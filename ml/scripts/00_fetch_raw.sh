@@ -115,11 +115,15 @@ PYTHON
 # The dataset directories are symlinks onto the data drive; downloads have to
 # land there, not in the repo checkout.
 payload_dir() {
-    local ds="$1"
-    local first
+    local ds="$1" first depth resolved
     first="$(python3 -c "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['expects'][0])" \
         "${ds}/manifest.yaml")"
-    dirname "$(readlink -f "${ds}/${first}")"
+    resolved="$(readlink -f "${ds}/${first}")"
+    # Walk up one level per path component, so a nested expects entry such as
+    # train/label.txt still resolves to the dataset root and not to train/.
+    depth="$(awk -F/ '{print NF}' <<< "${first}")"
+    while (( depth-- > 0 )); do resolved="$(dirname "${resolved}")"; done
+    echo "${resolved}"
 }
 
 fetch_widerface() {
@@ -166,6 +170,27 @@ fetch_hf() {
         --repo-type dataset --local-dir "${dest}"
 }
 
+# The RetinaFace landmarks live only on Google Drive. The file id belongs to the
+# manifest, which is where every dataset source is recorded (section 4.9).
+fetch_gdrive() {
+    local ds="$1" dest drive_id archive
+    dest="$(payload_dir "${ds}")"
+    read -r drive_id archive < <(python3 -c "
+import sys, yaml
+m = yaml.safe_load(open(sys.argv[1]))
+print(m['drive_id'], m['archive'])" "${ds}/manifest.yaml")
+
+    if [[ -f "${dest}/${archive}" ]]; then
+        log "${archive} already downloaded"
+    else
+        "${ML_ROOT}/.venv/bin/python" -m gdown "${drive_id}" -O "${dest}/${archive}" || {
+            warn "gdown failed; run 'uv sync' in ml/ or fetch ${archive} by hand"
+            return 1
+        }
+    fi
+    unzip -q -o "${dest}/${archive}" -d "${dest}"
+}
+
 manual_notice() {
     local dir="$1" name="$2"
     local url
@@ -177,7 +202,7 @@ manual_notice() {
 
 DATASETS=(
     "detection/widerface:widerface:auto"
-    "detection/retinaface_labels:retinaface_labels:manual"
+    "detection/retinaface_labels:retinaface_labels:gdrive"
     "antispoof/celeba_spoof:celeba_spoof:hf:Ar4ikov/celebA_spoof"
     "antispoof/xdomain/nuaa:nuaa:hf:akahana/anti-spoofing-nuaaaa"
     "antispoof/xdomain/unique_live:unique_live:hf:UniqueData/anti-spoofing_Real"
@@ -198,7 +223,8 @@ for entry in "${DATASETS[@]}"; do
     if [[ "${VERIFY_ONLY}" -eq 0 ]]; then
         case "${access}" in
             auto) "fetch_${name}" ;;
-            hf)   fetch_hf "${dir}" "${repo}" ;;
+            hf)     fetch_hf "${dir}" "${repo}" ;;
+            gdrive) fetch_gdrive "${dir}" ;;
         esac
     fi
     log "${name}"
