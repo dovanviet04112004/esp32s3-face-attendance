@@ -2,13 +2,16 @@ name: ms1mv3
 source_url: https://huggingface.co/datasets/gaunernst/ms1mv3-recordio
 access: auto
 license: research-only, non-commercial
-downloaded: null
-verified: false
+downloaded: '2026-08-27'
+verified: true
 expects:
 - train.rec
 - train.idx
 - property
-sha256: {}
+sha256:
+  train.rec: 305d259cd62d9e7a52bc544144f709602f333d560ec8fd191f95fa232f60db4c
+  train.idx: 59c7808ec53c7307d9f1a2d4ce7dcd9858229b805ba88bb3fe3fbd3102471e5b
+  property: 0188020121f63725ac41157596acf358e852e33f9ac859e3a175630343d95d9c
 counts:
   files: 3
 consumed_by:

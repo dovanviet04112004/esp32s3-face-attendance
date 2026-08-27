@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from facepipe.data.prepare.celeba_spoof_crop import scaled_box
+from facepipe.data.prepare.celeba_spoof_parquet import scaled_box, split_of
 from facepipe.data.prepare.device_index import build_rows, parse_name, write_manifest
 from facepipe.data.prepare.recordio_to_wds import (
     IR_HEADER,
@@ -102,22 +102,35 @@ def test_small_faces_can_be_dropped(wider_fixture) -> None:
 
 
 def test_scaled_box_is_square_and_centred() -> None:
-    left, top, right, bottom = scaled_box((10.0, 20.0, 40.0, 20.0), 1.0, 200, 200)
+    left, top, right, bottom = scaled_box((10, 20, 50, 40), 1.0, 200, 200)
     assert right - left == bottom - top
     assert (left + right) / 2 == pytest.approx(30.0, abs=1.0)
     assert (top + bottom) / 2 == pytest.approx(30.0, abs=1.0)
 
 
 def test_wide_crop_is_larger_than_tight_crop() -> None:
-    tight = scaled_box((50.0, 50.0, 40.0, 40.0), 1.0, 400, 400)
-    wide = scaled_box((50.0, 50.0, 40.0, 40.0), 2.7, 400, 400)
+    tight = scaled_box((50, 50, 90, 90), 1.0, 400, 400)
+    wide = scaled_box((50, 50, 90, 90), 2.7, 400, 400)
     assert (wide[2] - wide[0]) > (tight[2] - tight[0])
 
 
 def test_scaled_box_stays_inside_the_image() -> None:
-    left, top, right, bottom = scaled_box((0.0, 0.0, 40.0, 40.0), 2.7, 50, 50)
+    left, top, right, bottom = scaled_box((0, 0, 40, 40), 2.7, 50, 50)
     assert left >= 0 and top >= 0
     assert right <= 50 and bottom <= 50
+
+
+def test_box_is_read_as_corners_not_width_height() -> None:
+    box = scaled_box((100, 200, 220, 410), 1.0, 450, 600)
+    assert box[2] - box[0] == pytest.approx(210, abs=2)
+    assert box[3] <= 600
+
+
+def test_split_comes_from_the_shard_name() -> None:
+    assert split_of(Path("test-00000-of-00065-abc.parquet")) == "test"
+    assert split_of(Path("train-00014-of-00029-def.parquet")) == "train"
+    assert split_of(Path("valid-00000-of-00009-xyz.parquet")) == "valid"
+    assert split_of(Path("random.parquet")) == "unknown"
 
 
 def write_rec(path: Path, samples: list[tuple[int, bytes]]) -> Path:
