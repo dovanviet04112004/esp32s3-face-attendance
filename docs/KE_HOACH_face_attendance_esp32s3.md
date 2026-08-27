@@ -94,7 +94,7 @@ Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài li
 | Tập nhân viên tự thu | tự thu | ≥2.000 ảnh | đo trên đúng người sẽ dùng máy |
 
 MS1MV3 là mặc định chứ không phải phương án dự phòng: bản `recordio` chỉ 27.4 GB, đúng
-định dạng `glint360k_to_wds.py` đọc được, nên chạy được toàn bộ pipeline sớm hơn nhiều.
+định dạng `recordio_to_wds.py` đọc được, nên chạy được toàn bộ pipeline sớm hơn nhiều.
 Glint360K để dành khi số ID trở thành giới hạn thật, đo được chứ không phỏng đoán.
 
 **Dùng cho cả ba nhánh**
@@ -903,6 +903,7 @@ ml/
 └── tests/
     ├── conftest.py                          # fixture dùng chung
     ├── test_core_{config,registry,run_dir,trainer,distiller,isolation}.py
+    ├── test_prepare.py                      # bộ chuyển raw → interim
     └── {test_splits.py, test_transforms.py, test_postproc_parity.py}
 ```
 
