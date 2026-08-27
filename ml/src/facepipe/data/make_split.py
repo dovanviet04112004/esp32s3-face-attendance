@@ -30,7 +30,7 @@ CALIB_PER_BRANCH = 100
 
 TASK_VERSIONS = {
     "detection": "v1",
-    "antispoof": "v1_identity_disjoint",
+    "antispoof": "v1_upstream",
     "recognition": "v1_identity_disjoint",
     "device": "v1",
 }
@@ -98,11 +98,48 @@ def read_device_manifest(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def images_with_landmarks(path: Path) -> tuple[list[str], list[str]]:
+    """Split a COCO file into images that carry landmarks and images that do not."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    annotated = {
+        ann["image_id"] for ann in payload["annotations"] if ann.get("num_keypoints", 0) > 0
+    }
+    with_lm, without = [], []
+    for image in payload["images"]:
+        (with_lm if image["id"] in annotated else without).append(image["file_name"])
+    return with_lm, without
+
+
 def build_detection(source: Path, seed: int, ratios: Sequence[float]) -> dict[str, list[str]]:
-    """WIDER FACE has no identities, so this splits on images."""
-    images = images_from_coco(source) if source.suffix == ".json" else read_lines(source)
-    train, val = partition(images, ratios, seed)
-    return {"train.txt": train, "val.txt": val}
+    """Hold out a landmark evaluation set, taken from train.
+
+    The upstream val split carries boxes but no landmarks, so NMSE has to be
+    measured on images held out of train. Only images that actually carry
+    landmarks are eligible, and they leave the training list entirely.
+    """
+    with_lm, without = images_with_landmarks(source)
+    keep, held_out = partition(with_lm, ratios, seed)
+    return {"train.txt": sorted(keep + without), "landmark_val.txt": sorted(held_out)}
+
+
+def build_antispoof_upstream(crops_root: Path) -> dict[str, list[str]]:
+    """List the crops of each upstream split.
+
+    The CelebA-Spoof mirror carries no identity labels, so identity-disjointness
+    cannot be checked here. The upstream train/valid/test division is the only
+    separation available, and reshuffling it would silently break the rule.
+    """
+    scale_dir = crops_root / "img_1x"
+    names = {"train": "train_ids.txt", "valid": "val_ids.txt", "test": "test_ids.txt"}
+    parts: dict[str, list[str]] = {}
+    for split, filename in names.items():
+        entries = [
+            str(path.relative_to(scale_dir))
+            for label in ("live", "spoof")
+            for path in sorted((scale_dir / split / label).glob("*.jpg"))
+        ]
+        parts[filename] = entries
+    return parts
 
 
 def build_identity_disjoint(
@@ -210,16 +247,17 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.task == "detection":
         parts = build_detection(args.source, args.seed, (0.9, 0.1))
-        rule = f"chia theo anh, seed={args.seed}, ti le 90/10"
-        disjoint = [("train.txt", "val.txt")]
-    elif args.task == "antispoof":
-        parts = build_identity_disjoint(
-            args.source,
-            args.seed,
-            (0.8, 0.1, 0.1),
-            ("train_ids.txt", "val_ids.txt", "test_ids.txt"),
+        rule = (
+            f"landmark_val cat tu train, seed={args.seed}, ti le 90/10 tren anh co landmark; "
+            "val goc cua WIDER khong co landmark nen khong dung do NMSE"
         )
-        rule = f"identity-disjoint, seed={args.seed}, ti le 80/10/10 theo person_id"
+        disjoint = [("train.txt", "landmark_val.txt")]
+    elif args.task == "antispoof":
+        parts = build_antispoof_upstream(args.source)
+        rule = (
+            "giu nguyen chia train/valid/test cua upstream; mirror khong co nhan "
+            "identity nen khong tu kiem identity-disjoint duoc"
+        )
         disjoint = [("train_ids.txt", "val_ids.txt", "test_ids.txt")]
     elif args.task == "recognition":
         parts = build_identity_disjoint(

@@ -105,7 +105,8 @@ Glint360K để dành khi số ID trở thành giới hạn thật, đo được
 
 ### 1.3 Quy tắc chia dữ liệu
 
-- **Identity-disjoint** cho anti-spoof và recognition: một người không được xuất hiện ở cả train và val/test.
+- **Identity-disjoint** cho recognition: một người không được xuất hiện ở cả train và val/test.
+- Anti-spoof **giữ nguyên chia train/valid/test của upstream**. Mirror CelebA-Spoof không mang nhãn identity nên không tự kiểm identity-disjoint được; chia lại là phá luôn sự tách của giao thức gốc mà không có gì thay thế.
 - Ảnh OV5640 tự thu tách 2 phần **không giao nhau**: `calib/` (300 ảnh, dùng cho PTQ) và `test_device/` (validate cuối).
 - Calib chỉ lấy từ **ảnh live**; một khung spoof lọt vào tập PTQ sẽ kéo dải activation về phía tấn công.
 - Tập đo landmark cắt từ `train` của detect, không giao với phần đem train (§1.2).
@@ -712,7 +713,7 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │
 ├── splits/                                   # ✅ COMMIT TOÀN BỘ
 │   ├── detection/v1/{train.txt, val.txt, landmark_val.txt, SPLIT.md}
-│   ├── antispoof/v1_identity_disjoint/{train_ids.txt, val_ids.txt, test_ids.txt, SPLIT.md}
+│   ├── antispoof/v1_upstream/{train_ids.txt, val_ids.txt, test_ids.txt, SPLIT.md}
 │   ├── recognition/v1_identity_disjoint/{train_ids.txt, val_ids.txt, SPLIT.md}
 │   └── device/v1/{calib_det.txt, calib_spoof.txt, calib_recog.txt, test_device.txt, SPLIT.md}
 │
