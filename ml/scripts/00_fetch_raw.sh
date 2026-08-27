@@ -16,6 +16,11 @@ set -euo pipefail
 
 ML_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RAW="${ML_ROOT}/data/raw"
+
+# HF_TOKEN lifts the anonymous rate limit. .env is gitignored; .env.example is the template.
+if [[ -f "${ML_ROOT}/.env" ]]; then
+    set -a; . "${ML_ROOT}/.env"; set +a
+fi
 VERIFY_ONLY=0
 WANTED=()
 
@@ -139,12 +144,26 @@ fetch_widerface() {
 }
 
 # Mirrors on the Hub download straight into the data drive the symlinks point at.
+hf_cli() {
+    if [[ -x "${ML_ROOT}/.venv/bin/hf" ]]; then
+        echo "${ML_ROOT}/.venv/bin/hf"
+    elif command -v hf >/dev/null; then
+        command -v hf
+    else
+        return 1
+    fi
+}
+
 fetch_hf() {
-    local ds="$1" repo="$2" dest
+    local ds="$1" repo="$2" dest cli
     dest="$(payload_dir "${ds}")"
-    command -v hf >/dev/null || { warn "hf CLI absent: pip install huggingface_hub"; return 1; }
+    cli="$(hf_cli)" || {
+        warn "hf CLI absent. Run 'uv sync' in ml/, or pip install huggingface_hub"
+        return 1
+    }
     log "${repo} -> ${dest}"
-    HF_HOME="${RAW}/../.hf-cache" hf download "${repo}" --repo-type dataset --local-dir "${dest}"
+    HF_HOME="${ML_ROOT}/data/.hf-cache" "${cli}" download "${repo}" \
+        --repo-type dataset --local-dir "${dest}"
 }
 
 manual_notice() {

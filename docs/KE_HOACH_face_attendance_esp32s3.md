@@ -749,6 +749,8 @@ ml/
 ├── pyproject.toml  ├── uv.lock            # ✅ pin phiên bản, không dùng requirements.txt rời
 ├── Dockerfile                             # môi trường train tái lập được
 ├── Makefile
+├── .env.example                           # ✅ commit — HF_TOKEN và các biến, giá trị giả
+├── .env                                   # ❌ gitignore — giá trị thật (§4.9)
 │
 ├── configs/
 │   ├── common/{paths.yaml, hardware.yaml}
