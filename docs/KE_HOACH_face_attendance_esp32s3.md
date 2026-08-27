@@ -88,7 +88,7 @@ Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài li
 |---|---|---|---|
 | R50 @ WebFace600K | weight có sẵn của arcface_torch | ~166 MB | teacher, freeze, chỉ sinh embedding |
 | MS1MV3 | HF `gaunernst/ms1mv3-recordio` (`train.rec` + `train.idx` + `property`) | 27.4 GB | train student — **mặc định** |
-| Glint360K | HF `gaunernst/glint360k-wds-gz` (**webdataset `.tar.gz`**, đã shard sẵn) | 87.2 GB | train student — khi cần nhiều ID hơn |
+| Glint360K | HF `gaunernst/glint360k-wds-gz` (**webdataset `.tar.gz`**, đã shard sẵn) | 122 GB / 1385 shard | train student — khi cần nhiều ID hơn |
 | LFW · CFP-FP · AgeDB-30 | HF `gaunernst/face-recognition-eval` (`.bin` chuẩn insightface) | 488 MB cả bộ | đo TAR@FAR |
 | CFP-FF · CALFW · CPLFW | cùng repo trên, đi kèm sẵn | — | thêm chiều đánh giá, không tốn lần tải riêng |
 | Tập nhân viên tự thu | tự thu | ≥2.000 ảnh | đo trên đúng người sẽ dùng máy |

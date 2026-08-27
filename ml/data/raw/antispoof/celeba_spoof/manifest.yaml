@@ -3,12 +3,13 @@ source_url: https://huggingface.co/datasets/Ar4ikov/celebA_spoof
 access: auto
 license: research-only
 downloaded: '2026-08-27'
-verified: false
+verified: true
 expects:
 - data
-sha256: {}
+sha256:
+  data: <directory>
 counts:
-  files: 0
+  files: 167
 consumed_by:
 - antispoof/teacher
 - antispoof/student

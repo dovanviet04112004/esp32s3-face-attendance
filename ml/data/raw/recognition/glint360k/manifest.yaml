@@ -11,4 +11,5 @@ counts:
   files: 3
 consumed_by:
 - recognition/student
-notes: Webdataset .tar.gz da shard san, 1000 shard. Khong can chay glint360k_to_wds.py.
+notes: 'Webdataset .tar.gz da shard san: 1385 shard, 122 GB. Khong can chay recordio_to_wds.py.
+  Trang liet ke cua Hub cat o 1000 entry, dung so dem tren dia.'
