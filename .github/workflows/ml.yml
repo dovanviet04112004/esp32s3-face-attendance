@@ -1,0 +1,46 @@
+name: ml
+
+on:
+  push:
+    paths: ["ml/**", "contracts/**", ".github/workflows/ml.yml"]
+  pull_request:
+    paths: ["ml/**", "contracts/**", ".github/workflows/ml.yml"]
+
+defaults:
+  run:
+    working-directory: ml
+
+jobs:
+  ml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip until ml/ has a project file
+        id: guard
+        run: |
+          if [ -f pyproject.toml ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "ml/pyproject.toml absent, nothing to build yet"
+          fi
+
+      - uses: astral-sh/setup-uv@v5
+        if: steps.guard.outputs.ready == 'true'
+        with:
+          enable-cache: true
+
+      - name: Sync environment
+        if: steps.guard.outputs.ready == 'true'
+        run: uv sync --frozen
+
+      - name: Lint
+        if: steps.guard.outputs.ready == 'true'
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Test
+        if: steps.guard.outputs.ready == 'true'
+        run: uv run pytest -q

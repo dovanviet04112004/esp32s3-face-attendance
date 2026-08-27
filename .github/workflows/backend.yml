@@ -1,0 +1,72 @@
+name: backend
+
+on:
+  push:
+    paths: ["backend/**", "contracts/**", ".github/workflows/backend.yml"]
+  pull_request:
+    paths: ["backend/**", "contracts/**", ".github/workflows/backend.yml"]
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: attendance_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports: ["5432:5432"]
+
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/attendance_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip until backend/ has a package.json
+        id: guard
+        run: |
+          if [ -f package.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "backend/package.json absent, nothing to build yet"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.ready == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        if: steps.guard.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Prisma migrate
+        if: steps.guard.outputs.ready == 'true'
+        run: npx prisma migrate deploy
+
+      - name: Lint
+        if: steps.guard.outputs.ready == 'true'
+        run: npm run lint
+
+      - name: Test
+        if: steps.guard.outputs.ready == 'true'
+        run: npm test
+
+      - name: Build
+        if: steps.guard.outputs.ready == 'true'
+        run: npm run build

@@ -1,0 +1,79 @@
+name: contracts
+
+# Runs on every push: this is the job that stops ml, firmware and the web blocks
+# from drifting apart (KEHOACH 4.8).
+on:
+  push:
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate JSON Schema
+        run: |
+          npm install --no-save ajv-cli@5 ajv-formats@3
+          for f in contracts/schema/*.schema.json; do
+            npx ajv compile --spec=draft2020 -c ajv-formats -s "$f"
+          done
+
+      - name: Check mqtt_topics.yaml points at real schemas
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          text = pathlib.Path("contracts/mqtt_topics.yaml").read_text(encoding="utf-8")
+          missing = [s for s in re.findall(r"schema:\s*(\S+)", text)
+                     if not (pathlib.Path("contracts") / s).is_file()]
+          if missing:
+              sys.exit("missing schema files: " + ", ".join(missing))
+          PY
+
+      - name: Regenerate and fail on drift
+        run: |
+          ./tools/gen_from_schema.sh
+          git diff --exit-code -- \
+            backend/src/common/generated \
+            frontend/types/generated \
+            firmware/components/common/include/gen_payload.h
+
+      - name: Generated header compiles as C and C++
+        run: |
+          mkdir -p /tmp/cjson
+          cat > /tmp/cjson/cJSON.h <<'EOF'
+          #pragma once
+          #include <stdbool.h>
+          typedef struct cJSON { char *valuestring; double valuedouble; } cJSON;
+          cJSON *cJSON_GetObjectItemCaseSensitive(const cJSON *o, const char *k);
+          bool cJSON_IsString(const cJSON *i);
+          bool cJSON_IsNumber(const cJSON *i);
+          bool cJSON_IsBool(const cJSON *i);
+          bool cJSON_IsTrue(const cJSON *i);
+          bool cJSON_IsObject(const cJSON *i);
+          cJSON *cJSON_CreateObject(void);
+          void cJSON_AddStringToObject(cJSON *o, const char *k, const char *v);
+          void cJSON_AddNumberToObject(cJSON *o, const char *k, double v);
+          void cJSON_AddBoolToObject(cJSON *o, const char *k, bool v);
+          void cJSON_AddItemToObject(cJSON *o, const char *k, cJSON *v);
+          EOF
+          echo '#include "gen_payload.h"' > /tmp/cjson/probe.c
+          cp /tmp/cjson/probe.c /tmp/cjson/probe.cpp
+          gcc -std=c11 -Wall -Wextra -fsyntax-only \
+            -I/tmp/cjson -Ifirmware/components/common/include /tmp/cjson/probe.c
+          g++ -std=gnu++17 -Wall -Wextra -fsyntax-only \
+            -I/tmp/cjson -Ifirmware/components/common/include /tmp/cjson/probe.cpp
+
+      - name: Comment rules
+        run: python3 tools/check_comments.py
+
+      - name: Firmware layering
+        run: python3 tools/check_layers.py

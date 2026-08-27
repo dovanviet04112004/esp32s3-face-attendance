@@ -1,0 +1,54 @@
+name: firmware
+
+on:
+  push:
+    paths: ["firmware/**", "contracts/**", "tools/**", ".github/workflows/firmware.yml"]
+  pull_request:
+    paths: ["firmware/**", "contracts/**", "tools/**", ".github/workflows/firmware.yml"]
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Layering and comment rules
+        run: |
+          python3 tools/check_layers.py
+          python3 tools/check_comments.py firmware
+
+      - name: Skip build until firmware/ has a project
+        id: guard
+        run: |
+          if [ -f firmware/CMakeLists.txt ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "firmware/CMakeLists.txt absent, nothing to build yet"
+          fi
+
+      - name: Build ci profile
+        if: steps.guard.outputs.ready == 'true'
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.3
+          target: esp32s3
+          path: firmware
+          command: >-
+            idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.ci"
+            build
+
+      - name: Report binary size
+        if: steps.guard.outputs.ready == 'true'
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.3
+          target: esp32s3
+          path: firmware
+          command: idf.py size

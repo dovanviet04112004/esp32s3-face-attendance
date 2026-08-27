@@ -1,0 +1,50 @@
+name: frontend
+
+on:
+  push:
+    paths: ["frontend/**", "contracts/**", ".github/workflows/frontend.yml"]
+  pull_request:
+    paths: ["frontend/**", "contracts/**", ".github/workflows/frontend.yml"]
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip until frontend/ has a package.json
+        id: guard
+        run: |
+          if [ -f package.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "frontend/package.json absent, nothing to build yet"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.ready == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        if: steps.guard.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Lint
+        if: steps.guard.outputs.ready == 'true'
+        run: npm run lint
+
+      - name: Typecheck
+        if: steps.guard.outputs.ready == 'true'
+        run: npx tsc --noEmit
+
+      - name: Build
+        if: steps.guard.outputs.ready == 'true'
+        run: npm run build
