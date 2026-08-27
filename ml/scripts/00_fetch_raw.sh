@@ -210,7 +210,7 @@ DATASETS=(
     "antispoof/xdomain/axon_masks:axon_masks:hf:AxonData/face-anti-spoofing-dataset"
     "recognition/ms1mv3:ms1mv3:hf:gaunernst/ms1mv3-recordio"
     "recognition/glint360k:glint360k:hf:gaunernst/glint360k-wds-gz"
-    "recognition/benchmarks:recognition_benchmarks:manual"
+    "recognition/benchmarks:recognition_benchmarks:hf:gaunernst/face-recognition-eval"
 )
 
 incomplete=0

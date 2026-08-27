@@ -1,16 +1,26 @@
 name: recognition_benchmarks
-source_url: https://github.com/deepinsight/insightface/tree/master/recognition/_datasets_
-access: manual
+source_url: https://huggingface.co/datasets/gaunernst/face-recognition-eval
+access: auto
 license: research-only
-downloaded: null
-verified: false
+downloaded: '2026-08-27'
+verified: true
 expects:
 - lfw.bin
 - cfp_fp.bin
 - agedb_30.bin
-sha256: {}
+- cfp_ff.bin
+- calfw.bin
+- cplfw.bin
+sha256:
+  lfw.bin: 2cdf0242947ad8287a96f84b5908bb2332879050c959c4a9a23a5cc6bcea112c
+  cfp_fp.bin: a8754ddf9729a014438d00908a1dc2fe2dbdfb59db9d19a714251c2f814a94ad
+  agedb_30.bin: 1af672c0ea829b95951b12628687956fe54263614b60b0ec5af9cdfdc4480b30
+  cfp_ff.bin: f310688d436ec6569e0da801d097198ca8742d71702a5c635ef34e79e105ae02
+  calfw.bin: f643466e875865670a91d6d836dcd0af7ac41730f279ba13de1ed5ae6546c4db
+  cplfw.bin: 2d18b80537ef3dce1ba163d8829c5994d1408d4c2a84eee499bba5563d8da2fc
 counts:
-  files: 3
+  files: 6
 consumed_by:
 - recognition/eval
-notes: Do TAR@FAR va accuracy cua ca teacher lan student.
+notes: Dinh dang .bin cua insightface, doc thang bang eval cua arcface_torch. KE HOACH
+  §1.2 chi doi lfw/cfp_fp/agedb_30; bon con lai di kem, khong ton them lan tai.
