@@ -1,0 +1,33 @@
+# Dataset roots. Never hardcode a path in code; point these at wherever the
+# data actually lives, symlinking raw/ to another disk when space runs out.
+
+data_root: data
+raw_root: data/raw
+interim_root: data/interim
+processed_root: data/processed
+splits_root: data/splits
+cache_root: data/cache
+artifacts_root: artifacts
+
+detection:
+  widerface: data/raw/detection/widerface
+  retinaface_labels: data/raw/detection/retinaface_labels
+  coco_json: data/interim/detection/widerface_coco
+
+antispoof:
+  celeba_spoof: data/raw/antispoof/celeba_spoof
+  oulu_npu: data/raw/antispoof/oulu_npu
+  casia_mfsd: data/raw/antispoof/casia_mfsd
+  replay_attack: data/raw/antispoof/replay_attack
+  msu_mfsd: data/raw/antispoof/msu_mfsd
+  crops: data/interim/antispoof/celeba_spoof_crops
+
+recognition:
+  glint360k: data/raw/recognition/glint360k
+  ms1mv3: data/raw/recognition/ms1mv3
+  benchmarks: data/raw/recognition/benchmarks
+  shards: data/interim/recognition/glint360k_shards
+
+device:
+  ov5640: data/raw/device/ov5640
+  manifest: data/raw/device/ov5640/manifest.csv

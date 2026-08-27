@@ -1,0 +1,25 @@
+# Target device envelope. Training does not read most of these, but export and
+# the quantization ladder check against them, so they live next to the configs
+# rather than in a comment somewhere.
+
+target: esp32s3
+flash_mb: 16
+psram_mb: 8
+psram_mode: octal
+cpu_mhz: 240
+
+# Numbers marked measured=false are estimates until E8 puts them on a board.
+arena:
+  budget_bytes: 512000
+  measured: false
+
+latency_budget_ms:
+  detection: 120
+  antispoof: 60
+  recognition: 180
+  measured: false
+
+quantization:
+  activation_dtype: int8
+  weight_dtype: int8
+  calibration_images: 300
