@@ -1,17 +1,16 @@
 """MXNet RecordIO to webdataset tar shards.
 
-Glint360K ships as a single 145 GB .rec that only MXNet reads, and MXNet is no
-longer maintained. Rather than depend on it, this reads the RecordIO container
-directly: the format is a magic word, a packed length, an IRHeader and the
-encoded image.
+MS1MV3 ships as a single .rec that only MXNet reads, and MXNet is unmaintained.
+Rather than depend on it, this reads the RecordIO container directly: the format
+is a magic word, a packed length, an IRHeader and the encoded image.
 
-Shards are plain tar, so any loader that walks a tar can consume them.
+Glint360K needs none of this - its mirror is already sharded webdataset.
 
 Usage:
-    python -m facepipe.data.prepare.glint360k_to_wds \\
-        --rec data/raw/recognition/glint360k/train.rec \\
-        --idx data/raw/recognition/glint360k/train.idx \\
-        --out data/interim/recognition/glint360k_shards
+    python -m facepipe.data.prepare.recordio_to_wds \\
+        --rec data/raw/recognition/ms1mv3/train.rec \\
+        --idx data/raw/recognition/ms1mv3/train.idx \\
+        --out data/interim/recognition/ms1mv3_shards
 """
 
 from __future__ import annotations

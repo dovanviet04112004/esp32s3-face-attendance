@@ -12,7 +12,7 @@ from PIL import Image
 
 from facepipe.data.prepare.celeba_spoof_crop import scaled_box
 from facepipe.data.prepare.device_index import build_rows, parse_name, write_manifest
-from facepipe.data.prepare.glint360k_to_wds import (
+from facepipe.data.prepare.recordio_to_wds import (
     IR_HEADER,
     RECORD_MAGIC,
     read_records,

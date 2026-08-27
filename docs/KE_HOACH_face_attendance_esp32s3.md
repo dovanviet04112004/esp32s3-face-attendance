@@ -768,13 +768,13 @@ ml/
 │   │   ├── scheduler.py  ├── metrics.py  ├── logger.py  └── seed.py
 │   │
 │   ├── data/
-│   │   ├── datasets/{widerface.py, celeba_spoof.py, oulu_npu.py,
-│   │   │             casia_replay_msu.py, glint360k.py, ov5640_device.py}
+│   │   ├── datasets/{widerface.py, celeba_spoof.py, xdomain_spoof.py,
+│   │   │             recognition_wds.py, ov5640_device.py}
 │   │   ├── transforms/{det.py, spoof.py, recog.py, sensor_sim.py}
 │   │   ├── prepare/                       # ★ raw → interim → processed
 │   │   │   ├── widerface_to_coco.py
-│   │   │   ├── celeba_spoof_crop.py
-│   │   │   ├── glint360k_to_wds.py
+│   │   │   ├── celeba_spoof_parquet.py    # mirror CelebA-Spoof là parquet, không phải bbox.json
+│   │   │   ├── recordio_to_wds.py         # MXNet RecordIO → shard; Glint360K đã shard sẵn
 │   │   │   └── device_index.py            # quét ov5640/images → manifest.csv
 │   │   ├── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
 │   │   └── loaders.py
@@ -2046,6 +2046,6 @@ Firmware nền chạy song song với ba nhánh model, không phải đợi.
 
 **Model**: [YOLO26 docs](https://docs.ultralytics.com/models/yolo26) · [YOLO26 paper](https://arxiv.org/abs/2606.03748) · [YuNet paper](https://link.springer.com/article/10.1007/s11633-023-1423-y) · [libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · [OpenCV Zoo YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) · [CDCN](https://github.com/ZitongYu/CDCN) · [Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) · [InsightFace model_zoo](https://github.com/deepinsight/insightface/tree/master/model_zoo) · [arcface_torch](https://github.com/deepinsight/insightface/tree/master/recognition/arcface_torch) · [MobileFaceNet paper](https://arxiv.org/abs/1804.07573)
 
-**Dữ liệu**: [WIDER FACE](http://shuoyang1213.me/WIDERFACE/) · [RetinaFace 5-landmark](https://github.com/deepinsight/insightface/tree/master/detection/retinaface) · [CelebA-Spoof](https://github.com/ZhangYuanhan-AI/CelebA-Spoof) · [OULU-NPU](https://sites.google.com/site/oulunpudatabase/) · [Replay-Attack](https://www.idiap.ch/en/scientific-research/data/replayattack) · [Glint360K](https://github.com/deepinsight/insightface/tree/master/recognition/partial_fc) · [LFW](http://vis-www.cs.umass.edu/lfw/)
+**Dữ liệu — nguồn thật đang dùng** (trang chủ của dataset ở §1.2): [WIDER FACE](https://huggingface.co/datasets/wider_face) · [RetinaFace 5-landmark](https://github.com/deepinsight/insightface/tree/master/detection/retinaface) · [CelebA-Spoof](https://huggingface.co/datasets/Ar4ikov/celebA_spoof) · [NUAA](https://huggingface.co/datasets/akahana/anti-spoofing-nuaaaa) · [UniqueData live](https://huggingface.co/datasets/UniqueData/anti-spoofing_Real) · [UniqueData replay](https://huggingface.co/datasets/UniqueData/anti-spoofing_replay) · [AxonData masks](https://huggingface.co/datasets/AxonData/face-anti-spoofing-dataset) · [MS1MV3](https://huggingface.co/datasets/gaunernst/ms1mv3-recordio) · [Glint360K](https://huggingface.co/datasets/gaunernst/glint360k-wds-gz)
 
 **Nền tảng**: [esp-tflite-micro](https://components.espressif.com/components/espressif/esp-tflite-micro) · [ESP-NN](https://github.com/espressif/esp-nn) · [TFLite Micro memory management](https://github.com/tensorflow/tflite-micro/blob/main/tensorflow/lite/micro/docs/memory_management.md) · [esp32-camera](https://github.com/espressif/esp32-camera) · [ESP-IDF partition table](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/partition-tables.html) · [Pinout board GOOUUU ESP32-S3-CAM](https://github.com/profharris/GOOUUU_ESP32-S3-CAM)
