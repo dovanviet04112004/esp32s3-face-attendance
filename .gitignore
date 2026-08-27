@@ -1,5 +1,6 @@
 # ── Sinh ra từ source (KE HOACH §4.3) ──
-**/generated/
+# */generated/ CÓ commit: §4.2 bắt contracts.yml chạy lại generator rồi
+# git diff --exit-code, không commit thì không có gì để diff.
 build/
 dist/
 .next/
@@ -59,6 +60,13 @@ firmware/models/**/*.bin
 *.key
 *.crt
 secrets/
+
+# ── Công cụ AI agent — chỉ dùng ở máy local, không lên remote ──
+.claude/
+CLAUDE.md
+.cursor/
+.aider*
+.github/copilot-instructions.md
 
 # ── Hệ điều hành / IDE ──
 .DS_Store

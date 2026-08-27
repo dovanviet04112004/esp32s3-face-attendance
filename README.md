@@ -13,7 +13,7 @@ tử hoá INT8, nạp vào flash qua partition riêng để OTA được độc 
 |---|---|
 | [docs/KE_HOACH_face_attendance_esp32s3.md](docs/KE_HOACH_face_attendance_esp32s3.md) | Kiến trúc — nguồn sự thật duy nhất |
 | [docs/TASKS.md](docs/TASKS.md) | Backlog 14 epic |
-| [CLAUDE.md](CLAUDE.md) | Quy tắc bắt buộc cho mọi thay đổi |
+| `CLAUDE.md` | Quy tắc bắt buộc cho mọi thay đổi — chỉ có ở bản local, không commit |
 | `docs/adr/` | Quyết định kiến trúc, mỗi quyết định một file |
 | `docs/measurements/` | Số đo trên board thật |
 
