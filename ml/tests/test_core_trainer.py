@@ -1,0 +1,178 @@
+"""E2-T4 and E2-T7: the loop trains, survives an interrupt, and repeats on a seed."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+
+from facepipe.core.config import Config, load_config
+from facepipe.core.logger import RunLogger
+from facepipe.core.run_dir import RunDir, create_run_dir
+from facepipe.core.scheduler import build_optimizer, build_scheduler
+from facepipe.core.seed import seed_everything
+from facepipe.core.trainer import CKPT_LAST, ModelEma, Trainer
+
+
+class InterruptError(RuntimeError):
+    """Stand-in for the user hitting Ctrl-C mid-epoch."""
+
+
+def _build(
+    cfg: Config, run: RunDir, model: nn.Module, loader: DataLoader, stop_at: int | None = None
+) -> Trainer:
+    optimizer = build_optimizer(model, cfg.optim)
+    scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
+    criterion = nn.CrossEntropyLoss()
+    logger = RunLogger(run.path, tensorboard=False, level="WARNING")
+
+    def step_fn(batch):
+        images, labels = batch
+        loss = criterion(model(images), labels)
+        return loss, {"loss": float(loss.detach())}
+
+    trainer = Trainer(
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        train_loader=loader,
+        cfg=cfg,
+        run_dir=run,
+        logger=logger,
+        step_fn=step_fn,
+    )
+    if stop_at is not None:
+        trainer.step_fn = _stopping(step_fn, trainer, stop_at)
+    return trainer
+
+
+def _stopping(step_fn, trainer: Trainer, stop_at: int):
+    def wrapped(batch):
+        if trainer.state.global_step >= stop_at:
+            raise InterruptError(f"stopped at step {stop_at}")
+        return step_fn(batch)
+
+    return wrapped
+
+
+def _cfg(config_file: Path, tmp_path: Path, *overrides: str) -> Config:
+    return load_config(config_file, [f"run.artifacts_root={tmp_path / 'a'}", *overrides])
+
+
+def test_trains_two_epochs(config_file, tmp_path, tiny_model, tiny_loader) -> None:
+    cfg = _cfg(config_file, tmp_path)
+    run = create_run_dir(cfg)
+    trainer = _build(cfg, run, tiny_model, tiny_loader)
+    state = trainer.fit()
+    assert state.epoch == 2
+    assert state.global_step == 2 * len(tiny_loader)
+    assert (run.ckpt_dir / CKPT_LAST).is_file()
+
+
+def test_resume_continues_at_the_same_step(config_file, tmp_path, tiny_loader) -> None:
+    cfg = _cfg(config_file, tmp_path)
+    seed_everything(cfg.run.seed, deterministic=True)
+
+    from tests.conftest import TinyNet
+
+    steps_per_epoch = len(tiny_loader)
+    first = create_run_dir(cfg)
+    trainer = _build(cfg, first, TinyNet(), tiny_loader, stop_at=steps_per_epoch + 2)
+    with pytest.raises(InterruptError):
+        trainer.fit()
+
+    resumed_cfg = _cfg(config_file, tmp_path, f"train.resume={first.ckpt_dir / CKPT_LAST}")
+    second = create_run_dir(resumed_cfg)
+    resumed = _build(resumed_cfg, second, TinyNet(), tiny_loader)
+    assert resumed.state.epoch == 1
+    assert resumed.state.global_step == steps_per_epoch
+
+    state = resumed.fit()
+    assert state.epoch == 2
+    assert state.global_step == 2 * steps_per_epoch
+
+
+def test_resume_restores_weights_exactly(config_file, tmp_path, tiny_loader) -> None:
+    from tests.conftest import TinyNet
+
+    cfg = _cfg(config_file, tmp_path)
+    run = create_run_dir(cfg)
+    trainer = _build(cfg, run, TinyNet(), tiny_loader)
+    trainer.fit()
+    saved = {k: v.clone() for k, v in trainer.model.state_dict().items()}
+
+    resumed_cfg = _cfg(config_file, tmp_path, f"train.resume={run.ckpt_dir / CKPT_LAST}")
+    resumed = _build(resumed_cfg, create_run_dir(resumed_cfg), TinyNet(), tiny_loader)
+    for key, value in saved.items():
+        assert torch.allclose(resumed.model.state_dict()[key], value), key
+
+
+def test_same_seed_gives_the_same_loss(config_file, tmp_path, tiny_loader) -> None:
+    from tests.conftest import TinyNet
+
+    losses = []
+    for index in range(2):
+        cfg = _cfg(config_file, tmp_path, f"run.task=seedrun{index}")
+        seed_everything(cfg.run.seed, deterministic=True)
+        trainer = _build(cfg, create_run_dir(cfg), TinyNet(), tiny_loader)
+        state = trainer.fit()
+        losses.append(state.history[-1]["loss"])
+    assert losses[0] == pytest.approx(losses[1], rel=1e-9, abs=1e-9)
+
+
+def test_different_seed_gives_a_different_loss(config_file, tmp_path, tiny_loader) -> None:
+    from tests.conftest import TinyNet
+
+    losses = []
+    for index, seed in enumerate((1, 2)):
+        cfg = _cfg(config_file, tmp_path, f"run.task=seedvary{index}", f"run.seed={seed}")
+        seed_everything(cfg.run.seed, deterministic=True)
+        trainer = _build(cfg, create_run_dir(cfg), TinyNet(), tiny_loader)
+        losses.append(trainer.fit().history[-1]["loss"])
+    assert losses[0] != pytest.approx(losses[1])
+
+
+def test_grad_accumulation_reduces_optimizer_steps(config_file, tmp_path, tiny_loader) -> None:
+    from tests.conftest import TinyNet
+
+    cfg = _cfg(config_file, tmp_path, "train.accum_steps=2", "train.epochs=1")
+    trainer = _build(cfg, create_run_dir(cfg), TinyNet(), tiny_loader)
+    state = trainer.fit()
+    assert state.global_step == len(tiny_loader) // 2
+
+
+def test_non_finite_loss_stops_the_run(config_file, tmp_path, tiny_loader) -> None:
+    from tests.conftest import TinyNet
+
+    cfg = _cfg(config_file, tmp_path)
+    run = create_run_dir(cfg)
+    model = TinyNet()
+    trainer = _build(cfg, run, model, tiny_loader)
+    trainer.step_fn = lambda batch: (torch.tensor(float("nan"), requires_grad=True), {"loss": 0.0})
+    with pytest.raises(FloatingPointError, match="non-finite"):
+        trainer.fit()
+
+
+def test_ema_tracks_but_lags_the_live_weights(tiny_model) -> None:
+    ema = ModelEma(tiny_model, decay=0.5)
+    before = ema.module.head.weight.clone()
+    with torch.no_grad():
+        tiny_model.head.weight.add_(1.0)
+    ema.update(tiny_model)
+    after = ema.module.head.weight
+    assert not torch.allclose(after, before)
+    assert not torch.allclose(after, tiny_model.head.weight)
+
+
+def test_ema_state_survives_a_round_trip(tiny_model) -> None:
+    ema = ModelEma(tiny_model, decay=0.9)
+    with torch.no_grad():
+        tiny_model.head.weight.add_(0.3)
+    ema.update(tiny_model)
+    restored = ModelEma(tiny_model, decay=0.1)
+    restored.load_state_dict(ema.state_dict())
+    assert restored.decay == pytest.approx(0.9)
+    assert torch.allclose(restored.module.head.weight, ema.module.head.weight)
