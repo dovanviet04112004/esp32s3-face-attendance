@@ -10,7 +10,7 @@
 - [2. Phần cứng — bảng lắp mạch từng chân](#2-phần-cứng--bảng-lắp-mạch-từng-chân)
 - [3. Kỹ thuật tối ưu model — 6 lớp](#3-kỹ-thuật-tối-ưu-model--6-lớp)
 - [4. Cấu trúc repo](#4-cấu-trúc-repo)
-  - 4.2 `contracts/` · 4.4 `ml/` · 4.5 `firmware/` · 4.6 backend · 4.7 frontend · 4.8 deploy
+  - 4.2 `contracts/` · 4.4 `ml/` · 4.5 `firmware/` · 4.6 backend · 4.7 frontend · 4.8 deploy · 4.9 cấm hardcode
 - [5. Bảng task FreeRTOS + chia core + IPC](#5-bảng-task-freertos--chia-core--ipc)
 - [6. Bộ nhớ và định dạng lưu trữ](#6-bộ-nhớ-và-định-dạng-lưu-trữ)
   - 6.1 Phân vùng flash · 6.2 Bố cục trên thiết bị (NVS · model · LittleFS · **định dạng bản ghi**)
@@ -34,6 +34,10 @@
 | **Recognition** | Student | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | 0.99M params, ~4MB FP32 → **~1.1MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
 
 **Hai ràng buộc thiết kế quyết định bộ 6 này:**
+> **Landmark chỉ có ở `train`.** Bộ `retinaface_gt_v1.1` không gán landmark cho `val`, nên
+> tập đo NMSE landmark phải cắt ra từ chính `train` và không giao với phần đem train. Đo
+> landmark trên `val` gốc là đo trên nhãn không tồn tại. Box thì `val` vẫn đủ, AP vẫn đo bình thường.
+
 - Student detect **bắt buộc phải ra 5 landmark**, nếu không thì không align được mặt trước khi vào MobileFaceNet, accuracy nhận diện rớt mạnh. YuNet ra sẵn 5 điểm.
 - Teacher detect **cũng phải có landmark** thì mới distill được landmark head, nên dùng biến thể `-pose` chứ không dùng bản detect thuần.
 
@@ -41,7 +45,7 @@
 
 | Model | Dataset | Link | Vai trò | License |
 |---|---|---|---|---|
-| YOLO26m-pose (teacher) | COCO (pretrain sẵn) → **WIDER FACE** + **5-landmark của RetinaFace** (84.6k mặt train / 18.5k val) | [WIDER FACE](http://shuoyang1213.me/WIDERFACE/) · [annotation 5 điểm](https://github.com/deepinsight/insightface/tree/master/detection/retinaface) | fine-tune domain mặt | Research-only |
+| YOLO26m-pose (teacher) | COCO (pretrain sẵn) → **WIDER FACE** + **5-landmark của RetinaFace** (train 12.880 ảnh / 159.393 mặt, trong đó **75.913 mặt có đủ 5 landmark**; val 3.226 ảnh / 39.697 mặt, **không mặt nào có landmark**) | [WIDER FACE](http://shuoyang1213.me/WIDERFACE/) · [annotation 5 điểm](https://github.com/deepinsight/insightface/tree/master/detection/retinaface) | fine-tune domain mặt | Research-only |
 | YuNet (student) | WIDER FACE + 5-landmark (giống teacher — bắt buộc để nhãn KD khớp) | như trên | KD + task loss | Research-only |
 | CDCN++ (teacher) | **CelebA-Spoof** | [ZhangYuanhan-AI/CelebA-Spoof](https://github.com/ZhangYuanhan-AI/CelebA-Spoof) | train teacher | Research-only |
 | MiniFASNetV2-SE (student) | CelebA-Spoof + tập tự thu (in ảnh, màn hình điện thoại, màn hình laptop, mặt nạ giấy) | | KD + task loss | hỗn hợp |
@@ -1406,25 +1410,67 @@ Dùng khi cần đo nhanh giữa lúc đang gỡ lỗi. **Không dùng để ch�
 ```
 backend/
 ├── Dockerfile                        # multi-stage: build → node:22-alpine
+├── .env.example                      # ✅ commit — mọi biến, giá trị giả
+├── .env                              # ❌ gitignore — giá trị thật, không bao giờ commit
 ├── package.json  ├── tsconfig.json  ├── nest-cli.json
 ├── prisma/{schema.prisma, migrations/, seed.ts}
 ├── test/{app.e2e-spec.ts, jest-e2e.json}      # e2e mặc định của NestJS
 └── src/
     ├── main.ts                       # helmet, CORS (origin Vercel), ValidationPipe, Swagger
     ├── app.module.ts
-    ├── config/                       # env schema (zod), ConfigModule.forRoot
+    ├── config/
+    │   ├── env.schema.ts             # ★ zod — NƠI DUY NHẤT đọc process.env (§4.4)
+    │   └── configuration.ts          # ConfigModule.forRoot, validate lúc boot
     ├── common/
     │   ├── generated/                # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
     │   ├── guards/{jwt-auth.guard.ts, roles.guard.ts, device-auth.guard.ts}
+    │   ├── cache/{cache.module.ts, cache.service.ts, cache-keys.ts}
     │   ├── decorators/  ├── interceptors/  ├── filters/  └── dto/
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
     │   ├── users/    ├── employees/  ├── devices/   ├── enrollment/
     │   ├── attendance/ ├── shifts/   ├── reports/   ├── models/
     │   ├── mqtt/     ├── realtime/   └── audit/
-    ├── queue/{queue.module.ts, processors/{image, report, notify}.processor.ts}
-    └── database/prisma.service.ts
+    ├── queue/
+    │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
+    │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
+    │   └── processors/{image, report, notify}.processor.ts
+    └── database/{prisma.service.ts, redis.service.ts}
 ```
+
+**Redis giữ hai vai, một kết nối** — `database/redis.service.ts` sở hữu client, `cache/` và
+`queue/` cùng dùng. Hai vai này không được lẫn: hàng đợi mất job là mất việc, cache mất key
+chỉ là chậm đi một nhịp.
+
+| Vai | Ai dùng | Mất Redis thì sao |
+|---|---|---|
+| **Cache** đọc nhiều ghi ít | `common/cache/` | API vẫn chạy, rơi thẳng xuống Postgres |
+| **Hàng đợi** BullMQ | `queue/` | Job dừng, API vẫn nhận request |
+
+**Bảng cache — mỗi khoá một TTL, khai ở `cache-keys.ts`**
+
+| Khoá | Nội dung | TTL | Xoá khi |
+|---|---|---|---|
+| `emp:{id}` | hồ sơ nhân viên | 10 phút | sửa nhân viên |
+| `emp:list:{hash}` | trang danh sách đã lọc | 60 giây | thêm/sửa/xoá nhân viên |
+| `dev:{id}:status` | online, RSSI, heap | 45 giây | heartbeat tới |
+| `report:{type}:{range}` | báo cáo đã tổng hợp | 15 phút | có bản ghi chấm công mới trong khoảng |
+| `shift:active` | ca đang hiệu lực | 30 phút | sửa ca |
+
+Cache **chỉ chứa dữ liệu đọc lại được từ Postgres**. Không cache embedding, không cache JWT,
+không cache thứ gì mà mất đi là sai nghiệp vụ.
+
+**Bảng hàng đợi BullMQ — khai ở `queues.ts`**
+
+| Queue | Job | Ai đẩy vào | Vì sao không làm đồng bộ |
+|---|---|---|---|
+| `image` | resize + upload ảnh chấm công lên MinIO | `mqtt/` khi nhận bản ghi | Ảnh vài trăm KB, không để kiosk chờ |
+| `report` | tổng hợp báo cáo tháng ra file | `reports/` khi người dùng bấm | Quét vài chục nghìn bản ghi |
+| `notify` | gửi mail/webhook khi có sự kiện lạ | `audit/`, `devices/` | Bên thứ ba có thể chậm hoặc chết |
+| `ota` | rollout theo lô, theo dõi từng thiết bị | `models/` | Chạy hàng giờ, phải resume được |
+
+Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `image` và `ota` bắt buộc
+**idempotent**: BullMQ giao ít nhất một lần, chạy lại phải ra cùng kết quả.
 
 **Bảng dữ liệu chính (Prisma)**
 
@@ -1479,13 +1525,29 @@ frontend/
 │       ├── shifts/page.tsx  ├── reports/page.tsx  └── settings/page.tsx
 ├── public/{favicon.ico, logo.svg}
 ├── components/{ui/, charts/, tables/, forms/}
-├── lib/{api.ts, ws.ts, auth.ts}      # api.ts: axios + interceptor tự refresh khi 401
+├── lib/
+│   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.4)
+│   ├── api.ts                        # axios + interceptor tự refresh khi 401
+│   └── ws.ts  └── auth.ts
 ├── hooks/  ├── store/
 ├── types/
 │   └── generated/                    # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
+├── .env.example                      # ✅ commit — mọi biến, giá trị giả
+├── .env.local                        # ❌ gitignore — giá trị thật
 ├── middleware.ts
 └── next.config.ts
 ```
+
+**Biến môi trường của frontend là công khai.** Mọi thứ có tiền tố `NEXT_PUBLIC_` đi thẳng vào
+bundle mà trình duyệt tải về. Không bao giờ đặt secret ở đó — không JWT ký, không khoá MinIO,
+không mật khẩu broker. Frontend chỉ cần đúng hai biến:
+
+| Biến | Ví dụ | Công khai được không |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `https://api.example.com` | Được, chỉ là địa chỉ |
+| `NEXT_PUBLIC_WS_URL` | `wss://api.example.com` | Được |
+
+Thứ cần bí mật thì gọi vòng qua Route Handler chạy trên server của Next, không nhúng vào client.
 
 ### 4.8 `deploy/` — Docker trên VPS
 
@@ -1512,6 +1574,43 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, trỏ `NEXT_PUBLIC_API_URL=https://api.<domain>`.
 
 `ci/contracts.yml` là workflow quan trọng nhất: chạy lại generator từ `contracts/schema/`, fail nếu code sinh ra khác code đã commit. Đây là thứ chặn 3 khối trôi khỏi nhau.
+
+---
+
+### 4.9 Cấm hardcode — mỗi hằng số có đúng một nguồn
+
+Cùng một con số nằm ở hai chỗ thì sớm muộn hai chỗ sẽ lệch, và bên sai luôn là bên không ai
+nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loại hằng số.
+
+| Loại hằng số | Nguồn duy nhất | Cách phần còn lại lấy về |
+|---|---|---|
+| Chân GPIO | `firmware/main/app_config.h` + §2 | `#include "app_config.h"` |
+| Kích thước, offset bản ghi trên flash | `sys_storage/include/storage_format.h` + §6.2 | include, có `static_assert` |
+| Trường payload MQTT | `contracts/schema/*.json` | sinh code, §4.2 |
+| Tên topic, QoS, retained | `contracts/mqtt_topics.yaml` | đọc file, không gõ chuỗi topic |
+| File model đang deploy, sha256 | `contracts/models.lock.json` | đọc file |
+| Đường dẫn dataset | `ml/configs/common/paths.yaml` | nạp config |
+| Siêu tham số train, `input_hw` | `ml/configs/<nhánh>/*.yaml` | nạp config |
+| Ngân sách phần cứng, ngưỡng arena | `ml/configs/common/hardware.yaml` | nạp config |
+| URL, host, port, secret, chuỗi kết nối | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` · `lib/env.ts` |
+| Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
+| Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
+| Ngưỡng nghiệp vụ (khớp mặt, liveness, chống trùng) | NVS trên kiosk, `SET_CONFIG` từ server | đọc cấu hình lúc chạy |
+
+**Ba luật đi kèm:**
+
+1. **`process.env` chỉ được đọc ở đúng một file mỗi khối** — `config/env.schema.ts` ở backend,
+   `lib/env.ts` ở frontend. Nơi khác cần biến thì nhận qua tham số hoặc `ConfigService`. Đọc
+   rải rác thì không ai biết ứng dụng thật sự cần những biến gì để chạy.
+2. **Biến môi trường phải validate lúc boot, không phải lúc dùng.** Thiếu biến thì chết ngay
+   lúc khởi động với thông báo rõ, thay vì `undefined` chui vào chuỗi kết nối rồi lỗi sau ba
+   tiếng.
+3. **`.env` không bao giờ commit; `.env.example` bắt buộc commit** và phải liệt kê **đủ mọi
+   biến** với giá trị giả. Thêm một biến mà quên cập nhật `.env.example` là làm hỏng bước dựng
+   môi trường của người tiếp theo.
+
+Số đo được (latency, arena, accuracy) **không phải hằng số** — chúng nằm ở `docs/measurements/`
+và ở `metrics.json` của từng run, không viết thẳng vào code.
 
 ---
 
