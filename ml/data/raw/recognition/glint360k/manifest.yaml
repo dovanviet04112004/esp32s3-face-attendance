@@ -2,13 +2,14 @@ name: glint360k
 source_url: https://huggingface.co/datasets/gaunernst/glint360k-wds-gz
 access: auto
 license: research-only, non-commercial
-downloaded: null
-verified: false
+downloaded: '2026-08-27'
+verified: true
 expects:
 - glint360k-0000.tar.gz
-sha256: {}
+sha256:
+  glint360k-0000.tar.gz: 08184d3e9d6a78e0f7ffcedfed81edbe7a1404451fbcbc2df485be98a3d3879a
 counts:
-  files: 3
+  files: 1
 consumed_by:
 - recognition/student
 notes: 'Webdataset .tar.gz da shard san: 1385 shard, 122 GB. Khong can chay recordio_to_wds.py.
