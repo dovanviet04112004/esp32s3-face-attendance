@@ -45,12 +45,23 @@ done_already() {
     [[ "${FORCE}" -eq 0 ]] && [[ -e "$1" ]] && [[ -s "$1" || -n "$(ls -A "$1" 2>/dev/null)" ]]
 }
 
+# A rerun that produces fewer shards would leave the extra ones from the previous
+# run behind, and a loader globbing the directory would read them as data.
+reset_output() {
+    [[ "${FORCE}" -eq 1 ]] || return 0
+    local target="$1"
+    [[ -e "${target}" ]] || return 0
+    log "force: clearing ${target#"${ML_ROOT}/"}"
+    rm -rf "${target:?}"
+}
+
 prepare_detection() {
     local out="${INTERIM}/detection/widerface_coco"
     mkdir -p "${out}"
     local split
     for split in train val; do
         local target="${out}/${split}.json"
+        reset_output "${target}"
         if done_already "${target}"; then
             skip "detection/${split}.json already built"
             continue
@@ -65,6 +76,7 @@ prepare_detection() {
 
 prepare_antispoof() {
     local out="${INTERIM}/antispoof/celeba_spoof_crops"
+    reset_output "${out}"
     if done_already "${out}"; then
         skip "antispoof crops already built"
         return
@@ -77,6 +89,7 @@ prepare_antispoof() {
 
 prepare_recognition() {
     local out="${INTERIM}/recognition/ms1mv3_shards"
+    reset_output "${out}"
     if done_already "${out}"; then
         skip "recognition shards already built"
         return
