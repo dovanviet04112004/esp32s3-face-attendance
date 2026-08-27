@@ -843,8 +843,10 @@ ml/
 │   └── {01_explore_widerface.ipynb, 02_check_ov5640_stats.ipynb, ...}
 │       Notebook CHỈ để khảo sát. Code chạy được phải chuyển vào src/facepipe/
 ├── .python-version                        # pin bản Python cho uv
-├── conftest.py
-└── tests/{test_splits.py, test_transforms.py, test_postproc_parity.py}
+└── tests/
+    ├── conftest.py                          # fixture dùng chung
+    ├── test_core_{config,registry,run_dir,trainer,distiller,isolation}.py
+    └── {test_splits.py, test_transforms.py, test_postproc_parity.py}
 ```
 
 ##### Ranh giới `core/` ↔ `tasks/`
