@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://esp32s3-face-attendance/schema/attendance_record.schema.json",
+  "title": "AttendanceRecord",
+  "description": "One attendance punch produced by a kiosk. Mirrors the 48-byte on-device record of KEHOACH 6.2.5, widened to wire types.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "deviceId",
+    "localId",
+    "employeeId",
+    "ts",
+    "direction",
+    "matchScore",
+    "livenessScore",
+    "modelVersion"
+  ],
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{4,32}$",
+      "description": "Kiosk identity, same value used in the MQTT topic."
+    },
+    "localId": {
+      "type": "string",
+      "pattern": "^[0-9]{1,20}$",
+      "description": "Unsigned 64-bit counter (bootCount << 32 | seq) as a decimal string. Dedup key with deviceId; a string because it can exceed the exact-integer range of JSON consumers."
+    },
+    "employeeId": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Capture time, epoch milliseconds UTC."
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["IN", "OUT"]
+    },
+    "matchScore": {
+      "type": "number",
+      "minimum": -1,
+      "maximum": 1,
+      "description": "Cosine similarity against the matched template."
+    },
+    "livenessScore": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "modelVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "doorOpened": {
+      "type": "boolean",
+      "default": false
+    },
+    "capturedOffline": {
+      "type": "boolean",
+      "default": false,
+      "description": "Punch was recorded while the broker was unreachable."
+    },
+    "clockUnsynced": {
+      "type": "boolean",
+      "default": false,
+      "description": "ts was taken before the first successful NTP sync; treat it as approximate."
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://esp32s3-face-attendance/schema/device_cmd.schema.json",
+  "title": "DeviceCommand",
+  "description": "Server to kiosk command. The kiosk answers on the event topic; cmdId lets the server correlate the two.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cmdId", "ts", "action"],
+  "properties": {
+    "cmdId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Server-generated. The kiosk ignores a cmdId it has already executed."
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds UTC when the server issued the command."
+    },
+    "expiresAt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds after which the kiosk must drop the command instead of running it. Guards against a retained or long-queued OPEN_DOOR firing hours later."
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "OPEN_DOOR",
+        "REBOOT",
+        "SET_CONFIG",
+        "SYNC_TIME",
+        "RELOAD_FACEDB",
+        "ROTATE_TOKEN",
+        "CLEAR_LOGS",
+        "SET_ACTIVE_SLOT",
+        "DIAGNOSTICS"
+      ]
+    },
+    "issuedBy": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "User id or service name, recorded in the kiosk audit event."
+    },
+    "openMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 30000,
+      "description": "OPEN_DOOR only: how long the door stays released."
+    },
+    "activeSlot": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "SET_ACTIVE_SLOT only: which models partition to boot from next."
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "SET_CONFIG only. Every field is optional; absent means leave unchanged.",
+      "properties": {
+        "brightness": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "volume": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "lang": { "type": "string", "enum": ["vi", "en"] },
+        "matchThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "livenessThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "dedupWindowMinutes": { "type": "integer", "minimum": 0, "maximum": 1440 },
+        "wakeDistanceCm": { "type": "integer", "minimum": 10, "maximum": 200 }
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://esp32s3-face-attendance/schema/heartbeat.schema.json",
+  "title": "Heartbeat",
+  "description": "Periodic liveness and health sample from a kiosk. Published retained at QoS 0, so the last one always describes the current state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId", "ts", "uptimeSeconds", "fwVersion", "modelVersion"],
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{4,32}$"
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds UTC."
+    },
+    "uptimeSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fwVersion": {
+      "type": "string",
+      "maxLength": 32
+    },
+    "modelVersion": {
+      "type": "string",
+      "maxLength": 32,
+      "description": "Version string of the active models partition, from nvs:model/version."
+    },
+    "rssiDbm": {
+      "type": "integer",
+      "minimum": -127,
+      "maximum": 0
+    },
+    "heapFreeBytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "heapMinFreeBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Low-water mark since boot; a falling value across heartbeats means a leak."
+    },
+    "psramFreeBytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pendingUplinkCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Attendance records written to flash but not yet acknowledged by the broker."
+    },
+    "activeSlot": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "Which models partition is in use, models_0 or models_1."
+    },
+    "bootCount": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

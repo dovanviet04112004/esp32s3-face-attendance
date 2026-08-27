@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://esp32s3-face-attendance/schema/device_event.schema.json",
+  "title": "DeviceEvent",
+  "description": "Anything the kiosk wants the server to know about that is not an attendance punch: spoof attempts, hardware faults, doors opened by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId", "ts", "type", "severity"],
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{4,32}$"
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds UTC."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "SPOOF_DETECTED",
+        "UNKNOWN_FACE",
+        "QUALITY_REJECTED",
+        "DOOR_OPENED_MANUALLY",
+        "DOOR_FAULT",
+        "CAMERA_FAULT",
+        "TOF_FAULT",
+        "LCD_FAULT",
+        "AUDIO_FAULT",
+        "STORAGE_FAULT",
+        "FACEDB_CORRUPT",
+        "MODEL_LOAD_FAILED",
+        "OTA_FAILED",
+        "OTA_ROLLED_BACK",
+        "TIME_UNSYNCED",
+        "BOOTED"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["INFO", "WARN", "ERROR"]
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Short human-readable detail. Never put biometric data here."
+    },
+    "employeeId": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "description": "Present only when the event can be tied to a known employee."
+    },
+    "livenessScore": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "errorCode": {
+      "type": "integer",
+      "description": "esp_err_t value when the event came from a failing driver."
+    }
+  }
+}

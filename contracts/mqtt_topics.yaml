@@ -1,0 +1,68 @@
+# Topic table for kiosk <-> server. Defined once here; broker ACL, firmware and
+# backend all read this file instead of hardcoding topic strings.
+
+version: 1
+
+# {deviceId} is substituted per kiosk. Broker ACL grants each device
+# kiosk/{its own id}/# and nothing else (KEHOACH 7.2).
+prefix: kiosk
+
+topics:
+  - name: attendance
+    topic: kiosk/{deviceId}/up/attendance
+    direction: up
+    qos: 1
+    retained: false
+    schema: schema/attendance_record.schema.json
+    description: One attendance punch. At-least-once; the server dedups on (deviceId, localId).
+
+  - name: heartbeat
+    topic: kiosk/{deviceId}/up/heartbeat
+    direction: up
+    qos: 0
+    retained: true
+    interval_seconds: 30
+    schema: schema/heartbeat.schema.json
+    description: Health sample. Retained so a subscriber joining late still sees current state.
+
+  - name: event
+    topic: kiosk/{deviceId}/up/event
+    direction: up
+    qos: 1
+    retained: false
+    schema: schema/device_event.schema.json
+    description: Spoof attempts, hardware faults, manual door opens, command results.
+
+  - name: status
+    topic: kiosk/{deviceId}/up/status
+    direction: up
+    qos: 1
+    retained: true
+    last_will: true
+    payload: text
+    values: [online, offline]
+    description: Connection state. offline is the broker-published LWT; the kiosk publishes online after CONNACK.
+
+  - name: cmd
+    topic: kiosk/{deviceId}/down/cmd
+    direction: down
+    qos: 1
+    retained: false
+    schema: schema/device_cmd.schema.json
+    description: Open door, reboot, change config. Never retained - a retained OPEN_DOOR would fire on every reconnect.
+
+  - name: enroll
+    topic: kiosk/{deviceId}/down/enroll
+    direction: down
+    qos: 1
+    retained: false
+    schema: schema/enroll_payload.schema.json
+    description: Add or remove a face template.
+
+  - name: ota
+    topic: kiosk/{deviceId}/down/ota
+    direction: down
+    qos: 1
+    retained: false
+    schema: schema/ota_manifest.schema.json
+    description: Firmware, models or assets image offer.

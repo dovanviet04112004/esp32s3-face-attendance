@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://esp32s3-face-attendance/schema/ota_manifest.schema.json",
+  "title": "OtaManifest",
+  "description": "Server to kiosk update offer. Firmware and models roll independently: the models partition is A/B on its own, so a model update never reflashes the app.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["releaseId", "target", "version", "url", "sha256", "sizeBytes"],
+  "properties": {
+    "releaseId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "target": {
+      "type": "string",
+      "enum": ["FIRMWARE", "MODELS", "ASSETS"]
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 32
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 512,
+      "description": "HTTPS only. The kiosk validates the server certificate against the CA bundled in firmware."
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Digest of the whole image, verified after download and before the slot is marked active."
+    },
+    "sizeBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Checked against free partition space before the download starts."
+    },
+    "signature": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "maxLength": 1024,
+      "description": "Detached signature over sha256. Required in production builds, where Secure Boot v2 is on."
+    },
+    "minFwVersion": {
+      "type": "string",
+      "maxLength": 32,
+      "description": "MODELS only: refuse the image if the running firmware is older, so a new model never meets an interpreter that cannot run its ops."
+    },
+    "runId": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "MODELS only: the ml/ run directory this image came from, copied from contracts/models.lock.json."
+    },
+    "forced": {
+      "type": "boolean",
+      "default": false,
+      "description": "Install without waiting for the idle window."
+    }
+  }
+}

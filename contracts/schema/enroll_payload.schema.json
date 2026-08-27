@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://esp32s3-face-attendance/schema/enroll_payload.schema.json",
+  "title": "EnrollPayload",
+  "description": "Server to kiosk face template push. Carries the int8 embedding and its dequant scale exactly as they land in the 552-byte record of KEHOACH 6.2.4.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["op", "employeeId", "templateIdx", "updatedAt"],
+  "properties": {
+    "op": {
+      "type": "string",
+      "enum": ["UPSERT", "DELETE", "DELETE_EMPLOYEE", "REPLACE_ALL"],
+      "description": "DELETE removes one template, DELETE_EMPLOYEE removes every template of the employee, REPLACE_ALL is the full-resync path."
+    },
+    "employeeId": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "templateIdx": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "One employee holds several templates: frontal, glasses, low light."
+    },
+    "updatedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Epoch milliseconds UTC. The kiosk keeps the newer of two conflicting pushes."
+    },
+    "embedding": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "minLength": 683,
+      "maxLength": 684,
+      "description": "512 int8 values, base64 of the raw bytes. Required for UPSERT."
+    },
+    "scale": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Dequant factor for embedding. Required for UPSERT."
+    },
+    "quality": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "description": "Enrollment image quality; breaks ties when two templates collide."
+    },
+    "embeddingVersion": {
+      "type": "string",
+      "maxLength": 32,
+      "description": "Recognition model that produced the embedding. A kiosk running a different model must refuse the template rather than compare across models."
+    },
+    "fullName": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "Shown on the kiosk screen after a match. Display only."
+    },
+    "employeeCode": {
+      "type": "string",
+      "maxLength": 32
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "op": { "const": "UPSERT" } },
+        "required": ["op"]
+      },
+      "then": {
+        "required": ["embedding", "scale", "embeddingVersion"]
+      }
+    }
+  ]
+}
