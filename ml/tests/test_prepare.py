@@ -151,6 +151,15 @@ def test_recordio_round_trips(tmp_path: Path) -> None:
     assert [(r.label, r.image) for r in records] == samples
 
 
+def test_index_records_without_an_image_are_skipped(tmp_path: Path) -> None:
+    rec = write_rec(
+        tmp_path / "train.rec",
+        [(7, b"\xff\xd8real"), (5179422, b""), (9, b"\xff\xd8also"), (5179510, b"")],
+    )
+    records = list(read_records(rec))
+    assert [r.label for r in records] == [7, 9]
+
+
 def test_bad_magic_is_reported(tmp_path: Path) -> None:
     path = tmp_path / "broken.rec"
     path.write_bytes(struct.pack("II", 0xDEADBEEF, 8) + b"\0" * 8)
