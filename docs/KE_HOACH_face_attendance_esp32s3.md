@@ -513,7 +513,8 @@ esp32s3-face-attendance/
 │   └── workflows/{contracts.yml, ml.yml, firmware.yml, backend.yml, frontend.yml}
 │                   ★ GitHub Actions CHỈ đọc .github/workflows ở gốc repo
 ├── .gitignore  ├── .gitattributes  ├── .editorconfig  ├── .pre-commit-config.yaml
-├── README.md   ├── CLAUDE.md       ├── LICENSE        ├── Makefile
+├── README.md   ├── LICENSE         ├── Makefile
+├── CLAUDE.md                       ★ quy tắc làm việc — gitignore, chỉ có ở máy local
 │
 ├── contracts/     Hợp đồng dùng chung — nguồn sự thật duy nhất cho 3 khối
 ├── ml/            Python — train, KD, quantize, export
@@ -585,11 +586,13 @@ contracts/
 | Loại | Ví dụ | Git |
 |---|---|---|
 | Source | code, config YAML, schema, file split `.txt`, asset gốc (font, WAV, icon) | ✅ commit |
-| Sinh ra từ source | `*/generated/*`, `sdkconfig`, `managed_components/`, `build/` | ❌ gitignore |
+| Sinh từ `contracts/schema/` | `*/generated/*`, `gen_payload.h` | ✅ commit — không sửa tay, CI sinh lại rồi `git diff --exit-code` |
+| Sinh ra từ source, sinh lại được tại chỗ | `sdkconfig`, `managed_components/`, `build/` | ❌ gitignore |
 | Artifact nặng | checkpoint, `.onnx`, `.tflite`, ảnh dataset | ❌ gitignore — lưu ngoài (NAS/S3), ghi sha256 vào lock file |
 | Dữ liệu thô | dataset tải về | ❌ gitignore — mô tả trong `manifest.yaml` |
+| Cấu hình công cụ AI agent | `CLAUDE.md`, `.claude/`, `.cursor/` | ❌ gitignore — chỉ tồn tại ở máy local |
 
-Ba thứ **bắt buộc commit** dù là dữ liệu: `contracts/golden/` (vài trăm KB), `ml/data/splits/`, `contracts/models.lock.json`. Mất ba thứ này là mất khả năng tái lập.
+Bốn thứ **bắt buộc commit** dù là dữ liệu hoặc code sinh tự động: `contracts/golden/` (vài trăm KB), `ml/data/splits/`, `contracts/models.lock.json`, và toàn bộ code sinh từ `contracts/schema/`. Mất chúng là mất khả năng tái lập, hoặc mất chốt chặn giữ ba khối khớp nhau.
 
 ---
 
@@ -948,11 +951,11 @@ firmware/
 │   ├── sys_storage/       [C]    L2  # NVS + LittleFS + mmap model; sở hữu storage_format.h (§6.2.7)
 │   ├── sys_time/          [C]    L2  # SNTP + DS3231
 │   ├── ai_engine/         [C++]  L3  # TFLM — src/ tách 3 thư mục theo model (§4.5.6)
+│   ├── svc_facedb/        [C++]  L3  # bảng embedding + cosine search + CRUD
 │   ├── net_wifi/          [C]    L3
 │   ├── net_mqtt/          [C]    L3
 │   ├── net_ota/           [C]    L3
 │   ├── svc_door/          [C++]  L4  # IDoor + RelayDoor/ServoDoor bọc 2 driver trên
-│   ├── svc_facedb/        [C++]  L4  # bảng embedding + cosine search + CRUD
 │   ├── svc_vision/        [C++]  L4  # điều phối detect → align → spoof → recog
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
 │   ├── svc_sync/          [C++]  L5  # hàng đợi offline → MQTT
@@ -1020,9 +1023,9 @@ Quy tắc header:
 | L2 | `sys_storage` | C | `common`, `nvs_flash`, `spi_flash`, `esp_partition`, `littlefs` |
 | L2 | `sys_time` | C | `common`, `lwip`, `bsp_board` |
 | L3 | `ai_engine` | C++ | `common`, `sys_storage`, `esp-tflite-micro` |
+| L3 | `svc_facedb` | C++ | `common`, `sys_storage` |
 | L3 | `net_wifi` / `net_mqtt` / `net_ota` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_https_ota` |
 | L4 | `svc_door` | C++ | `common`, `drv_relay`, `drv_servo` |
-| L4 | `svc_facedb` | C++ | `common`, `sys_storage` |
 | L4 | `svc_vision` | C++ | `common`, `ai_engine`, `svc_facedb`, `drv_camera` |
 | L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_facedb`, `sys_storage`, `svc_door`, `drv_audio` |
 | L5 | `svc_sync` | C++ | `common`, `sys_storage`, `net_mqtt` |
@@ -1030,7 +1033,7 @@ Quy tắc header:
 | L7 | `main` | C | tất cả |
 
 **Ba quy tắc bất di bất dịch:**
-1. Không component nào được `REQUIRES` lên tầng trên hoặc ngang tầng. Driver L2 **không gọi nhau** (ngoại lệ duy nhất: `drv_ioexp` nằm L1).
+1. Không component nào được `REQUIRES` lên tầng trên hoặc ngang tầng — **không có ngoại lệ nào**. Driver L2 không gọi nhau; thứ nhiều driver cùng cần thì nằm ở L1, như `drv_ioexp`. Hai component ở cùng tầng mà cần nhau nghĩa là một trong hai đặt sai tầng: hạ nó xuống, đừng mở ngoại lệ.
 2. `ui_kiosk` **không gọi** `svc_attendance`, và `svc_attendance` **không biết UI tồn tại**. Hai bên gặp nhau qua queue/event khai trong `common/include/app_events.h`, do `main/app_wiring.c` nối. Đây là chỗ dễ đẻ ra vòng phụ thuộc nhất.
 3. `tools/check_layers.py` đọc `REQUIRES` trong mọi `CMakeLists.txt`, dựng đồ thị, **fail CI nếu có cạnh đi ngược**. Quy ước không được kiểm tra tự động thì 3 tháng sau sẽ bị vi phạm.
 
@@ -1409,7 +1412,7 @@ backend/
     ├── app.module.ts
     ├── config/                       # env schema (zod), ConfigModule.forRoot
     ├── common/
-    │   ├── generated/                # ❌ sinh từ contracts/schema — KHÔNG sửa tay
+    │   ├── generated/                # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
     │   ├── guards/{jwt-auth.guard.ts, roles.guard.ts, device-auth.guard.ts}
     │   ├── decorators/  ├── interceptors/  ├── filters/  └── dto/
     ├── modules/
@@ -1477,7 +1480,7 @@ frontend/
 ├── lib/{api.ts, ws.ts, auth.ts}      # api.ts: axios + interceptor tự refresh khi 401
 ├── hooks/  ├── store/
 ├── types/
-│   └── generated/                    # ❌ sinh từ contracts/schema
+│   └── generated/                    # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
 ├── middleware.ts
 └── next.config.ts
 ```
