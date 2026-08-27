@@ -1,0 +1,15 @@
+name: unique_replay
+source_url: https://huggingface.co/datasets/UniqueData/anti-spoofing_replay
+access: auto
+license: cc-by-nc-nd-4.0
+downloaded: '2026-08-27'
+verified: true
+expects:
+- data/videos.tar.gz
+sha256:
+  data/videos.tar.gz: a84ba26ca6363b193388e19f7ecb83790d901095c8dc5a13728d73050107953b
+counts:
+  files: 1
+consumed_by:
+- antispoof/eval
+notes: Tan cong bang man hinh phat lai.

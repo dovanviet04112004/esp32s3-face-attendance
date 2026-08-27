@@ -43,22 +43,72 @@
 
 ### 1.2 Dữ liệu train — từng model
 
-| Model | Dataset | Link | Vai trò | License |
-|---|---|---|---|---|
-| YOLO26m-pose (teacher) | COCO (pretrain sẵn) → **WIDER FACE** + **5-landmark của RetinaFace** (train 12.880 ảnh / 159.393 mặt, trong đó **75.913 mặt có đủ 5 landmark**; val 3.226 ảnh / 39.697 mặt, **không mặt nào có landmark**) | [WIDER FACE](http://shuoyang1213.me/WIDERFACE/) · [annotation 5 điểm](https://github.com/deepinsight/insightface/tree/master/detection/retinaface) | fine-tune domain mặt | Research-only |
-| YuNet (student) | WIDER FACE + 5-landmark (giống teacher — bắt buộc để nhãn KD khớp) | như trên | KD + task loss | Research-only |
-| CDCN++ (teacher) | **CelebA-Spoof** | [ZhangYuanhan-AI/CelebA-Spoof](https://github.com/ZhangYuanhan-AI/CelebA-Spoof) | train teacher | Research-only |
-| MiniFASNetV2-SE (student) | CelebA-Spoof + tập tự thu (in ảnh, màn hình điện thoại, màn hình laptop, mặt nạ giấy) | | KD + task loss | hỗn hợp |
-| — (test cross-domain) | OULU-NPU · CASIA-MFSD · Replay-Attack · MSU-MFSD | [OULU-NPU](https://sites.google.com/site/oulunpudatabase/) · [Idiap Replay-Attack](https://www.idiap.ch/en/scientific-research/data/replayattack) · [MSU-MFSD](http://biometrics.cse.msu.edu/Publications/Databases/MSUMobileFaceSpoofing/) | đo HTER / ACER | Research-only |
-| R50 (teacher) | **WebFace600K** — dùng weight có sẵn, không train lại | [insightface `_datasets_`](https://github.com/deepinsight/insightface/tree/master/recognition/_datasets_) | freeze, sinh embedding | Research-only |
-| MobileFaceNet (student) | **Glint360K** (17.09M ảnh / 360.232 ID) — ưu tiên; MS1MV3 nếu thiếu ổ cứng | [partial_fc / Glint360K](https://github.com/deepinsight/insightface/tree/master/recognition/partial_fc) | KD + ArcFace | Research-only, non-commercial |
-| — (val recognition) | LFW · CFP-FP · AgeDB-30 + tập nhân viên tự thu | [LFW](http://vis-www.cs.umass.edu/lfw/) | đo TAR@FAR | |
-| **Cả 3 nhánh** | **Ảnh OV5640 tự thu** (≥2.000 ảnh, đủ điều kiện sáng) | tự thu | validate cuối + calibrate INT8 | tự sở hữu |
+Cột **Nguồn thật** là chỗ dữ liệu được lấy về, không phải trang chủ của dataset. Nhiều bộ
+gốc nằm sau Google Drive hoặc sau thoả thuận ký tay; nơi nào có mirror công khai thì dùng
+mirror, và ghi rõ mirror nào để lần sau lấy lại được đúng bản đó.
+
+**Nhánh detect**
+
+| Dữ liệu | Nguồn thật | Kích thước | Vai trò |
+|---|---|---|---|
+| WIDER FACE ảnh | HF `wider_face` | train 1.37 GB / 12.880 ảnh · val 346 MB / 3.226 ảnh · split 3.4 MB | ảnh cho teacher và student |
+| Nhãn 5 landmark | `retinaface_gt_v1.1.zip`, Google Drive của insightface | 4.49 MB | nhãn box + landmark, **dùng chung cho teacher và student** |
+
+Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài liệu:
+
+| Split | Ảnh | Mặt | Mặt có đủ 5 landmark |
+|---|---|---|---|
+| train | 12.880 | 159.393 | **75.913** |
+| val | 3.226 | 39.697 | **0** |
+| test | 16.097 | 0 | 0 |
+
+> **Landmark chỉ tồn tại ở `train`.** Tập đo NMSE landmark phải cắt ra từ `train` và không
+> giao với phần đem train. Đo landmark trên `val` là đo với nhãn không tồn tại. Box thì
+> `val` đủ, AP đo bình thường. `test` chỉ có danh sách tên ảnh, không dùng được để đo gì.
+
+**Nhánh anti-spoof**
+
+| Dữ liệu | Nguồn thật | Kích thước | Vai trò |
+|---|---|---|---|
+| CelebA-Spoof | HF `Ar4ikov/celebA_spoof` (**parquet**, không phải layout gốc) | 67.1 GB | train teacher CDCN++ và student MiniFASNet |
+| NUAA Imposter | HF `akahana/anti-spoofing-nuaaaa` | 376 MB | test khác miền — ảnh in |
+| UniqueData live + replay | HF `UniqueData/anti-spoofing_Real` + `_replay` | 542 MB + 702 MB | test khác miền — màn hình phát lại, có cặp live đối chứng |
+| AxonData face-anti-spoofing | HF `AxonData/face-anti-spoofing-dataset` | 4.94 GB | test khác miền — video, có **mặt nạ latex 3D** |
+| Tập spoof tự thu | tự thu bằng OV5640 | ≥500 ảnh mỗi loại | test sát thực tế nhất |
+
+> **Không dùng OULU-NPU, CASIA-MFSD, Replay-Attack, MSU-MFSD.** Cả bốn bắt gửi bản cam kết
+> ký tay qua email và chờ nhiều tuần. Bốn bộ trên thay được **chức năng** của chúng — dữ
+> liệu thu độc lập, khác miền với tập train — nhưng **không thay được khả năng so số trực
+> tiếp** với bảng trong bài báo CDCN++ hay MiniFASNet, và không có giao thức OULU P1–P4.
+> Báo cáo phải ghi đúng như vậy, không được trình bày như thể đã chạy trên benchmark chuẩn.
+
+**Nhánh recognition**
+
+| Dữ liệu | Nguồn thật | Kích thước | Vai trò |
+|---|---|---|---|
+| R50 @ WebFace600K | weight có sẵn của arcface_torch | ~166 MB | teacher, freeze, chỉ sinh embedding |
+| MS1MV3 | HF `gaunernst/ms1mv3-recordio` (`train.rec` + `train.idx` + `property`) | 27.4 GB | train student — **mặc định** |
+| Glint360K | HF `gaunernst/glint360k-wds-gz` (**webdataset `.tar.gz`**, đã shard sẵn) | 87.2 GB | train student — khi cần nhiều ID hơn |
+| LFW | HF `vilsonrodrigues/lfw` | 🔬 chưa đo | đo TAR@FAR |
+| CFP-FP · AgeDB-30 | 🔬 chưa tìm được mirror công khai ở dạng `.bin` | — | để mở, không chặn E5 |
+| Tập nhân viên tự thu | tự thu | ≥2.000 ảnh | đo trên đúng người sẽ dùng máy |
+
+MS1MV3 là mặc định chứ không phải phương án dự phòng: bản `recordio` chỉ 27.4 GB, đúng
+định dạng `glint360k_to_wds.py` đọc được, nên chạy được toàn bộ pipeline sớm hơn nhiều.
+Glint360K để dành khi số ID trở thành giới hạn thật, đo được chứ không phỏng đoán.
+
+**Dùng cho cả ba nhánh**
+
+| Dữ liệu | Vai trò |
+|---|---|
+| Ảnh OV5640 tự thu (≥2.000, đủ dải sáng và khoảng cách) | validate cuối + calibrate INT8 |
 
 ### 1.3 Quy tắc chia dữ liệu
 
 - **Identity-disjoint** cho anti-spoof và recognition: một người không được xuất hiện ở cả train và val/test.
 - Ảnh OV5640 tự thu tách 2 phần **không giao nhau**: `calib/` (300 ảnh, dùng cho PTQ) và `test_device/` (validate cuối).
+- Calib chỉ lấy từ **ảnh live**; một khung spoof lọt vào tập PTQ sẽ kéo dải activation về phía tấn công.
+- Tập đo landmark cắt từ `train` của detect, không giao với phần đem train (§1.2).
 - File split lưu `.txt` và **commit vào git** (`ml/data/splits/`, bố cục ở §4.4.2) — kèm `SPLIT.md` ghi seed và sha256 để tái lập kết quả.
 
 ### 1.4 License
@@ -631,15 +681,18 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   │       ├── {train, val, test}/label.txt
 │   │       └── manifest.yaml                 # ✅
 │   ├── antispoof/
-│   │   ├── celeba_spoof/       + manifest.yaml    # ✅
-│   │   ├── oulu_npu/           + manifest.yaml    # ✅
-│   │   ├── casia_mfsd/         + manifest.yaml    # ✅
-│   │   ├── replay_attack/      + manifest.yaml    # ✅
-│   │   └── msu_mfsd/           + manifest.yaml    # ✅
+│   │   ├── celeba_spoof/                     # parquet, mirror Ar4ikov
+│   │   │   ├── data/*.parquet
+│   │   │   └── manifest.yaml                 # ✅
+│   │   └── xdomain/                          # ★ test khác miền, thay 4 bộ phải ký giấy
+│   │       ├── nuaa/          + manifest.yaml    # ✅ ảnh in
+│   │       ├── unique_live/   + manifest.yaml    # ✅ live đối chứng
+│   │       ├── unique_replay/ + manifest.yaml    # ✅ màn hình phát lại
+│   │       └── axon_masks/    + manifest.yaml    # ✅ video, mặt nạ latex 3D
 │   ├── recognition/
-│   │   ├── glint360k/{train.rec, train.idx, property}  + manifest.yaml   # ✅
-│   │   ├── ms1mv3/                                     + manifest.yaml   # ✅
-│   │   └── benchmarks/{lfw.bin, cfp_fp.bin, agedb_30.bin} + manifest.yaml # ✅
+│   │   ├── ms1mv3/{train.rec, train.idx, property}     + manifest.yaml   # ✅ mặc định
+│   │   ├── glint360k/glint360k-*.tar.gz                + manifest.yaml   # ✅ webdataset sẵn
+│   │   └── benchmarks/{lfw/, ...}                      + manifest.yaml   # ✅
 │   └── device/                               # ★ ảnh OV5640 tự thu — dùng cho CẢ 3 nhánh
 │       └── ov5640/
 │           ├── images/                       # <session>_<seq>.jpg, gốc từ board
@@ -649,8 +702,8 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │
 ├── interim/
 │   ├── detection/widerface_coco/{train.json, val.json}      # box + 5 landmark, format COCO
-│   ├── antispoof/celeba_spoof_crops/{img/, depth_gt/}       # crop 128×128 + depth map GT
-│   └── recognition/glint360k_shards/{000000.tar, ...}       # webdataset
+│   ├── antispoof/celeba_spoof_crops/{img_1x/, img_2.7x/}    # crop 128×128 hai tỉ lệ
+│   └── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │
 ├── processed/
 │   ├── detection/{train_160x120/, val_640x480/}
@@ -658,7 +711,7 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   └── recognition/{train_112x112/, val_112x112/}
 │
 ├── splits/                                   # ✅ COMMIT TOÀN BỘ
-│   ├── detection/v1/{train.txt, val.txt, SPLIT.md}
+│   ├── detection/v1/{train.txt, val.txt, landmark_val.txt, SPLIT.md}
 │   ├── antispoof/v1_identity_disjoint/{train_ids.txt, val_ids.txt, test_ids.txt, SPLIT.md}
 │   ├── recognition/v1_identity_disjoint/{train_ids.txt, val_ids.txt, SPLIT.md}
 │   └── device/v1/{calib_det.txt, calib_spoof.txt, calib_recog.txt, test_device.txt, SPLIT.md}

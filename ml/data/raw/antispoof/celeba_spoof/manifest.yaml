@@ -1,18 +1,16 @@
 name: celeba_spoof
-source_url: https://github.com/ZhangYuanhan-AI/CelebA-Spoof
-access: manual
+source_url: https://huggingface.co/datasets/Ar4ikov/celebA_spoof
+access: auto
 license: research-only
 downloaded: '2026-08-27'
-verified: true
+verified: false
 expects:
-- Data
-- metas
-sha256:
-  Data: <directory>
-  metas: <directory>
+- data
+sha256: {}
 counts:
   files: 0
 consumed_by:
 - antispoof/teacher
 - antispoof/student
-notes: Co bbox san; crop 1.0x va 2.7x sinh o interim.
+notes: Mirror dang parquet, KHONG phai layout Data/+metas/ goc. celeba_spoof_crop.py
+  phai doc parquet, khong doc bbox.json.

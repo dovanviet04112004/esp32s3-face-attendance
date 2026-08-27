@@ -1,16 +1,14 @@
-# Filled by ml/scripts/00_fetch_raw.sh. Fields left null have to be measured on
-# the machine that downloads the data; never write a digest by hand.
 name: glint360k
-source_url: https://github.com/deepinsight/insightface/tree/master/recognition/partial_fc
-access: manual
+source_url: https://huggingface.co/datasets/gaunernst/glint360k-wds-gz
+access: auto
 license: research-only, non-commercial
 downloaded: null
 verified: false
 expects:
-  - train.rec
-  - train.idx
-  - property
+- glint360k-0000.tar.gz
 sha256: {}
-counts: null
-consumed_by: [recognition/student]
-notes: 17.09M anh / 360232 ID. Doi ~145 GB o dia; symlink raw/ sang o khac neu can.
+counts:
+  files: 3
+consumed_by:
+- recognition/student
+notes: Webdataset .tar.gz da shard san, 1000 shard. Khong can chay glint360k_to_wds.py.

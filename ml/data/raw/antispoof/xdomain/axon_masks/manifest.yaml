@@ -1,0 +1,15 @@
+name: axon_masks
+source_url: https://huggingface.co/datasets/AxonData/face-anti-spoofing-dataset
+access: auto
+license: cc-by-nc-4.0
+downloaded: '2026-08-27'
+verified: true
+expects:
+- Latex_mask
+sha256:
+  Latex_mask: <directory>
+counts:
+  files: 10
+consumed_by:
+- antispoof/eval
+notes: Video, co mat na latex 3D - kieu tan cong 4 bo goc deu thieu.

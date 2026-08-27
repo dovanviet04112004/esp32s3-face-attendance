@@ -9,9 +9,12 @@ expects:
 - WIDER_val
 - WIDER_test
 - wider_face_split
-sha256: {}
+sha256:
+  WIDER_train: <directory>
+  WIDER_val: <directory>
 counts:
-  files: 0
+  files: 16106
+  images: 16106
 consumed_by:
 - detection/teacher
 - detection/student

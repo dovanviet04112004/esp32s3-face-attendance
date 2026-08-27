@@ -1,0 +1,15 @@
+name: unique_live
+source_url: https://huggingface.co/datasets/UniqueData/anti-spoofing_Real
+access: auto
+license: cc-by-nc-nd-4.0
+downloaded: '2026-08-27'
+verified: true
+expects:
+- data/data.tar.gz
+sha256:
+  data/data.tar.gz: 296513759cffa3747907610b3800bb1951c57f17975049b44ce1893cc1c8481b
+counts:
+  files: 1
+consumed_by:
+- antispoof/eval
+notes: Live doi chung cho unique_replay; hai bo phai dung cung luc moi co nghia.

@@ -2,13 +2,16 @@ name: retinaface_labels
 source_url: https://github.com/deepinsight/insightface/tree/master/detection/retinaface
 access: manual
 license: research-only
-downloaded: null
-verified: false
+downloaded: '2026-08-27'
+verified: true
 expects:
 - train/label.txt
 - val/label.txt
 - test/label.txt
-sha256: {}
+sha256:
+  train/label.txt: 9845b2a68e42dc015de6045d752f5337419c82c890fc92500e9e6390081515e6
+  val/label.txt: 4d42a89243b0f03135dcfbded8a1f81022ab919377b1a88011d6bdce13077c00
+  test/label.txt: f6edc7c1303024134a16a9f542c6a60350aa60b1a1c55235fcb736ed04eb4c26
 counts:
   files: 3
 consumed_by:

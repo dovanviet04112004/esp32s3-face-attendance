@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Fetch what can be fetched, then fill in every manifest from what is actually
-# on disk. Most face datasets sit behind a signed agreement, so this script
-# cannot download them; for those it prints where to register and verifies the
-# archive once you drop it in place.
+# Fetch every dataset, then fill in each manifest from what is actually on disk.
+#
+# Three access kinds: auto pulls over plain HTTP, hf pulls a Hub mirror, manual
+# needs a human because the source sits behind a Drive link or a signed form.
 #
 # Digests and counts come from the files, never from a person typing them.
 #
@@ -138,6 +138,15 @@ fetch_widerface() {
     done
 }
 
+# Mirrors on the Hub download straight into the data drive the symlinks point at.
+fetch_hf() {
+    local ds="$1" repo="$2" dest
+    dest="$(payload_dir "${ds}")"
+    command -v hf >/dev/null || { warn "hf CLI absent: pip install huggingface_hub"; return 1; }
+    log "${repo} -> ${dest}"
+    HF_HOME="${RAW}/../.hf-cache" hf download "${repo}" --repo-type dataset --local-dir "${dest}"
+}
+
 manual_notice() {
     local dir="$1" name="$2"
     local url
@@ -150,25 +159,28 @@ manual_notice() {
 DATASETS=(
     "detection/widerface:widerface:auto"
     "detection/retinaface_labels:retinaface_labels:manual"
-    "antispoof/celeba_spoof:celeba_spoof:manual"
-    "antispoof/oulu_npu:oulu_npu:manual"
-    "antispoof/casia_mfsd:casia_mfsd:manual"
-    "antispoof/replay_attack:replay_attack:manual"
-    "antispoof/msu_mfsd:msu_mfsd:manual"
-    "recognition/glint360k:glint360k:manual"
-    "recognition/ms1mv3:ms1mv3:manual"
+    "antispoof/celeba_spoof:celeba_spoof:hf:Ar4ikov/celebA_spoof"
+    "antispoof/xdomain/nuaa:nuaa:hf:akahana/anti-spoofing-nuaaaa"
+    "antispoof/xdomain/unique_live:unique_live:hf:UniqueData/anti-spoofing_Real"
+    "antispoof/xdomain/unique_replay:unique_replay:hf:UniqueData/anti-spoofing_replay"
+    "antispoof/xdomain/axon_masks:axon_masks:hf:AxonData/face-anti-spoofing-dataset"
+    "recognition/ms1mv3:ms1mv3:hf:gaunernst/ms1mv3-recordio"
+    "recognition/glint360k:glint360k:hf:gaunernst/glint360k-wds-gz"
     "recognition/benchmarks:recognition_benchmarks:manual"
 )
 
 incomplete=0
 for entry in "${DATASETS[@]}"; do
-    IFS=":" read -r rel name access <<< "${entry}"
+    IFS=":" read -r rel name access repo <<< "${entry}:"
     wanted "${name}" || continue
     dir="${RAW}/${rel}"
     [[ -f "${dir}/manifest.yaml" ]] || { warn "no manifest at ${dir}"; continue; }
 
-    if [[ "${VERIFY_ONLY}" -eq 0 && "${access}" == "auto" ]]; then
-        "fetch_${name}"
+    if [[ "${VERIFY_ONLY}" -eq 0 ]]; then
+        case "${access}" in
+            auto) "fetch_${name}" ;;
+            hf)   fetch_hf "${dir}" "${repo}" ;;
+        esac
     fi
     log "${name}"
     if ! record_manifest "${dir}"; then
