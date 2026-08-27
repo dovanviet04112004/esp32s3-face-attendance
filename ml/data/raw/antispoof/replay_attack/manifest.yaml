@@ -1,0 +1,16 @@
+# Filled by ml/scripts/00_fetch_raw.sh. Fields left null have to be measured on
+# the machine that downloads the data; never write a digest by hand.
+name: replay_attack
+source_url: https://www.idiap.ch/en/scientific-research/data/replayattack
+access: manual
+license: research-only, can ky thoa thuan
+downloaded: null
+verified: false
+expects:
+  - train
+  - devel
+  - test
+sha256: {}
+counts: null
+consumed_by: [antispoof/eval]
+notes: Do HTER cross-dataset theo cap CASIA <-> Replay.

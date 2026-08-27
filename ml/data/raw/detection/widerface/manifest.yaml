@@ -1,0 +1,19 @@
+name: widerface
+source_url: https://huggingface.co/datasets/wider_face
+access: auto
+license: research-only
+downloaded: '2026-08-27'
+verified: false
+expects:
+- WIDER_train
+- WIDER_val
+- WIDER_test
+- wider_face_split
+sha256: {}
+counts:
+  files: 0
+consumed_by:
+- detection/teacher
+- detection/student
+notes: Tai qua mirror HuggingFace, khong qua Google Drive cua trang goc. Dung annotation
+  5 landmark cua RetinaFace, KHONG dung label box goc.

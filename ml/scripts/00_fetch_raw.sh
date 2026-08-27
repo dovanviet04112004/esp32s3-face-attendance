@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+#
+# Fetch what can be fetched, then fill in every manifest from what is actually
+# on disk. Most face datasets sit behind a signed agreement, so this script
+# cannot download them; for those it prints where to register and verifies the
+# archive once you drop it in place.
+#
+# Digests and counts come from the files, never from a person typing them.
+#
+# Usage:
+#   ./scripts/00_fetch_raw.sh              # fetch the automatable ones, verify all
+#   ./scripts/00_fetch_raw.sh --verify     # verify only, no download
+#   ./scripts/00_fetch_raw.sh widerface    # one dataset by name
+
+set -euo pipefail
+
+ML_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RAW="${ML_ROOT}/data/raw"
+VERIFY_ONLY=0
+WANTED=()
+
+for arg in "$@"; do
+    case "$arg" in
+        --verify) VERIFY_ONLY=1 ;;
+        -*) echo "unknown flag: $arg" >&2; exit 2 ;;
+        *) WANTED+=("$arg") ;;
+    esac
+done
+
+wanted() {
+    [[ ${#WANTED[@]} -eq 0 ]] && return 0
+    local name
+    for name in "${WANTED[@]}"; do [[ "$name" == "$1" ]] && return 0; done
+    return 1
+}
+
+log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[33m!!\033[0m %s\n' "$*" >&2; }
+
+# Reads expects/ from the manifest, digests whatever exists, and writes back
+# sha256, counts, downloaded and verified.
+record_manifest() {
+    local dir="$1"
+    python3 - "$dir" <<'PYTHON'
+import hashlib
+import os
+import sys
+from datetime import date
+from pathlib import Path
+
+import yaml
+
+root = Path(sys.argv[1])
+manifest_path = root / "manifest.yaml"
+manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+
+
+def digest(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+digests: dict[str, str] = {}
+missing: list[str] = []
+for item in manifest.get("expects") or []:
+    target = root / item
+    if target.is_file():
+        digests[item] = digest(target)
+    elif target.is_dir() and any(p.is_file() for p in target.rglob("*")):
+        digests[item] = "<directory>"
+    else:
+        missing.append(item)
+
+bookkeeping = {"manifest.yaml", ".gitkeep"}
+image_suffixes = {".jpg", ".jpeg", ".png"}
+files = images = 0
+# followlinks: the dataset directories are symlinks onto the data drive.
+for folder, _dirs, names in os.walk(root, followlinks=True):
+    for name in names:
+        if name in bookkeeping:
+            continue
+        files += 1
+        if Path(name).suffix.lower() in image_suffixes:
+            images += 1
+counts = {"files": files}
+if images:
+    counts["images"] = images
+
+manifest["sha256"] = digests
+manifest["counts"] = counts
+manifest["verified"] = not missing
+if not missing:
+    manifest["downloaded"] = date.today().isoformat()
+
+manifest_path.write_text(
+    yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True), encoding="utf-8"
+)
+
+name = manifest.get("name", root.name)
+if missing:
+    print(f"  {name}: MISSING {', '.join(missing)}")
+else:
+    print(f"  {name}: verified, {counts['files']} file(s)")
+PYTHON
+}
+
+# The dataset directories are symlinks onto the data drive; downloads have to
+# land there, not in the repo checkout.
+payload_dir() {
+    local ds="$1"
+    local first
+    first="$(python3 -c "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['expects'][0])" \
+        "${ds}/manifest.yaml")"
+    dirname "$(readlink -f "${ds}/${first}")"
+}
+
+fetch_widerface() {
+    local ds="${RAW}/detection/widerface" dest
+    dest="$(payload_dir "${ds}")"
+    local base="https://huggingface.co/datasets/wider_face/resolve/main/data"
+    local archive
+    for archive in WIDER_train.zip WIDER_val.zip WIDER_test.zip wider_face_split.zip; do
+        if [[ -f "${dest}/${archive}" ]]; then
+            log "widerface: ${archive} already downloaded"
+        else
+            log "widerface: downloading ${archive}"
+            curl -fL --retry 3 --retry-delay 5 -C - \
+                -o "${dest}/${archive}" "${base}/${archive}" || {
+                warn "${archive} failed; rerun to resume"
+                continue
+            }
+        fi
+        log "widerface: unpacking ${archive}"
+        unzip -q -o "${dest}/${archive}" -d "${dest}"
+    done
+}
+
+manual_notice() {
+    local dir="$1" name="$2"
+    local url
+    url="$(python3 -c "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['source_url'])" \
+        "${dir}/manifest.yaml")"
+    warn "${name} needs a signed agreement. Register at ${url}"
+    warn "  then unpack it into ${dir}"
+}
+
+DATASETS=(
+    "detection/widerface:widerface:auto"
+    "detection/retinaface_labels:retinaface_labels:manual"
+    "antispoof/celeba_spoof:celeba_spoof:manual"
+    "antispoof/oulu_npu:oulu_npu:manual"
+    "antispoof/casia_mfsd:casia_mfsd:manual"
+    "antispoof/replay_attack:replay_attack:manual"
+    "antispoof/msu_mfsd:msu_mfsd:manual"
+    "recognition/glint360k:glint360k:manual"
+    "recognition/ms1mv3:ms1mv3:manual"
+    "recognition/benchmarks:recognition_benchmarks:manual"
+)
+
+incomplete=0
+for entry in "${DATASETS[@]}"; do
+    IFS=":" read -r rel name access <<< "${entry}"
+    wanted "${name}" || continue
+    dir="${RAW}/${rel}"
+    [[ -f "${dir}/manifest.yaml" ]] || { warn "no manifest at ${dir}"; continue; }
+
+    if [[ "${VERIFY_ONLY}" -eq 0 && "${access}" == "auto" ]]; then
+        "fetch_${name}"
+    fi
+    log "${name}"
+    if ! record_manifest "${dir}"; then
+        incomplete=1
+    fi
+    if ! python3 -c "import sys,yaml;sys.exit(0 if yaml.safe_load(open(sys.argv[1]))['verified'] else 1)" \
+        "${dir}/manifest.yaml"; then
+        incomplete=1
+        [[ "${access}" == "manual" ]] && manual_notice "${dir}" "${name}"
+    fi
+done
+
+if [[ "${incomplete}" -eq 1 ]]; then
+    warn "some datasets are incomplete; rerun with --verify after unpacking them"
+    exit 1
+fi
+log "every requested dataset is present and recorded"

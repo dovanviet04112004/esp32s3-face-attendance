@@ -3,8 +3,22 @@
 Thư mục **dữ liệu**, không phải code. Toàn bộ bị gitignore trừ ba loại file: `README.md`
 này, `splits/`, và mọi `manifest.yaml` / `manifest.csv`.
 
-Đường dẫn thật khai ở `ml/configs/common/paths.yaml` — có thể symlink `raw/` sang ổ khác
-khi hết chỗ.
+## Dữ liệu nằm ở đâu
+
+Ổ `C:` chỉ còn ~8 GB nên đĩa ext4 của WSL không nở thêm được; toàn bộ dữ liệu nặng nằm
+trên **`E:`**, thấy từ WSL là `/mnt/e/face-attendance-data`.
+
+| Trong repo | Thực tế |
+|---|---|
+| `data/interim`, `data/processed`, `data/cache` | symlink thẳng sang `E:` |
+| `data/raw/<nhánh>/<dataset>/<mục>` | symlink từng mục sang `E:` |
+| `data/raw/**/manifest.yaml` | file thật, commit vào git |
+| `data/splits/` | file thật, commit vào git |
+
+Manifest và split ở lại trong repo vì chúng là thứ bắt buộc commit (§4.3). Chỉ phần nặng
+đi ra ngoài. Dựng lại symlink sau khi clone: xem `scripts/00_fetch_raw.sh`.
+
+Đường dẫn dùng trong code khai ở `ml/configs/common/paths.yaml`, không hardcode.
 
 ## Ba tầng, không bao giờ trộn
 

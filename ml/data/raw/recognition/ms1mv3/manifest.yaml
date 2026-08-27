@@ -1,0 +1,16 @@
+# Filled by ml/scripts/00_fetch_raw.sh. Fields left null have to be measured on
+# the machine that downloads the data; never write a digest by hand.
+name: ms1mv3
+source_url: https://github.com/deepinsight/insightface/tree/master/recognition/_datasets_
+access: manual
+license: research-only, non-commercial
+downloaded: null
+verified: false
+expects:
+  - train.rec
+  - train.idx
+  - property
+sha256: {}
+counts: null
+consumed_by: [recognition/student]
+notes: Phuong an du phong khi khong du dia cho Glint360K.

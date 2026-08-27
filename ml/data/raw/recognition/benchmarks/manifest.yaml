@@ -1,0 +1,16 @@
+# Filled by ml/scripts/00_fetch_raw.sh. Fields left null have to be measured on
+# the machine that downloads the data; never write a digest by hand.
+name: recognition_benchmarks
+source_url: https://github.com/deepinsight/insightface/tree/master/recognition/_datasets_
+access: manual
+license: research-only
+downloaded: null
+verified: false
+expects:
+  - lfw.bin
+  - cfp_fp.bin
+  - agedb_30.bin
+sha256: {}
+counts: null
+consumed_by: [recognition/eval]
+notes: Do TAR@FAR va accuracy cua ca teacher lan student.
