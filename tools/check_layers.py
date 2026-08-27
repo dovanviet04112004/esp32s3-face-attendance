@@ -31,20 +31,16 @@ LAYERS: dict[str, int] = {
     "sys_storage": 2,
     "sys_time": 2,
     "ai_engine": 3,
+    "svc_facedb": 3,
     "net_wifi": 3,
     "net_mqtt": 3,
     "net_ota": 3,
     "svc_door": 4,
-    "svc_facedb": 4,
     "svc_vision": 4,
     "svc_attendance": 5,
     "svc_sync": 5,
     "ui_kiosk": 6,
     "main": 7,
-}
-
-ALLOWED_SIDEWAYS: set[tuple[str, str]] = {
-    ("svc_vision", "svc_facedb"),
 }
 
 FORBIDDEN_EDGES: set[tuple[str, str]] = {
@@ -126,8 +122,6 @@ def check_graph(graph: dict[str, set[str]]) -> list[Problem]:
                 )
                 continue
             dep_layer = LAYERS[dep]
-            if dep_layer == own_layer and (component, dep) in ALLOWED_SIDEWAYS:
-                continue
             if dep_layer == own_layer:
                 problems.append(
                     Problem(component, "4.5.4", f"sideways dependency on {dep} (both L{own_layer})")
