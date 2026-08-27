@@ -1,0 +1,57 @@
+# ml/data/
+
+Thư mục **dữ liệu**, không phải code. Toàn bộ bị gitignore trừ ba loại file: `README.md`
+này, `splits/`, và mọi `manifest.yaml` / `manifest.csv`.
+
+Đường dẫn thật khai ở `ml/configs/common/paths.yaml` — có thể symlink `raw/` sang ổ khác
+khi hết chỗ.
+
+## Ba tầng, không bao giờ trộn
+
+| Tầng | Nội dung | Quy tắc |
+|---|---|---|
+| `raw/` | Đúng như lúc tải về | **Read-only tuyệt đối.** Script ghi vào đây là bug |
+| `interim/` | Đã giải nén / đổi định dạng | Sinh lại được từ `raw/` bằng một lệnh |
+| `processed/` | Sẵn sàng nạp DataLoader | Sinh lại được từ `interim/` bằng một lệnh |
+
+Thư mục nào không sinh lại được bằng script thì nó đang nằm sai tầng.
+
+`cache/` là LMDB/npy cache của DataLoader — xoá lúc nào cũng được.
+
+## Lệnh sinh ra từng tầng
+
+```bash
+ml/scripts/00_fetch_raw.sh        # -> raw/
+ml/scripts/01_prepare_interim.sh  # raw/ -> interim/ -> processed/
+ml/scripts/02_make_splits.sh      # -> splits/
+```
+
+## manifest — mỗi dataset một file
+
+Đây là thứ để lần sau lục lại được nguồn gốc dữ liệu:
+
+```yaml
+name: widerface
+source_url: http://shuoyang1213.me/WIDERFACE/
+downloaded: 2026-09-02
+license: research-only
+sha256:
+  WIDER_train.zip: 3fedf70df8c1a2...
+counts: { images: 32203, faces: 393703 }
+notes: dùng annotation 5 landmark của RetinaFace, KHÔNG dùng label box gốc
+consumed_by: [detection/teacher, detection/student]
+```
+
+Ảnh OV5640 tự thu dùng `manifest.csv` thay vì YAML, cột: `file, person_id, session,
+lighting, distance_cm, is_spoof, spoof_type, capture_date`.
+
+## splits/ — commit toàn bộ
+
+Mỗi split kèm một `SPLIT.md` ghi quy tắc, seed, lệnh sinh, sha256 từng file và số lượng ID.
+
+Anti-spoof và recognition phải **identity-disjoint**: một người không được xuất hiện ở cả
+train và val/test.
+
+`calib_*.txt` và `test_device.txt` phải không giao nhau — `ml/tests/test_splits.py` kiểm
+tự động. Calibrate INT8 trên chính ảnh dùng để test thì con số nào cũng đẹp, và đó là loại
+lỗi im lặng không tự lộ ra.

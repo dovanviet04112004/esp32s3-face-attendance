@@ -1,0 +1,43 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check-comments
+        name: check comments (CLAUDE.md 2)
+        entry: python3 tools/check_comments.py
+        language: system
+        pass_filenames: false
+      - id: check-layers
+        name: check component layering (KE HOACH 4.5.4)
+        entry: python3 tools/check_layers.py
+        language: system
+        pass_filenames: false
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.8
+    hooks:
+      - id: clang-format
+        types_or: [c, c++]
+        exclude: ^firmware/(third_party|managed_components)/
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        exclude: (^.*/generated/.*$|^ml/data/.*$)
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-merge-conflict
+      - id: detect-private-key

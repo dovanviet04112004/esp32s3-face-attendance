@@ -1,0 +1,67 @@
+# ── Sinh ra từ source (KE HOACH §4.3) ──
+**/generated/
+build/
+dist/
+.next/
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── Firmware ──
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/models/**/*.tflite
+firmware/models/**/*.bin
+
+# ── Artifact nặng ──
+*.tflite
+*.onnx
+*.pth
+*.ckpt
+*.rec
+*.idx
+*.tar
+*.npz
+*.npy
+*.bin
+
+# ── ml/artifacts — mọi thứ trừ khung thư mục ──
+/ml/artifacts/**
+!/ml/artifacts/**/
+!/ml/artifacts/**/.gitkeep
+
+# ── ml/data — chỉ giữ README, splits, manifest (§4.4.1) ──
+/ml/data/**
+!/ml/data/**/
+!/ml/data/**/.gitkeep
+!/ml/data/README.md
+!/ml/data/**/manifest.yaml
+!/ml/data/**/manifest.csv
+!/ml/data/splits/**
+
+# ── contracts/golden — BẮT BUỘC commit dù là .npz (§4.3) ──
+!/contracts/golden/**/*.npz
+
+# ── Notebook: commit .ipynb nhưng không commit output ──
+.ipynb_checkpoints/
+
+# ── Bí mật (§6) ──
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# ── Hệ điều hành / IDE ──
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
