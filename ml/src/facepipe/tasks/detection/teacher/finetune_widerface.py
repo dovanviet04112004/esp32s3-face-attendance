@@ -126,7 +126,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cfg", type=Path, required=True)
     parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--resume", type=Path, help="run directory of an interrupted fine-tune")
     args = parser.parse_args(argv)
+
+    if args.resume:
+        from ultralytics import YOLO
+
+        YOLO(str(args.resume / "ultralytics" / "weights" / "last.pt")).train(resume=True)
+        return 0
 
     cfg = load_config(args.cfg, args.set)
     params = cfg.teacher.params
@@ -150,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         data=str(data_yaml.resolve()),
         epochs=cfg.train.epochs,
         batch=cfg.data.batch_size,
+        workers=cfg.data.num_workers,
         imgsz=cfg.teacher.input_hw[1],
         project=str(run.path.resolve()),
         name="ultralytics",

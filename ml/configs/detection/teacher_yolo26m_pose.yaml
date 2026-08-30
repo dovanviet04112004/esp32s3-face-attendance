@@ -35,6 +35,10 @@ data:
   # overflow, it pages to host memory: batch 8 still runs and is 52 times slower
   # per step. Raise this only after measuring again.
   batch_size: 4
+  # Images live on the Windows drive over drvfs, which reads at ~12 MB/s and
+  # intermittently fails an open under many concurrent readers. Eight workers
+  # killed a run with FileNotFoundError on a symlink that was present.
+  num_workers: 4
   split_files:
     - data/splits/detection/v1/train.txt
     - data/splits/detection/v1/landmark_val.txt
