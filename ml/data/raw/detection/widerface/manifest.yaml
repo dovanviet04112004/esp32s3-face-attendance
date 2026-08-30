@@ -9,16 +9,19 @@ expects:
 - WIDER_val
 - WIDER_test
 - wider_face_split
+- eval_tools/ground_truth
 sha256:
   WIDER_train: <directory>
   WIDER_val: <directory>
   WIDER_test: <directory>
   wider_face_split: <directory>
+  eval_tools/ground_truth: <directory>
 counts:
   files: 32424
   images: 32203
 consumed_by:
 - detection/teacher
 - detection/student
-notes: Tai qua mirror HuggingFace, khong qua Google Drive cua trang goc. Dung annotation
-  5 landmark cua RetinaFace, KHONG dung label box goc.
+notes: 'Tai qua mirror HuggingFace, khong qua Google Drive cua trang goc. Dung annotation
+  5 landmark cua RetinaFace, KHONG dung label box goc. eval_tools la bo cham diem
+  chinh thuc: ba tap Easy/Medium/Hard o ground_truth/ la thang do cua muc 0.80 (E4-T1).'

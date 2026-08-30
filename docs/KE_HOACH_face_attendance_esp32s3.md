@@ -52,6 +52,7 @@ mirror, và ghi rõ mirror nào để lần sau lấy lại được đúng bả
 | Dữ liệu | Nguồn thật | Kích thước | Vai trò |
 |---|---|---|---|
 | WIDER FACE ảnh | HF `wider_face` | train 1.37 GB / 12.880 ảnh · val 346 MB / 3.226 ảnh · split 3.4 MB | ảnh cho teacher và student |
+| Bộ chấm điểm WIDER | `eval_tools.zip` của nhóm tác giả | 8.4 MB | **định nghĩa Easy/Medium/Hard** — không có nó thì mọi ngưỡng AP trong tài liệu này vô nghĩa |
 | Nhãn 5 landmark | `retinaface_gt_v1.1.zip`, Google Drive của insightface | 4.49 MB | nhãn box + landmark, **dùng chung cho teacher và student** |
 
 Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài liệu:
@@ -679,6 +680,7 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   ├── detection/
 │   │   ├── widerface/
 │   │   │   ├── {WIDER_train, WIDER_val, WIDER_test, wider_face_split}/
+│   │   │   ├── eval_tools/ground_truth/      # ★ Easy/Medium/Hard — thang do cua muc 0.80
 │   │   │   └── manifest.yaml                 # ✅
 │   │   └── retinaface_labels/
 │   │       ├── {train, val, test}/label.txt
