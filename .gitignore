@@ -24,6 +24,7 @@ firmware/models/**/*.bin
 *.tflite
 *.onnx
 *.pth
+*.pt
 *.ckpt
 *.rec
 *.idx
