@@ -330,7 +330,8 @@ Xếp theo đúng thứ tự thực hiện.
 | **Recog: embedding KD** | Cosine + L2 giữa embedding 512-D teacher/student, cộng **ArcFace** trên nhãn thật |
 | **Recog: relation KD (RKD)** | Giữ khoảng cách & góc giữa các cặp/bộ ba embedding trong batch — quan trọng hơn khớp từng vector |
 | **Progressive / multi-stage KD** | GĐ1 chỉ feature KD → GĐ2 thêm logit/localization KD → GĐ3 thêm task loss (tăng dần trọng số) |
-| **Soft target: online vs cache** | Cache offline 1 lần nếu augment cố định (nhanh 2–3×); online nếu augment ngẫu nhiên mạnh |
+| **Soft target: online vs cache** | Cache được hay không là do **augment**, không do tiện. Cache offline 1 lần nếu augment cố định (nhanh 2–3×); augment ngẫu nhiên mạnh thì teacher phải chạy online |
+| **Chia theo loại soft target** | **Hình học cache được** (box, landmark, score): biến đổi theo ảnh y hệt nhãn thật, kể cả mosaic. **Feature map thì không**: nó là tensor dày theo không gian ảnh, mosaic ghép 4 ảnh rồi cắt ngẫu nhiên nên không có phép nào đưa nó theo. Nhánh nào cần feature KD dưới augment mạnh thì teacher **bắt buộc nằm trong vòng train** |
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
 | **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén JPEG q=60–90, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược |
 

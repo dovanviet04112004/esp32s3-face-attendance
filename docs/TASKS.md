@@ -96,7 +96,7 @@ Làm trước trong ba nhánh. Nó là cổng của pipeline, và **landmark c�
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | E4-T1 | `teacher/yolo26_pose_wrapper.py` + `finetune_widerface.py` | Teacher ra box + 5 landmark, WIDER hard ≥ 0,80 | E2-T5, E3-T2 |
-| E4-T2 | `teacher/export_soft_target.py` — cache logit + feature map | Shard `.npz` đọc được | E4-T1 |
+| E4-T2 | `teacher/export_soft_target.py` — cache box + landmark + score. **Không cache feature map**: mosaic làm nó vô nghĩa (§3 Lớp 2), FGD phải chạy teacher online | Shard `.npz` đọc được | E4-T1 |
 | E4-T3 | `student/{yunet, head, anchors, blocks}.py` | Param ≈ 75,8K, ra 3 nhánh đầu ra | E2-T3 |
 | E4-T4 | `losses/{kd_logit, kd_localization, kd_feature_fgd, task_loss}.py` | Unit test từng loss | E4-T3 |
 | E4-T5 | `train_kd.py` nhiều giai đoạn: feature → +logit/loc → +task | WIDER hard ≥ 0,72 ở FP32 | E4-T2, E4-T4, E3-T5 |
