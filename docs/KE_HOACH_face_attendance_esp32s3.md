@@ -405,11 +405,19 @@ Không mặc định KD tốt hơn. **Phải chứng minh bằng số**, và n�
 | Arm | Cách train | Ghi vào run |
 |---|---|---|
 | **A0** | Student, random init, **chỉ task loss** trên nhãn thật | `arm=baseline` |
-| **A1** | Student, random init, task loss + **logit KD** | `arm=kd_logit` |
-| **A2** | A1 + **feature KD** (FitNets / attention transfer) | `arm=kd_feature` |
-| **A3** | A2 + KD đặc thù nhánh: localization+FGD (detect) · depth map (spoof) · RKD (recog) | `arm=kd_full` |
+| **A3** | A0 + **toàn bộ KD của nhánh**: logit + feature + phần đặc thù — localization+FGD (detect) · depth map + contrastive depth (spoof) · RKD (recog) | `arm=kd_full` |
 
-A1→A3 cho biết **thành phần nào của KD thật sự có tác dụng**, không chỉ "KD tốt hơn". Đây là phần đóng góp học thuật rõ nhất của đồ án.
+**Đúng hai arm, không có mốc trung gian.** Bảng này trả lời một câu duy nhất: *KD có
+đáng dùng cho nhánh này không*. Đó cũng đúng là câu quyết định model nào đem ship.
+
+Cái bị bỏ phải nói rõ trong báo cáo: bảng **không** trả lời được *thành phần nào của KD
+tạo ra chênh lệch*. Muốn biết điều đó thì phải có các mốc chỉ-logit và chỉ-feature, tức
+gấp đôi số lần train mỗi nhánh. Với ngân sách thời gian hiện tại, đổi lấy phần phân tích
+đó là không đáng — nhưng **không được trình bày kết quả 2 arm như thể đã tách được đóng
+góp của từng thành phần**.
+
+Nếu về sau còn thời gian, thêm arm là chuyện cộng thêm dòng, không phải làm lại: giữ
+nguyên seed và `split.lock` thì mọi arm mới so được thẳng với hai arm đã có.
 
 **Điều kiện so sánh công bằng — sai một cái là bảng vô nghĩa:**
 
@@ -676,14 +684,19 @@ Dữ liệu nằm trên ổ Windows, vào WSL qua drvfs. Số đo trên chính m
 
 | Đại lượng | Giá trị |
 |---|---|
-| Đọc tuần tự | ~12 MB/s |
-| Độ trễ mỗi lần mở file | ~4 ms |
-| File nhỏ, một luồng | **37 file/s** |
-| Cùng dữ liệu đó trên ext4 | **332 file/s** |
+| Đọc tuần tự, khối 8 MB | **150 MB/s** |
+| Đọc + giải nén ảnh từ **file lẻ** | **66 ảnh/s** — 15 ms mỗi ảnh |
+| Đọc + giải nén ảnh **trong shard tar** | **1.668 ảnh/s** — 0,6 ms mỗi ảnh |
 
-Băng thông không phải vấn đề — **số lần mở file mới là vấn đề**. Nên luật của tầng
-`interim/` là: **thứ gì được đọc lặp lại mỗi epoch thì phải nằm trong shard tuần tự,
-không phải file lẻ.**
+Băng thông chưa bao giờ là vấn đề — **độ trễ mở file mới là**. Chênh lệch **25×**, và
+quan trọng hơn con số: hai trường hợp nghẽn ở hai chỗ khác nhau. File lẻ nghẽn ở drvfs,
+thứ không chia được cho nhiều worker. Trong shard thì nghẽn chuyển sang **giải nén JPEG**,
+thứ chia được. Đó là lý do tăng `num_workers` trên file lẻ không cải thiện gì (đo được:
+4 worker → GPU 72%, 8 worker → 76%, số vòng/giây không đổi).
+
+Nên luật của tầng `interim/` là: **thứ gì được đọc lặp lại mỗi epoch thì phải nằm trong
+shard tuần tự, không phải file lẻ** — và ảnh trong shard phải được **resize sẵn về đúng
+kích thước train**, để phần nghẽn còn lại cũng nhỏ đi.
 
 | Nhánh | Đọc mỗi epoch | Dạng đúng |
 |---|---|---|
@@ -738,6 +751,9 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 ├── interim/
 │   ├── detection/widerface_coco/{train.json, val.json}      # box + 5 landmark, format COCO
 │   ├── detection/widerface_yolo/{images/, labels/, data.yaml}  # layout Ultralytics doi cho teacher
+│   │                                             #   anh resize san ve canh dai 640: nho gon
+│   │                                             #   du de page cache giu duoc ca tap
+│   ├── detection/widerface_shards/{train, val}/  # ★ shard cho student, resize san 160x120
 │   ├── antispoof/celeba_spoof_crops/{img_1x/, img_2.7x/}    # crop 128×128 hai tỉ lệ
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │   └── recognition/identities.txt                           # danh sach ID doc tu shard
@@ -816,6 +832,7 @@ ml/
 │   │   │   ├── widerface_to_coco.py
 │   │   │   ├── celeba_spoof_parquet.py    # mirror CelebA-Spoof là parquet, không phải bbox.json
 │   │   │   ├── recordio_to_wds.py         # MXNet RecordIO → shard; Glint360K đã shard sẵn
+│   │   │   ├── images_to_wds.py           # ★ file lẻ → shard, resize sẵn — dùng cho cả 3 nhánh
 │   │   │   └── device_index.py            # quét ov5640/images → manifest.csv
 │   │   ├── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
 │   │   └── loaders.py

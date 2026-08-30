@@ -101,7 +101,7 @@ Làm trước trong ba nhánh. Nó là cổng của pipeline, và **landmark c�
 | E4-T4 | `losses/{kd_logit, kd_localization, kd_feature_fgd, task_loss}.py` | Unit test từng loss | E4-T3 |
 | E4-T5 | `train_kd.py` nhiều giai đoạn: feature → +logit/loc → +task | WIDER hard ≥ 0,72 ở FP32 | E4-T2, E4-T4, E3-T5 |
 | E4-T6 | `eval.py` — WIDER AP + **NMSE landmark trên ảnh OV5640** | NMSE < 5% | E4-T5, E3-T7 |
-| E4-T7 | **Bảng đối chứng A (§3.7)** — 4 arm A0/A1/A2/A3, A3 gồm localization KD + FGD | `reports/ablation_teacher.md` đủ 4 dòng + ADR | E4-T5 |
+| E4-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + feature + localization + FGD) | `reports/ablation_teacher.md` đủ 2 dòng + ADR | E4-T5 |
 | E4-T8 | **Thang lượng tử hoá (§3.8)** — Q0 → Q1 → Q2, dừng khi đạt | `reports/quant_ladder.md` + `calib_sweep.md` | E4-T7 |
 | E4-T9 | **Quét từng lớp (§3.9)** — mốc Q3, chỉ khi Q1 và Q2 đều chưa đạt | `layer_sensitivity.csv` + chọn được `k` ở điểm gãy | E4-T8 |
 | E4-T10 | `postproc/{decode, nms}.py` + `emit_golden.py` | `contracts/golden/detection/` có vector vàng | E4-T8 |
@@ -123,7 +123,7 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 | E5-T4 | `train_kd.py` + `data.py` — chạy KD thật | LFW ≥ 99,0 ở FP32 | E5-T1, E5-T3, E3-T5, **E5-T0** |
 | E5-T5 | `postproc/{align, l2norm, cosine}.py` | Align được bằng landmark thật từ detector E4 | E5-T4, E4-T11 |
 | E5-T6 | `eval.py` — LFW/CFP-FP/AgeDB + TAR@FAR trên `test_device` đã align bằng E4 | Bảng số vào `artifacts/recognition/reports/` | E5-T5 |
-| E5-T7 | **Bảng đối chứng A (§3.7)** — 4 arm, A3 gồm RKD | `reports/ablation_teacher.md` + ADR | E5-T6 |
+| E5-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (embedding + RKD) | `reports/ablation_teacher.md` đủ 2 dòng + ADR | E5-T6 |
 | E5-T8 | **Thang lượng tử hoá (§3.8)** — Q0 → Q1 → Q2 | `reports/quant_ladder.md` + `calib_sweep.md` | E5-T7 |
 | E5-T9 | **Quét từng lớp (§3.9)** — mốc Q3, chỉ khi cần | `layer_sensitivity.csv` + chọn `k` | E5-T8 |
 | E5-T10 | `emit_golden.py` | `contracts/golden/recognition/` có vector vàng | E5-T8 |
@@ -143,7 +143,7 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 | E6-T5 | `losses/{kd_logit, kd_depth_map, contrastive_depth_loss, task_loss}.py` | Unit test từng loss | E6-T4 |
 | E6-T6 | `train_kd.py` | ACER < 5% ở FP32 | E6-T3..T5, **E6-T0** |
 | E6-T7 | `eval.py` — ACER, HTER cross-dataset, ROC tập tự thu | HTER < 15% | E6-T6, E3-T8 |
-| E6-T8 | **Bảng đối chứng A (§3.7)** — 4 arm, A3 gồm depth-map KD + contrastive depth loss | `reports/ablation_teacher.md` + ADR | E6-T6 |
+| E6-T8 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + depth map + contrastive depth) | `reports/ablation_teacher.md` đủ 2 dòng + ADR | E6-T6 |
 | E6-T9 | **Thang lượng tử hoá (§3.8)** Q0→Q1→Q2 + **quét từng lớp (§3.9)** nếu cần | INT8 giữ ACER < 5%, `quant_ladder.md` + `calib_sweep.md` | E6-T8 |
 | E6-T10 | Export + `postproc/preproc.py` + golden + `meta.json` + lock | Hai file khớp sha256 | E6-T9 |
 

@@ -4,8 +4,9 @@ Two things change at once: one class instead of eighty, and five keypoints
 instead of seventeen. Ultralytics rebuilds the head from the dataset yaml, so
 kpt_shape and nc there are what actually decide the architecture.
 
-Images are symlinked rather than copied. WIDER FACE train is 1.4 GB and lives on
-the data drive; a second copy on the WSL disk would not fit.
+Images are symlinked unless max_side asks for a shrunk copy. Ultralytics reads
+loose files off a drvfs mount that spends 15 ms opening each one, so the only
+lever is making the set small enough for the page cache to keep it.
 
 Usage:
     python -m facepipe.tasks.detection.teacher.finetune_widerface \\
@@ -20,6 +21,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
+from PIL import Image
 
 from facepipe.core.config import load_config
 from facepipe.core.run_dir import create_run_dir
@@ -68,8 +70,36 @@ def to_yolo_line(annotation: dict, width: int, height: int) -> str:
     return " ".join(parts)
 
 
-def write_yolo_dataset(coco_path: Path, images_root: Path, split_dir: Path, out: Path) -> dict:
-    """Lay out images/ and labels/ for each split and return the counts."""
+def place_image(source: Path, target: Path, max_side: int | None) -> None:
+    """Symlink the image, or write a shrunk copy when a size is asked for.
+
+    Ultralytics reads loose files, so the only lever left is making them small
+    enough that the page cache holds the set after the first epoch. WIDER FACE is
+    1.4 GB at full size and around 600 MB at a 640 pixel long side, and only the
+    second fits alongside a training process in this machine's memory.
+    """
+    if max_side is None:
+        if not target.is_symlink():
+            target.symlink_to(source.resolve())
+        return
+    if target.exists():
+        return
+    with Image.open(source) as handle:
+        image = handle.convert("RGB")
+        width, height = image.size
+        if max(width, height) > max_side:
+            scale = max_side / max(width, height)
+            image = image.resize((round(width * scale), round(height * scale)), Image.BILINEAR)
+        image.save(target, format="JPEG", quality=90)
+
+
+def write_yolo_dataset(
+    coco_path: Path, images_root: Path, split_dir: Path, out: Path, max_side: int | None = None
+) -> dict:
+    """Lay out images/ and labels/ for each split and return the counts.
+
+    Labels are normalised, so shrinking the image leaves them untouched.
+    """
     payload = json.loads(coco_path.read_text(encoding="utf-8"))
     by_image: dict[int, list[dict]] = {}
     for annotation in payload["annotations"]:
@@ -89,9 +119,7 @@ def write_yolo_dataset(coco_path: Path, images_root: Path, split_dir: Path, out:
             counts["skipped"] += 1
             continue
         stem = name.replace("/", "__")
-        link = out / "images" / split / stem
-        if not link.is_symlink():
-            link.symlink_to((images_root / name).resolve())
+        place_image(images_root / name, out / "images" / split / stem, max_side)
         rows = [
             to_yolo_line(a, image["width"], image["height"]) for a in by_image.get(image["id"], [])
         ]
@@ -147,7 +175,11 @@ def main(argv: list[str] | None = None) -> int:
     dataset = Path(params["yolo_dataset"])
 
     counts = write_yolo_dataset(
-        Path(params["coco"]), Path(params["images"]), Path(params["split_dir"]), dataset
+        Path(params["coco"]),
+        Path(params["images"]),
+        Path(params["split_dir"]),
+        dataset,
+        params.get("max_side"),
     )
     data_yaml = write_data_yaml(dataset)
     print(f"{dataset}: train {counts['train']} / val {counts['val']}, skipped {counts['skipped']}")
