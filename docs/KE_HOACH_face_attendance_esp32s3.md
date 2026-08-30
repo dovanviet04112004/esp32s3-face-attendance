@@ -581,6 +581,7 @@ esp32s3-face-attendance/
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
     ├── TASKS.md                                 # backlog
+    ├── DU_LIEU.md                               # dữ liệu đã tải và xử lí — số đo trên đĩa
     ├── adr/{0001-yunet-thay-ulfg.md, ...}       # quyết định kiến trúc, mỗi cái 1 file
     ├── measurements/{arena.md, latency.md, power.md}   # số 🔬 đo được trên board
     └── thesis/                                  # bản báo cáo ĐATN
