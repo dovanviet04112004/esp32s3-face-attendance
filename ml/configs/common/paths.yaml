@@ -1,10 +1,10 @@
 # Dataset roots. Never hardcode a path in code; point these at wherever the
 # data actually lives, symlinking raw/ to another disk when space runs out.
 
-# The two machine-specific values, split by access pattern rather than by
-# lifecycle (KEHOACH section 4.4.1). cold_drive is a Windows drive reached over
-# drvfs, which costs 15 ms an open; fast_drive is an ext4 image on that same
-# drive, which costs 0.1 ms. Anything a training loop rereads belongs on fast.
+# The two machine-specific values (KEHOACH section 4.4.1). A dataset belongs on
+# fast_drive only when it fits in the page cache: drvfs is never cached and
+# rereads from Windows every epoch, while the ext4 image caches normally but
+# tops out at 33 MB/s. Above the cache, drvfs wins on bandwidth by six times.
 cold_drive: /mnt/e/face-attendance-data
 fast_drive: /data/face-attendance
 

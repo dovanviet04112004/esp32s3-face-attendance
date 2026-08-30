@@ -678,34 +678,42 @@ Dataset hàng trăm GB không nằm trong repo. `ml/data/` là **thư mục dữ
 
 Nếu một thư mục không sinh lại được bằng script thì nó đang nằm sai tầng.
 
-**Hai ổ — chia theo cách truy cập, không theo vòng đời**
+**Hai ổ — quyết định bằng việc tập dữ liệu có vừa page cache hay không**
 
-Ba tầng ở trên chia theo *vòng đời*. Chỗ đặt file thì chia theo *cách đọc*, và hai cách
-chia đó cắt nhau chứ không trùng nhau. Ổ khai ở `paths.yaml`:
+Ba tầng ở trên chia theo *vòng đời*. Chỗ đặt file là chuyện khác hẳn, và nó chỉ có một
+câu hỏi: **tập dữ liệu có vừa page cache không?** Ổ khai ở `paths.yaml`:
 
 | Khoá | Đường dẫn | Dành cho |
 |---|---|---|
-| `cold_drive` | `/mnt/e/face-attendance-data` — ổ Windows qua **drvfs** | Bản tải về, archive, thứ đọc **một lần** |
-| `fast_drive` | `/data/face-attendance` — ảnh **ext4** đặt trên chính ổ đó | Thứ vòng train đọc lại **mỗi epoch** |
+| `cold_drive` | `/mnt/e/face-attendance-data` — ổ Windows qua **drvfs** | Bản tải về, và mọi tập **lớn hơn page cache** |
+| `fast_drive` | `/data/face-attendance` — ảnh **ext4** đặt trên chính ổ đó | Tập **nhỏ hơn page cache** mà vòng train đọc lại mỗi epoch |
 
 `fast_drive` là một file `E:\wsl-data.img` được `mount -o loop` vào `/data`, khai trong
 `/etc/fstab` để còn sống sau `wsl --shutdown`. Dữ liệu vẫn nằm vật lý trên `E:`; khác biệt
 là WSL đọc nó bằng ext4 native thay vì qua giao thức drvfs.
 
-Số đo trên **cùng một tập 12.880 ảnh WIDER**, cache nóng, cùng vòng đọc:
+Số đo trên máy này, cùng một tập ảnh, cùng vòng đọc:
 
-| Cách đọc | Ảnh/s | MB/s |
+| Cách đọc | drvfs | ext4 loop |
 |---|---|---|
-| drvfs, file lẻ | 145,6 | 17,1 |
-| drvfs, file lẻ — **trong lúc train** | **66** | — |
-| **ext4, file lẻ** | **399,7** | **46,9** |
-| drvfs, ảnh trong shard tar | 1.668 | — |
+| File nhỏ (~115 KB), cache **lạnh** | 90,8 ảnh/s | 141,8 ảnh/s |
+| File nhỏ (~115 KB), cache **nóng** | 255 ảnh/s | **38.856 ảnh/s** |
+| File lớn, đọc tuần tự | **197 MB/s** | 33 MB/s |
 
-Đọc tuần tự khối 8 MB thì drvfs vẫn đạt 150 MB/s. Băng thông chưa bao giờ là vấn đề —
-**độ trễ mở file mới là**, ~15 ms mỗi lần trên drvfs. Và hai trường hợp nghẽn ở hai chỗ
-khác nhau: file lẻ trên drvfs nghẽn ở chính drvfs, thứ **không chia được cho nhiều worker**
-(đo: 4 worker → GPU 72%, 8 worker → 76%, số vòng/giây không đổi). Trên ext4 hoặc trong
-shard, nghẽn chuyển sang **giải nén JPEG**, thứ chia được.
+Hai đường này **cắt nhau**, nên không có ổ nào thắng tuyệt đối:
+
+- **drvfs không được page cache của Linux giữ.** Đọc lại tập cũ vẫn phải qua Windows,
+  mỗi epoch, mãi mãi — 255 ảnh/s là trần. File trên ext4 thì được giữ như file thường,
+  nên từ epoch 2 trở đi gần như miễn phí: nhanh hơn **152×**.
+- **ext4 trên loopback có trần băng thông ~33 MB/s**, vì mọi block của nó vẫn phải đi qua
+  drvfs. Nâng readahead của loop device từ 128 KB lên 4 MB **không đổi gì** — đã thử.
+- drvfs đắt ở **số lần mở file** (~15 ms mỗi lần), không ở số byte.
+
+Nên: tập vừa cache thì ext4 thắng áp đảo nhờ được cache; tập không vừa cache thì đằng nào
+cũng phải đọc lại từ đĩa mỗi epoch, và lúc đó drvfs thắng nhờ băng thông gấp 6 lần.
+
+**Trần cache là con số phải tính, không được đoán.** WSL được cấp 10 GB, tiến trình train
+chiếm ~2,5 GB, nên phần còn lại cho page cache là **~7 GB**.
 
 **Symlink không cứu được gì.** Một symlink đặt trên drvfs trỏ sang ext4 vẫn bắt mỗi lần
 `open()` trả tiền tra cứu drvfs trước. Muốn drvfs ra khỏi vòng lặp thì **cả mục lục lẫn
@@ -714,11 +722,16 @@ payload** phải nằm trên `fast_drive`. Khi bố cục Ultralytics và ảnh 
 
 **Luật xếp dữ liệu**
 
-| Nhánh | Đọc mỗi epoch | Dạng đúng |
-|---|---|---|
-| Detection | 11.618 ảnh × 4 (mosaic) | file lẻ trên `fast_drive` là đủ |
-| Anti-spoof | **419.935 mặt × 2 tỉ lệ** | **bắt buộc shard**, hai tỉ lệ **cùng một record** |
-| Recognition | 5.179.510 ảnh | shard — mirror đã sẵn dạng này |
+| Nhánh | Đọc mỗi epoch | Cỡ tập | Dạng đúng | Ổ |
+|---|---|---|---|---|
+| Detection | 11.618 ảnh × 4 (mosaic) | 1,5 GB | file lẻ — Ultralytics chỉ nhận dạng này | `fast_drive` |
+| Anti-spoof | **419.935 mặt × 2 tỉ lệ** | 8,2 GB | **shard**, hai tỉ lệ **cùng một record** | `cold_drive` |
+| Recognition | 5.179.510 ảnh | 36 GB | shard — mirror đã sẵn dạng này | `cold_drive` |
+
+Detection là nhánh **duy nhất** không đóng shard được, vì Ultralytics đọc file lẻ; may là
+nó cũng là nhánh duy nhất đủ nhỏ để nằm trọn trong page cache. Hai nhánh còn lại vượt xa
+trần 7 GB nên đặt trên `fast_drive` chỉ đổi băng thông 197 MB/s lấy 33 MB/s: recognition
+sẽ mất **18,6 phút mỗi epoch** thay vì **3,1 phút**, đổi lại không được gì.
 
 Ở 150 file/s, riêng việc mở file của anti-spoof đã tốn **~93 phút mỗi epoch**, trong khi
 model 0,43M tham số tính xong trong vài giây. Đóng gói thành shard là chênh lệch giữa
@@ -774,9 +787,10 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │           └── manifest.csv                  # ✅ file, person_id, session, lighting,
 │                                             #    distance_cm, is_spoof, spoof_type, capture_date
 │
-├── interim/                                  # ★ nam tren fast_drive, khong phai cold_drive
+├── interim/                                  # mac dinh tren cold_drive; chi widerface_yolo
+│   │                                         #   va anh WIDER goc nam tren fast_drive
 │   ├── detection/widerface_coco/{train.json, val.json}      # box + 5 landmark, format COCO
-│   ├── detection/widerface_yolo/{images/, labels/, data.yaml}  # layout Ultralytics cho teacher
+│   ├── detection/widerface_yolo/{images/, labels/, data.yaml}  # ★ fast_drive: vua page cache
 │   │                                             #   images/ la HARDLINK toi raw/, anh giu nguyen goc
 │   ├── detection/widerface_shards/{train, val}/  # ★ shard cho student, resize san 160x120
 │   ├── antispoof/celeba_spoof_crops/{train, valid, test}/shard_*.tar

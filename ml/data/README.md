@@ -23,9 +23,10 @@ cho **mọi mục có trên ổ**, không chỉ những mục `expects` gọi t�
 nằm trên ổ nhưng loader glob theo đường dẫn repo sẽ không thấy, và nó không báo lỗi.
 
 Đường dẫn dùng trong code khai ở `ml/configs/common/paths.yaml`, không hardcode. Hai ổ chứa
-dữ liệu khai ở `cold_drive` và `fast_drive` của chính file đó — chia theo **cách truy cập**,
-không theo vòng đời: thứ gì vòng train đọc lại mỗi epoch thì nằm trên `fast_drive`
-(KẾ HOẠCH §4.4.1).
+dữ liệu khai ở `cold_drive` và `fast_drive` của chính file đó. Chọn ổ bằng đúng một câu hỏi:
+**tập này có vừa page cache không?** Vừa thì `fast_drive` (được cache, nhanh hơn 152×);
+không vừa thì `cold_drive` (drvfs không bao giờ được cache, nhưng băng thông gấp 6 lần —
+KẾ HOẠCH §4.4.1).
 
 ## Ba tầng, không bao giờ trộn
 

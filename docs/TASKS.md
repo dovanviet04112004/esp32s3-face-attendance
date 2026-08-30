@@ -86,7 +86,7 @@ E1 nền repo ──► E2 ml/core ──► E3 dữ liệu
 | E3-T7 | Thu ≥2.000 ảnh OV5640 tự thu, đủ điều kiện sáng và khoảng cách | `manifest.csv` đầy đủ cột | E1-T8 |
 | E3-T8 | Thu tập spoof tự thu: in ảnh, màn hình điện thoại, màn hình laptop, mặt nạ giấy | ≥500 ảnh mỗi loại | E3-T7 |
 | E3-T9 | `data/transforms/sensor_sim.py` — mô phỏng nhiễu OV5640 | Ảnh sau augment giống ảnh thật khi so histogram | E3-T7 |
-| **E3-T10** | **Tầng `fast_drive`** (KẾ HOẠCH §4.4.1): ảnh ext4 loop trên `E:`, khai `/etc/fstab`, chuyển `interim/` + ảnh WIDER sang, bố cục Ultralytics dùng **hardlink** thay symlink | `/data` còn mount sau `wsl --shutdown`; đo được ảnh/giây ext4 so với drvfs trên **cùng một tập ảnh** | E3-T1 |
+| **E3-T10** | **Tầng `fast_drive`** (KẾ HOẠCH §4.4.1): ảnh ext4 loop trên `E:`, khai `/etc/fstab`; chuyển sang **chỉ tập nào vừa page cache** — ảnh WIDER + bố cục Ultralytics, nối bằng **hardlink** thay symlink. Shard anti-spoof và recognition ở lại `cold_drive` | `/data` còn mount sau `wsl --shutdown`; đo được ảnh/giây **cả cache lạnh lẫn nóng** trên cùng một tập, và MB/s tuần tự trên cả hai ổ | E3-T1 |
 
 ---
 
