@@ -185,8 +185,30 @@ fetch_widerface() {
                 continue
             }
         fi
-        log "widerface: unpacking ${archive}"
-        unzip -q -o "${dest}/${archive}" -d "${dest}"
+        # Unpacking only when the directory is absent. Redoing it rewrites 3.6 GB
+        # over drvfs, which starves any training run reading the same mount.
+        if [[ -d "${dest}/${archive%.zip}" ]]; then
+            log "widerface: ${archive%.zip} already unpacked"
+        else
+            log "widerface: unpacking ${archive}"
+            unzip -q -o "${dest}/${archive}" -d "${dest}"
+        fi
+    done
+
+    # The Easy/Medium/Hard subsets are not in the HuggingFace mirror, and without
+    # them the plan's 0.80 hard-track target has no scale to be measured on. The
+    # authors' own host serves them at about 1 KB/s; this mirror carries the same
+    # four files and is what the face detection papers evaluate against.
+    local truth="${dest}/eval_tools/ground_truth"
+    local base="https://raw.githubusercontent.com/Linzaer"
+    base="${base}/Ultra-Light-Fast-Generic-Face-Detector-1MB/master/widerface_evaluate/ground_truth"
+    mkdir -p "${truth}"
+    local name
+    for name in wider_face_val.mat wider_easy_val.mat wider_medium_val.mat wider_hard_val.mat; do
+        [[ -s "${truth}/${name}" ]] && continue
+        log "widerface: downloading ${name}"
+        curl -fL --retry 3 --retry-delay 5 -o "${truth}/${name}" "${base}/${name}" ||
+            warn "${name} failed; rerun to resume"
     done
 }
 

@@ -15,7 +15,7 @@ sha256:
   WIDER_test: <directory>
   wider_face_split: <directory>
 counts:
-  files: 32214
+  files: 32424
   images: 32203
 consumed_by:
 - detection/teacher
