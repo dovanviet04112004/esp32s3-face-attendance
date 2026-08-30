@@ -12,5 +12,7 @@ counts:
   files: 1
 consumed_by:
 - recognition/student
-notes: 'Webdataset .tar.gz da shard san: 1385 shard, 122 GB. Khong can chay recordio_to_wds.py.
+notes: 'CHUA TAI DU: chi co shard 0000 tren dia, ban day du la 1385 shard / 122 GB.
+  MS1MV3 la bo mac dinh nen chua chan gi; muon dung bo nay phai chay lai 00_fetch_raw.sh
+  glint360k va sua expects. Webdataset .tar.gz da shard san, khong can recordio_to_wds.py.
   Trang liet ke cua Hub cat o 1000 entry, dung so dem tren dia.'
