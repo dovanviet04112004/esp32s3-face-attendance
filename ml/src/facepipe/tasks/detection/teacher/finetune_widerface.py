@@ -71,15 +71,18 @@ def to_yolo_line(annotation: dict, width: int, height: int) -> str:
 
 
 def place_image(source: Path, target: Path, max_side: int | None) -> None:
-    """Symlink the image, or write a shrunk copy when a size is asked for.
+    """Link the image into the dataset, or write a shrunk copy when a size is asked for.
 
-    Ultralytics reads loose files, so the only lever left is making them small
-    enough that the page cache holds the set after the first epoch. WIDER FACE is
-    1.4 GB at full size and around 600 MB at a 640 pixel long side, and only the
-    second fits alongside a training process in this machine's memory.
+    A hard link costs no bytes and, unlike a symlink, adds no lookup to every
+    open. It needs both paths on one filesystem, which is why the symlink stays
+    as the fallback for a dataset whose images live on another disk.
     """
     if max_side is None:
-        if not target.is_symlink():
+        if target.exists() or target.is_symlink():
+            return
+        try:
+            target.hardlink_to(source.resolve())
+        except OSError:
             target.symlink_to(source.resolve())
         return
     if target.exists():

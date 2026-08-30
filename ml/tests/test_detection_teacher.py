@@ -89,12 +89,13 @@ def test_conversion_follows_the_committed_split(tmp_path: Path) -> None:
     assert counts == {"train": 1, "val": 1, "skipped": 1}
 
 
-def test_images_are_symlinked_rather_than_copied(tmp_path: Path) -> None:
+def test_images_are_linked_rather_than_copied(tmp_path: Path) -> None:
     coco, images, split = build_coco(tmp_path)
     write_yolo_dataset(coco, images, split, tmp_path / "yolo")
     link = tmp_path / "yolo" / "images" / "train" / "a__1.jpg"
-    assert link.is_symlink()
-    assert link.resolve() == (images / "a/1.jpg").resolve()
+    source = images / "a/1.jpg"
+    assert link.stat().st_ino == source.stat().st_ino
+    assert source.stat().st_nlink == 2
 
 
 def test_every_face_of_an_image_becomes_one_row(tmp_path: Path) -> None:
