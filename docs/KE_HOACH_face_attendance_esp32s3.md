@@ -704,6 +704,7 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │
 ├── interim/
 │   ├── detection/widerface_coco/{train.json, val.json}      # box + 5 landmark, format COCO
+│   ├── detection/widerface_yolo/{images/, labels/, data.yaml}  # layout Ultralytics doi cho teacher
 │   ├── antispoof/celeba_spoof_crops/{img_1x/, img_2.7x/}    # crop 128×128 hai tỉ lệ
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │   └── recognition/identities.txt                           # danh sach ID doc tu shard
@@ -894,6 +895,7 @@ ml/
 │   │   │   ├── ckpt/{best.pth, last.pth}
 │   │   │   ├── metrics.json
 │   │   │   └── tb/
+│   │   ├── teacher/                       # weight teacher tải về — đầu vào, không phải kết quả run
 │   │   ├── onnx/{student_fp32.onnx, student_qdq.onnx}
 │   │   ├── tflite/{yunet_fp32.tflite, yunet_int8.tflite}
 │   │   ├── golden/                        # vector vàng trước khi copy sang contracts/
