@@ -36,6 +36,10 @@ export = [
 teacher = [
     "ultralytics>=8.4",
 ]
+# Reading the WIDER FACE scoring kit, whose ground truth ships as MATLAB v5.
+eval = [
+    "scipy>=1.14",
+]
 track = [
     "wandb>=0.18",
 ]
