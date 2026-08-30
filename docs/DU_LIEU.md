@@ -59,8 +59,9 @@ Nhãn landmark chỉ có trên Google Drive, không có mirror HTTP. `drive_id` 
 ### Dữ liệu nặng nằm ngoài repo
 
 `raw/`, `interim/`, `processed/`, `cache/` không nằm trên đĩa WSL — đĩa ext4 không nở thêm
-được vì `C:` chỉ còn ~8 GB. Chúng nằm trên `E:`, đường dẫn khai ở khoá `data_drive` trong
-`ml/configs/common/paths.yaml` (§4.9), và vào repo bằng **symlink từng mục**.
+được vì `C:` chỉ còn ~8 GB. Chúng nằm trên `E:` và vào repo bằng **symlink từng mục**, qua
+một trong hai ổ khai ở `ml/configs/common/paths.yaml` (§4.9): `cold_drive` cho thứ đọc một
+lần, `fast_drive` cho thứ vòng train đọc lại mỗi epoch (KẾ HOẠCH §4.4.1).
 
 `00_fetch_raw.sh` dựng lại toàn bộ symlink mỗi lần chạy, kể cả với `--verify`. Link phải
 phủ **mọi mục có trên ổ**, không phải chỉ những mục `expects` gọi tên: `expects` là mẫu kiểm

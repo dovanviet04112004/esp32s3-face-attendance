@@ -79,13 +79,14 @@ E1 nền repo ──► E2 ml/core ──► E3 dữ liệu
 |---|---|---|---|
 | E3-T1 | `scripts/00_fetch_raw.sh` + `manifest.yaml` cho từng dataset | 8 manifest có url, sha256, ngày tải, license | E2-T1 |
 | E3-T2 | `data/prepare/widerface_to_coco.py` — box + 5 landmark → COCO json | `interim/detection/widerface_coco/` có 32.203 ảnh | E3-T1 |
-| E3-T3 | `data/prepare/celeba_spoof_crop.py` + `depth_gt.py` | Crop 128×128 + depth map GT cho ảnh live | E3-T1 |
+| E3-T3 | `data/prepare/celeba_spoof_parquet.py` + `depth_gt.py` | Shard crop 128×128 hai tỉ lệ + depth map GT cho ảnh live | E3-T1 |
 | E3-T4 | `data/prepare/glint360k_to_wds.py` | Webdataset shard đọc được | E3-T1 |
 | E3-T5 | `data/make_split.py` + sinh split cho 3 nhánh, kèm `SPLIT.md` | Split commit vào git, có seed và sha256 | E3-T2..T4 |
 | E3-T6 | `tests/test_splits.py` — kiểm identity-disjoint và calib ∩ test = ∅ | Test đỏ khi cố tình trộn | E3-T5 |
 | E3-T7 | Thu ≥2.000 ảnh OV5640 tự thu, đủ điều kiện sáng và khoảng cách | `manifest.csv` đầy đủ cột | E1-T8 |
 | E3-T8 | Thu tập spoof tự thu: in ảnh, màn hình điện thoại, màn hình laptop, mặt nạ giấy | ≥500 ảnh mỗi loại | E3-T7 |
 | E3-T9 | `data/transforms/sensor_sim.py` — mô phỏng nhiễu OV5640 | Ảnh sau augment giống ảnh thật khi so histogram | E3-T7 |
+| **E3-T10** | **Tầng `fast_drive`** (KẾ HOẠCH §4.4.1): ảnh ext4 loop trên `E:`, khai `/etc/fstab`, chuyển `interim/` + ảnh WIDER sang, bố cục Ultralytics dùng **hardlink** thay symlink | `/data` còn mount sau `wsl --shutdown`; đo được ảnh/giây ext4 so với drvfs trên **cùng một tập ảnh** | E3-T1 |
 
 ---
 
@@ -116,11 +117,11 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| **E5-T0** | **`recordio_to_wds.py`: bỏ member `.cls`, đưa nhãn vào tên file** — tar trả 1 KB cho mỗi `.cls` vài byte, nhân 5,18 triệu ảnh là ~5,3 GB đọc thừa mỗi epoch | Shard sinh lại, **36 GB → ~29 GB**, `test_prepare.py` vẫn xanh | E3-T4 |
+| ~~E5-T0~~ | ~~`recordio_to_wds.py`: bỏ member `.cls`~~ — **bỏ**. Shard đã nằm trên `fast_drive`, đọc nghẽn ở giải nén JPEG chứ không ở tar; sinh lại 36 GB để tiết kiệm 5,3 GB đọc tuần tự không đổi lại được gì | — | — |
 | E5-T1 | `teacher/r50_wf600k.py` + `export_embedding.py` | Cache embedding 512-D ra `.npy` memmap | E2-T5, E3-T4 |
 | E5-T2 | `student/mobilefacenet.py` + `blocks.py` (ReLU6, kênh bội 8) | Forward ra 512-D, param ≈ 0,99M | E2-T3 |
 | E5-T3 | `losses/{arcface, kd_embedding, kd_relation_rkd}.py` | Unit test từng loss | E5-T2 |
-| E5-T4 | `train_kd.py` + `data.py` — chạy KD thật | LFW ≥ 99,0 ở FP32 | E5-T1, E5-T3, E3-T5, **E5-T0** |
+| E5-T4 | `train_kd.py` + `data.py` — chạy KD thật | LFW ≥ 99,0 ở FP32 | E5-T1, E5-T3, E3-T5, **E3-T10** |
 | E5-T5 | `postproc/{align, l2norm, cosine}.py` | Align được bằng landmark thật từ detector E4 | E5-T4, E4-T11 |
 | E5-T6 | `eval.py` — LFW/CFP-FP/AgeDB + TAR@FAR trên `test_device` đã align bằng E4 | Bảng số vào `artifacts/recognition/reports/` | E5-T5 |
 | E5-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (embedding + RKD) | `reports/ablation_teacher.md` đủ 2 dòng + ADR | E5-T6 |
@@ -135,7 +136,7 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| **E6-T0** | **`data/prepare/spoof_crops_to_wds.py`** — gói crop CelebA-Spoof thành shard, **hai tỉ lệ 1x và 2.7x cùng một record** (KẾ HOẠCH §4.4.1) | Shard đọc được, **đo được số ảnh/giây tăng so với file lẻ** | E3-T3 |
+| **E6-T0** | **`celeba_spoof_parquet.py` ghi thẳng ra shard** — **hai tỉ lệ 1x và 2.7x cùng một record** (KẾ HOẠCH §4.4.1), không đi qua bước 1,05 triệu file lẻ; giải nén chạy song song nhiều nhân | Shard đọc lại đủ `tight.jpg` + `wide.jpg` + `json`, **đo được record/giây so với file lẻ** | E3-T3, E3-T10 |
 | E6-T1 | `teacher/cdcnpp.py` + `depth_gt.py` | Kiến trúc chạy, depth map GT sinh được | E2-T5, E3-T3 |
 | E6-T2 | `teacher/train_teacher.py` trên CelebA-Spoof | ACER < 2% trên tập val | E6-T1, **E6-T0** |
 | E6-T3 | `teacher/export_soft_target.py` — logit + depth map 32×32 | Shard đọc được | E6-T2 |

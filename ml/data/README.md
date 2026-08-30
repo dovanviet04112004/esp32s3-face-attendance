@@ -22,8 +22,10 @@ Dựng lại symlink sau khi clone bằng `./scripts/00_fetch_raw.sh --verify` �
 cho **mọi mục có trên ổ**, không chỉ những mục `expects` gọi tên. Thiếu link thì dữ liệu vẫn
 nằm trên ổ nhưng loader glob theo đường dẫn repo sẽ không thấy, và nó không báo lỗi.
 
-Đường dẫn dùng trong code khai ở `ml/configs/common/paths.yaml`, không hardcode. Ổ chứa dữ
-liệu khai ở khoá `data_drive` của chính file đó.
+Đường dẫn dùng trong code khai ở `ml/configs/common/paths.yaml`, không hardcode. Hai ổ chứa
+dữ liệu khai ở `cold_drive` và `fast_drive` của chính file đó — chia theo **cách truy cập**,
+không theo vòng đời: thứ gì vòng train đọc lại mỗi epoch thì nằm trên `fast_drive`
+(KẾ HOẠCH §4.4.1).
 
 ## Ba tầng, không bao giờ trộn
 

@@ -678,35 +678,61 @@ Dataset hàng trăm GB không nằm trong repo. `ml/data/` là **thư mục dữ
 
 Nếu một thư mục không sinh lại được bằng script thì nó đang nằm sai tầng.
 
-**Xếp dữ liệu theo cách ổ chịu được**
+**Hai ổ — chia theo cách truy cập, không theo vòng đời**
 
-Dữ liệu nằm trên ổ Windows, vào WSL qua drvfs. Số đo trên chính máy này:
+Ba tầng ở trên chia theo *vòng đời*. Chỗ đặt file thì chia theo *cách đọc*, và hai cách
+chia đó cắt nhau chứ không trùng nhau. Ổ khai ở `paths.yaml`:
 
-| Đại lượng | Giá trị |
-|---|---|
-| Đọc tuần tự, khối 8 MB | **150 MB/s** |
-| Đọc + giải nén ảnh từ **file lẻ** | **66 ảnh/s** — 15 ms mỗi ảnh |
-| Đọc + giải nén ảnh **trong shard tar** | **1.668 ảnh/s** — 0,6 ms mỗi ảnh |
+| Khoá | Đường dẫn | Dành cho |
+|---|---|---|
+| `cold_drive` | `/mnt/e/face-attendance-data` — ổ Windows qua **drvfs** | Bản tải về, archive, thứ đọc **một lần** |
+| `fast_drive` | `/data/face-attendance` — ảnh **ext4** đặt trên chính ổ đó | Thứ vòng train đọc lại **mỗi epoch** |
 
-Băng thông chưa bao giờ là vấn đề — **độ trễ mở file mới là**. Chênh lệch **25×**, và
-quan trọng hơn con số: hai trường hợp nghẽn ở hai chỗ khác nhau. File lẻ nghẽn ở drvfs,
-thứ không chia được cho nhiều worker. Trong shard thì nghẽn chuyển sang **giải nén JPEG**,
-thứ chia được. Đó là lý do tăng `num_workers` trên file lẻ không cải thiện gì (đo được:
-4 worker → GPU 72%, 8 worker → 76%, số vòng/giây không đổi).
+`fast_drive` là một file `E:\wsl-data.img` được `mount -o loop` vào `/data`, khai trong
+`/etc/fstab` để còn sống sau `wsl --shutdown`. Dữ liệu vẫn nằm vật lý trên `E:`; khác biệt
+là WSL đọc nó bằng ext4 native thay vì qua giao thức drvfs.
 
-Nên luật của tầng `interim/` là: **thứ gì được đọc lặp lại mỗi epoch thì phải nằm trong
-shard tuần tự, không phải file lẻ** — và ảnh trong shard phải được **resize sẵn về đúng
-kích thước train**, để phần nghẽn còn lại cũng nhỏ đi.
+Số đo trên **cùng một tập 12.880 ảnh WIDER**, cache nóng, cùng vòng đọc:
+
+| Cách đọc | Ảnh/s | MB/s |
+|---|---|---|
+| drvfs, file lẻ | 145,6 | 17,1 |
+| drvfs, file lẻ — **trong lúc train** | **66** | — |
+| **ext4, file lẻ** | **399,7** | **46,9** |
+| drvfs, ảnh trong shard tar | 1.668 | — |
+
+Đọc tuần tự khối 8 MB thì drvfs vẫn đạt 150 MB/s. Băng thông chưa bao giờ là vấn đề —
+**độ trễ mở file mới là**, ~15 ms mỗi lần trên drvfs. Và hai trường hợp nghẽn ở hai chỗ
+khác nhau: file lẻ trên drvfs nghẽn ở chính drvfs, thứ **không chia được cho nhiều worker**
+(đo: 4 worker → GPU 72%, 8 worker → 76%, số vòng/giây không đổi). Trên ext4 hoặc trong
+shard, nghẽn chuyển sang **giải nén JPEG**, thứ chia được.
+
+**Symlink không cứu được gì.** Một symlink đặt trên drvfs trỏ sang ext4 vẫn bắt mỗi lần
+`open()` trả tiền tra cứu drvfs trước. Muốn drvfs ra khỏi vòng lặp thì **cả mục lục lẫn
+payload** phải nằm trên `fast_drive`. Khi bố cục Ultralytics và ảnh gốc cùng nằm trên
+`fast_drive` thì dùng **hardlink**: cùng inode, tốn 0 byte và 0 lần tra cứu thêm.
+
+**Luật xếp dữ liệu**
 
 | Nhánh | Đọc mỗi epoch | Dạng đúng |
 |---|---|---|
-| Detection | 11.618 ảnh × 4 (mosaic) | file lẻ còn chịu được |
-| Anti-spoof | **419.935 crop × 2 tỉ lệ = 839.870** | **bắt buộc shard**, hai tỉ lệ cùng một record |
+| Detection | 11.618 ảnh × 4 (mosaic) | file lẻ trên `fast_drive` là đủ |
+| Anti-spoof | **419.935 mặt × 2 tỉ lệ** | **bắt buộc shard**, hai tỉ lệ **cùng một record** |
 | Recognition | 5.179.510 ảnh | shard — mirror đã sẵn dạng này |
 
 Ở 150 file/s, riêng việc mở file của anti-spoof đã tốn **~93 phút mỗi epoch**, trong khi
 model 0,43M tham số tính xong trong vài giây. Đóng gói thành shard là chênh lệch giữa
-nhánh đó mất mười ngày hay một ngày.
+nhánh đó mất mười ngày hay một ngày. Gói hai tỉ lệ vào một record thì một epoch trả tiền
+419.935 lần đọc chứ không phải 839.870.
+
+Record trong shard gom theo **dấu chấm đầu tiên** của tên member — đúng quy ước
+WebDataset mà shard MS1MV3 đang dùng (`{key}.jpg` + `{key}.cls`). Đó là thứ cho phép một
+record chở nhiều payload: `{key}.tight.jpg` + `{key}.wide.jpg` + `{key}.json`.
+
+**Resize sẵn chỉ khi vô hại.** Ảnh trong shard được resize về đúng kích thước train *chỉ
+khi* pipeline train không có augment phóng to — nếu có, resize là âm thầm bớt thông tin
+model đáng lẽ được thấy. Teacher detection có mosaic và scale augment ở 640, nên **giữ ảnh
+gốc**; student chỉ letterbox về 160×120 nên resize sẵn là vô hại.
 
 > **Tối ưu cách xếp, không tối ưu giao thức.** Được phép đổi: bố cục file, số worker,
 > kích thước shard, thứ tự đọc. **Không được đổi để chạy nhanh hơn**: split (§1.3),
@@ -748,13 +774,13 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │           └── manifest.csv                  # ✅ file, person_id, session, lighting,
 │                                             #    distance_cm, is_spoof, spoof_type, capture_date
 │
-├── interim/
+├── interim/                                  # ★ nam tren fast_drive, khong phai cold_drive
 │   ├── detection/widerface_coco/{train.json, val.json}      # box + 5 landmark, format COCO
-│   ├── detection/widerface_yolo/{images/, labels/, data.yaml}  # layout Ultralytics doi cho teacher
-│   │                                             #   anh resize san ve canh dai 640: nho gon
-│   │                                             #   du de page cache giu duoc ca tap
+│   ├── detection/widerface_yolo/{images/, labels/, data.yaml}  # layout Ultralytics cho teacher
+│   │                                             #   images/ la HARDLINK toi raw/, anh giu nguyen goc
 │   ├── detection/widerface_shards/{train, val}/  # ★ shard cho student, resize san 160x120
-│   ├── antispoof/celeba_spoof_crops/{img_1x/, img_2.7x/}    # crop 128×128 hai tỉ lệ
+│   ├── antispoof/celeba_spoof_crops/{train, valid, test}/shard_*.tar
+│   │                                             #   1 record = tight.jpg + wide.jpg + json
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │   └── recognition/identities.txt                           # danh sach ID doc tu shard
 │
@@ -831,8 +857,10 @@ ml/
 │   │   ├── prepare/                       # ★ raw → interim → processed
 │   │   │   ├── widerface_to_coco.py
 │   │   │   ├── celeba_spoof_parquet.py    # mirror CelebA-Spoof là parquet, không phải bbox.json
+│   │   │   │                              #   ra thẳng shard, hai tỉ lệ trong một record
 │   │   │   ├── recordio_to_wds.py         # MXNet RecordIO → shard; Glint360K đã shard sẵn
-│   │   │   ├── images_to_wds.py           # ★ file lẻ → shard, resize sẵn — dùng cho cả 3 nhánh
+│   │   │   ├── images_to_wds.py           # ★ NƠI DUY NHẤT định nghĩa bố cục record shard
+│   │   │   │                              #   ShardWriter + read_shard — dùng cho cả 3 nhánh
 │   │   │   └── device_index.py            # quét ov5640/images → manifest.csv
 │   │   ├── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
 │   │   └── loaders.py

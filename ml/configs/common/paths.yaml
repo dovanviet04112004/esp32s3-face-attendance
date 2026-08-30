@@ -1,10 +1,12 @@
 # Dataset roots. Never hardcode a path in code; point these at wherever the
 # data actually lives, symlinking raw/ to another disk when space runs out.
 
-# The only machine-specific value here. Datasets are hundreds of gigabytes and
-# do not fit on the WSL ext4 disk, so every raw/ entry is a symlink onto this
-# drive and 00_fetch_raw.sh downloads straight into it.
-data_drive: /mnt/e/face-attendance-data
+# The two machine-specific values, split by access pattern rather than by
+# lifecycle (KEHOACH section 4.4.1). cold_drive is a Windows drive reached over
+# drvfs, which costs 15 ms an open; fast_drive is an ext4 image on that same
+# drive, which costs 0.1 ms. Anything a training loop rereads belongs on fast.
+cold_drive: /mnt/e/face-attendance-data
+fast_drive: /data/face-attendance
 
 data_root: data
 raw_root: data/raw

@@ -112,15 +112,15 @@ else:
 PYTHON
 }
 
-# Datasets are hundreds of gigabytes and cannot sit on the WSL disk, so every
-# raw/ entry is a symlink onto the data drive and downloads land there directly.
-DATA_DRIVE="$(python3 -c \
-    "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['data_drive'])" \
+# Downloads are archives read once, so they land on the cold drive; only what a
+# training loop rereads is worth the fast tier (KEHOACH section 4.4.1).
+COLD_DRIVE="$(python3 -c \
+    "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['cold_drive'])" \
     "${ML_ROOT}/configs/common/paths.yaml")"
 
 payload_dir() {
     local ds="$1"
-    echo "${DATA_DRIVE}/raw/${ds#"${RAW}/"}"
+    echo "${COLD_DRIVE}/raw/${ds#"${RAW}/"}"
 }
 
 # One symlink per top-level entry on the drive. Deriving the list from expects
