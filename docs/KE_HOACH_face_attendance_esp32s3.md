@@ -670,6 +670,36 @@ Dataset hàng trăm GB không nằm trong repo. `ml/data/` là **thư mục dữ
 
 Nếu một thư mục không sinh lại được bằng script thì nó đang nằm sai tầng.
 
+**Xếp dữ liệu theo cách ổ chịu được**
+
+Dữ liệu nằm trên ổ Windows, vào WSL qua drvfs. Số đo trên chính máy này:
+
+| Đại lượng | Giá trị |
+|---|---|
+| Đọc tuần tự | ~12 MB/s |
+| Độ trễ mỗi lần mở file | ~4 ms |
+| File nhỏ, một luồng | **37 file/s** |
+| Cùng dữ liệu đó trên ext4 | **332 file/s** |
+
+Băng thông không phải vấn đề — **số lần mở file mới là vấn đề**. Nên luật của tầng
+`interim/` là: **thứ gì được đọc lặp lại mỗi epoch thì phải nằm trong shard tuần tự,
+không phải file lẻ.**
+
+| Nhánh | Đọc mỗi epoch | Dạng đúng |
+|---|---|---|
+| Detection | 11.618 ảnh × 4 (mosaic) | file lẻ còn chịu được |
+| Anti-spoof | **419.935 crop × 2 tỉ lệ = 839.870** | **bắt buộc shard**, hai tỉ lệ cùng một record |
+| Recognition | 5.179.510 ảnh | shard — mirror đã sẵn dạng này |
+
+Ở 150 file/s, riêng việc mở file của anti-spoof đã tốn **~93 phút mỗi epoch**, trong khi
+model 0,43M tham số tính xong trong vài giây. Đóng gói thành shard là chênh lệch giữa
+nhánh đó mất mười ngày hay một ngày.
+
+> **Tối ưu cách xếp, không tối ưu giao thức.** Được phép đổi: bố cục file, số worker,
+> kích thước shard, thứ tự đọc. **Không được đổi để chạy nhanh hơn**: split (§1.3),
+> điều kiện so sánh của bảng đối chứng (§3.7), tập calib tách khỏi test, hay việc đo
+> accuracy sau INT8 trên `test_device`. Nhanh mà mất một trong số đó là hỏng cả kết quả.
+
 #### 4.4.2 Chia theo bài toán trước, theo dataset sau
 
 ```

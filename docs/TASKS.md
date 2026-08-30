@@ -116,10 +116,11 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
+| **E5-T0** | **`recordio_to_wds.py`: bỏ member `.cls`, đưa nhãn vào tên file** — tar trả 1 KB cho mỗi `.cls` vài byte, nhân 5,18 triệu ảnh là ~5,3 GB đọc thừa mỗi epoch | Shard sinh lại, **36 GB → ~29 GB**, `test_prepare.py` vẫn xanh | E3-T4 |
 | E5-T1 | `teacher/r50_wf600k.py` + `export_embedding.py` | Cache embedding 512-D ra `.npy` memmap | E2-T5, E3-T4 |
 | E5-T2 | `student/mobilefacenet.py` + `blocks.py` (ReLU6, kênh bội 8) | Forward ra 512-D, param ≈ 0,99M | E2-T3 |
 | E5-T3 | `losses/{arcface, kd_embedding, kd_relation_rkd}.py` | Unit test từng loss | E5-T2 |
-| E5-T4 | `train_kd.py` + `data.py` — chạy KD thật | LFW ≥ 99,0 ở FP32 | E5-T1, E5-T3, E3-T5 |
+| E5-T4 | `train_kd.py` + `data.py` — chạy KD thật | LFW ≥ 99,0 ở FP32 | E5-T1, E5-T3, E3-T5, **E5-T0** |
 | E5-T5 | `postproc/{align, l2norm, cosine}.py` | Align được bằng landmark thật từ detector E4 | E5-T4, E4-T11 |
 | E5-T6 | `eval.py` — LFW/CFP-FP/AgeDB + TAR@FAR trên `test_device` đã align bằng E4 | Bảng số vào `artifacts/recognition/reports/` | E5-T5 |
 | E5-T7 | **Bảng đối chứng A (§3.7)** — 4 arm, A3 gồm RKD | `reports/ablation_teacher.md` + ADR | E5-T6 |
@@ -134,12 +135,13 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
+| **E6-T0** | **`data/prepare/spoof_crops_to_wds.py`** — gói crop CelebA-Spoof thành shard, **hai tỉ lệ 1x và 2.7x cùng một record** (KẾ HOẠCH §4.4.1) | Shard đọc được, **đo được số ảnh/giây tăng so với file lẻ** | E3-T3 |
 | E6-T1 | `teacher/cdcnpp.py` + `depth_gt.py` | Kiến trúc chạy, depth map GT sinh được | E2-T5, E3-T3 |
-| E6-T2 | `teacher/train_teacher.py` trên CelebA-Spoof | ACER < 2% trên tập val | E6-T1 |
+| E6-T2 | `teacher/train_teacher.py` trên CelebA-Spoof | ACER < 2% trên tập val | E6-T1, **E6-T0** |
 | E6-T3 | `teacher/export_soft_target.py` — logit + depth map 32×32 | Shard đọc được | E6-T2 |
 | E6-T4 | `student/minifasnet_v2_se.py` (SE dùng HardSigmoid) | Param ≈ 0,43M | E2-T3 |
 | E6-T5 | `losses/{kd_logit, kd_depth_map, contrastive_depth_loss, task_loss}.py` | Unit test từng loss | E6-T4 |
-| E6-T6 | `train_kd.py` | ACER < 5% ở FP32 | E6-T3..T5 |
+| E6-T6 | `train_kd.py` | ACER < 5% ở FP32 | E6-T3..T5, **E6-T0** |
 | E6-T7 | `eval.py` — ACER, HTER cross-dataset, ROC tập tự thu | HTER < 15% | E6-T6, E3-T8 |
 | E6-T8 | **Bảng đối chứng A (§3.7)** — 4 arm, A3 gồm depth-map KD + contrastive depth loss | `reports/ablation_teacher.md` + ADR | E6-T6 |
 | E6-T9 | **Thang lượng tử hoá (§3.8)** Q0→Q1→Q2 + **quét từng lớp (§3.9)** nếu cần | INT8 giữ ACER < 5%, `quant_ladder.md` + `calib_sweep.md` | E6-T8 |
