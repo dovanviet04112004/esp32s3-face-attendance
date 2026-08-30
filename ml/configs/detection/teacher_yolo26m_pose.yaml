@@ -25,9 +25,6 @@ teacher:
     images: data/raw/detection/widerface/WIDER_train/images
     split_dir: data/splits/detection/v1
     yolo_dataset: data/interim/detection/widerface_yolo
-    # Shrunk copies, not symlinks. Ultralytics reads loose files off drvfs at
-    # 66 images a second; at this size the whole set fits the page cache.
-    max_side: 640
     conf: 0.25
     iou: 0.5
 
