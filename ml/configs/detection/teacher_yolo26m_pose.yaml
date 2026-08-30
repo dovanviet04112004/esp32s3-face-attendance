@@ -1,0 +1,44 @@
+# Teacher fine-tune: COCO person-pose to WIDER FACE with five landmarks.
+# Produces the soft targets arms A1 to A3 of KEHOACH section 3.7 distil from, so
+# a teacher below the 0.80 hard-track target makes all three KD arms untrustworthy
+# rather than merely weaker.
+
+run:
+  task: detection
+  seed: 42
+  deterministic: true
+  tags: [teacher, yolo26m_pose]
+  notes: fine-tune for box and five landmarks
+
+model:
+  name: yunet
+  input_hw: [120, 160]
+
+teacher:
+  enabled: true
+  name: yolo26_pose
+  # Downloaded weight, not a run output. Gitignored like every other checkpoint.
+  ckpt: artifacts/detection/teacher/yolo26m-pose.pt
+  input_hw: [640, 640]
+  params:
+    coco: data/interim/detection/widerface_coco/train.json
+    images: data/raw/detection/widerface/WIDER_train/images
+    split_dir: data/splits/detection/v1
+    yolo_dataset: data/interim/detection/widerface_yolo
+    conf: 0.25
+    iou: 0.5
+
+data:
+  name: widerface_yolo
+  # Measured, not guessed. At 640 square this model peaks at 2.36 GB for batch 4
+  # and 4.62 GB for batch 8, and the card has 4 GB. WSL does not raise on the
+  # overflow, it pages to host memory: batch 8 still runs and is 52 times slower
+  # per step. Raise this only after measuring again.
+  batch_size: 4
+  split_files:
+    - data/splits/detection/v1/train.txt
+    - data/splits/detection/v1/landmark_val.txt
+
+train:
+  epochs: 100
+  amp: true
