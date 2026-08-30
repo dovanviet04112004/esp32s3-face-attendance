@@ -12,12 +12,20 @@ dependencies = [
     "pydantic>=2.9",
     "pyyaml>=6.0",
     "tensorboard>=2.18",
-    "torch>=2.5",
-    "torchvision>=0.20",
     "tqdm>=4.67",
 ]
 
 [project.optional-dependencies]
+# Pick exactly one build of torch. Neither is a default: an accidental CPU
+# install on the training box wastes days before anyone notices the GPU idle.
+cpu = [
+    "torch>=2.5",
+    "torchvision>=0.20",
+]
+cu130 = [
+    "torch>=2.5",
+    "torchvision>=0.20",
+]
 export = [
     "onnx>=1.17",
     "onnxruntime>=1.20",
@@ -41,16 +49,30 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/facepipe"]
 
-# CPU wheels only. Training happens on a machine with its own CUDA build; CI and
-# the reproducibility lock must not depend on a GPU being present.
+# Training runs on CUDA; CI has no GPU. Both builds are locked so the two
+# environments resolve from one uv.lock instead of drifting apart.
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv]
+conflicts = [[{ extra = "cpu" }, { extra = "cu130" }]]
+
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
-torchvision = [{ index = "pytorch-cpu" }]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]
 
 [tool.ruff]
 line-length = 100

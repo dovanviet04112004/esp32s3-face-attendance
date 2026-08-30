@@ -33,7 +33,7 @@ jobs:
 
       - name: Sync environment
         if: steps.guard.outputs.ready == 'true'
-        run: uv sync --frozen
+        run: uv sync --frozen --extra cpu
 
       - name: Lint
         if: steps.guard.outputs.ready == 'true'
