@@ -20,8 +20,8 @@ thực thi**.
 | Recognition | MS1MV3 RecordIO + 6 benchmark `.bin` | 518 shard webdataset | `recognition/v1_identity_disjoint` | ✅ |
 | Thiết bị (chung 3 nhánh) | — | — | `device/v1` trống | ❌ chưa có ảnh OV5640 |
 
-Tổng dung lượng `raw/` **101 GB**, nằm trên ổ `E:` (`/mnt/e/face-attendance-data`), vào repo
-bằng symlink. Chỉ `manifest.yaml`, `manifest.csv` và `splits/` là file thật trong git.
+Tổng dung lượng `raw/` **223 GB**, nằm trên ổ `E:`, vào repo bằng symlink (§2). Chỉ
+`manifest.yaml`, `manifest.csv` và `splits/` là file thật trong git.
 
 ---
 
@@ -40,21 +40,32 @@ khả năng so số trực tiếp với bảng trong bài báo gốc (KẾ HOẠ
 | NUAA Imposter | HF `akahana/anti-spoofing-nuaaaa` | 376 MB | eval khác miền — ảnh in |
 | UniqueData live | HF `UniqueData/anti-spoofing_Real` | 542 MB | eval khác miền — live đối chứng |
 | UniqueData replay | HF `UniqueData/anti-spoofing_replay` | 702 MB | eval khác miền — màn hình phát lại |
-| AxonData masks | HF `AxonData/face-anti-spoofing-dataset` | 720 MB | eval khác miền — mặt nạ latex 3D |
+| AxonData masks | HF `AxonData/face-anti-spoofing-dataset` | 5.0 GB | eval khác miền — 9 kiểu tấn công |
 | MS1MV3 | HF `gaunernst/ms1mv3-recordio` | 28 GB | train recognition — **mặc định** |
-| Glint360K | HF `gaunernst/glint360k-wds-gz` | 90 MB ⚠️ | dự phòng khi cần thêm ID |
+| Glint360K | HF `gaunernst/glint360k-wds-gz` | 122 GB / 1385 shard | dự phòng khi cần thêm ID |
 | Benchmark nhận diện | HF `gaunernst/face-recognition-eval` | 424 MB | LFW · CFP-FP · AgeDB-30 · CFP-FF · CALFW · CPLFW |
 
-⚠️ **Glint360K mới có 1 trên 1385 shard.** Bản đầy đủ là 122 GB. MS1MV3 là bộ mặc định nên
-điều này chưa chặn việc gì, nhưng `manifest.yaml` của nó chỉ khai một shard trong `expects`,
-nên bước verify của `00_fetch_raw.sh` báo đủ. Coi Glint360K là **chưa tải**, không phải đã có.
+Tổng **223 GB** trên `E:`. Glint360K đủ 1385 shard nhưng chưa dùng: MS1MV3 chạy được cả
+pipeline với 27,4 GB nên để dành Glint360K tới lúc số ID thành giới hạn đo được.
 
-AxonData lấy đúng thư mục `Latex_mask/` (720 MB) chứ không lấy cả bộ 4.94 GB: mặt nạ latex
-3D là kiểu tấn công mà cả bốn bộ phải ký giấy đều không có, phần còn lại của bộ này trùng
-kiểu tấn công với NUAA và UniqueData.
+AxonData mang 9 kiểu tấn công — latex, silicone, textile, mặt nạ giấy 3D, giấy 3D bọc,
+cutout, replay màn hình, replay điện thoại — kèm `Selfies/` làm live đối chứng. **Mặt nạ 3D
+là kiểu tấn công cả bốn bộ phải ký giấy đều không có**, nên bộ này bù đúng chỗ trống lớn
+nhất. Chủ yếu là video: 149 file, chỉ 29 ảnh.
 
 Nhãn landmark chỉ có trên Google Drive, không có mirror HTTP. `drive_id` khai trong
 `manifest.yaml` chứ không gõ vào script (KẾ HOẠCH §4.9).
+
+### Dữ liệu nặng nằm ngoài repo
+
+`raw/`, `interim/`, `processed/`, `cache/` không nằm trên đĩa WSL — đĩa ext4 không nở thêm
+được vì `C:` chỉ còn ~8 GB. Chúng nằm trên `E:`, đường dẫn khai ở khoá `data_drive` trong
+`ml/configs/common/paths.yaml` (§4.9), và vào repo bằng **symlink từng mục**.
+
+`00_fetch_raw.sh` dựng lại toàn bộ symlink mỗi lần chạy, kể cả với `--verify`. Link phải
+phủ **mọi mục có trên ổ**, không phải chỉ những mục `expects` gọi tên: `expects` là mẫu kiểm
+tra, không phải bản kiểm kê. Thiếu link thì dữ liệu vẫn nằm nguyên trên ổ nhưng loader glob
+theo đường dẫn repo sẽ không thấy — và nó không báo lỗi, nó chỉ train trên phần nhỏ hơn.
 
 ---
 
@@ -146,7 +157,7 @@ lúc đó; giải nén sớm là chiếm chỗ mà không dùng.
 | NUAA | `nuaaaa.tar.gz` |
 | UniqueData live | `data/data.tar.gz` |
 | UniqueData replay | `data/videos.tar.gz` |
-| AxonData | `Latex_mask/` — video |
+| AxonData | 9 thư mục video theo kiểu tấn công, kèm `Selfies/` live đối chứng |
 
 ---
 
@@ -232,9 +243,11 @@ Hai loại lỗi được nhắm thẳng, vì cả hai đều **hỏng im lặng
 | Thiếu | Chặn cái gì |
 |---|---|
 | **Ảnh OV5640 tự thu** (E3-T7, E3-T8) | E4-T6 NMSE · toàn bộ calib PTQ của cả ba nhánh · `test_device` |
-| Glint360K 1384 shard còn lại | Không chặn gì — MS1MV3 là mặc định |
 | Giải nén 4 bộ khác miền | E6 eval anti-spoof khác miền |
 | `processed/` | Chưa sinh; tạo lúc train từ `interim/` |
+
+Đã tải đủ nhưng chưa dùng, không tính là thiếu: Glint360K 1385 shard (MS1MV3 là mặc định)
+và 8 kiểu tấn công còn lại của AxonData (chỉ cần ở E6).
 
 Ảnh tự thu là mắt xích quan trọng nhất còn thiếu, và nó cần board thật. Không có nó thì
 INT8 phải calibrate bằng ảnh dataset — khác phân bố cảm biến, và mọi con số accuracy INT8
@@ -255,8 +268,8 @@ Cả ba script bỏ qua phần đã xong, nên chạy lại không mất công. 
 sạch đầu ra rồi làm lại; xoá là bắt buộc vì lần chạy sau có thể sinh ít shard hơn lần trước,
 và shard thừa còn sót lại sẽ bị loader đọc như dữ liệu thật.
 
-Kiểm mà không tải:
+Kiểm mà không tải — cũng là cách dựng lại symlink sau khi clone:
 
 ```bash
-./scripts/00_fetch_raw.sh --verify-only
+./scripts/00_fetch_raw.sh --verify
 ```

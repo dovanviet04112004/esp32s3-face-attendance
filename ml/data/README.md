@@ -16,9 +16,14 @@ trên **`E:`**, thấy từ WSL là `/mnt/e/face-attendance-data`.
 | `data/splits/` | file thật, commit vào git |
 
 Manifest và split ở lại trong repo vì chúng là thứ bắt buộc commit (§4.3). Chỉ phần nặng
-đi ra ngoài. Dựng lại symlink sau khi clone: xem `scripts/00_fetch_raw.sh`.
+đi ra ngoài.
 
-Đường dẫn dùng trong code khai ở `ml/configs/common/paths.yaml`, không hardcode.
+Dựng lại symlink sau khi clone bằng `./scripts/00_fetch_raw.sh --verify` — nó tạo một link
+cho **mọi mục có trên ổ**, không chỉ những mục `expects` gọi tên. Thiếu link thì dữ liệu vẫn
+nằm trên ổ nhưng loader glob theo đường dẫn repo sẽ không thấy, và nó không báo lỗi.
+
+Đường dẫn dùng trong code khai ở `ml/configs/common/paths.yaml`, không hardcode. Ổ chứa dữ
+liệu khai ở khoá `data_drive` của chính file đó.
 
 ## Ba tầng, không bao giờ trộn
 
