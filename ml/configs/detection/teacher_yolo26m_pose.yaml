@@ -35,10 +35,10 @@ data:
   # overflow, it pages to host memory: batch 8 still runs and is 52 times slower
   # per step. Raise this only after measuring again.
   batch_size: 4
-  # Measured on this machine: four readers leave the GPU 72 percent busy, eight
-  # leave it 76 percent and change iterations per second not at all. drvfs
-  # serialises below the worker layer, so the extra readers only add ways to
-  # starve one. Four is the count that has never dropped a read.
+  # Measured: 4, 6 and 8 readers all hold 2.4 iterations a second, and each one
+  # costs three processes because Ultralytics gives the val loader twice the
+  # count. Four leaves the most memory to the page cache, which is what makes
+  # every epoch after the first cheap (KEHOACH section 4.4.1).
   num_workers: 4
   split_files:
     - data/splits/detection/v1/train.txt
