@@ -2,14 +2,18 @@ name: axon_masks
 source_url: https://huggingface.co/datasets/AxonData/face-anti-spoofing-dataset
 access: auto
 license: cc-by-nc-4.0
-downloaded: '2026-08-27'
+downloaded: '2026-08-30'
 verified: true
 expects:
 - Latex_mask
 sha256:
   Latex_mask: <directory>
 counts:
-  files: 10
+  files: 149
+  images: 29
 consumed_by:
 - antispoof/eval
-notes: Video, co mat na latex 3D - kieu tan cong 4 bo goc deu thieu.
+notes: 'Video, 9 kieu tan cong: latex / silicone / textile / 3D paper / wrapped 3D paper
+  mask, cutout, replay display, replay mobile, kem Selfies lam live doi chung. Mat na 3D
+  la kieu tan cong ca 4 bo phai ky giay deu thieu. expects chi giu mot thu muc lam mau
+  kiem tra, khong phai danh sach day du.'

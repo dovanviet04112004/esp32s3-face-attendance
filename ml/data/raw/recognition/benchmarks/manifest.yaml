@@ -2,7 +2,7 @@ name: recognition_benchmarks
 source_url: https://huggingface.co/datasets/gaunernst/face-recognition-eval
 access: auto
 license: research-only
-downloaded: '2026-08-27'
+downloaded: '2026-08-30'
 verified: true
 expects:
 - lfw.bin
@@ -19,7 +19,7 @@ sha256:
   calfw.bin: f643466e875865670a91d6d836dcd0af7ac41730f279ba13de1ed5ae6546c4db
   cplfw.bin: 2d18b80537ef3dce1ba163d8829c5994d1408d4c2a84eee499bba5563d8da2fc
 counts:
-  files: 6
+  files: 7
 consumed_by:
 - recognition/eval
 notes: Dinh dang .bin cua insightface, doc thang bang eval cua arcface_torch. KE HOACH

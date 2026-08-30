@@ -2,14 +2,14 @@ name: nuaa
 source_url: https://huggingface.co/datasets/akahana/anti-spoofing-nuaaaa
 access: auto
 license: research-only
-downloaded: '2026-08-27'
+downloaded: '2026-08-30'
 verified: true
 expects:
 - nuaaaa.tar.gz
 sha256:
   nuaaaa.tar.gz: c0780c6f1e581b720eb3c48faaeef7713748b174233d3fcafa8da716b5c81a3e
 counts:
-  files: 1
+  files: 3
 consumed_by:
 - antispoof/eval
 notes: NUAA Imposter, tan cong bang anh in. Benchmark hoc thuat co bai bao doi chung.

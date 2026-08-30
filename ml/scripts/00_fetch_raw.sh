@@ -112,18 +112,61 @@ else:
 PYTHON
 }
 
-# The dataset directories are symlinks onto the data drive; downloads have to
-# land there, not in the repo checkout.
+# Datasets are hundreds of gigabytes and cannot sit on the WSL disk, so every
+# raw/ entry is a symlink onto the data drive and downloads land there directly.
+DATA_DRIVE="$(python3 -c \
+    "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['data_drive'])" \
+    "${ML_ROOT}/configs/common/paths.yaml")"
+
 payload_dir() {
-    local ds="$1" first depth resolved
-    first="$(python3 -c "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['expects'][0])" \
-        "${ds}/manifest.yaml")"
-    resolved="$(readlink -f "${ds}/${first}")"
-    # Walk up one level per path component, so a nested expects entry such as
-    # train/label.txt still resolves to the dataset root and not to train/.
-    depth="$(awk -F/ '{print NF}' <<< "${first}")"
-    while (( depth-- > 0 )); do resolved="$(dirname "${resolved}")"; done
-    echo "${resolved}"
+    local ds="$1"
+    echo "${DATA_DRIVE}/raw/${ds#"${RAW}/"}"
+}
+
+# One symlink per top-level entry on the drive. Deriving the list from expects
+# instead would link only what that list happens to name, leaving the other 1384
+# glint360k shards unreachable from the repo path a loader globs.
+link_payload() {
+    local ds="$1" src
+    src="$(payload_dir "${ds}")"
+    python3 - "${ds}" "${src}" <<'PYTHON'
+import os
+import sys
+from pathlib import Path
+
+dest, src = Path(sys.argv[1]), Path(sys.argv[2])
+if not src.is_dir():
+    sys.exit(0)
+dest.mkdir(parents=True, exist_ok=True)
+
+hub_bookkeeping = {".cache", ".gitattributes", ".gitkeep", "README.md"}
+own = {"manifest.yaml", "manifest.csv"}
+
+linked: dict[str, Path] = {}
+for child in list(dest.iterdir()):
+    if not child.is_symlink():
+        continue
+    if not child.exists():
+        child.unlink()
+        continue
+    linked[os.path.realpath(child)] = child
+
+made = 0
+for entry in sorted(src.iterdir()):
+    if entry.name in hub_bookkeeping or entry.name in own:
+        continue
+    # NTFS folds case, so the drive reports Data where the loader opens data.
+    # Keeping the existing link avoids a second name for one directory.
+    if os.path.realpath(entry) in linked:
+        continue
+    link = dest / entry.name
+    if link.is_symlink() or link.exists():
+        continue
+    link.symlink_to(entry)
+    made += 1
+
+print(f"  linked {made} new entry(ies)" if made else "  links already complete")
+PYTHON
 }
 
 fetch_widerface() {
@@ -221,6 +264,7 @@ for entry in "${DATASETS[@]}"; do
     [[ -f "${dir}/manifest.yaml" ]] || { warn "no manifest at ${dir}"; continue; }
 
     if [[ "${VERIFY_ONLY}" -eq 0 ]]; then
+        mkdir -p "$(payload_dir "${dir}")"
         case "${access}" in
             auto) "fetch_${name}" ;;
             hf)     fetch_hf "${dir}" "${repo}" ;;
@@ -228,6 +272,7 @@ for entry in "${DATASETS[@]}"; do
         esac
     fi
     log "${name}"
+    link_payload "${dir}"
     if ! record_manifest "${dir}"; then
         incomplete=1
     fi

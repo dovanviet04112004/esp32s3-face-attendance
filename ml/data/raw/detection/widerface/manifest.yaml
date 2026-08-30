@@ -2,7 +2,7 @@ name: widerface
 source_url: https://huggingface.co/datasets/wider_face
 access: auto
 license: research-only
-downloaded: '2026-08-27'
+downloaded: '2026-08-30'
 verified: true
 expects:
 - WIDER_train
@@ -15,7 +15,7 @@ sha256:
   WIDER_test: <directory>
   wider_face_split: <directory>
 counts:
-  files: 32210
+  files: 32214
   images: 32203
 consumed_by:
 - detection/teacher

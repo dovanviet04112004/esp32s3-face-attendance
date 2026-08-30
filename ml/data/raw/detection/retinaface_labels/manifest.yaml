@@ -2,7 +2,7 @@ name: retinaface_labels
 source_url: https://github.com/deepinsight/insightface/tree/master/detection/retinaface
 access: gdrive
 license: research-only
-downloaded: '2026-08-27'
+downloaded: '2026-08-30'
 verified: true
 expects:
 - train/label.txt
@@ -13,7 +13,7 @@ sha256:
   val/label.txt: 4d42a89243b0f03135dcfbded8a1f81022ab919377b1a88011d6bdce13077c00
   test/label.txt: f6edc7c1303024134a16a9f542c6a60350aa60b1a1c55235fcb736ed04eb4c26
 counts:
-  files: 3
+  files: 4
 consumed_by:
 - detection/teacher
 - detection/student
