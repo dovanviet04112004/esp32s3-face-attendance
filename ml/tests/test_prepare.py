@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import struct
 import tarfile
@@ -10,7 +11,14 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from facepipe.data.prepare.celeba_spoof_parquet import scaled_box, split_of
+from facepipe.data.prepare.celeba_spoof_parquet import (
+    CROP_SIZE,
+    Sample,
+    encode_crops,
+    scaled_box,
+    split_of,
+)
+from facepipe.data.prepare.images_to_wds import ShardWriter, read_shard
 from facepipe.data.prepare.device_index import build_rows, parse_name, write_manifest
 from facepipe.data.prepare.recordio_to_wds import (
     IR_HEADER,
@@ -220,3 +228,47 @@ def test_device_manifest_has_the_columns_the_plan_names(tmp_path: Path) -> None:
 def test_parse_name_rejects_a_name_without_a_sequence() -> None:
     assert parse_name("s01_0001") == ("s01", "0001")
     assert parse_name("nosequence") == ("", "")
+
+
+def test_a_record_keeps_every_member_written_under_one_key(tmp_path: Path) -> None:
+    with ShardWriter(tmp_path / "shards", shard_size=2) as writer:
+        writer.add({"tight.jpg": b"T0", "wide.jpg": b"W0", "json": b"{}"})
+        writer.add({"tight.jpg": b"T1", "wide.jpg": b"W1", "json": b"{}"})
+        writer.add({"tight.jpg": b"T2", "wide.jpg": b"W2", "json": b"{}"})
+
+    shards = sorted((tmp_path / "shards").glob("*.tar"))
+    assert len(shards) == 2
+    records = [record for shard in shards for record in read_shard(shard)]
+    assert [r["tight.jpg"] for r in records] == [b"T0", b"T1", b"T2"]
+    assert [r["wide.jpg"] for r in records] == [b"W0", b"W1", b"W2"]
+
+
+def test_reader_groups_on_the_first_dot_like_the_recognition_shards(tmp_path: Path) -> None:
+    shard = tmp_path / "s.tar"
+    with tarfile.open(shard, "w") as archive:
+        for key, image, label in (("000000000", b"A", b"7"), ("000000001", b"B", b"9")):
+            for name, payload in ((f"{key}.jpg", image), (f"{key}.cls", label)):
+                info = tarfile.TarInfo(name)
+                info.size = len(payload)
+                archive.addfile(info, io.BytesIO(payload))
+
+    records = list(read_shard(shard))
+    assert [(r["jpg"], r["cls"]) for r in records] == [(b"A", b"7"), (b"B", b"9")]
+
+
+def test_both_crop_scales_travel_in_one_record(tmp_path: Path) -> None:
+    source = tmp_path / "face.jpg"
+    make_image(source, (200, 200))
+    sample = Sample(
+        name="face",
+        image_bytes=source.read_bytes(),
+        box_xyxy=(80, 80, 120, 120),
+        is_spoof=True,
+        split="train",
+    )
+    members = encode_crops(sample, size=CROP_SIZE)
+    assert set(members) == {"tight.jpg", "wide.jpg", "json"}
+    assert json.loads(members["json"])["label"] == 1
+    for name in ("tight.jpg", "wide.jpg"):
+        with Image.open(io.BytesIO(members[name])) as patch:
+            assert patch.size == (CROP_SIZE, CROP_SIZE)

@@ -1,9 +1,12 @@
-"""CelebA-Spoof parquet shards to face crops at two scales.
+"""CelebA-Spoof parquet shards to face crops at two scales, packed into shards.
 
 MiniFASNet trains on two views of the same face: a tight 1.0x crop and a 2.7x
 context crop. The wide crop carries what separates a live face from a photo of
 one, the screen bezel and the paper edge, so cropping tight only throws away the
 signal the branch depends on.
+
+Both scales go in one record, so an epoch over 419,935 faces costs that many
+reads rather than twice as many opens (KEHOACH section 4.4.1).
 
 The mirror stores three columns: the encoded image, a bounding box and a class.
 Boxes are absolute pixel [x1, y1, x2, y2] in the image's own frame, verified
@@ -19,12 +22,21 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import batched
+from multiprocessing import Pool
 from pathlib import Path
 
-CROP_SCALES = (1.0, 2.7)
+from .images_to_wds import ShardWriter
+
+CROP_SCALES = {"tight": 1.0, "wide": 2.7}
 CROP_SIZE = 128
+CROP_QUALITY = 95
+# Bounds how many undecoded source images are in flight across the pool at once.
+ENCODE_BATCH = 256
 IMAGE_COLUMN = "Filepath"
 BBOX_COLUMN = "Bbox"
 CLASS_COLUMN = "Class"
@@ -99,41 +111,80 @@ def scaled_box(
     )
 
 
-def crop_sample(sample: Sample, out_root: Path, size: int = CROP_SIZE) -> list[Path]:
-    """Write one crop per scale under <scale>/<split>/<label>/."""
+def encode_crops(sample: Sample, size: int = CROP_SIZE) -> dict[str, bytes]:
+    """Both scales of one face plus its label, as the members of one record."""
     from PIL import Image
 
-    written: list[Path] = []
+    members: dict[str, bytes] = {}
     with Image.open(io.BytesIO(sample.image_bytes)) as image:
         image = image.convert("RGB")
-        label = "spoof" if sample.is_spoof else "live"
-        for scale in CROP_SCALES:
+        for name, scale in CROP_SCALES.items():
             box = scaled_box(sample.box_xyxy, scale, image.width, image.height)
             patch = image.crop(box).resize((size, size), Image.BILINEAR)
-            target = out_root / f"img_{scale:g}x" / sample.split / label / f"{sample.name}.jpg"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            patch.save(target, quality=95)
-            written.append(target)
-    return written
+            buffer = io.BytesIO()
+            patch.save(buffer, format="JPEG", quality=CROP_QUALITY)
+            members[f"{name}.jpg"] = buffer.getvalue()
+
+    meta = {"name": sample.name, "label": int(sample.is_spoof), "split": sample.split}
+    members["json"] = json.dumps(meta).encode()
+    return members
 
 
-def run(root: Path, out_root: Path, size: int = CROP_SIZE, limit: int | None = None) -> dict:
-    """Crop every annotated face in every shard."""
-    stats = {"cropped": 0, "skipped": 0, "live": 0, "spoof": 0, "shards": 0}
+def _encode_task(payload: tuple[Sample, int]) -> dict[str, bytes] | None:
+    sample, size = payload
+    try:
+        return encode_crops(sample, size)
+    except OSError:
+        return None
+
+
+def iter_samples(root: Path, stats: dict, limit: int | None) -> Iterator[Sample]:
+    """Stream every annotated row of every parquet shard, stopping at limit."""
     done = 0
     for shard in shard_paths(root):
         stats["shards"] += 1
         for sample in read_shard(shard):
             if limit is not None and done >= limit:
-                return stats
-            try:
-                crop_sample(sample, out_root, size)
-            except OSError:
-                stats["skipped"] += 1
-                continue
-            stats["cropped"] += 1
-            stats["spoof" if sample.is_spoof else "live"] += 1
+                return
+            yield sample
             done += 1
+
+
+def run(
+    root: Path,
+    out_root: Path,
+    size: int = CROP_SIZE,
+    limit: int | None = None,
+    workers: int = 1,
+) -> dict:
+    """Crop every annotated face into per-split shards under out_root.
+
+    Decoding and re-encoding dominate, so they run across a pool while a single
+    writer keeps records in parquet order: the shard index is a position, and a
+    set of shards written out of order would index a different dataset.
+    """
+    stats = {"cropped": 0, "skipped": 0, "live": 0, "spoof": 0, "shards": 0}
+    writers: dict[str, ShardWriter] = {}
+    pool = Pool(workers) if workers > 1 else None
+    try:
+        for batch in batched(iter_samples(root, stats, limit), ENCODE_BATCH):
+            payloads = [(sample, size) for sample in batch]
+            encoded = pool.map(_encode_task, payloads) if pool else map(_encode_task, payloads)
+            for sample, members in zip(batch, encoded, strict=True):
+                if members is None:
+                    stats["skipped"] += 1
+                    continue
+                if sample.split not in writers:
+                    writers[sample.split] = ShardWriter(out_root / sample.split)
+                writers[sample.split].add(members)
+                stats["cropped"] += 1
+                stats["spoof" if sample.is_spoof else "live"] += 1
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
+        for writer in writers.values():
+            writer.close()
     return stats
 
 
@@ -143,11 +194,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--size", type=int, default=CROP_SIZE)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     args = parser.parse_args(argv)
 
-    stats = run(args.root, args.out, args.size, args.limit)
+    stats = run(args.root, args.out, args.size, args.limit, args.workers)
     print(
-        f"{args.out}: {stats['cropped']} face(s) from {stats['shards']} shard(s) "
+        f"{args.out}: {stats['cropped']} face(s) from {stats['shards']} parquet shard(s) "
         f"({stats['live']} live, {stats['spoof']} spoof), {stats['skipped']} undecodable"
     )
     return 0
