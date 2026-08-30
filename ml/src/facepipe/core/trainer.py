@@ -10,7 +10,7 @@ import copy
 import math
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -243,6 +243,11 @@ class Trainer:
         if isinstance(batch, tuple | list):
             moved = [self._to_device(v) for v in batch]
             return type(batch)(moved) if isinstance(batch, tuple) else moved
+        # Branches carry their targets in a dataclass. Left alone it would stay
+        # on the host while the images move, and the loss would fail on device.
+        if is_dataclass(batch) and not isinstance(batch, type):
+            moved_fields = {f.name: self._to_device(getattr(batch, f.name)) for f in fields(batch)}
+            return replace(batch, **moved_fields)
         return batch
 
     @staticmethod

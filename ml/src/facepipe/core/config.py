@@ -108,11 +108,20 @@ class LossSpec(Section):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class StageSpec(Section):
+    """One phase of a progressive schedule: which terms are on, and how strongly."""
+
+    epochs: int = Field(gt=0)
+    losses: list[str] = Field(default_factory=list)
+    task_loss_weight: float = 1.0
+
+
 class DistillSection(Section):
     enabled: bool = False
     losses: list[LossSpec] = Field(default_factory=list)
     feature_layers: list[str] = Field(default_factory=list)
     task_loss_weight: float = 1.0
+    stages: list[StageSpec] = Field(default_factory=list)
 
 
 class LogSection(Section):

@@ -15,7 +15,7 @@ from typing import Any
 import torch
 from torch import nn
 
-from facepipe.core.config import DistillSection
+from facepipe.core.config import DistillSection, StageSpec
 from facepipe.core.hooks import FeatureHooks
 from facepipe.core.registry import LOSSES
 
@@ -74,6 +74,30 @@ class LossTerm:
     fn: nn.Module
 
 
+class StageSchedule:
+    """Which distillation terms are live at a given epoch.
+
+    Turning every term on at once lets the task loss pull the student towards
+    the labels before it has learned anything from the teacher's features, and
+    the feature term then spends the run fighting it (KEHOACH section 3, layer 2).
+    An empty schedule means every term is always on.
+    """
+
+    def __init__(self, stages: list[StageSpec]) -> None:
+        self.stages = stages
+        self.boundaries: list[int] = []
+        total = 0
+        for stage in stages:
+            total += stage.epochs
+            self.boundaries.append(total)
+
+    def at(self, epoch: int) -> StageSpec | None:
+        for boundary, stage in zip(self.boundaries, self.stages, strict=True):
+            if epoch < boundary:
+                return stage
+        return self.stages[-1] if self.stages else None
+
+
 class DistillLossSet(nn.Module):
     """Weighted sum of distillation terms, reported per term."""
 
@@ -98,10 +122,13 @@ class DistillLossSet(nn.Module):
         batch: Any = None,
         student_features: Mapping[str, torch.Tensor] | None = None,
         teacher_features: Mapping[str, torch.Tensor] | None = None,
+        only: set[str] | None = None,
     ) -> tuple[torch.Tensor, dict[str, float]]:
         total: torch.Tensor | None = None
         parts: dict[str, float] = {}
         for term in self.terms:
+            if only is not None and term.name not in only:
+                continue
             value = term.fn(
                 student_out,
                 teacher_out,
@@ -148,6 +175,7 @@ class Distiller(nn.Module):
         task_loss_weight: float = 1.0,
         student_layers: list[str] | None = None,
         teacher_layers: list[str] | None = None,
+        schedule: StageSchedule | None = None,
     ) -> None:
         super().__init__()
         self.student = student
@@ -155,6 +183,8 @@ class Distiller(nn.Module):
         self.loss_set = loss_set
         self.task_loss = task_loss
         self.task_loss_weight = task_loss_weight
+        self.schedule = schedule
+        self.epoch = 0
         self._student_hooks = (
             FeatureHooks(student, student_layers).attach() if student_layers else None
         )
@@ -175,10 +205,14 @@ class Distiller(nn.Module):
         parts: dict[str, float] = {}
         total: torch.Tensor | None = None
 
+        stage = self.schedule.at(self.epoch) if self.schedule is not None else None
+        task_weight = self.task_loss_weight if stage is None else stage.task_loss_weight
+        active = set(stage.losses) if stage is not None else None
+
         if self.task_loss is not None:
             task_value = self.task_loss(student_out, batch)
             parts["task"] = float(task_value.detach())
-            total = task_value * self.task_loss_weight
+            total = task_value * task_weight
 
         if self.distilling:
             teacher_out = self.teacher(inputs)
@@ -188,6 +222,7 @@ class Distiller(nn.Module):
                 batch,
                 student_features=self._features(self._student_hooks),
                 teacher_features=self._features(self._teacher_hooks),
+                only=active,
             )
             parts.update({f"kd_{k}": v for k, v in distill_parts.items()})
             total = distill_value if total is None else total + distill_value
