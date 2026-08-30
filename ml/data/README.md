@@ -63,8 +63,11 @@ lighting, distance_cm, is_spoof, spoof_type, capture_date`.
 
 Mỗi split kèm một `SPLIT.md` ghi quy tắc, seed, lệnh sinh, sha256 từng file và số lượng ID.
 
-Anti-spoof và recognition phải **identity-disjoint**: một người không được xuất hiện ở cả
-train và val/test.
+Recognition phải **identity-disjoint**: một người không được xuất hiện ở cả train và val.
+Anti-spoof giữ nguyên chia train/valid/test của upstream — mirror CelebA-Spoof không mang
+nhãn identity nên không tự kiểm được, và chia lại là phá luôn sự tách của giao thức gốc.
+
+Số đo của từng tập và cách sinh ra chúng ghi ở `docs/DU_LIEU.md`.
 
 `calib_*.txt` và `test_device.txt` phải không giao nhau — `ml/tests/test_splits.py` kiểm
 tự động. Calibrate INT8 trên chính ảnh dùng để test thì con số nào cũng đẹp, và đó là loại
