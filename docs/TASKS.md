@@ -86,6 +86,7 @@ E1 nền repo ──► E2 ml/core ──► E3 dữ liệu
 | E3-T7 | Thu ≥2.000 ảnh OV5640 tự thu, đủ điều kiện sáng và khoảng cách | `manifest.csv` đầy đủ cột | E1-T8 |
 | E3-T8 | Thu tập spoof tự thu: in ảnh, màn hình điện thoại, màn hình laptop, mặt nạ giấy | ≥500 ảnh mỗi loại | E3-T7 |
 | E3-T9 | `data/transforms/sensor_sim.py` — mô phỏng nhiễu OV5640 | Ảnh sau augment giống ảnh thật khi so histogram | E3-T7 |
+| **E3-T11** | **Bật `torch.compile` cho mọi run chưa chạy.** Đo được: 1 luồng Python ghim 100% một nhân trong khi GPU chỉ 66–71% — nghẽn ở chi phí phóng lệnh, không ở đĩa cũng không ở GPU. Model student nhỏ hơn teacher nên tỉ lệ chi phí này còn cao hơn. **Bắt buộc bật cho CẢ HAI arm** của mỗi bảng §3.7, vì compile đổi kernel nên đổi số học ở chữ số cuối | Đo it/s trước/sau trên cùng cấu hình; nếu OOM (VRAM 4 GB) thì ghi lại và dùng `mode="default"` thay `reduce-overhead` | E4-T2 |
 | **E3-T10** | **Tầng `fast_drive`** (KẾ HOẠCH §4.4.1): ảnh ext4 loop trên `E:`, khai `/etc/fstab`; chuyển sang **chỉ tập nào vừa page cache** — ảnh WIDER + bố cục Ultralytics, nối bằng **hardlink** thay symlink. Shard anti-spoof và recognition ở lại `cold_drive` | `/data` còn mount sau `wsl --shutdown`; đo được ảnh/giây **cả cache lạnh lẫn nóng** trên cùng một tập, và MB/s tuần tự trên cả hai ổ | E3-T1 |
 
 ---
