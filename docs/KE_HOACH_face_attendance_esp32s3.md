@@ -428,6 +428,12 @@ nguyên seed và `split.lock` thì mọi arm mới so được thẳng với hai
 | Augment, optimizer, lịch learning rate | Thời gian train mỗi bước |
 | Số epoch, tiêu chí chọn checkpoint tốt nhất | |
 | Tập test cuối để báo cáo | |
+| `train.compile` — bật hay tắt | |
+
+`train.compile` nằm ở cột trái vì `torch.compile` gộp và thay kernel, nên đổi kết quả ở
+chữ số cuối. Hai arm khác nhau ở khoá này thì chênh lệch đo được lẫn với chênh lệch do
+kernel, không tách ra được. Giá trị của nó có trong `config.resolved.yaml` của từng run —
+đó là chỗ để kiểm lại khi đọc bảng.
 
 Arm có KD tốn thêm một lần forward của teacher mỗi bước. Giữ **cùng số epoch** rồi **ghi rõ chi phí chênh lệch** — đó là cách so chuẩn cho báo cáo, đừng cân bằng bằng GPU-hour rồi cho A0 nhiều epoch hơn.
 
