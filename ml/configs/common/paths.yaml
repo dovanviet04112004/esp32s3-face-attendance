@@ -1,6 +1,11 @@
 # Dataset roots. Never hardcode a path in code; point these at wherever the
 # data actually lives, symlinking raw/ to another disk when space runs out.
 
+# The only machine-specific value here. Datasets are hundreds of gigabytes and
+# do not fit on the WSL ext4 disk, so every raw/ entry is a symlink onto this
+# drive and 00_fetch_raw.sh downloads straight into it.
+data_drive: /mnt/e/face-attendance-data
+
 data_root: data
 raw_root: data/raw
 interim_root: data/interim
@@ -16,17 +21,21 @@ detection:
 
 antispoof:
   celeba_spoof: data/raw/antispoof/celeba_spoof
-  oulu_npu: data/raw/antispoof/oulu_npu
-  casia_mfsd: data/raw/antispoof/casia_mfsd
-  replay_attack: data/raw/antispoof/replay_attack
-  msu_mfsd: data/raw/antispoof/msu_mfsd
   crops: data/interim/antispoof/celeba_spoof_crops
+  # Cross-domain evaluation only, never training: these replace the four gated
+  # datasets the plan dropped (KEHOACH section 1.2).
+  xdomain:
+    nuaa: data/raw/antispoof/xdomain/nuaa
+    unique_live: data/raw/antispoof/xdomain/unique_live
+    unique_replay: data/raw/antispoof/xdomain/unique_replay
+    axon_masks: data/raw/antispoof/xdomain/axon_masks
 
 recognition:
-  glint360k: data/raw/recognition/glint360k
   ms1mv3: data/raw/recognition/ms1mv3
+  glint360k: data/raw/recognition/glint360k
   benchmarks: data/raw/recognition/benchmarks
-  shards: data/interim/recognition/glint360k_shards
+  shards: data/interim/recognition/ms1mv3_shards
+  identities: data/interim/recognition/identities.txt
 
 device:
   ov5640: data/raw/device/ov5640
