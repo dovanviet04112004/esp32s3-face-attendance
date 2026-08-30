@@ -132,7 +132,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.resume:
         from ultralytics import YOLO
 
-        YOLO(str(args.resume / "ultralytics" / "weights" / "last.pt")).train(resume=True)
+        # Ultralytics restores every argument from the checkpoint. These few it
+        # lets a resume change, so the config stays the one place they live.
+        resumed = load_config(args.cfg, args.set)
+        YOLO(str(args.resume / "ultralytics" / "weights" / "last.pt")).train(
+            resume=True,
+            workers=resumed.data.num_workers,
+            batch=resumed.data.batch_size,
+        )
         return 0
 
     cfg = load_config(args.cfg, args.set)

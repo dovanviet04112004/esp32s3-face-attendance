@@ -160,6 +160,8 @@ def test_resume_reopens_the_last_checkpoint_of_the_named_run(tmp_path, monkeypat
     __import__("sys").modules["ultralytics"].YOLO = FakeYolo
 
     run = tmp_path / "20260830-1028_abc1234_def567"
-    assert module.main(["--cfg", "unused.yaml", "--resume", str(run)]) == 0
+    cfg = Path(__file__).resolve().parents[1] / "configs/detection/teacher_yolo26m_pose.yaml"
+    assert module.main(["--cfg", str(cfg), "--resume", str(run)]) == 0
     assert seen["weights"] == str(run / "ultralytics" / "weights" / "last.pt")
-    assert seen["kwargs"] == {"resume": True}
+    assert seen["kwargs"]["resume"] is True
+    assert set(seen["kwargs"]) == {"resume", "workers", "batch"}
