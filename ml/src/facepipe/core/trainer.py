@@ -29,6 +29,7 @@ from facepipe.core.seed import capture_rng_state, restore_rng_state
 CKPT_LAST = "last.pth"
 CKPT_BEST = "best.pth"
 CKPT_FORMAT_VER = 1
+RESUMED_FROM_NAME = "resumed_from.txt"
 
 
 def resolve_device(name: str = "auto") -> torch.device:
@@ -127,6 +128,7 @@ class Trainer:
         self.state = TrainState(best_is_lower=best_is_lower)
         self.state.best_metric = math.inf if best_is_lower else -math.inf
 
+        self.resumed_from: str | None = None
         if cfg.train.resume is not None:
             self.load_checkpoint(Path(cfg.train.resume))
 
@@ -271,6 +273,7 @@ class Trainer:
             "scaler": self.scaler.state_dict(),
             "rng": capture_rng_state(),
             "run_id": self.run_dir.run_id,
+            "resumed_from": self.resumed_from,
         }
         if self.scheduler is not None:
             payload["scheduler"] = self.scheduler.state_dict()
@@ -303,6 +306,14 @@ class Trainer:
             self.ema.load_state_dict(payload["ema"])
         if "rng" in payload:
             restore_rng_state(payload["rng"])
+
+        # A run_id carries a timestamp, so continuing lands in a new directory.
+        # Recording the parent keeps the history from breaking across the two.
+        self.resumed_from = payload.get("run_id")
+        if self.resumed_from:
+            (self.run_dir.path / RESUMED_FROM_NAME).write_text(
+                f"{self.resumed_from}\n", encoding="utf-8"
+            )
 
         self.state = TrainState(
             epoch=int(payload["epoch"]),

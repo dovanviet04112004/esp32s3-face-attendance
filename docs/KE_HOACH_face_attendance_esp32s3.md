@@ -947,6 +947,24 @@ Thứ tự ở §8 là thứ tự **bắt tay vào việc**, không phải thứ
 
 **Cách "lục lại" sau 6 tháng**: mở `contracts/models.lock.json` → lấy `run_id` → mở đúng thư mục run → có `config.resolved.yaml` (biết hyperparameter), `split.lock` (biết train trên tập nào), `env.txt` (biết môi trường), `ckpt/` (có weight). Không phải đoán, không phải hỏi lại ai.
 
+##### Mọi lần train phải dừng và chạy tiếp được
+
+Fine-tune teacher chạy hàng chục giờ trên một máy laptop dùng chung. Một lần mất
+điện, một lần cần máy làm việc khác, một cú đọc đĩa bị rớt — không cái nào được
+phép bắt train lại từ epoch 0. **Điểm vào train nào chạy quá một giờ thì bắt buộc
+có đường dừng và chạy tiếp.**
+
+| Ràng buộc | Nội dung |
+|---|---|
+| Nhịp ghi checkpoint | Cuối **mỗi epoch**. Dừng giữa chừng mất nhiều nhất 1 epoch |
+| Ghi checkpoint phải nguyên tử | Ghi ra `.tmp` rồi `rename`. Chết lúc đang ghi không được để lại file hỏng |
+| Resume phải khôi phục đủ | weight · optimizer · scaler · scheduler · EMA · **RNG state** · epoch · step · best metric · history |
+| Truy vết dòng dõi | Run tiếp nằm ở thư mục mới (run_id có dấu thời gian), nên nó **phải ghi lại run_id của run cha** — không thì lịch sử đứt đoạn giữa hai thư mục |
+
+RNG state đi kèm checkpoint là bắt buộc chứ không phải làm cho đẹp: thiếu nó thì
+run chạy tiếp bốc mẫu augment khác hẳn run không hề dừng, và hai lần train cùng
+seed ra hai kết quả khác nhau — bảng đối chứng §3.7 mất ý nghĩa ngay.
+
 ---
 
 ### 4.5 `firmware/` — ESP-IDF

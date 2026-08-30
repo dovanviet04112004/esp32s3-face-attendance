@@ -142,3 +142,24 @@ def test_a_face_running_off_the_frame_keeps_its_image() -> None:
     off = {"bbox": [0.0, 0.0, 10.0, 10.0], "keypoints": [106.8, 103.3, 1, *LANDMARKS[3:]]}
     points = [float(v) for v in to_yolo_line(off, 100, 100).split()[5:]]
     assert max(points[0::3] + points[1::3]) <= 1.01
+
+
+def test_resume_reopens_the_last_checkpoint_of_the_named_run(tmp_path, monkeypatch) -> None:
+    import facepipe.tasks.detection.teacher.finetune_widerface as module
+
+    seen: dict[str, object] = {}
+
+    class FakeYolo:
+        def __init__(self, weights: str) -> None:
+            seen["weights"] = weights
+
+        def train(self, **kwargs: object) -> None:
+            seen["kwargs"] = kwargs
+
+    monkeypatch.setitem(__import__("sys").modules, "ultralytics", type(module)("ultralytics"))
+    __import__("sys").modules["ultralytics"].YOLO = FakeYolo
+
+    run = tmp_path / "20260830-1028_abc1234_def567"
+    assert module.main(["--cfg", "unused.yaml", "--resume", str(run)]) == 0
+    assert seen["weights"] == str(run / "ultralytics" / "weights" / "last.pt")
+    assert seen["kwargs"] == {"resume": True}

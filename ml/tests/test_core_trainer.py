@@ -14,7 +14,7 @@ from facepipe.core.logger import RunLogger
 from facepipe.core.run_dir import RunDir, create_run_dir
 from facepipe.core.scheduler import build_optimizer, build_scheduler
 from facepipe.core.seed import seed_everything
-from facepipe.core.trainer import CKPT_LAST, ModelEma, Trainer
+from facepipe.core.trainer import CKPT_LAST, RESUMED_FROM_NAME, ModelEma, Trainer
 
 
 class InterruptError(RuntimeError):
@@ -176,3 +176,29 @@ def test_ema_state_survives_a_round_trip(tiny_model) -> None:
     restored.load_state_dict(ema.state_dict())
     assert restored.decay == pytest.approx(0.9)
     assert torch.allclose(restored.module.head.weight, ema.module.head.weight)
+
+
+def test_resume_records_the_run_it_continued(config_file, tmp_path, tiny_loader) -> None:
+    from tests.conftest import TinyNet
+
+    cfg = _cfg(config_file, tmp_path)
+    first = create_run_dir(cfg)
+    _build(cfg, first, TinyNet(), tiny_loader).fit()
+
+    resumed_cfg = _cfg(config_file, tmp_path, f"train.resume={first.ckpt_dir / CKPT_LAST}")
+    second = create_run_dir(resumed_cfg)
+    resumed = _build(resumed_cfg, second, TinyNet(), tiny_loader)
+
+    assert resumed.resumed_from == first.run_id
+    lineage = second.path / RESUMED_FROM_NAME
+    assert lineage.read_text(encoding="utf-8").strip() == first.run_id
+
+
+def test_a_fresh_run_claims_no_parent(config_file, tmp_path, tiny_loader) -> None:
+    from tests.conftest import TinyNet
+
+    cfg = _cfg(config_file, tmp_path)
+    run = create_run_dir(cfg)
+    trainer = _build(cfg, run, TinyNet(), tiny_loader)
+    assert trainer.resumed_from is None
+    assert not (run.path / RESUMED_FROM_NAME).exists()
