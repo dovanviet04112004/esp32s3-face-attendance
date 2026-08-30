@@ -16,7 +16,7 @@ thực thi**.
 | Nhánh | raw | interim | split | Chạy train được chưa |
 |---|---|---|---|---|
 | Detection | WIDER FACE + nhãn RetinaFace | COCO json, 2 file | `detection/v1` | ✅ |
-| Anti-spoof | CelebA-Spoof parquet + 4 bộ khác miền | 1.051.728 crop, 2 tỉ lệ | `antispoof/v1_upstream` | ✅ |
+| Anti-spoof | CelebA-Spoof parquet + 4 bộ khác miền | 525.864 record, 2 tỉ lệ/record | `antispoof/v1_upstream` | ✅ |
 | Recognition | MS1MV3 RecordIO + 6 benchmark `.bin` | 518 shard webdataset | `recognition/v1_identity_disjoint` | ✅ |
 | Thiết bị (chung 3 nhánh) | — | — | `device/v1` trống | ❌ chưa có ảnh OV5640 |
 
@@ -105,10 +105,10 @@ mẫu, và bằng test `test_box_is_read_as_corners_not_width_height`.
 
 Mỗi mặt cắt hai lần, cùng tâm, resize về **128×128**:
 
-| Tỉ lệ | Giữ lại cái gì |
-|---|---|
-| `img_1x/` | mặt sát viền — kết cấu da, moiré của màn hình |
-| `img_2.7x/` | cả bối cảnh — mép giấy in, khung màn hình, bàn tay cầm ảnh |
+| Member | Tỉ lệ | Giữ lại cái gì |
+|---|---|---|
+| `tight.jpg` | 1,0× | mặt sát viền — kết cấu da, moiré của màn hình |
+| `wide.jpg` | 2,7× | cả bối cảnh — mép giấy in, khung màn hình, bàn tay cầm ảnh |
 
 MiniFASNet cần cả hai: cắt sát thì vứt mất chính tín hiệu phân biệt mặt thật với ảnh chụp mặt.
 
@@ -119,8 +119,10 @@ MiniFASNet cần cả hai: cắt sát thì vứt mất chính tín hiệu phân 
 | test | 16.473 | 42.718 | 59.191 |
 | **Cộng** | 177.262 | 348.602 | **525.864** |
 
-525.864 mặt × 2 tỉ lệ = **1.051.728 file**. Tỉ lệ spoof/live ≈ 1,97 — bộ này lệch về phía
-tấn công, cần cân lại bằng sampler lúc train chứ không sửa ở tầng dữ liệu.
+525.864 mặt, mỗi mặt **một record** mang cả hai tỉ lệ — không phải 1.051.728 file lẻ, vì ở
+tốc độ mở file của ổ dữ liệu thì riêng việc mở đã tốn ~93 phút mỗi epoch (KẾ HOẠCH §4.4.1).
+Tỉ lệ spoof/live ≈ 1,97 — bộ này lệch về phía tấn công, cần cân lại bằng sampler lúc train
+chứ không sửa ở tầng dữ liệu.
 
 Split lấy từ **tiền tố tên shard** (`train-`, `valid-`, `test-`), là cách duy nhất còn giữ
 được chia của upstream: mirror đã bỏ nhãn identity.
