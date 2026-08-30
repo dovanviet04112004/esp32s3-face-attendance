@@ -35,6 +35,17 @@ def read_split(path: Path) -> set[str]:
     return {line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()}
 
 
+def unit(value: float) -> float:
+    """Clamp a normalised coordinate into [0, 1].
+
+    WIDER FACE annotates faces that run off the edge of the frame, so a few
+    landmarks land outside it. Ultralytics drops the whole label file when a
+    keypoint exceeds 1.01, taking every other face in that image with it;
+    clamping keeps the image and moves the point to the border it sits behind.
+    """
+    return min(1.0, max(0.0, value))
+
+
 def to_yolo_line(annotation: dict, width: int, height: int) -> str:
     """One label row: class, normalised box centre and size, then five points.
 
@@ -45,15 +56,15 @@ def to_yolo_line(annotation: dict, width: int, height: int) -> str:
     x, y, w, h = annotation["bbox"]
     parts = [
         f"{FACE_CLASS}",
-        f"{(x + w / 2) / width:.6f}",
-        f"{(y + h / 2) / height:.6f}",
-        f"{w / width:.6f}",
-        f"{h / height:.6f}",
+        f"{unit((x + w / 2) / width):.6f}",
+        f"{unit((y + h / 2) / height):.6f}",
+        f"{unit(w / width):.6f}",
+        f"{unit(h / height):.6f}",
     ]
     keypoints = annotation.get("keypoints") or [0.0] * (LANDMARK_COUNT * 3)
     for index in range(LANDMARK_COUNT):
         px, py, visible = keypoints[index * 3 : index * 3 + 3]
-        parts += [f"{px / width:.6f}", f"{py / height:.6f}", f"{int(visible)}"]
+        parts += [f"{unit(px / width):.6f}", f"{unit(py / height):.6f}", f"{int(visible)}"]
     return " ".join(parts)
 
 
@@ -131,16 +142,16 @@ def main(argv: list[str] | None = None) -> int:
 
     from ultralytics import YOLO
 
-    # Ultralytics owns its own output layout, so it is pointed inside the run
-    # directory rather than allowed to invent one next to it (CLAUDE.md 4.2).
+    # Absolute on purpose: Ultralytics resolves a relative project under its own
+    # runs_dir, which would put the weights outside the run directory (CLAUDE.md 4.2).
     run = create_run_dir(cfg)
     print(f"run: {run.path}")
     YOLO(str(cfg.teacher.ckpt)).train(
-        data=str(data_yaml),
+        data=str(data_yaml.resolve()),
         epochs=cfg.train.epochs,
         batch=cfg.data.batch_size,
         imgsz=cfg.teacher.input_hw[1],
-        project=str(run.path),
+        project=str(run.path.resolve()),
         name="ultralytics",
         seed=cfg.run.seed,
         deterministic=cfg.run.deterministic,

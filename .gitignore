@@ -74,3 +74,6 @@ CLAUDE.md
 Thumbs.db
 .idea/
 .vscode/
+
+# Ultralytics ghi vao runs_dir cua no khi project la duong dan tuong doi
+/runs/

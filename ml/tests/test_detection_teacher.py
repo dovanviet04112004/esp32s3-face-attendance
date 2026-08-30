@@ -129,3 +129,16 @@ def test_the_shipped_teacher_config_names_a_face_teacher() -> None:
     cfg = load_config(root / "configs/detection/teacher_yolo26m_pose.yaml")
     assert cfg.teacher.enabled and cfg.teacher.name == "yolo26_pose"
     assert set(cfg.teacher.params) >= {"coco", "images", "split_dir", "yolo_dataset"}
+
+
+def test_coordinates_are_clamped_into_the_unit_square() -> None:
+    over = {"bbox": [90.0, 90.0, 30.0, 30.0], "keypoints": [110.0, -5.0, 1, *LANDMARKS[3:]]}
+    values = [float(v) for v in to_yolo_line(over, 100, 100).split()[1:]]
+    assert max(values[:4]) <= 1.0
+    assert 0.0 <= values[4] <= 1.0 and 0.0 <= values[5] <= 1.0
+
+
+def test_a_face_running_off_the_frame_keeps_its_image() -> None:
+    off = {"bbox": [0.0, 0.0, 10.0, 10.0], "keypoints": [106.8, 103.3, 1, *LANDMARKS[3:]]}
+    points = [float(v) for v in to_yolo_line(off, 100, 100).split()[5:]]
+    assert max(points[0::3] + points[1::3]) <= 1.01
