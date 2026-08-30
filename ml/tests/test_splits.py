@@ -8,14 +8,18 @@ every INT8 number look good.
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
 import pytest
 
 from facepipe.data.make_split import (
+    build_antispoof_upstream,
+    build_detection,
     build_device,
     build_identity_disjoint,
     check_disjoint,
+    images_with_landmarks,
     partition,
     write_split,
 )
@@ -154,3 +158,81 @@ def test_split_files_are_byte_stable_across_runs(tmp_path: Path) -> None:
     first = write_split("recognition", parts, "r", 42, "cmd", tmp_path / "a")
     second = write_split("recognition", parts, "r", 42, "cmd", tmp_path / "b")
     assert first.digests == second.digests
+
+
+def write_coco(path: Path, with_lm: int, without_lm: int) -> Path:
+    images, annotations = [], []
+    for index in range(with_lm + without_lm):
+        images.append({"id": index, "file_name": f"g/{index:04d}.jpg", "width": 10, "height": 10})
+        annotations.append(
+            {
+                "id": index,
+                "image_id": index,
+                "bbox": [0, 0, 5, 5],
+                "num_keypoints": 5 if index < with_lm else 0,
+                "keypoints": [1.0] * 15,
+            }
+        )
+    path.write_text(json.dumps({"images": images, "annotations": annotations}), encoding="utf-8")
+    return path
+
+
+def test_landmark_images_are_told_apart(tmp_path: Path) -> None:
+    coco = write_coco(tmp_path / "train.json", with_lm=30, without_lm=7)
+    with_lm, without = images_with_landmarks(coco)
+    assert len(with_lm) == 30
+    assert len(without) == 7
+
+
+def test_landmark_val_only_holds_annotated_images(tmp_path: Path) -> None:
+    coco = write_coco(tmp_path / "train.json", with_lm=100, without_lm=20)
+    parts = build_detection(coco, seed=42, ratios=(0.9, 0.1))
+    with_lm, _ = images_with_landmarks(coco)
+    assert set(parts["landmark_val.txt"]) <= set(with_lm)
+
+
+def test_landmark_val_leaves_train_entirely(tmp_path: Path) -> None:
+    coco = write_coco(tmp_path / "train.json", with_lm=100, without_lm=20)
+    parts = build_detection(coco, seed=42, ratios=(0.9, 0.1))
+    assert set(parts["train.txt"]).isdisjoint(parts["landmark_val.txt"])
+    assert len(parts["train.txt"]) + len(parts["landmark_val.txt"]) == 120
+
+
+def test_images_without_landmarks_stay_in_train(tmp_path: Path) -> None:
+    coco = write_coco(tmp_path / "train.json", with_lm=100, without_lm=20)
+    parts = build_detection(coco, seed=42, ratios=(0.9, 0.1))
+    _, without = images_with_landmarks(coco)
+    assert set(without) <= set(parts["train.txt"])
+
+
+def make_crops(root: Path, counts: dict[str, tuple[int, int]]) -> Path:
+    for split, (live, spoof) in counts.items():
+        for label, total in (("live", live), ("spoof", spoof)):
+            folder = root / "img_1x" / split / label
+            folder.mkdir(parents=True, exist_ok=True)
+            for index in range(total):
+                (folder / f"{split}_{label}_{index}.jpg").write_bytes(b"x")
+    return root
+
+
+def test_upstream_division_is_recorded_not_reshuffled(tmp_path: Path) -> None:
+    root = make_crops(tmp_path / "crops", {"train": (5, 7), "valid": (2, 3), "test": (1, 4)})
+    parts = build_antispoof_upstream(root)
+    assert len(parts["train_ids.txt"]) == 12
+    assert len(parts["val_ids.txt"]) == 5
+    assert len(parts["test_ids.txt"]) == 5
+    check_disjoint(parts, [tuple(parts)])
+
+
+def test_upstream_split_keeps_every_crop(tmp_path: Path) -> None:
+    root = make_crops(tmp_path / "crops", {"train": (4, 4), "valid": (2, 2), "test": (3, 3)})
+    parts = build_antispoof_upstream(root)
+    assert sum(len(v) for v in parts.values()) == 18
+
+
+def test_upstream_split_carries_the_label_in_the_path(tmp_path: Path) -> None:
+    root = make_crops(tmp_path / "crops", {"train": (2, 2), "valid": (0, 0), "test": (0, 0)})
+    parts = build_antispoof_upstream(root)
+    live = [p for p in parts["train_ids.txt"] if "/live/" in p]
+    spoof = [p for p in parts["train_ids.txt"] if "/spoof/" in p]
+    assert len(live) == 2 and len(spoof) == 2

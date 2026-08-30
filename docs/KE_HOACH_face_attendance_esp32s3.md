@@ -704,7 +704,8 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 ├── interim/
 │   ├── detection/widerface_coco/{train.json, val.json}      # box + 5 landmark, format COCO
 │   ├── antispoof/celeba_spoof_crops/{img_1x/, img_2.7x/}    # crop 128×128 hai tỉ lệ
-│   └── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
+│   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
+│   └── recognition/identities.txt                           # danh sach ID doc tu shard
 │
 ├── processed/
 │   ├── detection/{train_160x120/, val_640x480/}
@@ -712,7 +713,9 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   └── recognition/{train_112x112/, val_112x112/}
 │
 ├── splits/                                   # ✅ COMMIT TOÀN BỘ
-│   ├── detection/v1/{train.txt, val.txt, landmark_val.txt, SPLIT.md}
+│   ├── detection/v1/{train.txt, landmark_val.txt, SPLIT.md}
+│   │                                             #   val cua WIDER dung truc tiep de do AP,
+│   │                                             #   khong can file split
 │   ├── antispoof/v1_upstream/{train_ids.txt, val_ids.txt, test_ids.txt, SPLIT.md}
 │   ├── recognition/v1_identity_disjoint/{train_ids.txt, val_ids.txt, SPLIT.md}
 │   └── device/v1/{calib_det.txt, calib_spoof.txt, calib_recog.txt, test_device.txt, SPLIT.md}
