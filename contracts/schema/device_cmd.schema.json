@@ -60,6 +60,7 @@
         "brightness": { "type": "integer", "minimum": 0, "maximum": 255 },
         "volume": { "type": "integer", "minimum": 0, "maximum": 255 },
         "lang": { "type": "string", "enum": ["vi", "en"] },
+        "detectThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "matchThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "livenessThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "dedupWindowMinutes": { "type": "integer", "minimum": 0, "maximum": 1440 },
