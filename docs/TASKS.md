@@ -100,19 +100,19 @@ Làm trước trong ba nhánh. Nó là cổng của pipeline, và **landmark c�
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E4-T1 | `teacher/yolo26_pose_wrapper.py` + `finetune_widerface.py` | Teacher ra box + 5 landmark, WIDER hard ≥ 0,80 | E2-T5, E3-T2 |
+| E4-T1 | `teacher/yolo26_pose_wrapper.py` + `finetune_widerface.py` | Teacher ra box + 5 landmark, WIDER hard ≥ 0,80 **đo ở 640²** (§3 lớp 2) | E2-T5, E3-T2 |
 | E4-T2 | `teacher/export_soft_target.py` — cache box + landmark + score. **Không cache feature map**: mosaic làm nó vô nghĩa (§3 Lớp 2), FGD phải chạy teacher online | Shard `.npz` đọc được | E4-T1 |
 | E4-T3 | `student/{yunet, head, anchors, blocks}.py` | Param ≈ 75,8K, ra 3 nhánh đầu ra | E2-T3 |
 | E4-T4 | `losses/{kd_logit, kd_localization, kd_feature_fgd, task_loss}.py` | Unit test từng loss | E4-T3 |
-| E4-T5 | `train_kd.py` nhiều giai đoạn: feature → +logit/loc → +task | WIDER hard ≥ 0,72 ở FP32 | E4-T2, E4-T4, E3-T5 |
+| E4-T5 | `train_kd.py` nhiều giai đoạn: feature → +logit/loc → +task | AP ≥ 0,90 trên mặt ≥ 32 px ở FP32 (§3 lớp 2) | E4-T2, E4-T4, E3-T5 |
 | E4-T6 | `eval.py` — WIDER AP + **NMSE landmark trên ảnh OV5640** | NMSE < 5% | E4-T5, E3-T7 |
-| E4-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + feature + localization + FGD) | `reports/ablation_teacher.md` đủ 2 dòng + ADR | E4-T5 |
-| E4-T8 | **Thang lượng tử hoá (§3.8)** — Q0 → Q1 → Q2, dừng khi đạt | `reports/quant_ladder.md` + `calib_sweep.md` | E4-T7 |
+| E4-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + feature + localization + FGD) | `docs/measurements/<nhánh>/ablation_teacher.md` đủ 2 dòng + ADR | E4-T5 |
+| E4-T8 | **Thang lượng tử hoá (§3.8)** — Q0 → Q1 → Q2, dừng khi đạt | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E4-T7 |
 | E4-T9 | **Quét từng lớp (§3.9)** — mốc Q3, chỉ khi Q1 và Q2 đều chưa đạt | `layer_sensitivity.csv` + chọn được `k` ở điểm gãy | E4-T8 |
 | E4-T10 | `postproc/{decode, nms}.py` + `emit_golden.py` | `contracts/golden/detection/` có vector vàng | E4-T8 |
-| E4-T11 | Export tflite + `tflite_op_check.py` + `meta.json` + lock | WIDER hard ≥ 0,70 ở INT8, hai file khớp sha256 | E4-T8 |
+| E4-T11 | Export tflite + `tflite_op_check.py` + `meta.json` + lock | AP trên mặt ≥ 32 px sụt < 1% so với FP32, hai file khớp sha256 | E4-T8 |
 | E4-T12 | Nếu NMSE > 5%: đổi sang RetinaFace-MobileNet0.25 | Đạt ngưỡng, ghi ADR mới | E4-T6 |
-| **E4-T13** | **Cầu nối teacher → student cho arm A3.** Hai thứ còn thiếu, arm A3 của nhánh này chưa chạy được nếu không có: (a) `detection_kd_logit` đòi `teacher_out` là `HeadOutput` trên prior của student, nhưng `Yolo26PoseTeacher` trả `TeacherDetections` — cần một module gán soft target vào prior; (b) FGD cần feature map của teacher **ở cùng độ phân giải với student**, mà teacher chạy 640² còn student chạy 160×120 | Arm A3 chạy hết 1 epoch với đủ 3 term, `reports/ablation_teacher.md` có dòng A3 | E4-T2, E4-T4 |
+| **E4-T13** | **Cầu nối teacher → student cho arm A3.** Hai thứ còn thiếu, arm A3 của nhánh này chưa chạy được nếu không có: (a) `detection_kd_logit` đòi `teacher_out` là `HeadOutput` trên prior của student, nhưng `Yolo26PoseTeacher` trả `TeacherDetections` — cần một module gán soft target vào prior; (b) FGD cần feature map của teacher **ở cùng độ phân giải với student**, mà teacher chạy 640² còn student chạy 160×120 | Arm A3 chạy hết 1 epoch với đủ 3 term, `docs/measurements/<nhánh>/ablation_teacher.md` có dòng A3 | E4-T2, E4-T4 |
 
 ---
 
@@ -129,8 +129,8 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 | E5-T4 | `train_kd.py` + `data.py` — chạy KD thật | LFW ≥ 99,0 ở FP32 | E5-T1, E5-T3, E3-T5, **E3-T10** |
 | E5-T5 | `postproc/{align, l2norm, cosine}.py` | Align được bằng landmark thật từ detector E4 | E5-T4, E4-T11 |
 | E5-T6 | `eval.py` — LFW/CFP-FP/AgeDB + TAR@FAR trên `test_device` đã align bằng E4 | Bảng số vào `artifacts/recognition/reports/` | E5-T5 |
-| E5-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (embedding + RKD) | `reports/ablation_teacher.md` đủ 2 dòng + ADR | E5-T6 |
-| E5-T8 | **Thang lượng tử hoá (§3.8)** — Q0 → Q1 → Q2 | `reports/quant_ladder.md` + `calib_sweep.md` | E5-T7 |
+| E5-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (embedding + RKD) | `docs/measurements/<nhánh>/ablation_teacher.md` đủ 2 dòng + ADR | E5-T6 |
+| E5-T8 | **Thang lượng tử hoá (§3.8)** — Q0 → Q1 → Q2 | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E5-T7 |
 | E5-T9 | **Quét từng lớp (§3.9)** — mốc Q3, chỉ khi cần | `layer_sensitivity.csv` + chọn `k` | E5-T8 |
 | E5-T10 | `emit_golden.py` | `contracts/golden/recognition/` có vector vàng | E5-T8 |
 | E5-T11 | Export tflite + op check + `meta.json` + lock | LFW ≥ 99,0 ở INT8, hai file khớp sha256 | E5-T8 |
@@ -149,7 +149,7 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 | E6-T5 | `losses/{kd_logit, kd_depth_map, contrastive_depth_loss, task_loss}.py` | Unit test từng loss | E6-T4 |
 | E6-T6 | `train_kd.py` | ACER < 5% ở FP32 | E6-T3..T5, **E6-T0** |
 | E6-T7 | `eval.py` — ACER, HTER cross-dataset, ROC tập tự thu | HTER < 15% | E6-T6, E3-T8 |
-| E6-T8 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + depth map + contrastive depth) | `reports/ablation_teacher.md` đủ 2 dòng + ADR | E6-T6 |
+| E6-T8 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + depth map + contrastive depth) | `docs/measurements/<nhánh>/ablation_teacher.md` đủ 2 dòng + ADR | E6-T6 |
 | E6-T9 | **Thang lượng tử hoá (§3.8)** Q0→Q1→Q2 + **quét từng lớp (§3.9)** nếu cần | INT8 giữ ACER < 5%, `quant_ladder.md` + `calib_sweep.md` | E6-T8 |
 | E6-T10 | Export + `postproc/preproc.py` + golden + `meta.json` + lock | Hai file khớp sha256 | E6-T9 |
 

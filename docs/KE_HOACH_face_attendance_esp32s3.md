@@ -27,7 +27,7 @@
 | Nhánh | Vai trò | Model | Link code / weight | Thông số | License |
 |---|---|---|---|---|---|
 | **Detect** | Teacher | **YOLO26m-pose** (fine-tune WIDER FACE, 5 keypoint) | [ultralytics/ultralytics](https://github.com/ultralytics/ultralytics) · [docs](https://docs.ultralytics.com/models/yolo26) · weight `yolo26m-pose.pt` tự tải | ~20M params, ~68 GFLOPs @640² | AGPL-3.0 / Enterprise |
-| **Detect** | Student | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750**; ra box **+ 5 landmark** | **MIT** |
+| **Detect** | Student | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750** đo ở **độ phân giải gốc**, không phải ở 160×120 của dự án này (§3 lớp 2); ra box **+ 5 landmark** | **MIT** |
 | **Anti-spoof** | Teacher | **CDCN++** (có MAFM, giám sát depth map) | [ZitongYu/CDCN](https://github.com/ZitongYu/CDCN) | ACER 0.2% (OULU-NPU P1), HTER 6.5% (CASIA→Replay) | Research-only ⚠️ |
 | **Anti-spoof** | Student | **MiniFASNetV2-SE ×2** — mỗi tỉ lệ crop một backbone | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — kiến trúc ở `src/model_lib/MiniFASNet.py` | **0.53M params** (2 × 0.26M + head), 0.088 GFLOPs @80×80 | Research-only ⚠️ |
 | **Recognition** | Teacher | **ResNet50 @ WebFace600K** (`w600k_r50`, lõi của buffalo_l) | Weight PyTorch + train code: [arcface_torch](https://github.com/deepinsight/insightface/tree/master/recognition/arcface_torch) · pack ONNX: [model_zoo](https://github.com/deepinsight/insightface/tree/master/model_zoo) | LFW 99.83 · CFP-FP 99.33 · AgeDB-30 98.23 · IJB-C(E4) 97.25 | Research-only ⚠️ |
@@ -387,6 +387,47 @@ và bỏ qua khi ảnh cắt xa. Lọc vĩnh viễn là dạy model rằng chỗ
 
 Cái giá phải trả nằm ở §4.4.1: student giờ **có** augment phóng to, nên nó phải đọc ảnh
 gốc chứ không đọc bản resize sẵn.
+
+#### Nghiệm thu detect đo trên miền nhánh này phục vụ
+
+Ba số Easy/Med/Hard của YuNet ở §1.1 đo trên **ảnh WIDER ở độ phân giải gốc**. Dự án này
+chạy 160×120. Lấy số của một kích thước đầu vào làm cổng nghiệm thu cho kích thước khác
+là so hai phép đo khác nhau, và cổng đó không đạt được vì lý do vật lý chứ không vì train
+kém.
+
+Đo trên WIDER val sau khi letterbox về 160×120, trung vị cạnh khuôn mặt:
+
+| Tập | Trung vị (px) |
+|---|---|
+| easy | 10,4 |
+| medium | 7,1 |
+| hard | **3,1** — 48,8% dưới 3 px |
+
+Medium và Hard phần lớn là vệt vài pixel. Nâng đầu vào là đường duy nhất để với tới
+chúng, và 🔬 arena ước tính chặn đường đó: 150 KB ở 160×120, 337 KB ở 240×180, 600 KB ở
+320×240, so với ~175 KB `arena_fast` mà detect chia với anti-spoof (§3.10). Detect chạy
+mỗi frame nên không đẩy sang PSRAM được.
+
+**Miền phục vụ được định nghĩa bằng chính pipeline, không phải chọn cho dễ.** Camera đưa
+khung 640×480 cho nhánh AI (§6.3), detect chạy đúng một phần tư của nó, recognition cần
+crop 112×112. Mặt **32 px ở đầu vào detect = 128 px trong khung camera**, vừa trên 112.
+Dưới ngưỡng đó crop căn chỉnh phải phóng to mới đủ cho MobileFaceNet, nên bắt được cũng
+không dùng được ở khâu sau. Đó là biên, và nó là cổng.
+
+| Mốc | Ngưỡng | Đo bằng |
+|---|---|---|
+| Student FP32 | **AP ≥ 0,90** trên mặt ≥ 32 px | `eval.py`, cột `ge32px` |
+| Student INT8 | sụt **< 1%** so với FP32 (§3.8) | `eval.py`, cột `ge32px` |
+| Vận hành | recall **≥ 0,90** và **≤ 0,15** khung thừa mỗi ảnh, trên ảnh một mặt cỡ kiosk | `eval.py` |
+| Teacher | WIDER hard ≥ 0,80 **đo ở 640²**, đầu vào của chính teacher | `eval.py --input-hw 640 640` |
+
+Mặt dưới 32 px không tính đúng cũng không tính sai — dùng đúng luật ignore của kit, giống
+cách Easy/Med/Hard là ba cách đọc một tập dự đoán. Tính chúng là dương tính giả sẽ thành
+phạt model vì tìm ra mặt thật.
+
+**Ba số WIDER chính thức vẫn báo cáo đủ, chỉ không dùng để chốt.** Bỏ chúng đi là giấu
+điểm yếu; giữ chúng làm cổng là chốt nhánh bằng một phép đo nó không phục vụ. Báo cáo cả
+hai, ghi rõ kích thước đầu vào của từng con số.
 
 ### Lớp 3 — Nén cấu trúc
 
