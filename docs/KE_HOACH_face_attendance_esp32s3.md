@@ -977,6 +977,10 @@ ml/
 │   └── bench/{host_bench.py, device_client.py, accuracy_on_device.py}
 │
 ├── scripts/                               # đánh số = thứ tự chạy
+│   ├── _resume_loop.sh                    # ★ khong danh so vi khong chay truc tiep:
+│   │                                      #   ham dung chung, moi script train source no.
+│   │                                      #   Train chet thi tu chay lai tu last.pth cua
+│   │                                      #   chinh no, co tran so lan de khong lap vo han
 │   ├── 00_fetch_raw.sh          ├── 01_prepare_interim.sh   ├── 02_make_splits.sh
 │   ├── 10_train_teacher_det.sh  ├── 11_train_teacher_spoof.sh
 │   ├── 20_kd_det.sh   ├── 21_kd_spoof.sh   ├── 22_kd_recog.sh
