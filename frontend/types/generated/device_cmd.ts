@@ -22,6 +22,7 @@ export interface DeviceCommand {
     brightness?: number;
     volume?: number;
     lang?: "vi" | "en";
+    detectThreshold?: number;
     matchThreshold?: number;
     livenessThreshold?: number;
     dedupWindowMinutes?: number;

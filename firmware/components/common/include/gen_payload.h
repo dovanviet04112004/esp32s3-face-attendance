@@ -175,6 +175,7 @@ typedef struct {
     uint8_t brightness;
     uint8_t volume;
     device_command_config_lang_t lang;
+    float detect_threshold;
     float match_threshold;
     float liveness_threshold;
     uint16_t dedup_window_minutes;
@@ -182,6 +183,7 @@ typedef struct {
     bool has_brightness;
     bool has_volume;
     bool has_lang;
+    bool has_detect_threshold;
     bool has_match_threshold;
     bool has_liveness_threshold;
     bool has_dedup_window_minutes;
@@ -207,6 +209,11 @@ static inline bool device_command_config_from_json(const cJSON *root, device_com
     if (cJSON_IsString(item) && item->valuestring != NULL) {
         if (!device_command_config_lang_parse(item->valuestring, &out->lang)) { return false; }
         out->has_lang = true;
+    }
+    item = cJSON_GetObjectItemCaseSensitive(root, "detectThreshold");
+    if (cJSON_IsNumber(item)) {
+        out->detect_threshold = (float) item->valuedouble;
+        out->has_detect_threshold = true;
     }
     item = cJSON_GetObjectItemCaseSensitive(root, "matchThreshold");
     if (cJSON_IsNumber(item)) {
@@ -244,6 +251,9 @@ static inline cJSON *device_command_config_to_json(const device_command_config_t
     }
     if (in->has_lang) {
         cJSON_AddStringToObject(root, "lang", device_command_config_lang_str(in->lang));
+    }
+    if (in->has_detect_threshold) {
+        cJSON_AddNumberToObject(root, "detectThreshold", (double) in->detect_threshold);
     }
     if (in->has_match_threshold) {
         cJSON_AddNumberToObject(root, "matchThreshold", (double) in->match_threshold);
