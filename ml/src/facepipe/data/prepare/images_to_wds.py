@@ -84,7 +84,9 @@ class ShardWriter:
     def _roll(self) -> None:
         if self._archive is not None:
             self._archive.close()
-        self._archive = tarfile.open(shard_path(self.out_dir, self.stats.shards), "w")
+        self._archive = tarfile.open(  # noqa: SIM115 - closed by close() or __exit__
+            shard_path(self.out_dir, self.stats.shards), "w"
+        )
         self.stats.shards += 1
 
     def close(self) -> ShardStats:

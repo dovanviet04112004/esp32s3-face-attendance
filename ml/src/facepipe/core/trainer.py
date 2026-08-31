@@ -39,6 +39,17 @@ def resolve_device(name: str = "auto") -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def _compiled(model: nn.Module, mode: bool | str) -> nn.Module:
+    """Wrap the model with torch.compile, or hand it back untouched.
+
+    A small model spends most of a step in Python issuing one kernel per layer.
+    Compiling trades warmup time for fewer and larger launches.
+    """
+    if not mode:
+        return model
+    return torch.compile(model, mode=mode if isinstance(mode, str) else "default")
+
+
 class ModelEma:
     """Exponential moving average of the student weights.
 
@@ -103,7 +114,7 @@ class Trainer:
         cfg: Config,
         run_dir: RunDir,
         logger: RunLogger,
-        step_fn: Callable[[Any], tuple[torch.Tensor, dict[str, float]]],
+        step_fn: Callable[[Any], tuple[torch.Tensor, dict[str, torch.Tensor]]],
         scheduler: LRScheduler | None = None,
         val_fn: Callable[[nn.Module, int], dict[str, float]] | None = None,
         best_metric_key: str = "loss",
@@ -113,7 +124,13 @@ class Trainer:
         self.run_dir = run_dir
         self.logger = logger
         self.device = resolve_device(cfg.train.device)
-        self.model = model.to(self.device)
+        self.channels_last = cfg.train.channels_last
+        self.module = model.to(self.device)
+        if self.channels_last:
+            self.module = self.module.to(memory_format=torch.channels_last)
+        # A compiled wrapper renames state_dict keys with an _orig_mod prefix,
+        # so weights are read and written through self.module, never self.model.
+        self.model = _compiled(self.module, cfg.train.compile)
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.train_loader = train_loader
@@ -124,7 +141,10 @@ class Trainer:
         self.amp_enabled = cfg.train.amp and self.device.type == "cuda"
         self.amp_dtype = getattr(torch, cfg.train.amp_dtype)
         self.scaler = torch.amp.GradScaler(self.device.type, enabled=self.amp_enabled)
-        self.ema = ModelEma(self.model, cfg.train.ema_decay) if cfg.train.ema_decay > 0 else None
+        self.ema = ModelEma(self.module, cfg.train.ema_decay) if cfg.train.ema_decay > 0 else None
+        # Divergence is recorded on device and read at logging cadence: testing
+        # it per step would block on the accelerator every step.
+        self.diverged = torch.zeros((), dtype=torch.bool, device=self.device)
         self.state = TrainState(best_is_lower=best_is_lower)
         self.state.best_metric = math.inf if best_is_lower else -math.inf
 
@@ -135,7 +155,7 @@ class Trainer:
     @property
     def export_module(self) -> nn.Module:
         """The weights an export should take: EMA when enabled, live weights otherwise."""
-        return self.ema.module if self.ema is not None else self.model
+        return self.ema.module if self.ema is not None else self.module
 
     def fit(self) -> TrainState:
         """Run from the current epoch to cfg.train.epochs."""
@@ -179,8 +199,7 @@ class Trainer:
                 self.device.type, dtype=self.amp_dtype, enabled=self.amp_enabled
             ):
                 loss, parts = self.step_fn(batch)
-            if not torch.isfinite(loss):
-                raise FloatingPointError(f"non-finite loss at step {self.state.global_step}")
+            self.diverged.logical_or_(~torch.isfinite(loss.detach()))
 
             self.scaler.scale(loss / accum).backward()
             tracker.update(parts, n=1)
@@ -196,24 +215,36 @@ class Trainer:
             self._optimizer_step()
             self.state.global_step += 1
 
+        self._check_diverged()
         stats = tracker.means()
         stats["epoch_seconds"] = time.perf_counter() - started
         self.logger.info(f"epoch {epoch} done | {tracker.format()}")
         return stats
 
+    def _check_diverged(self) -> None:
+        """Fail on a non-finite loss seen since the last check, and rearm.
+
+        The gradient scaler skips a step whose gradients are not finite, so the
+        steps between two checks are wasted rather than harmful.
+        """
+        if bool(self.diverged):
+            raise FloatingPointError(f"non-finite loss by step {self.state.global_step}")
+        self.diverged.zero_()
+
     def _optimizer_step(self) -> None:
         if self.cfg.train.grad_clip_norm > 0:
             self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.train.grad_clip_norm)
+            torch.nn.utils.clip_grad_norm_(self.module.parameters(), self.cfg.train.grad_clip_norm)
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
         if self.scheduler is not None:
             self.scheduler.step()
         if self.ema is not None:
-            self.ema.update(self.model)
+            self.ema.update(self.module)
 
     def _log_step(self, tracker: MetricTracker, throughput: Throughput) -> None:
+        self._check_diverged()
         self.logger.log_scalars(
             self.state.global_step,
             prefix="train",
@@ -237,7 +268,10 @@ class Trainer:
 
     def _to_device(self, batch: Any) -> Any:
         if isinstance(batch, torch.Tensor):
-            return batch.to(self.device, non_blocking=True)
+            moved = batch.to(self.device, non_blocking=True)
+            if self.channels_last and moved.dim() == 4 and moved.is_floating_point():
+                moved = moved.contiguous(memory_format=torch.channels_last)
+            return moved
         if isinstance(batch, Mapping):
             return {k: self._to_device(v) for k, v in batch.items()}
         if isinstance(batch, tuple | list):
@@ -273,7 +307,7 @@ class Trainer:
             "best_metric": self.state.best_metric,
             "best_is_lower": self.state.best_is_lower,
             "history": self.state.history,
-            "model": self.model.state_dict(),
+            "model": self.module.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "scaler": self.scaler.state_dict(),
             "rng": capture_rng_state(),
@@ -299,7 +333,7 @@ class Trainer:
         if version != CKPT_FORMAT_VER:
             raise ValueError(f"{path}: checkpoint format {version}, expected {CKPT_FORMAT_VER}")
 
-        self.model.load_state_dict(payload["model"])
+        self.module.load_state_dict(payload["model"])
         if weights_only_state:
             return
 

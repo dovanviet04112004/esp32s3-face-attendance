@@ -202,3 +202,46 @@ def test_a_fresh_run_claims_no_parent(config_file, tmp_path, tiny_loader) -> Non
     trainer = _build(cfg, run, TinyNet(), tiny_loader)
     assert trainer.resumed_from is None
     assert not (run.path / RESUMED_FROM_NAME).exists()
+
+
+class PrefixWrapper(nn.Module):
+    """Stands in for torch.compile, which renames state_dict keys."""
+
+    def __init__(self, wrapped: nn.Module) -> None:
+        super().__init__()
+        self._orig_mod = wrapped
+
+    def forward(self, *args, **kwargs):
+        return self._orig_mod(*args, **kwargs)
+
+
+def test_a_compiled_run_checkpoints_the_module_underneath(
+    monkeypatch, config_file, tmp_path, tiny_model, tiny_loader
+) -> None:
+    monkeypatch.setattr(torch, "compile", lambda m, **kw: PrefixWrapper(m))
+    cfg = _cfg(config_file, tmp_path, "train.compile=true")
+    run = create_run_dir(cfg)
+    trainer = _build(cfg, run, tiny_model, tiny_loader)
+
+    assert isinstance(trainer.model, PrefixWrapper)
+    assert trainer.module is tiny_model
+    trainer.fit()
+
+    saved = torch.load(run.ckpt_dir / CKPT_LAST, map_location="cpu", weights_only=False)
+    assert not any(k.startswith("_orig_mod.") for k in saved["model"])
+    assert set(saved["model"]) == set(tiny_model.state_dict())
+
+
+def test_compile_off_leaves_the_model_unwrapped(config_file, tmp_path, tiny_model, tiny_loader):
+    cfg = _cfg(config_file, tmp_path)
+    trainer = _build(cfg, create_run_dir(cfg), tiny_model, tiny_loader)
+    assert trainer.model is trainer.module is tiny_model
+
+
+def test_a_non_finite_loss_stops_the_run(config_file, tmp_path, tiny_model, tiny_loader) -> None:
+    cfg = _cfg(config_file, tmp_path, "train.epochs=1")
+    run = create_run_dir(cfg)
+    trainer = _build(cfg, run, tiny_model, tiny_loader)
+    trainer.step_fn = lambda batch: (torch.tensor(float("nan"), requires_grad=True), {})
+    with pytest.raises(FloatingPointError):
+        trainer.fit()

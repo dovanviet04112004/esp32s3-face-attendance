@@ -93,6 +93,10 @@ class TrainSection(Section):
     val_every_epochs: int = 1
     resume: Path | None = None
     device: str = "auto"
+    # Both change which kernels run, so an ablation row only compares against
+    # one that resolved them the same way (KEHOACH section 3.7).
+    compile: bool | str = False
+    channels_last: bool = False
 
     @field_validator("accum_steps")
     @classmethod

@@ -11,21 +11,28 @@ from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+import torch
+
 
 @dataclass
 class AverageMeter:
-    """Running mean of one scalar."""
+    """Running mean of one scalar, summed in whatever type the value arrives as.
 
-    total: float = 0.0
+    A value read off the accelerator stays there until mean is taken. Casting it
+    on the step that produced it would block until the device caught up, once per
+    loss term per step.
+    """
+
+    total: float | torch.Tensor = 0.0
     count: int = 0
 
-    def update(self, value: float, n: int = 1) -> None:
-        self.total += float(value) * n
+    def update(self, value: float | torch.Tensor, n: int = 1) -> None:
+        self.total = self.total + value * n
         self.count += n
 
     @property
     def mean(self) -> float:
-        return self.total / self.count if self.count else 0.0
+        return float(self.total) / self.count if self.count else 0.0
 
     def reset(self) -> None:
         self.total = 0.0
@@ -38,7 +45,7 @@ class MetricTracker:
 
     meters: dict[str, AverageMeter] = field(default_factory=lambda: defaultdict(AverageMeter))
 
-    def update(self, values: Mapping[str, float], n: int = 1) -> None:
+    def update(self, values: Mapping[str, float | torch.Tensor], n: int = 1) -> None:
         for key, value in values.items():
             self.meters[key].update(value, n)
 

@@ -18,8 +18,8 @@ from facepipe.data.prepare.celeba_spoof_parquet import (
     scaled_box,
     split_of,
 )
-from facepipe.data.prepare.images_to_wds import ShardWriter, read_shard
 from facepipe.data.prepare.device_index import build_rows, parse_name, write_manifest
+from facepipe.data.prepare.images_to_wds import ShardWriter, read_shard
 from facepipe.data.prepare.recordio_to_wds import (
     IR_HEADER,
     RECORD_MAGIC,

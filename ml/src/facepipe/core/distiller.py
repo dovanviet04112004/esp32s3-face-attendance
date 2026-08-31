@@ -123,9 +123,9 @@ class DistillLossSet(nn.Module):
         student_features: Mapping[str, torch.Tensor] | None = None,
         teacher_features: Mapping[str, torch.Tensor] | None = None,
         only: set[str] | None = None,
-    ) -> tuple[torch.Tensor, dict[str, float]]:
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         total: torch.Tensor | None = None
-        parts: dict[str, float] = {}
+        parts: dict[str, torch.Tensor] = {}
         for term in self.terms:
             if only is not None and term.name not in only:
                 continue
@@ -136,7 +136,7 @@ class DistillLossSet(nn.Module):
                 student_features=student_features,
                 teacher_features=teacher_features,
             )
-            parts[term.name] = float(value.detach())
+            parts[term.name] = value.detach()
             scaled = value * term.weight
             total = scaled if total is None else total + scaled
         if total is None:
@@ -198,11 +198,13 @@ class Distiller(nn.Module):
     def distilling(self) -> bool:
         return self.teacher is not None and self.loss_set is not None
 
-    def forward(self, inputs: Any, batch: Any = None) -> tuple[torch.Tensor, dict[str, float]]:
+    def forward(
+        self, inputs: Any, batch: Any = None
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Return the total loss and a per-term report."""
         self._clear_hooks()
         student_out = self.student(inputs)
-        parts: dict[str, float] = {}
+        parts: dict[str, torch.Tensor] = {}
         total: torch.Tensor | None = None
 
         stage = self.schedule.at(self.epoch) if self.schedule is not None else None
@@ -211,7 +213,7 @@ class Distiller(nn.Module):
 
         if self.task_loss is not None:
             task_value = self.task_loss(student_out, batch)
-            parts["task"] = float(task_value.detach())
+            parts["task"] = task_value.detach()
             total = task_value * task_weight
 
         if self.distilling:
@@ -229,7 +231,7 @@ class Distiller(nn.Module):
 
         if total is None:
             raise ValueError("no task loss and no distillation loss: nothing to optimize")
-        parts["total"] = float(total.detach())
+        parts["total"] = total.detach()
         return total, parts
 
     def _clear_hooks(self) -> None:

@@ -52,16 +52,38 @@ class Holder:
     right: list[torch.Tensor]
 
 
-def test_targets_in_a_dataclass_are_moved_with_the_images() -> None:
+def mover(channels_last: bool = False) -> object:
     from facepipe.core.trainer import Trainer
 
-    stub = type("S", (), {"device": torch.device("cpu"), "_to_device": Trainer._to_device})()
+    fields = {
+        "device": torch.device("cpu"),
+        "channels_last": channels_last,
+        "_to_device": Trainer._to_device,
+    }
+    return type("S", (), fields)()
+
+
+def test_targets_in_a_dataclass_are_moved_with_the_images() -> None:
     batch = Holder(left=torch.zeros(2), right=[torch.ones(3)])
-    moved = stub._to_device(batch)
+    moved = mover()._to_device(batch)
     assert moved is not batch
     assert isinstance(moved, Holder)
     assert torch.equal(moved.left, batch.left)
     assert torch.equal(moved.right[0], batch.right[0])
+
+
+def test_channels_last_reaches_images_and_leaves_targets_alone() -> None:
+    images = torch.zeros(2, 3, 8, 8)
+    labels = torch.zeros(2, 4)
+    moved = mover(channels_last=True)._to_device([images, labels])
+    assert moved[0].is_contiguous(memory_format=torch.channels_last)
+    assert moved[1].is_contiguous()
+
+
+def test_channels_last_off_leaves_the_layout_untouched() -> None:
+    images = torch.zeros(2, 3, 8, 8)
+    moved = mover()._to_device(images)
+    assert moved.is_contiguous()
 
 
 def write_dataset(tmp_path: Path) -> tuple[Path, Path, Path]:
