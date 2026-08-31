@@ -14,17 +14,26 @@
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-20}"
 RETRY_PAUSE_SECONDS="${RETRY_PAUSE_SECONDS:-15}"
 
+# Newest run directory under $1 that was created after $2, as an epoch second.
+#
+# The cutoff is what keeps an arm out of another arm's checkpoint. Both arms of
+# an ablation write into one runs root, so the newest directory there is usually
+# the arm that ran before this one; resuming from it would start the KD arm at
+# the baseline's weights and its epoch counter, and the run would look normal
+# from the outside (KEHOACH section 3.7).
 newest_run() {
-    ls -dt "$1"/*/ 2>/dev/null | head -1
+    find "$1" -mindepth 1 -maxdepth 1 -type d -newermt "@$2" -printf '%T@ %p/\n' 2>/dev/null |
+        sort -rn | head -1 | cut -d' ' -f2-
 }
 
 # Runs launch() until it succeeds, is stopped on purpose, or hits the attempt cap.
 train_with_resume() {
     local runs_root="$1"
-    local attempt=0 run status
+    local attempt=0 run status started_at
 
+    started_at="$(date +%s)"
     while :; do
-        run="$(newest_run "${runs_root}")"
+        run="$(newest_run "${runs_root}" "${started_at}")"
         launch "${run}"
         status=$?
 

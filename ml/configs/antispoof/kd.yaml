@@ -13,9 +13,11 @@ run:
 teacher:
   enabled: true
   name: cdcnpp
-  # Written by train_teacher.py. Its EMA copy is what gets loaded, because that
-  # is the copy whose ACER was measured.
-  ckpt: artifacts/antispoof/runs/teacher/ckpt/best.pth
+  # Copied out of the accepted teacher run, not read from runs/: a stable path
+  # keeps it out of the way of the resume loop, which treats every directory
+  # under runs/ as somewhere a student could continue from. Its EMA copy is the
+  # one loaded, that being the copy whose ACER was measured.
+  ckpt: artifacts/antispoof/teacher/cdcnpp_best.pth
   input_hw: [80, 80]
   params:
     theta: 0.7
