@@ -112,6 +112,7 @@ Làm trước trong ba nhánh. Nó là cổng của pipeline, và **landmark c�
 | E4-T10 | `postproc/{decode, nms}.py` + `emit_golden.py` | `contracts/golden/detection/` có vector vàng | E4-T8 |
 | E4-T11 | Export tflite + `tflite_op_check.py` + `meta.json` + lock | WIDER hard ≥ 0,70 ở INT8, hai file khớp sha256 | E4-T8 |
 | E4-T12 | Nếu NMSE > 5%: đổi sang RetinaFace-MobileNet0.25 | Đạt ngưỡng, ghi ADR mới | E4-T6 |
+| **E4-T13** | **Cầu nối teacher → student cho arm A3.** Hai thứ còn thiếu, arm A3 của nhánh này chưa chạy được nếu không có: (a) `detection_kd_logit` đòi `teacher_out` là `HeadOutput` trên prior của student, nhưng `Yolo26PoseTeacher` trả `TeacherDetections` — cần một module gán soft target vào prior; (b) FGD cần feature map của teacher **ở cùng độ phân giải với student**, mà teacher chạy 640² còn student chạy 160×120 | Arm A3 chạy hết 1 epoch với đủ 3 term, `reports/ablation_teacher.md` có dòng A3 | E4-T2, E4-T4 |
 
 ---
 
@@ -123,7 +124,7 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 |---|---|---|---|
 | ~~E5-T0~~ | ~~`recordio_to_wds.py`: bỏ member `.cls`~~ — **bỏ**. Shard đã nằm trên `fast_drive`, đọc nghẽn ở giải nén JPEG chứ không ở tar; sinh lại 36 GB để tiết kiệm 5,3 GB đọc tuần tự không đổi lại được gì | — | — |
 | E5-T1 | `teacher/r50_wf600k.py` + `export_embedding.py` | Cache embedding 512-D ra `.npy` memmap | E2-T5, E3-T4 |
-| E5-T2 | `student/mobilefacenet.py` + `blocks.py` (ReLU6, kênh bội 8) | Forward ra 512-D, param ≈ 0,99M | E2-T3 |
+| E5-T2 | `student/mobilefacenet.py` + `blocks.py` (ReLU6, kênh bội 8) | Forward ra 512-D, param **1,20M** đo được (0,99M của bài báo là bản embedding 128-D) | E2-T3 |
 | E5-T3 | `losses/{arcface, kd_embedding, kd_relation_rkd}.py` | Unit test từng loss | E5-T2 |
 | E5-T4 | `train_kd.py` + `data.py` — chạy KD thật | LFW ≥ 99,0 ở FP32 | E5-T1, E5-T3, E3-T5, **E3-T10** |
 | E5-T5 | `postproc/{align, l2norm, cosine}.py` | Align được bằng landmark thật từ detector E4 | E5-T4, E4-T11 |
