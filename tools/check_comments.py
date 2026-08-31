@@ -23,6 +23,9 @@ SKIP_DIR_PARTS = {
     "third_party",
     "generated",
     "__pycache__",
+    # Jupytext writes prose cells as runs of "#" lines, so section 2.3 cannot
+    # apply: KEHOACH 4.4 keeps notebooks for exploration and commits them as .py.
+    "notebooks",
     ".venv",
     ".next",
     "dist",
