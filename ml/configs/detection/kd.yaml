@@ -1,0 +1,55 @@
+# Arm A3 of KEHOACH section 3.7: the baseline plus every distillation term this
+# branch has. Everything the two arms must share - architecture, seed, split,
+# augmentation, optimizer, schedule, epoch count, compile - is inherited rather
+# than repeated, so the only difference between the two runs is the teacher and
+# the losses that read it.
+
+_base_: student_yunet.yaml
+
+run:
+  tags: [student, yunet, arm_kd_full]
+  notes: kd arm, logit plus localization plus FGD from YOLO26m-pose
+
+teacher:
+  enabled: true
+  # Runs in the loop rather than from a cache. A crop or a flip moves the image,
+  # the boxes and the feature maps together, so nothing keyed on an image name
+  # still lines up by the time the batch is built (TASKS E4-T2).
+  name: yolo26_pose_on_priors
+  ckpt: artifacts/detection/teacher/yolo26m_pose_widerface.pt
+  freeze: true
+  params:
+    # It sees the student's own 160x120 frame at four times the size, not the
+    # original image: supervising towards faces the student input cannot resolve
+    # is the train-serve mismatch section 3 layer 2 removes.
+    upscale: 4
+    input_hw: [120, 160]
+    conf: 0.25
+    iou: 0.5
+
+distill:
+  enabled: true
+  task_loss_weight: 1.0
+  # The three neck laterals, 64 channels each at 15x20, 7x10 and 3x5. The teacher
+  # levels are four times as wide and the FGD term resamples them down.
+  feature_layers: [neck.lateral.0, neck.lateral.1, neck.lateral.2]
+  # TODO(E4-T1): fill from the fine-tuned checkpoint. Neither the layer names nor
+  # the channel counts can be read off a weight file that does not exist yet.
+  teacher_feature_layers: []
+  losses:
+    - name: detection_kd_logit
+      weight: 1.0
+      params:
+        temperature: 3.0
+    - name: detection_kd_localization
+      weight: 1.0
+      params:
+        bbox_weight: 1.0
+        kps_weight: 1.0
+        score_threshold: 0.3
+    - name: detection_kd_feature_fgd
+      weight: 1.0
+      params:
+        student_channels: [64, 64, 64]
+        teacher_channels: []
+        image_hw: [120, 160]
