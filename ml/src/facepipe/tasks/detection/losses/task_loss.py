@@ -37,6 +37,10 @@ class DetectionTargets:
     landmark_mask: torch.Tensor
     priors: torch.Tensor
     gt_boxes: list[torch.Tensor] | None = None
+    # One row per prior, head shaped; absent on the arm that has no teacher.
+    teacher_cls: torch.Tensor | None = None
+    teacher_bbox: torch.Tensor | None = None
+    teacher_kps: torch.Tensor | None = None
 
     @property
     def positives(self) -> torch.Tensor:

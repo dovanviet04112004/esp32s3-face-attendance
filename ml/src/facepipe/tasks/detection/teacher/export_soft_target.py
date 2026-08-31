@@ -23,10 +23,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import torch
+from torch import nn
 
 from facepipe.core.config import load_config
+from facepipe.core.registry import TEACHERS
 
-from ..student.head import LANDMARK_COUNT
+from ..postproc.decode import unflatten_levels
+from ..student.anchors import feature_sizes
+from ..student.head import LANDMARK_COUNT, HeadOutput
+from ..student.yunet import STRIDES
 
 SHARD_SIZE = 2000
 SHARD_STEM = "soft_target"
@@ -147,6 +153,31 @@ class SoftTargetStore:
         if shard not in self._cache:
             self._cache[shard] = read_shard(shard)
         return self._cache[shard][name]
+
+
+@TEACHERS.register("cached_head_output")
+class CachedHeadOutput(nn.Module):
+    """Stands in for the teacher once its answers sit on the student's priors.
+
+    Running YOLO26m every step to re-derive answers that do not depend on the
+    student would make the distilled arm cost several times the baseline it is
+    compared against, and the table would then measure patience rather than
+    method (KEHOACH section 3.7). The loader has already moved the cached
+    detections through the same crop and flip the image took, so all that is
+    left here is putting the rows back into head shape.
+    """
+
+    def __init__(self, input_hw: tuple[int, int] = (120, 160)) -> None:
+        super().__init__()
+        self.sizes = feature_sizes(tuple(input_hw), STRIDES)
+
+    def forward(self, cached: tuple[torch.Tensor, torch.Tensor, torch.Tensor]) -> HeadOutput:
+        cls, bbox, kps = cached
+        return HeadOutput(
+            cls=unflatten_levels(cls, self.sizes),
+            bbox=unflatten_levels(bbox, self.sizes),
+            kps=unflatten_levels(kps, self.sizes),
+        )
 
 
 def run_teacher(weights: Path, images: list[Path], imgsz: int, conf: float) -> Iterator[SoftTarget]:

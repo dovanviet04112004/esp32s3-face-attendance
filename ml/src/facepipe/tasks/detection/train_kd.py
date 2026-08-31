@@ -61,15 +61,45 @@ def build_dataset(cfg: Config, split_index: int, train: bool) -> WiderFaceDatase
     )
 
 
+CACHED_TEACHER = "cached_head_output"
+ONLINE_TEACHER = "yolo26_pose_on_priors"
+
+
+class CachedTeacherDistiller(Distiller):
+    """Hands the teacher the rows already on the batch instead of the images."""
+
+    def teacher_inputs(self, inputs: object, batch: object) -> tuple[torch.Tensor, ...]:
+        cached = (batch.teacher_cls, batch.teacher_bbox, batch.teacher_kps)
+        if any(part is None for part in cached):
+            raise ValueError(
+                "this arm distils from cached soft targets but the batch carries none: "
+                "set data.params.soft_targets to the directory export_soft_target.py wrote"
+            )
+        return cached
+
+
+class OnlineTeacherDistiller(Distiller):
+    """Hands the teacher the images plus the priors it has to answer on."""
+
+    def teacher_inputs(self, inputs: object, batch: object) -> tuple[object, torch.Tensor]:
+        return inputs, batch.priors
+
+
+DISTILLERS = {CACHED_TEACHER: CachedTeacherDistiller, ONLINE_TEACHER: OnlineTeacherDistiller}
+
+
 def build_teacher(cfg: Config) -> TeacherWrapper | None:
     """Load the teacher only for the arms that distil from one."""
     if not cfg.teacher.enabled or cfg.teacher.name is None:
         return None
     from facepipe.core.registry import TEACHERS
 
-    model = TEACHERS.build(
-        {"name": cfg.teacher.name, "params": {"weights": cfg.teacher.ckpt, **cfg.teacher.params}}
-    )
+    from .teacher import export_soft_target, yolo26_pose_wrapper  # noqa: F401  registers both
+
+    params = dict(cfg.teacher.params)
+    if cfg.teacher.name != CACHED_TEACHER:
+        params["weights"] = cfg.teacher.ckpt
+    model = TEACHERS.build({"name": cfg.teacher.name, "params": params})
     return TeacherWrapper(model, freeze=cfg.teacher.freeze)
 
 
@@ -97,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         **prefetch(cfg),
     )
 
-    distiller = Distiller(
+    distiller = DISTILLERS.get(cfg.teacher.name, Distiller)(
         student=student,
         teacher=build_teacher(cfg),
         loss_set=DistillLossSet.from_config(cfg.distill) if cfg.distill.enabled else None,

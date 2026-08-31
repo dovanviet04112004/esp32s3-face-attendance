@@ -27,7 +27,7 @@ from torch.utils.data import Dataset
 from facepipe.core.registry import DATASETS
 
 from .losses.task_loss import DetectionTargets
-from .postproc.decode import bbox_encode
+from .postproc.decode import bbox_encode, kps_encode
 from .student.anchors import feature_sizes, pyramid_priors
 from .student.head import LANDMARK_COUNT
 from .student.yunet import STRIDES
@@ -46,6 +46,10 @@ MIN_FACE_PX = 8.0
 # Fraction of the frame a random window takes. Without it the student only ever
 # meets WIDER at one scale, and never a face the size the kiosk will show it.
 CROP_SCALE = (0.3, 1.0)
+
+TEACHER_SCORE_EPS = 1e-4
+# logit(TEACHER_SCORE_EPS): what a prior no teacher box claimed is worth.
+TEACHER_BACKGROUND_LOGIT = -9.2103
 
 
 @dataclass
@@ -254,6 +258,46 @@ def assign_priors(
     return owner, owner >= 0
 
 
+def assign_soft_targets(
+    boxes: np.ndarray, scores: np.ndarray, landmarks: np.ndarray, priors: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """One image's teacher detections resampled onto the student's own priors.
+
+    The two networks regress from different priors, so a teacher offset means
+    nothing to the student head; only the pixel box survives the move and it is
+    re-encoded here against the prior the student would use for it.
+
+    A prior no teacher box claims is background at TEACHER_BACKGROUND_LOGIT, not
+    at whatever the teacher scored there: only detections above the teacher's own
+    confidence cut are kept, so what it thinks below that cut is never recorded.
+    """
+    count = priors.shape[0]
+    cls = torch.full((count, 1), TEACHER_BACKGROUND_LOGIT)
+    bbox = torch.zeros(count, 4)
+    kps = torch.zeros(count, LANDMARK_COUNT * 2)
+
+    owner, positive = assign_priors(boxes, priors)
+    if positive.any():
+        chosen = owner[positive]
+        found = torch.as_tensor(boxes, dtype=torch.float32)[chosen]
+        confidence = torch.as_tensor(scores, dtype=torch.float32)[chosen]
+        points = torch.as_tensor(landmarks, dtype=torch.float32)[chosen]
+        clamped = confidence.clamp(TEACHER_SCORE_EPS, 1 - TEACHER_SCORE_EPS)
+        cls[positive] = torch.logit(clamped)[:, None]
+        bbox[positive] = bbox_encode(priors[positive], found)
+        kps[positive] = kps_encode(priors[positive], points.reshape(len(chosen), -1))
+    return cls, bbox, kps
+
+
+def teacher_targets(
+    sample: Sample, priors: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """The soft targets a sample carries, on the priors, after its augmentation."""
+    return assign_soft_targets(
+        sample.teacher_boxes, sample.teacher_scores, sample.teacher_landmarks, priors
+    )
+
+
 def build_targets(sample: Sample, priors: torch.Tensor) -> DetectionTargets:
     """Turn one augmented sample into the per-prior tensors the loss reads."""
     owner, positive = assign_priors(sample.boxes, priors)
@@ -269,6 +313,9 @@ def build_targets(sample: Sample, priors: torch.Tensor) -> DetectionTargets:
         landmarks[positive] = points.reshape(len(chosen), -1)
         landmark_mask[positive] = torch.as_tensor(sample.has_landmarks, dtype=torch.bool)[chosen]
 
+    teacher_cls, teacher_bbox, teacher_kps = (
+        teacher_targets(sample, priors) if len(sample.teacher_scores) else (None, None, None)
+    )
     return DetectionTargets(
         labels=positive.long(),
         boxes=boxes,
@@ -276,6 +323,9 @@ def build_targets(sample: Sample, priors: torch.Tensor) -> DetectionTargets:
         landmark_mask=landmark_mask,
         priors=priors,
         gt_boxes=[torch.as_tensor(sample.boxes, dtype=torch.float32)],
+        teacher_cls=teacher_cls,
+        teacher_bbox=teacher_bbox,
+        teacher_kps=teacher_kps,
     )
 
 
@@ -365,6 +415,12 @@ def collate(batch: list[tuple[torch.Tensor, DetectionTargets]]) -> tuple[torch.T
     """Stack images and per-prior targets, keeping raw boxes as a per-image list."""
     images = torch.stack([item[0] for item in batch])
     targets = [item[1] for item in batch]
+
+    def stack_teacher(field_name: str) -> torch.Tensor | None:
+        """Absent on the baseline arm, and present on every sample or none."""
+        values = [getattr(t, field_name) for t in targets]
+        return None if any(v is None for v in values) else torch.stack(values)
+
     merged = DetectionTargets(
         labels=torch.stack([t.labels for t in targets]),
         boxes=torch.stack([t.boxes for t in targets]),
@@ -372,6 +428,9 @@ def collate(batch: list[tuple[torch.Tensor, DetectionTargets]]) -> tuple[torch.T
         landmark_mask=torch.stack([t.landmark_mask for t in targets]),
         priors=targets[0].priors,
         gt_boxes=[t.gt_boxes[0] for t in targets],
+        teacher_cls=stack_teacher("teacher_cls"),
+        teacher_bbox=stack_teacher("teacher_bbox"),
+        teacher_kps=stack_teacher("teacher_kps"),
     )
     return images, merged
 
