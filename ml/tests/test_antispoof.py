@@ -146,3 +146,80 @@ def test_the_loss_buffer_follows_the_logits_device() -> None:
     loss = SpoofTaskLoss()
     logits = torch.tensor([[1.0, 0.0]], dtype=torch.float64)
     assert loss(logits, torch.tensor([0])).dtype == torch.float64
+
+
+def teacher_map(labels: list[int]) -> torch.Tensor:
+    import numpy as np
+
+    from facepipe.tasks.antispoof.teacher.depth_gt import depth_batch
+
+    return torch.from_numpy(depth_batch(np.array(labels)))
+
+
+def test_a_flat_input_leaves_no_central_difference_inside_the_border() -> None:
+    """theta mixes in the centre-subtracted response, which a constant image
+    cancels exactly. The border does not cancel: zero padding makes the ordinary
+    term sum fewer real pixels than the difference term subtracts."""
+    from facepipe.tasks.antispoof.teacher.cdcnpp import CDConv2d
+
+    conv = CDConv2d(3, 4, theta=1.0)
+    flat = torch.full((1, 3, 8, 8), 0.7)
+    assert conv(flat)[:, :, 1:-1, 1:-1].abs().max() < 1e-5
+
+
+def test_theta_zero_is_an_ordinary_convolution() -> None:
+    from facepipe.tasks.antispoof.teacher.cdcnpp import CDConv2d
+
+    conv = CDConv2d(3, 4, theta=0.0)
+    x = torch.randn(1, 3, 8, 8)
+    assert torch.allclose(conv(x), conv.conv(x))
+
+
+def test_the_teacher_returns_a_depth_map_not_a_logit() -> None:
+    from facepipe.tasks.antispoof.teacher.cdcnpp import CDCNpp
+    from facepipe.tasks.antispoof.teacher.depth_gt import DEPTH_SIZE
+
+    model = CDCNpp(width=8).eval()
+    views = (torch.randn(2, 3, INPUT_SIZE, INPUT_SIZE),) * 2
+    with torch.no_grad():
+        depth = model(views)
+    assert depth.shape == (2, DEPTH_SIZE, DEPTH_SIZE)
+    assert depth.min() >= 0.0
+
+
+def test_an_attack_target_is_flat_and_a_live_one_is_not() -> None:
+    from facepipe.tasks.antispoof.teacher.depth_gt import depth_target
+
+    assert depth_target(1).max() == 0.0
+    assert depth_target(0).max() > 0.9
+
+
+def test_score_distillation_costs_more_when_the_student_disagrees() -> None:
+    """The bug this guards: a live map averages about 0.42 over the whole map,
+    so reading that mean as a probability puts a live face under one half and
+    inverts the term."""
+    from facepipe.tasks.antispoof.losses import ScoreDistillLoss
+
+    loss = ScoreDistillLoss()
+    says_live = torch.tensor([[5.0, -5.0]])
+    says_spoof = torch.tensor([[-5.0, 5.0]])
+
+    assert loss(says_spoof, teacher_map([0])) > loss(says_live, teacher_map([0]))
+    assert loss(says_live, teacher_map([1])) > loss(says_spoof, teacher_map([1]))
+
+
+def test_every_contrast_kernel_sums_to_zero() -> None:
+    """A kernel that did not sum to zero would read brightness, not contrast."""
+    from facepipe.tasks.antispoof.losses import contrast_kernels
+
+    kernels = contrast_kernels()
+    assert kernels.shape == (8, 1, 3, 3)
+    assert torch.allclose(kernels.sum(dim=(1, 2, 3)), torch.zeros(8))
+
+
+def test_depth_distillation_needs_a_feature_layer() -> None:
+    from facepipe.tasks.antispoof.losses import DepthMapDistillLoss
+
+    loss = DepthMapDistillLoss(embedding=16)
+    with pytest.raises(ValueError, match="feature layer"):
+        loss(torch.zeros(1, 2), teacher_map([0]))
