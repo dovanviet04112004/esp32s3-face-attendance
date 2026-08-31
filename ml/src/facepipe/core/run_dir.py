@@ -78,18 +78,28 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def write_split_lock(path: Path, split_files: list[Path]) -> None:
+def declared_splits(params: dict[str, object]) -> list[str]:
+    """The split a branch names in its params rather than listing as files."""
+    keys = sorted(key for key in params if key.endswith("_split") or key == "shards")
+    return [f"{key}: {params[key]}" for key in keys]
+
+
+def write_split_lock(
+    path: Path, split_files: list[Path], declared: list[str] | None = None
+) -> None:
     """Record the digest of every split file the run consumed.
 
-    An absent file is recorded as MISSING rather than skipped: a run trained on
-    a split nobody can produce again must not look reproducible.
+    An absent file is recorded as MISSING rather than skipped, and a branch that
+    names shard ranges instead of listing files records those names: a run whose
+    data nobody can identify must not look reproducible.
     """
     lines = []
     for split in split_files:
         resolved = Path(split)
         digest = sha256_file(resolved) if resolved.is_file() else "MISSING"
         lines.append(f"{digest}  {split}")
-    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    lines = lines or list(declared or []) or ["UNDECLARED"]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_env_txt(path: Path) -> None:
@@ -154,6 +164,8 @@ def create_run_dir(cfg: Config, now: datetime | None = None) -> RunDir:
     (path / TB_DIR).mkdir()
 
     dump_config(cfg, path / CONFIG_NAME)
-    write_split_lock(path / SPLIT_LOCK_NAME, list(cfg.data.split_files))
+    write_split_lock(
+        path / SPLIT_LOCK_NAME, list(cfg.data.split_files), declared_splits(cfg.data.params)
+    )
     write_env_txt(path / ENV_NAME)
     return RunDir(path=path, task=cfg.run.task, run_id=f"{cfg.run.task}/{run_id}")
