@@ -272,3 +272,97 @@ def test_both_crop_scales_travel_in_one_record(tmp_path: Path) -> None:
     for name in ("tight.jpg", "wide.jpg"):
         with Image.open(io.BytesIO(members[name])) as patch:
             assert patch.size == (CROP_SIZE, CROP_SIZE)
+
+
+def test_shrinking_moves_boxes_and_keypoints_by_the_same_factor(tmp_path: Path) -> None:
+    """The failure this guards is silent: resized images with the original
+    labels load, train, and are wrong by one factor on every face."""
+    from facepipe.data.prepare.shrink_coco import shrink
+
+    images = tmp_path / "src"
+    make_image(images / "a" / "1.jpg", size=(400, 200))
+    coco = tmp_path / "in.json"
+    coco.write_text(
+        json.dumps(
+            {
+                "images": [{"id": 1, "file_name": "a/1.jpg", "width": 400, "height": 200}],
+                "annotations": [
+                    {
+                        "id": 1,
+                        "image_id": 1,
+                        "bbox": [100.0, 50.0, 40.0, 20.0],
+                        "area": 800.0,
+                        "keypoints": [110, 60, 2, 130, 60, 2, 120, 70, 2, 112, 80, 2, 128, 80, 2],
+                        "num_keypoints": 5,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    out_coco = tmp_path / "out.json"
+    stats = shrink(coco, images, out_coco, tmp_path / "dst", max_side=200)
+    assert stats == {"images": 1, "resized": 1, "annotations": 1, "missing": 0}
+
+    result = json.loads(out_coco.read_text(encoding="utf-8"))
+    record, annotation = result["images"][0], result["annotations"][0]
+    assert (record["width"], record["height"]) == (200, 100)
+    assert annotation["bbox"] == [50.0, 25.0, 20.0, 10.0]
+    assert annotation["area"] == 200.0
+    assert annotation["keypoints"][:3] == [55.0, 30.0, 2]
+    assert annotation["num_keypoints"] == 5
+
+
+def test_a_box_keeps_its_place_relative_to_the_image(tmp_path: Path) -> None:
+    from facepipe.data.prepare.shrink_coco import shrink
+
+    images = tmp_path / "src"
+    make_image(images / "a" / "1.jpg", size=(640, 480))
+    coco = tmp_path / "in.json"
+    box = [160.0, 120.0, 80.0, 60.0]
+    coco.write_text(
+        json.dumps(
+            {
+                "images": [{"id": 1, "file_name": "a/1.jpg", "width": 640, "height": 480}],
+                "annotations": [{"id": 1, "image_id": 1, "bbox": box}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    out_coco = tmp_path / "out.json"
+    shrink(coco, images, out_coco, tmp_path / "dst", max_side=320)
+
+    result = json.loads(out_coco.read_text(encoding="utf-8"))
+    record, annotation = result["images"][0], result["annotations"][0]
+    before = [box[0] / 640, box[1] / 480, box[2] / 640, box[3] / 480]
+    after = [
+        annotation["bbox"][0] / record["width"],
+        annotation["bbox"][1] / record["height"],
+        annotation["bbox"][2] / record["width"],
+        annotation["bbox"][3] / record["height"],
+    ]
+    assert after == pytest.approx(before)
+
+
+def test_an_image_already_small_enough_is_left_alone(tmp_path: Path) -> None:
+    from facepipe.data.prepare.shrink_coco import shrink
+
+    images = tmp_path / "src"
+    make_image(images / "a" / "1.jpg", size=(100, 80))
+    coco = tmp_path / "in.json"
+    coco.write_text(
+        json.dumps(
+            {
+                "images": [{"id": 1, "file_name": "a/1.jpg", "width": 100, "height": 80}],
+                "annotations": [{"id": 1, "image_id": 1, "bbox": [10.0, 20.0, 30.0, 40.0]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    out_coco = tmp_path / "out.json"
+    stats = shrink(coco, images, out_coco, tmp_path / "dst", max_side=320)
+    assert stats["resized"] == 0
+
+    result = json.loads(out_coco.read_text(encoding="utf-8"))
+    assert result["annotations"][0]["bbox"] == [10.0, 20.0, 30.0, 40.0]

@@ -737,9 +737,29 @@ payload** phải nằm trên `fast_drive`. Khi bố cục Ultralytics và ảnh 
 
 | Nhánh | Đọc mỗi epoch | Cỡ tập | Dạng đúng | Ổ |
 |---|---|---|---|---|
-| Detection | 11.618 ảnh × 4 (mosaic) | 1,5 GB | file lẻ — Ultralytics chỉ nhận dạng này | `fast_drive` |
+| Detection **teacher** | 11.618 ảnh × 4 (mosaic) | 1,5 GB | file lẻ **ảnh gốc** — Ultralytics chỉ nhận dạng này, và nó train ở 640 có scale augment | `fast_drive` |
+| Detection **student** | 11.618 ảnh | **394 MB** | file lẻ **đã thu nhỏ cạnh dài 320** | `fast_drive` |
 | Anti-spoof | **419.935 mặt × 2 tỉ lệ** | 8,2 GB | **shard**, hai tỉ lệ **cùng một record** | `cold_drive` |
 | Recognition | 5.179.510 ảnh | 36 GB | shard — mirror đã sẵn dạng này | `cold_drive` |
+
+**Student detection dùng file lẻ chứ không shard, và đó là ngoại lệ có lý do.** Luật shard ở
+trên tồn tại để né phí mở file 15 ms của drvfs; `fast_drive` đã xoá phí đó (cache nóng cho
+38.856 ảnh/s). Với 11.618 ảnh nằm gọn trong page cache thì shard không mua thêm gì, mà lại
+đổi `Dataset` lấy `IterableDataset` — mất trộn mẫu ở mức từng ảnh, chỉ còn trộn theo bộ đệm.
+
+Thứ **thật sự** mua được tốc độ ở nhánh này là **thu nhỏ ảnh**, vì nghẽn là giải nén chứ
+không phải mở file. Số đo:
+
+| | ảnh/s (chỉ đọc) | ảnh/s (đọc + train) | epoch |
+|---|---|---|---|
+| Ảnh gốc 1,4 GB | 258 | 271 | 28 s |
+| **Thu nhỏ 320, 394 MB** | **1.135** | **1.111** | **10 s** |
+
+`shrink_coco.py` thu ảnh **và** tỉ lệ lại toạ độ trong cùng một lần quét. Làm hai lần, hoặc
+resize mà quên nhãn, cho ra tập dữ liệu vẫn nạp được, vẫn train được, và **sai đúng một hệ
+số ở mọi khuôn mặt** — không có gì báo lỗi.
+
+Cả hai arm A0 và A3 phải dùng **cùng một** tập đã thu nhỏ; đó là điều kiện của §3.7.
 
 Detection là nhánh **duy nhất** không đóng shard được, vì Ultralytics đọc file lẻ; may là
 nó cũng là nhánh duy nhất đủ nhỏ để nằm trọn trong page cache. Hai nhánh còn lại vượt xa
@@ -888,6 +908,9 @@ ml/
 │   │   │   ├── recordio_to_wds.py         # MXNet RecordIO → shard; Glint360K đã shard sẵn
 │   │   │   ├── images_to_wds.py           # ★ NƠI DUY NHẤT định nghĩa bố cục record shard
 │   │   │   │                              #   ShardWriter + read_shard — dùng cho cả 3 nhánh
+│   │   │   ├── shrink_coco.py             # ★ thu nho anh + ti le lai toa do trong MOT lan
+│   │   │   │                              #   quet. He so scale chi ton tai o mot cho, nen
+│   │   │   │                              #   khong the co anh moi voi nhan cu
 │   │   │   └── device_index.py            # quét ov5640/images → manifest.csv
 │   │   ├── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
 │   │   └── loaders.py

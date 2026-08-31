@@ -33,11 +33,13 @@ data:
     - data/splits/detection/v1/train.txt
     - data/splits/detection/v1/landmark_val.txt
   params:
-    coco: data/interim/detection/widerface_coco/train.json
-    # Full-size originals on the fast tier. The loader letterboxes to 160x120
-    # with no upscaling augmentation, so pre-shrinking would be safe but is not
-    # needed while the set fits the page cache (KEHOACH section 4.4.1).
-    images: data/raw/detection/widerface/WIDER_train/images
+    # Images and labels both shrunk to a 320 pixel long side by shrink_coco, so
+    # the pair cannot drift. Decoding a 1024x768 original to produce a 160x120
+    # letterbox is work thrown away, and this branch has no augmentation that
+    # ever asks for more (KEHOACH section 4.4.1). Measured: 258 to 1135 images a
+    # second, a 28 second epoch to 10.
+    coco: data/interim/detection/widerface_small/train.json
+    images: data/interim/detection/widerface_small/images
 
 train:
   epochs: 300
