@@ -62,6 +62,7 @@ class FeatureFGDLoss(DistillLoss):
         teacher_channels: list[int],
         image_hw: tuple[int, int],
         layers: list[str] | None = None,
+        teacher_layers: list[str] | None = None,
         fg_weight: float = 1.0,
         bg_weight: float = 0.5,
         attention_weight: float = 0.5,
@@ -73,6 +74,7 @@ class FeatureFGDLoss(DistillLoss):
                 f"{len(student_channels)} student level(s) but {len(teacher_channels)} teacher"
             )
         self.layers = layers
+        self.teacher_layer_names = teacher_layers
         self.image_hw = tuple(image_hw)
         self.fg_weight = fg_weight
         self.bg_weight = bg_weight
@@ -96,12 +98,15 @@ class FeatureFGDLoss(DistillLoss):
         if not student_features or not teacher_features:
             raise ValueError("feature distillation needs hooks on both student and teacher")
         names = self.layers or sorted(student_features)
+        # The two models name nothing the same, so levels are paired by position
+        # in the two lists rather than by a name that would have to match.
+        teacher_names = self.teacher_layer_names or sorted(teacher_features)
         gt_boxes = getattr(batch, "gt_boxes", None)
 
         total = None
-        for adapter, name in zip(self.adapters, names, strict=True):
+        for adapter, name, teacher_name in zip(self.adapters, names, teacher_names, strict=True):
             student = adapter(student_features[name])
-            teacher = teacher_features[name]
+            teacher = teacher_features[teacher_name]
             term = self._level_loss(student, teacher, gt_boxes)
             total = term if total is None else total + term
         return total / len(names)

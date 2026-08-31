@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         task_loss=LOSSES.get(TASK_LOSS)(),
         task_loss_weight=cfg.distill.task_loss_weight,
         student_layers=cfg.distill.feature_layers or None,
-        teacher_layers=cfg.distill.feature_layers or None,
+        teacher_layers=cfg.distill.teacher_layers() or None,
         schedule=StageSchedule(cfg.distill.stages) if cfg.distill.stages else None,
     )
 
@@ -118,7 +118,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         logger.warning("no second split file: no validation, and best.pth will not be written")
 
-    optimizer = build_optimizer(student, cfg.optim)
+    # The FGD adapters are trainable and live in the loss, so the optimizer covers
+    # the distiller; the frozen teacher drops out for lacking requires_grad.
+    optimizer = build_optimizer(distiller, cfg.optim)
     scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
 
     def step_fn(batch: tuple[torch.Tensor, object]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
@@ -152,6 +154,9 @@ def main(argv: list[str] | None = None) -> int:
         val_fn=val_fn if val_loader is not None else None,
         best_metric_key="loss",
     )
+    # The trainer moves only the student; the teacher and the FGD adapters hang
+    # off the distiller and would otherwise stay on the host.
+    distiller.to(trainer.device)
     # The loss runs the student itself, so a compiled run has to reach the model
     # the trainer compiled rather than the one handed to the distiller.
     distiller.student = trainer.model
