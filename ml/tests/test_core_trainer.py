@@ -245,3 +245,38 @@ def test_a_non_finite_loss_stops_the_run(config_file, tmp_path, tiny_model, tiny
     trainer.step_fn = lambda batch: (torch.tensor(float("nan"), requires_grad=True), {})
     with pytest.raises(FloatingPointError):
         trainer.fit()
+
+
+def test_resume_into_a_compiled_run_restores_the_weights(
+    monkeypatch, config_file, tmp_path, tiny_loader
+) -> None:
+    from tests.conftest import TinyNet
+
+    monkeypatch.setattr(torch, "compile", lambda m, **kw: PrefixWrapper(m))
+    cfg = _cfg(config_file, tmp_path, "train.compile=true")
+    run = create_run_dir(cfg)
+    trainer = _build(cfg, run, TinyNet(), tiny_loader)
+    trainer.fit()
+    saved = {k: v.clone() for k, v in trainer.module.state_dict().items()}
+
+    resumed_cfg = _cfg(
+        config_file, tmp_path, "train.compile=true", f"train.resume={run.ckpt_dir / CKPT_LAST}"
+    )
+    resumed = _build(resumed_cfg, create_run_dir(resumed_cfg), TinyNet(), tiny_loader)
+    assert isinstance(resumed.model, PrefixWrapper)
+    for key, value in saved.items():
+        assert torch.allclose(resumed.module.state_dict()[key], value), key
+
+
+def test_resume_keeps_the_best_metric_so_a_worse_epoch_cannot_overwrite_it(
+    config_file, tmp_path, tiny_model, tiny_loader
+) -> None:
+    cfg = _cfg(config_file, tmp_path)
+    run = create_run_dir(cfg)
+    trainer = _build(cfg, run, tiny_model, tiny_loader)
+    trainer.state.best_metric = 0.125
+    trainer.save_checkpoint(CKPT_LAST)
+
+    resumed_cfg = _cfg(config_file, tmp_path, f"train.resume={run.ckpt_dir / CKPT_LAST}")
+    resumed = _build(resumed_cfg, create_run_dir(resumed_cfg), tiny_model, tiny_loader)
+    assert resumed.state.best_metric == 0.125
