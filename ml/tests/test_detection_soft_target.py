@@ -14,13 +14,13 @@ from facepipe.tasks.detection.data import (
     collate,
     teacher_targets,
 )
+from facepipe.tasks.detection.losses.kd_feature_fgd import FeatureFGDLoss
 from facepipe.tasks.detection.postproc.decode import (
     bbox_decode,
     flatten_levels,
     kps_decode,
     unflatten_levels,
 )
-from facepipe.tasks.detection.losses.kd_feature_fgd import FeatureFGDLoss
 from facepipe.tasks.detection.student import STRIDES, feature_sizes, pyramid_priors
 from facepipe.tasks.detection.student.head import LANDMARK_COUNT
 from facepipe.tasks.detection.teacher.export_soft_target import CachedHeadOutput

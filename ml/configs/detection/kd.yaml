@@ -12,16 +12,14 @@ run:
 
 teacher:
   enabled: true
-  # Runs in the loop rather than from a cache. A crop or a flip moves the image,
-  # the boxes and the feature maps together, so nothing keyed on an image name
-  # still lines up by the time the batch is built (TASKS E4-T2).
+  # In the loop, not from a cache: a crop moves image, boxes and feature maps
+  # together, so nothing keyed on an image name still lines up (TASKS E4-T2).
   name: yolo26_pose_on_priors
   ckpt: artifacts/detection/teacher/yolo26m_pose_widerface.pt
   freeze: true
   params:
-    # It sees the student's own 160x120 frame at four times the size, not the
-    # original image: supervising towards faces the student input cannot resolve
-    # is the train-serve mismatch section 3 layer 2 removes.
+    # The student's own frame at four times the size, not the original: teaching
+    # faces the student input cannot resolve is the mismatch 3 layer 2 removes.
     upscale: 4
     input_hw: [120, 160]
     conf: 0.25
