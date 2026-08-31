@@ -43,18 +43,17 @@ data:
     test_split: "test:10:"
 
 train:
-  # Measured: 4 minutes an epoch for the baseline and 11 for the kd arm, so the
-  # two arms are about 4 and 11 hours. Same count for both on purpose: the plan
-  # asks for the cost difference to be reported, not equalised (KEHOACH 3.7).
+  # A step benchmark reads 1,841 images a second; a real epoch runs below any such
+  # ceiling. Same count for both arms, since 3.7 reports the cost gap (measurements).
   epochs: 60
   amp: true
   ema_decay: 0.999
   grad_clip_norm: 5.0
   val_every_epochs: 2
-  # Measured: 2,034 images a second contiguous against 2,617 channels-last. Both
-  # arms must resolve this the same way (KEHOACH section 3.7), so it is set here
-  # in the file the KD arm inherits rather than per arm.
+  # Measured: 2,034 images a second contiguous against 2,617 channels-last, and
+  # 1,545 against 1,841 once the step carries EMA and clipping (KEHOACH 3.7).
   channels_last: true
+  compile: true
 
 optim:
   name: sgd
