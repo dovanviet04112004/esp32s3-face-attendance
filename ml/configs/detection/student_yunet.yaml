@@ -25,7 +25,8 @@ data:
   batch_size: 64
   # Measured: reading alone gives 258 images a second against 271 with the step
   # included, so nothing here waits on the GPU. Twenty readers and a deeper queue
-  # take an epoch from 28 to 17 seconds; neither switch touches the arithmetic.
+  # hold a 28 second epoch end to end; the loader on its own reaches 17, and the
+  # gap is the trainer competing for the same cores.
   num_workers: 20
   prefetch_factor: 4
   split_files:
