@@ -1,0 +1,54 @@
+# Teacher training: CDCN++ on CelebA-Spoof, supervised on pseudo depth maps.
+# Arm A3 of KEHOACH section 3.7 distils from whatever this produces, so a teacher
+# that does not separate live from attack here makes the KD arm untrustworthy
+# rather than merely weaker. Check ACER on the upstream valid split before
+# training a student against it.
+
+run:
+  task: antispoof
+  seed: 42
+  deterministic: true
+  tags: [teacher, cdcnpp]
+  notes: depth-supervised teacher for the anti-spoof branch
+
+model:
+  name: cdcnpp
+  # The teacher reads the wide crop only, at the same size the student's own wide
+  # backbone takes, so both see the identical pixels during distillation.
+  input_hw: [80, 80]
+  params:
+    theta: 0.7
+    depth_size: 32
+    width: 64
+
+data:
+  name: celeba_spoof
+  batch_size: 96
+  num_workers: 8
+  prefetch_factor: 4
+  params:
+    shards: data/interim/antispoof/celeba_spoof_crops
+    train_split: train
+    val_split: valid
+    supervision:
+      contrast_weight: 10.0
+
+train:
+  epochs: 30
+  amp: true
+  ema_decay: 0.999
+  grad_clip_norm: 5.0
+  val_every_epochs: 2
+
+optim:
+  name: adam
+  lr: 0.0001
+  weight_decay: 0.00005
+
+sched:
+  name: step
+  warmup_epochs: 1
+  min_lr: 0.000001
+  params:
+    gamma: 0.5
+    step_epochs: 10

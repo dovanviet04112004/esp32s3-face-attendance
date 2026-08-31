@@ -8,10 +8,13 @@ from pathlib import Path
 
 import pytest
 import torch
+import yaml
 from PIL import Image
 from torch.utils.data import DataLoader
 
+from facepipe.core.trainer import CKPT_BEST, CKPT_LAST
 from facepipe.data.prepare.images_to_wds import ShardWriter
+from facepipe.tasks.antispoof import train_kd as antispoof_train_kd
 from facepipe.tasks.antispoof.data import (
     SpoofSample,
     SpoofShardDataset,
@@ -20,7 +23,16 @@ from facepipe.tasks.antispoof.data import (
     horizontal_flip,
 )
 from facepipe.tasks.antispoof.losses import SpoofTaskLoss
+from facepipe.tasks.antispoof.losses.task_loss import LIVE, SPOOF
 from facepipe.tasks.antispoof.student import INPUT_SIZE, HardSigmoid, MiniFASNetV2SE
+from facepipe.tasks.antispoof.teacher import train_teacher
+from facepipe.tasks.antispoof.teacher.cdcnpp import CDCNpp
+from facepipe.tasks.antispoof.teacher.depth_gt import DEPTH_SIZE, live_reference_mean
+from facepipe.tasks.antispoof.teacher.train_teacher import (
+    LIVE_THRESHOLD,
+    DepthSupervision,
+    liveness,
+)
 
 
 def crop_bytes(shade: int, size: int = 128) -> bytes:
@@ -258,3 +270,200 @@ def test_a_rectangular_input_is_refused(tmp_path: Path) -> None:
     path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="square"):
         crop_size(load_config(path))
+
+
+def test_depth_supervision_is_zero_on_a_perfect_map() -> None:
+    supervision = DepthSupervision()
+    labels = torch.tensor([LIVE, SPOOF])
+    target = supervision.targets(labels)
+    assert float(supervision(target, labels)) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_depth_supervision_punishes_a_flat_map_for_a_live_face() -> None:
+    supervision = DepthSupervision()
+    labels = torch.tensor([LIVE])
+    flat = torch.zeros(1, DEPTH_SIZE, DEPTH_SIZE)
+    assert float(supervision(flat, labels)) > 0.1
+
+
+def test_the_contrast_term_carries_weight_against_the_level_term() -> None:
+    """A smooth mound's neighbour differences are small, so an equal weight is not.
+
+    Left at one the contrast term is a few percent of the L1 and cannot stop the
+    uniform blob that satisfies the L1; the default brings the two within reach
+    of each other on a prediction that is close but structureless.
+    """
+    torch.manual_seed(0)
+    labels = torch.tensor([LIVE])
+    level_only = DepthSupervision(contrast_weight=0.0)
+    target = level_only.targets(labels)
+    noisy = target + torch.randn_like(target) * 0.05
+
+    level = float(level_only(noisy, labels))
+    contrast = float(DepthSupervision()(noisy, labels)) - level
+    assert 0.2 < contrast / level < 5.0
+
+
+def test_the_contrast_term_ignores_a_map_that_is_only_too_bright() -> None:
+    """Shifting every pixel alike leaves every neighbour difference untouched."""
+    labels = torch.tensor([LIVE])
+    supervision = DepthSupervision()
+    shifted = supervision.targets(labels) + 0.05
+    level_only = float(DepthSupervision(contrast_weight=0.0)(shifted, labels))
+    assert float(supervision(shifted, labels)) == pytest.approx(level_only, abs=1e-2)
+
+
+def test_the_teacher_score_reads_a_live_map_above_the_threshold() -> None:
+    """Dividing by the mound's own mean is what puts a live face above one half."""
+    supervision = DepthSupervision()
+    labels = torch.tensor([LIVE, SPOOF])
+    scores = liveness(supervision.targets(labels), live_reference_mean())
+    assert float(scores[0]) > LIVE_THRESHOLD
+    assert float(scores[1]) < LIVE_THRESHOLD
+
+
+def write_split_shards(root: Path, records: int = 8) -> Path:
+    for split in ("train", "valid"):
+        write_shards(root / split, records=records, shard_size=4)
+    return root
+
+
+def teacher_config(tmp_path: Path, shards: Path) -> Path:
+    payload = {
+        "run": {"task": "antispoof", "seed": 42, "artifacts_root": str(tmp_path / "artifacts")},
+        "model": {
+            "name": "cdcnpp",
+            "input_hw": [INPUT_SIZE, INPUT_SIZE],
+            "params": {"theta": 0.7, "depth_size": 8, "width": 8},
+        },
+        "data": {
+            "name": "celeba_spoof",
+            "batch_size": 2,
+            "num_workers": 0,
+            "params": {"shards": str(shards), "supervision": {"depth_size": 8}},
+        },
+        "train": {"epochs": 1, "amp": False, "device": "cpu", "log_every_steps": 1},
+        "optim": {"name": "adam", "lr": 0.0001},
+        "sched": {"name": "cosine"},
+        "log": {"tensorboard": False},
+    }
+    path = tmp_path / "teacher.yaml"
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    return path
+
+
+def test_the_teacher_trains_and_reports_acer(tmp_path: Path) -> None:
+    shards = write_split_shards(tmp_path / "shards")
+    assert train_teacher.main(["--cfg", str(teacher_config(tmp_path, shards))]) == 0
+
+    run = next((tmp_path / "artifacts" / "antispoof" / "runs").iterdir())
+    assert (run / "ckpt" / CKPT_LAST).is_file()
+    # ACER is what picks the best epoch, so a missing best.pth means val_fn never
+    # produced the metric the teacher is accepted on.
+    assert (run / "ckpt" / CKPT_BEST).is_file()
+
+
+def student_config(tmp_path: Path, shards: Path, teacher_ckpt: Path | None) -> Path:
+    payload = {
+        "run": {"task": "antispoof", "seed": 42, "artifacts_root": str(tmp_path / "artifacts")},
+        "model": {
+            "name": "minifasnet_v2_se",
+            "input_hw": [INPUT_SIZE, INPUT_SIZE],
+            "params": {"num_classes": 2, "embedding": 16},
+        },
+        "data": {
+            "name": "celeba_spoof",
+            "batch_size": 2,
+            "num_workers": 0,
+            "params": {"shards": str(shards)},
+        },
+        "train": {"epochs": 1, "amp": False, "device": "cpu", "log_every_steps": 1},
+        "optim": {"name": "sgd", "lr": 0.001},
+        "sched": {"name": "cosine"},
+        "log": {"tensorboard": False},
+    }
+    if teacher_ckpt is not None:
+        payload["teacher"] = {
+            "enabled": True,
+            "name": "cdcnpp",
+            "ckpt": str(teacher_ckpt),
+            "params": {"theta": 0.7, "depth_size": 8, "width": 8},
+        }
+        payload["distill"] = {
+            "enabled": True,
+            "feature_layers": ["drop"],
+            "losses": [
+                {"name": "antispoof_kd_logit", "weight": 1.0},
+                {
+                    "name": "antispoof_kd_depth_map",
+                    "weight": 1.0,
+                    "params": {"embedding": 32, "depth_size": 8},
+                },
+                {
+                    "name": "antispoof_contrastive_depth",
+                    "weight": 0.5,
+                    "params": {"embedding": 32, "depth_size": 8},
+                },
+            ],
+        }
+    path = tmp_path / "student.yaml"
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    return path
+
+
+def test_the_baseline_student_trains_without_a_teacher(tmp_path: Path) -> None:
+    shards = write_split_shards(tmp_path / "shards")
+    assert antispoof_train_kd.main(["--cfg", str(student_config(tmp_path, shards, None))]) == 0
+    run = next((tmp_path / "artifacts" / "antispoof" / "runs").iterdir())
+    assert (run / "ckpt" / CKPT_LAST).is_file()
+
+
+def test_the_kd_arm_runs_every_term_the_branch_has(tmp_path: Path) -> None:
+    """The depth terms project from a student feature, so this covers the hooks too."""
+    shards = write_split_shards(tmp_path / "shards")
+    teacher_ckpt = tmp_path / "teacher.pth"
+    teacher = CDCNpp(theta=0.7, depth_size=8, width=8)
+    torch.save({"model": teacher.state_dict()}, teacher_ckpt)
+
+    cfg_path = student_config(tmp_path, shards, teacher_ckpt)
+    assert antispoof_train_kd.main(["--cfg", str(cfg_path)]) == 0
+    run = next((tmp_path / "artifacts" / "antispoof" / "runs").iterdir())
+    assert (run / "ckpt" / CKPT_LAST).is_file()
+
+
+def test_the_depth_projections_are_trained_by_the_run(tmp_path: Path) -> None:
+    """They live in the losses, so an optimizer over the student alone misses them."""
+    from facepipe.core.config import load_config
+    from facepipe.core.distiller import DistillLossSet
+    from facepipe.core.registry import MODELS
+    from facepipe.core.scheduler import build_optimizer
+
+    shards = write_split_shards(tmp_path / "shards")
+    teacher_ckpt = tmp_path / "teacher.pth"
+    torch.save({"model": CDCNpp(theta=0.7, depth_size=8, width=8).state_dict()}, teacher_ckpt)
+    cfg = load_config(student_config(tmp_path, shards, teacher_ckpt))
+
+    student = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
+    loss_set = DistillLossSet.from_config(cfg.distill)
+    distiller = antispoof_train_kd.Distiller(
+        student=student,
+        teacher=antispoof_train_kd.build_teacher(cfg),
+        loss_set=loss_set,
+        task_loss=None,
+    )
+    tracked = {
+        id(p)
+        for group in build_optimizer(distiller, cfg.optim).param_groups
+        for p in group["params"]
+    }
+    projection = loss_set.terms[1].fn.project[0].weight
+    assert id(projection) in tracked
+
+
+def test_the_teacher_is_loaded_from_its_ema_copy() -> None:
+    """A run with EMA on validates its EMA copy, so that is the measured model."""
+    live = {"weight": torch.zeros(2)}
+    shadow = {"weight": torch.ones(2)}
+    payload = {"model": live, "ema": {"decay": 0.999, "module": shadow}}
+    assert antispoof_train_kd.trained_weights(payload) is shadow
+    assert antispoof_train_kd.trained_weights({"model": live}) is live

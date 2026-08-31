@@ -1,0 +1,47 @@
+# Arm A3 of KEHOACH section 3.7: the baseline plus every distillation term this
+# branch has. Everything the two arms must share - architecture, seed, split,
+# augmentation, optimizer, schedule, epoch count, compile - is inherited rather
+# than repeated, so the only difference between the two runs is the teacher and
+# the losses that read it.
+
+_base_: student_minifasnet.yaml
+
+run:
+  tags: [student, minifasnet_v2_se, arm_kd_full]
+  notes: kd arm, logit plus depth map plus contrastive depth from CDCN++
+
+teacher:
+  enabled: true
+  name: cdcnpp
+  # Written by train_teacher.py. Its EMA copy is what gets loaded, because that
+  # is the copy whose ACER was measured.
+  ckpt: artifacts/antispoof/runs/teacher/ckpt/best.pth
+  input_hw: [80, 80]
+  params:
+    theta: 0.7
+    depth_size: 32
+    width: 64
+
+distill:
+  enabled: true
+  task_loss_weight: 1.0
+  # The joined embedding of both backbones, which is what the depth terms project
+  # a map out of. The classifier after it outputs two numbers and would carry no
+  # spatial information at all.
+  feature_layers: [drop]
+  losses:
+    - name: antispoof_kd_logit
+      weight: 1.0
+      params:
+        temperature: 2.0
+        scale: 4.0
+    - name: antispoof_kd_depth_map
+      weight: 1.0
+      params:
+        embedding: 256
+        depth_size: 32
+    - name: antispoof_contrastive_depth
+      weight: 0.5
+      params:
+        embedding: 256
+        depth_size: 32
