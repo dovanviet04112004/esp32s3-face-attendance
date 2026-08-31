@@ -29,12 +29,20 @@ SGD lr 0,02 + nesterov, cosine + 3 epoch warmup, EMA 0,999, `split.lock` v1, 300
 Chấm bằng `eval.py`, giao thức `evaluation.m` của tác giả (chuẩn hoá điểm toàn tập, tập
 độ khó làm ignore-mask, bao lồi VOC AP).
 
-| | easy | medium | hard |
-|---|---|---|---|
-| Mục tiêu KẾ HOẠCH | 0,884 | 0,866 | 0,750 |
-| v1 (epoch 150, `best.pth`) | **0,6407** | **0,4342** | **0,1844** |
-| v1 (epoch 300) | 0,6291 | 0,4259 | 0,1814 |
-| v2 (epoch 300, `best.pth`) | **0,6439** | 0,3664 | 0,1524 |
+| | easy | medium | hard | **≥32 px** (cổng) |
+|---|---|---|---|---|
+| YuNet công bố, **độ phân giải gốc** | 0,884 | 0,866 | 0,750 | — |
+| v1 (epoch 150, `best.pth`) | **0,6407** | **0,4342** | **0,1844** | 0,8775 |
+| v1 (epoch 300) | 0,6291 | 0,4259 | 0,1814 | — |
+| v2 (epoch 300, `best.pth`) | **0,6439** | 0,3664 | 0,1524 | **0,9313** |
+
+Cột `≥32 px` là cổng nghiệm thu (§3 lớp 2): mặt ≥ 32 px ở đầu vào detect = ≥ 128 px trong
+khung camera 640×480, tức vừa đủ cho crop 112×112 của recognition mà không phải phóng to.
+Mặt dưới ngưỡng làm ignore-mask. Ngưỡng FP32 là 0,90 — **v2 đạt 0,9313**, v1 đạt 0,8775.
+
+Ba số Easy/Med/Hard báo cáo để đối chiếu tài liệu, không dùng để chốt: chúng đo trên toàn
+bộ nhãn WIDER kể cả vệt 3 px, và số công bố của YuNet đo ở độ phân giải gốc chứ không
+phải 160×120.
 
 `best.pth` của v2 đạt val AP **0,7845**. Đường cong bão hoà từ epoch ~165: 0,7735 ở
 epoch 165 so với 0,7845 ở epoch 300 — 135 epoch cuối đổi lấy 0,011 AP.
@@ -138,10 +146,10 @@ Ca 2 và 3 mặt ở sàn 32 px chỉ có 19 và 5 ảnh — **không đủ đ�
 
 ## 6. Bảng đối chứng A — có teacher hay không (§3.7)
 
-| Arm | Cách train | val AP | WIDER easy/medium/hard | INT8 trên `test_device` |
-|---|---|---|---|---|
-| **A0** | task loss, không teacher | 0,7845 | 0,6439 / 0,3664 / 0,1524 | chưa chạy |
-| **A3** | A0 + logit + feature + localization + FGD | — | — | — |
+| Arm | Cách train | val AP | AP ≥32 px (cổng) | WIDER e/m/h | INT8 trên `test_device` |
+|---|---|---|---|---|---|
+| **A0** | task loss, không teacher | 0,7845 | **0,9313** | 0,6439 / 0,3664 / 0,1524 | chưa chạy |
+| **A3** | A0 + logit + feature + localization + FGD | — | — | — | — |
 
 A3 chưa chạy được: `detection_kd_logit` cần soft target là `HeadOutput` trên prior của
 student, còn `Yolo26PoseTeacher` trả `TeacherDetections`; và FGD cần feature map của
@@ -157,9 +165,7 @@ chốt được arm nào, và chưa được viết ADR.
 
 - Chấm lại v1 theo tiêu chí AP để tách hai biến ở §1.
 - E4-T13 → chạy arm A3 → điền nốt §6.
-- Thang lượng tử hoá §3.8, `quant_ladder.md`.
-- Cổng nghiệm thu của nhánh đang là WIDER hard ≥ 0,750, tức cột sàn 0 ở §4 — không đạt
-  được ở 160×120. Cần quyết định đổi sang thước đo trên miền khuôn mặt nhánh này phục vụ.
+- Thang lượng tử hoá §3.8, `quant_ladder.md`. Cổng INT8: sụt < 1% so với 0,9313.
 
 Ngưỡng tin cậy **0,30** đo ở §5 là giá trị đề nghị, không phải hằng số trong code: theo
 §4.9 nó nằm ở NVS trên kiosk và đổi được bằng `SET_CONFIG`, khai ở
