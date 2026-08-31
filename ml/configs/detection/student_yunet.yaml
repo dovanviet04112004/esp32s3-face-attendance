@@ -27,6 +27,12 @@ data:
   split_files:
     - data/splits/detection/v1/train.txt
     - data/splits/detection/v1/landmark_val.txt
+  params:
+    coco: data/interim/detection/widerface_coco/train.json
+    # Full-size originals on the fast tier. The loader letterboxes to 160x120
+    # with no upscaling augmentation, so pre-shrinking would be safe but is not
+    # needed while the set fits the page cache (KEHOACH section 4.4.1).
+    images: data/raw/detection/widerface/WIDER_train/images
 
 train:
   epochs: 300

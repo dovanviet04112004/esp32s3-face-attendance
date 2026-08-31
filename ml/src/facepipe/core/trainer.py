@@ -194,7 +194,7 @@ class Trainer:
         self.optimizer.zero_grad(set_to_none=True)
 
         for index, batch in enumerate(self.train_loader):
-            batch = self._to_device(batch)
+            batch = self.to_device(batch)
             with torch.amp.autocast(
                 self.device.type, dtype=self.amp_dtype, enabled=self.amp_enabled
             ):
@@ -266,21 +266,21 @@ class Trainer:
             self.state.best_metric = float(value)
             self.save_checkpoint(CKPT_BEST)
 
-    def _to_device(self, batch: Any) -> Any:
+    def to_device(self, batch: Any) -> Any:
         if isinstance(batch, torch.Tensor):
             moved = batch.to(self.device, non_blocking=True)
             if self.channels_last and moved.dim() == 4 and moved.is_floating_point():
                 moved = moved.contiguous(memory_format=torch.channels_last)
             return moved
         if isinstance(batch, Mapping):
-            return {k: self._to_device(v) for k, v in batch.items()}
+            return {k: self.to_device(v) for k, v in batch.items()}
         if isinstance(batch, tuple | list):
-            moved = [self._to_device(v) for v in batch]
+            moved = [self.to_device(v) for v in batch]
             return type(batch)(moved) if isinstance(batch, tuple) else moved
         # Branches carry their targets in a dataclass. Left alone it would stay
         # on the host while the images move, and the loss would fail on device.
         if is_dataclass(batch) and not isinstance(batch, type):
-            moved_fields = {f.name: self._to_device(getattr(batch, f.name)) for f in fields(batch)}
+            moved_fields = {f.name: self.to_device(getattr(batch, f.name)) for f in fields(batch)}
             return replace(batch, **moved_fields)
         return batch
 

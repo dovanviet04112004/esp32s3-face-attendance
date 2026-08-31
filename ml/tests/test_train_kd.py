@@ -58,14 +58,14 @@ def mover(channels_last: bool = False) -> object:
     fields = {
         "device": torch.device("cpu"),
         "channels_last": channels_last,
-        "_to_device": Trainer._to_device,
+        "to_device": Trainer.to_device,
     }
     return type("S", (), fields)()
 
 
 def test_targets_in_a_dataclass_are_moved_with_the_images() -> None:
     batch = Holder(left=torch.zeros(2), right=[torch.ones(3)])
-    moved = mover()._to_device(batch)
+    moved = mover().to_device(batch)
     assert moved is not batch
     assert isinstance(moved, Holder)
     assert torch.equal(moved.left, batch.left)
@@ -75,14 +75,14 @@ def test_targets_in_a_dataclass_are_moved_with_the_images() -> None:
 def test_channels_last_reaches_images_and_leaves_targets_alone() -> None:
     images = torch.zeros(2, 3, 8, 8)
     labels = torch.zeros(2, 4)
-    moved = mover(channels_last=True)._to_device([images, labels])
+    moved = mover(channels_last=True).to_device([images, labels])
     assert moved[0].is_contiguous(memory_format=torch.channels_last)
     assert moved[1].is_contiguous()
 
 
 def test_channels_last_off_leaves_the_layout_untouched() -> None:
     images = torch.zeros(2, 3, 8, 8)
-    moved = mover()._to_device(images)
+    moved = mover().to_device(images)
     assert moved.is_contiguous()
 
 
@@ -124,7 +124,7 @@ def write_config(tmp_path: Path, coco: Path, images: Path, split: Path) -> Path:
             "name": "widerface",
             "batch_size": 2,
             "num_workers": 0,
-            "split_files": [str(split)],
+            "split_files": [str(split), str(split)],
             "params": {"coco": str(coco), "images": str(images)},
         },
         "train": {"epochs": 1, "amp": False, "device": "cpu", "log_every_steps": 1},
@@ -153,3 +153,27 @@ def test_the_run_records_that_no_teacher_was_loaded(tmp_path: Path) -> None:
     cfg = load_config(cfg_path)
     assert not cfg.teacher.enabled
     assert train_kd.build_teacher(cfg) is None
+
+
+def test_validation_writes_a_best_checkpoint(tmp_path: Path) -> None:
+    from facepipe.core.trainer import CKPT_BEST
+
+    cfg_path = write_config(tmp_path, *write_dataset(tmp_path))
+    assert train_kd.main(["--cfg", str(cfg_path)]) == 0
+    run = next((tmp_path / "artifacts" / "detection" / "runs").iterdir())
+    assert (run / "ckpt" / CKPT_BEST).is_file()
+
+
+def test_a_single_split_says_so_instead_of_skipping_quietly(tmp_path: Path, caplog) -> None:
+    coco, images, split = write_dataset(tmp_path)
+    cfg_path = write_config(tmp_path, coco, images, split)
+    payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    payload["data"]["split_files"] = [str(split)]
+    cfg_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+    with caplog.at_level("WARNING"):
+        assert train_kd.main(["--cfg", str(cfg_path)]) == 0
+    assert "no validation" in caplog.text
+
+    run = next((tmp_path / "artifacts" / "detection" / "runs").iterdir())
+    assert not (run / "ckpt" / "best.pth").exists()
