@@ -101,9 +101,7 @@ class DepthWise(nn.Module):
     ) -> None:
         super().__init__()
         self.expand = ConvBnPrelu(in_channels, expand, kernel_size=1)
-        self.filter = ConvBnPrelu(
-            expand, expand, kernel_size, stride, padding, groups=expand
-        )
+        self.filter = ConvBnPrelu(expand, expand, kernel_size, stride, padding, groups=expand)
         self.excite = SqueezeExcite(expand) if squeeze_excite else None
         self.project = ConvBn(expand, out_channels, kernel_size=1)
 

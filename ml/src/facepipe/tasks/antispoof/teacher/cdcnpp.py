@@ -43,9 +43,7 @@ class CDConv2d(nn.Module):
         theta: float = 0.7,
     ) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(
-            in_channels, out_channels, kernel_size, stride, padding, bias=False
-        )
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False)
         self.theta = theta
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
