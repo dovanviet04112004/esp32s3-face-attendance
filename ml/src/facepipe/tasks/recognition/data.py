@@ -136,10 +136,10 @@ class Ms1mShardDataset(IterableDataset):
     def count_records(self) -> int:
         """How many records this split keeps, read from a sidecar or counted once.
 
-        Counting means streaming all 36 GB, which the LR schedule would otherwise
-        pay for at the start of every run and every resume. The answer depends
-        only on the shards and the identity list, so it is written beside the
-        shards and keyed by both (KEHOACH section 4.4.2).
+        Counting streams all 36 GB and takes about fifteen minutes, which the LR
+        schedule would otherwise pay for at the start of every run and every
+        resume. The answer depends only on the shards and the identity list, so it
+        is written beside the shards and keyed by both (KEHOACH section 4.4.2).
         """
         sidecar = self.shards[0].parent / COUNTS_NAME
         key = f"{len(self.labels)}:{min(self.labels, default=-1)}:{max(self.labels, default=-1)}"
