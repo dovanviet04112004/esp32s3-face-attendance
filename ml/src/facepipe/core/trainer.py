@@ -269,7 +269,9 @@ class Trainer:
     def to_device(self, batch: Any) -> Any:
         if isinstance(batch, torch.Tensor):
             moved = batch.to(self.device, non_blocking=True)
-            if self.channels_last and moved.dim() == 4 and moved.is_floating_point():
+            # Bytes count as images: a branch normalising on the device would
+            # otherwise reach the model contiguous, losing what this buys.
+            if self.channels_last and moved.dim() == 4:
                 moved = moved.contiguous(memory_format=torch.channels_last)
             return moved
         if isinstance(batch, Mapping):

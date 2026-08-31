@@ -80,6 +80,14 @@ def test_channels_last_reaches_images_and_leaves_targets_alone() -> None:
     assert moved[1].is_contiguous()
 
 
+def test_channels_last_reaches_byte_images_too() -> None:
+    """A branch that normalises on the device sends bytes; converting the float
+    afterwards is too late, since the model was already given a plain tensor."""
+    moved = mover(channels_last=True).to_device(torch.zeros(2, 3, 8, 8, dtype=torch.uint8))
+    assert moved.is_contiguous(memory_format=torch.channels_last)
+    assert moved.float().is_contiguous(memory_format=torch.channels_last)
+
+
 def test_channels_last_off_leaves_the_layout_untouched() -> None:
     images = torch.zeros(2, 3, 8, 8)
     moved = mover().to_device(images)
