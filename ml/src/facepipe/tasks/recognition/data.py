@@ -1,0 +1,247 @@
+"""MS1MV3 shards to batches of aligned faces, labels and cached teacher vectors.
+
+The images arrive already aligned to the ArcFace reference at 112x112, which is
+the same geometry postproc/align.py produces on the device, so nothing here
+warps anything. Augmentation is a horizontal flip and nothing else: identity is
+what the branch is learning, and a crop or a colour shift teaches it that two
+views of one face are two people.
+
+Records stream front to back out of the shards. An epoch is 5.18 million faces
+and 36 GB, which no page cache holds, so the order a shard is written in is the
+order it is read in and shuffling happens by shard order plus a held-back buffer
+(KEHOACH section 4.4.1).
+
+The split is identity-disjoint (KEHOACH section 1.3): the labels a run trains on
+are a contiguous renumbering of the identities in its own split, so a classifier
+column exists for each and only for those.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import random
+from collections import deque
+from collections.abc import Iterator
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import torch
+from PIL import Image
+from torch.utils.data import IterableDataset, get_worker_info
+
+from facepipe.data.prepare.images_to_wds import KEY_FIELD, read_shard
+
+ALIGNED_SIZE = 112
+PIXEL_MEAN = 127.5
+PIXEL_SCALE = 127.5
+# A buffered sample is 37 KB, so the buffer costs this many megabytes in every
+# worker process at once; twenty readers on a 9 GB host cannot afford more.
+SHUFFLE_BUFFER = 2048
+OPEN_SHARDS = 4
+TEACHER_DTYPE = np.float16
+COUNTS_NAME = "record_counts.json"
+
+
+@dataclass
+class RecogSample:
+    """One face: the aligned crop, its class index, and the teacher's answer."""
+
+    image: np.ndarray
+    label: int
+    teacher: np.ndarray | None = None
+
+
+@dataclass
+class RecogTargets:
+    """What a batch is scored against; teacher is absent on the baseline arm."""
+
+    labels: torch.Tensor
+    teacher: torch.Tensor | None = None
+
+
+def shard_paths(root: Path) -> list[Path]:
+    return sorted(Path(root).glob("*.tar"))
+
+
+def read_identities(path: Path) -> list[int]:
+    """Identity indices from a split file, one per line, ignoring any suffix."""
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    return [int(line.strip().split("/")[0]) for line in lines if line.strip()]
+
+
+def label_map(identities: list[int]) -> dict[int, int]:
+    """Original identity index to a contiguous class index, in sorted order."""
+    return {identity: index for index, identity in enumerate(sorted(set(identities)))}
+
+
+def decode(payload: bytes, size: int = ALIGNED_SIZE) -> np.ndarray:
+    with Image.open(io.BytesIO(payload)) as handle:
+        image = handle.convert("RGB")
+        if image.size != (size, size):
+            image = image.resize((size, size), Image.BILINEAR)
+        return np.array(image, dtype=np.uint8)
+
+
+def normalize_batch(images: torch.Tensor) -> torch.Tensor:
+    """Bytes to the [-1, 1] range both models were trained in.
+
+    Done on the accelerator rather than in the loader: a normalised batch is four
+    times the bytes of a byte batch, and that difference is paid on every host to
+    device copy for the whole run.
+    """
+    return (images.float() - PIXEL_MEAN) / PIXEL_SCALE
+
+
+class Ms1mShardDataset(IterableDataset):
+    """Streams (image, label, teacher embedding) for one side of the split."""
+
+    def __init__(
+        self,
+        root: Path,
+        identities: list[int],
+        size: int = ALIGNED_SIZE,
+        train: bool = True,
+        seed: int = 42,
+        teacher_cache: Path | None = None,
+        embedding_dim: int = 512,
+        shuffle_buffer: int = SHUFFLE_BUFFER,
+        open_shards: int = OPEN_SHARDS,
+    ) -> None:
+        self.shards = shard_paths(root)
+        if not self.shards:
+            raise FileNotFoundError(f"{root}: no *.tar")
+        self.labels = label_map(identities)
+        self.size = size
+        self.train = train
+        self.seed = seed
+        self.shuffle_buffer = shuffle_buffer if train else 0
+        self.open_shards = max(1, open_shards if train else 1)
+        self.teacher_cache = Path(teacher_cache) if teacher_cache else None
+        self.embedding_dim = embedding_dim
+        self.epoch = 0
+        self._cache: np.memmap | None = None
+        self._length = 0
+
+    @property
+    def num_classes(self) -> int:
+        return len(self.labels)
+
+    def __len__(self) -> int:
+        if not self._length:
+            self._length = self.count_records()
+        return self._length
+
+    def count_records(self) -> int:
+        """How many records this split keeps, read from a sidecar or counted once.
+
+        Counting means streaming all 36 GB, which the LR schedule would otherwise
+        pay for at the start of every run and every resume. The answer depends
+        only on the shards and the identity list, so it is written beside the
+        shards and keyed by both (KEHOACH section 4.4.2).
+        """
+        sidecar = self.shards[0].parent / COUNTS_NAME
+        key = f"{len(self.labels)}:{min(self.labels, default=-1)}:{max(self.labels, default=-1)}"
+        cached = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.is_file() else {}
+        if key in cached:
+            return int(cached[key])
+
+        kept = sum(1 for shard in self.shards for record in read_shard(shard) if self.keeps(record))
+        cached[key] = kept
+        sidecar.write_text(json.dumps(cached, sort_keys=True), encoding="utf-8")
+        return kept
+
+    def keeps(self, record: dict[str, bytes]) -> bool:
+        return int(record["cls"]) in self.labels
+
+    def _teacher_rows(self) -> np.memmap | None:
+        """Open the embedding cache lazily, once per worker process."""
+        if self.teacher_cache is None:
+            return None
+        if self._cache is None:
+            rows = self.teacher_cache.stat().st_size // (self.embedding_dim * 2)
+            self._cache = np.memmap(
+                self.teacher_cache, dtype=TEACHER_DTYPE, mode="r", shape=(rows, self.embedding_dim)
+            )
+        return self._cache
+
+    def _my_shards(self) -> list[Path]:
+        """This worker's slice of the shard list.
+
+        Without the split every worker would read every shard, so an epoch would
+        train on each record num_workers times while the logs showed one pass.
+        """
+        info = get_worker_info()
+        shards = list(self.shards)
+        if self.train:
+            random.Random(self.seed + self.epoch).shuffle(shards)
+        if info is None:
+            return shards
+        return shards[info.id :: info.num_workers]
+
+    def _interleaved(self, shards: list[Path]) -> Iterator[dict[str, bytes]]:
+        """Take one record from each of several shards in turn.
+
+        MS1MV3 stores a person's photographs back to back, so a single stream
+        hands the shuffle buffer one identity at a time and a batch ends up
+        holding very few people. Reading several shards in rotation multiplies
+        the identities in flight without giving up the sequential read each
+        stream still performs.
+        """
+        streams: deque[Iterator[dict[str, bytes]]] = deque()
+        waiting = iter(shards)
+        while True:
+            while len(streams) < self.open_shards:
+                shard = next(waiting, None)
+                if shard is None:
+                    break
+                streams.append(read_shard(shard))
+            if not streams:
+                return
+            stream = streams.popleft()
+            record = next(stream, None)
+            if record is None:
+                continue
+            streams.append(stream)
+            yield record
+
+    def _records(self) -> Iterator[RecogSample]:
+        cache = self._teacher_rows()
+        for record in self._interleaved(self._my_shards()):
+            if not self.keeps(record):
+                continue
+            index = int(record[KEY_FIELD])
+            yield RecogSample(
+                image=decode(record["jpg"], self.size),
+                label=self.labels[int(record["cls"])],
+                teacher=np.asarray(cache[index]) if cache is not None else None,
+            )
+
+    def __iter__(self) -> Iterator[RecogSample]:
+        info = get_worker_info()
+        rng = random.Random(self.seed + self.epoch + (info.id if info else 0))
+        buffer: list[RecogSample] = []
+        for sample in self._records():
+            if self.train and rng.random() < 0.5:
+                sample = RecogSample(sample.image[:, ::-1].copy(), sample.label, sample.teacher)
+            if self.shuffle_buffer <= 0:
+                yield sample
+                continue
+            buffer.append(sample)
+            if len(buffer) >= self.shuffle_buffer:
+                index = rng.randrange(len(buffer))
+                buffer[index], buffer[-1] = buffer[-1], buffer[index]
+                yield buffer.pop()
+        rng.shuffle(buffer)
+        yield from buffer
+
+
+def collate(batch: list[RecogSample]) -> tuple[torch.Tensor, RecogTargets]:
+    """Stack into byte images and the targets they are scored against."""
+    images = torch.from_numpy(np.stack([s.image for s in batch])).permute(0, 3, 1, 2).contiguous()
+    labels = torch.tensor([s.label for s in batch], dtype=torch.long)
+    teacher = None
+    if batch[0].teacher is not None:
+        teacher = torch.from_numpy(np.stack([s.teacher for s in batch]))
+    return images, RecogTargets(labels=labels, teacher=teacher)

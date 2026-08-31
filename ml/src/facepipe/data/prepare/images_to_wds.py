@@ -31,6 +31,7 @@ SHARD_SIZE = 2000
 SHARD_STEM = "shard"
 JPEG_QUALITY = 90
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
+KEY_FIELD = "__key__"
 
 
 @dataclass
@@ -108,6 +109,10 @@ def read_shard(path: Path) -> Iterator[dict[str, bytes]]:
 
     Opened in stream mode: a shard is read front to back, never seeked, which is
     the access pattern the whole layout exists to produce.
+
+    The grouping text is returned under KEY_FIELD as well, following WebDataset.
+    A branch that caches per-record data outside the shard needs it to line the
+    two up; the extension keys stay exactly what the writer was given.
     """
     current_key: str | None = None
     record: dict[str, bytes] = {}
@@ -117,7 +122,7 @@ def read_shard(path: Path) -> Iterator[dict[str, bytes]]:
             if key != current_key:
                 if record:
                     yield record
-                current_key, record = key, {}
+                current_key, record = key, {KEY_FIELD: key.encode("ascii")}
             handle = archive.extractfile(member)
             record[suffix] = handle.read() if handle else b""
     if record:
