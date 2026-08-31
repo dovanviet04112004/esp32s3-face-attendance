@@ -28,7 +28,7 @@ from facepipe.core.scheduler import build_optimizer, build_scheduler
 from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer
 
-from .data import SpoofShardDataset, collate
+from .data import QUALITY_RANGE, RECOMPRESS_PROBABILITY, SpoofShardDataset, collate
 from .eval import summary
 from .losses import task_loss  # noqa: F401  registers "antispoof_task"
 from .losses.task_loss import LIVE
@@ -62,6 +62,8 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         train=train,
         seed=cfg.run.seed,
         splits=split,
+        recompress_probability=float(params.get("recompress_probability", RECOMPRESS_PROBABILITY)),
+        quality_range=tuple(params.get("quality_range", QUALITY_RANGE)),
     )
 
 

@@ -29,6 +29,9 @@ from facepipe.data.prepare.images_to_wds import read_shard
 
 CROP_SIZE = 80
 SHUFFLE_BUFFER = 2048
+# Spans both pools the branch meets, so neither end can cue the label (KEHOACH 1.3).
+QUALITY_RANGE = (30, 95)
+RECOMPRESS_PROBABILITY = 0.5
 
 
 @dataclass
@@ -117,6 +120,26 @@ def horizontal_flip(sample: SpoofSample) -> SpoofSample:
     return SpoofSample(sample.tight[:, ::-1].copy(), sample.wide[:, ::-1].copy(), sample.label)
 
 
+def requantise(image: np.ndarray, quality: int) -> np.ndarray:
+    """Re-encode one view as JPEG at the given quality and decode it back."""
+    buffer = io.BytesIO()
+    Image.fromarray(image).save(buffer, format="JPEG", quality=quality)
+    buffer.seek(0)
+    with Image.open(buffer) as handle:
+        return np.array(handle.convert("RGB"), dtype=np.uint8)
+
+
+def recompress(sample: SpoofSample, quality: int) -> SpoofSample:
+    """Put both views through one JPEG quality, so compression cannot carry the label.
+
+    Measured: the training pool is 450x600 at a median 72 KB and the graded pool
+    480x600 at 471 KB, so blocking artefacts separate the two on their own.
+    """
+    return SpoofSample(
+        requantise(sample.tight, quality), requantise(sample.wide, quality), sample.label
+    )
+
+
 class SpoofShardDataset(IterableDataset):
     """Streams (tight, wide, label) from one split's shards."""
 
@@ -128,6 +151,8 @@ class SpoofShardDataset(IterableDataset):
         seed: int = 42,
         shuffle_buffer: int = SHUFFLE_BUFFER,
         splits: str | Sequence[str] | None = None,
+        recompress_probability: float = RECOMPRESS_PROBABILITY,
+        quality_range: tuple[int, int] = QUALITY_RANGE,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -140,6 +165,8 @@ class SpoofShardDataset(IterableDataset):
         self.train = train
         self.seed = seed
         self.shuffle_buffer = shuffle_buffer if train else 0
+        self.recompress_probability = recompress_probability
+        self.quality_range = quality_range
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -176,6 +203,8 @@ class SpoofShardDataset(IterableDataset):
         for sample in self._records():
             if self.train and rng.random() < 0.5:
                 sample = horizontal_flip(sample)
+            if self.train and rng.random() < self.recompress_probability:
+                sample = recompress(sample, rng.randint(*self.quality_range))
             if self.shuffle_buffer <= 0:
                 yield sample
                 continue
