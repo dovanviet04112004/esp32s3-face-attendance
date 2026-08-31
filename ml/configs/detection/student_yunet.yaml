@@ -33,15 +33,19 @@ data:
     - data/splits/detection/v1/train.txt
     - data/splits/detection/v1/landmark_val.txt
   params:
-    # Images and labels both shrunk to a 320 pixel long side by shrink_coco, so
-    # the pair cannot drift. Decoding a 1024x768 original to produce a 160x120
-    # letterbox is work thrown away (KEHOACH section 4.4.1): a 28 second epoch
-    # became 19. What it costs was measured, not assumed - one checkpoint scored
-    # on original and on shrunk validation images gives 0.6407/0.4342/0.1844
-    # against 0.6372/0.4300/0.1823, half a percent, because both paths end at the
-    # same 160x120 and only the extra resampling is lost.
-    coco: data/interim/detection/widerface_small/train.json
-    images: data/interim/detection/widerface_small/images
+    # Originals, not the 320 pixel copy. crop_scale takes as little as 30 percent
+    # of the frame and blows it up to 160 wide: from a 320 pixel image that is a
+    # 1.67x upscale inventing pixels, from a 1024 pixel one it is still a
+    # reduction (KEHOACH section 4.4.1). The shrink was right for a recipe with no
+    # zoom and stops being right when there is one; it cost 19 seconds an epoch
+    # against 28, and half a percent of AP.
+    coco: data/interim/detection/widerface_coco/train.json
+    images: data/raw/detection/widerface/WIDER_train/images
+    # Measured on the training split: at this input the median face is 2.9 pixels
+    # and level 2 never sees a positive prior. These pull the distribution up to a
+    # median of 13.6 (KEHOACH section 3, layer 2).
+    crop_scale: [0.3, 1.0]
+    min_face_px: 8
 
 train:
   epochs: 300

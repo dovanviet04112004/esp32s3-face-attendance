@@ -30,7 +30,7 @@ from facepipe.core.scheduler import build_optimizer, build_scheduler
 from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer
 
-from .data import WiderFaceDataset, collate
+from .data import CROP_SCALE, MIN_FACE_PX, WiderFaceDataset, collate
 from .eval import average_precision, decode_batch
 
 TASK_LOSS = "detection_task"
@@ -56,6 +56,8 @@ def build_dataset(cfg: Config, split_index: int, train: bool) -> WiderFaceDatase
         train=train,
         soft_targets=store,
         seed=cfg.run.seed,
+        crop_scale=tuple(params.get("crop_scale", CROP_SCALE)),
+        min_face_px=float(params.get("min_face_px", MIN_FACE_PX)),
     )
 
 

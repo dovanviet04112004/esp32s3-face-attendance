@@ -203,6 +203,4 @@ def test_the_coco_file_and_the_images_agree_on_names(tmp_path: Path) -> None:
     (tmp_path / "coco.json").write_text(json.dumps({"images": [], "annotations": []}), "utf-8")
 
     with pytest.raises(FileNotFoundError):
-        predict_images(
-            load_student(ckpt), ["absent.jpg"], tmp_path, INPUT_HW, torch.device("cpu")
-        )
+        predict_images(load_student(ckpt), ["absent.jpg"], tmp_path, INPUT_HW, torch.device("cpu"))

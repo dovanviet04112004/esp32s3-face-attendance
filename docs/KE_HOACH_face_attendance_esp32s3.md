@@ -356,6 +356,38 @@ Xếp theo đúng thứ tự thực hiện.
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
 | **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén JPEG q=60–90, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược |
 
+#### Công thức lấy mẫu của detect phải khớp kích thước đầu vào
+
+Ở đầu vào 160×120, letterbox ép ảnh WIDER 1024 px xuống hệ số 0,156. Đo trên chính tập
+train: **median khuôn mặt còn 2,9 px**, và **85,5% khuôn mặt nhỏ hơn một ô lưới stride-8**.
+Hộp nhỏ hơn độ phân giải lưới thì không hồi quy được — đó là dạy nhiễu, không phải dạy mặt.
+
+Hệ quả đo được với `LEVEL_RANGES` cũ `(0,32) (32,96) (96,∞)`:
+
+| Tầng | Stride | % số mặt rơi vào | Prior dương |
+|---|---|---|---|
+| 0 | 8 | 98,8% | 5.860 |
+| 1 | 16 | 1,2% | 917 |
+| 2 | 32 | 0,0% | **0** |
+
+Tầng 2 chưa từng nhận một mẫu dương nào: ba đầu ra, dùng thật một. Và phân bố lúc train
+(median 2,9 px) lệch hẳn phân bố lúc chạy — kiosk nhìn **một** mặt ở 0,5–1,5 m, 🔬 ước
+20–45 px. Đây là lệch train/serve về kích thước, không phải chuyện thiếu epoch.
+
+**Công thức chốt, mọi ngưỡng lấy từ đo:**
+
+| Tham số | Giá trị | Căn cứ |
+|---|---|---|
+| `crop_scale` | `[0.3, 1.0]` | Cắt vùng ngẫu nhiên rồi phóng về đầu vào. Median lên 13,6 px, p75 21 px, p90 34,8 px — chồng lên dải của kiosk |
+| `min_face_px` | `8` | Đúng một ô lưới stride-8. Lọc **sau** khi crop, tại đúng độ phân giải đầu vào |
+| `LEVEL_RANGES` | `(0,16) (16,48) (48,∞)` | Chia 61,1% / 33,6% / 5,3% trên phân bố sau augment |
+
+Lọc sau crop chứ không lọc khỏi dataset: cùng một khuôn mặt được học khi rơi vào crop gần
+và bỏ qua khi ảnh cắt xa. Lọc vĩnh viễn là dạy model rằng chỗ đó là nền.
+
+Cái giá phải trả nằm ở §4.4.1: student giờ **có** augment phóng to, nên nó phải đọc ảnh
+gốc chứ không đọc bản resize sẵn.
+
 ### Lớp 3 — Nén cấu trúc
 
 | Kỹ thuật | Ghi chú |
@@ -791,7 +823,13 @@ record chở nhiều payload: `{key}.tight.jpg` + `{key}.wide.jpg` + `{key}.json
 **Resize sẵn chỉ khi vô hại.** Ảnh trong shard được resize về đúng kích thước train *chỉ
 khi* pipeline train không có augment phóng to — nếu có, resize là âm thầm bớt thông tin
 model đáng lẽ được thấy. Teacher detection có mosaic và scale augment ở 640, nên **giữ ảnh
-gốc**; student chỉ letterbox về 160×120 nên resize sẵn là vô hại.
+gốc**.
+
+**Student detect cũng giữ ảnh gốc**, vì §3 Lớp 2 đã đưa `crop_scale` `[0.3, 1.0]` vào công
+thức của nó. Cắt 30% của bản 320 px rồi đưa về 160 px là **phóng 1,67×** — bịa pixel; cắt
+30% của ảnh gốc 1024 px cho 307 px rồi thu về 160 px, chi tiết thật. Bản `widerface_small`
+đúng cho công thức không có augment phóng to và hết đúng khi có; đo được cái giá của nó là
+epoch 19 giây so với 28.
 
 > **Tối ưu cách xếp, không tối ưu giao thức.** Được phép đổi: bố cục file, số worker,
 > kích thước shard, thứ tự đọc. **Không được đổi để chạy nhanh hơn**: split (§1.3),

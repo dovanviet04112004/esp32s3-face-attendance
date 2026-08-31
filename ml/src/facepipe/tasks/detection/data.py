@@ -35,10 +35,17 @@ from .student.yunet import STRIDES
 # Mirroring swaps the two eyes and the two mouth corners; the nose stays put.
 FLIP_INDEX = (1, 0, 2, 4, 3)
 
-# Which level owns a face, by the square root of its box area in pixels. A face
-# smaller than the finest stride still goes to that level rather than nowhere.
-LEVEL_RANGES = ((0.0, 32.0), (32.0, 96.0), (96.0, 1e9))
+# Level of a face by the square root of its box area, split 61/34/5 percent on the
+# distribution crop_scale produces (KEHOACH section 3, layer 2).
+LEVEL_RANGES = ((0.0, 16.0), (16.0, 48.0), (48.0, 1e9))
 CENTER_RADIUS = 1.5
+
+# One cell of the finest level. A box smaller than the grid that has to place it
+# cannot be regressed, so such a face is dropped rather than learned as noise.
+MIN_FACE_PX = 8.0
+# Fraction of the frame a random window takes. Without it the student only ever
+# meets WIDER at one scale, and never a face the size the kiosk will show it.
+CROP_SCALE = (0.3, 1.0)
 
 
 @dataclass
@@ -93,6 +100,81 @@ def letterbox(sample: Sample, out_hw: tuple[int, int]) -> Sample:
         teacher_boxes=sample.teacher_boxes * scale + np.tile(offset, 2),
         teacher_scores=sample.teacher_scores,
         teacher_landmarks=sample.teacher_landmarks * scale + offset,
+    )
+
+
+def _inside(boxes: np.ndarray, window: tuple[int, int, int, int]) -> np.ndarray:
+    """Which boxes have their centre in the window."""
+    if not len(boxes):
+        return np.zeros(0, dtype=bool)
+    left, top, right, bottom = window
+    centre_x = (boxes[:, 0] + boxes[:, 2]) / 2
+    centre_y = (boxes[:, 1] + boxes[:, 3]) / 2
+    return (centre_x > left) & (centre_x < right) & (centre_y > top) & (centre_y < bottom)
+
+
+def random_crop(
+    sample: Sample, rng: random.Random, scale: tuple[float, float] = CROP_SCALE
+) -> Sample:
+    """Take a random window of the image, so a face can appear at any size.
+
+    Without this the student only ever sees WIDER at one scale, which at 160x120
+    means a median face of 2.9 pixels, while the kiosk will show it one face
+    filling a fifth of the frame (KEHOACH section 3, layer 2).
+
+    A face whose centre falls outside the window is dropped rather than clipped:
+    a box cut by an edge no longer describes a face, and the box head would learn
+    that shape as if it did.
+    """
+    height, width = sample.image.shape[:2]
+    factor = rng.uniform(*scale)
+    crop_h = max(1, min(height, round(height * factor)))
+    crop_w = max(1, min(width, round(width * factor)))
+    top = rng.randint(0, height - crop_h)
+    left = rng.randint(0, width - crop_w)
+    window = (left, top, left + crop_w, top + crop_h)
+    offset = np.array([left, top], dtype=np.float32)
+
+    keep = _inside(sample.boxes, window)
+    teacher_keep = _inside(sample.teacher_boxes, window)
+    return Sample(
+        image=sample.image[top : top + crop_h, left : left + crop_w].copy(),
+        boxes=sample.boxes[keep] - np.tile(offset, 2),
+        landmarks=sample.landmarks[keep] - offset,
+        has_landmarks=sample.has_landmarks[keep],
+        teacher_boxes=sample.teacher_boxes[teacher_keep] - np.tile(offset, 2),
+        teacher_scores=sample.teacher_scores[teacher_keep],
+        teacher_landmarks=sample.teacher_landmarks[teacher_keep] - offset,
+    )
+
+
+def drop_small_faces(sample: Sample, min_px: float = MIN_FACE_PX) -> Sample:
+    """Remove faces below one cell of the finest level, at the input's own scale.
+
+    Called after the letterbox so the threshold is in the pixels the network
+    actually sees, which is the only frame where "too small to regress" means
+    anything.
+    """
+
+    def large_enough(boxes: np.ndarray) -> np.ndarray:
+        if not len(boxes):
+            return np.zeros(0, dtype=bool)
+        sides = np.sqrt(
+            np.clip(boxes[:, 2] - boxes[:, 0], 0, None)
+            * np.clip(boxes[:, 3] - boxes[:, 1], 0, None)
+        )
+        return sides >= min_px
+
+    keep = large_enough(sample.boxes)
+    teacher_keep = large_enough(sample.teacher_boxes)
+    return Sample(
+        image=sample.image,
+        boxes=sample.boxes[keep],
+        landmarks=sample.landmarks[keep],
+        has_landmarks=sample.has_landmarks[keep],
+        teacher_boxes=sample.teacher_boxes[teacher_keep],
+        teacher_scores=sample.teacher_scores[teacher_keep],
+        teacher_landmarks=sample.teacher_landmarks[teacher_keep],
     )
 
 
@@ -210,6 +292,8 @@ class WiderFaceDataset(Dataset):
         train: bool = True,
         soft_targets: object | None = None,
         seed: int = 42,
+        crop_scale: tuple[float, float] = CROP_SCALE,
+        min_face_px: float = MIN_FACE_PX,
     ) -> None:
         payload = json.loads(Path(coco).read_text(encoding="utf-8"))
         listed = {
@@ -230,6 +314,8 @@ class WiderFaceDataset(Dataset):
         self.input_hw = tuple(input_hw)
         self.train = train
         self.soft_targets = soft_targets
+        self.crop_scale = tuple(crop_scale)
+        self.min_face_px = float(min_face_px)
         self.rng = random.Random(seed)
         self.priors = torch.cat(pyramid_priors(feature_sizes(self.input_hw, STRIDES), STRIDES))
 
@@ -262,7 +348,12 @@ class WiderFaceDataset(Dataset):
         return sample
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, DetectionTargets]:
-        sample = letterbox(self._read(index), self.input_hw)
+        sample = self._read(index)
+        if self.train:
+            sample = random_crop(sample, self.rng, self.crop_scale)
+        # Filtered on both sides of the split: a face too small to train on is
+        # also one this branch does not claim to find.
+        sample = drop_small_faces(letterbox(sample, self.input_hw), self.min_face_px)
         if self.train and self.rng.random() < 0.5:
             sample = horizontal_flip(sample)
 
