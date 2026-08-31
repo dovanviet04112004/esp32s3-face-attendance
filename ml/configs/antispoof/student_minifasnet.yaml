@@ -33,7 +33,6 @@ data:
     shards: data/interim/antispoof/celeba_spoof_crops
     train_split: train
     val_split: valid
-    crop_size: 80
 
 train:
   epochs: 60

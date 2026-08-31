@@ -223,3 +223,38 @@ def test_depth_distillation_needs_a_feature_layer() -> None:
     loss = DepthMapDistillLoss(embedding=16)
     with pytest.raises(ValueError, match="feature layer"):
         loss(torch.zeros(1, 2), teacher_map([0]))
+
+
+def test_the_loader_size_comes_from_the_model_input(tmp_path: Path) -> None:
+    """Declaring the input twice lets one copy drift: the model would be built
+    for one size while the loader kept feeding the other."""
+    import yaml
+
+    from facepipe.core.config import load_config
+    from facepipe.tasks.antispoof.train_kd import crop_size
+
+    payload = {
+        "run": {"task": "antispoof", "artifacts_root": str(tmp_path)},
+        "model": {"name": "minifasnet_v2_se", "input_hw": [96, 96]},
+        "data": {"name": "celeba_spoof", "params": {"shards": str(tmp_path)}},
+    }
+    path = tmp_path / "cfg.yaml"
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    assert crop_size(load_config(path)) == 96
+
+
+def test_a_rectangular_input_is_refused(tmp_path: Path) -> None:
+    import yaml
+
+    from facepipe.core.config import load_config
+    from facepipe.tasks.antispoof.train_kd import crop_size
+
+    payload = {
+        "run": {"task": "antispoof", "artifacts_root": str(tmp_path)},
+        "model": {"name": "minifasnet_v2_se", "input_hw": [80, 96]},
+        "data": {"name": "celeba_spoof", "params": {"shards": str(tmp_path)}},
+    }
+    path = tmp_path / "cfg.yaml"
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="square"):
+        crop_size(load_config(path))

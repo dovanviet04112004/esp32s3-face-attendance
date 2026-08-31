@@ -27,7 +27,7 @@ from facepipe.core.scheduler import build_optimizer, build_scheduler
 from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer
 
-from .data import CROP_SIZE, SpoofShardDataset, collate
+from .data import SpoofShardDataset, collate
 from .losses import task_loss  # noqa: F401  registers "antispoof_task"
 from .student import minifasnet_v2_se  # noqa: F401  registers "minifasnet_v2_se"
 
@@ -39,10 +39,22 @@ def prefetch(cfg: Config) -> dict[str, int]:
     return {"prefetch_factor": cfg.data.prefetch_factor} if cfg.data.num_workers > 0 else {}
 
 
+def crop_size(cfg: Config) -> int:
+    """The size the loader feeds, taken from the one place it is declared.
+
+    Each backbone ends in a depthwise kernel sized to the map a square input
+    produces, so a rectangle would not reach that layer with the right shape.
+    """
+    height, width = cfg.model.input_hw
+    if height != width:
+        raise ValueError(f"model.input_hw must be square for this branch, got {height}x{width}")
+    return int(height)
+
+
 def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
     return SpoofShardDataset(
         root=Path(cfg.data.params["shards"]) / split,
-        size=int(cfg.data.params.get("crop_size", CROP_SIZE)),
+        size=crop_size(cfg),
         train=train,
         seed=cfg.run.seed,
     )
