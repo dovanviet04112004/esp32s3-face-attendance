@@ -74,6 +74,28 @@ def test_missing_split_is_marked_not_skipped(config_file: Path, tmp_path: Path) 
     assert "MISSING" in (run.path / SPLIT_LOCK_NAME).read_text(encoding="utf-8")
 
 
+def test_a_branch_that_names_shard_ranges_still_records_its_split(
+    config_file: Path, tmp_path: Path
+) -> None:
+    """Shard branches list no files, and every one of their runs locked nothing."""
+    cfg = _config(
+        config_file,
+        tmp_path,
+        **{"data.params.val_split": "test:0:10", "data.params.train_split": "train"},
+    )
+    written = (run := create_run_dir(cfg)).path / SPLIT_LOCK_NAME
+    text = written.read_text(encoding="utf-8")
+    assert "train_split: train" in text
+    assert "val_split: test:0:10" in text
+    assert run.path.is_dir()
+
+
+def test_a_run_that_names_no_data_at_all_says_so(config_file: Path, tmp_path: Path) -> None:
+    """An empty lock file reads as "not checked yet"; this has to read as a fault."""
+    run = create_run_dir(_config(config_file, tmp_path))
+    assert (run.path / SPLIT_LOCK_NAME).read_text(encoding="utf-8").strip() == "UNDECLARED"
+
+
 def test_resolved_config_is_replayable(config_file: Path, tmp_path: Path) -> None:
     cfg = _config(config_file, tmp_path)
     run = create_run_dir(cfg)
