@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
-from torch.nn.functional import l1_loss, mse_loss, softmax
+from torch.nn.functional import interpolate, l1_loss, mse_loss, softmax
 
 from facepipe.core.distiller import DistillLoss
 from facepipe.core.registry import LOSSES
@@ -117,6 +117,11 @@ class FeatureFGDLoss(DistillLoss):
         teacher: torch.Tensor,
         gt_boxes: list[torch.Tensor] | None,
     ) -> torch.Tensor:
+        # One letterboxed frame at two sizes, so a resample is all that separates them.
+        if teacher.shape[-2:] != student.shape[-2:]:
+            teacher = interpolate(
+                teacher, size=student.shape[-2:], mode="bilinear", align_corners=False
+            )
         spatial, channel = attention(teacher, self.temperature)
         weight = spatial * channel
 
