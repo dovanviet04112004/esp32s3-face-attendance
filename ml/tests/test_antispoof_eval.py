@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 from facepipe.tasks.antispoof.eval import (
     auc,
+    collect_scores,
     equal_error_rate,
     error_rates,
+    liveness_of,
     split_scores,
     summary,
 )
@@ -96,6 +99,49 @@ def test_the_summary_carries_the_key_the_trainer_selects_on() -> None:
     assert set(row) == {"auc", "eer", "apcer", "bpcer", "threshold"}
     assert row["eer"] == pytest.approx(0.0)
     assert row["auc"] == pytest.approx(1.0)
+
+
+def test_a_depth_map_and_a_pair_of_logits_both_become_one_score() -> None:
+    """The teacher draws a map and the student emits two logits, and a run has to
+    be scored the same way whichever produced it."""
+    reference = 0.42
+    perfect_live = torch.full((2, 1, 32, 32), reference)
+    assert liveness_of(perfect_live, reference).tolist() == pytest.approx([1.0, 1.0], abs=1e-5)
+
+    logits = torch.tensor([[6.0, -6.0], [-6.0, 6.0]])
+    scored = liveness_of(logits, reference)
+    assert scored[0] > 0.99 and scored[1] < 0.01
+
+
+def test_a_flat_map_reads_as_an_attack() -> None:
+    assert float(liveness_of(torch.zeros(1, 1, 32, 32), 0.42)[0]) == pytest.approx(0.0)
+
+
+def test_scores_come_back_aligned_with_their_labels() -> None:
+    model = torch.nn.Module()
+    model.forward = lambda pair: torch.tensor([[6.0, -6.0], [-6.0, 6.0]])
+    batch = (torch.zeros(2, 3, 8, 8), torch.zeros(2, 3, 8, 8), torch.tensor([LIVE, SPOOF]))
+
+    scores, labels = collect_scores(model, [batch, batch], torch.device("cpu"), 0.42)
+    assert scores.shape == labels.shape == (4,)
+    assert labels.tolist() == [LIVE, SPOOF, LIVE, SPOOF]
+    assert auc(scores, labels) == pytest.approx(1.0)
+
+
+def test_the_reported_rates_use_a_threshold_fitted_somewhere_else() -> None:
+    """Fitting the cut on the set being reported is marking your own homework.
+
+    The held-out scores here sit lower than the ones the threshold came from, so
+    the honest reading is worse than the crossing this set would have chosen for
+    itself, and the two numbers must not be equal.
+    """
+    fit_scores = np.array([0.9, 0.8, 0.2, 0.1])
+    held_scores = np.array([0.5, 0.45, 0.15, 0.05])
+
+    threshold = equal_error_rate(fit_scores, LIVE_FIRST).threshold
+    honest = error_rates(held_scores, LIVE_FIRST, threshold)
+    assert honest.acer > equal_error_rate(held_scores, LIVE_FIRST).acer
+    assert honest.bpcer == pytest.approx(1.0)
 
 
 def test_the_rates_stay_in_range_on_a_larger_random_set() -> None:
