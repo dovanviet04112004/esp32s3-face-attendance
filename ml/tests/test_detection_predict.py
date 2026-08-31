@@ -12,11 +12,15 @@ from PIL import Image
 
 from facepipe.tasks.detection.data import letterbox_params
 from facepipe.tasks.detection.eval import (
+    SERVICE_FACE_PX,
     Detections,
+    WiderGroundTruth,
     average_precision,
     decode_batch,
+    evaluate,
     load_student,
     predict_images,
+    size_subset,
     to_original,
 )
 from facepipe.tasks.detection.postproc.nms import box_iou, nms, top_k
@@ -204,3 +208,50 @@ def test_the_coco_file_and_the_images_agree_on_names(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError):
         predict_images(load_student(ckpt), ["absent.jpg"], tmp_path, INPUT_HW, torch.device("cpu"))
+
+
+def truth_with(tmp_path: Path, boxes: np.ndarray, size: tuple[int, int] = (480, 640)) -> tuple:
+    """One 640x480 image, so the letterbox to 160x120 scales every box by a quarter."""
+    height, width = size
+    Image.new("RGB", (width, height), (40, 80, 120)).save(tmp_path / "a.jpg")
+    truth = WiderGroundTruth(names=["a.jpg"], boxes=[boxes.astype(np.float64)], keep={})
+    return truth, tmp_path
+
+
+def test_the_floor_is_applied_at_the_input_scale_not_in_original_pixels(tmp_path: Path) -> None:
+    """A 100 px face in a 640 wide frame is 25 px to the model, so it is below 32."""
+    truth, root = truth_with(tmp_path, np.array([[10, 10, 100, 100], [10, 10, 200, 200]]))
+    kept = size_subset(truth, root, INPUT_HW, SERVICE_FACE_PX)[0]
+    assert kept.tolist() == [1]
+
+
+def test_the_service_floor_is_the_quarter_of_the_recognition_input(tmp_path: Path) -> None:
+    """32 px at the detector is 128 px in the 640x480 frame, above the 112 recog needs."""
+    assert SERVICE_FACE_PX * (640 / INPUT_HW[1]) == pytest.approx(128.0)
+
+
+def test_an_image_with_no_faces_contributes_no_indices(tmp_path: Path) -> None:
+    truth, root = truth_with(tmp_path, np.zeros((0, 4)))
+    assert size_subset(truth, root, INPUT_HW)[0].size == 0
+
+
+def test_a_face_below_the_floor_is_ignored_rather_than_counted_wrong(tmp_path: Path) -> None:
+    """The gate must not charge the detector for finding a face it does not serve.
+
+    One large face and one small one, both found. Scored on the served subset the
+    small hit is removed, so precision stays perfect; counting it as a false
+    positive would make finding real faces lower the score.
+    """
+    truth, root = truth_with(tmp_path, np.array([[10, 10, 200, 200], [400, 300, 60, 60]]))
+    truth.keep["served"] = size_subset(truth, root, INPUT_HW)
+    assert truth.keep["served"][0].tolist() == [0]
+
+    found = {"a.jpg": np.array([[10, 10, 200, 200, 0.9], [400, 300, 60, 60, 0.8]])}
+    assert evaluate(found, truth, settings=("served",))["served"] == pytest.approx(1.0, abs=1e-3)
+
+
+def test_missing_the_only_served_face_scores_zero(tmp_path: Path) -> None:
+    truth, root = truth_with(tmp_path, np.array([[10, 10, 200, 200], [400, 300, 60, 60]]))
+    truth.keep["served"] = size_subset(truth, root, INPUT_HW)
+    found = {"a.jpg": np.array([[400, 300, 60, 60, 0.9]])}
+    assert evaluate(found, truth, settings=("served",))["served"] == pytest.approx(0.0)
