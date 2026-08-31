@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
@@ -165,6 +166,45 @@ def test_ema_tracks_but_lags_the_live_weights(tiny_model) -> None:
     after = ema.module.head.weight
     assert not torch.allclose(after, before)
     assert not torch.allclose(after, tiny_model.head.weight)
+
+
+def test_ema_matches_the_tensor_by_tensor_average_exactly(tiny_model) -> None:
+    """Fusing the update must not move a single bit of the arithmetic.
+
+    Reference is the plain formula applied one tensor at a time, over several
+    steps so any drift between the two has somewhere to accumulate.
+    """
+    decay = 0.9
+    ema = ModelEma(tiny_model, decay=decay)
+    reference = {k: v.clone() for k, v in ema.module.state_dict().items()}
+
+    for step in range(5):
+        with torch.no_grad():
+            tiny_model.head.weight.add_(0.1 * (step + 1))
+        ema.update(tiny_model)
+        for key, value in tiny_model.state_dict().items():
+            if reference[key].dtype.is_floating_point:
+                reference[key].mul_(decay).add_(value, alpha=1.0 - decay)
+            else:
+                reference[key].copy_(value)
+
+    for key, value in ema.module.state_dict().items():
+        assert torch.equal(value, reference[key]), key
+
+
+def test_ema_keeps_tracking_after_the_model_object_is_swapped(tiny_model) -> None:
+    """The trainer hands over a compiled wrapper, and the pairing is cached."""
+    ema = ModelEma(tiny_model, decay=0.5)
+    ema.update(tiny_model)
+    replacement = copy.deepcopy(tiny_model)
+    with torch.no_grad():
+        replacement.head.weight.fill_(7.0)
+
+    ema.update(replacement)
+    ema.update(replacement)
+    target = torch.full_like(ema.module.head.weight, 7.0)
+    assert torch.allclose(ema.module.head.weight, target, atol=2.0)
+    assert not torch.allclose(ema.module.head.weight, tiny_model.head.weight)
 
 
 def test_ema_state_survives_a_round_trip(tiny_model) -> None:
