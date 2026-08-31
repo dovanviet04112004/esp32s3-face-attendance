@@ -30,10 +30,10 @@ teacher:
 
 data:
   name: widerface_yolo
-  # Measured, not guessed. At 640 square this model peaks at 2.36 GB for batch 4
-  # and 4.62 GB for batch 8, and the card has 4 GB. WSL does not raise on the
-  # overflow, it pages to host memory: batch 8 still runs and is 52 times slower
-  # per step. Raise this only after measuring again.
+  # Steady state at 640 square is 3.41 GiB of the card's 4.0, and reserved memory
+  # keeps climbing to about 5.95 GiB over thirty epochs before WSL starts paging
+  # to host memory, which costs a factor of fifty per step and raises no error.
+  # Four leaves too little room for that; measure at epoch three, not epoch one.
   batch_size: 4
   # Measured: 4, 6 and 8 readers all hold 2.4 iterations a second, and each one
   # costs three processes because Ultralytics gives the val loader twice the
