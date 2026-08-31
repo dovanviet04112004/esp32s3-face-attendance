@@ -127,8 +127,14 @@ class DistillSection(Section):
     enabled: bool = False
     losses: list[LossSpec] = Field(default_factory=list)
     feature_layers: list[str] = Field(default_factory=list)
+    # Two architectures share no layer names, so a feature term needs its own
+    # list per side; empty falls back to the student's, for models that do match.
+    teacher_feature_layers: list[str] = Field(default_factory=list)
     task_loss_weight: float = 1.0
     stages: list[StageSpec] = Field(default_factory=list)
+
+    def teacher_layers(self) -> list[str]:
+        return self.teacher_feature_layers or self.feature_layers
 
 
 class LogSection(Section):

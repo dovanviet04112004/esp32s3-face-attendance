@@ -217,7 +217,7 @@ class Distiller(nn.Module):
             total = task_value * task_weight
 
         if self.distilling:
-            teacher_out = self.teacher(inputs)
+            teacher_out = self.teacher(self.teacher_inputs(inputs, batch))
             distill_value, distill_parts = self.loss_set(
                 student_out,
                 teacher_out,
@@ -233,6 +233,15 @@ class Distiller(nn.Module):
             raise ValueError("no task loss and no distillation loss: nothing to optimize")
         parts["total"] = total.detach()
         return total, parts
+
+    def teacher_inputs(self, inputs: Any, batch: Any) -> Any:
+        """What the teacher is called with. Override to feed it something else.
+
+        A teacher whose answers were precomputed is handed those answers rather
+        than the images they came from, and only the branch that has such a
+        teacher knows where in the batch they travel.
+        """
+        return inputs
 
     def _clear_hooks(self) -> None:
         for hooks in (self._student_hooks, self._teacher_hooks):
