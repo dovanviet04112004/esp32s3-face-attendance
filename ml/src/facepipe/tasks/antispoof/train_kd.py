@@ -1,0 +1,163 @@
+"""The one entry point that trains the anti-spoof student, teacher or not.
+
+Both arms of KEHOACH section 3.7 run through here, exactly as the detection
+branch does: A0 leaves teacher.enabled false and gets the task loss, A3 switches
+the teacher on and names its distillation terms.
+
+Usage:
+    python -m facepipe.tasks.antispoof.train_kd --cfg configs/antispoof/student_minifasnet.yaml
+"""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+
+from facepipe.core.config import Config, load_config
+from facepipe.core.distiller import Distiller, DistillLossSet, StageSchedule, TeacherWrapper
+from facepipe.core.logger import RunLogger
+from facepipe.core.metrics import MetricTracker
+from facepipe.core.registry import LOSSES, MODELS
+from facepipe.core.run_dir import create_run_dir
+from facepipe.core.scheduler import build_optimizer, build_scheduler
+from facepipe.core.seed import seed_everything
+from facepipe.core.trainer import Trainer
+
+from .data import CROP_SIZE, SpoofShardDataset, collate
+from .losses import task_loss  # noqa: F401  registers "antispoof_task"
+from .student import minifasnet_v2_se  # noqa: F401  registers "minifasnet_v2_se"
+
+TASK_LOSS = "antispoof_task"
+
+
+def prefetch(cfg: Config) -> dict[str, int]:
+    """DataLoader rejects prefetch_factor when it has no workers to prefetch on."""
+    return {"prefetch_factor": cfg.data.prefetch_factor} if cfg.data.num_workers > 0 else {}
+
+
+def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
+    return SpoofShardDataset(
+        root=Path(cfg.data.params["shards"]) / split,
+        size=int(cfg.data.params.get("crop_size", CROP_SIZE)),
+        train=train,
+        seed=cfg.run.seed,
+    )
+
+
+def build_loader(cfg: Config, dataset: SpoofShardDataset, train: bool) -> DataLoader:
+    # Shards already arrive shuffled and the dataset holds a buffer back, so the
+    # loader must not shuffle: an IterableDataset cannot be indexed anyway.
+    return DataLoader(
+        dataset,
+        batch_size=cfg.data.batch_size,
+        num_workers=cfg.data.num_workers,
+        pin_memory=cfg.data.pin_memory,
+        drop_last=cfg.data.drop_last if train else False,
+        collate_fn=collate,
+        **prefetch(cfg),
+    )
+
+
+def build_teacher(cfg: Config) -> TeacherWrapper | None:
+    """Load the teacher only for the arms that distil from one."""
+    if not cfg.teacher.enabled or cfg.teacher.name is None:
+        return None
+    from facepipe.core.registry import TEACHERS
+
+    model = TEACHERS.build(
+        {"name": cfg.teacher.name, "params": {"weights": cfg.teacher.ckpt, **cfg.teacher.params}}
+    )
+    return TeacherWrapper(model, freeze=cfg.teacher.freeze)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cfg", type=Path, required=True)
+    parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
+    args = parser.parse_args(argv)
+
+    cfg = load_config(args.cfg, args.set)
+    seed_everything(cfg.run.seed, deterministic=cfg.run.deterministic)
+    run = create_run_dir(cfg)
+    logger = RunLogger(run.path, tensorboard=cfg.log.tensorboard, level=cfg.log.level)
+
+    student = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
+    train_set = build_dataset(cfg, cfg.data.params.get("train_split", "train"), train=True)
+    loader = build_loader(cfg, train_set, train=True)
+    val_set = build_dataset(cfg, cfg.data.params.get("val_split", "valid"), train=False)
+    val_loader = build_loader(cfg, val_set, train=False)
+
+    distiller = Distiller(
+        student=student,
+        teacher=build_teacher(cfg),
+        loss_set=DistillLossSet.from_config(cfg.distill) if cfg.distill.enabled else None,
+        task_loss=LOSSES.get(TASK_LOSS)(),
+        task_loss_weight=cfg.distill.task_loss_weight,
+        student_layers=cfg.distill.feature_layers or None,
+        teacher_layers=cfg.distill.feature_layers or None,
+        schedule=StageSchedule(cfg.distill.stages) if cfg.distill.stages else None,
+    )
+
+    optimizer = build_optimizer(student, cfg.optim)
+    scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
+
+    def step_fn(batch: tuple[torch.Tensor, ...]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        tight, wide, labels = batch
+        distiller.epoch = trainer.state.epoch
+        train_set.epoch = trainer.state.epoch
+        return distiller((tight, wide), labels)
+
+    @torch.no_grad()
+    def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
+        """Task loss and the two error rates ACER is built from.
+
+        APCER counts attacks accepted and BPCER live faces rejected; reporting
+        only accuracy would hide which of the two a model traded away, and they
+        cost very different things on a door (KEHOACH section 1.1).
+        """
+        module.eval()
+        meter = MetricTracker()
+        attacks = live = attacks_passed = live_rejected = 0
+        for batch in val_loader:
+            tight, wide, labels = trainer.to_device(batch)
+            logits = module((tight, wide))
+            meter.update({"loss": distiller.task_loss(logits, labels)}, n=1)
+            predicted = logits.argmax(dim=1)
+            attacks += int((labels == 1).sum())
+            live += int((labels == 0).sum())
+            attacks_passed += int(((labels == 1) & (predicted == 0)).sum())
+            live_rejected += int(((labels == 0) & (predicted == 1)).sum())
+        apcer = attacks_passed / attacks if attacks else 0.0
+        bpcer = live_rejected / live if live else 0.0
+        return {**meter.means(), "apcer": apcer, "bpcer": bpcer, "acer": (apcer + bpcer) / 2}
+
+    trainer = Trainer(
+        model=student,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        train_loader=loader,
+        cfg=cfg,
+        run_dir=run,
+        logger=logger,
+        step_fn=step_fn,
+        val_fn=val_fn,
+        best_metric_key="acer",
+    )
+    # The loss runs the student itself, so a compiled run has to reach the model
+    # the trainer compiled rather than the one handed to the distiller.
+    distiller.student = trainer.model
+    logger.info(
+        f"arm={'kd' if distiller.distilling else 'baseline'} "
+        f"train={len(train_set)} val={len(val_set)}"
+    )
+    trainer.fit()
+    distiller.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

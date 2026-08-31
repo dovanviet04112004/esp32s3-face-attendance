@@ -144,7 +144,7 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 | E6-T1 | `teacher/cdcnpp.py` + `depth_gt.py` | Kiến trúc chạy, depth map GT sinh được | E2-T5, E3-T3 |
 | E6-T2 | `teacher/train_teacher.py` trên CelebA-Spoof | ACER < 2% trên tập val | E6-T1, **E6-T0** |
 | E6-T3 | `teacher/export_soft_target.py` — logit + depth map 32×32 | Shard đọc được | E6-T2 |
-| E6-T4 | `student/minifasnet_v2_se.py` (SE dùng HardSigmoid) | Param ≈ 0,43M | E2-T3 |
+| E6-T4 | `student/minifasnet_v2_se.py` — **hai backbone**, SE dùng HardSigmoid | Param ≈ 0,53M; forward nhận cặp (tight, wide) | E2-T3 |
 | E6-T5 | `losses/{kd_logit, kd_depth_map, contrastive_depth_loss, task_loss}.py` | Unit test từng loss | E6-T4 |
 | E6-T6 | `train_kd.py` | ACER < 5% ở FP32 | E6-T3..T5, **E6-T0** |
 | E6-T7 | `eval.py` — ACER, HTER cross-dataset, ROC tập tự thu | HTER < 15% | E6-T6, E3-T8 |

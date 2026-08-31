@@ -29,7 +29,7 @@
 | **Detect** | Teacher | **YOLO26m-pose** (fine-tune WIDER FACE, 5 keypoint) | [ultralytics/ultralytics](https://github.com/ultralytics/ultralytics) · [docs](https://docs.ultralytics.com/models/yolo26) · weight `yolo26m-pose.pt` tự tải | ~20M params, ~68 GFLOPs @640² | AGPL-3.0 / Enterprise |
 | **Detect** | Student | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750**; ra box **+ 5 landmark** | **MIT** |
 | **Anti-spoof** | Teacher | **CDCN++** (có MAFM, giám sát depth map) | [ZitongYu/CDCN](https://github.com/ZitongYu/CDCN) | ACER 0.2% (OULU-NPU P1), HTER 6.5% (CASIA→Replay) | Research-only ⚠️ |
-| **Anti-spoof** | Student | **MiniFASNetV2-SE** | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — kiến trúc ở `src/model_lib/MiniFASNet.py` | 0.43M params, **0.044 GFLOPs** @80×80 | Research-only ⚠️ |
+| **Anti-spoof** | Student | **MiniFASNetV2-SE ×2** — mỗi tỉ lệ crop một backbone | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — kiến trúc ở `src/model_lib/MiniFASNet.py` | **0.53M params** (2 × 0.26M + head), 0.088 GFLOPs @80×80 | Research-only ⚠️ |
 | **Recognition** | Teacher | **ResNet50 @ WebFace600K** (`w600k_r50`, lõi của buffalo_l) | Weight PyTorch + train code: [arcface_torch](https://github.com/deepinsight/insightface/tree/master/recognition/arcface_torch) · pack ONNX: [model_zoo](https://github.com/deepinsight/insightface/tree/master/model_zoo) | LFW 99.83 · CFP-FP 99.33 · AgeDB-30 98.23 · IJB-C(E4) 97.25 | Research-only ⚠️ |
 | **Recognition** | Student | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | 0.99M params, ~4MB FP32 → **~1.1MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
 
@@ -40,6 +40,13 @@
 
 - Student detect **bắt buộc phải ra 5 landmark**, nếu không thì không align được mặt trước khi vào MobileFaceNet, accuracy nhận diện rớt mạnh. YuNet ra sẵn 5 điểm.
 - Teacher detect **cũng phải có landmark** thì mới distill được landmark head, nên dùng biến thể `-pose` chứ không dùng bản detect thuần.
+- Anti-spoof student là **hai backbone riêng**, một cho crop 1.0× và một cho 2.7×, ghép
+  embedding rồi mới phân lớp — đúng cách bản tham chiếu minivision làm (họ ship hai
+  checkpoint rồi ensemble). Dùng chung một backbone cho cả hai tỉ lệ thì rẻ hơn 0,1M tham
+  số nhưng bắt cùng bộ trọng số vừa đọc kết cấu da ở crop sát vừa đọc mép giấy ở crop rộng
+  — hai loại đặc trưng không liên quan gì nhau. Giá phải trả: `models_0` từ ~1,6 lên
+  **~1,7 MB trong 2 MB** (§6.1), và anti-spoof suy luận **hai lượt** mỗi khuôn mặt. Chấp
+  nhận được vì nó chỉ chạy khi detect thấy mặt, không chạy mỗi frame.
 
 ### 1.2 Dữ liệu train — từng model
 
@@ -740,7 +747,7 @@ trần 7 GB nên đặt trên `fast_drive` chỉ đổi băng thông 197 MB/s l�
 sẽ mất **18,6 phút mỗi epoch** thay vì **3,1 phút**, đổi lại không được gì.
 
 Ở 150 file/s, riêng việc mở file của anti-spoof đã tốn **~93 phút mỗi epoch**, trong khi
-model 0,43M tham số tính xong trong vài giây. Đóng gói thành shard là chênh lệch giữa
+model 0,53M tham số tính xong trong vài giây. Đóng gói thành shard là chênh lệch giữa
 nhánh đó mất mười ngày hay một ngày. Gói hai tỉ lệ vào một record thì một epoch trả tiền
 419.935 lần đọc chứ không phải 839.870.
 

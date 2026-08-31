@@ -1,0 +1,62 @@
+# MiniFASNetV2-SE student, arm A0 of the ablation in KEHOACH section 3.7: random
+# init, task loss only, no teacher. The KD arm inherits this file and switches
+# the teacher and distill sections on, so both arms share one architecture and
+# one schedule and only the losses differ.
+
+run:
+  task: antispoof
+  seed: 42
+  deterministic: true
+  tags: [student, minifasnet_v2_se, arm_baseline]
+  notes: baseline arm, no teacher
+
+model:
+  name: minifasnet_v2_se
+  # Per view. The 5x5 depthwise layer closing each backbone consumes exactly the
+  # map this size produces, so changing it without changing that kernel changes
+  # what the classifier sees.
+  input_hw: [80, 80]
+  params:
+    num_classes: 2
+    embedding: 128
+    squeeze_excite: true
+
+data:
+  name: celeba_spoof
+  batch_size: 256
+  # Records stream from shards, so a reader spends its time on JPEG decode. The
+  # detection branch measured twenty readers as the point where a 20-thread host
+  # stops gaining (KEHOACH section 4.4.1).
+  num_workers: 20
+  prefetch_factor: 4
+  params:
+    shards: data/interim/antispoof/celeba_spoof_crops
+    train_split: train
+    val_split: valid
+    crop_size: 80
+
+train:
+  epochs: 60
+  amp: true
+  ema_decay: 0.999
+  grad_clip_norm: 5.0
+  val_every_epochs: 2
+
+optim:
+  name: sgd
+  lr: 0.05
+  weight_decay: 0.0005
+  params:
+    momentum: 0.9
+    nesterov: true
+
+sched:
+  name: cosine
+  warmup_epochs: 2
+  min_lr: 0.0001
+
+teacher:
+  enabled: false
+
+distill:
+  enabled: false
