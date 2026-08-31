@@ -152,10 +152,11 @@ def build_loader(cfg: object, split: str) -> torch.utils.data.DataLoader:
     if height != width:
         raise ValueError(f"model.input_hw must be square for this branch, got {height}x{width}")
     dataset = SpoofShardDataset(
-        root=Path(cfg.data.params["shards"]) / split,
+        root=Path(cfg.data.params["shards"]),
         size=int(height),
         train=False,
         seed=cfg.run.seed,
+        splits=split,
     )
     return torch.utils.data.DataLoader(
         dataset,
@@ -185,8 +186,8 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True, help="a run directory under artifacts")
-    parser.add_argument("--split", default="test", help="the split the reported rates come from")
-    parser.add_argument("--fit-split", default="valid", help="where the threshold is fitted")
+    parser.add_argument("--split", default=None, help="the split the reported rates come from")
+    parser.add_argument("--fit-split", default=None, help="where the threshold is fitted")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args(argv)
 
@@ -196,15 +197,18 @@ def main(argv: list[str] | None = None) -> int:
     cfg, model = load_run(args.run)
     model = model.to(device)
     reference = live_reference_mean()
+    # The run's own splits, so a report cannot rest on a division it never saw.
+    fit_split = args.fit_split or cfg.data.params["val_split"]
+    held_split = args.split or cfg.data.params["test_split"]
 
-    fit = collect_scores(model, build_loader(cfg, args.fit_split), device, reference)
+    fit = collect_scores(model, build_loader(cfg, fit_split), device, reference)
     crossing = equal_error_rate(*fit)
-    print(f"{args.fit_split:6s} n={fit[0].size:<7} auc {auc(*fit):.4f}  eer {crossing.acer:.4f}")
+    print(f"{fit_split:12s} n={fit[0].size:<7} auc {auc(*fit):.4f}  eer {crossing.acer:.4f}")
     print(f"       threshold fitted here: {crossing.threshold:.6f}")
 
-    held = collect_scores(model, build_loader(cfg, args.split), device, reference)
+    held = collect_scores(model, build_loader(cfg, held_split), device, reference)
     rates = error_rates(*held, crossing.threshold)
-    print(f"\n{args.split:6s} n={held[0].size:<7} auc {auc(*held):.4f}")
+    print(f"\n{held_split:12s} n={held[0].size:<7} auc {auc(*held):.4f}")
     print(f"       apcer {rates.apcer:.4f}  bpcer {rates.bpcer:.4f}  ACER {rates.acer:.4f}")
     print(f"       eer   {equal_error_rate(*held).acer:.4f}  (not the gate, the threshold moved)")
     return 0

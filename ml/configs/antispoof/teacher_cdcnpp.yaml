@@ -31,7 +31,10 @@ data:
   params:
     shards: data/interim/antispoof/celeba_spoof_crops
     train_split: train
-    val_split: valid
+    # Validation comes out of the mirror's test split. Measured: train and valid
+    # are one pool at a median 72 and 76 KB, test is 471 KB (KEHOACH 1.3).
+    val_split: "test:0:10"
+    test_split: "test:10:"
     supervision:
       contrast_weight: 10.0
 

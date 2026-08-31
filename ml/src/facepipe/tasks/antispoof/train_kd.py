@@ -55,11 +55,13 @@ def crop_size(cfg: Config) -> int:
 
 
 def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
+    params = cfg.data.params
     return SpoofShardDataset(
-        root=Path(cfg.data.params["shards"]) / split,
+        root=Path(params["shards"]),
         size=crop_size(cfg),
         train=train,
         seed=cfg.run.seed,
+        splits=split,
     )
 
 

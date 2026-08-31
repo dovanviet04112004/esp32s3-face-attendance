@@ -16,7 +16,7 @@ import io
 import json
 import random
 import tarfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,17 +44,64 @@ def shard_paths(root: Path) -> list[Path]:
     return sorted(Path(root).glob("shard_*.tar"))
 
 
-def count_records(shards: list[Path], shard_size: int = 2000) -> int:
+def resolve_spec(root: Path, spec: str) -> list[Path]:
+    """Shards named by "split" or by "split:start:end", the end exclusive.
+
+    Slicing by shard buys reproducibility, not identity separation: the mirror
+    ships no identity labels and its own ordering already interleaves the two
+    classes, so a person can appear on both sides of a cut (SPLIT.md).
+    """
+    parts = str(spec).split(":")
+    shards = shard_paths(Path(root) / parts[0])
+    if not shards:
+        raise FileNotFoundError(f"{Path(root) / parts[0]}: no shard_*.tar")
+    if len(parts) == 1:
+        return shards
+    if len(parts) != 3:
+        raise ValueError(f"{spec!r}: expected 'split' or 'split:start:end'")
+    start = int(parts[1]) if parts[1] else 0
+    end = int(parts[2]) if parts[2] else len(shards)
+    chosen = shards[start:end]
+    if not chosen:
+        raise ValueError(f"{spec!r} selects nothing from {len(shards)} shards")
+    return chosen
+
+
+def resolve_splits(root: Path, specs: str | Sequence[str]) -> tuple[list[Path], int]:
+    """Every shard the specs name, and an exact record count for them.
+
+    Counted per spec, not over the merged list: only the last shard of a run is
+    short, and merging buries the short ones where the arithmetic would skip them.
+    """
+    if isinstance(specs, str):
+        specs = [specs]
+    shards: list[Path] = []
+    total = 0
+    for spec in specs:
+        chosen = resolve_spec(root, spec)
+        shards.extend(chosen)
+        total += count_records(chosen)
+    return shards, total
+
+
+def records_in(shard: Path) -> int:
+    """How many records one shard holds, by reading its member names."""
+    with tarfile.open(shard, "r|") as archive:
+        return sum(1 for member in archive if member.name.endswith(".json"))
+
+
+def count_records(shards: list[Path], shard_size: int | None = None) -> int:
     """Total records without reading every shard.
 
-    Every shard but the last holds shard_size records by construction, so only
-    the last one has to be opened.
+    Shards hold a fixed size, so the first one measures it and only the last,
+    which may be short, has to be counted too.
     """
     if not shards:
         return 0
-    with tarfile.open(shards[-1], "r|") as archive:
-        tail = sum(1 for member in archive if member.name.endswith(".json"))
-    return (len(shards) - 1) * shard_size + tail
+    if len(shards) == 1:
+        return records_in(shards[0])
+    full = shard_size if shard_size is not None else records_in(shards[0])
+    return (len(shards) - 1) * full + records_in(shards[-1])
 
 
 def decode(payload: bytes, size: int) -> np.ndarray:
@@ -80,16 +127,20 @@ class SpoofShardDataset(IterableDataset):
         train: bool = True,
         seed: int = 42,
         shuffle_buffer: int = SHUFFLE_BUFFER,
+        splits: str | Sequence[str] | None = None,
     ) -> None:
-        self.shards = shard_paths(root)
-        if not self.shards:
-            raise FileNotFoundError(f"{root}: no shard_*.tar")
+        if splits is None:
+            self.shards = shard_paths(root)
+            if not self.shards:
+                raise FileNotFoundError(f"{root}: no shard_*.tar")
+            self._length = count_records(self.shards)
+        else:
+            self.shards, self._length = resolve_splits(root, splits)
         self.size = size
         self.train = train
         self.seed = seed
         self.shuffle_buffer = shuffle_buffer if train else 0
         self.epoch = 0
-        self._length = count_records(self.shards)
 
     def __len__(self) -> int:
         return self._length

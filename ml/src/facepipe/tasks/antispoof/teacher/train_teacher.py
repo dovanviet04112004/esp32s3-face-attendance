@@ -92,10 +92,11 @@ def crop_size(cfg: Config) -> int:
 
 def build_loader(cfg: Config, split: str, train: bool) -> torch.utils.data.DataLoader:
     dataset = SpoofShardDataset(
-        root=Path(cfg.data.params["shards"]) / split,
+        root=Path(cfg.data.params["shards"]),
         size=crop_size(cfg),
         train=train,
         seed=cfg.run.seed,
+        splits=split,
     )
     return torch.utils.data.DataLoader(
         dataset,
