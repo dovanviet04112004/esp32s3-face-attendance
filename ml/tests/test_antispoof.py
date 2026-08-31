@@ -28,11 +28,7 @@ from facepipe.tasks.antispoof.student import INPUT_SIZE, HardSigmoid, MiniFASNet
 from facepipe.tasks.antispoof.teacher import train_teacher
 from facepipe.tasks.antispoof.teacher.cdcnpp import CDCNpp
 from facepipe.tasks.antispoof.teacher.depth_gt import DEPTH_SIZE, live_reference_mean
-from facepipe.tasks.antispoof.teacher.train_teacher import (
-    LIVE_THRESHOLD,
-    DepthSupervision,
-    liveness,
-)
+from facepipe.tasks.antispoof.teacher.train_teacher import DepthSupervision, liveness
 
 
 def crop_bytes(shade: int, size: int = 128) -> bytes:
@@ -313,13 +309,13 @@ def test_the_contrast_term_ignores_a_map_that_is_only_too_bright() -> None:
     assert float(supervision(shifted, labels)) == pytest.approx(level_only, abs=1e-2)
 
 
-def test_the_teacher_score_reads_a_live_map_above_the_threshold() -> None:
-    """Dividing by the mound's own mean is what puts a live face above one half."""
+def test_the_teacher_score_reads_a_perfect_live_map_as_one() -> None:
+    """Dividing by the mound's own mean is what puts a live face at 1, not at 0.42."""
     supervision = DepthSupervision()
     labels = torch.tensor([LIVE, SPOOF])
     scores = liveness(supervision.targets(labels), live_reference_mean())
-    assert float(scores[0]) > LIVE_THRESHOLD
-    assert float(scores[1]) < LIVE_THRESHOLD
+    assert float(scores[0]) == pytest.approx(1.0)
+    assert float(scores[1]) == pytest.approx(0.0)
 
 
 def write_split_shards(root: Path, records: int = 8) -> Path:

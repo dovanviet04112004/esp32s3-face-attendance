@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as fn
@@ -35,12 +36,11 @@ from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer
 
 from ..data import SpoofShardDataset, collate
+from ..eval import summary
 from ..losses.contrastive_depth_loss import contrast_kernels
 from ..losses.task_loss import LIVE
 from .cdcnpp import CDCNpp, depth_to_score  # noqa: F401  registers "cdcnpp"
 from .depth_gt import DEPTH_SIZE, gaussian_map, live_reference_mean
-
-LIVE_THRESHOLD = 0.5
 
 
 class DepthSupervision(nn.Module):
@@ -140,26 +140,24 @@ def main(argv: list[str] | None = None) -> int:
 
     @torch.no_grad()
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
-        """Depth loss and the two error rates ACER averages.
+        """Depth loss, and the error rates read off the map's own score.
 
-        The teacher has no classifier, so the class here comes from thresholding
-        the map's own score, the same way export and distillation read it.
+        The teacher has no classifier, so liveness is the collapsed map. Where to
+        cut it comes from where the two error rates cross on this split, not from
+        a constant: an untrained map scores below any fixed threshold, so a fixed
+        one reports 0.5 for every epoch until the distribution happens to cross it.
         """
         module.eval()
         meter = MetricTracker()
-        attacks = live = attacks_passed = live_rejected = 0
+        scores: list[np.ndarray] = []
+        truth: list[np.ndarray] = []
         for batch in val_loader:
             tight, wide, labels = trainer.to_device(batch)
             depth = module((tight, wide))
             meter.update({"depth": supervision(depth, labels)}, n=1)
-            predicted_live = liveness(depth, reference) >= LIVE_THRESHOLD
-            attacks += int((labels != LIVE).sum())
-            live += int((labels == LIVE).sum())
-            attacks_passed += int(((labels != LIVE) & predicted_live).sum())
-            live_rejected += int(((labels == LIVE) & ~predicted_live).sum())
-        apcer = attacks_passed / attacks if attacks else 0.0
-        bpcer = live_rejected / live if live else 0.0
-        return {**meter.means(), "apcer": apcer, "bpcer": bpcer, "acer": (apcer + bpcer) / 2}
+            scores.append(liveness(depth, reference).float().cpu().numpy())
+            truth.append(labels.cpu().numpy())
+        return {**meter.means(), **summary(np.concatenate(scores), np.concatenate(truth))}
 
     trainer = Trainer(
         model=model,
@@ -171,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         logger=logger,
         step_fn=step_fn,
         val_fn=val_fn,
-        best_metric_key="acer",
+        best_metric_key="eer",
     )
     supervision = supervision.to(trainer.device)
     logger.info(f"teacher={cfg.model.name} train={len(loader.dataset)}")

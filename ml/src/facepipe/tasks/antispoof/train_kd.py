@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -28,7 +29,9 @@ from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer
 
 from .data import SpoofShardDataset, collate
+from .eval import summary
 from .losses import task_loss  # noqa: F401  registers "antispoof_task"
+from .losses.task_loss import LIVE
 from .student import minifasnet_v2_se  # noqa: F401  registers "minifasnet_v2_se"
 
 TASK_LOSS = "antispoof_task"
@@ -140,27 +143,26 @@ def main(argv: list[str] | None = None) -> int:
 
     @torch.no_grad()
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
-        """Task loss and the two error rates ACER is built from.
+        """Task loss and the error rates at the threshold this split implies.
 
         APCER counts attacks accepted and BPCER live faces rejected; reporting
         only accuracy would hide which of the two a model traded away, and they
-        cost very different things on a door (KEHOACH section 1.1).
+        cost very different things on a door (KEHOACH section 1.1). Taking the
+        argmax instead would pin the threshold at an even split of the softmax,
+        which ranks checkpoints by where the scores sit rather than how well
+        they separate.
         """
         module.eval()
         meter = MetricTracker()
-        attacks = live = attacks_passed = live_rejected = 0
+        scores: list[np.ndarray] = []
+        truth: list[np.ndarray] = []
         for batch in val_loader:
             tight, wide, labels = trainer.to_device(batch)
             logits = module((tight, wide))
             meter.update({"loss": distiller.task_loss(logits, labels)}, n=1)
-            predicted = logits.argmax(dim=1)
-            attacks += int((labels == 1).sum())
-            live += int((labels == 0).sum())
-            attacks_passed += int(((labels == 1) & (predicted == 0)).sum())
-            live_rejected += int(((labels == 0) & (predicted == 1)).sum())
-        apcer = attacks_passed / attacks if attacks else 0.0
-        bpcer = live_rejected / live if live else 0.0
-        return {**meter.means(), "apcer": apcer, "bpcer": bpcer, "acer": (apcer + bpcer) / 2}
+            scores.append(logits.softmax(dim=1)[:, LIVE].float().cpu().numpy())
+            truth.append(labels.cpu().numpy())
+        return {**meter.means(), **summary(np.concatenate(scores), np.concatenate(truth))}
 
     trainer = Trainer(
         model=student,
@@ -172,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         logger=logger,
         step_fn=step_fn,
         val_fn=val_fn,
-        best_metric_key="acer",
+        best_metric_key="eer",
     )
     # The trainer moves only the student; the teacher and the depth projections
     # hang off the distiller and would otherwise stay on the host.
