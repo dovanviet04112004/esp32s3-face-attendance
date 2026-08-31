@@ -31,7 +31,7 @@
 | **Anti-spoof** | Teacher | **CDCN++** (có MAFM, giám sát depth map) | [ZitongYu/CDCN](https://github.com/ZitongYu/CDCN) | ACER 0.2% (OULU-NPU P1), HTER 6.5% (CASIA→Replay) | Research-only ⚠️ |
 | **Anti-spoof** | Student | **MiniFASNetV2-SE ×2** — mỗi tỉ lệ crop một backbone | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — kiến trúc ở `src/model_lib/MiniFASNet.py` | **0.53M params** (2 × 0.26M + head), 0.088 GFLOPs @80×80 | Research-only ⚠️ |
 | **Recognition** | Teacher | **ResNet50 @ WebFace600K** (`w600k_r50`, lõi của buffalo_l) | Weight PyTorch + train code: [arcface_torch](https://github.com/deepinsight/insightface/tree/master/recognition/arcface_torch) · pack ONNX: [model_zoo](https://github.com/deepinsight/insightface/tree/master/model_zoo) | LFW 99.83 · CFP-FP 99.33 · AgeDB-30 98.23 · IJB-C(E4) 97.25 | Research-only ⚠️ |
-| **Recognition** | Student | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | 0.99M params, ~4MB FP32 → **~1.1MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
+| **Recognition** | Student | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | **1.20M params** (đo trên bản trong repo), 4.58MB FP32 → **~1.2MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
 
 **Hai ràng buộc thiết kế quyết định bộ 6 này:**
 > **Landmark chỉ có ở `train`.** Bộ `retinaface_gt_v1.1` không gán landmark cho `val`, nên
@@ -44,9 +44,22 @@
   embedding rồi mới phân lớp — đúng cách bản tham chiếu minivision làm (họ ship hai
   checkpoint rồi ensemble). Dùng chung một backbone cho cả hai tỉ lệ thì rẻ hơn 0,1M tham
   số nhưng bắt cùng bộ trọng số vừa đọc kết cấu da ở crop sát vừa đọc mép giấy ở crop rộng
-  — hai loại đặc trưng không liên quan gì nhau. Giá phải trả: `models_0` từ ~1,6 lên
-  **~1,7 MB trong 2 MB** (§6.1), và anti-spoof suy luận **hai lượt** mỗi khuôn mặt. Chấp
-  nhận được vì nó chỉ chạy khi detect thấy mặt, không chạy mỗi frame.
+  — hai loại đặc trưng không liên quan gì nhau. Giá phải trả: anti-spoof suy luận **hai
+  lượt** mỗi khuôn mặt. Chấp nhận được vì nó chỉ chạy khi detect thấy mặt, không chạy mỗi
+  frame.
+
+**Ngân sách `models_0` — đếm trên tham số thật, không phải ước lượng:**
+
+| Nhánh | Params | ≈ INT8 |
+|---|---|---|
+| Detect (YuNet) | 75.631 | 76 KB |
+| Anti-spoof (MiniFASNetV2-SE ×2) | 525.362 | 525 KB |
+| Recognition (MobileFaceNet, embedding 512-D) | 1.199.488 | 1.199 KB |
+| **Tổng** | **1.800.481** | **~1,80 MB trong 2 MB** (§6.1) |
+
+Còn ~200 KB, chưa trừ overhead flatbuffer của TFLite (5–15% mỗi file). 🔬 Số cuối chỉ có
+sau khi export ở E4-T11/E5-T11/E6-T10; nếu vượt thì hạ `input_hw` của detect trước, vì nó
+là nhánh rẻ nhất để train lại.
 
 ### 1.2 Dữ liệu train — từng model
 
@@ -829,6 +842,9 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   ├── antispoof/celeba_spoof_crops/{train, valid, test}/shard_*.tar
 │   │                                             #   1 record = tight.jpg + wide.jpg + json
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
+│   │   └── record_counts.json                # ★ so ban ghi moi split giu lai, sinh tu dong
+│   │                                         #   lan dau. Dem tay phai doc het 36 GB, va
+│   │                                         #   lich LR can con so do TRUOC khi train
 │   └── recognition/identities.txt                           # danh sach ID doc tu shard
 │
 ├── processed/
