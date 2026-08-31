@@ -35,10 +35,11 @@ data:
   params:
     # Images and labels both shrunk to a 320 pixel long side by shrink_coco, so
     # the pair cannot drift. Decoding a 1024x768 original to produce a 160x120
-    # letterbox is work thrown away, and this branch has no augmentation that
-    # ever asks for more (KEHOACH section 4.4.1). The loader alone goes from 258
-    # to 1,135 images a second; a real run holds 19 seconds an epoch against the
-    # 28 it held before, so the loader is no longer what an epoch waits on.
+    # letterbox is work thrown away (KEHOACH section 4.4.1): a 28 second epoch
+    # became 19. What it costs was measured, not assumed - one checkpoint scored
+    # on original and on shrunk validation images gives 0.6407/0.4342/0.1844
+    # against 0.6372/0.4300/0.1823, half a percent, because both paths end at the
+    # same 160x120 and only the extra resampling is lost.
     coco: data/interim/detection/widerface_small/train.json
     images: data/interim/detection/widerface_small/images
 
