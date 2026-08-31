@@ -12,9 +12,13 @@ LIVE is 0 and SPOOF is 1.
 
 from __future__ import annotations
 
+import argparse
+from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
+import torch
 
 from .losses.task_loss import LIVE
 
@@ -111,3 +115,100 @@ def summary(scores: np.ndarray, labels: np.ndarray) -> dict[str, float]:
         "bpcer": crossing.bpcer,
         "threshold": crossing.threshold,
     }
+
+
+def liveness_of(output: torch.Tensor, reference: float) -> torch.Tensor:
+    """One score per sample, from whichever head the branch's two models have.
+
+    The teacher draws a depth map and the student emits two logits, and both are
+    read here rather than by the caller so a run is scored the same way whatever
+    produced it.
+    """
+    if output.dim() >= 3:
+        return output.flatten(1).mean(dim=1) / reference
+    return output.softmax(dim=1)[:, LIVE]
+
+
+@torch.no_grad()
+def collect_scores(
+    model: torch.nn.Module, loader: Iterable, device: torch.device, reference: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run one split through the model and return its scores beside its labels."""
+    model.eval()
+    scores: list[np.ndarray] = []
+    truth: list[np.ndarray] = []
+    for tight, wide, labels in loader:
+        output = model((tight.to(device), wide.to(device)))
+        scores.append(liveness_of(output, reference).float().cpu().numpy())
+        truth.append(labels.numpy())
+    return np.concatenate(scores), np.concatenate(truth)
+
+
+def build_loader(cfg: object, split: str) -> torch.utils.data.DataLoader:
+    """The named split, read the way training reads it but without shuffling."""
+    from .data import SpoofShardDataset, collate
+
+    height, width = cfg.model.input_hw
+    if height != width:
+        raise ValueError(f"model.input_hw must be square for this branch, got {height}x{width}")
+    dataset = SpoofShardDataset(
+        root=Path(cfg.data.params["shards"]) / split,
+        size=int(height),
+        train=False,
+        seed=cfg.run.seed,
+    )
+    return torch.utils.data.DataLoader(
+        dataset,
+        batch_size=cfg.data.batch_size,
+        num_workers=cfg.data.num_workers,
+        collate_fn=collate,
+    )
+
+
+def load_run(run: Path) -> tuple[object, torch.nn.Module]:
+    """Rebuild a run's model from the config it froze, preferring its EMA copy."""
+    from facepipe.core.config import load_config
+    from facepipe.core.registry import MODELS, TEACHERS
+
+    from .student import minifasnet_v2_se  # noqa: F401  registers the student
+    from .teacher import cdcnpp  # noqa: F401  registers the teacher
+
+    cfg = load_config(run / "config.resolved.yaml", [])
+    spec = {"name": cfg.model.name, "params": cfg.model.params}
+    model = TEACHERS.build(spec) if cfg.model.name in TEACHERS else MODELS.build(spec)
+
+    payload = torch.load(run / "ckpt" / "best.pth", map_location="cpu", weights_only=False)
+    model.load_state_dict(payload["ema"]["module"] if "ema" in payload else payload["model"])
+    return cfg, model
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--run", type=Path, required=True, help="a run directory under artifacts")
+    parser.add_argument("--split", default="test", help="the split the reported rates come from")
+    parser.add_argument("--fit-split", default="valid", help="where the threshold is fitted")
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    args = parser.parse_args(argv)
+
+    from .teacher.depth_gt import live_reference_mean
+
+    device = torch.device(args.device)
+    cfg, model = load_run(args.run)
+    model = model.to(device)
+    reference = live_reference_mean()
+
+    fit = collect_scores(model, build_loader(cfg, args.fit_split), device, reference)
+    crossing = equal_error_rate(*fit)
+    print(f"{args.fit_split:6s} n={fit[0].size:<7} auc {auc(*fit):.4f}  eer {crossing.acer:.4f}")
+    print(f"       threshold fitted here: {crossing.threshold:.6f}")
+
+    held = collect_scores(model, build_loader(cfg, args.split), device, reference)
+    rates = error_rates(*held, crossing.threshold)
+    print(f"\n{args.split:6s} n={held[0].size:<7} auc {auc(*held):.4f}")
+    print(f"       apcer {rates.apcer:.4f}  bpcer {rates.bpcer:.4f}  ACER {rates.acer:.4f}")
+    print(f"       eer   {equal_error_rate(*held).acer:.4f}  (not the gate, the threshold moved)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
