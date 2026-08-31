@@ -23,10 +23,10 @@ model:
 data:
   name: widerface
   batch_size: 64
-  # Measured: reading alone gives 258 images a second against 271 with the step
-  # included, so nothing here waits on the GPU. Twenty readers and a deeper queue
-  # hold a 28 second epoch end to end; the loader on its own reaches 17, and the
-  # gap is the trainer competing for the same cores.
+  # Measured in a real 300 epoch run: 19 seconds an epoch, 22 on the epoch that
+  # follows a validation. That is 581 images a second against the 1,111 a loader
+  # benchmark reports, so what an epoch now waits on is the step and the twenty
+  # worker processes forked at each epoch boundary, not the decode.
   num_workers: 20
   prefetch_factor: 4
   split_files:
@@ -36,8 +36,9 @@ data:
     # Images and labels both shrunk to a 320 pixel long side by shrink_coco, so
     # the pair cannot drift. Decoding a 1024x768 original to produce a 160x120
     # letterbox is work thrown away, and this branch has no augmentation that
-    # ever asks for more (KEHOACH section 4.4.1). Measured: 258 to 1135 images a
-    # second, a 28 second epoch to 10.
+    # ever asks for more (KEHOACH section 4.4.1). The loader alone goes from 258
+    # to 1,135 images a second; a real run holds 19 seconds an epoch against the
+    # 28 it held before, so the loader is no longer what an epoch waits on.
     coco: data/interim/detection/widerface_small/train.json
     images: data/interim/detection/widerface_small/images
 
