@@ -493,7 +493,7 @@ Chạy **3 seed** nếu đủ thời gian, báo cáo trung bình ± độ lệch
 
 **Quy tắc chọn**: so bằng **accuracy sau INT8 trên tập `test_device`**, không phải accuracy FP32 trên val. Cái chạy trên board mới là cái tính. Chênh lệch dưới ngưỡng nhiễu → chọn A0 vì đơn giản hơn.
 
-Kết quả ghi vào `artifacts/<nhánh>/reports/ablation_teacher.md`, và quyết định ghi thành một ADR trong `docs/adr/`.
+Kết quả ghi vào `docs/measurements/<nhánh>/ablation_teacher.md`, và quyết định ghi thành một ADR trong `docs/adr/`.
 
 ---
 
@@ -512,11 +512,11 @@ Bốn mốc kể một mạch truyện rõ: **trần → rẻ → đắt → m�
 
 **Vì sao Q1 gộp cả CLE và bias correction** thay vì tách thành nhiều dòng: cả hai đều **không cần train lại, không cần nhãn, chạy trong vài phút**, và đều nhắm đúng điểm yếu của depthwise conv — thứ chiếm phần lớn cả 3 model. Tách ra chỉ làm bảng dài mà không thêm kết luận nào. Ghép vào cho Q1 thành "PTQ tốt nhất khả thi", để phép so với Q2 trả lời đúng câu hỏi đáng hỏi: *QAT có đáng công train lại không*.
 
-**Bốn thuật toán calibration** (min-max · percentile · MSE · entropy) vẫn thử, nhưng là **sweep nội bộ khi dựng Q1**, không phải 4 dòng trong bảng chính. Đổi thuật toán calib chỉ là chạy lại converter, tính bằng phút chứ không phải giờ. Chọn cái thắng, ghi cả 4 số vào phụ lục `reports/calib_sweep.md`.
+**Bốn thuật toán calibration** (min-max · percentile · MSE · entropy) vẫn thử, nhưng là **sweep nội bộ khi dựng Q1**, không phải 4 dòng trong bảng chính. Đổi thuật toán calib chỉ là chạy lại converter, tính bằng phút chứ không phải giờ. Chọn cái thắng, ghi cả 4 số vào phụ lục `docs/measurements/<nhánh>/calib_sweep.md`.
 
 **AdaRound và BRECQ nằm ngoài bảng.** Chỉ đụng tới nếu Q2 cũng không đạt và không muốn hạ độ phân giải — khi đó ghi thành một dòng Q1b riêng.
 
-Mỗi dòng ghi đủ **5 cột** vào `artifacts/<nhánh>/reports/quant_ladder.md`:
+Mỗi dòng ghi đủ **5 cột** vào `docs/measurements/<nhánh>/quant_ladder.md`:
 
 | Q | Accuracy (chỉ số của nhánh) | Δ so với Q0 | Kích thước `.tflite` | 🔬 head arena | 🔬 latency trên board |
 |---|---|---|---|---|---|
@@ -1085,7 +1085,8 @@ ml/
 │   │   ├── onnx/{student_fp32.onnx, student_qdq.onnx}
 │   │   ├── tflite/{yunet_fp32.tflite, yunet_int8.tflite}
 │   │   ├── golden/                        # vector vàng trước khi copy sang contracts/
-│   │   └── reports/{quant_debug.html, sensitivity.csv, op_check.txt}
+│   │   └── reports/{quant_debug.html, layer_sensitivity.csv, op_check.txt}
+│   │                                      # ↑ sinh lại được. Số đo giữ lại: docs/measurements/
 │   ├── antispoof/                         # ↑ y hệt khuôn trên
 │   ├── recognition/                       # ↑ y hệt khuôn trên
 │   └── device/                            # kết quả đo trên board, dùng chung 3 nhánh
