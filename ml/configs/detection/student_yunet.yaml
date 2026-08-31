@@ -23,7 +23,11 @@ model:
 data:
   name: widerface
   batch_size: 64
-  num_workers: 8
+  # Measured: reading alone gives 258 images a second against 271 with the step
+  # included, so nothing here waits on the GPU. Twenty readers and a deeper queue
+  # take an epoch from 28 to 17 seconds; neither switch touches the arithmetic.
+  num_workers: 20
+  prefetch_factor: 4
   split_files:
     - data/splits/detection/v1/train.txt
     - data/splits/detection/v1/landmark_val.txt

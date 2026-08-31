@@ -61,6 +61,9 @@ class DataSection(Section):
     name: str
     batch_size: int = 32
     num_workers: int = 8
+    # Batches each worker keeps ready. Raising it hides a slow decode behind the
+    # step, and costs that many more decoded batches of host memory.
+    prefetch_factor: int = 2
     pin_memory: bool = True
     drop_last: bool = True
     split_files: list[Path] = Field(default_factory=list)
