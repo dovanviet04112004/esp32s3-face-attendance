@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -30,6 +31,7 @@ from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer
 
 from .data import WiderFaceDataset, collate
+from .eval import average_precision, decode_batch
 
 TASK_LOSS = "detection_task"
 
@@ -130,17 +132,34 @@ def main(argv: list[str] | None = None) -> int:
 
     @torch.no_grad()
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
-        """Task loss on the held-out split, which is what picks the best epoch.
+        """Average precision on the held-out split, which is what picks the epoch.
 
-        Only the task loss: a KD arm's distillation terms are not defined without
-        a teacher, so scoring them would make the two arms incomparable.
+        Not the task loss. Loss is a weighted sum of focal, IoU and landmark
+        terms whose value means nothing outside this file, and it keeps falling
+        after the detector has stopped finding more faces; a run selected on it
+        ships a worse detector than one of its own earlier epochs.
+
+        The distillation terms stay out of it either way: they are undefined
+        without a teacher, so scoring them would make the two arms incomparable.
         """
         module.eval()
         meter = MetricTracker()
+        priors = val_loader.dataset.priors.to(trainer.device)
+        predictions: list[np.ndarray] = []
+        truth: list[np.ndarray] = []
+
         for batch in val_loader:
             images, targets = trainer.to_device(batch)
-            meter.update({"loss": distiller.task_loss(module(images), targets)}, n=1)
-        return meter.means()
+            out = module(images)
+            meter.update({"loss": distiller.task_loss(out, targets)}, n=1)
+            for found, boxes in zip(decode_batch(out, priors), targets.gt_boxes, strict=True):
+                predictions.append(
+                    np.concatenate([found.boxes, found.scores[:, None]], axis=1)
+                    if len(found.boxes)
+                    else np.zeros((0, 5), np.float32)
+                )
+                truth.append(boxes.detach().cpu().numpy())
+        return {**meter.means(), "ap": average_precision(predictions, truth)}
 
     trainer = Trainer(
         model=student,
@@ -152,7 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         logger=logger,
         step_fn=step_fn,
         val_fn=val_fn if val_loader is not None else None,
-        best_metric_key="loss",
+        best_metric_key="ap",
+        best_is_lower=False,
     )
     # The trainer moves only the student; the teacher and the FGD adapters hang
     # off the distiller and would otherwise stay on the host.

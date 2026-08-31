@@ -20,10 +20,41 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import torch
 
 SETTINGS = ("easy", "medium", "hard")
 IOU_THRESHOLD = 0.5
 THRESHOLD_STEPS = 1000
+# Low on purpose. Average precision is an area under a curve, so cutting the tail
+# of low-scoring predictions cuts recall the curve would otherwise have reached.
+CONF_THRESHOLD = 0.02
+NMS_IOU = 0.3
+MAX_DETECTIONS = 750
+
+
+@dataclass
+class Detections:
+    """One image's surviving predictions, in whatever frame they were decoded."""
+
+    boxes: np.ndarray
+    scores: np.ndarray
+    landmarks: np.ndarray
+
+    def xywh_with_score(self) -> np.ndarray:
+        """The (N, 5) rows the WIDER kit reads: x, y, width, height, score."""
+        if not len(self.boxes):
+            return np.zeros((0, 5), dtype=np.float32)
+        sizes = self.boxes[:, 2:] - self.boxes[:, :2]
+        return np.concatenate([self.boxes[:, :2], sizes, self.scores[:, None]], axis=1)
+
+
+def empty_detections() -> Detections:
+    """What an image with nothing above the threshold returns."""
+    return Detections(
+        boxes=np.zeros((0, 4), np.float32),
+        scores=np.zeros(0, np.float32),
+        landmarks=np.zeros((0, 5, 2), np.float32),
+    )
 
 
 @dataclass
@@ -203,24 +234,191 @@ def normalized_mean_error(predicted: np.ndarray, target: np.ndarray, boxes: np.n
     return float((distance / np.maximum(scale[:, None], 1e-9)).mean())
 
 
+def average_precision(
+    predictions: list[np.ndarray], truth: list[np.ndarray], iou: float = IOU_THRESHOLD
+) -> float:
+    """One AP over a set of images, both sides in xyxy and the same frame.
+
+    Used while training, where the Easy, Medium and Hard subsets do not apply:
+    those are defined for the official validation set, and a held-out slice of
+    train has no such labelling. Letterboxing scales prediction and ground truth
+    alike, so an AP computed in that frame equals the one in original pixels.
+    """
+    faces = sum(len(boxes) for boxes in truth)
+    if not faces:
+        return float("nan")
+
+    scored: list[tuple[float, int]] = []
+    for prediction, boxes in zip(predictions, truth, strict=True):
+        taken = np.zeros(len(boxes), dtype=bool)
+        for row in prediction[np.argsort(-prediction[:, 4])] if len(prediction) else []:
+            overlaps = iou_xyxy(boxes, row[:4])
+            best = int(overlaps.argmax()) if overlaps.size else -1
+            hit = best >= 0 and overlaps[best] >= iou and not taken[best]
+            if hit:
+                taken[best] = True
+            scored.append((float(row[4]), int(hit)))
+
+    if not scored:
+        return 0.0
+    hits = np.array([hit for _, hit in sorted(scored, key=lambda row: -row[0])])
+    cumulative = np.cumsum(hits)
+    precision = cumulative / np.arange(1, len(hits) + 1)
+    return voc_ap(cumulative / faces, precision)
+
+
+def iou_xyxy(boxes: np.ndarray, box: np.ndarray) -> np.ndarray:
+    """Overlap of one xyxy box against many. The kit's own version takes xywh."""
+    from .postproc.nms import box_iou
+
+    return box_iou(np.asarray(boxes, dtype=np.float64), np.asarray(box, dtype=np.float64))
+
+
+def decode_batch(
+    out: object,
+    priors: torch.Tensor,
+    conf: float = CONF_THRESHOLD,
+    iou: float = NMS_IOU,
+    max_detections: int = MAX_DETECTIONS,
+) -> list[Detections]:
+    """Head output to per-image detections, in the frame the model was fed.
+
+    The same decode the losses use, then a threshold, a cap and suppression. No
+    coordinate mapping: the caller knows whether it is working in letterboxed or
+    original pixels, and only one of the two callers needs to leave that frame.
+    """
+    from .postproc.decode import bbox_decode, flatten_output, kps_decode
+    from .postproc.nms import nms, top_k
+
+    cls, bbox, kps = flatten_output(out)
+    scores = cls.sigmoid()[..., 0]
+    boxes = bbox_decode(priors, bbox)
+    points = kps_decode(priors, kps)
+
+    results = []
+    for index in range(scores.shape[0]):
+        image_scores = scores[index].float().cpu().numpy()
+        above = np.nonzero(image_scores >= conf)[0]
+        if not above.size:
+            results.append(empty_detections())
+            continue
+        above = above[top_k(image_scores[above], max_detections)]
+        image_boxes = boxes[index].float().cpu().numpy()[above]
+        keep = nms(image_boxes, image_scores[above], iou)
+        chosen = above[keep]
+        results.append(
+            Detections(
+                boxes=boxes[index].float().cpu().numpy()[chosen],
+                scores=image_scores[chosen],
+                landmarks=points[index].float().cpu().numpy()[chosen].reshape(-1, 5, 2),
+            )
+        )
+    return results
+
+
+def to_original(detections: Detections, scale: float, pad_x: int, pad_y: int) -> Detections:
+    """Undo the loader's letterbox, putting boxes back in the source's pixels."""
+    offset = np.array([pad_x, pad_y], dtype=np.float32)
+    return Detections(
+        boxes=(detections.boxes - np.tile(offset, 2)) / scale,
+        scores=detections.scores,
+        landmarks=(detections.landmarks - offset) / scale,
+    )
+
+
+@torch.no_grad()
+def predict_images(
+    model: torch.nn.Module,
+    names: list[str],
+    images_root: Path,
+    input_hw: tuple[int, int],
+    device: torch.device,
+    conf: float = CONF_THRESHOLD,
+    iou: float = NMS_IOU,
+) -> dict[str, Detections]:
+    """Run the model over a list of image names, returning original-pixel boxes."""
+    from PIL import Image
+
+    from .data import letterbox_params
+    from .student.anchors import feature_sizes, pyramid_priors
+    from .student.yunet import STRIDES
+
+    priors = torch.cat(pyramid_priors(feature_sizes(input_hw, STRIDES), STRIDES)).to(device)
+    model.eval()
+
+    out: dict[str, Detections] = {}
+    for name in names:
+        source = np.asarray(Image.open(Path(images_root) / name).convert("RGB"), dtype=np.uint8)
+        height, width = source.shape[:2]
+        scale, pad_x, pad_y = letterbox_params((height, width), input_hw)
+        resized = np.asarray(
+            Image.fromarray(source).resize(
+                (round(width * scale), round(height * scale)), Image.BILINEAR
+            ),
+            dtype=np.uint8,
+        )
+        canvas = np.zeros((*input_hw, 3), dtype=np.uint8)
+        canvas[pad_y : pad_y + resized.shape[0], pad_x : pad_x + resized.shape[1]] = resized
+
+        tensor = torch.from_numpy(canvas).permute(2, 0, 1).float().div_(255.0)[None].to(device)
+        detections = decode_batch(model(tensor), priors, conf, iou)[0]
+        out[name] = to_original(detections, scale, pad_x, pad_y)
+    return out
+
+
 def read_predictions(path: Path) -> dict[str, np.ndarray]:
     """Load predictions written as one npz of name to (N, 5) xywh-score rows."""
     with np.load(path, allow_pickle=False) as payload:
         return {name: payload[name] for name in payload.files}
 
 
+def load_student(ckpt: Path, params: dict | None = None) -> torch.nn.Module:
+    """Rebuild the student and load a run's weights, preferring its EMA copy."""
+    from facepipe.core.registry import MODELS
+
+    from .student import yunet  # noqa: F401  registers "yunet"
+
+    model = MODELS.build({"name": "yunet", "params": params or {}})
+    payload = torch.load(ckpt, map_location="cpu", weights_only=False)
+    state = payload["ema"]["module"] if "ema" in payload else payload.get("model", payload)
+    model.load_state_dict(state)
+    return model
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--predictions", type=Path, required=True)
+    parser.add_argument("--ckpt", type=Path, default=None, help="run a checkpoint over the images")
+    parser.add_argument("--predictions", type=Path, default=None, help="score a saved npz instead")
+    parser.add_argument(
+        "--images", type=Path, default=Path("data/raw/detection/widerface/WIDER_val/images")
+    )
+    parser.add_argument("--input-hw", type=int, nargs=2, default=(120, 160))
+    parser.add_argument("--save-predictions", type=Path, default=None)
     parser.add_argument(
         "--ground-truth",
         type=Path,
         default=Path("data/raw/detection/widerface/eval_tools/ground_truth"),
     )
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args(argv)
 
+    if (args.ckpt is None) == (args.predictions is None):
+        parser.error("pass exactly one of --ckpt and --predictions")
+
     truth = load_ground_truth(args.ground_truth)
-    scores = evaluate(read_predictions(args.predictions), truth)
+    if args.predictions is not None:
+        predictions = read_predictions(args.predictions)
+    else:
+        model = load_student(args.ckpt).to(args.device)
+        detected = predict_images(
+            model, truth.names, args.images, tuple(args.input_hw), torch.device(args.device)
+        )
+        predictions = {name: found.xywh_with_score() for name, found in detected.items()}
+        if args.save_predictions is not None:
+            args.save_predictions.parent.mkdir(parents=True, exist_ok=True)
+            np.savez(args.save_predictions, **predictions)
+
+    scores = evaluate(predictions, truth)
     for setting in SETTINGS:
         print(f"{setting:7s} AP {scores[setting]:.4f}")
     return 0

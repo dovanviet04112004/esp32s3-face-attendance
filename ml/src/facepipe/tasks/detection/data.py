@@ -56,6 +56,18 @@ class Sample:
     )
 
 
+def letterbox_params(in_hw: tuple[int, int], out_hw: tuple[int, int]) -> tuple[float, int, int]:
+    """Scale and padding that fit in_hw inside out_hw, as (scale, pad_x, pad_y).
+
+    Evaluation has to undo exactly what the loader did, so both read the geometry
+    from here. A second copy of this arithmetic would put every predicted box a
+    few pixels off its face, which lowers AP without ever looking like a bug.
+    """
+    scale = min(out_hw[0] / in_hw[0], out_hw[1] / in_hw[1])
+    new_h, new_w = round(in_hw[0] * scale), round(in_hw[1] * scale)
+    return scale, (out_hw[1] - new_w) // 2, (out_hw[0] - new_h) // 2
+
+
 def letterbox(sample: Sample, out_hw: tuple[int, int]) -> Sample:
     """Fit the image into out_hw keeping its aspect, padding the remainder.
 
@@ -63,9 +75,8 @@ def letterbox(sample: Sample, out_hw: tuple[int, int]) -> Sample:
     would learn a distortion the camera never produces.
     """
     height, width = sample.image.shape[:2]
-    scale = min(out_hw[0] / height, out_hw[1] / width)
+    scale, pad_x, pad_y = letterbox_params((height, width), out_hw)
     new_h, new_w = round(height * scale), round(width * scale)
-    pad_y, pad_x = (out_hw[0] - new_h) // 2, (out_hw[1] - new_w) // 2
 
     resized = np.asarray(
         Image.fromarray(sample.image).resize((new_w, new_h), Image.BILINEAR), dtype=np.uint8
