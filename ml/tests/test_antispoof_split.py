@@ -20,6 +20,7 @@ from facepipe.tasks.antispoof.data import (
     resolve_spec,
     resolve_splits,
 )
+from facepipe.tasks.antispoof.losses.task_loss import LIVE, SPOOF
 
 SIZE = 80
 
@@ -143,3 +144,27 @@ def test_a_training_pass_can_reach_both_augmentations(tmp_path: Path) -> None:
         tmp_path, size=SIZE, train=True, splits="train", recompress_probability=1.0
     )
     assert len(list(dataset)) == 64
+
+
+def test_a_shard_directory_can_be_read_without_a_split_name(tmp_path: Path) -> None:
+    """A cross-domain set is one folder of shards, not a split of the home set."""
+    write_split(tmp_path / "other", records=8, shard_size=4)
+    shards, total = resolve_splits(tmp_path / "other", ".")
+    assert len(shards) == 2 and total == 8
+
+
+def test_transfer_is_read_at_the_home_threshold(tmp_path: Path) -> None:
+    """HTER is the home cut applied elsewhere; refitting would hide the transfer.
+
+    The other set scores lower here, so the honest reading is worse than the
+    crossing it would have chosen for itself, and the two must not agree.
+    """
+    from facepipe.tasks.antispoof.eval import equal_error_rate, error_rates
+
+    labels = np.array([LIVE, LIVE, SPOOF, SPOOF])
+    home = np.array([0.9, 0.8, 0.2, 0.1])
+    other = np.array([0.4, 0.3, 0.1, 0.05])
+
+    threshold = equal_error_rate(home, labels).threshold
+    transferred = error_rates(other, labels, threshold)
+    assert transferred.acer > equal_error_rate(other, labels).acer
