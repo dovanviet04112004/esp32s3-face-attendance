@@ -21,9 +21,34 @@ Một batch không được là một danh tính: loader đọc **4 shard luân 
 batch. Đọc tuần tự từng shard sẽ cho ra batch gần như thuần một người, và ArcFace không
 học được gì từ batch như thế.
 
-Benchmark đánh giá: **LFW · CFP-FP · AgeDB**, chấm bằng giao thức verification chuẩn
-(ngưỡng chọn trên fold giữ lại), nên `val_fn` của nhánh này **không dính** lỗi ngưỡng cứng
-mà nhánh anti-spoof đã mắc.
+Benchmark đánh giá: **LFW · CFP-FP · AgeDB**, chấm bằng giao thức verification chuẩn của
+InsightFace — ngưỡng chốt trên 9 fold rồi chấm fold thứ 10, nên accuracy báo ra không phải
+accuracy của ngưỡng vừa khớp vào đáp án.
+
+### Split của nhánh này lành, đã kiểm
+
+Sau khi phát hiện `valid` của anti-spoof đo trên cùng mẻ với train, split recognition được
+kiểm lại:
+
+- Chia **theo `person_id`**, identity-disjoint, 84.088 danh tính train / 9.343 val.
+- Val **không** chấm trên split đó mà trên **ba benchmark độc lập, công bố sẵn**, nên
+  không thể có chuyện val cùng phân bố với train.
+
+Bảy file `.bin` có đủ trên đĩa: `lfw`, `cfp_fp`, `agedb_30`, `calfw`, `cplfw`, `cfp_ff`,
+`talfw`.
+
+### Tiêu chí chọn checkpoint: `cfp_fp_accuracy`
+
+Trước đó là `lfw_accuracy`. LFW chạy tới 99,8% với model loại này và chỉ có 6.000 cặp, nên
+một phần mười điểm ở đó bằng **6 cặp** — chọn `best.pth` bằng nhiễu, đúng ở những epoch
+cuối quan trọng nhất. CFP-FP khó nhất trong ba bộ (~93–95%), còn phân biệt được tới cuối.
+
+`tar@far` đúng để **báo cáo** (§1.1 nói cửa quan tâm TAR@FAR hơn accuracy) nhưng sai để
+**chọn**: ở FAR 1e-4 trên 3.000 cặp âm, ngân sách là `floor(1e-4 × 3000)` = **0** lần chấp
+nhận sai, nên nó nhảy theo bậc quá thô để xếp hạng hai epoch liền nhau.
+
+Chốt trước khi arm nào chạy, vì §3.7 xếp tiêu chí chọn checkpoint vào cột phải giống hệt
+giữa hai arm.
 
 ---
 
