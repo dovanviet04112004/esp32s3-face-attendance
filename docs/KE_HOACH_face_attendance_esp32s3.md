@@ -1006,6 +1006,8 @@ ml/
 │   │   │   ├── shrink_coco.py             # ★ thu nho anh + ti le lai toa do trong MOT lan
 │   │   │   │                              #   quet. He so scale chi ton tai o mot cho, nen
 │   │   │   │                              #   khong the co anh moi voi nhan cu
+│   │   │   ├── xdomain_crop.py            # bốn bộ khác miền → shard, mặt do nhánh detect tìm
+│   │   │   │                              #   crop mà kiosk không tự tạo ra được thì không phải phép thử công bằng
 │   │   │   └── device_index.py            # quét ov5640/images → manifest.csv
 │   │   ├── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
 │   │   └── loaders.py
