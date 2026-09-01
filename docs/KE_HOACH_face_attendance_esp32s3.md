@@ -1148,7 +1148,8 @@ ml/
 │   │   └── update_lock.py                 # ★ ghi contracts/models.lock.json
 │   │
 │   └── bench/{host_bench.py, device_client.py, accuracy_on_device.py,
-│              live_demo.py}                # ★ detect → spoof trên webcam host
+│              live_demo.py,                 # ★ detect → spoof trên webcam host
+│              cam_bridge.py}                # ★ chạy trên Windows: virtual cam → MJPEG
 │
 ├── scripts/                               # đánh số = thứ tự chạy
 │   ├── _resume_loop.sh                    # ★ khong danh so vi khong chay truc tiep:
