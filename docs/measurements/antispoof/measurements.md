@@ -289,11 +289,19 @@ Board ESP32-S3 + OV5640 (PID `0x5640`) phát MJPEG, host chạy detect → anti-
 **Mặt thật bị gọi SPOOF, thiếu đúng 0,0037.** Ngưỡng nằm sát 1 tới mức đó vì phân bố
 CelebA-Spoof bão hoà; sang cảm biến khác thì biên đó không còn nghĩa.
 
-Quan sát khi xem trực tiếp: **mặt chính diện thường ra LIVE, mặt quay nghiêng ra SPOOF.**
-Giả thuyết: CelebA-Spoof là dẫn xuất của CelebA nên ảnh live phần lớn chính diện, còn ảnh
-spoof là ảnh chụp lại ảnh ở đủ góc — model học tương quan **tư thế**, không học độ nổi. Đây
-là đường tắt thứ ba của nhánh, sau vết nén (§3) và hậu cảnh trong đích depth (§7). Tập test
-CelebA-Spoof không lộ ra vì nó cùng phân bố tư thế với tập train.
+Quan sát khi xem trực tiếp trên board: **mặt chính diện ra LIVE, mặt quay nghiêng ra SPOOF.**
+Giả thuyết lúc đó là model học tương quan **tư thế** thay vì học độ nổi.
+
+**Giả thuyết này đã bị bác, hai lần.** Đo phân bố tư thế của 250 crop mỗi lớp trong tập
+train bằng landmark của detector: yaw trung bình **live 0,1381 · spoof 0,1273** — hai lớp
+gần như y hệt, spoof còn chính diện hơn một chút. Không có tương quan nào để mà học. Rồi
+chấm trực tiếp trên ảnh camera: khung yaw cao nhất (0,3177) lại cho liveness cao nhất
+(0,999746), còn khung bị gọi SPOOF có yaw 0,0849, gần như chính diện.
+
+Nguyên nhân thật của quan sát trên board là **phơi sáng** — xem mục dưới — và ở phần đo trên
+điện thoại là **ảnh nằm ngang 90°** do virtual camera của Windows. Cả hai đều là hỏng ở khâu
+lấy ảnh, không phải ở model. §10 đo lại trên ảnh dựng đứng và đủ sáng: nghiêng đầu, ngẩng
+cúi, ngược sáng đều đạt 0,9999.
 
 **Đã kiểm chứng sơ bộ trên chính board.** Ngưỡng 0,997355:
 
@@ -312,8 +320,8 @@ Phép so có kiểm soát **loại được chất lượng ảnh** khỏi danh 
 vị trí, quality 10 và quality 4 đều cho 0,9999 và 100% LIVE. Cơ chế nén hai lần có thật
 nhưng ở dải này không phải yếu tố quyết định.
 
-🔬 **n còn nhỏ, nhất là nhóm nghiêng (n=1).** Muốn thành số liệu chốt thì cần tập tự thu
-tách riêng hai nhóm, mỗi nhóm vài chục ảnh, và đo APCER/BPCER theo từng nhóm.
+🔬 **n=1 cho nhóm nghiêng, và nhóm đó về sau hoá ra là ca ngược sáng chứ không phải ca tư
+thế.** Bảng này giữ lại làm ghi chép, kết luận đúng nằm ở §10.
 
 ### Phơi sáng lay điểm số mạnh hơn biên của ngưỡng 50 lần
 
@@ -375,7 +383,51 @@ về **1,3 fps**. Nguyên nhân là cửa sổ TCP và buffer gửi LWIP mặc �
 
 ---
 
-## 10. Còn nợ
+## 10. Bộ thước 48 khung trên camera thật — và ba kết luận bị bác
+
+Điện thoại qua virtual camera của Windows, 1280×720, ảnh **dựng đứng và đủ sáng** — hai điều
+kiện mà mọi phép đo trước đó của nhánh này đều thiếu. Bốn nhóm, 12 khung mỗi nhóm, chấm bằng
+A0 `20260901-0717` ở ngưỡng 0,997355:
+
+| Nhóm | n | cỡ mặt | liveness tb | dải | Đúng |
+|---|---|---|---|---|---|
+| `live_vua` — cách một cánh tay | 12 | 349 px | 1,0000 | 1,0000 | **100%** |
+| `live_kho` — nghiêng, ngẩng cúi, ngược sáng | 12 | 319 px | 0,9999 | 0,9995–1,0000 | **100%** |
+| `live_gan` — sát camera | 12 | 696 px | 0,2538 | 0,166–0,413 | **0%** |
+| `attack_anh` — ảnh thẻ in | 12 | 235 px | 0,0035 | 0,0003–0,0106 | **100%** |
+
+**Tư thế và ngược sáng không phải vấn đề.** Nhóm `live_kho` gộp cả hai và đạt 0,9999. Ba kết
+luận trước của nhánh — model bám tư thế (§9), phơi sáng lay điểm mạnh hơn biên ngưỡng 50 lần
+(§9), nén hai lần là thủ phạm (§9) — đều rút ra từ **ảnh hỏng ở khâu thu**: OV5640 cháy sáng
+vì AE đo cả trần nhà, rồi ảnh điện thoại nằm ngang 90°. Đo trên ảnh đúng thì cả ba biến mất.
+
+**Chỉ còn một lỗi thật: đứng gần.** Mặt 696 px cho 0,166–0,413, trượt sạch. Ba cách cắt crop
+đã thử ở khoảng cách đó (cắt cụt · đệm viền · vuông lọt khung) đều bị gọi tấn công, nên
+nguyên nhân là phân bố train chứ không phải phép cắt: đứng gần thì quanh mặt **không còn
+phòng** cho view wide, và không phép cắt nào lấy lại được thứ camera chưa chụp.
+
+### Ngưỡng đang đặt sai chỗ, và sửa được ngay
+
+| | Mặt thật | Tấn công |
+|---|---|---|
+| Thấp nhất / cao nhất | **0,1661** | **0,0106** |
+
+Hai lớp cách nhau **15 lần**. Model phân biệt tốt; cái vạch mới là chỗ sai:
+
+| Ngưỡng | Nhận đúng mặt thật | Chặn tấn công |
+|---|---|---|
+| 0,997355 — vay từ CelebA-Spoof | **67%** | 100% |
+| ~0,17 — đo trên chính thiết bị | **100%** | **100%** |
+
+Đổi mỗi hằng số ngưỡng là từ 67% lên 100%, **không train lại gì**. Đây là bằng chứng đo được
+cho luận điểm ở §5: cổng và ngưỡng vay từ miền khác thì không có nghĩa.
+
+🔬 **n=48, một người, một phòng, một buổi.** Đủ để kết luận 0,997355 sai, **chưa đủ** để chốt
+con số thay thế cho sản phẩm.
+
+---
+
+## 11. Còn nợ
 
 - **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
   đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
