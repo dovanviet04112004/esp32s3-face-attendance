@@ -40,7 +40,9 @@ from .student import mobilefacenet  # noqa: F401  registers "mobilefacenet"
 from .teacher import r50_wf600k  # noqa: F401  registers the teachers
 
 TASK_LOSS = "recognition_arcface"
-BEST_METRIC = "lfw_accuracy"
+# The hardest of the three benchmarks, and the only one with room left: LFW runs
+# to 99.8, where its 6,000 pairs put a tenth of a point at six pairs of noise.
+BEST_METRIC = "cfp_fp_accuracy"
 
 
 class CachedTeacherDistiller(Distiller):
