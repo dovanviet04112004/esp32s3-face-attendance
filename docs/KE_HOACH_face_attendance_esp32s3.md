@@ -103,6 +103,11 @@ Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài li
 > tiếp** với bảng trong bài báo CDCN++ hay MiniFASNet, và không có giao thức OULU P1–P4.
 > Báo cáo phải ghi đúng như vậy, không được trình bày như thể đã chạy trên benchmark chuẩn.
 
+**`ml/bench/live_demo.py` là công cụ nhìn, không phải phép đo.** Nó chạy detect rồi spoof
+trên webcam của máy host để thấy pipeline hoạt động ở thời gian thực. Webcam host **không
+phải OV5640**: khác cảm biến, khác ống kính, khác đường xử lý ảnh. Số nó in ra không được
+đưa vào bảng nghiệm thu và không thay được "tập spoof tự thu" ở bảng trên.
+
 **Nhánh recognition**
 
 | Dữ liệu | Nguồn thật | Kích thước | Vai trò |
@@ -1142,7 +1147,8 @@ ml/
 │   │   ├── pack_models_partition.py       # gộp 3 .tflite + header → models.bin
 │   │   └── update_lock.py                 # ★ ghi contracts/models.lock.json
 │   │
-│   └── bench/{host_bench.py, device_client.py, accuracy_on_device.py}
+│   └── bench/{host_bench.py, device_client.py, accuracy_on_device.py,
+│              live_demo.py}                # ★ detect → spoof trên webcam host
 │
 ├── scripts/                               # đánh số = thứ tự chạy
 │   ├── _resume_loop.sh                    # ★ khong danh so vi khong chay truc tiep:
