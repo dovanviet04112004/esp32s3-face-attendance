@@ -117,7 +117,7 @@ def summary(scores: np.ndarray, labels: np.ndarray) -> dict[str, float]:
     }
 
 
-def liveness_of(output: torch.Tensor, reference: float) -> torch.Tensor:
+def liveness_of(output: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
     """One score per sample, from whichever head the branch's two models have.
 
     The teacher draws a depth map and the student emits two logits, and both are
@@ -131,14 +131,17 @@ def liveness_of(output: torch.Tensor, reference: float) -> torch.Tensor:
 
 @torch.no_grad()
 def collect_scores(
-    model: torch.nn.Module, loader: Iterable, device: torch.device, reference: float
+    model: torch.nn.Module, loader: Iterable, device: torch.device
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run one split through the model and return its scores beside its labels."""
+    from .teacher.depth_gt import live_reference_mean
+
     model.eval()
     scores: list[np.ndarray] = []
     truth: list[np.ndarray] = []
-    for tight, wide, labels in loader:
+    for tight, wide, labels, wide_scale in loader:
         output = model((tight.to(device), wide.to(device)))
+        reference = torch.from_numpy(live_reference_mean(wide_scale.numpy())).to(device)
         scores.append(liveness_of(output, reference).float().cpu().numpy())
         truth.append(labels.numpy())
     return np.concatenate(scores), np.concatenate(truth)
@@ -202,22 +205,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    from .teacher.depth_gt import live_reference_mean
-
     device = torch.device(args.device)
     cfg, model = load_run(args.run)
     model = model.to(device)
-    reference = live_reference_mean()
     # The run's own splits, so a report cannot rest on a division it never saw.
     fit_split = args.fit_split or cfg.data.params["val_split"]
     held_split = args.split or cfg.data.params["test_split"]
 
-    fit = collect_scores(model, build_loader(cfg, fit_split), device, reference)
+    fit = collect_scores(model, build_loader(cfg, fit_split), device)
     crossing = equal_error_rate(*fit)
     print(f"{fit_split:12s} n={fit[0].size:<7} auc {auc(*fit):.4f}  eer {crossing.acer:.4f}")
     print(f"       threshold fitted here: {crossing.threshold:.6f}")
 
-    held = collect_scores(model, build_loader(cfg, held_split), device, reference)
+    held = collect_scores(model, build_loader(cfg, held_split), device)
     rates = error_rates(*held, crossing.threshold)
     print(f"\n{held_split:12s} n={held[0].size:<7} auc {auc(*held):.4f}")
     print(f"       apcer {rates.apcer:.4f}  bpcer {rates.bpcer:.4f}  ACER {rates.acer:.4f}")
@@ -226,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     for shards in args.xdomain:
         # HTER is these rates at the home set's own threshold: refitting here
         # would report how separable the other set is, not how well this transfers.
-        other = collect_scores(model, build_loader(cfg, ".", root=shards), device, reference)
+        other = collect_scores(model, build_loader(cfg, ".", root=shards), device)
         live, attack = split_scores(*other)
         rates = error_rates(*other, crossing.threshold)
         print(f"\n{shards.name:24s} n={other[0].size:<6} live {live.size:<5} attack {attack.size}")

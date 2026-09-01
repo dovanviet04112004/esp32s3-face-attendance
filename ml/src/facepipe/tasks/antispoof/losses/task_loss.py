@@ -14,12 +14,21 @@ retraining. Folding it into this weight would fix it into the weights instead.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import torch
 from torch import nn
 
 from facepipe.core.registry import LOSSES
 
 LIVE, SPOOF = 0, 1
+
+
+class SpoofBatch(NamedTuple):
+    """What a loss is told about the samples behind one batch of logits."""
+
+    labels: torch.Tensor
+    wide_scale: torch.Tensor
 
 
 @LOSSES.register("antispoof_task")
@@ -32,12 +41,12 @@ class SpoofTaskLoss(nn.Module):
         self.register_buffer("class_weight", weight)
         self.label_smoothing = label_smoothing
 
-    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def forward(self, logits: torch.Tensor, batch: SpoofBatch) -> torch.Tensor:
         # The trainer moves the model, not the loss the distiller holds, so this
         # buffer follows the logits rather than assuming anyone moved it.
         return nn.functional.cross_entropy(
             logits,
-            labels,
+            batch.labels,
             weight=self.class_weight.to(logits.device, logits.dtype),
             label_smoothing=self.label_smoothing,
         )

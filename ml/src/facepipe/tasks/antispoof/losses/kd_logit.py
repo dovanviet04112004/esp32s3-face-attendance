@@ -20,6 +20,7 @@ from facepipe.core.registry import LOSSES
 
 from ..teacher.cdcnpp import depth_to_score
 from ..teacher.depth_gt import live_reference_mean
+from .task_loss import SpoofBatch
 
 
 @LOSSES.register("antispoof_kd_logit")
@@ -30,17 +31,19 @@ class ScoreDistillLoss(DistillLoss):
         super().__init__()
         self.temperature = temperature
         self.scale = scale
-        self.reference = live_reference_mean()
 
     def forward(
         self,
         student_out: torch.Tensor,
         teacher_out: torch.Tensor,
-        batch: object = None,
+        batch: SpoofBatch = None,
         student_features: dict[str, torch.Tensor] | None = None,
         teacher_features: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
-        normalised = depth_to_score(teacher_out.detach()) / self.reference
+        reference = live_reference_mean(batch.wide_scale.cpu().numpy())
+        normalised = depth_to_score(teacher_out.detach()) / torch.as_tensor(
+            reference, device=teacher_out.device, dtype=teacher_out.dtype
+        )
         live = torch.sigmoid(self.scale * (normalised - 0.5))
         target = torch.stack((live, 1.0 - live), dim=1)
         student_log = fn.log_softmax(student_out / self.temperature, dim=1)

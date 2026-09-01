@@ -37,7 +37,7 @@ from .data import (
 )
 from .eval import summary
 from .losses import task_loss  # noqa: F401  registers "antispoof_task"
-from .losses.task_loss import LIVE
+from .losses.task_loss import LIVE, SpoofBatch
 from .student import minifasnet_v2_se  # noqa: F401  registers "minifasnet_v2_se"
 
 TASK_LOSS = "antispoof_task"
@@ -149,10 +149,10 @@ def main(argv: list[str] | None = None) -> int:
     scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
 
     def step_fn(batch: tuple[torch.Tensor, ...]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        tight, wide, labels = batch
+        tight, wide, labels, wide_scale = batch
         distiller.epoch = trainer.state.epoch
         train_set.epoch = trainer.state.epoch
-        return distiller((tight, wide), labels)
+        return distiller((tight, wide), SpoofBatch(labels, wide_scale))
 
     @torch.no_grad()
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
@@ -170,9 +170,10 @@ def main(argv: list[str] | None = None) -> int:
         scores: list[np.ndarray] = []
         truth: list[np.ndarray] = []
         for batch in val_loader:
-            tight, wide, labels = trainer.to_device(batch)
+            tight, wide, labels, wide_scale = trainer.to_device(batch)
             logits = module((tight, wide))
-            meter.update({"loss": distiller.task_loss(logits, labels)}, n=1)
+            batch_meta = SpoofBatch(labels, wide_scale)
+            meter.update({"loss": distiller.task_loss(logits, batch_meta)}, n=1)
             scores.append(logits.softmax(dim=1)[:, LIVE].float().cpu().numpy())
             truth.append(labels.cpu().numpy())
         return {**meter.means(), **summary(np.concatenate(scores), np.concatenate(truth))}

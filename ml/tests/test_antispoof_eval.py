@@ -120,9 +120,14 @@ def test_a_flat_map_reads_as_an_attack() -> None:
 def test_scores_come_back_aligned_with_their_labels() -> None:
     model = torch.nn.Module()
     model.forward = lambda pair: torch.tensor([[6.0, -6.0], [-6.0, 6.0]])
-    batch = (torch.zeros(2, 3, 8, 8), torch.zeros(2, 3, 8, 8), torch.tensor([LIVE, SPOOF]))
+    batch = (
+        torch.zeros(2, 3, 8, 8),
+        torch.zeros(2, 3, 8, 8),
+        torch.tensor([LIVE, SPOOF]),
+        torch.tensor([2.7, 2.7]),
+    )
 
-    scores, labels = collect_scores(model, [batch, batch], torch.device("cpu"), 0.42)
+    scores, labels = collect_scores(model, [batch, batch], torch.device("cpu"))
     assert scores.shape == labels.shape == (4,)
     assert labels.tolist() == [LIVE, SPOOF, LIVE, SPOOF]
     assert auc(scores, labels) == pytest.approx(1.0)

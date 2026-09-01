@@ -46,7 +46,9 @@ def write_split(root: Path, records: int, shard_size: int = 4) -> Path:
                 {
                     "tight.jpg": crop_bytes(10 + index),
                     "wide.jpg": crop_bytes(200 - index),
-                    "json": json.dumps({"name": f"f{index}", "label": index % 2}).encode(),
+                    "json": json.dumps(
+                        {"name": f"f{index}", "label": index % 2, "wide_scale": 2.7}
+                    ).encode(),
                 }
             )
     return root
@@ -119,7 +121,7 @@ def test_a_lower_quality_moves_the_image_further() -> None:
 
 
 def test_both_views_take_the_same_quality_and_keep_the_label() -> None:
-    sample = SpoofSample(tight=textured(1), wide=textured(2), label=1)
+    sample = SpoofSample(tight=textured(1), wide=textured(2), label=1, wide_scale=2.7)
     out = recompress(sample, quality=40)
     assert out.label == 1
     assert out.tight.shape == sample.tight.shape and out.wide.shape == sample.wide.shape
@@ -171,7 +173,7 @@ def test_every_camera_augmentation_moves_the_image() -> None:
 def test_the_two_views_take_one_draw_of_every_augmentation() -> None:
     """Drawing per view would teach the model the pair disagrees about the light."""
     flat = np.full((SIZE, SIZE, 3), 120, dtype=np.uint8)
-    sample = SpoofSample(tight=flat.copy(), wide=flat.copy(), label=1)
+    sample = SpoofSample(tight=flat.copy(), wide=flat.copy(), label=1, wide_scale=2.7)
 
     out = photometric(sample, random.Random(0), probability=1.0)
     assert np.array_equal(out.tight, out.wide)
@@ -183,6 +185,13 @@ def test_validation_is_never_camera_augmented(tmp_path: Path) -> None:
     dataset = SpoofShardDataset(tmp_path, size=SIZE, train=False, splits="test")
     first = [s.tight for s in dataset]
     assert all(np.array_equal(a, b) for a, b in zip(first, [s.tight for s in dataset], strict=True))
+
+
+def test_the_crop_scale_of_a_record_survives_into_the_sample(tmp_path: Path) -> None:
+    """The depth target is built from it, so losing it silently mislays the mound."""
+    write_split(tmp_path / "test", records=4, shard_size=4)
+    dataset = SpoofShardDataset(tmp_path, size=SIZE, train=False, splits="test")
+    assert all(sample.wide_scale == 2.7 for sample in dataset)
 
 
 def test_a_shard_directory_can_be_read_without_a_split_name(tmp_path: Path) -> None:

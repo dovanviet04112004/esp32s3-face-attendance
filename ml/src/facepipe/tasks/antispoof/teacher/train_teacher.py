@@ -46,7 +46,7 @@ from ..eval import summary
 from ..losses.contrastive_depth_loss import contrast_kernels
 from ..losses.task_loss import LIVE
 from .cdcnpp import CDCNpp, depth_to_score  # noqa: F401  registers "cdcnpp"
-from .depth_gt import DEPTH_SIZE, SIGMA_OF_FACE, face_mask, gaussian_map, live_reference_mean
+from .depth_gt import DEPTH_SIZE, LIVE, SIGMA_OF_FACE
 
 
 class DepthSupervision(nn.Module):
@@ -66,24 +66,40 @@ class DepthSupervision(nn.Module):
         contrast_weight: float = 10.0,
     ) -> None:
         super().__init__()
+        self.depth_size = depth_size
+        self.sigma = sigma
         self.contrast_weight = contrast_weight
-        self.register_buffer("mound", torch.from_numpy(gaussian_map(depth_size, sigma)))
-        self.register_buffer("face", torch.from_numpy(face_mask(depth_size)))
         self.register_buffer("kernels", contrast_kernels())
 
     def contrast(self, depth: torch.Tensor) -> torch.Tensor:
         return fn.conv2d(depth.unsqueeze(1), self.kernels.to(depth.dtype), padding=1)
 
-    def targets(self, labels: torch.Tensor) -> torch.Tensor:
+    def boxes(self, wide_scale: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """The mound and the face box for each sample, at that sample's crop scale."""
+        axis = (torch.arange(self.depth_size, device=wide_scale.device) + 0.5)
+        axis = axis / self.depth_size - 0.5
+        grid_y, grid_x = torch.meshgrid(axis, axis, indexing="ij")
+        scale = wide_scale.float().view(-1, 1, 1)
+        face = (grid_x.abs() <= 0.5 / scale) & (grid_y.abs() <= 0.5 / scale)
+        spread = self.sigma / scale
+        mound = torch.exp(-(grid_x**2 + grid_y**2) / (2.0 * spread**2)) * face
+        return mound, face
+
+    def targets(self, labels: torch.Tensor, wide_scale: torch.Tensor) -> torch.Tensor:
         """The mound for a live face, zeros for an attack."""
-        mound = self.mound.to(labels.device)
+        mound, _ = self.boxes(wide_scale)
         return torch.where(labels.view(-1, 1, 1) == LIVE, mound, torch.zeros_like(mound))
 
-    def forward(self, depth: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        target = self.targets(labels).to(depth.dtype)
-        face = self.face.to(depth.device)
+    def forward(
+        self, depth: torch.Tensor, labels: torch.Tensor, wide_scale: torch.Tensor
+    ) -> torch.Tensor:
+        mound, face = self.boxes(wide_scale)
+        target = torch.where(labels.view(-1, 1, 1) == LIVE, mound, torch.zeros_like(mound))
+        target = target.to(depth.dtype)
         error = (depth - target).abs()
-        level = error[:, face].mean() + error[:, ~face].mean()
+        inside = (error * face).sum(dim=(1, 2)) / face.sum(dim=(1, 2)).clamp(min=1)
+        outside = (error * ~face).sum(dim=(1, 2)) / (~face).sum(dim=(1, 2)).clamp(min=1)
+        level = (inside + outside).mean()
         shape = fn.mse_loss(self.contrast(depth), self.contrast(target))
         return level + self.contrast_weight * shape
 
@@ -126,7 +142,7 @@ def build_loader(cfg: Config, split: str, train: bool) -> torch.utils.data.DataL
     )
 
 
-def liveness(depth: torch.Tensor, reference: float) -> torch.Tensor:
+def liveness(depth: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
     """The map collapsed to a score in the range a threshold can be read on."""
     return depth_to_score(depth) / reference
 
@@ -147,13 +163,12 @@ def main(argv: list[str] | None = None) -> int:
     val_loader = build_loader(cfg, cfg.data.params.get("val_split", "valid"), train=False)
 
     supervision = DepthSupervision(**cfg.data.params.get("supervision", {}))
-    reference = live_reference_mean()
     optimizer = build_optimizer(model, cfg.optim)
     scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
 
     def step_fn(batch: tuple[torch.Tensor, ...]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        tight, wide, labels = batch
-        loss = supervision(trainer.model((tight, wide)), labels)
+        tight, wide, labels, wide_scale = batch
+        loss = supervision(trainer.model((tight, wide)), labels, wide_scale)
         return loss, {"depth": loss.detach()}
 
     @torch.no_grad()
@@ -170,10 +185,11 @@ def main(argv: list[str] | None = None) -> int:
         scores: list[np.ndarray] = []
         truth: list[np.ndarray] = []
         for batch in val_loader:
-            tight, wide, labels = trainer.to_device(batch)
+            tight, wide, labels, wide_scale = trainer.to_device(batch)
             depth = module((tight, wide))
-            meter.update({"depth": supervision(depth, labels)}, n=1)
-            scores.append(liveness(depth, reference).float().cpu().numpy())
+            meter.update({"depth": supervision(depth, labels, wide_scale)}, n=1)
+            reference = supervision.targets(torch.full_like(labels, LIVE), wide_scale)
+            scores.append(liveness(depth, reference.mean(dim=(1, 2))).float().cpu().numpy())
             truth.append(labels.cpu().numpy())
         return {**meter.means(), **summary(np.concatenate(scores), np.concatenate(truth))}
 

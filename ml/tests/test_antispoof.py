@@ -27,6 +27,7 @@ from facepipe.tasks.antispoof.losses.task_loss import LIVE, SPOOF
 from facepipe.tasks.antispoof.student import INPUT_SIZE, HardSigmoid, MiniFASNetV2SE
 from facepipe.tasks.antispoof.teacher import train_teacher
 from facepipe.tasks.antispoof.teacher.cdcnpp import CDCNpp
+from facepipe.tasks.antispoof.losses.task_loss import SpoofBatch
 from facepipe.tasks.antispoof.teacher.depth_gt import DEPTH_SIZE, live_reference_mean
 from facepipe.tasks.antispoof.teacher.train_teacher import DepthSupervision, liveness
 
@@ -41,7 +42,12 @@ def write_shards(root: Path, records: int, shard_size: int = 4) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     with ShardWriter(root, shard_size=shard_size) as writer:
         for index in range(records):
-            meta = {"name": f"f{index}", "label": index % 2, "split": "train"}
+            meta = {
+                "name": f"f{index}",
+                "label": index % 2,
+                "split": "train",
+                "wide_scale": 2.7,
+            }
             writer.add(
                 {
                     "tight.jpg": crop_bytes(10 + index),
@@ -96,7 +102,7 @@ def test_every_record_is_read_once_across_workers(tmp_path: Path) -> None:
     root = write_shards(tmp_path / "train", records=12, shard_size=2)
     ds = SpoofShardDataset(root, size=32, train=False)
     loader = DataLoader(ds, batch_size=1, num_workers=3, collate_fn=collate)
-    seen = sum(labels.numel() for _, _, labels in loader)
+    seen = sum(labels.numel() for _, _, labels, _ in loader)
     assert seen == 12
 
 
@@ -110,7 +116,7 @@ def test_flip_mirrors_both_views_together() -> None:
 
     tight = np.arange(2 * 2 * 3, dtype=np.uint8).reshape(2, 2, 3)
     wide = (tight + 1).astype(np.uint8)
-    flipped = horizontal_flip(SpoofSample(tight, wide, label=1))
+    flipped = horizontal_flip(SpoofSample(tight, wide, label=1, wide_scale=2.7))
     assert (flipped.tight == tight[:, ::-1]).all()
     assert (flipped.wide == wide[:, ::-1]).all()
     assert flipped.label == 1
@@ -119,9 +125,10 @@ def test_flip_mirrors_both_views_together() -> None:
 def test_collate_keeps_the_pair_and_the_label_aligned(tmp_path: Path) -> None:
     root = write_shards(tmp_path / "train", records=4, shard_size=4)
     batch = list(SpoofShardDataset(root, size=32, train=False))
-    tight, wide, labels = collate(batch)
+    tight, wide, labels, scales = collate(batch)
     assert tight.shape == wide.shape == (4, 3, 32, 32)
     assert labels.tolist() == [0, 1, 0, 1]
+    assert scales.tolist() == pytest.approx([2.7] * 4)
     assert not torch.allclose(tight, wide)
 
 
@@ -132,10 +139,10 @@ def test_the_loss_weights_the_class_the_data_is_short_of() -> None:
     loss = SpoofTaskLoss(live_weight=1.97)
     confident_live = torch.tensor([4.0, -4.0])
     confident_spoof = torch.tensor([-4.0, 4.0])
-    labels = torch.tensor([0, 1])
+    batch = SpoofBatch(torch.tensor([0, 1]), torch.tensor([2.7, 2.7]))
 
-    wrong_on_live = loss(torch.stack([confident_spoof, confident_spoof]), labels)
-    wrong_on_spoof = loss(torch.stack([confident_live, confident_live]), labels)
+    wrong_on_live = loss(torch.stack([confident_spoof, confident_spoof]), batch)
+    wrong_on_spoof = loss(torch.stack([confident_live, confident_live]), batch)
     assert wrong_on_live > wrong_on_spoof
 
 
@@ -143,25 +150,32 @@ def test_an_unweighted_loss_treats_the_two_errors_alike() -> None:
     loss = SpoofTaskLoss(live_weight=1.0)
     confident_live = torch.tensor([4.0, -4.0])
     confident_spoof = torch.tensor([-4.0, 4.0])
-    labels = torch.tensor([0, 1])
+    batch = SpoofBatch(torch.tensor([0, 1]), torch.tensor([2.7, 2.7]))
 
-    wrong_on_live = loss(torch.stack([confident_spoof, confident_spoof]), labels)
-    wrong_on_spoof = loss(torch.stack([confident_live, confident_live]), labels)
+    wrong_on_live = loss(torch.stack([confident_spoof, confident_spoof]), batch)
+    wrong_on_spoof = loss(torch.stack([confident_live, confident_live]), batch)
     assert torch.allclose(wrong_on_live, wrong_on_spoof)
 
 
 def test_the_loss_buffer_follows_the_logits_device() -> None:
     loss = SpoofTaskLoss()
     logits = torch.tensor([[1.0, 0.0]], dtype=torch.float64)
-    assert loss(logits, torch.tensor([0])).dtype == torch.float64
+    batch = SpoofBatch(torch.tensor([0]), torch.tensor([2.7]))
+    assert loss(logits, batch).dtype == torch.float64
 
 
-def teacher_map(labels: list[int]) -> torch.Tensor:
+def teacher_map(labels: list[int], wide_scale: float = 2.7) -> torch.Tensor:
     import numpy as np
 
     from facepipe.tasks.antispoof.teacher.depth_gt import depth_batch
 
-    return torch.from_numpy(depth_batch(np.array(labels)))
+    return torch.from_numpy(depth_batch(np.array(labels), wide_scale))
+
+
+def spoof_batch(labels: list[int], wide_scale: float = 2.7) -> SpoofBatch:
+    return SpoofBatch(
+        torch.tensor(labels), torch.full((len(labels),), wide_scale, dtype=torch.float32)
+    )
 
 
 def test_a_flat_input_leaves_no_central_difference_inside_the_border() -> None:
@@ -198,15 +212,15 @@ def test_the_teacher_returns_a_depth_map_not_a_logit() -> None:
 def test_an_attack_target_is_flat_and_a_live_one_is_not() -> None:
     from facepipe.tasks.antispoof.teacher.depth_gt import depth_target
 
-    assert depth_target(1).max() == 0.0
-    assert depth_target(0).max() > 0.9
+    assert depth_target(1, 2.7).max() == 0.0
+    assert depth_target(0, 2.7).max() > 0.9
 
 
 def test_the_live_target_stops_at_the_face_box() -> None:
     """Supervising the room as live surface asks the background to carry the label."""
     from facepipe.tasks.antispoof.teacher.depth_gt import depth_target, face_mask
 
-    mound, face = depth_target(0), face_mask()
+    mound, face = depth_target(0, 2.7), face_mask(2.7)
     assert face.mean() < 0.2
     assert mound[~face].max() == 0.0
     assert mound[face].sum() == pytest.approx(mound.sum())
@@ -218,9 +232,9 @@ def test_a_flat_map_still_costs_a_live_face_the_whole_mound() -> None:
 
     supervision = DepthSupervision()
     flat = torch.zeros(1, DEPTH_SIZE, DEPTH_SIZE)
-    whole_map_mean = float(depth_target(0).mean())
+    whole_map_mean = float(depth_target(0, 2.7).mean())
 
-    cost = float(supervision(flat, torch.tensor([LIVE])))
+    cost = float(supervision(flat, torch.tensor([LIVE]), torch.tensor([2.7])))
     assert cost > 5.0 * whole_map_mean
 
 
@@ -234,8 +248,9 @@ def test_score_distillation_costs_more_when_the_student_disagrees() -> None:
     says_live = torch.tensor([[5.0, -5.0]])
     says_spoof = torch.tensor([[-5.0, 5.0]])
 
-    assert loss(says_spoof, teacher_map([0])) > loss(says_live, teacher_map([0]))
-    assert loss(says_live, teacher_map([1])) > loss(says_spoof, teacher_map([1]))
+    live, attack = spoof_batch([0]), spoof_batch([1])
+    assert loss(says_spoof, teacher_map([0]), live) > loss(says_live, teacher_map([0]), live)
+    assert loss(says_live, teacher_map([1]), attack) > loss(says_spoof, teacher_map([1]), attack)
 
 
 def test_every_contrast_kernel_sums_to_zero() -> None:
@@ -252,7 +267,7 @@ def test_depth_distillation_needs_a_feature_layer() -> None:
 
     loss = DepthMapDistillLoss(embedding=16)
     with pytest.raises(ValueError, match="feature layer"):
-        loss(torch.zeros(1, 2), teacher_map([0]))
+        loss(torch.zeros(1, 2), teacher_map([0]), spoof_batch([0]))
 
 
 def test_the_loader_size_comes_from_the_model_input(tmp_path: Path) -> None:
@@ -290,18 +305,28 @@ def test_a_rectangular_input_is_refused(tmp_path: Path) -> None:
         crop_size(load_config(path))
 
 
+def test_the_loss_builds_the_same_target_the_dataset_side_does() -> None:
+    """Two implementations of one formula, one on GPU per step and one in numpy."""
+    from facepipe.tasks.antispoof.teacher.depth_gt import depth_batch
+
+    labels, scales = torch.tensor([LIVE, SPOOF, LIVE]), torch.tensor([2.7, 1.8, 1.0])
+    torch_side = DepthSupervision().targets(labels, scales)
+    numpy_side = torch.from_numpy(depth_batch(labels.numpy(), scales.numpy()))
+    assert torch.allclose(torch_side, numpy_side, atol=1e-6)
+
+
 def test_depth_supervision_is_zero_on_a_perfect_map() -> None:
     supervision = DepthSupervision()
-    labels = torch.tensor([LIVE, SPOOF])
-    target = supervision.targets(labels)
-    assert float(supervision(target, labels)) == pytest.approx(0.0, abs=1e-6)
+    labels, scales = torch.tensor([LIVE, SPOOF]), torch.tensor([2.7, 1.4])
+    target = supervision.targets(labels, scales)
+    assert float(supervision(target, labels, scales)) == pytest.approx(0.0, abs=1e-6)
 
 
 def test_depth_supervision_punishes_a_flat_map_for_a_live_face() -> None:
     supervision = DepthSupervision()
-    labels = torch.tensor([LIVE])
+    labels, scales = torch.tensor([LIVE]), torch.tensor([2.7])
     flat = torch.zeros(1, DEPTH_SIZE, DEPTH_SIZE)
-    assert float(supervision(flat, labels)) > 0.1
+    assert float(supervision(flat, labels, scales)) > 0.1
 
 
 def test_the_contrast_term_carries_weight_against_the_level_term() -> None:
@@ -312,30 +337,31 @@ def test_the_contrast_term_carries_weight_against_the_level_term() -> None:
     of each other on a prediction that is close but structureless.
     """
     torch.manual_seed(0)
-    labels = torch.tensor([LIVE])
+    labels, scales = torch.tensor([LIVE]), torch.tensor([2.7])
     level_only = DepthSupervision(contrast_weight=0.0)
-    target = level_only.targets(labels)
+    target = level_only.targets(labels, scales)
     noisy = target + torch.randn_like(target) * 0.05
 
-    level = float(level_only(noisy, labels))
-    contrast = float(DepthSupervision()(noisy, labels)) - level
+    level = float(level_only(noisy, labels, scales))
+    contrast = float(DepthSupervision()(noisy, labels, scales)) - level
     assert 0.2 < contrast / level < 5.0
 
 
 def test_the_contrast_term_ignores_a_map_that_is_only_too_bright() -> None:
     """Shifting every pixel alike leaves every neighbour difference untouched."""
-    labels = torch.tensor([LIVE])
+    labels, scales = torch.tensor([LIVE]), torch.tensor([2.7])
     supervision = DepthSupervision()
-    shifted = supervision.targets(labels) + 0.05
-    level_only = float(DepthSupervision(contrast_weight=0.0)(shifted, labels))
-    assert float(supervision(shifted, labels)) == pytest.approx(level_only, abs=1e-2)
+    shifted = supervision.targets(labels, scales) + 0.05
+    level_only = float(DepthSupervision(contrast_weight=0.0)(shifted, labels, scales))
+    assert float(supervision(shifted, labels, scales)) == pytest.approx(level_only, abs=1e-2)
 
 
 def test_the_teacher_score_reads_a_perfect_live_map_as_one() -> None:
     """Dividing by the mound's own mean is what puts a live face at 1, not at 0.42."""
     supervision = DepthSupervision()
-    labels = torch.tensor([LIVE, SPOOF])
-    scores = liveness(supervision.targets(labels), live_reference_mean())
+    labels, scales = torch.tensor([LIVE, SPOOF]), torch.tensor([2.7, 1.4])
+    reference = torch.from_numpy(live_reference_mean(scales.numpy()))
+    scores = liveness(supervision.targets(labels, scales), reference)
     assert float(scores[0]) == pytest.approx(1.0)
     assert float(scores[1]) == pytest.approx(0.0)
 

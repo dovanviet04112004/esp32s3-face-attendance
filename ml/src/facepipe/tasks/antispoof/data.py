@@ -17,7 +17,7 @@ import json
 import random
 import tarfile
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -50,6 +50,7 @@ class SpoofSample:
     tight: np.ndarray
     wide: np.ndarray
     label: int
+    wide_scale: float                          # scale the wide view actually reached
 
 
 def shard_paths(root: Path) -> list[Path]:
@@ -126,7 +127,7 @@ def decode(payload: bytes, size: int) -> np.ndarray:
 
 def horizontal_flip(sample: SpoofSample) -> SpoofSample:
     """Mirror both views together; a face and its context are one scene."""
-    return SpoofSample(sample.tight[:, ::-1].copy(), sample.wide[:, ::-1].copy(), sample.label)
+    return replace(sample, tight=sample.tight[:, ::-1].copy(), wide=sample.wide[:, ::-1].copy())
 
 
 def requantise(image: np.ndarray, quality: int) -> np.ndarray:
@@ -144,8 +145,8 @@ def recompress(sample: SpoofSample, quality: int) -> SpoofSample:
     Measured: the training pool is 450x600 at a median 72 KB and the graded pool
     480x600 at 471 KB, so blocking artefacts separate the two on their own.
     """
-    return SpoofSample(
-        requantise(sample.tight, quality), requantise(sample.wide, quality), sample.label
+    return replace(
+        sample, tight=requantise(sample.tight, quality), wide=requantise(sample.wide, quality)
     )
 
 
@@ -247,11 +248,11 @@ def photometric(
     if rng.random() < probability:
         gains = np.array([rng.uniform(*WHITE_BALANCE_RANGE) for _ in range(3)], dtype=np.float32)
         views = [white_balance(view, gains) for view in views]
-    return SpoofSample(views[0], views[1], sample.label)
+    return replace(sample, tight=views[0], wide=views[1])
 
 
 class SpoofShardDataset(IterableDataset):
-    """Streams (tight, wide, label) from one split's shards."""
+    """Streams (tight, wide, label, wide_scale) from one split's shards."""
 
     def __init__(
         self,
@@ -306,6 +307,7 @@ class SpoofShardDataset(IterableDataset):
                     tight=decode(record["tight.jpg"], self.size),
                     wide=decode(record["wide.jpg"], self.size),
                     label=int(meta["label"]),
+                    wide_scale=float(meta["wide_scale"]),
                 )
 
     def __iter__(self) -> Iterator[SpoofSample]:
@@ -335,9 +337,12 @@ def to_tensor(image: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(image).permute(2, 0, 1).float().div_(255.0)
 
 
-def collate(batch: list[SpoofSample]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Stack into (tight, wide, label), the triple the model and loss expect."""
+def collate(
+    batch: list[SpoofSample],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Stack into (tight, wide, label, wide_scale), what the model and loss expect."""
     tight = torch.stack([to_tensor(s.tight) for s in batch])
     wide = torch.stack([to_tensor(s.wide) for s in batch])
     labels = torch.tensor([s.label for s in batch], dtype=torch.long)
-    return tight, wide, labels
+    scales = torch.tensor([s.wide_scale for s in batch], dtype=torch.float32)
+    return tight, wide, labels, scales
