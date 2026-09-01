@@ -295,7 +295,25 @@ spoof là ảnh chụp lại ảnh ở đủ góc — model học tương quan *
 là đường tắt thứ ba của nhánh, sau vết nén (§3) và hậu cảnh trong đích depth (§7). Tập test
 CelebA-Spoof không lộ ra vì nó cùng phân bố tư thế với tập train.
 
-🔬 **Chưa kiểm chứng** — cần tập tự thu tách riêng nhóm chính diện và nhóm quay nghiêng.
+**Đã kiểm chứng sơ bộ trên chính board.** Ngưỡng 0,997355:
+
+| Tư thế | n | liveness | Gọi LIVE |
+|---|---|---|---|
+| chính diện, loạt liên tiếp | 11 | tb 0,997958 · max 0,999994 | **90,9%** |
+| chính diện, quality 10 | 2 | 0,999974 | 100% |
+| chính diện, quality 4 | 1 | 0,999854 | 100% |
+| **nghiêng, hơi cúi** | 1 | **0,993633** | **0%** |
+
+Chính diện đọc ~0,9999, nghiêng đọc 0,9936 — chênh ~0,006 và **ngưỡng nằm đúng giữa**.
+Người dùng quan sát trực tiếp trên luồng video: đổi góc mặt là chuyển sang SPOOF ngay, lặp
+lại nhất quán.
+
+Phép so có kiểm soát **loại được chất lượng ảnh** khỏi danh sách nghi phạm: cùng người cùng
+vị trí, quality 10 và quality 4 đều cho 0,9999 và 100% LIVE. Cơ chế nén hai lần có thật
+nhưng ở dải này không phải yếu tố quyết định.
+
+🔬 **n còn nhỏ, nhất là nhóm nghiêng (n=1).** Muốn thành số liệu chốt thì cần tập tự thu
+tách riêng hai nhóm, mỗi nhóm vài chục ảnh, và đo APCER/BPCER theo từng nhóm.
 
 ### Chất lượng ảnh camera — cơ chế nén hai lần
 
