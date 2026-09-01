@@ -315,6 +315,35 @@ nhưng ở dải này không phải yếu tố quyết định.
 🔬 **n còn nhỏ, nhất là nhóm nghiêng (n=1).** Muốn thành số liệu chốt thì cần tập tự thu
 tách riêng hai nhóm, mỗi nhóm vài chục ảnh, và đo APCER/BPCER theo từng nhóm.
 
+### Phơi sáng lay điểm số mạnh hơn biên của ngưỡng 50 lần
+
+Cùng người, cùng model, chỉ khác ánh sáng:
+
+| Điều kiện | liveness |
+|---|---|
+| đủ sáng, chính diện | 0,9999 |
+| ngược sáng, mặt nằm trong bóng | **0,683** |
+
+Biên độ do ánh sáng: **0,32**. Khoảng cách từ mặt thật tới ngưỡng: **0,006**.
+
+Nguyên nhân đo được: AE của OV5640 đo sáng **cả cảnh**. Camera chĩa lên trần sáng nên nó
+hạ phơi sáng để cứu trần, dìm mặt vào bóng; mặt tối thì mất kết cấu da, mà kết cấu da là
+thứ model dùng để tách da thật khỏi mặt phẳng in. Cùng cơ chế ấy làm màn hình điện thoại
+cháy trắng và loé khi đưa vào khung.
+
+**Hệ quả kiến trúc**: nếu phơi sáng trôi tự do thì không có ngưỡng cố định nào bền — hiệu
+chỉnh hôm nay, đổi giờ trong ngày là sai. Chính sách phơi sáng của `drv_camera` nằm ở
+**thượng nguồn** của ngưỡng anti-spoof. KẾ HOẠCH hiện **không quy định** chính sách này.
+
+Ba hướng, chưa chốt, phải qua §1.2: AE đo cả cảnh (đã đo là hỏng cả hai chiều) · AE đo theo
+hộp mặt do detector trả về · phơi sáng cố định (lặp lại được nên ngưỡng bền, hỏng khi ánh
+sáng phòng đổi nhiều).
+
+**Một cái bẫy khi nghiệm thu**: nếu màn hình cháy tới mức detector không tìm ra mặt, đòn
+tấn công thất bại **vì detect không bắt được, không phải vì anti-spoof chặn được**. Ghi
+nhận đó là "chặn được" là tự lừa mình; kẻ tấn công chỉ cần hạ độ sáng màn hình. Mọi phép đo
+APCER phải tách riêng "bắt được mặt rồi từ chối" khỏi "không bắt được mặt".
+
 ### Chất lượng ảnh camera — cơ chế nén hai lần
 
 Crop train sinh từ ảnh gốc rồi nén JPEG q95. Ảnh OV5640 thì **đã nén sẵn trên board** mới
