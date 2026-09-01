@@ -274,9 +274,17 @@ class Trainer:
         )
 
     def _track_best(self, val_stats: Mapping[str, float]) -> None:
+        """Save the best checkpoint, and refuse to run blind if it cannot be found.
+
+        A key the validation never produces used to mean no best.pth for the whole
+        run and no sign of it until the run was over and the file was missing.
+        """
         value = val_stats.get(self.best_metric_key)
         if value is None:
-            return
+            raise KeyError(
+                f"best_metric_key {self.best_metric_key!r} is not among the validation "
+                f"metrics {sorted(val_stats)}; best.pth would never be written"
+            )
         better = (
             value < self.state.best_metric
             if self.state.best_is_lower
