@@ -51,14 +51,15 @@ def write_dataset(tmp_path: Path) -> tuple[Path, Path]:
     return shards, split
 
 
-def write_benchmark(tmp_path: Path, pairs: int = 4) -> Path:
+def write_benchmark(tmp_path: Path, pairs: int = 4, names: tuple[str, ...] = ("lfw",)) -> Path:
     """A .bin in InsightFace's layout: encoded images then one flag per pair."""
     root = tmp_path / "benchmarks"
     root.mkdir(parents=True, exist_ok=True)
     encoded = [face_bytes(30 + index * 9) for index in range(pairs * 2)]
     issame = [index % 2 == 0 for index in range(pairs)]
-    with (root / "lfw.bin").open("wb") as handle:
-        pickle.dump((encoded, issame), handle)
+    for name in names:
+        with (root / f"{name}.bin").open("wb") as handle:
+            pickle.dump((encoded, issame), handle)
     return root
 
 
@@ -97,7 +98,9 @@ def runs_of(tmp_path: Path) -> list[Path]:
 
 def test_the_baseline_arm_trains_without_a_teacher(tmp_path: Path) -> None:
     shards, split = write_dataset(tmp_path)
-    cfg_path = write_config(tmp_path, shards, split, write_benchmark(tmp_path))
+    cfg_path = write_config(
+        tmp_path, shards, split, write_benchmark(tmp_path, names=("lfw", "cfp_fp"))
+    )
     assert train_kd.main(["--cfg", str(cfg_path)]) == 0
 
     run = runs_of(tmp_path)[0]
@@ -110,7 +113,9 @@ def test_the_arcface_centres_are_updated_by_the_run(tmp_path: Path) -> None:
     """They live in the loss, not the student, so an optimizer built over the
     student alone would leave them at their random initialisation."""
     shards, split = write_dataset(tmp_path)
-    cfg_path = write_config(tmp_path, shards, split, write_benchmark(tmp_path))
+    cfg_path = write_config(
+        tmp_path, shards, split, write_benchmark(tmp_path, names=("lfw", "cfp_fp"))
+    )
 
     from facepipe.core.config import load_config
     from facepipe.core.scheduler import build_optimizer
@@ -133,7 +138,9 @@ def test_the_kd_arm_reads_the_cache_instead_of_the_images(tmp_path: Path) -> Non
     rng = np.random.default_rng(0)
     rng.standard_normal((RECORDS, 512)).astype(TEACHER_DTYPE).tofile(cache)
 
-    cfg_path = write_config(tmp_path, shards, split, write_benchmark(tmp_path))
+    cfg_path = write_config(
+        tmp_path, shards, split, write_benchmark(tmp_path, names=("lfw", "cfp_fp"))
+    )
     payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     payload["teacher"] = {"enabled": True, "name": "cached_embedding"}
     payload["data"]["params"]["teacher_cache"] = str(cache)
@@ -165,7 +172,9 @@ def test_a_rectangular_input_is_refused(tmp_path: Path) -> None:
     from facepipe.core.config import load_config
 
     shards, split = write_dataset(tmp_path)
-    cfg_path = write_config(tmp_path, shards, split, write_benchmark(tmp_path))
+    cfg_path = write_config(
+        tmp_path, shards, split, write_benchmark(tmp_path, names=("lfw", "cfp_fp"))
+    )
     payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     payload["model"]["input_hw"] = [112, 96]
     cfg_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
