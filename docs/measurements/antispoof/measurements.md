@@ -120,6 +120,20 @@ Epoch thật: **7 phút 19 → 4 phút 35** (−37%).
 
 Cổng nhánh: **ACER < 5%** sau INT8. A0 trượt khoảng hai lần.
 
+**Con số 5% chưa có căn cứ đo đạc.** Nó nằm ở `TASKS.md` E6-T6, và tìm khắp KẾ HOẠCH không
+thấy chỗ nào dẫn nó ra từ một phép đo. Tham chiếu anti-spoof duy nhất là §1.1: CDCN++ ACER
+0,2% trên **OULU-NPU P1** — mà chính §1.2 đã ghi rằng dự án này *"không thay được khả năng
+so số trực tiếp với bảng trong bài báo CDCN++"* và không có giao thức OULU. OULU là phòng
+lab; CelebA-Spoof là ngoài đời.
+
+Số đo khớp với chẩn đoán đó: model qua cổng thoải mái trên bộ kiểm soát (NUAA EER 1,14%,
+Axon đòn phẳng 0–8,75%) và trượt trên CelebA-Spoof (9,73%). Nhánh detect đã gặp đúng lỗi
+này — ba số WIDER đo ở độ phân giải gốc đem làm cổng cho model 160×120 — và KẾ HOẠCH §3 xử
+bằng cách định nghĩa miền phục vụ rồi đặt cổng trên đó, vẫn báo cáo đủ số gốc bên cạnh.
+
+Anti-spoof cần đúng cách làm ấy, nhưng **phải định nghĩa miền trước khi nhìn số nó sinh
+ra**, nếu không thì là chọn cho vừa. Việc đó cần tập tự thu (§10) và phải qua §1.2.
+
 ### A0 — `20260901-0717_b326cd5_6706a4`, 60 epoch, best ở epoch 47
 
 Chấm bằng `eval.py`, ngưỡng chốt trên `test:0:10` rồi áp nguyên sang `test:10:`:
@@ -200,9 +214,103 @@ nên phải qua §1.2.
 
 ---
 
-## 7. Còn nợ
+## 7. Đích depth phủ 71,2% lên hậu cảnh
 
-- Chạy lại teacher (`20260901-1239`, đang chạy) → chạy A3 → điền §5 → ADR.
+Teacher đọc crop **wide**, nơi `scaled_box` để hộp mặt chiếm **14,1% diện tích**. Gò Gauss
+`sigma=0.28` vẽ cho crop tight, và `l1_loss` tính trên toàn bản đồ không mask:
+
+| `sigma` | Khối lượng đích trên mặt | Trên nền |
+|---|---|---|
+| 0,28 — gò phủ cả khung | 28,8% | **71,2%** |
+| 0,104 — thu theo cạnh hộp | 86,4% | 13,6% |
+| **mask hộp + gò** (đã chốt) | **100%** | 0% |
+
+Mẫu live bắt bức tường phía sau nhận giá trị "bề mặt sống", mẫu spoof bắt chính bức tường
+đó bằng 0 — mà CelebA-Spoof quay hai lớp trong cùng những căn phòng. **71,2% loss dạy phần
+nền mang nhãn lớp**, đúng đường tắt mà giám sát depth sinh ra để chặn.
+
+Che mặt nạ không thôi thì hỏng chiều ngược lại: ngoài hộp hai lớp cùng đích 0, nên bản đồ
+phẳng — đáp án suy biến — chỉ còn tốn 0,0585 thay vì 0,4160. **L1 lấy trung bình riêng
+trong và ngoài hộp rồi cộng**, đưa giá về đúng 0,4160 nhưng lần này toàn bộ từ vùng mặt.
+
+Run teacher `20260901-1239` chạy trên công thức hỏng, dừng ở epoch 11. Đường cong của nó
+giữ lại làm hàng đối chứng "trước khi sửa":
+
+| epoch | 1 | 3 | 5 | 7 | 9 | 11 |
+|---|---|---|---|---|---|---|
+| EER | 0,4995 | 0,2203 | 0,1919 | 0,1762 | 0,1673 | 0,1607 |
+
+Chia LR ở epoch 10 không đổi gì (mốc null đặt trước: 0,162; thực tế 0,1607), tức nó bão hoà
+quanh 0,16 — trên cả 0,1365 của bản teacher cũ và 0,1064 của student.
+
+---
+
+## 8. Năm phép augment còn thiếu — chưa kết luận được
+
+KẾ HOẠCH §3 lớp 2 khai sáu phép; code chỉ có lật ngang và nén JPEG. Bổ sung nhiễu
+Poisson-Gaussian, lệch cân bằng trắng, vignette, motion blur, ngược sáng — mỗi mẫu rút tham
+số một lần rồi áp cho **cả hai view**, gồm chung một luồng nhiễu vì crop tight nằm giữa crop
+wide nên cùng điểm ảnh cảm biến xuất hiện hai lần.
+
+Giá phải trả, đo trên reader: **1.534 img/s** khi dùng Poisson thật → **2.876 img/s** sau khi
+thay bằng Gauss cùng phương sai, cache lưới toạ độ và bỏ `sqrt` thừa ở vignette. Bước train
+tiêu thụ ~1.735 nên reader hết là nút thắt.
+
+A0 bản augment (`20260901-1508`), so với A0 cũ ở **cùng epoch**:
+
+| epoch | 1 | 3 | 5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| augment | 0,2058 | 0,1772 | 0,1629 | 0,1592 | 0,1631 | 0,1532 | 0,1624 | 0,1485 | 0,1598 | 0,1639 |
+| cũ | 0,1554 | 0,1352 | 0,1297 | 0,1290 | 0,1307 | 0,1173 | 0,1261 | 0,1122 | — | — |
+
+Khoảng cách co tới epoch 7 (0,0504 → 0,0302) rồi ngừng, sau đó dao động 0,148–0,164 không
+có hướng. Mốc đặt trước ở epoch 5 là **≥ 0,145 tại epoch 15 nghĩa là không trả công**; kết
+quả 0,1485, trượt.
+
+**Nhưng phép đo này chỉ kết luận được cho CelebA-Spoof val, không cho thiết bị.** Tập val là
+ảnh sạch, còn năm phép augment mô phỏng đúng đường OV5640 — chấm chúng bằng ảnh sạch là đo
+trên miền chúng không nhắm tới. Câu "augment có lợi hay hại" **chỉ trả lời được khi có tập
+tự thu**, và khi đó phải chấm cả hai checkpoint.
+
+---
+
+## 9. OV5640 thật — ba số đầu tiên trên miền thiết bị
+
+Board ESP32-S3 + OV5640 (PID `0x5640`) phát MJPEG, host chạy detect → anti-spoof qua
+`ml/bench/live_demo.py`. Crop cắt đúng đường của shard train (hộp vuông hoá, JPEG q95 ở
+128 px, resize 80).
+
+| | Số đo |
+|---|---|
+| Detect trên một khung 640×480 | 1 mặt, điểm 0,708, hộp **128×138 px**, 50 ms |
+| Anti-spoof cùng khung | liveness **0,993633** so với ngưỡng 0,997355 → **SPOOF** |
+| Một phiên 66 khung | live 21,2% · spoof 42,4% · không thấy mặt 36,4% |
+
+**Mặt thật bị gọi SPOOF, thiếu đúng 0,0037.** Ngưỡng nằm sát 1 tới mức đó vì phân bố
+CelebA-Spoof bão hoà; sang cảm biến khác thì biên đó không còn nghĩa.
+
+Quan sát khi xem trực tiếp: **mặt chính diện thường ra LIVE, mặt quay nghiêng ra SPOOF.**
+Giả thuyết: CelebA-Spoof là dẫn xuất của CelebA nên ảnh live phần lớn chính diện, còn ảnh
+spoof là ảnh chụp lại ảnh ở đủ góc — model học tương quan **tư thế**, không học độ nổi. Đây
+là đường tắt thứ ba của nhánh, sau vết nén (§3) và hậu cảnh trong đích depth (§7). Tập test
+CelebA-Spoof không lộ ra vì nó cùng phân bố tư thế với tập train.
+
+🔬 **Chưa kiểm chứng** — cần tập tự thu tách riêng nhóm chính diện và nhóm quay nghiêng.
+
+Chi phí host, đo trên CPU: detect 50 ms + anti-spoof 62 ms = **112 ms, ~9 fps**. Đường
+truyền mới là nút thắt: camera tự chụp được **10,9 fps** (16,2 KB/khung) nhưng qua WiFi chỉ
+về **1,3 fps**. Nguyên nhân là cửa sổ TCP và buffer gửi LWIP mặc định 5.760 byte; nâng lên
+65.534 và bật AMPDU cho **6,95 fps, 119 KB/s** — gấp hơn 5 lần. Con số này đáng nhớ khi viết
+`drv_camera` thật.
+
+---
+
+## 10. Còn nợ
+
+- **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
+  đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
+  thuyết tư thế, ngưỡng vận hành thật, và cổng nghiệm thu đo trên miền thiết bị.
+- Chạy lại teacher với đích depth đã sửa → chạy A3 → điền §5 → ADR.
 - **A0 chưa có bản đối chứng tắt augment nén.** Đã đo rằng nó không phá hỏng gì, nhưng
   chưa đo rằng nó giúp. Muốn chắc thì cần một run A0 với `recompress_probability: 0`.
 - UniqueData live + replay: hai bộ khác miền còn lại chưa chấm, cả hai là video nên cần
