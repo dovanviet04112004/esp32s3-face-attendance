@@ -46,26 +46,29 @@ from ..eval import summary
 from ..losses.contrastive_depth_loss import contrast_kernels
 from ..losses.task_loss import LIVE
 from .cdcnpp import CDCNpp, depth_to_score  # noqa: F401  registers "cdcnpp"
-from .depth_gt import DEPTH_SIZE, gaussian_map, live_reference_mean
+from .depth_gt import DEPTH_SIZE, SIGMA_OF_FACE, face_mask, gaussian_map, live_reference_mean
 
 
 class DepthSupervision(nn.Module):
     """L1 against the pseudo depth map, plus the same comparison on its contrasts.
 
-    The two terms are not naturally on one scale. The mound falls off over
-    sixteen pixels, so its neighbour differences are around 0.06 and squaring
-    them leaves the contrast term an order of magnitude under the L1: measured
-    on a live target, 0.039 against 0.0048 for a noisy prediction and 0.210
-    against 0.0057 for the uniform blob the L1 alone would settle for. The
-    default weight brings the two within a factor of two at the first of those.
+    L1 is averaged over the face box and over the room separately and added: the
+    box holds 14% of the pixels but carries half the term, and one mean over the
+    map would price a flat answer at 0.0585 rather than 0.4160. On a live target
+    the level reads 0.063 against a contrast of 0.0025 for a noisy prediction,
+    which is the gap the default weight closes.
     """
 
     def __init__(
-        self, depth_size: int = DEPTH_SIZE, sigma: float = 0.28, contrast_weight: float = 10.0
+        self,
+        depth_size: int = DEPTH_SIZE,
+        sigma: float = SIGMA_OF_FACE,
+        contrast_weight: float = 10.0,
     ) -> None:
         super().__init__()
         self.contrast_weight = contrast_weight
         self.register_buffer("mound", torch.from_numpy(gaussian_map(depth_size, sigma)))
+        self.register_buffer("face", torch.from_numpy(face_mask(depth_size)))
         self.register_buffer("kernels", contrast_kernels())
 
     def contrast(self, depth: torch.Tensor) -> torch.Tensor:
@@ -78,7 +81,9 @@ class DepthSupervision(nn.Module):
 
     def forward(self, depth: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         target = self.targets(labels).to(depth.dtype)
-        level = fn.l1_loss(depth, target)
+        face = self.face.to(depth.device)
+        error = (depth - target).abs()
+        level = error[:, face].mean() + error[:, ~face].mean()
         shape = fn.mse_loss(self.contrast(depth), self.contrast(target))
         return level + self.contrast_weight * shape
 

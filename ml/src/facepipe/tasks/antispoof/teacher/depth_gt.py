@@ -1,56 +1,72 @@
 """Pseudo depth maps: the target CDCN++ is supervised on.
 
-CDCN++ does not classify, it regresses a depth map, and the two classes get very
-different targets. A live face is a surface with relief, so its map is a smooth
-mound centred on the face. An attack is a photograph or a screen, which is flat
-whatever it depicts, so its map is all zeros. A model that learns to tell those
-two maps apart has learned the geometry rather than the texture, which is what
-survives a print it has never seen (KEHOACH section 1.1).
+CDCN++ regresses a depth map rather than a class. A live face is a surface with
+relief, so its map is a mound over the face; an attack is a photograph or a
+screen, flat whatever it depicts, so its map is all zeros.
+
+The mound stops at the face box. The teacher reads the wide crop, where the box
+covers one part in CROP_SCALES["wide"] of each side, and a target spilling onto
+the room around it would ask the background to carry the label (KEHOACH 3).
 
 CelebA-Spoof ships no depth channel, so this is a prior, not a measurement.
-Calling it ground truth is the field's convention and not a claim about accuracy:
-the map only has to be flat for attacks and not flat for live faces.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from facepipe.data.prepare.celeba_spoof_parquet import CROP_SCALES
+
 DEPTH_SIZE = 32
 LIVE, SPOOF = 0, 1
+FACE_FRACTION = 1.0 / CROP_SCALES["wide"]
+# A fraction of the face box, not of the map, so the mound keeps its shape if
+# the crop scale moves.
+SIGMA_OF_FACE = 0.28
 
 
-def gaussian_map(size: int = DEPTH_SIZE, sigma: float = 0.28) -> np.ndarray:
-    """A mound peaking at the centre and falling to nearly zero at the border.
+def face_mask(size: int = DEPTH_SIZE, fraction: float = FACE_FRACTION) -> np.ndarray:
+    """True over the face box, which sits centred in the crop by construction."""
+    axis = (np.arange(size, dtype=np.float32) + 0.5) / size - 0.5
+    grid_y, grid_x = np.meshgrid(axis, axis, indexing="ij")
+    half = fraction / 2.0
+    return (np.abs(grid_x) <= half) & (np.abs(grid_y) <= half)
 
-    Sigma is a fraction of the map, so the shape stays the same if the size
-    changes. At 0.28 the corners sit near 0.05, low enough that a border pixel
-    carries no signal but not so low that the loss ignores the face outline.
+
+def gaussian_map(
+    size: int = DEPTH_SIZE, sigma: float = SIGMA_OF_FACE, fraction: float = FACE_FRACTION
+) -> np.ndarray:
+    """A mound peaking at the centre of the face box and zero outside it.
+
+    Sigma is read against the box, so at 0.28 the mound has fallen to about 0.05
+    by the corner of the box.
     """
     axis = (np.arange(size, dtype=np.float32) + 0.5) / size - 0.5
     grid_y, grid_x = np.meshgrid(axis, axis, indexing="ij")
-    squared = (grid_x**2 + grid_y**2) / (2.0 * sigma**2)
-    return np.exp(-squared).astype(np.float32)
+    spread = sigma * fraction
+    squared = (grid_x**2 + grid_y**2) / (2.0 * spread**2)
+    return (np.exp(-squared) * face_mask(size, fraction)).astype(np.float32)
 
 
-def live_reference_mean(size: int = DEPTH_SIZE, sigma: float = 0.28) -> float:
+def live_reference_mean(size: int = DEPTH_SIZE, sigma: float = SIGMA_OF_FACE) -> float:
     """Mean of a perfect live map, the value a liveness score of 1 corresponds to.
 
-    A mound averaged over the whole map is about 0.42, not 1: most of the map is
-    the border, where the mound has already fallen off. Anything reading the mean
-    as a probability has to divide by this first.
+    Anything reading the mean as a probability divides by this first. It moves
+    with the crop scale, so scores compare only within one target recipe.
     """
     return float(gaussian_map(size, sigma).mean())
 
 
-def depth_target(label: int, size: int = DEPTH_SIZE, sigma: float = 0.28) -> np.ndarray:
+def depth_target(label: int, size: int = DEPTH_SIZE, sigma: float = SIGMA_OF_FACE) -> np.ndarray:
     """The map one sample is supervised against, by class."""
     if label == SPOOF:
         return np.zeros((size, size), dtype=np.float32)
     return gaussian_map(size, sigma)
 
 
-def depth_batch(labels: np.ndarray, size: int = DEPTH_SIZE, sigma: float = 0.28) -> np.ndarray:
+def depth_batch(
+    labels: np.ndarray, size: int = DEPTH_SIZE, sigma: float = SIGMA_OF_FACE
+) -> np.ndarray:
     """One map per label, stacked. The mound is built once and shared."""
     mound = gaussian_map(size, sigma)
     maps = np.zeros((len(labels), size, size), dtype=np.float32)
