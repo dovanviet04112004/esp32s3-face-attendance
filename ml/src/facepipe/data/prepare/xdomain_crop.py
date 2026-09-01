@@ -33,6 +33,8 @@ DETECT_HW = (120, 160)
 DETECT_CONF = 0.3
 NUAA_ARCHIVE = "nuaaaa.tar.gz"
 NUAA_LIVE_DIR = "ClientRaw"
+AXON_LIVE_DIR = "Selfies"
+AXON_FRAMES = 8
 
 
 @dataclass
@@ -63,21 +65,67 @@ def nuaa_images(root: Path, split: str = "test") -> Iterator[RawImage]:
         for member in tar:
             if not member.isfile() or not member.name.lower().endswith(".jpg"):
                 continue
-            stem = member.name.split("/raw/", 1)[-1]
-            if wanted and stem not in wanted and Path(stem).name not in wanted:
+            if member.name not in wanted:
                 continue
             handle = tar.extractfile(member)
             if handle is None:
                 continue
             yield RawImage(
-                name=stem,
+                name=member.name,
                 payload=handle.read(),
-                is_spoof=NUAA_LIVE_DIR not in stem,
+                is_spoof=NUAA_LIVE_DIR not in member.name,
                 source="nuaa",
             )
 
 
-SETS = {"nuaa": nuaa_images}
+def video_frames(path: Path, count: int = AXON_FRAMES) -> Iterator[bytes]:
+    """A few frames spread across one clip, encoded as JPEG.
+
+    Neighbouring frames of a video are near duplicates, so taking them evenly
+    across the clip buys variety that taking the first N does not.
+    """
+    import cv2
+
+    capture = cv2.VideoCapture(str(path))
+    try:
+        total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total <= 0:
+            return
+        for index in np.linspace(0, total - 1, num=min(count, total), dtype=int):
+            capture.set(cv2.CAP_PROP_POS_FRAMES, int(index))
+            ok, frame = capture.read()
+            if not ok:
+                continue
+            encoded, payload = cv2.imencode(".jpg", frame)
+            if encoded:
+                yield payload.tobytes()
+    finally:
+        capture.release()
+
+
+def axon_images(root: Path, split: str = "test") -> Iterator[RawImage]:
+    """Every attack folder as its own source, and the selfies as the live one.
+
+    The folder name is the only attack label any of the four sets carries, which
+    is the whole reason this set is worth the frame decoding (KEHOACH 1.2).
+    """
+    for folder in sorted(Path(root).iterdir()):
+        if not folder.is_dir():
+            continue
+        source = folder.name.strip().replace(" ", "_").lower()
+        is_spoof = folder.name != AXON_LIVE_DIR
+        for path in sorted(folder.rglob("*")):
+            if not path.is_file():
+                continue
+            suffix = path.suffix.lower()
+            if suffix in {".jpg", ".jpeg", ".png"}:
+                yield RawImage(path.name, path.read_bytes(), is_spoof, source)
+            elif suffix in {".mp4", ".mov"}:
+                for number, payload in enumerate(video_frames(path)):
+                    yield RawImage(f"{path.stem}_{number}", payload, is_spoof, source)
+
+
+SETS = {"nuaa": nuaa_images, "axon": axon_images}
 
 
 def load_detector(ckpt: Path, device: str):
@@ -151,25 +199,32 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root or Path("data/raw/antispoof/xdomain") / args.set
     model, priors = load_detector(args.detector, device)
 
-    kept = missed = 0
-    labels: dict[int, int] = {}
-    with ShardWriter(args.out) as writer:
+    writers: dict[str, ShardWriter] = {}
+    kept: dict[str, int] = {}
+    missed = 0
+    try:
         for raw in SETS[args.set](root, args.split):
             box = best_face(model, priors, raw.payload, device)
             if box is None:
                 missed += 1
                 continue
+            if raw.source not in writers:
+                writers[raw.source] = ShardWriter(args.out / raw.source).__enter__()
             members = crops_of(raw.payload, box)
             members["json"] = json.dumps(
                 {"name": raw.name, "label": int(raw.is_spoof), "split": raw.source}
             ).encode()
-            writer.add(members)
-            kept += 1
-            labels[int(raw.is_spoof)] = labels.get(int(raw.is_spoof), 0) + 1
+            writers[raw.source].add(members)
+            kept[raw.source] = kept.get(raw.source, 0) + 1
+    finally:
+        for writer in writers.values():
+            writer.__exit__(None, None, None)
 
-    found = kept / max(kept + missed, 1)
-    print(f"{args.set}/{args.split}: kept {kept}, no face in {missed} ({found:.1%} detected)")
-    print(f"  live {labels.get(0, 0)}  spoof {labels.get(1, 0)}  -> {args.out}")
+    total = sum(kept.values())
+    found = total / max(total + missed, 1)
+    print(f"{args.set}/{args.split}: kept {total}, no face in {missed} ({found:.1%} detected)")
+    for source, count in sorted(kept.items()):
+        print(f"  {source:36s} {count:>5}  -> {args.out / source}")
     return 0
 
 

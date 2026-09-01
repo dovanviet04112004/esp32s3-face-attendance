@@ -227,10 +227,15 @@ def main(argv: list[str] | None = None) -> int:
         # HTER is these rates at the home set's own threshold: refitting here
         # would report how separable the other set is, not how well this transfers.
         other = collect_scores(model, build_loader(cfg, ".", root=shards), device, reference)
+        live, attack = split_scores(*other)
         rates = error_rates(*other, crossing.threshold)
-        print(f"\n{shards.name:12s} n={other[0].size:<7} auc {auc(*other):.4f}")
-        print(f"       apcer {rates.apcer:.4f}  bpcer {rates.bpcer:.4f}  HTER {rates.acer:.4f}")
-        print(f"       eer   {equal_error_rate(*other).acer:.4f}")
+        print(f"\n{shards.name:24s} n={other[0].size:<6} live {live.size:<5} attack {attack.size}")
+        if not live.size or not attack.size:
+            rate, name = (rates.apcer, "apcer") if attack.size else (rates.bpcer, "bpcer")
+            print(f"       {name} {rate:.4f}   (one class only: no auc, no HTER)")
+            continue
+        print(f"       auc {auc(*other):.4f}  apcer {rates.apcer:.4f}  bpcer {rates.bpcer:.4f}")
+        print(f"       HTER {rates.acer:.4f}   eer {equal_error_rate(*other).acer:.4f}")
     return 0
 
 
