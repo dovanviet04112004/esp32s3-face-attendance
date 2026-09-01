@@ -144,15 +144,19 @@ def collect_scores(
     return np.concatenate(scores), np.concatenate(truth)
 
 
-def build_loader(cfg: object, split: str) -> torch.utils.data.DataLoader:
-    """The named split, read the way training reads it but without shuffling."""
+def build_loader(cfg: object, split: str, root: Path | None = None) -> torch.utils.data.DataLoader:
+    """The named split, read the way training reads it but without shuffling.
+
+    root overrides where the shards live, which is how a cross-domain set is read
+    through exactly the same path as the one a run was trained and validated on.
+    """
     from .data import SpoofShardDataset, collate
 
     height, width = cfg.model.input_hw
     if height != width:
         raise ValueError(f"model.input_hw must be square for this branch, got {height}x{width}")
     dataset = SpoofShardDataset(
-        root=Path(cfg.data.params["shards"]),
+        root=Path(root or cfg.data.params["shards"]),
         size=int(height),
         train=False,
         seed=cfg.run.seed,
@@ -189,6 +193,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--split", default=None, help="the split the reported rates come from")
     parser.add_argument("--fit-split", default=None, help="where the threshold is fitted")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--xdomain",
+        type=Path,
+        action="append",
+        default=[],
+        help="a shard directory from another dataset, scored at the same threshold",
+    )
     args = parser.parse_args(argv)
 
     from .teacher.depth_gt import live_reference_mean
@@ -211,6 +222,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\n{held_split:12s} n={held[0].size:<7} auc {auc(*held):.4f}")
     print(f"       apcer {rates.apcer:.4f}  bpcer {rates.bpcer:.4f}  ACER {rates.acer:.4f}")
     print(f"       eer   {equal_error_rate(*held).acer:.4f}  (not the gate, the threshold moved)")
+
+    for shards in args.xdomain:
+        # HTER is these rates at the home set's own threshold: refitting here
+        # would report how separable the other set is, not how well this transfers.
+        other = collect_scores(model, build_loader(cfg, ".", root=shards), device, reference)
+        rates = error_rates(*other, crossing.threshold)
+        print(f"\n{shards.name:12s} n={other[0].size:<7} auc {auc(*other):.4f}")
+        print(f"       apcer {rates.apcer:.4f}  bpcer {rates.bpcer:.4f}  HTER {rates.acer:.4f}")
+        print(f"       eer   {equal_error_rate(*other).acer:.4f}")
     return 0
 
 
