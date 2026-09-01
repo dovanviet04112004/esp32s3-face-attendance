@@ -297,6 +297,29 @@ CelebA-Spoof không lộ ra vì nó cùng phân bố tư thế với tập train
 
 🔬 **Chưa kiểm chứng** — cần tập tự thu tách riêng nhóm chính diện và nhóm quay nghiêng.
 
+### Chất lượng ảnh camera — cơ chế nén hai lần
+
+Crop train sinh từ ảnh gốc rồi nén JPEG q95. Ảnh OV5640 thì **đã nén sẵn trên board** mới
+bị crop và nén lại q95 — một lịch sử nén tập train chưa từng có, trên đúng nhánh mà §3 đã
+chứng minh là bám vào vết nén.
+
+Quét `jpeg_quality` của driver (số nhỏ là chất lượng cao):
+
+| quality | KB mỗi khung VGA | blockiness |
+|---|---|---|
+| 4 | 32,9 – 39,5 | **1,67** |
+| 8 | 18,3 | 2,23 |
+| 10 (mặc định cũ) | 15,6 | — |
+
+Chốt **quality 4 khi thu dữ liệu** (gấp 2,5 lần dữ liệu, ít vết block hơn) và giữ 10 khi
+xem trực tiếp, vì 39,5 KB/khung trên 119 KB/s chỉ còn ~3 fps.
+
+So sánh khác giữa ảnh OV5640 và crop CelebA-Spoof **chưa kết luận được**: phép đo lấy bức
+tường phẳng so với ảnh mặt, nên `sharp` và `std` thấp là do nội dung. Chỉ số ít bị nhiễu
+duy nhất là độ sáng — OV5640 đọc 142,2, nằm trong dải p10–p90 của tập train (73,9–151,5).
+
+🔬 Mức ảnh hưởng lên chính điểm liveness **chưa đo**, vì cần khuôn mặt trong khung.
+
 Chi phí host, đo trên CPU: detect 50 ms + anti-spoof 62 ms = **112 ms, ~9 fps**. Đường
 truyền mới là nút thắt: camera tự chụp được **10,9 fps** (16,2 KB/khung) nhưng qua WiFi chỉ
 về **1,3 fps**. Nguyên nhân là cửa sổ TCP và buffer gửi LWIP mặc định 5.760 byte; nâng lên
