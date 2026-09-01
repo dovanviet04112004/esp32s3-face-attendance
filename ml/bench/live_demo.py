@@ -113,7 +113,11 @@ def annotate(frame, box, label: str, colour: tuple[int, int, int]) -> None:
 
 def parse_args(argv: list[str] | None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument(
+        "--source",
+        default="0",
+        help="camera index, video file, or an MJPEG url such as http://<ip>:81/stream",
+    )
     parser.add_argument("--detector", type=Path, required=True)
     parser.add_argument("--spoof-run", type=Path, required=True, help="a run directory")
     parser.add_argument("--device", default="cpu")
@@ -128,9 +132,10 @@ def main(argv: list[str] | None = None) -> int:
     import cv2
 
     model, priors, spoof = load_models(args.detector, args.spoof_run, args.device)
-    capture = cv2.VideoCapture(args.camera)
+    source = int(args.source) if args.source.isdigit() else args.source
+    capture = cv2.VideoCapture(source)
     if not capture.isOpened():
-        print(f"cannot open camera {args.camera}", file=sys.stderr)
+        print(f"cannot open {args.source}", file=sys.stderr)
         return 1
 
     writer = None
