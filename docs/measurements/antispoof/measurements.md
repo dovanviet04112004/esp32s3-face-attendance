@@ -113,29 +113,100 @@ Epoch thật: **7 phút 19 → 4 phút 35** (−37%).
 
 ## 5. Bảng đối chứng A — có teacher hay không (§3.7)
 
-| Arm | Cách train | AUC val | EER val | ACER trên `test:10:` |
+| Arm | Cách train | AUC val | EER val | **ACER trên `test:10:`** |
 |---|---|---|---|---|
-| **A0** | task loss, không teacher | đang chạy | đang chạy | chưa |
+| **A0** | task loss, không teacher | 0,9605 | 0,1064 | **0,0973** |
 | **A3** | A0 + logit + depth map + contrastive depth | chưa chạy | chưa chạy | chưa |
 
-Cổng nhánh: **ACER < 5%** sau INT8.
+Cổng nhánh: **ACER < 5%** sau INT8. A0 trượt khoảng hai lần.
 
-Diễn biến A0 (`20260901-0717`, 60 epoch):
+### A0 — `20260901-0717_b326cd5_6706a4`, 60 epoch, best ở epoch 47
 
-| epoch | AUC | EER |
-|---|---|---|
-| 1 | 0,9261 | 0,1554 |
-| 3 | 0,9438 | 0,1352 |
+Chấm bằng `eval.py`, ngưỡng chốt trên `test:0:10` rồi áp nguyên sang `test:10:`:
+
+| | n | AUC | APCER | BPCER | ACER |
+|---|---|---|---|---|---|
+| val `test:0:10` | 20.000 | 0,9605 | — | — | EER 0,1064 |
+| **test `test:10:`** | 39.191 | **0,9698** | **0,0863** | **0,1082** | **0,0973** |
+
+Hai lớp lỗi giờ **cân nhau** (0,086 so với 0,108), khác hẳn teacher cũ (0,403 so với 0,015). Đường
+tắt vết nén đã bị chặn.
+
+**BPCER 0,1082 đáng lo ngang APCER**: cứ 9 lần chấm công thật thì 1 lần bị từ chối. Với
+kiosk, phiền hơn việc lọt vài đòn tấn công.
+
+Đường cong val (EER, val mỗi 2 epoch): 0,1554 → 0,1352 → 0,1297 → 0,1290 → 0,1307 →
+0,1173 → 0,1261 → 0,1122 → … → **0,1064 (epoch 47)** → 0,1279 (epoch 59). Đáy ở epoch 47,
+đúng đoạn cosine kéo LR xuống mạnh; 12 epoch cuối đi ngược. Val loss leo đều 0,52 → 1,83
+trong khi train loss rơi 0,042 → 0,0023 — nhớ tập train, nhưng `best.pth` giữ đúng đáy.
 
 ---
 
-## 6. Còn nợ
+## 6. Chẩn đoán khác miền — model thua kiểu tấn công nào
 
-- Chạy hết A0 → chấm `eval.py` → điền §5.
-- Chạy lại teacher → chạy A3 → điền §5 → ADR.
-- **HTER khác miền** trên bốn bộ đã tải mà chưa dùng: NUAA (ảnh in), UniqueData live +
-  replay, AxonData (mặt nạ latex/silicone, 9 kiểu tấn công). Đây là đường duy nhất biết
-  model thua kiểu tấn công nào, vì mirror đã vứt nhãn kiểu.
+Chấm A0 trên hai bộ ngoài, **ở ngưỡng mà tập nhà đã chọn** (0,997355). Fit lại ngưỡng trên
+bộ ngoài sẽ đo "bộ đó dễ hay khó" thay vì đo khả năng chuyển miền.
+
+Mặt do chính nhánh detect tìm (`xdomain_crop.py`), không lấy box ground-truth: crop mà
+kiosk không tự tạo ra được thì không phải phép thử công bằng. **100% ảnh dò được mặt** ở
+cả hai bộ, kể cả trên mặt nạ silicone và ảnh phát lại.
+
+### NUAA — ảnh in, miền hoàn toàn khác
+
+| n | AUC | EER | APCER | BPCER | HTER |
+|---|---|---|---|---|---|
+| 5.110 | **0,9992** | **0,0114** | **0,0006** | 0,1987 | 0,0996 |
+
+Chuyển miền **rất tốt**: webcam 2010, camera khác, nén khác, mà EER tốt hơn trên chính
+CelebA-Spoof **8 lần** và chặn 99,94% đòn tấn công. HTER 0,0996 gần như toàn bộ đến từ
+BPCER — ngưỡng nhà (0,9974, rất chặt) không mang sang được phân bố ảnh live của NUAA.
+
+**Đây là bằng chứng bác bỏ giả thuyết "9,7% là do lệch miền dữ liệu".**
+
+### AxonData — APCER theo từng kiểu tấn công
+
+| Kiểu | n | APCER |
+|---|---|---|
+| cut-out | 120 | **0,0000** |
+| replay mobile | 80 | 0,0125 |
+| 3D paper mask | 288 | 0,0312 |
+| replay display | 45 | 0,0667 |
+| wrapped 3D paper | 80 | 0,0875 |
+| **textile 3D mask** | 184 | **0,2500** |
+| **silicone mask** | 88 | **0,3523** |
+| **latex mask** | 80 | **0,5875** |
+
+Ranh giới sạch: **mọi tấn công phẳng đều bị chặn** (0–8,75%), **mặt nạ vật liệu 3D lọt ồ ạt**
+(25–59%).
+
+Nguyên nhân là **lỗ hổng phủ, không phải lỗi học**: CelebA-Spoof không chứa một mặt nạ 3D
+nào. Và depth map **không cứu được** loại này — mặt nạ latex đeo trên mặt có gò nổi thật,
+đúng đặc trưng mà teacher CDCN++ học, nên teacher cũng bị lừa. Depth map là thuốc cho tấn
+công **phẳng**, mà tấn công phẳng thì A0 đã giải xong.
+
+Không train được trên Axon: **đa dạng bằng 2** — latex có đúng 2 chiếc mặt nạ (Mask_6,
+Mask_8), silicone 2, textile 2 người; phía live chỉ 24 ảnh selfie. Các bộ khác trên
+HuggingFace (`silicone-mask-dataset` 58 video, `mask-face-anti-spoofing-dataset` 53 mẫu)
+đều là mẫu quảng cáo, bản đầy đủ bán thương mại, và **cùng một nhà cung cấp AxonData** nên
+train chéo giữa chúng vẫn quẩn trong một miền.
+
+BPCER 0,4167 trên selfies tính trên **24 ảnh** (mỗi ảnh 4,2%) — nhiễu cộng lệch ngưỡng,
+không kết luận được gì.
+
+**Kết luận phạm vi**: mặt nạ 3D nằm ngoài mô hình mối đe doạ của kiosk điểm danh, được ghi
+nhận thành giới hạn đã định lượng. Hướng khắc phục nếu cần sau này: NIR (da và latex phản
+xạ hồng ngoại khác nhau) hoặc rPPG (latex không có mạch đập) — cả hai đều đụng §2, §5, §6
+nên phải qua §1.2.
+
+---
+
+## 7. Còn nợ
+
+- Chạy lại teacher (`20260901-1239`, đang chạy) → chạy A3 → điền §5 → ADR.
+- **A0 chưa có bản đối chứng tắt augment nén.** Đã đo rằng nó không phá hỏng gì, nhưng
+  chưa đo rằng nó giúp. Muốn chắc thì cần một run A0 với `recompress_probability: 0`.
+- UniqueData live + replay: hai bộ khác miền còn lại chưa chấm, cả hai là video nên cần
+  giải khung hình như Axon.
 - `export_soft_target.py`, `postproc/preproc.py`, `postproc/emit_golden.py`, `quant.py`,
   `README.md` — §4.4 đã khai, chưa viết.
 - Thang lượng tử hoá §3.8.
