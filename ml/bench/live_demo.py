@@ -21,6 +21,7 @@ import io
 import sys
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -125,14 +126,21 @@ class Slot:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._value = None
+        self._version = 0
 
     def put(self, value) -> None:
         with self._lock:
             self._value = value
+            self._version += 1
 
     def get(self):
         with self._lock:
             return self._value
+
+    def take(self) -> tuple[object, int]:
+        """The value beside the count of puts, so a reader can skip what it has seen."""
+        with self._lock:
+            return self._value, self._version
 
 
 def read_into(source, frames: Slot, stop: threading.Event) -> None:
@@ -155,24 +163,35 @@ def read_into(source, frames: Slot, stop: threading.Event) -> None:
 
 
 def infer_into(models, frames: Slot, calls: Slot, stop: threading.Event, args) -> None:
-    """Score whatever frame is newest, so inference never holds up the display."""
+    """Score each new frame once.
+
+    Scoring whatever is in the slot regardless would re-run the same frame at
+    full speed on every core between arrivals. The reported score is a mean over
+    the last few frames, since one frame either side of the threshold flips the
+    call while the face has not moved.
+    """
     import cv2
 
     model, priors, spoof = models
+    recent: deque[float] = deque(maxlen=max(1, args.smooth))
+    seen = 0
     while not stop.is_set():
-        frame = frames.get()
-        if frame is None:
+        frame, version = frames.take()
+        if frame is None or version == seen:
             time.sleep(0.02)
             continue
+        seen = version
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         started = time.perf_counter()
         found = detect(model, priors, rgb, args.device)
         if found is None:
+            recent.clear()
             calls.put((None, 0.0, (time.perf_counter() - started) * 1000.0))
             continue
         box = found.boxes[int(np.argmax(found.scores))]
-        score = liveness(spoof, crops_of(rgb, box), args.device)
-        calls.put((box, score, (time.perf_counter() - started) * 1000.0))
+        recent.append(liveness(spoof, crops_of(rgb, box), args.device))
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        calls.put((box, sum(recent) / len(recent), elapsed_ms))
 
 
 def render(frames: Slot, calls: Slot, threshold: float):
@@ -256,6 +275,12 @@ def parse_args(argv: list[str] | None):
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--threshold", type=float, default=SPOOF_THRESHOLD)
     parser.add_argument("--save", type=Path, default=None, help="also write an annotated mp4")
+    parser.add_argument(
+        "--smooth",
+        type=int,
+        default=5,
+        help="frames averaged before a call, since one frame near the threshold flips it",
+    )
     parser.add_argument(
         "--serve",
         type=int,
