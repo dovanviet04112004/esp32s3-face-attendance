@@ -19,7 +19,9 @@ from __future__ import annotations
 import argparse
 import io
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
@@ -45,6 +47,8 @@ DETECT_CONF = 0.5
 # A0 fitted this on test:0:10, then read test:10: at it without refitting (measurements 5).
 SPOOF_THRESHOLD = 0.997355
 WRITER_FPS = 12.0
+SERVE_FPS = 15.0
+RECONNECT_WAIT_S = 0.5
 
 
 def load_models(detector: Path, spoof_run: Path, device: str):
@@ -111,6 +115,135 @@ def annotate(frame, box, label: str, colour: tuple[int, int, int]) -> None:
     cv2.putText(frame, label, (x1, max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, colour, 2)
 
 
+class Slot:
+    """One value, newest wins.
+
+    A queue would hand the reader a backlog of stale frames while the camera has
+    already moved on, which is what makes a stream look laggy rather than slow.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._value = None
+
+    def put(self, value) -> None:
+        with self._lock:
+            self._value = value
+
+    def get(self):
+        with self._lock:
+            return self._value
+
+
+def read_into(source, frames: Slot, stop: threading.Event) -> None:
+    """Pull frames, reopening the source when it drops.
+
+    A board on wifi ends its stream often enough that giving up on the first
+    failed read leaves the page black for the rest of the session.
+    """
+    import cv2
+
+    while not stop.is_set():
+        capture = cv2.VideoCapture(source)
+        while not stop.is_set():
+            ok, frame = capture.read()
+            if not ok:
+                break
+            frames.put(frame)
+        capture.release()
+        time.sleep(RECONNECT_WAIT_S)
+
+
+def infer_into(models, frames: Slot, calls: Slot, stop: threading.Event, args) -> None:
+    """Score whatever frame is newest, so inference never holds up the display."""
+    import cv2
+
+    model, priors, spoof = models
+    while not stop.is_set():
+        frame = frames.get()
+        if frame is None:
+            time.sleep(0.02)
+            continue
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        started = time.perf_counter()
+        found = detect(model, priors, rgb, args.device)
+        if found is None:
+            calls.put((None, 0.0, (time.perf_counter() - started) * 1000.0))
+            continue
+        box = found.boxes[int(np.argmax(found.scores))]
+        score = liveness(spoof, crops_of(rgb, box), args.device)
+        calls.put((box, score, (time.perf_counter() - started) * 1000.0))
+
+
+def render(frames: Slot, calls: Slot, threshold: float):
+    """The newest frame with the newest call drawn on it, encoded as JPEG."""
+    import cv2
+
+    frame = frames.get()
+    if frame is None:
+        return None
+    frame = frame.copy()
+    call = calls.get()
+    if call is not None and call[0] is not None:
+        box, score, elapsed_ms = call
+        is_live = score >= threshold
+        colour = (0, 200, 0) if is_live else (0, 0, 255)
+        annotate(frame, box, f"{'LIVE' if is_live else 'SPOOF'} {score:.4f}", colour)
+        cv2.putText(
+            frame,
+            f"{elapsed_ms:5.1f} ms",
+            (10, frame.shape[0] - 12),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 255),
+            1,
+        )
+    ok, buffer = cv2.imencode(".jpg", frame)
+    return buffer.tobytes() if ok else None
+
+
+def serve(frames: Slot, calls: Slot, stop: threading.Event, args) -> None:
+    """Re-serve the annotated frames as MJPEG, which a browser paces on its own."""
+    page = (
+        b"<body style='margin:0;background:#111;display:flex;justify-content:center'>"
+        b"<img src='/stream' style='max-width:100%'></body>"
+    )
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args) -> None:
+            return
+
+        def do_GET(self) -> None:
+            if self.path != "/stream":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(page)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.end_headers()
+            while not stop.is_set():
+                jpeg = render(frames, calls, args.threshold)
+                if jpeg is None:
+                    time.sleep(0.05)
+                    continue
+                try:
+                    self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n")
+                    self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
+                    self.wfile.write(jpeg)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                time.sleep(1.0 / SERVE_FPS)
+
+    server = ThreadingHTTPServer(("0.0.0.0", args.serve), Handler)
+    print(f"open http://localhost:{args.serve} in the browser")
+    try:
+        server.serve_forever()
+    finally:
+        stop.set()
+
+
 def parse_args(argv: list[str] | None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -123,6 +256,12 @@ def parse_args(argv: list[str] | None):
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--threshold", type=float, default=SPOOF_THRESHOLD)
     parser.add_argument("--save", type=Path, default=None, help="also write an annotated mp4")
+    parser.add_argument(
+        "--serve",
+        type=int,
+        default=None,
+        help="serve the annotated stream on this port rather than opening a window",
+    )
     return parser.parse_args(argv)
 
 
@@ -133,6 +272,18 @@ def main(argv: list[str] | None = None) -> int:
 
     model, priors, spoof = load_models(args.detector, args.spoof_run, args.device)
     source = int(args.source) if args.source.isdigit() else args.source
+
+    if args.serve is not None:
+        frames, calls, stop = Slot(), Slot(), threading.Event()
+        threading.Thread(target=read_into, args=(source, frames, stop), daemon=True).start()
+        threading.Thread(
+            target=infer_into,
+            args=((model, priors, spoof), frames, calls, stop, args),
+            daemon=True,
+        ).start()
+        serve(frames, calls, stop, args)
+        return 0
+
     capture = cv2.VideoCapture(source)
     if not capture.isOpened():
         print(f"cannot open {args.source}", file=sys.stderr)
