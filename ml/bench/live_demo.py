@@ -21,6 +21,7 @@ import io
 import sys
 import threading
 import time
+import urllib.request
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -50,6 +51,9 @@ SPOOF_THRESHOLD = 0.997355
 WRITER_FPS = 12.0
 SERVE_FPS = 15.0
 RECONNECT_WAIT_S = 0.5
+READ_TIMEOUT_S = 5.0
+READ_CHUNK_BYTES = 8192
+MAX_BUFFER_BYTES = 4_000_000
 
 
 def load_models(detector: Path, spoof_run: Path, device: str):
@@ -143,14 +147,49 @@ class Slot:
             return self._value, self._version
 
 
-def read_into(source, frames: Slot, stop: threading.Event) -> None:
-    """Pull frames, reopening the source when it drops.
+def read_mjpeg(url: str, frames: Slot, stop: threading.Event) -> None:
+    """Split an MJPEG stream on its JPEG markers, reconnecting when it ends.
 
-    A board on wifi ends its stream often enough that giving up on the first
-    failed read leaves the page black for the rest of the session.
+    The capture backend waits a full thirty seconds before admitting a stream
+    has ended, which freezes the page on one image every time the board hands a
+    connection back. Reading the socket directly reconnects in under a second.
     """
     import cv2
 
+    while not stop.is_set():
+        try:
+            response = urllib.request.urlopen(url, timeout=READ_TIMEOUT_S)
+            buffer = b""
+            while not stop.is_set():
+                chunk = response.read(READ_CHUNK_BYTES)
+                if not chunk:
+                    break
+                buffer += chunk
+                while True:
+                    start = buffer.find(b"\xff\xd8")
+                    end = buffer.find(b"\xff\xd9", start + 2)
+                    if start < 0 or end < 0:
+                        break
+                    frame = cv2.imdecode(
+                        np.frombuffer(buffer[start : end + 2], np.uint8), cv2.IMREAD_COLOR
+                    )
+                    buffer = buffer[end + 2 :]
+                    if frame is not None:
+                        frames.put(frame)
+                if len(buffer) > MAX_BUFFER_BYTES:
+                    buffer = b""
+        except Exception:
+            pass
+        time.sleep(RECONNECT_WAIT_S)
+
+
+def read_into(source, frames: Slot, stop: threading.Event) -> None:
+    """Pull frames, reopening the source when it drops."""
+    import cv2
+
+    if isinstance(source, str) and source.startswith("http"):
+        read_mjpeg(source, frames, stop)
+        return
     while not stop.is_set():
         capture = cv2.VideoCapture(source)
         while not stop.is_set():
