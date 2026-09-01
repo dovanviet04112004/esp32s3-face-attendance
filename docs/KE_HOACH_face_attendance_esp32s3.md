@@ -434,15 +434,67 @@ phạt model vì tìm ra mặt thật.
 điểm yếu; giữ chúng làm cổng là chốt nhánh bằng một phép đo nó không phục vụ. Báo cáo cả
 hai, ghi rõ kích thước đầu vào của từng con số.
 
+#### Tỉ lệ crop wide bị hình học khung hình chặn trên
+
+Anti-spoof student đọc hai khung của cùng một mặt: crop **tight** 1,0× và crop **wide**
+2,7×. Hai loại dấu hiệu nằm ở hai chỗ khác nhau — kết cấu da và moiré nằm trong mặt, còn
+mép giấy, viền màn hình, bàn tay đang cầm nằm **ngoài** mặt. Bịt nhánh wide lại, điểm của
+một tập ảnh thẻ giơ trước camera nhảy từ 0,0035 lên 0,3195: phần lớn khả năng bắt tấn công
+đi qua ngữ cảnh.
+
+Nhưng ngữ cảnh 2,7× **không phải lúc nào cũng tồn tại**. Tỉ lệ lớn nhất còn dựng được là
+`min(cao, rộng) / cạnh_mặt`, và nó tụt khi người lại gần:
+
+| Khung 1280×720 | Cạnh mặt | Tỉ lệ lớn nhất còn lọt |
+|---|---|---|
+| Ảnh thẻ giơ trước camera | 235 px | 3,07× |
+| Quay đầu, nghiêng, ngược sáng | 319 px | 2,26× |
+| Ngồi cách một cánh tay | 349 px | 2,06× |
+| Ngồi sát camera | 696 px | 1,03× |
+
+**Ở khoảng cách người dùng thật, 2,7× đã không dựng được.** Chỉ nhóm tấn công dựng được,
+vì ảnh thẻ bị giơ xa hơn mặt người — nghĩa là "ảnh wide còn nguyên" tương quan với nhãn
+tấn công, đúng loại đường tắt phải chặn.
+
+Áp vào kiosk: camera đưa khung 640×480 cho nhánh AI (§6.3) và nhận diện cần mặt ≥ 128 px
+(mục trên). 2,7× lọt khung khi mặt ≤ 480 / 2,7 = **178 px**. Dải dùng được là mặt 128–178
+px, tức tỉ lệ khoảng cách **1,39 lần**. Hẹp, và nằm ngoài dải đó là chuyện thường chứ
+không phải ngoại lệ.
+
+**Chốt: tỉ lệ wide là biến, không phải hằng số. Crop wide = ô vuông lớn nhất còn lọt khung,
+tâm tại tâm hộp mặt, trần 2,7×.** Thiếu chỗ thì thu tỉ lệ lại, không kéo giãn và không đệm.
+
+Bốn cách dựng, đo trên 48 khung camera thật với **cùng một bộ trọng số**, chỉ đổi ảnh wide:
+
+| Cách dựng | Mặt gần | Cách một cánh tay | Cách biệt thật/tấn công |
+|---|---|---|---|
+| Cắt theo biên rồi kéo về vuông | 0,2538 | 1,0000 | 15,6× |
+| Đệm phản chiếu cho đủ 2,7× | 0,0823 | 0,9999 | — |
+| Lấy luôn crop tight làm wide | 0,9953 | **0,0002** | — |
+| **Ô vuông lớn nhất còn lọt khung** | **0,9957** | **0,9999** | **108,3×** |
+
+Cắt theo biên đẻ ra khung chữ nhật rồi `resize` vuông, tức là kéo méo mặt: ở cự ly gần
+hộp mất 74% diện tích và tỉ lệ cạnh thành 1,78. Đệm phản chiếu thì nội dung là bịa, và
+model đọc nội dung bịa quanh mặt đúng như nó được dạy — thành dấu hiệu tấn công. Lấy tight
+làm wide thì mất ngữ cảnh cả ở cự ly còn thừa chỗ, nên mặt thật ở khoảng cách bình thường
+bị chấm 0,0002. Chỉ ô vuông lọt khung vừa không méo, vừa không bịa, vừa giữ đúng lượng
+ngữ cảnh **còn tồn tại thật**.
+
+Hai ràng buộc đi kèm:
+
+- **Prep và inference gọi chung một hàm.** Lệch hai bên là nguồn của mọi phép đo sai:
+  model đọc ở kiosk một phân bố hình học khác hẳn phân bố nó được train.
+- **Tỉ lệ thật đạt được ghi vào từng record.** Đích depth của teacher dựng từ nó (mục dưới),
+  và không có nó thì không kiểm được phân bố tỉ lệ mà một run đã thấy.
+
 #### Đích depth phải phủ đúng vùng mặt trong khung teacher đọc
 
 CDCN++ không phân loại, nó hồi quy một bản đồ 32×32. CelebA-Spoof không có kênh depth nên
 đích là một tiên nghiệm: mặt thật là bề mặt có độ nổi, đòn tấn công phẳng nên bản đồ toàn
 số 0. Tiên nghiệm đó chỉ đúng **ở nơi thực sự có mặt**.
 
-Teacher đọc crop **wide**, không đọc crop tight. `scaled_box` vuông hoá hộp mặt rồi nhân
-cạnh 2,7, nên trong khung teacher nhìn thấy, **hộp mặt chỉ chiếm 14,1% diện tích**; phần
-còn lại là tường, vai, hậu cảnh.
+Teacher đọc crop **wide**, không đọc crop tight. Hộp mặt chiếm `1 / tỉ_lệ_thật` của mỗi
+cạnh, nên ở trần 2,7× nó chỉ là **14,1% diện tích**; phần còn lại là tường, vai, hậu cảnh.
 
 Một gò Gauss phủ cả khung đặt phần lớn tín hiệu ra ngoài mặt:
 
@@ -459,21 +511,27 @@ trong cùng những căn phòng, nên đó là ép phần nền mang nhãn lớp
 mà giám sát depth sinh ra để chặn. Bản đồ PRNet của CDCN gốc bằng 0 ngoài vùng mặt.
 
 **Chốt: đích bằng 0 ngoài hộp mặt, gò nằm trong hộp.** Vị trí hộp biết trước bằng dựng
-hình — luôn ở giữa khung, cạnh bằng `1 / CROP_SCALES["wide"]` của cạnh khung — nên không
-cần landmark, không cần PRNet, không cần thêm dữ liệu.
+hình — luôn ở giữa khung, cạnh bằng `1 / tỉ_lệ_thật` của cạnh khung — nên không cần
+landmark, không cần PRNet, không cần thêm dữ liệu.
+
+**Mặt nạ dựng theo tỉ lệ thật của từng mẫu, không theo một hằng số.** Tỉ lệ wide thay đổi
+theo khoảng cách (mục trên); đo trên ba shard train, hộp mặt chiếm trung bình **0,53** cạnh
+khung với mẫu live và **0,58** với mẫu spoof, không phải 0,37 của trần 2,7×. Dùng một hằng
+số thì gò bị đặt lệch trên phần lớn dữ liệu, và phần lệch đó rơi đúng vào vùng mặt — chỗ
+duy nhất mang tín hiệu phân biệt hai lớp.
 
 **Che mặt nạ mà giữ nguyên cách lấy trung bình thì hỏng theo chiều ngược lại.** Ngoài hộp,
-live và spoof có cùng đích 0, nên toàn bộ phần phân biệt hai lớp dồn vào 14,1% số điểm ảnh.
-Lấy một trung bình trên cả bản đồ sẽ pha loãng nó theo tỉ lệ 6 trên 1, và bản đồ phẳng —
-đáp án suy biến teacher rơi vào ở epoch đầu — chỉ còn tốn 0,0585 thay vì 0,4160.
+live và spoof có cùng đích 0, nên toàn bộ phần phân biệt hai lớp dồn vào phần diện tích của
+hộp. Lấy một trung bình trên cả bản đồ sẽ pha loãng nó theo đúng tỉ lệ đó, và bản đồ phẳng
+— đáp án suy biến teacher rơi vào ở epoch đầu — chỉ còn tốn 0,0585 thay vì 0,4160.
 
 Nên **L1 lấy trung bình riêng trong hộp và ngoài hộp rồi cộng lại**: mặt và phòng mỗi bên
-một nửa số phiếu. Đo lại trên đích mới, cái giá của bản đồ phẳng trở về **0,4160**, đúng
-tầm nó có ở công thức cũ, nhưng lần này toàn bộ khoản phạt đến từ vùng mặt.
+một nửa số phiếu, bất kể hộp to nhỏ ra sao. Đo lại trên đích mới, cái giá của bản đồ phẳng
+trở về **0,4160**, nhưng lần này toàn bộ khoản phạt đến từ vùng mặt.
 
-Hệ quả: `live_reference_mean` đổi giá trị, nên **mọi điểm liveness của teacher đọc bằng
-trung bình bản đồ chỉ so được trong cùng một công thức đích**. Student không bị ảnh hưởng:
-nó xuất logit và đọc bằng softmax, không đi qua hằng số này.
+Hệ quả: `live_reference_mean` phụ thuộc tỉ lệ thật, nên **mọi điểm liveness của teacher đọc
+bằng trung bình bản đồ chỉ so được trong cùng một công thức đích và cùng một tỉ lệ**.
+Student không bị ảnh hưởng: nó xuất logit và đọc bằng softmax, không đi qua hằng số này.
 
 ### Lớp 3 — Nén cấu trúc
 
