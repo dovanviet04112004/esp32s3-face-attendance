@@ -41,6 +41,12 @@ VIGNETTE_RANGE = (0.10, 0.55)
 MOTION_BLUR_PX = (3, 7)
 BACKLIGHT_RANGE = (0.15, 0.60)
 PHOTOMETRIC_PROBABILITY = 0.5
+# Zooming a stored crop is how a nearer face is reached: at 1.8 the wide view
+# holds 2.7 / 1.8 of the face box, which is a person at arm's length.
+ZOOM_RANGE = (1.0, 1.8)
+SHIFT_FRACTION = 0.06
+ROTATE_DEGREES = 12.0
+GEOMETRIC_PROBABILITY = 0.5
 
 
 @dataclass
@@ -214,6 +220,53 @@ def white_balance(image: np.ndarray, gains: np.ndarray) -> np.ndarray:
     return _clipped(image.astype(np.float32) * gains)
 
 
+def zoom_shift(image: np.ndarray, zoom: float, shift_x: float, shift_y: float) -> np.ndarray:
+    """Take a smaller window and stretch it back, which is a face standing nearer."""
+    rows, cols = image.shape[:2]
+    height, width = round(rows / zoom), round(cols / zoom)
+    top = round((rows - height) / 2 + shift_y * rows)
+    left = round((cols - width) / 2 + shift_x * cols)
+    top = max(0, min(rows - height, top))
+    left = max(0, min(cols - width, left))
+    window = Image.fromarray(image[top : top + height, left : left + width])
+    return np.array(window.resize((cols, rows), Image.BILINEAR), dtype=np.uint8)
+
+
+def rotate(image: np.ndarray, degrees: float) -> np.ndarray:
+    """Turn about the centre, filling the corners by mirroring rather than with black."""
+    rows, cols = image.shape[:2]
+    radians = abs(degrees) * np.pi / 180.0
+    # Only the corners leave the frame, so the pad follows the angle rather than
+    # doubling the image: at twelve degrees that is nine pixels, not forty.
+    pad = int(np.ceil(max(rows, cols) * (np.cos(radians) + np.sin(radians) - 1.0) / 2.0)) + 2
+    padded = np.pad(image, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
+    turned = Image.fromarray(padded).rotate(degrees, resample=Image.BILINEAR)
+    return np.array(turned, dtype=np.uint8)[pad : pad + rows, pad : pad + cols]
+
+
+def geometric(
+    sample: SpoofSample,
+    rng: random.Random,
+    probability: float = GEOMETRIC_PROBABILITY,
+) -> SpoofSample:
+    """Scale, offset and turn, drawn once per sample and applied to both views.
+
+    A face fills more of the frame the nearer it stands, and the box a detector
+    draws sits a little off the one the shards were cut from. Neither varies in
+    the training pool, so without this the model reads a near face as an attack.
+    """
+    views = [sample.tight, sample.wide]
+    if rng.random() < probability:
+        zoom = rng.uniform(*ZOOM_RANGE)
+        shift_x = rng.uniform(-SHIFT_FRACTION, SHIFT_FRACTION)
+        shift_y = rng.uniform(-SHIFT_FRACTION, SHIFT_FRACTION)
+        views = [zoom_shift(view, zoom, shift_x, shift_y) for view in views]
+    if rng.random() < probability:
+        degrees = rng.uniform(-ROTATE_DEGREES, ROTATE_DEGREES)
+        views = [rotate(view, degrees) for view in views]
+    return SpoofSample(views[0], views[1], sample.label)
+
+
 def photometric(
     sample: SpoofSample,
     rng: random.Random,
@@ -264,6 +317,7 @@ class SpoofShardDataset(IterableDataset):
         recompress_probability: float = RECOMPRESS_PROBABILITY,
         quality_range: tuple[int, int] = QUALITY_RANGE,
         photometric_probability: float = PHOTOMETRIC_PROBABILITY,
+        geometric_probability: float = GEOMETRIC_PROBABILITY,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -279,6 +333,7 @@ class SpoofShardDataset(IterableDataset):
         self.recompress_probability = recompress_probability
         self.quality_range = quality_range
         self.photometric_probability = photometric_probability
+        self.geometric_probability = geometric_probability
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -316,6 +371,7 @@ class SpoofShardDataset(IterableDataset):
             if self.train and rng.random() < 0.5:
                 sample = horizontal_flip(sample)
             if self.train:
+                sample = geometric(sample, rng, self.geometric_probability)
                 sample = photometric(sample, rng, self.photometric_probability)
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
