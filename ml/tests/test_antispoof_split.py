@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import random
 from pathlib import Path
 
 import numpy as np
@@ -15,10 +16,16 @@ from facepipe.tasks.antispoof.data import (
     QUALITY_RANGE,
     SpoofSample,
     SpoofShardDataset,
+    backlight,
+    motion_blur,
+    photometric,
     recompress,
     requantise,
     resolve_spec,
     resolve_splits,
+    sensor_noise,
+    vignette,
+    white_balance,
 )
 from facepipe.tasks.antispoof.losses.task_loss import LIVE, SPOOF
 
@@ -144,6 +151,38 @@ def test_a_training_pass_can_reach_both_augmentations(tmp_path: Path) -> None:
         tmp_path, size=SIZE, train=True, splits="train", recompress_probability=1.0
     )
     assert len(list(dataset)) == 64
+
+
+def test_every_camera_augmentation_moves_the_image() -> None:
+    """One that silently returned its input would look like a passing test."""
+    image = textured()
+    moved = {
+        "backlight": backlight(image, 0.5, 0.0),
+        "motion_blur": motion_blur(image, 7, 0.0),
+        "vignette": vignette(image, 0.5),
+        "sensor_noise": sensor_noise(image, 80.0, 4.0, np.random.default_rng(0)),
+        "white_balance": white_balance(image, np.array([1.15, 1.0, 0.87], dtype=np.float32)),
+    }
+    for name, out in moved.items():
+        assert out.shape == image.shape and out.dtype == image.dtype, name
+        assert not np.array_equal(out, image), name
+
+
+def test_the_two_views_take_one_draw_of_every_augmentation() -> None:
+    """Drawing per view would teach the model the pair disagrees about the light."""
+    flat = np.full((SIZE, SIZE, 3), 120, dtype=np.uint8)
+    sample = SpoofSample(tight=flat.copy(), wide=flat.copy(), label=1)
+
+    out = photometric(sample, random.Random(0), probability=1.0)
+    assert np.array_equal(out.tight, out.wide)
+    assert not np.array_equal(out.tight, flat)
+
+
+def test_validation_is_never_camera_augmented(tmp_path: Path) -> None:
+    write_split(tmp_path / "test", records=8, shard_size=4)
+    dataset = SpoofShardDataset(tmp_path, size=SIZE, train=False, splits="test")
+    first = [s.tight for s in dataset]
+    assert all(np.array_equal(a, b) for a, b in zip(first, [s.tight for s in dataset], strict=True))
 
 
 def test_a_shard_directory_can_be_read_without_a_split_name(tmp_path: Path) -> None:

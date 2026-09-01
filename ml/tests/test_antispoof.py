@@ -202,9 +202,31 @@ def test_an_attack_target_is_flat_and_a_live_one_is_not() -> None:
     assert depth_target(0).max() > 0.9
 
 
+def test_the_live_target_stops_at_the_face_box() -> None:
+    """Supervising the room as live surface asks the background to carry the label."""
+    from facepipe.tasks.antispoof.teacher.depth_gt import depth_target, face_mask
+
+    mound, face = depth_target(0), face_mask()
+    assert face.mean() < 0.2
+    assert mound[~face].max() == 0.0
+    assert mound[face].sum() == pytest.approx(mound.sum())
+
+
+def test_a_flat_map_still_costs_a_live_face_the_whole_mound() -> None:
+    """Masking the target without renormalising would make flat maps nearly free."""
+    from facepipe.tasks.antispoof.teacher.depth_gt import depth_target
+
+    supervision = DepthSupervision()
+    flat = torch.zeros(1, DEPTH_SIZE, DEPTH_SIZE)
+    whole_map_mean = float(depth_target(0).mean())
+
+    cost = float(supervision(flat, torch.tensor([LIVE])))
+    assert cost > 5.0 * whole_map_mean
+
+
 def test_score_distillation_costs_more_when_the_student_disagrees() -> None:
-    """The bug this guards: a live map averages about 0.42 over the whole map,
-    so reading that mean as a probability puts a live face under one half and
+    """The bug this guards: a live map averages about 0.06 over the whole map,
+    so reading that mean as a probability puts a live face far under one half and
     inverts the term."""
     from facepipe.tasks.antispoof.losses import ScoreDistillLoss
 
