@@ -183,10 +183,33 @@ def read_mjpeg(url: str, frames: Slot, stop: threading.Event) -> None:
         time.sleep(RECONNECT_WAIT_S)
 
 
-def read_into(source, frames: Slot, stop: threading.Event) -> None:
+def poll_snapshots(url: str, frames: Slot, stop: threading.Event, every_s: float) -> None:
+    """Fetch single frames on a slow beat.
+
+    The board serves one stream at a time, so when a browser is watching, the
+    scorer has to take snapshots instead. Reconnecting twice a second exhausts
+    the sockets and takes the whole board down with it, so the beat is slow.
+    """
+    import cv2
+
+    while not stop.is_set():
+        try:
+            payload = urllib.request.urlopen(url, timeout=READ_TIMEOUT_S).read()
+            frame = cv2.imdecode(np.frombuffer(payload, np.uint8), cv2.IMREAD_COLOR)
+            if frame is not None:
+                frames.put(frame)
+        except Exception:
+            pass
+        time.sleep(every_s)
+
+
+def read_into(source, frames: Slot, stop: threading.Event, poll_s: float = 0.0) -> None:
     """Pull frames, reopening the source when it drops."""
     import cv2
 
+    if isinstance(source, str) and source.endswith("/jpg"):
+        poll_snapshots(source, frames, stop, poll_s or 1.0)
+        return
     if isinstance(source, str) and source.startswith("http"):
         read_mjpeg(source, frames, stop)
         return
@@ -281,7 +304,15 @@ def serve(frames: Slot, calls: Slot, stop: threading.Event, args) -> None:
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
             self.end_headers()
+            sent = 0
             while not stop.is_set():
+                # Sending a frame the browser already has only builds a queue it
+                # falls further behind on, which reads as lag rather than as low fps.
+                _, version = frames.take()
+                if version == sent:
+                    time.sleep(0.01)
+                    continue
+                sent = version
                 jpeg = render(frames, calls, args.threshold)
                 if jpeg is None:
                     time.sleep(0.05)
@@ -292,7 +323,6 @@ def serve(frames: Slot, calls: Slot, stop: threading.Event, args) -> None:
                     self.wfile.write(jpeg)
                 except (BrokenPipeError, ConnectionResetError):
                     return
-                time.sleep(1.0 / SERVE_FPS)
 
     server = ThreadingHTTPServer(("0.0.0.0", args.serve), Handler)
     print(f"open http://localhost:{args.serve} in the browser")
@@ -321,6 +351,12 @@ def parse_args(argv: list[str] | None):
         help="frames averaged before a call, since one frame near the threshold flips it",
     )
     parser.add_argument(
+        "--poll-interval",
+        type=float,
+        default=1.0,
+        help="seconds between snapshots when the source is a single-image url",
+    )
+    parser.add_argument(
         "--serve",
         type=int,
         default=None,
@@ -339,7 +375,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.serve is not None:
         frames, calls, stop = Slot(), Slot(), threading.Event()
-        threading.Thread(target=read_into, args=(source, frames, stop), daemon=True).start()
+        threading.Thread(
+            target=read_into, args=(source, frames, stop, args.poll_interval), daemon=True
+        ).start()
         threading.Thread(
             target=infer_into,
             args=((model, priors, spoof), frames, calls, stop, args),
