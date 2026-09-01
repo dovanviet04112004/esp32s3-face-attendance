@@ -50,6 +50,8 @@ train:
   # spatial convolution here is 3x3 dense, which is what cudnn's channels-last
   # kernels are for.
   channels_last: true
+  # The teacher is a fixed input to both arms, so 3.7 does not tie this to them.
+  compile: true
 
 optim:
   name: adam
