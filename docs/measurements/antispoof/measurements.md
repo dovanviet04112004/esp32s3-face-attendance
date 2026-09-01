@@ -427,12 +427,103 @@ con số thay thế cho sản phẩm.
 
 ---
 
-## 11. Còn nợ
+## 11. Ảnh wide dựng sai — nguyên nhân gốc của mọi số ở §9 và §10
+
+### 11.1 Cái hỏng
+
+`scaled_box` phóng hộp mặt quanh tâm, vuông hoá, rồi **clamp về trong khung**. Clamp một
+hình vuông vào khung trả ra hình **chữ nhật**; `resize` về vuông sau đó là kéo méo mặt.
+
+Đo trên 48 khung camera thật, hộp wide 2,7×:
+
+| Nhóm | Mất hộp wide | Tỉ lệ cạnh | Mặt chiếm crop |
+|---|---|---|---|
+| live_gan (ngồi sát) | **74%** | **1,78** | **0,97** |
+| live_vua (một cánh tay) | 24% | 1,31 | 0,48 |
+| live_kho (nghiêng, ngược sáng) | 16% | 1,20 | 0,44 |
+| attack_anh (ảnh thẻ) | 11% | 1,13 | 0,42 |
+| *train kỳ vọng* | *0%* | *1,00* | *0,37* |
+
+Không phải lỗi biên hiếm: ở khoảng cách dùng bình thường đã mất 24%. Và **thứ tự méo trùng
+thứ tự nhãn** — tấn công méo ít nhất vì ảnh thẻ bị giơ xa hơn mặt người.
+
+### 11.2 Clamp không phải chỗ hỏng, méo tỉ lệ mới là
+
+Đo trên 3 shard train (n=13.548): clamp có đầy trong train, model quen rồi.
+
+| | Mất hộp trung bình | Mất > 50% | Lệch cạnh > 1,5 | Mặt chiếm crop |
+|---|---|---|---|---|
+| live (n=4.596) | 34,7% | 26,7% | **4,6%** | 0,53 |
+| spoof (n=8.952) | 40,7% | 39,8% | **0,4%** | 0,58 |
+
+Lệch cạnh 1,78 của mặt gần nằm trong đuôi dưới 5% mà train từng thấy. Mặt chiếm 0,97 thì
+nằm ngoài hẳn.
+
+### 11.3 Bốn cách dựng, cùng một bộ trọng số
+
+Chỉ đổi ảnh wide, không train lại, không đổi ảnh tight:
+
+| Cách dựng | live_gan | live_vua | attack_anh | Cách biệt |
+|---|---|---|---|---|
+| Clamp rồi kéo về vuông | 0,2538 | 1,0000 | 0,0035 | 15,6× |
+| Đệm phản chiếu cho đủ 2,7× | 0,0823 | 0,9999 | 0,0160 | — |
+| Lấy tight làm wide | 0,9953 | **0,0002** | 0,3195 | — |
+| **Ô vuông lớn nhất lọt khung** | **0,9957** | **0,9999** | **0,0027** | **108×** |
+
+Đệm cho vuông làm **tệ hơn** clamp. Nên thủ phạm không phải méo tỉ lệ đơn thuần — ngữ cảnh
+**bịa ra**, dù bằng kéo giãn hay phản chiếu, bị model đọc là dấu hiệu tấn công. Ở mặt gần
+trong khung hình **không tồn tại** ngữ cảnh 2,7×; cách duy nhất đúng là thu tỉ lệ lại.
+
+Qua đường code thật sau khi sửa, cả tight lẫn wide đều dựng bằng `fitted_box`: thật thấp
+nhất **0,9927**, tấn công cao nhất **0,0073**, cách biệt **136×**.
+
+### 11.4 Nhánh wide gánh bao nhiêu
+
+Thay wide bằng tight rồi đo lệch điểm:
+
+| Nhóm | Có wide | Mù wide | Lệch |
+|---|---|---|---|
+| attack_anh | 0,0035 | 0,3195 | 0,3160 |
+| live_vua | 1,0000 | 0,0002 | 0,9998 |
+
+Phần lớn khả năng bắt tấn công đi qua ngữ cảnh. Đây là lý do zoom toàn cục ở §8 phá biên:
+nó bóc ngữ cảnh wide trên **mọi** mẫu.
+
+### 11.5 Tấn công ở cự ly gần — lỗ hổng dự đoán, không có thật
+
+Lo ngại: ô vuông lọt khung thu về ~1,0× ở mặt gần, hết viền để bắt. Đo trên nhóm mới
+`attack_gan` (giơ ảnh thẻ / màn hình sát camera):
+
+| Nhóm | n | Trung bình | Dải | Chặn |
+|---|---|---|---|---|
+| attack_gan | 3 | **0,0006** | 0,0000–0,0019 | 100% |
+| attack_anh | 12 | 0,0027 | 0,0004–0,0073 | 100% |
+
+Tấn công gần chấm **thấp hơn** tấn công xa. Dí sát màn hình thì lưới điểm ảnh và moiré rõ
+hơn, mà đó là dấu hiệu **trong** khuôn mặt — nhánh tight đọc được. Mất ngữ cảnh ở cự ly gần
+rơi đúng lúc dấu hiệu trong mặt mạnh nhất.
+
+🔬 **n=3, và là ảnh chụp bằng điện thoại chứ không phải khung từ camera kiosk.** Đủ để nói
+lỗ hổng không tồn tại như đã lo, **chưa đủ** làm số nghiệm thu.
+
+### 11.6 Kéo theo: đích depth
+
+`FACE_FRACTION = 1 / 2,7` là hằng số, nhưng mặt chiếm trung bình 0,53 (live) và 0,58
+(spoof) cạnh khung. Gò Gauss bị đặt lệch trên phần lớn dữ liệu, và phần lệch rơi đúng vào
+vùng mặt — chỗ duy nhất phân biệt hai lớp. Teacher chưa train lại lần nào từ khi sửa đích
+ở §7, nên bắt được trước khi tốn giờ GPU.
+
+---
+
+## 12. Còn nợ
 
 - **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
   đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
   thuyết tư thế, ngưỡng vận hành thật, và cổng nghiệm thu đo trên miền thiết bị.
-- Chạy lại teacher với đích depth đã sửa → chạy A3 → điền §5 → ADR.
+- **Sinh lại toàn bộ shard** bằng `fitted_box` — mọi số ở §5, §6, §9, §10 đo trên crop
+  dựng sai, nên chúng chỉ còn giá trị lịch sử. Rồi teacher → A0 → A3 → điền §5 → ADR.
+- **Ngưỡng 0,997355 phải đo lại.** Trên 51 khung, 0,992728 cho 100%/100%; nhưng đó là
+  ngưỡng khớp trên chính bộ đó, và bộ đó có 51 khung.
 - **A0 chưa có bản đối chứng tắt augment nén.** Đã đo rằng nó không phá hỏng gì, nhưng
   chưa đo rằng nó giúp. Muốn chắc thì cần một run A0 với `recompress_probability: 0`.
 - UniqueData live + replay: hai bộ khác miền còn lại chưa chấm, cả hai là video nên cần
