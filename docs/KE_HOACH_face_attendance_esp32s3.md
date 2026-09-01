@@ -347,7 +347,7 @@ Xếp theo đúng thứ tự thực hiện.
 | **Attention Transfer** | Chuyển bản đồ chú ý `sum(|F|²)` theo kênh — rẻ, hiệu quả với model bé |
 | **Detect: localization KD** | Distill cả tọa độ box **và 5 landmark**, không chỉ classification |
 | **Detect: FGD (feature imitation có mặt nạ)** | Chỉ bắt chước feature ở vùng gần GT box, bỏ nền → student không học nhiễu nền |
-| **Anti-spoof: depth-map KD** | Distill **depth map 32×32** của CDCN++ (L1 pixel-wise) + **contrastive depth loss** — đây là điểm mạnh nhất của teacher, bỏ đi thì phí |
+| **Anti-spoof: depth-map KD** | Distill **depth map 32×32** của CDCN++ (L1 pixel-wise) + **contrastive depth loss**. Giá trị của nó phụ thuộc đích depth phủ đúng vùng mặt — xem mục dưới |
 | **Recog: embedding KD** | Cosine + L2 giữa embedding 512-D teacher/student, cộng **ArcFace** trên nhãn thật |
 | **Recog: relation KD (RKD)** | Giữ khoảng cách & góc giữa các cặp/bộ ba embedding trong batch — quan trọng hơn khớp từng vector |
 | **Progressive / multi-stage KD** | GĐ1 chỉ feature KD → GĐ2 thêm logit/localization KD → GĐ3 thêm task loss (tăng dần trọng số) |
@@ -428,6 +428,47 @@ phạt model vì tìm ra mặt thật.
 **Ba số WIDER chính thức vẫn báo cáo đủ, chỉ không dùng để chốt.** Bỏ chúng đi là giấu
 điểm yếu; giữ chúng làm cổng là chốt nhánh bằng một phép đo nó không phục vụ. Báo cáo cả
 hai, ghi rõ kích thước đầu vào của từng con số.
+
+#### Đích depth phải phủ đúng vùng mặt trong khung teacher đọc
+
+CDCN++ không phân loại, nó hồi quy một bản đồ 32×32. CelebA-Spoof không có kênh depth nên
+đích là một tiên nghiệm: mặt thật là bề mặt có độ nổi, đòn tấn công phẳng nên bản đồ toàn
+số 0. Tiên nghiệm đó chỉ đúng **ở nơi thực sự có mặt**.
+
+Teacher đọc crop **wide**, không đọc crop tight. `scaled_box` vuông hoá hộp mặt rồi nhân
+cạnh 2,7, nên trong khung teacher nhìn thấy, **hộp mặt chỉ chiếm 14,1% diện tích**; phần
+còn lại là tường, vai, hậu cảnh.
+
+Một gò Gauss phủ cả khung đặt phần lớn tín hiệu ra ngoài mặt:
+
+| `sigma` | Khối lượng đích nằm trên mặt | Nằm trên nền |
+|---|---|---|
+| 0,28 — gò phủ cả khung | 28,8% | **71,2%** |
+| 0,104 — thu theo cạnh hộp | 86,4% | 13,6% |
+| **mask hộp mặt + gò** | **100%** | 0% |
+
+L1 tính trên toàn bản đồ, nên tỉ lệ khối lượng cũng là tỉ lệ tín hiệu loss. Với gò phủ cả
+khung, **71,2% của loss dạy model về phần nền**: mẫu live bắt bức tường phía sau nhận giá
+trị "bề mặt sống", mẫu spoof bắt chính bức tường đó bằng 0. CelebA-Spoof quay live và spoof
+trong cùng những căn phòng, nên đó là ép phần nền mang nhãn lớp — đúng đường tắt bối cảnh
+mà giám sát depth sinh ra để chặn. Bản đồ PRNet của CDCN gốc bằng 0 ngoài vùng mặt.
+
+**Chốt: đích bằng 0 ngoài hộp mặt, gò nằm trong hộp.** Vị trí hộp biết trước bằng dựng
+hình — luôn ở giữa khung, cạnh bằng `1 / CROP_SCALES["wide"]` của cạnh khung — nên không
+cần landmark, không cần PRNet, không cần thêm dữ liệu.
+
+**Che mặt nạ mà giữ nguyên cách lấy trung bình thì hỏng theo chiều ngược lại.** Ngoài hộp,
+live và spoof có cùng đích 0, nên toàn bộ phần phân biệt hai lớp dồn vào 14,1% số điểm ảnh.
+Lấy một trung bình trên cả bản đồ sẽ pha loãng nó theo tỉ lệ 6 trên 1, và bản đồ phẳng —
+đáp án suy biến teacher rơi vào ở epoch đầu — chỉ còn tốn 0,0585 thay vì 0,4160.
+
+Nên **L1 lấy trung bình riêng trong hộp và ngoài hộp rồi cộng lại**: mặt và phòng mỗi bên
+một nửa số phiếu. Đo lại trên đích mới, cái giá của bản đồ phẳng trở về **0,4160**, đúng
+tầm nó có ở công thức cũ, nhưng lần này toàn bộ khoản phạt đến từ vùng mặt.
+
+Hệ quả: `live_reference_mean` đổi giá trị, nên **mọi điểm liveness của teacher đọc bằng
+trung bình bản đồ chỉ so được trong cùng một công thức đích**. Student không bị ảnh hưởng:
+nó xuất logit và đọc bằng softmax, không đi qua hằng số này.
 
 ### Lớp 3 — Nén cấu trúc
 
