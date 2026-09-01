@@ -17,6 +17,7 @@ from facepipe.tasks.antispoof.data import (
     SpoofSample,
     SpoofShardDataset,
     backlight,
+    exposure,
     motion_blur,
     photometric,
     recompress,
@@ -155,10 +156,28 @@ def test_a_training_pass_can_reach_both_augmentations(tmp_path: Path) -> None:
     assert len(list(dataset)) == 64
 
 
+def test_exposure_darkens_without_touching_a_neutral_setting() -> None:
+    """A live face was measured collapsing at a 15% darkening, so this must reach it."""
+    from facepipe.tasks.antispoof.data import EXPOSURE_CONTRAST_RANGE, EXPOSURE_GAIN_RANGE
+
+    image = textured()
+    assert np.array_equal(exposure(image, 1.0, 1.0), image)
+    assert exposure(image, 0.7, 0.7).mean() < image.mean()
+    assert exposure(image, 1.2, 1.0).mean() > image.mean()
+    assert EXPOSURE_GAIN_RANGE[0] <= 0.85 and EXPOSURE_CONTRAST_RANGE[0] <= 0.80
+
+
+def test_exposure_flattens_the_contrast_it_is_asked_to() -> None:
+    """Brightness alone is not the failure: the face also loses its spread."""
+    image = textured()
+    assert exposure(image, 1.0, 0.5).std() < image.std() * 0.75
+
+
 def test_every_camera_augmentation_moves_the_image() -> None:
     """One that silently returned its input would look like a passing test."""
     image = textured()
     moved = {
+        "exposure": exposure(image, 0.7, 0.65),
         "backlight": backlight(image, 0.5, 0.0),
         "motion_blur": motion_blur(image, 7, 0.0),
         "vignette": vignette(image, 0.5),

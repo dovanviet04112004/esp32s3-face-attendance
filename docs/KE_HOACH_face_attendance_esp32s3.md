@@ -487,6 +487,41 @@ Hai ràng buộc đi kèm:
 - **Tỉ lệ thật đạt được ghi vào từng record.** Đích depth của teacher dựng từ nó (mục dưới),
   và không có nó thì không kiểm được phân bố tỉ lệ mà một run đã thấy.
 
+#### Nhánh tight phải học phơi sáng, nếu không nó đọc độ sáng thay cho kết cấu
+
+Nhánh tight đọc crop 1,0× và phải tách mặt thật khỏi bản in bằng **kết cấu bề mặt**: lỗ
+chân lông, độ bóng của da, vân moiré của màn hình. Kết cấu là đại lượng cục bộ, không phụ
+thuộc mức sáng chung của khung.
+
+Đo trên checkpoint A0 chưa có augment quang học, làm tối và bẹt tương phản chính những
+khung nó đang chấm đúng:
+
+| Biến đổi | Mặt thật, một cánh tay | Mặt thật, sát camera | Ảnh thẻ |
+|---|---|---|---|
+| Nguyên bản | 0,9999 | 0,9963 | 0,0025 |
+| Tối 15%, tương phản 80% | **0,0262** | **0,0594** | 0,0001 |
+| Tối 30%, tương phản 65% | 0,0066 | 0,0289 | 0,0001 |
+
+**Tối 15% là ngưỡng mắt người gần như không thấy, mà điểm rơi từ 0,9999 xuống 0,026.** Đó
+là bằng chứng nhánh tight không đọc kết cấu như thiết kế — nó bám vào **độ sáng và tương
+phản tuyệt đối**. Mẫu tấn công gần như không đổi, nên phép biến đổi này chỉ phá một lớp.
+
+Chế độ hỏng ngoài đời khớp đúng: người đứng trước tường trắng hoặc cửa sổ thì máy đo sáng
+bám theo nền, kéo khuôn mặt thiếu sáng và mất tương phản, và model gọi mặt thật là tấn
+công. Chiều ngược lại cũng vậy — màn hình tự phát sáng cho khuôn mặt phơi sáng đẹp, nên
+một đòn replay ở xa lại được đọc là thật.
+
+CelebA-Spoof không dạy được điều này: nó quay live và spoof trong cùng những căn phòng với
+cùng cách đặt sáng, nên mức sáng gần như không đổi trong tập.
+
+**Chốt: augment phơi sáng là bắt buộc cho nhánh anti-spoof**, cùng hạng với augment nén.
+Rút một hệ số phơi sáng và một hệ số tương phản, áp **một lần cho cả hai view** vì hai crop
+là một cảnh qua một ống kính. Dải phải trùm được vùng đã đo ra lỗi, tức xuống tới 0,55 phơi
+sáng và 0,50 tương phản, đồng thời phủ cả phía dư sáng.
+
+`backlight` không thay được: nó kéo một bên khung **về phía trắng**, tức làm sáng lên, còn
+`vignette` chỉ tối bốn góc và nhân đúng 1,0 ở giữa khung — nơi khuôn mặt nằm.
+
 #### Đích depth phải phủ đúng vùng mặt trong khung teacher đọc
 
 CDCN++ không phân loại, nó hồi quy một bản đồ 32×32. CelebA-Spoof không có kênh depth nên

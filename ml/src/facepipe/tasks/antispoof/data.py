@@ -40,6 +40,11 @@ WHITE_BALANCE_RANGE = (0.86, 1.16)
 VIGNETTE_RANGE = (0.10, 0.55)
 MOTION_BLUR_PX = (3, 7)
 BACKLIGHT_RANGE = (0.15, 0.60)
+MID_LEVEL = 127.5
+# Reaches the exposure a live face collapses at, and the bright side too
+# (KEHOACH 3).
+EXPOSURE_GAIN_RANGE = (0.55, 1.25)
+EXPOSURE_CONTRAST_RANGE = (0.50, 1.15)
 PHOTOMETRIC_PROBABILITY = 0.5
 
 
@@ -174,6 +179,16 @@ def backlight(image: np.ndarray, strength: float, angle: float) -> np.ndarray:
     return _clipped(signal + strength * ramp[..., None] * (255.0 - signal))
 
 
+def exposure(image: np.ndarray, gain: float, contrast: float) -> np.ndarray:
+    """Meter the scene differently, the way a bright wall behind a face does.
+
+    Equal gain and contrast is a pure exposure change; a contrast below the gain
+    lifts the blacks the way a hazy tone curve does.
+    """
+    signal = image.astype(np.float32)
+    return _clipped((signal - MID_LEVEL) * contrast + MID_LEVEL * gain)
+
+
 def motion_blur(image: np.ndarray, length: int, angle: float) -> np.ndarray:
     """Average along one direction, the smear a moving face leaves."""
     if length < 2:
@@ -224,9 +239,13 @@ def photometric(
 
     The two crops are one scene through one lens, so a separate draw per view
     would teach the model that the pair disagrees about the light. Applied in the
-    order the light meets the camera: scene, lens, sensor, processing.
+    order the light meets the camera: exposure, scene, lens, sensor, processing.
     """
     views = [sample.tight, sample.wide]
+    if rng.random() < probability:
+        gain = rng.uniform(*EXPOSURE_GAIN_RANGE)
+        contrast = rng.uniform(*EXPOSURE_CONTRAST_RANGE)
+        views = [exposure(view, gain, contrast) for view in views]
     if rng.random() < probability:
         strength, angle = rng.uniform(*BACKLIGHT_RANGE), rng.uniform(0.0, 2.0 * np.pi)
         views = [backlight(view, strength, angle) for view in views]
