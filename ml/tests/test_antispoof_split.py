@@ -17,15 +17,18 @@ from facepipe.tasks.antispoof.data import (
     SpoofSample,
     SpoofShardDataset,
     backlight,
+    geometric,
     motion_blur,
     photometric,
     recompress,
     requantise,
     resolve_spec,
     resolve_splits,
+    rotate,
     sensor_noise,
     vignette,
     white_balance,
+    zoom_shift,
 )
 from facepipe.tasks.antispoof.losses.task_loss import LIVE, SPOOF
 
@@ -183,6 +186,38 @@ def test_validation_is_never_camera_augmented(tmp_path: Path) -> None:
     dataset = SpoofShardDataset(tmp_path, size=SIZE, train=False, splits="test")
     first = [s.tight for s in dataset]
     assert all(np.array_equal(a, b) for a, b in zip(first, [s.tight for s in dataset], strict=True))
+
+
+def test_zooming_keeps_the_size_and_moves_the_content() -> None:
+    """A nearer face is reached by taking a smaller window and stretching it back."""
+    image = textured()
+    out = zoom_shift(image, zoom=1.8, shift_x=0.0, shift_y=0.0)
+    assert out.shape == image.shape and out.dtype == image.dtype
+    assert not np.array_equal(out, image)
+    assert np.array_equal(zoom_shift(image, 1.0, 0.0, 0.0), image)
+
+
+def test_rotating_fills_the_corners_rather_than_blacking_them() -> None:
+    """Black corners are further from anything the model saw than the turn is."""
+    image = np.full((SIZE, SIZE, 3), 200, dtype=np.uint8)
+    out = rotate(image, 12.0)
+    assert out.shape == image.shape
+    assert out.min() > 100
+
+
+def test_geometry_takes_one_draw_for_both_views() -> None:
+    flat = np.full((SIZE, SIZE, 3), 120, dtype=np.uint8)
+    sample = SpoofSample(tight=textured(3), wide=textured(3), label=0)
+    out = geometric(sample, random.Random(0), probability=1.0)
+    assert np.array_equal(out.tight, out.wide)
+    assert not np.array_equal(out.tight, flat)
+
+
+def test_validation_is_never_geometrically_augmented(tmp_path: Path) -> None:
+    write_split(tmp_path / "test", records=8, shard_size=4)
+    dataset = SpoofShardDataset(tmp_path, size=SIZE, train=False, splits="test")
+    first = [s.wide for s in dataset]
+    assert all(np.array_equal(a, b) for a, b in zip(first, [s.wide for s in dataset], strict=True))
 
 
 def test_a_shard_directory_can_be_read_without_a_split_name(tmp_path: Path) -> None:
