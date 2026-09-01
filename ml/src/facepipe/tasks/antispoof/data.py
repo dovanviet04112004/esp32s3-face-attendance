@@ -18,6 +18,7 @@ import random
 import tarfile
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +33,14 @@ SHUFFLE_BUFFER = 2048
 # Spans both pools the branch meets, so neither end can cue the label (KEHOACH 1.3).
 QUALITY_RANGE = (30, 95)
 RECOMPRESS_PROBABILITY = 0.5
+# The OV5640 path the kiosk runs, drawn per sample (KEHOACH section 3, layer 2).
+PHOTON_RANGE = (60.0, 600.0)
+READ_SIGMA_RANGE = (0.0, 5.0)
+WHITE_BALANCE_RANGE = (0.86, 1.16)
+VIGNETTE_RANGE = (0.10, 0.55)
+MOTION_BLUR_PX = (3, 7)
+BACKLIGHT_RANGE = (0.15, 0.60)
+PHOTOMETRIC_PROBABILITY = 0.5
 
 
 @dataclass
@@ -140,6 +149,107 @@ def recompress(sample: SpoofSample, quality: int) -> SpoofSample:
     )
 
 
+def _clipped(values: np.ndarray) -> np.ndarray:
+    return np.clip(values, 0.0, 255.0).astype(np.uint8)
+
+
+@lru_cache(maxsize=4)
+def _centred_grid(shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
+    """Coordinates running -0.5 to 0.5 across the image, y first.
+
+    Cached because every crop of a run is one size and callers only read it.
+    """
+    rows, cols = shape
+    axis_y = (np.arange(rows, dtype=np.float32) + 0.5) / rows - 0.5
+    axis_x = (np.arange(cols, dtype=np.float32) + 0.5) / cols - 0.5
+    return np.meshgrid(axis_y, axis_x, indexing="ij")
+
+
+def backlight(image: np.ndarray, strength: float, angle: float) -> np.ndarray:
+    """Wash one side towards white, the way a window behind the subject does."""
+    grid_y, grid_x = _centred_grid(image.shape[:2])
+    ramp = np.clip((grid_x * np.cos(angle) + grid_y * np.sin(angle)) + 0.5, 0.0, 1.0)
+    signal = image.astype(np.float32)
+    return _clipped(signal + strength * ramp[..., None] * (255.0 - signal))
+
+
+def motion_blur(image: np.ndarray, length: int, angle: float) -> np.ndarray:
+    """Average along one direction, the smear a moving face leaves."""
+    if length < 2:
+        return image
+    pad = length // 2 + 1
+    padded = np.pad(image, ((pad, pad), (pad, pad), (0, 0)), mode="edge").astype(np.float32)
+    rows, cols = image.shape[:2]
+    total = np.zeros((rows, cols, image.shape[2]), dtype=np.float32)
+    for step in np.linspace(-(length - 1) / 2.0, (length - 1) / 2.0, length):
+        top = pad + round(step * np.sin(angle))
+        left = pad + round(step * np.cos(angle))
+        total += padded[top : top + rows, left : left + cols]
+    return _clipped(total / float(length))
+
+
+def vignette(image: np.ndarray, strength: float) -> np.ndarray:
+    """Darken towards the corners, the falloff a small lens leaves."""
+    grid_y, grid_x = _centred_grid(image.shape[:2])
+    falloff = 1.0 - strength * 2.0 * (grid_x**2 + grid_y**2)
+    return _clipped(image.astype(np.float32) * falloff[..., None])
+
+
+def sensor_noise(
+    image: np.ndarray, photons: float, read_sigma: float, rng: np.random.Generator
+) -> np.ndarray:
+    """Shot noise scaling with signal plus constant read noise, the sensor pair.
+
+    Shot noise is Poisson, drawn here as the gaussian of matching variance: the
+    two agree to under a percent above about fifty photons, which PHOTON_RANGE
+    stays above, and one normal field costs a fraction of a poisson one.
+    """
+    signal = image.astype(np.float32)
+    sigma = np.sqrt(255.0 * signal / photons + read_sigma**2)
+    return _clipped(signal + rng.standard_normal(image.shape, dtype=np.float32) * sigma)
+
+
+def white_balance(image: np.ndarray, gains: np.ndarray) -> np.ndarray:
+    """Per-channel gain, the colour cast an auto white balance leaves."""
+    return _clipped(image.astype(np.float32) * gains)
+
+
+def photometric(
+    sample: SpoofSample,
+    rng: random.Random,
+    probability: float = PHOTOMETRIC_PROBABILITY,
+) -> SpoofSample:
+    """Camera-path augmentation, drawn once per sample and applied to both views.
+
+    The two crops are one scene through one lens, so a separate draw per view
+    would teach the model that the pair disagrees about the light. Applied in the
+    order the light meets the camera: scene, lens, sensor, processing.
+    """
+    views = [sample.tight, sample.wide]
+    if rng.random() < probability:
+        strength, angle = rng.uniform(*BACKLIGHT_RANGE), rng.uniform(0.0, 2.0 * np.pi)
+        views = [backlight(view, strength, angle) for view in views]
+    if rng.random() < probability:
+        length, angle = rng.randint(*MOTION_BLUR_PX), rng.uniform(0.0, np.pi)
+        views = [motion_blur(view, length, angle) for view in views]
+    if rng.random() < probability:
+        strength = rng.uniform(*VIGNETTE_RANGE)
+        views = [vignette(view, strength) for view in views]
+    if rng.random() < probability:
+        photons = rng.uniform(*PHOTON_RANGE)
+        read_sigma = rng.uniform(*READ_SIGMA_RANGE)
+        # One stream for both views: the tight crop is the middle of the wide one,
+        # so the same sensor pixels appear twice and their noise is not independent.
+        seed = rng.getrandbits(32)
+        views = [
+            sensor_noise(view, photons, read_sigma, np.random.default_rng(seed)) for view in views
+        ]
+    if rng.random() < probability:
+        gains = np.array([rng.uniform(*WHITE_BALANCE_RANGE) for _ in range(3)], dtype=np.float32)
+        views = [white_balance(view, gains) for view in views]
+    return SpoofSample(views[0], views[1], sample.label)
+
+
 class SpoofShardDataset(IterableDataset):
     """Streams (tight, wide, label) from one split's shards."""
 
@@ -153,6 +263,7 @@ class SpoofShardDataset(IterableDataset):
         splits: str | Sequence[str] | None = None,
         recompress_probability: float = RECOMPRESS_PROBABILITY,
         quality_range: tuple[int, int] = QUALITY_RANGE,
+        photometric_probability: float = PHOTOMETRIC_PROBABILITY,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -167,6 +278,7 @@ class SpoofShardDataset(IterableDataset):
         self.shuffle_buffer = shuffle_buffer if train else 0
         self.recompress_probability = recompress_probability
         self.quality_range = quality_range
+        self.photometric_probability = photometric_probability
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -203,6 +315,8 @@ class SpoofShardDataset(IterableDataset):
         for sample in self._records():
             if self.train and rng.random() < 0.5:
                 sample = horizontal_flip(sample)
+            if self.train:
+                sample = photometric(sample, rng, self.photometric_probability)
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
             if self.shuffle_buffer <= 0:

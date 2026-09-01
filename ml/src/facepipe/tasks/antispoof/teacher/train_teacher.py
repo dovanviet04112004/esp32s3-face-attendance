@@ -35,7 +35,13 @@ from facepipe.core.scheduler import build_optimizer, build_scheduler
 from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer
 
-from ..data import SpoofShardDataset, collate
+from ..data import (
+    PHOTOMETRIC_PROBABILITY,
+    QUALITY_RANGE,
+    RECOMPRESS_PROBABILITY,
+    SpoofShardDataset,
+    collate,
+)
 from ..eval import summary
 from ..losses.contrastive_depth_loss import contrast_kernels
 from ..losses.task_loss import LIVE
@@ -91,12 +97,18 @@ def crop_size(cfg: Config) -> int:
 
 
 def build_loader(cfg: Config, split: str, train: bool) -> torch.utils.data.DataLoader:
+    params = cfg.data.params
     dataset = SpoofShardDataset(
-        root=Path(cfg.data.params["shards"]),
+        root=Path(params["shards"]),
         size=crop_size(cfg),
         train=train,
         seed=cfg.run.seed,
         splits=split,
+        recompress_probability=float(params.get("recompress_probability", RECOMPRESS_PROBABILITY)),
+        quality_range=tuple(params.get("quality_range", QUALITY_RANGE)),
+        photometric_probability=float(
+            params.get("photometric_probability", PHOTOMETRIC_PROBABILITY)
+        ),
     )
     return torch.utils.data.DataLoader(
         dataset,
