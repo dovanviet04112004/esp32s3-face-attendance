@@ -15,7 +15,7 @@ from facepipe.data.prepare.celeba_spoof_parquet import (
     CROP_SIZE,
     Sample,
     encode_crops,
-    scaled_box,
+    fitted_box,
     split_of,
 )
 from facepipe.data.prepare.device_index import build_rows, parse_name, write_manifest
@@ -109,27 +109,36 @@ def test_small_faces_can_be_dropped(wider_fixture) -> None:
     assert coco["info"]["skipped_faces_small"] == 1
 
 
-def test_scaled_box_is_square_and_centred() -> None:
-    left, top, right, bottom = scaled_box((10, 20, 50, 40), 1.0, 200, 200)
+def test_fitted_box_is_square_and_centred() -> None:
+    (left, top, right, bottom), reached = fitted_box((10, 20, 50, 40), 1.0, 200, 200)
     assert right - left == bottom - top
     assert (left + right) / 2 == pytest.approx(30.0, abs=1.0)
     assert (top + bottom) / 2 == pytest.approx(30.0, abs=1.0)
+    assert reached == pytest.approx(1.0, abs=0.05)
 
 
 def test_wide_crop_is_larger_than_tight_crop() -> None:
-    tight = scaled_box((50, 50, 90, 90), 1.0, 400, 400)
-    wide = scaled_box((50, 50, 90, 90), 2.7, 400, 400)
+    tight, _ = fitted_box((50, 50, 90, 90), 1.0, 400, 400)
+    wide, reached = fitted_box((50, 50, 90, 90), 2.7, 400, 400)
     assert (wide[2] - wide[0]) > (tight[2] - tight[0])
+    assert reached == pytest.approx(2.7, abs=0.05)
 
 
-def test_scaled_box_stays_inside_the_image() -> None:
-    left, top, right, bottom = scaled_box((0, 0, 40, 40), 2.7, 50, 50)
+def test_fitted_box_stays_inside_the_image() -> None:
+    (left, top, right, bottom), _ = fitted_box((0, 0, 40, 40), 2.7, 50, 50)
     assert left >= 0 and top >= 0
     assert right <= 50 and bottom <= 50
 
 
+def test_a_face_with_no_room_shrinks_the_scale_rather_than_the_squareness() -> None:
+    """Clamping to the frame would stretch the face; the crop gives up reach instead."""
+    (left, top, right, bottom), reached = fitted_box((10, 10, 90, 90), 2.7, 100, 100)
+    assert right - left == bottom - top
+    assert reached < 2.7
+
+
 def test_box_is_read_as_corners_not_width_height() -> None:
-    box = scaled_box((100, 200, 220, 410), 1.0, 450, 600)
+    box, _ = fitted_box((100, 200, 220, 410), 1.0, 450, 600)
     assert box[2] - box[0] == pytest.approx(210, abs=2)
     assert box[3] <= 600
 

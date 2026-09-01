@@ -1,9 +1,9 @@
 """CelebA-Spoof parquet shards to face crops at two scales, packed into shards.
 
-MiniFASNet trains on two views of the same face: a tight 1.0x crop and a 2.7x
-context crop. The wide crop carries what separates a live face from a photo of
-one, the screen bezel and the paper edge, so cropping tight only throws away the
-signal the branch depends on.
+MiniFASNet trains on two views of the same face: a tight 1.0x crop and a context
+crop reaching for 2.7x. The wide crop carries what separates a live face from a
+photo of one, the screen bezel and the paper edge. 2.7x is a cap rather than a
+constant, since a face near the camera leaves no room for it (KEHOACH §3).
 
 Both scales go in one record, so an epoch over 419,935 faces costs that many
 reads rather than twice as many opens (KEHOACH section 4.4.1).
@@ -90,25 +90,24 @@ def read_shard(path: Path) -> Iterator[Sample]:
             )
 
 
-def scaled_box(
+def fitted_box(
     box_xyxy: tuple[int, int, int, int], scale: float, width: int, height: int
-) -> tuple[int, int, int, int]:
-    """Grow a box about its centre, square it off, and clamp to the image.
+) -> tuple[tuple[int, int, int, int], float]:
+    """Largest square about the face centre that fits the frame, capped at `scale`.
 
-    Squaring before scaling keeps the aspect ratio constant, so a wide box and a
-    tall box of the same face produce the same crop.
+    Returns the box and the scale it actually reached, which falls below `scale`
+    whenever the face sits too near the camera or the frame edge. Clamping a
+    square to the frame would stretch the face and padding would invent context,
+    and both read as attack cues (KEHOACH §3).
     """
     x1, y1, x2, y2 = box_xyxy
     cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-    side = max(x2 - x1, y2 - y1) * scale
-    left, top = round(cx - side / 2.0), round(cy - side / 2.0)
-    right, bottom = round(cx + side / 2.0), round(cy + side / 2.0)
-    return (
-        max(0, left),
-        max(0, top),
-        min(width, max(left + 1, right)),
-        min(height, max(top + 1, bottom)),
-    )
+    face = max(1, max(x2 - x1, y2 - y1))
+    room = max(1.0, 2.0 * min(cx, cy, width - cx, height - cy))
+    side = max(1, int(min(face * scale, room)))
+    left = min(max(0, round(cx - side / 2.0)), width - side)
+    top = min(max(0, round(cy - side / 2.0)), height - side)
+    return (left, top, left + side, top + side), side / face
 
 
 def encode_crops(sample: Sample, size: int = CROP_SIZE) -> dict[str, bytes]:
@@ -116,16 +115,22 @@ def encode_crops(sample: Sample, size: int = CROP_SIZE) -> dict[str, bytes]:
     from PIL import Image
 
     members: dict[str, bytes] = {}
+    reached: dict[str, float] = {}
     with Image.open(io.BytesIO(sample.image_bytes)) as image:
         image = image.convert("RGB")
         for name, scale in CROP_SCALES.items():
-            box = scaled_box(sample.box_xyxy, scale, image.width, image.height)
+            box, reached[name] = fitted_box(sample.box_xyxy, scale, image.width, image.height)
             patch = image.crop(box).resize((size, size), Image.BILINEAR)
             buffer = io.BytesIO()
             patch.save(buffer, format="JPEG", quality=CROP_QUALITY)
             members[f"{name}.jpg"] = buffer.getvalue()
 
-    meta = {"name": sample.name, "label": int(sample.is_spoof), "split": sample.split}
+    meta = {
+        "name": sample.name,
+        "label": int(sample.is_spoof),
+        "split": sample.split,
+        "wide_scale": round(reached["wide"], 4),
+    }
     members["json"] = json.dumps(meta).encode()
     return members
 

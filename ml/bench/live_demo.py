@@ -39,7 +39,7 @@ from facepipe.data.prepare.celeba_spoof_parquet import (
     CROP_QUALITY,
     CROP_SCALES,
     CROP_SIZE,
-    scaled_box,
+    fitted_box,
 )
 from facepipe.tasks.antispoof.data import CROP_SIZE as SPOOF_SIZE
 from facepipe.tasks.antispoof.eval import load_run
@@ -92,7 +92,8 @@ def crops_of(frame_rgb: np.ndarray, box: np.ndarray) -> dict[str, np.ndarray]:
     image = Image.fromarray(frame_rgb)
     views: dict[str, np.ndarray] = {}
     for name, scale in CROP_SCALES.items():
-        patch = image.crop(scaled_box(tuple(box), scale, image.width, image.height))
+        crop, _ = fitted_box(tuple(box), scale, image.width, image.height)
+        patch = image.crop(crop)
         buffer = io.BytesIO()
         patch.resize((CROP_SIZE, CROP_SIZE), Image.BILINEAR).save(
             buffer, format="JPEG", quality=CROP_QUALITY

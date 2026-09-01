@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .celeba_spoof_parquet import CROP_QUALITY, CROP_SCALES, CROP_SIZE, scaled_box
+from .celeba_spoof_parquet import CROP_QUALITY, CROP_SCALES, CROP_SIZE, fitted_box
 from .images_to_wds import ShardWriter
 
 DETECT_HW = (120, 160)
@@ -166,21 +166,25 @@ def best_face(model, priors, payload: bytes, device: str) -> np.ndarray | None:
     return original.boxes[int(np.argmax(original.scores))]
 
 
-def crops_of(payload: bytes, box: np.ndarray, size: int = CROP_SIZE) -> dict[str, bytes]:
+def crops_of(
+    payload: bytes, box: np.ndarray, size: int = CROP_SIZE
+) -> tuple[dict[str, bytes], float]:
     """Both scales of one face, encoded the way the shard format expects."""
     from PIL import Image
 
     members: dict[str, bytes] = {}
+    reached: dict[str, float] = {}
     with Image.open(io.BytesIO(payload)) as handle:
         image = handle.convert("RGB")
         for name, scale in CROP_SCALES.items():
-            patch = image.crop(scaled_box(tuple(box), scale, image.width, image.height))
+            crop, reached[name] = fitted_box(tuple(box), scale, image.width, image.height)
+            patch = image.crop(crop)
             buffer = io.BytesIO()
             patch.resize((size, size), Image.BILINEAR).save(
                 buffer, format="JPEG", quality=CROP_QUALITY
             )
             members[f"{name}.jpg"] = buffer.getvalue()
-    return members
+    return members, reached["wide"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -210,9 +214,14 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if raw.source not in writers:
                 writers[raw.source] = ShardWriter(args.out / raw.source).__enter__()
-            members = crops_of(raw.payload, box)
+            members, wide_scale = crops_of(raw.payload, box)
             members["json"] = json.dumps(
-                {"name": raw.name, "label": int(raw.is_spoof), "split": raw.source}
+                {
+                    "name": raw.name,
+                    "label": int(raw.is_spoof),
+                    "split": raw.source,
+                    "wide_scale": round(wide_scale, 4),
+                }
             ).encode()
             writers[raw.source].add(members)
             kept[raw.source] = kept.get(raw.source, 0) + 1
