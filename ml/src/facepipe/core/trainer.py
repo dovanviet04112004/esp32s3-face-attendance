@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader
 
 from facepipe.core.config import Config
 from facepipe.core.logger import RunLogger
-from facepipe.core.metrics import MetricTracker, Throughput
+from facepipe.core.metrics import MetricTracker, Throughput, format_scalars
 from facepipe.core.run_dir import RunDir
 from facepipe.core.seed import capture_rng_state, restore_rng_state
 
@@ -189,6 +189,9 @@ class Trainer:
             if self.val_fn is not None and self._due(self.cfg.train.val_every_epochs):
                 val_stats = self.val_fn(self.export_module, self.state.epoch)
                 self.logger.log_scalars(self.state.global_step, prefix="val", **val_stats)
+                # The metric a run is judged on belongs where someone watching a
+                # long run will see it, not only in the event files.
+                self.logger.info(f"epoch {epoch} val | {format_scalars(val_stats)}")
                 stats = {**stats, **{f"val_{k}": v for k, v in val_stats.items()}}
                 self._track_best(val_stats)
 

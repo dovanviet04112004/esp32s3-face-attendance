@@ -39,6 +39,11 @@ class AverageMeter:
         self.count = 0
 
 
+def format_scalars(values: Mapping[str, float], precision: int = 4) -> str:
+    """One line of name=value pairs, sorted so two epochs line up column by column."""
+    return " ".join(f"{key}={value:.{precision}f}" for key, value in sorted(values.items()))
+
+
 @dataclass
 class MetricTracker:
     """A named bundle of AverageMeters."""
@@ -57,7 +62,7 @@ class MetricTracker:
             meter.reset()
 
     def format(self, precision: int = 4) -> str:
-        return " ".join(f"{k}={v:.{precision}f}" for k, v in sorted(self.means().items()))
+        return format_scalars(self.means(), precision)
 
 
 class Throughput:
