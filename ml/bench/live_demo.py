@@ -8,10 +8,15 @@ one half.
 A host webcam is not the OV5640, so this shows whether the pipeline works, not
 how well it works: nothing it prints belongs in an acceptance table (KEHOACH 1.2).
 
-Usage:
-    python -m bench.live_demo \\
-        --detector artifacts/detection/runs/<run>/ckpt/best.pth \\
-        --spoof-run artifacts/antispoof/runs/<run>
+Usage, from ml/, with the source being a camera index, a file, or an MJPEG url:
+
+    .venv/bin/python -m bench.live_demo --serve 8080 \\
+        --source http://172.27.224.1:8091/ \\
+        --detector artifacts/detection/runs/20260831-1616_cc931df_36fbea/ckpt/best.pth \\
+        --spoof-run artifacts/antispoof/runs/20260901-0717_b326cd5_6706a4
+
+Then open http://localhost:8080. For a phone through the Windows virtual camera,
+bench/cam_bridge.py publishes that url; for the ESP32 board it is :81/stream.
 """
 
 from __future__ import annotations
