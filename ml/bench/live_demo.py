@@ -1,9 +1,9 @@
 """Watch the detection student feed the anti-spoof student on a host webcam.
 
 Crops are cut the way the training shards were cut, JPEG round trip included, so
-what the model sees here is what it was trained on, and the liveness score is
-read at the threshold the run fitted on its own validation split rather than at
-one half.
+what the model sees here is what it was trained on. A call needs a fraction of
+the last few frames to clear the threshold, since a turning head drops the odd
+frame across it while the face has not changed.
 
 A host webcam is not the OV5640, so this shows whether the pipeline works, not
 how well it works: nothing it prints belongs in an acceptance table (KEHOACH 1.2).
@@ -29,7 +29,9 @@ import time
 import urllib.request
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from math import ceil
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -53,6 +55,7 @@ DETECT_HW = (120, 160)
 DETECT_CONF = 0.5
 # A0 fitted this on test:0:10, then read test:10: at it without refitting (measurements 5).
 SPOOF_THRESHOLD = 0.997355
+VOTE_FRACTION = 0.6
 WRITER_FPS = 12.0
 SERVE_FPS = 15.0
 RECONNECT_WAIT_S = 0.5
@@ -230,13 +233,33 @@ def read_into(source, frames: Slot, stop: threading.Event, poll_s: float = 0.0) 
         time.sleep(RECONNECT_WAIT_S)
 
 
+class Call(NamedTuple):
+    """One verdict, carrying the votes behind it rather than a bare number."""
+
+    box: np.ndarray | None
+    score: float
+    votes: int
+    window: int
+    live: bool
+    elapsed_ms: float
+
+
+def call_of(recent: deque[float], threshold: float, vote: float) -> tuple[float, int, bool]:
+    """The median of the window, how many frames cleared, and the verdict.
+
+    A mean lets one outlying frame drag the call, and a turning head produces
+    those; a fraction of the window has to clear the threshold instead.
+    """
+    votes = sum(1 for value in recent if value >= threshold)
+    needed = max(1, ceil(vote * len(recent)))
+    return float(np.median(recent)), votes, votes >= needed
+
+
 def infer_into(models, frames: Slot, calls: Slot, stop: threading.Event, args) -> None:
     """Score each new frame once.
 
     Scoring whatever is in the slot regardless would re-run the same frame at
-    full speed on every core between arrivals. The reported score is a mean over
-    the last few frames, since one frame either side of the threshold flips the
-    call while the face has not moved.
+    full speed on every core between arrivals.
     """
     import cv2
 
@@ -254,12 +277,13 @@ def infer_into(models, frames: Slot, calls: Slot, stop: threading.Event, args) -
         found = detect(model, priors, rgb, args.device)
         if found is None:
             recent.clear()
-            calls.put((None, 0.0, (time.perf_counter() - started) * 1000.0))
+            calls.put(Call(None, 0.0, 0, 0, False, (time.perf_counter() - started) * 1000.0))
             continue
         box = found.boxes[int(np.argmax(found.scores))]
         recent.append(liveness(spoof, crops_of(rgb, box), args.device))
+        score, votes, live = call_of(recent, args.threshold, args.vote)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
-        calls.put((box, sum(recent) / len(recent), elapsed_ms))
+        calls.put(Call(box, score, votes, len(recent), live, elapsed_ms))
 
 
 def render(frames: Slot, calls: Slot, threshold: float):
@@ -271,14 +295,18 @@ def render(frames: Slot, calls: Slot, threshold: float):
         return None
     frame = frame.copy()
     call = calls.get()
-    if call is not None and call[0] is not None:
-        box, score, elapsed_ms = call
-        is_live = score >= threshold
-        colour = (0, 200, 0) if is_live else (0, 0, 255)
-        annotate(frame, box, f"{'LIVE' if is_live else 'SPOOF'} {score:.4f}", colour)
+    if call is not None and call.box is not None:
+        colour = (0, 200, 0) if call.live else (0, 0, 255)
+        verdict = "LIVE" if call.live else "SPOOF"
+        annotate(
+            frame,
+            call.box,
+            f"{verdict} {call.score:.4f}  {call.votes}/{call.window}",
+            colour,
+        )
         cv2.putText(
             frame,
-            f"{elapsed_ms:5.1f} ms",
+            f"{call.elapsed_ms:5.1f} ms  thr {threshold:.4f}",
             (10, frame.shape[0] - 12),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
@@ -354,7 +382,13 @@ def parse_args(argv: list[str] | None):
         "--smooth",
         type=int,
         default=5,
-        help="frames averaged before a call, since one frame near the threshold flips it",
+        help="frames the call is voted over, since one frame near the threshold flips it",
+    )
+    parser.add_argument(
+        "--vote",
+        type=float,
+        default=VOTE_FRACTION,
+        help="fraction of those frames that must clear the threshold to call it live",
     )
     parser.add_argument(
         "--poll-interval",
@@ -399,6 +433,7 @@ def main(argv: list[str] | None = None) -> int:
 
     writer = None
     counts = {"live": 0, "spoof": 0, "no face": 0}
+    recent: deque[float] = deque(maxlen=max(1, args.smooth))
     print("q or esc to quit")
     while True:
         ok, frame = capture.read()
@@ -409,14 +444,18 @@ def main(argv: list[str] | None = None) -> int:
         started = time.perf_counter()
         found = detect(model, priors, rgb, args.device)
         if found is None:
+            recent.clear()
             counts["no face"] += 1
         else:
             box = found.boxes[int(np.argmax(found.scores))]
-            score = liveness(spoof, crops_of(rgb, box), args.device)
-            is_live = score >= args.threshold
+            recent.append(liveness(spoof, crops_of(rgb, box), args.device))
+            score, votes, is_live = call_of(recent, args.threshold, args.vote)
             counts["live" if is_live else "spoof"] += 1
             colour = (0, 200, 0) if is_live else (0, 0, 255)
-            annotate(frame, box, f"{'LIVE' if is_live else 'SPOOF'} {score:.4f}", colour)
+            annotate(
+                frame, box, f"{'LIVE' if is_live else 'SPOOF'} {score:.4f}  {votes}/{len(recent)}",
+                colour,
+            )
         elapsed_ms = (time.perf_counter() - started) * 1000.0
 
         cv2.putText(
