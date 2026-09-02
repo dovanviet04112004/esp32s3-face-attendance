@@ -28,7 +28,7 @@ from facepipe.core.registry import LOSSES, MODELS
 from facepipe.core.run_dir import create_run_dir
 from facepipe.core.scheduler import build_optimizer, build_scheduler
 from facepipe.core.seed import seed_everything
-from facepipe.core.trainer import Trainer
+from facepipe.core.trainer import Trainer, resolve_device
 
 from .data import CROP_SCALE, MIN_FACE_PX, WiderFaceDataset, collate
 from .eval import average_precision, decode_batch
@@ -154,6 +154,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # The FGD adapters are trainable and live in the loss, so the optimizer covers
     # the distiller; the frozen teacher drops out for lacking requires_grad.
+
+    # Order matters: a resume casts optimizer momentum onto whichever device it
+    # finds the parameters on, and they start on the host.
+    distiller.to(resolve_device(cfg.train.device))
+
     optimizer = build_optimizer(distiller, cfg.optim)
     scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
 
@@ -206,9 +211,6 @@ def main(argv: list[str] | None = None) -> int:
         best_metric_key="ap",
         best_is_lower=False,
     )
-    # The trainer moves only the student; the teacher and the FGD adapters hang
-    # off the distiller and would otherwise stay on the host.
-    distiller.to(trainer.device)
     # The loss runs the student itself, so a compiled run has to reach the model
     # the trainer compiled rather than the one handed to the distiller.
     distiller.student = trainer.model
