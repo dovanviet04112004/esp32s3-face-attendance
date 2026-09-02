@@ -28,7 +28,7 @@ from facepipe.core.seed import capture_rng_state, restore_rng_state
 
 CKPT_LAST = "last.pth"
 CKPT_BEST = "best.pth"
-CKPT_FORMAT_VER = 1
+CKPT_FORMAT_VER = 2
 RESUMED_FROM_NAME = "resumed_from.txt"
 
 
@@ -136,12 +136,16 @@ class Trainer:
         val_fn: Callable[[nn.Module, int], dict[str, float]] | None = None,
         best_metric_key: str = "loss",
         best_is_lower: bool = True,
+        trained_elsewhere: Mapping[str, nn.Module] | None = None,
     ) -> None:
         self.cfg = cfg
         self.run_dir = run_dir
         self.logger = logger
         self.device = resolve_device(cfg.train.device)
         self.channels_last = cfg.train.channels_last
+        # Parameters the optimizer owns but the exported model does not, such as
+        # a classifier head living in the loss (KEHOACH 4.4).
+        self.trained_elsewhere = dict(trained_elsewhere or {})
         self.module = model.to(self.device)
         if self.channels_last:
             self.module = self.module.to(memory_format=torch.channels_last)
@@ -341,6 +345,7 @@ class Trainer:
             "optimizer": self.optimizer.state_dict(),
             "scaler": self.scaler.state_dict(),
             "rng": capture_rng_state(),
+            "elsewhere": {n: m.state_dict() for n, m in self.trained_elsewhere.items()},
             "run_id": self.run_dir.run_id,
             "resumed_from": self.resumed_from,
         }
@@ -366,6 +371,13 @@ class Trainer:
         self.module.load_state_dict(payload["model"])
         if weights_only_state:
             return
+
+        stored = payload.get("elsewhere", {})
+        missing = set(self.trained_elsewhere) - set(stored)
+        if missing:
+            raise ValueError(f"{path}: checkpoint has no state for {sorted(missing)}")
+        for name, module in self.trained_elsewhere.items():
+            module.load_state_dict(stored[name])
 
         self.optimizer.load_state_dict(payload["optimizer"])
         self.scaler.load_state_dict(payload["scaler"])

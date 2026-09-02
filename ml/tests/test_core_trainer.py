@@ -111,6 +111,102 @@ def test_resume_restores_weights_exactly(config_file, tmp_path, tiny_loader) -> 
         assert torch.allclose(resumed.model.state_dict()[key], value), key
 
 
+class CentresInLoss(nn.Module):
+    """A classifier the optimizer owns but the exported model never contains.
+
+    ArcFace puts its per-identity centres here, and they outweigh the student
+    they are trained beside (KEHOACH 4.4).
+    """
+
+    def __init__(self, features: int = 2, classes: int = 3) -> None:
+        super().__init__()
+        self.centres = nn.Parameter(torch.randn(classes, features))
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        return nn.functional.cross_entropy(logits @ self.centres.t(), labels)
+
+
+def _build_with_centres(cfg: Config, run: RunDir, model: nn.Module, centres: nn.Module, loader):
+    optimizer = build_optimizer(nn.ModuleList([model, centres]), cfg.optim)
+    scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
+
+    def step_fn(batch):
+        images, labels = batch
+        loss = centres(model(images), labels)
+        return loss, {"loss": float(loss.detach())}
+
+    return Trainer(
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        train_loader=loader,
+        cfg=cfg,
+        run_dir=run,
+        logger=RunLogger(run.path, tensorboard=False, level="WARNING"),
+        step_fn=step_fn,
+        trained_elsewhere={"centres": centres},
+    )
+
+
+def test_resume_restores_parameters_the_model_does_not_hold(
+    config_file, tmp_path, tiny_loader
+) -> None:
+    """The bug this guards: a head living in the loss came back randomly seeded,
+    while its momentum came back trained, so the resumed arm relearned it."""
+    from tests.conftest import TinyNet
+
+    cfg = _cfg(config_file, tmp_path)
+    run = create_run_dir(cfg)
+    trained = CentresInLoss()
+    _build_with_centres(cfg, run, TinyNet(), trained, tiny_loader).fit()
+    saved = trained.centres.detach().clone()
+
+    resumed_cfg = _cfg(config_file, tmp_path, f"train.resume={run.ckpt_dir / CKPT_LAST}")
+    fresh = CentresInLoss()
+    assert not torch.allclose(fresh.centres, saved)
+    _build_with_centres(resumed_cfg, create_run_dir(resumed_cfg), TinyNet(), fresh, tiny_loader)
+    assert torch.allclose(fresh.centres, saved)
+
+
+def test_resume_refuses_a_checkpoint_missing_those_parameters(
+    config_file, tmp_path, tiny_loader
+) -> None:
+    """Silence here is what let a run train for hours on a randomly seeded head."""
+    from tests.conftest import TinyNet
+
+    cfg = _cfg(config_file, tmp_path)
+    run = create_run_dir(cfg)
+    trainer = _build(cfg, run, TinyNet(), tiny_loader)
+    trainer.fit()
+
+    resumed_cfg = _cfg(config_file, tmp_path, f"train.resume={run.ckpt_dir / CKPT_LAST}")
+    with pytest.raises(ValueError, match="centres"):
+        _build_with_centres(
+            resumed_cfg, create_run_dir(resumed_cfg), TinyNet(), CentresInLoss(), tiny_loader
+        )
+
+
+def test_resume_puts_optimizer_state_beside_its_parameters(
+    config_file, tmp_path, tiny_loader
+) -> None:
+    """Momentum is cast to wherever a parameter sits when the state is restored."""
+    from tests.conftest import TinyNet
+
+    cfg = _cfg(config_file, tmp_path)
+    run = create_run_dir(cfg)
+    _build_with_centres(cfg, run, TinyNet(), CentresInLoss(), tiny_loader).fit()
+
+    resumed_cfg = _cfg(config_file, tmp_path, f"train.resume={run.ckpt_dir / CKPT_LAST}")
+    resumed = _build_with_centres(
+        resumed_cfg, create_run_dir(resumed_cfg), TinyNet(), CentresInLoss(), tiny_loader
+    )
+    for group in resumed.optimizer.param_groups:
+        for param in group["params"]:
+            for value in resumed.optimizer.state.get(param, {}).values():
+                if torch.is_tensor(value):
+                    assert value.device == param.device
+
+
 def test_same_seed_gives_the_same_loss(config_file, tmp_path, tiny_loader) -> None:
     from tests.conftest import TinyNet
 

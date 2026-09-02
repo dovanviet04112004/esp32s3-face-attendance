@@ -208,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         logger=logger,
         step_fn=step_fn,
         val_fn=val_fn if val_loader is not None else None,
+        trained_elsewhere={"distiller": distiller},
         best_metric_key="ap",
         best_is_lower=False,
     )

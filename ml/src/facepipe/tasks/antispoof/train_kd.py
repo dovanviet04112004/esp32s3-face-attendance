@@ -193,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         logger=logger,
         step_fn=step_fn,
         val_fn=val_fn,
+        trained_elsewhere={"distiller": distiller},
         best_metric_key="eer",
     )
     # The loss runs the student itself, so a compiled run has to reach the model
