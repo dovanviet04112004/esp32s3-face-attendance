@@ -515,7 +515,71 @@ vùng mặt — chỗ duy nhất phân biệt hai lớp. Teacher chưa train l�
 
 ---
 
-## 12. Còn nợ
+## 12. A0 trên crop đã sửa + augment phơi sáng
+
+Run `20260902-0140_0212c98_6706a4`, 60 epoch, seed 42, EER tốt nhất **0,1371** ở epoch 57.
+Không đặt cạnh EER của các run trước được: val split sinh lại trên crop mới, hai bên chấm
+trên hai bộ ảnh khác nhau.
+
+```
+ep 1  0,2409    ep 21  0,1719    ep 39  0,1559    ep 55  0,1420
+ep 11 0,1765    ep 29  0,1759    ep 45  0,1509    ep 57  0,1371
+```
+
+Phẳng suốt epoch 11–30 rồi đuôi cosine kéo xuống: 20 epoch cuối đóng góp gần một phần tư
+tổng mức giảm. Cắt ngắn lịch là vứt đúng phần đó.
+
+### 12.1 Bất biến phơi sáng — đã đạt
+
+Ép tối và bẹt tương phản trên chính khung mà mỗi model đang chấm đúng:
+
+| `live_vua` | Model cũ | A0 mới |
+|---|---|---|
+| Nguyên bản | 0,9999 | 0,9969 |
+| Tối 15%, tương phản 80% | **0,0262** | **0,9920** |
+| Tối 30%, tương phản 65% | 0,0066 | 0,9872 |
+| Tối 45%, tương phản 50% | — | 0,9451 |
+
+Mất 94% điểm xuống còn mất 0,5%. Đây là phép đo thẳng vào cơ chế ở §11.6 và nó đóng lại.
+
+### 12.2 Cú đảo ở khoảng cách xa — đã hết
+
+| Nhóm camera thật | Model cũ | A0 mới | |
+|---|---|---|---|
+| Mặt rất xa (163 px) | 0,1403 | **0,9979** | từ chối nhầm → nhận đúng |
+| Màn hình laptop ở xa (121 px) | 0,9295 | **0,0222** | lọt → chặn 100% |
+| Mặt sát camera | 0,9963 | 0,9999 | giữ |
+| Mặt một cánh tay | 0,9999 | 0,9969 | giữ |
+| Quay đầu, nghiêng, ngược sáng | 0,9999 | 0,9992 | giữ |
+| Ảnh thẻ ở cự ly vừa | 0,0027 | 0,0022 | giữ |
+
+Ở model cũ, xa thì mặt thật bị gọi là giả còn màn hình được gọi là thật. Cả hai chiều đều
+đảo lại đúng.
+
+### 12.3 Hai lỗ còn lại
+
+**Đòn màn hình ở cỡ mặt trung bình lọt.** Nhóm `attack_gan` chỉ có 3 khung và chúng không
+đồng ý với nhau:
+
+| Khung | Cạnh mặt / cạnh ngắn khung | Điểm |
+|---|---|---|
+| 000 | 0,36 | **0,9969** lọt |
+| 001 | 0,77 | 0,0006 |
+| 002 | 0,79 | 0,0045 |
+
+Dí thật sát thì bắt được, cỡ trung thì lọt. 🔬 **n=3, một khung sai — chưa đủ nói đây là
+quy luật hay ngoại lệ**, và cũng chưa đủ để bỏ qua: màn hình lọt ở 0,997 là lỗi mở cửa.
+
+**`live_xa` bất định**: trung bình 0,7349, dải 0,1994–0,9929. Khung thấp nhất cũng là khung
+nhoè nhất, nhưng tương quan giữa điểm và độ nét chỉ **+0,378** trên 20 khung, và hai khung
+cùng độ nét 34 chấm 0,27 với 0,99. Nhoè chỉ giải thích một phần.
+
+Hai lỗ này là lý do **chưa chạy teacher và A3**: bảng đối chứng A chỉ có nghĩa khi arm nền
+đã dùng được, mà một đòn tấn công lọt ở 0,997 thì chưa.
+
+---
+
+## 13. Còn nợ
 
 - **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
   đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
