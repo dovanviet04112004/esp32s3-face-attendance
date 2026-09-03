@@ -174,10 +174,12 @@ Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset n
 
 | GPIO | Lý do |
 |---|---|
-| **35, 36, 37** | Octal PSRAM (N16R8) — chạm vào là chết PSRAM |
+| **33, 34, 35, 36, 37** | Octal PSRAM (N16R8) — chạm vào là chết PSRAM. Bản Octal cần thêm SPIIO4–7 và SPIDQS, không chỉ ba chân cuối |
 | 26–32 | SPI Flash nội (không ra chân trên board này) |
 | 19, 20 | USB D+ / D− (nạp + console USB-CDC) |
 | 0, 3, 45, 46 | **Strapping** — dùng được nhưng phải theo quy tắc ở bảng dưới |
+
+ESP32-S3 **không có** GPIO22–25. Dải chân thật là 0–21 và 26–48; đừng tính bốn số đó vào chân trống.
 
 ### 2.3 Bảng đấu nối ngoại vi
 
@@ -191,7 +193,7 @@ Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset n
 | SDA / MOSI | **GPIO41** | SPI MOSI | |
 | SDO / MISO | — | không nối | Không cần đọc ngược từ panel |
 | CS | **GPIO47** | Chip select | |
-| DC / RS | **GPIO45** | Data / Command | ⚠️ **Strapping VDD_SPI** — hàn **10 kΩ pull-down** xuống GND, nếu không có thể không boot |
+| DC / RS | **GPIO39** | Data / Command | Chân thường. Không đặt trên GPIO45: board LCD hay có pull-up ở DC, mà GPIO45 là strapping VDD_SPI — kéo lên lúc reset là chọn flash 1.8 V và board không boot |
 | RES | **GPIO40** | Reset panel | (nguyên là SD_DATA — trống vì không dùng microSD) |
 | BLK | **GPIO21** | Backlight | LEDC PWM 5 kHz. Nếu backlight > 40 mA → qua MOSFET N (AO3400) |
 
@@ -223,6 +225,8 @@ Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset n
 
 > **Trình tự chọn địa chỉ GT911** (làm trong `drv_touch`): kéo RST = 0 → đặt INT là output, 0 = `0x5D` / 1 = `0x14` → giữ ≥ 10 ms → thả RST = 1 → giữ INT thêm 50 ms → chuyển INT sang input có ngắt.
 
+⚠️ Trình tự này **bắt buộc chạy**, không phải tuỳ chọn. PCF8574 là chân quasi-bidirectional: lúc cấp nguồn mọi chân bật lên HIGH qua nguồn dòng ~100 µA, nên P0 nhả reset GT911 ngay trước khi firmware kịp chạy, và GT911 chốt địa chỉ theo GPIO14 đang thả nổi. Địa chỉ sau power-up là bất định; chỉ lần reset do `drv_touch` chủ động mới quyết định được nó.
+
 #### D. ToF VL53L1X
 
 | Chân | Nối tới | Ghi chú |
@@ -231,7 +235,7 @@ Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset n
 | GND | GND | |
 | SDA / SCL | GPIO1 / GPIO2 | bus chung |
 | **GPIO1 (INT)** | **GPIO3** | GPIO3 nằm trong dải RTC GPIO (0–21) → **dùng làm nguồn đánh thức deep-sleep**. ⚠️ Strapping JTAG-source: để hở lúc boot, VL53L1X chỉ kéo xuống sau khi được cấu hình → an toàn |
-| **XSHUT** | **PCF8574 P1** | Giữ LOW khi boot, thả sau khi expander init |
+| **XSHUT** | **PCF8574 P1** | P1 lên HIGH lúc cấp nguồn nên VL53L1X tự chạy ở địa chỉ mặc định `0x29` — đúng thứ ta cần vì chỉ có một con. P1 chỉ dùng để reset lại lúc chạy |
 
 #### E. Âm thanh MAX98357A (I²S) + loa 4Ω/3W
 
@@ -241,33 +245,46 @@ Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset n
 | GND | GND | |
 | **BCLK** | **GPIO43** | Nguyên là U0TXD → giải phóng bằng `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y` |
 | **LRC / WS** | **GPIO44** | Nguyên là U0RXD |
-| **DIN** | **GPIO46** | ⚠️ Strapping — hàn **10 kΩ pull-down**, mặc định LOW lúc boot là đúng |
+| **DIN** | **GPIO46** | Strapping này chỉ chọn mức log ROM, không chặn boot. DIN là input trở kháng cao, pull-down nội của chip đã đủ — không cần hàn điện trở |
 | **SD (shutdown/mode)** | **PCF8574 P3** | Kéo LOW khi không phát → hết nhiễu xì. Hoặc nối 100 kΩ lên VIN = chế độ mono (L+R)/2 |
 | GAIN | để hở | = 9 dB. Nối GND = 12 dB |
 | OUT+ / OUT− | Loa | Ngõ ra **cầu (BTL)** — **tuyệt đối không nối OUT− xuống GND** |
 | Tụ lọc | 470–1000 µF gần VIN | Bắt buộc, nếu không sẽ reset board khi phát to |
 
-#### F. Chấp hành — CHỌN 1 TRONG 2
+#### F. Chấp hành — lắp cả hai, chọn lúc chạy
 
-**F1 — Relay module 5V opto**
+Hai bộ chấp hành cùng tồn tại trên board. Servo gạt thanh chắn là thứ thực sự mở cửa mô hình; relay là ngõ ra dành cho khoá điện, đấu sẵn nhưng **tiếp điểm để hở**. `svc_door` bọc cả hai sau `IDoor` (§4.5.5e), chọn bằng `Kconfig` — logic chấm công không biết bên dưới là cái nào.
 
-| Chân | Nối tới | Ghi chú |
+**F1 — Module 4 relay 5 V opto, tiếp điểm để hở**
+
+| Chân module | Nối tới | Ghi chú |
 |---|---|---|
-| VCC | 5V | |
+| VCC | **3V3** | Chỉ nuôi LED opto. Cùng mức với PCF8574 nên lúc P2 ở HIGH thì hai đầu LED bằng áp, opto tắt hẳn |
+| **JD-VCC** | **Rail 2 — 5 V riêng** | **Rút jumper VCC–JD-VCC trước.** Còn jumper thì 4 cuộn hút ăn chung rail ESP32 |
 | GND | GND chung | |
-| IN | **PCF8574 P2** | Relay opto thường **active-LOW**; PCF8574 sink 25 mA nhưng chỉ source ~100 µA → đi đúng chiều sink |
+| **IN1** | **PCF8574 P2** | Active-LOW. PCF8574 sink 25 mA nhưng chỉ source ~100 µA → đi đúng chiều nó khoẻ |
+| IN2–IN4 | để trống | Dư cho sau, muốn dùng thì lấy P4–P6 |
+| COM / NO kênh 1 | **để hở** | Chưa có khoá điện. Đây là ngõ ra dành sẵn |
 
-Nguồn 5V/2A dùng chung được cho cả hệ.
+Nghiệm thu `drv_relay` không cần tải: đóng kênh 1 thì nghe tiếng cạch, LED kênh 1 sáng, và đo thông mạch COM–NO thấy nối. Ba dấu hiệu đó đủ chứng minh driver chạy đúng.
 
-**F2 — Servo MG996R + thanh chắn**
+🔬 Sau khi đấu, đặt P2 ở HIGH rồi nhìn LED kênh 1: phải tắt hẳn. Nguồn HIGH của PCF8574 chỉ ~100 µA, đủ yếu để không kích opto nhưng đây là chỗ sát ngưỡng — LED còn sáng mờ hoặc relay rung thì hàn 4,7 kΩ từ IN1 lên 3V3. Hết cách thì dời IN1 sang GPIO48, bỏ LED RGB onboard.
+
+**F1b — Khi lắp khoá điện thật (chưa làm)**
+
+Ngõ ra ở trên nối được thẳng vào khoá chốt điện 12 V mà không sửa gì bên firmware. Lúc đó cần thêm ba thứ: khoá chốt 12 V ~0,6 A loại fail-secure, một nguồn 12 V/2 A riêng, và một diode **1N4007 mắc song song hai đầu khoá, vạch trắng về phía +12 V**. Mạch 12 V **không** chung mass với ESP32; nó chỉ gặp phần còn lại ở tiếp điểm cơ khí bên trong relay.
+
+Thiếu 1N4007 thì lúc relay ngắt, từ trường cuộn khoá sập sinh xung ngược vài trăm vôn đánh hồ quang qua tiếp điểm; tiếp điểm rỗ dần rồi dính, và cửa mở vĩnh viễn.
+
+**F2 — Servo SG90 + thanh chắn**
 
 | Chân | Nối tới | Ghi chú |
 |---|---|---|
 | PWM (vàng) | **GPIO38** | Phải là GPIO thật (LEDC hoặc MCPWM, 50 Hz) — **không** qua PCF8574 |
-| VCC (đỏ) | **Nguồn 5–6 V / ≥ 2 A RIÊNG** | MG996R stall ~2.5 A, dùng chung nguồn với ESP32 là brownout chắc chắn |
-| GND (nâu) | GND chung với ESP32 | Bắt buộc chung mass |
+| VCC (đỏ) | **Nguồn 5 V riêng** (chung với JD-VCC) | SG90 stall ~700 mA và cú sụt áp đó đủ làm ESP32 brownout giữa lúc mở cửa |
+| GND (nâu) | GND chung với ESP32 | Bắt buộc chung mass, nếu không xung PWM không có mốc tham chiếu |
 
-Nếu chọn F2 và bỏ luôn PCF8574: GT911_RST → GPIO39, VL53L1X_XSHUT → GPIO0 (dùng chung nút BOOT), MAX98357_SD nối cứng lên VIN qua 100 kΩ. Vẫn đủ chân.
+Tụ 470 µF sát chân nguồn servo. Xung 50 Hz, độ rộng 500–2400 µs quét hết tầm ~180°.
 
 #### G. PCF8574
 
@@ -278,36 +295,51 @@ Nếu chọn F2 và bỏ luôn PCF8574: GT911_RST → GPIO39, VL53L1X_XSHUT → 
 | INT | không dùng (poll trong `io_task`) |
 | **P0** | GT911_RST |
 | **P1** | VL53L1X_XSHUT |
-| **P2** | RELAY_IN |
+| **P2** | RELAY_IN1 |
 | **P3** | MAX98357_SD |
-| **P4** | LED xanh (nhận diện OK) |
-| **P5** | LED đỏ (từ chối / spoof) |
-| P6, P7 | dự phòng |
+| P4–P7 | dự phòng (P4–P6 dành cho relay IN2–IN4 nếu đấu tiếp) |
+
+Trạng thái nhận diện hiện trên LCD nên không có LED rời. Mọi chân P đều lên HIGH lúc cấp nguồn (§2.3.C) — chỉ giao cho P những việc mà mức HIGH lúc khởi động là vô hại. Relay opto active-LOW khớp đúng luật này: chưa có firmware thì cả 4 kênh tắt, cửa khoá chặt.
 
 ### 2.4 Chân trống sau khi lắp hết
 
 | GPIO | Trạng thái |
 |---|---|
-| GPIO38 | trống (hoặc servo PWM ở phương án F2) |
-| GPIO39 | trống |
+| GPIO45 | **để trống, không nối gì** — strapping VDD_SPI, pull-down nội giữ mức thấp lúc reset |
 | GPIO48 | LED RGB WS2812 onboard — dùng làm đèn báo trạng thái hệ thống |
 | GPIO0 | nút BOOT onboard — dùng làm nút "factory reset" (giữ 5 s) |
 
+**Không còn chân GPIO thường nào trống.** GPIO38 là servo PWM, GPIO39 là LCD DC. Cần thêm đường điều khiển chậm thì lấy ở PCF8574 — còn P4–P7. Cần thêm đường nhanh thì chỉ còn cách lấy GPIO48 và bỏ LED RGB onboard, không có chỗ nào khác.
+
 ### 2.5 Ngân sách nguồn
+
+Hai rail, chung mass.
+
+**Rail 1 — 5 V / 2 A, logic và ngoại vi**
 
 | Tải | Dòng điển hình | Dòng đỉnh |
 |---|---|---|
 | ESP32-S3 (Wi-Fi TX) | 100 mA | **350 mA** |
 | OV5640 (đang stream) | 120 mA | 200 mA |
 | LCD ST7796 + backlight | 100 mA | 150 mA |
-| MAX98357A + loa 3W | 30 mA | **600 mA** (5V) |
+| MAX98357A + loa 3W | 30 mA | **600 mA** |
 | VL53L1X | 20 mA | 40 mA |
 | GT911 | 5 mA | |
-| Relay | — | 70 mA |
-| **Tổng (phương án F1)** | ~380 mA | **~1.4 A** |
+| LED opto relay (qua 3V3) | 2 mA | 4 mA |
+| **Tổng** | ~377 mA | **~1.34 A** |
 
-Nguồn 5V/2A đủ cho F1. Phương án F2 bắt buộc nguồn thứ hai 5–6V/2A riêng cho servo.
-Tụ: 1000 µF gần jack 5V, 470 µF gần MAX98357A, 100 µF gần LCD, 100 nF sát mỗi IC.
+**Rail 2 — 5 V / ≥ 1,5 A, cơ cấu chấp hành**
+
+| Tải | Dòng điển hình | Dòng đỉnh |
+|---|---|---|
+| SG90 | 150 mA | **700 mA** (kẹt) |
+| Cuộn hút relay (JD-VCC) | 70 mA (1 kênh) | 280 mA (cả 4) |
+
+Tách rail 1 khỏi rail 2 vì hai đỉnh trùng nhau: kiosk phát tiếng báo đúng lúc mở cửa. Chung một rail thì 1,34 A của đỉnh amp cộng 0,7 A của servo đủ kéo sụt áp và reset ESP32. Rút jumper VCC–JD-VCC chính là thao tác đẩy cuộn hút sang rail 2.
+
+Lắp khoá điện theo §2.3.F1b thì thêm rail 3 — 12 V / 2 A, chỉ nuôi khoá, 0 mA lúc nghỉ và 600 mA lúc hút, cách ly hoàn toàn qua tiếp điểm relay.
+
+Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân nguồn servo, 100 µF gần LCD.
 
 ### 2.6 Datasheet
 
@@ -324,7 +356,9 @@ Tụ: 1000 µF gần jack 5V, 470 µF gần MAX98357A, 100 µF gần LCD, 100 nF
 | MAX98357A (I²S DAC/amp) | https://www.analog.com/media/en/technical-documentation/data-sheets/MAX98357A-MAX98357B.pdf |
 | PCF8574 (I/O expander) | https://www.ti.com/lit/ds/symlink/pcf8574.pdf |
 | DS3231 (RTC, tùy chọn) | https://www.analog.com/media/en/technical-documentation/data-sheets/DS3231.pdf |
-| MG996R (servo, phương án F2) | https://www.electronicoscaldas.com/datasheet/MG996R_Tower-Pro.pdf |
+| SG90 (servo) | http://www.ee.ic.ac.uk/pcheung/teaching/DE1_EE/stores/sg90_datasheet.pdf |
+| SRD-05VDC-SL-C (relay trên module) | https://www.circuitbasics.com/wp-content/uploads/2015/11/SRD-05VDC-SL-C-Datasheet.pdf |
+| 1N4007 (diode dập) | https://www.vishay.com/docs/88503/1n4001.pdf |
 
 ---
 
@@ -1610,7 +1644,7 @@ public:
 
 ##### e) `svc_door` — chỗ interface trả nợ trực tiếp
 
-Vấn đề "chưa chốt relay hay servo" giải bằng đúng chỗ này. Giữ nguyên quy tắc *driver viết bằng C*, đặt trừu tượng lên tầng service:
+Board mang cả hai bộ chấp hành (§2.3.F): servo gạt thanh chắn mở cửa mô hình, relay là ngõ ra dành cho khoá điện với tiếp điểm để hở. Cả hai đều đấu sẵn và đều nghiệm thu được trên phần cứng thật — relay bằng tiếng cạch, đèn kênh và phép đo thông mạch COM–NO — nên trừu tượng ở đây có hai hiện thực thật chứ không phải một chỗ trống chờ. Giữ nguyên quy tắc *driver viết bằng C*, đặt trừu tượng lên tầng service:
 
 ```
 components/drv_relay/   [C]   ← driver thuần, chỉ biết bật/tắt chân PCF8574
@@ -1629,7 +1663,7 @@ class RelayDoor final : public IDoor { /* gọi drv_relay_set() */ };
 class ServoDoor final : public IDoor { /* gọi drv_servo_angle() */ };
 ```
 
-`svc_attendance` chỉ thấy `IDoor&`. Đổi từ relay sang servo là đổi **một dòng** trong `main/app_wiring.c`, chọn bằng `Kconfig`. Không sửa gì trong logic chấm công.
+`svc_attendance` chỉ thấy `IDoor&`. Đổi từ relay sang servo là đổi **một dòng** trong `main/app_wiring.c`, chọn bằng `Kconfig`. Không sửa gì trong logic chấm công. Cùng chỗ cắm đó nhận `FakeDoor` để `test_apps` chạy được máy trạng thái chấm công trên host, không cần board.
 
 ##### f) `svc_attendance` — máy trạng thái bảng, **cố ý không dùng State pattern**
 
@@ -2399,7 +2433,7 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 │                     cosine vs face_db  →  id + score              │
 │                                    ▼                              │
 │              attendance state machine (chống trùng N phút)        │
-│                    ├─► LCD kết quả  ├─► loa  ├─► relay/servo      │
+│                    ├─► LCD kết quả  ├─► loa ├─► IDoor: relay/servo│
 │                    └─► LittleFS (append) ──► q_uplink             │
 └───────────────────────────────┬───────────────────────────────────┘
                                 │ MQTTS 8883 (QoS1, LWT)

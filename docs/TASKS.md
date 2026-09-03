@@ -161,7 +161,7 @@ Chạy song song với E4–E6. Không phụ thuộc model.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E7-T1 | Chốt cơ cấu chấp hành: relay + PCF8574 **hay** servo MG996R | KẾ HOẠCH §2.3F còn đúng một phương án | — |
+| E7-T1 | Đấu cả hai cơ cấu chấp hành theo §2.3F: module 4 relay opto (tiếp điểm để hở) và servo SG90 | Rút jumper JD-VCC, P2 ở HIGH thấy relay tắt hẳn, P2 ở LOW nghe cạch và đo thông mạch COM–NO, servo quét đủ tầm | — |
 | E7-T2 | `main/app_config.h` + `bsp_board` + `partitions.{dev,prod}.csv` | Board boot, PSRAM 8MB nhận đủ | — |
 | E7-T2b | **3 profile build** `sdkconfig.{dev,bench,prod}` theo §4.5.9, kèm flash QIO 80 MHz | 3 lệnh build ở §4.5.9 đều chạy, `bench` dùng `-O2` | E7-T2 |
 | E7-T3 | `common/` — RAII guard: `FrameGuard` `LockGuard` `MmapRegion` `Queue<T,N>` | Unit test từng guard | E7-T2 |
@@ -170,7 +170,7 @@ Chạy song song với E4–E6. Không phụ thuộc model.
 | E7-T6 | `drv_touch` (GT911, trình tự chọn địa chỉ) | Đọc được điểm chạm | E7-T4 |
 | E7-T7 | `drv_tof` (VL53L1X ULD) | Đọc khoảng cách, ngắt GPIO3 hoạt động | E7-T4 |
 | E7-T8 | `drv_audio` (I2S + MAX98357A) | Phát WAV từ SPIFFS, không xì | E7-T2 |
-| E7-T9 | `drv_relay` **hoặc** `drv_servo` + `svc_door` (IDoor + adapter) | Mở/đóng được | E7-T1, E7-T3 |
+| E7-T9 | `drv_relay` **và** `drv_servo` + `svc_door` (IDoor + `RelayDoor` + `ServoDoor` + `FakeDoor`) | Đổi `Kconfig` là đổi được cơ cấu, `FakeDoor` chạy test trên host | E7-T1, E7-T3 |
 | E7-T10 | `sys_storage` — NVS, LittleFS, mmap model, `storage_format.h` + `static_assert` | Ghi/đọc `faces.bin` sống sót khi rút điện giữa chừng | E7-T2 |
 | E7-T11 | Preview camera → LCD chạy liên tục | ≥ 12 fps, LVGL không giật | E7-T4, E7-T5 |
 | E7-T12 | `tools/check_layers.py` chạy sạch trên firmware thật | CI xanh | E7-T10 |
