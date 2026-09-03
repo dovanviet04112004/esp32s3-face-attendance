@@ -404,6 +404,99 @@ def test_resume_into_a_compiled_run_restores_the_weights(
         assert torch.allclose(resumed.module.state_dict()[key], value), key
 
 
+class LossHoldingTheStudent(nn.Module):
+    """The distiller's shape: it runs the student and owns centres beside it.
+
+    A compiled run points this at the wrapper so the loss reaches the compiled
+    graph, which is what puts the prefix into its state_dict (KEHOACH 4.4).
+    """
+
+    def __init__(self, student: nn.Module, features: int = 2, classes: int = 3) -> None:
+        super().__init__()
+        self.student = student
+        self.centres = nn.Parameter(torch.randn(classes, features))
+
+    def forward(self, images: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        return nn.functional.cross_entropy(self.student(images) @ self.centres.t(), labels)
+
+
+def _build_holding_student(cfg: Config, run: RunDir, student: nn.Module, loader):
+    holder = LossHoldingTheStudent(student)
+    optimizer = build_optimizer(holder, cfg.optim)
+    trainer = Trainer(
+        model=student,
+        optimizer=optimizer,
+        scheduler=build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs),
+        train_loader=loader,
+        cfg=cfg,
+        run_dir=run,
+        logger=RunLogger(run.path, tensorboard=False, level="WARNING"),
+        step_fn=lambda batch: (holder(*batch), {}),
+        trained_elsewhere={"holder": holder},
+    )
+    holder.student = trainer.model
+    return trainer, holder
+
+
+def test_a_compiled_run_keeps_the_prefix_out_of_elsewhere(
+    monkeypatch, config_file, tmp_path, tiny_loader
+) -> None:
+    """The bug this guards: the loss was checkpointed through the compiled
+    wrapper but read back through the bare student, so no key ever matched."""
+    from tests.conftest import TinyNet
+
+    monkeypatch.setattr(torch, "compile", lambda m, **kw: PrefixWrapper(m))
+    cfg = _cfg(config_file, tmp_path, "train.compile=true")
+    run = create_run_dir(cfg)
+    trainer, holder = _build_holding_student(cfg, run, TinyNet(), tiny_loader)
+    assert isinstance(holder.student, PrefixWrapper)
+    trainer.fit()
+
+    stored = torch.load(run.ckpt_dir / CKPT_LAST, map_location="cpu", weights_only=False)
+    assert not any("_orig_mod." in key for key in stored["elsewhere"]["holder"])
+
+
+def test_a_compiled_checkpoint_resumes_into_the_loss(
+    monkeypatch, config_file, tmp_path, tiny_loader
+) -> None:
+    from tests.conftest import TinyNet
+
+    monkeypatch.setattr(torch, "compile", lambda m, **kw: PrefixWrapper(m))
+    cfg = _cfg(config_file, tmp_path, "train.compile=true")
+    run = create_run_dir(cfg)
+    trainer, holder = _build_holding_student(cfg, run, TinyNet(), tiny_loader)
+    trainer.fit()
+    saved = holder.centres.detach().clone()
+
+    resumed_cfg = _cfg(
+        config_file, tmp_path, "train.compile=true", f"train.resume={run.ckpt_dir / CKPT_LAST}"
+    )
+    _, fresh = _build_holding_student(
+        resumed_cfg, create_run_dir(resumed_cfg), TinyNet(), tiny_loader
+    )
+    assert torch.allclose(fresh.centres, saved)
+
+
+def test_an_uncompiled_run_can_resume_a_compiled_checkpoint(
+    monkeypatch, config_file, tmp_path, tiny_loader
+) -> None:
+    """Compiling is a runtime choice, so it must not fence off a checkpoint."""
+    from tests.conftest import TinyNet
+
+    monkeypatch.setattr(torch, "compile", lambda m, **kw: PrefixWrapper(m))
+    cfg = _cfg(config_file, tmp_path, "train.compile=true")
+    run = create_run_dir(cfg)
+    trainer, holder = _build_holding_student(cfg, run, TinyNet(), tiny_loader)
+    trainer.fit()
+    saved = holder.centres.detach().clone()
+
+    resumed_cfg = _cfg(config_file, tmp_path, f"train.resume={run.ckpt_dir / CKPT_LAST}")
+    _, fresh = _build_holding_student(
+        resumed_cfg, create_run_dir(resumed_cfg), TinyNet(), tiny_loader
+    )
+    assert torch.allclose(fresh.centres, saved)
+
+
 def test_resume_keeps_the_best_metric_so_a_worse_epoch_cannot_overwrite_it(
     config_file, tmp_path, tiny_model, tiny_loader
 ) -> None:

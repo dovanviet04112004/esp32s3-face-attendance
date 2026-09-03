@@ -30,6 +30,7 @@ CKPT_LAST = "last.pth"
 CKPT_BEST = "best.pth"
 CKPT_FORMAT_VER = 2
 RESUMED_FROM_NAME = "resumed_from.txt"
+COMPILE_PREFIX = "_orig_mod."
 
 
 def resolve_device(name: str = "auto") -> torch.device:
@@ -48,6 +49,15 @@ def _compiled(model: nn.Module, mode: bool | str) -> nn.Module:
     if not mode:
         return model
     return torch.compile(model, mode=mode if isinstance(mode, str) else "default")
+
+
+def _uncompiled_state(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Strip the prefix torch.compile inserts, keeping it out of the checkpoint.
+
+    Whether a run compiled is a runtime choice, so a checkpoint written by one
+    has to load into a run that did not, and the reverse.
+    """
+    return {key.replace(COMPILE_PREFIX, ""): value for key, value in state.items()}
 
 
 class ModelEma:
@@ -345,7 +355,9 @@ class Trainer:
             "optimizer": self.optimizer.state_dict(),
             "scaler": self.scaler.state_dict(),
             "rng": capture_rng_state(),
-            "elsewhere": {n: m.state_dict() for n, m in self.trained_elsewhere.items()},
+            "elsewhere": {
+                n: _uncompiled_state(m.state_dict()) for n, m in self.trained_elsewhere.items()
+            },
             "run_id": self.run_dir.run_id,
             "resumed_from": self.resumed_from,
         }
@@ -377,7 +389,7 @@ class Trainer:
         if missing:
             raise ValueError(f"{path}: checkpoint has no state for {sorted(missing)}")
         for name, module in self.trained_elsewhere.items():
-            module.load_state_dict(stored[name])
+            module.load_state_dict(_uncompiled_state(stored[name]))
 
         self.optimizer.load_state_dict(payload["optimizer"])
         self.scaler.load_state_dict(payload["scaler"])
