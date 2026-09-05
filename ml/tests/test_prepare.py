@@ -16,6 +16,7 @@ from facepipe.data.prepare.celeba_spoof_parquet import (
     Sample,
     crop_sizes,
     encode_crops,
+    face_within,
     fitted_box,
     split_of,
 )
@@ -136,6 +137,16 @@ def test_a_face_with_no_room_shrinks_the_scale_rather_than_the_squareness() -> N
     (left, top, right, bottom), reached = fitted_box((10, 10, 90, 90), 2.7, 100, 100)
     assert right - left == bottom - top
     assert reached < 2.7
+
+
+def test_a_numpy_box_produces_a_record_json_can_encode() -> None:
+    """Detector boxes are numpy scalars, and every record is written as json."""
+    import numpy as np
+
+    box = np.array([100.0, 200.0, 220.0, 410.0], dtype=np.float32)
+    crop, reached = fitted_box(tuple(box), 2.7, 450, 600)
+    payload = {"wide_scale": round(reached, 4), "face_in_wide": face_within(tuple(box), crop)}
+    assert json.loads(json.dumps(payload)) == payload
 
 
 def test_an_off_centre_face_slides_the_square_rather_than_cutting_the_face() -> None:

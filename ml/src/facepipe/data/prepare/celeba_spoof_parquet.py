@@ -103,9 +103,9 @@ def fitted_box(
     back to square distorts the face and padding invents context, and both read
     as attack cues (KEHOACH §3).
     """
-    x1, y1, x2, y2 = box_xyxy
+    x1, y1, x2, y2 = (float(value) for value in box_xyxy)
     cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-    face = max(1, max(x2 - x1, y2 - y1))
+    face = max(1.0, max(x2 - x1, y2 - y1))
     side = max(1, int(min(face * scale, width, height)))
     left = min(max(0, round(cx - side / 2.0)), width - side)
     top = min(max(0, round(cy - side / 2.0)), height - side)
@@ -117,15 +117,19 @@ def crop_sizes(size: int = CROP_SIZE, wide_size: int = WIDE_SIZE) -> dict[str, i
 
 
 def face_within(box_xyxy: tuple[int, int, int, int], crop: tuple[int, int, int, int]):
-    """The face box in crop-relative units, which is what recropping needs."""
+    """The face box in crop-relative units, which is what recropping needs.
+
+    Detector boxes arrive as numpy scalars, and those reach the record as values
+    json cannot encode, so every component is cast on the way out.
+    """
     x1, y1, x2, y2 = box_xyxy
     left, top, right, _ = crop
-    side = max(1, right - left)
+    side = max(1, int(right) - int(left))
     return [
-        round((x1 - left) / side, 4),
-        round((y1 - top) / side, 4),
-        round((x2 - left) / side, 4),
-        round((y2 - top) / side, 4),
+        round(float(x1 - left) / side, 4),
+        round(float(y1 - top) / side, 4),
+        round(float(x2 - left) / side, 4),
+        round(float(y2 - top) / side, 4),
     ]
 
 
