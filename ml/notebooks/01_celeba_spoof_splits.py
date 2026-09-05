@@ -59,7 +59,8 @@ for split in SPLITS:
     for path in sorted(RAW.glob(f"{split}-*.parquet"))[:4]:
         counts.update(pq.read_table(path, columns=["Class"]).column("Class").to_pylist())
     total = sum(counts.values())
-    print(f"{split:6} " + "  ".join(f"{k}={v} ({v / total:.1%})" for k, v in sorted(counts.items())))
+    shares = "  ".join(f"{k}={v} ({v / total:.1%})" for k, v in sorted(counts.items()))
+    print(f"{split:6} {shares}")
 
 # %% [markdown]
 # Both classes are present everywhere, so nothing is missing in that sense. The
