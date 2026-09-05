@@ -601,7 +601,7 @@ là cùng một kết luận §10 rút ra trên 48 khung camera, giờ đo lại
 Hạ về 0,90 cắt tỉ lệ từ chối nhầm đi 4,8 lần trên `0140`, đổi lấy APCER tăng từ 0,098 lên
 0,169 **trên CelebA-Spoof**. Con số APCER đó không mang sang thiết bị được: §11.3 và §12.2
 đo trên khung camera thật cho cách biệt 108–136 lần, tức trên miền thiết bị hai lớp nằm xa
-nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§16).
+nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§17).
 
 `0140` tốt hơn ở **đuôi dưới của lớp thật** — p5 từ 0,8513 lên 0,9739 — mà đuôi dưới chính
 là chỗ ngưỡng cắt. Ở đỉnh thì hai bên như nhau (cả hai trung vị 1,0000).
@@ -967,12 +967,108 @@ về sát cấu hình đã biết là tốt; bằng chứng thật chỉ có sau
 
 ---
 
-## 16. Còn nợ
+## 16. A0 sau khi có cổng — 5/6 mốc đạt
+
+Run `20260905-1740_865b5d0_64c387`, 60 epoch, seed 42, 17:40 → 00:16 (6 giờ 36 phút).
+EER val tốt nhất **0,1297** ở epoch 59, tức chính epoch cuối — đuôi cosine còn giảm tới lúc
+hết lịch. Sáu mốc dưới đây chốt **trước** khi thấy kết quả.
+
+### 16.1 Bảng mốc
+
+| # | Mốc | Kết quả | |
+|---|---|---|---|
+| 1 | `live_kho` mặt thật xoay nghiêng 12/12 @0,90 | **12/12** | ✅ |
+| 2 | `attack_anh` ảnh thẻ trên màn hình 0/12 lọt | **0/12** | ✅ |
+| 3 | ACER 111 khung @0,90 ≤ 0,133 | **0,1184** | ✅ |
+| 4 | Axon `replay_*` APCER ≤ 0,09 | **0,0889 / 0,0125** | ✅ |
+| 5 | Axon `selfies` BPCER ≤ 0,29 | **0,4167** | ❌ |
+| 6 | EER val ≤ 0,14 | **0,1297** | ✅ |
+
+### 16.2 Ba bộ trọng số trên 111 khung camera
+
+| Ngưỡng | | `0140` cũ | `0932` không cổng | **`1740` có cổng** |
+|---|---|---|---|---|
+| 0,50 | BPCER / APCER / **ACER** | 0,0263 / 0,0857 / **0,0560** | 0,1447 / 0,8571 / **0,5009** | 0,1316 / 0,1714 / **0,1515** |
+| **0,90** | BPCER / APCER / **ACER** | 0,2368 / 0,0286 / **0,1327** | 0,3684 / 0,3143 / **0,3414** | 0,2368 / **0,0000** / **0,1184** |
+| 0,99 | BPCER / APCER / **ACER** | 0,2500 / 0,0286 / **0,1393** | 0,4079 / 0,0000 / **0,2039** | 0,2500 / 0,0000 / **0,1250** |
+
+Ở 0,90 bộ vá **trội hơn `0140` theo nghĩa chặt**: cùng tỉ lệ từ chối mặt thật, mà không đòn
+tấn công nào lọt. Ở 0,50 thì `0140` vẫn hơn — điểm vận hành quyết định câu trả lời.
+
+### 16.3 Nhóm nào đổi
+
+| Nhóm | n | `0140` | `0932` | **`1740`** |
+|---|---|---|---|---|
+| `live_kho` mặt thật nghiêng | 12 | 12/12 | **0/12** | **12/12** |
+| `live_gan` · `live_vua` · `live_rat_xa` | 44 | 44/44 | 44/44 | 44/44 |
+| `live_xa` | 20 | 2/20 | 4/20 | 2/20 |
+| `attack_anh` | 12 | 0/12 | **6/12** | **0/12** |
+| `attack_xa` | 20 | 0/20 | 4/20 | **0/20** |
+| `attack_gan` | 3 | 1/3 | 1/3 | **0/3** |
+
+`live_kho` quay lại 12/12 và `attack_gan` lần đầu sạch 0/3 — lỗ §12.3 đóng lại. Chẩn đoán
+§15 được xác nhận: cổng xác suất là thứ thiếu, không phải dải sai.
+
+### 16.4 Trên dữ liệu và khác miền
+
+| | `0140` | `0932` | **`1740`** |
+|---|---|---|---|
+| val `test:0:10` EER | 0,1406 | **0,1199** | 0,1297 |
+| `test:10:` ACER | 0,1239 | **0,1063** | 0,1159 |
+| NUAA HTER | 0,1529 | 0,1329 | **0,0764** |
+| NUAA BPCER | 0,3046 | 0,2561 | **0,1356** |
+| Axon `selfies` BPCER | **0,2917** | 0,5000 | 0,4167 |
+| Axon `replay_display` APCER | 0,0889 | 0,0889 | 0,0889 |
+| Axon `replay_mobile` APCER | 0,0250 | 0,0375 | **0,0125** |
+
+NUAA HTER giảm một nửa và BPCER giảm từ 30% xuống 14% — chuyển miền tốt hơn hẳn cả hai bộ
+trước. Đây là bằng chứng độc lập với 111 khung.
+
+### 16.5 Mốc 5 trượt, nhưng bộ đo quá nhỏ để kết luận
+
+`selfies` có **n = 24**. BPCER 0,4167 là 10/24, mốc 0,2917 là 7/24 — chênh đúng **ba khung**.
+Độ lệch chuẩn nhị thức ở n=24, p=0,29 là 0,093, nên khoảng cách này là 1,34σ: không phân
+biệt được với nhiễu. 🔬 **Ghi là trượt vì mốc đặt trước là trượt**, không diễn giải lại thành
+đạt; nhưng cũng không đủ cơ sở để nói bộ vá kém hơn ở chuyển miền — NUAA, n=5.110, nói ngược
+lại rõ ràng.
+
+### 16.6 Hai chỗ chưa mượt
+
+**`live_xa` vẫn 2/20.** Không bộ nào qua được, kể cả `0932`. Bản vá không đụng tới: mặt ở xa
+thì kết cấu không đủ phân giải để đọc, đây là hạn chế của crop 80 px chứ không phải augment.
+
+**Tám khung chụp tay chỉ 2/8 qua @0,90**, so với 4/8 của `0140`:
+
+| Khung | `0140` | `0932` | `1740` |
+|---|---|---|---|
+| 210115 | 0,9817 | 1,0000 | **0,9999** |
+| 210309 | 0,1464 | 0,9885 | **0,9972** |
+| 210124 | 0,9395 | 0,0641 | 0,8959 |
+| 210043 | 0,9904 | 0,9861 | 0,8949 |
+| 210051 | 0,6650 | 0,9989 | 0,8283 |
+| 210059 | 0,9964 | 0,8823 | 0,6948 |
+| 210317 | 0,7883 | 0,9983 | 0,4820 |
+| 210133 | 0,3052 | 0,9851 | **0,0271** |
+
+Bốn khung nằm trong dải 0,83–0,90, nên ngưỡng 0,80 cho 5/8. 🔬 **n=8, cả tám là mặt thật**,
+không có khung tấn công nào để cân — bảng này không tự nó chọn được ngưỡng. Nó nói rằng
+ngưỡng tối ưu trên 111 khung chưa chắc tối ưu ở cự ly gần, và đó là câu hỏi chỉ tập tự thu
+bằng OV5640 trả lời được.
+
+### 16.7 Chốt
+
+A0 dùng được: 5/6 mốc đạt, mốc trượt duy nhất nằm trên bộ 24 mẫu. Bộ trọng số
+`20260905-1740_865b5d0_64c387` là arm nền cho bảng đối chứng §3.7. Ngưỡng vận hành tạm đặt
+**0,90**; nó chưa phải ngưỡng nghiệm thu vì chưa đo trên miền thiết bị.
+
+---
+
+## 17. Còn nợ
 
 - **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
   đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
   thuyết tư thế, ngưỡng vận hành thật, và cổng nghiệm thu đo trên miền thiết bị.
-- **Run A0 với chính sách §15.4** — phép kiểm cho chẩn đoán §15, và là thứ chặn mọi bước sau.
+- **Teacher CDCN++ chưa train lại** trên shard mới với augment đã vá — thứ chặn arm A3.
 - **Mọi số ở §5, §6, §9–§12 đo trên hình học crop cũ** nên chỉ còn giá trị lịch sử: shard
   đã sinh lại ở §13. Thứ tự còn lại là A0 dùng được → teacher → A3 → điền §5 → ADR.
 - **Teacher chưa train lại** trên crop mới. Nó không cần sửa code — `boxes()` đã tham số
