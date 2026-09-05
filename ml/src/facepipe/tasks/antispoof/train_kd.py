@@ -27,6 +27,8 @@ from facepipe.core.trainer import Trainer, resolve_device
 from .data import (
     CROP_SCALE_PROBABILITY,
     CROP_SCALE_RANGE,
+    OCCLUSION_PROBABILITY,
+    OCCLUSION_SIDE_RANGE,
     PHOTOMETRIC_PROBABILITY,
     QUALITY_RANGE,
     RECOMPRESS_PROBABILITY,
@@ -73,6 +75,8 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         ),
         crop_scale_range=tuple(params.get("crop_scale_range", CROP_SCALE_RANGE)),
         crop_scale_probability=float(params.get("crop_scale_probability", CROP_SCALE_PROBABILITY)),
+        occlusion_probability=float(params.get("occlusion_probability", OCCLUSION_PROBABILITY)),
+        occlusion_side_range=tuple(params.get("occlusion_side_range", OCCLUSION_SIDE_RANGE)),
     )
 
 

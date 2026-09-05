@@ -35,6 +35,9 @@ data:
     crop_scale_range: [0.7, 1.2]
     # A gate, because this crop only ever narrows (measurements 15.1).
     crop_scale_probability: 0.15
+    # Accepted on APCER, since hiding part of the face loosens the gate (KEHOACH 3).
+    occlusion_probability: 0.25
+    occlusion_side_range: [0.20, 0.45]
 
 train:
   # Same count for both arms, since 3.7 reports the cost gap.

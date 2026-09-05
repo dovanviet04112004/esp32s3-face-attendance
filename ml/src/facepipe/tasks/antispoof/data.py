@@ -48,6 +48,11 @@ MID_LEVEL = 127.5
 EXPOSURE_GAIN_RANGE = (0.55, 1.25)
 EXPOSURE_CONTRAST_RANGE = (0.50, 1.15)
 PHOTOMETRIC_PROBABILITY = 0.5
+# Side of the patch as a fraction of the face box (KEHOACH 3, layer 2).
+OCCLUSION_SIDE_RANGE = (0.20, 0.45)
+# Gated for the reason the crop scale is: this only ever hides, so every sample
+# carrying a patch would move the pool off what the kiosk sees (KEHOACH 3).
+OCCLUSION_PROBABILITY = 0.25
 
 
 @dataclass
@@ -191,6 +196,37 @@ def crop_scale(sample: SpoofSample, target: float, size: int) -> SpoofSample:
     wide = narrow(sample.wide, sample.face_in_wide, sample.wide_scale, reached)
     tight = sample.tight if reached >= stored else narrow_tight(sample.tight, reached / stored)
     return replace(sample, tight=resized(tight, size), wide=resized(wide, size), wide_scale=reached)
+
+
+def face_square(view: np.ndarray, wide_scale: float) -> tuple[int, int]:
+    """Offset and side of the face box inside a view built about the face centre."""
+    edge = view.shape[0]
+    side = max(1, min(edge, round(edge / max(wide_scale, 1e-6))))
+    return (edge - side) // 2, side
+
+
+def occlude(
+    sample: SpoofSample,
+    rng: random.Random,
+    side_range: tuple[float, float] = OCCLUSION_SIDE_RANGE,
+) -> SpoofSample:
+    """Cover one part of the face in both views, at the same part of the face.
+
+    Placed in face-box coordinates rather than pixel ones, so the patch lands on
+    the same feature in a crop holding the face alone and in one holding a room.
+    """
+    fraction = rng.uniform(*side_range)
+    left, top = (rng.uniform(0.0, 1.0 - fraction) for _ in range(2))
+    level = rng.randint(0, 255)
+    views = []
+    for view, scale in ((sample.tight, 1.0), (sample.wide, sample.wide_scale)):
+        out = view.copy()
+        offset, side = face_square(view, scale)
+        x, y = offset + int(side * left), offset + int(side * top)
+        edge = max(1, int(side * fraction))
+        out[y : y + edge, x : x + edge] = level
+        views.append(out)
+    return replace(sample, tight=views[0], wide=views[1])
 
 
 def requantise(image: np.ndarray, quality: int) -> np.ndarray:
@@ -344,6 +380,8 @@ class SpoofShardDataset(IterableDataset):
         photometric_probability: float = PHOTOMETRIC_PROBABILITY,
         crop_scale_range: tuple[float, float] = CROP_SCALE_RANGE,
         crop_scale_probability: float = CROP_SCALE_PROBABILITY,
+        occlusion_probability: float = OCCLUSION_PROBABILITY,
+        occlusion_side_range: tuple[float, float] = OCCLUSION_SIDE_RANGE,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -361,6 +399,8 @@ class SpoofShardDataset(IterableDataset):
         self.photometric_probability = photometric_probability
         self.crop_scale_range = crop_scale_range
         self.crop_scale_probability = crop_scale_probability
+        self.occlusion_probability = occlusion_probability
+        self.occlusion_side_range = occlusion_side_range
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -405,6 +445,8 @@ class SpoofShardDataset(IterableDataset):
                 drawn = rng.random() < self.crop_scale_probability
                 target = rng.uniform(*self.crop_scale_range) if drawn else sample.wide_scale
                 sample = crop_scale(sample, target, self.size)
+                if rng.random() < self.occlusion_probability:
+                    sample = occlude(sample, rng, self.occlusion_side_range)
                 sample = photometric(sample, rng, self.photometric_probability)
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))

@@ -28,6 +28,8 @@ from facepipe.core.trainer import Trainer
 from ..data import (
     CROP_SCALE_PROBABILITY,
     CROP_SCALE_RANGE,
+    OCCLUSION_PROBABILITY,
+    OCCLUSION_SIDE_RANGE,
     PHOTOMETRIC_PROBABILITY,
     QUALITY_RANGE,
     RECOMPRESS_PROBABILITY,
@@ -121,6 +123,8 @@ def build_loader(cfg: Config, split: str, train: bool) -> torch.utils.data.DataL
         ),
         crop_scale_range=tuple(params.get("crop_scale_range", CROP_SCALE_RANGE)),
         crop_scale_probability=float(params.get("crop_scale_probability", CROP_SCALE_PROBABILITY)),
+        occlusion_probability=float(params.get("occlusion_probability", OCCLUSION_PROBABILITY)),
+        occlusion_side_range=tuple(params.get("occlusion_side_range", OCCLUSION_SIDE_RANGE)),
     )
     return torch.utils.data.DataLoader(
         dataset,

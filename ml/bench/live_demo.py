@@ -52,6 +52,12 @@ VOTE_FRACTION = 0.6
 # Cosine on L2-normalised embeddings, near FAR 1e-3 over the three benchmarks
 # (measurements 4.3). A0 pairs, not this protocol, so the page lets you move it.
 RECOG_THRESHOLD = 0.45
+# Largest share of the face box the picture edge may take while a score still
+# describes the person (KEHOACH 3, layer 2).
+MAX_FACE_CUT = 0.25
+# Below this a column carries no picture, so it is padding the capture path added
+# rather than a dark room.
+LETTERBOX_LEVEL = 12
 ENROLL_FRAMES = 20
 GALLERY_NAME = "gallery.npz"
 SNAP_DIR = "snaps"
@@ -108,6 +114,33 @@ def detect(model, priors, frame_rgb: np.ndarray, device: str):
     if not len(found.boxes):
         return None
     return to_original(found, scale, pad_x, pad_y)
+
+
+def picture_bounds(frame_rgb: np.ndarray) -> tuple[int, int, int, int]:
+    """The part of the frame carrying a picture, as x1, y1, x2, y2."""
+    height, width = frame_rgb.shape[:2]
+    columns = frame_rgb.mean(axis=(0, 2)) >= LETTERBOX_LEVEL
+    rows = frame_rgb.mean(axis=(1, 2)) >= LETTERBOX_LEVEL
+    if not columns.any() or not rows.any():
+        return 0, 0, width, height
+    x1, y1 = int(np.argmax(columns)), int(np.argmax(rows))
+    x2 = width - int(np.argmax(columns[::-1]))
+    y2 = height - int(np.argmax(rows[::-1]))
+    return x1, y1, x2, y2
+
+
+def framed(box: np.ndarray, bounds: tuple[int, int, int, int]) -> bool:
+    """Whether enough of the face is inside the picture for a score to mean anything.
+
+    Judged by area taken rather than by touching, since the edge costs the score
+    in proportion to how much of the face it eats (KEHOACH 3, layer 2).
+    """
+    x1, y1, x2, y2 = (float(v) for v in box)
+    left, top, right, bottom = bounds
+    whole = max(1.0, (x2 - x1) * (y2 - y1))
+    width = max(0.0, min(x2, right) - max(x1, left))
+    height = max(0.0, min(y2, bottom) - max(y1, top))
+    return 1.0 - (width * height) / whole <= MAX_FACE_CUT
 
 
 def crops_of(frame_rgb: np.ndarray, box: np.ndarray) -> dict[str, np.ndarray]:
@@ -361,6 +394,7 @@ class Call(NamedTuple):
     who: str | None = None
     similarity: float = 0.0
     gated: bool = True
+    framed: bool = True
 
 
 def call_of(recent: deque[float], threshold: float, vote: float) -> tuple[float, int, bool]:
@@ -457,6 +491,12 @@ def infer_into(
             continue
         best = int(np.argmax(found.scores))
         box = found.boxes[best]
+        if not framed(box, picture_bounds(rgb)):
+            recent.clear()
+            enrolment.cancel()
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            calls.put(Call(box, 0.0, 0, 0, False, elapsed_ms, framed=False))
+            continue
         views = crops_of(rgb, box)
         recent.append(liveness(spoof, views, args.device))
         score, votes, live = call_of(recent, args.threshold, args.vote)
@@ -494,18 +534,19 @@ def render(frames: Slot, calls: Slot, threshold: float):
     if call is not None and call.box is not None:
         colour = (0, 0, 255)
         verdict = "SPOOF"
-        if call.live or not call.gated:
+        if not call.framed:
+            colour = (0, 200, 255)
+            verdict = "DUA MAT VAO GIUA KHUNG"
+        elif call.live or not call.gated:
             verdict = f"{call.who or 'unknown'} {call.similarity:.3f}"
             colour = (0, 200, 0) if call.who else (0, 165, 255)
             if not call.live:
                 verdict = f"{verdict}  SPOOF"
                 colour = (0, 0, 255)
-        annotate(
-            frame,
-            call.box,
-            f"{verdict}  spoof {call.score:.4f}  {call.votes}/{call.window}",
-            colour,
-        )
+        caption = verdict
+        if call.framed:
+            caption = f"{verdict}  spoof {call.score:.4f}  {call.votes}/{call.window}"
+        annotate(frame, call.box, caption, colour)
         gate = "" if call.gated else "  GATE OFF"
         cv2.putText(
             frame,

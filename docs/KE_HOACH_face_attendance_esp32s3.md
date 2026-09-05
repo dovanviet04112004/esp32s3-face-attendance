@@ -658,6 +658,41 @@ sáng và 0,50 tương phản, đồng thời phủ cả phía dư sáng.
 `backlight` không thay được: nó kéo một bên khung **về phía trắng**, tức làm sáng lên, còn
 `vignette` chỉ tối bốn góc và nhân đúng 1,0 ở giữa khung — nơi khuôn mặt nằm.
 
+#### Model sống bằng dải mắt–mũi, nên che chỗ đó là hỏng — và đó là ràng buộc hai chiều
+
+Đo trên 44 khung mặt thật mà A0 đang chấm 0,9995, phá dần từng kiểu rồi chấm lại:
+
+| Kiểu phá | 15% | 30% | 45% | 60% |
+|---|---|---|---|---|
+| Che phần **dưới** mặt (mồm, cằm) | 0,999 | 0,998 | 0,998 | **0,951** |
+| Che **dải giữa** (mắt, mũi) | 0,997 | 0,743 | **0,076** | 0,295 |
+| Che một **cạnh** | 0,998 | 0,981 | 0,726 | 0,510 |
+| Mép khung cắt **ngang** | 0,959 | 0,870 | 0,749 | **0,077** |
+| Mép khung cắt **trên** | 1,000 | 0,997 | 0,999 | 0,990 |
+
+Che mồm gần như vô hại; che mắt là chết. Cắt mép trên vô hại; cắt mép ngang là chết. Suy ra
+**khẩu trang chạy được**, còn bàn tay đưa lên quá sống mũi thì không.
+
+Đây không thuần tuý là lỗi. Dải mắt–mũi là nơi tập trung tín hiệu sống — độ nổi sống mũi,
+hốc mắt — nên model bám vào đó là **đúng thiết kế**. Dạy nó bỏ qua vùng ấy là dạy nó chấp
+nhận cả những đòn tấn công cũng thiếu vùng ấy. Vì thế hai biện pháp dưới đây phải đi cùng
+nhau, và biện pháp chặn đứng trước.
+
+**Chốt 1 — tiền kiểm hình học, chạy trước khi chấm.** Hộp mặt phải nằm trọn trong **vùng
+ảnh thật** của khung, có lề. Không đạt thì trả về "đưa mặt vào khung", **không** trả về
+phán quyết sống/giả. Vùng ảnh thật là khung đã trừ viền letterbox: đường thu ảnh có thể độn
+đen hai bên, và `fitted_box` không biết phân biệt đen với tường nên sẽ kéo viền vào crop.
+
+**Chốt 2 — augment che, có cổng, rút cùng phân bố cho cả hai lớp.** Một khối chữ nhật xám
+đặt ngẫu nhiên trong hộp mặt, áp **một lần cho cả hai view** vì hai crop là một cảnh. Cổng
+xác suất là bắt buộc, cùng lý do đã ghi ở mục tỉ lệ crop: phép này một chiều, không cổng
+thì mọi mẫu đều bị che và tập train rời khỏi điều kiện vận hành. Rút cùng phân bố cho cả
+hai lớp là bắt buộc, nếu không thì "bị che" trở thành đường tắt dự đoán nhãn.
+
+Nghiệm thu phép augment này bằng **APCER**, không chỉ BPCER. Nó nới điều kiện chấp nhận nên
+rủi ro cố hữu là cho tấn công lọt; một bản vá kéo BPCER xuống mà đẩy APCER lên là bản vá
+hỏng.
+
 #### Đích depth phải phủ đúng vùng mặt trong khung teacher đọc
 
 CDCN++ không phân loại, nó hồi quy một bản đồ 32×32. CelebA-Spoof không có kênh depth nên

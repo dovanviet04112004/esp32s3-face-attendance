@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import random
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,7 @@ from facepipe.tasks.antispoof.data import (
     count_records,
     crop_scale,
     horizontal_flip,
+    occlude,
 )
 from facepipe.tasks.antispoof.losses import SpoofTaskLoss
 from facepipe.tasks.antispoof.losses.task_loss import LIVE, SPOOF, SpoofBatch
@@ -192,6 +194,61 @@ def test_the_presented_scale_is_drawn_the_same_way_for_both_classes(tmp_path: Pa
     assert live.min() < 1.2 and spoof.min() < 1.2
     assert live.max() > 2.4 and spoof.max() > 2.4
     assert abs(live.mean() - spoof.mean()) < 0.15
+
+
+def test_the_patch_covers_the_same_part_of_the_face_in_both_views() -> None:
+    """Both crops hold one scene, so a hand on the cheek is on it in each."""
+    edge = 64
+    sample = SpoofSample(
+        tight=np.full((edge, edge, 3), 200, dtype=np.uint8),
+        wide=np.full((edge, edge, 3), 200, dtype=np.uint8),
+        label=LIVE,
+        wide_scale=2.0,
+        face_in_wide=(0.25, 0.25, 0.75, 0.75),
+    )
+    covered = occlude(sample, random.Random(2), side_range=(0.4, 0.4))
+    tight_hit = (covered.tight[:, :, 0] != 200).mean()
+    wide_hit = (covered.wide[:, :, 0] != 200).mean()
+    assert tight_hit > 0 and wide_hit > 0
+    # The face fills the tight crop and a quarter of the wide one at 2.0x.
+    assert tight_hit == pytest.approx(wide_hit * 4, rel=0.15)
+
+
+def test_the_patch_lands_inside_the_face_box_of_the_wide_view() -> None:
+    """Placed in face coordinates, so the room around the face keeps its pixels."""
+    edge = 80
+    sample = SpoofSample(
+        tight=np.full((edge, edge, 3), 200, dtype=np.uint8),
+        wide=np.full((edge, edge, 3), 200, dtype=np.uint8),
+        label=SPOOF,
+        wide_scale=4.0,
+        face_in_wide=(0.375, 0.375, 0.625, 0.625),
+    )
+    for seed in range(20):
+        covered = occlude(sample, random.Random(seed))
+        touched = np.argwhere(covered.wide[:, :, 0] != 200)
+        assert touched[:, 0].min() >= 30 and touched[:, 0].max() <= 49
+        assert touched[:, 1].min() >= 30 and touched[:, 1].max() <= 49
+
+
+@pytest.mark.parametrize(("probability", "patched"), [(0.0, False), (1.0, True)])
+def test_the_occlusion_gate_decides_whether_a_patch_appears(
+    tmp_path: Path, probability: float, patched: bool
+) -> None:
+    """The shards paint each view one shade, so a patch is the only second shade."""
+    root = write_shards(tmp_path / "train", records=8, shard_size=8)
+    dataset = SpoofShardDataset(
+        root,
+        size=32,
+        train=True,
+        seed=4,
+        recompress_probability=0.0,
+        photometric_probability=0.0,
+        crop_scale_probability=0.0,
+        occlusion_probability=probability,
+    )
+    spreads = [float(sample.tight.astype(np.float32).std()) for sample in dataset]
+    assert (max(spreads) > 5.0) is patched
 
 
 @pytest.mark.parametrize("probability", [0.0, 1.0])
