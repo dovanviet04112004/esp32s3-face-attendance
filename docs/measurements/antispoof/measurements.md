@@ -601,7 +601,7 @@ là cùng một kết luận §10 rút ra trên 48 khung camera, giờ đo lại
 Hạ về 0,90 cắt tỉ lệ từ chối nhầm đi 4,8 lần trên `0140`, đổi lấy APCER tăng từ 0,098 lên
 0,169 **trên CelebA-Spoof**. Con số APCER đó không mang sang thiết bị được: §11.3 và §12.2
 đo trên khung camera thật cho cách biệt 108–136 lần, tức trên miền thiết bị hai lớp nằm xa
-nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§15).
+nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§16).
 
 `0140` tốt hơn ở **đuôi dưới của lớp thật** — p5 từ 0,8513 lên 0,9739 — mà đuôi dưới chính
 là chỗ ngưỡng cắt. Ở đỉnh thì hai bên như nhau (cả hai trung vị 1,0000).
@@ -882,13 +882,97 @@ CelebA-Spoof vân in và moiré đủ để phân biệt; trên khung điện th
 
 ---
 
-## 15. Còn nợ
+## 15. Vì sao A0 hỏng: augment một chiều không có cổng
+
+§14.6 đặt giả thuyết rằng dải `[0.7, 2.7]` dạy model bỏ qua bối cảnh. Đo xong thì cơ chế
+khác với giả thuyết, và sắc hơn.
+
+### 15.1 Phép cắt chỉ thu nhỏ được, nên nó dời phân bố chứ không mở rộng
+
+`crop_scale` không thể bịa thêm phần khung hình ảnh gốc không chứa — nó chỉ cắt bớt. Rút
+đều trong `[0.7, 2.7]` khi tỉ lệ lưu sẵn có trung vị 1,91 nghĩa là gần như mọi lần rút đều
+làm hẹp lại. Đo trên 4.000 bản ghi qua đúng loader lúc train:
+
+| | Train (có augment) | Val / kiosk |
+|---|---|---|
+| `wide_scale` trung vị | **1,44** | 1,91 |
+| \|tight − wide\| trung bình | **31,4** | 57,2 |
+| Mẫu có wide không rộng hơn tight | **17,7%** | 2,4% |
+
+Nhánh wide mất 45% lượng thông tin phân biệt nó với nhánh tight, và gần một mẫu trên năm
+thì hai nhánh nhìn cùng một cảnh. Nhìn ảnh dựng ra thì thấy thẳng: ô val còn cả người, cả
+tường, cả chữ trên nền; ô train hai bên gần như trùng nhau.
+
+### 15.2 Lỗi thật là thiếu cổng xác suất, không phải sai dải
+
+Quét toàn bộ augment của nhánh, kiểm xem trung vị của val có nằm trong dải p10–p90 của
+train không — tức tập train có còn chứa điều kiện lúc suy luận không:
+
+| Đại lượng | val trung vị | train p10 | train p90 | Val còn nằm trong? |
+|---|---|---|---|---|
+| Độ sáng | 123,0 | 78,0 | 161,3 | có, ở giữa |
+| Độ tương phản | 54,3 | 29,2 | 62,1 | có |
+| Độ nét | 13,9 | 6,5 | 21,4 | có, ở giữa |
+| Tỉ lệ crop | 1,91 | 0,90 | 2,17 | **sát mép trên** |
+| \|tight − wide\| | 57,9 | 3,5 | 58,5 | **sát mép trên** |
+
+Augment quang học và augment nén đều có cổng `p = 0,5`, nên mẫu sạch vẫn nằm trong tập
+train và val rơi vào giữa. **Tỉ lệ crop là phép duy nhất áp cho 100% mẫu** — không cổng — và
+nó là phép duy nhất đẩy điều kiện kiosk ra vùng đuôi.
+
+Tính thẳng phân vị mà điều kiện kiosk rơi vào bên trong phân bố train:
+
+| Chính sách | Phân vị của \|tight − wide\| | Phân vị của tỉ lệ |
+|---|---|---|
+| `uniform [0.7, 2.7]`, không cổng | **74,3** | **80,6** |
+| `p = 0,15` trong `[0.7, 1.2]` | 57,8 | 57,8 |
+
+Chỉ khoảng một phần tư số mẫu train có đủ ngữ cảnh như một khung kiosk điển hình. Bài học
+tổng quát: **augment một chiều bắt buộc phải có cổng**, nếu không nó dời tập train khỏi
+điều kiện vận hành thay vì bao lấy điều kiện đó.
+
+### 15.3 Quét tỉ lệ lúc suy luận — bằng chứng nhánh wide chưa học được gì
+
+Chấm 111 khung camera trong khi đổi tỉ lệ dựng nhánh wide:
+
+| wide | `0140` ACER | `0932` ACER |
+|---|---|---|
+| 1,0 | 0,5137 | 0,3658 |
+| 1,4 | 0,2429 | 0,6611 |
+| 1,8 | 0,4316 | 0,6006 |
+| 2,2 | 0,2776 | 0,4015 |
+| **2,7** | **0,1327** | 0,3414 |
+
+`0140` có đỉnh rõ tại 2,7 — đúng tỉ lệ nó được train, tức nó *có* dùng bối cảnh. `0932`
+không có đỉnh ở đâu cả, kể cả tại 1,4 là trung vị nó quen. Bỏ đói nhánh wide không chỉ dời
+điểm vận hành mà làm nhánh đó không học được gì; đưa tỉ lệ nào vào cũng vậy.
+
+### 15.4 Chính sách đã chốt
+
+Đo bốn chính sách trên 6.000 bản ghi train. Cơ sở `P(spoof)` = 0,6588:
+
+| Chính sách | \|t − w\| | `P(spoof \| < 1,0)` | live < 1,0 |
+|---|---|---|---|
+| Tắt hẳn | 57,7 | 0,9690 | 4 |
+| `uniform [0.7, 2.7]` | 42,0 | 0,6780 | 323 |
+| **`p=0,15` trong `[0.7, 1.2]`** | **50,9** | **0,7186** | **188** |
+| `p=0,15` + rung nhẹ ×`[0.85, 1.0]` | 47,5 | 0,7059 | 230 |
+
+Giữ 88% ngữ cảnh so với bản không augment mà vẫn kéo đường tắt từ 0,969 về 0,719. Tắt hẳn
+thì đường tắt quay lại nguyên vẹn, và **bốn trong tám khung chụp tay** nằm dưới 1,0
+(0,705 · 0,740 · 0,881 · 0,911) nên triệu chứng cũ sẽ tái phát.
+
+🔬 Chưa có gì chứng minh chính sách này chữa được 111 khung. Nó chỉ đưa thống kê ngữ cảnh
+về sát cấu hình đã biết là tốt; bằng chứng thật chỉ có sau khi train xong.
+
+---
+
+## 16. Còn nợ
 
 - **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
   đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
   thuyết tư thế, ngưỡng vận hành thật, và cổng nghiệm thu đo trên miền thiết bị.
-- **Run A0 thu hẹp `crop_scale_range`** — phép kiểm cho giả thuyết §14.6, và là thứ chặn
-  mọi bước sau. Dải nào thì chưa biết; cần quét vài mức chứ không đoán một mức.
+- **Run A0 với chính sách §15.4** — phép kiểm cho chẩn đoán §15, và là thứ chặn mọi bước sau.
 - **Mọi số ở §5, §6, §9–§12 đo trên hình học crop cũ** nên chỉ còn giá trị lịch sử: shard
   đã sinh lại ở §13. Thứ tự còn lại là A0 dùng được → teacher → A3 → điền §5 → ADR.
 - **Teacher chưa train lại** trên crop mới. Nó không cần sửa code — `boxes()` đã tham số

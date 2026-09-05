@@ -571,24 +571,55 @@ mặt bị cắt, nhưng phần còn lại dưới 1,0 chính là những ảnh 
 khung hình — tức ảnh chụp lại màn hình choán hết khung. Sửa hình học làm tương quan **đậm
 hơn**, không nhạt đi.
 
-**Chốt: mỗi mẫu rút một tỉ lệ ngẫu nhiên trong `[0.7, 2.7]`, rút từ cùng một phân bố cho cả
-live lẫn spoof, rồi cắt lại crop từ record theo tỉ lệ đó.** Rút cùng phân bố là toàn bộ mục
-đích: khi hai lớp gặp mọi tỉ lệ đều nhau, tỉ lệ hết mang thông tin về nhãn và model buộc
-phải đọc kết cấu với ngữ cảnh thật.
+Phép augment này chỉ **thu nhỏ** ngữ cảnh có sẵn — không có cách nào bịa thêm phần khung
+hình mà ảnh gốc không chứa. Nó vì thế **một chiều**, và một phép một chiều **bắt buộc phải
+có cổng xác suất**: không có cổng thì mọi mẫu đều bị đẩy về một phía và tập train thôi
+không còn chứa điều kiện lúc suy luận. Augment quang học và augment nén đều có cổng `p=0,5`
+nên mẫu sạch vẫn nằm trong tập train; tỉ lệ crop là phép duy nhất từng áp cho **100%** mẫu,
+và đó là lỗi.
+
+Đo vị trí của điều kiện kiosk bên trong phân bố train, trên 3.000 bản ghi:
+
+| Chính sách | Phân vị của \|tight − wide\| lúc suy luận | Phân vị của tỉ lệ |
+|---|---|---|
+| Rút đều `[0.7, 2.7]`, không cổng | **74,3** | **80,6** |
+| `p=0,15` trong `[0.7, 1.2]` | 57,8 | 57,8 |
+
+Không cổng thì kiosk chạy ở vùng đuôi trên của những gì model từng thấy: chỉ khoảng một
+phần tư số mẫu train có đủ ngữ cảnh như một khung kiosk điển hình.
+
+**Chốt: mỗi mẫu có xác suất `p = 0,15` được rút một tỉ lệ trong `[0.7, 1.2]`; 85% còn lại
+giữ nguyên tỉ lệ lưu trong record.** Rút từ cùng một phân bố cho cả live lẫn spoof — đó là
+toàn bộ mục đích, vì khi hai lớp cùng gặp vùng cắt cụt thì tỉ lệ hết mang thông tin về nhãn.
+
+Đặt tham số theo hai đại lượng phải cùng đạt, đo trên 6.000 bản ghi train thật:
+
+| Chính sách | \|tight − wide\| | `P(spoof \| tỉ lệ < 1,0)` | mẫu live < 1,0 |
+|---|---|---|---|
+| Không augment | 57,7 | 0,969 | 4 |
+| Rút đều `[0.7, 2.7]` | 42,0 | 0,678 | 323 |
+| **`p=0,15` trong `[0.7, 1.2]`** | **50,9** | **0,719** | **188** |
+
+Cột trái đo lượng thông tin phân biệt nhánh wide với nhánh tight; tụt cột này là bỏ đói
+nhánh wide và mất luôn khả năng đọc bối cảnh. Cột giữa đo đường tắt, cơ sở `P(spoof)` là
+0,659. Dải rộng đứt được đường tắt nhưng trả giá 27% ngữ cảnh; dải hẹp áp cho thiểu số giữ
+được 88% ngữ cảnh mà vẫn kéo đường tắt về sát cơ sở.
 
 Cận dưới đặt tại 0,7 vì đó là vùng mà mặt thật ở cự ly gần thật sự rơi vào: 🔬 tám khung
 điện thoại đo được 0,70–0,98, và đuôi dưới của chính tập train chạm 0,74. Trên 1,0 chỉ
 augment nhánh wide; **dưới 1,0 phải cắt cả hai nhánh cùng một lượng**, vì thiếu chỗ thì
 `fitted_box` thu cả tight lẫn wide bằng nhau — cắt mỗi wide là dạy một hình học không tồn tại.
 
-Trần vẫn là tỉ lệ mà từng ảnh dựng được — augment chỉ **thu nhỏ** ngữ cảnh có sẵn, không
-bịa thêm. Ràng buộc "không kéo giãn, không đệm" ở mục trên không được phép lách qua đường
-augment.
+Trần vẫn là tỉ lệ mà từng ảnh dựng được. Ràng buộc "không kéo giãn, không đệm" ở mục trên
+không được phép lách qua đường augment.
 
-Hai điều kiện để phép augment này có nghĩa:
+Ba điều kiện để phép augment này có nghĩa:
 
 - **Chỉ áp lúc train.** Val và test giữ nguyên tỉ lệ thật, nếu không thì bảng đối chứng
   đo trên một phân bố hình học không có ở kiosk.
+- **Phân bố tỉ lệ lúc train phải bám phân bố lúc suy luận.** Kiosk dựng nhánh wide ở 2,7
+  cố định, nên trung vị tỉ lệ khi train mà tụt xa 1,9 là đã đo một thứ khác với thứ sẽ chạy.
+  Đổi tham số augment thì đo lại hai cột trên trước khi tốn giờ GPU.
 - **Ghi tỉ lệ đã rút vào batch**, không phải tỉ lệ gốc của record. Đích depth của teacher
   dựng từ nó, và dựng theo tỉ lệ gốc là đặt gò Gauss lệch khỏi vùng mặt.
 

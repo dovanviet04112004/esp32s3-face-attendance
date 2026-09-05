@@ -194,6 +194,19 @@ def test_the_presented_scale_is_drawn_the_same_way_for_both_classes(tmp_path: Pa
     assert abs(live.mean() - spoof.mean()) < 0.15
 
 
+@pytest.mark.parametrize("probability", [0.0, 1.0])
+def test_both_views_reach_the_model_size_whether_the_crop_gate_fires(
+    tmp_path: Path, probability: float
+) -> None:
+    """The wide view is decoded at its native size, and only the recrop resizes it."""
+    root = write_shards(tmp_path / "train", records=8, shard_size=8)
+    dataset = SpoofShardDataset(
+        root, size=32, train=True, seed=1, crop_scale_probability=probability
+    )
+    for sample in dataset:
+        assert sample.tight.shape == sample.wide.shape == (32, 32, 3)
+
+
 def test_collate_keeps_the_pair_and_the_label_aligned(tmp_path: Path) -> None:
     root = write_shards(tmp_path / "train", records=4, shard_size=4)
     batch = list(SpoofShardDataset(root, size=32, train=False))

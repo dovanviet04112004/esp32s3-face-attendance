@@ -28,7 +28,10 @@ CROP_SIZE = 80
 SHUFFLE_BUFFER = 2048
 # Drawn from one distribution for both classes: every source record below 1.0x is
 # an attack, so scale alone predicts the label (KEHOACH 3, layer 2).
-CROP_SCALE_RANGE = (0.7, 2.7)
+CROP_SCALE_RANGE = (0.7, 1.2)
+# This crop can only narrow, so an ungated draw moves every sample off the scale
+# the kiosk builds and starves the wide branch of context (KEHOACH 3, layer 2).
+CROP_SCALE_PROBABILITY = 0.15
 # Spans both pools the branch meets, so neither end can cue the label (KEHOACH 1.3).
 QUALITY_RANGE = (30, 95)
 RECOMPRESS_PROBABILITY = 0.5
@@ -340,6 +343,7 @@ class SpoofShardDataset(IterableDataset):
         quality_range: tuple[int, int] = QUALITY_RANGE,
         photometric_probability: float = PHOTOMETRIC_PROBABILITY,
         crop_scale_range: tuple[float, float] = CROP_SCALE_RANGE,
+        crop_scale_probability: float = CROP_SCALE_PROBABILITY,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -356,6 +360,7 @@ class SpoofShardDataset(IterableDataset):
         self.quality_range = quality_range
         self.photometric_probability = photometric_probability
         self.crop_scale_range = crop_scale_range
+        self.crop_scale_probability = crop_scale_probability
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -397,7 +402,9 @@ class SpoofShardDataset(IterableDataset):
             if self.train and rng.random() < 0.5:
                 sample = horizontal_flip(sample)
             if self.train:
-                sample = crop_scale(sample, rng.uniform(*self.crop_scale_range), self.size)
+                drawn = rng.random() < self.crop_scale_probability
+                target = rng.uniform(*self.crop_scale_range) if drawn else sample.wide_scale
+                sample = crop_scale(sample, target, self.size)
                 sample = photometric(sample, rng, self.photometric_probability)
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))

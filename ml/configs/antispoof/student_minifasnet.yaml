@@ -32,7 +32,9 @@ data:
     val_split: "test:0:10"
     test_split: "test:10:"
     # Every source record below 1.0x is an attack (measurements 12.5).
-    crop_scale_range: [0.7, 2.7]
+    crop_scale_range: [0.7, 1.2]
+    # A gate, because this crop only ever narrows (measurements 15.1).
+    crop_scale_probability: 0.15
 
 train:
   # Same count for both arms, since 3.7 reports the cost gap.

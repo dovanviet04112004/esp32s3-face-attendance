@@ -25,6 +25,7 @@ from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer, resolve_device
 
 from .data import (
+    CROP_SCALE_PROBABILITY,
     CROP_SCALE_RANGE,
     PHOTOMETRIC_PROBABILITY,
     QUALITY_RANGE,
@@ -71,6 +72,7 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
             params.get("photometric_probability", PHOTOMETRIC_PROBABILITY)
         ),
         crop_scale_range=tuple(params.get("crop_scale_range", CROP_SCALE_RANGE)),
+        crop_scale_probability=float(params.get("crop_scale_probability", CROP_SCALE_PROBABILITY)),
     )
 
 
