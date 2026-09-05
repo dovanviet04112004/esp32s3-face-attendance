@@ -37,7 +37,10 @@ C_HEADER_SUFFIXES = {".h", ".hpp"}
 C_BODY_SUFFIXES = {".c", ".cpp", ".cc"}
 PY_SUFFIXES = {".py"}
 TS_SUFFIXES = {".ts", ".tsx", ".js", ".jsx"}
-SCANNED_SUFFIXES = C_HEADER_SUFFIXES | C_BODY_SUFFIXES | PY_SUFFIXES | TS_SUFFIXES
+YAML_SUFFIXES = {".yaml", ".yml"}
+SCANNED_SUFFIXES = (
+    C_HEADER_SUFFIXES | C_BODY_SUFFIXES | PY_SUFFIXES | TS_SUFFIXES | YAML_SUFFIXES
+)
 
 MAX_CONSECUTIVE_BODY_COMMENTS = 2
 MAX_DOC_COMMENT_LINES = 6
@@ -160,7 +163,11 @@ def check_common(path: Path, comments: list[tuple[int, str]]) -> list[Problem]:
 
 
 def check_runs_and_density(
-    path: Path, lines: list[str], comment_lines: set[int], is_header: bool
+    path: Path,
+    lines: list[str],
+    comment_lines: set[int],
+    is_header: bool,
+    density: bool = True,
 ) -> list[Problem]:
     problems = []
     if not is_header:
@@ -191,15 +198,15 @@ def check_runs_and_density(
             )
 
         code_lines = [i for i, ln in enumerate(lines, 1) if ln.strip()]
-        if len(code_lines) >= 20:
-            density = len(comment_lines) / len(code_lines)
-            if density > MAX_COMMENT_DENSITY:
+        if density and len(code_lines) >= 20:
+            share = len(comment_lines) / len(code_lines)
+            if share > MAX_COMMENT_DENSITY:
                 problems.append(
                     Problem(
                         path,
                         1,
                         "2.3",
-                        f"comment density {density:.0%} exceeds {MAX_COMMENT_DENSITY:.0%}",
+                        f"comment density {share:.0%} exceeds {MAX_COMMENT_DENSITY:.0%}",
                     )
                 )
     return problems
@@ -296,15 +303,79 @@ def check_python(path: Path, lines: list[str]) -> list[Problem]:
     return problems
 
 
+def check_docstrings(path: Path, source: str) -> list[Problem]:
+    """Section 2.3 for Python doc comments, which the line scanners never see."""
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    problems = []
+    named = [(tree, "module")] + [
+        (node, node.name)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+    ]
+    for node, name in named:
+        doc = ast.get_docstring(node, clean=False)
+        if doc is None:
+            continue
+        length = len(doc.splitlines())
+        if length > MAX_DOC_COMMENT_LINES:
+            line = node.body[0].lineno if node.body else 1
+            problems.append(
+                Problem(
+                    path,
+                    line,
+                    "2.3",
+                    f"{name} docstring is {length} lines, limit is {MAX_DOC_COMMENT_LINES}",
+                )
+            )
+    return problems
+
+
+def check_yaml(path: Path, lines: list[str]) -> list[Problem]:
+    """Sections 2.3, 2.4 and 2.6 for config files, minus the density rule.
+
+    Section 2.3 sets density per body file, and a config is key-value lines: one
+    cited line per tuned constant is what 4.9 asks for, not a budget to spend.
+    """
+    comments: list[tuple[int, str]] = []
+    comment_lines: set[int] = set()
+    for lineno, raw in enumerate(lines, 1):
+        stripped = raw.strip()
+        if not stripped.startswith("#"):
+            continue
+        comments.append((lineno, stripped.lstrip("#").strip()))
+        comment_lines.add(lineno)
+    problems = check_common(path, comments)
+    header_end = 0
+    for lineno in range(1, len(lines) + 1):
+        if lineno not in comment_lines:
+            break
+        header_end = lineno
+    body = {n for n in comment_lines if n > header_end}
+    if header_end > MAX_DOC_COMMENT_LINES:
+        problems.append(
+            Problem(path, 1, "2.3", f"header is {header_end} lines, limit is 6")
+        )
+    problems += check_runs_and_density(path, lines, body, is_header=False, density=False)
+    return problems
+
+
 def check_file(path: Path) -> list[Problem]:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        source = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return []
+    lines = source.splitlines()
     if is_generated(lines):
         return check_generated_banner(path, lines)
+    if path.suffix in YAML_SUFFIXES:
+        return check_yaml(path, lines)
     if path.suffix in PY_SUFFIXES:
-        return check_python(path, lines)
+        return check_python(path, lines) + check_docstrings(path, source)
     is_header = path.suffix in C_HEADER_SUFFIXES
     return check_c_like(path, lines, is_header)
 
