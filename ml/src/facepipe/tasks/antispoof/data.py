@@ -30,6 +30,9 @@ from facepipe.data.prepare.images_to_wds import read_shard
 
 CROP_SIZE = 80
 SHUFFLE_BUFFER = 2048
+# Drawn from one distribution for both classes: every source record below 1.0x is
+# an attack, so scale alone predicts the label (KEHOACH 3, layer 2).
+CROP_SCALE_RANGE = (0.7, 2.7)
 # Spans both pools the branch meets, so neither end can cue the label (KEHOACH 1.3).
 QUALITY_RANGE = (30, 95)
 RECOMPRESS_PROBABILITY = 0.5
@@ -55,7 +58,8 @@ class SpoofSample:
     tight: np.ndarray
     wide: np.ndarray
     label: int
-    wide_scale: float                          # scale the wide view actually reached
+    wide_scale: float  # scale the wide view actually reached
+    face_in_wide: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
 
 def shard_paths(root: Path) -> list[Path]:
@@ -122,17 +126,72 @@ def count_records(shards: list[Path], shard_size: int | None = None) -> int:
     return (len(shards) - 1) * full + records_in(shards[-1])
 
 
-def decode(payload: bytes, size: int) -> np.ndarray:
+def resized(image: np.ndarray, size: int) -> np.ndarray:
+    if image.shape[0] == size and image.shape[1] == size:
+        return image
+    return np.array(Image.fromarray(image).resize((size, size), Image.BILINEAR), dtype=np.uint8)
+
+
+def decode_native(payload: bytes) -> np.ndarray:
     with Image.open(io.BytesIO(payload)) as handle:
-        image = handle.convert("RGB")
-        if image.size != (size, size):
-            image = image.resize((size, size), Image.BILINEAR)
-        return np.array(image, dtype=np.uint8)
+        return np.array(handle.convert("RGB"), dtype=np.uint8)
+
+
+def decode(payload: bytes, size: int) -> np.ndarray:
+    return resized(decode_native(payload), size)
+
+
+def centred_face(reached: float) -> tuple[float, float, float, float]:
+    """Where the face sits in a wide crop built about its own centre."""
+    half = 0.5 / max(reached, 1e-6)
+    return (0.5 - half, 0.5 - half, 0.5 + half, 0.5 + half)
 
 
 def horizontal_flip(sample: SpoofSample) -> SpoofSample:
     """Mirror both views together; a face and its context are one scene."""
-    return replace(sample, tight=sample.tight[:, ::-1].copy(), wide=sample.wide[:, ::-1].copy())
+    x1, y1, x2, y2 = sample.face_in_wide
+    return replace(
+        sample,
+        tight=sample.tight[:, ::-1].copy(),
+        wide=sample.wide[:, ::-1].copy(),
+        face_in_wide=(1.0 - x2, y1, 1.0 - x1, y2),
+    )
+
+
+def narrow(wide: np.ndarray, face, reached: float, target: float) -> np.ndarray:
+    """The context view recropped to `target` scale, slid to hold the face inside.
+
+    Only shrinks what the frame already contains: padding or stretching to reach
+    a scale the source never had reads as an attack cue (KEHOACH section 3).
+    """
+    edge = wide.shape[0]
+    side = max(1, min(edge, round(edge * target / max(reached, 1e-6))))
+    x1, y1, x2, y2 = (value * edge for value in face)
+    left = int(min(max(0, round((x1 + x2) / 2.0 - side / 2.0)), edge - side))
+    top = int(min(max(0, round((y1 + y2) / 2.0 - side / 2.0)), edge - side))
+    return wide[top : top + side, left : left + side]
+
+
+def narrow_tight(tight: np.ndarray, factor: float) -> np.ndarray:
+    """The face view cropped about its own centre, which is where a square shorter
+    than the face box takes its bite."""
+    edge = tight.shape[0]
+    side = max(1, min(edge, round(edge * factor)))
+    offset = (edge - side) // 2
+    return tight[offset : offset + side, offset : offset + side]
+
+
+def crop_scale(sample: SpoofSample, target: float, size: int) -> SpoofSample:
+    """Present both views at `target` scale, capped by what the frame holds.
+
+    Below 1.0 the square is shorter than the face box, which is what a face too
+    near the lens produces. Both views lose the same edge there, never one alone.
+    """
+    reached = min(target, sample.wide_scale)
+    stored = min(1.0, sample.wide_scale)
+    wide = narrow(sample.wide, sample.face_in_wide, sample.wide_scale, reached)
+    tight = sample.tight if reached >= stored else narrow_tight(sample.tight, reached / stored)
+    return replace(sample, tight=resized(tight, size), wide=resized(wide, size), wide_scale=reached)
 
 
 def requantise(image: np.ndarray, quality: int) -> np.ndarray:
@@ -284,6 +343,7 @@ class SpoofShardDataset(IterableDataset):
         recompress_probability: float = RECOMPRESS_PROBABILITY,
         quality_range: tuple[int, int] = QUALITY_RANGE,
         photometric_probability: float = PHOTOMETRIC_PROBABILITY,
+        crop_scale_range: tuple[float, float] = CROP_SCALE_RANGE,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -299,6 +359,7 @@ class SpoofShardDataset(IterableDataset):
         self.recompress_probability = recompress_probability
         self.quality_range = quality_range
         self.photometric_probability = photometric_probability
+        self.crop_scale_range = crop_scale_range
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -322,11 +383,14 @@ class SpoofShardDataset(IterableDataset):
         for shard in self._my_shards():
             for record in read_shard(shard):
                 meta = json.loads(record["json"])
+                reached = float(meta["wide_scale"])
+                wide = decode_native(record["wide.jpg"])
                 yield SpoofSample(
                     tight=decode(record["tight.jpg"], self.size),
-                    wide=decode(record["wide.jpg"], self.size),
+                    wide=wide if self.train else resized(wide, self.size),
                     label=int(meta["label"]),
-                    wide_scale=float(meta["wide_scale"]),
+                    wide_scale=reached,
+                    face_in_wide=tuple(meta.get("face_in_wide") or centred_face(reached)),
                 )
 
     def __iter__(self) -> Iterator[SpoofSample]:
@@ -337,6 +401,7 @@ class SpoofShardDataset(IterableDataset):
             if self.train and rng.random() < 0.5:
                 sample = horizontal_flip(sample)
             if self.train:
+                sample = crop_scale(sample, rng.uniform(*self.crop_scale_range), self.size)
                 sample = photometric(sample, rng, self.photometric_probability)
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))

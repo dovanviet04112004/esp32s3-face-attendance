@@ -36,6 +36,7 @@ from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer
 
 from ..data import (
+    CROP_SCALE_RANGE,
     PHOTOMETRIC_PROBABILITY,
     QUALITY_RANGE,
     RECOMPRESS_PROBABILITY,
@@ -130,6 +131,7 @@ def build_loader(cfg: Config, split: str, train: bool) -> torch.utils.data.DataL
         photometric_probability=float(
             params.get("photometric_probability", PHOTOMETRIC_PROBABILITY)
         ),
+        crop_scale_range=tuple(params.get("crop_scale_range", CROP_SCALE_RANGE)),
     )
     return torch.utils.data.DataLoader(
         dataset,

@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 import yaml
@@ -20,6 +21,7 @@ from facepipe.tasks.antispoof.data import (
     SpoofShardDataset,
     collate,
     count_records,
+    crop_scale,
     horizontal_flip,
 )
 from facepipe.tasks.antispoof.losses import SpoofTaskLoss
@@ -120,6 +122,77 @@ def test_flip_mirrors_both_views_together() -> None:
     assert (flipped.tight == tight[:, ::-1]).all()
     assert (flipped.wide == wide[:, ::-1]).all()
     assert flipped.label == 1
+
+
+def wide_with_face(edge: int, face: tuple[float, float, float, float]) -> np.ndarray:
+    """A context view whose face region is the only red patch in it."""
+    image = np.full((edge, edge, 3), 40, dtype=np.uint8)
+    x1, y1, x2, y2 = (round(value * edge) for value in face)
+    image[y1:y2, x1:x2] = (255, 0, 0)
+    return image
+
+
+def face_fraction(image: np.ndarray) -> float:
+    return float((image[:, :, 0] > 200).mean())
+
+
+def sample_at(reached: float, edge: int = 224, label: int = LIVE) -> SpoofSample:
+    """One record whose painted face really is `1 / reached` of the context view."""
+    span = 1.0 / reached
+    face = (0.5 - span / 2, 0.5 - span / 2, 0.5 + span / 2, 0.5 + span / 2)
+    return SpoofSample(
+        tight=np.zeros((edge, edge, 3), dtype=np.uint8),
+        wide=wide_with_face(edge, face),
+        label=label,
+        wide_scale=reached,
+        face_in_wide=face,
+    )
+
+
+def test_narrowing_the_context_view_leaves_the_face_and_drops_the_context() -> None:
+    sample = sample_at(2.7)
+    assert face_fraction(sample.wide) == pytest.approx((1 / 2.7) ** 2, abs=0.02)
+    narrowed = crop_scale(sample, 1.0, size=224)
+    assert narrowed.wide_scale == pytest.approx(1.0)
+    assert face_fraction(narrowed.wide) > 0.95
+
+
+def test_a_scale_below_one_bites_into_both_views_together() -> None:
+    """A square shorter than the face box shortens the tight view by the same factor."""
+    sample = sample_at(2.7)
+    sample.tight[:] = 40
+    sample.tight[40:184, 40:184] = (255, 0, 0)
+    cut = crop_scale(sample, 0.7, size=224)
+    assert cut.wide_scale == pytest.approx(0.7)
+    assert face_fraction(cut.tight) > face_fraction(sample.tight)
+    assert face_fraction(cut.wide) > 0.95
+
+
+def test_the_drawn_scale_never_invents_context_the_frame_lacks() -> None:
+    edge = 224
+    sample = SpoofSample(
+        tight=np.zeros((edge, edge, 3), dtype=np.uint8),
+        wide=wide_with_face(edge, (0.1, 0.1, 0.9, 0.9)),
+        label=SPOOF,
+        wide_scale=1.2,
+        face_in_wide=(0.1, 0.1, 0.9, 0.9),
+    )
+    widened = crop_scale(sample, 2.7, size=edge)
+    assert widened.wide_scale == pytest.approx(1.2)
+    assert (widened.wide == sample.wide).all()
+
+
+def test_the_presented_scale_is_drawn_the_same_way_for_both_classes(tmp_path: Path) -> None:
+    """Scale correlates with the label in the source pool, so the draw must not."""
+    root = write_shards(tmp_path / "train", records=400, shard_size=50)
+    dataset = SpoofShardDataset(root, size=32, train=True, seed=7)
+    seen: dict[int, list[float]] = {LIVE: [], SPOOF: []}
+    for sample in dataset:
+        seen[sample.label].append(sample.wide_scale)
+    live, spoof = np.array(seen[LIVE]), np.array(seen[SPOOF])
+    assert live.min() < 1.2 and spoof.min() < 1.2
+    assert live.max() > 2.4 and spoof.max() > 2.4
+    assert abs(live.mean() - spoof.mean()) < 0.15
 
 
 def test_collate_keeps_the_pair_and_the_label_aligned(tmp_path: Path) -> None:

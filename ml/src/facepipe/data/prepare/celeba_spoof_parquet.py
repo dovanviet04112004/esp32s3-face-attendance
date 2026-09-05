@@ -34,6 +34,9 @@ from .images_to_wds import ShardWriter
 
 CROP_SCALES = {"tight": 1.0, "wide": 2.7}
 CROP_SIZE = 128
+# Holds 80 px of face at the 2.7x ceiling, so recropping the context view down
+# to 1.0x at read time still fills the model input (KEHOACH §3, layer 2).
+WIDE_SIZE = 224
 CROP_QUALITY = 95
 # Bounds how many undecoded source images are in flight across the pool at once.
 ENCODE_BATCH = 256
@@ -93,34 +96,57 @@ def read_shard(path: Path) -> Iterator[Sample]:
 def fitted_box(
     box_xyxy: tuple[int, int, int, int], scale: float, width: int, height: int
 ) -> tuple[tuple[int, int, int, int], float]:
-    """Largest square about the face centre that fits the frame, capped at `scale`.
+    """Largest square that fits the frame, capped at `scale`, slid to hold the face.
 
     Returns the box and the scale it actually reached, which falls below `scale`
-    whenever the face sits too near the camera or the frame edge. Clamping a
-    square to the frame would stretch the face and padding would invent context,
-    and both read as attack cues (KEHOACH §3).
+    whenever the face sits too near the camera. Stretching a clamped rectangle
+    back to square distorts the face and padding invents context, and both read
+    as attack cues (KEHOACH §3).
     """
     x1, y1, x2, y2 = box_xyxy
     cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
     face = max(1, max(x2 - x1, y2 - y1))
-    room = max(1.0, 2.0 * min(cx, cy, width - cx, height - cy))
-    side = max(1, int(min(face * scale, room)))
+    side = max(1, int(min(face * scale, width, height)))
     left = min(max(0, round(cx - side / 2.0)), width - side)
     top = min(max(0, round(cy - side / 2.0)), height - side)
     return (left, top, left + side, top + side), side / face
 
 
-def encode_crops(sample: Sample, size: int = CROP_SIZE) -> dict[str, bytes]:
+def crop_sizes(size: int = CROP_SIZE, wide_size: int = WIDE_SIZE) -> dict[str, int]:
+    return {name: wide_size if name == "wide" else size for name in CROP_SCALES}
+
+
+def face_within(box_xyxy: tuple[int, int, int, int], crop: tuple[int, int, int, int]):
+    """The face box in crop-relative units, which is what recropping needs."""
+    x1, y1, x2, y2 = box_xyxy
+    left, top, right, _ = crop
+    side = max(1, right - left)
+    return [
+        round((x1 - left) / side, 4),
+        round((y1 - top) / side, 4),
+        round((x2 - left) / side, 4),
+        round((y2 - top) / side, 4),
+    ]
+
+
+def encode_crops(
+    sample: Sample, size: int = CROP_SIZE, wide_size: int = WIDE_SIZE
+) -> dict[str, bytes]:
     """Both scales of one face plus its label, as the members of one record."""
     from PIL import Image
 
     members: dict[str, bytes] = {}
     reached: dict[str, float] = {}
+    sizes = crop_sizes(size, wide_size)
+    face_in_wide: list[float] = []
     with Image.open(io.BytesIO(sample.image_bytes)) as image:
         image = image.convert("RGB")
         for name, scale in CROP_SCALES.items():
             box, reached[name] = fitted_box(sample.box_xyxy, scale, image.width, image.height)
-            patch = image.crop(box).resize((size, size), Image.BILINEAR)
+            if name == "wide":
+                face_in_wide = face_within(sample.box_xyxy, box)
+            edge = sizes[name]
+            patch = image.crop(box).resize((edge, edge), Image.BILINEAR)
             buffer = io.BytesIO()
             patch.save(buffer, format="JPEG", quality=CROP_QUALITY)
             members[f"{name}.jpg"] = buffer.getvalue()
@@ -130,15 +156,16 @@ def encode_crops(sample: Sample, size: int = CROP_SIZE) -> dict[str, bytes]:
         "label": int(sample.is_spoof),
         "split": sample.split,
         "wide_scale": round(reached["wide"], 4),
+        "face_in_wide": face_in_wide,
     }
     members["json"] = json.dumps(meta).encode()
     return members
 
 
-def _encode_task(payload: tuple[Sample, int]) -> dict[str, bytes] | None:
-    sample, size = payload
+def _encode_task(payload: tuple[Sample, int, int]) -> dict[str, bytes] | None:
+    sample, size, wide_size = payload
     try:
-        return encode_crops(sample, size)
+        return encode_crops(sample, size, wide_size)
     except OSError:
         return None
 
@@ -161,6 +188,7 @@ def run(
     size: int = CROP_SIZE,
     limit: int | None = None,
     workers: int = 1,
+    wide_size: int = WIDE_SIZE,
 ) -> dict:
     """Crop every annotated face into per-split shards under out_root.
 
@@ -173,7 +201,7 @@ def run(
     pool = Pool(workers) if workers > 1 else None
     try:
         for batch in batched(iter_samples(root, stats, limit), ENCODE_BATCH):
-            payloads = [(sample, size) for sample in batch]
+            payloads = [(sample, size, wide_size) for sample in batch]
             encoded = pool.map(_encode_task, payloads) if pool else map(_encode_task, payloads)
             for sample, members in zip(batch, encoded, strict=True):
                 if members is None:
@@ -198,11 +226,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--size", type=int, default=CROP_SIZE)
+    parser.add_argument("--wide-size", type=int, default=WIDE_SIZE)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     args = parser.parse_args(argv)
 
-    stats = run(args.root, args.out, args.size, args.limit, args.workers)
+    stats = run(args.root, args.out, args.size, args.limit, args.workers, args.wide_size)
     print(
         f"{args.out}: {stats['cropped']} face(s) from {stats['shards']} parquet shard(s) "
         f"({stats['live']} live, {stats['spoof']} spoof), {stats['skipped']} undecodable"

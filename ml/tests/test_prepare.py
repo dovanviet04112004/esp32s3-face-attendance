@@ -14,6 +14,7 @@ from PIL import Image
 from facepipe.data.prepare.celeba_spoof_parquet import (
     CROP_SIZE,
     Sample,
+    crop_sizes,
     encode_crops,
     fitted_box,
     split_of,
@@ -135,6 +136,20 @@ def test_a_face_with_no_room_shrinks_the_scale_rather_than_the_squareness() -> N
     (left, top, right, bottom), reached = fitted_box((10, 10, 90, 90), 2.7, 100, 100)
     assert right - left == bottom - top
     assert reached < 2.7
+
+
+def test_an_off_centre_face_slides_the_square_rather_than_cutting_the_face() -> None:
+    """A crop shorter than the face box cuts the chin off, and that reads as an attack."""
+    face = (300, 460, 700, 700)
+    (left, top, right, bottom), reached = fitted_box(face, 1.0, 1280, 720)
+    assert reached >= 1.0
+    assert left <= face[0] and right >= face[2]
+    assert top <= face[1] and bottom >= face[3]
+
+
+def test_the_square_grows_to_the_short_edge_when_the_face_sits_against_a_border() -> None:
+    _, reached = fitted_box((0, 500, 400, 700), 2.7, 1280, 720)
+    assert reached == pytest.approx(720 / 400, abs=0.01)
 
 
 def test_box_is_read_as_corners_not_width_height() -> None:
@@ -277,10 +292,14 @@ def test_both_crop_scales_travel_in_one_record(tmp_path: Path) -> None:
     )
     members = encode_crops(sample, size=CROP_SIZE)
     assert set(members) == {"tight.jpg", "wide.jpg", "json"}
-    assert json.loads(members["json"])["label"] == 1
-    for name in ("tight.jpg", "wide.jpg"):
-        with Image.open(io.BytesIO(members[name])) as patch:
-            assert patch.size == (CROP_SIZE, CROP_SIZE)
+    meta = json.loads(members["json"])
+    assert meta["label"] == 1
+    for name, edge in crop_sizes().items():
+        with Image.open(io.BytesIO(members[f"{name}.jpg"])) as patch:
+            assert patch.size == (edge, edge)
+    x1, y1, x2, y2 = meta["face_in_wide"]
+    assert 0.0 <= x1 < x2 <= 1.0 and 0.0 <= y1 < y2 <= 1.0
+    assert x2 - x1 == pytest.approx(1.0 / meta["wide_scale"], abs=0.01)
 
 
 def test_shrinking_moves_boxes_and_keypoints_by_the_same_factor(tmp_path: Path) -> None:

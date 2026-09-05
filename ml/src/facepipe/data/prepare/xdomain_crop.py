@@ -26,7 +26,15 @@ from pathlib import Path
 
 import numpy as np
 
-from .celeba_spoof_parquet import CROP_QUALITY, CROP_SCALES, CROP_SIZE, fitted_box
+from .celeba_spoof_parquet import (
+    CROP_QUALITY,
+    CROP_SCALES,
+    CROP_SIZE,
+    WIDE_SIZE,
+    crop_sizes,
+    face_within,
+    fitted_box,
+)
 from .images_to_wds import ShardWriter
 
 DETECT_HW = (120, 160)
@@ -167,24 +175,29 @@ def best_face(model, priors, payload: bytes, device: str) -> np.ndarray | None:
 
 
 def crops_of(
-    payload: bytes, box: np.ndarray, size: int = CROP_SIZE
-) -> tuple[dict[str, bytes], float]:
+    payload: bytes, box: np.ndarray, size: int = CROP_SIZE, wide_size: int = WIDE_SIZE
+) -> tuple[dict[str, bytes], float, list[float]]:
     """Both scales of one face, encoded the way the shard format expects."""
     from PIL import Image
 
     members: dict[str, bytes] = {}
     reached: dict[str, float] = {}
+    sizes = crop_sizes(size, wide_size)
+    face_in_wide: list[float] = []
     with Image.open(io.BytesIO(payload)) as handle:
         image = handle.convert("RGB")
         for name, scale in CROP_SCALES.items():
             crop, reached[name] = fitted_box(tuple(box), scale, image.width, image.height)
+            if name == "wide":
+                face_in_wide = face_within(tuple(int(v) for v in box), crop)
+            edge = sizes[name]
             patch = image.crop(crop)
             buffer = io.BytesIO()
-            patch.resize((size, size), Image.BILINEAR).save(
+            patch.resize((edge, edge), Image.BILINEAR).save(
                 buffer, format="JPEG", quality=CROP_QUALITY
             )
             members[f"{name}.jpg"] = buffer.getvalue()
-    return members, reached["wide"]
+    return members, reached["wide"], face_in_wide
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -214,13 +227,14 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if raw.source not in writers:
                 writers[raw.source] = ShardWriter(args.out / raw.source).__enter__()
-            members, wide_scale = crops_of(raw.payload, box)
+            members, wide_scale, face_in_wide = crops_of(raw.payload, box)
             members["json"] = json.dumps(
                 {
                     "name": raw.name,
                     "label": int(raw.is_spoof),
                     "split": raw.source,
                     "wide_scale": round(wide_scale, 4),
+                    "face_in_wide": face_in_wide,
                 }
             ).encode()
             writers[raw.source].add(members)
