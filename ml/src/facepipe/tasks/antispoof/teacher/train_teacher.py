@@ -33,6 +33,8 @@ from ..data import (
     PHOTOMETRIC_PROBABILITY,
     QUALITY_RANGE,
     RECOMPRESS_PROBABILITY,
+    ROLL_PROBABILITY,
+    ROLL_RANGE,
     SpoofShardDataset,
     collate,
 )
@@ -125,6 +127,8 @@ def build_loader(cfg: Config, split: str, train: bool) -> torch.utils.data.DataL
         crop_scale_probability=float(params.get("crop_scale_probability", CROP_SCALE_PROBABILITY)),
         occlusion_probability=float(params.get("occlusion_probability", OCCLUSION_PROBABILITY)),
         occlusion_side_range=tuple(params.get("occlusion_side_range", OCCLUSION_SIDE_RANGE)),
+        roll_probability=float(params.get("roll_probability", ROLL_PROBABILITY)),
+        roll_range=tuple(params.get("roll_range", ROLL_RANGE)),
     )
     return torch.utils.data.DataLoader(
         dataset,

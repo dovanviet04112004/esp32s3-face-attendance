@@ -38,6 +38,9 @@ data:
     # Accepted on APCER, since hiding part of the face loosens the gate (KEHOACH 3).
     occlusion_probability: 0.25
     occlusion_side_range: [0.20, 0.45]
+    # A 15 degree tilt cost 32 of 44 live frames their pass (KEHOACH 3).
+    roll_probability: 0.35
+    roll_range: [-18.0, 18.0]
 
 train:
   # Same count for both arms, since 3.7 reports the cost gap.

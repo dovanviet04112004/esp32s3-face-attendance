@@ -53,6 +53,9 @@ OCCLUSION_SIDE_RANGE = (0.20, 0.45)
 # Gated for the reason the crop scale is: this only ever hides, so every sample
 # carrying a patch would move the pool off what the kiosk sees (KEHOACH 3).
 OCCLUSION_PROBABILITY = 0.25
+# Degrees of head roll, drawn per sample (KEHOACH 3, layer 2).
+ROLL_RANGE = (-18.0, 18.0)
+ROLL_PROBABILITY = 0.35
 
 
 @dataclass
@@ -229,6 +232,24 @@ def occlude(
     return replace(sample, tight=views[0], wide=views[1])
 
 
+def turned(image: np.ndarray, degrees: float) -> np.ndarray:
+    """One view rolled about its centre, with no corner the rotation invented.
+
+    Mirror padding first and cropping back after keeps the corners filled with
+    plausible texture; a black wedge would be a mark only rolled samples carry.
+    """
+    edge = image.shape[0]
+    pad = edge // 2
+    wider = np.pad(image, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
+    spun = Image.fromarray(wider).rotate(degrees, resample=Image.BILINEAR)
+    return np.array(spun, dtype=np.uint8)[pad : pad + edge, pad : pad + edge]
+
+
+def roll(sample: SpoofSample, degrees: float) -> SpoofSample:
+    """Roll both views by one angle, since the two crops are one scene."""
+    return replace(sample, tight=turned(sample.tight, degrees), wide=turned(sample.wide, degrees))
+
+
 def requantise(image: np.ndarray, quality: int) -> np.ndarray:
     """Re-encode one view as JPEG at the given quality and decode it back."""
     buffer = io.BytesIO()
@@ -382,6 +403,8 @@ class SpoofShardDataset(IterableDataset):
         crop_scale_probability: float = CROP_SCALE_PROBABILITY,
         occlusion_probability: float = OCCLUSION_PROBABILITY,
         occlusion_side_range: tuple[float, float] = OCCLUSION_SIDE_RANGE,
+        roll_probability: float = ROLL_PROBABILITY,
+        roll_range: tuple[float, float] = ROLL_RANGE,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -401,6 +424,8 @@ class SpoofShardDataset(IterableDataset):
         self.crop_scale_probability = crop_scale_probability
         self.occlusion_probability = occlusion_probability
         self.occlusion_side_range = occlusion_side_range
+        self.roll_probability = roll_probability
+        self.roll_range = roll_range
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -445,6 +470,8 @@ class SpoofShardDataset(IterableDataset):
                 drawn = rng.random() < self.crop_scale_probability
                 target = rng.uniform(*self.crop_scale_range) if drawn else sample.wide_scale
                 sample = crop_scale(sample, target, self.size)
+                if rng.random() < self.roll_probability:
+                    sample = roll(sample, rng.uniform(*self.roll_range))
                 if rng.random() < self.occlusion_probability:
                     sample = occlude(sample, rng, self.occlusion_side_range)
                 sample = photometric(sample, rng, self.photometric_probability)
