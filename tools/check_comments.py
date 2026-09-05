@@ -101,17 +101,30 @@ class Problem:
         return f"{shown}:{self.line}: [{self.rule}] {self.detail}"
 
 
+def is_skipped(path: Path) -> bool:
+    """True for a path under SKIP_DIR_PARTS, measured from the repo root.
+
+    The parts above the root belong to whoever cloned it and must not decide
+    whether a file is scanned.
+    """
+    try:
+        parts = path.relative_to(REPO_ROOT).parts
+    except ValueError:
+        parts = path.parts
+    return bool(SKIP_DIR_PARTS.intersection(parts))
+
+
 def iter_source_files(targets: list[Path]) -> list[Path]:
     files: list[Path] = []
     for target in targets:
         if target.is_file():
-            if target.suffix in SCANNED_SUFFIXES:
+            if target.suffix in SCANNED_SUFFIXES and not is_skipped(target):
                 files.append(target)
             continue
         for path in sorted(target.rglob("*")):
             if path.suffix not in SCANNED_SUFFIXES or not path.is_file():
                 continue
-            if SKIP_DIR_PARTS.intersection(path.parts):
+            if is_skipped(path):
                 continue
             files.append(path)
     return files
