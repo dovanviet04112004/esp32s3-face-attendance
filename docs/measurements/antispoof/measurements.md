@@ -601,7 +601,7 @@ là cùng một kết luận §10 rút ra trên 48 khung camera, giờ đo lại
 Hạ về 0,90 cắt tỉ lệ từ chối nhầm đi 4,8 lần trên `0140`, đổi lấy APCER tăng từ 0,098 lên
 0,169 **trên CelebA-Spoof**. Con số APCER đó không mang sang thiết bị được: §11.3 và §12.2
 đo trên khung camera thật cho cách biệt 108–136 lần, tức trên miền thiết bị hai lớp nằm xa
-nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§13).
+nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§14).
 
 `0140` tốt hơn ở **đuôi dưới của lớp thật** — p5 từ 0,8513 lên 0,9739 — mà đuôi dưới chính
 là chỗ ngưỡng cắt. Ở đỉnh thì hai bên như nhau (cả hai trung vị 1,0000).
@@ -689,13 +689,70 @@ thu.
 
 ---
 
-## 13. Còn nợ
+## 13. Sinh lại shard bằng ô vuông trượt — kiểm nhận
+
+Toàn bộ dữ liệu nhánh này dựng lại sau khi §12.5 chỉ ra crop cắt cụt mặt. Bốn phép kiểm
+chạy trước khi tốn giờ GPU:
+
+| Kiểm | Kết quả |
+|---|---|
+| CelebA-Spoof | **525.864** mặt, **0** ảnh hỏng, 13 GB |
+| Số shard từng split | 210 / 30 / 24 — khớp bản cũ |
+| `face_in_wide` có mặt | **42.000 / 42.000** bản ghi mẫu |
+| NUAA + Axon | 5.110 + 989 mặt, **100%** bắt được mặt |
+
+### 13.1 Đường tắt tỉ lệ crop đã đứt
+
+Đo trên 14.000 bản ghi shard thật, qua đúng đường loader lúc train:
+
+| | `P(spoof \| tỉ lệ < 1,0)` | Số mẫu live rơi vào đó |
+|---|---|---|
+| Trước augment | **0,9774** | 6 |
+| **Sau augment** | **0,7009** | **694** |
+| *Cơ sở (tỉ lệ spoof chung)* | *0,6595* | |
+
+0,7009 so với cơ sở 0,6595 — tỉ lệ crop gần như hết mang thông tin về nhãn.
+
+Ô vuông trượt cũng tự nó kéo tỉ lệ crop cắt cụt từ **8,8% xuống 1,87%**; phần còn lại là
+những ảnh mà hộp mặt lớn hơn cạnh ngắn khung hình, và chúng không thể dựng nổi tỉ lệ 1,0.
+
+### 13.2 Giá phải trả: reader chậm 31%, epoch dài thêm 23%
+
+Ảnh wide lưu ở 224 px nên giải nén tốn gấp ba lần điểm ảnh. Đo cùng điều kiện, chỉ khác
+bộ shard:
+
+| Reader | 8 worker | 12 worker | 16 worker |
+|---|---|---|---|
+| Shard cũ (wide 128) | 1.946 ảnh/giây | 2.819 | — |
+| Shard mới (wide 224) | 1.687 | **1.937** | 1.976 |
+
+| Cấu hình | phút/epoch |
+|---|---|
+| Wide 128, 8 worker | **5,00** |
+| Wide 224, 8 worker | 6,65 |
+| **Wide 224, 12 worker** | **6,17** |
+
+**Nghẽn là độ trễ I/O, không phải CPU.** GPU chạy ở 6% với 8 worker và 13% với 12; load
+giữ ở 6,4 trên 20 nhân; `/mnt/e` đọc khối lớn tới 96,7 MB/s nên đĩa cũng không phải thủ
+phạm. `tarfile` đọc nhiều lần nhỏ qua lớp drvfs, và thêm worker không rút ngắn được độ trễ
+mỗi lần đọc — đó là vì sao 12 worker chỉ mua được 7% chứ không phải 15% như benchmark hứa.
+
+Giữ 224 px chứ không hạ: `176 / 2,7 = 65 px`, dưới đầu vào 80 của model, nên crop 1,0×
+sẽ phải phóng to — đúng điều mà 224 sinh ra để tránh. Đổi lại là **+1,2 giờ GPU** mỗi run.
+
+---
+
+## 14. Còn nợ
 
 - **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
   đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
   thuyết tư thế, ngưỡng vận hành thật, và cổng nghiệm thu đo trên miền thiết bị.
-- **Sinh lại toàn bộ shard** bằng `fitted_box` — mọi số ở §5, §6, §9, §10 đo trên crop
-  dựng sai, nên chúng chỉ còn giá trị lịch sử. Rồi teacher → A0 → A3 → điền §5 → ADR.
+- **Mọi số ở §5, §6, §9–§12 đo trên hình học crop cũ** nên chỉ còn giá trị lịch sử: shard
+  đã sinh lại ở §13. Thứ tự còn lại là A0 → teacher → A3 → điền §5 → ADR.
+- **Teacher chưa train lại** trên crop mới. Nó không cần sửa code — `boxes()` đã tham số
+  hoá theo tỉ lệ thật và xử lý đúng cả vùng dưới 1,0 (tỉ lệ mặt bão hoà ở 1,000, `ref mean`
+  tăng đơn điệu 0,0585 → 0,6255) — nhưng nó đọc cùng shard nên cùng phải chạy lại. Chỉ
+  chặn A3, không chặn A0.
 - **Ngưỡng 0,997355 phải đo lại.** Trên 51 khung, 0,992728 cho 100%/100%; nhưng đó là
   ngưỡng khớp trên chính bộ đó, và bộ đó có 51 khung.
 - **A0 chưa có bản đối chứng tắt augment nén.** Đã đo rằng nó không phá hỏng gì, nhưng
