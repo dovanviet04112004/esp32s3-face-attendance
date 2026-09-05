@@ -73,6 +73,31 @@ epoch; nó chỉ đổi checkpoint được chọn, và cả hai checkpoint đã
 `channels_last` phải áp cho **cả tensor đầu vào**, kể cả khi nó là uint8 — áp mỗi model
 thì PyTorch chèn một lần chuyển layout mỗi bước và phần lợi mất sạch.
 
+### Thang batch trên card 4 GB, 84.088 lớp, đã compile + channels-last
+
+| Batch | Ảnh/giây | VRAM đỉnh |
+|---|---|---|
+| **128** (đang dùng) | 856 | 2,72 GiB |
+| 160 | 886 | 3,13 GiB |
+| 192 | **578** | 3,50 GiB |
+
+192 là **vách**: WSL phân trang sang bộ nhớ host thay vì báo lỗi, nên vượt ngưỡng chỉ hiện
+ra dưới dạng epoch chậm. 160 mua thêm 3% mà chỉ còn cách vách 400 MB — khoảng đó một run
+dài đủ phân mảnh để nuốt.
+
+**Reader không phải nút thắt ở nhánh này**: 5.568 ảnh/giây với 4 worker và 9.189 với 8,
+so với 856 mà bước train tiêu thụ. Sáu worker là để chừa nhân và bộ nhớ cho việc khác.
+
+**EMA + compile**: 736 → **856** ảnh/giây và 3,38 → **2,72** GiB. Phần bộ nhớ mới là lý do
+chính — 3,38 trên 4,0 không chừa chỗ cho phân mảnh của một run dài.
+
+**10 epoch là ngân sách, không phải phương pháp.** Ở 856 ảnh/giây, 4,66 triệu bản ghi là
+**1,5 giờ mỗi epoch**; mười epoch là thứ vừa túi cho hai arm trên một card. `arcface_torch`
+train mbf **40 epoch**. Báo cáo phải nói điều đó thay vì trình bày kết quả như một bản tái lập.
+
+LR 0,0125 là **scaling tuyến tính** từ công thức `ms1mv3_mbf` của `arcface_torch`, vốn dùng
+0,1 ở tổng batch 1024 trên tám card.
+
 > Một số đo trước đó ghi 77 ảnh/giây. Số đó lấy trong lúc một job batch-256 khác đang
 > thrash bộ nhớ máy; đo lại khi máy rảnh cho 859. Giữ lại đây để không ai đi tin con số cũ.
 
@@ -216,6 +241,13 @@ nằm ở việc xếp hạng hai epoch liền nhau của cùng một arm.
 - **ArcFace cộng góc**, không qua `acos`: `cos(θ+m) = cosθ·cos m − sinθ·sin m`, có điểm
   gãy tại `cos(π−m)`. Đi qua `acos` mất chữ số ở vùng `cosθ` gần ±1, đúng vùng mà mẫu
   dễ nằm vào cuối quá trình train.
+- **Trọng số ba term của arm A3**, đo tại lúc khởi tạo: ArcFace **46,2**, term cosine
+  **1,0**, term quan hệ **0,047**. Để nguyên trọng số 1 thì term quan hệ chỉ chiếm một
+  phần nghìn gradient và arm A3 là distillation trên danh nghĩa. Đặt 10,0 và 20,0 đưa cả
+  hai về khoảng một phần tư task loss khi nó ổn định quanh 8.
+- **Đầu gối Huber của RKD = 0,1**, đo giữa student chưa train và teacher: khoảng cách đã
+  chuẩn hoá lệch nhau khoảng **0,1**. `smooth_l1_loss` mặc định `beta=1.0` sẽ giữ mọi cặp
+  trong nhánh bậc hai, tức biến term này thành squared error thường.
 - **RKD** dùng khoảng cách đã chuẩn hoá theo trung bình; đầu gối Huber phải đặt gần đúng
   thang sai số thật, lệch thang thì term này thành hằng số.
 - **Cosine similarity bất biến với phép nhân dương từng vector**, nên scale int8 của

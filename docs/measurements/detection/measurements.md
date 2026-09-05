@@ -161,7 +161,51 @@ chốt được arm nào, và chưa được viết ADR.
 
 ---
 
-## 7. Còn nợ
+## 7. Giải nén JPEG là nút thắt của loader, không phải bước train
+
+| Đo trên nhánh này | Ảnh/giây |
+|---|---|
+| Chỉ đọc dữ liệu | **258** |
+| Đọc kèm đủ bước train | **271** |
+
+Hai số gần bằng nhau nghĩa là GPU ngồi chờ giải nén JPEG gần hết epoch. Student letterbox
+về 160×120 và không có phép augment nào cần hơn, nên giải một ảnh 1024×768 để ra kích thước
+đó là công đổ đi — đó là lý do `shrink_coco.py` tồn tại.
+
+Ảnh và toạ độ **phải rescale trong cùng một lượt**. Hai lượt, hoặc resize mà để nguyên nhãn
+cũ, cho ra một bộ dữ liệu vẫn nạp được, vẫn train được, và sai đều một hệ số ở mọi khuôn
+mặt — không có gì báo lỗi.
+
+**Mở file lẻ trên drvfs tốn 15 ms mỗi file.** Ultralytics đọc ảnh rời chứ không đọc shard,
+nên với teacher không có đòn bẩy nào khác ngoài việc thu bộ dữ liệu đủ nhỏ để page cache
+giữ được — đó là lý do `finetune_widerface.py` symlink ảnh trừ khi `max_side` yêu cầu bản
+thu nhỏ.
+
+### 7.1 Bộ nhớ của teacher bò lên trong ba mươi epoch
+
+Ở 640², trạng thái ổn định chiếm **3,41 GiB** trên card 4,0 GiB — nhưng **bộ nhớ đã đặt
+chỗ bò lên khoảng 5,95 GiB sau ba mươi epoch**, rồi WSL bắt đầu phân trang sang bộ nhớ
+host. Cái giá là **gấp năm mươi lần mỗi bước** và **không có lỗi nào được ném ra**.
+
+Hệ quả cho cách đo: **đo ở epoch ba, đừng đo ở epoch một.** Batch 4 để lại quá ít chỗ cho
+phần bò lên đó.
+
+Số worker: **4, 6 và 8 đều cho 2,4 iteration/giây**, mà mỗi worker tốn ba tiến trình vì
+Ultralytics cấp cho val loader gấp đôi số đó. Chọn 4 để chừa nhiều nhất cho page cache —
+thứ làm mọi epoch sau epoch đầu trở nên rẻ (§4.4.1).
+
+### 7.2 Student chờ bước train, không chờ giải nén
+
+Đo trên một run 300 epoch: **581 ảnh/giây** so với **1.111** của riêng loader. Nên epoch
+chờ ở bước train và ở phần fork mỗi epoch, không phải ở khâu giải nén — khác với teacher
+ở §7.
+
+`crop_scale` đọc **ảnh gốc**, không đọc bản 320 px: nó phóng 30% khung lên 160 px chiều
+rộng, và làm thế trên nguồn nhỏ là bịa điểm ảnh (§4.4.1).
+
+---
+
+## 8. Còn nợ
 
 - Chấm lại v1 theo tiêu chí AP để tách hai biến ở §1.
 - E4-T13 → chạy arm A3 → điền nốt §6.

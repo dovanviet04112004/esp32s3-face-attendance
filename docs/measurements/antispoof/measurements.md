@@ -740,6 +740,45 @@ mỗi lần đọc — đó là vì sao 12 worker chỉ mua được 7% chứ kh
 Giữ 224 px chứ không hạ: `176 / 2,7 = 65 px`, dưới đầu vào 80 của model, nên crop 1,0×
 sẽ phải phóng to — đúng điều mà 224 sinh ra để tránh. Đổi lại là **+1,2 giờ GPU** mỗi run.
 
+### 13.3 Batch của student bị arm KD chặn trên
+
+§3.7 buộc hai arm dùng chung batch, nên batch phải là cái arm KD **chứa nổi**, không phải
+cái arm nền thích. Đo channels-last trên card 4 GB:
+
+| Batch | Arm nền | Arm KD | VRAM |
+|---|---|---|---|
+| 256 | 2.617 ảnh/giây | **không vừa** | — |
+| 128 | — | **205** ảnh/giây | 2,70 GiB |
+| **96** (đang dùng) | 1.735 | 630 | 0,72 / 2,03 GiB |
+
+205 ảnh/giây ở batch 128 là **card đang phân trang chứ không phải đang tính**. Arm nền một
+mình thì thích 256 hơn, nhưng lấy 256 là bảng đối chứng mất nghĩa.
+
+`channels_last` cho **2.034 → 2.617** ảnh/giây, và **1.545 → 1.841** khi bước train mang
+thêm EMA và grad clipping. Benchmark một bước đọc 1.841 ảnh/giây; epoch thật luôn chạy dưới
+trần đó.
+
+LR 0,02 là **scaling tuyến tính theo batch**: 0,05 ứng với 256, và bộ nhớ của arm KD kéo
+batch xuống 96.
+
+### 13.4 Batch và layout của teacher CDCN++
+
+Đo channels-last trên card 4 GB:
+
+| Batch | Ảnh/giây | VRAM |
+|---|---|---|
+| **96** (đang dùng) | 630 | 1,03 GiB |
+| 192 | 629 | 2,05 GiB |
+
+Batch lớn hơn **không mua được gì** mà tốn thêm một gigabyte. Ở 630 ảnh/giây, 420k bản ghi
+là **11 phút mỗi epoch**, cả run dưới sáu giờ.
+
+`channels_last` cho **515 → 630** ảnh/giây. Mọi convolution ở CDCN++ là 3×3 dày, đúng thứ
+kernel channels-last của cudnn sinh ra để chạy.
+
+Teacher là **đầu vào cố định của cả hai arm**, nên §3.7 không ràng buộc batch của nó theo
+batch của student.
+
 ---
 
 ## 14. Còn nợ
