@@ -25,11 +25,10 @@ from facepipe.tasks.antispoof.data import (
     horizontal_flip,
 )
 from facepipe.tasks.antispoof.losses import SpoofTaskLoss
-from facepipe.tasks.antispoof.losses.task_loss import LIVE, SPOOF
+from facepipe.tasks.antispoof.losses.task_loss import LIVE, SPOOF, SpoofBatch
 from facepipe.tasks.antispoof.student import INPUT_SIZE, HardSigmoid, MiniFASNetV2SE
 from facepipe.tasks.antispoof.teacher import train_teacher
 from facepipe.tasks.antispoof.teacher.cdcnpp import CDCNpp
-from facepipe.tasks.antispoof.losses.task_loss import SpoofBatch
 from facepipe.tasks.antispoof.teacher.depth_gt import DEPTH_SIZE, live_reference_mean
 from facepipe.tasks.antispoof.teacher.train_teacher import DepthSupervision, liveness
 

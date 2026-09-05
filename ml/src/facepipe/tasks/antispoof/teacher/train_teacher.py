@@ -35,7 +35,6 @@ from ..data import (
 )
 from ..eval import summary
 from ..losses.contrastive_depth_loss import contrast_kernels
-from ..losses.task_loss import LIVE
 from .cdcnpp import CDCNpp, depth_to_score  # noqa: F401  registers "cdcnpp"
 from .depth_gt import DEPTH_SIZE, LIVE, SIGMA_OF_FACE
 
