@@ -577,6 +577,116 @@ cùng độ nét 34 chấm 0,27 với 0,99. Nhoè chỉ giải thích một ph�
 Hai lỗ này là lý do **chưa chạy teacher và A3**: bảng đối chứng A chỉ có nghĩa khi arm nền
 đã dùng được, mà một đòn tấn công lọt ở 0,997 thì chưa.
 
+### 12.4 Ngưỡng 0,997355 một mình từ chối 12–18% mặt thật
+
+Chấm 6.000 bản ghi `test:10:13` bằng cả hai bộ trọng số, cùng crop, cùng đường code:
+
+| | live p5 | live p25 | attack med | EER | thr tại EER |
+|---|---|---|---|---|---|
+| `20260901-0717` (crop hỏng) | 0,8513 | 0,9991 | 0,0007 | 0,1043 | 0,9811 |
+| `20260902-0140` (crop đã sửa) | **0,9739** | **0,9996** | 0,0008 | 0,1072 | 0,9953 |
+
+Quét ngưỡng, BPCER là tỉ lệ **mặt thật bị gọi là giả**:
+
+| Ngưỡng | `0717` BPCER / APCER | `0140` BPCER / APCER |
+|---|---|---|
+| **0,997355** (đang dùng) | **0,1837** / 0,0602 | **0,1264** / 0,0980 |
+| 0,99 | 0,1298 / 0,0871 | 0,0782 / 0,1195 |
+| 0,90 | 0,0624 / 0,1454 | **0,0266** / 0,1690 |
+| 0,50 | 0,0227 / 0,2226 | 0,0102 / 0,2167 |
+
+Cứ sáu khuôn mặt thật thì một bị từ chối, **trước khi** tính tới tư thế hay ánh sáng. Đây
+là cùng một kết luận §10 rút ra trên 48 khung camera, giờ đo lại trên 6.000 bản ghi.
+
+Hạ về 0,90 cắt tỉ lệ từ chối nhầm đi 4,8 lần trên `0140`, đổi lấy APCER tăng từ 0,098 lên
+0,169 **trên CelebA-Spoof**. Con số APCER đó không mang sang thiết bị được: §11.3 và §12.2
+đo trên khung camera thật cho cách biệt 108–136 lần, tức trên miền thiết bị hai lớp nằm xa
+nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§13).
+
+`0140` tốt hơn ở **đuôi dưới của lớp thật** — p5 từ 0,8513 lên 0,9739 — mà đuôi dưới chính
+là chỗ ngưỡng cắt. Ở đỉnh thì hai bên như nhau (cả hai trung vị 1,0000).
+
+Quét rộng hơn cho `0140`, 20.000 bản ghi `test:10:20` (5.743 thật / 14.257 tấn công):
+
+| Ngưỡng | Mặt thật bị từ chối | Tấn công lọt |
+|---|---|---|
+| 0,50 | 0,91% | 31,6% |
+| 0,80 | 1,83% | 27,8% |
+| **0,90** | **2,61%** | 25,2% |
+| 0,99 | 7,30% | 17,7% |
+| 0,997355 | 12,33% | 12,6% |
+
+**Cột phải không mang sang thiết bị được.** Trên khung camera thật (§11.3, §12.2) tấn công
+nằm ở 0,0022–0,0222 còn mặt thật ở 0,9451–0,9999, tức mọi ngưỡng trong dải **0,05–0,94**
+đều cho 100%/100%. Chọn **0,90** vì đó là giá trị **cao nhất** vẫn nằm dưới khung thật tệ
+nhất đo được (0,9451, §12.1 khi ép tối 45%) — cao nhất trong vùng an toàn thì chặn được
+nhiều nhất. Cách khung tấn công cao nhất 40 lần.
+
+Accuracy tại ngưỡng tối ưu của chính nó: `0717` **90,47%**, `0140` **89,40%**. Các bản
+MiniFASNetV2-SE công bố ngoài thường báo ~98% trên CelebA-Spoof, nhưng trên **split gốc**;
+mirror ở §1 là bộ khác, `test` của nó 70,6% là tấn công, nên hai con số không đặt cạnh nhau
+được. Khoảng cách vẫn đủ lớn để không bỏ qua.
+
+### 12.5 Điểm số bám tỉ lệ crop, không bám tư thế — và train dạy nó thế
+
+Tám khung điện thoại chụp bằng nút "Chụp khung này" của `live_demo.py`, đủ tư thế nghiêng
+ngẩng cúi che, chấm bằng A0 `20260902-0140` ở ngưỡng 0,90. Cột `tight` là tỉ lệ mà **crop
+sát mặt** thực sự đạt được: nhỏ hơn 1,00 nghĩa là ô vuông cắt ra **bé hơn chính hộp mặt**,
+tức crop cắt cụt mặt.
+
+| Khung | Điểm | `tight` | `wide` | Mặt (px) | Mặt / cạnh ngắn |
+|---|---|---|---|---|---|
+| 210043 | 0,0004 | **0,71** | 0,71 | 548 | 0,76 |
+| 210309 | 0,0042 | **0,88** | 0,88 | 702 | 0,97 |
+| 210133 | 0,1997 | 1,00 | 1,59 | 387 | 0,54 |
+| 210051 | 0,5644 | **0,91** | 0,91 | 625 | 0,87 |
+| 210124 | 0,6222 | **0,74** | 0,74 | 709 | 0,98 |
+| 210317 | 0,7537 | 1,00 | 1,82 | 372 | 0,52 |
+| 210059 | 0,9929 | 1,00 | 1,64 | 335 | 0,47 |
+| 210115 | 0,9958 | 1,00 | 1,82 | 317 | 0,44 |
+
+**Bốn khung có `tight` < 1,00 chiếm trọn bốn vị trí thấp nhất.** Không khung nào trong số
+đó vượt 0,63; không khung nào có `tight` = 1,00 tụt xuống dưới 0,19. Tư thế thì trộn đều cả
+hai nhóm, nên tư thế không giải thích được thứ tự này.
+
+Bỏ dải đen letterbox đi rồi chấm lại (nguồn là ảnh dọc điện thoại nhồi vào khung ngang
+1280×720, nội dung thật chỉ 507 px) làm **mọi khung tệ đi**, vì mất luôn phần phòng ngang:
+`tight` tụt xuống 0,24–0,96 và điểm tụt theo xuống 0,008–0,08. Cùng một quy luật, đo lần
+thứ hai trên 16 điểm.
+
+### Train dạy đúng cái đó
+
+Đếm `wide_scale` trên 10.000 bản ghi train. Vì `fitted_box` cắt cả hai view bằng cùng một
+lượng phòng, `wide_scale` < 1,0 tương đương `tight` < 1,0:
+
+| `wide_scale` | Tỉ lệ mẫu | Trong đó là mặt thật |
+|---|---|---|
+| **< 1,00** | 8,8% | **4,6%** |
+| 1,00–1,50 | 34,4% | 28,3% |
+| 1,50–2,00 | 33,5% | 46,5% |
+| 2,00–2,70 | 22,7% | 36,4% |
+
+| | Có `wide` < 1,0 |
+|---|---|
+| Mặt thật | **1,2%** |
+| Tấn công | **12,8%** |
+
+Trong tập train, crop bị cắt cụt **có xác suất là tấn công cao gấp 11 lần** là mặt thật.
+Model học đúng thứ nó được dạy: **cắt cụt ⇒ tấn công**. Đây là tương quan giả trong dữ
+liệu, không phải model hỏng — và nó nổ mỗi lần người dùng ngồi gần.
+
+Ngưỡng không chữa được: đây không phải điểm số trôi vài phần nghìn quanh vạch, mà là hai
+bậc độ lớn.
+
+### Suy ra ngưỡng khoảng cách
+
+Để `wide` với tới 2,7× thì cần `1,35 × mặt ≤` khoảng cách từ tâm mặt tới mép gần nhất. Mặt
+đặt giữa khung cao 720 px cho **mặt ≤ 266 px**, tức **≤ 37% chiều cao khung**. Tám khung ở
+trên nằm trong dải 44–98%: **không khung nào đủ xa**, kể cả hai khung chấm 0,99.
+
+🔬 **n=8, một người, một buổi, một điện thoại.** Đủ để nói cơ chế, chưa đủ làm cổng nghiệm
+thu.
+
 ---
 
 ## 13. Còn nợ
