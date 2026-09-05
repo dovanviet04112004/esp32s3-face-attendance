@@ -1,16 +1,9 @@
 """Five landmarks to a 112x112 aligned face.
 
-Must stay identical to ai_engine/src/recognition/align.cpp. The embedding a face
-gets depends on how it was aligned, so a device that aligns even slightly
-differently from the training pipeline compares embeddings drawn from two
-different distributions, and the similarity threshold tuned on one does not hold
-on the other.
-
-The reference points are ArcFace's, in the 112x112 frame; MS1MV3 was packed with
-them, so the student sees this exact geometry from its first step. The transform
-is a similarity - rotation, uniform scale, translation - and nothing more: a full
-affine would let the solver shear a face to fit the reference and remove exactly
-the shape differences the embedding is supposed to carry.
+Must stay identical to ai_engine/src/recognition/align.cpp: aligning differently
+puts the two sides' embeddings in different distributions. Reference points are
+ArcFace's, the geometry MS1MV3 was packed with. The transform is a similarity -
+a full affine would shear a face to fit and lose the shape the embedding carries.
 """
 
 from __future__ import annotations

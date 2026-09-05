@@ -1,10 +1,8 @@
 """Supervised loss on real labels: focal, GIoU and landmark L1.
 
-This is the whole of arm A0 in KEHOACH section 3.7 and stays switched on in every
-other arm, so a regression here moves all four rows of the ablation table at once.
-
-Targets arrive already assigned to priors. Assignment is the training loop's
-job; a loss that also decided which prior owns which face could not be tested
+The whole of arm A0 and switched on in every other arm (KEHOACH 3.7), so a
+regression here moves all four rows at once. Targets arrive already assigned to
+priors: a loss that also decided which prior owns which face could not be tested
 without reproducing that decision.
 """
 

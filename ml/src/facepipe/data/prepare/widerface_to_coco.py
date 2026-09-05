@@ -1,14 +1,8 @@
 """WIDER FACE plus RetinaFace landmarks to COCO json.
 
 The RetinaFace label file is the source of truth for both boxes and the five
-landmarks: teacher and student must see identical targets or the distilled
+landmarks: teacher and student must see identical targets, or the distilled
 landmark head learns against a different frame than the task loss.
-
-Usage:
-    python -m facepipe.data.prepare.widerface_to_coco \\
-        --labels data/raw/detection/retinaface_labels/train/label.txt \\
-        --images data/raw/detection/widerface/WIDER_train/images \\
-        --out data/interim/detection/widerface_coco/train.json
 """
 
 from __future__ import annotations

@@ -1,24 +1,9 @@
 """Run the teacher over every shard once and keep its 512-D answers on disk.
 
-The teacher is forty times the student's cost per image. Running it inside the
-training loop would make the distilled arm several times slower than the baseline
-it is being compared against, and the ablation would then be measuring patience
-rather than method (KEHOACH section 3.7). Its output depends only on the image,
-so it is computed once here and read back as fast as the shards themselves.
-
-Rows are addressed by the record's key, which is its position in the original
-RecordIO. Shards therefore write disjoint contiguous stretches, and a run that
-dies part way can resume at a shard boundary without recomputing what it has.
-
-The only augmentation the branch applies is a horizontal flip, and a flip does
-not move a face on the unit sphere far enough to matter here: one embedding per
-image is cached, and the student sees it whichever way its own copy was flipped.
-
-Usage:
-    python -m facepipe.tasks.recognition.teacher.export_embedding \\
-        --shards data/interim/recognition/ms1mv3_shards \\
-        --weights artifacts/recognition/teacher/w600k_r50.pth \\
-        --out artifacts/recognition/teacher/ms1mv3_embeddings.f16
+Caching the teacher out of the training loop keeps the ablation measuring method
+rather than patience (KEHOACH 3.7). Rows are addressed by the record's key, its
+position in the original RecordIO, so shards write disjoint stretches and a dead
+run resumes at a shard boundary. One embedding per image, flip included.
 """
 
 from __future__ import annotations

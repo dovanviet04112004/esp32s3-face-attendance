@@ -76,10 +76,9 @@ def test_the_crossing_of_a_separated_set_costs_nothing() -> None:
 def test_a_model_that_separates_perfectly_is_not_punished_for_its_scale() -> None:
     """The bug this replaced: every score under the fixed cut read as 0.5 ACER.
 
-    An untrained depth map scores near zero, so a constant threshold called every
-    sample an attack and reported the same number for a useless model and for one
-    that had learnt the split. The crossing is found on the scores themselves, so
-    a model whose whole distribution sits low still shows the separation it has.
+    An untrained depth map scores near zero, so a constant threshold reports the
+    same number for a useless model and a good one. The crossing is found on the
+    scores themselves, so a low distribution still shows its separation.
     """
     tiny = np.array([2e-4, 1.9e-4, 1e-5, 5e-6])
     assert error_rates(tiny, LIVE_FIRST, threshold=0.5).acer == pytest.approx(0.5)

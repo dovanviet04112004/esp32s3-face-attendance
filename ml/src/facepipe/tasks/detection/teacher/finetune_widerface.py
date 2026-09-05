@@ -1,16 +1,9 @@
 """Fine-tune YOLO26m-pose from COCO person-pose onto WIDER FACE.
 
-Two things change at once: one class instead of eighty, and five keypoints
-instead of seventeen. Ultralytics rebuilds the head from the dataset yaml, so
-kpt_shape and nc there are what actually decide the architecture.
-
-Images are symlinked unless max_side asks for a shrunk copy. Ultralytics reads
-loose files off a drvfs mount that spends 15 ms opening each one, so the only
-lever is making the set small enough for the page cache to keep it.
-
-Usage:
-    python -m facepipe.tasks.detection.teacher.finetune_widerface \\
-        --cfg configs/detection/teacher_yolo26m_pose.yaml
+One class instead of eighty and five keypoints instead of seventeen, both of
+which Ultralytics reads off the dataset yaml: kpt_shape and nc there decide the
+architecture. Images are symlinked unless max_side asks for a shrunk copy, since
+drvfs spends 15 ms opening each loose file (measurements 7).
 """
 
 from __future__ import annotations
@@ -40,10 +33,9 @@ def read_split(path: Path) -> set[str]:
 def unit(value: float) -> float:
     """Clamp a normalised coordinate into [0, 1].
 
-    WIDER FACE annotates faces that run off the edge of the frame, so a few
-    landmarks land outside it. Ultralytics drops the whole label file when a
-    keypoint exceeds 1.01, taking every other face in that image with it;
-    clamping keeps the image and moves the point to the border it sits behind.
+    WIDER FACE annotates faces running off the frame, and Ultralytics drops the
+    whole label file when a keypoint exceeds 1.01, taking every other face in
+    that image with it.
     """
     return min(1.0, max(0.0, value))
 

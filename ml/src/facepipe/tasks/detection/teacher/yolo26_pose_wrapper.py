@@ -1,12 +1,9 @@
 """YOLO26m-pose behind the interface the rest of the branch expects.
 
 Ultralytics is AGPL-3.0 and only this module touches it, so the import stays
-local to the teacher and the student never depends on it.
-
-The pretrained checkpoint predicts 17 COCO body keypoints for the class person.
-Using it unchanged would distil shoulders and hips into a head that means eyes,
-nose and mouth corners, and nothing downstream would complain: shapes only
-disagree if someone checks. load() checks.
+local. The pretrained checkpoint predicts 17 COCO body keypoints; using it
+unchanged would distil shoulders into a head that means eyes and mouth corners,
+and nothing downstream would complain, so load() checks.
 """
 
 from __future__ import annotations
@@ -105,13 +102,8 @@ class PriorAssignedTeacher(nn.Module):
     """The detector, with its answers put into the student's head shape.
 
     Feature distillation needs maps from the same forward the soft targets came
-    from, and a crop or a flip moves both, so neither survives being cached
-    against an image name. The detector therefore runs inside the loop, and the
-    extra forward per step is the cost the ablation reports (KEHOACH 3.7).
-
-    It is shown the student's own letterboxed frame, upscaled to its native size.
-    Handing it the original instead would supervise the student towards faces its
-    input cannot resolve, the mismatch section 3 layer 2 exists to remove.
+    from, so the detector runs inside the loop (KEHOACH 3.7). It sees the
+    student's letterboxed frame upscaled, never the original.
     """
 
     def __init__(

@@ -125,11 +125,9 @@ class TrainState:
 class Trainer:
     """Drives one training run end to end.
 
-    `step_fn` maps a batch to (loss, parts). Passing a Distiller covers both the
-    plain and the distilled arms without a branch in this file.
-
-    Checkpoints are written at epoch boundaries, so a resume replays from the
-    last completed epoch and epoch count stays consistent with global_step.
+    `step_fn` maps a batch to (loss, parts), so passing a Distiller covers both
+    arms without a branch here. Checkpoints are written at epoch boundaries: a
+    resume replays from the last completed epoch, keeping global_step consistent.
     """
 
     def __init__(

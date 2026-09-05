@@ -3,9 +3,6 @@
 Filenames follow <session>_<seq>.jpg and each image may carry a sibling json in
 meta/ holding the capture conditions. Whatever the json does not say is left
 empty rather than guessed: a fabricated lux value would end up in the report.
-
-Usage:
-    python -m facepipe.data.prepare.device_index --root data/raw/device/ov5640
 """
 
 from __future__ import annotations

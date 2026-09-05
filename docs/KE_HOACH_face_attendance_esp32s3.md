@@ -1338,16 +1338,18 @@ ml/
 │   │   ├── sensitivity/{layer_sensitivity.py, mixed_precision_planner.py}
 │   │   └── report/quant_debug.py
 │   │
-│   ├── export/
-│   │   ├── to_onnx.py  ├── onnx_to_tf.py  ├── tf_to_tflite_int8.py
-│   │   ├── tflite_op_check.py             # đối chiếu op ↔ danh sách ESP-NN/TFLM
-│   │   ├── emit_golden.py                 # ★ xuất vector vàng ra contracts/golden/
-│   │   ├── pack_models_partition.py       # gộp 3 .tflite + header → models.bin
-│   │   └── update_lock.py                 # ★ ghi contracts/models.lock.json
-│   │
-│   └── bench/{host_bench.py, device_client.py, accuracy_on_device.py,
-│              live_demo.py,                 # ★ detect → align → spoof → recog, webcam host
-│              cam_bridge.py}                # ★ chạy trên Windows: virtual cam → MJPEG
+│   └── export/
+│       ├── to_onnx.py  ├── onnx_to_tf.py  ├── tf_to_tflite_int8.py
+│       ├── tflite_op_check.py             # đối chiếu op ↔ danh sách ESP-NN/TFLM
+│       ├── emit_golden.py                 # ★ xuất vector vàng ra contracts/golden/
+│       ├── pack_models_partition.py       # gộp 3 .tflite + header → models.bin
+│       └── update_lock.py                 # ★ ghi contracts/models.lock.json
+│
+├── bench/{host_bench.py, device_client.py, accuracy_on_device.py,
+│          live_demo.py,                   # ★ detect → align → spoof → recog, webcam host
+│          cam_bridge.py}                  # ★ chạy trên Windows: virtual cam → MJPEG
+│       ★ Điểm vào chạy thẳng, KHÔNG phải thư viện. Nằm ngoài src/facepipe/ vì gói cài
+│         đặt được không được kéo theo cv2 và http.server của một cái demo.
 │
 ├── scripts/                               # đánh số = thứ tự chạy
 │   ├── _resume_loop.sh                    # ★ khong danh so vi khong chay truc tiep:

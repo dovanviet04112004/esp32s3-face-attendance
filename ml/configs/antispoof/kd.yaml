@@ -1,8 +1,5 @@
-# Arm A3 of KEHOACH section 3.7: the baseline plus every distillation term this
-# branch has. Everything the two arms must share - architecture, seed, split,
-# augmentation, optimizer, schedule, epoch count, compile - is inherited rather
-# than repeated, so the only difference between the two runs is the teacher and
-# the losses that read it.
+# Arm A3 of KEHOACH 3.7. Everything the two arms must share is inherited rather
+# than repeated, so the only difference is the teacher and the losses reading it.
 
 _base_: student_minifasnet.yaml
 
@@ -13,10 +10,8 @@ run:
 teacher:
   enabled: true
   name: cdcnpp
-  # Copied out of the accepted teacher run, not read from runs/: a stable path
-  # keeps it out of the way of the resume loop, which treats every directory
-  # under runs/ as somewhere a student could continue from. Its EMA copy is the
-  # one loaded, that being the copy whose ACER was measured.
+  # A stable path keeps it clear of the resume loop, which treats every
+  # directory under runs/ as somewhere a student could continue from.
   ckpt: artifacts/antispoof/teacher/cdcnpp_best.pth
   input_hw: [80, 80]
   params:
@@ -27,9 +22,7 @@ teacher:
 distill:
   enabled: true
   task_loss_weight: 1.0
-  # The joined embedding of both backbones, which is what the depth terms project
-  # a map out of. The classifier after it outputs two numbers and would carry no
-  # spatial information at all.
+  # The joined embedding: the classifier after it carries no spatial information.
   feature_layers: [drop]
   losses:
     - name: antispoof_kd_logit

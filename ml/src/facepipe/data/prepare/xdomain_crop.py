@@ -1,17 +1,9 @@
 """Cross-domain sets to shards, with faces found the way the device finds them.
 
-The four sets ship as photographs and video, not as the two 80x80 crops this
-branch reads. A crop the kiosk could not have produced is not a fair test, so
-faces come from the detection branch's own student rather than from a ground
-truth box the device will never have.
-
-CelebA-Spoof holds no label for the kind of attack, so which attacks a model
-fails on can only come from sets that do (KEHOACH section 1.2).
-
-Usage:
-    python -m facepipe.data.prepare.xdomain_crop --set nuaa \\
-        --detector artifacts/detection/runs/<run>/ckpt/best.pth \\
-        --out data/interim/antispoof/xdomain/nuaa_crops
+Faces come from the detection student, not from a ground truth box the device
+will never have: a crop the kiosk could not produce is not a fair test.
+CelebA-Spoof carries no attack-type label, so which attacks a model fails on can
+only come from sets that do (KEHOACH 1.2).
 """
 
 from __future__ import annotations

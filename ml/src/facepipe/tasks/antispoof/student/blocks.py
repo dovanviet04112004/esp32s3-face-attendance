@@ -1,10 +1,9 @@
 """Building blocks of the MiniFASNet student.
 
-Two constraints from layer 1 of the plan shape everything here. Every spatial
-convolution is depthwise so ESP-NN can accelerate it, and the squeeze-excite
-gate uses HardSigmoid rather than the usual sigmoid: ReLU6(x + 3) / 6 is
-piecewise linear, so INT8 reproduces it exactly where a sigmoid needs a lookup
-table and loses precision at both tails (KEHOACH section 3, layer 1).
+Every spatial convolution is depthwise so ESP-NN can accelerate it, and the
+squeeze-excite gate uses HardSigmoid: ReLU6(x + 3) / 6 is piecewise linear, so
+INT8 reproduces it exactly where a sigmoid needs a lookup table and loses both
+tails (KEHOACH 3, layer 1).
 """
 
 from __future__ import annotations

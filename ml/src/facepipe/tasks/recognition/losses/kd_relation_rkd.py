@@ -1,16 +1,9 @@
 """Relational KD: copy the shape of the batch, not the position of each face.
 
-Matching embeddings one by one asks a 1M-parameter student to land on the exact
-points a 43M-parameter teacher chose, which it cannot do and which it does not
-need to do. What identity comparison actually reads is relative: whether two
-faces are closer to each other than to a third. This term supervises that
-directly - distances between pairs and angles between triples - so the student is
-free to place the whole batch elsewhere on the sphere as long as its geometry
-matches (Park et al., Relational Knowledge Distillation).
-
-Distances are divided by their own batch mean before comparison, on both sides.
-Without that the term is dominated by the two models' different scales, and it
-would be pulling on exactly the length that l2norm throws away.
+Distances between pairs and angles between triples, so the student may place the
+batch anywhere on the sphere as long as the geometry matches (Park et al.).
+Distances are divided by their own batch mean on both sides, or the term is
+dominated by the two models' scales - the length l2norm throws away.
 """
 
 from __future__ import annotations
@@ -41,15 +34,9 @@ def pairwise_angles(embeddings: torch.Tensor) -> torch.Tensor:
 class RelationDistillLoss(DistillLoss):
     """Huber loss on pairwise distances and on the angles between triples.
 
-    Huber rather than squared error because one mismatched pair in a batch of
-    identities - the same person photographed twice, say - would otherwise
-    dominate a term meant to describe the batch as a whole.
-
-    The knee has to sit near the errors that actually occur or the robustness is
-    not there at all. Measured between an untrained student and the teacher, the
-    normalised distances differ by about 0.1, so the default beta of 1.0 that
-    smooth_l1_loss ships with would keep every pair in the quadratic half and
-    make this plain squared error.
+    Huber so one mismatched pair cannot dominate a term describing the whole
+    batch. The knee must sit near the errors that occur: the shipped beta of 1.0
+    would keep every pair quadratic and make this squared error (measurements 5).
     """
 
     def __init__(

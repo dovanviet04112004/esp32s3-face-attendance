@@ -1,13 +1,9 @@
 """MiniFASNetV2-SE: the anti-spoof model that ships on the device.
 
-It reads two crops of the same face, a tight one and a 2.7x context one, because
-what separates a live face from a photograph is mostly outside the face: a screen
-bezel, a paper edge, a hand holding the print. The two views share no weights;
-their embeddings are concatenated before the classifier (KEHOACH section 1.1).
-
-Input is 80x80 per view. The 5x5 depthwise layer that closes the backbone
-consumes exactly the 5x5 map that size produces, so changing the input size
-without changing that kernel silently changes what the classifier sees.
+Two crops of one face, tight and 2.7x context, on separate weights, concatenated
+before the classifier (KEHOACH 1.1). Input is 80x80 per view: the 5x5 depthwise
+layer closing each backbone consumes exactly the map that size produces, so
+changing the input without changing that kernel changes what the classifier sees.
 """
 
 from __future__ import annotations
@@ -56,10 +52,9 @@ class MiniFASNetBackbone(nn.Module):
 class MiniFASNetV2SE(nn.Module):
     """Two-scale anti-spoof classifier.
 
-    forward takes the two crops as one pair rather than two arguments, because
-    the shared distiller calls every student with a single input. Feeding the
-    same crop twice trains a model that cannot use context, which is the signal
-    the branch exists to read.
+    forward takes the two crops as one pair, not two arguments, because the
+    shared distiller calls every student with a single input. Feeding the same
+    crop twice trains a model that cannot use context.
     """
 
     def __init__(

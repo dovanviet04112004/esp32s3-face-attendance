@@ -1,17 +1,9 @@
 """Sequential tar shards, and the one place the record layout is defined.
 
-A record is every tar member sharing the text before the first dot, which is the
-WebDataset convention the MS1MV3 shards already follow. Grouping that way lets a
-record carry more than one payload: the anti-spoof branch stores both crop scales
-of one face together, so an epoch pays one read where two files cost two.
-
-Sharding is what makes an epoch affordable for the branches with hundreds of
-thousands of samples; see KEHOACH section 4.4.1 for which branch needs which.
-
-Usage:
-    python -m facepipe.data.prepare.images_to_wds \\
-        --images data/interim/detection/widerface_yolo/images/train \\
-        --out data/interim/detection/widerface_shards/train
+A record is every tar member sharing the text before the first dot, the
+WebDataset convention MS1MV3 already follows. Grouping that way lets one record
+carry several payloads, which is how the anti-spoof branch keeps both crop
+scales of a face behind a single read (KEHOACH 4.4.1).
 """
 
 from __future__ import annotations
@@ -107,12 +99,9 @@ class ShardWriter:
 def read_shard(path: Path) -> Iterator[dict[str, bytes]]:
     """Stream one shard back as records mapping extension to payload.
 
-    Opened in stream mode: a shard is read front to back, never seeked, which is
-    the access pattern the whole layout exists to produce.
-
-    The grouping text is returned under KEY_FIELD as well, following WebDataset.
-    A branch that caches per-record data outside the shard needs it to line the
-    two up; the extension keys stay exactly what the writer was given.
+    Opened in stream mode: front to back, never seeked. The grouping text comes
+    back under KEY_FIELD too, which is what a branch caching per-record data
+    outside the shard lines the two up by; extension keys stay as written.
     """
     current_key: str | None = None
     record: dict[str, bytes] = {}

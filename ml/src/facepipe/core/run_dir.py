@@ -1,10 +1,8 @@
 """Immutable run directories.
 
-Layout follows KEHOACH 4.4.3: artifacts/<task>/runs/<stamp>_<gitsha7>_<cfghash6>/
-with the branch as the first axis, matching configs/, data/ and tasks/.
-
-Six months later the trail back is: models.lock.json -> run_id -> this directory
--> config.resolved.yaml, split.lock, env.txt, ckpt/.
+Layout follows KEHOACH 4.4.3: artifacts/<task>/runs/<stamp>_<gitsha7>_<cfghash6>/.
+The trail back is models.lock.json -> run_id -> this directory ->
+config.resolved.yaml, split.lock, env.txt, ckpt/.
 """
 
 from __future__ import annotations

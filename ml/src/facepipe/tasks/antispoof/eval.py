@@ -1,13 +1,9 @@
 """ACER, HTER and the ROC an anti-spoof model is graded on.
 
-A liveness score is a number, and every error rate below is that number read
-against a threshold. Which threshold is the whole question: ACER at a fixed one
-cannot rank models, because a model that separates live from attack perfectly
-still scores 0.5 if its whole distribution sits on one side. So the threshold is
-fitted here, on the same scores, and reported alongside the rates it produced.
-
-Score convention: higher means more live. Labels follow losses.task_loss, where
-LIVE is 0 and SPOOF is 1.
+ACER at a fixed threshold cannot rank models: one that separates the classes
+perfectly still scores 0.5 with its whole distribution on one side, so the
+threshold is fitted here and reported beside the rates it produced. Higher means
+more live, and labels follow losses.task_loss: LIVE 0, SPOOF 1.
 """
 
 from __future__ import annotations
@@ -53,10 +49,9 @@ def error_rates(scores: np.ndarray, labels: np.ndarray, threshold: float) -> Err
 def equal_error_rate(scores: np.ndarray, labels: np.ndarray) -> ErrorRates:
     """The rates where APCER and BPCER meet, and the threshold that gets there.
 
-    APCER falls and BPCER rises with the threshold, so they cross exactly once
-    and the crossing is the model's separability with the operating point taken
-    out. This is what ranks two checkpoints; the shipped threshold is a separate
-    decision made once, on val, and then held fixed on test.
+    The two rates cross exactly once, and the crossing is separability with the
+    operating point taken out. This ranks checkpoints; the shipped threshold is
+    a separate decision, made on val and held fixed on test.
     """
     live, attack = split_scores(scores, labels)
     if not live.size or not attack.size:

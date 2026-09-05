@@ -1,10 +1,8 @@
 """Building blocks of the YuNet student.
 
-Every convolution here is separable and every activation is ReLU6, the two
-constraints layer 1 of the plan puts on an architecture before it is trained:
-ESP-NN accelerates depthwise and pointwise convolutions, and ReLU6 keeps
-activations in a bounded range that INT8 quantisation can cover without
-clipping the tail (KEHOACH section 3, layer 1).
+Every convolution is separable and every activation ReLU6: ESP-NN accelerates
+depthwise and pointwise convolutions, and ReLU6 bounds the activation range so
+INT8 covers it without clipping a tail (KEHOACH 3, layer 1).
 """
 
 from __future__ import annotations

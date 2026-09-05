@@ -1,14 +1,9 @@
 """Dataset, augmentation and prior assignment for the detection branch.
 
-Two rules shape this file.
-
-Augmentation is applied to the teacher's cached detections in the same call that
-applies it to the real labels. Transforming one and not the other leaves the
-student imitating geometry from a differently-cropped image, and the loss still
-falls (KEHOACH section 3, layer 2).
-
-The recipe is identical across all four arms of section 3.7. Only the loss may
-differ between arms, so nothing here may read whether a teacher is present.
+Augmentation hits the teacher's cached detections in the same call as the real
+labels: transform one and not the other and the student imitates geometry from a
+differently-cropped image while the loss still falls (KEHOACH 3, layer 2). The
+recipe is identical across all four arms, so nothing here reads for a teacher.
 """
 
 from __future__ import annotations
@@ -122,13 +117,9 @@ def random_crop(
 ) -> Sample:
     """Take a random window of the image, so a face can appear at any size.
 
-    Without this the student only ever sees WIDER at one scale, which at 160x120
-    means a median face of 2.9 pixels, while the kiosk will show it one face
-    filling a fifth of the frame (KEHOACH section 3, layer 2).
-
-    A face whose centre falls outside the window is dropped rather than clipped:
-    a box cut by an edge no longer describes a face, and the box head would learn
-    that shape as if it did.
+    Without it the student sees WIDER at one scale while the kiosk shows a face
+    filling a fifth of the frame (KEHOACH 3, layer 2). A face whose centre falls
+    outside the window is dropped, not clipped.
     """
     height, width = sample.image.shape[:2]
     factor = rng.uniform(*scale)
@@ -263,13 +254,9 @@ def assign_soft_targets(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """One image's teacher detections resampled onto the student's own priors.
 
-    The two networks regress from different priors, so a teacher offset means
-    nothing to the student head; only the pixel box survives the move and it is
-    re-encoded here against the prior the student would use for it.
-
-    A prior no teacher box claims is background at TEACHER_BACKGROUND_LOGIT, not
-    at whatever the teacher scored there: only detections above the teacher's own
-    confidence cut are kept, so what it thinks below that cut is never recorded.
+    The two regress from different priors, so only the pixel box survives and is
+    re-encoded against the student's own. An unclaimed prior takes
+    TEACHER_BACKGROUND_LOGIT, since nothing below the teacher's cut was recorded.
     """
     count = priors.shape[0]
     cls = torch.full((count, 1), TEACHER_BACKGROUND_LOGIT)

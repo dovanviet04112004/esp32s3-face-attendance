@@ -1,15 +1,9 @@
 """Deterministic split generation with a SPLIT.md that records how to redo it.
 
-Two rules this file exists to enforce:
-
-Identity-disjoint for anti-spoof and recognition. A person appearing in both
-train and val turns the metric into a memory test and inflates it silently.
-
-Calibration and device test sets never intersect. Calibrating INT8 on the very
-images used to report accuracy makes any number look good.
-
-Usage:
-    python -m facepipe.data.make_split --task recognition --seed 42
+Two rules it exists to enforce (KEHOACH 1.3). Anti-spoof and recognition splits
+are identity-disjoint: a person in both train and val turns the metric into a
+memory test. Calibration and device test sets never intersect: calibrating INT8
+on the images used to report accuracy makes any number look good.
 """
 
 from __future__ import annotations

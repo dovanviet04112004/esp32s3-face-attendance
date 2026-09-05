@@ -1,17 +1,9 @@
 """ArcFace: the task loss, an angular margin on the real identity labels.
 
-A plain softmax classifier only has to put each identity on its own side of a
-boundary, which leaves classes packed against each other; the embedding is then
-fine for choosing among the identities it was trained on and poor at deciding
-whether two unseen faces match. That second question is the only one the kiosk
-ever asks, since nobody in the employee database was in MS1MV3.
-
-The margin is added to the angle rather than the cosine, so the same penalty
-applies whether a sample sits near its class centre or far from it, and the
-decision boundary stays a cone on the unit sphere.
-
-The classifier weight is trained here and thrown away at export: the device runs
-the backbone and compares embeddings, and never sees these 84 thousand columns.
+The margin is added to the angle rather than the cosine, so the penalty is the
+same near a class centre as far from it and the boundary stays a cone. The
+classifier weight is trained here and thrown away at export: the device runs the
+backbone and compares embeddings, never these 84 thousand columns.
 """
 
 from __future__ import annotations

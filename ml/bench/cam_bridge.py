@@ -1,18 +1,8 @@
 """Publish a Windows camera as MJPEG so a Linux host can read it.
 
-A virtual camera is a Windows software device rather than a USB one, so it
-cannot be passed into WSL the way a real webcam can. This runs on the Windows
-side and serves frames over HTTP; the models stay where their dependencies are.
-
-Usage, on Windows, from a shell that has opencv:
-
-    python cam_bridge.py             list the cameras, then serve index 0 on 8091
-    python cam_bridge.py 1 8091      serve camera 1 on port 8091
-    python cam_bridge.py 1 8091 90   turn each frame 90 degrees clockwise first
-    python cam_bridge.py 1 8091 0 1  mirror it, the way a selfie preview reads
-
-From WSL the url is the default gateway, `ip route | awk '/^default/{print $3}'`,
-so `--source http://172.27.224.1:8091/` for bench/live_demo.py.
+A virtual camera is a Windows software device, not a USB one, so it cannot be
+passed into WSL. The url WSL reaches it on is the default gateway, not
+localhost: `ip route | awk '/^default/{print $3}'`.
 """
 
 import sys
@@ -76,6 +66,7 @@ def handler_for(capture, lock: threading.Lock, turn: int = 0, mirror: bool = Fal
 
 
 def main() -> int:
+    print("cam_bridge.py [index] [port] [turn_degrees] [mirror]")
     index = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 8091
     turn = int(sys.argv[3]) if len(sys.argv) > 3 else 0

@@ -1,15 +1,9 @@
 """Comparing an embedding against the enrolled templates.
 
-Must stay identical to svc_facedb/src/embedding_index.cpp. Templates are stored
-as int8 with a per-record scale (KEHOACH section 6.2.4), so the comparison the
-device actually runs is between two quantised vectors, and that is what this
-models rather than the float ideal.
-
-The stored scale never enters the similarity. Cosine measures angle, and scaling
-a vector by a positive constant does not move it, so both scales cancel exactly.
-The device therefore compares int8 against int8 with an int32 accumulator and one
-float divide at the end; dequantising first would cost 512 multiplies per
-template for a result that cannot differ.
+Must stay identical to svc_facedb/src/embedding_index.cpp. Templates are int8
+with a per-record scale (KEHOACH 6.2.4), and that scale never enters the
+similarity: cosine measures angle, so a positive factor cancels. The device
+compares int8 to int8 with an int32 accumulator and one float divide.
 """
 
 from __future__ import annotations

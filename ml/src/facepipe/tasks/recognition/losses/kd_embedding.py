@@ -1,16 +1,9 @@
 """Point the student's embedding the same way the teacher points its own.
 
-The teacher is a ResNet50 trained on WebFace600K, ten times the student's depth
-on a dataset it will never see; copying where it puts a face on the unit sphere
-is the whole of what the student can inherit from it.
-
-Only the direction is copied. Length carries no identity - the device normalises
-before every comparison (postproc/l2norm.py) - so a term that also matched length
-would spend gradient on a quantity nothing downstream reads.
-
-The plan names this term cosine plus L2. On unit vectors those are one term, not
-two: ||s - t||^2 = 2 - 2 cos(s, t), so adding the second only multiplies the
-gradient of the first by a constant, which the weight in the config already does.
+Only the direction is copied: the device normalises before every comparison, so
+matching length spends gradient on what nothing reads. The plan names this
+cosine plus L2, but on unit vectors ||s - t||^2 = 2 - 2 cos(s, t) - the second
+is the first times a constant, which the config weight already supplies.
 """
 
 from __future__ import annotations

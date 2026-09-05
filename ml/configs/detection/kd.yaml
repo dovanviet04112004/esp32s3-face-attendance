@@ -1,8 +1,5 @@
-# Arm A3 of KEHOACH section 3.7: the baseline plus every distillation term this
-# branch has. Everything the two arms must share - architecture, seed, split,
-# augmentation, optimizer, schedule, epoch count, compile - is inherited rather
-# than repeated, so the only difference between the two runs is the teacher and
-# the losses that read it.
+# Arm A3 of KEHOACH 3.7. Everything the arms must share is inherited rather than
+# repeated, so the only difference is the teacher and the losses reading it.
 
 _base_: student_yunet.yaml
 
@@ -12,14 +9,13 @@ run:
 
 teacher:
   enabled: true
-  # In the loop, not from a cache: a crop moves image, boxes and feature maps
-  # together, so nothing keyed on an image name still lines up (TASKS E4-T2).
+  # In the loop: a crop moves image, boxes and feature maps together, so nothing
+  # keyed on an image name lines up (TASKS E4-T2).
   name: yolo26_pose_on_priors
   ckpt: artifacts/detection/teacher/yolo26m_pose_widerface.pt
   freeze: true
   params:
-    # The student's own frame at four times the size, not the original: teaching
-    # faces the student input cannot resolve is the mismatch 3 layer 2 removes.
+    # The student's own frame upscaled, never the original (KEHOACH 3, layer 2).
     upscale: 4
     input_hw: [120, 160]
     conf: 0.25
@@ -28,11 +24,9 @@ teacher:
 distill:
   enabled: true
   task_loss_weight: 1.0
-  # The three neck laterals, 64 channels each at 15x20, 7x10 and 3x5. The teacher
-  # levels are four times as wide and the FGD term resamples them down.
+  # The three neck laterals; FGD resamples the teacher's wider levels down.
   feature_layers: [neck.lateral.0, neck.lateral.1, neck.lateral.2]
-  # TODO(E4-T1): fill from the fine-tuned checkpoint. Neither the layer names nor
-  # the channel counts can be read off a weight file that does not exist yet.
+  # TODO(E4-T1): fill from the fine-tuned checkpoint, which does not exist yet.
   teacher_feature_layers: []
   losses:
     - name: detection_kd_logit

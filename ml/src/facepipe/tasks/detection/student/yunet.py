@@ -1,11 +1,8 @@
 """YuNet student: backbone, TFPN neck, three-branch head.
 
-Registered as "yunet" so a config selects it by name without core importing
-this module (KEHOACH section 4.4.3).
-
-Weights start random. Loading the reference checkpoint would make the ablation
-in section 3.7 meaningless, because arm A0 would no longer be a student trained
-without a teacher.
+Registered as "yunet" so a config selects it by name without core importing this
+module (KEHOACH 4.4.3). Weights start random: loading the reference checkpoint
+would leave arm A0 no longer a student trained without a teacher.
 """
 
 from __future__ import annotations

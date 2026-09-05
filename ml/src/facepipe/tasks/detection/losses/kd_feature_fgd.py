@@ -1,13 +1,9 @@
 """Focal and Global Distillation on intermediate feature maps.
 
-Plain feature imitation makes the student copy the teacher's background too, and
-background is most of a WIDER FACE image. FGD splits the map with a mask built
-from the ground-truth boxes and weights the two halves separately, so the
-student spends its small capacity on faces.
-
-Each ground-truth box contributes 1 / area, otherwise one crowd scene of large
-faces outweighs every small face in the batch, and small faces are the hard
-track the plan is graded on.
+Plain feature imitation makes the student copy the background, which is most of
+a WIDER FACE image, so the map is split by a ground-truth mask and the halves
+weighted apart. Each box contributes 1 / area, or one crowd scene of large faces
+outweighs every small face in the batch.
 """
 
 from __future__ import annotations

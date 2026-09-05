@@ -1,13 +1,9 @@
 """Turning raw head output into pixel coordinates.
 
-Must stay identical to ai_engine/src/detection/decode.cpp. The training losses
-decode through these same functions rather than their own copy: a second
-implementation is a second thing to keep in step, and the drift shows up as a
-model that scores well in Python and misses faces on the board.
-
-Box encoding is YOLOX-style. The head predicts a centre offset in units of the
-prior's stride and a log-scale for the size; landmarks are plain offsets in the
-same units.
+Must stay identical to ai_engine/src/detection/decode.cpp, and the training
+losses decode through these same functions rather than a second copy that would
+drift. Encoding is YOLOX-style: a centre offset in units of the prior's stride
+and a log-scale for the size, with landmarks as plain offsets in those units.
 """
 
 from __future__ import annotations

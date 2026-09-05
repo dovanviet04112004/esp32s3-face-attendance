@@ -1,13 +1,9 @@
 """Geometry distillation: box corners and all five landmarks.
 
-Distilling only the class score throws away the half of the teacher that this
-project actually depends on. The landmarks decide how a face is aligned before
-MobileFaceNet sees it, so a student that finds faces but places eyes badly costs
-recognition accuracy that no later stage recovers.
-
-Comparison happens in pixels. The teacher regresses from its own priors, so its
-raw offsets mean something different from the student's even where both describe
-the same box.
+The landmarks decide how a face is aligned before MobileFaceNet sees it, so a
+student that finds faces but places eyes badly costs recognition accuracy no
+later stage recovers. Comparison happens in pixels: the teacher regresses from
+its own priors, so its raw offsets mean something else than the student's.
 """
 
 from __future__ import annotations

@@ -1,22 +1,9 @@
 """Verification accuracy on the standard benchmarks, and TAR at a fixed FAR.
 
-The question a kiosk asks is never "which of these 84 thousand identities is
-this" - it is "are these two faces the same person", about somebody the model was
-never trained on. That is what these sets measure, and it is why the training
-loss is not a useful reading of progress here.
-
-The protocol is InsightFace's: pairs come from a .bin holding encoded images and
-a same-or-not flag, similarity is the cosine between L2-normalised embeddings,
-and the threshold is chosen on nine folds and scored on the tenth so the reported
-accuracy is not the accuracy of a threshold fitted to the answer.
-
-The flip test - embedding a face and its mirror and adding the two - is off by
-default. Published figures use it, and this reproduces them with --flip, but the
-device runs one forward per face, so the default reports what will actually ship.
-
-TAR at FAR matters more than accuracy for the door. Accuracy weighs a stranger
-let in the same as an employee turned away, which is not how the two land in
-practice (KEHOACH section 1.1).
+InsightFace's protocol: pairs come from a .bin of encoded images and a
+same-or-not flag, similarity is cosine between L2-normalised embeddings, and the
+threshold is fitted on nine folds and scored on the tenth. The flip test is off
+by default - published figures use it, the device does not.
 """
 
 from __future__ import annotations

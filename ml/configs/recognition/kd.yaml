@@ -1,8 +1,5 @@
-# Arm A3 of KEHOACH section 3.7: the baseline plus every distillation term this
-# branch has. Everything the two arms must share - architecture, seed, split,
-# augmentation, optimizer, schedule, epoch count, compile - is inherited rather
-# than repeated, so the only difference between the two runs is the teacher and
-# the losses that read it.
+# Arm A3 of KEHOACH 3.7. Everything the two arms must share is inherited rather
+# than repeated, so the only difference is the teacher and the losses reading it.
 
 _base_: student_mobilefacenet.yaml
 
@@ -12,25 +9,18 @@ run:
 
 teacher:
   enabled: true
-  # The teacher ran once, offline. Running it in the loop would make this arm
-  # several times slower than the baseline it is compared against, and the table
-  # would then be measuring patience.
   name: cached_embedding
 
 data:
   params:
-    # Written by export_embedding.py: one fp16 row per record, addressed by the
-    # record's key, so a row and the face it came from cannot drift apart.
+    # Written by export_embedding.py, addressed by the record's key.
     teacher_cache: artifacts/recognition/teacher/ms1mv3_embeddings.f16
 
 distill:
   enabled: true
   task_loss_weight: 1.0
   losses:
-    # Measured at initialisation: ArcFace 46.2, the cosine term 1.0, the relational
-    # term 0.047. Left at a weight of one the relational term would be a thousandth
-    # of the gradient and the arm would be distilling in name only. These bring
-    # both terms to roughly a quarter of the task loss once it settles near 8.
+    # Balanced against the task loss at initialisation (measurements 5).
     - name: recognition_kd_embedding
       weight: 10.0
     - name: recognition_kd_relation_rkd

@@ -1,12 +1,8 @@
 """Make clean dataset images look like OV5640 frames.
 
-WIDER FACE and Glint360K are web photos: sharp, well exposed, already
-compressed once by a good encoder. The kiosk sees a small rolling-shutter
-sensor behind a cheap lens at 20 MHz XCLK. Training on the former and running
-on the latter is a domain gap, and this closes part of it.
-
-Every effect is seeded, so an augmented sample is reproducible from the seed
-and the index alone.
+WIDER FACE and Glint360K are sharp, well exposed web photos; the kiosk sees a
+small rolling-shutter sensor behind a cheap lens at 20 MHz XCLK. Every effect is
+seeded, so an augmented sample is reproducible from the seed and index alone.
 """
 
 from __future__ import annotations

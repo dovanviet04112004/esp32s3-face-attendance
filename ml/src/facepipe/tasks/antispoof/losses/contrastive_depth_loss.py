@@ -1,13 +1,9 @@
 """Contrastive depth loss: match the map's local contrast, not its level.
 
-An L1 on the map alone is satisfied by a prediction that is uniformly close to
-the target, which for a live face means a smooth blob with no structure. This
-term compares each pixel against its eight neighbours in both maps, so what is
-scored is the shape of the relief rather than how bright it is.
-
-That distinction is what separates a live face from a curved print: the print
-also has a non-flat depth, but the direction of its gradients does not follow a
-face (KEHOACH section 1.1).
+An L1 on the map alone is satisfied by a smooth blob of the right brightness.
+This compares each pixel against its eight neighbours in both maps, scoring the
+shape of the relief - which is what separates a live face from a curved print,
+whose depth is also non-flat but whose gradients do not follow a face.
 """
 
 from __future__ import annotations

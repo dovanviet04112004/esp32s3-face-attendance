@@ -1,13 +1,9 @@
 """KEHOACH section 3.7: the two arms of a branch may differ in one place only.
 
-The ablation answers whether the teacher is worth its cost. It can only answer
-that if the baseline and the distilled run were trained under identical
-conditions - same architecture, same seed, same split, same schedule, same
-kernels. A knob that drifts between the two puts its effect inside the number the
-table reports, and nothing in a finished run reveals which part came from where.
-
-These checks read the committed configs, so a divergence is caught before a run
-starts rather than after both arms have been trained.
+A knob that drifts between the arms puts its effect inside the number the table
+reports, and nothing in a finished run reveals which part came from where. These
+checks read the committed configs, so a divergence is caught before a run starts
+rather than after both arms have been trained.
 """
 
 from __future__ import annotations

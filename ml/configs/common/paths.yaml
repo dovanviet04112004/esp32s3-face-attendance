@@ -1,10 +1,8 @@
 # Dataset roots. Never hardcode a path in code; point these at wherever the
 # data actually lives, symlinking raw/ to another disk when space runs out.
 
-# The two machine-specific values (KEHOACH section 4.4.1). A dataset belongs on
-# fast_drive only when it fits in the page cache: drvfs is never cached and
-# rereads from Windows every epoch, while the ext4 image caches normally but
-# tops out at 33 MB/s. Above the cache, drvfs wins on bandwidth by six times.
+# The two machine-specific values. A dataset belongs on fast_drive only when it
+# fits the page cache; above that drvfs wins on bandwidth (KEHOACH 4.4.1).
 cold_drive: /mnt/e/face-attendance-data
 fast_drive: /data/face-attendance
 
@@ -24,8 +22,7 @@ detection:
 antispoof:
   celeba_spoof: data/raw/antispoof/celeba_spoof
   crops: data/interim/antispoof/celeba_spoof_crops
-  # Cross-domain evaluation only, never training: these replace the four gated
-  # datasets the plan dropped (KEHOACH section 1.2).
+  # Cross-domain evaluation only, never training (KEHOACH 1.2).
   xdomain:
     nuaa: data/raw/antispoof/xdomain/nuaa
     unique_live: data/raw/antispoof/xdomain/unique_live

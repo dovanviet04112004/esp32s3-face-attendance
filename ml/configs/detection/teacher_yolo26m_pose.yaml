@@ -1,7 +1,6 @@
 # Teacher fine-tune: COCO person-pose to WIDER FACE with five landmarks.
-# Produces the soft targets arms A1 to A3 of KEHOACH section 3.7 distil from, so
-# a teacher below the 0.80 hard-track target makes all three KD arms untrustworthy
-# rather than merely weaker.
+# Produces the soft targets arms A1 to A3 distil from, so a teacher below the
+# 0.80 hard-track target makes all three untrustworthy (KEHOACH 3.7).
 
 run:
   task: detection
@@ -30,15 +29,9 @@ teacher:
 
 data:
   name: widerface_yolo
-  # Steady state at 640 square is 3.41 GiB of the card's 4.0, and reserved memory
-  # keeps climbing to about 5.95 GiB over thirty epochs before WSL starts paging
-  # to host memory, which costs a factor of fifty per step and raises no error.
-  # Four leaves too little room for that; measure at epoch three, not epoch one.
+  # Reserved memory climbs across thirty epochs until WSL pages (measurements 7.1).
   batch_size: 4
-  # Measured: 4, 6 and 8 readers all hold 2.4 iterations a second, and each one
-  # costs three processes because Ultralytics gives the val loader twice the
-  # count. Four leaves the most memory to the page cache, which is what makes
-  # every epoch after the first cheap (KEHOACH section 4.4.1).
+  # More readers buy nothing and cost page cache (measurements 7.1).
   num_workers: 4
   split_files:
     - data/splits/detection/v1/train.txt

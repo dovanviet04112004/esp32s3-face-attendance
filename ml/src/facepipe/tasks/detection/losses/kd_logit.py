@@ -1,12 +1,9 @@
 """Classification distillation: KL between teacher and student face scores.
 
-The head carries one class and a sigmoid, so the divergence is Bernoulli rather
-than the categorical softmax the usual formulation assumes. Both terms are kept:
-dropping the background half would let the student agree with the teacher on
-faces while saying anything it likes everywhere else.
-
-Teacher output arrives already resampled onto the student's priors, which is
-export_soft_target's job (E4-T2). Everything here works elementwise.
+The head carries one class and a sigmoid, so the divergence is Bernoulli, not
+the categorical softmax the usual formulation assumes. Both terms are kept, or
+the student agrees with the teacher on faces and says anything elsewhere.
+Teacher output arrives already resampled onto the student's priors.
 """
 
 from __future__ import annotations

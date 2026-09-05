@@ -77,9 +77,8 @@ class LossTerm:
 class StageSchedule:
     """Which distillation terms are live at a given epoch.
 
-    Turning every term on at once lets the task loss pull the student towards
-    the labels before it has learned anything from the teacher's features, and
-    the feature term then spends the run fighting it (KEHOACH section 3, layer 2).
+    Turning every term on at once lets the task loss pull the student towards the
+    labels before the feature term has taught it anything (KEHOACH 3, layer 2).
     An empty schedule means every term is always on.
     """
 

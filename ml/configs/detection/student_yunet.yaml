@@ -1,7 +1,5 @@
-# YuNet student, arm A0 of the ablation in KEHOACH section 3.7: random init,
-# task loss only, no teacher. The KD arms inherit this file and switch the
-# teacher and distill sections on, so every arm shares one architecture and one
-# schedule and only the losses differ.
+# YuNet student, arm A0 of KEHOACH 3.7. The KD arms inherit this file and switch
+# teacher and distill on, so only the losses differ.
 
 run:
   task: detection
@@ -12,9 +10,8 @@ run:
 
 model:
   name: yunet
-  # 4:3, the aspect the OV5640 delivers. Height 120 leaves the stride-16 and
-  # stride-32 levels covering 112 and 96 rows, so the bottom strip is seen only
-  # by the finest level.
+  # 4:3, the aspect the OV5640 delivers; the bottom strip reaches the finest
+  # level only.
   input_hw: [120, 160]
   params:
     num_classes: 1
@@ -23,20 +20,17 @@ model:
 data:
   name: widerface
   batch_size: 64
-  # Measured on a 300 epoch run: 581 images a second against 1,111 from the loader
-  # alone, so an epoch waits on the step and the per-epoch forks, not on decoding.
+  # An epoch waits on the step, not on decoding (measurements 7.2).
   num_workers: 20
   prefetch_factor: 4
   split_files:
     - data/splits/detection/v1/train.txt
     - data/splits/detection/v1/landmark_val.txt
   params:
-    # Originals, not the 320 pixel copy: crop_scale blows 30 percent of a frame up
-    # to 160 wide, which invents pixels only when the source is small (KEHOACH 4.4.1).
+    # Originals, not the 320 px copy, or crop_scale invents pixels (measurements 7.2).
     coco: data/interim/detection/widerface_coco/train.json
     images: data/raw/detection/widerface/WIDER_train/images
-    # Measured on the training split: median face 2.9 px, level 2 gets no positive
-    # prior at all. These lift the median to 13.6 (KEHOACH section 3, layer 2).
+    # Lifts the median face from 2.9 px to 13.6 (measurements 3).
     crop_scale: [0.3, 1.0]
     min_face_px: 8
 

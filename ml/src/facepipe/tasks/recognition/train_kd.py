@@ -1,17 +1,8 @@
 """The one entry point that trains the recognition student, teacher or not.
 
-Both arms of KEHOACH section 3.7 run through here: A0 leaves teacher.enabled
-false and gets ArcFace alone, A3 switches the cached teacher on and names its
-distillation terms.
-
-Validation is verification accuracy on LFW, CFP-FP and AgeDB-30, not the training
-loss. ArcFace's loss falls steadily long after the embedding has stopped getting
-better at deciding whether two unseen faces match, so a checkpoint picked by loss
-is not the checkpoint that should ship.
-
-Usage:
-    python -m facepipe.tasks.recognition.train_kd \\
-        --cfg configs/recognition/student_mobilefacenet.yaml
+Both arms of KEHOACH 3.7 run through here: A0 leaves teacher.enabled false, A3
+switches the cached teacher on. Validation is verification on LFW, CFP-FP and
+AgeDB-30, never the training loss.
 """
 
 from __future__ import annotations

@@ -1,21 +1,9 @@
 """CelebA-Spoof parquet shards to face crops at two scales, packed into shards.
 
-MiniFASNet trains on two views of the same face: a tight 1.0x crop and a context
-crop reaching for 2.7x. The wide crop carries what separates a live face from a
-photo of one, the screen bezel and the paper edge. 2.7x is a cap rather than a
-constant, since a face near the camera leaves no room for it (KEHOACH §3).
-
-Both scales go in one record, so an epoch over 419,935 faces costs that many
-reads rather than twice as many opens (KEHOACH section 4.4.1).
-
-The mirror stores three columns: the encoded image, a bounding box and a class.
-Boxes are absolute pixel [x1, y1, x2, y2] in the image's own frame, verified
-against image dimensions across sample rows.
-
-Usage:
-    python -m facepipe.data.prepare.celeba_spoof_parquet \\
-        --root data/raw/antispoof/celeba_spoof \\
-        --out data/interim/antispoof/celeba_spoof_crops
+The 2.7x context scale is a cap, not a constant: a face near the camera leaves
+no room for it (KEHOACH 3). Both scales share one record, so an epoch costs one
+read per face rather than two opens (KEHOACH 4.4.1). Boxes in the mirror are
+absolute pixel [x1, y1, x2, y2] in the image's own frame.
 """
 
 from __future__ import annotations
@@ -100,8 +88,7 @@ def fitted_box(
 
     Returns the box and the scale it actually reached, which falls below `scale`
     whenever the face sits too near the camera. Stretching a clamped rectangle
-    back to square distorts the face and padding invents context, and both read
-    as attack cues (KEHOACH §3).
+    back to square distorts the face and padding invents context (KEHOACH 3).
     """
     x1, y1, x2, y2 = (float(value) for value in box_xyxy)
     cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0

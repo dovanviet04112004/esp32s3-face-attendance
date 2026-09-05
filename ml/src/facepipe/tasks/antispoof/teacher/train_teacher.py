@@ -1,19 +1,9 @@
 """Train CDCN++ on CelebA-Spoof against pseudo depth maps.
 
-The teacher never learns a class. It learns to draw a mound where there is a
-face with relief and a flat field where there is a photograph, and the class it
-implies is read off that map afterwards. Supervising geometry instead of a label
-is the whole reason this teacher is worth distilling from: the label is already
-in the data the student sees, the map is not (KEHOACH section 1.1).
-
-Two terms, both against the same target. L1 puts the map at the right level, and
-the contrast term compares each pixel against its eight neighbours so the shape
-of the relief has to match too - without it the L1 is satisfied by a smooth blob
-of roughly the right brightness, which is exactly what a curved print produces.
-
-Usage:
-    python -m facepipe.tasks.antispoof.teacher.train_teacher \\
-        --cfg configs/antispoof/teacher_cdcnpp.yaml
+The teacher never learns a class: it draws a mound over relief and a flat field
+over a photograph (KEHOACH 1.1). Two terms against the same target - L1 sets the
+level, the contrast term compares each pixel against its eight neighbours so the
+shape has to match too.
 """
 
 from __future__ import annotations
@@ -53,11 +43,9 @@ from .depth_gt import DEPTH_SIZE, LIVE, SIGMA_OF_FACE
 class DepthSupervision(nn.Module):
     """L1 against the pseudo depth map, plus the same comparison on its contrasts.
 
-    L1 is averaged over the face box and over the room separately and added: the
-    box holds 14% of the pixels but carries half the term, and one mean over the
-    map would price a flat answer at 0.0585 rather than 0.4160. On a live target
-    the level reads 0.063 against a contrast of 0.0025 for a noisy prediction,
-    which is the gap the default weight closes.
+    L1 is averaged inside and outside the face box separately and added, so the
+    box carries half the term against 14% of the pixels and a flat answer stops
+    being cheap (measurements 7).
     """
 
     def __init__(
@@ -177,10 +165,9 @@ def main(argv: list[str] | None = None) -> int:
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
         """Depth loss, and the error rates read off the map's own score.
 
-        The teacher has no classifier, so liveness is the collapsed map. Where to
-        cut it comes from where the two error rates cross on this split, not from
-        a constant: an untrained map scores below any fixed threshold, so a fixed
-        one reports 0.5 for every epoch until the distribution happens to cross it.
+        The teacher has no classifier, so liveness is the collapsed map, and the
+        cut comes from where the two rates cross on this split. A constant would
+        report 0.5 every epoch until the distribution happened to reach it.
         """
         module.eval()
         meter = MetricTracker()

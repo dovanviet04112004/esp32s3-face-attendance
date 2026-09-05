@@ -1,21 +1,8 @@
 """A smaller copy of a COCO dataset: images and coordinates rescaled together.
 
-The student letterboxes to 160x120 and has no augmentation that ever asks for
-more, so decoding a 1024x768 JPEG to produce it is work thrown away. Measured on
-this branch: reading alone runs at 258 images a second and reading with the full
-training step at 271, meaning the GPU spends the epoch waiting on JPEG decode.
-
-Images and annotations are rescaled in the same pass on purpose. Two passes, or
-a resize with the old labels left alone, produce a dataset that loads, trains,
-and is wrong everywhere by one scale factor - boxes drawn slightly off every
-face, with nothing that raises.
-
-Usage:
-    python -m facepipe.data.prepare.shrink_coco \\
-        --coco data/interim/detection/widerface_coco/train.json \\
-        --images data/raw/detection/widerface/WIDER_train/images \\
-        --out-coco data/interim/detection/widerface_small/train.json \\
-        --out-images data/interim/detection/widerface_small/images --max-side 320
+Images and annotations rescale in the same pass. Two passes, or a resize that
+leaves the old labels alone, produce a dataset that loads, trains, and is wrong
+everywhere by one scale factor, with nothing that raises (measurements 7).
 """
 
 from __future__ import annotations

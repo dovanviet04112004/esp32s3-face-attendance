@@ -1,18 +1,9 @@
 """WIDER FACE average precision, and landmark error on device captures.
 
-The AP here follows the authors' evaluation.m rather than a COCO-style mAP, so a
-number from any other protocol cannot be compared with these however close it
-looks. Easy, Medium and Hard are reported but do not gate the branch: they are
-measured at the original WIDER resolution upstream and at 160x120 two of the
-three are mostly faces a few pixels wide. The gate is the ge32px column, the
-faces this branch is asked to serve (KEHOACH section 3, layer 2).
-
-Two details decide whether the result means anything. Scores are normalised
-across the whole prediction set before thresholding, so a detector with a narrow
-score range is not punished. Ground-truth boxes outside the difficulty subset are
-neither targets nor false positives: a prediction landing on one is removed from
-the count instead of scored, which is what makes Easy, Medium and Hard three
-readings of one prediction set.
+AP follows the authors' evaluation.m, not a COCO-style mAP, and the gate is the
+ge32px column rather than Easy, Medium or Hard (KEHOACH 3, layer 2). Scores are
+normalised across the whole prediction set, and a prediction landing outside the
+difficulty subset is removed rather than scored - that is what makes them one run.
 """
 
 from __future__ import annotations
@@ -112,10 +103,8 @@ def size_subset(
     """Indices of the faces at least min_face_px across once letterboxed to the input.
 
     Easy, Medium and Hard label difficulty, not size, and at this input the last
-    two are mostly faces a few pixels wide: their median is 7.1 and 3.1 px. This
-    is the subset the branch is asked to serve, so it is the one that gates it,
-    and the kit's own ignore rule keeps a hit on a smaller face from counting
-    either way.
+    two are mostly faces a few pixels wide (measurements 3). This subset is the
+    one that gates the branch; the kit's ignore rule handles the rest.
     """
     from PIL import Image
 
@@ -276,10 +265,9 @@ def average_precision(
 ) -> float:
     """One AP over a set of images, both sides in xyxy and the same frame.
 
-    Used while training, where the Easy, Medium and Hard subsets do not apply:
-    those are defined for the official validation set, and a held-out slice of
-    train has no such labelling. Letterboxing scales prediction and ground truth
-    alike, so an AP computed in that frame equals the one in original pixels.
+    Used while training, where Easy, Medium and Hard do not apply. Letterboxing
+    scales prediction and truth alike, so an AP in that frame equals the one in
+    original pixels.
     """
     faces = sum(len(boxes) for boxes in truth)
     if not faces:

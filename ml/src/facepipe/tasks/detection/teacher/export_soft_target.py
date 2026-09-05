@@ -1,18 +1,8 @@
 """Cache the teacher's detections once, in original image coordinates.
 
-What is cached is geometry, not feature maps. Section 3.7 requires the four arms
-to share one augmentation recipe, and detection trains under mosaic, which glues
-four images together and crops the result. Boxes and landmarks survive that: they
-are transformed alongside the real labels. A feature map cannot be, so feature
-distillation needs the teacher in the loop and cannot read from here.
-
-Storing detections rather than a dense per-prior map is what makes the cache
-augmentable at all, and it is also two orders of magnitude smaller.
-
-Usage:
-    python -m facepipe.tasks.detection.teacher.export_soft_target \\
-        --cfg configs/detection/teacher_yolo26m_pose.yaml \\
-        --weights artifacts/detection/runs/<run_id>/ultralytics/weights/best.pt
+Geometry, not feature maps. Boxes and landmarks are transformed alongside the
+real labels under mosaic; a feature map cannot be, so feature distillation needs
+the teacher in the loop and cannot read from here (KEHOACH 3.7).
 """
 
 from __future__ import annotations
@@ -159,12 +149,9 @@ class SoftTargetStore:
 class CachedHeadOutput(nn.Module):
     """Stands in for the teacher once its answers sit on the student's priors.
 
-    Running YOLO26m every step to re-derive answers that do not depend on the
-    student would make the distilled arm cost several times the baseline it is
-    compared against, and the table would then measure patience rather than
-    method (KEHOACH section 3.7). The loader has already moved the cached
-    detections through the same crop and flip the image took, so all that is
-    left here is putting the rows back into head shape.
+    Re-deriving answers that do not depend on the student would make the ablation
+    measure patience rather than method (KEHOACH 3.7). The loader has already put
+    the cached detections through the image's own crop and flip.
     """
 
     def __init__(self, input_hw: tuple[int, int] = (120, 160)) -> None:

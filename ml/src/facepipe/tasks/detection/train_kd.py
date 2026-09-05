@@ -1,13 +1,9 @@
 """The one entry point that trains the detection student, teacher or not.
 
-All four arms of KEHOACH section 3.7 run through here. Which arm a run is comes
-from the config alone: A0 leaves teacher.enabled false and gets the task loss,
-A1 to A3 switch the teacher on and name their distillation terms. Splitting the
-baseline into a second script would let augmentation, seed or schedule drift
-between arms, and then the table measures the scripts rather than the method.
-
-Usage:
-    python -m facepipe.tasks.detection.train_kd --cfg configs/detection/student_yunet.yaml
+All four arms of KEHOACH 3.7 run through here, and which arm a run is comes from
+the config alone. Splitting the baseline into a second script would let
+augmentation, seed or schedule drift between arms, and the table would then
+measure the scripts rather than the method.
 """
 
 from __future__ import annotations
@@ -171,13 +167,9 @@ def main(argv: list[str] | None = None) -> int:
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
         """Average precision on the held-out split, which is what picks the epoch.
 
-        Not the task loss. Loss is a weighted sum of focal, IoU and landmark
-        terms whose value means nothing outside this file, and it keeps falling
-        after the detector has stopped finding more faces; a run selected on it
-        ships a worse detector than one of its own earlier epochs.
-
-        The distillation terms stay out of it either way: they are undefined
-        without a teacher, so scoring them would make the two arms incomparable.
+        Not the task loss, which keeps falling after the detector has stopped
+        finding faces. The distillation terms stay out of it as well: undefined
+        without a teacher, so scoring them would make the arms incomparable.
         """
         module.eval()
         meter = MetricTracker()

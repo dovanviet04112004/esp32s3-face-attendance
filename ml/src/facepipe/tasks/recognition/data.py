@@ -1,19 +1,9 @@
 """MS1MV3 shards to batches of aligned faces, labels and cached teacher vectors.
 
-The images arrive already aligned to the ArcFace reference at 112x112, which is
-the same geometry postproc/align.py produces on the device, so nothing here
-warps anything. Augmentation is a horizontal flip and nothing else: identity is
-what the branch is learning, and a crop or a colour shift teaches it that two
-views of one face are two people.
-
-Records stream front to back out of the shards. An epoch is 5.18 million faces
-and 36 GB, which no page cache holds, so the order a shard is written in is the
-order it is read in and shuffling happens by shard order plus a held-back buffer
-(KEHOACH section 4.4.1).
-
-The split is identity-disjoint (KEHOACH section 1.3): the labels a run trains on
-are a contiguous renumbering of the identities in its own split, so a classifier
-column exists for each and only for those.
+Images arrive aligned to the ArcFace reference at 112x112, the geometry the
+device reproduces, so nothing here warps anything and augmentation is a flip.
+Records stream front to back, shuffled by shard order plus a held-back buffer
+(KEHOACH 4.4.1). Labels renumber this run's own split (KEHOACH 1.3).
 """
 
 from __future__ import annotations
@@ -136,11 +126,9 @@ class Ms1mShardDataset(IterableDataset):
     def count_records(self) -> int:
         """How many records this split keeps, read from a sidecar or counted once.
 
-        Counting streams all 36 GB. Measured at 31 minutes for the 4,660,302
-        records of the train split while a run had the other cores, which the LR
-        schedule would otherwise pay at the start of every run and every resume.
-        The answer depends only on the shards and the identity list, so it is
-        written beside the shards and keyed by both (KEHOACH section 4.4.2).
+        Counting streams all 36 GB and costs 31 minutes (measurements 1), which
+        the LR schedule would otherwise pay on every run and resume. The answer
+        depends only on the shards and identity list, so it is keyed by both.
         """
         sidecar = self.shards[0].parent / COUNTS_NAME
         key = f"{len(self.labels)}:{min(self.labels, default=-1)}:{max(self.labels, default=-1)}"
@@ -184,11 +172,9 @@ class Ms1mShardDataset(IterableDataset):
     def _interleaved(self, shards: list[Path]) -> Iterator[dict[str, bytes]]:
         """Take one record from each of several shards in turn.
 
-        MS1MV3 stores a person's photographs back to back, so a single stream
-        hands the shuffle buffer one identity at a time and a batch ends up
-        holding very few people. Reading several shards in rotation multiplies
-        the identities in flight without giving up the sequential read each
-        stream still performs.
+        MS1MV3 stores a person's photographs back to back, so one stream hands
+        the shuffle buffer a single identity at a time. Rotation multiplies the
+        identities in flight while each stream still reads sequentially.
         """
         streams: deque[Iterator[dict[str, bytes]]] = deque()
         waiting = iter(shards)

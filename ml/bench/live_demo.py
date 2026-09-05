@@ -1,25 +1,9 @@
 """Watch the three students run as one chain on a host webcam: detect, align,
 anti-spoof, then recognition against faces enrolled from the served page.
 
-Crops are cut the way the training shards were cut, JPEG round trip included, so
-what the model sees here is what it was trained on. A call needs a fraction of
-the last few frames to clear the threshold, since a turning head drops the odd
-frame across it while the face has not changed.
-
-A host webcam is not the OV5640, so this shows whether the pipeline works, not
-how well it works: nothing it prints belongs in an acceptance table (KEHOACH 1.2).
-
-Usage, from ml/, with the source being a camera index, a file, or an MJPEG url:
-
-    .venv/bin/python -m bench.live_demo --serve 8080 \\
-        --source http://172.27.224.1:8091/ \\
-        --detector artifacts/detection/runs/20260831-1616_cc931df_36fbea/ckpt/best.pth \\
-        --spoof-run artifacts/antispoof/runs/20260902-0140_0212c98_6706a4 \\
-        --recog-run artifacts/recognition/runs/20260904-0932_f7a6aab_7122fb
-
-Then open http://localhost:8080, type a name and press Đăng ký. For a phone
-through the Windows virtual camera, bench/cam_bridge.py publishes that url; for
-the ESP32 board it is :81/stream.
+Crops go through the same function the training shards were cut with, JPEG round
+trip included. A host webcam is not the OV5640, so nothing printed here belongs
+in an acceptance table (KEHOACH 1.2).
 """
 
 from __future__ import annotations

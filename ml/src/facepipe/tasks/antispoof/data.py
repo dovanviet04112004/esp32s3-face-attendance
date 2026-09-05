@@ -1,13 +1,9 @@
 """CelebA-Spoof shards to batches of two crops and a label.
 
-Records are read front to back, never seeked: that is the whole reason the crops
-were packed into shards (KEHOACH section 4.4.1). Shuffling therefore happens in
-two places that together approximate a shuffled epoch - the shard order, and a
-buffer of records held back before yielding.
-
-The pair of crops belongs to one face. Feeding a tight crop with another face's
-wide crop teaches the model that context and face are unrelated, which is the
-opposite of what the branch is for.
+Records are read front to back, never seeked (KEHOACH 4.4.1), so shuffling comes
+from the shard order plus a buffer held back before yielding. The pair of crops
+belongs to one face: pairing a tight crop with another face's wide crop teaches
+that context and face are unrelated, which is the opposite of the point.
 """
 
 from __future__ import annotations

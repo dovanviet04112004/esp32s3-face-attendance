@@ -1,13 +1,9 @@
 """Score distillation: the student's two logits against the teacher's map score.
 
-The teacher has no classifier, so there is no logit to copy. Its depth map is
-collapsed to a mean and divided by the mean of a perfect live map, which puts a
-live face near 1 and an attack at 0; a sigmoid then turns that into the
-probability the student's softmax is compared against.
-
-The division is not cosmetic. A mound averaged over the whole map is about 0.42,
-so reading the raw mean as a probability puts a live face below one half and
-inverts every gradient this term produces.
+The teacher has no logit to copy, so its map is collapsed to a mean and divided
+by the mean of a perfect live map, which a sigmoid turns into a probability. The
+division is not cosmetic: that reference mean is well below one half, so the raw
+mean would read a live face as an attack and invert every gradient here.
 """
 
 from __future__ import annotations

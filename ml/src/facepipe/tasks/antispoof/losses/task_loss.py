@@ -1,15 +1,9 @@
 """Live against spoof on the real labels, with the class ratio compensated.
 
-CelebA-Spoof carries 348,602 attacks to 177,262 live faces, about two to one
-(docs/DU_LIEU.md), so answering "spoof" to everything already scores 66 percent.
-The weight is the inverse of that ratio and does one thing: keep the smaller
-class from being learned as noise. Rebalancing here rather than by dropping
-attacks keeps every sample the split already committed to (KEHOACH section 1.3).
-
-Which error costs more on a door is a different question with a different lever.
-An attack accepted is worse than a live face turned away, and that asymmetry is
-set by the decision threshold at inference, where it can be retuned without
-retraining. Folding it into this weight would fix it into the weights instead.
+The weight is the inverse of the pool's two-to-one attack ratio and does one
+thing: keep the smaller class from being learned as noise (docs/DU_LIEU.md).
+Which error costs more on a door is a separate question, set by the decision
+threshold at inference where it can be retuned without retraining.
 """
 
 from __future__ import annotations

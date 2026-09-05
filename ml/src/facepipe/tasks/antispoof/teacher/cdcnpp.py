@@ -1,17 +1,9 @@
 """CDCN++: the anti-spoof teacher, supervised on depth rather than a class.
 
-Its one idea is the central difference convolution. A normal convolution sums
-weighted intensities, which a printed photograph reproduces faithfully; this one
-subtracts the centre pixel from each neighbour first, so what it sees is local
-gradient. Print and screen leave gradient signatures that intensity alone hides,
-and theta sets how much of that difference is mixed into the ordinary response.
-
-MAFM is the second piece: three depths of the backbone are pooled to one size and
-gated by attention before being fused, so the head reads fine texture and coarse
-geometry together instead of only the last layer's view.
-
-The output is a depth map, not a logit. Turning it into a score is the caller's
-job, and export_soft_target does it the same way for every arm.
+The central difference convolution subtracts the centre pixel from each
+neighbour, reading local gradient rather than intensity; theta sets how much of
+it mixes into the ordinary response. MAFM pools three backbone depths and gates
+them by attention. Output is a depth map, not a logit.
 """
 
 from __future__ import annotations

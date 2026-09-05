@@ -1,18 +1,9 @@
 """MobileFaceNet: the recognition model that ships on the device.
 
-Its one departure from a MobileNet is the last layer. A classifier ends in global
-average pooling, which weighs every cell of the final map equally; on an aligned
-face the corner cells are background and the centre cells are the nose, so equal
-weighting throws away the only spatial structure alignment created. This ends in
-a global depthwise convolution instead: one learned weight per cell per channel,
-same output shape, and the layer can decide the corners matter less.
-
-Input is 112x112 aligned by the five landmarks the detector produces, which makes
-the final map 7x7 and fixes the depthwise kernel at 7. Changing the input size
-without changing that kernel changes what the embedding is computed from.
-
-The output is an unnormalised 512-D embedding. Normalising is the caller's job
-and is done the same way in postproc/l2norm.py and on the device.
+It closes on a global depthwise convolution rather than average pooling, so an
+aligned face's corner cells can weigh less than its centre. Input is 112x112,
+which makes the final map 7x7 and fixes that kernel at 7: change one without the
+other and the embedding is computed from something else. Output is unnormalised.
 """
 
 from __future__ import annotations

@@ -1,11 +1,7 @@
 """The one entry point that trains the anti-spoof student, teacher or not.
 
-Both arms of KEHOACH section 3.7 run through here, exactly as the detection
-branch does: A0 leaves teacher.enabled false and gets the task loss, A3 switches
-the teacher on and names its distillation terms.
-
-Usage:
-    python -m facepipe.tasks.antispoof.train_kd --cfg configs/antispoof/student_minifasnet.yaml
+Both arms of KEHOACH 3.7 run through here: A0 leaves teacher.enabled false and
+gets the task loss, A3 switches the teacher on and names its distillation terms.
 """
 
 from __future__ import annotations
@@ -165,12 +161,9 @@ def main(argv: list[str] | None = None) -> int:
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
         """Task loss and the error rates at the threshold this split implies.
 
-        APCER counts attacks accepted and BPCER live faces rejected; reporting
-        only accuracy would hide which of the two a model traded away, and they
-        cost very different things on a door (KEHOACH section 1.1). Taking the
-        argmax instead would pin the threshold at an even split of the softmax,
-        which ranks checkpoints by where the scores sit rather than how well
-        they separate.
+        APCER counts attacks accepted and BPCER live faces rejected, which cost
+        different things on a door (KEHOACH 1.1). An argmax would pin the
+        threshold at an even softmax split and rank by where scores sit.
         """
         module.eval()
         meter = MetricTracker()

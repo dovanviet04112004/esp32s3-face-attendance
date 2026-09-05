@@ -1,20 +1,9 @@
 """The recognition teacher: ArcFace ResNet50 trained on WebFace600K, frozen.
 
-This is the backbone of InsightFace's buffalo_l pack, and nothing here trains it.
-It exists to answer one question 5.1 million times - where does this face sit on
-the unit sphere - and export_embedding.py caches those answers so the KD arm pays
-the cost once instead of once per epoch.
-
-The architecture is arcface_torch's IResNet: batch norm before each convolution
-rather than after, PReLU throughout, and a fully connected layer over the whole
-7x7 final map instead of pooling it. The published weights have every batch norm
-that follows a convolution folded into that convolution's bias, so the blocks
-here carry only the batch norms that precede one - the shape the checkpoint has,
-not the shape the paper draws.
-
-Input is 112x112 RGB scaled to [-1, 1], the same alignment postproc/align.py
-produces. Feeding it anything else returns embeddings that are stable, plausible
-and wrong.
+arcface_torch's IResNet. The published weights fold every post-convolution batch
+norm into that convolution's bias, so the blocks here carry only the ones that
+precede a convolution. Input is 112x112 RGB in [-1, 1]; anything else returns
+plausible, wrong vectors.
 """
 
 from __future__ import annotations
@@ -98,10 +87,9 @@ def normalize_pixels(images: torch.Tensor) -> torch.Tensor:
 def load_r50_wf600k(weights: str | Path | None = None, strict: bool = True) -> IResNet:
     """Build the teacher and load the published checkpoint into it.
 
-    Loading strictly is the point: a key that does not line up means the
-    architecture here has drifted from the one the weights were trained in, and a
-    teacher assembled from a partial load produces embeddings that look like
-    embeddings and teach nothing.
+    Loading strictly is the point: a key that does not line up means this
+    architecture drifted from the one the weights were trained in, and a partial
+    load produces embeddings that look like embeddings and teach nothing.
     """
     model = IResNet()
     if weights is not None:
@@ -114,10 +102,9 @@ def load_r50_wf600k(weights: str | Path | None = None, strict: bool = True) -> I
 class CachedEmbedding(nn.Module):
     """Stands in for the teacher when its answers were computed ahead of time.
 
-    The lookup itself belongs to the loader, which reads the memmap in worker
-    processes alongside the images; running it here would put a 5 GB random-access
-    read on the training process. What is left is the conversion the cache's half
-    precision needs before a loss can use it.
+    The lookup belongs to the loader, which reads the memmap in worker processes
+    alongside the images; here it would put a 5 GB random-access read on the
+    training process. What is left is the conversion out of half precision.
     """
 
     def forward(self, cached: torch.Tensor) -> torch.Tensor:

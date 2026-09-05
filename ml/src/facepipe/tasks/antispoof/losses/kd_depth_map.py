@@ -1,13 +1,9 @@
 """Depth distillation: the student copies the teacher's map, not just its answer.
 
-The teacher regresses a 32x32 depth map; the student outputs two logits and has
-no depth head of its own, so a projection reads the map out of the student's
-fused embedding. That projection is trained here and thrown away at export: the
-device only ever runs the classifier.
-
-Copying the map rather than the label is the point of using CDCN++ as teacher at
-all. The label says live or attack, which the student could already learn from
-the data; the map says where on the face the evidence is, which it could not.
+The student has no depth head, so a projection reads the map out of its fused
+embedding; that projection is trained here and thrown away at export. Copying
+the map rather than the label is the point: the label is already in the data,
+the map says where on the face the evidence sits.
 """
 
 from __future__ import annotations

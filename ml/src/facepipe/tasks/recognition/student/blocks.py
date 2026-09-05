@@ -1,13 +1,9 @@
 """Building blocks of the MobileFaceNet student.
 
-Every spatial convolution is depthwise, which is what ESP-NN accelerates, and the
-activation is PReLU throughout: a per-channel slope costs one multiply and keeps
-the negative half of the distribution, which matters for a network whose output
-is compared by angle rather than thresholded (KEHOACH section 3, layer 1).
-
-The expand-filter-project shape is MobileNetV2's inverted residual. The width the
-filter runs at is given as a channel count rather than a ratio, because that is
-the number the kernel and the INT8 arena are sized from.
+Every spatial convolution is depthwise, which ESP-NN accelerates, and PReLU
+keeps the negative half of the distribution - it matters when the output is
+compared by angle (KEHOACH 3, layer 1). The inverted residual's filter width is
+a channel count, not a ratio: that is what the kernel and INT8 arena size from.
 """
 
 from __future__ import annotations

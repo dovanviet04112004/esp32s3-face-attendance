@@ -1,14 +1,9 @@
 """Pseudo depth maps: the target CDCN++ is supervised on.
 
-CDCN++ regresses a depth map rather than a class. A live face is a surface with
-relief, so its map is a mound over the face; an attack is a photograph or a
-screen, flat whatever it depicts, so its map is all zeros.
-
-The mound stops at the face box. The teacher reads the wide crop, where the box
-covers one part in the scale that crop actually reached, and a target spilling
-onto the room around it would ask the background to carry the label (KEHOACH 3).
-
-CelebA-Spoof ships no depth channel, so this is a prior, not a measurement.
+A live face is a surface with relief, so its map is a mound; an attack is flat
+whatever it depicts, so its map is zeros. The mound stops at the face box - a
+target spilling onto the room would ask the background to carry the label
+(KEHOACH 3). CelebA-Spoof ships no depth channel, so this is a prior.
 """
 
 from __future__ import annotations

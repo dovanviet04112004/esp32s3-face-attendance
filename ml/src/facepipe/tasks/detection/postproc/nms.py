@@ -1,15 +1,9 @@
 """Greedy non-maximum suppression over decoded boxes.
 
-Must stay identical to ai_engine/src/detection/nms.cpp. The device runs this on
-every frame, and a threshold or a tie-break that differs from the one a score was
-measured with produces a different face count for the same picture.
-
-One class, so there is no per-class partitioning: the head folds objectness into
-classification (student/head.py), which leaves a single score to sort by.
-
-Ties are broken by index, not left to the sort. Two priors can predict the same
-box with bit-identical scores after quantisation, and a sort that is unstable
-there would keep a different one on the device than in Python.
+Must stay identical to ai_engine/src/detection/nms.cpp, or the same picture
+yields a different face count on the device. One class, so no per-class
+partitioning. Ties break by index: two priors can carry bit-identical scores
+after quantisation, and an unstable sort would keep a different one on each side.
 """
 
 from __future__ import annotations
