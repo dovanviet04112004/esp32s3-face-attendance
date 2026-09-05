@@ -3,8 +3,7 @@
 Mọi số đã đo được của nhánh nhận dạng, kèm điều kiện đo. Số chưa chạy trên board đánh
 dấu 🔬.
 
-Nhánh này **chưa có run nào chạy**. Dưới đây là số của dữ liệu, của đường nạp, và của
-các phép đo thông lượng đã làm để chốt cấu hình loader.
+Arm A0 đã chạy đủ 10 epoch (§4.1). Arm A3 chưa chạy, nên §4 chưa kết luận được gì.
 
 ---
 
@@ -48,7 +47,7 @@ cuối quan trọng nhất. CFP-FP khó nhất trong ba bộ (~93–95%), còn p
 nhận sai, nên nó nhảy theo bậc quá thô để xếp hạng hai epoch liền nhau.
 
 Chốt trước khi arm nào chạy, vì §3.7 xếp tiêu chí chọn checkpoint vào cột phải giống hệt
-giữa hai arm.
+giữa hai arm. Sau khi A0 chạy xong, lựa chọn này lộ ra một chỗ hở — xem §4.2.
 
 ---
 
@@ -84,8 +83,107 @@ chỗ nó trong vòng train, nên chi phí teacher không lặp lại mỗi epoc
 
 | Arm | Cách train | LFW / CFP-FP / AgeDB | Accuracy sau INT8 trên `test_device` |
 |---|---|---|---|
-| **A0** | ArcFace, không teacher | chưa chạy | chưa chạy |
+| **A0** | ArcFace, không teacher | **0,9942 / 0,9583 / 0,9445** | chưa chạy |
 | **A3** | A0 + embedding + RKD | chưa chạy | chưa chạy |
+
+Ba số của A0 lấy ở ba epoch khác nhau (10 / 8 / 9) — mỗi bộ đạt đỉnh một chỗ. Checkpoint
+chỉ có một, chọn theo `cfp_fp_accuracy`, tức **epoch 8**. §4.2 nói vì sao chỗ này còn hở.
+
+Cột phải bỏ trống ở **cả hai** arm cho tới khi có `test_device`. §4.2 của CLAUDE.md chốt
+quyết định bằng accuracy sau INT8 trên tập đó, nên bảng FP32 này chưa quyết được gì —
+nó chỉ xác nhận đường train chạy đúng.
+
+### 4.1 Arm A0 — toàn bộ 10 epoch
+
+Điều kiện: seed 42, `deterministic: true`, batch 128, SGD momentum 0,9, LR đỉnh 0,0125,
+cosine tới 1,25e-5, warmup 1 epoch, AMP fp16, EMA 0,9999, `compile: true`,
+`split.lock` `1bed7073…` / `190c3872…`. RTX 3050 Laptop, torch 2.13.0+cu130.
+**16 giờ 26 phút** GPU, ~96–103 phút mỗi epoch.
+
+| ep | loss | LFW | CFP-FP | AgeDB | LFW T@1e-3 | CFP T@1e-3 | AgeDB T@1e-3 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 21,57 | 0,9178 | 0,7126 | 0,7457 | 0,5857 | 0,0226 | 0,0383 |
+| 2 | 13,83 | 0,9833 | 0,8984 | 0,8793 | 0,9250 | 0,4131 | 0,2720 |
+| 3 | 12,63 | 0,9872 | 0,9130 | 0,9047 | 0,9530 | 0,5900 | 0,4270 |
+| 4 | 12,24 | 0,9895 | 0,9327 | 0,9160 | 0,9650 | 0,6383 | 0,4390 |
+| 5 | 11,16 | 0,9918 | 0,9437 | 0,9250 | 0,9797 | 0,6846 | 0,4390 |
+| 6 | 10,19 | 0,9937 | 0,9457 | 0,9323 | 0,9807 | 0,7271 | 0,5460 |
+| 7 | 9,40 | 0,9940 | 0,9521 | 0,9402 | 0,9867 | 0,7506 | 0,5480 |
+| **8** | **9,06** | 0,9940 | **0,9583** | 0,9432 | 0,9910 | 0,7549 | **0,5877** |
+| 9 | 10,38 | 0,9938 | 0,9574 | **0,9445** | 0,9890 | 0,7794 | 0,5333 |
+| 10 | 14,29 | **0,9942** | 0,9559 | 0,9428 | 0,9897 | **0,7874** | 0,5613 |
+
+**Arm bão hoà ở epoch 8.** Ba epoch cuối không epoch nào cải thiện `best.pth`, và mọi
+bước của val sau đó đều nhỏ hơn ¼ độ lệch chuẩn của chính phép đo (`accuracy_std` ~0,010–0,013).
+
+**Loss tăng 9,06 → 14,29 ở hai epoch cuối không phải model xấu đi.** LR lúc đó đã nằm ở
+đáy lịch cosine (~6% đỉnh ở epoch 8,5), tức trọng số gần như đứng yên, trong khi val nhích
+lên chứ không tụt. Đây là hiệu ứng thứ tự dữ liệu: loader đọc 4 shard luân phiên nên mỗi
+epoch gặp một tổ hợp danh tính khác, và ArcFace scale 64 khuếch đại chênh lệch độ khó giữa
+các tổ hợp đó. Loss ArcFace ở đây là loss **train**, không so được giữa hai epoch khác mẻ.
+
+Loss lúc khởi tạo ≈ `30,7 + ln(84088)` ≈ 42; 9,06 là đã đi được phần lớn quãng đường.
+
+**10 epoch không suy ra được 40 epoch.** Ở cùng mốc thời gian thực, một lịch 40 epoch vẫn
+đang chạy ở **91%** LR đỉnh — cao gấp 14 lần. Đường cong ở đây là đường cong của một lịch
+đã hạ nhiệt xong, không phải khúc đầu của một lịch dài hơn. Muốn biết 40 epoch cho gì thì
+phải chạy 40 epoch.
+
+Checkpoint nối qua ba thư mục run (`resumed_from.txt`), do máy sập vì
+`cudaErrorUnknown` sau bản driver NVIDIA 591.74:
+
+| Run | Epoch | Giữ gì |
+|---|---|---|
+| `20260903-2255_f7a6aab_ec1061` | 1–4 | — |
+| `20260903-2258_f7a6aab_dad005` | 5–8 | **`best.pth` (epoch 8)** |
+| `20260904-0932_f7a6aab_7122fb` | 9–10 | `last.pth` (epoch 10) |
+
+`best.pth` nằm ở run **giữa**, không phải run cuối. Ai đi lấy checkpoint của arm này phải
+lấy đúng đường dẫn đó; run cuối chỉ có `last.pth`.
+
+### 4.1b Ngưỡng cosine — phân bố điểm của A0
+
+Checkpoint epoch 10, embed có lật ngang, 9.500 cặp cùng người và 9.500 cặp khác người gộp
+từ cả ba benchmark:
+
+| Bộ | Cùng người, trung vị | Cùng người, p5 | Khác người, p95 | Khác người, p99,9 |
+|---|---|---|---|---|
+| LFW | 0,741 | 0,518 | 0,221 | 0,397 |
+| CFP-FP | 0,518 | 0,232 | 0,209 | 0,388 |
+| AgeDB-30 | 0,510 | 0,241 | 0,262 | 0,472 |
+
+| Ngưỡng | Nhận đúng người thật | Nhận nhầm người lạ |
+|---|---|---|
+| 0,30 | 93,38% | 1,6316% |
+| 0,35 | 89,65% | 0,6526% |
+| **0,45** | **76,69%** | **0,0842%** |
+| 0,50 | 67,18% | 0,0316% |
+| 0,55 | 56,78% | 0,0000% |
+
+FAR 1e-3 rơi vào ngưỡng **0,4283**; đó là căn cứ của hằng số 0,45 trong `live_demo.py`.
+
+**Cột giữa là số bi quan cho mục đích điểm danh.** Benchmark chấm một ảnh với một ảnh, và
+CFP-FP là ảnh nghiêng 90° còn AgeDB-30 cách nhau 30 năm. Kiosk so **một khung với template
+trung bình 20 khung**, cùng buổi cùng camera cùng người — dễ hơn hẳn. Ngược lại, cột phải là
+số **lạc quan**: FAR đo trên một cặp, còn so 1:N thì mỗi người đã đăng ký là một lần rút
+thăm, sai số cộng lên xấp xỉ `N × FAR`.
+
+Hai chiều lệch ngược nhau nên **không suy ra được ngưỡng vận hành** từ bảng này. Nó chỉ nói
+vùng nào hợp lý để bắt đầu dò.
+
+### 4.2 Tiêu chí chọn checkpoint còn một chỗ hở
+
+`cfp_fp_accuracy` chọn epoch 8. Nhưng `cfp_fp_tar@far0.001` **tăng đơn điệu** suốt ba
+epoch cuối — 0,7549 → 0,7794 → 0,7874 — và nó mới là đại lượng cửa quan tâm (§1.1). Hai
+tiêu chí chỉ vào hai epoch khác nhau; chênh lệch CFP-FP accuracy giữa chúng là 0,0024,
+tức **một phần năm** độ lệch chuẩn.
+
+FAR 1e-3 dùng được ở đây: CFP-FP có 3.500 cặp âm nên ngân sách là `floor(1e-3 × 3500)` = 3
+lần chấp nhận sai — thô nhưng không suy biến, khác hẳn 1e-4 (ngân sách 0).
+
+Cả hai checkpoint đã có sẵn trên đĩa, đổi tiêu chí không tốn giờ GPU. **Phải chốt trước
+khi A3 chạy** (§3.7: tiêu chí chọn checkpoint nằm ở cột phải giống hệt giữa hai arm).
+Chưa chốt.
 
 ---
 
@@ -103,7 +201,7 @@ chỗ nó trong vòng train, nên chi phí teacher không lặp lại mỗi epoc
 
 ## 6. Còn nợ
 
-- Cache embedding teacher → chạy arm A0 → arm A3, điền §4.
+- Chốt tiêu chí chọn checkpoint (§4.2) → cache embedding teacher → chạy arm A3, điền §4.
 - `postproc/emit_golden.py`, `quant.py`, `README.md` — §4.4 đã khai, chưa viết.
 - Thang lượng tử hoá §3.8, `quant_ladder.md`.
 - TAR@FAR trên tập nhân viên tự thu — chưa có dữ liệu.
