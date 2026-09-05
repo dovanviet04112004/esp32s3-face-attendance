@@ -29,10 +29,10 @@ data:
   # arm at 2.70 GiB, which is the card paging rather than computing; 96 gives
   # 1,735 and 630 at 0.72 and 2.03 GiB. The baseline alone would rather have 256.
   batch_size: 96
-  # Measured: six readers already hold 2,756 images a second against the 2,617 the
-  # step consumes, so readers are not the constraint. Twenty would cost 1.5 GB of
-  # host memory in shuffle buffers alone, on a machine with nine.
-  num_workers: 8
+  # Measured on the 224 px context view: 1,687 images a second at eight readers
+  # against 1,937 at twelve, with the GPU sitting at 6% either way. Sixteen buys
+  # 2% more and costs another 312 MB of shuffle buffer on a machine with nine GB.
+  num_workers: 12
   prefetch_factor: 4
   params:
     shards: data/interim/antispoof/celeba_spoof_crops
