@@ -103,10 +103,17 @@ Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài li
 > tiếp** với bảng trong bài báo CDCN++ hay MiniFASNet, và không có giao thức OULU P1–P4.
 > Báo cáo phải ghi đúng như vậy, không được trình bày như thể đã chạy trên benchmark chuẩn.
 
-**`ml/bench/live_demo.py` là công cụ nhìn, không phải phép đo.** Nó chạy detect rồi spoof
-trên webcam của máy host để thấy pipeline hoạt động ở thời gian thực. Webcam host **không
-phải OV5640**: khác cảm biến, khác ống kính, khác đường xử lý ảnh. Số nó in ra không được
-đưa vào bảng nghiệm thu và không thay được "tập spoof tự thu" ở bảng trên.
+**`ml/bench/live_demo.py` là công cụ nhìn, không phải phép đo.** Nó chạy đủ chuỗi
+detect → align → spoof → recog trên webcam của máy host để thấy pipeline hoạt động ở thời
+gian thực, kèm nút đăng ký mặt ngay trên trang phục vụ. Webcam host **không phải OV5640**:
+khác cảm biến, khác ống kính, khác đường xử lý ảnh. Số nó in ra không được đưa vào bảng
+nghiệm thu và không thay được "tập spoof tự thu" ở bảng trên.
+
+Kho mặt đã đăng ký nằm ở `ml/artifacts/recognition/gallery.npz`, khung chụp lại từ nút
+"Chụp khung này" nằm ở `ml/artifacts/antispoof/snaps/` — cả hai trong vùng gitignore, vì
+embedding và ảnh khuôn mặt là dữ liệu sinh trắc và §6 cấm commit. Mỗi lần chụp ghi bốn file
+cùng tên gốc: khung gốc, crop `tight`, crop `wide`, và JSON kèm điểm số cùng tỉ lệ mà mỗi
+crop thực sự đạt được — số cuối là thứ đọc một điểm thấp phải đối chiếu (§3).
 
 **Nhánh recognition**
 
@@ -394,6 +401,7 @@ Xếp theo đúng thứ tự thực hiện.
 | **Chia theo loại soft target** | **Hình học cache được** (box, landmark, score): biến đổi theo ảnh y hệt nhãn thật, kể cả mosaic. **Feature map thì không**: nó là tensor dày theo không gian ảnh, mosaic ghép 4 ảnh rồi cắt ngẫu nhiên nên không có phép nào đưa nó theo. Nhánh nào cần feature KD dưới augment mạnh thì teacher **bắt buộc nằm trong vòng train** |
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
 | **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén JPEG q=60–90, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược |
+| **Anti-spoof: augment tỉ lệ crop** | Rút ngẫu nhiên tỉ lệ wide rồi cắt lại từ record, **rút cùng một phân bố cho cả hai lớp**. Bắt buộc, xem mục dưới |
 
 #### Công thức lấy mẫu của detect phải khớp kích thước đầu vào
 
@@ -496,7 +504,8 @@ px, tức tỉ lệ khoảng cách **1,39 lần**. Hẹp, và nằm ngoài dải
 không phải ngoại lệ.
 
 **Chốt: tỉ lệ wide là biến, không phải hằng số. Crop wide = ô vuông lớn nhất còn lọt khung,
-tâm tại tâm hộp mặt, trần 2,7×.** Thiếu chỗ thì thu tỉ lệ lại, không kéo giãn và không đệm.
+trần 2,7×, và ô vuông đó được TRƯỢT cho chứa trọn hộp mặt chứ không ép đặt giữa mặt.**
+Thiếu chỗ thì thu tỉ lệ lại, không kéo giãn và không đệm.
 
 Bốn cách dựng, đo trên 48 khung camera thật với **cùng một bộ trọng số**, chỉ đổi ảnh wide:
 
@@ -514,12 +523,74 @@ làm wide thì mất ngữ cảnh cả ở cự ly còn thừa chỗ, nên mặt
 bị chấm 0,0002. Chỉ ô vuông lọt khung vừa không méo, vừa không bịa, vừa giữ đúng lượng
 ngữ cảnh **còn tồn tại thật**.
 
-Hai ràng buộc đi kèm:
+**Trượt, không đặt giữa.** Ô vuông lớn nhất *đặt giữa tâm mặt* mà lọt khung có cạnh
+`2·min(cx, cy, W−cx, H−cy)`; ô vuông lớn nhất *lọt khung* có cạnh `min(W, H)`. Hai số này
+lệch nhau đúng bằng phần lệch tâm của khuôn mặt, và khi mặt nằm lệch xuống dưới hoặc sát
+một mép thì số đầu tụt xuống **dưới cả cạnh hộp mặt** — crop cắt cụt cằm và miệng. Vì ô
+vuông sau đó vẫn phải trượt cho lọt khung, ràng buộc đặt giữa **không mua được gì**: nó bị
+áp rồi bị bỏ ngay ở bước sau.
+
+Đo trên 8 khung điện thoại có mặt lớn và lệch tâm, cùng bộ trọng số, chỉ đổi cách dựng
+(`docs/measurements/antispoof/measurements.md` §12.5):
+
+| | Số khung qua ngưỡng 0,90 | Điểm thấp nhất |
+|---|---|---|
+| Ép đặt giữa | 2 / 8 | **0,0004** |
+| **Trượt cho lọt** | **4 / 8** | **0,1499** |
+
+Khung tệ nhất đi từ 0,0004 lên 0,9860. Bốn khung còn dưới ngưỡng đều là mặt chiếm trên 87%
+cạnh ngắn khung hình — ở đó ngữ cảnh **không tồn tại trong ảnh**, và không cách dựng nào
+lấy được thứ máy ảnh chưa chụp. Đó là biên của nhánh, và nó là việc của cảm biến khoảng
+cách chứ không phải của model.
+
+Ba ràng buộc đi kèm:
 
 - **Prep và inference gọi chung một hàm.** Lệch hai bên là nguồn của mọi phép đo sai:
   model đọc ở kiosk một phân bố hình học khác hẳn phân bố nó được train.
 - **Tỉ lệ thật đạt được ghi vào từng record.** Đích depth của teacher dựng từ nó (mục dưới),
   và không có nó thì không kiểm được phân bố tỉ lệ mà một run đã thấy.
+- **Đổi cách dựng thì shard hết giá trị.** Mọi run train trước đó đọc một phân bố hình học
+  khác; sinh lại shard rồi train lại là bắt buộc, không phải tuỳ chọn.
+
+#### Tỉ lệ crop tương quan với nhãn, nên phải rút ngẫu nhiên cho cả hai lớp
+
+Trong CelebA-Spoof, ảnh tấn công bị giơ xa hơn mặt người, nên tỉ lệ wide dựng được **tương
+quan thẳng với nhãn**. Đếm trên 3.000 bản ghi train dựng bằng ô vuông trượt:
+
+| Tỉ lệ wide | Số mẫu | Mặt thật | Tấn công |
+|---|---|---|---|
+| **< 1,0** — crop ngắn hơn hộp mặt | 309 | **0** | **309** |
+| ≥ 1,0 | 2.691 | 835 | 1.856 |
+
+Dưới 1,0 là **dự đoán hoàn hảo**: không một mặt thật nào rơi vào đó. Model học đúng thứ
+được dạy — *cắt cụt ⇒ tấn công* — và đường tắt ấy nổ mỗi lần người dùng lại gần, nổ theo
+bậc độ lớn chứ không trôi quanh ngưỡng. Không ngưỡng nào chữa được.
+
+Chỗ này **không tự hết khi sửa cách dựng crop**. Ô vuông trượt đã lấy lại phần lớn khuôn
+mặt bị cắt, nhưng phần còn lại dưới 1,0 chính là những ảnh mà hộp mặt lớn hơn cạnh ngắn
+khung hình — tức ảnh chụp lại màn hình choán hết khung. Sửa hình học làm tương quan **đậm
+hơn**, không nhạt đi.
+
+**Chốt: mỗi mẫu rút một tỉ lệ ngẫu nhiên trong `[0.7, 2.7]`, rút từ cùng một phân bố cho cả
+live lẫn spoof, rồi cắt lại crop từ record theo tỉ lệ đó.** Rút cùng phân bố là toàn bộ mục
+đích: khi hai lớp gặp mọi tỉ lệ đều nhau, tỉ lệ hết mang thông tin về nhãn và model buộc
+phải đọc kết cấu với ngữ cảnh thật.
+
+Cận dưới đặt tại 0,7 vì đó là vùng mà mặt thật ở cự ly gần thật sự rơi vào: 🔬 tám khung
+điện thoại đo được 0,70–0,98, và đuôi dưới của chính tập train chạm 0,74. Trên 1,0 chỉ
+augment nhánh wide; **dưới 1,0 phải cắt cả hai nhánh cùng một lượng**, vì thiếu chỗ thì
+`fitted_box` thu cả tight lẫn wide bằng nhau — cắt mỗi wide là dạy một hình học không tồn tại.
+
+Trần vẫn là tỉ lệ mà từng ảnh dựng được — augment chỉ **thu nhỏ** ngữ cảnh có sẵn, không
+bịa thêm. Ràng buộc "không kéo giãn, không đệm" ở mục trên không được phép lách qua đường
+augment.
+
+Hai điều kiện để phép augment này có nghĩa:
+
+- **Chỉ áp lúc train.** Val và test giữ nguyên tỉ lệ thật, nếu không thì bảng đối chứng
+  đo trên một phân bố hình học không có ở kiosk.
+- **Ghi tỉ lệ đã rút vào batch**, không phải tỉ lệ gốc của record. Đích depth của teacher
+  dựng từ nó, và dựng theo tỉ lệ gốc là đặt gò Gauss lệch khỏi vùng mặt.
 
 #### Nhánh tight phải học phơi sáng, nếu không nó đọc độ sáng thay cho kết cấu
 
@@ -1275,7 +1346,7 @@ ml/
 │   │   └── update_lock.py                 # ★ ghi contracts/models.lock.json
 │   │
 │   └── bench/{host_bench.py, device_client.py, accuracy_on_device.py,
-│              live_demo.py,                 # ★ detect → spoof trên webcam host
+│              live_demo.py,                 # ★ detect → align → spoof → recog, webcam host
 │              cam_bridge.py}                # ★ chạy trên Windows: virtual cam → MJPEG
 │
 ├── scripts/                               # đánh số = thứ tự chạy
