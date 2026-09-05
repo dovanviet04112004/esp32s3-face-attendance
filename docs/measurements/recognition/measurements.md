@@ -36,18 +36,30 @@ kiểm lại:
 Bảy file `.bin` có đủ trên đĩa: `lfw`, `cfp_fp`, `agedb_30`, `calfw`, `cplfw`, `cfp_ff`,
 `talfw`.
 
-### Tiêu chí chọn checkpoint: `cfp_fp_accuracy`
+### Tiêu chí chọn checkpoint: `cfp_fp_tar@far0.001`
 
-Trước đó là `lfw_accuracy`. LFW chạy tới 99,8% với model loại này và chỉ có 6.000 cặp, nên
-một phần mười điểm ở đó bằng **6 cặp** — chọn `best.pth` bằng nhiễu, đúng ở những epoch
-cuối quan trọng nhất. CFP-FP khó nhất trong ba bộ (~93–95%), còn phân biệt được tới cuối.
+**Bộ nào**: CFP-FP. LFW chạy tới 99,8% với model loại này và chỉ có 6.000 cặp, nên một phần
+mười điểm ở đó bằng **6 cặp** — xếp hạng bằng nhiễu, đúng ở những epoch cuối quan trọng
+nhất. CFP-FP khó nhất trong ba bộ (~93–95%), còn phân biệt được tới cuối.
 
-`tar@far` đúng để **báo cáo** (§1.1 nói cửa quan tâm TAR@FAR hơn accuracy) nhưng sai để
-**chọn**: ở FAR 1e-4 trên 3.000 cặp âm, ngân sách là `floor(1e-4 × 3000)` = **0** lần chấp
-nhận sai, nên nó nhảy theo bậc quá thô để xếp hạng hai epoch liền nhau.
+**Đại lượng nào**: TAR@FAR, không phải accuracy. Accuracy của benchmark verification đo tại
+ngưỡng làm chính accuracy lớn nhất — điểm cân bằng, vì cả ba bộ đều 50/50 cặp đúng/cặp sai.
+**Cửa điểm danh không bao giờ chạy ở điểm đó.** Nhận nhầm người lạ là ghi sai chấm công và
+mở cửa cho người lạ; không nhận ra nhân viên là đứng thử lại. Hai chi phí lệch hẳn nhau nên
+điểm vận hành nằm ở FAR thấp, và §1.1 đã nói cửa quan tâm TAR@FAR. Chọn model tại một điểm
+vận hành khác điểm sẽ dùng là chọn nhầm.
 
-Chốt trước khi arm nào chạy, vì §3.7 xếp tiêu chí chọn checkpoint vào cột phải giống hệt
-giữa hai arm. Sau khi A0 chạy xong, lựa chọn này lộ ra một chỗ hở — xem §4.2.
+**FAR nào**: 1e-3. Trên 3.500 cặp âm của CFP-FP, ngân sách là `floor(1e-3 × 3500)` = **3**
+lần chấp nhận sai — thô, nhưng không suy biến. Ở 1e-4 ngân sách là **0**, tức một cặp duy
+nhất định đoạt cả thứ hạng.
+
+**Không chọn trung bình TAR@1e-3 của ba bộ** dù ngân sách gộp là 9: LFW đã bão hoà ở 0,99
+nên chỉ làm loãng, còn AgeDB dao động 0,05 giữa hai epoch liền nhau (0,5877 → 0,5333) nên
+gộp vào là để bộ nhiễu nhất lái quyết định.
+
+§3.7 xếp tiêu chí chọn checkpoint vào cột phải giống hệt giữa hai arm, nên nó chốt trước khi
+A3 chạy. Đổi tiêu chí **không** làm bảng §4.1 phải đo lại — mọi cột đã ghi sẵn cho từng
+epoch; nó chỉ đổi checkpoint được chọn, và cả hai checkpoint đã nằm trên đĩa.
 
 ---
 
@@ -87,7 +99,7 @@ chỗ nó trong vòng train, nên chi phí teacher không lặp lại mỗi epoc
 | **A3** | A0 + embedding + RKD | chưa chạy | chưa chạy |
 
 Ba số của A0 lấy ở ba epoch khác nhau (10 / 8 / 9) — mỗi bộ đạt đỉnh một chỗ. Checkpoint
-chỉ có một, chọn theo `cfp_fp_accuracy`, tức **epoch 8**. §4.2 nói vì sao chỗ này còn hở.
+chỉ có một, chọn theo `cfp_fp_tar@far0.001`, tức **epoch 10** (§4.2).
 
 Cột phải bỏ trống ở **cả hai** arm cho tới khi có `test_device`. §4.2 của CLAUDE.md chốt
 quyết định bằng accuracy sau INT8 trên tập đó, nên bảng FP32 này chưa quyết được gì —
@@ -109,12 +121,17 @@ cosine tới 1,25e-5, warmup 1 epoch, AMP fp16, EMA 0,9999, `compile: true`,
 | 5 | 11,16 | 0,9918 | 0,9437 | 0,9250 | 0,9797 | 0,6846 | 0,4390 |
 | 6 | 10,19 | 0,9937 | 0,9457 | 0,9323 | 0,9807 | 0,7271 | 0,5460 |
 | 7 | 9,40 | 0,9940 | 0,9521 | 0,9402 | 0,9867 | 0,7506 | 0,5480 |
-| **8** | **9,06** | 0,9940 | **0,9583** | 0,9432 | 0,9910 | 0,7549 | **0,5877** |
+| 8 | 9,06 | 0,9940 | **0,9583** | 0,9432 | 0,9910 | 0,7549 | **0,5877** |
 | 9 | 10,38 | 0,9938 | 0,9574 | **0,9445** | 0,9890 | 0,7794 | 0,5333 |
-| 10 | 14,29 | **0,9942** | 0,9559 | 0,9428 | 0,9897 | **0,7874** | 0,5613 |
+| **10** | 14,29 | **0,9942** | 0,9559 | 0,9428 | 0,9897 | **0,7874** | 0,5613 |
 
-**Arm bão hoà ở epoch 8.** Ba epoch cuối không epoch nào cải thiện `best.pth`, và mọi
-bước của val sau đó đều nhỏ hơn ¼ độ lệch chuẩn của chính phép đo (`accuracy_std` ~0,010–0,013).
+Cột nào cũng đạt đỉnh ở một epoch khác nhau, nên **epoch nào là "tốt nhất" là do tiêu chí
+quyết định, không do dữ liệu**. Theo `cfp_fp_tar@far0.001` (§1) thì đó là **epoch 10**.
+
+**Arm bão hoà quanh epoch 8.** Từ đó trở đi mọi bước của accuracy đều nhỏ hơn ¼ độ lệch
+chuẩn của chính phép đo (`accuracy_std` ~0,010–0,013). Riêng TAR@1e-3 của CFP-FP vẫn tăng
+đơn điệu 0,7549 → 0,7794 → 0,7874 suốt ba epoch cuối; ba bước liên tiếp cùng chiều khó là
+nhiễu hơn một bước đơn lẻ, nhưng biên độ vẫn nhỏ và không nên đọc thành "còn học được nhiều".
 
 **Loss tăng 9,06 → 14,29 ở hai epoch cuối không phải model xấu đi.** LR lúc đó đã nằm ở
 đáy lịch cosine (~6% đỉnh ở epoch 8,5), tức trọng số gần như đứng yên, trong khi val nhích
@@ -135,11 +152,11 @@ Checkpoint nối qua ba thư mục run (`resumed_from.txt`), do máy sập vì
 | Run | Epoch | Giữ gì |
 |---|---|---|
 | `20260903-2255_f7a6aab_ec1061` | 1–4 | — |
-| `20260903-2258_f7a6aab_dad005` | 5–8 | **`best.pth` (epoch 8)** |
-| `20260904-0932_f7a6aab_7122fb` | 9–10 | `last.pth` (epoch 10) |
+| `20260903-2258_f7a6aab_dad005` | 5–8 | `best.pth` (epoch 8) — tiêu chí cũ |
+| `20260904-0932_f7a6aab_7122fb` | 9–10 | **`last.pth` (epoch 10)** — checkpoint dùng |
 
-`best.pth` nằm ở run **giữa**, không phải run cuối. Ai đi lấy checkpoint của arm này phải
-lấy đúng đường dẫn đó; run cuối chỉ có `last.pth`.
+Tên file đánh lạc hướng ở arm này: `best.pth` là của tiêu chí cũ và nằm ở run **giữa**,
+còn checkpoint được chọn là `last.pth` của run **cuối**. §4.2 nói rõ.
 
 ### 4.1b Ngưỡng cosine — phân bố điểm của A0
 
@@ -171,21 +188,28 @@ thăm, sai số cộng lên xấp xỉ `N × FAR`.
 Hai chiều lệch ngược nhau nên **không suy ra được ngưỡng vận hành** từ bảng này. Nó chỉ nói
 vùng nào hợp lý để bắt đầu dò.
 
-### 4.2 Tiêu chí chọn checkpoint còn một chỗ hở
+### 4.2 Checkpoint được chọn
 
-`cfp_fp_accuracy` chọn epoch 8. Nhưng `cfp_fp_tar@far0.001` **tăng đơn điệu** suốt ba
-epoch cuối — 0,7549 → 0,7794 → 0,7874 — và nó mới là đại lượng cửa quan tâm (§1.1). Hai
-tiêu chí chỉ vào hai epoch khác nhau; chênh lệch CFP-FP accuracy giữa chúng là 0,0024,
-tức **một phần năm** độ lệch chuẩn.
+`cfp_fp_tar@far0.001` (§1) chọn **epoch 10**. Trên đĩa, đó là `last.pth` của run cuối
+`20260904-0932_f7a6aab_7122fb`.
 
-FAR 1e-3 dùng được ở đây: CFP-FP có 3.500 cặp âm nên ngân sách là `floor(1e-3 × 3500)` = 3
-lần chấp nhận sai — thô nhưng không suy biến, khác hẳn 1e-4 (ngân sách 0).
+`best.pth` ở run giữa là **epoch 8**, do tiêu chí cũ ghi ra lúc chạy. Nó vẫn nằm đó và
+không xoá được bằng cách đổi hằng số, nên ai lấy checkpoint của arm này phải lấy `last.pth`
+của run cuối, không lấy file tên `best.pth`. Run A3 sinh ra sau khi đổi tiêu chí sẽ có
+`best.pth` đúng nghĩa.
 
-Cả hai checkpoint đã có sẵn trên đĩa, đổi tiêu chí không tốn giờ GPU. **Phải chốt trước
-khi A3 chạy** (§3.7: tiêu chí chọn checkpoint nằm ở cột phải giống hệt giữa hai arm).
-Chưa chốt.
+Chênh lệch giữa hai epoch nhỏ hơn nhiễu, nên đổi tiêu chí gần như không đổi kết quả của
+arm này:
 
----
+| Tiêu chí | Chọn | Hơn epoch nhì |
+|---|---|---|
+| `cfp_fp_accuracy` | ep 8 | +0,0009 — bằng **1/10** độ lệch chuẩn (0,0100) |
+| `cfp_fp_tar@far0.001` | ep 10 | +0,0080 |
+| Trung bình TAR@1e-3 ba bộ | ep 10 | +0,0016 |
+
+Ba bộ cũng không đồng ý: LFW và AgeDB đạt đỉnh TAR ở epoch 8, CFP-FP ở epoch 10. Giá trị
+của việc chốt tiêu chí nằm ở **bảng A0 vs A3**, nơi khoảng cách có thể vượt nhiễu — không
+nằm ở việc xếp hạng hai epoch liền nhau của cùng một arm.
 
 ## 5. Ghi chú kỹ thuật đã chốt
 
