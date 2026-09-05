@@ -1,5 +1,5 @@
-# Topic table for kiosk <-> server. Defined once here; broker ACL, firmware and
-# backend all read this file instead of hardcoding topic strings.
+# Topic table for kiosk <-> server. Broker ACL, firmware and backend all read
+# this file; no topic string is written anywhere else.
 
 version: 1
 
