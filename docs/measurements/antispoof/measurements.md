@@ -601,7 +601,7 @@ là cùng một kết luận §10 rút ra trên 48 khung camera, giờ đo lại
 Hạ về 0,90 cắt tỉ lệ từ chối nhầm đi 4,8 lần trên `0140`, đổi lấy APCER tăng từ 0,098 lên
 0,169 **trên CelebA-Spoof**. Con số APCER đó không mang sang thiết bị được: §11.3 và §12.2
 đo trên khung camera thật cho cách biệt 108–136 lần, tức trên miền thiết bị hai lớp nằm xa
-nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§14).
+nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§15).
 
 `0140` tốt hơn ở **đuôi dưới của lớp thật** — p5 từ 0,8513 lên 0,9739 — mà đuôi dưới chính
 là chỗ ngưỡng cắt. Ở đỉnh thì hai bên như nhau (cả hai trung vị 1,0000).
@@ -781,13 +781,116 @@ batch của student.
 
 ---
 
-## 14. Còn nợ
+## 14. A0 trên shard ô vuông trượt — được trên dữ liệu, mất trên camera
+
+Run `20260905-0932_ad91c16_73074a`, 60 epoch, seed 42, 09:32 → 15:41 (6 giờ 09 phút).
+EER val tốt nhất **0,1199** ở epoch 57, `best_metric = 0,11985`. Đường cong val:
+
+```
+ep 1  0,2249    ep 21  0,1832    ep 41  0,1498
+ep 11 0,1961    ep 31  0,1626    ep 51  0,1358
+                ep 43  0,1374    ep 57  0,1199
+```
+
+### 14.1 Trên dữ liệu: tốt hơn ở mọi mục
+
+Hai bộ trọng số chấm lại trên **cùng shard mới, cùng đường code**, nên chênh lệch ở đây chỉ
+đến từ trọng số:
+
+| | `20260902-0140` | `20260905-0932` |
+|---|---|---|
+| val `test:0:10` EER | 0,1406 | **0,1199** |
+| `test:10:` AUC | 0,9544 | **0,9658** |
+| `test:10:` ACER | 0,1239 | **0,1063** |
+| NUAA HTER | 0,1529 | **0,1329** |
+| NUAA BPCER | 0,3046 | **0,2561** |
+
+### 14.2 Trên 111 khung camera: tệ hơn ở mọi ngưỡng
+
+Cùng bộ `phone_eval` của §12.2, 76 khung mặt thật và 35 khung tấn công:
+
+| Ngưỡng | `0140` BPCER / APCER / **ACER** | `0932` BPCER / APCER / **ACER** |
+|---|---|---|
+| 0,50 | 0,0263 / 0,0857 / **0,0560** | 0,1447 / 0,8571 / **0,5009** |
+| 0,90 | 0,2368 / 0,0286 / **0,1327** | 0,3684 / 0,3143 / **0,3414** |
+| 0,99 | 0,2368 / 0,0286 / **0,1327** | 0,4079 / 0,0000 / **0,2039** |
+| 0,997113 | 0,4474 / 0,0000 / **0,2237** | 0,5658 / 0,0000 / **0,2829** |
+
+Ở 0,50 và 0,90 bộ mới thua **cả hai chiều cùng lúc** — không phải đánh đổi ngưỡng.
+
+### 14.3 Nhóm nào hỏng, ở ngưỡng 0,90
+
+| Nhóm | n | `0140` qua | `0932` qua | |
+|---|---|---|---|---|
+| `live_kho` mặt thật quay nghiêng | 12 | **12/12** | **0/12** | mất sạch |
+| `live_xa` | 20 | 2/20 | 4/20 | |
+| `live_gan` · `live_vua` · `live_rat_xa` | 44 | 44/44 | 44/44 | giữ |
+| `attack_anh` ảnh thẻ trên màn hình | 12 | 0/12 | **6/12** | lọt một nửa |
+| `attack_xa` màn hình ở xa | 20 | 0/20 | **4/20** | |
+| `attack_gan` | 3 | 1/3 | 1/3 | |
+
+`live_kho` đúng là nhóm sinh ra khiếu nại ban đầu — mặt thật quay nghiêng. Bộ mới từ chối
+cả 12 khung, tức nó làm **nặng thêm** chính triệu chứng đang phải chữa.
+
+### 14.4 Axon: mặt nạ và selfie
+
+| Bộ | `0140` | `0932` |
+|---|---|---|
+| `selfies` BPCER | 0,2917 | 0,5000 |
+| `3d_paper_mask` APCER | 0,2778 | 0,3576 |
+| `latex_mask` APCER | 0,4000 | 0,4750 |
+| `textile_3d_mask` APCER | 0,4239 | 0,4620 |
+| `silicone_mask` APCER | 0,4886 | 0,4205 |
+| `wrapped_3d_paper` APCER | 0,2000 | 0,1625 |
+| `cutout` APCER | 0,0750 | 0,0583 |
+| `replay_mobile` APCER | 0,0250 | 0,0375 |
+| `replay_display` APCER | 0,0889 | 0,0889 |
+
+Một nửa selfie thật bị từ chối, và mặt nạ vốn đã lọt gần một nửa thì lọt thêm.
+
+### 14.5 Tám khung chụp tay
+
+Chấm lại bằng hình học crop mới, nên điểm khác con số nằm trong tên file:
+
+| Khung | tỉ lệ đạt | `0140` | `0932` |
+|---|---|---|---|
+| 210043 | 0,705 | 0,9904 | 0,9861 |
+| 210051 | 0,911 | 0,6650 | 0,9989 |
+| 210059 | 1,000 / 1,636 | 0,9964 | 0,8823 |
+| 210115 | 1,000 / 1,816 | 0,9817 | 1,0000 |
+| 210124 | 0,740 | 0,9395 | **0,0641** |
+| 210133 | 0,999 / 1,590 | 0,3052 | 0,9851 |
+| 210309 | 0,881 | 0,1464 | 0,9885 |
+| 210317 | 0,998 / 1,824 | 0,7883 | 0,9983 |
+
+Qua ngưỡng 0,90: `0140` 4/8, `0932` 6/8. 🔬 **n=8 và cả tám đều là mặt thật**, nên bảng này
+không nói được gì về tấn công — nó chỉ mâu thuẫn bề mặt với §14.3, không bác được §14.3.
+
+### 14.6 Đọc hai bộ số
+
+Bộ mới thắng trên CelebA-Spoof và NUAA, thua trên khung camera. Hai kết quả không mâu thuẫn
+vì chúng đo hai thứ khác nhau, và bộ 111 khung mới là bộ gần miền triển khai hơn.
+
+🔬 **Giả thuyết chưa kiểm**: `crop_scale_range: [0.7, 2.7]` ở §13.1 cắt được đường tắt tỉ
+lệ, nhưng dải rộng như vậy có thể đồng thời dạy model bỏ qua bối cảnh quanh mặt. Trên
+CelebA-Spoof vân in và moiré đủ để phân biệt; trên khung điện thoại ở cự ly này thứ tố cáo
+`attack_anh` lại là viền màn hình và khung trình duyệt — nằm đúng phần bối cảnh đó. Kiểm
+được bằng một run A0 thu hẹp dải, mọi điều kiện khác giữ nguyên.
+
+**Chưa chốt A0.** Bảng đối chứng §3.7 chỉ có nghĩa khi arm nền dùng được, mà một nửa
+`attack_anh` lọt ở ngưỡng 0,90 thì chưa.
+
+---
+
+## 15. Còn nợ
 
 - **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
   đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
   thuyết tư thế, ngưỡng vận hành thật, và cổng nghiệm thu đo trên miền thiết bị.
+- **Run A0 thu hẹp `crop_scale_range`** — phép kiểm cho giả thuyết §14.6, và là thứ chặn
+  mọi bước sau. Dải nào thì chưa biết; cần quét vài mức chứ không đoán một mức.
 - **Mọi số ở §5, §6, §9–§12 đo trên hình học crop cũ** nên chỉ còn giá trị lịch sử: shard
-  đã sinh lại ở §13. Thứ tự còn lại là A0 → teacher → A3 → điền §5 → ADR.
+  đã sinh lại ở §13. Thứ tự còn lại là A0 dùng được → teacher → A3 → điền §5 → ADR.
 - **Teacher chưa train lại** trên crop mới. Nó không cần sửa code — `boxes()` đã tham số
   hoá theo tỉ lệ thật và xử lý đúng cả vùng dưới 1,0 (tỉ lệ mặt bão hoà ở 1,000, `ref mean`
   tăng đơn điệu 0,0585 → 0,6255) — nhưng nó đọc cùng shard nên cùng phải chạy lại. Chỉ
