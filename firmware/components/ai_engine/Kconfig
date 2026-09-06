@@ -1,0 +1,21 @@
+menu "AI engine"
+
+    config AI_ARENA_FAST_KB
+        int "Tensor arena for detection and anti-spoof, internal SRAM (KB)"
+        default 175
+        range 16 320
+        help
+            Sized from the SRAM budget of KEHOACH 6.4 and still an estimate:
+            E8-T7 measures the real tail and head of each model. Detection
+            runs on every frame, so this arena is asked for in internal RAM
+            and only falls back to PSRAM, loudly, when it does not fit.
+
+    config AI_ARENA_BIG_KB
+        int "Tensor arena for recognition, PSRAM (KB)"
+        default 512
+        range 64 4096
+        help
+            Recognition runs only after anti-spoof passes, rarely enough to
+            live in PSRAM (KEHOACH 3.10). Also an estimate until E8-T7.
+
+endmenu
