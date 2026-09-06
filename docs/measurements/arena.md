@@ -24,19 +24,27 @@ dải lớn như vậy là arena, nên nó phải xin **trước** mọi driver.
 Sau khi arena lấy 175 KB, RAM nội còn 118 KB và `drv_lcd`, `drv_touch`,
 `drv_camera` vẫn init đủ, preview giữ nguyên 14,19 fps.
 
-## 2. Còn thiếu — E8-T7
+## 2. `tail` và `head` — E8-T7
 
-Sáu con số của công thức `Σ tail + max(head)` chưa đo được vì chưa có lớp con
-nào của `TfliteModelBase`:
+| Model | tail | head | tổng |
+|---|---|---|---|
+| detect | 🔬 chưa có model | 🔬 | 🔬 |
+| **spoof** | **111.916 B (109,3 KB)** | **234.624 B (229,1 KB)** | **346.540 B (338,4 KB)** |
+| recog | 🔬 chưa có model | 🔬 | 🔬 |
 
-| Model | tail | head |
-|---|---|---|
-| detect | 🔬 | 🔬 |
-| spoof | 🔬 | 🔬 |
-| recog | 🔬 | 🔬 |
+`head` đọc trực tiếp từ lời từ chối của bộ cấp phát khi arena 175 KB không đủ
+(`Requested: 234624, available 67488`); tổng đọc từ `arena_used_bytes()` khi
+arena đã đủ rộng; `tail` là hiệu của hai số đó.
 
-Chừng nào chưa có sáu số này thì `AI_ARENA_FAST_KB = 175` và
-`AI_ARENA_BIG_KB = 512` vẫn chỉ là ước lượng lấy từ §6.4, không phải số đo.
+**Một mình nhánh anti-spoof đã cần 338 KB.** §6.4 dự trù 175 KB cho **cả**
+detect lẫn spoof dùng chung, tức là hụt gần một nửa trước khi nhánh detect kịp
+xuất hiện. Chip chỉ có ~232 KB liền mạch ở SRAM nội lúc `ai_engine_init()`
+chạy, nên arena này **không có cách nào nằm ở SRAM nội** với model hiện tại;
+nó đang chạy ở PSRAM, và cái giá của việc đó nằm ở `latency.md`.
+
+`AI_ARENA_FAST_KB = 175` mặc định vì thế vẫn là ước lượng của §6.4 chứ không
+phải số đo, và nó **sai**. Chưa sửa mặc định vì con số đúng phụ thuộc vào việc
+model có được thu nhỏ hay không — xem mục 3 của `latency.md`.
 
 ## 3. Cảnh báo cho các mốc sau
 
