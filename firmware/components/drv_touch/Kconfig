@@ -1,0 +1,10 @@
+menu "Touch driver"
+
+    config DRV_TOUCH_SELFTEST
+        bool "Offer drv_touch_selftest()"
+        default y
+        help
+            Polls the controller for a few seconds and logs each contact.
+            Bring-up only: it blocks the boot for as long as it watches.
+
+endmenu
