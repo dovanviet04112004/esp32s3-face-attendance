@@ -41,6 +41,9 @@ data:
     # A 15 degree tilt cost 32 of 44 live frames their pass (KEHOACH 3).
     roll_probability: 0.35
     roll_range: [-18.0, 18.0]
+    # A 2% shift of the box cost 15% of them (KEHOACH 3).
+    translate_probability: 0.5
+    translate_range: 0.10
 
 train:
   # Same count for both arms, since 3.7 reports the cost gap.

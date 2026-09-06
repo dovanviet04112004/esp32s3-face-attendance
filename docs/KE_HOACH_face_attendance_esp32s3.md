@@ -552,6 +552,41 @@ Ba ràng buộc đi kèm:
 - **Đổi cách dựng thì shard hết giá trị.** Mọi run train trước đó đọc một phân bố hình học
   khác; sinh lại shard rồi train lại là bắt buộc, không phải tuỳ chọn.
 
+#### Hộp mặt phải đến từ detector, không từ chú thích của dataset
+
+Dùng chung một hàm cắt là chưa đủ nếu hai bên đưa vào **hai hộp khác nhau**. CelebA-Spoof
+ship sẵn cột `Bbox` do người gán nhãn vẽ, còn kiosk chỉ có hộp YuNet trả về. Đo trên 759 ảnh:
+
+| So YuNet với `Bbox` | Trung vị | p90 |
+|---|---|---|
+| Tỉ lệ cạnh | **1,049** | 1,330 |
+| Xê dịch tâm | **3,0%** cạnh hộp | — |
+| Tỉ lệ ảnh lệch tâm quá 2% | **73,8%** | |
+
+Hộp detector to hơn 5% và lệch tâm 3%. Nghe nhỏ, nhưng model mất **15% số khung** chỉ vì
+xê dịch 2% (mục dưới), nên đây là một độ lệch hệ thống trên **mọi** crop nó từng học.
+
+**Chốt: shard dựng bằng hộp của detection student, không dùng cột chú thích.** `xdomain_crop.py`
+đã theo đúng luật này cho NUAA và Axon; tập train chính phải theo cùng. Ảnh nào detector
+không thấy mặt thì bỏ, vì kiosk cũng sẽ không thấy.
+
+#### Model dựa vào mặt nằm đúng chỗ, nên hộp rung là phải dạy
+
+Xê dịch hộp mặt rồi chấm lại 44 khung mặt thật đang đạt 0,99:
+
+| Xê dịch | 0% | 2% | 5% | 10% |
+|---|---|---|---|---|
+| Tỉ lệ qua ngưỡng 0,90 | 100% | **85%** | 77% | 72% |
+| Phân vị 10 của điểm | 0,93 | 0,87 | **0,50** | 0,09 |
+
+Detector rung vài phần trăm giữa hai khung liên tiếp, nhất là khi người dùng đang xoay đầu
+hoặc bước tới. Trong khi đó **mọi mẫu train đều có mặt nằm chính giữa crop** — không phép
+augment nào tịnh tiến nó.
+
+**Chốt: rút một vector tịnh tiến cho hộp mặt trước khi cắt, cùng phân bố cho cả hai lớp, có
+cổng xác suất.** Biên độ lấy theo mức detector thật sự rung, không lấy tròn: ±10% cạnh hộp
+phủ được cả phần lệch hệ thống giữa hai quy ước hộp ở mục trên.
+
 #### Tỉ lệ crop tương quan với nhãn, nên phải rút ngẫu nhiên cho cả hai lớp
 
 Trong CelebA-Spoof, ảnh tấn công bị giơ xa hơn mặt người, nên tỉ lệ wide dựng được **tương
@@ -654,6 +689,20 @@ cùng cách đặt sáng, nên mức sáng gần như không đổi trong tập.
 Rút một hệ số phơi sáng và một hệ số tương phản, áp **một lần cho cả hai view** vì hai crop
 là một cảnh qua một ống kính. Dải phải trùm được vùng đã đo ra lỗi, tức xuống tới 0,55 phơi
 sáng và 0,50 tương phản, đồng thời phủ cả phía dư sáng.
+
+Cận trên phải **đối xứng trong log** với cận dưới: `1 / 0,55 = 1,82` nên gain dừng ở **1,80**,
+và `1 / 0,50 = 2,00` nhưng tương phản dừng ở **1,50** vì trên mức đó ảnh bẹt về hai cực. Một
+dải lệch về phía tối không mở rộng tập train mà **dời** nó, và cái bị mất là đuôi cháy sáng:
+
+| Tỉ lệ mẫu có nền cháy sáng quá 4% | |
+|---|---|
+| Shard gốc | 14,4% |
+| Sau augment dải lệch `(0,55; 1,25)` | **4,8%** |
+| Sau augment dải đối xứng `(0,55; 1,80)` | 14,0% |
+| Khung kiosk thật | **~35%** |
+
+Nền cháy sáng có tương quan **−0,724** với điểm — mạnh gấp đôi mọi đặc trưng khác đo được —
+nên đuôi này không phải chi tiết bỏ qua được.
 
 `backlight` không thay được: nó kéo một bên khung **về phía trắng**, tức làm sáng lên, còn
 `vignette` chỉ tối bốn góc và nhân đúng 1,0 ở giữa khung — nơi khuôn mặt nằm.

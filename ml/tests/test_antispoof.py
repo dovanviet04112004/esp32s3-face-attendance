@@ -25,6 +25,7 @@ from facepipe.tasks.antispoof.data import (
     crop_scale,
     horizontal_flip,
     occlude,
+    translate,
 )
 from facepipe.tasks.antispoof.losses import SpoofTaskLoss
 from facepipe.tasks.antispoof.losses.task_loss import LIVE, SPOOF, SpoofBatch
@@ -194,6 +195,32 @@ def test_the_presented_scale_is_drawn_the_same_way_for_both_classes(tmp_path: Pa
     assert live.min() < 1.2 and spoof.min() < 1.2
     assert live.max() > 2.4 and spoof.max() > 2.4
     assert abs(live.mean() - spoof.mean()) < 0.15
+
+
+def test_the_shift_moves_the_context_view_less_than_the_face_view() -> None:
+    """One displacement in the frame covers less of a crop that holds more room."""
+    edge = 80
+    tight = np.zeros((edge, edge, 3), dtype=np.uint8)
+    wide = np.zeros((edge, edge, 3), dtype=np.uint8)
+    tight[:, edge // 2] = 255
+    wide[:, edge // 2] = 255
+    moved = translate(
+        SpoofSample(tight=tight, wide=wide, label=LIVE, wide_scale=4.0), 0.25, 0.0
+    )
+    tight_at = int(np.argmax(moved.tight[edge // 2, :, 0]))
+    wide_at = int(np.argmax(moved.wide[edge // 2, :, 0]))
+    assert edge // 2 - tight_at == pytest.approx(edge * 0.25, abs=2)
+    assert edge // 2 - wide_at == pytest.approx(edge * 0.25 / 4.0, abs=2)
+
+
+def test_the_shift_invents_no_flat_border() -> None:
+    """Mirroring the edge keeps a moved crop free of a mark only shifts carry."""
+    edge = 64
+    view = np.random.default_rng(0).integers(40, 200, (edge, edge, 3), dtype=np.uint8)
+    moved = translate(
+        SpoofSample(tight=view, wide=view.copy(), label=SPOOF, wide_scale=2.7), -0.1, 0.1
+    )
+    assert moved.tight[:, :4].std() > 5.0 and moved.tight[-4:, :].std() > 5.0
 
 
 def test_the_patch_covers_the_same_part_of_the_face_in_both_views() -> None:

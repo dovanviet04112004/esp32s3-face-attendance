@@ -34,6 +34,8 @@ from .data import (
     RECOMPRESS_PROBABILITY,
     ROLL_PROBABILITY,
     ROLL_RANGE,
+    TRANSLATE_PROBABILITY,
+    TRANSLATE_RANGE,
     SpoofShardDataset,
     collate,
 )
@@ -81,6 +83,8 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         occlusion_side_range=tuple(params.get("occlusion_side_range", OCCLUSION_SIDE_RANGE)),
         roll_probability=float(params.get("roll_probability", ROLL_PROBABILITY)),
         roll_range=tuple(params.get("roll_range", ROLL_RANGE)),
+        translate_probability=float(params.get("translate_probability", TRANSLATE_PROBABILITY)),
+        translate_range=float(params.get("translate_range", TRANSLATE_RANGE)),
     )
 
 

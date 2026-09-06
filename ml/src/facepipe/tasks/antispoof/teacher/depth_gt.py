@@ -33,9 +33,7 @@ def face_mask(wide_scale, size: int = DEPTH_SIZE) -> np.ndarray:
     return (np.abs(grid_x) <= half) & (np.abs(grid_y) <= half)
 
 
-def gaussian_map(
-    wide_scale, size: int = DEPTH_SIZE, sigma: float = SIGMA_OF_FACE
-) -> np.ndarray:
+def gaussian_map(wide_scale, size: int = DEPTH_SIZE, sigma: float = SIGMA_OF_FACE) -> np.ndarray:
     """A mound peaking at the centre of the face box and zero outside it.
 
     Sigma is read against the box, so at 0.28 the mound has fallen to about 0.05

@@ -13,7 +13,7 @@ import io
 import json
 import os
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import batched
 from multiprocessing import Pool
 from pathlib import Path
@@ -173,6 +173,24 @@ def iter_samples(root: Path, stats: dict, limit: int | None) -> Iterator[Sample]
             done += 1
 
 
+def redetected(samples: Iterator[Sample], detector: Path, device: str, stats: dict):
+    """The same rows carrying the box the kiosk's own detector draws.
+
+    The annotation box is a third convention neither prep nor inference uses; a
+    face the detector misses is dropped, since the kiosk would miss it too
+    (KEHOACH 3, layer 2).
+    """
+    from .xdomain_crop import best_face, load_detector
+
+    model, priors = load_detector(detector, device)
+    for sample in samples:
+        box = best_face(model, priors, sample.image_bytes, device)
+        if box is None:
+            stats["undetected"] += 1
+            continue
+        yield replace(sample, box_xyxy=tuple(int(value) for value in box))
+
+
 def run(
     root: Path,
     out_root: Path,
@@ -180,6 +198,8 @@ def run(
     limit: int | None = None,
     workers: int = 1,
     wide_size: int = WIDE_SIZE,
+    detector: Path | None = None,
+    device: str = "cuda",
 ) -> dict:
     """Crop every annotated face into per-split shards under out_root.
 
@@ -187,11 +207,14 @@ def run(
     writer keeps records in parquet order: the shard index is a position, and a
     set of shards written out of order would index a different dataset.
     """
-    stats = {"cropped": 0, "skipped": 0, "live": 0, "spoof": 0, "shards": 0}
+    stats = {"cropped": 0, "skipped": 0, "live": 0, "spoof": 0, "shards": 0, "undetected": 0}
     writers: dict[str, ShardWriter] = {}
     pool = Pool(workers) if workers > 1 else None
+    samples = iter_samples(root, stats, limit)
+    if detector is not None:
+        samples = redetected(samples, detector, device, stats)
     try:
-        for batch in batched(iter_samples(root, stats, limit), ENCODE_BATCH):
+        for batch in batched(samples, ENCODE_BATCH):
             payloads = [(sample, size, wide_size) for sample in batch]
             encoded = pool.map(_encode_task, payloads) if pool else map(_encode_task, payloads)
             for sample, members in zip(batch, encoded, strict=True):
@@ -220,12 +243,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wide-size", type=int, default=WIDE_SIZE)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1)
+    parser.add_argument("--detector", type=Path, default=None, help="a detection checkpoint")
+    parser.add_argument("--device", default="cuda")
     args = parser.parse_args(argv)
 
-    stats = run(args.root, args.out, args.size, args.limit, args.workers, args.wide_size)
+    stats = run(
+        args.root,
+        args.out,
+        args.size,
+        args.limit,
+        args.workers,
+        args.wide_size,
+        args.detector,
+        args.device,
+    )
     print(
         f"{args.out}: {stats['cropped']} face(s) from {stats['shards']} parquet shard(s) "
-        f"({stats['live']} live, {stats['spoof']} spoof), {stats['skipped']} undecodable"
+        f"({stats['live']} live, {stats['spoof']} spoof), {stats['skipped']} undecodable, "
+        f"{stats['undetected']} with no face"
     )
     return 0
 

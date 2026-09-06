@@ -35,6 +35,8 @@ from ..data import (
     RECOMPRESS_PROBABILITY,
     ROLL_PROBABILITY,
     ROLL_RANGE,
+    TRANSLATE_PROBABILITY,
+    TRANSLATE_RANGE,
     SpoofShardDataset,
     collate,
 )
@@ -69,7 +71,7 @@ class DepthSupervision(nn.Module):
 
     def boxes(self, wide_scale: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """The mound and the face box for each sample, at that sample's crop scale."""
-        axis = (torch.arange(self.depth_size, device=wide_scale.device) + 0.5)
+        axis = torch.arange(self.depth_size, device=wide_scale.device) + 0.5
         axis = axis / self.depth_size - 0.5
         grid_y, grid_x = torch.meshgrid(axis, axis, indexing="ij")
         scale = wide_scale.float().view(-1, 1, 1)
@@ -129,6 +131,8 @@ def build_loader(cfg: Config, split: str, train: bool) -> torch.utils.data.DataL
         occlusion_side_range=tuple(params.get("occlusion_side_range", OCCLUSION_SIDE_RANGE)),
         roll_probability=float(params.get("roll_probability", ROLL_PROBABILITY)),
         roll_range=tuple(params.get("roll_range", ROLL_RANGE)),
+        translate_probability=float(params.get("translate_probability", TRANSLATE_PROBABILITY)),
+        translate_range=float(params.get("translate_range", TRANSLATE_RANGE)),
     )
     return torch.utils.data.DataLoader(
         dataset,

@@ -43,10 +43,10 @@ VIGNETTE_RANGE = (0.10, 0.55)
 MOTION_BLUR_PX = (3, 7)
 BACKLIGHT_RANGE = (0.15, 0.60)
 MID_LEVEL = 127.5
-# Reaches the exposure a live face collapses at, and the bright side too
-# (KEHOACH 3).
-EXPOSURE_GAIN_RANGE = (0.55, 1.25)
-EXPOSURE_CONTRAST_RANGE = (0.50, 1.15)
+# Symmetric in log about 1.0, which is what keeps the blown-highlight tail in the
+# pool the branch trains on (KEHOACH 3).
+EXPOSURE_GAIN_RANGE = (0.55, 1.80)
+EXPOSURE_CONTRAST_RANGE = (0.50, 1.50)
 PHOTOMETRIC_PROBABILITY = 0.5
 # Side of the patch as a fraction of the face box (KEHOACH 3, layer 2).
 OCCLUSION_SIDE_RANGE = (0.20, 0.45)
@@ -56,6 +56,10 @@ OCCLUSION_PROBABILITY = 0.25
 # Degrees of head roll, drawn per sample (KEHOACH 3, layer 2).
 ROLL_RANGE = (-18.0, 18.0)
 ROLL_PROBABILITY = 0.35
+# Fraction of the face box the crop is moved by, symmetric so it widens the pool
+# rather than favouring one side (KEHOACH 3, layer 2).
+TRANSLATE_RANGE = 0.10
+TRANSLATE_PROBABILITY = 0.5
 
 
 @dataclass
@@ -250,6 +254,30 @@ def roll(sample: SpoofSample, degrees: float) -> SpoofSample:
     return replace(sample, tight=turned(sample.tight, degrees), wide=turned(sample.wide, degrees))
 
 
+def shifted(image: np.ndarray, dx: float, dy: float) -> np.ndarray:
+    """One view moved by a fraction of its own edge, mirrored where it runs out."""
+    edge = image.shape[0]
+    pad = max(1, edge // 4)
+    wider = np.pad(image, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
+    left = min(max(0, round(pad + dx * edge)), wider.shape[1] - edge)
+    top = min(max(0, round(pad + dy * edge)), wider.shape[0] - edge)
+    return wider[top : top + edge, left : left + edge]
+
+
+def translate(sample: SpoofSample, dx: float, dy: float) -> SpoofSample:
+    """Move the face off centre by one distance in the frame, seen in both views.
+
+    The shift is a fraction of the face box, so the context view moves by fewer
+    of its own pixels: the same displacement covers less of a wider crop.
+    """
+    span = 1.0 / max(sample.wide_scale, 1e-6)
+    return replace(
+        sample,
+        tight=shifted(sample.tight, dx, dy),
+        wide=shifted(sample.wide, dx * span, dy * span),
+    )
+
+
 def requantise(image: np.ndarray, quality: int) -> np.ndarray:
     """Re-encode one view as JPEG at the given quality and decode it back."""
     buffer = io.BytesIO()
@@ -405,6 +433,8 @@ class SpoofShardDataset(IterableDataset):
         occlusion_side_range: tuple[float, float] = OCCLUSION_SIDE_RANGE,
         roll_probability: float = ROLL_PROBABILITY,
         roll_range: tuple[float, float] = ROLL_RANGE,
+        translate_probability: float = TRANSLATE_PROBABILITY,
+        translate_range: float = TRANSLATE_RANGE,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -426,6 +456,8 @@ class SpoofShardDataset(IterableDataset):
         self.occlusion_side_range = occlusion_side_range
         self.roll_probability = roll_probability
         self.roll_range = roll_range
+        self.translate_probability = translate_probability
+        self.translate_range = translate_range
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -470,6 +502,9 @@ class SpoofShardDataset(IterableDataset):
                 drawn = rng.random() < self.crop_scale_probability
                 target = rng.uniform(*self.crop_scale_range) if drawn else sample.wide_scale
                 sample = crop_scale(sample, target, self.size)
+                if rng.random() < self.translate_probability:
+                    span = self.translate_range
+                    sample = translate(sample, rng.uniform(-span, span), rng.uniform(-span, span))
                 if rng.random() < self.roll_probability:
                     sample = roll(sample, rng.uniform(*self.roll_range))
                 if rng.random() < self.occlusion_probability:
