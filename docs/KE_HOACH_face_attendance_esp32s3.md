@@ -1776,7 +1776,12 @@ Header công khai là **mặt tiền C** (§4.5.3) để `app_main.c` và các c
 
 `virtual` **được phép** ở đúng bốn chỗ có nhu cầu thay thế thật: model TFLM, cơ cấu mở cửa, thuật toán so khớp, màn hình UI. Ba model × 1 vtable là chi phí không đáng kể; đổi lại là code test được trên máy host.
 
-##### b) Tiện ích RAII dùng chung (`components/common/priv_include/`)
+##### b) Tiện ích RAII dùng chung (`components/common/include/*.hpp`)
+
+Nằm ở `include/` chứ không phải `priv_include/`: IDF không xuất `priv_include` ra ngoài
+component, nên guard đặt ở đó thì đúng những component cần nó lại không thấy. Đây là ngoại
+lệ duy nhất với luật "header công khai chỉ POD + `extern "C"`" ở §4.5.3 — chúng là template
+C++ thuần header, chỉ component C++ include, và code C không bao giờ chạm tới.
 
 | Lớp | Bọc cái gì | Cứu được lỗi gì |
 |---|---|---|
