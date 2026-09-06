@@ -204,9 +204,7 @@ def test_the_shift_moves_the_context_view_less_than_the_face_view() -> None:
     wide = np.zeros((edge, edge, 3), dtype=np.uint8)
     tight[:, edge // 2] = 255
     wide[:, edge // 2] = 255
-    moved = translate(
-        SpoofSample(tight=tight, wide=wide, label=LIVE, wide_scale=4.0), 0.25, 0.0
-    )
+    moved = translate(SpoofSample(tight=tight, wide=wide, label=LIVE, wide_scale=4.0), 0.25, 0.0)
     tight_at = int(np.argmax(moved.tight[edge // 2, :, 0]))
     wide_at = int(np.argmax(moved.wide[edge // 2, :, 0]))
     assert edge // 2 - tight_at == pytest.approx(edge * 0.25, abs=2)
