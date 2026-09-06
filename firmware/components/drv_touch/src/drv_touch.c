@@ -14,8 +14,6 @@
 static const char *TAG = "drv_touch";
 
 #define TOUCH_ADDR_SELECT_LOW 0
-#define SELFTEST_MAX_POINTS 1
-#define SELFTEST_POLL_MS 50
 
 static esp_lcd_touch_handle_t s_touch;
 static esp_lcd_panel_io_handle_t s_io;
@@ -53,12 +51,12 @@ esp_err_t drv_touch_init(void)
 
     const esp_lcd_touch_config_t cfg = {
         // The controller reports in the panel's own portrait frame, which is
-        // the frame swap_xy then turns into the landscape view.
-        .x_max = APP_LCD_V_RES,
-        .y_max = APP_LCD_H_RES,
+        // the frame the display now uses, so nothing needs turning.
+        .x_max = APP_LCD_H_RES,
+        .y_max = APP_LCD_V_RES,
         .rst_gpio_num = GPIO_NUM_NC,
         .int_gpio_num = APP_TOUCH_INT_GPIO,
-        .flags = {.swap_xy = true, .mirror_x = true, .mirror_y = false},
+        .flags = {.swap_xy = false, .mirror_x = false, .mirror_y = false},
     };
     // Leaves INT as an input with its interrupt armed, which select_address
     // above does not: it hands the pin over as an output.
@@ -96,34 +94,6 @@ esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count)
     }
     *count = got;
     return ESP_OK;
-}
-
-esp_err_t drv_touch_selftest(uint8_t seconds)
-{
-#if !CONFIG_DRV_TOUCH_SELFTEST
-    (void)seconds;
-    return ESP_OK;
-#else
-    drv_touch_point_t points[SELFTEST_MAX_POINTS];
-    uint8_t count = 0;
-    int reports = 0;
-    int failures = 0;
-    ESP_LOGI(TAG, "touch the panel, watching for %u s", seconds);
-    for (int tick = 0; tick < seconds * (1000 / SELFTEST_POLL_MS); ++tick) {
-        const esp_err_t err = drv_touch_read(points, SELFTEST_MAX_POINTS, &count);
-        if (err != ESP_OK) {
-            failures++;
-        } else if (count) {
-            ESP_LOGI(TAG, "touch at %u,%u", points[0].x, points[0].y);
-            reports++;
-        }
-        vTaskDelay(pdMS_TO_TICKS(SELFTEST_POLL_MS));
-    }
-    // One poll per SELFTEST_POLL_MS, so a held finger counts many times over:
-    // this is a count of reports, not of separate touches.
-    ESP_LOGI(TAG, "selftest: %d report(s), %d read failure(s)", reports, failures);
-    return failures ? ESP_ERR_INVALID_RESPONSE : ESP_OK;
-#endif
 }
 
 esp_lcd_touch_handle_t drv_touch_handle(void)

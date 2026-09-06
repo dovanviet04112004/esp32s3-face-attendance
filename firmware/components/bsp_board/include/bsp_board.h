@@ -38,12 +38,6 @@ esp_err_t bsp_i2c_lock(uint32_t timeout_ms);
  */
 void bsp_i2c_unlock(void);
 
-/** Log which addresses answer on the shared bus.
- *  @ctx task | blocking | takes m_i2c
- *  @ret count of devices, or -1 when the bus is faulty rather than empty
- */
-int bsp_i2c_scan(void);
-
 #ifdef __cplusplus
 }
 #endif

@@ -1,9 +1,16 @@
 #include "bsp_board.h"
 #include "drv_ioexp.h"
 #include "drv_touch.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "unity.h"
 
 #define OVERSIZED_MAX 200
+#define WATCH_SECONDS 8
+#define WATCH_POLL_MS 50
+
+static const char *TAG = "test_touch";
 
 TEST_CASE("read refuses to work before init", "[drv_touch]")
 {
@@ -45,9 +52,28 @@ TEST_CASE("an untouched panel reports no contact", "[drv_touch]")
     TEST_ASSERT_EQUAL(0, count);
 }
 
+TEST_CASE("polling holds the bus for a whole watch window", "[drv_touch]")
+{
+    drv_touch_point_t points[1];
+    uint8_t count = 0;
+    int reports = 0;
+    ESP_LOGI(TAG, "touch all four corners, watching for %d s", WATCH_SECONDS);
+    // Asserts only that every read lands: a window with no finger in it is a
+    // quiet pass, and the coordinates it logs are what a person reads off.
+    for (int tick = 0; tick < WATCH_SECONDS * (1000 / WATCH_POLL_MS); ++tick) {
+        TEST_ASSERT_EQUAL(ESP_OK, drv_touch_read(points, 1, &count));
+        if (count) {
+            ESP_LOGI(TAG, "touch at %u,%u", points[0].x, points[0].y);
+            reports++;
+        }
+        vTaskDelay(pdMS_TO_TICKS(WATCH_POLL_MS));
+    }
+    ESP_LOGI(TAG, "%d contact report(s) in %d s", reports, WATCH_SECONDS);
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
-    unity_run_all_tests();
+    unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
 }

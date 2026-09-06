@@ -8,7 +8,6 @@ Sở hữu sơ đồ chân và hai bus dùng chung. Mọi driver từ L2 trở l
   I²C. Đổi chân phải sửa cả file này và KẾ HOẠCH §2 trong cùng một commit.
 - Dựng SPI2 cho panel và I2C0 cho bốn thiết bị dùng chung.
 - Giữ mutex `m_i2c` mà bốn thiết bị đó tranh nhau.
-- `bsp_i2c_scan()` — liệt kê địa chỉ trả lời, chỉ có ở bản `dev`.
 
 ## Phụ thuộc
 
@@ -25,6 +24,6 @@ kéo nội để tắt theo §2.3B.
 
 ## Giới hạn
 
-`report_pin()` cấu hình lại SDA/SCL thành GPIO thường trên đường vào
-`bsp_board_init`, nên nó nằm sau `CONFIG_BSP_BRINGUP_CHECKS` và không có ở bản
-`bench`/`prod`.
+Component không có hàm nghiệm thu nào (KẾ HOẠCH §4.5.8). Quét bus và dò trở kéo
+nằm ở `test_apps/buses/`; bài dò trở kéo phải chạy **trước** `bsp_board_init` vì
+sau đó hai chân thuộc về driver I²C, không đọc như GPIO thường được nữa.

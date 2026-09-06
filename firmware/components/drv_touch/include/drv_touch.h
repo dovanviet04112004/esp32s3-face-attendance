@@ -31,12 +31,6 @@ esp_err_t drv_touch_init(void);
  */
 esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count);
 
-/** Watch for contacts and log them, for as long as the window lasts.
- *  @ctx task | blocking for `seconds` | takes m_i2c repeatedly
- *  @ret ESP_OK once the window closes, whether or not anything touched
- */
-esp_err_t drv_touch_selftest(uint8_t seconds);
-
 /** Controller handle for the LVGL port to poll.
  *  @ctx any | non-blocking
  */

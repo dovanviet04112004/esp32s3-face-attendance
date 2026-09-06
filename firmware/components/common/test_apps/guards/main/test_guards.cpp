@@ -86,6 +86,6 @@ TEST_CASE("MmapRegion unmaps, so the same window maps again", "[common]")
 extern "C" void app_main(void)
 {
     UNITY_BEGIN();
-    unity_run_all_tests();
+    unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
 }
