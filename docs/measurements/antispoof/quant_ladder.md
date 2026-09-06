@@ -38,7 +38,10 @@ Dòng `PTQ min-max` chỉ chạy cho `0944`, để tách công của CLE và bia
 khỏi phần lượng tử hoá thuần.
 
 Hai cột 🔬 cần TFLM chạy trên board, tức E8-T7 và E8-T8, mà chuỗi phụ thuộc là
-E7-T10 → E8-T1 → E8-T2 → E8-T5. E7-T10 chưa bắt đầu.
+E7-T10 → E8-T1 → E8-T2 → E8-T5. E7-T10 và E8-T2 đã xong: `minifasnet_int8.tflite`
+của `1740` đang nằm ở partition `models_0`, board đọc được header và trả đúng
+con trỏ khối `.tflite`. Mắt xích còn thiếu là `ai_engine` (E8-T1), chưa có file
+nguồn nào.
 
 ## 3. Đọc bảng
 
