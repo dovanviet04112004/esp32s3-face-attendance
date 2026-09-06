@@ -430,12 +430,22 @@ Xếp theo đúng thứ tự thực hiện.
 
 | Kỹ thuật | Nội dung | Áp cho |
 |---|---|---|
-| Chọn op thân thiện INT8 | Thay SiLU/HardSwish/GELU → **ReLU6**. Sigmoid trong khối SE → **HardSigmoid dạng ReLU6(x+3)/6** | cả 3 |
+| Chọn op thân thiện INT8 | Thay SiLU/HardSwish/GELU/**PReLU** → **ReLU6** hoặc **ReLU**. Sigmoid trong khối SE → **HardSigmoid dạng ReLU6(x+3)/6** | cả 3 |
 | Kiểm tra op TFLM/ESP-NN **trước khi train** | ESP-NN chỉ tăng tốc: `CONV_2D`, `DEPTHWISE_CONV_2D`, `FULLY_CONNECTED`, `ADD`, `MUL`, `AVG/MAX_POOL`, `SOFTMAX`. Op ngoài danh sách → rơi về kernel C tham chiếu, chậm 10–40× | cả 3 |
 | Tránh op không có kernel | `RESIZE_BILINEAR` động, `TRANSPOSE_CONV`, `GATHER`, `ARGMAX` → chuyển ra hậu xử lý viết tay bằng C | detect (NMS, decode anchor) |
 | Số kênh về bội số 8/16 | ESP-NN SIMD nạp 16 byte/lần; kênh lẻ = padding phí | cả 3 |
 | Giảm độ phân giải đầu vào | detect **160×120** · anti-spoof **80×80** · recog **112×112** | cả 3 |
 | Width multiplier thay vì pruning | Scale kênh 0.75× / 0.5× rồi train lại từ đầu — ổn định hơn prune sau | student |
+
+**ReLU và ReLU6 tốn thời gian như nhau, và bằng không.** Kernel conv của esp-nn nhận `activation_min` / `activation_max` rồi kẹp ngay trong vòng lặp assembly, nên hàm kích hoạt chỉ là một cặp số trên đầu ra conv, không phải một op riêng. Vì thế chọn giữa hai cái **không phải chuyện tốc độ** mà là chuyện lượng tử hoá:
+
+| | Tốc độ | CLE (§3.8) | Dải activation |
+|---|---|---|---|
+| `PReLU` | **chậm**: op riêng, không có kernel esp-nn | ✅ thuần nhất dương | không chặn |
+| `ReLU` | 0 | ✅ thuần nhất dương | không chặn trên |
+| `ReLU6` | 0 | ❌ trần cố định phá tính thuần nhất | chặn ở 6 |
+
+Mặc định là `ReLU6` vì dải bị chặn giúp INT8; nhưng nhánh nào cần CLE thì `ReLU` là lựa chọn duy nhất không mất tốc độ. Khai bằng `model.params.activation` ở config nhánh, để so được bằng số thay vì tranh luận. **`PReLU` thì không được dùng ở bất kỳ nhánh nào** — nó tốn 42,3% thời gian của cả pipeline, đo ở `docs/measurements/latency.md`.
 
 ### Lớp 2 — Huấn luyện & Distillation
 
