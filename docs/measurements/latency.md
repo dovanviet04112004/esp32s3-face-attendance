@@ -10,15 +10,30 @@ im lặng. **Cả hai arena đều nằm ở PSRAM** — xem `arena.md`.
 
 ## 1. Một khuôn mặt đi hết ba nhánh
 
-| Nhánh | Model | Latency đo | Ngân sách §6.4 | Vượt |
+Cột "gốc" là kiến trúc ban đầu; cột "sau" là sau khi bỏ PReLU, đổi cách gộp
+kênh của SE và cho feature map lẻ. **Trọng số chưa train** ở cột sau — số op và
+latency không phụ thuộc trọng số, nhưng accuracy thì có.
+
+| Nhánh | Gốc | Sau | Giảm | Ngân sách §6.4 |
 |---|---|---|---|---|
-| detect | YuNet | **231,4 ms** | 120 ms | 1,9× |
-| spoof | MiniFASNetV2-SE ×2 | **1.086,9 ms** | 60 ms | 18,1× |
-| recog | MobileFaceNet | **2.177,4 ms** | 180 ms | 12,1× |
-| **Tổng** | | **3.495,6 ms** | **360 ms** | **9,7×** |
+| detect (YuNet) | 231,4 ms | **209,1 ms** | −9,6% | 120 ms |
+| spoof (MiniFASNet ×2) | 1.086,9 ms | **469,7 ms** | **−56,8%** | 60 ms |
+| recog (MobileFaceNet) | 2.177,4 ms | **1.079,7 ms** | **−50,4%** | 180 ms |
+| **Tổng** | **3.495,6 ms** | **1.758,5 ms** | **−49,7%** | **360 ms** |
+
+detect giảm nhờ được ở riêng SRAM nội, không đổi kiến trúc. Còn vượt ngân sách
+4,9 lần.
 
 Sai lệch giữa 20 lần chạy dưới 0,05% ở cả ba nhánh, nên đây là số ổn định chứ
 không phải một lần bắt được.
+
+### Op còn lại ngoài ESP-NN
+
+| Nhánh | Gốc | Sau |
+|---|---|---|
+| detect | 3/62 (`PAD`, `RESIZE_NEAREST_NEIGHBOR`) | 3/62 — chưa sửa |
+| spoof | 74/240 (`PRELU` 46, `MEAN` 20, `PAD` 8) | **1/186** (`CONCATENATION`, 55 µs) |
+| recog | 37/99 (`PRELU` 33, `PAD` 4) | **0/62** |
 
 ## 2. Từng op
 

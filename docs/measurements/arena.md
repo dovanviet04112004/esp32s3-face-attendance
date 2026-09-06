@@ -16,6 +16,30 @@ Cách lấy: `head` đọc từ lời từ chối của bộ cấp phát khi are
 rộng; `tail` là hiệu. `tail_det` suy từ hệ: nạp riêng detect được 185,0 KB,
 nạp thêm spoof lên 365,0 KB, mà `tail_spoof + head_spoof` đã biết.
 
+## 1b. Sau khi sửa kiến trúc, và sau khi chia lại arena
+
+`arena_fast` giữ **một mình detect** ở SRAM nội; `arena_big` cho **anti-spoof và
+recognition dùng chung** một `MicroAllocator` ở PSRAM (§3.10).
+
+| Arena | Dùng | Cấp | Ở đâu |
+|---|---|---|---|
+| `arena_fast` (detect) | **189.628 B** | 224 KB | SRAM nội |
+| `arena_big` (spoof + recog) | **823.148 B** | 1536 KB | PSRAM |
+
+Dùng chung có lãi đo được:
+
+| | riêng | chung |
+|---|---|---|
+| spoof | 282 KB | |
+| recog | 699 KB | |
+| **Tổng** | **981 KB** | **803 KB** |
+
+Tiết kiệm **178 KB (18%)**: head của spoof nằm gọn trong head của recog, chỉ
+tail chồng lên nhau.
+
+RAM nội còn trống sau khi nạp cả ba: **111 KB**. §6.4 còn nợ ~55 KB cho Wi-Fi +
+lwIP và ~53 KB cho stack 10 task, tức 108 KB — vừa đủ, không dư.
+
 ## 2. Công thức §3.10 trả đúng cái nó hứa
 
 `arena_fast` giữ detect và spoof trên **cùng một `MicroAllocator`**:
@@ -77,6 +101,10 @@ cho hẹp đi.
 | spoof (MiniFASNet ×2) | 525 KB | 877,7 KB | +67% |
 | recog (MobileFaceNet) | 1.199 KB | 1.479,5 KB | +23% |
 | **Tổng ảnh `models.bin`** | **1,80 MB** | **2.516,4 KB (2,46 MB)** | **+37%** |
+
+Sau khi sửa kiến trúc: detect 158,9 KB, spoof 849,7 KB, recog 1.454,6 KB, ảnh
+**2.463,6 KB**. Bỏ PReLU chỉ trả lại hệ số âm mỗi kênh nên flash gần như không
+đổi — thứ nó trả lại là thời gian và arena.
 
 `models_0` đã nâng từ 2 MB lên 3 MB (§6.1), còn dư 555 KB.
 
