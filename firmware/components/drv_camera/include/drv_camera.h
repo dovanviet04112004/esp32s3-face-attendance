@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-/** Start the sensor at QVGA RGB565 with its buffers in PSRAM.
+/** Start the sensor at HVGA RGB565 with its buffers in PSRAM.
  *  @ctx task | blocking | call once from app_main
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND when the sensor does not answer on SCCB
  */
@@ -27,17 +27,11 @@ camera_fb_t *drv_camera_grab(void);
  */
 void drv_camera_release(camera_fb_t *frame);
 
-/** Send one frame to the console as base64 JPEG between markers.
- *  @ctx task | blocking | a host script turns the markers back into a file
- *  @ret ESP_OK | ESP_ERR_NO_MEM when the encoder cannot fit the frame
+/** Hold the middle of the frame at a steady brightness, one step per frame.
+ *  @ctx task | blocking on SCCB | call while the frame is still held
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE while the sensor is down
  */
-esp_err_t drv_camera_dump(void);
-
-/** Grab a few frames and log their size, format and rate.
- *  @ctx task | blocking for a second or so
- *  @ret ESP_OK once the run finishes, whatever it measured
- */
-esp_err_t drv_camera_selftest(void);
+esp_err_t drv_camera_expose(const camera_fb_t *frame);
 
 #ifdef __cplusplus
 }

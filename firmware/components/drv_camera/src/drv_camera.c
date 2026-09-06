@@ -3,25 +3,86 @@
 #include "app_config.h"
 #include "app_err.h"
 #include "esp_log.h"
-#include "esp_timer.h"
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 static const char *TAG = "drv_camera";
 
 #define CAM_LEDC_TIMER LEDC_TIMER_1
 #define CAM_LEDC_CHANNEL LEDC_CHANNEL_1
-#define CAM_FB_COUNT 2
+// The preview holds one frame for most of a frame period while the panel
+// drains, so two would leave the sensor nowhere to land the next one.
+#define CAM_FB_COUNT 3
 #define CAM_JPEG_QUALITY 12
-#define SELFTEST_FRAMES 20
-#define DUMP_JPEG_QUALITY 90
-#define SWEEP_SETTLE_MS 300
-#define SWEEP_WARMUP 5
+
+#define METER_TARGET_GREEN 30
+#define METER_DEADBAND 4
+#define METER_SAMPLE_STEP 8
+#define METER_HOLD_GAIN 8
+#define METER_DAMPING 4
+#define METER_SETTLE_FRAMES 3
+#define VTS_REG 0x380E
+#define VTS_MASK 0xFFFF
+#define HZ5060_CTRL00_REG 0x3C00
+#define HZ5060_CTRL01_REG 0x3C01
+#define BAND_50HZ_BIT 0x04
+#define BAND_MANUAL_BIT 0x80
 
 static bool s_ready;
+static int s_exposure;
+static int s_exposure_max;
+static int s_settle;
+
+static int centre_green(const camera_fb_t *frame)
+{
+    const int x0 = frame->width / 4;
+    const int x1 = frame->width - x0;
+    const int y0 = frame->height / 4;
+    const int y1 = frame->height - y0;
+    const uint16_t *pixels = (const uint16_t *)frame->buf;
+    uint32_t sum = 0;
+    int taken = 0;
+
+    for (int y = y0; y < y1; y += METER_SAMPLE_STEP) {
+        const uint16_t *row = pixels + (size_t)y * frame->width;
+        for (int x = x0; x < x1; x += METER_SAMPLE_STEP) {
+            // The DVP lands RGB565 high byte first, and green carries most of
+            // the luminance, so its six bits stand in for brightness.
+            sum += (uint32_t)((__builtin_bswap16(row[x]) >> 5) & 0x3F);
+            taken++;
+        }
+    }
+    return taken ? (int)(sum / (uint32_t)taken) : 0;
+}
+
+static esp_err_t pick_50hz_band(sensor_t *sensor)
+{
+    // Mains here is 50 Hz and auto-detect wanders under fluorescent light:
+    // 0x3C01 bit 7 takes the band off auto, 0x3C00 bit 2 picks 50 over 60.
+    sensor->set_reg(sensor, HZ5060_CTRL01_REG, BAND_MANUAL_BIT, BAND_MANUAL_BIT);
+    sensor->set_reg(sensor, HZ5060_CTRL00_REG, BAND_50HZ_BIT, BAND_50HZ_BIT);
+    const int mode = sensor->get_reg(sensor, HZ5060_CTRL01_REG, BAND_MANUAL_BIT);
+    const int band = sensor->get_reg(sensor, HZ5060_CTRL00_REG, BAND_50HZ_BIT);
+    if (mode != BAND_MANUAL_BIT || band != BAND_50HZ_BIT) {
+        ESP_LOGE(TAG, "band filter refused the write: mode %d band %d", mode, band);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t hold_exposure_still(sensor_t *sensor)
+{
+    // The sensor's own metering reads the whole scene, so a bright wall behind
+    // a face drags the face into shadow (KEHOACH 2.1).
+    sensor->set_exposure_ctrl(sensor, 0);
+    sensor->set_gain_ctrl(sensor, 0);
+    sensor->set_agc_gain(sensor, METER_HOLD_GAIN);
+    s_exposure_max = sensor->get_reg(sensor, VTS_REG, VTS_MASK);
+    if (s_exposure_max <= 0) {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    s_exposure = s_exposure_max / 2;
+    sensor->set_aec_value(sensor, s_exposure);
+    return ESP_OK;
+}
 
 esp_err_t drv_camera_init(void)
 {
@@ -63,13 +124,15 @@ esp_err_t drv_camera_init(void)
     if (sensor == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
-    // The module sits with the lens above the connector, so the sensor's own
-    // frame arrives upside down (KEHOACH 2.1).
+    // The module sits with the lens above the connector, so its own frame
+    // arrives upside down, and a kiosk preview reads as a mirror (KEHOACH 2.1).
     sensor->set_vflip(sensor, 1);
     sensor->set_hmirror(sensor, 1);
+    APP_RETURN_ON_ERR(pick_50hz_band(sensor), TAG, "band filter");
+    APP_RETURN_ON_ERR(hold_exposure_still(sensor), TAG, "manual exposure");
     s_ready = true;
-    ESP_LOGI(TAG, "sensor 0x%04X up at %dx%d rgb565 in psram", sensor->id.PID, APP_LCD_H_RES,
-             APP_LCD_V_RES);
+    ESP_LOGI(TAG, "sensor 0x%04X up at %dx%d rgb565 in psram", sensor->id.PID, APP_CAM_H_RES,
+             APP_CAM_V_RES);
     return ESP_OK;
 }
 
@@ -85,60 +148,39 @@ void drv_camera_release(camera_fb_t *frame)
     }
 }
 
-esp_err_t drv_camera_dump(void)
+esp_err_t drv_camera_expose(const camera_fb_t *frame)
 {
-#if !CONFIG_DRV_CAMERA_SELFTEST
+    if (!s_ready || frame == NULL || frame->format != PIXFORMAT_RGB565) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    // The sensor takes a frame or two to act on a new exposure, so measuring
+    // every frame would read a stale one and drive the loop into a flicker.
+    if (s_settle > 0) {
+        s_settle--;
+        return ESP_OK;
+    }
+    const int level = centre_green(frame);
+    const int error = METER_TARGET_GREEN - level;
+    if (error > -METER_DEADBAND && error < METER_DEADBAND) {
+        return ESP_OK;
+    }
+    const int want = level > 0 ? s_exposure * METER_TARGET_GREEN / level : s_exposure_max;
+    int next = s_exposure + (want - s_exposure) / METER_DAMPING;
+    if (next == s_exposure) {
+        next += want > s_exposure ? 1 : -1;
+    }
+    next = next > s_exposure_max ? s_exposure_max : next;
+    next = next < 1 ? 1 : next;
+    if (next == s_exposure) {
+        return ESP_OK;
+    }
+    sensor_t *sensor = esp_camera_sensor_get();
+    if (sensor == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    sensor->set_aec_value(sensor, next);
+    s_exposure = next;
+    s_settle = METER_SETTLE_FRAMES;
     return ESP_OK;
-#else
-    camera_fb_t *frame = drv_camera_grab();
-    if (frame == NULL) {
-        return ESP_ERR_TIMEOUT;
-    }
-    uint8_t *jpeg = NULL;
-    size_t jpeg_len = 0;
-    const bool ok = frame2jpg(frame, DUMP_JPEG_QUALITY, &jpeg, &jpeg_len);
-    const size_t width = frame->width;
-    const size_t height = frame->height;
-    drv_camera_release(frame);
-    if (!ok) {
-        return ESP_ERR_NO_MEM;
-    }
-    printf("\n--FRAME %ux%u %u--\n", (unsigned)width, (unsigned)height, (unsigned)jpeg_len);
-    for (size_t i = 0; i < jpeg_len; ++i) {
-        printf("%02X", jpeg[i]);
-    }
-    printf("\n--END--\n");
-    free(jpeg);
-    return ESP_OK;
-#endif
 }
 
-esp_err_t drv_camera_selftest(void)
-{
-#if !CONFIG_DRV_CAMERA_SELFTEST
-    return ESP_OK;
-#else
-    for (int warm = 0; warm < SWEEP_WARMUP; ++warm) {
-        drv_camera_release(drv_camera_grab());
-    }
-    const int64_t started = esp_timer_get_time();
-    int taken = 0;
-    size_t width = 0, height = 0, bytes = 0;
-    for (int i = 0; i < SELFTEST_FRAMES; ++i) {
-        camera_fb_t *frame = drv_camera_grab();
-        if (frame == NULL) {
-            continue;
-        }
-        width = frame->width;
-        height = frame->height;
-        bytes = frame->len;
-        drv_camera_release(frame);
-        taken++;
-    }
-    const int64_t elapsed_us = esp_timer_get_time() - started;
-    const int mfps = elapsed_us > 0 ? (int)((int64_t)taken * 1000000000 / elapsed_us) : 0;
-    ESP_LOGI(TAG, "%ux%u  %u B/frame  %d.%03d fps", (unsigned)width, (unsigned)height,
-             (unsigned)bytes, mfps / 1000, mfps % 1000);
-    return taken > 0 ? ESP_OK : ESP_ERR_TIMEOUT;
-#endif
-}
