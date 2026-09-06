@@ -35,8 +35,9 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame);
 
 /** What the exposure loop last measured and where it put the two controls.
  *  @ctx any | non-blocking | brightness runs 0 to 63
+ *  @param exposure lines of the frame; @param gain16 sixteenths, so 16 is unity
  */
-void drv_camera_exposure_state(int *level, int *exposure, int *gain);
+void drv_camera_exposure_state(int *level, int *exposure, int *gain16);
 
 #ifdef __cplusplus
 }

@@ -3,6 +3,7 @@
 #include "app_config.h"
 #include "app_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 static const char *TAG = "drv_camera";
 
@@ -16,8 +17,16 @@ static const char *TAG = "drv_camera";
 #define METER_TARGET_GREEN 30
 #define METER_DEADBAND 4
 #define METER_SAMPLE_STEP 8
-#define METER_BASE_GAIN 1
-#define METER_MAX_GAIN 4
+// The driver's own header states gain = {0x350A[1:0], 0x350B[7:0]} / 16, so
+// sixteen of these units is unity and the step is fine enough to trim with.
+#define GAIN_HIGH_REG 0x350A
+#define GAIN_LOW_REG 0x350B
+#define METER_BASE_GAIN16 16
+#define METER_MAX_GAIN16 64
+// Mains at 50 Hz makes light peak twice per cycle, so an exposure that is a
+// whole number of half-periods collects the same light on every row.
+#define BAND_PERIOD_US 10000
+#define BAND_MEASURE_FRAMES 20
 #define METER_DAMPING 4
 #define METER_SETTLE_FRAMES 2
 #define METER_SATURATED 58
@@ -32,9 +41,13 @@ static const char *TAG = "drv_camera";
 static bool s_ready;
 static int s_exposure;
 static int s_exposure_max;
-static int s_gain = METER_BASE_GAIN;
+static int s_gain16 = METER_BASE_GAIN16;
 static int s_settle;
 static int s_level;
+static int s_band_lines;
+static int64_t s_frame_mark_us;
+static int64_t s_period_sum_us;
+static int s_period_seen;
 
 static int centre_green(const camera_fb_t *frame)
 {
@@ -79,7 +92,7 @@ static esp_err_t hold_exposure_still(sensor_t *sensor)
     // a face drags the face into shadow (KEHOACH 2.1).
     sensor->set_exposure_ctrl(sensor, 0);
     sensor->set_gain_ctrl(sensor, 0);
-    sensor->set_agc_gain(sensor, METER_BASE_GAIN);
+    sensor->set_agc_gain(sensor, METER_BASE_GAIN16 / 16);
     s_exposure_max = sensor->get_reg(sensor, VTS_REG, VTS_MASK);
     if (s_exposure_max <= 0) {
         return ESP_ERR_INVALID_RESPONSE;
@@ -153,10 +166,46 @@ void drv_camera_release(camera_fb_t *frame)
     }
 }
 
+static void set_gain16(sensor_t *sensor, int gain16)
+{
+    const int raw = gain16 > 0 ? gain16 - 1 : 0;
+    sensor->set_reg(sensor, GAIN_HIGH_REG, 0x03, raw >> 8);
+    sensor->set_reg(sensor, GAIN_LOW_REG, 0xFF, raw & 0xFF);
+}
+
+static esp_err_t learn_band(const camera_fb_t *frame)
+{
+    (void)frame;
+    const int64_t now = esp_timer_get_time();
+    if (s_frame_mark_us != 0) {
+        s_period_sum_us += now - s_frame_mark_us;
+        s_period_seen++;
+    }
+    s_frame_mark_us = now;
+    if (s_period_seen < BAND_MEASURE_FRAMES) {
+        return ESP_OK;
+    }
+    // One frame spans exposure_max lines, so a line lasts that fraction of the
+    // frame and the half-period is worth this many of them.
+    const int64_t period = s_period_sum_us / s_period_seen;
+    s_band_lines = (int)((BAND_PERIOD_US * (int64_t)s_exposure_max) / period);
+    s_band_lines = s_band_lines < 1 ? 1 : s_band_lines;
+    ESP_LOGI(TAG, "frame %lld us, one 50 Hz half-period is %d lines", (long long)period,
+             s_band_lines);
+    return ESP_OK;
+}
+
 esp_err_t drv_camera_expose(const camera_fb_t *frame)
 {
     if (!s_ready || frame == NULL || frame->format != PIXFORMAT_RGB565) {
         return ESP_ERR_INVALID_STATE;
+    }
+    sensor_t *sensor = esp_camera_sensor_get();
+    if (sensor == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (s_band_lines == 0) {
+        return learn_band(frame);
     }
     // The sensor takes a frame or two to act on a new exposure, so measuring
     // every frame would read a stale one and drive the loop into a flicker.
@@ -170,13 +219,10 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
     if (error > -METER_DEADBAND && error < METER_DEADBAND) {
         return ESP_OK;
     }
-    sensor_t *sensor = esp_camera_sensor_get();
-    if (sensor == NULL) {
-        return ESP_ERR_NOT_FOUND;
-    }
+
     // Exposure and gain are one quantity here. Steering them separately makes
     // them fight: dropping gain darkens the frame, which asks for gain back.
-    const int light = s_exposure * s_gain;
+    const int light = s_exposure * s_gain16;
     int want;
     if (level >= METER_SATURATED) {
         want = light / 2;
@@ -189,32 +235,36 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
     if (next == light) {
         next += want > light ? 1 : -1;
     }
-    const int ceiling = s_exposure_max * METER_MAX_GAIN;
+    const int ceiling = s_exposure_max * METER_MAX_GAIN16;
     next = next > ceiling ? ceiling : next;
-    next = next < 1 ? 1 : next;
+    next = next < METER_BASE_GAIN16 ? METER_BASE_GAIN16 : next;
     if (next == light) {
         return ESP_OK;
     }
-    // Exposure carries as much as it can and gain only takes the remainder,
-    // because gain noise is what the anti-spoof branch misreads as skin.
-    int gain = (next + s_exposure_max - 1) / s_exposure_max;
-    gain = gain < METER_BASE_GAIN ? METER_BASE_GAIN : gain;
-    const int exposure = next / gain;
-    if (gain != s_gain) {
-        sensor->set_agc_gain(sensor, gain);
-        s_gain = gain;
-    }
+
+    // Exposure moves in whole half-periods so no row sees a different slice of
+    // the mains cycle, and gain takes the remainder at its finer step.
+    const int max_bands = s_exposure_max / s_band_lines;
+    int bands = next / (s_band_lines * METER_BASE_GAIN16);
+    bands = bands < 1 ? 1 : (bands > max_bands ? max_bands : bands);
+    const int exposure = bands * s_band_lines;
+    int gain16 = next / exposure;
+    gain16 = gain16 < METER_BASE_GAIN16 ? METER_BASE_GAIN16 : gain16;
+    gain16 = gain16 > METER_MAX_GAIN16 ? METER_MAX_GAIN16 : gain16;
+
     if (exposure != s_exposure) {
         sensor->set_aec_value(sensor, exposure);
         s_exposure = exposure;
     }
-    ESP_LOGD(TAG, "green %d -> exposure %d/%d gain %d", level, s_exposure, s_exposure_max, s_gain);
+    if (gain16 != s_gain16) {
+        set_gain16(sensor, gain16);
+        s_gain16 = gain16;
+    }
     s_settle = METER_SETTLE_FRAMES;
     return ESP_OK;
 }
 
-
-void drv_camera_exposure_state(int *level, int *exposure, int *gain)
+void drv_camera_exposure_state(int *level, int *exposure, int *gain16)
 {
     if (level != NULL) {
         *level = s_level;
@@ -222,7 +272,7 @@ void drv_camera_exposure_state(int *level, int *exposure, int *gain)
     if (exposure != NULL) {
         *exposure = s_exposure;
     }
-    if (gain != NULL) {
-        *gain = s_gain;
+    if (gain16 != NULL) {
+        *gain16 = s_gain16;
     }
 }
