@@ -10,6 +10,16 @@ menu "AI engine"
             runs on every frame, so this arena is asked for in internal RAM
             and only falls back to PSRAM, loudly, when it does not fit.
 
+    config AI_ARENA_FAST_HEAD_KB
+        int "Split the fast arena, keeping this many KB of activations in SRAM"
+        default 0
+        range 0 384
+        help
+            Zero keeps one buffer. Above zero the arena splits: this many KB of
+            activations are asked for in internal RAM and the remainder of
+            AI_ARENA_FAST_KB holds the persistent half in PSRAM. Worth it when
+            the whole arena will not fit internally but its activations will.
+
     config AI_ARENA_BIG_KB
         int "Tensor arena for recognition, PSRAM (KB)"
         default 512

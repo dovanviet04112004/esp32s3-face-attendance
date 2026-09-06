@@ -12,17 +12,22 @@
 #define EMBED_MAX 512
 #define RUNS 20
 
-static int8_t s_frame[DETECT_LEN];
-static int8_t s_tight[CROP_LEN];
-static int8_t s_wide[CROP_LEN];
-static int8_t s_face[FACE_LEN];
+// These stand in for camera frames and crops, which live in psram on the real
+// device; leaving them in bss would take the internal ram an arena wants.
+static int8_t *s_frame;
+static int8_t *s_tight;
+static int8_t *s_wide;
+static int8_t *s_face;
 static int8_t s_embedding[EMBED_MAX];
 
-static void fill(int8_t *buffer, size_t len, int seed)
+static int8_t *psram(size_t len, int seed)
 {
+    int8_t *buffer = heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
+    TEST_ASSERT_NOT_NULL(buffer);
     for (size_t i = 0; i < len; ++i) {
         buffer[i] = (int8_t)(((i * 31) + (seed * 97)) % 255 - 128);
     }
+    return buffer;
 }
 
 static esp_err_t run_detect(void)
@@ -62,6 +67,10 @@ TEST_CASE("all three branches load and report what they took", "[bench_ai]")
 {
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
     TEST_ASSERT_EQUAL(ESP_OK, ai_engine_init());
+    s_frame = psram(DETECT_LEN, 1);
+    s_tight = psram(CROP_LEN, 2);
+    s_wide = psram(CROP_LEN, 3);
+    s_face = psram(FACE_LEN, 4);
 
     ai_engine_arena_stats_t stats;
     ai_engine_arena_stats(&stats);
@@ -79,10 +88,6 @@ TEST_CASE("all three branches load and report what they took", "[bench_ai]")
 
 TEST_CASE("one pass of all three, the number the budget is measured against", "[bench_ai]")
 {
-    fill(s_frame, DETECT_LEN, 1);
-    fill(s_tight, CROP_LEN, 2);
-    fill(s_wide, CROP_LEN, 3);
-    fill(s_face, FACE_LEN, 4);
     const int64_t detect = time_runs(run_detect, "detect");
     const int64_t spoof = time_runs(run_spoof, "spoof");
     const int64_t recog = time_runs(run_recog, "recog");

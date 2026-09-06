@@ -58,6 +58,17 @@ cấu hình nào đặt được detect ở SRAM nội.** Giá của việc đó
 §6.4 dự trù 175 KB cho `arena_fast`. Thực tế cần 365 KB — hụt 2,1 lần, và đó là
 trước khi tính `arena_big` 926 KB mà §6.4 không đặt ngân sách.
 
+**Tách `head`/`tail` thì `head` vừa, nhưng không đủ tiền trả.** `head` của
+`arena_fast` là 229,1 KB, mà khối liền nội lớn nhất lúc `ai_engine_init()` chạy
+là 272 KB, nên đặt được. Đặt xong thì RAM nội trống còn **95 KB**, trong khi
+§6.4 còn phải chi ~55 KB cho Wi-Fi + lwIP và ~53 KB cho stack 10 task. Mức thu
+về chỉ 1,9% latency (`latency.md`), nên `AI_ARENA_FAST_HEAD_KB` để mặc định 0.
+
+Con số 272 KB kia chỉ có sau khi buffer đầu vào của `bench_ai` chuyển sang
+PSRAM. Để chúng ở `.bss` thì chúng chiếm 131 KB RAM nội và khối liền lớn nhất
+tụt còn 144 KB — tức phép đo trước đó là của một con chip bị chính đồ đo làm
+cho hẹp đi.
+
 ## 4. Ngân sách flash
 
 | Nhánh | §1.1 ước tính | Đo thật | Chênh |

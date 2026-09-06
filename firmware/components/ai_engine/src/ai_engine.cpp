@@ -57,7 +57,9 @@ extern "C" esp_err_t ai_engine_init(void)
         return opened;
     }
     const size_t internal_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    esp_err_t err = s_fast.reserve(kFastBytes, MALLOC_CAP_INTERNAL);
+    constexpr size_t kFastHead = CONFIG_AI_ARENA_FAST_HEAD_KB * 1024U;
+    esp_err_t err = kFastHead > 0 ? s_fast.reserve_split(kFastHead, kFastBytes - kFastHead)
+                                  : s_fast.reserve(kFastBytes, MALLOC_CAP_INTERNAL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "arena_fast %u KB: %s", CONFIG_AI_ARENA_FAST_KB, esp_err_to_name(err));
         return err;

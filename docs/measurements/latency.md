@@ -82,6 +82,29 @@ thuần nhất dương; ReLU6 có trần cố định nên không thoả. Chọn
 CLE. `tflite_op_check.py` đã cảnh báo từ trước khi E8 tồn tại; giờ có giá của
 nó bằng số.
 
+**Đưa activation về SRAM nội chỉ thu được 1,9%.** Tách `head` xuống SRAM nội và
+để `tail` ở PSRAM (§3.10) cho:
+
+| Nhánh | Cả arena ở PSRAM | `head` ở SRAM nội | Thu về |
+|---|---|---|---|
+| detect | 232,4 ms | 209,5 ms | −23,0 ms (−9,9%) |
+| spoof | 1.087,6 ms | 1.042,6 ms | −45,0 ms (−4,1%) |
+| recog | 2.178,2 ms | 2.178,1 ms | 0 |
+| **Tổng** | 3.498,3 ms | **3.430,2 ms** | **−68,1 ms (−1,9%)** |
+
+`recog` không đổi là phép kiểm chứng: nó vẫn ở `arena_big` PSRAM nên đúng ra
+không được đổi, và nó không đổi.
+
+**Nên PSRAM không phải nút thắt.** Nếu băng thông bộ nhớ là chỗ nghẽn thì đưa
+toàn bộ activation của hai nhánh về SRAM nội phải thu được nhiều hơn 4–10%.
+Chỗ nghẽn là **phép tính trong kernel tham chiếu C**, đúng như bảng op chỉ ra.
+
+**Và cái giá thì không trả nổi.** Tách như trên lấy 240 KB SRAM nội, RAM nội
+trống tụt từ 335 KB xuống **95 KB**. §6.4 còn cần ~55 KB cho Wi-Fi + lwIP và
+~53 KB cho stack 10 task, tức 108 KB — nhiều hơn số còn lại. Vì vậy
+`AI_ARENA_FAST_HEAD_KB` để **mặc định 0**: cơ chế có sẵn, bật lên khi model đã
+nhỏ đi, không phải bây giờ.
+
 **Mức tối ưu trình biên dịch gần như không đổi gì**: `-Og` cho 1.087,1 ms và
 `-O2` cho 1.086,3 ms trên nhánh spoof, chênh 0,07%. Vòng nóng hoặc đã là
 assembly của esp-nn, hoặc bị chặn bởi băng thông PSRAM.
