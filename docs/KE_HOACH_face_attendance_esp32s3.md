@@ -1064,6 +1064,8 @@ Lý do tách chứ không gộp cả 3: detect chạy **mỗi frame**, anti-spoo
 
 Ba con số `tail` và ba con số `head` phải đo thật ở E8, không suy ra từ `arena_used_bytes()` tổng.
 
+**`ai_engine_init()` phải chạy trước mọi driver.** Ràng buộc thật của `arena_fast` không phải tổng RAM nội còn trống mà là **một dải liền mạch**: `heap_caps_aligned_alloc` không ghép được nhiều mảnh rời. Đo trên board (`docs/measurements/arena.md`): xin sau `drv_camera_init()` thì còn 192 KB trống nhưng mảnh to nhất chỉ 143 KB, arena 175 KB **lùi xuống PSRAM**; xin ngay sau `sys_storage_init()` thì nằm gọn SRAM nội, và LCD, touch, camera vẫn init đủ với 118 KB còn lại. Arena là chỗ duy nhất trong hệ xin một dải lớn như vậy, nên nó xin đầu tiên.
+
 ### Pipeline train
 
 ```
@@ -2716,6 +2718,8 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 | **Còn lại cho arena** | **≈ 175 KB** |
 
 **Hệ quả**: ~175 KB vừa đủ cho `arena_fast` (detect + anti-spoof dùng chung, tính theo công thức §3.10), `arena_big` của recognition bắt buộc xuống PSRAM. 🔬 Đo ở E8; nếu `arena_fast` không vừa thì hạ `input_hw` của detect xuống 128×96 và train lại nhánh đó.
+
+Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là dải liền mạch (§3.10). Số đo hiện có ở `docs/measurements/arena.md` là của cấu hình chưa có Wi-Fi và LVGL, nên phải đo lại ở E8-T9 khi đã đủ thành phần.
 
 ---
 
