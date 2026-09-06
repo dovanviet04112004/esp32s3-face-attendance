@@ -185,9 +185,16 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     return cfg, model
 
 
-def export_spec(run: Path):
-    """The module to trace, one example input, and the names of both ends."""
-    cfg, model = load_run(run)
+def export_spec(run: Path, model: torch.nn.Module | None = None):
+    """The module to trace, one example input, and the names of both ends.
+
+    model overrides the run's own weights, which is how the quantisation
+    passes export the graph they just rewrote.
+    """
+    from facepipe.core.config import load_config
+
+    cfg = load_config(run / "config.resolved.yaml", [])
+    model = model if model is not None else load_run(run)[1]
     model.eval()
     height, width = cfg.model.input_hw
     views = (torch.zeros(1, 3, height, width), torch.zeros(1, 3, height, width))

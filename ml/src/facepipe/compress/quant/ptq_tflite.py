@@ -60,13 +60,11 @@ def main(argv: list[str] | None = None) -> int:
     args.work.mkdir(parents=True, exist_ok=True)
     onnx_path = args.work / "prepared.onnx"
     package = tf_to_tflite_int8.BRANCH_PACKAGE[cfg.model.name]
-    # The shape comes from the branch, the weights from the passes above: the
-    # spec's own model is the untouched one and is thrown away here.
-    _, _spec_model, example, input_names, output_names = importlib.import_module(
+    _, traced, example, input_names, output_names = importlib.import_module(
         f"{package}.eval"
-    ).export_spec(args.run)
+    ).export_spec(args.run, model)
     torch.onnx.export(
-        model,
+        traced,
         example,
         str(onnx_path),
         opset_version=to_onnx.OPSET,
