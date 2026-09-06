@@ -476,6 +476,26 @@ phạt model vì tìm ra mặt thật.
 điểm yếu; giữ chúng làm cổng là chốt nhánh bằng một phép đo nó không phục vụ. Báo cáo cả
 hai, ghi rõ kích thước đầu vào của từng con số.
 
+#### Nhánh anti-spoof chống đúng hai kiểu tấn công, và nói thẳng kiểu thứ ba nó không chống
+
+Mọi quyết định phía dưới chỉ có nghĩa khi biết nhánh này đang chặn cái gì. Chốt phạm vi:
+
+| Kiểu tấn công | Trong phạm vi | Có dữ liệu train | Chấm điểm ở |
+|---|---|---|---|
+| Ảnh in trên giấy, ảnh thẻ giơ trước camera | ✅ | CelebA-Spoof, NUAA | cổng APCER |
+| Phát lại trên màn hình điện thoại / máy tính bảng | ✅ | CelebA-Spoof | cổng APCER |
+| Mặt nạ 3D, silicone, latex | ❌ | **không có** | chỉ quan sát, trên Axon |
+
+Hai kiểu đầu để lại dấu vết nhánh này đọc được: moiré, mép giấy, viền màn hình, ánh phản
+đều trên một mặt phẳng. Mặt nạ 3D thì không — nó có chiều sâu thật, nên tín hiệu duy nhất
+còn lại là kết cấu bề mặt, thứ mà một model 80×80 INT8 trên ESP32-S3 không đủ sức đọc.
+
+**Đo Axon vẫn báo cáo, nhưng không được làm cổng.** Chốt một nhánh bằng phép đo không có
+dữ liệu train tương ứng là chốt bằng may rủi: điểm tốt lên hay xấu đi đều không nói được
+điều gì về thay đổi vừa làm. Kiosk đặt trong nhà, có người qua lại, nên một chiếc mặt nạ
+silicone vừa đắt vừa dễ bị nhìn thấy — rủi ro còn lại này nhận là nhận, không vá bằng
+augmentation bịa ra.
+
 #### Tỉ lệ crop wide bị hình học khung hình chặn trên
 
 Anti-spoof student đọc hai khung của cùng một mặt: crop **tight** 1,0× và crop **wide**
