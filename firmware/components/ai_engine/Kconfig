@@ -3,7 +3,7 @@ menu "AI engine"
     config AI_ARENA_FAST_KB
         int "Tensor arena for detection and anti-spoof, internal SRAM (KB)"
         default 175
-        range 16 320
+        range 16 2048
         help
             Sized from the SRAM budget of KEHOACH 6.4 and still an estimate:
             E8-T7 measures the real tail and head of each model. Detection
@@ -17,5 +17,13 @@ menu "AI engine"
         help
             Recognition runs only after anti-spoof passes, rarely enough to
             live in PSRAM (KEHOACH 3.10). Also an estimate until E8-T7.
+
+    config AI_PROFILING
+        bool "Report ticks per operator after every invoke"
+        default n
+        help
+            Turns on TFLM's MicroProfiler, which costs roughly 48 KB of static
+            RAM and a print per invoke. E8-T8 uses it to tell an operator with
+            an ESP-NN kernel from one running the reference C path.
 
 endmenu

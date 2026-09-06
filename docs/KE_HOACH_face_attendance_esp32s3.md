@@ -2070,6 +2070,7 @@ components/ai_engine/
 │   │   ├── decode.cpp                     # giải mã anchor — khớp 1:1 ml/tasks/detection/postproc
 │   │   └── nms.cpp
 │   ├── antispoof/
+│   │   ├── spoof_model.hpp                # lớp + op của nhánh, không ra khỏi thư mục này
 │   │   ├── spoof_model.cpp
 │   │   ├── ops.cpp                        # MicroMutableOpResolver<9>
 │   │   └── preproc.cpp                    # crop + resize 80×80
@@ -2080,7 +2081,7 @@ components/ai_engine/
 │       └── l2norm.cpp
 └── test_apps/                             # chuẩn ESP-IDF, host-side chạy bằng pytest-embedded
     ├── detection/{main/test_decode.c, CMakeLists.txt, pytest_decode.py}
-    ├── antispoof/{main/test_preproc.c, CMakeLists.txt, pytest_preproc.py}
+    ├── antispoof/{main/{test_spoof.c, test_preproc.c}, CMakeLists.txt, pytest_preproc.py}
     └── recognition/{main/test_align.c, CMakeLists.txt, pytest_align.py}
 ```
 
