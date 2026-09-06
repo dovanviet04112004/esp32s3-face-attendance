@@ -1578,10 +1578,15 @@ ml/
 │   │   │   └── tb/
 │   │   ├── teacher/                       # weight teacher tải về — đầu vào, không phải kết quả run
 │   │   ├── onnx/{student_fp32.onnx, student_qdq.onnx}
+│   │   ├── tf/<tên>/                      # SavedModel, chặng giữa onnx2tf → TFLiteConverter
+│   │   │                                  # ↑ sinh lại được, giữ để đổi cấu hình quantize
+│   │   │                                  #   mà không phải chạy lại onnx2tf
 │   │   ├── tflite/{yunet_fp32.tflite, yunet_int8.tflite}
 │   │   ├── golden/                        # vector vàng trước khi copy sang contracts/
 │   │   └── reports/{quant_debug.html, layer_sensitivity.csv, op_check.txt}
 │   │                                      # ↑ sinh lại được. Số đo giữ lại: docs/measurements/
+│   │      Tên trên là của **một** model đã chốt. Khi đang so nhiều checkpoint thì gắn
+│   │      thêm hậu tố giờ của run: `student_fp32_0944.onnx`, `minifasnet_int8_0944.tflite`.
 │   ├── antispoof/                         # ↑ y hệt khuôn trên
 │   ├── recognition/                       # ↑ y hệt khuôn trên
 │   └── device/                            # kết quả đo trên board, dùng chung 3 nhánh
