@@ -1649,13 +1649,15 @@ firmware/
 │   ├── CMakeLists.txt
 │   ├── idf_component.yml             # ★ khai báo dependency registry
 │   ├── app_main.c            [C]     # khởi tạo tuần tự, không chứa logic
-│   ├── app_config.h          [C]     # ★ MỌI #define chân GPIO — DUY NHẤT 1 FILE
 │   ├── app_tasks.c           [C]     # xTaskCreatePinnedToCore (§5)
 │   └── app_wiring.c          [C]     # ★ nối queue/event giữa các component
 │
 ├── components/                       # ── 100% CODE TỰ VIẾT ──
 │   ├── common/            [C]    L0  # kiểu dữ liệu, error code, event id, ring buffer, gen_payload.h
-│   ├── bsp_board/         [C]    L1  # pinmap, khởi tạo bus i2c/spi, quản lý mutex bus, nguồn
+│   ├── bsp_board/         [C]    L1  # khởi tạo bus i2c/spi, quản lý mutex bus, nguồn
+│   │   └── include/app_config.h      # ★ MỌI #define chân GPIO — DUY NHẤT 1 FILE.
+│   │                                 #   Ở L1 vì L2 trở lên đều cần đọc, mà không
+│   │                                 #   component nào được phụ thuộc lên main (§4.5.4)
 │   ├── drv_ioexp/         [C]    L1  # PCF8574 + shadow register
 │   ├── drv_camera/        [C]    L2
 │   ├── drv_lcd/           [C]    L2
@@ -2294,7 +2296,7 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 
 | Loại hằng số | Nguồn duy nhất | Cách phần còn lại lấy về |
 |---|---|---|
-| Chân GPIO | `firmware/main/app_config.h` + §2 | `#include "app_config.h"` |
+| Chân GPIO | `firmware/components/bsp_board/include/app_config.h` + §2 | `#include "app_config.h"` |
 | Kích thước, offset bản ghi trên flash | `sys_storage/include/storage_format.h` + §6.2 | include, có `static_assert` |
 | Trường payload MQTT | `contracts/schema/*.json` | sinh code, §4.2 |
 | Tên topic, QoS, retained | `contracts/mqtt_topics.yaml` | đọc file, không gõ chuỗi topic |

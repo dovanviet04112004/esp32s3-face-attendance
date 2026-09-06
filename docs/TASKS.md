@@ -162,7 +162,7 @@ Chạy song song với E4–E6. Không phụ thuộc model.
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | E7-T1 | Đấu cả hai cơ cấu chấp hành theo §2.3F: module 4 relay opto (tiếp điểm để hở) và servo SG90 | Rút jumper JD-VCC, P2 ở HIGH thấy relay tắt hẳn, P2 ở LOW nghe cạch và đo thông mạch COM–NO, servo quét đủ tầm | — |
-| E7-T2 | `main/app_config.h` + `bsp_board` + `partitions.{dev,prod}.csv` | Board boot, PSRAM 8MB nhận đủ | — |
+| E7-T2 | `bsp_board` (kèm `include/app_config.h`) + `partitions.{dev,prod}.csv` | Board boot, PSRAM 8MB nhận đủ | — |
 | E7-T2b | **3 profile build** `sdkconfig.{dev,bench,prod}` theo §4.5.9, kèm flash QIO 80 MHz | 3 lệnh build ở §4.5.9 đều chạy, `bench` dùng `-O2` | E7-T2 |
 | E7-T3 | `common/` — RAII guard: `FrameGuard` `LockGuard` `MmapRegion` `Queue<T,N>` | Unit test từng guard | E7-T2 |
 | E7-T4 | `drv_ioexp` (PCF8574) + `drv_camera` (OV5640) | Chụp được ảnh QVGA vào PSRAM | E7-T2 |
