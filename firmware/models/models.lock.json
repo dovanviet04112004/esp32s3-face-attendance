@@ -1,8 +1,20 @@
 {
+  "detection": {
+    "file": "yunet_int8.tflite",
+    "sha256": "56b3f65dcd07472511d58d8379467f4c3de4637ba9333b9a4c3c5b59dca5b55c",
+    "run_id": "detection/20260831-1616_cc931df_36fbea",
+    "arena_bytes": 0
+  },
   "antispoof": {
     "file": "minifasnet_int8.tflite",
     "sha256": "3a38e08f0227db6410f3899dda2a019ceb6e9dfe4edd0f722376ba0ac1ab68ee",
     "run_id": "antispoof/20260905-1740_865b5d0_64c387",
+    "arena_bytes": 0
+  },
+  "recognition": {
+    "file": "mobilefacenet_int8.tflite",
+    "sha256": "a98144c52f2ddd822e7a4467525ace6a07fdcbc56e5d65e1423c466d7a86628b",
+    "run_id": "recognition/20260903-2258_f7a6aab_dad005",
     "arena_bytes": 0
   }
 }
