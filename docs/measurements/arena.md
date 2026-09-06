@@ -1,53 +1,81 @@
 # Arena TFLM — số đo trên board
 
-Bảng của KẾ HOẠCH §3.10 và §6.4. Cột nào chưa đo được thì để 🔬, không điền số
-suy ra.
+Bảng của KẾ HOẠCH §3.10 và §6.4, đo trong `firmware/test_apps/bench_ai` với cả
+ba model nạp từ partition `models_0`.
 
-## 1. Chỗ `arena_fast` nằm được
+## 1. `tail` và `head` từng model — E8-T7
 
-Đo trên `face_attendance` build `dev`, ESP32-S3 8 MB PSRAM octal, firmware ở
-commit của E8-T1. Lúc này mới có `sys_storage` + `drv_lcd` + `drv_touch` +
-`drv_camera` chạy; **chưa có Wi-Fi, chưa có LVGL**, nên các số dưới là mức
-rộng rãi nhất mà `arena_fast` còn được hưởng.
-
-| Xin arena ở đâu trong `app_main` | RAM nội trống | Khối liền lớn nhất | 175 KB vừa? |
+| Model | tail | head | riêng lẻ |
 |---|---|---|---|
-| Sau `drv_camera_init()` | 192 KB | **143 KB** | ❌ lùi xuống PSRAM |
-| Ngay sau `sys_storage_init()` | 293 KB | ≥ 175 KB | ✅ nằm SRAM nội |
+| detect | 26,6 KB | 158,4 KB | 185,0 KB |
+| spoof | 109,3 KB | 229,1 KB | 338,4 KB |
+| recog | 91,5 KB | 812,5 KB | 904,0 KB |
 
-**Ràng buộc là tính liền mạch, không phải tổng.** Ở dòng đầu vẫn còn 192 KB
-trống — thừa so với 175 KB — nhưng `heap_caps_aligned_alloc` cần **một dải
-liền**, mà lúc đó bounce buffer của LCD và mô tả DMA của camera đã cắt heap
-thành nhiều mảnh, mảnh to nhất chỉ 143 KB. Cả hệ chỉ có đúng một chỗ xin một
-dải lớn như vậy là arena, nên nó phải xin **trước** mọi driver.
+Cách lấy: `head` đọc từ lời từ chối của bộ cấp phát khi arena thiếu chỗ
+(`Requested: N, available M`); tổng đọc từ `arena_used_bytes()` khi arena đủ
+rộng; `tail` là hiệu. `tail_det` suy từ hệ: nạp riêng detect được 185,0 KB,
+nạp thêm spoof lên 365,0 KB, mà `tail_spoof + head_spoof` đã biết.
 
-Sau khi arena lấy 175 KB, RAM nội còn 118 KB và `drv_lcd`, `drv_touch`,
-`drv_camera` vẫn init đủ, preview giữ nguyên 14,19 fps.
+## 2. Công thức §3.10 trả đúng cái nó hứa
 
-## 2. `tail` và `head` — E8-T7
+`arena_fast` giữ detect và spoof trên **cùng một `MicroAllocator`**:
 
-| Model | tail | head | tổng |
+```
+Σ tail + max(head) = 26,6 + 109,3 + max(158,4 ; 229,1) = 365,0 KB
+```
+
+| Cách cấp | Byte |
+|---|---|
+| Hai buffer rời (185,0 + 338,4) | 523,4 KB |
+| Chung một allocator (đo thật) | **365,0 KB** |
+| **Tiết kiệm** | **158,4 KB, tức 30%** |
+
+Đúng bằng `head_det`, vì head của detect nằm gọn trong head của spoof. Đây là
+lý do §3.10 bắt truyền `MicroAllocator*` chứ không truyền buffer.
+
+Số cuối cùng đo được sau khi cả ba nạp xong:
+
+| Arena | Cấp | Dùng | Ở đâu |
 |---|---|---|---|
-| detect | 🔬 chưa có model | 🔬 | 🔬 |
-| **spoof** | **111.916 B (109,3 KB)** | **234.624 B (229,1 KB)** | **346.540 B (338,4 KB)** |
-| recog | 🔬 chưa có model | 🔬 | 🔬 |
+| `arena_fast` (detect + spoof) | 384 KB | **373.804 B** | PSRAM |
+| `arena_big` (recog) | 1024 KB | **926.588 B** | PSRAM |
 
-`head` đọc trực tiếp từ lời từ chối của bộ cấp phát khi arena 175 KB không đủ
-(`Requested: 234624, available 67488`); tổng đọc từ `arena_used_bytes()` khi
-arena đã đủ rộng; `tail` là hiệu của hai số đó.
+## 3. Không nhánh nào nằm được ở SRAM nội
 
-**Một mình nhánh anti-spoof đã cần 338 KB.** §6.4 dự trù 175 KB cho **cả**
-detect lẫn spoof dùng chung, tức là hụt gần một nửa trước khi nhánh detect kịp
-xuất hiện. Chip chỉ có ~232 KB liền mạch ở SRAM nội lúc `ai_engine_init()`
-chạy, nên arena này **không có cách nào nằm ở SRAM nội** với model hiện tại;
-nó đang chạy ở PSRAM, và cái giá của việc đó nằm ở `latency.md`.
+| Xin arena ở đâu trong `app_main` | RAM nội trống | Khối liền lớn nhất |
+|---|---|---|
+| Sau `drv_camera_init()` | 192 KB | 143 KB |
+| Ngay sau `sys_storage_init()` | 293 KB | ≥ 175 KB |
 
-`AI_ARENA_FAST_KB = 175` mặc định vì thế vẫn là ước lượng của §6.4 chứ không
-phải số đo, và nó **sai**. Chưa sửa mặc định vì con số đúng phụ thuộc vào việc
-model có được thu nhỏ hay không — xem mục 3 của `latency.md`.
+**Ràng buộc là tính liền mạch, không phải tổng.** `heap_caps_aligned_alloc` cần
+một dải liền, mà bounce buffer LCD và mô tả DMA camera cắt heap thành mảnh. Vì
+vậy `ai_engine_init()` chạy trước mọi driver (§3.10).
 
-## 3. Cảnh báo cho các mốc sau
+Nhưng ngay cả khi xin đầu tiên, `arena_fast` cần **365 KB** còn SRAM nội chỉ có
+~293 KB, và đó là lúc chưa có Wi-Fi lẫn LVGL. **Với model hiện tại, không có
+cấu hình nào đặt được detect ở SRAM nội.** Giá của việc đó nằm ở `latency.md`.
 
-Wi-Fi + lwIP lấy thêm ~55 KB SRAM nội (§6.4) và LVGL còn chưa lên. 118 KB
-còn lại sau arena sẽ mỏng đi, nên phải đo lại mục 1 ở E8-T9 khi đã đủ thành
-phần, chứ không được coi bảng này là số cuối.
+§6.4 dự trù 175 KB cho `arena_fast`. Thực tế cần 365 KB — hụt 2,1 lần, và đó là
+trước khi tính `arena_big` 926 KB mà §6.4 không đặt ngân sách.
+
+## 4. Ngân sách flash
+
+| Nhánh | §1.1 ước tính | Đo thật | Chênh |
+|---|---|---|---|
+| detect (YuNet) | 76 KB | 158,9 KB | +109% |
+| spoof (MiniFASNet ×2) | 525 KB | 877,7 KB | +67% |
+| recog (MobileFaceNet) | 1.199 KB | 1.479,5 KB | +23% |
+| **Tổng ảnh `models.bin`** | **1,80 MB** | **2.516,4 KB (2,46 MB)** | **+37%** |
+
+`models_0` đã nâng từ 2 MB lên 3 MB (§6.1), còn dư 555 KB.
+
+## 5. Bộ nhớ sau khi nạp xong
+
+| | Còn trống |
+|---|---|
+| SRAM nội | 206 KB |
+| PSRAM | 6.781 KB trong 8.192 KB |
+
+Số đo ở `bench_ai`, tức **chưa có Wi-Fi, LVGL, camera hay LCD**. §6.4 tính
+Wi-Fi + lwIP ~55 KB và stack 10 task ~53 KB đều ở SRAM nội, nên 206 KB kia sẽ
+mỏng đi nhiều. Phải đo lại ở E8-T9 khi đã đủ thành phần.
