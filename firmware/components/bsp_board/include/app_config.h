@@ -21,6 +21,9 @@
 #define APP_CAM_RESET_GPIO (-1)             // not wired
 // OV5640 accepts 6-27 MHz on XCLK (DS rev 2.51 section 4.2).
 #define APP_CAM_XCLK_HZ 27000000
+// FRAMESIZE_HVGA, the mode drv_camera asks the sensor for, is exactly this pair.
+#define APP_CAM_H_RES 480
+#define APP_CAM_V_RES 320
 
 #define APP_LCD_SCK_GPIO 42
 #define APP_LCD_MOSI_GPIO 41
@@ -30,9 +33,12 @@
 #define APP_LCD_DC_GPIO 39
 #define APP_LCD_RST_GPIO 40
 #define APP_LCD_BLK_GPIO 21
-#define APP_LCD_H_RES 480
-#define APP_LCD_V_RES 320
-#define APP_LCD_SPI_HZ 40000000
+// The panel is physically 320x480 portrait, and the kiosk stands it that way.
+#define APP_LCD_H_RES 320
+#define APP_LCD_V_RES 480
+// A whole frame is 307 KB, so the clock sets how long the panel shows two
+// moments at once: 80 MHz halves that window to about 30 ms (KEHOACH 2.3A).
+#define APP_LCD_SPI_HZ 80000000
 #define APP_LCD_BLK_HZ 5000
 
 #define APP_I2C_SDA_GPIO 1

@@ -109,6 +109,14 @@ gian thực, kèm nút đăng ký mặt ngay trên trang phục vụ. Webcam hos
 khác cảm biến, khác ống kính, khác đường xử lý ảnh. Số nó in ra không được đưa vào bảng
 nghiệm thu và không thay được "tập spoof tự thu" ở bảng trên.
 
+**Từ khi board có màn LCD, đường nghiệm thu không đi qua PC nữa.** Xem thì xem preview
+chạy trên chính LCD (E7-T11); thu dữ liệu thì ghi khung xuống partition `storage` rồi kéo
+về bằng `parttool.py`, không stream qua serial. Hai thay đổi này bỏ được hai nguồn sai lệch
+mà §9 của `docs/measurements/antispoof/` đã đo: khung không còn bị nén lần thứ hai để
+truyền đi, và ảnh nghiệm thu sinh ra từ đúng cảm biến, đúng ống kính, đúng cấu hình thu của
+thiết bị thật. `live_demo.py` và `cam_bridge.py` ở lại, nhưng chỉ để lặp nhanh khi sửa
+model trên PC — không phải đường nghiệm thu.
+
 Kho mặt đã đăng ký nằm ở `ml/artifacts/recognition/gallery.npz`, khung chụp lại từ nút
 "Chụp khung này" nằm ở `ml/artifacts/antispoof/snaps/` — cả hai trong vùng gitignore, vì
 embedding và ảnh khuôn mặt là dữ liệu sinh trắc và §6 cấm commit. Mỗi lần chụp ghi bốn file
@@ -164,7 +172,7 @@ Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset n
 | SIOC (SCCB SCL) | **GPIO5** | |
 | VSYNC | **GPIO6** | |
 | HREF | **GPIO7** | |
-| XCLK | **GPIO15** | LEDC phát 20 MHz (OV5640 nhận 6–27 MHz) |
+| XCLK | **GPIO15** | LEDC phát 27 MHz (OV5640 nhận 6–27 MHz) |
 | PCLK | **GPIO13** | |
 | D0 / Y2 | **GPIO11** | |
 | D1 / Y3 | **GPIO9** | |
@@ -176,6 +184,51 @@ Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset n
 | D7 / Y9 | **GPIO16** | |
 | PWDN | `-1` | không nối |
 | RESET | `-1` | không nối |
+
+**Điều kiện thu — một cấu hình duy nhất cho preview, suy luận và thu dữ liệu.** Ba đường
+dùng chung một cấu hình, vì model học phân bố nào thì lúc chạy phải nhận đúng phân bố đó.
+
+| Tham số | Giá trị | Vì sao |
+|---|---|---|
+| Cỡ khung | HVGA 480×320 | mặt 122 px ở cự ly kiosk; QQVGA còn 60 px, crop recog phải phóng to gấp đôi |
+| Định dạng | RGB565 | ảnh chỉ bị nén **một lần** ở khâu crop, khớp lịch sử nén của tập train |
+| XCLK | 27 MHz | 14,19 fps, đủ trên sàn 12 fps của E7-T11 |
+| Frame buffer | 3, ở PSRAM, `CAMERA_GRAB_LATEST` | preview giữ một khung gần trọn một chu kỳ; hai cái thì sensor không còn chỗ đáp |
+| `vflip` / `hmirror` | 1 / 1 | module gắn lens phía trên đầu nối nên khung ra ngược; gương là thứ người dùng chờ đợi ở kiosk |
+| Phơi sáng | **thủ công, đo vùng giữa khung** | xem dưới |
+| Gain | cố định 8 | gain cao đẻ nhiễu hạt, mà nhiễu hạt chính là thứ nhánh anti-spoof đọc nhầm thành kết cấu da |
+| Lọc vằn 50 Hz | `0x3C01` bit 7 = tay, `0x3C00` bit 2 = 50 Hz | tên bit lấy từ driver OV5640 của nhân Linux; ghi xong **đọc ngược lại**, lệch là `drv_camera_init` trả lỗi |
+
+**Phơi sáng nằm thượng nguồn của ngưỡng anti-spoof, nên nó là quyết định kiến trúc chứ
+không phải tham số driver.** Đo được: cùng một mặt thật, đủ sáng cho liveness 0,9999, ngược
+sáng còn 0,683 — biên độ 0,32, trong khi khoảng cách từ mặt thật tới ngưỡng chỉ 0,006. AE
+mặc định đo sáng **cả cảnh**, nên trần nhà sáng kéo phơi sáng xuống và dìm mặt vào bóng;
+mất kết cấu da là mất đúng thứ model dùng để tách da thật khỏi ảnh in. Cơ chế ấy hỏng cả
+hai chiều: nó cũng làm màn hình điện thoại cháy trắng.
+
+Cách cài: **tắt AE/AGC của sensor**, rồi `drv_camera_expose()` tự đo. Mỗi khung nó lấy mẫu
+thưa một phần tư giữa khung, quy kênh lục ra độ sáng, và lái `set_aec_value` về mức mục
+tiêu. Toàn bộ đi qua API có tên của `esp32-camera`, không gõ thẳng thanh ghi nào.
+
+Vòng lặp phải **giảm chấn**: sensor mất một tới hai khung mới áp dụng giá trị mới, nên đo
+mỗi khung rồi chỉnh ngay là đọc phải khung cũ và ảnh nhấp nháy sáng tối. Mỗi lần chỉnh đi
+một phần tư quãng đường còn thiếu, rồi nghỉ ba khung cho sensor bắt kịp.
+
+Cửa sổ giữa khung là xấp xỉ dùng được ngay của "đo theo hộp mặt", vì kiosk luôn có mặt ở
+giữa. Khi E8 đưa detector lên board thì thay vùng lấy mẫu bằng hộp mặt thật — vòng lặp giữ
+nguyên. Phơi sáng cố định cho ngưỡng bền nhất nhưng phải hiệu chỉnh lại theo từng chỗ lắp,
+nên chỉ dùng nếu đo thấy cách này vẫn trôi quá biên.
+
+Hai thanh ghi lọc vằn ràng buộc **AEC của chính sensor**, mà cấu hình này lại tắt AEC đi.
+Nên chúng chỉ có tác dụng nếu sau này bật AEC trở lại; còn ở chế độ thủ công, trách nhiệm
+chống nhấp nháy nằm ở bộ điều khiển của mình: thời gian phơi phải là bội số của nửa chu kỳ
+lưới (10 ms ở 50 Hz), và phần lẻ bù bằng gain. 🔬 Chưa cài — thấy sọc trôi dưới đèn huỳnh
+quang thì đây là chỗ sửa, không phải hai thanh ghi trên.
+
+**Preview không nằm trên đường dữ liệu của model.** Model đọc thẳng khung 480×320 gốc;
+màn chỉ lấy lát giữa 213×320 trải kín 320×480. Preview vì thế thấy **hẹp hơn** model, tức
+ai lọt vào màn thì chắc chắn model cũng thấy — chiều an toàn. Phóng to ở đây không đụng gì
+tới dữ liệu model ăn.
 
 ### 2.2 Chân CẤM dùng
 
@@ -190,13 +243,13 @@ ESP32-S3 **không có** GPIO22–25. Dải chân thật là 0–21 và 26–48; 
 
 ### 2.3 Bảng đấu nối ngoại vi
 
-#### A. LCD ST7796S 3.5" 480×320 — SPI 4 dây (SPI2_HOST)
+#### A. LCD ST7796S 3.5" 320×480 dọc — SPI 4 dây (SPI2_HOST)
 
 | Chân LCD | GPIO | Vai trò | Lưu ý |
 |---|---|---|---|
 | VCC | 3V3 | | |
 | GND | GND | | |
-| SCL / SCK | **GPIO42** | SPI CLK | Bắt đầu 40 MHz, thử nâng 80 MHz sau khi ổn |
+| SCL / SCK | **GPIO42** | SPI CLK | **80 MHz** — ở 40 MHz một khung 307 KB mất 61 ms, màn hiện hai khoảnh khắc cùng lúc và mặt di chuyển thấy rõ vạch |
 | SDA / MOSI | **GPIO41** | SPI MOSI | |
 | SDO / MISO | — | không nối | Không cần đọc ngược từ panel |
 | CS | **GPIO47** | Chip select | |
@@ -1649,8 +1702,8 @@ firmware/
 │   ├── CMakeLists.txt
 │   ├── idf_component.yml             # ★ khai báo dependency registry
 │   ├── app_main.c            [C]     # khởi tạo tuần tự, không chứa logic
-│   ├── app_tasks.c           [C]     # xTaskCreatePinnedToCore (§5)
-│   └── app_wiring.c          [C]     # ★ nối queue/event giữa các component
+│   ├── app_tasks.{c,h}       [C]     # xTaskCreatePinnedToCore (§5)
+│   └── app_wiring.{c,h}      [C]     # ★ nối queue/event giữa các component
 │
 ├── components/                       # ── 100% CODE TỰ VIẾT ──
 │   ├── common/            [C]    L0  # kiểu dữ liệu, error code, event id, ring buffer, gen_payload.h
@@ -2045,6 +2098,10 @@ Ba trục phân chia này **khớp nhau** ở cả ba nơi — mở cùng một 
 | Parity C ↔ Python | `test_apps/parity/` | đọc `contracts/golden/`, so sánh sai số |
 | Đo hiệu năng | `test_apps/bench_ai/`, `bench_mem/` | in ra CSV cho `ml/bench/device_client.py` |
 | Soak | `test_apps/soak/` | chạy 24h, theo dõi rò heap |
+
+**Không hàm nghiệm thu nào nằm trong `src/` hay header công khai của component.** Quét bus, dò trở kéo, đi bốn màu, rình ngón tay, đo fps, đẩy khung về máy — tất cả ở `test_apps/` của chính component đó. Để trong driver thì nó thành API công khai vĩnh viễn (`ui_kiosk` gọi được `drv_lcd_selftest()`), và mỗi lần boot phải trả giá cho thứ chỉ dùng lúc cắm dây. `Kconfig` của component vì thế không có cờ bật/tắt nghiệm thu: cái gì chỉ chạy lúc bring-up thì không có mặt trong ảnh sản phẩm, không phải bị tắt đi.
+
+Case cần mắt hoặc ngón tay người gắn thêm tag `[manual]`. `app_main` của test app gọi `unity_run_tests_by_tag("[manual]", true)`, nên vòng tự động bỏ qua chúng, còn người ngồi trước board chọn tay trong menu của IDF test runner.
 
 #### 4.5.9 Ba profile build
 
@@ -2614,7 +2671,7 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 |---|---|---|---|---|
 | Camera FB preview ×2 (320×240 RGB565) | 2 × 150 KB | **PSRAM** | `camera_config.fb_location = CAMERA_FB_IN_PSRAM`, `fb_count = 2` | Quá lớn cho SRAM |
 | Camera FB cho AI (640×480 RGB565, chỉ khi cần crop nét) | 600 KB | **PSRAM** | như trên | |
-| LCD frame buffer 480×320 RGB565 | 300 KB | **PSRAM** | `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` | |
+| LCD frame buffer 320×480 RGB565 | 300 KB | **PSRAM** | `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` | |
 | LCD bounce buffer (2 × 20 dòng) | 2 × 19.2 KB | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội |
 | **Arena detect** | 🔬 ước ~120 KB @160×120 | **SRAM nếu vừa** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_INTERNAL)` | Nhanh nhất, chạy nhiều nhất |
 | **Arena anti-spoof** | 🔬 ước ~60 KB @80×80 | **SRAM** | như trên | Nhỏ, dễ nhét |

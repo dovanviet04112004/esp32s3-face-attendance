@@ -1,4 +1,4 @@
-/** The 480x320 panel: bring-up, backlight, and blitting one rectangle.
+/** The 320x480 panel: bring-up, backlight, and blitting one rectangle.
  *  @ctx task | blocking | uses the SPI bus bsp_board owns
  */
 #pragma once
@@ -30,16 +30,17 @@ esp_err_t drv_lcd_backlight(uint8_t percent);
  */
 esp_err_t drv_lcd_blit(int x1, int y1, int x2, int y2, const void *pixels);
 
+/** Fill the panel from the centre slice of one sensor frame, upright.
+ *  @ctx task | blocking | pixels are RGB565 already in the panel's byte order
+ *  @param src_width,src_height frame size in pixels, wider than it is tall
+ *  @ret ESP_OK | ESP_ERR_INVALID_SIZE when no slice of that shape fits inside
+ */
+esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height);
+
 /** Paint the whole panel one colour.
- *  @ctx task | blocking | allocates one line from the internal heap
+ *  @ctx task | blocking | goes out through the bounce buffers
  */
 esp_err_t drv_lcd_fill(uint16_t rgb565);
-
-/** Walk the panel through red, green, blue and white.
- *  @ctx task | blocking, holds each colour for about a second
- *  @ret ESP_OK once every colour reached the panel
- */
-esp_err_t drv_lcd_selftest(void);
 
 /** Panel handle for the LVGL port to drive.
  *  @ctx any | non-blocking

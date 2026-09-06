@@ -19,15 +19,18 @@ reset chủ động trong `drv_touch_init` mới quyết được nó (§2.3C).
 
 Trả lời ở `0x5D`. Chạm bốn góc, hai vòng:
 
-| Góc | Vòng 1 | Vòng 2 |
-|---|---|---|
-| Trên-trái | 16,15 | 38,15 |
-| Trên-phải | 479,15 | 477,23 |
-| Dưới-phải | 473,318 | 475,314 |
-| Dưới-trái | 0,309 | 13,307 |
+| Góc | Toạ độ mong đợi | Đo lượt 1 | Đo lượt 2 |
+|---|---|---|---|
+| Trên-trái | 0,0 | 17,0 | 23,0 |
+| Trên-phải | 319,0 | 304,16 | 297,7 |
+| Dưới-phải | 319,479 | 307,453 | 308,450 |
+| Dưới-trái | 0,479 | 19,448 | 20,458 |
+
+Lệch 15–25 px ở mép là tầm với của đầu ngón tay, không phải sai hệ toạ độ: `x` tăng
+sang phải 0→319 và `y` tăng xuống 0→479, trùng khít hệ của panel.
 
 ## Giới hạn
 
-`x_max`/`y_max` phải khai theo hệ **dọc gốc của panel (320×480)**, không phải hệ
-ngang 480×320 đang hiển thị — khai nhầm thì `y` trả về tới 426 trong khi biên
-báo là 320.
+Bộ điều khiển báo toạ độ trong hệ **dọc gốc của panel (320×480)**, và màn cũng
+dựng đứng theo hệ đó, nên `swap_xy`/`mirror` đều tắt — khai nhầm thì `y` trả về
+tới 426 trong khi biên báo là 320.
