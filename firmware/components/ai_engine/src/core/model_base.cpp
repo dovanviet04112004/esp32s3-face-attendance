@@ -29,7 +29,8 @@ esp_err_t TfliteModelBase::init(const tflite::Model *model, Arena &arena) noexce
     }
     // Passing the arena's allocator rather than its buffer is what lets the
     // models on one arena share a head and stack their tails (KEHOACH 3.10).
-    interpreter_ = new (storage_) tflite::MicroInterpreter(model, resolver(), arena.allocator());
+    interpreter_ = new (storage_)
+        tflite::MicroInterpreter(model, resolver(), arena.allocator(), nullptr, profiler());
     if (interpreter_->AllocateTensors() != kTfLiteOk) {
         ESP_LOGE(TAG, "%s: allocate failed on an arena of %u KB", name(),
                  static_cast<unsigned>(arena.size() / 1024));
@@ -60,7 +61,9 @@ esp_err_t TfliteModelBase::invoke() noexcept
     if (interpreter_ == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
-    return interpreter_->Invoke() == kTfLiteOk ? ESP_OK : ESP_FAIL;
+    const TfLiteStatus status = interpreter_->Invoke();
+    profiler_report(name());
+    return status == kTfLiteOk ? ESP_OK : ESP_FAIL;
 }
 
 size_t TfliteModelBase::arena_used() const noexcept

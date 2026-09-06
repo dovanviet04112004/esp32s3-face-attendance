@@ -9,9 +9,20 @@
 #include "esp_err.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_op_resolver.h"
+#include "tensorflow/lite/micro/micro_profiler_interface.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 
 namespace ai {
+
+/** The profiler every interpreter reports to, or nullptr when it is off.
+ *  @ctx any | non-blocking
+ */
+tflite::MicroProfilerInterface *profiler() noexcept;
+
+/** Print what one invoke spent per operator and start the count over.
+ *  @ctx task | blocking on the console | does nothing when profiling is off
+ */
+void profiler_report(const char *name) noexcept;
 
 class ITfliteModel {
 public:
