@@ -71,6 +71,6 @@ def apply(model: nn.Module) -> dict[str, float]:
     lookup = dict(model.named_modules())
     moved: dict[str, float] = {}
     for first_name, second_name in pairs(model):
-        scale = equalize(lookup[first_name], lookup[second_name])
+        scale = equalize(lookup[first_name], lookup[second_name]).detach()
         moved[f"{first_name}->{second_name}"] = float(scale.max() / scale.min())
     return moved

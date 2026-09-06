@@ -10,11 +10,15 @@ run:
 
 model:
   name: mobilefacenet
-  # The frame MS1MV3 aligns to, and it fixes the closing kernel at 7.
-  input_hw: [112, 112]
+  # Odd at every stride-2, which is what folds PAD into the convolution, and
+  # it fixes the closing kernel at 8 (KEHOACH 3 layer 1).
+  input_hw: [113, 113]
   params:
     embedding: 512
     width: 64
+    # esp-nn folds this into the convolution's output clamp, so it costs
+    # nothing either way; relu is the one CLE still applies to (KEHOACH 3.8).
+    activation: relu
 
 data:
   name: ms1mv3

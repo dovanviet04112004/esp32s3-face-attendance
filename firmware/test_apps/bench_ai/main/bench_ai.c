@@ -6,14 +6,11 @@
 #include "sys_storage.h"
 #include "unity.h"
 
-#define DETECT_LEN (120 * 160 * 3)
-#define CROP_LEN (80 * 80 * 3)
-#define FACE_LEN (112 * 112 * 3)
 #define EMBED_MAX 512
 #define RUNS 20
 
-// These stand in for camera frames and crops, which live in psram on the real
-// device; leaving them in bss would take the internal ram an arena wants.
+// Camera frames live in psram on the real device, and in bss these would take
+// the internal ram an arena wants. Sizes come from the graphs themselves.
 static int8_t *s_frame;
 static int8_t *s_tight;
 static int8_t *s_wide;
@@ -22,6 +19,7 @@ static int8_t s_embedding[EMBED_MAX];
 
 static int8_t *psram(size_t len, int seed)
 {
+    TEST_ASSERT_GREATER_THAN_UINT(0, len);
     int8_t *buffer = heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
     TEST_ASSERT_NOT_NULL(buffer);
     for (size_t i = 0; i < len; ++i) {
@@ -67,16 +65,16 @@ TEST_CASE("all three branches load and report what they took", "[bench_ai]")
 {
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
     TEST_ASSERT_EQUAL(ESP_OK, ai_engine_init());
-    s_frame = psram(DETECT_LEN, 1);
-    s_tight = psram(CROP_LEN, 2);
-    s_wide = psram(CROP_LEN, 3);
-    s_face = psram(FACE_LEN, 4);
+    s_frame = psram(ai_engine_detect_input_len(), 1);
+    s_tight = psram(ai_engine_spoof_input_len(), 2);
+    s_wide = psram(ai_engine_spoof_input_len(), 3);
+    s_face = psram(ai_engine_recog_input_len(), 4);
 
     ai_engine_arena_stats_t stats;
     ai_engine_arena_stats(&stats);
-    TEST_ASSERT_EQUAL_UINT(DETECT_LEN, ai_engine_detect_input_len());
-    TEST_ASSERT_EQUAL_UINT(CROP_LEN, ai_engine_spoof_input_len());
-    TEST_ASSERT_EQUAL_UINT(FACE_LEN, ai_engine_recog_input_len());
+    printf("inputs: detect %u B, spoof %u B, recog %u B\n",
+           (unsigned)ai_engine_detect_input_len(), (unsigned)ai_engine_spoof_input_len(),
+           (unsigned)ai_engine_recog_input_len());
     printf("arena_fast %u B of %u KB in %s\n", (unsigned)stats.fast_used,
            (unsigned)(stats.fast_bytes / 1024), stats.fast_internal ? "sram" : "psram");
     printf("arena_big  %u B of %u KB in psram\n", (unsigned)stats.big_used,

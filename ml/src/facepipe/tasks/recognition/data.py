@@ -23,7 +23,7 @@ from torch.utils.data import IterableDataset, get_worker_info
 
 from facepipe.data.prepare.images_to_wds import KEY_FIELD, read_shard
 
-ALIGNED_SIZE = 112
+ALIGNED_SIZE = 113
 PIXEL_MEAN = 127.5
 PIXEL_SCALE = 127.5
 # A buffered sample is 37 KB, so the buffer costs this many megabytes in every

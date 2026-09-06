@@ -17,6 +17,8 @@ import numpy as np
 import torch
 from PIL import Image
 
+from .data import ALIGNED_SIZE
+
 BENCHMARKS = ("lfw", "cfp_fp", "agedb_30")
 FOLDS = 10
 THRESHOLD_STEPS = 4001
@@ -32,7 +34,7 @@ def read_bin(path: Path) -> tuple[list[bytes], np.ndarray]:
     return list(encoded), np.asarray(issame, dtype=bool)
 
 
-def decode_images(encoded: list[bytes], size: int = 112) -> np.ndarray:
+def decode_images(encoded: list[bytes], size: int = ALIGNED_SIZE) -> np.ndarray:
     """Decode to one uint8 array, pairs sitting at 2i and 2i+1."""
     out = np.zeros((len(encoded), size, size, 3), dtype=np.uint8)
     for index, payload in enumerate(encoded):
