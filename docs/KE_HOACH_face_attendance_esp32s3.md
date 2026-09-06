@@ -1080,14 +1080,20 @@ Cách làm: tạo **một** `MicroAllocator::Create(arena, size)` rồi truyền
 
 Tail nhỏ hơn head nhiều — cỡ vài chục KB mỗi model (metadata theo số tensor và số node), còn head là nơi activation nằm. Nhưng tail **không** biến mất khi đổi model, nên đừng bỏ qua nó khi tính ngân sách.
 
-**Hệ quả cho dự án này**: `max(head)` là của recognition (112×112, nặng nhất), một mình nó đã có thể vượt phần SRAM còn trống. Nên chốt **hai arena**, không phải một:
+**Hệ quả cho dự án này**, sau khi đo thật (`docs/measurements/arena.md`): chốt **hai arena**, chia theo **tần suất chạy**, không phải theo tốc độ mong muốn:
 
 | Arena | Ở đâu | Dùng cho | Kích thước |
 |---|---|---|---|
-| `arena_fast` | **SRAM nội**, align 16 B | detect + anti-spoof, dùng chung 1 `MicroAllocator` | `tail_det + tail_spoof + max(head_det, head_spoof)` 🔬 |
-| `arena_big` | **PSRAM**, align 16 B | recognition, `MicroAllocator` riêng | `tail_recog + head_recog` 🔬 |
+| `arena_fast` | **SRAM nội**, align 16 B | **detect một mình**, `MicroAllocator` riêng | `tail_det + head_det` = **185 KB** đo thật |
+| `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` 🔬 |
 
-Lý do tách chứ không gộp cả 3: detect chạy **mỗi frame**, anti-spoof chạy mỗi lần có mặt — hai thằng này cần tốc độ SRAM. Recognition chỉ chạy khi anti-spoof pass, tần suất thấp hơn hàng chục lần, chịu được PSRAM. Gộp cả 3 vào một allocator thì `max(head)` bị recognition kéo lên và **cả detect cũng phải xuống PSRAM theo** — mất tốc độ ở đúng chỗ chạy nhiều nhất.
+Ba số đo dẫn tới cách chia này:
+
+1. **SRAM chỉ mua được 4–10%.** Đưa toàn bộ activation của detect và spoof về SRAM nội chỉ cắt 1,9% của cả chuỗi. Băng thông PSRAM không phải nút thắt, phép tính trong kernel mới là.
+2. **detect chạy mỗi frame, hai nhánh kia chạy mỗi lần có người.** Nên 10% của detect là 10% liên tục, còn 4% của spoof chỉ xuất hiện lúc có mặt. Chỗ SRAM đắt thì đưa cho thằng chạy nhiều nhất.
+3. **spoof + recog gộp lại không vừa SRAM bằng cách nào cả.** Ép chúng vào `arena_fast` thì cả hai cùng trượt, và `arena_fast` phải phình tới mức không còn chỗ cho Wi-Fi lẫn stack task.
+
+detect một mình cần 185 KB thay vì 512 KB mà vẫn không đủ, nên cách chia này là thứ **làm cho hệ chạy được**, không chỉ nhanh hơn.
 
 Ba con số `tail` và ba con số `head` phải đo thật ở E8, không suy ra từ `arena_used_bytes()` tổng.
 
