@@ -2460,10 +2460,14 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 
 | Core | Giao cho | Vì sao |
 |---|---|---|
-| **Core 1 (APP_CPU)** | **CHỈ `ai_task`** | Một lần `Invoke()` chiếm CPU liên tục 100–400 ms. Để chung với LVGL thì UI giật, để chung Wi-Fi thì rớt gói. Độc chiếm 1 core là cách duy nhất giữ UI mượt trong lúc AI chạy |
+| **Core 1 (APP_CPU)** | **CHỈ `ai_task`** | Một lần `Invoke()` chiếm CPU liên tục **209 ms (detect), 470 ms (spoof), 1.074 ms (recog)** — đo ở `docs/measurements/latency.md`. Để chung với LVGL thì UI đứng hình hơn một giây, để chung Wi-Fi thì rớt gói. Độc chiếm 1 core là cách duy nhất giữ UI mượt trong lúc AI chạy |
 | **Core 0 (PRO_CPU)** | Wi-Fi/lwIP (hệ thống) + camera + LVGL + touch + audio + ToF + MQTT + sync | Toàn bộ là việc ngắn, phần lớn do DMA/ISR gánh; CPU chỉ điều phối |
 
-> 🔬 Nếu đo thấy core 0 quá tải (LVGL rớt dưới 20 fps): chuyển `mqtt_task` + `sync_task` sang core 1 với priority **thấp hơn** `ai_task` — chúng chỉ chạy khi AI nghỉ.
+**`ai_task` phải tự nuôi watchdog.** `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1` bật và timeout 5 giây, mà detect chạy **mỗi frame** nên core 1 bận liên tục và IDLE1 không bao giờ tới lượt. Đã thấy watchdog bắn thật khi chạy invoke liên tiếp trong `bench_ai`. Một lần `Invoke()` lâu nhất là 1.074 ms, còn xa 5 giây, nên **gọi `esp_task_wdt_reset()` giữa các model** là đủ — không cần hạ timeout, cũng không được bỏ IDLE1 ra khỏi watchdog.
+
+**Core 1 bão hoà, đừng trông vào chỗ trống của nó.** Camera ra một frame mỗi 70,5 ms còn detect tốn 209 ms, nên AI xử lý được 1 trong 3 frame và không có lúc nào rảnh. Ý định cũ "chuyển `mqtt_task` + `sync_task` sang core 1 vì chúng chỉ chạy khi AI nghỉ" vì thế không dùng được: AI không nghỉ. Core 0 quá tải thì phải giảm việc của core 0 hoặc giảm tần suất chạy detect, không phải đẩy sang core 1.
+
+> 🔬 **Hai core dùng chung một bus PSRAM và một cache dữ liệu.** Core 0 đẩy frame camera và heap LVGL qua PSRAM, core 1 quét 823 KB `arena_big` cũng qua PSRAM. Đo tách head/tail cho thấy PSRAM tốn 4–10% khi bus rảnh; lúc preview chạy song song thì chưa đo. Cách đo: bật preview rồi chạy AI, so với AI chạy một mình.
 
 ### 5.2 Bảng task
 
@@ -2473,7 +2477,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `tof_task` | `drv_tof` | 0 | 6 | 3 KB | ngắt GPIO3 / poll 100 ms | Đọc khoảng cách → phát `EVT_PRESENCE_ON/OFF`, đánh thức hệ thống |
 | `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Đọc WAV từ LittleFS → `i2s_channel_write` |
 | `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt GPIO14 | Đọc GT911 → `q_touch` |
-| **`ai_task`** | `vision_pipeline` | **1** | 5 | 8 KB | chờ `q_frame_ai` | quality gate → detect → align → spoof → recog → `q_result` |
+| **`ai_task`** | `vision_pipeline` | **1** | 5 | 8 KB | chờ `q_frame_ai` | quality gate → detect → align → spoof → recog → `q_result`, `esp_task_wdt_reset()` giữa các model (§5.1) |
 | `ui_task` | `ui` | 0 | 4 | 8 KB (+ LVGL heap ở PSRAM) | tick 20 ms | `lv_timer_handler()`, vẽ preview, xử lý `q_touch`, đọc `eg_system` |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB | esp-mqtt tự tạo | pub/sub, TLS |
