@@ -2053,8 +2053,10 @@ Ba model không gộp chung một cục. Danh sách op, hậu xử lý và test 
 ```
 components/ai_engine/
 ├── include/ai_engine.h                    # mặt tiền C duy nhất cho cả 3 model
+├── Kconfig                                # kích thước 2 arena, E8-T7 chỉnh lại theo số đo
 ├── priv_include/{tflite_model.hpp, arena.hpp, model_store.hpp}
 ├── src/
+│   ├── ai_engine.cpp                      # dựng 2 arena, mở model store, nối 3 model
 │   ├── core/                              # dùng chung — KHÔNG chứa gì riêng của model nào
 │   │   ├── model_base.cpp                 # TfliteModelBase: arena, interpreter, AllocateTensors
 │   │   ├── arena.cpp                      # cấp phát 16-byte aligned, internal → PSRAM fallback
@@ -2081,6 +2083,10 @@ components/ai_engine/
 ```
 
 **Quy tắc**: `src/core/` không được biết tên bất kỳ model nào. Thứ gì chỉ đúng cho một nhánh thì nằm trong thư mục nhánh đó. Thêm model thứ tư sau này = thêm một thư mục, không sửa `core/`.
+
+`src/ai_engine.cpp` nằm ngoài `core/` chính vì lý do đó: nó là chỗ duy nhất gọi tên cả ba nhánh, để dựng đúng model nào vào arena nào. `core/` chỉ nhận `tflite::Model*` và một `Arena&`, không biết chúng thuộc nhánh gì.
+
+**Hai kích thước arena khai ở `components/ai_engine/Kconfig`**, không gõ vào code: `AI_ARENA_FAST_KB` (SRAM nội, mặc định 175 theo §6.4) và `AI_ARENA_BIG_KB` (PSRAM). Cả hai là 🔬 ước lượng cho tới khi E8-T7 đo `tail` và `head` thật; đặt ở Kconfig để `sdkconfig.bench` chỉnh được mà không sửa nguồn. Xin `arena_fast` ở SRAM nội mà không đủ chỗ thì `Arena` lùi xuống PSRAM và **log cảnh báo** — chạy chậm còn hơn không chạy, nhưng phải thấy được là đã lùi.
 
 Ba trục phân chia này **khớp nhau** ở cả ba nơi — mở cùng một tên thư mục là thấy cùng một nhánh model:
 
