@@ -18,7 +18,10 @@ static const char *TAG = "app_tasks";
 static void report_rate(int frames, int64_t elapsed_us)
 {
     const int mfps = elapsed_us > 0 ? (int)((int64_t)frames * 1000000000 / elapsed_us) : 0;
-    ESP_LOGI(TAG, "preview %d.%03d fps", mfps / 1000, mfps % 1000);
+    int level = 0, exposure = 0, gain = 0;
+    drv_camera_exposure_state(&level, &exposure, &gain);
+    ESP_LOGI(TAG, "preview %d.%03d fps, level %d, exposure %d, gain %d", mfps / 1000, mfps % 1000,
+             level, exposure, gain);
 }
 
 static void cam_task(void *arg)
@@ -31,6 +34,9 @@ static void cam_task(void *arg)
     for (;;) {
         camera_fb_t *frame = drv_camera_grab();
         if (frame == NULL) {
+            // Spinning here at this priority would starve the idle task and
+            // trip the watchdog, so a dry pool costs one tick, not the core.
+            vTaskDelay(1);
             continue;
         }
         drv_camera_expose(frame);

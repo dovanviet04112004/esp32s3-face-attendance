@@ -36,9 +36,9 @@
 // The panel is physically 320x480 portrait, and the kiosk stands it that way.
 #define APP_LCD_H_RES 320
 #define APP_LCD_V_RES 480
-// A whole frame is 307 KB, so the clock sets how long the panel shows two
-// moments at once: 80 MHz halves that window to about 30 ms (KEHOACH 2.3A).
-#define APP_LCD_SPI_HZ 80000000
+// Jumper wiring loses its margin at 80 MHz: flexing it corrupts a command and
+// the panel latches white until reset (KEHOACH 2.3A).
+#define APP_LCD_SPI_HZ 40000000
 #define APP_LCD_BLK_HZ 5000
 
 #define APP_I2C_SDA_GPIO 1

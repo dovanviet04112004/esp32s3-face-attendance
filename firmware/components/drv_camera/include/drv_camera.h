@@ -33,6 +33,11 @@ void drv_camera_release(camera_fb_t *frame);
  */
 esp_err_t drv_camera_expose(const camera_fb_t *frame);
 
+/** What the exposure loop last measured and where it put the two controls.
+ *  @ctx any | non-blocking | brightness runs 0 to 63
+ */
+void drv_camera_exposure_state(int *level, int *exposure, int *gain);
+
 #ifdef __cplusplus
 }
 #endif

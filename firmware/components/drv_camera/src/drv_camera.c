@@ -16,9 +16,12 @@ static const char *TAG = "drv_camera";
 #define METER_TARGET_GREEN 30
 #define METER_DEADBAND 4
 #define METER_SAMPLE_STEP 8
-#define METER_HOLD_GAIN 8
+#define METER_BASE_GAIN 1
+#define METER_MAX_GAIN 4
 #define METER_DAMPING 4
-#define METER_SETTLE_FRAMES 3
+#define METER_SETTLE_FRAMES 2
+#define METER_SATURATED 58
+#define METER_STARVED 3
 #define VTS_REG 0x380E
 #define VTS_MASK 0xFFFF
 #define HZ5060_CTRL00_REG 0x3C00
@@ -29,7 +32,9 @@ static const char *TAG = "drv_camera";
 static bool s_ready;
 static int s_exposure;
 static int s_exposure_max;
+static int s_gain = METER_BASE_GAIN;
 static int s_settle;
+static int s_level;
 
 static int centre_green(const camera_fb_t *frame)
 {
@@ -74,7 +79,7 @@ static esp_err_t hold_exposure_still(sensor_t *sensor)
     // a face drags the face into shadow (KEHOACH 2.1).
     sensor->set_exposure_ctrl(sensor, 0);
     sensor->set_gain_ctrl(sensor, 0);
-    sensor->set_agc_gain(sensor, METER_HOLD_GAIN);
+    sensor->set_agc_gain(sensor, METER_BASE_GAIN);
     s_exposure_max = sensor->get_reg(sensor, VTS_REG, VTS_MASK);
     if (s_exposure_max <= 0) {
         return ESP_ERR_INVALID_RESPONSE;
@@ -160,27 +165,64 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
         return ESP_OK;
     }
     const int level = centre_green(frame);
+    s_level = level;
     const int error = METER_TARGET_GREEN - level;
     if (error > -METER_DEADBAND && error < METER_DEADBAND) {
-        return ESP_OK;
-    }
-    const int want = level > 0 ? s_exposure * METER_TARGET_GREEN / level : s_exposure_max;
-    int next = s_exposure + (want - s_exposure) / METER_DAMPING;
-    if (next == s_exposure) {
-        next += want > s_exposure ? 1 : -1;
-    }
-    next = next > s_exposure_max ? s_exposure_max : next;
-    next = next < 1 ? 1 : next;
-    if (next == s_exposure) {
         return ESP_OK;
     }
     sensor_t *sensor = esp_camera_sensor_get();
     if (sensor == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
-    sensor->set_aec_value(sensor, next);
-    s_exposure = next;
+    // Exposure and gain are one quantity here. Steering them separately makes
+    // them fight: dropping gain darkens the frame, which asks for gain back.
+    const int light = s_exposure * s_gain;
+    int want;
+    if (level >= METER_SATURATED) {
+        want = light / 2;
+    } else if (level <= METER_STARVED) {
+        want = light * 2;
+    } else {
+        want = light * METER_TARGET_GREEN / level;
+    }
+    int next = light + (want - light) / METER_DAMPING;
+    if (next == light) {
+        next += want > light ? 1 : -1;
+    }
+    const int ceiling = s_exposure_max * METER_MAX_GAIN;
+    next = next > ceiling ? ceiling : next;
+    next = next < 1 ? 1 : next;
+    if (next == light) {
+        return ESP_OK;
+    }
+    // Exposure carries as much as it can and gain only takes the remainder,
+    // because gain noise is what the anti-spoof branch misreads as skin.
+    int gain = (next + s_exposure_max - 1) / s_exposure_max;
+    gain = gain < METER_BASE_GAIN ? METER_BASE_GAIN : gain;
+    const int exposure = next / gain;
+    if (gain != s_gain) {
+        sensor->set_agc_gain(sensor, gain);
+        s_gain = gain;
+    }
+    if (exposure != s_exposure) {
+        sensor->set_aec_value(sensor, exposure);
+        s_exposure = exposure;
+    }
+    ESP_LOGD(TAG, "green %d -> exposure %d/%d gain %d", level, s_exposure, s_exposure_max, s_gain);
     s_settle = METER_SETTLE_FRAMES;
     return ESP_OK;
 }
 
+
+void drv_camera_exposure_state(int *level, int *exposure, int *gain)
+{
+    if (level != NULL) {
+        *level = s_level;
+    }
+    if (exposure != NULL) {
+        *exposure = s_exposure;
+    }
+    if (gain != NULL) {
+        *gain = s_gain;
+    }
+}
