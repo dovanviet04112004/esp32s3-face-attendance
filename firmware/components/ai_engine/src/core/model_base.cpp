@@ -32,9 +32,10 @@ esp_err_t TfliteModelBase::init(const tflite::Model *model, Arena &arena) noexce
     interpreter_ = new (storage_)
         tflite::MicroInterpreter(model, resolver(), arena.allocator(), nullptr, profiler());
     if (interpreter_->AllocateTensors() != kTfLiteOk) {
+        // A half-allocated interpreter holds node pointers it never filled, so
+        // running its destructor here reads them and faults.
         ESP_LOGE(TAG, "%s: allocate failed on an arena of %u KB", name(),
                  static_cast<unsigned>(arena.size() / 1024));
-        interpreter_->~MicroInterpreter();
         interpreter_ = nullptr;
         return ESP_ERR_NO_MEM;
     }
