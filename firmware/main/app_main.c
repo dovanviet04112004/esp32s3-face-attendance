@@ -26,8 +26,41 @@ static const uint16_t BRINGUP_COLOURS[] = {
     RGB565(0xFF, 0xFF, 0xFF),
 };
 
+static void probe_pin(const char *name, int gpio)
+{
+    gpio_config_t cfg = {
+        .pin_bit_mask = 1ULL << gpio,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&cfg));
+    esp_rom_delay_us(LINE_SETTLE_US);
+    const int on_pullup = gpio_get_level(gpio);
+
+    cfg.pull_up_en = GPIO_PULLUP_DISABLE;
+    cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
+    ESP_ERROR_CHECK(gpio_config(&cfg));
+    esp_rom_delay_us(LINE_SETTLE_US);
+    const int on_pulldown = gpio_get_level(gpio);
+
+    const char *verdict = "?";
+    if (!on_pullup) {
+        verdict = "TIED LOW - shorted to GND";
+    } else if (on_pulldown) {
+        verdict = "external pull-up present, line healthy";
+    } else {
+        verdict = "floating - no external pull-up reaches this pin";
+    }
+    ESP_LOGI(TAG, "%s gpio%d: pullup=%d pulldown=%d -> %s", name, gpio, on_pullup,
+             on_pulldown, verdict);
+}
+
 static void test_i2c_lines(void)
 {
+    probe_pin("SDA", APP_I2C_SDA_GPIO);
+    probe_pin("SCL", APP_I2C_SCL_GPIO);
+
     const gpio_config_t cfg = {
         .pin_bit_mask = (1ULL << APP_I2C_SDA_GPIO) | (1ULL << APP_I2C_SCL_GPIO),
         .mode = GPIO_MODE_INPUT_OUTPUT_OD,
