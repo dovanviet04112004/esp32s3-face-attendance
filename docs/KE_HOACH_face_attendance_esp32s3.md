@@ -1671,13 +1671,17 @@ seed ra hai kết quả khác nhau — bảng đối chứng §3.7 mất ý ngh�
 dependencies:
   idf: ">=5.3"
   espressif/esp32-camera: "^2.0"
-  espressif/esp-tflite-micro: "^1.3.7"
+  espressif/esp-tflite-micro: "^1.4.0"
+  espressif/esp-nn: "^1.3.2"
+  espressif/esp_lcd_st7796: "^1.3"
   espressif/esp_lcd_touch_gt911: "^1.1"
   espressif/esp_lvgl_port: "^2.4"
   lvgl/lvgl: "^9.2"
   joltwallet/littlefs: "^1.16"
 ```
 `espressif/esp_lcd_st7796` có trên registry (đã kéo về bản 1.4.0), nên `drv_lcd` gọi nó chứ không tự viết panel driver.
+
+**`esp-nn` khai thẳng dù `esp-tflite-micro` đã kéo nó theo.** Ràng buộc gián tiếp là `>=1.1.1`, mà các bản esp-nn cũ có lỗi trong kernel INT8 — sai số ở đây không làm build fail, nó chỉ làm model trả ra số khác trên board so với trên host, tức là đúng thứ khó lần nhất. Ghim sàn ở bản mới nhất để một lần resolve lại không tụt xuống bản cũ.
 
 ```
 third_party/
