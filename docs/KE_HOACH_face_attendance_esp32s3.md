@@ -555,7 +555,8 @@ Ba ràng buộc đi kèm:
 #### Hộp mặt phải đến từ detector, không từ chú thích của dataset
 
 Dùng chung một hàm cắt là chưa đủ nếu hai bên đưa vào **hai hộp khác nhau**. CelebA-Spoof
-ship sẵn cột `Bbox` do người gán nhãn vẽ, còn kiosk chỉ có hộp YuNet trả về. Đo trên 759 ảnh:
+ship sẵn cột `Bbox` do người gán nhãn vẽ, còn kiosk chỉ có hộp YuNet trả về. Đo hai hộp trên
+cùng 759 ảnh gốc, cùng hệ toạ độ pixel:
 
 | So YuNet với `Bbox` | Trung vị | p90 |
 |---|---|---|
@@ -563,12 +564,23 @@ ship sẵn cột `Bbox` do người gán nhãn vẽ, còn kiosk chỉ có hộp 
 | Xê dịch tâm | **3,0%** cạnh hộp | — |
 | Tỉ lệ ảnh lệch tâm quá 2% | **73,8%** | |
 
-Hộp detector to hơn 5% và lệch tâm 3%. Nghe nhỏ, nhưng model mất **15% số khung** chỉ vì
-xê dịch 2% (mục dưới), nên đây là một độ lệch hệ thống trên **mọi** crop nó từng học.
+Riêng tỉ lệ cạnh đo lại được trên 8.782 bản ghi shard bằng `wide_scale` — với bản ghi bị khung
+hình cắt cụt thì `wide_scale` chính là `min(W,H)/cạnh mặt`, nên thương của hai bản dựng khử
+hết phần còn lại: trung vị **1,029**, p10 0,939, p90 1,124, và **77,4%** số hộp lệch quá 2%.
+
+Hộp detector to hơn vài phần trăm và lệch tâm 3%. Nghe nhỏ, nhưng model mất **15% số khung**
+chỉ vì xê dịch 2% (mục dưới), nên đây là một độ lệch hệ thống trên **mọi** crop nó từng học.
 
 **Chốt: shard dựng bằng hộp của detection student, không dùng cột chú thích.** `xdomain_crop.py`
 đã theo đúng luật này cho NUAA và Axon; tập train chính phải theo cùng. Ảnh nào detector
-không thấy mặt thì bỏ, vì kiosk cũng sẽ không thấy.
+không thấy mặt thì bỏ, vì kiosk cũng sẽ không thấy — đo được 0,28% số ảnh, và tỉ lệ hai lớp
+gần như không đổi (1,884 → 1,877), nên phép bỏ này không kéo theo lệch cân bằng nhãn.
+
+**Hệ quả về thứ tự chạy:** `01_prepare_interim.sh` nhánh antispoof từ đây cần một checkpoint
+detection đã train xong, nên nó không còn chạy được trên một bản clone trắng. Số thứ tự của
+script vẫn là thứ tự chạy cho từng nhánh, nhưng riêng antispoof thì `10_train_teacher_det.sh`
+và `20_kd_det.sh` phải xong trước. Đường dẫn checkpoint khai ở `configs/common/paths.yaml`
+theo §4.9, không gõ thẳng vào script.
 
 #### Model dựa vào mặt nằm đúng chỗ, nên hộp rung là phải dạy
 
@@ -1279,6 +1291,8 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   ├── detection/widerface_shards/{train, val}/  # ★ shard cho student, resize san 160x120
 │   ├── antispoof/celeba_spoof_crops/{train, valid, test}/shard_*.tar
 │   │                                             #   1 record = tight.jpg + wide.jpg + json
+│   │                                             #   ★ hop mat cat bang detection student,
+│   │                                             #     KHONG dung cot Bbox cua dataset (§3)
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │   │   └── record_counts.json                # ★ so ban ghi moi split giu lai, sinh tu dong
 │   │                                         #   lan dau. Dem tay phai doc het 36 GB, va
@@ -1472,6 +1486,8 @@ ml/
 │   │                                      #   Train chet thi tu chay lai tu last.pth cua
 │   │                                      #   chinh no, co tran so lan de khong lap vo han
 │   ├── 00_fetch_raw.sh          ├── 01_prepare_interim.sh   ├── 02_make_splits.sh
+│   │                            #   ★ 01 nhanh antispoof can checkpoint detection
+│   │                            #     da train: cat mat bang student, khong bang Bbox (§3)
 │   ├── 10_train_teacher_det.sh  ├── 11_train_teacher_spoof.sh
 │   ├── 20_kd_det.sh   ├── 21_kd_spoof.sh   ├── 22_kd_recog.sh
 │   ├── 30_quantize.sh ├── 40_export.sh     ├── 41_emit_golden.sh
