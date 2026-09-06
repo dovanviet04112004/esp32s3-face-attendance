@@ -45,6 +45,12 @@ done_already() {
     [[ "${FORCE}" -eq 0 ]] && [[ -e "$1" ]] && [[ -s "$1" || -n "$(ls -A "$1" 2>/dev/null)" ]]
 }
 
+# Reads one dotted key out of the config that owns dataset paths (KEHOACH 4.9).
+paths_get() {
+    "${PY}" -c "import functools,sys,yaml; print(functools.reduce(lambda node, key: node[key], sys.argv[2].split('.'), yaml.safe_load(open(sys.argv[1]))))" \
+        "${ML_ROOT}/configs/common/paths.yaml" "$1"
+}
+
 # A rerun that produces fewer shards would leave the extra ones from the previous
 # run behind, and a loader globbing the directory would read them as data.
 reset_output() {
@@ -81,10 +87,18 @@ prepare_antispoof() {
         skip "antispoof crops already built"
         return
     fi
-    log "antispoof: CelebA-Spoof parquet -> crops 1.0x and 2.7x"
+    local detector
+    detector="${ML_ROOT}/$(paths_get antispoof.detector)"
+    [[ -f "${detector}" ]] || {
+        warn "no detection checkpoint at ${detector#"${ML_ROOT}/"}"
+        warn "antispoof crops are cut by the student, so train detection first (KEHOACH 3)"
+        exit 1
+    }
+    log "antispoof: CelebA-Spoof parquet -> crops 1.0x and 2.7x, faces from the student"
     "${PY}" -m facepipe.data.prepare.celeba_spoof_parquet \
         --root "${RAW}/antispoof/celeba_spoof" \
-        --out "${out}"
+        --out "${out}" \
+        --detector "${detector}"
 }
 
 prepare_recognition() {

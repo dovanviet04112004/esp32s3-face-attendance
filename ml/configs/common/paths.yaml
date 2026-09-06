@@ -22,6 +22,9 @@ detection:
 antispoof:
   celeba_spoof: data/raw/antispoof/celeba_spoof
   crops: data/interim/antispoof/celeba_spoof_crops
+  # The crops above are cut with this checkpoint, so retraining detection means
+  # rebuilding them: a shard set and the student that framed it move together (KEHOACH 3).
+  detector: artifacts/detection/runs/20260831-1616_cc931df_36fbea/ckpt/best.pth
   # Cross-domain evaluation only, never training (KEHOACH 1.2).
   xdomain:
     nuaa: data/raw/antispoof/xdomain/nuaa

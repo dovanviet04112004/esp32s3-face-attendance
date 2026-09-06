@@ -252,8 +252,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     parser.add_argument("--detector", type=Path, default=None, help="a detection checkpoint")
-    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--device", default=None)
     args = parser.parse_args(argv)
+
+    device = args.device
+    if device is None and args.detector is not None:
+        import torch
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
     stats = run(
         args.root,
@@ -263,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
         args.workers,
         args.wide_size,
         args.detector,
-        args.device,
+        device or "cuda",
     )
     print(
         f"{args.out}: {stats['cropped']} face(s) from {stats['shards']} parquet shard(s) "
