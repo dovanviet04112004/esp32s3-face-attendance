@@ -27,6 +27,12 @@ camera_fb_t *drv_camera_grab(void);
  */
 void drv_camera_release(camera_fb_t *frame);
 
+/** Send one frame to the console as base64 JPEG between markers.
+ *  @ctx task | blocking | a host script turns the markers back into a file
+ *  @ret ESP_OK | ESP_ERR_NO_MEM when the encoder cannot fit the frame
+ */
+esp_err_t drv_camera_dump(void);
+
 /** Grab a few frames and log their size, format and rate.
  *  @ctx task | blocking for a second or so
  *  @ret ESP_OK once the run finishes, whatever it measured

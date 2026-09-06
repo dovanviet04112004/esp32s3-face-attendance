@@ -60,6 +60,8 @@ esp_err_t drv_touch_init(void)
         .int_gpio_num = APP_TOUCH_INT_GPIO,
         .flags = {.swap_xy = true, .mirror_x = true, .mirror_y = false},
     };
+    // Leaves INT as an input with its interrupt armed, which select_address
+    // above does not: it hands the pin over as an output.
     APP_RETURN_ON_ERR(esp_lcd_touch_new_i2c_gt911(s_io, &cfg, &s_touch), TAG, "gt911");
     ESP_LOGI(TAG, "gt911 at 0x%02X, %dx%d", APP_TOUCH_I2C_ADDR_LOW, APP_LCD_H_RES, APP_LCD_V_RES);
     return ESP_OK;
@@ -70,8 +72,16 @@ esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count)
     if (points == NULL || count == NULL || max == 0) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (s_touch == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
     uint16_t xs[CONFIG_ESP_LCD_TOUCH_MAX_POINTS];
     uint16_t ys[CONFIG_ESP_LCD_TOUCH_MAX_POINTS];
+    // esp_lcd_touch fills up to the count it is handed, so a caller asking for
+    // more than these arrays hold would write past them.
+    const uint8_t room = max < CONFIG_ESP_LCD_TOUCH_MAX_POINTS
+                             ? max
+                             : (uint8_t)CONFIG_ESP_LCD_TOUCH_MAX_POINTS;
     uint8_t got = 0;
 
     APP_RETURN_ON_ERR(bsp_i2c_lock(0), TAG, "lock");
@@ -79,7 +89,7 @@ esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count)
     bsp_i2c_unlock();
     APP_RETURN_ON_ERR(err, TAG, "read");
 
-    esp_lcd_touch_get_coordinates(s_touch, xs, ys, NULL, &got, max);
+    esp_lcd_touch_get_coordinates(s_touch, xs, ys, NULL, &got, room);
     for (uint8_t i = 0; i < got; ++i) {
         points[i].x = xs[i];
         points[i].y = ys[i];
@@ -96,17 +106,23 @@ esp_err_t drv_touch_selftest(uint8_t seconds)
 #else
     drv_touch_point_t points[SELFTEST_MAX_POINTS];
     uint8_t count = 0;
-    int seen = 0;
+    int reports = 0;
+    int failures = 0;
     ESP_LOGI(TAG, "touch the panel, watching for %u s", seconds);
     for (int tick = 0; tick < seconds * (1000 / SELFTEST_POLL_MS); ++tick) {
-        if (drv_touch_read(points, SELFTEST_MAX_POINTS, &count) == ESP_OK && count) {
+        const esp_err_t err = drv_touch_read(points, SELFTEST_MAX_POINTS, &count);
+        if (err != ESP_OK) {
+            failures++;
+        } else if (count) {
             ESP_LOGI(TAG, "touch at %u,%u", points[0].x, points[0].y);
-            seen++;
+            reports++;
         }
         vTaskDelay(pdMS_TO_TICKS(SELFTEST_POLL_MS));
     }
-    ESP_LOGI(TAG, "selftest saw %d contact report(s)", seen);
-    return ESP_OK;
+    // One poll per SELFTEST_POLL_MS, so a held finger counts many times over:
+    // this is a count of reports, not of separate touches.
+    ESP_LOGI(TAG, "selftest: %d report(s), %d read failure(s)", reports, failures);
+    return failures ? ESP_ERR_INVALID_RESPONSE : ESP_OK;
 #endif
 }
 

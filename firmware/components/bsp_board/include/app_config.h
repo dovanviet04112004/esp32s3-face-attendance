@@ -20,7 +20,7 @@
 #define APP_CAM_PWDN_GPIO (-1)              // not wired
 #define APP_CAM_RESET_GPIO (-1)             // not wired
 // OV5640 accepts 6-27 MHz on XCLK (DS rev 2.51 section 4.2).
-#define APP_CAM_XCLK_HZ 20000000
+#define APP_CAM_XCLK_HZ 27000000
 
 #define APP_LCD_SCK_GPIO 42
 #define APP_LCD_MOSI_GPIO 41
