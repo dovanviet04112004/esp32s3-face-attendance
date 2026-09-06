@@ -38,8 +38,12 @@ def layer_shift(conv: nn.Conv2d, samples: torch.Tensor) -> torch.Tensor:
     return (exact - rounded).mean(dim=(0, 2, 3))
 
 
-def correct(model: nn.Module, feed: Iterable[tuple[torch.Tensor, torch.Tensor]]) -> dict[str, float]:
-    """Adjust every convolution's bias by the shift its own inputs reveal."""
+def correct(model: nn.Module, feed: Iterable[object]) -> dict[str, float]:
+    """Adjust every convolution's bias by the shift its own inputs reveal.
+
+    Each item of feed is the single argument the branch's forward takes, so a
+    two-view student yields a pair and a single-image one yields a tensor.
+    """
     seen: dict[str, torch.Tensor] = {}
     handles = []
 

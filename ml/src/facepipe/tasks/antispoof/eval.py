@@ -185,6 +185,16 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     return cfg, model
 
 
+def export_spec(run: Path):
+    """The module to trace, one example input, and the names of both ends."""
+    cfg, model = load_run(run)
+    model.eval()
+    height, width = cfg.model.input_hw
+    views = (torch.zeros(1, 3, height, width), torch.zeros(1, 3, height, width))
+    return cfg, model, (views,), ["tight", "wide"], ["logits"]
+
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True, help="a run directory under artifacts")

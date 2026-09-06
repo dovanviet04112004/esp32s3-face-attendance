@@ -410,6 +410,38 @@ def load_student(ckpt: Path, params: dict | None = None) -> torch.nn.Module:
     return model
 
 
+class ExportWrapper(torch.nn.Module):
+    """Flatten the head's three lists into the tuple an ONNX graph can carry."""
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        out = self.model(x)
+        return tuple(out.cls) + tuple(out.bbox) + tuple(out.kps)
+
+
+def load_run(run: Path) -> tuple[object, torch.nn.Module]:
+    """Rebuild a run's student from the config it froze."""
+    from facepipe.core.config import load_config
+
+    cfg = load_config(run / "config.resolved.yaml", [])
+    return cfg, load_student(run / "ckpt" / "best.pth", cfg.model.params)
+
+
+def export_spec(run: Path):
+    """The module to trace, one example input, and the names of both ends."""
+    from .student.yunet import STRIDES
+
+    cfg, model = load_run(run)
+    model.eval()
+    height, width = cfg.model.input_hw
+    outputs = [f"{head}_{stride}" for head in ("cls", "bbox", "kps") for stride in STRIDES]
+    return cfg, ExportWrapper(model), (torch.zeros(1, 3, height, width),), ["image"], outputs
+
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt", type=Path, default=None, help="run a checkpoint over the images")

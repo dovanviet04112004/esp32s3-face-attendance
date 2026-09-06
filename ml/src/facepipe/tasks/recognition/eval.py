@@ -161,6 +161,29 @@ def evaluate_all(
     return results
 
 
+def load_run(run: Path) -> tuple[object, torch.nn.Module]:
+    """Rebuild a run's student from the config it froze."""
+    from facepipe.core.config import load_config
+    from facepipe.core.registry import MODELS
+
+    from .student import mobilefacenet  # noqa: F401  registers "mobilefacenet"
+
+    cfg = load_config(run / "config.resolved.yaml", [])
+    model = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
+    payload = torch.load(run / "ckpt" / "best.pth", map_location="cpu", weights_only=False)
+    model.load_state_dict(payload["ema"]["module"] if "ema" in payload else payload["model"])
+    return cfg, model
+
+
+def export_spec(run: Path):
+    """The module to trace, one example input, and the names of both ends."""
+    cfg, model = load_run(run)
+    model.eval()
+    height, width = cfg.model.input_hw
+    return cfg, model, (torch.zeros(1, 3, height, width),), ["face"], ["embedding"]
+
+
+
 def main(argv: list[str] | None = None) -> int:
     from facepipe.core.registry import MODELS
 

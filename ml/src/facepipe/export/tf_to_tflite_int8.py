@@ -9,34 +9,23 @@ import argparse
 import importlib
 from pathlib import Path
 
-import numpy as np
-
-BRANCH_LOADERS = {
-    "minifasnet_v2_se": "facepipe.tasks.antispoof.eval",
-    "cdcnpp": "facepipe.tasks.antispoof.eval",
+# A model name maps to the package owning its graph shape and calibration set.
+BRANCH_PACKAGE = {
+    "minifasnet_v2_se": "facepipe.tasks.antispoof",
+    "cdcnpp": "facepipe.tasks.antispoof",
+    "yunet": "facepipe.tasks.detection",
+    "mobilefacenet": "facepipe.tasks.recognition",
 }
 
 
-def nhwc(batch) -> np.ndarray:
-    """Torch hands crops over as NCHW and every TFLite graph here reads NHWC."""
-    return np.ascontiguousarray(batch.numpy().transpose(0, 2, 3, 1), dtype=np.float32)
-
-
-def calibration_samples(run: Path, split: str, limit: int):
-    """Yield real crop pairs, one batch at a time, for the converter to measure."""
+def calibration_samples(run: Path, split: str | None, limit: int):
+    """Yield what the branch calls a representative sample, for the converter."""
     from facepipe.core.config import load_config
 
     cfg = load_config(run / "config.resolved.yaml", [])
-    module = importlib.import_module(BRANCH_LOADERS[cfg.model.name])
-    loader = module.build_loader(cfg, split)
-
-    taken = 0
-    for tight, wide, _labels, _scale in loader:
-        for i in range(tight.shape[0]):
-            if taken >= limit:
-                return
-            yield {"tight": nhwc(tight[i : i + 1]), "wide": nhwc(wide[i : i + 1])}
-            taken += 1
+    package = BRANCH_PACKAGE[cfg.model.name]
+    module = importlib.import_module(f"{package}.quant")
+    yield from module.calibration_batches(cfg, split, limit)
 
 
 def convert(saved_dir: Path, out: Path, representative=None) -> int:
@@ -67,18 +56,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--samples", type=int, default=300)
     args = parser.parse_args(argv)
 
-    representative = None
-    if args.run is not None:
-        from facepipe.core.config import load_config
+    def representative():
+        yield from calibration_samples(args.run, args.split, args.samples)
 
-        cfg = load_config(args.run / "config.resolved.yaml", [])
-        split = args.split or cfg.data.params["val_split"]
+    feed = representative if args.run is not None else None
 
-        def representative():  # noqa: F811  the converter wants a zero-arg callable
-            yield from calibration_samples(args.run, split, args.samples)
-
-    size = convert(args.saved, args.out, representative)
-    rung = "Q1 int8" if representative is not None else "Q0 float"
+    size = convert(args.saved, args.out, feed)
+    rung = "Q1 int8" if feed is not None else "Q0 float"
     print(f"{rung}  {args.out.name}  {size / 1024.0:.1f} KB")
     return 0
 

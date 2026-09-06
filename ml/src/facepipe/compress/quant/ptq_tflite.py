@@ -20,8 +20,8 @@ def prepared(run: Path, do_fold: bool, do_cle: bool, do_bias: bool, samples: int
     from facepipe.core.config import load_config
 
     cfg = load_config(run / "config.resolved.yaml", [])
-    module = importlib.import_module(to_onnx.BRANCH_LOADERS[cfg.model.name])
-    _, model = module.load_run(run)
+    package = tf_to_tflite_int8.BRANCH_PACKAGE[cfg.model.name]
+    _, model = importlib.import_module(f"{package}.eval").load_run(run)
     model.eval()
 
     report: dict[str, object] = {}
@@ -32,20 +32,12 @@ def prepared(run: Path, do_fold: bool, do_cle: bool, do_bias: bool, samples: int
         report["equalised"] = len(moved)
         report["widest_scale"] = round(max(moved.values()), 3) if moved else 1.0
     if do_bias:
-        feed = crop_pairs(run, cfg, samples)
+        quant = importlib.import_module(f"{package}.quant")
+        feed = quant.torch_batches(cfg, None, samples)
         shifts = bias_correction.correct(model, feed)
         report["biased"] = len(shifts)
         report["largest_shift"] = round(max(shifts.values()), 6) if shifts else 0.0
     return cfg, model, report
-
-
-def crop_pairs(run: Path, cfg, samples: int):
-    """Batches of real crops, shaped the way the student's forward reads them."""
-    module = importlib.import_module(to_onnx.BRANCH_LOADERS[cfg.model.name])
-    loader = module.build_loader(cfg, cfg.data.params["val_split"])
-    for tight, wide, _labels, _scale in loader:
-        yield (tight[:samples], wide[:samples])
-        return
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,23 +59,25 @@ def main(argv: list[str] | None = None) -> int:
 
     args.work.mkdir(parents=True, exist_ok=True)
     onnx_path = args.work / "prepared.onnx"
-    height, width = cfg.model.input_hw
-    views = to_onnx.two_view_inputs(height, width)
+    package = tf_to_tflite_int8.BRANCH_PACKAGE[cfg.model.name]
+    # The shape comes from the branch, the weights from the passes above: the
+    # spec's own model is the untouched one and is thrown away here.
+    _, _spec_model, example, input_names, output_names = importlib.import_module(
+        f"{package}.eval"
+    ).export_spec(args.run)
     torch.onnx.export(
         model,
-        (views,),
+        example,
         str(onnx_path),
         opset_version=to_onnx.OPSET,
-        input_names=["tight", "wide"],
-        output_names=["logits"],
+        input_names=input_names,
+        output_names=output_names,
         dynamo=False,
     )
     saved = onnx_to_tf.convert(onnx_path, args.work / "saved")
 
     def representative():
-        yield from tf_to_tflite_int8.calibration_samples(
-            args.run, cfg.data.params["val_split"], args.samples
-        )
+        yield from tf_to_tflite_int8.calibration_samples(args.run, None, args.samples)
 
     size = tf_to_tflite_int8.convert(saved, args.out, representative)
     print(f"Q1  {args.out.name}  {size / 1024.0:.1f} KB")
