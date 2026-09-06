@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS app_main.c
     INCLUDE_DIRS "."
-    REQUIRES common bsp_board drv_ioexp drv_lcd drv_touch
+    REQUIRES common bsp_board drv_camera drv_ioexp drv_lcd drv_touch
 )

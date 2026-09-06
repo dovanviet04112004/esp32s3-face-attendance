@@ -1,9 +1,10 @@
 #include "bsp_board.h"
+#include "drv_camera.h"
 #include "drv_ioexp.h"
 #include "drv_lcd.h"
 #include "drv_touch.h"
 
-#define TOUCH_WATCH_SECONDS 10
+#define TOUCH_WATCH_SECONDS 5
 
 void app_main(void)
 {
@@ -15,4 +16,6 @@ void app_main(void)
     bsp_i2c_scan();
     ESP_ERROR_CHECK(drv_touch_init());
     ESP_ERROR_CHECK(drv_touch_selftest(TOUCH_WATCH_SECONDS));
+    ESP_ERROR_CHECK(drv_camera_init());
+    ESP_ERROR_CHECK(drv_camera_selftest());
 }
