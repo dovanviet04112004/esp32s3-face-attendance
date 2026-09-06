@@ -53,7 +53,7 @@ esp_err_t bsp_board_init(void)
     APP_RETURN_ON_ERR(spi_bus_up(), TAG, "spi bus");
     APP_RETURN_ON_ERR(i2c_bus_up(), TAG, "i2c bus");
     s_ready = true;
-    ESP_LOGI(TAG, "spi%d and i2c0 up", LCD_SPI_HOST);
+    ESP_LOGI(TAG, "spi2 and i2c0 up");
     return ESP_OK;
 }
 
