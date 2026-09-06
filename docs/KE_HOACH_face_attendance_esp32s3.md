@@ -2467,7 +2467,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 
 **Core 1 bão hoà, đừng trông vào chỗ trống của nó.** Camera ra một frame mỗi 70,5 ms còn detect tốn 209 ms, nên AI xử lý được 1 trong 3 frame và không có lúc nào rảnh. Ý định cũ "chuyển `mqtt_task` + `sync_task` sang core 1 vì chúng chỉ chạy khi AI nghỉ" vì thế không dùng được: AI không nghỉ. Core 0 quá tải thì phải giảm việc của core 0 hoặc giảm tần suất chạy detect, không phải đẩy sang core 1.
 
-> 🔬 **Hai core dùng chung một bus PSRAM và một cache dữ liệu.** Core 0 đẩy frame camera và heap LVGL qua PSRAM, core 1 quét 823 KB `arena_big` cũng qua PSRAM. Đo tách head/tail cho thấy PSRAM tốn 4–10% khi bus rảnh; lúc preview chạy song song thì chưa đo. Cách đo: bật preview rồi chạy AI, so với AI chạy một mình.
+**Preview chạy song song lấy mất 16,6% của AI.** Core 0 đẩy frame camera và heap LVGL qua PSRAM (~8,7 MB/s), core 1 quét `arena_big` cũng qua PSRAM. Đo với tải đúng bằng lưu lượng đó: một khuôn mặt đi từ 1.758 ms lên **2.050 ms**, và cả ba nhánh chậm đều nhau 16,0–16,7%. **Kể cả detect, dù arena của nó nằm ở SRAM nội** — trọng số vẫn đọc từ flash qua mmap, mà flash và PSRAM dùng chung MSPI lẫn cache dữ liệu. Nên đặt arena ở SRAM **không** miễn nhiễm với tranh chấp bus; muốn giảm khoản 16,6% này thì phải giảm lưu lượng của core 0, không phải chuyển arena.
 
 ### 5.2 Bảng task
 

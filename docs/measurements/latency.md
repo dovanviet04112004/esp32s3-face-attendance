@@ -27,6 +27,28 @@ detect giảm nhờ được ở riêng SRAM nội, không đổi kiến trúc. 
 Sai lệch giữa 20 lần chạy dưới 0,05% ở cả ba nhánh, nên đây là số ổn định chứ
 không phải một lần bắt được.
 
+### Khi preview chạy song song
+
+Đo bằng một task ở core 0 chuyển đúng lưu lượng PSRAM mà camera + LCD tạo ra:
+một khung RGB565 480×320 mỗi 70 ms. Task đếm 4.285 KB/s **theo một chiều**,
+tức bus gánh cả đọc lẫn ghi ≈ 8,4 MB/s, sát 8,72 MB/s mà preview thật sự tạo.
+
+| Nhánh | AI một mình | Có tải preview | Chậm hơn |
+|---|---|---|---|
+| detect | 209,1 ms | **242,6 ms** | +16,0% |
+| spoof | 469,5 ms | **547,9 ms** | +16,7% |
+| recog | 1.079,6 ms | **1.260,0 ms** | +16,7% |
+| **Tổng** | **1.758,3 ms** | **2.050,4 ms** | **+16,6%** |
+
+**detect cũng chậm 16% dù arena của nó ở SRAM nội.** Trọng số vẫn đọc từ flash
+qua mmap, mà flash và PSRAM trên ESP32-S3 dùng chung MSPI và chung cache dữ
+liệu. Cơ chế đó là suy luận; con số 16% là đo. Hệ quả thực dụng: **đặt arena ở
+SRAM không miễn nhiễm với tranh chấp bus**, nên mức lãi 1,9% của việc tách
+head/tail càng không đáng so với 240 KB nó lấy.
+
+Ba nhánh chậm đi gần như bằng nhau (16,0 / 16,7 / 16,7%), tức đây là thuế đều
+trên mọi truy cập bộ nhớ ngoài chứ không phải một nhánh nào bị chặn riêng.
+
 ### Op còn lại ngoài ESP-NN
 
 | Nhánh | Gốc | Sau |

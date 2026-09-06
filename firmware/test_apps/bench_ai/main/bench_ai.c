@@ -1,13 +1,24 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "ai_engine.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sys_storage.h"
 #include "unity.h"
 
 #define EMBED_MAX 512
 #define RUNS 20
+
+// One RGB565 frame at the sensor's own size, and the rate cam_task delivers
+// them, so the load below moves what the preview really moves (KEHOACH 5.1).
+#define FRAME_BYTES (480 * 320 * 2)
+#define FRAME_PERIOD_MS 70
+#define LOAD_TASK_CORE 0
+#define LOAD_TASK_PRIORITY 7
+#define LOAD_TASK_STACK_BYTES 3072
 
 // Camera frames live in psram on the real device, and in bss these would take
 // the internal ram an arena wants. Sizes come from the graphs themselves.
@@ -26,6 +37,26 @@ static int8_t *psram(size_t len, int seed)
         buffer[i] = (int8_t)(((i * 31) + (seed * 97)) % 255 - 128);
     }
     return buffer;
+}
+
+static volatile bool s_load_running;
+static volatile uint32_t s_load_frames;
+
+static void psram_load_task(void *arg)
+{
+    (void)arg;
+    uint8_t *source = heap_caps_malloc(FRAME_BYTES, MALLOC_CAP_SPIRAM);
+    uint8_t *sink = heap_caps_malloc(FRAME_BYTES, MALLOC_CAP_SPIRAM);
+    while (s_load_running) {
+        if (source != NULL && sink != NULL) {
+            memcpy(sink, source, FRAME_BYTES);
+            s_load_frames++;
+        }
+        vTaskDelay(pdMS_TO_TICKS(FRAME_PERIOD_MS));
+    }
+    heap_caps_free(source);
+    heap_caps_free(sink);
+    vTaskDelete(NULL);
 }
 
 static esp_err_t run_detect(void)
@@ -90,6 +121,27 @@ TEST_CASE("one pass of all three, the number the budget is measured against", "[
     const int64_t spoof = time_runs(run_spoof, "spoof");
     const int64_t recog = time_runs(run_recog, "recog");
     printf("one face end to end: %lld us\n", (long long)(detect + spoof + recog));
+}
+
+TEST_CASE("the same three under the psram traffic a preview makes", "[bench_ai]")
+{
+    s_load_running = true;
+    s_load_frames = 0;
+    const int64_t started = esp_timer_get_time();
+    TEST_ASSERT_EQUAL(pdPASS, xTaskCreatePinnedToCore(psram_load_task, "load",
+                                                      LOAD_TASK_STACK_BYTES, NULL,
+                                                      LOAD_TASK_PRIORITY, NULL, LOAD_TASK_CORE));
+    const int64_t detect = time_runs(run_detect, "detect");
+    const int64_t spoof = time_runs(run_spoof, "spoof");
+    const int64_t recog = time_runs(run_recog, "recog");
+    const int64_t elapsed = esp_timer_get_time() - started;
+    s_load_running = false;
+    vTaskDelay(pdMS_TO_TICKS(2 * FRAME_PERIOD_MS));
+    printf("under load: one face end to end %lld us\n", (long long)(detect + spoof + recog));
+    const uint32_t moved_kb = (uint32_t)(((uint64_t)s_load_frames * FRAME_BYTES) / 1024U);
+    printf("load moved %u frames, %u KB in %lld ms, %u KB/s of psram\n",
+           (unsigned)s_load_frames, (unsigned)moved_kb, (long long)(elapsed / 1000),
+           (unsigned)((uint64_t)moved_kb * 1000000U / (uint64_t)elapsed));
 }
 
 void app_main(void)
