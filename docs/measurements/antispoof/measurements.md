@@ -601,7 +601,7 @@ là cùng một kết luận §10 rút ra trên 48 khung camera, giờ đo lại
 Hạ về 0,90 cắt tỉ lệ từ chối nhầm đi 4,8 lần trên `0140`, đổi lấy APCER tăng từ 0,098 lên
 0,169 **trên CelebA-Spoof**. Con số APCER đó không mang sang thiết bị được: §11.3 và §12.2
 đo trên khung camera thật cho cách biệt 108–136 lần, tức trên miền thiết bị hai lớp nằm xa
-nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§17).
+nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§18).
 
 `0140` tốt hơn ở **đuôi dưới của lớp thật** — p5 từ 0,8513 lên 0,9739 — mà đuôi dưới chính
 là chỗ ngưỡng cắt. Ở đỉnh thì hai bên như nhau (cả hai trung vị 1,0000).
@@ -1063,7 +1063,87 @@ A0 dùng được: 5/6 mốc đạt, mốc trượt duy nhất nằm trên bộ 
 
 ---
 
-## 17. Còn nợ
+## 17. Sinh lại shard bằng hộp detector — kiểm nhận
+
+Shard cũ cắt theo cột `Bbox` của CelebA-Spoof, còn kiosk chỉ có hộp YuNet. §15 và §16 đã
+vá phía augment; mục này vá phía dữ liệu và nghiệm thu trước khi tiêu 6,5 giờ GPU.
+
+### 17.1 Số lượng — mọi con số tự khớp
+
+`523.370` mặt từ 167 shard parquet, `0` ảnh không giải mã được, `2.494` ảnh detector không
+thấy mặt.
+
+| Split | Hộp chú thích | Hộp detector | Mất | Tỉ lệ |
+|---|---|---|---|---|
+| train | 419.935 | 417.816 | 2.119 | 0,505% |
+| valid | 46.738 | 46.482 | 256 | 0,548% |
+| test | 59.191 | 59.072 | 119 | 0,201% |
+| **Tổng** | **525.864** | **523.370** | **2.494** | **0,474%** |
+
+2.494 khớp đúng con số builder tự báo, nên không có bản ghi nào rơi vì lý do khác.
+
+### 17.2 Hai hộp lệch nhau bao nhiêu
+
+Đo trên 8.782 bản ghi ghép cặp theo tên, chỉ lấy bản ghi bị khung hình cắt cụt ở **cả hai**
+bản dựng — ở đó `wide_scale` là `min(W,H)/cạnh mặt` với cùng một ảnh, nên thương của hai
+bên khử sạch phần còn lại:
+
+| | p10 | p50 | p90 |
+|---|---|---|---|
+| Cạnh hộp detector / cạnh hộp chú thích | 0,939 | **1,029** | 1,124 |
+
+**77,4%** số hộp lệch quá 2%. Đây là độ lệch hệ thống nằm trên gần ba phần tư số crop model
+từng học, trong khi §16 đã đo rằng xê dịch 2% làm mất 15% số khung mặt thật.
+
+`face_in_wide` **không** dùng được cho phép đo này: nó chuẩn hoá theo cạnh crop, mà cạnh
+crop lại tỉ lệ với chính cạnh mặt, nên tỉ lệ đo bằng nó ra 1,011 — gần như mù với thứ cần đo.
+
+| `wide_scale` | Hộp chú thích | Hộp detector |
+|---|---|---|
+| p50 | 2,034 | 1,943 |
+| Tỉ lệ chạm trần 2,7× | 25,3% | 22,2% |
+
+Hộp to hơn thì trần hình học chặn sớm hơn, đúng như §13 dự đoán.
+
+### 17.3 Bỏ ảnh không thấy mặt có làm lệch cân bằng nhãn không
+
+Không. Đây là rủi ro phải loại trước khi tin `live_weight`, vì detector trượt lệch một lớp
+sẽ âm thầm làm sai trọng số mất mát.
+
+| Tỉ lệ spoof/live | Hộp chú thích | Hộp detector |
+|---|---|---|
+| train | 1,884 | **1,877** |
+| test | 2,628 | 2,598 |
+
+`live_weight = 1,97` giữ nguyên. Nó vốn đã lệch ~5% so với 1,88 từ trước; sửa lúc này sẽ
+thêm một điều kiện thay đổi và làm bảng đối chứng với `0057` mất nghĩa (KẾ HOẠCH §4.2).
+
+### 17.4 Cổng crop-scale bắn đúng tỉ lệ, và mù nhãn
+
+Kiểm lại trên shard mới, 12.000 mẫu mỗi chế độ. Tỉ lệ bản ghi rơi vào `[0,7; 1,2]`:
+
+| | Tự nhiên | Dự đoán ở cổng 0,15 | Đo được |
+|---|---|---|---|
+| live | 0,0239 | 0,1703 | **0,1669** |
+| spoof | 0,1127 | 0,2458 | **0,2446** |
+
+Sai số 0,002 trên cả hai lớp. Cổng rút từ **một** phân phối cho cả hai, nên nó không nhân
+thêm phần chênh sẵn có của nguồn — dữ liệu nguồn vốn đã cho spoof khả năng nằm dưới 1,2×
+cao gấp 4,7 lần, và cổng kéo tỉ số đó xuống 1,47.
+
+### 17.5 Tốc độ dựng
+
+Bản đầu chạy **22 ảnh/giây** trong khi detector một mình đạt 101. Nguyên nhân đo được: giải
+mã PNG 9,8 ms và forward 9,9 ms **cùng chạy nối tiếp trên tiến trình chính**, 8 worker mã
+hoá ngồi không. Tách bước letterbox cho pool và gộp forward theo lô 256 đưa lên **178 bản
+ghi/giây** khi chạy dài — toàn bộ 523 nghìn mặt hết 45 phút thay vì 6,5 giờ.
+
+Con số 69 ảnh/giây benchmark trên 2.000 dòng thấp hơn thực tế vì gánh cả thời gian nạp
+model và khởi động CUDA.
+
+---
+
+## 18. Còn nợ
 
 - **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
   đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
@@ -1079,6 +1159,9 @@ A0 dùng được: 5/6 mốc đạt, mốc trượt duy nhất nằm trên bộ 
   ngưỡng khớp trên chính bộ đó, và bộ đó có 51 khung.
 - **A0 chưa có bản đối chứng tắt augment nén.** Đã đo rằng nó không phá hỏng gì, nhưng
   chưa đo rằng nó giúp. Muốn chắc thì cần một run A0 với `recompress_probability: 0`.
+- **Run `20260906-0944` gộp ba thay đổi** so với `0057`: hộp detector (§17), augment dịch
+  chuyển, và phơi sáng đối xứng. Kết quả — tốt lên hay xấu đi — đều không quy được cho
+  thay đổi nào. Tách sạch tốn ba run nữa, khoảng 19,5 giờ; chỉ làm nếu con số bắt buộc.
 - UniqueData live + replay: hai bộ khác miền còn lại chưa chấm, cả hai là video nên cần
   giải khung hình như Axon.
 - `export_soft_target.py`, `postproc/preproc.py`, `postproc/emit_golden.py`, `quant.py`,
