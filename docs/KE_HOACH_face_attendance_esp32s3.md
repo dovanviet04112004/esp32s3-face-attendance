@@ -1064,6 +1064,8 @@ Lý do tách chứ không gộp cả 3: detect chạy **mỗi frame**, anti-spoo
 
 Ba con số `tail` và ba con số `head` phải đo thật ở E8, không suy ra từ `arena_used_bytes()` tổng.
 
+**Tách `head` và `tail` khi cả arena không vừa SRAM nội.** `MicroAllocator::Create` có bản nhận **hai** buffer rời: một cho vùng persistent (`tail`) và một cho vùng non-persistent (`head`). Vì `head` là chỗ activation nằm — thứ mỗi lần `Invoke()` quét đi quét lại — còn `tail` chỉ là metadata đọc một lần mỗi node, nên khi cả `arena_fast` không vừa SRAM nội thì đặt **`head` ở SRAM nội, `tail` ở PSRAM** vẫn giữ được phần nóng ở bộ nhớ nhanh. Khai bằng `AI_ARENA_FAST_HEAD_KB`: bằng 0 thì một buffer như cũ, lớn hơn 0 thì tách. Mức thu được phải đo, không suy ra — số nằm ở `docs/measurements/latency.md`.
+
 **`ai_engine_init()` phải chạy trước mọi driver.** Ràng buộc thật của `arena_fast` không phải tổng RAM nội còn trống mà là **một dải liền mạch**: `heap_caps_aligned_alloc` không ghép được nhiều mảnh rời. Đo trên board (`docs/measurements/arena.md`): xin sau `drv_camera_init()` thì còn 192 KB trống nhưng mảnh to nhất chỉ 143 KB, arena 175 KB **lùi xuống PSRAM**; xin ngay sau `sys_storage_init()` thì nằm gọn SRAM nội, và LCD, touch, camera vẫn init đủ với 118 KB còn lại. Arena là chỗ duy nhất trong hệ xin một dải lớn như vậy, nên nó xin đầu tiên.
 
 ### Pipeline train
