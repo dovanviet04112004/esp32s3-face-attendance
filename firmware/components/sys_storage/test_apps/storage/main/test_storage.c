@@ -162,18 +162,24 @@ TEST_CASE("the scratch directory is emptied at boot", "[sys_storage]")
     unlink(SCRATCH_PATH);
 }
 
-TEST_CASE("an unpacked models partition is reported, not trusted", "[sys_storage]")
+TEST_CASE("a packed models partition reads back, an unpacked one is refused", "[sys_storage]")
 {
-    // Nothing has written models.bin yet, so the header cannot pass its crc,
-    // and returning a pointer into that would hand ai_engine noise.
     const storage_models_header_t *header = NULL;
     const esp_err_t err = sys_storage_models_open(&header);
-    TEST_ASSERT_TRUE(err == ESP_ERR_INVALID_CRC || err == ESP_ERR_NOT_FOUND || err == ESP_OK);
+    const void *data = NULL;
+    size_t size = 0;
     if (err != ESP_OK) {
-        const void *data = NULL;
-        size_t size = 0;
+        TEST_ASSERT_TRUE(err == ESP_ERR_INVALID_CRC || err == ESP_ERR_NOT_FOUND);
         TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, sys_storage_model_find("spoof", &data, &size));
+        TEST_IGNORE_MESSAGE("models_0 carries no image, run ml/scripts/50_pack_and_flash.sh");
     }
+    TEST_ASSERT_EQUAL_UINT32(STORAGE_MODELS_VER, header->format_ver);
+    TEST_ASSERT_TRUE(header->count >= 1 && header->count <= STORAGE_MODEL_COUNT);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_model_find("spoof", &data, &size));
+    TEST_ASSERT_GREATER_THAN_UINT(0, size);
+    // A flatbuffer carries its identifier at byte 4, so the packer's offset
+    // arithmetic fails here rather than deep inside the interpreter.
+    TEST_ASSERT_EQUAL_MEMORY("TFL3", (const uint8_t *)data + 4, 4);
 }
 
 void app_main(void)
