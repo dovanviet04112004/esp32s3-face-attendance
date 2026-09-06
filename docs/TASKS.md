@@ -185,7 +185,7 @@ Chạy song song với E4–E6. Không phụ thuộc model.
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | E8-T1 | `ai_engine/src/core/` — `TfliteModelBase`, `ArenaAllocator`, `model_store` mmap | Nạp được 1 model từ partition | E7-T10 |
-| E8-T2 | `scripts/flash_models.sh` — gộp 3 tflite → `models.bin` → ghi `models_0` | Verify sha256 khớp `models.lock.json` | E8-T1, E4-T11, E5-T11, E6-T10 |
+| E8-T2 | `export/{pack_models_partition,update_lock}.py` + `scripts/50_pack_and_flash.sh` — gộp tflite → `models.bin` → ghi `models_0` | Verify sha256 khớp `models.lock.json`, board đọc được header | E8-T1, E4-T11, E5-T11, E6-T10 |
 | E8-T3 | `src/recognition/` — model + ops + align + l2norm | MobileFaceNet INT8 chạy trên board | E8-T2 |
 | E8-T4 | `src/detection/` — model + ops + decode + nms | YuNet INT8 chạy trên board | E8-T2 |
 | E8-T5 | `src/antispoof/` — model + ops + preproc | MiniFASNet INT8 chạy trên board | E8-T2 |

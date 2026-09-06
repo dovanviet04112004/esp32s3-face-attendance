@@ -2504,7 +2504,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 offset 0x0000  header 256 B
    +0x00  magic       'MDLS'            (4B)
    +0x04  format_ver  u32               (4B)
-   +0x08  count       u32  = 3          (4B)
+   +0x08  count       u32  ≤ 3          (4B)
    +0x0C  built_at    u32  epoch giây   (4B)
    +0x10  entry[0..2] mỗi entry 64 B:
              name[16]      "detect" | "spoof" | "recog"
@@ -2512,7 +2512,7 @@ offset 0x0000  header 256 B
              size    u32
              sha256  [32]
              in_h u16, in_w u16
-             arena_hint u32              # số byte arena đo được ở host, để cấp phát sớm
+             arena_hint u32              # arena đã đo (byte); 0 = chưa đo, xem E8-T7
    +0xD0  reserved                       (44B)
    +0xFC  crc32 của 0x00..0xFB           (4B)
 
@@ -2521,7 +2521,9 @@ offset ...     spoof.tflite   (căn 16 B — ESP-NN cần)
 offset ...     recog.tflite   (căn 16 B)
 ```
 
-`sys_storage/model_partition.c` mmap toàn bộ partition một lần, đọc header, trả `base + entry[i].offset` cho `ai_engine`. **Verify sha256 chỉ chạy ngay sau OTA**, không chạy mỗi lần boot — băm 1.7 MB tốn ~200 ms mỗi lần khởi động mà không đổi lại được gì.
+`sys_storage_models_open()` mmap toàn bộ partition một lần và kiểm crc header; `sys_storage_model_find()` tra theo `name` rồi trả `base + entry[i].offset` cho `ai_engine`. Tra theo tên chứ không theo vị trí, nên `count` nhỏ hơn 3 vẫn hợp lệ: khi một nhánh chưa có model, ảnh chỉ chứa những nhánh đã có và các entry còn lại để 0. **Verify sha256 chỉ chạy ngay sau OTA**, không chạy mỗi lần boot — băm 1.7 MB tốn ~200 ms mỗi lần khởi động mà không đổi lại được gì.
+
+Ảnh do `ml/src/facepipe/export/pack_models_partition.py` gộp: nó đọc `contracts/models.lock.json` để biết nhánh nào đang deploy, đối chiếu sha256 và `meta.json` của từng nhánh, rồi ghi header + ba khối `.tflite`. `ml/scripts/50_pack_and_flash.sh` gọi nó và ghi kết quả xuống `models_0` bằng `parttool.py`.
 
 **A/B model**: `nvs:model/active_slot` quyết định dùng partition nào. OTA ghi vào slot *không* active → verify sha256 → đổi `active_slot` → reboot. Nếu boot sau đó lỗi (`ai_engine_init` fail) thì `app_main` trả `active_slot` về giá trị cũ và reboot lại. Rollback model độc lập với rollback firmware.
 
