@@ -601,7 +601,7 @@ là cùng một kết luận §10 rút ra trên 48 khung camera, giờ đo lại
 Hạ về 0,90 cắt tỉ lệ từ chối nhầm đi 4,8 lần trên `0140`, đổi lấy APCER tăng từ 0,098 lên
 0,169 **trên CelebA-Spoof**. Con số APCER đó không mang sang thiết bị được: §11.3 và §12.2
 đo trên khung camera thật cho cách biệt 108–136 lần, tức trên miền thiết bị hai lớp nằm xa
-nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§18).
+nhau hơn hẳn so với trên bộ mirror này. Ngưỡng phải đo trên miền thiết bị (§19).
 
 `0140` tốt hơn ở **đuôi dưới của lớp thật** — p5 từ 0,8513 lên 0,9739 — mà đuôi dưới chính
 là chỗ ngưỡng cắt. Ở đỉnh thì hai bên như nhau (cả hai trung vị 1,0000).
@@ -1143,7 +1143,61 @@ model và khởi động CUDA.
 
 ---
 
-## 18. Còn nợ
+## 18. Hộp lệch 5% làm sập điểm — viền đen thì không
+
+Trên bộ 111 khung, toàn bộ 18 khung live trượt của `0140` nằm gọn trong một nhóm:
+
+| Nhóm | Mặt (px) | Chỗ còn cho context | Qua @0,90 |
+|---|---|---|---|
+| `live_rat_xa` | 163 | 3,11× | **20/20** |
+| `live_xa` | 216 | 2,35× | **2/20** |
+
+Mặt `live_xa` **to hơn** mà lại trượt, nên không phải chuyện khoảng cách.
+
+### 18.1 Phép thử tách một biến
+
+Mỗi khung chạy qua đúng một xử lý, giữ nguyên mọi thứ còn lại. `0140`, 20 khung mỗi nhóm:
+
+| Xử lý | `live_rat_xa` | `live_xa` |
+|---|---|---|
+| Nguyên khung (còn viền đen) | 0,999 · **100%** qua | 0,756 · 10% qua |
+| Bỏ viền đen, không làm gì thêm | 0,523 · **0%** qua | 0,899 · 50% qua |
+
+Bỏ viền đen **phá sập** nhóm đang qua sạch, nhưng lại **cứu** nhóm đang trượt. Hai chiều
+ngược nhau nên viền đen không thể là biến giải thích.
+
+### 18.2 Cái thật sự đổi là cái hộp
+
+Đo trên 8 khung `live_rat_xa`, so hộp trước và sau khi bỏ viền:
+
+| | Trung vị |
+|---|---|
+| Điểm đen trong crop wide, **cả hai bên** | **0,0000** |
+| Cạnh hộp sau / trước | **0,950** |
+| Tâm hộp xê dịch, theo cạnh mặt | **0,028** |
+| Điểm | 0,999 → **0,523** |
+
+Crop **không chứa một điểm đen nào** ở cả hai phía của phép so. Thứ duy nhất đổi là hộp:
+nhỏ đi 5%, tâm lệch 2,8%. Bỏ viền làm đổi tỉ lệ khung 16:9 thành ~5:7, detector letterbox
+khác đi, và hộp nó trả về lệch đi chừng đó.
+
+**Đây là bằng chứng nhân quả sạch nhất cho §17 và cho augment dịch chuyển**: model sập vì
+hộp rung vài phần trăm, đúng lượng mà §17.2 đo được giữa hộp chú thích và hộp detector
+(trung vị 1,029, 77,4% lệch quá 2%).
+
+Nhóm `live_xa` thì crop wide có **23,2%** điểm đen và ngồi ở 0,756, trong khi nhóm không
+đen ngồi ở 0,999 — viền đen vẫn có hại, chỉ là hại ít hơn hẳn so với hộp lệch.
+
+### 18.3 Hệ quả cho `cam_bridge`
+
+Bản cắt viền trong `cam_bridge.py` bỏ được 23,2% điểm đen kia, nhưng đồng thời đổi tỉ lệ
+khung và làm lệch **mọi** hộp chừng 5% — đúng lượng vừa làm sập 0,999 → 0,523. Nó là một
+đánh đổi, không phải một bản vá thuần tuý, và chỉ có lợi khi model đã chịu được hộp rung.
+Phải đo lại sau khi có model train bằng hộp detector; chưa chốt.
+
+---
+
+## 19. Còn nợ
 
 - **Tập tự thu bằng OV5640** (KẾ HOẠCH §1.2, ≥500 ảnh mỗi loại). Phần cứng đã sẵn sàng và
   đường lấy ảnh đã thông; chỉ còn khâu ngồi thu. Đây là thứ chặn ba câu hỏi cùng lúc: giả
