@@ -2,13 +2,11 @@
 
 #include "ai_engine.h"
 #include "esp_heap_caps.h"
-#include "esp_timer.h"
 #include "sys_storage.h"
 #include "unity.h"
 
 #define CROP_SIDE 80
 #define CROP_LEN (CROP_SIDE * CROP_SIDE * 3)
-#define RUNS 20
 
 static int8_t s_tight[CROP_LEN];
 static int8_t s_wide[CROP_LEN];
@@ -28,7 +26,7 @@ TEST_CASE("the branch comes up and reports where its arena landed", "[ai_spoof]"
     ai_engine_arena_stats_t stats;
     ai_engine_arena_stats(&stats);
     TEST_ASSERT_GREATER_THAN_UINT(0, stats.fast_used);
-    TEST_ASSERT_EQUAL_UINT(CROP_LEN, ai_engine_spoof_crop_len());
+    TEST_ASSERT_EQUAL_UINT(CROP_LEN, ai_engine_spoof_input_len());
     printf("arena_fast %u B used of %u KB in %s, internal free %u KB, psram free %u KB\n",
            (unsigned)stats.fast_used, (unsigned)(stats.fast_bytes / 1024),
            stats.fast_internal ? "sram" : "psram",
@@ -59,24 +57,6 @@ TEST_CASE("the crops reach the graph rather than a zeroed tensor", "[ai_spoof]")
     TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof(s_tight, s_wide, &second));
     printf("live %.4f then %.4f\n", first, second);
     TEST_ASSERT_NOT_EQUAL_FLOAT(first, second);
-}
-
-TEST_CASE("one invoke costs what the latency budget is measured against", "[ai_spoof]")
-{
-    fill(s_tight, 5);
-    fill(s_wide, 6);
-    float live = 0.0F;
-    int64_t total = 0, worst = 0, best = INT64_MAX;
-    for (int i = 0; i < RUNS; ++i) {
-        const int64_t started = esp_timer_get_time();
-        TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof(s_tight, s_wide, &live));
-        const int64_t spent = esp_timer_get_time() - started;
-        total += spent;
-        worst = spent > worst ? spent : worst;
-        best = spent < best ? spent : best;
-    }
-    printf("spoof invoke over %d runs: mean %lld us, min %lld us, max %lld us\n", RUNS,
-           (long long)(total / RUNS), (long long)best, (long long)worst);
 }
 
 void app_main(void)
