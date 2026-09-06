@@ -141,13 +141,15 @@ def load_detector(ckpt: Path, device: str):
     return model, priors
 
 
-def best_face(model, priors, payload: bytes, device: str) -> np.ndarray | None:
-    """The highest scoring face in one image, in that image's own pixels."""
-    import torch
+def detector_input(payload: bytes):
+    """One image letterboxed to the detector's size, with the mapping back.
+
+    Split out from the forward pass so a caller can decode many images across a
+    pool while the model still sees them as one batch.
+    """
     from PIL import Image
 
     from facepipe.tasks.detection.data import letterbox_params
-    from facepipe.tasks.detection.eval import decode_batch, to_original
 
     with Image.open(io.BytesIO(payload)) as handle:
         image = handle.convert("RGB")
@@ -155,15 +157,32 @@ def best_face(model, priors, payload: bytes, device: str) -> np.ndarray | None:
         scale, pad_x, pad_y = letterbox_params((height, width), DETECT_HW)
         canvas = Image.new("RGB", (DETECT_HW[1], DETECT_HW[0]))
         canvas.paste(image.resize((round(width * scale), round(height * scale))), (pad_x, pad_y))
+    return np.asarray(canvas, dtype=np.float32) / 255.0, (scale, pad_x, pad_y)
 
-    tensor = torch.from_numpy(np.asarray(canvas, dtype=np.float32) / 255.0)
-    tensor = tensor.permute(2, 0, 1)[None].to(device)
+
+def best_faces(model, priors, prepared, device: str):
+    """The highest scoring face per image, in each image's own pixels."""
+    import torch
+
+    from facepipe.tasks.detection.eval import decode_batch, to_original
+
+    canvases = np.stack([canvas for canvas, _ in prepared])
+    tensor = torch.from_numpy(canvases).permute(0, 3, 1, 2).to(device)
     with torch.no_grad():
-        found = decode_batch(model(tensor), priors, conf=DETECT_CONF)[0]
-    if not len(found.boxes):
-        return None
-    original = to_original(found, scale, pad_x, pad_y)
-    return original.boxes[int(np.argmax(original.scores))]
+        batch = decode_batch(model(tensor), priors, conf=DETECT_CONF)
+    boxes = []
+    for found, (_, mapping) in zip(batch, prepared, strict=True):
+        if not len(found.boxes):
+            boxes.append(None)
+            continue
+        original = to_original(found, *mapping)
+        boxes.append(original.boxes[int(np.argmax(original.scores))])
+    return boxes
+
+
+def best_face(model, priors, payload: bytes, device: str) -> np.ndarray | None:
+    """The highest scoring face in one image, in that image's own pixels."""
+    return best_faces(model, priors, [detector_input(payload)], device)[0]
 
 
 def crops_of(

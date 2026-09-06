@@ -173,22 +173,30 @@ def iter_samples(root: Path, stats: dict, limit: int | None) -> Iterator[Sample]
             done += 1
 
 
-def redetected(samples: Iterator[Sample], detector: Path, device: str, stats: dict):
+def _prepare_task(payload: bytes):
+    from .xdomain_crop import detector_input
+
+    return detector_input(payload)
+
+
+def redetected(samples: Iterator[Sample], detector: Path, device: str, stats: dict, pool=None):
     """The same rows carrying the box the kiosk's own detector draws.
 
     The annotation box is a third convention neither prep nor inference uses; a
     face the detector misses is dropped, since the kiosk would miss it too
     (KEHOACH 3, layer 2).
     """
-    from .xdomain_crop import best_face, load_detector
+    from .xdomain_crop import best_faces, load_detector
 
     model, priors = load_detector(detector, device)
-    for sample in samples:
-        box = best_face(model, priors, sample.image_bytes, device)
-        if box is None:
-            stats["undetected"] += 1
-            continue
-        yield replace(sample, box_xyxy=tuple(int(value) for value in box))
+    for batch in batched(samples, ENCODE_BATCH):
+        payloads = [sample.image_bytes for sample in batch]
+        prepared = pool.map(_prepare_task, payloads) if pool else list(map(_prepare_task, payloads))
+        for sample, box in zip(batch, best_faces(model, priors, prepared, device), strict=True):
+            if box is None:
+                stats["undetected"] += 1
+                continue
+            yield replace(sample, box_xyxy=tuple(int(value) for value in box))
 
 
 def run(
@@ -212,7 +220,7 @@ def run(
     pool = Pool(workers) if workers > 1 else None
     samples = iter_samples(root, stats, limit)
     if detector is not None:
-        samples = redetected(samples, detector, device, stats)
+        samples = redetected(samples, detector, device, stats, pool)
     try:
         for batch in batched(samples, ENCODE_BATCH):
             payloads = [(sample, size, wide_size) for sample in batch]
