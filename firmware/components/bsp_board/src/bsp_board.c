@@ -36,6 +36,8 @@ static esp_err_t i2c_bus_up(void)
         .scl_io_num = APP_I2C_SCL_GPIO,
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
+        // The bus carries one 4.7k pair, and the ~45k inside the chip would sit
+        // across it and weaken the edge the fast devices need (KEHOACH 2.3).
         .flags.enable_internal_pullup = false,
     };
     return i2c_new_master_bus(&cfg, &s_i2c_bus);
