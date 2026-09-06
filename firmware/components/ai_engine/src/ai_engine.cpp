@@ -3,10 +3,12 @@
 #include <string.h>
 
 #include "antispoof/spoof_model.hpp"
+#include "detection/detect_model.hpp"
 #include "arena.hpp"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "model_store.hpp"
+#include "recognition/recog_model.hpp"
 #include "sdkconfig.h"
 
 namespace {
@@ -19,23 +21,27 @@ constexpr size_t kBigBytes = CONFIG_AI_ARENA_BIG_KB * 1024U;
 ai::Arena s_fast;
 ai::Arena s_big;
 ai::ModelStore s_store;
+ai::DetectModel s_detect;
 ai::SpoofModel s_spoof;
-size_t s_spoof_crop_len;
+ai::RecogModel s_recog;
+size_t s_detect_len;
+size_t s_spoof_len;
+size_t s_recog_len;
 bool s_ready;
 
-esp_err_t load_spoof()
+esp_err_t load(ai::ITfliteModel &model, const char *name, ai::Arena &arena, size_t *input_len)
 {
-    const tflite::Model *graph = s_store.find("spoof");
+    const tflite::Model *graph = s_store.find(name);
     if (graph == nullptr) {
         return ESP_ERR_NOT_FOUND;
     }
-    const esp_err_t err = s_spoof.init(graph, s_fast);
+    const esp_err_t err = model.init(graph, arena);
     if (err != ESP_OK) {
         return err;
     }
-    const TfLiteTensor *crop = s_spoof.input(0);
-    s_spoof_crop_len = crop != nullptr ? crop->bytes : 0;
-    return s_spoof_crop_len > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
+    const TfLiteTensor *first = model.input(0);
+    *input_len = first != nullptr ? first->bytes : 0;
+    return *input_len > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
 }  // namespace
@@ -65,18 +71,72 @@ extern "C" esp_err_t ai_engine_init(void)
              CONFIG_AI_ARENA_FAST_KB, s_fast.internal() ? "sram" : "psram", CONFIG_AI_ARENA_BIG_KB,
              static_cast<unsigned>(internal_before / 1024),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
-    err = load_spoof();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "spoof branch: %s", esp_err_to_name(err));
-        return err;
+    // Detect and spoof share arena_fast so their tails stack and their heads
+    // overlap; recognition runs rarely enough for psram (KEHOACH 3.10).
+    struct {
+        ai::ITfliteModel &model;
+        const char *name;
+        ai::Arena &arena;
+        size_t *input_len;
+    } branches[] = {
+        {s_detect, "detect", s_fast, &s_detect_len},
+        {s_spoof, "spoof", s_fast, &s_spoof_len},
+        {s_recog, "recog", s_big, &s_recog_len},
+    };
+    for (auto &branch : branches) {
+        err = load(branch.model, branch.name, branch.arena, branch.input_len);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "%s branch: %s", branch.name, esp_err_to_name(err));
+            return err;
+        }
     }
     s_ready = true;
     return ESP_OK;
 }
 
-extern "C" size_t ai_engine_spoof_crop_len(void)
+extern "C" size_t ai_engine_detect_input_len(void)
 {
-    return s_spoof_crop_len;
+    return s_detect_len;
+}
+
+extern "C" size_t ai_engine_spoof_input_len(void)
+{
+    return s_spoof_len;
+}
+
+extern "C" size_t ai_engine_recog_input_len(void)
+{
+    return s_recog_len;
+}
+
+extern "C" esp_err_t ai_engine_detect(const int8_t *image)
+{
+    if (!s_ready || image == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    TfLiteTensor *frame = s_detect.input(0);
+    if (frame == nullptr || frame->bytes != s_detect_len) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(frame->data.int8, image, s_detect_len);
+    return s_detect.invoke();
+}
+
+extern "C" esp_err_t ai_engine_recognize(const int8_t *face, int8_t *out, size_t cap, float *scale)
+{
+    if (!s_ready || face == nullptr || out == nullptr || scale == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    TfLiteTensor *crop = s_recog.input(0);
+    if (crop == nullptr || crop->bytes != s_recog_len) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(crop->data.int8, face, s_recog_len);
+    const esp_err_t err = s_recog.invoke();
+    if (err != ESP_OK) {
+        return err;
+    }
+    return s_recog.embedding(out, cap, scale) > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
 extern "C" esp_err_t ai_engine_spoof(const int8_t *tight, const int8_t *wide, float *live)
@@ -89,10 +149,10 @@ extern "C" esp_err_t ai_engine_spoof(const int8_t *tight, const int8_t *wide, fl
     TfLiteTensor *inputs[] = {s_spoof.input(0), s_spoof.input(1)};
     const int8_t *crops[] = {tight, wide};
     for (int i = 0; i < 2; ++i) {
-        if (inputs[i] == nullptr || inputs[i]->bytes != s_spoof_crop_len) {
+        if (inputs[i] == nullptr || inputs[i]->bytes != s_spoof_len) {
             return ESP_ERR_INVALID_SIZE;
         }
-        memcpy(inputs[i]->data.int8, crops[i], s_spoof_crop_len);
+        memcpy(inputs[i]->data.int8, crops[i], s_spoof_len);
     }
     const esp_err_t err = s_spoof.invoke();
     if (err != ESP_OK) {

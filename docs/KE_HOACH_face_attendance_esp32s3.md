@@ -1888,36 +1888,47 @@ public:
         └───┬───────┬───────┬──┘
             │       │       │
      DetectModel SpoofModel RecogModel
-     op:12       op:9       op:8         ← MicroMutableOpResolver<N> riêng từng lớp
+     op:6        op:9       op:6         ← MicroMutableOpResolver<N> riêng từng lớp
      +decode()   —          +l2norm()
      +nms()
 ```
 
-Ba lớp con khác nhau ở **danh sách op đăng ký** và **hậu xử lý**, không phải khác cho có. `TfliteModelBase` giữ phần lặp lại: cấp arena, dựng interpreter, `AllocateTensors`, đo `arena_used_bytes()`.
+Ba lớp con khác nhau ở **danh sách op đăng ký** và **hậu xử lý**, không phải khác cho có. `TfliteModelBase` giữ phần lặp lại: dựng interpreter trên arena được đưa, `AllocateTensors`, đo `arena_used_bytes()`.
 
 ```cpp
 // priv_include/tflite_model.hpp
 class ITfliteModel {
 public:
     virtual ~ITfliteModel() = default;
-    virtual esp_err_t     init(const uint8_t* fb, size_t arena, uint32_t caps) = 0;
-    virtual TfLiteTensor* input()  noexcept = 0;
+    virtual esp_err_t     init(const tflite::Model* graph, Arena& arena) noexcept = 0;
+    virtual TfLiteTensor* input(int index)  noexcept = 0;
+    virtual TfLiteTensor* output(int index) noexcept = 0;
     virtual esp_err_t     invoke() noexcept = 0;
     virtual size_t        arena_used() const noexcept = 0;
     virtual const char*   name()       const noexcept = 0;
 };
 ```
+
+**`init` nhận `Arena&` chứ không nhận `(size, caps)`.** Model tự cấp buffer riêng thì mỗi model một `MicroAllocator`, mà §3.10 đòi ngược lại: detect và spoof phải dùng **chung** một allocator mới chồng được tail và dùng chung head. `Arena` sở hữu buffer, model chỉ mượn.
+
+**`input`/`output` có chỉ số.** Anti-spoof đọc hai crop, YuNet trả 9 tensor (3 đầu × 3 stride), nên một `input()` trơ không đủ diễn đạt.
+
 ```cpp
-// src/infer_detect.cpp
+// src/detection/detect_model.hpp
 class DetectModel final : public TfliteModelBase {
-    tflite::MicroMutableOpResolver<12> resolver_;   // đúng 12 op, không dùng AllOpsResolver
 public:
-    esp_err_t init(const uint8_t* fb, size_t arena, uint32_t caps) override;
+    const char* name() const noexcept override { return "detect"; }
     int decode_and_nms(FaceBox* out, int max_out) noexcept;   // KHÔNG virtual — đường nóng
+protected:
+    tflite::MicroOpResolver& resolver() noexcept override { return detect_ops(); }
 };
 ```
 
+`resolver()` là **template method**: `core/` dựng interpreter mà không biết nhánh nào đăng ký op gì, đúng luật "`src/core/` không được biết tên bất kỳ model nào" ở §4.5.6. Danh sách op nằm ở `<nhánh>/ops.cpp`.
+
 `decode_and_nms` cố tình **không** virtual: nó nằm trong đường nóng và chỉ có một cách làm.
+
+**Không có mutex nào cho `ai_engine`.** §5.2 chỉ có một `ai_task` gọi pipeline, nên tensor đầu vào của interpreter có đúng một người ghi. Đây là ràng buộc chứ không phải may mắn: gọi `ai_engine_*` từ task thứ hai là hỏng dữ liệu, và phải ghi rõ ở header công khai.
 
 ##### d) `svc_vision` — tiêm phụ thuộc, test được trên host
 
@@ -2065,8 +2076,9 @@ components/ai_engine/
 │   │   ├── model_store.cpp                # đọc header partition, trả con trỏ mmap từng entry
 │   │   └── profiler.cpp                   # MicroProfiler, chỉ bật khi CONFIG_AI_PROFILING
 │   ├── detection/
+│   │   ├── detect_model.hpp               # lớp + op của nhánh, không ra khỏi thư mục này
 │   │   ├── detect_model.cpp               # DetectModel : TfliteModelBase
-│   │   ├── ops.cpp                        # MicroMutableOpResolver<12> riêng nhánh này
+│   │   ├── ops.cpp                        # MicroMutableOpResolver<6>, đếm trên graph thật
 │   │   ├── decode.cpp                     # giải mã anchor — khớp 1:1 ml/tasks/detection/postproc
 │   │   └── nms.cpp
 │   ├── antispoof/
@@ -2075,8 +2087,9 @@ components/ai_engine/
 │   │   ├── ops.cpp                        # MicroMutableOpResolver<9>
 │   │   └── preproc.cpp                    # crop + resize 80×80
 │   └── recognition/
+│       ├── recog_model.hpp                # lớp + op của nhánh, không ra khỏi thư mục này
 │       ├── recog_model.cpp
-│       ├── ops.cpp                        # MicroMutableOpResolver<8>
+│       ├── ops.cpp                        # MicroMutableOpResolver<6>, đếm trên graph thật
 │       ├── align.cpp                      # affine warp 5 landmark → 112×112
 │       └── l2norm.cpp
 └── test_apps/                             # chuẩn ESP-IDF, host-side chạy bằng pytest-embedded
