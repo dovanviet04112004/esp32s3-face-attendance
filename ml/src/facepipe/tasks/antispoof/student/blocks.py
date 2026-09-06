@@ -2,8 +2,7 @@
 
 Every spatial convolution is depthwise so ESP-NN can accelerate it, and the
 squeeze-excite gate uses HardSigmoid: ReLU6(x + 3) / 6 is piecewise linear, so
-INT8 reproduces it exactly where a sigmoid needs a lookup table and loses both
-tails (KEHOACH 3, layer 1).
+INT8 reproduces it exactly where a sigmoid needs a lookup table (KEHOACH 3).
 """
 
 from __future__ import annotations
@@ -11,9 +10,20 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+# What esp-nn can express as a clamp on the convolution it already ran. relu
+# keeps the positive homogeneity cross-layer equalisation needs (KEHOACH 3.8).
+ACTIVATIONS = {"relu6": nn.ReLU6, "relu": nn.ReLU}
 
-class ConvBnPrelu(nn.Module):
-    """Convolution, batch norm, PReLU: the unit the whole backbone is built from."""
+
+def build_activation(name: str) -> nn.Module:
+    """The activation a branch config asks for, refusing anything unfoldable."""
+    if name not in ACTIVATIONS:
+        raise ValueError(f"{name}: activation must be one of {sorted(ACTIVATIONS)}")
+    return ACTIVATIONS[name](inplace=True)
+
+
+class ConvBnAct(nn.Module):
+    """Convolution, batch norm, activation: the unit the backbone is built from."""
 
     def __init__(
         self,
@@ -23,13 +33,14 @@ class ConvBnPrelu(nn.Module):
         stride: int = 1,
         padding: int | tuple[int, int] = 0,
         groups: int = 1,
+        activation: str = "relu6",
     ) -> None:
         super().__init__()
         self.conv = nn.Conv2d(
             in_channels, out_channels, kernel_size, stride, padding, groups=groups, bias=False
         )
         self.bn = nn.BatchNorm2d(out_channels)
-        self.act = nn.PReLU(out_channels)
+        self.act = build_activation(activation)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.act(self.bn(self.conv(x)))
@@ -69,12 +80,17 @@ class HardSigmoid(nn.Module):
 
 
 class SqueezeExcite(nn.Module):
-    """Channel gate: pool to one value per channel, then scale the map by it."""
+    """Channel gate: pool to one value per channel, then scale the map by it.
 
-    def __init__(self, channels: int, reduction: int = 8) -> None:
+    map_size is written out rather than adapted because a fixed window exports
+    as AVERAGE_POOL_2D, which esp-nn accelerates, while an adaptive one becomes
+    MEAN, which it does not (KEHOACH 3 layer 1).
+    """
+
+    def __init__(self, channels: int, map_size: int, reduction: int = 8) -> None:
         super().__init__()
         hidden = max(channels // reduction, 1)
-        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.pool = nn.AvgPool2d(map_size)
         self.down = nn.Conv2d(channels, hidden, kernel_size=1, bias=True)
         self.act = nn.ReLU6(inplace=True)
         self.up = nn.Conv2d(hidden, channels, kernel_size=1, bias=True)
@@ -93,15 +109,19 @@ class DepthWise(nn.Module):
         in_channels: int,
         out_channels: int,
         expand: int,
+        out_map: int,
         kernel_size: int = 3,
         stride: int = 1,
         padding: int = 1,
         squeeze_excite: bool = True,
+        activation: str = "relu6",
     ) -> None:
         super().__init__()
-        self.expand = ConvBnPrelu(in_channels, expand, kernel_size=1)
-        self.filter = ConvBnPrelu(expand, expand, kernel_size, stride, padding, groups=expand)
-        self.excite = SqueezeExcite(expand) if squeeze_excite else None
+        self.expand = ConvBnAct(in_channels, expand, kernel_size=1, activation=activation)
+        self.filter = ConvBnAct(
+            expand, expand, kernel_size, stride, padding, groups=expand, activation=activation
+        )
+        self.excite = SqueezeExcite(expand, out_map) if squeeze_excite else None
         self.project = ConvBn(expand, out_channels, kernel_size=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -119,9 +139,11 @@ class Residual(nn.Module):
         channels: int,
         blocks: int,
         expand: int,
+        map_size: int,
         kernel_size: int = 3,
         padding: int = 1,
         squeeze_excite: bool = True,
+        activation: str = "relu6",
     ) -> None:
         super().__init__()
         self.blocks = nn.ModuleList(
@@ -129,10 +151,12 @@ class Residual(nn.Module):
                 channels,
                 channels,
                 expand,
+                map_size,
                 kernel_size,
                 stride=1,
                 padding=padding,
                 squeeze_excite=squeeze_excite,
+                activation=activation,
             )
             for _ in range(blocks)
         )

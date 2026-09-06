@@ -13,7 +13,7 @@ teacher:
   # A stable path keeps it clear of the resume loop, which treats every
   # directory under runs/ as somewhere a student could continue from.
   ckpt: artifacts/antispoof/teacher/cdcnpp_best.pth
-  input_hw: [80, 80]
+  input_hw: [81, 81]
   params:
     theta: 0.7
     depth_size: 32

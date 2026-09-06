@@ -24,7 +24,7 @@ from torch.utils.data import IterableDataset, get_worker_info
 
 from facepipe.data.prepare.images_to_wds import read_shard
 
-CROP_SIZE = 80
+CROP_SIZE = 81
 SHUFFLE_BUFFER = 2048
 # Drawn from one distribution for both classes: every source record below 1.0x is
 # an attack, so scale alone predicts the label (KEHOACH 3, layer 2).

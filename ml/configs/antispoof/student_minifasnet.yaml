@@ -10,13 +10,16 @@ run:
 
 model:
   name: minifasnet_v2_se
-  # Per view, and the 5x5 depthwise layer closing each backbone consumes exactly
-  # the map this size produces.
-  input_hw: [80, 80]
+  # Per view. Odd at every stride-2, which folds PAD into the convolution, and
+  # it settles the closing kernel and every SE window (KEHOACH 3 layer 1).
+  input_hw: [81, 81]
   params:
     num_classes: 2
     embedding: 128
     squeeze_excite: true
+    # esp-nn folds this into the convolution's output clamp, so it costs
+    # nothing either way; relu is the one CLE still applies to (KEHOACH 3.8).
+    activation: relu
 
 data:
   name: celeba_spoof
