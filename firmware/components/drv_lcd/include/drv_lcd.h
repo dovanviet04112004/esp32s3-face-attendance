@@ -35,6 +35,12 @@ esp_err_t drv_lcd_blit(int x1, int y1, int x2, int y2, const void *pixels);
  */
 esp_err_t drv_lcd_fill(uint16_t rgb565);
 
+/** Walk the panel through red, green, blue and white.
+ *  @ctx task | blocking, holds each colour for about a second
+ *  @ret ESP_OK once every colour reached the panel
+ */
+esp_err_t drv_lcd_selftest(void);
+
 /** Panel handle for the LVGL port to drive.
  *  @ctx any | non-blocking
  */

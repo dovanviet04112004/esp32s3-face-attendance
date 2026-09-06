@@ -11,6 +11,8 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_st7796.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "drv_lcd";
 
@@ -20,6 +22,8 @@ static const char *TAG = "drv_lcd";
 #define BLK_DUTY_MAX ((1u << BLK_DUTY_BITS) - 1u)
 #define PANEL_CMD_BITS 8
 #define PANEL_PARAM_BITS 8
+#define SELFTEST_HOLD_MS 700
+#define RGB565(r, g, b) (uint16_t)(((r) & 0xF8) << 8 | ((g) & 0xFC) << 3 | (b) >> 3)
 
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_panel_io_handle_t s_io;
@@ -114,6 +118,25 @@ esp_err_t drv_lcd_fill(uint16_t rgb565)
     }
     heap_caps_free(line);
     return err;
+}
+
+esp_err_t drv_lcd_selftest(void)
+{
+#if !CONFIG_DRV_LCD_SELFTEST
+    return ESP_OK;
+#else
+    static const uint16_t colours[] = {RGB565(0xFF, 0, 0), RGB565(0, 0xFF, 0),
+                                       RGB565(0, 0, 0xFF), RGB565(0xFF, 0xFF, 0xFF)};
+    for (size_t i = 0; i < sizeof(colours) / sizeof(colours[0]); ++i) {
+        const esp_err_t err = drv_lcd_fill(colours[i]);
+        if (err != ESP_OK) {
+            return err;
+        }
+        vTaskDelay(pdMS_TO_TICKS(SELFTEST_HOLD_MS));
+    }
+    ESP_LOGI(TAG, "selftest reached every colour");
+    return ESP_OK;
+#endif
 }
 
 esp_lcd_panel_handle_t drv_lcd_panel(void)

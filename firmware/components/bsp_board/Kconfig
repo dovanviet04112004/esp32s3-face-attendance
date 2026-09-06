@@ -1,0 +1,11 @@
+menu "Board support"
+
+    config BSP_BRINGUP_CHECKS
+        bool "Report I2C pin state and scan the bus"
+        default y
+        help
+            Logs whether each I2C line has an external pull-up, and offers
+            bsp_i2c_scan(). Bring-up only: the pin report reconfigures SDA and
+            SCL as plain GPIO on the way into bsp_board_init.
+
+endmenu
