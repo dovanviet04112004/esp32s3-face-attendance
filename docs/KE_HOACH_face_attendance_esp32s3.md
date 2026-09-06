@@ -2473,21 +2473,25 @@ nvs,        data, nvs,      0x9000,    0x6000,
 otadata,    data, ota,      0xF000,    0x2000,
 phy_init,   data, phy,      0x11000,   0x1000,
 nvs_keys,   data, nvs_keys, 0x12000,   0x1000,   encrypted   # khoá mã hoá NVS
-ota_0,      app,  ota_0,    0x20000,   0x300000,        # 3 MB  firmware A
-ota_1,      app,  ota_1,    0x320000,  0x300000,        # 3 MB  firmware B
-models_0,   data, 0x40,     0x620000,  0x200000,        # 2 MB  3 model .tflite (slot A)
-models_1,   data, 0x41,     0x820000,  0x200000,        # 2 MB  slot B — OTA model có rollback
+ota_0,      app,  ota_0,    0x20000,   0x200000,        # 2 MB  firmware A
+ota_1,      app,  ota_1,    0x220000,  0x200000,        # 2 MB  firmware B
+models_0,   data, 0x40,     0x420000,  0x300000,        # 3 MB  3 model .tflite (slot A)
+models_1,   data, 0x41,     0x720000,  0x300000,        # 3 MB  slot B — OTA model có rollback
 assets,     data, spiffs,   0xA20000,  0x180000,        # 1.5 MB font, icon, âm thanh WAV
 storage,    data, littlefs, 0xBA0000,  0x400000,        # 4 MB  face DB + log chấm công offline
 coredump,   data, coredump, 0xFA0000,  0x10000,
 # còn trống: 0xFB0000 → 0x1000000 (~320 KB) dự phòng
 ```
 
+**Vì sao model rộng hơn firmware.** Ba model INT8 export xong đo được 2,46 MB (§1.1 ước tính 1,80 MB, hụt ở cả ba nhánh), còn ảnh firmware thật chỉ 567 KB — dùng 18% một slot OTA 3 MB. Nên mỗi slot OTA hạ xuống 2 MB, vẫn dư 3,6 lần, và mỗi slot model lên 3 MB. Cách chia này giữ nguyên offset của `assets`, `storage` và `coredump`, nên đổi bảng không xoá dữ liệu LittleFS đã ghi trên máy đang chạy.
+
+Đây là **nới chỗ, không phải lời giải**: 2,46 MB vẫn phải giảm, xem `docs/measurements/latency.md` §3 — cùng những thay đổi kiến trúc kéo latency xuống cũng kéo kích thước xuống.
+
 | Phân vùng | Chứa gì | Đọc bằng |
 |---|---|---|
 | `nvs` | Wi-Fi credential, device JWT, cấu hình, số serial — bố cục namespace ở §6.2.1 | `nvs_flash` |
 | `nvs_keys` | Khoá AES để mã hoá `nvs`. Chỉ có tác dụng khi bật Flash Encryption | `nvs_flash_secure_init` |
-| `models_0` / `models_1` | Header (magic, version, offset, sha256) + 3 file `.tflite` INT8 (~1.7 MB) | `esp_partition_mmap` → `const void*`, **0 byte RAM** |
+| `models_0` / `models_1` | Header (magic, version, offset, sha256) + 3 file `.tflite` INT8 (2,46 MB đo thật) | `esp_partition_mmap` → `const void*`, **0 byte RAM** |
 | `assets` | Font tiếng Việt, icon LVGL, file WAV thông báo | SPIFFS read-only |
 | `storage` | `db/faces.bin` (embedding), `log/attend.NNN` (append-only), `cfg/`, `tmp/` — bố cục ở §6.2.3 | LittleFS (chống mất điện tốt hơn SPIFFS) |
 
