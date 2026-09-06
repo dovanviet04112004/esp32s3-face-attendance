@@ -1,3 +1,4 @@
+#include "ai_engine.h"
 #include "app_tasks.h"
 #include "bsp_board.h"
 #include "drv_camera.h"
@@ -9,6 +10,9 @@
 void app_main(void)
 {
     ESP_ERROR_CHECK(sys_storage_init());
+    // The arena wants one contiguous run and the drivers below break the heap
+    // into pieces too small for it, so it goes first (KEHOACH 3.10).
+    ESP_ERROR_CHECK(ai_engine_init());
     ESP_ERROR_CHECK(bsp_board_init());
     ESP_ERROR_CHECK(drv_lcd_init());
     ESP_ERROR_CHECK(drv_lcd_backlight(100));
