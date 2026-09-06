@@ -434,8 +434,20 @@ Xếp theo đúng thứ tự thực hiện.
 | Kiểm tra op TFLM/ESP-NN **trước khi train** | ESP-NN chỉ tăng tốc: `CONV_2D`, `DEPTHWISE_CONV_2D`, `FULLY_CONNECTED`, `ADD`, `MUL`, `AVG/MAX_POOL`, `SOFTMAX`. Op ngoài danh sách → rơi về kernel C tham chiếu, chậm 10–40× | cả 3 |
 | Tránh op không có kernel | `RESIZE_BILINEAR` động, `TRANSPOSE_CONV`, `GATHER`, `ARGMAX` → chuyển ra hậu xử lý viết tay bằng C | detect (NMS, decode anchor) |
 | Số kênh về bội số 8/16 | ESP-NN SIMD nạp 16 byte/lần; kênh lẻ = padding phí | cả 3 |
-| Giảm độ phân giải đầu vào | detect **160×120** · anti-spoof **80×80** · recog **112×112** | cả 3 |
+| Giảm độ phân giải đầu vào | detect **160×120** · anti-spoof **80×80** · recog **113×113** | cả 3 |
+| Cho feature map lẻ ở mỗi lần stride-2 | Hết `PAD` — xem dưới | cả 3 |
 | Width multiplier thay vì pruning | Scale kênh 0.75× / 0.5× rồi train lại từ đầu — ổn định hơn prune sau | student |
+
+**Feature map lẻ ở conv stride-2 thì không sinh `PAD`.** TFLite `CONV_2D` chỉ diễn đạt được `SAME` và `VALID`; pad nào không trùng `SAME` phải thành op riêng, mà `PAD` không có kernel esp-nn. Với `k=3, s=2`:
+
+| Đầu vào của conv | `SAME` cần | PyTorch `padding=1` cho | Gộp được? |
+|---|---|---|---|
+| chẵn N | 1 ô, đặt lệch (0,1) | 2 ô, đối xứng (1,1) | ❌ sinh `PAD` |
+| **lẻ N** | 2 ô, đối xứng (1,1) | 2 ô, đối xứng (1,1) | ✅ |
+
+Nên **recognition đổi đầu vào 112 → 113**: chuỗi hạ mẫu thành 57 → 29 → 15 → 8, lẻ ở mọi bước, và cả bốn `PAD` biến mất mà **không đụng tới một conv nào** — kernel giữ nguyên 3×3, trường tiếp nhận giữ nguyên. Giá phải trả: kernel global khép sổ 7×7 → 8×8 (+7.680 tham số) và activation to hơn 1,8%. Đo được 82 ms, xem `docs/measurements/latency.md`.
+
+Hệ quả: `align.cpp` warp ra **113×113**, và `decode` của loader cũng đưa ảnh MS1MV3 về 113 — cả hai đều là "khuôn mặt đã căn, dựng lại ở 113×113", nên train và thiết bị nhìn thấy cùng một thứ.
 
 **ReLU và ReLU6 tốn thời gian như nhau, và bằng không.** Kernel conv của esp-nn nhận `activation_min` / `activation_max` rồi kẹp ngay trong vòng lặp assembly, nên hàm kích hoạt chỉ là một cặp số trên đầu ra conv, không phải một op riêng. Vì thế chọn giữa hai cái **không phải chuyện tốc độ** mà là chuyện lượng tử hoá:
 
@@ -2102,7 +2114,7 @@ components/ai_engine/
 │       ├── recog_model.hpp                # lớp + op của nhánh, không ra khỏi thư mục này
 │       ├── recog_model.cpp
 │       ├── ops.cpp                        # MicroMutableOpResolver<6>, đếm trên graph thật
-│       ├── align.cpp                      # affine warp 5 landmark → 112×112
+│       ├── align.cpp                      # affine warp 5 landmark → 113×113
 │       └── l2norm.cpp
 └── test_apps/                             # chuẩn ESP-IDF, host-side chạy bằng pytest-embedded
     ├── detection/{main/test_decode.c, CMakeLists.txt, pytest_decode.py}
@@ -2724,9 +2736,9 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 | LCD bounce buffer (2 × 20 dòng) | 2 × 19.2 KB | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội |
 | **Arena detect** | 🔬 ước ~120 KB @160×120 | **SRAM nếu vừa** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_INTERNAL)` | Nhanh nhất, chạy nhiều nhất |
 | **Arena anti-spoof** | 🔬 ước ~60 KB @80×80 | **SRAM** | như trên | Nhỏ, dễ nhét |
-| **Arena recognition** | 🔬 ước ~250–350 KB @112×112 | **PSRAM** | `MALLOC_CAP_SPIRAM \| MALLOC_CAP_8BIT`, align 16 | Nặng nhất, chạy ít nhất (chỉ khi spoof pass) → chấp nhận chậm |
+| **Arena recognition** | 904 KB đo thật @113×113 | **PSRAM** | `MALLOC_CAP_SPIRAM \| MALLOC_CAP_8BIT`, align 16 | Nặng nhất, chạy ít nhất (chỉ khi spoof pass) → chấp nhận chậm |
 | Trọng số 3 model `.tflite` | ~1.7 MB | **Flash mmap** | `esp_partition_mmap` | Không tốn RAM |
-| Ảnh crop 112×112×3 int8 (recog input) | 37.6 KB | **SRAM** | static buffer | Vào thẳng `Invoke()` |
+| Ảnh crop 113×113×3 int8 (recog input) | 38.3 KB | **SRAM** | static buffer | Vào thẳng `Invoke()` |
 | Ảnh crop 80×80×3 int8 (spoof input) | 19.2 KB | **SRAM** | static buffer | |
 | Bảng embedding (500 người × 512 chiều) | 1 MB nếu float32 — **256 KB nếu int8** | **PSRAM** (cache) + `storage` (bản gốc) | `MALLOC_CAP_SPIRAM` | Cosine search quét toàn bảng → phải ở RAM. **Khuyến nghị int8 + scale**, mất < 0.3% accuracy |
 | Log chấm công offline | tới 4 MB | **Flash LittleFS** | append-only | Chịu được mất điện |
@@ -2762,7 +2774,7 @@ Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là
 │ VL53L1X ─wake─► OV5640 ─► [quality gate] ─► YuNet INT8            │
 │                                    │  box + 5 landmark            │
 │                                    ▼                              │
-│                            affine align 112×112                   │
+│                            affine align 113×113                   │
 │                                    ▼                              │
 │                        MiniFASNetV2-SE INT8 (80×80)               │
 │                            live? ──No──► LCD "Giả mạo" + log      │
