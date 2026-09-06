@@ -1,19 +1,18 @@
 menu "AI engine"
 
     config AI_ARENA_FAST_KB
-        int "Tensor arena for detection and anti-spoof, internal SRAM (KB)"
-        default 175
+        int "Tensor arena for detection alone, internal SRAM (KB)"
+        default 224
         range 16 2048
         help
-            Sized from the SRAM budget of KEHOACH 6.4 and still an estimate:
-            E8-T7 measures the real tail and head of each model. Detection
-            runs on every frame, so this arena is asked for in internal RAM
-            and only falls back to PSRAM, loudly, when it does not fit.
+            Detection is the only branch that runs on every frame, so it gets
+            internal RAM to itself (KEHOACH 3.10). It measured 185 KB, and
+            this arena falls back to PSRAM, loudly, when it does not fit.
 
     config AI_ARENA_FAST_HEAD_KB
         int "Split the fast arena, keeping this many KB of activations in SRAM"
         default 0
-        range 0 384
+        range 0 2048
         help
             Zero keeps one buffer. Above zero the arena splits: this many KB of
             activations are asked for in internal RAM and the remainder of
@@ -21,12 +20,13 @@ menu "AI engine"
             the whole arena will not fit internally but its activations will.
 
     config AI_ARENA_BIG_KB
-        int "Tensor arena for recognition, PSRAM (KB)"
-        default 512
-        range 64 4096
+        int "Tensor arena shared by anti-spoof and recognition, PSRAM (KB)"
+        default 1536
+        range 64 8192
         help
-            Recognition runs only after anti-spoof passes, rarely enough to
-            live in PSRAM (KEHOACH 3.10). Also an estimate until E8-T7.
+            Both run only once a face appears, rarely enough for PSRAM, and
+            they share one MicroAllocator so their heads overlap while their
+            tails stack (KEHOACH 3.10).
 
     config AI_PROFILING
         bool "Report ticks per operator after every invoke"

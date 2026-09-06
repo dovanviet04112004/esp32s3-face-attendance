@@ -73,8 +73,8 @@ extern "C" esp_err_t ai_engine_init(void)
              CONFIG_AI_ARENA_FAST_KB, s_fast.internal() ? "sram" : "psram", CONFIG_AI_ARENA_BIG_KB,
              static_cast<unsigned>(internal_before / 1024),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
-    // Detect and spoof share arena_fast so their tails stack and their heads
-    // overlap; recognition runs rarely enough for psram (KEHOACH 3.10).
+    // Detect alone runs every frame, so internal ram goes to it and the other
+    // two share one psram allocator (KEHOACH 3.10).
     struct {
         ai::ITfliteModel &model;
         const char *name;
@@ -82,7 +82,7 @@ extern "C" esp_err_t ai_engine_init(void)
         size_t *input_len;
     } branches[] = {
         {s_detect, "detect", s_fast, &s_detect_len},
-        {s_spoof, "spoof", s_fast, &s_spoof_len},
+        {s_spoof, "spoof", s_big, &s_spoof_len},
         {s_recog, "recog", s_big, &s_recog_len},
     };
     for (auto &branch : branches) {
