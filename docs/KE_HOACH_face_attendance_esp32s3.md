@@ -1619,7 +1619,7 @@ dependencies:
   lvgl/lvgl: "^9.2"
   joltwallet/littlefs: "^1.16"
 ```
-🔬 Kiểm tra `espressif/esp_lcd_st7796` đã có trên registry chưa. Nếu chưa thì tự viết panel driver trong `components/drv_lcd/` — đừng vendor bừa.
+`espressif/esp_lcd_st7796` có trên registry (đã kéo về bản 1.4.0), nên `drv_lcd` gọi nó chứ không tự viết panel driver.
 
 ```
 third_party/
@@ -1658,13 +1658,13 @@ firmware/
 │   │   └── include/app_config.h      # ★ MỌI #define chân GPIO — DUY NHẤT 1 FILE.
 │   │                                 #   Ở L1 vì L2 trở lên đều cần đọc, mà không
 │   │                                 #   component nào được phụ thuộc lên main (§4.5.4)
-│   ├── drv_ioexp/         [C]    L1  # PCF8574 + shadow register
+│   ├── drv_ioexp/         [C]    L2  # PCF8574 + shadow register
 │   ├── drv_camera/        [C]    L2
 │   ├── drv_lcd/           [C]    L2
-│   ├── drv_touch/         [C]    L2
-│   ├── drv_tof/           [C]    L2
-│   ├── drv_audio/         [C]    L2
-│   ├── drv_relay/         [C]    L2  # chỉ bật/tắt chân PCF8574
+│   ├── drv_touch/         [C]    L3
+│   ├── drv_tof/           [C]    L3
+│   ├── drv_audio/         [C]    L3
+│   ├── drv_relay/         [C]    L3  # chỉ bật/tắt chân PCF8574
 │   ├── drv_servo/         [C]    L2  # chỉ đẩy xung LEDC 50 Hz
 │   ├── sys_storage/       [C]    L2  # NVS + LittleFS + mmap model; sở hữu storage_format.h (§6.2.7)
 │   ├── sys_time/          [C]    L2  # SNTP + DS3231
@@ -1730,14 +1730,14 @@ Quy tắc header:
 |---|---|---|---|
 | L0 | `common` | C | — (chỉ IDF core) |
 | L1 | `bsp_board` | C | `common` + `driver`, `esp_driver_gpio/i2c/spi/ledc` |
-| L1 | `drv_ioexp` | C | `common`, `bsp_board` |
+| L2 | `drv_ioexp` | C | `common`, `bsp_board` |
 | L2 | `drv_camera` | C | `common`, `bsp_board`, `espressif__esp32-camera` |
 | L2 | `drv_lcd` | C | `common`, `bsp_board`, `esp_lcd` |
-| L2 | `drv_touch` | C | `common`, `bsp_board`, `drv_ioexp`, `esp_lcd_touch_gt911` |
-| L2 | `drv_tof` | C | `common`, `bsp_board`, `drv_ioexp`, `vl53l1x_uld` |
-| L2 | `drv_audio` | C | `common`, `bsp_board`, `drv_ioexp`, `esp_driver_i2s` |
-| L2 | `drv_relay` | C | `common`, `drv_ioexp` |
 | L2 | `drv_servo` | C | `common`, `bsp_board` (LEDC) |
+| L3 | `drv_touch` | C | `common`, `bsp_board`, `drv_ioexp`, `esp_lcd_touch_gt911` |
+| L3 | `drv_tof` | C | `common`, `bsp_board`, `drv_ioexp`, `vl53l1x_uld` |
+| L3 | `drv_audio` | C | `common`, `bsp_board`, `drv_ioexp`, `esp_driver_i2s` |
+| L3 | `drv_relay` | C | `common`, `drv_ioexp` |
 | L2 | `sys_storage` | C | `common`, `nvs_flash`, `spi_flash`, `esp_partition`, `littlefs` |
 | L2 | `sys_time` | C | `common`, `lwip`, `bsp_board` |
 | L3 | `ai_engine` | C++ | `common`, `sys_storage`, `esp-tflite-micro` |
@@ -1751,7 +1751,7 @@ Quy tắc header:
 | L7 | `main` | C | tất cả |
 
 **Ba quy tắc bất di bất dịch:**
-1. Không component nào được `REQUIRES` lên tầng trên hoặc ngang tầng — **không có ngoại lệ nào**. Driver L2 không gọi nhau; thứ nhiều driver cùng cần thì nằm ở L1, như `drv_ioexp`. Hai component ở cùng tầng mà cần nhau nghĩa là một trong hai đặt sai tầng: hạ nó xuống, đừng mở ngoại lệ.
+1. Không component nào được `REQUIRES` lên tầng trên hoặc ngang tầng — **không có ngoại lệ nào**. Driver cùng tầng không gọi nhau; thứ nhiều driver cùng cần thì nằm ở tầng thấp hơn tất cả chúng, như `drv_ioexp` ở L2 dưới bốn driver L3 dùng nó. Hai component ở cùng tầng mà cần nhau nghĩa là một trong hai đặt sai tầng: hạ nó xuống, đừng mở ngoại lệ. Số tầng là **thứ tự toàn phần**, nên đọc số là biết ngay ai được phụ thuộc ai mà không phải tra bảng.
 2. `ui_kiosk` **không gọi** `svc_attendance`, và `svc_attendance` **không biết UI tồn tại**. Hai bên gặp nhau qua queue/event khai trong `common/include/app_events.h`, do `main/app_wiring.c` nối. Đây là chỗ dễ đẻ ra vòng phụ thuộc nhất.
 3. `tools/check_layers.py` đọc `REQUIRES` trong mọi `CMakeLists.txt`, dựng đồ thị, **fail CI nếu có cạnh đi ngược**. Quy ước không được kiểm tra tự động thì 3 tháng sau sẽ bị vi phạm.
 
