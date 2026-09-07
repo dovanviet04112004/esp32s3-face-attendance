@@ -21,7 +21,6 @@ public:
      */
     const tflite::Model *find(const char *name) const noexcept;
 
-    uint32_t count() const noexcept { return header_ != nullptr ? header_->count : 0; }
 
 private:
     const storage_models_header_t *header_ = nullptr;

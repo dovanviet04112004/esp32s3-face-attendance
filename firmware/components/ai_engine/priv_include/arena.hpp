@@ -18,11 +18,6 @@ public:
      */
     esp_err_t reserve(size_t bytes, uint32_t caps) noexcept;
 
-    /** Reserve the two halves TFLM keeps apart, activations in internal ram
-     *  and the persistent metadata in psram (KEHOACH 3.10).
-     */
-    esp_err_t reserve_split(size_t head_bytes, size_t tail_bytes) noexcept;
-
     tflite::MicroAllocator *allocator() const noexcept { return allocator_; }
     size_t size() const noexcept { return size_; }
     size_t used() const noexcept;
@@ -30,7 +25,6 @@ public:
 
 private:
     uint8_t *buffer_ = nullptr;
-    uint8_t *tail_buffer_ = nullptr;
     size_t size_ = 0;
     tflite::MicroAllocator *allocator_ = nullptr;
     bool internal_ = false;

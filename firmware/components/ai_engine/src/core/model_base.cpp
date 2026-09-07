@@ -27,13 +27,11 @@ esp_err_t TfliteModelBase::init(const tflite::Model *model, Arena &arena) noexce
     if (interpreter_ != nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
-    // Passing the arena's allocator rather than its buffer is what lets the
-    // models on one arena share a head and stack their tails (KEHOACH 3.10).
+    // Sharing the allocator, not the buffer, is what stacks tails (KEHOACH 3.10).
     interpreter_ = new (storage_)
         tflite::MicroInterpreter(model, resolver(), arena.allocator(), nullptr, profiler());
     if (interpreter_->AllocateTensors() != kTfLiteOk) {
-        // A half-allocated interpreter holds node pointers it never filled, so
-        // running its destructor here reads them and faults.
+        // A half-allocated interpreter faults inside its own destructor.
         ESP_LOGE(TAG, "%s: allocate failed on an arena of %u KB", name(),
                  static_cast<unsigned>(arena.size() / 1024));
         interpreter_ = nullptr;
@@ -65,11 +63,6 @@ esp_err_t TfliteModelBase::invoke() noexcept
     const TfLiteStatus status = interpreter_->Invoke();
     profiler_report(name());
     return status == kTfLiteOk ? ESP_OK : ESP_FAIL;
-}
-
-size_t TfliteModelBase::arena_used() const noexcept
-{
-    return interpreter_ != nullptr ? interpreter_->arena_used_bytes() : 0;
 }
 
 }  // namespace ai

@@ -31,7 +31,6 @@ public:
     virtual TfLiteTensor *input(int index) noexcept = 0;
     virtual TfLiteTensor *output(int index) noexcept = 0;
     virtual esp_err_t invoke() noexcept = 0;
-    virtual size_t arena_used() const noexcept = 0;
     virtual const char *name() const noexcept = 0;
 };
 
@@ -42,7 +41,6 @@ public:
     TfLiteTensor *input(int index) noexcept override;
     TfLiteTensor *output(int index) noexcept override;
     esp_err_t invoke() noexcept override;
-    size_t arena_used() const noexcept override;
 
 protected:
     /** The operators this branch registers, owned by the subclass.
