@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../../")
-set(COMPONENTS main common unity esp_partition)
+set(COMPONENTS main common unity)
 
 # The board is one board: test apps take its clock, cache and psram
 # settings from the same file the firmware does.

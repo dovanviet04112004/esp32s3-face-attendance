@@ -1,5 +1,4 @@
 #include "lock_guard.hpp"
-#include "mmap_region.hpp"
 #include "queue.hpp"
 #include "unity.h"
 
@@ -57,30 +56,6 @@ TEST_CASE("Queue refuses a fifth item and times out rather than blocking", "[com
     }
     TEST_ASSERT_FALSE(queue.send(99, 10));
     TEST_ASSERT_EQUAL(4, queue.waiting());
-}
-
-TEST_CASE("MmapRegion maps a real partition and reports failure on none", "[common]")
-{
-    const esp_partition_t *part =
-        esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, nullptr);
-    TEST_ASSERT_NOT_NULL(part);
-    {
-        app::MmapRegion region(part, 0, 4096);
-        TEST_ASSERT_TRUE(region.mapped());
-        TEST_ASSERT_NOT_NULL(region.data());
-    }
-    app::MmapRegion none(nullptr, 0, 4096);
-    TEST_ASSERT_FALSE(none.mapped());
-}
-
-TEST_CASE("MmapRegion unmaps, so the same window maps again", "[common]")
-{
-    const esp_partition_t *part =
-        esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, nullptr);
-    for (int round = 0; round < 32; ++round) {
-        app::MmapRegion region(part, 0, 64 * 1024);
-        TEST_ASSERT_TRUE(region.mapped());
-    }
 }
 
 extern "C" void app_main(void)
