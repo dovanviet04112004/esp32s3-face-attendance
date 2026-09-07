@@ -49,6 +49,28 @@ head/tail càng không đáng so với 240 KB nó lấy.
 Ba nhánh chậm đi gần như bằng nhau (16,0 / 16,7 / 16,7%), tức đây là thuế đều
 trên mọi truy cập bộ nhớ ngoài chứ không phải một nhánh nào bị chặn riêng.
 
+### Cấu hình đang chốt: cả hai arena ở PSRAM, recog hệ số width 32
+
+Đo 07/09 20:5x, 20 lần chạy mỗi nhánh, `AI_ARENA_FAST_INTERNAL=n`.
+
+| Nhánh | AI một mình | Có tải preview | Chậm hơn |
+|---|---|---|---|
+| detect | **232,5 ms** | 270,6 ms | +16,4% |
+| spoof | **469,5 ms** | 547,9 ms | +16,7% |
+| recog (w32) | **457,5 ms** | 534,7 ms | +16,9% |
+| **Tổng** | **1.159,5 ms** | **1.353,2 ms** | **+16,7%** |
+
+Giá của việc đưa `arena_fast` xuống PSRAM là **+23,4 ms trên detect** (232,5 so
+với 209,1), đúng khoảng 22 ms đã ước từ §3. Hai nhánh kia không đổi vì arena của
+chúng vốn đã ở PSRAM. Đổi lại là **220 KB RAM nội**, xem `arena.md` §1c.
+
+Trên tổng một lượt chấm công, 23,4 ms là **2,0%**. Trên tần suất thì khác: detect
+chạy mỗi frame, nên nó hạ preview từ 4,8 xuống 4,3 khung/giây khi AI rảnh, và từ
+3,7 xuống 3,3 khi có tải.
+
+Tỉ lệ chậm do preview giữ nguyên 16,7% dù arena đã đổi chỗ — thêm một xác nhận
+rằng thuế đó đến từ tranh chấp MSPI chung, không từ nơi đặt arena.
+
 ### Op còn lại ngoài ESP-NN
 
 | Nhánh | Gốc | Sau |

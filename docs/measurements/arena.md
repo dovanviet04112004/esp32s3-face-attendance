@@ -40,6 +40,30 @@ tail chồng lên nhau.
 RAM nội còn trống sau khi nạp cả ba: **111 KB**. §6.4 còn nợ ~55 KB cho Wi-Fi +
 lwIP và ~53 KB cho stack 10 task, tức 108 KB — vừa đủ, không dư.
 
+## 1c. `arena_fast` xuống PSRAM — đo trên board 07/09 20:5x
+
+`AI_ARENA_FAST_INTERNAL=n` đưa nốt detect xuống PSRAM. Cùng lúc `models.bin`
+trên flash đã là bản recog hệ số width 32, nên `arena_big` co lại theo.
+
+| | `arena_fast` ở SRAM nội | `arena_fast` ở PSRAM |
+|---|---|---|
+| `arena_fast` (detect) | 189.628 B | **189.628 B**, cấp 224 KB |
+| `arena_big` (spoof + recog) | 823.148 B (recog w64) | **476.172 B** (recog w32), cấp 1536 KB |
+| **RAM nội trống sau khi nạp cả ba** | 111 KB | **331 KB** |
+| PSRAM trống | — | 6.295 KB |
+
+Log của `ai_engine_init` nói thẳng arena không lấy một byte RAM nội nào:
+
+```
+ai_engine: arena_fast 224 KB in psram, arena_big 1536 KB, internal ram 331 to 331 KB
+```
+
+**Thu về 220 KB RAM nội.** §6.4 còn phải chi 267 KB cho Wi-Fi, stack, bounce
+buffer LCD, buffer crop và heap dự phòng: 111 KB thiếu 156 KB, còn 331 KB thì
+**dư 64 KB**. Đây là phép đo biến §6.4 từ không khả thi thành khả thi.
+
+Kích thước model đọc từ partition: detect 158 KB, spoof 849 KB, recog **712 KB**.
+
 ## 2. Công thức §3.10 trả đúng cái nó hứa
 
 `arena_fast` giữ detect và spoof trên **cùng một `MicroAllocator`**:

@@ -2816,14 +2816,21 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 
 Nạp cả ba trong `bench_ai` xong, RAM nội còn **111 KB**. Nhưng `bench_ai` chưa có Wi-Fi,
 LVGL, camera lẫn LCD, nên năm dòng dưới của bảng vẫn chưa chi đồng nào: 55 + 53 + 42 + 57 +
-60 = **267 KB**. 111 KB không trả nổi 267 KB, tức **đặt `arena_fast` ở SRAM nội chưa chắc
-giữ được khi đủ thành phần**.
+60 = **267 KB**. 111 KB không trả nổi 267 KB, tức **giữ `arena_fast` ở SRAM nội là không
+đủ chỗ cho phần còn lại của hệ**.
 
-**Đã chốt: `AI_ARENA_FAST_INTERNAL=n`, cả hai arena ở PSRAM.** Trả 224 KB lại cho hệ đưa
-RAM nội trống lên **335 KB**, dư 68 KB so với 267 KB còn nợ, và giá là detect 209,1 → 232,4
-ms (**+23,3 ms mỗi frame**, tức 1,3% của một lượt 1.758 ms). Trong 267 KB kia có 42 KB
-bounce buffer LCD bắt buộc là DMA nội, nên không có cách nào giữ `arena_fast` ở SRAM mà vẫn
-đủ chỗ cho LCD.
+**Đã chốt: `AI_ARENA_FAST_INTERNAL=n`, cả hai arena ở PSRAM** — và đo lại trên board xác
+nhận:
+
+| | `arena_fast` ở SRAM nội | `arena_fast` ở PSRAM |
+|---|---|---|
+| RAM nội trống sau khi nạp cả ba | 111 KB | **331 KB** |
+| Cân đối với 267 KB còn nợ | −156 KB | **+64 KB** |
+| detect | 209,1 ms | **232,5 ms** (+23,4) |
+
+Trả 224 KB lại cho hệ thu về **220 KB RAM nội đo thật**, giá là **+23,4 ms mỗi frame** trên
+detect, tức 2,0% của một lượt 1.159 ms. Trong 267 KB kia có 42 KB bounce buffer LCD bắt
+buộc là DMA nội, nên không có cách nào giữ `arena_fast` ở SRAM mà vẫn đủ chỗ cho LCD.
 
 Đường quay lại khi model nhỏ đi: **thu nhỏ model trước, bật `AI_ARENA_FAST_INTERNAL=y` sau**.
 Hệ số width cho recognition đã hạ `arena_big` từ 823 KB xuống 476 KB đo thật; `arena_fast`
