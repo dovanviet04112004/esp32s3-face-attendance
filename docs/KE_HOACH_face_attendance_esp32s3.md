@@ -1886,13 +1886,17 @@ C++ thuần header, chỉ component C++ include, và code C không bao giờ ch�
 |---|---|---|
 | `FrameGuard` | `camera_fb_t*` | **Quên `esp_camera_fb_return()`** — lỗi kinh điển làm cạn frame pool rồi treo máy sau vài phút |
 | `LockGuard` | `xSemaphoreTake/Give` | Return sớm giữa hàm mà quên nhả mutex → deadlock |
-| `MmapRegion` | `esp_partition_mmap` / `munmap` | Rò handle mmap khi OTA model |
-| `ArenaAllocator` | `heap_caps_aligned_alloc(16,…)` | Cấp phát arena không căn 16 B → ESP-NN chạy chậm âm thầm |
 | `Queue<T,N>` | `xQueueCreate` + gửi/nhận có kiểu | Gửi nhầm kiểu vào queue (C thuần không bắt được) |
-| `ScopedProfile` | `esp_timer_get_time()` | Đo latency mà quên ghi lại điểm kết thúc |
+
+Ba lớp này bọc tài nguyên mà **nhiều component cùng chạm tới**, nên chúng ở `common`.
+Tài nguyên chỉ một component sở hữu thì guard nằm luôn trong component đó: `Arena` bọc
+`heap_caps_aligned_alloc(16,…)` và `MicroProfiler` bọc phép đo tick đều là của riêng
+`ai_engine` (§4.5.6), còn mmap partition là của riêng `sys_storage` (§4.1 của `CLAUDE.md`
+cấm component khác gọi `esp_partition_*`). Kéo chúng lên `common` chỉ tạo thêm một chỗ
+phải đồng bộ, không cứu được lỗi nào.
 
 ```cpp
-// common/priv_include/frame_guard.hpp
+// common/include/frame_guard.hpp
 class FrameGuard {
     camera_fb_t* fb_;
 public:
@@ -2085,7 +2089,7 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 
 | Component | Lớp chính | Kỹ thuật | Lý do chọn |
 |---|---|---|---|
-| `common` | `FrameGuard`, `LockGuard`, `Queue<T,N>`, `MmapRegion` | RAII, template | Xoá cả một lớp lỗi rò tài nguyên |
+| `common` | `FrameGuard`, `LockGuard`, `Queue<T,N>` | RAII, template | Xoá cả một lớp lỗi rò tài nguyên |
 | `ai_engine` | `ITfliteModel` → `TfliteModelBase` → 3 lớp con | Kế thừa + template method | Ba model khác nhau ở op resolver và hậu xử lý |
 | `svc_vision` | `VisionPipeline` | Tiêm phụ thuộc qua tham chiếu interface | Test toàn bộ logic trên host, không cần board |
 | `svc_facedb` | `FaceDb`, `IMatcher` | Strategy | Đổi thuật toán so khớp khi quy mô tăng |
