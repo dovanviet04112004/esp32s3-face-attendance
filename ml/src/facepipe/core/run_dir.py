@@ -76,20 +76,40 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def shard_tree_digest(root: Path) -> str:
+    """Digest a shard tree by the path and size of every file under it.
+
+    Rebuilding shards writes over the same directory, so the path alone cannot
+    tell two generations apart and two runs look comparable when they are not.
+    """
+    if not root.is_dir():
+        return "MISSING"
+    manifest = sorted(
+        f"{item.relative_to(root).as_posix()} {item.stat().st_size}"
+        for item in root.rglob("*")
+        if item.is_file()
+    )
+    return hashlib.sha256("\n".join(manifest).encode("utf-8")).hexdigest()
+
+
 def declared_splits(params: dict[str, object]) -> list[str]:
     """The split a branch names in its params rather than listing as files."""
     keys = sorted(key for key in params if key.endswith("_split") or key == "shards")
-    return [f"{key}: {params[key]}" for key in keys]
+    lines = []
+    for key in keys:
+        lines.append(f"{key}: {params[key]}")
+        if key == "shards":
+            lines.append(f"shards_digest: {shard_tree_digest(Path(str(params[key])))}")
+    return lines
 
 
 def write_split_lock(
     path: Path, split_files: list[Path], declared: list[str] | None = None
 ) -> None:
-    """Record the digest of every split file the run consumed.
+    """Record the digest of every split the run consumed.
 
-    An absent file is recorded as MISSING rather than skipped, and a branch that
-    names shard ranges instead of listing files records those names: a run whose
-    data nobody can identify must not look reproducible.
+    An absent file is MISSING rather than skipped: a run whose data nobody can
+    identify must not look reproducible.
     """
     lines = []
     for split in split_files:
