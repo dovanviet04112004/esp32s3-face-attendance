@@ -139,8 +139,9 @@ Chỗ nghẽn là **phép tính trong kernel tham chiếu C**, đúng như bản
 **Và cái giá thì không trả nổi.** Tách như trên lấy 240 KB SRAM nội, RAM nội
 trống tụt từ 335 KB xuống **95 KB**. §6.4 còn cần ~55 KB cho Wi-Fi + lwIP và
 ~53 KB cho stack 10 task, tức 108 KB — nhiều hơn số còn lại. Vì vậy
-`AI_ARENA_FAST_HEAD_KB` để **mặc định 0**: cơ chế có sẵn, bật lên khi model đã
-nhỏ đi, không phải bây giờ.
+cơ chế tách đã bị gỡ khỏi `Arena`. Đường quay lại khi model nhỏ đi là
+`AI_ARENA_FAST_INTERNAL=y`, đặt **cả** arena vào SRAM nội, ăn đứt phương án
+giữa này.
 
 **Mức tối ưu trình biên dịch gần như không đổi gì**: `-Og` cho 1.087,1 ms và
 `-O2` cho 1.086,3 ms trên nhánh spoof, chênh 0,07%. Vòng nóng hoặc đã là

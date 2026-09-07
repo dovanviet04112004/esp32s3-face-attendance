@@ -1080,12 +1080,14 @@ Cách làm: tạo **một** `MicroAllocator::Create(arena, size)` rồi truyền
 
 Tail nhỏ hơn head nhiều — cỡ vài chục KB mỗi model (metadata theo số tensor và số node), còn head là nơi activation nằm. Nhưng tail **không** biến mất khi đổi model, nên đừng bỏ qua nó khi tính ngân sách.
 
-**Hệ quả cho dự án này**, sau khi đo thật (`docs/measurements/arena.md`): chốt **hai arena**, chia theo **tần suất chạy**, không phải theo tốc độ mong muốn:
+**Hệ quả cho dự án này**, sau khi đo thật (`docs/measurements/arena.md`): chốt **hai arena**, chia theo **tần suất chạy**, và **cả hai nằm ở PSRAM** cho tới khi model đủ nhỏ:
 
 | Arena | Ở đâu | Dùng cho | Kích thước |
 |---|---|---|---|
-| `arena_fast` | **SRAM nội**, align 16 B | **detect một mình**, `MicroAllocator` riêng | `tail_det + head_det` = **189.628 B** đo thật |
+| `arena_fast` | **PSRAM**, align 16 B; `AI_ARENA_FAST_INTERNAL` đổi sang SRAM nội | **detect một mình**, `MicroAllocator` riêng | `tail_det + head_det` = **189.628 B** đo thật |
 | `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` = **823.148 B** đo thật |
+
+Vẫn là hai arena dù cùng ở PSRAM: `arena_big` gộp được vì spoof và recog chạy nối nhau **sau khi** detect xong, nên `head` của chúng chồng lên nhau an toàn. detect chạy mỗi frame, không chia `head` với ai.
 
 Ba số đo dẫn tới cách chia này:
 
@@ -1093,13 +1095,24 @@ Ba số đo dẫn tới cách chia này:
 2. **detect chạy mỗi frame, hai nhánh kia chạy mỗi lần có người.** Nên 10% của detect là 10% liên tục, còn 4% của spoof chỉ xuất hiện lúc có mặt. Chỗ SRAM đắt thì đưa cho thằng chạy nhiều nhất.
 3. **spoof + recog gộp lại không vừa SRAM bằng cách nào cả.** Ép chúng vào `arena_fast` thì cả hai cùng trượt, và `arena_fast` phải phình tới mức không còn chỗ cho Wi-Fi lẫn stack task.
 
-detect một mình cần 185 KB thay vì 512 KB mà vẫn không đủ, nên cách chia này là thứ **làm cho hệ chạy được**, không chỉ nhanh hơn.
+**Nhưng detect vẫn không được SRAM nội, vì hệ không trả nổi 224 KB.** Điểm 2 nói detect xứng đáng nhất, và nó vẫn đúng; thứ chặn lại là ngân sách §6.4:
+
+| | `arena_fast` ở SRAM nội | `arena_fast` ở PSRAM |
+|---|---|---|
+| detect | 209,1 ms | 232,4 ms (**+23,3 ms**) |
+| RAM nội trống sau khi nạp cả ba | 111 KB | **335 KB** |
+| §6.4 còn phải chi | 267 KB | 267 KB |
+| **Cân đối** | **−156 KB** | **+68 KB** |
+
+Trong 267 KB đó có 42 KB bounce buffer LCD **bắt buộc `MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL`** — không có đường đẩy sang PSRAM. Nên đây không phải chọn nhanh hay chậm mà là chọn chạy được hay không: **23,3 ms mỗi frame đổi lấy 224 KB**, và 23,3 ms đó chỉ là 1,3% của một lượt chấm công 1.758 ms.
+
+`AI_ARENA_FAST_INTERNAL` giữ đường quay lại: model nhỏ đi tới mức 267 KB kia vừa chỗ thì bật `y` là detect về SRAM nội, không sửa một dòng code nào.
 
 Ba con số `tail` và ba con số `head` phải đo thật ở E8, không suy ra từ `arena_used_bytes()` tổng.
 
-**Tách `head` và `tail` khi cả arena không vừa SRAM nội.** `MicroAllocator::Create` có bản nhận **hai** buffer rời: một cho vùng persistent (`tail`) và một cho vùng non-persistent (`head`). Vì `head` là chỗ activation nằm — thứ mỗi lần `Invoke()` quét đi quét lại — còn `tail` chỉ là metadata đọc một lần mỗi node, nên khi cả `arena_fast` không vừa SRAM nội thì đặt **`head` ở SRAM nội, `tail` ở PSRAM** vẫn giữ được phần nóng ở bộ nhớ nhanh. Khai bằng `AI_ARENA_FAST_HEAD_KB`: bằng 0 thì một buffer như cũ, lớn hơn 0 thì tách. Mức thu được phải đo, không suy ra — số nằm ở `docs/measurements/latency.md`.
+**Không tách `head` và `tail`.** `MicroAllocator::Create` có bản nhận hai buffer rời, cho phép để `head` (activation) ở SRAM nội và `tail` (metadata) ở PSRAM. Đo rồi: cách đó thu về **1,9%** cả chuỗi trong khi vẫn ăn 158–229 KB SRAM nội, tức vẫn không lọt ngân sách §6.4 mà lãi thì bằng một phần ba của việc đặt cả arena vào SRAM. Nó là phương án ở giữa và **thua cả hai đầu**, nên `Arena` chỉ có một đường cấp phát duy nhất. Số đo ở `docs/measurements/latency.md`.
 
-**`ai_engine_init()` phải chạy trước mọi driver.** Ràng buộc thật của `arena_fast` không phải tổng RAM nội còn trống mà là **một dải liền mạch**: `heap_caps_aligned_alloc` không ghép được nhiều mảnh rời. Đo trên board (`docs/measurements/arena.md`): xin sau `drv_camera_init()` thì còn 192 KB trống nhưng mảnh to nhất chỉ 143 KB, arena **lùi xuống PSRAM**; xin ngay sau `sys_storage_init()` thì còn 293 KB với mảnh liền đủ rộng, và arena nằm gọn SRAM nội. Arena là chỗ duy nhất trong hệ xin một dải lớn như vậy, nên nó xin đầu tiên. RAM nội còn lại sau khi nạp cả ba model là **111 KB** — ngân sách chi tiếp cho Wi-Fi, LVGL và stack task nằm ở §6.4.
+**`ai_engine_init()` phải chạy trước mọi driver** — ràng buộc còn nguyên kể cả khi arena ở PSRAM, vì `AI_ARENA_FAST_INTERNAL` có thể bật lại. Ràng buộc thật không phải tổng RAM nội còn trống mà là **một dải liền mạch**: `heap_caps_aligned_alloc` không ghép được nhiều mảnh rời. Đo trên board (`docs/measurements/arena.md`): xin sau `drv_camera_init()` thì còn 192 KB trống nhưng mảnh to nhất chỉ 143 KB, arena **lùi xuống PSRAM**; xin ngay sau `sys_storage_init()` thì còn 293 KB với mảnh liền đủ rộng. Arena là chỗ duy nhất trong hệ xin một dải lớn như vậy, nên nó xin đầu tiên.
 
 ### Pipeline train
 
@@ -1917,22 +1930,22 @@ public:
         ┌──────────────────────┐
         │  <<interface>>       │
         │     ITfliteModel     │
-        │  init/input/invoke   │
-        │  arena_used/name     │
+        │  init/input/output   │
+        │  invoke/name         │
         └──────────┬───────────┘
                    │
         ┌──────────▼───────────┐
-        │   TfliteModelBase    │  arena_, interpreter_, profiler_, tensor I/O
+        │   TfliteModelBase    │  interpreter_, profiler_, tensor I/O
         │   (không tạo trực tiếp)│
         └───┬───────┬───────┬──┘
             │       │       │
      DetectModel SpoofModel RecogModel
-     op:6        op:9       op:6         ← MicroMutableOpResolver<N> riêng từng lớp
-     +decode()   —          +l2norm()
+     op:6        op:7       op:6         ← MicroMutableOpResolver<N> riêng từng lớp
+     +decode()   +score()   +l2norm()
      +nms()
 ```
 
-Ba lớp con khác nhau ở **danh sách op đăng ký** và **hậu xử lý**, không phải khác cho có. `TfliteModelBase` giữ phần lặp lại: dựng interpreter trên arena được đưa, `AllocateTensors`, đo `arena_used_bytes()`.
+Ba lớp con khác nhau ở **danh sách op đăng ký** và **hậu xử lý**, không phải khác cho có. `TfliteModelBase` giữ phần lặp lại: dựng interpreter trên arena được đưa và `AllocateTensors`.
 
 ```cpp
 // priv_include/tflite_model.hpp
@@ -1943,10 +1956,11 @@ public:
     virtual TfLiteTensor* input(int index)  noexcept = 0;
     virtual TfLiteTensor* output(int index) noexcept = 0;
     virtual esp_err_t     invoke() noexcept = 0;
-    virtual size_t        arena_used() const noexcept = 0;
     virtual const char*   name()       const noexcept = 0;
 };
 ```
+
+**Interface không có `arena_used()`.** Khi hai model dùng chung một `MicroAllocator`, `interpreter->arena_used_bytes()` trả về mức dùng của **cả allocator**, giống hệt nhau ở cả hai — một con số trông như của riêng model nhưng không phải. Mức dùng thật của từng arena đọc ở `Arena::used()`, và `ai_engine_arena_stats()` đưa nó ra ngoài.
 
 **`init` nhận `Arena&` chứ không nhận `(size, caps)`.** Model tự cấp buffer riêng thì mỗi model một `MicroAllocator`, mà §3.10 đòi ngược lại: detect và spoof phải dùng **chung** một allocator mới chồng được tail và dùng chung head. `Arena` sở hữu buffer, model chỉ mượn.
 
@@ -2144,9 +2158,9 @@ components/ai_engine/
 
 | Symbol | Mặc định | Nghĩa |
 |---|---|---|
-| `AI_ARENA_FAST_KB` | 224 | `arena_fast` ở SRAM nội, riêng detect. E8-T7 đo detect dùng 189.628 B |
-| `AI_ARENA_BIG_KB` | 1536 | `arena_big` ở PSRAM, spoof + recog dùng chung. Đo 823.148 B |
-| `AI_ARENA_FAST_HEAD_KB` | 0 | 0 = một buffer liền; lớn hơn 0 thì tách `head`/`tail` theo §3.10 |
+| `AI_ARENA_FAST_KB` | 224 | `arena_fast` riêng detect. E8-T7 đo detect dùng 189.628 B |
+| `AI_ARENA_BIG_KB` | 1536 | `arena_big`, spoof + recog dùng chung. Đo 823.148 B |
+| `AI_ARENA_FAST_INTERNAL` | n | `n` = `arena_fast` ở PSRAM; `y` = xin SRAM nội trước (§3.10) |
 
 Xin `arena_fast` ở SRAM nội mà không đủ chỗ thì `Arena` lùi xuống PSRAM và **log cảnh báo** kèm khối liền lớn nhất còn lại — chạy chậm còn hơn không chạy, nhưng phải thấy được là đã lùi.
 
@@ -2797,13 +2811,17 @@ LVGL, camera lẫn LCD, nên năm dòng dưới của bảng vẫn chưa chi đ�
 60 = **267 KB**. 111 KB không trả nổi 267 KB, tức **đặt `arena_fast` ở SRAM nội chưa chắc
 giữ được khi đủ thành phần**.
 
-Ba đường thoát, xếp theo thứ tự nên thử:
+**Đã chốt: `AI_ARENA_FAST_INTERNAL=n`, cả hai arena ở PSRAM.** Trả 224 KB lại cho hệ đưa
+RAM nội trống lên **335 KB**, dư 68 KB so với 267 KB còn nợ, và giá là detect 209,1 → 232,4
+ms (**+23,3 ms mỗi frame**, tức 1,3% của một lượt 1.758 ms). Trong 267 KB kia có 42 KB
+bounce buffer LCD bắt buộc là DMA nội, nên không có cách nào giữ `arena_fast` ở SRAM mà vẫn
+đủ chỗ cho LCD.
 
-1. **Thu nhỏ model** — hệ số width cho recognition đã hạ `arena_big` từ 823 KB xuống 476 KB đo thật; làm tương tự cho anti-spoof thì `arena_big` co thêm, nhưng `arena_fast` chỉ nhỏ đi khi detect nhỏ đi.
-2. **`AI_ARENA_FAST_HEAD_KB`** — giữ `head` ở SRAM nội, đẩy `tail` sang PSRAM (§3.10). Thu về 1,9% latency, tốn ít SRAM hơn hẳn.
-3. **Cho detect xuống `arena_big` luôn** — mất ≈ 22 ms mỗi frame theo `docs/measurements/latency.md`, đổi lại trả về toàn bộ 224 KB.
+Đường quay lại khi model nhỏ đi: **thu nhỏ model trước, bật `AI_ARENA_FAST_INTERNAL=y` sau**.
+Hệ số width cho recognition đã hạ `arena_big` từ 823 KB xuống 476 KB đo thật; `arena_fast`
+chỉ nhỏ đi khi chính detect nhỏ đi.
 
-Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là dải liền mạch (§3.10). Phải đo lại ở E8-T9 khi Wi-Fi và LVGL đã lên rồi mới chốt được đường nào.
+Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là dải liền mạch (§3.10). Phải đo lại ở E8-T9 khi Wi-Fi và LVGL đã lên.
 
 ---
 

@@ -86,7 +86,9 @@ trước khi tính `arena_big` 926 KB mà §6.4 không đặt ngân sách.
 `arena_fast` là 229,1 KB, mà khối liền nội lớn nhất lúc `ai_engine_init()` chạy
 là 272 KB, nên đặt được. Đặt xong thì RAM nội trống còn **95 KB**, trong khi
 §6.4 còn phải chi ~55 KB cho Wi-Fi + lwIP và ~53 KB cho stack 10 task. Mức thu
-về chỉ 1,9% latency (`latency.md`), nên `AI_ARENA_FAST_HEAD_KB` để mặc định 0.
+về chỉ 1,9% latency (`latency.md`), nên cơ chế tách đã bị gỡ khỏi `Arena`: nó
+thua cả hai đầu — kém đặt cả arena vào SRAM về tốc độ, kém đặt cả arena vào
+PSRAM về chỗ trống.
 
 Con số 272 KB kia chỉ có sau khi buffer đầu vào của `bench_ai` chuyển sang
 PSRAM. Để chúng ở `.bss` thì chúng chiếm 131 KB RAM nội và khối liền lớn nhất
