@@ -464,6 +464,14 @@ Anti-spoof theo cùng quy tắc: **80 → 81**, chuỗi thành 41 → 21 → 11 
 
 Mặc định là `ReLU6` vì dải bị chặn giúp INT8; nhưng nhánh nào cần CLE thì `ReLU` là lựa chọn duy nhất không mất tốc độ. Khai bằng `model.params.activation` ở config nhánh, để so được bằng số thay vì tranh luận. **`PReLU` thì không được dùng ở bất kỳ nhánh nào** — nó tốn 42,3% thời gian của cả pipeline, đo ở `docs/measurements/latency.md`.
 
+Từng nhánh chọn gì:
+
+| Nhánh | Activation | Vì sao |
+|---|---|---|
+| detection | `ReLU6` viết cứng trong `blocks.py` | Không chạy CLE, dải chặn có lợi cho INT8 |
+| anti-spoof | `ReLU` qua config | Chạy CLE; `HardSigmoid` của khối SE vẫn là `ReLU6(x+3)/6`, đó là công thức của cổng chứ không phải activation của conv |
+| recognition | `ReLU` qua config | Chạy CLE — `ReLU6` chỉ giữ được 15/48 cặp conv, `ReLU` giữ đủ 48/48 |
+
 ### Lớp 2 — Huấn luyện & Distillation
 
 | Kỹ thuật | Chi tiết |
@@ -1117,7 +1125,7 @@ Ba con số `tail` và ba con số `head` phải đo thật ở E8, không suy r
 ### Pipeline train
 
 ```
-[1] Kiến trúc student (ReLU6, kênh bội 8, kiểm tra op TFLM)
+[1] Kiến trúc student (activation theo bảng §3 lớp 1, kênh bội 8, kiểm tra op TFLM)
          │  random init — KHÔNG load .pth có sẵn
          ▼
 [2] Teacher: freeze → sinh soft target (+ feature map + depth map + embedding)
@@ -1547,7 +1555,7 @@ ml/
 │   │   │   │   └── export_soft_target.py  # cache logit + depth map 32×32
 │   │   │   ├── student/
 │   │   │   │   ├── minifasnet_v2_se.py
-│   │   │   │   └── blocks.py              # SE dùng HardSigmoid ReLU6(x+3)/6 cho INT8
+│   │   │   │   └── blocks.py              # ConvBnAct(relu); SE gate HardSigmoid ReLU6(x+3)/6
 │   │   │   ├── losses/
 │   │   │   │   ├── kd_logit.py
 │   │   │   │   ├── kd_depth_map.py        # L1 pixel-wise trên depth 32×32
@@ -1568,7 +1576,7 @@ ml/
 │   │       │   └── export_embedding.py    # cache embedding 512-D ra .npy memmap
 │   │       ├── student/
 │   │       │   ├── mobilefacenet.py
-│   │       │   └── blocks.py
+│   │       │   └── blocks.py              # ConvBnAct(relu), giữ CLE 48/48 cặp conv
 │   │       ├── losses/
 │   │       │   ├── arcface.py             # margin loss trên nhãn thật
 │   │       │   ├── kd_embedding.py        # cosine + L2 với embedding teacher

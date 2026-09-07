@@ -104,20 +104,33 @@ vào đúng phép tích chập mà mạng sinh ra để làm.
 
 ## 3. Đọc bảng
 
-**Nhánh nào theo §3 thì nhanh, nhánh nào bỏ §3 thì chậm.** §3 bắt student dùng
-ReLU6. YuNet làm đúng và đạt 96,3% op được tăng tốc. MiniFASNet và
-MobileFaceNet đều dùng PReLU, và đó là hai nhánh chậm. Đây không phải trùng
-hợp: ESP-NN gộp ReLU6 vào ngay đầu ra của conv, còn PReLU phải chạy một vòng
-tham chiếu C riêng trên toàn bộ activation.
+**Nhánh nào theo §3 thì nhanh, nhánh nào bỏ §3 thì chậm.** §3 cấm `PReLU` ở mọi
+nhánh. YuNet làm đúng ngay từ đầu — nó dùng `ReLU6` — và đạt 96,3% op được tăng
+tốc. MiniFASNet và MobileFaceNet dùng `PReLU`, và đó đúng là hai nhánh chậm.
+Không phải trùng hợp: ESP-NN kẹp `ReLU`/`ReLU6` ngay trong vòng lặp assembly
+của conv, còn `PReLU` phải chạy một vòng tham chiếu C riêng trên toàn bộ
+activation.
 
 **PReLU một mình ăn 1.478.722 µs — 42,3% của cả chuỗi 3.496 ms.** Cộng hết op
 không tăng tốc được (PReLU, MEAN, PAD, CONCATENATION, RESIZE) là 1.831.594 µs,
 tức **52,4% thời gian của cả pipeline dùng cho op mà chip không có kernel**.
 
-**Vì sao lại chọn PReLU**: CLE (cân bằng chéo lớp, §3.8) đòi hàm kích hoạt
-thuần nhất dương; ReLU6 có trần cố định nên không thoả. Chọn PReLU là chọn
-CLE. `tflite_op_check.py` đã cảnh báo từ trước khi E8 tồn tại; giờ có giá của
-nó bằng số.
+**Vì sao trước đó lại là PReLU, và vì sao thay bằng `ReLU` chứ không phải
+`ReLU6`**: CLE (cân bằng chéo lớp, §3.8) đòi hàm kích hoạt thuần nhất dương.
+`ReLU6` có trần cố định nên không thoả — nó chỉ giữ được 15/48 cặp conv của
+MobileFaceNet. `PReLU` thoả, nên chọn PReLU là chọn CLE, và giá phải trả hiện
+ở bảng trên. `ReLU` cũng thuần nhất dương, giữ đủ **48/48** cặp, mà lại tốn 0 ms
+vì esp-nn kẹp nó trong kernel conv. Vì vậy hai nhánh này đổi sang `ReLU`:
+**giữ nguyên CLE, bỏ toàn bộ chi phí**. Detection giữ `ReLU6` vì nó không chạy
+CLE và dải bị chặn có lợi cho INT8.
+
+**Đổi mới là kiến trúc, chưa phải model đã chốt.** Số ở cột "sau" đo trên đồ thị
+`ReLU` với **trọng số chưa train**. Tại thời điểm ghi bảng này,
+`contracts/models.lock.json` vẫn trỏ về bản `PReLU`: anti-spoof
+`20260905-1740_865b5d0` (đầu vào 80×80) và recognition `20260903-2258_f7a6aab`
+(112×112) — 80 và 112 là kích thước của kiến trúc cũ, bản mới dùng 81 và 113.
+Lock chỉ đổi sau khi mỗi nhánh có run train của chính kiến trúc mới và qua được
+ngưỡng accuracy INT8 ở §4.2.
 
 **Đưa activation về SRAM nội chỉ thu được 1,9%.** Tách `head` xuống SRAM nội và
 để `tail` ở PSRAM (§3.10) cho:
@@ -152,16 +165,23 @@ tỉ số 1,52 so với 1,50 theo lý thuyết.
 
 ## 4. Việc cần làm, xếp theo mức thu được
 
-| Việc | Ước tính thu về | Đánh đổi |
-|---|---|---|
-| PReLU → ReLU6 ở spoof và recog, train lại | **~1.479 ms** | Mất CLE, phải đo lại thang §3.8 cả hai nhánh |
-| MEAN → AVERAGE_POOL_2D ở khối SE của spoof | ~217 ms | Sửa kiến trúc student, train lại |
-| Đưa arena về SRAM nội | 🔬 chưa đo | Phải thu nhỏ model trước, xem `arena.md` |
-| Bỏ PAD bằng cách chọn padding tương đương ở conv | ~135 ms | Sửa kiến trúc, train lại |
+| Việc | Thu về | Đánh đổi | Trạng thái |
+|---|---|---|---|
+| `PReLU` → `ReLU` ở spoof và recog | **1.479 ms** | Không mất CLE: `ReLU` cũng thuần nhất dương | kiến trúc ✅, train recog đang chạy, train spoof chưa |
+| `MEAN` → `AVERAGE_POOL_2D` ở khối SE của spoof | 217 ms | Sửa kiến trúc student | kiến trúc ✅, chưa train |
+| Bỏ `PAD` bằng feature map lẻ (81, 113) | 135 ms | Sửa kiến trúc student | kiến trúc ✅, chưa train |
+| Hệ số width 32 cho recog | **621 ms** | Nửa số kênh, accuracy phải kiểm | đo ✅, chưa chốt |
+| Hệ số width cho spoof | 🔬 chưa đo | `MiniFASNetBackbone` chưa có tham số | chưa làm |
+| Ngừng preview lúc spoof + recog chạy | 🔬 ~190 ms | Màn hình đứng ~1,1 s mỗi lượt | chưa thử |
+| Đưa arena về SRAM nội | 23 ms mỗi frame, chỉ detect | Không đủ RAM, xem `arena.md` | ❌ bỏ |
 
-Ba dòng đầu đưa 3.496 ms xuống khoảng 1.800 ms mà không giảm một phép tính
-nào. Vẫn gấp 5 lần ngân sách 360 ms, nên **model bắt buộc phải nhỏ đi**, không
-chỉ đổi hàm kích hoạt.
+Ba dòng đầu đưa 3.496 ms xuống **1.758 ms** mà không giảm một phép tính nào —
+đo thật, không còn là ước lượng. Vẫn gấp 4,9 lần ngân sách 360 ms, nên **model
+bắt buộc phải nhỏ đi**: dòng thứ tư hạ tiếp xuống **1.138 ms**.
+
+Mọi con số ở bảng này đo trên trọng số chưa train. Chúng đúng cho latency vì
+latency không phụ thuộc trọng số, nhưng **accuracy thì có** — chưa nhánh nào
+trong hai nhánh này được chốt cho tới khi có run train của đúng kiến trúc mới.
 
 ## 5. Chưa tính vào
 

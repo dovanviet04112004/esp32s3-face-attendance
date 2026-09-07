@@ -124,7 +124,7 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 |---|---|---|---|
 | ~~E5-T0~~ | ~~`recordio_to_wds.py`: bỏ member `.cls`~~ — **bỏ**. Shard đã nằm trên `fast_drive`, đọc nghẽn ở giải nén JPEG chứ không ở tar; sinh lại 36 GB để tiết kiệm 5,3 GB đọc tuần tự không đổi lại được gì | — | — |
 | E5-T1 | `teacher/r50_wf600k.py` + `export_embedding.py` | Cache embedding 512-D ra `.npy` memmap | E2-T5, E3-T4 |
-| E5-T2 | `student/mobilefacenet.py` + `blocks.py` (ReLU6, kênh bội 8) | Forward ra 512-D, param **1,20M** đo được (0,99M của bài báo là bản embedding 128-D) | E2-T3 |
+| E5-T2 | `student/mobilefacenet.py` + `blocks.py` (ReLU, kênh bội 8) | Forward ra 512-D, param **1,20M** đo được (0,99M của bài báo là bản embedding 128-D) | E2-T3 |
 | E5-T3 | `losses/{arcface, kd_embedding, kd_relation_rkd}.py` | Unit test từng loss | E5-T2 |
 | E5-T4 | `train_kd.py` + `data.py` — chạy KD thật | LFW ≥ 99,0 ở FP32 | E5-T1, E5-T3, E3-T5, **E3-T10** |
 | E5-T5 | `postproc/{align, l2norm, cosine}.py` | Align được bằng landmark thật từ detector E4 | E5-T4, E4-T11 |
@@ -220,6 +220,11 @@ Vào epic này **chỉ khi** E8 chỉ ra vấn đề cụ thể. Không tối ư
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | E9-T9 | Cập nhật KẾ HOẠCH §3 và §6 theo số đo thật | Kế hoạch khớp thực tế, không còn 🔬 nào chưa có số | E8-T12 |
+| **E9-T10** | **Train lại recognition trên kiến trúc mới** — `ReLU` thay `PReLU`, đầu vào 113. Kiến trúc đã sửa, latency đã đo (1.079,7 ms), nhưng `models.lock.json` vẫn trỏ run `20260903-2258` của bản `PReLU` 112 | LFW/CFP-FP/AgeDB ≥ mốc bản cũ (0,9942 / 0,9559 / 0,9428), export INT8, lock đổi | E9-T3 |
+| **E9-T11** | **Train lại anti-spoof trên kiến trúc mới** — `ReLU`, `AvgPool2d` cỡ cố định thay `AdaptiveAvgPool2d`, đầu vào 81. Chưa chạy lần nào; lock vẫn trỏ run `20260905-1740` của bản `PReLU` 80 | ACER < 5% ở INT8, export, lock đổi | E9-T3, E9-T10 |
+| **E9-T12** | Thêm tham số `width` cho `MiniFASNetBackbone` — kênh đang viết cứng `(32, 64, 128, 256)`, nên chưa thử thu nhỏ được như recognition đã làm | Đo arena + latency ở `bench_ai` với ít nhất 2 hệ số | — |
+
+> E9-T10 và E9-T11 là **nợ của E9-T3**: đổi op ở tầng kiến trúc thì phải train lại, mà mọi số latency hiện có đều đo trên **trọng số chưa train**. Latency không phụ thuộc trọng số nên các số đó đúng; accuracy thì phụ thuộc, nên chưa nhánh nào được chốt.
 
 ---
 
