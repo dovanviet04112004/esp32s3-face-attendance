@@ -17,6 +17,11 @@ const char *TAG = "ai_engine";
 
 constexpr size_t kFastBytes = CONFIG_AI_ARENA_FAST_KB * 1024U;
 constexpr size_t kBigBytes = CONFIG_AI_ARENA_BIG_KB * 1024U;
+#ifdef CONFIG_AI_ARENA_FAST_INTERNAL
+constexpr uint32_t kFastCaps = MALLOC_CAP_INTERNAL;
+#else
+constexpr uint32_t kFastCaps = MALLOC_CAP_SPIRAM;
+#endif
 
 ai::Arena s_fast;
 ai::Arena s_big;
@@ -57,9 +62,7 @@ extern "C" esp_err_t ai_engine_init(void)
         return opened;
     }
     const size_t internal_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    constexpr size_t kFastHead = CONFIG_AI_ARENA_FAST_HEAD_KB * 1024U;
-    esp_err_t err = kFastHead > 0 ? s_fast.reserve_split(kFastHead, kFastBytes - kFastHead)
-                                  : s_fast.reserve(kFastBytes, MALLOC_CAP_INTERNAL);
+    esp_err_t err = s_fast.reserve(kFastBytes, kFastCaps);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "arena_fast %u KB: %s", CONFIG_AI_ARENA_FAST_KB, esp_err_to_name(err));
         return err;

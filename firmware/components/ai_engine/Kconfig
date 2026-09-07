@@ -1,23 +1,22 @@
 menu "AI engine"
 
     config AI_ARENA_FAST_KB
-        int "Tensor arena for detection alone, internal SRAM (KB)"
+        int "Tensor arena for detection alone (KB)"
         default 224
         range 16 2048
         help
             Detection is the only branch that runs on every frame, so it gets
-            internal RAM to itself (KEHOACH 3.10). It measured 185 KB, and
-            this arena falls back to PSRAM, loudly, when it does not fit.
+            an arena to itself (KEHOACH 3.10). E8-T7 measured it at 189,628 B.
 
-    config AI_ARENA_FAST_HEAD_KB
-        int "Split the fast arena, keeping this many KB of activations in SRAM"
-        default 0
-        range 0 2048
+    config AI_ARENA_FAST_INTERNAL
+        bool "Ask for the detection arena in internal SRAM"
+        default n
         help
-            Zero keeps one buffer. Above zero the arena splits: this many KB of
-            activations are asked for in internal RAM and the remainder of
-            AI_ARENA_FAST_KB holds the persistent half in PSRAM. Worth it when
-            the whole arena will not fit internally but its activations will.
+            Internal SRAM buys detection 23.3 ms per frame, but the 224 KB it
+            costs leaves the LCD bounce buffer and the Wi-Fi stack short by
+            156 KB (KEHOACH 6.4). Turn this on once the models shrink enough
+            for that budget to close. The arena falls back to PSRAM, loudly,
+            when it does not fit.
 
     config AI_ARENA_BIG_KB
         int "Tensor arena shared by anti-spoof and recognition, PSRAM (KB)"
