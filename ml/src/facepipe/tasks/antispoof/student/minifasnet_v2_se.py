@@ -17,6 +17,8 @@ from .blocks import ConvBn, ConvBnAct, DepthWise, Residual
 
 INPUT_SIZE = 81
 DOWNSAMPLES = 4
+# Every channel is a multiple of this, so it stays a multiple of 8 (KEHOACH 3).
+WIDTH = 32
 
 
 def stage_maps(input_size: int) -> list[int]:
@@ -41,23 +43,28 @@ class MiniFASNetBackbone(nn.Module):
         squeeze_excite: bool = True,
         activation: str = "relu6",
         input_size: int = INPUT_SIZE,
+        width: int = WIDTH,
     ) -> None:
         super().__init__()
         _stem, second, third, fourth = stage_maps(input_size)
         gate = {"squeeze_excite": squeeze_excite, "activation": activation}
-        self.stem = ConvBnAct(3, 32, 3, stride=2, padding=1, activation=activation)
-        self.stem_dw = ConvBnAct(32, 32, 3, stride=1, padding=1, groups=32, activation=activation)
+        wide = width * 2
+        closing = width * 8
+        self.stem = ConvBnAct(3, width, 3, stride=2, padding=1, activation=activation)
+        self.stem_dw = ConvBnAct(
+            width, width, 3, stride=1, padding=1, groups=width, activation=activation
+        )
 
-        self.down_2 = DepthWise(32, 32, 64, second, stride=2, **gate)
-        self.stage_2 = Residual(32, blocks=2, expand=64, map_size=second, **gate)
-        self.down_3 = DepthWise(32, 64, 128, third, stride=2, **gate)
-        self.stage_3 = Residual(64, blocks=3, expand=128, map_size=third, **gate)
-        self.down_4 = DepthWise(64, 64, 256, fourth, stride=2, **gate)
-        self.stage_4 = Residual(64, blocks=2, expand=128, map_size=fourth, **gate)
+        self.down_2 = DepthWise(width, width, wide, second, stride=2, **gate)
+        self.stage_2 = Residual(width, blocks=2, expand=wide, map_size=second, **gate)
+        self.down_3 = DepthWise(width, wide, width * 4, third, stride=2, **gate)
+        self.stage_3 = Residual(wide, blocks=3, expand=width * 4, map_size=third, **gate)
+        self.down_4 = DepthWise(wide, wide, closing, fourth, stride=2, **gate)
+        self.stage_4 = Residual(wide, blocks=2, expand=width * 4, map_size=fourth, **gate)
 
-        self.head = ConvBnAct(64, 256, kernel_size=1, activation=activation)
-        self.head_dw = ConvBn(256, 256, kernel_size=fourth, groups=256)
-        self.embed = nn.Linear(256, embedding, bias=False)
+        self.head = ConvBnAct(wide, closing, kernel_size=1, activation=activation)
+        self.head_dw = ConvBn(closing, closing, kernel_size=fourth, groups=closing)
+        self.embed = nn.Linear(closing, embedding, bias=False)
         self.embed_bn = nn.BatchNorm1d(embedding)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -85,10 +92,11 @@ class MiniFASNetV2SE(nn.Module):
         squeeze_excite: bool = True,
         activation: str = "relu6",
         input_size: int = INPUT_SIZE,
+        width: int = WIDTH,
     ) -> None:
         super().__init__()
-        self.tight = MiniFASNetBackbone(embedding, squeeze_excite, activation, input_size)
-        self.wide = MiniFASNetBackbone(embedding, squeeze_excite, activation, input_size)
+        self.tight = MiniFASNetBackbone(embedding, squeeze_excite, activation, input_size, width)
+        self.wide = MiniFASNetBackbone(embedding, squeeze_excite, activation, input_size, width)
         self.drop = nn.Dropout(p=0.2)
         self.classifier = nn.Linear(embedding * 2, num_classes)
 
