@@ -155,7 +155,8 @@ Chạy song song với E4–E6. Không phụ thuộc model.
 | E7-T4 | `drv_ioexp` (PCF8574) + `drv_camera` (OV5640) | Chụp được ảnh QVGA vào PSRAM | E7-T2 |
 | E7-T5 | `drv_lcd` (ST7796 + bounce buffer) + LVGL port | Hiện được ảnh tĩnh 320×480 | E7-T2 |
 | E7-T6 | `drv_touch` (GT911, trình tự chọn địa chỉ) | Đọc được điểm chạm | E7-T4 |
-| E7-T7 | `drv_tof` (VL53L1X ULD) | Đọc khoảng cách, ngắt GPIO3 hoạt động | E7-T4 |
+| E7-T7 | `drv_tof` (VL53L1X ULD) — **hai tiêu chí đã đạt 09/09**: sensor lên ở `0x29` với model id `0xEACC`, short mode 33 ms mỗi 100 ms, ngắt GPIO3 giương 16/20 lần. Còn nợ một lần đo có vật thật trước sensor (đang trả `65535` = không mục tiêu) | Đọc khoảng cách, ngắt GPIO3 hoạt động | E7-T4 |
+| **E7-T13** | **`drv_ioexp` NACK ở lần ghi đầu, chưa rõ nguyên nhân.** Fail 3 lần liền rồi pass 4/4 sau khi có một lần ghi 0xFF thành công. Đã loại: tốc độ bus (400 và 100 kHz như nhau), phần cứng (probe/write/read đều OK từ app khác), sdkconfig (giống hệt), giao dịch đầu sau khi tạo bus (cold write OK), và dây (chủ repo xác nhận không đụng). Quy luật còn lại chưa chứng minh: mọi lần fail là lần ghi đầu **kể từ khi cắm điện**, mà PCF8574 không có chân reset nên latch sống qua reset chip | Rút điện cắm lại rồi chạy `expander` đầu tiên: tái hiện được thì đo mức SDA/SCL trước init và chốt fix có bằng chứng; không tái hiện thì ghi lại là quan sát mở, **không thêm workaround** | — |
 | E7-T8 | `drv_audio` (I2S + MAX98357A) | Phát WAV từ SPIFFS, không xì | E7-T2 |
 | E7-T9 | `drv_relay` **và** `drv_servo` + `svc_door` (IDoor + `RelayDoor` + `ServoDoor` + `FakeDoor`) | Đổi `Kconfig` là đổi được cơ cấu, `FakeDoor` chạy test trên host | E7-T1, E7-T3 |
 | E7-T10 | `sys_storage` — NVS, LittleFS, mmap model, `storage_format.h` + `static_assert` | Ghi/đọc `faces.bin` sống sót khi rút điện giữa chừng | E7-T2 |
