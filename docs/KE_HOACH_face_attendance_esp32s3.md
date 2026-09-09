@@ -476,7 +476,7 @@ và cái giá của nó nằm ở `docs/adr/0002-bo-knowledge-distillation.md`.
 |---|---|
 | **Task loss của từng nhánh** | Detect: cls + box + landmark trên prior dương. Anti-spoof: BCE hai lớp trên cặp crop. Recognition: ArcFace trên nhãn danh tính |
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
-| **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén JPEG q=60–90, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược |
+| **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén lại JPEG chất lượng 30–95, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược, phơi sáng. Mỗi nhóm một cổng `p=0,5`; dải lấy từ `measurements/antispoof` §3 và §9 |
 | **Anti-spoof: augment tỉ lệ crop** | Rút ngẫu nhiên tỉ lệ wide rồi cắt lại từ record, **rút cùng một phân bố cho cả hai lớp**, qua một cổng xác suất. Bắt buộc, xem mục dưới |
 
 #### Công thức lấy mẫu của detect phải khớp kích thước đầu vào

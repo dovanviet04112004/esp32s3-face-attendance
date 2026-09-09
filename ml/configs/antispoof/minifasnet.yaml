@@ -36,6 +36,13 @@ data:
     # The mirror's train and valid are one pool; test is not (measurements 1).
     val_split: "test:0:10"
     test_split: "test:10:"
+    # Re-encoding the crop: the board compresses once already, so a second pass
+    # is the history the train set would otherwise lack (measurements 9).
+    recompress_probability: 0.5
+    quality_range: [30, 95]
+    # Poisson-Gaussian noise, white balance, vignette, motion blur, backlight
+    # and exposure, behind one gate (measurements 12.1).
+    photometric_probability: 0.5
     # Every source record below 1.0x is an attack (measurements 12.5).
     crop_scale_range: [0.7, 1.2]
     # A gate, because this crop only ever narrows (measurements 15.1).
