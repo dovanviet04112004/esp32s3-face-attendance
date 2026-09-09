@@ -209,7 +209,28 @@ Vào epic này **chỉ khi** E8 chỉ ra vấn đề cụ thể. Không tối ư
 | E9-T9 | Cập nhật KẾ HOẠCH §3 và §6 theo số đo thật | Kế hoạch khớp thực tế, không còn 🔬 nào chưa có số | E8-T12 |
 | ~~E9-T10~~ | ~~**Train lại recognition trên kiến trúc mới**~~ — **XONG**: run `20260908-1750` (ReLU 113, `width=32`, 10 epoch) đã export Q1 720,3 KB và vào lock. Không đạt mốc bản `PReLU` 112 trên `cfp_fp_tar@far0.001` (0,6403 so với 0,7874); bản `width=64` `20260907-2314` đạt 0,7566 và giữ làm đối chứng | ✅ | E9-T3 |
 | **E9-T11** | **Train lại anti-spoof trên kiến trúc mới** — `ReLU`, `AvgPool2d` cỡ cố định, đầu vào 81. Run `20260909-1116` mới tới epoch 2/60. Nhánh này **đã rút khỏi lock**, ảnh `models_0` chỉ còn 2 nhánh cho tới khi có bản train xong | ACER < 5% ở INT8, chấm lại trên tập tự thu E3-T8, export, vào lock | E9-T3, E3-T8 |
-| **E9-T12** | Thêm tham số `width` cho `MiniFASNetBackbone` — kênh đang viết cứng `(32, 64, 128, 256)`, nên chưa thử thu nhỏ được như recognition đã làm | Đo arena + latency ở `bench_ai` với ít nhất 2 hệ số | — |
+| ~~E9-T12~~ | ~~Thêm tham số `width` cho `MiniFASNetBackbone`~~ — **nửa đầu XONG**: `minifasnet_v2_se.py:46` đã có `width`. Còn thiếu phép đo | Đo arena + latency ở `bench_ai` với ít nhất 2 hệ số | — |
+
+### Ngân sách pixel camera → 3 model — nợ nhất quán
+
+Soát chuỗi `camera → detect → crop spoof/recog` bằng 4 agent đọc song song, mỗi khẳng
+định số học qua một agent phản biện: **34 đứng vững, 17 bị bác, 3 chưa phán quyết**.
+Những dòng dưới là phần đứng vững. Sửa `KẾ HOẠCH` thì theo `CLAUDE.md` §1.2 — nêu, chờ
+duyệt, rồi mới sửa.
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| **E9-T13** | **Cỡ khung camera nuôi nhánh AI — plan nói hai số, firmware ship một số.** Firmware cấu hình đúng một chế độ: `FRAMESIZE_HVGA` = 480×320, `ASPECT_RATIO_3X2` (`drv_camera.c:133`, `sensor.c:35`, `app_config.h:26-27`), không đổi được lúc chạy. Plan §3 (`:535`, `:596`) và §6.3 (`:2643-2644`) tính trên 640×480 | Một cỡ khung duy nhất trong plan, và §6.3 mô tả đúng buffer đang cấp | — |
+| **E9-T14** | **"detect chạy đúng một phần tư" sai ở khung thật.** 480/160 = 3 và 320/120 = 2,67, mà 3:2 ≠ 4:3 — phải chọn letterbox (mặt nhỏ hơn tính toán) hay cắt bề rộng (mất góc nhìn). Chưa có dòng code nào làm bước này, nên quyết định còn mở | Plan ghi đúng hệ số và cách dựng; `svc_vision` cài đúng cách đã chọn | E9-T13 |
+| **E9-T15** | **Quy đổi "32 px ở detect = 128 px trong khung camera" tính trên khung firmware không tạo ra.** Sàn 32 px và số 0,9313 vẫn hợp lệ (`eval.py:21`, `measurements/detection/measurements.md:37`); chỉ phần quy đổi sai. Ở 480×320 letterbox là 0,3333 → **96 px**, dưới 112 mà recog cần. Ba chỗ ghi câu sai: `plan:536`, `measurements/detection/measurements.md:39-40`, `eval.py:19-21` | Ba chỗ khớp khung thật, cổng vận hành nêu bằng px của khung đang thu | E9-T13 |
+| **E9-T16** | **Con 122 px "mặt ở cự ly kiosk" vô nguồn.** `plan:188`, `README:16`, `README:51` dùng nó để biện minh chọn HVGA, nhưng không có trong `docs/measurements/`, không mang 🔬. Đây là căn cứ duy nhất cho cỡ khung | Đo trên board ở 0,5 / 0,9 / 1,5 m, số vào `docs/measurements/`, plan trích lại | E7-T4 |
+| **E9-T17** | **`arena_hint` còn 0 dù đã có số đo.** detect đo thật **189.628 B** (`arena.md:26`, `Kconfig:8-9`), mà cả 6 ô hợp đồng vẫn 0: `contracts/models.lock.json:6,:12`, bản mirror `firmware/models/models.lock.json:6,:12`, hai `meta.json:4`. Theo `plan:996` thì 0 nghĩa "chưa đo", tức hợp đồng khai sai. Cơ chế: `update_lock.py:47` mặc định `--arena-bytes 0` và lần chạy cuối không truyền | Sáu ô mang số đo; `ai_engine` đọc `arena_hint` thay vì chỉ Kconfig (§3.8) | E8-T7 |
+| **E9-T18** | **Chưa có một số accuracy nào ở 81×81.** 18 run anti-spoof, chỉ `20260909-1116` là `[81,81]` và mới epoch 2/60. Mọi số ở `quant_ladder.md:12-14` và `antispoof/measurements.md:118,:143,:991,:1018` đều từ checkpoint `[80,80]` | Có bảng accuracy ở 81×81; mọi bảng cũ ghi rõ đo ở 80×80 | E9-T11 |
+| **E9-T19** | **Số đo gắn sai kích thước đầu vào.** `plan:2649` ghi "Arena recognition 904 KB đo thật @113×113", nhưng `arena.md:12` không nêu cỡ nào và git cho thấy phép đo lấy lúc `meta.json` còn 112 | `plan:2649` bỏ chú thích sai; `arena.md` nêu rõ cỡ của từng số | — |
+| **E9-T20** | **`ml/configs/recognition/mobilefacenet.yaml:18` còn `width: 64`** trong khi model đã vào lock là `width=32` — chạy lại config mặc định là train ra kiến trúc khác bản đang deploy | Config mặc định khớp bản trong lock | — |
+| **E9-T21** | **`preproc.cpp` khai ở `plan:2008`, `:2017`, `:643` nhưng không có trong cây** `ai_engine/src/antispoof/` | File tồn tại, hoặc plan thôi khai nó | E8-T5 |
+| **E9-T22** | **Hai chỗ nói ngược nhau về phần cứng.** `plan:194` khai gain **cố định**, driver lại lái gain bằng vòng kín; `plan:247` bắt SPI CLK **80 MHz** cho LCD | Mỗi tham số một nguồn, khớp code | — |
+| **E9-T23** | **`plan:636` "bốn khung còn dưới ngưỡng đều là mặt chiếm trên 87% cạnh ngắn khung hình"** sai với mọi tập con 4 khung của chính bộ số nó viện dẫn | Câu khớp số ở `antispoof/measurements.md` §12.5 | — |
 
 > E9-T10 và E9-T11 là **nợ của E9-T3**: đổi op ở tầng kiến trúc thì phải train lại, mà mọi số latency hiện có đều đo trên **trọng số chưa train**. Latency không phụ thuộc trọng số nên các số đó đúng; accuracy thì phụ thuộc, nên chưa nhánh nào được chốt.
 
