@@ -18,6 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 BASE_KEY = "_base_"
 
 
+CONFIG_NAME = "config.resolved.yaml"
+
+
 class Section(BaseModel):
     """Base for every config section: unknown keys are an error, not a typo that survives."""
 
@@ -208,6 +211,17 @@ def load_config(path: str | Path, overrides: Iterable[str] | None = None) -> Con
     if overrides:
         tree = apply_overrides(tree, overrides)
     return Config.model_validate(tree)
+
+
+def load_run_config(run: Path) -> Config:
+    """Read back the frozen config of a run, tolerating sections the schema dropped.
+
+    A run directory is immutable while Config follows the architecture, so an
+    older run can name a section that no longer exists (KEHOACH 4.4).
+    """
+    tree = load_yaml_tree(run / CONFIG_NAME)
+    known = set(Config.model_fields)
+    return Config.model_validate({k: v for k, v in tree.items() if k in known})
 
 
 def config_hash(cfg: Config, length: int = 6) -> str:

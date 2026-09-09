@@ -164,17 +164,20 @@ def build_loader(cfg: object, split: str, root: Path | None = None) -> torch.uti
 
 def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     """Rebuild a run's model from the config it froze, preferring its EMA copy."""
-    from facepipe.core.config import load_config
-    from facepipe.core.registry import MODELS, TEACHERS
+    from facepipe.core.config import load_run_config
+    from facepipe.core.registry import MODELS
 
     from .model import minifasnet_v2_se  # noqa: F401  registers the model
-    from .teacher import cdcnpp  # noqa: F401  registers the teacher
 
-    cfg = load_config(run / "config.resolved.yaml", [])
-    spec = {"name": cfg.model.name, "params": cfg.model.params}
-    model = TEACHERS.build(spec) if cfg.model.name in TEACHERS else MODELS.build(spec)
+    cfg = load_run_config(run)
+    model = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
 
-    payload = torch.load(run / "ckpt" / "best.pth", map_location="cpu", weights_only=False)
+    # best.pth appears only after the first validation, so a run stopped inside
+    # its first epochs has nothing but last.pth.
+    path = run / "ckpt" / "best.pth"
+    if not path.is_file():
+        path = run / "ckpt" / "last.pth"
+    payload = torch.load(path, map_location="cpu", weights_only=False)
     model.load_state_dict(payload["ema"]["module"] if "ema" in payload else payload["model"])
     return cfg, model
 
@@ -185,9 +188,9 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     model overrides the run's own weights, which is how the quantisation
     passes export the graph they just rewrote.
     """
-    from facepipe.core.config import load_config
+    from facepipe.core.config import load_run_config
 
-    cfg = load_config(run / "config.resolved.yaml", [])
+    cfg = load_run_config(run)
     model = model if model is not None else load_run(run)[1]
     model.eval()
     height, width = cfg.model.input_hw

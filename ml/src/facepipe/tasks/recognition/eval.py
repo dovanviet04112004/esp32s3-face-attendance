@@ -165,12 +165,12 @@ def evaluate_all(
 
 def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     """Rebuild a run's model from the config it froze."""
-    from facepipe.core.config import load_config
+    from facepipe.core.config import load_run_config
     from facepipe.core.registry import MODELS
 
     from .model import mobilefacenet  # noqa: F401  registers "mobilefacenet"
 
-    cfg = load_config(run / "config.resolved.yaml", [])
+    cfg = load_run_config(run)
     model = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
     payload = torch.load(run / "ckpt" / "best.pth", map_location="cpu", weights_only=False)
     model.load_state_dict(payload["ema"]["module"] if "ema" in payload else payload["model"])
@@ -183,9 +183,9 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     model overrides the run's own weights, which is how the quantisation
     passes export the graph they just rewrote.
     """
-    from facepipe.core.config import load_config
+    from facepipe.core.config import load_run_config
 
-    cfg = load_config(run / "config.resolved.yaml", [])
+    cfg = load_run_config(run)
     traced = model if model is not None else load_run(run)[1]
     traced.eval()
     height, width = cfg.model.input_hw

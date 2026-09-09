@@ -424,9 +424,9 @@ class ExportWrapper(torch.nn.Module):
 
 def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     """Rebuild a run's model from the config it froze."""
-    from facepipe.core.config import load_config
+    from facepipe.core.config import load_run_config
 
-    cfg = load_config(run / "config.resolved.yaml", [])
+    cfg = load_run_config(run)
     return cfg, load_model(run / "ckpt" / "best.pth", cfg.model.params)
 
 
@@ -436,11 +436,11 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     model overrides the run's own weights, which is how the quantisation
     passes export the graph they just rewrote.
     """
-    from facepipe.core.config import load_config
+    from facepipe.core.config import load_run_config
 
     from .model.yunet import STRIDES
 
-    cfg = load_config(run / "config.resolved.yaml", [])
+    cfg = load_run_config(run)
     traced = ExportWrapper(model if model is not None else load_run(run)[1])
     traced.eval()
     height, width = cfg.model.input_hw

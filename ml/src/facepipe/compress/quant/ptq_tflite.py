@@ -17,9 +17,9 @@ from . import bias_correction, cle, fold_bn
 
 def prepared(run: Path, do_fold: bool, do_cle: bool, do_bias: bool, samples: int):
     """The model with whichever pre-quantisation passes were asked for."""
-    from facepipe.core.config import load_config
+    from facepipe.core.config import load_run_config
 
-    cfg = load_config(run / "config.resolved.yaml", [])
+    cfg = load_run_config(run)
     package = tf_to_tflite_int8.BRANCH_PACKAGE[cfg.model.name]
     _, model = importlib.import_module(f"{package}.eval").load_run(run)
     model.eval()

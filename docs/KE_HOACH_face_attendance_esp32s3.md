@@ -1344,6 +1344,9 @@ ml/
 │   │   │   KHÔNG chứa tên nhánh nào. Không import ngược từ tasks/.
 │   │   ├── registry.py                    # @register("yunet") → gọi model bằng tên trong YAML
 │   │   ├── config.py                      # pydantic schema + merge YAML + override CLI
+│   │   │                                  #   ★ load_run_config() doc lai config da dong
+│   │   │                                  #     bang cua mot run cu: run la bat bien nen
+│   │   │                                  #     no co the chua muc ma schema da bo
 │   │   ├── trainer.py                     # vòng train chung: AMP, EMA, grad-clip, ckpt, resume
 │   │   ├── run_dir.py                     # ★ tạo thư mục run, ghi config.resolved + env + split.lock
 │   │   ├── scheduler.py  ├── metrics.py  ├── logger.py  └── seed.py
@@ -1520,6 +1523,12 @@ python -m facepipe.tasks.recognition.train  --cfg configs/recognition/mobileface
 Thứ tự ở §8 là thứ tự **bắt tay vào việc**, không phải thứ tự thay thế. Xong giai đoạn 5 thì cả ba nhánh cùng nằm trong repo và `50_pack_and_flash.sh` gộp cả ba `.tflite` vào một `models.bin`.
 
 **Cách "lục lại" sau 6 tháng**: mở `contracts/models.lock.json` → lấy `run_id` → mở đúng thư mục run → có `config.resolved.yaml` (biết hyperparameter), `split.lock` (biết train trên tập nào), `env.txt` (biết môi trường), `ckpt/` (có weight). Không phải đoán, không phải hỏi lại ai.
+
+Đọc một run cũ phải chịu được **mục mà schema đã bỏ**: thư mục run là bất biến, còn
+`Config` thì đổi theo kiến trúc. `load_config` giữ `extra="forbid"` để bắt lỗi gõ sai trong
+config người viết; `load_run_config` bỏ những mục cấp cao mà `Config` không còn khai, và chỉ
+dùng cho `config.resolved.yaml`. Không có nó thì mọi run train trước một lần đổi schema đều
+không mở lại được — 46 run mất khả năng export lúc ADR-0002 bỏ `teacher` và `distill`.
 
 ##### Mọi lần train phải dừng và chạy tiếp được
 

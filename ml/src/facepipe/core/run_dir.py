@@ -15,9 +15,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from facepipe.core.config import Config, config_hash, dump_config
+from facepipe.core.config import CONFIG_NAME, Config, config_hash, dump_config
 
-CONFIG_NAME = "config.resolved.yaml"
 SPLIT_LOCK_NAME = "split.lock"
 ENV_NAME = "env.txt"
 METRICS_NAME = "metrics.json"

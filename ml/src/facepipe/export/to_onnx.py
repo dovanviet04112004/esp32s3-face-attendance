@@ -45,9 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True, help="where the .onnx file goes")
     args = parser.parse_args(argv)
 
-    from facepipe.core.config import load_config
+    from facepipe.core.config import load_run_config
 
-    cfg = load_config(args.run / "config.resolved.yaml", [])
+    cfg = load_run_config(args.run)
     package = BRANCH_PACKAGE.get(cfg.model.name)
     if package is None:
         raise SystemExit(f"no branch known for model {cfg.model.name}")

@@ -20,9 +20,9 @@ BRANCH_PACKAGE = {
 
 def calibration_samples(run: Path, split: str | None, limit: int):
     """Yield what the branch calls a representative sample, for the converter."""
-    from facepipe.core.config import load_config
+    from facepipe.core.config import load_run_config
 
-    cfg = load_config(run / "config.resolved.yaml", [])
+    cfg = load_run_config(run)
     package = BRANCH_PACKAGE[cfg.model.name]
     module = importlib.import_module(f"{package}.quant")
     yield from module.calibration_batches(cfg, split, limit)

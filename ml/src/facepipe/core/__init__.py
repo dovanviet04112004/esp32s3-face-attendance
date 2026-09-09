@@ -4,7 +4,13 @@ All three branches import these modules. Nothing here may name a branch or
 import from facepipe.tasks; see KEHOACH 4.4.3.
 """
 
-from facepipe.core.config import Config, config_hash, dump_config, load_config
+from facepipe.core.config import (
+    Config,
+    config_hash,
+    dump_config,
+    load_config,
+    load_run_config,
+)
 from facepipe.core.logger import RunLogger, setup_console_logging
 from facepipe.core.metrics import AverageMeter, MetricTracker, Throughput
 from facepipe.core.registry import (
@@ -47,6 +53,7 @@ __all__ = [
     "dump_config",
     "git_sha7",
     "load_config",
+    "load_run_config",
     "resolve_device",
     "seed_everything",
     "setup_console_logging",

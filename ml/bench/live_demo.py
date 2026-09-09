@@ -34,9 +34,9 @@ from facepipe.tasks.antispoof.data import CROP_SIZE as SPOOF_SIZE
 from facepipe.tasks.antispoof.eval import load_run
 from facepipe.tasks.antispoof.losses.task_loss import LIVE
 from facepipe.tasks.detection.data import letterbox_params
-from facepipe.tasks.detection.eval import decode_batch, load_student, to_original
-from facepipe.tasks.detection.student.anchors import feature_sizes, pyramid_priors
-from facepipe.tasks.detection.student.yunet import STRIDES
+from facepipe.tasks.detection.eval import decode_batch, load_model, to_original
+from facepipe.tasks.detection.model.anchors import feature_sizes, pyramid_priors
+from facepipe.tasks.detection.model.yunet import STRIDES
 from facepipe.tasks.recognition.eval import embed
 from facepipe.tasks.recognition.postproc.align import (
     reference_landmarks,
@@ -75,11 +75,11 @@ def load_recogniser(run: Path, device: str) -> torch.nn.Module:
     A run stopped before it beat its own best leaves only last.pth, which is the
     case for the arm's final epoch.
     """
-    from facepipe.core.config import load_config
+    from facepipe.core.config import load_run_config
     from facepipe.core.registry import MODELS
-    from facepipe.tasks.recognition.student import mobilefacenet  # noqa: F401  registers it
+    from facepipe.tasks.recognition.model import mobilefacenet  # noqa: F401  registers it
 
-    cfg = load_config(run / "config.resolved.yaml", [])
+    cfg = load_run_config(run)
     model = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
     path = run / "ckpt" / "best.pth"
     if not path.exists():
@@ -92,7 +92,7 @@ def load_recogniser(run: Path, device: str) -> torch.nn.Module:
 
 def load_models(detector: Path, spoof_run: Path, recog_run: Path, device: str):
     """The three students and the priors the detector decodes against."""
-    model = load_student(detector).to(device).eval()
+    model = load_model(detector).to(device).eval()
     priors = torch.cat(pyramid_priors(feature_sizes(DETECT_HW, STRIDES), STRIDES)).to(device)
     _, spoof = load_run(spoof_run)
     return model, priors, spoof.to(device).eval(), load_recogniser(recog_run, device)

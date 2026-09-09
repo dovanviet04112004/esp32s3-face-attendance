@@ -79,11 +79,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=0, help="0 scores the whole split")
     args = parser.parse_args(argv)
 
-    from facepipe.core.config import load_config
-    from facepipe.tasks.antispoof.losses.task_loss import LIVE
+    from facepipe.core.config import load_run_config
     from facepipe.tasks.antispoof.eval import auc, build_loader, equal_error_rate
+    from facepipe.tasks.antispoof.losses.task_loss import LIVE
 
-    cfg = load_config(args.run / "config.resolved.yaml", [])
+    cfg = load_run_config(args.run)
     split = args.split or cfg.data.params["test_split"]
     live, truth = scores(args.model, build_loader(cfg, split), LIVE, args.limit)
 
