@@ -185,7 +185,7 @@ dùng chung một cấu hình, vì model học phân bố nào thì lúc chạy 
 
 | Tham số | Giá trị | Vì sao |
 |---|---|---|
-| Cỡ khung | HVGA 480×320 | mặt 122 px ở cự ly kiosk; QQVGA còn 60 px, crop recog phải phóng to gấp đôi |
+| Cỡ khung | HVGA 480×320 | đo trên board: cạnh mặt `≈ 47,7 / d` px với `d` mét, nên recognition còn pixel thật tới **0,42 m** (§3 lớp 2). VGA 640×480 nới lên 0,56 m nhưng gấp đôi số pixel đọc, fps tụt dưới sàn 12 của E7-T11 |
 | Định dạng | RGB565 | ảnh chỉ bị nén **một lần** ở khâu crop, khớp lịch sử nén của tập train |
 | XCLK | 27 MHz | 14,19 fps, đủ trên sàn 12 fps của E7-T11 |
 | Frame buffer | 3, ở PSRAM, `CAMERA_GRAB_LATEST` | preview giữ một khung gần trọn một chu kỳ; hai cái thì sensor không còn chỗ đáp |
@@ -494,8 +494,9 @@ Hệ quả đo được với `LEVEL_RANGES` cũ `(0,32) (32,96) (96,∞)`:
 | 2 | 32 | 0,0% | **0** |
 
 Tầng 2 chưa từng nhận một mẫu dương nào: ba đầu ra, dùng thật một. Và phân bố lúc train
-(median 2,9 px) lệch hẳn phân bố lúc chạy — kiosk nhìn **một** mặt ở 0,5–1,5 m, 🔬 ước
-20–45 px. Đây là lệch train/serve về kích thước, không phải chuyện thiếu epoch.
+(median 2,9 px) lệch hẳn phân bố lúc chạy — kiosk nhìn **một** mặt ở 0,25–0,42 m, đo được
+**38–57 px** ở đầu vào detect. Đây là lệch train/serve về kích thước, không phải chuyện
+thiếu epoch.
 
 **Công thức chốt, mọi ngưỡng lấy từ đo:**
 
@@ -532,10 +533,32 @@ chúng, và 🔬 arena ước tính chặn đường đó: 150 KB ở 160×120, 
 dùng 189,6 KB đo thật. Detect chạy mỗi frame nên đẩy sang PSRAM là mất 22 ms mỗi frame.
 
 **Miền phục vụ được định nghĩa bằng chính pipeline, không phải chọn cho dễ.** Camera đưa
-khung 640×480 cho nhánh AI (§6.3), detect chạy đúng một phần tư của nó, recognition cần
-crop 112×112. Mặt **32 px ở đầu vào detect = 128 px trong khung camera**, vừa trên 112.
-Dưới ngưỡng đó crop căn chỉnh phải phóng to mới đủ cho MobileFaceNet, nên bắt được cũng
-không dùng được ở khâu sau. Đó là biên, và nó là cổng.
+khung **480×320** cho cả ba nhánh (§2.1). detect nhận toàn khung qua `letterbox_params()`
+— hệ số `min(160/480, 120/320) = 0,3333`, đệm 6 px trên và dưới — còn spoof và recog
+**cắt từ khung gốc ở tỉ lệ 1:1**. Hai kiểu lấy pixel khác nhau: detect thu nhỏ nên không
+bao giờ thiếu, hai nhánh kia đòi pixel phải có sẵn.
+
+Ràng buộc chặn là recognition: nó warp ra ô **113×113**, nên mặt phải rộng **≥ 113 px
+trong khung camera**, tức **38 px ở đầu vào detect**. Dưới ngưỡng đó crop phải phóng to,
+mà nội suy không thêm thông tin — nó thêm vệt mờ trơn, đúng thứ anti-spoof đọc thành kết
+cấu. Bắt được cũng không dùng được ở khâu sau. Đó là biên, và nó là cổng.
+
+**Cạnh mặt theo khoảng cách, đo trên board** (`docs/measurements/detection/measurements.md`):
+`side ≈ 47,7 / d` px với `d` tính bằng mét. Suy ra ba mốc:
+
+| Ngưỡng | Cần | Khoảng cách tối đa |
+|---|---|---|
+| **recog 113×113** | 113 px | **0,42 m** ← chặn cả pipeline |
+| spoof 81×81 | 81 px | 0,59 m |
+| detect bắt được ở conf 0,5 | ~56 px | 🔬 0,85 m |
+
+**Dải làm việc chốt: 0,25–0,42 m.** Đầu xa do recognition chặn. Đầu gần không do model
+nào chặn — mặt chỉ chiếm 87% cạnh ngắn khung hình ở 🔬 0,17 m, chỗ ngữ cảnh wide của
+anti-spoof biến mất — nên 0,25 m là biên có dự phòng, đặt theo ToF chứ không theo model.
+
+Hệ số `47,7` dựng từ hai khung ở 0,5 m và 0,95 m, mà **khoảng cách đo bằng mắt**, nên nó
+mang sai số ±15%: dải recog thực nằm trong 0,36–0,48 m. Đo lại bằng thước là chốt cứng
+được (E9-T24).
 
 | Mốc | Ngưỡng | Đo bằng |
 |---|---|---|
@@ -593,10 +616,16 @@ Nhưng ngữ cảnh 2,7× **không phải lúc nào cũng tồn tại**. Tỉ l�
 vì ảnh thẻ bị giơ xa hơn mặt người — nghĩa là "ảnh wide còn nguyên" tương quan với nhãn
 tấn công, đúng loại đường tắt phải chặn.
 
-Áp vào kiosk: camera đưa khung 640×480 cho nhánh AI (§6.3) và nhận diện cần mặt ≥ 128 px
-(mục trên). 2,7× lọt khung khi mặt ≤ 480 / 2,7 = **178 px**. Dải dùng được là mặt 128–178
-px, tức tỉ lệ khoảng cách **1,39 lần**. Hẹp, và nằm ngoài dải đó là chuyện thường chứ
-không phải ngoại lệ.
+Áp vào kiosk: camera đưa khung **480×320** (§2.1) và nhận diện cần mặt **≥ 113 px** (mục
+trên). Ô vuông 2,7× lọt khung khi `2,7 × cạnh ≤ min(480, 320)`, tức cạnh **≤ 118 px**.
+Cộng hai điều kiện lại, dải mà **cả** recognition đủ pixel **và** 2,7× còn dựng được là
+mặt **113–118 px** — tỉ lệ khoảng cách **1,05 lần**, tức đúng một cự ly chứ không phải
+một dải.
+
+Trên toàn dải làm việc 0,25–0,42 m, tỉ lệ wide thật sự đạt được chạy từ **1,68×** (mặt
+191 px ở 0,25 m) tới **2,7×** (mặt 118 px ở 0,40 m). Nên 2,7× là **trần chứ không phải
+giá trị vận hành**: phần lớn thời gian model nhìn ít ngữ cảnh hơn thế. Đây chính là lý do
+cách dựng phải là ô vuông lớn nhất còn lọt khung, không phải hằng số 2,7×.
 
 **Chốt: tỉ lệ wide là biến, không phải hằng số. Crop wide = ô vuông lớn nhất còn lọt khung,
 trần 2,7×, và ô vuông đó được TRƯỢT cho chứa trọn hộp mặt chứ không ép đặt giữa mặt.**
@@ -2640,8 +2669,7 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 
 | Dữ liệu | Kích thước | Vùng | Cách cấp phát | Vì sao |
 |---|---|---|---|---|
-| Camera FB preview ×2 (320×240 RGB565) | 2 × 150 KB | **PSRAM** | `camera_config.fb_location = CAMERA_FB_IN_PSRAM`, `fb_count = 2` | Quá lớn cho SRAM |
-| Camera FB cho AI (640×480 RGB565, chỉ khi cần crop nét) | 600 KB | **PSRAM** | như trên | |
+| Camera FB ×3 (480×320 RGB565) | 3 × 300 KB = 900 KB | **PSRAM** | `fb_location = CAMERA_FB_IN_PSRAM`, `fb_count = 3`, `grab_mode = CAMERA_GRAB_LATEST` | Quá lớn cho SRAM. Một cấu hình cho cả preview và AI (§2.1), nên không có buffer riêng cho nhánh AI |
 | LCD frame buffer 320×480 RGB565 | 300 KB | **PSRAM** | `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` | |
 | LCD bounce buffer (2 × 20 dòng) | 2 × 19.2 KB | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội |
 | **Arena detect** | 🔬 ước ~120 KB @160×120 | **SRAM nếu vừa** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_INTERNAL)` | Nhanh nhất, chạy nhiều nhất |

@@ -231,6 +231,9 @@ duyệt, rồi mới sửa.
 | **E9-T21** | **`preproc.cpp` khai ở `plan:2008`, `:2017`, `:643` nhưng không có trong cây** `ai_engine/src/antispoof/` | File tồn tại, hoặc plan thôi khai nó | E8-T5 |
 | **E9-T22** | **Hai chỗ nói ngược nhau về phần cứng.** `plan:194` khai gain **cố định**, driver lại lái gain bằng vòng kín; `plan:247` bắt SPI CLK **80 MHz** cho LCD | Mỗi tham số một nguồn, khớp code | — |
 | **E9-T23** | **`plan:636` "bốn khung còn dưới ngưỡng đều là mặt chiếm trên 87% cạnh ngắn khung hình"** sai với mọi tập con 4 khung của chính bộ số nó viện dẫn | Câu khớp số ở `antispoof/measurements.md` §12.5 | — |
+| **E9-T24** | **Đo lại cạnh mặt bằng thước.** Hệ số `side ≈ 47,7/d` (`detection/measurements.md` §8) dựng từ hai khung mà khoảng cách ước bằng mắt, sai số ±15% → dải recog nằm đâu đó trong 0,36–0,48 m | ≥4 cự ly đo bằng thước, hệ số có sai số < 5%, KẾ HOẠCH §2.1 và §3 lớp 2 trích số chốt | E7-T4 |
+| **E9-T25** | **`drv_camera_expose()` không được gọi trong app thu ảnh** — nó là lệnh riêng ngoài `grab()`, nên ảnh thu ra dùng phơi sáng khởi động. Đo được: conf 0,317 → 0,424 ở cùng cự ly khi cho vòng kín hội tụ | Mọi đường thu ảnh gọi `expose()` cho tới khi `level` ổn định; E3-T7 và E3-T8 thu bằng đường đó | E7-T4 |
+| **E9-T26** | **Cổng vận hành đổi 32 → 38 px** ở đầu vào detect (113 px trong khung camera). Số AP 0,9313 hiện đo ở sàn 32 px, không mô tả điểm vận hành thật | `SERVICE_FACE_PX` và ba chỗ trích nó khớp 38; chấm lại AP ở sàn mới, không train lại | E9-T15 |
 
 > E9-T10 và E9-T11 là **nợ của E9-T3**: đổi op ở tầng kiến trúc thì phải train lại, mà mọi số latency hiện có đều đo trên **trọng số chưa train**. Latency không phụ thuộc trọng số nên các số đó đúng; accuracy thì phụ thuộc, nên chưa nhánh nào được chốt.
 

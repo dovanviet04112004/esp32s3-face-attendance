@@ -49,7 +49,7 @@ khiển qua PCF8574. Bảng đấu nối từng chân ở KẾ HOẠCH §2.
 make help          # liệt kê toàn bộ target
 make gen           # sinh DTO TypeScript + gen_payload.h từ contracts/schema
 make lint          # check_comments + check_layers + ruff + eslint
-make train-det     # chưng cất nhánh detection
+make train-det     # train nhánh detection
 make fw-dev        # build firmware profile dev
 make flash         # nạp và mở monitor
 make up            # dựng hạ tầng docker

@@ -205,7 +205,40 @@ rộng, và làm thế trên nguồn nhỏ là bịa điểm ảnh (§4.4.1).
 
 ---
 
-## 8. Còn nợ
+## 8. Cạnh mặt theo khoảng cách, đo trên board — 09/09
+
+Chụp bằng `drv_camera/test_apps/sensor`, case `[manual]` gọi `frame2jpg()` rồi in cả khung
+ra serial dạng hex. Cạnh mặt lấy bằng chính detector đang deploy
+(`detection/20260831-1616_cc931df_36fbea`, `best.pth`) qua `live_demo.detect()`, tức đúng
+`letterbox_params()` mà thiết bị phải dùng. `side = sqrt(w × h)` của hộp, cùng định nghĩa
+với `SERVICE_FACE_PX` ở `eval.py`.
+
+| Khoảng cách | conf | Hộp | `side` khung camera | ở đầu vào detect |
+|---|---|---|---|---|
+| 0,5 m | 0,773 | 78×112 | **93,4 px** | 31,1 px |
+| ~0,95 m, phơi sáng cố định | 0,317 | 37×48 | 42,4 px | 14,1 px |
+| ~0,95 m, vòng kín đã hội tụ | 0,424 | 44×60 | **51,3 px** | 17,1 px |
+
+Khớp luật nghịch đảo khoảng cách: `93,4 × 0,5 = 46,7` và `51,3 × 0,95 = 48,7`, nên
+**`side ≈ 47,7 / d`** px với `d` mét.
+
+Suy ra: recognition còn pixel thật tới **0,42 m** (cần 113 px), anti-spoof tới 0,59 m (cần
+81 px), detect còn bắt được ở conf 0,5 tới 🔬 0,85 m (~56 px). Ràng buộc chặn là
+recognition, nên dải làm việc là **0,25–0,42 m** — không phải 0,5–1,5 m như KẾ HOẠCH khai
+trước đó, và con "mặt 122 px ở cự ly kiosk" ở §2.1 không có phép đo nào đằng sau.
+
+**Hai khoảng cách đều ước bằng mắt**, nên hệ số 47,7 mang sai số ±15%: dải recog thực nằm
+trong 0,36–0,48 m. Đo lại bằng thước thì chốt cứng được (E9-T24).
+
+**Phơi sáng nằm trong đường đo này.** `drv_camera_expose()` là lệnh riêng, không nằm trong
+`drv_camera_grab()`, nên app nào không gọi nó thì chạy mãi ở phơi sáng khởi động. Thêm
+vòng 60 khung cho vòng kín hội tụ đưa conf từ 0,317 lên **0,424 ở cùng khoảng cách** — tức
++34% chỉ do sáng. Cỡ mặt không phụ thuộc độ sáng nên hai số `side` vẫn so được với nhau,
+nhưng mọi số conf đo bằng app chưa gọi `expose()` đều là chặn dưới.
+
+---
+
+## 9. Còn nợ
 
 - Chấm lại v1 theo tiêu chí AP để tách hai biến ở §1.
 - E4-T13 → chạy arm A3 → điền nốt §6.
