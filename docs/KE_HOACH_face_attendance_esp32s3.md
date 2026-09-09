@@ -292,6 +292,23 @@ ESP32-S3 **không có** GPIO22–25. Dải chân thật là 0–21 và 26–48; 
 | **GPIO1 (INT)** | **GPIO3** | GPIO3 nằm trong dải RTC GPIO (0–21) → **dùng làm nguồn đánh thức deep-sleep**. ⚠️ Strapping JTAG-source: để hở lúc boot, VL53L1X chỉ kéo xuống sau khi được cấu hình → an toàn |
 | **XSHUT** | **PCF8574 P1** | P1 lên HIGH lúc cấp nguồn nên VL53L1X tự chạy ở địa chỉ mặc định `0x29` — đúng thứ ta cần vì chỉ có một con. P1 chỉ dùng để reset lại lúc chạy |
 
+**Cấu hình đo, suy từ dải làm việc đo được.** Recognition chặn dải ở 0,25–0,42 m (§3 lớp
+2), nên ToF chỉ cần với tới nửa mét chứ không phải bốn mét:
+
+| Tham số | Giá trị | Vì sao |
+|---|---|---|
+| Distance mode | **Short** | Với tới 1,3 m, thừa cho 0,42 m, và là chế độ **chống nhiễu sáng môi trường tốt nhất** — kiosk quay ra phòng có đèn và có thể có nắng |
+| Timing budget | **33 ms** | Trọn trong chu kỳ 100 ms của `tof_task` (§5.2), còn dư cho jitter |
+| Inter-measurement | **100 ms** | Bằng đúng chu kỳ §5.2 đã khai, nên không có phép đo nào bị bỏ |
+
+Ba con này **suy ra từ bảng chế độ của datasheet**, chưa đo trên board — E7-T7 đo lại độ
+lệch thật ở 0,25 / 0,35 / 0,42 m rồi chốt.
+
+**Ngưỡng "có người" không nằm ở đây.** Nó là ngưỡng nghiệp vụ, nên theo §4.9 nó ở **NVS
+trên kiosk và đổi được bằng `SET_CONFIG`** — `drv_tof` chỉ trả khoảng cách, không tự quyết
+định có người hay không. Việc biến khoảng cách thành `EVT_PRESENCE_ON/OFF` là của E10-T4,
+và §5.3 hiện **chưa khai đường truyền** cho hai event đó.
+
 #### E. Âm thanh MAX98357A (I²S) + loa 4Ω/3W
 
 | Chân | Nối tới | Ghi chú |
@@ -1649,13 +1666,28 @@ dependencies:
 
 ```
 third_party/
-├── vl53l1x_uld/                # ST STSW-IMG009 — không có trên registry
-│   ├── CMakeLists.txt          # ta viết, bọc thành component IDF
+├── vl53l1x_uld/                # ST STSW-IMG009 — bản dual license, lấy nhánh BSD-3-Clause
+│   ├── CMakeLists.txt          # ta viết, bọc thành component IDF tên vl53l1x_uld
 │   ├── UPSTREAM.md             # ✅ url, phiên bản, ngày lấy, sha256, đã sửa gì
-│   ├── patches/*.patch         # ★ nếu buộc phải vá thì để patch, KHÔNG sửa thẳng file
-│   └── {src, include}/         # nguyên bản
+│   ├── patches/                # ★ buộc phải vá thì để patch, KHÔNG sửa thẳng file
+│   ├── core/                   # VL53L1X_api.{c,h} + VL53L1X_calibration.{c,h}, nguyên bản
+│   └── platform/               # CHỈ vl53l1_platform.h và vl53l1_types.h, nguyên bản
 └── README.md
 ```
+
+**Tầng platform của ULD là code của mình, nên nó không nằm ở `third_party/`.** ULD khai 9
+hàm `extern` cho I2C và delay (`VL53L1_WrByte`, `RdByte`, `WrWord`, `RdWord`, `WrDWord`,
+`RdDWord`, `WriteMulti`, `ReadMulti`, `WaitMs`) và ST ship kèm một `vl53l1_platform.c` mẫu.
+File mẫu đó **không được vendor**: hiện thực thật phải đi qua `bsp_i2c_bus()` và
+`bsp_i2c_lock()` (§5.3) vì bus I2C có bốn thiết bị, nên nó là code mình viết và nằm ở
+`components/drv_tof/src/`. Vendor cả file của ST thì trùng ký hiệu lúc link, mà sửa nó tại
+chỗ thì vi phạm §2.10. Bỏ đúng một file khỏi bản vendor và ghi vào `UPSTREAM.md` là cách
+duy nhất giữ được cả hai luật, nên `patches/` để rỗng.
+
+Cũng vì lý do đó mà **không dùng component trên registry**: cả ba bản có sẵn
+(`saleca/vl53l1x_uld_esp_wrapper`, `grrtzm/vl53l1x_library`, `espp/vl53l`) đều tự khởi tạo
+bus I2C từ chân GPIO, tức thêm một master thứ hai lên GPIO1/GPIO2 bên cạnh GT911, PCF8574
+và chính VL53L1X. Bus dùng chung là ràng buộc của §2.3B, không phải sở thích.
 
 #### 4.5.2 Cây thư mục
 
@@ -2455,6 +2487,12 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `s_frame_ready` | Binary semaphore | — | ISR camera | `cam_task` | ISR chỉ `xSemaphoreGiveFromISR`, xử lý ở task |
 | `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | như trên |
 | `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING`. Thay cho 6 biến cờ rời rạc |
+
+**Bảng này chưa có đường cho `EVT_PRESENCE_ON/OFF`.** §5.2 nói `tof_task` phát hai event đó
+và §4.5.5f nhận chúng vào máy trạng thái chấm công, nhưng không hàng đợi nào ở trên chở
+chúng và `eg_system` không có bit tương ứng. Chốt đường truyền là việc của **E10-T4**, cùng
+lúc dựng `common/include/app_events.h` mà §4.5.4 luật 2 đã khai nhưng chưa tồn tại. E7-T7
+không cần nó: `drv_tof` chỉ trả khoảng cách và giương `s_tof_int`.
 
 **Quy tắc ISR (bắt buộc)**
 - ISR **chỉ** gọi `xQueueSendFromISR` / `xSemaphoreGiveFromISR` + `portYIELD_FROM_ISR()`. Không log, không I2C, không malloc.
