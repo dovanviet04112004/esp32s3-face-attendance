@@ -31,6 +31,8 @@ static const char *TAG = "drv_camera";
 #define METER_SETTLE_FRAMES 2
 #define METER_SATURATED 58
 #define METER_STARVED 3
+#define AEC_PK_MANUAL_REG 0x3503
+#define AEC_PK_MANUAL_BOTH 0x03
 #define VTS_REG 0x380E
 #define VTS_MASK 0xFFFF
 #define HZ5060_CTRL00_REG 0x3C00
@@ -92,6 +94,13 @@ static esp_err_t hold_exposure_still(sensor_t *sensor)
     // a face drags the face into shadow (KEHOACH 2.1).
     sensor->set_exposure_ctrl(sensor, 0);
     sensor->set_gain_ctrl(sensor, 0);
+    // Those two report the write, not the sensor: an AEC left running steers
+    // the frame out from under this loop while every log line says manual.
+    const int manual = sensor->get_reg(sensor, AEC_PK_MANUAL_REG, AEC_PK_MANUAL_BOTH);
+    if (manual != AEC_PK_MANUAL_BOTH) {
+        ESP_LOGE(TAG, "aec/agc still automatic: 0x%04X reads 0x%02X", AEC_PK_MANUAL_REG, manual);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
     sensor->set_agc_gain(sensor, METER_BASE_GAIN16 / 16);
     s_exposure_max = sensor->get_reg(sensor, VTS_REG, VTS_MASK);
     if (s_exposure_max <= 0) {
