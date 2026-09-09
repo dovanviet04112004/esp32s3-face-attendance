@@ -11,6 +11,7 @@ import shutil
 from pathlib import Path
 
 from facepipe.export.pack_models_partition import BRANCH_ENTRY, sha256_of
+from facepipe.export.tflite_op_check import main as op_check
 
 # The firmware tree names weights per branch, so swapping a rung of the
 # KEHOACH 3.7 ladder never renames a file the packer looks for.
@@ -53,6 +54,11 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = args.artifacts / branch / "runs" / run_name
     if branch != args.branch or not run_dir.is_dir():
         raise SystemExit(f"run id must name a directory, and {run_dir} is not one")
+
+    # A graph the branch resolver cannot build fails only on the board, a whole
+    # flash cycle later, so it must not reach firmware/models/ at all.
+    if op_check(["--model", str(args.model), "--branch", args.branch]) != 0:
+        raise SystemExit(f"{args.model}: the {args.branch} resolver does not cover this graph")
 
     branch_dir = args.models_dir / args.branch
     branch_dir.mkdir(parents=True, exist_ok=True)

@@ -73,10 +73,11 @@ ladder() {
         --out "${art}/tflite/${model}_int8_q1_${tag}.tflite" \
         --work "${art}/tf/q1_${tag}" --samples "${CALIB_SAMPLES}" || return 1
 
-    log "${tag}: which operators esp-nn accelerates"
+    log "${tag}: operators, and whether the branch resolver covers them"
     "${PY}" -m facepipe.export.tflite_op_check \
         --model "${art}/tflite/${model}_int8_q1_${tag}.tflite" \
-        --out "${art}/reports/op_check_${tag}.txt"
+        --branch "${branch}" \
+        --out "${art}/reports/op_check_${tag}.txt" || return 1
 
     [[ "${SCORE}" == "1" ]] || return 0
     if [[ "${branch}" != "antispoof" ]]; then

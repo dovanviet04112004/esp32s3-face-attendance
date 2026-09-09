@@ -1047,7 +1047,7 @@ esp32s3-face-attendance/
 ├── CLAUDE.md                       ★ quy tắc làm việc — gitignore, chỉ có ở máy local
 │
 ├── contracts/     Hợp đồng dùng chung — nguồn sự thật duy nhất cho 3 khối
-├── ml/            Python — train, KD, quantize, export
+├── ml/            Python — train, quantize, export
 ├── firmware/      ESP-IDF — C + C++
 ├── backend/       NestJS
 ├── frontend/      Next.js → Vercel
@@ -1450,6 +1450,7 @@ ml/
 │          cam_bridge.py}                  # ★ chạy trên Windows: virtual cam → MJPEG
 │       ★ Điểm vào chạy thẳng, KHÔNG phải thư viện. Nằm ngoài src/facepipe/ vì gói cài
 │         đặt được không được kéo theo cv2 và http.server của một cái demo.
+│         cv2 khai ở extra `bench` của pyproject: `uv sync --extra bench`.
 │
 ├── scripts/                               # đánh số = thứ tự chạy
 │   ├── _resume_loop.sh                    # ★ khong danh so vi khong chay truc tiep:
@@ -1482,7 +1483,11 @@ ml/
 │   │   │                                  #   mà không phải chạy lại onnx2tf
 │   │   ├── tflite/{yunet_fp32.tflite, yunet_int8.tflite}
 │   │   ├── golden/                        # vector vàng trước khi copy sang contracts/
-│   │   └── reports/op_check.txt
+│   │   ├── reports/op_check.txt
+│   │   └── teacher/                       # weight teacher đã tải hoặc đã train, GIỮ LẠI
+│   │                                      #   dù ADR-0002 bỏ KD: 223 MB GPU đã tiêu, và
+│   │                                      #   là số đối chứng nếu quyết định đó bị xem lại.
+│   │                                      #   Không code nào đọc nó nữa
 │   │                                      # ↑ sinh lại được. Số đo giữ lại: docs/measurements/
 │   │      Tên trên là của **một** model đã chốt. Khi đang so nhiều checkpoint thì gắn
 │   │      thêm hậu tố giờ của run: `model_fp32_0944.onnx`, `minifasnet_int8_0944.tflite`.

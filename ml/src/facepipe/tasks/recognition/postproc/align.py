@@ -1,4 +1,4 @@
-"""Five landmarks to a 112x112 aligned face.
+"""Five landmarks to an aligned face crop.
 
 Must stay identical to ai_engine/src/recognition/align.cpp: aligning differently
 puts the two sides' embeddings in different distributions. Reference points are
@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import numpy as np
 
-ALIGNED_SIZE = 112
+ALIGNED_SIZE = 113
+# The reference points below are ArcFace's, laid out on a 112 grid.
+REFERENCE_BASIS = 112
 
 # Left eye, right eye, nose, left mouth corner, right mouth corner, in the order
 # the detector emits them.
@@ -27,8 +29,8 @@ REFERENCE_LANDMARKS = np.array(
 
 
 def reference_landmarks(size: int = ALIGNED_SIZE) -> np.ndarray:
-    """The target points, scaled if the output is not 112x112."""
-    return REFERENCE_LANDMARKS * (size / ALIGNED_SIZE)
+    """The target points, scaled from the 112 grid they are defined on."""
+    return REFERENCE_LANDMARKS * (size / REFERENCE_BASIS)
 
 
 def similarity_transform(source: np.ndarray, target: np.ndarray) -> np.ndarray:

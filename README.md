@@ -4,8 +4,8 @@ Máy chấm công nhận diện khuôn mặt chạy hoàn toàn trên ESP32-S3, 
 dashboard web. Đồ án tốt nghiệp.
 
 Ba model chạy trên thiết bị: phát hiện mặt (YuNet) → chống giả mạo (MiniFASNetV2-SE) →
-nhận diện (MobileFaceNet). Cả ba đều là student được chưng cất từ teacher lớn hơn, lượng
-tử hoá INT8, nạp vào flash qua partition riêng để OTA được độc lập với firmware.
+nhận diện (MobileFaceNet). Cả ba train trực tiếp trên nhãn thật, lượng tử hoá INT8, nạp
+vào flash qua partition riêng để OTA được độc lập với firmware.
 
 ## Tài liệu
 
@@ -23,7 +23,7 @@ tử hoá INT8, nạp vào flash qua partition riêng để OTA được độc 
 
 ```
 contracts/   Hợp đồng dùng chung — JSON Schema, vector vàng, models.lock.json
-ml/          Python — train, distillation, lượng tử hoá, export
+ml/          Python — train, lượng tử hoá, export
 firmware/    ESP-IDF — C + C++
 backend/     NestJS + Prisma + PostgreSQL
 frontend/    Next.js trên Vercel

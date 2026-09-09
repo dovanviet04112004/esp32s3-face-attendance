@@ -39,6 +39,7 @@ from facepipe.tasks.detection.model.anchors import feature_sizes, pyramid_priors
 from facepipe.tasks.detection.model.yunet import STRIDES
 from facepipe.tasks.recognition.eval import embed
 from facepipe.tasks.recognition.postproc.align import (
+    ALIGNED_SIZE,
     reference_landmarks,
     similarity_transform,
     warp_affine,
@@ -80,7 +81,12 @@ def load_recogniser(run: Path, device: str) -> torch.nn.Module:
     from facepipe.tasks.recognition.model import mobilefacenet  # noqa: F401  registers it
 
     cfg = load_run_config(run)
-    model = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
+    params = dict(cfg.model.params)
+    params["input_size"] = int(cfg.model.input_hw[0])
+    model = MODELS.build({"name": cfg.model.name, "params": params})
+    # The align step reads it back off the model: a run frozen at another size
+    # must not be warped to whatever the module default happens to be.
+    model.aligned_size = params["input_size"]
     path = run / "ckpt" / "best.pth"
     if not path.exists():
         path = run / "ckpt" / "last.pth"
@@ -175,9 +181,10 @@ def liveness(spoof, views: dict[str, np.ndarray], device: str) -> float:
 
 
 def embed_face(recog, frame_rgb: np.ndarray, landmarks: np.ndarray, device: str) -> np.ndarray:
-    """One L2-normalised embedding from the five landmarks, aligned to 112x112."""
-    matrix = similarity_transform(landmarks.reshape(-1, 2), reference_landmarks())
-    face = warp_affine(frame_rgb, matrix)
+    """One L2-normalised embedding from the five landmarks, aligned for this model."""
+    size = int(getattr(recog, "aligned_size", ALIGNED_SIZE))
+    matrix = similarity_transform(landmarks.reshape(-1, 2), reference_landmarks(size))
+    face = warp_affine(frame_rgb, matrix, size=size)
     return embed(recog, face[None], torch.device(device), flip=True)[0]
 
 

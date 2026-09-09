@@ -40,10 +40,10 @@ export = [
     "sng4onnx>=1.0",
     "psutil>=6.0",
 ]
-# AGPL-3.0, and only the detection teacher needs it. Kept out of the default
-# install so CI does not carry opencv and matplotlib to run unit tests.
-teacher = [
-    "ultralytics>=8.4",
+# bench/ holds standalone entry points, not library code, so the installable
+# package must not drag cv2 or http.server behind it (KEHOACH 4.4).
+bench = [
+    "opencv-python>=4.10",
 ]
 # Reading the WIDER FACE scoring kit, whose ground truth ships as MATLAB v5.
 eval = [
