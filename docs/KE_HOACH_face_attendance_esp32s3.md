@@ -293,11 +293,28 @@ chỉ chính xác ~15% (cùng một giá trị thanh ghi đo hai lần ra 37,3 m
 đo preview chạy song song với AI thì chậm đi **16,6%** — blit sẽ thành ~37 ms khi `ai_task`
 chạy, lúc đó mức 30 Hz hết biên còn mức 23,26 Hz vẫn dư 14%.
 
-⚠️ Panel quét thưa hơn thì **điểm ảnh TFT được nạp lại thưa hơn**, nên phải nghiệm thu bằng
-mắt là màn không nhấp nháy. Độ phân giải, số màu và fps của ảnh **không đổi** — 23,26 Hz là
-nhịp làm mới của panel, không phải nhịp đổi nội dung (nội dung do camera quyết định, 14,19 fps).
-Nếu nhấp nháy thì phương án thay thế là **thu preview còn 320×240**: ghi chỉ 16 ms nên khoá
-pha được ngay ở nhịp quét mặc định 57 Hz, đổi lấy việc ảnh chiếm nửa màn.
+**Quét 23,26 Hz thì panel nhấp nháy, và cái chữa là VCOM chứ không phải tần số.** Điểm ảnh TFT
+được nạp lại thưa hơn nên mọi lệch điện áp chung (VCOM, `0xC5`) hiện ra thành rung sáng; ở 57 Hz
+cùng độ lệch đó mắt không thấy. Thư viện `esp_lcd_st7796` cài `0xC5 = 0x18` cho panel chung, và
+module này rung với giá trị đó — thấy rõ trên **xám tĩnh 50%**, tức là lỗi của panel, không phải
+của camera. Đo 11/09 bằng cách quét `0xC5` trên xám 50% ở 23,26 Hz, mỗi mức 6 s, mắt chấm:
+`0x00`–`0x28` rung, **`0x2C`–`0x34` êm**, `0x38`–`0x3C` rung lại. `drv_lcd` cài **`0x30`**, giữa
+dải êm để còn biên hai phía cho trôi nhiệt. Trên thang xám 5 dải (đen, 25%, 50%, 75%, trắng) thì
+**dải trắng vẫn rung** ở cả `0x2C`, `0x30`, `0x34` với đảo cực 1-dot (`0xB4 = 0x01`, mặc định thư
+viện) và cả 2-dot (`0x02`); chuyển sang **column inversion (`0xB4 = 0x00`)** thì trắng êm. `drv_lcd`
+cài cả hai. 🔬 Chấm bằng mắt lúc 11/09 khuya dưới đèn học; **nghiệm thu lại ban ngày trên ảnh
+camera** trước khi coi là xong. Độ phân giải, số màu và fps của ảnh **không đổi** — 23,26 Hz là nhịp
+làm mới của panel, không phải nhịp đổi nội dung (camera quyết định, 14,19 fps).
+
+**Đã thử và loại: giữ 57 Hz gốc bằng cách đổi cửa sổ pha.** Trên giấy còn một cách không phải
+quét chậm: bắt đầu ghi **ngay sau khi tia vừa qua đỉnh** thay vì trước lúc về đỉnh. Tia nhanh hơn
+con trỏ ghi 1,8× nên chạy trước suốt vòng đầu (hiện toàn khung cũ), quay lại đỉnh ở 17,5 ms và chỉ
+đuổi kịp con trỏ ghi ở `T_s·T_w/(T_w−T_s)` = 39,1 ms, sau khi ghi đã xong ở 31,7 ms — điều kiện
+chung là `T_w < 2·T_s` (31,7 < 35 ms ✓). Đo 11/09 với cửa sổ bộ đếm 0…24: **khấc quay lại**. Biên
+3,3 ms trên giấy không sống được với đường nạp bounce buffer 30 KB (DMA 3,07 ms mỗi buffer, CPU
+phải kịp đổ đầy buffer kia), nên mọi lần trễ vài ms là tia đuổi kịp ở đáy màn. Cách này chỉ dùng
+lại được nếu vùng preview nhỏ đi (320×360 → `T_w` 23,8 ms, biên 11 ms) — quyết định của `ui_kiosk`
+(E10), không phải của driver.
 
 #### B. Bus I2C hệ thống (I2C_NUM_0, 400 kHz)
 
