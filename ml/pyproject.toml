@@ -1,7 +1,7 @@
 [project]
 name = "facepipe"
 version = "0.1.0"
-description = "Training, distillation, quantization and export for the ESP32-S3 face attendance kiosk"
+description = "Training, quantization and export for the ESP32-S3 face attendance kiosk"
 requires-python = ">=3.12"
 dependencies = [
     "gdown>=5.2",

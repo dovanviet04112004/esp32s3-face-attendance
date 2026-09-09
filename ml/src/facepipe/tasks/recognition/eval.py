@@ -202,24 +202,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ckpt", type=Path, default=None)
     parser.add_argument("--benchmarks", type=Path, default=Path("data/raw/recognition/benchmarks"))
     parser.add_argument("--model", default="mobilefacenet")
-    parser.add_argument("--teacher-weights", type=Path, default=None)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--flip", action="store_true")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args(argv)
 
-    if (args.ckpt is None) == (args.teacher_weights is None):
-        parser.error("pass exactly one of --ckpt and --teacher-weights")
+    if args.ckpt is None:
+        parser.error("--ckpt is required")
 
     device = torch.device(args.device)
-    if args.teacher_weights is not None:
-        from .teacher.r50_wf600k import load_r50_wf600k
-
-        model = load_r50_wf600k(args.teacher_weights)
-    else:
-        model = MODELS.build({"name": args.model, "params": {}})
-        payload = torch.load(args.ckpt, map_location="cpu", weights_only=False)
-        model.load_state_dict(payload.get("model", payload))
+    model = MODELS.build({"name": args.model, "params": {}})
+    payload = torch.load(args.ckpt, map_location="cpu", weights_only=False)
+    model.load_state_dict(payload.get("model", payload))
     model = model.to(device)
 
     for name, scores in evaluate_all(model, args.benchmarks, device, flip=args.flip).items():

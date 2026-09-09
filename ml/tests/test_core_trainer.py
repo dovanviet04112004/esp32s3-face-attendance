@@ -152,7 +152,7 @@ def test_resume_restores_parameters_the_model_does_not_hold(
     config_file, tmp_path, tiny_loader
 ) -> None:
     """The bug this guards: a head living in the loss came back randomly seeded,
-    while its momentum came back trained, so the resumed arm relearned it."""
+    while its momentum came back trained, so the resumed run relearned it."""
     from tests.conftest import TinyNet
 
     cfg = _cfg(config_file, tmp_path)

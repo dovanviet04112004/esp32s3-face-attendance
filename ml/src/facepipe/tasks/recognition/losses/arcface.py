@@ -23,7 +23,7 @@ class ArcFaceLoss(nn.Module):
     """Cross entropy over cosines, with an additive angular margin on the target.
 
     Takes the branch's target record and reads its labels field, so a batch can
-    carry cached teacher embeddings alongside without this loss knowing.
+    carry more fields alongside without this loss knowing.
     """
 
     def __init__(

@@ -38,23 +38,12 @@ def make_sample(height: int = 200, width: int = 100) -> Sample:
         boxes=np.array([[10.0, 20.0, 50.0, 80.0]], dtype=np.float32),
         landmarks=LANDMARKS.astype(np.float32),
         has_landmarks=np.array([True]),
-        teacher_boxes=np.array([[12.0, 22.0, 52.0, 82.0]], dtype=np.float32),
-        teacher_scores=np.array([0.9], dtype=np.float32),
-        teacher_landmarks=LANDMARKS.astype(np.float32) + 1.0,
     )
 
 
 def test_letterbox_keeps_the_aspect_ratio() -> None:
     out = letterbox(make_sample(200, 100), INPUT_HW)
     assert out.image.shape == (*INPUT_HW, 3)
-
-
-def test_letterbox_moves_the_teacher_boxes_with_the_real_ones() -> None:
-    sample = make_sample()
-    out = letterbox(sample, INPUT_HW)
-    gap_before = sample.teacher_boxes - sample.boxes
-    gap_after = out.teacher_boxes - out.boxes
-    assert np.allclose(gap_after, gap_before * (out.boxes[0, 2] - out.boxes[0, 0]) / 40.0)
 
 
 def test_flip_mirrors_boxes_within_the_image() -> None:
@@ -71,12 +60,6 @@ def test_flip_swaps_the_eyes_and_the_mouth_corners() -> None:
     for target, source in enumerate(FLIP_INDEX):
         assert out.landmarks[0, target, 1] == pytest.approx(sample.landmarks[0, source, 1])
     assert FLIP_INDEX[2] == 2
-
-
-def test_flip_reorders_the_teacher_landmarks_the_same_way() -> None:
-    sample = make_sample(100, 200)
-    out = horizontal_flip(sample)
-    assert np.allclose(out.teacher_landmarks[0, :, 1], sample.teacher_landmarks[0, FLIP_INDEX, 1])
 
 
 def test_flipping_twice_returns_the_original() -> None:

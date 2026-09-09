@@ -81,7 +81,7 @@ class MiniFASNetV2SE(nn.Module):
     """Two-scale anti-spoof classifier.
 
     forward takes the two crops as one pair, not two arguments, because the
-    shared distiller calls every model with a single input. Feeding the same
+    shared trainer calls every model with a single input. Feeding the same
     crop twice trains a model that cannot use context.
     """
 

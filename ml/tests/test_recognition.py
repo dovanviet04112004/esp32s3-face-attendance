@@ -1,4 +1,4 @@
-"""E5-T1 to E5-T3: the model, the three losses, and the teacher that feeds them."""
+"""E5-T2 and E5-T3: the model and the loss it trains against."""
 
 from __future__ import annotations
 

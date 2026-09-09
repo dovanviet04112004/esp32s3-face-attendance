@@ -1,4 +1,4 @@
-"""MS1MV3 shards to batches of aligned faces, labels and cached teacher vectors.
+"""MS1MV3 shards to batches of aligned faces and labels.
 
 Images arrive aligned to the ArcFace reference at 112x112, the geometry the
 device reproduces, so nothing here warps anything and augmentation is a flip.
@@ -21,7 +21,7 @@ import torch
 from PIL import Image
 from torch.utils.data import IterableDataset, get_worker_info
 
-from facepipe.data.prepare.images_to_wds import KEY_FIELD, read_shard
+from facepipe.data.prepare.images_to_wds import read_shard
 
 from .postproc.align import ALIGNED_SIZE
 
@@ -31,25 +31,22 @@ PIXEL_SCALE = 127.5
 # worker process at once; twenty readers on a 9 GB host cannot afford more.
 SHUFFLE_BUFFER = 2048
 OPEN_SHARDS = 4
-TEACHER_DTYPE = np.float16
 COUNTS_NAME = "record_counts.json"
 
 
 @dataclass
 class RecogSample:
-    """One face: the aligned crop, its class index, and the teacher's answer."""
+    """One face: the aligned crop and its class index."""
 
     image: np.ndarray
     label: int
-    teacher: np.ndarray | None = None
 
 
 @dataclass
 class RecogTargets:
-    """What a batch is scored against; teacher is absent on the baseline arm."""
+    """What a batch is scored against."""
 
     labels: torch.Tensor
-    teacher: torch.Tensor | None = None
 
 
 def shard_paths(root: Path) -> list[Path]:
@@ -86,7 +83,7 @@ def normalize_batch(images: torch.Tensor) -> torch.Tensor:
 
 
 class Ms1mShardDataset(IterableDataset):
-    """Streams (image, label, teacher embedding) for one side of the split."""
+    """Streams (image, label) for one side of the split."""
 
     def __init__(
         self,
@@ -95,7 +92,6 @@ class Ms1mShardDataset(IterableDataset):
         size: int = ALIGNED_SIZE,
         train: bool = True,
         seed: int = 42,
-        teacher_cache: Path | None = None,
         embedding_dim: int = 512,
         shuffle_buffer: int = SHUFFLE_BUFFER,
         open_shards: int = OPEN_SHARDS,
@@ -109,7 +105,6 @@ class Ms1mShardDataset(IterableDataset):
         self.seed = seed
         self.shuffle_buffer = shuffle_buffer if train else 0
         self.open_shards = max(1, open_shards if train else 1)
-        self.teacher_cache = Path(teacher_cache) if teacher_cache else None
         self.embedding_dim = embedding_dim
         self.epoch = 0
         self._cache: np.memmap | None = None
@@ -144,17 +139,6 @@ class Ms1mShardDataset(IterableDataset):
 
     def keeps(self, record: dict[str, bytes]) -> bool:
         return int(record["cls"]) in self.labels
-
-    def _teacher_rows(self) -> np.memmap | None:
-        """Open the embedding cache lazily, once per worker process."""
-        if self.teacher_cache is None:
-            return None
-        if self._cache is None:
-            rows = self.teacher_cache.stat().st_size // (self.embedding_dim * 2)
-            self._cache = np.memmap(
-                self.teacher_cache, dtype=TEACHER_DTYPE, mode="r", shape=(rows, self.embedding_dim)
-            )
-        return self._cache
 
     def _my_shards(self) -> list[Path]:
         """This worker's slice of the shard list.
@@ -195,15 +179,12 @@ class Ms1mShardDataset(IterableDataset):
             yield record
 
     def _records(self) -> Iterator[RecogSample]:
-        cache = self._teacher_rows()
         for record in self._interleaved(self._my_shards()):
             if not self.keeps(record):
                 continue
-            index = int(record[KEY_FIELD])
             yield RecogSample(
                 image=decode(record["jpg"], self.size),
                 label=self.labels[int(record["cls"])],
-                teacher=np.asarray(cache[index]) if cache is not None else None,
             )
 
     def __iter__(self) -> Iterator[RecogSample]:
@@ -212,7 +193,7 @@ class Ms1mShardDataset(IterableDataset):
         buffer: list[RecogSample] = []
         for sample in self._records():
             if self.train and rng.random() < 0.5:
-                sample = RecogSample(sample.image[:, ::-1].copy(), sample.label, sample.teacher)
+                sample = RecogSample(sample.image[:, ::-1].copy(), sample.label)
             if self.shuffle_buffer <= 0:
                 yield sample
                 continue
@@ -229,7 +210,4 @@ def collate(batch: list[RecogSample]) -> tuple[torch.Tensor, RecogTargets]:
     """Stack into byte images and the targets they are scored against."""
     images = torch.from_numpy(np.stack([s.image for s in batch])).permute(0, 3, 1, 2).contiguous()
     labels = torch.tensor([s.label for s in batch], dtype=torch.long)
-    teacher = None
-    if batch[0].teacher is not None:
-        teacher = torch.from_numpy(np.stack([s.teacher for s in batch]))
-    return images, RecogTargets(labels=labels, teacher=teacher)
+    return images, RecogTargets(labels=labels)

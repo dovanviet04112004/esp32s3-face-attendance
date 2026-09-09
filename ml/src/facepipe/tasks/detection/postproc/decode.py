@@ -24,24 +24,6 @@ def flatten_levels(tensors: list[torch.Tensor]) -> torch.Tensor:
     return torch.cat(flat, dim=1)
 
 
-def unflatten_levels(flat: torch.Tensor, sizes: list[tuple[int, int]]) -> list[torch.Tensor]:
-    """Inverse of flatten_levels: split (B, N, C) back into per-level maps.
-
-    Distillation terms that arrive as one row per prior have to be handed to the
-    losses in head shape, and splitting in any other order would pair a value
-    with a cell from a different level.
-    """
-    if sum(height * width for height, width in sizes) != flat.shape[1]:
-        raise ValueError(f"{flat.shape[1]} priors do not fill levels {sizes}")
-
-    maps: list[torch.Tensor] = []
-    start = 0
-    for height, width in sizes:
-        block = flat[:, start : start + height * width, :]
-        maps.append(block.reshape(block.shape[0], height, width, -1).permute(0, 3, 1, 2))
-        start += height * width
-    return maps
-
 
 def flatten_output(out: HeadOutput) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Flatten the three branches together, keeping them aligned."""

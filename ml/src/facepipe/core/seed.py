@@ -1,7 +1,7 @@
 """Seed control and RNG state capture.
 
 Reproducibility is a hard requirement here: the ablation tables of sections 3.7
-and 3.8 compare arms, and two arms that differ in seed cannot be compared.
+and CLAUDE.md 4.2 compare runs, and two runs that differ in seed cannot be compared.
 """
 
 from __future__ import annotations

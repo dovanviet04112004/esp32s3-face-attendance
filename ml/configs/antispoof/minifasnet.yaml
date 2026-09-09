@@ -1,5 +1,5 @@
-# MiniFASNetV2-SE, two backbones on one face (KEHOACH 1.1). Trained on labels
-# alone, no distillation (ADR-0002).
+# MiniFASNetV2-SE, two backbones on one face, trained on live/spoof labels
+# (KEHOACH 1.1).
 
 run:
   task: antispoof

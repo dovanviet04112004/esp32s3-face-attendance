@@ -1,6 +1,6 @@
 """Supervised loss on real labels: focal, GIoU and landmark L1.
 
-The whole of arm A0 and switched on in every other arm (KEHOACH 3.7), so a
+The only loss this branch trains on (ADR-0002), so a
 regression here moves all four rows at once. Targets arrive already assigned to
 priors: a loss that also decided which prior owns which face could not be tested
 without reproducing that decision.
@@ -22,7 +22,7 @@ from ..postproc.decode import bbox_decode, flatten_output, kps_encode
 
 @dataclass
 class DetectionTargets:
-    """Per-prior labels, plus the raw boxes feature distillation masks need.
+    """Per-prior labels, plus the raw boxes average precision is scored against.
 
     landmark_mask is not redundant with labels: only 75,913 of the 159,393
     labelled faces in WIDER FACE carry landmarks, so a positive prior without
@@ -35,10 +35,6 @@ class DetectionTargets:
     landmark_mask: torch.Tensor
     priors: torch.Tensor
     gt_boxes: list[torch.Tensor] | None = None
-    # One row per prior, head shaped; absent on the arm that has no teacher.
-    teacher_cls: torch.Tensor | None = None
-    teacher_bbox: torch.Tensor | None = None
-    teacher_kps: torch.Tensor | None = None
 
     @property
     def positives(self) -> torch.Tensor:

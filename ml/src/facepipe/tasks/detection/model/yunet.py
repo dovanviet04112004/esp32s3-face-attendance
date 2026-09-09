@@ -2,7 +2,7 @@
 
 Registered as "yunet" so a config selects it by name without core importing this
 module (KEHOACH 4.4.3). Weights start random: loading the reference checkpoint
-would leave arm A0 no longer a model trained without a teacher.
+would leave the run no longer a model trained from random initialisation.
 """
 
 from __future__ import annotations

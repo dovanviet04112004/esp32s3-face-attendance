@@ -1,5 +1,5 @@
-# MobileFaceNet, 512-D embedding (KEHOACH 1.1). Trained on identity labels with
-# ArcFace margin, no distillation (ADR-0002).
+# MobileFaceNet, 512-D embedding, trained on identity labels with an ArcFace
+# margin (KEHOACH 1.1).
 
 run:
   task: recognition

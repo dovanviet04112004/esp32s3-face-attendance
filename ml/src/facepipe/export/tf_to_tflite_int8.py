@@ -12,7 +12,6 @@ from pathlib import Path
 # A model name maps to the package owning its graph shape and calibration set.
 BRANCH_PACKAGE = {
     "minifasnet_v2_se": "facepipe.tasks.antispoof",
-    "cdcnpp": "facepipe.tasks.antispoof",
     "yunet": "facepipe.tasks.detection",
     "mobilefacenet": "facepipe.tasks.recognition",
 }

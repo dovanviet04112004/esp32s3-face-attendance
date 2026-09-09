@@ -1,9 +1,8 @@
 """Dataset, augmentation and prior assignment for the detection branch.
 
-Augmentation hits the teacher's cached detections in the same call as the real
-labels: transform one and not the other and the model imitates geometry from a
-differently-cropped image while the loss still falls (KEHOACH 3, layer 2). The
-recipe is identical across all four arms, so nothing here reads for a teacher.
+Every augmentation moves the boxes and the landmarks in the same call as the
+image: transforming one and not the other trains on geometry the picture no
+longer has, and the loss still falls while it happens (KEHOACH 3, layer 2).
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 import json
 import random
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +24,7 @@ from .losses.task_loss import DetectionTargets
 from .model.anchors import feature_sizes, pyramid_priors
 from .model.head import LANDMARK_COUNT
 from .model.yunet import STRIDES
-from .postproc.decode import bbox_encode, kps_encode
+from .postproc.decode import bbox_encode
 
 # Mirroring swaps the two eyes and the two mouth corners; the nose stays put.
 FLIP_INDEX = (1, 0, 2, 4, 3)
@@ -42,10 +41,6 @@ MIN_FACE_PX = 8.0
 # meets WIDER at one scale, and never a face the size the kiosk will show it.
 CROP_SCALE = (0.3, 1.0)
 
-TEACHER_SCORE_EPS = 1e-4
-# logit(TEACHER_SCORE_EPS): what a prior no teacher box claimed is worth.
-TEACHER_BACKGROUND_LOGIT = -9.2103
-
 
 @dataclass
 class Sample:
@@ -55,11 +50,6 @@ class Sample:
     boxes: np.ndarray
     landmarks: np.ndarray
     has_landmarks: np.ndarray
-    teacher_boxes: np.ndarray = field(default_factory=lambda: np.zeros((0, 4), np.float32))
-    teacher_scores: np.ndarray = field(default_factory=lambda: np.zeros((0,), np.float32))
-    teacher_landmarks: np.ndarray = field(
-        default_factory=lambda: np.zeros((0, LANDMARK_COUNT, 2), np.float32)
-    )
 
 
 def letterbox_params(in_hw: tuple[int, int], out_hw: tuple[int, int]) -> tuple[float, int, int]:
@@ -96,9 +86,6 @@ def letterbox(sample: Sample, out_hw: tuple[int, int]) -> Sample:
         boxes=sample.boxes * scale + np.tile(offset, 2),
         landmarks=sample.landmarks * scale + offset,
         has_landmarks=sample.has_landmarks,
-        teacher_boxes=sample.teacher_boxes * scale + np.tile(offset, 2),
-        teacher_scores=sample.teacher_scores,
-        teacher_landmarks=sample.teacher_landmarks * scale + offset,
     )
 
 
@@ -131,15 +118,11 @@ def random_crop(
     offset = np.array([left, top], dtype=np.float32)
 
     keep = _inside(sample.boxes, window)
-    teacher_keep = _inside(sample.teacher_boxes, window)
     return Sample(
         image=sample.image[top : top + crop_h, left : left + crop_w].copy(),
         boxes=sample.boxes[keep] - np.tile(offset, 2),
         landmarks=sample.landmarks[keep] - offset,
         has_landmarks=sample.has_landmarks[keep],
-        teacher_boxes=sample.teacher_boxes[teacher_keep] - np.tile(offset, 2),
-        teacher_scores=sample.teacher_scores[teacher_keep],
-        teacher_landmarks=sample.teacher_landmarks[teacher_keep] - offset,
     )
 
 
@@ -161,15 +144,11 @@ def drop_small_faces(sample: Sample, min_px: float = MIN_FACE_PX) -> Sample:
         return sides >= min_px
 
     keep = large_enough(sample.boxes)
-    teacher_keep = large_enough(sample.teacher_boxes)
     return Sample(
         image=sample.image,
         boxes=sample.boxes[keep],
         landmarks=sample.landmarks[keep],
         has_landmarks=sample.has_landmarks[keep],
-        teacher_boxes=sample.teacher_boxes[teacher_keep],
-        teacher_scores=sample.teacher_scores[teacher_keep],
-        teacher_landmarks=sample.teacher_landmarks[teacher_keep],
     )
 
 
@@ -201,9 +180,6 @@ def horizontal_flip(sample: Sample) -> Sample:
         boxes=flip_boxes(sample.boxes),
         landmarks=flip_points(sample.landmarks),
         has_landmarks=sample.has_landmarks,
-        teacher_boxes=flip_boxes(sample.teacher_boxes),
-        teacher_scores=sample.teacher_scores,
-        teacher_landmarks=flip_points(sample.teacher_landmarks),
     )
 
 
@@ -249,42 +225,6 @@ def assign_priors(
     return owner, owner >= 0
 
 
-def assign_soft_targets(
-    boxes: np.ndarray, scores: np.ndarray, landmarks: np.ndarray, priors: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """One image's teacher detections resampled onto the model's own priors.
-
-    The two regress from different priors, so only the pixel box survives and is
-    re-encoded against the model's own. An unclaimed prior takes
-    TEACHER_BACKGROUND_LOGIT, since nothing below the teacher's cut was recorded.
-    """
-    count = priors.shape[0]
-    cls = torch.full((count, 1), TEACHER_BACKGROUND_LOGIT)
-    bbox = torch.zeros(count, 4)
-    kps = torch.zeros(count, LANDMARK_COUNT * 2)
-
-    owner, positive = assign_priors(boxes, priors)
-    if positive.any():
-        chosen = owner[positive]
-        found = torch.as_tensor(boxes, dtype=torch.float32)[chosen]
-        confidence = torch.as_tensor(scores, dtype=torch.float32)[chosen]
-        points = torch.as_tensor(landmarks, dtype=torch.float32)[chosen]
-        clamped = confidence.clamp(TEACHER_SCORE_EPS, 1 - TEACHER_SCORE_EPS)
-        cls[positive] = torch.logit(clamped)[:, None]
-        bbox[positive] = bbox_encode(priors[positive], found)
-        kps[positive] = kps_encode(priors[positive], points.reshape(len(chosen), -1))
-    return cls, bbox, kps
-
-
-def teacher_targets(
-    sample: Sample, priors: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """The soft targets a sample carries, on the priors, after its augmentation."""
-    return assign_soft_targets(
-        sample.teacher_boxes, sample.teacher_scores, sample.teacher_landmarks, priors
-    )
-
-
 def build_targets(sample: Sample, priors: torch.Tensor) -> DetectionTargets:
     """Turn one augmented sample into the per-prior tensors the loss reads."""
     owner, positive = assign_priors(sample.boxes, priors)
@@ -300,9 +240,6 @@ def build_targets(sample: Sample, priors: torch.Tensor) -> DetectionTargets:
         landmarks[positive] = points.reshape(len(chosen), -1)
         landmark_mask[positive] = torch.as_tensor(sample.has_landmarks, dtype=torch.bool)[chosen]
 
-    teacher_cls, teacher_bbox, teacher_kps = (
-        teacher_targets(sample, priors) if len(sample.teacher_scores) else (None, None, None)
-    )
     return DetectionTargets(
         labels=positive.long(),
         boxes=boxes,
@@ -310,15 +247,12 @@ def build_targets(sample: Sample, priors: torch.Tensor) -> DetectionTargets:
         landmark_mask=landmark_mask,
         priors=priors,
         gt_boxes=[torch.as_tensor(sample.boxes, dtype=torch.float32)],
-        teacher_cls=teacher_cls,
-        teacher_bbox=teacher_bbox,
-        teacher_kps=teacher_kps,
     )
 
 
 @DATASETS.register("widerface")
 class WiderFaceDataset(Dataset):
-    """WIDER FACE through the committed split, with optional teacher targets."""
+    """WIDER FACE through the committed split."""
 
     def __init__(
         self,
@@ -327,7 +261,6 @@ class WiderFaceDataset(Dataset):
         split_file: Path,
         input_hw: tuple[int, int],
         train: bool = True,
-        soft_targets: object | None = None,
         seed: int = 42,
         crop_scale: tuple[float, float] = CROP_SCALE,
         min_face_px: float = MIN_FACE_PX,
@@ -350,7 +283,6 @@ class WiderFaceDataset(Dataset):
         self.images_root = Path(images_root)
         self.input_hw = tuple(input_hw)
         self.train = train
-        self.soft_targets = soft_targets
         self.crop_scale = tuple(crop_scale)
         self.min_face_px = float(min_face_px)
         self.rng = random.Random(seed)
@@ -377,11 +309,6 @@ class WiderFaceDataset(Dataset):
             landmarks=np.asarray(landmarks, dtype=np.float32).reshape(-1, LANDMARK_COUNT, 2),
             has_landmarks=np.asarray(labelled, dtype=bool).reshape(-1),
         )
-        if self.soft_targets is not None and name in self.soft_targets:
-            cached = self.soft_targets[name]
-            sample.teacher_boxes = cached.boxes
-            sample.teacher_scores = cached.scores
-            sample.teacher_landmarks = cached.keypoints
         return sample
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, DetectionTargets]:
@@ -403,11 +330,6 @@ def collate(batch: list[tuple[torch.Tensor, DetectionTargets]]) -> tuple[torch.T
     images = torch.stack([item[0] for item in batch])
     targets = [item[1] for item in batch]
 
-    def stack_teacher(field_name: str) -> torch.Tensor | None:
-        """Absent on the baseline arm, and present on every sample or none."""
-        values = [getattr(t, field_name) for t in targets]
-        return None if any(v is None for v in values) else torch.stack(values)
-
     merged = DetectionTargets(
         labels=torch.stack([t.labels for t in targets]),
         boxes=torch.stack([t.boxes for t in targets]),
@@ -415,9 +337,6 @@ def collate(batch: list[tuple[torch.Tensor, DetectionTargets]]) -> tuple[torch.T
         landmark_mask=torch.stack([t.landmark_mask for t in targets]),
         priors=targets[0].priors,
         gt_boxes=[t.gt_boxes[0] for t in targets],
-        teacher_cls=stack_teacher("teacher_cls"),
-        teacher_bbox=stack_teacher("teacher_bbox"),
-        teacher_kps=stack_teacher("teacher_kps"),
     )
     return images, merged
 
