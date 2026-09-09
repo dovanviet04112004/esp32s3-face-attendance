@@ -1844,7 +1844,7 @@ components/svc_facedb/
 │   └── svc_facedb.h        # ★ CÔNG KHAI. extern "C", chỉ POD + handle mờ
 ├── priv_include/
 │   └── facedb_internal.hpp # nội bộ, component khác KHÔNG thấy
-├── src/{facedb.cpp, embedding_index.cpp, persist.cpp}
+├── src/{facedb.cpp, embedding_index.cpp, persist.cpp, dot_s8_esp32s3.S}
 ├── test_apps/              # ★ chuẩn ESP-IDF: test app nằm TRONG component
 │   └── facedb/{main/test_facedb.c, CMakeLists.txt, pytest_facedb.py}
 ├── Kconfig                 # tuỳ chọn hiện trong menuconfig (vd. FACEDB_MAX_PERSON)
@@ -2082,6 +2082,8 @@ class FaceDb {
     Mutex          mtx_;        // mọi hàm công khai mở đầu bằng LockGuard
 };
 ```
+
+`EmbeddingTable` giữ nguyên ảnh file của §6.2.4 trong PSRAM — header 32 B rồi các bản ghi 552 B — nên ghi bền là một lệnh `write_atomic` của đúng khối đó, và chuẩn bình phương của từng bản ghi được tính sẵn lúc nạp. Tích vô hướng int8·int8 chạy bằng SIMD PIE của ESP32-S3 (`ee.vmulas.s8.accx`, 16 MAC mỗi lệnh) trong `dot_s8_esp32s3.S`: 32 B header và 552 B bản ghi đều chia hết cho 8 nên mọi embedding nằm 8-byte aligned, đủ cho `ee.vld.l.64.ip`; bản C thuần chỉ còn cho target khác. Kết quả số **đúng bằng** bản C — accumulator 40 bit, không làm tròn — nên `cosine.py` bên `ml/` vẫn là bản tham chiếu. Đo 10/09 ở `-O2`, 1.000 bản ghi: vòng C thuần **20,9 ms**, quá mốc 20 ms của E8-T11; số của kernel PIE ghi ở `TASKS.md`.
 
 ##### h) `ui_kiosk` — kế thừa đúng bài
 
@@ -2777,7 +2779,7 @@ Mọi layout nhị phân trong §6.2 tồn tại ở **đúng một file**:
 firmware/components/sys_storage/include/storage_format.h
 ```
 
-File này là bản dịch 1:1 của §6.2.2, §6.2.4, §6.2.5 sang C, và **bắt buộc có `static_assert`** để trình biên dịch chốt lại con số, không để nó chỉ là bảng trên giấy:
+File này là bản dịch 1:1 của §6.2.2, §6.2.4, §6.2.5 sang C — kèm đường dẫn file của §6.2.3 (`STORAGE_FACES_PATH`, …) để không component nào gõ lại chuỗi `/lfs/db/...` — và **bắt buộc có `static_assert`** để trình biên dịch chốt lại con số, không để nó chỉ là bảng trên giấy:
 
 ```c
 #pragma once
