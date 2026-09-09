@@ -24,8 +24,10 @@ typedef struct {
 } ai_engine_arena_stats_t;
 
 /** Map the models partition and reserve both arenas.
- *  @ctx task | blocking | call once from app_main after sys_storage_init
+ *  @ctx task | blocking | call once from app_main, ahead of every driver
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_NO_MEM | ESP_ERR_NOT_FOUND
+ *       | ESP_ERR_NOT_SUPPORTED when a graph needs an operator this build omits
+ *       | ESP_ERR_INVALID_CRC | ESP_ERR_INVALID_SIZE
  */
 esp_err_t ai_engine_init(void);
 

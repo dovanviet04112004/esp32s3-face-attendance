@@ -31,11 +31,12 @@ esp_err_t TfliteModelBase::init(const tflite::Model *model, Arena &arena) noexce
     interpreter_ = new (storage_)
         tflite::MicroInterpreter(model, resolver(), arena.allocator(), nullptr, profiler());
     if (interpreter_->AllocateTensors() != kTfLiteOk) {
-        // A half-allocated interpreter faults inside its own destructor.
-        ESP_LOGE(TAG, "%s: allocate failed on an arena of %u KB", name(),
+        // TFLM logs which operator or arena limit it tripped on; a
+        // half-allocated interpreter faults inside its own destructor.
+        ESP_LOGE(TAG, "%s: AllocateTensors rejected the graph, arena %u KB", name(),
                  static_cast<unsigned>(arena.size() / 1024));
         interpreter_ = nullptr;
-        return ESP_ERR_NO_MEM;
+        return ESP_ERR_NOT_SUPPORTED;
     }
     ESP_LOGI(TAG, "%s: %u in, %u out, arena at %u of %u KB", name(),
              static_cast<unsigned>(interpreter_->inputs_size()),
