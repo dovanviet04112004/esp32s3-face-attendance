@@ -30,3 +30,7 @@ dependencies.lock   linguist-generated
 *.yml   text eol=lf
 *.json  text eol=lf
 *.csv   text eol=lf
+
+# Vendored code stays byte-exact: eol conversion is a modification, and it
+# breaks the sha256 each third_party/UPSTREAM.md records.
+firmware/third_party/**  -text
