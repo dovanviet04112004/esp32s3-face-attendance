@@ -3,6 +3,7 @@
 
 #include "app_config.h"
 #include "bsp_board.h"
+#include "driver/gpio.h"
 #include "drv_audio.h"
 #include "drv_ioexp.h"
 #include "esp_timer.h"
@@ -25,6 +26,13 @@
 #define CLOCK_TOLERANCE_MS (CLIP_MS / 10 + 200)
 #define PLAYER_STACK_BYTES 4096
 #define PLAYER_PRIORITY 6
+#define EDGE_WINDOW_US 2000
+#define MIN_EDGES 10
+#define NOTE_SAMPLES (DRV_AUDIO_SAMPLE_HZ * 2 / 5)
+#define NOTE_C5_HZ 523
+#define NOTE_E5_HZ 659
+#define NOTE_G5_HZ 784
+#define NOTE_VOLUME 50
 
 static int16_t s_clip[CLIP_SAMPLES];
 
@@ -73,6 +81,21 @@ TEST_CASE("a two second clip occupies the bus for two seconds", "[drv_audio]")
     vTaskDelay(pdMS_TO_TICKS(GAP_MS));
 }
 
+static int edges_on(int gpio)
+{
+    // Reading the pad back while I2S drives it shows what the wire carries.
+    TEST_ASSERT_EQUAL(ESP_OK, gpio_input_enable(gpio));
+    int edges = 0;
+    int last = gpio_get_level(gpio);
+    const int64_t deadline = esp_timer_get_time() + EDGE_WINDOW_US;
+    while (esp_timer_get_time() < deadline) {
+        const int level = gpio_get_level(gpio);
+        edges += level != last;
+        last = level;
+    }
+    return edges;
+}
+
 TEST_CASE("sd_mode is high for the length of a clip and low after it", "[drv_audio]")
 {
     // The expander sources only ~100 uA on a high line, so a high read here means
@@ -80,6 +103,13 @@ TEST_CASE("sd_mode is high for the length of a clip and low after it", "[drv_aud
     fill_tone(CLIP_SAMPLES, HIGH_TONE_HZ);
     TEST_ASSERT_EQUAL(pdPASS, xTaskCreate(play_clip, "play", PLAYER_STACK_BYTES, NULL, PLAYER_PRIORITY, NULL));
     vTaskDelay(pdMS_TO_TICKS(MID_CLIP_MS));
+    const int bclk = edges_on(APP_AUDIO_BCLK_GPIO);
+    const int ws = edges_on(APP_AUDIO_LRC_GPIO);
+    const int din = edges_on(APP_AUDIO_DIN_GPIO);
+    printf("edges in %d us mid clip: bclk %d, ws %d, din %d\n", EDGE_WINDOW_US, bclk, ws, din);
+    TEST_ASSERT_GREATER_THAN(MIN_EDGES, bclk);
+    TEST_ASSERT_GREATER_THAN(MIN_EDGES, ws);
+    TEST_ASSERT_GREATER_THAN(MIN_EDGES, din);
     const uint8_t during = sd_line();
     vTaskDelay(pdMS_TO_TICKS(CLIP_MS - MID_CLIP_MS + AFTER_CLIP_MS));
     const uint8_t after = sd_line();
@@ -87,6 +117,19 @@ TEST_CASE("sd_mode is high for the length of a clip and low after it", "[drv_aud
     TEST_ASSERT_EQUAL(SD_BIT, during);
     TEST_ASSERT_EQUAL(0, after);
     vTaskDelay(pdMS_TO_TICKS(GAP_MS));
+}
+
+TEST_CASE("three rising notes for the ear, with silence around them", "[drv_audio]")
+{
+    const int notes_hz[] = { NOTE_C5_HZ, NOTE_E5_HZ, NOTE_G5_HZ };
+    TEST_ASSERT_EQUAL(ESP_OK, drv_audio_set_volume(NOTE_VOLUME));
+    printf("listen: three rising notes, then %d ms of silence that must carry no hiss\n", GAP_MS * 3);
+    for (size_t i = 0; i < sizeof(notes_hz) / sizeof(notes_hz[0]); ++i) {
+        fill_tone(NOTE_SAMPLES, notes_hz[i]);
+        TEST_ASSERT_EQUAL(ESP_OK, drv_audio_play_pcm(s_clip, NOTE_SAMPLES));
+    }
+    vTaskDelay(pdMS_TO_TICKS(GAP_MS * 3));
+    TEST_ASSERT_EQUAL(0, sd_line());
 }
 
 TEST_CASE("a loud half second burst leaves the board running", "[drv_audio]")
