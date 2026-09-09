@@ -310,6 +310,16 @@ do trình tự reset ở §2.3C quyết định, nên `drv_touch_init()` tự lo
 
 ⚠️ Trình tự này **bắt buộc chạy**, không phải tuỳ chọn. PCF8574 là chân quasi-bidirectional: lúc cấp nguồn mọi chân bật lên HIGH qua nguồn dòng ~100 µA, nên P0 nhả reset GT911 ngay trước khi firmware kịp chạy, và GT911 chốt địa chỉ theo GPIO14 đang thả nổi. Địa chỉ sau power-up là bất định; chỉ lần reset do `drv_touch` chủ động mới quyết định được nó.
 
+**RST của GT911 đi qua PCF8574 nên cạnh lên chậm, và mốc giữ phải theo đó.** PCF8574 là
+ngõ ra bán song hướng: kéo xuống thì mạnh, đẩy lên chỉ khoảng **100 µA**, nên cạnh lên phụ
+thuộc điện dung của đường RST trên module. Đo trên board: giữ RST thấp **10 ms** thì
+`esp_lcd_touch_new_i2c_gt911()` đọc config thất bại; giữ **100 ms** thì bộ điều khiển lên
+đúng ở `0x5D`. `APP_TOUCH_RST_HOLD_MS = 100` vì thế, không phải theo mốc 100 µs của
+datasheet — datasheet nói về chân được lái bằng ngõ ra thường.
+
+Và **INT phải trả về input sau khi chốt địa chỉ**: nó là ngõ ra *của bộ điều khiển*, giữ nó
+ở mức thấp từ phía ESP32 là tranh chấp chân.
+
 #### D. ToF VL53L1X
 
 | Chân | Nối tới | Ghi chú |

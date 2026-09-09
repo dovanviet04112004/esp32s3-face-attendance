@@ -32,6 +32,14 @@ static esp_err_t select_address(void)
     vTaskDelay(pdMS_TO_TICKS(APP_TOUCH_RST_HOLD_MS));
     APP_RETURN_ON_ERR(drv_ioexp_set(APP_IOEXP_P_TOUCH_RST, true), TAG, "rst high");
     vTaskDelay(pdMS_TO_TICKS(APP_TOUCH_INT_HOLD_MS));
+    // The controller answers nothing on i2c while this end drives its INT.
+    const gpio_config_t back_to_input = {
+        .pin_bit_mask = 1ULL << APP_TOUCH_INT_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    };
+    APP_RETURN_ON_ERR(gpio_config(&back_to_input), TAG, "int as input");
     return ESP_OK;
 }
 
@@ -58,8 +66,6 @@ esp_err_t drv_touch_init(void)
         .int_gpio_num = APP_TOUCH_INT_GPIO,
         .flags = {.swap_xy = false, .mirror_x = false, .mirror_y = false},
     };
-    // Leaves INT as an input with its interrupt armed, which select_address
-    // above does not: it hands the pin over as an output.
     APP_RETURN_ON_ERR(esp_lcd_touch_new_i2c_gt911(s_io, &cfg, &s_touch), TAG, "gt911");
     ESP_LOGI(TAG, "gt911 at 0x%02X, %dx%d", APP_TOUCH_I2C_ADDR_LOW, APP_LCD_H_RES, APP_LCD_V_RES);
     return ESP_OK;
