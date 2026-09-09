@@ -68,15 +68,17 @@ uint32_t sys_storage_crc32(const void *data, size_t len);
  */
 esp_err_t sys_storage_append(const char *path, const void *record, size_t len);
 
-/** Map the active models partition and hand back its header.
+/** Map the models partition and hand back its header.
  *  @ctx task | blocking | the mapping lives until reboot
- *  @ret ESP_OK | ESP_ERR_NOT_FOUND | ESP_ERR_INVALID_CRC on a damaged header
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND when the partition holds no image
+ *       | ESP_ERR_INVALID_CRC on a damaged header or an unknown format_ver
  */
 esp_err_t sys_storage_models_open(const storage_models_header_t **header);
 
 /** Find one model inside the mapped partition by its packed name.
  *  @ctx any | non-blocking | valid only after sys_storage_models_open
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND when no entry carries that name
+ *       | ESP_ERR_INVALID_SIZE when the entry does not lie inside the image
  */
 esp_err_t sys_storage_model_find(const char *name, const void **data, size_t *size);
 

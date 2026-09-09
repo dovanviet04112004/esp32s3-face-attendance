@@ -36,6 +36,7 @@ static bool s_ready;
 
 static const storage_models_header_t *s_models;
 static const uint8_t *s_models_base;
+static size_t s_models_bytes;
 static esp_partition_mmap_handle_t s_models_map;
 
 static esp_err_t take(void)
@@ -299,14 +300,22 @@ esp_err_t sys_storage_models_open(const storage_models_header_t **header)
                       TAG, "mmap");
 
     const storage_models_header_t *candidate = base;
+    // An erased partition reads back all ones, so a wrong magic means no image
+    // has been written yet; only a matching magic makes a bad crc corruption.
+    if (candidate->magic != STORAGE_MODELS_MAGIC) {
+        esp_partition_munmap(s_models_map);
+        ESP_LOGE(TAG, "no models image: magic %08" PRIx32, candidate->magic);
+        return ESP_ERR_NOT_FOUND;
+    }
     const uint32_t crc = esp_crc32_le(0, (const uint8_t *)candidate,
                                       offsetof(storage_models_header_t, crc32));
-    if (candidate->magic != STORAGE_MODELS_MAGIC || crc != candidate->crc32) {
+    if (crc != candidate->crc32 || candidate->format_ver != STORAGE_MODELS_VER) {
         esp_partition_munmap(s_models_map);
-        ESP_LOGE(TAG, "models header magic %08" PRIx32 " crc %08" PRIx32 " vs %08" PRIx32,
-                 candidate->magic, crc, candidate->crc32);
+        ESP_LOGE(TAG, "models header v%" PRIu32 " crc %08" PRIx32 " vs %08" PRIx32,
+                 candidate->format_ver, crc, candidate->crc32);
         return ESP_ERR_INVALID_CRC;
     }
+    s_models_bytes = part->size;
     s_models_base = base;
     s_models = candidate;
     *header = s_models;
@@ -325,7 +334,21 @@ esp_err_t sys_storage_model_find(const char *name, const void **data, size_t *si
         if (strncmp(entry->name, name, STORAGE_MODEL_NAME_LEN) != 0) {
             continue;
         }
-        *data = s_models_base + entry->offset;
+        // The header crc covers the header, not the payloads, so an entry can
+        // point anywhere; esp-nn also needs the weights 16-byte aligned.
+        if (entry->size == 0 || entry->offset < sizeof(*s_models) ||
+            entry->offset % STORAGE_MODEL_ALIGN != 0 ||
+            (uint64_t)entry->offset + entry->size > s_models_bytes) {
+            ESP_LOGE(TAG, "%s entry offset %" PRIu32 " size %" PRIu32 " outside %u B partition",
+                     name, entry->offset, entry->size, (unsigned)s_models_bytes);
+            return ESP_ERR_INVALID_SIZE;
+        }
+        const uint8_t *payload = s_models_base + entry->offset;
+        if (memcmp(payload + 4, "TFL3", 4) != 0) {
+            ESP_LOGE(TAG, "%s is not a tflite flatbuffer", name);
+            return ESP_ERR_INVALID_SIZE;
+        }
+        *data = payload;
         *size = entry->size;
         return ESP_OK;
     }
