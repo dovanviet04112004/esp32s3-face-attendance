@@ -986,6 +986,15 @@ Ba con số `tail` và ba con số `head` phải đo thật ở E8, không suy r
 
 **Không tách `head` và `tail`.** `MicroAllocator::Create` có bản nhận hai buffer rời, cho phép để `head` (activation) ở SRAM nội và `tail` (metadata) ở PSRAM. Đo rồi: cách đó thu về **1,9%** cả chuỗi trong khi vẫn ăn 158–229 KB SRAM nội, tức vẫn không lọt ngân sách §6.4 mà lãi thì bằng một phần ba của việc đặt cả arena vào SRAM. Nó là phương án ở giữa và **thua cả hai đầu**, nên `Arena` chỉ có một đường cấp phát duy nhất. Số đo ở `docs/measurements/latency.md`.
 
+**Kích thước arena đến từ ảnh model, Kconfig là trần trên.** Mỗi entry của ảnh
+`models_0` mang `arena_hint` — số byte arena đã đo cho chính model đó (§6.2.2).
+`ai_engine` đọc nó khi khác 0 và cấp đúng chừng ấy; `AI_ARENA_FAST_KB` và
+`AI_ARENA_BIG_KB` chỉ còn là **cận trên**, và `arena_hint` vượt trần thì `Arena`
+từ chối kèm log chứ không cấp thiếu rồi chết ở `AllocateTensors`. Lý do là đổi
+model không được kéo theo `menuconfig` + build lại: hai bản khác kích thước phải
+nạp được vào cùng một firmware, nếu không thì A/B model ở §6.2.2 chỉ đúng trên
+giấy. `arena_hint` bằng 0 nghĩa là chưa đo — khi đó dùng trần Kconfig như cũ.
+
 **`ai_engine_init()` phải chạy trước mọi driver** — ràng buộc còn nguyên kể cả khi arena ở PSRAM, vì `AI_ARENA_FAST_INTERNAL` có thể bật lại. Ràng buộc thật không phải tổng RAM nội còn trống mà là **một dải liền mạch**: `heap_caps_aligned_alloc` không ghép được nhiều mảnh rời. Đo trên board (`docs/measurements/arena.md`): xin sau `drv_camera_init()` thì còn 192 KB trống nhưng mảnh to nhất chỉ 143 KB, arena **lùi xuống PSRAM**; xin ngay sau `sys_storage_init()` thì còn 293 KB với mảnh liền đủ rộng. Arena là chỗ duy nhất trong hệ xin một dải lớn như vậy, nên nó xin đầu tiên.
 
 ### Pipeline train
@@ -1820,7 +1829,7 @@ public:
 
 **Interface không có `arena_used()`.** Khi hai model dùng chung một `MicroAllocator`, `interpreter->arena_used_bytes()` trả về mức dùng của **cả allocator**, giống hệt nhau ở cả hai — một con số trông như của riêng model nhưng không phải. Mức dùng thật của từng arena đọc ở `Arena::used()`, và `ai_engine_arena_stats()` đưa nó ra ngoài.
 
-**`init` nhận `Arena&` chứ không nhận `(size, caps)`.** Model tự cấp buffer riêng thì mỗi model một `MicroAllocator`, mà §3.8 đòi ngược lại: detect và spoof phải dùng **chung** một allocator mới chồng được tail và dùng chung head. `Arena` sở hữu buffer, model chỉ mượn.
+**`init` nhận `Arena&` chứ không nhận `(size, caps)`.** Model tự cấp buffer riêng thì mỗi model một `MicroAllocator`, mà §3.8 đòi ngược lại: **anti-spoof và recognition** phải dùng **chung** một allocator mới chồng được tail và dùng chung head. `Arena` sở hữu buffer, model chỉ mượn. detect có `arena_fast` một mình, nhưng vẫn nhận `Arena&` — cùng một giao diện cho cả ba nhánh, và cách chia lại arena không phải sửa chữ ký.
 
 **`input`/`output` có chỉ số.** Anti-spoof đọc hai crop, YuNet trả 9 tensor (3 đầu × 3 stride), nên một `input()` trơ không đủ diễn đạt.
 
@@ -2476,6 +2485,8 @@ offset ...     recog.tflite   (căn 16 B)
 `sys_storage_models_open()` mmap toàn bộ partition một lần và kiểm crc header; `sys_storage_model_find()` tra theo `name` rồi trả `base + entry[i].offset` cho `ai_engine`. Tra theo tên chứ không theo vị trí, nên `count` nhỏ hơn 3 vẫn hợp lệ: khi một nhánh chưa có model, ảnh chỉ chứa những nhánh đã có và các entry còn lại để 0. **Verify sha256 chỉ chạy ngay sau OTA**, không chạy mỗi lần boot — băm 1.7 MB tốn ~200 ms mỗi lần khởi động mà không đổi lại được gì.
 
 Ảnh do `ml/src/facepipe/export/pack_models_partition.py` gộp: nó đọc `contracts/models.lock.json` để biết nhánh nào đang deploy, đối chiếu sha256 và `meta.json` của từng nhánh, rồi ghi header + ba khối `.tflite`. `ml/scripts/50_pack_and_flash.sh` gọi nó và ghi kết quả xuống `models_0` bằng `parttool.py`.
+
+**So hai phiên bản model không được sửa contract.** Cả hai script nhận `--lock <file>`; mặc định là `contracts/models.lock.json`, tức bản đang deploy. Lock thí nghiệm nằm ở `ml/artifacts/<nhánh>/` — chỗ đã gitignore — chứ không ở `contracts/`, vì nó không phải hợp đồng mà là một lần đo. Nhờ vậy đo bản B là trỏ `--lock` sang file khác rồi flash lại `models_0`, không đụng `contracts/` và không build lại firmware: `ai_engine` đọc kích thước đầu vào từ chính graph và arena từ `arena_hint`, nên hai bản khác kích thước dùng cùng một binary. Giữ **cả hai** bản trên flash cùng lúc thì cần chọn slot lúc boot bằng `nvs:model/active_slot`, và đó là việc của E13-T2.
 
 **A/B model**: `nvs:model/active_slot` quyết định dùng partition nào. OTA ghi vào slot *không* active → verify sha256 → đổi `active_slot` → reboot. Nếu boot sau đó lỗi (`ai_engine_init` fail) thì `app_main` trả `active_slot` về giá trị cũ và reboot lại. Rollback model độc lập với rollback firmware.
 
