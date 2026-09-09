@@ -324,7 +324,8 @@ esp_err_t sys_storage_models_open(const storage_models_header_t **header)
     return ESP_OK;
 }
 
-esp_err_t sys_storage_model_find(const char *name, const void **data, size_t *size)
+esp_err_t sys_storage_model_find(const char *name, const void **data, size_t *size,
+                                 uint32_t *arena_hint_bytes)
 {
     if (s_models == NULL || name == NULL || data == NULL || size == NULL) {
         return ESP_ERR_INVALID_STATE;
@@ -350,6 +351,9 @@ esp_err_t sys_storage_model_find(const char *name, const void **data, size_t *si
         }
         *data = payload;
         *size = entry->size;
+        if (arena_hint_bytes != NULL) {
+            *arena_hint_bytes = entry->arena_hint;
+        }
         return ESP_OK;
     }
     return ESP_ERR_NOT_FOUND;

@@ -1016,13 +1016,42 @@ Ba con số `tail` và ba con số `head` phải đo thật ở E8, không suy r
 **Không tách `head` và `tail`.** `MicroAllocator::Create` có bản nhận hai buffer rời, cho phép để `head` (activation) ở SRAM nội và `tail` (metadata) ở PSRAM. Đo rồi: cách đó thu về **1,9%** cả chuỗi trong khi vẫn ăn 158–229 KB SRAM nội, tức vẫn không lọt ngân sách §6.4 mà lãi thì bằng một phần ba của việc đặt cả arena vào SRAM. Nó là phương án ở giữa và **thua cả hai đầu**, nên `Arena` chỉ có một đường cấp phát duy nhất. Số đo ở `docs/measurements/latency.md`.
 
 **Kích thước arena đến từ ảnh model, Kconfig là trần trên.** Mỗi entry của ảnh
-`models_0` mang `arena_hint` — số byte arena đã đo cho chính model đó (§6.2.2).
-`ai_engine` đọc nó khi khác 0 và cấp đúng chừng ấy; `AI_ARENA_FAST_KB` và
-`AI_ARENA_BIG_KB` chỉ còn là **cận trên**, và `arena_hint` vượt trần thì `Arena`
-từ chối kèm log chứ không cấp thiếu rồi chết ở `AllocateTensors`. Lý do là đổi
-model không được kéo theo `menuconfig` + build lại: hai bản khác kích thước phải
-nạp được vào cùng một firmware, nếu không thì A/B model ở §6.2.2 chỉ đúng trên
-giấy. `arena_hint` bằng 0 nghĩa là chưa đo — khi đó dùng trần Kconfig như cũ.
+`models_0` mang `arena_hint` — **số byte của arena mà model đó chạy trong**, đo ở
+E8-T7 (§6.2.2). `ai_engine` đọc nó khi khác 0 và cấp đúng chừng ấy;
+`AI_ARENA_FAST_KB` và `AI_ARENA_BIG_KB` chỉ còn là **cận trên**, và `arena_hint`
+vượt trần thì `Arena` từ chối kèm log chứ không cấp thiếu rồi chết ở
+`AllocateTensors`. Lý do là đổi model không được kéo theo `menuconfig` + build
+lại: hai bản khác kích thước phải nạp được vào cùng một firmware, nếu không thì
+A/B model ở §6.2.2 chỉ đúng trên giấy. `arena_hint` bằng 0 nghĩa là chưa đo —
+khi đó dùng trần Kconfig như cũ.
+
+**Nhánh dùng chung arena thì mỗi entry mang tổng của nhóm, firmware lấy `max`.**
+`arena_hint` là **một số cho mỗi model**, mà spoof và recog **chung một**
+`MicroAllocator`: 476.188 B của chúng là `Σ tail + max(head)` của **cặp**, không
+tồn tại hai số cộng lại ra nó. Nên quy ước là mỗi entry trong nhóm ghi **cùng
+một** con — tổng của nhóm — và `ai_engine` cấp cho mỗi arena:
+
+```
+arena_bytes = max(arena_hint của các nhánh dùng arena đó)
+```
+
+`max` của những số bằng nhau là chính nó, nên nhóm đủ nhánh thì ra đúng số đã đo.
+Ảnh thiếu một nhánh của nhóm (§6.2.2 cho phép `count < 3`) thì `max` trả con của
+nhánh còn lại, tức **cấp thừa** — vô hại ở PSRAM, trong khi cấp thiếu là chết ở
+`AllocateTensors`. Chọn `max` thay vì thêm field `arena_group` vì field mới bắt
+tăng `format_ver` và sửa `storage_format.h` mà không mua thêm gì: nhóm nào chung
+arena đã là hằng số của kiến trúc, khai ở chính `ai_engine` (§4.5.5c).
+
+**`arena_hint` ghi số `used` đo được, firmware làm tròn lên KB.**
+`arena_used_bytes()` là **chặn dưới, không phải kích thước đủ**: TFLM cấp `tail`
+từ đỉnh xuống và `head` từ đáy lên, nên đệm căn lề phụ thuộc chính địa chỉ và
+kích thước của arena. Đo trên board: cấp cho detect **đúng** 189.628 B — con số
+nó tự báo đã dùng — thì `AllocateTensors` **từ chối**, cấp 189.632 B thì chạy,
+trong khi `arena_big` ở đúng `used` 476.188 B lại chạy được. Phần thiếu vừa nhỏ
+vừa không đoán trước được, nên chỗ bù nằm ở `ai_engine`: nó làm tròn lên bội số
+1 KB **sau** khi lấy `max`, rồi mới so với trần Kconfig. Đặt phần bù ở firmware
+chứ không ở `update_lock` vì người ghi lock chỉ có số `used`, còn chỉ firmware
+biết bộ cấp phát của mình cần đệm.
 
 **`ai_engine_init()` phải chạy trước mọi driver** — ràng buộc còn nguyên kể cả khi arena ở PSRAM, vì `AI_ARENA_FAST_INTERNAL` có thể bật lại. Ràng buộc thật không phải tổng RAM nội còn trống mà là **một dải liền mạch**: `heap_caps_aligned_alloc` không ghép được nhiều mảnh rời. Đo trên board (`docs/measurements/arena.md`): xin sau `drv_camera_init()` thì còn 192 KB trống nhưng mảnh to nhất chỉ 143 KB, arena **lùi xuống PSRAM**; xin ngay sau `sys_storage_init()` thì còn 293 KB với mảnh liền đủ rộng. Arena là chỗ duy nhất trong hệ xin một dải lớn như vậy, nên nó xin đầu tiên.
 
@@ -2503,7 +2532,7 @@ offset 0x0000  header 256 B
              size    u32
              sha256  [32]
              in_h u16, in_w u16
-             arena_hint u32              # arena đã đo (byte); 0 = chưa đo, xem E8-T7
+             arena_hint u32              # arena model này chạy trong (byte); 0 = chưa đo
    +0xD0  reserved                       (44B)
    +0xFC  crc32 của 0x00..0xFB           (4B)
 
@@ -2512,7 +2541,9 @@ offset ...     spoof.tflite   (căn 16 B — ESP-NN cần)
 offset ...     recog.tflite   (căn 16 B)
 ```
 
-`sys_storage_models_open()` mmap toàn bộ partition một lần và kiểm crc header; `sys_storage_model_find()` tra theo `name` rồi trả `base + entry[i].offset` cho `ai_engine`. Tra theo tên chứ không theo vị trí, nên `count` nhỏ hơn 3 vẫn hợp lệ: khi một nhánh chưa có model, ảnh chỉ chứa những nhánh đã có và các entry còn lại để 0. **Verify sha256 chỉ chạy ngay sau OTA**, không chạy mỗi lần boot — băm 1.7 MB tốn ~200 ms mỗi lần khởi động mà không đổi lại được gì.
+`sys_storage_models_open()` mmap toàn bộ partition một lần và kiểm crc header; `sys_storage_model_find()` tra theo `name` rồi trả `base + entry[i].offset` **cùng `arena_hint`** cho `ai_engine`. Tra theo tên chứ không theo vị trí, nên `count` nhỏ hơn 3 vẫn hợp lệ: khi một nhánh chưa có model, ảnh chỉ chứa những nhánh đã có và các entry còn lại để 0. **Verify sha256 chỉ chạy ngay sau OTA**, không chạy mỗi lần boot — băm 1.7 MB tốn ~200 ms mỗi lần khởi động mà không đổi lại được gì.
+
+`arena_hint` là **số byte của arena mà model đó chạy trong**, không phải phần riêng của nó. Hai nhánh dùng chung một `MicroAllocator` thì cả hai entry ghi **cùng một** con — tổng của nhóm — và `ai_engine` cấp `max` trên từng nhóm; §3.8 nói vì sao `max` đúng và vì sao không thêm field `arena_group`. Nhóm nào chung arena là hằng số kiến trúc khai ở `ai_engine` (§4.5.5c), không nằm trong ảnh.
 
 Ảnh do `ml/src/facepipe/export/pack_models_partition.py` gộp: nó đọc `contracts/models.lock.json` để biết nhánh nào đang deploy, đối chiếu sha256 và `meta.json` của từng nhánh, rồi ghi header + ba khối `.tflite`. `ml/scripts/50_pack_and_flash.sh` gọi nó và ghi kết quả xuống `models_0` bằng `parttool.py`.
 

@@ -23,11 +23,22 @@ esp_err_t ModelStore::open() noexcept
     return ESP_OK;
 }
 
+uint32_t ModelStore::arena_hint_bytes(const char *name) const noexcept
+{
+    const void *data = nullptr;
+    size_t size = 0;
+    uint32_t hint = 0;
+    if (sys_storage_model_find(name, &data, &size, &hint) != ESP_OK) {
+        return 0;
+    }
+    return hint;
+}
+
 const tflite::Model *ModelStore::find(const char *name) const noexcept
 {
     const void *data = nullptr;
     size_t size = 0;
-    if (sys_storage_model_find(name, &data, &size) != ESP_OK) {
+    if (sys_storage_model_find(name, &data, &size, nullptr) != ESP_OK) {
         ESP_LOGE(TAG, "no model named %s", name);
         return nullptr;
     }

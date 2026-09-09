@@ -1,12 +1,14 @@
 menu "AI engine"
 
     config AI_ARENA_FAST_KB
-        int "Tensor arena for detection alone (KB)"
+        int "Ceiling for the detection arena (KB)"
         default 224
         range 16 2048
         help
             Detection is the only branch that runs on every frame, so it gets
-            an arena to itself (KEHOACH 3.8). E8-T7 measured it at 189,628 B.
+            an arena to itself (KEHOACH 3.8). The size comes from the image:
+            models_0 carries arena_hint per entry, and this only caps it, so a
+            model of another size needs no rebuild. Used when the image says 0.
 
     config AI_ARENA_FAST_INTERNAL
         bool "Ask for the detection arena in internal SRAM"
@@ -19,13 +21,14 @@ menu "AI engine"
             when it does not fit.
 
     config AI_ARENA_BIG_KB
-        int "Tensor arena shared by anti-spoof and recognition, PSRAM (KB)"
+        int "Ceiling for the anti-spoof and recognition arena, PSRAM (KB)"
         default 1536
         range 64 8192
         help
             Both run only once a face appears, rarely enough for PSRAM, and
             they share one MicroAllocator so their heads overlap while their
-            tails stack (KEHOACH 3.8).
+            tails stack (KEHOACH 3.8). Each of the two entries carries the pair
+            total in arena_hint and the engine takes the max; this only caps it.
 
     config AI_PROFILING
         bool "Report ticks per operator after every invoke"

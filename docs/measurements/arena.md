@@ -181,3 +181,48 @@ Kích thước đầu vào đọc từ chính graph: detect 57.600 B = 160×120�
 là `Σ tail + max(head)` của cặp — không tách thành hai số cộng lại đúng. Điền cả
 hai là đếm đôi, chia hai là vô nghĩa. Cần chốt firmware lấy `max(arena_hint)`
 trong nhóm chung arena, hay chỉ nhánh sizing mang số. Xem E9-T17.
+
+---
+
+## 7. `arena_hint` chạy thật, và `used` không phải kích thước đủ — 09/09 19:xx
+
+`ai_engine` giờ cấp arena theo `arena_hint` trong ảnh `models_0`, Kconfig chỉ còn
+là trần (§3.8). Đo trên board với ảnh ba nhánh:
+
+```
+I (439) ai_engine: arena_fast 190464 B in psram, arena_big 477184 B
+           arena_fast 189628 B of 186 KB in psram
+           arena_big  476188 B of 466 KB in psram
+```
+
+**`arena_used_bytes()` là chặn dưới, không phải kích thước đủ.** Quét trên board,
+mỗi bước một lần ghi `models_0`:
+
+| `arena_hint` của detect | Kết quả |
+|---|---|
+| **189.628** = đúng con `used` nó tự báo | **`AllocateTensors` TỪ CHỐI** |
+| 189.632 = `used` + 4 B | chạy, `used` vẫn báo 189.628 |
+| 189.712, 189.760, 189.824 | chạy |
+
+Trong khi `arena_big` ở đúng `used` 476.188 B **lại chạy được**. Nên phần thiếu
+vừa nhỏ vừa không đoán trước: TFLM cấp `tail` từ đỉnh xuống và `head` từ đáy lên,
+đệm căn lề phụ thuộc chính địa chỉ và kích thước arena. Vì vậy `ai_engine` làm
+tròn lên bội số **1 KB** sau khi lấy `max`, và `arena_hint` cứ ghi số `used` thô.
+
+**Lãi 1.108 KB PSRAM.** Cấp theo số đo thay vì theo trần Kconfig:
+
+| | Trần Kconfig | Theo `arena_hint` |
+|---|---|---|
+| `arena_fast` | 224 KB | **186 KB** |
+| `arena_big` | 1536 KB | **466 KB** |
+| Tổng cấp | 1.760 KB | **652 KB** |
+| PSRAM trống sau init | 6.295 KB | **7.403 KB** |
+
+`7.403 − 6.295 = 1.108 KB`, đúng bằng `1.760 − 652`. Latency không đổi: một lượt
+1.159,7 ms so với 1.159,3 ms, lệch 0,03%; có tải preview 1.353,6 so với
+1.353,1 ms. Arena nhỏ hơn không làm chậm gì — nó chỉ thôi giữ chỗ.
+
+**Ba op của detect còn chạy kernel C tham chiếu**, thấy khi `update_lock` in bảng
+op: `PAD` ×1 và `RESIZE_NEAREST_NEIGHBOR` ×2 (đường upsample của FPN). detect
+chạy mỗi frame và đang tốn 232,4 ms, nên đây là đầu mối cho E9-T3 — 27 op còn
+lại đều có kernel esp-nn.

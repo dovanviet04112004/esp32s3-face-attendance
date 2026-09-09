@@ -21,6 +21,11 @@ public:
      */
     const tflite::Model *find(const char *name) const noexcept;
 
+    /** Bytes the entry asks its arena for, 0 when the image carries no
+     *  measurement or no such entry (KEHOACH 3.8).
+     */
+    uint32_t arena_hint_bytes(const char *name) const noexcept;
+
 
 private:
     const storage_models_header_t *header_ = nullptr;

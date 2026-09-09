@@ -3,12 +3,12 @@
     "file": "yunet_int8.tflite",
     "sha256": "56b3f65dcd07472511d58d8379467f4c3de4637ba9333b9a4c3c5b59dca5b55c",
     "run_id": "detection/20260831-1616_cc931df_36fbea",
-    "arena_bytes": 0
+    "arena_bytes": 189628
   },
   "recognition": {
     "file": "mobilefacenet_int8.tflite",
     "sha256": "f77969e342ab10b49782b1241aef1b1ecabc4519c8cbf6129a463d9bbe983ad3",
     "run_id": "recognition/20260908-1750_ea985b1_bfed2e",
-    "arena_bytes": 0
+    "arena_bytes": 476188
   }
 }

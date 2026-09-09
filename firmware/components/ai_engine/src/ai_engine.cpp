@@ -1,5 +1,7 @@
 #include "ai_engine.h"
 
+#include <algorithm>
+#include <initializer_list>
 #include <string.h>
 
 #include "antispoof/spoof_model.hpp"
@@ -17,6 +19,7 @@ const char *TAG = "ai_engine";
 
 constexpr size_t kFastBytes = CONFIG_AI_ARENA_FAST_KB * 1024U;
 constexpr size_t kBigBytes = CONFIG_AI_ARENA_BIG_KB * 1024U;
+constexpr size_t kArenaRoundBytes = 1024U;
 #ifdef CONFIG_AI_ARENA_FAST_INTERNAL
 constexpr uint32_t kFastCaps = MALLOC_CAP_INTERNAL;
 #else
@@ -33,6 +36,28 @@ size_t s_detect_len;
 size_t s_spoof_len;
 size_t s_recog_len;
 bool s_ready;
+
+size_t arena_bytes(const char *arena_name, size_t ceiling, std::initializer_list<const char *> group)
+{
+    size_t wanted = 0;
+    for (const char *branch : group) {
+        wanted = std::max<size_t>(wanted, s_store.arena_hint_bytes(branch));
+    }
+    if (wanted == 0) {
+        return ceiling;
+    }
+    // arena_used_bytes() is a lower bound: TFLM's alignment padding depends on
+    // the arena's own base and size, so detect refuses at exactly its own used.
+    wanted = (wanted + kArenaRoundBytes - 1) / kArenaRoundBytes * kArenaRoundBytes;
+    if (wanted > ceiling) {
+        // Allocating the ceiling instead would only move the failure into
+        // AllocateTensors, where the message names an operator, not the cause.
+        ESP_LOGE(TAG, "%s: image asks %u B, %s caps it at %u B", arena_name,
+                 static_cast<unsigned>(wanted), arena_name, static_cast<unsigned>(ceiling));
+        return 0;
+    }
+    return wanted;
+}
 
 esp_err_t load(ai::ITfliteModel &model, const char *name, ai::Arena &arena, size_t *input_len)
 {
@@ -61,20 +86,26 @@ extern "C" esp_err_t ai_engine_init(void)
         ESP_LOGE(TAG, "models partition: %s", esp_err_to_name(opened));
         return opened;
     }
+    const size_t fast_bytes = arena_bytes("arena_fast", kFastBytes, {"detect"});
+    const size_t big_bytes = arena_bytes("arena_big", kBigBytes, {"spoof", "recog"});
+    if (fast_bytes == 0 || big_bytes == 0) {
+        return ESP_ERR_INVALID_SIZE;
+    }
     const size_t internal_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    esp_err_t err = s_fast.reserve(kFastBytes, kFastCaps);
+    esp_err_t err = s_fast.reserve(fast_bytes, kFastCaps);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "arena_fast %u KB: %s", CONFIG_AI_ARENA_FAST_KB, esp_err_to_name(err));
+        ESP_LOGE(TAG, "arena_fast %u B: %s", static_cast<unsigned>(fast_bytes),
+                 esp_err_to_name(err));
         return err;
     }
-    err = s_big.reserve(kBigBytes, MALLOC_CAP_SPIRAM);
+    err = s_big.reserve(big_bytes, MALLOC_CAP_SPIRAM);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "arena_big %u KB: %s", CONFIG_AI_ARENA_BIG_KB, esp_err_to_name(err));
+        ESP_LOGE(TAG, "arena_big %u B: %s", static_cast<unsigned>(big_bytes), esp_err_to_name(err));
         return err;
     }
-    ESP_LOGI(TAG, "arena_fast %u KB in %s, arena_big %u KB, internal ram %u to %u KB",
-             CONFIG_AI_ARENA_FAST_KB, s_fast.internal() ? "sram" : "psram", CONFIG_AI_ARENA_BIG_KB,
-             static_cast<unsigned>(internal_before / 1024),
+    ESP_LOGI(TAG, "arena_fast %u B in %s, arena_big %u B, internal ram %u to %u KB",
+             static_cast<unsigned>(fast_bytes), s_fast.internal() ? "sram" : "psram",
+             static_cast<unsigned>(big_bytes), static_cast<unsigned>(internal_before / 1024),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
     // Detect alone runs every frame, so internal ram goes to it and the other
     // two share one psram allocator (KEHOACH 3.8).
