@@ -276,6 +276,57 @@ Về phần cứng: cắm lại chân lỏng. Về phần phương pháp, ba đi
 
 ---
 
+## Lỗi 5 — Thư viện làm một việc không ghi trong hợp đồng của nó
+
+### Hiện tượng
+
+Để hết xé hình khi preview di chuyển, `drv_lcd` cần đọc vị trí tia quét của panel
+(`GET_SCANLINE`, `0x45`) qua đường `SDO`. Một chương trình thăm dò tự dựng bus SPI đọc được
+**hoàn hảo**: giá trị đi theo thứ vừa ghi, bộ đếm dòng tăng đều và cuộn vòng, đo được chu kỳ
+quét cho 18 mức thanh ghi. Đưa đúng đoạn code đó vào firmware thật, mọi phép đọc trả `0xFFFF`.
+
+Bisect từng bước khởi tạo cho ra một ranh giới sắc: đọc được **cho tới giao dịch đầu tiên mà
+`esp_lcd` gửi cho panel**, sau đó chết vĩnh viễn — reset panel, gửi lại nguyên chuỗi khởi tạo
+của chương trình thăm dò, nới xung CS từ 1 lên 1000 µs, đều không cứu được.
+
+### Nguyên nhân
+
+Trong `esp_lcd_panel_io_spi.c`, callback sau mỗi giao dịch gọi `gpio_ll_output_disable()` trên
+chân DC, và callback trước giao dịch kế mới bật lại. Nghĩa là **giữa hai giao dịch của
+`esp_lcd`, chân DC không được lái**. Lệnh đọc của `drv_lcd` đi bằng một thiết bị SPI khác trên
+cùng bus, chỉ gọi `gpio_set_level(DC, 0)` — mức được ghi vào thanh ghi nhưng driver đang tắt,
+chân thả nổi, điện trở kéo lên trên module giữ nó ở mức cao. Panel thấy `0x45` đến với DC =
+cao, tức là **dữ liệu**, và im lặng.
+
+Chương trình thăm dò không gặp vì nó tự sở hữu DC từ đầu đến cuối.
+
+### Vì sao lúc bình thường không gặp
+
+Vì hành vi đó **không sai với chính `esp_lcd`**: nó luôn bật DC trước khi gửi và chỉ tắt sau
+khi xong, nên mọi giao dịch của nó đều đúng. Nó chỉ sai với người thứ hai dùng chung chân —
+và hợp đồng công khai của `esp_lcd` không nói gì về việc chân DC sẽ ở trạng thái nào lúc nó
+không dùng. Đọc header thì không thấy; phải đọc mã nguồn.
+
+Cùng buổi còn một bẫy cùng loại ở tầng dưới: `spi_bus_initialize()` nối chân MISO vào ngoại
+vi nhưng **để driver ngõ ra của chân đó bật**. ESP lái chân SDO, panel không thể kéo nó xuống.
+Thăm dò không gặp vì trên chip vừa reset, chân đó chưa bị ai bật ngõ ra.
+
+### Cách sửa
+
+`drv_lcd` bật lại ngõ ra DC ngay trước mỗi lệnh đọc, và tắt ngõ ra MISO một lần khi tạo
+thiết bị đọc. Không sửa `esp_lcd`, không thay thư viện: hai dòng, đúng chỗ ranh giới đã đo.
+
+### Bằng chứng đã sửa
+
+```
+I (848) drv_lcd: st7796 up at 320x480, 2 bounce of 30720 B, scanline reads 15
+I (10284) app_tasks: preview 14.245 fps
+```
+
+Và trên kính: chủ repo xác nhận khấc **hết hẳn**, màn không nhấp nháy ở nhịp quét 23 Hz.
+
+---
+
 # Phần B — Hai lần tôi kết luận sai nguyên nhân
 
 Hai mục dưới đây không phải lỗi của hệ thống, mà là lỗi của người gỡ. Chúng vào báo cáo vì
@@ -442,6 +493,12 @@ kính** thay vì đọc log. Test nào cũng chỉ kiểm được thứ nó ch�
 ví dụ: thêm một phép kiểm đúng vào driver làm cả hệ vào vòng reset, và triệu chứng hiện ra ở
 một bộ phận không liên quan. Nên khi thêm một đường trả lỗi mới, phải đi theo nó lên tới
 `app_main()` và trả lời: **thiếu ngoại vi này thì hệ nên chết hay nên đi tiếp?**
+
+**13. Dùng chung một chân với thư viện thì phải đọc mã nguồn của thư viện, không đọc header.**
+Hợp đồng công khai chỉ hứa về lúc thư viện *đang dùng* tài nguyên; trạng thái nó để lại *giữa
+hai lần dùng* thường không ghi ở đâu. Lỗi 5 nằm đúng khoảng trống đó. Và cách tìm ra không phải
+đọc code lần thứ mười, mà là **bisect theo thời gian**: chèn một phép đọc sau từng bước khởi
+tạo, tìm bước đầu tiên làm nó đổi kết quả.
 
 **12. Con số trong datasheet gắn với một mô hình mạch, không phải với chân bất kỳ.** Nguyên
 tắc này vẫn đúng và vẫn nên ghi — dù ở lỗi cụ thể ban đầu tôi đã dùng nó để bọc cho một
