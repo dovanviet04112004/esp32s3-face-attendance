@@ -5,16 +5,10 @@
     "run_id": "detection/20260831-1616_cc931df_36fbea",
     "arena_bytes": 0
   },
-  "antispoof": {
-    "file": "minifasnet_int8.tflite",
-    "sha256": "3a38e08f0227db6410f3899dda2a019ceb6e9dfe4edd0f722376ba0ac1ab68ee",
-    "run_id": "antispoof/20260905-1740_865b5d0_64c387",
-    "arena_bytes": 0
-  },
   "recognition": {
     "file": "mobilefacenet_int8.tflite",
-    "sha256": "a98144c52f2ddd822e7a4467525ace6a07fdcbc56e5d65e1423c466d7a86628b",
-    "run_id": "recognition/20260903-2258_f7a6aab_dad005",
+    "sha256": "f77969e342ab10b49782b1241aef1b1ecabc4519c8cbf6129a463d9bbe983ad3",
+    "run_id": "recognition/20260908-1750_ea985b1_bfed2e",
     "arena_bytes": 0
   }
 }

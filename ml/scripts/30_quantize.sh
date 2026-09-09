@@ -37,9 +37,9 @@ read_branch() {
     "${PY}" -c '
 import sys
 from pathlib import Path
-from facepipe.core.config import load_config
+from facepipe.core.config import load_run_config
 from facepipe.export.tf_to_tflite_int8 import BRANCH_PACKAGE
-cfg = load_config(Path(sys.argv[1]) / "config.resolved.yaml", [])
+cfg = load_run_config(Path(sys.argv[1]))
 print(BRANCH_PACKAGE[cfg.model.name].rsplit(".", 1)[-1], cfg.model.name)
 ' "$1"
 }
