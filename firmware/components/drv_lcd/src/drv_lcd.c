@@ -37,6 +37,12 @@ static const char *TAG = "drv_lcd";
 #define FRAME_RATE_REG 0xB1
 #define FRAME_RATE_DIVA 0x81
 #define FRAME_RATE_RTNA 0x1F
+#define VCOM_REG 0xC5
+// The library's 0x18 leaves this module flickering at 23 Hz; 0x2C-0x34 measured calm (KEHOACH 2.3A).
+#define VCOM_LEVEL 0x30
+#define INVERSION_REG 0xB4
+// White still flickers under 1-dot and 2-dot inversion at 23 Hz; column inversion measured calm.
+#define INVERSION_COLUMN 0x00
 #define SCANLINE_REG 0x45
 #define SCANLINE_UNITS 242
 #define SCANLINE_LEAD 220
@@ -115,6 +121,8 @@ static void slow_the_scan(void)
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_UNLOCK_B}, 1);
     esp_lcd_panel_io_tx_param(s_io, FRAME_RATE_REG,
                               (uint8_t[]){FRAME_RATE_DIVA, FRAME_RATE_RTNA}, 2);
+    esp_lcd_panel_io_tx_param(s_io, VCOM_REG, (uint8_t[]){VCOM_LEVEL}, 1);
+    esp_lcd_panel_io_tx_param(s_io, INVERSION_REG, (uint8_t[]){INVERSION_COLUMN}, 1);
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_A}, 1);
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_B}, 1);
 }
