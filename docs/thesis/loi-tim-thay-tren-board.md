@@ -548,6 +548,19 @@ code** — một dòng, câu trả lời nhị phân, và nó sẽ nói ngay là
 Nguyên tắc chung: mọi phép kiểm "không thấy X" phải đi kèm một phép kiểm "có thấy được X khi X
 chắc chắn tồn tại không", nếu không thì "không thấy" không mang thông tin.
 
+### Kết quả thật, sau khi thước đo đã đúng
+
+Hai lần ngắt giữa `write_atomic`, đo bằng cách lưu ảnh chụp của boot kế tiếp vào NVS (board tự
+boot khi có điện lại, sớm hơn lúc người đo kịp cắm cổng console):
+
+| Cú ngắt | Rơi vào đâu trong hai pha | Boot sau thấy |
+|---|---|---|
+| Reset đột ngột | giữa `unlink(.bak)` và `rename(faces.bin → .bak)` | bản chính 63 nguyên, `.tmp` treo, không `.bak` |
+| **Rút cáp thật** | sau `fsync(.tmp)`, trước `unlink(.bak)` | bản chính 328 nguyên, `.bak` 327 còn, `.tmp` 329 treo |
+
+Cả hai lần `read_checked` trả bản chính, `attend.000` còn, LittleFS mount không một dòng cảnh
+báo. Cơ chế hai pha của §6.2.6 giữ đúng lời hứa — điều mà ba lượt đo đầu suýt kết luận ngược.
+
 ---
 
 # Bài học rút ra cho báo cáo
