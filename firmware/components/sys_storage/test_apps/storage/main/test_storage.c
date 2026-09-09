@@ -4,6 +4,8 @@
 
 #include "storage_format.h"
 #include "sys_storage.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "unity.h"
 
 #define FACES_PATH "/lfs/db/faces.bin"
@@ -114,10 +116,15 @@ TEST_CASE("a wrong magic is refused even when the file reads cleanly", "[sys_sto
                                                &len, &used_backup));
 }
 
+// Sixteen records twice over do not fit beside LittleFS's own frames in the
+// 3.5 KB the runner's task has, so the data lives outside the stack.
+static storage_attend_record_t s_written[RECORDS];
+static storage_attend_record_t s_read_back[RECORDS];
+
 TEST_CASE("appended records land one after another and keep their bytes", "[sys_storage]")
 {
     unlink(LOG_PATH);
-    storage_attend_record_t written[RECORDS];
+    storage_attend_record_t *written = s_written;
     for (int i = 0; i < RECORDS; ++i) {
         memset(&written[i], 0, sizeof(written[i]));
         written[i].magic = STORAGE_ATTEND_REC_MAGIC;
@@ -127,11 +134,14 @@ TEST_CASE("appended records land one after another and keep their bytes", "[sys_
         TEST_ASSERT_EQUAL(ESP_OK, sys_storage_append(LOG_PATH, &written[i], sizeof(written[i])));
     }
 
-    storage_attend_record_t read_back[RECORDS];
+    storage_attend_record_t *read_back = s_read_back;
     size_t len = 0;
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_read(LOG_PATH, read_back, sizeof(read_back), &len));
-    TEST_ASSERT_EQUAL_UINT(sizeof(written), len);
-    TEST_ASSERT_EQUAL_MEMORY(written, read_back, sizeof(written));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_read(LOG_PATH, read_back, sizeof(s_read_back), &len));
+    TEST_ASSERT_EQUAL_UINT(sizeof(s_written), len);
+    TEST_ASSERT_EQUAL_MEMORY(written, read_back, sizeof(s_written));
+    printf("main task stack left after 16 appends: %u B of %u\n",
+           (unsigned)uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t),
+           (unsigned)CONFIG_ESP_MAIN_TASK_STACK_SIZE);
     for (int i = 0; i < RECORDS; ++i) {
         const uint32_t crc =
             sys_storage_crc32(&read_back[i], offsetof(storage_attend_record_t, crc32));
