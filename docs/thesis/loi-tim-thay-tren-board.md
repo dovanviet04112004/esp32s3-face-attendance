@@ -327,6 +327,71 @@ Và trên kính: chủ repo xác nhận khấc **hết hẳn**, màn không nh�
 
 ---
 
+## Lỗi 6 — Dòng tổng kết màu xanh che hai lần panic
+
+### Hiện tượng
+
+Bộ test của `sys_storage` chưa từng chạy trên board. Đi chạy nó thì bước đầu đã lộ một điều:
+**nó không biên dịch được** — `sys_storage_model_find()` đã thêm tham số thứ tư từ nhiều commit
+trước, còn test vẫn gọi theo chữ ký cũ. Không ai thấy vì không gì build các test app, và task
+`E7-T10` đã được đánh dấu hoàn thành trên một bộ test không thể chạy.
+
+Sửa một dòng cho nó biên dịch, nạp lên board, log kết thúc bằng:
+
+```
+11 Tests 0 Failures 0 Ignored
+```
+
+Nhưng phía trên dòng đó, cùng một lần cắm điện, có **ba lần boot**. Hai lần đầu dừng ở case
+thứ tám rồi chip tự reset (`rst:0xc RTC_SW_CPU_RST`); lần thứ ba mới chạy hết. Bộ lọc log tôi
+dùng lúc đầu chỉ giữ các dòng `PASS`/`FAIL` nên **tôi đã đọc kết quả này là "11/11"** — đúng
+cái mà bất kỳ ai nhìn vào dòng tổng kết cũng sẽ đọc.
+
+### Nguyên nhân
+
+```
+***ERROR*** A stack overflow in task main has been detected.
+```
+
+Case đó đặt hai mảng 16 record (2 × 768 B) trên stack rồi gọi `fopen`/`fwrite`/`fsync` qua
+LittleFS mười sáu lần. Task chạy test có **3.584 B** stack. Đo sau khi đưa hai mảng ra ngoài:
+đường ghi file tự nó đã ăn **~2,2 KB** — nên với hai mảng còn trên stack thì tràn là chắc chắn,
+không phải ngẫu nhiên.
+
+Lần boot thứ ba "qua" vì kernel chỉ phát hiện tràn stack **lúc chuyển ngữ cảnh**, bằng cách
+kiểm một vùng canh ở đáy stack. Cùng một vết tràn, nếu lúc chuyển ngữ cảnh vùng canh chưa bị
+đè, thì không bị bắt — bộ nhớ vẫn đã bị ghi lem, chỉ là không ai báo. **Kết quả "pass" của lần
+thứ ba là kết quả của một chương trình đã hỏng bộ nhớ.**
+
+### Vì sao lúc bình thường không gặp
+
+Ba lớp che chồng lên nhau, lớp nào cũng bình thường một cách hợp lý:
+
+1. Không gì build test app, nên lỗi biên dịch tồn tại mà không ai biết.
+2. Test runner tự reset sau panic và **chạy tiếp từ đầu**, nên chuỗi log cuối cùng luôn kết
+   thúc bằng một lần chạy trọn — và dòng tổng kết chỉ đếm lần đó.
+3. Người đọc log lọc theo `PASS`/`FAIL`. Panic không phải `FAIL`; nó không có trong bộ lọc.
+
+Firmware thật chưa bị vì `sys_storage_append()` chưa được ai gọi. Khi `svc_attendance` gọi nó
+từ task riêng, con số 2,2 KB đó phải nằm trong ngân sách stack của task ấy — mà bảng stack
+trong tài liệu thiết kế §5 chưa từng có số đo cho việc này.
+
+### Cách sửa
+
+Hai mảng thành `static`. Test in luôn mức stack cao nhất của task để lần sau có số thay vì có
+cảm giác. Bật kiểm stack `STRONG` cho test app này (mới có 1 trong 9 test app bật). Và bộ lọc
+đọc log: **đếm số lần boot trong một lần cắm điện** — một bộ test đúng thì boot đúng một lần.
+
+### Bằng chứng đã sửa
+
+```
+=== số lần boot: 1 | panic: 0
+main task stack left after 16 appends: 1348 B of 3584
+11 Tests 0 Failures 0 Ignored
+```
+
+---
+
 # Phần B — Hai lần tôi kết luận sai nguyên nhân
 
 Hai mục dưới đây không phải lỗi của hệ thống, mà là lỗi của người gỡ. Chúng vào báo cáo vì
@@ -499,6 +564,13 @@ Hợp đồng công khai chỉ hứa về lúc thư viện *đang dùng* tài ng
 hai lần dùng* thường không ghi ở đâu. Lỗi 5 nằm đúng khoảng trống đó. Và cách tìm ra không phải
 đọc code lần thứ mười, mà là **bisect theo thời gian**: chèn một phép đọc sau từng bước khởi
 tạo, tìm bước đầu tiên làm nó đổi kết quả.
+
+**14. Một bộ test đúng thì boot đúng một lần.** Dòng tổng kết của test runner chỉ đếm lần chạy
+cuối; panic không phải `FAIL` và không lọt vào bộ lọc `PASS`/`FAIL`. Nên chỉ tiêu đầu tiên khi
+đọc log test trên board là **số lần boot trong một lần cắm điện**, trước cả số case pass. Và
+"đánh dấu xong" cho một bộ test phải kèm bằng chứng nó **đã biên dịch và chạy** sau lần đổi
+API gần nhất — bộ test của `sys_storage` đã nằm ở trạng thái không biên dịch được qua nhiều
+commit mà vẫn mang dấu xong.
 
 **12. Con số trong datasheet gắn với một mô hình mạch, không phải với chân bất kỳ.** Nguyên
 tắc này vẫn đúng và vẫn nên ghi — dù ở lỗi cụ thể ban đầu tôi đã dùng nó để bọc cho một
