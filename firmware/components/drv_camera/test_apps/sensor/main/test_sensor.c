@@ -32,10 +32,33 @@ TEST_CASE("a frame arrives at the size the pipeline expects", "[drv_camera]")
     drv_camera_release(frame);
 }
 
+TEST_CASE("every dvp data line toggles, so no bit is stuck", "[drv_camera]")
+{
+    // Colour bars exercise all eight lines whatever the room looks like; a
+    // stuck-high line shows in the AND of every byte, a stuck-low one in the OR.
+    sensor_t *sensor = esp_camera_sensor_get();
+    TEST_ASSERT_NOT_NULL(sensor);
+    TEST_ASSERT_EQUAL(0, sensor->set_colorbar(sensor, 1));
+    drv_camera_release(drv_camera_grab());
+    drv_camera_release(drv_camera_grab());
+    camera_fb_t *frame = drv_camera_grab();
+    TEST_ASSERT_NOT_NULL(frame);
+    uint8_t any_high = 0, all_high = 0xFF;
+    for (size_t i = 0; i < frame->len; ++i) {
+        any_high |= frame->buf[i];
+        all_high &= frame->buf[i];
+    }
+    drv_camera_release(frame);
+    TEST_ASSERT_EQUAL(0, sensor->set_colorbar(sensor, 0));
+    ESP_LOGI(TAG, "colour bars: byte OR 0x%02X, byte AND 0x%02X", any_high, all_high);
+    TEST_ASSERT_EQUAL_HEX8(0xFF, any_high);
+    TEST_ASSERT_EQUAL_HEX8(0x00, all_high);
+}
+
 TEST_CASE("frames keep coming, so every grab is returned to the pool", "[drv_camera]")
 {
-    // Two buffers only: a grab that forgets to return starves the pool within
-    // a couple of rounds rather than at the end.
+    // Three buffers: a grab that forgets to return starves the pool within a
+    // few rounds rather than at the end.
     for (int i = 0; i < GRAB_ROUNDS; ++i) {
         camera_fb_t *frame = drv_camera_grab();
         TEST_ASSERT_NOT_NULL(frame);
