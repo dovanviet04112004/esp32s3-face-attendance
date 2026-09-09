@@ -1,17 +1,27 @@
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "storage_format.h"
 #include "sys_storage.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "app_config.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
 #include "unity.h"
 
 #define FACES_PATH "/lfs/db/faces.bin"
 #define LOG_PATH "/lfs/log/attend.000"
 #define SCRATCH_PATH "/lfs/tmp/scratch.bin"
 #define RECORDS 16
+#define CUT_LOOP_REPORT 50
+#define CUT_LOOP_KEY "cut_loop"
+#define CUT_STATE_KEY "cut_state"
+#define CUT_COUNT_KEY "cut_count"
+#define BOOT_WINDOW_MS 60000
+#define BOOT_POLL_MS 50
 
 static void fill_header(storage_file_header_t *header, uint32_t magic, uint32_t count)
 {
@@ -23,11 +33,69 @@ static void fill_header(storage_file_header_t *header, uint32_t magic, uint32_t 
     header->crc32 = sys_storage_crc32(header, offsetof(storage_file_header_t, crc32));
 }
 
+
+static bool exists(const char *path)
+{
+    // access() is not among the calls esp_littlefs registers with the VFS, so
+    // it fails for every path; stat() is.
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
 TEST_CASE("init mounts once and refuses a second time", "[sys_storage]")
 {
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
+    const esp_err_t up = sys_storage_init();
+    TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, sys_storage_init());
     TEST_ASSERT_GREATER_THAN(0, sys_storage_boot_count());
+}
+
+TEST_CASE("whatever the last power-up left behind still reads back checked", "[sys_storage]")
+{
+    // Runs first: the cases below rewrite faces.bin, and this one has to see
+    // the file exactly as a power cut in the [manual] loop left it.
+    uint32_t loop_ran = 0;
+    sys_storage_get_u32(CUT_LOOP_KEY, &loop_ran);
+    const bool primary = exists(FACES_PATH);
+    const bool backup = exists(FACES_PATH ".bak");
+    const bool temp = exists(FACES_PATH ".tmp");
+    const bool other = exists(LOG_PATH);
+    // attend.000 is never touched by the loop: gone too means a wipe of the
+    // whole filesystem, not two renames losing one file.
+    printf("after the last power-up: loop marker %lu, primary %d, backup %d, tmp %d, attend.000 %d\n",
+           (unsigned long)loop_ran, primary, backup, temp, other);
+    // The board boots on its own when power returns, so the reading is kept
+    // in nvs for whoever attaches a console afterwards.
+    if (loop_ran) {
+        sys_storage_set_u32(CUT_STATE_KEY, (uint32_t)primary | (uint32_t)backup << 1 |
+                                               (uint32_t)temp << 2 | (uint32_t)other << 3);
+    }
+    uint32_t stored = 0;
+    if (sys_storage_get_u32(CUT_STATE_KEY, &stored) == ESP_OK) {
+        printf("stored post-cut snapshot: primary %lu, backup %lu, tmp %lu, attend.000 %lu\n",
+               (unsigned long)(stored & 1), (unsigned long)(stored >> 1 & 1),
+               (unsigned long)(stored >> 2 & 1), (unsigned long)(stored >> 3 & 1));
+    }
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(CUT_LOOP_KEY, 0));
+    if (!primary && !backup) {
+        TEST_ASSERT_EQUAL_MESSAGE(0, loop_ran, "the loop ran and the cut lost BOTH copies");
+        TEST_IGNORE_MESSAGE("no faces.bin yet: run the power-cut loop, cut power, boot again");
+    }
+    storage_file_header_t got;
+    size_t len = 0;
+    bool used_backup = false;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_read_checked(FACES_PATH, STORAGE_FACES_MAGIC, &got,
+                                                       sizeof(got), &len, &used_backup));
+    printf("faces.bin from the last power-up: record_count %lu, %s\n",
+           (unsigned long)got.record_count, used_backup ? "served from backup" : "primary intact");
+    if (loop_ran) {
+        sys_storage_set_u32(CUT_COUNT_KEY, got.record_count | (uint32_t)used_backup << 31);
+    }
+    uint32_t stored_count = 0;
+    if (sys_storage_get_u32(CUT_COUNT_KEY, &stored_count) == ESP_OK) {
+        printf("stored post-cut record_count %lu, %s\n", (unsigned long)(stored_count & 0x7FFFFFFF),
+               (stored_count >> 31) ? "served from backup" : "primary intact");
+    }
 }
 
 TEST_CASE("a setting survives the round trip through nvs", "[sys_storage]")
@@ -192,9 +260,54 @@ TEST_CASE("a packed models partition reads back, an unpacked one is refused", "[
     TEST_ASSERT_EQUAL_MEMORY("TFL3", (const uint8_t *)data + 4, 4);
 }
 
+TEST_CASE("write faces.bin forever so power can be cut mid-write", "[sys_storage][manual]")
+{
+    // Picked from the menu on its own, so it cannot lean on the init case.
+    const esp_err_t up = sys_storage_init();
+    TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
+    uint32_t marker = 0;
+    sys_storage_get_u32(CUT_LOOP_KEY, &marker);
+    // Looping again after a cut would overwrite the very file the cut left.
+    if (marker) {
+        TEST_IGNORE_MESSAGE("a cut happened since the last check: flash the normal suite first");
+    }
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(CUT_LOOP_KEY, 1));
+    storage_file_header_t header;
+    for (uint32_t n = 1;; ++n) {
+        fill_header(&header, STORAGE_FACES_MAGIC, n);
+        TEST_ASSERT_EQUAL(ESP_OK, sys_storage_write_atomic(FACES_PATH, &header, sizeof(header)));
+        if (n % CUT_LOOP_REPORT == 0) {
+            printf("write %lu done, cut power whenever you like\n", (unsigned long)n);
+        }
+    }
+}
+
 void app_main(void)
 {
+    // The mount-failed-so-format path in esp_littlefs logs only at verbose,
+    // and it is the path the power-cut cases exist to catch.
+    esp_log_level_set("esp_littlefs", ESP_LOG_VERBOSE);
+    const gpio_config_t boot_button = {
+        .pin_bit_mask = 1ULL << APP_FACTORY_RESET_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&boot_button));
     UNITY_BEGIN();
     unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
+    // GPIO0 low at reset is the download-mode strap, so the button is read in
+    // a window once the suite is done: press it then to start the power-cut loop.
+    printf("press BOOT within %d s to start the power-cut loop\n", BOOT_WINDOW_MS / 1000);
+    bool pressed = false;
+    for (int waited = 0; waited < BOOT_WINDOW_MS && !pressed; waited += BOOT_POLL_MS) {
+        vTaskDelay(pdMS_TO_TICKS(BOOT_POLL_MS));
+        pressed = gpio_get_level(APP_FACTORY_RESET_GPIO) == 0;
+    }
+    if (pressed) {
+        printf("BOOT held: starting the power-cut loop\n");
+        UNITY_BEGIN();
+        unity_run_tests_by_tag("[manual]", false);
+        UNITY_END();
+    }
 }
