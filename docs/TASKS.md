@@ -148,7 +148,7 @@ Chạy song song với E4–E6. Không phụ thuộc model.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E7-T1 | Đấu servo SG90 theo §2.3F: vàng GPIO38, đỏ rail 2 (5 V riêng), nâu GND chung, tụ 470 µF sát chân nguồn. Relay đã bỏ khỏi thiết kế 10/09 — không có khoá điện, P2 về dự phòng. Lần đấu đầu 10/09 servo đứng im trong khi xung đo ngược ở pad GPIO38 đúng 500/1450/2400 µs, 50 Hz — tức lỗi nằm ngoài chip; **chủ repo sửa lại phía servo thì quay** (chi tiết sửa gì và dây vàng ở GPIO38 hay GPIO48 chờ chủ repo xác nhận) | Chạy `drv_servo/test_apps/sweep` thấy tay quét 0→180→0 | — |
+| E7-T1 | Đấu servo SG90 theo §2.3F: vàng GPIO38, đỏ rail 2 (5 V riêng), nâu GND chung, tụ 470 µF sát chân nguồn. Relay đã bỏ khỏi thiết kế 10/09 — không có khoá điện, P2 về dự phòng. **Servo quay 10/09, dây vàng ở GPIO38 đúng §2.3F.** Lần chạy đầu tay đứng im trong khi xung đo ngược ở pad đúng 500/1450/2400 µs, 50 Hz — lỗi nằm ngoài chip: **rail 2 là sạc dự phòng, nó tự ngắt khi tải nhỏ** nên servo mất 5 V (§2.5). Đo "có nguồn" bằng cách xoay nhẹ cánh servo: có điện thì cưỡng lại | Chạy `drv_servo/test_apps/sweep` thấy tay quét 0→180→0 | — |
 | E7-T2 | `bsp_board` (kèm `include/app_config.h`) + `partitions.{dev,prod}.csv` | Board boot, PSRAM 8MB nhận đủ | — |
 | E7-T2b | **3 profile build** `sdkconfig.{dev,bench,prod}` theo §4.5.9, kèm flash QIO 80 MHz | 3 lệnh build ở §4.5.9 đều chạy, `bench` dùng `-O2` | E7-T2 |
 | E7-T3 | `common/` — RAII guard: `FrameGuard` `LockGuard` `Queue<T,N>` | Unit test từng guard | E7-T2 |

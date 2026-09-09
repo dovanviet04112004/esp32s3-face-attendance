@@ -486,6 +486,8 @@ Hai rail, chung mass.
 
 Tách rail 1 khỏi rail 2 vì hai đỉnh trùng nhau: kiosk phát tiếng báo đúng lúc mở cửa. Chung một rail thì 1,34 A của đỉnh amp cộng 0,7 A của servo đủ kéo sụt áp và reset ESP32.
 
+**Rail 2 không được là sạc dự phòng.** Sạc dự phòng tự ngắt ngõ ra khi tải dưới ngưỡng vài chục mA, mà servo đứng yên gần như không ăn dòng — đo 10/09 trên bàn: servo "chết" dù xung ở GPIO38 đúng từng micro giây, chỉ vì sạc đã tắt từ lúc nào. Kiosk thật dùng adapter 5 V thường; trên bàn thử thì phải giữ tải liên tục (servo quét, hoặc tải giả) cho sạc không ngủ.
+
 Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân nguồn servo, 100 µF gần LCD.
 
 ### 2.6 Datasheet
