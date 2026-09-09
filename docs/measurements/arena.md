@@ -144,3 +144,40 @@ Sau khi sửa kiến trúc: detect 158,9 KB, spoof 849,7 KB, recog 1.454,6 KB, �
 Số đo ở `bench_ai`, tức **chưa có Wi-Fi, LVGL, camera hay LCD**. §6.4 tính
 Wi-Fi + lwIP ~55 KB và stack 10 task ~53 KB đều ở SRAM nội, nên 206 KB kia sẽ
 mỏng đi nhiều. Phải đo lại ở E8-T9 khi đã đủ thành phần.
+
+---
+
+## 6. Ảnh ba nhánh, đo lại toàn bộ — 09/09 18:0x
+
+Lần đầu cả ba nhánh cùng nằm trên flash. `contracts/models.lock.json` chỉ mang
+hai nhánh cho tới khi anti-spoof train xong, nên ảnh này pack bằng **lock thí
+nghiệm** ở `ml/artifacts/bench3/` qua `--lock` và `--models-dir` (§6.2.2) —
+`contracts/` và `firmware/models/` không bị đụng. Nhánh spoof lấy export 81×81
+của run `20260909-1116` ở epoch 2: trọng số chưa train, mà latency và arena
+không phụ thuộc trọng số.
+
+```
+detect  yunet_int8.tflite         160x120    158,9 KB
+spoof   minifasnet_int8.tflite     81x81     849,7 KB
+recog   mobilefacenet_int8.tflite 113x113    720,3 KB
+models.bin  1.729,2 KB / 3.072 KB models_0, 3 of 3 branches
+```
+
+| Đại lượng | Đo lần này | Ghi ở §1c |
+|---|---|---|
+| `arena_fast` | 189.628 B | 189.628 B |
+| `arena_big` | **476.188 B** | 476.172 B |
+| RAM nội trống sau init | 331 KB | 331 KB |
+| PSRAM trống | 6.295 KB | 6.295 KB |
+
+Lệch 16 B ở `arena_big` là giữa hai export anti-spoof khác nhau, không phải sai
+số phép đo — cả ba nhánh đều lặp lại dưới 0,05% qua 20 lần chạy.
+
+Kích thước đầu vào đọc từ chính graph: detect 57.600 B = 160×120×3, spoof
+19.683 B = 81×81×3, recog 38.307 B = 113×113×3.
+
+**`arena_hint` vẫn bằng 0 và chưa điền được.** Header §6.2.2 cho mỗi model một
+`arena_hint`, nhưng spoof và recog **chung một** `MicroAllocator`, mà 476.188 B
+là `Σ tail + max(head)` của cặp — không tách thành hai số cộng lại đúng. Điền cả
+hai là đếm đôi, chia hai là vô nghĩa. Cần chốt firmware lấy `max(arena_hint)`
+trong nhóm chung arena, hay chỉ nhánh sizing mang số. Xem E9-T17.
