@@ -107,17 +107,17 @@ extern "C" esp_err_t ai_engine_init(void)
     return ESP_OK;
 }
 
-extern "C" size_t ai_engine_detect_input_len(void)
+extern "C" size_t ai_engine_detect_input_bytes(void)
 {
     return s_detect_len;
 }
 
-extern "C" size_t ai_engine_spoof_input_len(void)
+extern "C" size_t ai_engine_spoof_input_bytes(void)
 {
     return s_spoof_len;
 }
 
-extern "C" size_t ai_engine_recog_input_len(void)
+extern "C" size_t ai_engine_recog_input_bytes(void)
 {
     return s_recog_len;
 }
@@ -135,7 +135,14 @@ extern "C" esp_err_t ai_engine_detect(const int8_t *image)
     return s_detect.invoke();
 }
 
-extern "C" esp_err_t ai_engine_recognize(const int8_t *face, int8_t *out, size_t cap, float *scale)
+extern "C" size_t ai_engine_recog_output_bytes(void)
+{
+    const TfLiteTensor *tensor = s_ready ? s_recog.output(0) : nullptr;
+    return tensor != nullptr ? tensor->bytes : 0;
+}
+
+extern "C" esp_err_t ai_engine_recognize(const int8_t *face, int8_t *out, size_t cap_bytes,
+                                         float *scale)
 {
     // A zero length means the image carried no such branch (KEHOACH 6.2.2).
     if (!s_ready || s_recog_len == 0 || face == nullptr || out == nullptr || scale == nullptr) {
@@ -150,7 +157,7 @@ extern "C" esp_err_t ai_engine_recognize(const int8_t *face, int8_t *out, size_t
     if (err != ESP_OK) {
         return err;
     }
-    return s_recog.embedding(out, cap, scale) > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
+    return s_recog.embedding(out, cap_bytes, scale) > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
 extern "C" esp_err_t ai_engine_spoof(const int8_t *tight, const int8_t *wide, float *live)

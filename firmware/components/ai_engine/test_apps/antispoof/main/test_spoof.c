@@ -45,7 +45,7 @@ TEST_CASE("the branch comes up and reports where its arena landed", "[ai_spoof]"
 
     // The crop side belongs to the graph, which picks it so every feature map
     // stays odd (KEHOACH 3 layer 1); pinning it here would pin two places.
-    s_len = ai_engine_spoof_input_len();
+    s_len = ai_engine_spoof_input_bytes();
     const size_t side = square_side(s_len);
     printf("spoof input %u B, a square %ux%u RGB crop\n", (unsigned)s_len, (unsigned)side,
            (unsigned)side);

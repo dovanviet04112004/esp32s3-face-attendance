@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -36,12 +37,17 @@ esp_err_t ai_engine_init(void);
  */
 void ai_engine_arena_stats(ai_engine_arena_stats_t *out);
 
-/** How many int8 samples one branch's input holds, read from its own graph.
+/** How many bytes one branch's input tensor holds, read from its own graph.
+ *  @ctx any | non-blocking | zero until init, and zero for an absent branch
+ */
+size_t ai_engine_detect_input_bytes(void);
+size_t ai_engine_spoof_input_bytes(void);
+size_t ai_engine_recog_input_bytes(void);
+
+/** How many bytes ai_engine_recognize writes, so a caller can size its buffer.
  *  @ctx any | non-blocking | zero until init
  */
-size_t ai_engine_detect_input_len(void);
-size_t ai_engine_spoof_input_len(void);
-size_t ai_engine_recog_input_len(void);
+size_t ai_engine_recog_output_bytes(void);
 
 /** Run the detector over one letterboxed frame.
  *  @ctx ai_task | blocking for the whole graph
@@ -59,10 +65,11 @@ esp_err_t ai_engine_spoof(const int8_t *tight, const int8_t *wide, float *live);
 
 /** Embed one aligned face.
  *  @ctx ai_task | blocking for the whole graph
+ *  @param cap_bytes at least ai_engine_recog_output_bytes, all of which is written
  *  @param scale receives the dequant factor the int8 embedding carries
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_SIZE | ESP_FAIL
  */
-esp_err_t ai_engine_recognize(const int8_t *face, int8_t *out, size_t cap, float *scale);
+esp_err_t ai_engine_recognize(const int8_t *face, int8_t *out, size_t cap_bytes, float *scale);
 
 #ifdef __cplusplus
 }

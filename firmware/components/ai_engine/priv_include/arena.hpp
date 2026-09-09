@@ -13,6 +13,12 @@ namespace ai {
 
 class Arena {
 public:
+    Arena() = default;
+    // The buffer is owned and never released, so a copy would hand two objects
+    // one allocator and one run of memory.
+    Arena(const Arena &) = delete;
+    Arena &operator=(const Arena &) = delete;
+
     /** Reserve the buffer and place a MicroAllocator at the head of it.
      *  @param caps preferred heap, falling back to PSRAM with a warning
      */

@@ -21,7 +21,7 @@ public:
     /** Copy the embedding out with the scale needed to read it as floats.
      *  @ret how many int8 values it copied, or zero when cap is too small
      */
-    size_t embedding(int8_t *out, size_t cap, float *scale) noexcept;
+    size_t embedding(int8_t *out, size_t cap_bytes, float *scale) noexcept;
 
 protected:
     tflite::MicroOpResolver &resolver() noexcept override { return recog_ops(); }

@@ -36,7 +36,12 @@ public:
 
 class TfliteModelBase : public ITfliteModel {
 public:
+    TfliteModelBase() = default;
     ~TfliteModelBase() override;
+    // interpreter_ points into this object's own storage_, so a copy would
+    // leave two owners aimed at one interpreter.
+    TfliteModelBase(const TfliteModelBase &) = delete;
+    TfliteModelBase &operator=(const TfliteModelBase &) = delete;
     esp_err_t init(const tflite::Model *model, Arena &arena) noexcept override;
     TfLiteTensor *input(int index) noexcept override;
     TfLiteTensor *output(int index) noexcept override;

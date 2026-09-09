@@ -9,7 +9,6 @@
 #include "sys_storage.h"
 #include "unity.h"
 
-#define EMBED_MAX 512
 #define RUNS 20
 
 // One RGB565 frame at the sensor's own size, and the rate cam_task delivers
@@ -26,7 +25,7 @@ static int8_t *s_frame;
 static int8_t *s_tight;
 static int8_t *s_wide;
 static int8_t *s_face;
-static int8_t s_embedding[EMBED_MAX];
+static int8_t *s_embedding;
 
 static int8_t *psram(size_t len, int seed)
 {
@@ -73,7 +72,7 @@ static esp_err_t run_spoof(void)
 static esp_err_t run_recog(void)
 {
     float scale = 0.0F;
-    return ai_engine_recognize(s_face, s_embedding, sizeof(s_embedding), &scale);
+    return ai_engine_recognize(s_face, s_embedding, ai_engine_recog_output_bytes(), &scale);
 }
 
 static int64_t time_runs(esp_err_t (*once)(void), const char *label)
@@ -96,16 +95,17 @@ TEST_CASE("all three branches load and report what they took", "[bench_ai]")
 {
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
     TEST_ASSERT_EQUAL(ESP_OK, ai_engine_init());
-    s_frame = psram(ai_engine_detect_input_len(), 1);
-    s_tight = psram(ai_engine_spoof_input_len(), 2);
-    s_wide = psram(ai_engine_spoof_input_len(), 3);
-    s_face = psram(ai_engine_recog_input_len(), 4);
+    s_frame = psram(ai_engine_detect_input_bytes(), 1);
+    s_tight = psram(ai_engine_spoof_input_bytes(), 2);
+    s_wide = psram(ai_engine_spoof_input_bytes(), 3);
+    s_face = psram(ai_engine_recog_input_bytes(), 4);
+    s_embedding = psram(ai_engine_recog_output_bytes(), 5);
 
     ai_engine_arena_stats_t stats;
     ai_engine_arena_stats(&stats);
     printf("inputs: detect %u B, spoof %u B, recog %u B\n",
-           (unsigned)ai_engine_detect_input_len(), (unsigned)ai_engine_spoof_input_len(),
-           (unsigned)ai_engine_recog_input_len());
+           (unsigned)ai_engine_detect_input_bytes(), (unsigned)ai_engine_spoof_input_bytes(),
+           (unsigned)ai_engine_recog_input_bytes());
     printf("arena_fast %u B of %u KB in %s\n", (unsigned)stats.fast_used_bytes,
            (unsigned)(stats.fast_bytes / 1024), stats.fast_internal ? "sram" : "psram");
     printf("arena_big  %u B of %u KB in psram\n", (unsigned)stats.big_used_bytes,
