@@ -508,6 +508,46 @@ số liệu **cực kỳ ổn định**.
 Ba phép trên rẻ hơn nhiều so với thời gian tôi đã tiêu, và mỗi phép đều cho câu trả lời nhị
 phân không cần suy luận.
 
+## Sai 3 — Ba lần kết luận "mất dữ liệu" bằng một hàm không tồn tại
+
+### Tôi đã kết luận gì
+
+Để nghiệm thu tiêu chí *"`faces.bin` sống sót khi rút điện giữa chừng"* của `sys_storage`, tôi
+viết một case kiểm chạy đầu tiên sau mỗi lần boot: nếu `faces.bin` và bản `.bak` đều không
+tồn tại trong khi cờ NVS cho biết vòng ghi đã chạy, thì cú cắt điện đã làm mất **cả hai bản**.
+Ba lần chạy, ba lần case báo đúng như vậy — kể cả `attend.000`, file mà vòng ghi không đụng,
+cũng "mất". Tôi kết luận cả hệ thống file bị xoá, và đi tìm cơ chế: `format_if_mount_failed`,
+trình nạp ghi đè phân vùng, `empty_scratch()` xoá nhầm.
+
+### Vì sao nó sai
+
+Từng giả thuyết đều bị chính số đo bác: LittleFS không in dòng `W "mount failed... formatting"`
+nào; `flash_args` của trình nạp không có địa chỉ phân vùng `storage`; `readdir` của
+`esp_littlefs` bỏ qua `.` và `..`. Rồi hai phép đo cuối lật ngược tất cả: **quét thô phân vùng
+thấy magic của `faces.bin` 41 lần**, và ngay dưới dòng FAIL của tôi ở lượt ba có sẵn dòng
+`W sys_storage: faces.bin failed its check, backup served instead` — tức bản `.bak` **có thật**
+đúng lúc case của tôi bảo `backup 0`.
+
+Case kiểm dùng `access(path, F_OK)`. `esp_littlefs` đăng ký với VFS các hàm `stat`, `unlink`,
+`rename`… **nhưng không đăng ký `access`**, nên `access()` trả `-1` cho **mọi** đường dẫn, kể cả
+đường dẫn của một file vừa ghi xong. Đổi sang `stat()`: `primary 1, backup 1, attend.000 1` ở
+mọi lần boot. `sys_storage` đúng từ đầu; sai là thước đo.
+
+### Cơ chế đã lừa tôi
+
+Y hệt sai 2, và lần này tôi **đã biết bài học đó rồi** mà vẫn tái phạm: kết luận về đối tượng
+đo trong lúc chưa kiểm dụng cụ đo. Một hàm trả về "không tồn tại" cho mọi thứ trông giống hệt
+một hệ thống file trống, và giống hệt qua cả ba lần — sự ổn định ấy lại một lần nữa đọc như sự
+đúng. Càng nguy hiểm vì kết luận sai ở đây là kết luận **nặng** ("mất toàn bộ dữ liệu sinh
+trắc và log chấm công"), và tôi đã suýt đem nó đi sửa `sys_storage`.
+
+### Đáng lẽ phải làm gì
+
+Trước khi tin `access()` báo "không có file", **gọi nó lên một file vừa tạo trong cùng dòng
+code** — một dòng, câu trả lời nhị phân, và nó sẽ nói ngay là hàm này không dùng được ở đây.
+Nguyên tắc chung: mọi phép kiểm "không thấy X" phải đi kèm một phép kiểm "có thấy được X khi X
+chắc chắn tồn tại không", nếu không thì "không thấy" không mang thông tin.
+
 ---
 
 # Bài học rút ra cho báo cáo
