@@ -282,17 +282,18 @@ gian sau khi ESP32 boot. Đo trên board:
 | `bsp_board_init()` xong nếu không chờ | **4 ms** |
 | PCF8574 `0x20` ACK lần đầu | **5 ms** |
 | VL53L1X `0x29` ACK lần đầu | **17 ms** |
-| GT911 `0x5D` ACK lần đầu | **57 ms** |
 
-Ở t+4 ms **cả ba đều im**, trong khi SDA và SCL đều đã idle mức 1 — nên đây không phải
-thiếu pull-up mà là cuộc đua vài millisecond. Driver nào chạm bus ngay sau `bsp_board_init()`
-thì NACK; driver nào chậm vài ms thì chạy, nên lỗi đổi mặt theo từng lần sửa code và trông
-như ngẫu nhiên. **Reset chip không tái hiện được** vì ngoại vi vẫn đang có điện và đã sẵn
-sàng từ trước — chỉ lần cấp điện đầu mới lộ, tức đúng lúc người dùng cắm máy lần đầu.
+Ở t+4 ms **không con nào trả lời**, trong khi SDA và SCL đều đã idle mức 1 — nên đây không
+phải thiếu pull-up mà là cuộc đua vài millisecond. Driver nào chạm bus ngay sau
+`bsp_board_init()` thì NACK; driver nào chậm vài ms thì chạy, nên lỗi đổi mặt theo từng lần
+sửa code và trông như ngẫu nhiên. **Reset chip không tái hiện được** vì ngoại vi vẫn đang có
+điện và đã sẵn sàng từ trước — chỉ lần cấp điện đầu mới lộ, tức đúng lúc người dùng cắm máy
+lần đầu. Bảng này chỉ có hai thiết bị: mốc của GT911 không dùng được vì phép đo cũ chạy lúc
+đầu cắm cảm ứng còn lỏng (§2.3C), và nó cũng không cần — GT911 không nằm trong danh sách chờ.
 
 Chốt: `bsp_board_init()` thăm dò **những thiết bị có địa chỉ cố định lúc cấp nguồn** —
-`0x20` và `0x29` — tới khi cả hai ACK, trần **500 ms** (≈9× mốc 57 ms đo được), quá trần
-thì trả lỗi kèm địa chỉ nào im. GT911 **không** nằm trong danh sách chờ vì địa chỉ của nó
+`0x20` và `0x29` — tới khi cả hai ACK, trần **500 ms** (≈29× mốc 17 ms, chỗ chậm nhất trong
+hai con được chờ), quá trần thì trả lỗi kèm địa chỉ nào im. GT911 **không** nằm trong danh sách chờ vì địa chỉ của nó
 do trình tự reset ở §2.3C quyết định, nên `drv_touch_init()` tự lo con của mình.
 
 #### C. Cảm ứng GT911
@@ -310,15 +311,22 @@ do trình tự reset ở §2.3C quyết định, nên `drv_touch_init()` tự lo
 
 ⚠️ Trình tự này **bắt buộc chạy**, không phải tuỳ chọn. PCF8574 là chân quasi-bidirectional: lúc cấp nguồn mọi chân bật lên HIGH qua nguồn dòng ~100 µA, nên P0 nhả reset GT911 ngay trước khi firmware kịp chạy, và GT911 chốt địa chỉ theo GPIO14 đang thả nổi. Địa chỉ sau power-up là bất định; chỉ lần reset do `drv_touch` chủ động mới quyết định được nó.
 
-**RST của GT911 đi qua PCF8574 nên cạnh lên chậm, và mốc giữ phải theo đó.** PCF8574 là
-ngõ ra bán song hướng: kéo xuống thì mạnh, đẩy lên chỉ khoảng **100 µA**, nên cạnh lên phụ
-thuộc điện dung của đường RST trên module. Đo trên board: giữ RST thấp **10 ms** thì
-`esp_lcd_touch_new_i2c_gt911()` đọc config thất bại; giữ **100 ms** thì bộ điều khiển lên
-đúng ở `0x5D`. `APP_TOUCH_RST_HOLD_MS = 100` vì thế, không phải theo mốc 100 µs của
-datasheet — datasheet nói về chân được lái bằng ngõ ra thường.
+**Mốc giữ RST: 10 ms, đã nghiệm thu.** Datasheet GT911 đòi RST giữ thấp ≥ **100 µs**;
+`APP_TOUCH_RST_HOLD_MS = 10` là biên gấp 100 lần con số đó. Đo trên board bằng probe chạy
+**4 kiểu trình tự × 3 tốc độ bus × 6 mốc chờ**, trong đó có kiểu giữ RST thấp đúng 10 ms:
+đọc ra `"911"` **72/72 lần**, kèm thanh ghi cấu hình `version 0x61, x_max 320, y_max 480,
+5 điểm`. Cạnh **lên** của RST mới là cạnh chịu ảnh hưởng của nguồn đẩy ~100 µA ở PCF8574,
+và mốc giữ INT **sau** khi nhả RST (50 ms) đã phủ nó.
 
 Và **INT phải trả về input sau khi chốt địa chỉ**: nó là ngõ ra *của bộ điều khiển*, giữ nó
 ở mức thấp từ phía ESP32 là tranh chấp chân.
+
+⚠️ **Đầu cắm lớp cảm ứng trên module LCD phải vào hẳn.** Cắm lỏng thì bộ điều khiển vẫn ACK
+ở `0x5D` và vẫn phục vụ *một* giá trị cho thanh ghi mã sản phẩm — nhưng là giá trị sai, và
+**ổn định qua hàng chục lần khởi động**, nên nó trông y như một lỗi logic chứ không như một
+lỗi tiếp xúc. Đây là lý do `drv_touch_init()` đòi đúng ba byte `"911"` ở `0x8140` thay vì
+tin vào việc con chip có ACK: component GT911 của Espressif in mã sản phẩm ra log mà không
+kiểm nó.
 
 #### D. ToF VL53L1X
 

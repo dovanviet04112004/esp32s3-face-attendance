@@ -57,7 +57,7 @@
 #define APP_TOUCH_I2C_ADDR_HIGH 0x14        // INT held high during reset
 // GT911 latches its address off INT the moment RST is released, which
 // the expander does on its own at power-up (KEHOACH 2.3).
-#define APP_TOUCH_RST_HOLD_MS 100
+#define APP_TOUCH_RST_HOLD_MS 10
 #define APP_TOUCH_INT_HOLD_MS 50
 
 #define APP_TOF_INT_GPIO 3
