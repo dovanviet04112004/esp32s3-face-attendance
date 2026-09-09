@@ -2625,6 +2625,19 @@ offset ...     recog.tflite   (căn 16 B)
 
 **So hai phiên bản model không được sửa contract.** Cả hai script nhận `--lock <file>`; mặc định là `contracts/models.lock.json`, tức bản đang deploy. Lock thí nghiệm nằm ở `ml/artifacts/<nhánh>/` — chỗ đã gitignore — chứ không ở `contracts/`, vì nó không phải hợp đồng mà là một lần đo. Nhờ vậy đo bản B là trỏ `--lock` sang file khác rồi flash lại `models_0`, không đụng `contracts/` và không build lại firmware: `ai_engine` đọc kích thước đầu vào từ chính graph và arena từ `arena_hint`, nên hai bản khác kích thước dùng cùng một binary. Giữ **cả hai** bản trên flash cùng lúc thì cần chọn slot lúc boot bằng `nvs:model/active_slot`, và đó là việc của E13-T2.
 
+**Không phải ngoại vi nào hỏng cũng được chặn boot.** `app_main.c` khởi tạo tuần tự, nhưng
+`ESP_ERROR_CHECK` cho **mọi** lời gọi nghĩa là một con hỏng thì cả máy chấm công không lên.
+Chia hai nhóm:
+
+| Nhóm | Thiết bị | Hỏng thì |
+|---|---|---|
+| **Sống còn** | `sys_storage`, `ai_engine`, `bsp_board`, `drv_lcd`, `drv_ioexp`, `drv_camera` | dừng boot — không có chúng thì không chấm công được, cũng không báo được cho người dùng biết vì sao |
+| **Suy giảm được** | `drv_touch` | log cảnh báo rồi đi tiếp. Chấm công bằng mặt, cảm ứng chỉ phục vụ màn cài đặt và ghi danh; mất nó thì mất tính năng, không mất máy |
+
+Đây là đúng cách `ai_engine` đã làm với ảnh model thiếu nhánh ở §6.2.2, áp cho ngoại vi.
+Thiết bị suy giảm được thì tầng trên phải hỏi trạng thái trước khi dùng, thay vì cho rằng
+`app_main` đã bảo đảm nó có.
+
 **A/B model**: `nvs:model/active_slot` quyết định dùng partition nào. OTA ghi vào slot *không* active → verify sha256 → đổi `active_slot` → reboot. Nếu boot sau đó lỗi (`ai_engine_init` fail) thì `app_main` trả `active_slot` về giá trị cũ và reboot lại. Rollback model độc lập với rollback firmware.
 
 #### 6.2.3 LittleFS (partition `storage`, 4 MB) — bố cục file
