@@ -410,40 +410,19 @@ và §5.3 hiện **chưa khai đường truyền** cho hai event đó.
 | OUT+ / OUT− | Loa | Ngõ ra **cầu (BTL)** — **tuyệt đối không nối OUT− xuống GND** |
 | Tụ lọc | 470–1000 µF gần VIN | Bắt buộc, nếu không sẽ reset board khi phát to |
 
-#### F. Chấp hành — lắp cả hai, chọn lúc chạy
+#### F. Chấp hành — servo SG90 + thanh chắn
 
-Hai bộ chấp hành cùng tồn tại trên board. Servo gạt thanh chắn là thứ thực sự mở cửa mô hình; relay là ngõ ra dành cho khoá điện, đấu sẵn nhưng **tiếp điểm để hở**. `svc_door` bọc cả hai sau `IDoor` (§4.5.5e), chọn bằng `Kconfig` — logic chấm công không biết bên dưới là cái nào.
-
-**F1 — Module 4 relay 5 V opto, tiếp điểm để hở**
-
-| Chân module | Nối tới | Ghi chú |
-|---|---|---|
-| VCC | **3V3** | Chỉ nuôi LED opto. Cùng mức với PCF8574 nên lúc P2 ở HIGH thì hai đầu LED bằng áp, opto tắt hẳn |
-| **JD-VCC** | **Rail 2 — 5 V riêng** | **Rút jumper VCC–JD-VCC trước.** Còn jumper thì 4 cuộn hút ăn chung rail ESP32 |
-| GND | GND chung | |
-| **IN1** | **PCF8574 P2** | Active-LOW. PCF8574 sink 25 mA nhưng chỉ source ~100 µA → đi đúng chiều nó khoẻ |
-| IN2–IN4 | để trống | Dư cho sau, muốn dùng thì lấy P4–P6 |
-| COM / NO kênh 1 | **để hở** | Chưa có khoá điện. Đây là ngõ ra dành sẵn |
-
-Nghiệm thu `drv_relay` không cần tải: đóng kênh 1 thì nghe tiếng cạch, LED kênh 1 sáng, và đo thông mạch COM–NO thấy nối. Ba dấu hiệu đó đủ chứng minh driver chạy đúng.
-
-🔬 Sau khi đấu, đặt P2 ở HIGH rồi nhìn LED kênh 1: phải tắt hẳn. Nguồn HIGH của PCF8574 chỉ ~100 µA, đủ yếu để không kích opto nhưng đây là chỗ sát ngưỡng — LED còn sáng mờ hoặc relay rung thì hàn 4,7 kΩ từ IN1 lên 3V3. Hết cách thì dời IN1 sang GPIO48, bỏ LED RGB onboard.
-
-**F1b — Khi lắp khoá điện thật (chưa làm)**
-
-Ngõ ra ở trên nối được thẳng vào khoá chốt điện 12 V mà không sửa gì bên firmware. Lúc đó cần thêm ba thứ: khoá chốt 12 V ~0,6 A loại fail-secure, một nguồn 12 V/2 A riêng, và một diode **1N4007 mắc song song hai đầu khoá, vạch trắng về phía +12 V**. Mạch 12 V **không** chung mass với ESP32; nó chỉ gặp phần còn lại ở tiếp điểm cơ khí bên trong relay.
-
-Thiếu 1N4007 thì lúc relay ngắt, từ trường cuộn khoá sập sinh xung ngược vài trăm vôn đánh hồ quang qua tiếp điểm; tiếp điểm rỗ dần rồi dính, và cửa mở vĩnh viễn.
-
-**F2 — Servo SG90 + thanh chắn**
+Board có **một** bộ chấp hành: servo gạt thanh chắn mở cửa mô hình. Không có relay, không có ngõ ra dành sẵn cho khoá điện — lắp khoá sau này là một thay đổi kiến trúc mới, đi qua §1.2 của CLAUDE.md. `svc_door` bọc servo sau `IDoor` (§4.5.5e) để logic chấm công không biết bên dưới là gì và để test trên host cắm được cửa giả vào cùng chỗ.
 
 | Chân | Nối tới | Ghi chú |
 |---|---|---|
 | PWM (vàng) | **GPIO38** | Phải là GPIO thật (LEDC hoặc MCPWM, 50 Hz) — **không** qua PCF8574 |
-| VCC (đỏ) | **Nguồn 5 V riêng** (chung với JD-VCC) | SG90 stall ~700 mA và cú sụt áp đó đủ làm ESP32 brownout giữa lúc mở cửa |
+| VCC (đỏ) | **Rail 2 — nguồn 5 V riêng** (§2.5) | SG90 stall ~700 mA và cú sụt áp đó đủ làm ESP32 brownout giữa lúc mở cửa |
 | GND (nâu) | GND chung với ESP32 | Bắt buộc chung mass, nếu không xung PWM không có mốc tham chiếu |
 
-Tụ 470 µF sát chân nguồn servo. Xung 50 Hz, độ rộng 500–2400 µs quét hết tầm ~180°.
+Tụ 470 µF sát chân nguồn servo. Xung 50 Hz, độ rộng 500–2400 µs quét hết tầm ~180°. `drv_servo` phát xung từ LEDC timer 1 / kênh 1 (timer 0 / kênh 0 là đèn nền, §2.3A), 14 bit → 1,22 µs mỗi bậc. Lúc khởi động và sau `drv_servo_release()` chân ở mức thấp, không xung: tay servo thả lỏng và motor không ăn dòng. Hai góc cơ khí của thanh chắn khai ở `app_config.h`: **đóng 0°, mở 90°**.
+
+Đo 10/09 bằng cách bật tầng vào của pad và đọc ngược trong lúc LEDC đang lái: 0° / 90° / 180° → **500 / 1450 / 2400 µs**, chu kỳ 20,00 ms, mức nghỉ 0 dù board vốn ghim GPIO38 mức cao (§2.4) — driver ngõ ra của ESP thắng đường kéo đó, nên tín hiệu tới header là thật.
 
 #### G. PCF8574
 
@@ -454,11 +433,11 @@ Tụ 470 µF sát chân nguồn servo. Xung 50 Hz, độ rộng 500–2400 µs q
 | INT | không dùng (poll trong `io_task`) |
 | **P0** | GT911_RST |
 | **P1** | VL53L1X_XSHUT |
-| **P2** | RELAY_IN1 |
+| P2 | dự phòng |
 | **P3** | MAX98357_SD |
-| P4–P7 | dự phòng (P4–P6 dành cho relay IN2–IN4 nếu đấu tiếp) |
+| P4–P7 | dự phòng |
 
-Trạng thái nhận diện hiện trên LCD nên không có LED rời. Mọi chân P đều lên HIGH lúc cấp nguồn (§2.3.C) — chỉ giao cho P những việc mà mức HIGH lúc khởi động là vô hại. Relay opto active-LOW khớp đúng luật này: chưa có firmware thì cả 4 kênh tắt, cửa khoá chặt.
+Trạng thái nhận diện hiện trên LCD nên không có LED rời. Mọi chân P đều lên HIGH lúc cấp nguồn (§2.3.C) — chỉ giao cho P những việc mà mức HIGH lúc khởi động là vô hại: RST và XSHUT thả cao là chip được chạy, SD của amp ở cao là amp thức nhưng chưa có dữ liệu I²S, và `drv_audio_init` kéo P3 xuống trước khi bật clock. Cơ cấu mở cửa **không** đi qua PCF8574 vì lý do đó: mức HIGH lúc cấp nguồn trên một chân mở cửa là cửa mở.
 
 ### 2.4 Chân trống sau khi lắp hết
 
@@ -468,14 +447,14 @@ Trạng thái nhận diện hiện trên LCD nên không có LED rời. Mọi ch
 | GPIO48 | LED RGB WS2812 onboard — dùng làm đèn báo trạng thái hệ thống |
 | GPIO0 | nút BOOT onboard — dùng làm nút "factory reset" (giữ 5 s) |
 
-**Hết chân GPIO thường.** Cần thêm đường điều khiển chậm thì lấy ở PCF8574 — còn P4–P7.
+**Hết chân GPIO thường.** Cần thêm đường điều khiển chậm thì lấy ở PCF8574 — còn P2 và P4–P7.
 
 **Ba chân sau không dùng được làm ngõ vào trên board này**, đo bằng cách bật điện trở kéo
 lên rồi kéo xuống với **không cắm gì cả** và xem chân có đi theo không:
 
 | Chân | Kéo lên | Kéo xuống | Kết luận |
 |---|---|---|---|
-| GPIO38 | 20/20 cao | **20/20 cao** | board ghim mức cao |
+| GPIO38 | 20/20 cao | **20/20 cao** | board ghim mức cao — vẫn làm ngõ ra được: LEDC kéo pad về 0 (§2.3F) |
 | GPIO48 | **0/20 cao** | 0/20 | board ghim mức thấp |
 | GPIO0 | 20/20 cao | 20/20 cao | điện trở kéo lên của nút BOOT ghim cao |
 
@@ -497,19 +476,15 @@ Hai rail, chung mass.
 | MAX98357A + loa 3W | 30 mA | **600 mA** |
 | VL53L1X | 20 mA | 40 mA |
 | GT911 | 5 mA | |
-| LED opto relay (qua 3V3) | 2 mA | 4 mA |
-| **Tổng** | ~377 mA | **~1.34 A** |
+| **Tổng** | ~375 mA | **~1.34 A** |
 
-**Rail 2 — 5 V / ≥ 1,5 A, cơ cấu chấp hành**
+**Rail 2 — 5 V / ≥ 1 A, cơ cấu chấp hành**
 
 | Tải | Dòng điển hình | Dòng đỉnh |
 |---|---|---|
 | SG90 | 150 mA | **700 mA** (kẹt) |
-| Cuộn hút relay (JD-VCC) | 70 mA (1 kênh) | 280 mA (cả 4) |
 
-Tách rail 1 khỏi rail 2 vì hai đỉnh trùng nhau: kiosk phát tiếng báo đúng lúc mở cửa. Chung một rail thì 1,34 A của đỉnh amp cộng 0,7 A của servo đủ kéo sụt áp và reset ESP32. Rút jumper VCC–JD-VCC chính là thao tác đẩy cuộn hút sang rail 2.
-
-Lắp khoá điện theo §2.3.F1b thì thêm rail 3 — 12 V / 2 A, chỉ nuôi khoá, 0 mA lúc nghỉ và 600 mA lúc hút, cách ly hoàn toàn qua tiếp điểm relay.
+Tách rail 1 khỏi rail 2 vì hai đỉnh trùng nhau: kiosk phát tiếng báo đúng lúc mở cửa. Chung một rail thì 1,34 A của đỉnh amp cộng 0,7 A của servo đủ kéo sụt áp và reset ESP32.
 
 Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân nguồn servo, 100 µF gần LCD.
 
@@ -529,8 +504,6 @@ Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân ngu�
 | PCF8574 (I/O expander) | https://www.ti.com/lit/ds/symlink/pcf8574.pdf |
 | DS3231 (RTC, tùy chọn) | https://www.analog.com/media/en/technical-documentation/data-sheets/DS3231.pdf |
 | SG90 (servo) | http://www.ee.ic.ac.uk/pcheung/teaching/DE1_EE/stores/sg90_datasheet.pdf |
-| SRD-05VDC-SL-C (relay trên module) | https://www.circuitbasics.com/wp-content/uploads/2015/11/SRD-05VDC-SL-C-Datasheet.pdf |
-| 1N4007 (diode dập) | https://www.vishay.com/docs/88503/1n4001.pdf |
 
 ---
 
@@ -1822,7 +1795,6 @@ firmware/
 │   ├── drv_touch/         [C]    L3
 │   ├── drv_tof/           [C]    L3
 │   ├── drv_audio/         [C]    L3
-│   ├── drv_relay/         [C]    L3  # chỉ bật/tắt chân PCF8574
 │   ├── drv_servo/         [C]    L2  # chỉ đẩy xung LEDC 50 Hz
 │   ├── sys_storage/       [C]    L2  # NVS + LittleFS + mmap model; sở hữu storage_format.h (§6.2.7)
 │   ├── sys_time/          [C]    L2  # SNTP + DS3231
@@ -1831,7 +1803,7 @@ firmware/
 │   ├── net_wifi/          [C]    L3
 │   ├── net_mqtt/          [C]    L3
 │   ├── net_ota/           [C]    L3
-│   ├── svc_door/          [C++]  L4  # IDoor + RelayDoor/ServoDoor bọc 2 driver trên
+│   ├── svc_door/          [C++]  L4  # IDoor + ServoDoor bọc drv_servo, FakeDoor cho test
 │   ├── svc_vision/        [C++]  L4  # điều phối detect → align → spoof → recog
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
 │   ├── svc_sync/          [C++]  L5  # hàng đợi offline → MQTT
@@ -1895,13 +1867,12 @@ Quy tắc header:
 | L3 | `drv_touch` | C | `common`, `bsp_board`, `drv_ioexp`, `esp_lcd_touch_gt911` |
 | L3 | `drv_tof` | C | `common`, `bsp_board`, `drv_ioexp`, `vl53l1x_uld` |
 | L3 | `drv_audio` | C | `common`, `bsp_board`, `drv_ioexp`, `esp_driver_i2s` |
-| L3 | `drv_relay` | C | `common`, `drv_ioexp` |
 | L2 | `sys_storage` | C | `common`, `nvs_flash`, `spi_flash`, `esp_partition`, `littlefs` |
 | L2 | `sys_time` | C | `common`, `lwip`, `bsp_board` |
 | L3 | `ai_engine` | C++ | `common`, `sys_storage`, `esp-tflite-micro` |
 | L3 | `svc_facedb` | C++ | `common`, `sys_storage` |
 | L3 | `net_wifi` / `net_mqtt` / `net_ota` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_https_ota` |
-| L4 | `svc_door` | C++ | `common`, `drv_relay`, `drv_servo` |
+| L4 | `svc_door` | C++ | `common`, `bsp_board`, `drv_servo`, `esp_timer` |
 | L4 | `svc_vision` | C++ | `common`, `ai_engine`, `svc_facedb`, `drv_camera` |
 | L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_facedb`, `sys_storage`, `svc_door`, `drv_audio` |
 | L5 | `svc_sync` | C++ | `common`, `sys_storage`, `net_mqtt` |
@@ -2061,26 +2032,27 @@ public:
 
 ##### e) `svc_door` — chỗ interface trả nợ trực tiếp
 
-Board mang cả hai bộ chấp hành (§2.3.F): servo gạt thanh chắn mở cửa mô hình, relay là ngõ ra dành cho khoá điện với tiếp điểm để hở. Cả hai đều đấu sẵn và đều nghiệm thu được trên phần cứng thật — relay bằng tiếng cạch, đèn kênh và phép đo thông mạch COM–NO — nên trừu tượng ở đây có hai hiện thực thật chứ không phải một chỗ trống chờ. Giữ nguyên quy tắc *driver viết bằng C*, đặt trừu tượng lên tầng service:
+Board có một bộ chấp hành (§2.3F): servo gạt thanh chắn. Trừu tượng ở đây không tồn tại để đổi phần cứng — nó tồn tại để `svc_attendance` chạy được trên host với một cánh cửa giả, và để `main`, viết bằng C, nối dây mà không phải biết C++. Giữ nguyên quy tắc *driver viết bằng C*, đặt trừu tượng lên tầng service:
 
 ```
-components/drv_relay/   [C]   ← driver thuần, chỉ biết bật/tắt chân PCF8574
 components/drv_servo/   [C]   ← driver thuần, chỉ biết đẩy xung LEDC 50 Hz
-components/svc_door/    [C++] ← IDoor + 2 adapter bọc 2 driver trên
+components/svc_door/    [C++] ← IDoor + ServoDoor bọc driver trên + FakeDoor cho test
 ```
 ```cpp
 class IDoor {
 public:
     virtual ~IDoor() = default;
-    virtual esp_err_t open(uint32_t hold_ms) noexcept = 0;
+    virtual esp_err_t open(uint32_t hold_ms) noexcept = 0;   // mở, tự đóng sau hold_ms
     virtual esp_err_t close() noexcept = 0;
     virtual bool      is_open() const noexcept = 0;
 };
-class RelayDoor final : public IDoor { /* gọi drv_relay_set() */ };
-class ServoDoor final : public IDoor { /* gọi drv_servo_angle() */ };
+class ServoDoor final : public IDoor { /* drv_servo_angle() + esp_timer đóng lại */ };
+class FakeDoor  final : public IDoor { /* ghi lại lệnh cuối để test kiểm */ };
 ```
 
-`svc_attendance` chỉ thấy `IDoor&`. Đổi từ relay sang servo là đổi **một dòng** trong `main/app_wiring.c`, chọn bằng `Kconfig`. Không sửa gì trong logic chấm công. Cùng chỗ cắm đó nhận `FakeDoor` để `test_apps` chạy được máy trạng thái chấm công trên host, không cần board.
+Ba lớp nằm trong `priv_include/door.hpp`. Header công khai `svc_door.h` theo luật §4.5.3 chỉ có cú pháp C: handle mờ `svc_door_t`, `svc_door_servo()` trả về cửa thật dựng tĩnh một lần, `svc_door_fake()` trả về cửa giả, và ba hàm `svc_door_open / svc_door_close / svc_door_is_open` gọi vào bảng ảo bên dưới. `svc_attendance` chỉ thấy `svc_door_t`. `main/app_wiring.c` đưa `svc_door_servo()` vào; `test_apps` của `svc_attendance` đưa `svc_door_fake()` vào cùng chỗ để chạy máy trạng thái chấm công trên host, không cần board. Không có `Kconfig` chọn cơ cấu vì chỉ có một cơ cấu thật.
+
+`ServoDoor::open(hold_ms)` quay tới `APP_DOOR_OPEN_DEG` và đặt một `esp_timer` one-shot; hết `hold_ms` thì `close()` quay về `APP_DOOR_CLOSED_DEG`, rồi sau khi tay đã tới (SG90: 0,1 s/60°) gọi `drv_servo_release()` để motor không giữ dòng. `open()` trong lúc đang mở chỉ gia hạn giờ đóng. Trạng thái được một mutex có timeout bảo vệ vì `attend_task` và task của `esp_timer` cùng đụng vào.
 
 ##### f) `svc_attendance` — máy trạng thái bảng, **cố ý không dùng State pattern**
 
@@ -2165,7 +2137,7 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 | `ai_engine` | `ITfliteModel` → `TfliteModelBase` → 3 lớp con | Kế thừa + template method | Ba model khác nhau ở op resolver và hậu xử lý |
 | `svc_vision` | `VisionPipeline` | Tiêm phụ thuộc qua tham chiếu interface | Test toàn bộ logic trên host, không cần board |
 | `svc_facedb` | `FaceDb`, `IMatcher` | Strategy | Đổi thuật toán so khớp khi quy mô tăng |
-| `svc_door` | `IDoor`, `RelayDoor`, `ServoDoor` | Adapter bọc driver C | Chốt relay/servo muộn mà không sửa logic |
+| `svc_door` | `IDoor`, `ServoDoor`, `FakeDoor` | Adapter bọc driver C, ra ngoài bằng handle mờ | Chạy máy trạng thái chấm công trên host với cửa giả |
 | `svc_attendance` | `AttendanceFsm` | Bảng `constexpr`, **không** virtual | Nhìn hết sơ đồ trạng thái trong 1 màn hình |
 | `svc_sync` | `UplinkQueue`, `IPersist` | Composition | Thay LittleFS bằng RAM fake khi test |
 | `ui_kiosk` | `Screen` → 5 lớp con, `ScreenManager` | Kế thừa | Năm màn hình cùng vòng đời |
@@ -2584,6 +2556,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | **`m_spi_lcd`** | Mutex | — | `ui_task`, `ota_task` (màn hình tiến trình) | — | 1 bus SPI, tránh xé khung hình |
 | **`m_facedb`** | Mutex | — | `ai_task` (đọc), `mqtt_task` (ghi khi enroll) | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
 | **`m_littlefs`** | Mutex | — | `attend_task`, `sync_task`, `ota_task`, `audio_task` | — | LittleFS không thread-safe mặc định |
+| `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
 | `s_frame_ready` | Binary semaphore | — | ISR camera | `cam_task` | ISR chỉ `xSemaphoreGiveFromISR`, xử lý ở task |
 | `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | như trên |
 | `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING`. Thay cho 6 biến cờ rời rạc |
@@ -2931,7 +2904,7 @@ Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là
 │                     cosine vs face_db  →  id + score              │
 │                                    ▼                              │
 │              attendance state machine (chống trùng N phút)        │
-│                    ├─► LCD kết quả  ├─► loa ├─► IDoor: relay/servo│
+│                    ├─► LCD kết quả  ├─► loa ├─► IDoor: servo      │
 │                    └─► LittleFS (append) ──► q_uplink             │
 └───────────────────────────────┬───────────────────────────────────┘
                                 │ MQTTS 8883 (QoS1, LWT)

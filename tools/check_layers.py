@@ -26,7 +26,6 @@ LAYERS: dict[str, int] = {
     "drv_touch": 3,
     "drv_tof": 3,
     "drv_audio": 3,
-    "drv_relay": 3,
     "drv_servo": 2,
     "sys_storage": 2,
     "sys_time": 2,

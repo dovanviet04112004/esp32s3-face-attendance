@@ -53,7 +53,6 @@
 // line may only carry work where that level is harmless (KEHOACH 2.3).
 #define APP_IOEXP_P_TOUCH_RST 0
 #define APP_IOEXP_P_TOF_XSHUT 1
-#define APP_IOEXP_P_RELAY_IN1 2
 #define APP_IOEXP_P_AUDIO_SD 3
 
 #define APP_TOUCH_INT_GPIO 14
@@ -75,6 +74,8 @@
 #define APP_SERVO_HZ 50
 #define APP_SERVO_MIN_US 500
 #define APP_SERVO_MAX_US 2400
+#define APP_DOOR_CLOSED_DEG 0               // barrier arm down
+#define APP_DOOR_OPEN_DEG 90                // barrier arm up
 
 #define APP_STATUS_LED_GPIO 48              // WS2812 on board
 #define APP_FACTORY_RESET_GPIO 0            // BOOT button

@@ -20,20 +20,20 @@ TEST_CASE("changing one line leaves the other seven where they stood", "[drv_ioe
 {
     // The chip takes all eight lines in one byte, so this is the invariant the
     // shadow register exists to hold.
-    TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_set(APP_IOEXP_P_RELAY_IN1, false));
+    TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_set(APP_IOEXP_P_AUDIO_SD, false));
     uint8_t port = 0;
     TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_read(&port));
-    TEST_ASSERT_BIT_LOW(APP_IOEXP_P_RELAY_IN1, port);
+    TEST_ASSERT_BIT_LOW(APP_IOEXP_P_AUDIO_SD, port);
     TEST_ASSERT_BIT_HIGH(APP_IOEXP_P_TOUCH_RST, port);
     TEST_ASSERT_BIT_HIGH(APP_IOEXP_P_TOF_XSHUT, port);
 
-    TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_set(APP_IOEXP_P_AUDIO_SD, false));
+    TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_set(APP_IOEXP_P_TOF_XSHUT, false));
     TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_read(&port));
-    TEST_ASSERT_BIT_LOW(APP_IOEXP_P_RELAY_IN1, port);
     TEST_ASSERT_BIT_LOW(APP_IOEXP_P_AUDIO_SD, port);
+    TEST_ASSERT_BIT_LOW(APP_IOEXP_P_TOF_XSHUT, port);
     TEST_ASSERT_BIT_HIGH(APP_IOEXP_P_TOUCH_RST, port);
 
-    TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_set(APP_IOEXP_P_RELAY_IN1, true));
+    TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_set(APP_IOEXP_P_TOF_XSHUT, true));
     TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_set(APP_IOEXP_P_AUDIO_SD, true));
 }
 
