@@ -1,5 +1,7 @@
 #include "drv_touch.h"
 
+#include <string.h>
+
 #include "app_config.h"
 #include "app_err.h"
 #include "bsp_board.h"
@@ -14,6 +16,9 @@
 static const char *TAG = "drv_touch";
 
 #define TOUCH_ADDR_SELECT_LOW 0
+#define PRODUCT_ID_REG 0x8140
+#define PRODUCT_ID_LEN 3
+#define PRODUCT_ID_GT911 "911"
 
 static esp_lcd_touch_handle_t s_touch;
 static esp_lcd_panel_io_handle_t s_io;
@@ -43,6 +48,24 @@ static esp_err_t select_address(void)
     return ESP_OK;
 }
 
+static esp_err_t check_product_id(void)
+{
+    uint8_t id[PRODUCT_ID_LEN] = {0};
+    uint8_t again[PRODUCT_ID_LEN] = {0};
+    // A panel whose flex is unseated still acks its address and serves noise,
+    // and the gt911 component logs the id it reads without checking it.
+    APP_RETURN_ON_ERR(esp_lcd_panel_io_rx_param(s_io, PRODUCT_ID_REG, id, sizeof(id)), TAG, "id");
+    APP_RETURN_ON_ERR(esp_lcd_panel_io_rx_param(s_io, PRODUCT_ID_REG, again, sizeof(again)), TAG,
+                      "id again");
+    if (memcmp(id, PRODUCT_ID_GT911, PRODUCT_ID_LEN) != 0 ||
+        memcmp(id, again, PRODUCT_ID_LEN) != 0) {
+        ESP_LOGE(TAG, "id 0x%02X%02X%02X then 0x%02X%02X%02X, expected \"911\"", id[0], id[1],
+                 id[2], again[0], again[1], again[2]);
+        return ESP_ERR_NOT_FOUND;
+    }
+    return ESP_OK;
+}
+
 esp_err_t drv_touch_init(void)
 {
     if (s_touch != NULL) {
@@ -56,6 +79,7 @@ esp_err_t drv_touch_init(void)
     io_cfg.dev_addr = APP_TOUCH_I2C_ADDR_LOW;
     io_cfg.scl_speed_hz = APP_I2C_HZ;
     APP_RETURN_ON_ERR(esp_lcd_new_panel_io_i2c(bsp_i2c_bus(), &io_cfg, &s_io), TAG, "touch io");
+    APP_RETURN_ON_ERR(check_product_id(), TAG, "product id");
 
     const esp_lcd_touch_config_t cfg = {
         // The controller reports in the panel's own portrait frame, which is
