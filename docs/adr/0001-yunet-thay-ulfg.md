@@ -2,7 +2,7 @@
 
 - **Trạng thái**: Chấp nhận
 - **Ngày**: 2026-08-27
-- **Liên quan**: KẾ HOẠCH §1.1 (bảng model), §3.7 (bảng đối chứng KD), §4.5.6 (`ai_engine/src/detection/`)
+- **Liên quan**: KẾ HOẠCH §1.1 (bảng model), §4.5.6 (`ai_engine/src/detection/`); bị ADR-0002 sửa phần teacher
 
 ---
 
@@ -16,7 +16,7 @@ Ràng buộc từ phần cứng và từ hai chặng sau:
 
 | Ràng buộc | Từ đâu |
 |---|---|
-| Chạy INT8 trên ESP32-S3, arena dùng chung với 2 model còn lại | §3.10 |
+| Chạy INT8 trên ESP32-S3, arena dùng chung với 2 model còn lại | §3.8 |
 | Phải ra **5 landmark** để affine align 112×112 trước MobileFaceNet | §1.1, §7.1 |
 | Teacher phải có landmark thì mới distill được đủ hai nhánh | §1.1 |
 | Hậu xử lý decode + NMS phải viết lại bằng C, khớp 1:1 bản Python | §4.5.6, `contracts/golden/` |
@@ -62,7 +62,7 @@ YuNet sau khi lượng tử hoá.
 
 **5. Có sẵn bản ONNX và INT8 tham chiếu.**
 
-`opencv_zoo` phát hành cả hai. Khi leo thang lượng tử hoá theo §3.8, có bản tham chiếu để
+`opencv_zoo` phát hành cả hai. Khi lượng tử hoá theo §3.7, có bản tham chiếu để
 đối chiếu là khác biệt giữa "biết mình sai ở đâu" và "mò".
 
 **6. License không phải yếu tố phân biệt.** Cả hai đều MIT.
@@ -96,7 +96,7 @@ YuNet sau khi lượng tử hoá.
 ## Điều kiện xét lại
 
 Mở lại ADR này nếu E8 đo trên board cho thấy YuNet không đạt ngân sách latency hoặc arena
-ở §3.10, hoặc nếu AP Hard trên tập ảnh OV5640 tự thu thấp hơn hẳn số trên WIDER FACE.
+ở §3.8, hoặc nếu AP Hard trên tập ảnh OV5640 tự thu thấp hơn hẳn số trên WIDER FACE.
 
 ## Nguồn
 

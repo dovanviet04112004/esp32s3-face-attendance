@@ -107,7 +107,7 @@ Làm trước trong ba nhánh. Nó là cổng của pipeline, và **landmark c�
 | E4-T5 | `train_kd.py` nhiều giai đoạn: feature → +logit/loc → +task | AP ≥ 0,90 trên mặt ≥ 32 px ở FP32 (§3 lớp 2) | E4-T2, E4-T4, E3-T5 |
 | E4-T6 | `eval.py` — WIDER AP + **NMSE landmark trên ảnh OV5640** | NMSE < 5% | E4-T5, E3-T7 |
 | E4-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + feature + localization + FGD) | `docs/measurements/<nhánh>/ablation_teacher.md` đủ 2 dòng + ADR | E4-T5 |
-| E4-T8 | **Thang lượng tử hoá (§3.8)** — Q0 → Q1 → Q2, dừng khi đạt | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E4-T7 |
+| E4-T8 | **Thang lượng tử hoá (§3.7)** — Q0 → Q1 → Q2, dừng khi đạt | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E4-T7 |
 | E4-T9 | **Quét từng lớp (§3.9)** — mốc Q3, chỉ khi Q1 và Q2 đều chưa đạt | `layer_sensitivity.csv` + chọn được `k` ở điểm gãy | E4-T8 |
 | E4-T10 | `postproc/{decode, nms}.py` + `emit_golden.py` | `contracts/golden/detection/` có vector vàng | E4-T8 |
 | E4-T11 | Export tflite + `tflite_op_check.py` + `meta.json` + lock | AP trên mặt ≥ 32 px sụt < 1% so với FP32, hai file khớp sha256 | E4-T8 |
@@ -130,7 +130,7 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 | E5-T5 | `postproc/{align, l2norm, cosine}.py` | Align được bằng landmark thật từ detector E4 | E5-T4, E4-T11 |
 | E5-T6 | `eval.py` — LFW/CFP-FP/AgeDB + TAR@FAR trên `test_device` đã align bằng E4 | Bảng số vào `artifacts/recognition/reports/` | E5-T5 |
 | E5-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (embedding + RKD) | `docs/measurements/<nhánh>/ablation_teacher.md` đủ 2 dòng + ADR | E5-T6 |
-| E5-T8 | **Thang lượng tử hoá (§3.8)** — Q0 → Q1 → Q2 | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E5-T7 |
+| E5-T8 | **Thang lượng tử hoá (§3.7)** — Q0 → Q1 → Q2 | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E5-T7 |
 | E5-T9 | **Quét từng lớp (§3.9)** — mốc Q3, chỉ khi cần | `layer_sensitivity.csv` + chọn `k` | E5-T8 |
 | E5-T10 | `emit_golden.py` | `contracts/golden/recognition/` có vector vàng | E5-T8 |
 | E5-T11 | Export tflite + op check + `meta.json` + lock | LFW ≥ 99,0 ở INT8, hai file khớp sha256 | E5-T8 |
@@ -150,7 +150,7 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 | E6-T6 | `train_kd.py` | ACER < 5% ở FP32 | E6-T3..T5, **E6-T0** |
 | E6-T7 | `eval.py` — ACER, HTER cross-dataset, ROC tập tự thu | HTER < 15% | E6-T6, E3-T8 |
 | E6-T8 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + depth map + contrastive depth) | `docs/measurements/<nhánh>/ablation_teacher.md` đủ 2 dòng + ADR | E6-T6 |
-| E6-T9 | **Thang lượng tử hoá (§3.8)** Q0→Q1→Q2 + **quét từng lớp (§3.9)** nếu cần | INT8 giữ ACER < 5%, `quant_ladder.md` + `calib_sweep.md` | E6-T8 |
+| E6-T9 | **Thang lượng tử hoá (§3.7)** Q0→Q1→Q2 + **quét từng lớp (§3.9)** nếu cần | INT8 giữ ACER < 5%, `quant_ladder.md` + `calib_sweep.md` | E6-T8 |
 | E6-T10 | Export + `postproc/preproc.py` + golden + `meta.json` + lock | Hai file khớp sha256 | E6-T9 |
 
 ---
@@ -190,7 +190,7 @@ Chạy song song với E4–E6. Không phụ thuộc model.
 | E8-T4 | `src/detection/` — model + ops + decode + nms | YuNet INT8 chạy trên board | E8-T2 |
 | E8-T5 | `src/antispoof/` — model + ops + preproc | MiniFASNet INT8 chạy trên board | E8-T2 |
 | E8-T6 | `test_apps/parity` — so với `contracts/golden/` cả 3 nhánh | Sai số < 1e-3 trên mọi vector vàng | E8-T3..T5 |
-| E8-T7 | 🔬 **Đo `tail` và `head` riêng từng model** (§3.10), không chỉ tổng `arena_used_bytes()` | 6 con số vào `docs/measurements/arena.md` | E8-T3..T5 |
+| E8-T7 | 🔬 **Đo `tail` và `head` riêng từng model** (§3.8), không chỉ tổng `arena_used_bytes()` | 6 con số vào `docs/measurements/arena.md` | E8-T3..T5 |
 | E8-T7b | Dựng 2 arena: `arena_fast` (detect+spoof chung 1 `MicroAllocator`, SRAM) và `arena_big` (recog, PSRAM) | Cả 3 model chạy được, `arena_fast` vừa SRAM nội | E8-T7 |
 | E8-T8 | 🔬 **Đo latency từng model và từng op** — `MicroProfiler`, **build bằng profile `bench`** (`-O2`, không assert) | Bảng vào `docs/measurements/latency.md`, chỉ rõ op nào không có kernel ESP-NN | E8-T7, E7-T2b |
 | E8-T9 | 🔬 **Đo RAM đỉnh toàn hệ** — `heap_caps_get_minimum_free_size` cả internal và PSRAM | Số vào `docs/measurements/`, đối chiếu §6.4 | E8-T7 |

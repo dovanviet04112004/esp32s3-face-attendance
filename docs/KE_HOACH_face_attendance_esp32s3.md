@@ -6,7 +6,7 @@
 
 ## Mục lục
 
-- [1. Sáu model + link + dữ liệu train](#1-sáu-model--link--dữ-liệu-train)
+- [1. Ba model + link + dữ liệu train](#1-ba-model--link--dữ-liệu-train)
 - [2. Phần cứng — bảng lắp mạch từng chân](#2-phần-cứng--bảng-lắp-mạch-từng-chân)
 - [3. Kỹ thuật tối ưu model — 6 lớp](#3-kỹ-thuật-tối-ưu-model--6-lớp)
 - [4. Cấu trúc repo](#4-cấu-trúc-repo)
@@ -20,27 +20,23 @@
 
 ---
 
-## 1. Sáu model + link + dữ liệu train
+## 1. Ba model + link + dữ liệu train
 
 ### 1.1 Bảng model
 
-| Nhánh | Vai trò | Model | Link code / weight | Thông số | License |
-|---|---|---|---|---|---|
-| **Detect** | Teacher | **YOLO26m-pose** (fine-tune WIDER FACE, 5 keypoint) | [ultralytics/ultralytics](https://github.com/ultralytics/ultralytics) · [docs](https://docs.ultralytics.com/models/yolo26) · weight `yolo26m-pose.pt` tự tải | ~20M params, ~68 GFLOPs @640² | AGPL-3.0 / Enterprise |
-| **Detect** | Student | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750** đo ở **độ phân giải gốc**, không phải ở 160×120 của dự án này (§3 lớp 2); ra box **+ 5 landmark** | **MIT** |
-| **Anti-spoof** | Teacher | **CDCN++** (có MAFM, giám sát depth map) | [ZitongYu/CDCN](https://github.com/ZitongYu/CDCN) | ACER 0.2% (OULU-NPU P1), HTER 6.5% (CASIA→Replay) | Research-only ⚠️ |
-| **Anti-spoof** | Student | **MiniFASNetV2-SE ×2** — mỗi tỉ lệ crop một backbone | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — kiến trúc ở `src/model_lib/MiniFASNet.py` | **0.53M params** (2 × 0.26M + head), 0.088 GFLOPs @80×80 | Research-only ⚠️ |
-| **Recognition** | Teacher | **ResNet50 @ WebFace600K** (`w600k_r50`, lõi của buffalo_l) | Weight PyTorch + train code: [arcface_torch](https://github.com/deepinsight/insightface/tree/master/recognition/arcface_torch) · pack ONNX: [model_zoo](https://github.com/deepinsight/insightface/tree/master/model_zoo) | LFW 99.83 · CFP-FP 99.33 · AgeDB-30 98.23 · IJB-C(E4) 97.25 | Research-only ⚠️ |
-| **Recognition** | Student | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | **1.20M params** (đo trên bản trong repo), 4.58MB FP32 → **~1.2MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
+| Nhánh | Model | Link code / weight | Thông số | License |
+|---|---|---|---|---|
+| **Detect** | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750** đo ở **độ phân giải gốc**, không phải ở 160×120 của dự án này (§3 lớp 2); ra box **+ 5 landmark** | **MIT** |
+| **Anti-spoof** | **MiniFASNetV2-SE ×2** — mỗi tỉ lệ crop một backbone | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — kiến trúc ở `src/model_lib/MiniFASNet.py` | **0.53M params** (2 × 0.26M + head), 0.088 GFLOPs @80×80 | Research-only ⚠️ |
+| **Recognition** | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | **1.20M params** (đo trên bản trong repo), 4.58MB FP32 → **~1.2MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
 
-**Hai ràng buộc thiết kế quyết định bộ 6 này:**
+**Hai ràng buộc thiết kế quyết định bộ 3 này:**
 > **Landmark chỉ có ở `train`.** Bộ `retinaface_gt_v1.1` không gán landmark cho `val`, nên
 > tập đo NMSE landmark phải cắt ra từ chính `train` và không giao với phần đem train. Đo
 > landmark trên `val` gốc là đo trên nhãn không tồn tại. Box thì `val` vẫn đủ, AP vẫn đo bình thường.
 
-- Student detect **bắt buộc phải ra 5 landmark**, nếu không thì không align được mặt trước khi vào MobileFaceNet, accuracy nhận diện rớt mạnh. YuNet ra sẵn 5 điểm.
-- Teacher detect **cũng phải có landmark** thì mới distill được landmark head, nên dùng biến thể `-pose` chứ không dùng bản detect thuần.
-- Anti-spoof student là **hai backbone riêng**, một cho crop 1.0× và một cho 2.7×, ghép
+- Detect **bắt buộc phải ra 5 landmark**, nếu không thì không align được mặt trước khi vào MobileFaceNet, accuracy nhận diện rớt mạnh. YuNet ra sẵn 5 điểm.
+- Anti-spoof là **hai backbone riêng**, một cho crop 1.0× và một cho 2.7×, ghép
   embedding rồi mới phân lớp — đúng cách bản tham chiếu minivision làm (họ ship hai
   checkpoint rồi ensemble). Dùng chung một backbone cho cả hai tỉ lệ thì rẻ hơn 0,1M tham
   số nhưng bắt cùng bộ trọng số vừa đọc kết cấu da ở crop sát vừa đọc mép giấy ở crop rộng
@@ -71,9 +67,9 @@ mirror, và ghi rõ mirror nào để lần sau lấy lại được đúng bả
 
 | Dữ liệu | Nguồn thật | Kích thước | Vai trò |
 |---|---|---|---|
-| WIDER FACE ảnh | HF `wider_face` | train 1.37 GB / 12.880 ảnh · val 346 MB / 3.226 ảnh · split 3.4 MB | ảnh cho teacher và student |
+| WIDER FACE ảnh | HF `wider_face` | train 1.37 GB / 12.880 ảnh · val 346 MB / 3.226 ảnh · split 3.4 MB | ảnh train và val |
 | Bộ chấm điểm WIDER | `eval_tools.zip` của nhóm tác giả | 8.4 MB | **định nghĩa Easy/Medium/Hard** — không có nó thì mọi ngưỡng AP trong tài liệu này vô nghĩa |
-| Nhãn 5 landmark | `retinaface_gt_v1.1.zip`, Google Drive của insightface | 4.49 MB | nhãn box + landmark, **dùng chung cho teacher và student** |
+| Nhãn 5 landmark | `retinaface_gt_v1.1.zip`, Google Drive của insightface | 4.49 MB | nhãn box + landmark |
 
 Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài liệu:
 
@@ -91,7 +87,7 @@ Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài li
 
 | Dữ liệu | Nguồn thật | Kích thước | Vai trò |
 |---|---|---|---|
-| CelebA-Spoof | HF `Ar4ikov/celebA_spoof` (**parquet**, không phải layout gốc) | 67.1 GB | train teacher CDCN++ và student MiniFASNet |
+| CelebA-Spoof | HF `Ar4ikov/celebA_spoof` (**parquet**, không phải layout gốc) | 67.1 GB | train MiniFASNet |
 | NUAA Imposter | HF `akahana/anti-spoofing-nuaaaa` | 376 MB | test khác miền — ảnh in |
 | UniqueData live + replay | HF `UniqueData/anti-spoofing_Real` + `_replay` | 542 MB + 702 MB | test khác miền — màn hình phát lại, có cặp live đối chứng |
 | AxonData face-anti-spoofing | HF `AxonData/face-anti-spoofing-dataset` | 4.94 GB | test khác miền — video, có **mặt nạ latex 3D** |
@@ -127,9 +123,8 @@ crop thực sự đạt được — số cuối là thứ đọc một điểm 
 
 | Dữ liệu | Nguồn thật | Kích thước | Vai trò |
 |---|---|---|---|
-| R50 @ WebFace600K | weight có sẵn của arcface_torch | ~166 MB | teacher, freeze, chỉ sinh embedding |
-| MS1MV3 | HF `gaunernst/ms1mv3-recordio` (`train.rec` + `train.idx` + `property`) | 27.4 GB | train student — **mặc định** |
-| Glint360K | HF `gaunernst/glint360k-wds-gz` (**webdataset `.tar.gz`**, đã shard sẵn) | 122 GB / 1385 shard | train student — khi cần nhiều ID hơn |
+| MS1MV3 | HF `gaunernst/ms1mv3-recordio` (`train.rec` + `train.idx` + `property`) | 27.4 GB | train — **mặc định** |
+| Glint360K | HF `gaunernst/glint360k-wds-gz` (**webdataset `.tar.gz`**, đã shard sẵn) | 122 GB / 1385 shard | train — khi cần nhiều ID hơn |
 | LFW · CFP-FP · AgeDB-30 | HF `gaunernst/face-recognition-eval` (`.bin` chuẩn insightface) | 488 MB cả bộ | đo TAR@FAR |
 | CFP-FF · CALFW · CPLFW | cùng repo trên, đi kèm sẵn | — | thêm chiều đánh giá, không tốn lần tải riêng |
 | Tập nhân viên tự thu | tự thu | ≥2.000 ảnh | đo trên đúng người sẽ dùng máy |
@@ -155,7 +150,7 @@ Glint360K để dành khi số ID trở thành giới hạn thật, đo được
 
 ### 1.4 License
 
-Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset nhận diện, dataset anti-spoof, teacher YOLO AGPL). Với đồ án tốt nghiệp là hợp lệ. Nếu thương mại hoá phải thay: teacher YOLO → Enterprise license hoặc tự train; Glint360K → dataset có license thương mại; CelebA-Spoof → tự thu. Ghi rõ trong báo cáo.
+Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset nhận diện, dataset anti-spoof). Với đồ án tốt nghiệp là hợp lệ. Nếu thương mại hoá phải thay: Glint360K → dataset có license thương mại; CelebA-Spoof → tự thu. Ghi rõ trong báo cáo. Code của cả ba kiến trúc là MIT hoặc tương đương; ràng buộc nằm ở **dữ liệu và weight tham chiếu**, không ở kiến trúc.
 
 ---
 
@@ -437,7 +432,7 @@ Xếp theo đúng thứ tự thực hiện.
 | Giảm độ phân giải đầu vào | detect **160×120** · anti-spoof **81×81** · recog **113×113** | cả 3 |
 | Cho feature map lẻ ở mỗi lần stride-2 | Hết `PAD` — xem dưới | cả 3 |
 | Gộp kênh bằng `AvgPool2d` cỡ cố định | `AdaptiveAvgPool2d(1)` xuất ra `MEAN`, **không có kernel esp-nn**; cỡ cố định ra `AVERAGE_POOL_2D`, có | khối SE |
-| Width multiplier thay vì pruning | Scale kênh 0.75× / 0.5× rồi train lại từ đầu — ổn định hơn prune sau | student |
+| Width multiplier thay vì pruning | Scale kênh 0.75× / 0.5× rồi train lại từ đầu — ổn định hơn prune sau | cả 3 |
 
 **Feature map lẻ ở conv stride-2 thì không sinh `PAD`.** TFLite `CONV_2D` chỉ diễn đạt được `SAME` và `VALID`; pad nào không trùng `SAME` phải thành op riêng, mà `PAD` không có kernel esp-nn. Với `k=3, s=2`:
 
@@ -456,7 +451,7 @@ Anti-spoof theo cùng quy tắc: **80 → 81**, chuỗi thành 41 → 21 → 11 
 
 **ReLU và ReLU6 tốn thời gian như nhau, và bằng không.** Kernel conv của esp-nn nhận `activation_min` / `activation_max` rồi kẹp ngay trong vòng lặp assembly, nên hàm kích hoạt chỉ là một cặp số trên đầu ra conv, không phải một op riêng. Vì thế chọn giữa hai cái **không phải chuyện tốc độ** mà là chuyện lượng tử hoá:
 
-| | Tốc độ | CLE (§3.8) | Dải activation |
+| | Tốc độ | CLE (§3.7) | Dải activation |
 |---|---|---|---|
 | `PReLU` | **chậm**: op riêng, không có kernel esp-nn | ✅ thuần nhất dương | không chặn |
 | `ReLU` | 0 | ✅ thuần nhất dương | không chặn trên |
@@ -472,24 +467,17 @@ Từng nhánh chọn gì:
 | anti-spoof | `ReLU` qua config | Chạy CLE; `HardSigmoid` của khối SE vẫn là `ReLU6(x+3)/6`, đó là công thức của cổng chứ không phải activation của conv |
 | recognition | `ReLU` qua config | Chạy CLE — `ReLU6` chỉ giữ được 15/48 cặp conv, `ReLU` giữ đủ 48/48 |
 
-### Lớp 2 — Huấn luyện & Distillation
+### Lớp 2 — Huấn luyện
+
+**Ba model train từ khởi tạo ngẫu nhiên trên nhãn thật, không có teacher.** Quyết định đó
+và cái giá của nó nằm ở `docs/adr/0002-bo-knowledge-distillation.md`.
 
 | Kỹ thuật | Chi tiết |
 |---|---|
-| **Logit KD** | `KL(soft_teacher/T ‖ soft_student/T) · T²` + task loss. T = 2–4 |
-| **Feature KD (FitNets)** | Ghép feature map trung gian teacher↔student qua conv 1×1 adapter, loss L2 |
-| **Attention Transfer** | Chuyển bản đồ chú ý `sum(|F|²)` theo kênh — rẻ, hiệu quả với model bé |
-| **Detect: localization KD** | Distill cả tọa độ box **và 5 landmark**, không chỉ classification |
-| **Detect: FGD (feature imitation có mặt nạ)** | Chỉ bắt chước feature ở vùng gần GT box, bỏ nền → student không học nhiễu nền |
-| **Anti-spoof: depth-map KD** | Distill **depth map 32×32** của CDCN++ (L1 pixel-wise) + **contrastive depth loss**. Giá trị của nó phụ thuộc đích depth phủ đúng vùng mặt — xem mục dưới |
-| **Recog: embedding KD** | Cosine + L2 giữa embedding 512-D teacher/student, cộng **ArcFace** trên nhãn thật |
-| **Recog: relation KD (RKD)** | Giữ khoảng cách & góc giữa các cặp/bộ ba embedding trong batch — quan trọng hơn khớp từng vector |
-| **Progressive / multi-stage KD** | GĐ1 chỉ feature KD → GĐ2 thêm logit/localization KD → GĐ3 thêm task loss (tăng dần trọng số) |
-| **Soft target: online vs cache** | Cache được hay không là do **augment**, không do tiện. Cache offline 1 lần nếu augment cố định (nhanh 2–3×); augment ngẫu nhiên mạnh thì teacher phải chạy online |
-| **Chia theo loại soft target** | **Hình học cache được** (box, landmark, score): biến đổi theo ảnh y hệt nhãn thật, kể cả mosaic. **Feature map thì không**: nó là tensor dày theo không gian ảnh, mosaic ghép 4 ảnh rồi cắt ngẫu nhiên nên không có phép nào đưa nó theo. Nhánh nào cần feature KD dưới augment mạnh thì teacher **bắt buộc nằm trong vòng train** |
+| **Task loss của từng nhánh** | Detect: cls + box + landmark trên prior dương. Anti-spoof: BCE hai lớp trên cặp crop. Recognition: ArcFace trên nhãn danh tính |
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
 | **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén JPEG q=60–90, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược |
-| **Anti-spoof: augment tỉ lệ crop** | Rút ngẫu nhiên tỉ lệ wide rồi cắt lại từ record, **rút cùng một phân bố cho cả hai lớp**. Bắt buộc, xem mục dưới |
+| **Anti-spoof: augment tỉ lệ crop** | Rút ngẫu nhiên tỉ lệ wide rồi cắt lại từ record, **rút cùng một phân bố cho cả hai lớp**, qua một cổng xác suất. Bắt buộc, xem mục dưới |
 
 #### Công thức lấy mẫu của detect phải khớp kích thước đầu vào
 
@@ -520,7 +508,7 @@ Tầng 2 chưa từng nhận một mẫu dương nào: ba đầu ra, dùng thậ
 Lọc sau crop chứ không lọc khỏi dataset: cùng một khuôn mặt được học khi rơi vào crop gần
 và bỏ qua khi ảnh cắt xa. Lọc vĩnh viễn là dạy model rằng chỗ đó là nền.
 
-Cái giá phải trả nằm ở §4.4.1: student giờ **có** augment phóng to, nên nó phải đọc ảnh
+Cái giá phải trả nằm ở §4.4.1: detect giờ **có** augment phóng to, nên nó phải đọc ảnh
 gốc chứ không đọc bản resize sẵn.
 
 #### Nghiệm thu detect đo trên miền nhánh này phục vụ
@@ -540,7 +528,7 @@ kém.
 
 Medium và Hard phần lớn là vệt vài pixel. Nâng đầu vào là đường duy nhất để với tới
 chúng, và 🔬 arena ước tính chặn đường đó: 150 KB ở 160×120, 337 KB ở 240×180, 600 KB ở
-320×240, so với 224 KB mà `arena_fast` được cấp ở SRAM nội (§3.10) — trong đó detect đã
+320×240, so với 224 KB mà `arena_fast` được cấp ở SRAM nội (§3.8) — trong đó detect đã
 dùng 189,6 KB đo thật. Detect chạy mỗi frame nên đẩy sang PSRAM là mất 22 ms mỗi frame.
 
 **Miền phục vụ được định nghĩa bằng chính pipeline, không phải chọn cho dễ.** Camera đưa
@@ -552,9 +540,8 @@ không dùng được ở khâu sau. Đó là biên, và nó là cổng.
 | Mốc | Ngưỡng | Đo bằng |
 |---|---|---|
 | Student FP32 | **AP ≥ 0,90** trên mặt ≥ 32 px | `eval.py`, cột `ge32px` |
-| Student INT8 | sụt **< 1%** so với FP32 (§3.8) | `eval.py`, cột `ge32px` |
+| Student INT8 | sụt **< 1%** so với FP32 (§3.7) | `eval.py`, cột `ge32px` |
 | Vận hành | recall **≥ 0,90** và **≤ 0,15** khung thừa mỗi ảnh, trên ảnh một mặt cỡ kiosk | `eval.py` |
-| Teacher | WIDER hard ≥ 0,80 **đo ở 640²**, đầu vào của chính teacher | `eval.py --input-hw 640 640` |
 
 Mặt dưới 32 px không tính đúng cũng không tính sai — dùng đúng luật ignore của kit, giống
 cách Easy/Med/Hard là ba cách đọc một tập dự đoán. Tính chúng là dương tính giả sẽ thành
@@ -586,7 +573,7 @@ augmentation bịa ra.
 
 #### Tỉ lệ crop wide bị hình học khung hình chặn trên
 
-Anti-spoof student đọc hai khung của cùng một mặt: crop **tight** 1,0× và crop **wide**
+Anti-spoof đọc hai khung của cùng một mặt: crop **tight** 1,0× và crop **wide**
 2,7×. Hai loại dấu hiệu nằm ở hai chỗ khác nhau — kết cấu da và moiré nằm trong mặt, còn
 mép giấy, viền màn hình, bàn tay đang cầm nằm **ngoài** mặt. Bịt nhánh wide lại, điểm của
 một tập ảnh thẻ giơ trước camera nhảy từ 0,0035 lên 0,3195: phần lớn khả năng bắt tấn công
@@ -655,8 +642,8 @@ Ba ràng buộc đi kèm:
 
 - **Prep và inference gọi chung một hàm.** Lệch hai bên là nguồn của mọi phép đo sai:
   model đọc ở kiosk một phân bố hình học khác hẳn phân bố nó được train.
-- **Tỉ lệ thật đạt được ghi vào từng record.** Đích depth của teacher dựng từ nó (mục dưới),
-  và không có nó thì không kiểm được phân bố tỉ lệ mà một run đã thấy.
+- **Tỉ lệ thật đạt được ghi vào từng record**, vì không có nó thì không kiểm được phân bố
+  tỉ lệ hình học mà một run đã thấy.
 - **Đổi cách dựng thì shard hết giá trị.** Mọi run train trước đó đọc một phân bố hình học
   khác; sinh lại shard rồi train lại là bắt buộc, không phải tuỳ chọn.
 
@@ -679,15 +666,15 @@ hết phần còn lại: trung vị **1,029**, p10 0,939, p90 1,124, và **77,4%
 Hộp detector to hơn vài phần trăm và lệch tâm 3%. Nghe nhỏ, nhưng model mất **15% số khung**
 chỉ vì xê dịch 2% (mục dưới), nên đây là một độ lệch hệ thống trên **mọi** crop nó từng học.
 
-**Chốt: shard dựng bằng hộp của detection student, không dùng cột chú thích.** `xdomain_crop.py`
+**Chốt: shard dựng bằng hộp của nhánh detect, không dùng cột chú thích.** `xdomain_crop.py`
 đã theo đúng luật này cho NUAA và Axon; tập train chính phải theo cùng. Ảnh nào detector
 không thấy mặt thì bỏ, vì kiosk cũng sẽ không thấy — đo được 0,28% số ảnh, và tỉ lệ hai lớp
 gần như không đổi (1,884 → 1,877), nên phép bỏ này không kéo theo lệch cân bằng nhãn.
 
 **Hệ quả về thứ tự chạy:** `01_prepare_interim.sh` nhánh antispoof từ đây cần một checkpoint
 detection đã train xong, nên nó không còn chạy được trên một bản clone trắng. Số thứ tự của
-script vẫn là thứ tự chạy cho từng nhánh, nhưng riêng antispoof thì `10_train_teacher_det.sh`
-và `20_kd_det.sh` phải xong trước. Đường dẫn checkpoint khai ở `configs/common/paths.yaml`
+script vẫn là thứ tự chạy cho từng nhánh, nhưng riêng antispoof thì `20_train_det.sh` phải
+xong trước. Đường dẫn checkpoint khai ở `configs/common/paths.yaml`
 theo §4.9, không gõ thẳng vào script.
 
 #### Model dựa vào mặt nằm đúng chỗ, nên hộp rung là phải dạy
@@ -775,8 +762,8 @@ Ba điều kiện để phép augment này có nghĩa:
 - **Phân bố tỉ lệ lúc train phải bám phân bố lúc suy luận.** Kiosk dựng nhánh wide ở 2,7
   cố định, nên trung vị tỉ lệ khi train mà tụt xa 1,9 là đã đo một thứ khác với thứ sẽ chạy.
   Đổi tham số augment thì đo lại hai cột trên trước khi tốn giờ GPU.
-- **Ghi tỉ lệ đã rút vào batch**, không phải tỉ lệ gốc của record. Đích depth của teacher
-  dựng từ nó, và dựng theo tỉ lệ gốc là đặt gò Gauss lệch khỏi vùng mặt.
+- **Ghi tỉ lệ đã rút vào batch**, không phải tỉ lệ gốc của record — phép augment rút lại
+  tỉ lệ, nên tỉ lệ gốc không còn mô tả đúng khung mà model thấy.
 
 #### Nhánh tight phải học phơi sáng, nếu không nó đọc độ sáng thay cho kết cấu
 
@@ -784,7 +771,7 @@ Nhánh tight đọc crop 1,0× và phải tách mặt thật khỏi bản in b�
 chân lông, độ bóng của da, vân moiré của màn hình. Kết cấu là đại lượng cục bộ, không phụ
 thuộc mức sáng chung của khung.
 
-Đo trên checkpoint A0 chưa có augment quang học, làm tối và bẹt tương phản chính những
+Đo trên checkpoint chưa có augment quang học, làm tối và bẹt tương phản chính những
 khung nó đang chấm đúng:
 
 | Biến đổi | Mặt thật, một cánh tay | Mặt thật, sát camera | Ảnh thẻ |
@@ -829,7 +816,7 @@ nên đuôi này không phải chi tiết bỏ qua được.
 
 #### Model sống bằng dải mắt–mũi, nên che chỗ đó là hỏng — và đó là ràng buộc hai chiều
 
-Đo trên 44 khung mặt thật mà A0 đang chấm 0,9995, phá dần từng kiểu rồi chấm lại:
+Đo trên 44 khung mặt thật đang được chấm 0,9995, phá dần từng kiểu rồi chấm lại:
 
 | Kiểu phá | 15% | 30% | 45% | 60% |
 |---|---|---|---|---|
@@ -862,62 +849,16 @@ Nghiệm thu phép augment này bằng **APCER**, không chỉ BPCER. Nó nới 
 rủi ro cố hữu là cho tấn công lọt; một bản vá kéo BPCER xuống mà đẩy APCER lên là bản vá
 hỏng.
 
-#### Đích depth phải phủ đúng vùng mặt trong khung teacher đọc
-
-CDCN++ không phân loại, nó hồi quy một bản đồ 32×32. CelebA-Spoof không có kênh depth nên
-đích là một tiên nghiệm: mặt thật là bề mặt có độ nổi, đòn tấn công phẳng nên bản đồ toàn
-số 0. Tiên nghiệm đó chỉ đúng **ở nơi thực sự có mặt**.
-
-Teacher đọc crop **wide**, không đọc crop tight. Hộp mặt chiếm `1 / tỉ_lệ_thật` của mỗi
-cạnh, nên ở trần 2,7× nó chỉ là **14,1% diện tích**; phần còn lại là tường, vai, hậu cảnh.
-
-Một gò Gauss phủ cả khung đặt phần lớn tín hiệu ra ngoài mặt:
-
-| `sigma` | Khối lượng đích nằm trên mặt | Nằm trên nền |
-|---|---|---|
-| 0,28 — gò phủ cả khung | 28,8% | **71,2%** |
-| 0,104 — thu theo cạnh hộp | 86,4% | 13,6% |
-| **mask hộp mặt + gò** | **100%** | 0% |
-
-L1 tính trên toàn bản đồ, nên tỉ lệ khối lượng cũng là tỉ lệ tín hiệu loss. Với gò phủ cả
-khung, **71,2% của loss dạy model về phần nền**: mẫu live bắt bức tường phía sau nhận giá
-trị "bề mặt sống", mẫu spoof bắt chính bức tường đó bằng 0. CelebA-Spoof quay live và spoof
-trong cùng những căn phòng, nên đó là ép phần nền mang nhãn lớp — đúng đường tắt bối cảnh
-mà giám sát depth sinh ra để chặn. Bản đồ PRNet của CDCN gốc bằng 0 ngoài vùng mặt.
-
-**Chốt: đích bằng 0 ngoài hộp mặt, gò nằm trong hộp.** Vị trí hộp biết trước bằng dựng
-hình — luôn ở giữa khung, cạnh bằng `1 / tỉ_lệ_thật` của cạnh khung — nên không cần
-landmark, không cần PRNet, không cần thêm dữ liệu.
-
-**Mặt nạ dựng theo tỉ lệ thật của từng mẫu, không theo một hằng số.** Tỉ lệ wide thay đổi
-theo khoảng cách (mục trên); đo trên ba shard train, hộp mặt chiếm trung bình **0,53** cạnh
-khung với mẫu live và **0,58** với mẫu spoof, không phải 0,37 của trần 2,7×. Dùng một hằng
-số thì gò bị đặt lệch trên phần lớn dữ liệu, và phần lệch đó rơi đúng vào vùng mặt — chỗ
-duy nhất mang tín hiệu phân biệt hai lớp.
-
-**Che mặt nạ mà giữ nguyên cách lấy trung bình thì hỏng theo chiều ngược lại.** Ngoài hộp,
-live và spoof có cùng đích 0, nên toàn bộ phần phân biệt hai lớp dồn vào phần diện tích của
-hộp. Lấy một trung bình trên cả bản đồ sẽ pha loãng nó theo đúng tỉ lệ đó, và bản đồ phẳng
-— đáp án suy biến teacher rơi vào ở epoch đầu — chỉ còn tốn 0,0585 thay vì 0,4160.
-
-Nên **L1 lấy trung bình riêng trong hộp và ngoài hộp rồi cộng lại**: mặt và phòng mỗi bên
-một nửa số phiếu, bất kể hộp to nhỏ ra sao. Đo lại trên đích mới, cái giá của bản đồ phẳng
-trở về **0,4160**, nhưng lần này toàn bộ khoản phạt đến từ vùng mặt.
-
-Hệ quả: `live_reference_mean` phụ thuộc tỉ lệ thật, nên **mọi điểm liveness của teacher đọc
-bằng trung bình bản đồ chỉ so được trong cùng một công thức đích và cùng một tỉ lệ**.
-Student không bị ảnh hưởng: nó xuất logit và đọc bằng softmax, không đi qua hằng số này.
-
 ### Lớp 3 — Nén cấu trúc
 
 | Kỹ thuật | Ghi chú |
 |---|---|
 | **Structured pruning** (channel/filter, tiêu chí BN-γ hoặc L1-norm) | **Chỉ dùng loại này.** Unstructured/sparse pruning **vô nghĩa trên MCU** — không có kernel sparse |
 | Iterative prune → fine-tune | Cắt ≤ 20% kênh mỗi vòng, fine-tune lại, lặp |
-| Khi nào bỏ qua | Cả 3 student đã rất nhỏ; nếu đo thấy accuracy tụt > 1% khi cắt 10% kênh thì **bỏ hẳn bước này** |
+| Khi nào bỏ qua | Cả 3 model đã rất nhỏ; nếu đo thấy accuracy tụt > 1% khi cắt 10% kênh thì **bỏ hẳn bước này** |
 | Layer fusion (Conv+BN+ReLU) | **Bắt buộc** trước khi quantize — TFLite Converter làm tự động, phải mở visualizer xác nhận |
 
-### Lớp 4 — Lượng tử hoá (chi tiết tới từng layer)
+### Lớp 4 — Lượng tử hoá
 
 **Mức chi tiết (granularity)**
 
@@ -926,8 +867,7 @@ Student không bị ảnh hưởng: nó xuất logit và đọc bằng softmax, 
 | Per-tensor weight | 1 scale cho cả layer | ❌ Không dùng — cả 3 model đầy depthwise conv, range giữa các kênh lệch rất lớn |
 | **Per-channel (per-axis) weight** | Mỗi output channel 1 scale | ✅ **Bắt buộc**, TFLite hỗ trợ sẵn, không cần code thêm |
 | Activation | Luôn per-tensor (phân bố đổi theo runtime, không cố định như weight) | Không có lựa chọn khác trên TFLite |
-| **Mixed-precision theo layer** | Giữ FP32/FP16 cho layer nhạy | Chỉ dùng nếu QAT + per-channel vẫn chưa đạt. Ưu tiên giữ float: **conv đầu tiên** và **layer embedding/logits cuối** |
-| INT16 activation × INT8 weight | TFLite có chế độ này | Dự phòng cho MobileFaceNet nếu embedding lệch nhiều; ⚠️ kernel INT16 của ESP-NN hạn chế → chậm hơn |
+| INT16 activation × INT8 weight | TFLite có chế độ này | ❌ Không dùng — kernel INT16 của ESP-NN hạn chế, mất phần lớn tăng tốc |
 
 **Kỹ thuật bổ trợ**
 
@@ -935,12 +875,7 @@ Student không bị ảnh hưởng: nó xuất logit và đọc bằng softmax, 
 |---|---|
 | **Cross-Layer Equalization (CLE)** | Cân bằng range weight giữa các layer liền kề bằng phép scale tương đương — **cứu accuracy depthwise conv rất mạnh**, làm trước PTQ, không cần train lại |
 | **Bias correction / bias absorption** | Bù sai số trung bình do quantize gây ra ở bias — miễn phí, luôn nên làm |
-| **AdaRound** | Học cách làm tròn weight (lên/xuống) thay vì round-to-nearest — nâng PTQ gần bằng QAT mà không cần nhãn |
-| **BRECQ** | Tái tạo theo từng block, mạnh hơn AdaRound; dùng nếu AdaRound chưa đủ |
 | **Chọn thuật toán calibration** | `min-max` (nhạy outlier) vs **`percentile 99.9%`** vs `MSE` vs `KL/entropy` — thử cả 4, chọn theo accuracy. 300–500 ảnh calib là đủ |
-| **QAT với LSQ (Learned Step Size)** | Học luôn scale factor, hội tụ tốt hơn fake-quant thường |
-| **Quantization-aware KD** | Sau khi bật fake-quant, distill lại từ chính bản FP32 của mình (self-distillation) — bù phần lớn sụt accuracy |
-| **Layer-wise sensitivity analysis** | Chạy `tf.lite.experimental.QuantizationDebugger`, lấy RMSE/cosine từng layer → xếp hạng độ nhạy. **Đây là dữ liệu để quyết mixed-precision**, không đoán mò |
 
 ### Lớp 5 — Runtime ESP32-S3
 
@@ -948,7 +883,7 @@ Student không bị ảnh hưởng: nó xuất logit và đọc bằng softmax, 
 |---|---|
 | **Arena ở RAM nội, không PSRAM** | ESP-NN đo person_detection trên S3: **2300 ms → 54 ms** khi bật ESP-NN + arena ở RAM nội. Arena ở PSRAM chậm hơn nhiều lần. 🔬 Đo cả 2 |
 | **Align 16 byte** | `heap_caps_aligned_alloc(16, size, MALLOC_CAP_INTERNAL)` — SIMD của LX7 yêu cầu |
-| **Quy tắc arena** | Xem §3.10 — không phải `max(3)` cũng không phải tổng của 3. Công thức đúng: **Σ tail + max(head)** khi 3 interpreter dùng chung một `MicroAllocator` |
+| **Quy tắc arena** | Xem §3.8 — không phải `max(3)` cũng không phải tổng của 3. Công thức đúng: **Σ tail + max(head)** khi 3 interpreter dùng chung một `MicroAllocator` |
 | **Model nằm trong flash, mmap** | `esp_partition_mmap(models_part, ..., ESP_PARTITION_MMAP_DATA, &ptr)` → trọng số đọc thẳng từ flash qua cache, **tốn 0 byte RAM**. Không nhúng model thành mảng C trong firmware |
 | **`MicroMutableOpResolver` riêng từng model** | Chỉ đăng ký đúng op cần → giảm vài chục KB flash so với `AllOpsResolver` |
 | Cấu hình sdkconfig | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB` · `CONFIG_ESP32S3_DATA_CACHE_64KB` · `CONFIG_SPIRAM_SPEED_80M` · `CONFIG_SPIRAM_MODE_OCT` · `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240` · `CONFIG_COMPILER_OPTIMIZATION_PERF` |
@@ -968,110 +903,41 @@ Student không bị ảnh hưởng: nó xuất logit và đọc bằng softmax, 
 | Accuracy trên thiết bị | Firmware chế độ `bench`: đọc ảnh từ LittleFS → chạy pipeline → trả kết quả qua UART/HTTP cho `ml/bench/device_client.py` so với ground truth |
 | Nhiệt độ + dòng | Đo dòng thật lúc Wi-Fi TX + AI + loa cùng lúc |
 
-### 3.7 Bảng đối chứng A — có teacher hay không có teacher
+### 3.7 Thang lượng tử hoá
 
-Không mặc định KD tốt hơn. **Phải chứng minh bằng số**, và nếu KD không thắng thì chọn bản không teacher — nhẹ hơn, train nhanh hơn, ít phụ thuộc license teacher hơn.
-
-**Ba nhánh chạy độc lập, mỗi nhánh làm đủ bảng này.**
-
-| Arm | Cách train | Ghi vào run |
-|---|---|---|
-| **A0** | Student, random init, **chỉ task loss** trên nhãn thật | `arm=baseline` |
-| **A3** | A0 + **toàn bộ KD của nhánh**: logit + feature + phần đặc thù — localization+FGD (detect) · depth map + contrastive depth (spoof) · RKD (recog) | `arm=kd_full` |
-
-**Đúng hai arm, không có mốc trung gian.** Bảng này trả lời một câu duy nhất: *KD có
-đáng dùng cho nhánh này không*. Đó cũng đúng là câu quyết định model nào đem ship.
-
-Cái bị bỏ phải nói rõ trong báo cáo: bảng **không** trả lời được *thành phần nào của KD
-tạo ra chênh lệch*. Muốn biết điều đó thì phải có các mốc chỉ-logit và chỉ-feature, tức
-gấp đôi số lần train mỗi nhánh. Với ngân sách thời gian hiện tại, đổi lấy phần phân tích
-đó là không đáng — nhưng **không được trình bày kết quả 2 arm như thể đã tách được đóng
-góp của từng thành phần**.
-
-Nếu về sau còn thời gian, thêm arm là chuyện cộng thêm dòng, không phải làm lại: giữ
-nguyên seed và `split.lock` thì mọi arm mới so được thẳng với hai arm đã có.
-
-**Điều kiện so sánh công bằng — sai một cái là bảng vô nghĩa:**
-
-| Phải giống hệt nhau | Được khác |
-|---|---|
-| Kiến trúc student, seed khởi tạo | Hàm loss |
-| `split.lock` (cùng tập train/val/test) | Có nạp teacher hay không |
-| Augment, optimizer, lịch learning rate | Thời gian train mỗi bước |
-| Số epoch, tiêu chí chọn checkpoint tốt nhất | |
-| Tập test cuối để báo cáo | |
-| `train.compile` — bật hay tắt | |
-
-`train.compile` nằm ở cột trái vì `torch.compile` gộp và thay kernel, nên đổi kết quả ở
-chữ số cuối. Hai arm khác nhau ở khoá này thì chênh lệch đo được lẫn với chênh lệch do
-kernel, không tách ra được. Giá trị của nó có trong `config.resolved.yaml` của từng run —
-đó là chỗ để kiểm lại khi đọc bảng.
-
-Arm có KD tốn thêm một lần forward của teacher mỗi bước. Giữ **cùng số epoch** rồi **ghi rõ chi phí chênh lệch** — đó là cách so chuẩn cho báo cáo, đừng cân bằng bằng GPU-hour rồi cho A0 nhiều epoch hơn.
-
-Chạy **3 seed** nếu đủ thời gian, báo cáo trung bình ± độ lệch. Không đủ thì 1 seed và ghi rõ là 1 seed — chênh lệch dưới 0,3% với 1 seed thì không kết luận được gì.
-
-**Quy tắc chọn**: so bằng **accuracy sau INT8 trên tập `test_device`**, không phải accuracy FP32 trên val. Cái chạy trên board mới là cái tính. Chênh lệch dưới ngưỡng nhiễu → chọn A0 vì đơn giản hơn.
-
-Kết quả ghi vào `docs/measurements/<nhánh>/ablation_teacher.md`, và quyết định ghi thành một ADR trong `docs/adr/`.
-
----
-
-### 3.8 Bảng đối chứng B — thang lượng tử hoá
-
-Chạy trên arm thắng ở §3.7. **Đúng 4 mốc**, đi từ rẻ đến đắt, dừng ngay khi đạt ngưỡng.
+**Đúng hai mốc.** Không có mốc nào cần train lại.
 
 | ID | Cấu hình | Vai trò |
 |---|---|---|
 | **Q0** | FP32 | Trần. Mọi con số dưới đây tính theo % so với Q0 |
-| **Q1** | **PTQ**: per-channel weight + calib percentile 99.9% + **CLE** + **bias correction** | Mốc thực dụng — không cần train lại, không cần nhãn |
-| **Q2** | **QAT + LSQ** + quantization-aware KD | Train lại có nhận thức lượng tử hoá |
-| **Q3** | Bản thắng giữa Q1/Q2 + **mixed-precision theo §3.9** | Giữ float vài layer nhạy nhất |
+| **Q1** | **PTQ**: per-channel weight + fold BN + **CLE** + **bias correction** | Mốc đem ship |
 
-Bốn mốc kể một mạch truyện rõ: **trần → rẻ → đắt → mổ từng lớp**. Trả lời được ba câu hỏi mà hội đồng sẽ hỏi: lượng tử hoá mất bao nhiêu, train lại có bù được không, và mổ từng lớp có đáng không.
+**Vì sao chỉ có Q1.** Cả bốn thành phần của nó **không cần train lại, không cần nhãn,
+chạy trong vài phút**, và đều nhắm đúng điểm yếu của depthwise conv — thứ chiếm phần lớn cả
+ba model. Những mốc đắt hơn (QAT, LSQ, mixed-precision theo layer, AdaRound, BRECQ) đều
+đòi train lại hoặc giữ layer float; layer float rơi vào kernel C tham chiếu của TFLM thì
+chậm gấp 10–40 lần, đánh mất đúng thứ mà lượng tử hoá mua được. Với ngân sách của đồ án
+này, đổi lấy chúng là không đáng.
 
-**Vì sao Q1 gộp cả CLE và bias correction** thay vì tách thành nhiều dòng: cả hai đều **không cần train lại, không cần nhãn, chạy trong vài phút**, và đều nhắm đúng điểm yếu của depthwise conv — thứ chiếm phần lớn cả 3 model. Tách ra chỉ làm bảng dài mà không thêm kết luận nào. Ghép vào cho Q1 thành "PTQ tốt nhất khả thi", để phép so với Q2 trả lời đúng câu hỏi đáng hỏi: *QAT có đáng công train lại không*.
-
-**Bốn thuật toán calibration** (min-max · percentile · MSE · entropy) vẫn thử, nhưng là **sweep nội bộ khi dựng Q1**, không phải 4 dòng trong bảng chính. Đổi thuật toán calib chỉ là chạy lại converter, tính bằng phút chứ không phải giờ. Chọn cái thắng, ghi cả 4 số vào phụ lục `docs/measurements/<nhánh>/calib_sweep.md`.
-
-**AdaRound và BRECQ nằm ngoài bảng.** Chỉ đụng tới nếu Q2 cũng không đạt và không muốn hạ độ phân giải — khi đó ghi thành một dòng Q1b riêng.
+**Bốn thuật toán calibration** (min-max · percentile · MSE · entropy) là **sweep nội bộ khi
+dựng Q1**, không phải mốc riêng. Đổi thuật toán calib chỉ là chạy lại converter, tính bằng
+phút. Chọn cái thắng, ghi cả bốn số vào `docs/measurements/<nhánh>/calib_sweep.md`.
 
 Mỗi dòng ghi đủ **5 cột** vào `docs/measurements/<nhánh>/quant_ladder.md`:
 
 | Q | Accuracy (chỉ số của nhánh) | Δ so với Q0 | Kích thước `.tflite` | 🔬 head arena | 🔬 latency trên board |
 |---|---|---|---|---|---|
 
-**Quy tắc chọn**: mốc **rẻ nhất** thoả cả ba ngưỡng — accuracy sụt < 1% so với Q0, arena vừa chỗ đã định ở §3.10, latency đạt ngân sách. Q1 đạt thì dừng, không chạy Q2 cho đẹp bảng.
+**Quy tắc chọn**: Q1 phải thoả cả ba ngưỡng — accuracy sụt < 1% so với Q0, arena vừa chỗ đã
+định ở §3.7, latency đạt ngân sách. Không thoả thì đường đi tiếp là **thu nhỏ hoặc đổi kiến
+trúc rồi train lại**, không phải leo thang lượng tử hoá.
+
+**So bằng accuracy sau INT8 trên tập `test_device`**, không phải accuracy FP32 trên val.
+Cái chạy trên board mới là cái tính.
 
 ---
 
-### 3.9 Đi sâu từng lớp — chọn layer giữ float
-
-Chỉ chạy khi Q1 và Q2 ở §3.8 đều chưa đạt ngưỡng. Đây là mốc Q3.
-
-**Bước 1 — đo độ nhạy từng layer.** `tf.lite.experimental.QuantizationDebugger` chạy trên tập calib, xuất RMSE và cosine similarity giữa đầu ra FP32 và INT8 của **từng layer**:
-
-```
-artifacts/<nhánh>/reports/layer_sensitivity.csv
-layer_name, op_type, rmse, cosine, weight_range_ratio, output_channels
-```
-
-`weight_range_ratio` = max/min của range trọng số giữa các output channel. Tỉ lệ cao ở depthwise conv là dấu hiệu CLE chưa xử lý hết.
-
-**Bước 2 — xếp hạng và quét.** Sắp giảm dần theo RMSE, giữ float `k` layer đầu bảng, quét `k = 0, 1, 2, 3, 5, 8`:
-
-| k | Layer giữ float | Accuracy | Kích thước | 🔬 head arena | 🔬 latency |
-|---|---|---|---|---|---|
-
-**Bước 3 — chọn điểm gãy**, không chọn `k` lớn nhất. Thường `k = 1–2` lấy lại phần lớn accuracy; từ `k = 3` trở đi accuracy tăng không đáng kể mà arena và latency phình nhanh vì layer float không có kernel ESP-NN.
-
-**Dự đoán cần kiểm chứng** (ghi vào báo cáo dù đúng hay sai): layer nhạy nhất thường là **conv đầu tiên** (nhận ảnh thô, range rộng) và **layer embedding/logits cuối** (đầu ra cần độ phân giải cao). Nếu đo ra khác thì đó là kết quả đáng viết.
-
-**Ràng buộc bắt buộc**: mọi layer giữ float phải kiểm bằng `tflite_op_check.py` xem TFLM có kernel không. Layer float rơi vào kernel C tham chiếu thì chậm gấp 10–40 lần, đánh mất toàn bộ lợi ích.
-
----
-
-### 3.10 Arena dùng chung — công thức đúng
+### 3.8 Arena dùng chung — công thức đúng
 
 TFLM chia arena làm hai vùng, và chỉ một trong hai vùng dùng lại được:
 
@@ -1125,42 +991,31 @@ Ba con số `tail` và ba con số `head` phải đo thật ở E8, không suy r
 ### Pipeline train
 
 ```
-[1] Kiến trúc student (activation theo bảng §3 lớp 1, kênh bội 8, kiểm tra op TFLM)
+[1] Kiến trúc (activation theo bảng §3 lớp 1, kênh bội 8, kiểm tra op TFLM)
          │  random init — KHÔNG load .pth có sẵn
          ▼
-[2] Teacher: freeze → sinh soft target (+ feature map + depth map + embedding)
+[2] Train trên nhãn thật (task loss của nhánh, augment mô phỏng OV5640)
          │
          ▼
-[3] KD nhiều giai đoạn:  feature → +logit/localization → +task loss
+[3] Q0 — FP32  ──🔬 đo accuracy gốc, đây là trần để so
          │
          ▼
-[4] Student FP32  ──🔬 đo accuracy gốc (mốc so sánh)
-         │
-         ├─(tùy chọn)→ Structured pruning → fine-tune  ── bỏ nếu tụt >1% khi cắt 10%
-         ▼
-[5] Fold Conv+BN → CLE → Bias correction
+[4] Fold Conv+BN → CLE → Bias correction
          │
          ▼
-[6] Q1 — PTQ per-channel + CLE + bias correction (calib 300 ảnh OV5640)
+[5] Q1 — PTQ per-channel (calib 300 ảnh OV5640)
          │
-    🔬 sụt accuracy < 1%? ──Có──┐
-         │Không                  │
-         ▼                       │
-[7] Q2 — QAT + LSQ + quantization-aware KD
-         │                       │
-    🔬 vẫn chưa đạt?              │
-         ▼                       │
-[8] Q3 — sensitivity analysis → mixed-precision (giữ float layer nhạy nhất)
-         │                       │
-         └───────────┬───────────┘
+    🔬 sụt accuracy < 1% so với Q0?
+         │
+         ├──Không──→ thu nhỏ hoặc đổi kiến trúc, quay về [1]
+         ▼ Có
+[6] INT8 → ONNX → onnx2tf → .tflite
                      ▼
-[9] Student INT8 → ONNX → onnx2tf → .tflite
+[7] tflite_op_check.py — mọi op có trong MicroMutableOpResolver chưa?
                      ▼
-[10] tflite_op_check.py — mọi op có trong MicroMutableOpResolver chưa?
+[8] Gộp 3 .tflite thành 1 image cho partition `models_0` → flash
                      ▼
-[11] Gộp 3 .tflite thành 1 image cho partition `models_0` → flash
-                     ▼
-[12] 🔬 Trên board: arena_used_bytes, latency/op, RAM đỉnh, accuracy ảnh thật
+[9] 🔬 Trên board: arena_used_bytes, latency/op, RAM đỉnh, accuracy ảnh thật
                      ▼
               Đạt? ──Không──► quay lại bước tương ứng (5 / 7 / 1)
                      ▼ Có
@@ -1325,8 +1180,7 @@ payload** phải nằm trên `fast_drive`. Khi bố cục Ultralytics và ảnh 
 
 | Nhánh | Đọc mỗi epoch | Cỡ tập | Dạng đúng | Ổ |
 |---|---|---|---|---|
-| Detection **teacher** | 11.618 ảnh × 4 (mosaic) | 1,5 GB | file lẻ **ảnh gốc** — Ultralytics chỉ nhận dạng này, và nó train ở 640 có scale augment | `fast_drive` |
-| Detection **student** | 11.618 ảnh | **394 MB** | file lẻ **đã thu nhỏ cạnh dài 320** | `fast_drive` |
+| Detection | 11.618 ảnh | **394 MB** | file lẻ **đã thu nhỏ cạnh dài 320** | `fast_drive` |
 | Anti-spoof | **419.935 mặt × 2 tỉ lệ** | 8,2 GB | **shard**, hai tỉ lệ **cùng một record** | `cold_drive` |
 | Recognition | 5.179.510 ảnh | 36 GB | shard — mirror đã sẵn dạng này | `cold_drive` |
 
@@ -1347,7 +1201,7 @@ không phải mở file. Số đo:
 resize mà quên nhãn, cho ra tập dữ liệu vẫn nạp được, vẫn train được, và **sai đúng một hệ
 số ở mọi khuôn mặt** — không có gì báo lỗi.
 
-Cả hai arm A0 và A3 phải dùng **cùng một** tập đã thu nhỏ; đó là điều kiện của §3.7.
+Mọi run của cùng một nhánh phải dùng **cùng một** tập đã thu nhỏ, nếu không thì hai run không so được với nhau.
 
 Detection là nhánh **duy nhất** không đóng shard được, vì Ultralytics đọc file lẻ; may là
 nó cũng là nhánh duy nhất đủ nhỏ để nằm trọn trong page cache. Hai nhánh còn lại vượt xa
@@ -1365,7 +1219,7 @@ record chở nhiều payload: `{key}.tight.jpg` + `{key}.wide.jpg` + `{key}.json
 
 **Resize sẵn chỉ khi vô hại.** Ảnh trong shard được resize về đúng kích thước train *chỉ
 khi* pipeline train không có augment phóng to — nếu có, resize là âm thầm bớt thông tin
-model đáng lẽ được thấy. Teacher detection có mosaic và scale augment ở 640, nên **giữ ảnh
+model đáng lẽ được thấy. Nhánh detect có scale augment, nên **giữ ảnh
 gốc**.
 
 **Student detect cũng giữ ảnh gốc**, vì §3 Lớp 2 đã đưa `crop_scale` `[0.3, 1.0]` vào công
@@ -1419,10 +1273,10 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   ├── detection/widerface_coco/{train.json, val.json}      # box + 5 landmark, format COCO
 │   ├── detection/widerface_yolo/{images/, labels/, data.yaml}  # ★ fast_drive: vua page cache
 │   │                                             #   images/ la HARDLINK toi raw/, anh giu nguyen goc
-│   ├── detection/widerface_shards/{train, val}/  # ★ shard cho student, resize san 160x120
+│   ├── detection/widerface_shards/{train, val}/  # ★ shard cho detect, resize san 160x120
 │   ├── antispoof/celeba_spoof_crops/{train, valid, test}/shard_*.tar
 │   │                                             #   1 record = tight.jpg + wide.jpg + json
-│   │                                             #   ★ hop mat cat bang detection student,
+│   │                                             #   ★ hop mat cat bang nhanh detect,
 │   │                                             #     KHONG dung cot Bbox cua dataset (§3)
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │   │   └── record_counts.json                # ★ so ban ghi moi split giu lai, sinh tu dong
@@ -1456,7 +1310,7 @@ sha256:
   WIDER_train.zip: 3fedf70df8c1a2...
 counts: { images: 32203, faces: 393703 }
 notes: dùng annotation 5 landmark của RetinaFace, KHÔNG dùng label box gốc
-consumed_by: [detection/teacher, detection/student]
+consumed_by: [detection]
 ```
 
 **`SPLIT.md`** — mỗi split một file:
@@ -1481,9 +1335,9 @@ ml/
 │
 ├── configs/
 │   ├── common/{paths.yaml, hardware.yaml}
-│   ├── detection/{teacher_yolo26m_pose.yaml, student_yunet.yaml, kd.yaml, quant.yaml}
-│   ├── antispoof/  (4 file cùng tên)
-│   └── recognition/(4 file cùng tên)
+│   ├── detection/{yunet.yaml, quant.yaml}
+│   ├── antispoof/  (2 file cùng tên)
+│   └── recognition/(2 file cùng tên)
 │
 ├── src/facepipe/
 │   ├── core/                              # ── HẠ TẦNG TRAIN: 3 nhánh cùng import ──
@@ -1491,8 +1345,6 @@ ml/
 │   │   ├── registry.py                    # @register("yunet") → gọi model bằng tên trong YAML
 │   │   ├── config.py                      # pydantic schema + merge YAML + override CLI
 │   │   ├── trainer.py                     # vòng train chung: AMP, EMA, grad-clip, ckpt, resume
-│   │   ├── distiller.py                   # TeacherWrapper + DistillLoss trừu tượng
-│   │   ├── hooks.py                       # forward hook lấy feature map cho feature-KD
 │   │   ├── run_dir.py                     # ★ tạo thư mục run, ghi config.resolved + env + split.lock
 │   │   ├── scheduler.py  ├── metrics.py  ├── logger.py  └── seed.py
 │   │
@@ -1517,70 +1369,50 @@ ml/
 │   │   └── loaders.py
 │   │
 │   ├── tasks/                             # ── BA NHÁNH, MỖI NHÁNH MỘT THƯ MỤC ĐỘC LẬP ──
-│   │   │   Cùng khuôn: README · teacher/ · student/ · losses/ · postproc/
-│   │   │              · data.py · quant.py · train_kd.py · eval.py
+│   │   │   Cùng khuôn: README · model/ · losses/ · postproc/
+│   │   │              · data.py · quant.py · train.py · eval.py
 │   │   │   ★ = file phải khớp 1:1 với bản C ở firmware, kiểm bằng contracts/golden/
 │   │   │
 │   │   ├── detection/
-│   │   │   ├── README.md                  # teacher gì, student gì, metric gì, lệnh chạy
-│   │   │   ├── teacher/
-│   │   │   │   ├── yolo26_pose_wrapper.py # bọc Ultralytics → interface teacher chung
-│   │   │   │   ├── finetune_widerface.py  # COCO-pretrain → WIDER FACE + 5 landmark
-│   │   │   │   └── export_soft_target.py  # cache logit + feature map ra .npz shard
-│   │   │   ├── student/
+│   │   │   ├── README.md                  # kiến trúc gì, metric gì, lệnh chạy
+│   │   │   ├── model/
 │   │   │   │   ├── yunet.py               # backbone + neck
 │   │   │   │   ├── head.py                # 3 đầu ra: cls / bbox / 5 landmark
 │   │   │   │   ├── anchors.py             # ★ sinh prior box, khớp anchors trong decode.cpp
 │   │   │   │   └── blocks.py              # conv-bn-relu6, depthwise sep, kênh bội 8
 │   │   │   ├── losses/
-│   │   │   │   ├── kd_logit.py            # KL trên nhánh phân loại
-│   │   │   │   ├── kd_localization.py     # distill cả box VÀ 5 landmark
-│   │   │   │   ├── kd_feature_fgd.py      # feature imitation có mặt nạ quanh GT
 │   │   │   │   └── task_loss.py           # focal + IoU + landmark L1 trên nhãn thật
 │   │   │   ├── postproc/
 │   │   │   │   ├── decode.py              # ★ ai_engine/src/detection/decode.cpp
 │   │   │   │   ├── nms.py                 # ★ ai_engine/src/detection/nms.cpp
 │   │   │   │   └── emit_golden.py         # → contracts/golden/detection/{decode,nms}/
 │   │   │   ├── data.py                    # dataloader + augment riêng nhánh
-│   │   │   ├── quant.py                   # tập calib + layer giữ float riêng nhánh
-│   │   │   ├── train_kd.py                # điểm vào duy nhất để train nhánh này
+│   │   │   ├── quant.py                   # tập calib riêng nhánh
+│   │   │   ├── train.py                   # điểm vào duy nhất để train nhánh này
 │   │   │   └── eval.py                    # WIDER AP + NMSE landmark trên ảnh OV5640
 │   │   │
 │   │   ├── antispoof/
 │   │   │   ├── README.md
-│   │   │   ├── teacher/
-│   │   │   │   ├── cdcnpp.py              # kiến trúc CDCN++ (gồm MAFM)
-│   │   │   │   ├── depth_gt.py            # sinh depth map GT cho ảnh live
-│   │   │   │   ├── train_teacher.py       # CelebA-Spoof, có depth supervision
-│   │   │   │   └── export_soft_target.py  # cache logit + depth map 32×32
-│   │   │   ├── student/
+│   │   │   ├── model/
 │   │   │   │   ├── minifasnet_v2_se.py
 │   │   │   │   └── blocks.py              # ConvBnAct(relu); SE gate HardSigmoid ReLU6(x+3)/6
 │   │   │   ├── losses/
-│   │   │   │   ├── kd_logit.py
-│   │   │   │   ├── kd_depth_map.py        # L1 pixel-wise trên depth 32×32
-│   │   │   │   ├── contrastive_depth_loss.py
 │   │   │   │   └── task_loss.py           # BCE live/spoof
 │   │   │   ├── postproc/
 │   │   │   │   ├── preproc.py             # ★ ai_engine/src/antispoof/preproc.cpp
 │   │   │   │   └── emit_golden.py         # → contracts/golden/antispoof/preproc/
 │   │   │   ├── data.py                    # patch crop 1.0×/2.7×, augment in ảnh + màn hình
 │   │   │   ├── quant.py
-│   │   │   ├── train_kd.py
+│   │   │   ├── train.py
 │   │   │   └── eval.py                    # ACER, HTER cross-dataset, ROC tập tự thu
 │   │   │
 │   │   └── recognition/
 │   │       ├── README.md
-│   │       ├── teacher/
-│   │       │   ├── r50_wf600k.py          # nạp arcface_torch R50, freeze
-│   │       │   └── export_embedding.py    # cache embedding 512-D ra .npy memmap
-│   │       ├── student/
+│   │       ├── model/
 │   │       │   ├── mobilefacenet.py
 │   │       │   └── blocks.py              # ConvBnAct(relu), giữ CLE 48/48 cặp conv
 │   │       ├── losses/
-│   │       │   ├── arcface.py             # margin loss trên nhãn thật
-│   │       │   ├── kd_embedding.py        # cosine + L2 với embedding teacher
-│   │       │   └── kd_relation_rkd.py     # giữ khoảng cách + góc giữa các cặp trong batch
+│   │       │   └── arcface.py             # margin loss trên nhãn thật
 │   │       ├── postproc/
 │   │       │   ├── align.py               # ★ ai_engine/src/recognition/align.cpp
 │   │       │   ├── l2norm.py              # ★ ai_engine/src/recognition/l2norm.cpp
@@ -1588,15 +1420,11 @@ ml/
 │   │       │   └── emit_golden.py         # → contracts/golden/recognition/{align,l2norm,cosine}/
 │   │       ├── data.py                    # webdataset Glint360K + sampler theo ID
 │   │       ├── quant.py
-│   │       ├── train_kd.py
+│   │       ├── train.py
 │   │       └── eval.py                    # LFW/CFP-FP/AgeDB + TAR@FAR tập nhân viên
 │   │
 │   ├── compress/
-│   │   ├── prune/{bn_gamma.py, l1_filter.py, finetune.py}
-│   │   ├── quant/{fold_bn.py, cle.py, bias_correction.py, adaround.py,
-│   │   │          calibrator.py, ptq_tflite.py, qat_lsq.py}
-│   │   ├── sensitivity/{layer_sensitivity.py, mixed_precision_planner.py}
-│   │   └── report/quant_debug.py
+│   │   └── quant/{fold_bn.py, cle.py, bias_correction.py, ptq_tflite.py}
 │   │
 │   └── export/
 │       ├── to_onnx.py  ├── onnx_to_tf.py  ├── tf_to_tflite_int8.py
@@ -1618,9 +1446,8 @@ ml/
 │   │                                      #   chinh no, co tran so lan de khong lap vo han
 │   ├── 00_fetch_raw.sh          ├── 01_prepare_interim.sh   ├── 02_make_splits.sh
 │   │                            #   ★ 01 nhanh antispoof can checkpoint detection
-│   │                            #     da train: cat mat bang student, khong bang Bbox (§3)
-│   ├── 10_train_teacher_det.sh  ├── 11_train_teacher_spoof.sh
-│   ├── 20_kd_det.sh   ├── 21_kd_spoof.sh   ├── 22_kd_recog.sh
+│   │                            #     da train: cat mat bang detect, khong bang Bbox (§3)
+│   ├── 20_train_det.sh ├── 21_train_spoof.sh ├── 22_train_recog.sh
 │   ├── 30_quantize.sh ├── 40_export.sh     ├── 41_emit_golden.sh
 │   └── 50_pack_and_flash.sh
 │
@@ -1634,17 +1461,16 @@ ml/
 │   │   │   ├── ckpt/{best.pth, last.pth}
 │   │   │   ├── metrics.json
 │   │   │   └── tb/
-│   │   ├── teacher/                       # weight teacher tải về — đầu vào, không phải kết quả run
-│   │   ├── onnx/{student_fp32.onnx, student_qdq.onnx}
+│   │   ├── onnx/{model_fp32.onnx, model_qdq.onnx}
 │   │   ├── tf/<tên>/                      # SavedModel, chặng giữa onnx2tf → TFLiteConverter
 │   │   │                                  # ↑ sinh lại được, giữ để đổi cấu hình quantize
 │   │   │                                  #   mà không phải chạy lại onnx2tf
 │   │   ├── tflite/{yunet_fp32.tflite, yunet_int8.tflite}
 │   │   ├── golden/                        # vector vàng trước khi copy sang contracts/
-│   │   └── reports/{quant_debug.html, layer_sensitivity.csv, op_check.txt}
+│   │   └── reports/op_check.txt
 │   │                                      # ↑ sinh lại được. Số đo giữ lại: docs/measurements/
 │   │      Tên trên là của **một** model đã chốt. Khi đang so nhiều checkpoint thì gắn
-│   │      thêm hậu tố giờ của run: `student_fp32_0944.onnx`, `minifasnet_int8_0944.tflite`.
+│   │      thêm hậu tố giờ của run: `model_fp32_0944.onnx`, `minifasnet_int8_0944.tflite`.
 │   ├── antispoof/                         # ↑ y hệt khuôn trên
 │   ├── recognition/                       # ↑ y hệt khuôn trên
 │   └── device/                            # kết quả đo trên board, dùng chung 3 nhánh
@@ -1656,7 +1482,7 @@ ml/
 ├── .python-version                        # pin bản Python cho uv
 └── tests/
     ├── conftest.py                          # fixture dùng chung
-    ├── test_core_{config,registry,run_dir,trainer,distiller,isolation}.py
+    ├── test_core_{config,registry,run_dir,trainer,isolation}.py
     ├── test_prepare.py                      # bộ chuyển raw → interim
     └── {test_splits.py, test_transforms.py, test_postproc_parity.py}
 ```
@@ -1667,25 +1493,25 @@ ml/
 
 | Ở `core/` — viết 1 lần, 3 nhánh cùng dùng | Ở `tasks/<nhánh>/` — mỗi nhánh một bản riêng |
 |---|---|
-| Vòng lặp train: AMP, EMA, grad-clip, resume | Kiến trúc student |
-| Lưu/khôi phục checkpoint, tạo thư mục run | Cách nạp và freeze teacher |
-| Nạp + merge YAML, override từ CLI | Hàm loss (localization KD · depth-map KD · RKD) |
+| Vòng lặp train: AMP, EMA, grad-clip, resume | Kiến trúc từng nhánh |
+| Lưu/khôi phục checkpoint, tạo thư mục run | Dataloader và augment riêng nhánh |
+| Nạp + merge YAML, override từ CLI | Hàm loss của nhánh (focal+IoU · BCE · ArcFace) |
 | Cố định seed, ghi `env.txt`, `split.lock` | Augment và dataloader riêng nhánh |
 | Ghi tensorboard + wandb | Chỉ số đánh giá (WIDER AP · HTER · TAR@FAR) |
-| Hook lấy feature map trung gian | Hậu xử lý ★ phải khớp firmware |
+| | Hậu xử lý ★ phải khớp firmware |
 
 **Luật**: `core/` không được `import` bất cứ thứ gì từ `tasks/`, và không được chứa tên nhánh. Thấy `if task == "detection"` trong `core/` là code đặt sai chỗ — đẩy xuống `tasks/detection/`. Đây đúng là luật của `ai_engine/src/core/` ở firmware (§4.5.6): cùng một nguyên tắc, hai ngôn ngữ.
 
 Cần thứ `core/` chưa có: chỉ 1 nhánh cần → để trong `tasks/<nhánh>/`. Từ 2 nhánh trở lên cần và không dính đặc thù nhánh nào → nâng lên `core/`, giữ nguyên giao diện, **không** thêm nhánh `if`.
 
-`compress/` và `export/` cũng là hạ tầng: chúng giữ **thuật toán** (CLE, AdaRound, LSQ, convert). Mỗi nhánh chỉ cấp tham số riêng qua `tasks/<nhánh>/quant.py` — tập calib, danh sách layer giữ float, danh sách op cần kiểm.
+`compress/` và `export/` cũng là hạ tầng: chúng giữ **thuật toán** (fold BN, CLE, bias correction, convert). Mỗi nhánh chỉ cấp tham số riêng qua `tasks/<nhánh>/quant.py` — tập calib và danh sách op cần kiểm.
 
 ##### Ba lệnh chạy song song, không thay thế nhau
 
 ```bash
-python -m facepipe.tasks.detection.train_kd    --cfg configs/detection/kd.yaml
-python -m facepipe.tasks.antispoof.train_kd    --cfg configs/antispoof/kd.yaml
-python -m facepipe.tasks.recognition.train_kd  --cfg configs/recognition/kd.yaml
+python -m facepipe.tasks.detection.train    --cfg configs/detection/yunet.yaml
+python -m facepipe.tasks.antispoof.train    --cfg configs/antispoof/minifasnet.yaml
+python -m facepipe.tasks.recognition.train  --cfg configs/recognition/mobilefacenet.yaml
 ```
 
 Thứ tự ở §8 là thứ tự **bắt tay vào việc**, không phải thứ tự thay thế. Xong giai đoạn 5 thì cả ba nhánh cùng nằm trong repo và `50_pack_and_flash.sh` gộp cả ba `.tflite` vào một `models.bin`.
@@ -1694,7 +1520,7 @@ Thứ tự ở §8 là thứ tự **bắt tay vào việc**, không phải thứ
 
 ##### Mọi lần train phải dừng và chạy tiếp được
 
-Fine-tune teacher chạy hàng chục giờ trên một máy laptop dùng chung. Một lần mất
+Train một nhánh chạy hàng chục giờ trên một máy laptop dùng chung. Một lần mất
 điện, một lần cần máy làm việc khác, một cú đọc đĩa bị rớt — không cái nào được
 phép bắt train lại từ epoch 0. **Điểm vào train nào chạy quá một giờ thì bắt buộc
 có đường dừng và chạy tiếp.**
@@ -1970,7 +1796,7 @@ public:
 
 **Interface không có `arena_used()`.** Khi hai model dùng chung một `MicroAllocator`, `interpreter->arena_used_bytes()` trả về mức dùng của **cả allocator**, giống hệt nhau ở cả hai — một con số trông như của riêng model nhưng không phải. Mức dùng thật của từng arena đọc ở `Arena::used()`, và `ai_engine_arena_stats()` đưa nó ra ngoài.
 
-**`init` nhận `Arena&` chứ không nhận `(size, caps)`.** Model tự cấp buffer riêng thì mỗi model một `MicroAllocator`, mà §3.10 đòi ngược lại: detect và spoof phải dùng **chung** một allocator mới chồng được tail và dùng chung head. `Arena` sở hữu buffer, model chỉ mượn.
+**`init` nhận `Arena&` chứ không nhận `(size, caps)`.** Model tự cấp buffer riêng thì mỗi model một `MicroAllocator`, mà §3.8 đòi ngược lại: detect và spoof phải dùng **chung** một allocator mới chồng được tail và dùng chung head. `Arena` sở hữu buffer, model chỉ mượn.
 
 **`input`/`output` có chỉ số.** Anti-spoof đọc hai crop, YuNet trả 9 tensor (3 đầu × 3 stride), nên một `input()` trơ không đủ diễn đạt.
 
@@ -2168,7 +1994,7 @@ components/ai_engine/
 |---|---|---|
 | `AI_ARENA_FAST_KB` | 224 | `arena_fast` riêng detect. E8-T7 đo detect dùng 189.628 B |
 | `AI_ARENA_BIG_KB` | 1536 | `arena_big`, spoof + recog dùng chung. Đo 823.148 B |
-| `AI_ARENA_FAST_INTERNAL` | n | `n` = `arena_fast` ở PSRAM; `y` = xin SRAM nội trước (§3.10) |
+| `AI_ARENA_FAST_INTERNAL` | n | `n` = `arena_fast` ở PSRAM; `y` = xin SRAM nội trước (§3.8) |
 
 Xin `arena_fast` ở SRAM nội mà không đủ chỗ thì `Arena` lùi xuống PSRAM và **log cảnh báo** kèm khối liền lớn nhất còn lại — chạy chậm còn hơn không chạy, nhưng phải thấy được là đã lùi.
 
@@ -2836,7 +2662,7 @@ buộc là DMA nội, nên không có cách nào giữ `arena_fast` ở SRAM mà
 Hệ số width cho recognition đã hạ `arena_big` từ 823 KB xuống 476 KB đo thật; `arena_fast`
 chỉ nhỏ đi khi chính detect nhỏ đi.
 
-Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là dải liền mạch (§3.10). Phải đo lại ở E8-T9 khi Wi-Fi và LVGL đã lên.
+Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là dải liền mạch (§3.8). Phải đo lại ở E8-T9 khi Wi-Fi và LVGL đã lên.
 
 ---
 
@@ -2903,7 +2729,7 @@ Firmware nền chạy song song với ba nhánh model, không phải đợi.
 
 ## Nguồn tham khảo
 
-**Model**: [YOLO26 docs](https://docs.ultralytics.com/models/yolo26) · [YOLO26 paper](https://arxiv.org/abs/2606.03748) · [YuNet paper](https://link.springer.com/article/10.1007/s11633-023-1423-y) · [libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · [OpenCV Zoo YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) · [CDCN](https://github.com/ZitongYu/CDCN) · [Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) · [InsightFace model_zoo](https://github.com/deepinsight/insightface/tree/master/model_zoo) · [arcface_torch](https://github.com/deepinsight/insightface/tree/master/recognition/arcface_torch) · [MobileFaceNet paper](https://arxiv.org/abs/1804.07573)
+**Model**: [YuNet paper](https://link.springer.com/article/10.1007/s11633-023-1423-y) · [libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · [OpenCV Zoo YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) · [Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) · [arcface_torch](https://github.com/deepinsight/insightface/tree/master/recognition/arcface_torch) · [MobileFaceNet paper](https://arxiv.org/abs/1804.07573)
 
 **Dữ liệu — nguồn thật đang dùng** (trang chủ của dataset ở §1.2): [WIDER FACE](https://huggingface.co/datasets/wider_face) · [RetinaFace 5-landmark](https://github.com/deepinsight/insightface/tree/master/detection/retinaface) · [CelebA-Spoof](https://huggingface.co/datasets/Ar4ikov/celebA_spoof) · [NUAA](https://huggingface.co/datasets/akahana/anti-spoofing-nuaaaa) · [UniqueData live](https://huggingface.co/datasets/UniqueData/anti-spoofing_Real) · [UniqueData replay](https://huggingface.co/datasets/UniqueData/anti-spoofing_replay) · [AxonData masks](https://huggingface.co/datasets/AxonData/face-anti-spoofing-dataset) · [MS1MV3](https://huggingface.co/datasets/gaunernst/ms1mv3-recordio) · [Glint360K](https://huggingface.co/datasets/gaunernst/glint360k-wds-gz) · [benchmark nhận diện](https://huggingface.co/datasets/gaunernst/face-recognition-eval)
 
