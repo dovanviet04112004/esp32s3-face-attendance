@@ -1774,7 +1774,7 @@ public:
         └───┬───────┬───────┬──┘
             │       │       │
      DetectModel SpoofModel RecogModel
-     op:6        op:7       op:6         ← MicroMutableOpResolver<N> riêng từng lớp
+     op:6        op:7       op:4         ← MicroMutableOpResolver<N> riêng từng lớp
      +decode()   +score()   +l2norm()
      +nms()
 ```
@@ -1975,7 +1975,7 @@ components/ai_engine/
 │   └── recognition/
 │       ├── recog_model.hpp                # lớp + op của nhánh, không ra khỏi thư mục này
 │       ├── recog_model.cpp
-│       ├── ops.cpp                        # MicroMutableOpResolver<6>, đếm trên graph thật
+│       ├── ops.cpp                        # MicroMutableOpResolver<4>, đếm trên graph thật
 │       ├── align.cpp                      # affine warp 5 landmark → 113×113
 │       └── l2norm.cpp
 └── test_apps/                             # chuẩn ESP-IDF, host-side chạy bằng pytest-embedded
