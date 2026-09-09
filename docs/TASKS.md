@@ -308,6 +308,7 @@ duyệt, rồi mới sửa.
 | E14-T3 | Chương kết quả: bảng số từ `docs/measurements/` | Mọi số có nguồn đo | E13-T6 |
 | E14-T4 | Sơ đồ, ảnh sản phẩm, video demo | Đủ hình | E13-T6 |
 | E14-T5 | Rà license research-only, ghi rõ trong báo cáo | Có mục riêng | E14-T2 |
+| **E14-T7** | **Mục "lỗi chỉ phần cứng thật mới lộ"** — `docs/thesis/loi-tim-thay-tren-board.md` đã có bản đầu cho hai lỗi 09/09: cuộc đua khởi tạo bus I2C, và giả định phân cực chân ngắt. Ghi tiếp mỗi lỗi cùng loại tìm được về sau | Mỗi lỗi có hiện tượng, giả thuyết đã loại, mốc đo, cách sửa, bằng chứng trên board | — |
 | E14-T6 | Slide bảo vệ + tập trình bày | Xong | E14-T3, E14-T4 |
 
 ---
