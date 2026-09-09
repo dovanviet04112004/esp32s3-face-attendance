@@ -23,7 +23,7 @@ static esp_err_t spi_bus_up(void)
     const spi_bus_config_t cfg = {
         .sclk_io_num = APP_LCD_SCK_GPIO,
         .mosi_io_num = APP_LCD_MOSI_GPIO,
-        .miso_io_num = -1,
+        .miso_io_num = APP_LCD_SDO_GPIO,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = APP_LCD_H_RES * APP_LCD_V_RES * sizeof(uint16_t),

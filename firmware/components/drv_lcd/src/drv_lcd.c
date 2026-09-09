@@ -3,14 +3,18 @@
 #include "app_config.h"
 #include "app_err.h"
 #include "bsp_board.h"
+#include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "driver/spi_master.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_st7796.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 static const char *TAG = "drv_lcd";
 
@@ -25,6 +29,19 @@ static const char *TAG = "drv_lcd";
 #define BOUNCE_BYTES (BOUNCE_PIXELS * (int)sizeof(uint16_t))
 #define BOUNCE_COUNT 2
 #define BOUNCE_WAIT_MS 200
+#define CMDSET_REG 0xF0
+#define CMDSET_UNLOCK_A 0xC3
+#define CMDSET_UNLOCK_B 0x96
+#define CMDSET_LOCK_A 0x3C
+#define CMDSET_LOCK_B 0x69
+#define FRAME_RATE_REG 0xB1
+#define FRAME_RATE_DIVA 0x81
+#define FRAME_RATE_RTNA 0x1F
+#define SCANLINE_REG 0x45
+#define SCANLINE_UNITS 242
+#define SCANLINE_LEAD 220
+#define SYNC_TICK_CEILING 60
+#define CS_FRAME_GAP_US 1
 
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_panel_io_handle_t s_io;
@@ -33,6 +50,7 @@ static SemaphoreHandle_t s_bounce_free;
 static int s_next;
 static uint16_t s_column_map[APP_LCD_H_RES];
 static int s_map_width;
+static spi_device_handle_t s_reader;
 
 static esp_err_t backlight_up(void)
 {
@@ -66,10 +84,101 @@ static bool bounce_sent(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_dat
     return woken == pdTRUE;
 }
 
+static esp_err_t chip_select_up(void)
+{
+    const gpio_config_t cs = {
+        .pin_bit_mask = 1ULL << APP_LCD_CS_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+    };
+    APP_RETURN_ON_ERR(gpio_config(&cs), TAG, "cs");
+    return gpio_set_level(APP_LCD_CS_GPIO, 0);
+}
+
+static esp_err_t reader_up(void)
+{
+    // The bus leaves this pin's output driver on, and an esp driving it is an
+    // esp the panel cannot pull low: every read comes back all ones.
+    APP_RETURN_ON_ERR(gpio_set_direction(APP_LCD_SDO_GPIO, GPIO_MODE_INPUT), TAG, "sdo as input");
+    const spi_device_interface_config_t cfg = {
+        .clock_speed_hz = APP_LCD_READ_HZ,
+        .mode = 0,
+        .spics_io_num = GPIO_NUM_NC,
+        .queue_size = 1,
+        .flags = SPI_DEVICE_HALFDUPLEX,
+    };
+    return spi_bus_add_device(bsp_lcd_spi_host(), &cfg, &s_reader);
+}
+
+static void slow_the_scan(void)
+{
+    esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_UNLOCK_A}, 1);
+    esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_UNLOCK_B}, 1);
+    esp_lcd_panel_io_tx_param(s_io, FRAME_RATE_REG,
+                              (uint8_t[]){FRAME_RATE_DIVA, FRAME_RATE_RTNA}, 2);
+    esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_A}, 1);
+    esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_B}, 1);
+}
+
+static int scan_line(void)
+{
+    uint8_t raw[2] = {0};
+    // esp_lcd disables the dc output driver after each of its transactions, so
+    // a level set here would float and the panel would take the command as data.
+    gpio_set_direction(APP_LCD_DC_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(APP_LCD_CS_GPIO, 1);
+    esp_rom_delay_us(CS_FRAME_GAP_US);
+    gpio_set_level(APP_LCD_CS_GPIO, 0);
+    gpio_set_level(APP_LCD_DC_GPIO, 0);
+    spi_transaction_t cmd = {
+        .flags = SPI_TRANS_USE_TXDATA,
+        .length = 8,
+        .tx_data = {SCANLINE_REG},
+    };
+    esp_err_t err = spi_device_polling_transmit(s_reader, &cmd);
+    if (err == ESP_OK) {
+        gpio_set_level(APP_LCD_DC_GPIO, 1);
+        spi_transaction_t rd = {
+            .flags = SPI_TRANS_USE_RXDATA,
+            .rxlength = 16,
+        };
+        err = spi_device_polling_transmit(s_reader, &rd);
+        raw[0] = rd.rx_data[0];
+        raw[1] = rd.rx_data[1];
+    }
+    gpio_set_level(APP_LCD_CS_GPIO, 1);
+    esp_rom_delay_us(CS_FRAME_GAP_US);
+    gpio_set_level(APP_LCD_CS_GPIO, 0);
+    return err == ESP_OK ? (((raw[0] & 0x03) << 8) | raw[1]) : -1;
+}
+
+static void drain_bounce(void)
+{
+    for (int i = 0; i < BOUNCE_COUNT; ++i) {
+        xSemaphoreTake(s_bounce_free, pdMS_TO_TICKS(BOUNCE_WAIT_MS));
+    }
+    for (int i = 0; i < BOUNCE_COUNT; ++i) {
+        xSemaphoreGive(s_bounce_free);
+    }
+}
+
+static void wait_for_scan_lead(void)
+{
+    drain_bounce();
+    for (int tick = 0; tick < SYNC_TICK_CEILING; ++tick) {
+        const int line = scan_line();
+        // A reading past the counter's range means the sync line is not
+        // answering, and an unsynced frame beats a stalled preview.
+        if (line < 0 || line > SCANLINE_UNITS || line >= SCANLINE_LEAD) {
+            return;
+        }
+        vTaskDelay(1);
+    }
+}
+
 static esp_err_t panel_up(void)
 {
     const esp_lcd_panel_io_spi_config_t io_cfg = {
-        .cs_gpio_num = APP_LCD_CS_GPIO,
+        .cs_gpio_num = GPIO_NUM_NC,
         .dc_gpio_num = APP_LCD_DC_GPIO,
         .spi_mode = 0,
         .pclk_hz = APP_LCD_SPI_HZ,
@@ -98,6 +207,9 @@ static esp_err_t panel_up(void)
     APP_RETURN_ON_ERR(esp_lcd_panel_invert_color(s_panel, false), TAG, "invert");
     APP_RETURN_ON_ERR(esp_lcd_panel_swap_xy(s_panel, false), TAG, "swap xy");
     APP_RETURN_ON_ERR(esp_lcd_panel_mirror(s_panel, true, false), TAG, "mirror");
+    // One frame takes longer to write than the scan takes to cross it, and the
+    // writer only stays ahead if the scan is the slower of the two (KEHOACH 2.3A).
+    slow_the_scan();
     return esp_lcd_panel_disp_on_off(s_panel, true);
 }
 
@@ -118,10 +230,12 @@ esp_err_t drv_lcd_init(void)
             return ESP_ERR_NO_MEM;
         }
     }
+    APP_RETURN_ON_ERR(chip_select_up(), TAG, "chip select");
     APP_RETURN_ON_ERR(backlight_up(), TAG, "backlight");
     APP_RETURN_ON_ERR(panel_up(), TAG, "panel");
-    ESP_LOGI(TAG, "st7796 up at %dx%d, %d bounce of %d B", APP_LCD_H_RES, APP_LCD_V_RES,
-             BOUNCE_COUNT, BOUNCE_BYTES);
+    APP_RETURN_ON_ERR(reader_up(), TAG, "scanline reader");
+    ESP_LOGI(TAG, "st7796 up at %dx%d, %d bounce of %d B, scanline reads %d", APP_LCD_H_RES,
+             APP_LCD_V_RES, BOUNCE_COUNT, BOUNCE_BYTES, scan_line());
     return ESP_OK;
 }
 
@@ -198,6 +312,7 @@ esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height)
         return ESP_ERR_INVALID_SIZE;
     }
     build_column_map(src_width, taken_width);
+    wait_for_scan_lead();
     const int rows_per_strip = BOUNCE_PIXELS / APP_LCD_H_RES;
     const uint16_t *src = pixels;
 

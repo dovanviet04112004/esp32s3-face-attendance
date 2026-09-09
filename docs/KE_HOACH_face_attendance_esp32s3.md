@@ -252,11 +252,52 @@ cách đọc sai đó là nối ngõ ra ngắt vào đường SDA và làm chế
 | GND | GND | | |
 | SCL / SCK | **GPIO42** | SPI CLK | **80 MHz** — ở 40 MHz một khung 307 KB mất 61 ms, màn hiện hai khoảnh khắc cùng lúc và mặt di chuyển thấy rõ vạch |
 | SDA / MOSI | **GPIO41** | SPI MOSI | |
-| SDO / MISO | — | không nối | Không cần đọc ngược từ panel |
+| SDO / MISO | **GPIO43** | Đọc thanh ghi panel | Chỉ dùng cho `GET_SCANLINE` để khoá pha (xem dưới). Đọc **3 MHz**: dưới 2 MHz ESP32 lấy mẫu sai, trên 6,6 MHz vượt chu kỳ đọc 150 ns của datasheet |
 | CS | **GPIO47** | Chip select | |
 | DC / RS | **GPIO39** | Data / Command | Chân thường. Không đặt trên GPIO45: board LCD hay có pull-up ở DC, mà GPIO45 là strapping VDD_SPI — kéo lên lúc reset là chọn flash 1.8 V và board không boot |
 | RES | **GPIO40** | Reset panel | (nguyên là SD_DATA — trống vì không dùng microSD) |
 | BLK | **GPIO21** | Backlight | LEDC PWM 5 kHz. Nếu backlight > 40 mA → qua MOSFET N (AO3400) |
+
+**Khoá pha để preview không bị xé hình.** Panel quét lại bộ nhớ ảnh của nó theo nhịp riêng,
+không đồng bộ với lúc firmware ghi. Đo trên board: một khung 320×480 RGB565 (307 KB) mất
+**31,7 ms** để ghi ở 80 MHz, còn chu kỳ quét mặc định là **17,5 ms** — nên trong lúc ghi,
+tia quét lướt qua vùng đang ghi ~1,8 lần và mỗi lần để lại một vết cắt ngang giữa phần khung
+mới và phần khung cũ. Mặt người di chuyển thấy rõ.
+
+Điều kiện để hết hẳn: **con trỏ ghi phải chạy trước tia quét trọn cả khung**. Cần hai thứ:
+
+| Điều kiện | Cách đạt |
+|---|---|
+| Chu kỳ quét **dài hơn** thời gian ghi | `FRMCTR1 (0xB1) = 0x81 0x1F` → **42,98 ms** đo được (23,26 Hz) |
+| Bắt đầu ghi ngay trước lúc tia quét về dòng 0 | Đọc `GET_SCANLINE (0x45)` qua `SDO` mỗi 1 ms, thấy bộ đếm vào đoạn **220…241** thì ghi |
+
+Bộ đếm của `0x45` chạy **0…241**, mỗi đơn vị bằng 2 dòng vật lý. Bắt đầu ở đoạn cuối chứ
+không đợi đúng lúc cuộn vòng: con trỏ ghi xuất phát từ dòng 0 trong khi tia quét còn đang
+quét 44 dòng cuối, nên có đà trước; tia quét cuộn về 0 rồi đuổi theo với tốc độ 90 µs/dòng
+so với 66 µs/dòng của con trỏ ghi — ghi nhanh hơn quét **36%**, không bao giờ bị bắt kịp.
+Đọc `0x45` không được thì ghi ngay như không có khoá pha: một khung bị xé tốt hơn một preview
+đứng hình.
+
+**Đọc thanh ghi qua `esp_lcd` cần một điều `esp_lcd` không nói ra.** Sau mỗi giao dịch của
+nó, `esp_lcd_panel_io_spi` **tắt driver ngõ ra của chân DC** (`post_cb` gọi
+`gpio_ll_output_disable`) và chỉ bật lại trong `pre_cb` của giao dịch kế. Một lệnh đọc gửi
+bằng thiết bị SPI khác trên cùng bus mà chỉ `gpio_set_level(DC, 0)` sẽ **không kéo được
+chân xuống** — DC thả nổi lên mức cao theo điện trở kéo của module, panel coi lệnh là dữ liệu
+và im lặng. `drv_lcd` vì thế bật lại ngõ ra DC trước mỗi lần đọc, và tự sở hữu chân CS (giao
+`cs_gpio_num = NC` cho `esp_lcd`) để nhấp được một khung CS riêng cho lệnh đọc — panel đếm
+clock từ cạnh xuống của CS, lệnh đọc không có khung riêng sẽ rơi vào giữa khung pixel.
+
+**Vì sao lấy 23,26 Hz mà không lấy mức nhanh hơn.** Quét cả dải thanh ghi thì `0x81 0x10`
+cho 33,18 ms (30,13 Hz), chỉ hơn thời gian ghi 4,8%. Hai lý do bỏ nó: phép đo chu kỳ quét
+chỉ chính xác ~15% (cùng một giá trị thanh ghi đo hai lần ra 37,3 ms và 43,0 ms), và §5.1 đã
+đo preview chạy song song với AI thì chậm đi **16,6%** — blit sẽ thành ~37 ms khi `ai_task`
+chạy, lúc đó mức 30 Hz hết biên còn mức 23,26 Hz vẫn dư 14%.
+
+⚠️ Panel quét thưa hơn thì **điểm ảnh TFT được nạp lại thưa hơn**, nên phải nghiệm thu bằng
+mắt là màn không nhấp nháy. Độ phân giải, số màu và fps của ảnh **không đổi** — 23,26 Hz là
+nhịp làm mới của panel, không phải nhịp đổi nội dung (nội dung do camera quyết định, 14,19 fps).
+Nếu nhấp nháy thì phương án thay thế là **thu preview còn 320×240**: ghi chỉ 16 ms nên khoá
+pha được ngay ở nhịp quét mặc định 57 Hz, đổi lấy việc ảnh chiếm nửa màn.
 
 #### B. Bus I2C hệ thống (I2C_NUM_0, 400 kHz)
 
@@ -361,7 +402,7 @@ và §5.3 hiện **chưa khai đường truyền** cho hai event đó.
 |---|---|---|
 | VIN | **5V** | Không lấy 3V3 — mất công suất |
 | GND | GND | |
-| **BCLK** | **GPIO43** | Nguyên là U0TXD → giải phóng bằng `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y` |
+| **BCLK** | **GPIO45** | GPIO43 đã giao cho `SDO` của LCD (§2.3A). GPIO45 là strapping VDD_SPI nhưng chỉ lấy mẫu **lúc reset**, mà I2S không đẩy chân lúc reset và chân có pull-down nội — đo trên board: kéo lên 20/20 mức cao, kéo xuống 0/20, tức trống thật |
 | **LRC / WS** | **GPIO44** | Nguyên là U0RXD |
 | **DIN** | **GPIO46** | Strapping này chỉ chọn mức log ROM, không chặn boot. DIN là input trở kháng cao, pull-down nội của chip đã đủ — không cần hàn điện trở |
 | **SD (shutdown/mode)** | **PCF8574 P3** | Kéo LOW khi không phát → hết nhiễu xì. Hoặc nối 100 kΩ lên VIN = chế độ mono (L+R)/2 |
@@ -423,11 +464,24 @@ Trạng thái nhận diện hiện trên LCD nên không có LED rời. Mọi ch
 
 | GPIO | Trạng thái |
 |---|---|
-| GPIO45 | **để trống, không nối gì** — strapping VDD_SPI, pull-down nội giữ mức thấp lúc reset |
+| GPIO45 | **đã giao cho `BCLK` của loa** (§2.3E) — chân GPIO thường cuối cùng của board |
 | GPIO48 | LED RGB WS2812 onboard — dùng làm đèn báo trạng thái hệ thống |
 | GPIO0 | nút BOOT onboard — dùng làm nút "factory reset" (giữ 5 s) |
 
-**Không còn chân GPIO thường nào trống.** GPIO38 là servo PWM, GPIO39 là LCD DC. Cần thêm đường điều khiển chậm thì lấy ở PCF8574 — còn P4–P7. Cần thêm đường nhanh thì chỉ còn cách lấy GPIO48 và bỏ LED RGB onboard, không có chỗ nào khác.
+**Hết chân GPIO thường.** Cần thêm đường điều khiển chậm thì lấy ở PCF8574 — còn P4–P7.
+
+**Ba chân sau không dùng được làm ngõ vào trên board này**, đo bằng cách bật điện trở kéo
+lên rồi kéo xuống với **không cắm gì cả** và xem chân có đi theo không:
+
+| Chân | Kéo lên | Kéo xuống | Kết luận |
+|---|---|---|---|
+| GPIO38 | 20/20 cao | **20/20 cao** | board ghim mức cao |
+| GPIO48 | **0/20 cao** | 0/20 | board ghim mức thấp |
+| GPIO0 | 20/20 cao | 20/20 cao | điện trở kéo lên của nút BOOT ghim cao |
+
+Nên câu "cần đường nhanh thì lấy GPIO48" **chỉ đúng cho ngõ ra**. Muốn thêm một ngõ vào thì
+phải lấy lại từ một chân đang dùng, và **phải đo mức nền của chân đó trước khi cắm gì vào** —
+chân bị ghim mức cho ra số liệu rất ổn định mà không chứa thông tin nào về thiết bị bên kia.
 
 ### 2.5 Ngân sách nguồn
 

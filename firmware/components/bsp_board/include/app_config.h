@@ -33,6 +33,10 @@
 #define APP_LCD_DC_GPIO 39
 #define APP_LCD_RST_GPIO 40
 #define APP_LCD_BLK_GPIO 21
+// The panel answers reads only between 2 and 6.6 MHz: below it the esp samples
+// early, above it the read cycle is shorter than 150 ns (KEHOACH 2.3A).
+#define APP_LCD_SDO_GPIO 43
+#define APP_LCD_READ_HZ 3000000
 // The panel is physically 320x480 portrait, and the kiosk stands it that way.
 #define APP_LCD_H_RES 320
 #define APP_LCD_V_RES 480
@@ -63,7 +67,7 @@
 #define APP_TOF_INT_GPIO 3
 #define APP_TOF_I2C_ADDR 0x29
 
-#define APP_AUDIO_BCLK_GPIO 43              // frees U0TXD, needs USB-CDC console
+#define APP_AUDIO_BCLK_GPIO 45              // GPIO43 carries the panel's SDO
 #define APP_AUDIO_LRC_GPIO 44               // frees U0RXD, needs USB-CDC console
 #define APP_AUDIO_DIN_GPIO 46
 
