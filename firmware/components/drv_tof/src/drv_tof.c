@@ -13,6 +13,9 @@ static const char *TAG = "drv_tof";
 
 #define TOF_DEV 0
 #define DISTANCE_MODE_SHORT 1
+// The chip powers up active high, which would raise the edge on ClearInterrupt
+// rather than on a completed measurement.
+#define INTERRUPT_ACTIVE_LOW 0
 #define TIMING_BUDGET_MS 33
 #define INTER_MEASUREMENT_MS 100
 // XSHUT needs 100 us low, then the chip walks its own boot sequence.
@@ -62,8 +65,8 @@ static esp_err_t attach_ready_line(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        // The chip drives the line low on a completed measurement and holds it
-        // until ClearInterrupt, so the falling edge is the one event per cycle.
+        // Pairs with INTERRUPT_ACTIVE_LOW: the line rests high and the chip
+        // pulls it down once per completed measurement (KEHOACH 2.3).
         .intr_type = GPIO_INTR_NEGEDGE,
     };
     APP_RETURN_ON_ERR(gpio_config(&cfg), TAG, "int pin");
@@ -93,6 +96,7 @@ esp_err_t drv_tof_init(void)
         return ESP_ERR_NOT_FOUND;
     }
     if (VL53L1X_SensorInit(TOF_DEV) != 0 ||
+        VL53L1X_SetInterruptPolarity(TOF_DEV, INTERRUPT_ACTIVE_LOW) != 0 ||
         VL53L1X_SetDistanceMode(TOF_DEV, DISTANCE_MODE_SHORT) != 0 ||
         VL53L1X_SetTimingBudgetInMs(TOF_DEV, TIMING_BUDGET_MS) != 0 ||
         VL53L1X_SetInterMeasurementInMs(TOF_DEV, INTER_MEASUREMENT_MS) != 0) {
