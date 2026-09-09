@@ -30,6 +30,7 @@ public:
     virtual esp_err_t init(const tflite::Model *model, Arena &arena) noexcept = 0;
     virtual TfLiteTensor *input(int index) noexcept = 0;
     virtual TfLiteTensor *output(int index) noexcept = 0;
+    virtual size_t output_count() const noexcept = 0;
     virtual esp_err_t invoke() noexcept = 0;
     virtual const char *name() const noexcept = 0;
 };
@@ -45,6 +46,7 @@ public:
     esp_err_t init(const tflite::Model *model, Arena &arena) noexcept override;
     TfLiteTensor *input(int index) noexcept override;
     TfLiteTensor *output(int index) noexcept override;
+    size_t output_count() const noexcept override;
     esp_err_t invoke() noexcept override;
 
 protected:

@@ -3,6 +3,9 @@
  */
 #pragma once
 
+#include <stddef.h>
+
+#include "ai_engine.h"
 #include "tflite_model.hpp"
 
 namespace ai {
@@ -19,5 +22,22 @@ public:
 protected:
     tflite::MicroOpResolver &resolver() noexcept override { return detect_ops(); }
 };
+
+/** Faces from the head tensors of the run that just finished, best first and
+ *  already suppressed; boxes and landmarks in detector input pixels.
+ *  @ctx ai_task | non-blocking | reads the interpreter's output tensors
+ */
+size_t decode_faces(ITfliteModel &model, float min_score, ai_engine_face_t *out, size_t cap) noexcept;
+
+/** Greedy NMS over faces sorted best first, in place; returns how many stay.
+ *  @ctx any | non-blocking
+ */
+size_t suppress(ai_engine_face_t *faces, size_t count) noexcept;
+
+/** Fit a camera frame into the detector's input tensor, black bars around it,
+ *  and report the geometry that maps its boxes back (letterbox_params in ml).
+ *  @ctx ai_task | blocking for the resample
+ */
+esp_err_t letterbox_frame(const ai_engine_frame_t &frame, TfLiteTensor *input, ai_engine_letterbox_t *geometry) noexcept;
 
 }  // namespace ai

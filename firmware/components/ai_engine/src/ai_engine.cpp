@@ -36,6 +36,7 @@ size_t s_detect_len;
 size_t s_spoof_len;
 size_t s_recog_len;
 bool s_ready;
+bool s_detected;
 
 size_t arena_bytes(const char *arena_name, size_t ceiling, std::initializer_list<const char *> group)
 {
@@ -163,7 +164,86 @@ extern "C" esp_err_t ai_engine_detect(const int8_t *image)
         return ESP_ERR_INVALID_SIZE;
     }
     memcpy(frame->data.int8, image, s_detect_len);
-    return s_detect.invoke();
+    const esp_err_t err = s_detect.invoke();
+    s_detected = err == ESP_OK;
+    return err;
+}
+
+extern "C" size_t ai_engine_faces(float min_score, ai_engine_face_t *out, size_t cap)
+{
+    if (!s_ready || !s_detected || out == nullptr) {
+        return 0;
+    }
+    return ai::decode_faces(s_detect, min_score, out, cap);
+}
+
+extern "C" esp_err_t ai_engine_detect_frame(const ai_engine_frame_t *frame, ai_engine_letterbox_t *geometry)
+{
+    if (!s_ready || frame == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    ai_engine_letterbox_t local;
+    const esp_err_t boxed = ai::letterbox_frame(*frame, s_detect.input(0), geometry != nullptr ? geometry : &local);
+    if (boxed != ESP_OK) {
+        return boxed;
+    }
+    const esp_err_t err = s_detect.invoke();
+    s_detected = err == ESP_OK;
+    return err;
+}
+
+extern "C" void ai_engine_face_to_frame(const ai_engine_letterbox_t *geometry, ai_engine_face_t *face)
+{
+    if (geometry == nullptr || face == nullptr || geometry->scale <= 0.0f) {
+        return;
+    }
+    for (int i = 0; i < 4; ++i) {
+        const float pad = (i % 2 == 0) ? static_cast<float>(geometry->pad_x) : static_cast<float>(geometry->pad_y);
+        face->box[i] = (face->box[i] - pad) / geometry->scale;
+    }
+    for (int i = 0; i < 10; ++i) {
+        const float pad = (i % 2 == 0) ? static_cast<float>(geometry->pad_x) : static_cast<float>(geometry->pad_y);
+        face->landmarks[i] = (face->landmarks[i] - pad) / geometry->scale;
+    }
+}
+
+extern "C" esp_err_t ai_engine_recognize_face(const ai_engine_frame_t *frame, const float landmarks[10], int8_t *out,
+                                              size_t cap_bytes, float *scale)
+{
+    if (!s_ready || s_recog_len == 0 || frame == nullptr || landmarks == nullptr || out == nullptr || scale == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t aligned = ai::align_face(*frame, landmarks, s_recog.input(0));
+    if (aligned != ESP_OK) {
+        return aligned;
+    }
+    const esp_err_t err = s_recog.invoke();
+    if (err != ESP_OK) {
+        return err;
+    }
+    return s_recog.embedding(out, cap_bytes, scale) > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
+}
+
+extern "C" esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live,
+                                          float *wide_scale)
+{
+    if (!s_ready || s_spoof_len == 0 || frame == nullptr || box == nullptr || live == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    float reached = 0.0f;
+    const esp_err_t cut = ai::crop_pair(*frame, box, s_spoof.input(0), s_spoof.input(1), &reached);
+    if (cut != ESP_OK) {
+        return cut;
+    }
+    if (wide_scale != nullptr) {
+        *wide_scale = reached;
+    }
+    const esp_err_t err = s_spoof.invoke();
+    if (err != ESP_OK) {
+        return err;
+    }
+    *live = s_spoof.score();
+    return *live >= 0.0F ? ESP_OK : ESP_FAIL;
 }
 
 extern "C" size_t ai_engine_recog_output_bytes(void)

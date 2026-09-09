@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include "ai_engine.h"
 #include "tflite_model.hpp"
 
 namespace ai {
@@ -24,5 +25,13 @@ public:
 protected:
     tflite::MicroOpResolver &resolver() noexcept override { return spoof_ops(); }
 };
+
+/** Cut the tight and wide crops of one face box, in frame pixels, into the
+ *  two input tensors; the wide square is the largest that fits, at most 2.7x (KEHOACH 3).
+ *  @ctx ai_task | blocking for the two resamples
+ *  @param wide_scale receives the context ratio the frame actually allowed
+ */
+esp_err_t crop_pair(const ai_engine_frame_t &frame, const float box[4], TfLiteTensor *tight, TfLiteTensor *wide,
+                    float *wide_scale) noexcept;
 
 }  // namespace ai

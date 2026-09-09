@@ -1,0 +1,53 @@
+#include "detect_model.hpp"
+
+#include <math.h>
+#include <string.h>
+
+#include "pixels.hpp"
+
+namespace ai {
+
+namespace {
+
+constexpr float kPixelMean = 0.0f;
+constexpr float kPixelSpan = 255.0f;
+
+}  // namespace
+
+esp_err_t letterbox_frame(const ai_engine_frame_t &frame, TfLiteTensor *input, ai_engine_letterbox_t *geometry) noexcept
+{
+    if (frame.pixels == nullptr || frame.width <= 0 || frame.height <= 0 || input == nullptr || geometry == nullptr ||
+        input->dims->size != 4 || input->dims->data[3] != kChannels) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const int out_h = input->dims->data[1];
+    const int out_w = input->dims->data[2];
+    // Same arithmetic as letterbox_params in ml/tasks/detection/data.py: the boxes
+    // come back through it, so a second version would shift every face a few pixels.
+    const float scale = fminf(static_cast<float>(out_h) / frame.height, static_cast<float>(out_w) / frame.width);
+    const int new_h = static_cast<int>(rintf(frame.height * scale));
+    const int new_w = static_cast<int>(rintf(frame.width * scale));
+    geometry->scale = scale;
+    geometry->pad_x = (out_w - new_w) / 2;
+    geometry->pad_y = (out_h - new_h) / 2;
+
+    const Quantizer quant(input, kPixelMean, kPixelSpan);
+    const int8_t black = quant(0.0f);
+    memset(input->data.int8, black, input->bytes);
+    const float step = 1.0f / scale;
+    for (int row = 0; row < new_h; ++row) {
+        int8_t *out = input->data.int8 + ((geometry->pad_y + row) * out_w + geometry->pad_x) * kChannels;
+        const float y0 = row * step;
+        for (int col = 0; col < new_w; ++col) {
+            const float x0 = col * step;
+            float rgb[kChannels];
+            sample_area(frame, x0, y0, x0 + step, y0 + step, rgb);
+            for (int c = 0; c < kChannels; ++c) {
+                *out++ = quant(rgb[c]);
+            }
+        }
+    }
+    return ESP_OK;
+}
+
+}  // namespace ai

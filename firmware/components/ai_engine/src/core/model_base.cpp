@@ -56,6 +56,11 @@ TfLiteTensor *TfliteModelBase::output(int index) noexcept
     return interpreter_ != nullptr ? interpreter_->output(static_cast<size_t>(index)) : nullptr;
 }
 
+size_t TfliteModelBase::output_count() const noexcept
+{
+    return interpreter_ != nullptr ? interpreter_->outputs_size() : 0;
+}
+
 esp_err_t TfliteModelBase::invoke() noexcept
 {
     if (interpreter_ == nullptr) {
