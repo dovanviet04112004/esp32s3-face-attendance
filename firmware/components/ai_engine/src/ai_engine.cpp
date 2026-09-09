@@ -83,17 +83,25 @@ extern "C" esp_err_t ai_engine_init(void)
         const char *name;
         ai::Arena &arena;
         size_t *input_len;
+        bool required;
     } branches[] = {
-        {s_detect, "detect", s_fast, &s_detect_len},
-        {s_spoof, "spoof", s_big, &s_spoof_len},
-        {s_recog, "recog", s_big, &s_recog_len},
+        {s_detect, "detect", s_fast, &s_detect_len, true},
+        {s_spoof, "spoof", s_big, &s_spoof_len, false},
+        {s_recog, "recog", s_big, &s_recog_len, false},
     };
     for (auto &branch : branches) {
         err = load(branch.model, branch.name, branch.arena, branch.input_len);
-        if (err != ESP_OK) {
+        if (err == ESP_OK) {
+            continue;
+        }
+        // An image carrying fewer than three branches is valid (KEHOACH 6.2.2),
+        // and detect is the one the pipeline cannot start without.
+        if (branch.required || err != ESP_ERR_NOT_FOUND) {
             ESP_LOGE(TAG, "%s branch: %s", branch.name, esp_err_to_name(err));
             return err;
         }
+        ESP_LOGW(TAG, "%s branch absent, its entry points will refuse", branch.name);
+        *branch.input_len = 0;
     }
     s_ready = true;
     return ESP_OK;
@@ -129,7 +137,8 @@ extern "C" esp_err_t ai_engine_detect(const int8_t *image)
 
 extern "C" esp_err_t ai_engine_recognize(const int8_t *face, int8_t *out, size_t cap, float *scale)
 {
-    if (!s_ready || face == nullptr || out == nullptr || scale == nullptr) {
+    // A zero length means the image carried no such branch (KEHOACH 6.2.2).
+    if (!s_ready || s_recog_len == 0 || face == nullptr || out == nullptr || scale == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
     TfLiteTensor *crop = s_recog.input(0);
@@ -146,7 +155,8 @@ extern "C" esp_err_t ai_engine_recognize(const int8_t *face, int8_t *out, size_t
 
 extern "C" esp_err_t ai_engine_spoof(const int8_t *tight, const int8_t *wide, float *live)
 {
-    if (!s_ready || tight == nullptr || wide == nullptr || live == nullptr) {
+    // A zero length means the image carried no such branch (KEHOACH 6.2.2).
+    if (!s_ready || s_spoof_len == 0 || tight == nullptr || wide == nullptr || live == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
     // Input 0 is the tight crop and input 1 the wide one, the order the packed
