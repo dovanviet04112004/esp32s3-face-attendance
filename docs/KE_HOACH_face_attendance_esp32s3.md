@@ -1483,11 +1483,7 @@ ml/
 │   │   │                                  #   mà không phải chạy lại onnx2tf
 │   │   ├── tflite/{yunet_fp32.tflite, yunet_int8.tflite}
 │   │   ├── golden/                        # vector vàng trước khi copy sang contracts/
-│   │   ├── reports/op_check.txt
-│   │   └── teacher/                       # weight teacher đã tải hoặc đã train, GIỮ LẠI
-│   │                                      #   dù ADR-0002 bỏ KD: 223 MB GPU đã tiêu, và
-│   │                                      #   là số đối chứng nếu quyết định đó bị xem lại.
-│   │                                      #   Không code nào đọc nó nữa
+│   │   └── reports/op_check.txt
 │   │                                      # ↑ sinh lại được. Số đo giữ lại: docs/measurements/
 │   │      Tên trên là của **một** model đã chốt. Khi đang so nhiều checkpoint thì gắn
 │   │      thêm hậu tố giờ của run: `model_fp32_0944.onnx`, `minifasnet_int8_0944.tflite`.

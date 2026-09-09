@@ -18,7 +18,7 @@ Ràng buộc từ phần cứng và từ hai chặng sau:
 |---|---|
 | Chạy INT8 trên ESP32-S3, arena dùng chung với 2 model còn lại | §3.8 |
 | Phải ra **5 landmark** để affine align 112×112 trước MobileFaceNet | §1.1, §7.1 |
-| Teacher phải có landmark thì mới distill được đủ hai nhánh | §1.1 |
+| ~~Teacher phải có landmark thì mới distill được đủ hai nhánh~~ — **vô hiệu từ ADR-0002** | ~~§1.1~~ |
 | Hậu xử lý decode + NMS phải viết lại bằng C, khớp 1:1 bản Python | §4.5.6, `contracts/golden/` |
 
 Hai ứng viên student được xét: **YuNet** (`yunet_n`, từ `libfacedetection.train`) và
@@ -37,11 +37,13 @@ nhận ảnh chưa align, và accuracy nhận diện rớt mạnh. Muốn dùng 
 landmark head và tự train nó — tức là làm lại đúng phần việc YuNet đã có sẵn và đã được
 kiểm chứng, nhưng không có bản tham chiếu để đối chiếu.
 
-**2. Không có landmark thì phí một nửa tín hiệu teacher.**
+**2. Không có landmark thì phí một nửa tín hiệu teacher.** ~~Teacher là YOLO26m-pose,
+chọn bản `-pose` chính vì nó có landmark; `kd_localization.py` distill cả box lẫn 5
+landmark, nên student không có landmark head làm nhánh distill đó chỉ còn một nửa.~~
 
-Teacher là YOLO26m-pose, chọn bản `-pose` chính vì nó có landmark. `kd_localization.py`
-distill **cả box lẫn 5 landmark**. Student không có landmark head thì nhánh distill đó
-chỉ còn một nửa, và việc chọn teacher `-pose` trở nên vô nghĩa.
+**Lý lẽ này vô hiệu từ ADR-0002** — không còn teacher nào. Nhưng kết luận thì không đổi,
+vì lý lẽ 1 đứng một mình: recognition cần 5 landmark để affine align, và detector là chỗ
+duy nhất trong pipeline biết chúng.
 
 **3. Accuracy cách biệt, và cách biệt lớn nhất đúng ở chỗ quan trọng nhất.**
 
@@ -72,7 +74,6 @@ YuNet sau khi lượng tử hoá.
 **Chấp nhận được**
 
 - Align được mặt bằng landmark của chính detector đang chạy, không lệch train/serve.
-- Distill đủ hai nhánh box và landmark từ teacher.
 - Có bản INT8 tham chiếu để soi khi quantize.
 
 **Phải trả giá**

@@ -44,8 +44,11 @@ mang đúng thiên lệch đó — chấm lại CDCN++ trên mẻ `test` cho ACE
 nhãn thật, mỗi nhánh một task loss. Xoá toàn bộ code, config và script của KD; bảng model
 §1.1 còn ba dòng; §3.7 cũ (bảng đối chứng A) không còn lý do tồn tại.
 
-Weight teacher đã train thì **giữ lại** ở `ml/artifacts/*/teacher/` — chúng là dữ liệu
-đã tốn GPU và vẫn dùng được để đối chiếu nếu quyết định này bị xem lại.
+Weight teacher **xoá hết**, kể cả `ml/artifacts/*/teacher/`: 223 MB không code nào đọc
+nữa. Hai trong ba tải lại được từ upstream (`yolo26m-pose.pt` của Ultralytics,
+`w600k_r50.pth` của insightface); `cdcnpp_best.pth` là 6,5 giờ GPU tự train và mất hẳn.
+Số đo của nó vẫn còn ở `docs/measurements/antispoof/measurements.md` §2, nên phần kết luận
+"teacher tệ hơn student trên mẻ test" vẫn tra lại được, chỉ không chạy lại được.
 
 ## Cái giá
 

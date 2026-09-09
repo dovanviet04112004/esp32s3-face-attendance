@@ -60,14 +60,13 @@ E1 nền repo ──► E2 ml/core ──► E3 dữ liệu
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | E2-T1 | `pyproject.toml` + `uv.lock` + `Dockerfile` môi trường train | `uv sync` dựng lại được từ máy trắng | E1-T1 |
-| E2-T2 | `core/config.py` — pydantic schema, merge YAML, override CLI | Nạp `configs/detection/kd.yaml` không lỗi | E2-T1 |
+| E2-T2 | `core/config.py` — pydantic schema, merge YAML, override CLI, `load_run_config` đọc lại config đóng băng | Nạp `configs/detection/yunet.yaml` không lỗi; mở được run có mục schema đã bỏ | E2-T1 |
 | E2-T3 | `core/registry.py` — gọi model/loss/dataset bằng tên | `@register("dummy")` rồi gọi được từ YAML | E2-T2 |
 | E2-T4 | `core/trainer.py` — AMP, EMA, grad-clip, checkpoint, resume | Train 2 epoch model giả, ngắt giữa chừng, resume đúng bước | E2-T3 |
-| E2-T5 | `core/distiller.py` + `core/hooks.py` — TeacherWrapper, DistillLoss, hook feature map | Distill model giả → student giả, loss giảm | E2-T4 |
 | E2-T6 | `core/run_dir.py` — sinh thư mục run kèm `config.resolved.yaml`, `env.txt`, `split.lock` | Mỗi lần chạy ra một thư mục đủ 3 file | E2-T4 |
 | E2-T7 | `core/seed.py` + `core/logger.py` | Hai lần chạy cùng seed cho cùng loss | E2-T4 |
 | E2-T8 | **Độ phân giải đầu vào là tham số config, không hardcode** | Đổi `input_hw` trong YAML là đổi được cả train lẫn export | E2-T2 |
-| E2-T9 | Test: `core/` không import gì từ `tasks/` | Script kiểm CI, fail khi vi phạm | E2-T5 |
+| E2-T9 | Test: `core/` không import gì từ `tasks/` | Script kiểm CI, fail khi vi phạm | E2-T4 |
 
 > E2-T8 là bảo hiểm rẻ nhất cho quyết định "tối ưu sau": nếu E8 đo ra arena không vừa, đổi độ phân giải và train lại chỉ là sửa YAML rồi chạy lại script, không phải viết lại code.
 
@@ -86,10 +85,10 @@ E1 nền repo ──► E2 ml/core ──► E3 dữ liệu
 | E3-T7 | Thu ≥2.000 ảnh OV5640 tự thu, đủ điều kiện sáng và khoảng cách | `manifest.csv` đầy đủ cột | E1-T8 |
 | E3-T8 | Thu tập spoof tự thu: in ảnh, màn hình điện thoại, màn hình laptop, mặt nạ giấy | ≥500 ảnh mỗi loại | E3-T7 |
 | E3-T9 | `data/transforms/sensor_sim.py` — mô phỏng nhiễu OV5640 | Ảnh sau augment giống ảnh thật khi so histogram | E3-T7 |
-| **E3-T11** | **Gỡ chỗ CPU và GPU phải chờ nhau trong vòng train.** Đo trên teacher: một luồng Python ghim 100% một nhân, GPU chỉ 66–71%. Hai cơ chế ngược nhau, ba chỗ: **(a)** `distiller.py:139,214,232` — `float(value.detach())` cho từng thành phần loss, **~5 lần đồng bộ mỗi bước**, nặng nhất; **(b)** `trainer.py` — `if not torch.isfinite(loss)` ép đọc bool từ GPU mỗi bước; **(c)** chi phí phóng lệnh từng lớp, gỡ bằng `torch.compile`. Sửa (b) mà bỏ (a) thì **không được gì** | (a)+(b): giữ loss dạng tensor, cộng dồn trên GPU, chỉ đổi sang `float` ở nhịp `log_every_steps`; cờ non-finite gom trên GPU rồi kiểm cùng nhịp đó. (c): khoá `train.compile` trong config, **không hardcode**. Đo it/s trước/sau. Bẫy phải tránh: `torch.compile` bọc model nên `state_dict()` mọc tiền tố `_orig_mod.` — checkpoint phải lấy từ module gốc, nếu không sẽ hỏng im lặng lúc export | E2-T5 |
+| **E3-T11** | **Gỡ chỗ CPU và GPU phải chờ nhau trong vòng train.** Đo trên nhánh detect: một luồng Python ghim 100% một nhân, GPU chỉ 66–71%. Hai cơ chế ngược nhau, ba chỗ: **(a)** `float(value.detach())` cho từng thành phần loss trong vòng train, **~5 lần đồng bộ mỗi bước**, nặng nhất; **(b)** `trainer.py` — `if not torch.isfinite(loss)` ép đọc bool từ GPU mỗi bước; **(c)** chi phí phóng lệnh từng lớp, gỡ bằng `torch.compile`. Sửa (b) mà bỏ (a) thì **không được gì** | (a)+(b): giữ loss dạng tensor, cộng dồn trên GPU, chỉ đổi sang `float` ở nhịp `log_every_steps`; cờ non-finite gom trên GPU rồi kiểm cùng nhịp đó. (c): khoá `train.compile` trong config, **không hardcode**. Đo it/s trước/sau. Bẫy phải tránh: `torch.compile` bọc model nên `state_dict()` mọc tiền tố `_orig_mod.` — checkpoint phải lấy từ module gốc, nếu không sẽ hỏng im lặng lúc export | E2-T4 |
 | **E3-T12** | `channels_last` cho model tích chập chạy AMP — một dòng, thường 10–30% trên tensor core 🔬 chưa đo trên máy này | Đo it/s trước/sau; cùng ràng buộc §3.7 như `train.compile` nếu nó đổi kết quả | E3-T11 |
-| **E3-T14** | **Chọn batch bằng bộ nhớ ở trạng thái ổn định, không bằng vài vòng đầu.** Teacher đo được 2,36 GB ở vòng đầu nên chốt batch 4; thực tế ổn định là **3,41 GiB trên card 4,0 GiB** — chỉ còn 0,6 GiB dư địa, và bộ nhớ reserved còn bò lên 5,95 GiB sau ~30 epoch rồi tràn sang RAM host, chậm **50×**. Đo lại sau **≥3 epoch**, chừa **≥25% dư địa**. Kiểm luôn cảnh báo `max_det` Ultralytics tự nâng (300 → 1968 với WIDER): nó quyết định bộ nhớ mỗi lần validation | Config của mỗi nhánh ghi rõ VRAM ổn định đo ở epoch mấy, không phải ở vòng đầu | — |
-| **E3-T13** | **Đặt `PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.8,max_split_size_mb:256` cho mọi run trên card 4 GB.** Đo được trên teacher: sau ~24 epoch, bộ nhớ reserved bò tới 4,16 GiB trên card 4,0 GiB — WSL **không ném lỗi**, nó âm thầm đẩy sang RAM host và chậm **20×** (0,33 → 6,6 s/vòng). Ultralytics đã tự gọi `_clear_memory(0.5)` cuối mỗi epoch nên đó không phải chỗ thiếu; bộ nhớ phình **trong lòng epoch** vì ảnh WIDER có từ 1 tới 1.968 mặt. Hai tham số này tác động liên tục trong epoch | Chạy hết 100 epoch không tụt xuống dưới 3,0 it/s. ⚠️ **KHÔNG dùng `expandable_segments:True`** — đã thử, giảm reserved 1,5 GB thật nhưng **sập sau 10 phút** với `!handles_.at(i) INTERNAL ASSERT FAILED` ở `CUDACachingAllocator.cpp:467`: nó cần API bộ nhớ ảo của driver mà WSL đi qua GPU-PV không hỗ trợ đủ | — |
+| **E3-T14** | **Chọn batch bằng bộ nhớ ở trạng thái ổn định, không bằng vài vòng đầu.** Đo được 2,36 GB ở vòng đầu nên chốt batch 4; thực tế ổn định là **3,41 GiB trên card 4,0 GiB** — chỉ còn 0,6 GiB dư địa, và bộ nhớ reserved còn bò lên 5,95 GiB sau ~30 epoch rồi tràn sang RAM host, chậm **50×**. Đo lại sau **≥3 epoch**, chừa **≥25% dư địa**. Kiểm luôn cảnh báo `max_det` Ultralytics tự nâng (300 → 1968 với WIDER): nó quyết định bộ nhớ mỗi lần validation | Config của mỗi nhánh ghi rõ VRAM ổn định đo ở epoch mấy, không phải ở vòng đầu | — |
+| **E3-T13** | **Đặt `PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.8,max_split_size_mb:256` cho mọi run trên card 4 GB.** Đo được: sau ~24 epoch, bộ nhớ reserved bò tới 4,16 GiB trên card 4,0 GiB — WSL **không ném lỗi**, nó âm thầm đẩy sang RAM host và chậm **20×** (0,33 → 6,6 s/vòng). Ultralytics đã tự gọi `_clear_memory(0.5)` cuối mỗi epoch nên đó không phải chỗ thiếu; bộ nhớ phình **trong lòng epoch** vì ảnh WIDER có từ 1 tới 1.968 mặt. Hai tham số này tác động liên tục trong epoch | Chạy hết 100 epoch không tụt xuống dưới 3,0 it/s. ⚠️ **KHÔNG dùng `expandable_segments:True`** — đã thử, giảm reserved 1,5 GB thật nhưng **sập sau 10 phút** với `!handles_.at(i) INTERNAL ASSERT FAILED` ở `CUDACachingAllocator.cpp:467`: nó cần API bộ nhớ ảo của driver mà WSL đi qua GPU-PV không hỗ trợ đủ | — |
 | **E3-T10** | **Tầng `fast_drive`** (KẾ HOẠCH §4.4.1): ảnh ext4 loop trên `E:`, khai `/etc/fstab`; chuyển sang **chỉ tập nào vừa page cache** — ảnh WIDER + bố cục Ultralytics, nối bằng **hardlink** thay symlink. Shard anti-spoof và recognition ở lại `cold_drive` | `/data` còn mount sau `wsl --shutdown`; đo được ảnh/giây **cả cache lạnh lẫn nóng** trên cùng một tập, và MB/s tuần tự trên cả hai ổ | E3-T1 |
 
 ---
@@ -100,38 +99,30 @@ Làm trước trong ba nhánh. Nó là cổng của pipeline, và **landmark c�
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E4-T1 | `teacher/yolo26_pose_wrapper.py` + `finetune_widerface.py` | Teacher ra box + 5 landmark, WIDER hard ≥ 0,80 **đo ở 640²** (§3 lớp 2) | E2-T5, E3-T2 |
-| E4-T2 | `teacher/export_soft_target.py` — cache box + landmark + score. **Không cache feature map**: mosaic làm nó vô nghĩa (§3 Lớp 2), FGD phải chạy teacher online | Shard `.npz` đọc được | E4-T1 |
 | E4-T3 | `student/{yunet, head, anchors, blocks}.py` | Param ≈ 75,8K, ra 3 nhánh đầu ra | E2-T3 |
-| E4-T4 | `losses/{kd_logit, kd_localization, kd_feature_fgd, task_loss}.py` | Unit test từng loss | E4-T3 |
-| E4-T5 | `train_kd.py` nhiều giai đoạn: feature → +logit/loc → +task | AP ≥ 0,90 trên mặt ≥ 32 px ở FP32 (§3 lớp 2) | E4-T2, E4-T4, E3-T5 |
+| E4-T4 | `losses/task_loss.py` — focal + IoU + landmark L1 | Unit test từng thành phần | E4-T3 |
+| E4-T5 | `train.py` — task loss trên nhãn thật | AP ≥ 0,90 trên mặt ≥ 32 px ở FP32 (§3 lớp 2) | E4-T3, E4-T4, E3-T5 |
 | E4-T6 | `eval.py` — WIDER AP + **NMSE landmark trên ảnh OV5640** | NMSE < 5% | E4-T5, E3-T7 |
-| E4-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + feature + localization + FGD) | `docs/measurements/<nhánh>/ablation_teacher.md` đủ 2 dòng + ADR | E4-T5 |
-| E4-T8 | **Thang lượng tử hoá (§3.7)** — Q0 → Q1 → Q2, dừng khi đạt | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E4-T7 |
-| E4-T9 | **Quét từng lớp (§3.9)** — mốc Q3, chỉ khi Q1 và Q2 đều chưa đạt | `layer_sensitivity.csv` + chọn được `k` ở điểm gãy | E4-T8 |
+| E4-T8 | **Thang lượng tử hoá (§3.7)** — Q0 rồi Q1 | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E4-T6 |
 | E4-T10 | `postproc/{decode, nms}.py` + `emit_golden.py` | `contracts/golden/detection/` có vector vàng | E4-T8 |
 | E4-T11 | Export tflite + `tflite_op_check.py` + `meta.json` + lock | AP trên mặt ≥ 32 px sụt < 1% so với FP32, hai file khớp sha256 | E4-T8 |
 | E4-T12 | Nếu NMSE > 5%: đổi sang RetinaFace-MobileNet0.25 | Đạt ngưỡng, ghi ADR mới | E4-T6 |
-| **E4-T13** | **Cầu nối teacher → student cho arm A3.** Hai thứ còn thiếu, arm A3 của nhánh này chưa chạy được nếu không có: (a) `detection_kd_logit` đòi `teacher_out` là `HeadOutput` trên prior của student, nhưng `Yolo26PoseTeacher` trả `TeacherDetections` — cần một module gán soft target vào prior; (b) FGD cần feature map của teacher **ở cùng độ phân giải với student**, mà teacher chạy 640² còn student chạy 160×120 | Arm A3 chạy hết 1 epoch với đủ 3 term, `docs/measurements/<nhánh>/ablation_teacher.md` có dòng A3 | E4-T2, E4-T4 |
 
 ---
 
 ## E5 — Nhánh recognition
 
-Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_device` dùng crop align bằng **detector thật từ E4**, không phải landmark thủ công.
+Ảnh `test_device` dùng crop align bằng **detector thật từ E4**, không phải landmark thủ công — align lúc train khác align lúc chạy là loại lỗi rất khó truy.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | ~~E5-T0~~ | ~~`recordio_to_wds.py`: bỏ member `.cls`~~ — **bỏ**. Shard đã nằm trên `fast_drive`, đọc nghẽn ở giải nén JPEG chứ không ở tar; sinh lại 36 GB để tiết kiệm 5,3 GB đọc tuần tự không đổi lại được gì | — | — |
-| E5-T1 | `teacher/r50_wf600k.py` + `export_embedding.py` | Cache embedding 512-D ra `.npy` memmap | E2-T5, E3-T4 |
 | E5-T2 | `student/mobilefacenet.py` + `blocks.py` (ReLU, kênh bội 8) | Forward ra 512-D, param **1,20M** đo được (0,99M của bài báo là bản embedding 128-D) | E2-T3 |
 | E5-T3 | `losses/{arcface, kd_embedding, kd_relation_rkd}.py` | Unit test từng loss | E5-T2 |
-| E5-T4 | `train_kd.py` + `data.py` — chạy KD thật | LFW ≥ 99,0 ở FP32 | E5-T1, E5-T3, E3-T5, **E3-T10** |
+| E5-T4 | `train.py` + `data.py` — ArcFace trên nhãn thật | LFW ≥ 99,0 ở FP32 | E5-T2, E5-T3, E3-T5, **E3-T10** |
 | E5-T5 | `postproc/{align, l2norm, cosine}.py` | Align được bằng landmark thật từ detector E4 | E5-T4, E4-T11 |
 | E5-T6 | `eval.py` — LFW/CFP-FP/AgeDB + TAR@FAR trên `test_device` đã align bằng E4 | Bảng số vào `artifacts/recognition/reports/` | E5-T5 |
-| E5-T7 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (embedding + RKD) | `docs/measurements/<nhánh>/ablation_teacher.md` đủ 2 dòng + ADR | E5-T6 |
-| E5-T8 | **Thang lượng tử hoá (§3.7)** — Q0 → Q1 → Q2 | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E5-T7 |
-| E5-T9 | **Quét từng lớp (§3.9)** — mốc Q3, chỉ khi cần | `layer_sensitivity.csv` + chọn `k` | E5-T8 |
+| E5-T8 | **Thang lượng tử hoá (§3.7)** — Q0 rồi Q1 | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E5-T6 |
 | E5-T10 | `emit_golden.py` | `contracts/golden/recognition/` có vector vàng | E5-T8 |
 | E5-T11 | Export tflite + op check + `meta.json` + lock | LFW ≥ 99,0 ở INT8, hai file khớp sha256 | E5-T8 |
 
@@ -142,15 +133,11 @@ Teacher R50 có weight sẵn, **không phải train teacher**. Ảnh `test_devic
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | **E6-T0** | **`celeba_spoof_parquet.py` ghi thẳng ra shard** — **hai tỉ lệ 1x và 2.7x cùng một record** (KẾ HOẠCH §4.4.1), không đi qua bước 1,05 triệu file lẻ; giải nén chạy song song nhiều nhân | Shard đọc lại đủ `tight.jpg` + `wide.jpg` + `json`, **đo được record/giây so với file lẻ** | E3-T3, E3-T10 |
-| E6-T1 | `teacher/cdcnpp.py` + `depth_gt.py` | Kiến trúc chạy, depth map GT sinh được | E2-T5, E3-T3 |
-| E6-T2 | `teacher/train_teacher.py` trên CelebA-Spoof | ACER < 2% trên tập val | E6-T1, **E6-T0** |
-| E6-T3 | `teacher/export_soft_target.py` — logit + depth map 32×32 | Shard đọc được | E6-T2 |
-| E6-T4 | `student/minifasnet_v2_se.py` — **hai backbone**, SE dùng HardSigmoid | Param ≈ 0,53M; forward nhận cặp (tight, wide) | E2-T3 |
-| E6-T5 | `losses/{kd_logit, kd_depth_map, contrastive_depth_loss, task_loss}.py` | Unit test từng loss | E6-T4 |
-| E6-T6 | `train_kd.py` | ACER < 5% ở FP32 | E6-T3..T5, **E6-T0** |
+| E6-T4 | `model/minifasnet_v2_se.py` — **hai backbone**, SE dùng HardSigmoid, `AvgPool2d` cỡ cố định, đầu vào 81 | Param ≈ 0,53M ở `width=32`; forward nhận cặp (tight, wide) | E2-T3 |
+| E6-T5 | `losses/task_loss.py` — BCE hai lớp trên cặp crop | Unit test từng thành phần | E6-T4 |
+| E6-T6 | `train.py` | ACER < 5% ở FP32 | E6-T4, E6-T5, **E6-T0** |
 | E6-T7 | `eval.py` — ACER, HTER cross-dataset, ROC tập tự thu | HTER < 15% | E6-T6, E3-T8 |
-| E6-T8 | **Bảng đối chứng A (§3.7)** — **2 arm**: A0 không teacher, A3 toàn bộ KD (logit + depth map + contrastive depth) | `docs/measurements/<nhánh>/ablation_teacher.md` đủ 2 dòng + ADR | E6-T6 |
-| E6-T9 | **Thang lượng tử hoá (§3.7)** Q0→Q1→Q2 + **quét từng lớp (§3.9)** nếu cần | INT8 giữ ACER < 5%, `quant_ladder.md` + `calib_sweep.md` | E6-T8 |
+| E6-T9 | **Thang lượng tử hoá (§3.7)** — Q0 rồi Q1 | INT8 giữ ACER < 5%, `quant_ladder.md` + `calib_sweep.md` | E6-T7 |
 | E6-T10 | Export + `postproc/preproc.py` + golden + `meta.json` + lock | Hai file khớp sha256 | E6-T9 |
 
 ---
@@ -210,18 +197,18 @@ Vào epic này **chỉ khi** E8 chỉ ra vấn đề cụ thể. Không tối ư
 |---|---|---|
 | `arena_fast` vượt SRAM nội | E9-T1 — tách anti-spoof ra `arena_big`, chỉ để detect ở SRAM | Sửa 1 dòng cấp phát |
 | Vẫn không vừa | E9-T2 — hạ `input_hw` trong YAML, train lại nhánh đó | Chỉ đổi config nhờ E2-T8 |
-| Latency quá cao | E9-T3 — đọc `latency.md`, tìm op không có kernel ESP-NN, thay op ở tầng kiến trúc rồi train lại | Sửa `student/blocks.py` |
+| Latency quá cao | E9-T3 — đọc `latency.md`, tìm op không có kernel ESP-NN, thay op ở tầng kiến trúc rồi train lại | Sửa `model/blocks.py` |
 | Latency vẫn cao | E9-T4 — siết ngưỡng thoát sớm, giảm tần suất chạy recognition | Sửa `svc_vision` |
 | Accuracy INT8 tụt | E9-T5 — sensitivity analysis → mixed-precision giữ float layer đầu và cuối | `compress/sensitivity/` |
-| Accuracy vẫn tụt | E9-T6 — QAT + LSQ + quantization-aware KD | Train lại nhánh đó |
+| Accuracy vẫn tụt | E9-T6 — thu nhỏ hoặc đổi kiến trúc; §3.7 không có mốc lượng tử hoá nào đắt hơn Q1 | Train lại nhánh đó |
 | Landmark lệch | E9-T7 — đổi student detection sang RetinaFace-MobileNet0.25 | Train lại nhánh detection |
 | Sai số parity C ↔ Python | E9-T8 — sửa bản C cho khớp bản Python, không sửa ngược | `ai_engine/src/<nhánh>/` |
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | E9-T9 | Cập nhật KẾ HOẠCH §3 và §6 theo số đo thật | Kế hoạch khớp thực tế, không còn 🔬 nào chưa có số | E8-T12 |
-| **E9-T10** | **Train lại recognition trên kiến trúc mới** — `ReLU` thay `PReLU`, đầu vào 113. Kiến trúc đã sửa, latency đã đo (1.079,7 ms), nhưng `models.lock.json` vẫn trỏ run `20260903-2258` của bản `PReLU` 112 | LFW/CFP-FP/AgeDB ≥ mốc bản cũ (0,9942 / 0,9559 / 0,9428), export INT8, lock đổi | E9-T3 |
-| **E9-T11** | **Train lại anti-spoof trên kiến trúc mới** — `ReLU`, `AvgPool2d` cỡ cố định thay `AdaptiveAvgPool2d`, đầu vào 81. Chưa chạy lần nào; lock vẫn trỏ run `20260905-1740` của bản `PReLU` 80 | ACER < 5% ở INT8, export, lock đổi | E9-T3, E9-T10 |
+| ~~E9-T10~~ | ~~**Train lại recognition trên kiến trúc mới**~~ — **XONG**: run `20260908-1750` (ReLU 113, `width=32`, 10 epoch) đã export Q1 720,3 KB và vào lock. Không đạt mốc bản `PReLU` 112 trên `cfp_fp_tar@far0.001` (0,6403 so với 0,7874); bản `width=64` `20260907-2314` đạt 0,7566 và giữ làm đối chứng | ✅ | E9-T3 |
+| **E9-T11** | **Train lại anti-spoof trên kiến trúc mới** — `ReLU`, `AvgPool2d` cỡ cố định, đầu vào 81. Run `20260909-1116` mới tới epoch 2/60. Nhánh này **đã rút khỏi lock**, ảnh `models_0` chỉ còn 2 nhánh cho tới khi có bản train xong | ACER < 5% ở INT8, chấm lại trên tập tự thu E3-T8, export, vào lock | E9-T3, E3-T8 |
 | **E9-T12** | Thêm tham số `width` cho `MiniFASNetBackbone` — kênh đang viết cứng `(32, 64, 128, 256)`, nên chưa thử thu nhỏ được như recognition đã làm | Đo arena + latency ở `bench_ai` với ít nhất 2 hệ số | — |
 
 > E9-T10 và E9-T11 là **nợ của E9-T3**: đổi op ở tầng kiến trúc thì phải train lại, mà mọi số latency hiện có đều đo trên **trọng số chưa train**. Latency không phụ thuộc trọng số nên các số đó đúng; accuracy thì phụ thuộc, nên chưa nhánh nào được chốt.
@@ -290,7 +277,7 @@ Vào epic này **chỉ khi** E8 chỉ ra vấn đề cụ thể. Không tối ư
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E14-T1 | Chương cơ sở lý thuyết: KD, quantization, TinyML | Xong bản nháp | E6-T8 |
+| E14-T1 | Chương cơ sở lý thuyết: kiến trúc thân thiện INT8, quantization, TinyML | Xong bản nháp | E6-T7 |
 | E14-T2 | Chương thiết kế: trích từ KẾ HOẠCH §2–§6 | Xong bản nháp | E13-T6 |
 | E14-T3 | Chương kết quả: bảng số từ `docs/measurements/` | Mọi số có nguồn đo | E13-T6 |
 | E14-T4 | Sơ đồ, ảnh sản phẩm, video demo | Đủ hình | E13-T6 |
@@ -318,4 +305,4 @@ Vào epic này **chỉ khi** E8 chỉ ra vấn đề cụ thể. Không tối ư
 | E13 Bảo mật + OTA | — |
 | E14 Báo cáo | — |
 
-Muốn rút ngắn thì cắt E6 xuống mức tối thiểu: train MiniFASNet thẳng bằng task loss, bỏ KD depth map. Vẫn có sản phẩm chạy, đổi lại mất phần đóng góp học thuật đáng giá nhất của đồ án.
+Muốn rút ngắn thì cắt E6 xuống mức tối thiểu: giữ nguyên train bằng task loss nhưng bỏ tập tự thu E3-T8, chấm bằng CelebA-Spoof. Vẫn có sản phẩm chạy, đổi lại số liveness không nói được gì về miền thiết bị.
