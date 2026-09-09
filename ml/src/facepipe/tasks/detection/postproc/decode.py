@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import torch
 
-from ..student.head import HeadOutput
+from ..model.head import HeadOutput
 
 
 def flatten_levels(tensors: list[torch.Tensor]) -> torch.Tensor:

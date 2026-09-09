@@ -2,7 +2,7 @@
 
 Each step is optional so the ladder can show what each one is worth. Turning
 them all off leaves plain min-max PTQ, which is the floor the rest is measured
-against (KEHOACH 3.8).
+against (KEHOACH 3.7).
 """
 
 import argparse

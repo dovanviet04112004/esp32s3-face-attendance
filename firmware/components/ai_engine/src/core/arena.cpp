@@ -27,7 +27,7 @@ esp_err_t Arena::reserve(size_t bytes, uint32_t caps) noexcept
     buffer_ = take(bytes, caps);
     internal_ = buffer_ != nullptr && (caps & MALLOC_CAP_INTERNAL) != 0;
     if (buffer_ == nullptr && (caps & MALLOC_CAP_INTERNAL) != 0) {
-        // Detection runs every frame, so psram here costs speed (KEHOACH 3.10).
+        // Detection runs every frame, so psram here costs speed (KEHOACH 3.8).
         ESP_LOGW(TAG, "%u KB needs one run, largest internal block is %u KB, using psram",
                  static_cast<unsigned>(bytes / 1024),
                  static_cast<unsigned>(

@@ -48,15 +48,6 @@ class ModelSection(Section):
         return value
 
 
-class TeacherSection(Section):
-    enabled: bool = False
-    name: str | None = None
-    ckpt: Path | None = None
-    input_hw: tuple[int, int] | None = None
-    params: dict[str, Any] = Field(default_factory=dict)
-    freeze: bool = True
-
-
 class DataSection(Section):
     name: str
     batch_size: int = 32
@@ -123,20 +114,6 @@ class StageSpec(Section):
     task_loss_weight: float = 1.0
 
 
-class DistillSection(Section):
-    enabled: bool = False
-    losses: list[LossSpec] = Field(default_factory=list)
-    feature_layers: list[str] = Field(default_factory=list)
-    # Two architectures share no layer names, so a feature term needs its own
-    # list per side; empty falls back to the student's, for models that do match.
-    teacher_feature_layers: list[str] = Field(default_factory=list)
-    task_loss_weight: float = 1.0
-    stages: list[StageSpec] = Field(default_factory=list)
-
-    def teacher_layers(self) -> list[str]:
-        return self.teacher_feature_layers or self.feature_layers
-
-
 class LogSection(Section):
     tensorboard: bool = True
     wandb: bool = False
@@ -153,8 +130,6 @@ class Config(Section):
     train: TrainSection = Field(default_factory=TrainSection)
     optim: OptimSection = Field(default_factory=OptimSection)
     sched: SchedSection = Field(default_factory=SchedSection)
-    teacher: TeacherSection = Field(default_factory=TeacherSection)
-    distill: DistillSection = Field(default_factory=DistillSection)
     log: LogSection = Field(default_factory=LogSection)
     quant: dict[str, Any] = Field(default_factory=dict)
 

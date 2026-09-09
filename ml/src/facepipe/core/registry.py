@@ -82,7 +82,6 @@ class Registry:
 
 
 MODELS = Registry("model")
-TEACHERS = Registry("teacher")
 LOSSES = Registry("loss")
 DATASETS = Registry("dataset")
 TRANSFORMS = Registry("transform")
@@ -90,5 +89,5 @@ OPTIMIZERS = Registry("optimizer")
 SCHEDULERS = Registry("scheduler")
 
 ALL_REGISTRIES: dict[str, Registry] = {
-    r.kind: r for r in (MODELS, TEACHERS, LOSSES, DATASETS, TRANSFORMS, OPTIMIZERS, SCHEDULERS)
+    r.kind: r for r in (MODELS, LOSSES, DATASETS, TRANSFORMS, OPTIMIZERS, SCHEDULERS)
 }

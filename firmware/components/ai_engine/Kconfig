@@ -6,7 +6,7 @@ menu "AI engine"
         range 16 2048
         help
             Detection is the only branch that runs on every frame, so it gets
-            an arena to itself (KEHOACH 3.10). E8-T7 measured it at 189,628 B.
+            an arena to itself (KEHOACH 3.8). E8-T7 measured it at 189,628 B.
 
     config AI_ARENA_FAST_INTERNAL
         bool "Ask for the detection arena in internal SRAM"
@@ -25,7 +25,7 @@ menu "AI engine"
         help
             Both run only once a face appears, rarely enough for PSRAM, and
             they share one MicroAllocator so their heads overlap while their
-            tails stack (KEHOACH 3.10).
+            tails stack (KEHOACH 3.8).
 
     config AI_PROFILING
         bool "Report ticks per operator after every invoke"

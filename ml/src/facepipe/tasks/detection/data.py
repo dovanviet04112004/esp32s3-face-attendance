@@ -1,7 +1,7 @@
 """Dataset, augmentation and prior assignment for the detection branch.
 
 Augmentation hits the teacher's cached detections in the same call as the real
-labels: transform one and not the other and the student imitates geometry from a
+labels: transform one and not the other and the model imitates geometry from a
 differently-cropped image while the loss still falls (KEHOACH 3, layer 2). The
 recipe is identical across all four arms, so nothing here reads for a teacher.
 """
@@ -22,10 +22,10 @@ from torch.utils.data import Dataset
 from facepipe.core.registry import DATASETS
 
 from .losses.task_loss import DetectionTargets
+from .model.anchors import feature_sizes, pyramid_priors
+from .model.head import LANDMARK_COUNT
+from .model.yunet import STRIDES
 from .postproc.decode import bbox_encode, kps_encode
-from .student.anchors import feature_sizes, pyramid_priors
-from .student.head import LANDMARK_COUNT
-from .student.yunet import STRIDES
 
 # Mirroring swaps the two eyes and the two mouth corners; the nose stays put.
 FLIP_INDEX = (1, 0, 2, 4, 3)
@@ -38,7 +38,7 @@ CENTER_RADIUS = 1.5
 # One cell of the finest level. A box smaller than the grid that has to place it
 # cannot be regressed, so such a face is dropped rather than learned as noise.
 MIN_FACE_PX = 8.0
-# Fraction of the frame a random window takes. Without it the student only ever
+# Fraction of the frame a random window takes. Without it the model only ever
 # meets WIDER at one scale, and never a face the size the kiosk will show it.
 CROP_SCALE = (0.3, 1.0)
 
@@ -117,7 +117,7 @@ def random_crop(
 ) -> Sample:
     """Take a random window of the image, so a face can appear at any size.
 
-    Without it the student sees WIDER at one scale while the kiosk shows a face
+    Without it the model sees WIDER at one scale while the kiosk shows a face
     filling a fifth of the frame (KEHOACH 3, layer 2). A face whose centre falls
     outside the window is dropped, not clipped.
     """
@@ -252,10 +252,10 @@ def assign_priors(
 def assign_soft_targets(
     boxes: np.ndarray, scores: np.ndarray, landmarks: np.ndarray, priors: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """One image's teacher detections resampled onto the student's own priors.
+    """One image's teacher detections resampled onto the model's own priors.
 
     The two regress from different priors, so only the pixel box survives and is
-    re-encoded against the student's own. An unclaimed prior takes
+    re-encoded against the model's own. An unclaimed prior takes
     TEACHER_BACKGROUND_LOGIT, since nothing below the teacher's cut was recorded.
     """
     count = priors.shape[0]

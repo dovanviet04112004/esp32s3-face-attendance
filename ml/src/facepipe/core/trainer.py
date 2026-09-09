@@ -61,7 +61,7 @@ def _uncompiled_state(state: Mapping[str, Any]) -> dict[str, Any]:
 
 
 class ModelEma:
-    """Exponential moving average of the student weights.
+    """Exponential moving average of the model weights.
 
     The shadow copy is kept on the same device and updated with no grad; it is
     what gets exported when ema_decay is on, since it is usually the better of

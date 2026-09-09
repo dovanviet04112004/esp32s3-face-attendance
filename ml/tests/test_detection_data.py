@@ -25,8 +25,8 @@ from facepipe.tasks.detection.data import (
     letterbox,
     random_crop,
 )
-from facepipe.tasks.detection.student import STRIDES, feature_sizes, pyramid_priors
-from facepipe.tasks.detection.student.head import LANDMARK_COUNT
+from facepipe.tasks.detection.model import STRIDES, feature_sizes, pyramid_priors
+from facepipe.tasks.detection.model.head import LANDMARK_COUNT
 
 INPUT_HW = (120, 160)
 LANDMARKS = np.array([[[20.0, 30.0], [60.0, 30.0], [40.0, 50.0], [25.0, 70.0], [55.0, 70.0]]])

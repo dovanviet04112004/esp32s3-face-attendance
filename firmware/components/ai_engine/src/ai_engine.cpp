@@ -77,7 +77,7 @@ extern "C" esp_err_t ai_engine_init(void)
              static_cast<unsigned>(internal_before / 1024),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
     // Detect alone runs every frame, so internal ram goes to it and the other
-    // two share one psram allocator (KEHOACH 3.10).
+    // two share one psram allocator (KEHOACH 3.8).
     struct {
         ai::ITfliteModel &model;
         const char *name;

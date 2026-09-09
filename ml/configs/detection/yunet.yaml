@@ -1,0 +1,55 @@
+# YuNet: box plus five landmarks (KEHOACH 1.1). Trained on labels alone, no
+# distillation (ADR-0002).
+
+run:
+  task: detection
+  seed: 42
+  deterministic: true
+  tags: [yunet]
+  notes: box and five landmarks on WIDER FACE
+
+model:
+  name: yunet
+  # 4:3, the aspect the OV5640 delivers; the bottom strip reaches the finest
+  # level only.
+  input_hw: [120, 160]
+  params:
+    num_classes: 1
+    shared_convs: 1
+
+data:
+  name: widerface
+  batch_size: 64
+  # An epoch waits on the step, not on decoding (measurements 7.2).
+  num_workers: 20
+  prefetch_factor: 4
+  split_files:
+    - data/splits/detection/v1/train.txt
+    - data/splits/detection/v1/landmark_val.txt
+  params:
+    # Originals, not the 320 px copy, or crop_scale invents pixels (measurements 7.2).
+    coco: data/interim/detection/widerface_coco/train.json
+    images: data/raw/detection/widerface/WIDER_train/images
+    # Lifts the median face from 2.9 px to 13.6 (measurements 3).
+    crop_scale: [0.3, 1.0]
+    min_face_px: 8
+
+train:
+  epochs: 300
+  amp: true
+  ema_decay: 0.999
+  grad_clip_norm: 10.0
+  val_every_epochs: 5
+
+optim:
+  name: sgd
+  lr: 0.02
+  weight_decay: 0.0005
+  params:
+    momentum: 0.9
+    nesterov: true
+
+sched:
+  name: cosine
+  warmup_epochs: 3
+  min_lr: 0.0001

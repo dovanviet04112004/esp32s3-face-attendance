@@ -1,12 +1,11 @@
 """List a graph's operators and say which ones ESP-NN accelerates.
 
 An op with no ESP-NN kernel still runs, on the TFLM reference C path, ten to
-forty times slower (KEHOACH 3.9). Finding one here costs a minute; finding it
+forty times slower (KEHOACH 3 layer 4). Finding one here costs a minute; finding it
 after the engine is built costs a rebuild of the branch.
 """
 
 import argparse
-import json
 from pathlib import Path
 
 # esp-nn carries optimised int8 kernels for these, and only these, on the
@@ -49,7 +48,7 @@ def operators(model_path: Path) -> dict[str, int]:
     interpreter = Interpreter(model_path=str(model_path))
     interpreter.allocate_tensors()
     counts: dict[str, int] = {}
-    for op in interpreter._get_ops_details():  # noqa: SLF001  the only public-ish route
+    for op in interpreter._get_ops_details():
         name = op["op_name"]
         # DELEGATE is the host interpreter handing work to XNNPACK; no such
         # node reaches the board, so counting it would overstate the graph.

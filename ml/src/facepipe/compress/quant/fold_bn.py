@@ -2,7 +2,7 @@
 
 Equalisation and bias correction both read a layer's weight range, and a range
 measured while BatchNorm still holds a separate scale is not the range the
-quantiser will see (KEHOACH 3.8).
+quantiser will see (KEHOACH 3.7).
 """
 
 import torch

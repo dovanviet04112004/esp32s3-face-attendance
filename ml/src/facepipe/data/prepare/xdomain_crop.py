@@ -1,6 +1,6 @@
 """Cross-domain sets to shards, with faces found the way the device finds them.
 
-Faces come from the detection student, not from a ground truth box the device
+Faces come from the detection branch, not from a ground truth box the device
 will never have: a crop the kiosk could not produce is not a fair test.
 CelebA-Spoof carries no attack-type label, so which attacks a model fails on can
 only come from sets that do (KEHOACH 1.2).
@@ -129,14 +129,14 @@ SETS = {"nuaa": nuaa_images, "axon": axon_images}
 
 
 def load_detector(ckpt: Path, device: str):
-    """The detection student and its priors, ready to run on one image at a time."""
+    """The detection model and its priors, ready to run on one image at a time."""
     import torch
 
-    from facepipe.tasks.detection.eval import load_student
-    from facepipe.tasks.detection.student.anchors import feature_sizes, pyramid_priors
-    from facepipe.tasks.detection.student.yunet import STRIDES
+    from facepipe.tasks.detection.eval import load_model
+    from facepipe.tasks.detection.model.anchors import feature_sizes, pyramid_priors
+    from facepipe.tasks.detection.model.yunet import STRIDES
 
-    model = load_student(Path(ckpt)).to(device).eval()
+    model = load_model(Path(ckpt)).to(device).eval()
     priors = torch.cat(pyramid_priors(feature_sizes(DETECT_HW, STRIDES), STRIDES)).to(device)
     return model, priors
 

@@ -18,14 +18,14 @@ from facepipe.tasks.detection.eval import (
     average_precision,
     decode_batch,
     evaluate,
-    load_student,
+    load_model,
     predict_images,
     size_subset,
     to_original,
 )
+from facepipe.tasks.detection.model.anchors import feature_sizes, pyramid_priors
+from facepipe.tasks.detection.model.yunet import STRIDES, YuNet
 from facepipe.tasks.detection.postproc.nms import box_iou, nms, top_k
-from facepipe.tasks.detection.student.anchors import feature_sizes, pyramid_priors
-from facepipe.tasks.detection.student.yunet import STRIDES, YuNet
 
 INPUT_HW = (120, 160)
 
@@ -161,7 +161,7 @@ def test_a_checkpoint_becomes_predictions_on_the_source_images(tmp_path: Path) -
 
     ckpt = tmp_path / "best.pth"
     torch.save({"model": YuNet().state_dict()}, ckpt)
-    model = load_student(ckpt)
+    model = load_model(ckpt)
 
     names = ["0--Parade/0.jpg", "0--Parade/1.jpg"]
     found = predict_images(model, names, tmp_path, INPUT_HW, torch.device("cpu"), conf=0.0)
@@ -182,7 +182,7 @@ def test_the_ema_copy_is_what_a_checkpoint_loads_back(tmp_path: Path) -> None:
     ckpt = tmp_path / "best.pth"
     torch.save({"model": live.state_dict(), "ema": {"module": shadow.state_dict()}}, ckpt)
 
-    loaded = load_student(ckpt)
+    loaded = load_model(ckpt)
     first = next(iter(loaded.state_dict().values()))
     assert torch.allclose(first, next(iter(shadow.state_dict().values())))
 
@@ -207,7 +207,7 @@ def test_the_coco_file_and_the_images_agree_on_names(tmp_path: Path) -> None:
     (tmp_path / "coco.json").write_text(json.dumps({"images": [], "annotations": []}), "utf-8")
 
     with pytest.raises(FileNotFoundError):
-        predict_images(load_student(ckpt), ["absent.jpg"], tmp_path, INPUT_HW, torch.device("cpu"))
+        predict_images(load_model(ckpt), ["absent.jpg"], tmp_path, INPUT_HW, torch.device("cpu"))
 
 
 def truth_with(tmp_path: Path, boxes: np.ndarray, size: tuple[int, int] = (480, 640)) -> tuple:

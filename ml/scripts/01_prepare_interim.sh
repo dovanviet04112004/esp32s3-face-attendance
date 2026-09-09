@@ -91,10 +91,10 @@ prepare_antispoof() {
     detector="${ML_ROOT}/$(paths_get antispoof.detector)"
     [[ -f "${detector}" ]] || {
         warn "no detection checkpoint at ${detector#"${ML_ROOT}/"}"
-        warn "antispoof crops are cut by the student, so train detection first (KEHOACH 3)"
+        warn "antispoof crops are cut by the detector, so train detection first (KEHOACH 3)"
         exit 1
     }
-    log "antispoof: CelebA-Spoof parquet -> crops 1.0x and 2.7x, faces from the student"
+    log "antispoof: CelebA-Spoof parquet -> crops 1.0x and 2.7x, faces from the detector"
     "${PY}" -m facepipe.data.prepare.celeba_spoof_parquet \
         --root "${RAW}/antispoof/celeba_spoof" \
         --out "${out}" \

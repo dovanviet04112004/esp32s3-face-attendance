@@ -114,7 +114,7 @@ def test_resume_restores_weights_exactly(config_file, tmp_path, tiny_loader) -> 
 class CentresInLoss(nn.Module):
     """A classifier the optimizer owns but the exported model never contains.
 
-    ArcFace puts its per-identity centres here, and they outweigh the student
+    ArcFace puts its per-identity centres here, and they outweigh the model
     they are trained beside (KEHOACH 4.4).
     """
 
@@ -404,27 +404,27 @@ def test_resume_into_a_compiled_run_restores_the_weights(
         assert torch.allclose(resumed.module.state_dict()[key], value), key
 
 
-class LossHoldingTheStudent(nn.Module):
-    """The distiller's shape: it runs the student and owns centres beside it.
+class LossHoldingTheModel(nn.Module):
+    """The training bundle's shape: it runs the model and owns centres beside it.
 
     A compiled run points this at the wrapper so the loss reaches the compiled
     graph, which is what puts the prefix into its state_dict (KEHOACH 4.4).
     """
 
-    def __init__(self, student: nn.Module, features: int = 2, classes: int = 3) -> None:
+    def __init__(self, model: nn.Module, features: int = 2, classes: int = 3) -> None:
         super().__init__()
-        self.student = student
+        self.model = model
         self.centres = nn.Parameter(torch.randn(classes, features))
 
     def forward(self, images: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        return nn.functional.cross_entropy(self.student(images) @ self.centres.t(), labels)
+        return nn.functional.cross_entropy(self.model(images) @ self.centres.t(), labels)
 
 
-def _build_holding_student(cfg: Config, run: RunDir, student: nn.Module, loader):
-    holder = LossHoldingTheStudent(student)
+def _build_holding_model(cfg: Config, run: RunDir, model: nn.Module, loader):
+    holder = LossHoldingTheModel(model)
     optimizer = build_optimizer(holder, cfg.optim)
     trainer = Trainer(
-        model=student,
+        model=model,
         optimizer=optimizer,
         scheduler=build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs),
         train_loader=loader,
@@ -434,7 +434,7 @@ def _build_holding_student(cfg: Config, run: RunDir, student: nn.Module, loader)
         step_fn=lambda batch: (holder(*batch), {}),
         trained_elsewhere={"holder": holder},
     )
-    holder.student = trainer.model
+    holder.model = trainer.model
     return trainer, holder
 
 
@@ -442,14 +442,14 @@ def test_a_compiled_run_keeps_the_prefix_out_of_elsewhere(
     monkeypatch, config_file, tmp_path, tiny_loader
 ) -> None:
     """The bug this guards: the loss was checkpointed through the compiled
-    wrapper but read back through the bare student, so no key ever matched."""
+    wrapper but read back through the bare model, so no key ever matched."""
     from tests.conftest import TinyNet
 
     monkeypatch.setattr(torch, "compile", lambda m, **kw: PrefixWrapper(m))
     cfg = _cfg(config_file, tmp_path, "train.compile=true")
     run = create_run_dir(cfg)
-    trainer, holder = _build_holding_student(cfg, run, TinyNet(), tiny_loader)
-    assert isinstance(holder.student, PrefixWrapper)
+    trainer, holder = _build_holding_model(cfg, run, TinyNet(), tiny_loader)
+    assert isinstance(holder.model, PrefixWrapper)
     trainer.fit()
 
     stored = torch.load(run.ckpt_dir / CKPT_LAST, map_location="cpu", weights_only=False)
@@ -464,14 +464,14 @@ def test_a_compiled_checkpoint_resumes_into_the_loss(
     monkeypatch.setattr(torch, "compile", lambda m, **kw: PrefixWrapper(m))
     cfg = _cfg(config_file, tmp_path, "train.compile=true")
     run = create_run_dir(cfg)
-    trainer, holder = _build_holding_student(cfg, run, TinyNet(), tiny_loader)
+    trainer, holder = _build_holding_model(cfg, run, TinyNet(), tiny_loader)
     trainer.fit()
     saved = holder.centres.detach().clone()
 
     resumed_cfg = _cfg(
         config_file, tmp_path, "train.compile=true", f"train.resume={run.ckpt_dir / CKPT_LAST}"
     )
-    _, fresh = _build_holding_student(
+    _, fresh = _build_holding_model(
         resumed_cfg, create_run_dir(resumed_cfg), TinyNet(), tiny_loader
     )
     assert torch.allclose(fresh.centres, saved)
@@ -486,12 +486,12 @@ def test_an_uncompiled_run_can_resume_a_compiled_checkpoint(
     monkeypatch.setattr(torch, "compile", lambda m, **kw: PrefixWrapper(m))
     cfg = _cfg(config_file, tmp_path, "train.compile=true")
     run = create_run_dir(cfg)
-    trainer, holder = _build_holding_student(cfg, run, TinyNet(), tiny_loader)
+    trainer, holder = _build_holding_model(cfg, run, TinyNet(), tiny_loader)
     trainer.fit()
     saved = holder.centres.detach().clone()
 
     resumed_cfg = _cfg(config_file, tmp_path, f"train.resume={run.ckpt_dir / CKPT_LAST}")
-    _, fresh = _build_holding_student(
+    _, fresh = _build_holding_model(
         resumed_cfg, create_run_dir(resumed_cfg), TinyNet(), tiny_loader
     )
     assert torch.allclose(fresh.centres, saved)

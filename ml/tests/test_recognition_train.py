@@ -1,4 +1,4 @@
-"""E5-T4 and E5-T6: the entry point runs both arms, and the benchmark protocol."""
+"""E5-T4 and E5-T6: the entry point trains, and the benchmark protocol."""
 
 from __future__ import annotations
 
@@ -14,8 +14,7 @@ from PIL import Image
 
 from facepipe.core.trainer import CKPT_BEST, CKPT_LAST
 from facepipe.data.prepare.images_to_wds import ShardWriter
-from facepipe.tasks.recognition import train_kd
-from facepipe.tasks.recognition.data import TEACHER_DTYPE
+from facepipe.tasks.recognition import train
 from facepipe.tasks.recognition.eval import (
     evaluate_all,
     kfold_accuracy,
@@ -23,8 +22,9 @@ from facepipe.tasks.recognition.eval import (
     read_bin,
     tar_at_far,
 )
+from facepipe.tasks.recognition.model.mobilefacenet import INPUT_SIZE
 
-INPUT_HW = (112, 112)
+INPUT_HW = (INPUT_SIZE, INPUT_SIZE)
 IDENTITIES = 4
 RECORDS = 16
 
@@ -96,12 +96,12 @@ def runs_of(tmp_path: Path) -> list[Path]:
     return sorted((tmp_path / "artifacts" / "recognition" / "runs").iterdir())
 
 
-def test_the_baseline_arm_trains_without_a_teacher(tmp_path: Path) -> None:
+def test_the_entry_point_trains_and_writes_a_run(tmp_path: Path) -> None:
     shards, split = write_dataset(tmp_path)
     cfg_path = write_config(
         tmp_path, shards, split, write_benchmark(tmp_path, names=("lfw", "cfp_fp"))
     )
-    assert train_kd.main(["--cfg", str(cfg_path)]) == 0
+    assert train.main(["--cfg", str(cfg_path)]) == 0
 
     run = runs_of(tmp_path)[0]
     assert (run / "ckpt" / CKPT_LAST).is_file()
@@ -109,63 +109,10 @@ def test_the_baseline_arm_trains_without_a_teacher(tmp_path: Path) -> None:
     assert (run / "config.resolved.yaml").is_file()
 
 
-def test_the_arcface_centres_are_updated_by_the_run(tmp_path: Path) -> None:
-    """They live in the loss, not the student, so an optimizer built over the
-    student alone would leave them at their random initialisation."""
-    shards, split = write_dataset(tmp_path)
-    cfg_path = write_config(
-        tmp_path, shards, split, write_benchmark(tmp_path, names=("lfw", "cfp_fp"))
-    )
-
-    from facepipe.core.config import load_config
-    from facepipe.core.scheduler import build_optimizer
-
-    cfg = load_config(cfg_path)
-    student = train_kd.MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
-    loss = train_kd.LOSSES.get(train_kd.TASK_LOSS)(num_classes=IDENTITIES, embedding=512)
-    distiller = train_kd.Distiller(student=student, teacher=None, loss_set=None, task_loss=loss)
-    tracked = {
-        id(p)
-        for group in build_optimizer(distiller, cfg.optim).param_groups
-        for p in group["params"]
-    }
-    assert id(loss.weight) in tracked
 
 
-def test_the_kd_arm_reads_the_cache_instead_of_the_images(tmp_path: Path) -> None:
-    shards, split = write_dataset(tmp_path)
-    cache = tmp_path / "teacher.f16"
-    rng = np.random.default_rng(0)
-    rng.standard_normal((RECORDS, 512)).astype(TEACHER_DTYPE).tofile(cache)
-
-    cfg_path = write_config(
-        tmp_path, shards, split, write_benchmark(tmp_path, names=("lfw", "cfp_fp"))
-    )
-    payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    payload["teacher"] = {"enabled": True, "name": "cached_embedding"}
-    payload["data"]["params"]["teacher_cache"] = str(cache)
-    payload["distill"] = {
-        "enabled": True,
-        "losses": [
-            {"name": "recognition_kd_embedding", "weight": 1.0},
-            {"name": "recognition_kd_relation_rkd", "weight": 1.0},
-        ],
-    }
-    cfg_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-
-    assert train_kd.main(["--cfg", str(cfg_path)]) == 0
-    assert (runs_of(tmp_path)[0] / "ckpt" / CKPT_LAST).is_file()
 
 
-def test_distilling_without_a_cache_says_so(tmp_path: Path) -> None:
-    """Silently distilling from nothing would produce a run that looks like an arm."""
-    from facepipe.tasks.recognition.data import RecogTargets
-
-    distiller = train_kd.CachedTeacherDistiller(
-        student=torch.nn.Identity(), teacher=None, loss_set=None
-    )
-    with pytest.raises(ValueError, match="teacher_cache"):
-        distiller.teacher_inputs(None, RecogTargets(labels=torch.zeros(1, dtype=torch.long)))
 
 
 def test_a_rectangular_input_is_refused(tmp_path: Path) -> None:
@@ -176,11 +123,11 @@ def test_a_rectangular_input_is_refused(tmp_path: Path) -> None:
         tmp_path, shards, split, write_benchmark(tmp_path, names=("lfw", "cfp_fp"))
     )
     payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    payload["model"]["input_hw"] = [112, 96]
+    payload["model"]["input_hw"] = [INPUT_SIZE, INPUT_SIZE - 16]
     cfg_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
 
     with pytest.raises(ValueError, match="square"):
-        train_kd.crop_size(load_config(cfg_path))
+        train.crop_size(load_config(cfg_path))
 
 
 def test_a_benchmark_reads_back_as_pairs(tmp_path: Path) -> None:
@@ -191,7 +138,7 @@ def test_a_benchmark_reads_back_as_pairs(tmp_path: Path) -> None:
 
 
 def test_the_benchmark_runner_scores_every_set_it_finds(tmp_path: Path) -> None:
-    from facepipe.tasks.recognition.student import MobileFaceNet
+    from facepipe.tasks.recognition.model import MobileFaceNet
 
     root = write_benchmark(tmp_path, pairs=10)
     model = MobileFaceNet(width=8).eval()

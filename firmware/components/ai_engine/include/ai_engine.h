@@ -29,7 +29,7 @@ typedef struct {
  */
 esp_err_t ai_engine_init(void);
 
-/** Where the two arenas of KEHOACH 3.10 ended up, all zero until init.
+/** Where the two arenas of KEHOACH 3.8 ended up, all zero until init.
  *  @ctx any | non-blocking
  */
 void ai_engine_arena_stats(ai_engine_arena_stats_t *out);

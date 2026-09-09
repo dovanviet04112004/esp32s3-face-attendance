@@ -1,4 +1,4 @@
-"""Calibration set for the detection branch (KEHOACH 3.8).
+"""Calibration set for the detection branch (KEHOACH 3.7).
 
 The converter measures activation ranges on whatever it is fed, so the crops
 here come through the same letterbox the training split uses. Ranges taken
@@ -34,7 +34,7 @@ def calibration_batches(cfg: object, split: str | None, limit: int):
 
 
 def torch_batches(cfg: object, split: str | None, samples: int):
-    """One batch shaped the way the student's own forward reads it."""
+    """One batch shaped the way the model's own forward reads it."""
     from .data import WiderFaceDataset, collate
 
     dataset = WiderFaceDataset(

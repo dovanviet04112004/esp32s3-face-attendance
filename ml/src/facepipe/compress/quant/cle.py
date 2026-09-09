@@ -3,7 +3,7 @@
 A channel whose weights are far larger than its neighbours' forces the whole
 tensor's quantisation range wide, and every other channel loses resolution to
 it. Scaling one layer down and the next one up by the same factor leaves the
-function unchanged while the ranges even out (KEHOACH 3.8).
+function unchanged while the ranges even out (KEHOACH 3.7).
 """
 
 import torch

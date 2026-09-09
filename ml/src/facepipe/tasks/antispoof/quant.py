@@ -1,4 +1,4 @@
-"""Calibration set for the anti-spoof branch (KEHOACH 3.8).
+"""Calibration set for the anti-spoof branch (KEHOACH 3.7).
 
 Both crops of a pair have to arrive together: the graph reads them as two
 inputs, and calibrating one while the other holds zeros measures a range the
@@ -32,7 +32,7 @@ def calibration_batches(cfg: object, split: str | None, limit: int):
 
 
 def torch_batches(cfg: object, split: str | None, samples: int):
-    """One batch shaped the way the student's own forward reads it: a pair."""
+    """One batch shaped the way the model's own forward reads it: a pair."""
     from .eval import build_loader
 
     split = split or cfg.data.params["val_split"]

@@ -30,16 +30,16 @@ test: ## Host-side tests for ml/ and backend/
 	cd backend && npm test
 
 # ml
-train-det: ## Distill the detection student
-	cd ml && uv run python -m facepipe.tasks.detection.train_kd --cfg configs/detection/kd.yaml
+train-det: ## Train the detection branch
+	cd ml && ./scripts/20_train_det.sh
 
-train-spoof: ## Distill the anti-spoof student
-	cd ml && uv run python -m facepipe.tasks.antispoof.train_kd --cfg configs/antispoof/kd.yaml
+train-spoof: ## Train the anti-spoof branch
+	cd ml && ./scripts/21_train_spoof.sh
 
-train-recog: ## Distill the recognition student
-	cd ml && uv run python -m facepipe.tasks.recognition.train_kd --cfg configs/recognition/kd.yaml
+train-recog: ## Train the recognition branch
+	cd ml && ./scripts/22_train_recog.sh
 
-quantize: ## Run the Q0..Q10 quantization ladder
+quantize: ## Run the Q0 and Q1 rungs on a run directory
 	cd ml && ./scripts/30_quantize.sh
 
 export: ## ONNX to INT8 TFLite, then update contracts/models.lock.json

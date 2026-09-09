@@ -36,7 +36,7 @@ class SpoofTaskLoss(nn.Module):
         self.label_smoothing = label_smoothing
 
     def forward(self, logits: torch.Tensor, batch: SpoofBatch) -> torch.Tensor:
-        # The trainer moves the model, not the loss the distiller holds, so this
+        # The trainer moves the model, not the loss beside it, so this
         # buffer follows the logits rather than assuming anyone moved it.
         return nn.functional.cross_entropy(
             logits,

@@ -1,6 +1,6 @@
 """Freeze a trained run into ONNX, the first link of the export chain.
 
-The graph it writes is the Q0 rung of KEHOACH 3.8: still float, and the
+The graph it writes is the Q0 rung of KEHOACH 3.7: still float, and the
 reference every quantised rung below is measured against. What shape the
 graph has belongs to the branch, so the branch hands it over in export_spec.
 """

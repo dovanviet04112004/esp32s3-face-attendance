@@ -27,7 +27,7 @@ esp_err_t TfliteModelBase::init(const tflite::Model *model, Arena &arena) noexce
     if (interpreter_ != nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
-    // Sharing the allocator, not the buffer, is what stacks tails (KEHOACH 3.10).
+    // Sharing the allocator, not the buffer, is what stacks tails (KEHOACH 3.8).
     interpreter_ = new (storage_)
         tflite::MicroInterpreter(model, resolver(), arena.allocator(), nullptr, profiler());
     if (interpreter_->AllocateTensors() != kTfLiteOk) {

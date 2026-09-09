@@ -164,11 +164,11 @@ def evaluate_all(
 
 
 def load_run(run: Path) -> tuple[object, torch.nn.Module]:
-    """Rebuild a run's student from the config it froze."""
+    """Rebuild a run's model from the config it froze."""
     from facepipe.core.config import load_config
     from facepipe.core.registry import MODELS
 
-    from .student import mobilefacenet  # noqa: F401  registers "mobilefacenet"
+    from .model import mobilefacenet  # noqa: F401  registers "mobilefacenet"
 
     cfg = load_config(run / "config.resolved.yaml", [])
     model = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
@@ -196,7 +196,7 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
 def main(argv: list[str] | None = None) -> int:
     from facepipe.core.registry import MODELS
 
-    from .student import mobilefacenet  # noqa: F401  registers "mobilefacenet"
+    from .model import mobilefacenet  # noqa: F401  registers "mobilefacenet"
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt", type=Path, default=None)

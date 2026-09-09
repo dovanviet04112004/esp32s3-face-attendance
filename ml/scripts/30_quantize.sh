@@ -56,16 +56,16 @@ ladder() {
 
     log "${tag}: torch to onnx"
     "${PY}" -m facepipe.export.to_onnx --run "${run}" \
-        --out "${art}/onnx/student_fp32_${tag}.onnx" || return 1
+        --out "${art}/onnx/model_fp32_${tag}.onnx" || return 1
 
     log "${tag}: onnx to savedmodel"
     "${PY}" -m facepipe.export.onnx_to_tf \
-        --onnx "${art}/onnx/student_fp32_${tag}.onnx" \
-        --out "${art}/tf/student_${tag}" || return 1
+        --onnx "${art}/onnx/model_fp32_${tag}.onnx" \
+        --out "${art}/tf/model_${tag}" || return 1
 
     log "${tag}: Q0, the float ceiling"
     "${PY}" -m facepipe.export.tf_to_tflite_int8 \
-        --saved "${art}/tf/student_${tag}" \
+        --saved "${art}/tf/model_${tag}" \
         --out "${art}/tflite/${model}_fp32_${tag}.tflite" || return 1
 
     log "${tag}: Q1, fold then equalise then correct bias"

@@ -1,7 +1,7 @@
 """WIDER FACE plus RetinaFace landmarks to COCO json.
 
 The RetinaFace label file is the source of truth for both boxes and the five
-landmarks: teacher and student must see identical targets, or the distilled
+landmarks: every branch that reads this file must see identical targets, or a
 landmark head learns against a different frame than the task loss.
 """
 

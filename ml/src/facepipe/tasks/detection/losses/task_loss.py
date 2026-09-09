@@ -16,8 +16,8 @@ from torch.nn.functional import binary_cross_entropy_with_logits, smooth_l1_loss
 
 from facepipe.core.registry import LOSSES
 
+from ..model.head import HeadOutput
 from ..postproc.decode import bbox_decode, flatten_output, kps_encode
-from ..student.head import HeadOutput
 
 
 @dataclass
@@ -104,8 +104,8 @@ class DetectionTaskLoss(nn.Module):
         self.gamma = gamma
         self.beta = beta
 
-    def forward(self, student_out: HeadOutput, batch: DetectionTargets) -> torch.Tensor:
-        cls_pred, bbox_pred, kps_pred = flatten_output(student_out)
+    def forward(self, model_out: HeadOutput, batch: DetectionTargets) -> torch.Tensor:
+        cls_pred, bbox_pred, kps_pred = flatten_output(model_out)
         positives = batch.positives
         # Every term is divided by the same count, so their weights stay
         # comparable no matter how many faces a batch happens to hold.

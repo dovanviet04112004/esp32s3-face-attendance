@@ -1,4 +1,4 @@
-"""E5-T1 to E5-T3: the student, the three losses, and the teacher that feeds them."""
+"""E5-T1 to E5-T3: the model, the three losses, and the teacher that feeds them."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from facepipe.data.prepare.images_to_wds import KEY_FIELD, ShardWriter, read_sha
 from facepipe.tasks.recognition.data import (
     Ms1mShardDataset,
     RecogTargets,
-    collate,
     decode,
     label_map,
     normalize_batch,
@@ -22,13 +21,9 @@ from facepipe.tasks.recognition.data import (
 )
 from facepipe.tasks.recognition.losses import (
     ArcFaceLoss,
-    EmbeddingDistillLoss,
-    RelationDistillLoss,
-    pairwise_angles,
-    pairwise_distances,
 )
-from facepipe.tasks.recognition.student import INPUT_SIZE, MobileFaceNet
-from facepipe.tasks.recognition.teacher import CachedEmbedding, IResNet, normalize_pixels
+from facepipe.tasks.recognition.model import INPUT_SIZE, MobileFaceNet
+from facepipe.tasks.recognition.model.mobilefacenet import FINAL_MAP
 
 EMBEDDING = 512
 
@@ -50,13 +45,13 @@ def write_shards(root: Path, records: int, identities: int, shard_size: int = 4)
     return root
 
 
-def test_the_student_emits_a_512_dimensional_embedding() -> None:
+def test_the_model_emits_a_512_dimensional_embedding() -> None:
     model = MobileFaceNet().eval()
     out = model(torch.randn(2, 3, INPUT_SIZE, INPUT_SIZE))
     assert out.shape == (2, EMBEDDING)
 
 
-def test_the_student_stays_inside_the_flash_budget() -> None:
+def test_the_model_stays_inside_the_flash_budget() -> None:
     """A model over about 1.3M parameters no longer fits the branch's INT8 share."""
     total = sum(p.numel() for p in MobileFaceNet().parameters())
     assert 1_000_000 < total < 1_300_000
@@ -69,31 +64,17 @@ def test_the_final_layer_weighs_cells_separately() -> None:
     if the two agreed the layer would not be doing what it exists to do.
     """
     model = MobileFaceNet().eval()
-    features = torch.randn(1, 512, 7, 7)
+    features = torch.randn(1, 512, FINAL_MAP, FINAL_MAP)
     with torch.no_grad():
         learned = model.head_dw(features)
         pooled = torch.nn.functional.adaptive_avg_pool2d(features, 1)
     assert not torch.allclose(learned, pooled, atol=1e-3)
 
 
-def test_the_teacher_reads_its_input_in_minus_one_to_one() -> None:
-    assert float(normalize_pixels(torch.tensor([0.0]))) == pytest.approx(-1.0)
-    assert float(normalize_pixels(torch.tensor([255.0]))) == pytest.approx(1.0, abs=1e-2)
 
 
-def test_the_teacher_architecture_matches_its_published_shape() -> None:
-    """43.6M parameters and a 512-D output: the shape w600k_r50 was trained in."""
-    model = IResNet()
-    total = sum(p.numel() for p in model.parameters())
-    assert 43_000_000 < total < 44_000_000
-    assert model.fc.in_features == 512 * 7 * 7
 
 
-def test_the_cached_teacher_only_widens_what_the_loader_read() -> None:
-    cached = torch.zeros(3, EMBEDDING, dtype=torch.float16)
-    out = CachedEmbedding()(cached)
-    assert out.dtype is torch.float32
-    assert out.shape == cached.shape
 
 
 def test_arcface_penalises_the_true_class_and_nothing_else() -> None:
@@ -140,45 +121,12 @@ def test_arcface_trains_its_own_centres() -> None:
     assert loss.weight.grad is not None and loss.weight.grad.abs().sum() > 0
 
 
-def test_embedding_distillation_reads_direction_and_ignores_length() -> None:
-    loss = EmbeddingDistillLoss()
-    teacher = torch.randn(4, EMBEDDING)
-    assert float(loss(teacher, teacher)) == pytest.approx(0.0, abs=1e-6)
-    assert float(loss(teacher * 7.0, teacher)) == pytest.approx(0.0, abs=1e-5)
-    assert float(loss(-teacher, teacher)) == pytest.approx(2.0, abs=1e-5)
 
 
-def test_relational_distillation_survives_a_rotation_of_the_whole_batch() -> None:
-    """RKD scores the batch's geometry, so moving all of it together is free.
-
-    That is the property the term exists for: the student may place the batch
-    anywhere on the sphere as long as the distances and angles inside it match.
-    """
-    torch.manual_seed(0)
-    loss = RelationDistillLoss()
-    teacher = torch.randn(8, 16)
-    rotation, _ = torch.linalg.qr(torch.randn(16, 16))
-    rotated = teacher @ rotation * 3.0
-
-    assert float(loss(teacher, teacher)) == pytest.approx(0.0, abs=1e-6)
-    assert float(loss(rotated, teacher)) == pytest.approx(0.0, abs=1e-5)
-    assert float(loss(torch.randn(8, 16), teacher)) > 1e-3
 
 
-def test_pairwise_distances_are_scaled_by_their_own_mean() -> None:
-    """Without that division the term would compare the two models' scales."""
-    points = torch.randn(6, 4)
-    scaled = pairwise_distances(points)
-    assert torch.allclose(scaled, pairwise_distances(points * 10.0), atol=1e-4)
-    off_diagonal = scaled[~torch.eye(6, dtype=torch.bool)]
-    assert float(off_diagonal.mean()) == pytest.approx(1.0, abs=1e-4)
 
 
-def test_pairwise_angles_are_cosines() -> None:
-    points = torch.tensor([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-    angles = pairwise_angles(points)
-    assert angles.shape == (3, 3, 3)
-    assert float(angles[0, 1, 2]) == pytest.approx(0.0, abs=1e-6)
 
 
 def test_the_label_map_is_contiguous_from_zero() -> None:
@@ -243,33 +191,8 @@ def test_reading_several_shards_at_once_mixes_identities(tmp_path: Path) -> None
     assert len({label // 4 for label in first_four}) > 1
 
 
-def test_the_teacher_cache_is_paired_with_the_record_that_produced_it(tmp_path: Path) -> None:
-    """Rows are addressed by the record key, so a mismatch would teach the wrong face."""
-    root = write_shards(tmp_path / "shards", records=8, identities=2, shard_size=8)
-    cache = tmp_path / "teacher.f16"
-    rows = np.arange(8 * 4, dtype=np.float16).reshape(8, 4)
-    rows.tofile(cache)
-
-    dataset = Ms1mShardDataset(
-        root,
-        identities=[0, 1],
-        train=False,
-        teacher_cache=cache,
-        embedding_dim=4,
-        shuffle_buffer=0,
-    )
-    for index, sample in enumerate(dataset):
-        assert np.array_equal(sample.teacher, rows[index])
 
 
-def test_collate_stacks_bytes_and_targets(tmp_path: Path) -> None:
-    root = write_shards(tmp_path / "shards", records=4, identities=2, shard_size=4)
-    dataset = Ms1mShardDataset(root, identities=[0, 1], train=False, shuffle_buffer=0)
-    images, targets = collate(list(dataset))
-    assert images.shape == (4, 3, INPUT_SIZE, INPUT_SIZE)
-    assert images.dtype is torch.uint8
-    assert targets.labels.tolist() == [0, 1, 0, 1]
-    assert targets.teacher is None
 
 
 def test_decoding_returns_the_declared_size() -> None:

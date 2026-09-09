@@ -13,7 +13,7 @@ from pathlib import Path
 from facepipe.export.pack_models_partition import BRANCH_ENTRY, sha256_of
 
 # The firmware tree names weights per branch, so swapping a rung of the
-# KEHOACH 3.8 ladder never renames a file the packer looks for.
+# KEHOACH 3.7 ladder never renames a file the packer looks for.
 DEPLOY_NAME = {
     "detection": "yunet_int8.tflite",
     "antispoof": "minifasnet_int8.tflite",

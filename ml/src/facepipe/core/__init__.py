@@ -5,8 +5,6 @@ import from facepipe.tasks; see KEHOACH 4.4.3.
 """
 
 from facepipe.core.config import Config, config_hash, dump_config, load_config
-from facepipe.core.distiller import Distiller, DistillLoss, DistillLossSet, TeacherWrapper
-from facepipe.core.hooks import FeatureHooks, capture_features
 from facepipe.core.logger import RunLogger, setup_console_logging
 from facepipe.core.metrics import AverageMeter, MetricTracker, Throughput
 from facepipe.core.registry import (
@@ -15,7 +13,6 @@ from facepipe.core.registry import (
     MODELS,
     OPTIMIZERS,
     SCHEDULERS,
-    TEACHERS,
     TRANSFORMS,
     Registry,
     RegistryError,
@@ -31,27 +28,20 @@ __all__ = [
     "MODELS",
     "OPTIMIZERS",
     "SCHEDULERS",
-    "TEACHERS",
     "TRANSFORMS",
     "AverageMeter",
     "Config",
-    "DistillLoss",
-    "DistillLossSet",
-    "Distiller",
-    "FeatureHooks",
     "MetricTracker",
     "ModelEma",
     "Registry",
     "RegistryError",
     "RunDir",
     "RunLogger",
-    "TeacherWrapper",
     "Throughput",
     "TrainState",
     "Trainer",
     "build_optimizer",
     "build_scheduler",
-    "capture_features",
     "config_hash",
     "create_run_dir",
     "dump_config",

@@ -100,20 +100,10 @@ def test_the_summary_carries_the_key_the_trainer_selects_on() -> None:
     assert row["auc"] == pytest.approx(1.0)
 
 
-def test_a_depth_map_and_a_pair_of_logits_both_become_one_score() -> None:
-    """The teacher draws a map and the student emits two logits, and a run has to
-    be scored the same way whichever produced it."""
-    reference = 0.42
-    perfect_live = torch.full((2, 1, 32, 32), reference)
-    assert liveness_of(perfect_live, reference).tolist() == pytest.approx([1.0, 1.0], abs=1e-5)
-
-    logits = torch.tensor([[6.0, -6.0], [-6.0, 6.0]])
-    scored = liveness_of(logits, reference)
-    assert scored[0] > 0.99 and scored[1] < 0.01
 
 
-def test_a_flat_map_reads_as_an_attack() -> None:
-    assert float(liveness_of(torch.zeros(1, 1, 32, 32), 0.42)[0]) == pytest.approx(0.0)
+def test_equal_logits_read_as_an_even_split() -> None:
+    assert float(liveness_of(torch.zeros(1, 2))[0]) == pytest.approx(0.5)
 
 
 def test_scores_come_back_aligned_with_their_labels() -> None:

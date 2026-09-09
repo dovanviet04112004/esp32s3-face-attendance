@@ -2,7 +2,7 @@
 
 Rounding weights does not shift a layer's output symmetrically: over a real
 batch the error has a mean, and that mean travels through every layer after
-it. Measuring it and subtracting it costs one pass and no labels (KEHOACH 3.8).
+it. Measuring it and subtracting it costs one pass and no labels (KEHOACH 3.7).
 """
 
 from collections.abc import Iterable
@@ -42,7 +42,7 @@ def correct(model: nn.Module, feed: Iterable[object]) -> dict[str, float]:
     """Adjust every convolution's bias by the shift its own inputs reveal.
 
     Each item of feed is the single argument the branch's forward takes, so a
-    two-view student yields a pair and a single-image one yields a tensor.
+    two-view model yields a pair and a single-image one yields a tensor.
     """
     seen: dict[str, torch.Tensor] = {}
     handles = []

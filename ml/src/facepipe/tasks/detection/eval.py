@@ -365,8 +365,8 @@ def predict_images(
     from PIL import Image
 
     from .data import letterbox_params
-    from .student.anchors import feature_sizes, pyramid_priors
-    from .student.yunet import STRIDES
+    from .model.anchors import feature_sizes, pyramid_priors
+    from .model.yunet import STRIDES
 
     priors = torch.cat(pyramid_priors(feature_sizes(input_hw, STRIDES), STRIDES)).to(device)
     model.eval()
@@ -397,11 +397,11 @@ def read_predictions(path: Path) -> dict[str, np.ndarray]:
         return {name: payload[name] for name in payload.files}
 
 
-def load_student(ckpt: Path, params: dict | None = None) -> torch.nn.Module:
-    """Rebuild the student and load a run's weights, preferring its EMA copy."""
+def load_model(ckpt: Path, params: dict | None = None) -> torch.nn.Module:
+    """Rebuild the model and load a run's weights, preferring its EMA copy."""
     from facepipe.core.registry import MODELS
 
-    from .student import yunet  # noqa: F401  registers "yunet"
+    from .model import yunet  # noqa: F401  registers "yunet"
 
     model = MODELS.build({"name": "yunet", "params": params or {}})
     payload = torch.load(ckpt, map_location="cpu", weights_only=False)
@@ -423,11 +423,11 @@ class ExportWrapper(torch.nn.Module):
 
 
 def load_run(run: Path) -> tuple[object, torch.nn.Module]:
-    """Rebuild a run's student from the config it froze."""
+    """Rebuild a run's model from the config it froze."""
     from facepipe.core.config import load_config
 
     cfg = load_config(run / "config.resolved.yaml", [])
-    return cfg, load_student(run / "ckpt" / "best.pth", cfg.model.params)
+    return cfg, load_model(run / "ckpt" / "best.pth", cfg.model.params)
 
 
 def export_spec(run: Path, model: torch.nn.Module | None = None):
@@ -438,7 +438,7 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     """
     from facepipe.core.config import load_config
 
-    from .student.yunet import STRIDES
+    from .model.yunet import STRIDES
 
     cfg = load_config(run / "config.resolved.yaml", [])
     traced = ExportWrapper(model if model is not None else load_run(run)[1])
@@ -474,7 +474,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.predictions is not None:
         predictions = read_predictions(args.predictions)
     else:
-        model = load_student(args.ckpt).to(args.device)
+        model = load_model(args.ckpt).to(args.device)
         detected = predict_images(
             model, truth.names, args.images, tuple(args.input_hw), torch.device(args.device)
         )

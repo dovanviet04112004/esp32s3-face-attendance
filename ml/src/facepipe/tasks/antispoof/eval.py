@@ -112,15 +112,12 @@ def summary(scores: np.ndarray, labels: np.ndarray) -> dict[str, float]:
     }
 
 
-def liveness_of(output: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
-    """One score per sample, from whichever head the branch's two models have.
+def liveness_of(output: torch.Tensor) -> torch.Tensor:
+    """One score per sample, read here rather than by each caller.
 
-    The teacher draws a depth map and the student emits two logits, and both are
-    read here rather than by the caller so a run is scored the same way whatever
-    produced it.
+    Every caller must read the same head the same way, or two numbers that look
+    comparable are not.
     """
-    if output.dim() >= 3:
-        return output.flatten(1).mean(dim=1) / reference
     return output.softmax(dim=1)[:, LIVE]
 
 
@@ -129,15 +126,12 @@ def collect_scores(
     model: torch.nn.Module, loader: Iterable, device: torch.device
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run one split through the model and return its scores beside its labels."""
-    from .teacher.depth_gt import live_reference_mean
-
     model.eval()
     scores: list[np.ndarray] = []
     truth: list[np.ndarray] = []
-    for tight, wide, labels, wide_scale in loader:
+    for tight, wide, labels, _wide_scale in loader:
         output = model((tight.to(device), wide.to(device)))
-        reference = torch.from_numpy(live_reference_mean(wide_scale.numpy())).to(device)
-        scores.append(liveness_of(output, reference).float().cpu().numpy())
+        scores.append(liveness_of(output).float().cpu().numpy())
         truth.append(labels.numpy())
     return np.concatenate(scores), np.concatenate(truth)
 
@@ -173,7 +167,7 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     from facepipe.core.config import load_config
     from facepipe.core.registry import MODELS, TEACHERS
 
-    from .student import minifasnet_v2_se  # noqa: F401  registers the student
+    from .model import minifasnet_v2_se  # noqa: F401  registers the model
     from .teacher import cdcnpp  # noqa: F401  registers the teacher
 
     cfg = load_config(run / "config.resolved.yaml", [])
