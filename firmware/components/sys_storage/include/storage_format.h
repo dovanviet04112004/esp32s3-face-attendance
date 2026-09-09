@@ -14,9 +14,12 @@
 #define STORAGE_SHA256_LEN 32
 #define STORAGE_MODEL_ALIGN 16            // esp-nn reads the weights aligned
 
+#define STORAGE_FACES_PATH "/lfs/db/faces.bin"  // KEHOACH 6.2.3
 #define STORAGE_FACES_MAGIC 0x31424446u   // 'FDB1'
 #define STORAGE_FACES_VER 1u
 #define STORAGE_FACE_MAGIC 0x45434146u    // 'FACE'
+#define STORAGE_FACE_FLAG_ACTIVE 0x01u
+#define STORAGE_FACE_FLAG_DELETED 0x02u
 #define STORAGE_EMBED_DIM 512
 
 #define STORAGE_ATTEND_MAGIC 0x31474C41u  // 'ALG1'

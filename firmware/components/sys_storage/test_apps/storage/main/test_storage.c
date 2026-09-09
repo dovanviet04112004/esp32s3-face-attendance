@@ -12,7 +12,7 @@
 #include "esp_log.h"
 #include "unity.h"
 
-#define FACES_PATH "/lfs/db/faces.bin"
+#define FACES_PATH STORAGE_FACES_PATH
 #define LOG_PATH "/lfs/log/attend.000"
 #define SCRATCH_PATH "/lfs/tmp/scratch.bin"
 #define RECORDS 16
