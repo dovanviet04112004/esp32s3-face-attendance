@@ -238,6 +238,12 @@ ESP32-S3 **không có** GPIO22–25. Dải chân thật là 0–21 và 26–48; 
 
 ### 2.3 Bảng đấu nối ngoại vi
 
+**Đọc bảng theo đúng chiều**: cột **Chân** là tên in trên **breakout của thiết bị**, cột
+**Nối tới** là chân của **ESP32-S3** (hoặc của PCF8574 khi ghi rõ `P<n>`). Hai cột không
+cùng một hệ số. Con VL53L1X có chân ngắt được ST đặt tên là **`GPIO1`** — đó là chân *của
+sensor*, không phải `GPIO1` của ESP32, mà `GPIO1` của ESP32 là **SDA** (§2.3B). Đấu theo
+cách đọc sai đó là nối ngõ ra ngắt vào đường SDA và làm chết cả bus.
+
 #### A. LCD ST7796S 3.5" 320×480 dọc — SPI 4 dây (SPI2_HOST)
 
 | Chân LCD | GPIO | Vai trò | Lưu ý |
@@ -289,7 +295,7 @@ ESP32-S3 **không có** GPIO22–25. Dải chân thật là 0–21 và 26–48; 
 | VIN | 3V3 (breakout có LDO nên 3.3–5 V đều được) | |
 | GND | GND | |
 | SDA / SCL | GPIO1 / GPIO2 | bus chung |
-| **GPIO1 (INT)** | **GPIO3** | GPIO3 nằm trong dải RTC GPIO (0–21) → **dùng làm nguồn đánh thức deep-sleep**. ⚠️ Strapping JTAG-source: để hở lúc boot, VL53L1X chỉ kéo xuống sau khi được cấu hình → an toàn |
+| **`GPIO1` của sensor** = ngõ ra ngắt (một số breakout in là `INT`) | **ESP GPIO3** | Không liên quan gì tới `GPIO1` của ESP32 — chân đó là SDA. ESP GPIO3 nằm trong dải RTC GPIO (0–21) → **dùng làm nguồn đánh thức deep-sleep**. ⚠️ Strapping JTAG-source: để hở lúc boot, VL53L1X chỉ kéo xuống sau khi được cấu hình → an toàn |
 | **XSHUT** | **PCF8574 P1** | P1 lên HIGH lúc cấp nguồn nên VL53L1X tự chạy ở địa chỉ mặc định `0x29` — đúng thứ ta cần vì chỉ có một con. P1 chỉ dùng để reset lại lúc chạy |
 
 **Cấu hình đo, suy từ dải làm việc đo được.** Recognition chặn dải ở 0,25–0,42 m (§3 lớp

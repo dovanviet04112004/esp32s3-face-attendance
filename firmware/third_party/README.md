@@ -22,7 +22,14 @@ Thứ có trên registry thì khai ở `main/idf_component.yml`, ESP-IDF tự k�
 ```
 vl53l1x_uld/
 ├── CMakeLists.txt      # ta viết
-├── UPSTREAM.md         # url, version, ngày, sha256, patch nào
+├── UPSTREAM.md         # url, version, ngày, sha256, patch nào, bỏ file nào
 ├── patches/*.patch
-└── {src, include}/     # nguyên bản, không đụng vào
+└── core/ platform/     # nguyên bản, không đụng vào
 ```
+
+Thư mục con giữ **đúng tên của bản gốc**, không đổi thành `src/`+`include/`: đổi tên là một
+dạng sửa, và nó làm sha256 không còn đối chiếu được theo đường dẫn.
+
+Bỏ **một file** khỏi bản vendor là hợp lệ khi file đó là bản mẫu mà dự án phải tự hiện
+thực — nhưng phải ghi rõ file nào và vì sao vào `UPSTREAM.md`. Xem `vl53l1x_uld` với
+`platform/vl53l1_platform.c`.
