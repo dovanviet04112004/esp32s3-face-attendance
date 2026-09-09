@@ -106,9 +106,9 @@ TEST_CASE("all three branches load and report what they took", "[bench_ai]")
     printf("inputs: detect %u B, spoof %u B, recog %u B\n",
            (unsigned)ai_engine_detect_input_len(), (unsigned)ai_engine_spoof_input_len(),
            (unsigned)ai_engine_recog_input_len());
-    printf("arena_fast %u B of %u KB in %s\n", (unsigned)stats.fast_used,
+    printf("arena_fast %u B of %u KB in %s\n", (unsigned)stats.fast_used_bytes,
            (unsigned)(stats.fast_bytes / 1024), stats.fast_internal ? "sram" : "psram");
-    printf("arena_big  %u B of %u KB in psram\n", (unsigned)stats.big_used,
+    printf("arena_big  %u B of %u KB in psram\n", (unsigned)stats.big_used_bytes,
            (unsigned)(stats.big_bytes / 1024));
     printf("free after init: internal %u KB, psram %u KB\n",
            (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),

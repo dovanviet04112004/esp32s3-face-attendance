@@ -173,8 +173,8 @@ extern "C" void ai_engine_arena_stats(ai_engine_arena_stats_t *out)
         return;
     }
     out->fast_bytes = s_fast.size();
-    out->fast_used = s_fast.used();
+    out->fast_used_bytes = s_fast.used();
     out->big_bytes = s_big.size();
-    out->big_used = s_big.used();
+    out->big_used_bytes = s_big.used();
     out->fast_internal = s_fast.internal();
 }

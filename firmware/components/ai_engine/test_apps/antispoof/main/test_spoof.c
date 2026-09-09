@@ -41,7 +41,7 @@ TEST_CASE("the branch comes up and reports where its arena landed", "[ai_spoof]"
 
     ai_engine_arena_stats_t stats;
     ai_engine_arena_stats(&stats);
-    TEST_ASSERT_GREATER_THAN_UINT(0, stats.fast_used);
+    TEST_ASSERT_GREATER_THAN_UINT(0, stats.big_used_bytes);
 
     // The crop side belongs to the graph, which picks it so every feature map
     // stays odd (KEHOACH 3 layer 1); pinning it here would pin two places.
@@ -49,9 +49,8 @@ TEST_CASE("the branch comes up and reports where its arena landed", "[ai_spoof]"
     const size_t side = square_side(s_len);
     printf("spoof input %u B, a square %ux%u RGB crop\n", (unsigned)s_len, (unsigned)side,
            (unsigned)side);
-    printf("arena_fast %u B used of %u KB in %s, internal free %u KB, psram free %u KB\n",
-           (unsigned)stats.fast_used, (unsigned)(stats.fast_bytes / 1024),
-           stats.fast_internal ? "sram" : "psram",
+    printf("arena_big %u B used of %u KB, internal free %u KB, psram free %u KB\n",
+           (unsigned)stats.big_used_bytes, (unsigned)(stats.big_bytes / 1024),
            (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
            (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
 }

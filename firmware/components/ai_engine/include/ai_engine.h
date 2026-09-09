@@ -14,13 +14,13 @@
 extern "C" {
 #endif
 
-/** What one arena reserved and how much of it the models on it hold. */
+/** What each arena reserved and how much of it the models on it hold. */
 typedef struct {
-    size_t fast_bytes;                    // reserved for detect and spoof
-    size_t fast_used;                     // handed out by its allocator
-    size_t big_bytes;                     // reserved for recognition
-    size_t big_used;
-    bool fast_internal;                   // false once it fell back to psram
+    size_t fast_bytes;                    // reserved for detect alone
+    size_t fast_used_bytes;               // handed out by its allocator
+    size_t big_bytes;                     // reserved for spoof and recog together
+    size_t big_used_bytes;                // handed out by its allocator
+    bool fast_internal;                   // true only while it sits in internal sram
 } ai_engine_arena_stats_t;
 
 /** Map the models partition and reserve both arenas.
