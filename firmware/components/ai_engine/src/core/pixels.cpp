@@ -8,10 +8,50 @@ namespace {
 
 constexpr float kInt8Min = -128.0f;
 constexpr float kInt8Max = 127.0f;
+constexpr int kMaxSide = 320;
 
 int clamp_index(int value, int limit) noexcept
 {
     return value < 0 ? 0 : (value >= limit ? limit - 1 : value);
+}
+
+// Source pixel range [first, last] covering destination cell i of `count` cells over [origin, origin + span).
+void cell_bounds(float origin, float span, int count, int limit, int *first, int *last) noexcept
+{
+    const float step = span / static_cast<float>(count);
+    for (int i = 0; i < count; ++i) {
+        const float lo = origin + i * step;
+        const float hi = lo + step;
+        int a = clamp_index(static_cast<int>(floorf(lo)), limit);
+        int b = clamp_index(static_cast<int>(ceilf(hi)) - 1, limit);
+        if (b < a) {
+            b = a;
+        }
+        first[i] = a;
+        last[i] = b;
+    }
+}
+
+void area_rows(const ai_engine_frame_t &frame, const int *col_first, const int *col_last, int cols, int row_first,
+               int row_last, int8_t *out, const Quantizer &quant) noexcept
+{
+    for (int c = 0; c < cols; ++c) {
+        unsigned sum[kChannels] = { 0, 0, 0 };
+        for (int y = row_first; y <= row_last; ++y) {
+            const uint16_t *row = frame.pixels + y * frame.width;
+            for (int x = col_first[c]; x <= col_last[c]; ++x) {
+                unsigned px[kChannels];
+                unpack_rgb565(row[x], px);
+                sum[0] += px[0];
+                sum[1] += px[1];
+                sum[2] += px[2];
+            }
+        }
+        const unsigned count = static_cast<unsigned>((col_last[c] - col_first[c] + 1) * (row_last - row_first + 1));
+        for (int k = 0; k < kChannels; ++k) {
+            *out++ = quant.byte((sum[k] + count / 2) / count);
+        }
+    }
 }
 
 }  // namespace
@@ -19,6 +59,9 @@ int clamp_index(int value, int limit) noexcept
 Quantizer::Quantizer(const TfLiteTensor *tensor, float mean, float span) noexcept
     : mean_(mean), span_(span), inverse_scale_(1.0f / tensor->params.scale), zero_point_(tensor->params.zero_point)
 {
+    for (int v = 0; v < kByteLevels; ++v) {
+        table_[v] = (*this)(static_cast<float>(v));
+    }
 }
 
 int8_t Quantizer::operator()(float value) const noexcept
@@ -27,14 +70,14 @@ int8_t Quantizer::operator()(float value) const noexcept
     return static_cast<int8_t>(q < kInt8Min ? kInt8Min : (q > kInt8Max ? kInt8Max : q));
 }
 
-void unpack_rgb565(uint16_t word, float rgb[kChannels]) noexcept
+void unpack_rgb565(uint16_t word, unsigned rgb[kChannels]) noexcept
 {
     const unsigned r = (word >> 11) & 0x1Fu;
     const unsigned g = (word >> 5) & 0x3Fu;
     const unsigned b = word & 0x1Fu;
-    rgb[0] = static_cast<float>((r << 3) | (r >> 2));
-    rgb[1] = static_cast<float>((g << 2) | (g >> 4));
-    rgb[2] = static_cast<float>((b << 3) | (b >> 2));
+    rgb[0] = (r << 3) | (r >> 2);
+    rgb[1] = (g << 2) | (g >> 4);
+    rgb[2] = (b << 3) | (b >> 2);
 }
 
 void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb[kChannels]) noexcept
@@ -48,7 +91,7 @@ void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb
     const int x1 = clamp_index(static_cast<int>(fx0) + 1, frame.width);
     const int y0 = clamp_index(static_cast<int>(fy0), frame.height);
     const int y1 = clamp_index(static_cast<int>(fy0) + 1, frame.height);
-    float p00[kChannels], p01[kChannels], p10[kChannels], p11[kChannels];
+    unsigned p00[kChannels], p01[kChannels], p10[kChannels], p11[kChannels];
     unpack_rgb565(frame.pixels[y0 * frame.width + x0], p00);
     unpack_rgb565(frame.pixels[y0 * frame.width + x1], p01);
     unpack_rgb565(frame.pixels[y1 * frame.width + x0], p10);
@@ -60,52 +103,34 @@ void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb
     }
 }
 
-void sample_area(const ai_engine_frame_t &frame, float x0, float y0, float x1, float y1,
-                 float rgb[kChannels]) noexcept
-{
-    int left = clamp_index(static_cast<int>(floorf(x0)), frame.width);
-    int top = clamp_index(static_cast<int>(floorf(y0)), frame.height);
-    int right = clamp_index(static_cast<int>(ceilf(x1)) - 1, frame.width);
-    int bottom = clamp_index(static_cast<int>(ceilf(y1)) - 1, frame.height);
-    if (right < left) {
-        right = left;
-    }
-    if (bottom < top) {
-        bottom = top;
-    }
-    float sum[kChannels] = { 0.0f, 0.0f, 0.0f };
-    for (int y = top; y <= bottom; ++y) {
-        const uint16_t *row = frame.pixels + y * frame.width;
-        for (int x = left; x <= right; ++x) {
-            float px[kChannels];
-            unpack_rgb565(row[x], px);
-            for (int c = 0; c < kChannels; ++c) {
-                sum[c] += px[c];
-            }
-        }
-    }
-    const float count = static_cast<float>((right - left + 1) * (bottom - top + 1));
-    for (int c = 0; c < kChannels; ++c) {
-        rgb[c] = sum[c] / count;
-    }
-}
-
 void resample_square(const ai_engine_frame_t &frame, float left, float top, float side, TfLiteTensor *tensor,
                      const Quantizer &quant) noexcept
 {
     const int size = tensor->dims->data[1];
-    const float step = side / static_cast<float>(size);
-    int8_t *out = tensor->data.int8;
+    if (size > kMaxSide) {
+        return;
+    }
+    int col_first[kMaxSide], col_last[kMaxSide], row_first[kMaxSide], row_last[kMaxSide];
+    cell_bounds(left, side, size, frame.width, col_first, col_last);
+    cell_bounds(top, side, size, frame.height, row_first, row_last);
     for (int row = 0; row < size; ++row) {
-        const float y0 = top + row * step;
-        for (int col = 0; col < size; ++col) {
-            const float x0 = left + col * step;
-            float rgb[kChannels];
-            sample_area(frame, x0, y0, x0 + step, y0 + step, rgb);
-            for (int c = 0; c < kChannels; ++c) {
-                *out++ = quant(rgb[c]);
-            }
-        }
+        area_rows(frame, col_first, col_last, size, row_first[row], row_last[row],
+                  tensor->data.int8 + row * size * kChannels, quant);
+    }
+}
+
+void resample_frame(const ai_engine_frame_t &frame, int new_w, int new_h, int8_t *out, int out_w,
+                    const Quantizer &quant) noexcept
+{
+    if (new_w > kMaxSide || new_h > kMaxSide) {
+        return;
+    }
+    int col_first[kMaxSide], col_last[kMaxSide], row_first[kMaxSide], row_last[kMaxSide];
+    cell_bounds(0.0f, static_cast<float>(frame.width), new_w, frame.width, col_first, col_last);
+    cell_bounds(0.0f, static_cast<float>(frame.height), new_h, frame.height, row_first, row_last);
+    for (int row = 0; row < new_h; ++row) {
+        area_rows(frame, col_first, col_last, new_w, row_first[row], row_last[row], out + row * out_w * kChannels,
+                  quant);
     }
 }
 
