@@ -170,12 +170,12 @@ TEST_CASE("a packed models partition reads back, an unpacked one is refused", "[
     size_t size = 0;
     if (err != ESP_OK) {
         TEST_ASSERT_TRUE(err == ESP_ERR_INVALID_CRC || err == ESP_ERR_NOT_FOUND);
-        TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, sys_storage_model_find("spoof", &data, &size));
+        TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, sys_storage_model_find("spoof", &data, &size, NULL));
         TEST_IGNORE_MESSAGE("models_0 carries no image, run ml/scripts/50_pack_and_flash.sh");
     }
     TEST_ASSERT_EQUAL_UINT32(STORAGE_MODELS_VER, header->format_ver);
     TEST_ASSERT_TRUE(header->count >= 1 && header->count <= STORAGE_MODEL_COUNT);
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_model_find("spoof", &data, &size));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_model_find("spoof", &data, &size, NULL));
     TEST_ASSERT_GREATER_THAN_UINT(0, size);
     // A flatbuffer carries its identifier at byte 4, so the packer's offset
     // arithmetic fails here rather than deep inside the interpreter.
