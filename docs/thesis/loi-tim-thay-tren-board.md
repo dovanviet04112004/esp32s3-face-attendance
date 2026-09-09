@@ -1,8 +1,8 @@
-# Hai lỗi chỉ phần cứng thật mới lộ ra
+# Ba lỗi chỉ phần cứng thật mới lộ ra
 
-Ghi cho chương thực nghiệm của báo cáo. Cả hai lỗi dưới đây **không** làm build fail,
+Ghi cho chương thực nghiệm của báo cáo. Cả ba lỗi dưới đây **không** làm build fail,
 **không** bị code review bắt, và **không** bị bất kỳ test nào trên máy tính phát hiện. Cả
-hai đều được tìm ra trong một buổi lắp cảm biến VL53L1X lên board thật, ngày 09/09/2026.
+ba đều được tìm ra trong một buổi lắp cảm biến VL53L1X lên board thật, ngày 09/09/2026.
 
 Điểm chung khiến chúng đáng viết vào báo cáo: **hàm báo thành công trong khi phần cứng
 chưa làm được việc**. Sai không nằm trong dòng code nào, nó nằm ở *giả định về thế giới bên
@@ -119,6 +119,18 @@ Comment trong code lúc đó còn ghi ngược sự thật — rằng chip kéo 
 Một comment nói trái phần cứng thì tệ hơn không có comment, vì nó chặn người sau khỏi đi
 kiểm lại.
 
+### Vì sao lúc bình thường không gặp
+
+Vì **đếm ngắt thì thấy đúng**. Ai kiểm cũng sẽ kiểm điều dễ kiểm nhất: chân ngắt có giương
+không? Có, 20 trên 20, đúng nhịp 100 ms. Nhìn vào đó thì mọi thứ đang hoạt động.
+
+Chỉ khi **thật sự đọc dữ liệu sau mỗi ngắt** mới lộ ra là chưa lần nào có dữ liệu. Mà cái
+đó chỉ xảy ra khi viết tầng dùng cảm biến — tức muộn hơn nhiều so với lúc viết driver.
+
+Thêm nữa, nếu chỉ đọc theo chu kỳ (polling) mà không dựa vào ngắt thì hệ **vẫn chạy đúng**,
+chỉ tốn điện hơn. Lỗi sẽ ngủ tới đúng lúc ai đó bật chế độ ngủ sâu và trông vào chân ngắt
+để đánh thức.
+
 ### Cách sửa
 
 Lập trình phân cực **active low** ngay trong `drv_tof_init()` thay vì trông vào mặc định.
@@ -145,6 +157,76 @@ cảm biến — nó chặn hồng ngoại 940 nm. Không liên quan tới lỗi
 
 ---
 
+## Lỗi 3 — Con số đúng theo datasheet, sai theo mạch thật
+
+### Hiện tượng
+
+`drv_touch` trượt 4 trong 6 test case. `esp_lcd_touch_new_i2c_gt911()` luôn thất bại ở bước
+đọc thanh ghi cấu hình, trả `ESP_ERR_INVALID_RESPONSE`.
+
+Đáng chú ý: bus scan **có** thấy GT911 ở `0x5D`, nhưng ngay trong app của `drv_touch` thì
+nó mất ở **cả hai** địa chỉ khả dĩ (`0x5D` và `0x14`). Nghĩa là bộ điều khiển không chỉ ở
+sai địa chỉ — nó không trả lời gì cả.
+
+### Cách truy
+
+Bước quyết định là **so một xung reset làm bằng tay với chuỗi reset của driver**:
+
+| | RST giữ thấp | Chờ sau khi nhả RST | INT lúc reset | Kết quả |
+|---|---|---|---|---|
+| Xung tay trong test | **100 ms** | 100 ms | không đụng | GT911 trả lời `0x5D` |
+| `select_address()` của driver | **10 ms** | 50 ms | kéo thấp | không trả lời |
+
+Ba biến khác nhau, nên phải khoá từng biến:
+
+| Thử | Kết quả |
+|---|---|
+| Nâng mốc chờ **sau** khi nhả RST 50 → 100 ms | vẫn trượt → **không phải** |
+| Trả INT về input sau khi chốt địa chỉ | vẫn trượt → **không phải** |
+| Nâng mốc giữ RST **thấp** 10 → 100 ms | **`init` thành công**, `gt911 at 0x5D, 320x480` |
+
+### Nguyên nhân
+
+Chân RST của GT911 **không đi qua GPIO của ESP32, nó đi qua PCF8574**. Con đó là ngõ ra
+**bán song hướng** (quasi-bidirectional): kéo xuống thì mạnh, nhưng **đẩy lên chỉ khoảng
+100 µA**. Nên cạnh lên của đường RST do điện dung của module quyết định, không do driver.
+
+Datasheet GT911 ghi RST cần giữ thấp ≥ **100 µs**. Chọn 10 ms là **thừa 100 lần** so với con
+số đó — và vẫn không đủ, vì con số đó nói về một chân được lái bằng **ngõ ra đẩy-kéo thông
+thường**, không phải qua một bộ mở rộng chỉ đẩy được 100 µA.
+
+### Vì sao lúc bình thường không gặp
+
+Đây là lỗi khó phát hiện nhất trong ba lỗi, vì **nó không trông giống lỗi ở bất kỳ đâu**:
+
+- **Code review không thể bắt.** Dòng code là `vTaskDelay(pdMS_TO_TICKS(10))` với hằng số
+  tên là `APP_TOUCH_RST_HOLD_MS`. Người review tra datasheet, thấy 100 µs, kết luận 10 ms
+  là quá đủ. Kết luận đó **đúng theo datasheet** và sai theo mạch.
+- **Sai không nằm ở con số mà ở mô hình.** Cả người viết và người review đều đang hình dung
+  một chân GPIO đẩy-kéo. Không ai sai phép tính; mọi người sai cùng một giả định về mạch.
+- **Không mô phỏng được.** Không có công cụ nào trên máy tính biết rằng chân này đi qua
+  PCF8574 và bao nhiêu điện dung nằm trên nó.
+- **Và chưa ai chạy `drv_touch` trên board.** Task `E7-T6` đã được đánh dấu hoàn thành. Lần
+  đầu chạy thật là buổi này, và nó trượt 4 trong 6 case.
+
+Nếu không chạy thử, lỗi này sẽ xuất hiện ở dạng "màn hình cảm ứng không ăn" — một triệu
+chứng mà người ta sẽ đi nghi dây, nghi panel, nghi LVGL, trước khi nghi một con số đã được
+đối chiếu với datasheet.
+
+### Bằng chứng đã sửa
+
+```
+I (543) drv_touch: gt911 at 0x5D, 320x480
+./main/test_touch.c:31:controller opens on the shared bus:PASS
+```
+
+Từ 4 trượt xuống **3 trượt**. Phần còn lại nằm ở `esp_lcd_touch_gt911_read_data` — một lỗi
+**khác**, chưa truy ra nguyên nhân, và đã ghi vào backlog `E7-T14` cùng ba giả thuyết đã
+loại. **Không thêm workaround cho nguyên nhân chưa biết**: chính nguyên tắc đó là lý do ba
+lỗi trên tìm được thật thay vì bị che lấp.
+
+---
+
 ## Bài học rút ra cho báo cáo
 
 **1. Hàm trả `ESP_OK` chỉ nói về phần nó kiểm soát.** `i2c_new_master_bus()` cấu hình
@@ -168,5 +250,16 @@ quá trình phát triển không bao giờ tạo ra: lỗi 1 cần **cấp đi�
 lỗi 2 cần **thật sự đọc dữ liệu** sau ngắt thay vì chỉ đếm ngắt. Test nào cũng chỉ kiểm
 được thứ nó chịu làm.
 
-**6. Đánh dấu "xong" mà chưa chạy trên board thì chưa xong.** `drv_ioexp` đã được đánh dấu
-hoàn thành trong backlog, và nó trượt 3 trong 4 test case ngay lần đầu chạy thật.
+**6. Đánh dấu "xong" mà chưa chạy trên board thì chưa xong.** `drv_ioexp` và `drv_touch`
+đều đã được đánh dấu hoàn thành trong backlog. Lần đầu chạy thật, `drv_ioexp` trượt 3 trong
+4 case và `drv_touch` trượt 4 trong 6.
+
+**7. Con số trong datasheet gắn với một mô hình mạch, không phải với chân bất kỳ.** Mốc
+"RST ≥ 100 µs" đúng cho chân được lái bằng ngõ ra đẩy-kéo. Chân đó đi qua bộ mở rộng chỉ
+đẩy được 100 µA thì con số mất hiệu lực — không phải vì datasheet sai, mà vì **điều kiện áp
+dụng đã khác**. Mọi hằng số thời gian lấy từ datasheet đều nên ghi kèm *nó giả định cách
+lái chân nào*.
+
+**8. Cách gỡ hiệu quả nhất là so một lần chạy được với một lần không chạy được, rồi khoá
+từng biến một.** Ở lỗi 3, hai bên lệch nhau ba tham số; thử lần lượt thì hai cái đầu loại
+được và cái thứ ba là nguyên nhân. Nhanh hơn nhiều so với đọc lại code lần thứ mười.
