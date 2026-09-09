@@ -10,6 +10,9 @@ static const char *TAG = "bsp_board";
 
 #define LCD_SPI_HOST SPI2_HOST
 #define I2C_LOCK_DEFAULT_MS 1000
+#define I2C_READY_CEILING_MS 500
+#define I2C_READY_STEP_MS 5
+#define I2C_ACK_WAIT_MS 20
 
 static i2c_master_bus_handle_t s_i2c_bus;
 static SemaphoreHandle_t s_i2c_mutex;
@@ -43,6 +46,37 @@ static esp_err_t i2c_bus_up(void)
     return i2c_new_master_bus(&cfg, &s_i2c_bus);
 }
 
+static esp_err_t wait_for_bus_devices(void)
+{
+    // i2c_new_master_bus succeeding says nothing about the devices: at 4 ms
+    // after boot none of them answers yet, measured (KEHOACH 2.3).
+    const uint16_t addrs[] = {APP_IOEXP_I2C_ADDR, APP_TOF_I2C_ADDR};
+    const size_t count = sizeof(addrs) / sizeof(addrs[0]);
+    bool answered[sizeof(addrs) / sizeof(addrs[0])] = {false};
+    esp_log_level_set("i2c.master", ESP_LOG_NONE);
+    for (int waited_ms = 0; waited_ms <= I2C_READY_CEILING_MS; waited_ms += I2C_READY_STEP_MS) {
+        size_t seen = 0;
+        for (size_t i = 0; i < count; ++i) {
+            answered[i] = answered[i] ||
+                          i2c_master_probe(s_i2c_bus, addrs[i], I2C_ACK_WAIT_MS) == ESP_OK;
+            seen += answered[i] ? 1 : 0;
+        }
+        if (seen == count) {
+            esp_log_level_set("i2c.master", ESP_LOG_INFO);
+            ESP_LOGI(TAG, "i2c ready after %d ms", waited_ms);
+            return ESP_OK;
+        }
+        vTaskDelay(pdMS_TO_TICKS(I2C_READY_STEP_MS));
+    }
+    esp_log_level_set("i2c.master", ESP_LOG_INFO);
+    for (size_t i = 0; i < count; ++i) {
+        if (!answered[i]) {
+            ESP_LOGE(TAG, "i2c 0x%02X silent after %d ms", addrs[i], I2C_READY_CEILING_MS);
+        }
+    }
+    return ESP_ERR_NOT_FOUND;
+}
+
 esp_err_t bsp_board_init(void)
 {
     if (s_ready) {
@@ -54,6 +88,7 @@ esp_err_t bsp_board_init(void)
     }
     APP_RETURN_ON_ERR(spi_bus_up(), TAG, "spi bus");
     APP_RETURN_ON_ERR(i2c_bus_up(), TAG, "i2c bus");
+    APP_RETURN_ON_ERR(wait_for_bus_devices(), TAG, "i2c devices");
     s_ready = true;
     ESP_LOGI(TAG, "spi2 and i2c0 up");
     return ESP_OK;

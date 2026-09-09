@@ -273,6 +273,28 @@ cách đọc sai đó là nối ngõ ra ngắt vào đường SDA và làm chế
 | PCF8574 (I/O expander) | `0x20` (A2A1A0 = GND GND GND) |
 | DS3231 (RTC, tùy chọn) | `0x68` |
 
+**`bsp_board_init()` phải chờ bus trả lời, không được trả về ngay sau khi tạo bus.**
+`i2c_new_master_bus()` thành công không có nghĩa bus chở được giao dịch: thiết bị cần thời
+gian sau khi ESP32 boot. Đo trên board:
+
+| Mốc | t+ |
+|---|---|
+| `bsp_board_init()` xong nếu không chờ | **4 ms** |
+| PCF8574 `0x20` ACK lần đầu | **5 ms** |
+| VL53L1X `0x29` ACK lần đầu | **17 ms** |
+| GT911 `0x5D` ACK lần đầu | **57 ms** |
+
+Ở t+4 ms **cả ba đều im**, trong khi SDA và SCL đều đã idle mức 1 — nên đây không phải
+thiếu pull-up mà là cuộc đua vài millisecond. Driver nào chạm bus ngay sau `bsp_board_init()`
+thì NACK; driver nào chậm vài ms thì chạy, nên lỗi đổi mặt theo từng lần sửa code và trông
+như ngẫu nhiên. **Reset chip không tái hiện được** vì ngoại vi vẫn đang có điện và đã sẵn
+sàng từ trước — chỉ lần cấp điện đầu mới lộ, tức đúng lúc người dùng cắm máy lần đầu.
+
+Chốt: `bsp_board_init()` thăm dò **những thiết bị có địa chỉ cố định lúc cấp nguồn** —
+`0x20` và `0x29` — tới khi cả hai ACK, trần **500 ms** (≈9× mốc 57 ms đo được), quá trần
+thì trả lỗi kèm địa chỉ nào im. GT911 **không** nằm trong danh sách chờ vì địa chỉ của nó
+do trình tự reset ở §2.3C quyết định, nên `drv_touch_init()` tự lo con của mình.
+
 #### C. Cảm ứng GT911
 
 | Chân | Nối tới | Ghi chú |

@@ -105,6 +105,25 @@ TEST_CASE("unlock hands the bus to the task waiting on it", "[bsp_board]")
     TEST_ASSERT_EQUAL(ESP_OK, s_probe_result);
 }
 
+TEST_CASE("init hands back a bus that already carries a transfer", "[bsp_board]")
+{
+    // Both devices are silent 4 ms after boot, so an init that only creates the
+    // bus lets whichever driver runs first NACK (KEHOACH 2.3).
+    uint8_t all_high = 0xFF;
+    i2c_master_dev_handle_t dev = NULL;
+    const i2c_device_config_t cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = APP_IOEXP_I2C_ADDR,
+        .scl_speed_hz = APP_I2C_HZ,
+    };
+    TEST_ASSERT_EQUAL(ESP_OK, i2c_master_bus_add_device(bsp_i2c_bus(), &cfg, &dev));
+    TEST_ASSERT_EQUAL(ESP_OK, bsp_i2c_lock(LOCK_WAIT_MS));
+    const esp_err_t err = i2c_master_transmit(dev, &all_high, 1, ACK_WAIT_MS);
+    bsp_i2c_unlock();
+    TEST_ASSERT_EQUAL(ESP_OK, i2c_master_bus_rm_device(dev));
+    TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, err, "init returned before the bus could carry a write");
+}
+
 TEST_CASE("the expander answers where app_config places it", "[bsp_board]")
 {
     TEST_ASSERT_EQUAL(ESP_OK, bsp_i2c_lock(LOCK_WAIT_MS));
