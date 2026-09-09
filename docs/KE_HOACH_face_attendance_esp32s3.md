@@ -408,7 +408,7 @@ và §5.3 hiện **chưa khai đường truyền** cho hai event đó.
 | **SD (shutdown/mode)** | **PCF8574 P3** | Kéo LOW khi không phát → hết nhiễu xì. Hoặc nối 100 kΩ lên VIN = chế độ mono (L+R)/2 |
 | GAIN | để hở | = 9 dB. Nối GND = 12 dB |
 | OUT+ / OUT− | Loa | Ngõ ra **cầu (BTL)** — **tuyệt đối không nối OUT− xuống GND** |
-| Tụ lọc | 470–1000 µF gần VIN | Bắt buộc, nếu không sẽ reset board khi phát to |
+| Tụ lọc | 470–1000 µF gần VIN, **chân dài (+) về VIN, chân vạch sọc (−) về GND** | Bắt buộc, nếu không sẽ reset board khi phát to. Cắm ngược cực thì tụ dẫn dòng và kéo sập VIN: amp rè rồi câm hẳn trong khi mọi chân tín hiệu vẫn đúng (đo 10/09) |
 
 #### F. Chấp hành — servo SG90 + thanh chắn
 
