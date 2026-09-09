@@ -2171,17 +2171,19 @@ Ba model không gộp chung một cục. Danh sách op, hậu xử lý và test 
 components/ai_engine/
 ├── include/ai_engine.h                    # mặt tiền C duy nhất cho cả 3 model
 ├── Kconfig                                # kích thước 2 arena, E8-T7 chỉnh lại theo số đo
-├── priv_include/{tflite_model.hpp, arena.hpp, model_store.hpp}
+├── priv_include/{tflite_model.hpp, arena.hpp, model_store.hpp, pixels.hpp}
 ├── src/
 │   ├── ai_engine.cpp                      # dựng 2 arena, mở model store, nối 3 model
 │   ├── core/                              # dùng chung — KHÔNG chứa gì riêng của model nào
 │   │   ├── model_base.cpp                 # TfliteModelBase: arena, interpreter, AllocateTensors
 │   │   ├── arena.cpp                      # cấp phát 16-byte aligned, internal → PSRAM fallback
 │   │   ├── model_store.cpp                # đọc header partition, trả con trỏ mmap từng entry
-│   │   └── profiler.cpp                   # MicroProfiler, chỉ bật khi CONFIG_AI_PROFILING
+│   │   ├── profiler.cpp                   # MicroProfiler, chỉ bật khi CONFIG_AI_PROFILING
+│   │   └── pixels.cpp                     # RGB565 → RGB, lấy mẫu bilinear/area, ghi vào tensor int8
 │   ├── detection/
 │   │   ├── detect_model.hpp               # DetectModel : TfliteModelBase, chỉ khai op + tên
 │   │   ├── ops.cpp                        # MicroMutableOpResolver<6>, đếm trên graph thật
+│   │   ├── letterbox.cpp                  # khung 480×320 → tensor 160×120, khớp letterbox_params
 │   │   ├── decode.cpp                     # giải mã anchor — khớp 1:1 ml/tasks/detection/postproc
 │   │   └── nms.cpp
 │   ├── antispoof/
