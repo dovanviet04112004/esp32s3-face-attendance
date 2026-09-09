@@ -1449,7 +1449,10 @@ ml/
 │   │                            #     da train: cat mat bang detect, khong bang Bbox (§3)
 │   ├── 20_train_det.sh ├── 21_train_spoof.sh ├── 22_train_recog.sh
 │   ├── 30_quantize.sh ├── 40_export.sh     ├── 41_emit_golden.sh
-│   └── 50_pack_and_flash.sh
+│   ├── 50_pack_and_flash.sh
+│   └── trainctl.sh              # ★ start | pause | resume | check cho mot nhanh.
+│                                #   Khong phai mot chang cua pipeline nen khong
+│                                #   co so, giong _resume_loop.sh
 │
 ├── artifacts/                             # ❌ gitignore
 │   │   ★ TRỤC PHÂN CHIA CẤP 1 LÀ NHÁNH MODEL, giống configs/ · data/ · tasks/
@@ -1705,6 +1708,18 @@ Quy tắc header:
 
 Header công khai là **mặt tiền C** (§4.5.3) để `app_main.c` và các component C gọi được. Toàn bộ OOP nằm sau mặt tiền đó, trong `src/*.cpp` và `priv_include/*.hpp`.
 
+
+**Hai cái bẫy `trainctl.sh` sinh ra để đóng.** Cả hai đã xảy ra thật:
+
+`pgrep -f` và `pkill -f` so mẫu với **toàn bộ dòng lệnh**, kể cả dòng lệnh của chính shell
+đang gõ nó. Gõ `pkill -f facepipe.tasks.recognition.train` vào terminal thì mẫu khớp chính
+cái shell đó và nó tự giết mình — train vẫn chạy, terminal thì chết. `trainctl.sh` liệt kê
+cây tổ tiên của chính nó rồi loại ra trước khi gửi tín hiệu.
+
+Resume phải nêu lại **đủ mọi tham số `model.params`**, không chỉ đường dẫn checkpoint. Model
+được dựng từ config rồi mới nạp `state_dict`, nên thiếu một tham số là dựng sai kiến trúc và
+`load_state_dict` báo `size mismatch`. `trainctl.sh resume` đọc lại chúng từ
+`config.resolved.yaml` của chính run đó, nên không phụ thuộc vào việc người gọi có nhớ hay không.
 ##### a) Ràng buộc C++ trên MCU
 
 ```
