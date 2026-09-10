@@ -55,7 +55,7 @@ TEST_CASE("whatever the last power-up left behind still reads back checked", "[s
     // Runs first: the cases below rewrite faces.bin, and this one has to see
     // the file exactly as a power cut in the [manual] loop left it.
     uint32_t loop_ran = 0;
-    sys_storage_get_u32(CUT_LOOP_KEY, &loop_ran);
+    sys_storage_get_u32(STORAGE_NS_SYS, CUT_LOOP_KEY, &loop_ran);
     const bool primary = exists(FACES_PATH);
     const bool backup = exists(FACES_PATH ".bak");
     const bool temp = exists(FACES_PATH ".tmp");
@@ -67,16 +67,16 @@ TEST_CASE("whatever the last power-up left behind still reads back checked", "[s
     // The board boots on its own when power returns, so the reading is kept
     // in nvs for whoever attaches a console afterwards.
     if (loop_ran) {
-        sys_storage_set_u32(CUT_STATE_KEY, (uint32_t)primary | (uint32_t)backup << 1 |
+        sys_storage_set_u32(STORAGE_NS_SYS, CUT_STATE_KEY, (uint32_t)primary | (uint32_t)backup << 1 |
                                                (uint32_t)temp << 2 | (uint32_t)other << 3);
     }
     uint32_t stored = 0;
-    if (sys_storage_get_u32(CUT_STATE_KEY, &stored) == ESP_OK) {
+    if (sys_storage_get_u32(STORAGE_NS_SYS, CUT_STATE_KEY, &stored) == ESP_OK) {
         printf("stored post-cut snapshot: primary %lu, backup %lu, tmp %lu, attend.000 %lu\n",
                (unsigned long)(stored & 1), (unsigned long)(stored >> 1 & 1),
                (unsigned long)(stored >> 2 & 1), (unsigned long)(stored >> 3 & 1));
     }
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(CUT_LOOP_KEY, 0));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, CUT_LOOP_KEY, 0));
     if (!primary && !backup) {
         TEST_ASSERT_EQUAL_MESSAGE(0, loop_ran, "the loop ran and the cut lost BOTH copies");
         TEST_IGNORE_MESSAGE("no faces.bin yet: run the power-cut loop, cut power, boot again");
@@ -89,10 +89,10 @@ TEST_CASE("whatever the last power-up left behind still reads back checked", "[s
     printf("faces.bin from the last power-up: record_count %lu, %s\n",
            (unsigned long)got.record_count, used_backup ? "served from backup" : "primary intact");
     if (loop_ran) {
-        sys_storage_set_u32(CUT_COUNT_KEY, got.record_count | (uint32_t)used_backup << 31);
+        sys_storage_set_u32(STORAGE_NS_SYS, CUT_COUNT_KEY, got.record_count | (uint32_t)used_backup << 31);
     }
     uint32_t stored_count = 0;
-    if (sys_storage_get_u32(CUT_COUNT_KEY, &stored_count) == ESP_OK) {
+    if (sys_storage_get_u32(STORAGE_NS_SYS, CUT_COUNT_KEY, &stored_count) == ESP_OK) {
         printf("stored post-cut record_count %lu, %s\n", (unsigned long)(stored_count & 0x7FFFFFFF),
                (stored_count >> 31) ? "served from backup" : "primary intact");
     }
@@ -102,8 +102,8 @@ TEST_CASE("a setting survives the round trip through nvs", "[sys_storage]")
 {
     const uint32_t written = 0xA5A50042u;
     uint32_t read_back = 0;
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32("probe", written));
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_get_u32("probe", &read_back));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, "probe", written));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_get_u32(STORAGE_NS_SYS, "probe", &read_back));
     TEST_ASSERT_EQUAL_UINT32(written, read_back);
 }
 
@@ -266,12 +266,12 @@ TEST_CASE("write faces.bin forever so power can be cut mid-write", "[sys_storage
     const esp_err_t up = sys_storage_init();
     TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
     uint32_t marker = 0;
-    sys_storage_get_u32(CUT_LOOP_KEY, &marker);
+    sys_storage_get_u32(STORAGE_NS_SYS, CUT_LOOP_KEY, &marker);
     // Looping again after a cut would overwrite the very file the cut left.
     if (marker) {
         TEST_IGNORE_MESSAGE("a cut happened since the last check: flash the normal suite first");
     }
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(CUT_LOOP_KEY, 1));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, CUT_LOOP_KEY, 1));
     storage_file_header_t header;
     for (uint32_t n = 1;; ++n) {
         fill_header(&header, STORAGE_FACES_MAGIC, n);
@@ -280,6 +280,34 @@ TEST_CASE("write faces.bin forever so power can be cut mid-write", "[sys_storage
             printf("write %lu done, cut power whenever you like\n", (unsigned long)n);
         }
     }
+}
+
+TEST_CASE("two namespaces hold the same key without meeting", "[sys_storage]")
+{
+    const char *key = "same_key";
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_UI, key, 11));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_VISION, key, 22));
+    uint32_t from_ui = 0, from_vision = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_get_u32(STORAGE_NS_UI, key, &from_ui));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_get_u32(STORAGE_NS_VISION, key, &from_vision));
+    printf("ui %u, vision %u for one key name\n", (unsigned)from_ui, (unsigned)from_vision);
+    TEST_ASSERT_EQUAL(11, from_ui);
+    TEST_ASSERT_EQUAL(22, from_vision);
+}
+
+TEST_CASE("a string setting comes back whole and a short buffer is refused", "[sys_storage]")
+{
+    const char *host = "pool.ntp.org";
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_str(STORAGE_NS_DEVICE, "sntp_host", host));
+    char read_back[32] = { 0 };
+    TEST_ASSERT_EQUAL(ESP_OK,
+                      sys_storage_get_str(STORAGE_NS_DEVICE, "sntp_host", read_back,
+                                          sizeof(read_back)));
+    printf("sntp_host reads %s\n", read_back);
+    TEST_ASSERT_EQUAL_STRING(host, read_back);
+    char tiny[4] = { 0 };
+    TEST_ASSERT_NOT_EQUAL(ESP_OK,
+                          sys_storage_get_str(STORAGE_NS_DEVICE, "sntp_host", tiny, sizeof(tiny)));
 }
 
 void app_main(void)

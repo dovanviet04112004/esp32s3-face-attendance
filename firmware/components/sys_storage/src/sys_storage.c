@@ -22,15 +22,21 @@ static const char *TAG = "sys_storage";
 #define SCRATCH_DIR MOUNT_POINT "/tmp"
 #define PARTITION_STORAGE "storage"
 #define PARTITION_MODELS "models_0"
-#define NVS_NAMESPACE "kiosk"
+#define NVS_LEGACY_NAMESPACE "kiosk"
 #define NVS_BOOT_COUNT "boot_count"
+#define NVS_SLOTS 6
 #define LOCK_WAIT_MS 5000
 #define PATH_MAX_LEN 64
 // LittleFS allows a 255 byte name, and the compiler checks that the join fits.
 #define SCRATCH_PATH_LEN (sizeof(SCRATCH_DIR) + 1 + 255)
 
+typedef struct {
+    const char *name;
+    nvs_handle_t handle;
+} nvs_slot_t;
+
 static SemaphoreHandle_t s_lock;
-static nvs_handle_t s_nvs;
+static nvs_slot_t s_slots[NVS_SLOTS];
 static uint32_t s_boot_count;
 static bool s_ready;
 
@@ -86,8 +92,46 @@ static esp_err_t open_settings(void)
         APP_RETURN_ON_ERR(nvs_flash_erase(), TAG, "nvs erase");
         err = nvs_flash_init();
     }
-    APP_RETURN_ON_ERR(err, TAG, "nvs init");
-    return nvs_open(NVS_NAMESPACE, NVS_READWRITE, &s_nvs);
+    return err;
+}
+
+// Handles are opened on demand and kept, since KEHOACH 6.2.1 names six groups
+// and a kiosk touches at most a few of them per boot.
+static esp_err_t namespace_handle(const char *ns, nvs_handle_t *out)
+{
+    for (size_t i = 0; i < NVS_SLOTS; ++i) {
+        if (s_slots[i].name != NULL && strcmp(s_slots[i].name, ns) == 0) {
+            *out = s_slots[i].handle;
+            return ESP_OK;
+        }
+    }
+    for (size_t i = 0; i < NVS_SLOTS; ++i) {
+        if (s_slots[i].name == NULL) {
+            APP_RETURN_ON_ERR(nvs_open(ns, NVS_READWRITE, &s_slots[i].handle), TAG, ns);
+            s_slots[i].name = ns;
+            *out = s_slots[i].handle;
+            return ESP_OK;
+        }
+    }
+    return ESP_ERR_NO_MEM;
+}
+
+// local_id must not repeat across the life of the device (KEHOACH 6.2.5), so a
+// count kept under the old flat namespace is carried into its group once.
+static uint32_t stored_boot_count(nvs_handle_t sys)
+{
+    uint32_t count = 0;
+    if (nvs_get_u32(sys, NVS_BOOT_COUNT, &count) == ESP_OK) {
+        return count;
+    }
+    nvs_handle_t legacy;
+    if (nvs_open(NVS_LEGACY_NAMESPACE, NVS_READONLY, &legacy) == ESP_OK) {
+        if (nvs_get_u32(legacy, NVS_BOOT_COUNT, &count) != ESP_OK) {
+            count = 0;
+        }
+        nvs_close(legacy);
+    }
+    return count;
 }
 
 esp_err_t sys_storage_init(void)
@@ -102,12 +146,11 @@ esp_err_t sys_storage_init(void)
     APP_RETURN_ON_ERR(open_settings(), TAG, "settings");
     APP_RETURN_ON_ERR(mount_filesystem(), TAG, "filesystem");
 
-    if (nvs_get_u32(s_nvs, NVS_BOOT_COUNT, &s_boot_count) != ESP_OK) {
-        s_boot_count = 0;
-    }
-    s_boot_count++;
-    APP_RETURN_ON_ERR(nvs_set_u32(s_nvs, NVS_BOOT_COUNT, s_boot_count), TAG, "boot count");
-    APP_RETURN_ON_ERR(nvs_commit(s_nvs), TAG, "commit");
+    nvs_handle_t sys;
+    APP_RETURN_ON_ERR(namespace_handle(STORAGE_NS_SYS, &sys), TAG, "sys namespace");
+    s_boot_count = stored_boot_count(sys) + 1;
+    APP_RETURN_ON_ERR(nvs_set_u32(sys, NVS_BOOT_COUNT, s_boot_count), TAG, "boot count");
+    APP_RETURN_ON_ERR(nvs_commit(sys), TAG, "commit");
 
     // Enrol leaves crops here and nothing reads them after a reboot, so the
     // directory starts empty rather than filling up over the device's life.
@@ -126,26 +169,68 @@ uint32_t sys_storage_boot_count(void)
     return s_boot_count;
 }
 
-esp_err_t sys_storage_get_u32(const char *key, uint32_t *value)
+esp_err_t sys_storage_get_u32(const char *ns, const char *key, uint32_t *value)
 {
-    if (!s_ready || key == NULL || value == NULL) {
+    if (!s_ready || ns == NULL || key == NULL || value == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     APP_RETURN_ON_ERR(take(), TAG, "lock");
-    const esp_err_t err = nvs_get_u32(s_nvs, key, value);
+    nvs_handle_t handle;
+    esp_err_t err = namespace_handle(ns, &handle);
+    if (err == ESP_OK) {
+        err = nvs_get_u32(handle, key, value);
+    }
     give();
     return err;
 }
 
-esp_err_t sys_storage_set_u32(const char *key, uint32_t value)
+esp_err_t sys_storage_get_str(const char *ns, const char *key, char *out, size_t cap)
 {
-    if (!s_ready || key == NULL) {
+    if (!s_ready || ns == NULL || key == NULL || out == NULL || cap == 0) {
         return ESP_ERR_INVALID_ARG;
     }
     APP_RETURN_ON_ERR(take(), TAG, "lock");
-    esp_err_t err = nvs_set_u32(s_nvs, key, value);
+    nvs_handle_t handle;
+    size_t len = cap;
+    esp_err_t err = namespace_handle(ns, &handle);
     if (err == ESP_OK) {
-        err = nvs_commit(s_nvs);
+        err = nvs_get_str(handle, key, out, &len);
+    }
+    give();
+    return err;
+}
+
+esp_err_t sys_storage_set_str(const char *ns, const char *key, const char *value)
+{
+    if (!s_ready || ns == NULL || key == NULL || value == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    nvs_handle_t handle;
+    esp_err_t err = namespace_handle(ns, &handle);
+    if (err == ESP_OK) {
+        err = nvs_set_str(handle, key, value);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
+    give();
+    return err;
+}
+
+esp_err_t sys_storage_set_u32(const char *ns, const char *key, uint32_t value)
+{
+    if (!s_ready || ns == NULL || key == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    nvs_handle_t handle;
+    esp_err_t err = namespace_handle(ns, &handle);
+    if (err == ESP_OK) {
+        err = nvs_set_u32(handle, key, value);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
     }
     give();
     return err;

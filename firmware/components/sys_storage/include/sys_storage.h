@@ -20,16 +20,36 @@ extern "C" {
  */
 esp_err_t sys_storage_init(void);
 
-/** Read one unsigned setting.
+// The six groups of KEHOACH 6.2.1, one NVS namespace each.
+#define STORAGE_NS_WIFI "wifi"
+#define STORAGE_NS_DEVICE "device"
+#define STORAGE_NS_MODEL "model"
+#define STORAGE_NS_SYS "sys"
+#define STORAGE_NS_UI "ui"
+#define STORAGE_NS_VISION "vision"
+
+/** Read one unsigned setting from a namespace of KEHOACH 6.2.1.
  *  @ctx task | blocking | takes m_littlefs (KEHOACH 5.3)
+ *  @param ns one of the STORAGE_NS_* names
  *  @ret ESP_OK | ESP_ERR_NVS_NOT_FOUND, leaving the destination untouched
  */
-esp_err_t sys_storage_get_u32(const char *key, uint32_t *value);
+esp_err_t sys_storage_get_u32(const char *ns, const char *key, uint32_t *value);
 
 /** Write one unsigned setting and commit it.
  *  @ctx task | blocking | takes m_littlefs
  */
-esp_err_t sys_storage_set_u32(const char *key, uint32_t value);
+esp_err_t sys_storage_set_u32(const char *ns, const char *key, uint32_t value);
+
+/** Read one string setting, always leaving a terminator inside cap.
+ *  @ctx task | blocking | takes m_littlefs
+ *  @ret ESP_OK | ESP_ERR_NVS_NOT_FOUND | ESP_ERR_NVS_INVALID_LENGTH when cap is short
+ */
+esp_err_t sys_storage_get_str(const char *ns, const char *key, char *out, size_t cap);
+
+/** Write one string setting and commit it.
+ *  @ctx task | blocking | takes m_littlefs
+ */
+esp_err_t sys_storage_set_str(const char *ns, const char *key, const char *value);
 
 /** How many times this device has booted, counted up once per init.
  *  @ctx any | non-blocking | the high half of every attendance local_id

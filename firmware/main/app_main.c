@@ -17,7 +17,7 @@ static const char *TAG = "app_main";
 static bool rtc_ntp_marker(void)
 {
     uint32_t marker = 0;
-    return sys_storage_get_u32(NVS_RTC_NTP_SET, &marker) == ESP_OK && marker != 0;
+    return sys_storage_get_u32(STORAGE_NS_SYS, NVS_RTC_NTP_SET, &marker) == ESP_OK && marker != 0;
 }
 
 void app_main(void)
