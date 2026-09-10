@@ -63,11 +63,15 @@ bool fit(const float landmarks[2 * kLandmarks], float size, Similarity &out)
 
 }  // namespace
 
-esp_err_t align_face(const ai_engine_frame_t &frame, const float landmarks[10], TfLiteTensor *input) noexcept
+esp_err_t align_face(const ai_engine_frame_t &frame, const float landmarks[10], const TfLiteTensor *input,
+                     int8_t *out, size_t cap_bytes) noexcept
 {
-    if (frame.pixels == nullptr || landmarks == nullptr || input == nullptr || input->dims->size != 4 ||
-        input->dims->data[3] != kChannels) {
+    if (frame.pixels == nullptr || landmarks == nullptr || input == nullptr || out == nullptr ||
+        input->dims->size != 4 || input->dims->data[3] != kChannels) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (cap_bytes < input->bytes) {
+        return ESP_ERR_INVALID_SIZE;
     }
     const int size = input->dims->data[1];
     Similarity m;
@@ -82,7 +86,6 @@ esp_err_t align_face(const ai_engine_frame_t &frame, const float landmarks[10], 
     const float ia = m.a / det;
     const float ib = -m.b / det;
     const Quantizer quant(input, kPixelMean, kPixelSpan);
-    int8_t *out = input->data.int8;
     for (int row = 0; row < size; ++row) {
         for (int col = 0; col < size; ++col) {
             const float dx = static_cast<float>(col) - m.tx;

@@ -35,8 +35,8 @@ void unpack_rgb565(uint16_t word, unsigned rgb[kChannels]) noexcept;
 /** Bilinear sample at a fractional position, clamped to the frame border. */
 void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb[kChannels]) noexcept;
 
-/** Resample one frame rectangle onto a square int8 NHWC tensor region by area averaging. */
-void resample_square(const ai_engine_frame_t &frame, float left, float top, float side, TfLiteTensor *tensor,
+/** Resample one frame rectangle onto a size x size x 3 int8 block by area averaging. */
+void resample_square(const ai_engine_frame_t &frame, float left, float top, float side, int size, int8_t *out,
                      const Quantizer &quant) noexcept;
 
 /** Resample the whole frame to new_w x new_h by area averaging, writing NHWC int8

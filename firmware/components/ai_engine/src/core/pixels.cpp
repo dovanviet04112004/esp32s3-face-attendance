@@ -103,10 +103,9 @@ void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb
     }
 }
 
-void resample_square(const ai_engine_frame_t &frame, float left, float top, float side, TfLiteTensor *tensor,
+void resample_square(const ai_engine_frame_t &frame, float left, float top, float side, int size, int8_t *out,
                      const Quantizer &quant) noexcept
 {
-    const int size = tensor->dims->data[1];
     if (size > kMaxSide) {
         return;
     }
@@ -114,8 +113,7 @@ void resample_square(const ai_engine_frame_t &frame, float left, float top, floa
     cell_bounds(left, side, size, frame.width, col_first, col_last);
     cell_bounds(top, side, size, frame.height, row_first, row_last);
     for (int row = 0; row < size; ++row) {
-        area_rows(frame, col_first, col_last, size, row_first[row], row_last[row],
-                  tensor->data.int8 + row * size * kChannels, quant);
+        area_rows(frame, col_first, col_last, size, row_first[row], row_last[row], out + row * size * kChannels, quant);
     }
 }
 

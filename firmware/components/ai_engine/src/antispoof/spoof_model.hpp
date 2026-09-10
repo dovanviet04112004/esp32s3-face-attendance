@@ -26,12 +26,14 @@ protected:
     tflite::MicroOpResolver &resolver() noexcept override { return spoof_ops(); }
 };
 
-/** Cut the tight and wide crops of one face box, in frame pixels, into the
- *  two input tensors; the wide square is the largest that fits, at most 2.7x (KEHOACH 3).
+/** Cut the tight and wide crops of one face box, in frame pixels, into two
+ *  buffers shaped and quantised like the input tensors; the wide square is the
+ *  largest that fits, at most 2.7x (KEHOACH 3).
  *  @ctx ai_task | blocking for the two resamples
- *  @param wide_scale receives the context ratio the frame actually allowed
+ *  @param cap_bytes size of each buffer; @param wide_scale the context ratio the frame allowed
  */
-esp_err_t crop_pair(const ai_engine_frame_t &frame, const float box[4], TfLiteTensor *tight, TfLiteTensor *wide,
+esp_err_t crop_pair(const ai_engine_frame_t &frame, const float box[4], const TfLiteTensor *tight,
+                    const TfLiteTensor *wide, int8_t *tight_out, int8_t *wide_out, size_t cap_bytes,
                     float *wide_scale) noexcept;
 
 }  // namespace ai

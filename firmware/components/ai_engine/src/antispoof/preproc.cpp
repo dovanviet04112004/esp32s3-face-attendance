@@ -40,21 +40,27 @@ Square fitted(const float box[4], float scale, int width, int height)
 
 }  // namespace
 
-esp_err_t crop_pair(const ai_engine_frame_t &frame, const float box[4], TfLiteTensor *tight, TfLiteTensor *wide,
+esp_err_t crop_pair(const ai_engine_frame_t &frame, const float box[4], const TfLiteTensor *tight,
+                    const TfLiteTensor *wide, int8_t *tight_out, int8_t *wide_out, size_t cap_bytes,
                     float *wide_scale) noexcept
 {
-    if (frame.pixels == nullptr || box == nullptr || tight == nullptr || wide == nullptr || wide_scale == nullptr ||
-        tight->dims->size != 4 || wide->dims->size != 4 || tight->dims->data[3] != kChannels ||
-        wide->dims->data[3] != kChannels) {
+    if (frame.pixels == nullptr || box == nullptr || tight == nullptr || wide == nullptr || tight_out == nullptr ||
+        wide_out == nullptr || wide_scale == nullptr || tight->dims->size != 4 || wide->dims->size != 4 ||
+        tight->dims->data[3] != kChannels || wide->dims->data[3] != kChannels) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (cap_bytes < tight->bytes || cap_bytes < wide->bytes) {
+        return ESP_ERR_INVALID_SIZE;
     }
     if (box[2] <= box[0] || box[3] <= box[1]) {
         return ESP_ERR_INVALID_ARG;
     }
     const Square near = fitted(box, kTightScale, frame.width, frame.height);
     const Square far = fitted(box, kWideScale, frame.width, frame.height);
-    resample_square(frame, near.left, near.top, near.side, tight, Quantizer(tight, kPixelMean, kPixelSpan));
-    resample_square(frame, far.left, far.top, far.side, wide, Quantizer(wide, kPixelMean, kPixelSpan));
+    resample_square(frame, near.left, near.top, near.side, tight->dims->data[1], tight_out,
+                    Quantizer(tight, kPixelMean, kPixelSpan));
+    resample_square(frame, far.left, far.top, far.side, wide->dims->data[1], wide_out,
+                    Quantizer(wide, kPixelMean, kPixelSpan));
     *wide_scale = far.reached;
     return ESP_OK;
 }
