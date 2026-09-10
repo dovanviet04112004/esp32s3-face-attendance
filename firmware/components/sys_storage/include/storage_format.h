@@ -15,6 +15,8 @@
 #define STORAGE_MODEL_ALIGN 16            // esp-nn reads the weights aligned
 
 #define STORAGE_FACES_PATH "/lfs/db/faces.bin"  // KEHOACH 6.2.3
+#define STORAGE_ATTEND_DIR "/lfs/log"             // KEHOACH 6.2.5
+#define STORAGE_ATTEND_PATH "/lfs/log/attend.000"  // rotation is E10-T3
 #define STORAGE_FACES_MAGIC 0x31424446u   // 'FDB1'
 #define STORAGE_FACES_VER 1u
 #define STORAGE_FACE_MAGIC 0x45434146u    // 'FACE'
