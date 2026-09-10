@@ -2997,7 +2997,7 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 
 | Dữ liệu | Kích thước | Vùng | Cách cấp phát | Vì sao |
 |---|---|---|---|---|
-| Camera FB ×3 (480×320 RGB565) | 3 × 300 KB = 900 KB | **PSRAM** | `fb_location = CAMERA_FB_IN_PSRAM`, `fb_count = 3`, `grab_mode = CAMERA_GRAB_LATEST` | Quá lớn cho SRAM. Một cấu hình cho cả preview và AI (§2.1), nên không có buffer riêng cho nhánh AI |
+| Camera FB ×4 (480×320 RGB565) | 4 × 300 KB = 1.200 KB | **PSRAM** | `fb_location = CAMERA_FB_IN_PSRAM`, `fb_count = 4`, `grab_mode = CAMERA_GRAB_LATEST` | Quá lớn cho SRAM. Một cấu hình cho cả preview và AI (§2.1), nên không có buffer riêng cho nhánh AI. **Cần 4 chứ không phải 3**: `ai_task` giữ một khung tới 2 giây và `cam_task` giữ một khung suốt lúc vẽ, nên với 3 khung cảm biến không còn chỗ để lấp khung kế tiếp và chu kỳ thành *lấp + xử lý* thay vì `max(lấp, xử lý)` — đo 11/09: preview **8,1 fps** với 3 khung, **14,18 fps** với 4, cùng phòng cùng bản (`docs/measurements/latency.md` §6) |
 | LCD frame buffer 320×480 RGB565 | 300 KB | **PSRAM** | `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` | |
 | LCD bounce buffer (2 × 20 dòng) | 2 × 19.2 KB | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội |
 | **Arena detect** | 🔬 ước ~120 KB @160×120 | **SRAM nếu vừa** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_INTERNAL)` | Nhanh nhất, chạy nhiều nhất |

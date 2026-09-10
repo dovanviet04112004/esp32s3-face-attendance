@@ -210,3 +210,39 @@ trong hai nhánh này được chốt cho tới khi có run train của đúng k
 Bảng trên chỉ đo `Invoke()`. Chưa có: letterbox ảnh vào detect, decode + NMS
 sau detect, crop 1,0×/2,7× cho spoof, affine warp 112×112 cho recog, và
 l2norm. Chúng là E8-T3/T4/T5 phần hậu xử lý, sẽ cộng thêm.
+
+## 6. Preview mất một nửa nhịp vì thiếu một khung đệm — đo 11/09
+
+Nối `ai_task` vào đường khung (E10-T4) làm preview tụt từ **14,18 fps** xuống
+**8,1 fps**. Bốn phép đo trên board, cùng phòng, cùng bản dựng, khác đúng một
+điều kiện mỗi lần:
+
+| Điều kiện | Preview | `exposure` | Chu kỳ khung cảm biến |
+|---|---|---|---|
+| `fb_count` 3, `ai_task` nằm im | **14,18 fps** | 826 dòng | 70.490 µs |
+| `fb_count` 3, `ai_task` chạy | **8,1 fps** | 868 dòng | 70.490 µs |
+| `fb_count` 4, `ai_task` chạy | **14,18 fps** | 868 dòng | 70.490 µs |
+| Quét phơi sáng 744 → 876 dòng | — | mọi mức | **70.490 µs ở mọi mức** |
+
+**Nguyên nhân là số khung đệm, không phải phơi sáng và không phải chia core.**
+Phép quét ở dòng thứ tư đóng đường phơi sáng: chu kỳ khung của cảm biến là
+70.490 µs ở mọi mức phơi tới đúng `VTS` = 876 dòng, nên phơi dài **không** làm
+cảm biến kéo dài khung. Với 3 khung thì `ai_task` giữ một khung tới 2 giây,
+`cam_task` giữ một khung suốt lúc `drv_lcd_blit_frame` chạy, còn lại một khung
+cho driver — nên cảm biến phải **đợi khung được trả** mới lấp được khung kế
+tiếp, và chu kỳ thành *lấp + xử lý* ≈ 125 ms thay vì `max(lấp, xử lý)` = 70 ms.
+Thêm khung thứ tư (300 KB PSRAM trong 6,09 MB còn trống) trả nhịp về đúng nhịp
+cảm biến.
+
+**`drv_camera_grab` không hề trả về NULL trong cả ba lần đo** (0 lần pool cạn).
+Đó là lý do phép đo "pool cạn" không phát hiện được chuyện này: `esp_camera_fb_get`
+không báo thiếu khung, nó **đợi**, và cái đợi hiện ra thành fps chứ không thành
+lỗi.
+
+**Chốt lại một chỗ đã suy luận sai.** Chu kỳ khung 130.408 µs đo được trong lần
+chạy có AI từng bị đọc là "trần của cảm biến trong phòng tối". Nó là **hậu quả**
+của việc thiếu khung đệm, không phải nguyên nhân: cùng cảm biến, cùng phơi sáng,
+thêm một khung đệm là chu kỳ về 70.490 µs.
+
+Vấn đề phơi sáng kẹt cả hai trần của E7-T17 **vẫn còn nguyên** và không liên
+quan: `level` chỉ đạt 12–14 trên mục tiêu 30 ở `exposure` 868 với `gain` 4×.
