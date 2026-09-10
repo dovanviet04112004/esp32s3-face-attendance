@@ -225,25 +225,6 @@ extern "C" esp_err_t ai_engine_recognize_face(const ai_engine_frame_t *frame, co
     return s_recog.embedding(out, cap_bytes, scale) > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
-extern "C" esp_err_t ai_engine_align_face(const ai_engine_frame_t *frame, const float landmarks[10], int8_t *out,
-                                          size_t cap_bytes)
-{
-    if (!s_ready || s_recog_len == 0 || frame == nullptr || landmarks == nullptr || out == nullptr) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    return ai::align_face(*frame, landmarks, s_recog.input(0), out, cap_bytes);
-}
-
-extern "C" esp_err_t ai_engine_spoof_crops(const ai_engine_frame_t *frame, const float box[4], int8_t *tight,
-                                           int8_t *wide, size_t cap_bytes, float *wide_scale)
-{
-    if (!s_ready || s_spoof_len == 0 || frame == nullptr || box == nullptr || tight == nullptr || wide == nullptr ||
-        wide_scale == nullptr) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    return ai::crop_pair(*frame, box, s_spoof.input(0), s_spoof.input(1), tight, wide, cap_bytes, wide_scale);
-}
-
 extern "C" esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live,
                                           float *wide_scale)
 {

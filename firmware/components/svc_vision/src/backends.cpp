@@ -1,7 +1,5 @@
 #include "backends.hpp"
 
-#include "esp_heap_caps.h"
-
 namespace vision {
 
 size_t AiDetector::detect(const ai_engine_frame_t &frame, float min_score, ai_engine_face_t *out,
@@ -18,62 +16,21 @@ size_t AiDetector::detect(const ai_engine_frame_t &frame, float min_score, ai_en
     return count;
 }
 
-esp_err_t AiLiveness::init() noexcept
-{
-    bytes_ = ai_engine_spoof_input_bytes();
-    if (bytes_ == 0) {
-        return ESP_OK;
-    }
-    tight_ = static_cast<int8_t *>(heap_caps_malloc(bytes_, MALLOC_CAP_SPIRAM));
-    wide_ = static_cast<int8_t *>(heap_caps_malloc(bytes_, MALLOC_CAP_SPIRAM));
-    return (tight_ != nullptr && wide_ != nullptr) ? ESP_OK : ESP_ERR_NO_MEM;
-}
-
 bool AiLiveness::available() const noexcept
 {
-    return bytes_ > 0 && tight_ != nullptr && wide_ != nullptr;
+    return ai_engine_spoof_input_bytes() > 0;
 }
 
-esp_err_t AiLiveness::capture(const ai_engine_frame_t &frame, const float box[4], float *wide_scale) noexcept
+esp_err_t AiLiveness::score(const ai_engine_frame_t &frame, const float box[4], float *live,
+                            float *wide_scale) noexcept
 {
-    if (!available()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    return ai_engine_spoof_crops(&frame, box, tight_, wide_, bytes_, wide_scale);
+    return ai_engine_spoof_face(&frame, box, live, wide_scale);
 }
 
-esp_err_t AiLiveness::score(float *live) noexcept
+esp_err_t AiEmbedder::embed(const ai_engine_frame_t &frame, const float landmarks[10], int8_t *out,
+                            size_t cap_bytes, float *scale) noexcept
 {
-    if (!available()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    return ai_engine_spoof(tight_, wide_, live);
-}
-
-esp_err_t AiEmbedder::init() noexcept
-{
-    bytes_ = ai_engine_recog_input_bytes();
-    if (bytes_ == 0) {
-        return ESP_ERR_NOT_FOUND;
-    }
-    face_ = static_cast<int8_t *>(heap_caps_malloc(bytes_, MALLOC_CAP_SPIRAM));
-    return face_ != nullptr ? ESP_OK : ESP_ERR_NO_MEM;
-}
-
-esp_err_t AiEmbedder::capture(const ai_engine_frame_t &frame, const float landmarks[10]) noexcept
-{
-    if (face_ == nullptr) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    return ai_engine_align_face(&frame, landmarks, face_, bytes_);
-}
-
-esp_err_t AiEmbedder::embed(int8_t *out, size_t cap_bytes, float *scale) noexcept
-{
-    if (face_ == nullptr) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    return ai_engine_recognize(face_, out, cap_bytes, scale);
+    return ai_engine_recognize_face(&frame, landmarks, out, cap_bytes, scale);
 }
 
 esp_err_t FacedbMatcher::best(const int8_t *emb, float scale, uint32_t *employee_id, float *score) noexcept

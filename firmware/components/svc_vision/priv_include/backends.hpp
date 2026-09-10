@@ -1,5 +1,5 @@
 /** The four adapters that put ai_engine and svc_facedb behind the seams of vision.hpp.
- *  @ctx ai_task | init once at boot, the crop buffers live in PSRAM for good
+ *  @ctx ai_task | stateless: every call works on the frame it is handed
  */
 #pragma once
 
@@ -14,26 +14,14 @@ public:
 
 class AiLiveness final : public ILiveness {
 public:
-    esp_err_t init() noexcept;
     bool available() const noexcept override;
-    esp_err_t capture(const ai_engine_frame_t &frame, const float box[4], float *wide_scale) noexcept override;
-    esp_err_t score(float *live) noexcept override;
-
-private:
-    int8_t *tight_ = nullptr;
-    int8_t *wide_ = nullptr;
-    size_t bytes_ = 0;
+    esp_err_t score(const ai_engine_frame_t &frame, const float box[4], float *live, float *wide_scale) noexcept override;
 };
 
 class AiEmbedder final : public IEmbedder {
 public:
-    esp_err_t init() noexcept;
-    esp_err_t capture(const ai_engine_frame_t &frame, const float landmarks[10]) noexcept override;
-    esp_err_t embed(int8_t *out, size_t cap_bytes, float *scale) noexcept override;
-
-private:
-    int8_t *face_ = nullptr;
-    size_t bytes_ = 0;
+    esp_err_t embed(const ai_engine_frame_t &frame, const float landmarks[10], int8_t *out, size_t cap_bytes,
+                    float *scale) noexcept override;
 };
 
 class FacedbMatcher final : public IMatcher {

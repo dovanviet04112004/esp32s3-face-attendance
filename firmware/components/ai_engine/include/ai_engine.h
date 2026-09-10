@@ -111,24 +111,6 @@ esp_err_t ai_engine_recognize_face(const ai_engine_frame_t *frame, const float l
  */
 esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live, float *wide_scale);
 
-/** Align a face into a caller buffer with the recogniser's input shape and
- *  quantisation, without running it; feed it later through ai_engine_recognize.
- *  @ctx ai_task | blocking for the warp
- *  @param cap_bytes at least ai_engine_recog_input_bytes
- *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_ERR_INVALID_SIZE
- */
-esp_err_t ai_engine_align_face(const ai_engine_frame_t *frame, const float landmarks[10], int8_t *out,
-                               size_t cap_bytes);
-
-/** Cut the tight and wide crops into caller buffers shaped for the spoof graph,
- *  without running it; feed them later through ai_engine_spoof.
- *  @ctx ai_task | blocking for the two resamples
- *  @param cap_bytes size of each buffer, at least ai_engine_spoof_input_bytes
- *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_ERR_INVALID_SIZE
- */
-esp_err_t ai_engine_spoof_crops(const ai_engine_frame_t *frame, const float box[4], int8_t *tight, int8_t *wide,
-                                size_t cap_bytes, float *wide_scale);
-
 /** Score one face as live or presented, from two crops already in the graph's
  *  own quantisation.
  *  @ctx ai_task | blocking for the whole graph

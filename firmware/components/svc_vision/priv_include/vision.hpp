@@ -26,15 +26,15 @@ class ILiveness {
 public:
     virtual ~ILiveness() = default;
     virtual bool available() const noexcept = 0;
-    virtual esp_err_t capture(const ai_engine_frame_t &frame, const float box[4], float *wide_scale) noexcept = 0;
-    virtual esp_err_t score(float *live) noexcept = 0;
+    virtual esp_err_t score(const ai_engine_frame_t &frame, const float box[4], float *live,
+                            float *wide_scale) noexcept = 0;
 };
 
 class IEmbedder {
 public:
     virtual ~IEmbedder() = default;
-    virtual esp_err_t capture(const ai_engine_frame_t &frame, const float landmarks[10]) noexcept = 0;
-    virtual esp_err_t embed(int8_t *out, size_t cap_bytes, float *scale) noexcept = 0;
+    virtual esp_err_t embed(const ai_engine_frame_t &frame, const float landmarks[10], int8_t *out, size_t cap_bytes,
+                            float *scale) noexcept = 0;
 };
 
 class IMatcher {
@@ -57,15 +57,11 @@ public:
     void reset() noexcept;
 
 private:
-    enum class Stage : uint8_t { Track, Liveness, Embed };
     enum class Seen : uint8_t { Nothing, Small, Face };
 
     void follow(const ai_engine_face_t &primary) noexcept;
     bool may_verify() const noexcept;
-    void verdict(bool matched) noexcept;
-    void begin(const ai_engine_frame_t &frame, const ai_engine_face_t &primary) noexcept;
-    void liveness(svc_vision_result_t &out) noexcept;
-    void embed(svc_vision_result_t &out) noexcept;
+    void verify(const ai_engine_frame_t &frame, const ai_engine_face_t &primary, svc_vision_result_t &out) noexcept;
 
     IDetector &detector_;
     ILiveness &liveness_;
@@ -77,10 +73,7 @@ private:
     int stable_ = 0;
     int since_verdict_ = -1;
     bool matched_ = false;
-    Stage stage_ = Stage::Track;
     Seen seen_ = Seen::Nothing;
-    float pending_wide_ = -1.0f;
-    float pending_live_ = -1.0f;
     int8_t embedding_[SVC_FACEDB_EMBED_BYTES]{};
 };
 

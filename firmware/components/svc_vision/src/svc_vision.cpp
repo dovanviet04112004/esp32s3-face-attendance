@@ -30,15 +30,9 @@ extern "C" esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds)
     if (thresholds == nullptr || !sane(*thresholds)) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = s_liveness.init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "spoof crops: %s", esp_err_to_name(err));
-        return err;
-    }
-    err = s_embedder.init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "aligned face: %s", esp_err_to_name(err));
-        return err;
+    if (ai_engine_recog_input_bytes() == 0) {
+        ESP_LOGE(TAG, "the image on models_0 carries no recognition branch");
+        return ESP_ERR_NOT_FOUND;
     }
     s_pipeline.configure(*thresholds);
     s_ready = true;

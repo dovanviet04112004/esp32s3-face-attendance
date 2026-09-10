@@ -61,7 +61,6 @@ void VisionPipeline::reset() noexcept
     stable_ = 0;
     since_verdict_ = -1;
     matched_ = false;
-    stage_ = Stage::Track;
     seen_ = Seen::Nothing;
 }
 
@@ -76,7 +75,6 @@ void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
         stable_ = 1;
         since_verdict_ = -1;
         matched_ = false;
-        stage_ = Stage::Track;
     }
     memcpy(tracked_, primary.box, sizeof(tracked_));
 }
@@ -86,67 +84,40 @@ bool VisionPipeline::may_verify() const noexcept
     return since_verdict_ < 0 || (!matched_ && since_verdict_ >= kRetryDetects);
 }
 
-void VisionPipeline::verdict(bool matched) noexcept
+void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face_t &primary,
+                            svc_vision_result_t &out) noexcept
 {
-    matched_ = matched;
-    since_verdict_ = 0;
-    stage_ = Stage::Track;
-}
-
-void VisionPipeline::begin(const ai_engine_frame_t &frame, const ai_engine_face_t &primary) noexcept
-{
-    // Both crops are taken from this frame now: the frame goes back to the camera
-    // after this step, and spoof's run will overwrite recog's input (KEHOACH 3.8).
-    pending_wide_ = -1.0f;
-    pending_live_ = -1.0f;
-    if (liveness_.available() && liveness_.capture(frame, primary.box, &pending_wide_) != ESP_OK) {
-        return;
-    }
-    if (embedder_.capture(frame, primary.landmarks) != ESP_OK) {
-        return;
-    }
-    stage_ = liveness_.available() ? Stage::Liveness : Stage::Embed;
-}
-
-void VisionPipeline::liveness(svc_vision_result_t &out) noexcept
-{
-    float live = -1.0f;
-    if (liveness_.score(&live) != ESP_OK) {
-        stage_ = Stage::Track;
-        return;
-    }
-    pending_live_ = live;
-    if (live < thresholds_.live_min_score) {
-        out.kind = SVC_VISION_SPOOF;
+    if (liveness_.available()) {
+        float live = -1.0f;
+        float wide = -1.0f;
+        if (liveness_.score(frame, primary.box, &live, &wide) != ESP_OK) {
+            return;
+        }
         out.live_score = live;
-        out.wide_scale = pending_wide_;
-        verdict(false);
-        return;
+        out.wide_scale = wide;
+        if (live < thresholds_.live_min_score) {
+            out.kind = SVC_VISION_SPOOF;
+            matched_ = false;
+            since_verdict_ = 0;
+            return;
+        }
     }
-    stage_ = Stage::Embed;
-}
-
-void VisionPipeline::embed(svc_vision_result_t &out) noexcept
-{
     float scale = 0.0f;
-    if (embedder_.embed(embedding_, sizeof(embedding_), &scale) != ESP_OK) {
-        stage_ = Stage::Track;
+    if (embedder_.embed(frame, primary.landmarks, embedding_, sizeof(embedding_), &scale) != ESP_OK) {
         return;
     }
     uint32_t employee_id = 0;
     float score = -1.0f;
     const esp_err_t found = matcher_.best(embedding_, scale, &employee_id, &score);
-    out.live_score = pending_live_;
-    out.wide_scale = pending_wide_;
     out.match_score = score;
-    if (found == ESP_OK && score >= thresholds_.match_min_score) {
+    matched_ = found == ESP_OK && score >= thresholds_.match_min_score;
+    since_verdict_ = 0;
+    if (matched_) {
         out.kind = SVC_VISION_MATCH;
         out.employee_id = employee_id;
-        verdict(true);
         return;
     }
     out.kind = SVC_VISION_UNKNOWN;
-    verdict(false);
 }
 
 svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcept
@@ -159,7 +130,6 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     }
     if (count == 0) {
         stable_ = 0;
-        stage_ = Stage::Track;
         if (seen_ != Seen::Nothing) {
             seen_ = Seen::Nothing;
             out.kind = SVC_VISION_NO_FACE;
@@ -170,7 +140,6 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     memcpy(out.primary.box, primary.box, sizeof(out.primary.box));
     follow(primary);
     if (side_of(primary.box) < static_cast<float>(thresholds_.face_min_px)) {
-        stage_ = Stage::Track;
         if (seen_ != Seen::Small) {
             seen_ = Seen::Small;
             out.kind = SVC_VISION_FACE_SMALL;
@@ -178,18 +147,8 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
         return out;
     }
     seen_ = Seen::Face;
-    switch (stage_) {
-    case Stage::Track:
-        if (stable_ >= kStableDetects && may_verify()) {
-            begin(frame, primary);
-        }
-        break;
-    case Stage::Liveness:
-        liveness(out);
-        break;
-    case Stage::Embed:
-        embed(out);
-        break;
+    if (stable_ >= kStableDetects && may_verify()) {
+        verify(frame, primary, out);
     }
     return out;
 }
