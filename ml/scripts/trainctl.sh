@@ -193,7 +193,9 @@ import yaml
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 run, metric, live = Path(sys.argv[1]), sys.argv[2], sys.argv[3] == "1"
-epochs = yaml.safe_load((run / "config.resolved.yaml").read_text())["train"]["epochs"]
+train_cfg = yaml.safe_load((run / "config.resolved.yaml").read_text())["train"]
+epochs = train_cfg["epochs"]
+val_every = int(train_cfg.get("val_every_epochs", 1) or 1)
 acc = EventAccumulator(str(run / "tb"), size_guidance={"scalars": 0})
 acc.Reload()
 tags = acc.Tags()["scalars"]
@@ -205,8 +207,9 @@ last, back = series[-1], series[max(-100, -len(series))]
 rate = (last.step - back.step) / max(last.wall_time - back.wall_time, 1e-9)
 marks = acc.Scalars(metric) if metric in tags else []
 # Steps per epoch comes from the gap between two validation marks of this very
-# run, so a resumed run needs no knowledge of where its chain began.
-per_epoch = marks[1].step - marks[0].step if len(marks) >= 2 else None
+# run, so a resumed run needs no knowledge of where its chain began. That gap
+# spans val_every_epochs epochs, not one.
+per_epoch = (marks[1].step - marks[0].step) / val_every if len(marks) >= 2 else None
 age = (time.time() - last.wall_time) / 60
 where = f"{last.step / per_epoch:.2f}" if per_epoch else "?"
 print(f"  step   {last.step:,}  epoch {where}/{epochs}  loss {last.value:.2f}  {rate:.2f} step/s")
@@ -222,6 +225,8 @@ else:
 
 if not marks:
     raise SystemExit
+# The trainer names a validation by the 0-based index of the epoch it just
+# finished, so the label here is one below the count of epochs behind it.
 name = metric.split("/")[-1]
 lower = name in {"eer", "loss", "acer"}
 best = min(marks, key=lambda m: m.value) if lower else max(marks, key=lambda m: m.value)
@@ -231,11 +236,11 @@ if len(marks) > len(shown):
 else:
     print(f"  {name}")
 for mark in shown:
-    epoch = round(mark.step / per_epoch) if per_epoch else "?"
+    epoch = round(mark.step / per_epoch) - 1 if per_epoch else "?"
     flag = "  <- best" if mark is best else ""
     print(f"    epoch {epoch:>3}  {mark.value:.4f}{flag}")
 if best not in shown:
-    epoch = round(best.step / per_epoch) if per_epoch else "?"
+    epoch = round(best.step / per_epoch) - 1 if per_epoch else "?"
     print(f"    epoch {epoch:>3}  {best.value:.4f}  <- best")
 PY
 }
