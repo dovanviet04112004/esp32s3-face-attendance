@@ -1823,7 +1823,7 @@ firmware/
 │   ├── net_mqtt/          [C]    L3
 │   ├── net_ota/           [C]    L3
 │   ├── svc_door/          [C++]  L4  # IDoor + ServoDoor bọc drv_servo, FakeDoor cho test
-│   ├── svc_vision/        [C++]  L4  # máy bước: detect mỗi khung + tối đa một model nữa (§4.5.5d)
+│   ├── svc_vision/        [C++]  L4  # detect mỗi khung, chuỗi spoof → recog khi mặt ổn định (§4.5.5d)
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
 │   ├── svc_sync/          [C++]  L5  # hàng đợi offline → MQTT
 │   └── ui_kiosk/          [C++]  L6  # LVGL screens
@@ -2031,48 +2031,46 @@ protected:
 
 **Không có mutex nào cho `ai_engine`.** §5.2 chỉ có một `ai_task` gọi pipeline, nên tensor đầu vào của interpreter có đúng một người ghi. Đây là ràng buộc chứ không phải may mắn: gọi `ai_engine_*` từ task thứ hai là hỏng dữ liệu, và phải ghi rõ ở header công khai.
 
-##### d) `svc_vision` — máy bước, tiêm phụ thuộc, test được không cần model
+##### d) `svc_vision` — tuần tự, tiêm phụ thuộc, test được không cần model
 
 `svc_vision` không nhìn thấy lớp C++ của `ai_engine` (chúng nằm trong `priv_include`, §4.5.3), nên nó tự khai bốn interface nhỏ của mình và bọc API C của `ai_engine` và `svc_facedb` bằng bốn adapter:
 
 ```cpp
 class IDetector { virtual size_t detect(const ai_engine_frame_t&, float min_score, ai_engine_face_t* out, size_t cap) = 0; };
 class ILiveness { virtual bool available() const = 0;
-                  virtual esp_err_t capture(const ai_engine_frame_t&, const float box[4], float* wide_scale) = 0;  // cắt 2 crop vào bộ đệm riêng
-                  virtual esp_err_t score(float* live) = 0; };                                                     // chạy graph trên crop đã cắt
-class IEmbedder { virtual esp_err_t capture(const ai_engine_frame_t&, const float landmarks[10]) = 0;             // align vào bộ đệm riêng
-                  virtual esp_err_t embed(int8_t* out, size_t cap, float* scale) = 0; };
+                  virtual esp_err_t score(const ai_engine_frame_t&, const float box[4], float* live, float* wide_scale) = 0; };
+class IEmbedder { virtual esp_err_t embed(const ai_engine_frame_t&, const float landmarks[10], int8_t* out, size_t cap, float* scale) = 0; };
 class IMatcher  { virtual esp_err_t best(const int8_t* emb, float scale, uint32_t* id, float* score) = 0; };
 
 class VisionPipeline {
 public:
     VisionPipeline(IDetector&, ILiveness&, IEmbedder&, IMatcher&) noexcept;
     void configure(const svc_vision_thresholds_t&) noexcept;
-    svc_vision_result_t step(const ai_engine_frame_t& frame) noexcept;   // MỘT khung, detect + tối đa một model nữa
+    svc_vision_result_t step(const ai_engine_frame_t& frame) noexcept;   // MỘT khung: detect, và cả chuỗi khi mặt đã ổn định
     void reset() noexcept;
 };
 ```
 
-**Máy bước, không phải chuỗi.** Mỗi `step()` luôn chạy detect trên khung mới nhất trước, rồi chạy **tối đa một** model nữa tuỳ trạng thái: `Track` → (mặt ổn định qua 2 lần detect, IoU ≥ 0,5) cắt sẵn hai crop spoof và ảnh đã align vào bộ đệm riêng của adapter (~78 KB PSRAM) → `Liveness` chạy spoof → `Embed` chạy recog + tra `svc_facedb`. Nhờ đó detect **không dừng** trong lúc xác thực: hộp mặt vẫn cập nhật ≥ 1,3 lần/giây khi đang xác thực và 3,4 lần/giây khi rỗi, người thứ hai bước vào vẫn có hộp. Cắt sẵn là bắt buộc chứ không phải tối ưu: spoof và recog dùng chung một `MicroAllocator` nên `head` của chúng chồng lên nhau (§3.8) — chạy spoof là xoá tensor vào của recog, mà khung gốc lúc đó đã trả về camera.
+**Tuần tự, thoát sớm, đúng §3 lớp 5.** Mỗi `step()` chạy detect trên khung mới nhất. Khi mặt chính đã ổn định qua 2 lần detect (IoU ≥ 0,5) thì **cùng bước đó** chạy tiếp spoof → recog → tra `svc_facedb` trên chính khung đang giữ, và trả kết quả ngay: mặt xuất hiện → kết quả sau ≈ 0,6 + 0,93 ≈ **1,5 s**, mức thấp nhất mà ba model cho phép. Trong 0,93 s đó detect không chạy — đó là giá của một core cho AI, và giá được trả ở **đường preview** chứ không ở đường model: hộp mặt trên màn hình do một bộ bám rẻ trên core 0 kéo theo khuôn mặt ở nhịp khung hình giữa hai lần detect (§4.5.5h, E10-T1), nên mắt không thấy hộp khựng mà kết quả không chậm thêm. Hai cách đã cân và bỏ: xen kẽ detect giữa spoof và recog làm kết quả chậm thêm 0,6 s; đưa spoof/recog sang core 0 ăn CPU rỗi của Wi-Fi/LCD và thuế bus PSRAM cho cả hai bên.
 
-**Bám một mặt chính.** Mặt chính là hộp lớn nhất trên ngưỡng detect. Cùng một track thì sau `MATCH` không xác thực lại; sau `SPOOF`/`UNKNOWN` thử lại sau 6 lần detect (~2 s); mất dấu (không mặt, hoặc IoU < 0,5) là huỷ xác thực đang chờ và về `Track`. Mặt dưới `face_min_px` (113 px, ràng buộc của recog ở §3) chỉ báo `FACE_SMALL`, không chạy gì thêm.
+**Bám một mặt chính.** Mặt chính là hộp lớn nhất trên ngưỡng detect. Cùng một track thì sau `MATCH` không xác thực lại; sau `SPOOF`/`UNKNOWN` thử lại sau 6 lần detect (~2 s); mất dấu (không mặt, hoặc IoU < 0,5) là track mới. Mặt dưới `face_min_px` (113 px, ràng buộc của recog ở §3) chỉ báo `FACE_SMALL`, không chạy gì thêm.
 
-**Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua bước `Liveness` và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
+**Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
 
 Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision` (🔬 giá trị gieo chưa đo, E8-T12 chốt).
 
-Header công khai `svc_vision.h` chỉ có C: `svc_vision_init(thresholds)`, `svc_vision_step(const camera_fb_t*, svc_vision_result_t*)`, `svc_vision_reset()`. Khung do `ai_task` giữ bằng `FrameGuard` và trả sau `step()`; `svc_vision` không sở hữu khung.
+Header công khai `svc_vision.h` chỉ có C: `svc_vision_init(thresholds)`, `svc_vision_step(const camera_fb_t*, svc_vision_result_t*)`, `svc_vision_reset()`. Khung do `ai_task` giữ bằng `FrameGuard` suốt `step()` và trả sau đó; `svc_vision` không sở hữu khung và không chép khung.
 
 ```
 components/svc_vision/
 ├── include/svc_vision.h                  # C: ngưỡng, kết quả, init/step/reset
 ├── priv_include/{vision.hpp, backends.hpp}   # 4 interface + VisionPipeline · 4 adapter thật
-├── src/{pipeline.cpp, backends.cpp, svc_vision.cpp}   # máy bước · adapter · mặt tiền C
+├── src/{pipeline.cpp, backends.cpp, svc_vision.cpp}   # chuỗi thoát sớm · adapter · mặt tiền C
 ├── Kconfig                               # giá trị gieo cho 4 ngưỡng
 └── test_apps/pipeline/{main/test_pipeline.cpp, CMakeLists.txt, pytest_pipeline.py}
 ```
 
-`test_apps/pipeline` dựng `VisionPipeline` với bốn adapter giả (kịch bản mặt xuất hiện, ổn định, đổi người, giả mạo, mất dấu) và đếm lần gọi từng adapter — chạy trên board **không cần partition model**, kiểm đúng thứ tự detect → spoof → detect → recog và mọi lối thoát sớm. Đây là lý do thực dụng nhất để dùng OOP ở tầng này.
+`test_apps/pipeline` dựng `VisionPipeline` với bốn adapter giả (kịch bản mặt xuất hiện, ổn định, đổi người, giả mạo, mất dấu) và đếm lần gọi từng adapter — chạy trên board **không cần partition model**, kiểm đúng thứ tự detect → spoof → recog và mọi lối thoát sớm. Đây là lý do thực dụng nhất để dùng OOP ở tầng này.
 
 ##### e) `svc_door` — chỗ interface trả nợ trực tiếp
 
@@ -2151,6 +2149,8 @@ public:
 
 Năm màn hình cùng vòng đời, thêm màn hình mới không đụng `ScreenManager`. Đây là chỗ virtual đáng giá nhất và cũng rẻ nhất (mỗi lần chuyển màn mới gọi 1 lần).
 
+**Hộp mặt trên preview bám theo khung hình, không bám theo nhịp detect.** Detect ra hộp 3–4 lần/giây và im hẳn 0,93 s trong lúc spoof + recog chạy (§4.5.5d); vẽ hộp theo nhịp đó là hộp khựng. `ScanScreen` giữ hộp cuối cùng `svc_vision` báo và, trên mỗi khung preview (core 0), dịch nó theo một phép khớp mẫu rẻ: mẫu độ sáng 24×24 lấy quanh tâm hộp ở khung trước, tìm trong bán kính ±8 px ở khung sau bằng tổng sai tuyệt đối — khoảng 170 nghìn phép cộng, 🔬 ước 1–2 ms mỗi khung, tức ~3 % core 0. Hộp mới từ detect thay thế hộp đang bám. Bộ bám không phát hiện mặt mới và không ảnh hưởng đường model: nó chỉ là cách mắt không thấy giật mà kết quả chấm công không chậm thêm một mili giây nào. Kết quả chấm công vẽ đè lên khung preview trong cùng đường này, không qua LVGL cho vùng preview.
+
 ##### i) Vòng đời đối tượng — dựng một lần, không bao giờ hủy
 
 ```cpp
@@ -2177,7 +2177,7 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 |---|---|---|---|
 | `common` | `FrameGuard`, `LockGuard`, `Queue<T,N>` | RAII, template | Xoá cả một lớp lỗi rò tài nguyên |
 | `ai_engine` | `ITfliteModel` → `TfliteModelBase` → 3 lớp con | Kế thừa + template method | Ba model khác nhau ở op resolver và hậu xử lý |
-| `svc_vision` | `VisionPipeline`, 4 interface + 4 adapter | Máy bước; tiêm phụ thuộc qua tham chiếu interface | Detect không dừng khi xác thực; test toàn bộ logic với adapter giả, không cần model |
+| `svc_vision` | `VisionPipeline`, 4 interface + 4 adapter | Chuỗi thoát sớm; tiêm phụ thuộc qua tham chiếu interface | Kết quả nhanh nhất ba model cho phép; test toàn bộ logic với adapter giả, không cần model |
 | `svc_facedb` | `FaceDb`, `IMatcher` | Strategy | Đổi thuật toán so khớp khi quy mô tăng |
 | `svc_door` | `IDoor`, `ServoDoor`, `FakeDoor` | Adapter bọc driver C, ra ngoài bằng handle mờ | Chạy máy trạng thái chấm công trên host với cửa giả |
 | `svc_attendance` | `AttendanceFsm` | Bảng `constexpr`, **không** virtual | Nhìn hết sơ đồ trạng thái trong 1 màn hình |
@@ -2576,7 +2576,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `tof_task` | `drv_tof` | 0 | 6 | 3 KB | ngắt GPIO3 / poll 100 ms | Đọc khoảng cách → phát `EVT_PRESENCE_ON/OFF`, đánh thức hệ thống |
 | `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Đọc WAV từ LittleFS → `i2s_channel_write` |
 | `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt GPIO14 | Đọc GT911 → `q_touch` |
-| **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect luôn chạy, cộng tối đa một model nữa (spoof hoặc recog) theo máy bước §4.5.5d; kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
+| **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
 | `ui_task` | `ui` | 0 | 4 | 8 KB (+ LVGL heap ở PSRAM) | tick 20 ms | `lv_timer_handler()`, vẽ preview, xử lý `q_touch`, đọc `eg_system` |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB | esp-mqtt tự tạo | pub/sub, TLS |
