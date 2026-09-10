@@ -1825,7 +1825,10 @@ firmware/
 ├── main/
 │   ├── CMakeLists.txt
 │   ├── idf_component.yml             # ★ khai báo dependency registry
-│   ├── app_main.c            [C]     # khởi tạo tuần tự, không chứa logic
+│   ├── app_main.c            [C]     # điểm vào: gọi app_boot rồi app_tasks_start
+│   ├── app_boot.{c,h}        [C]     # ★ chuỗi khởi tạo, không chứa logic. Tách khỏi
+│   │                                 #   app_main.c để `test_apps/soak` dựng đúng
+│   │                                 #   chuỗi mà kiosk dựng, không phải bản chép lại
 │   ├── app_tasks.{c,h}       [C]     # xTaskCreatePinnedToCore (§5)
 │   └── app_wiring.{c,h}      [C]     # ★ nối queue/event giữa các component
 │
