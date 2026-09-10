@@ -322,14 +322,23 @@ lại được nếu vùng preview nhỏ đi (320×360 → `T_w` 23,8 ms, biên 
 |---|---|---|
 | SDA | **GPIO1** | Chính là chân QWIIC trên board |
 | SCL | **GPIO2** | |
-| Pull-up | 4.7 kΩ lên 3V3 | Đo trước: board GT911 thường đã có sẵn. **Chỉ để 1 cặp pull-up trên toàn bus**, tháo pull-up của các board còn lại. |
+| Pull-up | 4,7 kΩ lên 3V3 | **Đo trên board này**: SCL đã có trở treo của module cảm ứng, SDA không có nên dùng một trở ngoài |
+
+**Mỗi đường đúng một trở treo trên toàn bus**, tháo trở của các board thêm vào sau. Pull-up
+nội ~45 kΩ của chip **để tắt** (`enable_internal_pullup = false`): bật lên thì bus chạy được
+mà không cần trở ngoài, nhưng 45 kΩ trên điện dung breadboard cho sườn lên chậm, mà GT911 và
+VL53L1X cùng chia bus này. Sàn của trở treo ở 3,3 V là ~1 kΩ, suy từ `Vol` 0,4 V ở dòng nhận
+3 mA: cắm thêm một module tự mang trở treo thì mỗi đường còn ~2,35 kΩ, vẫn trong khoảng chạy
+được; xuống dưới 1,5 kΩ mới phải tháo bớt. Trạng thái từng chân đọc bằng
+`bsp_board/test_apps/buses` — app đo riêng từng đường, không suy từ cả cặp.
 
 | Thiết bị | Địa chỉ |
 |---|---|
 | GT911 (touch) | `0x5D` (mặc định) hoặc `0x14` |
 | VL53L1X (ToF) | `0x29` |
 | PCF8574 (I/O expander) | `0x20` (A2A1A0 = GND GND GND) |
-| DS3231 (RTC, tùy chọn) | `0x68` |
+| DS3231 (RTC) | `0x68` |
+| AT24C32 trên module RTC — **không dùng** | `0x57` (bản clone `0x50`) |
 
 **`bsp_board_init()` phải chờ bus trả lời, không được trả về ngay sau khi tạo bus.**
 `i2c_new_master_bus()` thành công không có nghĩa bus chở được giao dịch: thiết bị cần thời
@@ -456,6 +465,24 @@ Tụ 470 µF sát chân nguồn servo. Xung 50 Hz, độ rộng 500–2400 µs q
 
 Trạng thái nhận diện hiện trên LCD nên không có LED rời. Mọi chân P đều lên HIGH lúc cấp nguồn (§2.3.C) — chỉ giao cho P những việc mà mức HIGH lúc khởi động là vô hại: RST và XSHUT thả cao là chip được chạy, SD của amp ở cao là amp thức nhưng chưa có dữ liệu I²S, và `drv_audio_init` kéo P3 xuống trước khi bật clock. Cơ cấu mở cửa **không** đi qua PCF8574 vì lý do đó: mức HIGH lúc cấp nguồn trên một chân mở cửa là cửa mở.
 
+#### H. RTC DS3231
+
+| Chân | Nối tới | Ghi chú |
+|---|---|---|
+| VCC | **3V3** | **Không nuôi 5 V**: module có trở treo lên chính VCC của nó, nuôi 5 V là kéo SDA/SCL lên 5 V, đúng hai chân của ESP32-S3 và GT911 |
+| GND | GND | |
+| SDA | GPIO1 | bus chung |
+| SCL | GPIO2 | bus chung |
+| SQW / 32K | không nối | Đánh thức deep-sleep đã có ngắt VL53L1X ở GPIO3 (§2.3D) |
+
+Không tốn thêm chân GPIO nào, chỉ thêm một địa chỉ trên bus I2C đang có, nên `m_i2c` (§5.3)
+đã đếm sẵn nó là thiết bị thứ tư. Module bán kèm một EEPROM AT24C32 ở `0x57`: **không dùng**,
+vì chỉ `sys_storage` được giữ dữ liệu bền và trong kế hoạch không có EEPROM ngoài.
+
+⚠️ **Pin trên module.** Loại ZS-042 phổ biến có mạch sạc cho pin LIR2032. Cắm pin CR2032
+không sạc lại vào đó thì phải bỏ điện trở sạc trước, không thì pin phồng. Soi bằng mắt khi
+hàng về, trước khi cấp nguồn lần đầu.
+
 ### 2.4 Chân trống sau khi lắp hết
 
 | GPIO | Trạng thái |
@@ -521,7 +548,7 @@ Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân ngu�
 | GT911 (touch) | https://www.crystalfontz.com/controllers/GOODIX/GT911/458/ |
 | MAX98357A (I²S DAC/amp) | https://www.analog.com/media/en/technical-documentation/data-sheets/MAX98357A-MAX98357B.pdf |
 | PCF8574 (I/O expander) | https://www.ti.com/lit/ds/symlink/pcf8574.pdf |
-| DS3231 (RTC, tùy chọn) | https://www.analog.com/media/en/technical-documentation/data-sheets/DS3231.pdf |
+| DS3231 (RTC) | https://www.analog.com/media/en/technical-documentation/data-sheets/DS3231.pdf |
 | SG90 (servo) | http://www.ee.ic.ac.uk/pcheung/teaching/DE1_EE/stores/sg90_datasheet.pdf |
 
 ---
@@ -1816,7 +1843,7 @@ firmware/
 │   ├── drv_audio/         [C]    L3
 │   ├── drv_servo/         [C]    L2  # chỉ đẩy xung LEDC 50 Hz
 │   ├── sys_storage/       [C]    L2  # NVS + LittleFS + mmap model; sở hữu storage_format.h (§6.2.7)
-│   ├── sys_time/          [C]    L2  # SNTP + DS3231
+│   ├── sys_time/          [C]    L2  # DS3231 là nguồn chính, SNTP hiệu chỉnh (§6.2.5)
 │   ├── ai_engine/         [C++]  L3  # TFLM — src/ tách 3 thư mục theo model (§4.5.6)
 │   ├── svc_facedb/        [C++]  L3  # bảng embedding + cosine search + CRUD
 │   ├── net_wifi/          [C]    L3
@@ -2675,7 +2702,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
 | `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_host`, `mqtt_port`, `mqtt_user`, `mqtt_pass` | str / u32 | token xoay vòng khi còn 7 ngày |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
-| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8) | | `boot_count` dùng sinh `local_id` |
+| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8) | | `boot_count` dùng sinh `local_id`; `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại, §6.2.5 dùng nó quyết định `flags` bit2 |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt |
 | `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32) | | bốn ngưỡng của §4.5.5d; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
 
@@ -2804,6 +2831,20 @@ Header file **giống hệt khuôn của `faces.bin`** (magic `'ALG1'`, `record_
 4 MB / 48 B ≈ **87.000 bản ghi** — thừa cho vài tháng mất mạng liên tục.
 
 `local_id` sinh từ `boot_count` (NVS) ghép với số thứ tự trong phiên, nên **không bao giờ trùng kể cả sau mất điện**, và server dùng đúng trường này làm khoá chống trùng (`unique(deviceId, localId)`).
+
+**Nguồn giờ của `ts`, và khi nào bật bit2.** DS3231 (§2.3H) là nguồn giờ **chính**: `sys_time`
+đọc nó lúc boot và đặt giờ hệ thống ngay, trước khi có Wi-Fi. Đó là lý do nhánh này không còn
+là tuỳ chọn — cửa sổ hỏng là mất điện xong có điện lại mà mạng chưa lên, đúng lúc người ta
+tới chấm công, và không có RTC thì `ts` của những bản ghi đó vô nghĩa. SNTP là nguồn **hiệu
+chỉnh**: mỗi lần đồng bộ được thì ghi giờ trở lại DS3231 và đặt `sys.rtc_ntp_set` = 1
+(§6.2.1).
+
+`flags` bit2 = **`ts` không đến từ một đồng hồ đã từng được NTP đặt**, tức một trong hai
+trường hợp: DS3231 báo mất dao động (cờ `OSF`, pin cạn hoặc chưa bao giờ được đặt), hoặc
+`sys.rtc_ntp_set` = 0. RTC còn giờ và đã từng được NTP đặt thì bit2 = 0 kể cả khi phiên này
+chưa gặp NTP lần nào — sai số ~2 ppm của DS3231 không đáng kể với một bản ghi chấm công.
+Server đọc bit2 để biết `ts` tin được tới đâu và **không** được thay `ts` bằng giờ nhận gói:
+giờ vào làm là dữ liệu của thiết bị, không phải của broker.
 
 #### 6.2.6 Quy tắc ghi — chống mất điện
 
