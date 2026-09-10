@@ -46,6 +46,9 @@ TEST_CASE("the branch comes up and reports where its arena landed", "[ai_spoof]"
     // The crop side belongs to the graph, which picks it so every feature map
     // stays odd (KEHOACH 3 layer 1); pinning it here would pin two places.
     s_len = ai_engine_spoof_input_bytes();
+    if (s_len == 0) {
+        TEST_IGNORE_MESSAGE("the image on models_0 carries no spoof branch (KEHOACH 6.2.2)");
+    }
     const size_t side = square_side(s_len);
     printf("spoof input %u B, a square %ux%u RGB crop\n", (unsigned)s_len, (unsigned)side,
            (unsigned)side);
@@ -55,8 +58,16 @@ TEST_CASE("the branch comes up and reports where its arena landed", "[ai_spoof]"
            (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
 }
 
+static void need_branch(void)
+{
+    if (s_len == 0) {
+        TEST_IGNORE_MESSAGE("no spoof branch on models_0");
+    }
+}
+
 TEST_CASE("a crop pair comes back as a probability", "[ai_spoof]")
 {
+    need_branch();
     s_tight = fill(s_len, 1);
     s_wide = fill(s_len, 2);
     float live = -1.0F;
@@ -67,6 +78,7 @@ TEST_CASE("a crop pair comes back as a probability", "[ai_spoof]")
 
 TEST_CASE("the crops reach the graph rather than a zeroed tensor", "[ai_spoof]")
 {
+    need_branch();
     // Two runs that differ only in their input must differ in their answer,
     // which is what a crop landing in the wrong tensor would not do.
     float first = 0.0F, second = 0.0F;
@@ -107,6 +119,7 @@ static void centred_box(float face_px, float box[4])
 
 TEST_CASE("crops cut from a frame score, and the wide square stops at the frame", "[ai_spoof]")
 {
+    need_branch();
     const ai_engine_frame_t frame = { .pixels = gradient_frame(), .width = FRAME_W, .height = FRAME_H };
     float box[4];
     float live = -1.0f;
