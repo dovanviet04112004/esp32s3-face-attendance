@@ -1843,7 +1843,7 @@ firmware/
 │   ├── drv_audio/         [C]    L3
 │   ├── drv_servo/         [C]    L2  # chỉ đẩy xung LEDC 50 Hz
 │   ├── sys_storage/       [C]    L2  # NVS + LittleFS + mmap model; sở hữu storage_format.h (§6.2.7)
-│   ├── sys_time/          [C]    L2  # DS3231 là nguồn chính, SNTP hiệu chỉnh (§6.2.5)
+│   ├── sys_time/          [C]    L2  # DS3231 là nguồn chính, SNTP hiệu chỉnh; báo nguồn giờ ra, không tự lưu (§6.2.5)
 │   ├── ai_engine/         [C++]  L3  # TFLM — src/ tách 3 thư mục theo model (§4.5.6)
 │   ├── svc_facedb/        [C++]  L3  # bảng embedding + cosine search + CRUD
 │   ├── net_wifi/          [C]    L3
@@ -2702,7 +2702,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
 | `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_host`, `mqtt_port`, `mqtt_user`, `mqtt_pass` | str / u32 | token xoay vòng khi còn 7 ngày |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
-| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8) | | `boot_count` dùng sinh `local_id`; `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại, §6.2.5 dùng nó quyết định `flags` bit2 |
+| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8) | | `boot_count` dùng sinh `local_id`; `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5) |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt |
 | `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32) | | bốn ngưỡng của §4.5.5d; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
 
@@ -2845,6 +2845,13 @@ trường hợp: DS3231 báo mất dao động (cờ `OSF`, pin cạn hoặc ch�
 chưa gặp NTP lần nào — sai số ~2 ppm của DS3231 không đáng kể với một bản ghi chấm công.
 Server đọc bit2 để biết `ts` tin được tới đâu và **không** được thay `ts` bằng giờ nhận gói:
 giờ vào làm là dữ liệu của thiết bị, không phải của broker.
+
+**Ai làm gì.** `sys_time` (L2) đọc `OSF` với thanh ghi giờ, đặt giờ hệ thống, chạy SNTP và ghi
+giờ đã hiệu chỉnh trở lại DS3231; nó **báo nguồn giờ ra ngoài** qua API và **không chạm NVS**,
+vì §4.5.4 cấm L2 phụ thuộc L2. Cờ bền `sys.rtc_ntp_set` do **tầng nối dây** đọc lúc boot rồi
+đưa vào `sys_time`, và ghi lại khi `sys_time` báo SNTP vừa thành công. `svc_attendance` (L5)
+hỏi nguồn giờ để đặt bit2 lúc dựng bản ghi. Cách chia này giữ `sys_time` test được trên host
+mà không cần storage, và giữ một nguồn sự thật duy nhất cho câu hỏi giờ có đáng tin hay không.
 
 #### 6.2.6 Quy tắc ghi — chống mất điện
 
