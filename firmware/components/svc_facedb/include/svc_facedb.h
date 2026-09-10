@@ -7,10 +7,13 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "storage_format.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define SVC_FACEDB_EMBED_BYTES STORAGE_EMBED_DIM
 
 /** The template closest to a query and how close it came. */
 typedef struct {
