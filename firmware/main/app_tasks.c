@@ -5,6 +5,9 @@
 #include "drv_lcd.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "net_wifi.h"
+#include "sys_storage.h"
+#include "sys_time.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -14,6 +17,13 @@ static const char *TAG = "app_tasks";
 #define CAM_TASK_PRIORITY 7
 #define CAM_TASK_STACK_BYTES 4096
 #define RATE_WINDOW_FRAMES 60
+#define NET_TASK_CORE 0
+#define NET_TASK_PRIORITY 3
+#define NET_TASK_STACK_BYTES 4096
+#define JOIN_WAIT_MS 30000
+#define SNTP_HOST_CAP 64
+#define NVS_SNTP_HOST "sntp_host"
+#define NVS_RTC_NTP_SET "rtc_ntp_set"
 
 static void report_rate(int frames, int64_t elapsed_us)
 {
@@ -22,6 +32,38 @@ static void report_rate(int frames, int64_t elapsed_us)
     drv_camera_exposure_state(&level, &exposure, &gain16);
     ESP_LOGI(TAG, "preview %d.%03d fps, level %d, exposure %d lines, gain %d/16", mfps / 1000,
              mfps % 1000, level, exposure, gain16);
+}
+
+// The marker is what tells a later boot that this clock has been verified, and
+// only sys_storage may write it (KEHOACH 6.2.5).
+static void on_time_synced(void *arg)
+{
+    (void)arg;
+    const esp_err_t err = sys_storage_set_u32(STORAGE_NS_SYS, NVS_RTC_NTP_SET, 1);
+    ESP_LOGI(TAG, "time verified, marker %s", esp_err_to_name(err));
+}
+
+// One shot: the clock needs a netif, so the wait belongs off app_main and the
+// task leaves once the correction is under way.
+static void net_task(void *arg)
+{
+    (void)arg;
+    if (net_wifi_wait_connected(JOIN_WAIT_MS) != ESP_OK) {
+        ESP_LOGW(TAG, "no link in %d ms, clock stays on the rtc", JOIN_WAIT_MS);
+        vTaskDelete(NULL);
+        return;
+    }
+    char host[SNTP_HOST_CAP] = { 0 };
+    const esp_err_t stored = sys_storage_get_str(STORAGE_NS_DEVICE, NVS_SNTP_HOST, host,
+                                                 sizeof(host));
+    if (stored != ESP_OK) {
+        ESP_LOGW(TAG, "no sntp host in nvs: %s", esp_err_to_name(stored));
+        vTaskDelete(NULL);
+        return;
+    }
+    const esp_err_t sync = sys_time_sync_start(host, on_time_synced, NULL);
+    ESP_LOGI(TAG, "sntp against %s: %s", host, esp_err_to_name(sync));
+    vTaskDelete(NULL);
 }
 
 static void cam_task(void *arg)
@@ -60,5 +102,10 @@ esp_err_t app_tasks_start(void)
     // 100-400 ms and would stall everything sharing it (KEHOACH 5.1).
     const BaseType_t started = xTaskCreatePinnedToCore(
         cam_task, "cam", CAM_TASK_STACK_BYTES, NULL, CAM_TASK_PRIORITY, NULL, CAM_TASK_CORE);
-    return started == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+    if (started != pdPASS) {
+        return ESP_ERR_NO_MEM;
+    }
+    const BaseType_t net = xTaskCreatePinnedToCore(net_task, "net", NET_TASK_STACK_BYTES, NULL,
+                                                   NET_TASK_PRIORITY, NULL, NET_TASK_CORE);
+    return net == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }

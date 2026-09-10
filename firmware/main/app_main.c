@@ -5,6 +5,7 @@
 #include "drv_ioexp.h"
 #include "drv_lcd.h"
 #include "drv_touch.h"
+#include "net_wifi.h"
 #include "esp_log.h"
 #include "sys_storage.h"
 #include "sys_time.h"
@@ -13,7 +14,6 @@ static const char *TAG = "app_main";
 
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
 
-// Only sys_storage may reach NVS, so the clock is handed this (KEHOACH 6.2.5).
 static bool rtc_ntp_marker(void)
 {
     uint32_t marker = 0;
@@ -40,5 +40,10 @@ void app_main(void)
         ESP_LOGW(TAG, "touch absent: %s", esp_err_to_name(touch));
     }
     ESP_ERROR_CHECK(drv_camera_init());
+    // A kiosk with no network still opens doors (KEHOACH 6.2.5).
+    const esp_err_t station = net_wifi_start();
+    if (station != ESP_OK) {
+        ESP_LOGW(TAG, "wifi down: %s", esp_err_to_name(station));
+    }
     ESP_ERROR_CHECK(app_tasks_start());
 }
