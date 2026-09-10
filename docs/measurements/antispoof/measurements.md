@@ -1221,3 +1221,25 @@ Phải đo lại sau khi có model train bằng hộp detector; chưa chốt.
 - `export_soft_target.py`, `postproc/preproc.py`, `postproc/emit_golden.py`, `quant.py`,
   `README.md` — §4.4 đã khai, chưa viết.
 - Thang lượng tử hoá §3.8.
+
+---
+
+## 20. Lệnh chấm bộ 111 khung nằm trong repo — kiểm nhận
+
+Mọi bảng trên bộ `phone_eval` ở §12, §14, §16 chấm bằng script tạm đã mất. Từ 11/09 `eval.py`
+có chế độ `--frames`: đi qua detector, lấy hộp lớn nhất, cắt hai crop bằng `fitted_box` với
+vòng JPEG q95 y như shard, chấm ở ba ngưỡng 0,50 / 0,90 / 0,99 và in số qua/chặn theo thư mục:
+
+```bash
+cd ml && .venv/bin/python -m facepipe.tasks.antispoof.eval \
+  --run artifacts/antispoof/runs/<run> \
+  --frames /mnt/e/face-attendance-data/interim/antispoof/phone_eval \
+  --detector artifacts/detection/runs/20260831-1616_cc931df_36fbea/ckpt/best.pth
+```
+
+Kiểm nhận: bản `1740` không nạp được vào code hiện tại (PReLU, 80 px, `MEAN` đã bỏ), nên
+chạy cùng vòng chấm đó trên worktree của commit `865b5d0`. Kết quả **trùng từng số** với §16.2
+và §16.3: @0,50 BPCER 0,1316 / APCER 0,1714 / ACER 0,1515 · @0,90 0,2368 / 0,0000 / **0,1184** ·
+@0,99 0,2500 / 0,0000 / 0,1250; `live_kho` 12/12, `live_xa` 2/20, `attack_anh` 0/12 lọt,
+`attack_gan` 0/3 lọt ở 0,90. Run mới `20260909-1116` (ReLU, 81 px) chấm bằng đúng lệnh trên
+khi train xong, và so thẳng với bảng §16.2.
