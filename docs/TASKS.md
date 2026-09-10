@@ -258,6 +258,7 @@ duyệt, rồi mới sửa.
 | E10-T7 | Luồng enroll trên kiosk | Thêm được người mới từ màn hình | E10-T1, E8-T11 |
 | E10-T8 | 🔬 `test_apps/soak` chạy liên tục 24 giờ | Heap không giảm dần | E10-T4 |
 | E10-T9 | 🔬 Đo dòng thật lúc Wi-Fi TX + camera + LCD + loa cùng chạy | Số vào `docs/measurements/power.md`, đối chiếu §2.5 | E10-T4 |
+| **E10-T10** | `sys_time` — DS3231 là nguồn giờ chính, SNTP hiệu chỉnh (§2.3H, §6.2.5). Việc gồm: đọc RTC lúc boot rồi đặt giờ hệ thống **trước khi có Wi-Fi**, đọc cờ `OSF` để biết RTC có giờ tin được hay không, mỗi lần SNTP đồng bộ thì ghi giờ trở lại RTC và đặt `sys.rtc_ntp_set` = 1, và cấp cho `svc_attendance` quy tắc bật `flags` bit2. Nghiệm thu phần cứng ở `test_apps/` của chính component: probe `0x68`, đọc giờ hai lần cách nhau để chắc đồng hồ có chạy, rút điện rồi cắm lại xem giờ còn đúng. Chốt duyệt 10/09 (RTC hết là tuỳ chọn) | Rút điện 5 phút, boot lại **chưa có Wi-Fi** mà `ts` vẫn đúng; `updated_at_ms` của `svc_facedb` hết bằng 0 | E7-T2, E10-T5 |
 
 ---
 
