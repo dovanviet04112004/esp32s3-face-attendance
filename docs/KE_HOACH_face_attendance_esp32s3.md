@@ -418,9 +418,9 @@ Ba con này **suy ra từ bảng chế độ của datasheet**, chưa đo trên 
 lệch thật ở 0,25 / 0,35 / 0,42 m rồi chốt.
 
 **Ngưỡng "có người" không nằm ở đây.** Nó là ngưỡng nghiệp vụ, nên theo §4.9 nó ở **NVS
-trên kiosk và đổi được bằng `SET_CONFIG`** — `drv_tof` chỉ trả khoảng cách, không tự quyết
-định có người hay không. Việc biến khoảng cách thành `EVT_PRESENCE_ON/OFF` là của E10-T4,
-và §5.3 hiện **chưa khai đường truyền** cho hai event đó.
+trên kiosk và đổi được bằng `SET_CONFIG`** — khoá `vision.present_mm` của §6.2.1. `drv_tof`
+chỉ trả khoảng cách, không tự quyết định có người hay không; việc biến khoảng cách thành
+`EVT_PRESENCE_ON/OFF` là của `tof_task`, và §5.3 khai đường truyền của hai event đó.
 
 #### E. Âm thanh MAX98357A (I²S) + loa 4Ω/3W
 
@@ -2660,6 +2660,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `q_touch` | Queue, depth 8, `touch_evt_t` | 8 × 8 B | `touch_task` | `ui_task` | Không mất thao tác vuốt nhanh |
 | `q_audio` | Queue, depth 4, `sound_id_t` | 4 × 4 B | `attend_task`, `ui_task` | `audio_task` | Phát âm không được chặn nghiệp vụ |
 | `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | Đầy thì ghi thẳng LittleFS, không mất bản ghi |
+| `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
 | **`m_spi_lcd`** | Mutex | — | `ui_task`, `ota_task` (màn hình tiến trình) | — | 1 bus SPI, tránh xé khung hình |
 | **`m_facedb`** | Mutex | — | `ai_task` (đọc), `mqtt_task` (ghi khi enroll) | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
@@ -2667,13 +2668,21 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
 | `s_frame_ready` | Binary semaphore | — | ISR camera | `cam_task` | ISR chỉ `xSemaphoreGiveFromISR`, xử lý ở task |
 | `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | như trên |
-| `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING`. Thay cho 6 biến cờ rời rạc |
+| `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT`. Thay cho 7 biến cờ rời rạc |
 
-**Bảng này chưa có đường cho `EVT_PRESENCE_ON/OFF`.** §5.2 nói `tof_task` phát hai event đó
-và §4.5.5f nhận chúng vào máy trạng thái chấm công, nhưng không hàng đợi nào ở trên chở
-chúng và `eg_system` không có bit tương ứng. Chốt đường truyền là việc của **E10-T4**, cùng
-lúc dựng `common/include/app_events.h` mà §4.5.4 luật 2 đã khai nhưng chưa tồn tại. E7-T7
-không cần nó: `drv_tof` chỉ trả khoảng cách và giương `s_tof_int`.
+**Đường của `EVT_PRESENCE_ON/OFF`.** `drv_tof` chỉ trả khoảng cách (§2.3D), nên `tof_task` là
+chỗ biến khoảng cách thành hai cạnh: dưới `vision.present_mm` là có người, trên ngưỡng đó cộng
+một dải trễ là hết người, và **chỉ cạnh** mới đi vào `q_presence`. Trạng thái thì đi ra bằng
+bit `PRESENT` của `eg_system`, vì `ui_task` chỉ cần biết có ai đứng đó không trên mỗi nhịp
+20 ms chứ không phải chờ cạnh. Một người ghi là `tof_task`, hai người đọc hai kiểu khác nhau —
+hàng đợi cho `attend_task`, bit cho `ui_task` — nên không cần fan-out. E7-T7 không cần gì
+trong số này: `drv_tof` chỉ trả khoảng cách và giương `s_tof_int`.
+
+**Handle của queue và event group nằm ở `main/app_wiring.c`.** `common/include/app_events.h`
+(L0) khai `app_presence_t`, `app_sound_t` và bảng bit của `eg_system` — những thứ khai được mà
+không cần biết tầng nào tồn tại. Bản thân handle thì không: `q_uplink` chở
+`storage_attend_record_t` của L2 và `q_result` chở `svc_vision_result_t` của L4, nên chỗ duy
+nhất thấy đủ để dựng chúng là tầng nối dây ở L7 (§4.5.4 luật 2).
 
 **Quy tắc ISR (bắt buộc)**
 - ISR **chỉ** gọi `xQueueSendFromISR` / `xSemaphoreGiveFromISR` + `portYIELD_FROM_ISR()`. Không log, không I2C, không malloc.
@@ -2734,8 +2743,8 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8) | | `boot_count` dùng sinh `local_id`; `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5) |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt |
-| `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32) | | bốn ngưỡng của §4.5.5d; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
-| `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
+| `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `present_mm` (u32, mm) | | bốn ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
+| `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
 
 **Không để dữ liệu sinh trắc trong NVS.** NVS là key-value nhỏ, ghi nhiều sẽ mòn; embedding nằm ở LittleFS.
 
@@ -2916,7 +2925,7 @@ ack. Không component nào ngoài `sys_storage` biết log gồm mấy file.
 | Việc | Cách ghi | Mất điện giữa chừng thì sao |
 |---|---|---|
 | Sửa `faces.bin` | Ghi `faces.tmp` → `lfs_file_sync` → rename `faces.bin`→`faces.bak` → rename `faces.tmp`→`faces.bin` | `faces.bin` hoặc còn nguyên bản cũ, hoặc đã là bản mới. Không bao giờ nửa vời. Boot sau đọc `faces.bin`; CRC sai thì rơi về `faces.bak` |
-| Thêm bản ghi chấm công | `lfs_file_write` + **`lfs_file_sync` ngay sau mỗi bản ghi** | Bản ghi cuối CRC sai → bị bỏ lúc đọc lại. Các bản ghi trước còn nguyên |
+| Thêm bản ghi chấm công | `lfs_file_write` + **`lfs_file_sync` ngay sau mỗi bản ghi**. Lần ghi sau **cắt cái đuôi dở** về mốc 32 + k×48 trước khi ghi tiếp | Bản ghi cuối dở dang bị cắt, các bản ghi trước còn nguyên. Không cắt thì n byte lẻ đó đẩy lệch mọi bản ghi ghi sau nó và cả file đọc ra sai |
 | Cập nhật `cursor.bin` | Ghi **SAU KHI** broker trả ack QoS 1, bằng đường hai pha của `faces.bin` | Gửi lại bản ghi đã gửi → server khử trùng bằng `local_id`. Đây là at-least-once, đúng ý đồ — thà trùng còn hơn mất |
 | Xoay vòng log | Bản ghi kế tiếp không còn vừa trong 256 KB → mở `attend.NNN+1`, ghi header rồi ghi vào đó. Xoá file cũ chỉ khi `cursor.file_index` đã vượt qua nó | Không mất bản ghi chưa sync. Không file nào vượt 256 KB, nên người đọc chặn được kích thước buffer |
 | `tmp/` | Xoá sạch trong `sys_storage_init()` | Không cần quan tâm |
