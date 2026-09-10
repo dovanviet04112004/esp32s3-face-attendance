@@ -16,7 +16,9 @@
 
 #define STORAGE_FACES_PATH "/lfs/db/faces.bin"  // KEHOACH 6.2.3
 #define STORAGE_ATTEND_DIR "/lfs/log"             // KEHOACH 6.2.5
-#define STORAGE_ATTEND_PATH "/lfs/log/attend.000"  // rotation is E10-T3
+#define STORAGE_ATTEND_FMT "/lfs/log/attend.%03u"  // 000 to 999
+#define STORAGE_ATTEND_FILES 1000u
+#define STORAGE_CURSOR_PATH "/lfs/log/cursor.bin"
 #define STORAGE_FACES_MAGIC 0x31424446u   // 'FDB1'
 #define STORAGE_FACES_VER 1u
 #define STORAGE_FACE_MAGIC 0x45434146u    // 'FACE'
@@ -25,8 +27,11 @@
 #define STORAGE_EMBED_DIM 512
 
 #define STORAGE_ATTEND_MAGIC 0x31474C41u  // 'ALG1'
+#define STORAGE_ATTEND_VER 1u
 #define STORAGE_ATTEND_REC_MAGIC 0x44545441u  // 'ATTD'
 #define STORAGE_ATTEND_ROTATE_BYTES (256 * 1024)
+#define STORAGE_CURSOR_MAGIC 0x31554341u  // 'ACU1'
+#define STORAGE_CURSOR_VER 1u
 
 /** One model inside the packed image, found by name rather than by position.
  */
@@ -97,6 +102,17 @@ typedef struct __attribute__((packed)) {
     uint32_t crc32;
 } storage_attend_record_t;
 
+/** How far the uplink has got through the log. Only an acked record moves it,
+ *  so a power cut costs a resend and never a record (KEHOACH 6.2.5).
+ */
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint16_t format_ver;
+    uint16_t file_index;                  // which attend.NNN
+    uint32_t offset;                      // next byte in it, 32 + k * 48
+    uint32_t crc32;
+} storage_cursor_t;
+
 // The compiler holds these numbers, so a field added without a version bump
 // breaks the build rather than writing records the next firmware cannot read.
 static_assert(sizeof(storage_model_entry_t) == 64, "model entry must match KEHOACH 6.2.2");
@@ -114,3 +130,6 @@ static_assert(offsetof(storage_face_record_t, crc32) == 548, "face crc offset dr
 static_assert(sizeof(storage_attend_record_t) == 48, "attend record must match KEHOACH 6.2.5");
 static_assert(offsetof(storage_attend_record_t, ts_ms) == 16, "attend ts offset drifted");
 static_assert(offsetof(storage_attend_record_t, crc32) == 44, "attend crc offset drifted");
+
+static_assert(sizeof(storage_cursor_t) == 16, "cursor must match KEHOACH 6.2.5");
+static_assert(offsetof(storage_cursor_t, offset) == 8, "cursor offset field drifted");

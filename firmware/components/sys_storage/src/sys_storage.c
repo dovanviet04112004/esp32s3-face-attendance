@@ -2,8 +2,10 @@
 
 #include <dirent.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "app_err.h"
@@ -24,6 +26,9 @@ static const char *TAG = "sys_storage";
 #define PARTITION_MODELS "models_0"
 #define NVS_LEGACY_NAMESPACE "kiosk"
 #define NVS_BOOT_COUNT "boot_count"
+#define LOG_NAME_PREFIX "attend."
+#define LOG_HEADER_BYTES sizeof(storage_file_header_t)
+#define LOG_RECORD_BYTES sizeof(storage_attend_record_t)
 #define NVS_SLOTS 6
 #define LOCK_WAIT_MS 5000
 #define PATH_MAX_LEN 64
@@ -36,6 +41,9 @@ typedef struct {
 } nvs_slot_t;
 
 static SemaphoreHandle_t s_lock;
+static uint32_t s_log_index;
+static uint32_t s_log_dropped_below;
+static bool s_log_scanned;
 static nvs_slot_t s_slots[NVS_SLOTS];
 static uint32_t s_boot_count;
 static bool s_ready;
@@ -250,19 +258,14 @@ static esp_err_t write_whole(const char *path, const void *data, size_t len)
     return (written == len && synced == 0) ? ESP_OK : ESP_FAIL;
 }
 
-esp_err_t sys_storage_write_atomic(const char *path, const void *data, size_t len)
+static esp_err_t replace_locked(const char *path, const void *data, size_t len)
 {
-    if (!s_ready || path == NULL || data == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
     char scratch[PATH_MAX_LEN];
     char previous[PATH_MAX_LEN];
     if (snprintf(scratch, sizeof(scratch), "%s.tmp", path) >= (int)sizeof(scratch) ||
         snprintf(previous, sizeof(previous), "%s.bak", path) >= (int)sizeof(previous)) {
         return ESP_ERR_INVALID_SIZE;
     }
-
-    APP_RETURN_ON_ERR(take(), TAG, "lock");
     esp_err_t err = write_whole(scratch, data, len);
     if (err == ESP_OK) {
         // The old copy steps aside first, so the moment the new name appears
@@ -274,19 +277,24 @@ esp_err_t sys_storage_write_atomic(const char *path, const void *data, size_t le
     if (err != ESP_OK) {
         unlink(scratch);
     }
+    return err;
+}
+
+esp_err_t sys_storage_write_atomic(const char *path, const void *data, size_t len)
+{
+    if (!s_ready || path == NULL || data == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    const esp_err_t err = replace_locked(path, data, len);
     give();
     return err;
 }
 
-esp_err_t sys_storage_read(const char *path, void *buf, size_t cap, size_t *out_len)
+static esp_err_t read_locked(const char *path, void *buf, size_t cap, size_t *out_len)
 {
-    if (!s_ready || path == NULL || buf == NULL || out_len == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    APP_RETURN_ON_ERR(take(), TAG, "lock");
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
-        give();
         return ESP_ERR_NOT_FOUND;
     }
     // The end-of-file flag only rises after a read runs past the last byte, so
@@ -296,14 +304,23 @@ esp_err_t sys_storage_read(const char *path, void *buf, size_t cap, size_t *out_
     rewind(file);
     if (size < 0 || (size_t)size > cap) {
         fclose(file);
-        give();
         return ESP_ERR_INVALID_SIZE;
     }
     const size_t got = fread(buf, 1, (size_t)size, file);
     fclose(file);
-    give();
     *out_len = got;
     return got == (size_t)size ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t sys_storage_read(const char *path, void *buf, size_t cap, size_t *out_len)
+{
+    if (!s_ready || path == NULL || buf == NULL || out_len == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    const esp_err_t err = read_locked(path, buf, cap, out_len);
+    give();
+    return err;
 }
 
 uint32_t sys_storage_crc32(const void *data, size_t len)
@@ -347,22 +364,276 @@ esp_err_t sys_storage_read_checked(const char *path, uint32_t magic, void *buf, 
     return ESP_OK;
 }
 
+static esp_err_t append_locked(const char *path, const void *record, size_t len)
+{
+    FILE *file = fopen(path, "ab");
+    if (file == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    const size_t written = fwrite(record, 1, len, file);
+    const int synced = fflush(file) == 0 ? fsync(fileno(file)) : -1;
+    fclose(file);
+    return (written == len && synced == 0) ? ESP_OK : ESP_FAIL;
+}
+
 esp_err_t sys_storage_append(const char *path, const void *record, size_t len)
 {
     if (!s_ready || path == NULL || record == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     APP_RETURN_ON_ERR(take(), TAG, "lock");
-    FILE *file = fopen(path, "ab");
+    const esp_err_t err = append_locked(path, record, len);
+    give();
+    return err;
+}
+
+static long file_size(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0 ? (long)st.st_size : -1;
+}
+
+static esp_err_t read_at(const char *path, long offset, void *buf, size_t len)
+{
+    FILE *file = fopen(path, "rb");
     if (file == NULL) {
-        give();
         return ESP_ERR_NOT_FOUND;
     }
-    const size_t written = fwrite(record, 1, len, file);
-    const int synced = fflush(file) == 0 ? fsync(fileno(file)) : -1;
+    const size_t got = fseek(file, offset, SEEK_SET) == 0 ? fread(buf, 1, len, file) : 0;
     fclose(file);
+    return got == len ? ESP_OK : ESP_FAIL;
+}
+
+static void log_path_of(uint32_t index, char *out, size_t cap)
+{
+    snprintf(out, cap, STORAGE_ATTEND_FMT, (unsigned)index);
+}
+
+static bool log_index_of(const char *name, uint32_t *index)
+{
+    if (strncmp(name, LOG_NAME_PREFIX, strlen(LOG_NAME_PREFIX)) != 0) {
+        return false;
+    }
+    char *end = NULL;
+    const unsigned long parsed = strtoul(name + strlen(LOG_NAME_PREFIX), &end, 10);
+    if (*end != '\0' || parsed >= STORAGE_ATTEND_FILES) {
+        return false;
+    }
+    *index = (uint32_t)parsed;
+    return true;
+}
+
+static uint32_t newest_log_index(void)
+{
+    DIR *dir = opendir(STORAGE_ATTEND_DIR);
+    if (dir == NULL) {
+        return 0;
+    }
+    uint32_t newest = 0;
+    uint32_t index = 0;
+    for (struct dirent *entry = readdir(dir); entry != NULL; entry = readdir(dir)) {
+        if (log_index_of(entry->d_name, &index) && index > newest) {
+            newest = index;
+        }
+    }
+    closedir(dir);
+    return newest;
+}
+
+static esp_err_t write_log_header(const char *path)
+{
+    storage_file_header_t header = { 0 };
+    header.magic = STORAGE_ATTEND_MAGIC;
+    header.format_ver = STORAGE_ATTEND_VER;
+    header.record_size = LOG_RECORD_BYTES;
+    header.updated_at_ms = (int64_t)time(NULL) * 1000;
+    header.crc32 = sys_storage_crc32(&header, offsetof(storage_file_header_t, crc32));
+    return write_whole(path, &header, sizeof(header));
+}
+
+static bool log_header_holds(const char *path)
+{
+    storage_file_header_t header;
+    if (read_at(path, 0, &header, sizeof(header)) != ESP_OK) {
+        return false;
+    }
+    const uint32_t crc = sys_storage_crc32(&header, offsetof(storage_file_header_t, crc32));
+    return header.magic == STORAGE_ATTEND_MAGIC && header.crc32 == crc &&
+           header.record_size == LOG_RECORD_BYTES;
+}
+
+// Names the file the next record goes into, creating it or rotating on to the
+// next name as KEHOACH 6.2.6 says.
+static esp_err_t active_log(char *path, size_t cap)
+{
+    if (!s_log_scanned) {
+        s_log_index = newest_log_index();
+        s_log_scanned = true;
+    }
+    while (s_log_index < STORAGE_ATTEND_FILES) {
+        log_path_of(s_log_index, path, cap);
+        long size = file_size(path);
+        // Absent, or a header the last power cut never finished: no record can
+        // live in those bytes, so the file starts over.
+        if (size < (long)LOG_HEADER_BYTES) {
+            return write_log_header(path);
+        }
+        if (!log_header_holds(path)) {
+            ESP_LOGE(TAG, "%s carries no log header, rotating past it", path);
+            ++s_log_index;
+            continue;
+        }
+        const long partial = (size - (long)LOG_HEADER_BYTES) % (long)LOG_RECORD_BYTES;
+        if (partial != 0) {
+            if (truncate(path, size - partial) != 0) {
+                ESP_LOGE(TAG, "%s keeps a %ld B tail, rotating past it", path, partial);
+                ++s_log_index;
+                continue;
+            }
+            ESP_LOGW(TAG, "%s ended %ld B into a record, tail dropped", path, partial);
+            size -= partial;
+        }
+        if ((size_t)size + LOG_RECORD_BYTES > STORAGE_ATTEND_ROTATE_BYTES) {
+            ++s_log_index;
+            continue;
+        }
+        return ESP_OK;
+    }
+    return ESP_ERR_NO_MEM;
+}
+
+esp_err_t sys_storage_attend_append(const storage_attend_record_t *record)
+{
+    if (!s_ready || record == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    char path[PATH_MAX_LEN];
+    esp_err_t err = active_log(path, sizeof(path));
+    if (err == ESP_OK) {
+        err = append_locked(path, record, sizeof(*record));
+    }
     give();
-    return (written == len && synced == 0) ? ESP_OK : ESP_FAIL;
+    return err;
+}
+
+static void cursor_of(storage_cursor_t *out, uint32_t index, uint32_t offset)
+{
+    memset(out, 0, sizeof(*out));
+    out->magic = STORAGE_CURSOR_MAGIC;
+    out->format_ver = STORAGE_CURSOR_VER;
+    out->file_index = (uint16_t)index;
+    out->offset = offset;
+    out->crc32 = sys_storage_crc32(out, offsetof(storage_cursor_t, crc32));
+}
+
+static bool cursor_holds(const storage_cursor_t *cursor, size_t len)
+{
+    if (len != sizeof(*cursor)) {
+        return false;
+    }
+    const uint32_t crc = sys_storage_crc32(cursor, offsetof(storage_cursor_t, crc32));
+    return cursor->magic == STORAGE_CURSOR_MAGIC && cursor->crc32 == crc &&
+           cursor->format_ver == STORAGE_CURSOR_VER;
+}
+
+static void load_cursor(storage_cursor_t *out)
+{
+    size_t len = 0;
+    if (read_locked(STORAGE_CURSOR_PATH, out, sizeof(*out), &len) == ESP_OK &&
+        cursor_holds(out, len)) {
+        return;
+    }
+    if (read_locked(STORAGE_CURSOR_PATH ".bak", out, sizeof(*out), &len) == ESP_OK &&
+        cursor_holds(out, len)) {
+        ESP_LOGW(TAG, "cursor.bin failed its check, its backup answered");
+        return;
+    }
+    cursor_of(out, 0, LOG_HEADER_BYTES);
+}
+
+esp_err_t sys_storage_attend_cursor_get(storage_cursor_t *out)
+{
+    if (!s_ready || out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    load_cursor(out);
+    give();
+    return ESP_OK;
+}
+
+// A file goes only once the cursor sits past it, and only once per session per
+// name, so a cursor moving inside one file costs no lookups (KEHOACH 6.2.6).
+static void drop_synced_logs(uint32_t below)
+{
+    char path[PATH_MAX_LEN];
+    for (; s_log_dropped_below < below; ++s_log_dropped_below) {
+        log_path_of(s_log_dropped_below, path, sizeof(path));
+        if (unlink(path) == 0) {
+            ESP_LOGI(TAG, "%s synced through, dropped", path);
+        }
+    }
+}
+
+esp_err_t sys_storage_attend_cursor_set(const storage_cursor_t *cursor)
+{
+    if (!s_ready || cursor == NULL || cursor->file_index >= STORAGE_ATTEND_FILES ||
+        cursor->offset < LOG_HEADER_BYTES ||
+        (cursor->offset - LOG_HEADER_BYTES) % LOG_RECORD_BYTES != 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    storage_cursor_t stamped;
+    cursor_of(&stamped, cursor->file_index, cursor->offset);
+
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    const esp_err_t err = replace_locked(STORAGE_CURSOR_PATH, &stamped, sizeof(stamped));
+    if (err == ESP_OK) {
+        drop_synced_logs(stamped.file_index);
+    }
+    give();
+    return err;
+}
+
+esp_err_t sys_storage_attend_read(const storage_cursor_t *at, storage_attend_record_t *out,
+                                  storage_cursor_t *next)
+{
+    if (!s_ready || at == NULL || out == NULL || next == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    if (!s_log_scanned) {
+        s_log_index = newest_log_index();
+        s_log_scanned = true;
+    }
+    char path[PATH_MAX_LEN];
+    long offset = at->offset < LOG_HEADER_BYTES ? (long)LOG_HEADER_BYTES : (long)at->offset;
+    esp_err_t err = ESP_ERR_NOT_FOUND;
+    for (uint32_t index = at->file_index; index <= s_log_index; ++index) {
+        log_path_of(index, path, sizeof(path));
+        const long size = file_size(path);
+        while (size >= offset + (long)LOG_RECORD_BYTES) {
+            err = read_at(path, offset, out, sizeof(*out));
+            offset += (long)LOG_RECORD_BYTES;
+            if (err != ESP_OK) {
+                break;
+            }
+            const uint32_t crc = sys_storage_crc32(out, offsetof(storage_attend_record_t, crc32));
+            if (out->magic == STORAGE_ATTEND_REC_MAGIC && out->crc32 == crc) {
+                cursor_of(next, index, (uint32_t)offset);
+                give();
+                return ESP_OK;
+            }
+            // KEHOACH 6.2.6 drops such a record, and the cursor has to be able
+            // to move past it or the uplink stalls here forever.
+            ESP_LOGW(TAG, "%s record at %ld failed its check, skipped", path,
+                     offset - (long)LOG_RECORD_BYTES);
+            err = ESP_ERR_NOT_FOUND;
+        }
+        offset = (long)LOG_HEADER_BYTES;
+    }
+    give();
+    return err;
 }
 
 esp_err_t sys_storage_models_open(const storage_models_header_t **header)

@@ -88,6 +88,31 @@ uint32_t sys_storage_crc32(const void *data, size_t len);
  */
 esp_err_t sys_storage_append(const char *path, const void *record, size_t len);
 
+/** Append one attendance record, rotating the log at 256 KB (KEHOACH 6.2.5).
+ *  @ctx task | blocking ~10-20 ms | takes m_littlefs
+ *  @ret ESP_OK | ESP_ERR_NO_MEM once every log file name is spent
+ */
+esp_err_t sys_storage_attend_append(const storage_attend_record_t *record);
+
+/** How far the uplink has got, or the start of the log when nothing has synced.
+ *  @ctx task | blocking | takes m_littlefs
+ */
+esp_err_t sys_storage_attend_cursor_get(storage_cursor_t *out);
+
+/** Move the cursor and drop the log files it has left behind.
+ *  @ctx task | blocking | takes m_littlefs | only an acked record moves it
+ *  @ret ESP_OK | ESP_ERR_INVALID_ARG when the offset misses the record grid
+ */
+esp_err_t sys_storage_attend_cursor_set(const storage_cursor_t *cursor);
+
+/** Read the record a cursor points at and hand back the cursor after it.
+ *  @ctx task | blocking | takes m_littlefs
+ *  @param next untouched unless a record is returned
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND when the log holds nothing past this point
+ */
+esp_err_t sys_storage_attend_read(const storage_cursor_t *at, storage_attend_record_t *out,
+                                  storage_cursor_t *next);
+
 /** Map the models partition and hand back its header.
  *  @ctx task | blocking | the mapping lives until reboot
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND when the partition holds no image

@@ -91,7 +91,7 @@ esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool d
     record.model_version = 1;
     record.crc32 = esp_crc32_le(0, (const uint8_t *)&record, offsetof(storage_attend_record_t, crc32));
 
-    const esp_err_t err = sys_storage_append(STORAGE_ATTEND_PATH, &record, sizeof(record));
+    const esp_err_t err = sys_storage_attend_append(&record);
     if (err == ESP_OK) {
         s_last_record = record;
         s_have_record = true;
