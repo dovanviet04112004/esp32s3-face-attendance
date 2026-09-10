@@ -186,7 +186,7 @@ Chạy song song với E4–E6. Không phụ thuộc model.
 | E8-T7b | Dựng 2 arena: `arena_fast` (detect+spoof chung 1 `MicroAllocator`, SRAM) và `arena_big` (recog, PSRAM) | Cả 3 model chạy được, `arena_fast` vừa SRAM nội | E8-T7 |
 | E8-T8 | 🔬 **Đo latency từng model và từng op** — `MicroProfiler`, **build bằng profile `bench`** (`-O2`, không assert) | Bảng vào `docs/measurements/latency.md`, chỉ rõ op nào không có kernel ESP-NN | E8-T7, E7-T2b |
 | E8-T9 | 🔬 **Đo RAM đỉnh toàn hệ** — `heap_caps_get_minimum_free_size` cả internal và PSRAM | Số vào `docs/measurements/`, đối chiếu §6.4 | E8-T7 |
-| E8-T10 | `svc_vision` — pipeline 5 nhánh thoát sớm. **Viết 11/09 theo §4.5.5d mới (máy bước)**: 4 interface + 4 adapter bọc `ai_engine`/`svc_facedb`, detect mỗi khung + tối đa một model nữa, cắt sẵn crop vào PSRAM khi mặt ổn định, bám một mặt chính, kết quả là sự kiện. `ai_engine` thêm `ai_engine_align_face()` và `ai_engine_spoof_crops()` (cắt không chạy). App test `test_apps/pipeline` chạy máy bước với 4 adapter giả, 8 case, **chưa chạy trên board** (không có board lúc viết) | Chạy đủ chuỗi trên ảnh thật từ camera | E8-T6 |
+| E8-T10 | `svc_vision` — pipeline 5 nhánh thoát sớm. **Viết 11/09 theo §4.5.5d**: 4 interface + 4 adapter bọc `ai_engine`/`svc_facedb`, detect mỗi khung, mặt ổn định qua 2 detect thì chạy hết spoof → recog → tra bảng ngay trong bước đó (tuần tự, kết quả ≈ 1,5 s sau khi mặt xuất hiện), bám một mặt chính, kết quả là sự kiện. Bản xen kẽ detect giữa hai model đã viết rồi bỏ cùng ngày vì làm kết quả chậm thêm 0,6 s; hộp không khựng là việc của bộ bám trên preview (E10-T1). App test `test_apps/pipeline` chạy chuỗi với 4 adapter giả, 8 case, **chưa chạy trên board** (không có board lúc viết) | Chạy đủ chuỗi trên ảnh thật từ camera | E8-T6 |
 | E8-T11 | `svc_facedb` — bảng embedding int8 trong PSRAM + cosine search. **Viết và đo 10/09, 6/6 case, hai lần boot**: bảng 1.000 bản ghi (500 người × 2) giữ nguyên ảnh file §6.2.4 trong PSRAM; **lookup toàn bảng 6,8 ms** với kernel PIE `ee.vmulas.s8.accx` (vòng C thuần: 36,2 ms ở `-Og`, 20,9 ms ở `-O2` — trượt mốc, nên mới viết kernel); điểm số y hệt tham chiếu double (mẫu hỏng 40 lane: 0,8305 = 0,8305; người lạ 0,136); xoá mềm + nén khi đầy; ghi 2 pha 552 KB mất 1,8–2,3 s; boot sau nạp lại 1000/1000. `contracts/golden/recognition/cosine` còn trống (E8-T6) nên test so với tham chiếu tính tại chỗ. Còn nợ: nối vào `svc_vision`/`svc_attendance`, `updated_at_ms` = 0 cho tới khi có `sys_time` | Tra 500 người < 20 ms | E8-T3, E7-T10 |
 | E8-T12 | 🔬 **Đo accuracy đầu-cuối trên ảnh OV5640 thật** | FAR/FRR trên tập `test_device` | E8-T10, E8-T11 |
 
@@ -249,7 +249,7 @@ duyệt, rồi mới sửa.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E10-T1 | `ui_kiosk` — `Screen` base + `ScreenManager` + 5 màn hình | Chuyển màn mượt, không rò bộ nhớ | E7-T5, E7-T6 |
+| E10-T1 | `ui_kiosk` — `Screen` base + `ScreenManager` + 5 màn hình, kèm **bộ bám hộp trên đường preview** (§4.5.5h: khớp mẫu 24×24 ±8 px mỗi khung, 🔬 1–2 ms) để hộp mặt không khựng trong 0,93 s spoof + recog chạy | Chuyển màn mượt, không rò bộ nhớ; hộp theo mặt ở 14 fps giữa hai lần detect | E7-T5, E7-T6 |
 | E10-T2 | `svc_attendance` — FSM bảng `constexpr` + chống chấm trùng | Unit test đủ 6 trạng thái | E8-T10, E7-T9 |
 | E10-T3 | Ghi log chấm công LittleFS append-only + `cursor.bin` | Rút điện 20 lần không mất bản ghi | E7-T10, E10-T2 |
 | E10-T4 | `app_tasks.c` — 11 task đúng core và priority theo §5.2 | `uxTaskGetStackHighWaterMark` ổn định | E10-T1, E10-T2 |
