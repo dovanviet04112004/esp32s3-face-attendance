@@ -17,8 +17,7 @@ static const char *TAG = "drv_camera";
 #define METER_TARGET_GREEN 30
 #define METER_DEADBAND 4
 #define METER_SAMPLE_STEP 8
-// The driver's own header states gain = {0x350A[1:0], 0x350B[7:0]} / 16, so
-// sixteen of these units is unity and the step is fine enough to trim with.
+// Gain is {0x350A[1:0], 0x350B[7:0]} / 16 per the driver header, so 16 is unity.
 #define GAIN_HIGH_REG 0x350A
 #define GAIN_LOW_REG 0x350B
 #define METER_BASE_GAIN16 16
@@ -26,7 +25,9 @@ static const char *TAG = "drv_camera";
 // Mains at 50 Hz makes light peak twice per cycle, so an exposure that is a
 // whole number of half-periods collects the same light on every row.
 #define BAND_PERIOD_US 10000
-#define BAND_MEASURE_FRAMES 20
+#define BAND_MEASURE_FRAMES 12
+// A frame already waiting comes back with no delay, reading as no period.
+#define BAND_DRAIN_FRAMES CAM_FB_COUNT
 #define METER_DAMPING 4
 #define METER_SETTLE_FRAMES 2
 #define METER_SATURATED 58
@@ -47,9 +48,6 @@ static int s_gain16 = METER_BASE_GAIN16;
 static int s_settle;
 static int s_level;
 static int s_band_lines;
-static int64_t s_frame_mark_us;
-static int64_t s_period_sum_us;
-static int s_period_seen;
 
 static int centre_green(const camera_fb_t *frame)
 {
@@ -111,6 +109,44 @@ static esp_err_t hold_exposure_still(sensor_t *sensor)
     return ESP_OK;
 }
 
+// Measured with nothing else holding frames: the sensor's own interval.
+static esp_err_t learn_band(void)
+{
+    for (int i = 0; i < BAND_DRAIN_FRAMES; ++i) {
+        camera_fb_t *ready = esp_camera_fb_get();
+        if (ready != NULL) {
+            esp_camera_fb_return(ready);
+        }
+    }
+    int64_t total_us = 0;
+    int seen = 0;
+    int64_t mark_us = 0;
+    for (int i = 0; i < BAND_MEASURE_FRAMES; ++i) {
+        camera_fb_t *frame = esp_camera_fb_get();
+        if (frame == NULL) {
+            continue;
+        }
+        const int64_t now = esp_timer_get_time();
+        esp_camera_fb_return(frame);
+        if (mark_us != 0) {
+            total_us += now - mark_us;
+            ++seen;
+        }
+        mark_us = now;
+    }
+    if (seen == 0) {
+        return ESP_ERR_TIMEOUT;
+    }
+    // One frame spans exposure_max lines, so a line lasts that fraction of the
+    // frame and the half-period is worth this many of them.
+    const int64_t period = total_us / seen;
+    s_band_lines = (int)((BAND_PERIOD_US * (int64_t)s_exposure_max) / period);
+    s_band_lines = s_band_lines < 1 ? 1 : s_band_lines;
+    ESP_LOGI(TAG, "frame %lld us, one 50 Hz half-period is %d lines, vts %d",
+             (long long)period, s_band_lines, s_exposure_max);
+    return ESP_OK;
+}
+
 esp_err_t drv_camera_init(void)
 {
     if (s_ready) {
@@ -157,6 +193,7 @@ esp_err_t drv_camera_init(void)
     sensor->set_hmirror(sensor, 1);
     APP_RETURN_ON_ERR(pick_50hz_band(sensor), TAG, "band filter");
     APP_RETURN_ON_ERR(hold_exposure_still(sensor), TAG, "manual exposure");
+    APP_RETURN_ON_ERR(learn_band(), TAG, "band period");
     s_ready = true;
     ESP_LOGI(TAG, "sensor 0x%04X up at %dx%d rgb565 in psram", sensor->id.PID, APP_CAM_H_RES,
              APP_CAM_V_RES);
@@ -182,28 +219,6 @@ static void set_gain16(sensor_t *sensor, int gain16)
     sensor->set_reg(sensor, GAIN_LOW_REG, 0xFF, raw & 0xFF);
 }
 
-static esp_err_t learn_band(const camera_fb_t *frame)
-{
-    (void)frame;
-    const int64_t now = esp_timer_get_time();
-    if (s_frame_mark_us != 0) {
-        s_period_sum_us += now - s_frame_mark_us;
-        s_period_seen++;
-    }
-    s_frame_mark_us = now;
-    if (s_period_seen < BAND_MEASURE_FRAMES) {
-        return ESP_OK;
-    }
-    // One frame spans exposure_max lines, so a line lasts that fraction of the
-    // frame and the half-period is worth this many of them.
-    const int64_t period = s_period_sum_us / s_period_seen;
-    s_band_lines = (int)((BAND_PERIOD_US * (int64_t)s_exposure_max) / period);
-    s_band_lines = s_band_lines < 1 ? 1 : s_band_lines;
-    ESP_LOGI(TAG, "frame %lld us, one 50 Hz half-period is %d lines", (long long)period,
-             s_band_lines);
-    return ESP_OK;
-}
-
 esp_err_t drv_camera_expose(const camera_fb_t *frame)
 {
     if (!s_ready || frame == NULL || frame->format != PIXFORMAT_RGB565) {
@@ -212,9 +227,6 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
     sensor_t *sensor = esp_camera_sensor_get();
     if (sensor == NULL) {
         return ESP_ERR_NOT_FOUND;
-    }
-    if (s_band_lines == 0) {
-        return learn_band(frame);
     }
     // The sensor takes a frame or two to act on a new exposure, so measuring
     // every frame would read a stale one and drive the loop into a flicker.
