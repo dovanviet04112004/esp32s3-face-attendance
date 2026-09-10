@@ -55,7 +55,9 @@ pids_matching() {
     done
 }
 
-newest_run() { ls -dt "${ML_ROOT}/artifacts/$1/runs/"*/ 2>/dev/null | head -1; }
+# Run names start with the start time, so name order is start order; the
+# directory mtime moves whenever anything inside a run is touched.
+newest_run() { ls -d "${ML_ROOT}/artifacts/$1/runs/"*/ 2>/dev/null | sort | tail -1; }
 
 cmd_start() {
     local branch="$1"; shift
