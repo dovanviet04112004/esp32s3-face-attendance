@@ -9,6 +9,7 @@ more live, and labels follow losses.task_loss: LIVE 0, SPOOF 1.
 from __future__ import annotations
 
 import argparse
+import io
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,7 +17,13 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .losses.task_loss import LIVE
+from .losses.task_loss import LIVE, SPOOF
+
+# The operating points every camera-frame table in measurements.md is read at.
+FRAME_THRESHOLDS = (0.50, 0.90, 0.99)
+DETECT_HW = (120, 160)
+DETECT_CONF = 0.5
+FRAME_SUFFIXES = (".jpg", ".jpeg", ".png")
 
 
 @dataclass(frozen=True)
@@ -198,6 +205,132 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     return cfg, model, (views,), ["tight", "wide"], ["logits"]
 
 
+def frame_label(folder: str) -> int:
+    """LIVE for a folder named live_*, SPOOF for anything else."""
+    return LIVE if folder.startswith("live") else SPOOF
+
+
+def load_detector(ckpt: Path, device: torch.device):
+    """The detection student and its priors, for finding the face in a whole frame."""
+    from facepipe.tasks.detection.eval import load_model
+    from facepipe.tasks.detection.model.anchors import feature_sizes, pyramid_priors
+    from facepipe.tasks.detection.model.yunet import STRIDES
+
+    model = load_model(ckpt).to(device).eval()
+    priors = torch.cat(pyramid_priors(feature_sizes(DETECT_HW, STRIDES), STRIDES)).to(device)
+    return model, priors
+
+
+@torch.no_grad()
+def largest_face(
+    detector, priors, frame_rgb: np.ndarray, device: torch.device
+) -> np.ndarray | None:
+    """The biggest box in one frame, in that frame's pixels, or None."""
+    from PIL import Image
+
+    from facepipe.tasks.detection.data import letterbox_params
+    from facepipe.tasks.detection.eval import decode_batch, to_original
+
+    height, width = frame_rgb.shape[:2]
+    scale, pad_x, pad_y = letterbox_params((height, width), DETECT_HW)
+    canvas = Image.new("RGB", (DETECT_HW[1], DETECT_HW[0]))
+    canvas.paste(
+        Image.fromarray(frame_rgb).resize((round(width * scale), round(height * scale))),
+        (pad_x, pad_y),
+    )
+    tensor = torch.from_numpy(np.asarray(canvas, dtype=np.float32) / 255.0).permute(2, 0, 1)[None]
+    found = decode_batch(detector(tensor.to(device)), priors, conf=DETECT_CONF)[0]
+    if not len(found.boxes):
+        return None
+    boxes = to_original(found, scale, pad_x, pad_y).boxes
+    sides = np.maximum(boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1])
+    return boxes[int(np.argmax(sides))]
+
+
+def crop_views(frame_rgb: np.ndarray, box: np.ndarray, size: int) -> tuple[np.ndarray, np.ndarray]:
+    """Both scales of one face, through the JPEG round trip the shards were cut with."""
+    from PIL import Image
+
+    from facepipe.data.prepare.celeba_spoof_parquet import (
+        CROP_QUALITY,
+        CROP_SCALES,
+        crop_sizes,
+        fitted_box,
+    )
+
+    image = Image.fromarray(frame_rgb)
+    sizes = crop_sizes()
+    views = []
+    for name, scale in CROP_SCALES.items():
+        crop, _ = fitted_box(tuple(box), scale, image.width, image.height)
+        buffer = io.BytesIO()
+        image.crop(crop).resize((sizes[name], sizes[name]), Image.BILINEAR).save(
+            buffer, format="JPEG", quality=CROP_QUALITY
+        )
+        buffer.seek(0)
+        with Image.open(buffer) as handle:
+            views.append(
+                np.array(handle.convert("RGB").resize((size, size), Image.BILINEAR), dtype=np.uint8)
+            )
+    return views[0], views[1]
+
+
+@torch.no_grad()
+def score_frames(
+    model: torch.nn.Module, detector, priors, root: Path, size: int, device: torch.device
+) -> list[tuple[str, str, float]]:
+    """One (folder, file, liveness) per frame under root; frames without a face score nan."""
+    from PIL import Image
+
+    def as_batch(image: np.ndarray) -> torch.Tensor:
+        return torch.from_numpy(image).permute(2, 0, 1).float().div_(255.0)[None].to(device)
+
+    model.eval()
+    rows: list[tuple[str, str, float]] = []
+    for folder in sorted(p for p in root.iterdir() if p.is_dir()):
+        for path in sorted(p for p in folder.iterdir() if p.suffix.lower() in FRAME_SUFFIXES):
+            with Image.open(path) as handle:
+                frame = np.array(handle.convert("RGB"), dtype=np.uint8)
+            box = largest_face(detector, priors, frame, device)
+            if box is None:
+                rows.append((folder.name, path.name, float("nan")))
+                continue
+            tight, wide = crop_views(frame, box, size)
+            rows.append(
+                (
+                    folder.name,
+                    path.name,
+                    float(liveness_of(model((as_batch(tight), as_batch(wide))))[0]),
+                )
+            )
+    return rows
+
+
+def report_frames(rows: list[tuple[str, str, float]], thresholds: Iterable[float]) -> None:
+    """Per-folder pass counts and the three rates at every threshold, the measurements.md layout."""
+    thresholds = tuple(thresholds)
+    scored = [(folder, score) for folder, _file, score in rows if not np.isnan(score)]
+    missed = len(rows) - len(scored)
+    scores = np.array([s for _f, s in scored], dtype=np.float64)
+    labels = np.array([frame_label(f) for f, _s in scored], dtype=np.int64)
+    print(f"frames {len(rows)}, scored {len(scored)}, no face in {missed}")
+    header = "  ".join(f"@{t:.2f}" for t in thresholds)
+    print(f"{'folder':14s} {'n':>3s}  {header}")
+    for folder in sorted({f for f, _s in scored}):
+        own = np.array([s for f, s in scored if f == folder])
+        live = frame_label(folder) == LIVE
+        passes = "  ".join(
+            f"{int((own >= t).sum()) if live else int((own < t).sum()):>3d}/{own.size:<2d}"
+            for t in thresholds
+        )
+        print(f"{folder:14s} {own.size:>3d}  {passes}   {'pass' if live else 'blocked'}")
+    print(f"{'threshold':14s} {'bpcer':>8s} {'apcer':>8s} {'ACER':>8s}")
+    for threshold in thresholds:
+        rates = error_rates(scores, labels, threshold)
+        print(f"{threshold:<14.2f} {rates.bpcer:8.4f} {rates.apcer:8.4f} {rates.acer:8.4f}")
+    crossing = equal_error_rate(scores, labels)
+    print(f"eer {crossing.acer:.4f} at {crossing.threshold:.4f}, auc {auc(scores, labels):.4f}")
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -212,11 +345,29 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="a shard directory from another dataset, scored at the same threshold",
     )
+    parser.add_argument(
+        "--frames",
+        type=Path,
+        default=None,
+        help="a folder of live_*/attack_* folders of whole camera frames, run through the detector",
+    )
+    parser.add_argument(
+        "--detector", type=Path, default=None, help="detection checkpoint, needed with --frames"
+    )
     args = parser.parse_args(argv)
 
     device = torch.device(args.device)
     cfg, model = load_run(args.run)
     model = model.to(device)
+    if args.frames is not None:
+        if args.detector is None:
+            parser.error("--frames needs --detector")
+        detector, priors = load_detector(args.detector, device)
+        rows = score_frames(
+            model, detector, priors, args.frames, int(cfg.model.input_hw[0]), device
+        )
+        report_frames(rows, FRAME_THRESHOLDS)
+        return 0
     # The run's own splits, so a report cannot rest on a division it never saw.
     fit_split = args.fit_split or cfg.data.params["val_split"]
     held_split = args.split or cfg.data.params["test_split"]
