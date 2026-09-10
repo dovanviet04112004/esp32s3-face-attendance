@@ -20,13 +20,14 @@ extern "C" {
  */
 esp_err_t sys_storage_init(void);
 
-// The six groups of KEHOACH 6.2.1, one NVS namespace each.
+// The seven groups of KEHOACH 6.2.1, one NVS namespace each.
 #define STORAGE_NS_WIFI "wifi"
 #define STORAGE_NS_DEVICE "device"
 #define STORAGE_NS_MODEL "model"
 #define STORAGE_NS_SYS "sys"
 #define STORAGE_NS_UI "ui"
 #define STORAGE_NS_VISION "vision"
+#define STORAGE_NS_ATTEND "attend"
 
 /** Read one unsigned setting from a namespace of KEHOACH 6.2.1.
  *  @ctx task | blocking | takes m_littlefs (KEHOACH 5.3)

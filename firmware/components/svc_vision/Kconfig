@@ -34,4 +34,14 @@ menu "Vision pipeline"
             Recognition warps the face onto 113x113, and a smaller face would
             be enlarged, which adds blur rather than information (KEHOACH 3).
 
+    config VISION_SEED_PRESENT_MM
+        int "Seed for the distance that counts as someone standing there (mm)"
+        default 700
+        range 40 1300
+        help
+            Written to NVS key vision/present_mm on the first boot only.
+            Recognition works between 250 and 420 mm (KEHOACH 3), so the
+            gate sits past that: someone inside this distance wakes the
+            pipeline, which then asks them to come closer (KEHOACH 2.3D).
+
 endmenu

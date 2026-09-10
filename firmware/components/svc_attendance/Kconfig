@@ -1,0 +1,22 @@
+menu "Attendance"
+
+    config ATTEND_SEED_DEDUP_MIN
+        int "Seed for the window that swallows a second stamp (minutes)"
+        default 5
+        range 1 720
+        help
+            Written to NVS key attend/dedup_min on the first boot only
+            (KEHOACH 6.2.1); afterwards the kiosk reads NVS and SET_CONFIG
+            changes it. A second scan inside the window still opens the
+            door, it just writes no record (KEHOACH 4.5.5f).
+
+    config ATTEND_SEED_ALLOW_NO_SPOOF
+        bool "Seed for granting on a negative liveness score"
+        default n
+        help
+            Written to NVS key attend/allow_no_spoof on the first boot only.
+            A kiosk that cannot tell a face from a photo should not open a
+            door, so this is for a bench running an image with no spoof
+            branch (KEHOACH 4.5.5f).
+
+endmenu

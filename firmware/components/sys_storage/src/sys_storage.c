@@ -29,7 +29,7 @@ static const char *TAG = "sys_storage";
 #define LOG_NAME_PREFIX "attend."
 #define LOG_HEADER_BYTES sizeof(storage_file_header_t)
 #define LOG_RECORD_BYTES sizeof(storage_attend_record_t)
-#define NVS_SLOTS 6
+#define NVS_SLOTS 7
 #define LOCK_WAIT_MS 5000
 #define PATH_MAX_LEN 64
 // LittleFS allows a 255 byte name, and the compiler checks that the join fits.
@@ -103,7 +103,7 @@ static esp_err_t open_settings(void)
     return err;
 }
 
-// Handles are opened on demand and kept, since KEHOACH 6.2.1 names six groups
+// Handles are opened on demand and kept, since KEHOACH 6.2.1 names seven groups
 // and a kiosk touches at most a few of them per boot.
 static esp_err_t namespace_handle(const char *ns, nvs_handle_t *out)
 {
