@@ -9,9 +9,9 @@ static const char *TAG = "drv_camera";
 
 #define CAM_LEDC_TIMER LEDC_TIMER_1
 #define CAM_LEDC_CHANNEL LEDC_CHANNEL_1
-// The preview holds one frame for most of a frame period while the panel
-// drains, so two would leave the sensor nowhere to land the next one.
-#define CAM_FB_COUNT 3
+// The preview holds one across the blit and ai_task one for up to two seconds,
+// so a fourth keeps the sensor from waiting on a return (KEHOACH 6.3).
+#define CAM_FB_COUNT 4
 #define CAM_JPEG_QUALITY 12
 
 #define METER_TARGET_GREEN 30
