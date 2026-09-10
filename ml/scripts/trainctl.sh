@@ -57,7 +57,18 @@ pids_matching() {
 
 # Run names start with the start time, so name order is start order; the
 # directory mtime moves whenever anything inside a run is touched.
-newest_run() { ls -d "${ML_ROOT}/artifacts/$1/runs/"*/ 2>/dev/null | sort | tail -1; }
+runs_by_age() { ls -d "${ML_ROOT}/artifacts/$1/runs/"*/ 2>/dev/null | sort -r; }
+
+newest_run() { runs_by_age "$1" | head -1; }
+
+# An attempt killed before its first epoch boundary leaves a run directory with
+# no checkpoint, and the chain carries on from the newest one that has it.
+newest_chain_run() {
+    local dir
+    for dir in $(runs_by_age "$1"); do
+        [[ -f "${dir}ckpt/last.pth" ]] && { printf '%s\n' "${dir}"; return 0; }
+    done
+}
 
 cmd_start() {
     local branch="$1"; shift
@@ -68,7 +79,7 @@ cmd_start() {
 
     mkdir -p "${LOG_DIR}"
     local out="${LOG_DIR}/train_${branch}.log"
-    ( cd "${ML_ROOT}" && nohup "./scripts/${script}" "${cfg}" "$@" >"${out}" 2>&1 & )
+    ( cd "${ML_ROOT}" && setsid nohup "./scripts/${script}" "${cfg}" "$@" >"${out}" 2>&1 </dev/null & )
     log "${branch}: started on ${cfg} ${*:-}"
     log "log ${out}"
     await_start "${out}" "${branch}"
@@ -81,10 +92,9 @@ cmd_resume() {
     [[ -n $(pids_matching "facepipe\.tasks\.${branch}\.train" "${self}") ]] &&
         die "${branch} is already running; pause it first"
 
-    local run; run=$(newest_run "${branch}")
-    [[ -n ${run} ]] || die "${branch} has no run yet; use start"
+    local run; run=$(newest_chain_run "${branch}")
+    [[ -n ${run} ]] || die "${branch} has no run with a checkpoint; use start"
     local ckpt="${run}ckpt/last.pth"
-    [[ -f ${ckpt} ]] || die "no ${ckpt}: that run finished no epoch, so use start"
 
     # Every model.params key, read back from the run's own frozen config: the
     # model is rebuilt from config before the state_dict loads, so a missing key
@@ -106,7 +116,8 @@ PY
     mkdir -p "${LOG_DIR}"
     local out="${LOG_DIR}/train_${branch}.log"
     ( cd "${ML_ROOT}" &&
-      nohup "./scripts/${script}" "${cfg}" "${sets[@]}" "train.resume=${ckpt}" >"${out}" 2>&1 & )
+      setsid nohup "./scripts/${script}" "${cfg}" "${sets[@]}" "train.resume=${ckpt}" \
+        >"${out}" 2>&1 </dev/null & )
     await_start "${out}" "${branch}"
 }
 
