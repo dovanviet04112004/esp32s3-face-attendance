@@ -2626,7 +2626,10 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | **Core 1 (APP_CPU)** | **CHỈ `ai_task`** | Một lần `Invoke()` chiếm CPU liên tục **209 ms (detect), 470 ms (spoof), 1.074 ms (recog)** — đo ở `docs/measurements/latency.md`. Để chung với LVGL thì UI đứng hình hơn một giây, để chung Wi-Fi thì rớt gói. Độc chiếm 1 core là cách duy nhất giữ UI mượt trong lúc AI chạy |
 | **Core 0 (PRO_CPU)** | Wi-Fi/lwIP (hệ thống) + camera + LVGL + touch + audio + ToF + MQTT + sync | Toàn bộ là việc ngắn, phần lớn do DMA/ISR gánh; CPU chỉ điều phối |
 
-**`ai_task` phải tự nuôi watchdog.** `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1` bật và timeout 5 giây, mà detect chạy **mỗi frame** nên core 1 bận liên tục và IDLE1 không bao giờ tới lượt. Đã thấy watchdog bắn thật khi chạy invoke liên tiếp trong `bench_ai`. Một lần `Invoke()` lâu nhất là 1.074 ms, còn xa 5 giây, nên **gọi `esp_task_wdt_reset()` giữa các model** là đủ — không cần hạ timeout, cũng không được bỏ IDLE1 ra khỏi watchdog.
+**`ai_task` phải tự nuôi watchdog, và nhường một tick.** `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1` bật và timeout 5 giây, mà detect chạy **mỗi frame** nên core 1 bận liên tục và IDLE1 không bao giờ tới lượt. Đã thấy watchdog bắn thật khi chạy invoke liên tiếp trong `bench_ai`. Hai việc khác nhau, phải làm cả hai:
+
+- `ai_task` **tự đăng ký** vào watchdog rồi `esp_task_wdt_reset()` sau mỗi step. Việc này bảo vệ chính nó: một model treo thì watchdog kêu tên `ai_task`. Một lần `Invoke()` lâu nhất là 1.074 ms, còn xa 5 giây, nên không cần hạ timeout.
+- `ai_task` **nhường đúng một tick** sau mỗi frame. Ô của IDLE1 chỉ được nạp khi **chính IDLE1 chạy**; `esp_task_wdt_reset()` từ task khác không nạp hộ nó, nên không nhường là watchdog vẫn bắn tên IDLE1 dù `ai_task` báo cáo đều. Một tick 1 ms trên mỗi 210 ms của detect là 0,5% core 1 — rẻ hơn nhiều so với bỏ IDLE1 ra khỏi watchdog, việc **không được** làm.
 
 **Core 1 bão hoà, đừng trông vào chỗ trống của nó.** Camera ra một frame mỗi 70,5 ms còn detect tốn 209 ms, nên AI xử lý được 1 trong 3 frame và không có lúc nào rảnh. Ý định cũ "chuyển `mqtt_task` + `sync_task` sang core 1 vì chúng chỉ chạy khi AI nghỉ" vì thế không dùng được: AI không nghỉ. Core 0 quá tải thì phải giảm việc của core 0 hoặc giảm tần suất chạy detect, không phải đẩy sang core 1.
 
