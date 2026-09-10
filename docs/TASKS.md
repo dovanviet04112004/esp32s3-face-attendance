@@ -249,7 +249,7 @@ duyệt, rồi mới sửa.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E10-T1 | `ui_kiosk` — `Screen` base + `ScreenManager` + 5 màn hình, kèm **bộ bám hộp trên đường preview** (§4.5.5h: khớp mẫu 24×24 ±8 px mỗi khung, 🔬 1–2 ms) để hộp mặt không khựng trong 0,93 s spoof + recog chạy | Chuyển màn mượt, không rò bộ nhớ; hộp theo mặt ở 14 fps giữa hai lần detect | E7-T5, E7-T6 |
+| E10-T1 | `ui_kiosk` — `Screen` base + `ScreenManager` + 5 màn hình, kèm **bộ bám hộp trên đường preview** (§4.5.5h) để hộp mặt không khựng trong 0,93 s spoof + recog chạy. **`BoxTracker` viết 11/09**: mẫu 24×24 ở nửa độ phân giải, cửa sổ 40×40, 289 vị trí trong ±16 px, chỉ dịch khi khớp tốt hơn đứng yên; app test `test_apps/tracker` 5 case trên khung tổng hợp, biên dịch ở `-O2`, **chưa chạy và chưa đo ms** (không có board). Màn hình LVGL chưa làm | Chuyển màn mượt, không rò bộ nhớ; hộp theo mặt ở 14 fps giữa hai lần detect | E7-T5, E7-T6 |
 | E10-T2 | `svc_attendance` — FSM bảng `constexpr` + chống chấm trùng | Unit test đủ 6 trạng thái | E8-T10, E7-T9 |
 | E10-T3 | Ghi log chấm công LittleFS append-only + `cursor.bin` | Rút điện 20 lần không mất bản ghi | E7-T10, E10-T2 |
 | E10-T4 | `app_tasks.c` — 11 task đúng core và priority theo §5.2 | `uxTaskGetStackHighWaterMark` ổn định | E10-T1, E10-T2 |
