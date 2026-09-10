@@ -1,0 +1,37 @@
+menu "Vision pipeline"
+
+    config VISION_SEED_DETECT_MIN_PERMILLE
+        int "Seed for the detector confidence floor (per mille)"
+        default 500
+        range 1 999
+        help
+            Written to NVS key vision/detect_min on the first boot only
+            (KEHOACH 6.2.1); afterwards the kiosk reads NVS and SET_CONFIG
+            changes it. The value is a seed, not a measurement: E8-T12
+            replaces it with the operating point read off the device set.
+
+    config VISION_SEED_LIVE_MIN_PERMILLE
+        int "Seed for the liveness floor (per mille)"
+        default 500
+        range 1 999
+        help
+            Same rule as the detector seed. Tune on the self-collected set
+            toward the live-reject rate the site accepts (KEHOACH 3).
+
+    config VISION_SEED_MATCH_MIN_PERMILLE
+        int "Seed for the cosine match floor (per mille)"
+        default 600
+        range 1 999
+        help
+            Same rule as the detector seed. Cosine of unit embeddings, so
+            600 means 0.6; the device set fixes the real value (E8-T12).
+
+    config VISION_SEED_FACE_MIN_PX
+        int "Seed for the smallest face the pipeline verifies (frame pixels)"
+        default 113
+        range 16 480
+        help
+            Recognition warps the face onto 113x113, and a smaller face would
+            be enlarged, which adds blur rather than information (KEHOACH 3).
+
+endmenu
