@@ -426,15 +426,15 @@ và §5.3 hiện **chưa khai đường truyền** cho hai event đó.
 
 | Chân | Nối tới | Ghi chú |
 |---|---|---|
-| VIN | **5V** | Không lấy 3V3 — mất công suất |
+| VIN | **5V của rail 1** | Không lấy 3V3 vì mất công suất, và **không lấy chân 5V của board**: chân đó đi từ cáp USB, không tải nổi đỉnh 600 mA của amp — đo 10/09: tiếng nhỏ rồi rè, và đường USB của board rớt 3 lần khi phát to |
 | GND | GND | |
 | **BCLK** | **GPIO45** | GPIO43 đã giao cho `SDO` của LCD (§2.3A). GPIO45 là strapping VDD_SPI nhưng chỉ lấy mẫu **lúc reset**, mà I2S không đẩy chân lúc reset và chân có pull-down nội — đo trên board: kéo lên 20/20 mức cao, kéo xuống 0/20, tức trống thật |
-| **LRC / WS** | **GPIO44** | Nguyên là U0RXD |
+| **LRC / WS** | **GPIO44** | Nguyên là U0RXD, và **có trở kéo lên thụ động sẵn trên board** — đo 10/09: bật trở kéo xuống nội vẫn đọc mức 1, nhưng chip đẩy được cả hai mức nên I2S vẫn đúng. Hệ quả: **rút dây LRC ra thì amp không im mà nhả tiếng rác to**, vì nó vẫn chốt bit từ DIN nhưng lệch hàng khung nên biên độ nhảy gần đỉnh thang. Nghe được tiếng lúc thiếu dây khung không bao giờ là dấu hiệu tốt |
 | **DIN** | **GPIO46** | Strapping này chỉ chọn mức log ROM, không chặn boot. DIN là input trở kháng cao, pull-down nội của chip đã đủ — không cần hàn điện trở |
 | **SD (shutdown/mode)** | **PCF8574 P3** | Kéo LOW khi không phát → hết nhiễu xì. Hoặc nối 100 kΩ lên VIN = chế độ mono (L+R)/2 |
 | GAIN | để hở | = 9 dB. Nối GND = 12 dB |
 | OUT+ / OUT− | Loa | Ngõ ra **cầu (BTL)** — **tuyệt đối không nối OUT− xuống GND** |
-| Tụ lọc | 470–1000 µF gần VIN, **chân dài (+) về VIN, chân vạch sọc (−) về GND** | Bắt buộc, nếu không sẽ reset board khi phát to. Cắm ngược cực thì tụ dẫn dòng và kéo sập VIN: amp rè rồi câm hẳn trong khi mọi chân tín hiệu vẫn đúng (đo 10/09) |
+| Tụ lọc | 470–1000 µF gần VIN, **chân dài (+) về VIN, chân vạch sọc (−) về GND** | Bắt buộc, nếu không sẽ reset board khi phát to. Cắm ngược cực thì tụ dẫn dòng và kéo sập VIN: amp rè rồi câm hẳn trong khi mọi chân tín hiệu vẫn đúng (đo 10/09). **Tụ đã cắm ngược một lần thì thay tụ mới, không cắm lại**: nội trở tăng vĩnh viễn, và khối ra class-D vẫn băm ~300 kHz kể cả khi đầu vào bằng 0 nên rail thiếu điện tích là rè ngay dù không có tín hiệu. Chân tụ trên breadboard rất dễ lỏng, và **rung của servo che được một chân lỏng** — đo 10/09 mất cả buổi vì chỗ này |
 
 #### F. Chấp hành — servo SG90 + thanh chắn
 
