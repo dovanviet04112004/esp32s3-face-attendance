@@ -1920,7 +1920,7 @@ Quy tắc header:
 | L3 | `net_wifi` / `net_mqtt` / `net_ota` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_https_ota` |
 | L4 | `svc_door` | C++ | `common`, `bsp_board`, `drv_servo`, `esp_timer` |
 | L4 | `svc_vision` | C++ | `common`, `ai_engine`, `svc_facedb`, `drv_camera` |
-| L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_facedb`, `sys_storage`, `svc_door`, `drv_audio` |
+| L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_facedb`, `sys_storage`, `sys_time`, `svc_door`, `drv_audio` |
 | L5 | `svc_sync` | C++ | `common`, `sys_storage`, `net_mqtt` |
 | L6 | `ui_kiosk` | C++ | `common`, `drv_lcd`, `drv_touch`, `lvgl`, `esp_lvgl_port` |
 | L7 | `main` | C | tất cả |
@@ -2127,11 +2127,41 @@ Ba lớp nằm trong `priv_include/door.hpp`. Header công khai `svc_door.h` the
 
 ```cpp
 enum class St : uint8_t { Idle, Detecting, Verifying, Granted, Denied, Cooldown };
-struct Transition { St from; Ev on; St to; Action act; };
+enum class Ev : uint8_t { PresenceOn, PresenceOff, NoFace, FaceSmall, Spoof, Unknown, Match, Timeout };
+enum class Act : uint8_t { None, Watch, Grant, Refuse, Rest };
+struct Transition { St from; Ev on; St to; Act act; };
 static constexpr Transition kTable[] = { … };   // nằm ở flash, 0 byte RAM
 ```
 
 State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn nhưng ở đây **tệ hơn**: 6 lớp + 6 vtable, chuyển trạng thái thành cấp phát/hủy đối tượng, và không nhìn được toàn bộ sơ đồ trạng thái trong một màn hình. Bảng `constexpr` nằm trong flash, đọc một phát thấy hết, kiểm chứng bằng unit test dễ. Dùng mẫu thiết kế phải có lý do, không phải để cho đủ.
+
+**Sơ đồ, đọc hết trong một bảng.** Sự kiện không có trong bảng ở trạng thái hiện tại thì **bị bỏ**, không phải lỗi: `svc_vision` bắn `NONE` ở phần lớn khung và ToF bắn `PresenceOff` bất cứ lúc nào.
+
+| Từ | Sự kiện | Sang | Hành động |
+|---|---|---|---|
+| `Idle` | `PresenceOn` | `Detecting` | `Watch` — bật preview, chờ mặt |
+| `Detecting` | `FaceSmall` | `Detecting` | `None` — chỉ UI nhắc lại gần |
+| `Detecting` | `Match` | `Granted` | `Grant` |
+| `Detecting` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
+| `Detecting` | `NoFace` / `PresenceOff` | `Idle` | `Rest` |
+| `Verifying` | `Match` | `Granted` | `Grant` |
+| `Verifying` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
+| `Verifying` | `Timeout` | `Detecting` | `None` |
+| `Granted` | `Timeout` | `Cooldown` | `Rest` |
+| `Denied` | `Timeout` | `Cooldown` | `Rest` |
+| `Cooldown` | `Timeout` | `Idle` | `None` |
+| `Cooldown` | `PresenceOff` | `Idle` | `None` |
+
+`Verifying` tồn tại cho đường xác thực nhiều khung của §4.5.5d: `svc_vision` tự giữ nhịp thử lại, nên tầng này chỉ cần một trạng thái chờ có `Timeout` để không kẹt nếu `ai_task` chết.
+
+**Bốn quyết định nghiệp vụ tầng này giữ, không đẩy xuống dưới:**
+
+1. **Chống chấm trùng.** Cùng một `employee_id` trong `attend.dedup_min` phút thì `Grant` vẫn mở cửa nhưng **không sinh bản ghi mới** — người ta quét lại vì cửa chưa kịp mở, không phải vì muốn chấm hai lần. Cửa sổ là ngưỡng nghiệp vụ nên nằm ở NVS (§4.9, §6.2.1).
+2. **Điểm liveness âm.** §4.5.5d trả `live_score = −1` khi ảnh `models_0` không có nhánh spoof. Mặc định là **từ chối**, vì một kiosk không biết phân biệt mặt thật với ảnh in thì không nên mở cửa. `attend.allow_no_spoof` = 1 cho phép bàn thử mở, và bản ghi sinh ra vẫn mang `liveness_score` âm để server biết.
+3. **`flags` của bản ghi (§6.2.5).** bit0 theo `svc_door_open` trả về; bit1 bật khi bản ghi chỉ nằm ở LittleFS chưa lên được server; bit2 theo `sys_time_source()`, tức bật khi nguồn giờ chưa từng được NTP xác nhận.
+4. **`local_id`.** `boot_count << 32 | seq`, `seq` đếm trong phiên. Không bao giờ trùng kể cả sau mất điện (§6.2.5).
+
+Thời lượng `Granted`, `Denied` và `Cooldown` là nhịp giao diện, không phải ngưỡng nghiệp vụ, nên là hằng số của component chứ không vào NVS.
 
 ##### g) `svc_facedb` — Strategy cho thuật toán so khớp
 
@@ -2705,6 +2735,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8) | | `boot_count` dùng sinh `local_id`; `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5) |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt |
 | `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32) | | bốn ngưỡng của §4.5.5d; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
+| `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
 
 **Không để dữ liệu sinh trắc trong NVS.** NVS là key-value nhỏ, ghi nhiều sẽ mòn; embedding nằm ở LittleFS.
 
