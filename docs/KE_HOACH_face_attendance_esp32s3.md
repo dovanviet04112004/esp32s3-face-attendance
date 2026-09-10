@@ -1826,7 +1826,7 @@ firmware/
 │   ├── svc_vision/        [C++]  L4  # detect mỗi khung, chuỗi spoof → recog khi mặt ổn định (§4.5.5d)
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
 │   ├── svc_sync/          [C++]  L5  # hàng đợi offline → MQTT
-│   └── ui_kiosk/          [C++]  L6  # LVGL screens
+│   └── ui_kiosk/          [C++]  L6  # LVGL screens + bộ bám hộp preview (§4.5.5h)
 │
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
@@ -2149,7 +2149,14 @@ public:
 
 Năm màn hình cùng vòng đời, thêm màn hình mới không đụng `ScreenManager`. Đây là chỗ virtual đáng giá nhất và cũng rẻ nhất (mỗi lần chuyển màn mới gọi 1 lần).
 
-**Hộp mặt trên preview bám theo khung hình, không bám theo nhịp detect.** Detect ra hộp 3–4 lần/giây và im hẳn 0,93 s trong lúc spoof + recog chạy (§4.5.5d); vẽ hộp theo nhịp đó là hộp khựng. `ScanScreen` giữ hộp cuối cùng `svc_vision` báo và, trên mỗi khung preview (core 0), dịch nó theo một phép khớp mẫu rẻ: mẫu độ sáng 24×24 lấy quanh tâm hộp ở khung trước, tìm trong bán kính ±8 px ở khung sau bằng tổng sai tuyệt đối — khoảng 170 nghìn phép cộng, 🔬 ước 1–2 ms mỗi khung, tức ~3 % core 0. Hộp mới từ detect thay thế hộp đang bám. Bộ bám không phát hiện mặt mới và không ảnh hưởng đường model: nó chỉ là cách mắt không thấy giật mà kết quả chấm công không chậm thêm một mili giây nào. Kết quả chấm công vẽ đè lên khung preview trong cùng đường này, không qua LVGL cho vùng preview.
+**Hộp mặt trên preview bám theo khung hình, không bám theo nhịp detect.** Detect ra hộp 3–4 lần/giây và im hẳn 0,93 s trong lúc spoof + recog chạy (§4.5.5d); vẽ hộp theo nhịp đó là hộp khựng. `BoxTracker` (`src/box_tracker.cpp`) nhận hộp mới từ `svc_vision`, lấy một mẫu độ sáng **24×24 điểm bám** dưới tâm hộp — mỗi điểm bám là một pixel khung lấy cách 2 (nửa độ phân giải), tức mẫu phủ 48×48 px khung — rồi trên mỗi khung preview (core 0) đổi cửa sổ 40×40 điểm bám quanh vị trí cũ sang độ sáng một lần, quét 17×17 = 289 vị trí trong bán kính ±8 điểm bám (**±16 px khung**, đủ cho người đi ngang ở cự ly kiosk) bằng tổng sai tuyệt đối trên 576 điểm, và dịch hộp theo vị trí khớp nhất. Ba luật giữ nó không nói dối: chỉ dịch khi khớp **tốt hơn đứng yên**; sai lệch trung bình trên 48 mức/điểm là mất dấu, hộp đứng lại; mẫu phẳng (độ tương phản dưới 24 mức) không bám. Hộp mới từ detect **thay thế** hộp đang bám, nên sai số không tích luỹ quá một chu kỳ detect. 🔬 Ước 1–2 ms mỗi khung (~3 % core 0), đo ở `test_apps/tracker`. Bộ bám không phát hiện mặt mới và không đưa gì về đường model: nó chỉ là cách mắt không thấy giật mà kết quả chấm công không chậm thêm một mili giây nào. Kết quả chấm công vẽ đè lên khung preview trong cùng đường này, không qua LVGL cho vùng preview.
+
+```
+components/ui_kiosk/
+├── priv_include/box_tracker.hpp          # BoxTracker: set(hộp, khung) · update(khung) · box()
+├── src/box_tracker.cpp
+└── test_apps/tracker/{main/test_tracker.cpp, CMakeLists.txt, pytest_tracker.py}   # khung tổng hợp, không cần camera
+```
 
 ##### i) Vòng đời đối tượng — dựng một lần, không bao giờ hủy
 
@@ -2182,7 +2189,7 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 | `svc_door` | `IDoor`, `ServoDoor`, `FakeDoor` | Adapter bọc driver C, ra ngoài bằng handle mờ | Chạy máy trạng thái chấm công trên host với cửa giả |
 | `svc_attendance` | `AttendanceFsm` | Bảng `constexpr`, **không** virtual | Nhìn hết sơ đồ trạng thái trong 1 màn hình |
 | `svc_sync` | `UplinkQueue`, `IPersist` | Composition | Thay LittleFS bằng RAM fake khi test |
-| `ui_kiosk` | `Screen` → 5 lớp con, `ScreenManager` | Kế thừa | Năm màn hình cùng vòng đời |
+| `ui_kiosk` | `Screen` → 5 lớp con, `ScreenManager`, `BoxTracker` | Kế thừa; bộ bám là giá trị thuần | Năm màn hình cùng vòng đời; hộp mặt theo khung hình, không theo nhịp detect |
 
 #### 4.5.6 `ai_engine` — mỗi model một thư mục
 
