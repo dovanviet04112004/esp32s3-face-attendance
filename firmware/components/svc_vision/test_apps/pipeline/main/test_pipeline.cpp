@@ -233,6 +233,46 @@ TEST_CASE("a stranger and an empty table both come back unknown", "[svc_vision]"
     TEST_ASSERT_EQUAL(SVC_VISION_UNKNOWN, result.kind);
 }
 
+TEST_CASE("a larger newcomer waits until the face being served has left", "[svc_vision]")
+{
+    Rig rig;
+    rig.detector.one(20.0f, 20.0f, kBigFace);
+    rig.step();
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
+    // The newcomer stands closer, so its box is larger; the first face is still there.
+    rig.detector.count = 2;
+    rig.detector.set(0, 300.0f, 100.0f, kBigFace + 40.0f);
+    rig.detector.set(1, 20.0f, 20.0f, kBigFace);
+    for (int i = 0; i < 4; ++i) {
+        const svc_vision_result_t result = rig.pipeline.step(kFrame);
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, result.kind);
+        TEST_ASSERT_FLOAT_WITHIN(0.001f, 20.0f, result.primary.box[0]);
+        TEST_ASSERT_EQUAL(2, result.faces);
+    }
+    TEST_ASSERT_EQUAL(1, rig.liveness.scores);
+    rig.detector.one(300.0f, 100.0f, kBigFace + 40.0f);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    const svc_vision_result_t served = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, served.kind);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 300.0f, served.primary.box[0]);
+    TEST_ASSERT_EQUAL(2, rig.liveness.scores);
+}
+
+TEST_CASE("two faces of one size side by side do not swap the track", "[svc_vision]")
+{
+    Rig rig;
+    rig.detector.count = 2;
+    rig.detector.set(0, 20.0f, 60.0f, kBigFace);
+    rig.detector.set(1, 300.0f, 60.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    // The detector lists them the other way round on the next frame.
+    rig.detector.set(0, 300.0f, 60.0f, kBigFace);
+    rig.detector.set(1, 20.0f, 60.0f, kBigFace);
+    const svc_vision_result_t result = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, result.kind);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 20.0f, result.primary.box[0]);
+}
+
 TEST_CASE("every face is reported up to the cap and the largest is followed", "[svc_vision]")
 {
     Rig rig;

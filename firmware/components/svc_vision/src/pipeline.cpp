@@ -64,6 +64,27 @@ void VisionPipeline::reset() noexcept
     seen_ = Seen::Nothing;
 }
 
+const ai_engine_face_t &VisionPipeline::pick(size_t count) const noexcept
+{
+    // The face already followed keeps its turn while it is still there; a larger
+    // newcomer only takes over once it is lost (KEHOACH 4.5.5d).
+    if (stable_ > 0) {
+        size_t best = count;
+        float best_iou = kSameFaceIou;
+        for (size_t i = 0; i < count; ++i) {
+            const float overlap = iou(tracked_, faces_[i].box);
+            if (overlap >= best_iou) {
+                best_iou = overlap;
+                best = i;
+            }
+        }
+        if (best < count) {
+            return faces_[best];
+        }
+    }
+    return largest(faces_, count);
+}
+
 void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
 {
     if (stable_ > 0 && iou(tracked_, primary.box) >= kSameFaceIou) {
@@ -136,7 +157,7 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
         }
         return out;
     }
-    const ai_engine_face_t &primary = largest(faces_, count);
+    const ai_engine_face_t &primary = pick(count);
     memcpy(out.primary.box, primary.box, sizeof(out.primary.box));
     follow(primary);
     if (side_of(primary.box) < static_cast<float>(thresholds_.face_min_px)) {
