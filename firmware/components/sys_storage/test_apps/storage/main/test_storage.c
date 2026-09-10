@@ -13,15 +13,28 @@
 #include "unity.h"
 
 #define FACES_PATH STORAGE_FACES_PATH
-#define LOG_PATH "/lfs/log/attend.000"
+#define APPEND_PATH "/lfs/tmp/append.bin"
 #define SCRATCH_PATH "/lfs/tmp/scratch.bin"
 #define RECORDS 16
 #define CUT_LOOP_REPORT 50
 #define CUT_LOOP_KEY "cut_loop"
 #define CUT_STATE_KEY "cut_state"
 #define CUT_COUNT_KEY "cut_count"
+#define LOG_CUT_KEY "log_cut"
+#define LOG_SEQ_KEY "log_seq"
+#define LOG_BOOT_KEY "log_boot"
 #define BOOT_WINDOW_MS 60000
+#define BOOT_HOLD_MS 2000
 #define BOOT_POLL_MS 50
+#define FACES_LOOP_NAME "write faces.bin forever so power can be cut mid-write"
+#define LOG_LOOP_NAME "append records forever so power can be cut mid-append"
+// A 4 MB partition holds sixteen 256 KB files, so the log can reach no further.
+#define LOG_FILES 16
+#define LOG_HEADER_BYTES sizeof(storage_file_header_t)
+#define LOG_RECORD_BYTES sizeof(storage_attend_record_t)
+#define LOG_FILL_RECORDS ((STORAGE_ATTEND_ROTATE_BYTES - LOG_HEADER_BYTES) / LOG_RECORD_BYTES)
+#define LOG_FILL_BLOCK 20
+#define PATH_LEN 32
 
 static void fill_header(storage_file_header_t *header, uint32_t magic, uint32_t count)
 {
@@ -42,6 +55,59 @@ static bool exists(const char *path)
     return stat(path, &st) == 0;
 }
 
+static long size_of(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0 ? (long)st.st_size : -1;
+}
+
+static void log_path_of(uint32_t index, char *out, size_t cap)
+{
+    snprintf(out, cap, STORAGE_ATTEND_FMT, (unsigned)index);
+}
+
+// The rotation cases leave the log under a different name on every run.
+static uint32_t newest_log_index(void)
+{
+    char path[PATH_LEN];
+    uint32_t newest = 0;
+    for (uint32_t index = 0; index < LOG_FILES; ++index) {
+        log_path_of(index, path, sizeof(path));
+        if (exists(path)) {
+            newest = index;
+        }
+    }
+    return newest;
+}
+
+static void wipe_log(void)
+{
+    char path[PATH_LEN];
+    for (uint32_t index = 0; index < LOG_FILES; ++index) {
+        log_path_of(index, path, sizeof(path));
+        unlink(path);
+    }
+    unlink(STORAGE_CURSOR_PATH);
+    unlink(STORAGE_CURSOR_PATH ".bak");
+    unlink(STORAGE_CURSOR_PATH ".tmp");
+}
+
+static void fill_record(storage_attend_record_t *record, uint32_t seq)
+{
+    memset(record, 0, sizeof(*record));
+    record->magic = STORAGE_ATTEND_REC_MAGIC;
+    record->local_id = ((uint64_t)sys_storage_boot_count() << 32) | seq;
+    record->employee_id = 4000u + seq % 100u;
+    record->ts_ms = (int64_t)seq * 1000;
+    record->crc32 = sys_storage_crc32(record, offsetof(storage_attend_record_t, crc32));
+}
+
+static bool record_holds(const storage_attend_record_t *record)
+{
+    const uint32_t crc = sys_storage_crc32(record, offsetof(storage_attend_record_t, crc32));
+    return record->magic == STORAGE_ATTEND_REC_MAGIC && record->crc32 == crc;
+}
+
 TEST_CASE("init mounts once and refuses a second time", "[sys_storage]")
 {
     const esp_err_t up = sys_storage_init();
@@ -59,10 +125,12 @@ TEST_CASE("whatever the last power-up left behind still reads back checked", "[s
     const bool primary = exists(FACES_PATH);
     const bool backup = exists(FACES_PATH ".bak");
     const bool temp = exists(FACES_PATH ".tmp");
-    const bool other = exists(LOG_PATH);
-    // attend.000 is never touched by the loop: gone too means a wipe of the
-    // whole filesystem, not two renames losing one file.
-    printf("after the last power-up: loop marker %lu, primary %d, backup %d, tmp %d, attend.000 %d\n",
+    char newest[PATH_LEN];
+    log_path_of(newest_log_index(), newest, sizeof(newest));
+    // The log keeps at least one file through every case here, so that name
+    // going missing means a wipe, not two renames losing one file.
+    const bool other = exists(newest);
+    printf("after the last power-up: loop marker %lu, primary %d, backup %d, tmp %d, log %d\n",
            (unsigned long)loop_ran, primary, backup, temp, other);
     // The board boots on its own when power returns, so the reading is kept
     // in nvs for whoever attaches a console afterwards.
@@ -72,7 +140,7 @@ TEST_CASE("whatever the last power-up left behind still reads back checked", "[s
     }
     uint32_t stored = 0;
     if (sys_storage_get_u32(STORAGE_NS_SYS, CUT_STATE_KEY, &stored) == ESP_OK) {
-        printf("stored post-cut snapshot: primary %lu, backup %lu, tmp %lu, attend.000 %lu\n",
+        printf("stored post-cut snapshot: primary %lu, backup %lu, tmp %lu, log %lu\n",
                (unsigned long)(stored & 1), (unsigned long)(stored >> 1 & 1),
                (unsigned long)(stored >> 2 & 1), (unsigned long)(stored >> 3 & 1));
     }
@@ -96,6 +164,63 @@ TEST_CASE("whatever the last power-up left behind still reads back checked", "[s
         printf("stored post-cut record_count %lu, %s\n", (unsigned long)(stored_count & 0x7FFFFFFF),
                (stored_count >> 31) ? "served from backup" : "primary intact");
     }
+}
+
+// Reads the log the way a fresh firmware would: sequentially, at the 48 B grid,
+// counting only records this run of the loop wrote and passed their checksum.
+static void scan_log(uint32_t boot, uint32_t *count, uint32_t *highest)
+{
+    *count = 0;
+    *highest = 0;
+    char path[PATH_LEN];
+    storage_attend_record_t record;
+    for (uint32_t index = 0; index < LOG_FILES; ++index) {
+        log_path_of(index, path, sizeof(path));
+        FILE *file = fopen(path, "rb");
+        if (file == NULL) {
+            continue;
+        }
+        fseek(file, (long)LOG_HEADER_BYTES, SEEK_SET);
+        while (fread(&record, 1, sizeof(record), file) == sizeof(record)) {
+            if (!record_holds(&record) || (uint32_t)(record.local_id >> 32) != boot) {
+                continue;
+            }
+            const uint32_t seq = (uint32_t)record.local_id;
+            ++*count;
+            if (seq > *highest) {
+                *highest = seq;
+            }
+        }
+        fclose(file);
+    }
+}
+
+TEST_CASE("the log kept every record the last power-up confirmed", "[sys_storage]")
+{
+    // Runs early: the log cases below rewrite these files, and this one has to
+    // see them exactly as the power cut left them.
+    const esp_err_t up = sys_storage_init();
+    TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
+    uint32_t loop_ran = 0;
+    uint32_t confirmed = 0;
+    uint32_t loop_boot = 0;
+    sys_storage_get_u32(STORAGE_NS_SYS, LOG_CUT_KEY, &loop_ran);
+    sys_storage_get_u32(STORAGE_NS_SYS, LOG_SEQ_KEY, &confirmed);
+    sys_storage_get_u32(STORAGE_NS_SYS, LOG_BOOT_KEY, &loop_boot);
+    uint32_t count = 0;
+    uint32_t highest = 0;
+    scan_log(loop_boot, &count, &highest);
+    printf("loop marker %lu: boot %lu confirmed %lu records, the log holds %lu, highest seq %lu\n",
+           (unsigned long)loop_ran, (unsigned long)loop_boot, (unsigned long)confirmed,
+           (unsigned long)count, (unsigned long)highest);
+    if (!loop_ran) {
+        TEST_IGNORE_MESSAGE("no cut since the last check: tap BOOT, cut power, boot again");
+    }
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, LOG_CUT_KEY, 0));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(confirmed, count);
+    // Sequence numbers start at one, so a gap anywhere puts the count below the
+    // highest number seen even when nothing looks torn.
+    TEST_ASSERT_EQUAL_UINT32(highest, count);
 }
 
 TEST_CASE("a setting survives the round trip through nvs", "[sys_storage]")
@@ -191,7 +316,7 @@ static storage_attend_record_t s_read_back[RECORDS];
 
 TEST_CASE("appended records land one after another and keep their bytes", "[sys_storage]")
 {
-    unlink(LOG_PATH);
+    unlink(APPEND_PATH);
     storage_attend_record_t *written = s_written;
     for (int i = 0; i < RECORDS; ++i) {
         memset(&written[i], 0, sizeof(written[i]));
@@ -199,12 +324,12 @@ TEST_CASE("appended records land one after another and keep their bytes", "[sys_
         written[i].local_id = ((uint64_t)sys_storage_boot_count() << 32) | (uint32_t)i;
         written[i].employee_id = 1000u + i;
         written[i].crc32 = sys_storage_crc32(&written[i], offsetof(storage_attend_record_t, crc32));
-        TEST_ASSERT_EQUAL(ESP_OK, sys_storage_append(LOG_PATH, &written[i], sizeof(written[i])));
+        TEST_ASSERT_EQUAL(ESP_OK, sys_storage_append(APPEND_PATH, &written[i], sizeof(written[i])));
     }
 
     storage_attend_record_t *read_back = s_read_back;
     size_t len = 0;
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_read(LOG_PATH, read_back, sizeof(s_read_back), &len));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_read(APPEND_PATH, read_back, sizeof(s_read_back), &len));
     TEST_ASSERT_EQUAL_UINT(sizeof(s_written), len);
     TEST_ASSERT_EQUAL_MEMORY(written, read_back, sizeof(s_written));
     printf("main task stack left after 16 appends: %u B of %u\n",
@@ -222,7 +347,7 @@ TEST_CASE("a buffer too small is refused rather than filled halfway", "[sys_stor
     uint8_t narrow[sizeof(storage_attend_record_t)];
     size_t len = 0;
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE,
-                      sys_storage_read(LOG_PATH, narrow, sizeof(narrow), &len));
+                      sys_storage_read(APPEND_PATH, narrow, sizeof(narrow), &len));
 }
 
 TEST_CASE("the scratch directory is emptied at boot", "[sys_storage]")
@@ -258,6 +383,212 @@ TEST_CASE("a packed models partition reads back, an unpacked one is refused", "[
     // A flatbuffer carries its identifier at byte 4, so the packer's offset
     // arithmetic fails here rather than deep inside the interpreter.
     TEST_ASSERT_EQUAL_MEMORY("TFL3", (const uint8_t *)data + 4, 4);
+}
+
+TEST_CASE("the first record creates the log with its own header", "[sys_storage]")
+{
+    wipe_log();
+    storage_attend_record_t record;
+    fill_record(&record, 1);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_append(&record));
+
+    char path[PATH_LEN];
+    log_path_of(newest_log_index(), path, sizeof(path));
+    struct {
+        storage_file_header_t header;
+        storage_attend_record_t record;
+    } opened;
+    size_t len = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_read(path, &opened, sizeof(opened), &len));
+    printf("%s opened with %u B header, record_size %u, %u B in all\n", path,
+           (unsigned)LOG_HEADER_BYTES, opened.header.record_size, (unsigned)len);
+    TEST_ASSERT_EQUAL_UINT(sizeof(opened), len);
+    TEST_ASSERT_EQUAL_HEX32(STORAGE_ATTEND_MAGIC, opened.header.magic);
+    TEST_ASSERT_EQUAL_UINT16(STORAGE_ATTEND_VER, opened.header.format_ver);
+    TEST_ASSERT_EQUAL_UINT16(LOG_RECORD_BYTES, opened.header.record_size);
+    TEST_ASSERT_EQUAL_UINT32(
+        sys_storage_crc32(&opened.header, offsetof(storage_file_header_t, crc32)),
+        opened.header.crc32);
+    TEST_ASSERT_EQUAL_MEMORY(&record, &opened.record, sizeof(record));
+}
+
+TEST_CASE("the cursor walks the records and stops at the end", "[sys_storage]")
+{
+    wipe_log();
+    storage_attend_record_t written;
+    for (uint32_t seq = 1; seq <= 3; ++seq) {
+        fill_record(&written, seq);
+        TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_append(&written));
+    }
+    storage_cursor_t at;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_cursor_get(&at));
+    TEST_ASSERT_EQUAL_UINT32(LOG_HEADER_BYTES, at.offset);
+
+    storage_attend_record_t got;
+    storage_cursor_t next;
+    for (uint32_t seq = 1; seq <= 3; ++seq) {
+        TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_read(&at, &got, &next));
+        TEST_ASSERT_EQUAL_UINT32(seq, (uint32_t)got.local_id);
+        TEST_ASSERT_EQUAL_UINT32(at.offset + LOG_RECORD_BYTES, next.offset);
+        at = next;
+    }
+    printf("three records walked, the cursor rests at file %u offset %lu\n", at.file_index,
+           (unsigned long)at.offset);
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, sys_storage_attend_read(&at, &got, &next));
+}
+
+TEST_CASE("a tail left by a cut mid-append is cut off, not read as a record", "[sys_storage]")
+{
+    wipe_log();
+    storage_attend_record_t record;
+    fill_record(&record, 1);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_append(&record));
+    char path[PATH_LEN];
+    log_path_of(newest_log_index(), path, sizeof(path));
+    const long whole = size_of(path);
+
+    // What a cut in the middle of one fwrite leaves behind: part of a record.
+    const size_t torn_bytes = LOG_RECORD_BYTES / 3;
+    FILE *torn = fopen(path, "ab");
+    TEST_ASSERT_NOT_NULL(torn);
+    TEST_ASSERT_EQUAL_UINT(torn_bytes, fwrite(&record, 1, torn_bytes, torn));
+    fclose(torn);
+    TEST_ASSERT_EQUAL(whole + (long)torn_bytes, size_of(path));
+
+    fill_record(&record, 2);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_append(&record));
+    printf("%s carried a %u B tail, back on the grid at %ld B\n", path, (unsigned)torn_bytes,
+           size_of(path));
+    TEST_ASSERT_EQUAL(whole + (long)LOG_RECORD_BYTES, size_of(path));
+
+    storage_cursor_t at;
+    storage_cursor_t next;
+    storage_attend_record_t got;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_cursor_get(&at));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_read(&at, &got, &next));
+    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)got.local_id);
+    at = next;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_read(&at, &got, &next));
+    TEST_ASSERT_EQUAL_UINT32(2, (uint32_t)got.local_id);
+}
+
+TEST_CASE("the cursor keeps its place across a torn write and refuses a bad offset",
+          "[sys_storage]")
+{
+    storage_cursor_t first;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_cursor_get(&first));
+    first.offset = LOG_HEADER_BYTES + LOG_RECORD_BYTES;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_cursor_set(&first));
+    storage_cursor_t second = first;
+    second.offset += LOG_RECORD_BYTES;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_cursor_set(&second));
+
+    storage_cursor_t stored;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_cursor_get(&stored));
+    TEST_ASSERT_EQUAL_UINT32(second.offset, stored.offset);
+    TEST_ASSERT_EQUAL_UINT16(second.file_index, stored.file_index);
+
+    FILE *torn = fopen(STORAGE_CURSOR_PATH, "wb");
+    TEST_ASSERT_NOT_NULL(torn);
+    fwrite("half", 1, 4, torn);
+    fclose(torn);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_cursor_get(&stored));
+    printf("a torn cursor.bin answered from its backup: offset %lu\n",
+           (unsigned long)stored.offset);
+    TEST_ASSERT_EQUAL_UINT32(first.offset, stored.offset);
+
+    stored.offset = LOG_HEADER_BYTES + 1;
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, sys_storage_attend_cursor_set(&stored));
+}
+
+// Bulk-written rather than appended one at a time: 5460 syncs would spend a
+// minute and a half of the suite to reach the same bytes.
+static storage_attend_record_t s_fill[LOG_FILL_BLOCK];
+
+TEST_CASE("the log rotates when the next record no longer fits", "[sys_storage]")
+{
+    wipe_log();
+    storage_attend_record_t record;
+    fill_record(&record, 1);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_append(&record));
+    const uint32_t index = newest_log_index();
+    char path[PATH_LEN];
+    char rotated[PATH_LEN];
+    log_path_of(index, path, sizeof(path));
+    log_path_of(index + 1, rotated, sizeof(rotated));
+
+    FILE *file = fopen(path, "ab");
+    TEST_ASSERT_NOT_NULL(file);
+    for (uint32_t seq = 2; seq <= LOG_FILL_RECORDS; seq += LOG_FILL_BLOCK) {
+        const uint32_t left = (uint32_t)LOG_FILL_RECORDS - seq + 1;
+        const uint32_t count = left < LOG_FILL_BLOCK ? left : LOG_FILL_BLOCK;
+        for (uint32_t i = 0; i < count; ++i) {
+            fill_record(&s_fill[i], seq + i);
+        }
+        TEST_ASSERT_EQUAL_UINT(count, fwrite(s_fill, LOG_RECORD_BYTES, count, file));
+    }
+    fflush(file);
+    fsync(fileno(file));
+    fclose(file);
+    const long filled = size_of(path);
+    printf("%s filled to %ld B of %u, %u records\n", path, filled,
+           (unsigned)STORAGE_ATTEND_ROTATE_BYTES, (unsigned)LOG_FILL_RECORDS);
+    TEST_ASSERT_TRUE(filled + (long)LOG_RECORD_BYTES > (long)STORAGE_ATTEND_ROTATE_BYTES);
+    TEST_ASSERT_FALSE(exists(rotated));
+
+    fill_record(&record, (uint32_t)LOG_FILL_RECORDS + 1);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_append(&record));
+    TEST_ASSERT_EQUAL(filled, size_of(path));
+    TEST_ASSERT_EQUAL(LOG_HEADER_BYTES + LOG_RECORD_BYTES, size_of(rotated));
+}
+
+TEST_CASE("a file the cursor has left behind is dropped", "[sys_storage]")
+{
+    const uint32_t newest = newest_log_index();
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0, newest, "the rotation case has to run first");
+    char behind[PATH_LEN];
+    char kept[PATH_LEN];
+    log_path_of(newest - 1, behind, sizeof(behind));
+    log_path_of(newest, kept, sizeof(kept));
+    TEST_ASSERT_TRUE(exists(behind));
+
+    storage_cursor_t moved;
+    memset(&moved, 0, sizeof(moved));
+    moved.file_index = (uint16_t)newest;
+    moved.offset = LOG_HEADER_BYTES;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_cursor_set(&moved));
+    printf("cursor at file %u: %s %s, %s %s\n", (unsigned)newest, behind,
+           exists(behind) ? "kept" : "dropped", kept, exists(kept) ? "kept" : "dropped");
+    TEST_ASSERT_FALSE(exists(behind));
+    TEST_ASSERT_TRUE(exists(kept));
+}
+
+TEST_CASE("append records forever so power can be cut mid-append", "[sys_storage][manual]")
+{
+    // Picked by name from app_main, so it cannot lean on the cases above.
+    const esp_err_t up = sys_storage_init();
+    TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
+    uint32_t marker = 0;
+    sys_storage_get_u32(STORAGE_NS_SYS, LOG_CUT_KEY, &marker);
+    if (marker) {
+        TEST_IGNORE_MESSAGE("a cut happened since the last check: flash the normal suite first");
+    }
+    wipe_log();
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, LOG_BOOT_KEY,
+                                                  sys_storage_boot_count()));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, LOG_SEQ_KEY, 0));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, LOG_CUT_KEY, 1));
+    storage_attend_record_t record;
+    for (uint32_t seq = 1;; ++seq) {
+        fill_record(&record, seq);
+        TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_append(&record));
+        // The count reaches nvs only every so often, so it stays a floor on
+        // what the log must hold rather than a second write per record.
+        if (seq % CUT_LOOP_REPORT == 0) {
+            TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, LOG_SEQ_KEY, seq));
+            printf("record %lu confirmed, cut power whenever you like\n", (unsigned long)seq);
+        }
+    }
 }
 
 TEST_CASE("write faces.bin forever so power can be cut mid-write", "[sys_storage][manual]")
@@ -326,16 +657,22 @@ void app_main(void)
     UNITY_END();
     // GPIO0 low at reset is the download-mode strap, so the button is read in
     // a window once the suite is done: press it then to start the power-cut loop.
-    printf("press BOOT within %d s to start the power-cut loop\n", BOOT_WINDOW_MS / 1000);
+    printf("within %d s: tap BOOT for the attendance log loop, hold %d s for faces.bin\n",
+           BOOT_WINDOW_MS / 1000, BOOT_HOLD_MS / 1000);
     bool pressed = false;
     for (int waited = 0; waited < BOOT_WINDOW_MS && !pressed; waited += BOOT_POLL_MS) {
         vTaskDelay(pdMS_TO_TICKS(BOOT_POLL_MS));
         pressed = gpio_get_level(APP_FACTORY_RESET_GPIO) == 0;
     }
     if (pressed) {
-        printf("BOOT held: starting the power-cut loop\n");
+        bool held = true;
+        for (int waited = 0; waited < BOOT_HOLD_MS && held; waited += BOOT_POLL_MS) {
+            vTaskDelay(pdMS_TO_TICKS(BOOT_POLL_MS));
+            held = gpio_get_level(APP_FACTORY_RESET_GPIO) == 0;
+        }
+        printf("starting the %s loop\n", held ? "faces.bin" : "attendance log");
         UNITY_BEGIN();
-        unity_run_tests_by_tag("[manual]", false);
+        unity_run_test_by_name(held ? FACES_LOOP_NAME : LOG_LOOP_NAME);
         UNITY_END();
     }
 }
