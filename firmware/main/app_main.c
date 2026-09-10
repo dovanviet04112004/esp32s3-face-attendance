@@ -7,8 +7,18 @@
 #include "drv_touch.h"
 #include "esp_log.h"
 #include "sys_storage.h"
+#include "sys_time.h"
 
 static const char *TAG = "app_main";
+
+#define NVS_RTC_NTP_SET "rtc_ntp_set"
+
+// Only sys_storage may reach NVS, so the clock is handed this (KEHOACH 6.2.5).
+static bool rtc_ntp_marker(void)
+{
+    uint32_t marker = 0;
+    return sys_storage_get_u32(NVS_RTC_NTP_SET, &marker) == ESP_OK && marker != 0;
+}
 
 void app_main(void)
 {
@@ -19,6 +29,11 @@ void app_main(void)
     ESP_ERROR_CHECK(drv_lcd_init());
     ESP_ERROR_CHECK(drv_lcd_backlight(100));
     ESP_ERROR_CHECK(drv_ioexp_init());
+    // A silent clock costs the trust of a timestamp, not the kiosk (KEHOACH 6.2.5).
+    const esp_err_t clock = sys_time_init(rtc_ntp_marker());
+    if (clock != ESP_OK) {
+        ESP_LOGW(TAG, "rtc absent: %s", esp_err_to_name(clock));
+    }
     // A dead panel costs the settings screen, not the kiosk (KEHOACH 6.2.2).
     const esp_err_t touch = drv_touch_init();
     if (touch != ESP_OK) {
