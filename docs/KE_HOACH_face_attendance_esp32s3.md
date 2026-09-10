@@ -2884,14 +2884,41 @@ vì §4.5.4 cấm L2 phụ thuộc L2. Cờ bền `sys.rtc_ntp_set` do **tầng 
 hỏi nguồn giờ để đặt bit2 lúc dựng bản ghi. Cách chia này giữ `sys_time` test được trên host
 mà không cần storage, và giữ một nguồn sự thật duy nhất cho câu hỏi giờ có đáng tin hay không.
 
+**`record_count` của header log luôn bằng 0.** Header ghi một lần lúc tạo file, nên con số này
+chỉ đúng được nếu ghi lại header sau mỗi bản ghi — thêm một lần ghi cộng một `sync` vào cùng
+một block cho mỗi 48 byte, tức gấp đôi giá của §6.2.6 và dồn hết vào một block duy nhất. Người
+đọc lấy số bản ghi từ kích thước file: `(size − 32) / 48`. Header vẫn phải có vì `magic` và
+`record_size` là thứ bắt được một file lệch định dạng, và `format_ver` là thứ cho phép migrate.
+
+**`log/cursor.bin` — 16 B, một bản ghi duy nhất.** §6.2.3 khai file này, §6.2.7 buộc mọi layout
+nhị phân phải có bảng trong §6.2, nên bảng của nó là:
+
+| Offset | Kích thước | Trường |
+|---|---|---|
+| 0 | 4 | `magic` = `'ACU1'` |
+| 4 | 2 | `format_ver` u16 |
+| 6 | 2 | `file_index` u16 — đã đồng bộ tới `attend.NNN` nào |
+| 8 | 4 | `offset` u32 — byte kế tiếp trong file đó, luôn là 32 + k×48 |
+| 12 | 4 | `crc32` |
+
+Con trỏ ghi bằng **đúng đường hai pha của `faces.bin`** (§6.2.6): mất điện giữa lúc ghi để lại
+con trỏ cũ nguyên vẹn, không để lại 16 byte nửa vời. Con trỏ cũ chỉ gây gửi lại, đúng ý đồ
+at-least-once. Không có `cursor.bin` nghĩa là chưa đồng bộ gì, tức `{0, 32}`.
+
+**Ai làm gì.** `sys_storage` (L2) sở hữu tên file, header, xoay vòng 256 KB, `cursor.bin` và
+việc xoá file đã đồng bộ hết — §4.1 cho nó độc quyền gọi `lfs_*`, và mục này đã giao cho nó
+một hàm header dùng chung cho cả hai định dạng. `svc_attendance` (L5) chỉ đưa xuống bản ghi
+48 B đã dựng sẵn. `svc_sync` (L5) đọc bản ghi ở con trỏ, gửi, rồi đẩy con trỏ **sau khi** có
+ack. Không component nào ngoài `sys_storage` biết log gồm mấy file.
+
 #### 6.2.6 Quy tắc ghi — chống mất điện
 
 | Việc | Cách ghi | Mất điện giữa chừng thì sao |
 |---|---|---|
 | Sửa `faces.bin` | Ghi `faces.tmp` → `lfs_file_sync` → rename `faces.bin`→`faces.bak` → rename `faces.tmp`→`faces.bin` | `faces.bin` hoặc còn nguyên bản cũ, hoặc đã là bản mới. Không bao giờ nửa vời. Boot sau đọc `faces.bin`; CRC sai thì rơi về `faces.bak` |
 | Thêm bản ghi chấm công | `lfs_file_write` + **`lfs_file_sync` ngay sau mỗi bản ghi** | Bản ghi cuối CRC sai → bị bỏ lúc đọc lại. Các bản ghi trước còn nguyên |
-| Cập nhật `cursor.bin` | Ghi **SAU KHI** broker trả ack QoS 1 | Gửi lại bản ghi đã gửi → server khử trùng bằng `local_id`. Đây là at-least-once, đúng ý đồ — thà trùng còn hơn mất |
-| Xoay vòng log | `attend.NNN` > 256 KB → tạo `attend.NNN+1`. Xoá file cũ chỉ khi `cursor` đã vượt hết file đó | Không mất bản ghi chưa sync |
+| Cập nhật `cursor.bin` | Ghi **SAU KHI** broker trả ack QoS 1, bằng đường hai pha của `faces.bin` | Gửi lại bản ghi đã gửi → server khử trùng bằng `local_id`. Đây là at-least-once, đúng ý đồ — thà trùng còn hơn mất |
+| Xoay vòng log | Bản ghi kế tiếp không còn vừa trong 256 KB → mở `attend.NNN+1`, ghi header rồi ghi vào đó. Xoá file cũ chỉ khi `cursor.file_index` đã vượt qua nó | Không mất bản ghi chưa sync. Không file nào vượt 256 KB, nên người đọc chặn được kích thước buffer |
 | `tmp/` | Xoá sạch trong `sys_storage_init()` | Không cần quan tâm |
 
 `lfs_file_sync` sau mỗi bản ghi 48 B là đánh đổi có chủ đích: chậm hơn (~10–20 ms/lần ghi) nhưng bản ghi chấm công không được phép mất. Tần suất ghi thấp (vài chục lần/ngày) nên không ảnh hưởng gì.
