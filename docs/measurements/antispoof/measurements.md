@@ -1382,3 +1382,35 @@ view wide của một mẫu khác trong luồng, rút bất kể nhãn, mép ho�
 `p = 0,5`. Lý do từng ràng buộc ở KẾ HOẠCH §3 lớp 2. Nhánh đối chứng: run `20260911-1411`
 (không hoán nền, cùng checkpoint gốc epoch 59, cùng lịch 60 → 90) — hai run khác đúng một
 biến. Nghiệm thu bằng lệnh §20, cả BPCER lẫn APCER.
+
+### 22.5 Nhánh 1,5× / p 0,5 không dịch chuyển cơ chế — đo giữa run, 15:45
+
+Run `20260911-1438` (hoán nền `keep 1,5×`, `p 0,5`, nhãn cho mượn theo luồng) fine-tune từ
+`best.pth` epoch 59, chấm `best.pth` của nó lúc epoch 68 — đang ở đỉnh LR của warm restart,
+nên ACER tuyệt đối so với epoch 59 là so lệch pha; cột đáng đọc là bảng cắt bỏ view:
+
+| Nhóm | full | t+t | w+w | | full epoch 59 | w+w epoch 59 |
+|---|---|---|---|---|---|---|
+| `live_vua` | 0,16 | 0,97 | **0,03** | | 0,20 | 0,01 |
+| `live_rat_xa` | 0,41 | 0,71 | 0,23 | | 0,36 | 0,04 |
+| `live_xa` | 0,32 | 0,82 | 0,11 | | 0,72 | 0,33 |
+| `live_kho` | 0,85 | 0,94 | 0,51 | | 0,94 | 0,84 |
+
+Nhánh wide vẫn phủ quyết `live_vua` y như trước; ACER @0,90 0,4079, `live_vua` 0/12 ở mọi
+ngưỡng. Val trong lúc đó **tốt hơn** (EER 0,1407 so với 0,1602 của đối chứng cùng epoch) — val
+là split cùng lệch cảnh, nên nó không đo được điều này.
+
+Vì sao gần như không tác dụng — đo trên ba shard train (6.000 mẫu):
+
+| | `wide_scale` p10 / p50 / p90 | keep 1,5×: diện tích hoán đổi p50 | keep 1,2× |
+|---|---|---|---|
+| thật | 1,19 / **1,77** / 2,69 | **28%** | 54% |
+| tấn công | 1,41 / **2,02** / 2,70 | 45% | 65% |
+
+`keep_scale` tính theo cạnh mặt, nhưng view wide chỉ đạt ~1,8–2,0× mặt ở trung vị, nên vành
+1,5× phủ 73–84% cạnh view và phần hoán đổi là một dải mỏng bên ngoài. Nan cửa sát đầu người
+trong `live_vua` nằm trong vùng giữ. Thêm vào đó, mẫu cho mượn rút theo tỉ lệ luồng (≈ 2 thật
+: 1 tấn công) nên nền hoán vào vẫn nghiêng về cảnh studio với mẫu thật.
+
+Nhánh kế: `keep 1,2×`, `p 0,7`, nhãn cho mượn rút 50/50 từ hai vòng riêng; cùng checkpoint
+gốc, cùng lịch 60 → 90. Run `1438` dừng ở epoch 68; `1411` vẫn là đối chứng.
