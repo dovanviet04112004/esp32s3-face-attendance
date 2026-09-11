@@ -8,6 +8,7 @@ config.resolved.yaml, split.lock, env.txt, ckpt/.
 from __future__ import annotations
 
 import hashlib
+import os
 import platform
 import subprocess
 import sys
@@ -83,12 +84,13 @@ def shard_tree_digest(root: Path) -> str:
     """
     if not root.is_dir():
         return "MISSING"
-    manifest = sorted(
-        f"{item.relative_to(root).as_posix()} {item.stat().st_size}"
-        for item in root.rglob("*")
-        if item.is_file()
-    )
-    return hashlib.sha256("\n".join(manifest).encode("utf-8")).hexdigest()
+    manifest = []
+    # followlinks: pool members can be links onto other shard trees (KEHOACH 1.2).
+    for folder, _dirs, names in os.walk(root, followlinks=True):
+        for name in names:
+            item = Path(folder) / name
+            manifest.append(f"{item.relative_to(root).as_posix()} {item.stat().st_size}")
+    return hashlib.sha256("\n".join(sorted(manifest)).encode("utf-8")).hexdigest()
 
 
 def declared_splits(params: dict[str, object]) -> list[str]:
