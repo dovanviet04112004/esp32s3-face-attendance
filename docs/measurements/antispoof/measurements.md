@@ -1417,3 +1417,20 @@ gốc, cùng lịch 60 → 90. Run `1438` dừng ở epoch 68; `1411` vẫn là 
 
 Ghi chú nhãn: trong code `LIVE = 0`, `SPOOF = 1`; hai bảng thống kê shard ở §22.3 và §22.5 đọc nhãn theo
 hằng đó. Luồng train là ≈ 2 tấn công : 1 thật, và mẫu **thật** là bên có nhiều ngữ cảnh hơn.
+
+---
+
+## 23. Tổng liều augment của run một-backbone — tính từ config, 11/09
+
+`config.resolved.yaml` của `20260911-1634_d3b227e_325fb6`: lật 0,5 · nén lại 0,5 · quang học
+0,5 · cắt crop 0,15 · che 0,25 · nghiêng 0,35 · trượt 0,5. Không tính lật:
+
+| | |
+|---|---|
+| P(mẫu tới model nguyên vẹn) | **0,052** |
+| Kỳ vọng số phép trên một mẫu | **2,25** |
+| P(0 / 1 / 2 / 3 / 4 / 5 / 6 phép) | 0,052 / 0,210 / 0,336 / 0,268 / 0,111 / 0,022 / 0,002 |
+| P(≥ 3 phép) | **0,403** |
+
+Từng phép có bảng riêng ở §9, §12, §13, §15; tổng liều thì chưa có arm nào đo. Luật ở KẾ HOẠCH
+§3 lớp 2 ("Tổng liều augment phải đo").
