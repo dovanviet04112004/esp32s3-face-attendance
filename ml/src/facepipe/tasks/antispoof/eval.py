@@ -177,15 +177,18 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     from .model import minifasnet_v2_se  # noqa: F401  registers the model
 
     cfg = load_run_config(run)
-    model = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
-
     # best.pth appears only after the first validation, so a run stopped inside
     # its first epochs has nothing but last.pth.
     path = run / "ckpt" / "best.pth"
     if not path.is_file():
         path = run / "ckpt" / "last.pth"
     payload = torch.load(path, map_location="cpu", weights_only=False)
-    model.load_state_dict(payload["ema"]["module"] if "ema" in payload else payload["model"])
+    state = payload["ema"]["module"] if "ema" in payload else payload["model"]
+    params = dict(cfg.model.params)
+    # A config without a views key belongs to a two-view run; its weights say so.
+    params.setdefault("views", "both" if any(k.startswith("wide.") for k in state) else "tight")
+    model = MODELS.build({"name": cfg.model.name, "params": params})
+    model.load_state_dict(state)
     return cfg, model
 
 
