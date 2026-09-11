@@ -25,6 +25,8 @@ from torch.utils.data import IterableDataset, get_worker_info
 
 from facepipe.data.prepare.images_to_wds import read_shard
 
+from .losses.task_loss import LIVE, SPOOF
+
 CROP_SIZE = 81
 SHUFFLE_BUFFER = 2048
 # Drawn from one distribution for both classes: every source record below 1.0x is
@@ -63,8 +65,8 @@ TRANSLATE_RANGE = 0.10
 TRANSLATE_PROBABILITY = 0.5
 # Live and attack come from different rooms in the source set, so the wide branch
 # learns the room; the far context is traded between samples (KEHOACH 3, layer 2).
-CONTEXT_SWAP_PROBABILITY = 0.5
-CONTEXT_KEEP_SCALE = 1.5
+CONTEXT_SWAP_PROBABILITY = 0.7
+CONTEXT_KEEP_SCALE = 1.2
 # Soft edge as a fraction of the face side: a crisp square reads as a paper cut-out.
 CONTEXT_FEATHER = 0.12
 CONTEXT_DONORS = 32
@@ -541,16 +543,19 @@ class SpoofShardDataset(IterableDataset):
         info = get_worker_info()
         rng = random.Random(self.seed + self.epoch + (info.id if info else 0))
         buffer: list[SpoofSample] = []
-        donors: deque[np.ndarray] = deque(maxlen=CONTEXT_DONORS)
+        # One ring per label, and the lender's label is drawn 50/50: a ring shared
+        # by both would hand out contexts in the stream's own 2:1 mix.
+        donors = {label: deque(maxlen=CONTEXT_DONORS) for label in (LIVE, SPOOF)}
         for sample in self._records():
             if self.train and rng.random() < 0.5:
                 sample = horizontal_flip(sample)
             if self.train:
                 native = sample.wide
-                if donors and rng.random() < self.context_swap_probability:
-                    sample = swap_context(sample, rng.choice(donors), self.context_keep_scale)
+                lender = donors[LIVE if rng.random() < 0.5 else SPOOF] or donors[sample.label ^ 1]
+                if lender and rng.random() < self.context_swap_probability:
+                    sample = swap_context(sample, rng.choice(lender), self.context_keep_scale)
                 if sample.wide_scale >= CONTEXT_DONOR_MIN_SCALE:
-                    donors.append(native)
+                    donors[sample.label].append(native)
                 drawn = rng.random() < self.crop_scale_probability
                 target = rng.uniform(*self.crop_scale_range) if drawn else sample.wide_scale
                 sample = crop_scale(sample, target, self.size)

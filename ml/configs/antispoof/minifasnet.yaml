@@ -57,10 +57,10 @@ data:
     translate_probability: 0.5
     translate_range: 0.10
     # The source set's live faces stand in studios and its attacks in rooms, so
-    # the far context is traded between samples of either label (measurements 22).
-    context_swap_probability: 0.5
-    # Kept around the face: a printed border sits inside this, a room outside it.
-    context_keep_scale: 1.5
+    # the far context is traded between samples, lender label 50/50 (measurements 22).
+    context_swap_probability: 0.7
+    # 1.5x kept 72-84% of the view and left the shortcut in place (measurements 22.5).
+    context_keep_scale: 1.2
 
 train:
   # 1740 converged inside 60 and the relu port had not, so it runs longer; a
