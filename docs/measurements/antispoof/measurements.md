@@ -1689,3 +1689,32 @@ checkpoint tốt nhất, chỉ tốn thêm ~2,5 giờ GPU; đặt 60 mà nó cò
 Cái phải theo dõi khi chấm: `best.pth` chọn theo **val EER**, mà bảng trên cho thấy EER vẫn
 giảm trong lúc val loss tăng. Nên khi run xong phải chấm **cả `best.pth` lẫn `last.pth`** trên
 miền thiết bị (§24.4) rồi mới chốt, chứ không tin một mình EER.
+
+---
+
+## 29. Chấm giữa chừng ở epoch 30 của arm một backbone — 11/09
+
+Dừng trainer, chấm, resume (chạy song song là thứ đã giết một run lúc 15:42, xem
+`memory: wsl-crash-build-parallelism`). Mỗi model dùng **ngưỡng do chính val của nó khớp**,
+đúng cách firmware sẽ dùng: `1112` khớp ở 0,996929 trên val thuần CelebA, arm mới khớp ở
+**0,811101** trên val CelebA + LCC development.
+
+| Bộ | `1112` hai nhánh, 60 epoch, đã hội tụ | arm mới, epoch 30/90 |
+|---|---|---|
+| CelebA `test:10:` ACER | **0,1382** | 0,1506 |
+| LCC evaluation AUC | 0,7797 | **0,8950** |
+| LCC evaluation EER | 0,2771 | **0,1912** |
+| LCC evaluation BPCER | 0,5892 | **0,4650** |
+| SynthASpoof bona fide BPCER | 0,3435 | **0,1590** |
+| SynthASpoof iPad APCER | **0,2805** | 0,4070 |
+| NUAA AUC / EER | **0,9921 / 0,0327** | 0,9635 / 0,1000 |
+| `phone_eval` EER / AUC | **0,1712 / 0,8917** | 0,2876 / 0,8229 |
+| 73 khung board, qua ở ngưỡng riêng | ~24/47 | **~36–40/47** |
+
+**Hình rõ và đáng lo: mọi bộ tiến bộ đều là bộ vừa đưa vào train** (LCC, SynthASpoof), còn hai
+bộ thật sự chưa từng train — NUAA và `phone_eval` — đều **tệ đi**. Khung board tốt lên rõ rệt
+nhưng bộ đó chỉ có mặt thật nên chỉ đo được một nửa.
+
+Chưa kết luận được vì đây là epoch 30/90 đấu với một model đã hội tụ. Điều kiện để phán ở mốc
+epoch 60: nếu NUAA và `phone_eval` vẫn kém `1112` thì hai bộ mới chỉ dạy model nhớ chính chúng,
+và việc trộn vào train phải rút lại.
