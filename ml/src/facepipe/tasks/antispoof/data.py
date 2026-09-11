@@ -12,7 +12,6 @@ import io
 import json
 import random
 import tarfile
-from collections import deque
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from functools import lru_cache
@@ -24,8 +23,6 @@ from PIL import Image
 from torch.utils.data import IterableDataset, get_worker_info
 
 from facepipe.data.prepare.images_to_wds import read_shard
-
-from .losses.task_loss import LIVE, SPOOF
 
 CROP_SIZE = 81
 SHUFFLE_BUFFER = 2048
@@ -63,14 +60,6 @@ ROLL_PROBABILITY = 0.35
 # rather than favouring one side (KEHOACH 3, layer 2).
 TRANSLATE_RANGE = 0.10
 TRANSLATE_PROBABILITY = 0.5
-# Live and attack come from different rooms in the source set, so the wide branch
-# learns the room; the far context is traded between samples (KEHOACH 3, layer 2).
-CONTEXT_SWAP_PROBABILITY = 0.7
-CONTEXT_KEEP_SCALE = 1.2
-# Soft edge as a fraction of the face side: a crisp square reads as a paper cut-out.
-CONTEXT_FEATHER = 0.12
-CONTEXT_DONORS = 32
-CONTEXT_DONOR_MIN_SCALE = 2.2
 
 
 @dataclass
@@ -201,39 +190,6 @@ def narrow_tight(tight: np.ndarray, factor: float) -> np.ndarray:
     side = max(1, min(edge, round(edge * factor)))
     offset = (edge - side) // 2
     return tight[offset : offset + side, offset : offset + side]
-
-
-def context_alpha(edge: int, face, keep_scale: float, feather: float) -> np.ndarray:
-    """Weight of the sample's own pixels in a context swap: one near the face, zero far away."""
-    from PIL import ImageDraw, ImageFilter
-
-    x1, y1, x2, y2 = (value * edge for value in face)
-    side = max(1.0, max(x2 - x1, y2 - y1))
-    half = min(float(edge), side * keep_scale) / 2.0
-    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-    mask = Image.new("L", (edge, edge), 0)
-    ImageDraw.Draw(mask).rectangle((cx - half, cy - half, cx + half, cy + half), fill=255)
-    mask = mask.filter(ImageFilter.GaussianBlur(side * feather))
-    return np.asarray(mask, dtype=np.float32)[..., None] / 255.0
-
-
-def swap_context(
-    sample: SpoofSample,
-    donor_wide: np.ndarray,
-    keep_scale: float = CONTEXT_KEEP_SCALE,
-    feather: float = CONTEXT_FEATHER,
-) -> SpoofSample:
-    """Another sample's context behind this face, the face and its surround kept.
-
-    Drawn regardless of label, so the room stops predicting the answer while the
-    tight view and the border right around the face stay as recorded.
-    """
-    edge = sample.wide.shape[0]
-    if donor_wide.shape[0] != edge:
-        donor_wide = resized(donor_wide, edge)
-    alpha = context_alpha(edge, sample.face_in_wide, keep_scale, feather)
-    mixed = sample.wide.astype(np.float32) * alpha + donor_wide.astype(np.float32) * (1.0 - alpha)
-    return replace(sample, wide=np.clip(mixed + 0.5, 0.0, 255.0).astype(np.uint8))
 
 
 def crop_scale(sample: SpoofSample, target: float, size: int) -> SpoofSample:
@@ -479,8 +435,6 @@ class SpoofShardDataset(IterableDataset):
         roll_range: tuple[float, float] = ROLL_RANGE,
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
-        context_swap_probability: float = CONTEXT_SWAP_PROBABILITY,
-        context_keep_scale: float = CONTEXT_KEEP_SCALE,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -504,8 +458,6 @@ class SpoofShardDataset(IterableDataset):
         self.roll_range = roll_range
         self.translate_probability = translate_probability
         self.translate_range = translate_range
-        self.context_swap_probability = context_swap_probability
-        self.context_keep_scale = context_keep_scale
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -543,19 +495,10 @@ class SpoofShardDataset(IterableDataset):
         info = get_worker_info()
         rng = random.Random(self.seed + self.epoch + (info.id if info else 0))
         buffer: list[SpoofSample] = []
-        # One ring per label, and the lender's label is drawn 50/50: a ring shared
-        # by both would hand out contexts in the stream's own 2:1 mix.
-        donors = {label: deque(maxlen=CONTEXT_DONORS) for label in (LIVE, SPOOF)}
         for sample in self._records():
             if self.train and rng.random() < 0.5:
                 sample = horizontal_flip(sample)
             if self.train:
-                native = sample.wide
-                lender = donors[LIVE if rng.random() < 0.5 else SPOOF] or donors[sample.label ^ 1]
-                if lender and rng.random() < self.context_swap_probability:
-                    sample = swap_context(sample, rng.choice(lender), self.context_keep_scale)
-                if sample.wide_scale >= CONTEXT_DONOR_MIN_SCALE:
-                    donors[sample.label].append(native)
                 drawn = rng.random() < self.crop_scale_probability
                 target = rng.uniform(*self.crop_scale_range) if drawn else sample.wide_scale
                 sample = crop_scale(sample, target, self.size)

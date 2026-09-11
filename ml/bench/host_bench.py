@@ -58,6 +58,8 @@ def scores(model_path: Path, loader, live_index: int, limit: int = 0):
             break
         for i in range(tight.shape[0]):
             for name, batch in (("tight", tight), ("wide", wide)):
+                if name not in inputs:
+                    continue
                 # A missing name would silently leave one crop at zero, which
                 # costs far more accuracy than any quantisation rung.
                 detail = inputs[name]

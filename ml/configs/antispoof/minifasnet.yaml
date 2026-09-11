@@ -22,6 +22,8 @@ model:
     # esp-nn folds this into the convolution's output clamp, so it costs
     # nothing either way; relu is the one CLE still applies to (KEHOACH 3.8).
     activation: relu
+    # The face crop alone: a context backbone learns the room (KEHOACH 1.1).
+    views: tight
 
 data:
   name: celeba_spoof
@@ -44,7 +46,7 @@ data:
     # and exposure, behind one gate (measurements 12.1).
     photometric_probability: 0.5
     # Every source record below 1.0x is an attack (measurements 12.5).
-    crop_scale_range: [0.7, 1.2]
+    crop_scale_range: [0.7, 1.0]
     # A gate, because this crop only ever narrows (measurements 15.1).
     crop_scale_probability: 0.15
     # Accepted on APCER, since hiding part of the face loosens the gate (KEHOACH 3).
@@ -56,16 +58,10 @@ data:
     # A 2% shift of the box cost 15% of them (KEHOACH 3).
     translate_probability: 0.5
     translate_range: 0.10
-    # The source set's live faces stand in studios and its attacks in rooms, so
-    # the far context is traded between samples, lender label 50/50 (measurements 22).
-    context_swap_probability: 0.7
-    # 1.5x kept 72-84% of the view and left the shortcut in place (measurements 22.5).
-    context_keep_scale: 1.2
 
 train:
-  # 1740 converged inside 60 and the relu port had not, so it runs longer; a
-  # comparison against 1740 carries the epoch difference (measurements 21).
-  epochs: 90
+  # Held constant so two runs of this branch stay comparable.
+  epochs: 60
   amp: true
   ema_decay: 0.999
   grad_clip_norm: 5.0

@@ -78,11 +78,11 @@ class MiniFASNetBackbone(nn.Module):
 
 @MODELS.register("minifasnet_v2_se")
 class MiniFASNetV2SE(nn.Module):
-    """Two-scale anti-spoof classifier.
+    """Anti-spoof classifier over the face crop, with an optional context backbone.
 
-    forward takes the two crops as one pair, not two arguments, because the
-    shared trainer calls every model with a single input. Feeding the same
-    crop twice trains a model that cannot use context.
+    forward takes the views as one tuple, not two arguments, because the shared
+    trainer calls every model with a single input; a single tensor is read as
+    the face crop. views="tight" keeps only the face backbone (KEHOACH 1.1).
     """
 
     def __init__(
@@ -93,14 +93,24 @@ class MiniFASNetV2SE(nn.Module):
         activation: str = "relu6",
         input_size: int = INPUT_SIZE,
         width: int = WIDTH,
+        views: str = "tight",
     ) -> None:
         super().__init__()
+        if views not in ("tight", "both"):
+            raise ValueError(f"views must be 'tight' or 'both', got {views!r}")
+        self.views = views
         self.tight = MiniFASNetBackbone(embedding, squeeze_excite, activation, input_size, width)
-        self.wide = MiniFASNetBackbone(embedding, squeeze_excite, activation, input_size, width)
+        self.wide = (
+            MiniFASNetBackbone(embedding, squeeze_excite, activation, input_size, width)
+            if views == "both"
+            else None
+        )
         self.drop = nn.Dropout(p=0.2)
-        self.classifier = nn.Linear(embedding * 2, num_classes)
+        self.classifier = nn.Linear(embedding * (2 if views == "both" else 1), num_classes)
 
-    def forward(self, views: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
-        tight, wide = views
-        joined = torch.cat((self.tight(tight), self.wide(wide)), dim=1)
-        return self.classifier(self.drop(joined))
+    def forward(self, views: torch.Tensor | tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+        tight = views[0] if isinstance(views, (tuple, list)) else views
+        features = self.tight(tight)
+        if self.wide is not None:
+            features = torch.cat((features, self.wide(views[1])), dim=1)
+        return self.classifier(self.drop(features))

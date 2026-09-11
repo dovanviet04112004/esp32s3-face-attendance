@@ -201,8 +201,16 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     model = model if model is not None else load_run(run)[1]
     model.eval()
     height, width = cfg.model.input_hw
-    views = (torch.zeros(1, 3, height, width), torch.zeros(1, 3, height, width))
-    return cfg, model, (views,), ["tight", "wide"], ["logits"]
+    names = input_names(cfg)
+    views = tuple(torch.zeros(1, 3, height, width) for _ in names)
+    example = views if len(names) > 1 else views[0]
+    return cfg, model, (example,), names, ["logits"]
+
+
+def input_names(cfg: object) -> list[str]:
+    """The graph's inputs in order: the face crop, and the context crop if the model has one."""
+    both = (cfg.model.params or {}).get("views", "tight") == "both"
+    return ["tight", "wide"] if both else ["tight"]
 
 
 def frame_label(folder: str) -> int:
