@@ -58,8 +58,9 @@ data:
     translate_range: 0.10
 
 train:
-  # Held constant so two runs of this branch stay comparable.
-  epochs: 60
+  # 60 was where 1740 had converged; the relu port had not, so it runs longer
+  # and a comparison against 1740 carries the epoch difference (measurements 21).
+  epochs: 90
   amp: true
   ema_decay: 0.999
   grad_clip_norm: 5.0
