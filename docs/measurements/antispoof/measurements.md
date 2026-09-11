@@ -1656,3 +1656,36 @@ hình dạng bộ bốn.
 Checkpoint hai view cũ vẫn chấm được: `load_run` đọc trọng số để suy ra `views` rồi **ghi ngược
 vào cfg**, nên loader biết phải dọn hay giữ view thứ hai. Kiểm lại trên `1112`: `views -> both`,
 batch ra đủ hai tensor 96×3×81×81.
+
+---
+
+## 28. 60 epoch có đủ không — đọc lại đường val của `1112`, 11/09
+
+Câu hỏi: pool mới có cần nhiều epoch hơn 60 không. Đọc `tb` của run hai backbone `1112`,
+sáu điểm val cuối (mỗi 2 epoch):
+
+| | Đầu sáu điểm | Cuối |
+|---|---|---|
+| `train/lr` | 0,0001 | 0,0001 (cosine đã anneal hết) |
+| `train/task` | 0,1002 | **0,1006** (phẳng, nhích lên) |
+| `val/loss` | 1,0119 | **1,1306** (tăng đều) |
+| `val/eer` | 0,1604 | 0,1526 |
+| `val/auc` | 0,9277 | 0,9363 |
+| ngưỡng khớp | 0,9898 | **0,9969** |
+
+**60 epoch không cắt ngang việc học của run cũ — nó đã sang vùng overfit.** Loss train chạm
+đáy và đi ngang, loss val tăng 0,12, chỉ EER và AUC còn bò tốt lên từng chút, và ngưỡng bị đẩy
+sát 1 (đúng bệnh §12.4: không còn biên).
+
+Dù vậy arm 11/09 đặt **90 epoch**, vì hai điều kiện đã khác:
+
+- **Nửa số tham số**: 262.746 (một backbone) so với 525.490. Ít năng lực nhớ hơn thì điểm gối
+  overfit tới muộn hơn.
+- **Nhiều hơn 20,0% dữ liệu mỗi epoch** (501.026 so với 417.816) và trải trên ba bộ thay vì một.
+
+Và giá của hai lựa chọn lệch hẳn nhau: đặt 90 mà nó overfit từ 60 thì `best.pth` vẫn giữ đúng
+checkpoint tốt nhất, chỉ tốn thêm ~2,5 giờ GPU; đặt 60 mà nó còn đang lên thì mất cả run.
+
+Cái phải theo dõi khi chấm: `best.pth` chọn theo **val EER**, mà bảng trên cho thấy EER vẫn
+giảm trong lúc val loss tăng. Nên khi run xong phải chấm **cả `best.pth` lẫn `last.pth`** trên
+miền thiết bị (§24.4) rồi mới chốt, chứ không tin một mình EER.

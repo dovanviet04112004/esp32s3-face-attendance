@@ -62,8 +62,8 @@ data:
     translate_range: 0.10
 
 train:
-  # Held constant so two runs of this branch stay comparable.
-  epochs: 60
+  # Half the parameters over a fifth more data, so the overfit knee arrives later
+  epochs: 90  # than the 60 the two-backbone pool needed (measurements 28)
   amp: true
   ema_decay: 0.999
   grad_clip_norm: 5.0
