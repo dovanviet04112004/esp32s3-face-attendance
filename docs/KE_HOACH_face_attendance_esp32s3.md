@@ -614,7 +614,7 @@ và cái giá của nó nằm ở `docs/adr/0002-bo-knowledge-distillation.md`.
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
 | **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén lại JPEG chất lượng 30–95, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược, phơi sáng. Mỗi nhóm một cổng `p=0,5`; dải lấy từ `measurements/antispoof` §3 và §9 |
 | **Anti-spoof: augment tỉ lệ crop** | Rút ngẫu nhiên tỉ lệ wide rồi cắt lại từ record, **rút cùng một phân bố cho cả hai lớp**, qua một cổng xác suất. Bắt buộc, xem mục dưới |
-| **Anti-spoof: augment hoán nền** | Phần ngữ cảnh xa trong view wide lấy từ **một mẫu khác, bất kể nhãn**; giữ mặt và vành quanh mặt 1,5×, mép hoà mềm. Cổng `p = 0,5`. Bắt buộc, xem mục dưới |
+| **Anti-spoof: augment hoán nền** | Phần view wide ngoài vành **1,2×** quanh mặt lấy từ một mẫu khác, **nhãn của mẫu cho mượn rút 50/50**; mép hoà mềm. Cổng `p = 0,7`. Bắt buộc, xem mục dưới |
 
 #### Công thức lấy mẫu của detect phải khớp kích thước đầu vào
 
@@ -1036,14 +1036,19 @@ Ba phép đo độc lập trên bộ 111 khung chốt nhân quả (`measurements
 1,0×–2,7× không có mốc nào cứu được cả bộ, và mờ nền lúc suy luận chỉ kéo ACER 0,34 → 0,28,
 nên đây không phải việc của điểm vận hành hay của tiền xử lý — nó là việc của **tập train**.
 
-**Chốt — augment hoán nền, có cổng, rút bất kể nhãn.** Với mỗi mẫu, phần view wide **ngoài
-vành 1,5× quanh mặt** thay bằng view wide của một mẫu khác gần đó trong luồng, rút bất kể
-nhãn, qua cổng `p = 0,5`. Ba ràng buộc, mỗi cái có lý do đo được:
+**Chốt — augment hoán nền, có cổng, nhãn cho mượn cân bằng.** Với mỗi mẫu, phần view wide
+**ngoài vành 1,2× quanh mặt** thay bằng view wide của một mẫu khác gần đó trong luồng, qua
+cổng `p = 0,7`. Ba ràng buộc, mỗi cái có lý do đo được:
 
-- **Rút bất kể nhãn**, vì mục đích là để nền hết tương quan với nhãn; rút cùng nhãn là giữ
-  nguyên đường tắt.
-- **Giữ vành 1,5×**, vì mép tấm ảnh in hay viền điện thoại — tín hiệu *chính đáng* của nhánh
-  wide — nằm ngay quanh mặt, còn căn phòng nằm ngoài. Nhánh tight không đụng tới.
+- **Nhãn của mẫu cho mượn rút 50/50**, vì mục đích là để nền hết tương quan với nhãn. Rút
+  theo tỉ lệ tự nhiên của luồng (≈ 2 thật : 1 tấn công) thì nền vẫn còn mang một phần nhãn.
+- **Giữ đúng 1,2×**, không rộng hơn. Vành 1,5× nghe hợp lý — "mép ảnh in nằm ngay quanh
+  mặt" — nhưng đo trên tập train thì view wide chỉ đạt **1,77× (thật) / 2,02× (tấn công)**
+  ở trung vị, nên vành 1,5× phủ 73–84% cạnh view và phần hoán đổi chỉ còn **28% diện tích**
+  ở mẫu thật; nan cửa sát đầu người vẫn nằm trong vùng giữ, và nhánh fine-tune với 1,5× sau
+  9 epoch **không dịch chuyển cơ chế** (`measurements/antispoof` §22.5). Ở 1,2× phần hoán
+  đổi lên 54% / 65%. Mép ảnh in nằm trong 1,2× thì vẫn còn; nằm ngoài thì nhánh tight —
+  thứ đang chặn 35/35 đòn tấn công một mình — phải gánh.
 - **Mép hoà mềm** (Gauss, 12% cạnh mặt), vì một hình vuông cắt sắc quanh mặt chính là dấu
   hiệu "ảnh cắt dán" mà model đọc thành tấn công: nền phẳng có mép sắc đã hạ cả `live_kho`
   0,97 → 0,006 trong phép đo ở trên.
