@@ -235,15 +235,18 @@ fetch_hf() {
         --repo-type dataset --local-dir "${dest}"
 }
 
-# The RetinaFace landmarks live only on Google Drive. The file id belongs to the
-# manifest, which is where every dataset source is recorded (section 4.9).
+# Archives that live only on Google Drive. The file id belongs to the manifest,
+# which is where every dataset source is recorded (section 4.9).
 fetch_gdrive() {
-    local ds="$1" dest drive_id archive
+    local ds="$1" dest drive_id archive unpacked
     dest="$(payload_dir "${ds}")"
-    read -r drive_id archive < <(python3 -c "
+    read -r drive_id archive unpacked < <(python3 -c "
 import sys, yaml
+from pathlib import Path
 m = yaml.safe_load(open(sys.argv[1]))
-print(m['drive_id'], m['archive'])" "${ds}/manifest.yaml")
+dest = Path(sys.argv[2])
+present = all((dest / e).exists() for e in m.get('expects') or [])
+print(m['drive_id'], m['archive'], int(present))" "${ds}/manifest.yaml" "${dest}")
 
     if [[ -f "${dest}/${archive}" ]]; then
         log "${archive} already downloaded"
@@ -253,7 +256,12 @@ print(m['drive_id'], m['archive'])" "${ds}/manifest.yaml")
             return 1
         }
     fi
-    unzip -q -o "${dest}/${archive}" -d "${dest}"
+    # Unpacking only while expects/ is absent: a 12 GB rewrite over drvfs starves training.
+    if [[ "${unpacked}" == 1 ]]; then
+        log "${archive} already unpacked"
+    else
+        unzip -q -o "${dest}/${archive}" -d "${dest}"
+    fi
 }
 
 manual_notice() {
@@ -274,7 +282,7 @@ DATASETS=(
     "antispoof/xdomain/unique_replay:unique_replay:hf:UniqueData/anti-spoofing_replay"
     "antispoof/xdomain/axon_masks:axon_masks:hf:AxonData/face-anti-spoofing-dataset"
     "antispoof/xdomain/lcc_fasd:lcc_fasd:manual"
-    "antispoof/xdomain/synthaspoof:synthaspoof:manual"
+    "antispoof/xdomain/synthaspoof:synthaspoof:gdrive"
     "recognition/ms1mv3:ms1mv3:hf:gaunernst/ms1mv3-recordio"
     "recognition/glint360k:glint360k:hf:gaunernst/glint360k-wds-gz"
     "recognition/benchmarks:recognition_benchmarks:hf:gaunernst/face-recognition-eval"

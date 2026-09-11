@@ -1,20 +1,21 @@
 name: lcc_fasd
-source_url: https://csit.am/2019/proceedings/PRIP/PRIP3.pdf
+source_url: https://www.kaggle.com/datasets/faber24/lcc-fasd
 access: manual
-license: research-only (theo bai bao; doc lai dieu khoan luc tai)
+license: research-only theo bai bao; ban Kaggle ghi "Unknown"
 downloaded: null
 verified: false
 expects:
-- LCC_FASD_training
-- LCC_FASD_development
-- LCC_FASD_evaluation
+- LCC_FASD/LCC_FASD_training
+- LCC_FASD/LCC_FASD_development
+- LCC_FASD/LCC_FASD_evaluation
 sha256: {}
 counts:
   files: 0
 consumed_by:
 - antispoof/eval
-notes: Large Crowdcollected Facial Anti-Spoofing Dataset (Timoshenko, ID R&D 2019).
-  Link Google Drive nam trong bai bao, khong co mirror HF. Trang csit.am khong vao
-  duoc ngay 11/09/2026 nen chua ghi duoc drive_id. Bo cuc thu muc training/development/evaluation
-  voi real/spoof ben trong la theo tri nho, xac nhan luc tai. Anh that va tan cong
-  (in, phat lai) chup lai bang dien thoai trong cung loai phong.
+notes: Large Crowdcollected Facial Anti-Spoofing Dataset (Timoshenko, ID R&D 2019,
+  https://csit.am/2019/proceedings/PRIP/PRIP3.pdf; trang khong vao duoc 11/09/2026).
+  Ban Kaggle 5.189.883.545 byte (5,19 GB) PNG, can dang nhap Kaggle, khong form; nut
+  Download tra ve archive.zip, giai nen ra LCC_FASD/LCC_FASD_{training,development,evaluation}/{real,spoof}/.
+  Ten file dang <camera>_id<nguoi>_s<phien>_<khung>.png. Anh that va tan cong (in,
+  phat lai) chup lai bang dien thoai trong cung loai phong.
