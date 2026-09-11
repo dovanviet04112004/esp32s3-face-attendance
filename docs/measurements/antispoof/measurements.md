@@ -1543,7 +1543,9 @@ Model `1112` (hai nhánh, mốc đang so), crop BOX, ngưỡng 0,90:
 | < 0,50 | **8** (16%): `b_002` 0,32 · `c_000` 0,03 · `d_005` 0,11 · `d_016` 0,04 · `d_019` 0,46 · `d_030` 0,02 · `d_033` 0,08 · `d_037` 0,06 |
 
 BPCER@0,90 = **12/51 = 23,5%** trên cùng một người thật, cùng phòng, chỉ đổi chỗ đứng và góc.
-(Tiếp ở §25 với số nền trên hai bộ mới.)
+Giữ đúng dải làm việc của KẾ HOẠCH §3 (0,25–0,42 m, tức cạnh mặt **113–191 px**): còn 46 khung,
+12 khung rớt đều nằm trong dải, **BPCER@0,90 = 12/46 = 26,1%**; năm khung ngoài dải (86–111 px
+và 197 px) đều được chấm ≥ 0,97. (Tiếp ở §25 với số nền trên hai bộ mới.)
 `d_016` là bàn tay che mồm (bảng che ở KẾ HOẠCH §3 nói che mồm vô hại — trên camera thật
 thì không). Các khung còn lại rớt khi người rời khỏi giữa khung: đúng cơ chế §22, nhánh wide
 đọc căn phòng. Đây là bộ thước cho arm một-backbone sắp tới, và là bằng chứng trên miền

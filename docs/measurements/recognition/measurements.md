@@ -290,7 +290,9 @@ lật. Bỏ khung không có hộp hoặc mặt dưới 90 px: còn **50** khung
 | 0,70 | 28/49 (57,1%) | 0 |
 
 Seed 0,60 bỏ **3 khung trong 10** của chính người đã đăng ký; cửa sổ mà người lạ LFW chưa lọt
-mà người thật còn nhận nhiều nhất là **0,40–0,45**. Con số này là FP32 trên PC, một người, 600
+mà người thật còn nhận nhiều nhất là **0,40–0,45**. Giữ đúng dải làm việc 113–191 px của KẾ
+HOẠCH §3 thì còn 45 khung: 0,60 nhận **30/45 (66,7%)**, 0,45 nhận 37/45 (82,2%), 0,40 nhận
+39/45 (86,7%); bốn khung ngoài dải (94–112 px, 197 px) đều được nhận ở 0,60. Con số này là FP32 trên PC, một người, 600
 người lạ; INT8 trên board và nhiều nhân viên mới là E8-T12 thật.
 
 Sáu khung thấp nhất, nhìn tận ảnh:
