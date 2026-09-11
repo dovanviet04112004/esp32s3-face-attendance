@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import argparse
 import io
+import itertools
 import json
 import tarfile
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -129,8 +131,12 @@ LCC_SPLITS = {"train": "training", "val": "development", "test": "evaluation"}
 LCC_LIVE_DIR = "real"
 SYNTH_LIVE_DIR = "BonaFide"
 SYNTH_ATTACK_DIR = "PAs"
-# Per source, spaced evenly through the folder: 2 000 resolves APCER to 0.05%.
-SYNTH_CAP = 2000
+# Per channel, spaced evenly through the folder: 2 000 resolves APCER to 0.05%.
+SYNTH_TEST_CAP = 2000
+# Per channel again, from what test did not take (KEHOACH 1.2).
+SYNTH_TRAIN_CAP = 10000
+DETECT_BATCH = 64
+DECODE_THREADS = 8
 
 
 def lcc_images(root: Path, split: str = "test") -> Iterator[RawImage]:
@@ -144,18 +150,29 @@ def lcc_images(root: Path, split: str = "test") -> Iterator[RawImage]:
             yield RawImage(path.name, path.read_bytes(), is_spoof, LCC_SPLITS[split])
 
 
+def spaced(count: int, cap: int) -> list[int]:
+    return np.linspace(0, count - 1, num=min(cap, count), dtype=int).tolist()
+
+
 def synthaspoof_images(root: Path, split: str = "test") -> Iterator[RawImage]:
-    """BonaFide and each PAs channel as its own source, capped per source."""
+    """Test keeps each channel as its own source; train pools the images test left.
+
+    Channels stay separate in test because APCER per capture device is the
+    question; training only needs the live/spoof label.
+    """
     base = Path(root) / "SynthASpoof"
     folders = [base / SYNTH_LIVE_DIR] + sorted(p for p in (base / SYNTH_ATTACK_DIR).iterdir() if p.is_dir())
     for folder in folders:
         paths = sorted(folder.glob("*.png"))
-        picks = np.linspace(0, len(paths) - 1, num=min(SYNTH_CAP, len(paths)), dtype=int)
-        source = folder.name.lower()
+        test_picks = spaced(len(paths), SYNTH_TEST_CAP)
+        if split == "test":
+            chosen, source = test_picks, f"test/{folder.name.lower()}"
+        else:
+            rest = sorted(set(range(len(paths))) - set(test_picks))
+            chosen, source = [rest[i] for i in spaced(len(rest), SYNTH_TRAIN_CAP)], "train"
         is_spoof = folder.name != SYNTH_LIVE_DIR
-        for index in picks:
-            path = paths[int(index)]
-            yield RawImage(path.name, path.read_bytes(), is_spoof, source)
+        for index in chosen:
+            yield RawImage(paths[index].name, paths[index].read_bytes(), is_spoof, source)
 
 
 SETS = {
@@ -268,29 +285,33 @@ def main(argv: list[str] | None = None) -> int:
     writers: dict[str, ShardWriter] = {}
     kept: dict[str, int] = {}
     missed = 0
-    try:
-        for raw in SETS[args.set](root, args.split):
-            box = best_face(model, priors, raw.payload, device)
-            if box is None:
-                missed += 1
-                continue
-            if raw.source not in writers:
-                writers[raw.source] = ShardWriter(args.out / raw.source).__enter__()
-            members, wide_scale, face_in_wide = crops_of(raw.payload, box)
-            members["json"] = json.dumps(
-                {
-                    "name": raw.name,
-                    "label": int(raw.is_spoof),
-                    "split": raw.source,
-                    "wide_scale": round(wide_scale, 4),
-                    "face_in_wide": face_in_wide,
-                }
-            ).encode()
-            writers[raw.source].add(members)
-            kept[raw.source] = kept.get(raw.source, 0) + 1
-    finally:
-        for writer in writers.values():
-            writer.__exit__(None, None, None)
+    images = SETS[args.set](root, args.split)
+    # Decoding is the slow half, so a pool decodes a batch while the GPU sees it whole.
+    with ThreadPoolExecutor(max_workers=DECODE_THREADS) as pool:
+        try:
+            while chunk := list(itertools.islice(images, DETECT_BATCH)):
+                prepared = list(pool.map(lambda raw: detector_input(raw.payload), chunk))
+                boxes = best_faces(model, priors, prepared, device)
+                found = [(raw, box) for raw, box in zip(chunk, boxes, strict=True) if box is not None]
+                missed += len(chunk) - len(found)
+                cropped = list(pool.map(lambda pair: crops_of(pair[0].payload, pair[1]), found))
+                for (raw, _), (members, wide_scale, face_in_wide) in zip(found, cropped, strict=True):
+                    if raw.source not in writers:
+                        writers[raw.source] = ShardWriter(args.out / raw.source).__enter__()
+                    members["json"] = json.dumps(
+                        {
+                            "name": raw.name,
+                            "label": int(raw.is_spoof),
+                            "split": raw.source,
+                            "wide_scale": round(wide_scale, 4),
+                            "face_in_wide": face_in_wide,
+                        }
+                    ).encode()
+                    writers[raw.source].add(members)
+                    kept[raw.source] = kept.get(raw.source, 0) + 1
+        finally:
+            for writer in writers.values():
+                writer.__exit__(None, None, None)
 
     total = sum(kept.values())
     found = total / max(total + missed, 1)
