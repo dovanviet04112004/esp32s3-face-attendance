@@ -614,6 +614,7 @@ và cái giá của nó nằm ở `docs/adr/0002-bo-knowledge-distillation.md`.
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
 | **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén lại JPEG chất lượng 30–95, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược, phơi sáng. Mỗi nhóm một cổng `p=0,5`; dải lấy từ `measurements/antispoof` §3 và §9 |
 | **Anti-spoof: augment tỉ lệ crop** | Rút ngẫu nhiên tỉ lệ wide rồi cắt lại từ record, **rút cùng một phân bố cho cả hai lớp**, qua một cổng xác suất. Bắt buộc, xem mục dưới |
+| **Anti-spoof: augment hoán nền** | Phần ngữ cảnh xa trong view wide lấy từ **một mẫu khác, bất kể nhãn**; giữ mặt và vành quanh mặt 1,5×, mép hoà mềm. Cổng `p = 0,5`. Bắt buộc, xem mục dưới |
 
 #### Công thức lấy mẫu của detect phải khớp kích thước đầu vào
 
@@ -1013,6 +1014,43 @@ hai lớp là bắt buộc, nếu không thì "bị che" trở thành đường 
 Nghiệm thu phép augment này bằng **APCER**, không chỉ BPCER. Nó nới điều kiện chấp nhận nên
 rủi ro cố hữu là cho tấn công lọt; một bản vá kéo BPCER xuống mà đẩy APCER lên là bản vá
 hỏng.
+
+#### Nhánh wide đọc căn phòng thay cho khuôn mặt, nên nền phải hoán đổi giữa các mẫu
+
+CelebA-Spoof có một lệch pha ở tầng **cảnh**: mẫu thật phần lớn là ảnh sự kiện của người
+nổi tiếng — phông studio, banner, bokeh — còn mẫu tấn công là người cầm ảnh in hay điện
+thoại **trong phòng thường**: trần ô, cửa, tường, tay. Nhánh wide vì thế học một đường tắt:
+*phòng thường có cạnh thẳng ⇒ tấn công*. Kiosk đứng trong đúng một căn phòng thường.
+
+Ba phép đo độc lập trên bộ 111 khung chốt nhân quả (`measurements/antispoof` §22):
+
+| Phép | `live_vua` | `live_rat_xa` | `live_kho` |
+|---|---|---|---|
+| Điểm gốc | 0,20 | 0,35 | 0,97 |
+| View wide thay bằng chính crop tight | **0,98** | **0,83** | 0,90 |
+| Nền wide làm mờ, giữ mặt | **0,78** | **0,97** | 0,96 |
+| Mặt của nhóm này **trên nền của `live_kho`** | **0,80** | **0,95** | — |
+| Mặt của `live_kho` **trên nền của `live_vua`** | — | — | **0,22** |
+
+Đổi nền là đổi kết luận theo cả hai chiều; mặt thì model tin là thật. Quét tỉ lệ wide
+1,0×–2,7× không có mốc nào cứu được cả bộ, và mờ nền lúc suy luận chỉ kéo ACER 0,34 → 0,28,
+nên đây không phải việc của điểm vận hành hay của tiền xử lý — nó là việc của **tập train**.
+
+**Chốt — augment hoán nền, có cổng, rút bất kể nhãn.** Với mỗi mẫu, phần view wide **ngoài
+vành 1,5× quanh mặt** thay bằng view wide của một mẫu khác gần đó trong luồng, rút bất kể
+nhãn, qua cổng `p = 0,5`. Ba ràng buộc, mỗi cái có lý do đo được:
+
+- **Rút bất kể nhãn**, vì mục đích là để nền hết tương quan với nhãn; rút cùng nhãn là giữ
+  nguyên đường tắt.
+- **Giữ vành 1,5×**, vì mép tấm ảnh in hay viền điện thoại — tín hiệu *chính đáng* của nhánh
+  wide — nằm ngay quanh mặt, còn căn phòng nằm ngoài. Nhánh tight không đụng tới.
+- **Mép hoà mềm** (Gauss, 12% cạnh mặt), vì một hình vuông cắt sắc quanh mặt chính là dấu
+  hiệu "ảnh cắt dán" mà model đọc thành tấn công: nền phẳng có mép sắc đã hạ cả `live_kho`
+  0,97 → 0,006 trong phép đo ở trên.
+
+Nghiệm thu bằng **cả BPCER lẫn APCER** trên bộ 111 khung, cùng lệnh §20 của
+`measurements/antispoof`: phép này nới điều kiện nền cho mặt thật, nên rủi ro cố hữu là cho
+tấn công lọt theo — và nhánh tight phải là thứ giữ APCER ở 0.
 
 ### Lớp 3 — Nén cấu trúc
 

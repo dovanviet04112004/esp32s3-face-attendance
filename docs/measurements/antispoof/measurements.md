@@ -1304,3 +1304,81 @@ trong đúng 23 epoch đó là bằng chứng rõ nhất.
 Hai đường tiếp, chưa chọn: kéo dài lịch train quá 60 epoch trên đúng cấu hình này (~2,5 giờ
 mỗi 23 epoch, rẻ, và số liệu đang ủng hộ), hoặc đi theo kết luận của ADR 0002 là **thu dữ
 liệu bằng chính OV5640** (E3-T8) vì khoảng cách đo được nằm ở miền dữ liệu.
+
+---
+
+## 22. Vì sao `live_vua` rớt: nhánh wide phân loại căn phòng — đo 11/09
+
+Từ §21: `live_vua` 347 px rớt 0/12 trong khi `live_kho` 316 px qua 12/12, tức không phải
+khoảng cách. Chấm từng khung với các view bị cắt bỏ, model epoch 59, CPU:
+
+| Nhóm | full (tight+wide) | **tight+tight** | wide+wide | tight+xám |
+|---|---|---|---|---|
+| `live_vua` | 0,20 | **0,98** | **0,01** | 0,15 |
+| `live_rat_xa` | 0,36 | **0,83** | **0,04** | 0,12 |
+| `live_xa` | 0,72 | 0,53 | 0,33 | 0,05 |
+| `live_kho` | 0,94 | 0,90 | 0,84 | 0,03 |
+| `live_gan` | 0,99 | 1,00 | 0,99 | 0,64 |
+| `attack_anh` | 0,25 | 0,35 | **0,77** | 0,02 |
+| `attack_xa` | 0,14 | 0,17 | **0,65** | 0,03 |
+
+Hai điều đọc ra ngay. Với mặt thật, **view wide là thứ kéo điểm xuống**: `live_vua` nhìn
+mặt không thì 0,98, nhìn nền không thì 0,01. Với tấn công thì ngược lại, **view tight mới
+mang tín hiệu**: `attack_xa` nhìn mặt không vẫn bị chặn (0,17), nhìn nền không thì lọt
+(0,65). Nghĩa là nhánh tight làm đúng việc; nhánh wide đang phán theo nền.
+
+### 22.1 Nhân quả: đổi nền là đổi kết luận
+
+Cùng khung 006 của mỗi nhóm, giữ nguyên view tight, chỉ đổi phần nền của view wide:
+
+| Thao tác trên nền wide | `live_vua` | `live_rat_xa` | `live_kho` |
+|---|---|---|---|
+| Nguyên bản | 0,211 | 0,354 | 0,972 |
+| Làm mờ Gauss r24, giữ vành 1,3× | **0,784** | **0,973** | 0,958 |
+| Phẳng màu tường, mép sắc | 0,004 | 0,025 | **0,006** |
+| Phẳng màu gỗ, mép sắc | 0,009 | 0,005 | 0,037 |
+| Mặt nhóm này ghép lên nền `live_kho` | **0,803** | **0,953** | — |
+| Mặt `live_kho` ghép lên nền `live_vua` | — | — | **0,221** |
+| Mặt `live_xa` ghép lên nền `live_vua` | 0,252 | | |
+
+Nền của `live_vua` và `live_rat_xa` là **cánh cửa gỗ nan dọc màu nâu đậm, viền thẳng**;
+nền của `live_kho` và `live_xa` chủ yếu là tường trắng. Nền phẳng có mép cắt sắc hạ cả
+`live_kho` xuống 0,006: một hình vuông sắc quanh mặt chính là dấu "ảnh cắt dán".
+
+### 22.2 Không sửa được ở suy luận
+
+Quét tỉ lệ wide trên cả bộ, ngưỡng 0,90:
+
+| wide | BPCER | APCER | ACER | `live_kho` | `live_vua` | `live_rat_xa` | `live_xa` |
+|---|---|---|---|---|---|---|---|
+| 1,0× | 0,5658 | 0,0000 | 0,2829 | 6/12 | 12/12 | 2/20 | 1/20 |
+| 1,4× | 0,3553 | 0,0571 | 0,2062 | 0/12 | 12/12 | 20/20 | 5/20 |
+| 1,8× | 0,7500 | 0,0286 | 0,3893 | 4/12 | 0/12 | 1/20 | 2/20 |
+| 2,2× | 0,6711 | 0,0000 | 0,3355 | 12/12 | 0/12 | 0/20 | 1/20 |
+| 2,7× | 0,6842 | 0,0000 | 0,3421 | 11/12 | 0/12 | 0/20 | 1/20 |
+
+Không mốc nào giữ được cả năm nhóm mặt thật; 1,4× cứu `live_vua` và `live_rat_xa` nhưng
+giết `live_kho` và cho tấn công lọt. Mờ nền lúc suy luận trên cả bộ (giữ vành 1,0–1,6×, r12–24)
+chỉ kéo ACER từ 0,3421 xuống 0,2763–0,3026, `live_vua` vẫn 0–3/12. Nhánh wide **giòn**, không
+có tiền xử lý nào ổn định được nó.
+
+### 22.3 Model học điều đó từ đâu
+
+Mở 20 view wide đầu của shard train: mẫu tấn công là người **cầm ảnh in hay điện thoại trong
+phòng thường** — trần ô, cửa, tường, tay; mẫu thật là **ảnh sự kiện của người nổi tiếng** —
+phông studio, banner tài trợ, bokeh. Thống kê nền ngoài hộp mặt trên 1.950 mẫu đầu không
+tách bằng độ sáng hay mật độ cạnh (thật 12,7 / tấn công 14,0), nên đường tắt nằm ở **kiểu
+cảnh**, không ở một con số đơn lẻ. Kiosk đứng trong đúng một căn phòng thường.
+
+Hai ghi chú về chính bộ `phone_eval`: mỗi thư mục là **một clip** (kích thước file đồng
+đều, tên tuần tự), nên 12 khung là một điều kiện chụp chứ không phải 12 mặt độc lập; và
+khung là video dọc nhồi vào 1280×720 với **hai dải đen**, `fitted_box` kéo dải đen vào crop
+— kiosk thật không có dải đen này (§3 đã ghi ở mục "tiền kiểm hình học").
+
+### 22.4 Sửa
+
+Augment **hoán nền** trong tập train: phần view wide ngoài vành 1,5× quanh mặt thay bằng
+view wide của một mẫu khác trong luồng, rút bất kể nhãn, mép hoà Gauss 12% cạnh mặt, cổng
+`p = 0,5`. Lý do từng ràng buộc ở KẾ HOẠCH §3 lớp 2. Nhánh đối chứng: run `20260911-1411`
+(không hoán nền, cùng checkpoint gốc epoch 59, cùng lịch 60 → 90) — hai run khác đúng một
+biến. Nghiệm thu bằng lệnh §20, cả BPCER lẫn APCER.
