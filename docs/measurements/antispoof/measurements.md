@@ -1272,16 +1272,28 @@ thay được gì** — và cũng chưa có gì để thay: `firmware/models/ant
 `contracts/models.lock.json` không có dòng antispoof, còn `1740` thì §20 đã ghi là không nạp
 được vào code hiện tại (PReLU, 80 px, `MEAN` đã bỏ).
 
-**Nhóm nào hỏng** — tất cả nằm ở mặt thật ở xa, ở ngưỡng 0,90:
+**Nhóm nào hỏng** — ở ngưỡng 0,90, kèm cỡ mặt đo bằng chính detector:
 
-| Nhóm | n | epoch 37 | **epoch 59** |
-|---|---|---|---|
-| `live_gan` | 12 | 12/12 | **12/12** |
-| `live_kho` | 12 | 0/12 | **11/12** |
-| `live_vua` | 12 | 0/12 | **0/12** |
-| `live_rat_xa` | 20 | 0/20 | **0/20** |
-| `live_xa` | 20 | 1/20 | **1/20** |
-| ba nhóm tấn công | 35 | 34/35 chặn | **35/35 chặn** |
+| Nhóm | n | cạnh mặt (px) | epoch 37 | **epoch 59** |
+|---|---|---|---|---|
+| `live_gan` | 12 | 686–700 | 12/12 | **12/12** |
+| `live_vua` | 12 | **347–350** | 0/12 | **0/12** |
+| `live_kho` | 12 | 316–319 | 0/12 | **11/12** |
+| `live_xa` | 20 | 202–234 | 1/20 | **1/20** |
+| `live_rat_xa` | 20 | 162–164 | 0/20 | **0/20** |
+| ba nhóm tấn công | 35 | 117–2026 | 34/35 chặn | **35/35 chặn** |
+
+**Không khung nào nằm ngoài miền phục vụ, và cỡ mặt không giải thích được kiểu hỏng.** Cạnh
+nhỏ nhất trong cả bộ là 117 px, trên cả cổng recog 113 px lẫn cổng spoof 81 px của §3, nên
+`--min-face-px 113` không rơi khung nào và ACER ở trên không phải chấm nhầm vào những khung
+kiosk vốn loại ở bước `FACE_SMALL`. Quan trọng hơn: `live_vua` **347 px rớt sạch 0/12** trong
+khi `live_kho` 316 px qua 12/12 và `live_xa` 218 px qua 17/20 ở ngưỡng 0,50 — **nhỏ hơn mà
+lại qua**. Giới hạn phân giải thì phải đơn điệu theo cỡ; cái này không đơn điệu, nên nguyên
+nhân nằm ở điều kiện chụp của từng nhóm chứ không ở khoảng cách.
+
+Công thức `side ≈ 47,7/d` của §3 dựng cho OV5640 ở HVGA nên **không quy được px của bộ này
+ra mét**: `phone_eval` chụp bằng điện thoại, khác độ phân giải và góc nhìn. Quy được là px
+tuyệt đối, và px tuyệt đối thì đủ ở mọi nhóm.
 
 **Nhưng hướng đi đúng, chỉ là chưa tới.** 23 epoch cuối kéo EER trên miền thiết bị từ
 **0,4523 xuống 0,1712** và AUC từ 0,6289 lên 0,8917, trong khi val gần như đứng yên
