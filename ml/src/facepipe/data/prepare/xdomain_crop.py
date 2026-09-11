@@ -139,40 +139,55 @@ DETECT_BATCH = 64
 DECODE_THREADS = 8
 
 
-def lcc_images(root: Path, split: str = "test") -> Iterator[RawImage]:
-    """One LCC-FASD split as one source, labelled by its real/spoof folder."""
+def lcc_paths(root: Path, split: str) -> list[Path]:
+    """Every image of one LCC-FASD split, real folder first."""
     folder = Path(root) / "LCC_FASD" / f"LCC_FASD_{LCC_SPLITS[split]}"
     if not folder.is_dir():
         raise FileNotFoundError(f"{folder}: no LCC-FASD split {split!r}")
-    for label_dir in sorted(p for p in folder.iterdir() if p.is_dir()):
-        is_spoof = label_dir.name != LCC_LIVE_DIR
-        for path in sorted(label_dir.glob("*.png")):
-            yield RawImage(path.name, path.read_bytes(), is_spoof, LCC_SPLITS[split])
+    return [
+        path
+        for label_dir in sorted(p for p in folder.iterdir() if p.is_dir())
+        for path in sorted(label_dir.glob("*.png"))
+    ]
+
+
+def lcc_images(root: Path, split: str = "test") -> Iterator[RawImage]:
+    """One LCC-FASD split as one source, labelled by its real/spoof folder."""
+    for path in lcc_paths(root, split):
+        is_spoof = path.parent.name != LCC_LIVE_DIR
+        yield RawImage(path.name, path.read_bytes(), is_spoof, LCC_SPLITS[split])
 
 
 def spaced(count: int, cap: int) -> list[int]:
     return np.linspace(0, count - 1, num=min(cap, count), dtype=int).tolist()
 
 
-def synthaspoof_images(root: Path, split: str = "test") -> Iterator[RawImage]:
-    """Test keeps each channel as its own source; train pools the images test left.
+def synthaspoof_paths(root: Path, split: str) -> list[tuple[Path, str]]:
+    """The images one SynthASpoof split takes, each with the source it lands in.
 
-    Channels stay separate in test because APCER per capture device is the
-    question; training only needs the live/spoof label.
+    Test samples 2 000 per channel evenly and keeps the channel as its source;
+    train takes up to 10 000 of the rest per channel, pooled into one source.
     """
     base = Path(root) / "SynthASpoof"
-    folders = [base / SYNTH_LIVE_DIR] + sorted(p for p in (base / SYNTH_ATTACK_DIR).iterdir() if p.is_dir())
+    folders = [base / SYNTH_LIVE_DIR]
+    folders += sorted(p for p in (base / SYNTH_ATTACK_DIR).iterdir() if p.is_dir())
+    chosen: list[tuple[Path, str]] = []
     for folder in folders:
         paths = sorted(folder.glob("*.png"))
         test_picks = spaced(len(paths), SYNTH_TEST_CAP)
         if split == "test":
-            chosen, source = test_picks, f"test/{folder.name.lower()}"
+            chosen += [(paths[i], f"test/{folder.name.lower()}") for i in test_picks]
         else:
             rest = sorted(set(range(len(paths))) - set(test_picks))
-            chosen, source = [rest[i] for i in spaced(len(rest), SYNTH_TRAIN_CAP)], "train"
-        is_spoof = folder.name != SYNTH_LIVE_DIR
-        for index in chosen:
-            yield RawImage(paths[index].name, paths[index].read_bytes(), is_spoof, source)
+            chosen += [(paths[rest[i]], "train") for i in spaced(len(rest), SYNTH_TRAIN_CAP)]
+    return chosen
+
+
+def synthaspoof_images(root: Path, split: str = "test") -> Iterator[RawImage]:
+    """BonaFide against every PAs channel, split as synthaspoof_paths decides."""
+    for path, source in synthaspoof_paths(root, split):
+        is_spoof = path.parent.name != SYNTH_LIVE_DIR
+        yield RawImage(path.name, path.read_bytes(), is_spoof, source)
 
 
 SETS = {
