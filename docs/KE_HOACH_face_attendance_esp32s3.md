@@ -27,7 +27,7 @@
 | Nhánh | Model | Link code / weight | Thông số | License |
 |---|---|---|---|---|
 | **Detect** | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750** đo ở **độ phân giải gốc**, không phải ở 160×120 của dự án này (§3 lớp 2); ra box **+ 5 landmark** | **MIT** |
-| **Anti-spoof** | **MiniFASNetV2-SE ×2** — mỗi tỉ lệ crop một backbone | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — kiến trúc ở `src/model_lib/MiniFASNet.py` | **0.53M params** (2 × 0.26M + head), 0.088 GFLOPs @80×80 | Research-only ⚠️ |
+| **Anti-spoof** | **MiniFASNetV2-SE, một backbone** trên crop mặt 1,0× | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — kiến trúc ở `src/model_lib/MiniFASNet.py` | 🔬 **≈0.26M params** (một backbone + head), ≈0.044 GFLOPs @81×81 | Research-only ⚠️ |
 | **Recognition** | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | **1.20M params** (đo trên bản trong repo), 4.58MB FP32 → **~1.2MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
 
 **Hai ràng buộc thiết kế quyết định bộ 3 này:**
@@ -36,22 +36,26 @@
 > landmark trên `val` gốc là đo trên nhãn không tồn tại. Box thì `val` vẫn đủ, AP vẫn đo bình thường.
 
 - Detect **bắt buộc phải ra 5 landmark**, nếu không thì không align được mặt trước khi vào MobileFaceNet, accuracy nhận diện rớt mạnh. YuNet ra sẵn 5 điểm.
-- Anti-spoof là **hai backbone riêng**, một cho crop 1.0× và một cho 2.7×, ghép
-  embedding rồi mới phân lớp — đúng cách bản tham chiếu minivision làm (họ ship hai
-  checkpoint rồi ensemble). Dùng chung một backbone cho cả hai tỉ lệ thì rẻ hơn 0,1M tham
-  số nhưng bắt cùng bộ trọng số vừa đọc kết cấu da ở crop sát vừa đọc mép giấy ở crop rộng
-  — hai loại đặc trưng không liên quan gì nhau. Giá phải trả: anti-spoof suy luận **hai
-  lượt** mỗi khuôn mặt. Chấp nhận được vì nó chỉ chạy khi detect thấy mặt, không chạy mỗi
-  frame.
+- Anti-spoof là **một backbone trên crop mặt 1,0×**. Bản tham chiếu minivision dùng hai
+  backbone (1,0× và 2,7×) rồi ghép, và kế hoạch đã đi theo cho tới 11/09. Đo trên 111 khung
+  camera (`measurements/antispoof` §22) thì nhánh 2,7× **phân loại căn phòng thay cho khuôn
+  mặt**: CelebA-Spoof để mặt thật trong ảnh sự kiện studio và mặt giả trong phòng thường,
+  nên nhánh ngữ cảnh học đúng cái đó và phủ quyết mặt thật đứng trước cửa gỗ — 0,98 khi
+  chỉ nhìn mặt, 0,20 khi thấy cả nền, và ghép mặt sang nền khác là đổi kết luận theo cả
+  hai chiều. Bỏ nhánh wide thì model chỉ còn đọc được kết cấu da và moiré, đúng thứ định
+  nghĩa bài toán, và suy luận còn **một lượt** mỗi mặt. Giá phải trả là mất cách bắt mép
+  giấy hay viền màn hình nằm ngoài mặt: một phép đo cũ cho thấy bịt nhánh wide đẩy điểm
+  một tập ảnh thẻ từ 0,0035 lên 0,3195 (vẫn dưới ngưỡng), nên **APCER là điều kiện nghiệm
+  thu bắt buộc** của nhánh này, ngang hàng BPCER.
 
 **Ngân sách `models_0` — đếm trên tham số thật, không phải ước lượng:**
 
 | Nhánh | Params | ≈ INT8 |
 |---|---|---|
 | Detect (YuNet) | 75.631 | 76 KB |
-| Anti-spoof (MiniFASNetV2-SE ×2) | 525.362 | 525 KB |
+| Anti-spoof (MiniFASNetV2-SE, một backbone) | 🔬 ≈ 263.000 | ≈ 263 KB |
 | Recognition (MobileFaceNet, embedding 512-D) | 1.199.488 | 1.199 KB |
-| **Tổng** | **1.800.481** | **~1,80 MB trong 2 MB** (§6.1) |
+| **Tổng** | 🔬 ≈ 1.538.000 | **~1,54 MB trong 2 MB** (§6.1) |
 
 Còn ~200 KB, chưa trừ overhead flatbuffer của TFLite (5–15% mỗi file). 🔬 Số cuối chỉ có
 sau khi export ở E4-T11/E5-T11/E6-T10; nếu vượt thì hạ `input_hw` của detect trước, vì nó
@@ -89,7 +93,7 @@ Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài li
 |---|---|---|---|
 | CelebA-Spoof | HF `Ar4ikov/celebA_spoof` (**parquet**, không phải layout gốc) | 67.1 GB | train MiniFASNet |
 | NUAA Imposter | HF `akahana/anti-spoofing-nuaaaa` | 376 MB | test khác miền — ảnh in |
-| UniqueData live + replay | HF `UniqueData/anti-spoofing_Real` + `_replay` | 542 MB + 702 MB | test khác miền — màn hình phát lại, có cặp live đối chứng |
+| UniqueData live + replay | HF `UniqueData/anti-spoofing_Real` + `_replay` | 542 MB + 702 MB, nhưng chỉ **30 người thật** (selfie + video) và **30 clip phát lại** — vài trăm khung, không đủ để train | test khác miền — màn hình phát lại, có cặp live đối chứng |
 | AxonData face-anti-spoofing | HF `AxonData/face-anti-spoofing-dataset` | 4.94 GB | test khác miền — video, có **mặt nạ latex 3D** |
 | Tập spoof tự thu | tự thu bằng OV5640 | ≥500 ảnh mỗi loại | test sát thực tế nhất |
 
@@ -613,8 +617,7 @@ và cái giá của nó nằm ở `docs/adr/0002-bo-knowledge-distillation.md`.
 | **Task loss của từng nhánh** | Detect: cls + box + landmark trên prior dương. Anti-spoof: BCE hai lớp trên cặp crop. Recognition: ArcFace trên nhãn danh tính |
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
 | **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén lại JPEG chất lượng 30–95, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược, phơi sáng. Mỗi nhóm một cổng `p=0,5`; dải lấy từ `measurements/antispoof` §3 và §9 |
-| **Anti-spoof: augment tỉ lệ crop** | Rút ngẫu nhiên tỉ lệ wide rồi cắt lại từ record, **rút cùng một phân bố cho cả hai lớp**, qua một cổng xác suất. Bắt buộc, xem mục dưới |
-| **Anti-spoof: augment hoán nền** | Phần view wide ngoài vành **1,2×** quanh mặt lấy từ một mẫu khác, **nhãn của mẫu cho mượn rút 50/50**; mép hoà mềm. Cổng `p = 0,7`. Bắt buộc, xem mục dưới |
+| **Anti-spoof: augment cắt crop** | Với `p = 0,15` cắt crop mặt về một tỉ lệ trong `[0.7, 1.0]` rồi dựng lại, **rút cùng một phân bố cho cả hai lớp**. Bắt buộc, xem mục dưới |
 
 #### Công thức lấy mẫu của detect phải khớp kích thước đầu vào
 
@@ -731,87 +734,36 @@ dữ liệu train tương ứng là chốt bằng may rủi: điểm tốt lên 
 silicone vừa đắt vừa dễ bị nhìn thấy — rủi ro còn lại này nhận là nhận, không vá bằng
 augmentation bịa ra.
 
-#### Tỉ lệ crop wide bị hình học khung hình chặn trên
+#### Một view: crop mặt 1,0×, ô vuông trượt cho lọt khung
 
-Anti-spoof đọc hai khung của cùng một mặt: crop **tight** 1,0× và crop **wide**
-2,7×. Hai loại dấu hiệu nằm ở hai chỗ khác nhau — kết cấu da và moiré nằm trong mặt, còn
-mép giấy, viền màn hình, bàn tay đang cầm nằm **ngoài** mặt. Bịt nhánh wide lại, điểm của
-một tập ảnh thẻ giơ trước camera nhảy từ 0,0035 lên 0,3195: phần lớn khả năng bắt tấn công
-đi qua ngữ cảnh.
+Anti-spoof đọc **một** crop: ô vuông cạnh bằng cạnh dài của hộp mặt, đặt quanh tâm mặt,
+**trượt** vào trong khung khi tâm mặt sát mép, và **thu lại** khi hộp mặt lớn hơn cạnh ngắn
+khung hình. Không kéo giãn, không đệm. Ba lý do đo được (`measurements/antispoof` §12.5):
+cắt theo biên rồi kéo về vuông làm méo mặt (ở cự ly gần hộp mất 74% diện tích, tỉ lệ cạnh
+1,78); đệm phản chiếu là bịa nội dung, và model đọc nội dung bịa quanh mặt thành dấu tấn
+công; trượt thay cho ép đặt giữa đưa 8 khung mặt lớn lệch tâm từ 2/8 lên 4/8 qua ngưỡng
+0,90 và khung tệ nhất từ 0,0004 lên 0,9860. Mặt chiếm trên 87% cạnh ngắn khung thì crop bị
+thu — đó là biên của nhánh và là việc của cảm biến khoảng cách (§2.3D), không phải của model.
 
-Nhưng ngữ cảnh 2,7× **không phải lúc nào cũng tồn tại**. Tỉ lệ lớn nhất còn dựng được là
-`min(cao, rộng) / cạnh_mặt`, và nó tụt khi người lại gần:
-
-| Khung 1280×720 | Cạnh mặt | Tỉ lệ lớn nhất còn lọt |
-|---|---|---|
-| Ảnh thẻ giơ trước camera | 235 px | 3,07× |
-| Quay đầu, nghiêng, ngược sáng | 319 px | 2,26× |
-| Ngồi cách một cánh tay | 349 px | 2,06× |
-| Ngồi sát camera | 696 px | 1,03× |
-
-**Ở khoảng cách người dùng thật, 2,7× đã không dựng được.** Chỉ nhóm tấn công dựng được,
-vì ảnh thẻ bị giơ xa hơn mặt người — nghĩa là "ảnh wide còn nguyên" tương quan với nhãn
-tấn công, đúng loại đường tắt phải chặn.
-
-Áp vào kiosk: camera đưa khung **480×320** (§2.1) và nhận diện cần mặt **≥ 113 px** (mục
-trên). Ô vuông 2,7× lọt khung khi `2,7 × cạnh ≤ min(480, 320)`, tức cạnh **≤ 118 px**.
-Cộng hai điều kiện lại, dải mà **cả** recognition đủ pixel **và** 2,7× còn dựng được là
-mặt **113–118 px** — tỉ lệ khoảng cách **1,05 lần**, tức đúng một cự ly chứ không phải
-một dải.
-
-Trên toàn dải làm việc 0,25–0,42 m, tỉ lệ wide thật sự đạt được chạy từ **1,68×** (mặt
-191 px ở 0,25 m) tới **2,7×** (mặt 118 px ở 0,40 m). Nên 2,7× là **trần chứ không phải
-giá trị vận hành**: phần lớn thời gian model nhìn ít ngữ cảnh hơn thế. Đây chính là lý do
-cách dựng phải là ô vuông lớn nhất còn lọt khung, không phải hằng số 2,7×.
-
-**Chốt: tỉ lệ wide là biến, không phải hằng số. Crop wide = ô vuông lớn nhất còn lọt khung,
-trần 2,7×, và ô vuông đó được TRƯỢT cho chứa trọn hộp mặt chứ không ép đặt giữa mặt.**
-Thiếu chỗ thì thu tỉ lệ lại, không kéo giãn và không đệm.
-
-Bốn cách dựng, đo trên 48 khung camera thật với **cùng một bộ trọng số**, chỉ đổi ảnh wide:
-
-| Cách dựng | Mặt gần | Cách một cánh tay | Cách biệt thật/tấn công |
-|---|---|---|---|
-| Cắt theo biên rồi kéo về vuông | 0,2538 | 1,0000 | 15,6× |
-| Đệm phản chiếu cho đủ 2,7× | 0,0823 | 0,9999 | — |
-| Lấy luôn crop tight làm wide | 0,9953 | **0,0002** | — |
-| **Ô vuông lớn nhất còn lọt khung** | **0,9957** | **0,9999** | **108,3×** |
-
-Cắt theo biên đẻ ra khung chữ nhật rồi `resize` vuông, tức là kéo méo mặt: ở cự ly gần
-hộp mất 74% diện tích và tỉ lệ cạnh thành 1,78. Đệm phản chiếu thì nội dung là bịa, và
-model đọc nội dung bịa quanh mặt đúng như nó được dạy — thành dấu hiệu tấn công. Lấy tight
-làm wide thì mất ngữ cảnh cả ở cự ly còn thừa chỗ, nên mặt thật ở khoảng cách bình thường
-bị chấm 0,0002. Chỉ ô vuông lọt khung vừa không méo, vừa không bịa, vừa giữ đúng lượng
-ngữ cảnh **còn tồn tại thật**.
-
-**Trượt, không đặt giữa.** Ô vuông lớn nhất *đặt giữa tâm mặt* mà lọt khung có cạnh
-`2·min(cx, cy, W−cx, H−cy)`; ô vuông lớn nhất *lọt khung* có cạnh `min(W, H)`. Hai số này
-lệch nhau đúng bằng phần lệch tâm của khuôn mặt, và khi mặt nằm lệch xuống dưới hoặc sát
-một mép thì số đầu tụt xuống **dưới cả cạnh hộp mặt** — crop cắt cụt cằm và miệng. Vì ô
-vuông sau đó vẫn phải trượt cho lọt khung, ràng buộc đặt giữa **không mua được gì**: nó bị
-áp rồi bị bỏ ngay ở bước sau.
-
-Đo trên 8 khung điện thoại có mặt lớn và lệch tâm, cùng bộ trọng số, chỉ đổi cách dựng
-(`docs/measurements/antispoof/measurements.md` §12.5):
-
-| | Số khung qua ngưỡng 0,90 | Điểm thấp nhất |
-|---|---|---|
-| Ép đặt giữa | 2 / 8 | **0,0004** |
-| **Trượt cho lọt** | **4 / 8** | **0,1499** |
-
-Khung tệ nhất đi từ 0,0004 lên 0,9860. Bốn khung còn dưới ngưỡng đều là mặt chiếm trên 87%
-cạnh ngắn khung hình — ở đó ngữ cảnh **không tồn tại trong ảnh**, và không cách dựng nào
-lấy được thứ máy ảnh chưa chụp. Đó là biên của nhánh, và nó là việc của cảm biến khoảng
-cách chứ không phải của model.
+**Vì sao không còn view ngữ cảnh 2,7×.** Nó được thiết kế để bắt mép giấy và viền màn hình
+nằm ngoài mặt, và trong CelebA-Spoof nó bắt được — vì trong bộ đó mặt thật là ảnh sự kiện
+studio còn mặt giả là người cầm ảnh trong phòng thường, nên "phòng thường" tự nó đã là nhãn.
+Đo trên 111 khung camera thật (`measurements/antispoof` §22): mặt thật đứng trước cửa gỗ
+được chấm 0,20 khi thấy cả nền và **0,98 khi chỉ nhìn mặt**; ghép mặt đó lên nền tường
+trắng thì lên 0,80, ghép mặt đang qua 0,97 lên nền cửa gỗ thì rớt 0,22. Quét tỉ lệ ngữ cảnh
+1,0–2,7× không có mốc nào giữ được cả năm nhóm mặt thật; hoán nền lúc train cũng không kéo
+được cơ chế đó đi. Nhánh ngữ cảnh vì thế là nguồn của đường tắt, không phải của tín hiệu,
+và kiosk đứng trong đúng loại phòng mà nó gọi là tấn công.
 
 Ba ràng buộc đi kèm:
 
-- **Prep và inference gọi chung một hàm.** Lệch hai bên là nguồn của mọi phép đo sai:
-  model đọc ở kiosk một phân bố hình học khác hẳn phân bố nó được train.
-- **Tỉ lệ thật đạt được ghi vào từng record**, vì không có nó thì không kiểm được phân bố
-  tỉ lệ hình học mà một run đã thấy.
-- **Đổi cách dựng thì shard hết giá trị.** Mọi run train trước đó đọc một phân bố hình học
-  khác; sinh lại shard rồi train lại là bắt buộc, không phải tuỳ chọn.
+- **Prep, eval và firmware dựng crop bằng một luật.** `fitted_box` bên `ml/` và `fitted()`
+  trong `ai_engine/src/antispoof/preproc.cpp` là cùng một phép; lệch hai bên là model đọc ở
+  kiosk một hình học khác thứ nó được train.
+- **Tỉ lệ thật đạt được ghi vào từng record** (`wide_scale` trong shard, giờ đọc là tỉ lệ ô
+  vuông còn dựng được so với hộp mặt), vì không có nó thì không kiểm được vùng cắt cụt mà
+  mục dưới nói tới.
+- **Đổi cách dựng thì shard hết giá trị**: sinh lại shard rồi train lại là bắt buộc.
 
 #### Hộp mặt phải đến từ detector, không từ chú thích của dataset
 
@@ -860,76 +812,36 @@ augment nào tịnh tiến nó.
 cổng xác suất.** Biên độ lấy theo mức detector thật sự rung, không lấy tròn: ±10% cạnh hộp
 phủ được cả phần lệch hệ thống giữa hai quy ước hộp ở mục trên.
 
-#### Tỉ lệ crop tương quan với nhãn, nên phải rút ngẫu nhiên cho cả hai lớp
+#### Tỉ lệ crop tương quan với nhãn, nên phải cắt ngẫu nhiên cho cả hai lớp
 
-Trong CelebA-Spoof, ảnh tấn công bị giơ xa hơn mặt người, nên tỉ lệ wide dựng được **tương
-quan thẳng với nhãn**. Đếm trên 3.000 bản ghi train dựng bằng ô vuông trượt:
+Trong CelebA-Spoof, ảnh tấn công bị giơ xa hơn mặt người, nên tỉ lệ ô vuông còn dựng được
+**tương quan thẳng với nhãn**. Đếm trên 3.000 bản ghi train:
 
-| Tỉ lệ wide | Số mẫu | Mặt thật | Tấn công |
+| Tỉ lệ ô vuông so với hộp mặt | Số mẫu | Mặt thật | Tấn công |
 |---|---|---|---|
 | **< 1,0** — crop ngắn hơn hộp mặt | 309 | **0** | **309** |
 | ≥ 1,0 | 2.691 | 835 | 1.856 |
 
 Dưới 1,0 là **dự đoán hoàn hảo**: không một mặt thật nào rơi vào đó. Model học đúng thứ
-được dạy — *cắt cụt ⇒ tấn công* — và đường tắt ấy nổ mỗi lần người dùng lại gần, nổ theo
-bậc độ lớn chứ không trôi quanh ngưỡng. Không ngưỡng nào chữa được.
+được dạy — *cắt cụt ⇒ tấn công* — và đường tắt ấy nổ mỗi lần người dùng lại gần, vì khi mặt
+lớn hơn cạnh ngắn khung thì crop mặt cũng bị thu đúng như thế.
 
-Chỗ này **không tự hết khi sửa cách dựng crop**. Ô vuông trượt đã lấy lại phần lớn khuôn
-mặt bị cắt, nhưng phần còn lại dưới 1,0 chính là những ảnh mà hộp mặt lớn hơn cạnh ngắn
-khung hình — tức ảnh chụp lại màn hình choán hết khung. Sửa hình học làm tương quan **đậm
-hơn**, không nhạt đi.
+Phép augment này chỉ **thu nhỏ** crop có sẵn — không có cách nào bịa thêm phần khung hình
+mà ảnh gốc không chứa. Nó vì thế **một chiều**, và một phép một chiều **bắt buộc phải có
+cổng xác suất**: không có cổng thì mọi mẫu đều bị đẩy về một phía và tập train thôi không
+còn chứa điều kiện lúc suy luận (đo ở `measurements/antispoof` §15).
 
-Phép augment này chỉ **thu nhỏ** ngữ cảnh có sẵn — không có cách nào bịa thêm phần khung
-hình mà ảnh gốc không chứa. Nó vì thế **một chiều**, và một phép một chiều **bắt buộc phải
-có cổng xác suất**: không có cổng thì mọi mẫu đều bị đẩy về một phía và tập train thôi
-không còn chứa điều kiện lúc suy luận. Augment quang học và augment nén đều có cổng `p=0,5`
-nên mẫu sạch vẫn nằm trong tập train; tỉ lệ crop là phép duy nhất từng áp cho **100%** mẫu,
-và đó là lỗi.
-
-Đo vị trí của điều kiện kiosk bên trong phân bố train, trên 3.000 bản ghi:
-
-| Chính sách | Phân vị của \|tight − wide\| lúc suy luận | Phân vị của tỉ lệ |
-|---|---|---|
-| Rút đều `[0.7, 2.7]`, không cổng | **74,3** | **80,6** |
-| `p=0,15` trong `[0.7, 1.2]` | 57,8 | 57,8 |
-
-Không cổng thì kiosk chạy ở vùng đuôi trên của những gì model từng thấy: chỉ khoảng một
-phần tư số mẫu train có đủ ngữ cảnh như một khung kiosk điển hình.
-
-**Chốt: mỗi mẫu có xác suất `p = 0,15` được rút một tỉ lệ trong `[0.7, 1.2]`; 85% còn lại
-giữ nguyên tỉ lệ lưu trong record.** Rút từ cùng một phân bố cho cả live lẫn spoof — đó là
-toàn bộ mục đích, vì khi hai lớp cùng gặp vùng cắt cụt thì tỉ lệ hết mang thông tin về nhãn.
-
-Đặt tham số theo hai đại lượng phải cùng đạt, đo trên 6.000 bản ghi train thật:
-
-| Chính sách | \|tight − wide\| | `P(spoof \| tỉ lệ < 1,0)` | mẫu live < 1,0 |
-|---|---|---|---|
-| Không augment | 57,7 | 0,969 | 4 |
-| Rút đều `[0.7, 2.7]` | 42,0 | 0,678 | 323 |
-| **`p=0,15` trong `[0.7, 1.2]`** | **50,9** | **0,719** | **188** |
-
-Cột trái đo lượng thông tin phân biệt nhánh wide với nhánh tight; tụt cột này là bỏ đói
-nhánh wide và mất luôn khả năng đọc bối cảnh. Cột giữa đo đường tắt, cơ sở `P(spoof)` là
-0,659. Dải rộng đứt được đường tắt nhưng trả giá 27% ngữ cảnh; dải hẹp áp cho thiểu số giữ
-được 88% ngữ cảnh mà vẫn kéo đường tắt về sát cơ sở.
-
-Cận dưới đặt tại 0,7 vì đó là vùng mà mặt thật ở cự ly gần thật sự rơi vào: 🔬 tám khung
-điện thoại đo được 0,70–0,98, và đuôi dưới của chính tập train chạm 0,74. Trên 1,0 chỉ
-augment nhánh wide; **dưới 1,0 phải cắt cả hai nhánh cùng một lượng**, vì thiếu chỗ thì
-`fitted_box` thu cả tight lẫn wide bằng nhau — cắt mỗi wide là dạy một hình học không tồn tại.
-
-Trần vẫn là tỉ lệ mà từng ảnh dựng được. Ràng buộc "không kéo giãn, không đệm" ở mục trên
-không được phép lách qua đường augment.
+**Chốt: mỗi mẫu có xác suất `p = 0,15` được cắt crop mặt về một tỉ lệ trong `[0.7, 1.0]`;
+85% còn lại giữ nguyên.** Rút từ cùng một phân bố cho cả live lẫn spoof — đó là toàn bộ mục
+đích, vì khi hai lớp cùng gặp vùng cắt cụt thì tỉ lệ hết mang thông tin về nhãn. Cận dưới
+0,7 là vùng mặt thật ở cự ly gần thật sự rơi vào: 🔬 tám khung điện thoại đo được 0,70–0,98,
+và đuôi dưới của chính tập train chạm 0,74.
 
 Ba điều kiện để phép augment này có nghĩa:
 
-- **Chỉ áp lúc train.** Val và test giữ nguyên tỉ lệ thật, nếu không thì bảng đối chứng
-  đo trên một phân bố hình học không có ở kiosk.
-- **Phân bố tỉ lệ lúc train phải bám phân bố lúc suy luận.** Kiosk dựng nhánh wide ở 2,7
-  cố định, nên trung vị tỉ lệ khi train mà tụt xa 1,9 là đã đo một thứ khác với thứ sẽ chạy.
-  Đổi tham số augment thì đo lại hai cột trên trước khi tốn giờ GPU.
-- **Ghi tỉ lệ đã rút vào batch**, không phải tỉ lệ gốc của record — phép augment rút lại
-  tỉ lệ, nên tỉ lệ gốc không còn mô tả đúng khung mà model thấy.
+- **Chỉ áp lúc train.** Val và test giữ nguyên tỉ lệ thật.
+- **Ghi tỉ lệ đã rút vào batch**, không phải tỉ lệ gốc của record.
+- Ràng buộc "không kéo giãn, không đệm" ở mục trên không được phép lách qua đường augment.
 
 #### Nhánh tight phải học phơi sáng, nếu không nó đọc độ sáng thay cho kết cấu
 
@@ -959,8 +871,7 @@ CelebA-Spoof không dạy được điều này: nó quay live và spoof trong c
 cùng cách đặt sáng, nên mức sáng gần như không đổi trong tập.
 
 **Chốt: augment phơi sáng là bắt buộc cho nhánh anti-spoof**, cùng hạng với augment nén.
-Rút một hệ số phơi sáng và một hệ số tương phản, áp **một lần cho cả hai view** vì hai crop
-là một cảnh qua một ống kính. Dải phải trùm được vùng đã đo ra lỗi, tức xuống tới 0,55 phơi
+Rút một hệ số phơi sáng và một hệ số tương phản, áp cho crop mặt. Dải phải trùm được vùng đã đo ra lỗi, tức xuống tới 0,55 phơi
 sáng và 0,50 tương phản, đồng thời phủ cả phía dư sáng.
 
 Cận trên phải **đối xứng trong log** với cận dưới: `1 / 0,55 = 1,82` nên gain dừng ở **1,80**,
@@ -1006,7 +917,7 @@ phán quyết sống/giả. Vùng ảnh thật là khung đã trừ viền lette
 đen hai bên, và `fitted_box` không biết phân biệt đen với tường nên sẽ kéo viền vào crop.
 
 **Chốt 2 — augment che, có cổng, rút cùng phân bố cho cả hai lớp.** Một khối chữ nhật xám
-đặt ngẫu nhiên trong hộp mặt, áp **một lần cho cả hai view** vì hai crop là một cảnh. Cổng
+đặt ngẫu nhiên trong hộp mặt. Cổng
 xác suất là bắt buộc, cùng lý do đã ghi ở mục tỉ lệ crop: phép này một chiều, không cổng
 thì mọi mẫu đều bị che và tập train rời khỏi điều kiện vận hành. Rút cùng phân bố cho cả
 hai lớp là bắt buộc, nếu không thì "bị che" trở thành đường tắt dự đoán nhãn.
@@ -1014,47 +925,6 @@ hai lớp là bắt buộc, nếu không thì "bị che" trở thành đường 
 Nghiệm thu phép augment này bằng **APCER**, không chỉ BPCER. Nó nới điều kiện chấp nhận nên
 rủi ro cố hữu là cho tấn công lọt; một bản vá kéo BPCER xuống mà đẩy APCER lên là bản vá
 hỏng.
-
-#### Nhánh wide đọc căn phòng thay cho khuôn mặt, nên nền phải hoán đổi giữa các mẫu
-
-CelebA-Spoof có một lệch pha ở tầng **cảnh**: mẫu thật phần lớn là ảnh sự kiện của người
-nổi tiếng — phông studio, banner, bokeh — còn mẫu tấn công là người cầm ảnh in hay điện
-thoại **trong phòng thường**: trần ô, cửa, tường, tay. Nhánh wide vì thế học một đường tắt:
-*phòng thường có cạnh thẳng ⇒ tấn công*. Kiosk đứng trong đúng một căn phòng thường.
-
-Ba phép đo độc lập trên bộ 111 khung chốt nhân quả (`measurements/antispoof` §22):
-
-| Phép | `live_vua` | `live_rat_xa` | `live_kho` |
-|---|---|---|---|
-| Điểm gốc | 0,20 | 0,35 | 0,97 |
-| View wide thay bằng chính crop tight | **0,98** | **0,83** | 0,90 |
-| Nền wide làm mờ, giữ mặt | **0,78** | **0,97** | 0,96 |
-| Mặt của nhóm này **trên nền của `live_kho`** | **0,80** | **0,95** | — |
-| Mặt của `live_kho` **trên nền của `live_vua`** | — | — | **0,22** |
-
-Đổi nền là đổi kết luận theo cả hai chiều; mặt thì model tin là thật. Quét tỉ lệ wide
-1,0×–2,7× không có mốc nào cứu được cả bộ, và mờ nền lúc suy luận chỉ kéo ACER 0,34 → 0,28,
-nên đây không phải việc của điểm vận hành hay của tiền xử lý — nó là việc của **tập train**.
-
-**Chốt — augment hoán nền, có cổng, nhãn cho mượn cân bằng.** Với mỗi mẫu, phần view wide
-**ngoài vành 1,2× quanh mặt** thay bằng view wide của một mẫu khác gần đó trong luồng, qua
-cổng `p = 0,7`. Ba ràng buộc, mỗi cái có lý do đo được:
-
-- **Nhãn của mẫu cho mượn rút 50/50**, vì mục đích là để nền hết tương quan với nhãn. Rút
-  theo tỉ lệ tự nhiên của luồng (≈ 2 tấn công : 1 thật) thì nền vẫn còn mang một phần nhãn.
-- **Giữ đúng 1,2×**, không rộng hơn. Vành 1,5× nghe hợp lý — "mép ảnh in nằm ngay quanh
-  mặt" — nhưng đo trên tập train thì view wide chỉ đạt **2,02× (thật) / 1,77× (tấn công)**
-  ở trung vị, nên vành 1,5× phủ 73–84% cạnh view và phần hoán đổi chỉ còn **28–45% diện tích**; nan cửa sát đầu người vẫn nằm trong vùng giữ, và nhánh fine-tune với 1,5× sau
-  9 epoch **không dịch chuyển cơ chế** (`measurements/antispoof` §22.5). Ở 1,2× phần hoán
-  đổi lên 54–65%. Mép ảnh in nằm trong 1,2× thì vẫn còn; nằm ngoài thì nhánh tight —
-  thứ đang chặn 35/35 đòn tấn công một mình — phải gánh.
-- **Mép hoà mềm** (Gauss, 12% cạnh mặt), vì một hình vuông cắt sắc quanh mặt chính là dấu
-  hiệu "ảnh cắt dán" mà model đọc thành tấn công: nền phẳng có mép sắc đã hạ cả `live_kho`
-  0,97 → 0,006 trong phép đo ở trên.
-
-Nghiệm thu bằng **cả BPCER lẫn APCER** trên bộ 111 khung, cùng lệnh §20 của
-`measurements/antispoof`: phép này nới điều kiện nền cho mặt thật, nên rủi ro cố hữu là cho
-tấn công lọt theo — và nhánh tight phải là thứ giữ APCER ở 0.
 
 ### Lớp 3 — Nén cấu trúc
 
@@ -1166,7 +1036,7 @@ Tail nhỏ hơn head nhiều — cỡ vài chục KB mỗi model (metadata theo 
 | Arena | Ở đâu | Dùng cho | Kích thước |
 |---|---|---|---|
 | `arena_fast` | **PSRAM**, align 16 B; `AI_ARENA_FAST_INTERNAL` đổi sang SRAM nội | **detect một mình**, `MicroAllocator` riêng | `tail_det + head_det` = **189.628 B** đo thật |
-| `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` = **823.148 B** đo thật |
+| `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` = **823.148 B** đo thật với spoof hai backbone; 🔬 đo lại với một backbone |
 
 Vẫn là hai arena dù cùng ở PSRAM: `arena_big` gộp được vì spoof và recog chạy nối nhau **sau khi** detect xong, nên `head` của chúng chồng lên nhau an toàn. detect chạy mỗi frame, không chia `head` với ai.
 
@@ -2110,7 +1980,7 @@ protected:
 ```cpp
 class IDetector { virtual size_t detect(const ai_engine_frame_t&, float min_score, ai_engine_face_t* out, size_t cap) = 0; };
 class ILiveness { virtual bool available() const = 0;
-                  virtual esp_err_t score(const ai_engine_frame_t&, const float box[4], float* live, float* wide_scale) = 0; };
+                  virtual esp_err_t score(const ai_engine_frame_t&, const float box[4], float* live) = 0; };
 class IEmbedder { virtual esp_err_t embed(const ai_engine_frame_t&, const float landmarks[10], int8_t* out, size_t cap, float* scale) = 0; };
 class IMatcher  { virtual esp_err_t best(const int8_t* emb, float scale, uint32_t* id, float* score) = 0; };
 
@@ -2668,7 +2538,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 
 | Core | Giao cho | Vì sao |
 |---|---|---|
-| **Core 1 (APP_CPU)** | **CHỈ `ai_task`** | Một lần `Invoke()` chiếm CPU liên tục **209 ms (detect), 470 ms (spoof), 1.074 ms (recog)** — đo ở `docs/measurements/latency.md`. Để chung với LVGL thì UI đứng hình hơn một giây, để chung Wi-Fi thì rớt gói. Độc chiếm 1 core là cách duy nhất giữ UI mượt trong lúc AI chạy |
+| **Core 1 (APP_CPU)** | **CHỈ `ai_task`** | Một lần `Invoke()` chiếm CPU liên tục **209 ms (detect), 470 ms (spoof), 1.074 ms (recog)** — đo ở `docs/measurements/latency.md`; 🔬 số spoof đo với hai backbone, đo lại khi bản một backbone (§1.1) lên board. Để chung với LVGL thì UI đứng hình hơn một giây, để chung Wi-Fi thì rớt gói. Độc chiếm 1 core là cách duy nhất giữ UI mượt trong lúc AI chạy |
 | **Core 0 (PRO_CPU)** | Wi-Fi/lwIP (hệ thống) + camera + LVGL + touch + audio + ToF + MQTT + sync | Toàn bộ là việc ngắn, phần lớn do DMA/ISR gánh; CPU chỉ điều phối |
 
 **`ai_task` phải tự nuôi watchdog, và nhường một tick.** `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1` bật và timeout 5 giây, mà detect chạy **mỗi frame** nên core 1 bận liên tục và IDLE1 không bao giờ tới lượt. Đã thấy watchdog bắn thật khi chạy invoke liên tiếp trong `bench_ai`. Hai việc khác nhau, phải làm cả hai:
