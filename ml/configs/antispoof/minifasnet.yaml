@@ -34,8 +34,8 @@ data:
   prefetch_factor: 4
   params:
     shards: data/interim/antispoof/celeba_spoof_crops
-    # LCC-FASD training split five times over, about 9% of the pool (KEHOACH 1.2).
-    train_split: [train, lcc_training, lcc_training, lcc_training, lcc_training, lcc_training]
+    # LCC-FASD training five times over plus the SynthASpoof train pool, ~17% (KEHOACH 1.2).
+    train_split: [train, lcc_training, lcc_training, lcc_training, lcc_training, lcc_training, synth_training]
     # The mirror's train and valid are one pool; test is not (measurements 1).
     val_split: "test:0:10"
     test_split: "test:10:"
