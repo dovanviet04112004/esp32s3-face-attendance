@@ -1750,3 +1750,44 @@ không có ngưỡng nào dùng được, model mới tách kém hơn nhưng dù
 
 Xuyên suốt bảng là **hiệu chỉnh**: ngưỡng 0,883 thay cho 0,997 sát trần của §12.4. APCER nhích
 lên ở kênh in và Samsung chính là giá của ngưỡng thấp hơn, đổi lại BPCER giảm ở mọi miền.
+
+---
+
+## 31. Arm một backbone chạy hết 90 epoch — kết quả chốt, 12/09
+
+Run `20260912-0107_fd87e15_5728fa` (nối tiếp `20260911-2001`), xong 03:39, 90 epoch, seed 42,
+pool 501.026 bản ghi ba bộ, val 22.944 (CelebA `test:0:10` + LCC `development`).
+`best.pth` là **epoch 79** (val EER 0,1121), `last.pth` là **epoch 89** (0,1160).
+Mỗi model chấm ở ngưỡng val của chính nó.
+
+| Bộ | `1112` hai nhánh | **best, epoch 79** | last, epoch 89 |
+|---|---|---|---|
+| Ngưỡng vận hành | 0,9969 | **0,9380** | 0,9302 |
+| CelebA `test:10:` ACER | 0,1382 | **0,0968** | 0,1050 |
+| LCC evaluation HTER / EER | 0,3223 / 0,2771 | 0,1737 / 0,1690 | **0,1754 / 0,1624** |
+| SynthASpoof bona fide BPCER | 0,3435 | **0,1090** | 0,2315 |
+| SynthASpoof in APCER | 0,0100 | 0,0110 | **0,0060** |
+| SynthASpoof Samsung APCER | 0,0190 | 0,0345 | **0,0040** |
+| SynthASpoof iPad APCER | 0,2805 | 0,2660 | **0,0695** |
+| SynthASpoof webcam APCER | 0,1180 | 0,0435 | **0,0085** |
+| NUAA HTER / EER | 0,2522 / **0,0327** | 0,2758 / 0,1315 | 0,2551 / 0,1374 |
+| **`phone_eval` EER / AUC** | 0,1712 / 0,8917 | **0,0615 / 0,9838** | 0,1647 / 0,9320 |
+| 73 khung board qua @0,90 | 35/47 | **43/47** | — |
+
+**Kết quả chính: `phone_eval` EER giảm 2,8 lần, từ 0,1712 xuống 0,0615, AUC 0,8917 lên 0,9838.**
+Đây là bộ chưa bao giờ nằm trong pool train của bất kỳ arm nào, nên nó là bằng chứng khái quát
+hoá chứ không phải nhớ bài. Kiến trúc một backbone cộng hai bộ dữ liệu mới đã trả lời được câu
+hỏi mở từ §22.
+
+**Chọn `best.pth`** theo luật KẾ HOẠCH §4.2 (quyết định bằng miền thiết bị): `phone_eval` EER
+0,0615 so với 0,1647 của `last.pth`. `last.pth` chặn tấn công SynthASpoof giỏi hơn hẳn (iPad
+0,0695 so với 0,2660) nhưng thua rõ ở miền camera, và miền camera mới là thứ kiosk gặp.
+
+**Hai điểm còn nợ:**
+
+- **NUAA vẫn kém**: EER 0,1315 so với 0,0327 của model cũ. Ảnh in của NUAA là kiểu tấn công mà
+  hai bộ mới không dạy, và nó là bộ khác miền duy nhất còn lại mà arm này thua.
+- **Chính sách ngưỡng chưa chốt, và nó đang là nút thắt.** Ngưỡng khớp trên val ra 0,9380, trong
+  khi `phone_eval` đạt EER ở 0,6204 và 73 khung board qua 43/47 ở 0,90 nhưng chỉ 21/47 ở 0,99.
+  Model đã đủ tốt; cái sai bây giờ nằm ở chỗ lấy ngưỡng từ val của CelebA + LCC thay vì từ chính
+  miền thiết bị. Đó là E8-T12.
