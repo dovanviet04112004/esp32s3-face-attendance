@@ -1,7 +1,7 @@
 """Live against spoof on the real labels, with the class ratio compensated.
 
-The weight is the inverse of the pool's two-to-one attack ratio and does one
-thing: keep the smaller class from being learned as noise (docs/DU_LIEU.md).
+The weight is the inverse of the pool's attack ratio and does one thing: keep
+the smaller class from being learned as noise (docs/DU_LIEU.md 4.2b).
 Which error costs more on a door is a separate question, set by the decision
 threshold at inference where it can be retuned without retraining.
 """
@@ -29,7 +29,8 @@ class SpoofBatch(NamedTuple):
 class SpoofTaskLoss(nn.Module):
     """Cross entropy over the two classes, live weighted by the class ratio."""
 
-    def __init__(self, live_weight: float = 1.97, label_smoothing: float = 0.0) -> None:
+    # 341 101 attacks over 160 010 live in the pool of KEHOACH 1.2.
+    def __init__(self, live_weight: float = 2.13, label_smoothing: float = 0.0) -> None:
         super().__init__()
         weight = torch.tensor([live_weight, 1.0], dtype=torch.float32)
         self.register_buffer("class_weight", weight)
