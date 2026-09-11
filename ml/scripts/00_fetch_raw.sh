@@ -2,8 +2,8 @@
 #
 # Fetch every dataset, then fill in each manifest from what is actually on disk.
 #
-# Three access kinds: auto pulls over plain HTTP, hf pulls a Hub mirror, manual
-# needs a human because the source sits behind a Drive link or a signed form.
+# Access kinds: auto pulls over plain HTTP, hf pulls a Hub mirror, gdrive and
+# kaggle pull one archive by file id or token, manual needs a human.
 #
 # Digests and counts come from the files, never from a person typing them.
 #
@@ -17,7 +17,8 @@ set -euo pipefail
 ML_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RAW="${ML_ROOT}/data/raw"
 
-# HF_TOKEN lifts the anonymous rate limit. .env is gitignored; .env.example is the template.
+# HF_TOKEN lifts the anonymous rate limit, KAGGLE_API_TOKEN gates the kaggle sets;
+# .env is gitignored and .env.example is its template.
 if [[ -f "${ML_ROOT}/.env" ]]; then
     set -a; . "${ML_ROOT}/.env"; set +a
 fi
@@ -235,18 +236,34 @@ fetch_hf() {
         --repo-type dataset --local-dir "${dest}"
 }
 
-# Archives that live only on Google Drive. The file id belongs to the manifest,
-# which is where every dataset source is recorded (section 4.9).
-fetch_gdrive() {
-    local ds="$1" dest drive_id archive unpacked
-    dest="$(payload_dir "${ds}")"
-    read -r drive_id archive unpacked < <(python3 -c "
+manifest_field() {
+    python3 -c "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))[sys.argv[2]])" \
+        "$1/manifest.yaml" "$2"
+}
+
+# Unpacking only while expects/ is absent: a 12 GB rewrite over drvfs starves training.
+unpack_archive() {
+    local ds="$1" dest="$2" archive="$3"
+    if python3 -c "
 import sys, yaml
 from pathlib import Path
 m = yaml.safe_load(open(sys.argv[1]))
 dest = Path(sys.argv[2])
-present = all((dest / e).exists() for e in m.get('expects') or [])
-print(m['drive_id'], m['archive'], int(present))" "${ds}/manifest.yaml" "${dest}")
+sys.exit(0 if all((dest / e).exists() for e in m.get('expects') or []) else 1)" \
+        "${ds}/manifest.yaml" "${dest}"; then
+        log "${archive} already unpacked"
+    else
+        unzip -q -o "${dest}/${archive}" -d "${dest}"
+    fi
+}
+
+# Archives that live only on Google Drive. The file id belongs to the manifest,
+# which is where every dataset source is recorded (section 4.9).
+fetch_gdrive() {
+    local ds="$1" dest drive_id archive
+    dest="$(payload_dir "${ds}")"
+    drive_id="$(manifest_field "${ds}" drive_id)"
+    archive="$(manifest_field "${ds}" archive)"
 
     if [[ -f "${dest}/${archive}" ]]; then
         log "${archive} already downloaded"
@@ -256,12 +273,39 @@ print(m['drive_id'], m['archive'], int(present))" "${ds}/manifest.yaml" "${dest}
             return 1
         }
     fi
-    # Unpacking only while expects/ is absent: a 12 GB rewrite over drvfs starves training.
-    if [[ "${unpacked}" == 1 ]]; then
-        log "${archive} already unpacked"
+    unpack_archive "${ds}" "${dest}" "${archive}"
+}
+
+# Kaggle answers a bearer token with a signed storage url that must be fetched
+# without that header, so the redirect is followed by hand.
+fetch_kaggle() {
+    local ds="$1" ref="$2" dest archive version api url
+    dest="$(payload_dir "${ds}")"
+    archive="$(manifest_field "${ds}" archive)"
+    version="$(manifest_field "${ds}" kaggle_version)"
+
+    if [[ -f "${dest}/${archive}" ]]; then
+        log "${archive} already downloaded"
     else
-        unzip -q -o "${dest}/${archive}" -d "${dest}"
+        [[ -n "${KAGGLE_API_TOKEN:-}" ]] || {
+            warn "KAGGLE_API_TOKEN is unset; put it in ml/.env (template in .env.example)"
+            return 1
+        }
+        api="https://www.kaggle.com/api/v1/datasets/download/${ref}?datasetVersionNumber=${version}"
+        url="$(curl -fsS -o /dev/null -w '%{redirect_url}' \
+            -H "Authorization: Bearer ${KAGGLE_API_TOKEN}" "${api}")"
+        [[ -n "${url}" ]] || {
+            warn "kaggle returned no download url for ${ref}; check the token"
+            return 1
+        }
+        log "${ref} -> ${dest}/${archive}"
+        curl -fL --retry 3 --retry-delay 5 -C - -o "${dest}/${archive}.part" "${url}" || {
+            warn "${archive} failed; rerun to resume"
+            return 1
+        }
+        mv "${dest}/${archive}.part" "${dest}/${archive}"
     fi
+    unpack_archive "${ds}" "${dest}" "${archive}"
 }
 
 manual_notice() {
@@ -281,7 +325,7 @@ DATASETS=(
     "antispoof/xdomain/unique_live:unique_live:hf:UniqueData/anti-spoofing_Real"
     "antispoof/xdomain/unique_replay:unique_replay:hf:UniqueData/anti-spoofing_replay"
     "antispoof/xdomain/axon_masks:axon_masks:hf:AxonData/face-anti-spoofing-dataset"
-    "antispoof/xdomain/lcc_fasd:lcc_fasd:manual"
+    "antispoof/xdomain/lcc_fasd:lcc_fasd:kaggle:faber24/lcc-fasd"
     "antispoof/xdomain/synthaspoof:synthaspoof:gdrive"
     "recognition/ms1mv3:ms1mv3:hf:gaunernst/ms1mv3-recordio"
     "recognition/glint360k:glint360k:hf:gaunernst/glint360k-wds-gz"
@@ -301,6 +345,7 @@ for entry in "${DATASETS[@]}"; do
             auto) "fetch_${name}" ;;
             hf)     fetch_hf "${dir}" "${repo}" ;;
             gdrive) fetch_gdrive "${dir}" ;;
+            kaggle) fetch_kaggle "${dir}" "${repo}" ;;
             manual) manual_notice "${dir}" "${name}" ;;
         esac
     fi
