@@ -1118,6 +1118,9 @@ sẽ âm thầm làm sai trọng số mất mát.
 `live_weight = 1,97` giữ nguyên. Nó vốn đã lệch ~5% so với 1,88 từ trước; sửa lúc này sẽ
 thêm một điều kiện thay đổi và làm bảng đối chứng với `0057` mất nghĩa (KẾ HOẠCH §4.2).
 
+> Quyết định này **hết hiệu lực từ §26** (11/09): pool không còn là CelebA-Spoof một mình nên
+> tỉ lệ mà trọng số nghịch đảo đã khác, và bảng đối chứng với `0057` vốn đã đứt ở trục dữ liệu.
+
 ### 17.4 Cổng crop-scale bắn đúng tỉ lệ, và mù nhãn
 
 Kiểm lại trên shard mới, 12.000 mẫu mỗi chế độ. Tỉ lệ bản ghi rơi vào `[0,7; 1,2]`:
@@ -1580,3 +1583,33 @@ thoại. iPad là kênh phát lại khó nhất (APCER 28%), gấp 15 lần Sams
 (`train_split` 7 spec, hash config `271c09`). Với arm đó, LCC evaluation và SynthASpoof test
 không còn hoàn toàn "khác miền": chúng là phần giữ lại của bộ đã train một phần, và bảng
 phải ghi rõ như vậy.
+
+---
+
+## 26. Tỉ lệ lớp của pool ba bộ, và `live_weight` — tính 11/09
+
+`SpoofTaskLoss` định nghĩa `live_weight` là **nghịch đảo tỉ lệ tấn công của pool**. Pool đổi
+(KẾ HOẠCH §1.2) nên phải tính lại. Nguồn phải là **shard**, không phải danh sách id: §17.3 đã
+chỉ ra ảnh detector không thấy mặt bị bỏ và điều đó lệch tỉ lệ.
+
+| Phần của pool | Bản ghi | live | spoof | Nguồn tỉ lệ |
+|---|---|---|---|---|
+| CelebA-Spoof `train` | 417.816 | 145.227 | 272.589 | 1,877 đo ở §17.3 |
+| LCC-FASD `training` ×5 | 41.410 | 6.102 | 35.308 | 1.223/7.076 của split, trừ 17 ảnh không thấy mặt |
+| SynthASpoof `train` | 41.800 | 10.000 | 31.800 | 10.000 `BonaFide` + 31.800 `PAs`, detect 100% |
+| **Cộng** | **501.026** | **161.329** | **339.697** | |
+
+Tổng khớp đúng con số `train=501026` mà trainer in ra. Tỉ lệ spoof/live = **2,106**, nên
+**`live_weight = 2,11`**.
+
+Ba giá trị dễ nhầm, ghi rõ để không ai lấy nhầm:
+
+| Giá trị | Nghĩa | Ở đâu |
+|---|---|---|
+| 1,97 | tỉ lệ **danh sách** của riêng CelebA-Spoof | `DU_LIEU` §3.2 |
+| 1,877 | tỉ lệ **shard** của riêng CelebA-Spoof train | §17.3 |
+| **2,11** | tỉ lệ **shard của cả pool** — cái hàm mất mát dùng | mục này |
+
+Pool mới đẩy tỉ lệ tấn công lên vì hai bộ thêm vào đều lệch mạnh về phía tấn công: LCC-FASD
+`training` chỉ **14,7%** ảnh thật, SynthASpoof `train` **23,9%**, so với 34,7% của CelebA-Spoof.
+Tỉ trọng live của pool tụt từ 34,7% xuống **32,2%**.

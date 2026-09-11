@@ -112,7 +112,10 @@ Mỗi mặt cắt hai lần, cùng tâm, resize về **128×128**:
 | `tight.jpg` | 1,0× | mặt sát viền — kết cấu da, moiré của màn hình |
 | `wide.jpg` | 2,7× | cả bối cảnh — mép giấy in, khung màn hình, bàn tay cầm ảnh |
 
-MiniFASNet cần cả hai: cắt sát thì vứt mất chính tín hiệu phân biệt mặt thật với ảnh chụp mặt.
+**Từ 11/09 model chỉ ăn `tight.jpg`.** Nhánh wide đã được chứng minh là phân loại **căn phòng**
+chứ không phải bối cảnh tấn công (`measurements/antispoof` §22), nên kiến trúc rút về một
+backbone trên crop mặt (KẾ HOẠCH §1.1). `wide.jpg` vẫn nằm trong shard vì phép augment tỉ lệ
+crop cắt ra từ nó, nhưng nó không vào model nữa.
 
 | Split | live | spoof | Tổng |
 |---|---|---|---|
@@ -123,8 +126,11 @@ MiniFASNet cần cả hai: cắt sát thì vứt mất chính tín hiệu phân 
 
 525.864 mặt, mỗi mặt **một record** mang cả hai tỉ lệ — không phải 1.051.728 file lẻ, vì ở
 tốc độ mở file của ổ dữ liệu thì riêng việc mở đã tốn ~93 phút mỗi epoch (KẾ HOẠCH §4.4.1).
-Tỉ lệ spoof/live ≈ 1,97 — bộ này lệch về phía tấn công, cần cân lại bằng sampler lúc train
-chứ không sửa ở tầng dữ liệu.
+Tỉ lệ spoof/live ≈ 1,97 **theo danh sách của mirror**; trên shard thật, sau khi bỏ ảnh
+detector không thấy mặt, split train đo được **1,877** (`measurements/antispoof` §17.3). Bộ này
+lệch về phía tấn công, cân lại bằng trọng số lớp trong hàm mất mát chứ không sửa ở tầng dữ
+liệu — trọng số ấy lấy theo tỉ lệ của **cả pool**, không phải của riêng bộ này
+(`measurements/antispoof` §26).
 
 Split lấy từ **tiền tố tên shard** (`train-`, `valid-`, `test-`), là cách duy nhất còn giữ
 được chia của upstream: mirror đã bỏ nhãn identity.
@@ -226,8 +232,10 @@ tra giao rỗng.
 > vì hai split kia đã rò thì phải giả định nó cũng có thể rò. Hệ quả: sau khi trộn `training`
 > vào pool, con số trên `evaluation` **không còn là số khác miền sạch** — báo cáo phải ghi
 > kèm cảnh báo này, và kết luận cuối dựa vào `phone_eval`, khung OV5640, NUAA, SynthASpoof.
-> Cùng hạng ngoại lệ với CelebA-Spoof ở §4.2 (KẾ HOẠCH §1.3). Sinh bằng `python -m facepipe.data.make_split --task antispoof --seed 42`
-với `--source data/raw/antispoof/xdomain`.
+> Cùng hạng ngoại lệ với CelebA-Spoof ở §4.2 (KẾ HOẠCH §1.3).
+
+Sinh bằng `python -m facepipe.data.make_split --task antispoof --seed 42` với
+`--source data/raw/antispoof/xdomain`.
 
 ### 4.3 `recognition/v1_identity_disjoint`
 
