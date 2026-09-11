@@ -1,4 +1,4 @@
-# MiniFASNetV2-SE, two backbones on one face, trained on live/spoof labels
+# MiniFASNetV2-SE, one backbone on the face crop, trained on live/spoof labels
 # (KEHOACH 1.1).
 
 run:
@@ -34,7 +34,8 @@ data:
   prefetch_factor: 4
   params:
     shards: data/interim/antispoof/celeba_spoof_crops
-    train_split: train
+    # LCC-FASD training split five times over, about 9% of the pool (KEHOACH 1.2).
+    train_split: [train, lcc_training, lcc_training, lcc_training, lcc_training, lcc_training]
     # The mirror's train and valid are one pool; test is not (measurements 1).
     val_split: "test:0:10"
     test_split: "test:10:"

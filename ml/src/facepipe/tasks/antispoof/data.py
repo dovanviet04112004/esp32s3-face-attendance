@@ -35,9 +35,10 @@ CROP_SCALE_PROBABILITY = 0.15
 # Spans both pools the branch meets, so neither end can cue the label (KEHOACH 1.3).
 QUALITY_RANGE = (30, 95)
 RECOMPRESS_PROBABILITY = 0.5
-# The OV5640 path the kiosk runs, drawn per sample (KEHOACH section 3, layer 2).
-PHOTON_RANGE = (60.0, 600.0)
-READ_SIGMA_RANGE = (0.0, 5.0)
+# Raw device frames at the gain ceiling measure sigma 3 (measurements 24.1).
+PHOTON_RANGE = (2000.0, 8000.0)
+READ_SIGMA_RANGE = (0.0, 3.0)
+# The rest of the OV5640 path, drawn per sample (KEHOACH section 3, layer 2).
 WHITE_BALANCE_RANGE = (0.86, 1.16)
 VIGNETTE_RANGE = (0.10, 0.55)
 MOTION_BLUR_PX = (3, 7)
