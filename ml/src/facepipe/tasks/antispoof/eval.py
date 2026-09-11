@@ -278,44 +278,55 @@ def crop_views(frame_rgb: np.ndarray, box: np.ndarray, size: int) -> tuple[np.nd
 @torch.no_grad()
 def score_frames(
     model: torch.nn.Module, detector, priors, root: Path, size: int, device: torch.device
-) -> list[tuple[str, str, float]]:
-    """One (folder, file, liveness) per frame under root; frames without a face score nan."""
+) -> list[tuple[str, str, float, float]]:
+    """One (folder, file, liveness, face side px) per frame; no face scores nan.
+
+    The side is what KEHOACH 3 turns into a distance, so a report can be read
+    on the range the branch serves instead of on every frame in the folder.
+    """
     from PIL import Image
 
     def as_batch(image: np.ndarray) -> torch.Tensor:
         return torch.from_numpy(image).permute(2, 0, 1).float().div_(255.0)[None].to(device)
 
     model.eval()
-    rows: list[tuple[str, str, float]] = []
+    rows: list[tuple[str, str, float, float]] = []
     for folder in sorted(p for p in root.iterdir() if p.is_dir()):
         for path in sorted(p for p in folder.iterdir() if p.suffix.lower() in FRAME_SUFFIXES):
             with Image.open(path) as handle:
                 frame = np.array(handle.convert("RGB"), dtype=np.uint8)
             box = largest_face(detector, priors, frame, device)
             if box is None:
-                rows.append((folder.name, path.name, float("nan")))
+                rows.append((folder.name, path.name, float("nan"), float("nan")))
                 continue
             tight, wide = crop_views(frame, box, size)
+            side = float(max(box[2] - box[0], box[3] - box[1]))
             rows.append(
                 (
                     folder.name,
                     path.name,
                     float(liveness_of(model((as_batch(tight), as_batch(wide))))[0]),
+                    side,
                 )
             )
     return rows
 
 
-def report_frames(rows: list[tuple[str, str, float]], thresholds: Iterable[float]) -> None:
+def report_frames(
+    rows: list[tuple[str, str, float, float]], thresholds: Iterable[float], min_face_px: float = 0.0
+) -> None:
     """Per-folder pass counts and the three rates at every threshold, the measurements.md layout."""
     thresholds = tuple(thresholds)
-    scored = [(folder, score) for folder, _file, score in rows if not np.isnan(score)]
+    kept = [row for row in rows if not np.isnan(row[2]) and row[3] >= min_face_px]
+    scored = [(folder, score) for folder, _file, score, _side in kept]
+    sides = {folder: [side for f, _n, _s, side in kept if f == folder] for folder, _s in scored}
     missed = len(rows) - len(scored)
     scores = np.array([s for _f, s in scored], dtype=np.float64)
     labels = np.array([frame_label(f) for f, _s in scored], dtype=np.int64)
-    print(f"frames {len(rows)}, scored {len(scored)}, no face in {missed}")
+    print(f"frames {len(rows)}, scored {len(scored)}, dropped {missed} "
+          f"(no face, or side under {min_face_px:.0f} px)")
     header = "  ".join(f"@{t:.2f}" for t in thresholds)
-    print(f"{'folder':14s} {'n':>3s}  {header}")
+    print(f"{'folder':14s} {'n':>3s}  {'side px':>13s}  {header}")
     for folder in sorted({f for f, _s in scored}):
         own = np.array([s for f, s in scored if f == folder])
         live = frame_label(folder) == LIVE
@@ -323,7 +334,10 @@ def report_frames(rows: list[tuple[str, str, float]], thresholds: Iterable[float
             f"{int((own >= t).sum()) if live else int((own < t).sum()):>3d}/{own.size:<2d}"
             for t in thresholds
         )
-        print(f"{folder:14s} {own.size:>3d}  {passes}   {'pass' if live else 'blocked'}")
+        span = sides[folder]
+        reach = f"{int(min(span)):>4d}-{int(max(span)):<4d}" if span else "    -    "
+        print(f"{folder:14s} {own.size:>3d}  {reach:>13s}  {passes}   "
+              f"{'pass' if live else 'blocked'}")
     print(f"{'threshold':14s} {'bpcer':>8s} {'apcer':>8s} {'ACER':>8s}")
     for threshold in thresholds:
         rates = error_rates(scores, labels, threshold)
@@ -354,6 +368,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--detector", type=Path, default=None, help="detection checkpoint, needed with --frames"
     )
+    parser.add_argument(
+        "--min-face-px",
+        type=float,
+        default=0.0,
+        help="drop frames whose face is narrower than this, the served range of KEHOACH 3",
+    )
     args = parser.parse_args(argv)
 
     device = torch.device(args.device)
@@ -366,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
         rows = score_frames(
             model, detector, priors, args.frames, int(cfg.model.input_hw[0]), device
         )
-        report_frames(rows, FRAME_THRESHOLDS)
+        report_frames(rows, FRAME_THRESHOLDS, args.min_face_px)
         return 0
     # The run's own splits, so a report cannot rest on a division it never saw.
     fit_split = args.fit_split or cfg.data.params["val_split"]
