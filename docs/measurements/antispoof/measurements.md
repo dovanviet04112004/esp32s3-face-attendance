@@ -1543,7 +1543,38 @@ Model `1112` (hai nhánh, mốc đang so), crop BOX, ngưỡng 0,90:
 | < 0,50 | **8** (16%): `b_002` 0,32 · `c_000` 0,03 · `d_005` 0,11 · `d_016` 0,04 · `d_019` 0,46 · `d_030` 0,02 · `d_033` 0,08 · `d_037` 0,06 |
 
 BPCER@0,90 = **12/51 = 23,5%** trên cùng một người thật, cùng phòng, chỉ đổi chỗ đứng và góc.
+(Tiếp ở §25 với số nền trên hai bộ mới.)
 `d_016` là bàn tay che mồm (bảng che ở KẾ HOẠCH §3 nói che mồm vô hại — trên camera thật
 thì không). Các khung còn lại rớt khi người rời khỏi giữa khung: đúng cơ chế §22, nhánh wide
 đọc căn phòng. Đây là bộ thước cho arm một-backbone sắp tới, và là bằng chứng trên miền
 thiết bị rằng con số ACER trên `phone_eval` không phải chuyện riêng của điện thoại.
+
+---
+
+## 25. Số nền của `1112` trên LCC-FASD và SynthASpoof — đo 11/09
+
+Hai bộ mới về (§1.2 KẾ HOẠCH), cắt bằng `xdomain_crop.py` theo hộp detector ở 160×120
+(LCC evaluation: 7.555/7.580 có mặt; SynthASpoof: 2.000 ảnh mỗi kênh, đủ mặt). Chấm bằng
+model hai nhánh `20260911-1112`, ngưỡng **0,996929** khớp trên `test:0:10` của CelebA-Spoof,
+tức đúng cách firmware sẽ dùng một ngưỡng cố định:
+
+| Bộ | n | live / attack | AUC | APCER | BPCER | HTER | EER |
+|---|---|---|---|---|---|---|---|
+| CelebA `test:10:` (nhà) | 39.072 | | 0,951 | 0,126 | 0,151 | 0,138 | 0,135 |
+| **LCC-FASD evaluation** | 7.555 | 314 / 7.241 | **0,780** | 0,055 | **0,589** | 0,322 | 0,277 |
+| SynthASpoof `bonafide` | 2.000 | 2.000 / 0 | | | **0,344** | | |
+| SynthASpoof `printattack` | 2.000 | 0 / 2.000 | | 0,010 | | | |
+| SynthASpoof `samsung_replayattack` | 2.000 | 0 / 2.000 | | 0,019 | | | |
+| SynthASpoof `ipad_replayattack` | 2.000 | 0 / 2.000 | | **0,281** | | | |
+| SynthASpoof `webcam_replayattack` | 2.000 | 0 / 2.000 | | 0,118 | | | |
+| NUAA | 5.110 | 3.362 / 1.748 | 0,992 | 0,004 | **0,500** | 0,252 | 0,033 |
+
+Cùng một hình ở cả ba bộ ngoài: ngưỡng khớp trên CelebA-Spoof **đuổi 34–59% người thật** đi
+mà gần như không cho tấn công lọt. NUAA có EER 3,3% nên tách được, chỉ lệch ngưỡng; LCC-FASD
+EER 27,7% là không tách được ở miền đó, đúng bộ có thật và giả cùng phòng chụp lại bằng điện
+thoại. iPad là kênh phát lại khó nhất (APCER 28%), gấp 15 lần Samsung.
+
+Đây là mốc để so arm một-backbone có LCC training và SynthASpoof train trong pool
+(`train_split` 7 spec, hash config `271c09`). Với arm đó, LCC evaluation và SynthASpoof test
+không còn hoàn toàn "khác miền": chúng là phần giữ lại của bộ đã train một phần, và bảng
+phải ghi rõ như vậy.
