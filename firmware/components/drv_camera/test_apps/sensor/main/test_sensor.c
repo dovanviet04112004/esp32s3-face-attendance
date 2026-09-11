@@ -1,5 +1,7 @@
 #include "app_config.h"
 #include "bsp_board.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "drv_camera.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -108,9 +110,72 @@ TEST_CASE("one frame reaches the host as jpeg", "[drv_camera][manual]")
     free(jpeg);
 }
 
+#define RAW_METER_FRAMES 40
+#define RAW_DUMP_FRAMES 60
+#define RAW_METER_BETWEEN 6
+#define RAW_CHUNK_BYTES 2048
+
+static void hex_out(const uint8_t *bytes, size_t len)
+{
+    static const char digits[] = "0123456789ABCDEF";
+    static char line[RAW_CHUNK_BYTES * 2];
+    for (size_t at = 0; at < len; at += RAW_CHUNK_BYTES) {
+        const size_t take = len - at < RAW_CHUNK_BYTES ? len - at : RAW_CHUNK_BYTES;
+        for (size_t i = 0; i < take; ++i) {
+            line[2 * i] = digits[bytes[at + i] >> 4];
+            line[2 * i + 1] = digits[bytes[at + i] & 0x0F];
+        }
+        fwrite(line, 1, take * 2, stdout);
+    }
+    fflush(stdout);
+}
+
+// Console writes drop bytes whenever the host lags, and the driver that makes
+// them block also takes the RX path the unity menu polls, so it goes in last.
+static void blocking_console(void)
+{
+    static bool installed;
+    if (installed) {
+        return;
+    }
+    usb_serial_jtag_driver_config_t console = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    TEST_ASSERT_EQUAL(ESP_OK, usb_serial_jtag_driver_install(&console));
+    usb_serial_jtag_vfs_use_driver();
+    installed = true;
+}
+
+TEST_CASE("metered frames reach the host as raw rgb565", "[drv_camera][manual]")
+{
+    blocking_console();
+    for (int i = 0; i < RAW_METER_FRAMES; ++i) {
+        camera_fb_t *frame = drv_camera_grab();
+        TEST_ASSERT_NOT_NULL(frame);
+        TEST_ASSERT_EQUAL(ESP_OK, drv_camera_expose(frame));
+        drv_camera_release(frame);
+    }
+    for (int i = 0; i < RAW_DUMP_FRAMES; ++i) {
+        for (int m = 0; m < RAW_METER_BETWEEN; ++m) {
+            camera_fb_t *metered = drv_camera_grab();
+            TEST_ASSERT_NOT_NULL(metered);
+            TEST_ASSERT_EQUAL(ESP_OK, drv_camera_expose(metered));
+            drv_camera_release(metered);
+        }
+        camera_fb_t *frame = drv_camera_grab();
+        TEST_ASSERT_NOT_NULL(frame);
+        int level, exposure, gain16;
+        drv_camera_exposure_state(&level, &exposure, &gain16);
+        printf("\n--RAW %ux%u level %d exposure %d gain16 %d--\n", (unsigned)frame->width,
+               (unsigned)frame->height, level, exposure, gain16);
+        hex_out(frame->buf, frame->len);
+        printf("\n--END--\n");
+        drv_camera_release(frame);
+    }
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
     unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
+    unity_run_menu();
 }
