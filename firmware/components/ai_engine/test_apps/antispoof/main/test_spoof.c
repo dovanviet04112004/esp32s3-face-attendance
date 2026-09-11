@@ -90,9 +90,6 @@ TEST_CASE("the crop reaches the graph rather than a zeroed tensor", "[ai_spoof]"
 #define FRAME_W 480
 #define FRAME_H 320
 #define CENTRED_FACE_PX 100.0f
-#define LARGE_FACE_PX 150.0f
-#define WIDE_CEILING 2.7f
-#define SCALE_TOLERANCE 0.01f
 
 static uint16_t *gradient_frame(void)
 {
@@ -114,25 +111,23 @@ static void centred_box(float face_px, float box[4])
     box[3] = box[1] + face_px;
 }
 
-TEST_CASE("crops cut from a frame score, and the wide square stops at the frame", "[ai_spoof]")
+TEST_CASE("a crop cut from a frame scores, and a face taller than the frame still fits", "[ai_spoof]")
 {
     need_branch();
     const ai_engine_frame_t frame = { .pixels = gradient_frame(), .width = FRAME_W, .height = FRAME_H };
     float box[4];
     float live = -1.0f;
-    float wide = 0.0f;
-    // A 100 px face leaves room for the full 2.7x square; a 150 px face is capped by the 320 px height.
     centred_box(CENTRED_FACE_PX, box);
-    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof_face(&frame, box, &live, &wide));
-    TEST_ASSERT_FLOAT_WITHIN(SCALE_TOLERANCE, WIDE_CEILING, wide);
+    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof_face(&frame, box, &live));
     TEST_ASSERT_TRUE(live >= 0.0f && live <= 1.0f);
-    printf("100 px face: wide %.3f, live %.4f\n", wide, live);
-    centred_box(LARGE_FACE_PX, box);
-    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof_face(&frame, box, &live, &wide));
-    TEST_ASSERT_FLOAT_WITHIN(SCALE_TOLERANCE, FRAME_H / LARGE_FACE_PX, wide);
-    printf("150 px face: wide %.3f, live %.4f\n", wide, live);
+    printf("100 px face: live %.4f\n", live);
+    // Taller than the 320 px frame: the square shrinks to the frame rather than failing.
+    centred_box(FRAME_H + 40.0f, box);
+    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof_face(&frame, box, &live));
+    TEST_ASSERT_TRUE(live >= 0.0f && live <= 1.0f);
+    printf("360 px face: live %.4f\n", live);
     const float flat[4] = { 10.0f, 10.0f, 10.0f, 50.0f };
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, ai_engine_spoof_face(&frame, flat, &live, &wide));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, ai_engine_spoof_face(&frame, flat, &live));
 }
 
 void app_main(void)
