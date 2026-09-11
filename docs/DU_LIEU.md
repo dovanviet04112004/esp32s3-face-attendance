@@ -16,7 +16,7 @@ thực thi**.
 | Nhánh | raw | interim | split | Chạy train được chưa |
 |---|---|---|---|---|
 | Detection | WIDER FACE + nhãn RetinaFace | COCO json, 2 file | `detection/v1` | ✅ |
-| Anti-spoof | CelebA-Spoof parquet + 4 bộ khác miền | 525.864 record, 2 tỉ lệ/record | `antispoof/v1_upstream` | ✅ |
+| Anti-spoof | CelebA-Spoof parquet + 6 bộ khác miền | 525.864 record + LCC-FASD 18.827 + SynthASpoof 103.797 | `antispoof/v1_upstream` + `v2_upstream_lcc_synth` | ✅ |
 | Recognition | MS1MV3 RecordIO + 6 benchmark `.bin` | 518 shard webdataset | `recognition/v1_identity_disjoint` | ✅ |
 | Thiết bị (chung 3 nhánh) | — | — | `device/v1` trống | ❌ chưa có ảnh OV5640 |
 
@@ -218,7 +218,15 @@ gộp vào pool, chọn theo đúng luật của `xdomain_crop.py` nên ids và 
 
 LCC-FASD giữ ba split của tác giả. SynthASpoof không có split gốc: test lấy 2.000 ảnh cách
 đều trong từng kênh, train lấy phần còn lại, hai bên tách theo tên ảnh và `make_split` kiểm
-tra giao rỗng. Sinh bằng `python -m facepipe.data.make_split --task antispoof --seed 42`
+tra giao rỗng.
+
+> ⚠ **Không được gọi LCC-FASD là identity-disjoint.** Tên ảnh của `training` và `development`
+> mang `id<N>`: 118 và 25 người, **trùng 12 người**, tức chính split của tác giả đã rò danh
+> tính giữa hai bên. `evaluation` đặt tên ẩn danh (`real_0.png`) nên **không kiểm được**, và
+> vì hai split kia đã rò thì phải giả định nó cũng có thể rò. Hệ quả: sau khi trộn `training`
+> vào pool, con số trên `evaluation` **không còn là số khác miền sạch** — báo cáo phải ghi
+> kèm cảnh báo này, và kết luận cuối dựa vào `phone_eval`, khung OV5640, NUAA, SynthASpoof.
+> Cùng hạng ngoại lệ với CelebA-Spoof ở §4.2 (KẾ HOẠCH §1.3). Sinh bằng `python -m facepipe.data.make_split --task antispoof --seed 42`
 với `--source data/raw/antispoof/xdomain`.
 
 ### 4.3 `recognition/v1_identity_disjoint`
