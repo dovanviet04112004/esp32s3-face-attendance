@@ -9,8 +9,7 @@
 
 // Crops live in psram: in bss they would take the internal ram an arena wants,
 // and the measurement would be of a chip the test itself narrowed.
-static int8_t *s_tight;
-static int8_t *s_wide;
+static int8_t *s_face;
 static size_t s_len;
 
 static int8_t *fill(size_t len, int seed)
@@ -65,27 +64,25 @@ static void need_branch(void)
     }
 }
 
-TEST_CASE("a crop pair comes back as a probability", "[ai_spoof]")
+TEST_CASE("a face crop comes back as a probability", "[ai_spoof]")
 {
     need_branch();
-    s_tight = fill(s_len, 1);
-    s_wide = fill(s_len, 2);
+    s_face = fill(s_len, 1);
     float live = -1.0F;
-    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof(s_tight, s_wide, &live));
+    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof(s_face, &live));
     TEST_ASSERT_TRUE(live >= 0.0F && live <= 1.0F);
     printf("live %.4f\n", live);
 }
 
-TEST_CASE("the crops reach the graph rather than a zeroed tensor", "[ai_spoof]")
+TEST_CASE("the crop reaches the graph rather than a zeroed tensor", "[ai_spoof]")
 {
     need_branch();
     // Two runs that differ only in their input must differ in their answer,
     // which is what a crop landing in the wrong tensor would not do.
     float first = 0.0F, second = 0.0F;
-    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof(s_tight, s_wide, &first));
-    memset(s_tight, -128, s_len);
-    memset(s_wide, 127, s_len);
-    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof(s_tight, s_wide, &second));
+    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof(s_face, &first));
+    memset(s_face, -128, s_len);
+    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof(s_face, &second));
     printf("live %.4f then %.4f\n", first, second);
     TEST_ASSERT_NOT_EQUAL_FLOAT(first, second);
 }

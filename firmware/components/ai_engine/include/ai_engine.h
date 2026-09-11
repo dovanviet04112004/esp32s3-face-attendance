@@ -104,20 +104,19 @@ void ai_engine_face_to_frame(const ai_engine_letterbox_t *geometry, ai_engine_fa
 esp_err_t ai_engine_recognize_face(const ai_engine_frame_t *frame, const float landmarks[10], int8_t *out,
                                    size_t cap_bytes, float *scale);
 
-/** Cut the tight and wide crops of a face box in frame pixels and score its liveness.
- *  @ctx ai_task | blocking for the crops and the whole graph
- *  @param wide_scale receives the context ratio the frame allowed, at most 2.7; may be NULL
+/** Cut the face crop of a box in frame pixels and score its liveness.
+ *  @ctx ai_task | blocking for the crop and the whole graph
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_FAIL
  */
-esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live, float *wide_scale);
+esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live);
 
-/** Score one face as live or presented, from two crops already in the graph's
+/** Score one face as live or presented, from a crop already in the graph's
  *  own quantisation.
  *  @ctx ai_task | blocking for the whole graph
- *  @param tight the face box, @param wide the same face with context around it
+ *  @param face the face box, ai_engine_spoof_input_bytes long
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_SIZE | ESP_FAIL
  */
-esp_err_t ai_engine_spoof(const int8_t *tight, const int8_t *wide, float *live);
+esp_err_t ai_engine_spoof(const int8_t *face, float *live);
 
 /** Embed one aligned face.
  *  @ctx ai_task | blocking for the whole graph

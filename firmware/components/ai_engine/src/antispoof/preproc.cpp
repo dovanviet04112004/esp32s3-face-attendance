@@ -8,9 +8,8 @@ namespace ai {
 
 namespace {
 
-// CROP_SCALES in ml/data/prepare/celeba_spoof_parquet.py: 1.0 for tight, 2.7 as the wide ceiling.
-constexpr float kTightScale = 1.0f;
-constexpr float kWideScale = 2.7f;
+// CROP_SCALES in ml/data/prepare/celeba_spoof_parquet.py: the face crop is 1.0 of the box.
+constexpr float kFaceScale = 1.0f;
 constexpr float kPixelMean = 0.0f;
 constexpr float kPixelSpan = 255.0f;
 
@@ -40,28 +39,22 @@ Square fitted(const float box[4], float scale, int width, int height)
 
 }  // namespace
 
-esp_err_t crop_pair(const ai_engine_frame_t &frame, const float box[4], const TfLiteTensor *tight,
-                    const TfLiteTensor *wide, int8_t *tight_out, int8_t *wide_out, size_t cap_bytes,
-                    float *wide_scale) noexcept
+esp_err_t crop_face(const ai_engine_frame_t &frame, const float box[4], const TfLiteTensor *input,
+                    int8_t *out, size_t cap_bytes) noexcept
 {
-    if (frame.pixels == nullptr || box == nullptr || tight == nullptr || wide == nullptr || tight_out == nullptr ||
-        wide_out == nullptr || wide_scale == nullptr || tight->dims->size != 4 || wide->dims->size != 4 ||
-        tight->dims->data[3] != kChannels || wide->dims->data[3] != kChannels) {
+    if (frame.pixels == nullptr || box == nullptr || input == nullptr || out == nullptr ||
+        input->dims->size != 4 || input->dims->data[3] != kChannels) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (cap_bytes < tight->bytes || cap_bytes < wide->bytes) {
+    if (cap_bytes < input->bytes) {
         return ESP_ERR_INVALID_SIZE;
     }
     if (box[2] <= box[0] || box[3] <= box[1]) {
         return ESP_ERR_INVALID_ARG;
     }
-    const Square near = fitted(box, kTightScale, frame.width, frame.height);
-    const Square far = fitted(box, kWideScale, frame.width, frame.height);
-    resample_square(frame, near.left, near.top, near.side, tight->dims->data[1], tight_out,
-                    Quantizer(tight, kPixelMean, kPixelSpan));
-    resample_square(frame, far.left, far.top, far.side, wide->dims->data[1], wide_out,
-                    Quantizer(wide, kPixelMean, kPixelSpan));
-    *wide_scale = far.reached;
+    const Square face = fitted(box, kFaceScale, frame.width, frame.height);
+    resample_square(frame, face.left, face.top, face.side, input->dims->data[1], out,
+                    Quantizer(input, kPixelMean, kPixelSpan));
     return ESP_OK;
 }
 

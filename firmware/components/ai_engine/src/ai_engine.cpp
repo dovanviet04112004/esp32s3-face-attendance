@@ -225,22 +225,15 @@ extern "C" esp_err_t ai_engine_recognize_face(const ai_engine_frame_t *frame, co
     return s_recog.embedding(out, cap_bytes, scale) > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
-extern "C" esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live,
-                                          float *wide_scale)
+extern "C" esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live)
 {
     if (!s_ready || s_spoof_len == 0 || frame == nullptr || box == nullptr || live == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
-    float reached = 0.0f;
-    TfLiteTensor *tight = s_spoof.input(0);
-    TfLiteTensor *wide = s_spoof.input(1);
-    const esp_err_t cut =
-        ai::crop_pair(*frame, box, tight, wide, tight->data.int8, wide->data.int8, s_spoof_len, &reached);
+    TfLiteTensor *input = s_spoof.input(0);
+    const esp_err_t cut = ai::crop_face(*frame, box, input, input->data.int8, s_spoof_len);
     if (cut != ESP_OK) {
         return cut;
-    }
-    if (wide_scale != nullptr) {
-        *wide_scale = reached;
     }
     const esp_err_t err = s_spoof.invoke();
     if (err != ESP_OK) {
@@ -275,22 +268,17 @@ extern "C" esp_err_t ai_engine_recognize(const int8_t *face, int8_t *out, size_t
     return s_recog.embedding(out, cap_bytes, scale) > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
-extern "C" esp_err_t ai_engine_spoof(const int8_t *tight, const int8_t *wide, float *live)
+extern "C" esp_err_t ai_engine_spoof(const int8_t *face, float *live)
 {
     // A zero length means the image carried no such branch (KEHOACH 6.2.2).
-    if (!s_ready || s_spoof_len == 0 || tight == nullptr || wide == nullptr || live == nullptr) {
+    if (!s_ready || s_spoof_len == 0 || face == nullptr || live == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
-    // Input 0 is the tight crop and input 1 the wide one, the order the packed
-    // graph lists them in; swapping them still runs and still scores.
-    TfLiteTensor *inputs[] = {s_spoof.input(0), s_spoof.input(1)};
-    const int8_t *crops[] = {tight, wide};
-    for (int i = 0; i < 2; ++i) {
-        if (inputs[i] == nullptr || inputs[i]->bytes != s_spoof_len) {
-            return ESP_ERR_INVALID_SIZE;
-        }
-        memcpy(inputs[i]->data.int8, crops[i], s_spoof_len);
+    TfLiteTensor *input = s_spoof.input(0);
+    if (input == nullptr || input->bytes != s_spoof_len) {
+        return ESP_ERR_INVALID_SIZE;
     }
+    memcpy(input->data.int8, face, s_spoof_len);
     const esp_err_t err = s_spoof.invoke();
     if (err != ESP_OK) {
         return err;

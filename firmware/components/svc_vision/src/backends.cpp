@@ -21,10 +21,9 @@ bool AiLiveness::available() const noexcept
     return ai_engine_spoof_input_bytes() > 0;
 }
 
-esp_err_t AiLiveness::score(const ai_engine_frame_t &frame, const float box[4], float *live,
-                            float *wide_scale) noexcept
+esp_err_t AiLiveness::score(const ai_engine_frame_t &frame, const float box[4], float *live) noexcept
 {
-    return ai_engine_spoof_face(&frame, box, live, wide_scale);
+    return ai_engine_spoof_face(&frame, box, live);
 }
 
 esp_err_t AiEmbedder::embed(const ai_engine_frame_t &frame, const float landmarks[10], int8_t *out,

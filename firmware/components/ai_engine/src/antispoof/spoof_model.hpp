@@ -1,4 +1,4 @@
-/** The anti-spoof branch: two crops of one face in, one liveness score out.
+/** The anti-spoof branch: the face crop in, one liveness score out.
  *  @ctx task | invoke blocks | layer 3 of the pipeline in KEHOACH 3
  */
 #pragma once
@@ -26,14 +26,13 @@ protected:
     tflite::MicroOpResolver &resolver() noexcept override { return spoof_ops(); }
 };
 
-/** Cut the tight and wide crops of one face box, in frame pixels, into two
- *  buffers shaped and quantised like the input tensors; the wide square is the
- *  largest that fits, at most 2.7x (KEHOACH 3).
- *  @ctx ai_task | blocking for the two resamples
- *  @param cap_bytes size of each buffer; @param wide_scale the context ratio the frame allowed
+/** Cut the face crop of one box, in frame pixels, into a buffer shaped and
+ *  quantised like the input tensor: the largest square that fits the frame,
+ *  slid to hold the face, at most the face side (KEHOACH 3).
+ *  @ctx ai_task | blocking for the resample
+ *  @param cap_bytes size of the buffer
  */
-esp_err_t crop_pair(const ai_engine_frame_t &frame, const float box[4], const TfLiteTensor *tight,
-                    const TfLiteTensor *wide, int8_t *tight_out, int8_t *wide_out, size_t cap_bytes,
-                    float *wide_scale) noexcept;
+esp_err_t crop_face(const ai_engine_frame_t &frame, const float box[4], const TfLiteTensor *input,
+                    int8_t *out, size_t cap_bytes) noexcept;
 
 }  // namespace ai

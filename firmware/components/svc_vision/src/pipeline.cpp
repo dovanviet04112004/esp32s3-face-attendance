@@ -50,7 +50,6 @@ svc_vision_result_t blank() noexcept
     out.kind = SVC_VISION_NONE;
     out.match_score = -1.0f;
     out.live_score = -1.0f;
-    out.wide_scale = -1.0f;
     return out;
 }
 
@@ -110,12 +109,10 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
 {
     if (liveness_.available()) {
         float live = -1.0f;
-        float wide = -1.0f;
-        if (liveness_.score(frame, primary.box, &live, &wide) != ESP_OK) {
+        if (liveness_.score(frame, primary.box, &live) != ESP_OK) {
             return;
         }
         out.live_score = live;
-        out.wide_scale = wide;
         if (live < thresholds_.live_min_score) {
             out.kind = SVC_VISION_SPOOF;
             matched_ = false;

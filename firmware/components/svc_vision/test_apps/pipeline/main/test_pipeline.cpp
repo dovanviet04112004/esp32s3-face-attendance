@@ -62,11 +62,10 @@ public:
     int scores = 0;
 
     bool available() const noexcept override { return present; }
-    esp_err_t score(const ai_engine_frame_t &, const float *, float *out, float *wide_scale) noexcept override
+    esp_err_t score(const ai_engine_frame_t &, const float *, float *out) noexcept override
     {
         ++scores;
         *out = live;
-        *wide_scale = 2.7f;
         return ESP_OK;
     }
 };
@@ -130,7 +129,6 @@ TEST_CASE("a face stable over two detects is verified in that step and reported 
     TEST_ASSERT_EQUAL(kEmployee, result.employee_id);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, kMatchScore, result.match_score);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, kLiveScore, result.live_score);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.7f, result.wide_scale);
     TEST_ASSERT_EQUAL(2, rig.detector.calls);
     TEST_ASSERT_EQUAL(1, rig.liveness.scores);
     TEST_ASSERT_EQUAL(1, rig.embedder.embeds);

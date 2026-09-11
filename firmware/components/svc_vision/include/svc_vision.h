@@ -43,7 +43,6 @@ typedef struct {
     uint32_t employee_id;                 // valid for MATCH
     float match_score;
     float live_score;
-    float wide_scale;                     // context the frame allowed the wide crop
     svc_vision_box_t primary;             // the face being tracked
     svc_vision_box_t boxes[SVC_VISION_REPORTED_FACES];
     uint8_t faces;                        // faces this detect saw, may exceed the boxes kept
