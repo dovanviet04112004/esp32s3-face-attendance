@@ -213,6 +213,11 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     return cfg, model, (example,), names, ["logits"]
 
 
+def named(spec: str | list[str]) -> str:
+    """A split reads as one spec or as several; the report names whichever it got."""
+    return (spec if isinstance(spec, str) else "+".join(map(str, spec)))[:24]
+
+
 def keeps_wide(cfg: object) -> bool:
     """Whether this run's model reads the context crop at all."""
     return (cfg.model.params or {}).get("views", "tight") == "both"
@@ -415,12 +420,12 @@ def main(argv: list[str] | None = None) -> int:
 
     fit = collect_scores(model, build_loader(cfg, fit_split), device)
     crossing = equal_error_rate(*fit)
-    print(f"{fit_split:12s} n={fit[0].size:<7} auc {auc(*fit):.4f}  eer {crossing.acer:.4f}")
+    print(f"{named(fit_split):24s} n={fit[0].size:<7} auc {auc(*fit):.4f}  eer {crossing.acer:.4f}")
     print(f"       threshold fitted here: {crossing.threshold:.6f}")
 
     held = collect_scores(model, build_loader(cfg, held_split), device)
     rates = error_rates(*held, crossing.threshold)
-    print(f"\n{held_split:12s} n={held[0].size:<7} auc {auc(*held):.4f}")
+    print(f"\n{named(held_split):24s} n={held[0].size:<7} auc {auc(*held):.4f}")
     print(f"       apcer {rates.apcer:.4f}  bpcer {rates.bpcer:.4f}  ACER {rates.acer:.4f}")
     print(f"       eer   {equal_error_rate(*held).acer:.4f}  (not the gate, the threshold moved)")
 
