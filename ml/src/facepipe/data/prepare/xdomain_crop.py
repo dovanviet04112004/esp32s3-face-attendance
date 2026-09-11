@@ -125,7 +125,45 @@ def axon_images(root: Path, split: str = "test") -> Iterator[RawImage]:
                     yield RawImage(f"{path.stem}_{number}", payload, is_spoof, source)
 
 
-SETS = {"nuaa": nuaa_images, "axon": axon_images}
+LCC_SPLITS = {"train": "training", "val": "development", "test": "evaluation"}
+LCC_LIVE_DIR = "real"
+SYNTH_LIVE_DIR = "BonaFide"
+SYNTH_ATTACK_DIR = "PAs"
+# Per source, spaced evenly through the folder: 2 000 resolves APCER to 0.05%.
+SYNTH_CAP = 2000
+
+
+def lcc_images(root: Path, split: str = "test") -> Iterator[RawImage]:
+    """One LCC-FASD split as one source, labelled by its real/spoof folder."""
+    folder = Path(root) / "LCC_FASD" / f"LCC_FASD_{LCC_SPLITS[split]}"
+    if not folder.is_dir():
+        raise FileNotFoundError(f"{folder}: no LCC-FASD split {split!r}")
+    for label_dir in sorted(p for p in folder.iterdir() if p.is_dir()):
+        is_spoof = label_dir.name != LCC_LIVE_DIR
+        for path in sorted(label_dir.glob("*.png")):
+            yield RawImage(path.name, path.read_bytes(), is_spoof, LCC_SPLITS[split])
+
+
+def synthaspoof_images(root: Path, split: str = "test") -> Iterator[RawImage]:
+    """BonaFide and each PAs channel as its own source, capped per source."""
+    base = Path(root) / "SynthASpoof"
+    folders = [base / SYNTH_LIVE_DIR] + sorted(p for p in (base / SYNTH_ATTACK_DIR).iterdir() if p.is_dir())
+    for folder in folders:
+        paths = sorted(folder.glob("*.png"))
+        picks = np.linspace(0, len(paths) - 1, num=min(SYNTH_CAP, len(paths)), dtype=int)
+        source = folder.name.lower()
+        is_spoof = folder.name != SYNTH_LIVE_DIR
+        for index in picks:
+            path = paths[int(index)]
+            yield RawImage(path.name, path.read_bytes(), is_spoof, source)
+
+
+SETS = {
+    "nuaa": nuaa_images,
+    "axon": axon_images,
+    "lcc_fasd": lcc_images,
+    "synthaspoof": synthaspoof_images,
+}
 
 
 def load_detector(ckpt: Path, device: str):
