@@ -133,7 +133,7 @@ Làm trước trong ba nhánh. Nó là cổng của pipeline, và **landmark c�
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | **E6-T0** | **`celeba_spoof_parquet.py` ghi thẳng ra shard** — **hai tỉ lệ 1x và 2.7x cùng một record** (KẾ HOẠCH §4.4.1), không đi qua bước 1,05 triệu file lẻ; giải nén chạy song song nhiều nhân | Shard đọc lại đủ `tight.jpg` + `wide.jpg` + `json`, **đo được record/giây so với file lẻ** | E3-T3, E3-T10 |
-| E6-T4 | `model/minifasnet_v2_se.py` — **hai backbone**, SE dùng HardSigmoid, `AvgPool2d` cỡ cố định, đầu vào 81 | Param ≈ 0,53M ở `width=32`; forward nhận cặp (tight, wide) | E2-T3 |
+| E6-T4 | `model/minifasnet_v2_se.py` — **một backbone trên crop mặt** (đổi 11/09, §1.1; `views: both` vẫn dựng được để nạp lại checkpoint cũ), SE dùng HardSigmoid, `AvgPool2d` cỡ cố định, đầu vào 81 | Param **262.746** ở `width=32`, `views: tight`; forward nhận một crop | E2-T3 |
 | E6-T5 | `losses/task_loss.py` — BCE hai lớp trên cặp crop | Unit test từng thành phần | E6-T4 |
 | E6-T6 | `train.py` | ACER < 5% ở FP32 | E6-T4, E6-T5, **E6-T0** |
 | E6-T7 | `eval.py` — ACER, HTER cross-dataset, ROC tập tự thu | HTER < 15% | E6-T6, E3-T8 |
