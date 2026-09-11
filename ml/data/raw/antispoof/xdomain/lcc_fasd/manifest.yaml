@@ -1,0 +1,20 @@
+name: lcc_fasd
+source_url: https://csit.am/2019/proceedings/PRIP/PRIP3.pdf
+access: manual
+license: research-only (theo bai bao; doc lai dieu khoan luc tai)
+downloaded: null
+verified: false
+expects:
+- LCC_FASD_training
+- LCC_FASD_development
+- LCC_FASD_evaluation
+sha256: {}
+counts:
+  files: 0
+consumed_by:
+- antispoof/eval
+notes: Large Crowdcollected Facial Anti-Spoofing Dataset (Timoshenko, ID R&D 2019).
+  Link Google Drive nam trong bai bao, khong co mirror HF. Trang csit.am khong vao
+  duoc ngay 11/09/2026 nen chua ghi duoc drive_id. Bo cuc thu muc training/development/evaluation
+  voi real/spoof ben trong la theo tri nho, xac nhan luc tai. Anh that va tan cong
+  (in, phat lai) chup lai bang dien thoai trong cung loai phong.

@@ -31,6 +31,8 @@ antispoof:
     unique_live: data/raw/antispoof/xdomain/unique_live
     unique_replay: data/raw/antispoof/xdomain/unique_replay
     axon_masks: data/raw/antispoof/xdomain/axon_masks
+    lcc_fasd: data/raw/antispoof/xdomain/lcc_fasd
+    synthaspoof: data/raw/antispoof/xdomain/synthaspoof
 
 recognition:
   ms1mv3: data/raw/recognition/ms1mv3

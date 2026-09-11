@@ -261,8 +261,8 @@ manual_notice() {
     local url
     url="$(python3 -c "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['source_url'])" \
         "${dir}/manifest.yaml")"
-    warn "${name} needs a signed agreement. Register at ${url}"
-    warn "  then unpack it into ${dir}"
+    warn "${name} is fetched by hand: get it from ${url}"
+    warn "  then unpack it into $(payload_dir "${dir}") and rerun with --verify"
 }
 
 DATASETS=(
@@ -273,6 +273,8 @@ DATASETS=(
     "antispoof/xdomain/unique_live:unique_live:hf:UniqueData/anti-spoofing_Real"
     "antispoof/xdomain/unique_replay:unique_replay:hf:UniqueData/anti-spoofing_replay"
     "antispoof/xdomain/axon_masks:axon_masks:hf:AxonData/face-anti-spoofing-dataset"
+    "antispoof/xdomain/lcc_fasd:lcc_fasd:manual"
+    "antispoof/xdomain/synthaspoof:synthaspoof:manual"
     "recognition/ms1mv3:ms1mv3:hf:gaunernst/ms1mv3-recordio"
     "recognition/glint360k:glint360k:hf:gaunernst/glint360k-wds-gz"
     "recognition/benchmarks:recognition_benchmarks:hf:gaunernst/face-recognition-eval"
@@ -291,6 +293,7 @@ for entry in "${DATASETS[@]}"; do
             auto) "fetch_${name}" ;;
             hf)     fetch_hf "${dir}" "${repo}" ;;
             gdrive) fetch_gdrive "${dir}" ;;
+            manual) manual_notice "${dir}" "${name}" ;;
         esac
     fi
     log "${name}"

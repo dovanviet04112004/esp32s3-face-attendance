@@ -1,0 +1,17 @@
+name: synthaspoof
+source_url: https://github.com/meilfang/synthaspoof
+access: manual
+license: CC BY-NC-SA 4.0, chi nghien cuu; cam dung cho san pham va NIST FRVT
+downloaded: null
+verified: false
+expects:
+- SynthASpoof
+sha256: {}
+counts:
+  files: 0
+consumed_by:
+- antispoof/eval
+notes: 25.000 anh that tong hop + 78.800 tan cong (in va phat lai qua 1 dien thoai,
+  2 tablet, 1 webcam). Tai qua Google Drive https://drive.google.com/file/d/12s7V6wcY1F-BNlKA1aIVVulz-vj8lcoB
+  sau khi dien form ten/don vi/email theo README. Ten archive va bo cuc chua biet,
+  dien expects lai luc tai.
