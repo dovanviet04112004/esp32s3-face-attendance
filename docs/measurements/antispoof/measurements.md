@@ -1243,3 +1243,52 @@ và §16.3: @0,50 BPCER 0,1316 / APCER 0,1714 / ACER 0,1515 · @0,90 0,2368 / 0,
 @0,99 0,2500 / 0,0000 / 0,1250; `live_kho` 12/12, `live_xa` 2/20, `attack_anh` 0/12 lọt,
 `attack_gan` 0/3 lọt ở 0,90. Run mới `20260909-1116` (ReLU, 81 px) chấm bằng đúng lệnh trên
 khi train xong, và so thẳng với bảng §16.2.
+
+---
+
+## 21. Run ReLU 81 px chấm xong 60 epoch — chưa thay được `1740`
+
+Chuỗi resume `20260910-0947` → `1043` → `1538` → `20260911-1112_a3fd8e1_526ccc` chạy hết
+60 epoch lúc 14:00 ngày 11/09. Val trên mirror CelebA-Spoof đi xuống đều tới epoch cuối:
+
+| epoch | 37 | 39 | 53 | 55 | 57 | **59** |
+|---|---|---|---|---|---|---|
+| val EER | 0,1604 | 0,1561 | 0,1584 | 0,1554 | 0,1535 | **0,1526** |
+| val AUC | 0,9277 | 0,9306 | 0,9333 | 0,9351 | 0,9361 | **0,9363** |
+
+`best.pth` là epoch 59. Chấm bộ 111 khung bằng đúng lệnh §20:
+
+| Ngưỡng | | epoch 37 | **epoch 59** | `1740` (§16.2) |
+|---|---|---|---|---|
+| 0,50 | BPCER / APCER / **ACER** | 0,6711 / 0,0286 / **0,3498** | 0,4342 / 0,0286 / **0,2314** | 0,1316 / 0,1714 / **0,1515** |
+| **0,90** | BPCER / APCER / **ACER** | 0,8289 / 0,0000 / **0,4145** | 0,6842 / 0,0000 / **0,3421** | 0,2368 / 0,0000 / **0,1184** |
+| 0,99 | BPCER / APCER / **ACER** | 1,0000 / 0,0000 / **0,5000** | 0,8421 / 0,0000 / **0,4211** | 0,2500 / 0,0000 / **0,1250** |
+| | EER / AUC | 0,4523 / 0,6289 | **0,1712 / 0,8917** | — |
+
+**Chưa đạt.** Ở điểm vận hành 0,90 bản mới chặn sạch mọi đòn tấn công nhưng **từ chối 68%
+mặt thật** (BPCER 0,6842 so với 0,2368 của `1740`), tức ACER gấp **2,9 lần**. Theo §4.2 của
+`CLAUDE.md`, model chọn theo số trên miền thiết bị chứ không theo val, nên run này **không
+thay được gì** — và cũng chưa có gì để thay: `firmware/models/antispoof/` rỗng,
+`contracts/models.lock.json` không có dòng antispoof, còn `1740` thì §20 đã ghi là không nạp
+được vào code hiện tại (PReLU, 80 px, `MEAN` đã bỏ).
+
+**Nhóm nào hỏng** — tất cả nằm ở mặt thật ở xa, ở ngưỡng 0,90:
+
+| Nhóm | n | epoch 37 | **epoch 59** |
+|---|---|---|---|
+| `live_gan` | 12 | 12/12 | **12/12** |
+| `live_kho` | 12 | 0/12 | **11/12** |
+| `live_vua` | 12 | 0/12 | **0/12** |
+| `live_rat_xa` | 20 | 0/20 | **0/20** |
+| `live_xa` | 20 | 1/20 | **1/20** |
+| ba nhóm tấn công | 35 | 34/35 chặn | **35/35 chặn** |
+
+**Nhưng hướng đi đúng, chỉ là chưa tới.** 23 epoch cuối kéo EER trên miền thiết bị từ
+**0,4523 xuống 0,1712** và AUC từ 0,6289 lên 0,8917, trong khi val gần như đứng yên
+(0,1604 → 0,1526). Nghĩa là model vẫn đang học đặc trưng tổng quát chứ không phải học thuộc
+val, và lịch 60 epoch **hết trước khi đường cong phẳng**. `live_kho` đi từ 0/12 lên 11/12
+trong đúng 23 epoch đó là bằng chứng rõ nhất.
+
+Hai đường tiếp, chưa chọn: kéo dài lịch train quá 60 epoch trên đúng cấu hình này (~2,5 giờ
+mỗi 23 epoch, rẻ, và số liệu đang ủng hộ), hoặc đi theo kết luận của ADR 0002 là **thu dữ
+liệu bằng chính OV5640** (E3-T8) vì khoảng cách đo được nằm ở miền dữ liệu.
