@@ -618,7 +618,7 @@ và cái giá của nó nằm ở `docs/adr/0002-bo-knowledge-distillation.md`.
 |---|---|
 | **Task loss của từng nhánh** | Detect: cls + box + landmark trên prior dương. Anti-spoof: BCE hai lớp trên cặp crop. Recognition: ArcFace trên nhãn danh tính |
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
-| **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén lại JPEG chất lượng 30–95, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược, phơi sáng. Mỗi nhóm một cổng `p=0,5`. Dải nén và phơi sáng từ `measurements/antispoof` §3, §9, §12; **dải nhiễu từ §24**: khung RGB565 thô ở gain 4× trần đo ra σ ≈ 3 trên thang 8 bit, không phụ thuộc mức sáng, nên `PHOTON_RANGE (2000, 8000)` cho σ shot 2–4 ở mức 128 và `READ_SIGMA_RANGE (0, 3)`; dải cũ `(60, 600)` sinh σ 7–23, nặng hơn camera một bậc |
+| **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén lại JPEG chất lượng 30–95, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược, phơi sáng. Mỗi nhóm một cổng `p=0,5`. Dải nén và phơi sáng từ `measurements/antispoof` §3, §9, §12; **dải nhiễu từ §24**: khung RGB565 thô ở gain 4× trần đo ra σ ≈ 3 trên thang 8 bit ở độ phân giải cảm biến, còn **σ 2,2–2,9 sau khi trung bình vùng về 81 px** như board làm, gần như không phụ thuộc mức sáng; nên `PHOTON_RANGE (8000, 16000)` và `READ_SIGMA_RANGE (1,5; 3,0)`, cho σ 1,7–3,2 ở mức 30 và 2,4–4,0 ở mức 230; dải cũ `(60, 600)` sinh σ 7–23, nặng hơn camera một bậc |
 | **Anti-spoof: augment cắt crop** | Với `p = 0,15` cắt crop mặt về một tỉ lệ trong `[0.7, 1.0]` rồi dựng lại, **rút cùng một phân bố cho cả hai lớp**. Bắt buộc, xem mục dưới |
 
 #### Công thức lấy mẫu của detect phải khớp kích thước đầu vào

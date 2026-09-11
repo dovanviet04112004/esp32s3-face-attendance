@@ -1472,9 +1472,29 @@ Dải train hiện tại `PHOTON_RANGE (60, 600)`, `READ_SIGMA_RANGE (0, 5)` sin
 cho ≈ 3. Comment trong `data.py` gọi dải này là "đường OV5640" nhưng §3 và §9 không có phép đo
 nhiễu nào; đây là phép đo đầu tiên và nó bác dải đó.
 
-Đề xuất (chờ duyệt theo §1.2, chưa sửa): `PHOTON_RANGE (2000, 8000)` cho σ shot 2,0–4,0 ở
-mức 128, `READ_SIGMA_RANGE (0, 3)`. Cận trên rộng hơn số đo một ít vì phòng khác có thể
-cần gain cao hơn qua đường khác, nhưng không còn cách một bậc.
+Model không nhìn pixel cảm biến mà nhìn crop 81 px do trung bình vùng, nên đo lại sau khi
+thu nhỏ cả khung bằng `Image.BOX` theo đúng hệ số mặt/81 của bộ ảnh (mặt 86–197 px):
+
+| Hệ số thu | tương ứng cạnh mặt | σ trung vị | p10–p90 |
+|---|---|---|---|
+| 1,0 | 81 px | 3,03 | 1,85–3,37 |
+| 1,7 | 138 px (median) | **2,65** | 2,32–2,85 |
+| 2,4 | 194 px | **2,44** | 2,16–2,66 |
+
+Trung bình 2,9–5,8 pixel mà σ chỉ giảm 10–20%: phần lớn "nhiễu" này có tương quan không gian
+(ISP của OV5640 đã lọc), không phải nhiễu trắng từng pixel. Đích cho augment là **σ 2,2–2,9,
+gần như phẳng theo mức sáng**.
+
+Chốt (đã duyệt 11/09, sửa plan §3 và `data.py`): `PHOTON_RANGE (8000, 16000)`,
+`READ_SIGMA_RANGE (1,5; 3,0)`:
+
+| photons / read | σ ở mức 30 | 128 | 230 |
+|---|---|---|---|
+| 16000 / 1,5 (nhẹ nhất) | 1,65 | 2,07 | 2,42 |
+| 8000 / 3,0 (nặng nhất) | 3,16 | 3,62 | 4,04 |
+
+Dải cũ ở cùng ba mức: 7,4–23,3 ở mức 128. Cổng `p=0,5` của nhóm quang học không đổi nên bộ ba
+liều ở §23 giữ nguyên.
 
 ### 24.2 Thu nhỏ trung bình vùng (board) so với bilinear (train): không có khoảng cách
 
