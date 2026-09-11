@@ -1718,3 +1718,35 @@ nhưng bộ đó chỉ có mặt thật nên chỉ đo được một nửa.
 Chưa kết luận được vì đây là epoch 30/90 đấu với một model đã hội tụ. Điều kiện để phán ở mốc
 epoch 60: nếu NUAA và `phone_eval` vẫn kém `1112` thì hai bộ mới chỉ dạy model nhớ chính chúng,
 và việc trộn vào train phải rút lại.
+
+---
+
+## 30. Chấm mốc hai, `best.pth` của epoch 57 — 12/09
+
+Cùng cách §29: dừng trainer, chấm, resume; mỗi model dùng ngưỡng val của chính nó.
+
+| Bộ | `1112` hai nhánh, thr 0,9969 | epoch 30, thr 0,8111 | **epoch 57, thr 0,8833** |
+|---|---|---|---|
+| CelebA `test:10:` ACER | 0,1382 | 0,1506 | **0,1208** |
+| LCC evaluation AUC | 0,7797 | 0,8950 | **0,9126** |
+| LCC evaluation HTER / EER | 0,3223 / 0,2771 | 0,2571 / 0,1912 | **0,2050 / 0,1877** |
+| SynthASpoof bona fide BPCER | 0,3435 | 0,1590 | **0,1460** |
+| SynthASpoof in / Samsung APCER | 0,0100 / 0,0190 | — | 0,0310 / 0,0385 |
+| SynthASpoof iPad / webcam APCER | 0,2805 / 0,1180 | 0,4070 / — | 0,2900 / 0,1190 |
+| NUAA HTER / EER | 0,2522 / **0,0327** | 0,2256 / 0,1000 | **0,2066** / 0,1292 |
+| `phone_eval` EER / AUC | 0,1712 / 0,8917 | 0,2876 / 0,8229 | **0,1647 / 0,9150** |
+| 73 khung board qua @0,90 | 35/47 | 35/47 | **44/47** |
+
+**Điều kiện phán quyết đặt ở §29 đã có câu trả lời.** `phone_eval` — bộ chưa bao giờ vào train —
+đi từ tệ hơn mốc cũ ở epoch 30 (EER 0,2876) tới **vượt mốc cũ** ở epoch 57 (0,1647 so với
+0,1712), AUC 0,9150 so với 0,8917. Nên hai bộ dữ liệu mới không chỉ dạy model nhớ chính chúng.
+
+Khung board: 44/47 mặt thật qua ở 0,90, so với 35/47. Ở ngưỡng vận hành riêng thì model mới
+đuổi ~3 khung còn model cũ đuổi ~23.
+
+**Chỗ còn kém là NUAA**: EER 0,1292 so với 0,0327, tức tách ảnh in kém hơn hẳn. Nhưng HTER ở
+ngưỡng vận hành lại tốt hơn (0,2066 so với 0,2522). Đọc đúng: model cũ tách NUAA giỏi hơn mà
+không có ngưỡng nào dùng được, model mới tách kém hơn nhưng dùng được.
+
+Xuyên suốt bảng là **hiệu chỉnh**: ngưỡng 0,883 thay cho 0,997 sát trần của §12.4. APCER nhích
+lên ở kênh in và Samsung chính là giá của ngưỡng thấp hơn, đổi lại BPCER giảm ở mọi miền.
