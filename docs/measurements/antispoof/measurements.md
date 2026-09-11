@@ -1367,7 +1367,7 @@ có tiền xử lý nào ổn định được nó.
 Mở 20 view wide đầu của shard train: mẫu tấn công là người **cầm ảnh in hay điện thoại trong
 phòng thường** — trần ô, cửa, tường, tay; mẫu thật là **ảnh sự kiện của người nổi tiếng** —
 phông studio, banner tài trợ, bokeh. Thống kê nền ngoài hộp mặt trên 1.950 mẫu đầu không
-tách bằng độ sáng hay mật độ cạnh (thật 12,7 / tấn công 14,0), nên đường tắt nằm ở **kiểu
+tách bằng độ sáng hay mật độ cạnh (thật 14,0 / tấn công 12,7), nên đường tắt nằm ở **kiểu
 cảnh**, không ở một con số đơn lẻ. Kiosk đứng trong đúng một căn phòng thường.
 
 Hai ghi chú về chính bộ `phone_eval`: mỗi thư mục là **một clip** (kích thước file đồng
@@ -1404,13 +1404,16 @@ Vì sao gần như không tác dụng — đo trên ba shard train (6.000 mẫu)
 
 | | `wide_scale` p10 / p50 / p90 | keep 1,5×: diện tích hoán đổi p50 | keep 1,2× |
 |---|---|---|---|
-| thật | 1,19 / **1,77** / 2,69 | **28%** | 54% |
-| tấn công | 1,41 / **2,02** / 2,70 | 45% | 65% |
+| thật | 1,41 / **2,02** / 2,70 | 45% | 65% |
+| tấn công | 1,19 / **1,77** / 2,69 | **28%** | 54% |
 
 `keep_scale` tính theo cạnh mặt, nhưng view wide chỉ đạt ~1,8–2,0× mặt ở trung vị, nên vành
 1,5× phủ 73–84% cạnh view và phần hoán đổi là một dải mỏng bên ngoài. Nan cửa sát đầu người
-trong `live_vua` nằm trong vùng giữ. Thêm vào đó, mẫu cho mượn rút theo tỉ lệ luồng (≈ 2 thật
-: 1 tấn công) nên nền hoán vào vẫn nghiêng về cảnh studio với mẫu thật.
+trong `live_vua` nằm trong vùng giữ. Thêm vào đó, mẫu cho mượn rút theo tỉ lệ luồng (≈ 2 tấn công
+: 1 thật) nên nền hoán vào vẫn nghiêng về cảnh phòng thường.
 
 Nhánh kế: `keep 1,2×`, `p 0,7`, nhãn cho mượn rút 50/50 từ hai vòng riêng; cùng checkpoint
 gốc, cùng lịch 60 → 90. Run `1438` dừng ở epoch 68; `1411` vẫn là đối chứng.
+
+Ghi chú nhãn: trong code `LIVE = 0`, `SPOOF = 1`; hai bảng thống kê shard ở §22.3 và §22.5 đọc nhãn theo
+hằng đó. Luồng train là ≈ 2 tấn công : 1 thật, và mẫu **thật** là bên có nhiều ngữ cảnh hơn.

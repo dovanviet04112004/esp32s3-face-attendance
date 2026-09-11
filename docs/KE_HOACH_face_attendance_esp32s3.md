@@ -1041,13 +1041,12 @@ nên đây không phải việc của điểm vận hành hay của tiền xử 
 cổng `p = 0,7`. Ba ràng buộc, mỗi cái có lý do đo được:
 
 - **Nhãn của mẫu cho mượn rút 50/50**, vì mục đích là để nền hết tương quan với nhãn. Rút
-  theo tỉ lệ tự nhiên của luồng (≈ 2 thật : 1 tấn công) thì nền vẫn còn mang một phần nhãn.
+  theo tỉ lệ tự nhiên của luồng (≈ 2 tấn công : 1 thật) thì nền vẫn còn mang một phần nhãn.
 - **Giữ đúng 1,2×**, không rộng hơn. Vành 1,5× nghe hợp lý — "mép ảnh in nằm ngay quanh
-  mặt" — nhưng đo trên tập train thì view wide chỉ đạt **1,77× (thật) / 2,02× (tấn công)**
-  ở trung vị, nên vành 1,5× phủ 73–84% cạnh view và phần hoán đổi chỉ còn **28% diện tích**
-  ở mẫu thật; nan cửa sát đầu người vẫn nằm trong vùng giữ, và nhánh fine-tune với 1,5× sau
+  mặt" — nhưng đo trên tập train thì view wide chỉ đạt **2,02× (thật) / 1,77× (tấn công)**
+  ở trung vị, nên vành 1,5× phủ 73–84% cạnh view và phần hoán đổi chỉ còn **28–45% diện tích**; nan cửa sát đầu người vẫn nằm trong vùng giữ, và nhánh fine-tune với 1,5× sau
   9 epoch **không dịch chuyển cơ chế** (`measurements/antispoof` §22.5). Ở 1,2× phần hoán
-  đổi lên 54% / 65%. Mép ảnh in nằm trong 1,2× thì vẫn còn; nằm ngoài thì nhánh tight —
+  đổi lên 54–65%. Mép ảnh in nằm trong 1,2× thì vẫn còn; nằm ngoài thì nhánh tight —
   thứ đang chặn 35/35 đòn tấn công một mình — phải gánh.
 - **Mép hoà mềm** (Gauss, 12% cạnh mặt), vì một hình vuông cắt sắc quanh mặt chính là dấu
   hiệu "ảnh cắt dán" mà model đọc thành tấn công: nền phẳng có mép sắc đã hạ cả `live_kho`
