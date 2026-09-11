@@ -260,4 +260,48 @@ nằm ở việc xếp hạng hai epoch liền nhau của cùng một arm.
 - Chốt tiêu chí chọn checkpoint (§4.2) → cache embedding teacher → chạy arm A3, điền §4.
 - `postproc/emit_golden.py`, `quant.py`, `README.md` — §4.4 đã khai, chưa viết.
 - Thang lượng tử hoá §3.8, `quant_ladder.md`.
-- TAR@FAR trên tập nhân viên tự thu — chưa có dữ liệu.
+- TAR@FAR trên tập nhân viên tự thu — mới có một người, §7.
+
+---
+
+## 7. Khung OV5640 thật, một người: đăng ký một khung, nhận các khung còn lại — đo 11/09
+
+Bộ ảnh ở `measurements/antispoof` §24: 73 khung RGB565 thô, một người, một phòng thiếu sáng
+(gain 4×, phơi sáng trần), người tự đổi góc và cự ly. Đường chấm đúng như firmware trừ độ chính
+xác số: YuNet ở 160×120 → 5 landmark → `align` 113 → MobileFaceNet FP32 của run
+`20260908-1750_ea985b1_bfed2e` (bản trong `models.lock.json`), cosine của embedding L2, không
+lật. Bỏ khung không có hộp hoặc mặt dưới 90 px: còn **50** khung. Đăng ký **`s20260911a_000`**
+(chính diện, 138 px), so với 49 khung còn lại.
+
+| Cosine người thật với khung đăng ký | |
+|---|---|
+| min / p10 / median / max | **0,270** / 0,367 / **0,733** / 0,910 |
+| 600 mặt lạ LFW so với cùng khung đăng ký | max **0,383** · p99 0,327 · median −0,005 |
+
+| Ngưỡng | Người thật nhận | Người lạ lọt (600) |
+|---|---|---|
+| 0,30 | 47/49 (95,9%) | 7 |
+| 0,35 | 44/49 (89,8%) | 4 |
+| **0,40** | 43/49 (87,8%) | **0** |
+| 0,4283 (FAR 1e-3 trên CFP-FP, §4) | 42/49 (85,7%) | 0 |
+| 0,45 | 41/49 (83,7%) | 0 |
+| 0,50 | 40/49 (81,6%) | 0 |
+| **0,60 (seed `VISION_SEED_MATCH_MIN_PERMILLE`)** | **34/49 (69,4%)** | 0 |
+| 0,70 | 28/49 (57,1%) | 0 |
+
+Seed 0,60 bỏ **3 khung trong 10** của chính người đã đăng ký; cửa sổ mà người lạ LFW chưa lọt
+mà người thật còn nhận nhiều nhất là **0,40–0,45**. Con số này là FP32 trên PC, một người, 600
+người lạ; INT8 trên board và nhiều nhân viên mới là E8-T12 thật.
+
+Sáu khung thấp nhất, nhìn tận ảnh:
+
+| Khung | cos | Ảnh |
+|---|---|---|
+| `d_045` | 0,327 | mờ chuyển động mạnh, mặt cắt mép trên — ảnh tệ, không tính |
+| `c_001` | 0,373 | ngửa hẳn, nhìn từ dưới cằm — tư thế ngoài dải |
+| `d_039` · `d_038` · `d_031` · `b_002` | 0,27–0,34 | **mặt chìm trong bóng**, chính diện hoặc 3/4, không mờ |
+
+Bốn khung cuối là chỗ đáng lo: không có gì "tệ" ở tư thế, chỉ tối. Vòng đo sáng bám vùng
+giữa khung (trần nhà) nên mặt ở mép dưới thiếu sáng, đúng E7-T17 và §9 của anti-spoof. Chọn
+khung đăng ký khác không cứu được: khung tốt nhất (`d_040`) cho median 0,757, tệ nhất (`d_045`)
+0,253.

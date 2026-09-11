@@ -1434,3 +1434,96 @@ hằng đó. Luồng train là ≈ 2 tấn công : 1 thật, và mẫu **thật*
 
 Từng phép có bảng riêng ở §9, §12, §13, §15; tổng liều thì chưa có arm nào đo. Luật ở KẾ HOẠCH
 §3 lớp 2 ("Tổng liều augment phải đo").
+
+---
+
+## 24. Khung RGB565 thô từ chính board — nhiễu, thu nhỏ, lượng tử, điểm sống — đo 11/09
+
+Lần đầu có ảnh **đúng đường ảnh của kiosk**: RGB565 thô từ `drv_camera`, không JPEG, không
+qua điện thoại. Ca `[manual]` "metered frames reach the host as raw rgb565" của
+`drv_camera/test_apps/sensor` (commit `c8e661b`) chạy vòng phơi sáng 40 khung cho hội tụ, rồi
+cứ 6 khung đo sáng lại dump một khung hex qua USB console, kèm `level / exposure / gain16`
+của chính khung đó. Host lưu PNG không mất bit (5/6/5 nhân bit lên 8 như `unpack_rgb565`) vào
+`raw/device/ov5640/images/<phiên>_<seq>.png` và `meta/…json`.
+
+| | |
+|---|---|
+| Khung lưu được | **73** (phiên a 12, b 5, c 2, d 54), một người, một phòng, người di chuyển góc và cự ly |
+| Tốc độ | ~10 s một khung 307 KB, 60 khung ≈ 10 phút |
+| Rớt | phiên d: 6/60 khung về thiếu byte hoặc lẫn dòng log watchdog |
+| Phơi sáng | **868 dòng ở cả 73 khung** (trần 70,5 ms); gain16 54–64, median **64** (trần 4×); `level` 13–34, median 26 so với mục tiêu 30 |
+
+Phòng này thiếu sáng với cảm biến: hai điều khiển kịch trần mà vẫn dưới mục tiêu, đúng bệnh
+E7-T17. Mọi số dưới đây là ở **gain 4×**, tức trường hợp nhiễu nhất của camera.
+
+### 24.1 Nhiễu cảm biến: dải augment nặng gấp 3–8 lần thực tế
+
+Kênh lục (6 bit, bước lượng tử = 4 trên thang 8 bit), khối 16×16 phẳng nhất (20% khối có
+phương sai thấp nhất sau khi trừ mặt phẳng), 72 khung:
+
+| | |
+|---|---|
+| σ nhiễu trung vị mỗi khung | **3,03** (1,85–3,37) |
+| Phụ thuộc mức sáng | **không đo được** — hệ số shot noise khớp ra ~0 ở 60/72 khung |
+| σ sau khi trừ nhiễu lượng tử `4/√12 = 1,15` | ≈ **2,8** |
+
+Dải train hiện tại `PHOTON_RANGE (60, 600)`, `READ_SIGMA_RANGE (0, 5)` sinh ở mức 128 một
+σ shot từ `√(255·128/600) = 7,4` tới `√(255·128/60) = 23,3`. Camera thật ở gain tối đa
+cho ≈ 3. Comment trong `data.py` gọi dải này là "đường OV5640" nhưng §3 và §9 không có phép đo
+nhiễu nào; đây là phép đo đầu tiên và nó bác dải đó.
+
+Đề xuất (chờ duyệt theo §1.2, chưa sửa): `PHOTON_RANGE (2000, 8000)` cho σ shot 2,0–4,0 ở
+mức 128, `READ_SIGMA_RANGE (0, 3)`. Cận trên rộng hơn số đo một ít vì phòng khác có thể
+cần gain cao hơn qua đường khác, nhưng không còn cách một bậc.
+
+### 24.2 Thu nhỏ trung bình vùng (board) so với bilinear (train): không có khoảng cách
+
+51 khung có mặt, cùng crop 1,0×, resize về 81 bằng `Image.BOX` (tương ứng `resample_square`
+trên board) và `Image.BILINEAR` (đường train), chấm bằng model hai nhánh `1112`:
+
+| | |
+|---|---|
+| Trung bình (BOX − BILINEAR) | **−0,003** |
+| Lệch lớn nhất một khung | 0,049 (`a_001`: 0,834 so 0,883) |
+| Sai khác pixel trung bình ở 81 px | 1,3–2,7 mức |
+
+Không cần đổi cách resize ở bên nào.
+
+### 24.3 Lượng tử 5/6/5: ảnh hưởng nhỏ và hai chiều
+
+Áp lượng tử RGB565 (nhân bit lên như board) lên 111 khung `phone_eval` rồi chấm lại, cùng
+model `1112`:
+
+| Nhóm | n | as-is | 565 | Δ | qua @0,90 |
+|---|---|---|---|---|---|
+| attack_anh | 12 | 0,236 | 0,192 | −0,045 | 0 → 0 |
+| attack_gan | 3 | 0,301 | 0,275 | −0,026 | 0 → 0 |
+| attack_xa | 20 | 0,179 | 0,186 | +0,007 | 0 → 0 |
+| live_gan | 12 | 0,993 | 0,995 | +0,002 | 12 → 12 |
+| live_kho | 12 | 0,940 | 0,913 | −0,028 | 11 → **9** |
+| live_rat_xa | 20 | 0,407 | 0,460 | +0,052 | 0 → 0 |
+| live_vua | 12 | 0,227 | 0,267 | +0,039 | 0 → 0 |
+| live_xa | 20 | 0,709 | 0,780 | +0,070 | 2 → **4** |
+
+Không có chiều nhất quán và không nhóm nào đổi kết luận. Theo luật 1 của §3 lớp 2, chưa đủ
+khoảng cách để thêm phép mô phỏng 565 vào train.
+
+### 24.4 Điểm sống trên khung camera thật — một người, một phòng
+
+Detector ở 160×120 tìm được mặt ở **51/73** khung (22 khung không có hộp: người ra mép khung,
+quay nghiêng sâu, hoặc mờ chuyển động). Cạnh mặt 86–197 px trong khung 480×320, median
+**138 px**, tức 29–66 px ở đầu vào detect, median 46.
+
+Model `1112` (hai nhánh, mốc đang so), crop BOX, ngưỡng 0,90:
+
+| Điểm sống | Khung |
+|---|---|
+| ≥ 0,90 | **39** (76%) |
+| 0,50 – 0,90 | 4 |
+| < 0,50 | **8** (16%): `b_002` 0,32 · `c_000` 0,03 · `d_005` 0,11 · `d_016` 0,04 · `d_019` 0,46 · `d_030` 0,02 · `d_033` 0,08 · `d_037` 0,06 |
+
+BPCER@0,90 = **12/51 = 23,5%** trên cùng một người thật, cùng phòng, chỉ đổi chỗ đứng và góc.
+`d_016` là bàn tay che mồm (bảng che ở KẾ HOẠCH §3 nói che mồm vô hại — trên camera thật
+thì không). Các khung còn lại rớt khi người rời khỏi giữa khung: đúng cơ chế §22, nhánh wide
+đọc căn phòng. Đây là bộ thước cho arm một-backbone sắp tới, và là bằng chứng trên miền
+thiết bị rằng con số ACER trên `phone_eval` không phải chuyện riêng của điện thoại.
