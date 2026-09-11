@@ -323,8 +323,10 @@ def report_frames(
     missed = len(rows) - len(scored)
     scores = np.array([s for _f, s in scored], dtype=np.float64)
     labels = np.array([frame_label(f) for f, _s in scored], dtype=np.int64)
-    print(f"frames {len(rows)}, scored {len(scored)}, dropped {missed} "
-          f"(no face, or side under {min_face_px:.0f} px)")
+    print(
+        f"frames {len(rows)}, scored {len(scored)}, dropped {missed} "
+        f"(no face, or side under {min_face_px:.0f} px)"
+    )
     header = "  ".join(f"@{t:.2f}" for t in thresholds)
     print(f"{'folder':14s} {'n':>3s}  {'side px':>13s}  {header}")
     for folder in sorted({f for f, _s in scored}):
@@ -336,8 +338,9 @@ def report_frames(
         )
         span = sides[folder]
         reach = f"{int(min(span)):>4d}-{int(max(span)):<4d}" if span else "    -    "
-        print(f"{folder:14s} {own.size:>3d}  {reach:>13s}  {passes}   "
-              f"{'pass' if live else 'blocked'}")
+        print(
+            f"{folder:14s} {own.size:>3d}  {reach:>13s}  {passes}   {'pass' if live else 'blocked'}"
+        )
     print(f"{'threshold':14s} {'bpcer':>8s} {'apcer':>8s} {'ACER':>8s}")
     for threshold in thresholds:
         rates = error_rates(scores, labels, threshold)
