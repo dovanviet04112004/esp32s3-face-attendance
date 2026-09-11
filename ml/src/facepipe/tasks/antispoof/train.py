@@ -24,6 +24,8 @@ from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer, resolve_device
 
 from .data import (
+    CONTEXT_KEEP_SCALE,
+    CONTEXT_SWAP_PROBABILITY,
     CROP_SCALE_PROBABILITY,
     CROP_SCALE_RANGE,
     OCCLUSION_PROBABILITY,
@@ -84,6 +86,10 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         roll_range=tuple(params.get("roll_range", ROLL_RANGE)),
         translate_probability=float(params.get("translate_probability", TRANSLATE_PROBABILITY)),
         translate_range=float(params.get("translate_range", TRANSLATE_RANGE)),
+        context_swap_probability=float(
+            params.get("context_swap_probability", CONTEXT_SWAP_PROBABILITY)
+        ),
+        context_keep_scale=float(params.get("context_keep_scale", CONTEXT_KEEP_SCALE)),
     )
 
 
