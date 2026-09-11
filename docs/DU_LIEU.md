@@ -203,6 +203,24 @@ kiểm identity-disjoint được**; chia lại theo seed là phá luôn sự t�
 không có gì thay thế. Đây là ngoại lệ có chủ ý của KẾ HOẠCH §1.3, và báo cáo phải ghi đúng
 như vậy chứ không được nói bộ này identity-disjoint.
 
+### 4.2b `antispoof/v2_upstream_lcc_synth` — hai bộ trộn thêm từ 11/09
+
+Phần CelebA-Spoof vẫn là `v1_upstream` ở trên, không đổi. Bản này chỉ liệt kê hai bộ được
+gộp vào pool, chọn theo đúng luật của `xdomain_crop.py` nên ids và shard không lệch nhau.
+
+| File | Số ảnh | Vai | sha256 |
+|---|---|---|---|
+| `lcc_train_ids.txt` | 8.299 | **train**, lặp 5 lần trong `train_split` | `4a74012f…` |
+| `lcc_val_ids.txt` | 2.948 | để dành | `84c6edb5…` |
+| `lcc_test_ids.txt` | 7.580 | test khác miền | `a0b91571…` |
+| `synth_train_ids.txt` | 41.800 | **train** (10.000 mỗi kênh ngoài phần test; in chỉ còn 1.800) | `ec655fc6…` |
+| `synth_test_ids.txt` | 10.000 | test khác miền, 2.000 trải đều mỗi kênh | `0a2ea310…` |
+
+LCC-FASD giữ ba split của tác giả. SynthASpoof không có split gốc: test lấy 2.000 ảnh cách
+đều trong từng kênh, train lấy phần còn lại, hai bên tách theo tên ảnh và `make_split` kiểm
+tra giao rỗng. Sinh bằng `python -m facepipe.data.make_split --task antispoof --seed 42`
+với `--source data/raw/antispoof/xdomain`.
+
 ### 4.3 `recognition/v1_identity_disjoint`
 
 | File | Số identity | sha256 |

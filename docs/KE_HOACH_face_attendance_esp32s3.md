@@ -1432,7 +1432,9 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   ├── detection/v1/{train.txt, landmark_val.txt, SPLIT.md}
 │   │                                             #   val cua WIDER dung truc tiep de do AP,
 │   │                                             #   khong can file split
-│   ├── antispoof/v1_upstream/{train_ids.txt, val_ids.txt, test_ids.txt, SPLIT.md}
+│   ├── antispoof/v1_upstream/{train_ids.txt, val_ids.txt, test_ids.txt, SPLIT.md}   # phần CelebA-Spoof, không đổi
+│   ├── antispoof/v2_upstream_lcc_synth/{lcc_{train,val,test}_ids.txt, synth_{train,test}_ids.txt, SPLIT.md}
+│   │                                             #   hai bộ trộn thêm từ 11/09 (§1.2); tên ảnh chọn đúng luật của xdomain_crop.py
 │   ├── recognition/v1_identity_disjoint/{train_ids.txt, val_ids.txt, SPLIT.md}
 │   └── device/v1/{calib_det.txt, calib_spoof.txt, calib_recog.txt, test_device.txt, SPLIT.md}
 │

@@ -88,11 +88,12 @@ split_device() {
 }
 
 split_antispoof() {
-    local crops="${INTERIM}/antispoof/celeba_spoof_crops"
-    [[ -d "${crops}/img_1x" ]] || { warn "antispoof: ${crops} absent, run 01 first"; return 1; }
-    log "antispoof: recording the upstream division"
+    local xdomain="${RAW}/antispoof/xdomain"
+    [[ -d "${xdomain}/lcc_fasd/LCC_FASD" && -d "${xdomain}/synthaspoof/SynthASpoof" ]] ||
+        { warn "antispoof: LCC-FASD or SynthASpoof absent under ${xdomain}, run 00 first"; return 1; }
+    log "antispoof: listing the two sets folded into the pool"
     "${PY}" -m facepipe.data.make_split \
-        --task antispoof --source "${crops}" --seed "${SEED}" --split-root "${SPLITS}"
+        --task antispoof --source "${xdomain}" --seed "${SEED}" --split-root "${SPLITS}"
 }
 
 wanted detection   && split_detection

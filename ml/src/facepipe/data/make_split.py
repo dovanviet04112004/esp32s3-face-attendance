@@ -24,7 +24,7 @@ CALIB_PER_BRANCH = 100
 
 TASK_VERSIONS = {
     "detection": "v1",
-    "antispoof": "v1_upstream",
+    "antispoof": "v2_upstream_lcc_synth",
     "recognition": "v1_identity_disjoint",
     "device": "v1",
 }
@@ -116,23 +116,27 @@ def build_detection(source: Path, seed: int, ratios: Sequence[float]) -> dict[st
     return {"train.txt": sorted(keep + without), "landmark_val.txt": sorted(held_out)}
 
 
-def build_antispoof_upstream(crops_root: Path) -> dict[str, list[str]]:
-    """List the crops of each upstream split.
+def build_antispoof_pool(xdomain_root: Path) -> dict[str, list[str]]:
+    """List the LCC-FASD and SynthASpoof images each part of the pool takes.
 
-    The CelebA-Spoof mirror carries no identity labels, so identity-disjointness
-    cannot be checked here. The upstream train/valid/test division is the only
-    separation available, and reshuffling it would silently break the rule.
+    The CelebA-Spoof part keeps the upstream division recorded in v1_upstream.
+    The two sets folded in are listed by the same selection xdomain_crop
+    applies, so the ids and the shards cannot drift apart (KEHOACH 1.2).
     """
-    scale_dir = crops_root / "img_1x"
-    names = {"train": "train_ids.txt", "valid": "val_ids.txt", "test": "test_ids.txt"}
+    from .prepare.xdomain_crop import LCC_SPLITS, lcc_paths, synthaspoof_paths
+
     parts: dict[str, list[str]] = {}
-    for split, filename in names.items():
-        entries = [
-            str(path.relative_to(scale_dir))
-            for label in ("live", "spoof")
-            for path in sorted((scale_dir / split / label).glob("*.jpg"))
+    lcc_root = xdomain_root / "lcc_fasd"
+    for split in LCC_SPLITS:
+        parts[f"lcc_{split}_ids.txt"] = [
+            f"{path.parent.parent.name}/{path.parent.name}/{path.name}"
+            for path in lcc_paths(lcc_root, split)
         ]
-        parts[filename] = entries
+    synth_root = xdomain_root / "synthaspoof"
+    for split in ("train", "test"):
+        parts[f"synth_{split}_ids.txt"] = [
+            f"{path.parent.name}/{path.name}" for path, _ in synthaspoof_paths(synth_root, split)
+        ]
     return parts
 
 
@@ -247,12 +251,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         disjoint = [("train.txt", "landmark_val.txt")]
     elif args.task == "antispoof":
-        parts = build_antispoof_upstream(args.source)
+        parts = build_antispoof_pool(args.source)
         rule = (
-            "giu nguyen chia train/valid/test cua upstream; mirror khong co nhan "
-            "identity nen khong tu kiem identity-disjoint duoc"
+            "CelebA-Spoof giu chia train/valid/test cua upstream (v1_upstream, khong doi); "
+            "LCC-FASD giu ba split cua tac gia, training vao pool lap 5 lan, evaluation chi test; "
+            "SynthASpoof test lay 2000 anh trai deu moi kenh, train lay toi da 10000 anh con lai moi kenh"
         )
-        disjoint = [("train_ids.txt", "val_ids.txt", "test_ids.txt")]
+        disjoint = [
+            ("lcc_train_ids.txt", "lcc_val_ids.txt", "lcc_test_ids.txt"),
+            ("synth_train_ids.txt", "synth_test_ids.txt"),
+        ]
     elif args.task == "recognition":
         parts = build_identity_disjoint(
             args.source, args.seed, (0.9, 0.1), ("train_ids.txt", "val_ids.txt")
