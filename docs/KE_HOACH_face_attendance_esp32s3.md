@@ -95,7 +95,9 @@ Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài li
 | NUAA Imposter | HF `akahana/anti-spoofing-nuaaaa` | 376 MB | test khác miền — ảnh in |
 | UniqueData live + replay | HF `UniqueData/anti-spoofing_Real` + `_replay` | 542 MB + 702 MB, nhưng chỉ **30 người thật** (selfie + video) và **30 clip phát lại** — vài trăm khung, không đủ để train | test khác miền — màn hình phát lại, có cặp live đối chứng |
 | AxonData face-anti-spoofing | HF `AxonData/face-anti-spoofing-dataset` | 4.94 GB | test khác miền — video, có **mặt nạ latex 3D** |
-| Tập spoof tự thu | tự thu bằng OV5640 | ≥500 ảnh mỗi loại | test sát thực tế nhất |
+| LCC-FASD | Google Drive, link trong [bài báo](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf) (ID R&D 2019) — **chưa tải**, manifest đã ghi | 🔬 ~16.000 ảnh | test khác miền — thật, in, phát lại **chụp lại bằng điện thoại trong phòng thường**, thật và giả cùng cảnh. Xét trộn vào train **sau** khi chấm chéo |
+| SynthASpoof | Google Drive qua form, [GitHub](https://github.com/meilfang/synthaspoof) — **chưa tải**, manifest đã ghi | 25.000 thật tổng hợp + 78.800 tấn công | test khác miền — in và phát lại qua 1 điện thoại, 2 tablet, 1 webcam. CC BY-NC-SA 4.0, chỉ nghiên cứu, không sản phẩm |
+| Tập spoof tự thu | tự thu bằng OV5640 | vài chục clip ngắn, phủ **điều kiện** (phòng, giờ, người, vật liệu tấn công) — không cần nhiều | **kiểm chất lượng cuối**, không bao giờ train |
 
 > **Không dùng OULU-NPU, CASIA-MFSD, Replay-Attack, MSU-MFSD.** Cả bốn bắt gửi bản cam kết
 > ký tay qua email và chờ nhiều tuần. Bốn bộ trên thay được **chức năng** của chúng — dữ
@@ -925,6 +927,28 @@ hai lớp là bắt buộc, nếu không thì "bị che" trở thành đường 
 Nghiệm thu phép augment này bằng **APCER**, không chỉ BPCER. Nó nới điều kiện chấp nhận nên
 rủi ro cố hữu là cho tấn công lọt; một bản vá kéo BPCER xuống mà đẩy APCER lên là bản vá
 hỏng.
+
+#### Tổng liều augment phải đo, không cộng dồn
+
+Mỗi phép augment ở trên có một khoảng cách đo được mà nó nhắm vào, và số đo cho từng phép
+đứng riêng. Nhưng chúng **chồng lên nhau** trong cùng một mẫu, và tổng liều đó chưa từng đo.
+Với các cổng hiện tại (`measurements/antispoof` §23): xác suất một mẫu tới model **nguyên
+vẹn** là **5,2%**, trung bình mỗi mẫu chịu **2,25 phép**, và **40,3%** số mẫu chịu từ ba phép
+trở lên. "Nén lại q30 + nghiêng 15° + che 40% mặt" trên cùng một crop có còn giống ảnh kiosk
+hay không, chưa bảng nào trả lời.
+
+Bốn luật:
+
+1. **Không thêm phép nào chưa có khoảng cách đo được** giữa tập train và khung kiosk mà nó
+   nhắm vào. Phép nhắm vào một đường tắt *của dataset* (như hoán nền, đã bỏ) là dấu hiệu dữ
+   liệu hoặc kiến trúc sai chỗ — sửa ở đó, không sửa bằng augment.
+2. **Đổi bất kỳ cổng nào thì ghi lại bộ ba** (P nguyên vẹn, kỳ vọng số phép, P ≥ 3) vào
+   `measurements/antispoof`, tính từ `config.resolved.yaml` của run.
+3. **Đối chứng tổng liều trước khi thêm**: một arm chỉ giữ nhóm mô phỏng đường ảnh OV5640,
+   một arm đủ phép, cùng seed cùng lịch (§4.2), so trên bộ khung camera. Arm ít phép không
+   kém thì phần dư là gánh nặng, cắt.
+4. Dữ liệu kiểm chứng phải rộng hơn 5 clip trước khi đọc bảng đối chứng đó: mỗi điều kiện
+   chụp là **một** điểm dữ liệu, không phải 12.
 
 ### Lớp 3 — Nén cấu trúc
 
