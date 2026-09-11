@@ -37,7 +37,8 @@ data:
     # LCC-FASD training five times over plus the SynthASpoof train pool, ~17% (KEHOACH 1.2).
     train_split: [train, lcc_training, lcc_training, lcc_training, lcc_training, lcc_training, synth_training]
     # The mirror's train and valid are one pool; test is not (measurements 1).
-    val_split: "test:0:10"
+    # LCC development rides along: a threshold fitted on CelebA alone throws away
+    val_split: ["test:0:10", "lcc_development"]  # a third of a second domain (measurements 25)
     test_split: "test:10:"
     # Re-encoding the crop: the board compresses once already, so a second pass
     # is the history the train set would otherwise lack (measurements 9).

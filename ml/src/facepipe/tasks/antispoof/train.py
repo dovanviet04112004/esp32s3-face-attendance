@@ -38,7 +38,7 @@ from .data import (
     SpoofShardDataset,
     collate,
 )
-from .eval import summary
+from .eval import keeps_wide, summary
 from .losses import task_loss  # noqa: F401  registers "antispoof_task"
 from .losses.task_loss import LIVE, SpoofBatch
 from .model import minifasnet_v2_se  # noqa: F401  registers "minifasnet_v2_se"
@@ -84,6 +84,7 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         roll_range=tuple(params.get("roll_range", ROLL_RANGE)),
         translate_probability=float(params.get("translate_probability", TRANSLATE_PROBABILITY)),
         translate_range=float(params.get("translate_range", TRANSLATE_RANGE)),
+        keep_wide=keeps_wide(cfg),
     )
 
 

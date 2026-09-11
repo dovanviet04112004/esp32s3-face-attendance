@@ -65,13 +65,30 @@ TRANSLATE_PROBABILITY = 0.5
 
 @dataclass
 class SpoofSample:
-    """One face: the tight view, the context view, and whether it is an attack."""
+    """One face: the tight view, the context view, and whether it is an attack.
+
+    A one-backbone model drops the context view once the crop scale has been cut
+    from it, and every augmentation after that point sees wide as None.
+    """
 
     tight: np.ndarray
-    wide: np.ndarray
+    wide: np.ndarray | None
     label: int
     wide_scale: float  # scale the wide view actually reached
     face_in_wide: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
+
+    def views(self) -> list[np.ndarray]:
+        return [self.tight] if self.wide is None else [self.tight, self.wide]
+
+    def scaled_views(self) -> list[tuple[np.ndarray, float]]:
+        """Each view with the crop scale its own pixels are laid out at."""
+        return list(zip(self.views(), (1.0, self.wide_scale), strict=False))
+
+    def with_views(self, views: list[np.ndarray]) -> SpoofSample:
+        return replace(self, tight=views[0], wide=views[1] if self.wide is not None else None)
+
+    def mapped(self, per_view) -> SpoofSample:
+        return self.with_views([per_view(view) for view in self.views()])
 
 
 def shard_paths(root: Path) -> list[Path]:
@@ -227,14 +244,14 @@ def occlude(
     left, top = (rng.uniform(0.0, 1.0 - fraction) for _ in range(2))
     level = rng.randint(0, 255)
     views = []
-    for view, scale in ((sample.tight, 1.0), (sample.wide, sample.wide_scale)):
+    for view, scale in sample.scaled_views():
         out = view.copy()
         offset, side = face_square(view, scale)
         x, y = offset + int(side * left), offset + int(side * top)
         edge = max(1, int(side * fraction))
         out[y : y + edge, x : x + edge] = level
         views.append(out)
-    return replace(sample, tight=views[0], wide=views[1])
+    return sample.with_views(views)
 
 
 def turned(image: np.ndarray, degrees: float) -> np.ndarray:
@@ -252,7 +269,7 @@ def turned(image: np.ndarray, degrees: float) -> np.ndarray:
 
 def roll(sample: SpoofSample, degrees: float) -> SpoofSample:
     """Roll both views by one angle, since the two crops are one scene."""
-    return replace(sample, tight=turned(sample.tight, degrees), wide=turned(sample.wide, degrees))
+    return sample.mapped(lambda view: turned(view, degrees))
 
 
 def shifted(image: np.ndarray, dx: float, dy: float) -> np.ndarray:
@@ -272,11 +289,8 @@ def translate(sample: SpoofSample, dx: float, dy: float) -> SpoofSample:
     of its own pixels: the same displacement covers less of a wider crop.
     """
     span = 1.0 / max(sample.wide_scale, 1e-6)
-    return replace(
-        sample,
-        tight=shifted(sample.tight, dx, dy),
-        wide=shifted(sample.wide, dx * span, dy * span),
-    )
+    wide = None if sample.wide is None else shifted(sample.wide, dx * span, dy * span)
+    return replace(sample, tight=shifted(sample.tight, dx, dy), wide=wide)
 
 
 def requantise(image: np.ndarray, quality: int) -> np.ndarray:
@@ -294,9 +308,7 @@ def recompress(sample: SpoofSample, quality: int) -> SpoofSample:
     Measured: the training pool is 450x600 at a median 72 KB and the graded pool
     480x600 at 471 KB, so blocking artefacts separate the two on their own.
     """
-    return replace(
-        sample, tight=requantise(sample.tight, quality), wide=requantise(sample.wide, quality)
-    )
+    return sample.mapped(lambda view: requantise(view, quality))
 
 
 def _clipped(values: np.ndarray) -> np.ndarray:
@@ -385,7 +397,7 @@ def photometric(
     would teach the model that the pair disagrees about the light. Applied in the
     order the light meets the camera: exposure, scene, lens, sensor, processing.
     """
-    views = [sample.tight, sample.wide]
+    views = sample.views()
     if rng.random() < probability:
         gain = rng.uniform(*EXPOSURE_GAIN_RANGE)
         contrast = rng.uniform(*EXPOSURE_CONTRAST_RANGE)
@@ -411,7 +423,7 @@ def photometric(
     if rng.random() < probability:
         gains = np.array([rng.uniform(*WHITE_BALANCE_RANGE) for _ in range(3)], dtype=np.float32)
         views = [white_balance(view, gains) for view in views]
-    return replace(sample, tight=views[0], wide=views[1])
+    return sample.with_views(views)
 
 
 class SpoofShardDataset(IterableDataset):
@@ -436,6 +448,7 @@ class SpoofShardDataset(IterableDataset):
         roll_range: tuple[float, float] = ROLL_RANGE,
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
+        keep_wide: bool = True,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -447,6 +460,7 @@ class SpoofShardDataset(IterableDataset):
         self.size = size
         self.train = train
         self.seed = seed
+        self.keep_wide = keep_wide
         self.shuffle_buffer = shuffle_buffer if train else 0
         self.recompress_probability = recompress_probability
         self.quality_range = quality_range
@@ -483,10 +497,14 @@ class SpoofShardDataset(IterableDataset):
             for record in read_shard(shard):
                 meta = json.loads(record["json"])
                 reached = float(meta["wide_scale"])
-                wide = decode_native(record["wide.jpg"])
+                # The crop-scale augmentation cuts the tight view out of this one,
+                # so a training pass still needs it even when the model will not see it.
+                wide = decode_native(record["wide.jpg"]) if self.train or self.keep_wide else None
+                if wide is not None and not self.train:
+                    wide = resized(wide, self.size)
                 yield SpoofSample(
                     tight=decode(record["tight.jpg"], self.size),
-                    wide=wide if self.train else resized(wide, self.size),
+                    wide=wide,
                     label=int(meta["label"]),
                     wide_scale=reached,
                     face_in_wide=tuple(meta.get("face_in_wide") or centred_face(reached)),
@@ -503,6 +521,8 @@ class SpoofShardDataset(IterableDataset):
                 drawn = rng.random() < self.crop_scale_probability
                 target = rng.uniform(*self.crop_scale_range) if drawn else sample.wide_scale
                 sample = crop_scale(sample, target, self.size)
+                if not self.keep_wide:
+                    sample = replace(sample, wide=None)
                 if rng.random() < self.translate_probability:
                     span = self.translate_range
                     sample = translate(sample, rng.uniform(-span, span), rng.uniform(-span, span))
@@ -532,9 +552,13 @@ def to_tensor(image: np.ndarray) -> torch.Tensor:
 def collate(
     batch: list[SpoofSample],
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Stack into (tight, wide, label, wide_scale), what the model and loss expect."""
+    """Stack into (tight, wide, label, wide_scale), what the model and loss expect.
+
+    A one-backbone run carries no context view, and the empty stand-in keeps the
+    tuple the same shape for every caller.
+    """
     tight = torch.stack([to_tensor(s.tight) for s in batch])
-    wide = torch.stack([to_tensor(s.wide) for s in batch])
+    wide = torch.stack([to_tensor(s.wide) for s in batch]) if batch[0].wide is not None else tight[:0]
     labels = torch.tensor([s.label for s in batch], dtype=torch.long)
     scales = torch.tensor([s.wide_scale for s in batch], dtype=torch.float32)
     return tight, wide, labels, scales

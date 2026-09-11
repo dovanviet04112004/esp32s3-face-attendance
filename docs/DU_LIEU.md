@@ -217,7 +217,7 @@ gộp vào pool, chọn theo đúng luật của `xdomain_crop.py` nên ids và 
 | File | Số ảnh | Vai | sha256 |
 |---|---|---|---|
 | `lcc_train_ids.txt` | 8.299 | **train**, lặp 5 lần trong `train_split` | `4a74012f…` |
-| `lcc_val_ids.txt` | 2.948 | để dành | `84c6edb5…` |
+| `lcc_val_ids.txt` | 2.948 | **val**, cùng `test:0:10` của CelebA | `84c6edb5…` |
 | `lcc_test_ids.txt` | 7.580 | test khác miền | `a0b91571…` |
 | `synth_train_ids.txt` | 41.800 | **train** (10.000 mỗi kênh ngoài phần test; in chỉ còn 1.800) | `ec655fc6…` |
 | `synth_test_ids.txt` | 10.000 | test khác miền, 2.000 trải đều mỗi kênh | `0a2ea310…` |

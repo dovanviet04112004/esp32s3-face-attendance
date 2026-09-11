@@ -160,6 +160,7 @@ def build_loader(cfg: object, split: str, root: Path | None = None) -> torch.uti
         train=False,
         seed=cfg.run.seed,
         splits=split,
+        keep_wide=keeps_wide(cfg),
     )
     return torch.utils.data.DataLoader(
         dataset,
@@ -184,10 +185,12 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
         path = run / "ckpt" / "last.pth"
     payload = torch.load(path, map_location="cpu", weights_only=False)
     state = payload["ema"]["module"] if "ema" in payload else payload["model"]
-    params = dict(cfg.model.params)
-    # A config without a views key belongs to a two-view run; its weights say so.
-    params.setdefault("views", "both" if any(k.startswith("wide.") for k in state) else "tight")
-    model = MODELS.build({"name": cfg.model.name, "params": params})
+    # A config without a views key belongs to a two-view run; its weights say so,
+    # and writing it back is what makes the loader hand that run its second view.
+    cfg.model.params.setdefault(
+        "views", "both" if any(k.startswith("wide.") for k in state) else "tight"
+    )
+    model = MODELS.build({"name": cfg.model.name, "params": dict(cfg.model.params)})
     model.load_state_dict(state)
     return cfg, model
 
@@ -210,10 +213,14 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     return cfg, model, (example,), names, ["logits"]
 
 
+def keeps_wide(cfg: object) -> bool:
+    """Whether this run's model reads the context crop at all."""
+    return (cfg.model.params or {}).get("views", "tight") == "both"
+
+
 def input_names(cfg: object) -> list[str]:
     """The graph's inputs in order: the face crop, and the context crop if the model has one."""
-    both = (cfg.model.params or {}).get("views", "tight") == "both"
-    return ["tight", "wide"] if both else ["tight"]
+    return ["tight", "wide"] if keeps_wide(cfg) else ["tight"]
 
 
 def frame_label(folder: str) -> int:

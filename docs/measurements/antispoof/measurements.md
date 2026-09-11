@@ -1613,3 +1613,46 @@ Ba giá trị dễ nhầm, ghi rõ để không ai lấy nhầm:
 Pool mới đẩy tỉ lệ tấn công lên vì hai bộ thêm vào đều lệch mạnh về phía tấn công: LCC-FASD
 `training` chỉ **14,7%** ảnh thật, SynthASpoof `train` **23,9%**, so với 34,7% của CelebA-Spoof.
 Tỉ trọng live của pool tụt từ 34,7% xuống **32,2%**.
+
+---
+
+## 27. Dọn đường dữ liệu cho model một backbone — đo 11/09
+
+### 27.1 Val không còn thuần CelebA-Spoof
+
+§25 đo được: ngưỡng khớp trên `test:0:10` của CelebA-Spoof **đuổi 34–59% mặt thật** ở ba miền
+khác. Mà chính split ấy vừa chọn `best.pth` vừa là nơi `eval.py` khớp ngưỡng, tức cả hai quyết
+định đều nhìn một miền.
+
+`val_split` chuyển thành `["test:0:10", "lcc_development"]`:
+
+| Phần | Bản ghi | Vai |
+|---|---|---|
+| CelebA-Spoof `test:0:10` | 20.000 | miền nhà, giữ nguyên để so được với các run trước |
+| LCC-FASD `development` | 2.944 | miền điện thoại chụp lại trong phòng thường |
+| **Cộng** | **22.944** | |
+
+`development` **không** nằm trong pool train (chỉ `training` nằm), nhưng nó trùng 12 người với
+`training` (`DU_LIEU` §4.2b) nên nó chỉ dùng để **khớp ngưỡng và chọn checkpoint**, không bao giờ
+báo cáo như số khác miền. Hệ quả phải ghi rõ: **val EER của arm này không so được với val EER của
+`1112`**; so sánh nằm ở bảng test và bảng khác miền.
+
+### 27.2 Nhánh wide rời khỏi đường augment
+
+Model một backbone không đọc view ngữ cảnh, nhưng phép cắt tỉ lệ crop **vẫn cắt view tight ra từ
+nó**, nên không bỏ được lúc giải mã. Chỉ bỏ được sau bước đó: trượt, nghiêng, che, quang học và
+nén lại giờ chỉ chạy trên view model thật sự ăn.
+
+| | Một worker |
+|---|---|
+| Còn giữ view wide | 315 mẫu/s |
+| Bỏ sau bước cắt tỉ lệ | **399 mẫu/s** |
+
+**+27%** cho reader. Với 12 worker reader vốn đã trên mức 1.735 mẫu/s mà bước train tiêu thụ
+(§13.2) nên epoch không ngắn lại, cái được là CPU và RAM — thứ đang hiếm trên máy này
+(`memory: wsl-crash-build-parallelism`). `collate` trả tensor wide rỗng để mọi caller giữ nguyên
+hình dạng bộ bốn.
+
+Checkpoint hai view cũ vẫn chấm được: `load_run` đọc trọng số để suy ra `views` rồi **ghi ngược
+vào cfg**, nên loader biết phải dọn hay giữ view thứ hai. Kiểm lại trên `1112`: `views -> both`,
+batch ra đủ hai tensor 96×3×81×81.
