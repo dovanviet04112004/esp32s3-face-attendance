@@ -30,7 +30,7 @@ HOLE_FP = "MountingHole:MountingHole_3.2mm_M3"
 PLACEMENT = {
     # Every module body along the top of the board starts on the panel's own top
     # edge, so the three outlines read as one line (KEHOACH 2.3I).
-    "J4": (13.65, 20.0, 90),
+    "J4": (15.65, 20.0, 90),
     # Between the left row's names clearing the board edge and C4's can still fitting.
     "U1": (20.0, 64.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
@@ -56,8 +56,8 @@ PLACEMENT = {
     # Band 3, y 84..108: the supplies side by side so their grounds meet at one
     # point (rule 1), J11 keeping its offset from J9 so rule 2 survives the move.
     "C1": (134.0, 94.0, 0),
-    "J10": (134.0, 109.0, 0),
-    "J11": (145.5, 109.0, 0),
+    "J10": (134.0, 107.0, 0),
+    "J11": (145.5, 107.0, 0),
 }
 
 
@@ -83,15 +83,15 @@ def sd_row() -> tuple:
 # 🔬 Assumed centred on the far edge, mirroring the header at the near one.
 PLACEMENT["J14"] = sd_row()
 # Where the carrier bolts to the case: H1..H4 hold the panel to this board, not this
-# board to anything. Two give up their corner to what already stands there.
-BOARD_HOLES = {"H5": (4.0, 26.0, 0), "H6": (154.0, 4.0, 0), "H7": (154.0, 98.5, 0),
-               "H8": (118.0, 117.0, 0), "H9": (4.0, 117.0, 0)}
+# board to anything. The ToF and the terminals each moved 2 mm to clear a corner.
+BOARD_HOLES = {"H5": (5.0, 5.0, 0), "H6": (153.0, 5.0, 0),
+               "H7": (153.0, 116.0, 0), "H8": (5.0, 116.0, 0)}
 PLACEMENT.update(BOARD_HOLES)
 # A plugged-in module keeps its body, and that body lands on the board. Drawn on
 # the silkscreen so nothing is placed inside one. 🔬 only the RTC is measured.
 MODULE_AREA = {
     "J3 LCD 4.0in": LCD_AREA,
-    "J4 VL53L1X": (7.5, 7.0, 32.5, 22.0),
+    "J4 VL53L1X": (9.5, 7.0, 34.5, 22.0),
     "J5 PCF8574 48x16": (109.85, 7.0, 125.85, 55.0),
     "J7 MAX98357A": (109.85, 60.0, 129.85, 80.0),
 }

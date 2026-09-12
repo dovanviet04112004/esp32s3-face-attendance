@@ -715,9 +715,12 @@ con tụ chỉ còn hở 0,04 mm mỗi bên.
 board*, không giữ *board vào cái gì*. Thiếu chúng thì cả cụm màn cộng board treo lơ lửng trong
 vỏ, mà hai con domino lại là chỗ người ta vặn vít siết dây vào — lực đó phải có chỗ truyền xuống.
 
-Không đủ bốn góc: góc trên trái đã có con ToF đứng, góc dưới phải đã có hai con domino. Hai lỗ
-đó trượt dọc mép thay vì nằm đúng góc. Vẫn cùng cỡ **M3 Ø3,2** với lỗ bắt màn, nên cả board chỉ
-dùng một cỡ vít.
+Bốn lỗ **đúng bốn góc**, cách mép board 5 mm. Hai góc vốn bị chiếm — góc trên trái có thân con
+ToF, góc dưới phải có hai con domino — nên **con ToF dịch phải 2 mm và hai domino dịch lên 2 mm**
+để nhường chỗ. Dịch linh kiện rẻ hơn là bỏ góc: lỗ bắt nằm giữa mép thì board vẫn vênh được ở
+góc, mà góc lại đúng chỗ vỏ máy đỡ.
+
+Cùng cỡ **M3 Ø3,2** với lỗ bắt màn, nên cả board chỉ dùng một cỡ vít.
 
 **Khung thân của mọi module ở hàng trên bắt đầu cùng một đường: mép trên tấm màn, y = 7.** Trước
 đó VLX cao hơn 2 mm và PCF8574 cao hơn 1 mm — không phải quyết định nào cả, chỉ là số gõ vào lúc
