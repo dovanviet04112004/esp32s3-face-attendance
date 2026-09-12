@@ -9,7 +9,6 @@
 static const char *TAG = "bsp_board";
 
 #define LCD_SPI_HOST SPI2_HOST
-#define I2C_LOCK_DEFAULT_MS 1000
 #define I2C_READY_CEILING_MS 500
 #define I2C_READY_STEP_MS 5
 #define I2C_ACK_WAIT_MS 20
@@ -106,8 +105,8 @@ i2c_master_bus_handle_t bsp_i2c_bus(void)
 
 esp_err_t bsp_i2c_lock(uint32_t timeout_ms)
 {
-    const uint32_t wait = timeout_ms ? timeout_ms : I2C_LOCK_DEFAULT_MS;
-    return xSemaphoreTake(s_i2c_mutex, pdMS_TO_TICKS(wait)) == pdTRUE ? ESP_OK : ESP_ERR_TIMEOUT;
+    return xSemaphoreTake(s_i2c_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE ? ESP_OK
+                                                                            : ESP_ERR_TIMEOUT;
 }
 
 void bsp_i2c_unlock(void)

@@ -16,6 +16,7 @@
 static const char *TAG = "drv_touch";
 
 #define TOUCH_ADDR_SELECT_LOW 0
+#define TOUCH_LOCK_MS 200
 #define PRODUCT_ID_REG 0x8140
 #define PRODUCT_ID_LEN 3
 #define PRODUCT_ID_GT911 "911"
@@ -112,7 +113,7 @@ esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count)
                              : (uint8_t)CONFIG_ESP_LCD_TOUCH_MAX_POINTS;
     uint8_t got = 0;
 
-    APP_RETURN_ON_ERR(bsp_i2c_lock(0), TAG, "lock");
+    APP_RETURN_ON_ERR(bsp_i2c_lock(TOUCH_LOCK_MS), TAG, "lock");
     const esp_err_t err = esp_lcd_touch_read_data(s_touch);
     bsp_i2c_unlock();
     APP_RETURN_ON_ERR(err, TAG, "read");
