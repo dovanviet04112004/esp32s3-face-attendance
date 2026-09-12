@@ -1312,15 +1312,17 @@ esp32s3-face-attendance/
 ├── firmware/      ESP-IDF — C + C++
 ├── hardware/      KiCad + datasheet — mạch thật mà firmware chạy trên đó
 │   ├── README.md                    # mở bằng KiCad bản nào, đọc gì trước
+│   ├── gen/{gen_sch.py, gen_pcb.py, gen_fp.py}  # ✅ SINH RA kicad/ và lib/ — nguồn thật
 │   ├── kicad/{kiosk.kicad_pro, .kicad_sch, .kicad_pcb, fp-lib-table, sym-lib-table}  # ✅ text
-│   ├── lib/{symbols/, footprints/}  # ✅ tự vẽ; kéo về thì kèm UPSTREAM.md
+│   ├── lib/{symbols/, footprints/}  # ✅ sinh từ gen/; kéo về thì kèm UPSTREAM.md
 │   ├── export/                      # ✅ PDF/PNG cho báo cáo, đóng dấu git sha của §2
 │   ├── datasheets/                  # ❌ gitignore PDF — chỉ giữ INDEX.md
 │   └── vendor/                      # ❌ gitignore — sơ đồ module hãng, giữ UPSTREAM.md
 ├── backend/       NestJS
 ├── frontend/      Next.js → Vercel
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
-├── tools/         Script ngang khối: gen_from_schema · check_comments · check_layers · check_schematic
+├── tools/         Script ngang khối: gen_from_schema · check_comments · check_layers
+│                   · check_schematic · check_pcb
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
     ├── TASKS.md                                 # backlog
@@ -1349,6 +1351,14 @@ kéo từ hãng đi theo luật `third_party/` (CLAUDE.md §2.10): không sửa,
 **Sơ đồ nguyên lý là ảnh chụp của §2, không phải nguồn thứ ba.** Chân GPIO vẫn khai ở đúng hai chỗ —
 `app_config.h` và §2 (CLAUDE.md §1.3). Mỗi bản trong `export/` đóng dấu git sha của §2 lúc vẽ; lệch
 nhau thì **§2 đúng**, sơ đồ vẽ lại, không bao giờ ngược lại.
+
+**`hardware/gen/` là nguồn, `hardware/kicad/` là sản phẩm.** Ba script sinh ra toàn bộ file KiCad
+từ bảng chân của §2: `gen_sch.py` → sơ đồ + thư viện symbol, `gen_pcb.py` → PCB, `gen_fp.py` →
+footprint devkit tự vẽ. Bảng dữ liệu trong `gen_sch.py` chép thứ tự chân từng module theo §2.3, nên
+sửa một chân là sửa ở §2 trước, rồi ở script, rồi sinh lại — không bao giờ sửa tay file `.kicad_*`.
+File sinh ra **vẫn commit** (chúng là thứ mở được bằng KiCad và là thứ đem đi đặt in), nhưng sửa tay
+chúng thì lần sinh sau mất sạch. Sinh lại phải **cho ra file y hệt**: uuid đặt theo tên linh kiện
+chứ không lấy ngẫu nhiên, nếu không mỗi lần chạy là diff hai nghìn dòng và không ai soát được gì.
 
 ### 4.2 `contracts/` — nguồn sự thật duy nhất
 

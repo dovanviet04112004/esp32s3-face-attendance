@@ -15,14 +15,34 @@ sách nguồn đều ở đó. Thư mục này không giải thích lại, nó c
 
 | Thư mục | Git | Vì sao |
 |---|---|---|
+| `gen/` | ✅ | **Nguồn thật**: ba script sinh ra `kicad/` và `lib/` từ bảng chân §2 |
 | `kicad/` | ✅ | `.kicad_sch` / `.kicad_pcb` là s-expression dạng text, diff được |
-| `lib/` | ✅ | Symbol và footprint tự vẽ. Kéo về thì kèm `UPSTREAM.md` |
+| `lib/` | ✅ | Symbol và footprint sinh từ `gen/`. Kéo về thì kèm `UPSTREAM.md` |
 | `export/` | ✅ | PDF/PNG cho báo cáo, nhẹ, là thứ người chấm đọc |
 | `datasheets/` | ❌ | PDF của hãng — bản quyền không thuộc dự án. Chỉ `INDEX.md` vào git |
 | `vendor/` | ❌ | Sơ đồ module hãng phát hành. Chỉ `UPSTREAM.md` vào git |
 
 `*.kicad_prl`, `*-backups/` và `fp-info-cache` là rác phiên làm việc, mỗi máy một khác — đã
 gitignore.
+
+## Sinh lại toàn bộ
+
+Chạy **từ gốc repo**, đúng thứ tự — `gen_pcb` đọc sơ đồ vừa sinh để lấy net:
+
+```bash
+python3 hardware/gen/gen_fp.py     # footprint devkit tự vẽ  -> lib/footprints/
+python3 hardware/gen/gen_sch.py    # sơ đồ + symbol          -> kicad/, lib/symbols/
+python3 hardware/gen/gen_pcb.py    # PCB                     -> kicad/
+kicad-cli pcb upgrade hardware/kicad/kiosk.kicad_pcb
+python3 tools/check_schematic.py && python3 tools/check_pcb.py
+```
+
+`pcb upgrade` là bắt buộc: `gen_pcb.py` ghi ở định dạng `20241229` rồi để KiCad nâng lên
+`20260206`, vì viết thẳng định dạng mới nhất bằng tay là chép một thứ sẽ đổi ở bản sau.
+
+**Sinh lại phải ra file y hệt.** Chạy hai lần liên tiếp mà `git status` sạch thì đúng; lệch
+là có uuid nào đó đang lấy ngẫu nhiên, và mỗi lần chạy sẽ đẻ ra hai nghìn dòng diff che mất
+thay đổi thật. Đừng sửa tay file trong `kicad/` — lần sinh sau mất sạch.
 
 ## Đóng KiCad trước khi sinh lại sơ đồ
 

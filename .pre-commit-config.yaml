@@ -16,6 +16,11 @@ repos:
         entry: python3 tools/check_schematic.py
         language: system
         pass_filenames: false
+      - id: check-pcb
+        name: check PCB against the schematic (KE HOACH 4.1)
+        entry: python3 tools/check_pcb.py
+        language: system
+        pass_filenames: false
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.9

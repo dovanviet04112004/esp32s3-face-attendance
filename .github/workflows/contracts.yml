@@ -80,3 +80,6 @@ jobs:
 
       - name: Schematic against the pin map
         run: python3 tools/check_schematic.py
+
+      - name: PCB against the schematic
+        run: python3 tools/check_pcb.py
