@@ -701,6 +701,11 @@ PCF8574 dài 48 mm đổ xuống dưới nó, `J3` hất xuống vì tấm màn 
 sang trái. Chiều cao board (121 mm) và khe giữa tấm màn với khung con amp đều là hệ quả của luật
 này chứ không phải chọn trước. `tools/check_pcb.py` bắt lại: chữ nào rơi vào khung module thì fail.
 
+**Đế cắm phải nằm chính giữa khung của module nó đỡ.** Lệch thì module ngồi hẫng một bên, và
+trên board đế nó hiện ra thành cái khung nét đứt không cân với hàng lỗ bên trong. Căn theo
+**trục mà hàng chân chạy** — hàng ngang căn theo chiều ngang khung, hàng dọc căn theo chiều dọc.
+`tools/check_pcb.py` bắt lệch quá 0,3 mm.
+
 Luật đó áp cho **cả tên linh kiện** (`J3`, `J5`, …), không riêng tên chân — chữ `J5` nằm dưới
 thân con PCF8574 thì cũng vô dụng y như chữ `SCL` nằm đó. Tên linh kiện đặt ở **đầu hàng chân**,
 lùi ra cùng phía với tên chân. Riêng bốn lỗ vít màn thì **ẩn hẳn chữ `H1`…`H4`**: một lỗ khoan

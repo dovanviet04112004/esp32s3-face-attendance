@@ -30,7 +30,7 @@ HOLE_FP = "MountingHole:MountingHole_2.7mm"
 PLACEMENT = {
     # Face: ToF over the devkit, panel flat to their right, its capacitor on the
     # strip below where an 11 mm can clears the 8.5 mm the panel stands at.
-    "J4": (13.5, 18.0, 90),
+    "J4": (13.65, 18.0, 90),
     # Between the left row's names clearing the board edge and C4's can still fitting.
     "U1": (20.0, 62.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
@@ -39,17 +39,19 @@ PLACEMENT = {
     # A 107 mm panel leaves no strip under itself, so its capacitor goes beside it,
     # centred in the gap and with its plus leg on the same line as the panel's VCC.
     "C4": (38.63, 111.5, 90),
+    # Every socket under a module sits centred across that module's own outline, so
+    # the body lands square on it instead of hanging over one side.
     # Right of the panel, three bands. Band 1, y 6..54: the I2C parts.
     "J13": (129.0, 34.32, 180),
-    "J5": (111.0, 9.0, 90),
+    "J5": (112.19, 9.0, 90),
     "J6": (138.0, 12.0, 90),
     # Turned round so the 3V3 leg meets J6.VCC and the SDA leg meets J6.SDA, the
     # only two pads on the board 2.54 mm apart carrying those nets. Centred on J6.
     "R1": (149.43, 20.0, 180),
     # Band 2, y 58..80: the two loads that switch, each with its capacitor beside
     # it. J7 sits at the left edge of the amplifier's outline so C2 can reach it.
-    "J7": (112.0, 62.0, 0),
-    "C2": (112.0, 86.0, 0),
+    "J7": (112.0, 62.38, 0),
+    "C2": (112.0, 86.38, 0),
     "J9": (143.0, 62.0, 0),
     "C3": (149.0, 64.54, 0),
     # Band 3, y 84..108: the supplies side by side so their grounds meet at one

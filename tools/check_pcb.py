@@ -275,6 +275,22 @@ def main() -> int:
             problems.append(f"module body ({bx0:.0f}, {by0:.0f})-({bx1:.0f}, {by1:.0f}): "
                             f"holds {', '.join(inside)}")
 
+    # The body lands square on its socket only if the row is centred across the
+    # outline along the axis the row runs; 1 mm of drift is visible on the board.
+    for bx0, by0, bx1, by1 in boxes_from(outline(pcb, "F.SilkS", dashed=True)):
+        for ref, part in sorted(parts.items()):
+            seats = [p["xy"] for p in part["pads"].values() if p["net"]]
+            if len(seats) < 2 or not all(bx0 <= x <= bx1 and by0 <= y <= by1 for x, y in seats):
+                continue
+            xs = [x for x, y in seats]
+            ys = [y for x, y in seats]
+            along = (max(xs) - min(xs)) >= (max(ys) - min(ys))
+            mid = (min(xs) + max(xs)) / 2 if along else (min(ys) + max(ys)) / 2
+            centre = (bx0 + bx1) / 2 if along else (by0 + by1) / 2
+            if abs(mid - centre) > 0.3:
+                problems.append(f"{ref}: sits {mid - centre:+.2f} mm off the centre of "
+                                f"the body it carries")
+
     hulls = {}
     for ref, part in parts.items():
         if part["crtyd"]:
