@@ -69,28 +69,30 @@ SERVO = [("GND", "GND"), ("VCC", "+5V_R2"), ("PWM", "SERVO_PWM")]
 JACK1 = [("+5V", "+5V_R1"), ("GND", "GND")]
 JACK2 = [("+5V", "+5V_R2"), ("GND", "GND")]
 
-# ref, value, description, pins for the left bank, pins for the right bank, x, y
+# ref, value, pins for the left bank, pins for the right bank, x, y. Three columns:
+# the devkit, everything quiet, everything that moves current.
 PARTS = [
-    ("U1", "ESP32-S3-CAM N16R8", DEVKIT_LEFT, DEVKIT_RIGHT, 75.0, 60.0),
-    ("J3", "LCD 4.0in ST7796S + GT911", LCD, [], 190.0, 40.0),
-    ("J14", "LCD microSD - lo cho, chua noi day", SD, [], 190.0, 240.0),
-    ("J4", "VL53L1X", TOF, [], 190.0, 95.0),
-    ("J5", "PCF8574 - de cam 4 chan nguon", EXPANDER_I2C, [], 190.0, 142.0),
-    ("J13", "PCF8574 - han day tu hang P", EXPANDER_IO, [], 190.0, 173.0),
-    ("J6", "DS3231", RTC, [], 190.0, 205.0),
-    ("J7", "MAX98357A", AMP, [], 285.0, 40.0),
-    ("J9", "SG90 servo", SERVO, [], 285.0, 110.0),
-    ("J10", "Jack 5V rail 1", JACK1, [], 285.0, 140.0),
-    ("J11", "Jack 5V rail 2", JACK2, [], 285.0, 165.0),
+    ("U1", "ESP32-S3-CAM N16R8", DEVKIT_LEFT, DEVKIT_RIGHT, 55.0, 105.0),
+    ("J3", "LCD 4.0in ST7796S + GT911", LCD, [], 125.0, 48.0),
+    ("J14", "LCD microSD - lo cho, chua noi day", SD, [], 125.0, 90.0),
+    ("J4", "VL53L1X", TOF, [], 125.0, 122.0),
+    ("J5", "PCF8574 - de cam 4 chan nguon", EXPANDER_I2C, [], 125.0, 155.0),
+    ("J13", "PCF8574 - han day tu hang P", EXPANDER_IO, [], 125.0, 190.0),
+    ("J6", "DS3231", RTC, [], 125.0, 228.0),
+    ("J7", "MAX98357A", AMP, [], 195.0, 48.0),
+    ("J9", "SG90 servo", SERVO, [], 195.0, 88.0),
+    ("J10", "Jack 5V rail 1", JACK1, [], 195.0, 120.0),
+    ("J11", "Jack 5V rail 2", JACK2, [], 195.0, 145.0),
 ]
 
-# ref, value, top net, bottom net, x, y  -- two-pin parts drawn vertically
+# ref, value, top net, bottom net, x, y. Each one is drawn beside the load it holds
+# up, so the sheet says which rail it belongs to without reading a net label.
 TWO_PIN = [
-    ("R1", "4k7", "+3V3", "I2C_SDA", 150.0, 215.0),
-    ("C1", "1000uF", "+5V_R1", "GND", 285.0, 195.0),
-    ("C2", "470uF", "+5V_R1", "GND", 305.0, 195.0),
-    ("C3", "470uF", "+5V_R2", "GND", 325.0, 195.0),
-    ("C4", "100uF", "+3V3", "GND", 345.0, 195.0),
+    ("R1", "4k7", "+3V3", "I2C_SDA", 145.0, 155.0),
+    ("C1", "1000uF", "+5V_R1", "GND", 215.0, 132.0),
+    ("C2", "470uF", "+5V_R1", "GND", 215.0, 48.0),
+    ("C3", "470uF", "+5V_R2", "GND", 215.0, 88.0),
+    ("C4", "100uF", "+3V3", "GND", 145.0, 48.0),
 ]
 
 FONT = "(effects (font (size 1.27 1.27)))"
