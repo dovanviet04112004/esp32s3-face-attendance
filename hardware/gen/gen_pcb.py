@@ -51,10 +51,12 @@ PLACEMENT = {
     # it. J7 sits at the left edge of the amplifier's outline so C2 can reach it.
     "J7": (113.85, 62.38, 0),
     "C2": (113.85, 86.38, 0),
-    "J9": (143.0, 62.0, 0),
-    "C3": (149.0, 64.54, 0),
+    # The servo header takes the outer slot so its cable clears the board edge; its
+    # reservoir turns round to keep the plus leg on the pin it holds up (rule 7).
+    "C3": (138.25, 64.54, 180),
+    "J9": (145.5, 62.0, 0),
     # Band 3, y 84..108: the supplies side by side so their grounds meet at one
-    # point (rule 1), J11 keeping its offset from J9 so rule 2 survives the move.
+    # point (rule 1), J11 right under J9 so rail 2 climbs on one straight run.
     "C1": (134.0, 94.0, 0),
     "J10": (134.0, 107.0, 0),
     "J11": (145.5, 107.0, 0),
