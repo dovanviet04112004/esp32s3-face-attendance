@@ -35,23 +35,22 @@ PLACEMENT = {
     "U1": (20.0, 62.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
     # panel reaches 107 mm up from wherever its header lands.
-    "J3": (57.0, 111.5, 90),
+    "J3": (55.54, 111.5, 90),
     # A 107 mm panel leaves no strip under itself, so its capacitor goes beside it,
     # centred in the gap and with its plus leg on the same line as the panel's VCC.
-    "C4": (38.63, 111.5, 90),
-    # Every socket under a module sits centred across that module's own outline, so
-    # the body lands square on it instead of hanging over one side.
+    "C4": (37.90, 111.5, 90),
+    # Sockets under a module sit centred across its outline (KEHOACH 2.3I).
     # Right of the panel, three bands. Band 1, y 6..54: the I2C parts.
-    "J13": (129.0, 34.32, 180),
-    "J5": (112.19, 9.0, 90),
-    "J6": (138.0, 12.0, 90),
+    "J13": (130.85, 34.32, 180),
+    "J5": (114.04, 9.0, 90),
+    "J6": (139.85, 12.0, 90),
     # Turned round so the 3V3 leg meets J6.VCC and the SDA leg meets J6.SDA, the
     # only two pads on the board 2.54 mm apart carrying those nets. Centred on J6.
-    "R1": (149.43, 20.0, 180),
+    "R1": (151.28, 20.0, 180),
     # Band 2, y 58..80: the two loads that switch, each with its capacitor beside
     # it. J7 sits at the left edge of the amplifier's outline so C2 can reach it.
-    "J7": (112.0, 62.38, 0),
-    "C2": (112.0, 86.38, 0),
+    "J7": (113.85, 62.38, 0),
+    "C2": (113.85, 86.38, 0),
     "J9": (143.0, 62.0, 0),
     "C3": (149.0, 64.54, 0),
     # Band 3, y 84..108: the supplies side by side so their grounds meet at one
@@ -88,8 +87,8 @@ PLACEMENT["J14"] = sd_row()
 MODULE_AREA = {
     "J3 LCD 4.0in": LCD_AREA,
     "J4 VL53L1X": (7.5, 5.0, 32.5, 20.0),
-    "J5 PCF8574 48x16": (108.0, 6.0, 124.0, 54.0),
-    "J7 MAX98357A": (108.0, 60.0, 128.0, 80.0),
+    "J5 PCF8574 48x16": (109.85, 6.0, 125.85, 54.0),
+    "J7 MAX98357A": (109.85, 60.0, 129.85, 80.0),
 }
 
 

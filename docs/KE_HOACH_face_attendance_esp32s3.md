@@ -701,6 +701,12 @@ PCF8574 dài 48 mm đổ xuống dưới nó, `J3` hất xuống vì tấm màn 
 sang trái. Chiều cao board (121 mm) và khe giữa tấm màn với khung con amp đều là hệ quả của luật
 này chứ không phải chọn trước. `tools/check_pcb.py` bắt lại: chữ nào rơi vào khung module thì fail.
 
+**Ba khe quanh tấm màn để bằng nhau: 7,3 mm.** Tấm màn cách devkit, cách khung PCF8574 và cách
+khung MAX98357A đúng một khoảng. Con số 7,3 không chọn cho đẹp mà do **thân tụ `C4` chặn**: nó
+6,3 mm và nằm trong khe bên trái, nên khe không hẹp hơn được. Cân bằng bằng cách đẩy tấm màn
+sang trái 1,46 mm và cả cụm bên phải sang phải 1,85 mm — chia đôi đơn thuần thì ra 6,38 mm và
+con tụ chỉ còn hở 0,04 mm mỗi bên.
+
 **Đế cắm phải nằm chính giữa khung của module nó đỡ.** Lệch thì module ngồi hẫng một bên, và
 trên board đế nó hiện ra thành cái khung nét đứt không cân với hàng lỗ bên trong. Căn theo
 **trục mà hàng chân chạy** — hàng ngang căn theo chiều ngang khung, hàng dọc căn theo chiều dọc.
