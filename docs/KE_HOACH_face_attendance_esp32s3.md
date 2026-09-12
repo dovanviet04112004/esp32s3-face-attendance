@@ -511,6 +511,27 @@ gian sau khi ESP32 boot. Đo trên board:
 | PCF8574 `0x20` ACK lần đầu | **5 ms** |
 | VL53L1X `0x29` ACK lần đầu | **17 ms** |
 
+**Quét cả bus với đủ thiết bị, 12/09** — `bsp_board/test_apps/buses`, 7/7 case PASS ở 400 kHz:
+
+| Địa chỉ | Ai |
+|---|---|
+| `0x14` | GT911 — **không phải `0x5D`**, xem dưới |
+| `0x20` | PCF8574 |
+| `0x29` | VL53L1X |
+| `0x57` | AT24C32 trên module RTC, không dùng |
+| `0x68` | DS3231 |
+
+Đúng năm con phải có và không con nào thừa, nên **SDA không bị chập** — nếu chập thì mọi địa
+chỉ đều "trả lời" và phép đếm của test bắt được. Trở treo 4,7 kΩ đủ cho sườn lên ở 400 kHz với
+cả năm con trên dây breadboard, mà dây breadboard dài hơn đồng trên board đế nhiều.
+
+GT911 trả lời ở **`0x14`** chứ không phải `0x5D` mặc định: app này không chạy trình tự reset của
+`drv_touch`, nên địa chỉ do cuộc đua lúc cấp nguồn quyết định — đúng như cảnh báo ở §2.3C. Đây là
+bằng chứng đo được rằng trình tự đó bắt buộc, không phải tuỳ chọn.
+
+Log ghi `i2c ready after 0 ms` vì đây là **reset**, ngoại vi vẫn đang có điện từ trước. Mốc 5 ms
+và 17 ms ở bảng trên chỉ hiện ra lúc **cấp nguồn lần đầu** (§2.3B).
+
 Ở t+4 ms **không con nào trả lời**, trong khi SDA và SCL đều đã idle mức 1 — nên đây không
 phải thiếu pull-up mà là cuộc đua vài millisecond. Driver nào chạm bus ngay sau
 `bsp_board_init()` thì NACK; driver nào chậm vài ms thì chạy, nên lỗi đổi mặt theo từng lần
