@@ -2618,9 +2618,10 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | **`m_facedb`** | Mutex | — | `ai_task` (đọc), `mqtt_task` (ghi khi enroll) | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
 | **`m_littlefs`** | Mutex | — | `attend_task`, `sync_task`, `ota_task`, `audio_task` | — | LittleFS không thread-safe mặc định |
 | `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
-| `s_bounce_free` | Binary semaphore | — | callback `esp_lcd` | `drv_lcd` | Đệm bounce được trả lại thì mới nạp lượt sau. Callback **trả** cờ yield cho `esp_lcd` tự nhường, không tự gọi `portYIELD_FROM_ISR` |
-| `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | như trên |
+| `s_bounce_free` | Counting semaphore, **2 suất** | — | callback `esp_lcd` | `drv_lcd` | Đệm bounce được trả lại thì mới nạp lượt sau. Có hai đệm nên phải đếm được hai suất: binary chỉ giữ được một, đệm rỗi thứ hai sẽ nằm không. Callback **trả** cờ yield cho `esp_lcd` tự nhường, không tự gọi `portYIELD_FROM_ISR` |
+| `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | Một lần đo xong là một lần đánh thức, không có suất để dồn |
 | `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT`. Thay cho 7 biến cờ rời rạc |
+| `eg_wifi` | EventGroup, nội bộ `net_wifi` | 4 B | handler sự kiện Wi-Fi | `net_wifi_wait_connected()` | `net_wifi` ở L5 không được phụ thuộc lên `app_wiring` ở L7 (§4.5.4), nên trạng thái link phải có chỗ đứng ngay trong component. `net_task` là nơi duy nhất bắc bit này sang `WIFI_OK` của `eg_system` |
 
 **Đường của `EVT_PRESENCE_ON/OFF`.** `drv_tof` chỉ trả khoảng cách (§2.3D), nên `tof_task` là
 chỗ biến khoảng cách thành hai cạnh: dưới `vision.present_mm` là có người, trên ngưỡng đó cộng
