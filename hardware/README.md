@@ -48,8 +48,8 @@ thay đổi thật. Đừng sửa tay file trong `kicad/` — lần sinh sau m�
 
 | Ø | Số lỗ | Ở đâu | Cái gì cắm vào |
 |---|---|---|---|
-| **0,40 mm** | 29 | rải khắp board | **Via** tín hiệu — không cắm gì, chỉ nối đồng hai mặt |
-| **0,60 mm** | 26 | rải khắp board | **Via nguồn** — khoan to hơn vì mỗi cái gánh cả dòng về của một tải |
+| **0,40 mm** | 27 | rải khắp board | **Via** tín hiệu — không cắm gì, chỉ nối đồng hai mặt |
+| **0,60 mm** | 19 | rải khắp board | **Via nguồn** — khoan to hơn vì mỗi cái gánh cả dòng về của một tải |
 | **0,80 mm** | 8 | `R1` `C2` `C3` `C4` | Chân trở 1/4 W và chân tụ nhỏ, đều ~0,6 mm |
 | **1,00 mm** | 139 | `U1` `J3` `J4` `J5` `J6` `J7` `J9` `J13` `J14` `J16` `J18`, `C1`, và hai lưới hàn `J15` `J17` | Chân header 2,54 mm (vuông 0,64 → chéo 0,91), chân tụ 1000 µF, lưới 4 × 5 giữ breakout USB và hai cặp lỗ nguồn của chúng |
 | **1,30 mm** | 4 | `J10` `J11` | Chân domino MX126-5.0 |
@@ -64,7 +64,9 @@ Vành đồng mỏng nhất **0,20 mm** (via tín hiệu); mỏng nhất trong c
 vành dưới 0,20 mm — dưới mức đó thì xưởng rẻ bắt đầu hỏi lại hoặc báo giá khác.
 
 Bốn lỗ vít là **NPTH nên không có vành**, đó là đúng chứ không phải thiếu: có đồng quanh lỗ bắt
-vít thì đầu vít chạm vào là chập.
+vít thì đầu vít chạm vào là chập. Cùng lý do, **không đồng nào trong bán kính 3,5 mm quanh cả tám
+lỗ vít**, hai mặt, dây lẫn via — cỡ long đen M3. DRC chỉ đo tới mép lỗ, còn thứ đè lên mặt board
+là đầu vít với trụ đồng, rộng gấp đôi lỗ (KẾ HOẠCH §2.5).
 
 ## Đóng KiCad trước khi sinh lại sơ đồ
 
