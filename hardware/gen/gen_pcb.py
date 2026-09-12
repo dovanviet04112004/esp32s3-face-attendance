@@ -82,6 +82,11 @@ def sd_row() -> tuple:
 
 # 🔬 Assumed centred on the far edge, mirroring the header at the near one.
 PLACEMENT["J14"] = sd_row()
+# Where the carrier bolts to the case: H1..H4 hold the panel to this board, not this
+# board to anything. Two give up their corner to what already stands there.
+BOARD_HOLES = {"H5": (4.0, 26.0, 0), "H6": (154.0, 4.0, 0), "H7": (154.0, 98.5, 0),
+               "H8": (118.0, 117.0, 0), "H9": (4.0, 117.0, 0)}
+PLACEMENT.update(BOARD_HOLES)
 # A plugged-in module keeps its body, and that body lands on the board. Drawn on
 # the silkscreen so nothing is placed inside one. 🔬 only the RTC is measured.
 MODULE_AREA = {
@@ -493,9 +498,13 @@ def main() -> None:
                         ["layer", '"F.SilkS"'], ["uuid", f'"{uid("area", name, i)}"']])
 
     for ref, spot in PLACEMENT.items():
+        if ref in BOARD_HOLES:
+            continue
         doc.append(place(ref, footprint[ref], nets[ref], net_id, spot))
     for ref, spot in lcd_holes().items():
         doc.append(place(ref, HOLE_FP, {}, net_id, spot))
+    for ref in BOARD_HOLES:
+        doc.append(place(ref, HOLE_FP, {}, net_id, PLACEMENT[ref]))
 
     doc += pin_labels(doc)
     move_references(doc)

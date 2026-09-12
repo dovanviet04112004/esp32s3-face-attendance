@@ -711,6 +711,14 @@ khung MAX98357A đúng một khoảng. Con số 7,3 không chọn cho đẹp mà
 sang trái 1,46 mm và cả cụm bên phải sang phải 1,85 mm — chia đôi đơn thuần thì ra 6,38 mm và
 con tụ chỉ còn hở 0,04 mm mỗi bên.
 
+**Board đế có lỗ bắt của riêng nó — `H5`…`H9`, năm lỗ M3.** Bốn lỗ `H1`…`H4` giữ *tấm màn vào
+board*, không giữ *board vào cái gì*. Thiếu chúng thì cả cụm màn cộng board treo lơ lửng trong
+vỏ, mà hai con domino lại là chỗ người ta vặn vít siết dây vào — lực đó phải có chỗ truyền xuống.
+
+Không đủ bốn góc: góc trên trái đã có con ToF đứng, góc dưới phải đã có hai con domino. Hai lỗ
+đó trượt dọc mép thay vì nằm đúng góc. Vẫn cùng cỡ **M3 Ø3,2** với lỗ bắt màn, nên cả board chỉ
+dùng một cỡ vít.
+
 **Khung thân của mọi module ở hàng trên bắt đầu cùng một đường: mép trên tấm màn, y = 7.** Trước
 đó VLX cao hơn 2 mm và PCF8574 cao hơn 1 mm — không phải quyết định nào cả, chỉ là số gõ vào lúc
 xếp thô. Ba khung lệch nhau vài milimét thì nhìn ra ngay là board chưa được căn, và cái nhìn đó
