@@ -473,6 +473,9 @@ Tụ 470 µF sát chân nguồn servo. Xung 50 Hz, độ rộng 500–2400 µs q
 
 #### G. PCF8574
 
+**Kích thước module: 48 × 16 × 15 mm.** Cao 15 mm nên nó **không lọt xuống dưới tấm màn** (màn
+đứng cách board 8,5 mm trên đế cắm), phải đặt ngoài vùng màn.
+
 **Module có hai hàng chân vuông góc nhau, không phải một.** Cạnh dưới (và cạnh trên, nối song song
 để nối tiếp nhiều module) là hàng 4 chân `SCL SDA GND VCC`; cạnh phải là hàng 9 chân `P0…P7 INT`.
 Board đế vì thế cần **hai đế cắm**, không phải một hàng 16.
@@ -494,6 +497,8 @@ hàn cả ba xuống GND **trên module**, board đế không có đường đ�
 Trạng thái nhận diện hiện trên LCD nên không có LED rời. Mọi chân P đều lên HIGH lúc cấp nguồn (§2.3.C) — chỉ giao cho P những việc mà mức HIGH lúc khởi động là vô hại: RST và XSHUT thả cao là chip được chạy, SD của amp ở cao là amp thức nhưng chưa có dữ liệu I²S, và `drv_audio_init` kéo P3 xuống trước khi bật clock. Cơ cấu mở cửa **không** đi qua PCF8574 vì lý do đó: mức HIGH lúc cấp nguồn trên một chân mở cửa là cửa mở.
 
 #### H. RTC DS3231
+
+**Module cắm dọc**: thân 19 × 42 mm dựng đứng, hàng 6 chân nằm ngang ở cạnh trên.
 
 **Thứ tự chân**, đọc từ module ZS-042 (42 × 19 mm): hàng 6 chân là
 `32K · SQW · SCL · SDA · VCC · GND`; cạnh đối diện có thêm hàng 4 chân `SCL SDA VCC GND`
