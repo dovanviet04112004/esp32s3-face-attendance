@@ -23,6 +23,22 @@ sách nguồn đều ở đó. Thư mục này không giải thích lại, nó c
 `*.kicad_prl`, `*-backups/` và `fp-info-cache` là rác phiên làm việc, mỗi máy một khác — đã
 gitignore.
 
+## Đóng KiCad trước khi sinh lại sơ đồ
+
+KiCad giữ cả file trong bộ nhớ. Đang mở mà có ai ghi đè file dưới đĩa thì lần Save
+tiếp theo của KiCad **xoá sạch** thay đổi đó — không báo gì cả. Đã mất một lần sửa
+chỗ đặt linh kiện đúng theo cách này.
+
+Hai file `~kiosk.kicad_*.lck` là dấu hiệu KiCad đang mở project; còn chúng thì không
+ghi vào `kicad/`. Và mỗi lần sơ đồ đổi, chạy:
+
+```bash
+python3 tools/check_schematic.py
+```
+
+Nó đọc thẳng `kiosk.kicad_sch`, đối chiếu từng chân devkit với `app_config.h` và bắt
+cả chữ chen nhau. Kiểm trên file thật nên bắt được cả thứ do KiCad ghi ra.
+
 ## §2 đúng, sơ đồ sai thì sửa sơ đồ
 
 Chân GPIO khai ở **đúng hai chỗ**: `firmware/components/bsp_board/include/app_config.h` và KẾ

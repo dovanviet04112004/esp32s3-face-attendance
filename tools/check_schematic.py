@@ -19,6 +19,10 @@ HEADER = "firmware/components/bsp_board/include/app_config.h"
 SCHEMATIC = "hardware/kicad/kiosk.kicad_sch"
 DEVKIT = "kiosk:U1"
 TOLERANCE = 0.01
+CHAR_MM = 0.85
+# A 1.27 mm glyph plus clearance, kept under the 2.54 mm pin pitch so that two
+# labels one pin apart stay legal while text that crowds another reads as a fault.
+LINE_MM = 2.3
 
 # Soldered to the devkit through its own DVP socket, so they never reach the carrier.
 SKIP_GROUPS = ("CAM",)
@@ -71,9 +75,8 @@ def expected_net(macro: str) -> str:
     return macro.removeprefix("APP_").removesuffix("_GPIO")
 
 
-def devkit_nets(schematic: Path) -> tuple[dict[str, str], list[Problem]]:
+def devkit_nets(tree: list) -> tuple[dict[str, str], list[Problem]]:
     """Net name against each devkit pin name, read off the drawn geometry."""
-    tree = parse_sexp(schematic.read_text(encoding="utf-8"))
     problems: list[Problem] = []
 
     library = None
@@ -123,6 +126,36 @@ def devkit_nets(schematic: Path) -> tuple[dict[str, str], list[Problem]]:
     return nets, problems
 
 
+def text_boxes(tree: list) -> list[tuple[str, float, float, float, float]]:
+    """Every drawn string with the box it occupies, at the 1.27 mm font."""
+    boxes = []
+    for symbol in children(tree, "symbol"):
+        if first(symbol, "lib_id") is None:
+            continue
+        for field in children(symbol, "property"):
+            if field[1] not in ("Reference", "Value") or not field[2]:
+                continue
+            if children(field, "hide"):
+                continue
+            at = first(field, "at")
+            boxes.append((field[2], float(at[1]), float(at[2])))
+    for label in children(tree, "label"):
+        at = first(label, "at")
+        boxes.append((label[1], float(at[1]), float(at[2])))
+    return [(text, x - len(text) * CHAR_MM / 2, x + len(text) * CHAR_MM / 2,
+             y - LINE_MM / 2, y + LINE_MM / 2) for text, x, y in boxes]
+
+
+def overlaps(tree: list) -> list[Problem]:
+    boxes = text_boxes(tree)
+    found = []
+    for i, (text, x0, x1, y0, y1) in enumerate(boxes):
+        for other, ox0, ox1, oy0, oy1 in boxes[i + 1:]:
+            if x0 < ox1 and ox0 < x1 and y0 < oy1 and oy0 < y1:
+                found.append(Problem("sheet", f'"{text}" sits on "{other}"'))
+    return found
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
@@ -134,7 +167,9 @@ def main() -> int:
         return 0
 
     gpios = macro_gpios(header)
-    nets, problems = devkit_nets(schematic)
+    tree = parse_sexp(schematic.read_text(encoding="utf-8"))
+    nets, problems = devkit_nets(tree)
+    problems += overlaps(tree)
 
     for macro, gpio in sorted(gpios.items(), key=lambda kv: kv[1]):
         want, got = expected_net(macro), nets.get(f"IO{gpio}")
