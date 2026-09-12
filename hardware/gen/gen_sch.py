@@ -82,14 +82,14 @@ PARTS = [
     ("J7", "MAX98357A", AMP, [], 182.0, 48.0),
     ("J9", "SG90 servo", SERVO, [], 182.0, 108.0),
     ("J10", "Jack 5V rail 1", JACK1, [], 182.0, 165.0),
-    ("J11", "Jack 5V rail 2", JACK2, [], 182.0, 190.0),
+    ("J11", "Jack 5V rail 2", JACK2, [], 182.0, 220.0),
 ]
 
 # ref, value, top net, bottom net, x, y. Each one is drawn beside the load it holds
 # up, so the sheet says which rail it belongs to without reading a net label.
 TWO_PIN = [
     ("R1", "4k7", "+3V3", "I2C_SDA", 132.0, 155.0),
-    ("C1", "1000uF", "+5V_R1", "GND", 182.0, 217.0),
+    ("C1", "1000uF", "+5V_R1", "GND", 182.0, 192.0),
     ("C2", "470uF", "+5V_R1", "GND", 182.0, 78.0),
     ("C3", "470uF", "+5V_R2", "GND", 182.0, 135.0),
     ("C4", "100uF", "+3V3", "GND", 132.0, 48.0),
