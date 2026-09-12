@@ -549,6 +549,19 @@ def silk_cells(doc: list) -> set:
     return out
 
 
+def hug(pts: list, seat: tuple, head: bool) -> None:
+    """Slide the leg that reaches a pad onto the pad's own axis: the grid rarely falls
+    on a pad centre, and a track that bends to find it reads as crooked."""
+    i, j = (1, 2) if head else (len(pts) - 2, len(pts) - 3)
+    if not 0 <= j < len(pts) or not 0 <= i < len(pts):
+        return
+    (ax, ay), (bx, by) = pts[i], pts[j]
+    if abs(ax - bx) < 1e-6:
+        pts[i], pts[j] = (seat[0], ay), (seat[0], by)
+    elif abs(ay - by) < 1e-6:
+        pts[i], pts[j] = (ax, seat[1]), (bx, seat[1])
+
+
 def route_jobs(pads: dict) -> list:
     """Every edge to lay, in the order that decides which one gets first pick."""
     jobs = [(tag, a, b) for tag in RAIL_TREE for a, b in RAIL_TREE[tag]]
@@ -611,6 +624,8 @@ def one_run(pads: dict, stamp: dict, rim: dict, ink: set, placed: list,
         out.append((pts, LAYERS[part[0][1]]))
     out[0] = ([pads[src][:2]] + out[0][0], out[0][1])
     out[-1] = (out[-1][0] + [pads[dst][:2]], out[-1][1])
+    hug(out[0][0], pads[src][:2], True)
+    hug(out[-1][0], pads[dst][:2], False)
     return out
 
 
