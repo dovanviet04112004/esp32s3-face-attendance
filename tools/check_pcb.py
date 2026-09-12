@@ -122,6 +122,18 @@ def board_parts(tree: list) -> dict[str, dict]:
                     pt = first(node, tag)
                     if pt:
                         corners.append(place(ox, oy, deg, float(pt[1]), float(pt[2])))
+        # A can or a mounting hole draws its courtyard as a circle, and a part the
+        # overlap test cannot see is a part nothing stops from landing on another.
+        for node in children(fp, "fp_circle"):
+            layer = first(node, "layer")
+            if not layer or layer[1] != "F.CrtYd":
+                continue
+            mid, rim = first(node, "center"), first(node, "end")
+            cx, cy = float(mid[1]), float(mid[2])
+            radius = math.dist((cx, cy), (float(rim[1]), float(rim[2])))
+            hub = place(ox, oy, deg, cx, cy)
+            corners += [(hub[0] + sx * radius, hub[1] + sy * radius)
+                        for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
         parts[ref] = {"spec": fp[1], "pads": pads, "crtyd": corners}
     return parts
 
@@ -143,15 +155,18 @@ def outline(tree: list, layer: str, dashed: bool | None = None) -> list[tuple]:
 
 
 def boxes_from(segments: list[tuple]) -> list[tuple]:
-    """Axis-aligned rectangles recovered from their four drawn sides."""
-    corners: dict[tuple, list] = {}
+    """One axis-aligned rectangle per closed loop, grouped by shared endpoints."""
+    loops: list[dict] = []
     for x1, y1, x2, y2 in segments:
-        key = (round(min(x1, x2), 3), round(min(y1, y2), 3),
-               round(max(x1, x2), 3), round(max(y1, y2), 3))
-        corners.setdefault("all", []).append(key)
-    xs = [v for box in corners.get("all", []) for v in (box[0], box[2])]
-    ys = [v for box in corners.get("all", []) for v in (box[1], box[3])]
-    return [(min(xs), min(ys), max(xs), max(ys))] if xs else []
+        ends = {(round(x1, 3), round(y1, 3)), (round(x2, 3), round(y2, 3))}
+        joined = {"ends": set(ends), "pts": [(x1, y1), (x2, y2)]}
+        for loop in [g for g in loops if g["ends"] & ends]:
+            joined["ends"] |= loop["ends"]
+            joined["pts"] += loop["pts"]
+            loops.remove(loop)
+        loops.append(joined)
+    return [(min(p[0] for p in g["pts"]), min(p[1] for p in g["pts"]),
+             max(p[0] for p in g["pts"]), max(p[1] for p in g["pts"])) for g in loops]
 
 
 def text_boxes(tree: list) -> list[tuple]:
@@ -229,6 +244,17 @@ def main() -> int:
                 if not (x0 <= point[0] <= x1 and y0 <= point[1] <= y1):
                     problems.append(f"{ref}: ({point[0]:.1f}, {point[1]:.1f}) falls outside the board")
                     break
+
+    # A module keeps its body once plugged in, so the dashed rectangle it stands on
+    # holds its own pins and nothing else wired. Mounting holes carry no net.
+    for area in boxes_from(outline(pcb, "F.SilkS", dashed=True)):
+        x0, y0, x1, y1 = area
+        inside = sorted(ref for ref, part in parts.items()
+                        if any(p["net"] and x0 <= p["xy"][0] <= x1 and y0 <= p["xy"][1] <= y1
+                               for p in part["pads"].values()))
+        if len(inside) > 1:
+            problems.append(f"module body ({x0:.0f}, {y0:.0f})-({x1:.0f}, {y1:.0f}): "
+                            f"holds {', '.join(inside)}")
 
     hulls = {}
     for ref, part in parts.items():

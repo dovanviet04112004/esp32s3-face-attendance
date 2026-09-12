@@ -298,12 +298,45 @@ trên module có pad riêng và không dùng (§2.3A `RES` mượn GPIO40 vốn 
 VCC · GND · CS · RESET · DC · SDI · SCK · LED · SDO · NC · CTP_SDA · CTP_SCL · CTP_INT · CTP_RST
 ```
 
-🔬 **Chưa đo — đây là chân duy nhất của board đế còn chưa nghiệm thu.** Board đế khoan 14 lỗ
-đối xứng nên lắp ngược vẫn cắm vừa, và khi đó `VCC` rơi vào chỗ `CTP_RST`: nguồn 3V3 đổ thẳng
-vào ngõ ra reset của GT911. Đo trước khi đặt in, bằng cách tìm `GND` chứ không đếm từ mép:
-chân `GND` thông mạch với vỏ kim loại khe microSD, và nó là chân **thứ hai** tính từ một đầu —
-đầu kia chân thứ hai là `CTP_SCL`, có trở treo nên đọc ra vài kΩ chứ không phải 0 Ω. Đầu nào
-cho 0 Ω thì đầu đó là `VCC`.
+Đã đối chiếu với module 12/09. Board đế khoan 14 lỗ đối xứng nên lắp ngược vẫn cắm vừa, và khi
+đó `VCC` rơi vào chỗ `CTP_RST` — nguồn 3V3 đổ thẳng vào ngõ ra reset của GT911. Đầu `VCC` là
+đầu có chân thứ hai (`GND`) thông mạch 0 Ω với vỏ kim loại khe microSD; đầu kia chân thứ hai là
+`CTP_SCL`, có trở treo nên đọc ra vài kΩ. Soi lại bằng phép đo đó mỗi lần thay module.
+
+**Bốn lỗ bắt vít — hàng chân không phải chỗ chịu lực.** Tấm màn cắm xuống `J3` ở **một cạnh**,
+cạnh đối diện thả tự do. Kiosk dựng màn đứng, nên trọng lượng tấm màn và mỗi lần người dùng ấn
+lên cảm ứng đều dồn vào 14 mối hàn của hàng chân. Mối hàn chân cắm chịu nén tốt và chịu bẩy rất
+kém: hỏng theo kiểu nứt chân tóc, lúc đầu chỉ chập chờn một hai chân, và trông y hệt lỗi phần mềm.
+
+| Hạng mục | Chốt |
+|---|---|
+| Vít | **M2.5**, board đế khoan **Ø2,7 mm** — lỗ trên tấm màn bên nào cũng lọt, kể cả bản khoan Ø2,5 |
+| Trụ | Trụ đồng cái–cái cao **8,5 mm**, đúng chiều cao đế cắm `J3` |
+| Số lượng | **4**, bốn góc tấm màn |
+| Chịu lực | Hai lỗ ở **cạnh tự do** giữ tấm màn; hai lỗ cạnh `J3` chỉ chống xoay |
+
+Chiều cao trụ **phải bằng** chiều cao tấm màn ngồi trên đế cắm, không được xê xích: trụ cao hơn
+thì vặn vít xong chân chưa vào hết đế; trụ thấp hơn thì vít kéo tấm màn tách khỏi đế, tức là đúng
+cái lực bẩy mà bốn con vít sinh ra để triệt tiêu. Bắt đế cắm xuống board trước, đặt tấm màn lên,
+rồi mới siết vít — siết trước là ép chân vào đế lệch trục.
+
+**Kích thước tấm màn: 107 × 61 mm** (đo 12/09). Nó quyết định luôn chiều cao board đế: 107 mm
+cộng lề trên dưới là **116 mm**, tức tấm màn gần như phủ trọn chiều cao board, và dải còn lại
+dưới mép tấm màn chỉ 5 mm — không nhét vừa một con tụ nào. Vì thế tụ `C4` của màn nằm **bên
+trái** tấm màn, dưới devkit, xa chân nguồn của `J3` khoảng 20 mm; nó là tụ trữ chứ không phải
+tụ lọc cao tần nên quãng đó chấp nhận được, còn lọc cao tần thì module màn tự mang.
+
+🔬 **Còn hai số chưa đo, và chúng quyết định bốn lỗ có bắt được vít hay không.** Vít M2.5 trong
+lỗ Ø2,7 chỉ có 0,1 mm khe, lệch 1 mm là không bắt được. Hai số đó khai ở đầu
+`hardware/gen/gen_pcb.py`, sửa xong sinh lại là cả bốn lỗ tự dịch theo:
+
+| Hằng số | Đang đặt | Phải đo |
+|---|---|---|
+| `LCD_HEADER_INSET` | 15 mm | Từ **tim hàng chân 14** tới **mép gần nhất** của tấm màn |
+| `LCD_HOLE_INSET` | 3,5 mm | Từ **tâm lỗ** tới mép tấm màn (đo một góc là đủ nếu bốn lỗ đối xứng) |
+
+Đo tới **tâm lỗ**, không đo tới mép lỗ. Và nếu bốn lỗ trên tấm màn **không** đối xứng thì báo
+lại: lúc đó phải khai từng lỗ một chứ không suy ra từ một con số lùi vào.
 
 | Chân LCD | GPIO | Vai trò | Lưu ý |
 |---|---|---|---|

@@ -13,19 +13,16 @@ SCH = Path("hardware/kicad/kiosk.kicad_sch")
 OUT = Path("hardware/kicad/kiosk.kicad_pcb")
 STOCK = Path("/mnt/d/KiCad/share/kicad/footprints")
 LOCAL = Path("hardware/lib/footprints/kiosk.pretty")
-BOARD_W, BOARD_H = 170.0, 116.0
+BOARD_W, BOARD_H = 158.0, 116.0
 EDGE = 0.0
-# 🔬 Estimated from a 4.0 inch 3:2 panel plus bezel. Nothing taller than the
-# 8.5 mm standoff may sit inside it, because the panel covers it whole.
-LCD_AREA = (42.0, 4.0, 104.0, 102.0)
-# A plugged-in module keeps its body, and that body lands on the board. Drawn on
-# the silkscreen so nothing is placed inside one. 🔬 only the RTC is measured.
-MODULE_AREA = {
-    "J3 LCD 4.0in": LCD_AREA,
-    "J4 VL53L1X": (7.5, 5.0, 32.5, 20.0),
-    "J5 PCF8574 48x16": (108.0, 6.0, 124.0, 54.0),
-    "J7 MAX98357A": (106.0, 60.0, 126.0, 80.0),
-}
+# Panel PCB measured off the module. It stands 8.5 mm up on J3 and covers its
+# rectangle whole, so nothing taller than that may sit inside (KEHOACH 2.3A).
+LCD_PANEL = (61.0, 107.0)
+# 🔬 Header row to the panel's near edge, and hole centre to panel edge. Both
+# unmeasured: an M2.5 screw has 0.1 mm of slack, so 1 mm of error will not bolt.
+LCD_HEADER_INSET = 15.0
+LCD_HOLE_INSET = 3.5
+HOLE_FP = "MountingHole:MountingHole_2.7mm"
 
 # ref -> (x, y, rotation). A stock connector footprint has its origin on pin 1, so
 # the point given is its top end; U1 is drawn in-house and placed by its centre.
@@ -35,26 +32,58 @@ PLACEMENT = {
     "J4": (13.5, 18.0, 90),
     "U1": (20.0, 62.0, 0),
     "J3": (57.0, 96.0, 90),
-    "C4": (57.0, 109.0, 0),
+    # A 107 mm panel leaves no strip under itself, so its capacitor goes to the
+    # left of it, below the devkit, which is the nearest 3V3 the panel does not cover.
+    "C4": (38.0, 102.0, 90),
     # Right of the panel, three bands. Band 1, y 6..54: the I2C parts.
     "J13": (129.0, 34.32, 180),
     "J5": (111.0, 9.0, 90),
     "J6": (138.0, 12.0, 90),
     # Turned round so the 3V3 leg meets J6.VCC and the SDA leg meets J6.SDA, the
-    # only two pads on the board 2.54 mm apart carrying those nets.
-    "R1": (153.16, 20.0, 180),
+    # only two pads on the board 2.54 mm apart carrying those nets. Centred on J6.
+    "R1": (149.43, 20.0, 180),
     # Band 2, y 58..80: the two loads that switch, each with its capacitor beside
     # it. J7 sits at the left edge of the amplifier's outline so C2 can reach it.
     "J7": (110.0, 62.0, 0),
     "C2": (110.0, 86.0, 0),
-    "J9": (150.0, 62.0, 0),
-    "C3": (156.0, 64.5, 0),
-    # Band 3, y 84..108: bulk capacitor over the supplies, which sit side by side
-    # on the bottom edge so their grounds meet at one point (rule 1).
+    "J9": (143.0, 62.0, 0),
+    "C3": (149.0, 64.54, 0),
+    # Band 3, y 84..108: the supplies side by side so their grounds meet at one
+    # point (rule 1), J11 keeping its offset from J9 so rule 2 survives the move.
     "C1": (134.0, 94.0, 0),
     "J10": (134.0, 109.0, 0),
-    "J11": (154.0, 109.0, 0),
+    "J11": (147.0, 109.0, 0),
 }
+
+
+def lcd_area() -> tuple:
+    """The panel rectangle, anchored on the header it plugs into rather than guessed."""
+    x, y, _ = PLACEMENT["J3"]
+    centre = x + (14 - 1) * 2.54 / 2.0
+    near = y + LCD_HEADER_INSET
+    return (round(centre - LCD_PANEL[0] / 2, 2), round(near - LCD_PANEL[1], 2),
+            round(centre + LCD_PANEL[0] / 2, 2), round(near, 2))
+
+
+LCD_AREA = lcd_area()
+# A plugged-in module keeps its body, and that body lands on the board. Drawn on
+# the silkscreen so nothing is placed inside one. 🔬 only the RTC is measured.
+MODULE_AREA = {
+    "J3 LCD 4.0in": LCD_AREA,
+    "J4 VL53L1X": (7.5, 5.0, 32.5, 20.0),
+    "J5 PCF8574 48x16": (108.0, 6.0, 124.0, 54.0),
+    "J7 MAX98357A": (106.0, 60.0, 126.0, 80.0),
+}
+
+
+def lcd_holes() -> dict:
+    """M2.5 clearance at the panel's four corners, so J3 carries no load."""
+    x0, y0, x1, y1 = LCD_AREA
+    inset = LCD_HOLE_INSET
+    corners = ((x0 + inset, y0 + inset), (x1 - inset, y0 + inset),
+               (x1 - inset, y1 - inset), (x0 + inset, y1 - inset))
+    return {f"H{i + 1}": (round(hx, 2), round(hy, 2), 0)
+            for i, (hx, hy) in enumerate(corners)}
 
 
 def uid(*parts: object) -> str:
@@ -169,8 +198,8 @@ UUID_NODES = ("fp_line", "fp_rect", "fp_circle", "fp_arc", "fp_poly", "fp_text",
               "pad", "property")
 
 
-def place(ref: str, spec: str, pin_nets: dict, net_id: dict) -> list:
-    x, y, rot = PLACEMENT[ref]
+def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> list:
+    x, y, rot = spot
     tree = load_footprint(spec)
     # tree[1] is the footprint's own name, a bare string; the board names it itself.
     body = [c for c in tree[1:]
@@ -376,8 +405,10 @@ def main() -> None:
                         ["stroke", ["width", "0.2"], ["type", "dash"]],
                         ["layer", '"F.SilkS"'], ["uuid", f'"{uid("area", name, i)}"']])
 
-    for ref in PLACEMENT:
-        doc.append(place(ref, footprint[ref], nets[ref], net_id))
+    for ref, spot in PLACEMENT.items():
+        doc.append(place(ref, footprint[ref], nets[ref], net_id, spot))
+    for ref, spot in lcd_holes().items():
+        doc.append(place(ref, HOLE_FP, {}, net_id, spot))
 
     doc += pin_labels(doc)
     pads = pad_points(doc)
