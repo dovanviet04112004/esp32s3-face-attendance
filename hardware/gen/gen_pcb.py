@@ -347,8 +347,11 @@ def track(tag: str, a: tuple, b: tuple, width: float, layer: str, net: int) -> l
 
 def via(tag: str, at: tuple, width: float, net: int) -> list:
     size, drill = VIA[width]
+    # Mask covers every via: a module standing over one cannot reach it, and silk
+    # printed across one keeps its letters (KEHOACH 2.5).
     return ["via", ["at", str(at[0]), str(at[1])], ["size", str(size)],
             ["drill", str(drill)], ["layers", SIGNAL_LAYER, POWER_LAYER],
+            ["covering", ["front", "yes"], ["back", "yes"]],
             ["net", str(net)], ["uuid", f'"{uid("via", tag)}"']]
 
 

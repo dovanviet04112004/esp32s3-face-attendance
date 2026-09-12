@@ -56,7 +56,8 @@ thay đổi thật. Đừng sửa tay file trong `kicad/` — lần sinh sau m�
 | **3,20 mm** | 8 | `H1`…`H4` bắt tấm màn (lỗ trên màn Ø3,5); `H5`…`H8` bắt board vào vỏ, bốn góc | Vít M3 — **không phủ đồng** (NPTH) |
 
 **Board 2 lớp**, dày 1,6 mm. Đường nguồn 1,0 mm đi mặt sau, tín hiệu 0,25 mm đi mặt trước; đường nào
-bí thì lật mặt, và chỗ lật là một via. Theo IPC-2221 ở 1 oz, dây 1,0 mm chịu **2,39 A** so với đỉnh
+bí thì lật mặt, và chỗ lật là một via. **Mọi via đều bịt mask hai mặt** — không có đồng trần nào ngoài
+chân cắm. Theo IPC-2221 ở 1 oz, dây 1,0 mm chịu **2,39 A** so với đỉnh
 1,34 A của rail 1, còn via Ø0,6 chịu **1,48 A** so với 0,91 A của via nặng nhất.
 
 Vành đồng mỏng nhất **0,20 mm** (via tín hiệu); mỏng nhất trong các lỗ cắm là **0,35 mm** (các lỗ 1,00). `tools/check_pcb.py` chặn lỗ dưới 0,30 mm và

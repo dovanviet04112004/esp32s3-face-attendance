@@ -14006,8 +14006,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14024,8 +14024,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14042,8 +14042,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14060,8 +14060,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14294,8 +14294,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14496,8 +14496,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14514,8 +14514,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14724,8 +14724,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14742,8 +14742,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14808,8 +14808,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14826,8 +14826,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14844,8 +14844,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14918,8 +14918,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14936,8 +14936,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -14954,8 +14954,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15204,8 +15204,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15222,8 +15222,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15240,8 +15240,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15258,8 +15258,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15276,8 +15276,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15294,8 +15294,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15312,8 +15312,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15330,8 +15330,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15348,8 +15348,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15366,8 +15366,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15384,8 +15384,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15402,8 +15402,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15420,8 +15420,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15438,8 +15438,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15456,8 +15456,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15474,8 +15474,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -15492,8 +15492,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16118,8 +16118,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16448,8 +16448,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16466,8 +16466,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16532,8 +16532,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16550,8 +16550,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16648,8 +16648,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16666,8 +16666,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16732,8 +16732,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16750,8 +16750,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16816,8 +16816,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16834,8 +16834,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16852,8 +16852,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16958,8 +16958,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16976,8 +16976,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -16994,8 +16994,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -17012,8 +17012,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -17126,8 +17126,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -17144,8 +17144,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -17162,8 +17162,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -17300,8 +17300,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)
@@ -17318,8 +17318,8 @@
 		(layers "F.Cu" "B.Cu")
 		(capping no)
 		(covering
-			(front no)
-			(back no)
+			(front yes)
+			(back yes)
 		)
 		(plugging
 			(front no)

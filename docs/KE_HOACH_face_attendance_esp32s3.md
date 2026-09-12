@@ -867,8 +867,12 @@ mặt sau vẫn tới được chân mà không tốn via nào.
 của devkit + màn + ba con I2C) — dư 18%, mỏng. Ø0,6 đưa lên **1,48 A**, dư 63%. Dây 1,0 mm thì chịu
 **2,39 A** so với đỉnh 1,34 A của rail 1, không phải lo.
 
-Không via nào được nằm dưới chữ in lụa: xưởng gọt in lụa khỏi chỗ đồng trần, nên tên chân in đè
-lên via là mất chữ. Router chặn sẵn, `check_pcb` kiểm lại.
+**Mọi via đều bịt mask cả hai mặt.** Sơn phủ kín vành đồng quanh via — lỗ vẫn khoan, thành vẫn mạ,
+vẫn dẫn giữa hai mặt, chỉ là không còn đồng trần. Được ba thứ: module đứng bên trên không thể chạm
+vào via nằm dưới nó, in lụa in đè lên được (xưởng gọt in lụa khỏi chỗ đồng trần, nên tên chân in
+qua via là mất chữ), và không có đồng trần nào để oxy hoá. Mất một thứ: không chọc que đồng hồ vào
+via đo được nữa — board này via không phải điểm đo nên không mất gì. Ngoài ra router vẫn chặn sẵn
+không đặt via dưới chữ, và `check_pcb` kiểm lại.
 
 **Bảy luật trên không phải là thứ máy tự tìm ra được.** Router đi theo cây khai sẵn trong
 `RAIL_TREE` của `hardware/gen/gen_pcb.py` — từng nhánh một — và **các nhánh của cùng một cây chặn
