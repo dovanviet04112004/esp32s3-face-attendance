@@ -1,7 +1,7 @@
 """WIDER FACE average precision, and landmark error on device captures.
 
 AP follows the authors' evaluation.m, not a COCO-style mAP, and the gate is the
-ge32px column rather than Easy, Medium or Hard (KEHOACH 3, layer 2). Scores are
+served-size column rather than Easy, Medium or Hard (KEHOACH 3, layer 2). Scores are
 normalised across the whole prediction set, and a prediction landing outside the
 difficulty subset is removed rather than scored - that is what makes them one run.
 """
@@ -16,9 +16,9 @@ import numpy as np
 import torch
 
 SETTINGS = ("easy", "medium", "hard")
-# A quarter of the 640x480 AI frame, so 32 px here is 128 px there: under it the
-# aligned crop is upsampled to reach 112x112 recognition (KEHOACH section 3, layer 2).
-SERVICE_FACE_PX = 32.0
+# Letterboxed from the 480x320 AI frame by 0.3333, so 38 px here is 113 px there:
+# under it the aligned crop is upsampled to reach recognition (KEHOACH 3, layer 2).
+SERVICE_FACE_PX = 38.0
 IOU_THRESHOLD = 0.5
 THRESHOLD_STEPS = 1000
 # Low on purpose. Average precision is an area under a curve, so cutting the tail
