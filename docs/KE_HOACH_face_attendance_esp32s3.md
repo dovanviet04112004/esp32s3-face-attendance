@@ -1188,7 +1188,7 @@ esp32s3-face-attendance/
     ├── TASKS.md                                 # backlog
     ├── DU_LIEU.md                               # dữ liệu đã tải và xử lí — số đo trên đĩa
     ├── adr/{0001-yunet-thay-ulfg.md, ...}       # quyết định kiến trúc, mỗi cái 1 file
-    ├── measurements/{arena.md, latency.md, power.md}   # số 🔬 đo được trên board
+    ├── measurements/{arena.md, latency.md, power.md, parity.md}  # số 🔬 đo được trên board
     └── thesis/                                  # bản báo cáo ĐATN
 ```
 

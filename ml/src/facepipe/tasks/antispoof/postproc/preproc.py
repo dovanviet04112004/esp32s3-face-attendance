@@ -35,11 +35,18 @@ def fitted_square(box: np.ndarray, scale: float, width: int, height: int) -> tup
 
 
 def cell_bounds(origin: float, span: float, count: int, limit: int) -> tuple[np.ndarray, np.ndarray]:
-    """Inclusive source index range covering each destination cell."""
-    step = span / float(count)
-    index = np.arange(count, dtype=np.float64)
-    first = np.clip(np.floor(origin + index * step).astype(np.int64), 0, limit - 1)
-    last = np.clip(np.ceil(origin + (index + 1) * step).astype(np.int64) - 1, 0, limit - 1)
+    """Inclusive source index range covering each destination cell.
+
+    float32 and `lo + step` rather than `origin + (i + 1) * step`: the device
+    computes it that way, and on the last cell the two disagree by a pixel.
+    """
+    step = np.float32(span) / np.float32(count)
+    # xtensa contracts origin + i * step into one madd.s, so the product and the
+    # sum round once between them; float64 here reproduces that single rounding.
+    low = (np.float64(origin) + np.arange(count, dtype=np.float64) * np.float64(step)).astype(np.float32)
+    high = low + step
+    first = np.clip(np.floor(low).astype(np.int64), 0, limit - 1)
+    last = np.clip(np.ceil(high).astype(np.int64) - 1, 0, limit - 1)
     return first, np.maximum(first, last)
 
 
