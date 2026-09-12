@@ -50,6 +50,15 @@ firmware/models/**/*.bin
 # ── contracts/golden — BẮT BUỘC commit dù là .npz (§4.3) ──
 !/contracts/golden/**/*.npz
 
+# ── hardware — KiCad vào git, PDF của hãng thì không (§4.1) ──
+/hardware/datasheets/**
+!/hardware/datasheets/INDEX.md
+/hardware/vendor/**
+!/hardware/vendor/UPSTREAM.md
+*.kicad_prl
+*-backups/
+fp-info-cache
+
 # ── Notebook: commit .ipynb nhưng không commit output ──
 .ipynb_checkpoints/
 
