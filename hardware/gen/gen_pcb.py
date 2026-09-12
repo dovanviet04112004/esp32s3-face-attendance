@@ -94,8 +94,8 @@ PLACEMENT["J14"] = sd_row()
 BOARD_HOLES = {"H5": (5.0, 5.0, 0), "H6": (153.0, 5.0, 0),
                "H7": (153.0, 116.0, 0), "H8": (5.0, 116.0, 0)}
 PLACEMENT.update(BOARD_HOLES)
-# A plugged-in module keeps its body, and that body lands on the board. Drawn on
-# the silkscreen so nothing is placed inside one. 🔬 only the RTC is measured.
+# A plugged-in module keeps its body, and that body lands on the board. Drawn on the
+# silkscreen so nothing sits inside one. 🔬 ToF, expander and amplifier come off photos.
 MODULE_AREA = {
     "J3 LCD 4.0in": LCD_AREA,
     "J4 VL53L1X": (9.5, 7.0, 34.5, 22.0),
