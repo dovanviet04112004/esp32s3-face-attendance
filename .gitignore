@@ -58,6 +58,9 @@ firmware/models/**/*.bin
 *.kicad_prl
 *-backups/
 fp-info-cache
+~*.lck
+_autosave-*
+.history/
 
 # ── Notebook: commit .ipynb nhưng không commit output ──
 .ipynb_checkpoints/
