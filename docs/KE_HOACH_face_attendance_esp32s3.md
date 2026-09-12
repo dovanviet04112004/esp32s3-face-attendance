@@ -289,14 +289,33 @@ cách đọc sai đó là nối ngõ ra ngắt vào đường SDA và làm chế
 
 Module `KMRTM40045-SPI+CTP V1.0`, silkscreen ghi `4.0" TFT SPI 480*320`. Số điểm ảnh đúng
 bằng bảng dưới tính, chỉ khác kích thước vật lý — nên nó không đụng gì tới firmware, mà đụng
-tới lỗ bắt vít và vỏ máy. Header **14 chân một hàng**, gộp cả LCD lẫn cảm ứng; khe microSD
-trên module có pad riêng và không dùng (§2.3A `RES` mượn GPIO40 vốn là `SD_DATA`).
+tới lỗ bắt vít và vỏ máy. Header chính **14 chân một hàng**, gộp cả LCD lẫn cảm ứng; khe microSD
+trên module có hàng chân riêng ở cạnh đối diện và không dùng (`RES` mượn GPIO40 vốn là `SD_DATA`).
 
 **Thứ tự chân trên header**, đọc dọc hàng 14 chân:
 
 ```
 VCC · GND · CS · RESET · DC · SDI · SCK · LED · SDO · NC · CTP_SDA · CTP_SCL · CTP_INT · CTP_RST
 ```
+
+**Module có hàng chân thứ hai — 4 chân microSD ở cạnh ngắn đối diện**, đọc từ trái sang phải:
+
+```
+SD_CS · SD_MOSI · SD_MISO · SD_SCK
+```
+
+**Không dùng, và board đế không mang lỗ nào cho nó.** Dữ liệu bền nằm ở flash trong (§6.1), kế
+hoạch không có microSD. Nếu sau này cần thì ba trong bốn chân là **rẻ**: `SD_MOSI`, `SD_MISO`,
+`SD_SCK` dùng chung SPI2 với chính tấm màn (GPIO41 / GPIO43 / GPIO42), chỉ `SD_CS` mới cần một
+chân riêng — mà §2.4 đã hết chân GPIO thường. Ứng viên duy nhất là **GPIO48**, chân board ghim
+mức thấp nên chỉ làm ngõ ra được, mà `CS` đúng là ngõ ra; đổi lại mất đèn WS2812. Đó là thay
+đổi kiến trúc, đi qua §1.2 của CLAUDE.md, không phải việc sửa lúc đi dây.
+
+⚠️ **Hàng này nằm cùng dải 11,2 mm với hai lỗ vít đầu trên.** Nó ở giữa cạnh, hai lỗ vít ở hai
+góc, cách nhau **20 mm** nên không đụng. Nhưng theo §2.3I thì hàng chân không dùng là **để
+trống, không hàn** — và điều đó phải đúng ở đây, vì board đế không khoan lỗ tránh. Module về mà
+**đã có sẵn chân hàn ở hàng SD chĩa xuống** thì tấm màn không ngồi xuống được 8,5 mm, và lúc ấy
+phải hoặc tháo hàng chân đó ra, hoặc khoan thêm 4 lỗ tránh trước khi đặt in.
 
 Đã đối chiếu với module 12/09. Board đế khoan 14 lỗ đối xứng nên lắp ngược vẫn cắm vừa, và khi
 đó `VCC` rơi vào chỗ `CTP_RST` — nguồn 3V3 đổ thẳng vào ngõ ra reset của GT911. Đầu `VCC` là
