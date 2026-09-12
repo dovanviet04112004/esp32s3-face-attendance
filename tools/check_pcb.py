@@ -27,6 +27,8 @@ REF_GLYPH_MM = 0.78
 POLARISED = "CP_Radial"
 # What a low-cost two-layer house quotes without asking questions.
 MIN_DRILL_MM, MIN_RING_MM = 0.3, 0.2
+# The two classes of kiosk.kicad_pro, which section 2.5 sizes from the peak amps.
+POWER_WIDTH_MM, SIGNAL_WIDTH_MM = 1.0, 0.25
 
 
 def parse_sexp(text: str) -> list:
@@ -218,6 +220,130 @@ def text_boxes(tree: list) -> list[tuple]:
     return found
 
 
+# Section 2.5 rules 1, 2, 6 and 7 are facts about where current flows, which no clearance
+# check sees: cut these pads out and the first pairs must part, the second pairs must not.
+RULE_CUTS = [
+    ("GND", ("J10.2", "C1.2", "J11.2"),
+     [("J9.1", "J7.6"), ("J9.1", "U1.40"), ("C3.2", "J16.2"), ("J18.2", "J16.2")],
+     [("J7.6", "C2.2"), ("J9.1", "C3.2")], "1, 2"),
+    ("GND", ("J10.2", "C1.2"), [("J7.6", "U1.40")], [("J7.6", "C2.2")], "2"),
+    ("+5V_R1", ("J10.1", "C1.1"), [("U1.20", "J7.7")], [("J7.7", "C2.1")], "6, 7"),
+    ("+5V_R2", ("J11.1",), [("J9.2", "J18.1")], [("J9.2", "C3.1")], "6, 7"),
+]
+
+
+def seg_gap(p: tuple, q: tuple, r: tuple, s: tuple) -> tuple:
+    """Closest approach of two segments, and the point halfway across it."""
+    def near(a, b, c):
+        vx, vy = b[0] - a[0], b[1] - a[1]
+        run = vx * vx + vy * vy
+        t = 0.0 if run == 0 else max(0.0, min(1.0, ((c[0] - a[0]) * vx + (c[1] - a[1]) * vy) / run))
+        foot = (a[0] + vx * t, a[1] + vy * t)
+        return math.dist(c, foot), foot, c
+    best = min(near(p, q, r), near(p, q, s), near(r, s, p), near(r, s, q), key=lambda h: h[0])
+    return best[0], ((best[1][0] + best[2][0]) / 2, (best[1][1] + best[2][1]) / 2)
+
+
+def copper_bits(tree: list, parts: dict, net: str) -> list:
+    """Everything on one net: pads, tracks and vias, each with a reach around it."""
+    bits = []
+    for ref, part in parts.items():
+        for number, pad in part["pads"].items():
+            if pad["net"] == net:
+                bits.append({"id": f"{ref}.{number}", "layer": None,
+                             "a": pad["xy"], "b": pad["xy"], "r": pad["size"] / 2})
+    for node in children(tree, "segment"):
+        if first(node, "net")[-1] != net:
+            continue
+        start, end = first(node, "start"), first(node, "end")
+        bits.append({"id": None, "layer": first(node, "layer")[1],
+                     "a": (float(start[1]), float(start[2])),
+                     "b": (float(end[1]), float(end[2])),
+                     "r": float(first(node, "width")[1]) / 2})
+    for node in children(tree, "via"):
+        if first(node, "net")[-1] != net:
+            continue
+        at = first(node, "at")
+        spot = (float(at[1]), float(at[2]))
+        bits.append({"id": None, "layer": None, "a": spot, "b": spot,
+                     "r": float(first(node, "size")[1]) / 2})
+    return bits
+
+
+def joined(bits: list, drop: tuple, cut: dict) -> list:
+    """Groups of copper that touch. Cutting a pad out also cuts junctions inside it."""
+    live = [b for b in bits if b["id"] not in drop]
+    owner = list(range(len(live)))
+
+    def root(k):
+        while owner[k] != k:
+            owner[k] = owner[owner[k]]
+            k = owner[k]
+        return k
+
+    for i, one in enumerate(live):
+        for j in range(i + 1, len(live)):
+            two = live[j]
+            if one["layer"] and two["layer"] and one["layer"] != two["layer"]:
+                continue
+            reach, where = seg_gap(one["a"], one["b"], two["a"], two["b"])
+            if reach > one["r"] + two["r"] + TOLERANCE:
+                continue
+            if any(math.dist(where, spot) <= span for spot, span in cut.values()):
+                continue
+            owner[root(i)] = root(j)
+    groups: dict = {}
+    for k, bit in enumerate(live):
+        groups.setdefault(root(k), []).append(bit["id"])
+    return [{b for b in g if b} for g in groups.values()]
+
+
+def check_rules(tree: list, parts: dict) -> list:
+    """Section 2.5 rules 1, 2, 6 and 7, read off the copper rather than the plan."""
+    problems = []
+    for net in sorted({p["net"] for part in parts.values() for p in part["pads"].values() if p["net"]}):
+        bits = copper_bits(tree, parts, net)
+        whole = joined(bits, (), {})
+        holding = [g for g in whole if g]
+        if len(holding) > 1:
+            problems.append(f"{net}: dong chia lam {len(holding)} manh roi nhau")
+    seats = {f"{ref}.{number}": (pad["xy"], pad["size"] / 2)
+             for ref, part in parts.items() for number, pad in part["pads"].items()}
+    for net, drop, apart, together, rule in RULE_CUTS:
+        cut = {pad: seats[pad] for pad in drop if pad in seats}
+        groups = joined(copper_bits(tree, parts, net), drop, cut)
+        where = {}
+        for k, group in enumerate(groups):
+            for pad in group:
+                where[pad] = k
+        for a, b in apart:
+            if a in where and b in where and where[a] == where[b]:
+                problems.append(f"luat {rule}: bo {'+'.join(drop)} ra ma {a} van noi {b}")
+        for a, b in together:
+            if where.get(a) != where.get(b):
+                problems.append(f"luat {rule}: bo {'+'.join(drop)} ra thi {a} roi khoi {b}")
+    return problems
+
+
+def check_wires(tree: list) -> list:
+    """Every track on the width its class calls for, every via drillable."""
+    problems = []
+    for node in children(tree, "segment"):
+        net = first(node, "net")[-1]
+        width = float(first(node, "width")[1])
+        want = POWER_WIDTH_MM if net[0] == "+" or net == "GND" else SIGNAL_WIDTH_MM
+        if abs(width - want) > TOLERANCE:
+            problems.append(f"{net}: mot doan rong {width} mm, lop nay phai {want} mm")
+    for node in children(tree, "via"):
+        size = float(first(node, "size")[1])
+        drill = float(first(node, "drill")[1])
+        if drill < MIN_DRILL_MM:
+            problems.append(f"via o {first(node, 'at')[1]}: khoan {drill} mm duoi muc {MIN_DRILL_MM}")
+        if (size - drill) / 2 < MIN_RING_MM:
+            problems.append(f"via o {first(node, 'at')[1]}: vanh {(size - drill) / 2:.2f} mm duoi muc {MIN_RING_MM}")
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
@@ -320,6 +446,9 @@ def main() -> int:
     if doubled:
         problems.append(f"{len(doubled)} uuid(s) shared by more than one node, "
                         f"first {doubled[0]}")
+
+    problems += check_rules(pcb, parts)
+    problems += check_wires(pcb)
 
     hulls = {}
     for ref, part in parts.items():
