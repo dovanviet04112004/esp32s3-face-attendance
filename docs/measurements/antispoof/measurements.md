@@ -113,6 +113,9 @@ Epoch thật: **7 phút 19 → 4 phút 35** (−37%).
 
 ## 5. Bảng đối chứng A — có teacher hay không (§3.7)
 
+> **Đo ở crop 80×80, hai backbone.** Bản đang deploy là một backbone ở **81×81**; số của nó
+> ở §31 và §33. Hai bộ số không so thẳng với nhau được.
+
 | Arm | Cách train | AUC val | EER val | **ACER trên `test:10:`** |
 |---|---|---|---|---|
 | **A0** | task loss, không teacher | 0,9605 | 0,1064 | **0,0973** |
@@ -135,6 +138,9 @@ Anti-spoof cần đúng cách làm ấy, nhưng **phải định nghĩa miền t
 ra**, nếu không thì là chọn cho vừa. Việc đó cần tập tự thu (§10) và phải qua §1.2.
 
 ### A0 — `20260901-0717_b326cd5_6706a4`, 60 epoch, best ở epoch 47
+
+> **Đo ở crop 80×80, hai backbone.** Bản đang deploy là một backbone ở **81×81**; số của nó
+> ở §31 và §33. Hai bộ số không so thẳng với nhau được.
 
 Chấm bằng `eval.py`, ngưỡng chốt trên `test:0:10` rồi áp nguyên sang `test:10:`:
 
@@ -985,6 +991,9 @@ hết lịch. Sáu mốc dưới đây chốt **trước** khi thấy kết qu�
 | 6 | EER val ≤ 0,14 | **0,1297** | ✅ |
 
 ### 16.2 Ba bộ trọng số trên 111 khung camera
+
+> **Đo ở crop 80×80, hai backbone.** Bản đang deploy là một backbone ở **81×81**; số của nó
+> ở §31 và §33. Hai bộ số không so thẳng với nhau được.
 
 | Ngưỡng | | `0140` cũ | `0932` không cổng | **`1740` có cổng** |
 |---|---|---|---|---|

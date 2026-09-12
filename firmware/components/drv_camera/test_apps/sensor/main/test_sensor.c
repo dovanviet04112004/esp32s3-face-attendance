@@ -23,6 +23,8 @@
 #define RATE_FRAMES 20
 #define RATE_FLOOR_MFPS 12000
 #define DUMP_JPEG_QUALITY 90
+// Grabs the closed loop needs to reach its level; a frame taken earlier carries the boot exposure.
+#define METER_SETTLE_FRAMES 40
 
 static const char *TAG = "test_sensor";
 
@@ -100,8 +102,19 @@ TEST_CASE("the sensor sustains the rate the preview needs", "[drv_camera]")
     TEST_ASSERT_GREATER_OR_EQUAL_MESSAGE(RATE_FLOOR_MFPS, mfps, "below the E7-T11 preview floor");
 }
 
+static void settle_exposure(void)
+{
+    for (int i = 0; i < METER_SETTLE_FRAMES; ++i) {
+        camera_fb_t *frame = drv_camera_grab();
+        TEST_ASSERT_NOT_NULL(frame);
+        TEST_ASSERT_EQUAL(ESP_OK, drv_camera_expose(frame));
+        drv_camera_release(frame);
+    }
+}
+
 TEST_CASE("one frame reaches the host as jpeg", "[drv_camera][manual]")
 {
+    settle_exposure();
     camera_fb_t *frame = drv_camera_grab();
     TEST_ASSERT_NOT_NULL(frame);
     uint8_t *jpeg = NULL;
@@ -119,7 +132,6 @@ TEST_CASE("one frame reaches the host as jpeg", "[drv_camera][manual]")
     free(jpeg);
 }
 
-#define RAW_METER_FRAMES 40
 #define RAW_DUMP_FRAMES 60
 #define RAW_METER_BETWEEN 6
 #define RAW_CHUNK_BYTES 2048
@@ -158,12 +170,7 @@ TEST_CASE("metered frames reach the host as raw rgb565", "[drv_camera][manual]")
     blocking_console();
     const esp_err_t ready = drv_camera_init();
     TEST_ASSERT_TRUE(ready == ESP_OK || ready == ESP_ERR_INVALID_STATE);
-    for (int i = 0; i < RAW_METER_FRAMES; ++i) {
-        camera_fb_t *frame = drv_camera_grab();
-        TEST_ASSERT_NOT_NULL(frame);
-        TEST_ASSERT_EQUAL(ESP_OK, drv_camera_expose(frame));
-        drv_camera_release(frame);
-    }
+    settle_exposure();
     for (int i = 0; i < RAW_DUMP_FRAMES; ++i) {
         for (int m = 0; m < RAW_METER_BETWEEN; ++m) {
             camera_fb_t *metered = drv_camera_grab();
