@@ -28,6 +28,7 @@ typedef enum {
     SVC_VISION_NONE = 0,                  // nothing new: tracking a face already reported on
     SVC_VISION_NO_FACE,                   // the frame lost every face
     SVC_VISION_FACE_SMALL,                // a face is there, too far for recognition
+    SVC_VISION_FACE_OUT_OF_FRAME,         // the 1.0x crop would run off the frame
     SVC_VISION_SPOOF,                     // liveness below the floor
     SVC_VISION_UNKNOWN,                   // live, no template close enough
     SVC_VISION_MATCH,                     // live and matched

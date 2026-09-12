@@ -31,6 +31,17 @@ public:
         set(0, left, top, side);
     }
 
+    void oblong(float left, float top, float width, float height) noexcept
+    {
+        count = 1;
+        ai_engine_face_t &f = faces[0];
+        f.box[0] = left;
+        f.box[1] = top;
+        f.box[2] = left + width;
+        f.box[3] = top + height;
+        f.score = 0.9f;
+    }
+
     void set(size_t index, float left, float top, float side) noexcept
     {
         ai_engine_face_t &f = faces[index];
@@ -188,6 +199,29 @@ TEST_CASE("a face that jumps elsewhere is a new track and waits to settle again"
     TEST_ASSERT_EQUAL(2, rig.liveness.scores);
 }
 
+TEST_CASE("a face hanging off the frame is reported once and never verified", "[svc_vision]")
+{
+    Rig rig;
+    rig.detector.one(-20.0f, 100.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_FACE_OUT_OF_FRAME, rig.step());
+    for (int i = 0; i < 5; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    }
+    TEST_ASSERT_EQUAL(0, rig.liveness.scores);
+    TEST_ASSERT_EQUAL(0, rig.embedder.embeds);
+}
+
+TEST_CASE("a tall face inside the frame still fails when its square is not", "[svc_vision]")
+{
+    Rig rig;
+    rig.detector.oblong(390.0f, 100.0f, 80.0f, 150.0f);
+    TEST_ASSERT_EQUAL(SVC_VISION_FACE_OUT_OF_FRAME, rig.step());
+    TEST_ASSERT_EQUAL(0, rig.liveness.scores);
+    rig.detector.oblong(200.0f, 100.0f, 80.0f, 150.0f);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
+}
+
 TEST_CASE("a small face is reported once and never verified", "[svc_vision]")
 {
     Rig rig;
@@ -239,7 +273,7 @@ TEST_CASE("a larger newcomer waits until the face being served has left", "[svc_
     TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
     // The newcomer stands closer, so its box is larger; the first face is still there.
     rig.detector.count = 2;
-    rig.detector.set(0, 300.0f, 100.0f, kBigFace + 40.0f);
+    rig.detector.set(0, 280.0f, 100.0f, kBigFace + 40.0f);
     rig.detector.set(1, 20.0f, 20.0f, kBigFace);
     for (int i = 0; i < 4; ++i) {
         const svc_vision_result_t result = rig.pipeline.step(kFrame);
@@ -248,11 +282,11 @@ TEST_CASE("a larger newcomer waits until the face being served has left", "[svc_
         TEST_ASSERT_EQUAL(2, result.faces);
     }
     TEST_ASSERT_EQUAL(1, rig.liveness.scores);
-    rig.detector.one(300.0f, 100.0f, kBigFace + 40.0f);
+    rig.detector.one(280.0f, 100.0f, kBigFace + 40.0f);
     TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
     const svc_vision_result_t served = rig.pipeline.step(kFrame);
     TEST_ASSERT_EQUAL(SVC_VISION_MATCH, served.kind);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 300.0f, served.primary.box[0]);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 280.0f, served.primary.box[0]);
     TEST_ASSERT_EQUAL(2, rig.liveness.scores);
 }
 

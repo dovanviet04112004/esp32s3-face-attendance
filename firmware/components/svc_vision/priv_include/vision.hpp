@@ -57,7 +57,7 @@ public:
     void reset() noexcept;
 
 private:
-    enum class Seen : uint8_t { Nothing, Small, Face };
+    enum class Seen : uint8_t { Nothing, Small, Edge, Face };
 
     const ai_engine_face_t &pick(size_t count) const noexcept;
     void follow(const ai_engine_face_t &primary) noexcept;

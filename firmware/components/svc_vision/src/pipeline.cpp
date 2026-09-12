@@ -32,6 +32,18 @@ float side_of(const float *box) noexcept
     return width > height ? width : height;
 }
 
+// The 1.0x square fitted_box builds must fit whole, or the clamp pulls frame
+// border into the crop and the spoof branch reads it as content (KEHOACH 3).
+bool square_fits(const float *box, int width, int height) noexcept
+{
+    const float side = side_of(box);
+    const float centre_x = (box[0] + box[2]) / 2.0f;
+    const float centre_y = (box[1] + box[3]) / 2.0f;
+    return centre_x - side / 2.0f >= 0.0f && centre_y - side / 2.0f >= 0.0f &&
+           centre_x + side / 2.0f <= static_cast<float>(width) &&
+           centre_y + side / 2.0f <= static_cast<float>(height);
+}
+
 const ai_engine_face_t &largest(const ai_engine_face_t *faces, size_t count) noexcept
 {
     size_t best = 0;
@@ -161,6 +173,14 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
         if (seen_ != Seen::Small) {
             seen_ = Seen::Small;
             out.kind = SVC_VISION_FACE_SMALL;
+        }
+        return out;
+    }
+    if (!square_fits(primary.box, frame.width, frame.height)) {
+        stable_ = 0;
+        if (seen_ != Seen::Edge) {
+            seen_ = Seen::Edge;
+            out.kind = SVC_VISION_FACE_OUT_OF_FRAME;
         }
         return out;
     }
