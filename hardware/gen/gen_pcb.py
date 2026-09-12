@@ -289,7 +289,7 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
 # 1.34 A of peak on rail 1 and 0.7 A on rail 2, and 0.25 mm does not carry that.
 ROUTE = True
 POWER_MM, SIGNAL_MM = 1.0, 0.25
-POWER_CLEAR, SIGNAL_CLEAR = 0.3, 0.2
+POWER_CLEAR, SIGNAL_CLEAR = 0.35, 0.25
 # Every pad is through-hole, so either side reaches it and a whole run may sit on the
 # back with no via. Supplies prefer the back and signals the front; crossing costs one.
 POWER_LAYER, SIGNAL_LAYER = '"B.Cu"', '"F.Cu"'

@@ -867,6 +867,12 @@ mặt sau vẫn tới được chân mà không tốn via nào.
 của devkit + màn + ba con I2C) — dư 18%, mỏng. Ø0,6 đưa lên **1,48 A**, dư 63%. Dây 1,0 mm thì chịu
 **2,39 A** so với đỉnh 1,34 A của rail 1, không phải lo.
 
+**Router giữ khe rộng hơn mức netclass đòi.** Netclass vẫn là 0,2 mm cho tín hiệu và 0,3 mm cho
+nguồn — DRC chấm theo đúng đó — nhưng router đi với 0,25 và 0,35, nên nó tự tránh những lối chỉ
+vừa khít. Kết quả: khe đồng hẹp nhất toàn board **0,255 mm** thay vì 0,215, không còn cặp nào dưới
+0,25 mm, và lại còn **ít via hơn** (46 thay vì 53) vì đường đi đơn giản hơn. Đi sát đúng mức tối
+thiểu thì DRC vẫn qua, nhưng không còn chỗ nào cho sai số ăn mòn của xưởng.
+
 **Mọi via đều bịt mask cả hai mặt.** Sơn phủ kín vành đồng quanh via — lỗ vẫn khoan, thành vẫn mạ,
 vẫn dẫn giữa hai mặt, chỉ là không còn đồng trần. Được ba thứ: module đứng bên trên không thể chạm
 vào via nằm dưới nó, in lụa in đè lên được (xưởng gọt in lụa khỏi chỗ đồng trần, nên tên chân in
