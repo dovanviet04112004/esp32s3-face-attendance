@@ -426,7 +426,8 @@ def main() -> int:
     # outline along the axis the row runs; 1 mm of drift is visible on the board.
     for bx0, by0, bx1, by1 in boxes_from(outline(pcb, "F.SilkS", dashed=True)):
         for ref, part in sorted(parts.items()):
-            seats = [p["xy"] for p in part["pads"].values() if p["net"]]
+            # Every row, net or none: a row of bare holes sits off centre just as visibly.
+            seats = [p["xy"] for p in part["pads"].values()]
             if len(seats) < 2 or not all(bx0 <= x <= bx1 and by0 <= y <= by1 for x, y in seats):
                 continue
             xs = [x for x, y in seats]
