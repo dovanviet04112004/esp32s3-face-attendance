@@ -3,11 +3,11 @@
 	(generator "kiosk-gen")
 	(generator_version "10.0")
 	(layer "F.Cu")
-	(descr "GOOUUU ESP32-S3-CAM socket, 2x20 at 2.54 mm, rows 25.4 mm apart. Pin 1 = 3V3 at top left seen from above with the two USB-C on the bottom edge. Silkscreen bar marks that edge: it must stay clear for the cables, and the EN and BOOT buttons on the module face up.")
+	(descr "GOOUUU ESP32-S3-CAM socket, 2x20 at 2.54 mm, rows 25.4 mm apart - measured on the board and confirmed against a published figure. Pin 1 = 3V3 at top left seen from above with the two USB-C on the bottom edge; the silkscreen bar marks that edge. The outline is deliberately oversized: this board has no datasheet, so its real edge is unmeasured and the courtyard errs wide to keep tall parts out from under it. Keep the USB edge clear for cables, and EN and BOOT reachable on the top face.")
 	(tags "esp32s3 cam devkit socket")
 	(attr through_hole)
 	(property "Reference" "REF**"
-		(at 0 -28.13 0)
+		(at 0 -34.50 0)
 		(layer "F.SilkS")
 		(uuid "c7da1493-bd3c-4e90-816b-3efd78bda7b5")
 		(effects
@@ -18,7 +18,7 @@
 		)
 	)
 	(property "Value" "ESP32-S3-CAM"
-		(at 0 28.13 0)
+		(at 0 34.50 0)
 		(layer "F.Fab")
 		(uuid "7f822e49-abf3-4b9f-82fa-171cc765e248")
 		(effects
@@ -29,8 +29,8 @@
 		)
 	)
 	(fp_line
-		(start -15.20 -26.63)
-		(end 15.20 -26.63)
+		(start -16.00 -33.00)
+		(end 16.00 -33.00)
 		(stroke
 			(width 0.12)
 			(type solid)
@@ -39,8 +39,8 @@
 		(uuid "8da2f2f2-eb00-49ac-8052-e26a87b51903")
 	)
 	(fp_line
-		(start 15.20 -26.63)
-		(end 15.20 26.63)
+		(start 16.00 -33.00)
+		(end 16.00 33.00)
 		(stroke
 			(width 0.12)
 			(type solid)
@@ -49,8 +49,8 @@
 		(uuid "5fc5daab-ce3c-48a6-841f-ef41da3d5853")
 	)
 	(fp_line
-		(start 15.20 26.63)
-		(end -15.20 26.63)
+		(start 16.00 33.00)
+		(end -16.00 33.00)
 		(stroke
 			(width 0.12)
 			(type solid)
@@ -59,8 +59,8 @@
 		(uuid "de045a97-7dad-4b0a-84e5-52a22d0dee58")
 	)
 	(fp_line
-		(start -15.20 26.63)
-		(end -15.20 -26.63)
+		(start -16.00 33.00)
+		(end -16.00 -33.00)
 		(stroke
 			(width 0.12)
 			(type solid)
@@ -69,8 +69,8 @@
 		(uuid "90bd9f92-356d-4948-8e54-4511e479f92f")
 	)
 	(fp_line
-		(start -15.45 -26.88)
-		(end 15.45 -26.88)
+		(start -16.25 -33.25)
+		(end 16.25 -33.25)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -79,8 +79,8 @@
 		(uuid "18a3739c-73a1-4af9-806d-8d99b3c7f1ef")
 	)
 	(fp_line
-		(start 15.45 -26.88)
-		(end 15.45 26.88)
+		(start 16.25 -33.25)
+		(end 16.25 33.25)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -89,8 +89,8 @@
 		(uuid "c1b048a3-c1c2-4a85-8d26-cb97e2362c8c")
 	)
 	(fp_line
-		(start 15.45 26.88)
-		(end -15.45 26.88)
+		(start 16.25 33.25)
+		(end -16.25 33.25)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -99,8 +99,8 @@
 		(uuid "6ba976ab-fbcb-40b4-89aa-99d66aedd368")
 	)
 	(fp_line
-		(start -15.45 26.88)
-		(end -15.45 -26.88)
+		(start -16.25 33.25)
+		(end -16.25 -33.25)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -109,8 +109,8 @@
 		(uuid "80bc9746-aa17-4509-81ba-1d36da612bd8")
 	)
 	(fp_line
-		(start -15.20 22.63)
-		(end 15.20 22.63)
+		(start -16.00 27.00)
+		(end 16.00 27.00)
 		(stroke
 			(width 0.12)
 			(type solid)
