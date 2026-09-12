@@ -156,6 +156,8 @@ static void blocking_console(void)
 TEST_CASE("metered frames reach the host as raw rgb565", "[drv_camera][manual]")
 {
     blocking_console();
+    const esp_err_t ready = drv_camera_init();
+    TEST_ASSERT_TRUE(ready == ESP_OK || ready == ESP_ERR_INVALID_STATE);
     for (int i = 0; i < RAW_METER_FRAMES; ++i) {
         camera_fb_t *frame = drv_camera_grab();
         TEST_ASSERT_NOT_NULL(frame);
@@ -387,7 +389,7 @@ TEST_CASE("forget the frames the button kept", "[drv_camera][manual]")
 }
 
 #define KEEP_CASE "the button keeps one frame, the led says whether it landed"
-#define HOST_WINDOW_MS 6000
+#define HOST_WINDOW_MS 3000
 
 // A byte from the host inside the window claims the board for the menu; with no
 // host there is nobody to pick a case, so the keeping case starts by itself.
@@ -405,19 +407,22 @@ static bool host_spoke(void)
 
 void app_main(void)
 {
-    UNITY_BEGIN();
-    unity_run_tests_by_tag("[manual]", true);
-    UNITY_END();
     // The led holds its colour across a reset, so a boot starts by clearing it.
     if (led_start() == ESP_OK) {
         led_show(0, 0, 0);
     }
+    // A host that waits out the whole suite loses the menu to the keeping case.
     printf("send any key within %d s for the menu, otherwise the board keeps frames\n",
            HOST_WINDOW_MS / 1000);
-    if (!host_spoke()) {
-        UNITY_BEGIN();
-        unity_run_test_by_name(KEEP_CASE);
-        UNITY_END();
+    if (host_spoke()) {
+        unity_run_menu();
+        return;
     }
+    UNITY_BEGIN();
+    unity_run_tests_by_tag("[manual]", true);
+    UNITY_END();
+    UNITY_BEGIN();
+    unity_run_test_by_name(KEEP_CASE);
+    UNITY_END();
     unity_run_menu();
 }
