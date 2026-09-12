@@ -104,3 +104,40 @@ scale đổi. Đổi sang ReLU6 để lấy kernel ESP-NN thì **mất luôn CLE
 thứ vừa đo được là có công. Nên quyết định này cần latency thật của E8-T8 chứ
 không suy đoán: 46 phép elementwise trên C tham chiếu chưa chắc đắt bằng cái mất
 đi khi bỏ CLE.
+
+---
+
+## 4. Arm một backbone `0107` — thang chạy lại 12/09, CLE tắt
+
+Run `20260912-0107_fd87e15_5728fa`, `best.pth` epoch 79, một backbone trên crop mặt 81×81.
+Cùng giao thức mục 2: `test_split`, 4.032/39.072 mẫu trải đều. Ba cột cuối **đo thật trên
+board**, không còn 🔬: `ai_engine/test_apps/antispoof` và `test_apps/bench_ai`, 240 MHz,
+`-O2`, PSRAM octal 80 MHz, cả hai arena ở PSRAM.
+
+| Q | EER | AUC | Δ EER so với Q0 | Kích thước | head arena | latency |
+|---|---|---|---|---|---|---|
+| **Q0** FP32 | 0,0895 | 0,9727 | — | 1.046,6 KB | — | — |
+| **Q1** fold + bias, **không CLE** | **0,0908** | **0,9727** | **+1,45%** | **424,9 KB** | **210 KB** | **234,0 ms** |
+
+**Q1 đạt cả ba ngưỡng accuracy và arena của §3.7**: AUC bằng đúng Q0, EER lệch 0,0013 tuyệt
+đối (0,13 điểm phần trăm, dưới ngưỡng 1%), arena 422.764 B nằm trong `arena_big` 466 KB.
+**Ngưỡng latency vẫn trượt**: 234,0 ms so với ngân sách 60 ms của §6.4. Nhưng bản hai
+backbone là 469,7 ms, nên một backbone đã cắt đúng một nửa.
+
+## 5. Vì sao CLE bị tắt — bảng tách, 12/09
+
+Chạy lần đầu với Q1 đúng định nghĩa cũ (có CLE) cho kết quả tệ hẳn. Tách từng thành phần,
+cùng run, cùng split, cùng 4.032 mẫu:
+
+| Cấu hình | EER | AUC | Δ EER so với Q0 |
+|---|---|---|---|
+| Q0 FP32 | 0,0895 | 0,9727 | — |
+| PTQ trơ (không CLE, không bias) | **0,0860** | 0,9722 | **−3,91%** |
+| Chỉ bias correction | 0,0908 | **0,9727** | +1,45% |
+| Chỉ CLE | 0,1368 | 0,9385 | **+52,8%** |
+| CLE + bias | 0,1370 | 0,9383 | **+53,1%** |
+| CLE + bias, 1.000 mẫu calib | 0,1404 | 0,9364 | +56,9% |
+
+Một mình CLE gây ra toàn bộ thiệt hại; bias correction vô hại; tăng mẫu calib không cứu
+được vì calib không phải nguyên nhân. Cơ chế ở `measurements.md` §32.
+

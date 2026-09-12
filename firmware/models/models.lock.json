@@ -5,6 +5,12 @@
     "run_id": "detection/20260831-1616_cc931df_36fbea",
     "arena_bytes": 189628
   },
+  "antispoof": {
+    "file": "minifasnet_int8.tflite",
+    "sha256": "57f1f4f5c10409d9c3b47ec02179511c2aadda53e6d6b35695561661205ef57e",
+    "run_id": "antispoof/20260912-0107_fd87e15_5728fa",
+    "arena_bytes": 0
+  },
   "recognition": {
     "file": "mobilefacenet_int8.tflite",
     "sha256": "f77969e342ab10b49782b1241aef1b1ecabc4519c8cbf6129a463d9bbe983ad3",

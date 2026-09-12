@@ -1791,3 +1791,56 @@ hỏi mở từ §22.
   khi `phone_eval` đạt EER ở 0,6204 và 73 khung board qua 43/47 ở 0,90 nhưng chỉ 21/47 ở 0,99.
   Model đã đủ tốt; cái sai bây giờ nằm ở chỗ lấy ngưỡng từ val của CelebA + LCC thay vì từ chính
   miền thiết bị. Đó là E8-T12.
+
+---
+
+## 32. CLE phá model một backbone sau INT8 — tìm nguyên nhân, 12/09
+
+Export lần đầu theo đúng §3.7 cũ (Q1 = fold + CLE + bias) cho EER **0,1370** trong khi FP32
+là 0,0895, tức **+53%**. Bảng tách ở `quant_ladder.md` §5 chỉ đích danh **CLE**: bỏ nó ra thì
+INT8 còn tốt hơn FP32 (0,0860).
+
+### 32.1 CLE không sai về hàm
+
+Kiểm trực tiếp: fold BN rồi chạy `cle.apply`, so logit trước và sau trên cùng đầu vào.
+
+| | |
+|---|---|
+| Số cặp CLE cân | 23 |
+| Sai lệch logit lớn nhất | **0,0000** |
+
+Phép cân là tương đương đúng như lý thuyết. Nên nguyên nhân không nằm ở tính đúng đắn.
+
+### 32.2 Nó dời dải kích hoạt, mà TFLite lượng tử hoá kích hoạt theo per-tensor
+
+Đo biên độ kích hoạt lớn nhất của từng conv trên 64 crop calib thật, trước và sau CLE:
+
+| Lớp | Trước | Sau | Tỉ lệ |
+|---|---|---|---|
+| `down_4.expand.conv` | 6,09 | 19,04 | **3,12×** |
+| `stage_2.blocks.0.expand.conv` | 6,50 | 17,14 | 2,64× |
+| `stage_4.blocks.1.expand.conv` | 11,10 | 27,61 | 2,49× |
+| … | | | |
+| `stage_2.blocks.1.project.conv` | 9,38 | 2,67 | **0,28×** |
+| `stage_4.blocks.0.project.conv` | 7,91 | 2,29 | 0,29× |
+| `down_2.project.conv` | 13,03 | 3,83 | 0,29× |
+| **Đỉnh toàn mạng** | **31,8** | **37,5** | |
+
+CLE chỉ nhìn dải **trọng số**, còn TFLite lượng tử hoá **kích hoạt theo per-tensor**. Nó đẩy
+các lớp `expand` lên tới 3,1× và kéo các lớp `project` xuống 0,28×. Nhánh `project` bị thu nhỏ
+rồi cộng vào đường residual có biên độ nguyên vẹn, nên sau khi làm tròn INT8 phần lớn đóng góp
+của nhánh ấy bị xoá. FP32 không hề hấn, INT8 thì mất.
+
+### 32.3 Vì sao bản hai backbone không dính
+
+Ba model hai backbone ở mục 2 của `quant_ladder.md` đều có CLE mà EER còn tốt hơn Q0. Giả
+thuyết: gấp đôi số kênh cho mỗi giai đoạn nên biên độ trung bình mỗi kênh nhỏ hơn, và việc
+ghép hai embedding trước lớp phân loại làm loãng sai số của một nhánh. **Chưa kiểm**, và
+không cần kiểm để chốt, vì luật mới là đo từng nhánh chứ không bật mặc định.
+
+### 32.4 Nợ để lại
+
+`yunet_int8.tflite` và `mobilefacenet_int8.tflite` đang nằm trên board **đều được dựng khi CLE
+còn bật mặc định**. Detect dùng `ReLU6` nên §3 lớp 1 nói CLE không chạy được trên nó, còn
+**recognition dùng `ReLU` và giữ đủ 48/48 cặp**, nên nhánh ấy có thể đang chịu đúng lỗi này.
+Phải chạy lại bảng tách cho recognition trước khi tin con số của nó (E6-T11).

@@ -53,13 +53,13 @@
 | Nhánh | Params | ≈ INT8 |
 |---|---|---|
 | Detect (YuNet) | 75.631 | 76 KB |
-| Anti-spoof (MiniFASNetV2-SE, một backbone) | 🔬 ≈ 263.000 | ≈ 263 KB |
-| Recognition (MobileFaceNet, embedding 512-D) | 1.199.488 | 1.199 KB |
-| **Tổng** | 🔬 ≈ 1.538.000 | **~1,54 MB trong 2 MB** (§6.1) |
+| Anti-spoof (MiniFASNetV2-SE, một backbone) | 262.746 | **424 KB** đo trên board 12/09 |
+| Recognition (MobileFaceNet, embedding 512-D) | 1.199.488 | 720 KB đo trên board |
+| **Tổng** | 1.537.865 | **1.302 KB trong 2 MB** (§6.1), gồm cả detect 158 KB |
 
-Còn ~200 KB, chưa trừ overhead flatbuffer của TFLite (5–15% mỗi file). 🔬 Số cuối chỉ có
-sau khi export ở E4-T11/E5-T11/E6-T10; nếu vượt thì hạ `input_hw` của detect trước, vì nó
-là nhánh rẻ nhất để train lại.
+**Đã export và đo trên board 12/09**: ba file `.tflite` INT8 chiếm 1.302 KB trong partition
+`models_0` 2 MB, còn dư 746 KB. Cột KB là kích thước file thật, gồm cả overhead flatbuffer,
+nên nó lớn hơn cột tham số ở nhánh anti-spoof (per-channel scale và bias int32 của 42 conv).
 
 ### 1.2 Dữ liệu train — từng model
 
@@ -606,7 +606,7 @@ Từng nhánh chọn gì:
 | Nhánh | Activation | Vì sao |
 |---|---|---|
 | detection | `ReLU6` viết cứng trong `blocks.py` | Không chạy CLE, dải chặn có lợi cho INT8 |
-| anti-spoof | `ReLU` qua config | Chạy CLE; `HardSigmoid` của khối SE vẫn là `ReLU6(x+3)/6`, đó là công thức của cổng chứ không phải activation của conv |
+| anti-spoof | `ReLU` qua config | **Không chạy CLE** — đo 12/09 cho thấy nó làm EER sau INT8 tăng 53% (`measurements/antispoof` §32). `ReLU` vẫn giữ vì nó không tốn gì so với `ReLU6` và để ngỏ đường bật lại CLE nếu kiến trúc đổi. `HardSigmoid` của khối SE vẫn là `ReLU6(x+3)/6`, đó là công thức của cổng chứ không phải activation của conv |
 | recognition | `ReLU` qua config | Chạy CLE — `ReLU6` chỉ giữ được 15/48 cặp conv, `ReLU` giữ đủ 48/48 |
 
 ### Lớp 2 — Huấn luyện
@@ -974,7 +974,7 @@ Bốn luật:
 
 | Kỹ thuật | Vì sao cần |
 |---|---|
-| **Cross-Layer Equalization (CLE)** | Cân bằng range weight giữa các layer liền kề bằng phép scale tương đương — **cứu accuracy depthwise conv rất mạnh**, làm trước PTQ, không cần train lại |
+| **Cross-Layer Equalization (CLE)** | Cân bằng range **weight** giữa các layer liền kề bằng phép scale tương đương, làm trước PTQ, không cần train lại. **Không mặc định bật: phải đo từng nhánh.** Nó chỉ cân weight, trong khi TFLite lượng tử hoá **activation theo per-tensor**; trên MiniFASNetV2-SE phép cân ấy đẩy dải activation của lớp `expand` lên 3,1× và kéo lớp `project` xuống 0,28×, làm nhánh residual bị làm tròn mất và EER tăng **53%** dù hàm FP32 không đổi (`measurements/antispoof` §32) |
 | **Bias correction / bias absorption** | Bù sai số trung bình do quantize gây ra ở bias — miễn phí, luôn nên làm |
 | **Chọn thuật toán calibration** | `min-max` (nhạy outlier) vs **`percentile 99.9%`** vs `MSE` vs `KL/entropy` — thử cả 4, chọn theo accuracy. 300–500 ảnh calib là đủ |
 
@@ -1011,7 +1011,7 @@ Bốn luật:
 | ID | Cấu hình | Vai trò |
 |---|---|---|
 | **Q0** | FP32 | Trần. Mọi con số dưới đây tính theo % so với Q0 |
-| **Q1** | **PTQ**: per-channel weight + fold BN + **CLE** + **bias correction** | Mốc đem ship |
+| **Q1** | **PTQ**: per-channel weight + fold BN + **bias correction**; **CLE chỉ bật khi đo được là có lợi trên chính nhánh đó** | Mốc đem ship |
 
 **Vì sao chỉ có Q1.** Cả bốn thành phần của nó **không cần train lại, không cần nhãn,
 chạy trong vài phút**, và đều nhắm đúng điểm yếu của depthwise conv — thứ chiếm phần lớn cả
@@ -1060,7 +1060,7 @@ Tail nhỏ hơn head nhiều — cỡ vài chục KB mỗi model (metadata theo 
 | Arena | Ở đâu | Dùng cho | Kích thước |
 |---|---|---|---|
 | `arena_fast` | **PSRAM**, align 16 B; `AI_ARENA_FAST_INTERNAL` đổi sang SRAM nội | **detect một mình**, `MicroAllocator` riêng | `tail_det + head_det` = **189.628 B** đo thật |
-| `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` = **823.148 B** đo thật với spoof hai backbone; 🔬 đo lại với một backbone |
+| `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` = **422.764 B** đo thật 12/09 với spoof một backbone (spoof chiếm 210 KB, recog nâng lên 412 KB); bản hai backbone từng chiếm 823.148 B |
 
 Vẫn là hai arena dù cùng ở PSRAM: `arena_big` gộp được vì spoof và recog chạy nối nhau **sau khi** detect xong, nên `head` của chúng chồng lên nhau an toàn. detect chạy mỗi frame, không chia `head` với ai.
 
@@ -1139,7 +1139,7 @@ biết bộ cấp phát của mình cần đệm.
 [3] Q0 — FP32  ──🔬 đo accuracy gốc, đây là trần để so
          │
          ▼
-[4] Fold Conv+BN → CLE → Bias correction
+[4] Fold Conv+BN → Bias correction   (CLE chỉ khi nhánh đo được là có lợi, §3.7)
          │
          ▼
 [5] Q1 — PTQ per-channel (calib 300 ảnh OV5640)

@@ -246,3 +246,50 @@ thêm một khung đệm là chu kỳ về 70.490 µs.
 
 Vấn đề phơi sáng kẹt cả hai trần của E7-T17 **vẫn còn nguyên** và không liên
 quan: `level` chỉ đạt 12–14 trên mục tiêu 30 ở `exposure` 868 với `gain` 4×.
+
+---
+
+## 7. Ba nhánh với model thật đã train — đo 12/09
+
+Lần đầu cả ba `.tflite` trên `models_0` là model **đã train và đã chốt**, không còn trọng số
+ngẫu nhiên: detect `20260831-1616`, anti-spoof `20260912-0107` (một backbone), recognition
+`20260908-1750`. Cùng cấu hình mục 1: 240 MHz, `-O2`, PSRAM octal 80 MHz, cả hai arena ở
+PSRAM. `firmware/test_apps/bench_ai`, 20 lần chạy mỗi nhánh.
+
+| Nhánh | Đo 12/09 | Bản hai backbone (mục 1) | Ngân sách §6.4 |
+|---|---|---|---|
+| detect | 232,5 ms | 209,1 ms | 120 ms |
+| **anti-spoof** | **234,0 ms** | 469,7 ms | 60 ms |
+| recognition | 458,0 ms | 1.079,7 ms | 180 ms |
+| **Một mặt đi hết ba nhánh** | **924,5 ms** | 1.758,5 ms | **360 ms** |
+
+**Anti-spoof đúng một nửa bản hai backbone** (234,0 so với 469,7 ms), khớp với việc bỏ một
+trong hai backbone. Tổng còn 52,6% so với lần đo cũ.
+
+**Vẫn trượt ngân sách 2,6 lần.** Ngân sách 360 ms của §6.4 không đạt ở bất kỳ nhánh nào, và
+trượt nặng nhất ở anti-spoof (3,9 lần). Ba số này là số thật để §6.4 được viết lại, chứ không
+phải để tự trấn an.
+
+Dưới tải preview (một luồng đọc ghi PSRAM 4.290 KB/s, 309 khung trong 21,6 s):
+
+| Nhánh | Rảnh | Có tải | Tăng |
+|---|---|---|---|
+| detect | 232,5 ms | 270,6 ms | +16,4% |
+| anti-spoof | 234,0 ms | 273,7 ms | +17,0% |
+| recognition | 458,0 ms | 535,4 ms | +16,9% |
+| **Tổng** | **924,5 ms** | **1.079,7 ms** | **+16,8%** |
+
+Mức phạt 17% trùng khít lần đo cũ (16,6%), nên nó là đặc tính của băng thông PSRAM chứ không
+phải của model.
+
+### 7.1 Arena và kích thước, đo cùng lần
+
+| | Giá trị |
+|---|---|
+| `arena_fast` (detect riêng) | 189.628 B trong 186 KB cấp phát |
+| `arena_big` (spoof + recog chung) | **422.764 B** trong 466 KB, trước đây 823.148 B |
+| Sau khi nạp spoof | 210 KB |
+| Sau khi nạp recog | 412 KB |
+| File trên `models_0` | detect 158 KB, spoof **424 KB**, recog 720 KB |
+| RAM nội còn rảnh | 331–335 KB |
+| PSRAM còn rảnh | 7.537 KB |

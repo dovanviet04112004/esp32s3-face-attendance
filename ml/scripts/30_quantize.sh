@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 #
 # The quantisation ladder of KEHOACH section 3.8, one run at a time. Q0 is the float
-# ceiling and Q1 is per-channel PTQ with BN folding, cross-layer equalisation
-# and bias correction. Every rung is scored on the same split so the numbers in
-# docs/measurements/<branch>/quant_ladder.md compare against each other.
+# ceiling and Q1 is per-channel PTQ with BN folding and bias correction. Every rung
+# is scored on the same split so the numbers in docs/measurements/<branch>/quant_ladder.md
+# compare against each other.
+#
+# Cross-layer equalisation is off unless CLE=1: it balances weight ranges while
+# TFLite quantises activations per tensor, and on the anti-spoof branch that trade
+# costs 53% of EER (measurements/antispoof 32).
 #
 # Which branch a run belongs to comes from its own frozen config, so one
 # invocation can walk runs from all three.
@@ -20,6 +24,7 @@ PY="${ML_ROOT}/.venv/bin/python"
 BENCH_LIMIT="${BENCH_LIMIT:-4000}"
 CALIB_SAMPLES="${CALIB_SAMPLES:-300}"
 SCORE="${SCORE:-1}"
+CLE="${CLE:-0}"
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m!!\033[0m %s\n' "$*" >&2; }
@@ -68,9 +73,11 @@ ladder() {
         --saved "${art}/tf/model_${tag}" \
         --out "${art}/tflite/${model}_fp32_${tag}.tflite" || return 1
 
-    log "${tag}: Q1, fold then equalise then correct bias"
+    local equalise=(--no-cle)
+    [[ "${CLE}" == "1" ]] && equalise=()
+    log "${tag}: Q1, fold then correct bias, ${#equalise[@]} flag(s) off"
     "${PY}" -m facepipe.compress.quant.ptq_tflite --run "${run}" \
-        --out "${art}/tflite/${model}_int8_q1_${tag}.tflite" \
+        --out "${art}/tflite/${model}_int8_q1_${tag}.tflite" "${equalise[@]}" \
         --work "${art}/tf/q1_${tag}" --samples "${CALIB_SAMPLES}" || return 1
 
     log "${tag}: operators, and whether the branch resolver covers them"
