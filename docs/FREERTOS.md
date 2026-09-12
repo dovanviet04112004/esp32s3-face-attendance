@@ -15,6 +15,64 @@ Số kèm chú thích *(bản đồ)* là số đo của tài liệu tham khảo
 
 ---
 
+## 0. Tóm tắt: bẫy nào tránh được, tránh bằng cách nào
+
+Ba cột dưới đây là thứ đáng đọc nhất của cả file: **không phải "sạch" mà là "sạch nhờ đâu"**.
+Một bẫy tránh được do may thì lần sau vẫn dính.
+
+### 0.1 Đã dính, đã sửa — có bằng chứng trên board
+
+Ba ca này chứng minh danh mục không phải lý thuyết. Cả ba đều **im lặng** cho tới lúc đo.
+
+| Bẫy | Dính ở đâu | Triệu chứng | Cách ra |
+|---|---|---|---|
+| **Tràn stack** (6.1) | `sys_storage`, case `append` | Panic **2 trên 3 lần boot**, lần thứ ba in `11 Tests 0 Failures` **che mất hai panic** | Đo được đường `append` qua LittleFS ăn **~2,2 KB stack**, task chính chỉ còn 1.348/3.584 B sau 16 lần ghi. Nâng stack (E7-T10) |
+| **Phân mảnh heap** (7.2) | `arena_fast` xin sau `drv_camera_init()` | RAM nội **trống 192 KB** mà `heap_caps_aligned_alloc` vẫn trượt | Mảnh liền mạch lớn nhất chỉ **143 KB** — bounce buffer LCD và mô tả DMA camera cắt heap thành mảnh. Chuyển arena xuống PSRAM (`arena.md` §1c, §3) |
+| **Pool nhỏ hơn nhịp tiêu thụ** (9.14) | `fb_count` 3 với `q_frame` depth 1 | Preview tụt **14,18 → 8,1 fps** khi nối `ai_task` | `ai_task` giữ một khung tới 2 s và `cam_task` giữ một khung lúc vẽ, nên với 3 khung không còn ô nào để lấp và chu kỳ thành *lấp + xử lý* thay vì `max(lấp, xử lý)`. Lên 4 khung (`latency.md` §6) |
+
+Điểm chung: **cả ba đều được tìm ra bằng phép đo, không cái nào lộ ra khi đọc code.** Bài học
+của ca thứ nhất đắt nhất — một lần chạy xanh đã che hai lần panic, nên "chạy thấy ổn" không
+phải bằng chứng.
+
+### 0.2 Tránh được, và nhờ đâu
+
+| Bẫy | Tránh nhờ | Bằng chứng |
+|---|---|---|
+| Mutex chờ vô hạn (10.1) | `LockGuard` **bắt buộc nhận timeout**, CLAUDE.md §4.1 cấm `portMAX_DELAY` cho mutex | `grep` ra **0 chỗ** |
+| Rò khung ở queue ghi đè (9.8) | `offer_to_ai` hút khung cũ **trả về pool** trước khi gửi, gửi hỏng cũng trả | Đọc `app_tasks.c:97` |
+| Rò và phân mảnh heap (7.1, 7.2) | Khuôn **xin lúc boot, không bao giờ trả** cho arena, bảng embedding và pool khung | Heap phẳng trong 56 B suốt một phút soak |
+| IDLE đói → watchdog (2.3) | `cam_task` hết khung thì `vTaskDelay(1)`; `ai_task` nhường một tick mỗi khung | §5.1 của kế hoạch, và watchdog im trên board |
+| Bẫy đơn vị watermark (6.2) | Code nhân `sizeof(StackType_t)` thay vì hằng số 4 | `portSTACK_TYPE` là `uint8_t` nên nhân 1 — đúng ở đây **và** trên port khác |
+| `pdMS_TO_TICKS` về 0 tick (4.1) | `CONFIG_FREERTOS_HZ=1000`, sàn 1 ms | Ràng buộc này **phụ thuộc config** — hạ tick rate là dính lại |
+| Đảo ngược ưu tiên (10.4) | Khoá dùng mutex thật, semaphore chỉ để báo hiệu ISR→task | Bốn mutex, hai semaphore, không cái nào lẫn vai |
+| Deadlock (10.2) | Thứ tự khoá chốt ở §5.3; chỗ duy nhất lồng hai khoá đi đúng chiều | `FaceDb::persist` lấy `m_facedb` rồi mới `m_littlefs` |
+| ISR chạm PSRAM (8.4) | Hai ISR chỉ đụng handle semaphore | Đọc `drv_tof.c`, `drv_lcd.c` |
+| Cấp phát động sau boot (7.7) | CLAUDE.md §4.1 cấm `new`/`delete` sau boot | `grep` ra **0 chỗ** |
+| Mất quyền sở hữu con trỏ (9.7) | `cam_task` không đụng `frame` sau khi gửi; `blit` xảy ra **trước** | Đọc `cam_task` |
+| Không kiểm `xQueueReceive` (9.2) | Mọi lời gọi đều nằm trong điều kiện | `grep` ra **0 chỗ** trần |
+| `malloc` mỗi vòng gửi (9.13) | Khung đi qua pool cấp sẵn của `esp32-camera` | `grep` ra **0 chỗ** |
+
+Ba dòng đầu là **luật trong CLAUDE.md hoặc kế hoạch**, không phải thói quen. Đó là lý do chúng
+giữ được khi thêm người và thêm task — còn những dòng dựa vào "code hiện đang đúng" thì phải
+soát lại mỗi lần sửa.
+
+### 0.3 Đang dính, chưa sửa
+
+| # | Bẫy | Chỗ | Row |
+|---|---|---|---|
+| **P1** | Giữ khoá suốt lời gọi chặn dài (10.3) | `FaceDb::persist` giữ `m_facedb` 1,8–2,3 s trong khi `kLockMs` là 200 ms | E10-T11 |
+| **P2** | Task có watchdog mà chặn vô hạn (12.2) | `ai_task` | E10-T12 |
+| **P3** | Gửi queue bỏ qua kết quả (9.3) | `xQueueSend(results, 0)` | E10-T12 |
+| **P4** | App chạy lâu nhất không bật bắt lỗi heap (7.3) | `soak`, `bench_mem` | E10-T8 |
+| **P5** | `prod` tắt poisoning nên hỏng heap ngoài hiện trường là vô hình | profile build | — |
+
+### 0.4 Chưa kiểm được
+
+Sáu task của E10 và E13 chưa tồn tại, nên §14 liệt kê những gì phải chạy lại khi chúng lên.
+**Danh mục này chỉ đúng tới ngày ghi** — thêm một task là phải soát lại từ §1.
+
+---
+
 ## 1. Vòng đời task
 
 | # | Kiểu hỏng | Cách kiểm | Trạng thái |
