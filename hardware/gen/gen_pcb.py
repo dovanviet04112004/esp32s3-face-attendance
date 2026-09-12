@@ -61,10 +61,8 @@ PLACEMENT = {
     "J10": (137.0, 107.0, 0),
     "J11": (148.5, 107.0, 0),
     # The one stretch of bottom edge a USB plug can still reach (KEHOACH 2.5).
-    "J15": (108.59, 107.5, 90),
-    "J16": (111.13, 100.5, 90),
-    "J17": (122.19, 107.5, 90),
-    "J18": (124.73, 100.5, 90),
+    "J16": (111.13, 99.0, 90),
+    "J18": (124.73, 99.0, 90),
 }
 
 
@@ -94,6 +92,10 @@ PLACEMENT["J14"] = sd_row()
 BOARD_HOLES = {"H5": (5.0, 5.0, 0), "H6": (153.0, 5.0, 0),
                "H7": (153.0, 116.0, 0), "H8": (5.0, 116.0, 0)}
 PLACEMENT.update(BOARD_HOLES)
+# Bare holes carrying no net, so like the screw holes they never reach the sheet.
+GRID_FP = "kiosk:SolderGrid_4x05_P2.54mm"
+SOLDER_GRID = {"J15": (112.4, 111.5, 0), "J17": (126.0, 111.5, 0)}
+PLACEMENT.update(SOLDER_GRID)
 # A plugged-in module keeps its body, and that body lands on the board. Drawn on the
 # silkscreen so nothing sits inside one. 🔬 ToF, expander and amplifier come off photos.
 MODULE_AREA = {
@@ -222,8 +224,8 @@ def load_footprint(spec: str) -> list:
     return parse((root / f"{name}.kicad_mod").read_text(encoding="utf-8"))
 
 
-# pcb upgrade mints a random uuid for every one of these that arrives without
-# one, so a regenerated board diffs in ~2000 lines unless they are named first.
+# pcb upgrade mints a random uuid for every one of these that arrives without one, so
+# each is named here, keyed on the reference to stay unique across two placements.
 UUID_NODES = ("fp_line", "fp_rect", "fp_circle", "fp_arc", "fp_poly", "fp_text",
               "pad", "property")
 
@@ -272,10 +274,9 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
                 and "MountingHole" in spec):
             node = list(node) + [["hide", "yes"]]
         if node[0] in UUID_NODES:
-            node = list(node)
+            node = [c for c in node if not (isinstance(c, list) and c[0] == "uuid")]
             seen[node[0]] = seen.get(node[0], 0) + 1
-            if not any(isinstance(c, list) and c[0] == "uuid" for c in node):
-                node.append(["uuid", f'"{uid("in", ref, node[0], seen[node[0]])}"'])
+            node.append(["uuid", f'"{uid("in", ref, node[0], seen[node[0]])}"'])
         out.append(node)
     return out
 
@@ -520,13 +521,15 @@ def main() -> None:
                         ["layer", '"F.SilkS"'], ["uuid", f'"{uid("area", name, i)}"']])
 
     for ref, spot in PLACEMENT.items():
-        if ref in BOARD_HOLES:
+        if ref in BOARD_HOLES or ref in SOLDER_GRID:
             continue
         doc.append(place(ref, footprint[ref], nets[ref], net_id, spot))
     for ref, spot in lcd_holes().items():
         doc.append(place(ref, HOLE_FP, {}, net_id, spot))
     for ref in BOARD_HOLES:
         doc.append(place(ref, HOLE_FP, {}, net_id, PLACEMENT[ref]))
+    for ref in SOLDER_GRID:
+        doc.append(place(ref, GRID_FP, {}, net_id, PLACEMENT[ref]))
 
     doc += pin_labels(doc)
     move_references(doc)

@@ -30,7 +30,7 @@ gitignore.
 Chạy **từ gốc repo**, đúng thứ tự — `gen_pcb` đọc sơ đồ vừa sinh để lấy net:
 
 ```bash
-python3 hardware/gen/gen_fp.py     # footprint devkit tự vẽ  -> lib/footprints/
+python3 hardware/gen/gen_fp.py     # hai footprint tự vẽ     -> lib/footprints/
 python3 hardware/gen/gen_sch.py    # sơ đồ + symbol          -> kicad/, lib/symbols/
 python3 hardware/gen/gen_pcb.py    # PCB                     -> kicad/
 kicad-cli pcb upgrade hardware/kicad/kiosk.kicad_pcb
@@ -48,7 +48,7 @@ thay đổi thật. Đừng sửa tay file trong `kicad/` — lần sinh sau m�
 
 | Ø | Số lỗ | Ở đâu | Cái gì cắm vào |
 |---|---|---|---|
-| **1,00 mm** | 107 | `U1` `J3` `J4` `J5` `J6` `J7` `J9` `J13` `J14` `J15` `J16` `J17` `J18`, và `C1` | Chân header 2,54 mm (vuông 0,64 → chéo 0,91), chân tụ 1000 µF, hàng neo và lỗ nguồn hai cổng USB |
+| **1,00 mm** | 139 | `U1` `J3` `J4` `J5` `J6` `J7` `J9` `J13` `J14` `J16` `J18`, `C1`, và hai lưới hàn `J15` `J17` | Chân header 2,54 mm (vuông 0,64 → chéo 0,91), chân tụ 1000 µF, lưới 4 × 5 giữ breakout USB và hai cặp lỗ nguồn của chúng |
 | **0,80 mm** | 8 | `R1` `C2` `C3` `C4` | Chân trở 1/4 W và chân tụ nhỏ, đều ~0,6 mm |
 | **1,30 mm** | 4 | `J10` `J11` | Chân domino MX126-5.0 |
 | **3,20 mm** | 8 | `H1`…`H4` bắt tấm màn (lỗ trên màn Ø3,5); `H5`…`H8` bắt board vào vỏ, bốn góc | Vít M3 — **không phủ đồng** (NPTH) |

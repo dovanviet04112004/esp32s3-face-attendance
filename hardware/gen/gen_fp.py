@@ -1,4 +1,4 @@
-"""Emit the ESP32-S3-CAM socket footprint: 2x20, 2.54 mm pitch, 25.4 mm between rows."""
+"""Emit the two in-house footprints: the ESP32-S3-CAM socket and the solder grid."""
 
 import hashlib
 from pathlib import Path
@@ -65,7 +65,47 @@ def pad(number: int, x: float, y: float) -> str:
     ])
 
 
+GRID_OUT = Path("hardware/lib/footprints/kiosk.pretty/SolderGrid_4x05_P2.54mm.kicad_mod")
+GRID_COLS, GRID_ROWS = 4, 5
+GRID_REF_GAP = 9.0
+
+
+def solder_grid() -> None:
+    """A field of bare holes on the 2.54 grid, so any pin row at that pitch lands on it."""
+    cx = (GRID_COLS - 1) * PITCH / 2.0
+    cy = (GRID_ROWS - 1) * PITCH / 2.0
+    out = [
+        '(footprint "SolderGrid_4x05_P2.54mm"',
+        f"\t(version {VERSION})",
+        '\t(generator "kiosk-gen")',
+        '\t(generator_version "10.0")',
+        '\t(layer "F.Cu")',
+        '\t(descr "Bare 4x5 field of 2.54 mm holes for soldering a small breakout down. No '
+        'pad carries a net and none ever should: the board it holds has no standard pin row, '
+        'so the module slides until its pins sit over holes and is soldered wherever they '
+        'land. Power reaches the module on wire, from the pair of holes beside this field.")',
+        '\t(tags "solder grid breakout anchor")',
+        "\t(attr through_hole)",
+        prop("Reference", "REF**", -GRID_REF_GAP, "F.SilkS"),
+        prop("Value", "SolderGrid_4x05", GRID_REF_GAP, "F.Fab"),
+    ]
+    x, y = cx + 0.85 + 0.25, cy + 0.85 + 0.25
+    for tag, a, b, c, d in (("t", -x, -y, x, -y), ("r", x, -y, x, y),
+                            ("b", x, y, -x, y), ("l", -x, y, -x, -y)):
+        out.append(line(f"grid{tag}", a, b, c, d, "F.CrtYd", 0.05))
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
+            out.append(pad(row * GRID_COLS + col + 1, -cx + col * PITCH, -cy + row * PITCH))
+    out.append(")")
+
+    GRID_OUT.parent.mkdir(parents=True, exist_ok=True)
+    GRID_OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
+    print(f"{GRID_OUT}")
+    print(f"  {GRID_COLS * GRID_ROWS} lo | {2 * cx:.2f} x {2 * cy:.2f} mm | khong lo nao mang net")
+
+
 def main() -> None:
+    solder_grid()
     out = [
         '(footprint "ESP32-S3-CAM_2x20_P2.54mm_R25.4mm"',
         f"\t(version {VERSION})",

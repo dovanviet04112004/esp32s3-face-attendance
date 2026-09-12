@@ -860,17 +860,23 @@ là hai phần rời nhau:
 
 | Ref | Là gì | Lỗ |
 |---|---|---|
-| `J15` | Hàng neo bắt breakout **USB-C** xuống board | 4 lỗ Ø1,0 bước 2,54 — **không mang net nào** |
+| `J15` | Lưới hàn giữ breakout **USB-C** | **20 lỗ** Ø1,0, lưới 4 × 5 bước 2,54 — **không lỗ nào mang net** |
 | `J16` | Hai lỗ nguồn của cổng USB-C | `+5V_R1` và `GND` |
-| `J17` | Hàng neo bắt breakout **micro-USB** xuống board | 4 lỗ Ø1,0 bước 2,54 — không mang net |
+| `J17` | Lưới hàn giữ breakout **micro-USB** | 20 lỗ Ø1,0, lưới 4 × 5 bước 2,54 — không lỗ nào mang net |
 | `J18` | Hai lỗ nguồn của cổng micro-USB | `+5V_R2` và `GND` |
 
-**Hàng neo cố ý không mang điện.** Breakout USB bán ngoài không theo chuẩn chân nào: micro-USB
+**Lưới hàn chứ không phải hàng chân.** Breakout USB bán ngoài không theo chuẩn chân nào: micro-USB
 thường 5 chân (`VBUS D− D+ ID GND`), USB-C có loại 2, 6 và 16 chân, `VBUS` với `GND` khi thì cạnh
-nhau khi thì ở hai đầu. Ghi net vào hàng neo là ghi theo một suy đoán. Nên hàng neo chỉ làm **chỗ
-ngồi cơ khí** — hàn chân nào của breakout vào cũng được, miễn nó không bung — còn điện thì hai
-sợi dây ngắn từ `VBUS` và `GND` của breakout chạy lên hai lỗ nguồn ngay phía trên, và hai lỗ đó
-đã có đồng nối thẳng về domino.
+nhau khi thì ở hai đầu. Đặt sẵn một hàng lỗ là cược rằng chân của nó rơi đúng chỗ đó — cược cả về
+số chân lẫn về việc hàng chân nằm cách mép module bao nhiêu, mà cả hai số đều chưa ai đo.
+
+Lưới 2,54 thì không phải cược: **lỗ và chân cùng một bước, nên trượt module tới đâu cũng có lúc cả
+hàng chân rơi trọn vào lỗ.** Đẩy cho trùng rồi hàn, thừa lỗ thì bỏ trống. Đổi sang con breakout
+khác sau này cũng không phải sửa board.
+
+`J15` và `J17` **không có trên sơ đồ nguyên lý**: chúng không mang một net nào, đúng như bốn lỗ vít
+`H5`…`H8`. Điện đi riêng — hai sợi dây ngắn từ `VBUS` và `GND` của breakout lên `J16`/`J18` ngay
+phía trên, và hai lỗ đó đã có đồng nối thẳng về domino.
 
 **USB-C gánh rail 1, micro-USB gánh rail 2.** Đầu C chịu 3 A nên đỡ được đỉnh 1,34 A của rail 1;
 đầu micro-B chỉ chịu 1,8 A và tiếp xúc yếu hơn hẳn, nên chỉ giao cho đỉnh 0,7 A của servo. Làm

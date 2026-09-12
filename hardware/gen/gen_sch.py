@@ -70,19 +70,15 @@ AMP = [("LRC", "AUDIO_LRC"), ("BCLK", "AUDIO_BCLK"), ("DIN", "AUDIO_DIN"),
 SERVO = [("GND", "GND"), ("VCC", "+5V_R2"), ("PWM", "SERVO_PWM")]
 JACK1 = [("+5V", "+5V_R1"), ("GND", "GND")]
 JACK2 = [("+5V", "+5V_R2"), ("GND", "GND")]
-# A USB breakout has no standard pin row, so its anchor holes take no net (KEHOACH 2.5).
-ANCHOR = [("1", None), ("2", None), ("3", None), ("4", None)]
 TAP1 = [("+5V", "+5V_R1"), ("GND", "GND")]
 TAP2 = [("+5V", "+5V_R2"), ("GND", "GND")]
 
 # ref, value, pins for the left bank, pins for the right bank, x, y. Three columns: the
-# devkit with the USB inlets under it, everything quiet, everything that moves current.
+# devkit with the two USB taps under it, everything quiet, everything that moves current.
 PARTS = [
     ("U1", "ESP32-S3-CAM N16R8", DEVKIT_LEFT, DEVKIT_RIGHT, 48.0, 105.0),
-    ("J15", "USB-C breakout - hang neo, khong mang dien", ANCHOR, [], 48.0, 182.88),
-    ("J16", "USB-C - hai lo nguon ve rail 1", TAP1, [], 48.0, 212.09),
-    ("J17", "microUSB breakout - hang neo, khong mang dien", ANCHOR, [], 48.0, 241.30),
-    ("J18", "microUSB - hai lo nguon ve rail 2", TAP2, [], 48.0, 270.51),
+    ("J16", "USB-C - hai lo nguon ve rail 1", TAP1, [], 48.0, 180.34),
+    ("J18", "microUSB - hai lo nguon ve rail 2", TAP2, [], 48.0, 207.01),
     ("J3", "LCD 4.0in ST7796S + GT911", LCD, [], 112.0, 48.26),
     ("J14", "LCD microSD - lo cho, chua noi day", SD, [], 112.0, 90.17),
     ("J4", "VL53L1X", TOF, [], 112.0, 121.92),
@@ -122,8 +118,7 @@ FOOTPRINTS = {
     "J9": HEADER.format(3),
     # Both supplies are screw terminals: they carry the peak amps of section 2.5.
     "J10": TERMINAL, "J11": TERMINAL,
-    "J15": HEADER.format(4), "J16": HEADER.format(2),
-    "J17": HEADER.format(4), "J18": HEADER.format(2),
+    "J16": HEADER.format(2), "J18": HEADER.format(2),
     "R1": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
     "C1": "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm",
     "C2": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
