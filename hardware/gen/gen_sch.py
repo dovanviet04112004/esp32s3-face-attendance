@@ -73,26 +73,26 @@ JACK2 = [("+5V", "+5V_R2"), ("GND", "GND")]
 # the devkit, everything quiet, everything that moves current.
 PARTS = [
     ("U1", "ESP32-S3-CAM N16R8", DEVKIT_LEFT, DEVKIT_RIGHT, 48.0, 105.0),
-    ("J3", "LCD 4.0in ST7796S + GT911", LCD, [], 112.0, 48.0),
-    ("J14", "LCD microSD - lo cho, chua noi day", SD, [], 112.0, 90.0),
-    ("J4", "VL53L1X", TOF, [], 112.0, 122.0),
-    ("J5", "PCF8574 - de cam 4 chan nguon", EXPANDER_I2C, [], 112.0, 155.0),
-    ("J13", "PCF8574 - han day tu hang P", EXPANDER_IO, [], 112.0, 190.0),
-    ("J6", "DS3231", RTC, [], 112.0, 228.0),
-    ("J7", "MAX98357A", AMP, [], 182.0, 48.0),
-    ("J9", "SG90 servo", SERVO, [], 182.0, 108.0),
-    ("J10", "Jack 5V rail 1", JACK1, [], 182.0, 165.0),
-    ("J11", "Jack 5V rail 2", JACK2, [], 182.0, 220.0),
+    ("J3", "LCD 4.0in ST7796S + GT911", LCD, [], 112.0, 48.26),
+    ("J14", "LCD microSD - lo cho, chua noi day", SD, [], 112.0, 90.17),
+    ("J4", "VL53L1X", TOF, [], 112.0, 121.92),
+    ("J5", "PCF8574 - de cam 4 chan nguon", EXPANDER_I2C, [], 112.0, 153.67),
+    ("J13", "PCF8574 - han day tu hang P", EXPANDER_IO, [], 112.0, 189.23),
+    ("J6", "DS3231", RTC, [], 112.0, 227.33),
+    ("J7", "MAX98357A", AMP, [], 182.0, 39.37),
+    ("J9", "SG90 servo", SERVO, [], 182.0, 102.87),
+    ("J10", "Jack 5V rail 1", JACK1, [], 182.0, 160.02),
+    ("J11", "Jack 5V rail 2", JACK2, [], 182.0, 215.9),
 ]
 
 # ref, value, top net, bottom net, x, y. Each one is drawn beside the load it holds
 # up, so the sheet says which rail it belongs to without reading a net label.
 TWO_PIN = [
-    ("R1", "4k7", "+3V3", "I2C_SDA", 132.0, 155.0),
-    ("C1", "1000uF", "+5V_R1", "GND", 182.0, 192.0),
-    ("C2", "470uF", "+5V_R1", "GND", 182.0, 78.0),
-    ("C3", "470uF", "+5V_R2", "GND", 182.0, 135.0),
-    ("C4", "100uF", "+3V3", "GND", 132.0, 48.0),
+    ("R1", "4k7", "+3V3", "I2C_SDA", 132.0, 153.67),
+    ("C1", "1000uF", "+5V_R1", "GND", 182.0, 187.96),
+    ("C2", "470uF", "+5V_R1", "GND", 182.0, 73.66),
+    ("C3", "470uF", "+5V_R2", "GND", 182.0, 132.08),
+    ("C4", "100uF", "+3V3", "GND", 132.0, 48.26),
 ]
 
 FONT = "(effects (font (size 1.27 1.27)))"
@@ -205,8 +205,8 @@ def stub_label(ref: str, tag: object, net: str, px: float, py: float, side: str)
 
 
 def snap(value: float) -> float:
-    """Onto the 2.54 mm placement grid, which puts every pin on KiCad's 1.27 mm one."""
-    return round(round(value / PITCH) * PITCH, 2)
+    """Onto KiCad's own 1.27 mm grid, which every pin offset is already a multiple of."""
+    return round(round(value / (PITCH / 2)) * (PITCH / 2), 2)
 
 
 def no_connect(ref: str, tag: str, x: float, y: float) -> str:
