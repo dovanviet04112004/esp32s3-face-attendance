@@ -27,3 +27,6 @@ sha256sum hardware/datasheets/*.pdf
 
 **VL53L1X ULD API** (§2.6) là gói phần mềm chứ không phải PDF — nó đã nằm ở
 `firmware/third_party/`, nguồn ghi trong `UPSTREAM.md` của chính nó.
+
+**Board ESP32-S3-CAM (GOOUUU)** (§2.6) là trang web chứ không phải PDF, và nội dung cần dùng
+— thứ tự chân hai hàng — **đã chép vào KẾ HOẠCH §2** rồi. Không tải gì về; §2 là bản giữ.

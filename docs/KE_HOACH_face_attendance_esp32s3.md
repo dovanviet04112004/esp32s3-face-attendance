@@ -165,6 +165,41 @@ Toàn bộ chain dính research-only ở ít nhất một mắt xích (dataset n
 **Board**: ESP32-S3-CAM (GOOUUU / ESP32-S3-WROOM-1 **N16R8**) — 16MB Flash, 8MB **Octal** PSRAM, camera OV5640 hàn sẵn qua đế DVP.
 **Pinout camera**: giống `CAMERA_MODEL_ESP32S3_EYE` trong `camera_pins.h`.
 
+**Thứ tự chân trên hai hàng của board**, đọc từ trên xuống với **cạnh USB quay xuống dưới**.
+Các bảng §2.1–§2.3 nói chân nào đi đâu; bảng này nói chân nào nằm ở đâu, và board đế cần
+đúng nửa sau. Nguồn: sơ đồ silkscreen ở `GOOUUU_ESP32-S3-CAM` (§2.6).
+
+| # | Hàng trái | # | Hàng phải |
+|---|---|---|---|
+| 1 | `3V3` | 1 | `IO43` |
+| 2 | `EN` | 2 | `IO44` |
+| 3 | `IO4` | 3 | `IO1` |
+| 4 | `IO5` | 4 | `IO2` |
+| 5 | `IO6` | 5 | `IO42` |
+| 6 | `IO7` | 6 | `IO41` |
+| 7 | `IO15` | 7 | `IO40` |
+| 8 | `IO16` | 8 | `IO39` |
+| 9 | `IO17` | 9 | `IO38` |
+| 10 | `IO18` | 10 | `IO37` |
+| 11 | `IO8` | 11 | `IO36` |
+| 12 | `IO3` | 12 | `IO35` |
+| 13 | `IO46` | 13 | `IO0` |
+| 14 | `IO9` | 14 | `IO45` |
+| 15 | `IO10` | 15 | `IO48` |
+| 16 | `IO11` | 16 | `IO47` |
+| 17 | `IO12` | 17 | `IO21` |
+| 18 | `IO13` | 18 | `IO20` |
+| 19 | `IO14` | 19 | `IO19` |
+| 20 | `5V0` | 20 | `GND` |
+
+Hai hàng cách nhau **25,4 mm**, bước **2,54 mm**. Board chỉ có **một** chân `GND` và **một**
+chân `3V3` ra hàng, nên cả dòng về của board đi qua một chân duy nhất — không có chân mass
+thứ hai để chia tải, và cũng không có chân nào để cắm nhầm.
+
+Mốc để không lắp ngược: `3V3` và `IO43` là cặp **xa USB nhất**, `5V0` và `GND` là cặp **sát
+USB**. Lỗ khoan trên board đế đối xứng nên nhìn board không bao giờ thấy ngược; chỉ lộ lúc
+cắm, mà lúc ấy board đã in xong (§2.3I).
+
 ### 2.1 Chân camera OV5640 — cố định trên board (chỉ để khai báo trong code)
 
 | Tín hiệu | GPIO | Ghi chú |
@@ -256,6 +291,19 @@ Module `KMRTM40045-SPI+CTP V1.0`, silkscreen ghi `4.0" TFT SPI 480*320`. Số đ
 bằng bảng dưới tính, chỉ khác kích thước vật lý — nên nó không đụng gì tới firmware, mà đụng
 tới lỗ bắt vít và vỏ máy. Header **14 chân một hàng**, gộp cả LCD lẫn cảm ứng; khe microSD
 trên module có pad riêng và không dùng (§2.3A `RES` mượn GPIO40 vốn là `SD_DATA`).
+
+**Thứ tự chân trên header**, đọc dọc hàng 14 chân:
+
+```
+VCC · GND · CS · RESET · DC · SDI · SCK · LED · SDO · NC · CTP_SDA · CTP_SCL · CTP_INT · CTP_RST
+```
+
+🔬 **Chưa đo — đây là chân duy nhất của board đế còn chưa nghiệm thu.** Board đế khoan 14 lỗ
+đối xứng nên lắp ngược vẫn cắm vừa, và khi đó `VCC` rơi vào chỗ `CTP_RST`: nguồn 3V3 đổ thẳng
+vào ngõ ra reset của GT911. Đo trước khi đặt in, bằng cách tìm `GND` chứ không đếm từ mép:
+chân `GND` thông mạch với vỏ kim loại khe microSD, và nó là chân **thứ hai** tính từ một đầu —
+đầu kia chân thứ hai là `CTP_SCL`, có trở treo nên đọc ra vài kΩ chứ không phải 0 Ω. Đầu nào
+cho 0 Ω thì đầu đó là `VCC`.
 
 | Chân LCD | GPIO | Vai trò | Lưu ý |
 |---|---|---|---|
@@ -611,10 +659,12 @@ nhấp nhô đó được khuếch đại ra loa. Năm luật dưới đây có 
 | 2 | Mỗi tải nặng về **thẳng** domino của nó: servo → `J11.GND`, amp → `J10.GND` | Đi vòng qua nhau là dùng chung đoạn đồng, tức dùng chung cả nhiễu |
 | 3 | Tụ 470 µF đặt **sát chân** amp và sát chân servo, không sát domino | Cú 600 mA của amp phải chạy dọc dây về nguồn thay vì lấy ngay tại chỗ (§2.3E) |
 | 4 | Vòng nguồn–mass của amp phải **ngắn và khép kín**, tránh xa bus I2C | Khối ra class-D băm ~300 kHz **kể cả khi đầu vào bằng 0** (§2.3E), đủ để vào SDA/SCL |
-| 5 | `OUT+` và `OUT−` đi thành **một cặp**, tránh bus I2C | Ngõ ra là cầu: cả hai dây đều dao động, không dây nào là mass (§2.3E) |
+| 5 | Hai dây loa đi thành **một cặp**, xoắn vào nhau, tránh bus I2C | Ngõ ra là cầu: cả hai dây đều dao động, không dây nào là mass (§2.3E) |
 
-`OUT−` **không bao giờ** nối xuống GND — trong sơ đồ nó là net `SPK_N` riêng, và luật đó giữ
-nguyên trên PCB.
+Luật 5 là luật **đi dây trong vỏ máy**, không phải luật PCB: loa đấu thẳng vào domino của
+chính module MAX98357A, nên `OUT+` và `OUT−` không có net nào trên board đế và board đế
+không mang đầu nối loa (§2.3E). `OUT−` **không bao giờ** nối xuống GND — kể cả khi bắt vít
+loa vào khung máy.
 
 ### 2.6 Datasheet
 
@@ -624,6 +674,7 @@ Bảng này là **nguồn** của danh sách; bản PDF tải về nằm ở `ha
 
 | Linh kiện | Datasheet |
 |---|---|
+| **Board ESP32-S3-CAM (GOOUUU) — thứ tự chân hai hàng** | https://github.com/profharris/GOOUUU_ESP32-S3-CAM |
 | ESP32-S3 (SoC) | https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf |
 | ESP32-S3-WROOM-1 (module N16R8) | https://www.espressif.com/sites/default/files/documentation/esp32-s3-wroom-1_wroom-1u_datasheet_en.pdf |
 | ESP32-S3 Technical Reference Manual | https://www.espressif.com/sites/default/files/documentation/esp32-s3_technical_reference_manual_en.pdf |
