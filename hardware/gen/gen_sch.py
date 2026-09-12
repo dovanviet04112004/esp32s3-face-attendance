@@ -54,6 +54,9 @@ EXPANDER_I2C = [("SCL", "I2C_SCL"), ("SDA", "I2C_SDA"), ("GND", "GND"), ("VCC", 
 # signal reaches the row without cutting the board (KEHOACH 2.3I).
 EXPANDER_IO = [("P0", "TOUCH_RST"), ("P1", "TOF_XSHUT"), ("P2", None), ("P3", "AMP_SD"),
                ("P4", None), ("P5", None), ("P6", None), ("P7", None), ("INT", None)]
+# The panel's own microSD row, landed as bare holes and wired to nothing: SD_CS has
+# no GPIO left to reach and the other three would share SPI2 (KEHOACH 2.3A).
+SD = [("SD_CS", None), ("SD_MOSI", None), ("SD_MISO", None), ("SD_SCK", None)]
 RTC = [("32K", None), ("SQW", None), ("SCL", "I2C_SCL"), ("SDA", "I2C_SDA"),
        ("VCC", "+3V3"), ("GND", "GND")]
 # The speaker lands on the amplifier module's own screw terminal, so OUT+ and OUT-
@@ -70,6 +73,7 @@ JACK2 = [("+5V", "+5V_R2"), ("GND", "GND")]
 PARTS = [
     ("U1", "ESP32-S3-CAM N16R8", DEVKIT_LEFT, DEVKIT_RIGHT, 75.0, 60.0),
     ("J3", "LCD 4.0in ST7796S + GT911", LCD, [], 190.0, 40.0),
+    ("J14", "LCD microSD - lo cho, chua noi day", SD, [], 190.0, 240.0),
     ("J4", "VL53L1X", TOF, [], 190.0, 95.0),
     ("J5", "PCF8574 - de cam 4 chan nguon", EXPANDER_I2C, [], 190.0, 142.0),
     ("J13", "PCF8574 - han day tu hang P", EXPANDER_IO, [], 190.0, 173.0),
@@ -100,6 +104,8 @@ FOOTPRINTS = {
     # Modules drop into these, so they are sockets.
     "J3": SOCKET.format(14), "J4": SOCKET.format(6), "J5": SOCKET.format(4),
     "J13": HEADER.format(9), "J6": SOCKET.format(6), "J7": SOCKET.format(7),
+    # Holes, not a socket: a second socket 107 mm from J3 would have to line up with it.
+    "J14": HEADER.format(4),
     # The servo arrives with a female plug and the spare row takes jumper wires.
     "J9": HEADER.format(3),
     # Both supplies are screw terminals: they carry the peak amps of section 2.5.

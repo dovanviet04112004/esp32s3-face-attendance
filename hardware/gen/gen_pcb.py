@@ -69,6 +69,17 @@ def lcd_area() -> tuple:
 
 
 LCD_AREA = lcd_area()
+
+
+def sd_row() -> tuple:
+    """Under the panel's microSD pins, so one soldered there passes through."""
+    x0, y0, x1, _ = LCD_AREA
+    return (round((x0 + x1) / 2.0 - (4 - 1) * 2.54 / 2.0, 2),
+            round(y0 + LCD_HEADER_INSET, 2), 90)
+
+
+# 🔬 Assumed centred on the far edge, mirroring the header at the near one.
+PLACEMENT["J14"] = sd_row()
 # A plugged-in module keeps its body, and that body lands on the board. Drawn on
 # the silkscreen so nothing is placed inside one. 🔬 only the RTC is measured.
 MODULE_AREA = {

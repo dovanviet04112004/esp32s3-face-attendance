@@ -304,18 +304,24 @@ VCC · GND · CS · RESET · DC · SDI · SCK · LED · SDO · NC · CTP_SDA · 
 SD_CS · SD_MOSI · SD_MISO · SD_SCK
 ```
 
-**Không dùng, và board đế không mang lỗ nào cho nó.** Dữ liệu bền nằm ở flash trong (§6.1), kế
-hoạch không có microSD. Nếu sau này cần thì ba trong bốn chân là **rẻ**: `SD_MOSI`, `SD_MISO`,
-`SD_SCK` dùng chung SPI2 với chính tấm màn (GPIO41 / GPIO43 / GPIO42), chỉ `SD_CS` mới cần một
-chân riêng — mà §2.4 đã hết chân GPIO thường. Ứng viên duy nhất là **GPIO48**, chân board ghim
-mức thấp nên chỉ làm ngõ ra được, mà `CS` đúng là ngõ ra; đổi lại mất đèn WS2812. Đó là thay
-đổi kiến trúc, đi qua §1.2 của CLAUDE.md, không phải việc sửa lúc đi dây.
+**Không nối đi đâu, nhưng board đế vẫn khoan đủ 4 lỗ — `J14`.** Dữ liệu bền nằm ở flash trong
+(§6.1), kế hoạch không có microSD, nên bốn lỗ này **không có đường đồng nào**. Chúng làm hai
+việc: cho chân SD (nếu module có hàn sẵn) **chui qua** thay vì kênh tấm màn lên, và để sau này
+hàn dây vào mà không phải cắt board — đúng vai trò `J13` đang làm cho hàng P của PCF8574 (§2.3I).
 
-⚠️ **Hàng này nằm cùng dải 11,2 mm với hai lỗ vít đầu trên.** Nó ở giữa cạnh, hai lỗ vít ở hai
-góc, cách nhau **20 mm** nên không đụng. Nhưng theo §2.3I thì hàng chân không dùng là **để
-trống, không hàn** — và điều đó phải đúng ở đây, vì board đế không khoan lỗ tránh. Module về mà
-**đã có sẵn chân hàn ở hàng SD chĩa xuống** thì tấm màn không ngồi xuống được 8,5 mm, và lúc ấy
-phải hoặc tháo hàng chân đó ra, hoặc khoan thêm 4 lỗ tránh trước khi đặt in.
+Khoan mà không nối là rẻ, còn không khoan thì hết đường: lúc board in xong mới phát hiện module
+có chân ở hàng đó thì phải tháo hàng chân ra khỏi module.
+
+Nếu sau này thật sự dùng, ba trong bốn chân là **rẻ**: `SD_MOSI`, `SD_MISO`, `SD_SCK` dùng chung
+SPI2 với chính tấm màn (GPIO41 / GPIO43 / GPIO42), chỉ `SD_CS` mới cần một chân riêng — mà §2.4
+đã hết chân GPIO thường. Ứng viên duy nhất là **GPIO48**, chân board ghim mức thấp nên chỉ làm
+ngõ ra được, mà `CS` đúng là ngõ ra; đổi lại mất đèn WS2812. Đó là thay đổi kiến trúc, đi qua
+§1.2 của CLAUDE.md, không phải việc sửa lúc đi dây.
+
+🔬 **Vị trí hàng SD giả định nằm giữa cạnh**, đối xứng với hàng 14 chân ở cạnh kia, và lùi vào
+bằng đúng `LCD_HEADER_INSET`. Nó cách hai lỗ vít đầu trên **20 mm** nên không đụng, và có lệch
+vài milimét cũng không sao khi chỉ dùng làm chỗ hàn dây. Chỉ khi module **có sẵn chân** ở hàng
+đó thì vị trí mới phải đúng — lúc ấy đo thêm khoảng cách từ mép trái tấm màn tới chân `SD_CS`.
 
 Đã đối chiếu với module 12/09. Board đế khoan 14 lỗ đối xứng nên lắp ngược vẫn cắm vừa, và khi
 đó `VCC` rơi vào chỗ `CTP_RST` — nguồn 3V3 đổ thẳng vào ngõ ra reset của GT911. Đầu `VCC` là
