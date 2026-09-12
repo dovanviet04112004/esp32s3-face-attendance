@@ -851,8 +851,16 @@ gặp; chỉ là chuyện của bàn thử.
 #### Đi dây — cái máy tìm đường, luật thì người khai
 
 Board **2 lớp**. Đường nguồn **1,0 mm đi mặt sau**, tín hiệu **0,25 mm đi mặt trước**; đường nào bí
-thì lật sang mặt kia, và chỗ lật là một **via Ø0,4 mm** (vành 0,2). Mọi chân đều xuyên lỗ nên một
-đường đi trọn vẹn ở mặt sau vẫn tới được chân mà không tốn via nào.
+thì lật sang mặt kia, và chỗ lật là một **via**. Mọi chân đều xuyên lỗ nên một đường đi trọn vẹn ở
+mặt sau vẫn tới được chân mà không tốn via nào.
+
+**Via nguồn khoan to hơn via tín hiệu** — Ø0,6 so với Ø0,4. Theo IPC-2221 (1 oz, 10 °C), thành mạ
+25 µm của lỗ Ø0,4 chỉ chịu **1,11 A**, mà via mass nặng nhất trên board gánh **0,91 A** (đường về
+của devkit + màn + ba con I2C) — dư 18%, mỏng. Ø0,6 đưa lên **1,48 A**, dư 63%. Dây 1,0 mm thì chịu
+**2,39 A** so với đỉnh 1,34 A của rail 1, không phải lo.
+
+Không via nào được nằm dưới chữ in lụa: xưởng gọt in lụa khỏi chỗ đồng trần, nên tên chân in đè
+lên via là mất chữ. Router chặn sẵn, `check_pcb` kiểm lại.
 
 **Bảy luật trên không phải là thứ máy tự tìm ra được.** Router đi theo cây khai sẵn trong
 `RAIL_TREE` của `hardware/gen/gen_pcb.py` — từng nhánh một — và **các nhánh của cùng một cây chặn

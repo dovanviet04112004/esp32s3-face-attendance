@@ -291,7 +291,10 @@ POWER_CLEAR, SIGNAL_CLEAR = 0.3, 0.2
 # back with no via. Supplies prefer the back and signals the front; crossing costs one.
 POWER_LAYER, SIGNAL_LAYER = '"B.Cu"', '"F.Cu"'
 LAYERS = (SIGNAL_LAYER, POWER_LAYER)
-VIA_PAD, VIA_DRILL = 0.8, 0.4
+# A power via carries a load's whole return, so it is drilled wider than a
+# signal one: IPC-2221 gives a 0.4 mm barrel 1.11 A and a 0.6 mm barrel 1.48 A.
+VIA = {SIGNAL_MM: (0.8, 0.4), POWER_MM: (1.2, 0.6)}
+PROBES = (SIGNAL_MM / 2, POWER_MM / 2, 0.4, 0.6)
 GRID = 0.2
 EDGE_KEEP = 0.4
 TURN_COST, VIA_COST, WRONG_SIDE = 6, 30, 1
@@ -339,9 +342,10 @@ def track(tag: str, a: tuple, b: tuple, width: float, layer: str, net: int) -> l
             ["uuid", f'"{uid("trk", tag)}"']]
 
 
-def via(tag: str, at: tuple, net: int) -> list:
-    return ["via", ["at", str(at[0]), str(at[1])], ["size", str(VIA_PAD)],
-            ["drill", str(VIA_DRILL)], ["layers", SIGNAL_LAYER, POWER_LAYER],
+def via(tag: str, at: tuple, width: float, net: int) -> list:
+    size, drill = VIA[width]
+    return ["via", ["at", str(at[0]), str(at[1])], ["size", str(size)],
+            ["drill", str(drill)], ["layers", SIGNAL_LAYER, POWER_LAYER],
             ["net", str(net)], ["uuid", f'"{uid("via", tag)}"']]
 
 
@@ -486,6 +490,55 @@ def corners(cells: list) -> list:
     return out
 
 
+def turn(x: float, y: float, deg: float, lx: float, ly: float) -> tuple:
+    th = math.radians(deg)
+    return (x + lx * math.cos(th) + ly * math.sin(th),
+            y - lx * math.sin(th) + ly * math.cos(th))
+
+
+# Glyph figures are check_pcb's, kept here so the router can dodge what it measures.
+GLYPH_MM, REF_GLYPH_MM, LINE_MM = 0.62, 0.78, 1.0
+
+
+def silk_cells(doc: list) -> set:
+    """Cells under a printed name: silk is clipped off bare copper, so no via may sit there."""
+    printed = [(n, unquote(n[1]), GLYPH_MM, 0.0, 0.0, 0.0)
+               for n in doc if isinstance(n, list) and n[0] == "gr_text"]
+    for fp in [n for n in doc if isinstance(n, list) and n[0] == "footprint"]:
+        at = first(fp, "at")
+        ox, oy = float(at[1]), float(at[2])
+        deg = float(at[3]) if len(at) > 3 else 0.0
+        for prop in children(fp, "property"):
+            if unquote(prop[1]) != "Reference" or children(prop, "hide"):
+                continue
+            printed.append((prop, unquote(prop[2]), REF_GLYPH_MM, ox, oy, deg))
+    out = set()
+    for node, text, glyph, ox, oy, deg in printed:
+        layer = first(node, "layer")
+        if not layer or unquote(layer[1]) != "F.SilkS":
+            continue
+        at = first(node, "at")
+        x, y = float(at[1]), float(at[2])
+        rot = float(at[3]) if len(at) > 3 else 0.0
+        if (ox, oy, deg) != (0.0, 0.0, 0.0):
+            x, y = turn(ox, oy, deg, x, y)
+            rot = 0.0
+        justify = first(first(node, "effects") or [], "justify")
+        side = unquote(justify[1]) if justify else "center"
+        span = len(text) * glyph
+        reach = {"left": (0.0, span), "right": (-span, 0.0),
+                 "center": (-span / 2, span / 2)}[side]
+        a = turn(x, y, rot, reach[0], -LINE_MM / 2)
+        b = turn(x, y, rot, reach[1], LINE_MM / 2)
+        grow = max(VIA[POWER_MM][0], VIA[SIGNAL_MM][0]) / 2
+        for i in range(max(0, int((min(a[0], b[0]) - grow) / GRID)),
+                       min(NX - 1, int((max(a[0], b[0]) + grow) / GRID)) + 1):
+            for j in range(max(0, int((min(a[1], b[1]) - grow) / GRID)),
+                           min(NY - 1, int((max(a[1], b[1]) + grow) / GRID)) + 1):
+                out.add(j * NX + i)
+    return out
+
+
 def route_jobs(pads: dict) -> list:
     """Every edge to lay, in the order that decides which one gets first pick."""
     jobs = [(tag, a, b) for tag in RAIL_TREE for a, b in RAIL_TREE[tag]]
@@ -499,12 +552,13 @@ def route_jobs(pads: dict) -> list:
     return jobs
 
 
-def one_run(pads: dict, stamp: dict, rim: dict, placed: list, job: tuple) -> tuple:
+def one_run(pads: dict, stamp: dict, rim: dict, ink: set, placed: list,
+            job: tuple) -> tuple:
     """Corners with the layer each sits on, or None when there is no way through."""
     tag, src, dst = job
     width, clear, want = wire_class(tag)
     blocked, room = {}, {}
-    for probe, into in ((width / 2, blocked), (VIA_PAD / 2, room)):
+    for probe, into in ((width / 2, blocked), (VIA[width][0] / 2, room)):
         for layer in LAYERS:
             field = bytearray(NX * NY)
             for cell in rim[probe]:
@@ -513,6 +567,9 @@ def one_run(pads: dict, stamp: dict, rim: dict, placed: list, job: tuple) -> tup
                 if pad_id in (src, dst) or (net and pad_tag(pad_id, net) == tag):
                     continue
                 for cell in stamp[(max(clear, net_clear(net)), probe)][pad_id]:
+                    field[cell] = 1
+            if probe != width / 2:
+                for cell in ink:
                     field[cell] = 1
             for run in placed:
                 # A declared tree stays a tree: its own branches block each other, so
@@ -550,11 +607,12 @@ def one_run(pads: dict, stamp: dict, rim: dict, placed: list, job: tuple) -> tup
 def route_board(doc: list, net_id: dict) -> list:
     """Lay every edge; when one is walled in, lift the newest foreign run and retry."""
     pads = every_pad(doc)
-    probes = [(c, r) for c in (SIGNAL_CLEAR, POWER_CLEAR)
-              for r in (SIGNAL_MM / 2, POWER_MM / 2, VIA_PAD / 2)]
+    probes = [(c, r) for c in (SIGNAL_CLEAR, POWER_CLEAR) for r in PROBES]
     stamp = {key: {pad_id: disc_cells(x, y, half + key[0] + key[1])
                    for pad_id, (x, y, half, net) in pads.items()} for key in probes}
-    rim = {r: border(2 * r) for r in (SIGNAL_MM / 2, POWER_MM / 2, VIA_PAD / 2)}
+    rim = {r: border(2 * r) for r in PROBES}
+    # A via under a printed name eats the name: the fab clips silk off bare copper.
+    ink = silk_cells(doc)
     queue, placed, tries = list(route_jobs(pads)), [], {}
     budget = 12 * len(queue)
     while queue:
@@ -562,7 +620,7 @@ def route_board(doc: list, net_id: dict) -> list:
         if budget < 0:
             raise SystemExit("!! rip-up khong hoi tu, dung lai")
         job = queue.pop(0)
-        parts = one_run(pads, stamp, rim, placed, job)
+        parts = one_run(pads, stamp, rim, ink, placed, job)
         if parts is not None:
             placed.append(settle(job, parts))
             continue
@@ -582,7 +640,7 @@ def route_board(doc: list, net_id: dict) -> list:
         for k, (a, b, layer) in enumerate(run["legs"]):
             out.append(track(f'{run["tag"]}-{order}-{k}', a, b, run["width"], layer, number))
         for k, at in enumerate(run["holes"]):
-            out.append(via(f'{run["tag"]}-{order}-{k}', at, number))
+            out.append(via(f'{run["tag"]}-{order}-{k}', at, run["width"], number))
     return out
 
 
@@ -602,13 +660,13 @@ def settle(job: tuple, parts: list) -> dict:
         halo[layer] = {}
         for job_clear in (SIGNAL_CLEAR, POWER_CLEAR):
             gap = max(clear, job_clear)
-            for probe in (SIGNAL_MM / 2, POWER_MM / 2, VIA_PAD / 2):
+            for probe in PROBES:
                 cells = set()
                 for a, b, side in legs:
                     if side == layer:
                         cells |= line_cells(a, b, width / 2 + gap + probe)
                 for at in holes:
-                    cells.update(disc_cells(at[0], at[1], VIA_PAD / 2 + gap + probe))
+                    cells.update(disc_cells(at[0], at[1], VIA[width][0] / 2 + gap + probe))
                 halo[layer][(job_clear, probe)] = cells
     return {"job": job, "tag": tag, "width": width, "legs": legs,
             "holes": holes, "halo": halo}

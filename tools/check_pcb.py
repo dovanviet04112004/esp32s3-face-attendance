@@ -472,6 +472,13 @@ def main() -> int:
                 r = pad["size"] / 2
                 if tx0 < px + r and px - r < tx1 and ty0 < py + r and py - r < ty1:
                     problems.append(f'"{text}": silkscreen covers pad {ref}.{number}')
+        # Silk is clipped off bare copper, so a name printed over a via loses a letter.
+        for node in children(pcb, "via"):
+            at = first(node, "at")
+            vx, vy = float(at[1]), float(at[2])
+            r = float(first(node, "size")[1]) / 2
+            if tx0 < vx + r and vx - r < tx1 and ty0 < vy + r and vy - r < ty1:
+                problems.append(f'"{text}": silkscreen covers the via at ({vx:.1f}, {vy:.1f})')
         # A name printed under a module is legible until the module is fitted, which
         # is the moment anyone needs it, so the body it belongs to must not reach it.
         for bx0, by0, bx1, by1 in bodies:
