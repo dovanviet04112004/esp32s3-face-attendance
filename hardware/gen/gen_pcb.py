@@ -332,6 +332,12 @@ def route(tag: str, a: tuple, b: tuple, width: float, layer: str, net: int) -> l
 # Rule 1 of section 2.5: the two grounds meet at exactly one point, at the terminals.
 RAIL2_GROUND = {"J11.2", "J9.1", "C3.2"}
 GROUND_TIE = ("J10.2", "J11.2")
+# Rule 6: a supply rail is drawn, not searched. Each load reaches its own terminal on
+# its own copper, and each reservoir hangs on the load it holds up (KEHOACH 2.5).
+RAIL_TREE = {
+    "+5V_R1": [("J10.1", "U1.20"), ("J10.1", "J7.7"), ("J10.1", "C1.1"), ("J7.7", "C2.1")],
+    "+5V_R2": [("J11.1", "J9.2"), ("J9.2", "C3.1")],
+}
 
 
 LABEL_GAP = 0.6
@@ -527,7 +533,10 @@ def main() -> None:
             doc += route("gndtie", tie[GROUND_TIE[0]], tie[GROUND_TIE[1]], width, layer, number)
             laid += 1
             continue
-        for j, (a, b) in enumerate(spanning_edges(group)):
+        seat = {q[0]: q for q in group}
+        edges = ([(seat[a], seat[b]) for a, b in RAIL_TREE[name]] if name in RAIL_TREE
+                 else spanning_edges(group))
+        for j, (a, b) in enumerate(edges):
             doc += route(f"{name}{j}", a, b, width, layer, number)
             laid += 1
 

@@ -828,6 +828,26 @@ nhấp nhô đó được khuếch đại ra loa. Năm luật dưới đây có 
 | 4 | Vòng nguồn–mass của amp phải **ngắn và khép kín**, tránh xa bus I2C | Khối ra class-D băm ~300 kHz **kể cả khi đầu vào bằng 0** (§2.3E), đủ để vào SDA/SCL |
 | 5 | Hai dây loa đi thành **một cặp**, xoắn vào nhau, tránh bus I2C | Ngõ ra là cầu: cả hai dây đều dao động, không dây nào là mass (§2.3E) |
 
+#### Đường dương — cùng một vấn đề, và năm luật trên không phủ
+
+Năm luật trên đều nói về mass. Nhưng đồng có điện trở ở **cả hai chiều**: nếu 600 mA của amp
+chạy qua đoạn đồng mà devkit đang lấy điện, nó kéo sụt đúng chỗ ESP32 ăn. Về sơ đồ thì `J10`,
+`U1.5V` và `J7.VIN` cùng một net nên nối kiểu gì cũng "đúng"; về vật lý thì không.
+
+| # | Luật | Hỏng thế nào nếu bỏ |
+|---|---|---|
+| 6 | Mỗi tải nặng đi **thẳng** từ domino của nó, không mượn nhánh của tải khác. `J10 → U1` và `J10 → J7` là **hai nhánh song song**, không bao giờ là `J10 → U1 → J7` | Nối chuỗi là dòng đỉnh của amp chạy qua đoạn đồng của devkit — tái hiện đúng cú brownout đã đo ở §2.3E, lần này trên board in |
+| 7 | Tụ trữ bám vào **chân tải**, không bám vào domino: `C2` treo trên `J7.VIN`, `C3` trên `J9.VCC` | Bám domino là tụ nạp cho cả rail thay vì cho riêng tải, mất tác dụng của luật 3 |
+
+Hai luật này khai thẳng trong `hardware/gen/gen_pcb.py` ở `RAIL_TREE` — từng đoạn dây một, chứ
+không để thuật toán tự tìm cây ngắn nhất. Cây ngắn nhất sẽ nối chuỗi, vì nối chuỗi thì ngắn hơn.
+
+⚠️ **Chân `5V` của devkit nối với VBUS của USB.** Chính phép đo ở §2.3E chứng minh: lúc lấy điện
+cho amp từ chân đó thì đường USB của board rớt. Nghĩa là khi vừa cắm USB vừa vặn dây vào `J10`,
+nguồn ngoài và cổng USB của máy tính **đấu song song**. Trên bàn thường không sao, nhưng nguồn
+ngoài cao hơn 5 V rõ rệt thì nó đẩy ngược vào cổng USB. Ngoài thực địa không có USB nên không
+gặp; chỉ là chuyện của bàn thử.
+
 Luật 5 là luật **đi dây trong vỏ máy**, không phải luật PCB: loa đấu thẳng vào domino của
 chính module MAX98357A, nên `OUT+` và `OUT−` không có net nào trên board đế và board đế
 không mang đầu nối loa (§2.3E). `OUT−` **không bao giờ** nối xuống GND — kể cả khi bắt vít
