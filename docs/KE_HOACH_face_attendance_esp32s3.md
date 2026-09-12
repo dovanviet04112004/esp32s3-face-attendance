@@ -885,12 +885,14 @@ ngay trên đã nói cho chân `5V` của devkit, giờ thêm hai đường nữ
 cách nguồn USB-C nhận biết có thiết bị; loại 2 chân rẻ nhất hay bỏ hai con này. Soi trước khi
 mua — board không sửa được chuyện đó.
 
-🔬 **Khung thân 13 × 15 mm mỗi con là ước lượng, chưa đo.** Hai con nằm cạnh nhau ở mép dưới,
-cùng quay đầu cắm ra ngoài — chung mép với hai domino, để dây nguồn vào từ một phía. Ô chứa chúng
-rộng **31 mm**, chặn trái bởi khung tấm màn và chặn phải bởi `J10`; để đủ chỗ thì **`C1` `J10`
-`J11` đã dịch sang phải 3 mm**, đúng một phép tịnh tiến nên mọi khoảng cách trong luật 1–7 giữ
-nguyên. Con breakout nào rộng quá **13 mm** thì không đứng cạnh nhau được nữa, phải xếp chéo và
-cáp của con lùi vào sẽ chạy 16 mm trên mặt board.
+**Khung thân 13 × 15 mm mỗi con.** Hai con nằm cạnh nhau ở mép dưới, cùng quay đầu cắm ra ngoài —
+chung mép với hai domino, để dây nguồn vào từ một phía. Ô chứa chúng rộng **31 mm**, chặn trái
+bởi khung tấm màn và chặn phải bởi `J10`; để đủ chỗ thì **`C1` `J10` `J11` đã dịch sang phải
+3 mm**, đúng một phép tịnh tiến nên mọi khoảng cách trong luật 1–7 giữ nguyên.
+
+Một trong hai con đo **chưa tới 10 mm** bề ngang nên khung 13 mm còn dư hơn 3 mm cho nó. 🔬 Con
+còn lại chưa đo; quá 13 mm thì hai con không đứng cạnh nhau được nữa, phải xếp chéo và cáp của
+con lùi vào sẽ chạy 16 mm trên mặt board.
 
 **Hai domino đặt sát nhau hết mức đường bao cho phép**, nên luật 1 gần đúng nghĩa đen: `J10.GND` và `J11.GND` cách nhau **11,5 mm**. Bước bốn con ốc ra **5 / 6,5 / 5 mm** — không đều được vì đường bao hai domino chạm nhau ở 6,5, ép sát hơn là hai khung chồng lên nhau. Tụ `C1` đặt **lệch hẳn về `J10`**, hai chân nằm đúng trên hai chân của nó. Nó mang net `+5V_R1`, không dính gì tới `+5V_R2` của `J11` — kê nó cân giữa hai domino là vẽ ra một quan hệ điện không có thật, và kéo dài đoạn đồng tới đúng cái domino cần nó. Rail 2 không có tụ trữ ở domino: 470 µF của nó nằm sát chân servo theo luật 3.
 
