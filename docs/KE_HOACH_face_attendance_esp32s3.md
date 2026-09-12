@@ -556,6 +556,8 @@ Hàng chân nào không dùng thì **để trống, đừng hàn** — hàng 4 c
 | GPIO0 | nút BOOT onboard — dùng làm nút "factory reset" (giữ 5 s) |
 
 **Hết chân GPIO thường.** Cần thêm đường điều khiển chậm thì lấy ở PCF8574 — còn P2 và P4–P7.
+Board đế **không mang đầu nối nào cho mấy chân đó**: hàng P trên module vẫn hở, nên sợi dây mới
+hàn thẳng từ module tới nơi cần, không đi vòng qua board.
 
 **Ba chân sau không dùng được làm ngõ vào trên board này**, đo bằng cách bật điện trở kéo
 lên rồi kéo xuống với **không cắm gì cả** và xem chân có đi theo không:
