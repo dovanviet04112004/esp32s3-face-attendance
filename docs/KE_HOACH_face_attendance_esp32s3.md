@@ -701,6 +701,11 @@ PCF8574 dài 48 mm đổ xuống dưới nó, `J3` hất xuống vì tấm màn 
 sang trái. Chiều cao board (121 mm) và khe giữa tấm màn với khung con amp đều là hệ quả của luật
 này chứ không phải chọn trước. `tools/check_pcb.py` bắt lại: chữ nào rơi vào khung module thì fail.
 
+Luật đó áp cho **cả tên linh kiện** (`J3`, `J5`, …), không riêng tên chân — chữ `J5` nằm dưới
+thân con PCF8574 thì cũng vô dụng y như chữ `SCL` nằm đó. Tên linh kiện đặt ở **đầu hàng chân**,
+lùi ra cùng phía với tên chân. Riêng bốn lỗ vít màn thì **ẩn hẳn chữ `H1`…`H4`**: một lỗ khoan
+Ø2,7 tự nó đã nói nó là lỗ vít, còn chỗ in thì nằm gọn dưới tấm màn.
+
 ### 2.4 Chân trống sau khi lắp hết
 
 | GPIO | Trạng thái |

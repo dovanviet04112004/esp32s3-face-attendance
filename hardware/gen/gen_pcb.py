@@ -247,6 +247,9 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
             node = list(node)
             if net:
                 node.append(["net", str(net_id[net]), f'"{net}"'])
+        if (node[0] == "property" and unquote(node[1]) == "Reference"
+                and "MountingHole" in spec):
+            node = list(node) + [["hide", "yes"]]
         if node[0] in UUID_NODES:
             node = list(node)
             seen[node[0]] = seen.get(node[0], 0) + 1
@@ -346,6 +349,51 @@ def label_side(seats: dict) -> tuple:
     return across, 1, far + LABEL_GAP
 
 
+def pad_seats(fp: list) -> dict:
+    """Pad number -> its board position, plus the local x that says which row it is on."""
+    import math
+    at = first(fp, "at")
+    ox, oy = float(at[1]), float(at[2])
+    th = math.radians(float(at[3]) if len(at) > 3 else 0.0)
+    seats = {}
+    for pad in children(fp, "pad"):
+        a = first(pad, "at")
+        lx, ly = float(a[1]), float(a[2])
+        seats[unquote(pad[1])] = (ox + lx * math.cos(th) + ly * math.sin(th),
+                                  oy - lx * math.sin(th) + ly * math.cos(th), lx)
+    return seats
+
+
+def move_references(doc: list) -> None:
+    """A designator under a module is as lost as a pin name, so it follows them out."""
+    import math
+    import gen_sch
+    labelled = {ref for ref, value, left, right, x, y in gen_sch.PARTS}
+    for fp in [n for n in doc if isinstance(n, list) and n[0] == "footprint"]:
+        prop = next((p for p in children(fp, "property")
+                     if unquote(p[1]) == "Reference"), None)
+        seats = pad_seats(fp)
+        if prop is None or not seats or children(prop, "hide"):
+            continue
+        if unquote(prop[2]) not in labelled:
+            continue
+        xs = [s[0] for s in seats.values()]
+        ys = [s[1] for s in seats.values()]
+        if not any(a[0] <= min(xs) and max(xs) <= a[2]
+                   and a[1] <= min(ys) and max(ys) <= a[3] for a in MODULE_AREA.values()):
+            continue
+        across, sign, line = label_side(seats)
+        start = (min(xs) if across else min(ys)) - 3.0
+        bx, by = (start, line + sign * 1.5) if across else (line + sign * 1.5, start)
+        at = first(fp, "at")
+        ox, oy = float(at[1]), float(at[2])
+        th = math.radians(float(at[3]) if len(at) > 3 else 0.0)
+        dx, dy = bx - ox, by - oy
+        spot = first(prop, "at")
+        spot[1] = f"{dx * math.cos(th) - dy * math.sin(th):.2f}"
+        spot[2] = f"{dx * math.sin(th) + dy * math.cos(th):.2f}"
+
+
 def pin_labels(doc: list) -> list:
     """A signal name printed beside every pad, so a hole can be identified by eye."""
     import math
@@ -366,12 +414,7 @@ def pin_labels(doc: list) -> list:
         deg = float(at[3]) if len(at) > 3 else 0.0
         th = math.radians(deg)
         pads = children(fp, "pad")
-        seats = {}
-        for pad in pads:
-            a = first(pad, "at")
-            lx, ly = float(a[1]), float(a[2])
-            seats[unquote(pad[1])] = (ox + lx * math.cos(th) + ly * math.sin(th),
-                                      oy - lx * math.sin(th) + ly * math.cos(th), lx)
+        seats = pad_seats(fp)
         across, sign, line = label_side(seats)
         for pad in pads:
             number = unquote(pad[1])
@@ -454,6 +497,7 @@ def main() -> None:
         doc.append(place(ref, HOLE_FP, {}, net_id, spot))
 
     doc += pin_labels(doc)
+    move_references(doc)
     pads = pad_points(doc)
     laid = 0
     for name, number in (net_id.items() if ROUTE else ()):

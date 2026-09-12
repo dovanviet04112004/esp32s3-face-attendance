@@ -21,6 +21,8 @@ TOLERANCE = 0.01
 # 0.8 mm glyphs at the stroke width gen_pcb uses for a pin label.
 GLYPH_MM = 0.62
 LINE_MM = 1.0
+# Designators are set at 1 mm rather than the 0.8 mm gen_pcb gives a pin name.
+REF_GLYPH_MM = 0.78
 POLARISED = "CP_Radial"
 
 
@@ -169,10 +171,28 @@ def boxes_from(segments: list[tuple]) -> list[tuple]:
              max(p[0] for p in g["pts"]), max(p[1] for p in g["pts"])) for g in loops]
 
 
+def silk_strings(tree: list) -> list[tuple]:
+    """Every visible front-silkscreen string: the pin names and the designators."""
+    found = [(n, 1.0) for n in children(tree, "gr_text")]
+    for fp in children(tree, "footprint"):
+        at = first(fp, "at")
+        ox, oy = float(at[1]), float(at[2])
+        deg = float(at[3]) if len(at) > 3 else 0.0
+        for prop in children(fp, "property"):
+            if prop[1] != "Reference" or children(prop, "hide"):
+                continue
+            spot = first(prop, "at")
+            moved = place(ox, oy, deg, float(spot[1]), float(spot[2]))
+            found.append(([prop[0], prop[2], ["at", str(moved[0]), str(moved[1]), "0"],
+                           *[c for c in prop[3:] if not (isinstance(c, list) and c[0] == "at")]],
+                          REF_GLYPH_MM / GLYPH_MM))
+    return found
+
+
 def text_boxes(tree: list) -> list[tuple]:
     """Silkscreen strings with the rectangle each one inks."""
     found = []
-    for node in children(tree, "gr_text"):
+    for node, scale in silk_strings(tree):
         layer = first(node, "layer")
         if not layer or layer[1] != "F.SilkS":
             continue
@@ -181,7 +201,7 @@ def text_boxes(tree: list) -> list[tuple]:
         rot = float(at[3]) if len(at) > 3 else 0.0
         justify = first(first(node, "effects") or [], "justify")
         side = justify[1] if justify else "center"
-        width = len(node[1]) * GLYPH_MM
+        width = len(node[1]) * GLYPH_MM * scale
         span = {"left": (0.0, width), "right": (-width, 0.0),
                 "center": (-width / 2, width / 2)}[side]
         a = place(x, y, rot, span[0], -LINE_MM / 2)

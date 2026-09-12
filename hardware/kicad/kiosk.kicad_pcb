@@ -90,7 +90,7 @@
 		(descr "Through hole straight socket strip, 1x07, 2.54mm pitch, single row (from Kicad 4.0.7), script generated")
 		(tags "Through hole socket strip THT 1x07 2.54mm single row")
 		(property "Reference" "J7"
-			(at 0 -2.77 0)
+			(at -6.1 -3 0)
 			(layer "F.SilkS")
 			(uuid "7c5f453b-6e5e-4aad-8043-0700b1648162")
 			(effects
@@ -390,7 +390,7 @@
 		(descr "Through hole straight socket strip, 1x04, 2.54mm pitch, single row (from Kicad 4.0.7), script generated")
 		(tags "Through hole socket strip THT 1x04 2.54mm single row")
 		(property "Reference" "J5"
-			(at 0 -2.77 90)
+			(at 5.1 -3 90)
 			(layer "F.SilkS")
 			(uuid "2735590a-7a29-46d4-8ef0-bf43e11261dc")
 			(effects
@@ -664,7 +664,7 @@
 		(descr "Through hole straight socket strip, 1x14, 2.54mm pitch, single row (from Kicad 4.0.7), script generated")
 		(tags "Through hole socket strip THT 1x14 2.54mm single row")
 		(property "Reference" "J3"
-			(at 0 -2.77 90)
+			(at -4.6 -3 90)
 			(layer "F.SilkS")
 			(uuid "cc92ec7b-33af-4af0-8e9f-25b8790e8230")
 			(effects
@@ -1441,6 +1441,7 @@
 		(property "Reference" "H2"
 			(at 0 -3.65 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "16f7742a-60de-4234-8090-861c45150879")
 			(effects
 				(font
@@ -1545,7 +1546,7 @@
 		(descr "Through hole straight socket strip, 1x06, 2.54mm pitch, single row (from Kicad 4.0.7), script generated")
 		(tags "Through hole socket strip THT 1x06 2.54mm single row")
 		(property "Reference" "J4"
-			(at 0 -2.77 90)
+			(at -4.1 -3 90)
 			(layer "F.SilkS")
 			(uuid "d6bb2aae-689a-46dc-874a-57c92d514dad")
 			(effects
@@ -4098,6 +4099,7 @@
 		(property "Reference" "H4"
 			(at 0 -3.65 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "a6d5bb8a-26fe-443b-8366-ec343988eaea")
 			(effects
 				(font
@@ -7154,7 +7156,7 @@
 		(descr "Through hole straight pin header, 1x04, 2.54mm pitch, single row")
 		(tags "Through hole pin header THT 1x04 2.54mm single row")
 		(property "Reference" "J14"
-			(at 0 -2.38 90)
+			(at 4.6 -3 90)
 			(layer "F.SilkS")
 			(uuid "207f5cb4-ec2c-497b-8d16-ccdece351f1b")
 			(effects
@@ -9127,6 +9129,7 @@
 		(property "Reference" "H3"
 			(at 0 -3.65 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "78848340-6d64-47fc-8357-d441a1a9266c")
 			(effects
 				(font
@@ -9233,6 +9236,7 @@
 		(property "Reference" "H1"
 			(at 0 -3.65 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "78799676-da59-484c-88da-e2e530c54cc4")
 			(effects
 				(font
