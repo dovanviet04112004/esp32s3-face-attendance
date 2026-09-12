@@ -1187,6 +1187,7 @@ esp32s3-face-attendance/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
     ├── TASKS.md                                 # backlog
     ├── DU_LIEU.md                               # dữ liệu đã tải và xử lí — số đo trên đĩa
+    ├── FREERTOS.md                              # sổ kiểm lỗi đồng thời, soát lại mỗi khi thêm task
     ├── adr/{0001-yunet-thay-ulfg.md, ...}       # quyết định kiến trúc, mỗi cái 1 file
     ├── measurements/{arena.md, latency.md, power.md, parity.md}  # số 🔬 đo được trên board
     └── thesis/                                  # bản báo cáo ĐATN
@@ -2593,6 +2594,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota` | 0 | 3 | 8 KB | khi có lệnh `down/ota` | Tải firmware / models, verify sha256, ghi partition |
 | `sync_task` | `sync_service` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, xoá khỏi hàng đợi |
+| `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ 30 s chỉ để biết là không có sóng. **Tạm**: tách thành `mqtt_task` và `sync_task` ở E10-T6 |
 | `wifi` / `lwip` | hệ thống IDF | 0 | 18–23 | — | — | Do IDF quản lý, không tự tạo |
 
 > **Quy tắc priority**: mọi task ứng dụng phải < 18 để không chèn Wi-Fi stack. Task có deadline cứng (cam, tof, audio) đặt cao hơn task chỉ cần "mượt mắt" (ui) và task nền (sync).
@@ -2602,6 +2604,9 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | Đối tượng | Kiểu | Kích thước | Gửi | Nhận | Vì sao đặt ở đây |
 |---|---|---|---|---|---|
 | `q_frame_ai` | Queue, **depth 1**, `camera_fb_t*` | 1 × 4 B | `cam_task` | `ai_task` | Depth 1 + `xQueueOverwrite`: **luôn xử lý frame mới nhất**, frame cũ trả về pool ngay → không dồn RAM, không trễ tích luỹ |
+
+**Không có semaphore giữa ISR camera và `cam_task`.** `esp_camera_fb_get()` đã tự chặn cho tới khi có khung, nên một binary semaphore nữa chỉ là tầng chờ thứ hai chờ đúng thứ mà tầng dưới đã chờ.
+
 | `q_frame_preview` | Queue, depth 2, `camera_fb_t*` | 2 × 4 B | `cam_task` | `ui_task` | Preview cho phép trễ 1 frame |
 | `q_result` | Queue, depth 4, `svc_vision_result_t` | 4 × ~104 B | `ai_task` | `attend_task` | Tách hẳn tính toán khỏi nghiệp vụ |
 | `q_touch` | Queue, depth 8, `touch_evt_t` | 8 × 8 B | `touch_task` | `ui_task` | Không mất thao tác vuốt nhanh |
@@ -2613,7 +2618,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | **`m_facedb`** | Mutex | — | `ai_task` (đọc), `mqtt_task` (ghi khi enroll) | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
 | **`m_littlefs`** | Mutex | — | `attend_task`, `sync_task`, `ota_task`, `audio_task` | — | LittleFS không thread-safe mặc định |
 | `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
-| `s_frame_ready` | Binary semaphore | — | ISR camera | `cam_task` | ISR chỉ `xSemaphoreGiveFromISR`, xử lý ở task |
+| `s_bounce_free` | Binary semaphore | — | callback `esp_lcd` | `drv_lcd` | Đệm bounce được trả lại thì mới nạp lượt sau. Callback **trả** cờ yield cho `esp_lcd` tự nhường, không tự gọi `portYIELD_FROM_ISR` |
 | `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | như trên |
 | `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT`. Thay cho 7 biến cờ rời rạc |
 
