@@ -340,18 +340,24 @@ Hai con số đó ràng buộc thiết kế theo hai hướng ngược nhau. C�
 **11,2 mm**, đủ rộng cho cả hàng chân lẫn hai lỗ vít, và đó là lý do bốn lỗ đặt ở **bốn góc**:
 góc là chỗ duy nhất có vật liệu.
 
-Cùng con số đó chặn `LCD_HEADER_INSET` ≤ **11,2 mm** — hàng chân phải nằm trong dải dôi, không
-thể chui xuống dưới kính. Giá trị 15 mm đặt lúc đầu là bất khả thi; đang để **6 mm**, và `J3`
-tụt xuống theo cho mép xa của tấm màn không tràn khỏi mép trên board.
+Cùng con số đó chặn khoảng lùi của hàng chân ≤ **11,2 mm** — hàng chân phải nằm trong dải dôi,
+không thể chui xuống dưới kính.
 
-🔬 **Còn hai số chưa đo, và chúng quyết định bốn lỗ có bắt được vít hay không.** Vít M2.5 trong
-lỗ Ø2,7 chỉ có 0,1 mm khe, lệch 1 mm là không bắt được. Hai số đó khai ở đầu
-`hardware/gen/gen_pcb.py`, sửa xong sinh lại là cả bốn lỗ tự dịch theo:
+**Hàng chân nằm ngang hàng với hai lỗ vít đầu dưới**, nhích về phía mép khoảng **1 mm** (nhìn
+trên module 12/09). Nhờ đó hai khoảng lùi không còn độc lập: đo lỗ là biết luôn hàng chân, nên
+`LCD_HEADER_INSET` suy ra từ `LCD_HOLE_INSET` chứ không khai riêng. `J3` tụt xuống `y = 107,5`
+cho mép xa của tấm màn không tràn khỏi mép trên board, và hàng chữ tên chân của nó rơi **ngay
+dưới** mép tấm màn — tức là vẫn đọc được sau khi lắp màn, không bị che.
 
-| Hằng số | Đang đặt | Phải đo |
+🔬 **Còn đúng một số chưa đo, và nó quyết định bốn lỗ có bắt được vít hay không.** Vít M2.5
+trong lỗ Ø2,7 chỉ có 0,1 mm khe, lệch 1 mm là không bắt được. Khai ở đầu
+`hardware/gen/gen_pcb.py`, sửa xong sinh lại là bốn lỗ lẫn `J3` tự dịch theo:
+
+| Hằng số | Đang đặt | Nguồn |
 |---|---|---|
-| `LCD_HEADER_INSET` | 6 mm | Từ **tim hàng chân 14** tới **mép ngắn gần nhất** của tấm màn. Phải ≤ 11,2 mm |
-| `LCD_HOLE_INSET` | 3,5 mm | Từ **tâm lỗ** tới mép tấm màn (đo một góc là đủ nếu bốn lỗ đối xứng) |
+| `LCD_HOLE_INSET` | 3,5 mm | 🔬 **phải đo**: từ **tâm lỗ** tới mép tấm màn |
+| `LCD_HEADER_DROP` | 1,0 mm | Hàng chân thấp hơn hàng lỗ bao nhiêu, nhìn trên module |
+| `LCD_HEADER_INSET` | 2,5 mm | Suy ra: `LCD_HOLE_INSET − LCD_HEADER_DROP` |
 
 Đo tới **tâm lỗ**, không đo tới mép lỗ. Và nếu bốn lỗ trên tấm màn **không** đối xứng thì báo
 lại: lúc đó phải khai từng lỗ một chứ không suy ra từ một con số lùi vào.

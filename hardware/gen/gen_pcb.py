@@ -18,10 +18,11 @@ EDGE = 0.0
 # Panel PCB measured off the module. It stands 8.5 mm up on J3 and covers its
 # rectangle whole, so nothing taller than that may sit inside (KEHOACH 2.3A).
 LCD_PANEL = (61.0, 107.0)
-# 🔬 Header row to the panel's near edge, and hole centre to panel edge. Neither is
-# measured; the header one is capped by the 11.2 mm strip past the glass (KEHOACH 2.3A).
-LCD_HEADER_INSET = 6.0
+# 🔬 Hole centre to the panel edge, the one number left. The header row lands on the
+# hole line a shade nearer the edge, so measuring this settles both (KEHOACH 2.3A).
 LCD_HOLE_INSET = 3.5
+LCD_HEADER_DROP = 1.0
+LCD_HEADER_INSET = LCD_HOLE_INSET - LCD_HEADER_DROP
 HOLE_FP = "MountingHole:MountingHole_2.7mm"
 
 # ref -> (x, y, rotation). A stock connector footprint has its origin on pin 1, so
@@ -33,7 +34,7 @@ PLACEMENT = {
     "U1": (20.0, 62.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
     # panel reaches 107 mm up from wherever its header lands.
-    "J3": (57.0, 105.0, 90),
+    "J3": (57.0, 107.5, 90),
     # A 107 mm panel leaves no strip under itself, so its capacitor goes to the
     # left of it, below the devkit, which is the nearest 3V3 the panel does not cover.
     "C4": (38.0, 102.0, 90),
@@ -348,20 +349,22 @@ def pin_labels(doc: list) -> list:
             if ref == "U1":
                 dx, dy, rot, just = (4.0 if lx < 0 else -4.0), 0.0, 0, ("left" if lx < 0 else "right")
             elif len(pads) == 2:
-                # On a two-pad row an inboard label lands on the other pad's copper.
+                # Beside its pad a label reaches the next part once two sit close, so
+                # it goes above instead, nudged outward off the centred reference.
                 away = -1.0 if px <= sum(s[0] for s in seats.values()) / 2 else 1.0
-                dx, dy, rot, just = 1.6 * away, 0.0, 0, ("right" if away < 0 else "left")
+                dx, dy, rot, just = 1.5 * away, -6.0, 0, None
             elif abs(deg - 90) < 1:
                 # rotated text grows back toward the pad unless justified away from it
                 dx, dy, rot, just = 0.0, 2.0, 90, "right"
             else:
                 dx, dy, rot, just = -2.0, 0.0, 0, "right"
+            effects = ["effects", ["font", ["size", "0.8", "0.8"], ["thickness", "0.12"]]]
+            if just:
+                effects.append(["justify", just])
             out.append(["gr_text", f'"{label}"',
                         ["at", f"{px + dx:.2f}", f"{py + dy:.2f}", str(rot)],
                         ["layer", '"F.SilkS"'],
-                        ["uuid", f'"{uid("lbl", ref, label)}"'],
-                        ["effects", ["font", ["size", "0.8", "0.8"], ["thickness", "0.12"]],
-                         ["justify", just]]])
+                        ["uuid", f'"{uid("lbl", ref, label)}"'], effects])
     return out
 
 
