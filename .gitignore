@@ -61,6 +61,7 @@ fp-info-cache
 ~*.lck
 _autosave-*
 .history/
+hardware/export/*.rpt
 
 # ── Notebook: commit .ipynb nhưng không commit output ──
 .ipynb_checkpoints/
@@ -89,4 +90,3 @@ Thumbs.db
 
 # Ultralytics ghi vao runs_dir cua no khi project la duong dan tuong doi
 /runs/
-hardware/export/*.rpt
