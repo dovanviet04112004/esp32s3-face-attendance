@@ -26,14 +26,6 @@ SKIP_GROUPS = ("CAM",)
 # Fitted on the devkit, so the carrier routes no copper to them (KEHOACH 2.4).
 SKIP_MACROS = ("APP_STATUS_LED_GPIO", "APP_FACTORY_RESET_GPIO")
 
-# Macro and net agree on the signal but not on the word for it.
-ALIASES = {
-    "APP_LCD_RST_GPIO": "LCD_RES",
-    "APP_LCD_SDO_GPIO": "LCD_MISO",
-    "APP_AUDIO_BCLK_GPIO": "I2S_BCLK",
-    "APP_AUDIO_LRC_GPIO": "I2S_LRC",
-    "APP_AUDIO_DIN_GPIO": "I2S_DIN",
-}
 
 
 @dataclass
@@ -75,7 +67,8 @@ def macro_gpios(header: Path) -> dict[str, int]:
 
 
 def expected_net(macro: str) -> str:
-    return ALIASES.get(macro, macro.removeprefix("APP_").removesuffix("_GPIO"))
+    """APP_LCD_DC_GPIO names net LCD_DC, with no table in between."""
+    return macro.removeprefix("APP_").removesuffix("_GPIO")
 
 
 def devkit_nets(schematic: Path) -> tuple[dict[str, str], list[Problem]]:

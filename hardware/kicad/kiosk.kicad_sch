@@ -4226,7 +4226,7 @@
 		)
 		(uuid "04af6a82-95ac-49be-8ee5-f58d3b98f3ea")
 	)
-	(label "I2S_DIN"
+	(label "AUDIO_DIN"
 		(at 52.14 66.35 180)
 		(effects
 			(font
@@ -4306,7 +4306,7 @@
 		)
 		(uuid "3005286f-be58-4276-87bd-b3958a6e49a4")
 	)
-	(label "I2S_BCLK"
+	(label "AUDIO_BCLK"
 		(at 264.68 42.54 180)
 		(effects
 			(font
@@ -4486,7 +4486,7 @@
 		)
 		(uuid "65db9e3d-5d25-48d6-87bf-bae4d1eb6f45")
 	)
-	(label "I2S_LRC"
+	(label "AUDIO_LRC"
 		(at 264.68 45.08 180)
 		(effects
 			(font
@@ -4496,7 +4496,7 @@
 		)
 		(uuid "6681aaad-b096-46c8-83bf-cfd1aa99845c")
 	)
-	(label "LCD_RES"
+	(label "LCD_RST"
 		(at 169.68 31.11 180)
 		(effects
 			(font
@@ -4516,7 +4516,7 @@
 		)
 		(uuid "6baec6f0-a10e-4bf2-89da-dd7620d199f4")
 	)
-	(label "LCD_MISO"
+	(label "LCD_SDO"
 		(at 169.68 43.81 180)
 		(effects
 			(font
@@ -4856,7 +4856,7 @@
 		)
 		(uuid "b158c5c4-e962-4529-8d42-0486cc7a842e")
 	)
-	(label "I2S_LRC"
+	(label "AUDIO_LRC"
 		(at 97.86 38.41 0)
 		(effects
 			(font
@@ -4926,7 +4926,7 @@
 		)
 		(uuid "c0c48876-5cbb-4efd-869d-dc7e5addb820")
 	)
-	(label "LCD_MISO"
+	(label "LCD_SDO"
 		(at 97.86 35.87 0)
 		(effects
 			(font
@@ -4976,7 +4976,7 @@
 		)
 		(uuid "c7cb64fd-877e-4772-80ee-7fd5d0e7ac84")
 	)
-	(label "LCD_RES"
+	(label "LCD_RST"
 		(at 97.86 51.11 0)
 		(effects
 			(font
@@ -5066,7 +5066,7 @@
 		)
 		(uuid "f23417d9-4bdc-44f7-8d90-4644a352a7b0")
 	)
-	(label "I2S_DIN"
+	(label "AUDIO_DIN"
 		(at 264.68 40 180)
 		(effects
 			(font
@@ -5106,7 +5106,7 @@
 		)
 		(uuid "fb78a88c-3cec-47a2-849b-42f1f6d1f572")
 	)
-	(label "I2S_BCLK"
+	(label "AUDIO_BCLK"
 		(at 97.86 68.89 0)
 		(effects
 			(font
@@ -5147,7 +5147,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Connector_PinSocket_2.54mm:PinSocket_1x06_P2.54mm_Vertical"
 			(at 190 95 0)
 			(hide yes)
 			(show_name no)
@@ -5237,7 +5237,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm"
 			(at 325 195 0)
 			(hide yes)
 			(show_name no)
@@ -5315,7 +5315,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm"
 			(at 345 195 0)
 			(hide yes)
 			(show_name no)
@@ -5393,7 +5393,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm"
 			(at 305 195 0)
 			(hide yes)
 			(show_name no)
@@ -5471,7 +5471,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "TerminalBlock:TerminalBlock_bornier-2_P5.08mm"
 			(at 285 140 0)
 			(hide yes)
 			(show_name no)
@@ -5549,7 +5549,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
 			(at 150 215 0)
 			(hide yes)
 			(show_name no)
@@ -5627,7 +5627,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Connector_PinSocket_2.54mm:PinSocket_1x14_P2.54mm_Vertical"
 			(at 190 40 0)
 			(hide yes)
 			(show_name no)
@@ -5741,7 +5741,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "kiosk:ESP32-S3-CAM_2x20_P2.54mm_R25.4mm"
 			(at 75 60 0)
 			(hide yes)
 			(show_name no)
@@ -5933,7 +5933,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Connector_PinSocket_2.54mm:PinSocket_1x16_P2.54mm_Vertical"
 			(at 190 130 0)
 			(hide yes)
 			(show_name no)
@@ -6053,7 +6053,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
 			(at 285 110 0)
 			(hide yes)
 			(show_name no)
@@ -6134,7 +6134,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm"
 			(at 285 195 0)
 			(hide yes)
 			(show_name no)
@@ -6212,7 +6212,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical"
 			(at 190 235 0)
 			(hide yes)
 			(show_name no)
@@ -6305,7 +6305,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Connector_PinSocket_2.54mm:PinSocket_1x09_P2.54mm_Vertical"
 			(at 285 40 0)
 			(hide yes)
 			(show_name no)
@@ -6404,7 +6404,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Connector_PinSocket_2.54mm:PinSocket_1x06_P2.54mm_Vertical"
 			(at 190 195 0)
 			(hide yes)
 			(show_name no)
@@ -6494,7 +6494,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "TerminalBlock:TerminalBlock_bornier-2_P5.08mm"
 			(at 285 165 0)
 			(hide yes)
 			(show_name no)
@@ -6572,7 +6572,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "TerminalBlock:TerminalBlock_bornier-2_P5.08mm"
 			(at 285 85 0)
 			(hide yes)
 			(show_name no)
