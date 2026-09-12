@@ -704,11 +704,11 @@ mang sai số ±15%: dải recog thực nằm trong 0,36–0,48 m. Đo lại b�
 
 | Mốc | Ngưỡng | Đo bằng |
 |---|---|---|
-| Student FP32 | **AP ≥ 0,90** trên mặt ≥ 32 px | `eval.py`, cột `ge32px` |
-| Student INT8 | sụt **< 1%** so với FP32 (§3.7) | `eval.py`, cột `ge32px` |
+| Student FP32 | **AP ≥ 0,90** trên mặt ≥ 38 px | `eval.py`, cột `ge38px` |
+| Student INT8 | sụt **< 1%** so với FP32 (§3.7) | `eval.py`, cột `ge38px` |
 | Vận hành | recall **≥ 0,90** và **≤ 0,15** khung thừa mỗi ảnh, trên ảnh một mặt cỡ kiosk | `eval.py` |
 
-Mặt dưới 32 px không tính đúng cũng không tính sai — dùng đúng luật ignore của kit, giống
+Mặt dưới 38 px không tính đúng cũng không tính sai — dùng đúng luật ignore của kit, giống
 cách Easy/Med/Hard là ba cách đọc một tập dự đoán. Tính chúng là dương tính giả sẽ thành
 phạt model vì tìm ra mặt thật.
 
@@ -2938,9 +2938,8 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 | Camera FB ×4 (480×320 RGB565) | 4 × 300 KB = 1.200 KB | **PSRAM** | `fb_location = CAMERA_FB_IN_PSRAM`, `fb_count = 4`, `grab_mode = CAMERA_GRAB_LATEST` | Quá lớn cho SRAM. Một cấu hình cho cả preview và AI (§2.1), nên không có buffer riêng cho nhánh AI. **Cần 4 chứ không phải 3**: `ai_task` giữ một khung tới 2 giây và `cam_task` giữ một khung suốt lúc vẽ, nên với 3 khung cảm biến không còn chỗ để lấp khung kế tiếp và chu kỳ thành *lấp + xử lý* thay vì `max(lấp, xử lý)` — đo 11/09: preview **8,1 fps** với 3 khung, **14,18 fps** với 4, cùng phòng cùng bản (`docs/measurements/latency.md` §6) |
 | LCD frame buffer 320×480 RGB565 | 300 KB | **PSRAM** | `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` | |
 | LCD bounce buffer (2 × 20 dòng) | 2 × 19.2 KB | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội |
-| **Arena detect** | 🔬 ước ~120 KB @160×120 | **SRAM nếu vừa** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_INTERNAL)` | Nhanh nhất, chạy nhiều nhất |
-| **Arena anti-spoof** | 338 KB đo thật @80×80, 🔬 lại sau khi sang 81 | **SRAM** | như trên | Nhỏ, dễ nhét |
-| **Arena recognition** | 904 KB đo thật @113×113 | **PSRAM** | `MALLOC_CAP_SPIRAM \| MALLOC_CAP_8BIT`, align 16 | Nặng nhất, chạy ít nhất (chỉ khi spoof pass) → chấp nhận chậm |
+| **`arena_fast`** — detect một mình @160×120 | **189.628 B** đo thật | **PSRAM** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_SPIRAM)` | Không nhánh nào nằm vừa SRAM nội (§6.4); `ai_engine` cấp theo `arena_hint` rồi làm tròn lên bội KB |
+| **`arena_big`** — anti-spoof @81×81 và recognition @113×113 **chung một `MicroAllocator`** | **422.764 B** đo thật 12/09 | **PSRAM** | như trên | `Σ tail + max(head)` theo §3.8, không phải tổng hai arena. Bản hai backbone từng chiếm 823.148 B |
 | Trọng số 3 model `.tflite` | ~1.7 MB | **Flash mmap** | `esp_partition_mmap` | Không tốn RAM |
 | Ảnh crop 113×113×3 int8 (recog input) | 38.3 KB | **SRAM** | static buffer | Vào thẳng `Invoke()` |
 | Ảnh crop 81×81×3 int8 (spoof input) | 19.7 KB | **SRAM** | static buffer | |
@@ -2968,7 +2967,7 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 | Arena | Dùng | Cấp | Ở đâu | So với bảng trên |
 |---|---|---|---|---|
 | `arena_fast` — detect một mình | 189.628 B | 224 KB | SRAM nội | vượt **49 KB** |
-| `arena_big` — spoof + recog chung | 823.148 B | 1536 KB | PSRAM | bảng này không tính, vì chỉ tính SRAM |
+| `arena_big` — spoof + recog chung | 422.764 B | 466 KB | PSRAM | bảng này không tính, vì chỉ tính SRAM |
 
 Nạp cả ba trong `bench_ai` xong, RAM nội còn **111 KB**. Nhưng `bench_ai` chưa có Wi-Fi,
 LVGL, camera lẫn LCD, nên năm dòng dưới của bảng vẫn chưa chi đồng nào: 55 + 53 + 42 + 57 +
@@ -2989,8 +2988,9 @@ detect, tức 2,0% của một lượt 1.159 ms. Trong 267 KB kia có 42 KB boun
 buộc là DMA nội, nên không có cách nào giữ `arena_fast` ở SRAM mà vẫn đủ chỗ cho LCD.
 
 Đường quay lại khi model nhỏ đi: **thu nhỏ model trước, bật `AI_ARENA_FAST_INTERNAL=y` sau**.
-Hệ số width cho recognition đã hạ `arena_big` từ 823 KB xuống 476 KB đo thật; `arena_fast`
-chỉ nhỏ đi khi chính detect nhỏ đi.
+`arena_big` đã nhỏ đi hai lần và cả hai đều là số đo: hạ `width` của recognition xuống 32
+đưa 823.148 B về 476.188 B, bỏ nhánh ngữ cảnh của anti-spoof đưa tiếp về **422.764 B**.
+`arena_fast` chỉ nhỏ đi khi chính detect nhỏ đi.
 
 Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là dải liền mạch (§3.8). Phải đo lại ở E8-T9 khi Wi-Fi và LVGL đã lên.
 
