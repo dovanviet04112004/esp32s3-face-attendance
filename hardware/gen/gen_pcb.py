@@ -6,6 +6,7 @@ its own terminal, and the amplifier keeps its distance from the I2C bus.
 """
 
 import hashlib
+import math
 import re
 from pathlib import Path
 
@@ -281,36 +282,40 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
     return out
 
 
-# Track widths: the Power class of kiosk.kicad_pro, because section 2.5 puts 1.34 A
-# of peak on rail 1 and 0.7 A on rail 2, and 0.25 mm does not carry that.
-ROUTE = False          # placement only until the layout is signed off
+# Track widths and clearances are the two classes of kiosk.kicad_pro: section 2.5 puts
+# 1.34 A of peak on rail 1 and 0.7 A on rail 2, and 0.25 mm does not carry that.
+ROUTE = True
 POWER_MM, SIGNAL_MM = 1.0, 0.25
-# Every pad here is through-hole, so a track on either layer reaches it: supplies
-# on the back and signals on the front halves the crowding with no vias.
+POWER_CLEAR, SIGNAL_CLEAR = 0.3, 0.2
+# Every pad is through-hole, so either side reaches it and a whole run may sit on the
+# back with no via. Supplies prefer the back and signals the front; crossing costs one.
 POWER_LAYER, SIGNAL_LAYER = '"B.Cu"', '"F.Cu"'
+LAYERS = (SIGNAL_LAYER, POWER_LAYER)
+VIA_PAD, VIA_DRILL = 0.8, 0.4
+GRID = 0.2
+EDGE_KEEP = 0.4
+TURN_COST, VIA_COST, WRONG_SIDE = 6, 30, 1
+NX = int(BOARD_W / GRID) + 1
+NY = int(BOARD_H / GRID) + 1
 
-
-def pad_points(doc: list) -> dict:
-    """Net name -> [(ref.pad, x, y)] in board coordinates."""
-    import math
-    found: dict = {}
-    for fp in [n for n in doc if isinstance(n, list) and n[0] == "footprint"]:
-        ref = next((unquote(p[2]) for p in children(fp, "property")
-                    if len(p) > 2 and unquote(p[1]) == "Reference"), "?")
-        at = first(fp, "at")
-        ox, oy = float(at[1]), float(at[2])
-        th = math.radians(float(at[3]) if len(at) > 3 else 0.0)
-        for pad in children(fp, "pad"):
-            net = first(pad, "net")
-            if not net:
-                continue
-            a = first(pad, "at")
-            lx, ly = float(a[1]), float(a[2])
-            found.setdefault(unquote(net[-1]), []).append(
-                (f"{ref}.{unquote(pad[1])}",
-                 round(ox + lx * math.cos(th) + ly * math.sin(th), 3),
-                 round(oy - lx * math.sin(th) + ly * math.cos(th), 3)))
-    return found
+# Rule 1 of section 2.5: the two grounds meet at exactly one point. They are laid as
+# two nets that block each other, so no second junction can appear by accident.
+RAIL2_GROUND = {"J11.2", "J9.1", "C3.2", "J18.2"}
+GROUND_TIE = ("J10.2", "J11.2")
+# Rules 2, 6 and 7: a rail is drawn, not searched. Each heavy load reaches its own
+# terminal on its own copper, and each reservoir hangs on the load it holds up.
+RAIL_TREE = {
+    "+5V_R1": [("J10.1", "U1.20"), ("J10.1", "J7.7"), ("J10.1", "C1.1"), ("J7.7", "C2.1"),
+               ("J10.1", "J16.1")],
+    "+5V_R2": [("J11.1", "J9.2"), ("J9.2", "C3.1"), ("J11.1", "J18.1")],
+    "GND@tie": [GROUND_TIE],
+    # Four branches leave J10.2, which has the room; every pad wedged in a row carries
+    # at most two, because its neighbours leave it only the two ways out.
+    "GND@1": [("J10.2", "J7.6"), ("J7.6", "C2.2"), ("J10.2", "C1.2"), ("J10.2", "U1.40"),
+              ("J10.2", "J16.2"), ("U1.40", "C4.2"), ("C4.2", "J3.2"), ("J3.2", "J4.2"),
+              ("J4.2", "J5.3"), ("J5.3", "J6.6")],
+    "GND@2": [("J11.2", "J9.1"), ("J9.1", "C3.2"), ("J11.2", "J18.2")],
+}
 
 
 def spanning_edges(points: list) -> list:
@@ -334,27 +339,279 @@ def track(tag: str, a: tuple, b: tuple, width: float, layer: str, net: int) -> l
             ["uuid", f'"{uid("trk", tag)}"']]
 
 
-def route(tag: str, a: tuple, b: tuple, width: float, layer: str, net: int) -> list:
-    """One corner, horizontal first; a zero-length leg is dropped."""
-    corner = (b[1], a[2])
+def via(tag: str, at: tuple, net: int) -> list:
+    return ["via", ["at", str(at[0]), str(at[1])], ["size", str(VIA_PAD)],
+            ["drill", str(VIA_DRILL)], ["layers", SIGNAL_LAYER, POWER_LAYER],
+            ["net", str(net)], ["uuid", f'"{uid("via", tag)}"']]
+
+
+def every_pad(doc: list) -> dict:
+    """Pad id -> x, y, half its widest side, and the net it carries or None."""
+    found = {}
+    for fp in [n for n in doc if isinstance(n, list) and n[0] == "footprint"]:
+        ref = next((unquote(p[2]) for p in children(fp, "property")
+                    if len(p) > 2 and unquote(p[1]) == "Reference"), "?")
+        at = first(fp, "at")
+        ox, oy = float(at[1]), float(at[2])
+        th = math.radians(float(at[3]) if len(at) > 3 else 0.0)
+        for pad in children(fp, "pad"):
+            a, size, net = first(pad, "at"), first(pad, "size"), first(pad, "net")
+            lx, ly = float(a[1]), float(a[2])
+            found[f"{ref}.{unquote(pad[1])}"] = (
+                round(ox + lx * math.cos(th) + ly * math.sin(th), 3),
+                round(oy - lx * math.sin(th) + ly * math.cos(th), 3),
+                max(float(size[1]), float(size[2])) / 2.0,
+                unquote(net[-1]) if net else None)
+    return found
+
+
+def pad_tag(pad_id: str, net: str) -> str:
+    """Which routing net a pad belongs to; ground splits in two before it is laid."""
+    if net != "GND":
+        return net
+    return "GND@2" if pad_id in RAIL2_GROUND else "GND@1"
+
+
+def net_clear(net: str) -> float:
+    """A pad answers to its own class too, and KiCad keeps the wider of the two."""
+    return POWER_CLEAR if net and (net[0] == "+" or net == "GND") else SIGNAL_CLEAR
+
+
+def wire_class(tag: str) -> tuple:
+    if tag[0] == "+" or tag.startswith("GND"):
+        return POWER_MM, POWER_CLEAR, POWER_LAYER
+    return SIGNAL_MM, SIGNAL_CLEAR, SIGNAL_LAYER
+
+
+def disc_cells(x: float, y: float, r: float) -> list:
     out = []
-    if abs(a[1] - corner[0]) > 0.001:
-        out.append(track(tag + "h", (a[1], a[2]), corner, width, layer, net))
-    if abs(corner[1] - b[2]) > 0.001:
-        out.append(track(tag + "v", corner, (b[1], b[2]), width, layer, net))
+    for i in range(max(0, int((x - r) / GRID)), min(NX - 1, int((x + r) / GRID) + 1) + 1):
+        room = r * r - (i * GRID - x) ** 2
+        if room < 0:
+            continue
+        span = math.sqrt(room)
+        for j in range(max(0, math.ceil((y - span) / GRID)),
+                       min(NY - 1, int((y + span) / GRID)) + 1):
+            out.append(j * NX + i)
     return out
 
 
-# Rule 1 of section 2.5: the two grounds meet at exactly one point, at the terminals.
-RAIL2_GROUND = {"J11.2", "J9.1", "C3.2", "J18.2"}
-GROUND_TIE = ("J10.2", "J11.2")
-# Rule 6: a supply rail is drawn, not searched. Each load reaches its own terminal on
-# its own copper, and each reservoir hangs on the load it holds up (KEHOACH 2.5).
-RAIL_TREE = {
-    "+5V_R1": [("J10.1", "U1.20"), ("J10.1", "J7.7"), ("J10.1", "C1.1"), ("J7.7", "C2.1"),
-               ("J10.1", "J16.1")],
-    "+5V_R2": [("J11.1", "J9.2"), ("J9.2", "C3.1"), ("J11.1", "J18.1")],
-}
+def line_cells(a: tuple, b: tuple, r: float) -> set:
+    out = set()
+    steps = max(1, int(math.dist(a, b) / (GRID / 2)))
+    for k in range(steps + 1):
+        t = k / steps
+        out.update(disc_cells(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, r))
+    return out
+
+
+def border(width: float) -> set:
+    keep = width / 2.0 + EDGE_KEEP
+    lo_i, hi_i = math.ceil(keep / GRID), int((BOARD_W - keep) / GRID)
+    lo_j, hi_j = math.ceil(keep / GRID), int((BOARD_H - keep) / GRID)
+    out = set()
+    for j in range(NY):
+        if j < lo_j or j > hi_j:
+            out.update(range(j * NX, (j + 1) * NX))
+        else:
+            out.update(range(j * NX, j * NX + lo_i))
+            out.update(range(j * NX + hi_i + 1, (j + 1) * NX))
+    return out
+
+
+def find_path(blocked: dict, room: dict, start: tuple, goal: tuple, want: str) -> list:
+    """(cell, layer) from pad to pad over both sides; a layer change is a via."""
+    import heapq
+    si, sj = int(round(start[0] / GRID)), int(round(start[1] / GRID))
+    gi, gj = int(round(goal[0] / GRID)), int(round(goal[1] / GRID))
+    src, dst = sj * NX + si, gj * NX + gi
+    step = ((1, 0), (0, 1), (-1, 0), (0, -1))
+    side = {name: k for k, name in enumerate(LAYERS)}
+    wall = [blocked[name] for name in LAYERS]
+    hole = [room[name] for name in LAYERS]
+    bias = [0 if name == want else WRONG_SIDE for name in LAYERS]
+    best, came, heap = {}, {}, []
+    for lay in range(2):
+        if wall[lay][src]:
+            continue
+        for d in range(4):
+            state = (src * 4 + d) * 2 + lay
+            best[state] = 0
+            heap.append((abs(si - gi) + abs(sj - gj), 0, state))
+    heapq.heapify(heap)
+    while heap:
+        _, cost, state = heapq.heappop(heap)
+        if cost > best.get(state, 1 << 30):
+            continue
+        seat, lay = divmod(state, 2)
+        cell, face = divmod(seat, 4)
+        if cell == dst:
+            trail = []
+            while True:
+                trail.append((state // 8, state % 2))
+                if state not in came:
+                    return trail[::-1]
+                state = came[state]
+        i, j = cell % NX, cell // NX
+        moves = []
+        if not (hole[0][cell] or hole[1][cell]):
+            moves.append(((cell * 4 + face) * 2 + (1 - lay), VIA_COST))
+        for turn, (dx, dy) in enumerate(step):
+            ni, nj = i + dx, j + dy
+            if 0 <= ni < NX and 0 <= nj < NY and not wall[lay][nj * NX + ni]:
+                moves.append((((nj * NX + ni) * 4 + turn) * 2 + lay,
+                              1 + bias[lay] + (0 if turn == face else TURN_COST)))
+        for ahead, price in moves:
+            if wall[ahead % 2][ahead // 8]:
+                continue
+            walk = cost + price
+            if walk < best.get(ahead, 1 << 30):
+                best[ahead] = walk
+                came[ahead] = state
+                ni, nj = (ahead // 8) % NX, (ahead // 8) // NX
+                heapq.heappush(heap, (walk + abs(ni - gi) + abs(nj - gj), walk, ahead))
+    return None
+
+
+def corners(cells: list) -> list:
+    pts = [((c % NX) * GRID, (c // NX) * GRID) for c in cells]
+    out = [pts[0]]
+    for k in range(1, len(pts) - 1):
+        ax, ay = pts[k - 1]
+        bx, by = pts[k]
+        cx, cy = pts[k + 1]
+        if (round(bx - ax, 4), round(by - ay, 4)) != (round(cx - bx, 4), round(cy - by, 4)):
+            out.append((bx, by))
+    out.append(pts[-1])
+    return out
+
+
+def route_jobs(pads: dict) -> list:
+    """Every edge to lay, in the order that decides which one gets first pick."""
+    jobs = [(tag, a, b) for tag in RAIL_TREE for a, b in RAIL_TREE[tag]]
+    rest: dict = {}
+    for pad_id, (x, y, half, net) in pads.items():
+        if net is None or net == "GND" or net in RAIL_TREE:
+            continue
+        rest.setdefault(net, []).append((pad_id, x, y))
+    for net in sorted(rest, key=lambda n: (-len(rest[n]), n)):
+        jobs += [(net, a[0], b[0]) for a, b in spanning_edges(rest[net])]
+    return jobs
+
+
+def one_run(pads: dict, stamp: dict, rim: dict, placed: list, job: tuple) -> tuple:
+    """Corners with the layer each sits on, or None when there is no way through."""
+    tag, src, dst = job
+    width, clear, want = wire_class(tag)
+    blocked, room = {}, {}
+    for probe, into in ((width / 2, blocked), (VIA_PAD / 2, room)):
+        for layer in LAYERS:
+            field = bytearray(NX * NY)
+            for cell in rim[probe]:
+                field[cell] = 1
+            for pad_id, (x, y, half, net) in pads.items():
+                if pad_id in (src, dst) or (net and pad_tag(pad_id, net) == tag):
+                    continue
+                for cell in stamp[(max(clear, net_clear(net)), probe)][pad_id]:
+                    field[cell] = 1
+            for run in placed:
+                # A declared tree stays a tree: its own branches block each other, so
+                # two loads never share copper the plan says they must not (rule 6).
+                if run["tag"] == tag and tag not in RAIL_TREE:
+                    continue
+                for cell in run["halo"][layer][(clear, probe)]:
+                    field[cell] = 1
+            # Copper on the two pads an edge joins is shared by what else lands there.
+            for pad_id in (src, dst):
+                x, y, half, _ = pads[pad_id]
+                for cell in disc_cells(x, y, half):
+                    field[cell] = 0
+            into[layer] = field
+    trail = find_path(blocked, room, pads[src][:2], pads[dst][:2], want)
+    if trail is None:
+        return None
+    runs, here = [], [trail[0]]
+    for cell, lay in trail[1:]:
+        if lay == here[-1][1]:
+            here.append((cell, lay))
+        else:
+            runs.append(here)
+            here = [(cell, lay)]
+    runs.append(here)
+    out = []
+    for part in runs:
+        pts = corners([c for c, _ in part])
+        out.append((pts, LAYERS[part[0][1]]))
+    out[0] = ([pads[src][:2]] + out[0][0], out[0][1])
+    out[-1] = (out[-1][0] + [pads[dst][:2]], out[-1][1])
+    return out
+
+
+def route_board(doc: list, net_id: dict) -> list:
+    """Lay every edge; when one is walled in, lift the newest foreign run and retry."""
+    pads = every_pad(doc)
+    probes = [(c, r) for c in (SIGNAL_CLEAR, POWER_CLEAR)
+              for r in (SIGNAL_MM / 2, POWER_MM / 2, VIA_PAD / 2)]
+    stamp = {key: {pad_id: disc_cells(x, y, half + key[0] + key[1])
+                   for pad_id, (x, y, half, net) in pads.items()} for key in probes}
+    rim = {r: border(2 * r) for r in (SIGNAL_MM / 2, POWER_MM / 2, VIA_PAD / 2)}
+    queue, placed, tries = list(route_jobs(pads)), [], {}
+    budget = 12 * len(queue)
+    while queue:
+        budget -= 1
+        if budget < 0:
+            raise SystemExit("!! rip-up khong hoi tu, dung lai")
+        job = queue.pop(0)
+        parts = one_run(pads, stamp, rim, placed, job)
+        if parts is not None:
+            placed.append(settle(job, parts))
+            continue
+        tries[job] = tries.get(job, 0) + 1
+        if tries[job] > 8:
+            raise SystemExit(f"!! khong tim duoc duong {job[0]}: {job[1]} -> {job[2]}")
+        victim = next((r for r in reversed(placed) if r["tag"] != job[0]), None)
+        if victim is None:
+            raise SystemExit(f"!! {job[0]}: {job[1]} -> {job[2]} bi chinh pad chan")
+        placed.remove(victim)
+        queue.insert(0, job)
+        queue.append(victim["job"])
+
+    out = []
+    for order, run in enumerate(placed):
+        number = net_id[run["tag"].split("@")[0]]
+        for k, (a, b, layer) in enumerate(run["legs"]):
+            out.append(track(f'{run["tag"]}-{order}-{k}', a, b, run["width"], layer, number))
+        for k, at in enumerate(run["holes"]):
+            out.append(via(f'{run["tag"]}-{order}-{k}', at, number))
+    return out
+
+
+def settle(job: tuple, parts: list) -> dict:
+    """One laid edge: its legs, its vias, and the copper each job must keep clear of."""
+    tag = job[0]
+    width, clear, _ = wire_class(tag)
+    legs, holes = [], []
+    for pts, layer in parts:
+        for k in range(len(pts) - 1):
+            if math.dist(pts[k], pts[k + 1]) > 1e-6:
+                legs.append((pts[k], pts[k + 1], layer))
+    for k in range(len(parts) - 1):
+        holes.append(parts[k][0][-1])
+    halo = {}
+    for layer in LAYERS:
+        halo[layer] = {}
+        for job_clear in (SIGNAL_CLEAR, POWER_CLEAR):
+            gap = max(clear, job_clear)
+            for probe in (SIGNAL_MM / 2, POWER_MM / 2, VIA_PAD / 2):
+                cells = set()
+                for a, b, side in legs:
+                    if side == layer:
+                        cells |= line_cells(a, b, width / 2 + gap + probe)
+                for at in holes:
+                    cells.update(disc_cells(at[0], at[1], VIA_PAD / 2 + gap + probe))
+                halo[layer][(job_clear, probe)] = cells
+    return {"job": job, "tag": tag, "width": width, "legs": legs,
+            "holes": holes, "halo": halo}
 
 
 LABEL_GAP = 0.6
@@ -533,34 +790,12 @@ def main() -> None:
 
     doc += pin_labels(doc)
     move_references(doc)
-    pads = pad_points(doc)
-    laid = 0
-    for name, number in (net_id.items() if ROUTE else ()):
-        group = pads.get(name, [])
-        power = name.startswith("+") or name == "GND"
-        width = POWER_MM if power else SIGNAL_MM
-        layer = POWER_LAYER if power else SIGNAL_LAYER
-        if name == "GND":
-            near = [p for p in group if p[0] in RAIL2_GROUND]
-            far = [p for p in group if p[0] not in RAIL2_GROUND]
-            runs = [(f"gnd2", near), ("gnd1", far)]
-            tie = {p[0]: p for p in group}
-            for i, (tag, part) in enumerate(runs):
-                for j, (a, b) in enumerate(spanning_edges(part)):
-                    doc += route(f"{tag}{j}", a, b, width, layer, number)
-                    laid += 1
-            doc += route("gndtie", tie[GROUND_TIE[0]], tie[GROUND_TIE[1]], width, layer, number)
-            laid += 1
-            continue
-        seat = {q[0]: q for q in group}
-        edges = ([(seat[a], seat[b]) for a, b in RAIL_TREE[name]] if name in RAIL_TREE
-                 else spanning_edges(group))
-        for j, (a, b) in enumerate(edges):
-            doc += route(f"{name}{j}", a, b, width, layer, number)
-            laid += 1
+    laid = route_board(doc, net_id) if ROUTE else []
+    doc += laid
 
     OUT.write_text(emit(doc) + "\n", encoding="utf-8")
-    print(f"{OUT}: {len(PLACEMENT)} footprint, {len(net_id)} net, board {BOARD_W}x{BOARD_H} mm")
+    print(f"{OUT}: {len(PLACEMENT)} footprint, {len(net_id)} net, {len(laid)} doan day, "
+          f"board {BOARD_W}x{BOARD_H} mm")
     missing = sorted(set(footprint) - set(PLACEMENT))
     if missing:
         print(f"  !! chua dat: {missing}")

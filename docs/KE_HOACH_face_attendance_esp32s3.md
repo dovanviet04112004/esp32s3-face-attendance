@@ -848,6 +848,30 @@ nguồn ngoài và cổng USB của máy tính **đấu song song**. Trên bàn 
 ngoài cao hơn 5 V rõ rệt thì nó đẩy ngược vào cổng USB. Ngoài thực địa không có USB nên không
 gặp; chỉ là chuyện của bàn thử.
 
+#### Đi dây — cái máy tìm đường, luật thì người khai
+
+Board **2 lớp**. Đường nguồn **1,0 mm đi mặt sau**, tín hiệu **0,25 mm đi mặt trước**; đường nào bí
+thì lật sang mặt kia, và chỗ lật là một **via Ø0,4 mm** (vành 0,2). Mọi chân đều xuyên lỗ nên một
+đường đi trọn vẹn ở mặt sau vẫn tới được chân mà không tốn via nào.
+
+**Bảy luật trên không phải là thứ máy tự tìm ra được.** Router đi theo cây khai sẵn trong
+`RAIL_TREE` của `hardware/gen/gen_pcb.py` — từng nhánh một — và **các nhánh của cùng một cây chặn
+lẫn nhau** lúc tìm đường, nên hai tải không bao giờ dùng chung đoạn đồng mà luật 6 cấm. Mass tách
+làm hai net rời (`GND@1`, `GND@2`) chặn nhau y hệt, rồi nối lại bằng đúng một đoạn `GND@tie` giữa
+hai domino — đó là luật 1, thành ra đúng nghĩa đen chứ không còn là lời dặn.
+
+Một chân bị hai chân khác kẹp trong hàng thì **chỉ còn hai lối ra**, nên không chân nào ở chỗ chật
+được phép đẻ quá hai nhánh. Cây mass xếp lại theo đúng ràng buộc đó: bốn nhánh rời `J10.2` (chỗ
+rộng), còn các chân trong hàng thì nối chuỗi hai một.
+
+**Điểm sao của rail 1 là chân domino cộng chân tụ `C1`**, không phải riêng chân domino. `C1` cố ý
+nằm chồng lên hai chân của `J10` (đoạn trên), nên tải rẽ nhánh ngay tại chân tụ — đoạn đồng dùng
+chung chỉ còn 5 mm giữa domino và tụ, mà rẽ ngay tại tụ trữ mới đúng là chỗ nên rẽ.
+
+`tools/check_pcb.py` đọc lớp đồng đã vẽ rồi kiểm lại luật 1, 2, 6, 7 bằng cách **cắt chân ra khỏi
+đồng và xem cái gì còn dính nhau**. Cần thiết vì **DRC của KiCad không thấy được mấy luật này**:
+board nối chuỗi `J10 → U1 → J7` vẫn cho DRC 0 vi phạm, chỉ `check_pcb` bắt.
+
 Luật 5 là luật **đi dây trong vỏ máy**, không phải luật PCB: loa đấu thẳng vào domino của
 chính module MAX98357A, nên `OUT+` và `OUT−` không có net nào trên board đế và board đế
 không mang đầu nối loa (§2.3E). `OUT−` **không bao giờ** nối xuống GND — kể cả khi bắt vít
