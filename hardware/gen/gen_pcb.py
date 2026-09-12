@@ -570,6 +570,18 @@ def hug(pts: list, seat: tuple, head: bool) -> None:
         pts[i], pts[j] = (ax, seat[1]), (bx, seat[1])
 
 
+def straighten(pts: list) -> None:
+    """Drop a corner that no longer turns: sliding a leg onto a pad axis can leave
+    three points on one line, and each pair of them is emitted as its own track."""
+    k = 1
+    while k < len(pts) - 1:
+        (ax, ay), (bx, by), (cx, cy) = pts[k - 1], pts[k], pts[k + 1]
+        if abs((bx - ax) * (cy - by) - (by - ay) * (cx - bx)) < 1e-9:
+            del pts[k]
+        else:
+            k += 1
+
+
 def route_jobs(pads: dict) -> list:
     """Every edge to lay, in the order that decides which one gets first pick."""
     jobs = [(tag, a, b) for tag in RAIL_TREE for a, b in RAIL_TREE[tag]]
@@ -634,6 +646,8 @@ def one_run(pads: dict, stamp: dict, rim: dict, ink: set, placed: list,
     out[-1] = (out[-1][0] + [pads[dst][:2]], out[-1][1])
     hug(out[0][0], pads[src][:2], True)
     hug(out[-1][0], pads[dst][:2], False)
+    for pts, _ in out:
+        straighten(pts)
     return out
 
 
