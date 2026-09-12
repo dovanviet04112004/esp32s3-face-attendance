@@ -13,6 +13,7 @@ import argparse
 import math
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 SCHEMATIC = "hardware/kicad/kiosk.kicad_sch"
@@ -310,6 +311,15 @@ def main() -> int:
             if abs(mid - centre) > 0.3:
                 problems.append(f"{ref}: sits {mid - centre:+.2f} mm off the centre of "
                                 f"the body it carries")
+
+    # A footprint placed twice brings its library uuids twice unless the generator
+    # renames them, and KiCad then treats two different pads as one object.
+    doubled = sorted(value for value, count in Counter(
+        re.findall(r'\(uuid "([0-9a-f-]{36})"\)', board.read_text(encoding="utf-8"))
+    ).items() if count > 1)
+    if doubled:
+        problems.append(f"{len(doubled)} uuid(s) shared by more than one node, "
+                        f"first {doubled[0]}")
 
     hulls = {}
     for ref, part in parts.items():
