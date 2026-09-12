@@ -408,6 +408,9 @@ kiểm nó.
 
 #### D. ToF VL53L1X
 
+**Thứ tự chân trên header**, đọc từ module: `VIN · GND · SCL · SDA · GPIO1 · XSHUT`.
+Một hàng 6 chân. Bảng dưới nói chân nào đi đâu, không nói thứ tự.
+
 | Chân | Nối tới | Ghi chú |
 |---|---|---|
 | VIN | 3V3 (breakout có LDO nên 3.3–5 V đều được) | |
@@ -434,6 +437,10 @@ chỉ trả khoảng cách, không tự quyết định có người hay không;
 `EVT_PRESENCE_ON/OFF` là của `tof_task`, và §5.3 khai đường truyền của hai event đó.
 
 #### E. Âm thanh MAX98357A (I²S) + loa 4Ω/3W
+
+**Thứ tự chân trên header**, đọc từ module: `LRC · BCLK · DIN · GAIN · SD · GND · Vin` — một hàng
+**7 chân**. Ngõ ra loa **không** nằm trên hàng này: module có domino 2 chân riêng ở mép đối diện,
+nên **loa đấu thẳng vào module**, board đế không mang đầu nối loa nào.
 
 | Chân | Nối tới | Ghi chú |
 |---|---|---|
@@ -484,6 +491,10 @@ hàn cả ba xuống GND **trên module**, board đế không có đường đ�
 Trạng thái nhận diện hiện trên LCD nên không có LED rời. Mọi chân P đều lên HIGH lúc cấp nguồn (§2.3.C) — chỉ giao cho P những việc mà mức HIGH lúc khởi động là vô hại: RST và XSHUT thả cao là chip được chạy, SD của amp ở cao là amp thức nhưng chưa có dữ liệu I²S, và `drv_audio_init` kéo P3 xuống trước khi bật clock. Cơ cấu mở cửa **không** đi qua PCF8574 vì lý do đó: mức HIGH lúc cấp nguồn trên một chân mở cửa là cửa mở.
 
 #### H. RTC DS3231
+
+**Thứ tự chân**, đọc từ module ZS-042 (42 × 19 mm): hàng 6 chân là
+`32K · SQW · SCL · SDA · VCC · GND`; cạnh đối diện có thêm hàng 4 chân `SCL SDA VCC GND`
+nối song song để nối tiếp nhiều thiết bị. Board đế dùng hàng 6.
 
 | Chân | Nối tới | Ghi chú |
 |---|---|---|
