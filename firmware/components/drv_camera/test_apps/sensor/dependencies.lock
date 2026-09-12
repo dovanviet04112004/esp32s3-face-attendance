@@ -27,9 +27,20 @@ dependencies:
     source:
       type: idf
     version: 6.0.2
+  joltwallet/littlefs:
+    component_hash: 3af20a3d75c49db9dc2286fd50862c34055c9f578419ad1f2bf7ed3ed01391fe
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.22.3
 direct_dependencies:
 - espressif/esp32-camera
 - idf
-manifest_hash: 7cab6e80eb530a6f978fd97312fa9cc5e8483fdabc7bbd561e6a69eba6572c96
+- joltwallet/littlefs
+manifest_hash: e38ce31109defa09953515e397b42e1c8027a43d99f92a4f582191bf96bc32e5
 target: esp32s3
 version: 3.0.0

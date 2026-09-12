@@ -1,13 +1,21 @@
 #include "app_config.h"
 #include "bsp_board.h"
+#include "driver/gpio.h"
+#include "driver/rmt_tx.h"
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "drv_camera.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "sys_storage.h"
 #include "unity.h"
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 
 #define GRAB_ROUNDS 40
 #define RATE_WARMUP 5
@@ -170,6 +178,205 @@ TEST_CASE("metered frames reach the host as raw rgb565", "[drv_camera][manual]")
         printf("\n--END--\n");
         drv_camera_release(frame);
     }
+}
+
+#define SHOT_DIR "/lfs/shot"
+#define SHOT_QUALITY 85
+#define SHOT_MAX 150
+#define SHOT_MAX_BYTES (3u * 1024u * 1024u + 512u * 1024u)
+#define SHOT_PATH_MAX (sizeof(SHOT_DIR) + 1 + 256)
+#define BUTTON_POLL_MS 20
+#define BUTTON_END_HOLD_MS 2000
+#define LED_RESOLUTION_HZ 10000000
+#define LED_T0H 3
+#define LED_T0L 9
+#define LED_T1H 9
+#define LED_T1L 3
+#define LED_LATCH_US 300
+#define LED_FLASH_MS 120
+
+static rmt_channel_handle_t s_led;
+static rmt_encoder_handle_t s_led_bytes;
+
+// WS2812 on GPIO48 (KEHOACH 2): a bit is one pulse whose high time carries it,
+// so the bytes encoder needs the two durations rather than a clock.
+static void led_start(void)
+{
+    const rmt_tx_channel_config_t channel = {
+        .gpio_num = APP_STATUS_LED_GPIO,
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = LED_RESOLUTION_HZ,
+        .mem_block_symbols = 64,
+        .trans_queue_depth = 4,
+    };
+    TEST_ASSERT_EQUAL(ESP_OK, rmt_new_tx_channel(&channel, &s_led));
+    const rmt_bytes_encoder_config_t bytes = {
+        .bit0 = { .level0 = 1, .duration0 = LED_T0H, .level1 = 0, .duration1 = LED_T0L },
+        .bit1 = { .level0 = 1, .duration0 = LED_T1H, .level1 = 0, .duration1 = LED_T1L },
+        .flags.msb_first = 1,
+    };
+    TEST_ASSERT_EQUAL(ESP_OK, rmt_new_bytes_encoder(&bytes, &s_led_bytes));
+    TEST_ASSERT_EQUAL(ESP_OK, rmt_enable(s_led));
+}
+
+static void led_show(uint8_t red, uint8_t green, uint8_t blue)
+{
+    const uint8_t grb[3] = { green, red, blue };
+    const rmt_transmit_config_t once = { .loop_count = 0 };
+    rmt_transmit(s_led, s_led_bytes, grb, sizeof(grb), &once);
+    rmt_tx_wait_all_done(s_led, -1);
+    esp_rom_delay_us(LED_LATCH_US);
+}
+
+static void led_flash(uint8_t red, uint8_t green, uint8_t blue)
+{
+    led_show(red, green, blue);
+    vTaskDelay(pdMS_TO_TICKS(LED_FLASH_MS));
+}
+
+static void button_start(void)
+{
+    const gpio_config_t boot_button = {
+        .pin_bit_mask = 1ULL << APP_FACTORY_RESET_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+    };
+    TEST_ASSERT_EQUAL(ESP_OK, gpio_config(&boot_button));
+}
+
+// Returns how long the button stayed down, so one poll loop reads tap and hold.
+static int press_ms(void)
+{
+    if (gpio_get_level(APP_FACTORY_RESET_GPIO) != 0) {
+        return 0;
+    }
+    int held = 0;
+    while (gpio_get_level(APP_FACTORY_RESET_GPIO) == 0 && held < BUTTON_END_HOLD_MS) {
+        vTaskDelay(pdMS_TO_TICKS(BUTTON_POLL_MS));
+        held += BUTTON_POLL_MS;
+    }
+    return held;
+}
+
+static size_t keep_shot(int index, int scene)
+{
+    camera_fb_t *frame = drv_camera_grab();
+    if (frame == NULL) {
+        return 0;
+    }
+    int level, exposure, gain16;
+    drv_camera_exposure_state(&level, &exposure, &gain16);
+    uint8_t *jpeg = NULL;
+    size_t len = 0;
+    const bool encoded = frame2jpg(frame, SHOT_QUALITY, &jpeg, &len);
+    drv_camera_release(frame);
+    if (!encoded) {
+        return 0;
+    }
+    char path[96];
+    snprintf(path, sizeof(path), SHOT_DIR "/s%02d_%03d_L%02d_E%03d_G%02d.jpg", scene, index, level,
+             exposure, gain16);
+    FILE *out = fopen(path, "wb");
+    const size_t put = out != NULL ? fwrite(jpeg, 1, len, out) : 0;
+    if (out != NULL) {
+        fclose(out);
+    }
+    free(jpeg);
+    printf("kept %s  %u B  level %d exposure %d gain16 %d\n", path, (unsigned)put, level, exposure,
+           gain16);
+    return put == len ? put : 0;
+}
+
+TEST_CASE("the button keeps one frame, the led says whether it landed", "[drv_camera][manual]")
+{
+    blocking_console();
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
+    const esp_err_t up = drv_camera_init();
+    TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
+    mkdir(SHOT_DIR, 0777);
+    button_start();
+    led_start();
+    printf("tap BOOT to keep a frame, hold %d s to finish\n", BUTTON_END_HOLD_MS / 1000);
+
+    size_t written = 0;
+    int kept = 0, scene = 0;
+    bool finished = false;
+    // The led is left alone between presses: re-sending it every frame starved
+    // the camera's dma and the sensor returned short frames.
+    led_show(0, 0, 8);
+    while (!finished && kept < SHOT_MAX && written < SHOT_MAX_BYTES) {
+        camera_fb_t *warm = drv_camera_grab();
+        if (warm != NULL) {
+            drv_camera_expose(warm);
+            drv_camera_release(warm);
+        }
+        const int held = press_ms();
+        if (held == 0) {
+            continue;
+        }
+        if (held >= BUTTON_END_HOLD_MS) {
+            finished = true;
+            continue;
+        }
+        const size_t put = keep_shot(kept, scene);
+        led_flash(put == 0 ? 32 : 0, put == 0 ? 0 : 32, 0);
+        led_show(0, 0, 8);
+        if (put == 0) {
+            continue;
+        }
+        written += put;
+        kept++;
+    }
+    led_show(0, 0, 0);
+    printf("kept %d frame(s), %u B in " SHOT_DIR "\n", kept, (unsigned)written);
+    TEST_ASSERT_GREATER_THAN(0, kept);
+}
+
+TEST_CASE("hand back the frames the button kept", "[drv_camera][manual]")
+{
+    blocking_console();
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
+    DIR *dir = opendir(SHOT_DIR);
+    if (dir == NULL) {
+        TEST_IGNORE_MESSAGE("no " SHOT_DIR ": the keeping case has not run");
+    }
+    uint8_t *buffer = heap_caps_malloc(SHOT_MAX_BYTES / 16, MALLOC_CAP_SPIRAM);
+    TEST_ASSERT_NOT_NULL(buffer);
+    int sent = 0;
+    for (struct dirent *entry = readdir(dir); entry != NULL; entry = readdir(dir)) {
+        char path[SHOT_PATH_MAX];
+        snprintf(path, sizeof(path), SHOT_DIR "/%s", entry->d_name);
+        FILE *in = fopen(path, "rb");
+        if (in == NULL) {
+            continue;
+        }
+        const size_t len = fread(buffer, 1, SHOT_MAX_BYTES / 16, in);
+        fclose(in);
+        printf("\n--SHOT %s %u--\n", entry->d_name, (unsigned)len);
+        hex_out(buffer, len);
+        printf("\n--END--\n");
+        sent++;
+    }
+    closedir(dir);
+    free(buffer);
+    printf("--SHOTS DONE %d--\n", sent);
+}
+
+TEST_CASE("forget the frames the button kept", "[drv_camera][manual]")
+{
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
+    DIR *dir = opendir(SHOT_DIR);
+    if (dir == NULL) {
+        TEST_IGNORE_MESSAGE("no " SHOT_DIR " to empty");
+    }
+    int gone = 0;
+    for (struct dirent *entry = readdir(dir); entry != NULL; entry = readdir(dir)) {
+        char path[SHOT_PATH_MAX];
+        snprintf(path, sizeof(path), SHOT_DIR "/%s", entry->d_name);
+        gone += remove(path) == 0 ? 1 : 0;
+    }
+    closedir(dir);
+    printf("removed %d file(s)\n", gone);
 }
 
 void app_main(void)

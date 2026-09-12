@@ -1,3 +1,4 @@
 dependencies:
   idf: ">=5.3"
   espressif/esp32-camera: "^2.0"
+  joltwallet/littlefs: "^1.16"
