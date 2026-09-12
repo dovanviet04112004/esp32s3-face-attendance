@@ -2025,7 +2025,7 @@ public:
 
 **Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
 
-Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision` (🔬 giá trị gieo chưa đo, E8-T12 chốt).
+Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision`. `live_min` gieo **750‰**, đo 12/09 trên 57 khung thật của board và 35 khung giả (`docs/measurements/antispoof` §33): mọi khung giả đứng dưới 0,686 nên trên 0,70 là chặn sạch, và 750‰ giữ khoảng đệm mà chỉ trượt 1/57 khung thật. Số ấy **chưa có khung giả chụp bằng chính OV5640**, nên E8-T12 vẫn phải chốt lại. Ba ngưỡng còn lại 🔬 chưa đo.
 
 Header công khai `svc_vision.h` chỉ có C: `svc_vision_init(thresholds)`, `svc_vision_step(const camera_fb_t*, svc_vision_result_t*)`, `svc_vision_reset()`. Khung do `ai_task` giữ bằng `FrameGuard` suốt `step()` và trả sau đó; `svc_vision` không sở hữu khung và không chép khung.
 

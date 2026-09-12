@@ -12,11 +12,12 @@ menu "Vision pipeline"
 
     config VISION_SEED_LIVE_MIN_PERMILLE
         int "Seed for the liveness floor (per mille)"
-        default 500
+        default 750
         range 1 999
         help
-            Same rule as the detector seed. Tune on the self-collected set
-            toward the live-reject rate the site accepts (KEHOACH 3).
+            Written to NVS key vision/live_min on the first boot only. The
+            sweep in antispoof measurements 33 puts every attack below 686
+            and costs one live frame in 57 here; device attacks move it.
 
     config VISION_SEED_MATCH_MIN_PERMILLE
         int "Seed for the cosine match floor (per mille)"
