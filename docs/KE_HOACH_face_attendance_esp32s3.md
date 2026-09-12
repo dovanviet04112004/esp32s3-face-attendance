@@ -348,8 +348,14 @@ rồi mới siết vít — siết trước là ép chân vào đế lệch tr�
 **Kích thước tấm màn: 107 × 61 mm** (đo 12/09). Nó quyết định luôn chiều cao board đế: 107 mm
 cộng lề trên dưới là **116 mm**, tức tấm màn gần như phủ trọn chiều cao board, và dải còn lại
 dưới mép tấm màn chỉ 5 mm — không nhét vừa một con tụ nào. Vì thế tụ `C4` của màn nằm **bên
-trái** tấm màn, dưới devkit, xa chân nguồn của `J3` khoảng 19 mm; nó là tụ trữ chứ không phải
-tụ lọc cao tần nên quãng đó chấp nhận được, còn lọc cao tần thì module màn tự mang.
+trái** tấm màn, trong khe giữa devkit và tấm màn, chân dương **thẳng hàng với chân `VCC` của
+`J3`** và cách nó **18,4 mm**; nó là tụ trữ chứ không phải tụ lọc cao tần nên quãng đó chấp
+nhận được, còn lọc cao tần thì module màn tự mang.
+
+Khe đó rộng **8,76 mm** cho một thân tụ 6,3 mm, tức hở đều **0,98 mm** hai bên — và để có được
+chừng đó thì devkit phải dịch sang trái 2 mm. Đường bao của devkit vì thế chỉ còn cách mép trái
+board 1,75 mm, nhưng đường bao đó **cố ý vẽ rộng hơn thân thật** (§2.6 không có datasheet cho
+board này), nên mép thật của module vẫn cách mép board khoảng 4 mm.
 
 **Kính không nằm giữa PCB, và chỗ dôi ra là chỗ để hàng chân với lỗ vít.** Vùng hiển thị của
 tấm 4,0" tỉ lệ 3:2 là **84,5 × 56,4 mm** (suy từ đường chéo, không phải số đo), nên so với PCB

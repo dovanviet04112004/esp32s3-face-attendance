@@ -31,13 +31,14 @@ PLACEMENT = {
     # Face: ToF over the devkit, panel flat to their right, its capacitor on the
     # strip below where an 11 mm can clears the 8.5 mm the panel stands at.
     "J4": (13.5, 18.0, 90),
-    "U1": (20.0, 62.0, 0),
+    # Two millimetres left of centre so the strip beside the panel fits a can.
+    "U1": (18.0, 62.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
     # panel reaches 107 mm up from wherever its header lands.
     "J3": (57.0, 107.5, 90),
-    # A 107 mm panel leaves no strip under itself, so its capacitor goes to the
-    # left of it, below the devkit, which is the nearest 3V3 the panel does not cover.
-    "C4": (38.0, 102.0, 90),
+    # A 107 mm panel leaves no strip under itself, so its capacitor goes beside it,
+    # centred in the gap and with its plus leg on the same line as the panel's VCC.
+    "C4": (38.63, 107.5, 90),
     # Right of the panel, three bands. Band 1, y 6..54: the I2C parts.
     "J13": (129.0, 34.32, 180),
     "J5": (111.0, 9.0, 90),
