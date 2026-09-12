@@ -8315,7 +8315,7 @@
 	(footprint "kiosk:BareHoles_1x04_P2.54mm"
 		(layer "F.Cu")
 		(uuid "b04fce8d-874d-4b31-8aa9-434b5ec073f8")
-		(at 68.24 8.5 90)
+		(at 72.05 8.5 90)
 		(descr "Four bare 2.54 mm holes for the panel's own microSD pins to pass through, or for wire soldered in later. No net reaches them and no part is fitted here, so the footprint draws no silkscreen: the only outline that means anything at this spot is the panel body, and a socket outline printed across it would only crowd it.")
 		(tags "bare holes pass through")
 		(property "Reference" "J14"
@@ -13528,7 +13528,7 @@
 		)
 	)
 	(gr_text "SD_CS"
-		(at 64.43 6.4 90)
+		(at 68.24 6.4 90)
 		(layer "F.SilkS")
 		(uuid "34c48011-e988-4863-8fe1-0937ae5c02e3")
 		(effects
@@ -13540,7 +13540,7 @@
 		)
 	)
 	(gr_text "SD_MOSI"
-		(at 66.97 6.4 90)
+		(at 70.78 6.4 90)
 		(layer "F.SilkS")
 		(uuid "a1ccde47-fd83-430a-870a-9fc6f92d7491")
 		(effects
@@ -13552,7 +13552,7 @@
 		)
 	)
 	(gr_text "SD_MISO"
-		(at 69.51 6.4 90)
+		(at 73.32 6.4 90)
 		(layer "F.SilkS")
 		(uuid "df6d7fbd-bb44-4f89-8a65-2b5953a3eba4")
 		(effects
@@ -13564,7 +13564,7 @@
 		)
 	)
 	(gr_text "SD_SCK"
-		(at 72.05 6.4 90)
+		(at 75.86 6.4 90)
 		(layer "F.SilkS")
 		(uuid "f715fa2f-874c-426e-8042-fab91885d32a")
 		(effects

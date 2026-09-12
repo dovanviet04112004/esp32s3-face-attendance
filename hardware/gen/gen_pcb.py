@@ -31,8 +31,8 @@ LCD_HEADER_INSET = LCD_HOLE_INSET[1] - LCD_HEADER_DROP
 LCD_SD_INSET = LCD_HEADER_INSET
 HOLE_FP = "MountingHole:MountingHole_3.2mm_M3"
 
-# ref -> (x, y, rotation). A stock connector footprint has its origin on pin 1, so
-# the point given is its top end; U1 is drawn in-house and placed by its centre.
+# ref -> (x, y, rotation). A stock connector footprint has its origin on pin 1, so the
+# point given is its top end; every in-house one is placed by its centre instead.
 PLACEMENT = {
     # Every module body along the top of the board starts on the panel's own top
     # edge, so the three outlines read as one line (KEHOACH 2.3I).
@@ -87,8 +87,7 @@ LCD_AREA = lcd_area()
 def sd_row() -> tuple:
     """Under the panel's microSD pins, so one soldered there passes through."""
     x0, y0, x1, _ = LCD_AREA
-    return (round((x0 + x1) / 2.0 - (4 - 1) * 2.54 / 2.0, 2),
-            round(y0 + LCD_SD_INSET, 2), 90)
+    return (round((x0 + x1) / 2.0, 2), round(y0 + LCD_SD_INSET, 2), 90)
 
 
 PLACEMENT["J14"] = sd_row()
