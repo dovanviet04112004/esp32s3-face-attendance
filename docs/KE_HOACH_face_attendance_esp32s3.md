@@ -536,12 +536,11 @@ góc cách nhau 48 mm; hàn rời từng hàng thì lệch một hai độ là h
 Để đế trên board làm khuôn thì nó tự thẳng.
 
 **Ngoại lệ duy nhất: PCF8574.** Hai hàng chân của nó chĩa hai phía ngược nhau, nên chỉ một hàng
-cắm xuống được. Chọn **hàng 9 chân P dọc cạnh dài** làm chỗ tựa — 9 chân trên cạnh 48 mm giữ
-module vững hơn hẳn 4 chân trên cạnh 16 mm, mà board này có servo rung. Hàng 4 chân I2C ngửa lên
-trên, nối xuống hàng lỗ `J5` cạnh module bằng **4 sợi dây**.
+cắm xuống được. **Hàng 4 chân nguồn hàn chĩa xuống, cắm vào đế `J5`.** Hàng P giữ nguyên chĩa
+lên: dây cắm vào chân P ở đầu này, đầu kia tuốt trần **hàn xuống hàng lỗ `J13`** đặt cạnh module.
 
-Sáu chân `P2, P4…P7, INT` không mang tín hiệu nào nhưng vẫn phải có lỗ: chúng là chỗ chân module
-cắm xuống.
+`J13` có đủ **9 lỗ** dù chỉ ba sợi được hàn (`P0 P1 P3`) — sáu lỗ còn lại để sau này thêm tín
+hiệu mà không phải cắt board.
 
 Hàng chân nào không dùng thì **để trống, đừng hàn** — hàng 4 chân I2C thứ hai của PCF8574 chỉ
 để nối tiếp thiết bị khác, mà board đế đã có đế riêng cho từng thiết bị rồi.
