@@ -57,9 +57,14 @@ PLACEMENT = {
     "J9": (145.5, 62.0, 0),
     # Band 3, y 84..108: the supplies side by side so their grounds meet at one
     # point (rule 1), J11 right under J9 so rail 2 climbs on one straight run.
-    "C1": (134.0, 94.0, 0),
-    "J10": (134.0, 107.0, 0),
-    "J11": (145.5, 107.0, 0),
+    "C1": (137.0, 94.0, 0),
+    "J10": (137.0, 107.0, 0),
+    "J11": (148.5, 107.0, 0),
+    # The one stretch of bottom edge a USB plug can still reach (KEHOACH 2.5).
+    "J15": (108.59, 107.5, 90),
+    "J16": (111.13, 100.5, 90),
+    "J17": (122.19, 107.5, 90),
+    "J18": (124.73, 100.5, 90),
 }
 
 
@@ -96,6 +101,8 @@ MODULE_AREA = {
     "J4 VL53L1X": (9.5, 7.0, 34.5, 22.0),
     "J5 PCF8574 48x16": (109.85, 7.0, 125.85, 55.0),
     "J7 MAX98357A": (109.85, 60.0, 129.85, 80.0),
+    "J15 USB-C": (105.9, 104.0, 118.9, 119.0),
+    "J17 microUSB": (119.5, 104.0, 132.5, 119.0),
 }
 
 
@@ -338,13 +345,14 @@ def route(tag: str, a: tuple, b: tuple, width: float, layer: str, net: int) -> l
 
 
 # Rule 1 of section 2.5: the two grounds meet at exactly one point, at the terminals.
-RAIL2_GROUND = {"J11.2", "J9.1", "C3.2"}
+RAIL2_GROUND = {"J11.2", "J9.1", "C3.2", "J18.2"}
 GROUND_TIE = ("J10.2", "J11.2")
 # Rule 6: a supply rail is drawn, not searched. Each load reaches its own terminal on
 # its own copper, and each reservoir hangs on the load it holds up (KEHOACH 2.5).
 RAIL_TREE = {
-    "+5V_R1": [("J10.1", "U1.20"), ("J10.1", "J7.7"), ("J10.1", "C1.1"), ("J7.7", "C2.1")],
-    "+5V_R2": [("J11.1", "J9.2"), ("J9.2", "C3.1")],
+    "+5V_R1": [("J10.1", "U1.20"), ("J10.1", "J7.7"), ("J10.1", "C1.1"), ("J7.7", "C2.1"),
+               ("J10.1", "J16.1")],
+    "+5V_R2": [("J11.1", "J9.2"), ("J9.2", "C3.1"), ("J11.1", "J18.1")],
 }
 
 

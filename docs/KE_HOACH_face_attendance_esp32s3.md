@@ -853,6 +853,45 @@ chính module MAX98357A, nên `OUT+` và `OUT−` không có net nào trên boar
 không mang đầu nối loa (§2.3E). `OUT−` **không bao giờ** nối xuống GND — kể cả khi bắt vít
 loa vào khung máy.
 
+#### Hai cổng USB nạp điện — `J15`…`J18`
+
+Ngoài hai domino, board đế có **hai chỗ hàn breakout USB** để cấp 5 V lúc thử trên bàn. Mỗi chỗ
+là hai phần rời nhau:
+
+| Ref | Là gì | Lỗ |
+|---|---|---|
+| `J15` | Hàng neo bắt breakout **USB-C** xuống board | 4 lỗ Ø1,0 bước 2,54 — **không mang net nào** |
+| `J16` | Hai lỗ nguồn của cổng USB-C | `+5V_R1` và `GND` |
+| `J17` | Hàng neo bắt breakout **micro-USB** xuống board | 4 lỗ Ø1,0 bước 2,54 — không mang net |
+| `J18` | Hai lỗ nguồn của cổng micro-USB | `+5V_R2` và `GND` |
+
+**Hàng neo cố ý không mang điện.** Breakout USB bán ngoài không theo chuẩn chân nào: micro-USB
+thường 5 chân (`VBUS D− D+ ID GND`), USB-C có loại 2, 6 và 16 chân, `VBUS` với `GND` khi thì cạnh
+nhau khi thì ở hai đầu. Ghi net vào hàng neo là ghi theo một suy đoán. Nên hàng neo chỉ làm **chỗ
+ngồi cơ khí** — hàn chân nào của breakout vào cũng được, miễn nó không bung — còn điện thì hai
+sợi dây ngắn từ `VBUS` và `GND` của breakout chạy lên hai lỗ nguồn ngay phía trên, và hai lỗ đó
+đã có đồng nối thẳng về domino.
+
+**USB-C gánh rail 1, micro-USB gánh rail 2.** Đầu C chịu 3 A nên đỡ được đỉnh 1,34 A của rail 1;
+đầu micro-B chỉ chịu 1,8 A và tiếp xúc yếu hơn hẳn, nên chỉ giao cho đỉnh 0,7 A của servo. Làm
+ngược lại là dựng sẵn đúng cú sụt áp đã đo ở §2.3E, lần này ngay tại đầu cắm.
+
+⚠️ **Cắm USB lúc đang vặn dây vào domino là đấu song song hai nguồn** — cùng cái bẫy mà cảnh báo
+ngay trên đã nói cho chân `5V` của devkit, giờ thêm hai đường nữa. Board không chặn được bằng
+đồng: muốn chặn phải thêm diode Schottky, mà mỗi con sụt 0,3–0,4 V trên một rail 5 V vốn không dư
+(ESP32 brownout quanh 4,5 V). **Mỗi lúc chỉ một đường vào.**
+
+⚠️ **Breakout USB-C thiếu hai con 5,1 kΩ ở `CC1`/`CC2` thì sạc USB-C không ra một vôn nào.** Đó là
+cách nguồn USB-C nhận biết có thiết bị; loại 2 chân rẻ nhất hay bỏ hai con này. Soi trước khi
+mua — board không sửa được chuyện đó.
+
+🔬 **Khung thân 13 × 15 mm mỗi con là ước lượng, chưa đo.** Hai con nằm cạnh nhau ở mép dưới,
+cùng quay đầu cắm ra ngoài — chung mép với hai domino, để dây nguồn vào từ một phía. Ô chứa chúng
+rộng **31 mm**, chặn trái bởi khung tấm màn và chặn phải bởi `J10`; để đủ chỗ thì **`C1` `J10`
+`J11` đã dịch sang phải 3 mm**, đúng một phép tịnh tiến nên mọi khoảng cách trong luật 1–7 giữ
+nguyên. Con breakout nào rộng quá **13 mm** thì không đứng cạnh nhau được nữa, phải xếp chéo và
+cáp của con lùi vào sẽ chạy 16 mm trên mặt board.
+
 **Hai domino đặt sát nhau hết mức đường bao cho phép**, nên luật 1 gần đúng nghĩa đen: `J10.GND` và `J11.GND` cách nhau **11,5 mm**. Bước bốn con ốc ra **5 / 6,5 / 5 mm** — không đều được vì đường bao hai domino chạm nhau ở 6,5, ép sát hơn là hai khung chồng lên nhau. Tụ `C1` đặt **lệch hẳn về `J10`**, hai chân nằm đúng trên hai chân của nó. Nó mang net `+5V_R1`, không dính gì tới `+5V_R2` của `J11` — kê nó cân giữa hai domino là vẽ ra một quan hệ điện không có thật, và kéo dài đoạn đồng tới đúng cái domino cần nó. Rail 2 không có tụ trữ ở domino: 470 µF của nó nằm sát chân servo theo luật 3.
 
 ### 2.6 Datasheet
