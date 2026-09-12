@@ -711,6 +711,11 @@ khung MAX98357A đúng một khoảng. Con số 7,3 không chọn cho đẹp mà
 sang trái 1,46 mm và cả cụm bên phải sang phải 1,85 mm — chia đôi đơn thuần thì ra 6,38 mm và
 con tụ chỉ còn hở 0,04 mm mỗi bên.
 
+**Khung thân của mọi module ở hàng trên bắt đầu cùng một đường: mép trên tấm màn, y = 7.** Trước
+đó VLX cao hơn 2 mm và PCF8574 cao hơn 1 mm — không phải quyết định nào cả, chỉ là số gõ vào lúc
+xếp thô. Ba khung lệch nhau vài milimét thì nhìn ra ngay là board chưa được căn, và cái nhìn đó
+đúng: chưa ai căn thật. Devkit tụt xuống theo VLX để cột trái giữ nguyên khoảng cách.
+
 **Đế cắm phải nằm chính giữa khung của module nó đỡ.** Lệch thì module ngồi hẫng một bên, và
 trên board đế nó hiện ra thành cái khung nét đứt không cân với hàng lỗ bên trong. Căn theo
 **trục mà hàng chân chạy** — hàng ngang căn theo chiều ngang khung, hàng dọc căn theo chiều dọc.

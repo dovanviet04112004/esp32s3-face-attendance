@@ -28,11 +28,11 @@ HOLE_FP = "MountingHole:MountingHole_3.2mm_M3"
 # ref -> (x, y, rotation). A stock connector footprint has its origin on pin 1, so
 # the point given is its top end; U1 is drawn in-house and placed by its centre.
 PLACEMENT = {
-    # Face: ToF over the devkit, panel flat to their right, its capacitor on the
-    # strip below where an 11 mm can clears the 8.5 mm the panel stands at.
-    "J4": (13.65, 18.0, 90),
+    # Every module body along the top of the board starts on the panel's own top
+    # edge, so the three outlines read as one line (KEHOACH 2.3I).
+    "J4": (13.65, 20.0, 90),
     # Between the left row's names clearing the board edge and C4's can still fitting.
-    "U1": (20.0, 62.0, 0),
+    "U1": (20.0, 64.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
     # panel reaches 107 mm up from wherever its header lands.
     "J3": (55.54, 111.5, 90),
@@ -42,7 +42,7 @@ PLACEMENT = {
     # Sockets under a module sit centred across its outline (KEHOACH 2.3I).
     # Right of the panel, three bands. Band 1, y 6..54: the I2C parts.
     "J13": (130.85, 34.32, 180),
-    "J5": (114.04, 9.0, 90),
+    "J5": (114.04, 10.0, 90),
     "J6": (139.85, 12.0, 90),
     # Turned round so the 3V3 leg meets J6.VCC and the SDA leg meets J6.SDA, the
     # only two pads on the board 2.54 mm apart carrying those nets. Centred on J6.
@@ -86,8 +86,8 @@ PLACEMENT["J14"] = sd_row()
 # the silkscreen so nothing is placed inside one. 🔬 only the RTC is measured.
 MODULE_AREA = {
     "J3 LCD 4.0in": LCD_AREA,
-    "J4 VL53L1X": (7.5, 5.0, 32.5, 20.0),
-    "J5 PCF8574 48x16": (109.85, 6.0, 125.85, 54.0),
+    "J4 VL53L1X": (7.5, 7.0, 32.5, 22.0),
+    "J5 PCF8574 48x16": (109.85, 7.0, 125.85, 55.0),
     "J7 MAX98357A": (109.85, 60.0, 129.85, 80.0),
 }
 
