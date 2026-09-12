@@ -545,6 +545,24 @@ Tách rail 1 khỏi rail 2 vì hai đỉnh trùng nhau: kiosk phát tiếng báo
 
 Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân nguồn servo, 100 µF gần LCD.
 
+#### Đường mass — quyết định lúc đi dây, không phải lúc vẽ sơ đồ
+
+Sơ đồ nguyên lý chỉ khai được rằng mọi chân GND **cùng một nút**. Đồng thì có điện trở, nên
+700 mA của servo chạy qua một đoạn đồng sẽ tạo ra một hiệu điện thế trên chính đoạn đó; thiết
+bị nào lấy mass qua đoạn ấy sẽ thấy mass của mình nhấp nhô theo servo. Với MAX98357A thì cái
+nhấp nhô đó được khuếch đại ra loa. Năm luật dưới đây có hiệu lực ở bước đi dây PCB.
+
+| # | Luật | Hỏng thế nào nếu bỏ |
+|---|---|---|
+| 1 | Hai mass gặp nhau tại **đúng một điểm**, giữa `J10.GND` và `J11.GND`, sát hai domino | Gặp hai chỗ là thành vòng; dòng servo chia một phần chạy qua đồng của rail 1 |
+| 2 | Mỗi tải nặng về **thẳng** domino của nó: servo → `J11.GND`, amp → `J10.GND` | Đi vòng qua nhau là dùng chung đoạn đồng, tức dùng chung cả nhiễu |
+| 3 | Tụ 470 µF đặt **sát chân** amp và sát chân servo, không sát domino | Cú 600 mA của amp phải chạy dọc dây về nguồn thay vì lấy ngay tại chỗ (§2.3E) |
+| 4 | Vòng nguồn–mass của amp phải **ngắn và khép kín**, tránh xa bus I2C | Khối ra class-D băm ~300 kHz **kể cả khi đầu vào bằng 0** (§2.3E), đủ để vào SDA/SCL |
+| 5 | `OUT+` và `OUT−` đi thành **một cặp**, tránh bus I2C | Ngõ ra là cầu: cả hai dây đều dao động, không dây nào là mass (§2.3E) |
+
+`OUT−` **không bao giờ** nối xuống GND — trong sơ đồ nó là net `SPK_N` riêng, và luật đó giữ
+nguyên trên PCB.
+
 ### 2.6 Datasheet
 
 Bảng này là **nguồn** của danh sách; bản PDF tải về nằm ở `hardware/datasheets/` và không vào git
