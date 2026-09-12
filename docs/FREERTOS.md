@@ -42,9 +42,17 @@ Số kèm chú thích *(bản đồ)* là số đo của tài liệu tham khảo
 | 2.5 | Xếp ưu tiên theo "task nào quan trọng" thay vì theo **độ gấp của hạn chót** | Đối chiếu §5.2 | ✅ `cam` 7 vì mất khung là mất vĩnh viễn; `ai` 5 vì nó chiếm core riêng |
 | 2.6 | Ghim core sai | `AI_TASK_CORE` | ✅ core 1 chỉ có `ai_task` |
 
+| 2.7 | Tưởng bộ lập lịch là một task nền ngồi canh chừng — **nó là một HÀM**. Không có gì xảy ra thì không một dòng lệnh nào của nó chạy | — | nên chia nhiều task **không** tốn công quản lý thường trực |
+| 2.8 | Thang ưu tiên 0…24, đặt ở **tham số thứ năm** của `xTaskCreate` | Đọc `kTasks[]` | ✅ `cam` 7 · `tof` 6 · `ai` 5 · `attend` 4 · `net` 3, không chạm trần 24 |
+| 2.9 | `vTaskPrioritySet` có hiệu lực **ngay trong lời gọi**, không đợi tick | `grep vTaskPrioritySet` | ✅ không dùng — ưu tiên chốt lúc tạo |
+| 2.10 | Chen ngang xảy ra **giữa chừng bất cứ việc gì**, kể cả giữa một lệnh | — | xem 2.11 |
+| 2.11 | **Tài nguyên ra dùng chung bị cắt xen**: hai task cùng ghi console thì chữ của task này rơi vào giữa từ của task kia | Kiểm task nào ghi ra console | ✅ `ESP_LOGx` đi qua `s_log_mutex` của IDF (`log/src/os/log_lock.c`) nên **dòng không xé**. `printf` trần thì không có bảo đảm ấy — trong repo chỉ test app dùng, mà unity chạy tuần tự một task |
+| 2.12 | **Khoá log của IDF lấy bằng `portMAX_DELAY`** — một lời `ESP_LOGx` có thể chặn vô hạn sau lưng mình | Đọc `log_lock.c` | ✅ là mutex nên có kế thừa ưu tiên, không đảo ngược. Nhưng đây là lý do **không log trong vùng khoá** và **không log trong ISR** |
+
 Chia task **không** làm nhanh lên — vẫn từng ấy việc trên một CPU. Cái đắt không phải chi phí
 đổi task (4,19 µs, khoảng 0,17% khi 100 lần/giây *(bản đồ)*) mà là **stack** và **lỗi đồng
-thời**.
+thời**. `taskYIELD()` đo được 5,418 µs *(bản đồ)* và đó là **cận dưới**, đo lúc chỉ một task
+Ready.
 
 ---
 
@@ -105,6 +113,18 @@ hơn hỏi vòng **1,96×** *(bản đồ)*, vì kernel gỡ task khỏi Ready n
 Watermark đo 11/09: `cam` 2644, `attend` 2968, `tof` 1568, **`ai` 1532 B trống** — mỏng nhất, và
 đo khi mới có detect chạy. Phải đo lại khi spoof với recog chạy sâu (E10-T8).
 
+**Ba chỗ tranh nhau đúng một khối RAM vật lý**, và mỗi chỗ hỏng ở một thời điểm khác nhau:
+
+| Chỗ | Chia lúc nào | Hỏng lúc nào | Ai thấy trước |
+|---|---|---|---|
+| `.data` / `.bss` tĩnh | biên dịch | **link** | mình, trên máy mình |
+| Stack | tạo task | **chạy** — tràn, đè hàng xóm | mình, nếu may |
+| Heap | chạy | **chạy** — trả `NULL` | **khách hàng, trên bàn của họ** |
+
+Stack **tự dọn**: gọi hàm đẩy thêm một tầng, ra khỏi hàm bỏ đi một tầng. Đó là lý do nó không
+rò được, và cũng là lý do nó không nới được. `.bss` tốn **0 byte flash**; `.data` tốn flash
+đúng bằng cỡ mảng — khai mảng lớn có giá trị khởi tạo là trả tiền hai lần.
+
 ---
 
 ## 7. Heap
@@ -120,8 +140,28 @@ Watermark đo 11/09: `cam` 2644, `attend` 2968, `tof` 1568, **`ai` 1532 B trốn
 | 7.7 | `new`/`delete` sau boot (CLAUDE.md §4.1) | `grep "\bnew \|\bdelete "` | ✅ **0 chỗ** |
 | 7.8 | Trả về địa chỉ biến cục bộ | Đọc mắt | ✅ |
 
+### 7b. Số học đáng nhớ của heap *(bản đồ)*
+
+| | |
+|---|---|
+| `malloc(1)` thật sự tốn | **16 B** — khối tối thiểu 16, cộng 4 B header |
+| Một cặp `malloc` + `free` | **8912 ns**, hơn **2×** một lần đổi task |
+| Task stack 4096 B lấy của heap | **4204 B** — dôi đúng **108 B** (TCB + header khối) |
+| Rò 4 KB mỗi vòng | **90 vòng** là cạn heap |
+
+Con số 108 B cố định là thứ đáng nhớ: nó cho phép tính trước heap mất bao nhiêu khi thêm một
+task, không cần đo.
+
 **Khuôn mẫu của dự án**: xin lúc boot khi heap còn liền mạch, **không bao giờ trả**. Không thể
-rò, không thể phân mảnh. Arena, bảng embedding và pool khung đều theo khuôn này.
+rò, không thể phân mảnh, không thể hỏng vì không ai trả rồi xin lại. Arena, bảng embedding và
+pool khung đều theo khuôn này.
+
+Heap chỉ cho thêm đúng một thứ — **đổi cỡ lúc chạy** — thứ dự án này không cần, mà mang về đủ
+bốn rủi ro: rò · phân mảnh · hỏng · lỗi lúc chạy.
+
+Đổi sang tĩnh còn một lợi ích ít ai để ý: **`.bss` chật thì link trượt**, tức thiếu RAM lộ ra
+trên máy mình lúc build chứ không phải trên thiết bị lúc 3 giờ sáng. Đó là **cảnh báo sớm**,
+không phải phiền toái.
 
 ---
 
@@ -134,6 +174,8 @@ rò, không thể phân mảnh. Arena, bảng embedding và pool khung đều th
 | 8.3 | Buffer DMA nằm ở PSRAM | Đọc cấp phát của LCD và camera | ✅ bounce buffer ở RAM nội |
 | 8.4 | **ISR không bao giờ đọc được PSRAM** | Kiểm biến mà ISR đụng tới | ✅ hai ISR chỉ đụng handle semaphore |
 | 8.5 | PSRAM **ghi chậm 14,86×**, đọc tuần tự chỉ chậm 1,93× *(bản đồ)* | Đặt dữ liệu ghi-một-lần-đọc-tuần-tự ở PSRAM | ✅ arena và bảng embedding đúng khuôn này |
+| 8.6 | Tưởng IDF dùng `heap_1`…`heap_5` của FreeRTOS gốc — **không**, nó có bộ cấp phát riêng theo `caps` | — | ✅ mọi chỗ trong repo đi qua `heap_caps_*` |
+| 8.7 | Không biết **mọi đối tượng FreeRTOS đều có bản `…Static`** | `xTaskCreateStatic`, `xQueueCreateStatic`, `xSemaphoreCreateMutexStatic` | ⏳ chưa dùng, xem §1 |
 
 ---
 
@@ -141,7 +183,8 @@ rò, không thể phân mảnh. Arena, bảng embedding và pool khung đều th
 
 | # | Kiểu hỏng | Cách kiểm | Trạng thái |
 |---|---|---|---|
-| 9.1 | Không có hàng đợi thì **không có nhịp**: ghi hai lần đọc một lần, mất một giá trị không ai biết | Đối chiếu §5.3 | ✅ mọi đường liên task đều qua queue |
+| 9.1 | Biến dùng chung không khoá: giẫm chân nhau, đọc ra thứ **dở dang** | Tìm biến ghi bởi task này đọc bởi task kia | ✅ mọi đường liên task đều qua queue hoặc event group |
+| 9.1b | Có chỗ chứa nhưng **không có nhịp** — lỗi này ít người để ý hơn lỗi trên. Ghi hai lần đọc một lần thì **mất một giá trị mà không ai biết**; muốn chờ giá trị mới thì phải quay vòng hỏi, đốt CPU | Đối chiếu §5.3 | ✅ cái thiếu không phải chỗ chứa mà là nhịp, và queue cho cả hai |
 | 9.2 | **Không kiểm giá trị trả về của `xQueueReceive`** — trả `pdFALSE` thì biến đích **không đổi**, in lại giá trị cũ y như thật | `grep xQueueReceive` không kèm điều kiện | ✅ **0 chỗ**, mọi lời gọi đều kiểm |
 | 9.3 | Gửi với timeout 0 rồi bỏ qua kết quả — **mất bản ghi âm thầm** | `grep "xQueueSend(.*, 0)"` | ⚠ **P3**, xem §13 |
 | 9.4 | `portMAX_DELAY` khi nhận — treo im lặng nếu bên kia chết | Kiểm task nào chặn vô hạn | ⚠ **P2**, xem §13 |
@@ -153,6 +196,23 @@ rò, không thể phân mảnh. Arena, bảng embedding và pool khung đều th
 | 9.10 | Queue chở struct lớn | `sizeof × depth` | ✅ 4 × ~100 B |
 | 9.11 | `xQueueCreate` trả `NULL` khi hết heap | Kiểm giá trị trả về | ✅ `app_wiring` kiểm cả năm |
 | 9.12 | Gửi số trần, không biết nó sinh lúc nào | Thêm trường đóng dấu giờ | ⏳ `q_uplink` có `ts` trong bản ghi; `q_result` chưa cần |
+| 9.13 | **`malloc` mỗi lần gửi** thay vì dùng vòng đệm cấp sẵn | `grep malloc` trong thân task | ✅ **0 chỗ** — khung đi qua pool của `esp32-camera` |
+| 9.14 | **Số ô đệm phải lớn hơn độ dài queue ít nhất 1**, nếu không người gửi không còn ô nào để lấp trong lúc queue đang đầy | `CAM_FB_COUNT` so với `FRAME_DEPTH` | ✅ **4 ô** cho queue dài **1**. Số 4 chốt bằng phép đo chứ không bằng luật này: 3 ô cho preview **8,1 fps**, 4 ô cho **14,18 fps** (`latency.md` §6) |
+| 9.15 | Dùng một queue cho **hai chiều** | Queue là một chiều; hai chiều thì dựng hai queue | ✅ mỗi queue một chiều, một người ghi |
+| 9.16 | Dùng `xQueueSendToFront` cho việc thường — nó là để **chen đầu hàng**, chỉ dành cho lệnh khẩn | `grep xQueueSendToFront` | ✅ không dùng |
+| 9.17 | Nhầm `xQueuePeek` với `xQueueReceive` — `Peek` đọc món đầu mà **không gỡ nó ra** | `grep xQueuePeek` | ✅ không dùng |
+| 9.18 | `queue set` trả về **chính cái queue** chứ không phải dữ liệu — quên nhận tiếp là treo | `grep xQueueCreateSet` | ✅ không dùng |
+
+### 9b. Ba mức chờ, mỗi mức một nghĩa vụ
+
+| Timeout | Nghĩa | Nghĩa vụ kèm theo |
+|---|---|---|
+| `0` | Hỏi rồi đi ngay | **Phải xử lý nhánh trượt.** Bỏ qua là thành mất dữ liệu (P3), hoặc thành quay vòng đốt CPU nếu đặt trong vòng lặp chặt |
+| `n` tick | Chờ có hạn | **Phải viết nhánh hết hạn.** Không viết thì hết hạn im lặng thành "không có dữ liệu" |
+| `portMAX_DELAY` | Chờ mãi | **Treo im lặng nếu bên kia chết.** Chỉ dùng cho task mà việc duy nhất là chờ queue đó, và **không** đăng ký watchdog (P2) |
+
+Chặn lành rẻ hơn hỏi vòng **1,96×** *(bản đồ)*: kernel gỡ task khỏi Ready và cắm vào danh sách
+chờ của chính queue ấy, nên nó **biến mất khỏi tầm nhìn bộ lập lịch** và không tốn chu kỳ nào.
 
 ---
 
