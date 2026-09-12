@@ -23,7 +23,7 @@ LCD_PANEL = (61.0, 107.0)
 LCD_HOLE_INSET = 3.5
 LCD_HEADER_DROP = 1.0
 LCD_HEADER_INSET = LCD_HOLE_INSET - LCD_HEADER_DROP
-HOLE_FP = "MountingHole:MountingHole_2.7mm"
+HOLE_FP = "MountingHole:MountingHole_3.2mm_M3"
 
 # ref -> (x, y, rotation). A stock connector footprint has its origin on pin 1, so
 # the point given is its top end; U1 is drawn in-house and placed by its centre.
@@ -93,7 +93,7 @@ MODULE_AREA = {
 
 
 def lcd_holes() -> dict:
-    """M2.5 clearance at the panel's four corners, so J3 carries no load."""
+    """M3 clearance at the panel's four corners, so J3 carries no load."""
     x0, y0, x1, y1 = LCD_AREA
     inset = LCD_HOLE_INSET
     corners = ((x0 + inset, y0 + inset), (x1 - inset, y0 + inset),

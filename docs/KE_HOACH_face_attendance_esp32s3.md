@@ -344,15 +344,18 @@ kém: hỏng theo kiểu nứt chân tóc, lúc đầu chỉ chập chờn một
 
 | Hạng mục | Chốt |
 |---|---|
-| Vít | **M2.5**, board đế khoan **Ø2,7 mm** — lỗ trên tấm màn bên nào cũng lọt, kể cả bản khoan Ø2,5 |
-| Trụ | Trụ đồng cái–cái cao **8,5 mm**, đúng chiều cao đế cắm `J3` |
+| Vít | **M3**, board đế khoan **Ø3,2 mm**. Lỗ trên tấm màn đo được **Ø3,5** — đúng cỡ thoát vít M3 |
+| Trụ | Trụ đồng cái–cái **M3 × 8 mm** |
 | Số lượng | **4**, bốn góc tấm màn |
 | Chịu lực | Hai lỗ ở **cạnh tự do** giữ tấm màn; hai lỗ cạnh `J3` chỉ chống xoay |
 
-Chiều cao trụ **phải bằng** chiều cao tấm màn ngồi trên đế cắm, không được xê xích: trụ cao hơn
-thì vặn vít xong chân chưa vào hết đế; trụ thấp hơn thì vít kéo tấm màn tách khỏi đế, tức là đúng
-cái lực bẩy mà bốn con vít sinh ra để triệt tiêu. Bắt đế cắm xuống board trước, đặt tấm màn lên,
-rồi mới siết vít — siết trước là ép chân vào đế lệch trục.
+Trụ **không được cao hơn** 8,5 mm là chiều cao tấm màn ngồi trên đế cắm `J3`. Cao hơn thì tấm
+màn tì lên trụ và chân chưa vào hết đế — đúng cái lỗi mà bốn con vít sinh ra để chữa. Thấp hơn
+một chút thì ngược lại, vít kéo tấm màn xuống và chân cắm sâu thêm, vô hại vì đế còn dư hành
+trình. Nên chọn **8 mm**: 8,5 không phải chiều dài bán sẵn, còn 8 thì có ở mọi hàng ốc vít.
+
+Bắt đế cắm xuống board trước, đặt tấm màn lên, rồi mới siết vít — siết trước là ép chân vào đế
+lệch trục.
 
 **Kích thước tấm màn: 107 × 61 mm** (đo 12/09). Nó quyết định luôn chiều cao board đế: 107 mm
 cộng chỗ cho hàng chữ tên chân ở **cả hai đầu** là **121 mm** — mỗi đầu phải chừa đủ 4,3 mm cho
@@ -377,7 +380,7 @@ tấm 4,0" tỉ lệ 3:2 là **84,5 × 56,4 mm** (suy từ đường chéo, khô
 | Dài | 107 | 84,5 | **11,2 mm** |
 
 Hai con số đó ràng buộc thiết kế theo hai hướng ngược nhau. Cạnh dài chỉ dôi **2,3 mm** nên
-**không khoan được lỗ vít ở giữa hai cạnh dài** — lỗ Ø2,7 cần nhiều hơn thế. Cạnh ngắn dôi
+**không khoan được lỗ vít ở giữa hai cạnh dài** — lỗ Ø3,5 cần nhiều hơn thế. Cạnh ngắn dôi
 **11,2 mm**, đủ rộng cho cả hàng chân lẫn hai lỗ vít, và đó là lý do bốn lỗ đặt ở **bốn góc**:
 góc là chỗ duy nhất có vật liệu.
 
@@ -390,8 +393,9 @@ trên module 12/09). Nhờ đó hai khoảng lùi không còn độc lập: đo 
 cho mép xa của tấm màn không tràn khỏi mép trên board, và hàng chữ tên chân của nó rơi **ngay
 dưới** mép tấm màn — tức là vẫn đọc được sau khi lắp màn, không bị che.
 
-🔬 **Còn đúng một số chưa đo, và nó quyết định bốn lỗ có bắt được vít hay không.** Vít M2.5
-trong lỗ Ø2,7 chỉ có 0,1 mm khe, lệch 1 mm là không bắt được. Khai ở đầu
+🔬 **Còn đúng một số chưa đo, và nó quyết định bốn lỗ có bắt được vít hay không.** Vít M3 qua
+lỗ Ø3,5 của tấm màn rồi qua lỗ Ø3,2 của board đế chỉ xê dịch được **0,35 mm**; lệch 1 mm là không
+bắt được. Khai ở đầu
 `hardware/gen/gen_pcb.py`, sửa xong sinh lại là bốn lỗ lẫn `J3` tự dịch theo:
 
 | Hằng số | Đang đặt | Nguồn |
@@ -715,7 +719,7 @@ trên board đế nó hiện ra thành cái khung nét đứt không cân với 
 Luật đó áp cho **cả tên linh kiện** (`J3`, `J5`, …), không riêng tên chân — chữ `J5` nằm dưới
 thân con PCF8574 thì cũng vô dụng y như chữ `SCL` nằm đó. Tên linh kiện đặt ở **đầu hàng chân**,
 lùi ra cùng phía với tên chân. Riêng bốn lỗ vít màn thì **ẩn hẳn chữ `H1`…`H4`**: một lỗ khoan
-Ø2,7 tự nó đã nói nó là lỗ vít, còn chỗ in thì nằm gọn dưới tấm màn.
+Ø3,2 tự nó đã nói nó là lỗ vít, còn chỗ in thì nằm gọn dưới tấm màn.
 
 ### 2.4 Chân trống sau khi lắp hết
 
