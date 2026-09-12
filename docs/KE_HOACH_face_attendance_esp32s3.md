@@ -873,6 +873,17 @@ vừa khít. Kết quả: khe đồng hẹp nhất toàn board **0,255 mm** thay
 0,25 mm, và lại còn **ít via hơn** (46 thay vì 53) vì đường đi đơn giản hơn. Đi sát đúng mức tối
 thiểu thì DRC vẫn qua, nhưng không còn chỗ nào cho sai số ăn mòn của xưởng.
 
+**Không đồng nào trong bán kính 3,5 mm quanh tám lỗ vít.** Luật này không phải luật điện, nên DRC
+không bao giờ bắt: khoảng cách đồng tới **mép lỗ** thì DRC chấm, còn thứ đè lên mặt board là **đầu
+vít và trụ đồng**, rộng hơn lỗ nhiều. Vít M3 pan head Ø5,6; trụ lục giác M3 Ø5,2–5,8; long đen M3
+Ø7,0 — lấy cái to nhất, vùng cấm là **Ø7,0, tức bán kính 3,5 mm, cả hai mặt**, chặn cả dây lẫn via.
+
+Trước khi có luật này router chỉ tránh lỗ đúng bằng khoảng cách netclass — 1,97 mm tính từ tâm — nên
+đồng chui vào đúng chỗ kim loại sẽ đè, chỉ còn lớp sơn phủ ~20 µm ngăn. Ba chỗ đã thành bẫy thật:
+`H1` và `H2` có `I2C_SCL` mặt trước với `GND` mặt sau dưới **cùng một con vít** (nứt sơn là chết cả
+bus I2C), `H4` có `+3V3` **và** `GND` cùng nằm mặt sau dưới một đầu vít — chập thẳng nguồn. Giá của
+vùng cấm: **5 đoạn dây**, 0 via, khe đồng hẹp nhất không đổi.
+
 **Mọi via đều bịt mask cả hai mặt.** Sơn phủ kín vành đồng quanh via — lỗ vẫn khoan, thành vẫn mạ,
 vẫn dẫn giữa hai mặt, chỉ là không còn đồng trần. Được ba thứ: module đứng bên trên không thể chạm
 vào via nằm dưới nó, in lụa in đè lên được (xưởng gọt in lụa khỏi chỗ đồng trần, nên tên chân in

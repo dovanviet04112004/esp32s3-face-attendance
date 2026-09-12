@@ -300,6 +300,8 @@ VIA = {SIGNAL_MM: (0.8, 0.4), POWER_MM: (1.2, 0.6)}
 PROBES = (SIGNAL_MM / 2, POWER_MM / 2, 0.4, 0.6)
 GRID = 0.2
 EDGE_KEEP = 0.4
+# An M3 washer is Ø7.0 and presses on the mask, not on the hole edge DRC measures.
+SCREW_KEEP = 3.5
 TURN_COST, VIA_COST, WRONG_SIDE = 6, 30, 1
 NX = int(BOARD_W / GRID) + 1
 NY = int(BOARD_H / GRID) + 1
@@ -431,6 +433,12 @@ def border(width: float) -> set:
             out.update(range(j * NX, j * NX + lo_i))
             out.update(range(j * NX + hi_i + 1, (j + 1) * NX))
     return out
+
+
+def screw_keepout(probe: float) -> set:
+    """Cells no copper may reach: the screw head and standoff press here (KEHOACH 2.5)."""
+    holes = list(lcd_holes().values()) + [PLACEMENT[ref] for ref in BOARD_HOLES]
+    return {cell for x, y, _ in holes for cell in disc_cells(x, y, SCREW_KEEP + probe)}
 
 
 def find_path(blocked: dict, room: dict, start: tuple, goal: tuple, want: str) -> list:
@@ -635,7 +643,7 @@ def route_board(doc: list, net_id: dict) -> list:
     probes = [(c, r) for c in (SIGNAL_CLEAR, POWER_CLEAR) for r in PROBES]
     stamp = {key: {pad_id: disc_cells(x, y, half + key[0] + key[1])
                    for pad_id, (x, y, half, net) in pads.items()} for key in probes}
-    rim = {r: border(2 * r) for r in PROBES}
+    rim = {r: border(2 * r) | screw_keepout(r) for r in PROBES}
     # A via under a printed name eats the name: the fab clips silk off bare copper.
     ink = silk_cells(doc)
     queue, placed, tries = list(route_jobs(pads)), [], {}
