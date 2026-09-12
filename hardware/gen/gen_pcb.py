@@ -253,6 +253,12 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
             number = unquote(node[1])
             net = pin_nets.get(number)
             node = list(node)
+            # A pad carries the footprint's angle even when it is round: the library
+            # parity check reads pad orientation, and a bare (at x y) fails against it.
+            if rot:
+                node = [([c[0], c[1], c[2],
+                          f"{(float(c[3] if len(c) > 3 else 0) + rot) % 360:g}"]
+                         if isinstance(c, list) and c[0] == "at" else c) for c in node]
             if net:
                 node.append(["net", str(net_id[net]), f'"{net}"'])
         if (node[0] == "property" and unquote(node[1]) == "Reference"
