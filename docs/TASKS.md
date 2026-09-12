@@ -316,7 +316,7 @@ duyệt, rồi mới sửa.
 | E14-T2 | Chương thiết kế: trích từ KẾ HOẠCH §2–§6 | Xong bản nháp | E13-T6 |
 | E14-T3 | Chương kết quả: bảng số từ `docs/measurements/` | Mọi số có nguồn đo | E13-T6 |
 | E14-T4 | Ảnh sản phẩm, video demo; sơ đồ lấy từ `hardware/export/` (E14-T8) | Đủ hình | E13-T6, E14-T8 |
-| **E14-T8** | **Vẽ sơ đồ nguyên lý + PCB bằng KiCad** — chép chân từ §2, không chép ngược. Xuất PDF ra `hardware/export/`, tên file mang git sha của §2 lúc vẽ | Mọi chân khớp §2 và `app_config.h`; PDF mở ra đọc được ở A4 | E1-T9 |
+| **E14-T8** | **Vẽ sơ đồ nguyên lý + PCB bằng KiCad** — chép chân từ §2, không chép ngược. **Sơ đồ xong 12/09**: `hardware/kicad/kiosk.kicad_sch`, 16 linh kiện, 29 net, đối chiếu máy 15/15 chân khớp `app_config.h`. 🔬 **chưa mở bằng KiCad lần nào** — máy dựng không cài được, phải mở kiểm trước khi tin. Còn lại: footprint, PCB, xuất PDF ra `hardware/export/` kèm git sha của §2 | Mọi chân khớp §2 và `app_config.h`; PDF mở ra đọc được ở A4 | E1-T9 |
 | E14-T5 | Rà license research-only, ghi rõ trong báo cáo | Có mục riêng | E14-T2 |
 | **E14-T7** | **Mục "lỗi chỉ phần cứng thật mới lộ"** — `docs/thesis/loi-tim-thay-tren-board.md` đã có bản đầu cho ba lỗi 09/09: cuộc đua khởi tạo bus I2C, giả định phân cực chân ngắt, và mốc thời gian datasheet sai mô hình mạch. Ghi tiếp mỗi lỗi cùng loại tìm được về sau | Mỗi lỗi có hiện tượng, giả thuyết đã loại, mốc đo, cách sửa, bằng chứng trên board | — |
 | E14-T6 | Slide bảo vệ + tập trình bày | Xong | E14-T3, E14-T4 |
