@@ -29,8 +29,8 @@
 		)
 	)
 	(fp_line
-		(start -16.00 -33.00)
-		(end 16.00 -33.00)
+		(start -14.00 -33.00)
+		(end 14.00 -33.00)
 		(stroke
 			(width 0.12)
 			(type solid)
@@ -39,8 +39,8 @@
 		(uuid "8da2f2f2-eb00-49ac-8052-e26a87b51903")
 	)
 	(fp_line
-		(start 16.00 -33.00)
-		(end 16.00 33.00)
+		(start 14.00 -33.00)
+		(end 14.00 33.00)
 		(stroke
 			(width 0.12)
 			(type solid)
@@ -49,8 +49,8 @@
 		(uuid "5fc5daab-ce3c-48a6-841f-ef41da3d5853")
 	)
 	(fp_line
-		(start 16.00 33.00)
-		(end -16.00 33.00)
+		(start 14.00 33.00)
+		(end -14.00 33.00)
 		(stroke
 			(width 0.12)
 			(type solid)
@@ -59,8 +59,8 @@
 		(uuid "de045a97-7dad-4b0a-84e5-52a22d0dee58")
 	)
 	(fp_line
-		(start -16.00 33.00)
-		(end -16.00 -33.00)
+		(start -14.00 33.00)
+		(end -14.00 -33.00)
 		(stroke
 			(width 0.12)
 			(type solid)
@@ -69,8 +69,8 @@
 		(uuid "90bd9f92-356d-4948-8e54-4511e479f92f")
 	)
 	(fp_line
-		(start -16.25 -33.25)
-		(end 16.25 -33.25)
+		(start -14.25 -33.25)
+		(end 14.25 -33.25)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -79,8 +79,8 @@
 		(uuid "18a3739c-73a1-4af9-806d-8d99b3c7f1ef")
 	)
 	(fp_line
-		(start 16.25 -33.25)
-		(end 16.25 33.25)
+		(start 14.25 -33.25)
+		(end 14.25 33.25)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -89,8 +89,8 @@
 		(uuid "c1b048a3-c1c2-4a85-8d26-cb97e2362c8c")
 	)
 	(fp_line
-		(start 16.25 33.25)
-		(end -16.25 33.25)
+		(start 14.25 33.25)
+		(end -14.25 33.25)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -99,8 +99,8 @@
 		(uuid "6ba976ab-fbcb-40b4-89aa-99d66aedd368")
 	)
 	(fp_line
-		(start -16.25 33.25)
-		(end -16.25 -33.25)
+		(start -14.25 33.25)
+		(end -14.25 -33.25)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -109,8 +109,8 @@
 		(uuid "80bc9746-aa17-4509-81ba-1d36da612bd8")
 	)
 	(fp_line
-		(start -16.00 27.00)
-		(end 16.00 27.00)
+		(start -14.00 27.00)
+		(end 14.00 27.00)
 		(stroke
 			(width 0.12)
 			(type solid)

@@ -31,8 +31,8 @@ PLACEMENT = {
     # Face: ToF over the devkit, panel flat to their right, its capacitor on the
     # strip below where an 11 mm can clears the 8.5 mm the panel stands at.
     "J4": (13.5, 18.0, 90),
-    # Two millimetres left of centre so the strip beside the panel fits a can.
-    "U1": (18.0, 62.0, 0),
+    # Between the left row's names clearing the board edge and C4's can still fitting.
+    "U1": (20.0, 62.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
     # panel reaches 107 mm up from wherever its header lands.
     "J3": (57.0, 107.5, 90),
@@ -357,9 +357,10 @@ def pin_labels(doc: list) -> list:
             if not label:
                 continue
             px, py, lx = seats[number]
-            # U1 has room between its two rows; everything else reads outward.
+            # Between the two rows is exactly where the devkit's body lands, so a label
+            # put there is legible until the moment the board is actually used.
             if ref == "U1":
-                dx, dy, rot, just = (4.0 if lx < 0 else -4.0), 0.0, 0, ("left" if lx < 0 else "right")
+                dx, dy, rot, just = (-2.0 if lx < 0 else 2.0), 0.0, 0, ("right" if lx < 0 else "left")
             elif len(pads) == 2:
                 # Beside its pad a label reaches the next part once two sit close, so
                 # it goes above instead, nudged outward off the centred reference.

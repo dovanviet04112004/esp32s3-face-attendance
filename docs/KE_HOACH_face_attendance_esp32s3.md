@@ -196,6 +196,15 @@ Hai hàng cách nhau **25,4 mm**, bước **2,54 mm**. Board chỉ có **một**
 chân `3V3` ra hàng, nên cả dòng về của board đi qua một chân duy nhất — không có chân mass
 thứ hai để chia tải, và cũng không có chân nào để cắm nhầm.
 
+🔬 **Bề ngang module ≈ 28 mm**, tức mép board chạy sát ngoài hai hàng chân chừng 1,3 mm. Chưa
+đo bằng thước, chỉ nhìn module. Con số này quyết định chỗ trống hai bên devkit trên board đế,
+nên vẽ rộng quá thì mất chỗ thật: bản đầu vẽ 32 mm và con tụ `C4` của màn không còn khe để lọt.
+Chiều dài vẫn cố ý vẽ dư vì đầu USB và cụm camera nhô ra.
+
+**Tên chân in ra phía ngoài hai hàng, không in vào giữa.** Khoảng giữa hai hàng chính là chỗ
+thân devkit đậy xuống, nên chữ in ở đó chỉ đọc được tới đúng lúc cắm module vào — mà đó là lúc
+người ta cần đọc.
+
 Mốc để không lắp ngược: `3V3` và `IO43` là cặp **xa USB nhất**, `5V0` và `GND` là cặp **sát
 USB**. Lỗ khoan trên board đế đối xứng nên nhìn board không bao giờ thấy ngược; chỉ lộ lúc
 cắm, mà lúc ấy board đã in xong (§2.3I).

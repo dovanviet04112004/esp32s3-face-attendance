@@ -10,9 +10,9 @@ ROWS, PITCH, ROW_GAP = 20, 2.54, 25.4
 DRILL, PAD = 1.0, 1.7
 HALF = (ROWS - 1) * PITCH / 2.0
 X = ROW_GAP / 2.0
-# Pads are exact, the outline is not: with no datasheet the module edge is
-# over-stated on purpose, so nothing tall lands under the overhang. 🔬
-CX, CY = 16.0, 33.0
+# 🔬 Pads are exact, the outline is not. The module edge runs close to the pin rows,
+# so the width is 1.3 mm outside them; the length still errs wide for USB and camera.
+CX, CY = 14.0, 33.0
 USB_EDGE = 6.0
 
 
