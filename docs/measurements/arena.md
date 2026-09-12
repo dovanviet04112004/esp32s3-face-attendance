@@ -226,3 +226,30 @@ tròn lên bội số **1 KB** sau khi lấy `max`, và `arena_hint` cứ ghi s�
 op: `PAD` ×1 và `RESIZE_NEAREST_NEIGHBOR` ×2 (đường upsample của FPN). detect
 chạy mỗi frame và đang tốn 232,4 ms, nên đây là đầu mối cho E9-T3 — 27 op còn
 lại đều có kernel esp-nn.
+
+---
+
+## 8. Ảnh model mang số arena của chính nó — 12/09
+
+`contracts/models.lock.json` khai `arena_bytes` **0 cho anti-spoof** và **476.188 B cho
+recognition**, tức số của ảnh hai backbone, trong khi nhánh một backbone đã thay vào từ 12/09.
+Cơ chế: `update_lock.py` để `--arena-bytes` mặc định 0, lần export cuối không truyền, nên phép
+đo bị ghi đè bằng "chưa đo". Cờ này giờ **bắt buộc**, không có mặc định.
+
+Cả hai ô mang **422.764 B** — tổng của nhóm, đúng luật §3.8 (`plan:2720`): hai nhánh chung một
+`MicroAllocator` thì cả hai entry ghi cùng một con, `ai_engine` lấy `max` theo nhóm.
+
+Đóng gói lại `models_0` rồi đọc trên board:
+
+| | Trước | Sau |
+|---|---|---|
+| `arena_big` cấp | 477.184 B (466 KB) | **422.912 B (413 KB)** |
+| spoof dùng | 210 KB | 210 KB |
+| recog dùng | 412 KB | 412 KB |
+| RAM nội trống sau init | 331 KB | 331 KB |
+
+**Lãi 53 KB PSRAM**, và `recog: arena at 412 of 413 KB` cho thấy mức cấp mới sát đúng nhu cầu
+chứ không dư. `arena_fast` không đổi: 189.628 B trong 186 KB.
+
+Bài học: sửa lock mà không đóng gói lại ảnh thì board vẫn đọc header cũ — `meta.json` và
+`models.lock.json` chỉ là nguồn, `models_0` mới là thứ thiết bị tin.
