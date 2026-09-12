@@ -24,6 +24,8 @@ LINE_MM = 1.0
 # Designators are set at 1 mm rather than the 0.8 mm gen_pcb gives a pin name.
 REF_GLYPH_MM = 0.78
 POLARISED = "CP_Radial"
+# What a low-cost two-layer house quotes without asking questions.
+MIN_DRILL_MM, MIN_RING_MM = 0.3, 0.2
 
 
 def parse_sexp(text: str) -> list:
@@ -110,11 +112,15 @@ def board_parts(tree: list) -> dict[str, dict]:
         for pad in children(fp, "pad"):
             a = first(pad, "at")
             net = first(pad, "net")
+            drill = first(pad, "drill")
             pads[pad[1]] = {
                 "xy": place(ox, oy, deg, float(a[1]), float(a[2])),
                 "net": net[-1] if net else None,
                 "shape": pad[3],
                 "size": max(float(v) for v in first(pad, "size")[1:3]),
+                "narrow": min(float(v) for v in first(pad, "size")[1:3]),
+                "drill": float(drill[1]) if drill else None,
+                "plated": pad[2] == "thru_hole",
             }
         corners = []
         for node in children(fp, "fp_line") + children(fp, "fp_rect"):
@@ -255,6 +261,20 @@ def main() -> int:
             problems.append(f"{ref}: the plus pad sits on ground")
         elif plus["shape"] not in ("rect", "roundrect"):
             problems.append(f"{ref}: pad 1 is {plus['shape']}, nothing marks which leg is plus")
+
+    # A plated hole the fab cannot drill, or a ring it cannot hold, is caught here
+    # rather than by the board house after the order is placed.
+    for ref, part in sorted(parts.items()):
+        for number, pad in sorted(part["pads"].items()):
+            if pad["drill"] is None or not pad["plated"]:
+                continue
+            ring = (pad["narrow"] - pad["drill"]) / 2
+            if pad["drill"] < MIN_DRILL_MM:
+                problems.append(f"{ref}.{number}: drilled {pad['drill']:.2f} mm, "
+                                f"under the {MIN_DRILL_MM} mm floor")
+            if ring < MIN_RING_MM:
+                problems.append(f"{ref}.{number}: {ring:.2f} mm of copper round the hole, "
+                                f"under the {MIN_RING_MM} mm floor")
 
     edge = boxes_from(outline(pcb, "Edge.Cuts"))
     if edge:

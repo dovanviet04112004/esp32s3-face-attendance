@@ -44,6 +44,21 @@ python3 tools/check_schematic.py && python3 tools/check_pcb.py
 là có uuid nào đó đang lấy ngẫu nhiên, và mỗi lần chạy sẽ đẻ ra hai nghìn dòng diff che mất
 thay đổi thật. Đừng sửa tay file trong `kicad/` — lần sinh sau mất sạch.
 
+## Lỗ khoan
+
+| Ø | Số lỗ | Ở đâu | Cái gì cắm vào |
+|---|---|---|---|
+| **1,00 mm** | 95 | `U1` `J3` `J4` `J5` `J6` `J7` `J9` `J13` `J14`, và `C1` | Chân header 2,54 mm (vuông 0,64 → chéo 0,91), chân tụ 1000 µF |
+| **0,80 mm** | 8 | `R1` `C2` `C3` `C4` | Chân trở 1/4 W và chân tụ nhỏ, đều ~0,6 mm |
+| **1,30 mm** | 4 | `J10` `J11` | Chân domino MX126-5.0 |
+| **2,70 mm** | 4 | `H1`…`H4` | Vít M2.5 bắt tấm màn — **không phủ đồng** (NPTH) |
+
+Vành đồng mỏng nhất **0,35 mm** (các lỗ 1,00). `tools/check_pcb.py` chặn lỗ dưới 0,30 mm và
+vành dưới 0,20 mm — dưới mức đó thì xưởng rẻ bắt đầu hỏi lại hoặc báo giá khác.
+
+Bốn lỗ vít là **NPTH nên không có vành**, đó là đúng chứ không phải thiếu: có đồng quanh lỗ bắt
+vít thì đầu vít chạm vào là chập.
+
 ## Đóng KiCad trước khi sinh lại sơ đồ
 
 KiCad giữ cả file trong bộ nhớ. Đang mở mà có ai ghi đè file dưới đĩa thì lần Save
