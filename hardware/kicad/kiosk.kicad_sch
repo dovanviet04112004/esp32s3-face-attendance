@@ -975,7 +975,7 @@
     (uuid "1621a0e4-0d94-4e81-8720-187254128b4c")
     (property "Reference" "J14" (at 111.76 81.28 0) (effects (font (size 1.27 1.27))))
     (property "Value" "LCD microSD - lo cho, chua noi day" (at 111.76 100.33 0) (effects (font (size 1.27 1.27))))
-    (property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical" (at 111.76 90.17 0)
+    (property "Footprint" "kiosk:BareHoles_1x04_P2.54mm" (at 111.76 90.17 0)
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 111.76 90.17 0) (effects (font (size 1.27 1.27)) hide))
     (pin "1" (uuid "eb5b4acf-5cb6-40f6-86ab-a38c9577ad51"))

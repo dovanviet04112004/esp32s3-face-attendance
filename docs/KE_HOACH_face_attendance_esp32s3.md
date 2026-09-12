@@ -327,8 +327,10 @@ SPI2 với chính tấm màn (GPIO41 / GPIO43 / GPIO42), chỉ `SD_CS` mới c�
 ngõ ra được, mà `CS` đúng là ngõ ra; đổi lại mất đèn WS2812. Đó là thay đổi kiến trúc, đi qua
 §1.2 của CLAUDE.md, không phải việc sửa lúc đi dây.
 
-🔬 **Vị trí hàng SD giả định nằm giữa cạnh**, đối xứng với hàng 14 chân ở cạnh kia, và lùi vào
-bằng đúng `LCD_HEADER_INSET`. Nó cách hai lỗ vít đầu trên **20 mm** nên không đụng, và có lệch
+**Hàng SD nằm đối xứng với hàng 14 chân**, cùng lùi vào 1,5 mm — đo khoảng cách hai hàng được
+104 mm trên tấm màn 107 mm thì chỉ còn cách đó. `J14` dùng footprint tự vẽ `BareHoles_1x04`:
+bốn lỗ trần, **không vẽ đường bao in lụa**, vì chỗ ấy không có đế cắm nào và đường bao duy nhất
+có nghĩa là khung tấm màn. Nó cách hai lỗ vít đầu trên **20 mm** nên không đụng, và có lệch
 vài milimét cũng không sao khi chỉ dùng làm chỗ hàn dây. Chỉ khi module **có sẵn chân** ở hàng
 đó thì vị trí mới phải đúng — lúc ấy đo thêm khoảng cách từ mép trái tấm màn tới chân `SD_CS`.
 
@@ -393,19 +395,25 @@ trên module 12/09). Nhờ đó hai khoảng lùi không còn độc lập: đo 
 cho mép xa của tấm màn không tràn khỏi mép trên board, và hàng chữ tên chân của nó rơi **ngay
 dưới** mép tấm màn — tức là vẫn đọc được sau khi lắp màn, không bị che.
 
-🔬 **Còn đúng một số chưa đo, và nó quyết định bốn lỗ có bắt được vít hay không.** Vít M3 qua
-lỗ Ø3,5 của tấm màn rồi qua lỗ Ø3,2 của board đế chỉ xê dịch được **0,35 mm**; lệch 1 mm là không
-bắt được. Khai ở đầu
+**Bốn lỗ vít đã có số đo (12/09).** Vít M3 qua lỗ Ø3,5 của tấm màn rồi qua lỗ Ø3,2 của board đế
+chỉ xê dịch được **0,35 mm**, nên đây từng là con số duy nhất chặn đường gửi xưởng. Đo **tâm lỗ
+tới tâm lỗ** chứ không đo tới mép tấm — mép tấm rồi suy ra thì dễ nhầm chỗ đặt thước. Khai ở đầu
 `hardware/gen/gen_pcb.py`, sửa xong sinh lại là bốn lỗ lẫn `J3` tự dịch theo:
 
 | Hằng số | Đang đặt | Nguồn |
 |---|---|---|
-| `LCD_HOLE_INSET` | 3,5 mm | 🔬 **phải đo**: từ **tâm lỗ** tới mép tấm màn |
+| `LCD_HOLE_PITCH` | **55,0 × 102,0 mm** | Đo tâm–tâm trên tấm màn 12/09 |
+| `LCD_HOLE_INSET` | 3,00 / 2,50 mm | Suy ra: `(107 − 102)/2` và `(61 − 55)/2` — **hai chiều không bằng nhau** |
 | `LCD_HEADER_DROP` | 1,0 mm | Hàng chân thấp hơn hàng lỗ bao nhiêu, nhìn trên module |
-| `LCD_HEADER_INSET` | 2,5 mm | Suy ra: `LCD_HOLE_INSET − LCD_HEADER_DROP` |
+| `LCD_HEADER_INSET` | 1,5 mm | Suy ra: `LCD_HOLE_INSET dọc − LCD_HEADER_DROP` |
 
-Đo tới **tâm lỗ**, không đo tới mép lỗ. Và nếu bốn lỗ trên tấm màn **không** đối xứng thì báo
-lại: lúc đó phải khai từng lỗ một chứ không suy ra từ một con số lùi vào.
+**Hai phép đo tự kiểm chéo nhau.** Khoảng cách giữa hàng 14 chân và hàng 4 chân microSD đo được
+**104 mm**; từ chuỗi trên mà suy thì phải là `107 − 1,5 − 1,5 = 104`. Khớp. Nếu lúc đo lỗ mà kẹp
+thước theo mép ngoài thay vì tâm–tâm thì chuỗi ấy cho ra **100,5 mm**, lệch hẳn — nên phép đo thứ
+hai chốt luôn rằng phép thứ nhất đọc đúng cách.
+
+⚠️ Theo chiều dọc, lỗ Ø3,5 thụt vào 2,50 mm nên chỉ còn **0,75 mm vật liệu** tới mép tấm màn.
+Siết vừa tay; siết mạnh là nứt mép.
 
 | Chân LCD | GPIO | Vai trò | Lưu ý |
 |---|---|---|---|

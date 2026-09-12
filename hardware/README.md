@@ -30,7 +30,7 @@ gitignore.
 Chạy **từ gốc repo**, đúng thứ tự — `gen_pcb` đọc sơ đồ vừa sinh để lấy net:
 
 ```bash
-python3 hardware/gen/gen_fp.py     # hai footprint tự vẽ     -> lib/footprints/
+python3 hardware/gen/gen_fp.py     # ba footprint tự vẽ      -> lib/footprints/
 python3 hardware/gen/gen_sch.py    # sơ đồ + symbol          -> kicad/, lib/symbols/
 python3 hardware/gen/gen_pcb.py    # PCB                     -> kicad/
 kicad-cli pcb upgrade hardware/kicad/kiosk.kicad_pcb

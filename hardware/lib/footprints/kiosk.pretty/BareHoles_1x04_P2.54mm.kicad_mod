@@ -1,0 +1,99 @@
+(footprint "BareHoles_1x04_P2.54mm"
+	(version 20260206)
+	(generator "kiosk-gen")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "Four bare 2.54 mm holes for the panel's own microSD pins to pass through, or for wire soldered in later. No net reaches them and no part is fitted here, so the footprint draws no silkscreen: the only outline that means anything at this spot is the panel body, and a socket outline printed across it would only crowd it.")
+	(tags "bare holes pass through")
+	(attr through_hole)
+	(property "Reference" "REF**"
+		(at 0 -6.81 0)
+		(layer "F.SilkS")
+		(uuid "c7da1493-bd3c-4e90-816b-3efd78bda7b5")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "BareHoles_1x04"
+		(at 0 6.81 0)
+		(layer "F.Fab")
+		(uuid "7f822e49-abf3-4b9f-82fa-171cc765e248")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(fp_line
+		(start -1.10 -4.91)
+		(end 1.10 -4.91)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "15151433-072e-47cf-80bb-e15740a86ccf")
+	)
+	(fp_line
+		(start 1.10 -4.91)
+		(end 1.10 4.91)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "22f58fe4-bc17-4b11-8776-8aa674e7a035")
+	)
+	(fp_line
+		(start 1.10 4.91)
+		(end -1.10 4.91)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "148ca111-f1c5-4590-880d-2b480a3d9113")
+	)
+	(fp_line
+		(start -1.10 4.91)
+		(end -1.10 -4.91)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "16516649-48c4-4cfc-8df8-f38c8b574ff1")
+	)
+	(pad "1" thru_hole rect
+		(at 0 -3.81)
+		(size 1.7 1.7)
+		(drill 1.0)
+		(layers "*.Cu" "*.Mask")
+		(uuid "64bb215a-fe9c-488e-8e6e-cd9e8821db32")
+	)
+	(pad "2" thru_hole circle
+		(at 0 -1.27)
+		(size 1.7 1.7)
+		(drill 1.0)
+		(layers "*.Cu" "*.Mask")
+		(uuid "24ff5c95-33af-4a7a-82d8-2ee7b88503ab")
+	)
+	(pad "3" thru_hole circle
+		(at 0 1.27)
+		(size 1.7 1.7)
+		(drill 1.0)
+		(layers "*.Cu" "*.Mask")
+		(uuid "5be532ca-bfd3-4252-8619-58ed552fba0e")
+	)
+	(pad "4" thru_hole circle
+		(at 0 3.81)
+		(size 1.7 1.7)
+		(drill 1.0)
+		(layers "*.Cu" "*.Mask")
+		(uuid "406b55f4-c549-4191-85de-2a89c4dae0c6")
+	)
+)

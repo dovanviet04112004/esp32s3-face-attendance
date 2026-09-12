@@ -104,8 +104,42 @@ def solder_grid() -> None:
     print(f"  {GRID_COLS * GRID_ROWS} lo | {2 * cx:.2f} x {2 * cy:.2f} mm | khong lo nao mang net")
 
 
+BARE_OUT = Path("hardware/lib/footprints/kiosk.pretty/BareHoles_1x04_P2.54mm.kicad_mod")
+
+
+def bare_holes() -> None:
+    """Four holes in a row and nothing else: no socket goes here, so no outline either."""
+    half = 3 * PITCH / 2.0
+    out = [
+        '(footprint "BareHoles_1x04_P2.54mm"',
+        f"\t(version {VERSION})",
+        '\t(generator "kiosk-gen")',
+        '\t(generator_version "10.0")',
+        '\t(layer "F.Cu")',
+        '\t(descr "Four bare 2.54 mm holes for the panel\'s own microSD pins to pass through, '
+        'or for wire soldered in later. No net reaches them and no part is fitted here, so the '
+        'footprint draws no silkscreen: the only outline that means anything at this spot is '
+        'the panel body, and a socket outline printed across it would only crowd it.")',
+        '\t(tags "bare holes pass through")',
+        "\t(attr through_hole)",
+        prop("Reference", "REF**", -half - 3.0, "F.SilkS"),
+        prop("Value", "BareHoles_1x04", half + 3.0, "F.Fab"),
+    ]
+    x, y = 0.85 + 0.25, half + 0.85 + 0.25
+    for tag, a, b, c, d in (("t", -x, -y, x, -y), ("r", x, -y, x, y),
+                            ("b", x, y, -x, y), ("l", -x, y, -x, -y)):
+        out.append(line(f"bare{tag}", a, b, c, d, "F.CrtYd", 0.05))
+    for i in range(4):
+        out.append(pad(i + 1, 0, -half + i * PITCH))
+    out.append(")")
+    BARE_OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
+    print(f"{BARE_OUT}")
+    print(f"  4 lo | khong in lua | khong lo nao mang net")
+
+
 def main() -> None:
     solder_grid()
+    bare_holes()
     out = [
         '(footprint "ESP32-S3-CAM_2x20_P2.54mm_R25.4mm"',
         f"\t(version {VERSION})",

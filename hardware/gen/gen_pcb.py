@@ -19,11 +19,16 @@ EDGE = 0.0
 # Panel PCB measured off the module. It stands 8.5 mm up on J3 and covers its
 # rectangle whole, so nothing taller than that may sit inside (KEHOACH 2.3A).
 LCD_PANEL = (61.0, 107.0)
-# 🔬 Hole centre to the panel edge, the one number left. The header row lands on the
-# hole line a shade nearer the edge, so measuring this settles both (KEHOACH 2.3A).
-LCD_HOLE_INSET = 3.5
+# Hole centre to hole centre across the panel, measured on it. The two insets that
+# follow are not equal, and the header row sits 1 mm outside the near one (KEHOACH 2.3A).
+LCD_HOLE_PITCH = (55.0, 102.0)
+LCD_HOLE_INSET = ((LCD_PANEL[0] - LCD_HOLE_PITCH[0]) / 2,
+                  (LCD_PANEL[1] - LCD_HOLE_PITCH[1]) / 2)
 LCD_HEADER_DROP = 1.0
-LCD_HEADER_INSET = LCD_HOLE_INSET - LCD_HEADER_DROP
+LCD_HEADER_INSET = LCD_HOLE_INSET[1] - LCD_HEADER_DROP
+# The two rows measure 104 mm apart on the panel, which puts the far one the same
+# 1.5 mm in as the near one - the mirror section 2.3A assumed, now read off it.
+LCD_SD_INSET = LCD_HEADER_INSET
 HOLE_FP = "MountingHole:MountingHole_3.2mm_M3"
 
 # ref -> (x, y, rotation). A stock connector footprint has its origin on pin 1, so
@@ -36,10 +41,10 @@ PLACEMENT = {
     "U1": (20.0, 64.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
     # panel reaches 107 mm up from wherever its header lands.
-    "J3": (55.54, 111.5, 90),
+    "J3": (55.54, 112.5, 90),
     # A 107 mm panel leaves no strip under itself, so its capacitor goes beside it,
     # centred in the gap and with its plus leg on the same line as the panel's VCC.
-    "C4": (37.90, 111.5, 90),
+    "C4": (37.90, 112.5, 90),
     # Sockets under a module sit centred across its outline (KEHOACH 2.3I).
     # Right of the panel, three bands. Band 1, y 6..54: the I2C parts.
     "J13": (130.85, 34.32, 180),
@@ -83,10 +88,9 @@ def sd_row() -> tuple:
     """Under the panel's microSD pins, so one soldered there passes through."""
     x0, y0, x1, _ = LCD_AREA
     return (round((x0 + x1) / 2.0 - (4 - 1) * 2.54 / 2.0, 2),
-            round(y0 + LCD_HEADER_INSET, 2), 90)
+            round(y0 + LCD_SD_INSET, 2), 90)
 
 
-# 🔬 Assumed centred on the far edge, mirroring the header at the near one.
 PLACEMENT["J14"] = sd_row()
 # Where the carrier bolts to the case: H1..H4 hold the panel to this board, not this
 # board to anything. The ToF and the terminals each moved 2 mm to clear a corner.
@@ -112,9 +116,9 @@ MODULE_AREA = {
 def lcd_holes() -> dict:
     """M3 clearance at the panel's four corners, so J3 carries no load."""
     x0, y0, x1, y1 = LCD_AREA
-    inset = LCD_HOLE_INSET
-    corners = ((x0 + inset, y0 + inset), (x1 - inset, y0 + inset),
-               (x1 - inset, y1 - inset), (x0 + inset, y1 - inset))
+    wide, tall = LCD_HOLE_INSET
+    corners = ((x0 + wide, y0 + tall), (x1 - wide, y0 + tall),
+               (x1 - wide, y1 - tall), (x0 + wide, y1 - tall))
     return {f"H{i + 1}": (round(hx, 2), round(hy, 2), 0)
             for i, (hx, hy) in enumerate(corners)}
 
@@ -361,11 +365,15 @@ def every_pad(doc: list) -> dict:
         for pad in children(fp, "pad"):
             a, size, net = first(pad, "at"), first(pad, "size"), first(pad, "net")
             lx, ly = float(a[1]), float(a[2])
+            wide, tall = float(size[1]), float(size[2])
+            # A square pad reaches further at its corners than any circle drawn on its
+            # side does, and pin 1 of every header is square.
+            reach = (math.hypot(wide, tall) if pad[3] in ("rect", "roundrect")
+                     else max(wide, tall)) / 2.0
             found[f"{ref}.{unquote(pad[1])}"] = (
                 round(ox + lx * math.cos(th) + ly * math.sin(th), 3),
                 round(oy - lx * math.sin(th) + ly * math.cos(th), 3),
-                max(float(size[1]), float(size[2])) / 2.0,
-                unquote(net[-1]) if net else None)
+                reach, unquote(net[-1]) if net else None)
     return found
 
 

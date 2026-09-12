@@ -113,7 +113,7 @@ FOOTPRINTS = {
     "J3": SOCKET.format(14), "J4": SOCKET.format(6), "J5": SOCKET.format(4),
     "J13": HEADER.format(9), "J6": SOCKET.format(6), "J7": SOCKET.format(7),
     # Holes, not a socket: a second socket 107 mm from J3 would have to line up with it.
-    "J14": HEADER.format(4),
+    "J14": "kiosk:BareHoles_1x04_P2.54mm",
     # The servo arrives with a female plug and the spare row takes jumper wires.
     "J9": HEADER.format(3),
     # Both supplies are screw terminals: they carry the peak amps of section 2.5.
