@@ -520,6 +520,23 @@ vì chỉ `sys_storage` được giữ dữ liệu bền và trong kế hoạch 
 không sạc lại vào đó thì phải bỏ điện trở sạc trước, không thì pin phồng. Soi bằng mắt khi
 hàng về, trước khi cấp nguồn lần đầu.
 
+#### I. Hàn hàng chân cho module cắm xuống board đế
+
+Luật chung cho cả năm module, vì sai một lần là hỏng một module:
+
+**Mọi hàng chân của một module phải chĩa cùng một phía, và phía đó là xuống board đế.** Module
+nằm ngửa, mặt linh kiện hướng lên, đọc được chữ sau khi lắp, và thứ tự chân khớp đúng silkscreen.
+Hàn ngược lên mặt linh kiện thì phải lật úp module mới cắm được, và khi đó **thứ tự chân soi
+gương** — VCC vào chỗ SCL. Lỗ khoan đối xứng nên nhìn board không bao giờ thấy sai, chỉ lộ lúc
+cắm module vào, mà lúc ấy board đã in xong.
+
+**Cắm hàng chân xuống đế trên board trước, rồi mới úp module lên hàn.** PCF8574 có hai hàng vuông
+góc cách nhau 48 mm; hàn rời từng hàng thì lệch một hai độ là hai hàng không còn khớp hai đế.
+Để đế trên board làm khuôn thì nó tự thẳng.
+
+Hàng chân nào không dùng thì **để trống, đừng hàn** — hàng 4 chân I2C thứ hai của PCF8574 chỉ
+để nối tiếp thiết bị khác, mà board đế đã có đế riêng cho từng thiết bị rồi.
+
 ### 2.4 Chân trống sau khi lắp hết
 
 | GPIO | Trạng thái |
