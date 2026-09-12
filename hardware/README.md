@@ -2,8 +2,9 @@
 
 Sơ đồ nguyên lý, PCB và tài liệu linh kiện của kiosk.
 
-**KiCad bản:** _(điền khi mở lần đầu — `Help → About`)_. Định dạng `.kicad_sch` đổi theo major
+**KiCad bản: 10.0.6** (`kicad-cli version`). Định dạng `.kicad_sch` đổi theo major
 version và không tương thích ngược, nên bản đã ghi ở đây là bản duy nhất mở được file trong `kicad/`.
+File trong `kicad/` ghi ở phiên bản định dạng `20260306` (sơ đồ) và `20260206` (PCB).
 
 ## Đọc gì trước
 
