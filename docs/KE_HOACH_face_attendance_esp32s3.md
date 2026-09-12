@@ -355,8 +355,9 @@ cái lực bẩy mà bốn con vít sinh ra để triệt tiêu. Bắt đế c�
 rồi mới siết vít — siết trước là ép chân vào đế lệch trục.
 
 **Kích thước tấm màn: 107 × 61 mm** (đo 12/09). Nó quyết định luôn chiều cao board đế: 107 mm
-cộng lề trên dưới là **116 mm**, tức tấm màn gần như phủ trọn chiều cao board, và dải còn lại
-dưới mép tấm màn chỉ 5 mm — không nhét vừa một con tụ nào. Vì thế tụ `C4` của màn nằm **bên
+cộng chỗ cho hàng chữ tên chân ở **cả hai đầu** là **121 mm** — mỗi đầu phải chừa đủ 4,3 mm cho
+một chuỗi như `CTP_SDA` cộng lề mép. Tấm màn vì thế phủ gần trọn chiều cao board, và dải còn
+lại dưới mép tấm màn không nhét vừa một con tụ nào. Vì thế tụ `C4` của màn nằm **bên
 trái** tấm màn, trong khe giữa devkit và tấm màn, chân dương **thẳng hàng với chân `VCC` của
 `J3`** và cách nó **18,4 mm**; nó là tụ trữ chứ không phải tụ lọc cao tần nên quãng đó chấp
 nhận được, còn lọc cao tần thì module màn tự mang.
@@ -689,6 +690,16 @@ hiệu mà không phải cắt board.
 
 Hàng chân nào không dùng thì **để trống, đừng hàn** — hàng 4 chân I2C thứ hai của PCF8574 chỉ
 để nối tiếp thiết bị khác, mà board đế đã có đế riêng cho từng thiết bị rồi.
+
+**Tên chân in lụa phải nằm ngoài thân module, không nằm dưới nó.** Chỗ duy nhất cần đọc tên
+chân là lúc cắm module vào và lúc dò lỗi — mà đó đúng là lúc thân module đậy lên vùng của nó.
+Chữ in trong vùng ấy đọc được cho tới đúng giây phút nó trở nên cần thiết, rồi biến mất.
+
+Luật khi vẽ: chữ chạy **vuông góc với hàng chân**, và mọc ra **phía mép gần nhất của khung
+module**, không phải theo một hướng cố định. Hệ quả là mỗi con một hướng — `J5` hất lên vì thân
+PCF8574 dài 48 mm đổ xuống dưới nó, `J3` hất xuống vì tấm màn cao 107 mm đổ lên trên, `J7` hất
+sang trái. Chiều cao board (121 mm) và khe giữa tấm màn với khung con amp đều là hệ quả của luật
+này chứ không phải chọn trước. `tools/check_pcb.py` bắt lại: chữ nào rơi vào khung module thì fail.
 
 ### 2.4 Chân trống sau khi lắp hết
 

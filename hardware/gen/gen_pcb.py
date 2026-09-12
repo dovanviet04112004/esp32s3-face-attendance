@@ -13,7 +13,7 @@ SCH = Path("hardware/kicad/kiosk.kicad_sch")
 OUT = Path("hardware/kicad/kiosk.kicad_pcb")
 STOCK = Path("/mnt/d/KiCad/share/kicad/footprints")
 LOCAL = Path("hardware/lib/footprints/kiosk.pretty")
-BOARD_W, BOARD_H = 158.0, 116.0
+BOARD_W, BOARD_H = 158.0, 121.0
 EDGE = 0.0
 # Panel PCB measured off the module. It stands 8.5 mm up on J3 and covers its
 # rectangle whole, so nothing taller than that may sit inside (KEHOACH 2.3A).
@@ -35,10 +35,10 @@ PLACEMENT = {
     "U1": (20.0, 62.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
     # panel reaches 107 mm up from wherever its header lands.
-    "J3": (57.0, 107.5, 90),
+    "J3": (57.0, 111.5, 90),
     # A 107 mm panel leaves no strip under itself, so its capacitor goes beside it,
     # centred in the gap and with its plus leg on the same line as the panel's VCC.
-    "C4": (38.63, 107.5, 90),
+    "C4": (38.63, 111.5, 90),
     # Right of the panel, three bands. Band 1, y 6..54: the I2C parts.
     "J13": (129.0, 34.32, 180),
     "J5": (111.0, 9.0, 90),
@@ -48,8 +48,8 @@ PLACEMENT = {
     "R1": (149.43, 20.0, 180),
     # Band 2, y 58..80: the two loads that switch, each with its capacitor beside
     # it. J7 sits at the left edge of the amplifier's outline so C2 can reach it.
-    "J7": (110.0, 62.0, 0),
-    "C2": (110.0, 86.0, 0),
+    "J7": (112.0, 62.0, 0),
+    "C2": (112.0, 86.0, 0),
     "J9": (143.0, 62.0, 0),
     "C3": (149.0, 64.54, 0),
     # Band 3, y 84..108: the supplies side by side so their grounds meet at one
@@ -87,7 +87,7 @@ MODULE_AREA = {
     "J3 LCD 4.0in": LCD_AREA,
     "J4 VL53L1X": (7.5, 5.0, 32.5, 20.0),
     "J5 PCF8574 48x16": (108.0, 6.0, 124.0, 54.0),
-    "J7 MAX98357A": (106.0, 60.0, 126.0, 80.0),
+    "J7 MAX98357A": (108.0, 60.0, 128.0, 80.0),
 }
 
 
@@ -325,6 +325,27 @@ RAIL2_GROUND = {"J11.2", "J9.1", "C3.2"}
 GROUND_TIE = ("J10.2", "J11.2")
 
 
+LABEL_GAP = 0.6
+LABEL_OFFSET = 1.5
+
+
+def label_side(seats: dict) -> tuple:
+    """Which way a row's names run and the line they start from, clear of any body."""
+    xs = [s[0] for s in seats.values()]
+    ys = [s[1] for s in seats.values()]
+    across = (max(xs) - min(xs)) >= (max(ys) - min(ys))
+    low, high = (min(ys), max(ys)) if across else (min(xs), max(xs))
+    over = next((a for a in MODULE_AREA.values()
+                 if a[0] <= min(xs) and max(xs) <= a[2]
+                 and a[1] <= min(ys) and max(ys) <= a[3]), None)
+    if over is None:
+        return (across, 1, high + LABEL_OFFSET) if across else (across, -1, low - LABEL_OFFSET)
+    near, far = (over[1], over[3]) if across else (over[0], over[2])
+    if low - near <= far - high:
+        return across, -1, near - LABEL_GAP
+    return across, 1, far + LABEL_GAP
+
+
 def pin_labels(doc: list) -> list:
     """A signal name printed beside every pad, so a hole can be identified by eye."""
     import math
@@ -351,6 +372,7 @@ def pin_labels(doc: list) -> list:
             lx, ly = float(a[1]), float(a[2])
             seats[unquote(pad[1])] = (ox + lx * math.cos(th) + ly * math.sin(th),
                                       oy - lx * math.sin(th) + ly * math.cos(th), lx)
+        across, sign, line = label_side(seats)
         for pad in pads:
             number = unquote(pad[1])
             label = names.get((ref, number))
@@ -360,22 +382,25 @@ def pin_labels(doc: list) -> list:
             # Between the two rows is exactly where the devkit's body lands, so a label
             # put there is legible until the moment the board is actually used.
             if ref == "U1":
-                dx, dy, rot, just = (-2.0 if lx < 0 else 2.0), 0.0, 0, ("right" if lx < 0 else "left")
+                ax, ay = px + (-2.0 if lx < 0 else 2.0), py
+                rot, just = 0, ("right" if lx < 0 else "left")
             elif len(pads) == 2:
                 # Beside its pad a label reaches the next part once two sit close, so
                 # it goes above instead, nudged outward off the centred reference.
                 away = -1.0 if px <= sum(s[0] for s in seats.values()) / 2 else 1.0
-                dx, dy, rot, just = 1.5 * away, -6.0, 0, None
-            elif abs(deg - 90) < 1:
-                # rotated text grows back toward the pad unless justified away from it
-                dx, dy, rot, just = 0.0, 2.0, 90, "right"
+                ax, ay = px + 1.5 * away, py - 6.0
+                rot, just = 0, None
+            elif across:
+                ax, ay = px, line
+                rot, just = 90, ("right" if sign > 0 else "left")
             else:
-                dx, dy, rot, just = -2.0, 0.0, 0, "right"
+                ax, ay = line, py
+                rot, just = 0, ("right" if sign < 0 else "left")
             effects = ["effects", ["font", ["size", "0.8", "0.8"], ["thickness", "0.12"]]]
             if just:
                 effects.append(["justify", just])
             out.append(["gr_text", f'"{label}"',
-                        ["at", f"{px + dx:.2f}", f"{py + dy:.2f}", str(rot)],
+                        ["at", f"{ax:.2f}", f"{ay:.2f}", str(rot)],
                         ["layer", '"F.SilkS"'],
                         ["uuid", f'"{uid("lbl", ref, label)}"'], effects])
     return out

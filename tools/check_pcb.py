@@ -247,13 +247,12 @@ def main() -> int:
 
     # A module keeps its body once plugged in, so the dashed rectangle it stands on
     # holds its own pins and nothing else wired. Mounting holes carry no net.
-    for area in boxes_from(outline(pcb, "F.SilkS", dashed=True)):
-        x0, y0, x1, y1 = area
+    for bx0, by0, bx1, by1 in boxes_from(outline(pcb, "F.SilkS", dashed=True)):
         inside = sorted(ref for ref, part in parts.items()
-                        if any(p["net"] and x0 <= p["xy"][0] <= x1 and y0 <= p["xy"][1] <= y1
+                        if any(p["net"] and bx0 <= p["xy"][0] <= bx1 and by0 <= p["xy"][1] <= by1
                                for p in part["pads"].values()))
         if len(inside) > 1:
-            problems.append(f"module body ({x0:.0f}, {y0:.0f})-({x1:.0f}, {y1:.0f}): "
+            problems.append(f"module body ({bx0:.0f}, {by0:.0f})-({bx1:.0f}, {by1:.0f}): "
                             f"holds {', '.join(inside)}")
 
     hulls = {}
@@ -270,6 +269,7 @@ def main() -> int:
             if ax0 < bx1 and bx0 < ax1 and ay0 < by1 and by0 < ay1:
                 problems.append(f"{a} and {b}: courtyards overlap")
 
+    bodies = boxes_from(outline(pcb, "F.SilkS", dashed=True))
     for text, tx0, ty0, tx1, ty1 in text_boxes(pcb):
         for ref, part in sorted(parts.items()):
             for number, pad in part["pads"].items():
@@ -277,6 +277,14 @@ def main() -> int:
                 r = pad["size"] / 2
                 if tx0 < px + r and px - r < tx1 and ty0 < py + r and py - r < ty1:
                     problems.append(f'"{text}": silkscreen covers pad {ref}.{number}')
+        # A name printed under a module is legible until the module is fitted, which
+        # is the moment anyone needs it, so the body it belongs to must not reach it.
+        for bx0, by0, bx1, by1 in bodies:
+            if tx0 < bx1 and bx0 < tx1 and ty0 < by1 and by0 < ty1:
+                problems.append(f'"{text}": a module body at ({bx0:.0f}, {by0:.0f}) covers it')
+        if edge and not (edge[0][0] <= tx0 and tx1 <= edge[0][2]
+                         and edge[0][1] <= ty0 and ty1 <= edge[0][3]):
+            problems.append(f'"{text}": silkscreen runs off the board')
 
     for problem in problems:
         print(problem)
