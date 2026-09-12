@@ -18,9 +18,9 @@ EDGE = 0.0
 # Panel PCB measured off the module. It stands 8.5 mm up on J3 and covers its
 # rectangle whole, so nothing taller than that may sit inside (KEHOACH 2.3A).
 LCD_PANEL = (61.0, 107.0)
-# 🔬 Header row to the panel's near edge, and hole centre to panel edge. Both
-# unmeasured: an M2.5 screw has 0.1 mm of slack, so 1 mm of error will not bolt.
-LCD_HEADER_INSET = 15.0
+# 🔬 Header row to the panel's near edge, and hole centre to panel edge. Neither is
+# measured; the header one is capped by the 11.2 mm strip past the glass (KEHOACH 2.3A).
+LCD_HEADER_INSET = 6.0
 LCD_HOLE_INSET = 3.5
 HOLE_FP = "MountingHole:MountingHole_2.7mm"
 
@@ -31,7 +31,9 @@ PLACEMENT = {
     # strip below where an 11 mm can clears the 8.5 mm the panel stands at.
     "J4": (13.5, 18.0, 90),
     "U1": (20.0, 62.0, 0),
-    "J3": (57.0, 96.0, 90),
+    # Low enough that the panel's far edge clears the top of the board, since the
+    # panel reaches 107 mm up from wherever its header lands.
+    "J3": (57.0, 105.0, 90),
     # A 107 mm panel leaves no strip under itself, so its capacitor goes to the
     # left of it, below the devkit, which is the nearest 3V3 the panel does not cover.
     "C4": (38.0, 102.0, 90),

@@ -323,8 +323,26 @@ rồi mới siết vít — siết trước là ép chân vào đế lệch tr�
 **Kích thước tấm màn: 107 × 61 mm** (đo 12/09). Nó quyết định luôn chiều cao board đế: 107 mm
 cộng lề trên dưới là **116 mm**, tức tấm màn gần như phủ trọn chiều cao board, và dải còn lại
 dưới mép tấm màn chỉ 5 mm — không nhét vừa một con tụ nào. Vì thế tụ `C4` của màn nằm **bên
-trái** tấm màn, dưới devkit, xa chân nguồn của `J3` khoảng 20 mm; nó là tụ trữ chứ không phải
+trái** tấm màn, dưới devkit, xa chân nguồn của `J3` khoảng 19 mm; nó là tụ trữ chứ không phải
 tụ lọc cao tần nên quãng đó chấp nhận được, còn lọc cao tần thì module màn tự mang.
+
+**Kính không nằm giữa PCB, và chỗ dôi ra là chỗ để hàng chân với lỗ vít.** Vùng hiển thị của
+tấm 4,0" tỉ lệ 3:2 là **84,5 × 56,4 mm** (suy từ đường chéo, không phải số đo), nên so với PCB
+107 × 61:
+
+| Chiều | PCB | Kính | Dôi mỗi bên |
+|---|---|---|---|
+| Rộng | 61 | 56,4 | **2,3 mm** |
+| Dài | 107 | 84,5 | **11,2 mm** |
+
+Hai con số đó ràng buộc thiết kế theo hai hướng ngược nhau. Cạnh dài chỉ dôi **2,3 mm** nên
+**không khoan được lỗ vít ở giữa hai cạnh dài** — lỗ Ø2,7 cần nhiều hơn thế. Cạnh ngắn dôi
+**11,2 mm**, đủ rộng cho cả hàng chân lẫn hai lỗ vít, và đó là lý do bốn lỗ đặt ở **bốn góc**:
+góc là chỗ duy nhất có vật liệu.
+
+Cùng con số đó chặn `LCD_HEADER_INSET` ≤ **11,2 mm** — hàng chân phải nằm trong dải dôi, không
+thể chui xuống dưới kính. Giá trị 15 mm đặt lúc đầu là bất khả thi; đang để **6 mm**, và `J3`
+tụt xuống theo cho mép xa của tấm màn không tràn khỏi mép trên board.
 
 🔬 **Còn hai số chưa đo, và chúng quyết định bốn lỗ có bắt được vít hay không.** Vít M2.5 trong
 lỗ Ø2,7 chỉ có 0,1 mm khe, lệch 1 mm là không bắt được. Hai số đó khai ở đầu
@@ -332,7 +350,7 @@ lỗ Ø2,7 chỉ có 0,1 mm khe, lệch 1 mm là không bắt được. Hai số
 
 | Hằng số | Đang đặt | Phải đo |
 |---|---|---|
-| `LCD_HEADER_INSET` | 15 mm | Từ **tim hàng chân 14** tới **mép gần nhất** của tấm màn |
+| `LCD_HEADER_INSET` | 6 mm | Từ **tim hàng chân 14** tới **mép ngắn gần nhất** của tấm màn. Phải ≤ 11,2 mm |
 | `LCD_HOLE_INSET` | 3,5 mm | Từ **tâm lỗ** tới mép tấm màn (đo một góc là đủ nếu bốn lỗ đối xứng) |
 
 Đo tới **tâm lỗ**, không đo tới mép lỗ. Và nếu bốn lỗ trên tấm màn **không** đối xứng thì báo

@@ -660,7 +660,7 @@
 	(footprint "Connector_PinSocket_2.54mm:PinSocket_1x14_P2.54mm_Vertical"
 		(layer "F.Cu")
 		(uuid "0f5f16d6-1dbc-47cb-8d4d-6eb3feffde0a")
-		(at 57 96 90)
+		(at 57 105 90)
 		(descr "Through hole straight socket strip, 1x14, 2.54mm pitch, single row (from Kicad 4.0.7), script generated")
 		(tags "Through hole socket strip THT 1x14 2.54mm single row")
 		(property "Reference" "J3"
@@ -12120,7 +12120,7 @@
 		)
 	)
 	(gr_text "VCC"
-		(at 57 98 90)
+		(at 57 107 90)
 		(layer "F.SilkS")
 		(uuid "39c716d3-2f9d-4b80-83b2-23aa47c75323")
 		(effects
@@ -12132,7 +12132,7 @@
 		)
 	)
 	(gr_text "GND"
-		(at 59.54 98 90)
+		(at 59.54 107 90)
 		(layer "F.SilkS")
 		(uuid "aaec6327-2b94-4c00-8270-a27c651bbf0e")
 		(effects
@@ -12144,7 +12144,7 @@
 		)
 	)
 	(gr_text "CS"
-		(at 62.08 98 90)
+		(at 62.08 107 90)
 		(layer "F.SilkS")
 		(uuid "b2621245-2014-4d9f-88a2-8272981a7fb4")
 		(effects
@@ -12156,7 +12156,7 @@
 		)
 	)
 	(gr_text "RESET"
-		(at 64.62 98 90)
+		(at 64.62 107 90)
 		(layer "F.SilkS")
 		(uuid "2b203f91-1af9-4292-8c97-15ea010256a1")
 		(effects
@@ -12168,7 +12168,7 @@
 		)
 	)
 	(gr_text "D/C"
-		(at 67.16 98 90)
+		(at 67.16 107 90)
 		(layer "F.SilkS")
 		(uuid "c8c6cfb5-902c-4c8a-8aec-54d215ad689e")
 		(effects
@@ -12180,7 +12180,7 @@
 		)
 	)
 	(gr_text "SDI"
-		(at 69.7 98 90)
+		(at 69.7 107 90)
 		(layer "F.SilkS")
 		(uuid "c4e563bc-a1fc-489d-837b-63700f46dc4f")
 		(effects
@@ -12192,7 +12192,7 @@
 		)
 	)
 	(gr_text "SCK"
-		(at 72.24 98 90)
+		(at 72.24 107 90)
 		(layer "F.SilkS")
 		(uuid "59a9f53a-89e6-4aff-8ffe-026f7e97a68e")
 		(effects
@@ -12204,7 +12204,7 @@
 		)
 	)
 	(gr_text "LED"
-		(at 74.78 98 90)
+		(at 74.78 107 90)
 		(layer "F.SilkS")
 		(uuid "4a674c0e-41d9-4522-884c-fc33bce86f44")
 		(effects
@@ -12216,7 +12216,7 @@
 		)
 	)
 	(gr_text "SDO"
-		(at 77.32 98 90)
+		(at 77.32 107 90)
 		(layer "F.SilkS")
 		(uuid "9a85bda4-c3df-4bd8-85ee-b29507f99dcf")
 		(effects
@@ -12228,7 +12228,7 @@
 		)
 	)
 	(gr_text "NC"
-		(at 79.86 98 90)
+		(at 79.86 107 90)
 		(layer "F.SilkS")
 		(uuid "d39ff2ca-9edd-4a46-80eb-1361aa8b8a99")
 		(effects
@@ -12240,7 +12240,7 @@
 		)
 	)
 	(gr_text "CTP_SDA"
-		(at 82.4 98 90)
+		(at 82.4 107 90)
 		(layer "F.SilkS")
 		(uuid "5f5da914-50d8-414d-8529-207318548960")
 		(effects
@@ -12252,7 +12252,7 @@
 		)
 	)
 	(gr_text "CTP_SCL"
-		(at 84.94 98 90)
+		(at 84.94 107 90)
 		(layer "F.SilkS")
 		(uuid "71bef5f1-2e71-4cbd-8adc-55ceedec95e4")
 		(effects
@@ -12264,7 +12264,7 @@
 		)
 	)
 	(gr_text "CTP_INT"
-		(at 87.48 98 90)
+		(at 87.48 107 90)
 		(layer "F.SilkS")
 		(uuid "5c3381f1-74c6-4419-80db-7ec193304d0c")
 		(effects
@@ -12276,7 +12276,7 @@
 		)
 	)
 	(gr_text "CTP_RST"
-		(at 90.02 98 90)
+		(at 90.02 107 90)
 		(layer "F.SilkS")
 		(uuid "f0342570-063d-4643-86e0-ff0fe3046fa0")
 		(effects
