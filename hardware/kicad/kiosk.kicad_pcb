@@ -4989,7 +4989,7 @@
 	(footprint "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
 		(layer "F.Cu")
 		(uuid "7718493f-2759-48d2-8a5f-6ec37c0b06e8")
-		(at 145.5 62)
+		(at 148.5 62.38)
 		(descr "Through hole straight pin header, 1x03, 2.54mm pitch, single row")
 		(tags "Through hole pin header THT 1x03 2.54mm single row")
 		(property "Reference" "J9"
@@ -8530,7 +8530,7 @@
 	(footprint "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm"
 		(layer "F.Cu")
 		(uuid "d2a728d1-306c-4820-8d92-9c75acc33444")
-		(at 138.25 64.54 180)
+		(at 141.25 64.92 180)
 		(descr "CP, Radial series, Radial, pin pitch=3.50mm, diameter=8mm, height=12mm, Electrolytic Capacitor")
 		(tags "CP Radial series Radial pin pitch 3.50mm diameter 8mm height 12mm Electrolytic Capacitor")
 		(property "Reference" "C3"
@@ -13581,7 +13581,7 @@
 		)
 	)
 	(gr_text "GND"
-		(at 144 62 0)
+		(at 147 62.38 0)
 		(layer "F.SilkS")
 		(uuid "6b0dc68d-5bff-4f18-850e-d54741f49f1f")
 		(effects
@@ -13593,7 +13593,7 @@
 		)
 	)
 	(gr_text "VCC"
-		(at 144 64.54 0)
+		(at 147 64.92 0)
 		(layer "F.SilkS")
 		(uuid "0ebc9f8c-c3a6-4ab8-8838-99dfcc5ee947")
 		(effects
@@ -13605,7 +13605,7 @@
 		)
 	)
 	(gr_text "PWM"
-		(at 144 67.08 0)
+		(at 147 67.46 0)
 		(layer "F.SilkS")
 		(uuid "92c7fd0f-03c5-4e5d-82d9-5a0caa77e5b2")
 		(effects
