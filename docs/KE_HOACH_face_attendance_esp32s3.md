@@ -790,6 +790,8 @@ chính module MAX98357A, nên `OUT+` và `OUT−` không có net nào trên boar
 không mang đầu nối loa (§2.3E). `OUT−` **không bao giờ** nối xuống GND — kể cả khi bắt vít
 loa vào khung máy.
 
+**Hai domino đặt sát nhau hết mức đường bao cho phép**, nên luật 1 gần đúng nghĩa đen: `J10.GND` và `J11.GND` cách nhau **11,5 mm**. Bước bốn con ốc ra **5 / 6,5 / 5 mm** — không đều được vì đường bao hai domino chạm nhau ở 6,5, ép sát hơn là hai khung chồng lên nhau. Tụ `C1` đặt **cân giữa cả bốn ốc** chứ không riêng `J10`: nó là tụ trữ của điểm nối chung, không phải của một domino.
+
 ### 2.6 Datasheet
 
 Bảng này là **nguồn** của danh sách; bản PDF tải về nằm ở `hardware/datasheets/` và không vào git

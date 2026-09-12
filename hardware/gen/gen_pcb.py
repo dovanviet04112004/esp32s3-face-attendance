@@ -55,9 +55,9 @@ PLACEMENT = {
     "C3": (149.0, 64.54, 0),
     # Band 3, y 84..108: the supplies side by side so their grounds meet at one
     # point (rule 1), J11 keeping its offset from J9 so rule 2 survives the move.
-    "C1": (134.0, 94.0, 0),
+    "C1": (139.75, 94.0, 0),
     "J10": (134.0, 109.0, 0),
-    "J11": (147.0, 109.0, 0),
+    "J11": (145.5, 109.0, 0),
 }
 
 

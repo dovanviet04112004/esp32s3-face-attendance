@@ -1023,7 +1023,7 @@
 	(footprint "TerminalBlock:TerminalBlock_MaiXu_MX126-5.0-02P_1x02_P5.00mm"
 		(layer "F.Cu")
 		(uuid "24d16c4f-f54e-4ea5-8edb-ab1acbccbeca")
-		(at 147 109)
+		(at 145.5 109)
 		(descr "terminal block MaiXu MX126-5.0-02P, 2 pins, pitch 5mm, size 10.5x7.8mm, drill diameter 1.3mm, pad diameter 2.8mm, https://www.lcsc.com/datasheet/lcsc_datasheet_2309150913_MAX-MX126-5-0-03P-GN01-Cu-S-A_C5188435.pdf")
 		(tags "THT terminal block MaiXu MX126-5.0-02P pitch 5mm size 10.5x7.8mm drill 1.3mm pad 2.8mm")
 		(property "Reference" "J11"
@@ -1834,7 +1834,7 @@
 	(footprint "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm"
 		(layer "F.Cu")
 		(uuid "5698604f-3b41-4acd-88a5-db95484eb79b")
-		(at 134 94)
+		(at 139.75 94)
 		(descr "CP, Radial series, Radial, pin pitch=5.00mm, diameter=10mm, height=16mm, Electrolytic Capacitor")
 		(tags "CP Radial series Radial pin pitch 5.00mm diameter 10mm height 16mm Electrolytic Capacitor")
 		(property "Reference" "C1"
@@ -11799,7 +11799,7 @@
 		)
 	)
 	(gr_text "+5V"
-		(at 145.5 103 0)
+		(at 144 103 0)
 		(layer "F.SilkS")
 		(uuid "88ccb11c-5208-4afb-81de-da07f56449d6")
 		(effects
@@ -11810,7 +11810,7 @@
 		)
 	)
 	(gr_text "GND"
-		(at 153.5 103 0)
+		(at 152 103 0)
 		(layer "F.SilkS")
 		(uuid "77779d43-c411-4fb7-80fd-604ae1348436")
 		(effects
