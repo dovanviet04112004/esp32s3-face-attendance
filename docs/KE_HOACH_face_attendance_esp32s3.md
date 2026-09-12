@@ -1214,7 +1214,7 @@ contracts/
 │   └── ota_manifest.schema.json
 ├── mqtt_topics.yaml                     # topic + QoS + retained + chiều + schema tương ứng
 ├── golden/                              # ✅ COMMIT — vector vàng: Python sinh, C kiểm
-│   ├── detection/{decode/, nms/}         #   {in_000.npz, out_000.npz, ...} trong mỗi thư mục
+│   ├── detection/{decode/, nms/}         #   case_000.gold, case_001.gold, ... trong mỗi thư mục
 │   ├── antispoof/{preproc/}
 │   └── recognition/{align/, l2norm/, cosine/}
 ├── models.lock.json                     # model đang deploy: name, version, sha256, run_id
@@ -1231,7 +1231,11 @@ contracts/
 
 **File sinh ra không được sửa tay.** CI chạy lại generator rồi `git diff --exit-code` — lệch là fail.
 
-`golden/` giải bài toán "hậu xử lý Python phải khớp 1:1 với C": `ml/export/emit_golden.py` xuất tensor đầu vào + kết quả mong đợi ra `.npz`; `firmware/test_apps/parity` đọc **chính file đó** và so sánh trên board. Lệch ở decode anchor / NMS / affine warp lộ ra ngay, không phải mò lúc tích hợp.
+`golden/` giải bài toán "hậu xử lý Python phải khớp 1:1 với C": mỗi nhánh có `postproc/emit_golden.py` xuất tensor đầu vào cộng kết quả mong đợi, `firmware/test_apps/parity` đọc **chính file đó** và so sánh trên board. Lệch ở decode anchor / NMS / affine warp lộ ra ngay, không phải mò lúc tích hợp.
+
+**Định dạng là `.gold`, một khối nhị phân phẳng little-endian, không phải `.npz`.** `.npz` là file zip: đọc nó trên MCU cần một trình phân tích zip cộng npy dài hơn chính phép kiểm, mà không kiểm thêm được gì. Khuôn: magic `GOLD`, `version` u32, `count` u32, rồi mỗi tensor một bản ghi — tên 32 B nul-đệm, `dtype` u32 (0 `f32`, 1 `i8`, 2 `i32`, 3 `u8`), `ndim` u32, `dims` 4×u32, `nbytes` u32, dữ liệu đệm lên bội 4 B. `ml/export/emit_golden.py` giữ **đúng khuôn này** — hàm ghi và hàm đọc — còn ba `postproc/emit_golden.py` chỉ dựng ca kiểm của nhánh mình; một khuôn một chỗ, ba nhánh vẫn độc lập theo §4.5.
+
+`test_apps/parity` nướng cả cây `contracts/golden/` vào partition `storage` bằng `littlefs_create_partition_image(... FLASH_IN_PROJECT)`, nên board mở chúng qua `/lfs` như file thường và không cần đường truyền riêng nào.
 
 `models.lock.json`:
 ```json
