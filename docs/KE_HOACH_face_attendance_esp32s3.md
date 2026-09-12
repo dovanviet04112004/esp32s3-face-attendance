@@ -1821,8 +1821,18 @@ firmware/
 │   ├── bench_mem/                    # đo heap đỉnh, watermark stack
 │   └── soak/                         # chạy 24h, theo dõi rò heap
 │
-└── scripts/{flash_models.sh, check_pinmap.py}   # riêng firmware; script ngang khối ở /tools
+└── scripts/                           # rỗng, xem dưới; script ngang khối ở /tools
 ```
+
+**`scripts/` rỗng là có chủ ý.** Nạp `models_0` đã có `ml/scripts/50_pack_and_flash.sh` (§6.3):
+bước gộp ảnh cần `contracts/models.lock.json`, sha256 từng nhánh và venv của `ml/`, nên một bản
+bên firmware chỉ có thể gọi vòng sang `ml/` hoặc là bản sao thứ hai của cùng logic.
+
+Một `check_pinmap.py` đối chiếu `app_config.h` với §2 thì **hoãn**, không bỏ. §2 ghi chân bằng ba
+kiểu bảng khác nhau cộng văn xuôi, nên bộ phân tích sẽ báo oan mỗi lần sửa câu chữ — mà check báo
+oan thì sau vài lần sẽ bị bỏ qua, tức tệ hơn không có. Khi chân bắt đầu đổi lại thì thứ đáng viết
+là phép kiểm rẻ hơn hẳn: commit nào sửa dòng `_GPIO` của `app_config.h` phải sửa cả §2 trong cùng
+commit (CLAUDE.md §1.3), đọc `git diff --cached --name-only` là đủ, không cần đọc hiểu bảng nào.
 
 #### 4.5.3 Bố cục bên trong một component
 
