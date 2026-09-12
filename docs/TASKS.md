@@ -50,6 +50,7 @@ E1 nền repo ──► E2 ml/core ──► E3 dữ liệu
 | E1-T6 | 5 workflow trong `.github/workflows/` | Push lên là CI chạy, `contracts.yml` fail khi code sinh ra lệch | E1-T3, E1-T5 |
 | E1-T7 | `docs/adr/0001` ghi quyết định chọn YuNet thay ULFG | File tồn tại | E1-T1 |
 | E1-T8 | **Sketch thu ảnh OV5640** — firmware tối giản, chỉ camera + lưu ảnh ra serial/SD | Chụp được ảnh JPEG từ board | E1-T1 |
+| E1-T9 | **Khung `hardware/`** theo §4.1: sáu thư mục, `README.md`, `datasheets/INDEX.md`, `vendor/UPSTREAM.md`, luật ignore cho PDF và rác phiên KiCad | `git status` sạch sau khi thả PDF và mở KiCad một lượt | E1-T1 |
 
 > E1-T8 là code vứt đi, không nằm trong `firmware/`. Mục đích duy nhất: mở khoá việc thu dữ liệu ở E3 mà không phải đợi toàn bộ firmware.
 
@@ -314,7 +315,8 @@ duyệt, rồi mới sửa.
 | E14-T1 | Chương cơ sở lý thuyết: kiến trúc thân thiện INT8, quantization, TinyML | Xong bản nháp | E6-T7 |
 | E14-T2 | Chương thiết kế: trích từ KẾ HOẠCH §2–§6 | Xong bản nháp | E13-T6 |
 | E14-T3 | Chương kết quả: bảng số từ `docs/measurements/` | Mọi số có nguồn đo | E13-T6 |
-| E14-T4 | Sơ đồ, ảnh sản phẩm, video demo | Đủ hình | E13-T6 |
+| E14-T4 | Ảnh sản phẩm, video demo; sơ đồ lấy từ `hardware/export/` (E14-T8) | Đủ hình | E13-T6, E14-T8 |
+| **E14-T8** | **Vẽ sơ đồ nguyên lý + PCB bằng KiCad** — chép chân từ §2, không chép ngược. Xuất PDF ra `hardware/export/`, tên file mang git sha của §2 lúc vẽ | Mọi chân khớp §2 và `app_config.h`; PDF mở ra đọc được ở A4 | E1-T9 |
 | E14-T5 | Rà license research-only, ghi rõ trong báo cáo | Có mục riêng | E14-T2 |
 | **E14-T7** | **Mục "lỗi chỉ phần cứng thật mới lộ"** — `docs/thesis/loi-tim-thay-tren-board.md` đã có bản đầu cho ba lỗi 09/09: cuộc đua khởi tạo bus I2C, giả định phân cực chân ngắt, và mốc thời gian datasheet sai mô hình mạch. Ghi tiếp mỗi lỗi cùng loại tìm được về sau | Mỗi lỗi có hiện tượng, giả thuyết đã loại, mốc đo, cách sửa, bằng chứng trên board | — |
 | E14-T6 | Slide bảo vệ + tập trình bày | Xong | E14-T3, E14-T4 |

@@ -542,6 +542,10 @@ Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân ngu�
 
 ### 2.6 Datasheet
 
+Bảng này là **nguồn** của danh sách; bản PDF tải về nằm ở `hardware/datasheets/` và không vào git
+(§4.1). `hardware/datasheets/INDEX.md` nối tên file với đúng dòng dưới đây kèm sha256, để tải lại
+được đúng bản đã dùng — hãng có sửa datasheet mà không đổi URL.
+
 | Linh kiện | Datasheet |
 |---|---|
 | ESP32-S3 (SoC) | https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf |
@@ -1179,6 +1183,13 @@ esp32s3-face-attendance/
 ├── contracts/     Hợp đồng dùng chung — nguồn sự thật duy nhất cho 3 khối
 ├── ml/            Python — train, quantize, export
 ├── firmware/      ESP-IDF — C + C++
+├── hardware/      KiCad + datasheet — mạch thật mà firmware chạy trên đó
+│   ├── README.md                    # mở bằng KiCad bản nào, đọc gì trước
+│   ├── kicad/{kiosk.kicad_pro, kiosk.kicad_sch, kiosk.kicad_pcb}   # ✅ source dạng text
+│   ├── lib/{symbols/, footprints/}  # ✅ tự vẽ; kéo về thì kèm UPSTREAM.md
+│   ├── export/                      # ✅ PDF/PNG cho báo cáo, đóng dấu git sha của §2
+│   ├── datasheets/                  # ❌ gitignore PDF — chỉ giữ INDEX.md
+│   └── vendor/                      # ❌ gitignore — sơ đồ module hãng, giữ UPSTREAM.md
 ├── backend/       NestJS
 ├── frontend/      Next.js → Vercel
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
@@ -1201,6 +1212,16 @@ esp32s3-face-attendance/
 | `Makefile` | Điểm vào duy nhất: `make gen` · `make lint` · `make train-det` · `make flash` |
 
 Ba khối `ml` / `firmware` / `backend+frontend` **không bao giờ copy định nghĩa của nhau**. Payload MQTT, danh sách model đang deploy, vector kiểm thử — tất cả nằm ở `contracts/`, mỗi bên sinh code từ đó. Đây là thứ giữ monorepo không rữa sau vài tháng.
+
+**`hardware/` commit cái gì.** File KiCad là source dạng s-expression nên vào git và diff được.
+PDF datasheet thì không: bản quyền thuộc nhà sản xuất, mà git không bao giờ quên một blob đã trót
+commit. Thay vào đó `datasheets/INDEX.md` giữ **danh tính** của từng file — tên file ↔ URL ở §2.6 ↔
+sha256 — đúng khuôn `contracts/models.lock.json` giữ sha256 còn `.tflite` thì gitignore. Sơ đồ module
+kéo từ hãng đi theo luật `third_party/` (CLAUDE.md §2.10): không sửa, ghi nguồn vào `vendor/UPSTREAM.md`.
+
+**Sơ đồ nguyên lý là ảnh chụp của §2, không phải nguồn thứ ba.** Chân GPIO vẫn khai ở đúng hai chỗ —
+`app_config.h` và §2 (CLAUDE.md §1.3). Mỗi bản trong `export/` đóng dấu git sha của §2 lúc vẽ; lệch
+nhau thì **§2 đúng**, sơ đồ vẽ lại, không bao giờ ngược lại.
 
 ### 4.2 `contracts/` — nguồn sự thật duy nhất
 
