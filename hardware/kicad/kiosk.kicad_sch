@@ -1321,7 +1321,7 @@
     (uuid "3cd4dd63-43f8-4825-8a16-1cad6ca1f14d")
     (property "Reference" "C4" (at 345.44 187.96 0) (effects (font (size 1.27 1.27))))
     (property "Value" "100uF" (at 345.44 204.47 0) (effects (font (size 1.27 1.27))))
-    (property "Footprint" "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm" (at 345.44 195.58 0)
+    (property "Footprint" "Capacitor_THT:CP_Radial_D5.0mm_P2.50mm" (at 345.44 195.58 0)
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 345.44 195.58 0) (effects (font (size 1.27 1.27)) hide))
     (pin "1" (uuid "103f4a77-2829-468c-863a-2b0081022991"))

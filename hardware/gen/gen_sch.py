@@ -114,7 +114,9 @@ FOOTPRINTS = {
     "C1": "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm",
     "C2": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
     "C3": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
-    "C4": "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm",
+    # Same 2.50 mm holes as the 6.3 mm can, but the panel leaves a 7.30 mm gap
+    # and only a 5 mm body clears it either side (KEHOACH 2.5).
+    "C4": "Capacitor_THT:CP_Radial_D5.0mm_P2.50mm",
 }
 
 

@@ -770,6 +770,8 @@ Tách rail 1 khỏi rail 2 vì hai đỉnh trùng nhau: kiosk phát tiếng báo
 
 Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân nguồn servo, 100 µF gần LCD.
 
+Con 100 µF của màn phải là loại **thân Ø5 mm**, không phải Ø6,3. Khe nó nằm rộng 7,30 mm (§2.3A) nên thân 6,3 chỉ hở 0,25 mm mỗi bên, còn 5 mm hở 0,90. Bước chân hai loại đều 2,50 mm nên **lỗ khoan giống hệt nhau** — mua nhầm loại to vẫn cắm vừa, chỉ là sát.
+
 #### Đường mass — quyết định lúc đi dây, không phải lúc vẽ sơ đồ
 
 Sơ đồ nguyên lý chỉ khai được rằng mọi chân GND **cùng một nút**. Đồng thì có điện trở, nên
