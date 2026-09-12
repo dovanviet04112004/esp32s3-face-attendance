@@ -584,7 +584,7 @@ Một hàng 6 chân. Bảng dưới nói chân nào đi đâu, không nói thứ
 
 | Chân | Nối tới | Ghi chú |
 |---|---|---|
-| VIN | 3V3 (breakout có LDO nên 3.3–5 V đều được) | |
+| VIN | **3V3** | Breakout có LDO nên *bản thân nó* chạy được 3,3–5 V, nhưng **đừng nuôi 5 V**: chưa biết trở treo I2C của breakout bám vào `VIN` hay bám vào ngõ ra LDO. Bám `VIN` thì nuôi 5 V là kéo cả bus lên 5 V — đúng cái bẫy §2.3H đã cấm với DS3231. Muốn đổi thì soi mạch breakout trước |
 | GND | GND | |
 | SDA / SCL | GPIO1 / GPIO2 | bus chung |
 | **`GPIO1` của sensor** = ngõ ra ngắt (một số breakout in là `INT`) | **ESP GPIO3** | Không liên quan gì tới `GPIO1` của ESP32 — chân đó là SDA. ESP GPIO3 nằm trong dải RTC GPIO (0–21) → **dùng làm nguồn đánh thức deep-sleep**. ⚠️ Strapping JTAG-source: để hở lúc boot, VL53L1X chỉ kéo xuống sau khi được cấu hình → an toàn |
