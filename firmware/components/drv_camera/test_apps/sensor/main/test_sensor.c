@@ -6,6 +6,7 @@
 #include "driver/usb_serial_jtag_vfs.h"
 #include "drv_camera.h"
 #include "esp_log.h"
+#include "esp_rom_serial_output.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -200,8 +201,11 @@ static rmt_encoder_handle_t s_led_bytes;
 
 // WS2812 on GPIO48 (KEHOACH 2): a bit is one pulse whose high time carries it,
 // so the bytes encoder needs the two durations rather than a clock.
-static void led_start(void)
+static esp_err_t led_start(void)
 {
+    if (s_led != NULL) {
+        return ESP_OK;
+    }
     const rmt_tx_channel_config_t channel = {
         .gpio_num = APP_STATUS_LED_GPIO,
         .clk_src = RMT_CLK_SRC_DEFAULT,
@@ -209,14 +213,17 @@ static void led_start(void)
         .mem_block_symbols = 64,
         .trans_queue_depth = 4,
     };
-    TEST_ASSERT_EQUAL(ESP_OK, rmt_new_tx_channel(&channel, &s_led));
+    esp_err_t err = rmt_new_tx_channel(&channel, &s_led);
+    if (err != ESP_OK) {
+        return err;
+    }
     const rmt_bytes_encoder_config_t bytes = {
         .bit0 = { .level0 = 1, .duration0 = LED_T0H, .level1 = 0, .duration1 = LED_T0L },
         .bit1 = { .level0 = 1, .duration0 = LED_T1H, .level1 = 0, .duration1 = LED_T1L },
         .flags.msb_first = 1,
     };
-    TEST_ASSERT_EQUAL(ESP_OK, rmt_new_bytes_encoder(&bytes, &s_led_bytes));
-    TEST_ASSERT_EQUAL(ESP_OK, rmt_enable(s_led));
+    err = rmt_new_bytes_encoder(&bytes, &s_led_bytes);
+    return err == ESP_OK ? rmt_enable(s_led) : err;
 }
 
 static void led_show(uint8_t red, uint8_t green, uint8_t blue)
@@ -295,7 +302,7 @@ TEST_CASE("the button keeps one frame, the led says whether it landed", "[drv_ca
     TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
     mkdir(SHOT_DIR, 0777);
     button_start();
-    led_start();
+    TEST_ASSERT_EQUAL(ESP_OK, led_start());
     printf("tap BOOT to keep a frame, hold %d s to finish\n", BUTTON_END_HOLD_MS / 1000);
 
     size_t written = 0;
@@ -379,10 +386,38 @@ TEST_CASE("forget the frames the button kept", "[drv_camera][manual]")
     printf("removed %d file(s)\n", gone);
 }
 
+#define KEEP_CASE "the button keeps one frame, the led says whether it landed"
+#define HOST_WINDOW_MS 6000
+
+// A byte from the host inside the window claims the board for the menu; with no
+// host there is nobody to pick a case, so the keeping case starts by itself.
+static bool host_spoke(void)
+{
+    uint8_t ch;
+    for (int waited = 0; waited < HOST_WINDOW_MS; waited += BUTTON_POLL_MS) {
+        if (esp_rom_output_rx_one_char(&ch) == 0) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(BUTTON_POLL_MS));
+    }
+    return false;
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
     unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
+    // The led holds its colour across a reset, so a boot starts by clearing it.
+    if (led_start() == ESP_OK) {
+        led_show(0, 0, 0);
+    }
+    printf("send any key within %d s for the menu, otherwise the board keeps frames\n",
+           HOST_WINDOW_MS / 1000);
+    if (!host_spoke()) {
+        UNITY_BEGIN();
+        unity_run_test_by_name(KEEP_CASE);
+        UNITY_END();
+    }
     unity_run_menu();
 }
