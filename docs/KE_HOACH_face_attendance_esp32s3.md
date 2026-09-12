@@ -1208,7 +1208,7 @@ esp32s3-face-attendance/
 ├── firmware/      ESP-IDF — C + C++
 ├── hardware/      KiCad + datasheet — mạch thật mà firmware chạy trên đó
 │   ├── README.md                    # mở bằng KiCad bản nào, đọc gì trước
-│   ├── kicad/{kiosk.kicad_pro, .kicad_sch, .kicad_pcb, fp-lib-table}  # ✅ source dạng text
+│   ├── kicad/{kiosk.kicad_pro, .kicad_sch, .kicad_pcb, fp-lib-table, sym-lib-table}  # ✅ text
 │   ├── lib/{symbols/, footprints/}  # ✅ tự vẽ; kéo về thì kèm UPSTREAM.md
 │   ├── export/                      # ✅ PDF/PNG cho báo cáo, đóng dấu git sha của §2
 │   ├── datasheets/                  # ❌ gitignore PDF — chỉ giữ INDEX.md

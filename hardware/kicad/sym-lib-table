@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "kiosk")(type "KiCad")(uri "${KIPRJMOD}/../lib/symbols/kiosk.kicad_sym")(options "")(descr "Ky hieu rieng cua board de, xem hardware/README.md"))
+)
