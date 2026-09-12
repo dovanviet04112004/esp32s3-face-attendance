@@ -44,7 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branch", required=True, choices=sorted(BRANCH_ENTRY))
     parser.add_argument("--model", type=Path, required=True, help="the exported .tflite")
     parser.add_argument("--run-id", required=True, help="<branch>/<run directory name>")
-    parser.add_argument("--arena-bytes", type=int, default=0, help="0 until E8-T7 measures it")
+    parser.add_argument(
+        "--arena-bytes",
+        type=int,
+        required=True,
+        help="bytes of the arena the branch runs in, 0 only while nobody has measured it",
+    )
     parser.add_argument("--artifacts", type=Path, default=Path("ml/artifacts"))
     parser.add_argument("--lock", type=Path, default=Path("contracts/models.lock.json"))
     parser.add_argument("--models-dir", type=Path, default=Path("firmware/models"))

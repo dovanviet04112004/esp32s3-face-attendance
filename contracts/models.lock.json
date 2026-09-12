@@ -9,12 +9,12 @@
     "file": "minifasnet_int8.tflite",
     "sha256": "57f1f4f5c10409d9c3b47ec02179511c2aadda53e6d6b35695561661205ef57e",
     "run_id": "antispoof/20260912-0107_fd87e15_5728fa",
-    "arena_bytes": 0
+    "arena_bytes": 422764
   },
   "recognition": {
     "file": "mobilefacenet_int8.tflite",
     "sha256": "f77969e342ab10b49782b1241aef1b1ecabc4519c8cbf6129a463d9bbe983ad3",
     "run_id": "recognition/20260908-1750_ea985b1_bfed2e",
-    "arena_bytes": 476188
+    "arena_bytes": 422764
   }
 }
