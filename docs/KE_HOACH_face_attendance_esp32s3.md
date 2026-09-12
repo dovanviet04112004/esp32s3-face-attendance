@@ -734,6 +734,14 @@ PCF8574 dài 48 mm đổ xuống dưới nó, `J3` hất xuống vì tấm màn 
 sang trái. Chiều cao board (121 mm) và khe giữa tấm màn với khung con amp đều là hệ quả của luật
 này chứ không phải chọn trước. `tools/check_pcb.py` bắt lại: chữ nào rơi vào khung module thì fail.
 
+**Chữ in lụa: cao 0,8 mm, nét 0,15 mm** — đúng hai mức sàn mà xưởng công bố (JLCPCB: rộng nét
+≥ 0,15, cao ≥ 0,8). Nét đúng tỉ lệ với cỡ chữ 0,8 là 0,12, và 0,12 vẫn in ra trên dây chuyền bây
+giờ — nhưng nó nằm **dưới** mức hãng cam kết, nghĩa là họ được quyền in mờ hoặc bỏ hẳn mà không
+báo. Cả bộ in lụa này tồn tại để cắm module khỏi phải tra bảng, nên mất chữ là mất hết công; đổi
+lấy chữ đậm hơn một chút là đổi có lãi. Đường bao thân linh kiện vẫn giữ **0,12** của thư viện
+KiCad: đó là nét thẳng dài, in bao giờ cũng ra, mà sửa nó thì dấu chân lệch khỏi thư viện và DRC
+dựng lại cả loạt cảnh báo `lib_footprint_mismatch`.
+
 **Ba khe quanh tấm màn để bằng nhau: 7,3 mm.** Tấm màn cách devkit, cách khung PCF8574 và cách
 khung MAX98357A đúng một khoảng. Con số 7,3 không chọn cho đẹp mà do **thân tụ `C4` chặn**: nó
 6,3 mm và nằm trong khe bên trái, nên khe không hẹp hơn được. Cân bằng bằng cách đẩy tấm màn

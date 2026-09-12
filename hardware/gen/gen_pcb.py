@@ -516,6 +516,8 @@ def turn(x: float, y: float, deg: float, lx: float, ly: float) -> tuple:
 
 # Glyph figures are check_pcb's, kept here so the router can dodge what it measures.
 GLYPH_MM, REF_GLYPH_MM, LINE_MM = 0.62, 0.78, 1.0
+# Both floors a fab publishes for silkscreen: 0.8 mm tall, 0.15 mm pen (KEHOACH 2.3).
+SILK_MM, SILK_PEN_MM = "0.8", "0.15"
 
 
 def silk_cells(doc: list) -> set:
@@ -830,7 +832,8 @@ def pin_labels(doc: list) -> list:
             else:
                 ax, ay = line, py
                 rot, just = 0, ("right" if sign < 0 else "left")
-            effects = ["effects", ["font", ["size", "0.8", "0.8"], ["thickness", "0.12"]]]
+            effects = ["effects", ["font", ["size", SILK_MM, SILK_MM],
+                                   ["thickness", SILK_PEN_MM]]]
             if just:
                 effects.append(["justify", just])
             out.append(["gr_text", f'"{label}"',
