@@ -37,7 +37,7 @@ Chi tiết từng thư mục ở KẾ HOẠCH §4.
 ## Phần cứng
 
 ESP32-S3-WROOM-1 N16R8 (16 MB flash, 8 MB octal PSRAM) · camera OV5640 · LCD ST7796S
-3.5" cảm ứng GT911 · ToF VL53L1X · loa qua MAX98357A · servo SG90 gạt thanh chắn ·
+4.0" cảm ứng GT911 · ToF VL53L1X · loa qua MAX98357A · servo SG90 gạt thanh chắn ·
 PCF8574 cho các đường điều khiển chậm. Bảng đấu nối từng chân ở KẾ HOẠCH §2.
 
 > Chân GPIO chỉ khai ở hai chỗ: `firmware/main/app_config.h` và KẾ HOẠCH §2. Đổi chân

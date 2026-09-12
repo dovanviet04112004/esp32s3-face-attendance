@@ -250,7 +250,12 @@ cùng một hệ số. Con VL53L1X có chân ngắt được ST đặt tên là 
 sensor*, không phải `GPIO1` của ESP32, mà `GPIO1` của ESP32 là **SDA** (§2.3B). Đấu theo
 cách đọc sai đó là nối ngõ ra ngắt vào đường SDA và làm chết cả bus.
 
-#### A. LCD ST7796S 3.5" 320×480 dọc — SPI 4 dây (SPI2_HOST)
+#### A. LCD ST7796S 4.0" 320×480 dọc — SPI 4 dây (SPI2_HOST)
+
+Module `KMRTM40045-SPI+CTP V1.0`, silkscreen ghi `4.0" TFT SPI 480*320`. Số điểm ảnh đúng
+bằng bảng dưới tính, chỉ khác kích thước vật lý — nên nó không đụng gì tới firmware, mà đụng
+tới lỗ bắt vít và vỏ máy. Header **14 chân một hàng**, gộp cả LCD lẫn cảm ứng; khe microSD
+trên module có pad riêng và không dùng (§2.3A `RES` mượn GPIO40 vốn là `SD_DATA`).
 
 | Chân LCD | GPIO | Vai trò | Lưu ý |
 |---|---|---|---|
