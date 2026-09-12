@@ -4,8 +4,9 @@ import hashlib
 from pathlib import Path
 
 OUT = Path("hardware/lib/footprints/kiosk.pretty/ESP32-S3-CAM_2x20_P2.54mm_R25.4mm.kicad_mod")
-# The string KiCad 10 itself wrote into kiosk.kicad_sch, so it cannot read as too new.
-VERSION = "20260306"
+# A footprint carries the board's format version, not the sheet's. Give it the
+# sheet's and KiCad refuses the library as too new to read.
+VERSION = "20260206"
 ROWS, PITCH, ROW_GAP = 20, 2.54, 25.4
 DRILL, PAD = 1.0, 1.7
 HALF = (ROWS - 1) * PITCH / 2.0

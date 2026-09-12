@@ -242,10 +242,10 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
             node = list(node)
             if unquote(node[1]) == "Reference":
                 node[2] = f'"{ref}"'
-            # KiCad carries the placement angle down into each text, so a rotated
-            # footprint whose text stays at zero reads as altered from its library.
+            # Modulo 180, the way KiCad's own boards store it: a name follows a
+            # quarter turn but never ends up upside down at a half one.
             if rot:
-                node = [([c[0], c[1], c[2], str((float(c[3] if len(c) > 3 else 0) + rot) % 360)]
+                node = [([c[0], c[1], c[2], str((float(c[3] if len(c) > 3 else 0) + rot) % 180)]
                          if isinstance(c, list) and c[0] == "at" else c) for c in node]
         if node[0] == "pad":
             number = unquote(node[1])

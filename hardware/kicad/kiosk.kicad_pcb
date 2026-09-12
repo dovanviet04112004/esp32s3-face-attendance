@@ -4239,7 +4239,7 @@
 		(descr "Resistor, Axial_DIN0207 series, Axial, Horizontal, pin pitch=10.16mm, 0.25W = 1/4W, length*diameter=6.3*2.5mm^2, http://cdn-reichelt.de/documents/datenblatt/B400/1_4W%23YAG.pdf")
 		(tags "Resistor Axial_DIN0207 series Axial Horizontal pin pitch 10.16mm 0.25W = 1/4W length 6.3mm diameter 2.5mm")
 		(property "Reference" "R1"
-			(at 5.08 -2.37 180)
+			(at 5.08 -2.37 0)
 			(layer "F.SilkS")
 			(uuid "f0cdbab9-19fc-4323-8b37-558e12553814")
 			(effects
@@ -4250,7 +4250,7 @@
 			)
 		)
 		(property "Value" "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-			(at 5.08 2.37 180)
+			(at 5.08 2.37 0)
 			(layer "F.Fab")
 			(uuid "25e51640-b5b6-4488-88ca-18ea8e4764e0")
 			(effects
@@ -4261,7 +4261,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 180)
+			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "f373af0f-8c0d-492d-8094-6c7467c405c7")
@@ -4272,7 +4272,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 180)
+			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "26abab09-882c-4b7b-870a-f6900ca638bf")
@@ -4283,7 +4283,7 @@
 			)
 		)
 		(property "KiLib_Generator" "resistor/THT"
-			(at 0 0 180)
+			(at 0 0 0)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "a70a0c52-1ef8-4aba-88c2-962245e7903b")
@@ -5158,7 +5158,7 @@
 		(descr "Through hole straight pin header, 1x09, 2.54mm pitch, single row")
 		(tags "Through hole pin header THT 1x09 2.54mm single row")
 		(property "Reference" "J13"
-			(at 0 -2.38 180)
+			(at 0 -2.38 0)
 			(layer "F.SilkS")
 			(uuid "c19e565e-f535-476a-833b-8970b0bb155a")
 			(effects
@@ -5169,7 +5169,7 @@
 			)
 		)
 		(property "Value" "PinHeader_1x09_P2.54mm_Vertical"
-			(at 0 22.7 180)
+			(at 0 22.7 0)
 			(layer "F.Fab")
 			(uuid "0c5b7bd3-665f-4c79-82ac-aa985abf8d89")
 			(effects
@@ -5180,7 +5180,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 180)
+			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "b02858b7-b17f-4b2b-818e-173637777b67")
@@ -5191,7 +5191,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 180)
+			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "7552b295-36b3-4149-8475-ace758af9360")
@@ -5202,7 +5202,7 @@
 			)
 		)
 		(property "KiLib_Generator" "connector/pin_header_socket"
-			(at 0 0 180)
+			(at 0 0 0)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "7d63cfcb-054d-470f-8def-06d88f11d451")

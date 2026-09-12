@@ -7,6 +7,8 @@ from pathlib import Path
 
 OUT = Path("hardware/kicad/kiosk.kicad_sch")
 SYMBOLS = Path("hardware/lib/symbols/kiosk.kicad_sym")
+# A sheet and a symbol library are two formats on two version numbers.
+SHEET_FORMAT, SYMBOL_FORMAT = 20260306, 20251024
 ROOT_UUID = "b0a1c2d3-0000-4000-8000-000000000001"
 PITCH = 2.54
 STUB = 5.08
@@ -242,7 +244,7 @@ def main() -> None:
 
     text = "\n".join([
         "(kicad_sch",
-        "  (version 20260306)",
+        f"  (version {SHEET_FORMAT})",
         '  (generator "eeschema")',
         '  (generator_version "10.0")',
         "",
@@ -274,7 +276,7 @@ def main() -> None:
     SYMBOLS.parent.mkdir(parents=True, exist_ok=True)
     SYMBOLS.write_text("\n".join([
         "(kicad_symbol_lib",
-        "  (version 20260306)",
+        f"  (version {SYMBOL_FORMAT})",
         '  (generator "kicad_symbol_editor")',
         '  (generator_version "10.0")',
         "\n".join(entry.replace('(symbol "kiosk:', '(symbol "', 1) for entry in lib),
