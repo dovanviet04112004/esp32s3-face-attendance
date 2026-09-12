@@ -27,6 +27,9 @@ INPUT_SCALE = 0.007843138
 INPUT_ZERO = -1
 PIXEL_MEAN = 127.5
 PIXEL_SPAN = 127.5
+# The deployed embedding output, which is what normalized_int8 reads.
+EMBED_SCALE = 0.038641058
+EMBED_ZERO = 8
 
 
 def quantized_pixels(image: np.ndarray) -> np.ndarray:
@@ -73,18 +76,26 @@ def emit_align(root: Path, rng: np.random.Generator) -> int:
 
 
 def emit_l2norm(root: Path, rng: np.random.Generator) -> int:
-    vectors = [
-        rng.normal(0, 1, EMBEDDING).astype(np.float32),
-        rng.normal(0, 1e-4, EMBEDDING).astype(np.float32),
-        np.zeros(EMBEDDING, dtype=np.float32),
-        np.full(EMBEDDING, 3.5, dtype=np.float32),
+    """Raw int8 embeddings in, the unit int8 vector and its scale out."""
+    raws = [
+        rng.integers(-128, 128, EMBEDDING).astype(np.int8),
+        np.full(EMBEDDING, EMBED_ZERO, dtype=np.int8),
+        np.full(EMBEDDING, 127, dtype=np.int8),
+        (rng.integers(-4, 5, EMBEDDING) + EMBED_ZERO).astype(np.int8),
     ]
-    for index, raw in enumerate(vectors):
+    for index, raw in enumerate(raws):
+        dequantized = (raw.astype(np.float32) - EMBED_ZERO) * np.float32(EMBED_SCALE)
+        unit, scale = quantize(l2_normalize(dequantized).astype(np.float32))
         write_case(
             root / "l2norm" / f"case_{index:03d}.gold",
-            {"raw": raw, "unit": l2_normalize(raw).astype(np.float32)},
+            {
+                "raw": raw,
+                "quant": np.array([EMBED_SCALE, float(EMBED_ZERO)], dtype=np.float32),
+                "unit": unit,
+                "scale": np.array([scale], dtype=np.float32),
+            },
         )
-    return len(vectors)
+    return len(raws)
 
 
 def emit_cosine(root: Path, rng: np.random.Generator) -> int:
