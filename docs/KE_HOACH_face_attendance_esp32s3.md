@@ -534,6 +534,16 @@ cắm module vào, mà lúc ấy board đã in xong.
 góc cách nhau 48 mm; hàn rời từng hàng thì lệch một hai độ là hai hàng không còn khớp hai đế.
 Để đế trên board làm khuôn thì nó tự thẳng.
 
+**Ngoại lệ duy nhất: PCF8574.** Hàng 4 chân của nó nằm **trong mặt phẳng module** còn hàng P
+**vuông góc chĩa lên** — lệch nhau 90°, không tư thế nào cho cả hai cùng chĩa xuống. Nên hàng
+4 chân hàn chĩa xuống và cắm vào đế `J5`; ba tín hiệu `P0 P1 P3` đi **dây rời**: một đầu cắm vào
+hàng P trên module, đầu kia **tuốt trần hàn thẳng** vào hàng lỗ `J13` cạnh module. Mối hàn ở đây
+tốt hơn giắc cắm: `P0` là chân reset GT911, mà §2.3C ghi tiếp xúc lỏng ở đó cho ra lỗi trông y
+như lỗi logic.
+
+⚠️ Module dài 48 mm mà chỉ tựa trên 4 chân ở một đầu, đầu kia hẫng. Board có servo rung nên
+**phải chống đầu hẫng** — một trụ đồng hoặc miếng xốp hai mặt.
+
 Hàng chân nào không dùng thì **để trống, đừng hàn** — hàng 4 chân I2C thứ hai của PCF8574 chỉ
 để nối tiếp thiết bị khác, mà board đế đã có đế riêng cho từng thiết bị rồi.
 
