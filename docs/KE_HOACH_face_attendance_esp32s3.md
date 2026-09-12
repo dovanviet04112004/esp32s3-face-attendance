@@ -458,6 +458,9 @@ nên **loa đấu thẳng vào module**, board đế không mang đầu nối lo
 
 Board có **một** bộ chấp hành: servo gạt thanh chắn mở cửa mô hình. Không có relay, không có ngõ ra dành sẵn cho khoá điện — lắp khoá sau này là một thay đổi kiến trúc mới, đi qua §1.2 của CLAUDE.md. `svc_door` bọc servo sau `IDoor` (§4.5.5e) để logic chấm công không biết bên dưới là gì và để test trên host cắm được cửa giả vào cùng chỗ.
 
+**Thứ tự chân trên giắc SG90**: `GND (nâu) · VCC (đỏ) · PWM (cam)`. Mass và tín hiệu nằm ở hai
+đầu, nên vẽ ngược thứ tự là cắm servo vào thì mass của nó rơi lên chân GPIO38 đang đẩy xung.
+
 | Chân | Nối tới | Ghi chú |
 |---|---|---|
 | PWM (vàng) | **GPIO38** | Phải là GPIO thật (LEDC hoặc MCPWM, 50 Hz) — **không** qua PCF8574 |
