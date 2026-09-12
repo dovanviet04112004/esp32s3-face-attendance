@@ -400,6 +400,13 @@ def main(argv: list[str] | None = None) -> int:
         default=0.0,
         help="drop frames whose face is narrower than this, the served range of KEHOACH 3",
     )
+    parser.add_argument(
+        "--thresholds",
+        type=float,
+        nargs="+",
+        default=FRAME_THRESHOLDS,
+        help="operating points the frame table is read at",
+    )
     args = parser.parse_args(argv)
 
     device = torch.device(args.device)
@@ -412,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
         rows = score_frames(
             model, detector, priors, args.frames, int(cfg.model.input_hw[0]), device
         )
-        report_frames(rows, FRAME_THRESHOLDS, args.min_face_px)
+        report_frames(rows, args.thresholds, args.min_face_px)
         return 0
     # The run's own splits, so a report cannot rest on a division it never saw.
     fit_split = args.fit_split or cfg.data.params["val_split"]
