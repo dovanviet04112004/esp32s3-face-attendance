@@ -1844,3 +1844,73 @@ không cần kiểm để chốt, vì luật mới là đo từng nhánh chứ k
 còn bật mặc định**. Detect dùng `ReLU6` nên §3 lớp 1 nói CLE không chạy được trên nó, còn
 **recognition dùng `ReLU` và giữ đủ 48/48 cặp**, nên nhánh ấy có thể đang chịu đúng lỗi này.
 Phải chạy lại bảng tách cho recognition trước khi tin con số của nó (E6-T11).
+
+---
+
+## 33. Hạ ngưỡng vận hành từ 0,9380 xuống 0,75 — quét trên khung thật của board, 12/09
+
+Run `20260912-0107_fd87e15_5728fa` chốt ngưỡng **0,9380** bằng val của chính nó (CelebA-Spoof
+10 shard + LCC `development`). Ngưỡng ấy chưa bao giờ gặp ảnh của OV5640. Mục này quét lại nó
+trên hai tập khung nguyên, một bên thật một bên giả, rồi chốt giá trị gieo cho NVS.
+
+### 33.1 Hai tập và cách chấm
+
+| Tập | Nguồn | Khung | Có mặt | Cỡ mặt |
+|---|---|---|---|---|
+| `live_button` | 8 ảnh JPEG board tự giữ khi bấm nút, phiên `toi1209` | 8 | 6 | 185–270 px |
+| `live_dump` | 73 khung RGB565 dump qua console, phiên `s20260911a–d` | 73 | 51 | 86–197 px |
+| `attack_*` | `interim/antispoof/phone_eval`, ảnh in và màn hình | 35 | 35 | 117–2026 px |
+
+24 khung thật bị loại vì detector không tìm ra mặt: 2 tấm bấm nút là cảnh cửa sổ và hành lang
+**không có mặt người trong khung** — detector đúng, không sinh mặt ma — và 22 khung dump cũ.
+
+```bash
+cd ml && .venv/bin/python -m facepipe.tasks.antispoof.eval \
+  --run artifacts/antispoof/runs/20260912-0107_fd87e15_5728fa \
+  --frames <thư mục live_*/attack_*> \
+  --detector artifacts/detection/runs/20260831-1616_cc931df_36fbea/ckpt/best.pth \
+  --thresholds 0.60 0.70 0.75 0.80 0.85 0.90 0.938
+```
+
+### 33.2 Bảng quét
+
+BPCER đọc trên 57 khung thật của board, APCER trên 35 khung giả của `phone_eval`. Hai tập chấm
+bằng hai lần chạy cùng lệnh trên, ghép tay — không có tập nào vừa thật vừa giả từ một camera.
+
+| Ngưỡng | BPCER board | `live_button` | APCER | Ghi chú |
+|---|---|---|---|---|
+| 0,60 | 0,0000 | 6/6 | **0,0857** | 3 khung giả lọt |
+| 0,70 | 0,0175 | 6/6 | 0,0000 | sàn an toàn |
+| **0,75** | **0,0175** | **6/6** | **0,0000** | **chốt** |
+| 0,80 | 0,0526 | 6/6 | 0,0000 | |
+| 0,85 | 0,0877 | 6/6 | 0,0000 | |
+| 0,90 | 0,1228 | 5/6 | 0,0000 | |
+| 0,9380 | 0,2105 | 5/6 | 0,0000 | ngưỡng của run |
+
+**Khung giả điểm cao nhất trong cả 35 tấm là 0,6851** (`attack_xa/013.jpg`, mặt 124 px), kế đó
+0,6537 và 0,6173. Trên 0,70 là chặn sạch. Chọn 0,75 để có đệm 0,065 trên con mạnh nhất mà vẫn
+chỉ trượt 1/57 khung thật.
+
+Sáu tấm bấm nút, thứ gần cách dùng thật nhất: 0,9987 · 0,9938 · 0,9933 · 0,9852 · 0,9483 ·
+0,8754. Tấm 0,8754 là tấm nghiêng mặt, sau lưng có màn hình sáng — nó trượt ở 0,9380 và qua ở
+0,75.
+
+### 33.3 Giới hạn của con số này
+
+**35 mẫu giả là ít.** APCER 0,0000 trên 35 mẫu chỉ chặn trên được ở ~8,6% theo quy tắc ba. Đây
+không phải bằng chứng chặn tuyệt đối.
+
+**Khung giả chụp bằng camera điện thoại, không phải OV5640.** Ảnh in và màn hình đưa thẳng vào
+OV5640 có thể ra phổ điểm khác. 0,75 là số dùng được ngay, không phải số chốt; E8-T12 chốt lại
+khi có loạt `--spoof phone` / `--spoof print` thu bằng chính board.
+
+**Ngưỡng chỉ đúng trong tầm mặt nó phục vụ.** Trên `phone_eval`, `live_rat_xa` (mặt 162 px) ở
+0,75 chỉ qua 10/20, còn `live_gan`/`live_kho`/`live_vua` qua 12/12. Mặt càng nhỏ điểm càng tụt,
+nên hạ ngưỡng không thay được việc đứng gần. Hạt giống `face_min_px` 113 px có thể quá rộng so
+với dải này — chưa đo, để cho E8-T12.
+
+### 33.4 Đã đổi
+
+`CONFIG_VISION_SEED_LIVE_MIN_PERMILLE` 500 → **750**. Giá trị cũ nằm dưới cả mức 0,686 mà ảnh
+giả đạt được, tức boot đầu là cho ảnh in lọt. Ngưỡng chạy thật vẫn ở NVS `vision/live_min`
+(§4.9), `Kconfig` chỉ gieo lần boot đầu.
