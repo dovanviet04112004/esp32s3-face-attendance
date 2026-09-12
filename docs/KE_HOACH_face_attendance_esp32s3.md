@@ -463,9 +463,16 @@ Tụ 470 µF sát chân nguồn servo. Xung 50 Hz, độ rộng 500–2400 µs q
 
 #### G. PCF8574
 
+**Module có hai hàng chân vuông góc nhau, không phải một.** Cạnh dưới (và cạnh trên, nối song song
+để nối tiếp nhiều module) là hàng 4 chân `SCL SDA GND VCC`; cạnh phải là hàng 9 chân `P0…P7 INT`.
+Board đế vì thế cần **hai đế cắm**, không phải một hàng 16.
+
+`A0/A1/A2` **không phải chân**: chúng là ba bãi hàn chọn địa chỉ trên chính module. Để `0x20` thì
+hàn cả ba xuống GND **trên module**, board đế không có đường đồng nào tới đó.
+
 | Chân | Gán cho |
 |---|---|
-| A0 / A1 / A2 | GND, GND, GND → địa chỉ `0x20` |
+| A0 / A1 / A2 | hàn xuống GND **trên module** → địa chỉ `0x20` |
 | SDA / SCL | GPIO1 / GPIO2 |
 | INT | không dùng (poll trong `io_task`) |
 | **P0** | GT911_RST |
