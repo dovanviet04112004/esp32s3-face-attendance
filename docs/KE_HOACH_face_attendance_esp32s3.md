@@ -1233,7 +1233,7 @@ contracts/
 
 `golden/` giải bài toán "hậu xử lý Python phải khớp 1:1 với C": mỗi nhánh có `postproc/emit_golden.py` xuất tensor đầu vào cộng kết quả mong đợi, `firmware/test_apps/parity` đọc **chính file đó** và so sánh trên board. Lệch ở decode anchor / NMS / affine warp lộ ra ngay, không phải mò lúc tích hợp.
 
-**Định dạng là `.gold`, một khối nhị phân phẳng little-endian, không phải `.npz`.** `.npz` là file zip: đọc nó trên MCU cần một trình phân tích zip cộng npy dài hơn chính phép kiểm, mà không kiểm thêm được gì. Khuôn: magic `GOLD`, `version` u32, `count` u32, rồi mỗi tensor một bản ghi — tên 32 B nul-đệm, `dtype` u32 (0 `f32`, 1 `i8`, 2 `i32`, 3 `u8`), `ndim` u32, `dims` 4×u32, `nbytes` u32, dữ liệu đệm lên bội 4 B. `ml/export/emit_golden.py` giữ **đúng khuôn này** — hàm ghi và hàm đọc — còn ba `postproc/emit_golden.py` chỉ dựng ca kiểm của nhánh mình; một khuôn một chỗ, ba nhánh vẫn độc lập theo §4.5.
+**Định dạng là `.gold`, một khối nhị phân phẳng little-endian, không phải `.npz`.** `.npz` là file zip: đọc nó trên MCU cần một trình phân tích zip cộng npy dài hơn chính phép kiểm, mà không kiểm thêm được gì. Khuôn: magic `GOLD`, `version` u32, `count` u32, rồi mỗi tensor một bản ghi — tên 32 B nul-đệm, `dtype` u32 (0 `f32`, 1 `i8`, 2 `i32`, 3 `u8`, 4 `u16` — khung camera là RGB565), `ndim` u32, `dims` 4×u32, `nbytes` u32, dữ liệu đệm lên bội 4 B. `ml/export/emit_golden.py` giữ **đúng khuôn này** — hàm ghi và hàm đọc — còn ba `postproc/emit_golden.py` chỉ dựng ca kiểm của nhánh mình; một khuôn một chỗ, ba nhánh vẫn độc lập theo §4.5.
 
 `test_apps/parity` nướng cả cây `contracts/golden/` vào partition `storage` bằng `littlefs_create_partition_image(... FLASH_IN_PROJECT)`, nên board mở chúng qua `/lfs` như file thường và không cần đường truyền riêng nào.
 
@@ -1577,7 +1577,7 @@ ml/
 │   └── export/
 │       ├── to_onnx.py  ├── onnx_to_tf.py  ├── tf_to_tflite_int8.py
 │       ├── tflite_op_check.py             # đối chiếu op ↔ danh sách ESP-NN/TFLM
-│       ├── emit_golden.py                 # ★ xuất vector vàng ra contracts/golden/
+│       ├── emit_golden.py                 # ★ khuôn .gold: hàm ghi và hàm đọc, ba nhánh dùng chung
 │       ├── pack_models_partition.py       # gộp 3 .tflite + header → models.bin
 │       └── update_lock.py                 # ★ ghi contracts/models.lock.json
 │
@@ -1618,7 +1618,6 @@ ml/
 │   │   │                                  # ↑ sinh lại được, giữ để đổi cấu hình quantize
 │   │   │                                  #   mà không phải chạy lại onnx2tf
 │   │   ├── tflite/{yunet_fp32.tflite, yunet_int8.tflite}
-│   │   ├── golden/                        # vector vàng trước khi copy sang contracts/
 │   │   └── reports/op_check.txt
 │   │                                      # ↑ sinh lại được. Số đo giữ lại: docs/measurements/
 │   │      Tên trên là của **một** model đã chốt. Khi đang so nhiều checkpoint thì gắn

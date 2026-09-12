@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from facepipe.export.emit_golden import write_case
+from facepipe.tasks.antispoof.postproc.preproc import unpack_rgb565
 
 from .align import ALIGNED_SIZE, align, reference_landmarks, similarity_transform
 from .cosine import cosine_int8, quantize
@@ -50,14 +51,17 @@ def landmark_cases() -> list[np.ndarray]:
 
 
 def emit_align(root: Path, rng: np.random.Generator) -> int:
-    frame = rng.integers(0, 256, (*FRAME_HW, 3), dtype=np.uint8)
+    # drv_camera hands out RGB565, so the reference warps the unpacked words
+    # rather than an rgb888 frame the board never sees.
+    words = rng.integers(0, 1 << 16, FRAME_HW, dtype=np.uint16)
+    frame = unpack_rgb565(words).astype(np.uint8)
     cases = landmark_cases()
     for index, landmarks in enumerate(cases):
         matrix = similarity_transform(landmarks, reference_landmarks(ALIGNED_SIZE))
         write_case(
             root / "align" / f"case_{index:03d}.gold",
             {
-                "frame": frame,
+                "frame": words,
                 "frame_hw": np.array(FRAME_HW, dtype=np.int32),
                 "landmarks": landmarks.reshape(-1).astype(np.float32),
                 "quant": np.array([INPUT_SCALE, float(INPUT_ZERO)], dtype=np.float32),

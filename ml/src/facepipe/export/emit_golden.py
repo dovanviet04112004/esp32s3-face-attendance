@@ -16,7 +16,7 @@ MAGIC = b"GOLD"
 VERSION = 1
 NAME_BYTES = 32
 MAX_DIMS = 4
-DTYPES = {"float32": 0, "int8": 1, "int32": 2, "uint8": 3}
+DTYPES = {"float32": 0, "int8": 1, "int32": 2, "uint8": 3, "uint16": 4}
 CODE_TO_DTYPE = {code: name for name, code in DTYPES.items()}
 
 
