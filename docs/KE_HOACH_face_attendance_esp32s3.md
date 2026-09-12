@@ -1193,7 +1193,7 @@ esp32s3-face-attendance/
 ├── backend/       NestJS
 ├── frontend/      Next.js → Vercel
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
-├── tools/         Script ngang khối: gen_from_schema · check_comments · check_layers
+├── tools/         Script ngang khối: gen_from_schema · check_comments · check_layers · check_schematic
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
     ├── TASKS.md                                 # backlog

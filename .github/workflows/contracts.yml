@@ -77,3 +77,6 @@ jobs:
 
       - name: Firmware layering
         run: python3 tools/check_layers.py
+
+      - name: Schematic against the pin map
+        run: python3 tools/check_schematic.py
