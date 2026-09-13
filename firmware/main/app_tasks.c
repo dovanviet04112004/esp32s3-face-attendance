@@ -269,9 +269,11 @@ static app_ui_verdict_t verdict_for(svc_attendance_state_t state, svc_vision_kin
             return APP_UI_GRANTED;
         case SVC_ATTENDANCE_DENIED:
             return kind == SVC_VISION_SPOOF ? APP_UI_SPOOF : APP_UI_DENIED;
-        // The card the grant put up stays until the machine goes idle.
+        // Whatever the line says stays up through the rest that follows it.
         case SVC_ATTENDANCE_COOLDOWN:
-            return APP_UI_GRANTED;
+            return kind == SVC_VISION_MATCH
+                       ? APP_UI_GRANTED
+                       : (kind == SVC_VISION_SPOOF ? APP_UI_SPOOF : APP_UI_DENIED);
         default:
             return APP_UI_IDLE;
     }

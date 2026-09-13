@@ -310,16 +310,22 @@ static void build_column_map(int src_width, int taken_width)
     s_map_width = src_width;
 }
 
-static void paint_card(const drv_lcd_card_t *card, uint16_t *strip, int top, int rows)
+static void paint_mask(const drv_lcd_mask_t *mask, uint16_t *strip, int top, int rows)
 {
-    const int y1 = card->y > top ? card->y : top;
-    const int y2 = card->y + card->h < top + rows ? card->y + card->h : top + rows;
-    const int x1 = card->x > 0 ? card->x : 0;
-    const int x2 = card->x + card->w < APP_LCD_H_RES ? card->x + card->w : APP_LCD_H_RES;
+    const int y1 = mask->y > top ? mask->y : top;
+    const int y2 = mask->y + mask->h < top + rows ? mask->y + mask->h : top + rows;
+    const int x1 = mask->x > 0 ? mask->x : 0;
+    const int x2 = mask->x + mask->w < APP_LCD_H_RES ? mask->x + mask->w : APP_LCD_H_RES;
     for (int y = y1; y < y2; ++y) {
-        const uint16_t *src = card->pixels + (size_t)(y - card->y) * card->w + (x1 - card->x);
-        memcpy(strip + (size_t)(y - top) * APP_LCD_H_RES + x1, src,
-               (size_t)(x2 - x1) * sizeof(uint16_t));
+        const uint8_t *cover = mask->cover + (size_t)(y - mask->y) * mask->w + (x1 - mask->x);
+        uint16_t *out = strip + (size_t)(y - top) * APP_LCD_H_RES + x1;
+        for (int x = 0; x < x2 - x1; ++x) {
+            if (cover[x] == DRV_LCD_INK) {
+                out[x] = mask->ink_rgb565;
+            } else if (cover[x] == DRV_LCD_EDGE) {
+                out[x] = mask->edge_rgb565;
+            }
+        }
     }
 }
 
@@ -350,13 +356,13 @@ static void paint_box(const drv_lcd_box_t *box, uint16_t *strip, int top, int ro
 
 static void paint_overlay(const drv_lcd_overlay_t *overlay, uint16_t *strip, int top, int rows)
 {
-    for (uint8_t i = 0; i < overlay->cards && i < DRV_LCD_OVERLAY_CARDS; ++i) {
-        if (overlay->card[i].pixels != NULL) {
-            paint_card(&overlay->card[i], strip, top, rows);
-        }
-    }
     for (uint8_t i = 0; i < overlay->boxes && i < DRV_LCD_OVERLAY_BOXES; ++i) {
         paint_box(&overlay->box[i], strip, top, rows);
+    }
+    for (uint8_t i = 0; i < overlay->masks && i < DRV_LCD_OVERLAY_MASKS; ++i) {
+        if (overlay->mask[i].cover != NULL) {
+            paint_mask(&overlay->mask[i], strip, top, rows);
+        }
     }
 }
 

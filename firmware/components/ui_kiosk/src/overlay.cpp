@@ -1,19 +1,19 @@
 #include "overlay.hpp"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "app_config.h"
 #include "esp_heap_caps.h"
-#include "esp_timer.h"
+#include "kiosk_sans_22.h"
 
 namespace ui {
 
 namespace {
 
-constexpr int kBoxEdgePx = 3;
-constexpr int kCardBorderPx = 3;
-constexpr int kGlyphStrokePx = 10;
-constexpr int kGlyphSidePx = 64;
+constexpr int kBandTop = APP_LCD_V_RES - 112;
+constexpr int kLineGap = 4;
+constexpr int kIdCap = 24;
 
 // RGB565 the panel wants high byte first, and the preview path does not swap
 // on the way out (KEHOACH 4.5.5h).
@@ -23,123 +23,139 @@ constexpr uint16_t wire(uint16_t rgb565)
 }
 
 constexpr uint16_t kWhite = 0xFFFF;
-constexpr uint16_t kGreen = 0x07E0;
-constexpr uint16_t kRed = 0xF800;
-constexpr uint16_t kAmber = 0xFD20;
-constexpr uint16_t kInk = 0x0841;
-constexpr uint16_t kSteel = 0x8410;
+constexpr uint16_t kMint = 0x27EC;
+constexpr uint16_t kShadow = 0x0000;
 
-uint16_t accent_of(app_ui_verdict_t verdict)
+// Vietnamese reaches the glass from here until an i18n file exists (CLAUDE 3).
+const char *say(app_ui_verdict_t verdict)
 {
     switch (verdict) {
         case APP_UI_GRANTED:
-            return kGreen;
-        case APP_UI_DENIED:
-        case APP_UI_UNKNOWN:
-            return kRed;
+            return "Chấm công thành công";
         case APP_UI_SPOOF:
-            return kAmber;
+            return "Ảnh giả, mời thử lại";
+        case APP_UI_UNKNOWN:
+            return "Chưa có trong hệ thống";
+        case APP_UI_DENIED:
+            return "Chưa nhận được, thử lại";
         default:
-            return kWhite;
+            return nullptr;
     }
 }
 
-bool shows_card(app_ui_verdict_t verdict)
+uint32_t code_point(const char **at)
 {
-    return verdict != APP_UI_IDLE && verdict != APP_UI_SCANNING;
+    const uint8_t *p = (const uint8_t *)*at;
+    uint32_t code = *p++;
+    int extra = 0;
+    if ((code & 0xE0u) == 0xC0u) {
+        code &= 0x1Fu;
+        extra = 1;
+    } else if ((code & 0xF0u) == 0xE0u) {
+        code &= 0x0Fu;
+        extra = 2;
+    } else if ((code & 0xF8u) == 0xF0u) {
+        code &= 0x07u;
+        extra = 3;
+    }
+    for (int i = 0; i < extra && (*p & 0xC0u) == 0x80u; ++i) {
+        code = (code << 6) | (*p++ & 0x3Fu);
+    }
+    *at = (const char *)p;
+    return code;
 }
 
-void fill_rect(uint16_t *pixels, int stride, int x, int y, int w, int h, int rows_cap,
-               uint16_t colour)
+const kiosk_glyph_t *glyph_of(uint32_t code)
 {
-    const int x1 = x > 0 ? x : 0;
-    const int y1 = y > 0 ? y : 0;
-    const int x2 = x + w < stride ? x + w : stride;
-    const int y2 = y + h < rows_cap ? y + h : rows_cap;
-    for (int row = y1; row < y2; ++row) {
-        uint16_t *line = pixels + (size_t)row * stride;
-        for (int col = x1; col < x2; ++col) {
-            line[col] = colour;
+    int low = 0;
+    int high = (int)kiosk_sans_22_count - 1;
+    while (low <= high) {
+        const int mid = (low + high) / 2;
+        const uint32_t here = kiosk_sans_22_glyphs[mid].code;
+        if (here == code) {
+            return &kiosk_sans_22_glyphs[mid];
+        }
+        if (here < code) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
         }
     }
+    return nullptr;
 }
 
-// A stroke of its own thickness at every step, so the two glyphs below need no
-// line algorithm and no rounding rules.
-void stroke(uint16_t *pixels, int stride, int x0, int y0, int dx, int dy, int steps,
-            uint16_t colour)
+int width_of(const char *text)
 {
-    for (int i = 0; i < steps; ++i) {
-        fill_rect(pixels, stride, x0 + dx * i, y0 + dy * i, kGlyphStrokePx, kGlyphStrokePx,
-                  OverlayBuilder::kCardHeight, colour);
+    int width = 0;
+    while (*text != '\0') {
+        const kiosk_glyph_t *glyph = glyph_of(code_point(&text));
+        width += glyph != nullptr ? glyph->adv : 0;
+    }
+    return width;
+}
+
+void stamp(uint8_t *cover, int rows, int pen_x, int top, const char *text, uint8_t value)
+{
+    while (*text != '\0') {
+        const kiosk_glyph_t *glyph = glyph_of(code_point(&text));
+        if (glyph == nullptr) {
+            continue;
+        }
+        const uint8_t *bits = &kiosk_sans_22_bitmap[glyph->at];
+        const int stride = (glyph->w + 7) / 8;
+        for (int y = 0; y < glyph->h; ++y) {
+            const int row = top + glyph->off_y + y;
+            if (row < 0 || row >= rows) {
+                continue;
+            }
+            for (int x = 0; x < glyph->w; ++x) {
+                const int col = pen_x + glyph->off_x + x;
+                if (col < 0 || col >= APP_LCD_H_RES) {
+                    continue;
+                }
+                if ((bits[y * stride + x / 8] & (0x80u >> (x % 8))) == 0) {
+                    continue;
+                }
+                uint8_t *cell = &cover[(size_t)row * APP_LCD_H_RES + col];
+                if (value == DRV_LCD_INK || *cell == 0) {
+                    *cell = value;
+                }
+            }
+        }
+        pen_x += glyph->adv;
     }
 }
 
-void draw_tick(uint16_t *pixels, int stride, int cx, int cy, uint16_t colour)
+// Text over live video carries its own contrast: every glyph is stamped once
+// around itself in shadow, then once on top in ink.
+void write_line(uint8_t *cover, int rows, int top, const char *text)
 {
-    const int arm = kGlyphSidePx / 3;
-    stroke(pixels, stride, cx - arm, cy, 1, 1, arm, colour);
-    stroke(pixels, stride, cx, cy + arm, 1, -1, 2 * arm, colour);
+    const int pen = (APP_LCD_H_RES - width_of(text)) / 2;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx != 0 || dy != 0) {
+                stamp(cover, rows, pen + dx, top + dy, text, DRV_LCD_EDGE);
+            }
+        }
+    }
+    stamp(cover, rows, pen, top, text, DRV_LCD_INK);
 }
 
-void draw_cross(uint16_t *pixels, int stride, int cx, int cy, uint16_t colour)
-{
-    const int arm = kGlyphSidePx / 2;
-    stroke(pixels, stride, cx - arm, cy - arm, 1, 1, 2 * arm, colour);
-    stroke(pixels, stride, cx - arm, cy + arm, 1, -1, 2 * arm, colour);
-}
+constexpr int kBoxEdgePx = 3;
+constexpr uint16_t kSteel = 0x8410;
 
 }  // namespace
-
-esp_err_t OverlayBuilder::init() noexcept
-{
-    const size_t bytes = (size_t)kCardWidth * kCardHeight * sizeof(uint16_t);
-    for (int i = 0; i < kCards; ++i) {
-        card_[i] = static_cast<uint16_t *>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM));
-        if (card_[i] == nullptr) {
-            return ESP_ERR_NO_MEM;
-        }
-        memset(card_[i], 0, bytes);
-    }
-    return ESP_OK;
-}
-
-uint16_t *OverlayBuilder::card_pixels() noexcept
-{
-    return card_[shown_card_];
-}
-
-void OverlayBuilder::paint_card() noexcept
-{
-    uint16_t *pixels = card_[next_card_];
-    const uint16_t accent = wire(accent_of(verdict_));
-    fill_rect(pixels, kCardWidth, 0, 0, kCardWidth, kCardHeight, kCardHeight, accent);
-    fill_rect(pixels, kCardWidth, kCardBorderPx, kCardBorderPx, kCardWidth - 2 * kCardBorderPx,
-              kCardHeight - 2 * kCardBorderPx, kCardHeight, wire(kInk));
-    const int cx = kCardWidth / 2 - kGlyphStrokePx / 2;
-    const int cy = kCardHeight / 2 - kGlyphStrokePx / 2;
-    if (verdict_ == APP_UI_GRANTED) {
-        draw_tick(pixels, kCardWidth, cx, cy, accent);
-    } else {
-        draw_cross(pixels, kCardWidth, cx, cy, accent);
-    }
-    shown_card_ = next_card_;
-    next_card_ = (next_card_ + 1) % kCards;
-}
 
 bool OverlayBuilder::set_face(bool found, const float box[4], int frame_width,
                               int frame_height) noexcept
 {
     int16_t panel[4] = { 0, 0, 0, 0 };
-    const bool on_panel =
-        found && drv_lcd_frame_to_panel(frame_width, frame_height, box, panel);
-    const int64_t now_us = esp_timer_get_time();
+    const bool on_panel = found && drv_lcd_frame_to_panel(frame_width, frame_height, box, panel);
     if (!on_panel) {
-        const bool expired = face_found_ && now_us - face_seen_us_ >= kFaceHoldUs;
-        face_found_ = face_found_ && !expired;
-        return expired;
+        const bool changed = face_found_;
+        face_found_ = false;
+        return changed;
     }
-    face_seen_us_ = now_us;
     if (face_found_ && memcmp(panel, face_, sizeof(panel)) == 0) {
         return false;
     }
@@ -166,37 +182,64 @@ bool OverlayBuilder::set_others(const float *boxes, int count, int frame_width,
     return true;
 }
 
+esp_err_t OverlayBuilder::init() noexcept
+{
+    const size_t bytes = (size_t)APP_LCD_H_RES * kBandHeight;
+    for (int i = 0; i < kSlots; ++i) {
+        cover_[i] = static_cast<uint8_t *>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM));
+        if (cover_[i] == nullptr) {
+            return ESP_ERR_NO_MEM;
+        }
+        memset(cover_[i], 0, bytes);
+    }
+    return ESP_OK;
+}
+
+void OverlayBuilder::draw(const char *line, const char *under) noexcept
+{
+    uint8_t *cover = cover_[next_];
+    memset(cover, 0, (size_t)APP_LCD_H_RES * kBandHeight);
+    const int lines = under != nullptr ? 2 : 1;
+    const int block = lines * kiosk_sans_22_line_h + (lines - 1) * kLineGap;
+    int top = (kBandHeight - block) / 2;
+    write_line(cover, kBandHeight, top, line);
+    if (under != nullptr) {
+        top += kiosk_sans_22_line_h + kLineGap;
+        write_line(cover, kBandHeight, top, under);
+    }
+    shown_ = next_;
+    next_ = (next_ + 1) % kSlots;
+}
+
 bool OverlayBuilder::set_verdict(app_ui_verdict_t verdict, uint32_t employee_id) noexcept
 {
     if (verdict == verdict_ && employee_id == employee_id_) {
         return false;
     }
-    const bool repaint = shows_card(verdict) && verdict != verdict_;
     verdict_ = verdict;
     employee_id_ = employee_id;
-    if (repaint) {
-        paint_card();
+    const char *line = say(verdict);
+    if (line == nullptr) {
+        shown_ = -1;
+        return true;
     }
+    char id[kIdCap] = { 0 };
+    if (verdict == APP_UI_GRANTED && employee_id != 0) {
+        snprintf(id, sizeof(id), "Mã %u", (unsigned)employee_id);
+    }
+    draw(line, id[0] != '\0' ? id : nullptr);
     return true;
 }
 
 void OverlayBuilder::build(drv_lcd_overlay_t *out) noexcept
 {
     memset(out, 0, sizeof(*out));
-    if (shows_card(verdict_) && card_pixels() != nullptr) {
-        out->card[0].x = (int16_t)((APP_LCD_H_RES - kCardWidth) / 2);
-        out->card[0].y = (int16_t)((APP_LCD_V_RES - kCardHeight) / 2);
-        out->card[0].w = kCardWidth;
-        out->card[0].h = kCardHeight;
-        out->card[0].pixels = card_pixels();
-        out->cards = 1;
-    }
     if (face_found_) {
         out->box[0].x1 = face_[0];
         out->box[0].y1 = face_[1];
         out->box[0].x2 = face_[2];
         out->box[0].y2 = face_[3];
-        out->box[0].rgb565 = wire(accent_of(verdict_));
+        out->box[0].rgb565 = wire(verdict_ == APP_UI_GRANTED ? kMint : kWhite);
         out->box[0].edge_px = kBoxEdgePx;
         out->boxes = 1;
     }
@@ -211,6 +254,17 @@ void OverlayBuilder::build(drv_lcd_overlay_t *out) noexcept
         box->edge_px = 1;
         out->boxes = (uint8_t)(out->boxes + 1);
     }
+    if (shown_ < 0) {
+        return;
+    }
+    out->mask[0].x = 0;
+    out->mask[0].y = kBandTop;
+    out->mask[0].w = APP_LCD_H_RES;
+    out->mask[0].h = kBandHeight;
+    out->mask[0].cover = cover_[shown_];
+    out->mask[0].ink_rgb565 = wire(verdict_ == APP_UI_GRANTED ? kMint : kWhite);
+    out->mask[0].edge_rgb565 = wire(kShadow);
+    out->masks = 1;
 }
 
 }  // namespace ui

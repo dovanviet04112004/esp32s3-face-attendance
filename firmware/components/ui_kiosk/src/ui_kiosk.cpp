@@ -13,6 +13,7 @@ namespace {
 const char *TAG = "ui_kiosk";
 
 constexpr int kSlots = 2;
+constexpr int kHistory = 24;
 constexpr uint32_t kVerdictShift = 32;
 
 struct Detect {
@@ -24,28 +25,27 @@ struct Detect {
 };
 
 // How far the face has travelled since each of the last frames drawn, so a box
-// that took 300 ms to compute can be carried forward to now.
+// that took half a second to compute can be carried forward to now.
 struct Travelled {
     int64_t stamp_us;
     int32_t x;
     int32_t y;
 };
 
-constexpr int kHistory = 24;
-
 ui::OverlayBuilder s_builder;
 ui::BoxTracker s_tracker;
-Travelled s_history[kHistory];
-int s_history_next;
-int32_t s_travel_x;
-int32_t s_travel_y;
 drv_lcd_overlay_t s_slot[kSlots];
 std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
 int s_next;
 bool s_ready;
 
-// Every write to the builder happens on the preview path, so what the other two
-// tasks report arrives through one atomic handover each.
+Travelled s_history[kHistory];
+int s_history_next;
+int32_t s_travel_x;
+int32_t s_travel_y;
+
+// The preview path is the only writer, so what the other two tasks report
+// arrives through one atomic handover each.
 Detect s_detect_slot[kSlots];
 std::atomic<const Detect *> s_detect{ nullptr };
 int s_detect_next;
@@ -60,26 +60,13 @@ void publish()
     s_shown.store(target, std::memory_order_release);
 }
 
-bool take_verdict()
-{
-    const uint64_t packed = s_verdict.load(std::memory_order_acquire);
-    if (packed == s_verdict_shown) {
-        return false;
-    }
-    s_verdict_shown = packed;
-    return s_builder.set_verdict(static_cast<app_ui_verdict_t>(packed >> kVerdictShift),
-                                 static_cast<uint32_t>(packed));
-}
-
-// Nothing older than the ring reaches here, and a stamp the ring has forgotten
-// leaves the box where the detector put it.
+// A stamp the ring has forgotten leaves the box where the detector put it.
 bool travel_since(int64_t stamp_us, int32_t *dx, int32_t *dy)
 {
     for (int i = 0; i < kHistory; ++i) {
-        const Travelled &seen = s_history[i];
-        if (seen.stamp_us == stamp_us) {
-            *dx = s_travel_x - seen.x;
-            *dy = s_travel_y - seen.y;
+        if (s_history[i].stamp_us == stamp_us) {
+            *dx = s_travel_x - s_history[i].x;
+            *dy = s_travel_y - s_history[i].y;
             return true;
         }
     }
@@ -113,10 +100,8 @@ void follow(const uint16_t *pixels, int width, int height, int64_t stamp_us)
     int32_t dx = 0;
     int32_t dy = 0;
     travel_since(fresh->stamp_us, &dx, &dy);
-    ESP_LOGD(TAG, "anchor %+d %+d px, %lld ms old", (int)dx, (int)dy,
-             (long long)((esp_timer_get_time() - fresh->stamp_us) / 1000));
-    const ui::Box box = { fresh->box[0][0] + dx, fresh->box[0][1] + dy,
-                          fresh->box[0][2] + dx, fresh->box[0][3] + dy };
+    const ui::Box box = { fresh->box[0][0] + dx, fresh->box[0][1] + dy, fresh->box[0][2] + dx,
+                          fresh->box[0][3] + dy };
     s_tracker.anchor(box, pixels, width, height);
     s_builder.set_others(&fresh->box[1][0], fresh->count - 1, fresh->width, fresh->height);
 }
@@ -136,8 +121,7 @@ esp_err_t ui_kiosk_init(void)
     memset(s_detect_slot, 0, sizeof(s_detect_slot));
     s_ready = true;
     publish();
-    ESP_LOGI(TAG, "overlay up, card %dx%d", ui::OverlayBuilder::kCardWidth,
-             ui::OverlayBuilder::kCardHeight);
+    ESP_LOGI(TAG, "overlay up, band %d px", ui::OverlayBuilder::kBandHeight);
     return ESP_OK;
 }
 
@@ -148,13 +132,13 @@ void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame
         return;
     }
     Detect *target = &s_detect_slot[s_detect_next];
-    target->stamp_us = stamp_us;
     target->count = count < DRV_LCD_OVERLAY_BOXES ? count : DRV_LCD_OVERLAY_BOXES;
     if (target->count > 0) {
         memcpy(target->box, boxes, sizeof(float) * 4 * target->count);
     }
     target->width = frame_width;
     target->height = frame_height;
+    target->stamp_us = stamp_us;
     s_detect_next = (s_detect_next + 1) % kSlots;
     s_detect.store(target, std::memory_order_release);
 }
@@ -170,12 +154,17 @@ void ui_kiosk_track(const void *pixels, int width, int height, int64_t stamp_us)
     if (!s_ready || pixels == NULL) {
         return;
     }
-    const uint16_t *words = (const uint16_t *)pixels;
-    follow(words, width, height, stamp_us);
+    follow((const uint16_t *)pixels, width, height, stamp_us);
     const ui::Box &held = s_tracker.box();
     const float box[4] = { held.x1, held.y1, held.x2, held.y2 };
     bool changed = s_builder.set_face(s_tracker.active(), box, width, height);
-    changed = take_verdict() || changed;
+    const uint64_t packed = s_verdict.load(std::memory_order_acquire);
+    if (packed != s_verdict_shown) {
+        s_verdict_shown = packed;
+        changed = s_builder.set_verdict(static_cast<app_ui_verdict_t>(packed >> kVerdictShift),
+                                        static_cast<uint32_t>(packed)) ||
+                  changed;
+    }
     if (changed) {
         publish();
     }

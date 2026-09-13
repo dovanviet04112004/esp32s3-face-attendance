@@ -2264,7 +2264,7 @@ firmware/
 │
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
-│   ├── fonts/{noto_sans_vn_16.c, noto_sans_vn_24.c}
+│   ├── fonts/{gen_font.py, kiosk_sans_22.{c,h}}   # 1bpp, sinh từ TTF, ui_kiosk đè lên preview
 │   ├── icons/  ├── sounds/{ok.wav, denied.wav, spoof.wav}
 │   └── build_assets.py               # → build/assets.bin (image SPIFFS)
 │
@@ -2559,6 +2559,7 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 | Từ | Sự kiện | Sang | Hành động |
 |---|---|---|---|
 | `Idle` | `PresenceOn` | `Detecting` | `Watch` — bật preview, chờ mặt |
+| `Idle` | `FaceSmall` / `Spoof` / `Unknown` / `Match` | `Detecting` | `Watch` — người vẫn đứng đó |
 | `Detecting` | `FaceSmall` | `Detecting` | `None` — chỉ UI nhắc lại gần |
 | `Detecting` | `Match` | `Granted` | `Grant` |
 | `Detecting` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
@@ -2572,6 +2573,8 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 | `Cooldown` | `PresenceOff` | `Idle` | `None` |
 
 `Verifying` tồn tại cho đường xác thực nhiều khung của §4.5.5d: `svc_vision` tự giữ nhịp thử lại, nên tầng này chỉ cần một trạng thái chờ có `Timeout` để không kẹt nếu `ai_task` chết.
+
+**Một khuôn mặt cũng mở được máy, không chỉ ToF.** Bản đầu chỉ có `PresenceOn` đưa `Idle` sang `Detecting`, mà `PresenceOn` là **một cạnh**: chấm xong, máy về `Idle`, người vẫn đứng nguyên chỗ cũ nên không có cạnh nào nữa và **không chấm lại được cho tới khi bước hẳn ra rồi vào lại**. Đo trên board 13/09: sau lần chấm đầu, mọi lần sau im cho tới khi reset. Bốn sự kiện thị giác ở `Idle` vì thế cũng mở máy — thấy mặt tức là có người, dù ToF chưa kịp nhả cạnh nào. Chống chấm trùng vẫn là việc của `attend.dedup_min` nên mở đường này không đẻ ra bản ghi thừa.
 
 **Bốn quyết định nghiệp vụ tầng này giữ, không đẩy xuống dưới:**
 

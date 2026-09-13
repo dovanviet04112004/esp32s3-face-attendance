@@ -6,6 +6,11 @@ namespace {
 
 constexpr Transition kTable[] = {
     { St::Idle, Ev::PresenceOn, St::Detecting, Act::Watch },
+    // A face reopens the machine too: PresenceOn is an edge (KEHOACH 4.5.5f).
+    { St::Idle, Ev::FaceSmall, St::Detecting, Act::Watch },
+    { St::Idle, Ev::Spoof, St::Detecting, Act::Watch },
+    { St::Idle, Ev::Unknown, St::Detecting, Act::Watch },
+    { St::Idle, Ev::Match, St::Detecting, Act::Watch },
     { St::Detecting, Ev::FaceSmall, St::Detecting, Act::None },
     { St::Detecting, Ev::Match, St::Granted, Act::Grant },
     { St::Detecting, Ev::Spoof, St::Denied, Act::Refuse },

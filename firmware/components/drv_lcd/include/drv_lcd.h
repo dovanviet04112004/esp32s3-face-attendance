@@ -13,11 +13,27 @@
 extern "C" {
 #endif
 
-#define DRV_LCD_OVERLAY_CARDS 2
+#define DRV_LCD_OVERLAY_MASKS 2
 #define DRV_LCD_OVERLAY_BOXES 4
 
-/** A hollow rectangle drawn over the preview, in panel pixels.
+#define DRV_LCD_INK 1
+#define DRV_LCD_EDGE 2
+
+/** Text laid over the preview: one byte a pixel saying what to paint there.
+ *  Colours are already in panel byte order, because the preview path does not
+ *  swap on the way out (KEHOACH 4.5.5h).
  */
+typedef struct {
+    int16_t x;
+    int16_t y;
+    int16_t w;
+    int16_t h;
+    const uint8_t *cover;                 // w*h: 0 leaves the video, else INK or EDGE
+    uint16_t ink_rgb565;
+    uint16_t edge_rgb565;
+} drv_lcd_mask_t;
+
+/** A hollow rectangle drawn over the preview, in panel pixels. */
 typedef struct {
     int16_t x1;
     int16_t y1;
@@ -27,24 +43,11 @@ typedef struct {
     uint8_t edge_px;
 } drv_lcd_box_t;
 
-/** A solid image drawn over the preview, in panel pixels.
- */
+/** What to paint over the preview, cut into strips as the frame is gathered. */
 typedef struct {
-    int16_t x;
-    int16_t y;
-    int16_t w;
-    int16_t h;
-    const uint16_t *pixels;               // w*h, already in panel byte order
-} drv_lcd_card_t;
-
-/** What to paint over the preview, cut into strips as the frame is gathered.
- *  Pixels arrive in panel byte order because the preview path does not swap:
- *  a camera frame is already the right way round (KEHOACH 4.5.5h).
- */
-typedef struct {
-    uint8_t cards;
+    uint8_t masks;
     uint8_t boxes;
-    drv_lcd_card_t card[DRV_LCD_OVERLAY_CARDS];
+    drv_lcd_mask_t mask[DRV_LCD_OVERLAY_MASKS];
     drv_lcd_box_t box[DRV_LCD_OVERLAY_BOXES];
 } drv_lcd_overlay_t;
 
