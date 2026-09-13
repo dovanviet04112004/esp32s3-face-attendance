@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "storage_format.h"
+#include "svc_facedb.h"
 
 namespace facedb {
 
@@ -94,6 +95,7 @@ public:
     esp_err_t enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
                      const int8_t *emb, float scale, const char *name) noexcept;
     esp_err_t remove(uint32_t employee_id) noexcept;
+    size_t people(svc_facedb_person_t *out, size_t cap) noexcept;
     esp_err_t persist() noexcept;
     size_t active() const noexcept { return active_; }
 

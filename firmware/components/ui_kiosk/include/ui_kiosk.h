@@ -55,6 +55,30 @@ bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *na
  */
 void ui_kiosk_enrol_kept(void);
 
+/** One row of the people list, filled by main from the table it can reach. */
+typedef struct {
+    uint32_t employee_id;
+    uint16_t templates;
+    char name[STORAGE_NAME_CAP];
+} ui_kiosk_person_t;
+
+#define UI_KIOSK_PEOPLE_ROWS 8
+
+/** True when a screen has opened that needs the list refreshed.
+ *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
+ */
+bool ui_kiosk_take_people_request(void);
+
+/** Hand the list to whichever screen asked for it.
+ *  @ctx ui_task | non-blocking | copied, the caller keeps its own array
+ */
+void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count);
+
+/** True while a screen is collecting faces rather than checking anyone in.
+ *  @ctx ai_task | non-blocking
+ */
+bool ui_kiosk_enrolling(void);
+
 /** The cover map to paint over this frame.
  *  @ctx cam_task | non-blocking | read once per frame
  *  @ret NULL until the first screen has been painted

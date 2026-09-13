@@ -208,6 +208,30 @@ bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *na
     return true;
 }
 
+bool ui_kiosk_take_people_request(void)
+{
+    if (!s_ready || !ui::people().wanted) {
+        return false;
+    }
+    ui::people().wanted = false;
+    return true;
+}
+
+void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count)
+{
+    if (!s_ready) {
+        return;
+    }
+    ui::people().count = count < UI_KIOSK_PEOPLE_ROWS ? count : UI_KIOSK_PEOPLE_ROWS;
+    memcpy(ui::people().row, people, sizeof(ui_kiosk_person_t) * ui::people().count);
+    s_dirty = true;
+}
+
+bool ui_kiosk_enrolling(void)
+{
+    return s_ready && ui::manager().at() == ui::ScreenId::Capture;
+}
+
 void ui_kiosk_enrol_kept(void)
 {
     if (s_ready) {

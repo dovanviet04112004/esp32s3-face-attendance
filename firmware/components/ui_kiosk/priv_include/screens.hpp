@@ -8,6 +8,7 @@
 #include "app_events.h"
 #include "canvas.hpp"
 #include "storage_format.h"
+#include "ui_kiosk.h"
 
 namespace ui {
 
@@ -73,6 +74,15 @@ EnrolRequest &enrol_request() noexcept;
 
 /** The capture screen counts a sample when the pipeline really kept one. */
 void enrol_kept() noexcept;
+
+/** What the people screen shows, handed down by main (KEHOACH 4.5.4 rule 2). */
+struct People {
+    bool wanted;
+    int count;
+    ui_kiosk_person_t row[UI_KIOSK_PEOPLE_ROWS];
+};
+
+People &people() noexcept;
 
 Screen *scan_screen() noexcept;
 Screen *menu_screen() noexcept;

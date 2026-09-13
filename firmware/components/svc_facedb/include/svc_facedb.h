@@ -44,6 +44,19 @@ esp_err_t svc_facedb_lookup(const int8_t *emb, float scale, svc_facedb_match_t *
 esp_err_t svc_facedb_enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
                             const int8_t *emb, float scale, const char *name);
 
+/** One enrolled person, however many templates they carry. */
+typedef struct {
+    uint32_t employee_id;
+    uint16_t templates;
+    char name[STORAGE_NAME_CAP];
+} svc_facedb_person_t;
+
+/** Fill out with the people in the table, one entry each.
+ *  @ctx task | blocking | takes m_facedb
+ *  @ret how many it wrote, never more than cap
+ */
+size_t svc_facedb_people(svc_facedb_person_t *out, size_t cap);
+
 /** Soft-delete every template of one employee.
  *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND when nothing carried that id | ESP_ERR_TIMEOUT

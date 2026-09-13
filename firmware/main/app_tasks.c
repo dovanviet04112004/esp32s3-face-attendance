@@ -16,6 +16,7 @@
 #include "net_wifi.h"
 #include "storage_format.h"
 #include "svc_attendance.h"
+#include "svc_facedb.h"
 #include "svc_vision.h"
 #include "sys_storage.h"
 #include "sys_time.h"
@@ -217,7 +218,7 @@ static void ai_task(void *arg)
         esp_task_wdt_reset();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "vision step %s", esp_err_to_name(err));
-        } else if (result.kind != SVC_VISION_NONE) {
+        } else if (result.kind != SVC_VISION_NONE && !ui_kiosk_enrolling()) {
             ESP_LOGI(TAG, "verdict %d, live %.3f, match %.3f, id %u", (int)result.kind,
                      result.live_score, result.match_score, (unsigned)result.employee_id);
             // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
@@ -253,13 +254,32 @@ static void ui_task(void *arg)
 {
     (void)arg;
     bool armed = false;
+    bool enrolling = false;
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(UI_TICK_MS));
         ui_kiosk_tick(UI_TICK_MS);
+        const bool now_enrolling = ui_kiosk_enrolling();
+        if (enrolling && !now_enrolling) {
+            // The enrolled track has already matched, and a matched track is
+            // never verified again (KEHOACH 4.5.5d).
+            svc_vision_reset();
+        }
+        enrolling = now_enrolling;
         if (armed && !svc_vision_enrol_pending()) {
             armed = false;
             ui_kiosk_enrol_kept();
+        }
+        if (ui_kiosk_take_people_request()) {
+            svc_facedb_person_t table[UI_KIOSK_PEOPLE_ROWS];
+            ui_kiosk_person_t rows[UI_KIOSK_PEOPLE_ROWS];
+            const size_t found = svc_facedb_people(table, UI_KIOSK_PEOPLE_ROWS);
+            for (size_t i = 0; i < found; ++i) {
+                rows[i].employee_id = table[i].employee_id;
+                rows[i].templates = table[i].templates;
+                memcpy(rows[i].name, table[i].name, sizeof(rows[i].name));
+            }
+            ui_kiosk_set_people(rows, (int)found);
         }
         uint32_t employee_id = 0;
         uint16_t template_idx = 0;

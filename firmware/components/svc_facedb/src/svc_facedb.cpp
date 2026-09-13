@@ -40,6 +40,11 @@ esp_err_t svc_facedb_enroll(uint32_t employee_id, uint16_t template_idx, uint8_t
     return s_db.enroll(employee_id, template_idx, quality, emb, scale, name);
 }
 
+size_t svc_facedb_people(svc_facedb_person_t *out, size_t cap)
+{
+    return s_db.people(out, cap);
+}
+
 esp_err_t svc_facedb_remove(uint32_t employee_id)
 {
     return s_db.remove(employee_id);

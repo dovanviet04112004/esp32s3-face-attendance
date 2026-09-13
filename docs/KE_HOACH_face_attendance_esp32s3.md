@@ -2667,6 +2667,8 @@ gõ **chữ không dấu** — bộ gõ tiếng Việt là một hệ thống ri
 gọi `svc_vision_enrol_next()` rồi đứng chờ chính `MATCH` của người vừa thêm, nên "thêm thành
 công" là câu nói sau khi máy **đã nhận lại được**, không phải sau khi ghi xong file.
 
+**Đăng ký không được đẻ ra một lần chấm công.** Ngay sau mẫu đầu, máy nhận ra người đang đứng đó và `svc_vision` bắn `MATCH` như mọi khi — `svc_attendance` mở cửa, ghi bản ghi, màn hiện "Đã chấm công" giữa lúc người ta đang quay mặt sang trái. Thấy trên board 13/09. Nên `ai_task` **không đẩy kết quả vào `q_result`** khi màn `Capture` đang mở: khung vẫn chạy đủ ba model để lấy mẫu, chỉ có đường nghiệp vụ là im. Câu xác nhận của việc thêm người do chính `CaptureScreen` nói, không mượn thẻ chấm công của màn `Scan`.
+
 ##### h.1) Màn `Scan` — khung ngắm là thứ sửa lỗi "đứng xa không chấm được"
 
 Máy chấm công thương mại (ZKTeco SpeedFace, Hikvision MinMoe) đều để một **khung ngắm đứng yên

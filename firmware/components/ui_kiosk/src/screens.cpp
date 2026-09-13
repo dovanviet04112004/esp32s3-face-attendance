@@ -25,10 +25,12 @@ constexpr int kEdge = 2;
 constexpr int kRingR = 30;
 constexpr int kSamples = 3;
 constexpr int64_t kSampleGapMs = 400;
+constexpr int64_t kDoneShowMs = 1800;
 constexpr uint32_t kFirstEmployee = 1;
 
 ScreenManager s_manager;
 EnrolRequest s_request;
+People s_people_list;
 
 void button(Canvas &to, int x, int y, int w, int h, const char *label, uint8_t tone, bool held)
 {
@@ -410,7 +412,11 @@ public:
         }
         took_ = false;
         if (kept_ >= kSamples) {
-            manager().go(ScreenId::Scan);
+            // This screen says it, not the attendance card (KEHOACH 4.5.5h).
+            if (since_ms_ >= kDoneShowMs) {
+                manager().go(ScreenId::Scan);
+            }
+            took_ = true;
             return true;
         }
         arm();
@@ -425,11 +431,19 @@ public:
         since_ms_ = 0;
     }
 
+    bool done() const noexcept { return kept_ >= kSamples; }
+
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         top_bar(to, nullptr);
-        to.text_centred(kBarH + 12, kAsk[kept_ < kSamples ? kept_ : kSamples - 1], DRV_LCD_INK);
-        guide(to, DRV_LCD_WARN, nullptr);
+        if (done()) {
+            char line[STORAGE_NAME_CAP + 12];
+            snprintf(line, sizeof(line), "Đã thêm %s", enrol_request().name);
+            to.text_centred(kBarH + 12, line, DRV_LCD_ACCENT);
+        } else {
+            to.text_centred(kBarH + 12, kAsk[kept_], DRV_LCD_INK);
+        }
+        guide(to, done() ? DRV_LCD_ACCENT : DRV_LCD_WARN, nullptr);
         const int left = (APP_LCD_H_RES - (kSamples * 40 + (kSamples - 1) * 10)) / 2;
         for (int i = 0; i < kSamples; ++i) {
             const int x = left + i * 50;
@@ -467,6 +481,8 @@ public:
     bool opaque() const noexcept override { return true; }
 
     explicit ListScreen(const char *title) noexcept : title_(title) {}
+
+    void on_enter() noexcept override { lines_ = 0; }
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
@@ -516,7 +532,56 @@ ScanScreen s_scan;
 MenuScreen s_menu;
 EnrolScreen s_enrol;
 CaptureScreen s_capture;
-ListScreen s_people("Danh sách");
+class PeopleScreen final : public Screen {
+public:
+    bool opaque() const noexcept override { return true; }
+
+    void on_enter() noexcept override
+    {
+        people().wanted = true;
+        held_ = false;
+    }
+
+    bool on_touch(int x, int y, bool down) noexcept override
+    {
+        const bool on_back = inside(x, y, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH);
+        if (down) {
+            held_ = on_back;
+            return true;
+        }
+        const bool fire = held_ && on_back;
+        held_ = false;
+        if (fire) {
+            manager().go(ScreenId::Menu);
+        }
+        return true;
+    }
+
+    void paint(Canvas &to, const Sight &seen) noexcept override
+    {
+        (void)seen;
+        top_bar(to, nullptr);
+        to.text_centred(kBarH + 18, "Danh sách", DRV_LCD_INK);
+        if (people().count == 0) {
+            to.text_centred(kBarH + 80, "Chưa có ai", DRV_LCD_WARN);
+        }
+        for (int i = 0; i < people().count; ++i) {
+            const ui_kiosk_person_t &who = people().row[i];
+            char line[STORAGE_NAME_CAP + 24];
+            snprintf(line, sizeof(line), "%s  ·  %u mẫu",
+                     who.name[0] != '\0' ? who.name : "Chưa đặt tên", (unsigned)who.templates);
+            to.text(kPad, kBarH + 60 + i * (Canvas::line_height() + 10), line, DRV_LCD_INK);
+        }
+        button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Quay lại", DRV_LCD_INK, held_);
+    }
+
+private:
+    static constexpr int kFootY = APP_LCD_V_RES - kRowH - kPad;
+
+    bool held_ = false;
+};
+
+PeopleScreen s_people;
 ListScreen s_settings("Cài đặt");
 
 }  // namespace
@@ -544,6 +609,11 @@ EnrolRequest &enrol_request() noexcept
 void enrol_kept() noexcept
 {
     s_capture.kept_one();
+}
+
+People &people() noexcept
+{
+    return s_people_list;
 }
 
 Screen *scan_screen() noexcept
