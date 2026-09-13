@@ -96,6 +96,18 @@ void BoxTracker::capture(const uint16_t *frame, int width) noexcept
     active_ = high - low >= kMinContrast;
 }
 
+void BoxTracker::anchor(const Box &box, const uint16_t *frame, int width, int height) noexcept
+{
+    if (frame == nullptr || width < kWindowPx || height < kWindowPx || box.x2 <= box.x1 ||
+        box.y2 <= box.y1) {
+        return;
+    }
+    box_ = box;
+    patch_left_ = centred((box.x1 + box.x2) / 2.0f, kPatchPx, width);
+    patch_top_ = centred((box.y1 + box.y2) / 2.0f, kPatchPx, height);
+    capture(frame, width);
+}
+
 void BoxTracker::refresh(const uint16_t *frame, int width, int height) noexcept
 {
     if (!active_ || frame == nullptr || width < kWindowPx || height < kWindowPx) {

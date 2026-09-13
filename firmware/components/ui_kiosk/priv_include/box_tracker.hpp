@@ -18,7 +18,7 @@ struct Box {
 class BoxTracker {
 public:
     static constexpr int kStep = 2;                        // frame pixels per tracking pixel
-    static constexpr int kPatch = 24;                      // template side, tracking pixels
+    static constexpr int kPatch = 16;                      // template side, tracking pixels
     static constexpr int kRadius = 32;                     // search radius, tracking pixels
     static constexpr int kCoarseStep = 4;                  // tracking pixels between coarse tries
     static constexpr int kLostFrames = 3;                  // misses that put the box away
@@ -41,6 +41,13 @@ public:
 
     /** Give the box the side lengths of a newer one, around the centre it holds. */
     void reshape(float width, float height) noexcept;
+
+    /** Put the box here and take a patch under it, keeping the motion learned. */
+    void anchor(const Box &box, const uint16_t *frame, int width, int height) noexcept;
+
+    /** What the last update measured the face moving, in frame pixels. */
+    int drift_x() const noexcept { return drift_x_; }
+    int drift_y() const noexcept { return drift_y_; }
 
     bool active() const noexcept { return active_; }
     const Box &box() const noexcept { return box_; }

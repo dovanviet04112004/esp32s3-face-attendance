@@ -22,8 +22,10 @@ esp_err_t ui_kiosk_init(void);
 
 /** Put boxes where the detector last saw faces, in sensor frame pixels.
  *  @ctx ai_task | non-blocking | boxes holds count sets of four, first is primary
+ *  @param stamp_us the timestamp of the frame the detector read
  */
-void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height);
+void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
+                       int64_t stamp_us);
 
 /** Say what the kiosk decided about that face.
  *  @ctx attend_task | non-blocking | employee_id reads 0 unless granted
@@ -33,7 +35,7 @@ void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id);
 /** Slide the box onto this preview frame and refresh what the overlay shows.
  *  @ctx cam_task | non-blocking | one call per frame, ahead of the draw
  */
-void ui_kiosk_track(const void *pixels, int width, int height);
+void ui_kiosk_track(const void *pixels, int width, int height, int64_t stamp_us);
 
 /** The overlay to paint over this frame.
  *  @ctx cam_task | non-blocking | read once per frame, never held across frames

@@ -51,6 +51,11 @@ static const char *TAG = "app_tasks";
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
 #define NVS_PRESENT_MM "present_mm"
 
+static int64_t stamp_of(const camera_fb_t *frame)
+{
+    return (int64_t)frame->timestamp.tv_sec * 1000000 + frame->timestamp.tv_usec;
+}
+
 static void report_rate(int frames, int64_t elapsed_us)
 {
     const int mfps = elapsed_us > 0 ? (int)((int64_t)frames * 1000000000 / elapsed_us) : 0;
@@ -126,7 +131,7 @@ static void cam_task(void *arg)
             continue;
         }
         drv_camera_expose(frame);
-        ui_kiosk_track(frame->buf, frame->width, frame->height);
+        ui_kiosk_track(frame->buf, frame->width, frame->height, stamp_of(frame));
         const esp_err_t err =
             drv_lcd_blit_frame(frame->buf, frame->width, frame->height, ui_kiosk_overlay());
         offer_to_ai(wiring->frames, frame);
@@ -182,7 +187,7 @@ static void ai_task(void *arg)
         svc_vision_result_t result = { 0 };
         const esp_err_t err = svc_vision_step(frame, &result);
         const int shown = faces_to_show(&result, boxes);
-        ui_kiosk_on_faces(&boxes[0][0], shown, frame->width, frame->height);
+        ui_kiosk_on_faces(&boxes[0][0], shown, frame->width, frame->height, stamp_of(frame));
         if ((shown > 0) != had_face) {
             had_face = shown > 0;
             ESP_LOGI(TAG, "face %s, %d drawn of %u seen", had_face ? "in" : "out", shown,

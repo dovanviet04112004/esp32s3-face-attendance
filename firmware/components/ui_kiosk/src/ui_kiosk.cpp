@@ -13,17 +13,31 @@ const char *TAG = "ui_kiosk";
 
 constexpr int kSlots = 2;
 constexpr uint32_t kVerdictShift = 32;
-constexpr float kSameFace = 0.2f;
 
 struct Detect {
     float box[DRV_LCD_OVERLAY_BOXES][4];
     int count;
     int width;
     int height;
+    int64_t stamp_us;                     // the frame the detector read
 };
+
+// How far the face has travelled since each of the last frames drawn, so a box
+// that took 300 ms to compute can be carried forward to now.
+struct Travelled {
+    int64_t stamp_us;
+    int32_t x;
+    int32_t y;
+};
+
+constexpr int kHistory = 24;
 
 ui::OverlayBuilder s_builder;
 ui::BoxTracker s_tracker;
+Travelled s_history[kHistory];
+int s_history_next;
+int32_t s_travel_x;
+int32_t s_travel_y;
 drv_lcd_overlay_t s_slot[kSlots];
 std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
 int s_next;
@@ -56,44 +70,52 @@ bool take_verdict()
                                  static_cast<uint32_t>(packed));
 }
 
-float overlap(const ui::Box &a, const ui::Box &b)
+// Nothing older than the ring reaches here, and a stamp the ring has forgotten
+// leaves the box where the detector put it.
+bool travel_since(int64_t stamp_us, int32_t *dx, int32_t *dy)
 {
-    const float left = a.x1 > b.x1 ? a.x1 : b.x1;
-    const float top = a.y1 > b.y1 ? a.y1 : b.y1;
-    const float right = a.x2 < b.x2 ? a.x2 : b.x2;
-    const float bottom = a.y2 < b.y2 ? a.y2 : b.y2;
-    const float w = right > left ? right - left : 0.0f;
-    const float h = bottom > top ? bottom - top : 0.0f;
-    const float shared = w * h;
-    const float joined =
-        (a.x2 - a.x1) * (a.y2 - a.y1) + (b.x2 - b.x1) * (b.y2 - b.y1) - shared;
-    return joined > 0.0f ? shared / joined : 0.0f;
+    for (int i = 0; i < kHistory; ++i) {
+        const Travelled &seen = s_history[i];
+        if (seen.stamp_us == stamp_us) {
+            *dx = s_travel_x - seen.x;
+            *dy = s_travel_y - seen.y;
+            return true;
+        }
+    }
+    return false;
 }
 
-// A detect lands three times a second; between two of them the patch match is
-// what keeps the box on the face (KEHOACH 4.5.5h).
-void follow(const uint16_t *pixels, int width, int height)
+void remember(int64_t stamp_us)
 {
+    s_travel_x += s_tracker.drift_x();
+    s_travel_y += s_tracker.drift_y();
+    s_history[s_history_next] = { stamp_us, s_travel_x, s_travel_y };
+    s_history_next = (s_history_next + 1) % kHistory;
+}
+
+// The detector is accurate but late, the match is on time but drifts: the box
+// is the detector's, carried forward by the match (KEHOACH 4.5.5h).
+void follow(const uint16_t *pixels, int width, int height, int64_t stamp_us)
+{
+    s_tracker.update(pixels, width, height);
+    remember(stamp_us);
+
     const Detect *fresh = s_detect.exchange(nullptr, std::memory_order_acquire);
-    if (fresh != nullptr && fresh->count <= 0) {
+    if (fresh == nullptr) {
+        return;
+    }
+    if (fresh->count <= 0) {
         s_tracker.clear();
         s_builder.set_others(nullptr, 0, width, height);
         return;
     }
-    if (fresh != nullptr) {
-        const ui::Box box = { fresh->box[0][0], fresh->box[0][1], fresh->box[0][2],
-                              fresh->box[0][3] };
-        // That box is a third of a second old, so snapping onto it would drag
-        // the kiosk's box back behind the face it is already holding.
-        if (s_tracker.active() && overlap(s_tracker.box(), box) >= kSameFace) {
-            s_tracker.reshape(box.x2 - box.x1, box.y2 - box.y1);
-            s_tracker.refresh(pixels, width, height);
-        } else {
-            s_tracker.set(box, pixels, fresh->width, fresh->height, true);
-        }
-        s_builder.set_others(&fresh->box[1][0], fresh->count - 1, fresh->width, fresh->height);
-    }
-    s_tracker.update(pixels, width, height);
+    int32_t dx = 0;
+    int32_t dy = 0;
+    travel_since(fresh->stamp_us, &dx, &dy);
+    const ui::Box box = { fresh->box[0][0] + dx, fresh->box[0][1] + dy,
+                          fresh->box[0][2] + dx, fresh->box[0][3] + dy };
+    s_tracker.anchor(box, pixels, width, height);
+    s_builder.set_others(&fresh->box[1][0], fresh->count - 1, fresh->width, fresh->height);
 }
 
 }  // namespace
@@ -116,12 +138,14 @@ esp_err_t ui_kiosk_init(void)
     return ESP_OK;
 }
 
-void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height)
+void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
+                       int64_t stamp_us)
 {
     if (!s_ready) {
         return;
     }
     Detect *target = &s_detect_slot[s_detect_next];
+    target->stamp_us = stamp_us;
     target->count = count < DRV_LCD_OVERLAY_BOXES ? count : DRV_LCD_OVERLAY_BOXES;
     if (target->count > 0) {
         memcpy(target->box, boxes, sizeof(float) * 4 * target->count);
@@ -138,13 +162,13 @@ void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id)
     s_verdict.store(packed, std::memory_order_release);
 }
 
-void ui_kiosk_track(const void *pixels, int width, int height)
+void ui_kiosk_track(const void *pixels, int width, int height, int64_t stamp_us)
 {
     if (!s_ready || pixels == NULL) {
         return;
     }
     const uint16_t *words = (const uint16_t *)pixels;
-    follow(words, width, height);
+    follow(words, width, height, stamp_us);
     const ui::Box &held = s_tracker.box();
     const float box[4] = { held.x1, held.y1, held.x2, held.y2 };
     bool changed = s_builder.set_face(s_tracker.active(), box, width, height);
