@@ -155,9 +155,11 @@ public:
         } else if (seen.face && !seen.close_enough) {
             tone = DRV_LCD_WARN;
             prompt = "Lại gần hơn";
-        } else if (seen.verifying) {
-            tone = DRV_LCD_WARN;
-            prompt = "Giữ yên…";
+        } else if (seen.face) {
+            // The frame turning is the whole message: asking again for a face
+            // it already has is the machine not looking.
+            tone = DRV_LCD_ACCENT;
+            prompt = nullptr;
         }
         guide(to, tone, prompt);
 
