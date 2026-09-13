@@ -1,0 +1,11 @@
+menu "sys_time"
+
+    config SYS_TIME_TZ
+        string "POSIX time zone the screen reads the clock in"
+        default "ICT-7"
+        help
+            Registers and records stay in UTC; this only moves what a person
+            sees. NVS device/tz overrides it from the first boot that has one.
+            POSIX signs are inverted: ICT-7 is UTC+7.
+
+endmenu

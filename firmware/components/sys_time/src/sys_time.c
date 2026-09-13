@@ -6,6 +6,8 @@
 
 #include "app_err.h"
 #include "bsp_board.h"
+#include <stdlib.h>
+
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
 #include "esp_sntp.h"
@@ -175,6 +177,17 @@ esp_err_t sys_time_write_rtc(void)
     // clears it, so a fresh time is worthless until this write happens.
     status &= (uint8_t)~OSF_BIT;
     return write_regs(STATUS_REG, &status, 1);
+}
+
+esp_err_t sys_time_set_zone(const char *posix_tz)
+{
+    if (posix_tz == NULL || posix_tz[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    setenv("TZ", posix_tz, 1);
+    tzset();
+    ESP_LOGI(TAG, "zone %s", posix_tz);
+    return ESP_OK;
 }
 
 esp_err_t sys_time_sync_start(const char *server, sys_time_synced_cb on_synced, void *arg)

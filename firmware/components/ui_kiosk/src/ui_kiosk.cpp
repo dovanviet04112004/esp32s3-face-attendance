@@ -3,6 +3,7 @@
 #include <atomic>
 #include <new>
 #include <string.h>
+#include <time.h>
 
 #include "canvas.hpp"
 #include "esp_heap_caps.h"
@@ -20,6 +21,7 @@ constexpr uint32_t kVerdictShift = 32;
 // quiet window: a face nobody enrolled would otherwise strobe it forever.
 constexpr int64_t kShowMs = 2500;
 constexpr int64_t kQuietMs = 6000;
+constexpr int64_t kClockPollMs = 1000;
 
 constexpr uint16_t kWhite = 0xFFFF;
 constexpr uint16_t kMint = 0x27EC;
@@ -49,6 +51,8 @@ uint64_t s_line_showing;
 int64_t s_clear_in_ms;
 int64_t s_quiet_in_ms;
 std::atomic<int32_t> s_touch{ -1 };
+int64_t s_clock_poll_ms;
+int64_t s_minute_shown = -1;
 
 // The whole panel is one map, but only the rectangle a screen touched is worth
 // sending: the rest is zero and would cost a scan of 153 KB every frame.
@@ -76,6 +80,22 @@ void publish(const ui::Canvas &from)
     target->serial = ++s_serial;
     s_next = (s_next + 1) % kSlots;
     s_shown.store(target, std::memory_order_release);
+}
+
+// Every screen paints the clock, and a repaint needs a reason, so the minute
+// rolling over is one.
+void mind_the_clock(int64_t dt_ms)
+{
+    s_clock_poll_ms += dt_ms;
+    if (s_clock_poll_ms < kClockPollMs) {
+        return;
+    }
+    s_clock_poll_ms = 0;
+    const int64_t minute = (int64_t)time(nullptr) / 60;
+    if (minute != s_minute_shown) {
+        s_minute_shown = minute;
+        s_dirty = true;
+    }
 }
 
 void take_verdict(int64_t dt_ms)
@@ -191,6 +211,7 @@ void ui_kiosk_tick(uint32_t dt_ms)
         was = now;
         s_dirty = ui::manager().current()->on_touch(x, y, now >= 0) || s_dirty;
     }
+    mind_the_clock(dt_ms);
     take_verdict(dt_ms);
     s_dirty = ui::manager().current()->tick(dt_ms, s_seen) || s_dirty;
     if (!s_dirty) {

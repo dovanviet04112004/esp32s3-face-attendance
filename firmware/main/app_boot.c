@@ -1,5 +1,7 @@
 #include "app_boot.h"
 
+#include <string.h>
+
 #include <inttypes.h>
 
 #include "ai_engine.h"
@@ -27,6 +29,8 @@ static const char *TAG = "app_boot";
 
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
 #define NVS_SEED_VER "seed_ver"
+#define NVS_TZ "tz"
+#define TZ_CAP 40
 // Raise only when a seed below changes, and read KEHOACH 6.2.1 first: it
 // overwrites whatever SET_CONFIG had put there.
 #define APP_SEED_VER 3
@@ -181,6 +185,12 @@ esp_err_t app_boot(void)
     // A door that will not take a pulse is a miswired kiosk, not a degraded
     // one: granting access with nothing to open is worse than not booting.
     ESP_ERROR_CHECK(drv_servo_init());
+    char zone[TZ_CAP] = { 0 };
+    if (sys_storage_get_str(STORAGE_NS_DEVICE, NVS_TZ, zone, sizeof(zone)) != ESP_OK) {
+        strlcpy(zone, CONFIG_SYS_TIME_TZ, sizeof(zone));
+    }
+    ESP_ERROR_CHECK(sys_time_set_zone(zone));
+
     // A kiosk with no voice still opens doors, so the amplifier only warns.
     const esp_err_t amplifier = drv_audio_init();
     if (amplifier != ESP_OK) {

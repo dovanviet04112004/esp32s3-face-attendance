@@ -48,6 +48,12 @@ int64_t sys_time_now_ms(void);
  */
 esp_err_t sys_time_sync_start(const char *server, sys_time_synced_cb on_synced, void *arg);
 
+/** Set the zone every localtime call reads, records staying in UTC.
+ *  @ctx task | non-blocking | posix string, where ICT-7 means UTC+7
+ *  @ret ESP_OK | ESP_ERR_INVALID_ARG
+ */
+esp_err_t sys_time_set_zone(const char *posix_tz);
+
 /** Overwrite the RTC from the system clock and clear its oscillator-stopped flag.
  *  @ctx task | blocking | takes m_i2c
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE without init
