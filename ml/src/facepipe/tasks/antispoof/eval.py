@@ -207,7 +207,8 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     model = model if model is not None else load_run(run)[1]
     model.eval()
     height, width = cfg.model.input_hw
-    names = input_names(cfg)
+    # The traced module decides the graph inputs; a config need not name views.
+    names = ["tight", "wide"] if getattr(model, "wide", None) is not None else ["tight"]
     views = tuple(torch.zeros(1, 3, height, width) for _ in names)
     example = views if len(names) > 1 else views[0]
     return cfg, model, (example,), names, ["logits"]

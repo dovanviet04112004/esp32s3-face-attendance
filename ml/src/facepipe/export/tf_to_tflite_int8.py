@@ -23,6 +23,9 @@ def calibration_samples(run: Path, split: str | None, limit: int):
 
     cfg = load_run_config(run)
     package = BRANCH_PACKAGE[cfg.model.name]
+    # The branch loader fills in what an older config omits, reading the weights.
+    evaluator = importlib.import_module(f"{package}.eval")
+    cfg = evaluator.load_run(run)[0] if hasattr(evaluator, "load_run") else cfg
     module = importlib.import_module(f"{package}.quant")
     yield from module.calibration_batches(cfg, split, limit)
 
