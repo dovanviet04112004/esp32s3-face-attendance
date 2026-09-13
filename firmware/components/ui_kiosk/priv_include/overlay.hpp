@@ -26,6 +26,9 @@ public:
     /** @ret false when the box lands on the pixels it already covers */
     bool set_face(bool found, const float box[4], int frame_width, int frame_height) noexcept;
 
+    /** Boxes the detector saw beside the one being followed, drawn as they came. */
+    bool set_others(const float *boxes, int count, int frame_width, int frame_height) noexcept;
+
     /** @ret false when the verdict is the one already showing */
     bool set_verdict(app_ui_verdict_t verdict, uint32_t employee_id) noexcept;
 
@@ -38,7 +41,11 @@ private:
     uint16_t *card_[kCards] = { nullptr, nullptr };
     int next_card_ = 0;
     int shown_card_ = 0;
+    static constexpr int kOthers = DRV_LCD_OVERLAY_BOXES - 1;
+
     int16_t face_[4] = { 0, 0, 0, 0 };
+    int16_t other_[kOthers][4] = {};
+    int others_ = 0;
     bool face_found_ = false;
     int64_t face_seen_us_ = 0;
     app_ui_verdict_t verdict_ = APP_UI_IDLE;

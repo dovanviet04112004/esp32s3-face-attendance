@@ -103,28 +103,27 @@ bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
     uint32_t best = stay;
     int best_col = stay_col;
     int best_row = stay_row;
-    // A coarse pass over four times the area costs what the old dense grid did,
-    // and a fast walk crosses more than the dense grid could reach.
-    for (int row = 0; row < kPositions; row += BoxTracker::kCoarseStep) {
-        for (int col = 0; col < kPositions; col += BoxTracker::kCoarseStep) {
-            const uint32_t cost = sad(col, row, best);
-            if (cost < best) {
-                best = cost;
-                best_col = col;
-                best_row = row;
-            }
-        }
-    }
-    for (int row = best_row - 1; row <= best_row + 1; ++row) {
-        for (int col = best_col - 1; col <= best_col + 1; ++col) {
-            if (row < 0 || col < 0 || row >= kPositions || col >= kPositions) {
-                continue;
-            }
-            const uint32_t cost = sad(col, row, best);
-            if (cost < best) {
-                best = cost;
-                best_col = col;
-                best_row = row;
+    // One sparse pass over the whole reach, then two passes that close in on
+    // what it found: 307 comparisons cover what a dense grid of 4225 would.
+    for (int step = BoxTracker::kCoarseStep; step >= 1; step /= 2) {
+        const int from_row = step == BoxTracker::kCoarseStep ? 0 : best_row - step;
+        const int to_row = step == BoxTracker::kCoarseStep ? kPositions - 1 : best_row + step;
+        const int from_col = step == BoxTracker::kCoarseStep ? 0 : best_col - step;
+        const int to_col = step == BoxTracker::kCoarseStep ? kPositions - 1 : best_col + step;
+        const int try_row = best_row;
+        const int try_col = best_col;
+        for (int row = from_row; row <= to_row; row += step) {
+            for (int col = from_col; col <= to_col; col += step) {
+                if (row < 0 || col < 0 || row >= kPositions || col >= kPositions ||
+                    (row == try_row && col == try_col)) {
+                    continue;
+                }
+                const uint32_t cost = sad(col, row, best);
+                if (cost < best) {
+                    best = cost;
+                    best_col = col;
+                    best_row = row;
+                }
             }
         }
     }

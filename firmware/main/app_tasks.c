@@ -1,6 +1,7 @@
 #include "app_tasks.h"
 
 #include <inttypes.h>
+#include <string.h>
 
 #include "app_config.h"
 #include "app_events.h"
@@ -141,12 +142,33 @@ static void cam_task(void *arg)
     }
 }
 
+// The primary leads so ui_kiosk can follow it; the rest are drawn where the
+// detector put them, and the primary is already one of them.
+static int faces_to_show(const svc_vision_result_t *result, float boxes[][4])
+{
+    if (result->faces == 0) {
+        return 0;
+    }
+    memcpy(boxes[0], result->primary.box, sizeof(boxes[0]));
+    int kept = 1;
+    for (uint8_t i = 0; i < result->faces && i < SVC_VISION_REPORTED_FACES &&
+                        kept < DRV_LCD_OVERLAY_BOXES;
+         ++i) {
+        if (memcmp(result->boxes[i].box, result->primary.box, sizeof(boxes[0])) == 0) {
+            continue;
+        }
+        memcpy(boxes[kept++], result->boxes[i].box, sizeof(boxes[0]));
+    }
+    return kept;
+}
+
 static void ai_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
     const esp_err_t watched = esp_task_wdt_add(NULL);
     ESP_LOGI(TAG, "ai on core %d, watchdog %s", AI_TASK_CORE, esp_err_to_name(watched));
     bool had_face = false;
+    float boxes[DRV_LCD_OVERLAY_BOXES][4];
 
     for (;;) {
         camera_fb_t *frame = NULL;
@@ -159,11 +181,12 @@ static void ai_task(void *arg)
         }
         svc_vision_result_t result = { 0 };
         const esp_err_t err = svc_vision_step(frame, &result);
-        const bool face = result.faces > 0;
-        ui_kiosk_on_face(face, result.primary.box, frame->width, frame->height);
-        if (face != had_face) {
-            had_face = face;
-            ESP_LOGI(TAG, "face %s", face ? "in" : "out");
+        const int shown = faces_to_show(&result, boxes);
+        ui_kiosk_on_faces(&boxes[0][0], shown, frame->width, frame->height);
+        if ((shown > 0) != had_face) {
+            had_face = shown > 0;
+            ESP_LOGI(TAG, "face %s, %d drawn of %u seen", had_face ? "in" : "out", shown,
+                     (unsigned)result.faces);
         }
         drv_camera_release(frame);
         esp_task_wdt_reset();

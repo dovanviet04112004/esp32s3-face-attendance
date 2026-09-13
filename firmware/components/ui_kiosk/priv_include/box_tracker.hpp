@@ -19,8 +19,8 @@ class BoxTracker {
 public:
     static constexpr int kStep = 2;                        // frame pixels per tracking pixel
     static constexpr int kPatch = 24;                      // template side, tracking pixels
-    static constexpr int kRadius = 16;                     // search radius, tracking pixels
-    static constexpr int kCoarseStep = 2;                  // tracking pixels between coarse tries
+    static constexpr int kRadius = 32;                     // search radius, tracking pixels
+    static constexpr int kCoarseStep = 4;                  // tracking pixels between coarse tries
     static constexpr int kWindow = kPatch + 2 * kRadius;
 
     /** Take a fresh box from the detector and capture the patch under its centre.

@@ -15,10 +15,10 @@ constexpr int kSlots = 2;
 constexpr uint32_t kVerdictShift = 32;
 
 struct Detect {
-    float box[4];
+    float box[DRV_LCD_OVERLAY_BOXES][4];
+    int count;
     int width;
     int height;
-    bool found;
 };
 
 ui::OverlayBuilder s_builder;
@@ -64,12 +64,14 @@ void follow(const uint16_t *pixels, int width, int height)
         s_tracker.update(pixels, width, height);
         return;
     }
-    if (!fresh->found) {
+    if (fresh->count <= 0) {
         s_tracker.clear();
+        s_builder.set_others(nullptr, 0, width, height);
         return;
     }
-    const ui::Box box = { fresh->box[0], fresh->box[1], fresh->box[2], fresh->box[3] };
+    const ui::Box box = { fresh->box[0][0], fresh->box[0][1], fresh->box[0][2], fresh->box[0][3] };
     s_tracker.set(box, pixels, fresh->width, fresh->height, true);
+    s_builder.set_others(&fresh->box[1][0], fresh->count - 1, fresh->width, fresh->height);
 }
 
 }  // namespace
@@ -92,16 +94,18 @@ esp_err_t ui_kiosk_init(void)
     return ESP_OK;
 }
 
-void ui_kiosk_on_face(bool found, const float box[4], int frame_width, int frame_height)
+void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height)
 {
     if (!s_ready) {
         return;
     }
     Detect *target = &s_detect_slot[s_detect_next];
-    memcpy(target->box, box, sizeof(target->box));
+    target->count = count < DRV_LCD_OVERLAY_BOXES ? count : DRV_LCD_OVERLAY_BOXES;
+    if (target->count > 0) {
+        memcpy(target->box, boxes, sizeof(float) * 4 * target->count);
+    }
     target->width = frame_width;
     target->height = frame_height;
-    target->found = found;
     s_detect_next = (s_detect_next + 1) % kSlots;
     s_detect.store(target, std::memory_order_release);
 }

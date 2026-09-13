@@ -20,10 +20,10 @@ extern "C" {
  */
 esp_err_t ui_kiosk_init(void);
 
-/** Put the box where the detector last saw a face, in sensor frame pixels.
- *  @ctx ai_task | non-blocking | pass found = false when no face is there
+/** Put boxes where the detector last saw faces, in sensor frame pixels.
+ *  @ctx ai_task | non-blocking | boxes holds count sets of four, first is primary
  */
-void ui_kiosk_on_face(bool found, const float box[4], int frame_width, int frame_height);
+void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height);
 
 /** Say what the kiosk decided about that face.
  *  @ctx attend_task | non-blocking | employee_id reads 0 unless granted

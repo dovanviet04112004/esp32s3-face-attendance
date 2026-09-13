@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 #define DRV_LCD_OVERLAY_CARDS 2
-#define DRV_LCD_OVERLAY_BOXES 2
+#define DRV_LCD_OVERLAY_BOXES 4
 
 /** A hollow rectangle drawn over the preview, in panel pixels.
  */

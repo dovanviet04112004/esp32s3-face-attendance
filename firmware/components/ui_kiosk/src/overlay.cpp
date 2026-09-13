@@ -27,6 +27,7 @@ constexpr uint16_t kGreen = 0x07E0;
 constexpr uint16_t kRed = 0xF800;
 constexpr uint16_t kAmber = 0xFD20;
 constexpr uint16_t kInk = 0x0841;
+constexpr uint16_t kSteel = 0x8410;
 
 uint16_t accent_of(app_ui_verdict_t verdict)
 {
@@ -147,6 +148,24 @@ bool OverlayBuilder::set_face(bool found, const float box[4], int frame_width,
     return true;
 }
 
+bool OverlayBuilder::set_others(const float *boxes, int count, int frame_width,
+                                int frame_height) noexcept
+{
+    int16_t panel[kOthers][4] = {};
+    int kept = 0;
+    for (int i = 0; i < count && kept < kOthers; ++i) {
+        if (drv_lcd_frame_to_panel(frame_width, frame_height, boxes + i * 4, panel[kept])) {
+            ++kept;
+        }
+    }
+    if (kept == others_ && memcmp(panel, other_, sizeof(int16_t) * 4 * kept) == 0) {
+        return false;
+    }
+    memcpy(other_, panel, sizeof(other_));
+    others_ = kept;
+    return true;
+}
+
 bool OverlayBuilder::set_verdict(app_ui_verdict_t verdict, uint32_t employee_id) noexcept
 {
     if (verdict == verdict_ && employee_id == employee_id_) {
@@ -180,6 +199,17 @@ void OverlayBuilder::build(drv_lcd_overlay_t *out) noexcept
         out->box[0].rgb565 = wire(accent_of(verdict_));
         out->box[0].edge_px = kBoxEdgePx;
         out->boxes = 1;
+    }
+    // A thinner edge says the kiosk saw this face but is not working on it.
+    for (int i = 0; i < others_ && out->boxes < DRV_LCD_OVERLAY_BOXES; ++i) {
+        drv_lcd_box_t *box = &out->box[out->boxes];
+        box->x1 = other_[i][0];
+        box->y1 = other_[i][1];
+        box->x2 = other_[i][2];
+        box->y2 = other_[i][3];
+        box->rgb565 = wire(kSteel);
+        box->edge_px = 1;
+        out->boxes = (uint8_t)(out->boxes + 1);
     }
 }
 
