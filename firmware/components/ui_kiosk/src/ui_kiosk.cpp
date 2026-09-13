@@ -101,10 +101,7 @@ void take_verdict(int64_t dt_ms)
         }
         s_seen.verifying = verdict == APP_UI_SCANNING;
     }
-    // A granted track is never verified again (KEHOACH 4.5.5d), so while that
-    // face stays the card is the newest thing the kiosk knows about it.
-    const bool holding = s_seen.verdict == APP_UI_GRANTED && s_seen.face;
-    if (s_clear_in_ms == 0 && s_seen.verdict > APP_UI_SCANNING && !holding) {
+    if (s_clear_in_ms == 0 && s_seen.verdict > APP_UI_SCANNING) {
         s_clear_in_ms = -1;
         s_seen.verdict = APP_UI_IDLE;
         s_dirty = true;
