@@ -13,6 +13,7 @@ const char *TAG = "ui_kiosk";
 
 constexpr int kSlots = 2;
 constexpr uint32_t kVerdictShift = 32;
+constexpr float kSameFace = 0.2f;
 
 struct Detect {
     float box[DRV_LCD_OVERLAY_BOXES][4];
@@ -55,23 +56,44 @@ bool take_verdict()
                                  static_cast<uint32_t>(packed));
 }
 
+float overlap(const ui::Box &a, const ui::Box &b)
+{
+    const float left = a.x1 > b.x1 ? a.x1 : b.x1;
+    const float top = a.y1 > b.y1 ? a.y1 : b.y1;
+    const float right = a.x2 < b.x2 ? a.x2 : b.x2;
+    const float bottom = a.y2 < b.y2 ? a.y2 : b.y2;
+    const float w = right > left ? right - left : 0.0f;
+    const float h = bottom > top ? bottom - top : 0.0f;
+    const float shared = w * h;
+    const float joined =
+        (a.x2 - a.x1) * (a.y2 - a.y1) + (b.x2 - b.x1) * (b.y2 - b.y1) - shared;
+    return joined > 0.0f ? shared / joined : 0.0f;
+}
+
 // A detect lands three times a second; between two of them the patch match is
 // what keeps the box on the face (KEHOACH 4.5.5h).
 void follow(const uint16_t *pixels, int width, int height)
 {
     const Detect *fresh = s_detect.exchange(nullptr, std::memory_order_acquire);
-    if (fresh == nullptr) {
-        s_tracker.update(pixels, width, height);
-        return;
-    }
-    if (fresh->count <= 0) {
+    if (fresh != nullptr && fresh->count <= 0) {
         s_tracker.clear();
         s_builder.set_others(nullptr, 0, width, height);
         return;
     }
-    const ui::Box box = { fresh->box[0][0], fresh->box[0][1], fresh->box[0][2], fresh->box[0][3] };
-    s_tracker.set(box, pixels, fresh->width, fresh->height, true);
-    s_builder.set_others(&fresh->box[1][0], fresh->count - 1, fresh->width, fresh->height);
+    if (fresh != nullptr) {
+        const ui::Box box = { fresh->box[0][0], fresh->box[0][1], fresh->box[0][2],
+                              fresh->box[0][3] };
+        // That box is a third of a second old, so snapping onto it would drag
+        // the kiosk's box back behind the face it is already holding.
+        if (s_tracker.active() && overlap(s_tracker.box(), box) >= kSameFace) {
+            s_tracker.reshape(box.x2 - box.x1, box.y2 - box.y1);
+            s_tracker.refresh(pixels, width, height);
+        } else {
+            s_tracker.set(box, pixels, fresh->width, fresh->height, true);
+        }
+        s_builder.set_others(&fresh->box[1][0], fresh->count - 1, fresh->width, fresh->height);
+    }
+    s_tracker.update(pixels, width, height);
 }
 
 }  // namespace

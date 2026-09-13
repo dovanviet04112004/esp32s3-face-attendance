@@ -77,6 +77,12 @@ void BoxTracker::set(const Box &box, const uint16_t *frame, int width, int heigh
     box_ = box;
     patch_left_ = centred((box.x1 + box.x2) / 2.0f, kPatchPx, width);
     patch_top_ = centred((box.y1 + box.y2) / 2.0f, kPatchPx, height);
+    capture(frame, width);
+}
+
+void BoxTracker::capture(const uint16_t *frame, int width) noexcept
+{
+    lost_ = 0;
     sample(frame, width, patch_left_, patch_top_, kPatch, template_);
     uint8_t low = 255;
     uint8_t high = 0;
@@ -86,6 +92,24 @@ void BoxTracker::set(const Box &box, const uint16_t *frame, int width, int heigh
     }
     // A flat patch matches everywhere, so it would only ever follow noise.
     active_ = high - low >= kMinContrast;
+}
+
+void BoxTracker::refresh(const uint16_t *frame, int width, int height) noexcept
+{
+    if (!active_ || frame == nullptr || width < kWindowPx || height < kWindowPx) {
+        return;
+    }
+    capture(frame, width);
+}
+
+void BoxTracker::reshape(float width, float height) noexcept
+{
+    const float cx = (box_.x1 + box_.x2) / 2.0f;
+    const float cy = (box_.y1 + box_.y2) / 2.0f;
+    box_.x1 = cx - width / 2.0f;
+    box_.x2 = cx + width / 2.0f;
+    box_.y1 = cy - height / 2.0f;
+    box_.y2 = cy + height / 2.0f;
 }
 
 bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
@@ -128,8 +152,11 @@ bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
         }
     }
     if (best / (kPatch * kPatch) > kLostMeanDiff) {
+        // A box drawn on a patch nobody can find any more is a box that lies.
+        active_ = ++lost_ < BoxTracker::kLostFrames;
         return false;
     }
+    lost_ = 0;
     const int dx = window_left + best_col * kStep - patch_left_;
     const int dy = window_top + best_row * kStep - patch_top_;
     patch_left_ += dx;
