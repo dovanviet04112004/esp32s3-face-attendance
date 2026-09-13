@@ -29,11 +29,12 @@ menu "Vision pipeline"
 
     config VISION_SEED_FACE_MIN_PX
         int "Seed for the smallest face the pipeline verifies (frame pixels)"
-        default 113
+        default 100
         range 16 480
         help
-            Recognition warps the face onto 113x113, and a smaller face would
-            be enlarged, which adds blur rather than information (KEHOACH 3).
+            Recognition warps the face onto 113x113. Someone standing at the
+            distance the guide frame invites measures 107-110 px, so 113 was a
+            gate nobody could clear from there (KEHOACH 2.1).
 
     config VISION_SEED_PRESENT_MM
         int "Seed for the distance that counts as someone standing there (mm)"

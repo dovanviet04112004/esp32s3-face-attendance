@@ -23,6 +23,9 @@ public:
 
     void clear() noexcept;
 
+    /** Zero the whole map, for a buffer nothing has painted into yet. */
+    void wipe() noexcept;
+
     struct Region {
         int16_t x;
         int16_t y;

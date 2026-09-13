@@ -66,7 +66,21 @@ int Canvas::line_height() noexcept
     return kiosk_sans_22_line_h;
 }
 
+// Wiping all 153 KB costs more than the painting does, and everything outside
+// the spans the last screen touched is already zero.
 void Canvas::clear() noexcept
+{
+    for (int row = 0; row < height_; ++row) {
+        if (row_x2_[row] > row_x1_[row]) {
+            memset(cells_ + (size_t)row * width_ + row_x1_[row], 0,
+                   (size_t)(row_x2_[row] - row_x1_[row]));
+        }
+        row_x1_[row] = (int16_t)width_;
+        row_x2_[row] = 0;
+    }
+}
+
+void Canvas::wipe() noexcept
 {
     memset(cells_, 0, (size_t)width_ * height_);
     for (int row = 0; row < height_; ++row) {

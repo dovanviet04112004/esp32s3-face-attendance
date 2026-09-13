@@ -1,6 +1,7 @@
 #include "ui_kiosk.h"
 
 #include <atomic>
+#include <new>
 #include <string.h>
 
 #include "canvas.hpp"
@@ -13,6 +14,7 @@ namespace {
 const char *TAG = "ui_kiosk";
 
 constexpr int kSlots = 2;
+alignas(ui::Canvas) uint8_t s_canvas_store[2][sizeof(ui::Canvas)];
 constexpr uint32_t kVerdictShift = 32;
 // A line stays up this long, and the same line will not come back inside the
 // quiet window: a face nobody enrolled would otherwise strobe it forever.
@@ -29,7 +31,9 @@ constexpr uint16_t wire(uint16_t rgb565)
     return (uint16_t)((rgb565 >> 8) | (rgb565 << 8));
 }
 
-uint8_t *s_cells;
+// One map per slot: cam_task reads the published one for a whole frame while
+// ui_task paints the other (KEHOACH 4.5.5h).
+ui::Canvas *s_canvas[kSlots];
 drv_lcd_overlay_t s_slot[kSlots];
 std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
 int s_next;
@@ -108,10 +112,14 @@ esp_err_t ui_kiosk_init(void)
     if (s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
-    s_cells = static_cast<uint8_t *>(
-        heap_caps_malloc((size_t)APP_LCD_H_RES * APP_LCD_V_RES, MALLOC_CAP_SPIRAM));
-    if (s_cells == nullptr) {
-        return ESP_ERR_NO_MEM;
+    for (int i = 0; i < kSlots; ++i) {
+        uint8_t *cells = static_cast<uint8_t *>(
+            heap_caps_malloc((size_t)APP_LCD_H_RES * APP_LCD_V_RES, MALLOC_CAP_SPIRAM));
+        if (cells == nullptr) {
+            return ESP_ERR_NO_MEM;
+        }
+        s_canvas[i] = new (s_canvas_store[i]) ui::Canvas(cells, APP_LCD_H_RES, APP_LCD_V_RES);
+        s_canvas[i]->wipe();
     }
     ui::manager().attach(ui::ScreenId::Scan, ui::scan_screen());
     ui::manager().attach(ui::ScreenId::Menu, ui::menu_screen());
@@ -182,7 +190,7 @@ void ui_kiosk_tick(uint32_t dt_ms)
         return;
     }
     s_dirty = false;
-    ui::Canvas canvas(s_cells, APP_LCD_H_RES, APP_LCD_V_RES);
+    ui::Canvas &canvas = *s_canvas[s_next];
     canvas.clear();
     ui::manager().current()->paint(canvas, s_seen);
     publish(canvas);
