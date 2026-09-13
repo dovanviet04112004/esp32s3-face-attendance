@@ -86,7 +86,10 @@ void take_verdict(int64_t dt_ms)
     if (packed != s_verdict_taken) {
         s_verdict_taken = packed;
         const app_ui_verdict_t verdict = static_cast<app_ui_verdict_t>(packed >> kVerdictShift);
-        const bool quiet = packed == s_line_showing && s_quiet_in_ms > 0;
+        // The quiet window keeps a refusal from strobing; a second clock-in for
+        // the same person is news and has to show.
+        const bool quiet = packed == s_line_showing && s_quiet_in_ms > 0 &&
+                           verdict != APP_UI_GRANTED;
         if (verdict > APP_UI_SCANNING && !quiet) {
             s_line_showing = packed;
             s_clear_in_ms = kShowMs;
@@ -98,7 +101,10 @@ void take_verdict(int64_t dt_ms)
         }
         s_seen.verifying = verdict == APP_UI_SCANNING;
     }
-    if (s_clear_in_ms == 0 && s_seen.verdict > APP_UI_SCANNING) {
+    // A granted track is never verified again (KEHOACH 4.5.5d), so while that
+    // face stays the card is the newest thing the kiosk knows about it.
+    const bool holding = s_seen.verdict == APP_UI_GRANTED && s_seen.face;
+    if (s_clear_in_ms == 0 && s_seen.verdict > APP_UI_SCANNING && !holding) {
         s_clear_in_ms = -1;
         s_seen.verdict = APP_UI_IDLE;
         s_dirty = true;
