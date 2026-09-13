@@ -149,6 +149,8 @@ def build_loader(cfg: object, split: str, root: Path | None = None) -> torch.uti
     root overrides where the shards live, which is how a cross-domain set is read
     through exactly the same path as the one a run was trained and validated on.
     """
+    from functools import partial
+
     from .data import SpoofShardDataset, collate
 
     height, width = cfg.model.input_hw
@@ -166,7 +168,7 @@ def build_loader(cfg: object, split: str, root: Path | None = None) -> torch.uti
         dataset,
         batch_size=cfg.data.batch_size,
         num_workers=cfg.data.num_workers,
-        collate_fn=collate,
+        collate_fn=partial(collate, chroma=wants_chroma(cfg)),
     )
 
 
@@ -209,7 +211,8 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     height, width = cfg.model.input_hw
     # The traced module decides the graph inputs; a config need not name views.
     names = ["tight", "wide"] if getattr(model, "wide", None) is not None else ["tight"]
-    views = tuple(torch.zeros(1, 3, height, width) for _ in names)
+    planes = 4 if getattr(model, "chroma", False) else 3
+    views = tuple(torch.zeros(1, planes, height, width) for _ in names)
     example = views if len(names) > 1 else views[0]
     return cfg, model, (example,), names, ["logits"]
 
@@ -217,6 +220,11 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
 def named(spec: str | list[str]) -> str:
     """A split reads as one spec or as several; the report names whichever it got."""
     return (spec if isinstance(spec, str) else "+".join(map(str, spec)))[:24]
+
+
+def wants_chroma(cfg: object) -> bool:
+    """Whether this run's input carries the saturation plane (measurements 38)."""
+    return bool((cfg.model.params or {}).get("chroma", False))
 
 
 def keeps_wide(cfg: object) -> bool:
@@ -310,8 +318,15 @@ def score_frames(
     """
     from PIL import Image
 
+    from .data import chroma_of
+
+    wants = bool(getattr(model, "chroma", False))
+
     def as_batch(image: np.ndarray) -> torch.Tensor:
-        return torch.from_numpy(image).permute(2, 0, 1).float().div_(255.0)[None].to(device)
+        planes = torch.from_numpy(image).permute(2, 0, 1).float().div_(255.0)
+        if wants:
+            planes = torch.cat((planes, chroma_of(planes)))
+        return planes[None].to(device)
 
     model.eval()
     rows: list[tuple[str, str, float, float]] = []

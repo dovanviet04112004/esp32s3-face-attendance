@@ -44,13 +44,16 @@ class MiniFASNetBackbone(nn.Module):
         activation: str = "relu6",
         input_size: int = INPUT_SIZE,
         width: int = WIDTH,
+        in_channels: int = 3,
     ) -> None:
         super().__init__()
         _stem, second, third, fourth = stage_maps(input_size)
         gate = {"squeeze_excite": squeeze_excite, "activation": activation}
         wide = width * 2
         closing = width * 8
-        self.stem = ConvBnAct(3, width, 3, stride=2, padding=1, activation=activation)
+        self.stem = ConvBnAct(
+            in_channels, width, 3, stride=2, padding=1, activation=activation
+        )
         self.stem_dw = ConvBnAct(
             width, width, 3, stride=1, padding=1, groups=width, activation=activation
         )
@@ -94,14 +97,21 @@ class MiniFASNetV2SE(nn.Module):
         input_size: int = INPUT_SIZE,
         width: int = WIDTH,
         views: str = "tight",
+        chroma: bool = False,
     ) -> None:
         super().__init__()
         if views not in ("tight", "both"):
             raise ValueError(f"views must be 'tight' or 'both', got {views!r}")
         self.views = views
-        self.tight = MiniFASNetBackbone(embedding, squeeze_excite, activation, input_size, width)
+        self.chroma = chroma
+        planes = 4 if chroma else 3
+        self.tight = MiniFASNetBackbone(
+            embedding, squeeze_excite, activation, input_size, width, planes
+        )
         self.wide = (
-            MiniFASNetBackbone(embedding, squeeze_excite, activation, input_size, width)
+            MiniFASNetBackbone(
+                embedding, squeeze_excite, activation, input_size, width, planes
+            )
             if views == "both"
             else None
         )

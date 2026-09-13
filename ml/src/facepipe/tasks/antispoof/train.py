@@ -7,6 +7,7 @@ gets in and a real face turned away cost different things on a door.
 from __future__ import annotations
 
 import argparse
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -103,7 +104,7 @@ def build_loader(cfg: Config, dataset: SpoofShardDataset, train: bool) -> DataLo
         num_workers=cfg.data.num_workers,
         pin_memory=cfg.data.pin_memory,
         drop_last=cfg.data.drop_last if train else False,
-        collate_fn=collate,
+        collate_fn=partial(collate, chroma=bool(cfg.model.params.get("chroma", False))),
         **prefetch(cfg),
     )
 

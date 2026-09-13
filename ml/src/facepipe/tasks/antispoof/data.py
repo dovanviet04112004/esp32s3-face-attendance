@@ -557,20 +557,37 @@ class SpoofShardDataset(IterableDataset):
         yield from buffer
 
 
-def to_tensor(image: np.ndarray) -> torch.Tensor:
-    return torch.from_numpy(image).permute(2, 0, 1).float().div_(255.0)
+def chroma_of(rgb: torch.Tensor) -> torch.Tensor:
+    """Per-pixel saturation, the one cue that holds its sign across lens chains.
+
+    A convolution cannot reach it: max and min across channels are not linear,
+    and the stem is linear before its activation (KEHOACH 3, measurements 38).
+    """
+    high = rgb.max(dim=0, keepdim=True).values
+    low = rgb.min(dim=0, keepdim=True).values
+    return (high - low) / high.clamp_min(1e-6)
+
+
+def to_tensor(image: np.ndarray, chroma: bool = False) -> torch.Tensor:
+    planes = torch.from_numpy(image).permute(2, 0, 1).float().div_(255.0)
+    return torch.cat((planes, chroma_of(planes))) if chroma else planes
 
 
 def collate(
     batch: list[SpoofSample],
+    chroma: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Stack into (tight, wide, label, wide_scale), what the model and loss expect.
 
     A one-backbone run carries no context view, and the empty stand-in keeps the
     tuple the same shape for every caller.
     """
-    tight = torch.stack([to_tensor(s.tight) for s in batch])
-    wide = torch.stack([to_tensor(s.wide) for s in batch]) if batch[0].wide is not None else tight[:0]
+    tight = torch.stack([to_tensor(s.tight, chroma) for s in batch])
+    wide = (
+        torch.stack([to_tensor(s.wide, chroma) for s in batch])
+        if batch[0].wide is not None
+        else tight[:0]
+    )
     labels = torch.tensor([s.label for s in batch], dtype=torch.long)
     scales = torch.tensor([s.wide_scale for s in batch], dtype=torch.float32)
     return tight, wide, labels, scales
