@@ -24,6 +24,11 @@
 
 static const char *TAG = "app_tasks";
 
+// What frame the pipeline is holding, so its observer can stamp the boxes.
+static int64_t s_seen_stamp_us;
+static int s_seen_width;
+static int s_seen_height;
+
 #define CAM_TASK_CORE 0
 #define CAM_TASK_PRIORITY 7
 #define CAM_TASK_STACK_BYTES 4096
@@ -147,33 +152,21 @@ static void cam_task(void *arg)
     }
 }
 
-// The primary leads so ui_kiosk can follow it; the rest are drawn where the
-// detector put them, and the primary is already one of them.
-static int faces_to_show(const svc_vision_result_t *result, float boxes[][4])
+// svc_vision calls this the moment detect has run, which is what keeps the box
+// on the glass half a second fresher than the whole step (KEHOACH 4.5.5d).
+static void on_seen(const svc_vision_box_t *boxes, uint8_t count, void *ctx)
 {
-    if (result->faces == 0) {
-        return 0;
-    }
-    memcpy(boxes[0], result->primary.box, sizeof(boxes[0]));
-    int kept = 1;
-    for (uint8_t i = 0; i < result->faces && i < SVC_VISION_REPORTED_FACES &&
-                        kept < DRV_LCD_OVERLAY_BOXES;
-         ++i) {
-        if (memcmp(result->boxes[i].box, result->primary.box, sizeof(boxes[0])) == 0) {
-            continue;
-        }
-        memcpy(boxes[kept++], result->boxes[i].box, sizeof(boxes[0]));
-    }
-    return kept;
+    (void)ctx;
+    ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height, s_seen_stamp_us);
 }
 
 static void ai_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
+    svc_vision_on_seen(on_seen, NULL);
     const esp_err_t watched = esp_task_wdt_add(NULL);
     ESP_LOGI(TAG, "ai on core %d, watchdog %s", AI_TASK_CORE, esp_err_to_name(watched));
     bool had_face = false;
-    float boxes[DRV_LCD_OVERLAY_BOXES][4];
 
     for (;;) {
         camera_fb_t *frame = NULL;
@@ -185,13 +178,13 @@ static void ai_task(void *arg)
             continue;
         }
         svc_vision_result_t result = { 0 };
+        s_seen_stamp_us = stamp_of(frame);
+        s_seen_width = frame->width;
+        s_seen_height = frame->height;
         const esp_err_t err = svc_vision_step(frame, &result);
-        const int shown = faces_to_show(&result, boxes);
-        ui_kiosk_on_faces(&boxes[0][0], shown, frame->width, frame->height, stamp_of(frame));
-        if ((shown > 0) != had_face) {
-            had_face = shown > 0;
-            ESP_LOGI(TAG, "face %s, %d drawn of %u seen", had_face ? "in" : "out", shown,
-                     (unsigned)result.faces);
+        if ((result.faces > 0) != had_face) {
+            had_face = result.faces > 0;
+            ESP_LOGI(TAG, "face %s, %u seen", had_face ? "in" : "out", (unsigned)result.faces);
         }
         drv_camera_release(frame);
         esp_task_wdt_reset();

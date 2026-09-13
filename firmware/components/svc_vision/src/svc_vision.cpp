@@ -42,6 +42,11 @@ extern "C" esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds)
     return ESP_OK;
 }
 
+extern "C" void svc_vision_on_seen(svc_vision_seen_cb_t cb, void *ctx)
+{
+    s_pipeline.observe(cb, ctx);
+}
+
 extern "C" esp_err_t svc_vision_step(const camera_fb_t *frame, svc_vision_result_t *out)
 {
     if (!s_ready || frame == nullptr || out == nullptr) {

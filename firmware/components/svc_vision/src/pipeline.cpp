@@ -154,6 +154,27 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     out.kind = SVC_VISION_UNKNOWN;
 }
 
+void VisionPipeline::tell(const svc_vision_result_t &out, size_t count) noexcept
+{
+    if (seen_cb_ == nullptr) {
+        return;
+    }
+    svc_vision_box_t boxes[SVC_VISION_REPORTED_FACES];
+    uint8_t kept = 0;
+    if (count > 0) {
+        memcpy(boxes[kept++].box, out.primary.box, sizeof(boxes[0].box));
+        for (size_t i = 0; i < count && i < SVC_VISION_REPORTED_FACES &&
+                           kept < SVC_VISION_REPORTED_FACES;
+             ++i) {
+            if (memcmp(faces_[i].box, out.primary.box, sizeof(boxes[0].box)) == 0) {
+                continue;
+            }
+            memcpy(boxes[kept++].box, faces_[i].box, sizeof(boxes[0].box));
+        }
+    }
+    seen_cb_(boxes, kept, seen_ctx_);
+}
+
 svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcept
 {
     svc_vision_result_t out = blank();
@@ -164,6 +185,7 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     }
     if (count == 0) {
         stable_ = 0;
+        tell(out, 0);
         if (seen_ != Seen::Nothing) {
             seen_ = Seen::Nothing;
             out.kind = SVC_VISION_NO_FACE;
@@ -173,6 +195,9 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     const ai_engine_face_t &primary = pick(count);
     memcpy(out.primary.box, primary.box, sizeof(out.primary.box));
     follow(primary);
+    // The slow models below hold this step for up to a second, and a box that
+    // waits for them is a second old by the time it is drawn (KEHOACH 4.5.5d).
+    tell(out, count);
     if (side_of(primary.box) < static_cast<float>(thresholds_.face_min_px)) {
         if (seen_ != Seen::Small) {
             seen_ = Seen::Small;

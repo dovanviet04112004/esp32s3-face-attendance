@@ -5,6 +5,7 @@
 
 #include "box_tracker.hpp"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "overlay.hpp"
 
 namespace {
@@ -112,6 +113,8 @@ void follow(const uint16_t *pixels, int width, int height, int64_t stamp_us)
     int32_t dx = 0;
     int32_t dy = 0;
     travel_since(fresh->stamp_us, &dx, &dy);
+    ESP_LOGD(TAG, "anchor %+d %+d px, %lld ms old", (int)dx, (int)dy,
+             (long long)((esp_timer_get_time() - fresh->stamp_us) / 1000));
     const ui::Box box = { fresh->box[0][0] + dx, fresh->box[0][1] + dy,
                           fresh->box[0][2] + dx, fresh->box[0][3] + dy };
     s_tracker.anchor(box, pixels, width, height);

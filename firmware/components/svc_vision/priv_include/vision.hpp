@@ -54,6 +54,7 @@ public:
 
     void configure(const svc_vision_thresholds_t &thresholds) noexcept { thresholds_ = thresholds; }
     svc_vision_result_t step(const ai_engine_frame_t &frame) noexcept;
+    void observe(svc_vision_seen_cb_t cb, void *ctx) noexcept { seen_cb_ = cb; seen_ctx_ = ctx; }
     void reset() noexcept;
 
 private:
@@ -63,6 +64,7 @@ private:
     void follow(const ai_engine_face_t &primary) noexcept;
     bool may_verify() const noexcept;
     void verify(const ai_engine_frame_t &frame, const ai_engine_face_t &primary, svc_vision_result_t &out) noexcept;
+    void tell(const svc_vision_result_t &out, size_t count) noexcept;
 
     IDetector &detector_;
     ILiveness &liveness_;
@@ -70,6 +72,8 @@ private:
     IMatcher &matcher_;
     svc_vision_thresholds_t thresholds_{};
     ai_engine_face_t faces_[kMaxFaces]{};
+    svc_vision_seen_cb_t seen_cb_ = nullptr;
+    void *seen_ctx_ = nullptr;
     float tracked_[4]{};
     int stable_ = 0;
     int since_verdict_ = -1;

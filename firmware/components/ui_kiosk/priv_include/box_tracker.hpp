@@ -63,8 +63,10 @@ private:
     uint8_t window_[kWindow * kWindow] = {};
     Box box_ = {};
     int lost_ = 0;
-    int drift_x_ = 0;                                      // frame pixels per frame
+    int drift_x_ = 0;                                      // this frame only
     int drift_y_ = 0;
+    int lead_x_ = 0;                                       // last motion that worked
+    int lead_y_ = 0;
     int patch_left_ = 0;                                   // frame pixels
     int patch_top_ = 0;
     bool active_ = false;
