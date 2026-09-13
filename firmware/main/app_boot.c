@@ -20,6 +20,7 @@
 #include "svc_vision.h"
 #include "sys_storage.h"
 #include "sys_time.h"
+#include "ui_kiosk.h"
 
 static const char *TAG = "app_boot";
 
@@ -156,6 +157,7 @@ esp_err_t app_boot(void)
     ESP_ERROR_CHECK(bsp_board_init());
     ESP_ERROR_CHECK(drv_lcd_init());
     ESP_ERROR_CHECK(drv_lcd_backlight(100));
+    ESP_ERROR_CHECK(ui_kiosk_init());
     ESP_ERROR_CHECK(drv_ioexp_init());
     // A silent clock costs the trust of a timestamp, not the kiosk (KEHOACH 6.2.5).
     const esp_err_t clock = sys_time_init(rtc_ntp_marker());

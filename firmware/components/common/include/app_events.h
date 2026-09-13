@@ -24,6 +24,16 @@ typedef enum {
     APP_SOUND_COUNT,
 } app_sound_t;
 
+/** What the screen says about whoever is standing there (KEHOACH 4.5.5h). */
+typedef enum {
+    APP_UI_IDLE = 0,
+    APP_UI_SCANNING,
+    APP_UI_GRANTED,
+    APP_UI_DENIED,
+    APP_UI_SPOOF,
+    APP_UI_UNKNOWN,
+} app_ui_verdict_t;
+
 // The bits of eg_system, one per question a task is allowed to ask.
 #define APP_EG_WIFI_OK 0x01u
 #define APP_EG_MQTT_OK 0x02u

@@ -66,15 +66,15 @@ TEST_CASE("a landscape sensor frame lands centred on the portrait panel", "[drv_
     for (int i = 0; i < SENSOR_PIXELS; ++i) {
         frame[i] = (uint16_t)i;
     }
-    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_blit_frame(frame, APP_CAM_H_RES, APP_CAM_V_RES));
+    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_blit_frame(frame, APP_CAM_H_RES, APP_CAM_V_RES, NULL));
     heap_caps_free(frame);
 }
 
 TEST_CASE("a frame too tall to shrink into the panel is refused", "[drv_lcd]")
 {
     uint16_t pixel = 0;
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, drv_lcd_blit_frame(&pixel, 0, APP_CAM_V_RES));
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, drv_lcd_blit_frame(&pixel, 10, 10000));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, drv_lcd_blit_frame(&pixel, 0, APP_CAM_V_RES, NULL));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, drv_lcd_blit_frame(&pixel, 10, 10000, NULL));
 }
 
 TEST_CASE("red, green, blue and white each reach the glass", "[drv_lcd][manual]")

@@ -17,6 +17,7 @@
 #include "svc_vision.h"
 #include "sys_storage.h"
 #include "sys_time.h"
+#include "ui_kiosk.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -124,7 +125,8 @@ static void cam_task(void *arg)
             continue;
         }
         drv_camera_expose(frame);
-        const esp_err_t err = drv_lcd_blit_frame(frame->buf, frame->width, frame->height);
+        const esp_err_t err =
+            drv_lcd_blit_frame(frame->buf, frame->width, frame->height, ui_kiosk_overlay());
         offer_to_ai(wiring->frames, frame);
         if (err != last_blit) {
             ESP_LOGE(TAG, "blit %s", esp_err_to_name(err));
@@ -155,6 +157,7 @@ static void ai_task(void *arg)
         }
         svc_vision_result_t result = { 0 };
         const esp_err_t err = svc_vision_step(frame, &result);
+        ui_kiosk_on_face(result.faces > 0, result.primary.box, frame->width, frame->height);
         drv_camera_release(frame);
         esp_task_wdt_reset();
         if (err != ESP_OK) {
@@ -228,6 +231,24 @@ static app_sound_t sound_for(svc_attendance_state_t state, svc_vision_kind_t kin
     return kind == SVC_VISION_SPOOF ? APP_SOUND_SPOOF : APP_SOUND_DENIED;
 }
 
+static app_ui_verdict_t verdict_for(svc_attendance_state_t state, svc_vision_kind_t kind)
+{
+    switch (state) {
+        case SVC_ATTENDANCE_DETECTING:
+        case SVC_ATTENDANCE_VERIFYING:
+            return APP_UI_SCANNING;
+        case SVC_ATTENDANCE_GRANTED:
+            return APP_UI_GRANTED;
+        case SVC_ATTENDANCE_DENIED:
+            return kind == SVC_VISION_SPOOF ? APP_UI_SPOOF : APP_UI_DENIED;
+        // The card the grant put up stays until the machine goes idle.
+        case SVC_ATTENDANCE_COOLDOWN:
+            return APP_UI_GRANTED;
+        default:
+            return APP_UI_IDLE;
+    }
+}
+
 static void announce(const app_wiring_t *wiring, svc_attendance_state_t state,
                      svc_vision_kind_t kind)
 {
@@ -257,6 +278,7 @@ static void attend_task(void *arg)
     const app_wiring_t *wiring = arg;
     svc_attendance_state_t last_state = svc_attendance_state();
     svc_vision_kind_t last_kind = SVC_VISION_NONE;
+    uint32_t last_employee = 0;
     uint32_t records = svc_attendance_records();
 
     for (;;) {
@@ -267,6 +289,7 @@ static void attend_task(void *arg)
         svc_vision_result_t result;
         if (xQueueReceive(wiring->results, &result, pdMS_TO_TICKS(ATTEND_TICK_MS)) == pdTRUE) {
             last_kind = result.kind;
+            last_employee = result.employee_id;
             svc_attendance_on_vision(&result, sys_time_now_ms());
         }
         svc_attendance_tick(sys_time_now_ms());
@@ -276,6 +299,7 @@ static void attend_task(void *arg)
             ESP_LOGI(TAG, "attendance state %d to %d on vision %d", (int)last_state, (int)state,
                      (int)last_kind);
             last_state = state;
+            ui_kiosk_on_verdict(verdict_for(state, last_kind), last_employee);
             announce(wiring, state, last_kind);
         }
         if (svc_attendance_records() != records) {

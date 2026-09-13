@@ -1,5 +1,7 @@
 #include "drv_lcd.h"
 
+#include <string.h>
+
 #include "app_config.h"
 #include "app_err.h"
 #include "bsp_board.h"
@@ -308,7 +310,58 @@ static void build_column_map(int src_width, int taken_width)
     s_map_width = src_width;
 }
 
-esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height)
+static void paint_card(const drv_lcd_card_t *card, uint16_t *strip, int top, int rows)
+{
+    const int y1 = card->y > top ? card->y : top;
+    const int y2 = card->y + card->h < top + rows ? card->y + card->h : top + rows;
+    const int x1 = card->x > 0 ? card->x : 0;
+    const int x2 = card->x + card->w < APP_LCD_H_RES ? card->x + card->w : APP_LCD_H_RES;
+    for (int y = y1; y < y2; ++y) {
+        const uint16_t *src = card->pixels + (size_t)(y - card->y) * card->w + (x1 - card->x);
+        memcpy(strip + (size_t)(y - top) * APP_LCD_H_RES + x1, src,
+               (size_t)(x2 - x1) * sizeof(uint16_t));
+    }
+}
+
+static void paint_row_span(uint16_t *row, int x1, int x2, uint16_t colour)
+{
+    const int from = x1 > 0 ? x1 : 0;
+    const int to = x2 < APP_LCD_H_RES ? x2 : APP_LCD_H_RES;
+    for (int x = from; x < to; ++x) {
+        row[x] = colour;
+    }
+}
+
+static void paint_box(const drv_lcd_box_t *box, uint16_t *strip, int top, int rows)
+{
+    const int edge = box->edge_px > 0 ? box->edge_px : 1;
+    const int y1 = box->y1 > top ? box->y1 : top;
+    const int y2 = box->y2 < top + rows ? box->y2 : top + rows;
+    for (int y = y1; y < y2; ++y) {
+        uint16_t *row = strip + (size_t)(y - top) * APP_LCD_H_RES;
+        if (y < box->y1 + edge || y >= box->y2 - edge) {
+            paint_row_span(row, box->x1, box->x2, box->rgb565);
+            continue;
+        }
+        paint_row_span(row, box->x1, box->x1 + edge, box->rgb565);
+        paint_row_span(row, box->x2 - edge, box->x2, box->rgb565);
+    }
+}
+
+static void paint_overlay(const drv_lcd_overlay_t *overlay, uint16_t *strip, int top, int rows)
+{
+    for (uint8_t i = 0; i < overlay->cards && i < DRV_LCD_OVERLAY_CARDS; ++i) {
+        if (overlay->card[i].pixels != NULL) {
+            paint_card(&overlay->card[i], strip, top, rows);
+        }
+    }
+    for (uint8_t i = 0; i < overlay->boxes && i < DRV_LCD_OVERLAY_BOXES; ++i) {
+        paint_box(&overlay->box[i], strip, top, rows);
+    }
+}
+
+esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height,
+                             const drv_lcd_overlay_t *overlay)
 {
     if (src_width <= 0 || src_height <= 0) {
         return ESP_ERR_INVALID_SIZE;
@@ -337,9 +390,40 @@ esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height)
                 out[x] = row[s_column_map[x]];
             }
         }
+        if (overlay != NULL) {
+            paint_overlay(overlay, dst, y, rows);
+        }
         APP_RETURN_ON_ERR(send_bounce(0, y, APP_LCD_H_RES, y + rows, dst), TAG, "strip");
     }
     return ESP_OK;
+}
+
+static int16_t clamp_to(float value, int limit)
+{
+    const int rounded = (int)(value + 0.5f);
+    if (rounded < 0) {
+        return 0;
+    }
+    return (int16_t)(rounded > limit ? limit : rounded);
+}
+
+bool drv_lcd_frame_to_panel(int src_width, int src_height, const float box[4], int16_t out[4])
+{
+    if (src_width <= 0 || src_height <= 0 || box == NULL || out == NULL) {
+        return false;
+    }
+    const int taken_width = (src_height * APP_LCD_H_RES) / APP_LCD_V_RES;
+    if (taken_width <= 0 || taken_width > src_width) {
+        return false;
+    }
+    const float left = (float)((src_width - taken_width) / 2);
+    const float columns = (float)APP_LCD_H_RES / (float)taken_width;
+    const float rows = (float)APP_LCD_V_RES / (float)src_height;
+    out[0] = clamp_to((box[0] - left) * columns, APP_LCD_H_RES);
+    out[1] = clamp_to(box[1] * rows, APP_LCD_V_RES);
+    out[2] = clamp_to((box[2] - left) * columns, APP_LCD_H_RES);
+    out[3] = clamp_to(box[3] * rows, APP_LCD_V_RES);
+    return out[2] > out[0] && out[3] > out[1];
 }
 
 esp_err_t drv_lcd_fill(uint16_t rgb565)
