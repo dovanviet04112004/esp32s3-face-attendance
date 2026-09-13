@@ -1307,9 +1307,16 @@ trong 0,50–1,50 và cân bằng trắng từng kênh trong 0,86–1,16; đo tr
 của `sat_mean` tụt **0,8609 → 0,7185** sau augment. Thu hẹp hai dải ấy đã **chạy thử và bị
 bác** (§39): AUC rơi ở **cả ba miền**, riêng `phone_eval` sập 0,9838 → 0,5353 với hai phần ba
 nhóm mặt thật không qua nổi ngưỡng nào — dải rộng ấy **đang mua sự bền vững** chứ không chôn
-dấu hiệu. Đường còn lại chưa thử là **thêm một kênh sắc độ** vào đầu vào, để đại lượng ấy
-không phải tự mò ra từ RGB (stem conv nhận 4 kênh, thêm đúng một hàng trọng số) — nó đưa
-thẳng thông tin vào chứ không nới lỏng augment, nên §39 không nói gì về nó. **Không** chốt độ
+dấu hiệu. Đường còn lại là **kênh sắc độ thứ tư**: ngoài R, G, B thì đầu vào mang thêm
+`S = (max − min) / max` tính trên từng điểm, **sau** toàn bộ augment — model ở suy luận cũng
+chỉ có ảnh cảm biến đã qua đường quang học của nó, nên train phải nhìn đúng thứ đó. Một mạng
+tích chập **không tự tính được** `max` và `min` trên trục kênh: hai phép ấy phi tuyến theo
+kênh, còn conv thì tuyến tính rồi mới ReLU, nên đại lượng này phải được **đưa vào**, không
+phải được **hy vọng học ra**. Giá: `stem` nhận 4 kênh thay vì 3, tức thêm đúng một hàng trọng
+số ở lớp đầu — arena không đổi, 234 ms không đổi, 81×81 không đổi; `ai_engine/src/antispoof/
+preproc.cpp` ghi thêm một kênh vào tensor đầu vào cùng lúc nó ghi ba kênh kia. §39 bác việc
+**nới lỏng augment**, không nói gì về việc **đưa thẳng đại lượng vào**, nên đây là hai phép
+thử khác nhau. **Không** chốt độ
 bão hoà thành cổng cứng: trên OV5640 hai lớp chồng ở 0,282–0,413 và biên chỉ 1,7%, nên cổng
 ấy chặn đúng một tấm ảnh chứ không chặn được một loại tấn công (§38.3).
 
