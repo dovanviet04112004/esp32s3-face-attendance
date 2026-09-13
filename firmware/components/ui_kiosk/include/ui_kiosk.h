@@ -70,6 +70,12 @@ typedef struct {
  */
 bool ui_kiosk_take_people_request(void);
 
+/** Collect the employee the people screen asked to delete.
+ *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
+ *  @ret false when nobody is waiting to be removed
+ */
+bool ui_kiosk_take_remove(uint32_t *employee_id);
+
 /** Hand the list to whichever screen asked for it.
  *  @ctx ui_task | non-blocking | copied, the caller keeps its own array
  */

@@ -224,6 +224,16 @@ bool ui_kiosk_take_people_request(void)
     return true;
 }
 
+bool ui_kiosk_take_remove(uint32_t *employee_id)
+{
+    if (!s_ready || employee_id == nullptr || !ui::remove_request().waiting) {
+        return false;
+    }
+    *employee_id = ui::remove_request().employee_id;
+    ui::remove_request().waiting = false;
+    return true;
+}
+
 void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count)
 {
     if (!s_ready) {
@@ -231,6 +241,7 @@ void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count)
     }
     ui::people().count = count < UI_KIOSK_PEOPLE_ROWS ? count : UI_KIOSK_PEOPLE_ROWS;
     memcpy(ui::people().row, people, sizeof(ui_kiosk_person_t) * ui::people().count);
+    ui::people_delivered();
     s_dirty = true;
 }
 

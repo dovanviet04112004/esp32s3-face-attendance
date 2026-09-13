@@ -246,6 +246,19 @@ static void touch_task(void *arg)
     }
 }
 
+static void show_people(void)
+{
+    svc_facedb_person_t table[UI_KIOSK_PEOPLE_ROWS];
+    ui_kiosk_person_t rows[UI_KIOSK_PEOPLE_ROWS];
+    const size_t found = svc_facedb_people(table, UI_KIOSK_PEOPLE_ROWS);
+    for (size_t i = 0; i < found; ++i) {
+        rows[i].employee_id = table[i].employee_id;
+        rows[i].templates = table[i].templates;
+        memcpy(rows[i].name, table[i].name, sizeof(rows[i].name));
+    }
+    ui_kiosk_set_people(rows, (int)found);
+}
+
 // The screens ask for a face and svc_vision answers with the next one it
 // embeds, so the enrol flow needs no camera path of its own (KEHOACH 4.5.5h).
 static void ui_task(void *arg)
@@ -271,15 +284,15 @@ static void ui_task(void *arg)
             ui_kiosk_enrol_kept();
         }
         if (ui_kiosk_take_people_request()) {
-            svc_facedb_person_t table[UI_KIOSK_PEOPLE_ROWS];
-            ui_kiosk_person_t rows[UI_KIOSK_PEOPLE_ROWS];
-            const size_t found = svc_facedb_people(table, UI_KIOSK_PEOPLE_ROWS);
-            for (size_t i = 0; i < found; ++i) {
-                rows[i].employee_id = table[i].employee_id;
-                rows[i].templates = table[i].templates;
-                memcpy(rows[i].name, table[i].name, sizeof(rows[i].name));
-            }
-            ui_kiosk_set_people(rows, (int)found);
+            show_people();
+        }
+        uint32_t going = 0;
+        if (ui_kiosk_take_remove(&going)) {
+            const esp_err_t gone = svc_facedb_remove(going);
+            const esp_err_t saved = gone == ESP_OK ? svc_facedb_persist() : gone;
+            ESP_LOGI(TAG, "remove %" PRIu32 ": %s, saved %s", going, esp_err_to_name(gone),
+                     esp_err_to_name(saved));
+            show_people();
         }
         uint32_t employee_id = 0;
         uint16_t template_idx = 0;

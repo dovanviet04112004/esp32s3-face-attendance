@@ -30,6 +30,7 @@ constexpr uint32_t kNewPerson = 0;        // main fills in the id (KEHOACH 4.5.5
 
 ScreenManager s_manager;
 EnrolRequest s_request;
+RemoveRequest s_remove;
 People s_people_list;
 
 void button(Canvas &to, int x, int y, int w, int h, const char *label, uint8_t tone, bool held)
@@ -450,18 +451,19 @@ public:
     {
         (void)seen;
         since_ms_ += dt_ms;
+        // The done line is painted once when the last sample lands and then
+        // held: repainting an opaque screen every tick reads as a flicker.
+        if (kept_ >= kSamples) {
+            if (since_ms_ < kDoneShowMs) {
+                return false;
+            }
+            manager().go(ScreenId::Scan);
+            return true;
+        }
         if (!took_ || since_ms_ < kSampleGapMs) {
             return false;
         }
         took_ = false;
-        if (kept_ >= kSamples) {
-            // This screen says it, not the attendance card (KEHOACH 4.5.5h).
-            if (since_ms_ >= kDoneShowMs) {
-                manager().go(ScreenId::Scan);
-            }
-            took_ = true;
-            return true;
-        }
         arm();
         return true;
     }
@@ -582,21 +584,39 @@ public:
     void on_enter() noexcept override
     {
         people().wanted = true;
-        held_ = false;
+        held_ = kNothing;
+        armed_ = kNothing;
+        going_ = 0;
     }
+
+    void delivered() noexcept { going_ = 0; }
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        const bool on_back = inside(x, y, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH);
+        const int hit = row_at(x, y);
         if (down) {
-            held_ = on_back;
+            held_ = hit;
             return true;
         }
-        const bool fire = held_ && on_back;
-        held_ = false;
-        if (fire) {
+        const int fire = held_ == hit ? hit : kNothing;
+        held_ = kNothing;
+        if (fire == kBack) {
             manager().go(ScreenId::Menu);
+            return true;
         }
+        if (fire < 0 || fire >= people().count) {
+            armed_ = kNothing;
+            return true;
+        }
+        // The second touch on the same row is the confirmation (KEHOACH 4.5.5h.3).
+        if (fire == armed_) {
+            going_ = people().row[fire].employee_id;
+            remove_request().employee_id = going_;
+            remove_request().waiting = true;
+            armed_ = kNothing;
+            return true;
+        }
+        armed_ = fire;
         return true;
     }
 
@@ -604,24 +624,57 @@ public:
     {
         (void)seen;
         top_bar(to, nullptr);
-        to.text_centred(kBarH + 18, "Danh sách", DRV_LCD_INK);
+        to.text_centred(kBarH + 12, "Danh sách", DRV_LCD_INK);
         if (people().count == 0) {
-            to.text_centred(kBarH + 80, "Chưa có ai", DRV_LCD_WARN);
+            to.text_centred(kRowTop, "Chưa có ai", DRV_LCD_WARN);
+        } else {
+            to.text_centred(kBarH + 44, "Chạm hai lần vào một dòng để xoá", DRV_LCD_EDGE);
         }
         for (int i = 0; i < people().count; ++i) {
             const ui_kiosk_person_t &who = people().row[i];
+            const int y = kRowTop + i * kRowStep;
+            const bool leaving = going_ != 0 && who.employee_id == going_;
+            if (i == armed_ || leaving) {
+                to.rounded(kPad - 6, y - 6, APP_LCD_H_RES - 2 * kPad + 12, kRowStep, kRadius,
+                           kEdge, DRV_LCD_WARN);
+            }
             char line[STORAGE_NAME_CAP + 24];
             snprintf(line, sizeof(line), "%s  ·  %u mẫu",
                      who.name[0] != '\0' ? who.name : "Chưa đặt tên", (unsigned)who.templates);
-            to.text(kPad, kBarH + 60 + i * (Canvas::line_height() + 10), line, DRV_LCD_INK);
+            to.text(kPad, y, line, DRV_LCD_INK);
+            const char *tail = leaving ? "Đang xoá…" : (i == armed_ ? "Xoá?" : nullptr);
+            if (tail != nullptr) {
+                to.text(APP_LCD_H_RES - kPad - Canvas::text_width(tail), y, tail, DRV_LCD_WARN);
+            }
         }
-        button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Quay lại", DRV_LCD_INK, held_);
+        button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Quay lại", DRV_LCD_INK,
+               held_ == kBack);
     }
 
 private:
+    static constexpr int kNothing = -1;
+    static constexpr int kBack = -2;
     static constexpr int kFootY = APP_LCD_V_RES - kRowH - kPad;
+    static constexpr int kRowTop = kBarH + 76;
+    static constexpr int kRowStep = 36;
 
-    bool held_ = false;
+    int row_at(int x, int y) const noexcept
+    {
+        if (inside(x, y, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH)) {
+            return kBack;
+        }
+        for (int i = 0; i < people().count; ++i) {
+            if (inside(x, y, kPad - 6, kRowTop + i * kRowStep - 6, APP_LCD_H_RES - 2 * kPad + 12,
+                       kRowStep)) {
+                return i;
+            }
+        }
+        return kNothing;
+    }
+
+    int held_ = kNothing;
+    int armed_ = kNothing;
+    uint32_t going_ = 0;
 };
 
 PeopleScreen s_people;
@@ -660,6 +713,16 @@ ScreenManager &manager() noexcept
 EnrolRequest &enrol_request() noexcept
 {
     return s_request;
+}
+
+RemoveRequest &remove_request() noexcept
+{
+    return s_remove;
+}
+
+void people_delivered() noexcept
+{
+    s_people.delivered();
 }
 
 void enrol_kept() noexcept

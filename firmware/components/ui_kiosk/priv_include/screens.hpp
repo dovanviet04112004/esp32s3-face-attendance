@@ -86,6 +86,14 @@ struct EnrolRequest {
 
 EnrolRequest &enrol_request() noexcept;
 
+/** Where the people screen leaves the employee it wants gone. */
+struct RemoveRequest {
+    bool waiting;
+    uint32_t employee_id;
+};
+
+RemoveRequest &remove_request() noexcept;
+
 /** The capture screen counts a sample when the pipeline really kept one. */
 void enrol_kept() noexcept;
 
@@ -97,6 +105,11 @@ struct People {
 };
 
 People &people() noexcept;
+
+/** Tell the people screen its list has been refreshed, so a row that asked to
+ *  go stops saying so whether or not the table let it.
+ */
+void people_delivered() noexcept;
 
 Screen *scan_screen() noexcept;
 Screen *menu_screen() noexcept;
