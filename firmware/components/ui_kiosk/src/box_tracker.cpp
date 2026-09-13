@@ -77,6 +77,8 @@ void BoxTracker::set(const Box &box, const uint16_t *frame, int width, int heigh
     box_ = box;
     patch_left_ = centred((box.x1 + box.x2) / 2.0f, kPatchPx, width);
     patch_top_ = centred((box.y1 + box.y2) / 2.0f, kPatchPx, height);
+    drift_x_ = 0;
+    drift_y_ = 0;
     capture(frame, width);
 }
 
@@ -117,12 +119,17 @@ bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
     if (!active_ || frame == nullptr || width < kWindowPx || height < kWindowPx) {
         return false;
     }
-    const int window_left = clamp(patch_left_ - kRadius * kStep, 0, width - kWindowPx);
-    const int window_top = clamp(patch_top_ - kRadius * kStep, 0, height - kWindowPx);
+    // A face that moved last frame is moving this one, so the window goes where
+    // it is headed: the reach doubles for a steady walk and costs nothing.
+    const int lead_x = clamp(drift_x_, -kRadius * kStep, kRadius * kStep);
+    const int lead_y = clamp(drift_y_, -kRadius * kStep, kRadius * kStep);
+    const int window_left =
+        clamp(patch_left_ + lead_x - kRadius * kStep, 0, width - kWindowPx);
+    const int window_top = clamp(patch_top_ + lead_y - kRadius * kStep, 0, height - kWindowPx);
     sample(frame, width, window_left, window_top, kWindow, window_);
 
-    const int stay_col = (patch_left_ - window_left) / kStep;
-    const int stay_row = (patch_top_ - window_top) / kStep;
+    const int stay_col = clamp((patch_left_ - window_left) / kStep, 0, kPositions - 1);
+    const int stay_row = clamp((patch_top_ - window_top) / kStep, 0, kPositions - 1);
     const uint32_t stay = sad(stay_col, stay_row, UINT32_MAX);
     uint32_t best = stay;
     int best_col = stay_col;
@@ -159,6 +166,8 @@ bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
     lost_ = 0;
     const int dx = window_left + best_col * kStep - patch_left_;
     const int dy = window_top + best_row * kStep - patch_top_;
+    drift_x_ = dx;
+    drift_y_ = dy;
     patch_left_ += dx;
     patch_top_ += dy;
     box_.x1 += static_cast<float>(dx);
