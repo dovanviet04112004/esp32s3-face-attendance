@@ -1282,9 +1282,34 @@ Ba điều kiện để phép augment này có nghĩa:
 
 #### Nhánh tight phải học phơi sáng, nếu không nó đọc độ sáng thay cho kết cấu
 
-Nhánh tight đọc crop 1,0× và phải tách mặt thật khỏi bản in bằng **kết cấu bề mặt**: lỗ
-chân lông, độ bóng của da, vân moiré của màn hình. Kết cấu là đại lượng cục bộ, không phụ
-thuộc mức sáng chung của khung.
+Nhánh tight đọc crop 1,0× và tách mặt thật khỏi bản in bằng **kết cấu bề mặt**: lỗ chân
+lông, độ bóng của da, vân moiré của màn hình. Kết cấu là đại lượng cục bộ, không phụ thuộc
+mức sáng chung của khung.
+
+**Nhưng kết cấu không sống sót qua phép thu về 81×81, và dấu của nó đổi theo ống kính.**
+Đo 13/09 trên ba miền (`measurements/antispoof` §38): năng lượng tần số cao cho AUC 0,86
+trên khung OV5640 nhưng **0,10** trên `phone_eval` — màn hình chụp lại bằng camera điện
+thoại sinh moiré nên tấn công *nhiều* tần số cao hơn mặt thật, còn qua ống kính mềm của
+OV5640 thì tấn công *ít* hơn. Mọi đặc trưng kết cấu đo được đều đổi dấu như vậy, nên học
+kết cấu là học đặc tính của một chuỗi ống kính. Và mặt 195 px của một bản sao lẫn mặt
+150 px của người thật đều bị thu về 81×81 trước khi model nhìn: vi cấu trúc mà mắt người
+dùng để phân biệt **đã mất trước lớp conv đầu tiên**.
+
+**Thứ sống sót là màu.** Cùng phép quét ấy, `sat_mean` (độ bão hoà trung bình của crop) giữ
+**cùng một dấu trên cả ba miền** — AUC 0,8548 trên chính phân bố train CelebA-Spoof, 1,0000
+trên `phone_eval`, 0,9829 trên OV5640 — và `chroma_hp` cho 0,71 / 0,91 / 0,91. Cả hai là
+thống kê **tần số thấp** nên phép thu nhỏ không xoá được. Lý do vật lý: một bản sao đi qua
+**hai lần đường màu** — màn hình hoặc mực in, rồi cảm biến — và mỗi lần bóp dải màu, nên da
+mất bão hoà. Đây là dấu hiệu nhánh tight phải dựa vào ở độ phân giải này, không phải kết cấu.
+
+**Chuỗi augment đang bóp chính dấu hiệu ấy.** `photometric` đổi `contrast` trong 0,50–1,50
+và cân bằng trắng từng kênh trong 0,86–1,16; đo trên 2.000 bản ghi val, AUC của `sat_mean`
+tụt **0,8609 → 0,7185** sau augment. Hai việc phải làm, cả hai giữ nguyên 81×81 và không
+thêm một phép tính nào lúc suy luận: **thu hẹp hai dải ấy** về mức OV5640 thật sự tạo ra, và
+**thêm một kênh sắc độ** vào đầu vào để dấu hiệu không phải tự mò ra từ RGB (stem conv nhận
+4 kênh, thêm đúng một hàng trọng số). **Không** chốt độ bão hoà thành cổng cứng: trên OV5640
+hai lớp chồng ở 0,282–0,413 và biên chỉ 1,7%, nên cổng ấy chặn đúng một tấm ảnh chứ không
+chặn được một loại tấn công (§38.3).
 
 Đo trên checkpoint chưa có augment quang học, làm tối và bẹt tương phản chính những
 khung nó đang chấm đúng:

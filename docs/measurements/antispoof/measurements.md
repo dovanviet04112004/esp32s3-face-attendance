@@ -2146,9 +2146,80 @@ thường, nên model học **kiểu cảnh** chứ không học độ sống.
 
 Hai đường còn lại, cả hai đều tốn một lần train và chưa thử:
 
-1. **Ngẫu nhiên hoá độ nét/độ nhoè khi train.** Danh sách augment hiện có crop, che, quang học,
-   chất lượng JPEG, xoay, tịnh tiến — **không có làm mờ**. Model chưa bao giờ bị buộc phải bất
-   biến với độ nét, nên nó được phép dùng độ nét làm dấu hiệu lớp.
-2. **Nâng độ phân giải đầu vào** khỏi 81×81 để vi cấu trúc sống sót. Đổi kiến trúc, đổi arena,
+1. **Nâng độ phân giải đầu vào** khỏi 81×81 để vi cấu trúc sống sót. Đổi kiến trúc, đổi arena,
    và §8 của `latency.md` cho thấy nhánh này đã tốn 234 ms — nâng cạnh lên 128 là nhân ~2,5 lần
    số phép tính.
+2. **Tìm một dấu hiệu sống sót qua phép thu về 81×81** — §38 làm việc đó và tìm ra một cái.
+
+---
+
+## 38. Dấu hiệu nào sống sót qua phép thu về 81×81 — quét đặc trưng trên ba miền, 13/09
+
+§37.6 đặt câu hỏi: ở 81×81 thì còn dấu hiệu nào. Mục này quét bảy đặc trưng tính trên crop mặt
+chuẩn hoá về 128 px, chấm AUC **trên ba miền độc lập** — nếu một đặc trưng đổi dấu giữa hai
+miền thì nó là đặc tính của chuỗi thu ảnh, không phải của sự sống.
+
+### 38.1 Bảng quét
+
+AUC đọc với **lớp thật là dương**: trên 0,5 nghĩa là mặt thật có giá trị cao hơn.
+
+| Đặc trưng | CelebA-Spoof val (4.000) | `phone_eval` (111) | OV5640 (85) |
+|---|---|---|---|
+| **`sat_mean`** độ bão hoà trung bình | **0,8548** | **1,0000** | **0,9829** |
+| **`chroma_hp`** tần số cao của sắc độ | 0,7113 | 0,9143 | 0,9062 |
+| `hp_energy` năng lượng tần số cao | — | 0,1045 | 0,8624 |
+| `luma_std` | — | 0,1545 | 0,7589 |
+| `hp_spread` | — | 0,8320 | 0,0037 |
+| `spec_frac` | — | 0,2199 | 0,1272 |
+| `luma_mean` | 0,4169 | — | — |
+
+**Mọi đặc trưng kết cấu đều đổi dấu giữa hai miền.** `hp_energy` cho 0,86 trên OV5640 và 0,10
+trên `phone_eval`: màn hình chụp lại bằng camera điện thoại sinh **moiré** nên tấn công *nhiều*
+tần số cao hơn mặt thật, còn qua OV5640 thì ống kính mềm xoá moiré và bản sao nhoè đi nên tấn
+công *ít* hơn. Dùng kết cấu là học đặc tính của một chuỗi ống kính, và đó đúng là cái bẫy §22.3
+đã chỉ ra ở trục khác.
+
+**Chỉ hai đặc trưng màu giữ nguyên dấu trên cả ba miền**, kể cả trên chính phân bố train. Cả
+hai là thống kê **tần số thấp** nên chúng **sống sót qua phép thu về 81×81** — đúng thứ §37.6
+nói là đã mất. Lý do vật lý: bản sao đi qua **hai lần đường màu** (màn hình hoặc mực in, rồi
+cảm biến), mỗi lần bóp dải màu, nên da mất bão hoà.
+
+### 38.2 Vì sao model không dùng nó
+
+Model nhận RGB nên nó **có** thông tin ấy. Nhưng chuỗi augment bóp nó: `photometric` đổi
+`contrast` trong 0,50–1,50 và `white_balance` từng kênh trong 0,86–1,16, mỗi phép `p = 0,5`.
+Đo trên 2.000 bản ghi val, cùng ảnh, trước và sau augment:
+
+| | AUC của `sat_mean` | trung vị lớp thật | trung vị lớp giả |
+|---|---|---|---|
+| Ảnh gốc trong shard | **0,8609** | 0,4083 | 0,2531 |
+| Sau `photometric` | **0,7185** | 0,3124 | 0,2170 |
+
+Augment **không xoá hẳn nhưng làm yếu đi rõ**, và model chọn đường tắt kiểu cảnh thay vì dấu
+hiệu bị làm nhiễu này.
+
+### 38.3 Vì sao **không** chốt nó thành một cổng cứng
+
+| Bộ | Ảnh giả | Mặt thật |
+|---|---|---|
+| OV5640 | min 0,131 · med 0,369 · **max 0,413** | **min 0,282** · p5 0,356 · med 0,707 |
+| `phone_eval` | min 0,069 · med 0,072 · **max 0,238** | **min 0,244** · med 0,299 |
+
+Trên `phone_eval` hai lớp **tách hẳn**. Trên OV5640 chúng chồng ở 0,282–0,413, và một cổng đặt
+ở 0,42 chặn được 21/21 khung tấn công nhưng **biên chỉ 1,7%** so với khung giả đậm màu nhất,
+đổi lấy ~10% mặt thật bị từ chối. Mức tuyệt đối còn phụ thuộc màn hình và giấy in: một ảnh rực
+rỡ trên màn OLED tốt sẽ vượt. **Cổng ấy chặn đúng tấm ảnh này chứ không chặn được loại tấn công
+này**, nên nó không được nạp.
+
+### 38.4 Cái dùng được
+
+Dấu hiệu đúng, nhưng phải để **model** cân nó cùng mọi thứ khác thay vì một ngưỡng cứng, và
+phải để nó **học được** — tức thu hẹp phần augment đang bóp chính nó. Hai thay đổi, cùng giữ
+nguyên 81×81 và không thêm một phép tính nào lúc suy luận:
+
+1. **Thu hẹp `EXPOSURE_CONTRAST_RANGE` và `WHITE_BALANCE_RANGE`** về quanh mức mà OV5640 thật
+   sự tạo ra, thay vì dải rộng đang dạy model bỏ qua màu.
+2. **Thêm một kênh sắc độ** vào đầu vào để dấu hiệu không phải tự mò ra từ RGB: stem conv nhận
+   4 kênh thay vì 3, chi phí thêm đúng một hàng trọng số ở lớp đầu.
+
+Cả hai cần một lần train và **không cần một khung dữ liệu mới nào**.
