@@ -7,6 +7,7 @@
 
 #include "app_events.h"
 #include "canvas.hpp"
+#include "storage_format.h"
 
 namespace ui {
 

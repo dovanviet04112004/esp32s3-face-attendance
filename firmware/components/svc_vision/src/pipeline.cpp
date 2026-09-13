@@ -139,7 +139,7 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     uint32_t employee_id = 0;
     float score = -1.0f;
     if (enrol_id_ != 0) {
-        matcher_.keep(embedding_, scale, enrol_id_, enrol_name_);
+        matcher_.keep(embedding_, scale, enrol_id_, enrol_idx_, enrol_name_);
         enrol_id_ = 0;
     }
     char name[STORAGE_NAME_CAP] = { 0 };
@@ -160,9 +160,11 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     out.kind = SVC_VISION_UNKNOWN;
 }
 
-void VisionPipeline::enrol_next(uint32_t employee_id, const char *name) noexcept
+void VisionPipeline::enrol_next(uint32_t employee_id, uint16_t template_idx,
+                                const char *name) noexcept
 {
     strlcpy(enrol_name_, name != nullptr ? name : "", sizeof(enrol_name_));
+    enrol_idx_ = template_idx;
     enrol_id_ = employee_id;
 }
 

@@ -49,9 +49,9 @@ esp_err_t FacedbMatcher::best(const int8_t *emb, float scale, uint32_t *employee
 }
 
 esp_err_t FacedbMatcher::keep(const int8_t *emb, float scale, uint32_t employee_id,
-                              const char *name) noexcept
+                              uint16_t template_idx, const char *name) noexcept
 {
-    const esp_err_t added = svc_facedb_enroll(employee_id, 0, 255, emb, scale, name);
+    const esp_err_t added = svc_facedb_enroll(employee_id, template_idx, 255, emb, scale, name);
     return added == ESP_OK ? svc_facedb_persist() : added;
 }
 

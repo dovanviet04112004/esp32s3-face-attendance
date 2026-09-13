@@ -22,6 +22,19 @@ public:
     uint8_t *cells() const noexcept { return cells_; }
 
     void clear() noexcept;
+
+    struct Region {
+        int16_t x;
+        int16_t y;
+        int16_t w;
+        int16_t h;
+    };
+
+    /** The bands of rows this screen painted, coalesced into at most cap boxes.
+     *  A screen covers a fraction of the panel and the gaps are what makes
+     *  sending the map affordable at all (KEHOACH 4.5.5h).
+     */
+    int regions(Region *out, int cap) const noexcept;
     void fill(int x, int y, int w, int h, uint8_t value) noexcept;
     void frame(int x, int y, int w, int h, int edge, uint8_t value) noexcept;
 
@@ -38,10 +51,13 @@ public:
 
 private:
     void stamp(int pen_x, int top, const char *utf8, uint8_t value) noexcept;
+    void touched(int x1, int y1, int x2, int y2) noexcept;
 
     uint8_t *cells_;
     int width_;
     int height_;
+    int16_t row_x1_[APP_LCD_V_RES] = {};
+    int16_t row_x2_[APP_LCD_V_RES] = {};
 };
 
 }  // namespace ui

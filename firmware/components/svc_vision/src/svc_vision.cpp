@@ -22,6 +22,8 @@ bool sane(const svc_vision_thresholds_t &t)
 
 }  // namespace
 
+int s_face_min_px;
+
 extern "C" esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds)
 {
     if (s_ready) {
@@ -35,6 +37,7 @@ extern "C" esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds)
         return ESP_ERR_NOT_FOUND;
     }
     s_pipeline.configure(*thresholds);
+    s_face_min_px = thresholds->face_min_px;
     s_ready = true;
     ESP_LOGI(TAG, "detect >= %.2f, live >= %.2f%s, match >= %.2f, face >= %d px", thresholds->detect_min_score,
              thresholds->live_min_score, s_liveness.available() ? "" : " (no spoof branch, skipped)",
@@ -47,13 +50,19 @@ extern "C" void svc_vision_on_seen(svc_vision_seen_cb_t cb, void *ctx)
     s_pipeline.observe(cb, ctx);
 }
 
-extern "C" esp_err_t svc_vision_enrol_next(uint32_t employee_id, const char *name)
+extern "C" esp_err_t svc_vision_enrol_next(uint32_t employee_id, uint16_t template_idx,
+                                           const char *name)
 {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
-    s_pipeline.enrol_next(employee_id, name);
+    s_pipeline.enrol_next(employee_id, template_idx, name);
     return ESP_OK;
+}
+
+extern "C" int svc_vision_face_min_px(void)
+{
+    return s_ready ? s_face_min_px : 0;
 }
 
 extern "C" esp_err_t svc_vision_step(const camera_fb_t *frame, svc_vision_result_t *out)

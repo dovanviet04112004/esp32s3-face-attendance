@@ -26,9 +26,9 @@
 static const char *TAG = "app_tasks";
 
 // What frame the pipeline is holding, so its observer can stamp the boxes.
-static int64_t s_seen_stamp_us;
 static int s_seen_width;
 static int s_seen_height;
+static int s_face_min_px;
 
 #define CAM_TASK_CORE 0
 #define CAM_TASK_PRIORITY 7
@@ -63,11 +63,10 @@ static int s_seen_height;
 #define TOUCH_TASK_STACK_BYTES 3072
 #define TOUCH_POLL_MS 40
 #define TOUCH_POINTS 1
-
-static int64_t stamp_of(const camera_fb_t *frame)
-{
-    return (int64_t)frame->timestamp.tv_sec * 1000000 + frame->timestamp.tv_usec;
-}
+#define UI_TASK_CORE 0
+#define UI_TASK_PRIORITY 4
+#define UI_TASK_STACK_BYTES 8192
+#define UI_TICK_MS 20
 
 static void report_rate(int frames, int64_t elapsed_us)
 {
@@ -144,7 +143,6 @@ static void cam_task(void *arg)
             continue;
         }
         drv_camera_expose(frame);
-        ui_kiosk_track(frame->buf, frame->width, frame->height, stamp_of(frame));
         const esp_err_t err =
             drv_lcd_blit_frame(frame->buf, frame->width, frame->height, ui_kiosk_overlay());
         offer_to_ai(wiring->frames, frame);
@@ -165,12 +163,13 @@ static void cam_task(void *arg)
 static void on_seen(const svc_vision_box_t *boxes, uint8_t count, void *ctx)
 {
     (void)ctx;
-    ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height, s_seen_stamp_us);
+    ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height, s_face_min_px);
 }
 
 static void ai_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
+    s_face_min_px = svc_vision_face_min_px();
     svc_vision_on_seen(on_seen, NULL);
     const esp_err_t watched = esp_task_wdt_add(NULL);
     ESP_LOGI(TAG, "ai on core %d, watchdog %s", AI_TASK_CORE, esp_err_to_name(watched));
@@ -186,7 +185,6 @@ static void ai_task(void *arg)
             continue;
         }
         svc_vision_result_t result = { 0 };
-        s_seen_stamp_us = stamp_of(frame);
         s_seen_width = frame->width;
         s_seen_height = frame->height;
         const esp_err_t err = svc_vision_step(frame, &result);
@@ -224,15 +222,27 @@ static void touch_task(void *arg)
             ui_kiosk_on_touch(false, 0, 0);
             continue;
         }
-        if (!ui_kiosk_on_touch(true, points[0].x, points[0].y)) {
+        ui_kiosk_on_touch(true, points[0].x, points[0].y);
+    }
+}
+
+// The screens ask for a face and svc_vision answers with the next one it
+// embeds, so the enrol flow needs no camera path of its own (KEHOACH 4.5.5h).
+static void ui_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(UI_TICK_MS));
+        ui_kiosk_tick(UI_TICK_MS);
+        uint32_t employee_id = 0;
+        uint16_t template_idx = 0;
+        char name[STORAGE_NAME_CAP] = { 0 };
+        if (!ui_kiosk_take_enrol(&employee_id, &template_idx, name, sizeof(name))) {
             continue;
         }
-        char name[STORAGE_NAME_CAP] = { 0 };
-        if (sys_storage_get_str(STORAGE_NS_DEVICE, NVS_ENROL_NAME, name, sizeof(name)) != ESP_OK) {
-            strlcpy(name, CONFIG_UI_ENROL_NAME, sizeof(name));
-        }
-        const esp_err_t armed = svc_vision_enrol_next(ENROL_EMPLOYEE_ID, name);
-        ESP_LOGI(TAG, "enrol armed for %s: %s", name, esp_err_to_name(armed));
+        const esp_err_t armed = svc_vision_enrol_next(employee_id, template_idx, name);
+        ESP_LOGI(TAG, "enrol %u sample %u for %s: %s", (unsigned)employee_id,
+                 (unsigned)template_idx, name, esp_err_to_name(armed));
     }
 }
 
@@ -393,6 +403,7 @@ static const app_task_spec_t kTasks[] = {
     { tof_task, "tof", TOF_TASK_STACK_BYTES, TOF_TASK_PRIORITY, TOF_TASK_CORE, 0 },
     { ai_task, "ai", AI_TASK_STACK_BYTES, AI_TASK_PRIORITY, AI_TASK_CORE, APP_EG_AI_READY },
     { touch_task, "touch", TOUCH_TASK_STACK_BYTES, TOUCH_TASK_PRIORITY, TOUCH_TASK_CORE, 0 },
+    { ui_task, "ui", UI_TASK_STACK_BYTES, UI_TASK_PRIORITY, UI_TASK_CORE, 0 },
     { attend_task, "attend", ATTEND_TASK_STACK_BYTES, ATTEND_TASK_PRIORITY, ATTEND_TASK_CORE, 0 },
     { net_task, "net", NET_TASK_STACK_BYTES, NET_TASK_PRIORITY, NET_TASK_CORE, 0 },
 };

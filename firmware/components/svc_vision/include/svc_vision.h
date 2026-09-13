@@ -71,7 +71,13 @@ void svc_vision_on_seen(svc_vision_seen_cb_t cb, void *ctx);
  *  @ctx task | non-blocking | one shot: the next embedding is kept, then matched
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE until svc_vision_init has run
  */
-esp_err_t svc_vision_enrol_next(uint32_t employee_id, const char *name);
+esp_err_t svc_vision_enrol_next(uint32_t employee_id, uint16_t template_idx,
+                                const char *name);
+
+/** The smallest face this pipeline will verify, in frame pixels.
+ *  @ctx any | non-blocking | zero until svc_vision_init has run
+ */
+int svc_vision_face_min_px(void);
 
 /** Feed one RGB565 frame; the caller keeps the frame and returns it afterwards.
  *  @ctx ai_task | blocking: detect, plus spoof and recog once the face is stable (KEHOACH 4.5.5d)

@@ -3,146 +3,99 @@
 #include <atomic>
 #include <string.h>
 
-#include "box_tracker.hpp"
+#include "canvas.hpp"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_timer.h"
-#include "overlay.hpp"
-#include "storage_format.h"
+#include "screens.hpp"
 
 namespace {
 
 const char *TAG = "ui_kiosk";
 
 constexpr int kSlots = 2;
-constexpr int kHistory = 24;
 constexpr uint32_t kVerdictShift = 32;
 // A line stays up this long, and the same line will not come back inside the
 // quiet window: a face nobody enrolled would otherwise strobe it forever.
-constexpr int64_t kShowUs = 2500000;
-constexpr int64_t kQuietUs = 6000000;
+constexpr int64_t kShowMs = 2500;
+constexpr int64_t kQuietMs = 6000;
 
-struct Detect {
-    float box[DRV_LCD_OVERLAY_BOXES][4];
-    int count;
-    int width;
-    int height;
-    int64_t stamp_us;                     // the frame the detector read
-};
+constexpr uint16_t kWhite = 0xFFFF;
+constexpr uint16_t kMint = 0x27EC;
+constexpr uint16_t kAmber = 0xFD20;
+constexpr uint16_t kShadow = 0x0000;
 
-// How far the face has travelled since each of the last frames drawn, so a box
-// that took half a second to compute can be carried forward to now.
-struct Travelled {
-    int64_t stamp_us;
-    int32_t x;
-    int32_t y;
-};
+constexpr uint16_t wire(uint16_t rgb565)
+{
+    return (uint16_t)((rgb565 >> 8) | (rgb565 << 8));
+}
 
-ui::OverlayBuilder s_builder;
-ui::BoxTracker s_tracker;
+uint8_t *s_cells;
 drv_lcd_overlay_t s_slot[kSlots];
 std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
 int s_next;
 bool s_ready;
+bool s_dirty = true;
 
-Travelled s_history[kHistory];
-int s_history_next;
-int32_t s_travel_x;
-int32_t s_travel_y;
-
-// The preview path is the only writer, so what the other two tasks report
-// arrives through one atomic handover each.
-Detect s_detect_slot[kSlots];
-std::atomic<const Detect *> s_detect{ nullptr };
-int s_detect_next;
+ui::Sight s_seen;
 std::atomic<uint64_t> s_verdict{ 0 };
 char s_name[STORAGE_NAME_CAP];
-std::atomic<bool> s_button_held{ false };
-std::atomic<bool> s_button_dirty{ false };
 uint64_t s_verdict_taken;
 uint64_t s_line_showing;
-int64_t s_clear_at_us;
-int64_t s_quiet_until_us;
+int64_t s_clear_in_ms;
+int64_t s_quiet_in_ms;
+std::atomic<int32_t> s_touch{ -1 };
 
-void publish()
+// The whole panel is one map, but only the rectangle a screen touched is worth
+// sending: the rest is zero and would cost a scan of 153 KB every frame.
+void publish(const ui::Canvas &from)
 {
     drv_lcd_overlay_t *target = &s_slot[s_next];
-    s_builder.build(target);
+    memset(target, 0, sizeof(*target));
+    ui::Canvas::Region region[DRV_LCD_OVERLAY_MASKS];
+    const int kept = from.regions(region, DRV_LCD_OVERLAY_MASKS);
+    for (int i = 0; i < kept; ++i) {
+        drv_lcd_mask_t *mask = &target->mask[i];
+        mask->x = region[i].x;
+        mask->y = region[i].y;
+        mask->w = region[i].w;
+        mask->h = region[i].h;
+        mask->stride = APP_LCD_H_RES;
+        mask->cover = from.cells() + (size_t)region[i].y * APP_LCD_H_RES + region[i].x;
+        mask->ink_rgb565 = wire(kWhite);
+        mask->edge_rgb565 = wire(kShadow);
+        mask->accent_rgb565 = wire(kMint);
+        mask->warn_rgb565 = wire(kAmber);
+    }
+    target->masks = (uint8_t)kept;
     s_next = (s_next + 1) % kSlots;
     s_shown.store(target, std::memory_order_release);
 }
 
-// A stamp the ring has forgotten leaves the box where the detector put it.
-bool travel_since(int64_t stamp_us, int32_t *dx, int32_t *dy)
+void take_verdict(int64_t dt_ms)
 {
-    for (int i = 0; i < kHistory; ++i) {
-        if (s_history[i].stamp_us == stamp_us) {
-            *dx = s_travel_x - s_history[i].x;
-            *dy = s_travel_y - s_history[i].y;
-            return true;
-        }
-    }
-    return false;
-}
-
-void remember(int64_t stamp_us)
-{
-    s_travel_x += s_tracker.drift_x();
-    s_travel_y += s_tracker.drift_y();
-    s_history[s_history_next] = { stamp_us, s_travel_x, s_travel_y };
-    s_history_next = (s_history_next + 1) % kHistory;
-}
-
-// The detector is accurate but late, the match is on time but drifts: the box
-// is the detector's, carried forward by the match (KEHOACH 4.5.5h).
-void follow(const uint16_t *pixels, int width, int height, int64_t stamp_us)
-{
-    s_tracker.update(pixels, width, height);
-    remember(stamp_us);
-
-    const Detect *fresh = s_detect.exchange(nullptr, std::memory_order_acquire);
-    if (fresh == nullptr) {
-        return;
-    }
-    if (fresh->count <= 0) {
-        s_tracker.clear();
-        s_builder.set_others(nullptr, 0, width, height);
-        return;
-    }
-    int32_t dx = 0;
-    int32_t dy = 0;
-    travel_since(fresh->stamp_us, &dx, &dy);
-    const ui::Box box = { fresh->box[0][0] + dx, fresh->box[0][1] + dy, fresh->box[0][2] + dx,
-                          fresh->box[0][3] + dy };
-    s_tracker.anchor(box, pixels, width, height);
-    s_builder.set_others(&fresh->box[1][0], fresh->count - 1, fresh->width, fresh->height);
-}
-
-bool show(uint64_t packed, int64_t now_us)
-{
-    s_line_showing = packed;
-    s_clear_at_us = now_us + kShowUs;
-    s_quiet_until_us = now_us + kQuietUs;
-    return s_builder.set_verdict(static_cast<app_ui_verdict_t>(packed >> kVerdictShift),
-                                 static_cast<uint32_t>(packed), s_name);
-}
-
-bool say_something()
-{
-    const int64_t now_us = esp_timer_get_time();
+    s_clear_in_ms -= s_clear_in_ms > 0 ? dt_ms : 0;
+    s_quiet_in_ms -= s_quiet_in_ms > 0 ? dt_ms : 0;
     const uint64_t packed = s_verdict.load(std::memory_order_acquire);
     if (packed != s_verdict_taken) {
         s_verdict_taken = packed;
-        const bool idle = (packed >> kVerdictShift) <= APP_UI_SCANNING;
-        const bool repeat = packed == s_line_showing && now_us < s_quiet_until_us;
-        if (!idle && !repeat) {
-            return show(packed, now_us);
+        const app_ui_verdict_t verdict = static_cast<app_ui_verdict_t>(packed >> kVerdictShift);
+        const bool quiet = packed == s_line_showing && s_quiet_in_ms > 0;
+        if (verdict > APP_UI_SCANNING && !quiet) {
+            s_line_showing = packed;
+            s_clear_in_ms = kShowMs;
+            s_quiet_in_ms = kQuietMs;
+            s_seen.verdict = verdict;
+            s_seen.employee_id = static_cast<uint32_t>(packed);
+            strlcpy(s_seen.name, s_name, sizeof(s_seen.name));
+            s_dirty = true;
         }
+        s_seen.verifying = verdict == APP_UI_SCANNING;
     }
-    if (s_clear_at_us != 0 && now_us >= s_clear_at_us) {
-        s_clear_at_us = 0;
-        return s_builder.set_verdict(APP_UI_IDLE, 0, nullptr);
+    if (s_clear_in_ms == 0 && s_seen.verdict > APP_UI_SCANNING) {
+        s_clear_in_ms = -1;
+        s_seen.verdict = APP_UI_IDLE;
+        s_dirty = true;
     }
-    return false;
 }
 
 }  // namespace
@@ -152,78 +105,96 @@ esp_err_t ui_kiosk_init(void)
     if (s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
-    const esp_err_t err = s_builder.init();
-    if (err != ESP_OK) {
-        return err;
+    s_cells = static_cast<uint8_t *>(
+        heap_caps_malloc((size_t)APP_LCD_H_RES * APP_LCD_V_RES, MALLOC_CAP_SPIRAM));
+    if (s_cells == nullptr) {
+        return ESP_ERR_NO_MEM;
     }
+    ui::manager().attach(ui::ScreenId::Scan, ui::scan_screen());
+    ui::manager().attach(ui::ScreenId::Menu, ui::menu_screen());
+    ui::manager().attach(ui::ScreenId::Enrol, ui::enrol_screen());
+    ui::manager().attach(ui::ScreenId::Capture, ui::capture_screen());
+    ui::manager().attach(ui::ScreenId::People, ui::people_screen());
+    ui::manager().attach(ui::ScreenId::Settings, ui::settings_screen());
     memset(s_slot, 0, sizeof(s_slot));
-    memset(s_detect_slot, 0, sizeof(s_detect_slot));
+    memset(&s_seen, 0, sizeof(s_seen));
     s_ready = true;
-    publish();
-    ESP_LOGI(TAG, "overlay up, band %d px", ui::OverlayBuilder::kBandHeight);
+    ui_kiosk_tick(0);
+    ESP_LOGI(TAG, "screens up on a %dx%d map", APP_LCD_H_RES, APP_LCD_V_RES);
     return ESP_OK;
 }
 
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
-                       int64_t stamp_us)
+                       int face_min_px)
 {
-    if (!s_ready) {
-        return;
+    (void)frame_width;
+    (void)frame_height;
+    const bool face = count > 0;
+    bool close_enough = false;
+    for (int i = 0; i < count; ++i) {
+        const float w = boxes[i * 4 + 2] - boxes[i * 4 + 0];
+        const float h = boxes[i * 4 + 3] - boxes[i * 4 + 1];
+        close_enough = close_enough || (w > h ? w : h) >= (float)face_min_px;
     }
-    Detect *target = &s_detect_slot[s_detect_next];
-    target->count = count < DRV_LCD_OVERLAY_BOXES ? count : DRV_LCD_OVERLAY_BOXES;
-    if (target->count > 0) {
-        memcpy(target->box, boxes, sizeof(float) * 4 * target->count);
+    if (face != s_seen.face || close_enough != s_seen.close_enough) {
+        s_seen.face = face;
+        s_seen.close_enough = close_enough;
+        s_dirty = true;
     }
-    target->width = frame_width;
-    target->height = frame_height;
-    target->stamp_us = stamp_us;
-    s_detect_next = (s_detect_next + 1) % kSlots;
-    s_detect.store(target, std::memory_order_release);
 }
 
 void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id, const char *name)
 {
-    // The preview path reads this only once the word below changes, so the
-    // order of these two writes is the handover.
+    // The word below is what makes the screen look at this, so it lands second.
     strlcpy(s_name, name != NULL ? name : "", sizeof(s_name));
-    const uint64_t packed = ((uint64_t)verdict << kVerdictShift) | employee_id;
-    s_verdict.store(packed, std::memory_order_release);
+    s_verdict.store(((uint64_t)verdict << kVerdictShift) | employee_id,
+                    std::memory_order_release);
 }
 
-bool ui_kiosk_on_touch(bool down, int x, int y)
+void ui_kiosk_on_touch(bool down, int x, int y)
 {
     if (!s_ready) {
-        return false;
-    }
-    const bool inside = x >= ui::OverlayBuilder::kButtonX &&
-                        x < ui::OverlayBuilder::kButtonX + ui::OverlayBuilder::kButtonW &&
-                        y >= ui::OverlayBuilder::kButtonY &&
-                        y < ui::OverlayBuilder::kButtonY + ui::OverlayBuilder::kButtonH;
-    const bool was = s_button_held.exchange(down && inside, std::memory_order_acq_rel);
-    if (was != (down && inside)) {
-        s_button_dirty.store(true, std::memory_order_release);
-    }
-    // The press is only a press once the finger comes off it again.
-    return was && !down;
-}
-
-void ui_kiosk_track(const void *pixels, int width, int height, int64_t stamp_us)
-{
-    if (!s_ready || pixels == NULL) {
         return;
     }
-    follow((const uint16_t *)pixels, width, height, stamp_us);
-    const ui::Box &held = s_tracker.box();
-    const float box[4] = { held.x1, held.y1, held.x2, held.y2 };
-    bool changed = s_builder.set_face(s_tracker.active(), box, width, height);
-    changed = say_something() || changed;
-    if (s_button_dirty.exchange(false, std::memory_order_acq_rel)) {
-        changed = s_builder.set_button(s_button_held.load(std::memory_order_acquire)) || changed;
+    s_touch.store(down ? ((x & 0xFFFF) << 12) | (y & 0xFFF) : -1, std::memory_order_release);
+}
+
+void ui_kiosk_tick(uint32_t dt_ms)
+{
+    if (!s_ready) {
+        return;
     }
-    if (changed) {
-        publish();
+    static int32_t was = -1;
+    const int32_t now = s_touch.load(std::memory_order_acquire);
+    if (now != was) {
+        const int32_t report = now >= 0 ? now : was;
+        const int x = report >= 0 ? (report >> 12) & 0xFFFF : 0;
+        const int y = report >= 0 ? report & 0xFFF : 0;
+        was = now;
+        s_dirty = ui::manager().current()->on_touch(x, y, now >= 0) || s_dirty;
     }
+    take_verdict(dt_ms);
+    s_dirty = ui::manager().current()->tick(dt_ms, s_seen) || s_dirty;
+    if (!s_dirty) {
+        return;
+    }
+    s_dirty = false;
+    ui::Canvas canvas(s_cells, APP_LCD_H_RES, APP_LCD_V_RES);
+    canvas.clear();
+    ui::manager().current()->paint(canvas, s_seen);
+    publish(canvas);
+}
+
+bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *name, size_t cap)
+{
+    if (!s_ready || !ui::enrol_request().waiting) {
+        return false;
+    }
+    *employee_id = ui::enrol_request().employee_id;
+    *template_idx = ui::enrol_request().template_idx;
+    strlcpy(name, ui::enrol_request().name, cap);
+    ui::enrol_request().waiting = false;
+    return true;
 }
 
 const drv_lcd_overlay_t *ui_kiosk_overlay(void)

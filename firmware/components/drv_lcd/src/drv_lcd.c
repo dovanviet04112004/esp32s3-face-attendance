@@ -326,6 +326,8 @@ static void paint_mask(const drv_lcd_mask_t *mask, uint16_t *strip, int top, int
                 out[x] = mask->edge_rgb565;
             } else if (cover[x] == DRV_LCD_ACCENT) {
                 out[x] = mask->accent_rgb565;
+            } else if (cover[x] == DRV_LCD_WARN) {
+                out[x] = mask->warn_rgb565;
             }
         }
     }

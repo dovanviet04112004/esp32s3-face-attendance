@@ -69,6 +69,44 @@ int Canvas::line_height() noexcept
 void Canvas::clear() noexcept
 {
     memset(cells_, 0, (size_t)width_ * height_);
+    for (int row = 0; row < height_; ++row) {
+        row_x1_[row] = (int16_t)width_;
+        row_x2_[row] = 0;
+    }
+}
+
+void Canvas::touched(int x1, int y1, int x2, int y2) noexcept
+{
+    for (int row = y1; row < y2; ++row) {
+        row_x1_[row] = x1 < row_x1_[row] ? (int16_t)x1 : row_x1_[row];
+        row_x2_[row] = x2 > row_x2_[row] ? (int16_t)x2 : row_x2_[row];
+    }
+}
+
+int Canvas::regions(Region *out, int cap) const noexcept
+{
+    int kept = 0;
+    int row = 0;
+    while (row < height_ && kept < cap) {
+        if (row_x2_[row] <= row_x1_[row]) {
+            ++row;
+            continue;
+        }
+        int left = row_x1_[row];
+        int right = row_x2_[row];
+        const int top = row;
+        while (row < height_ && row_x2_[row] > row_x1_[row]) {
+            left = row_x1_[row] < left ? row_x1_[row] : left;
+            right = row_x2_[row] > right ? row_x2_[row] : right;
+            ++row;
+        }
+        out[kept].x = (int16_t)left;
+        out[kept].y = (int16_t)top;
+        out[kept].w = (int16_t)(right - left);
+        out[kept].h = (int16_t)(row - top);
+        ++kept;
+    }
+    return kept;
 }
 
 void Canvas::fill(int x, int y, int w, int h, uint8_t value) noexcept
@@ -77,9 +115,13 @@ void Canvas::fill(int x, int y, int w, int h, uint8_t value) noexcept
     const int y1 = y > 0 ? y : 0;
     const int x2 = x + w < width_ ? x + w : width_;
     const int y2 = y + h < height_ ? y + h : height_;
+    if (x2 <= x1 || y2 <= y1) {
+        return;
+    }
     for (int row = y1; row < y2; ++row) {
         memset(cells_ + (size_t)row * width_ + x1, value, (size_t)(x2 - x1));
     }
+    touched(x1, y1, x2, y2);
 }
 
 void Canvas::frame(int x, int y, int w, int h, int edge, uint8_t value) noexcept
@@ -148,6 +190,7 @@ void Canvas::stamp(int pen_x, int top, const char *utf8, uint8_t value) noexcept
                 uint8_t *cell = &cells_[(size_t)row * width_ + col];
                 if (value != DRV_LCD_EDGE || *cell == 0) {
                     *cell = value;
+                    touched(col, row, col + 1, row + 1);
                 }
             }
         }

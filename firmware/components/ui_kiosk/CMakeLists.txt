@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS src/box_tracker.cpp src/overlay.cpp src/ui_kiosk.cpp
+    SRCS src/box_tracker.cpp src/canvas.cpp src/screens.cpp src/ui_kiosk.cpp
          ../../assets/fonts/kiosk_sans_22.c
     INCLUDE_DIRS include
     PRIV_INCLUDE_DIRS priv_include ../../assets/fonts
