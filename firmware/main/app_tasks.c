@@ -9,6 +9,7 @@
 #include "drv_camera.h"
 #include "drv_lcd.h"
 #include "drv_tof.h"
+#include "drv_touch.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
@@ -55,6 +56,13 @@ static int s_seen_height;
 #define NVS_SNTP_HOST "sntp_host"
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
 #define NVS_PRESENT_MM "present_mm"
+#define NVS_ENROL_NAME "enrol_name"
+#define ENROL_EMPLOYEE_ID 1u
+#define TOUCH_TASK_CORE 0
+#define TOUCH_TASK_PRIORITY 5
+#define TOUCH_TASK_STACK_BYTES 3072
+#define TOUCH_POLL_MS 40
+#define TOUCH_POINTS 1
 
 static int64_t stamp_of(const camera_fb_t *frame)
 {
@@ -191,6 +199,8 @@ static void ai_task(void *arg)
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "vision step %s", esp_err_to_name(err));
         } else if (result.kind != SVC_VISION_NONE) {
+            ESP_LOGI(TAG, "verdict %d, live %.3f, match %.3f, id %u", (int)result.kind,
+                     result.live_score, result.match_score, (unsigned)result.employee_id);
             // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
             if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) != pdTRUE) {
                 ESP_LOGE(TAG, "result %d dropped, attend queue full", (int)result.kind);
@@ -198,6 +208,31 @@ static void ai_task(void *arg)
         }
         // Only IDLE1 feeds its own watchdog slot, so it needs a turn (KEHOACH 5.1).
         vTaskDelay(1);
+    }
+}
+
+// One button until the enrol screen of E10-T7 lands; ui_kiosk owns where it
+// sits and this task only says where the finger went.
+static void touch_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(TOUCH_POLL_MS));
+        drv_touch_point_t points[TOUCH_POINTS];
+        uint8_t count = 0;
+        if (drv_touch_read(points, TOUCH_POINTS, &count) != ESP_OK || count == 0) {
+            ui_kiosk_on_touch(false, 0, 0);
+            continue;
+        }
+        if (!ui_kiosk_on_touch(true, points[0].x, points[0].y)) {
+            continue;
+        }
+        char name[STORAGE_NAME_CAP] = { 0 };
+        if (sys_storage_get_str(STORAGE_NS_DEVICE, NVS_ENROL_NAME, name, sizeof(name)) != ESP_OK) {
+            strlcpy(name, CONFIG_UI_ENROL_NAME, sizeof(name));
+        }
+        const esp_err_t armed = svc_vision_enrol_next(ENROL_EMPLOYEE_ID, name);
+        ESP_LOGI(TAG, "enrol armed for %s: %s", name, esp_err_to_name(armed));
     }
 }
 
@@ -312,6 +347,7 @@ static void attend_task(void *arg)
     svc_attendance_state_t last_state = svc_attendance_state();
     svc_vision_kind_t last_kind = SVC_VISION_NONE;
     uint32_t last_employee = 0;
+    char last_name[STORAGE_NAME_CAP] = { 0 };
     uint32_t records = svc_attendance_records();
 
     for (;;) {
@@ -323,6 +359,7 @@ static void attend_task(void *arg)
         if (xQueueReceive(wiring->results, &result, pdMS_TO_TICKS(ATTEND_TICK_MS)) == pdTRUE) {
             last_kind = result.kind;
             last_employee = result.employee_id;
+            memcpy(last_name, result.name, sizeof(last_name));
             svc_attendance_on_vision(&result, sys_time_now_ms());
         }
         svc_attendance_tick(sys_time_now_ms());
@@ -332,7 +369,7 @@ static void attend_task(void *arg)
             ESP_LOGI(TAG, "attendance state %d to %d on vision %d", (int)last_state, (int)state,
                      (int)last_kind);
             last_state = state;
-            ui_kiosk_on_verdict(verdict_for(state, last_kind), last_employee);
+            ui_kiosk_on_verdict(verdict_for(state, last_kind), last_employee, last_name);
             announce(wiring, state, last_kind);
         }
         if (svc_attendance_records() != records) {
@@ -355,6 +392,7 @@ static const app_task_spec_t kTasks[] = {
     { cam_task, "cam", CAM_TASK_STACK_BYTES, CAM_TASK_PRIORITY, CAM_TASK_CORE, 0 },
     { tof_task, "tof", TOF_TASK_STACK_BYTES, TOF_TASK_PRIORITY, TOF_TASK_CORE, 0 },
     { ai_task, "ai", AI_TASK_STACK_BYTES, AI_TASK_PRIORITY, AI_TASK_CORE, APP_EG_AI_READY },
+    { touch_task, "touch", TOUCH_TASK_STACK_BYTES, TOUCH_TASK_PRIORITY, TOUCH_TASK_CORE, 0 },
     { attend_task, "attend", ATTEND_TASK_STACK_BYTES, ATTEND_TASK_PRIORITY, ATTEND_TASK_CORE, 0 },
     { net_task, "net", NET_TASK_STACK_BYTES, NET_TASK_PRIORITY, NET_TASK_CORE, 0 },
 };

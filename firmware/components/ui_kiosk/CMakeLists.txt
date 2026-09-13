@@ -3,6 +3,6 @@ idf_component_register(
          ../../assets/fonts/kiosk_sans_22.c
     INCLUDE_DIRS include
     PRIV_INCLUDE_DIRS priv_include ../../assets/fonts
-    REQUIRES common bsp_board drv_lcd
+    REQUIRES common bsp_board drv_lcd sys_storage
     PRIV_REQUIRES log esp_timer
 )

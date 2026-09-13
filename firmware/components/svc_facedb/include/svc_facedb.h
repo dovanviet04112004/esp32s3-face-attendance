@@ -20,6 +20,7 @@ typedef struct {
     uint32_t employee_id;
     uint16_t template_idx;
     float score;                          // cosine, -1..1
+    char name[STORAGE_NAME_CAP];          // empty when the record carries none
 } svc_facedb_match_t;
 
 /** Reserve the table in PSRAM and load db/faces.bin, or start empty when there is none.
@@ -41,7 +42,7 @@ esp_err_t svc_facedb_lookup(const int8_t *emb, float scale, svc_facedb_match_t *
  *  @ret ESP_OK | ESP_ERR_NO_MEM when the table is full even after compaction | ESP_ERR_TIMEOUT
  */
 esp_err_t svc_facedb_enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
-                            const int8_t *emb, float scale);
+                            const int8_t *emb, float scale, const char *name);
 
 /** Soft-delete every template of one employee.
  *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist

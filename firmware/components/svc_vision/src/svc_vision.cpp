@@ -47,6 +47,15 @@ extern "C" void svc_vision_on_seen(svc_vision_seen_cb_t cb, void *ctx)
     s_pipeline.observe(cb, ctx);
 }
 
+extern "C" esp_err_t svc_vision_enrol_next(uint32_t employee_id, const char *name)
+{
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_pipeline.enrol_next(employee_id, name);
+    return ESP_OK;
+}
+
 extern "C" esp_err_t svc_vision_step(const camera_fb_t *frame, svc_vision_result_t *out)
 {
     if (!s_ready || frame == nullptr || out == nullptr) {

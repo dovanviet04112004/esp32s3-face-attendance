@@ -18,6 +18,7 @@ extern "C" {
 
 #define DRV_LCD_INK 1
 #define DRV_LCD_EDGE 2
+#define DRV_LCD_ACCENT 3
 
 /** Text laid over the preview: one byte a pixel saying what to paint there.
  *  Colours are already in panel byte order, because the preview path does not
@@ -31,6 +32,7 @@ typedef struct {
     const uint8_t *cover;                 // w*h: 0 leaves the video, else INK or EDGE
     uint16_t ink_rgb565;
     uint16_t edge_rgb565;
+    uint16_t accent_rgb565;
 } drv_lcd_mask_t;
 
 /** A hollow rectangle drawn over the preview, in panel pixels. */

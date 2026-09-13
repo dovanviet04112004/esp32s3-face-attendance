@@ -26,7 +26,10 @@ public:
 
 class FacedbMatcher final : public IMatcher {
 public:
-    esp_err_t best(const int8_t *emb, float scale, uint32_t *employee_id, float *score) noexcept override;
+    esp_err_t best(const int8_t *emb, float scale, uint32_t *employee_id, float *score,
+                   char *name, size_t name_cap) noexcept override;
+    esp_err_t keep(const int8_t *emb, float scale, uint32_t employee_id,
+                   const char *name) noexcept override;
 };
 
 }  // namespace vision

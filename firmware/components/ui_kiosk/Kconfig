@@ -1,0 +1,11 @@
+menu "Kiosk screen"
+
+    config UI_ENROL_NAME
+        string "Name the board button enrols under"
+        default "Nhân viên 1"
+        help
+            The enrol screen of E10-T7 replaces this. Until it exists the board
+            button is the only way to add a face, and NVS key device/enrol_name
+            overrides this at run time.
+
+endmenu

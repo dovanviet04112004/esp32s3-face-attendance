@@ -1,6 +1,8 @@
 #include "svc_facedb.h"
 
 #include "facedb_internal.hpp"
+#include <string.h>
+
 #include "sdkconfig.h"
 
 namespace {
@@ -26,14 +28,16 @@ esp_err_t svc_facedb_lookup(const int8_t *emb, float scale, svc_facedb_match_t *
         out->employee_id = result.employee_id;
         out->template_idx = result.template_idx;
         out->score = result.score;
+        // The table may move under a later enrol, so the name is copied out.
+        strlcpy(out->name, result.name != nullptr ? result.name : "", sizeof(out->name));
     }
     return err;
 }
 
 esp_err_t svc_facedb_enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality, const int8_t *emb,
-                            float scale)
+                            float scale, const char *name)
 {
-    return s_db.enroll(employee_id, template_idx, quality, emb, scale);
+    return s_db.enroll(employee_id, template_idx, quality, emb, scale, name);
 }
 
 esp_err_t svc_facedb_remove(uint32_t employee_id)

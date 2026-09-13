@@ -101,11 +101,15 @@ public:
     float score = kMatchScore;
     int calls = 0;
 
-    esp_err_t best(const int8_t *, float, uint32_t *employee_id, float *out) noexcept override
+    esp_err_t best(const int8_t *, float, uint32_t *employee_id, float *out, char *name,
+                   size_t name_cap) noexcept override
     {
         ++calls;
         *employee_id = kEmployee;
         *out = score;
+        if (name != nullptr && name_cap > 0) {
+            name[0] = '\0';
+        }
         return answer;
     }
 };

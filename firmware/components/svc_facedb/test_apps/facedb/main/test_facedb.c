@@ -68,7 +68,7 @@ static void enroll_everyone(void)
     for (uint32_t id = 1; id <= PEOPLE; ++id) {
         for (uint16_t idx = 0; idx < TEMPLATES_PER_PERSON; ++idx) {
             synth(seed_of(id, idx), s_emb);
-            TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll(id, idx, QUALITY, s_emb, SCALE));
+            TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll(id, idx, QUALITY, s_emb, SCALE, "Nhân viên"));
         }
     }
 }
@@ -100,7 +100,7 @@ TEST_CASE("enrolling everyone twice keeps the count, a repeat replaces in place"
     printf("%d enrols in %lld ms\n", ENROLLED, (esp_timer_get_time() - t0) / 1000);
     TEST_ASSERT_EQUAL(ENROLLED, svc_facedb_count());
     synth(seed_of(PROBE_ID, PROBE_IDX), s_emb);
-    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll(PROBE_ID, PROBE_IDX, QUALITY, s_emb, SCALE));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll(PROBE_ID, PROBE_IDX, QUALITY, s_emb, SCALE, "Nhân viên"));
     TEST_ASSERT_EQUAL(ENROLLED, svc_facedb_count());
 }
 
@@ -159,7 +159,7 @@ TEST_CASE("removing an employee hides both templates and re-enrolling fills a fu
     // The table is at capacity with two dead records, so this append has to compact first.
     for (uint16_t idx = 0; idx < TEMPLATES_PER_PERSON; ++idx) {
         synth(seed_of(PROBE_ID, idx), s_emb);
-        TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll(PROBE_ID, idx, QUALITY, s_emb, SCALE));
+        TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll(PROBE_ID, idx, QUALITY, s_emb, SCALE, "Nhân viên"));
     }
     TEST_ASSERT_EQUAL(ENROLLED, svc_facedb_count());
     synth(seed_of(PROBE_ID, PROBE_IDX), s_emb);

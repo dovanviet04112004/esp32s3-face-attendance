@@ -449,7 +449,8 @@ TEST_CASE("the cosine of two templates matches the host", "[parity]")
         const uint32_t employee = 900u + static_cast<uint32_t>(c);
         TEST_ASSERT_EQUAL(ESP_OK,
                           svc_facedb_enroll(employee, 0, 100,
-                                            reinterpret_cast<const int8_t *>(tmpl->data), scales[1]));
+                                            reinterpret_cast<const int8_t *>(tmpl->data), scales[1],
+                                            nullptr));
         svc_facedb_match_t match;
         TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_lookup(reinterpret_cast<const int8_t *>(query->data),
                                                     scales[0], &match));

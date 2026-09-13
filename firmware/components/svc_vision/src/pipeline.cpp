@@ -138,7 +138,12 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     }
     uint32_t employee_id = 0;
     float score = -1.0f;
-    const esp_err_t found = matcher_.best(embedding_, scale, &employee_id, &score);
+    if (enrol_id_ != 0) {
+        matcher_.keep(embedding_, scale, enrol_id_, enrol_name_);
+        enrol_id_ = 0;
+    }
+    char name[STORAGE_NAME_CAP] = { 0 };
+    const esp_err_t found = matcher_.best(embedding_, scale, &employee_id, &score, name, sizeof(name));
     // A table that never answered is not a verdict about this face (KEHOACH 5.3).
     if (found != ESP_OK && found != ESP_ERR_NOT_FOUND) {
         return;
@@ -149,9 +154,16 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     if (matched_) {
         out.kind = SVC_VISION_MATCH;
         out.employee_id = employee_id;
+        memcpy(out.name, name, sizeof(out.name));
         return;
     }
     out.kind = SVC_VISION_UNKNOWN;
+}
+
+void VisionPipeline::enrol_next(uint32_t employee_id, const char *name) noexcept
+{
+    strlcpy(enrol_name_, name != nullptr ? name : "", sizeof(enrol_name_));
+    enrol_id_ = employee_id;
 }
 
 void VisionPipeline::tell(const svc_vision_result_t &out, size_t count) noexcept

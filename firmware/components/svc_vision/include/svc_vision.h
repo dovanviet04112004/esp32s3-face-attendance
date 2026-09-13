@@ -9,6 +9,7 @@
 
 #include "esp_camera.h"
 #include "esp_err.h"
+#include "storage_format.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,6 +43,7 @@ typedef struct {
 typedef struct {
     svc_vision_kind_t kind;
     uint32_t employee_id;                 // valid for MATCH
+    char name[STORAGE_NAME_CAP];          // valid for MATCH, empty when unnamed
     float match_score;
     float live_score;
     svc_vision_box_t primary;             // the face being tracked
@@ -64,6 +66,12 @@ typedef void (*svc_vision_seen_cb_t)(const svc_vision_box_t *boxes, uint8_t coun
  *  @ctx task | non-blocking | one observer, NULL to drop it (KEHOACH 4.5.5d)
  */
 void svc_vision_on_seen(svc_vision_seen_cb_t cb, void *ctx);
+
+/** Keep the next face this pipeline embeds, under this id and name.
+ *  @ctx task | non-blocking | one shot: the next embedding is kept, then matched
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE until svc_vision_init has run
+ */
+esp_err_t svc_vision_enrol_next(uint32_t employee_id, const char *name);
 
 /** Feed one RGB565 frame; the caller keeps the frame and returns it afterwards.
  *  @ctx ai_task | blocking: detect, plus spoof and recog once the face is stable (KEHOACH 4.5.5d)

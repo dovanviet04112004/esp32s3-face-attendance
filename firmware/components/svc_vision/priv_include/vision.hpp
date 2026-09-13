@@ -40,7 +40,10 @@ public:
 class IMatcher {
 public:
     virtual ~IMatcher() = default;
-    virtual esp_err_t best(const int8_t *emb, float scale, uint32_t *employee_id, float *score) noexcept = 0;
+    virtual esp_err_t best(const int8_t *emb, float scale, uint32_t *employee_id, float *score,
+                           char *name, size_t name_cap) noexcept = 0;
+    virtual esp_err_t keep(const int8_t *emb, float scale, uint32_t employee_id,
+                           const char *name) noexcept = 0;
 };
 
 class VisionPipeline {
@@ -55,6 +58,7 @@ public:
     void configure(const svc_vision_thresholds_t &thresholds) noexcept { thresholds_ = thresholds; }
     svc_vision_result_t step(const ai_engine_frame_t &frame) noexcept;
     void observe(svc_vision_seen_cb_t cb, void *ctx) noexcept { seen_cb_ = cb; seen_ctx_ = ctx; }
+    void enrol_next(uint32_t employee_id, const char *name) noexcept;
     void reset() noexcept;
 
 private:
@@ -72,6 +76,8 @@ private:
     IMatcher &matcher_;
     svc_vision_thresholds_t thresholds_{};
     ai_engine_face_t faces_[kMaxFaces]{};
+    uint32_t enrol_id_ = 0;
+    char enrol_name_[STORAGE_NAME_CAP] = {};
     svc_vision_seen_cb_t seen_cb_ = nullptr;
     void *seen_ctx_ = nullptr;
     float tracked_[4]{};

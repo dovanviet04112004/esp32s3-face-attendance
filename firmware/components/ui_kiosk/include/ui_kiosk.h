@@ -28,14 +28,20 @@ void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame
                        int64_t stamp_us);
 
 /** Say what the kiosk decided about that face.
- *  @ctx attend_task | non-blocking | employee_id reads 0 unless granted
+ *  @ctx attend_task | non-blocking | employee_id and name read empty unless granted
  */
-void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id);
+void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id, const char *name);
 
 /** Slide the box onto this preview frame and refresh what the overlay shows.
  *  @ctx cam_task | non-blocking | one call per frame, ahead of the draw
  */
 void ui_kiosk_track(const void *pixels, int width, int height, int64_t stamp_us);
+
+/** Hand one touch to the screen.
+ *  @ctx touch_task | non-blocking | pass down = false when the finger lifts
+ *  @ret true on the release that lands inside the enrol button
+ */
+bool ui_kiosk_on_touch(bool down, int x, int y);
 
 /** The overlay to paint over this frame.
  *  @ctx cam_task | non-blocking | read once per frame, never held across frames

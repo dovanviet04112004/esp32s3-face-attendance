@@ -39,7 +39,7 @@ esp_err_t EmbeddingTable::reserve(size_t capacity) noexcept
         return ESP_ERR_INVALID_ARG;
     }
     const size_t bytes = sizeof(storage_file_header_t) + capacity * sizeof(storage_face_record_t);
-    // Header 32 B and record 552 B are both multiples of 8, so every embedding
+    // Header 32 B and record 576 B are both multiples of 8, so every embedding
     // sits 8-byte aligned once the image does (the SIMD kernel needs that).
     image_ = static_cast<uint8_t *>(heap_caps_aligned_calloc(kImageAlign, 1, bytes, MALLOC_CAP_SPIRAM));
     norm_sq_ = static_cast<uint32_t *>(heap_caps_calloc(capacity, sizeof(uint32_t), MALLOC_CAP_SPIRAM));
@@ -156,7 +156,7 @@ esp_err_t FaceDb::lookup(const int8_t *emb, float scale, MatchResult *out) noexc
 }
 
 esp_err_t FaceDb::enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality, const int8_t *emb,
-                         float scale) noexcept
+                         float scale, const char *name) noexcept
 {
     if (emb == nullptr) {
         return ESP_ERR_INVALID_ARG;
@@ -197,6 +197,9 @@ esp_err_t FaceDb::enroll(uint32_t employee_id, uint16_t template_idx, uint8_t qu
     rec->flags = STORAGE_FACE_FLAG_ACTIVE;
     rec->scale = scale;
     memcpy(rec->embedding, emb, STORAGE_EMBED_DIM);
+    if (name != NULL) {
+        strncpy(rec->name, name, sizeof(rec->name) - 1);
+    }
     table_.set_norm_sq(slot, norm_sq(emb));
     seal(slot);
     return ESP_OK;

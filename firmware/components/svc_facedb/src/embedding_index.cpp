@@ -55,7 +55,7 @@ uint32_t norm_sq(const int8_t *emb) noexcept
 MatchResult CosineLinearMatcher::best(const int8_t *emb, float scale) const noexcept
 {
     (void)scale;
-    MatchResult result = { 0, 0, -1.0f, false };
+    MatchResult result = { 0, 0, -1.0f, false, nullptr };
     const float query_sq = static_cast<float>(norm_sq(emb));
     if (query_sq == 0.0f) {
         return result;
@@ -71,7 +71,7 @@ MatchResult CosineLinearMatcher::best(const int8_t *emb, float scale) const noex
         const float score = static_cast<float>(dot_aligned_query(rec->embedding)) /
                             sqrtf(query_sq * static_cast<float>(table_.norm_sq(i)));
         if (!result.found || score > result.score) {
-            result = { rec->employee_id, rec->template_idx, score, true };
+            result = { rec->employee_id, rec->template_idx, score, true, rec->name };
         }
     }
     return result;

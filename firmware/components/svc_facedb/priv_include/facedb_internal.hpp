@@ -18,6 +18,7 @@ struct MatchResult {
     uint16_t template_idx;
     float score;
     bool found;
+    const char *name;                     // points into the table, never copied
 };
 
 /** The file image itself, header first, so persisting is one write of this block.
@@ -91,7 +92,7 @@ public:
     esp_err_t init(size_t capacity) noexcept;
     esp_err_t lookup(const int8_t *emb, float scale, MatchResult *out) noexcept;
     esp_err_t enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
-                     const int8_t *emb, float scale) noexcept;
+                     const int8_t *emb, float scale, const char *name) noexcept;
     esp_err_t remove(uint32_t employee_id) noexcept;
     esp_err_t persist() noexcept;
     size_t active() const noexcept { return active_; }

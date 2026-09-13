@@ -2602,7 +2602,7 @@ class FaceDb {
 };
 ```
 
-`EmbeddingTable` giữ nguyên ảnh file của §6.2.4 trong PSRAM — header 32 B rồi các bản ghi 552 B — nên ghi bền là một lệnh `write_atomic` của đúng khối đó, và chuẩn bình phương của từng bản ghi được tính sẵn lúc nạp. Tích vô hướng int8·int8 chạy bằng SIMD PIE của ESP32-S3 (`ee.vmulas.s8.accx`, 16 MAC mỗi lệnh) trong `dot_s8_esp32s3.S`: 32 B header và 552 B bản ghi đều chia hết cho 8 nên mọi embedding nằm 8-byte aligned, đủ cho `ee.vld.l.64.ip`; bản C thuần chỉ còn cho target khác. Kết quả số **đúng bằng** bản C — accumulator 40 bit, không làm tròn — nên `cosine.py` bên `ml/` vẫn là bản tham chiếu. Đo 10/09 ở `-O2`, 1.000 bản ghi: vòng C thuần **20,9 ms**, quá mốc 20 ms của E8-T11; số của kernel PIE ghi ở `TASKS.md`.
+`EmbeddingTable` giữ nguyên ảnh file của §6.2.4 trong PSRAM — header 32 B rồi các bản ghi 576 B — nên ghi bền là một lệnh `write_atomic` của đúng khối đó, và chuẩn bình phương của từng bản ghi được tính sẵn lúc nạp. Tích vô hướng int8·int8 chạy bằng SIMD PIE của ESP32-S3 (`ee.vmulas.s8.accx`, 16 MAC mỗi lệnh) trong `dot_s8_esp32s3.S`: 32 B header và 576 B bản ghi đều chia hết cho 8 nên mọi embedding nằm 8-byte aligned, đủ cho `ee.vld.l.64.ip`; bản C thuần chỉ còn cho target khác. Kết quả số **đúng bằng** bản C — accumulator 40 bit, không làm tròn — nên `cosine.py` bên `ml/` vẫn là bản tham chiếu. Đo 10/09 ở `-O2`, 1.000 bản ghi: vòng C thuần **20,9 ms**, quá mốc 20 ms của E8-T11; số của kernel PIE ghi ở `TASKS.md`.
 
 ##### h) `ui_kiosk` — kế thừa đúng bài
 
@@ -3287,7 +3287,7 @@ Thiết bị suy giảm được thì tầng trên phải hỏi trạng thái tr
 
 Chọn LittleFS chứ không SPIFFS vì LittleFS có copy-on-write + `rename` nguyên tử, chịu được mất điện giữa lúc ghi. SPIFFS không.
 
-#### 6.2.4 `db/faces.bin` — header 32 B + bản ghi 552 B
+#### 6.2.4 `db/faces.bin` — header 32 B + bản ghi 576 B
 
 **Header file (32 B, ở đầu file)** — có `format_ver` để sau này còn migrate được:
 
@@ -3295,13 +3295,13 @@ Chọn LittleFS chứ không SPIFFS vì LittleFS có copy-on-write + `rename` ng
 |---|---|---|
 | 0 | 4 | `magic` = `'FDB1'` |
 | 4 | 2 | `format_ver` u16 |
-| 6 | 2 | `record_size` u16 = 552 |
+| 6 | 2 | `record_size` u16 = 576 |
 | 8 | 4 | `record_count` u32 (kể cả bản ghi đã xoá mềm) |
 | 12 | 8 | `updated_at` i64 epoch ms |
 | 20 | 8 | `reserved` |
 | 28 | 4 | `crc32` của byte 0..27 |
 
-**Bản ghi (552 B mỗi cái)**
+**Bản ghi (576 B mỗi cái, `format_ver` = 2)**
 
 | Offset | Kích thước | Trường | Ghi chú |
 |---|---|---|---|
@@ -3313,10 +3313,17 @@ Chọn LittleFS chứ không SPIFFS vì LittleFS có copy-on-write + `rename` ng
 | 12 | 4 | `scale` f32 | hệ số dequant cho embedding int8 |
 | 16 | 512 | `embedding` int8[512] | |
 | 528 | 8 | `updated_at` i64 | epoch ms |
-| 536 | 12 | `reserved` | chừa chỗ để thêm trường mà không phá format |
-| 548 | 4 | `crc32` | băm byte 0..547 |
+| 536 | 32 | `name` char[32] | UTF-8, có `\0` cuối; rỗng thì màn hình hiện mã số |
+| 568 | 4 | `reserved` | chừa chỗ để thêm trường mà không phá format |
+| 572 | 4 | `crc32` | băm byte 0..571 |
 
-500 người × 2 template = 1.000 bản ghi = **552 KB**, thoải mái trong 4 MB.
+500 người × 2 template = 1.000 bản ghi = **576 KB**, thoải mái trong 4 MB.
+
+**Vì sao tên nằm trên thiết bị, không chỉ ở server.** Kiosk phải nói được "Chào anh Việt" ngay
+lúc mở cửa, kể cả khi mất mạng — mà mất mạng là trạng thái §6.2.6 coi là bình thường. Một mã số
+trên kính không nói với ai điều gì. 32 byte UTF-8 đủ cho một tên tiếng Việt viết đủ dấu, và
+`record_size` vẫn chia hết cho 8 nên embedding giữ nguyên căn lề 8 byte mà kernel PIE cần
+(§4.5.5g). Tên **không** vào phép so khớp: nó chỉ là nhãn đi kèm bản ghi.
 
 Lưu **int8 + scale** chứ không float32: giảm 4 lần dung lượng và 4 lần RAM cache, mất < 0.3% accuracy khi so cosine. Bảng nạp nguyên vào PSRAM lúc boot; `faces.bin` chỉ là bản bền.
 

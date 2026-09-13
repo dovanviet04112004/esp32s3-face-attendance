@@ -20,7 +20,8 @@
 #define STORAGE_ATTEND_FILES 1000u
 #define STORAGE_CURSOR_PATH "/lfs/log/cursor.bin"
 #define STORAGE_FACES_MAGIC 0x31424446u   // 'FDB1'
-#define STORAGE_FACES_VER 1u
+#define STORAGE_FACES_VER 2u
+#define STORAGE_NAME_CAP 32
 #define STORAGE_FACE_MAGIC 0x45434146u    // 'FACE'
 #define STORAGE_FACE_FLAG_ACTIVE 0x01u
 #define STORAGE_FACE_FLAG_DELETED 0x02u
@@ -81,7 +82,8 @@ typedef struct __attribute__((packed)) {
     float scale;                          // dequant for the int8 embedding
     int8_t embedding[STORAGE_EMBED_DIM];
     int64_t updated_at_ms;
-    uint8_t reserved[12];
+    char name[STORAGE_NAME_CAP];          // UTF-8, terminated; empty shows the id
+    uint8_t reserved[4];
     uint32_t crc32;
 } storage_face_record_t;
 
@@ -123,9 +125,9 @@ static_assert(offsetof(storage_models_header_t, crc32) == 0xFC, "models crc offs
 static_assert(sizeof(storage_file_header_t) == 32, "file header must match KEHOACH 6.2.4");
 static_assert(offsetof(storage_file_header_t, crc32) == 28, "file header crc offset drifted");
 
-static_assert(sizeof(storage_face_record_t) == 552, "face record must match KEHOACH 6.2.4");
+static_assert(sizeof(storage_face_record_t) == 576, "face record must match KEHOACH 6.2.4");
 static_assert(offsetof(storage_face_record_t, embedding) == 16, "embedding offset drifted");
-static_assert(offsetof(storage_face_record_t, crc32) == 548, "face crc offset drifted");
+static_assert(offsetof(storage_face_record_t, crc32) == 572, "face crc offset drifted");
 
 static_assert(sizeof(storage_attend_record_t) == 48, "attend record must match KEHOACH 6.2.5");
 static_assert(offsetof(storage_attend_record_t, ts_ms) == 16, "attend ts offset drifted");

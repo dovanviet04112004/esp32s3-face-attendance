@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "overlay.hpp"
+#include "storage_format.h"
 
 namespace {
 
@@ -54,6 +55,9 @@ Detect s_detect_slot[kSlots];
 std::atomic<const Detect *> s_detect{ nullptr };
 int s_detect_next;
 std::atomic<uint64_t> s_verdict{ 0 };
+char s_name[STORAGE_NAME_CAP];
+std::atomic<bool> s_button_held{ false };
+std::atomic<bool> s_button_dirty{ false };
 uint64_t s_verdict_taken;
 uint64_t s_line_showing;
 int64_t s_clear_at_us;
@@ -119,7 +123,7 @@ bool show(uint64_t packed, int64_t now_us)
     s_clear_at_us = now_us + kShowUs;
     s_quiet_until_us = now_us + kQuietUs;
     return s_builder.set_verdict(static_cast<app_ui_verdict_t>(packed >> kVerdictShift),
-                                 static_cast<uint32_t>(packed));
+                                 static_cast<uint32_t>(packed), s_name);
 }
 
 bool say_something()
@@ -136,7 +140,7 @@ bool say_something()
     }
     if (s_clear_at_us != 0 && now_us >= s_clear_at_us) {
         s_clear_at_us = 0;
-        return s_builder.set_verdict(APP_UI_IDLE, 0);
+        return s_builder.set_verdict(APP_UI_IDLE, 0, nullptr);
     }
     return false;
 }
@@ -178,10 +182,30 @@ void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame
     s_detect.store(target, std::memory_order_release);
 }
 
-void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id)
+void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id, const char *name)
 {
+    // The preview path reads this only once the word below changes, so the
+    // order of these two writes is the handover.
+    strlcpy(s_name, name != NULL ? name : "", sizeof(s_name));
     const uint64_t packed = ((uint64_t)verdict << kVerdictShift) | employee_id;
     s_verdict.store(packed, std::memory_order_release);
+}
+
+bool ui_kiosk_on_touch(bool down, int x, int y)
+{
+    if (!s_ready) {
+        return false;
+    }
+    const bool inside = x >= ui::OverlayBuilder::kButtonX &&
+                        x < ui::OverlayBuilder::kButtonX + ui::OverlayBuilder::kButtonW &&
+                        y >= ui::OverlayBuilder::kButtonY &&
+                        y < ui::OverlayBuilder::kButtonY + ui::OverlayBuilder::kButtonH;
+    const bool was = s_button_held.exchange(down && inside, std::memory_order_acq_rel);
+    if (was != (down && inside)) {
+        s_button_dirty.store(true, std::memory_order_release);
+    }
+    // The press is only a press once the finger comes off it again.
+    return was && !down;
 }
 
 void ui_kiosk_track(const void *pixels, int width, int height, int64_t stamp_us)
@@ -194,6 +218,9 @@ void ui_kiosk_track(const void *pixels, int width, int height, int64_t stamp_us)
     const float box[4] = { held.x1, held.y1, held.x2, held.y2 };
     bool changed = s_builder.set_face(s_tracker.active(), box, width, height);
     changed = say_something() || changed;
+    if (s_button_dirty.exchange(false, std::memory_order_acq_rel)) {
+        changed = s_builder.set_button(s_button_held.load(std::memory_order_acquire)) || changed;
+    }
     if (changed) {
         publish();
     }
