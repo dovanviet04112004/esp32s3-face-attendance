@@ -2644,9 +2644,11 @@ còn `cam_task` bỏ qua bước vẽ — khung vẫn chạy cho `ai_task`, ch�
 **Đường đi giữa các màn:**
 
 ```
-Scan ──"Thêm người"──> Enroll ──gõ tên, OK──> Capture ──đủ mẫu──> Result("Đã thêm") ──> Scan
-  │                       │                      │
-  └──"Cài đặt"──> Settings└──────Huỷ─────────────┘
+Scan ──≡──> Menu ──"Thêm người"──> Enroll ──gõ tên, OK──> Capture ──đủ mẫu──> Scan
+ ▲           │                        │                     │
+ │           ├──"Danh sách"──> People │                     │
+ │           ├──"Cài đặt"────> Settings                     │
+ └───────────┴──────────── Đóng / Huỷ ──────────────────────┘
 ```
 
 `Enroll` là màn **bàn phím**: một ô tên, lưới chữ A–Z cộng phím cách, xoá và OK. Bàn phím chỉ
@@ -2654,6 +2656,40 @@ gõ **chữ không dấu** — bộ gõ tiếng Việt là một hệ thống ri
 đủ dấu đi vào bằng `SET_CONFIG` từ server (§6.2.1) hoặc luồng đăng ký trên web. `CaptureScreen`
 gọi `svc_vision_enrol_next()` rồi đứng chờ chính `MATCH` của người vừa thêm, nên "thêm thành
 công" là câu nói sau khi máy **đã nhận lại được**, không phải sau khi ghi xong file.
+
+##### h.1) Màn `Scan` — khung ngắm là thứ sửa lỗi "đứng xa không chấm được"
+
+Máy chấm công thương mại (ZKTeco SpeedFace, Hikvision MinMoe) đều để một **khung ngắm đứng yên
+giữa màn** và bảo người dùng đưa mặt vào đó ở 30–50 cm. Đó không phải trang trí: nó là cách duy
+nhất nói cho người đứng trước máy biết **đứng đâu thì máy làm việc được**, và kiosk này đang
+thiếu đúng chỗ ấy — `vision.face_min_px` = 113 px từ chối mọi khuôn mặt nhỏ hơn mà **không nói
+gì**, nên người đứng xa chỉ thấy máy im.
+
+Khung ngắm vì thế vẽ **đúng bằng ngưỡng ấy quy ra pixel panel**, không phải bằng mắt: đường
+preview lấy dải giữa 213 cột của khung 480 rồi kéo lên 320, tức hệ số 1,502 — nên 113 px khung
+là **170 px panel**. Khung ngắm rộng 176 px, cao 220 px, đặt giữa: ai lấp đầy nó thì chắc chắn
+qua cổng `face_min_px`, và đó là một lời hứa đo được chứ không phải một gợi ý.
+
+Bốn trạng thái của khung, màu là thông tin chứ không phải trang trí:
+
+| Máy đang | Khung | Dòng nhắc dưới khung |
+|---|---|---|
+| chờ, không thấy ai | trắng mờ | `Đưa khuôn mặt vào khung` |
+| thấy mặt nhưng nhỏ hơn cổng | hổ phách | `Lại gần hơn` |
+| đang chạy spoof + recog | hổ phách | `Giữ yên…` |
+| xong, đạt / từ chối | xanh / đỏ | thẻ kết quả ở dải dưới |
+
+Ba thứ còn lại trên `Scan`: **thanh trên** mang giờ, ngày và dấu Wi-Fi; nút `≡` góc phải mở
+`Menu`; **dải dưới** mang kết quả (§4.5.5h). Không có gì che mặt người đang đứng — mọi thứ
+nằm ở mép, và thẻ kết quả chỉ chiếm dải dưới trong 2,5 giây.
+
+##### h.2) Màn `Capture` — đăng ký lấy nhiều mẫu, có vạch tiến trình
+
+Máy thương mại lấy nhiều mẫu và hiện vạch phần trăm; người dùng biết còn phải đứng bao lâu.
+`Capture` lấy **3 mẫu cách nhau ≥ 400 ms** (chính diện, hơi nghiêng trái, hơi nghiêng phải),
+mỗi mẫu là một `template_idx`, và vẽ ba ô vuông sáng dần. Câu nhắc đổi theo mẫu đang chờ.
+Bỏ dở giữa chừng thì những mẫu đã lấy **bị xoá**, vì một người chỉ có mẫu chính diện sẽ nhận
+kém ở mọi tư thế khác và đó là lỗi khó truy sau này.
 
 **Hộp mặt trên preview bám theo khung hình, không bám theo nhịp detect.** Detect ra hộp 3–4 lần/giây và im hẳn 0,93 s trong lúc spoof + recog chạy (§4.5.5d); vẽ hộp theo nhịp đó là hộp khựng. `BoxTracker` (`src/box_tracker.cpp`) nhận hộp mới từ `svc_vision`, lấy một mẫu độ sáng **24×24 điểm bám** dưới tâm hộp — mỗi điểm bám là một pixel khung lấy cách 2 (nửa độ phân giải), tức mẫu phủ 48×48 px khung — rồi trên mỗi khung preview (core 0) đổi cửa sổ 56×56 điểm bám quanh vị trí cũ sang độ sáng một lần, quét **thô rồi tinh** trong bán kính ±16 điểm bám (**±32 px khung**) bằng tổng sai tuyệt đối trên 576 điểm: 17×17 = 289 vị trí cách nhau 2 điểm bám, rồi 3×3 vị trí sát quanh chỗ thắng — **298 phép so, đúng bằng số phép so của lưới dày cũ mà phủ gấp bốn diện tích**. Mỗi phép so **bỏ dở ngay giữa chừng** khi tổng đã vượt chỗ tốt nhất đang giữ, và phần lớn vị trí vượt ngay từ vài hàng đầu. Ba luật giữ nó không nói dối: chỉ dịch khi khớp **tốt hơn đứng yên**; sai lệch trung bình trên 48 mức/điểm là mất dấu, hộp đứng lại; mẫu phẳng (độ tương phản dưới 24 mức) không bám. Hộp mới từ detect **thay thế** hộp đang bám, nên sai số không tích luỹ quá một chu kỳ detect. **Đo trên board 13/09, không phải 1–2 ms như ước lượng cũ**: nối bộ bám vào `cam_task` kéo preview **13,2 → 9,5 fps**, tức ~29 ms mỗi khung ở profile `dev` (`-Og`). Thoát sớm trong phép so đưa về **11,2–12,9 fps**. Bài học: lưới 289 vị trí × 576 điểm là 166 nghìn phép trừ mỗi khung, và ước lượng 1–2 ms cho ngần ấy việc ở `-Og` là sai một bậc. Bộ bám không phát hiện mặt mới và không đưa gì về đường model: nó chỉ là cách mắt không thấy giật mà kết quả chấm công không chậm thêm một mili giây nào. Kết quả chấm công vẽ đè lên khung preview trong cùng đường này, không qua LVGL cho vùng preview.
 
