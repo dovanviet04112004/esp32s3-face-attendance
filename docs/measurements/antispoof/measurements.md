@@ -2039,3 +2039,41 @@ phải nhiễu mẫu. Chốt ngưỡng vận hành vẫn phải có tập live �
 
 Cả 21 khung giả đến từ **một vật thử** (một ảnh thẻ, một cự ly). Một tập tấn công thật cần
 nhiều ảnh, cả in lẫn màn hình, nhiều cự ly và nhiều mức sáng.
+
+---
+
+## 36. Sáu checkpoint trên 64 khung thật của board — đóng lỗ hổng mẫu của §35, 13/09
+
+§35.3 nói thẳng 7 khung thật không đọc được BPCER. Mục này gộp **mọi khung thật đang có trên
+đĩa**: `toi1209` (nút giữ khung), `s20260911a–d` (dump console) và `live1309` (thu 13/09) —
+95 khung, **64 khung có mặt**, cỡ mặt **86–270 px**. Lớp tấn công giữ nguyên 21 khung ảnh thẻ
+của §34. Cùng detector, cùng lệnh, checkpoint float.
+
+| Run | views | epoch | **AUC** | EER | ACER thấp nhất |
+|---|---|---|---|---|---|
+| `20260912-0107_fd87e15` **(đang nạp)** | tight | 80 | **0,6510** | 0,4252 @0,980 | 0,413 @0,75 |
+| `20260910-0947_a51978c` | both | 6 | 0,9397 | 0,0945 @0,143 | 0,180 @0,40 |
+| `20260910-1043_2b33c30` | both | 30 | 0,9263 | 0,0945 @0,427 | 0,102 @0,50 |
+| **`20260910-1538_09a1263`** | **both** | **36** | **0,9449** | **0,0945 @0,550** | **0,0789 @0,40** |
+| `20260911-1112_a3fd8e1` | both | 60 | 0,8624 | 0,1496 @0,817 | 0,150 @0,75 |
+| `20260911-1438_6519ac4` | both | 68 | 0,8497 | 0,1812 @0,699 | 0,157 @0,75 |
+
+### 36.1 Ba điều bảng này chốt
+
+**Model đang nạp gần như không phân biệt được trên miền thiết bị**: AUC 0,6510, và 0,5 là đoán
+mò. Mọi ngưỡng đều cho ACER ≥ 0,41. Đây không phải chuyện lệch ngưỡng, là chuyện model.
+
+**`1538` ở sàn 0,40 chặn 19/21 khung giả và cho qua 60/64 khung thật** — ACER 0,0789, tốt hơn
+bản đang nạp **5,2 lần**, AUC 0,651 → 0,945. Sàn vận hành của nó nằm quanh **0,40–0,55**, không
+phải 0,75 của §33: ngưỡng phải gieo lại theo model, không mang từ model này sang model kia.
+
+**Train dài hơn làm tệ đi trên miền thiết bị.** Trong họ hai nhánh: epoch 36 cho AUC 0,945,
+epoch 60 còn 0,862, epoch 68 còn 0,850, và bản một nhánh 80 epoch chạm 0,651. §29–§31 chốt arm
+bằng CelebA-Spoof, LCC và SynthASpoof; trên khung của chính cảm biến này thứ tự đảo ngược. Đây
+là lý do §4.2 của `CLAUDE.md` bắt so bằng **accuracy sau INT8 trên `test_device`**.
+
+### 36.2 Còn lại
+
+21 khung giả vẫn đến từ **một ảnh thẻ, một cự ly, một mức sáng**: APCER 0,0952 nghĩa là đúng
+2 khung lọt, nên con số ấy còn rộng. 64 khung thật đến từ **một người**. Điểm ở đây là **float**;
+sau INT8 phổ điểm sẽ dịch, nên ngưỡng chỉ chốt được sau khi export và chấm lại trên board.
