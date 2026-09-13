@@ -11,6 +11,7 @@
 #include "app_err.h"
 #include "esp_crc.h"
 #include "esp_littlefs.h"
+#include "esp_spiffs.h"
 #include "esp_log.h"
 #include "esp_partition.h"
 #include "freertos/FreeRTOS.h"
@@ -24,6 +25,8 @@ static const char *TAG = "sys_storage";
 #define SCRATCH_DIR MOUNT_POINT "/tmp"
 #define PARTITION_STORAGE "storage"
 #define PARTITION_MODELS "models_0"
+#define PARTITION_ASSETS "assets"
+#define ASSETS_POINT "/assets"
 #define NVS_LEGACY_NAMESPACE "kiosk"
 #define NVS_BOOT_COUNT "boot_count"
 #define LOG_NAME_PREFIX "attend."
@@ -78,6 +81,26 @@ static void empty_scratch(void)
     closedir(dir);
 }
 
+// Read-only and its own mount: an asset is never written at run time, so it
+// shares neither the lock nor the failure mode of the writable volume.
+static void mount_assets(void)
+{
+    const esp_vfs_spiffs_conf_t cfg = {
+        .base_path = ASSETS_POINT,
+        .partition_label = PARTITION_ASSETS,
+        .max_files = 2,
+        .format_if_mount_failed = false,
+    };
+    const esp_err_t err = esp_vfs_spiffs_register(&cfg);
+    size_t total = 0, used = 0;
+    if (err == ESP_OK && esp_spiffs_info(PARTITION_ASSETS, &total, &used) == ESP_OK) {
+        ESP_LOGI(TAG, "assets mounted, %u of %u KB used", (unsigned)(used / 1024),
+                 (unsigned)(total / 1024));
+        return;
+    }
+    ESP_LOGW(TAG, "no assets partition: %s", esp_err_to_name(err));
+}
+
 static esp_err_t mount_filesystem(void)
 {
     const esp_vfs_littlefs_conf_t cfg = {
@@ -87,6 +110,7 @@ static esp_err_t mount_filesystem(void)
         .dont_mount = false,
     };
     APP_RETURN_ON_ERR(esp_vfs_littlefs_register(&cfg), TAG, "mount");
+    mount_assets();
     mkdir(MOUNT_POINT "/db", 0777);
     mkdir(MOUNT_POINT "/log", 0777);
     mkdir(MOUNT_POINT "/cfg", 0777);

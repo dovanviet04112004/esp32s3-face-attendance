@@ -6,6 +6,7 @@
 #include "app_events.h"
 #include "app_wiring.h"
 #include "bsp_board.h"
+#include "drv_audio.h"
 #include "drv_camera.h"
 #include "drv_ioexp.h"
 #include "drv_lcd.h"
@@ -180,6 +181,11 @@ esp_err_t app_boot(void)
     // A door that will not take a pulse is a miswired kiosk, not a degraded
     // one: granting access with nothing to open is worse than not booting.
     ESP_ERROR_CHECK(drv_servo_init());
+    // A kiosk with no voice still opens doors, so the amplifier only warns.
+    const esp_err_t amplifier = drv_audio_init();
+    if (amplifier != ESP_OK) {
+        ESP_LOGW(TAG, "audio down: %s", esp_err_to_name(amplifier));
+    }
     const svc_attendance_policy_t policy = attend_policy();
     ESP_ERROR_CHECK(svc_attendance_init(svc_door_servo(), &policy));
     // A kiosk with no network still opens doors (KEHOACH 6.2.5).

@@ -6,10 +6,12 @@
 #include "app_config.h"
 #include "app_events.h"
 #include "app_wiring.h"
+#include "drv_audio.h"
 #include "drv_camera.h"
 #include "drv_lcd.h"
 #include "drv_tof.h"
 #include "drv_touch.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
@@ -68,6 +70,12 @@ static int s_face_min_px;
 #define UI_TASK_STACK_BYTES 8192
 #define UI_TICK_MS 20
 #define UI_GROUND_RGB565 0x0821
+#define AUDIO_TASK_CORE 0
+#define AUDIO_TASK_PRIORITY 6
+#define AUDIO_TASK_STACK_BYTES 4096
+#define AUDIO_CLIP_PATH "/assets/snd/ok.wav"
+#define AUDIO_CLIP_CAP_BYTES (128 * 1024)
+#define WAV_HEADER_MIN 44
 
 static void report_rate(int frames, int64_t elapsed_us)
 {
@@ -317,6 +325,57 @@ static void ui_task(void *arg)
     }
 }
 
+// The clip is read once and kept: a grant must not wait on a file, and the
+// header is walked rather than assumed because a wav carries optional chunks.
+static size_t pcm_of(const uint8_t *wav, size_t len, const int16_t **pcm)
+{
+    if (len < WAV_HEADER_MIN || memcmp(wav, "RIFF", 4) != 0 || memcmp(wav + 8, "WAVE", 4) != 0) {
+        return 0;
+    }
+    size_t at = 12;
+    while (at + 8 <= len) {
+        uint32_t size = 0;
+        memcpy(&size, wav + at + 4, sizeof(size));
+        const uint8_t *body = wav + at + 8;
+        if (memcmp(wav + at, "data", 4) == 0) {
+            const size_t have = len - (at + 8);
+            *pcm = (const int16_t *)body;
+            return (size < have ? size : have) / sizeof(int16_t);
+        }
+        at += 8 + size + (size & 1u);
+    }
+    return 0;
+}
+
+static void audio_task(void *arg)
+{
+    const app_wiring_t *wiring = arg;
+    uint8_t *clip = heap_caps_malloc(AUDIO_CLIP_CAP_BYTES, MALLOC_CAP_SPIRAM);
+    const int16_t *pcm = NULL;
+    size_t samples = 0;
+    size_t len = 0;
+    if (clip != NULL && sys_storage_read(AUDIO_CLIP_PATH, clip, AUDIO_CLIP_CAP_BYTES, &len) ==
+                            ESP_OK) {
+        samples = pcm_of(clip, len, &pcm);
+    }
+    ESP_LOGI(TAG, "audio: %s, %u samples", samples > 0 ? AUDIO_CLIP_PATH : "no clip",
+             (unsigned)samples);
+
+    for (;;) {
+        app_sound_t sound = APP_SOUND_OK;
+        if (xQueueReceive(wiring->sounds, &sound, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if (sound != APP_SOUND_OK || samples == 0) {
+            continue;
+        }
+        const esp_err_t played = drv_audio_play_pcm(pcm, samples);
+        if (played != ESP_OK) {
+            ESP_LOGE(TAG, "audio play %s", esp_err_to_name(played));
+        }
+    }
+}
+
 static uint32_t presence_gate_mm(void)
 {
     uint32_t gate_mm = 0;
@@ -374,14 +433,6 @@ static void tof_task(void *arg)
     }
 }
 
-static app_sound_t sound_for(svc_attendance_state_t state, svc_vision_kind_t kind)
-{
-    if (state == SVC_ATTENDANCE_GRANTED) {
-        return APP_SOUND_OK;
-    }
-    return kind == SVC_VISION_SPOOF ? APP_SOUND_SPOOF : APP_SOUND_DENIED;
-}
-
 static app_ui_verdict_t verdict_for(svc_attendance_state_t state, svc_vision_kind_t kind)
 {
     switch (state) {
@@ -405,13 +456,14 @@ static app_ui_verdict_t verdict_for(svc_attendance_state_t state, svc_vision_kin
     }
 }
 
-static void announce(const app_wiring_t *wiring, svc_attendance_state_t state,
-                     svc_vision_kind_t kind)
+// The kiosk speaks only when it opens the door: a refusal is already on the
+// glass, and a sound would announce it to the room (KEHOACH 6.2.8).
+static void announce(const app_wiring_t *wiring, svc_attendance_state_t state)
 {
-    if (state != SVC_ATTENDANCE_GRANTED && state != SVC_ATTENDANCE_DENIED) {
+    if (state != SVC_ATTENDANCE_GRANTED) {
         return;
     }
-    const app_sound_t sound = sound_for(state, kind);
+    const app_sound_t sound = APP_SOUND_OK;
     xQueueSend(wiring->sounds, &sound, 0);
 }
 
@@ -458,7 +510,7 @@ static void attend_task(void *arg)
                      (int)last_kind);
             last_state = state;
             ui_kiosk_on_verdict(verdict_for(state, last_kind), last_employee, last_name);
-            announce(wiring, state, last_kind);
+            announce(wiring, state);
         }
         if (svc_attendance_records() != records) {
             records = svc_attendance_records();
@@ -482,6 +534,7 @@ static const app_task_spec_t kTasks[] = {
     { ai_task, "ai", AI_TASK_STACK_BYTES, AI_TASK_PRIORITY, AI_TASK_CORE, APP_EG_AI_READY },
     { touch_task, "touch", TOUCH_TASK_STACK_BYTES, TOUCH_TASK_PRIORITY, TOUCH_TASK_CORE, 0 },
     { ui_task, "ui", UI_TASK_STACK_BYTES, UI_TASK_PRIORITY, UI_TASK_CORE, 0 },
+    { audio_task, "audio", AUDIO_TASK_STACK_BYTES, AUDIO_TASK_PRIORITY, AUDIO_TASK_CORE, 0 },
     { attend_task, "attend", ATTEND_TASK_STACK_BYTES, ATTEND_TASK_PRIORITY, ATTEND_TASK_CORE, 0 },
     { net_task, "net", NET_TASK_STACK_BYTES, NET_TASK_PRIORITY, NET_TASK_CORE, 0 },
 };
