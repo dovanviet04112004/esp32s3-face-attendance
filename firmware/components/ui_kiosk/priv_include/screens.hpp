@@ -41,6 +41,9 @@ public:
     virtual bool on_touch(int x, int y, bool down) noexcept { return false; }
     virtual bool tick(uint32_t dt_ms, const Sight &seen) noexcept { return false; }
     virtual void paint(Canvas &to, const Sight &seen) noexcept = 0;
+
+    /** True when the screen covers the panel and the preview must not show. */
+    virtual bool opaque() const noexcept { return false; }
 };
 
 class ScreenManager {

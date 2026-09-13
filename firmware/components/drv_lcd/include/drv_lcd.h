@@ -52,6 +52,8 @@ typedef struct {
 typedef struct {
     uint8_t masks;
     uint8_t boxes;
+    bool opaque;                          // the masks cover the panel, no video below
+    uint32_t serial;                      // rises whenever the masks change
     drv_lcd_mask_t mask[DRV_LCD_OVERLAY_MASKS];
     drv_lcd_box_t box[DRV_LCD_OVERLAY_BOXES];
 } drv_lcd_overlay_t;
@@ -82,6 +84,11 @@ esp_err_t drv_lcd_blit(int x1, int y1, int x2, int y2, const void *pixels);
  */
 esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height,
                              const drv_lcd_overlay_t *overlay);
+
+/** Paint an overlay on its own, with no camera frame under it.
+ *  @ctx task | blocking | for a screen that covers the panel (KEHOACH 4.5.5h)
+ */
+esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565);
 
 /** Where a rectangle of the sensor frame lands on the panel.
  *  @ctx any | non-blocking | the same centre slice drv_lcd_blit_frame shows

@@ -408,6 +408,26 @@ esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height,
     return ESP_OK;
 }
 
+esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565)
+{
+    if (overlay == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const int rows_per_strip = BOUNCE_PIXELS / APP_LCD_H_RES;
+    for (int y = 0; y < APP_LCD_V_RES; y += rows_per_strip) {
+        const int rows =
+            (y + rows_per_strip <= APP_LCD_V_RES) ? rows_per_strip : APP_LCD_V_RES - y;
+        uint16_t *dst = NULL;
+        APP_RETURN_ON_ERR(claim_bounce(&dst), TAG, "bounce");
+        for (int i = 0; i < rows * APP_LCD_H_RES; ++i) {
+            dst[i] = ground_rgb565;
+        }
+        paint_overlay(overlay, dst, y, rows);
+        APP_RETURN_ON_ERR(send_bounce(0, y, APP_LCD_H_RES, y + rows, dst), TAG, "strip");
+    }
+    return ESP_OK;
+}
+
 static int16_t clamp_to(float value, int limit)
 {
     const int rounded = (int)(value + 0.5f);

@@ -9,10 +9,10 @@ namespace ui {
 namespace {
 
 constexpr int kBarH = 34;
-constexpr int kGuideW = 176;
-constexpr int kGuideH = 220;
+constexpr int kGuideW = 240;
+constexpr int kGuideH = 296;
 constexpr int kGuideX = (APP_LCD_H_RES - kGuideW) / 2;
-constexpr int kGuideY = 120;
+constexpr int kGuideY = 96;
 constexpr int kPromptY = kGuideY + kGuideH + 16;
 constexpr int kBandH = 104;
 constexpr int kBandY = APP_LCD_V_RES - kBandH - 8;
@@ -66,7 +66,7 @@ void top_bar(Canvas &to, const char *right)
 // camera app uses for "put it here" (KEHOACH 4.5.5h).
 void guide(Canvas &to, uint8_t tone, const char *prompt)
 {
-    const int arm = 38;
+    const int arm = 52;
     const int thick = 4;
     const int x2 = kGuideX + kGuideW;
     const int y2 = kGuideY + kGuideH;
@@ -196,6 +196,8 @@ private:
 
 class MenuScreen final : public Screen {
 public:
+    bool opaque() const noexcept override { return true; }
+
     bool on_touch(int x, int y, bool down) noexcept override
     {
         const int hit = row_at(x, y);
@@ -227,7 +229,6 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
-        to.fill(0, 0, APP_LCD_H_RES, APP_LCD_V_RES, DRV_LCD_EDGE);
         top_bar(to, nullptr);
         to.text_centred(kBarH + 18, "Quản lý", DRV_LCD_INK);
         for (int i = 0; i < kRows; ++i) {
@@ -258,6 +259,8 @@ private:
 
 class EnrolScreen final : public Screen {
 public:
+    bool opaque() const noexcept override { return true; }
+
     void on_enter() noexcept override
     {
         typed_[0] = '\0';
@@ -283,7 +286,6 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
-        to.fill(0, 0, APP_LCD_H_RES, APP_LCD_V_RES, DRV_LCD_EDGE);
         top_bar(to, nullptr);
         to.text(kPad, kBarH + 10, "Tên người mới", DRV_LCD_INK);
         to.rounded(kPad, kBarH + 42, APP_LCD_H_RES - 2 * kPad, 44, kRadius, kEdge, DRV_LCD_ACCENT);
@@ -450,6 +452,8 @@ private:
 
 class ListScreen final : public Screen {
 public:
+    bool opaque() const noexcept override { return true; }
+
     explicit ListScreen(const char *title) noexcept : title_(title) {}
 
     bool on_touch(int x, int y, bool down) noexcept override
@@ -470,7 +474,6 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
-        to.fill(0, 0, APP_LCD_H_RES, APP_LCD_V_RES, DRV_LCD_EDGE);
         top_bar(to, nullptr);
         to.text_centred(kBarH + 18, title_, DRV_LCD_INK);
         for (int i = 0; i < lines_; ++i) {

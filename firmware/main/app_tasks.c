@@ -67,6 +67,7 @@ static int s_face_min_px;
 #define UI_TASK_PRIORITY 4
 #define UI_TASK_STACK_BYTES 8192
 #define UI_TICK_MS 20
+#define UI_GROUND_RGB565 0x0821
 
 static void report_rate(int frames, int64_t elapsed_us)
 {
@@ -127,11 +128,31 @@ static void offer_to_ai(QueueHandle_t frames, camera_fb_t *frame)
     }
 }
 
+// A screen that covers the panel has nothing new to say on most frames, and
+// repainting it anyway costs the same gather a live preview does.
+static esp_err_t show(const drv_lcd_overlay_t *overlay, const camera_fb_t *frame,
+                      uint32_t *drawn_serial)
+{
+    if (overlay == NULL) {
+        return drv_lcd_blit_frame(frame->buf, frame->width, frame->height, NULL);
+    }
+    if (!overlay->opaque) {
+        *drawn_serial = 0;
+        return drv_lcd_blit_frame(frame->buf, frame->width, frame->height, overlay);
+    }
+    if (overlay->serial == *drawn_serial) {
+        return ESP_OK;
+    }
+    *drawn_serial = overlay->serial;
+    return drv_lcd_paint(overlay, UI_GROUND_RGB565);
+}
+
 static void cam_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
     int64_t window_started = esp_timer_get_time();
     int frames = 0;
+    uint32_t drawn_serial = 0;
     esp_err_t last_blit = ESP_OK;
 
     for (;;) {
@@ -143,8 +164,7 @@ static void cam_task(void *arg)
             continue;
         }
         drv_camera_expose(frame);
-        const esp_err_t err =
-            drv_lcd_blit_frame(frame->buf, frame->width, frame->height, ui_kiosk_overlay());
+        const esp_err_t err = show(ui_kiosk_overlay(), frame, &drawn_serial);
         offer_to_ai(wiring->frames, frame);
         if (err != last_blit) {
             ESP_LOGE(TAG, "blit %s", esp_err_to_name(err));

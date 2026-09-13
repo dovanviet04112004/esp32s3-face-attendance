@@ -33,6 +33,7 @@ uint8_t *s_cells;
 drv_lcd_overlay_t s_slot[kSlots];
 std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
 int s_next;
+uint32_t s_serial;
 bool s_ready;
 bool s_dirty = true;
 
@@ -67,6 +68,8 @@ void publish(const ui::Canvas &from)
         mask->warn_rgb565 = wire(kAmber);
     }
     target->masks = (uint8_t)kept;
+    target->opaque = ui::manager().current()->opaque();
+    target->serial = ++s_serial;
     s_next = (s_next + 1) % kSlots;
     s_shown.store(target, std::memory_order_release);
 }
