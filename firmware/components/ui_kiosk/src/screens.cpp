@@ -41,6 +41,20 @@ void button(Canvas &to, int x, int y, int w, int h, const char *label, uint8_t t
     to.text_centred_in(x, w, y + (h - Canvas::line_height()) / 2, label, DRV_LCD_INK);
 }
 
+// Three bars, not a glyph: the 22 px table holds ASCII and Vietnamese only.
+void hamburger(Canvas &to, int x, int y, int w, int h)
+{
+    const int bar_w = w / 2;
+    const int bar_h = 3;
+    const int gap = 5;
+    const int left = x + (w - bar_w) / 2;
+    int top = y + (h - (3 * bar_h + 2 * gap)) / 2;
+    for (int i = 0; i < 3; ++i) {
+        to.fill(left, top, bar_w, bar_h, DRV_LCD_INK);
+        top += bar_h + gap;
+    }
+}
+
 bool inside(int x, int y, int bx, int by, int bw, int bh)
 {
     return x >= bx && x < bx + bw && y >= by && y < by + bh;
@@ -126,6 +140,19 @@ const char *refusal(app_ui_verdict_t verdict)
 
 class ScanScreen final : public Screen {
 public:
+    bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
+    {
+        (void)dt_ms;
+        // A track that granted is never verified again (KEHOACH 4.5.5d), so the
+        // progress line would be a lie until the face leaves.
+        const bool answered = seen.verdict == APP_UI_GRANTED || (answered_ && seen.face);
+        if (answered == answered_) {
+            return false;
+        }
+        answered_ = answered;
+        return true;
+    }
+
     bool on_touch(int x, int y, bool down) noexcept override
     {
         const bool on_menu = inside(x, y, APP_LCD_H_RES - kMenuW, 0, kMenuW, kBarH);
@@ -144,7 +171,8 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         top_bar(to, nullptr);
-        button(to, APP_LCD_H_RES - kMenuW - 4, 2, kMenuW, kBarH - 4, "≡", DRV_LCD_INK, held_);
+        button(to, APP_LCD_H_RES - kMenuW - 4, 2, kMenuW, kBarH - 4, "", DRV_LCD_INK, held_);
+        hamburger(to, APP_LCD_H_RES - kMenuW - 4, 2, kMenuW, kBarH - 4);
 
         uint8_t tone = DRV_LCD_INK;
         const char *prompt = "Đưa khuôn mặt vào khung";
@@ -158,10 +186,8 @@ public:
             tone = DRV_LCD_WARN;
             prompt = "Lại gần hơn";
         } else if (seen.face) {
-            // The frame turning is the whole message: asking again for a face
-            // it already has is the machine not looking.
             tone = DRV_LCD_ACCENT;
-            prompt = nullptr;
+            prompt = answered_ ? nullptr : "Đang nhận diện...";
         }
         guide(to, tone, prompt);
 
@@ -196,6 +222,7 @@ private:
     }
 
     bool held_ = false;
+    bool answered_ = false;
 };
 
 class MenuScreen final : public Screen {
