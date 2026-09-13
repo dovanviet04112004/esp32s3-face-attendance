@@ -45,7 +45,7 @@ phải bằng chứng.
 | Bẫy đơn vị watermark (6.2) | Code nhân `sizeof(StackType_t)` thay vì hằng số 4 | `portSTACK_TYPE` là `uint8_t` nên nhân 1 — đúng ở đây **và** trên port khác |
 | `pdMS_TO_TICKS` về 0 tick (4.1) | `CONFIG_FREERTOS_HZ=1000`, sàn 1 ms | Ràng buộc này **phụ thuộc config** — hạ tick rate là dính lại |
 | Đảo ngược ưu tiên (10.4) | Khoá dùng mutex thật, semaphore chỉ để báo hiệu ISR→task | Bốn mutex, hai semaphore, không cái nào lẫn vai |
-| Deadlock (10.2) | Thứ tự khoá chốt ở §5.3; chỗ duy nhất lồng hai khoá đi đúng chiều | `FaceDb::persist` lấy `m_facedb` rồi mới `m_littlefs` |
+| Deadlock (10.2) | Thứ tự khoá chốt ở §5.3; chỗ duy nhất lồng ba khoá đi đúng chiều | `FaceDb::persist` lấy `m_facedb_io` rồi `m_facedb` rồi mới `m_littlefs` |
 | ISR chạm PSRAM (8.4) | Hai ISR chỉ đụng handle semaphore | Đọc `drv_tof.c`, `drv_lcd.c` |
 | Cấp phát động sau boot (7.7) | CLAUDE.md §4.1 cấm `new`/`delete` sau boot | `grep` ra **0 chỗ** |
 | Mất quyền sở hữu con trỏ (9.7) | `cam_task` không đụng `frame` sau khi gửi; `blit` xảy ra **trước** | Đọc `cam_task` |
@@ -56,17 +56,26 @@ Ba dòng đầu là **luật trong CLAUDE.md hoặc kế hoạch**, không phả
 giữ được khi thêm người và thêm task — còn những dòng dựa vào "code hiện đang đúng" thì phải
 soát lại mỗi lần sửa.
 
-### 0.3 Đang dính, chưa sửa
+### 0.3 Đã dính, đã sửa — tìm ra bằng đọc code
+
+Ba ca ở §0.1 chỉ lộ ra khi đo. Ba ca dưới đây thì ngược lại: **phép đo không thấy cái nào**,
+vì cả ba chỉ nổ khi hai task chạm nhau đúng lúc — mà cái "đúng lúc" ấy chưa từng xảy ra trên
+bàn. Danh mục này là thứ tìm ra chúng.
+
+| # | Bẫy | Chỗ | Cách ra |
+|---|---|---|---|
+| **P1** | Giữ khoá suốt lời gọi chặn dài (10.3) | `FaceDb::persist` giữ `m_facedb` 1,8–2,3 s trong khi `lookup` chỉ chờ 200 ms, và `pipeline.cpp` đọc mọi lỗi tra cứu thành `UNKNOWN` → **người thật bị từ chối** vì ai đó vừa đăng ký | `m_facedb_io` xếp hàng người ghi với nhau, phép ghi chạy ngoài `m_facedb`; pipeline tách "bảng nói không" khỏi "bảng không trả lời" (E10-T11) |
+| **P2** | Task có watchdog mà chặn vô hạn (12.2) | `ai_task` chặn `portMAX_DELAY` trên `q_frame` → camera chết thì watchdog **kêu nhầm tên** | Chờ 2 s, hết hạn thì nạp watchdog và log hàng đợi cạn (E10-T12) |
+| **P3** | Gửi queue bỏ qua kết quả (9.3) | `xQueueSend(results, 0)` không kiểm giá trị trả về → một `MATCH` rơi là **một lần chấm công mất** | Chờ 100 ms rồi log kind phải bỏ (E10-T12) |
+
+### 0.4 Đang dính, chưa sửa
 
 | # | Bẫy | Chỗ | Row |
 |---|---|---|---|
-| **P1** | Giữ khoá suốt lời gọi chặn dài (10.3) | `FaceDb::persist` giữ `m_facedb` 1,8–2,3 s trong khi `kLockMs` là 200 ms | E10-T11 |
-| **P2** | Task có watchdog mà chặn vô hạn (12.2) | `ai_task` | E10-T12 |
-| **P3** | Gửi queue bỏ qua kết quả (9.3) | `xQueueSend(results, 0)` | E10-T12 |
-| **P4** | App chạy lâu nhất không bật bắt lỗi heap (7.3) | `soak`, `bench_mem` | E10-T8 |
+| **P4** | App chạy lâu nhất không bật bắt lỗi heap (7.3) | `soak` đã lấy `sdkconfig.dev` và `bench_mem` lấy `sdkconfig.bench`; **còn nợ lượt chạy 24 giờ** | E10-T8 |
 | **P5** | `prod` tắt poisoning nên hỏng heap ngoài hiện trường là vô hình | profile build | — |
 
-### 0.4 Chưa kiểm được
+### 0.5 Chưa kiểm được
 
 Sáu task của E10 và E13 chưa tồn tại, nên §14 liệt kê những gì phải chạy lại khi chúng lên.
 **Danh mục này chỉ đúng tới ngày ghi** — thêm một task là phải soát lại từ §1.
@@ -191,7 +200,7 @@ rò được, và cũng là lý do nó không nới được. `.bss` tốn **0 b
 |---|---|---|---|
 | 7.1 | Rò: xin mà không trả. **Vi điều khiển không có ai thu hồi** — chỉ hết khi khởi động lại | Đo heap trước và sau **một chu kỳ đầy đủ** | ✅ `soak` so mẫu đầu với mẫu sau; heap phẳng trong 56 B suốt một phút |
 | 7.2 | **Phân mảnh**: tổng trống còn nhiều mà **dải liền mạch** thì hết. *(bản đồ: trống 31.083 B, xin 20 KB vẫn trượt, mảnh lớn nhất 7.936 B)* | `heap_caps_get_largest_free_block`, **không** chỉ `get_free_size` | ✅ `bench_mem` in cả hai. Dự án đã dính đúng lỗi này một lần: `arena.md` §1c — trống 192 KB mà mảnh to nhất 143 KB nên arena lùi xuống PSRAM |
-| 7.3 | Hỏng heap: ghi lố ra ngoài khối, đè sổ sách khối kế. **Không canary nào kêu**, nổ ở hàm khác lúc khác, ra `LoadProhibited` với `EXCVADDR` vô nghĩa | `CONFIG_HEAP_POISONING` từng profile | ⚠ **P4**, xem §13 |
+| 7.3 | Hỏng heap: ghi lố ra ngoài khối, đè sổ sách khối kế. **Không canary nào kêu**, nổ ở hàm khác lúc khác, ra `LoadProhibited` với `EXCVADDR` vô nghĩa | `CONFIG_HEAP_POISONING` từng profile | ⚠ **P4**, xem §13 — `soak` đã lấy `sdkconfig.dev`, còn nợ chính lượt chạy 24 giờ |
 | 7.4 | "Đang trống" nói lên rất ít — phải xem **thấp nhất từng chạm**. *(bản đồ: trống 389.071 B mà đáy 2.207 B, chênh 176×)* | `heap_caps_get_minimum_free_size` | ⏳ E8-T9, cần ngoại vi |
 | 7.5 | Không kiểm `NULL` sau khi xin | Đọc mọi `malloc`/`heap_caps_malloc` | ✅ |
 | 7.6 | Dùng sau khi trả, hoặc trả rồi không gán `NULL` | Đọc mắt | ✅ `free_case` trong `parity.cpp` gán `NULL` ngay sau `free` |
@@ -244,8 +253,8 @@ không phải phiền toái.
 | 9.1 | Biến dùng chung không khoá: giẫm chân nhau, đọc ra thứ **dở dang** | Tìm biến ghi bởi task này đọc bởi task kia | ✅ mọi đường liên task đều qua queue hoặc event group |
 | 9.1b | Có chỗ chứa nhưng **không có nhịp** — lỗi này ít người để ý hơn lỗi trên. Ghi hai lần đọc một lần thì **mất một giá trị mà không ai biết**; muốn chờ giá trị mới thì phải quay vòng hỏi, đốt CPU | Đối chiếu §5.3 | ✅ cái thiếu không phải chỗ chứa mà là nhịp, và queue cho cả hai |
 | 9.2 | **Không kiểm giá trị trả về của `xQueueReceive`** — trả `pdFALSE` thì biến đích **không đổi**, in lại giá trị cũ y như thật | `grep xQueueReceive` không kèm điều kiện | ✅ **0 chỗ**, mọi lời gọi đều kiểm |
-| 9.3 | Gửi với timeout 0 rồi bỏ qua kết quả — **mất bản ghi âm thầm** | `grep "xQueueSend(.*, 0)"` | ⚠ **P3**, xem §13 |
-| 9.4 | `portMAX_DELAY` khi nhận — treo im lặng nếu bên kia chết | Kiểm task nào chặn vô hạn | ⚠ **P2**, xem §13 |
+| 9.3 | Gửi với timeout 0 rồi bỏ qua kết quả — **mất bản ghi âm thầm** | `grep "xQueueSend(.*, 0)"` | ✅ `ai_task` chờ 100 ms rồi log kind phải bỏ; `offer_to_ai` gửi 0 nhưng trả khung về pool ở cả hai nhánh |
+| 9.4 | `portMAX_DELAY` khi nhận — treo im lặng nếu bên kia chết | Kiểm task nào chặn vô hạn | ✅ `ai_task` chờ 2 s, hết hạn thì nạp watchdog và log hàng đợi cạn |
 | 9.5 | Gửi con trỏ trỏ vào stack người gửi | Đọc kiểu phần tử | ✅ `q_frame` chở con trỏ khung do pool sở hữu |
 | 9.6 | Gửi `&x` thay vì `x` hoặc ngược lại — **trình dịch không báo lỗi** | Đọc mắt từng lời gọi | ✅ |
 | 9.7 | **Gửi con trỏ đi là mất quyền sở hữu** — người gửi không được đụng nữa | Đọc mã sau mỗi lần gửi | ✅ `cam_task` không đụng `frame` sau `offer_to_ai`; `blit` xảy ra **trước** |
@@ -280,7 +289,7 @@ chờ của chính queue ấy, nên nó **biến mất khỏi tầm nhìn bộ l
 |---|---|---|---|
 | 10.1 | `portMAX_DELAY` khi lấy mutex — treo vô hạn, không cách nào biết | `grep "xSemaphoreTake.*portMAX_DELAY"` | ✅ **0 chỗ** |
 | 10.2 | Khoá lồng nhau sai thứ tự → deadlock | Thứ tự §5.3: `m_facedb` → `m_littlefs` → `m_i2c` → `m_spi_lcd` | ✅ chỗ duy nhất lồng hai khoá là `FaceDb::persist()`, đi đúng chiều |
-| 10.3 | **Giữ khoá suốt một lời gọi chặn dài** | Tìm I/O flash, I2C, nhận queue bên trong vùng khoá | ⚠ **P1**, xem §13 |
+| 10.3 | **Giữ khoá suốt một lời gọi chặn dài** | Tìm I/O flash, I2C, nhận queue bên trong vùng khoá | ✅ `m_facedb_io` xếp hàng người ghi, phép ghi 552 KB chạy ngoài `m_facedb` (§5.3 của kế hoạch) |
 | 10.4 | Dùng binary semaphore thay mutex — **mất kế thừa ưu tiên** | Kiểm từng semaphore | ✅ hai semaphore đều là báo hiệu ISR→task |
 | 10.5 | Lấy lại mutex không đệ quy từ nhánh đang giữ | Đọc hàm public gọi lẫn nhau | ✅ |
 | 10.6 | Lấy mutex trong ISR — sai tuyệt đối | `grep` trong ISR | ✅ |
@@ -314,39 +323,6 @@ chờ của chính queue ấy, nên nó **biến mất khỏi tầm nhìn bộ l
 
 ## 13. Phát hiện đang mở
 
-### P1 — `m_facedb` bị giữ suốt một phép ghi flash 2 giây
-
-`FaceDb::persist()` lấy `m_facedb` rồi gọi `store_.save()`, tức ghi 552 KB xuống LittleFS.
-E10-T3 đo phép ghi hai pha ấy mất **1,8–2,3 s**. Nhưng `kLockMs = 200` ms.
-
-Hệ quả: ai gọi `svc_facedb_lookup` trong cửa sổ đó nhận `ESP_ERR_TIMEOUT`, và
-`pipeline.cpp:143` biến mọi lỗi tra cứu thành **`UNKNOWN`** — **người thật bị từ chối** chỉ vì
-đúng lúc ấy có ai đó đăng ký xong và bảng đang được ghi xuống.
-
-Thứ tự khoá **đúng** (§5.3), nên đây không phải deadlock mà là lỗi **độ dài vùng khoá**.
-
-Ba đường, chưa chọn: chép ảnh bảng dưới khoá rồi thả khoá mới ghi (tốn thêm 552 KB PSRAM trong
-chốc lát); để `svc_attendance` chặn enroll và xác thực chạy chồng; hoặc tách lỗi tra cứu khỏi
-"không tìm thấy" để pipeline báo bận thay vì `UNKNOWN`. **Chốt trước E10-T7.** Row E10-T11.
-
-### P2 — `ai_task` vừa đăng ký watchdog vừa chặn vô hạn
-
-`ai_task` gọi `esp_task_wdt_add(NULL)` rồi chặn ở `xQueueReceive(frames, portMAX_DELAY)`.
-Camera ngừng đẩy khung thì nó **không bao giờ tới `esp_task_wdt_reset()`** và watchdog nổ.
-
-Hai cách đọc: **cố ý** — camera chết là hệ hỏng, để reset là đúng, nhưng báo cáo **chỉ vào
-`ai_task`** trong khi lỗi ở `cam_task` hoặc sensor; hoặc **sót** — nên chờ có hạn, hết giờ thì
-nạp watchdog và log "không có khung".
-
-`portMAX_DELAY` ở đây **không vi phạm** CLAUDE.md §4.1 (luật đó cấm cho mutex). Vấn đề là nó đi
-cùng watchdog. Row E10-T12.
-
-### P3 — kết quả nhận dạng rơi âm thầm khi `attend_task` chậm
-
-`xQueueSend(wiring->results, &result, 0)` gửi timeout 0 và **không kiểm giá trị trả về**.
-`RESULT_DEPTH` là 4. Chậm quá bốn kết quả thì kết quả thứ năm biến mất không dấu vết — một
-`MATCH` rơi là **một lần chấm công mất**. Ngay trên nó `offer_to_ai` xử lý đúng. Row E10-T12.
-
 ### P4 — app chạy lâu nhất lại là app chạy mù nhất
 
 Ba profile của §4.5.9 đều vào git và đều hợp lý: `dev` bật assert, `HEAP_POISONING_LIGHT` và
@@ -357,18 +333,23 @@ Vấn đề ở chỗ khác: **`soak` và `bench_mem` không chọn profile nào
 `sdkconfig.defaults.esp32s3` — file chỉ khai flash, PSRAM và cache — nên phần còn lại rơi về
 mặc định IDF, mà mặc định của `HEAP_CORRUPTION_DETECTION` là **`DISABLED`**.
 
-Nghĩa là bài kiểm **24 giờ**, thứ có nhiều thời gian nhất để một lỗi ghi lố heap lộ ra, đang
-chạy với phép bắt lỗi đó **tắt**. `bench_ai` và `parity` còn tắt tường minh, nhưng chúng chạy
-vài phút nên không sao.
+Nghĩa là bài kiểm **24 giờ**, thứ có nhiều thời gian nhất để một lỗi ghi lố heap lộ ra, chạy
+với phép bắt lỗi đó **tắt**. `bench_ai` và `parity` cũng tắt tường minh, nhưng chúng chạy vài
+phút nên không sao.
 
-Việc phải làm: cho `soak` chạy ít nhất một lượt 24 giờ với `sdkconfig.dev`. Ghi kết quả vào
-`docs/measurements/`. Xem E10-T8.
+Hai app đã có profile: `soak` lấy `sdkconfig.dev` (đọc lại `sdkconfig` sinh ra thấy
+`CONFIG_HEAP_POISONING_LIGHT=y`), còn `bench_mem` lấy `sdkconfig.bench` chứ không phải `dev` —
+nó đi báo số chứ không đi săn lỗi, mà poisoning thêm canary vào **mọi** khối nên sẽ thổi phồng
+đúng con số RAM đỉnh nó sinh ra; `bench` vẫn giữ `FREERTOS_USE_TRACE_FACILITY` mà
+`uxTaskGetSystemState` cần.
+
+Còn nợ: **chính lượt chạy 24 giờ**, kết quả vào `docs/measurements/`. Xem E10-T8.
 
 ### P5 — `prod` tắt poisoning, nên hỏng heap ngoài hiện trường là vô hình
 
 Đây là đánh đổi tiêu chuẩn chứ không phải lỗi: poisoning tốn thời gian mỗi lần xin và trả.
-Ghi lại để đừng quên rằng **lưới bắt lỗi heap của bản giao hàng là con số không**, và vì vậy
-P1 với P3 phải được đóng trước khi giao — trên hiện trường sẽ không có gì kêu.
+Ghi lại để đừng quên rằng **lưới bắt lỗi heap của bản giao hàng là con số không**: mọi lỗi
+kiểu P1 hay P3 phải bị chặn từ `dev`, vì trên hiện trường sẽ không có gì kêu.
 
 ---
 
