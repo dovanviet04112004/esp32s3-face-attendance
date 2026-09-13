@@ -9,8 +9,9 @@ namespace {
 // Recognition runs only once the box has held still this many detects (KEHOACH 3, layer 5).
 constexpr int kStableDetects = 2;
 constexpr float kSameFaceIou = 0.5f;
-// A verdict other than MATCH is retried after this many detects on the same track.
-constexpr int kRetryDetects = 6;
+// A verdict other than MATCH is retried after this many detects on the same
+// track: 320 ms each, and six of them is a person standing still for 2.8 s.
+constexpr int kRetryDetects = 3;
 // The detector drops a frame here and there on a face that never moved.
 constexpr int kMissesLost = 2;
 
@@ -115,7 +116,10 @@ void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
 
 bool VisionPipeline::may_verify() const noexcept
 {
-    return since_verdict_ < 0 || (!matched_ && since_verdict_ >= kRetryDetects);
+    // An enrol needs the embedding of the face that just matched, and matched_
+    // otherwise closes this path on that track for good.
+    return enrol_id_ != 0 || since_verdict_ < 0 ||
+           (!matched_ && since_verdict_ >= kRetryDetects);
 }
 
 void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face_t &primary,
