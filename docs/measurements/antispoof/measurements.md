@@ -1994,3 +1994,48 @@ Hai thứ giải thích khoảng cách ấy, và cả hai đều kiểm được
   ảnh, nhiều cự ly, in và màn hình, và một tập live cùng cảm biến để đọc BPCER.
 - **Cho tới lúc đó, nhánh chống giả của kiosk không chặn được ảnh in chính diện.** Ghi đúng như
   vậy vào báo cáo, không ghi là đã có chống giả.
+
+---
+
+## 35. Sáu checkpoint trên cùng 21 khung giả và 7 khung thật của board — 13/09
+
+§34 kết luận crop `tight` 1,0× cắt mất bằng chứng. Mục này chấm **mọi checkpoint còn `best.pth`
+của nhánh** trên cùng bộ khung của §34, cộng 7 khung mặt thật thu cùng buổi cùng cảm biến
+(`live1309`, cỡ mặt 147–180 px). Cùng detector, cùng đường code, cùng lệnh.
+
+### 35.1 Bảng
+
+`views` đọc từ chính state dict: có khoá `wide.*` là hai nhánh.
+
+| Run | views | tham số | epoch | giả chặn @0,50 | thật qua @0,50 | ACER@0,50 | AUC |
+|---|---|---|---|---|---|---|---|
+| `20260910-0947_a51978c` | both | 0,540M | 6 | 19/21 | 5/7 | 0,190 | 0,9116 |
+| **`20260910-1043_2b33c30`** | **both** | 0,540M | 30 | **19/21** | **7/7** | **0,048** | 0,9048 |
+| `20260910-1538_09a1263` | both | 0,540M | 36 | 19/21 | 7/7 | 0,048 | 0,9048 |
+| `20260911-1112_a3fd8e1` | both | 0,540M | 60 | 17/21 | 7/7 | 0,095 | **0,9184** |
+| `20260911-1438_6519ac4` | both | 0,540M | 68 | 16/21 | 7/7 | 0,119 | 0,8844 |
+| `20260912-0107_fd87e15` **(đang nạp)** | **tight** | 0,270M | 80 | **2/21** | 7/7 | **0,452** | 0,8707 |
+
+`1043` giữ nguyên 19/21 chặn và 7/7 qua ở **cả 0,50 lẫn 0,75**, tức dải ngưỡng dùng được rộng
+chứ không phải một điểm may. Sàn 0,75 của §33 đang gieo nằm gọn trong dải đó.
+
+### 35.2 Điều bảng này nói
+
+**Model một nhánh `tight` duy nhất của cả nhánh chính là model đã đem đi deploy**, và nó là
+model duy nhất không chặn được ảnh thẻ. Năm checkpoint hai nhánh, trải từ epoch 6 tới 68, qua
+ba cấu hình train khác nhau, đều chặn 16–19 trên 21. Đây không còn là một phép so hai model mà
+là tương quan trên sáu điểm: **bằng chứng nằm ở view `wide` 2,7**, đúng như §34.4 khoanh.
+
+Thứ hai, **train dài hơn làm tệ đi trên miền thiết bị**: trong họ hai nhánh, epoch 30 chặn
+19/21 còn epoch 68 chặn 16/21. §29–§31 chốt arm một backbone bằng CelebA-Spoof, LCC và
+SynthASpoof; trên miền thiết bị thứ tự đảo lại.
+
+### 35.3 Giới hạn
+
+**7 khung thật là quá ít để đọc BPCER.** BPCER 0,000 ở đây chặn trên được ~35% theo quy tắc ba,
+nên nó **không** chứng minh model không từ chối oan — §24.4 đã đo `1112` cho BPCER@0,90 = 23,5%
+trên 51 khung thật. Bảng này chỉ kết luận chắc được **phía tấn công**: 2/21 so với 19/21 không
+phải nhiễu mẫu. Chốt ngưỡng vận hành vẫn phải có tập live đủ lớn trên cùng cảm biến.
+
+Cả 21 khung giả đến từ **một vật thử** (một ảnh thẻ, một cự ly). Một tập tấn công thật cần
+nhiều ảnh, cả in lẫn màn hình, nhiều cự ly và nhiều mức sáng.
