@@ -17,7 +17,6 @@ public:
     static constexpr int kCardWidth = 260;
     static constexpr int kCardHeight = 140;
     static constexpr int kCards = 2;
-    static constexpr int kBarHeight = 36;
     // The detector drops a face for a step or two at kiosk range, and a box
     // that blinks with it is a box nobody sees (KEHOACH 4.5.5h).
     static constexpr int64_t kFaceHoldUs = 700000;
@@ -35,9 +34,7 @@ public:
 private:
     uint16_t *card_pixels() noexcept;
     void paint_card() noexcept;
-    void paint_bar() noexcept;
 
-    uint16_t *bar_ = nullptr;
     uint16_t *card_[kCards] = { nullptr, nullptr };
     int next_card_ = 0;
     int shown_card_ = 0;
