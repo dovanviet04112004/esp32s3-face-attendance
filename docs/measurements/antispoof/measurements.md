@@ -2223,3 +2223,47 @@ nguyên 81×81 và không thêm một phép tính nào lúc suy luận:
    4 kênh thay vì 3, chi phí thêm đúng một hàng trọng số ở lớp đầu.
 
 Cả hai cần một lần train và **không cần một khung dữ liệu mới nào**.
+
+---
+
+## 39. Thu hẹp augment màu — giả thuyết §38.4 bị bác, 13/09
+
+§38.2 đo được `photometric` kéo AUC của `sat_mean` từ 0,8609 xuống 0,7185 và §38.4 suy ra:
+nới lỏng phần bóp màu thì model dùng được dấu hiệu ấy. Mục này chạy thử và **bác nó**.
+
+### 39.1 Cách chạy
+
+Run `20260913-2224_bb2e219_cb1f01`, khởi động ấm từ `best.pth` của chính model đang nạp
+(`20260912-0107`), 10 epoch, LR 0,002, warmup 1, **đúng một biến đổi**:
+
+| | Bản đối chứng | Run này |
+|---|---|---|
+| `exposure_contrast_range` | 0,50 – 1,50 | **0,90 – 1,10** |
+| `white_balance_range` | 0,86 – 1,16 | **0,97 – 1,03** |
+
+Cùng seed 42, cùng `split.lock`, cùng pool 501.026 bản ghi, cùng kiến trúc 81×81 một backbone.
+Hai dải ấy thành tham số dataset trong cùng lần sửa, nên `config.resolved.yaml` của run tự khai.
+
+### 39.2 Kết quả — tệ hơn ở cả ba miền
+
+| | val EER | Thiết bị AUC | `phone_eval` AUC |
+|---|---|---|---|
+| `20260912-0107` đang nạp | **0,1121** | **0,6510** | **0,9838** |
+| `20260913-2224` thu hẹp màu | 0,1994 | 0,5766 | 0,5353 |
+
+`phone_eval` sập nặng nhất: `live_rat_xa` 0/20, `live_vua` 0/12, `live_xa` 0/20 khung mặt thật
+qua được ở mọi ngưỡng dưới 0,90 — cùng kiểu hỏng mà §37.2 đo trên model hai nhánh.
+
+**Dải rộng ấy không chôn dấu hiệu màu, nó đang mua sự bền vững.** Cắt nó đi thì model bám sát
+phân bố màu của tập train và gãy ngay khi gặp một chuỗi camera khác. Giả thuyết §38.4 điểm 1
+**đóng lại**.
+
+### 39.3 Điều phép đo này chưa kết luận được
+
+Run dài **10 epoch từ một khởi động ấm**, bản đối chứng dài **90 epoch**: một phần sa sút có
+thể chỉ là chưa hội tụ lại chứ không phải do dải augment. Val EER đi 0,2830 → 0,1994 rồi phẳng
+(mức cải thiện epoch cuối còn 0,004), nên nó đã gần đáy của lịch này, nhưng **muốn kết tội dứt
+điểm phải chạy đủ 90 epoch** — đó là phép so mà §4.2 của `CLAUDE.md` đòi.
+
+Điểm 2 của §38.4 — **kênh sắc độ tường minh** — chưa bị động tới: nó không nới lỏng augment mà
+đưa thẳng đại lượng vào đầu vào, nên kết quả ở đây không nói gì về nó.
