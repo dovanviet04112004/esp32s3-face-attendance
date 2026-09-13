@@ -57,6 +57,12 @@ typedef struct {
  */
 size_t svc_facedb_people(svc_facedb_person_t *out, size_t cap);
 
+/** One past the highest employee id alive in the table, for a person added here.
+ *  @ctx task | blocking | takes m_facedb
+ *  @ret the id to enrol under, or 0 when the table cannot be read
+ */
+uint32_t svc_facedb_next_employee_id(void);
+
 /** Soft-delete every template of one employee.
  *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND when nothing carried that id | ESP_ERR_TIMEOUT

@@ -261,6 +261,22 @@ size_t FaceDb::people(svc_facedb_person_t *out, size_t cap) noexcept
     return kept;
 }
 
+uint32_t FaceDb::next_employee_id() noexcept
+{
+    app::LockGuard lock(mutex_, kLockMs);
+    if (!lock.held()) {
+        return 0;
+    }
+    uint32_t highest = 0;
+    for (size_t i = 0; i < table_.count(); ++i) {
+        const storage_face_record_t *rec = table_.record(i);
+        if (live(*rec) && rec->employee_id > highest) {
+            highest = rec->employee_id;
+        }
+    }
+    return highest + 1;
+}
+
 esp_err_t FaceDb::persist() noexcept
 {
     app::LockGuard io(io_mutex_, kIoLockMs);

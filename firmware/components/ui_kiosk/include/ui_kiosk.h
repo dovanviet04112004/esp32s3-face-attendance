@@ -46,6 +46,7 @@ void ui_kiosk_tick(uint32_t dt_ms);
 
 /** Collect a face the enrol screen is waiting for.
  *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
+ *  @param employee_id 0 for a person with no id yet, which the caller assigns
  *  @ret false when no screen is asking for one
  */
 bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *name, size_t cap);

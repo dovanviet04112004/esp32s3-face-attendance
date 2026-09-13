@@ -26,7 +26,7 @@ constexpr int kRingR = 30;
 constexpr int kSamples = 3;
 constexpr int64_t kSampleGapMs = 400;
 constexpr int64_t kDoneShowMs = 1800;
-constexpr uint32_t kFirstEmployee = 1;
+constexpr uint32_t kNewPerson = 0;        // main fills in the id (KEHOACH 4.5.5h.2)
 
 ScreenManager s_manager;
 EnrolRequest s_request;
@@ -492,7 +492,7 @@ private:
     void arm() noexcept
     {
         since_ms_ = 0;
-        enrol_request().employee_id = kFirstEmployee;
+        enrol_request().employee_id = kNewPerson;
         enrol_request().template_idx = (uint16_t)kept_;
         enrol_request().waiting = true;
     }

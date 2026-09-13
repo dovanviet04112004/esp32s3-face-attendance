@@ -58,8 +58,6 @@ static int s_face_min_px;
 #define NVS_SNTP_HOST "sntp_host"
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
 #define NVS_PRESENT_MM "present_mm"
-#define NVS_ENROL_NAME "enrol_name"
-#define ENROL_EMPLOYEE_ID 1u
 #define TOUCH_TASK_CORE 0
 #define TOUCH_TASK_PRIORITY 5
 #define TOUCH_TASK_STACK_BYTES 3072
@@ -255,6 +253,7 @@ static void ui_task(void *arg)
     (void)arg;
     bool armed = false;
     bool enrolling = false;
+    uint32_t new_employee = 0;
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(UI_TICK_MS));
@@ -264,6 +263,7 @@ static void ui_task(void *arg)
             // The enrolled track has already matched, and a matched track is
             // never verified again (KEHOACH 4.5.5d).
             svc_vision_reset();
+            new_employee = 0;
         }
         enrolling = now_enrolling;
         if (armed && !svc_vision_enrol_pending()) {
@@ -285,6 +285,16 @@ static void ui_task(void *arg)
         uint16_t template_idx = 0;
         char name[STORAGE_NAME_CAP] = { 0 };
         if (!ui_kiosk_take_enrol(&employee_id, &template_idx, name, sizeof(name))) {
+            continue;
+        }
+        // All three samples of one person share the id taken for the first
+        // (KEHOACH 4.5.5h.2).
+        if (employee_id == 0) {
+            new_employee = new_employee != 0 ? new_employee : svc_facedb_next_employee_id();
+            employee_id = new_employee;
+        }
+        if (employee_id == 0) {
+            ESP_LOGE(TAG, "no id for %s, face table did not answer", name);
             continue;
         }
         const esp_err_t asked = svc_vision_enrol_next(employee_id, template_idx, name);
