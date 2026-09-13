@@ -293,3 +293,61 @@ phải của model.
 | File trên `models_0` | detect 158 KB, spoof **424 KB**, recog 720 KB |
 | RAM nội còn rảnh | 331–335 KB |
 | PSRAM còn rảnh | 7.537 KB |
+
+---
+
+## 8. Nhánh chống giả hai backbone, model thật đã train — đo 13/09
+
+§36 của `antispoof/measurements.md` chốt rằng bản một backbone không phân biệt được ảnh in trên
+miền thiết bị (AUC 0,6510) còn bản hai backbone đọc 0,9449. Mục này trả lời câu còn lại: **nó
+tốn thêm bao nhiêu.**
+
+Export `20260910-1538_09a1263` (hai backbone, `views: both`) qua đúng đường của §4.4 —
+ONNX (khớp torch tới 1,669e-06) → SavedModel → INT8 hiệu chuẩn 300 mẫu. Đóng vào `models_0`
+cùng detect và recog đang dùng, chạy `firmware/test_apps/bench_ai`, 20 lần mỗi nhánh, cùng
+cấu hình mục 1: 240 MHz, `-O2`, PSRAM octal 80 MHz.
+
+| Nhánh | **Hai backbone, 13/09** | Một backbone, §7 | Chênh |
+|---|---|---|---|
+| detect | 232,5 ms | 232,5 ms | 0 |
+| **anti-spoof** | **468,1 ms** | 234,0 ms | **+234,1 ms** |
+| recognition | 457,4 ms | 458,0 ms | −0,6 ms |
+| **Một mặt đi hết ba nhánh** | **1.157,9 ms** | 924,5 ms | **+25,2%** |
+
+Dưới tải preview (4.292 KB/s PSRAM, 387 khung trong 27,0 s):
+
+| Nhánh | Hai backbone | Một backbone, §7 | Chênh |
+|---|---|---|---|
+| detect | 270,6 ms | 270,6 ms | 0 |
+| anti-spoof | 546,9 ms | 273,7 ms | +273,2 ms |
+| recognition | 534,5 ms | 535,4 ms | −0,9 ms |
+| **Tổng** | **1.352,0 ms** | 1.079,7 ms | **+25,2%** |
+
+Sai lệch 20 lần chạy của nhánh spoof: 468.083–468.383 µs, tức **0,06%**.
+
+**Con số này xác nhận cột "sau" của mục 1.** Mục 1 đo 469,7 ms cho `MiniFASNet ×2` trên **trọng
+số ngẫu nhiên**; model thật đo 468,1 ms, lệch **0,3%**. Latency không phụ thuộc trọng số, đúng
+như mục 1 đã nêu, và giờ có model thật để đối chứng.
+
+### 8.1 Op và bộ nhớ
+
+`tflite_op_check` trên chính file vừa export: **186 op, 185 chạy kernel ESP-NN**, còn đúng một
+`CONCATENATION` dùng kernel tham chiếu — trùng khít cột "sau" của bảng op ở mục 1 (`1/186`).
+Không còn `PRELU`, `MEAN` hay `PAD`: hai backbone là **cùng một backbone chạy hai lượt**, nên
+nó không kéo theo op nào chip không có kernel.
+
+| | Một backbone | Hai backbone | Chênh |
+|---|---|---|---|
+| File trên `models_0` | 425 KB | **854 KB** | +429 KB (partition 3.072 KB) |
+| `arena_big` cần | 422.764 B | **476.204 B** | **+53.440 B** |
+| `models_0` đã dùng | 1.304 KB | 1.733 KB | |
+
+`arena_hint` phải nâng cùng lúc ở **cả hai** nhánh dùng chung `arena_big`: để nguyên 422.764 B
+thì spoof nạp được (282 của 413 KB) nhưng **recog bị `AllocateTensors` từ chối**, vì hai nhánh
+xếp chồng tail trên một `MicroAllocator` (§3.8).
+
+### 8.2 Chỗ lấy lại thời gian
+
+Bảng "việc cần làm" ở mục 4 còn dòng chưa thử: **ngừng preview lúc spoof + recog chạy, 🔬 ~190
+ms**. Riêng nó gần như trả hết 234 ms của backbone thứ hai, và đổi lại là màn hình đứng trong
+quãng mà giao diện đang hiện `Đang nhận diện...` (§4.5.5h.1) nên người dùng không đọc ra là treo.
