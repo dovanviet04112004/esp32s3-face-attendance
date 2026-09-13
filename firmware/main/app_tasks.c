@@ -34,6 +34,8 @@ static const char *TAG = "app_tasks";
 #define AI_TASK_CORE 1
 #define AI_TASK_PRIORITY 5
 #define AI_TASK_STACK_BYTES 8192
+#define FRAME_WAIT_MS 2000
+#define RESULT_WAIT_MS 100
 #define ATTEND_TASK_CORE 0
 #define ATTEND_TASK_PRIORITY 4
 #define ATTEND_TASK_STACK_BYTES 4096
@@ -144,7 +146,11 @@ static void ai_task(void *arg)
 
     for (;;) {
         camera_fb_t *frame = NULL;
-        if (xQueueReceive(wiring->frames, &frame, portMAX_DELAY) != pdTRUE) {
+        // A dry queue is the camera's fault, so feeding the watchdog here keeps
+        // the panic pointed at the task that stopped (KEHOACH 5.1).
+        if (xQueueReceive(wiring->frames, &frame, pdMS_TO_TICKS(FRAME_WAIT_MS)) != pdTRUE) {
+            esp_task_wdt_reset();
+            ESP_LOGE(TAG, "no frame in %d ms", FRAME_WAIT_MS);
             continue;
         }
         svc_vision_result_t result = { 0 };
@@ -154,7 +160,10 @@ static void ai_task(void *arg)
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "vision step %s", esp_err_to_name(err));
         } else if (result.kind != SVC_VISION_NONE) {
-            xQueueSend(wiring->results, &result, 0);
+            // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
+            if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) != pdTRUE) {
+                ESP_LOGE(TAG, "result %d dropped, attend queue full", (int)result.kind);
+            }
         }
         // Only IDLE1 feeds its own watchdog slot, so it needs a turn (KEHOACH 5.1).
         vTaskDelay(1);
