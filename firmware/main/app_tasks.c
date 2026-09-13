@@ -267,13 +267,16 @@ static app_ui_verdict_t verdict_for(svc_attendance_state_t state, svc_vision_kin
             return APP_UI_SCANNING;
         case SVC_ATTENDANCE_GRANTED:
             return APP_UI_GRANTED;
-        case SVC_ATTENDANCE_DENIED:
-            return kind == SVC_VISION_SPOOF ? APP_UI_SPOOF : APP_UI_DENIED;
         // Whatever the line says stays up through the rest that follows it.
+        case SVC_ATTENDANCE_DENIED:
         case SVC_ATTENDANCE_COOLDOWN:
-            return kind == SVC_VISION_MATCH
-                       ? APP_UI_GRANTED
-                       : (kind == SVC_VISION_SPOOF ? APP_UI_SPOOF : APP_UI_DENIED);
+            if (kind == SVC_VISION_MATCH) {
+                return APP_UI_GRANTED;
+            }
+            if (kind == SVC_VISION_SPOOF) {
+                return APP_UI_SPOOF;
+            }
+            return kind == SVC_VISION_UNKNOWN ? APP_UI_UNKNOWN : APP_UI_DENIED;
         default:
             return APP_UI_IDLE;
     }

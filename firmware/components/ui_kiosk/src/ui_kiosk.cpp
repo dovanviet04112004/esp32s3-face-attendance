@@ -15,6 +15,10 @@ const char *TAG = "ui_kiosk";
 constexpr int kSlots = 2;
 constexpr int kHistory = 24;
 constexpr uint32_t kVerdictShift = 32;
+// A line stays up this long, and the same line will not come back inside the
+// quiet window: a face nobody enrolled would otherwise strobe it forever.
+constexpr int64_t kShowUs = 2500000;
+constexpr int64_t kQuietUs = 6000000;
 
 struct Detect {
     float box[DRV_LCD_OVERLAY_BOXES][4];
@@ -50,7 +54,10 @@ Detect s_detect_slot[kSlots];
 std::atomic<const Detect *> s_detect{ nullptr };
 int s_detect_next;
 std::atomic<uint64_t> s_verdict{ 0 };
-uint64_t s_verdict_shown;
+uint64_t s_verdict_taken;
+uint64_t s_line_showing;
+int64_t s_clear_at_us;
+int64_t s_quiet_until_us;
 
 void publish()
 {
@@ -106,6 +113,34 @@ void follow(const uint16_t *pixels, int width, int height, int64_t stamp_us)
     s_builder.set_others(&fresh->box[1][0], fresh->count - 1, fresh->width, fresh->height);
 }
 
+bool show(uint64_t packed, int64_t now_us)
+{
+    s_line_showing = packed;
+    s_clear_at_us = now_us + kShowUs;
+    s_quiet_until_us = now_us + kQuietUs;
+    return s_builder.set_verdict(static_cast<app_ui_verdict_t>(packed >> kVerdictShift),
+                                 static_cast<uint32_t>(packed));
+}
+
+bool say_something()
+{
+    const int64_t now_us = esp_timer_get_time();
+    const uint64_t packed = s_verdict.load(std::memory_order_acquire);
+    if (packed != s_verdict_taken) {
+        s_verdict_taken = packed;
+        const bool idle = (packed >> kVerdictShift) <= APP_UI_SCANNING;
+        const bool repeat = packed == s_line_showing && now_us < s_quiet_until_us;
+        if (!idle && !repeat) {
+            return show(packed, now_us);
+        }
+    }
+    if (s_clear_at_us != 0 && now_us >= s_clear_at_us) {
+        s_clear_at_us = 0;
+        return s_builder.set_verdict(APP_UI_IDLE, 0);
+    }
+    return false;
+}
+
 }  // namespace
 
 esp_err_t ui_kiosk_init(void)
@@ -158,13 +193,7 @@ void ui_kiosk_track(const void *pixels, int width, int height, int64_t stamp_us)
     const ui::Box &held = s_tracker.box();
     const float box[4] = { held.x1, held.y1, held.x2, held.y2 };
     bool changed = s_builder.set_face(s_tracker.active(), box, width, height);
-    const uint64_t packed = s_verdict.load(std::memory_order_acquire);
-    if (packed != s_verdict_shown) {
-        s_verdict_shown = packed;
-        changed = s_builder.set_verdict(static_cast<app_ui_verdict_t>(packed >> kVerdictShift),
-                                        static_cast<uint32_t>(packed)) ||
-                  changed;
-    }
+    changed = say_something() || changed;
     if (changed) {
         publish();
     }
