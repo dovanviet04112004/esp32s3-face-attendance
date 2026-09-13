@@ -29,7 +29,8 @@ typedef struct {
     int16_t y;
     int16_t w;
     int16_t h;
-    const uint8_t *cover;                 // w*h: 0 leaves the video, else INK or EDGE
+    const uint8_t *cover;                 // 0 leaves the video, else INK, EDGE or ACCENT
+    int16_t stride;                       // cells per row, so a sub-rectangle can be sent
     uint16_t ink_rgb565;
     uint16_t edge_rgb565;
     uint16_t accent_rgb565;

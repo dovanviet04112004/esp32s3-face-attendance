@@ -317,7 +317,7 @@ static void paint_mask(const drv_lcd_mask_t *mask, uint16_t *strip, int top, int
     const int x1 = mask->x > 0 ? mask->x : 0;
     const int x2 = mask->x + mask->w < APP_LCD_H_RES ? mask->x + mask->w : APP_LCD_H_RES;
     for (int y = y1; y < y2; ++y) {
-        const uint8_t *cover = mask->cover + (size_t)(y - mask->y) * mask->w + (x1 - mask->x);
+        const uint8_t *cover = mask->cover + (size_t)(y - mask->y) * mask->stride + (x1 - mask->x);
         uint16_t *out = strip + (size_t)(y - top) * APP_LCD_H_RES + x1;
         for (int x = 0; x < x2 - x1; ++x) {
             if (cover[x] == DRV_LCD_INK) {

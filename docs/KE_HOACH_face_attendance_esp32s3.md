@@ -2611,11 +2611,10 @@ public:
     virtual void on_enter() {}
     virtual void on_exit()  {}
     virtual bool on_touch(int x, int y, bool down) { return false; }   // true = vẽ lại
-    virtual void tick(uint32_t dt_ms) {}
-    virtual bool wants_video() const = 0;        // quyết định ai cầm panel
-    virtual void paint(Canvas& to) = 0;          // cover map, không phải lv_obj
+    virtual bool tick(uint32_t dt_ms, const Sight& seen) { return false; }
+    virtual void paint(Canvas& to, const Sight& seen) = 0;   // cover map, không phải lv_obj
 };
-// ScanScreen · ResultScreen · EnrollScreen · CaptureScreen · SettingsScreen
+// ScanScreen · MenuScreen · EnrolScreen · CaptureScreen · PeopleScreen · SettingsScreen
 class ScreenManager {
     Screen*  screens_[kScreenCount];   // dựng sẵn lúc boot, không tạo/hủy lúc chạy
     Screen*  cur_;
@@ -2636,10 +2635,17 @@ map ấy theo từng dải 48 dòng ngay trong vòng gom khung. Cái giá phải
 sách và nút bấm **tự viết**, mỗi thứ cỡ trăm dòng; cái được là không thêm thư viện, không thêm
 48 KB heap, và **không bao giờ có hai người ghi panel**.
 
-**Ai cầm panel do `wants_video()` quyết.** Màn có video (`Scan`, `Result`, `Capture`) thì
-`cam_task` vẽ khung rồi đè cover map của màn lên trong cùng một lượt; `ui_task` chỉ dựng map.
-Màn không video (`Enroll`, `Settings`) thì `ui_task` lấy `m_spi_lcd` và tự đẩy cả khung hình,
-còn `cam_task` bỏ qua bước vẽ — khung vẫn chạy cho `ai_task`, chỉ không lên kính.
+**Không ai bàn giao panel cho ai.** Ý đầu là màn không video thì `ui_task` lấy `m_spi_lcd` và
+tự đẩy khung hình — nhưng mỗi lần chuyển màn khi ấy là một lần đổi chủ giữa hai task đang chạy,
+đúng chỗ xé hình hay sinh ra. Thay vào đó **`cam_task` vẫn là người duy nhất ghi panel ở mọi
+màn**, và màn không video chỉ **tô kín nền vào cover map của chính nó** — video vẫn chạy dưới
+lớp ấy nhưng không thấy được. Cái giá là một lượt gửi SPI không ai nhìn; cái được là `m_spi_lcd`
+không bao giờ bị tranh và không có đường mã nào chuyển quyền lúc đang chạy.
+
+**Cover map gửi xuống theo hộp bao, không gửi cả màn.** `Canvas` nhớ hình chữ nhật nhỏ nhất
+chứa mọi ô khác 0; `drv_lcd_mask_t` mang thêm `stride` nên nó nhận thẳng một vùng con của bản
+đồ 320×480 mà không phải chép ra. Màn `Scan` chỉ đụng thanh trên, khung ngắm và dải dưới, nên
+mỗi khung chỉ quét đúng ngần ấy byte thay vì 153 KB.
 
 **Đường đi giữa các màn:**
 
@@ -2669,6 +2675,13 @@ Khung ngắm vì thế vẽ **đúng bằng ngưỡng ấy quy ra pixel panel**,
 preview lấy dải giữa 213 cột của khung 480 rồi kéo lên 320, tức hệ số 1,502 — nên 113 px khung
 là **170 px panel**. Khung ngắm rộng 176 px, cao 220 px, đặt giữa: ai lấp đầy nó thì chắc chắn
 qua cổng `face_min_px`, và đó là một lời hứa đo được chứ không phải một gợi ý.
+
+**Khung ngắm thay luôn hộp bám mặt.** Hộp vẽ theo đầu ra detect phải bám một khuôn mặt đang đi
+lại bằng một bộ so vân sáng chạy mỗi khung, và đo trên board 13/09 nó tốn **~2 fps** mà vẫn
+trượt khi người quay nhanh (§4.5.5h, đoạn `BoxTracker`). Khung ngắm **đứng yên** thì không có gì
+để trượt, không tốn phép tính nào, và nói được nhiều hơn: hộp bám chỉ nói "máy thấy anh", khung
+ngắm nói "đứng vào đây thì máy làm việc được". `BoxTracker` vì thế **ra khỏi đường vẽ**; mã giữ
+lại trong cây cho luồng nào cần bám thật (ví dụ nhiều người cùng khung ở E10-T7).
 
 Bốn trạng thái của khung, màu là thông tin chứ không phải trang trí:
 
