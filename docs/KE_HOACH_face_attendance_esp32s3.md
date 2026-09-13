@@ -1302,14 +1302,16 @@ thống kê **tần số thấp** nên phép thu nhỏ không xoá được. Lý
 **hai lần đường màu** — màn hình hoặc mực in, rồi cảm biến — và mỗi lần bóp dải màu, nên da
 mất bão hoà. Đây là dấu hiệu nhánh tight phải dựa vào ở độ phân giải này, không phải kết cấu.
 
-**Chuỗi augment đang bóp chính dấu hiệu ấy.** `photometric` đổi `contrast` trong 0,50–1,50
-và cân bằng trắng từng kênh trong 0,86–1,16; đo trên 2.000 bản ghi val, AUC của `sat_mean`
-tụt **0,8609 → 0,7185** sau augment. Hai việc phải làm, cả hai giữ nguyên 81×81 và không
-thêm một phép tính nào lúc suy luận: **thu hẹp hai dải ấy** về mức OV5640 thật sự tạo ra, và
-**thêm một kênh sắc độ** vào đầu vào để dấu hiệu không phải tự mò ra từ RGB (stem conv nhận
-4 kênh, thêm đúng một hàng trọng số). **Không** chốt độ bão hoà thành cổng cứng: trên OV5640
-hai lớp chồng ở 0,282–0,413 và biên chỉ 1,7%, nên cổng ấy chặn đúng một tấm ảnh chứ không
-chặn được một loại tấn công (§38.3).
+**Chuỗi augment bóp dấu hiệu ấy, nhưng nới nó ra thì hỏng.** `photometric` đổi `contrast`
+trong 0,50–1,50 và cân bằng trắng từng kênh trong 0,86–1,16; đo trên 2.000 bản ghi val, AUC
+của `sat_mean` tụt **0,8609 → 0,7185** sau augment. Thu hẹp hai dải ấy đã **chạy thử và bị
+bác** (§39): AUC rơi ở **cả ba miền**, riêng `phone_eval` sập 0,9838 → 0,5353 với hai phần ba
+nhóm mặt thật không qua nổi ngưỡng nào — dải rộng ấy **đang mua sự bền vững** chứ không chôn
+dấu hiệu. Đường còn lại chưa thử là **thêm một kênh sắc độ** vào đầu vào, để đại lượng ấy
+không phải tự mò ra từ RGB (stem conv nhận 4 kênh, thêm đúng một hàng trọng số) — nó đưa
+thẳng thông tin vào chứ không nới lỏng augment, nên §39 không nói gì về nó. **Không** chốt độ
+bão hoà thành cổng cứng: trên OV5640 hai lớp chồng ở 0,282–0,413 và biên chỉ 1,7%, nên cổng
+ấy chặn đúng một tấm ảnh chứ không chặn được một loại tấn công (§38.3).
 
 Đo trên checkpoint chưa có augment quang học, làm tối và bẹt tương phản chính những
 khung nó đang chấm đúng:
@@ -2567,6 +2569,12 @@ class FakeDoor  final : public IDoor { /* ghi lại lệnh cuối để test ki�
 
 Ba lớp nằm trong `priv_include/door.hpp`. Header công khai `svc_door.h` theo luật §4.5.3 chỉ có cú pháp C: handle mờ `svc_door_t`, `svc_door_servo()` trả về cửa thật dựng tĩnh một lần, `svc_door_fake()` trả về cửa giả, và ba hàm `svc_door_open / svc_door_close / svc_door_is_open` gọi vào bảng ảo bên dưới. `svc_attendance` chỉ thấy `svc_door_t`. `main/app_wiring.c` đưa `svc_door_servo()` vào; `test_apps` của `svc_attendance` đưa `svc_door_fake()` vào cùng chỗ để chạy máy trạng thái chấm công trên host, không cần board. Không có `Kconfig` chọn cơ cấu vì chỉ có một cơ cấu thật.
 
+**Đồng hồ giữ UTC, múi giờ là việc của tầng vẽ.** DS3231 và `sys_time_now_ms()` đều là UTC, nên
+một bản ghi chấm công mang đúng một mốc thời gian dù kiosk đứng ở đâu. Chuỗi POSIX nằm ở NVS
+`device/tz` (§6.2.1), `main` đọc rồi gọi `sys_time_set_zone()` — `sys_time` không tự đọc NVS
+được vì `sys_storage` cùng tầng L2 và §4.5.4 cấm phụ thuộc ngang tầng. Thiếu khoá thì rơi về
+`CONFIG_SYS_TIME_TZ`: một kiosk hiện sai giờ 7 tiếng còn tệ hơn một kiosk không boot.
+
 `ServoDoor::open(hold_ms)` quay tới `APP_DOOR_OPEN_DEG` và đặt một `esp_timer` one-shot; hết `hold_ms` thì `close()` quay về `APP_DOOR_CLOSED_DEG`, rồi sau khi tay đã tới (SG90: 0,1 s/60°) gọi `drv_servo_release()` để motor không giữ dòng. `open()` trong lúc đang mở chỉ gia hạn giờ đóng. Trạng thái được một mutex có timeout bảo vệ vì `attend_task` và task của `esp_timer` cùng đụng vào.
 
 ##### f) `svc_attendance` — máy trạng thái bảng, **cố ý không dùng State pattern**
@@ -3359,7 +3367,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | Namespace | Key | Kiểu | Ghi chú |
 |---|---|---|---|
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
-| `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_host`, `mqtt_port`, `mqtt_user`, `mqtt_pass`, `sntp_host` | str / u32 | token xoay vòng khi còn 7 ngày; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code |
+| `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_host`, `mqtt_port`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz` | str / u32 | token xoay vòng khi còn 7 ngày; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt |
