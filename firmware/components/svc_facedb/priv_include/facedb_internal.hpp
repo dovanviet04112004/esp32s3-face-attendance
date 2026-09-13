@@ -106,6 +106,8 @@ private:
     CosineLinearMatcher matcher_;
     IPersist &store_;
     SemaphoreHandle_t mutex_ = nullptr;
+    // Lock order: m_facedb_io -> m_facedb (KEHOACH 5.3).
+    SemaphoreHandle_t io_mutex_ = nullptr;
     size_t active_ = 0;
 };
 

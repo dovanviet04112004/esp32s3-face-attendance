@@ -24,9 +24,14 @@
 #define STRANGER_CEILING 0.5f
 #define QUALITY 200
 #define SCALE 0.0123f
+#define PERSIST_TASK_STACK_BYTES 4096
+#define PROBE_GAP_MS 50
+#define PROBES_DURING_SAVE 10
 
 static int8_t s_emb[STORAGE_EMBED_DIM];
 static int8_t s_damaged[STORAGE_EMBED_DIM];
+static TaskHandle_t s_waiter;
+static esp_err_t s_persist_err;
 
 static uint32_t seed_of(uint32_t employee_id, uint16_t idx)
 {
@@ -179,6 +184,39 @@ TEST_CASE("persist writes the whole table and the file on flash agrees with it",
     TEST_ASSERT_EQUAL(ENROLLED, head.record_count);
     TEST_ASSERT_EQUAL(sizeof(head) + ENROLLED * sizeof(storage_face_record_t), size);
     printf("main task stack left %u bytes\n", (unsigned)uxTaskGetStackHighWaterMark(NULL));
+}
+
+static void persist_task(void *arg)
+{
+    (void)arg;
+    s_persist_err = svc_facedb_persist();
+    xTaskNotifyGive(s_waiter);
+    vTaskDelete(NULL);
+}
+
+TEST_CASE("a lookup keeps answering while the table is written to flash", "[svc_facedb]")
+{
+    s_waiter = xTaskGetCurrentTaskHandle();
+    s_persist_err = ESP_FAIL;
+    TEST_ASSERT_EQUAL(pdPASS, xTaskCreate(persist_task, "persist", PERSIST_TASK_STACK_BYTES, NULL,
+                                          uxTaskPriorityGet(NULL), NULL));
+    svc_facedb_match_t match;
+    int64_t worst_us = 0;
+    int probes = 0;
+    while (ulTaskNotifyTake(pdTRUE, 0) == 0) {
+        synth(seed_of(PROBE_ID, PROBE_IDX), s_emb);
+        const int64_t t0 = esp_timer_get_time();
+        const esp_err_t err = svc_facedb_lookup(s_emb, SCALE, &match);
+        const int64_t took_us = esp_timer_get_time() - t0;
+        TEST_ASSERT_EQUAL(ESP_OK, err);
+        TEST_ASSERT_EQUAL(PROBE_ID, match.employee_id);
+        worst_us = took_us > worst_us ? took_us : worst_us;
+        ++probes;
+        vTaskDelay(pdMS_TO_TICKS(PROBE_GAP_MS));
+    }
+    printf("%d lookups during the save, worst %lld us\n", probes, worst_us);
+    TEST_ASSERT_EQUAL(ESP_OK, s_persist_err);
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(PROBES_DURING_SAVE, probes);
 }
 
 void app_main(void)

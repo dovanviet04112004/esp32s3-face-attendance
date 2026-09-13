@@ -15,6 +15,8 @@ namespace {
 const char *TAG = "svc_facedb";
 
 constexpr uint32_t kLockMs = 200;
+// A writer queues behind a 1.8-2.3 s save of the whole table (KEHOACH 6.2.4).
+constexpr uint32_t kIoLockMs = 4000;
 constexpr size_t kImageAlign = 16;
 constexpr size_t kHeaderCrcBytes = offsetof(storage_file_header_t, crc32);
 constexpr size_t kRecordCrcBytes = offsetof(storage_face_record_t, crc32);
@@ -84,7 +86,8 @@ esp_err_t FaceDb::init(size_t capacity) noexcept
     }
     APP_RETURN_ON_ERR(table_.reserve(capacity), TAG, "table");
     mutex_ = xSemaphoreCreateMutex();
-    if (mutex_ == nullptr) {
+    io_mutex_ = xSemaphoreCreateMutex();
+    if (mutex_ == nullptr || io_mutex_ == nullptr) {
         return ESP_ERR_NO_MEM;
     }
     const esp_err_t loaded = load();
@@ -158,6 +161,10 @@ esp_err_t FaceDb::enroll(uint32_t employee_id, uint16_t template_idx, uint8_t qu
     if (emb == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
+    app::LockGuard io(io_mutex_, kIoLockMs);
+    if (!io.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
     app::LockGuard lock(mutex_, kLockMs);
     if (!lock.held()) {
         return ESP_ERR_TIMEOUT;
@@ -197,6 +204,10 @@ esp_err_t FaceDb::enroll(uint32_t employee_id, uint16_t template_idx, uint8_t qu
 
 esp_err_t FaceDb::remove(uint32_t employee_id) noexcept
 {
+    app::LockGuard io(io_mutex_, kIoLockMs);
+    if (!io.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
     app::LockGuard lock(mutex_, kLockMs);
     if (!lock.held()) {
         return ESP_ERR_TIMEOUT;
@@ -216,16 +227,25 @@ esp_err_t FaceDb::remove(uint32_t employee_id) noexcept
 
 esp_err_t FaceDb::persist() noexcept
 {
-    app::LockGuard lock(mutex_, kLockMs);
-    if (!lock.held()) {
+    app::LockGuard io(io_mutex_, kIoLockMs);
+    if (!io.held()) {
         return ESP_ERR_TIMEOUT;
     }
-    const size_t dead = table_.count() - active_;
-    if (dead * 100 > table_.count() * kCompactDeadPercent) {
-        compact();
+    size_t bytes = 0;
+    {
+        app::LockGuard lock(mutex_, kLockMs);
+        if (!lock.held()) {
+            return ESP_ERR_TIMEOUT;
+        }
+        const size_t dead = table_.count() - active_;
+        if (dead * 100 > table_.count() * kCompactDeadPercent) {
+            compact();
+        }
+        seal_header();
+        bytes = table_.image_bytes();
     }
-    seal_header();
-    return store_.save(table_.image(), table_.image_bytes());
+    // m_facedb_io alone covers the save, so a lookup never waits on it (KEHOACH 5.3).
+    return store_.save(table_.image(), bytes);
 }
 
 void FaceDb::compact() noexcept

@@ -3088,6 +3088,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
 | **`m_spi_lcd`** | Mutex | — | `ui_task`, `ota_task` (màn hình tiến trình) | — | 1 bus SPI, tránh xé khung hình |
 | **`m_facedb`** | Mutex | — | `ai_task` (đọc), `mqtt_task` (ghi khi enroll) | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
+| **`m_facedb_io`** | Mutex | — | `mqtt_task` / `ui_task` (mọi đường ghi bảng) | — | Ghi 552 KB xuống LittleFS mất 1,8–2,3 s, mà `m_facedb` chỉ chờ 200 ms: giữ `m_facedb` suốt phép ghi thì `lookup` hết giờ và người thật bị từ chối. Khoá này xếp hàng **người ghi với người ghi**, để phép ghi dài chạy ngoài `m_facedb` mà ảnh bảng vẫn không bị sửa giữa chừng |
 | **`m_littlefs`** | Mutex | — | `attend_task`, `sync_task`, `ota_task`, `audio_task` | — | LittleFS không thread-safe mặc định |
 | `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
 | `s_bounce_free` | Counting semaphore, **2 suất** | — | callback `esp_lcd` | `drv_lcd` | Đệm bounce được trả lại thì mới nạp lượt sau. Có hai đệm nên phải đếm được hai suất: binary chỉ giữ được một, đệm rỗi thứ hai sẽ nằm không. Callback **trả** cờ yield cho `esp_lcd` tự nhường, không tự gọi `portYIELD_FROM_ISR` |
@@ -3115,7 +3116,13 @@ nhất thấy đủ để dựng chúng là tầng nối dây ở L7 (§4.5.4 lu
 - Mutex **không dùng được** trong ISR — cần khoá thì dùng `portMUX_TYPE` + `portENTER_CRITICAL_ISR`.
 
 **Quy tắc chống deadlock**
-Thứ tự lấy khoá cố định trên toàn dự án: `m_facedb` → `m_littlefs` → `m_i2c` → `m_spi_lcd`. Không bao giờ lấy ngược. Mọi `xSemaphoreTake` đều có timeout, không dùng `portMAX_DELAY` cho mutex.
+Thứ tự lấy khoá cố định trên toàn dự án: `m_facedb_io` → `m_facedb` → `m_littlefs` → `m_i2c` → `m_spi_lcd`. Không bao giờ lấy ngược. Mọi `xSemaphoreTake` đều có timeout, không dùng `portMAX_DELAY` cho mutex.
+
+**Vùng khoá của `m_facedb` phải ngắn hơn hạn chờ của chính nó.** `lookup` chờ 200 ms, nên mọi
+đường giữ `m_facedb` lâu hơn thế đều là lỗi, kể cả khi thứ tự khoá đúng. Phép ghi bảng xuống
+flash là đường duy nhất như vậy, và nó ra ngoài bằng `m_facedb_io`: lấy `m_facedb_io`, lấy
+`m_facedb` đúng lúc nén và đóng dấu header rồi thả ngay, ghi flash dưới một mình `m_facedb_io`.
+Người ghi khác chờ ở cửa `m_facedb_io`; `ai_task` không chờ gì cả.
 
 ---
 

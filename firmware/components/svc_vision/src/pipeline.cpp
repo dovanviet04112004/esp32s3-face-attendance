@@ -139,6 +139,10 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     uint32_t employee_id = 0;
     float score = -1.0f;
     const esp_err_t found = matcher_.best(embedding_, scale, &employee_id, &score);
+    // A table that never answered is not a verdict about this face (KEHOACH 5.3).
+    if (found != ESP_OK && found != ESP_ERR_NOT_FOUND) {
+        return;
+    }
     out.match_score = score;
     matched_ = found == ESP_OK && score >= thresholds_.match_min_score;
     since_verdict_ = 0;
