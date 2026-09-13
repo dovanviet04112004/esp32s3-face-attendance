@@ -2077,3 +2077,78 @@ là lý do §4.2 của `CLAUDE.md` bắt so bằng **accuracy sau INT8 trên `te
 21 khung giả vẫn đến từ **một ảnh thẻ, một cự ly, một mức sáng**: APCER 0,0952 nghĩa là đúng
 2 khung lọt, nên con số ấy còn rộng. 64 khung thật đến từ **một người**. Điểm ở đây là **float**;
 sau INT8 phổ điểm sẽ dịch, nên ngưỡng chỉ chốt được sau khi export và chấm lại trên board.
+
+---
+
+## 37. Bốn đường đã thử và loại, cho cùng một đòn tấn công — 13/09
+
+§34 và §36 chốt rằng ảnh chân dung chụp lại qua OV5640 lọt qua nhánh chống giả. Mục này ghi
+bốn đường đã thử để bịt, và vì sao từng đường **không dùng được** — để lần sau không ai mất
+công đi lại.
+
+### 37.1 Nâng ngưỡng — loại
+
+Không có điểm vận hành nào: 0,90 không chặn thêm khung nào so với 0,75, còn 0,99 thì §9 đã đo
+một mặt **thật** trên board chấm 0,9936 và §12.4 đo BPCER 12–18% quanh vùng đó (§34.2).
+
+### 37.2 Quay lại model hai backbone — loại
+
+Trên miền thiết bị nó thắng rõ (§36: AUC 0,9449 so với 0,6510). Nhưng chấm nó lên **chính 111
+khung của §22**:
+
+| | `1538` hai nhánh | `0107` một nhánh (đang nạp) |
+|---|---|---|
+| `live_rat_xa` qua @0,50 | **0/20** | 20/20 |
+| `live_vua` qua @0,50 | **0/12** | 12/12 |
+| `live_xa` qua @0,50 | 1/20 | 19/20 |
+| BPCER @0,50 | **0,671** | 0,013 |
+| AUC | 0,629 | **0,984** |
+
+Nó **từ chối 2/3 người thật**, đúng cơ chế §22 đã chứng minh nhân quả: nhánh wide phán theo nền.
+Ảnh thẻ nền trắng phẳng mép sắc bị chặn là **trúng do tình cờ**, cùng cơ chế bắn nhầm vào người
+thật đứng trước cửa gỗ. Đổi một lỗ hổng lấy một lỗ hổng lớn hơn.
+
+### 37.3 Cổng trên cho cỡ mặt — loại
+
+21/21 khung tấn công nằm ở 193–239 px, trên trần 191 px của dải §3, còn 7 khung mặt thật cùng
+buổi nằm ở 147–180 px. Nhưng tiền đề "bản sao thì nhỏ về vật lý nên phải dí sát" **sai**: thử
+lại bằng ảnh mở trên màn PC, mặt rơi đúng giữa dải hợp lệ và vẫn được chấm. Kẻ tấn công chọn cả
+cự ly lẫn cỡ bản sao, nên cổng hình học chỉ đuổi nó sang một cự ly khác.
+
+### 37.4 Thêm NUAA vào tập train — loại vì đã giải xong
+
+Model hiện tại chấm NUAA (ảnh in, webcam 2010) ở **AUC 0,9992, APCER 0,0006**, và AxonData cho
+replay mobile 0,0125 / replay display 0,0667. **Tấn công phẳng trên camera khác đều bị chặn.**
+Vấn đề không phải lớp tấn công chưa được học.
+
+### 37.5 Làm sắc ảnh trước khi vào model — loại, và nó đi ngược
+
+Nhìn bằng mắt thì khác biệt rất rõ: phóng to vùng trán, khung tấn công **phẳng như sáp**, không
+sợi tóc không vi cấu trúc; khung mặt thật có cả hai. Nhưng quét unsharp mask r2 trên cả bộ:
+
+| Mức | Ảnh giả chặn @0,50 | APCER | AUC |
+|---|---|---|---|
+| không | 2/21 | 0,905 | 0,651 |
+| +100% | 1/21 | 0,952 | 0,631 |
+| +200% | 1/21 | 0,952 | 0,592 |
+| +350% | **0/21** | **1,000** | **0,545** |
+
+Đơn điệu và ngược chiều: thêm tần số cao thì model càng đọc ra "thật".
+
+### 37.6 Điều bốn phép thử này gộp lại chỉ ra
+
+Đầu vào của nhánh là **81×81**. Mặt tấn công 195 px và mặt thật 150 px đều bị thu về ngần ấy,
+nên **mọi vi cấu trúc mà mắt dùng để phân biệt đã bị xoá trước khi model nhìn thấy**. Cái còn
+lại ở 81×81 là dấu hiệu thô — màu, ánh sáng, bố cục, kiểu cảnh — và ở mức thô ấy một chân dung
+studio chụp lại **không khác** một khuôn mặt thật. §22.3 đã đo đúng cơ chế đó từ phía dữ liệu:
+lớp thật của CelebA-Spoof là ảnh sự kiện người nổi tiếng, lớp giả là người cầm ảnh trong phòng
+thường, nên model học **kiểu cảnh** chứ không học độ sống.
+
+Hai đường còn lại, cả hai đều tốn một lần train và chưa thử:
+
+1. **Ngẫu nhiên hoá độ nét/độ nhoè khi train.** Danh sách augment hiện có crop, che, quang học,
+   chất lượng JPEG, xoay, tịnh tiến — **không có làm mờ**. Model chưa bao giờ bị buộc phải bất
+   biến với độ nét, nên nó được phép dùng độ nét làm dấu hiệu lớp.
+2. **Nâng độ phân giải đầu vào** khỏi 81×81 để vi cấu trúc sống sót. Đổi kiến trúc, đổi arena,
+   và §8 của `latency.md` cho thấy nhánh này đã tốn 234 ms — nâng cạnh lên 128 là nhân ~2,5 lần
+   số phép tính.
