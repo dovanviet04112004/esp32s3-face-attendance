@@ -3173,10 +3173,22 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
 | `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_host`, `mqtt_port`, `mqtt_user`, `mqtt_pass`, `sntp_host` | str / u32 | token xoay vòng khi còn 7 ngày; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
-| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8) | | `boot_count` dùng sinh `local_id`; `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5) |
+| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt |
 | `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `present_mm` (u32, mm) | | bốn ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
+
+**Gieo một lần là không đủ: bộ gieo phải có số hiệu.** Luật "boot đầu gieo, sau đó NVS sở hữu"
+đúng cho giá trị người vận hành đã đặt, nhưng nó khoá luôn cả những thiết bị **chưa ai đặt gì**:
+một phép đo mới đổi `Kconfig` thì thiết bị đã boot một lần vẫn giữ số cũ, im lặng, mãi mãi.
+Đây không phải giả định — board dev giữ `vision.live_min` = 500‰ suốt từ trước E8-T12 trong khi
+firmware gieo 750‰, tức ngưỡng chống giả mạo thấp hơn số đo được **250‰** mà không log nào kêu.
+
+Nên `main` giữ một hằng `APP_SEED_VER` cạnh bảng gieo và so với `sys.seed_ver` của thiết bị:
+thiếu khoá hoặc số của thiết bị nhỏ hơn thì **gieo đè toàn bộ bảng** rồi ghi số mới; bằng nhau
+thì giữ nguyên đúng như luật cũ. Nâng `APP_SEED_VER` là cách duy nhất một phép đo mới đi tới
+thiết bị đã chạy, và cái giá của nó là **mọi giá trị `SET_CONFIG` đã đặt bị ghi đè một lần** —
+vì vậy chỉ nâng khi con số trong `Kconfig` thật sự đổi, không nâng theo phiên bản firmware.
 
 **Không để dữ liệu sinh trắc trong NVS.** NVS là key-value nhỏ, ghi nhiều sẽ mòn; embedding nằm ở LittleFS.
 

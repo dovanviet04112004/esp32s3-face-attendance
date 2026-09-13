@@ -24,6 +24,10 @@
 static const char *TAG = "app_boot";
 
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
+#define NVS_SEED_VER "seed_ver"
+// Raise only when a seed below changes, and read KEHOACH 6.2.1 first: it
+// overwrites whatever SET_CONFIG had put there.
+#define APP_SEED_VER 1
 #define NVS_DETECT_MIN "detect_min"
 #define NVS_LIVE_MIN "live_min"
 #define NVS_MATCH_MIN "match_min"
@@ -61,18 +65,26 @@ static bool rtc_ntp_marker(void)
     return sys_storage_get_u32(STORAGE_NS_SYS, NVS_RTC_NTP_SET, &marker) == ESP_OK && marker != 0;
 }
 
-// KEHOACH 6.2.1: a threshold is seeded once and owned by NVS afterwards, so a
-// firmware update never walks over a value SET_CONFIG owns.
+// KEHOACH 6.2.1: NVS owns a threshold once it is seeded, and only a seed
+// version the device has not reached yet may write over that.
 static void seed_settings(void)
 {
+    uint32_t device_ver = 0;
+    const bool stale = sys_storage_get_u32(STORAGE_NS_SYS, NVS_SEED_VER, &device_ver) != ESP_OK ||
+                       device_ver < APP_SEED_VER;
     for (size_t i = 0; i < sizeof(kSeeds) / sizeof(kSeeds[0]); ++i) {
         uint32_t stored = 0;
-        if (sys_storage_get_u32(kSeeds[i].ns, kSeeds[i].key, &stored) == ESP_OK) {
+        const bool present = sys_storage_get_u32(kSeeds[i].ns, kSeeds[i].key, &stored) == ESP_OK;
+        if (present && (!stale || stored == kSeeds[i].seed)) {
             continue;
         }
         const esp_err_t err = sys_storage_set_u32(kSeeds[i].ns, kSeeds[i].key, kSeeds[i].seed);
-        ESP_LOGI(TAG, "%s/%s seeded %" PRIu32 ": %s", kSeeds[i].ns, kSeeds[i].key, kSeeds[i].seed,
-                 esp_err_to_name(err));
+        ESP_LOGW(TAG, "%s/%s %" PRIu32 " to seed %" PRIu32 ": %s", kSeeds[i].ns, kSeeds[i].key,
+                 present ? stored : 0, kSeeds[i].seed, esp_err_to_name(err));
+    }
+    if (stale) {
+        ESP_LOGI(TAG, "seed set %" PRIu32 " to %d", device_ver, APP_SEED_VER);
+        sys_storage_set_u32(STORAGE_NS_SYS, NVS_SEED_VER, APP_SEED_VER);
     }
 }
 
