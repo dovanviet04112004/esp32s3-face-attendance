@@ -2179,8 +2179,6 @@ dependencies:
   espressif/esp-nn: "^1.3.2"
   espressif/esp_lcd_st7796: "^1.3"
   espressif/esp_lcd_touch_gt911: "^1.1"
-  espressif/esp_lvgl_port: "^2.4"
-  lvgl/lvgl: "^9.2"
   joltwallet/littlefs: "^1.16"
 ```
 `espressif/esp_lcd_st7796` có trên registry (đã kéo về bản 1.4.0), nên `drv_lcd` gọi nó chứ không tự viết panel driver.
@@ -2260,7 +2258,7 @@ firmware/
 │   ├── svc_vision/        [C++]  L4  # detect mỗi khung, chuỗi spoof → recog khi mặt ổn định (§4.5.5d)
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
 │   ├── svc_sync/          [C++]  L5  # hàng đợi offline → MQTT
-│   └── ui_kiosk/          [C++]  L6  # LVGL screens + bộ bám hộp preview (§4.5.5h)
+│   └── ui_kiosk/          [C++]  L6  # 5 màn hình vẽ thẳng lên panel + bộ bám hộp (§4.5.5h)
 │
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
@@ -2339,7 +2337,7 @@ Quy tắc header:
 | L4 | `svc_vision` | C++ | `common`, `ai_engine`, `svc_facedb`, `drv_camera` |
 | L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_facedb`, `sys_storage`, `sys_time`, `svc_door`, `drv_audio` |
 | L5 | `svc_sync` | C++ | `common`, `sys_storage`, `net_mqtt` |
-| L6 | `ui_kiosk` | C++ | `common`, `drv_lcd`, `drv_touch`, `lvgl`, `esp_lvgl_port` |
+| L6 | `ui_kiosk` | C++ | `common`, `bsp_board`, `drv_lcd`, `drv_touch`, `sys_storage` |
 | L7 | `main` | C | tất cả |
 
 **Ba quy tắc bất di bất dịch:**
@@ -2608,16 +2606,16 @@ class FaceDb {
 
 ```cpp
 class Screen {
-protected:
-    lv_obj_t* root_ = nullptr;
 public:
     virtual ~Screen() = default;
-    virtual void on_enter()                    = 0;
-    virtual void on_exit()                     = 0;
-    virtual void on_event(const AppEvent& e)   = 0;
-    virtual void tick(uint32_t dt_ms)          {}
+    virtual void on_enter() {}
+    virtual void on_exit()  {}
+    virtual bool on_touch(int x, int y, bool down) { return false; }   // true = vẽ lại
+    virtual void tick(uint32_t dt_ms) {}
+    virtual bool wants_video() const = 0;        // quyết định ai cầm panel
+    virtual void paint(Canvas& to) = 0;          // cover map, không phải lv_obj
 };
-// IdleScreen · ScanScreen · ResultScreen · EnrollScreen · SettingsScreen
+// ScanScreen · ResultScreen · EnrollScreen · CaptureScreen · SettingsScreen
 class ScreenManager {
     Screen*  screens_[kScreenCount];   // dựng sẵn lúc boot, không tạo/hủy lúc chạy
     Screen*  cur_;
@@ -2627,6 +2625,35 @@ public:
 ```
 
 Năm màn hình cùng vòng đời, thêm màn hình mới không đụng `ScreenManager`. Đây là chỗ virtual đáng giá nhất và cũng rẻ nhất (mỗi lần chuyển màn mới gọi 1 lần).
+
+**Không dùng LVGL, và đó là hệ quả của chính đoạn dưới.** §4.5.5h đã chốt vùng preview vẽ
+thẳng, không qua LVGL — mà **màn hình chính của kiosk chính là preview**. Để LVGL vào thì hai
+bộ vẽ cùng ghi một panel SPI, đúng thứ `m_spi_lcd` sinh ra để chặn, và mỗi lần chuyển màn là
+một lần bàn giao panel — chỗ mà xé hình hay quay lại. Nên cả năm màn dùng **một bộ vẽ duy
+nhất**: `Canvas` là một **cover map 1 byte mỗi pixel** (0 = để lọt video, `INK` / `EDGE` /
+`ACCENT` = màu), chữ lấy từ bảng glyph 1bpp `assets/fonts/` sinh sẵn từ TTF, và `drv_lcd` cắt
+map ấy theo từng dải 48 dòng ngay trong vòng gom khung. Cái giá phải trả là bàn phím, danh
+sách và nút bấm **tự viết**, mỗi thứ cỡ trăm dòng; cái được là không thêm thư viện, không thêm
+48 KB heap, và **không bao giờ có hai người ghi panel**.
+
+**Ai cầm panel do `wants_video()` quyết.** Màn có video (`Scan`, `Result`, `Capture`) thì
+`cam_task` vẽ khung rồi đè cover map của màn lên trong cùng một lượt; `ui_task` chỉ dựng map.
+Màn không video (`Enroll`, `Settings`) thì `ui_task` lấy `m_spi_lcd` và tự đẩy cả khung hình,
+còn `cam_task` bỏ qua bước vẽ — khung vẫn chạy cho `ai_task`, chỉ không lên kính.
+
+**Đường đi giữa các màn:**
+
+```
+Scan ──"Thêm người"──> Enroll ──gõ tên, OK──> Capture ──đủ mẫu──> Result("Đã thêm") ──> Scan
+  │                       │                      │
+  └──"Cài đặt"──> Settings└──────Huỷ─────────────┘
+```
+
+`Enroll` là màn **bàn phím**: một ô tên, lưới chữ A–Z cộng phím cách, xoá và OK. Bàn phím chỉ
+gõ **chữ không dấu** — bộ gõ tiếng Việt là một hệ thống riêng, không phải việc của kiosk; tên
+đủ dấu đi vào bằng `SET_CONFIG` từ server (§6.2.1) hoặc luồng đăng ký trên web. `CaptureScreen`
+gọi `svc_vision_enrol_next()` rồi đứng chờ chính `MATCH` của người vừa thêm, nên "thêm thành
+công" là câu nói sau khi máy **đã nhận lại được**, không phải sau khi ghi xong file.
 
 **Hộp mặt trên preview bám theo khung hình, không bám theo nhịp detect.** Detect ra hộp 3–4 lần/giây và im hẳn 0,93 s trong lúc spoof + recog chạy (§4.5.5d); vẽ hộp theo nhịp đó là hộp khựng. `BoxTracker` (`src/box_tracker.cpp`) nhận hộp mới từ `svc_vision`, lấy một mẫu độ sáng **24×24 điểm bám** dưới tâm hộp — mỗi điểm bám là một pixel khung lấy cách 2 (nửa độ phân giải), tức mẫu phủ 48×48 px khung — rồi trên mỗi khung preview (core 0) đổi cửa sổ 56×56 điểm bám quanh vị trí cũ sang độ sáng một lần, quét **thô rồi tinh** trong bán kính ±16 điểm bám (**±32 px khung**) bằng tổng sai tuyệt đối trên 576 điểm: 17×17 = 289 vị trí cách nhau 2 điểm bám, rồi 3×3 vị trí sát quanh chỗ thắng — **298 phép so, đúng bằng số phép so của lưới dày cũ mà phủ gấp bốn diện tích**. Mỗi phép so **bỏ dở ngay giữa chừng** khi tổng đã vượt chỗ tốt nhất đang giữ, và phần lớn vị trí vượt ngay từ vài hàng đầu. Ba luật giữ nó không nói dối: chỉ dịch khi khớp **tốt hơn đứng yên**; sai lệch trung bình trên 48 mức/điểm là mất dấu, hộp đứng lại; mẫu phẳng (độ tương phản dưới 24 mức) không bám. Hộp mới từ detect **thay thế** hộp đang bám, nên sai số không tích luỹ quá một chu kỳ detect. **Đo trên board 13/09, không phải 1–2 ms như ước lượng cũ**: nối bộ bám vào `cam_task` kéo preview **13,2 → 9,5 fps**, tức ~29 ms mỗi khung ở profile `dev` (`-Og`). Thoát sớm trong phép so đưa về **11,2–12,9 fps**. Bài học: lưới 289 vị trí × 576 điểm là 166 nghìn phép trừ mỗi khung, và ước lượng 1–2 ms cho ngần ấy việc ở `-Og` là sai một bậc. Bộ bám không phát hiện mặt mới và không đưa gì về đường model: nó chỉ là cách mắt không thấy giật mà kết quả chấm công không chậm thêm một mili giây nào. Kết quả chấm công vẽ đè lên khung preview trong cùng đường này, không qua LVGL cho vùng preview.
 
@@ -3083,7 +3110,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Đọc WAV từ LittleFS → `i2s_channel_write` |
 | `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt GPIO14 | Đọc GT911 → `q_touch` |
 | **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
-| `ui_task` | `ui_kiosk` | 0 | 4 | 8 KB (+ LVGL heap ở PSRAM) | tick 20 ms | `lv_timer_handler()`, dựng ảnh overlay cho `cam_task`, xử lý `q_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
+| `ui_task` | `ui_kiosk` | 0 | 4 | 8 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, xử lý `q_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota` | 0 | 3 | 8 KB | khi có lệnh `down/ota` | Tải firmware / models, verify sha256, ghi partition |
@@ -3483,7 +3510,7 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 | Bảng embedding (500 người × 512 chiều) | 1 MB nếu float32 — **256 KB nếu int8** | **PSRAM** (cache) + `storage` (bản gốc) | `MALLOC_CAP_SPIRAM` | Cosine search quét toàn bảng → phải ở RAM. **Khuyến nghị int8 + scale**, mất < 0.3% accuracy |
 | Log chấm công offline | tới 4 MB | **Flash LittleFS** | append-only | Chịu được mất điện |
 | Cert TLS + device JWT | ~4 KB | **NVS mã hoá** | `nvs_flash` + NVS encryption | |
-| LVGL heap | 48 KB | **PSRAM** | `LV_MEM_CUSTOM = 1` → `heap_caps_malloc` | LVGL không cần tốc độ RAM nội |
+| Cover map của `ui_kiosk` | 320×104 + 168×46 + 320×480 (màn không video) | **PSRAM** | `heap_caps_malloc` | 1 byte mỗi pixel: 0 để lọt video, còn lại là mực / viền / nhấn (§4.5.5h) |
 | Wi-Fi + lwIP buffer | ~55 KB | **SRAM (bắt buộc)** | IDF tự quản | Không thể để PSRAM |
 | Stack 10 task | ~53 KB | **SRAM (bắt buộc)** | FreeRTOS | |
 
