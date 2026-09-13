@@ -158,18 +158,42 @@ TEST_CASE("granted walks to cooldown and back to idle on its own", "[svc_attenda
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_IDLE, svc_attendance_state());
 }
 
+TEST_CASE("a match while idle grants on the spot", "[svc_attendance]")
+{
+    machine_up(true);
+    back_to_idle();
+    svc_door_close(svc_door_fake());
+    feed(SVC_VISION_MATCH, EMPLOYEE_B, LIVE_SCORE);
+    printf("match straight out of idle left state %d\n", (int)svc_attendance_state());
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    TEST_ASSERT_TRUE(svc_door_is_open(svc_door_fake()));
+}
+
+TEST_CASE("the refusal hold does not swallow the match behind it", "[svc_attendance]")
+{
+    machine_up(true);
+    back_to_idle();
+    svc_door_close(svc_door_fake());
+    feed(SVC_VISION_UNKNOWN, 0, LIVE_SCORE);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_DENIED, svc_attendance_state());
+    s_now_ms += DENY_HOLD_MS / 2;
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    TEST_ASSERT_TRUE(svc_door_is_open(svc_door_fake()));
+}
+
 TEST_CASE("an event with no row in this state is dropped", "[svc_attendance]")
 {
     machine_up(true);
     back_to_idle();
     const uint32_t before = svc_attendance_records();
-    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
-    printf("match while idle left state %d\n", (int)svc_attendance_state());
+    feed(SVC_VISION_NO_FACE, 0, LIVE_SCORE);
+    printf("no face while idle left state %d\n", (int)svc_attendance_state());
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_IDLE, svc_attendance_state());
-    TEST_ASSERT_EQUAL(before, svc_attendance_records());
     const svc_vision_result_t nothing = event_of(SVC_VISION_NONE, 0, LIVE_SCORE);
     TEST_ASSERT_EQUAL(ESP_OK, svc_attendance_on_vision(&nothing, s_now_ms));
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_IDLE, svc_attendance_state());
+    TEST_ASSERT_EQUAL(before, svc_attendance_records());
 }
 
 void app_main(void)

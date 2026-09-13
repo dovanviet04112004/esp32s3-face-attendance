@@ -6,11 +6,11 @@ namespace {
 
 constexpr Transition kTable[] = {
     { St::Idle, Ev::PresenceOn, St::Detecting, Act::Watch },
-    // A face reopens the machine too: PresenceOn is an edge (KEHOACH 4.5.5f).
+    // A verdict reopens the machine and is acted on here (KEHOACH 4.5.5f).
     { St::Idle, Ev::FaceSmall, St::Detecting, Act::Watch },
-    { St::Idle, Ev::Spoof, St::Detecting, Act::Watch },
-    { St::Idle, Ev::Unknown, St::Detecting, Act::Watch },
-    { St::Idle, Ev::Match, St::Detecting, Act::Watch },
+    { St::Idle, Ev::Spoof, St::Denied, Act::Refuse },
+    { St::Idle, Ev::Unknown, St::Denied, Act::Refuse },
+    { St::Idle, Ev::Match, St::Granted, Act::Grant },
     { St::Detecting, Ev::FaceSmall, St::Detecting, Act::None },
     { St::Detecting, Ev::Match, St::Granted, Act::Grant },
     { St::Detecting, Ev::Spoof, St::Denied, Act::Refuse },
@@ -22,7 +22,9 @@ constexpr Transition kTable[] = {
     { St::Verifying, Ev::Unknown, St::Denied, Act::Refuse },
     { St::Verifying, Ev::Timeout, St::Detecting, Act::None },
     { St::Granted, Ev::Timeout, St::Cooldown, Act::Rest },
+    { St::Denied, Ev::Match, St::Granted, Act::Grant },
     { St::Denied, Ev::Timeout, St::Cooldown, Act::Rest },
+    { St::Cooldown, Ev::Match, St::Granted, Act::Grant },
     { St::Cooldown, Ev::Timeout, St::Idle, Act::None },
     { St::Cooldown, Ev::PresenceOff, St::Idle, Act::None },
 };
