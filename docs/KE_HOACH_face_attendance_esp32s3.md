@@ -3238,7 +3238,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 |---|---|---|---|---|---|---|
 | `cam_task` | `drv_camera` | 0 | 7 | 4 KB | mỗi frame (~15 fps) | `esp_camera_fb_get()` → vẽ preview kèm overlay của `ui_kiosk` → đẩy con trỏ vào `q_frame_ai` (overwrite) |
 | `tof_task` | `drv_tof` | 0 | 6 | 3 KB | ngắt GPIO3 / poll 100 ms | Đọc khoảng cách → phát `EVT_PRESENCE_ON/OFF`, đánh thức hệ thống |
-| `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Đọc WAV từ LittleFS → `i2s_channel_write` |
+| `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Nạp `snd/ok.wav` từ partition `assets` **một lần lúc lên**, giữ PCM trong PSRAM rồi phát khi có `APP_SOUND_OK`: mở cửa xong không phải đọc file |
 | `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt GPIO14 | Đọc GT911 → `q_touch` |
 | **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
 | `ui_task` | `ui_kiosk` | 0 | 4 | 8 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, xử lý `q_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
@@ -3619,12 +3619,14 @@ Ba hệ quả bắt buộc:
 
 ```
 /assets
-├── font/{noto_vn_16.bin, noto_vn_24.bin}
-├── img/{logo.bin, icon_ok.bin, icon_deny.bin}    # định dạng LVGL binary
-└── snd/{ok.wav, denied.wav, spoof.wav, enroll.wav}   # 16 kHz, 16-bit, mono
+└── snd/ok.wav                                    # 16 kHz, 16-bit, mono
 ```
 
-Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ, nhẹ hơn LittleFS. Cập nhật bằng cách ghi đè cả partition qua OTA.
+Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ, nhẹ hơn LittleFS. Cập nhật bằng cách ghi đè cả partition qua OTA. Ảnh do `assets/build_assets.py` dựng bằng `spiffsgen.py` của IDF; script giữ **bảng ánh xạ** từ tên file nguồn sang tên trên thiết bị, nên đổi file âm thanh không phải sửa một dòng firmware nào.
+
+**Máy chỉ lên tiếng khi nó mở cửa.** Bảng ban đầu có bốn tiếng `ok / denied / spoof / enroll`; giờ chỉ còn `ok.wav`. Một lần từ chối đã hiện chữ và đổi màu khung ngắm ngay trước mặt người đứng đó (§4.5.5h.1), còn phát tiếng cho nó thì **thông báo cái trượt của người ta ra cả phòng** — kiosk đặt ở cửa, người xung quanh nghe được. Tiếng nói "xong rồi, đi được" là thứ duy nhất người dùng cần nghe mà không phải nhìn màn. `attend_task` vì thế chỉ đẩy `APP_SOUND_OK` vào `q_audio`, và bảng `app_sound_t` giữ nguyên bốn giá trị để không phá hợp đồng của `app_events.h`.
+
+Font không nằm ở đây: bảng chữ 1bpp của kiosk biên dịch thẳng vào ảnh firmware (`assets/fonts/kiosk_sans_22.c`, §4.5.5h), vì nó phải vẽ được trước khi mount xong bất cứ thứ gì.
 
 ### 6.3 Bảng dữ liệu — nằm ở đâu và vì sao
 
