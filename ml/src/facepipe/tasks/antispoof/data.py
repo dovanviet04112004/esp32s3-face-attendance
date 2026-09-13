@@ -390,6 +390,8 @@ def photometric(
     sample: SpoofSample,
     rng: random.Random,
     probability: float = PHOTOMETRIC_PROBABILITY,
+    contrast_range: tuple[float, float] = EXPOSURE_CONTRAST_RANGE,
+    white_balance_range: tuple[float, float] = WHITE_BALANCE_RANGE,
 ) -> SpoofSample:
     """Camera-path augmentation, drawn once per sample and applied to both views.
 
@@ -400,7 +402,7 @@ def photometric(
     views = sample.views()
     if rng.random() < probability:
         gain = rng.uniform(*EXPOSURE_GAIN_RANGE)
-        contrast = rng.uniform(*EXPOSURE_CONTRAST_RANGE)
+        contrast = rng.uniform(*contrast_range)
         views = [exposure(view, gain, contrast) for view in views]
     if rng.random() < probability:
         strength, angle = rng.uniform(*BACKLIGHT_RANGE), rng.uniform(0.0, 2.0 * np.pi)
@@ -421,7 +423,7 @@ def photometric(
             sensor_noise(view, photons, read_sigma, np.random.default_rng(seed)) for view in views
         ]
     if rng.random() < probability:
-        gains = np.array([rng.uniform(*WHITE_BALANCE_RANGE) for _ in range(3)], dtype=np.float32)
+        gains = np.array([rng.uniform(*white_balance_range) for _ in range(3)], dtype=np.float32)
         views = [white_balance(view, gains) for view in views]
     return sample.with_views(views)
 
@@ -440,6 +442,8 @@ class SpoofShardDataset(IterableDataset):
         recompress_probability: float = RECOMPRESS_PROBABILITY,
         quality_range: tuple[int, int] = QUALITY_RANGE,
         photometric_probability: float = PHOTOMETRIC_PROBABILITY,
+        exposure_contrast_range: tuple[float, float] = EXPOSURE_CONTRAST_RANGE,
+        white_balance_range: tuple[float, float] = WHITE_BALANCE_RANGE,
         crop_scale_range: tuple[float, float] = CROP_SCALE_RANGE,
         crop_scale_probability: float = CROP_SCALE_PROBABILITY,
         occlusion_probability: float = OCCLUSION_PROBABILITY,
@@ -467,6 +471,8 @@ class SpoofShardDataset(IterableDataset):
         self.photometric_probability = photometric_probability
         self.crop_scale_range = crop_scale_range
         self.crop_scale_probability = crop_scale_probability
+        self.exposure_contrast_range = tuple(exposure_contrast_range)
+        self.white_balance_range = tuple(white_balance_range)
         self.occlusion_probability = occlusion_probability
         self.occlusion_side_range = occlusion_side_range
         self.roll_probability = roll_probability
@@ -530,7 +536,13 @@ class SpoofShardDataset(IterableDataset):
                     sample = roll(sample, rng.uniform(*self.roll_range))
                 if rng.random() < self.occlusion_probability:
                     sample = occlude(sample, rng, self.occlusion_side_range)
-                sample = photometric(sample, rng, self.photometric_probability)
+                sample = photometric(
+                    sample,
+                    rng,
+                    self.photometric_probability,
+                    self.exposure_contrast_range,
+                    self.white_balance_range,
+                )
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
             if self.shuffle_buffer <= 0:

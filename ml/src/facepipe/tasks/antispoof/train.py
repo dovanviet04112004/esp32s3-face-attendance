@@ -26,6 +26,7 @@ from facepipe.core.trainer import Trainer, resolve_device
 from .data import (
     CROP_SCALE_PROBABILITY,
     CROP_SCALE_RANGE,
+    EXPOSURE_CONTRAST_RANGE,
     OCCLUSION_PROBABILITY,
     OCCLUSION_SIDE_RANGE,
     PHOTOMETRIC_PROBABILITY,
@@ -35,6 +36,7 @@ from .data import (
     ROLL_RANGE,
     TRANSLATE_PROBABILITY,
     TRANSLATE_RANGE,
+    WHITE_BALANCE_RANGE,
     SpoofShardDataset,
     collate,
 )
@@ -76,6 +78,10 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         photometric_probability=float(
             params.get("photometric_probability", PHOTOMETRIC_PROBABILITY)
         ),
+        exposure_contrast_range=tuple(
+            params.get("exposure_contrast_range", EXPOSURE_CONTRAST_RANGE)
+        ),
+        white_balance_range=tuple(params.get("white_balance_range", WHITE_BALANCE_RANGE)),
         crop_scale_range=tuple(params.get("crop_scale_range", CROP_SCALE_RANGE)),
         crop_scale_probability=float(params.get("crop_scale_probability", CROP_SCALE_PROBABILITY)),
         occlusion_probability=float(params.get("occlusion_probability", OCCLUSION_PROBABILITY)),
