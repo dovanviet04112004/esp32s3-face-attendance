@@ -1923,3 +1923,74 @@ với dải này — chưa đo, để cho E8-T12.
 `CONFIG_VISION_SEED_LIVE_MIN_PERMILLE` 500 → **750**. Giá trị cũ nằm dưới cả mức 0,686 mà ảnh
 giả đạt được, tức boot đầu là cho ảnh in lọt. Ngưỡng chạy thật vẫn ở NVS `vision/live_min`
 (§4.9), `Kconfig` chỉ gieo lần boot đầu.
+
+---
+
+## 34. Ảnh thẻ đưa thẳng vào OV5640 vượt sàn — phép đo §33.3 còn nợ, 13/09
+
+§33 chốt sàn 0,75 trên 35 khung giả **chụp bằng camera điện thoại**, và §33.3 ghi rõ giới hạn:
+"Ảnh in và màn hình đưa thẳng vào OV5640 có thể ra phổ điểm khác". Mục này là phép đo đó.
+
+### 34.1 Cách thu
+
+Board chạy `drv_camera/test_apps/sensor`, ca `metered frames reach the host as raw rgb565`;
+host kéo về bằng `ml/bench/device_client.py raw spoof1309 --spoof print --distance-cm 40`.
+Vật thử: **một ảnh thẻ chính diện** giơ trước ống kính ở ~40 cm, lấp gần kín khung 480×320.
+30 khung nguyên, 21 khung có mặt (9 khung detector không thấy mặt, rơi vào các bước đo sáng
+tối/cháy), cỡ mặt **192–238 px** — nằm trên cả `face_min_px` 100 lẫn 113.
+
+Chấm bằng chính run đang nạp trên board, `20260912-0107_fd87e15_5728fa`, checkpoint **float**
+trên host, qua `facepipe.tasks.antispoof.eval --frames`.
+
+### 34.2 Bảng quét
+
+| Ngưỡng | Chặn được | **APCER** |
+|---|---|---|
+| 0,60 | 3/21 | 0,857 |
+| **0,75 (đang gieo)** | **4/21** | **0,810** |
+| 0,90 | 4/21 | 0,810 |
+| 0,99 | 17/21 | 0,190 |
+
+Trên board, cùng vật thử, `app_tasks` in ra bốn phán quyết `MATCH` với liveness **0,767 ·
+0,979 · 0,990 · 0,998** — ba trong bốn nằm trên 0,97.
+
+**Không có điểm vận hành nào dùng được.** 0,90 không chặn thêm khung nào so với 0,75; 0,99 chặn
+được 81% nhưng §9 đã đo một **mặt thật** trên board chấm 0,9936 (trượt ngưỡng 0,997355) và
+§12.4 đo BPCER 12–18% ở vùng ngưỡng đó trên 6.000 bản ghi. Nâng sàn là đổi ảnh giả lọt lấy
+người thật bị từ chối, không phải sửa lỗi.
+
+### 34.3 Không phải lỗi firmware, không phải lỗi INT8
+
+Board chấm bằng INT8 + tiền xử lý C++ (`ai_engine/src/antispoof/preproc.cpp`), host chấm bằng
+float + tiền xử lý Python, hai đường độc lập, **cùng một phổ điểm** trên cùng vật thử. Crop của
+firmware cũng đúng: `config.resolved.yaml` của run ghi `views: tight`, và `preproc.cpp` cắt
+đúng 1,0× hộp mặt. Lỗi không nằm ở tầng thiết bị.
+
+### 34.4 Nguyên nhân: lớp tấn công của bộ train không chứa thứ này, và crop 1,0× cắt mất bằng chứng
+
+Trên CelebA-Spoof, chính model này cho **trung vị lớp tấn công 0,0008** so với lớp thật 1,0000
+(§12.4) — nó phân biệt tốt trong miền nó được train. Cách biệt giữa 0,0008 và 0,98 là **khoảng
+cách miền**, không phải model kém.
+
+Hai thứ giải thích khoảng cách ấy, và cả hai đều kiểm được:
+
+1. **Crop 1,0× không chứa bằng chứng.** Khung thu được cho thấy ảnh thẻ lấp kín khung: mép giấy,
+   viền vật mang ảnh và vệt loang trên nền đều nằm **ngoài** ô vuông 1,0× quanh hộp mặt. Model
+   chỉ được nhìn đúng phần mặt, mà phần mặt của một ảnh thẻ chính diện thì không khác mặt thật.
+   `CROP_SCALES` của `celeba_spoof_parquet.py` sinh **hai view**: `tight` 1,0 và `wide` 2,7, và
+   mỗi bản ghi trong shard đều có đủ `*.tight.jpg` lẫn `*.wide.jpg` — nhưng **cả 12 run của
+   nhánh này đều `views: tight`**, chưa run nào train `wide`. MiniFASNet gốc dùng 2,7 và 4,0
+   đúng vì lý do trên.
+2. **Đường tắt tư thế.** §9 quan sát trên board: mặt chính diện ra LIVE, mặt quay nghiêng ra
+   SPOOF, và đặt giả thuyết model học tương quan tư thế thay vì độ nổi. Ảnh thẻ là khuôn mặt
+   chính diện, đủ sáng, sạch nhất có thể — nó rơi đúng vào đầu "live" của đường tắt ấy.
+
+### 34.5 Việc phải làm
+
+- **Train arm `wide` 2,7** rồi so với arm `tight` trên cùng seed, cùng `split.lock`, cùng số
+  epoch (§4.2 của CLAUDE.md), chấm cả trên CelebA-Spoof lẫn 21 khung của mục này. Dữ liệu đã
+  nằm sẵn trong shard, chỉ thiếu lần train.
+- **Thu tập tấn công miền thiết bị cho đủ**: 21 khung một vật thử không phải một tập. Cần nhiều
+  ảnh, nhiều cự ly, in và màn hình, và một tập live cùng cảm biến để đọc BPCER.
+- **Cho tới lúc đó, nhánh chống giả của kiosk không chặn được ảnh in chính diện.** Ghi đúng như
+  vậy vào báo cáo, không ghi là đã có chống giả.
