@@ -253,3 +253,74 @@ chứ không dư. `arena_fast` không đổi: 189.628 B trong 186 KB.
 
 Bài học: sửa lock mà không đóng gói lại ảnh thì board vẫn đọc header cũ — `meta.json` và
 `models.lock.json` chỉ là nguồn, `models_0` mới là thứ thiết bị tin.
+
+---
+
+## 9. RAM đỉnh toàn hệ, kiosk chạy thật — E8-T9, 13/09
+
+`firmware/test_apps/bench_mem` dựng đúng chuỗi `app_boot` + `app_tasks` của kiosk nên số dưới
+đây là của thiết bị thật, không phải của một app rút gọn. Lần này **ngoại vi cắm đủ** (PCF8574
+0x20, VL53L1X 0x29, DS3231 0x68, GT911 0x5D) nên `bsp_board_init()` đi qua được — lượt đo
+12/09 abort ở đúng chỗ đó.
+
+Build bằng profile `bench` (`-O2`, poisoning tắt, `FREERTOS_USE_TRACE_FACILITY` còn) chứ không
+phải `dev`: poisoning thêm canary vào **mọi** khối nên nó thổi phồng đúng con số app này sinh ra.
+
+| Mốc | Đáy RAM nội | Đáy PSRAM |
+|---|---|---|
+| trước `app_boot` | 255.483 B (249 KB) | 8.189 KB |
+| sau `app_boot`, ba model đã nạp | 97.811 B (95 KB) | 5.844 KB |
+| **kiosk chạy, 6 mẫu cách nhau 10 s** | **73.323 B (71 KB)** | **5.844 KB** |
+
+Đáy giữ **nguyên 73.323 B qua cả sáu mẫu** — heap phẳng, không có chỗ nào rò theo khung.
+Mảnh liền mạch lớn nhất lúc kết thúc: **32 KB**.
+
+### 9.1 Watermark từng task
+
+| Task | Prio | Stack trống |
+|---|---|---|
+| `ipc0` | 1 | **444 B** |
+| `ipc1` | 24 | 532 B |
+| `IDLE1` | 0 | 784 B |
+| `IDLE0` | 0 | 792 B |
+| `ai` | 5 | 1.524 B |
+| `tof` | 6 | 1.560 B |
+| `sys_evt` | 20 | 1.568 B |
+| `Tmr Svc` | 1 | 1.448 B |
+| `tcpip` | 18 | 2.240 B |
+| `cam` | 7 | 2.768 B |
+| `attend` | 4 | 2.812 B |
+| `esp_timer` | 22 | 3.124 B |
+| `cam_task` (của `esp32-camera`) | 23 | 3.356 B |
+| `wifi` | 23 | 4.540 B |
+| `main` | 1 | 5.824 B |
+
+Bốn task mỏng nhất đều **của IDF**, không phải của dự án; `ipc0` ra khỏi xưởng đã sát đáy.
+Mỏng nhất trong bốn task của `app_tasks.c` là `ai` với 1.524/8.192 B — và đó là số lúc **chưa
+có mặt người nào** trước camera, tức mới chỉ chạy detect. Spoof và recog đi sâu hơn nên phải
+đo lại watermark này khi có mặt thật.
+
+### 9.2 Đối chiếu §6.4
+
+§6.4 ước 267 KB cho năm dòng chưa chi và ghi "còn dư 64 KB" khi cả hai arena xuống PSRAM.
+Đo thật: hệ đi từ 331 KB trống (chỉ có model) xuống **71 KB** khi camera, LCD, ToF, servo,
+`svc_facedb`, `svc_vision`, `svc_attendance` và ngăn xếp Wi-Fi cùng lên — tức **260 KB đã chi**,
+sát con số ước 267 KB một cách bất ngờ.
+
+Nhưng bảng ấy chưa trả hết: **LVGL chưa tồn tại**, và Wi-Fi lần này **chỉ quay số chứ không vào
+được mạng** (`disconnected 8 time(s)`, AP không có mặt), nên chưa có phiên TCP nào và 30 KB bắt
+tay TLS của dòng "heap dự phòng" chưa bị đụng tới.
+
+**Ràng buộc cho E10-T1**: còn **71 KB RAM nội, mảnh liền lớn nhất 32 KB**. Đệm vẽ của LVGL vì
+thế không thể xin quá 32 KB ở RAM nội, và heap LVGL phải nằm ở PSRAM — chỗ còn 5,8 MB.
+
+### 9.3 Hai điều lộ ra ngoài đề
+
+**Profile build đổi fps 7%.** Cùng board, cùng phòng: bản `bench` (`-O2`) đo **14,17–14,19 fps**,
+bản `dev` (`-Og` + `HEAP_POISONING_LIGHT`) đang nằm trên board đo **12,9–13,7 fps**. Mọi con số
+fps của phiên LCD đều lấy trên bản `dev`, nên khi quay lại việc đó phải nói rõ đang đứng ở profile nào.
+
+**`unity_run_menu()` bỏ đói `IDLE0`.** Sau khi hai case xong, watchdog bắn `IDLE0` mỗi 5 giây,
+CPU 0 lúc thì `main` lúc thì `cam`. Đây là chuyện của app test chứ không phải của kiosk: menu
+tương tác dò `stdin` không nhường, còn firmware chính không có menu và chạy cả tiếng không một
+lần watchdog kêu. Không sửa, ghi lại để lần sau đọc log `bench_mem` đừng tưởng kiosk hỏng.

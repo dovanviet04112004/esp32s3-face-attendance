@@ -3492,7 +3492,23 @@ buộc là DMA nội, nên không có cách nào giữ `arena_fast` ở SRAM mà
 đưa 823.148 B về 476.188 B, bỏ nhánh ngữ cảnh của anti-spoof đưa tiếp về **422.764 B**.
 `arena_fast` chỉ nhỏ đi khi chính detect nhỏ đi.
 
-Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là dải liền mạch (§3.8). Phải đo lại ở E8-T9 khi Wi-Fi và LVGL đã lên.
+Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là dải liền mạch (§3.8).
+
+**E8-T9 đã đo, 13/09** (`docs/measurements/arena.md` §9), kiosk chạy thật với ngoại vi cắm đủ:
+
+| Mốc | RAM nội trống | PSRAM trống |
+|---|---|---|
+| trước `app_boot` | 249 KB | 8.189 KB |
+| sau `app_boot` (ba model đã nạp) | 95 KB | 5.844 KB |
+| kiosk chạy, đáy qua 6 mẫu | **71 KB** | 5.844 KB |
+
+Hệ chi **260 KB** cho năm dòng chưa tính, sát con số ước 267 KB. Đáy đứng yên qua cả sáu mẫu
+nên không có chỗ nào rò. Hai khoản **chưa** trả đồng nào: LVGL chưa tồn tại, và lượt đo ấy
+Wi-Fi không vào được mạng nên chưa có phiên TCP lẫn 30 KB bắt tay TLS.
+
+Con số phải mang sang E10-T1 không phải 71 KB mà là **mảnh liền mạch lớn nhất: 32 KB**. Đệm vẽ
+LVGL xin quá mức đó ở RAM nội sẽ trượt dù tổng còn trống, đúng cơ chế đã hạ `arena_fast` xuống
+PSRAM; heap LVGL vì thế nằm ở PSRAM, nơi còn 5,8 MB.
 
 ---
 
