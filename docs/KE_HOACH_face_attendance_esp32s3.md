@@ -2627,10 +2627,27 @@ Năm màn hình cùng vòng đời, thêm màn hình mới không đụng `Scree
 
 ```
 components/ui_kiosk/
+├── include/ui_kiosk.h                    # mặt tiền C: ui_kiosk_init · on_vision · on_state · overlay
 ├── priv_include/box_tracker.hpp          # BoxTracker: set(hộp, khung) · update(khung) · box()
+├── priv_include/overlay.hpp              # OverlayBuilder: dựng ảnh thẻ, xuất drv_lcd_overlay_t
 ├── src/box_tracker.cpp
+├── src/overlay.cpp
+├── src/ui_kiosk.cpp                      # ScreenManager + hai ô overlay, dựng tĩnh
+├── src/screens/{idle,scan,result,enroll,settings}.cpp
 └── test_apps/tracker/{main/test_tracker.cpp, CMakeLists.txt, pytest_tracker.py}   # khung tổng hợp, không cần camera
 ```
+
+**Overlay là dữ liệu, không phải lời gọi vẽ.** `ui_kiosk` (L6) không được gọi xuống `cam_task`
+và `drv_lcd` (L2) không được biết màn hình nào đang hiện, nên cái đi giữa hai bên là một struct
+phẳng khai ở `drv_lcd.h`: vài **hộp rỗng** (hộp mặt) và vài **ô đặc** kèm con trỏ pixel RGB565
+(thẻ thông báo). `drv_lcd_blit_frame` cắt chúng theo từng dải 20 dòng ngay trong vòng gom, nên
+overlay đi cùng chuyến với preview chứ không phải một lượt ghi panel thứ hai. Pixel của ô đặc
+phải nằm sẵn **theo thứ tự byte của panel** — đường preview không đảo byte, vì khung camera đã
+đúng chiều rồi.
+
+`ui_kiosk` giữ **hai ô overlay** và công bố bằng một phép ghi con trỏ nguyên tử: nó chỉ điền vào
+ô đang không được công bố rồi mới đổi con trỏ, `cam_task` đọc con trỏ một lần cho cả khung. Không
+khoá nào trên đường vẽ, và cái giá đúng bằng **một khung chậm** ở lần đổi thẻ.
 
 ##### i) Vòng đời đối tượng — dựng một lần, không bao giờ hủy
 
@@ -3056,12 +3073,12 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 
 | Task | Component | Core | Prio | Stack | Kích hoạt | Nhiệm vụ |
 |---|---|---|---|---|---|---|
-| `cam_task` | `drv_camera` | 0 | 7 | 4 KB | mỗi frame (~15 fps) | `esp_camera_fb_get()` → đẩy con trỏ vào `q_frame_ai` (overwrite) + `q_frame_preview` |
+| `cam_task` | `drv_camera` | 0 | 7 | 4 KB | mỗi frame (~15 fps) | `esp_camera_fb_get()` → vẽ preview kèm overlay của `ui_kiosk` → đẩy con trỏ vào `q_frame_ai` (overwrite) |
 | `tof_task` | `drv_tof` | 0 | 6 | 3 KB | ngắt GPIO3 / poll 100 ms | Đọc khoảng cách → phát `EVT_PRESENCE_ON/OFF`, đánh thức hệ thống |
 | `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Đọc WAV từ LittleFS → `i2s_channel_write` |
 | `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt GPIO14 | Đọc GT911 → `q_touch` |
 | **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
-| `ui_task` | `ui` | 0 | 4 | 8 KB (+ LVGL heap ở PSRAM) | tick 20 ms | `lv_timer_handler()`, vẽ preview, xử lý `q_touch`, đọc `eg_system` |
+| `ui_task` | `ui_kiosk` | 0 | 4 | 8 KB (+ LVGL heap ở PSRAM) | tick 20 ms | `lv_timer_handler()`, dựng ảnh overlay cho `cam_task`, xử lý `q_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota` | 0 | 3 | 8 KB | khi có lệnh `down/ota` | Tải firmware / models, verify sha256, ghi partition |
@@ -3077,9 +3094,17 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 |---|---|---|---|---|---|
 | `q_frame_ai` | Queue, **depth 1**, `camera_fb_t*` | 1 × 4 B | `cam_task` | `ai_task` | Depth 1 + `xQueueOverwrite`: **luôn xử lý frame mới nhất**, frame cũ trả về pool ngay → không dồn RAM, không trễ tích luỹ |
 
+**Không có hàng đợi preview, và đó là một quyết định đo được.** Ý cũ — `cam_task` đẩy khung
+sang `ui_task` để `ui_task` vẽ — thêm **một task nữa giữ khung**, mà `fb_count` = 4 hiện chỉ vừa
+đủ cho `ai_task` giữ một và `cam_task` giữ một: thiếu một ô để lấp là chu kỳ thành *lấp + xử lý*
+thay vì `max(lấp, xử lý)`, đúng cơ chế đã kéo preview **14,18 → 8,1 fps** (§6.3, `latency.md` §6).
+Nên khung **không đi đâu cả**: `cam_task` vẽ ngay tại chỗ nó đang cầm khung, và `ui_kiosk` chỉ
+đưa xuống một **ảnh overlay** để đè lên từng dải 20 dòng đúng lúc dải ấy đang được gom (§4.5.5h).
+Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn thêm một lượt quét PSRAM nào.
+`ui_task` vẫn cầm panel qua `m_spi_lcd`, nhưng chỉ cho màn hình **không có video**.
+
 **Không có semaphore giữa ISR camera và `cam_task`.** `esp_camera_fb_get()` đã tự chặn cho tới khi có khung, nên một binary semaphore nữa chỉ là tầng chờ thứ hai chờ đúng thứ mà tầng dưới đã chờ.
 
-| `q_frame_preview` | Queue, depth 2, `camera_fb_t*` | 2 × 4 B | `cam_task` | `ui_task` | Preview cho phép trễ 1 frame |
 | `q_result` | Queue, depth 4, `svc_vision_result_t` | 4 × ~104 B | `ai_task` | `attend_task` | Tách hẳn tính toán khỏi nghiệp vụ |
 | `q_touch` | Queue, depth 8, `touch_evt_t` | 8 × 8 B | `touch_task` | `ui_task` | Không mất thao tác vuốt nhanh |
 | `q_audio` | Queue, depth 4, `sound_id_t` | 4 × 4 B | `attend_task`, `ui_task` | `audio_task` | Phát âm không được chặn nghiệp vụ |
