@@ -144,8 +144,10 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     }
     uint32_t employee_id = 0;
     float score = -1.0f;
-    if (enrol_id_ != 0) {
-        matcher_.keep(embedding_, scale, enrol_id_, enrol_idx_, enrol_name_);
+    // A request outlives a table that refused the sample, so the next verified
+    // frame tries again (KEHOACH 4.5.5d).
+    if (enrol_id_ != 0 &&
+        matcher_.keep(embedding_, scale, enrol_id_, enrol_idx_, enrol_name_) == ESP_OK) {
         enrol_id_ = 0;
     }
     char name[STORAGE_NAME_CAP] = { 0 };
