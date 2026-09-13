@@ -38,6 +38,7 @@ static int s_face_min_px;
 #define TOF_TASK_PRIORITY 6
 #define TOF_TASK_STACK_BYTES 3072
 #define TOF_POLL_MS 100
+#define TOF_SETTLE_POLLS 5
 #define PRESENCE_HYSTERESIS_MM 60
 #define AI_TASK_CORE 1
 #define AI_TASK_PRIORITY 5
@@ -290,6 +291,7 @@ static void tof_task(void *arg)
     SemaphoreHandle_t ready = drv_tof_ready_signal();
     const uint32_t gate_mm = presence_gate_mm();
     bool present = false;
+    int settling = TOF_SETTLE_POLLS;
 
     for (;;) {
         if (ready != NULL) {
@@ -300,6 +302,12 @@ static void tof_task(void *arg)
         uint16_t distance_mm = 0;
         bool status_ok = false;
         if (drv_tof_read_mm(&distance_mm, &status_ok) != ESP_OK) {
+            continue;
+        }
+        // The first rangings carry nothing behind them: one read 59 mm into an
+        // empty room (E7-T7).
+        if (settling > 0) {
+            --settling;
             continue;
         }
         // An empty field reads 65535 mm with the status clear (E7-T7), so a bad
