@@ -251,18 +251,25 @@ static void touch_task(void *arg)
 static void ui_task(void *arg)
 {
     (void)arg;
+    bool armed = false;
+
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(UI_TICK_MS));
         ui_kiosk_tick(UI_TICK_MS);
+        if (armed && !svc_vision_enrol_pending()) {
+            armed = false;
+            ui_kiosk_enrol_kept();
+        }
         uint32_t employee_id = 0;
         uint16_t template_idx = 0;
         char name[STORAGE_NAME_CAP] = { 0 };
         if (!ui_kiosk_take_enrol(&employee_id, &template_idx, name, sizeof(name))) {
             continue;
         }
-        const esp_err_t armed = svc_vision_enrol_next(employee_id, template_idx, name);
+        const esp_err_t asked = svc_vision_enrol_next(employee_id, template_idx, name);
+        armed = asked == ESP_OK;
         ESP_LOGI(TAG, "enrol %u sample %u for %s: %s", (unsigned)employee_id,
-                 (unsigned)template_idx, name, esp_err_to_name(armed));
+                 (unsigned)template_idx, name, esp_err_to_name(asked));
     }
 }
 

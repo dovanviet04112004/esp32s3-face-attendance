@@ -59,6 +59,7 @@ public:
     svc_vision_result_t step(const ai_engine_frame_t &frame) noexcept;
     void observe(svc_vision_seen_cb_t cb, void *ctx) noexcept { seen_cb_ = cb; seen_ctx_ = ctx; }
     void enrol_next(uint32_t employee_id, uint16_t template_idx, const char *name) noexcept;
+    bool enrol_pending() const noexcept { return enrol_id_ != 0; }
     void reset() noexcept;
 
 private:

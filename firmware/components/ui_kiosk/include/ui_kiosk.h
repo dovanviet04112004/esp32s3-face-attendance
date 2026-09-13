@@ -50,6 +50,11 @@ void ui_kiosk_tick(uint32_t dt_ms);
  */
 bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *name, size_t cap);
 
+/** Tell the enrol flow the pipeline has kept the face it asked for.
+ *  @ctx ui_task | non-blocking
+ */
+void ui_kiosk_enrol_kept(void);
+
 /** The cover map to paint over this frame.
  *  @ctx cam_task | non-blocking | read once per frame
  *  @ret NULL until the first screen has been painted

@@ -200,6 +200,14 @@ bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *na
     return true;
 }
 
+void ui_kiosk_enrol_kept(void)
+{
+    if (s_ready) {
+        ui::enrol_kept();
+        s_dirty = true;
+    }
+}
+
 const drv_lcd_overlay_t *ui_kiosk_overlay(void)
 {
     return s_shown.load(std::memory_order_acquire);

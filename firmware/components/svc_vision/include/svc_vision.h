@@ -74,6 +74,11 @@ void svc_vision_on_seen(svc_vision_seen_cb_t cb, void *ctx);
 esp_err_t svc_vision_enrol_next(uint32_t employee_id, uint16_t template_idx,
                                 const char *name);
 
+/** True while a face asked for by svc_vision_enrol_next has not arrived yet.
+ *  @ctx any | non-blocking | clears the moment the pipeline keeps one
+ */
+bool svc_vision_enrol_pending(void);
+
 /** The smallest face this pipeline will verify, in frame pixels.
  *  @ctx any | non-blocking | zero until svc_vision_init has run
  */

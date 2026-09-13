@@ -71,6 +71,9 @@ struct EnrolRequest {
 
 EnrolRequest &enrol_request() noexcept;
 
+/** The capture screen counts a sample when the pipeline really kept one. */
+void enrol_kept() noexcept;
+
 Screen *scan_screen() noexcept;
 Screen *menu_screen() noexcept;
 Screen *enrol_screen() noexcept;

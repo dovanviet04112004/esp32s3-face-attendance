@@ -60,6 +60,11 @@ extern "C" esp_err_t svc_vision_enrol_next(uint32_t employee_id, uint16_t templa
     return ESP_OK;
 }
 
+extern "C" bool svc_vision_enrol_pending(void)
+{
+    return s_ready && s_pipeline.enrol_pending();
+}
+
 extern "C" int svc_vision_face_min_px(void)
 {
     return s_ready ? s_face_min_px : 0;

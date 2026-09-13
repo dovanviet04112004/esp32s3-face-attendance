@@ -379,6 +379,7 @@ public:
     {
         kept_ = 0;
         since_ms_ = 0;
+        took_ = false;
         arm();
     }
 
@@ -402,16 +403,24 @@ public:
     {
         (void)seen;
         since_ms_ += dt_ms;
-        if (enrol_request().waiting || since_ms_ < kSampleGapMs) {
+        if (!took_ || since_ms_ < kSampleGapMs) {
             return false;
         }
-        ++kept_;
+        took_ = false;
         if (kept_ >= kSamples) {
             manager().go(ScreenId::Scan);
             return true;
         }
         arm();
         return true;
+    }
+
+    // Asking takes a tick, landing takes a second and a half (KEHOACH 4.5.5d).
+    void kept_one() noexcept
+    {
+        ++kept_;
+        took_ = true;
+        since_ms_ = 0;
     }
 
     void paint(Canvas &to, const Sight &seen) noexcept override
@@ -447,6 +456,7 @@ private:
 
     int kept_ = 0;
     int64_t since_ms_ = 0;
+    bool took_ = false;
     bool held_ = false;
 };
 
@@ -527,6 +537,11 @@ ScreenManager &manager() noexcept
 EnrolRequest &enrol_request() noexcept
 {
     return s_request;
+}
+
+void enrol_kept() noexcept
+{
+    s_capture.kept_one();
 }
 
 Screen *scan_screen() noexcept
