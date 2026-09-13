@@ -2,13 +2,13 @@ menu "Vision pipeline"
 
     config VISION_SEED_DETECT_MIN_PERMILLE
         int "Seed for the detector confidence floor (per mille)"
-        default 500
+        default 350
         range 1 999
         help
             Written to NVS key vision/detect_min on the first boot only
             (KEHOACH 6.2.1); afterwards the kiosk reads NVS and SET_CONFIG
-            changes it. The value is a seed, not a measurement: E8-T12
-            replaces it with the operating point read off the device set.
+            changes it. A real face at kiosk range scores 0.45-0.59 and
+            background noise 0.14-0.37, so this sits between them (KEHOACH 2.1).
 
     config VISION_SEED_LIVE_MIN_PERMILLE
         int "Seed for the liveness floor (per mille)"

@@ -11,6 +11,8 @@ constexpr int kStableDetects = 2;
 constexpr float kSameFaceIou = 0.5f;
 // A verdict other than MATCH is retried after this many detects on the same track.
 constexpr int kRetryDetects = 6;
+// The detector drops a frame here and there on a face that never moved.
+constexpr int kMissesLost = 2;
 
 float iou(const float *a, const float *b) noexcept
 {
@@ -198,6 +200,9 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
         memcpy(out.boxes[i].box, faces_[i].box, sizeof(out.boxes[i].box));
     }
     if (count == 0) {
+        if (++misses_ < kMissesLost) {
+            return out;
+        }
         stable_ = 0;
         tell(out, 0);
         if (seen_ != Seen::Nothing) {
@@ -206,6 +211,7 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
         }
         return out;
     }
+    misses_ = 0;
     const ai_engine_face_t &primary = pick(count);
     memcpy(out.primary.box, primary.box, sizeof(out.primary.box));
     follow(primary);

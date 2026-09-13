@@ -28,7 +28,7 @@ static const char *TAG = "app_boot";
 #define NVS_SEED_VER "seed_ver"
 // Raise only when a seed below changes, and read KEHOACH 6.2.1 first: it
 // overwrites whatever SET_CONFIG had put there.
-#define APP_SEED_VER 1
+#define APP_SEED_VER 2
 #define NVS_DETECT_MIN "detect_min"
 #define NVS_LIVE_MIN "live_min"
 #define NVS_MATCH_MIN "match_min"
