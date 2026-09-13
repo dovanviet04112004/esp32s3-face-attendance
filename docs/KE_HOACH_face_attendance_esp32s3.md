@@ -2704,9 +2704,19 @@ Bốn trạng thái của khung, màu là thông tin chứ không phải trang t
 |---|---|---|
 | chờ, không thấy ai | trắng mờ | `Đưa khuôn mặt vào khung` |
 | thấy mặt nhưng nhỏ hơn cổng | hổ phách | `Lại gần hơn` |
-| mặt đủ lớn, ba model đang chạy | xanh mint | `Đang nhận diện...` |
+| mặt đủ lớn nhưng nằm ngoài khung | hổ phách | `Đưa mặt vào giữa khung` |
+| mặt tràn ra ngoài khung vì đứng quá gần | hổ phách | `Lùi lại một chút` |
+| mặt nằm trong khung, ba model đang chạy | xanh mint | `Đang nhận diện...` |
 | xong, đạt | xanh mint | thẻ dấu tích + tên ở dải dưới |
 | xong, từ chối | hổ phách | một dòng chữ ở dải dưới |
+
+**Khung ngắm là một phép kiểm, không phải một hình vẽ.** `ui_kiosk` đưa hộp của **mặt đang được
+bám** (§4.5.5d xếp nó đứng đầu danh sách) qua `drv_lcd_frame_to_panel()` — đúng dải ảnh mà
+preview đang chiếu — rồi so với hình chữ nhật khung ngắm. Thấy trên board 13/09: màn chỉ hỏi
+"có mặt nào đủ to không", nên một khuôn mặt nằm hẳn dưới đáy preview, ngoài khung, vẫn được báo
+`Đang nhận diện...`. Phép so này là **lời khuyên chứ không phải cổng**: cổng vẫn là `face_min_px`
+cộng hình học §3 "Chốt 1" ở `svc_vision`, nên khung ngắm **không đẻ thêm ngưỡng nghiệp vụ** nào
+cho §4.9, và người đứng lệch một chút vẫn chấm được — chỉ là màn hình chỉ cho họ chỗ đứng tốt hơn.
 
 Bản đồ phủ mang **bốn màu** (§4.5.5h): trắng, viền đen, xanh mint, hổ phách. Không có đỏ, nên
 từ chối nói bằng hổ phách cộng câu chữ chứ không bằng màu thứ năm. Dòng `Đang nhận diện...` tắt
