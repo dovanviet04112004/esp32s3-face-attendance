@@ -3,5 +3,5 @@ idf_component_register(
     INCLUDE_DIRS include
     PRIV_INCLUDE_DIRS priv_include
     REQUIRES common bsp_board drv_lcd
-    PRIV_REQUIRES log
+    PRIV_REQUIRES log esp_timer
 )

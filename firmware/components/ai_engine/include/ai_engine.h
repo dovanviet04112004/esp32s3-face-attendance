@@ -49,11 +49,15 @@ size_t ai_engine_recog_input_bytes(void);
  */
 size_t ai_engine_recog_output_bytes(void);
 
-/** A camera frame as drv_camera hands it out: RGB565 words, row-major. */
+/** A camera frame as drv_camera hands it out: RGB565 words, row-major.
+ *  The dvp lands the high byte first while the esp reads a word low byte
+ *  first, so a sensor frame must say so or every channel comes out shuffled.
+ */
 typedef struct {
     const uint16_t *pixels;
     int width;
     int height;
+    bool high_byte_first;                 // true for anything the camera filled
 } ai_engine_frame_t;
 
 /** How the last ai_engine_detect_frame fitted the frame into the detector. */

@@ -32,6 +32,13 @@ private:
 /** The three 8-bit channels of one RGB565 word, high bits replicated into the low ones. */
 void unpack_rgb565(uint16_t word, unsigned rgb[kChannels]) noexcept;
 
+/** One word of the frame, put the way round unpack_rgb565 reads it. */
+inline uint16_t frame_word(const ai_engine_frame_t &frame, size_t index) noexcept
+{
+    const uint16_t word = frame.pixels[index];
+    return frame.high_byte_first ? static_cast<uint16_t>((word >> 8) | (word << 8)) : word;
+}
+
 /** Bilinear sample at a fractional position, clamped to the frame border. */
 void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb[kChannels]) noexcept;
 

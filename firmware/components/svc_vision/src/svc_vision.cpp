@@ -54,6 +54,7 @@ extern "C" esp_err_t svc_vision_step(const camera_fb_t *frame, svc_vision_result
         .pixels = reinterpret_cast<const uint16_t *>(frame->buf),
         .width = static_cast<int>(frame->width),
         .height = static_cast<int>(frame->height),
+        .high_byte_first = true,
     };
     *out = s_pipeline.step(view);
     return ESP_OK;

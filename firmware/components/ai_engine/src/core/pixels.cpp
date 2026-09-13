@@ -38,10 +38,10 @@ void area_rows(const ai_engine_frame_t &frame, const int *col_first, const int *
     for (int c = 0; c < cols; ++c) {
         unsigned sum[kChannels] = { 0, 0, 0 };
         for (int y = row_first; y <= row_last; ++y) {
-            const uint16_t *row = frame.pixels + y * frame.width;
+            const size_t row = static_cast<size_t>(y) * frame.width;
             for (int x = col_first[c]; x <= col_last[c]; ++x) {
                 unsigned px[kChannels];
-                unpack_rgb565(row[x], px);
+                unpack_rgb565(frame_word(frame, row + x), px);
                 sum[0] += px[0];
                 sum[1] += px[1];
                 sum[2] += px[2];
@@ -92,10 +92,10 @@ void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb
     const int y0 = clamp_index(static_cast<int>(fy0), frame.height);
     const int y1 = clamp_index(static_cast<int>(fy0) + 1, frame.height);
     unsigned p00[kChannels], p01[kChannels], p10[kChannels], p11[kChannels];
-    unpack_rgb565(frame.pixels[y0 * frame.width + x0], p00);
-    unpack_rgb565(frame.pixels[y0 * frame.width + x1], p01);
-    unpack_rgb565(frame.pixels[y1 * frame.width + x0], p10);
-    unpack_rgb565(frame.pixels[y1 * frame.width + x1], p11);
+    unpack_rgb565(frame_word(frame, static_cast<size_t>(y0) * frame.width + x0), p00);
+    unpack_rgb565(frame_word(frame, static_cast<size_t>(y0) * frame.width + x1), p01);
+    unpack_rgb565(frame_word(frame, static_cast<size_t>(y1) * frame.width + x0), p10);
+    unpack_rgb565(frame_word(frame, static_cast<size_t>(y1) * frame.width + x1), p11);
     for (int c = 0; c < kChannels; ++c) {
         const float top = p00[c] * (1.0f - wx) + p01[c] * wx;
         const float bottom = p10[c] * (1.0f - wx) + p11[c] * wx;

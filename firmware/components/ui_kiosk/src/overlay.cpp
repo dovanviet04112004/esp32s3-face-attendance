@@ -4,6 +4,7 @@
 
 #include "app_config.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 
 namespace ui {
 
@@ -47,12 +48,13 @@ bool shows_card(app_ui_verdict_t verdict)
     return verdict != APP_UI_IDLE && verdict != APP_UI_SCANNING;
 }
 
-void fill_rect(uint16_t *pixels, int stride, int x, int y, int w, int h, uint16_t colour)
+void fill_rect(uint16_t *pixels, int stride, int x, int y, int w, int h, int rows_cap,
+               uint16_t colour)
 {
     const int x1 = x > 0 ? x : 0;
     const int y1 = y > 0 ? y : 0;
     const int x2 = x + w < stride ? x + w : stride;
-    const int y2 = y + h < OverlayBuilder::kCardHeight ? y + h : OverlayBuilder::kCardHeight;
+    const int y2 = y + h < rows_cap ? y + h : rows_cap;
     for (int row = y1; row < y2; ++row) {
         uint16_t *line = pixels + (size_t)row * stride;
         for (int col = x1; col < x2; ++col) {
@@ -68,7 +70,7 @@ void stroke(uint16_t *pixels, int stride, int x0, int y0, int dx, int dy, int st
 {
     for (int i = 0; i < steps; ++i) {
         fill_rect(pixels, stride, x0 + dx * i, y0 + dy * i, kGlyphStrokePx, kGlyphStrokePx,
-                  colour);
+                  OverlayBuilder::kCardHeight, colour);
     }
 }
 
@@ -90,6 +92,12 @@ void draw_cross(uint16_t *pixels, int stride, int cx, int cy, uint16_t colour)
 
 esp_err_t OverlayBuilder::init() noexcept
 {
+    const size_t bar_bytes = (size_t)APP_LCD_H_RES * kBarHeight * sizeof(uint16_t);
+    bar_ = static_cast<uint16_t *>(heap_caps_malloc(bar_bytes, MALLOC_CAP_SPIRAM));
+    if (bar_ == nullptr) {
+        return ESP_ERR_NO_MEM;
+    }
+    paint_bar();
     const size_t bytes = (size_t)kCardWidth * kCardHeight * sizeof(uint16_t);
     for (int i = 0; i < kCards; ++i) {
         card_[i] = static_cast<uint16_t *>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM));
@@ -101,6 +109,15 @@ esp_err_t OverlayBuilder::init() noexcept
     return ESP_OK;
 }
 
+// The bar is the one thing on screen every frame, so it is also the proof that
+// the overlay reaches the gather loop at all.
+void OverlayBuilder::paint_bar() noexcept
+{
+    fill_rect(bar_, APP_LCD_H_RES, 0, 0, APP_LCD_H_RES, kBarHeight, kBarHeight, wire(kInk));
+    fill_rect(bar_, APP_LCD_H_RES, 0, kBarHeight - 2, APP_LCD_H_RES, 2, kBarHeight,
+              wire(kWhite));
+}
+
 uint16_t *OverlayBuilder::card_pixels() noexcept
 {
     return card_[shown_card_];
@@ -110,9 +127,9 @@ void OverlayBuilder::paint_card() noexcept
 {
     uint16_t *pixels = card_[next_card_];
     const uint16_t accent = wire(accent_of(verdict_));
-    fill_rect(pixels, kCardWidth, 0, 0, kCardWidth, kCardHeight, accent);
+    fill_rect(pixels, kCardWidth, 0, 0, kCardWidth, kCardHeight, kCardHeight, accent);
     fill_rect(pixels, kCardWidth, kCardBorderPx, kCardBorderPx, kCardWidth - 2 * kCardBorderPx,
-              kCardHeight - 2 * kCardBorderPx, wire(kInk));
+              kCardHeight - 2 * kCardBorderPx, kCardHeight, wire(kInk));
     const int cx = kCardWidth / 2 - kGlyphStrokePx / 2;
     const int cy = kCardHeight / 2 - kGlyphStrokePx / 2;
     if (verdict_ == APP_UI_GRANTED) {
@@ -130,11 +147,13 @@ bool OverlayBuilder::set_face(bool found, const float box[4], int frame_width,
     int16_t panel[4] = { 0, 0, 0, 0 };
     const bool on_panel =
         found && drv_lcd_frame_to_panel(frame_width, frame_height, box, panel);
+    const int64_t now_us = esp_timer_get_time();
     if (!on_panel) {
-        const bool changed = face_found_;
-        face_found_ = false;
-        return changed;
+        const bool expired = face_found_ && now_us - face_seen_us_ >= kFaceHoldUs;
+        face_found_ = face_found_ && !expired;
+        return expired;
     }
+    face_seen_us_ = now_us;
     if (face_found_ && memcmp(panel, face_, sizeof(panel)) == 0) {
         return false;
     }
@@ -160,13 +179,19 @@ bool OverlayBuilder::set_verdict(app_ui_verdict_t verdict, uint32_t employee_id)
 void OverlayBuilder::build(drv_lcd_overlay_t *out) noexcept
 {
     memset(out, 0, sizeof(*out));
-    if (shows_card(verdict_) && card_pixels() != nullptr) {
-        out->card[0].x = (int16_t)((APP_LCD_H_RES - kCardWidth) / 2);
-        out->card[0].y = (int16_t)((APP_LCD_V_RES - kCardHeight) / 2);
-        out->card[0].w = kCardWidth;
-        out->card[0].h = kCardHeight;
-        out->card[0].pixels = card_pixels();
+    if (bar_ != nullptr) {
+        out->card[0].w = APP_LCD_H_RES;
+        out->card[0].h = kBarHeight;
+        out->card[0].pixels = bar_;
         out->cards = 1;
+    }
+    if (shows_card(verdict_) && card_pixels() != nullptr) {
+        out->card[out->cards].x = (int16_t)((APP_LCD_H_RES - kCardWidth) / 2);
+        out->card[out->cards].y = (int16_t)((APP_LCD_V_RES - kCardHeight) / 2);
+        out->card[out->cards].w = kCardWidth;
+        out->card[out->cards].h = kCardHeight;
+        out->card[out->cards].pixels = card_pixels();
+        out->cards = (uint8_t)(out->cards + 1);
     }
     if (face_found_) {
         out->box[0].x1 = face_[0];
