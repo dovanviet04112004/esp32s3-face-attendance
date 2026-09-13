@@ -2561,7 +2561,9 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 | Từ | Sự kiện | Sang | Hành động |
 |---|---|---|---|
 | `Idle` | `PresenceOn` | `Detecting` | `Watch` — bật preview, chờ mặt |
-| `Idle` | `FaceSmall` / `Spoof` / `Unknown` / `Match` | `Detecting` | `Watch` — người vẫn đứng đó |
+| `Idle` | `FaceSmall` | `Detecting` | `Watch` — có người, còn xa |
+| `Idle` | `Match` | `Granted` | `Grant` |
+| `Idle` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
 | `Detecting` | `FaceSmall` | `Detecting` | `None` — chỉ UI nhắc lại gần |
 | `Detecting` | `Match` | `Granted` | `Grant` |
 | `Detecting` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
@@ -2570,13 +2572,17 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 | `Verifying` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
 | `Verifying` | `Timeout` | `Detecting` | `None` |
 | `Granted` | `Timeout` | `Cooldown` | `Rest` |
+| `Denied` | `Match` | `Granted` | `Grant` |
 | `Denied` | `Timeout` | `Cooldown` | `Rest` |
+| `Cooldown` | `Match` | `Granted` | `Grant` |
 | `Cooldown` | `Timeout` | `Idle` | `None` |
 | `Cooldown` | `PresenceOff` | `Idle` | `None` |
 
 `Verifying` tồn tại cho đường xác thực nhiều khung của §4.5.5d: `svc_vision` tự giữ nhịp thử lại, nên tầng này chỉ cần một trạng thái chờ có `Timeout` để không kẹt nếu `ai_task` chết.
 
-**Một khuôn mặt cũng mở được máy, không chỉ ToF.** Bản đầu chỉ có `PresenceOn` đưa `Idle` sang `Detecting`, mà `PresenceOn` là **một cạnh**: chấm xong, máy về `Idle`, người vẫn đứng nguyên chỗ cũ nên không có cạnh nào nữa và **không chấm lại được cho tới khi bước hẳn ra rồi vào lại**. Đo trên board 13/09: sau lần chấm đầu, mọi lần sau im cho tới khi reset. Bốn sự kiện thị giác ở `Idle` vì thế cũng mở máy — thấy mặt tức là có người, dù ToF chưa kịp nhả cạnh nào. Chống chấm trùng vẫn là việc của `attend.dedup_min` nên mở đường này không đẻ ra bản ghi thừa.
+**Một khuôn mặt cũng mở được máy, không chỉ ToF.** `PresenceOn` là **một cạnh**: chấm xong, máy về `Idle`, người vẫn đứng nguyên chỗ cũ nên không có cạnh nào nữa và ToF không mở máy lần thứ hai. Đo trên board 13/09: chỉ nghe ToF thì sau lần chấm đầu, mọi lần sau im cho tới khi reset. Bốn sự kiện thị giác ở `Idle` vì thế cũng mở máy — thấy mặt tức là có người, dù ToF chưa kịp nhả cạnh nào.
+
+**Nhưng mở máy không được tiêu mất chính phán quyết đã mở nó.** Mỗi sự kiện ở `Idle` làm đúng việc nó mang: `FaceSmall` mở máy rồi chờ, còn `Match` **cấp luôn** và `Spoof` / `Unknown` **từ chối luôn**. Đo trên board 13/09: khi `Match` ở `Idle` chỉ chuyển sang `Detecting`, lần khớp đầu bị tiêu vào việc mở máy, mà §4.5.5d **không xác thực lại một track đã khớp** nên lần khớp thứ hai chỉ tới khi người dùng cử động đủ để track mất dấu (IoU < 0,5) — người đưa mặt vào khung rồi đứng yên **không bao giờ chấm được**, phải nhúc nhích mới xong. Cùng một lẽ ấy, `Denied` và `Cooldown` nhận `Match`: 3,5 giây giữ màn hình từ chối không được phép nuốt một lần khớp thật, người bị từ chối oan phải được chấm ngay ở vòng thử lại kế tiếp chứ không đứng đợi hết giờ. Chống chấm trùng vẫn là việc của `attend.dedup_min` nên không đường nào trong số này đẻ ra bản ghi thừa.
 
 **Bốn quyết định nghiệp vụ tầng này giữ, không đẩy xuống dưới:**
 
