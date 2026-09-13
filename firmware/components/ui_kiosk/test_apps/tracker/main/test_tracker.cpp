@@ -70,7 +70,7 @@ TEST_CASE("a textured patch drifting a few pixels a frame is followed", "[ui_kio
     int by = 120;
     paint(bx, by);
     ui::BoxTracker tracker;
-    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH);
+    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH, false);
     TEST_ASSERT_TRUE(tracker.active());
     int64_t total_us = 0;
     float worst = 0.0f;
@@ -95,7 +95,7 @@ TEST_CASE("a fast walk inside the search radius is still followed", "[ui_kiosk]"
     int by = 150;
     paint(bx, by);
     ui::BoxTracker tracker;
-    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH);
+    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH, false);
     for (int i = 0; i < kFrames; ++i) {
         bx += kFastStepX;
         paint(bx, by);
@@ -110,7 +110,7 @@ TEST_CASE("a jump past the radius does not drag the box along", "[ui_kiosk]")
     const int by = 120;
     paint(bx, by);
     ui::BoxTracker tracker;
-    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH);
+    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH, false);
     paint(bx + kJumpPx, by);
     const ui::Box before = tracker.box();
     tracker.update(s_frame, kFrameW, kFrameH);
@@ -125,7 +125,7 @@ TEST_CASE("a flat patch is refused at set and never moves", "[ui_kiosk]")
         s_frame[i] = grey565(128);
     }
     ui::BoxTracker tracker;
-    tracker.set(blob_box(200, 120), s_frame, kFrameW, kFrameH);
+    tracker.set(blob_box(200, 120), s_frame, kFrameW, kFrameH, false);
     TEST_ASSERT_FALSE(tracker.active());
     TEST_ASSERT_FALSE(tracker.update(s_frame, kFrameW, kFrameH));
 }
@@ -136,7 +136,7 @@ TEST_CASE("a fresh detector box replaces the tracked one, and the frame edge is 
     int by = 120;
     paint(bx, by);
     ui::BoxTracker tracker;
-    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH);
+    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH, false);
     bx += kStepX;
     paint(bx, by);
     tracker.update(s_frame, kFrameW, kFrameH);
@@ -144,7 +144,7 @@ TEST_CASE("a fresh detector box replaces the tracked one, and the frame edge is 
     bx = kFrameW - kBlob - 4;
     by = kFrameH - kBlob - 4;
     paint(bx, by);
-    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH);
+    tracker.set(blob_box(bx, by), s_frame, kFrameW, kFrameH, false);
     TEST_ASSERT_TRUE(tracker.active());
     TEST_ASSERT_FLOAT_WITHIN(0.01f, static_cast<float>(bx), tracker.box().x1);
     for (int i = 0; i < 3; ++i) {

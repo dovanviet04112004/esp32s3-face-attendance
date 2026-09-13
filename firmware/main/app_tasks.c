@@ -125,6 +125,7 @@ static void cam_task(void *arg)
             continue;
         }
         drv_camera_expose(frame);
+        ui_kiosk_track(frame->buf, frame->width, frame->height);
         const esp_err_t err =
             drv_lcd_blit_frame(frame->buf, frame->width, frame->height, ui_kiosk_overlay());
         offer_to_ai(wiring->frames, frame);

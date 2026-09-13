@@ -1,6 +1,7 @@
 #include "box_tracker.hpp"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 namespace ui {
@@ -13,8 +14,9 @@ constexpr int kPatchPx = BoxTracker::kPatch * BoxTracker::kStep;
 constexpr int kWindowPx = BoxTracker::kWindow * BoxTracker::kStep;
 constexpr int kPositions = BoxTracker::kWindow - BoxTracker::kPatch + 1;
 
-uint8_t luma(uint16_t rgb565) noexcept
+uint8_t luma(uint16_t word, bool high_byte_first) noexcept
 {
+    const uint16_t rgb565 = high_byte_first ? static_cast<uint16_t>((word >> 8) | (word << 8)) : word;
     const unsigned r = (rgb565 >> 11) & 0x1Fu;
     const unsigned g = (rgb565 >> 5) & 0x3Fu;
     const unsigned b = rgb565 & 0x1Fu;
@@ -41,17 +43,22 @@ void BoxTracker::sample(const uint16_t *frame, int width, int left, int top, int
     for (int row = 0; row < side; ++row) {
         const uint16_t *line = frame + (top + row * kStep) * width + left;
         for (int col = 0; col < side; ++col) {
-            *out++ = luma(line[col * kStep]);
+            *out++ = luma(line[col * kStep], high_byte_first_);
         }
     }
 }
 
-uint32_t BoxTracker::sad(int col, int row) const noexcept
+uint32_t BoxTracker::sad(int col, int row, uint32_t ceiling) const noexcept
 {
     uint32_t total = 0;
     for (int y = 0; y < kPatch; ++y) {
         const uint8_t *a = template_ + y * kPatch;
         const uint8_t *b = window_ + (row + y) * kWindow + col;
+        // A position already worse than the best one cannot win, and most of
+        // the 289 of them are, so the row is where the search gives up.
+        if (total >= ceiling) {
+            return ceiling;
+        }
         for (int x = 0; x < kPatch; ++x) {
             total += static_cast<uint32_t>(abs(static_cast<int>(a[x]) - static_cast<int>(b[x])));
         }
@@ -59,9 +66,11 @@ uint32_t BoxTracker::sad(int col, int row) const noexcept
     return total;
 }
 
-void BoxTracker::set(const Box &box, const uint16_t *frame, int width, int height) noexcept
+void BoxTracker::set(const Box &box, const uint16_t *frame, int width, int height,
+                     bool high_byte_first) noexcept
 {
     active_ = false;
+    high_byte_first_ = high_byte_first;
     if (frame == nullptr || width < kWindowPx || height < kWindowPx || box.x2 <= box.x1 || box.y2 <= box.y1) {
         return;
     }
@@ -90,13 +99,28 @@ bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
 
     const int stay_col = (patch_left_ - window_left) / kStep;
     const int stay_row = (patch_top_ - window_top) / kStep;
-    const uint32_t stay = sad(stay_col, stay_row);
+    const uint32_t stay = sad(stay_col, stay_row, UINT32_MAX);
     uint32_t best = stay;
     int best_col = stay_col;
     int best_row = stay_row;
-    for (int row = 0; row < kPositions; ++row) {
-        for (int col = 0; col < kPositions; ++col) {
-            const uint32_t cost = sad(col, row);
+    // A coarse pass over four times the area costs what the old dense grid did,
+    // and a fast walk crosses more than the dense grid could reach.
+    for (int row = 0; row < kPositions; row += BoxTracker::kCoarseStep) {
+        for (int col = 0; col < kPositions; col += BoxTracker::kCoarseStep) {
+            const uint32_t cost = sad(col, row, best);
+            if (cost < best) {
+                best = cost;
+                best_col = col;
+                best_row = row;
+            }
+        }
+    }
+    for (int row = best_row - 1; row <= best_row + 1; ++row) {
+        for (int col = best_col - 1; col <= best_col + 1; ++col) {
+            if (row < 0 || col < 0 || row >= kPositions || col >= kPositions) {
+                continue;
+            }
+            const uint32_t cost = sad(col, row, best);
             if (cost < best) {
                 best = cost;
                 best_col = col;

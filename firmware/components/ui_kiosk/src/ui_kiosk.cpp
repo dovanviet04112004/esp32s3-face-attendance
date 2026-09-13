@@ -3,6 +3,7 @@
 #include <atomic>
 #include <string.h>
 
+#include "box_tracker.hpp"
 #include "esp_log.h"
 #include "overlay.hpp"
 
@@ -11,21 +12,64 @@ namespace {
 const char *TAG = "ui_kiosk";
 
 constexpr int kSlots = 2;
+constexpr uint32_t kVerdictShift = 32;
+
+struct Detect {
+    float box[4];
+    int width;
+    int height;
+    bool found;
+};
 
 ui::OverlayBuilder s_builder;
+ui::BoxTracker s_tracker;
 drv_lcd_overlay_t s_slot[kSlots];
 std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
 int s_next;
 bool s_ready;
 
-// The slot cam_task is reading must stay still, so the next look is built in
-// the other one and only the pointer moves.
+// Every write to the builder happens on the preview path, so what the other two
+// tasks report arrives through one atomic handover each.
+Detect s_detect_slot[kSlots];
+std::atomic<const Detect *> s_detect{ nullptr };
+int s_detect_next;
+std::atomic<uint64_t> s_verdict{ 0 };
+uint64_t s_verdict_shown;
+
 void publish()
 {
     drv_lcd_overlay_t *target = &s_slot[s_next];
     s_builder.build(target);
     s_next = (s_next + 1) % kSlots;
     s_shown.store(target, std::memory_order_release);
+}
+
+bool take_verdict()
+{
+    const uint64_t packed = s_verdict.load(std::memory_order_acquire);
+    if (packed == s_verdict_shown) {
+        return false;
+    }
+    s_verdict_shown = packed;
+    return s_builder.set_verdict(static_cast<app_ui_verdict_t>(packed >> kVerdictShift),
+                                 static_cast<uint32_t>(packed));
+}
+
+// A detect lands three times a second; between two of them the patch match is
+// what keeps the box on the face (KEHOACH 4.5.5h).
+void follow(const uint16_t *pixels, int width, int height)
+{
+    const Detect *fresh = s_detect.exchange(nullptr, std::memory_order_acquire);
+    if (fresh == nullptr) {
+        s_tracker.update(pixels, width, height);
+        return;
+    }
+    if (!fresh->found) {
+        s_tracker.clear();
+        return;
+    }
+    const ui::Box box = { fresh->box[0], fresh->box[1], fresh->box[2], fresh->box[3] };
+    s_tracker.set(box, pixels, fresh->width, fresh->height, true);
 }
 
 }  // namespace
@@ -40,6 +84,7 @@ esp_err_t ui_kiosk_init(void)
         return err;
     }
     memset(s_slot, 0, sizeof(s_slot));
+    memset(s_detect_slot, 0, sizeof(s_detect_slot));
     s_ready = true;
     publish();
     ESP_LOGI(TAG, "overlay up, card %dx%d", ui::OverlayBuilder::kCardWidth,
@@ -49,18 +94,38 @@ esp_err_t ui_kiosk_init(void)
 
 void ui_kiosk_on_face(bool found, const float box[4], int frame_width, int frame_height)
 {
-    if (!s_ready || !s_builder.set_face(found, box, frame_width, frame_height)) {
+    if (!s_ready) {
         return;
     }
-    publish();
+    Detect *target = &s_detect_slot[s_detect_next];
+    memcpy(target->box, box, sizeof(target->box));
+    target->width = frame_width;
+    target->height = frame_height;
+    target->found = found;
+    s_detect_next = (s_detect_next + 1) % kSlots;
+    s_detect.store(target, std::memory_order_release);
 }
 
 void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id)
 {
-    if (!s_ready || !s_builder.set_verdict(verdict, employee_id)) {
+    const uint64_t packed = ((uint64_t)verdict << kVerdictShift) | employee_id;
+    s_verdict.store(packed, std::memory_order_release);
+}
+
+void ui_kiosk_track(const void *pixels, int width, int height)
+{
+    if (!s_ready || pixels == NULL) {
         return;
     }
-    publish();
+    const uint16_t *words = (const uint16_t *)pixels;
+    follow(words, width, height);
+    const ui::Box &held = s_tracker.box();
+    const float box[4] = { held.x1, held.y1, held.x2, held.y2 };
+    bool changed = s_builder.set_face(s_tracker.active(), box, width, height);
+    changed = take_verdict() || changed;
+    if (changed) {
+        publish();
+    }
 }
 
 const drv_lcd_overlay_t *ui_kiosk_overlay(void)

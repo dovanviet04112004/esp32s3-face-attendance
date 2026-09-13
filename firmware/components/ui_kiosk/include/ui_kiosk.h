@@ -30,6 +30,11 @@ void ui_kiosk_on_face(bool found, const float box[4], int frame_width, int frame
  */
 void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id);
 
+/** Slide the box onto this preview frame and refresh what the overlay shows.
+ *  @ctx cam_task | non-blocking | one call per frame, ahead of the draw
+ */
+void ui_kiosk_track(const void *pixels, int width, int height);
+
 /** The overlay to paint over this frame.
  *  @ctx cam_task | non-blocking | read once per frame, never held across frames
  *  @ret NULL while nothing is drawn
