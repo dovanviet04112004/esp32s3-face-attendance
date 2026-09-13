@@ -10,6 +10,7 @@ set(COMPONENTS main common bsp_board sys_storage sys_time net_wifi ai_engine drv
 # settings from the same file the firmware does.
 set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../../sdkconfig.defaults.esp32s3"
                        "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults"
+                       "${CMAKE_CURRENT_LIST_DIR}/../../sdkconfig.dev"
                        $ENV{SDKCONFIG_DEFAULTS})
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
