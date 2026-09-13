@@ -124,6 +124,22 @@ void ring(Canvas &to, int cx, int cy, int radius, int thick, uint8_t tone)
     }
 }
 
+const char *prompt_for(Place place, bool answered)
+{
+    switch (place) {
+        case Place::Far:
+            return "Lại gần hơn";
+        case Place::Outside:
+            return "Đưa mặt vào giữa khung";
+        case Place::Close:
+            return "Lùi lại một chút";
+        case Place::Ready:
+            return answered ? nullptr : "Đang nhận diện...";
+        default:
+            return "Đưa khuôn mặt vào khung";
+    }
+}
+
 const char *refusal(app_ui_verdict_t verdict)
 {
     switch (verdict) {
@@ -182,12 +198,12 @@ public:
         } else if (refusal(seen.verdict) != nullptr) {
             tone = DRV_LCD_WARN;
             prompt = nullptr;
-        } else if (seen.face && !seen.close_enough) {
-            tone = DRV_LCD_WARN;
-            prompt = "Lại gần hơn";
-        } else if (seen.face) {
+        } else if (seen.place == Place::Ready) {
             tone = DRV_LCD_ACCENT;
-            prompt = answered_ ? nullptr : "Đang nhận diện...";
+            prompt = prompt_for(seen.place, answered_);
+        } else if (seen.place != Place::Nothing) {
+            tone = DRV_LCD_WARN;
+            prompt = prompt_for(seen.place, answered_);
         }
         guide(to, tone, prompt);
 
@@ -612,6 +628,19 @@ PeopleScreen s_people;
 ListScreen s_settings("Cài đặt");
 
 }  // namespace
+
+Place place_of(const int16_t panel_box[4], bool close_enough) noexcept
+{
+    if (!close_enough) {
+        return Place::Far;
+    }
+    if (panel_box[2] - panel_box[0] > kGuideW || panel_box[3] - panel_box[1] > kGuideH) {
+        return Place::Close;
+    }
+    const bool held = panel_box[0] >= kGuideX && panel_box[1] >= kGuideY &&
+                      panel_box[2] <= kGuideX + kGuideW && panel_box[3] <= kGuideY + kGuideH;
+    return held ? Place::Ready : Place::Outside;
+}
 
 void ScreenManager::go(ScreenId id) noexcept
 {

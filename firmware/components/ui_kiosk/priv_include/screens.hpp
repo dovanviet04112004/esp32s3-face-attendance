@@ -22,15 +22,29 @@ enum class ScreenId {
     Count,
 };
 
+/** Where the tracked face sits against the guide frame. */
+enum class Place : uint8_t {
+    Nothing = 0,                          // the detector has no face
+    Far,                                  // below vision.face_min_px
+    Outside,                              // big enough, not inside the guide
+    Close,                                // wider or taller than the guide
+    Ready,                                // inside the guide, models running on it
+};
+
 /** What the kiosk knows about the person in front of it, as a screen sees it. */
 struct Sight {
     bool face;                            // the detector has one
-    bool close_enough;                    // it clears vision.face_min_px
+    Place place;
     bool verifying;                       // the slow models are running on it
     app_ui_verdict_t verdict;
     uint32_t employee_id;
     char name[STORAGE_NAME_CAP];
 };
+
+/** Read a face box already mapped to panel pixels against the guide frame.
+ *  @ctx any | non-blocking | the guide rectangle lives with the screens
+ */
+Place place_of(const int16_t panel_box[4], bool close_enough) noexcept;
 
 class Screen {
 public:

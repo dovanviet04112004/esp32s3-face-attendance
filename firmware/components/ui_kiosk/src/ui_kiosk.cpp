@@ -141,18 +141,22 @@ esp_err_t ui_kiosk_init(void)
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
                        int face_min_px)
 {
-    (void)frame_width;
-    (void)frame_height;
+    // The tracked face leads the list (KEHOACH 4.5.5d), and the guide is about
+    // the person being served, not about whoever else is in shot.
     const bool face = count > 0;
-    bool close_enough = false;
-    for (int i = 0; i < count; ++i) {
-        const float w = boxes[i * 4 + 2] - boxes[i * 4 + 0];
-        const float h = boxes[i * 4 + 3] - boxes[i * 4 + 1];
-        close_enough = close_enough || (w > h ? w : h) >= (float)face_min_px;
+    ui::Place place = ui::Place::Nothing;
+    if (face) {
+        const float w = boxes[2] - boxes[0];
+        const float h = boxes[3] - boxes[1];
+        const bool close_enough = (w > h ? w : h) >= (float)face_min_px;
+        int16_t panel[4] = { 0, 0, 0, 0 };
+        place = drv_lcd_frame_to_panel(frame_width, frame_height, boxes, panel)
+                    ? ui::place_of(panel, close_enough)
+                    : ui::Place::Outside;
     }
-    if (face != s_seen.face || close_enough != s_seen.close_enough) {
+    if (face != s_seen.face || place != s_seen.place) {
         s_seen.face = face;
-        s_seen.close_enough = close_enough;
+        s_seen.place = place;
         s_dirty = true;
     }
 }
