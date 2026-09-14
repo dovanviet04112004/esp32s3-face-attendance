@@ -705,11 +705,78 @@ Mục tiêu đặt ra ở đầu tài liệu **chưa đạt**. Bảng tổng k�
 | Ghép model + bề mặt | Không hơn bề mặt đơn lẻ | Đã loại (§3.6) |
 | Sinh ảnh giả tổng hợp từ pool | Không chạy | Đã loại bằng phổ tần trước khi train (§9.3) |
 | Đích giám sát 6×6 ô | AUC 0,7552 · ACER 0,2675 | Đã chạy 90 epoch, **trượt** (§11.6) |
+| SSDG — tổng quát hoá miền | AUC 0,5938 · ACER 0,2615 | Đã chạy 90 epoch, **trượt nặng** (§12.2) |
 
 Không phương án nào trong bảng đủ để chốt. Hai việc còn lại, theo thứ tự:
 
-1. **§8** — chụp ~10 khung bằng phương tiện tấn công thứ hai. Đây là phép thử duy nhất còn
-   có thể khiến đặc trưng bề mặt trở nên đáng tin (nếu biên rộng ra trên dữ liệu mới) hoặc
-   bị loại hẳn.
+1. **§8 — đã chạy, đã đạt.** Điện thoại thứ hai: 4/4 khung giả dưới ngưỡng cũ, 4/4 khung
+   thật trên ngưỡng, chốt kiểm soát sạch. Đặc trưng bề mặt là hướng duy nhất còn sống.
 2. **§5.1** — bổ sung vài chục khung mặt thật không nhãn ở điều kiện thiếu sáng, vá phần
    chặn oan của phép thích nghi thống kê. Việc này **đã có bằng chứng** và độc lập với mục 1.
+
+---
+
+# 12. SSDG — đã chạy 90 epoch, trượt, và trả về số đo sắc nhất của cả dự án
+
+## 12.1. Thiết kế và tiêu chí
+
+Hai hạng cộng vào mục tiêu, nhãn miền lấy sẵn từ thư mục shard nên không phải gắn lại:
+
+- **Đầu miền qua lớp đảo gradient, chỉ nhìn khung mặt thật.** Thân mạng học cách đánh bại nó,
+  nên nửa "thật" thôi mang thông tin camera nào đã chụp.
+- **Triplet bất đối xứng.** Mặt thật của mọi miền là **một** lớp; tấn công của **mỗi** miền là
+  lớp riêng. Mặt thật co lại, tấn công được phép tách ra.
+
+Một lỗi suýt làm cả phép thử vô nghĩa, bắt được trước khi phóng: mỗi worker đọc hết shard này
+mới sang shard khác, mà một thư mục shard là một miền, nên **mỗi batch chỉ mang 1–2 miền** —
+đầu đối kháng không có gì để phân biệt. Sửa bằng cách đọc **xen kẽ 12 shard** và chọn shard
+kế tiếp **theo miền chưa có trong cửa sổ**, vì `unique_live`/`unique_replay` lặp 5 lần trong
+split và sẽ tự chiếm hết chỗ. Sau khi sửa: 2–6 miền mỗi batch.
+
+Tiêu chí giữ nguyên §11.5: ACER < 0,1425 **và** chặn oan ≤ 2/64.
+
+Run này đổi **hai** biến cùng lúc — SSDG **và** tắt augmentation `backlight` — nên kết quả
+không tách được công của từng cái. Ghi rõ trước khi chạy, và vẫn đúng khi đọc.
+
+## 12.2. Kết quả
+
+| Model | AUC | ACER | Giả lọt ≤ 5% | Thật bị chặn |
+|---|---|---|---|---|
+| chroma 13/09 | **0,8668** | **0,1425** | 23,8% | **2/64** |
+| cùng pool, không SSDG | 0,8512 | 0,1964 | 66,7% | 15/64 |
+| **SSDG, 90 epoch** | **0,5938** | 0,2615 | 47,6% | 11/64 |
+
+ACER 0,2615 và 11/64: **trượt cả hai vế**. AUC 0,5938 chỉ hơn mức tung đồng xu 0,09 — tức
+trên khung của chính camera này, model gần như **không phân biệt được gì**.
+
+## 12.3. Số đo đáng giá hơn kết quả
+
+Chấm chính run ấy ở hai thời điểm, cùng bộ trọng số, cùng đường chấm:
+
+| | epoch 47 | epoch 90 |
+|---|---|---|
+| val EER — thước đo gián tiếp | 0,1802 | **0,1537** ↓ tốt lên |
+| val AUC | 0,9035 | **0,9285** ↑ tốt lên |
+| **AUC trên OV5640** | **0,8609** | **0,5938** ↓ sụp |
+
+Mốc val cuối **0,1537 / 0,9285 là tốt nhất trong cả ba run từng chạy** — hơn cả bản đối chứng
+(0,1573 / 0,9226) lẫn bản đầu phụ 6×6 (0,1624 / 0,9237). Cùng lúc ấy nó là bản **tệ nhất trên
+board**: 0,5938 so với 0,8512 và 0,8668.
+
+§11.7 đã thấy hiện tượng này trong một run, nhưng biên độ nhỏ (AUC 0,8616 → 0,7552). Ở đây
+biên độ là **0,8609 → 0,5938**, và chiều val thì mạnh hơn hẳn. Kết luận không còn là "thước đo
+gián tiếp yếu":
+
+> Trên nhánh này, **val không phải thước đo kém — nó ngược dấu.** Val càng tốt, board càng tệ,
+> đo được trong cùng một run, hai lần, ở hai biên độ khác nhau.
+
+## 12.4. Cái này nói gì về SSDG, và cái nó không nói
+
+SSDG san phẳng chênh lệch **giữa các miền có trong pool**. OV5640 không phải một trong số đó —
+cảnh báo này ghi trước khi phóng và kết quả không bác nó. Ép mạng vứt thông tin "miền nào" khi
+mọi miền đều là ảnh sưu tầm chỉ khiến nó bám chặt hơn vào thứ **chung** cho các miền ấy, mà
+thứ chung ấy chính là phong cách ảnh (§11.2) — đúng cái không tồn tại trên khung của board.
+
+Không được đọc kết quả này thành "SSDG là phương pháp tồi". Nó nói: **không có khung OV5640
+trong pool thì không kỹ thuật tổng quát hoá miền nào cứu được**, vì miền đích vắng mặt khỏi
+bài toán mà kỹ thuật ấy giải.
