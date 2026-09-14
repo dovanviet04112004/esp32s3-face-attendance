@@ -22,13 +22,28 @@ extern "C" {
  */
 esp_err_t ui_kiosk_init(void);
 
+/** Why the pipeline is not verifying the face it can see, or that it is.
+ *  The screen may advise on framing, but only this says work is happening,
+ *  and only svc_vision knows that (KEHOACH 4.5.5h.1).
+ */
+typedef enum {
+    UI_KIOSK_STAGE_WORKING = 0,           // the face passed every gate
+    UI_KIOSK_STAGE_NO_FACE,
+    UI_KIOSK_STAGE_TOO_FAR,               // under vision.face_min_px
+    UI_KIOSK_STAGE_TOO_CLOSE,             // the 1.0x crop would leave the frame
+} ui_kiosk_stage_t;
+
 /** Tell the screens what the detector saw, in sensor frame pixels.
  *  @ctx ai_task | non-blocking | boxes holds count sets of four
- *  @param face_min_px the gate below which the kiosk asks the person to come closer
  *  @param yaw of the tracked face, 0 facing the lens (KEHOACH 4.5.5h.2)
  */
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
-                       int face_min_px, float yaw);
+                       float yaw);
+
+/** Tell the screens what the pipeline decided about that face.
+ *  @ctx ai_task | non-blocking | one per step, after svc_vision_step
+ */
+void ui_kiosk_on_stage(ui_kiosk_stage_t stage);
 
 /** Say what the kiosk decided about that face.
  *  @ctx attend_task | non-blocking | employee_id and name read empty unless granted

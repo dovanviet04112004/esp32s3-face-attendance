@@ -13,7 +13,6 @@ constexpr int kGuideW = 240;
 constexpr int kGuideH = 296;
 constexpr int kGuideX = (APP_LCD_H_RES - kGuideW) / 2;
 constexpr int kGuideY = 96;
-constexpr int kGuideSlack = 14;
 constexpr int kPromptY = kGuideY + kGuideH + 16;
 constexpr int kBandH = 104;
 constexpr int kBandY = APP_LCD_V_RES - kBandH - 8;
@@ -140,16 +139,14 @@ void ring(Canvas &to, int cx, int cy, int radius, int thick, uint8_t tone)
     }
 }
 
-const char *prompt_for(Place place)
+const char *prompt_for(ui_kiosk_stage_t stage)
 {
-    switch (place) {
-        case Place::Far:
+    switch (stage) {
+        case UI_KIOSK_STAGE_TOO_FAR:
             return "Lại gần hơn";
-        case Place::Outside:
-            return "Đưa mặt vào giữa khung";
-        case Place::Close:
+        case UI_KIOSK_STAGE_TOO_CLOSE:
             return "Lùi lại một chút";
-        case Place::Ready:
+        case UI_KIOSK_STAGE_WORKING:
             return "Đang nhận diện...";
         default:
             return "Đưa khuôn mặt vào khung";
@@ -178,11 +175,14 @@ public:
         // A track that granted is never verified again (KEHOACH 4.5.5d), so every
         // line guiding the face into the frame is a lie until that face leaves.
         const bool answered = seen.verdict == APP_UI_GRANTED ||
-                              (answered_ && seen.face && refusal(seen.verdict) == nullptr);
-        if (answered == answered_) {
+                              (answered_ && seen.face && seen.verdict != APP_UI_SCANNING &&
+                               refusal(seen.verdict) == nullptr);
+        const bool carded = seen.verdict == APP_UI_GRANTED;
+        if (answered == answered_ && carded == carded_) {
             return false;
         }
         answered_ = answered;
+        carded_ = carded;
         return true;
     }
 
@@ -216,12 +216,12 @@ public:
         } else if (answered_) {
             tone = DRV_LCD_ACCENT;
             prompt = nullptr;
-        } else if (seen.place == Place::Ready) {
-            tone = DRV_LCD_ACCENT;
-            prompt = prompt_for(seen.place);
-        } else if (seen.place != Place::Nothing) {
+        } else if (seen.stage == UI_KIOSK_STAGE_WORKING) {
+            tone = seen.face ? DRV_LCD_ACCENT : DRV_LCD_INK;
+            prompt = seen.face ? prompt_for(seen.stage) : prompt;
+        } else if (seen.stage != UI_KIOSK_STAGE_NO_FACE) {
             tone = DRV_LCD_WARN;
-            prompt = prompt_for(seen.place);
+            prompt = prompt_for(seen.stage);
         }
         guide(to, tone, prompt);
 
@@ -229,7 +229,9 @@ public:
             to.text_centred(kBandY + kBandH / 2 - Canvas::line_height() / 2, line, DRV_LCD_INK);
             return;
         }
-        if (answered_) {
+        // The card keeps its own clock; the latch above only silences guidance,
+        // or a stamped face standing still would pin the card (KEHOACH 4.5.5h.1).
+        if (seen.verdict == APP_UI_GRANTED) {
             granted(to, seen);
         }
     }
@@ -256,6 +258,7 @@ private:
 
     bool held_ = false;
     bool answered_ = false;
+    bool carded_ = false;
 };
 
 class MenuScreen final : public Screen {
@@ -545,7 +548,10 @@ public:
         meter(to, step, step >= kGaugeSteps ? DRV_LCD_ACCENT : DRV_LCD_WARN);
         const char *line = refusal(seen.verdict);
         if (line == nullptr) {
-            line = armed_ ? "Giữ nguyên" : hint(seen);
+            line = hint(seen);
+        }
+        if (line == nullptr) {
+            line = armed_ ? "Giữ nguyên" : nullptr;
         }
         if (line != nullptr) {
             to.text_centred(kHintY, line, DRV_LCD_INK);
@@ -602,24 +608,29 @@ private:
         best_ = turn > best_ ? turn : best_;
     }
 
+    // Full means accepted, not perfect: facing the lens measures within 0.05 of
+    // zero, so a bar scaled off zero would sit at half while already good.
     int gauge(const Sight &seen) const noexcept
     {
         if (!seen.face) {
             return 0;
         }
-        float part = seen.yaw * wanted() / kTurnYaw;
-        if (kept_ == 0) {
-            const float off = seen.yaw < 0.0f ? -seen.yaw : seen.yaw;
-            part = 1.0f - off / kFrontalYaw;
+        if (posed(seen)) {
+            return kGaugeSteps;
         }
+        const float off = seen.yaw < 0.0f ? -seen.yaw : seen.yaw;
+        float part = kept_ == 0 ? kFrontalYaw / (off > 0.0f ? off : kFrontalYaw)
+                                : seen.yaw * wanted() / reach();
         part = part < 0.0f ? 0.0f : (part > 1.0f ? 1.0f : part);
-        return (int)(part * (float)kGaugeSteps);
+        return (int)(part * (float)(kGaugeSteps - 1));
     }
 
+    // A face too close or off centre never reaches the template stage at all, so
+    // the framing line outranks the pose line (KEHOACH 4.5.5h.2).
     const char *hint(const Sight &seen) const noexcept
     {
-        if (!seen.face) {
-            return "Đưa khuôn mặt vào khung";
+        if (!seen.face || seen.stage != UI_KIOSK_STAGE_WORKING) {
+            return prompt_for(seen.stage);
         }
         if (kept_ == 0) {
             return nullptr;
@@ -827,23 +838,6 @@ ListScreen s_settings("Cài đặt");
 
 }  // namespace
 
-Place place_of(const int16_t panel_box[4], bool close_enough, Place was) noexcept
-{
-    if (!close_enough) {
-        return Place::Far;
-    }
-    // The detector box jitters a few pixels a frame, so a face already inside
-    // leaves on a wider bound than it entered on (KEHOACH 4.5.5h).
-    const int slack = was == Place::Ready ? kGuideSlack : 0;
-    if (panel_box[2] - panel_box[0] > kGuideW + slack ||
-        panel_box[3] - panel_box[1] > kGuideH + slack) {
-        return Place::Close;
-    }
-    const bool held = panel_box[0] >= kGuideX - slack && panel_box[1] >= kGuideY - slack &&
-                      panel_box[2] <= kGuideX + kGuideW + slack &&
-                      panel_box[3] <= kGuideY + kGuideH + slack;
-    return held ? Place::Ready : Place::Outside;
-}
 
 void ScreenManager::go(ScreenId id) noexcept
 {

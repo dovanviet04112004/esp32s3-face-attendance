@@ -32,7 +32,6 @@ static const char *TAG = "app_tasks";
 // What frame the pipeline is holding, so its observer can stamp the boxes.
 static int s_seen_width;
 static int s_seen_height;
-static int s_face_min_px;
 
 #define CAM_TASK_CORE 0
 #define CAM_TASK_PRIORITY 7
@@ -192,14 +191,29 @@ static void cam_task(void *arg)
 static void on_seen(const svc_vision_box_t *boxes, uint8_t count, void *ctx)
 {
     (void)ctx;
-    ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height, s_face_min_px,
+    ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height,
                       count > 0 ? boxes[0].yaw : 0.0f);
+}
+
+// Only svc_vision knows which gate a face failed, and a screen that guesses will
+// claim work the pipeline is not doing (KEHOACH 4.5.5h.1).
+static ui_kiosk_stage_t stage_of(svc_vision_kind_t kind)
+{
+    switch (kind) {
+        case SVC_VISION_NO_FACE:
+            return UI_KIOSK_STAGE_NO_FACE;
+        case SVC_VISION_FACE_SMALL:
+            return UI_KIOSK_STAGE_TOO_FAR;
+        case SVC_VISION_FACE_OUT_OF_FRAME:
+            return UI_KIOSK_STAGE_TOO_CLOSE;
+        default:
+            return UI_KIOSK_STAGE_WORKING;
+    }
 }
 
 static void ai_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
-    s_face_min_px = svc_vision_face_min_px();
     svc_vision_on_seen(on_seen, NULL);
     const esp_err_t watched = esp_task_wdt_add(NULL);
     ESP_LOGI(TAG, "ai on core %d, watchdog %s", AI_TASK_CORE, esp_err_to_name(watched));
@@ -227,6 +241,7 @@ static void ai_task(void *arg)
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "vision step %s", esp_err_to_name(err));
         } else if (result.kind != SVC_VISION_NONE) {
+            ui_kiosk_on_stage(stage_of(result.kind));
             ESP_LOGI(TAG, "verdict %d, live %.3f, match %.3f, id %u", (int)result.kind,
                      result.live_score, result.match_score, (unsigned)result.employee_id);
             if (ui_kiosk_enrolling()) {
@@ -518,9 +533,13 @@ static void attend_task(void *arg)
         }
         svc_vision_result_t result;
         if (xQueueReceive(wiring->results, &result, pdMS_TO_TICKS(ATTEND_TICK_MS)) == pdTRUE) {
-            last_kind = result.kind;
-            last_employee = result.employee_id;
-            memcpy(last_name, result.name, sizeof(last_name));
+            // The machine drops this kind, so letting it reach the line would
+            // reword the glass over an event nothing else acted on.
+            if (result.kind != SVC_VISION_FACE_OUT_OF_FRAME) {
+                last_kind = result.kind;
+                last_employee = result.employee_id;
+                memcpy(last_name, result.name, sizeof(last_name));
+            }
             svc_attendance_on_vision(&result, sys_time_now_ms());
         }
         svc_attendance_tick(sys_time_now_ms());

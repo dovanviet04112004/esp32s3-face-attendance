@@ -155,9 +155,20 @@ attend::Ev event_of(svc_vision_kind_t kind, bool *carries)
     }
 }
 
+// A timeout carries a blank result, so only the events that looked at a face may
+// be read as saying who is standing there.
+bool about_a_face(attend::Ev event)
+{
+    return event == attend::Ev::Match || event == attend::Ev::Unknown ||
+           event == attend::Ev::Spoof || event == attend::Ev::FaceSmall;
+}
+
 void apply(attend::Ev event, const svc_vision_result_t *result, int64_t now_ms)
 {
-    if (event == attend::Ev::NoFace || event == attend::Ev::PresenceOff) {
+    // An empty frame is not the only way the last person leaves: a queue keeps a
+    // face in shot throughout, so anyone else being seen ends their turn too.
+    if (event == attend::Ev::NoFace || event == attend::Ev::PresenceOff ||
+        (about_a_face(event) && result->employee_id != s_last_employee)) {
         s_left_since_grant = true;
     }
     const attend::Step step = attend::next(s_state, event);

@@ -23,18 +23,11 @@ enum class ScreenId {
 };
 
 /** Where the tracked face sits against the guide frame. */
-enum class Place : uint8_t {
-    Nothing = 0,                          // the detector has no face
-    Far,                                  // below vision.face_min_px
-    Outside,                              // big enough, not inside the guide
-    Close,                                // wider or taller than the guide
-    Ready,                                // inside the guide, models running on it
-};
 
 /** What the kiosk knows about the person in front of it, as a screen sees it. */
 struct Sight {
     bool face;                            // the detector has one
-    Place place;
+    ui_kiosk_stage_t stage;               // what svc_vision is doing with it
     float yaw;                            // 0 facing the lens (KEHOACH 4.5.5h.2)
     app_ui_verdict_t verdict;
     uint32_t employee_id;
@@ -44,7 +37,6 @@ struct Sight {
 /** Read a face box already mapped to panel pixels against the guide frame.
  *  @ctx any | non-blocking | the guide rectangle lives with the screens
  */
-Place place_of(const int16_t panel_box[4], bool close_enough, Place was) noexcept;
 
 class Screen {
 public:

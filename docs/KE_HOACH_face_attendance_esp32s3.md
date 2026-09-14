@@ -2856,8 +2856,12 @@ mở `Menu` — ba hình chữ nhật vẽ thẳng, vì bảng chữ 22 px chỉ
 tự như `≡` sẽ ra ô trống; **dải dưới** mang kết quả (§4.5.5h). Không có gì che mặt người đang
 đứng — mọi thứ nằm ở mép.
 
-**Một câu ở lại 2,5 giây tính từ phán quyết *cuối cùng* dựng nó lên, không phải từ phán quyết
-đầu.** Bản đầu có thêm một cửa sổ im lặng 6 giây chặn cùng một câu hiện lại, để một khuôn mặt
+**Thẻ kết quả tắt khi *người tiếp theo được phục vụ*, không phải khi hết một đồng hồ.** Kiosk
+đặt ở cửa thì phía sau luôn có người chờ, và 2,5 giây thẻ của người trước là 2,5 giây người sau
+đứng nhìn kết quả không phải của mình. Máy chuyển sang phục vụ ai đó là một sự kiện đã có sẵn —
+trạng thái `Detecting` — nhưng bản đầu **vứt nó đi** vì nó không phải một phán quyết. Nhận lấy
+nó: nó hạ thẻ cũ xuống và mở lại phần hướng dẫn cho người mới. Đồng hồ 2,5 giây vẫn còn, nhưng
+chỉ để lo trường hợp **không có ai phía sau**. Bản đầu có thêm một cửa sổ im lặng 6 giây chặn cùng một câu hiện lại, để một khuôn mặt
 chưa đăng ký khỏi làm nó nhấp nháy. Nhưng cửa sổ ấy **dài hơn** thời gian hiện chữ, nên nó đẻ ra
 đúng cái nó định chặn, chỉ chậm hơn: `Chưa có trong hệ thống` sáng 2,5 giây, **tắt 3,5 giây
 trong lúc máy vẫn đang từ chối**, rồi sáng lại. Bỏ cửa sổ im lặng; thay bằng: cùng một câu đến

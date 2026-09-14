@@ -184,6 +184,62 @@ TEST_CASE("a face that never leaves is granted once, and again after it does",
     TEST_ASSERT_TRUE(svc_door_is_open(svc_door_fake()));
 }
 
+TEST_CASE("a queue behind the first face keeps its turn", "[svc_attendance]")
+{
+    machine_up(true);
+    back_to_idle();
+    svc_attendance_on_presence(true);
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    s_now_ms += GRANT_HOLD_MS + 1;
+    svc_attendance_tick(s_now_ms);
+    s_now_ms += COOLDOWN_MS + 1;
+    svc_attendance_tick(s_now_ms);
+
+    // Nobody left the frame: the next person stepped up while the first walked
+    // off, so the machine never hears NoFace between the two.
+    const uint32_t before = svc_attendance_records();
+    feed(SVC_VISION_MATCH, EMPLOYEE_B, LIVE_SCORE);
+    printf("second in the queue landed in state %d\n", (int)svc_attendance_state());
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    TEST_ASSERT_EQUAL(before + 1, svc_attendance_records());
+
+    s_now_ms += GRANT_HOLD_MS + 1;
+    svc_attendance_tick(s_now_ms);
+    s_now_ms += COOLDOWN_MS + 1;
+    svc_attendance_tick(s_now_ms);
+    svc_door_close(svc_door_fake());
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    TEST_ASSERT_TRUE(svc_door_is_open(svc_door_fake()));
+}
+
+TEST_CASE("a stranger in the queue ends the last person's turn", "[svc_attendance]")
+{
+    machine_up(true);
+    back_to_idle();
+    svc_attendance_on_presence(true);
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    s_now_ms += GRANT_HOLD_MS + 1;
+    svc_attendance_tick(s_now_ms);
+    s_now_ms += COOLDOWN_MS + 1;
+    svc_attendance_tick(s_now_ms);
+
+    // Somebody nobody enrolled stands there next, so no record moves the machine
+    // on, and the frame never empties.
+    feed(SVC_VISION_UNKNOWN, 0, LIVE_SCORE);
+    s_now_ms += DENY_HOLD_MS + 1;
+    svc_attendance_tick(s_now_ms);
+    s_now_ms += COOLDOWN_MS + 1;
+    svc_attendance_tick(s_now_ms);
+    svc_door_close(svc_door_fake());
+
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    printf("the first person came back to state %d\n", (int)svc_attendance_state());
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    TEST_ASSERT_TRUE(svc_door_is_open(svc_door_fake()));
+}
+
 TEST_CASE("a match while idle grants on the spot", "[svc_attendance]")
 {
     machine_up(true);

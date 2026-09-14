@@ -17,8 +17,12 @@ const char *TAG = "ui_kiosk";
 constexpr int kSlots = 2;
 alignas(ui::Canvas) uint8_t s_canvas_store[2][sizeof(ui::Canvas)];
 constexpr uint32_t kVerdictShift = 32;
-// A line stays up this long after the last verdict that raised it.
-constexpr int64_t kShowMs = 2500;
+// How long a card survives with nobody behind it; the next person being served
+// takes it down sooner, so it does not have to be generous.
+constexpr int64_t kShowMs = 1500;
+// A prompt nobody can finish reading is worse than the wrong prompt: svc_vision
+// changes its mind per step, which is faster than an eye (KEHOACH 4.5.5h.1).
+constexpr int64_t kStageDwellMs = 700;
 constexpr int64_t kClockPollMs = 1000;
 
 constexpr uint16_t kWhite = 0xFFFF;
@@ -42,6 +46,8 @@ bool s_ready;
 bool s_dirty = true;
 
 ui::Sight s_seen;
+ui_kiosk_stage_t s_wanted = UI_KIOSK_STAGE_NO_FACE;
+int64_t s_stage_held_ms;
 std::atomic<uint64_t> s_verdict{ 0 };
 char s_name[STORAGE_NAME_CAP];
 uint64_t s_verdict_taken;
@@ -95,6 +101,21 @@ void mind_the_clock(int64_t dt_ms)
     }
 }
 
+void settle_stage(int64_t dt_ms)
+{
+    s_stage_held_ms += dt_ms;
+    if (s_wanted == s_seen.stage) {
+        return;
+    }
+    // Losing the face is news at once; every other change waits its turn.
+    if (s_wanted != UI_KIOSK_STAGE_NO_FACE && s_stage_held_ms < kStageDwellMs) {
+        return;
+    }
+    s_seen.stage = s_wanted;
+    s_stage_held_ms = 0;
+    s_dirty = true;
+}
+
 void take_verdict(int64_t dt_ms)
 {
     s_clear_in_ms -= s_clear_in_ms > 0 ? dt_ms : 0;
@@ -115,6 +136,12 @@ void take_verdict(int64_t dt_ms)
                 strlcpy(s_seen.name, s_name, sizeof(s_seen.name));
                 s_dirty = true;
             }
+        } else if (verdict == APP_UI_SCANNING && s_seen.verdict > APP_UI_SCANNING) {
+            // The machine has taken up somebody else, so the last person's card
+            // must not be what the new one is looking at (KEHOACH 4.5.5h.1).
+            s_clear_in_ms = -1;
+            s_seen.verdict = APP_UI_SCANNING;
+            s_dirty = true;
         }
     }
     // The countdown steps by whole ticks, so it can pass zero without landing on it.
@@ -156,28 +183,25 @@ esp_err_t ui_kiosk_init(void)
 }
 
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
-                       int face_min_px, float yaw)
+                       float yaw)
 {
     // The tracked face leads the list (KEHOACH 4.5.5d), and the guide is about
     // the person being served, not about whoever else is in shot.
+    (void)frame_width;
+    (void)frame_height;
+    (void)boxes;
     const bool face = count > 0;
-    ui::Place place = ui::Place::Nothing;
-    if (face) {
-        const float w = boxes[2] - boxes[0];
-        const float h = boxes[3] - boxes[1];
-        const bool close_enough = (w > h ? w : h) >= (float)face_min_px;
-        int16_t panel[4] = { 0, 0, 0, 0 };
-        place = drv_lcd_frame_to_panel(frame_width, frame_height, boxes, panel)
-                    ? ui::place_of(panel, close_enough, s_seen.place)
-                    : ui::Place::Outside;
-    }
     // Capture reads the turn every tick, so it lands whether or not the box moved.
     s_seen.yaw = face ? yaw : 0.0f;
-    if (face != s_seen.face || place != s_seen.place) {
+    if (face != s_seen.face) {
         s_seen.face = face;
-        s_seen.place = place;
         s_dirty = true;
     }
+}
+
+void ui_kiosk_on_stage(ui_kiosk_stage_t stage)
+{
+    s_wanted = stage;
 }
 
 void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id, const char *name)
@@ -211,6 +235,7 @@ void ui_kiosk_tick(uint32_t dt_ms)
         s_dirty = ui::manager().current()->on_touch(x, y, now >= 0) || s_dirty;
     }
     mind_the_clock(dt_ms);
+    settle_stage(dt_ms);
     take_verdict(dt_ms);
     s_dirty = ui::manager().current()->tick(dt_ms, s_seen) || s_dirty;
     if (!s_dirty) {
