@@ -1363,7 +1363,7 @@ nên đuôi này không phải chi tiết bỏ qua được.
 `backlight` không thay được: nó kéo một bên khung **về phía trắng**, tức làm sáng lên, còn
 `vignette` chỉ tối bốn góc và nhân đúng 1,0 ở giữa khung — nơi khuôn mặt nằm.
 
-#### Một nhãn toàn cục cho phép model trả lời bằng bố cục, nên đích giám sát là 6×6 ô
+#### Đích giám sát 6×6 ô: đã chạy, đã đo, **bị bác**
 
 Mọi mục trên đây đổi **thứ model được ăn**. Mục này đổi **câu hỏi bắt nó trả lời**, và đó là
 trục duy nhất chưa đụng tới sau khi 12 hướng phía dữ liệu đã bị số đo đóng lại
@@ -1391,17 +1391,48 @@ trên cả pool, còn bản đồ nhị phân thì không cần gì.
 | Tham số thêm trên board | **0** — đầu phụ bỏ lúc xuất, `head_dw` trở đi không đổi một byte |
 | Arena, latency, 81×81 | không đổi |
 
-**SSDG là bước hai, không làm cùng lúc.** Hai lần train ngày 14/09 đều cho proxy tăng còn
-thiết bị giảm (iPad AUC 0,8729 → 0,9718 trong khi OV5640 0,8668 → 0,8438). SSDG nhắm đúng
-chế độ hỏng đó: ép đặc trưng **mặt thật** không phân biệt được giữa các miền, còn **tấn
-công** thì cho tách theo miền. Nhãn miền đã có sẵn trên shard từ `xdomain_crop.py`
+**SSDG là bước hai, và nó vẫn chưa chạy.** Ý định ban đầu là làm sau nếu bước một đạt; bước một
+trượt, nên nó không được kích hoạt. Giữ lại đây vì nó nhắm đúng chế độ hỏng vừa đo được: ép đặc
+trưng **mặt thật** không phân biệt được giữa các miền, còn **tấn công** thì cho tách theo miền —
+tức tối ưu thẳng cho một miền chưa từng thấy. Nhãn miền đã có sẵn trên shard từ `xdomain_crop.py`
 (`synth_ipad`, `synth_samsung`, `unique_replay`…) nên không phải gắn lại. Giá: thêm lớp đảo
-gradient và bộ lấy mẫu triplet bất đối xứng — đủ lớn để phải đo riêng, nên **chạy sau** và
-chỉ khi bước một đạt.
+gradient và bộ lấy mẫu triplet bất đối xứng. ⚠️ Nhưng số đo ở trên cho thấy độ lệch nằm giữa
+**pool và camera**, mà SSDG chỉ san phẳng được chênh lệch **giữa các miền có trong pool** —
+OV5640 không phải một trong số đó. Nên đừng chạy nó như bước kế tiếp mặc định.
 
 **Nghiệm thu, chốt trước khi train** — 21 khung tấn công + 64 khung mặt thật của OV5640, giữ
 hoàn toàn ngoài tập huấn luyện. Đạt khi **ACER dưới 0,1425** *và* số khung mặt thật bị chặn
 **không vượt 2/64**. Thiếu một trong hai là trượt.
+
+**Kết quả 14/09, 90 epoch, cùng pool với bản không có đầu phụ:**
+
+| Model | AUC | ACER | Giả lọt ≤5% | Thật bị chặn |
+|---|---|---|---|---|
+| chroma 13/09 | **0,8668** | **0,1425** | 23,8% | **2/64** |
+| cùng pool, không đầu phụ | 0,8512 | 0,1964 | 66,7% | 15/64 |
+| **có đầu phụ 6×6** | 0,7552 | 0,2675 | 52,4% | 14/64 |
+
+**Trượt cả hai vế**, và kém hơn chính bản đối chứng cùng pool: AUC −0,096, ACER +0,071. Chỉ
+nhỉnh hơn ở tỉ lệ giả lọt. Đầu phụ vì thế **tắt mặc định**; mã giữ lại sau cờ
+`patch_supervision` vì nó không tốn gì khi tắt, và vì số đo phải tái lập được.
+
+**Nhưng phép đo này lại trả về thứ giá trị hơn kết quả của nó.** Chấm lại chính run ấy ở giữa
+lịch train:
+
+| | epoch 45 | epoch 90 |
+|---|---|---|
+| val EER — thước đo gián tiếp | 0,1934 | **0,1624** ↓ tốt lên |
+| AUC trên OV5640 | **0,8616** | 0,7552 ↓ tệ đi |
+
+**Trong cùng một lần train**, proxy đi lên đều trong khi thiết bị đi xuống. Hiện tượng "proxy
+tăng thì thiết bị giảm" trước đó chỉ thấy khi so **giữa hai run**; đây là lần đầu nó lộ ra
+**bên trong một run**, tức nó không phải hệ quả của việc đổi pool hay đổi siêu tham số. Càng
+train lâu, model càng khớp phân bố pool và càng lệch khỏi camera thật.
+
+Hệ quả cho mọi arm về sau: **vấn đề không nằm ở kiến trúc hay hàm mục tiêu.** Pool và camera là
+hai phân bố khác nhau, và không một đích giám sát nào sửa được điều đó từ phía pool. Trước khi
+đề xuất arm tiếp theo, đọc `docs/thesis/nghien-cuu-chong-gia-mao-ov5640.md` — mười ba hướng đã
+đóng bằng số đo, và cái duy nhất còn mở đều cần khung ảnh tấn công thật từ chính OV5640.
 
 #### Model sống bằng dải mắt–mũi, nên che chỗ đó là hỏng — và đó là ràng buộc hai chiều
 
@@ -2665,6 +2696,10 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 
 **Nhưng mở máy không được tiêu mất chính phán quyết đã mở nó.** Mỗi sự kiện ở `Idle` làm đúng việc nó mang: `FaceSmall` mở máy rồi chờ, còn `Match` **cấp luôn** và `Spoof` / `Unknown` **từ chối luôn**. Đo trên board 13/09: khi `Match` ở `Idle` chỉ chuyển sang `Detecting`, lần khớp đầu bị tiêu vào việc mở máy, mà §4.5.5d **không xác thực lại một track đã khớp** nên lần khớp thứ hai chỉ tới khi người dùng cử động đủ để track mất dấu (IoU < 0,5) — người đưa mặt vào khung rồi đứng yên **không bao giờ chấm được**, phải nhúc nhích mới xong. Cùng một lẽ ấy, `Denied` và `Cooldown` nhận `Match`: 3,5 giây giữ màn hình từ chối không được phép nuốt một lần khớp thật, người bị từ chối oan phải được chấm ngay ở vòng thử lại kế tiếp chứ không đứng đợi hết giờ. Chống chấm trùng vẫn là việc của `attend.dedup_min` nên không đường nào trong số này đẻ ra bản ghi thừa.
 
+**Một lần cấp quyền đòi một lần *đến*, không phải một lần *khớp*.** Ba đường `Match` ở trên có mặt để một lần khớp thật không bị nuốt, nhưng chúng cũng khiến khuôn mặt **chưa hề rời đi** được cấp quyền lại sau mỗi vòng `Granted → Cooldown → Idle`: `Cooldown` dài 1.500 ms trong khi một vòng AI đầy đủ mất ≈ 1.750 ms, nên máy không bao giờ nghỉ được trọn vẹn. Hậu quả đo trên board 14/09: cửa mở lại và loa kêu lại **mỗi ≈ 4 giây** suốt thời gian người ta còn đứng đó, còn dải kết quả thì nháy sang câu nhắc căn khung rồi quay lại. `dedup_min` không đỡ được vì nó chỉ chặn **bản ghi**, không chặn cửa, tiếng và màn.
+
+Nên `Grant` bị chặn khi **cùng một `employee_id` còn trong cửa sổ `dedup_min`** *và* chưa có `NoFace` hoặc `PresenceOff` nào kể từ lần cấp trước. Chặn đặt ở **bước chuyển trạng thái** chứ không ở hành động: tiếng và màn bám vào việc *đổi trạng thái*, nên chặn ở hành động thì cửa im mà loa vẫn kêu. Người khác bước tới vẫn được cấp ngay, vì phép so là theo mã nhân viên.
+
 **Bốn quyết định nghiệp vụ tầng này giữ, không đẩy xuống dưới:**
 
 1. **Chống chấm trùng.** Cùng một `employee_id` trong `attend.dedup_min` phút thì `Grant` vẫn mở cửa nhưng **không sinh bản ghi mới** — người ta quét lại vì cửa chưa kịp mở, không phải vì muốn chấm hai lần. Cửa sổ là ngưỡng nghiệp vụ nên nằm ở NVS (§4.9, §6.2.1).
@@ -2800,14 +2835,38 @@ cộng hình học §3 "Chốt 1" ở `svc_vision`, nên khung ngắm **không �
 cho §4.9, và người đứng lệch một chút vẫn chấm được — chỉ là màn hình chỉ cho họ chỗ đứng tốt hơn.
 
 Bản đồ phủ mang **bốn màu** (§4.5.5h): trắng, viền đen, xanh mint, hổ phách. Không có đỏ, nên
-từ chối nói bằng hổ phách cộng câu chữ chứ không bằng màu thứ năm. Dòng `Đang nhận diện...` tắt
-ngay khi có phán quyết và **không hiện lại chừng nào khuôn mặt ấy còn đứng đó**: track đã khớp
-thì §4.5.5d không xác thực lại, nên dòng ấy sẽ là một lời nói dối.
+từ chối nói bằng hổ phách cộng câu chữ chứ không bằng màu thứ năm.
+
+**Đã trả lời rồi thì thôi hướng dẫn.** Mọi câu nhắc căn khung — `Đang nhận diện...`, `Lại gần
+hơn`, `Đưa mặt vào giữa khung`, `Lùi lại một chút` — đều tắt từ lúc có phán quyết cho tới khi
+**khuôn mặt ấy rời khung**, không riêng câu đầu. Lý do như nhau: §4.5.5d không xác thực lại một
+track đã khớp, nên hướng dẫn người ta căn lại là hướng dẫn một việc vô nghĩa. Đo trên board
+14/09 khi chốt này chỉ áp cho một câu: chấm xong đứng yên thì màn nhảy sang `Đưa mặt vào giữa
+khung` ngay sau khi thẻ kết quả hết giờ. Một phán quyết **từ chối** thì xoá cờ ấy lập tức, nếu
+không người sau giơ ảnh giả sẽ vẫn thấy thẻ "Đã chấm công" của người trước.
+
+**So khung ngắm phải có trễ.** Hộp của detector rung vài pixel mỗi khung, mà phép so ban đầu là
+biên cứng — lệch một pixel là nhảy `Ready` → `Outside`. Ở ~14 fps thì câu chữ dưới khung đảo qua
+lại mấy lần một giây. Nên khuôn mặt **đã ở trong** khung được nới thêm **14 px** mỗi phía trước
+khi bị coi là ra ngoài; vào khung thì vẫn khắt khe. Trễ áp cho cả phép so "quá gần", vì kích
+thước hộp cũng rung.
 
 Ba thứ còn lại trên `Scan`: **thanh trên** mang giờ, ngày và dấu Wi-Fi; nút **ba gạch** góc phải
 mở `Menu` — ba hình chữ nhật vẽ thẳng, vì bảng chữ 22 px chỉ có ASCII và tiếng Việt nên một ký
 tự như `≡` sẽ ra ô trống; **dải dưới** mang kết quả (§4.5.5h). Không có gì che mặt người đang
-đứng — mọi thứ nằm ở mép, và thẻ kết quả chỉ chiếm dải dưới trong 2,5 giây.
+đứng — mọi thứ nằm ở mép.
+
+**Một câu ở lại 2,5 giây tính từ phán quyết *cuối cùng* dựng nó lên, không phải từ phán quyết
+đầu.** Bản đầu có thêm một cửa sổ im lặng 6 giây chặn cùng một câu hiện lại, để một khuôn mặt
+chưa đăng ký khỏi làm nó nhấp nháy. Nhưng cửa sổ ấy **dài hơn** thời gian hiện chữ, nên nó đẻ ra
+đúng cái nó định chặn, chỉ chậm hơn: `Chưa có trong hệ thống` sáng 2,5 giây, **tắt 3,5 giây
+trong lúc máy vẫn đang từ chối**, rồi sáng lại. Bỏ cửa sổ im lặng; thay bằng: cùng một câu đến
+lại **trong lúc nó còn đang hiện** thì chỉ gia hạn đồng hồ chứ không dựng lại. Câu chữ vì thế
+đứng yên suốt thời gian người ta còn bị từ chối, và tắt 2,5 giây sau khi họ đi.
+
+Đồng hồ ấy đếm lùi theo **bước tick nguyên**, nên phép kiểm phải là "đã qua 0" chứ không phải
+"bằng 0": chỉ cần đổi `UI_TICK_MS` sang một số không chia hết 2.500 là câu chữ **không bao giờ
+tắt nữa**.
 
 ##### h.2) Màn `Capture` — đăng ký lấy nhiều mẫu, có vạch tiến trình
 
@@ -2816,6 +2875,71 @@ Máy thương mại lấy nhiều mẫu và hiện vạch phần trăm; người
 mỗi mẫu là một `template_idx`, và vẽ ba ô vuông sáng dần. Câu nhắc đổi theo mẫu đang chờ.
 Bỏ dở giữa chừng thì những mẫu đã lấy **bị xoá**, vì một người chỉ có mẫu chính diện sẽ nhận
 kém ở mọi tư thế khác và đó là lỗi khó truy sau này.
+
+**Câu nhắc tư thế phải là điều kiện, không phải lời đề nghị.** Bản đầu chỉ đổi chữ rồi lấy
+**khung verified kế tiếp bất kỳ**, cách nhau tối thiểu 400 ms — không có phép so nào kiểm mặt
+có quay hay không. Đứng yên nhìn thẳng suốt cả ba lượt vẫn lấy đủ 3 mẫu và vẫn báo "Đã thêm",
+mà thứ ghi xuống flash là **ba mẫu chính diện gần trùng nhau**. Đó đúng là lỗi đoạn trên vừa
+mô tả, chỉ khác là nó đến qua đường chạy trọn vẹn chứ không qua đường huỷ giữa chừng.
+
+**Đo góc quay ngang bằng chính 5 điểm mốc YuNet đã trả.** Không thêm model, không thêm phép
+chạy: chiếu vectơ *mũi − trung điểm hai mắt* lên **trục hai mắt**, chia cho bình phương độ dài
+trục ấy. Chọn phép chiếu chứ không lấy lệch ngang thuần, vì phép chiếu **không đổi khi đầu
+nghiêng** — nghiêng đầu mà bị đọc thành quay là kiểu sai làm người dùng phát điên.
+
+⚠️ **Bẫy dấu.** `hmirror` = 1 (§2.1), nên khung đã lật gương trước khi tới cả model lẫn UI.
+Dấu của đại lượng trên vì thế **không suy ra bằng lập luận mà phải đo**: một lần ghi log trên
+board, quay trái rồi quay phải, đọc dấu thật. 🔬 **Chưa đo** — ngưỡng khởi điểm đặt **0,12** và
+chốt lại bằng chính phép đo ấy. Sai dấu ở đây nghĩa là người dùng quay đúng mà máy đòi quay
+ngược, tức hỏng toàn bộ tính năng.
+
+**Năm luật giữ cho nó không thành cực hình.** Đây là phần quyết định việc này *xịn* hay *ức
+chế*:
+
+1. **Phản hồi sống, không phải đúng/sai.** Một vạch chỉ hướng đầy dần theo góc quay hiện tại.
+   Người dùng thấy nó nhúc nhích theo đầu mình thì biết máy đang nghe; đứng đoán xem đã đủ chưa
+   mới là thứ gây ức chế.
+2. **Giữ 300 ms mới tính.** Quét nhanh qua đúng góc sẽ lấy phải khung nhoè. Giữ một nhịp ngắn
+   vừa tránh nhoè vừa làm thao tác có cảm giác dứt khoát.
+3. **Có trễ ở ngưỡng nhận**, cùng lý do §4.5.5h.1: điểm mốc rung thì vạch sẽ giật quanh biên.
+4. **Quay nhầm bên thì nói ra** — "Quay ngược lại" — chứ không im lặng từ chối. Im lặng là lúc
+   người dùng nghĩ máy hỏng.
+5. **Không bao giờ nhốt người dùng.** Quá **6 giây** chưa đạt thì lấy **khung quay nhiều nhất
+   đã thấy** rồi đi tiếp, không báo gì. Một mẫu hơi thiếu góc vẫn hơn một người bị kẹt ở màn
+   đăng ký. Luật này đứng trên bốn luật kia.
+
+Mẫu đầu cũng có điều kiện, ngược lại: **phải đủ chính diện**. Người bắt đầu ở tư thế đã quay mà
+không bị chặn thì cả ba mẫu lại cùng một phía.
+
+**Đường đi của con số.** Góc quay tính ở `svc_vision`, nơi duy nhất biết ngữ nghĩa của điểm mốc,
+rồi đi theo `svc_vision_box_t` ra ngoài — `main` chuyển tiếp cho `ui_kiosk` đúng như nó đang
+chuyển hộp mặt, nên không có luật tầng nào bị phá (§4.5.4). `ui_kiosk` **chỉ vẽ**, không tự tính
+tư thế từ toạ độ.
+
+**Đăng ký đã đi qua cổng liveness, và đó là thứ tự bắt buộc.** `verify()` chấm liveness **trước**
+`embed()`, nên một tấm ảnh giơ lên lúc đăng ký trả `SPOOF` và thoát sớm — không đường nào ghi
+được mẫu vào bảng. Thứ tự ấy không được đảo: một mẫu giả nằm trong `svc_facedb` làm mọi lớp
+chống giả phía sau thành vô nghĩa, vì từ đó trở đi kẻ tấn công là người dùng hợp lệ.
+
+**Nhưng ảnh không có nhánh spoof thì đăng ký đang mở toang.** Khối kiểm nằm sau
+`liveness_.available()`, nên `models_0` thiếu nhánh spoof là cả khối bị bỏ qua. Bên chấm công có
+`attend.allow_no_spoof` và **mặc định từ chối** (quyết định 2 ở §4.5.5f); bên đăng ký không có
+cổng tương đương, tức cùng một hoàn cảnh mà cửa thì khoá còn bảng mặt thì ai ghi cũng được.
+**Dùng lại đúng khoá ấy, không đẻ khoá mới** (§4.9): nó trả lời đúng một câu — *kiosk này có
+được phép hành động khi không có câu trả lời liveness không* — và mở cửa hay ghi mẫu đều là hành
+động ấy. Cổng đặt ở **`main`**, nơi đã cầm chính sách và đã làm cầu nối giữa `ui_kiosk` và
+`svc_vision`, nên `svc_vision` không phải biết một ngưỡng nghiệp vụ nào.
+
+**Mẫu bị từ chối không được làm màn hình treo.** `Capture` hiện chỉ đi tiếp khi một mẫu **đậu**,
+và bỏ qua hoàn toàn phán quyết đi kèm. Bị `SPOOF` liên tục thì màn đứng im **không giới hạn**,
+không một dòng giải thích, lối ra duy nhất là nút "Huỷ". Hai luật:
+
+- **Nói ra lý do.** `SPOOF`, `FACE_SMALL`, `FACE_OUT_OF_FRAME` đều có câu riêng ngay dưới khung
+  ngắm, dùng lại đúng chữ của §4.5.5h.1 chứ không đặt bộ chữ thứ hai.
+- **Bỏ cuộc tử tế sau 15 giây** một mẫu không đậu: xoá những mẫu đã lấy đúng như đường huỷ, về
+  `Menu`, báo "Chưa lấy được mẫu". ⚠️ Khác hẳn luật 5 ở trên: hết giờ vì **tư thế** thì lấy khung
+  tốt nhất đã thấy, còn hết giờ vì **liveness** thì **tuyệt đối không được lấy** — nhận đại một
+  mẫu ở đây là tự tay ghi khuôn mặt giả vào bảng.
 
 **Người thêm tại kiosk lấy mã số ở đâu.** Kiosk không có server để cấp mã, nên `main` hỏi
 `svc_facedb_next_employee_id()` — **một hơn mã lớn nhất còn sống trong bảng** — đúng **một lần

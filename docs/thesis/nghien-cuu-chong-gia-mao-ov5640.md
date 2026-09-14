@@ -609,6 +609,50 @@ muốn — đây là lỗi đã mắc hai lần trong ngày (§6.1).
 bị **tệ đi**. Khác biệt của lần này là cả hai lần đó chỉ đổi *dữ liệu*, còn đây đổi *đích
 giám sát*. Đó là lý do để kỳ vọng khác, **không phải** bằng chứng rằng nó sẽ khác.
 
+## 11.6. Kết quả: trượt cả hai vế
+
+90 epoch, cùng pool với bản đối chứng, khác đúng một biến là đầu phụ 6 × 6.
+
+| Model | AUC | ACER | Giả lọt ≤ 5% | Thật bị chặn |
+|---|---|---|---|---|
+| chroma 13/09 | **0,8668** | **0,1425** | 23,8% | **2/64** |
+| cùng pool, không đầu phụ | 0,8512 | 0,1964 | 66,7% | 15/64 |
+| **có đầu phụ 6 × 6** | 0,7552 | 0,2675 | 52,4% | 14/64 |
+
+Tiêu chí đã chốt ở §11.5 là ACER < 0,1425 **và** chặn oan ≤ 2/64. Kết quả 0,2675 và 14/64 —
+**trượt cả hai**, và còn kém hơn chính bản đối chứng cùng pool: AUC −0,096, ACER +0,071. Chỉ
+nhỉnh hơn ở tỉ lệ giả lọt (52,4% so với 66,7%).
+
+Giả thuyết trung tâm ở §11.2 — model phân loại *phong cách ảnh* nên ép nó tính cục bộ sẽ sửa
+được — **không đứng vững trước phép đo**.
+
+## 11.7. Thứ phép đo này trả về, giá trị hơn kết quả của nó
+
+Chấm lại **chính run ấy** ở giữa lịch huấn luyện:
+
+| | epoch 45 | epoch 90 |
+|---|---|---|
+| val EER — thước đo gián tiếp | 0,1934 | **0,1624** ↓ tốt lên |
+| AUC trên OV5640 | **0,8616** | 0,7552 ↓ tệ đi |
+| ACER trên OV5640 | 0,2191 | 0,2675 ↓ tệ đi |
+
+**Trong cùng một lần huấn luyện, proxy đi lên đều trong khi thiết bị đi xuống.**
+
+Đây là điểm khác biệt so với §6.1. Ở đó hiện tượng "proxy tăng thì thiết bị giảm" chỉ quan sát
+được khi so **giữa hai lần train khác nhau**, nên luôn còn chỗ đổ cho việc đã đổi pool hoặc đổi
+siêu tham số. Lần này nó lộ ra **bên trong một run duy nhất**, cùng dữ liệu, cùng siêu tham số,
+chỉ khác số epoch. Không còn biến nào khác để đổ.
+
+> Kết luận rút ra: **vấn đề không nằm ở kiến trúc, cũng không nằm ở hàm mục tiêu.** Càng huấn
+> luyện lâu, model càng khớp phân bố của pool, và chính việc khớp ấy đẩy nó ra xa camera thật.
+> Mọi đích giám sát đặt từ phía pool đều chịu chung số phận, vì chúng cùng tối ưu trên một phân
+> bố không phải phân bố triển khai.
+
+Hệ quả trực tiếp: **SSDG mất phần lớn lý do**. Nó san phẳng chênh lệch **giữa các miền có trong
+pool**, mà OV5640 không phải một trong số đó. Và **arm "đầu phụ + pool chroma"** (ước tính 8,5
+giờ) cũng không được chạy: biến vừa bị bác trên một pool, không có cơ sở để kỳ vọng nó đảo chiều
+trên pool khác.
+
 ---
 
 **Trạng thái chốt cuối ngày 14/09/2026.** Model tốt nhất cho board vẫn là bản chroma 4 kênh
@@ -625,6 +669,7 @@ Mục tiêu đặt ra ở đầu tài liệu **chưa đạt**. Bảng tổng k�
 | Đặc trưng bề mặt đơn lẻ | 83/85 dưới kiểm chéo | Mạnh nhất, nhưng biên 0,046 σ — chưa nạp được |
 | Ghép model + bề mặt | Không hơn bề mặt đơn lẻ | Đã loại (§3.6) |
 | Sinh ảnh giả tổng hợp từ pool | Không chạy | Đã loại bằng phổ tần trước khi train (§9.3) |
+| Đích giám sát 6×6 ô | AUC 0,7552 · ACER 0,2675 | Đã chạy 90 epoch, **trượt** (§11.6) |
 
 Không phương án nào trong bảng đủ để chốt. Hai việc còn lại, theo thứ tự:
 
