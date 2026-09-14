@@ -33,7 +33,7 @@ void cell_bounds(float origin, float span, int count, int limit, int *first, int
 }
 
 void area_rows(const ai_engine_frame_t &frame, const int *col_first, const int *col_last, int cols, int row_first,
-               int row_last, int8_t *out, const Quantizer &quant) noexcept
+               int row_last, int8_t *out, const Quantizer &quant, int planes) noexcept
 {
     for (int c = 0; c < cols; ++c) {
         unsigned sum[kChannels] = { 0, 0, 0 };
@@ -48,8 +48,19 @@ void area_rows(const ai_engine_frame_t &frame, const int *col_first, const int *
             }
         }
         const unsigned count = static_cast<unsigned>((col_last[c] - col_first[c] + 1) * (row_last - row_first + 1));
+        unsigned mean[kChannels];
         for (int k = 0; k < kChannels; ++k) {
-            *out++ = quant.byte((sum[k] + count / 2) / count);
+            mean[k] = (sum[k] + count / 2) / count;
+            *out++ = quant.byte(mean[k]);
+        }
+        if (planes > kChannels) {
+            unsigned high = mean[0] > mean[1] ? mean[0] : mean[1];
+            high = high > mean[2] ? high : mean[2];
+            unsigned low = mean[0] < mean[1] ? mean[0] : mean[1];
+            low = low < mean[2] ? low : mean[2];
+            // The plane carries the same 0..1 range as the three beside it, so
+            // it goes through the same table rather than a scale of its own.
+            *out++ = quant.byte(high > 0 ? ((high - low) * (kByteLevels - 1) + high / 2) / high : 0);
         }
     }
 }
@@ -104,7 +115,7 @@ void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb
 }
 
 void resample_square(const ai_engine_frame_t &frame, float left, float top, float side, int size, int8_t *out,
-                     const Quantizer &quant) noexcept
+                     const Quantizer &quant, int planes) noexcept
 {
     if (size > kMaxSide) {
         return;
@@ -113,7 +124,8 @@ void resample_square(const ai_engine_frame_t &frame, float left, float top, floa
     cell_bounds(left, side, size, frame.width, col_first, col_last);
     cell_bounds(top, side, size, frame.height, row_first, row_last);
     for (int row = 0; row < size; ++row) {
-        area_rows(frame, col_first, col_last, size, row_first[row], row_last[row], out + row * size * kChannels, quant);
+        area_rows(frame, col_first, col_last, size, row_first[row], row_last[row],
+                  out + (size_t)row * size * planes, quant, planes);
     }
 }
 
@@ -128,7 +140,7 @@ void resample_frame(const ai_engine_frame_t &frame, int new_w, int new_h, int8_t
     cell_bounds(0.0f, static_cast<float>(frame.height), new_h, frame.height, row_first, row_last);
     for (int row = 0; row < new_h; ++row) {
         area_rows(frame, col_first, col_last, new_w, row_first[row], row_last[row], out + row * out_w * kChannels,
-                  quant);
+                  quant, kChannels);
     }
 }
 

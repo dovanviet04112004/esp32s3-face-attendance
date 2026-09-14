@@ -42,9 +42,12 @@ inline uint16_t frame_word(const ai_engine_frame_t &frame, size_t index) noexcep
 /** Bilinear sample at a fractional position, clamped to the frame border. */
 void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb[kChannels]) noexcept;
 
-/** Resample one frame rectangle onto a size x size x 3 int8 block by area averaging. */
+/** Resample one frame rectangle onto a size x size x planes int8 block by area
+ *  averaging; planes 4 appends per-pixel saturation, which a convolution cannot
+ *  derive from the three beside it (KEHOACH 3, measurements 38).
+ */
 void resample_square(const ai_engine_frame_t &frame, float left, float top, float side, int size, int8_t *out,
-                     const Quantizer &quant) noexcept;
+                     const Quantizer &quant, int planes = kChannels) noexcept;
 
 /** Resample the whole frame to new_w x new_h by area averaging, writing NHWC int8
  *  rows of out_w pixels starting at out; out must hold new_h rows of out_w pixels. */
