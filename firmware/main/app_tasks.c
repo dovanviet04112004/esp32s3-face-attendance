@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <string.h>
 
+#include "ai_engine.h"
 #include "app_config.h"
 #include "app_events.h"
 #include "app_wiring.h"
@@ -191,7 +192,8 @@ static void cam_task(void *arg)
 static void on_seen(const svc_vision_box_t *boxes, uint8_t count, void *ctx)
 {
     (void)ctx;
-    ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height, s_face_min_px);
+    ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height, s_face_min_px,
+                      count > 0 ? boxes[0].yaw : 0.0f);
 }
 
 static void ai_task(void *arg)
@@ -224,11 +226,18 @@ static void ai_task(void *arg)
         esp_task_wdt_reset();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "vision step %s", esp_err_to_name(err));
-        } else if (result.kind != SVC_VISION_NONE && !ui_kiosk_enrolling()) {
+        } else if (result.kind != SVC_VISION_NONE) {
             ESP_LOGI(TAG, "verdict %d, live %.3f, match %.3f, id %u", (int)result.kind,
                      result.live_score, result.match_score, (unsigned)result.employee_id);
+            if (ui_kiosk_enrolling()) {
+                // Enrolling keeps attendance out of it, but a refused sample still
+                // has to reach the glass or the screen waits mute (KEHOACH 4.5.5h.2).
+                if (result.kind == SVC_VISION_SPOOF) {
+                    ui_kiosk_on_verdict(APP_UI_SPOOF, 0, "");
+                }
             // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
-            if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) != pdTRUE) {
+            } else if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) !=
+                       pdTRUE) {
                 ESP_LOGE(TAG, "result %d dropped, attend queue full", (int)result.kind);
             }
         }
@@ -305,7 +314,18 @@ static void ui_task(void *arg)
         uint32_t employee_id = 0;
         uint16_t template_idx = 0;
         char name[STORAGE_NAME_CAP] = { 0 };
-        if (!ui_kiosk_take_enrol(&employee_id, &template_idx, name, sizeof(name))) {
+        float yaw_min = 0.0f;
+        float yaw_max = 0.0f;
+        if (!ui_kiosk_take_enrol(&employee_id, &template_idx, name, sizeof(name), &yaw_min,
+                                 &yaw_max)) {
+            continue;
+        }
+        svc_attendance_policy_t policy = { 0 };
+        // A template taken with no liveness answer is a spoof wearing a name, and
+        // the bit that already governs the door answers this too (KEHOACH 4.5.5h.2).
+        if (ai_engine_spoof_input_bytes() == 0 &&
+            (svc_attendance_policy(&policy) != ESP_OK || !policy.allow_no_spoof)) {
+            ESP_LOGE(TAG, "enrol refused for %s: no spoof branch and the policy forbids it", name);
             continue;
         }
         // All three samples of one person share the id taken for the first
@@ -318,7 +338,8 @@ static void ui_task(void *arg)
             ESP_LOGE(TAG, "no id for %s, face table did not answer", name);
             continue;
         }
-        const esp_err_t asked = svc_vision_enrol_next(employee_id, template_idx, name);
+        const esp_err_t asked =
+            svc_vision_enrol_next(employee_id, template_idx, name, yaw_min, yaw_max);
         armed = asked == ESP_OK;
         ESP_LOGI(TAG, "enrol %u sample %u for %s: %s", (unsigned)employee_id,
                  (unsigned)template_idx, name, esp_err_to_name(asked));

@@ -51,12 +51,12 @@ extern "C" void svc_vision_on_seen(svc_vision_seen_cb_t cb, void *ctx)
 }
 
 extern "C" esp_err_t svc_vision_enrol_next(uint32_t employee_id, uint16_t template_idx,
-                                           const char *name)
+                                           const char *name, float yaw_min, float yaw_max)
 {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
-    s_pipeline.enrol_next(employee_id, template_idx, name);
+    s_pipeline.enrol_next(employee_id, template_idx, name, yaw_min, yaw_max);
     return ESP_OK;
 }
 

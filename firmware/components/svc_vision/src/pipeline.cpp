@@ -58,6 +58,21 @@ const ai_engine_face_t &largest(const ai_engine_face_t *faces, size_t count) noe
     return faces[best];
 }
 
+// Projected on the eye axis rather than taken as a plain sideways offset, so a
+// tilted head does not read as a turned one (KEHOACH 4.5.5h.2).
+float yaw_of(const float landmarks[10]) noexcept
+{
+    const float eye_x = landmarks[2] - landmarks[0];
+    const float eye_y = landmarks[3] - landmarks[1];
+    const float span = eye_x * eye_x + eye_y * eye_y;
+    if (span < 1.0f) {
+        return 0.0f;
+    }
+    const float nose_x = landmarks[4] - (landmarks[0] + landmarks[2]) * 0.5f;
+    const float nose_y = landmarks[5] - (landmarks[1] + landmarks[3]) * 0.5f;
+    return (nose_x * eye_x + nose_y * eye_y) / span;
+}
+
 svc_vision_result_t blank() noexcept
 {
     svc_vision_result_t out;
@@ -146,7 +161,8 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     float score = -1.0f;
     // A request outlives a table that refused the sample, so the next verified
     // frame tries again (KEHOACH 4.5.5d).
-    if (enrol_id_ != 0 &&
+    const float turn = yaw_of(primary.landmarks);
+    if (enrol_id_ != 0 && turn >= enrol_yaw_min_ && turn <= enrol_yaw_max_ &&
         matcher_.keep(embedding_, scale, enrol_id_, enrol_idx_, enrol_name_) == ESP_OK) {
         enrol_id_ = 0;
     }
@@ -168,11 +184,13 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     out.kind = SVC_VISION_UNKNOWN;
 }
 
-void VisionPipeline::enrol_next(uint32_t employee_id, uint16_t template_idx,
-                                const char *name) noexcept
+void VisionPipeline::enrol_next(uint32_t employee_id, uint16_t template_idx, const char *name,
+                                float yaw_min, float yaw_max) noexcept
 {
     strlcpy(enrol_name_, name != nullptr ? name : "", sizeof(enrol_name_));
     enrol_idx_ = template_idx;
+    enrol_yaw_min_ = yaw_min;
+    enrol_yaw_max_ = yaw_max;
     enrol_id_ = employee_id;
 }
 
@@ -184,14 +202,15 @@ void VisionPipeline::tell(const svc_vision_result_t &out, size_t count) noexcept
     svc_vision_box_t boxes[SVC_VISION_REPORTED_FACES];
     uint8_t kept = 0;
     if (count > 0) {
-        memcpy(boxes[kept++].box, out.primary.box, sizeof(boxes[0].box));
+        boxes[kept++] = out.primary;
         for (size_t i = 0; i < count && i < SVC_VISION_REPORTED_FACES &&
                            kept < SVC_VISION_REPORTED_FACES;
              ++i) {
             if (memcmp(faces_[i].box, out.primary.box, sizeof(boxes[0].box)) == 0) {
                 continue;
             }
-            memcpy(boxes[kept++].box, faces_[i].box, sizeof(boxes[0].box));
+            memcpy(boxes[kept].box, faces_[i].box, sizeof(boxes[0].box));
+            boxes[kept++].yaw = yaw_of(faces_[i].landmarks);
         }
     }
     seen_cb_(boxes, kept, seen_ctx_);
@@ -204,6 +223,7 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     out.faces = static_cast<uint8_t>(count);
     for (size_t i = 0; i < count && i < SVC_VISION_REPORTED_FACES; ++i) {
         memcpy(out.boxes[i].box, faces_[i].box, sizeof(out.boxes[i].box));
+        out.boxes[i].yaw = yaw_of(faces_[i].landmarks);
     }
     if (count == 0) {
         if (++misses_ < kMissesLost) {
@@ -220,6 +240,7 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     misses_ = 0;
     const ai_engine_face_t &primary = pick(count);
     memcpy(out.primary.box, primary.box, sizeof(out.primary.box));
+    out.primary.yaw = yaw_of(primary.landmarks);
     follow(primary);
     // The slow models below hold this step for up to a second, and a box that
     // waits for them is a second old by the time it is drawn (KEHOACH 4.5.5d).

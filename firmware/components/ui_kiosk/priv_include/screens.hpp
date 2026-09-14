@@ -35,6 +35,7 @@ enum class Place : uint8_t {
 struct Sight {
     bool face;                            // the detector has one
     Place place;
+    float yaw;                            // 0 facing the lens (KEHOACH 4.5.5h.2)
     app_ui_verdict_t verdict;
     uint32_t employee_id;
     char name[STORAGE_NAME_CAP];
@@ -81,6 +82,8 @@ struct EnrolRequest {
     uint32_t employee_id;
     uint16_t template_idx;
     char name[STORAGE_NAME_CAP];
+    float yaw_min;                        // the turn this sample asks for
+    float yaw_max;
 };
 
 EnrolRequest &enrol_request() noexcept;

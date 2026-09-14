@@ -28,6 +28,20 @@ constexpr int kSamples = 3;
 constexpr int64_t kSampleGapMs = 400;
 constexpr int64_t kDoneShowMs = 1800;
 constexpr uint32_t kNewPerson = 0;        // main fills in the id (KEHOACH 4.5.5h.2)
+// Measured on the board 14/09: facing the lens holds inside 0.05, a turn either
+// way passes 0.44, and left is the negative one (KEHOACH 4.5.5h.2).
+constexpr float kFrontalYaw = 0.10f;
+constexpr float kTurnYaw = 0.20f;
+constexpr float kTurnSign = -1.0f;
+constexpr float kOpenYaw = 10.0f;
+constexpr int64_t kPoseHoldMs = 300;
+constexpr int64_t kPoseWaitMs = 6000;
+constexpr int64_t kSampleWaitMs = 15000;
+constexpr int kGaugeSteps = 12;
+constexpr int kAskY = 40;
+constexpr int kDotsY = 66;
+constexpr int kGaugeY = 82;
+constexpr int kHintY = 356;
 
 ScreenManager s_manager;
 EnrolRequest s_request;
@@ -428,9 +442,9 @@ public:
     void on_enter() noexcept override
     {
         kept_ = 0;
-        since_ms_ = 0;
         took_ = false;
-        arm();
+        failed_ = false;
+        begin();
     }
 
     bool on_touch(int x, int y, bool down) noexcept override
@@ -451,22 +465,44 @@ public:
 
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
     {
-        (void)seen;
         since_ms_ += dt_ms;
-        // The done line is painted once when the last sample lands and then
-        // held: repainting an opaque screen every tick reads as a flicker.
-        if (kept_ >= kSamples) {
+        if (failed_ || kept_ >= kSamples) {
             if (since_ms_ < kDoneShowMs) {
                 return false;
             }
-            manager().go(ScreenId::Scan);
+            manager().go(failed_ ? ScreenId::Menu : ScreenId::Scan);
             return true;
         }
-        if (!took_ || since_ms_ < kSampleGapMs) {
+        if (took_) {
+            if (since_ms_ < kSampleGapMs) {
+                return false;
+            }
+            took_ = false;
+            begin();
+            return true;
+        }
+        wait_ms_ += dt_ms;
+        // Liveness refusing every frame must not hold a person here, and taking
+        // one anyway would write a spoof into the table (KEHOACH 4.5.5h.2).
+        if (wait_ms_ >= kSampleWaitMs) {
+            enrol_request().waiting = false;
+            failed_ = true;
+            since_ms_ = 0;
+            return true;
+        }
+        if (!armed_) {
+            watch(seen);
+            pose_ms_ = posed(seen) ? pose_ms_ + (int64_t)dt_ms : 0;
+            if (pose_ms_ >= kPoseHoldMs) {
+                arm();
+                return true;
+            }
+        }
+        const int step = gauge(seen);
+        if (step == step_) {
             return false;
         }
-        took_ = false;
-        arm();
+        step_ = step;
         return true;
     }
 
@@ -483,23 +519,37 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         top_bar(to, nullptr);
-        if (done()) {
+        if (failed_) {
+            to.text_centred(kAskY, "Chưa lấy được mẫu", DRV_LCD_WARN);
+        } else if (done()) {
             char line[STORAGE_NAME_CAP + 12];
             snprintf(line, sizeof(line), "Đã thêm %s", enrol_request().name);
-            to.text_centred(kBarH + 12, line, DRV_LCD_ACCENT);
+            to.text_centred(kAskY, line, DRV_LCD_ACCENT);
         } else {
-            to.text_centred(kBarH + 12, kAsk[kept_], DRV_LCD_INK);
+            to.text_centred(kAskY, kAsk[kept_], DRV_LCD_INK);
         }
-        guide(to, done() ? DRV_LCD_ACCENT : DRV_LCD_WARN, nullptr);
         const int left = (APP_LCD_H_RES - (kSamples * 40 + (kSamples - 1) * 10)) / 2;
         for (int i = 0; i < kSamples; ++i) {
             const int x = left + i * 50;
-            to.rounded(x, kPromptY, 40, 14, 6, 2, DRV_LCD_INK);
+            to.rounded(x, kDotsY, 40, 12, 6, 2, DRV_LCD_INK);
             if (i < kept_) {
-                to.fill(x + 3, kPromptY + 3, 34, 8, DRV_LCD_ACCENT);
+                to.fill(x + 3, kDotsY + 3, 34, 6, DRV_LCD_ACCENT);
             }
         }
-        (void)seen;
+        guide(to, done() ? DRV_LCD_ACCENT : DRV_LCD_WARN, nullptr);
+        if (failed_ || done()) {
+            button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Huỷ", DRV_LCD_INK, held_);
+            return;
+        }
+        const int step = gauge(seen);
+        meter(to, step, step >= kGaugeSteps ? DRV_LCD_ACCENT : DRV_LCD_WARN);
+        const char *line = refusal(seen.verdict);
+        if (line == nullptr) {
+            line = armed_ ? "Giữ nguyên" : hint(seen);
+        }
+        if (line != nullptr) {
+            to.text_centred(kHintY, line, DRV_LCD_INK);
+        }
         button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Huỷ", DRV_LCD_INK, held_);
     }
 
@@ -509,17 +559,110 @@ private:
                                                     "Quay nhẹ sang trái",
                                                     "Quay nhẹ sang phải" };
 
-    void arm() noexcept
+    static void meter(Canvas &to, int step, uint8_t tone) noexcept
+    {
+        const int width = 200;
+        const int x = (APP_LCD_H_RES - width) / 2;
+        to.rounded(x, kGaugeY, width, 10, 5, 2, DRV_LCD_INK);
+        const int lit = (width - 6) * step / kGaugeSteps;
+        if (lit > 0) {
+            to.fill(x + 3, kGaugeY + 3, lit, 4, tone);
+        }
+    }
+
+    float wanted() const noexcept { return kept_ == 1 ? kTurnSign : -kTurnSign; }
+
+    // Six seconds of trying settles for the best turn this person managed rather
+    // than keeping them at the screen (KEHOACH 4.5.5h.2).
+    float reach() const noexcept
+    {
+        if (wait_ms_ < kPoseWaitMs) {
+            return kTurnYaw;
+        }
+        return best_ > kTurnYaw ? kTurnYaw : best_ * 0.8f;
+    }
+
+    bool posed(const Sight &seen) const noexcept
+    {
+        if (!seen.face) {
+            return false;
+        }
+        if (kept_ == 0) {
+            return seen.yaw > -kFrontalYaw && seen.yaw < kFrontalYaw;
+        }
+        return seen.yaw * wanted() >= reach();
+    }
+
+    void watch(const Sight &seen) noexcept
+    {
+        if (!seen.face || kept_ == 0) {
+            return;
+        }
+        const float turn = seen.yaw * wanted();
+        best_ = turn > best_ ? turn : best_;
+    }
+
+    int gauge(const Sight &seen) const noexcept
+    {
+        if (!seen.face) {
+            return 0;
+        }
+        float part = seen.yaw * wanted() / kTurnYaw;
+        if (kept_ == 0) {
+            const float off = seen.yaw < 0.0f ? -seen.yaw : seen.yaw;
+            part = 1.0f - off / kFrontalYaw;
+        }
+        part = part < 0.0f ? 0.0f : (part > 1.0f ? 1.0f : part);
+        return (int)(part * (float)kGaugeSteps);
+    }
+
+    const char *hint(const Sight &seen) const noexcept
+    {
+        if (!seen.face) {
+            return "Đưa khuôn mặt vào khung";
+        }
+        if (kept_ == 0) {
+            return nullptr;
+        }
+        return seen.yaw * wanted() < -kFrontalYaw ? "Quay ngược lại" : nullptr;
+    }
+
+    void begin() noexcept
     {
         since_ms_ = 0;
+        wait_ms_ = 0;
+        pose_ms_ = 0;
+        best_ = 0.0f;
+        armed_ = false;
+        step_ = -1;
+    }
+
+    void arm() noexcept
+    {
+        float low = -kFrontalYaw;
+        float high = kFrontalYaw;
+        if (kept_ > 0) {
+            const float edge = reach();
+            low = wanted() > 0.0f ? edge : -kOpenYaw;
+            high = wanted() > 0.0f ? kOpenYaw : -edge;
+        }
         enrol_request().employee_id = kNewPerson;
         enrol_request().template_idx = (uint16_t)kept_;
+        enrol_request().yaw_min = low;
+        enrol_request().yaw_max = high;
         enrol_request().waiting = true;
+        armed_ = true;
     }
 
     int kept_ = 0;
     int64_t since_ms_ = 0;
+    int64_t wait_ms_ = 0;
+    int64_t pose_ms_ = 0;
+    float best_ = 0.0f;
+    int step_ = -1;
     bool took_ = false;
+    bool armed_ = false;
+    bool failed_ = false;
     bool held_ = false;
 };
 

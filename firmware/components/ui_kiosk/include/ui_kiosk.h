@@ -25,9 +25,10 @@ esp_err_t ui_kiosk_init(void);
 /** Tell the screens what the detector saw, in sensor frame pixels.
  *  @ctx ai_task | non-blocking | boxes holds count sets of four
  *  @param face_min_px the gate below which the kiosk asks the person to come closer
+ *  @param yaw of the tracked face, 0 facing the lens (KEHOACH 4.5.5h.2)
  */
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
-                       int face_min_px);
+                       int face_min_px, float yaw);
 
 /** Say what the kiosk decided about that face.
  *  @ctx attend_task | non-blocking | employee_id and name read empty unless granted
@@ -47,9 +48,11 @@ void ui_kiosk_tick(uint32_t dt_ms);
 /** Collect a face the enrol screen is waiting for.
  *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
  *  @param employee_id 0 for a person with no id yet, which the caller assigns
+ *  @param yaw the turn window the sample asks for (KEHOACH 4.5.5h.2)
  *  @ret false when no screen is asking for one
  */
-bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *name, size_t cap);
+bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *name, size_t cap,
+                         float *yaw_min, float *yaw_max);
 
 /** Tell the enrol flow the pipeline has kept the face it asked for.
  *  @ctx ui_task | non-blocking

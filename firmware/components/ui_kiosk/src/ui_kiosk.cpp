@@ -156,7 +156,7 @@ esp_err_t ui_kiosk_init(void)
 }
 
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
-                       int face_min_px)
+                       int face_min_px, float yaw)
 {
     // The tracked face leads the list (KEHOACH 4.5.5d), and the guide is about
     // the person being served, not about whoever else is in shot.
@@ -171,6 +171,8 @@ void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame
                     ? ui::place_of(panel, close_enough, s_seen.place)
                     : ui::Place::Outside;
     }
+    // Capture reads the turn every tick, so it lands whether or not the box moved.
+    s_seen.yaw = face ? yaw : 0.0f;
     if (face != s_seen.face || place != s_seen.place) {
         s_seen.face = face;
         s_seen.place = place;
@@ -221,7 +223,8 @@ void ui_kiosk_tick(uint32_t dt_ms)
     publish(canvas);
 }
 
-bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *name, size_t cap)
+bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *name, size_t cap,
+                         float *yaw_min, float *yaw_max)
 {
     if (!s_ready || !ui::enrol_request().waiting) {
         return false;
@@ -229,6 +232,8 @@ bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *na
     *employee_id = ui::enrol_request().employee_id;
     *template_idx = ui::enrol_request().template_idx;
     strlcpy(name, ui::enrol_request().name, cap);
+    *yaw_min = ui::enrol_request().yaw_min;
+    *yaw_max = ui::enrol_request().yaw_max;
     ui::enrol_request().waiting = false;
     return true;
 }

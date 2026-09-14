@@ -218,6 +218,18 @@ extern "C" esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result,
     return ESP_OK;
 }
 
+extern "C" esp_err_t svc_attendance_policy(svc_attendance_policy_t *out)
+{
+    if (out == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    *out = s_policy;
+    return ESP_OK;
+}
+
 extern "C" esp_err_t svc_attendance_on_presence(bool present)
 {
     if (!s_ready) {

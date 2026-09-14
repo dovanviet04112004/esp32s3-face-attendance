@@ -37,6 +37,7 @@ typedef enum {
 
 typedef struct {
     float box[4];                         // x1, y1, x2, y2 in frame pixels
+    float yaw;                            // nose along the eye axis, 0 facing the lens
 } svc_vision_box_t;
 
 /** One event from one step. Scores are -1 where the stage did not run. */
@@ -69,10 +70,11 @@ void svc_vision_on_seen(svc_vision_seen_cb_t cb, void *ctx);
 
 /** Keep the next face this pipeline embeds, under this id and name.
  *  @ctx task | non-blocking | one shot: the next embedding is kept, then matched
+ *  @param yaw_min the turn window the sample must fall in (KEHOACH 4.5.5h.2)
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE until svc_vision_init has run
  */
-esp_err_t svc_vision_enrol_next(uint32_t employee_id, uint16_t template_idx,
-                                const char *name);
+esp_err_t svc_vision_enrol_next(uint32_t employee_id, uint16_t template_idx, const char *name,
+                                float yaw_min, float yaw_max);
 
 /** True while a face asked for by svc_vision_enrol_next has not arrived yet.
  *  @ctx any | non-blocking | clears the moment the pipeline keeps one

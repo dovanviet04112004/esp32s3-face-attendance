@@ -65,6 +65,12 @@ esp_err_t svc_attendance_tick(int64_t now_ms);
  */
 svc_attendance_state_t svc_attendance_state(void);
 
+/** The policy in force, for a caller facing the same decision on another path.
+ *  @ctx any | non-blocking
+ *  @ret ESP_OK | ESP_ERR_INVALID_ARG | ESP_ERR_INVALID_STATE without init
+ */
+esp_err_t svc_attendance_policy(svc_attendance_policy_t *out);
+
 /** The last record this machine wrote, for a test or a screen to read back.
  *  @ctx any | non-blocking
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND when nothing has been stamped yet
