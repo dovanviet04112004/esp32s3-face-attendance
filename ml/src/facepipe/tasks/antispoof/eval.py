@@ -187,6 +187,9 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
         path = run / "ckpt" / "last.pth"
     payload = torch.load(path, map_location="cpu", weights_only=False)
     state = payload["ema"]["module"] if "ema" in payload else payload["model"]
+    # Sized off the train split rather than the config, so nothing here can rebuild
+    # it, and inference never wants it (KEHOACH 3, SSDG).
+    state = {k: v for k, v in state.items() if not k.startswith("domain.")}
     # A config without a views key belongs to a two-view run; its weights say so,
     # and writing it back is what makes the loader hand that run its second view.
     cfg.model.params.setdefault(
