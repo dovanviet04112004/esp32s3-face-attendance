@@ -165,6 +165,41 @@ def unique_images(root: Path, split: str = "train") -> Iterator[RawImage]:
                     yield RawImage(f"{name}_{number}", payload, is_spoof, f"{split}/{folder}")
 
 
+# Breadth of person and light is the point, so one face per identity beats many
+# faces from few; the stride spreads the draw over the whole set (KEHOACH 1.2).
+MS1MV3_CAP = 20000
+MS1MV3_SHARD_STRIDE = 4
+
+
+def ms1mv3_images(root: Path, split: str = "train") -> Iterator[RawImage]:
+    """One face per identity from the recognition shards, every one of them live.
+
+    The pool's live half is narrow enough that saturation separates the classes
+    inside it, which is the shortcut the branch then learns (measurements 40.8).
+    """
+    shards = sorted(Path(root).glob("*.tar"))[::MS1MV3_SHARD_STRIDE]
+    if not shards:
+        raise FileNotFoundError(f"{root}: no ms1mv3 shards")
+    quota = -(-MS1MV3_CAP // len(shards))
+    seen: set[bytes] = set()
+    for shard in shards:
+        kept, payload = 0, {}
+        with tarfile.open(shard) as archive:
+            for member in archive:
+                if kept >= quota:
+                    break
+                stem, _, kind = member.name.rpartition(".")
+                if kind == "jpg":
+                    payload[stem] = archive.extractfile(member).read()
+                elif kind == "cls":
+                    identity = archive.extractfile(member).read().strip()
+                    image = payload.pop(stem, None)
+                    if image is not None and identity not in seen:
+                        seen.add(identity)
+                        kept += 1
+                        yield RawImage(f"{shard.stem}_{stem}", image, False, split)
+
+
 LCC_SPLITS = {"train": "training", "val": "development", "test": "evaluation"}
 LCC_LIVE_DIR = "real"
 SYNTH_LIVE_DIR = "BonaFide"
@@ -244,6 +279,7 @@ SETS = {
     "lcc_fasd": lcc_images,
     "synthaspoof": synthaspoof_images,
     "unique": unique_images,
+    "ms1mv3": ms1mv3_images,
 }
 
 

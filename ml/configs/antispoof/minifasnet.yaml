@@ -39,8 +39,8 @@ data:
     shards: data/interim/antispoof/celeba_spoof_crops
     # Weighted by how much of each channel the model still gets wrong; the paired
     # set repeats because its two sides differ only by the screen (measurements 40.6).
-    train_split: ["train:0:60", lcc_training, synth_bonafide, synth_ipad, synth_samsung,
-                  synth_webcam, synth_print,
+    train_split: ["train:0:60", lcc_training, ms1mv3_live,
+                  synth_bonafide, synth_ipad, synth_samsung, synth_webcam, synth_print,
                   unique_live, unique_replay, unique_live, unique_replay, unique_live,
                   unique_replay, unique_live, unique_replay, unique_live, unique_replay]
     # The mirror's train and valid are one pool; test is not (measurements 1).
@@ -94,8 +94,8 @@ sched:
   min_lr: 0.0001
 
 loss:
-  # 128 889 attacks over 72 556 live, counted on the shards (measurements 40.6).
-  live_weight: 1.776
+  # 128 889 attacks over 92 498 live, counted on the shards (measurements 40.6).
+  live_weight: 1.393
   # Live sits at 0.997 in every domain measured, which leaves a threshold nowhere
   # to stand; this caps how far the easy half can be pushed (measurements 40.5).
   label_smoothing: 0.05
