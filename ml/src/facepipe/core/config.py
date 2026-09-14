@@ -134,6 +134,7 @@ class Config(Section):
     optim: OptimSection = Field(default_factory=OptimSection)
     sched: SchedSection = Field(default_factory=SchedSection)
     log: LogSection = Field(default_factory=LogSection)
+    loss: dict[str, Any] = Field(default_factory=dict)
     quant: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:

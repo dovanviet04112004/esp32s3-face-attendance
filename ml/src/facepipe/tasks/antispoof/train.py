@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     val_set = build_dataset(cfg, cfg.data.params.get("val_split", "valid"), train=False)
     val_loader = build_loader(cfg, val_set, train=False)
 
-    criterion = LOSSES.get(TASK_LOSS)()
+    criterion = LOSSES.get(TASK_LOSS)(**cfg.loss)
 
     # Order matters: a resume casts optimizer momentum onto whichever device it
     # finds the parameters on, and they start on the host.
