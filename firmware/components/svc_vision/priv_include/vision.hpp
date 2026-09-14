@@ -26,8 +26,8 @@ class ILiveness {
 public:
     virtual ~ILiveness() = default;
     virtual bool available() const noexcept = 0;
-    virtual esp_err_t score(const ai_engine_frame_t &frame, const float box[4],
-                            float *live) noexcept = 0;
+    virtual esp_err_t score(const ai_engine_frame_t &frame, const float box[4], float *live,
+                            float *surface) noexcept = 0;
 };
 
 class IEmbedder {

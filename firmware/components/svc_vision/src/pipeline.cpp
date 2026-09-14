@@ -14,6 +14,16 @@ constexpr float kSameFaceIou = 0.5f;
 constexpr int kRetryDetects = 3;
 // The detector drops a frame here and there on a face that never moved.
 constexpr int kMissesLost = 2;
+// Fitted on 68 real frames of this camera, through area_rows: a JPEG pass or an
+// interpolating resampler both move this number (KEHOACH 3).
+constexpr float kSurfaceSlope = 0.00097f;
+constexpr float kSurfaceIntercept = 0.0776f;
+
+float surface_residual(float surface, const float *box) noexcept
+{
+    const float expected = kSurfaceSlope * (box[2] - box[0]) + kSurfaceIntercept;
+    return surface < 0.0f ? 0.0f : surface - expected;
+}
 
 float iou(const float *a, const float *b) noexcept
 {
@@ -142,11 +152,15 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
 {
     if (liveness_.available()) {
         float live = -1.0f;
-        if (liveness_.score(frame, primary.box, &live) != ESP_OK) {
+        float surface = -1.0f;
+        if (liveness_.score(frame, primary.box, &live, &surface) != ESP_OK) {
             return;
         }
         out.live_score = live;
-        if (live < thresholds_.live_min_score) {
+        out.surface_residual = surface_residual(surface, primary.box);
+        const bool screen = thresholds_.surface_drop > 0.0f &&
+                            out.surface_residual < -thresholds_.surface_drop;
+        if (live < thresholds_.live_min_score || screen) {
             out.kind = SVC_VISION_SPOOF;
             matched_ = false;
             since_verdict_ = 0;

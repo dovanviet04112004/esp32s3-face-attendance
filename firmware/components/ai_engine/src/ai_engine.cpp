@@ -225,7 +225,8 @@ extern "C" esp_err_t ai_engine_recognize_face(const ai_engine_frame_t *frame, co
     return s_recog.embedding(out, cap_bytes, scale) > 0 ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
-extern "C" esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live)
+extern "C" esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4],
+                                          float *live, float *surface)
 {
     if (!s_ready || s_spoof_len == 0 || frame == nullptr || box == nullptr || live == nullptr) {
         return ESP_ERR_INVALID_STATE;
@@ -234,6 +235,10 @@ extern "C" esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const 
     const esp_err_t cut = ai::crop_face(*frame, box, input, input->data.int8, s_spoof_len);
     if (cut != ESP_OK) {
         return cut;
+    }
+    if (surface != nullptr) {
+        *surface = ai::surface_sharpness(input->data.int8, input->dims->data[1],
+                                         input->dims->data[3]);
     }
     const esp_err_t err = s_spoof.invoke();
     if (err != ESP_OK) {

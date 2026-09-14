@@ -15,7 +15,8 @@ public:
 class AiLiveness final : public ILiveness {
 public:
     bool available() const noexcept override;
-    esp_err_t score(const ai_engine_frame_t &frame, const float box[4], float *live) noexcept override;
+    esp_err_t score(const ai_engine_frame_t &frame, const float box[4], float *live,
+                    float *surface) noexcept override;
 };
 
 class AiEmbedder final : public IEmbedder {

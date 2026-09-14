@@ -62,3 +62,38 @@ nội suy song tuyến tính có thể khớp bit khi hai bên dùng hai độ r
 Ngưỡng nghiệm thu của ca này vì vậy là **worst ≤ 2 LSB** (`ALIGN_LSB` trong `parity.cpp`), năm
 ca còn lại giữ **khớp tuyệt đối**. Hạ `align.py` xuống float32 để khớp bit đã cân nhắc và bỏ:
 nó làm xấu ảnh train để lấy một con số đẹp trong bảng này.
+
+---
+
+## 2. Độ nét bề mặt — 15/09
+
+Cổng của KẾ HOẠCH §3 đọc dải tần số cao, mà **bộ lấy mẫu quyết định dải ấy**, nên ngưỡng
+khớp trên host chỉ chuyển sang board được nếu hai bên tính ra cùng một số.
+
+Ca `surface sharpness on a known frame` trong `ai_engine/test_apps/antispoof` dựng một khung
+480 × 320 với `word = (x·2654435761 + y·40503) >> 13` — mỗi điểm ảnh khác hẳn hàng xóm, tức
+trường hợp khắc nghiệt nhất cho một phép thu nhỏ. Host tính lại đúng khung ấy.
+
+| Bề rộng mặt | Board | Host | Lệch |
+|---|---|---|---|
+| 100 px | 1,364202 | 1,364201 | 1e−6 |
+| 150 px | 2,170380 | 2,170382 | 2e−6 |
+| 200 px | 1,981394 | 1,981393 | 1e−6 |
+
+**Khớp tới 6 chữ số.** Phép lượng tử hoá từng ô về int8 nằm trong đường đo và không làm
+dịch con số.
+
+Phép thử này **không** phủ phép mở RGB565, vì khung tổng hợp sinh thẳng ra từ word 565 nên
+cả hai bên cùng dùng `(r<<3)|(r>>2)`. Khung lưu ra đĩa thì `grab.py` mở bằng `r·255/31`,
+lệch một đơn vị ở vài mức. Đóng nốt bằng cách nén ngược về 5/6/5 rồi mở lại kiểu board trước
+khi chấm 93 khung: đường xu hướng đi từ `0,00095·w + 0,0802` sang `0,00097·w + 0,0776`, khe
+giữa hai nhóm rộng ra từ 0,392 σ lên **0,443 σ**.
+
+Ba bộ lấy mẫu cho ba kết quả khác nhau trên cùng khung ấy, nên con số chỉ có nghĩa khi kèm
+đường crop:
+
+| Bộ lấy mẫu | 100 px | 150 px | 200 px |
+|---|---|---|---|
+| `area_rows` — board | 1,364 | 2,170 | 1,981 |
+| `Image.BOX` của PIL | 1,810 | 2,486 | 2,473 |
+| `Image.BILINEAR` của PIL | 1,585 | 2,279 | 2,108 |

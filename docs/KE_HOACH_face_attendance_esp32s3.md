@@ -1179,7 +1179,7 @@ chia ấy phi tuyến, cùng lý do đã dùng để thêm kênh bão hoà thứ
 
 **Định nghĩa.** Lấy đúng crop 81×81 mà nhánh spoof đã dựng, chuyển xám, chuẩn hoá về trung
 bình 0 độ lệch chuẩn 1, rồi lấy trung bình trị tuyệt đối của Laplace. Trừ đi đường xu hướng
-theo bề rộng hộp mặt `0,00095 × rộng + 0,0802`, khớp trên 68 khung mặt thật của board. Phần
+theo bề rộng hộp mặt `0,00097 × rộng + 0,0776`, khớp trên 68 khung mặt thật của board. Phần
 dư âm quá sâu nghĩa là bề mặt mịn hơn mức một khuôn mặt cỡ ấy phải có.
 
 **Hai hệ số ấy gắn với đúng đường crop của board, và đổi đường là đổi số.** Cùng 93 khung,
@@ -1190,7 +1190,7 @@ cùng định nghĩa, chỉ khác cách lấy crop:
 | `crop_views`: JPEG q95 rồi bilinear — đường cắt shard | 0,095 σ |
 | không JPEG, bilinear | 0,435 σ |
 | không JPEG, `Image.BOX` của PIL | 0,685 σ |
-| **bản sao chính xác của `area_rows`** | **0,392 σ** |
+| **bản sao chính xác của `area_rows`** | **0,443 σ** |
 
 Ba dòng đầu đều là ước lượng, và dòng BOX lạc quan quá tay: trên một khung nhiễu cao tần,
 BOX cho độ nét cao hơn `area_rows` **24–33%**, vì nó chia trọng số theo phần diện tích phủ
@@ -1210,18 +1210,18 @@ tối, chỉ phụ thuộc bề mặt có kết cấu hay không. Da có lỗ ch
 
 | Ngưỡng phần dư | Thật bị chặn | Giả bắt được | Biên tới khung thật tệ nhất |
 |---|---|---|---|
-| −0,070 | 0/68 | 25/25 | 0,03 σ |
-| −0,080 | 0/68 | 25/25 | 0,34 σ |
-| −0,090 | 0/68 | 24/25 | 0,66 σ |
-| **−0,100** | **0/68** | **24/25** | **0,97 σ** |
-| −0,110 | 0/68 | 22/25 | 1,28 σ |
+| −0,070 | 0/68 | 25/25 | 0,05 σ |
+| −0,080 | 0/68 | 25/25 | 0,36 σ |
+| −0,090 | 0/68 | 24/25 | 0,67 σ |
+| **−0,100** | **0/68** | **24/25** | **0,98 σ** |
+| −0,110 | 0/68 | 22/25 | 1,29 σ |
 
 Đối chiếu với model, cùng 93 khung, `live_min` để ở 750‰: chroma 13/09 một mình chặn oan
 **2/68** và bắt **12/25**. Model **không thêm được khung giả nào** vào phép hoặc — 12 khung nó
 bắt nằm trọn trong số cổng bề mặt đã bắt — và nó chỉ góp thêm 2 lần chặn oan.
 
-**Gieo −0,100.** Cửa sổ bắt đủ 25 mà không chặn ai trải từ −0,0815 đến −0,0689, rộng đúng
-0,0126, nên ngưỡng đặt ở đó chỉ còn **0,34 σ** che cho người thật. Hai vế **không đáng giá
+**Gieo −0,100.** Cửa sổ bắt đủ 25 mà không chặn ai trải từ −0,0827 đến −0,0684, rộng đúng
+0,0143, nên ngưỡng đặt ở đó chỉ còn **0,36 σ** che cho người thật. Hai vế **không đáng giá
 như nhau**: một khung giả lọt cổng vẫn còn model đứng sau, vì phép hợp là **hoặc**; một người
 thật bị từ chối thì không có lớp nào đỡ. Đổi một khung giả trong 25 lấy biên **0,97 σ** là
 đúng chiều với ràng buộc cứng, nhất là khi 68 khung thật ấy đều của một người.
@@ -1248,18 +1248,17 @@ dư tối đa còn được coi là mặt thật**, `0` là tắt cổng. Gieo *
 quyết định của code**. Hai hệ số đường xu hướng là hằng số khớp từ dữ liệu, không phải tham
 số vận hành, nên chúng nằm trong `svc_vision` và trích mục này.
 
-**Gieo tắt, và chỉ bật sau một phép đo đối chiếu trên board.** Bảng trên chạy một **bản sao
-`area_rows` viết bằng Python**, khớp từng bước của `cell_bounds`, nhưng còn hai chỗ lệch chưa
-khử được: board mở RGB565 bằng `(r<<3)|(r>>2)` trong khi khung lưu ra đĩa dùng `r*255//31`,
-sai một đơn vị ở vài mức; và board lượng tử hoá trung bình về int8, thêm nhiễu làm tròn. Cả
-hai rơi đúng dải tần số cao mà cổng này đọc. 🔬 Chưa đo.
+**Phép đo đối chiếu đã chạy và đã khớp** (`docs/measurements/parity.md` §2). Ca `surface
+sharpness on a known frame` dựng một khung có kết cấu từng điểm ảnh — khung gradient sẵn có
+trơn quá nên không dò được gì — và board với host ra **cùng số tới 6 chữ số** ở cả ba cỡ mặt.
+Phép lượng tử hoá từng ô về int8 nằm trong đường đo và không làm dịch kết quả. Phép mở RGB565
+thì khung tổng hợp không phủ, nên đóng riêng bằng cách nén ngược về 5/6/5 rồi mở lại kiểu
+board trước khi chấm 93 khung; đó là lý do hai hệ số ở trên mang giá trị hiện tại.
 
-Phép đo đã dựng sẵn: ca `surface sharpness on a known frame` trong `test_apps/antispoof` in
-độ nét của một khung tổng hợp **có kết cấu biết trước** ở ba cỡ mặt — khung gradient sẵn có
-trơn quá nên không dò được gì — và host tính lại đúng khung ấy. Lệch bao nhiêu phần trăm thì
-ghi vào `docs/measurements/parity.md` rồi mới chốt ngưỡng. Bật một cổng có quyền từ chối
-người thật dựa trên con số chưa đo trên chính thiết bị chạy nó là đúng loại sai lầm nhánh
-này đã mắc nhiều lần.
+**Vẫn gieo 0.** Không còn vướng số đo nào; cái còn lại là quyết định vận hành, vì bật một
+cổng có quyền **từ chối người thật** là đổi hành vi thấy được ở cửa. Bật bằng đúng một bước
+và không phải nạp lại: `SET_CONFIG` ghi `vision.surface_drop`, hoặc đổi
+`VISION_SEED_SURFACE_DROP_PERMILLE` rồi tăng `APP_SEED_VER`.
 
 #### Một view: crop mặt 1,0×, ô vuông trượt cho lọt khung
 

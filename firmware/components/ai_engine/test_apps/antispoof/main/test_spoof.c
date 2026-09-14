@@ -103,6 +103,21 @@ static uint16_t *gradient_frame(void)
     return pixels;
 }
 
+// A gradient is too smooth to tell two resamplers apart, so this one mixes the
+// coordinates into every bit the crop can carry (KEHOACH 3).
+static uint16_t *speckled_frame(void)
+{
+    uint16_t *pixels = heap_caps_malloc(FRAME_W * FRAME_H * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    TEST_ASSERT_NOT_NULL(pixels);
+    for (int y = 0; y < FRAME_H; ++y) {
+        for (int x = 0; x < FRAME_W; ++x) {
+            const uint32_t mixed = (uint32_t)x * 2654435761u + (uint32_t)y * 40503u;
+            pixels[y * FRAME_W + x] = (uint16_t)(mixed >> 13);
+        }
+    }
+    return pixels;
+}
+
 static void centred_box(float face_px, float box[4])
 {
     box[0] = FRAME_W / 2.0f - face_px / 2.0f;
@@ -117,17 +132,34 @@ TEST_CASE("a crop cut from a frame scores, and a face taller than the frame stil
     const ai_engine_frame_t frame = { .pixels = gradient_frame(), .width = FRAME_W, .height = FRAME_H };
     float box[4];
     float live = -1.0f;
+    float texture = -1.0f;
     centred_box(CENTRED_FACE_PX, box);
-    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof_face(&frame, box, &live));
+    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof_face(&frame, box, &live, &texture));
     TEST_ASSERT_TRUE(live >= 0.0f && live <= 1.0f);
-    printf("100 px face: live %.4f\n", live);
+    TEST_ASSERT_TRUE(texture > 0.0f);
+    printf("100 px face: live %.4f surface %.4f\n", live, texture);
     // Taller than the 320 px frame: the square shrinks to the frame rather than failing.
     centred_box(FRAME_H + 40.0f, box);
-    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof_face(&frame, box, &live));
+    TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof_face(&frame, box, &live, &texture));
     TEST_ASSERT_TRUE(live >= 0.0f && live <= 1.0f);
-    printf("360 px face: live %.4f\n", live);
+    printf("360 px face: live %.4f surface %.4f\n", live, texture);
     const float flat[4] = { 10.0f, 10.0f, 10.0f, 50.0f };
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, ai_engine_spoof_face(&frame, flat, &live));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, ai_engine_spoof_face(&frame, flat, &live, &texture));
+}
+
+TEST_CASE("surface sharpness on a known frame, for the host to match", "[ai_spoof]")
+{
+    need_branch();
+    const ai_engine_frame_t frame = { .pixels = speckled_frame(), .width = FRAME_W, .height = FRAME_H };
+    float box[4];
+    float live = -1.0f;
+    float texture = -1.0f;
+    for (float face = 100.0f; face <= 200.0f; face += 50.0f) {
+        centred_box(face, box);
+        TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof_face(&frame, box, &live, &texture));
+        TEST_ASSERT_TRUE(texture > 0.0f);
+        printf("PARITY face %.0f surface %.6f\n", face, texture);
+    }
 }
 
 void app_main(void)
