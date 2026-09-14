@@ -35,7 +35,6 @@ enum class Place : uint8_t {
 struct Sight {
     bool face;                            // the detector has one
     Place place;
-    bool verifying;                       // the slow models are running on it
     app_ui_verdict_t verdict;
     uint32_t employee_id;
     char name[STORAGE_NAME_CAP];
@@ -44,7 +43,7 @@ struct Sight {
 /** Read a face box already mapped to panel pixels against the guide frame.
  *  @ctx any | non-blocking | the guide rectangle lives with the screens
  */
-Place place_of(const int16_t panel_box[4], bool close_enough) noexcept;
+Place place_of(const int16_t panel_box[4], bool close_enough, Place was) noexcept;
 
 class Screen {
 public:

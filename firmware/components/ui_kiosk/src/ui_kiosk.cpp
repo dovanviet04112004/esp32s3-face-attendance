@@ -17,10 +17,8 @@ const char *TAG = "ui_kiosk";
 constexpr int kSlots = 2;
 alignas(ui::Canvas) uint8_t s_canvas_store[2][sizeof(ui::Canvas)];
 constexpr uint32_t kVerdictShift = 32;
-// A line stays up this long, and the same line will not come back inside the
-// quiet window: a face nobody enrolled would otherwise strobe it forever.
+// A line stays up this long after the last verdict that raised it.
 constexpr int64_t kShowMs = 2500;
-constexpr int64_t kQuietMs = 6000;
 constexpr int64_t kClockPollMs = 1000;
 
 constexpr uint16_t kWhite = 0xFFFF;
@@ -49,7 +47,6 @@ char s_name[STORAGE_NAME_CAP];
 uint64_t s_verdict_taken;
 uint64_t s_line_showing;
 int64_t s_clear_in_ms;
-int64_t s_quiet_in_ms;
 std::atomic<int32_t> s_touch{ -1 };
 int64_t s_clock_poll_ms;
 int64_t s_minute_shown = -1;
@@ -101,27 +98,27 @@ void mind_the_clock(int64_t dt_ms)
 void take_verdict(int64_t dt_ms)
 {
     s_clear_in_ms -= s_clear_in_ms > 0 ? dt_ms : 0;
-    s_quiet_in_ms -= s_quiet_in_ms > 0 ? dt_ms : 0;
     const uint64_t packed = s_verdict.load(std::memory_order_acquire);
     if (packed != s_verdict_taken) {
         s_verdict_taken = packed;
         const app_ui_verdict_t verdict = static_cast<app_ui_verdict_t>(packed >> kVerdictShift);
-        // The quiet window keeps a refusal from strobing; a second clock-in for
-        // the same person is news and has to show.
-        const bool quiet = packed == s_line_showing && s_quiet_in_ms > 0 &&
-                           verdict != APP_UI_GRANTED;
-        if (verdict > APP_UI_SCANNING && !quiet) {
-            s_line_showing = packed;
+        if (verdict > APP_UI_SCANNING) {
+            // The same refusal arriving again is the same news, so the line is
+            // held rather than blanked and flashed back (KEHOACH 4.5.5h).
+            const bool holding = packed == s_line_showing && s_seen.verdict == verdict &&
+                                 verdict != APP_UI_GRANTED;
             s_clear_in_ms = kShowMs;
-            s_quiet_in_ms = kQuietMs;
-            s_seen.verdict = verdict;
-            s_seen.employee_id = static_cast<uint32_t>(packed);
-            strlcpy(s_seen.name, s_name, sizeof(s_seen.name));
-            s_dirty = true;
+            if (!holding) {
+                s_line_showing = packed;
+                s_seen.verdict = verdict;
+                s_seen.employee_id = static_cast<uint32_t>(packed);
+                strlcpy(s_seen.name, s_name, sizeof(s_seen.name));
+                s_dirty = true;
+            }
         }
-        s_seen.verifying = verdict == APP_UI_SCANNING;
     }
-    if (s_clear_in_ms == 0 && s_seen.verdict > APP_UI_SCANNING) {
+    // The countdown steps by whole ticks, so it can pass zero without landing on it.
+    if (s_clear_in_ms <= 0 && s_seen.verdict > APP_UI_SCANNING) {
         s_clear_in_ms = -1;
         s_seen.verdict = APP_UI_IDLE;
         s_dirty = true;
@@ -171,7 +168,7 @@ void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame
         const bool close_enough = (w > h ? w : h) >= (float)face_min_px;
         int16_t panel[4] = { 0, 0, 0, 0 };
         place = drv_lcd_frame_to_panel(frame_width, frame_height, boxes, panel)
-                    ? ui::place_of(panel, close_enough)
+                    ? ui::place_of(panel, close_enough, s_seen.place)
                     : ui::Place::Outside;
     }
     if (face != s_seen.face || place != s_seen.place) {

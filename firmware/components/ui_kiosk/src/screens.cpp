@@ -13,6 +13,7 @@ constexpr int kGuideW = 240;
 constexpr int kGuideH = 296;
 constexpr int kGuideX = (APP_LCD_H_RES - kGuideW) / 2;
 constexpr int kGuideY = 96;
+constexpr int kGuideSlack = 14;
 constexpr int kPromptY = kGuideY + kGuideH + 16;
 constexpr int kBandH = 104;
 constexpr int kBandY = APP_LCD_V_RES - kBandH - 8;
@@ -125,7 +126,7 @@ void ring(Canvas &to, int cx, int cy, int radius, int thick, uint8_t tone)
     }
 }
 
-const char *prompt_for(Place place, bool answered)
+const char *prompt_for(Place place)
 {
     switch (place) {
         case Place::Far:
@@ -135,7 +136,7 @@ const char *prompt_for(Place place, bool answered)
         case Place::Close:
             return "Lùi lại một chút";
         case Place::Ready:
-            return answered ? nullptr : "Đang nhận diện...";
+            return "Đang nhận diện...";
         default:
             return "Đưa khuôn mặt vào khung";
     }
@@ -160,9 +161,10 @@ public:
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
     {
         (void)dt_ms;
-        // A track that granted is never verified again (KEHOACH 4.5.5d), so the
-        // progress line would be a lie until the face leaves.
-        const bool answered = seen.verdict == APP_UI_GRANTED || (answered_ && seen.face);
+        // A track that granted is never verified again (KEHOACH 4.5.5d), so every
+        // line guiding the face into the frame is a lie until that face leaves.
+        const bool answered = seen.verdict == APP_UI_GRANTED ||
+                              (answered_ && seen.face && refusal(seen.verdict) == nullptr);
         if (answered == answered_) {
             return false;
         }
@@ -193,28 +195,28 @@ public:
 
         uint8_t tone = DRV_LCD_INK;
         const char *prompt = "Đưa khuôn mặt vào khung";
-        if (seen.verdict == APP_UI_GRANTED) {
-            tone = DRV_LCD_ACCENT;
-            prompt = nullptr;
-        } else if (refusal(seen.verdict) != nullptr) {
+        const char *line = refusal(seen.verdict);
+        if (line != nullptr) {
             tone = DRV_LCD_WARN;
+            prompt = nullptr;
+        } else if (answered_) {
+            tone = DRV_LCD_ACCENT;
             prompt = nullptr;
         } else if (seen.place == Place::Ready) {
             tone = DRV_LCD_ACCENT;
-            prompt = prompt_for(seen.place, answered_);
+            prompt = prompt_for(seen.place);
         } else if (seen.place != Place::Nothing) {
             tone = DRV_LCD_WARN;
-            prompt = prompt_for(seen.place, answered_);
+            prompt = prompt_for(seen.place);
         }
         guide(to, tone, prompt);
 
-        if (seen.verdict == APP_UI_GRANTED) {
-            granted(to, seen);
-            return;
-        }
-        const char *line = refusal(seen.verdict);
         if (line != nullptr) {
             to.text_centred(kBandY + kBandH / 2 - Canvas::line_height() / 2, line, DRV_LCD_INK);
+            return;
+        }
+        if (answered_) {
+            granted(to, seen);
         }
     }
 
@@ -682,16 +684,21 @@ ListScreen s_settings("Cài đặt");
 
 }  // namespace
 
-Place place_of(const int16_t panel_box[4], bool close_enough) noexcept
+Place place_of(const int16_t panel_box[4], bool close_enough, Place was) noexcept
 {
     if (!close_enough) {
         return Place::Far;
     }
-    if (panel_box[2] - panel_box[0] > kGuideW || panel_box[3] - panel_box[1] > kGuideH) {
+    // The detector box jitters a few pixels a frame, so a face already inside
+    // leaves on a wider bound than it entered on (KEHOACH 4.5.5h).
+    const int slack = was == Place::Ready ? kGuideSlack : 0;
+    if (panel_box[2] - panel_box[0] > kGuideW + slack ||
+        panel_box[3] - panel_box[1] > kGuideH + slack) {
         return Place::Close;
     }
-    const bool held = panel_box[0] >= kGuideX && panel_box[1] >= kGuideY &&
-                      panel_box[2] <= kGuideX + kGuideW && panel_box[3] <= kGuideY + kGuideH;
+    const bool held = panel_box[0] >= kGuideX - slack && panel_box[1] >= kGuideY - slack &&
+                      panel_box[2] <= kGuideX + kGuideW + slack &&
+                      panel_box[3] <= kGuideY + kGuideH + slack;
     return held ? Place::Ready : Place::Outside;
 }
 
