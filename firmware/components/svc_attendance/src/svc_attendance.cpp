@@ -34,6 +34,7 @@ uint32_t s_last_employee = 0;
 int64_t s_last_stamp_ms = 0;
 storage_attend_record_t s_last_record = {};
 bool s_have_record = false;
+bool s_left_since_grant = true;
 
 uint32_t hold_of(attend::St state)
 {
@@ -76,6 +77,13 @@ bool stamped_recently(uint32_t employee_id, int64_t now_ms)
     return now_ms - s_last_stamp_ms < window_ms;
 }
 
+// A face that never left is one arrival, so granting it twice would reopen the
+// door and speak again over a stamp already taken (KEHOACH 4.5.5f).
+bool same_arrival(const svc_vision_result_t *result, int64_t now_ms)
+{
+    return !s_left_since_grant && stamped_recently(result->employee_id, now_ms);
+}
+
 esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool door_opened)
 {
     storage_attend_record_t record = {};
@@ -113,6 +121,7 @@ void act_on(attend::Act act, const svc_vision_result_t *result, int64_t now_ms)
             return;
         }
         const bool opened = svc_door_open(s_door, kDoorHoldMs) == ESP_OK;
+        s_left_since_grant = false;
         if (stamped_recently(result->employee_id, now_ms)) {
             ESP_LOGI(TAG, "employee %" PRIu32 " stamped inside the window, door only",
                      result->employee_id);
@@ -148,8 +157,11 @@ attend::Ev event_of(svc_vision_kind_t kind, bool *carries)
 
 void apply(attend::Ev event, const svc_vision_result_t *result, int64_t now_ms)
 {
+    if (event == attend::Ev::NoFace || event == attend::Ev::PresenceOff) {
+        s_left_since_grant = true;
+    }
     const attend::Step step = attend::next(s_state, event);
-    if (!step.moved) {
+    if (!step.moved || (step.act == attend::Act::Grant && same_arrival(result, now_ms))) {
         return;
     }
     s_state = step.to;
@@ -171,6 +183,7 @@ extern "C" esp_err_t svc_attendance_init(svc_door_t door, const svc_attendance_p
     s_policy = *policy;
     s_state = attend::St::Idle;
     s_state_since_ms = 0;
+    s_left_since_grant = true;
     s_ready = true;
     ESP_LOGI(TAG, "up, dedup %" PRIu32 " min, no-spoof grants %s", s_policy.dedup_min,
              s_policy.allow_no_spoof ? "allowed" : "refused");
