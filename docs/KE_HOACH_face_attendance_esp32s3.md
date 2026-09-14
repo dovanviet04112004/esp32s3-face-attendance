@@ -2887,11 +2887,23 @@ chạy: chiếu vectơ *mũi − trung điểm hai mắt* lên **trục hai mắ
 trục ấy. Chọn phép chiếu chứ không lấy lệch ngang thuần, vì phép chiếu **không đổi khi đầu
 nghiêng** — nghiêng đầu mà bị đọc thành quay là kiểu sai làm người dùng phát điên.
 
-⚠️ **Bẫy dấu.** `hmirror` = 1 (§2.1), nên khung đã lật gương trước khi tới cả model lẫn UI.
-Dấu của đại lượng trên vì thế **không suy ra bằng lập luận mà phải đo**: một lần ghi log trên
-board, quay trái rồi quay phải, đọc dấu thật. 🔬 **Chưa đo** — ngưỡng khởi điểm đặt **0,12** và
-chốt lại bằng chính phép đo ấy. Sai dấu ở đây nghĩa là người dùng quay đúng mà máy đòi quay
-ngược, tức hỏng toàn bộ tính năng.
+**Bẫy dấu, và nó đã sập một lần.** `hmirror` = 1 (§2.1) nên khung đã lật gương trước khi tới cả
+model lẫn UI, vì thế dấu **không suy ra bằng lập luận mà phải đo**. Hằng số đặt tạm ban đầu là
+`+1` cho "trái"; phép đo trên board 14/09 cho thấy **ngược lại**:
+
+| Tư thế | min | trung vị | max |
+|---|---|---|---|
+| Nhìn thẳng | −0,035 | −0,017 | +0,051 |
+| **Quay trái** | −0,532 | **−0,445** | −0,041 |
+| **Quay phải** | +0,442 | **+0,613** | +0,692 |
+
+Khoảng trống giữa hai nhóm rất rộng, nên ngưỡng đặt **rộng rãi về phía dễ**: chính diện trong
+**±0,10** (đo được ±0,05) và coi là đã quay khi vượt **0,20** (đo được ≥ 0,44, tức chưa tới một
+nửa). Chọn thế vì lỗi đắt ở đây là *quay đúng mà máy không nhận*, chứ không phải nhận hơi dễ.
+
+Cách đo lại nếu đổi camera hoặc đổi `hmirror`: ghi log giá trị này ở `on_seen`, giữ một tư thế
+25 giây cho mỗi chiều — nhịp `on_seen` bằng nhịp bước pipeline nên một tư thế thoáng qua chỉ cho
+vài mẫu và không đủ kết luận.
 
 **Năm luật giữ cho nó không thành cực hình.** Đây là phần quyết định việc này *xịn* hay *ức
 chế*:
