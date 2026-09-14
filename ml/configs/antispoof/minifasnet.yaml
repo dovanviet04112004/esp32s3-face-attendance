@@ -27,6 +27,9 @@ model:
     # A fourth input plane holding (max-min)/max: a convolution cannot derive it,
     # because max and min across channels are not linear (measurements 38.4).
     chroma: true
+    # One binary answer per 6x6 cell, so a global composition cannot carry the
+    # label; the head is dropped at export (KEHOACH 3).
+    patch_supervision: true
 
 data:
   name: celeba_spoof
@@ -39,7 +42,7 @@ data:
     shards: data/interim/antispoof/celeba_spoof_crops
     # Weighted by how much of each channel the model still gets wrong; the paired
     # set repeats because its two sides differ only by the screen (measurements 40.6).
-    train_split: ["train:0:60", lcc_training, ms1mv3_live,
+    train_split: ["train:0:60", lcc_training,
                   synth_bonafide, synth_ipad, synth_samsung, synth_webcam, synth_print,
                   unique_live, unique_replay, unique_live, unique_replay, unique_live,
                   unique_replay, unique_live, unique_replay, unique_live, unique_replay]
@@ -94,8 +97,11 @@ sched:
   min_lr: 0.0001
 
 loss:
-  # 128 889 attacks over 92 498 live, counted on the shards (measurements 40.6).
-  live_weight: 1.393
+  # 128 889 attacks over 72 498 live, counted on the shards (measurements 40.6).
+  live_weight: 1.776
+  # Matched to the task term: both are one binary decision per sample, so an
+  # equal weight leaves neither able to dominate (KEHOACH 3).
+  patch_weight: 1.0
   # Live sits at 0.997 in every domain measured, which leaves a threshold nowhere
   # to stand; this caps how far the easy half can be pushed (measurements 40.5).
   label_smoothing: 0.05

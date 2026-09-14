@@ -30,18 +30,33 @@ class SpoofTaskLoss(nn.Module):
     """Cross entropy over the two classes, live weighted by the class ratio."""
 
     # 339 697 attacks over 161 329 live (measurements/antispoof 26).
-    def __init__(self, live_weight: float = 2.11, label_smoothing: float = 0.0) -> None:
+    def __init__(
+        self,
+        live_weight: float = 2.11,
+        label_smoothing: float = 0.0,
+        patch_weight: float = 0.0,
+    ) -> None:
         super().__init__()
         weight = torch.tensor([live_weight, 1.0], dtype=torch.float32)
         self.register_buffer("class_weight", weight)
         self.label_smoothing = label_smoothing
+        self.patch_weight = patch_weight
 
-    def forward(self, logits: torch.Tensor, batch: SpoofBatch) -> torch.Tensor:
+    def forward(
+        self,
+        output: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+        batch: SpoofBatch,
+    ) -> torch.Tensor:
+        logits, patch = output if isinstance(output, tuple) else (output, None)
         # The trainer moves the model, not the loss beside it, so this
         # buffer follows the logits rather than assuming anyone moved it.
-        return nn.functional.cross_entropy(
-            logits,
-            batch.labels,
-            weight=self.class_weight.to(logits.device, logits.dtype),
-            label_smoothing=self.label_smoothing,
+        weight = self.class_weight.to(logits.device, logits.dtype)
+        task = nn.functional.cross_entropy(
+            logits, batch.labels, weight=weight, label_smoothing=self.label_smoothing
         )
+        if patch is None or self.patch_weight == 0.0:
+            return task
+        truth = (batch.labels == LIVE).to(patch.dtype).view(-1, 1, 1, 1).expand_as(patch)
+        cell = nn.functional.binary_cross_entropy_with_logits(patch, truth, reduction="none")
+        spread = (cell.mean(dim=(1, 2, 3)) * weight[batch.labels]).mean()
+        return task + self.patch_weight * spread

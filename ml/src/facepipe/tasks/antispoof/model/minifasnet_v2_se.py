@@ -35,7 +35,7 @@ FINAL_MAP = stage_maps(INPUT_SIZE)[-1]
 
 
 class MiniFASNetBackbone(nn.Module):
-    """One view's feature extractor, ending in an embedding rather than a class."""
+    """One view's feature extractor: the embedding, and the spatial map beside it."""
 
     def __init__(
         self,
@@ -45,6 +45,7 @@ class MiniFASNetBackbone(nn.Module):
         input_size: int = INPUT_SIZE,
         width: int = WIDTH,
         in_channels: int = 3,
+        patch_supervision: bool = False,
     ) -> None:
         super().__init__()
         _stem, second, third, fourth = stage_maps(input_size)
@@ -69,23 +70,27 @@ class MiniFASNetBackbone(nn.Module):
         self.head_dw = ConvBn(closing, closing, kernel_size=fourth, groups=closing)
         self.embed = nn.Linear(closing, embedding, bias=False)
         self.embed_bn = nn.BatchNorm1d(embedding)
+        # Dropped at export: the local decisions only shape training (KEHOACH 3).
+        self.patch = nn.Conv2d(closing, 1, kernel_size=1) if patch_supervision else None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
         x = self.stem_dw(self.stem(x))
         x = self.stage_2(self.down_2(x))
         x = self.stage_3(self.down_3(x))
         x = self.stage_4(self.down_4(x))
-        x = self.head_dw(self.head(x))
-        return self.embed_bn(self.embed(torch.flatten(x, 1)))
+        mapped = self.head(x)
+        flat = torch.flatten(self.head_dw(mapped), 1)
+        patch = self.patch(mapped) if self.patch is not None and self.training else None
+        return self.embed_bn(self.embed(flat)), patch
 
 
 @MODELS.register("minifasnet_v2_se")
 class MiniFASNetV2SE(nn.Module):
     """Anti-spoof classifier over the face crop, with an optional context backbone.
 
-    forward takes the views as one tuple, not two arguments, because the shared
-    trainer calls every model with a single input; a single tensor is read as
-    the face crop. views="tight" keeps only the face backbone (KEHOACH 1.1).
+    forward takes the views as one tuple because the shared trainer hands every
+    model a single input; views="tight" keeps only the face backbone. Under
+    patch_supervision it also returns the spatial map, but only while training.
     """
 
     def __init__(
@@ -98,6 +103,7 @@ class MiniFASNetV2SE(nn.Module):
         width: int = WIDTH,
         views: str = "tight",
         chroma: bool = False,
+        patch_supervision: bool = False,
     ) -> None:
         super().__init__()
         if views not in ("tight", "both"):
@@ -106,7 +112,7 @@ class MiniFASNetV2SE(nn.Module):
         self.chroma = chroma
         planes = 4 if chroma else 3
         self.tight = MiniFASNetBackbone(
-            embedding, squeeze_excite, activation, input_size, width, planes
+            embedding, squeeze_excite, activation, input_size, width, planes, patch_supervision
         )
         self.wide = (
             MiniFASNetBackbone(
@@ -118,9 +124,12 @@ class MiniFASNetV2SE(nn.Module):
         self.drop = nn.Dropout(p=0.2)
         self.classifier = nn.Linear(embedding * (2 if views == "both" else 1), num_classes)
 
-    def forward(self, views: torch.Tensor | tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+    def forward(
+        self, views: torch.Tensor | tuple[torch.Tensor, torch.Tensor]
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         tight = views[0] if isinstance(views, (tuple, list)) else views
-        features = self.tight(tight)
+        features, patch = self.tight(tight)
         if self.wide is not None:
-            features = torch.cat((features, self.wide(views[1])), dim=1)
-        return self.classifier(self.drop(features))
+            features = torch.cat((features, self.wide(views[1])[0]), dim=1)
+        logits = self.classifier(self.drop(features))
+        return (logits, patch) if patch is not None else logits
