@@ -1363,6 +1363,46 @@ nên đuôi này không phải chi tiết bỏ qua được.
 `backlight` không thay được: nó kéo một bên khung **về phía trắng**, tức làm sáng lên, còn
 `vignette` chỉ tối bốn góc và nhân đúng 1,0 ở giữa khung — nơi khuôn mặt nằm.
 
+#### Một nhãn toàn cục cho phép model trả lời bằng bố cục, nên đích giám sát là 6×6 ô
+
+Mọi mục trên đây đổi **thứ model được ăn**. Mục này đổi **câu hỏi bắt nó trả lời**, và đó là
+trục duy nhất chưa đụng tới sau khi 12 hướng phía dữ liệu đã bị số đo đóng lại
+(`docs/thesis/nghien-cuu-chong-gia-mao-ov5640.md`).
+
+Cross-entropy nhị phân hỏi model đúng **một** câu cho cả khung hình. Một câu duy nhất thì
+trả lời được bằng **bố cục tổng thể** — chân dung chính diện, nền sạch, sáng đều — và đó
+đúng là thứ model đang làm: ảnh thẻ hiển thị trên màn hình ăn **0,999**, trong khi mặt thật
+thiếu sáng rớt xuống 0,135. Nó phân loại *phong cách ảnh*, không phân loại *bề mặt sống*.
+
+**Bản đồ không gian vẫn còn nguyên, chỉ đang bị vứt đi.** Chuỗi hạ mẫu 81 → 41 → 21 → 11 → 6
+để lại `head` xuất ra **6×6 × 256**, rồi `head_dw` — depthwise kernel 6×6 — bóp nó về một
+điểm. Gắn thêm **một conv 1×1, 256 → 1** vào chính bản đồ ấy là có **36 quyết định độc lập**,
+mỗi ô phủ ~13×13 điểm ảnh đầu vào. Không còn bố cục toàn cục nào để bám: từng mảnh bề mặt
+phải tự đứng vững.
+
+Hàm mục tiêu thành `L = CE(nhãn) + λ · BCE(bản đồ 6×6)`, nhãn bản đồ là hằng số theo lớp vì
+crop **đã là** khuôn mặt — giá trị nằm ở chỗ ép tính cục bộ, không ở chỗ khoanh vùng.
+Đây là dạng rẻ nhất của pixel-wise supervision; bản đồ độ sâu giả cần một bộ khớp 3DMM chạy
+trên cả pool, còn bản đồ nhị phân thì không cần gì.
+
+| | |
+|---|---|
+| Tham số thêm khi train | **257** |
+| Tham số thêm trên board | **0** — đầu phụ bỏ lúc xuất, `head_dw` trở đi không đổi một byte |
+| Arena, latency, 81×81 | không đổi |
+
+**SSDG là bước hai, không làm cùng lúc.** Hai lần train ngày 14/09 đều cho proxy tăng còn
+thiết bị giảm (iPad AUC 0,8729 → 0,9718 trong khi OV5640 0,8668 → 0,8438). SSDG nhắm đúng
+chế độ hỏng đó: ép đặc trưng **mặt thật** không phân biệt được giữa các miền, còn **tấn
+công** thì cho tách theo miền. Nhãn miền đã có sẵn trên shard từ `xdomain_crop.py`
+(`synth_ipad`, `synth_samsung`, `unique_replay`…) nên không phải gắn lại. Giá: thêm lớp đảo
+gradient và bộ lấy mẫu triplet bất đối xứng — đủ lớn để phải đo riêng, nên **chạy sau** và
+chỉ khi bước một đạt.
+
+**Nghiệm thu, chốt trước khi train** — 21 khung tấn công + 64 khung mặt thật của OV5640, giữ
+hoàn toàn ngoài tập huấn luyện. Đạt khi **ACER dưới 0,1425** *và* số khung mặt thật bị chặn
+**không vượt 2/64**. Thiếu một trong hai là trượt.
+
 #### Model sống bằng dải mắt–mũi, nên che chỗ đó là hỏng — và đó là ràng buộc hai chiều
 
 Đo trên 44 khung mặt thật đang được chấm 0,9995, phá dần từng kiểu rồi chấm lại:
