@@ -24,6 +24,9 @@ model:
     activation: relu
     # The face crop alone: a context backbone learns the room (KEHOACH 1.1).
     views: tight
+    # A fourth input plane holding (max-min)/max: a convolution cannot derive it,
+    # because max and min across channels are not linear (measurements 38.4).
+    chroma: true
 
 data:
   name: celeba_spoof
@@ -34,11 +37,15 @@ data:
   prefetch_factor: 4
   params:
     shards: data/interim/antispoof/celeba_spoof_crops
-    # LCC-FASD training five times over plus the SynthASpoof train pool, ~17% (KEHOACH 1.2).
-    train_split: [train, lcc_training, lcc_training, lcc_training, lcc_training, lcc_training, synth_training]
+    # Weighted by how much of each channel the model still gets wrong; the paired
+    # set repeats because its two sides differ only by the screen (measurements 40.6).
+    train_split: ["train:0:60", lcc_training, synth_bonafide, synth_ipad, synth_samsung,
+                  synth_webcam, synth_print,
+                  unique_live, unique_replay, unique_live, unique_replay, unique_live,
+                  unique_replay, unique_live, unique_replay, unique_live, unique_replay]
     # The mirror's train and valid are one pool; test is not (measurements 1).
-    # LCC development rides along: a threshold fitted on CelebA alone throws away
-    val_split: ["test:0:10", "lcc_development"]  # a third of a second domain (measurements 25)
+    # Two more domains ride along: a threshold fitted on CelebA alone throws away
+    val_split: ["test:0:10", lcc_development, unique_live_val, unique_replay_val]  # real faces (measurements 40.5)
     test_split: "test:10:"
     # Re-encoding the crop: the board compresses once already, so a second pass
     # is the history the train set would otherwise lack (measurements 9).
@@ -85,3 +92,10 @@ sched:
   name: cosine
   warmup_epochs: 2
   min_lr: 0.0001
+
+loss:
+  # 128 889 attacks over 72 556 live, counted on the shards (measurements 40.6).
+  live_weight: 1.776
+  # Live sits at 0.997 in every domain measured, which leaves a threshold nowhere
+  # to stand; this caps how far the easy half can be pushed (measurements 40.5).
+  label_smoothing: 0.05

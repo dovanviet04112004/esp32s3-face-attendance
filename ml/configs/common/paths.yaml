@@ -25,11 +25,13 @@ antispoof:
   # The crops above are cut with this checkpoint, so retraining detection means
   # rebuilding them: a shard set and the detector that framed it move together (KEHOACH 3).
   detector: artifacts/detection/runs/20260831-1616_cc931df_36fbea/ckpt/best.pth
-  # Cross-domain evaluation only, never training (KEHOACH 1.2).
+  # Which of these train and which only test is settled per set in KEHOACH 1.2.
   xdomain:
     nuaa: data/raw/antispoof/xdomain/nuaa
     unique_live: data/raw/antispoof/xdomain/unique_live
     unique_replay: data/raw/antispoof/xdomain/unique_replay
+    # The two archives above unpacked side by side, with the csv that pairs them.
+    unique_pair: data/interim/antispoof/unique_pair
     axon_masks: data/raw/antispoof/xdomain/axon_masks
     lcc_fasd: data/raw/antispoof/xdomain/lcc_fasd
     synthaspoof: data/raw/antispoof/xdomain/synthaspoof
