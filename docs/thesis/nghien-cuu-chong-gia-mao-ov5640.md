@@ -371,31 +371,66 @@ Bảng ở §5 là số **sau khi sửa** cả hai.
 | Biên phân tách quá hẹp | Giả cao nhất −0,062 so với thật thấp nhất −0,061, cách nhau **0,001** tức **0,046 σ** | Cao — chưa đủ để chốt một ngưỡng cố định |
 | Kiểm chéo hụt hai khung | 83/85 dưới bỏ-một-ra; hỏng đúng hai điểm biên (§3.6) | Cao — AUC 1,0000 không lặp lại được khi đánh giá trung thực |
 | Ghép với điểm model không cứu được | Quét toàn bộ góc cho trọng số tối ưu của điểm model bằng **0** | Cao — không có tín hiệu thứ hai để bù |
-| Chỉ một phương tiện tấn công | 21 khung đều là ảnh thẻ, **một** điện thoại, **một** phiên chụp | Cao — điều duy nhất còn có thể lật ngược kết quả |
+| Chỉ một phương tiện tấn công | Đã mở rộng sang điện thoại thứ hai ở §8: 4/4 khung giả vẫn dưới ngưỡng, chốt kiểm soát sạch | Đã hạ — còn lại là cỡ mẫu 4 và việc ảnh in chưa đo |
 | Đường xu hướng khớp trên chính tập chấm | Độ dốc rất nhỏ (0,02 trên 30 px) nên ảnh hưởng ít, nhưng vẫn là khớp trên dữ liệu đang đánh giá | Trung bình |
 | Chưa kiểm ảnh in | Giấy in có kết cấu riêng, có thể rơi vào vùng khác hẳn màn hình | Trung bình |
 | Điểm model đo bằng bản float | Bản chroma **chưa từng được xuất INT8**; chênh lệch float↔INT8 đo trước đó là APCER 0,238 ↔ 0,286 | Thấp |
 
 ---
 
-# 8. Bước kiểm chứng tiếp theo
+# 8. Phép thử phương tiện thứ hai — đã chạy, đã đạt
 
-Một phép thử duy nhất, khoảng **10 khung**, và ý nghĩa của kết quả được chốt **trước** khi
-chụp để tránh diễn giải theo ý muốn:
+## 8.1. Thiết kế, chốt trước khi chụp
 
-| Cần chụp | Số khung |
+Ngưỡng −0,062 và đường xu hướng `độ nét = 0,00067 × bề rộng + 0,099` giữ nguyên từ phiên
+13/09. Không khớp lại bất cứ tham số nào trên dữ liệu mới.
+
+| Kết quả | Đọc là |
 |---|---|
-| Ảnh giả bằng **một điện thoại khác** (kích thước điểm ảnh và lớp phủ màn khác) | ≈ 5 |
-| Ảnh giả bằng **ảnh in trên giấy** | ≈ 5 |
+| ≥ 4/5 khung giả dưới −0,062 **và** ≥ 4/5 khung thật trên −0,061 | Đạt |
+| ≤ 2/5 khung giả dưới ngưỡng | Trượt, loại đặc trưng |
+| Khung thật mới tụt dưới −0,062 | Phiên hỏng, không đọc số khung giả |
 
-**Nếu** chúng cũng rơi xuống dưới −0,062 thì đặc trưng bề mặt là tính chất thật của phương
-tiện tấn công, và có cơ sở để xây một cổng kiểm tra độc lập chạy song song với model.
+Năm khung mặt thật chụp trong **cùng phiên** là chốt kiểm soát: đèn và khoảng cách đổi thì
+cả hai nhóm cùng trôi, và khi đó số của nhóm giả không nói lên điều gì.
 
-**Nếu không**, đặc trưng này chỉ đúng cho một chiếc điện thoại và phải loại bỏ.
+## 8.2. Kết quả — phiên 14/09, điện thoại thứ hai
 
-Song song và độc lập với phép thử trên, một việc **đã có bằng chứng** và làm được ngay: bổ
-sung vài chục khung mặt thật **không nhãn** ở điều kiện thiếu sáng để mở rộng tập thích nghi
-ở §5, vá đúng ba khung bị chặn oan ở §5.1.
+| Khung | Nhãn | Bề rộng | Độ nét thô | Phần dư |
+|---|---|---|---|---|
+| `p2gia_002` | giả | 233 px | 0,1056 | −0,1498 |
+| `p2gia_003` | giả | 310 px | 0,0847 | −0,2221 |
+| `p2gia_004` | giả | 322 px | 0,0832 | −0,2312 |
+| `p2gia_005` | giả | 243 px | 0,1358 | −0,1258 |
+| `p2that_001` | thật | 112 px | 0,2077 | +0,0337 |
+| `p2that_002` | thật | 114 px | 0,2036 | +0,0285 |
+| `p2that_003` | thật | 114 px | 0,2056 | +0,0305 |
+| `p2that_004` | thật | 116 px | 0,2089 | +0,0324 |
+
+**4/4 giả dưới ngưỡng, 4/4 thật trên ngưỡng.** Chốt kiểm soát nằm +0,028…+0,034, đúng giữa
+dải thật gốc −0,061…+0,078, nên phiên không trôi.
+
+## 8.3. Bốn điều làm hẹp kết luận
+
+**Chấm được 8 trên 10 khung.** `p2gia_001` và `p2that_005` bị bộ dò không tìm ra mặt; khung
+giả đầu bị cắt mất cằm. Rụng chứ không phải trượt, nhưng cỡ mẫu còn 4 mỗi phía.
+
+**Phần dư bị ngoại suy.** Khung giả rộng 233–322 px, ngoài hẳn dải 145–174 px của 21 khung
+gốc và ngoài miền khớp đường xu hướng, nên biên rộng ở cột phần dư bị thổi phồng. Kết luận
+không dựa vào đó: trên **độ nét thô**, giả nằm 0,083–0,136 và thật nằm 0,204–0,209, gấp 2,4
+lần và không chồng lấn, không cần đường xu hướng nào.
+
+**Gain lệch có lợi cho phe thật.** Thật chụp ở gain 56–60, giả ở 17–22 vì màn hình sáng hơn
+phòng. Nhiễu cảm biến đẩy độ nét lên, tức nhóm thật đang được thiên vị. Khoảng cách 2,4 lần
+lớn hơn mức nhiễu giải thích được, nhưng biến này chưa khử.
+
+**Mới chỉ màn hình.** Ảnh in chưa đo. Phạm vi đúng của kết luận là **phát lại qua màn hình**,
+không phải mọi phương tiện tấn công.
+
+## 8.4. Việc đi kèm, độc lập với phép thử này
+
+Bổ sung vài chục khung mặt thật **không nhãn** ở điều kiện thiếu sáng để mở rộng tập thích
+nghi ở §5, vá đúng ba khung bị chặn oan ở §5.1.
 
 ---
 
