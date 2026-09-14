@@ -1179,7 +1179,7 @@ chia ấy phi tuyến, cùng lý do đã dùng để thêm kênh bão hoà thứ
 
 **Định nghĩa.** Lấy đúng crop 81×81 mà nhánh spoof đã dựng, chuyển xám, chuẩn hoá về trung
 bình 0 độ lệch chuẩn 1, rồi lấy trung bình trị tuyệt đối của Laplace. Trừ đi đường xu hướng
-theo bề rộng hộp mặt `0,00042 × rộng + 0,1944`, khớp trên 68 khung mặt thật của board. Phần
+theo bề rộng hộp mặt `0,00095 × rộng + 0,0802`, khớp trên 68 khung mặt thật của board. Phần
 dư âm quá sâu nghĩa là bề mặt mịn hơn mức một khuôn mặt cỡ ấy phải có.
 
 **Hai hệ số ấy gắn với đúng đường crop của board, và đổi đường là đổi số.** Cùng 93 khung,
@@ -1189,7 +1189,12 @@ cùng định nghĩa, chỉ khác cách lấy crop:
 |---|---|
 | `crop_views`: JPEG q95 rồi bilinear — đường cắt shard | 0,095 σ |
 | không JPEG, bilinear | 0,435 σ |
-| **không JPEG, trung bình vùng — `area_rows` của board** | **0,685 σ** |
+| không JPEG, `Image.BOX` của PIL | 0,685 σ |
+| **bản sao chính xác của `area_rows`** | **0,392 σ** |
+
+Ba dòng đầu đều là ước lượng, và dòng BOX lạc quan quá tay: trên một khung nhiễu cao tần,
+BOX cho độ nét cao hơn `area_rows` **24–33%**, vì nó chia trọng số theo phần diện tích phủ
+còn `cell_bounds` đếm trọn mọi điểm ảnh chạm vào ô. Dòng cuối mới là con số để dựa vào.
 
 Hai lý do, đo được chứ không suy: JPEG bôi mịn **mặt thật** nhiều hơn ảnh giả, vì mặt thật
 mới có chi tiết tần số cao để mất; và `resample_square` lấy **trung bình vùng** chứ không nội
@@ -1205,20 +1210,21 @@ tối, chỉ phụ thuộc bề mặt có kết cấu hay không. Da có lỗ ch
 
 | Ngưỡng phần dư | Thật bị chặn | Giả bắt được | Biên tới khung thật tệ nhất |
 |---|---|---|---|
-| −0,070 | 3/68 | 25/25 | âm |
-| −0,080 | 0/68 | 25/25 | 0,13 σ |
-| −0,090 | 0/68 | 25/25 | 0,37 σ |
-| **−0,100** | **0/68** | **25/25** | **0,61 σ** |
-| −0,110 | 0/68 | 24/25 | 0,85 σ |
+| −0,070 | 0/68 | 25/25 | 0,03 σ |
+| −0,080 | 0/68 | 25/25 | 0,34 σ |
+| −0,090 | 0/68 | 24/25 | 0,66 σ |
+| **−0,100** | **0/68** | **24/25** | **0,97 σ** |
+| −0,110 | 0/68 | 22/25 | 1,28 σ |
 
 Đối chiếu với model, cùng 93 khung, `live_min` để ở 750‰: chroma 13/09 một mình chặn oan
 **2/68** và bắt **12/25**. Model **không thêm được khung giả nào** vào phép hoặc — 12 khung nó
 bắt nằm trọn trong số cổng bề mặt đã bắt — và nó chỉ góp thêm 2 lần chặn oan.
 
-**Gieo −0,100.** Cửa sổ vừa cả hai vế trải từ −0,0745 đến −0,1030; điểm cân bằng hai biên là
-−0,089, nhưng hai vế **không đáng giá như nhau**. Một khung giả lọt cổng vẫn còn model đứng
-sau, vì phép hợp là **hoặc**; một người thật bị từ chối thì không có lớp nào đỡ. Nên ngưỡng
-đẩy về sát mép an toàn của người thật: −0,100 giữ 0,61 σ ở vế ấy và vẫn bắt đủ 25/25.
+**Gieo −0,100.** Cửa sổ bắt đủ 25 mà không chặn ai trải từ −0,0815 đến −0,0689, rộng đúng
+0,0126, nên ngưỡng đặt ở đó chỉ còn **0,34 σ** che cho người thật. Hai vế **không đáng giá
+như nhau**: một khung giả lọt cổng vẫn còn model đứng sau, vì phép hợp là **hoặc**; một người
+thật bị từ chối thì không có lớp nào đỡ. Đổi một khung giả trong 25 lấy biên **0,97 σ** là
+đúng chiều với ràng buộc cứng, nhất là khi 68 khung thật ấy đều của một người.
 
 **Vì sao không bỏ model.** Cả 25 khung giả đều là phát lại qua màn hình. Cổng này đo mất mát
 độ phân giải nên nó **không thấy** ảnh in chất lượng cao, mặt nạ 3D, hay màn hình mật độ rất
@@ -1242,14 +1248,18 @@ dư tối đa còn được coi là mặt thật**, `0` là tắt cổng. Gieo *
 quyết định của code**. Hai hệ số đường xu hướng là hằng số khớp từ dữ liệu, không phải tham
 số vận hành, nên chúng nằm trong `svc_vision` và trích mục này.
 
-**Gieo tắt, và chỉ bật sau một phép đo đối chiếu trên board.** Bảng trên dùng `Image.BOX` của
-PIL để thay cho `area_rows`, mà hai cái **không giống hệt**: `cell_bounds` lấy trọn mọi điểm
-ảnh nguồn chạm vào ô đích với trọng số bằng nhau, còn BOX chia theo phần diện tích phủ. Chênh
-lệch ấy rơi đúng dải tần số cao mà cổng này đọc. 🔬 Chưa đo. Phép đo cần: dựng một khung tổng
-hợp **có kết cấu biết trước** — khung gradient sẵn có trơn quá nên không dò được gì — rồi
-chấm cùng khung ấy hai bên và đối chiếu, ghi vào `docs/measurements/parity.md`. Bật một cổng
-có quyền từ chối người thật dựa trên con số chưa đo trên chính thiết bị chạy nó là đúng loại
-sai lầm nhánh này đã mắc nhiều lần.
+**Gieo tắt, và chỉ bật sau một phép đo đối chiếu trên board.** Bảng trên chạy một **bản sao
+`area_rows` viết bằng Python**, khớp từng bước của `cell_bounds`, nhưng còn hai chỗ lệch chưa
+khử được: board mở RGB565 bằng `(r<<3)|(r>>2)` trong khi khung lưu ra đĩa dùng `r*255//31`,
+sai một đơn vị ở vài mức; và board lượng tử hoá trung bình về int8, thêm nhiễu làm tròn. Cả
+hai rơi đúng dải tần số cao mà cổng này đọc. 🔬 Chưa đo.
+
+Phép đo đã dựng sẵn: ca `surface sharpness on a known frame` trong `test_apps/antispoof` in
+độ nét của một khung tổng hợp **có kết cấu biết trước** ở ba cỡ mặt — khung gradient sẵn có
+trơn quá nên không dò được gì — và host tính lại đúng khung ấy. Lệch bao nhiêu phần trăm thì
+ghi vào `docs/measurements/parity.md` rồi mới chốt ngưỡng. Bật một cổng có quyền từ chối
+người thật dựa trên con số chưa đo trên chính thiết bị chạy nó là đúng loại sai lầm nhánh
+này đã mắc nhiều lần.
 
 #### Một view: crop mặt 1,0×, ô vuông trượt cho lọt khung
 
@@ -2753,7 +2763,7 @@ public:
 
 **Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL`/`FACE_OUT_OF_FRAME` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
 
-Năm ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`, `surface_drop`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision`. `surface_drop` gieo **0**, tức tắt, là cổng độ nét bề mặt của §3: nó chạy cạnh liveness trên chính crop ấy và hợp với model bằng **hoặc**, đo trên 93 khung OV5640 cho 0/68 khung thật bị chặn và 25/25 khung giả bị bắt ở 100‰, trong khi model một mình ở cùng tập chặn 2 và bắt 12. Gieo tắt vì bảng ấy thay `area_rows` bằng `Image.BOX` chứ chưa đối chiếu với chính board; bật lên 100 sau phép đo ở §3. `live_min` gieo **750‰**, đo 12/09 trên 57 khung thật của board và 35 khung giả (`docs/measurements/antispoof` §33): mọi khung giả đứng dưới 0,686 nên trên 0,70 là chặn sạch, và 750‰ giữ khoảng đệm mà chỉ trượt 1/57 khung thật. Số ấy **chưa có khung giả chụp bằng chính OV5640**, nên E8-T12 vẫn phải chốt lại. `detect_min` gieo **350‰**, đo 13/09 trên board sau khi sửa thứ tự byte RGB565 (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức sàn 500‰ cũ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` hạ **113 → 100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức hụt cổng cũ đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên lại.
+Năm ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`, `surface_drop`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision`. `surface_drop` gieo **0**, tức tắt, là cổng độ nét bề mặt của §3: nó chạy cạnh liveness trên chính crop ấy và hợp với model bằng **hoặc**, đo trên 93 khung OV5640 cho 0/68 khung thật bị chặn và 24/25 khung giả bị bắt ở 100‰, trong khi model một mình ở cùng tập chặn 2 và bắt 12. Gieo tắt vì bảng ấy chạy bản sao `area_rows` bằng Python chứ chưa đối chiếu với chính board; bật lên 100 sau phép đo ở §3. `live_min` gieo **750‰**, đo 12/09 trên 57 khung thật của board và 35 khung giả (`docs/measurements/antispoof` §33): mọi khung giả đứng dưới 0,686 nên trên 0,70 là chặn sạch, và 750‰ giữ khoảng đệm mà chỉ trượt 1/57 khung thật. Số ấy **chưa có khung giả chụp bằng chính OV5640**, nên E8-T12 vẫn phải chốt lại. `detect_min` gieo **350‰**, đo 13/09 trên board sau khi sửa thứ tự byte RGB565 (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức sàn 500‰ cũ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` hạ **113 → 100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức hụt cổng cũ đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên lại.
 
 `match_min` 🔬 chưa đo.
 
