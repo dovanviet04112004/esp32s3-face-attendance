@@ -2267,3 +2267,127 @@ thể chỉ là chưa hội tụ lại chứ không phải do dải augment. Val
 
 Điểm 2 của §38.4 — **kênh sắc độ tường minh** — chưa bị động tới: nó không nới lỏng augment mà
 đưa thẳng đại lượng vào đầu vào, nên kết quả ở đây không nói gì về nó.
+
+## 40. Vì sao ảnh thẻ trên màn hình vượt sàn — truy tới thành phần pool train, 14/09
+
+Bốn giả thuyết bị bác trong ngày, và nguyên nhân thật nằm ở chỗ không ai nhìn: tỉ trọng từng
+kênh tấn công trong `train_split`.
+
+### 40.1 Bộ khung board có nhãn: sửa lại còn 21 giả và 13 thật
+
+`raw/device/ov5640` có 125 ảnh và 125 json, nhưng **chỉ 52 json mang khoá `is_spoof`**. Bảy
+mươi ba khung `s20260911*` là ảnh dump lúc chỉnh cảm biến 11/09 và **không có nhãn nào**;
+§36 đã coi chúng là mặt thật, nên con số "64 khung thật" của mục đó không đứng được.
+
+Trong phần có nhãn còn hai chỗ sai, đọc ra bằng cách mở ảnh lên xem:
+
+| Khung | Nhãn trong json | Thực tế |
+|---|---|---|
+| `spoof1309_000`–`006` | giả | **mặt thật**, đầu lọt nửa dưới khung |
+| `spoof1309_017`, `018` | giả | khung hỏng, không có mặt |
+| `spoof1309_007`–`016`, `019`–`029` | giả | đúng: ảnh thẻ trên màn hình điện thoại |
+
+Detector không bắt được mặt trong đúng 9 khung sai ấy, nên chúng chưa bao giờ lọt vào một
+phép đo nào — nhưng đó là may, không phải thiết kế. `raw/` là read-only (CLAUDE.md §4.2) nên
+json giữ nguyên; bảng này là nơi ghi nhãn đúng.
+
+**Bộ phán quyết từ đây: 21 khung giả và 13 khung thật** (`live1309` 7, `toi1209` 6). Nhỏ, nên
+mọi tỉ lệ dưới đây có bước nhảy 1/21 ≈ 0,048.
+
+`live1309` chụp 20:26, `spoof1309` chụp 20:19–20:22 — cách nhau 4 phút, cùng người, cùng
+phòng, cùng 40 cm. Đây là cặp đối chứng sạch nhất đang có.
+
+### 40.2 Board đang chạy model 3 kênh, không phải bản chroma
+
+Chấm trên 21 + 13 khung ở §40.1, crop dựng đúng như `preproc.cpp`:
+
+| File | Kênh | sha256 | Thật (med) | Giả (med) | AUC | @0,75 BPCER/APCER |
+|---|---|---|---|---|---|---|
+| `minifasnet_int8.tflite` — **đang nạp** | 3 | `57f1f4f5…` | 0,998 | **0,984** | 0,6960 | 0,000 / **0,857** |
+| `spoof_chroma_int8.tflite` | 4 | `047b4b46…` | 0,997 | 0,733 | 0,8755 | 0,000 / **0,476** |
+
+Kênh sắc độ giảm tỉ lệ lọt gần một nửa, nhưng **chưa bao giờ được nạp lên board**: ba file
+firmware đọc được 4 kênh còn chưa commit. Mọi quan sát trên phần cứng tới hôm nay đều là của
+bản 3 kênh.
+
+### 40.3 Lệch tiền xử lý giữa train và board không đáng kể
+
+Shard cắt bằng `crop_views`: crop → 128 px → JPEG q95 → 81 px. Board: crop → trung bình ô
+thẳng xuống 81 px, không có JPEG bao giờ. Chấm cùng model chroma qua ba đường:
+
+| Đường crop | Khung board AUC | `unique_pair` AUC |
+|---|---|---|
+| shard (JPEG 95) | 0,8718 | 0,7914 |
+| bỏ JPEG | 0,8755 | 0,7904 |
+| đúng như board (area, thẳng 81) | 0,8755 | 0,8000 |
+
+Chênh dưới 0,03. **Lệch có thật trong code nhưng không phải nguyên nhân**, và số đo trên PC
+đại diện đúng cho board.
+
+### 40.4 Quang học của board không phá dấu hiệu
+
+Ép crop qua đúng nút thắt của board — làm mềm theo tỉ lệ thu nhỏ, hạ về mặt 160 px, lượng tử
+RGB565 — rồi chấm lại bằng model chroma, 300 ảnh mỗi lớp:
+
+| Nguồn | AUC gốc | AUC sau khi ép |
+|---|---|---|
+| LCC-FASD `training` | 1,0000 | 1,0000 |
+| SynthASpoof webcam replay | 0,9805 | 0,9851 |
+| SynthASpoof Samsung replay | 0,9759 | 0,9781 |
+| SynthASpoof print | 0,9732 | 0,9728 |
+| SynthASpoof **iPad replay** | **0,8729** | **0,8872** |
+
+Không nguồn nào sụt. Giả thuyết "độ phân giải của OV5640 xoá mất vết chụp lại" **bị bác**.
+
+### 40.5 Độ khó xếp theo loại tấn công, không theo miền
+
+Trung vị điểm sống của phía tấn công, cùng model chroma:
+
+| Tấn công | Trung vị | Bắt được ở 0,75? |
+|---|---|---|
+| LCC-FASD | 0,001 | có |
+| SynthASpoof webcam replay | 0,069 | có |
+| `unique_replay` (phát lại, quay bằng điện thoại) | 0,151 | có |
+| SynthASpoof print | 0,170 | có |
+| SynthASpoof Samsung replay | 0,240 | có |
+| **SynthASpoof iPad replay** | **0,809** | **không** |
+| **Ảnh thẻ trên điện thoại, khung board** | **0,733** | **không** |
+
+Mọi tấn công để lại vết nhìn thấy được — vân sọc, vân giấy, hạt nén — đều bị bắt. Hai ca thua
+là đúng hai ca **màn hình tốt, phơi sáng chuẩn, không để lại vết**, và đòn tấn công thật của
+board rơi vào đó.
+
+Mặt thật cho trung vị **≈ 0,997 ở mọi tập**. Model quá tự tin: iPad replay có AUC 0,8729, tức
+là vẫn còn tín hiệu, nhưng trung vị tấn công 0,809 nằm sát 0,997 nên **không còn khoảng đặt
+ngưỡng**. Đó là lý do mọi lần chỉnh ngưỡng đều thất bại.
+
+### 40.6 Pool train đặt ngược với độ khó
+
+Đếm bản ghi thật trong shard, `train_split = [train, lcc_training ×5, synth_training]`:
+
+| Nguồn | Bản ghi | % pool | AUC của model |
+|---|---|---|---|
+| CelebA-Spoof `train` | 417.816 | **83,4 %** | nhãn lẫn phong cách ảnh (§22.3) |
+| LCC-FASD `training` ×5 | 41.410 | 8,3 % | **1,0000** — đã giải xong |
+| SynthASpoof `train` | 41.800 | 8,3 % | |
+| ├ BonaFide | 10.000 | 2,0 % | |
+| ├ Samsung replay | 10.000 | 2,0 % | 0,9759 |
+| ├ webcam replay | 10.000 | 2,0 % | 0,9805 |
+| ├ print | 1.800 | 0,4 % | 0,9732 |
+| └ **iPad replay** | **10.000** | **2,0 %** | **0,8729** |
+
+**Kênh tấn công duy nhất mà model chưa giải được chiếm 2,0 % pool**, trong khi bộ đã đạt AUC
+1,0000 được nhân 5 lần và bộ có nhãn lẫn phong cách ảnh chiếm 83,4 %. Model đang tiêu gần hết
+sức vào những ca đã thắng từ lâu.
+
+`synth_training` gộp cả bốn kênh vào **một** nguồn, nên không thể nâng riêng iPad mà không
+nâng kèm ba kênh dễ. Tách theo kênh ở nhánh train là điều kiện để cân lại được.
+
+### 40.7 Bốn giả thuyết bị bác trong cùng ngày
+
+| Giả thuyết | Bác bằng |
+|---|---|
+| Chỉnh `live_min` là đủ | Hai miền đẩy phân bố ngược nhau: board BPCER 0,016 / APCER 0,524, `unique_pair` BPCER 0,459 / APCER 0,144 |
+| `sat_mean` làm cổng | AUC 1,0000 trong cùng một phòng, nhưng `toi1209` (thật, văn phòng) sat 0,282–0,376 nằm trong dải giả 0,131–0,413 |
+| Lượng tử INT8 làm hỏng | float APCER 0,238 so với INT8 0,286, trong nhiễu của 21 mẫu |
+| Độ phân giải OV5640 xoá vết chụp lại | §40.4, không nguồn nào sụt |
