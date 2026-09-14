@@ -27,9 +27,9 @@ model:
     # A fourth input plane holding (max-min)/max: a convolution cannot derive it,
     # because max and min across channels are not linear (measurements 38.4).
     chroma: true
-    # One binary answer per 6x6 cell, so a global composition cannot carry the
-    # label; the head is dropped at export (KEHOACH 3).
-    patch_supervision: true
+    # Off: the 6x6 head cost 0.096 AUC on the device against the same pool
+    # without it, and the plan carries the table (KEHOACH 3).
+    patch_supervision: false
 
 data:
   name: celeba_spoof
@@ -99,8 +99,7 @@ sched:
 loss:
   # 128 889 attacks over 72 498 live, counted on the shards (measurements 40.6).
   live_weight: 1.776
-  # Matched to the task term: both are one binary decision per sample, so an
-  # equal weight leaves neither able to dominate (KEHOACH 3).
+  # Read only while patch_supervision is on, which it is not (KEHOACH 3).
   patch_weight: 1.0
   # Live sits at 0.997 in every domain measured, which leaves a threshold nowhere
   # to stand; this caps how far the easy half can be pushed (measurements 40.5).
