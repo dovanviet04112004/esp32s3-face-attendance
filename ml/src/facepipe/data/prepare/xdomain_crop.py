@@ -37,6 +37,15 @@ NUAA_ARCHIVE = "nuaaaa.tar.gz"
 NUAA_LIVE_DIR = "ClientRaw"
 AXON_LIVE_DIR = "Selfies"
 AXON_FRAMES = 8
+UNIQUE_LIVE_DIR = "live"
+UNIQUE_REPLAY_DIR = "replay"
+UNIQUE_MANIFEST = "anti-spoofing_replay.csv"
+UNIQUE_FRAMES = 60
+# A player's first frame paints a play button over the face, and the last frame
+# is often black; both would become the label (measurements/antispoof 40.6).
+UNIQUE_EDGE = 0.2
+# Of 30 people, held out whole: a person on both sides makes val read high.
+UNIQUE_VAL_EVERY = 5
 
 
 @dataclass
@@ -80,11 +89,11 @@ def nuaa_images(root: Path, split: str = "test") -> Iterator[RawImage]:
             )
 
 
-def video_frames(path: Path, count: int = AXON_FRAMES) -> Iterator[bytes]:
-    """A few frames spread across one clip, encoded as JPEG.
+def video_frames(path: Path, count: int = AXON_FRAMES, edge: float = 0.0) -> Iterator[bytes]:
+    """A few frames spread across one clip as JPEG, `edge` of it dropped each end.
 
-    Neighbouring frames of a video are near duplicates, so taking them evenly
-    across the clip buys variety that taking the first N does not.
+    Neighbouring frames are near duplicates, so spreading them evenly buys
+    variety that taking the first N does not.
     """
     import cv2
 
@@ -93,7 +102,8 @@ def video_frames(path: Path, count: int = AXON_FRAMES) -> Iterator[bytes]:
         total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
         if total <= 0:
             return
-        for index in np.linspace(0, total - 1, num=min(count, total), dtype=int):
+        first, last = total * edge, (total - 1) * (1.0 - edge)
+        for index in np.linspace(first, last, num=min(count, total), dtype=int):
             capture.set(cv2.CAP_PROP_POS_FRAMES, int(index))
             ok, frame = capture.read()
             if not ok:
@@ -127,14 +137,50 @@ def axon_images(root: Path, split: str = "test") -> Iterator[RawImage]:
                     yield RawImage(f"{path.stem}_{number}", payload, is_spoof, source)
 
 
+def unique_pairs(root: Path) -> list[tuple[str, str]]:
+    """Each live folder with the replay folder filmed from it, per the manifest."""
+    lines = (Path(root) / UNIQUE_MANIFEST).read_text(encoding="utf-8").splitlines()
+    pairs = [line.split(";") for line in lines[1:] if line.strip()]
+    return sorted((row[0], Path(row[2]).parent.name) for row in pairs if len(row) >= 3 and row[2])
+
+
+def unique_images(root: Path, split: str = "train") -> Iterator[RawImage]:
+    """Paired live and replay clips of one person, held out whole by person.
+
+    The two sides differ only by the screen between face and lens, so photo
+    style cannot separate them and the model has to read the screen itself.
+    """
+    root = Path(root)
+    for index, ids in enumerate(unique_pairs(root)):
+        if (split == "val") != (index % UNIQUE_VAL_EVERY == 0):
+            continue
+        for folder, name, is_spoof in (
+            (UNIQUE_LIVE_DIR, ids[0], False),
+            (UNIQUE_REPLAY_DIR, ids[1], True),
+        ):
+            for path in sorted((root / folder / name).glob("*")):
+                if path.suffix.lower() not in {".mp4", ".mov"}:
+                    continue
+                for number, payload in enumerate(video_frames(path, UNIQUE_FRAMES, UNIQUE_EDGE)):
+                    yield RawImage(f"{name}_{number}", payload, is_spoof, f"{split}/{folder}")
+
+
 LCC_SPLITS = {"train": "training", "val": "development", "test": "evaluation"}
 LCC_LIVE_DIR = "real"
 SYNTH_LIVE_DIR = "BonaFide"
 SYNTH_ATTACK_DIR = "PAs"
 # Per channel, spaced evenly through the folder: 2 000 resolves APCER to 0.05%.
 SYNTH_TEST_CAP = 2000
-# Per channel again, from what test did not take (KEHOACH 1.2).
-SYNTH_TRAIN_CAP = 10000
+# Per channel from what test did not take, sized by how much of that channel the
+# model still gets wrong (measurements/antispoof 40.5).
+SYNTH_TRAIN_CAPS = {
+    "BonaFide": 23000,
+    "iPad_ReplayAttack": 23000,
+    "Samsung_ReplayAttack": 6000,
+    "Webcam_ReplayAttack": 6000,
+    "PrintAttack": 2000,
+}
+SYNTH_TRAIN_CAP = 6000
 DETECT_BATCH = 64
 DECODE_THREADS = 8
 
@@ -165,8 +211,8 @@ def spaced(count: int, cap: int) -> list[int]:
 def synthaspoof_paths(root: Path, split: str) -> list[tuple[Path, str]]:
     """The images one SynthASpoof split takes, each with the source it lands in.
 
-    Test samples 2 000 per channel evenly and keeps the channel as its source;
-    train takes up to 10 000 of the rest per channel, pooled into one source.
+    Both splits keep the channel as its own source, so a pool can weight the
+    channel the model fails on without dragging the solved ones up with it.
     """
     base = Path(root) / "SynthASpoof"
     folders = [base / SYNTH_LIVE_DIR]
@@ -175,11 +221,13 @@ def synthaspoof_paths(root: Path, split: str) -> list[tuple[Path, str]]:
     for folder in folders:
         paths = sorted(folder.glob("*.png"))
         test_picks = spaced(len(paths), SYNTH_TEST_CAP)
+        source = f"{split}/{folder.name.lower()}"
         if split == "test":
-            chosen += [(paths[i], f"test/{folder.name.lower()}") for i in test_picks]
+            chosen += [(paths[i], source) for i in test_picks]
         else:
             rest = sorted(set(range(len(paths))) - set(test_picks))
-            chosen += [(paths[rest[i]], "train") for i in spaced(len(rest), SYNTH_TRAIN_CAP)]
+            cap = SYNTH_TRAIN_CAPS.get(folder.name, SYNTH_TRAIN_CAP)
+            chosen += [(paths[rest[i]], source) for i in spaced(len(rest), cap)]
     return chosen
 
 
@@ -195,6 +243,7 @@ SETS = {
     "axon": axon_images,
     "lcc_fasd": lcc_images,
     "synthaspoof": synthaspoof_images,
+    "unique": unique_images,
 }
 
 
