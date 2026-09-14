@@ -54,9 +54,12 @@ data:
     # is the history the train set would otherwise lack (measurements 9).
     recompress_probability: 0.5
     quality_range: [30, 95]
-    # Poisson-Gaussian noise, white balance, vignette, motion blur, backlight
-    # and exposure, behind one gate (measurements 12.1).
+    # Poisson-Gaussian noise, white balance, vignette, motion blur and exposure,
+    # behind one gate (measurements 12.1).
     photometric_probability: 0.5
+    # Off: it whitens the face while the backlit scene it models is in a
+    # background this branch never sees (KEHOACH 3).
+    backlight_range: [0.0, 0.0]
     # Every source record below 1.0x is an attack (measurements 12.5).
     crop_scale_range: [0.7, 1.0]
     # A gate, because this crop only ever narrows (measurements 15.1).
@@ -101,6 +104,11 @@ loss:
   live_weight: 1.776
   # Read only while patch_supervision is on, which it is not (KEHOACH 3).
   patch_weight: 1.0
+  # SSDG: the domain head sees only live faces, through a reversed gradient, and
+  # the triplet keeps attacks of different domains apart (KEHOACH 3).
+  domain_weight: 0.1
+  triplet_weight: 0.1
+  triplet_margin: 0.3
   # Live sits at 0.997 in every domain measured, which leaves a threshold nowhere
   # to stand; this caps how far the easy half can be pushed (measurements 40.5).
   label_smoothing: 0.05

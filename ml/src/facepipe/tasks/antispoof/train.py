@@ -120,8 +120,13 @@ def main(argv: list[str] | None = None) -> int:
     run = create_run_dir(cfg)
     logger = RunLogger(run.path, tensorboard=cfg.log.tensorboard, level=cfg.log.level)
 
-    model = MODELS.build({"name": cfg.model.name, "params": cfg.model.params})
     train_set = build_dataset(cfg, cfg.data.params.get("train_split", "train"), train=True)
+    params = dict(cfg.model.params)
+    # Counted off the split rather than written down twice, or a pool change
+    # would silently leave the head sized for the old one (KEHOACH 3).
+    if cfg.loss.get("domain_weight", 0.0) > 0.0:
+        params["domains"] = len(train_set.domains)
+    model = MODELS.build({"name": cfg.model.name, "params": params})
     loader = build_loader(cfg, train_set, train=True)
     val_set = build_dataset(cfg, cfg.data.params.get("val_split", "valid"), train=False)
     val_loader = build_loader(cfg, val_set, train=False)
@@ -138,11 +143,11 @@ def main(argv: list[str] | None = None) -> int:
     scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
 
     def step_fn(batch: tuple[torch.Tensor, ...]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        tight, wide, labels, wide_scale = batch
+        tight, wide, labels, wide_scale, domains = batch
         train_set.epoch = trainer.state.epoch
         # trainer.model, not the module above: a compiled run must reach the
         # wrapper the trainer built, or the graph is traced twice.
-        loss = criterion(trainer.model((tight, wide)), SpoofBatch(labels, wide_scale))
+        loss = criterion(trainer.model((tight, wide)), SpoofBatch(labels, wide_scale, domains))
         return loss, {"task": loss.detach(), "total": loss.detach()}
 
     @torch.no_grad()
@@ -158,9 +163,9 @@ def main(argv: list[str] | None = None) -> int:
         scores: list[np.ndarray] = []
         truth: list[np.ndarray] = []
         for batch in val_loader:
-            tight, wide, labels, wide_scale = trainer.to_device(batch)
+            tight, wide, labels, wide_scale, domains = trainer.to_device(batch)
             logits = module((tight, wide))
-            batch_meta = SpoofBatch(labels, wide_scale)
+            batch_meta = SpoofBatch(labels, wide_scale, domains)
             meter.update({"loss": criterion(logits, batch_meta)}, n=1)
             scores.append(logits.softmax(dim=1)[:, LIVE].float().cpu().numpy())
             truth.append(labels.cpu().numpy())

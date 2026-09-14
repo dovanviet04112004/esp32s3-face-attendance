@@ -84,6 +84,19 @@ class MiniFASNetBackbone(nn.Module):
         return self.embed_bn(self.embed(flat)), patch
 
 
+class Reverse(torch.autograd.Function):
+    """Identity going forward, sign flipped coming back: one head, two goals."""
+
+    @staticmethod
+    def forward(ctx, x: torch.Tensor, scale: float) -> torch.Tensor:
+        ctx.scale = scale
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad: torch.Tensor):
+        return -ctx.scale * grad, None
+
+
 @MODELS.register("minifasnet_v2_se")
 class MiniFASNetV2SE(nn.Module):
     """Anti-spoof classifier over the face crop, with an optional context backbone.
@@ -104,6 +117,7 @@ class MiniFASNetV2SE(nn.Module):
         views: str = "tight",
         chroma: bool = False,
         patch_supervision: bool = False,
+        domains: int = 0,
     ) -> None:
         super().__init__()
         if views not in ("tight", "both"):
@@ -122,7 +136,11 @@ class MiniFASNetV2SE(nn.Module):
             else None
         )
         self.drop = nn.Dropout(p=0.2)
-        self.classifier = nn.Linear(embedding * (2 if views == "both" else 1), num_classes)
+        width_out = embedding * (2 if views == "both" else 1)
+        self.classifier = nn.Linear(width_out, num_classes)
+        # Reached through a sign flip, so the trunk learns to defeat it and the
+        # live half stops carrying which camera took it (KEHOACH 3, SSDG).
+        self.domain = nn.Linear(width_out, domains) if domains > 1 else None
 
     def forward(
         self, views: torch.Tensor | tuple[torch.Tensor, torch.Tensor]
@@ -132,4 +150,7 @@ class MiniFASNetV2SE(nn.Module):
         if self.wide is not None:
             features = torch.cat((features, self.wide(views[1])[0]), dim=1)
         logits = self.classifier(self.drop(features))
-        return (logits, patch) if patch is not None else logits
+        if not self.training or (patch is None and self.domain is None):
+            return logits
+        told = self.domain(Reverse.apply(features, 1.0)) if self.domain is not None else None
+        return logits, patch, features, told

@@ -26,6 +26,8 @@ from facepipe.data.prepare.images_to_wds import read_shard
 
 CROP_SIZE = 81
 SHUFFLE_BUFFER = 2048
+# Shards read at once, so one batch carries several capture setups (KEHOACH 3).
+INTERLEAVE_SHARDS = 12
 # Drawn from one distribution for both classes: every source record below 1.0x is
 # an attack, so scale alone predicts the label (KEHOACH 3, layer 2).
 CROP_SCALE_RANGE = (0.7, 1.2)
@@ -75,6 +77,7 @@ class SpoofSample:
     wide: np.ndarray | None
     label: int
     wide_scale: float  # scale the wide view actually reached
+    domain: int = 0    # which shard folder it came from (KEHOACH 3)
     face_in_wide: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
     def views(self) -> list[np.ndarray]:
@@ -392,6 +395,7 @@ def photometric(
     probability: float = PHOTOMETRIC_PROBABILITY,
     contrast_range: tuple[float, float] = EXPOSURE_CONTRAST_RANGE,
     white_balance_range: tuple[float, float] = WHITE_BALANCE_RANGE,
+    backlight_range: tuple[float, float] = BACKLIGHT_RANGE,
 ) -> SpoofSample:
     """Camera-path augmentation, drawn once per sample and applied to both views.
 
@@ -404,8 +408,8 @@ def photometric(
         gain = rng.uniform(*EXPOSURE_GAIN_RANGE)
         contrast = rng.uniform(*contrast_range)
         views = [exposure(view, gain, contrast) for view in views]
-    if rng.random() < probability:
-        strength, angle = rng.uniform(*BACKLIGHT_RANGE), rng.uniform(0.0, 2.0 * np.pi)
+    if backlight_range[1] > 0.0 and rng.random() < probability:
+        strength, angle = rng.uniform(*backlight_range), rng.uniform(0.0, 2.0 * np.pi)
         views = [backlight(view, strength, angle) for view in views]
     if rng.random() < probability:
         length, angle = rng.randint(*MOTION_BLUR_PX), rng.uniform(0.0, np.pi)
@@ -444,6 +448,7 @@ class SpoofShardDataset(IterableDataset):
         photometric_probability: float = PHOTOMETRIC_PROBABILITY,
         exposure_contrast_range: tuple[float, float] = EXPOSURE_CONTRAST_RANGE,
         white_balance_range: tuple[float, float] = WHITE_BALANCE_RANGE,
+        backlight_range: tuple[float, float] = BACKLIGHT_RANGE,
         crop_scale_range: tuple[float, float] = CROP_SCALE_RANGE,
         crop_scale_probability: float = CROP_SCALE_PROBABILITY,
         occlusion_probability: float = OCCLUSION_PROBABILITY,
@@ -453,6 +458,7 @@ class SpoofShardDataset(IterableDataset):
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
         keep_wide: bool = True,
+        interleave: int = INTERLEAVE_SHARDS,
     ) -> None:
         if splits is None:
             self.shards = shard_paths(root)
@@ -461,10 +467,14 @@ class SpoofShardDataset(IterableDataset):
             self._length = count_records(self.shards)
         else:
             self.shards, self._length = resolve_splits(root, splits)
+        # A folder is one capture setup, which is what SSDG calls a domain; the
+        # order is sorted so a resumed run numbers them the same way (KEHOACH 3).
+        self.domains = sorted({shard.parent.name for shard in self.shards})
         self.size = size
         self.train = train
         self.seed = seed
         self.keep_wide = keep_wide
+        self.interleave = max(1, interleave)
         self.shuffle_buffer = shuffle_buffer if train else 0
         self.recompress_probability = recompress_probability
         self.quality_range = quality_range
@@ -473,6 +483,7 @@ class SpoofShardDataset(IterableDataset):
         self.crop_scale_probability = crop_scale_probability
         self.exposure_contrast_range = tuple(exposure_contrast_range)
         self.white_balance_range = tuple(white_balance_range)
+        self.backlight_range = tuple(backlight_range)
         self.occlusion_probability = occlusion_probability
         self.occlusion_side_range = occlusion_side_range
         self.roll_probability = roll_probability
@@ -498,9 +509,31 @@ class SpoofShardDataset(IterableDataset):
             return shards
         return shards[info.id :: info.num_workers]
 
+    def _open(self, shards: list[Path], live: list) -> None:
+        # Picked by folder, not by position: the paired set repeats five times in
+        # the split and would otherwise fill the window on its own (KEHOACH 3).
+        while shards and len(live) < self.interleave:
+            held = {domain for domain, _ in live}
+            at = next((i for i, s in enumerate(shards)
+                       if self.domains.index(s.parent.name) not in held), 0)
+            shard = shards.pop(at)
+            live.append((self.domains.index(shard.parent.name), iter(read_shard(shard))))
+
     def _records(self) -> Iterator[SpoofSample]:
-        for shard in self._my_shards():
-            for record in read_shard(shard):
+        # One folder is one domain, so reading shards end to end hands a batch a
+        # single domain and the domain terms have nothing to compare (KEHOACH 3).
+        waiting = self._my_shards()
+        live: list = []
+        while True:
+            self._open(waiting, live)
+            if not live:
+                return
+            standing = []
+            for domain, stream in live:
+                record = next(stream, None)
+                if record is None:
+                    continue
+                standing.append((domain, stream))
                 meta = json.loads(record["json"])
                 reached = float(meta["wide_scale"])
                 # The crop-scale augmentation cuts the tight view out of this one,
@@ -514,7 +547,9 @@ class SpoofShardDataset(IterableDataset):
                     label=int(meta["label"]),
                     wide_scale=reached,
                     face_in_wide=tuple(meta.get("face_in_wide") or centred_face(reached)),
+                    domain=domain,
                 )
+            live = standing
 
     def __iter__(self) -> Iterator[SpoofSample]:
         info = get_worker_info()
@@ -542,6 +577,7 @@ class SpoofShardDataset(IterableDataset):
                     self.photometric_probability,
                     self.exposure_contrast_range,
                     self.white_balance_range,
+                    self.backlight_range,
                 )
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
@@ -576,8 +612,8 @@ def to_tensor(image: np.ndarray, chroma: bool = False) -> torch.Tensor:
 def collate(
     batch: list[SpoofSample],
     chroma: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Stack into (tight, wide, label, wide_scale), what the model and loss expect.
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Stack into (tight, wide, label, wide_scale, domain) for the model and loss.
 
     A one-backbone run carries no context view, and the empty stand-in keeps the
     tuple the same shape for every caller.
@@ -590,4 +626,5 @@ def collate(
     )
     labels = torch.tensor([s.label for s in batch], dtype=torch.long)
     scales = torch.tensor([s.wide_scale for s in batch], dtype=torch.float32)
-    return tight, wide, labels, scales
+    domains = torch.tensor([s.domain for s in batch], dtype=torch.long)
+    return tight, wide, labels, scales, domains

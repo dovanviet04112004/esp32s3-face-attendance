@@ -23,6 +23,7 @@ class SpoofBatch(NamedTuple):
 
     labels: torch.Tensor
     wide_scale: torch.Tensor
+    domains: torch.Tensor
 
 
 @LOSSES.register("antispoof_task")
@@ -35,28 +36,65 @@ class SpoofTaskLoss(nn.Module):
         live_weight: float = 2.11,
         label_smoothing: float = 0.0,
         patch_weight: float = 0.0,
+        domain_weight: float = 0.0,
+        triplet_weight: float = 0.0,
+        triplet_margin: float = 0.3,
     ) -> None:
         super().__init__()
         weight = torch.tensor([live_weight, 1.0], dtype=torch.float32)
         self.register_buffer("class_weight", weight)
         self.label_smoothing = label_smoothing
         self.patch_weight = patch_weight
+        self.domain_weight = domain_weight
+        self.triplet_weight = triplet_weight
+        self.triplet_margin = triplet_margin
+
+    # Live of every domain is one class while each domain's attacks are their own,
+    # so real faces close up and attacks stay apart (KEHOACH 3, SSDG).
+    def asymmetric(self, features: torch.Tensor, batch: SpoofBatch) -> torch.Tensor:
+        groups = torch.where(batch.labels == LIVE, torch.zeros_like(batch.domains),
+                             batch.domains + 1)
+        unit = nn.functional.normalize(features.float(), dim=1)
+        gap = torch.cdist(unit, unit)
+        same = groups[:, None] == groups[None, :]
+        eye = torch.eye(len(groups), dtype=torch.bool, device=groups.device)
+        far = gap.masked_fill(~same | eye, -1.0).amax(dim=1)
+        near = gap.masked_fill(same, float("inf")).amin(dim=1)
+        usable = (same & ~eye).any(dim=1) & (~same).any(dim=1)
+        if not bool(usable.any()):
+            return features.sum() * 0.0
+        return nn.functional.relu(far - near + self.triplet_margin)[usable].mean()
 
     def forward(
         self,
-        output: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+        output: torch.Tensor | tuple[torch.Tensor, ...],
         batch: SpoofBatch,
     ) -> torch.Tensor:
-        logits, patch = output if isinstance(output, tuple) else (output, None)
+        parts = output if isinstance(output, tuple) else (output,)
+        logits = parts[0]
+        patch = parts[1] if len(parts) > 1 else None
+        features = parts[2] if len(parts) > 2 else None
+        domain_logits = parts[3] if len(parts) > 3 else None
         # The trainer moves the model, not the loss beside it, so this
         # buffer follows the logits rather than assuming anyone moved it.
         weight = self.class_weight.to(logits.device, logits.dtype)
         task = nn.functional.cross_entropy(
             logits, batch.labels, weight=weight, label_smoothing=self.label_smoothing
         )
+        total = task
+        # One side only: real faces are pushed to look alike across domains while
+        # attacks are left free to differ (KEHOACH 3, SSDG).
+        if domain_logits is not None and self.domain_weight > 0.0:
+            live = batch.labels == LIVE
+            if bool(live.any()):
+                total = total + self.domain_weight * nn.functional.cross_entropy(
+                    domain_logits[live], batch.domains[live]
+                )
+        if features is not None and self.triplet_weight > 0.0:
+            total = total + self.triplet_weight * self.asymmetric(features, batch)
         if patch is None or self.patch_weight == 0.0:
-            return task
+            return total
         truth = (batch.labels == LIVE).to(patch.dtype).view(-1, 1, 1, 1).expand_as(patch)
         cell = nn.functional.binary_cross_entropy_with_logits(patch, truth, reduction="none")
         spread = (cell.mean(dim=(1, 2, 3)) * weight[batch.labels]).mean()
-        return task + self.patch_weight * spread
+        return total + self.patch_weight * spread

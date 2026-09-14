@@ -1360,8 +1360,41 @@ dải lệch về phía tối không mở rộng tập train mà **dời** nó, 
 Nền cháy sáng có tương quan **−0,724** với điểm — mạnh gấp đôi mọi đặc trưng khác đo được —
 nên đuôi này không phải chi tiết bỏ qua được.
 
-`backlight` không thay được: nó kéo một bên khung **về phía trắng**, tức làm sáng lên, còn
-`vignette` chỉ tối bốn góc và nhân đúng 1,0 ở giữa khung — nơi khuôn mặt nằm.
+#### `backlight` mô phỏng nền, mà nhánh một backbone không nhìn thấy nền
+
+Đo 14/09 trên 64 khung mặt thật của OV5640: lấy dải p5–p95 của bốn đại lượng (độ nét, bão hoà,
+độ sáng, tương phản) làm đích, rồi hỏi **bao nhiêu phần trăm mẫu train rơi vào đúng dải ấy**.
+Đây là độ **phủ**, không phải khoảng cách giữa hai trung vị — augment có nhiệm vụ nới rộng để
+trùm lấy thiết bị, chứ không phải dời phân bố tới đó.
+
+| Thao tác trong `photometric` | Phủ | So với tắt hết |
+|---|---|---|
+| tắt hết | 53,0% | — |
+| nhoè chuyển động | **62,8%** | **+9,8** |
+| vignette | **59,2%** | **+6,2** |
+| cân bằng trắng | 52,8% | −0,3 |
+| nhiễu cảm biến | 50,8% | −2,2 |
+| tương phản | 46,0% | −7,0 |
+| phơi sáng | 41,7% | −11,3 |
+| **ánh ngược** | **33,3%** | **−19,7** |
+| bật hết | 32,8% | −20,2 |
+| **bật hết trừ ánh ngược** | **44,5%** | thu lại **11,7 điểm** |
+
+**Cả chuỗi augment đang phủ thiết bị kém hơn là không augment gì** (43,5% so với 53,0% khi đo ở
+mức cổng), và `backlight` một mình gánh hơn nửa khoản lỗ.
+
+Lý do không nằm ở dải số mà ở chỗ nó mô phỏng sai vật: `backlight` kéo một bên khung **về phía
+trắng** để giả cảnh ngược sáng, nhưng nhánh `views: tight` **chỉ nhìn crop khuôn mặt**, nơi
+không có nền. Một cảnh ngược sáng thật làm **mặt tối đi** còn nền cháy trắng; ở đây nó đang bôi
+trắng lên chính khuôn mặt. Số đo khớp với chẩn đoán: bão hoà rơi 51,3% → **9,0%**, độ sáng
+53,3% → **16,3%**. **Tắt.** Con số −0,724 giữa nền cháy sáng và điểm vẫn đúng — nó đo trên
+**khung đầy đủ**, và nếu muốn khai thác thì phải cho model nhìn thấy nền, không phải bôi trắng
+lên mặt.
+
+**Phơi sáng và tương phản thì giữ, dù cũng âm.** Đổi lấy độ phủ ở đây là mở lại một lỗi đã đo:
+làm tối 15% kéo một khuôn mặt thật từ 0,9999 xuống **0,026**, và §39 đã đo rằng thu hẹp dải làm
+AUC rơi ở **cả ba miền**. `vignette` thì tối bốn góc và nhân đúng 1,0 ở giữa khung — nơi khuôn
+mặt nằm — nên nó không thay được `backlight`, mà cũng không cần thay.
 
 #### Đích giám sát 6×6 ô: đã chạy, đã đo, **bị bác**
 
@@ -1391,7 +1424,39 @@ trên cả pool, còn bản đồ nhị phân thì không cần gì.
 | Tham số thêm trên board | **0** — đầu phụ bỏ lúc xuất, `head_dw` trở đi không đổi một byte |
 | Arena, latency, 81×81 | không đổi |
 
-**SSDG là bước hai, và nó vẫn chưa chạy.** Ý định ban đầu là làm sau nếu bước một đạt; bước một
+#### SSDG: ép mặt thật giống nhau giữa các miền, thả cho tấn công tách ra
+
+Ba mảnh, tất cả chỉ sống lúc train và **biến mất khi xuất**: eval trả về đúng một tensor logit
+như cũ, nên đồ thị INT8, arena và 81×81 không đổi một byte. Giá lúc train là **1.161 tham số**
+(128 × 9 + 9).
+
+1. **Đối kháng một phía.** Một đầu tuyến tính đoán *khung hình này từ nguồn nào*, nhưng chỉ
+   được nuôi bằng **mẫu mặt thật**, và nối vào thân qua một lớp **đảo dấu gradient**. Thân vì
+   thế học cách làm đầu ấy đoán sai — tức đặc trưng của mặt thật thôi mang dấu vết của camera
+   đã chụp. Phía tấn công **không** bị ép như vậy: mỗi kiểu tấn công được phép khác nhau.
+2. **Triplet bất đối xứng.** Gom nhãn lại: mọi mặt thật là **một lớp**, còn tấn công của mỗi
+   miền là **lớp riêng**. Triplet trên nhãn ấy kéo mặt thật của mọi nguồn lại gần nhau, đẩy
+   các kiểu tấn công ra xa nhau, và vẫn tách thật khỏi giả.
+3. Đặc trưng chuẩn hoá về độ dài đơn vị trước khi tính khoảng cách.
+
+**Nhưng nó chỉ chạy được nếu một batch mang nhiều miền, và ban đầu thì không.** Đo 14/09: mỗi
+worker đọc **hết shard này mới sang shard khác**, mà một thư mục shard là một miền, nên batch
+mang **1–2 miền** — đầu đối kháng không có gì để phân biệt và triplet không có cặp khác miền
+nào. Bộ đệm xáo 2.048 mẫu không cứu được vì nó chỉ trộn quanh một ranh giới shard.
+
+Sửa: đọc **xen kẽ 12 shard cùng lúc**, và chọn shard mở tiếp **theo miền chưa có mặt** chứ
+không theo thứ tự — vì `unique_live`/`unique_replay` lặp năm lần trong split nên chọn theo thứ
+tự sẽ để chúng chiếm trọn cửa sổ. Sau khi sửa: **2–6 miền mỗi batch**, không còn batch một miền.
+
+Số miền **đếm từ chính split** lúc dựng model, không gõ vào config — đổi pool mà quên sửa thì
+đầu phân biệt sẽ lệch kích thước trong im lặng.
+
+**Cảnh báo giữ nguyên:** độ lệch đã đo được nằm giữa **pool và camera**, mà SSDG chỉ san phẳng
+chênh lệch **giữa các miền có trong pool** — OV5640 không phải một trong số đó. Và phía mặt
+thật chỉ có **4 trong 9** thư mục, nên đầu đối kháng thường chỉ thấy 2 miền mỗi batch. Đây là
+một phép thử có cơ sở, không phải một lời giải đã biết trước.
+
+**Bản ghi cũ về SSDG như bước hai:** Ý định ban đầu là làm sau nếu bước một đạt; bước một
 trượt, nên nó không được kích hoạt. Giữ lại đây vì nó nhắm đúng chế độ hỏng vừa đo được: ép đặc
 trưng **mặt thật** không phân biệt được giữa các miền, còn **tấn công** thì cho tách theo miền —
 tức tối ưu thẳng cho một miền chưa từng thấy. Nhãn miền đã có sẵn trên shard từ `xdomain_crop.py`
