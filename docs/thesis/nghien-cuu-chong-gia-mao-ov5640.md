@@ -780,3 +780,84 @@ thứ chung ấy chính là phong cách ảnh (§11.2) — đúng cái không t�
 Không được đọc kết quả này thành "SSDG là phương pháp tồi". Nó nói: **không có khung OV5640
 trong pool thì không kỹ thuật tổng quát hoá miền nào cứu được**, vì miền đích vắng mặt khỏi
 bài toán mà kỹ thuật ấy giải.
+
+---
+
+# 13. Dạy model chính manh mối nó đang bị bắt phớt lờ
+
+Ràng buộc của đồ án: lời giải phải nằm trong **model**, không phải một cổng kiểm tra viết tay
+bên cạnh. Mục này thiết kế phép thử theo đúng ràng buộc ấy, và chốt tiêu chí trước khi chạy.
+
+## 13.1. Chẩn đoán: model không phải không học được, nó bị dạy để bỏ qua
+
+Ba số đo đặt cạnh nhau cho một chẩn đoán khác hẳn "model yếu":
+
+| Đo ở đâu | AUC của độ nét bề mặt |
+|---|---|
+| 93 khung của board | **0,443 σ tách bạch**, cổng bắt 25/25 |
+| Pool **sau** chuỗi augmentation (§3.5) | **0,479** — bằng tung đồng xu |
+
+Chuỗi augmentation — nén JPEG 30–95, nhiễu cảm biến, nhoè chuyển động — **xoá đúng dải tần
+số cao** mà manh mối này nằm ở đó. Model không thiếu năng lực; trong dữ liệu nó thấy, manh
+mối ấy **không tồn tại**.
+
+Củng cố thêm, đo ngày 15/09: tương quan giữa điểm model và phần dư bề mặt, tính **bên trong
+từng lớp** để loại hiệu ứng lớp:
+
+| Nhóm | Tương quan |
+|---|---|
+| Cả 93 khung | +0,502 |
+| Chỉ 25 khung giả | **−0,141** |
+| Chỉ 68 khung thật | **+0,046** |
+
+Bên trong mỗi lớp, hai đại lượng **gần như độc lập**. Model đang dùng một thông tin khác
+hẳn — và dùng dở, vì 13/25 khung giả nó chấm trên 0,75.
+
+## 13.2. Rút lại lập luận ở §9.4
+
+§9.4 từ chối việc lọc thông thấp riêng nửa ảnh giả, gọi đó là **mẹo** chứ không phải mô
+phỏng: gán một biến đổi nhân tạo cho đúng một lớp thì model chỉ học *mờ thì là giả*.
+
+Lập luận ấy đứng trên giả định rằng độ mờ **không phải** cơ chế thật. §9.3 đã bác chính giả
+định đó: phổ của 21 khung giả thật **mượt và đơn điệu**, và ứng viên khớp nhất là **nhoè ống
+kính σ = 0,7** (lệch 0,192, gần hơn cả mặt thật không biến đổi ở 0,218). Trên cảm biến này,
+ở độ phân giải này, ảnh phát lại qua màn hình **đúng là** một khuôn mặt bị lọc thông thấp nhẹ.
+
+Vậy áp một bộ lọc **đo được từ thiết bị** lên nửa ảnh giả không phải bịa ra manh mối, mà là
+tái tạo manh mối đang có thật. Lý do từ chối ở §9.4 sai, và mục này thay nó.
+
+Cái §9.4 nói **đúng và vẫn giữ**: nếu độ mờ là khác biệt *duy nhất*, model học một luật giòn.
+Thiết kế dưới đây vì thế **không** thay các manh mối cũ của pool mà **cộng thêm** vào.
+
+## 13.3. Thiết kế
+
+| Bước | Nội dung |
+|---|---|
+| 1 | Hiệu chuẩn bộ lọc **từ dữ liệu board**: tìm đáp ứng tần số đưa phổ trung bình của 68 khung thật về phổ trung bình của 25 khung giả. Khớp từ dữ liệu, không quét tham số như §9.1 |
+| 2 | Áp bộ lọc ấy lên **nửa ảnh giả** của pool, giữ nguyên mọi manh mối sẵn có |
+| 3 | Ngừng phá manh mối: hạ `recompress_probability`, thu hẹp `quality_range`, bỏ nhoè chuyển động. Chuỗi hiện tại phủ **32,8%** dải thiết bị, tắt hẳn thì **53,0%** (số đo 14/09) |
+| 4 | Train 90 epoch, cùng seed và cùng `split.lock` với bản đối chứng |
+
+## 13.4. Tiêu chí, chốt trước khi chạy
+
+Chấm trên **85 khung gốc** của OV5640 — 21 giả, 64 thật — giữ ngoài tập huấn luyện.
+
+| Điều kiện | Ngưỡng |
+|---|---|
+| ACER | **< 0,1425** |
+| Khung mặt thật bị chặn | **≤ 2 / 64** |
+
+Thiếu một vế là trượt. Đây đúng mốc đã dùng cho §11.5 và §12, giữ nguyên để so được.
+
+**Thêm một tiêu chí chẩn đoán**, và nó quan trọng ngang kết quả: đo lại tương quan ở §13.1.
+Nếu ACER đạt mà tương quan **vẫn quanh 0**, thì model đã tốt lên vì một lý do khác và thiết
+kế này không phải nguyên nhân — không được ghi công cho nó.
+
+## 13.5. Cách đọc từng kết cục
+
+| Kết cục | Đọc là |
+|---|---|
+| Đạt cả hai vế **và** tương quan tăng rõ | Model đã học được manh mối bề mặt. Lời giải nằm trong model, đúng ràng buộc đồ án |
+| Đạt nhưng tương quan ~0 | Trùng hợp hoặc nguyên nhân khác. Phải tách biến rồi chạy lại |
+| Trượt, tương quan tăng | Model **học được** manh mối nhưng nó không đủ một mình. Hướng đúng, liều chưa đủ |
+| Trượt, tương quan ~0 | Model **từ chối học** manh mối dù nó là tín hiệu mạnh nhất trong dữ liệu. Lúc ấy vấn đề ở kiến trúc, không ở dữ liệu — và đó là kết luận đáng giá nhất của cả hướng này |
