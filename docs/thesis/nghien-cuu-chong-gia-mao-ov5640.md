@@ -1256,3 +1256,181 @@ hiệu chuẩn khỏi khung chấm.
 nay**, vì đích duy nhất ta có lại chính là tập chấm. Khi có ~300 khung chia đôi, phép hiệu
 chỉnh theo nhãn quay lại hợp lệ — và lúc ấy chồng lấn phải khớp thực tế, không phải bị dựng
 ra bằng cách lấy p5/p95 của hai lớp rời nhau.
+
+---
+
+# 15. Hiệu chỉnh ba trục, và giới hạn của việc huấn luyện trên pool
+
+Chương 14 sửa phép hiệu chỉnh cho hết rò rỉ nhãn. Chương này mở rộng nó sang hai trục còn
+lại, đo được một bước nhảy thật, rồi chạm vào một giới hạn mà ba lần chạy độc lập đều chỉ
+về cùng một chỗ.
+
+## 15.1. Hai trục chưa ai đụng tới
+
+Độ nét chỉ là một trong ba trục rẻ tiền tách được 85 khung. Đo cả ba, không model:
+
+| đặc trưng | AUC trên 85 khung | thật | giả |
+|---|---|---|---|
+| độ nét | 0,9896 | 0,1658 | 0,1042 |
+| độ sáng | 0,9442 | 88,1 | 125,0 |
+| bão hoà màu | 0,9427 | 0,7065 | 0,3688 |
+
+Và khoảng cách giữa pool với thiết bị, đo **trên lớp mặt thật** nên không cần nhãn:
+
+| trục | pool thật | thiết bị thật | lệch |
+|---|---|---|---|
+| bão hoà màu | 0,3606 | **0,6556** | **1,82×** |
+| độ sáng | 112,6 | 88,0 | 0,78× |
+| độ nét (đã hiệu chỉnh ở §14) | 0,1410 | 0,1658 | 1,18× |
+
+Bão hoà màu là lỗ hổng lớn nhất, và nó nằm đúng trên **kênh đầu vào thứ tư** của model.
+
+## 15.2. Một giả thuyết bị bác trước khi vặn nút
+
+Nghi ngờ hợp lý: bão hoà 0,6556 cao bất thường, có thể chỉ vì khung thiết bị tối hơn, mà
+điểm ảnh tối thì tỉ số `(max-min)/max` bị thổi phồng.
+
+Kiểm bằng cách kéo pool về đúng độ sáng thiết bị:
+
+| hệ số | độ sáng | bão hoà |
+|---|---|---|
+| 1,000 | 112,6 | 0,3606 |
+| 0,782 | 87,5 | **0,3612** |
+| 0,600 | 67,1 | 0,3614 |
+| 0,500 | 56,0 | 0,3605 |
+| 0,782 + lượng tử RGB565 | 87,3 | 0,3590 |
+
+Phơi sáng **không giải thích gì cả** — chênh lệch 0,0006. Bão hoà của camera là màu thật, và
+pool đang nuôi kênh chroma bằng một nửa dải board đưa vào.
+
+## 15.3. Thiết kế
+
+Mỗi trục một dải, lấy **p5–p95 trên 64 khung mặt thật của camera**: đích là thuộc tính của
+đường ống kính, không phải của một lớp, nên mọi crop đi cùng một phép biến đổi bất kể nhãn.
+
+`toward()` đi tối đa **bốn** bước hiệu chỉnh tỉ lệ, vì bão hoà tăng **dưới tuyến tính** theo
+hệ số kéo: kéo một điểm ảnh khỏi màu xám của nó cũng nâng luôn cái `max` mà tỉ số chia cho.
+Hai bước mới đóng được 43% khoảng cách; bốn bước đưa p95 lên 0,735 so với đích 0,798.
+
+Nghiệm thu **trước khi chạy**, 700 crop mỗi phía:
+
+| trục | pool p5 / tv / p95 | thiết bị thật | AUC theo nhãn |
+|---|---|---|---|
+| độ nét | 0,097 / 0,153 / 0,211 | 0,129 / 0,166 / 0,216 | 0,512 |
+| độ sáng | 56,6 / 87,6 / 116,5 | 54,3 / 88,1 / 120,8 | 0,516 |
+| bão hoà | 0,366 / 0,547 / 0,735 | 0,356 / 0,707 / 0,798 | 0,519 |
+
+Cả ba ở mức may rủi — không trục nào chỉ được nhãn.
+
+## 15.4. Bước nhảy có thật
+
+Run `20260915-1207_7bb3a48_7adcb0`, lịch 8 epoch, val mỗi epoch. So cùng epoch 1, cùng giai
+đoạn warmup nên learning rate tương đương:
+
+| | run 4 — một trục | run 5 — ba trục |
+|---|---|---|
+| `dev_auc` | 0,7634 | **0,9717** |
+| `dev_acer` | 0,2928 | **0,0312** |
+| bắt giả ở ngân sách 3 mặt thật | 9/21 | **19/21** |
+
+Nuôi đúng dải bão hoà đổi được từ 9 lên 19 khung. Đây là bước nhảy lớn nhất đo được trong
+ngày, và `19/21` gần chạm cổng bề mặt (20/21).
+
+## 15.5. Nhưng checkpoint ấy không triển khai được
+
+Chấm `ep1` trên từng khung, không chỉ nhìn AUC:
+
+| | thấp nhất | trung vị | cao nhất | bề rộng |
+|---|---|---|---|---|
+| ảnh giả | 0,4314 | 0,4612 | 0,4777 | **0,046** |
+| mặt thật | **0,4160** | 0,5462 | 0,5967 | 0,181 |
+
+Hai khung lọt cách vạch **0,0013**. Bốn mặt thật nằm **dưới** khung giả cao nhất. Và ở ngưỡng
+sản xuất 0,75: **chặn oan 64/64**.
+
+`auc 0,9717` chỉ đo **thứ tự** trong một dải rộng 0,046. Một biên 0,0013 thì lượng tử hoá
+INT8 xoá sạch — đây là chỗ §4.2 (quyết định so sau INT8) có ý nghĩa vật lý chứ không phải
+thủ tục.
+
+**Sai sót trong cách đọc của tôi**: `dev_blocked = 64/64` bị tôi gạt hai lần là "vô nghĩa ở
+epoch sớm". Không vô nghĩa — nó đang báo đúng rằng điểm số chưa tản ra và checkpoint không
+dùng được. `dev_auc` và `dev_acer` đều không nhìn thấy điều đó, vì một cái xếp hạng còn một
+cái tự chọn ngưỡng tốt nhất.
+
+Khung bị chặn oan cũng có quy luật: cả 3 đều thuộc phiên `toi1209` — **phiên thiếu sáng**,
+3 trong 8 khung. Khớp với phép chẩn đoán ở §15.7: model yếu nhất ở vùng tối.
+
+## 15.6. Đường rơi, đo trên từng epoch
+
+| epoch | `dev_auc` | bắt giả @3 | **val pool eer** |
+|---|---|---|---|
+| 0 | 0,6272 | 5 | 0,4856 |
+| 1 | **0,9717** | **19** | 0,3617 |
+| 2 | 0,9561 | 17 | 0,2953 |
+| 3 | 0,9226 | 11 | 0,2851 |
+| 4 | 0,8073 | 5 | 0,2688 |
+| 5 | 0,6548 | **0** | 0,2585 |
+
+**Val pool tốt lên 6/6 epoch. Thiết bị xấu đi 5/5 epoch.** Không sót một mốc nào.
+
+Giả thuyết "hạ learning rate ngay tại đỉnh sẽ neo model lại" — **bác bỏ**. Ở epoch 5 learning
+rate đã còn một nửa (0,0101) mà đà rơi còn nhanh hơn.
+
+## 15.7. Cú rơi nằm trên trục nào
+
+Chấm chênh lệch điểm giữa checkpoint đỉnh và checkpoint đã rơi, chia đôi theo từng trục:
+
+| | trôi của lớp giả | đối chứng trên lớp thật |
+|---|---|---|
+| nửa **tối** | **+0,2066** | +0,0165 |
+| nửa sáng | +0,0462 | −0,0157 |
+| chênh | **0,1605** | 0,0322 |
+
+Nửa tối trôi mạnh gấp 5 lần, và **không phải hồi quy về trung bình**: nửa tối vốn đã ở điểm
+cao hơn (0,4531 so với 0,3070) nên còn ít chỗ trống hơn, vậy mà trôi/khoảng-trống vẫn là
+0,378 so với 0,067.
+
+Độ sáng trung bình: giả nửa tối 112,0 · giả nửa sáng 153,4 · **mặt thật 88,0**. Mọi khung giả
+đều sáng hơn mọi mặt thật vì màn hình tự phát sáng, nên "nửa tối" nghĩa là **nửa giống mặt
+thật nhất** — đúng nửa model đánh mất trước.
+
+Trôi của lớp giả **+0,1302** so với lớp thật **+0,0004**: mất riêng phía giả, không phải cả
+phân bố trôi.
+
+## 15.8. Giới hạn: ba lần chạy chỉ về một chỗ
+
+| run | liều hiệu chỉnh | lịch | đỉnh | sau đó |
+|---|---|---|---|---|
+| run 1 | mờ theo thư mục, 23,8% ảnh giả | 90 epoch | ep5 · 0,9673 | rơi về 0,7976 ở ep9 |
+| run 4 | một trục, mù nhãn | 90 epoch | ep3 · 0,9628 | rơi về 0,7850 ở ep9 |
+| run 5 | **ba trục**, mù nhãn | **8 epoch** | **ep1 · 0,9717** | rơi về 0,6548 ở ep5 |
+
+Ba liều hiệu chỉnh khác hẳn nhau, hai lịch learning rate khác nhau. Cả ba: đỉnh rất sớm, rơi
+đơn điệu sau đó, pool val lên đều suốt. Ở ep7 run 1 và run 4 trùng nhau trong **0,005**.
+
+> Hiệu chỉnh nâng được **điểm xuất phát** — rất nhiều, 0,7634 lên 0,9717 tại cùng epoch —
+> nhưng **không chặn được đà rơi**.
+
+Vì phép hiệu chỉnh đổi **cách chụp**, không đổi **vật được chụp**. Ảnh giả của pool là ảnh
+chụp lại trong studio; ảnh giả của board là màn hình LCD điện thoại ở 20 cm, với lưới điểm
+ảnh, phổ đèn nền, phản xạ mặt kính và nén gam màu riêng. Làm mờ và chỉnh màu một tấm
+CelebA cho ra "ảnh studio nhìn qua OV5640", không cho ra "màn hình điện thoại nhìn qua
+OV5640". Càng học lâu, model càng bám vào nội dung — thứ không tồn tại trên camera này.
+
+## 15.9. Chỗ đứng cuối ngày
+
+**Đã đo được**:
+- Pool không sinh ra được model triển khai được cho camera này: đỉnh thì biên 0,0013, mà
+  huấn luyện tiếp thì hỏng.
+- Bộ 85 khung không phân biệt nổi model với mẹo một dòng: trần độ nét 0,9896, và cả ba
+  trục rẻ tiền đều trên 0,94.
+- Cổng bề mặt bắt 25/25, chặn oan 0/68 — thứ duy nhất đạt cả hai vế của mục tiêu.
+- Quét toàn bộ góc ghép: **trọng số tối ưu của điểm model bằng 0**.
+
+**Chưa đo được, và không được đọc thành đã đo**: mọi phát biểu về ảnh giả **sắc nét** — chụp
+sát, đủ sáng. Bộ khung hiện có **0 khung** loại đó, nên mệnh đề "mờ ⇒ giả" chưa thể bác bỏ,
+mà chưa bác bỏ được thì chưa phải bằng chứng.
+
+**Bước tiếp**: thu khung mới theo 16 ô (2 điện thoại × 4 góc/khoảng cách × 2 mức sáng), đường
+RAW RGB565 — **không** dùng ca nút BOOT vì nó lưu JPEG q85, mà một lượt JPEG đã đo được là
+kéo tách bạch từ 0,435σ xuống 0,095σ, và board lúc chạy thật không nén JPEG khung nào.
