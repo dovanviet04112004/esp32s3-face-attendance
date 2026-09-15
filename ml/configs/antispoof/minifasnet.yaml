@@ -50,6 +50,9 @@ data:
     # Two more domains ride along: a threshold fitted on CelebA alone throws away
     val_split: ["test:0:10", lcc_development, unique_live_val, unique_replay_val]  # real faces (measurements 40.5)
     test_split: "test:10:"
+    # 85 frames the camera took, scored every validation and never selected on:
+    # the proxy has measured backwards twice, so this one is watched live (KEHOACH 4.2).
+    device_eval: data/interim/antispoof/device_eval.npz
     # A second pass is the history the train set lacks (measurements 9), but q30
     # strips the band the surface cue lives in (KEHOACH 3).
     recompress_probability: 0.25

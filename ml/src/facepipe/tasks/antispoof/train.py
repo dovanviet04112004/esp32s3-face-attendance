@@ -41,6 +41,7 @@ from .data import (
     WHITE_BALANCE_RANGE,
     SpoofShardDataset,
     collate,
+    to_tensor,
 )
 from .eval import keeps_wide, summary
 from .losses import task_loss  # noqa: F401  registers "antispoof_task"
@@ -65,6 +66,48 @@ def crop_size(cfg: Config) -> int:
     if height != width:
         raise ValueError(f"model.input_hw must be square for this branch, got {height}x{width}")
     return int(height)
+
+
+DEVICE_LIVE_MIN = 0.75
+
+
+def device_frames(cfg: Config) -> tuple[torch.Tensor, np.ndarray] | None:
+    """The held-out camera frames, already cropped, or None when none are named."""
+    named = (cfg.data.params or {}).get("device_eval")
+    if not named:
+        return None
+    blob = np.load(Path(named))
+    chroma = bool(cfg.model.params.get("chroma", False))
+    return torch.stack([to_tensor(crop, chroma) for crop in blob["crops"]]), blob["labels"]
+
+
+def on_device(module: nn.Module, held, device) -> dict[str, float]:
+    """Scores on the camera's own frames, reported and never selected on.
+
+    Making this the key the trainer picks best.pth by would fit a checkpoint to
+    the only honest measurement this branch has (KEHOACH 4.2).
+    """
+    if held is None:
+        return {}
+    crops, labels = held
+    was_training = module.training
+    module.eval()
+    with torch.no_grad():
+        logits = module((crops.to(device), torch.empty(0)))
+    module.train(was_training)
+    scores = logits.softmax(dim=1)[:, LIVE].float().cpu().numpy()
+    live, attack = scores[labels == 0], scores[labels == 1]
+    if not live.size or not attack.size:
+        return {}
+    acer = min(((live < bar).mean() + (attack >= bar).mean()) / 2 for bar in np.sort(scores))
+    ranks = np.concatenate([live, attack]).argsort().argsort() + 1
+    auc = (ranks[: live.size].sum() - live.size * (live.size + 1) / 2) / (live.size * attack.size)
+    return {
+        "dev_auc": float(auc),
+        "dev_acer": float(acer),
+        "dev_blocked": float((live < DEVICE_LIVE_MIN).sum()),
+        "dev_caught": float((attack < DEVICE_LIVE_MIN).sum()),
+    }
 
 
 def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
@@ -155,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
         loss = criterion(trainer.model((tight, wide)), SpoofBatch(labels, wide_scale, domains))
         return loss, {"task": loss.detach(), "total": loss.detach()}
 
+    held = device_frames(cfg)
+
     @torch.no_grad()
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
         """Task loss and the error rates at the threshold this split implies.
@@ -174,7 +219,8 @@ def main(argv: list[str] | None = None) -> int:
             meter.update({"loss": criterion(logits, batch_meta)}, n=1)
             scores.append(logits.softmax(dim=1)[:, LIVE].float().cpu().numpy())
             truth.append(labels.cpu().numpy())
-        return {**meter.means(), **summary(np.concatenate(scores), np.concatenate(truth))}
+        stats = {**meter.means(), **summary(np.concatenate(scores), np.concatenate(truth))}
+        return {**stats, **on_device(module, held, trainer.device)}
 
     trainer = Trainer(
         model=model,
