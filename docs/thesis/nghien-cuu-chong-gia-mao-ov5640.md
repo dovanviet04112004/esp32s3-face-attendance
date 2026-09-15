@@ -859,6 +859,17 @@ Thiếu một vế là trượt. Đây đúng mốc đã dùng cho §11.5 và §
 Nếu ACER đạt mà tương quan **vẫn quanh 0**, thì model đã tốt lên vì một lý do khác và thiết
 kế này không phải nguyên nhân — không được ghi công cho nó.
 
+**Tiêu chí ấy, viết như trên, không đủ vững** — phát hiện khi chạy lần đầu. Hệ số Pearson
+tính trên **21 – 25 khung giả** bị vài điểm đòn bẩy chi phối: cùng model chroma, cùng công
+thức, nó cho **−0,141** trên 93 khung và **+0,352** trên 85 khung, tức **đổi dấu** chỉ vì bốn
+khung của phiên `p2` có phần dư rất thấp mà điểm model lại cao. Dùng nguyên nó thì kết luận
+"model học được" hay "model phớt lờ" tuỳ chọn tập, đúng loại tự lừa mục này sinh ra để chặn.
+
+Tương quan **hạng** đỡ hơn nhưng chưa đủ (chroma: +0,187 so +0,479). Nên tiêu chí đọc theo
+**hướng, không theo ngưỡng**: so model mới với model đối chứng **trên cùng một tập, bằng cả
+hai hệ số**, và chỉ kết luận khi **cả bốn phép so cùng chiều**. Cỡ mẫu 21 khung giả không
+đỡ nổi một ngưỡng tuyệt đối, và sẽ không đỡ nổi cho tới khi có thêm khung giả của board.
+
 ## 13.5. Cách đọc từng kết cục
 
 | Kết cục | Đọc là |
