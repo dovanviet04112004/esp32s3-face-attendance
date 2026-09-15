@@ -1522,6 +1522,52 @@ trên cả pool, còn bản đồ nhị phân thì không cần gì.
 | Tham số thêm trên board | **0** — đầu phụ bỏ lúc xuất, `head_dw` trở đi không đổi một byte |
 | Arena, latency, 81×81 | không đổi |
 
+
+#### Đích giám sát bản đồ độ sâu 21×21
+
+Mục 6×6 phía trên bị bác, và lý do hỏng nằm ở **nhãn**, không ở ý tưởng. Nhãn bản đồ nhị phân
+là **hằng số theo lớp**: mọi ô của mặt thật gán 1, mọi ô của ảnh giả gán 0. Nó lặp lại đúng
+cái nhãn 36 lần mà không thêm một bit thông tin nào, nên model vẫn trả lời được bằng phong
+cách ảnh — chỉ là phải trả lời 36 lần.
+
+Bản đồ độ sâu đổi hẳn câu hỏi: mặt thật mang **hình khối 3D riêng của từng ảnh** (sống mũi
+nhô, hốc mắt lõm, má lùi, đổi theo tư thế), ảnh giả là **mặt phẳng**. Model phải dựng lại
+hình học từ một ảnh đơn.
+
+**Đây là lý do nó đáng thử sau khi mọi hướng phía dữ liệu đã đóng:** hình khối 3D là **vật
+lý**, không phải phong cách ảnh. Một khuôn mặt là 3D dù chụp bằng máy web của CelebA hay bằng
+OV5640; một tấm kính là phẳng trong cả hai. Toàn bộ chẩn đoán ở
+`docs/thesis/nghien-cuu-chong-gia-mao-ov5640.md` §14–15 là *model học phong cách, mà phong
+cách pool ngược dấu với board* — đây là trục đầu tiên miễn nhiễm với chẩn đoán đó.
+
+**Gắn ở tầng 21×21**, tức bản đồ sau `down_2`, chứ không ở 6×6: tài liệu FAS dùng 32×32, và
+ở 6×6 thì hình khối của mọi khuôn mặt bóp lại gần như giống nhau — *giữa gần, rìa xa* — nên
+nhãn lại thoái hoá về hằng số, đúng cái đã hỏng.
+
+Hàm mục tiêu: `L = CE(nhãn) + λ · MSE(bản đồ 21×21)`.
+
+Nhãn sinh **ngoại tuyến** bằng một bộ ước lượng độ sâu ONNX chạy trên crop của pool, phía
+tấn công gán **toàn 0** theo quy ước. Chạy bằng `onnxruntime` đã khai trong `pyproject.toml`,
+không thêm gói nào.
+
+| | |
+|---|---|
+| Tham số thêm khi train | **conv 1×1, C → 1** ở tầng 21×21 |
+| Tham số thêm trên board | **0** — đầu phụ bỏ lúc xuất |
+| Arena, latency, 81×81 | không đổi |
+| Cần dữ liệu thiết bị mới | không |
+
+**Điều kiện đúng đắn của nhãn, và là rủi ro lớn nhất của mục này:** bản đồ độ sâu phải chịu
+**đúng** mọi phép biến đổi hình học mà crop chịu — `roll`, `translate`, `crop_scale`,
+`horizontal_flip`. Sai một phép thì nhãn lệch khỏi ảnh **trong im lặng**, không test nào bắt
+được và số đo sẽ tệ mà không rõ vì sao. Chỉ `roll` đi qua cơ chế `views()`; ba phép còn lại
+gọi thẳng tên trường nên phải sửa tay từng phép.
+
+**Lỗ hổng không được đóng, phải ghi rõ:** nhãn phía tấn công vẫn là hằng số, nên model **vẫn
+có thể** lách bằng phong cách — thấy phong cách pool-live thì xuất hình mặt, thấy phong cách
+pool-spoof thì xuất 0. Thứ ngăn nó là phía mặt thật: 441 ô phải khớp một hình khối **cụ thể,
+đổi theo từng ảnh**, không đoán bừa được. Đó là ép gián tiếp, không phải khoá chặt.
+
 #### SSDG: ép mặt thật giống nhau giữa các miền, thả cho tấn công tách ra
 
 Ba mảnh, tất cả chỉ sống lúc train và **biến mất khi xuất**: eval trả về đúng một tensor logit
@@ -2153,6 +2199,11 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   │                                             #   1 record = tight.jpg + wide.jpg + json
 │   │                                             #   ★ hop mat cat bang nhanh detect,
 │   │                                             #     KHONG dung cot Bbox cua dataset (§3)
+│   ├── antispoof/depth_maps/<folder>/shard_*.npz # ★ nhan do sau 21x21, float16, khoa theo
+│   │                                             #   (shard, chi so ban ghi). Gia mac dinh 0.
+│   │                                             #   Sinh lai bang 03_prepare_depth.sh (§3)
+│   └── antispoof/depth_model/*.onnx              # ★ bo uoc luong do sau, KHONG commit (§6);
+│                                                 #   nguon + sha256 ghi o manifest
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │   │   └── record_counts.json                # ★ so ban ghi moi split giu lai, sinh tu dong
 │   │                                         #   lan dau. Dem tay phai doc het 36 GB, va
@@ -2328,6 +2379,9 @@ ml/
 │   ├── 00_fetch_raw.sh          ├── 01_prepare_interim.sh   ├── 02_make_splits.sh
 │   │                            #   ★ 01 nhanh antispoof can checkpoint detection
 │   │                            #     da train: cat mat bang detect, khong bang Bbox (§3)
+│   ├── 03_prepare_depth.sh      # ★ chi nhanh antispoof: tai bo uoc luong do sau, chay tren
+│   │                            #   crop cua pool, ghi interim/antispoof/depth_maps/.
+│   │                            #   Chay sau 01, truoc 21_train_spoof.sh (§3)
 │   ├── 20_train_det.sh ├── 21_train_spoof.sh ├── 22_train_recog.sh
 │   ├── 30_quantize.sh ├── 40_export.sh     ├── 41_emit_golden.sh
 │   ├── 50_pack_and_flash.sh
