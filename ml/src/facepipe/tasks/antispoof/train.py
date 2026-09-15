@@ -229,9 +229,16 @@ def main(argv: list[str] | None = None) -> int:
         train_set.epoch = trainer.state.epoch
         # trainer.model, not the module above: a compiled run must reach the
         # wrapper the trainer built, or the graph is traced twice.
-        loss = criterion(trainer.model((tight, wide)),
-                         SpoofBatch(labels, wide_scale, domains, shapes, trust))
-        return loss, {"task": loss.detach(), "total": loss.detach()}
+        told = SpoofBatch(labels, wide_scale, domains, shapes, trust)
+        output = trainer.model((tight, wide))
+        loss = criterion(output, told)
+        # Reported on its own so a head that never learns shows up in one epoch
+        # rather than at the end of a run (KEHOACH 3).
+        parts = output if isinstance(output, tuple) else (output,)
+        shape = parts[4] if len(parts) > 4 else None
+        relief = criterion.relief(shape, told) if shape is not None else loss.new_zeros(())
+        return loss, {"task": loss.detach(), "depth": relief.detach(),
+                      "total": loss.detach()}
 
     held = device_frames(cfg)
 

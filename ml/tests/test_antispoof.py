@@ -71,6 +71,9 @@ def test_the_model_is_two_backbones_and_one_head() -> None:
 
 
 def test_the_two_views_are_not_the_same_weights() -> None:
+    # Seeded: an unlucky draw leaves a fresh net near saturation, where both
+    # orders read back the same and the test fails on the draw, not the code.
+    torch.manual_seed(0)
     model = MiniFASNetV2SE(views="both").eval()
     tight = torch.randn(2, 3, INPUT_SIZE, INPUT_SIZE)
     wide = torch.randn(2, 3, INPUT_SIZE, INPUT_SIZE)
