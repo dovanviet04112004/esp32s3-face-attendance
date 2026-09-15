@@ -391,6 +391,45 @@ def white_balance(image: np.ndarray, gains: np.ndarray) -> np.ndarray:
     return _clipped(image.astype(np.float32) * gains)
 
 
+# ln(sharpness ratio) against Pillow radius, fitted on 400 pool crops over
+# 0.55 to 1.25, where a smaller radius moves the number too little to invert.
+BLUR_DECADE = 1.16
+BLUR_OFFSET = 0.431
+BLUR_FLOOR = 1.05
+BLUR_CEILING = 2.0
+BLUR_PASSES = 2
+
+
+def surface_of(crop: np.ndarray) -> float:
+    """Mean absolute Laplacian of contrast-normalised luma (KEHOACH 3)."""
+    grey = crop.astype(np.float64) @ np.array([0.299, 0.587, 0.114])
+    grey = (grey - grey.mean()) / max(grey.std(), 1e-9)
+    bend = (grey[:-2, 1:-1] + grey[2:, 1:-1] + grey[1:-1, :-2] + grey[1:-1, 2:]
+            - 4.0 * grey[1:-1, 1:-1])
+    return float(np.abs(bend).mean())
+
+
+def radius_for(ratio: float) -> float:
+    """Blur that divides surface detail by `ratio`, or zero when none is needed."""
+    if ratio <= BLUR_FLOOR:
+        return 0.0
+    return float(min((np.log(ratio) + BLUR_OFFSET) / BLUR_DECADE, BLUR_CEILING))
+
+
+def aimed_at(sample: SpoofSample, aim: float) -> SpoofSample:
+    """Soften until surface detail reaches `aim`, or give up after two passes.
+
+    One pass undershoots on an already-soft crop: the inverse is fitted on sharp
+    pool crops, where a radius removes proportionally more (KEHOACH 3).
+    """
+    for _ in range(BLUR_PASSES):
+        radius = radius_for(surface_of(sample.tight) / max(aim, 1e-6))
+        if radius <= 0.0:
+            break
+        sample = soften(sample, radius)
+    return sample
+
+
 def soften(sample: SpoofSample, radius: float) -> SpoofSample:
     """Bring a crop down to the surface detail this camera actually delivers.
 
@@ -474,9 +513,9 @@ class SpoofShardDataset(IterableDataset):
         roll_range: tuple[float, float] = ROLL_RANGE,
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
-        pool_blur_range: tuple[float, float] = (0.0, 0.0),
-        screen_blur_probability: float = 0.0,
-        screen_blur_range: tuple[float, float] = (0.0, 0.0),
+        live_band: tuple[float, float] = (0.0, 0.0),
+        attack_band: tuple[float, float] = (0.0, 0.0),
+        printed_band: tuple[float, float] = (0.0, 0.0),
         calibrate_eval: bool = False,
         motion_blur_probability: float | None = None,
         keep_wide: bool = True,
@@ -512,10 +551,10 @@ class SpoofShardDataset(IterableDataset):
         self.roll_range = roll_range
         self.translate_probability = translate_probability
         self.translate_range = translate_range
-        self.pool_blur_range = tuple(pool_blur_range)
+        self.live_band = tuple(live_band)
+        self.attack_band = tuple(attack_band)
+        self.printed_band = tuple(printed_band)
         self.calibrate_eval = calibrate_eval
-        self.screen_blur_probability = screen_blur_probability
-        self.screen_blur_range = tuple(screen_blur_range)
         self.motion_blur_probability = motion_blur_probability
         self.epoch = 0
 
@@ -608,20 +647,16 @@ class SpoofShardDataset(IterableDataset):
                     self.backlight_range,
                     self.motion_blur_probability,
                 )
-            # The pool is 1.3x sharper than this camera at both labels, so the first
-            # radius shifts the level and the second adds the gap (KEHOACH 3).
-            if self.train or self.calibrate_eval:
-                mid = sum(self.pool_blur_range) / 2.0
-                if self.pool_blur_range[1] > 0.0:
-                    sample = soften(sample, rng.uniform(*self.pool_blur_range)
-                                    if self.train else mid)
-                attack = sample.label == SPOOF and not sample.printed
-                drawn = rng.random() < self.screen_blur_probability if self.train else True
-                if attack and drawn and self.screen_blur_range[1] > 0.0:
-                    sample = soften(sample, rng.uniform(*self.screen_blur_range) if self.train
-                                    else sum(self.screen_blur_range) / 2.0)
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
+            # Last in the chain, since compression moves the number this aims at,
+            # and the pool's sharp attacks have no counterpart here (KEHOACH 3).
+            if self.train or self.calibrate_eval:
+                band = self.printed_band if sample.printed else (
+                    self.attack_band if sample.label == SPOOF else self.live_band)
+                if band[1] > 0.0:
+                    aim = rng.uniform(*band) if self.train else sum(band) / 2.0
+                    sample = aimed_at(sample, aim)
             if self.shuffle_buffer <= 0:
                 yield sample
                 continue
