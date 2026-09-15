@@ -735,8 +735,14 @@ split và sẽ tự chiếm hết chỗ. Sau khi sửa: 2–6 miền mỗi batch
 
 Tiêu chí giữ nguyên §11.5: ACER < 0,1425 **và** chặn oan ≤ 2/64.
 
-Run này đổi **hai** biến cùng lúc — SSDG **và** tắt augmentation `backlight` — nên kết quả
-không tách được công của từng cái. Ghi rõ trước khi chạy, và vẫn đúng khi đọc.
+Lúc chạy, run này được ghi là đổi **hai** biến — SSDG và tắt `backlight`. Rà lại ngày
+15/09 cho thấy điều đó **không đúng**: `train.py` không hề truyền `backlight_range` xuống
+dataset, nên khoá `[0.0, 0.0]` trong config chưa bao giờ có tác dụng và augmentation ấy
+vẫn bật suốt. Run chỉ đổi **một** biến là SSDG, và kết quả ở dưới quy hết về nó.
+
+Bài học phương pháp, đắt hơn bản thân bug: một khoá config **được nhận** không có nghĩa là
+nó **được đọc**. Từ nay mỗi lần đổi tham số dữ liệu phải in lại giá trị **lấy từ chính
+dataset đã dựng**, chứ không đọc lại từ file config.
 
 ## 12.2. Kết quả
 
@@ -861,3 +867,48 @@ kế này không phải nguyên nhân — không được ghi công cho nó.
 | Đạt nhưng tương quan ~0 | Trùng hợp hoặc nguyên nhân khác. Phải tách biến rồi chạy lại |
 | Trượt, tương quan tăng | Model **học được** manh mối nhưng nó không đủ một mình. Hướng đúng, liều chưa đủ |
 | Trượt, tương quan ~0 | Model **từ chối học** manh mối dù nó là tín hiệu mạnh nhất trong dữ liệu. Lúc ấy vấn đề ở kiến trúc, không ở dữ liệu — và đó là kết luận đáng giá nhất của cả hướng này |
+
+## 13.6. Hiệu chuẩn, và ba con số không khớp nhau
+
+Bước 1 của §13.3 cho **ba** ước lượng cho cùng một độ mờ, và chúng lệch nhau:
+
+| Cách đo | σ |
+|---|---|
+| Khớp phổ, biên độ `a` để tự do | 0,49 – 0,57 |
+| §9.3 — so phổ với ứng viên nhoè ống kính | 0,70 |
+| Tỉ lệ giảm độ nét trên 800 crop của pool | ≈ 0,78 |
+
+Cách lệch ra là cách có lỗi xác định được: hệ số biên độ `a` **chạm mép lưới tìm kiếm** ở
+0,70, tức nó hút mất phần suy giảm toàn dải và để lại σ nhỏ giả tạo. Mà đặc trưng bề mặt
+chuẩn hoá tương phản **trước** khi lấy đạo hàm, nên nó xoá đúng `a`. Hai cách còn lại hội tụ,
+và chúng là hai cách đo độc lập.
+
+Đáp ứng thô cũng không dùng được: hai nửa dữ liệu lệch nhau 0,158, và đường cong **không đơn
+điệu** (15/39 bước đi lên). Áp nguyên nó lên pool là nhét nhiễu của 21 khung vào 200 nghìn
+mẫu. Một dạng trơn một tham số thì ổn định hơn hẳn — hai nửa cho σ 0,47 và 0,54, lệch 13%.
+
+**Tham số cuối cùng không phải σ.** Đường dữ liệu dùng `ImageFilter.GaussianBlur` của Pillow
+vì `scipy` không nằm trong danh sách dependency, và đo được rằng ở cùng giá trị Pillow làm mờ
+**ít hơn scipy 6 – 16%**. Nên dải được hiệu chuẩn lại theo chính `radius` của Pillow, lấy đích
+là dải tỉ lệ độ nét quan sát trên thiết bị (**1,32 – 2,16**, tức trung vị khung thật chia cho
+hai đầu dải khung giả):
+
+| Pillow radius | Tỉ lệ giảm độ nét |
+|---|---|
+| **0,65** | **1,34** — cận dưới |
+| 0,90 | 1,84 |
+| **1,05** | **2,20** — cận trên |
+
+Kiểm trên đường dữ liệu thật sau khi cài: khung thật 0,2202 · giả màn hình 0,1406 (tỉ lệ
+**1,57**) · giả không phải màn hình 0,2271 (tỉ lệ **0,97**, tức không bị đụng). `synth_print`
+giữ 0,2477 và nửa giả của CelebA giữ 0,2172 — đúng yêu cầu, vì giấy không mất độ phân giải
+theo cơ chế này.
+
+## 13.7. Hai việc cố ý không làm trong lần chạy này
+
+**Không nâng hạn mức `synth_print`.** Không có khung ảnh in nào chụp bằng board, nên tác dụng
+của việc nâng **không đo được**. Thêm một biến không đo được vào cùng một run chỉ phá khả năng
+quy trách nhiệm — đúng lỗi §12.1 vừa ghi. Print là một run riêng, sau khi có ảnh in để chấm.
+
+**Không đụng tới cổng ở §3.** Nó vẫn nằm trên board và vẫn tắt, nên không có đường nào để nó
+ảnh hưởng tới số đo của model.

@@ -25,6 +25,7 @@ from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer, resolve_device
 
 from .data import (
+    BACKLIGHT_RANGE,
     CROP_SCALE_PROBABILITY,
     CROP_SCALE_RANGE,
     EXPOSURE_CONTRAST_RANGE,
@@ -83,6 +84,7 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
             params.get("exposure_contrast_range", EXPOSURE_CONTRAST_RANGE)
         ),
         white_balance_range=tuple(params.get("white_balance_range", WHITE_BALANCE_RANGE)),
+        backlight_range=tuple(params.get("backlight_range", BACKLIGHT_RANGE)),
         crop_scale_range=tuple(params.get("crop_scale_range", CROP_SCALE_RANGE)),
         crop_scale_probability=float(params.get("crop_scale_probability", CROP_SCALE_PROBABILITY)),
         occlusion_probability=float(params.get("occlusion_probability", OCCLUSION_PROBABILITY)),
@@ -91,6 +93,9 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         roll_range=tuple(params.get("roll_range", ROLL_RANGE)),
         translate_probability=float(params.get("translate_probability", TRANSLATE_PROBABILITY)),
         translate_range=float(params.get("translate_range", TRANSLATE_RANGE)),
+        screen_blur_probability=float(params.get("screen_blur_probability", 0.0)),
+        screen_blur_range=tuple(params.get("screen_blur_range", (0.0, 0.0))),
+        motion_blur_probability=params.get("motion_blur_probability"),
         keep_wide=keeps_wide(cfg),
     )
 

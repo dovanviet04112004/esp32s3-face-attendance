@@ -50,16 +50,22 @@ data:
     # Two more domains ride along: a threshold fitted on CelebA alone throws away
     val_split: ["test:0:10", lcc_development, unique_live_val, unique_replay_val]  # real faces (measurements 40.5)
     test_split: "test:10:"
-    # Re-encoding the crop: the board compresses once already, so a second pass
-    # is the history the train set would otherwise lack (measurements 9).
-    recompress_probability: 0.5
-    quality_range: [30, 95]
+    # A second pass is the history the train set lacks (measurements 9), but q30
+    # strips the band the surface cue lives in (KEHOACH 3).
+    recompress_probability: 0.25
+    quality_range: [55, 95]
     # Poisson-Gaussian noise, white balance, vignette, motion blur and exposure,
     # behind one gate (measurements 12.1).
     photometric_probability: 0.5
     # Off: it whitens the face while the backlit scene it models is in a
     # background this branch never sees (KEHOACH 3).
     backlight_range: [0.0, 0.0]
+    # Low rather than off: it erases the same band, but a kiosk sees hand shake.
+    motion_blur_probability: 0.15
+    screen_blur_probability: 0.7
+    # Screens only, never print. Pillow radius reproducing the 1.32-2.16 sharpness
+    # drop measured on the device, which sigma would not (KEHOACH 3).
+    screen_blur_range: [0.65, 1.05]
     # Every source record below 1.0x is an attack (measurements 12.5).
     crop_scale_range: [0.7, 1.0]
     # A gate, because this crop only ever narrows (measurements 15.1).

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image
+from PIL import Image, ImageFilter
 from torch.utils.data import IterableDataset, get_worker_info
 
 from facepipe.data.prepare.images_to_wds import read_shard
@@ -78,6 +78,7 @@ class SpoofSample:
     label: int
     wide_scale: float  # scale the wide view actually reached
     domain: int = 0    # which shard folder it came from (KEHOACH 3)
+    replay: bool = False  # shown on a screen rather than printed
     face_in_wide: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
     def views(self) -> list[np.ndarray]:
@@ -389,6 +390,19 @@ def white_balance(image: np.ndarray, gains: np.ndarray) -> np.ndarray:
     return _clipped(image.astype(np.float32) * gains)
 
 
+def screen_blur(sample: SpoofSample, radius: float) -> SpoofSample:
+    """The resolution a face loses on its way through a screen (KEHOACH 3).
+
+    Calibrated on Pillow's radius, not on sigma: the two differ by 6 to 16 per
+    cent and Pillow is what runs here (measurements/parity 2).
+    """
+    return sample.mapped(
+        lambda view: np.array(
+            Image.fromarray(view).filter(ImageFilter.GaussianBlur(radius)), dtype=np.uint8
+        )
+    )
+
+
 def photometric(
     sample: SpoofSample,
     rng: random.Random,
@@ -396,6 +410,7 @@ def photometric(
     contrast_range: tuple[float, float] = EXPOSURE_CONTRAST_RANGE,
     white_balance_range: tuple[float, float] = WHITE_BALANCE_RANGE,
     backlight_range: tuple[float, float] = BACKLIGHT_RANGE,
+    motion_probability: float | None = None,
 ) -> SpoofSample:
     """Camera-path augmentation, drawn once per sample and applied to both views.
 
@@ -411,7 +426,8 @@ def photometric(
     if backlight_range[1] > 0.0 and rng.random() < probability:
         strength, angle = rng.uniform(*backlight_range), rng.uniform(0.0, 2.0 * np.pi)
         views = [backlight(view, strength, angle) for view in views]
-    if rng.random() < probability:
+    motion = probability if motion_probability is None else motion_probability
+    if rng.random() < motion:
         length, angle = rng.randint(*MOTION_BLUR_PX), rng.uniform(0.0, np.pi)
         views = [motion_blur(view, length, angle) for view in views]
     if rng.random() < probability:
@@ -457,6 +473,9 @@ class SpoofShardDataset(IterableDataset):
         roll_range: tuple[float, float] = ROLL_RANGE,
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
+        screen_blur_probability: float = 0.0,
+        screen_blur_range: tuple[float, float] = (0.0, 0.0),
+        motion_blur_probability: float | None = None,
         keep_wide: bool = True,
         interleave: int = INTERLEAVE_SHARDS,
     ) -> None:
@@ -490,6 +509,9 @@ class SpoofShardDataset(IterableDataset):
         self.roll_range = roll_range
         self.translate_probability = translate_probability
         self.translate_range = translate_range
+        self.screen_blur_probability = screen_blur_probability
+        self.screen_blur_range = tuple(screen_blur_range)
+        self.motion_blur_probability = motion_blur_probability
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -548,6 +570,9 @@ class SpoofShardDataset(IterableDataset):
                     wide_scale=reached,
                     face_in_wide=tuple(meta.get("face_in_wide") or centred_face(reached)),
                     domain=domain,
+                    # Read per record rather than per folder: CelebA mixes the two
+                    # media under one name and must stay out of this (KEHOACH 3).
+                    replay="replay" in str(meta.get("split", "")),
                 )
             live = standing
 
@@ -578,7 +603,13 @@ class SpoofShardDataset(IterableDataset):
                     self.exposure_contrast_range,
                     self.white_balance_range,
                     self.backlight_range,
+                    self.motion_blur_probability,
                 )
+                # Screens only: paper keeps its grain, and blurring it would teach
+                # the branch that print looks alive (KEHOACH 3).
+                if (sample.replay and self.screen_blur_range[1] > 0.0
+                        and rng.random() < self.screen_blur_probability):
+                    sample = screen_blur(sample, rng.uniform(*self.screen_blur_range))
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
             if self.shuffle_buffer <= 0:
