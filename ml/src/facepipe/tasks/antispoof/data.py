@@ -391,8 +391,8 @@ def white_balance(image: np.ndarray, gains: np.ndarray) -> np.ndarray:
     return _clipped(image.astype(np.float32) * gains)
 
 
-def screen_blur(sample: SpoofSample, radius: float) -> SpoofSample:
-    """The resolution a face loses on its way through a screen (KEHOACH 3).
+def soften(sample: SpoofSample, radius: float) -> SpoofSample:
+    """Bring a crop down to the surface detail this camera actually delivers.
 
     Calibrated on Pillow's radius, not on sigma: the two differ by 6 to 16 per
     cent and Pillow is what runs here (measurements/parity 2).
@@ -474,6 +474,7 @@ class SpoofShardDataset(IterableDataset):
         roll_range: tuple[float, float] = ROLL_RANGE,
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
+        pool_blur_range: tuple[float, float] = (0.0, 0.0),
         screen_blur_probability: float = 0.0,
         screen_blur_range: tuple[float, float] = (0.0, 0.0),
         motion_blur_probability: float | None = None,
@@ -510,6 +511,7 @@ class SpoofShardDataset(IterableDataset):
         self.roll_range = roll_range
         self.translate_probability = translate_probability
         self.translate_range = translate_range
+        self.pool_blur_range = tuple(pool_blur_range)
         self.screen_blur_probability = screen_blur_probability
         self.screen_blur_range = tuple(screen_blur_range)
         self.motion_blur_probability = motion_blur_probability
@@ -604,12 +606,14 @@ class SpoofShardDataset(IterableDataset):
                     self.backlight_range,
                     self.motion_blur_probability,
                 )
-                # Every attack but paper, which keeps its grain: blurring that would
-                # teach the branch print looks alive (KEHOACH 3).
+                # The pool is 1.3x sharper than this camera at both labels, so the
+                # first radius shifts the level and the second adds the gap.
+                if self.pool_blur_range[1] > 0.0:
+                    sample = soften(sample, rng.uniform(*self.pool_blur_range))
                 if (sample.label == SPOOF and not sample.printed
                         and self.screen_blur_range[1] > 0.0
                         and rng.random() < self.screen_blur_probability):
-                    sample = screen_blur(sample, rng.uniform(*self.screen_blur_range))
+                    sample = soften(sample, rng.uniform(*self.screen_blur_range))
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
             if self.shuffle_buffer <= 0:
