@@ -923,3 +923,81 @@ quy trách nhiệm — đúng lỗi §12.1 vừa ghi. Print là một run riêng
 
 **Không đụng tới cổng ở §3.** Nó vẫn nằm trên board và vẫn tắt, nên không có đường nào để nó
 ảnh hưởng tới số đo của model.
+
+## 13.8. Lần chạy thứ nhất: trượt, và nó chỉ ra hai sai sót thiết kế
+
+Chạy tới epoch 10 rồi dừng. Nhờ chấm 85 khung của board **mỗi chu kỳ val** (§13.9), đường
+cong hiện ra ngay thay vì phải chờ 90 epoch:
+
+| Epoch | AUC trên board | val EER |
+|---|---|---|
+| 2 | 0,8891 | 0,4032 |
+| 4 | 0,9338 | 0,2325 |
+| **6** | **0,9673** | 0,2080 |
+| 8 | 0,8698 | 0,1859 ↓ tốt lên |
+| 10 | 0,7976 | 0,1814 ↓ tốt lên |
+
+**0,9673 ở epoch 6 là AUC cao nhất từng đo trên thiết bị**, hơn cả 0,9377 của phép thích nghi
+thống kê. Rồi hai bước liên tiếp đi xuống trong khi val đi lên — đúng chữ ký §12.3, nên dừng.
+
+Phép chẩn đoán cho kết quả **dương**: tương quan giữa điểm model và phần dư bề mặt cao hơn
+bản đối chứng ở **cả bốn** phép so (hai tập khung × Pearson và Spearman). Model **có** học
+manh mối. Cơ chế chạy được; hai sai sót nằm ở liều và ở chỗ đặt.
+
+**Sai sót 1 — làm mờ nhầm phạm vi.** Điều kiện cũ đọc **tên thư mục** và chỉ nhận bốn miền
+màn hình. Nhưng CelebA giữ **78.810 trong 122.243** ảnh giả của pool, và nó không bị đụng
+tới, nên vẫn dạy định nghĩa cũ:
+
+| Nhóm trong lớp giả | Mẫu | Phần |
+|---|---|---|
+| CelebA — dạy phong cách ảnh | 78.810 | **64,5%** |
+| Màn hình — mang manh mối | 41.633 | 34,1% |
+| Giấy | 1.800 | 1,5% |
+
+Chỉ **23,8%** ảnh giả thật sự mang manh mối. Thiểu số thua đa số, và đường cong ở trên là
+hình ảnh của việc thua đó.
+
+Sửa: điều kiện đọc **phương tiện ghi trong chính bản ghi**, không đọc tên thư mục. Mọi thứ
+mang nhãn tấn công đều được làm mờ **trừ** bản ghi có `split` nói *print*, vì giấy **tăng**
+tần số cao chứ không mất. Không cắt gì, nên nửa thật giữ nguyên toàn bộ danh tính và ánh sáng
+của CelebA. Tỉ lệ mang manh mối: **23,8% → ~95%** của lớp giả.
+
+**Sai sót 2 — khớp tỉ lệ nhưng sai mức tuyệt đối.** Lần đầu chỉ khớp *khoảng cách giữa hai
+lớp*. Nhưng cả pool nằm cao hơn thiết bị **1,3 lần ở cả hai nhãn**:
+
+| | Pool | Thiết bị |
+|---|---|---|
+| Mặt thật, trung vị độ nét | 0,2195 | 0,167 |
+| Ảnh giả, trung vị độ nét | 0,1408 | 0,106 |
+
+Model là mạng tích chập trên điểm ảnh, **không** chuẩn hoá theo đường xu hướng như cổng ở §3,
+nên nó đọc **giá trị tuyệt đối**. Học "0,22 là mặt thật" rồi gặp mặt thật của board ở 0,167 —
+đó chính là cơ chế chặn oan.
+
+## 13.9. Hiệu chuẩn hai tầng, khớp đồng thời ba đích
+
+Hai bán kính, **khớp cùng lúc** chứ không nối tiếp, vì chúng tương tác: làm mờ một ảnh **đã
+mờ** lấy đi ít hơn làm mờ một ảnh sắc nét, nên một phép mờ đồng đều **thu hẹp** tỉ lệ giữa hai
+lớp chứ không giữ nguyên — dự đoán ban đầu của tác giả là *nới rộng*, và nó sai.
+
+| Tham số | Giá trị | Áp lên |
+|---|---|---|
+| `pool_blur_range` | 0,45 – 0,75 | **mọi** crop, mọi nhãn |
+| `screen_blur_range` | 0,70 – 1,05 | ảnh giả không phải giấy |
+| `screen_blur_probability` | 0,95 | — |
+
+Kết quả đo trên dataset đã dựng, không đọc từ config:
+
+| Nhóm | p5 / trung vị / p95 | Đích của thiết bị |
+|---|---|---|
+| Mặt thật | 0,097 / **0,164** / 0,266 | 0,130 / **0,167** / 0,218 |
+| Ảnh giả | 0,066 / **0,110** / 0,179 | 0,099 / **0,106** / 0,131 |
+| Tỉ lệ thật/giả | **1,50** | **1,58** |
+
+Dải của pool **rộng hơn** dải thiết bị ở cả hai đuôi, nên khung của camera nằm **bên trong**
+phân phối huấn luyện thay vì ở mép.
+
+**Phần ảnh giả để sắc nét hạ từ 30% xuống 5%**, và lý do là một sai sót phương pháp đáng ghi:
+con số 30% ban đầu do tác giả **bịa ra** để "tạo chồng lấn", không rút từ số đo nào. Nhìn lại
+dữ liệu thì **mọi** khung tấn công camera từng chụp đều mịn, trải 0,099 – 0,131; chồng lấn
+giữa hai lớp trên thiết bị đến từ **mặt thật thiếu sáng**, không từ ảnh giả sắc nét.
