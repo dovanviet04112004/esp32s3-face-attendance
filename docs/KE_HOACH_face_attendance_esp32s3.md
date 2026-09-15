@@ -2295,7 +2295,13 @@ ml/
 │   │   │   │                              #   khong the co anh moi voi nhan cu
 │   │   │   ├── xdomain_crop.py            # bốn bộ khác miền → shard, mặt do nhánh detect tìm
 │   │   │   │                              #   crop mà kiosk không tự tạo ra được thì không phải phép thử công bằng
-│   │   │   └── device_index.py            # quét ov5640/images → manifest.csv
+│   │   │   ├── device_index.py            # quét ov5640/images → manifest.csv
+│   │   │   └── depth_maps.py              # ★ nhãn độ sâu 21×21 cho nhánh antispoof (§3).
+│   │   │                                  #   Chạy bộ ước lượng trên view WIDE rồi cắt về
+│   │   │                                  #   face_in_wide: view TIGHT không còn nền nên
+│   │   │                                  #   bộ ước lượng chỉ trả về một mặt phẳng nghiêng.
+│   │   │                                  #   Lưu kèm độ tin cậy từng nhãn; ~10% mặt thật
+│   │   │                                  #   lệch hẳn khỏi hình chuẩn và phải bị che lúc train
 │   │   ├── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
 │   │   └── loaders.py
 │   │
