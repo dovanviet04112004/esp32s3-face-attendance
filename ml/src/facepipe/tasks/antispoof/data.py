@@ -26,6 +26,10 @@ from facepipe.data.prepare.images_to_wds import read_shard
 
 CROP_SIZE = 81
 LIVE, SPOOF = 0, 1
+# The depth label rides at the stored grid and drops to the head's map only once,
+# after the geometry: resampling it at 21 loses the shape (measurements 42).
+DEPTH_GRID = 63
+DEPTH_TARGET = 21
 SHUFFLE_BUFFER = 2048
 # Shards read at once, so one batch carries several capture setups (KEHOACH 3).
 INTERLEAVE_SHARDS = 12
@@ -79,6 +83,8 @@ class SpoofSample:
     label: int
     wide_scale: float  # scale the wide view actually reached
     domain: int = 0    # which shard folder it came from (KEHOACH 3)
+    depth: np.ndarray | None = None  # 21x21 face shape, flat for an attack
+    depth_trust: float = 0.0         # how far the label sits from the mean shape
     face_in_wide: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
     def views(self) -> list[np.ndarray]:
@@ -162,7 +168,7 @@ def count_records(shards: list[Path], shard_size: int | None = None) -> int:
 def resized(image: np.ndarray, size: int) -> np.ndarray:
     if image.shape[0] == size and image.shape[1] == size:
         return image
-    return np.array(Image.fromarray(image).resize((size, size), Image.BILINEAR), dtype=np.uint8)
+    return np.array(Image.fromarray(image).resize((size, size), Image.BILINEAR), dtype=image.dtype)
 
 
 def decode_native(payload: bytes) -> np.ndarray:
@@ -187,6 +193,7 @@ def horizontal_flip(sample: SpoofSample) -> SpoofSample:
         sample,
         tight=sample.tight[:, ::-1].copy(),
         wide=sample.wide[:, ::-1].copy(),
+        depth=None if sample.depth is None else sample.depth[:, ::-1].copy(),
         face_in_wide=(1.0 - x2, y1, 1.0 - x1, y2),
     )
 
@@ -223,8 +230,14 @@ def crop_scale(sample: SpoofSample, target: float, size: int) -> SpoofSample:
     reached = min(target, sample.wide_scale)
     stored = min(1.0, sample.wide_scale)
     wide = narrow(sample.wide, sample.face_in_wide, sample.wide_scale, reached)
-    tight = sample.tight if reached >= stored else narrow_tight(sample.tight, reached / stored)
-    return replace(sample, tight=resized(tight, size), wide=resized(wide, size), wide_scale=reached)
+    close = reached >= stored
+    tight = sample.tight if close else narrow_tight(sample.tight, reached / stored)
+    # The map covers the tight view, so the same centred bite keeps them aligned.
+    depth = sample.depth
+    if depth is not None and not close:
+        depth = resized(narrow_tight(depth, reached / stored), depth.shape[0])
+    return replace(sample, tight=resized(tight, size), wide=resized(wide, size),
+                   depth=depth, wide_scale=reached)
 
 
 def face_square(view: np.ndarray, wide_scale: float) -> tuple[int, int]:
@@ -258,6 +271,12 @@ def occlude(
     return sample.with_views(views)
 
 
+def margins(image: np.ndarray, pad: int) -> tuple:
+    """Pad widths for a view or for the single-channel depth map beside it."""
+    edges = ((pad, pad), (pad, pad))
+    return edges if image.ndim == 2 else edges + ((0, 0),)
+
+
 def turned(image: np.ndarray, degrees: float) -> np.ndarray:
     """One view rolled about its centre, with no corner the rotation invented.
 
@@ -266,21 +285,24 @@ def turned(image: np.ndarray, degrees: float) -> np.ndarray:
     """
     edge = image.shape[0]
     pad = edge // 2
-    wider = np.pad(image, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
+    wider = np.pad(image, margins(image, pad), mode="reflect")
     spun = Image.fromarray(wider).rotate(degrees, resample=Image.BILINEAR)
-    return np.array(spun, dtype=np.uint8)[pad : pad + edge, pad : pad + edge]
+    return np.array(spun, dtype=image.dtype)[pad : pad + edge, pad : pad + edge]
 
 
 def roll(sample: SpoofSample, degrees: float) -> SpoofSample:
     """Roll both views by one angle, since the two crops are one scene."""
-    return sample.mapped(lambda view: turned(view, degrees))
+    spun = sample.mapped(lambda view: turned(view, degrees))
+    if sample.depth is None:
+        return spun
+    return replace(spun, depth=turned(sample.depth, degrees))
 
 
 def shifted(image: np.ndarray, dx: float, dy: float) -> np.ndarray:
     """One view moved by a fraction of its own edge, mirrored where it runs out."""
     edge = image.shape[0]
     pad = max(1, edge // 4)
-    wider = np.pad(image, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
+    wider = np.pad(image, margins(image, pad), mode="reflect")
     left = min(max(0, round(pad + dx * edge)), wider.shape[1] - edge)
     top = min(max(0, round(pad + dy * edge)), wider.shape[0] - edge)
     return wider[top : top + edge, left : left + edge]
@@ -294,7 +316,8 @@ def translate(sample: SpoofSample, dx: float, dy: float) -> SpoofSample:
     """
     span = 1.0 / max(sample.wide_scale, 1e-6)
     wide = None if sample.wide is None else shifted(sample.wide, dx * span, dy * span)
-    return replace(sample, tight=shifted(sample.tight, dx, dy), wide=wide)
+    depth = None if sample.depth is None else shifted(sample.depth, dx, dy)
+    return replace(sample, tight=shifted(sample.tight, dx, dy), wide=wide, depth=depth)
 
 
 def requantise(image: np.ndarray, quality: int) -> np.ndarray:

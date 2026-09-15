@@ -136,7 +136,7 @@ def collect_scores(
     model.eval()
     scores: list[np.ndarray] = []
     truth: list[np.ndarray] = []
-    for tight, wide, labels, _wide_scale in loader:
+    for tight, wide, labels, *_rest in loader:
         output = model((tight.to(device), wide.to(device)))
         scores.append(liveness_of(output).float().cpu().numpy())
         truth.append(labels.numpy())

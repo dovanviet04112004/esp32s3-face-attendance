@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import random
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from facepipe.core.trainer import CKPT_LAST
 from facepipe.data.prepare.images_to_wds import ShardWriter
 from facepipe.tasks.antispoof import train as antispoof_train
 from facepipe.tasks.antispoof.data import (
+    DEPTH_GRID,
     SpoofSample,
     SpoofShardDataset,
     collate,
@@ -25,6 +27,7 @@ from facepipe.tasks.antispoof.data import (
     crop_scale,
     horizontal_flip,
     occlude,
+    roll,
     translate,
 )
 from facepipe.tasks.antispoof.losses import SpoofTaskLoss
@@ -59,7 +62,7 @@ def write_shards(root: Path, records: int, shard_size: int = 4) -> Path:
 
 
 def test_the_model_is_two_backbones_and_one_head() -> None:
-    model = MiniFASNetV2SE()
+    model = MiniFASNetV2SE(views="both")
     total = sum(p.numel() for p in model.parameters())
     per_branch = sum(p.numel() for p in model.tight.parameters())
     assert 0.50e6 < total < 0.56e6, total
@@ -68,7 +71,7 @@ def test_the_model_is_two_backbones_and_one_head() -> None:
 
 
 def test_the_two_views_are_not_the_same_weights() -> None:
-    model = MiniFASNetV2SE().eval()
+    model = MiniFASNetV2SE(views="both").eval()
     tight = torch.randn(2, 3, INPUT_SIZE, INPUT_SIZE)
     wide = torch.randn(2, 3, INPUT_SIZE, INPUT_SIZE)
     with torch.no_grad():
@@ -102,7 +105,7 @@ def test_every_record_is_read_once_across_workers(tmp_path: Path) -> None:
     root = write_shards(tmp_path / "train", records=12, shard_size=2)
     ds = SpoofShardDataset(root, size=32, train=False)
     loader = DataLoader(ds, batch_size=1, num_workers=3, collate_fn=collate)
-    seen = sum(labels.numel() for _, _, labels, _ in loader)
+    seen = sum(batch[2].numel() for batch in loader)
     assert seen == 12
 
 
@@ -288,7 +291,7 @@ def test_both_views_reach_the_model_size_whether_the_crop_gate_fires(
 def test_collate_keeps_the_pair_and_the_label_aligned(tmp_path: Path) -> None:
     root = write_shards(tmp_path / "train", records=4, shard_size=4)
     batch = list(SpoofShardDataset(root, size=32, train=False))
-    tight, wide, labels, scales = collate(batch)
+    tight, wide, labels, scales = collate(batch)[:4]
     assert tight.shape == wide.shape == (4, 3, 32, 32)
     assert labels.tolist() == [0, 1, 0, 1]
     assert scales.tolist() == pytest.approx([2.7] * 4)
@@ -302,7 +305,8 @@ def test_the_loss_weights_the_class_the_data_is_short_of() -> None:
     loss = SpoofTaskLoss(live_weight=1.97)
     confident_live = torch.tensor([4.0, -4.0])
     confident_spoof = torch.tensor([-4.0, 4.0])
-    batch = SpoofBatch(torch.tensor([0, 1]), torch.tensor([2.7, 2.7]))
+    batch = SpoofBatch(torch.tensor([0, 1]), torch.tensor([2.7, 2.7]),
+                       torch.tensor([0, 0]))
 
     wrong_on_live = loss(torch.stack([confident_spoof, confident_spoof]), batch)
     wrong_on_spoof = loss(torch.stack([confident_live, confident_live]), batch)
@@ -313,7 +317,8 @@ def test_an_unweighted_loss_treats_the_two_errors_alike() -> None:
     loss = SpoofTaskLoss(live_weight=1.0)
     confident_live = torch.tensor([4.0, -4.0])
     confident_spoof = torch.tensor([-4.0, 4.0])
-    batch = SpoofBatch(torch.tensor([0, 1]), torch.tensor([2.7, 2.7]))
+    batch = SpoofBatch(torch.tensor([0, 1]), torch.tensor([2.7, 2.7]),
+                       torch.tensor([0, 0]))
 
     wrong_on_live = loss(torch.stack([confident_spoof, confident_spoof]), batch)
     wrong_on_spoof = loss(torch.stack([confident_live, confident_live]), batch)
@@ -323,7 +328,7 @@ def test_an_unweighted_loss_treats_the_two_errors_alike() -> None:
 def test_the_loss_buffer_follows_the_logits_device() -> None:
     loss = SpoofTaskLoss()
     logits = torch.tensor([[1.0, 0.0]], dtype=torch.float64)
-    batch = SpoofBatch(torch.tensor([0]), torch.tensor([2.7]))
+    batch = SpoofBatch(torch.tensor([0]), torch.tensor([2.7]), torch.tensor([0]))
     assert loss(logits, batch).dtype == torch.float64
 
 
@@ -445,3 +450,55 @@ def test_the_entry_point_trains_and_writes_a_run(tmp_path: Path) -> None:
 
 
 
+
+
+def matched_depth(view: np.ndarray, grid: int = DEPTH_GRID) -> np.ndarray:
+    """The crop's own luma, shrunk: a map that starts perfectly aligned."""
+    grey = view.astype(np.float32) @ np.array([0.299, 0.587, 0.114], np.float32)
+    small = np.array(Image.fromarray(grey).resize((grid, grid), Image.BILINEAR), np.float32)
+    return (small - small.mean()) / max(float(small.std()), 1e-6)
+
+
+def still_aligned(sample: SpoofSample) -> float:
+    """Correlation between the map and the crop it is supposed to describe."""
+    want = matched_depth(sample.tight).ravel()
+    got = sample.depth.astype(np.float32).ravel()
+    got = (got - got.mean()) / max(float(got.std()), 1e-6)
+    want = (want - want.mean()) / max(float(want.std()), 1e-6)
+    return float(np.dot(want, got) / len(want))
+
+
+@pytest.fixture
+def depth_sample() -> SpoofSample:
+    rng = np.random.default_rng(7)
+    coarse = rng.integers(0, 255, (16, 16, 3), dtype=np.uint8)
+    tight = np.array(Image.fromarray(coarse).resize((128, 128)), dtype=np.uint8)
+    wide = np.array(Image.fromarray(tight).resize((224, 224)), dtype=np.uint8)
+    return SpoofSample(tight=tight, wide=wide, label=LIVE, wide_scale=1.0,
+                       depth=matched_depth(tight), face_in_wide=(0.25, 0.25, 0.75, 0.75))
+
+
+# A map that drifts from its crop trains the head on the wrong face and nothing
+# downstream can see it, which is why every geometric step is checked (KEHOACH 3).
+@pytest.mark.parametrize(
+    "name,apply",
+    [
+        ("flip", horizontal_flip),
+        ("roll_negative", lambda s: roll(s, -18.0)),
+        ("roll_positive", lambda s: roll(s, 12.0)),
+        ("translate", lambda s: translate(s, 0.10, -0.06)),
+        ("crop_scale", lambda s: crop_scale(s, 0.75, 128)),
+        ("chained", lambda s: roll(translate(horizontal_flip(s), 0.08, 0.05), -9.0)),
+    ],
+)
+def test_depth_follows_the_crop_through(name: str, apply, depth_sample: SpoofSample) -> None:
+    assert still_aligned(depth_sample) > 0.99
+    assert still_aligned(apply(depth_sample)) > 0.75
+
+
+def test_a_sample_without_depth_survives_every_step(depth_sample: SpoofSample) -> None:
+    bare = replace(depth_sample, depth=None)
+    for step in (horizontal_flip, lambda s: roll(s, 8.0), lambda s: translate(s, 0.05, 0.05),
+                 lambda s: crop_scale(s, 0.8, 128)):
+        bare = step(bare)
+    assert bare.depth is None

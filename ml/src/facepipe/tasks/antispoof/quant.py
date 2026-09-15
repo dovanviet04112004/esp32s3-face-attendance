@@ -17,7 +17,7 @@ def calibration_batches(cfg: object, split: str | None, limit: int):
     names = input_names(cfg)
     loader = build_loader(cfg, split or cfg.data.params["val_split"])
     taken = 0
-    for tight, wide, _labels, _scale in loader:
+    for tight, wide, *_rest in loader:
         views = {"tight": tight, "wide": wide}
         for i in range(tight.shape[0]):
             if taken >= limit:
@@ -36,7 +36,7 @@ def torch_batches(cfg: object, split: str | None, samples: int):
     from .eval import build_loader, input_names
 
     split = split or cfg.data.params["val_split"]
-    for tight, wide, _labels, _scale in build_loader(cfg, split):
+    for tight, wide, *_rest in build_loader(cfg, split):
         if len(input_names(cfg)) > 1:
             yield (tight[:samples], wide[:samples])
         else:

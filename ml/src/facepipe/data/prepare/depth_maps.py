@@ -18,7 +18,9 @@ from PIL import Image
 
 from facepipe.data.prepare.images_to_wds import read_shard
 
-GRID = 21
+# Three times the 21x21 the head reads: crop and roll resample the map, and a
+# 0.7 bite off a 21 grid comes back at 0.735 correlation (measurements 42).
+GRID = 63
 # The estimator's own normalisation, shipped with it.
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
