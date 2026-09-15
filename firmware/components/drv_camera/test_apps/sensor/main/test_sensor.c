@@ -190,6 +190,12 @@ TEST_CASE("metered frames reach the host as raw rgb565", "[drv_camera][manual]")
     }
 }
 
+#define RAW_DIR "/lfs/raw"
+// One frame is 300 KB and the littlefs partition is 4 MB, so the cap is flash,
+// not choice; the rest is left for the filesystem's own bookkeeping.
+#define RAW_KEEP_MAX 12
+#define RAW_KEEP_BYTES (3u * 1024u * 1024u + 512u * 1024u)
+#define RAW_ONE_MAX (512u * 1024u)
 #define SHOT_DIR "/lfs/shot"
 #define SHOT_QUALITY 85
 #define SHOT_MAX 150
@@ -303,6 +309,76 @@ static size_t keep_shot(int index, int scene)
     return put == len ? put : 0;
 }
 
+static size_t keep_raw(int index)
+{
+    camera_fb_t *frame = drv_camera_grab();
+    if (frame == NULL) {
+        return 0;
+    }
+    int level, exposure, gain16;
+    drv_camera_exposure_state(&level, &exposure, &gain16);
+    char path[SHOT_PATH_MAX];
+    snprintf(path, sizeof(path), RAW_DIR "/r%03d_%ux%u_L%02d_E%03d_G%02d.raw", index,
+             (unsigned)frame->width, (unsigned)frame->height, level, exposure, gain16);
+    FILE *out = fopen(path, "wb");
+    const size_t want = frame->len;
+    const size_t put = out != NULL ? fwrite(frame->buf, 1, want, out) : 0;
+    if (out != NULL) {
+        fclose(out);
+    }
+    drv_camera_release(frame);
+    return put == want ? put : 0;
+}
+
+TEST_CASE("the button keeps one raw frame, the led says it landed", "[drv_camera][manual]")
+{
+    blocking_console();
+    const esp_err_t up = drv_camera_init();
+    TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
+    button_start();
+    TEST_ASSERT_EQUAL(ESP_OK, led_start());
+    settle_exposure();
+    printf("tap BOOT for a raw frame, hold %d s to finish\n", BUTTON_END_HOLD_MS / 1000);
+
+    // Set once and left alone: re-sending it every poll starves the camera's dma
+    // and the sensor hands back short frames.
+    led_show(0, 0, 8);
+    int kept = 0;
+    bool finished = false;
+    while (!finished && kept < RAW_DUMP_FRAMES) {
+        camera_fb_t *warm = drv_camera_grab();
+        if (warm != NULL) {
+            drv_camera_expose(warm);
+            drv_camera_release(warm);
+        }
+        const int held = press_ms();
+        if (held == 0) {
+            continue;
+        }
+        if (held >= BUTTON_END_HOLD_MS) {
+            finished = true;
+            continue;
+        }
+        camera_fb_t *frame = drv_camera_grab();
+        if (frame == NULL) {
+            led_flash(32, 0, 0);
+            led_show(0, 0, 8);
+            continue;
+        }
+        int level, exposure, gain16;
+        drv_camera_exposure_state(&level, &exposure, &gain16);
+        printf("\n--RAW %ux%u level %d exposure %d gain16 %d--\n", (unsigned)frame->width,
+               (unsigned)frame->height, level, exposure, gain16);
+        hex_out(frame->buf, frame->len);
+        printf("\n--END--\n");
+        drv_camera_release(frame);
+        ++kept;
+        led_flash(0, 32, 0);
+        led_show(0, 0, 8);
+    }
+    printf("\n--DONE %d--\n", kept);
+}
+
 TEST_CASE("the button keeps one frame, the led says whether it landed", "[drv_camera][manual]")
 {
     blocking_console();
@@ -348,25 +424,71 @@ TEST_CASE("the button keeps one frame, the led says whether it landed", "[drv_ca
     TEST_ASSERT_GREATER_THAN(0, kept);
 }
 
-TEST_CASE("hand back the frames the button kept", "[drv_camera][manual]")
+TEST_CASE("the button keeps raw frames on the board", "[drv_camera][manual]")
 {
     blocking_console();
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
-    DIR *dir = opendir(SHOT_DIR);
-    if (dir == NULL) {
-        TEST_IGNORE_MESSAGE("no " SHOT_DIR ": the keeping case has not run");
+    const esp_err_t up = drv_camera_init();
+    TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
+    mkdir(RAW_DIR, 0777);
+    button_start();
+    TEST_ASSERT_EQUAL(ESP_OK, led_start());
+    settle_exposure();
+    printf("tap BOOT to keep a raw frame, %d fit; hold %d s to finish\n", RAW_KEEP_MAX,
+           BUTTON_END_HOLD_MS / 1000);
+
+    // Set once and left alone: re-sending it every poll starves the camera's dma
+    // and the sensor hands back short frames.
+    led_show(0, 0, 8);
+    size_t written = 0;
+    int kept = 0;
+    bool finished = false;
+    while (!finished && kept < RAW_KEEP_MAX && written < RAW_KEEP_BYTES) {
+        camera_fb_t *warm = drv_camera_grab();
+        if (warm != NULL) {
+            drv_camera_expose(warm);
+            drv_camera_release(warm);
+        }
+        const int held = press_ms();
+        if (held == 0) {
+            continue;
+        }
+        if (held >= BUTTON_END_HOLD_MS) {
+            finished = true;
+            continue;
+        }
+        const size_t put = keep_raw(kept);
+        led_flash(put == 0 ? 32 : 0, put == 0 ? 0 : 32, 0);
+        led_show(0, 0, 8);
+        if (put == 0) {
+            continue;
+        }
+        written += put;
+        ++kept;
     }
-    uint8_t *buffer = heap_caps_malloc(SHOT_MAX_BYTES / 16, MALLOC_CAP_SPIRAM);
+    led_flash(0, 0, 32);
+    printf("--RAW KEPT %d  %u B--\n", kept, (unsigned)written);
+}
+
+static void hand_back(const char *from)
+{
+    blocking_console();
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
+    DIR *dir = opendir(from);
+    if (dir == NULL) {
+        TEST_IGNORE_MESSAGE("nothing kept there yet");
+    }
+    uint8_t *buffer = heap_caps_malloc(RAW_ONE_MAX, MALLOC_CAP_SPIRAM);
     TEST_ASSERT_NOT_NULL(buffer);
     int sent = 0;
     for (struct dirent *entry = readdir(dir); entry != NULL; entry = readdir(dir)) {
         char path[SHOT_PATH_MAX];
-        snprintf(path, sizeof(path), SHOT_DIR "/%s", entry->d_name);
+        snprintf(path, sizeof(path), "%s/%s", from, entry->d_name);
         FILE *in = fopen(path, "rb");
         if (in == NULL) {
             continue;
         }
-        const size_t len = fread(buffer, 1, SHOT_MAX_BYTES / 16, in);
+        const size_t len = fread(buffer, 1, RAW_ONE_MAX, in);
         fclose(in);
         printf("\n--SHOT %s %u--\n", entry->d_name, (unsigned)len);
         hex_out(buffer, len);
@@ -378,21 +500,41 @@ TEST_CASE("hand back the frames the button kept", "[drv_camera][manual]")
     printf("--SHOTS DONE %d--\n", sent);
 }
 
-TEST_CASE("forget the frames the button kept", "[drv_camera][manual]")
+TEST_CASE("hand back the frames the button kept", "[drv_camera][manual]")
+{
+    hand_back(SHOT_DIR);
+}
+
+TEST_CASE("hand back the raw frames the button kept", "[drv_camera][manual]")
+{
+    hand_back(RAW_DIR);
+}
+
+static void forget_kept(const char *from)
 {
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
-    DIR *dir = opendir(SHOT_DIR);
+    DIR *dir = opendir(from);
     if (dir == NULL) {
-        TEST_IGNORE_MESSAGE("no " SHOT_DIR " to empty");
+        TEST_IGNORE_MESSAGE("nothing kept there to empty");
     }
     int gone = 0;
     for (struct dirent *entry = readdir(dir); entry != NULL; entry = readdir(dir)) {
         char path[SHOT_PATH_MAX];
-        snprintf(path, sizeof(path), SHOT_DIR "/%s", entry->d_name);
+        snprintf(path, sizeof(path), "%s/%s", from, entry->d_name);
         gone += remove(path) == 0 ? 1 : 0;
     }
     closedir(dir);
     printf("removed %d file(s)\n", gone);
+}
+
+TEST_CASE("forget the frames the button kept", "[drv_camera][manual]")
+{
+    forget_kept(SHOT_DIR);
+}
+
+TEST_CASE("forget the raw frames the button kept", "[drv_camera][manual]")
+{
+    forget_kept(RAW_DIR);
 }
 
 #define KEEP_CASE "the button keeps one frame, the led says whether it landed"
