@@ -1064,3 +1064,195 @@ sớm hơn là chép nhiễu của bốn khung.
 **Giữ một phần khung ngoài phép hiệu chuẩn.** Hiệu chỉnh càng tinh càng dễ khớp vào mẫu thay
 vì khớp vào hiện tượng, và nhìn con số thì không phân biệt được; chỉ khung không tham gia
 hiệu chuẩn mới nói được.
+
+---
+
+# 14. Rò rỉ nhãn trong phép hiệu chỉnh bề mặt
+
+Chương này ghi lại một sai sót của chính tôi, phát hiện ngày 15/09/2026, và số đo mà việc
+truy nó tới cùng đã sinh ra. Số đo ấy quan trọng hơn cả sai sót: nó giải thích toàn bộ hiện
+tượng ngược dấu kéo dài từ §4.1 tới §13.10.
+
+## 14.1. Dấu hiệu: một con số hoàn hảo, quá sớm
+
+Run `20260915-1105_25974fd_9ad494` báo về:
+
+| epoch | val pool eer / auc | dev_acer / dev_auc | chặn oan | bắt giả |
+|---|---|---|---|---|
+| 1 | 0,1954 / 0,8906 | 0,0234 / 0,9829 | 64/64 | 21/21 |
+| 3 | 0,0544 / 0,9873 | **0,0000 / 1,0000** | 1/64 | 21/21 |
+| 5 | 0,0506 / 0,9884 | **0,0000 / 1,0000** | 0/64 | 21/21 |
+
+Tách lớp hoàn hảo ở epoch 3 trên một bài toán mà mười lăm hướng trước đó đều trượt. Đó là
+chữ ký của rò rỉ, không phải của tiến bộ.
+
+## 14.2. Thước đo còn thiếu: trần của một phép so sánh
+
+Câu hỏi chưa ai đặt suốt cả nhánh: **một ngưỡng độ nét trần trụi, không model, đạt bao
+nhiêu trên chính 85 khung này?**
+
+Đo trực tiếp `surface_of` trên 85 khung, không huấn luyện gì:
+
+| | AUC chỉ bằng độ nét |
+|---|---|
+| 85 khung thiết bị | **0,9896** |
+| val (đang bật `calibrate_eval`) | **0,9892** |
+| train | 0,8550 |
+
+Một dòng lệnh so sánh bắt **20/21** khung giả ở mức chặn 3 người thật. Trên val nó bắt 99,0%
+khung giả ở mức chặn 5%.
+
+`surface_of` **không có tham số nào được fit** — nó là trung bình trị tuyệt đối Laplace của
+luma đã chuẩn hoá tương phản. Nên AUC 0,9896 là trần trung thực, không phải kết quả của việc
+khớp vào tập chấm.
+
+## 14.3. Ba lỗ chồng lên nhau
+
+| # | Lỗ | Hệ quả đo được |
+|---|---|---|
+| 1 | Dải đích chọn **theo nhãn**: `live_band` 0,130–0,218 và `attack_band` 0,099–0,131 | Hai dải chồng nhau đúng **0,8%** — nhãn được đóng dấu thẳng vào điểm ảnh |
+| 2 | `calibrate_eval: true` dùng **điểm giữa cố định** cho nhánh eval | Mọi mặt thật về 0,174, mọi ảnh giả về 0,115 — val mất khả năng phát hiện lối tắt, đúng việc duy nhất của nó |
+| 3 | Dải lấy từ phân vị của **chính 85 khung dùng để chấm** | Cả ba mặt đo cùng làm từ một manh mối |
+
+Nhánh train dùng `rng.uniform` nên còn giữ độ tản (AUC nét 0,8550); nhánh eval dùng điểm
+giữa nên tách đôi gọn ghẽ (0,9892). Đó là lý do val tăng vọt cùng lúc với thiết bị.
+
+Kết cục: tôi dựng lại đúng **cổng bề mặt** ở §7 — thứ đã bị gạt vì không phải model — chỉ
+khác là giấu trong dữ liệu thay vì trong code, rồi đem chấm trên hai thước đo cùng làm từ
+cue ấy.
+
+## 14.4. Số đo quyết định: pool và thiết bị ngược dấu
+
+Đo `surface_of` trên 1200 crop mỗi phía, sau toàn bộ augment, trước khi hiệu chỉnh:
+
+| | độ nét **thật** | độ nét **giả** | thật / giả |
+|---|---|---|---|
+| thiết bị (85 khung) | 0,1658 | 0,1042 | **1,591×** |
+| pool train (1200) | 0,2107 | 0,2302 | **0,915×** |
+| pool val (1200) | 0,2069 | 0,2364 | 0,875× |
+
+**Trong pool, ảnh giả nét hơn mặt thật. Trên thiết bị thì ngược hẳn.**
+
+Phép kiểm độc lập: fit **một** bán kính mờ chỉ trên mặt thật (tỉ số 1,2709 → bán kính
+0,5782), rồi đem đúng bán kính ấy sang phía giả mà không nhìn nhãn:
+
+- dự đoán ảnh giả rơi về 0,1812
+- thực tế thiết bị 0,1042
+- **lệch 73,9%**
+
+Phép mờ là phép **nhân**: nó chia cả hai phía cho cùng một số nên **giữ nguyên tỉ số**. Do
+đó **không** bộ hệ số mù-nhãn nào — một hay chia theo bao nhiêu cụm — bắc được cầu này. Cần
+lật dấu 1,74×, mà thông tin để biết lật cho ai chỉ nằm ở cái nhãn.
+
+Đây là nguyên nhân gốc của hiện tượng ngược dấu đo được ở §4.1, §12.3 và §13.10: **mỗi lần
+val pool tốt lên là model học chặt thêm một quan hệ ngược dấu với thiết bị.** Nó cũng là
+dạng định lượng của câu ở §1.1 — model học *phong cách ảnh*, và trong CelebA-Spoof phong
+cách của lớp giả là ảnh chụp lại trong studio, nét hơn ảnh đời thường của lớp thật.
+
+## 14.5. Rút lại một phần §13.10
+
+Bảng bằng chứng ở §13.10 vẫn đúng như số, nhưng **cách đọc thì sai**. Đặt cạnh trần 0,9896:
+
+| Model | AUC thiết bị | so với trần một phép so sánh |
+|---|---|---|
+| 3 kênh — bản trên board | 0,6473 | dưới |
+| chroma 13/09 | 0,8668 | dưới |
+| Thích nghi thống kê 20 lớp | 0,9377 | dưới |
+| Hiệu chỉnh bề mặt, `ep13` | 0,9754 | **dưới** |
+
+**Mọi model nhánh này từng đo trên 85 khung đều xếp dưới một ngưỡng độ nét một dòng.** Câu
+"AUC cao nhất nhánh này từng đo" ở §13.10 phải đọc kèm câu này, nếu không nó gây hiểu nhầm.
+
+Hệ quả thứ hai: với 85 khung hiện có, **không phân biệt được model tốt với cổng thủ công**,
+vì trần bộ đo đã là 0,9896. Mọi con số ~1,0 ở đây là không thể bác bỏ, mà không bác bỏ được
+thì không chứng minh được.
+
+## 14.6. `dev_blocked` và `dev_caught` trộn hai đại lượng
+
+Cả hai đọc cùng vạch 0,75 cố định, nên khi phân bố trôi lên thì **cùng rơi** — không phải
+đánh đổi, mà là vạch bị bỏ lại phía sau. Chấm lại hai checkpoint của run
+`20260915-1005_168d426_71e22b`:
+
+| | trung vị thật | trung vị giả | cách nhau | AUC |
+|---|---|---|---|---|
+| đỉnh `ep13` | 0,9581 | 0,4755 | **0,4827** | 0,9762 |
+| cuối | 0,9500 | 0,7599 | **0,1902** | 0,8943 |
+
+Mặt thật gần như đứng yên (−0,008); ảnh giả leo lên **+0,2844**. Ép cả hai cùng từ chối đúng
+3 người thật:
+
+| | vạch | bắt giả |
+|---|---|---|
+| đỉnh `ep13` | 0,7439 | **19/21** |
+| cuối | 0,5835 | **2/21** |
+
+Ở vạch 0,75 nó ra 19 với 10 — trông như xấu đi một nửa. Cùng giá phải trả trên người thật
+thì bản cuối bắt được **2 trên 21**. Vạch cố định đã che mất phần lớn mức hỏng.
+
+Đã thêm `dev_caught_on_budget`: vạch lấy từ chính điểm mặt thật sao cho luôn đúng
+`DEVICE_BLOCKED_BUDGET` người bị từ chối, nên giá trả cố định qua mọi epoch và con số còn
+lại là khả năng phân biệt thuần.
+
+## 14.7. Sửa: một dải duy nhất, mù nhãn
+
+Không lật dấu bằng nhãn nữa. Xoá hẳn thông tin độ nét khỏi lúc học: **một dải chung cho cả
+hai lớp**, lấy từ phân vị p5–p95 của 85 khung **gộp nhãn** — `surface_band: [0.1018, 0.2110]`
+— và mỗi crop bốc đích riêng trong dải đó. Áp cho cả train lẫn eval, vì phép biến đổi giờ
+không nhìn nhãn nên val vẫn làm trọng tài được.
+
+Nghiệm thu, đo trên 900 crop mỗi phía **trước khi chạy**:
+
+| | AUC chỉ bằng độ nét — trước | sau |
+|---|---|---|
+| val | 0,9892 | **0,4517** |
+| train | 0,8550 | **0,5327** |
+
+Ở mức chặn 5% người thật chỉ còn bắt 5,5% / 7,6% khung giả — đúng mức may rủi. Phân bố vẫn
+nằm trong dải camera (p5 ~0,09–0,107, p95 ~0,194–0,199 so với thiết bị 0,1018–0,2110), nên
+đây là hiệu chỉnh miền chứ không phải xoá dữ liệu.
+
+Khi độ nét không còn nói gì về nhãn, model **buộc** phải tìm cue khác. Điểm thiết bị dự kiến
+**tụt mạnh** so với 1,0000 — và con số tụt ấy là con số trung thực đầu tiên của nhánh này.
+
+`surface_ceiling` ghi vào log mỗi run ngay dòng đầu (`surface_ceiling=0.9895833`), để không
+run nào báo được điểm thiết bị dưới trần mà không ai nhận ra.
+
+## 14.8. Các lỗi kỹ thuật trong phiên và cách sửa
+
+Ghi để lần sau không mất thời gian lại.
+
+| Lỗi | Triệu chứng | Sửa |
+|---|---|---|
+| Dải đích chọn theo nhãn | AUC thiết bị 1,0000 ở epoch 3 | Một dải mù nhãn (§14.7) |
+| `calibrate_eval` dùng điểm giữa | val 0,9873 nằm **dưới** ngưỡng nét 0,9892 | Bỏ cờ; eval bốc như train |
+| `backlight_range` khai trong config nhưng không truyền vào dataset | Run SSDG tưởng đổi hai thứ, thực ra đổi một | Rà **mọi** khoá `data.params` đối chiếu chữ ký dataset |
+| Nhắm dải chạy **trước** `recompress` | Nén dịch chính đại lượng đang nhắm | Đưa xuống cuối chuỗi augment |
+| `radius_for` trả `np.float64` | `ImageFilter.GaussianBlur` báo `xy == (0,0)` nhập nhằng | Ép `float`, bỏ qua khi bán kính 0 |
+| `load_run` nạp strict | Checkpoint SSDG bị từ chối vì config dựng lại không có đầu domain | Lọc `domain.*` trước khi nạp |
+| `dev_blocked` / `dev_caught` ở vạch cố định | Che mất mức hỏng: 19↔10 thay vì 19↔2 | `dev_caught_on_budget` (§14.6) |
+| Script keeper canh PID của run **trước** | Thoát im lặng sau 1 phút, mọi checkpoint đỉnh mất | Kiểm process còn sống **sau** khi bật, không tin lệnh bật |
+| `pkill -f <pattern>` | Tự khớp chính shell đang chạy — **4 lần trong một phiên** | Lấy PID bằng `ps` rồi `kill` từng PID |
+| Kill nhầm bash wrapper thay vì python | Monitor báo "RUN ENDED" giả | Lọc theo `comm == python` |
+| Worker DataLoader sống sót sau khi cha chết | 7 process treo giữ GPU | Kill theo danh sách PID, không theo pattern |
+| Pearson trên 21–25 khung giả | Đổi dấu (−0,141 → +0,352) vì 4 điểm đòn bẩy | Đọc chiều so với đối chứng, chỉ kết luận khi cả bốn hệ số đồng ý |
+| Hiệu chỉnh theo cỡ mặt | Không cài được | Shard lưu mọi crop ở 128×128 nên bề rộng gốc đã mất, và model cũng không nhìn thấy cỡ mặt |
+
+Hai lỗi thuộc về cách tôi báo cáo, ghi lại vì chúng đắt hơn lỗi code:
+
+- Con số "30% ảnh giả còn nét" ở một bản nháp là **bịa, không đo**. Thực tế mọi khung giả của
+  thiết bị đều mượt (0,099–0,131).
+- Tôi dự đoán tương tác làm mờ sẽ **nới rộng** tỉ lệ giữa hai lớp; đo ra thì nó **thu hẹp**.
+
+## 14.9. Bước tiếp
+
+**Thu ~300 khung của board** — giờ không còn là "nên có". Với trần 0,9896 trên 85 khung hiện
+tại, bộ đo **không thể** phân biệt model học được cue thật với model đọc độ nét. Đợt chụp mới
+làm được ba việc cùng lúc: nâng trần, đưa tập chấm từ 21 khung giả lên ~100, và tách khung
+hiệu chuẩn khỏi khung chấm.
+
+**Hiệu chỉnh theo nhãn chỉ hợp lệ khi đích đến từ dữ liệu độc lập với tập chấm.** Quan hệ
+"mặt thật nét hơn ảnh phát lại" trên camera này là **có thật** (thật p5 0,1287, giả p95
+0,1286, và 4/21 khung giả vẫn nằm lọt trong khoảng mặt thật). Nó chỉ không dùng được **hôm
+nay**, vì đích duy nhất ta có lại chính là tập chấm. Khi có ~300 khung chia đôi, phép hiệu
+chỉnh theo nhãn quay lại hợp lệ — và lúc ấy chồng lấn phải khớp thực tế, không phải bị dựng
+ra bằng cách lấy p5/p95 của hai lớp rời nhau.
