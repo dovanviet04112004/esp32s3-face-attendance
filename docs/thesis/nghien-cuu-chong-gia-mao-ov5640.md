@@ -1434,3 +1434,173 @@ mà chưa bác bỏ được thì chưa phải bằng chứng.
 **Bước tiếp**: thu khung mới theo 16 ô (2 điện thoại × 4 góc/khoảng cách × 2 mức sáng), đường
 RAW RGB565 — **không** dùng ca nút BOOT vì nó lưu JPEG q85, mà một lượt JPEG đã đo được là
 kéo tách bạch từ 0,435σ xuống 0,095σ, và board lúc chạy thật không nén JPEG khung nào.
+
+---
+
+# 16. Đảo dấu là do trộn nguồn, và giám sát độ sâu
+
+Chương này ghi ba việc: một phép đo **sửa lại kết luận của §14**, một trần đo lường rộng hơn
+tôi tưởng, và phép thử cuối cùng còn lại ở phía model.
+
+## 16.1. Trần của bộ đo rộng hơn một trục
+
+§14.2 đo trần bằng độ nét. Đo nốt hai trục còn lại, trên cùng 85 khung, không model nào:
+
+| đặc trưng thô | AUC | thật | giả |
+|---|---|---|---|
+| độ nét | **0,9896** | 0,1658 | 0,1042 |
+| độ sáng | **0,9442** | 88,1 | 125,0 |
+| bão hoà màu | **0,9427** | 0,7065 | 0,3688 |
+
+**Ba đặc trưng một dòng, cả ba đều trên 0,94.** Bộ 85 khung không phân biệt nổi một model học
+được điều gì thật với một mẹo rẻ tiền — và đây là hệ quả trực tiếp của việc **21 khung giả
+đến từ một phiên duy nhất**: chúng khác mặt thật **đồng thời trên mọi trục đơn giản**, không
+phải vì "giả thì thế" mà vì một máy, một độ sáng màn hình, một căn phòng.
+
+## 16.2. §14.4 sai: đảo dấu là tính chất của phép TRỘN
+
+§14.4 kết luận "pool dạy ngược dấu" như một thuộc tính của dữ liệu. Đo lại **từng nguồn
+riêng**, 1400 crop mỗi nhóm, tắt hiệu chỉnh:
+
+| nguồn | thật/giả độ nét | độ sáng | bão hoà | khớp dấu thiết bị |
+|---|---|---|---|---|
+| synth webcam | **1,148** | 0,821 | 1,423 | **3/3** |
+| celeba train | **1,075** | 0,932 | 1,608 | **3/3** |
+| lcc | **1,094** | 0,900 | 1,249 | **3/3** |
+| synth ipad | 0,943 | 0,769 | 1,091 | 2/3 |
+| unique (cặp) | 1,059 | 1,005 | 0,953 | 1/3 |
+| synth samsung | 0,903 | 1,048 | 1,094 | 1/3 |
+| synth print | 0,935 | 1,071 | 0,914 | **0/3** |
+
+Thiết bị: 1,591 / 0,705 / 1,916.
+
+**Không nguồn nào ngược dấu mạnh trên trục độ nét**, vậy mà hỗn hợp thì ngược. Tách hai
+nguyên nhân:
+
+| phép đo | thật/giả độ nét |
+|---|---|
+| toàn `train_split`, **tắt** augmentation | **0,885** |
+| toàn `train_split`, **bật** augmentation | 0,938 |
+| chỉ celeba, **tắt** augmentation | **1,066** |
+| chỉ celeba, **bật** augmentation | 1,023 |
+
+Augmentation đổi net khoảng 0,05 và đổi **ngược chiều** ở hai hàng, tức mức nhiễu. Trộn nguồn
+đổi từ 1,066 xuống 0,885. **Toàn bộ cú đảo dấu nằm ở phép trộn** — nghịch lý Simpson.
+
+## 16.3. Tỉ trọng nguồn không phải thứ KẾ HOẠCH tưởng
+
+Đếm xem bộ nạp **thực sự** đưa vào bao nhiêu, 2500 mẫu:
+
+| nguồn | % mẫu | % của lớp giả | tv độ nét ảnh giả |
+|---|---|---|---|
+| train (celeba) | **33,3%** | 34,4% | 0,2227 |
+| synth_ipad | 8,4% | 13,2% | **0,2648** |
+| synth_samsung | 8,3% | 13,1% | **0,2763** |
+| synth_print | 8,3% | 13,1% | **0,2547** |
+| synth_webcam | 8,3% | 13,1% | 0,2179 |
+| unique_replay | 8,3% | 13,1% | 0,1685 |
+| ba nguồn còn lại (toàn mặt thật) | 8,3% mỗi | — | — |
+
+**Ba kênh sai dấu cộng lại là 39,4% lớp giả** — nhiều hơn celeba — và là ba kênh **sắc nét
+nhất**, so với mặt thật 0,2174. Đó là cơ chế của §16.2.
+
+Nguyên nhân nằm trong `_open()`: nó giữ 12 luồng, **chọn shard theo thư mục chưa có mặt**, rồi
+ném suất thừa cho thư mục nhiều shard nhất. Với 9 thư mục thì mỗi thư mục được đúng một suất,
+celeba ăn ba suất thừa.
+
+**Hệ quả: số shard gần như không ảnh hưởng tỉ lệ lấy mẫu; số THƯ MỤC mới ảnh hưởng.**
+`synth_print` có **1 shard** mà vẫn ăn 13,1% lớp giả, ngang `synth_ipad` có 12 shard. Ý đồ
+tỉ trọng viết ở §1 — *"lấy iPad tối đa, các kênh khác chỉ giữ mức đủ"*, thực hiện bằng cách
+chỉnh số shard — **chưa bao giờ có hiệu lực**. `interleave` giờ khai trong config thay vì nằm
+ẩn trong module.
+
+## 16.4. Hai thứ hỏng lặng lẽ, tìm thấy khi rà
+
+**SSDG chưa bao giờ được tắt.** §12.4 ghi nó "không được kích hoạt" và §12.2 đo nó **kém
+0,257 AUC**, nhưng `domain_weight: 0.1` nằm trong config từ commit thử nghiệm tới giờ. Mọi
+run kể từ đó đều gánh một hàm mất mát đã bị bác.
+
+**Bảy test của nhánh đang đỏ, và ba lỗi cùng loại trong code chạy thật.** Commit bỏ backbone
+thứ hai không sửa hai test model; commit SSDG thêm `domains` vào `collate` và `SpoofBatch` rồi
+bỏ lại bốn chỗ gọi ở arity cũ — trong đó `quant.py` hai chỗ và `eval.py` một chỗ, tức **toàn
+bộ đường xuất INT8 đang hỏng**. Và `load_run` chỉ lọc `domain.*`, nên checkpoint có đầu depth
+(`tight.depth.*`) **không đọc được**.
+
+Không phép đo nào bắt được mấy lỗi này vì không ai chạy lại bộ test.
+
+## 16.5. Giám sát bản đồ độ sâu — thiết kế và chất lượng nhãn
+
+Xem §3 của KẾ HOẠCH. Nhãn sinh bằng Depth-Anything V2 small chạy trên view **wide** rồi cắt về
+`face_in_wide`: trên view **tight** bộ ước lượng không còn nền để neo và trả về một **mặt phẳng
+nghiêng** (233 → 107 trên một mặt thật). Ảnh giả **không được đo** — gán toàn 0 theo định
+nghĩa, vì bộ ước lượng sẽ bị lừa bởi khuôn mặt trong ảnh.
+
+Chất lượng nhãn, tương quan từng ảnh với hình trung bình, 60 mặt thật mỗi nguồn:
+
+| nguồn | cạnh vào | trung vị | p10 | số âm | ≥ 0,5 |
+|---|---|---|---|---|---|
+| celeba | 126 | 0,558 | 0,117 | 2 | 53% |
+| celeba | **224** | **0,757** | **0,417** | 1 | **83%** |
+| celeba | 350 | 0,763 | 0,420 | 2 | 82% |
+| lcc | 126 | 0,731 | 0,001 | 6 | 77% |
+| lcc | **224** | **0,802** | **0,675** | **0** | **97%** |
+| lcc | 350 | 0,797 | 0,688 | 0 | 97% |
+
+Điểm gãy nằm đúng ở **224**: 126 đưa vào một phần năm nhãn rác ở celeba, còn 350 không thêm
+gì. Hình trung bình của cả hai nguồn **ra dạng khuôn mặt** — giữa gần, rìa xa.
+
+Nhãn lưu ở lưới **63** và chỉ hạ về 21 ở bước cuối: các phép augment lấy mẫu lại nó, và một
+nhát cắt 0,7 trên lưới 21 đọc về chỉ còn **0,735** tương quan với chính crop của nó. Phép
+kiểm căn khớp nay nằm trong bộ test, không phải trong đầu tôi.
+
+## 16.6. Kết quả: giám sát độ sâu làm tệ đi
+
+Hai run, cùng 36 shard, cùng 5 epoch, cùng seed, khác **đúng một biến** là `depth_weight`.
+
+| epoch | `nodepth` bắt giả @3 | `depth` bắt giả @3 |
+|---|---|---|
+| 0 | 0 | 0 |
+| 1 | 6 | **14** |
+| 2 | 10 | 11 |
+| 3 | **20** | 3 |
+| 4 | 19 | 7 |
+
+Chấm theo tiêu chí nghiệm thu — không được loại mặt thật nào:
+
+| | giả cao nhất | thật thấp nhất | **thật bị loại** |
+|---|---|---|---|
+| `nodepth` ep3 | 0,4887 | 0,4763 | **6** |
+| `depth` ep3 | 0,4554 | 0,4428 | **10** |
+
+`dev_gap` cuối run: −0,0008 với −0,0232. Đối chứng thắng trên mọi thước.
+
+**Cơ chế hỏng xác định được**, nhờ chỉ số đặt ra trước khi chạy. Hàm mất mát của riêng đầu
+depth: **0,3334 → 0,2552 → 0,2495 → 0,2438**. Mốc 0,3334 chính là nghiệm tầm thường *"đoán
+phẳng hết"* (bằng tỉ lệ mặt thật trong pool). Nó **tụt xuống rồi chững ngay sau epoch 1**.
+
+Tức: đầu phụ **học được**, nhưng **cái thân không dùng**, và ràng buộc thừa làm nhiệm vụ chính
+tệ đi — **y hệt chế độ hỏng của `patch` ở §11**.
+
+**Đầu phụ trên nhánh này: 0/3.** `patch` −0,096 AUC, SSDG −0,257 AUC, depth kém đối chứng trên
+mọi thước.
+
+**Giới hạn của phép thử này**: pilot chỉ dùng **36 shard CelebA thuần**. Phép so là công bằng
+vì hai bên cùng pool, nhưng kết luận đúng cho **pool đó**, chưa đúng cho pool đầy đủ. Kiểm
+tiếp tốn 2,5 giờ sinh nhãn cộng 45 phút train; với thành tích 0/3 thì chưa làm.
+
+## 16.7. Chỗ đứng sau ngày 15/09
+
+**Bảy lần chạy, năm hướng, cùng một kiểu hỏng.** Hiệu chỉnh một trục, ba trục, đổi tỉ trọng
+nguồn, SSDG, giám sát độ sâu — mọi hướng đều đỉnh rất sớm rồi rơi, trong khi val pool lên đều
+từng mốc một.
+
+**Chưa checkpoint nào đạt mốc nghiệm thu.** Bản tốt nhất cả ngày loại **6 mặt thật**.
+
+**Cổng bề mặt vẫn là thứ duy nhất đạt cả hai vế**: 25/25 khung giả điện thoại 1, 4/4 điện
+thoại 2 (§8), 0/68 chặn oan. Và quét toàn bộ góc ghép cho **trọng số tối ưu của điểm model
+bằng 0**.
+
+**Lỗ hổng lớn nhất còn lại là cùng một lỗ hổng từ đầu ngày**: 0 khung ảnh giả **sắc nét** —
+điện thoại sát ống kính, màn hình sáng hết cỡ. Mệnh đề "mờ ⇒ giả" vẫn **chưa thể bác bỏ**,
+mà chưa bác bỏ được thì chưa phải bằng chứng. Ca chụp theo nút bấm dựng ngày 15/09 lưu được
+12 khung RAW trên board mỗi chuyến, đủ cho phép bác bỏ đó.
