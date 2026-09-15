@@ -397,6 +397,14 @@ BLUR_OFFSET = 0.431
 BLUR_FLOOR = 1.05
 BLUR_CEILING = 2.0
 BLUR_PASSES = 2
+# One step may not land, and a gain far from 1 turns a crop into a flat or a
+# clipped one, so each pass is bounded and close enough ends it (KEHOACH 3).
+TRIM_TOLERANCE = 0.05
+TRIM_FLOOR = 0.4
+TRIM_CEILING = 2.5
+# Saturation grows sublinearly in the gain that drives it, since stretching a
+# pixel from its grey raises the maximum the ratio divides by (KEHOACH 3).
+TRIM_PASSES = 4
 
 
 def surface_of(crop: np.ndarray) -> float:
@@ -406,6 +414,50 @@ def surface_of(crop: np.ndarray) -> float:
     bend = (grey[:-2, 1:-1] + grey[2:, 1:-1] + grey[1:-1, :-2] + grey[1:-1, 2:]
             - 4.0 * grey[1:-1, 1:-1])
     return float(np.abs(bend).mean())
+
+
+def brightness_of(crop: np.ndarray) -> float:
+    """Mean luma, on the same weights the surface measure and the board use."""
+    return float((crop.astype(np.float64) @ np.array([0.299, 0.587, 0.114])).mean())
+
+
+def saturation_of(crop: np.ndarray) -> float:
+    """Mean per-pixel saturation, the quantity the model's fourth plane carries."""
+    values = crop.astype(np.float64)
+    high, low = values.max(axis=2), values.min(axis=2)
+    return float(((high - low) / np.maximum(high, 1e-6)).mean())
+
+
+def brightened(sample: SpoofSample, gain: float) -> SpoofSample:
+    """Scale luma, which leaves saturation where it was (measurements 41)."""
+    return sample.mapped(
+        lambda view: np.clip(view.astype(np.float64) * gain, 0.0, 255.0).astype(np.uint8)
+    )
+
+
+def saturated(sample: SpoofSample, gain: float) -> SpoofSample:
+    """Stretch each pixel away from its own grey, which holds luma exactly."""
+
+    def stretch(view: np.ndarray) -> np.ndarray:
+        values = view.astype(np.float64)
+        grey = (values @ np.array([0.299, 0.587, 0.114]))[..., None]
+        return np.clip(grey + gain * (values - grey), 0.0, 255.0).astype(np.uint8)
+
+    return sample.mapped(stretch)
+
+
+def toward(sample: SpoofSample, aim: float, measure, apply_gain) -> SpoofSample:
+    """Walk a crop to `aim` by repeated proportional correction (KEHOACH 3).
+
+    Clipping at both ends makes one step undershoot, and the measures are not
+    linear in the gain they are driven by.
+    """
+    for _ in range(TRIM_PASSES):
+        seen = measure(sample.tight)
+        if seen <= 0.0 or abs(seen - aim) <= TRIM_TOLERANCE * aim:
+            break
+        sample = apply_gain(sample, min(max(aim / seen, TRIM_FLOOR), TRIM_CEILING))
+    return sample
 
 
 def radius_for(ratio: float) -> float:
@@ -513,6 +565,8 @@ class SpoofShardDataset(IterableDataset):
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
         surface_band: tuple[float, float] = (0.0, 0.0),
+        bright_band: tuple[float, float] = (0.0, 0.0),
+        chroma_band: tuple[float, float] = (0.0, 0.0),
         motion_blur_probability: float | None = None,
         keep_wide: bool = True,
         interleave: int = INTERLEAVE_SHARDS,
@@ -548,6 +602,8 @@ class SpoofShardDataset(IterableDataset):
         self.translate_probability = translate_probability
         self.translate_range = translate_range
         self.surface_band = tuple(surface_band)
+        self.bright_band = tuple(bright_band)
+        self.chroma_band = tuple(chroma_band)
         self.motion_blur_probability = motion_blur_probability
         self.epoch = 0
 
@@ -641,8 +697,12 @@ class SpoofShardDataset(IterableDataset):
                 )
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
-            # Last in the chain, since recompress moves the number this aims at, and
-            # one band for both labels: the pool's gap points the other way (KEHOACH 3).
+            # Last in the chain, since recompress moves the numbers these aim at, and
+            # each band spans one label only, the camera's live faces (KEHOACH 3).
+            if self.chroma_band[1] > 0.0:
+                sample = toward(sample, rng.uniform(*self.chroma_band), saturation_of, saturated)
+            if self.bright_band[1] > 0.0:
+                sample = toward(sample, rng.uniform(*self.bright_band), brightness_of, brightened)
             if self.surface_band[1] > 0.0:
                 sample = aimed_at(sample, rng.uniform(*self.surface_band))
             if self.shuffle_buffer <= 0:

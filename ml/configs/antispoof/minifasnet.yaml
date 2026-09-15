@@ -65,9 +65,13 @@ data:
     backlight_range: [0.0, 0.0]
     # Low rather than off: it erases the same band, but a kiosk sees hand shake.
     motion_blur_probability: 0.15
-    # p5 to p95 of the surface detail this camera delivers, both labels pooled: a
-    # band per label carries the answer, the pool's gap running backwards (KEHOACH 3).
-    surface_band: [0.1018, 0.2110]
+    # p5 to p95 over the camera's own live faces, which is a property of the lens
+    # chain rather than of a class, so attacks ride the same transform (KEHOACH 3).
+    surface_band: [0.1287, 0.2163]
+    bright_band: [54.31, 120.77]
+    # The pool sits 1.82x below this, and exposure does not explain the gap
+    # (measurements 41); the fourth input plane carries exactly this (KEHOACH 3).
+    chroma_band: [0.3557, 0.7982]
     # Every source record below 1.0x is an attack (measurements 12.5).
     crop_scale_range: [0.7, 1.0]
     # A gate, because this crop only ever narrows (measurements 15.1).

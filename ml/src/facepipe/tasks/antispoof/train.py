@@ -163,6 +163,8 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         translate_probability=float(params.get("translate_probability", TRANSLATE_PROBABILITY)),
         translate_range=float(params.get("translate_range", TRANSLATE_RANGE)),
         surface_band=tuple(params.get("surface_band", (0.0, 0.0))),
+        bright_band=tuple(params.get("bright_band", (0.0, 0.0))),
+        chroma_band=tuple(params.get("chroma_band", (0.0, 0.0))),
         motion_blur_probability=params.get("motion_blur_probability"),
         keep_wide=keeps_wide(cfg),
     )
