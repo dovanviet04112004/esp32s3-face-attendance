@@ -25,6 +25,7 @@ from torch.utils.data import IterableDataset, get_worker_info
 from facepipe.data.prepare.images_to_wds import read_shard
 
 CROP_SIZE = 81
+LIVE, SPOOF = 0, 1
 SHUFFLE_BUFFER = 2048
 # Shards read at once, so one batch carries several capture setups (KEHOACH 3).
 INTERLEAVE_SHARDS = 12
@@ -78,7 +79,7 @@ class SpoofSample:
     label: int
     wide_scale: float  # scale the wide view actually reached
     domain: int = 0    # which shard folder it came from (KEHOACH 3)
-    replay: bool = False  # shown on a screen rather than printed
+    printed: bool = False  # on paper, which keeps its grain rather than losing it
     face_in_wide: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
     def views(self) -> list[np.ndarray]:
@@ -570,9 +571,7 @@ class SpoofShardDataset(IterableDataset):
                     wide_scale=reached,
                     face_in_wide=tuple(meta.get("face_in_wide") or centred_face(reached)),
                     domain=domain,
-                    # Read per record rather than per folder: CelebA mixes the two
-                    # media under one name and must stay out of this (KEHOACH 3).
-                    replay="replay" in str(meta.get("split", "")),
+                    printed="print" in str(meta.get("split", "")),
                 )
             live = standing
 
@@ -605,9 +604,10 @@ class SpoofShardDataset(IterableDataset):
                     self.backlight_range,
                     self.motion_blur_probability,
                 )
-                # Screens only: paper keeps its grain, and blurring it would teach
-                # the branch that print looks alive (KEHOACH 3).
-                if (sample.replay and self.screen_blur_range[1] > 0.0
+                # Every attack but paper, which keeps its grain: blurring that would
+                # teach the branch print looks alive (KEHOACH 3).
+                if (sample.label == SPOOF and not sample.printed
+                        and self.screen_blur_range[1] > 0.0
                         and rng.random() < self.screen_blur_probability):
                     sample = screen_blur(sample, rng.uniform(*self.screen_blur_range))
             if self.train and rng.random() < self.recompress_probability:

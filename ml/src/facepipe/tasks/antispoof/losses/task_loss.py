@@ -15,7 +15,7 @@ from torch import nn
 
 from facepipe.core.registry import LOSSES
 
-LIVE, SPOOF = 0, 1
+from ..data import LIVE, SPOOF
 
 
 class SpoofBatch(NamedTuple):
