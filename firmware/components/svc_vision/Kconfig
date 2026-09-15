@@ -42,9 +42,9 @@ menu "Vision pipeline"
         range 0 999
         help
             Written to NVS key vision/surface_drop on the first boot only. On 93
-            device frames 100 blocks none of 68 real faces and catches 24 of 25
-            attacks, but the table runs a host replica of area_rows, not the
-            board; seeded off until the parity measurement lands (KEHOACH 3).
+            device frames 80 blocks none of 68 real faces and catches all 25
+            attacks, the last of them by 0.0027; seeded off until someone decides
+            a door may reject on this (KEHOACH 3).
 
     config VISION_SEED_PRESENT_MM
         int "Seed for the distance that counts as someone standing there (mm)"
