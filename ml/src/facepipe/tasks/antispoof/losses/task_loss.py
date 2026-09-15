@@ -24,6 +24,8 @@ class SpoofBatch(NamedTuple):
     labels: torch.Tensor
     wide_scale: torch.Tensor
     domains: torch.Tensor
+    depth: torch.Tensor | None = None
+    depth_trust: torch.Tensor | None = None
 
 
 @LOSSES.register("antispoof_task")
@@ -39,6 +41,8 @@ class SpoofTaskLoss(nn.Module):
         domain_weight: float = 0.0,
         triplet_weight: float = 0.0,
         triplet_margin: float = 0.3,
+        depth_weight: float = 0.0,
+        depth_trust_floor: float = 0.3,
     ) -> None:
         super().__init__()
         weight = torch.tensor([live_weight, 1.0], dtype=torch.float32)
@@ -48,6 +52,8 @@ class SpoofTaskLoss(nn.Module):
         self.domain_weight = domain_weight
         self.triplet_weight = triplet_weight
         self.triplet_margin = triplet_margin
+        self.depth_weight = depth_weight
+        self.depth_trust_floor = depth_trust_floor
 
     # Live of every domain is one class while each domain's attacks are their own,
     # so real faces close up and attacks stay apart (KEHOACH 3, SSDG).
@@ -65,6 +71,18 @@ class SpoofTaskLoss(nn.Module):
             return features.sum() * 0.0
         return nn.functional.relu(far - near + self.triplet_margin)[usable].mean()
 
+    # Labels the estimator got wrong are dropped rather than learned: a tenth of
+    # the live faces disagree with the mean shape it produces (KEHOACH 3).
+    def relief(self, shape: torch.Tensor, batch: SpoofBatch) -> torch.Tensor:
+        if batch.depth is None or batch.depth_trust is None:
+            return shape.sum() * 0.0
+        want = batch.depth.to(shape.dtype).unsqueeze(1)
+        keep = (batch.depth_trust >= self.depth_trust_floor).to(shape.dtype)
+        if not bool(keep.any()):
+            return shape.sum() * 0.0
+        cell = nn.functional.mse_loss(shape, want, reduction="none").mean(dim=(1, 2, 3))
+        return (cell * keep).sum() / keep.sum()
+
     def forward(
         self,
         output: torch.Tensor | tuple[torch.Tensor, ...],
@@ -75,6 +93,7 @@ class SpoofTaskLoss(nn.Module):
         patch = parts[1] if len(parts) > 1 else None
         features = parts[2] if len(parts) > 2 else None
         domain_logits = parts[3] if len(parts) > 3 else None
+        shape = parts[4] if len(parts) > 4 else None
         # The trainer moves the model, not the loss beside it, so this
         # buffer follows the logits rather than assuming anyone moved it.
         weight = self.class_weight.to(logits.device, logits.dtype)
@@ -92,6 +111,8 @@ class SpoofTaskLoss(nn.Module):
                 )
         if features is not None and self.triplet_weight > 0.0:
             total = total + self.triplet_weight * self.asymmetric(features, batch)
+        if shape is not None and self.depth_weight > 0.0:
+            total = total + self.depth_weight * self.relief(shape, batch)
         if patch is None or self.patch_weight == 0.0:
             return total
         truth = (batch.labels == LIVE).to(patch.dtype).view(-1, 1, 1, 1).expand_as(patch)

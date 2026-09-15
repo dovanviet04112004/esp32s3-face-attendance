@@ -68,6 +68,8 @@ data:
     # Streams held open at once. One per folder first, the rest to the folder with
     # the most shards left, so this sets what share each source gets (KEHOACH 3).
     interleave: 12
+    # 21x21 face shape per record, flat for an attack (KEHOACH 3).
+    depth_maps: data/interim/antispoof/depth_maps
     # p5 to p95 over the camera's own live faces, which is a property of the lens
     # chain rather than of a class, so attacks ride the same transform (KEHOACH 3).
     surface_band: [0.1287, 0.2163]
@@ -119,6 +121,10 @@ loss:
   live_weight: 1.776
   # Read only while patch_supervision is on, which it is not (KEHOACH 3).
   patch_weight: 1.0
+  # The auxiliary task, and the agreement below which a label is the estimator's
+  # own error rather than a face (measurements 42).
+  depth_weight: 0.5
+  depth_trust_floor: 0.3
   # Off, as KEHOACH 3 records it: the run that carried it scored 0.5938 on the
   # camera against 0.8512 for the same pool without it (measurements 12.2).
   domain_weight: 0.0

@@ -587,6 +587,7 @@ class SpoofShardDataset(IterableDataset):
         roll_range: tuple[float, float] = ROLL_RANGE,
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
+        depth_root: Path | None = None,
         surface_band: tuple[float, float] = (0.0, 0.0),
         bright_band: tuple[float, float] = (0.0, 0.0),
         chroma_band: tuple[float, float] = (0.0, 0.0),
@@ -624,6 +625,7 @@ class SpoofShardDataset(IterableDataset):
         self.roll_range = roll_range
         self.translate_probability = translate_probability
         self.translate_range = translate_range
+        self.depth_root = Path(depth_root) if depth_root else None
         self.surface_band = tuple(surface_band)
         self.bright_band = tuple(bright_band)
         self.chroma_band = tuple(chroma_band)
@@ -647,15 +649,26 @@ class SpoofShardDataset(IterableDataset):
             return shards
         return shards[info.id :: info.num_workers]
 
+    def _labels_for(self, shard: Path) -> tuple | None:
+        """The depth npz written beside this shard, or None when it was not made."""
+        if self.depth_root is None:
+            return None
+        beside = self.depth_root / shard.parent.name / f"{shard.stem}.npz"
+        if not beside.is_file():
+            return None
+        held = np.load(beside)
+        return held["depth"], held["trust"]
+
     def _open(self, shards: list[Path], live: list) -> None:
         # Picked by folder, not by position: the paired set repeats five times in
         # the split and would otherwise fill the window on its own (KEHOACH 3).
         while shards and len(live) < self.interleave:
-            held = {domain for domain, _ in live}
+            held = {domain for domain, _, _ in live}
             at = next((i for i, s in enumerate(shards)
                        if self.domains.index(s.parent.name) not in held), 0)
             shard = shards.pop(at)
-            live.append((self.domains.index(shard.parent.name), iter(read_shard(shard))))
+            live.append((self.domains.index(shard.parent.name),
+                         enumerate(read_shard(shard)), self._labels_for(shard)))
 
     def _records(self) -> Iterator[SpoofSample]:
         # One folder is one domain, so reading shards end to end hands a batch a
@@ -667,11 +680,12 @@ class SpoofShardDataset(IterableDataset):
             if not live:
                 return
             standing = []
-            for domain, stream in live:
-                record = next(stream, None)
-                if record is None:
+            for domain, stream, labels in live:
+                pair = next(stream, None)
+                if pair is None:
                     continue
-                standing.append((domain, stream))
+                standing.append((domain, stream, labels))
+                index, record = pair
                 meta = json.loads(record["json"])
                 reached = float(meta["wide_scale"])
                 # The crop-scale augmentation cuts the tight view out of this one,
@@ -686,6 +700,10 @@ class SpoofShardDataset(IterableDataset):
                     wide_scale=reached,
                     face_in_wide=tuple(meta.get("face_in_wide") or centred_face(reached)),
                     domain=domain,
+                    depth=None if labels is None or index >= len(labels[0])
+                    else labels[0][index].astype(np.float32),
+                    depth_trust=0.0 if labels is None or index >= len(labels[1])
+                    else float(labels[1][index]),
                 )
             live = standing
 
@@ -756,11 +774,18 @@ def to_tensor(image: np.ndarray, chroma: bool = False) -> torch.Tensor:
     return torch.cat((planes, chroma_of(planes))) if chroma else planes
 
 
+def supervised(depth: np.ndarray | None) -> np.ndarray:
+    """The label at the size the head reads, resampled once and only here."""
+    if depth is None:
+        return np.zeros((DEPTH_TARGET, DEPTH_TARGET), dtype=np.float32)
+    return resized(np.ascontiguousarray(depth, dtype=np.float32), DEPTH_TARGET)
+
+
 def collate(
     batch: list[SpoofSample],
     chroma: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Stack into (tight, wide, label, wide_scale, domain) for the model and loss.
+) -> tuple[torch.Tensor, ...]:
+    """Stack into (tight, wide, label, scale, domain, depth, trust) for the loss.
 
     A one-backbone run carries no context view, and the empty stand-in keeps the
     tuple the same shape for every caller.
@@ -774,4 +799,6 @@ def collate(
     labels = torch.tensor([s.label for s in batch], dtype=torch.long)
     scales = torch.tensor([s.wide_scale for s in batch], dtype=torch.float32)
     domains = torch.tensor([s.domain for s in batch], dtype=torch.long)
-    return tight, wide, labels, scales, domains
+    shapes = torch.stack([torch.from_numpy(supervised(s.depth)) for s in batch])
+    trust = torch.tensor([s.depth_trust for s in batch], dtype=torch.float32)
+    return tight, wide, labels, scales, domains, shapes, trust

@@ -166,6 +166,7 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         roll_range=tuple(params.get("roll_range", ROLL_RANGE)),
         translate_probability=float(params.get("translate_probability", TRANSLATE_PROBABILITY)),
         translate_range=float(params.get("translate_range", TRANSLATE_RANGE)),
+        depth_root=Path(params["depth_maps"]) if params.get("depth_maps") else None,
         surface_band=tuple(params.get("surface_band", (0.0, 0.0))),
         bright_band=tuple(params.get("bright_band", (0.0, 0.0))),
         chroma_band=tuple(params.get("chroma_band", (0.0, 0.0))),
@@ -206,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     # would silently leave the head sized for the old one (KEHOACH 3).
     if cfg.loss.get("domain_weight", 0.0) > 0.0:
         params["domains"] = len(train_set.domains)
+    params["depth_supervision"] = cfg.loss.get("depth_weight", 0.0) > 0.0
     model = MODELS.build({"name": cfg.model.name, "params": params})
     loader = build_loader(cfg, train_set, train=True)
     val_set = build_dataset(cfg, cfg.data.params.get("val_split", "valid"), train=False)
@@ -223,11 +225,12 @@ def main(argv: list[str] | None = None) -> int:
     scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
 
     def step_fn(batch: tuple[torch.Tensor, ...]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        tight, wide, labels, wide_scale, domains = batch
+        tight, wide, labels, wide_scale, domains, shapes, trust = batch
         train_set.epoch = trainer.state.epoch
         # trainer.model, not the module above: a compiled run must reach the
         # wrapper the trainer built, or the graph is traced twice.
-        loss = criterion(trainer.model((tight, wide)), SpoofBatch(labels, wide_scale, domains))
+        loss = criterion(trainer.model((tight, wide)),
+                         SpoofBatch(labels, wide_scale, domains, shapes, trust))
         return loss, {"task": loss.detach(), "total": loss.detach()}
 
     held = device_frames(cfg)
@@ -245,9 +248,9 @@ def main(argv: list[str] | None = None) -> int:
         scores: list[np.ndarray] = []
         truth: list[np.ndarray] = []
         for batch in val_loader:
-            tight, wide, labels, wide_scale, domains = trainer.to_device(batch)
+            tight, wide, labels, wide_scale, domains, shapes, trust = trainer.to_device(batch)
             logits = module((tight, wide))
-            batch_meta = SpoofBatch(labels, wide_scale, domains)
+            batch_meta = SpoofBatch(labels, wide_scale, domains, shapes, trust)
             meter.update({"loss": criterion(logits, batch_meta)}, n=1)
             scores.append(logits.softmax(dim=1)[:, LIVE].float().cpu().numpy())
             truth.append(labels.cpu().numpy())
