@@ -41,6 +41,7 @@ from .data import (
     WHITE_BALANCE_RANGE,
     SpoofShardDataset,
     collate,
+    surface_of,
     to_tensor,
 )
 from .eval import keeps_wide, summary
@@ -72,6 +73,14 @@ DEVICE_LIVE_MIN = 0.75
 DEVICE_BLOCKED_BUDGET = 3          # real faces this camera may turn away
 
 
+def ranking_auc(live: np.ndarray, attack: np.ndarray) -> float:
+    """Probability a live frame outranks an attack, counted on ranks rather than bins."""
+    ranks = np.concatenate([live, attack]).argsort().argsort() + 1
+    return float(
+        (ranks[: live.size].sum() - live.size * (live.size + 1) / 2) / (live.size * attack.size)
+    )
+
+
 def device_frames(cfg: Config) -> tuple[torch.Tensor, np.ndarray] | None:
     """The held-out camera frames, already cropped, or None when none are named."""
     named = (cfg.data.params or {}).get("device_eval")
@@ -80,6 +89,21 @@ def device_frames(cfg: Config) -> tuple[torch.Tensor, np.ndarray] | None:
     blob = np.load(Path(named))
     chroma = bool(cfg.model.params.get("chroma", False))
     return torch.stack([to_tensor(crop, chroma) for crop in blob["crops"]]), blob["labels"]
+
+
+def surface_ceiling(cfg: Config) -> float | None:
+    """What a bare sharpness threshold already scores on the held-out frames.
+
+    A model below this earned nothing the firmware could not do with one compare,
+    and this branch has published a device number that sat under it (KEHOACH 4.2).
+    """
+    named = (cfg.data.params or {}).get("device_eval")
+    if not named:
+        return None
+    blob = np.load(Path(named))
+    sharp = np.array([surface_of(crop) for crop in blob["crops"]])
+    live, attack = sharp[blob["labels"] == 0], sharp[blob["labels"] == 1]
+    return ranking_auc(live, attack) if live.size and attack.size else None
 
 
 def on_device(module: nn.Module, held, device) -> dict[str, float]:
@@ -100,17 +124,15 @@ def on_device(module: nn.Module, held, device) -> dict[str, float]:
     live, attack = scores[labels == 0], scores[labels == 1]
     if not live.size or not attack.size:
         return {}
-    acer = min(((live < bar).mean() + (attack >= bar).mean()) / 2 for bar in np.sort(scores))
-    ranks = np.concatenate([live, attack]).argsort().argsort() + 1
-    auc = (ranks[: live.size].sum() - live.size * (live.size + 1) / 2) / (live.size * attack.size)
+    acer = min(((live < cut).mean() + (attack >= cut).mean()) / 2 for cut in np.sort(scores))
     # Held at one cost in real faces, since dev_caught moves with the distribution.
-    bar = np.sort(live)[DEVICE_BLOCKED_BUDGET] if live.size > DEVICE_BLOCKED_BUDGET else 0.0
+    budget = np.sort(live)[DEVICE_BLOCKED_BUDGET] if live.size > DEVICE_BLOCKED_BUDGET else 0.0
     return {
-        "dev_auc": float(auc),
+        "dev_auc": ranking_auc(live, attack),
         "dev_acer": float(acer),
         "dev_blocked": float((live < DEVICE_LIVE_MIN).sum()),
         "dev_caught": float((attack < DEVICE_LIVE_MIN).sum()),
-        "dev_caught_on_budget": float((attack < bar).sum()),
+        "dev_caught_on_budget": float((attack < budget).sum()),
     }
 
 
@@ -140,10 +162,7 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         roll_range=tuple(params.get("roll_range", ROLL_RANGE)),
         translate_probability=float(params.get("translate_probability", TRANSLATE_PROBABILITY)),
         translate_range=float(params.get("translate_range", TRANSLATE_RANGE)),
-        live_band=tuple(params.get("live_band", (0.0, 0.0))),
-        attack_band=tuple(params.get("attack_band", (0.0, 0.0))),
-        printed_band=tuple(params.get("printed_band", (0.0, 0.0))),
-        calibrate_eval=bool(params.get("calibrate_eval", False)),
+        surface_band=tuple(params.get("surface_band", (0.0, 0.0))),
         motion_blur_probability=params.get("motion_blur_probability"),
         keep_wide=keeps_wide(cfg),
     )
@@ -240,7 +259,8 @@ def main(argv: list[str] | None = None) -> int:
         val_fn=val_fn,
         best_metric_key="eer",
     )
-    logger.info(f"train={len(train_set)} val={len(val_set)}")
+    ceiling = surface_ceiling(cfg)
+    logger.info(f"train={len(train_set)} val={len(val_set)} surface_ceiling={ceiling}")
     trainer.fit()
     return 0
 

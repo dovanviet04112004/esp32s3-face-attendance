@@ -79,7 +79,6 @@ class SpoofSample:
     label: int
     wide_scale: float  # scale the wide view actually reached
     domain: int = 0    # which shard folder it came from (KEHOACH 3)
-    printed: bool = False  # on paper, which keeps its grain rather than losing it
     face_in_wide: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
     def views(self) -> list[np.ndarray]:
@@ -513,10 +512,7 @@ class SpoofShardDataset(IterableDataset):
         roll_range: tuple[float, float] = ROLL_RANGE,
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
-        live_band: tuple[float, float] = (0.0, 0.0),
-        attack_band: tuple[float, float] = (0.0, 0.0),
-        printed_band: tuple[float, float] = (0.0, 0.0),
-        calibrate_eval: bool = False,
+        surface_band: tuple[float, float] = (0.0, 0.0),
         motion_blur_probability: float | None = None,
         keep_wide: bool = True,
         interleave: int = INTERLEAVE_SHARDS,
@@ -551,10 +547,7 @@ class SpoofShardDataset(IterableDataset):
         self.roll_range = roll_range
         self.translate_probability = translate_probability
         self.translate_range = translate_range
-        self.live_band = tuple(live_band)
-        self.attack_band = tuple(attack_band)
-        self.printed_band = tuple(printed_band)
-        self.calibrate_eval = calibrate_eval
+        self.surface_band = tuple(surface_band)
         self.motion_blur_probability = motion_blur_probability
         self.epoch = 0
 
@@ -614,7 +607,6 @@ class SpoofShardDataset(IterableDataset):
                     wide_scale=reached,
                     face_in_wide=tuple(meta.get("face_in_wide") or centred_face(reached)),
                     domain=domain,
-                    printed="print" in str(meta.get("split", "")),
                 )
             live = standing
 
@@ -649,14 +641,10 @@ class SpoofShardDataset(IterableDataset):
                 )
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
-            # Last in the chain, since compression moves the number this aims at,
-            # and the pool's sharp attacks have no counterpart here (KEHOACH 3).
-            if self.train or self.calibrate_eval:
-                band = self.printed_band if sample.printed else (
-                    self.attack_band if sample.label == SPOOF else self.live_band)
-                if band[1] > 0.0:
-                    aim = rng.uniform(*band) if self.train else sum(band) / 2.0
-                    sample = aimed_at(sample, aim)
+            # Last in the chain, since recompress moves the number this aims at, and
+            # one band for both labels: the pool's gap points the other way (KEHOACH 3).
+            if self.surface_band[1] > 0.0:
+                sample = aimed_at(sample, rng.uniform(*self.surface_band))
             if self.shuffle_buffer <= 0:
                 yield sample
                 continue
