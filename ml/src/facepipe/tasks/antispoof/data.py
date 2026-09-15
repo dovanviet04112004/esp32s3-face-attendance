@@ -477,6 +477,7 @@ class SpoofShardDataset(IterableDataset):
         pool_blur_range: tuple[float, float] = (0.0, 0.0),
         screen_blur_probability: float = 0.0,
         screen_blur_range: tuple[float, float] = (0.0, 0.0),
+        calibrate_eval: bool = False,
         motion_blur_probability: float | None = None,
         keep_wide: bool = True,
         interleave: int = INTERLEAVE_SHARDS,
@@ -512,6 +513,7 @@ class SpoofShardDataset(IterableDataset):
         self.translate_probability = translate_probability
         self.translate_range = translate_range
         self.pool_blur_range = tuple(pool_blur_range)
+        self.calibrate_eval = calibrate_eval
         self.screen_blur_probability = screen_blur_probability
         self.screen_blur_range = tuple(screen_blur_range)
         self.motion_blur_probability = motion_blur_probability
@@ -606,14 +608,18 @@ class SpoofShardDataset(IterableDataset):
                     self.backlight_range,
                     self.motion_blur_probability,
                 )
-                # The pool is 1.3x sharper than this camera at both labels, so the
-                # first radius shifts the level and the second adds the gap.
+            # The pool is 1.3x sharper than this camera at both labels, so the first
+            # radius shifts the level and the second adds the gap (KEHOACH 3).
+            if self.train or self.calibrate_eval:
+                mid = sum(self.pool_blur_range) / 2.0
                 if self.pool_blur_range[1] > 0.0:
-                    sample = soften(sample, rng.uniform(*self.pool_blur_range))
-                if (sample.label == SPOOF and not sample.printed
-                        and self.screen_blur_range[1] > 0.0
-                        and rng.random() < self.screen_blur_probability):
-                    sample = soften(sample, rng.uniform(*self.screen_blur_range))
+                    sample = soften(sample, rng.uniform(*self.pool_blur_range)
+                                    if self.train else mid)
+                attack = sample.label == SPOOF and not sample.printed
+                drawn = rng.random() < self.screen_blur_probability if self.train else True
+                if attack and drawn and self.screen_blur_range[1] > 0.0:
+                    sample = soften(sample, rng.uniform(*self.screen_blur_range) if self.train
+                                    else sum(self.screen_blur_range) / 2.0)
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
             if self.shuffle_buffer <= 0:

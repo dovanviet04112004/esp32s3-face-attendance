@@ -71,6 +71,9 @@ data:
     # Screens only, never print. Pillow radius reproducing the 1.32-2.16 sharpness
     # drop measured on the device, which sigma would not (KEHOACH 3).
     screen_blur_range: [0.70, 1.05]
+    # Val takes the same domain shift, at the midpoint and with no random
+    # draw, so the split it selects on is the one training sees (KEHOACH 3).
+    calibrate_eval: true
     # Every source record below 1.0x is an attack (measurements 12.5).
     crop_scale_range: [0.7, 1.0]
     # A gate, because this crop only ever narrows (measurements 15.1).

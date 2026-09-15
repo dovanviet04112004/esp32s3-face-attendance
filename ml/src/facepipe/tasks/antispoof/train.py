@@ -138,6 +138,7 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         translate_range=float(params.get("translate_range", TRANSLATE_RANGE)),
         pool_blur_range=tuple(params.get("pool_blur_range", (0.0, 0.0))),
         screen_blur_probability=float(params.get("screen_blur_probability", 0.0)),
+        calibrate_eval=bool(params.get("calibrate_eval", False)),
         screen_blur_range=tuple(params.get("screen_blur_range", (0.0, 0.0))),
         motion_blur_probability=params.get("motion_blur_probability"),
         keep_wide=keeps_wide(cfg),
