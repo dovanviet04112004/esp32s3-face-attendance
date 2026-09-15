@@ -69,6 +69,7 @@ def crop_size(cfg: Config) -> int:
 
 
 DEVICE_LIVE_MIN = 0.75
+DEVICE_BLOCKED_BUDGET = 3          # real faces this camera may turn away
 
 
 def device_frames(cfg: Config) -> tuple[torch.Tensor, np.ndarray] | None:
@@ -102,11 +103,14 @@ def on_device(module: nn.Module, held, device) -> dict[str, float]:
     acer = min(((live < bar).mean() + (attack >= bar).mean()) / 2 for bar in np.sort(scores))
     ranks = np.concatenate([live, attack]).argsort().argsort() + 1
     auc = (ranks[: live.size].sum() - live.size * (live.size + 1) / 2) / (live.size * attack.size)
+    # Held at one cost in real faces, since dev_caught moves with the distribution.
+    bar = np.sort(live)[DEVICE_BLOCKED_BUDGET] if live.size > DEVICE_BLOCKED_BUDGET else 0.0
     return {
         "dev_auc": float(auc),
         "dev_acer": float(acer),
         "dev_blocked": float((live < DEVICE_LIVE_MIN).sum()),
         "dev_caught": float((attack < DEVICE_LIVE_MIN).sum()),
+        "dev_caught_on_budget": float((attack < bar).sum()),
     }
 
 
