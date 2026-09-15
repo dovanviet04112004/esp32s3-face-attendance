@@ -133,6 +133,9 @@ def on_device(module: nn.Module, held, device) -> dict[str, float]:
         "dev_blocked": float((live < DEVICE_LIVE_MIN).sum()),
         "dev_caught": float((attack < DEVICE_LIVE_MIN).sum()),
         "dev_caught_on_budget": float((attack < budget).sum()),
+        # Negative means the tails overlap, and a positive one under a quantisation
+        # step is a separation INT8 cannot carry to the board (KEHOACH 4.2).
+        "dev_gap": float(np.percentile(live, 5) - np.percentile(attack, 95)),
     }
 
 
