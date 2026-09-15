@@ -1001,3 +1001,66 @@ phân phối huấn luyện thay vì ở mép.
 con số 30% ban đầu do tác giả **bịa ra** để "tạo chồng lấn", không rút từ số đo nào. Nhìn lại
 dữ liệu thì **mọi** khung tấn công camera từng chụp đều mịn, trải 0,099 – 0,131; chồng lấn
 giữa hai lớp trên thiết bị đến từ **mặt thật thiếu sáng**, không từ ảnh giả sắc nét.
+
+## 13.10. Hướng đi: hiệu chỉnh thống kê bề mặt của pool theo camera
+
+Sau mười lăm hướng đóng lại bằng số đo, đây là hướng đầu tiên cho kết quả vượt mọi bản cũ
+trên thiết bị. Phát biểu gọn:
+
+> Không sửa model, không thêm cổng bên ngoài. **Sửa dữ liệu huấn luyện cho tới khi thống kê
+> bề mặt của nó trùng với thống kê bề mặt camera thật sự tạo ra** — ở cả hai nhãn, cả mức
+> tuyệt đối lẫn khoảng cách giữa hai lớp.
+
+Ba thành phần, mỗi cái sửa một sai sót đã đo được:
+
+| Thành phần | Sửa cái gì |
+|---|---|
+| Ngừng phá manh mối: hạ nén JPEG, hạ nhoè chuyển động | Pool cũ xoá dải tần số cao khiến manh mối chỉ còn AUC 0,479 (§13.1) |
+| Làm mờ **mọi ảnh giả trừ giấy**, theo phương tiện ghi trong bản ghi | Điều kiện cũ đọc tên thư mục, bỏ sót 64,5% lớp giả (§13.8) |
+| Hai bán kính khớp đồng thời: mức tuyệt đối **và** khoảng cách | Khớp riêng tỉ lệ để lại cả pool nét hơn thiết bị 1,3 lần (§13.9) |
+
+### Bằng chứng
+
+Chấm trên 85 khung OV5640, bản `ep13` của run `20260915-1005_168d426_71e22b`:
+
+| Model | ACER | AUC | Chặn oan | Bắt giả |
+|---|---|---|---|---|
+| 3 kênh — bản đang nằm trên board | 0,3460 | 0,6473 | — | — |
+| chroma 13/09 — bản tốt nhất trước đây | 0,1425 | 0,8668 | **2/64** | 11/21 |
+| Thích nghi thống kê 20 lớp | 0,1245 | 0,9377 | 3/64 | — |
+| **Hiệu chỉnh bề mặt, epoch 14/90** | **0,0469** | **0,9754** | 4/64 | 19/21 |
+
+ACER bằng **một phần ba** mốc nghiệm thu và **một phần ba** bản tốt nhất cũ. AUC là con số cao
+nhất nhánh này từng đo trên thiết bị.
+
+Và cùng lúc ấy, **val trên pool là tệ nhất trong bốn run**: eer 0,2976 so với 0,1814 của run
+mờ-theo-thư-mục, vốn lại là run có điểm thiết bị kém nhất. Đây là dạng sạch nhất của hiện
+tượng ngược dấu ở §12.3, và là lý do việc chấm 85 khung **mỗi chu kỳ val** không phải tiện
+nghi mà là điều kiện cần: nếu chọn theo val thì run đúng đã bị giết từ epoch 2.
+
+### Chưa xong, và không được đọc thành đã xong
+
+**Run mới ở epoch 14 trên 90.** Run trước cũng dẫn ở epoch 6 rồi sụp ở epoch 8.
+
+**Vế thứ hai của mốc chưa đạt**: chặn oan 4/64, mốc là ≤ 2.
+
+**Đây là float.** §4.2 chốt quyết định so **sau INT8**, và chênh lệch đo trước đây là APCER
+0,238 ↔ 0,286.
+
+**Trần không đổi: pool vẫn 0% khung của camera này.** Hướng này khai thác nốt phần còn lại
+của trần cũ; nó không nâng trần.
+
+### Bước tiếp, theo thứ tự
+
+**Thu ~300 khung của board.** Việc duy nhất phá được trần, và nó đồng thời đưa tập chấm từ 21
+khung giả lên ~100 — đủ để một kết luận không bị bốn khung lật ngược như §13.4 đã dính.
+
+**Hiệu chỉnh có điều kiện, không phải một phân phối duy nhất.** Trục đầu tiên là **cỡ mặt**,
+vì §3.3 đã đo được độ nét phụ thuộc bề rộng mặt, mà phép hiệu chỉnh hiện tại áp cùng một dải
+mờ cho crop mặt 64 px lẫn 300 px. Trục thứ hai là **ánh sáng**, vì nhiễu ở gain cao tự nó đẩy
+độ nét lên. Ngưỡng để chia được: **~30 khung mỗi ô**, tức ~180 khung giả cho hai trục — chia
+sớm hơn là chép nhiễu của bốn khung.
+
+**Giữ một phần khung ngoài phép hiệu chuẩn.** Hiệu chỉnh càng tinh càng dễ khớp vào mẫu thay
+vì khớp vào hiện tượng, và nhìn con số thì không phân biệt được; chỉ khung không tham gia
+hiệu chuẩn mới nói được.
