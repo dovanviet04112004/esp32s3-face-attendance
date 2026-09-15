@@ -65,6 +65,9 @@ data:
     backlight_range: [0.0, 0.0]
     # Low rather than off: it erases the same band, but a kiosk sees hand shake.
     motion_blur_probability: 0.15
+    # Streams held open at once. One per folder first, the rest to the folder with
+    # the most shards left, so this sets what share each source gets (KEHOACH 3).
+    interleave: 12
     # p5 to p95 over the camera's own live faces, which is a property of the lens
     # chain rather than of a class, so attacks ride the same transform (KEHOACH 3).
     surface_band: [0.1287, 0.2163]
@@ -116,10 +119,10 @@ loss:
   live_weight: 1.776
   # Read only while patch_supervision is on, which it is not (KEHOACH 3).
   patch_weight: 1.0
-  # SSDG: the domain head sees only live faces, through a reversed gradient, and
-  # the triplet keeps attacks of different domains apart (KEHOACH 3).
-  domain_weight: 0.1
-  triplet_weight: 0.1
+  # Off, as KEHOACH 3 records it: the run that carried it scored 0.5938 on the
+  # camera against 0.8512 for the same pool without it (measurements 12.2).
+  domain_weight: 0.0
+  triplet_weight: 0.0
   triplet_margin: 0.3
   # Live sits at 0.997 in every domain measured, which leaves a threshold nowhere
   # to stand; this caps how far the easy half can be pushed (measurements 40.5).

@@ -27,6 +27,7 @@ from facepipe.core.trainer import Trainer, resolve_device
 from .data import (
     BACKLIGHT_RANGE,
     CROP_SCALE_PROBABILITY,
+    INTERLEAVE_SHARDS,
     CROP_SCALE_RANGE,
     EXPOSURE_CONTRAST_RANGE,
     OCCLUSION_PROBABILITY,
@@ -169,6 +170,7 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         bright_band=tuple(params.get("bright_band", (0.0, 0.0))),
         chroma_band=tuple(params.get("chroma_band", (0.0, 0.0))),
         motion_blur_probability=params.get("motion_blur_probability"),
+        interleave=int(params.get("interleave", INTERLEAVE_SHARDS)),
         keep_wide=keeps_wide(cfg),
     )
 
