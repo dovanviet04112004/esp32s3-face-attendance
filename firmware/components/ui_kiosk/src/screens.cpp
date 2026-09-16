@@ -33,6 +33,9 @@ constexpr float kFrontalYaw = 0.10f;
 constexpr float kTurnYaw = 0.20f;
 constexpr float kTurnSign = -1.0f;
 constexpr float kOpenYaw = 10.0f;
+// Enters the wrong-way line here and leaves it at zero, so a jittering landmark
+// cannot flicker the text (KEHOACH 4.5.5h.2 rule 3).
+constexpr float kWrongYaw = 0.03f;
 constexpr int64_t kPoseHoldMs = 300;
 constexpr int64_t kPoseWaitMs = 6000;
 constexpr int64_t kSampleWaitMs = 15000;
@@ -501,11 +504,13 @@ public:
                 return true;
             }
         }
+        const bool turned_away = astray(seen);
         const int step = gauge(seen);
-        if (step == step_) {
+        if (step == step_ && turned_away == wrong_) {
             return false;
         }
         step_ = step;
+        wrong_ = turned_away;
         return true;
     }
 
@@ -635,7 +640,18 @@ private:
         if (kept_ == 0) {
             return nullptr;
         }
-        return seen.yaw * wanted() < -kFrontalYaw ? "Quay ngược lại" : nullptr;
+        return wrong_ ? "Quay ngược lại" : nullptr;
+    }
+
+    // Any turn against the asked side counts, not only a wide one: silence is
+    // when a person decides the machine is broken (KEHOACH 4.5.5h.2 rule 4).
+    bool astray(const Sight &seen) const noexcept
+    {
+        if (!seen.face || kept_ == 0) {
+            return false;
+        }
+        const float turn = seen.yaw * wanted();
+        return wrong_ ? turn < 0.0f : turn < -kWrongYaw;
     }
 
     void begin() noexcept
@@ -645,6 +661,7 @@ private:
         pose_ms_ = 0;
         best_ = 0.0f;
         armed_ = false;
+        wrong_ = false;
         step_ = -1;
     }
 
@@ -673,6 +690,7 @@ private:
     int step_ = -1;
     bool took_ = false;
     bool armed_ = false;
+    bool wrong_ = false;
     bool failed_ = false;
     bool held_ = false;
 };
