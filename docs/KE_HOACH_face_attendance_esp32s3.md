@@ -1215,7 +1215,10 @@ gốc, float, host), `loss.temperature`; `train.py` nạp teacher đóng băng, 
 và đưa logit của nó vào `SpoofBatch.teacher_logits`; `losses/distill_loss.py` tính KL·T². Ảnh
 của cả pool là đầu vào, nhãn không đọc. Augment theo view wide: `crop_scale_range` 1,2–2,7 với
 xác suất 0,5 vì board kẹp khung khi mặt gần, `occlusion` nhẹ (0,15; 10–25% cạnh) để không che
-mất vành ngữ cảnh, `chroma: false`. Chọn checkpoint bằng **KL trên val**, không bằng EER pool.
+mất vành ngữ cảnh, `chroma: false`, và **`photometric_probability: 0`**: đo trên chính pipeline
+train, khối nhiễu/mờ/phơi sáng làm teacher gọi 59% mặt thật là giả so với 20% trên ảnh sạch,
+trong khi năm augment còn lại không đổi phán quyết của nó (`measurements.md` §41.10); distill
+là học hàm của teacher trên miền cần dùng, không phải dạy nó "mờ là giả". Chọn checkpoint bằng **KL trên val**, không bằng EER pool.
 Nghiệm thu bằng bảng bốn dòng cùng thước 87 khung INT8 + tập lớn + `bench_ai`: teacher, bản
 nhập stem tách đang nạp, student distill, student cũ `0107`; student lên `models.lock.json` chỉ
 khi giữ 62/62 và chặn 25/25 với khe không hẹp hơn bản đang nạp.

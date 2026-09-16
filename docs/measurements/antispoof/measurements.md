@@ -2651,3 +2651,32 @@ không lộ ra. Phép tách của `conv1` áp được cho mọi lớp PReLU, v�
 depthwise thì theo kênh, còn 1×1 `project` thì hấp thụ −a vào cột trọng số (W·diag(a)). Mỗi lớp
 tách tốn thêm một conv trước và một conv sau, nên chỉ đáng cho vài lớp; chọn lớp nào cần một
 lượt đổi-từng-lớp trên chính các tập trên (chưa chạy).
+
+### 41.10 Chuẩn bị distill (ADR-0003): teacher nhìn pipeline train của mình ra sao
+
+Trước khi bấm run, cho teacher (`0728`, PReLU) chấm 30 lô của chính pipeline train (view wide,
+thu 81→80), tắt từng augment một. Số là trung bình p_sống trên ảnh **nhãn thật của pool**:
+
+| Cấu hình augment | p_sống thật | thật bị teacher gọi giả (< 0,5) | p_sống giả |
+|---|---|---|---|
+| đủ như config | 0,419 | **59%** | 0,160 |
+| không augment | 0,775 | 19% | 0,180 |
+| **tắt riêng photometric** | **0,775** | **20%** | 0,267 |
+| tắt riêng recompress | 0,422 | 60% | 0,121 |
+| tắt riêng crop_scale | 0,424 | 59% | 0,154 |
+| tắt riêng occlusion | 0,444 | 55% | 0,168 |
+| tắt roll + translate | 0,473 | 52% | 0,157 |
+
+Một khối gây toàn bộ chênh lệch: **photometric** (Poisson-Gauss, cân trắng, vignette, mờ chuyển
+động, phơi sáng). Teacher coi ảnh mờ và nhiễu là giả — đúng hướng ba mặt thật mờ nhất của board
+nằm thấp (§41.4). Distill với mục tiêu ấy là dạy student "mờ ⇒ giả", nên `photometric_probability`
+về 0 trong `minifasnet_distill.yaml`. 19% mặt thật pool bị teacher gọi giả **trên ảnh sạch** là
+bất đồng giữa nhãn CelebA và teacher (§41.5), không phải lỗi pipeline.
+
+Cùng phép đo cho thấy view wide của shard **hiếm khi đạt 2,7×**: `wide_scale` đạt được có trung vị
+1,35, p90 2,0–2,3, chỉ 4–8% từ 2,5× trở lên, vì ảnh nguồn CelebA là chân dung cắt sát nên
+`fitted_box` kẹp vào biên ảnh. Student vì thế thấy nhiều ngữ cảnh 1,1–2,0× (đúng dải board kẹp
+khung khi mặt gần) và ít ngữ cảnh đầy 2,7×; đó là giới hạn của pool, ghi lại để đọc kết quả.
+
+Run đầu (`20260916-1011`, photometric bật) dừng ở epoch 3 khi phát hiện điều trên: KL val
+3,50 → 4,71 → 1,62 → 1,13, ~3,5 phút một epoch.
