@@ -442,3 +442,60 @@ def test_the_entry_point_trains_and_writes_a_run(tmp_path: Path) -> None:
     assert antispoof_train.main(["--cfg", str(run_config(tmp_path, shards))]) == 0
     run = next((tmp_path / "artifacts" / "antispoof" / "runs").iterdir())
     assert (run / "ckpt" / CKPT_LAST).is_file()
+
+
+def test_distill_loss_is_zero_when_student_matches_teacher():
+    import torch
+
+    from facepipe.tasks.antispoof.losses.distill_loss import SpoofDistillLoss
+    from facepipe.tasks.antispoof.losses.task_loss import SpoofBatch
+
+    logits = torch.tensor([[2.0, -1.0, 0.5], [0.1, 0.2, -3.0]])
+    batch = SpoofBatch(torch.zeros(2, dtype=torch.long), torch.ones(2), logits.clone())
+    assert abs(SpoofDistillLoss(temperature=4.0)(logits, batch).item()) < 1e-6
+    apart = SpoofDistillLoss(temperature=4.0)(logits + torch.tensor([[1.0, 0.0, -1.0]]), batch)
+    assert apart.item() > 0.0
+
+
+def test_distill_loss_refuses_a_batch_without_teacher_logits():
+    import pytest
+    import torch
+
+    from facepipe.tasks.antispoof.losses.distill_loss import SpoofDistillLoss
+    from facepipe.tasks.antispoof.losses.task_loss import SpoofBatch
+
+    with pytest.raises(ValueError):
+        SpoofDistillLoss()(torch.zeros(2, 3), SpoofBatch(torch.zeros(2, dtype=torch.long), torch.ones(2)))
+
+
+def test_wide_only_model_reads_the_second_view_only():
+    import torch
+
+    from facepipe.tasks.antispoof.model.minifasnet_v2_se import MiniFASNetV2SE
+
+    torch.manual_seed(0)
+    model = MiniFASNetV2SE(num_classes=3, views="wide", chroma=False).eval()
+    assert model.tight is None and model.wide is not None
+    tight_a, tight_b = torch.rand(2, 3, 81, 81), torch.rand(2, 3, 81, 81)
+    wide_a, wide_b = torch.rand(2, 3, 81, 81), torch.rand(2, 3, 81, 81)
+    with torch.no_grad():
+        same = model((tight_a, wide_a)), model((tight_b, wide_a))
+        other = model((tight_a, wide_b))
+    assert torch.allclose(same[0], same[1])
+    assert not torch.allclose(same[0], other)
+    assert same[0].shape == (2, 3)
+
+
+def test_input_names_follow_the_views_key():
+    from types import SimpleNamespace
+
+    from facepipe.tasks.antispoof.eval import input_names, keeps_wide
+
+    def cfg(**params):
+        return SimpleNamespace(model=SimpleNamespace(params=params))
+
+    assert input_names(cfg(views="tight")) == ["tight"]
+    assert input_names(cfg(views="wide")) == ["wide"]
+    assert input_names(cfg(views="both")) == ["tight", "wide"]
+    assert input_names(cfg(view="wide")) == ["wide"]
+    assert keeps_wide(cfg(views="wide")) and not keeps_wide(cfg(views="tight"))

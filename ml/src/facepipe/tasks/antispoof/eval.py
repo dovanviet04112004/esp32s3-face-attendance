@@ -192,8 +192,10 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     # A config without a views key belongs to a two-view run; its weights say so,
     # and writing it back is what makes the loader hand that run its second view.
     if cfg.model.name == "minifasnet_v2_se":
+        has_tight = any(k.startswith("tight.") for k in state)
+        has_wide = any(k.startswith("wide.") for k in state)
         cfg.model.params.setdefault(
-            "views", "both" if any(k.startswith("wide.") for k in state) else "tight"
+            "views", "both" if has_tight and has_wide else "wide" if has_wide else "tight"
         )
     model = MODELS.build({"name": cfg.model.name, "params": dict(cfg.model.params)})
     model.load_state_dict(state)
@@ -213,7 +215,8 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     model.eval()
     height, width = cfg.model.input_hw
     # A two-backbone module names its own inputs; any other reads the config.
-    names = ["tight", "wide"] if getattr(model, "wide", None) is not None else input_names(cfg)
+    two = getattr(model, "tight", None) is not None and getattr(model, "wide", None) is not None
+    names = ["tight", "wide"] if two else input_names(cfg)
     planes = 4 if getattr(model, "chroma", False) else 3
     views = tuple(torch.zeros(1, planes, height, width) for _ in names)
     example = views if len(names) > 1 else views[0]
@@ -232,16 +235,18 @@ def wants_chroma(cfg: object) -> bool:
 
 def keeps_wide(cfg: object) -> bool:
     """Whether this run's model reads the context crop at all."""
-    params = cfg.model.params or {}
-    return params.get("views", "tight") == "both" or params.get("view") == "wide"
+    return input_names(cfg) != ["tight"]
 
 
 def input_names(cfg: object) -> list[str]:
     """The graph's inputs in order, which is also what calibration keys its samples by."""
     params = cfg.model.params or {}
-    if params.get("views", "tight") == "both":
+    views = params.get("views", "tight")
+    if views == "both":
         return ["tight", "wide"]
-    return ["wide"] if params.get("view") == "wide" else ["tight"]
+    if views == "wide" or params.get("view") == "wide":
+        return ["wide"]
+    return ["tight"]
 
 
 def frame_label(folder: str) -> int:

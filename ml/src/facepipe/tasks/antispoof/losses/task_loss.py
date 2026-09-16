@@ -23,6 +23,7 @@ class SpoofBatch(NamedTuple):
 
     labels: torch.Tensor
     wide_scale: torch.Tensor
+    teacher_logits: torch.Tensor | None = None
 
 
 @LOSSES.register("antispoof_task")

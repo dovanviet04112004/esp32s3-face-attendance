@@ -1,0 +1,86 @@
+# MiniFASNetV2-SE width 32 on the 2.7x context view, distilled from the imported
+# MiniFASNetV2 run; the pool's labels are never read (ADR-0003, KEHOACH 3).
+
+run:
+  task: antispoof
+  seed: 42
+  deterministic: true
+  tags: [minifasnet_v2_se, wide, distill]
+  notes: student of 20260916-0728 (imported PReLU teacher), KL at T=4, no labels
+
+model:
+  name: minifasnet_v2_se
+  # Odd at every stride-2, which folds PAD into the convolution (KEHOACH 3 layer 1).
+  input_hw: [81, 81]
+  params:
+    # Same three outputs as the teacher, live first, so the board reads it unchanged.
+    num_classes: 3
+    embedding: 128
+    squeeze_excite: true
+    width: 32
+    activation: relu
+    # The context crop alone: the teacher's signal lives in the bezel and the hand (KEHOACH 3).
+    views: wide
+    chroma: false
+    patch_supervision: false
+
+data:
+  name: celeba_spoof
+  batch_size: 96
+  num_workers: 12
+  prefetch_factor: 4
+  params:
+    shards: data/interim/antispoof/celeba_spoof_crops
+    # Images only, labels unread, so CelebA's share is harmless here (ADR-0003).
+    train_split: ["train:0:60", lcc_training,
+                  synth_bonafide, synth_ipad, synth_samsung, synth_webcam, synth_print,
+                  unique_live, unique_replay, unique_live, unique_replay, unique_live,
+                  unique_replay, unique_live, unique_replay, unique_live, unique_replay]
+    val_split: ["test:0:10", lcc_development, unique_live_val, unique_replay_val]
+    test_split: "test:10:"
+    recompress_probability: 0.5
+    quality_range: [30, 95]
+    photometric_probability: 0.5
+    backlight_range: [0.0, 0.0]
+    # The board clamps the square to the frame when a face is near: real faces at
+    # 40 cm reach only 1.2 to 1.7x, so the student must meet that range (KEHOACH 3).
+    crop_scale_range: [1.2, 2.7]
+    crop_scale_probability: 0.5
+    # Light: a wide patch over the context would hide the very bezel the model reads.
+    occlusion_probability: 0.15
+    occlusion_side_range: [0.10, 0.25]
+    roll_probability: 0.35
+    roll_range: [-18.0, 18.0]
+    translate_probability: 0.5
+    translate_range: 0.10
+
+train:
+  # Every label-trained run peaked on the board within five epochs; twenty is
+  # enough to see whether the student tracks the teacher, and resume extends it.
+  epochs: 20
+  amp: true
+  ema_decay: 0.999
+  grad_clip_norm: 5.0
+  val_every_epochs: 1
+  channels_last: true
+  compile: true
+
+optim:
+  name: sgd
+  lr: 0.02
+  weight_decay: 0.0005
+  params:
+    momentum: 0.9
+    nesterov: true
+
+sched:
+  name: cosine
+  warmup_epochs: 2
+  min_lr: 0.0001
+
+loss:
+  name: antispoof_distill
+  teacher_run: artifacts/antispoof/runs/20260916-0728_f20a94a_ec4799
+  # Hinton's range; the teacher is near-certain on most images, so a higher T
+  # keeps the two attack classes' ordering in the target (ADR-0003).
+  temperature: 4.0

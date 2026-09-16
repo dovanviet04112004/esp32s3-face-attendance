@@ -41,12 +41,13 @@ from .data import (
     SpoofShardDataset,
     collate,
 )
-from .eval import keeps_wide, summary
-from .losses import task_loss  # noqa: F401  registers "antispoof_task"
+from .eval import keeps_wide, load_run, summary
+from .losses import distill_loss, task_loss  # noqa: F401  registers both losses
 from .losses.task_loss import LIVE, SpoofBatch
 from .model import minifasnet_v2_se  # noqa: F401  registers "minifasnet_v2_se"
 
 TASK_LOSS = "antispoof_task"
+DISTILL_LOSS = "antispoof_distill"
 
 
 def prefetch(cfg: Config) -> dict[str, int]:
@@ -95,6 +96,24 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
     )
 
 
+def load_teacher(run: Path, device: torch.device) -> tuple[nn.Module, tuple[int, int]]:
+    """The frozen teacher of ADR-0003 and the input size it was imported at."""
+    teacher_cfg, teacher = load_run(run)
+    teacher.to(device).eval()
+    for parameter in teacher.parameters():
+        parameter.requires_grad_(False)
+    height, width = teacher_cfg.model.input_hw
+    return teacher, (int(height), int(width))
+
+
+def sized(view: torch.Tensor, hw: tuple[int, int]) -> torch.Tensor:
+    """The view at the teacher's input size; it reads 80 where the student reads 81."""
+    if tuple(view.shape[-2:]) == hw:
+        return view
+    return nn.functional.interpolate(view, size=hw, mode="bilinear", align_corners=False,
+                                     antialias=True)
+
+
 def build_loader(cfg: Config, dataset: SpoofShardDataset, train: bool) -> DataLoader:
     # Shards already arrive shuffled and the dataset holds a buffer back, so the
     # loader must not shuffle: an IterableDataset cannot be indexed anyway.
@@ -127,23 +146,38 @@ def main(argv: list[str] | None = None) -> int:
     val_set = build_dataset(cfg, cfg.data.params.get("val_split", "valid"), train=False)
     val_loader = build_loader(cfg, val_set, train=False)
 
-    criterion = LOSSES.get(TASK_LOSS)(**cfg.loss)
+    loss_cfg = dict(cfg.loss)
+    loss_name = str(loss_cfg.pop("name", TASK_LOSS))
+    teacher_run = loss_cfg.pop("teacher_run", None)
+    if loss_name == DISTILL_LOSS and teacher_run is None:
+        raise ValueError("loss.teacher_run is required with antispoof_distill (ADR-0003)")
+    criterion = LOSSES.get(loss_name)(**loss_cfg)
 
     # Order matters: a resume casts optimizer momentum onto whichever device it
     # finds the parameters on, and they start on the host.
     device = resolve_device(cfg.train.device)
     model.to(device)
     criterion.to(device)
+    teacher, teacher_hw = (None, None)
+    if loss_name == DISTILL_LOSS:
+        teacher, teacher_hw = load_teacher(Path(teacher_run), device)
 
     optimizer = build_optimizer(model, cfg.optim)
     scheduler = build_scheduler(optimizer, cfg.sched, len(loader), cfg.train.epochs)
 
+    @torch.no_grad()
+    def teacher_logits(tight: torch.Tensor, wide: torch.Tensor) -> torch.Tensor | None:
+        if teacher is None:
+            return None
+        return teacher((sized(tight, teacher_hw), sized(wide, teacher_hw))).float()
+
     def step_fn(batch: tuple[torch.Tensor, ...]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         tight, wide, labels, wide_scale = batch
         train_set.epoch = trainer.state.epoch
+        meta = SpoofBatch(labels, wide_scale, teacher_logits(tight, wide))
         # trainer.model, not the module above: a compiled run must reach the
         # wrapper the trainer built, or the graph is traced twice.
-        loss = criterion(trainer.model((tight, wide)), SpoofBatch(labels, wide_scale))
+        loss = criterion(trainer.model((tight, wide)), meta)
         return loss, {"task": loss.detach(), "total": loss.detach()}
 
     @torch.no_grad()
@@ -161,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         for batch in val_loader:
             tight, wide, labels, wide_scale = trainer.to_device(batch)
             logits = module((tight, wide))
-            batch_meta = SpoofBatch(labels, wide_scale)
+            batch_meta = SpoofBatch(labels, wide_scale, teacher_logits(tight, wide))
             meter.update({"loss": criterion(logits, batch_meta)}, n=1)
             scores.append(logits.softmax(dim=1)[:, LIVE].float().cpu().numpy())
             truth.append(labels.cpu().numpy())
@@ -177,7 +211,9 @@ def main(argv: list[str] | None = None) -> int:
         logger=logger,
         step_fn=step_fn,
         val_fn=val_fn,
-        best_metric_key="eer",
+        # Distillation ranks checkpoints by the divergence it minimises: the pool's
+        # EER reads labels this run never learned from (ADR-0003).
+        best_metric_key="loss" if teacher is not None else "eer",
     )
     logger.info(f"train={len(train_set)} val={len(val_set)}")
     trainer.fit()

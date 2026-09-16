@@ -87,10 +87,10 @@ class MiniFASNetBackbone(nn.Module):
 
 @MODELS.register("minifasnet_v2_se")
 class MiniFASNetV2SE(nn.Module):
-    """Anti-spoof classifier over the face crop, with an optional context backbone.
+    """Anti-spoof classifier over the face crop, the context crop, or both.
 
     forward takes the views as one tuple because the shared trainer hands every
-    model a single input; views="tight" keeps only the face backbone. Under
+    model a single input; `views` picks which backbones exist. Under
     patch_supervision it also returns the spatial map, but only while training.
     """
 
@@ -107,21 +107,19 @@ class MiniFASNetV2SE(nn.Module):
         patch_supervision: bool = False,
     ) -> None:
         super().__init__()
-        if views not in ("tight", "both"):
-            raise ValueError(f"views must be 'tight' or 'both', got {views!r}")
+        if views not in ("tight", "wide", "both"):
+            raise ValueError(f"views must be 'tight', 'wide' or 'both', got {views!r}")
         self.views = views
         self.chroma = chroma
         planes = 4 if chroma else 3
-        self.tight = MiniFASNetBackbone(
-            embedding, squeeze_excite, activation, input_size, width, planes, patch_supervision
-        )
-        self.wide = (
-            MiniFASNetBackbone(
-                embedding, squeeze_excite, activation, input_size, width, planes
+
+        def backbone(patch: bool) -> MiniFASNetBackbone:
+            return MiniFASNetBackbone(
+                embedding, squeeze_excite, activation, input_size, width, planes, patch
             )
-            if views == "both"
-            else None
-        )
+
+        self.tight = backbone(patch_supervision) if views in ("tight", "both") else None
+        self.wide = backbone(patch_supervision and views == "wide") if views in ("wide", "both") else None
         self.drop = nn.Dropout(p=0.2)
         width_out = embedding * (2 if views == "both" else 1)
         self.classifier = nn.Linear(width_out, num_classes)
@@ -129,10 +127,12 @@ class MiniFASNetV2SE(nn.Module):
     def forward(
         self, views: torch.Tensor | tuple[torch.Tensor, torch.Tensor]
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        tight = views[0] if isinstance(views, (tuple, list)) else views
-        features, patch = self.tight(tight)
-        if self.wide is not None:
-            features = torch.cat((features, self.wide(views[1])[0]), dim=1)
+        if self.tight is None:
+            features, patch = self.wide(views[1] if isinstance(views, (tuple, list)) else views)
+        else:
+            features, patch = self.tight(views[0] if isinstance(views, (tuple, list)) else views)
+            if self.wide is not None:
+                features = torch.cat((features, self.wide(views[1])[0]), dim=1)
         logits = self.classifier(self.drop(features))
         if not self.training or patch is None:
             return logits
