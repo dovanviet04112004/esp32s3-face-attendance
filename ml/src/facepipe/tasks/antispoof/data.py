@@ -19,17 +19,12 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image, ImageFilter
+from PIL import Image
 from torch.utils.data import IterableDataset, get_worker_info
 
 from facepipe.data.prepare.images_to_wds import read_shard
 
 CROP_SIZE = 81
-LIVE, SPOOF = 0, 1
-# The depth label rides at the stored grid and drops to the head's map only once,
-# after the geometry: resampling it at 21 loses the shape (measurements 42).
-DEPTH_GRID = 63
-DEPTH_TARGET = 21
 SHUFFLE_BUFFER = 2048
 # Shards read at once, so one batch carries several capture setups (KEHOACH 3).
 INTERLEAVE_SHARDS = 12
@@ -83,8 +78,6 @@ class SpoofSample:
     label: int
     wide_scale: float  # scale the wide view actually reached
     domain: int = 0    # which shard folder it came from (KEHOACH 3)
-    depth: np.ndarray | None = None  # 21x21 face shape, flat for an attack
-    depth_trust: float = 0.0         # how far the label sits from the mean shape
     face_in_wide: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
     def views(self) -> list[np.ndarray]:
@@ -168,7 +161,7 @@ def count_records(shards: list[Path], shard_size: int | None = None) -> int:
 def resized(image: np.ndarray, size: int) -> np.ndarray:
     if image.shape[0] == size and image.shape[1] == size:
         return image
-    return np.array(Image.fromarray(image).resize((size, size), Image.BILINEAR), dtype=image.dtype)
+    return np.array(Image.fromarray(image).resize((size, size), Image.BILINEAR), dtype=np.uint8)
 
 
 def decode_native(payload: bytes) -> np.ndarray:
@@ -193,7 +186,6 @@ def horizontal_flip(sample: SpoofSample) -> SpoofSample:
         sample,
         tight=sample.tight[:, ::-1].copy(),
         wide=sample.wide[:, ::-1].copy(),
-        depth=None if sample.depth is None else sample.depth[:, ::-1].copy(),
         face_in_wide=(1.0 - x2, y1, 1.0 - x1, y2),
     )
 
@@ -230,14 +222,8 @@ def crop_scale(sample: SpoofSample, target: float, size: int) -> SpoofSample:
     reached = min(target, sample.wide_scale)
     stored = min(1.0, sample.wide_scale)
     wide = narrow(sample.wide, sample.face_in_wide, sample.wide_scale, reached)
-    close = reached >= stored
-    tight = sample.tight if close else narrow_tight(sample.tight, reached / stored)
-    # The map covers the tight view, so the same centred bite keeps them aligned.
-    depth = sample.depth
-    if depth is not None and not close:
-        depth = resized(narrow_tight(depth, reached / stored), depth.shape[0])
-    return replace(sample, tight=resized(tight, size), wide=resized(wide, size),
-                   depth=depth, wide_scale=reached)
+    tight = sample.tight if reached >= stored else narrow_tight(sample.tight, reached / stored)
+    return replace(sample, tight=resized(tight, size), wide=resized(wide, size), wide_scale=reached)
 
 
 def face_square(view: np.ndarray, wide_scale: float) -> tuple[int, int]:
@@ -271,12 +257,6 @@ def occlude(
     return sample.with_views(views)
 
 
-def margins(image: np.ndarray, pad: int) -> tuple:
-    """Pad widths for a view or for the single-channel depth map beside it."""
-    edges = ((pad, pad), (pad, pad))
-    return edges if image.ndim == 2 else edges + ((0, 0),)
-
-
 def turned(image: np.ndarray, degrees: float) -> np.ndarray:
     """One view rolled about its centre, with no corner the rotation invented.
 
@@ -285,24 +265,21 @@ def turned(image: np.ndarray, degrees: float) -> np.ndarray:
     """
     edge = image.shape[0]
     pad = edge // 2
-    wider = np.pad(image, margins(image, pad), mode="reflect")
+    wider = np.pad(image, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
     spun = Image.fromarray(wider).rotate(degrees, resample=Image.BILINEAR)
-    return np.array(spun, dtype=image.dtype)[pad : pad + edge, pad : pad + edge]
+    return np.array(spun, dtype=np.uint8)[pad : pad + edge, pad : pad + edge]
 
 
 def roll(sample: SpoofSample, degrees: float) -> SpoofSample:
     """Roll both views by one angle, since the two crops are one scene."""
-    spun = sample.mapped(lambda view: turned(view, degrees))
-    if sample.depth is None:
-        return spun
-    return replace(spun, depth=turned(sample.depth, degrees))
+    return sample.mapped(lambda view: turned(view, degrees))
 
 
 def shifted(image: np.ndarray, dx: float, dy: float) -> np.ndarray:
     """One view moved by a fraction of its own edge, mirrored where it runs out."""
     edge = image.shape[0]
     pad = max(1, edge // 4)
-    wider = np.pad(image, margins(image, pad), mode="reflect")
+    wider = np.pad(image, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
     left = min(max(0, round(pad + dx * edge)), wider.shape[1] - edge)
     top = min(max(0, round(pad + dy * edge)), wider.shape[0] - edge)
     return wider[top : top + edge, left : left + edge]
@@ -316,8 +293,7 @@ def translate(sample: SpoofSample, dx: float, dy: float) -> SpoofSample:
     """
     span = 1.0 / max(sample.wide_scale, 1e-6)
     wide = None if sample.wide is None else shifted(sample.wide, dx * span, dy * span)
-    depth = None if sample.depth is None else shifted(sample.depth, dx, dy)
-    return replace(sample, tight=shifted(sample.tight, dx, dy), wide=wide, depth=depth)
+    return replace(sample, tight=shifted(sample.tight, dx, dy), wide=wide)
 
 
 def requantise(image: np.ndarray, quality: int) -> np.ndarray:
@@ -413,110 +389,6 @@ def white_balance(image: np.ndarray, gains: np.ndarray) -> np.ndarray:
     return _clipped(image.astype(np.float32) * gains)
 
 
-# ln(sharpness ratio) against Pillow radius, fitted on 400 pool crops over
-# 0.55 to 1.25, where a smaller radius moves the number too little to invert.
-BLUR_DECADE = 1.16
-BLUR_OFFSET = 0.431
-BLUR_FLOOR = 1.05
-BLUR_CEILING = 2.0
-BLUR_PASSES = 2
-# One step may not land, and a gain far from 1 turns a crop into a flat or a
-# clipped one, so each pass is bounded and close enough ends it (KEHOACH 3).
-TRIM_TOLERANCE = 0.05
-TRIM_FLOOR = 0.4
-TRIM_CEILING = 2.5
-# Saturation grows sublinearly in the gain that drives it, since stretching a
-# pixel from its grey raises the maximum the ratio divides by (KEHOACH 3).
-TRIM_PASSES = 4
-
-
-def surface_of(crop: np.ndarray) -> float:
-    """Mean absolute Laplacian of contrast-normalised luma (KEHOACH 3)."""
-    grey = crop.astype(np.float64) @ np.array([0.299, 0.587, 0.114])
-    grey = (grey - grey.mean()) / max(grey.std(), 1e-9)
-    bend = (grey[:-2, 1:-1] + grey[2:, 1:-1] + grey[1:-1, :-2] + grey[1:-1, 2:]
-            - 4.0 * grey[1:-1, 1:-1])
-    return float(np.abs(bend).mean())
-
-
-def brightness_of(crop: np.ndarray) -> float:
-    """Mean luma, on the same weights the surface measure and the board use."""
-    return float((crop.astype(np.float64) @ np.array([0.299, 0.587, 0.114])).mean())
-
-
-def saturation_of(crop: np.ndarray) -> float:
-    """Mean per-pixel saturation, the quantity the model's fourth plane carries."""
-    values = crop.astype(np.float64)
-    high, low = values.max(axis=2), values.min(axis=2)
-    return float(((high - low) / np.maximum(high, 1e-6)).mean())
-
-
-def brightened(sample: SpoofSample, gain: float) -> SpoofSample:
-    """Scale luma, which leaves saturation where it was (measurements 41)."""
-    return sample.mapped(
-        lambda view: np.clip(view.astype(np.float64) * gain, 0.0, 255.0).astype(np.uint8)
-    )
-
-
-def saturated(sample: SpoofSample, gain: float) -> SpoofSample:
-    """Stretch each pixel away from its own grey, which holds luma exactly."""
-
-    def stretch(view: np.ndarray) -> np.ndarray:
-        values = view.astype(np.float64)
-        grey = (values @ np.array([0.299, 0.587, 0.114]))[..., None]
-        return np.clip(grey + gain * (values - grey), 0.0, 255.0).astype(np.uint8)
-
-    return sample.mapped(stretch)
-
-
-def toward(sample: SpoofSample, aim: float, measure, apply_gain) -> SpoofSample:
-    """Walk a crop to `aim` by repeated proportional correction (KEHOACH 3).
-
-    Clipping at both ends makes one step undershoot, and the measures are not
-    linear in the gain they are driven by.
-    """
-    for _ in range(TRIM_PASSES):
-        seen = measure(sample.tight)
-        if seen <= 0.0 or abs(seen - aim) <= TRIM_TOLERANCE * aim:
-            break
-        sample = apply_gain(sample, min(max(aim / seen, TRIM_FLOOR), TRIM_CEILING))
-    return sample
-
-
-def radius_for(ratio: float) -> float:
-    """Blur that divides surface detail by `ratio`, or zero when none is needed."""
-    if ratio <= BLUR_FLOOR:
-        return 0.0
-    return float(min((np.log(ratio) + BLUR_OFFSET) / BLUR_DECADE, BLUR_CEILING))
-
-
-def aimed_at(sample: SpoofSample, aim: float) -> SpoofSample:
-    """Soften until surface detail reaches `aim`, or give up after two passes.
-
-    One pass undershoots on an already-soft crop: the inverse is fitted on sharp
-    pool crops, where a radius removes proportionally more (KEHOACH 3).
-    """
-    for _ in range(BLUR_PASSES):
-        radius = radius_for(surface_of(sample.tight) / max(aim, 1e-6))
-        if radius <= 0.0:
-            break
-        sample = soften(sample, radius)
-    return sample
-
-
-def soften(sample: SpoofSample, radius: float) -> SpoofSample:
-    """Bring a crop down to the surface detail this camera actually delivers.
-
-    Calibrated on Pillow's radius, not on sigma: the two differ by 6 to 16 per
-    cent and Pillow is what runs here (measurements/parity 2).
-    """
-    return sample.mapped(
-        lambda view: np.array(
-            Image.fromarray(view).filter(ImageFilter.GaussianBlur(radius)), dtype=np.uint8
-        )
-    )
-
-
 def photometric(
     sample: SpoofSample,
     rng: random.Random,
@@ -524,7 +396,6 @@ def photometric(
     contrast_range: tuple[float, float] = EXPOSURE_CONTRAST_RANGE,
     white_balance_range: tuple[float, float] = WHITE_BALANCE_RANGE,
     backlight_range: tuple[float, float] = BACKLIGHT_RANGE,
-    motion_probability: float | None = None,
 ) -> SpoofSample:
     """Camera-path augmentation, drawn once per sample and applied to both views.
 
@@ -540,8 +411,7 @@ def photometric(
     if backlight_range[1] > 0.0 and rng.random() < probability:
         strength, angle = rng.uniform(*backlight_range), rng.uniform(0.0, 2.0 * np.pi)
         views = [backlight(view, strength, angle) for view in views]
-    motion = probability if motion_probability is None else motion_probability
-    if rng.random() < motion:
+    if rng.random() < probability:
         length, angle = rng.randint(*MOTION_BLUR_PX), rng.uniform(0.0, np.pi)
         views = [motion_blur(view, length, angle) for view in views]
     if rng.random() < probability:
@@ -587,11 +457,6 @@ class SpoofShardDataset(IterableDataset):
         roll_range: tuple[float, float] = ROLL_RANGE,
         translate_probability: float = TRANSLATE_PROBABILITY,
         translate_range: float = TRANSLATE_RANGE,
-        depth_root: Path | None = None,
-        surface_band: tuple[float, float] = (0.0, 0.0),
-        bright_band: tuple[float, float] = (0.0, 0.0),
-        chroma_band: tuple[float, float] = (0.0, 0.0),
-        motion_blur_probability: float | None = None,
         keep_wide: bool = True,
         interleave: int = INTERLEAVE_SHARDS,
     ) -> None:
@@ -625,11 +490,6 @@ class SpoofShardDataset(IterableDataset):
         self.roll_range = roll_range
         self.translate_probability = translate_probability
         self.translate_range = translate_range
-        self.depth_root = Path(depth_root) if depth_root else None
-        self.surface_band = tuple(surface_band)
-        self.bright_band = tuple(bright_band)
-        self.chroma_band = tuple(chroma_band)
-        self.motion_blur_probability = motion_blur_probability
         self.epoch = 0
 
     def __len__(self) -> int:
@@ -649,26 +509,15 @@ class SpoofShardDataset(IterableDataset):
             return shards
         return shards[info.id :: info.num_workers]
 
-    def _labels_for(self, shard: Path) -> tuple | None:
-        """The depth npz written beside this shard, or None when it was not made."""
-        if self.depth_root is None:
-            return None
-        beside = self.depth_root / shard.parent.name / f"{shard.stem}.npz"
-        if not beside.is_file():
-            return None
-        held = np.load(beside)
-        return held["depth"], held["trust"]
-
     def _open(self, shards: list[Path], live: list) -> None:
         # Picked by folder, not by position: the paired set repeats five times in
         # the split and would otherwise fill the window on its own (KEHOACH 3).
         while shards and len(live) < self.interleave:
-            held = {domain for domain, _, _ in live}
+            held = {domain for domain, _ in live}
             at = next((i for i, s in enumerate(shards)
                        if self.domains.index(s.parent.name) not in held), 0)
             shard = shards.pop(at)
-            live.append((self.domains.index(shard.parent.name),
-                         enumerate(read_shard(shard)), self._labels_for(shard)))
+            live.append((self.domains.index(shard.parent.name), iter(read_shard(shard))))
 
     def _records(self) -> Iterator[SpoofSample]:
         # One folder is one domain, so reading shards end to end hands a batch a
@@ -680,12 +529,11 @@ class SpoofShardDataset(IterableDataset):
             if not live:
                 return
             standing = []
-            for domain, stream, labels in live:
-                pair = next(stream, None)
-                if pair is None:
+            for domain, stream in live:
+                record = next(stream, None)
+                if record is None:
                     continue
-                standing.append((domain, stream, labels))
-                index, record = pair
+                standing.append((domain, stream))
                 meta = json.loads(record["json"])
                 reached = float(meta["wide_scale"])
                 # The crop-scale augmentation cuts the tight view out of this one,
@@ -700,10 +548,6 @@ class SpoofShardDataset(IterableDataset):
                     wide_scale=reached,
                     face_in_wide=tuple(meta.get("face_in_wide") or centred_face(reached)),
                     domain=domain,
-                    depth=None if labels is None or index >= len(labels[0])
-                    else labels[0][index].astype(np.float32),
-                    depth_trust=0.0 if labels is None or index >= len(labels[1])
-                    else float(labels[1][index]),
                 )
             live = standing
 
@@ -734,18 +578,9 @@ class SpoofShardDataset(IterableDataset):
                     self.exposure_contrast_range,
                     self.white_balance_range,
                     self.backlight_range,
-                    self.motion_blur_probability,
                 )
             if self.train and rng.random() < self.recompress_probability:
                 sample = recompress(sample, rng.randint(*self.quality_range))
-            # Last in the chain, since recompress moves the numbers these aim at, and
-            # each band spans one label only, the camera's live faces (KEHOACH 3).
-            if self.chroma_band[1] > 0.0:
-                sample = toward(sample, rng.uniform(*self.chroma_band), saturation_of, saturated)
-            if self.bright_band[1] > 0.0:
-                sample = toward(sample, rng.uniform(*self.bright_band), brightness_of, brightened)
-            if self.surface_band[1] > 0.0:
-                sample = aimed_at(sample, rng.uniform(*self.surface_band))
             if self.shuffle_buffer <= 0:
                 yield sample
                 continue
@@ -774,18 +609,11 @@ def to_tensor(image: np.ndarray, chroma: bool = False) -> torch.Tensor:
     return torch.cat((planes, chroma_of(planes))) if chroma else planes
 
 
-def supervised(depth: np.ndarray | None) -> np.ndarray:
-    """The label at the size the head reads, resampled once and only here."""
-    if depth is None:
-        return np.zeros((DEPTH_TARGET, DEPTH_TARGET), dtype=np.float32)
-    return resized(np.ascontiguousarray(depth, dtype=np.float32), DEPTH_TARGET)
-
-
 def collate(
     batch: list[SpoofSample],
     chroma: bool = False,
-) -> tuple[torch.Tensor, ...]:
-    """Stack into (tight, wide, label, scale, domain, depth, trust) for the loss.
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Stack into (tight, wide, label, wide_scale) for the model and loss.
 
     A one-backbone run carries no context view, and the empty stand-in keeps the
     tuple the same shape for every caller.
@@ -798,7 +626,4 @@ def collate(
     )
     labels = torch.tensor([s.label for s in batch], dtype=torch.long)
     scales = torch.tensor([s.wide_scale for s in batch], dtype=torch.float32)
-    domains = torch.tensor([s.domain for s in batch], dtype=torch.long)
-    shapes = torch.stack([torch.from_numpy(supervised(s.depth)) for s in batch])
-    trust = torch.tensor([s.depth_trust for s in batch], dtype=torch.float32)
-    return tight, wide, labels, scales, domains, shapes, trust
+    return tight, wide, labels, scales

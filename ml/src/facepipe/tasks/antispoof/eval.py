@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import io
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,8 +24,6 @@ FRAME_THRESHOLDS = (0.50, 0.90, 0.99)
 DETECT_HW = (120, 160)
 DETECT_CONF = 0.5
 FRAME_SUFFIXES = (".jpg", ".jpeg", ".png")
-# domain sits at the top level, depth and patch inside a backbone.
-TRAINING_ONLY = re.compile(r"(^|\.)(domain|depth|patch)\.")
 
 
 @dataclass(frozen=True)
@@ -190,9 +187,8 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
         path = run / "ckpt" / "last.pth"
     payload = torch.load(path, map_location="cpu", weights_only=False)
     state = payload["ema"]["module"] if "ema" in payload else payload["model"]
-    # Every head that only exists while training: the config cannot rebuild them
-    # and inference never asks for them (KEHOACH 3).
-    state = {k: v for k, v in state.items() if not TRAINING_ONLY.search(k)}
+    # The per-cell head lives only while training, and the config cannot rebuild it.
+    state = {k: v for k, v in state.items() if ".patch." not in k}
     # A config without a views key belongs to a two-view run; its weights say so,
     # and writing it back is what makes the loader hand that run its second view.
     cfg.model.params.setdefault(

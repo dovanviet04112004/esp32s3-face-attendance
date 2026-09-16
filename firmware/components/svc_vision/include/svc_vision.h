@@ -17,13 +17,12 @@ extern "C" {
 
 #define SVC_VISION_REPORTED_FACES 4
 
-/** The five business thresholds, read from NVS by main (KEHOACH 4.9). */
+/** The four business thresholds, read from NVS by main (KEHOACH 4.9). */
 typedef struct {
     float detect_min_score;               // a detection below this is not a face
     float live_min_score;                 // liveness below this is a presentation attack
     float match_min_score;                // cosine below this is a stranger
     int face_min_px;                      // a face narrower than this is not verified
-    float surface_drop;                   // texture this far under the trend is a screen, 0 off
 } svc_vision_thresholds_t;
 
 typedef enum {
@@ -48,7 +47,6 @@ typedef struct {
     char name[STORAGE_NAME_CAP];          // valid for MATCH, empty when unnamed
     float match_score;
     float live_score;
-    float surface_residual;               // texture minus its face-width trend (KEHOACH 3)
     svc_vision_box_t primary;             // the face being tracked
     svc_vision_box_t boxes[SVC_VISION_REPORTED_FACES];
     uint8_t faces;                        // faces this detect saw, may exceed the boxes kept

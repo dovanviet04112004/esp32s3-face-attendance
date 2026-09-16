@@ -13,16 +13,11 @@ constexpr float kLiveScore = 0.9f;
 constexpr float kSpoofScore = 0.1f;
 constexpr float kMatchScore = 0.83f;
 constexpr float kStrangerScore = 0.31f;
-// The trend of KEHOACH 3 expects 0.223 at kBigFace, so these sit either side of it.
-constexpr float kScreenSurface = 0.10f;
-constexpr float kSkinSurface = 0.32f;
-constexpr float kSurfaceDrop = 0.10f;
 constexpr uint32_t kEmployee = 42;
-constexpr int kRetryDetects = 3;
-constexpr int kMissesLost = 2;
+constexpr int kRetryDetects = 6;
 
 uint16_t s_pixels[4];
-const ai_engine_frame_t kFrame = { s_pixels, kFrameW, kFrameH, true };
+const ai_engine_frame_t kFrame = { s_pixels, kFrameW, kFrameH };
 
 class FakeDetector final : public vision::IDetector {
 public:
@@ -75,18 +70,13 @@ class FakeLiveness final : public vision::ILiveness {
 public:
     bool present = true;
     float live = kLiveScore;
-    float surface = -1.0f;
     int scores = 0;
 
     bool available() const noexcept override { return present; }
-    esp_err_t score(const ai_engine_frame_t &, const float *, float *out,
-                    float *texture) noexcept override
+    esp_err_t score(const ai_engine_frame_t &, const float *, float *out) noexcept override
     {
         ++scores;
         *out = live;
-        if (texture != nullptr) {
-            *texture = surface;
-        }
         return ESP_OK;
     }
 };
@@ -110,8 +100,6 @@ public:
     esp_err_t answer = ESP_OK;
     float score = kMatchScore;
     int calls = 0;
-    int kept = 0;
-    esp_err_t keeps = ESP_OK;
 
     esp_err_t best(const int8_t *, float, uint32_t *employee_id, float *out, char *name,
                    size_t name_cap) noexcept override
@@ -124,12 +112,6 @@ public:
         }
         return answer;
     }
-
-    esp_err_t keep(const int8_t *, float, uint32_t, uint16_t, const char *) noexcept override
-    {
-        ++kept;
-        return keeps;
-    }
 };
 
 struct Rig {
@@ -139,11 +121,9 @@ struct Rig {
     FakeMatcher matcher;
     vision::VisionPipeline pipeline{ detector, liveness, embedder, matcher };
 
-    Rig() { gate(0.0f); }
-
-    void gate(float drop)
+    Rig()
     {
-        const svc_vision_thresholds_t thresholds = { 0.5f, 0.5f, 0.6f, 113, drop };
+        const svc_vision_thresholds_t thresholds = { 0.5f, 0.5f, 0.6f, 113 };
         pipeline.configure(thresholds);
     }
 
@@ -194,49 +174,6 @@ TEST_CASE("a spoof stops before recognition, and the same face is retried later"
     TEST_ASSERT_EQUAL(0, rig.embedder.embeds);
 }
 
-TEST_CASE("a face too smooth for its size is a screen even when the model says live", "[svc_vision]")
-{
-    Rig rig;
-    rig.gate(kSurfaceDrop);
-    rig.liveness.surface = kScreenSurface;
-    rig.detector.one(100.0f, 80.0f, kBigFace);
-    rig.step();
-    const svc_vision_result_t result = rig.pipeline.step(kFrame);
-    TEST_ASSERT_EQUAL(SVC_VISION_SPOOF, result.kind);
-    TEST_ASSERT_TRUE(result.surface_residual < -kSurfaceDrop);
-    TEST_ASSERT_EQUAL(0, rig.embedder.embeds);
-}
-
-TEST_CASE("skin texture clears the surface gate, and a zero bar turns it off", "[svc_vision]")
-{
-    Rig rig;
-    rig.gate(kSurfaceDrop);
-    rig.liveness.surface = kSkinSurface;
-    rig.detector.one(100.0f, 80.0f, kBigFace);
-    rig.step();
-    const svc_vision_result_t passed = rig.pipeline.step(kFrame);
-    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, passed.kind);
-    TEST_ASSERT_TRUE(passed.surface_residual > 0.0f);
-
-    Rig off;
-    off.liveness.surface = kScreenSurface;
-    off.detector.one(100.0f, 80.0f, kBigFace);
-    off.step();
-    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, off.pipeline.step(kFrame).kind);
-}
-
-TEST_CASE("a crop the branch could not measure never trips the gate", "[svc_vision]")
-{
-    Rig rig;
-    rig.gate(kSurfaceDrop);
-    rig.liveness.surface = -1.0f;
-    rig.detector.one(100.0f, 80.0f, kBigFace);
-    rig.step();
-    const svc_vision_result_t result = rig.pipeline.step(kFrame);
-    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, result.kind);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, result.surface_residual);
-}
-
 TEST_CASE("no face is reported once, and a returning face starts over", "[svc_vision]")
 {
     Rig rig;
@@ -244,9 +181,6 @@ TEST_CASE("no face is reported once, and a returning face starts over", "[svc_vi
     rig.step();
     TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
     rig.detector.count = 0;
-    for (int i = 0; i < kMissesLost - 1; ++i) {
-        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
-    }
     TEST_ASSERT_EQUAL(SVC_VISION_NO_FACE, rig.step());
     TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
     rig.detector.one(100.0f, 80.0f, kBigFace);

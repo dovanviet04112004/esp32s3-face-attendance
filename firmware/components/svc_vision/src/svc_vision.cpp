@@ -17,8 +17,7 @@ bool s_ready;
 bool sane(const svc_vision_thresholds_t &t)
 {
     return t.detect_min_score > 0.0f && t.detect_min_score < 1.0f && t.live_min_score >= 0.0f &&
-           t.live_min_score <= 1.0f && t.match_min_score > -1.0f && t.match_min_score <= 1.0f &&
-           t.face_min_px > 0 && t.surface_drop >= 0.0f && t.surface_drop < 1.0f;
+           t.live_min_score <= 1.0f && t.match_min_score > -1.0f && t.match_min_score <= 1.0f && t.face_min_px > 0;
 }
 
 }  // namespace

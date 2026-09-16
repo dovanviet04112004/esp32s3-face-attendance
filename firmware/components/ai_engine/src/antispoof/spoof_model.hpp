@@ -35,12 +35,4 @@ protected:
 esp_err_t crop_face(const ai_engine_frame_t &frame, const float box[4], const TfLiteTensor *input,
                     int8_t *out, size_t cap_bytes) noexcept;
 
-/** Mean absolute Laplacian of the crop's contrast-normalised luma, a number that
- *  reads surface texture rather than exposure (KEHOACH 3). Negative when the
- *  crop is too small or has fewer planes than the branch expects.
- *  @ctx ai_task | blocking for two passes over the crop
- *  @param side pixels along one edge, planes interleaved channels per pixel
- */
-float surface_sharpness(const int8_t *crop, int side, int planes) noexcept;
-
 }  // namespace ai

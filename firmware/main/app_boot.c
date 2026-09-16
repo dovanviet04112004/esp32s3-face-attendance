@@ -38,7 +38,6 @@ static const char *TAG = "app_boot";
 #define NVS_LIVE_MIN "live_min"
 #define NVS_MATCH_MIN "match_min"
 #define NVS_FACE_MIN_PX "face_min_px"
-#define NVS_SURFACE_DROP "surface_drop"
 #define NVS_PRESENT_MM "present_mm"
 #define NVS_DEDUP_MIN "dedup_min"
 #define NVS_ALLOW_NO_SPOOF "allow_no_spoof"
@@ -61,7 +60,6 @@ static const app_seed_t kSeeds[] = {
     { STORAGE_NS_VISION, NVS_LIVE_MIN, CONFIG_VISION_SEED_LIVE_MIN_PERMILLE },
     { STORAGE_NS_VISION, NVS_MATCH_MIN, CONFIG_VISION_SEED_MATCH_MIN_PERMILLE },
     { STORAGE_NS_VISION, NVS_FACE_MIN_PX, CONFIG_VISION_SEED_FACE_MIN_PX },
-    { STORAGE_NS_VISION, NVS_SURFACE_DROP, CONFIG_VISION_SEED_SURFACE_DROP_PERMILLE },
     { STORAGE_NS_VISION, NVS_PRESENT_MM, CONFIG_VISION_SEED_PRESENT_MM },
     { STORAGE_NS_ATTEND, NVS_DEDUP_MIN, CONFIG_ATTEND_SEED_DEDUP_MIN },
     { STORAGE_NS_ATTEND, NVS_ALLOW_NO_SPOOF, ATTEND_SEED_ALLOW_NO_SPOOF },
@@ -116,9 +114,6 @@ static svc_vision_thresholds_t vision_thresholds(void)
             PERMILLE,
         .face_min_px =
             (int)setting(STORAGE_NS_VISION, NVS_FACE_MIN_PX, CONFIG_VISION_SEED_FACE_MIN_PX),
-        .surface_drop = setting(STORAGE_NS_VISION, NVS_SURFACE_DROP,
-                                CONFIG_VISION_SEED_SURFACE_DROP_PERMILLE) /
-                        PERMILLE,
     };
     return thresholds;
 }
@@ -152,9 +147,9 @@ static void start_vision(EventGroupHandle_t flags)
         return;
     }
     xEventGroupSetBits(flags, APP_EG_AI_READY);
-    ESP_LOGI(TAG, "vision up: detect %.3f, live %.3f, match %.3f, face %d px, surface %.3f",
+    ESP_LOGI(TAG, "vision up: detect %.3f, live %.3f, match %.3f, face %d px",
              thresholds.detect_min_score, thresholds.live_min_score, thresholds.match_min_score,
-             thresholds.face_min_px, thresholds.surface_drop);
+             thresholds.face_min_px);
 }
 
 esp_err_t app_boot(void)

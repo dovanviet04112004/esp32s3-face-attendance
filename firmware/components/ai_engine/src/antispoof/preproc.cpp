@@ -12,12 +12,6 @@ namespace {
 constexpr float kFaceScale = 1.0f;
 constexpr float kPixelMean = 0.0f;
 constexpr float kPixelSpan = 255.0f;
-constexpr float kLumaWeights[kChannels] = { 0.299f, 0.587f, 0.114f };
-
-float luma(const int8_t *pixel) noexcept
-{
-    return kLumaWeights[0] * pixel[0] + kLumaWeights[1] * pixel[1] + kLumaWeights[2] * pixel[2];
-}
 
 struct Square {
     float left;
@@ -63,36 +57,6 @@ esp_err_t crop_face(const ai_engine_frame_t &frame, const float box[4], const Tf
     resample_square(frame, face.left, face.top, face.side, input->dims->data[1], out,
                     Quantizer(input, kPixelMean, kPixelSpan), planes);
     return ESP_OK;
-}
-
-float surface_sharpness(const int8_t *crop, int side, int planes) noexcept
-{
-    if (crop == nullptr || side < 3 || planes < kChannels) {
-        return -1.0f;
-    }
-    float sum = 0.0f;
-    float square = 0.0f;
-    const int pixels = side * side;
-    for (int i = 0; i < pixels; ++i) {
-        const float value = luma(crop + i * planes);
-        sum += value;
-        square += value * value;
-    }
-    const float count = static_cast<float>(pixels);
-    const float mean = sum / count;
-    const float spread = sqrtf(fmaxf(square / count - mean * mean, 1e-9f));
-    float total = 0.0f;
-    for (int row = 1; row < side - 1; ++row) {
-        for (int col = 1; col < side - 1; ++col) {
-            const int8_t *centre = crop + (row * side + col) * planes;
-            const float bend = luma(centre - side * planes) + luma(centre + side * planes) +
-                               luma(centre - planes) + luma(centre + planes) - 4.0f * luma(centre);
-            total += fabsf(bend);
-        }
-    }
-    // Laplace is linear and quantisation affine, so one divide normalises it all (KEHOACH 3).
-    const float inner = static_cast<float>(side - 2) * static_cast<float>(side - 2);
-    return total / inner / spread;
 }
 
 }  // namespace ai

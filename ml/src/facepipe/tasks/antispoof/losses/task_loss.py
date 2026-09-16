@@ -15,7 +15,7 @@ from torch import nn
 
 from facepipe.core.registry import LOSSES
 
-from ..data import LIVE, SPOOF
+LIVE, SPOOF = 0, 1
 
 
 class SpoofBatch(NamedTuple):
@@ -23,9 +23,6 @@ class SpoofBatch(NamedTuple):
 
     labels: torch.Tensor
     wide_scale: torch.Tensor
-    domains: torch.Tensor
-    depth: torch.Tensor | None = None
-    depth_trust: torch.Tensor | None = None
 
 
 @LOSSES.register("antispoof_task")
@@ -38,50 +35,13 @@ class SpoofTaskLoss(nn.Module):
         live_weight: float = 2.11,
         label_smoothing: float = 0.0,
         patch_weight: float = 0.0,
-        domain_weight: float = 0.0,
-        triplet_weight: float = 0.0,
-        triplet_margin: float = 0.3,
-        depth_weight: float = 0.0,
-        depth_trust_floor: float = 0.3,
     ) -> None:
         super().__init__()
         weight = torch.tensor([live_weight, 1.0], dtype=torch.float32)
         self.register_buffer("class_weight", weight)
         self.label_smoothing = label_smoothing
         self.patch_weight = patch_weight
-        self.domain_weight = domain_weight
-        self.triplet_weight = triplet_weight
-        self.triplet_margin = triplet_margin
-        self.depth_weight = depth_weight
-        self.depth_trust_floor = depth_trust_floor
 
-    # Live of every domain is one class while each domain's attacks are their own,
-    # so real faces close up and attacks stay apart (KEHOACH 3, SSDG).
-    def asymmetric(self, features: torch.Tensor, batch: SpoofBatch) -> torch.Tensor:
-        groups = torch.where(batch.labels == LIVE, torch.zeros_like(batch.domains),
-                             batch.domains + 1)
-        unit = nn.functional.normalize(features.float(), dim=1)
-        gap = torch.cdist(unit, unit)
-        same = groups[:, None] == groups[None, :]
-        eye = torch.eye(len(groups), dtype=torch.bool, device=groups.device)
-        far = gap.masked_fill(~same | eye, -1.0).amax(dim=1)
-        near = gap.masked_fill(same, float("inf")).amin(dim=1)
-        usable = (same & ~eye).any(dim=1) & (~same).any(dim=1)
-        if not bool(usable.any()):
-            return features.sum() * 0.0
-        return nn.functional.relu(far - near + self.triplet_margin)[usable].mean()
-
-    # Labels the estimator got wrong are dropped rather than learned: a tenth of
-    # the live faces disagree with the mean shape it produces (KEHOACH 3).
-    def relief(self, shape: torch.Tensor, batch: SpoofBatch) -> torch.Tensor:
-        if batch.depth is None or batch.depth_trust is None:
-            return shape.sum() * 0.0
-        want = batch.depth.to(shape.dtype).unsqueeze(1)
-        keep = (batch.depth_trust >= self.depth_trust_floor).to(shape.dtype)
-        if not bool(keep.any()):
-            return shape.sum() * 0.0
-        cell = nn.functional.mse_loss(shape, want, reduction="none").mean(dim=(1, 2, 3))
-        return (cell * keep).sum() / keep.sum()
 
     def forward(
         self,
@@ -91,9 +51,6 @@ class SpoofTaskLoss(nn.Module):
         parts = output if isinstance(output, tuple) else (output,)
         logits = parts[0]
         patch = parts[1] if len(parts) > 1 else None
-        features = parts[2] if len(parts) > 2 else None
-        domain_logits = parts[3] if len(parts) > 3 else None
-        shape = parts[4] if len(parts) > 4 else None
         # The trainer moves the model, not the loss beside it, so this
         # buffer follows the logits rather than assuming anyone moved it.
         weight = self.class_weight.to(logits.device, logits.dtype)
@@ -101,18 +58,6 @@ class SpoofTaskLoss(nn.Module):
             logits, batch.labels, weight=weight, label_smoothing=self.label_smoothing
         )
         total = task
-        # One side only: real faces are pushed to look alike across domains while
-        # attacks are left free to differ (KEHOACH 3, SSDG).
-        if domain_logits is not None and self.domain_weight > 0.0:
-            live = batch.labels == LIVE
-            if bool(live.any()):
-                total = total + self.domain_weight * nn.functional.cross_entropy(
-                    domain_logits[live], batch.domains[live]
-                )
-        if features is not None and self.triplet_weight > 0.0:
-            total = total + self.triplet_weight * self.asymmetric(features, batch)
-        if shape is not None and self.depth_weight > 0.0:
-            total = total + self.depth_weight * self.relief(shape, batch)
         if patch is None or self.patch_weight == 0.0:
             return total
         truth = (batch.labels == LIVE).to(patch.dtype).view(-1, 1, 1, 1).expand_as(patch)

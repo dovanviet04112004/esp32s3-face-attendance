@@ -46,7 +46,6 @@ class MiniFASNetBackbone(nn.Module):
         width: int = WIDTH,
         in_channels: int = 3,
         patch_supervision: bool = False,
-        depth_supervision: bool = False,
     ) -> None:
         super().__init__()
         _stem, second, third, fourth = stage_maps(input_size)
@@ -73,32 +72,17 @@ class MiniFASNetBackbone(nn.Module):
         self.embed_bn = nn.BatchNorm1d(embedding)
         # Dropped at export: the local decisions only shape training (KEHOACH 3).
         self.patch = nn.Conv2d(closing, 1, kernel_size=1) if patch_supervision else None
-        # Read off stage_2, the one map near the 32x32 the FAS papers supervise at.
-        self.depth = nn.Conv2d(width, 1, kernel_size=1) if depth_supervision else None
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
         x = self.stem_dw(self.stem(x))
-        early = self.stage_2(self.down_2(x))
-        x = self.stage_3(self.down_3(early))
+        x = self.stage_2(self.down_2(x))
+        x = self.stage_3(self.down_3(x))
         x = self.stage_4(self.down_4(x))
         mapped = self.head(x)
         flat = torch.flatten(self.head_dw(mapped), 1)
         patch = self.patch(mapped) if self.patch is not None and self.training else None
-        shape = self.depth(early) if self.depth is not None and self.training else None
-        return self.embed_bn(self.embed(flat)), patch, shape
+        return self.embed_bn(self.embed(flat)), patch
 
-
-class Reverse(torch.autograd.Function):
-    """Identity going forward, sign flipped coming back: one head, two goals."""
-
-    @staticmethod
-    def forward(ctx, x: torch.Tensor, scale: float) -> torch.Tensor:
-        ctx.scale = scale
-        return x.view_as(x)
-
-    @staticmethod
-    def backward(ctx, grad: torch.Tensor):
-        return -ctx.scale * grad, None
 
 
 @MODELS.register("minifasnet_v2_se")
@@ -121,8 +105,6 @@ class MiniFASNetV2SE(nn.Module):
         views: str = "tight",
         chroma: bool = False,
         patch_supervision: bool = False,
-        depth_supervision: bool = False,
-        domains: int = 0,
     ) -> None:
         super().__init__()
         if views not in ("tight", "both"):
@@ -131,8 +113,7 @@ class MiniFASNetV2SE(nn.Module):
         self.chroma = chroma
         planes = 4 if chroma else 3
         self.tight = MiniFASNetBackbone(
-            embedding, squeeze_excite, activation, input_size, width, planes,
-            patch_supervision, depth_supervision,
+            embedding, squeeze_excite, activation, input_size, width, planes, patch_supervision
         )
         self.wide = (
             MiniFASNetBackbone(
@@ -144,19 +125,15 @@ class MiniFASNetV2SE(nn.Module):
         self.drop = nn.Dropout(p=0.2)
         width_out = embedding * (2 if views == "both" else 1)
         self.classifier = nn.Linear(width_out, num_classes)
-        # Reached through a sign flip, so the trunk learns to defeat it and the
-        # live half stops carrying which camera took it (KEHOACH 3, SSDG).
-        self.domain = nn.Linear(width_out, domains) if domains > 1 else None
 
     def forward(
         self, views: torch.Tensor | tuple[torch.Tensor, torch.Tensor]
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         tight = views[0] if isinstance(views, (tuple, list)) else views
-        features, patch, shape = self.tight(tight)
+        features, patch = self.tight(tight)
         if self.wide is not None:
             features = torch.cat((features, self.wide(views[1])[0]), dim=1)
         logits = self.classifier(self.drop(features))
-        if not self.training or (patch is None and shape is None and self.domain is None):
+        if not self.training or patch is None:
             return logits
-        told = self.domain(Reverse.apply(features, 1.0)) if self.domain is not None else None
-        return logits, patch, features, told, shape
+        return logits, patch

@@ -110,11 +110,9 @@ esp_err_t ai_engine_recognize_face(const ai_engine_frame_t *frame, const float l
 
 /** Cut the face crop of a box in frame pixels and score its liveness.
  *  @ctx ai_task | blocking for the crop and the whole graph
- *  @param surface receives the crop's surface sharpness, NULL to skip it
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_FAIL
  */
-esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live,
-                               float *surface);
+esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live);
 
 /** Score one face as live or presented, from a crop already in the graph's
  *  own quantisation.
