@@ -27,7 +27,7 @@
 | Nhánh | Model | Link code / weight | Thông số | License |
 |---|---|---|---|---|
 | **Detect** | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750** đo ở **độ phân giải gốc**, không phải ở 160×120 của dự án này (§3 lớp 2); ra box **+ 5 landmark** | **MIT** |
-| **Anti-spoof** | **MiniFASNetV2-SE, một backbone** trên crop mặt 1,0× | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — kiến trúc ở `src/model_lib/MiniFASNet.py` | 🔬 **≈0.26M params** (một backbone + head), ≈0.044 GFLOPs @81×81 | Research-only ⚠️ |
+| **Anti-spoof** | **MiniFASNetV2 trọng số nhập, stem tách** trên crop ngữ cảnh 2,7× (§3); student **MiniFASNetV2-SE width 32** distill từ nó (ADR-0003) | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — trọng số `2.7_80x80_MiniFASNetV2.pth`, kiến trúc ở `src/model_lib/MiniFASNet.py` | **432.832 params**, 40,7 MMAC @80×80, spoof 535 ms trên board; student ≈0,26M params, 24,6 MMAC @81×81 | Apache-2.0 (code và weight upstream) |
 | **Recognition** | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | **1.20M params** (đo trên bản trong repo), 4.58MB FP32 → **~1.2MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
 
 **Hai ràng buộc thiết kế quyết định bộ 3 này:**
@@ -53,9 +53,9 @@
 | Nhánh | Params | ≈ INT8 |
 |---|---|---|
 | Detect (YuNet) | 75.631 | 76 KB |
-| Anti-spoof (MiniFASNetV2-SE, một backbone) | 262.746 | **424 KB** đo trên board 12/09 |
+| Anti-spoof (MiniFASNetV2 nhập, stem tách) | 432.832 | **586 KB** đo trên board 16/09 |
 | Recognition (MobileFaceNet, embedding 512-D) | 1.199.488 | 720 KB đo trên board |
-| **Tổng** | 1.537.865 | **1.302 KB trong 2 MB** (§6.1), gồm cả detect 158 KB |
+| **Tổng** | 1.707.951 | **1.464 KB trong 2 MB** (§6.1), gồm cả detect 158 KB |
 
 **Đã export và đo trên board 12/09**: ba file `.tflite` INT8 chiếm 1.302 KB trong partition
 `models_0` 2 MB, còn dư 746 KB. Cột KB là kích thước file thật, gồm cả overhead flatbuffer,
@@ -1047,8 +1047,12 @@ Từng nhánh chọn gì:
 
 ### Lớp 2 — Huấn luyện
 
-**Ba model train từ khởi tạo ngẫu nhiên trên nhãn thật, không có teacher.** Quyết định đó
-và cái giá của nó nằm ở `docs/adr/0002-bo-knowledge-distillation.md`.
+**Detect và recognition train từ khởi tạo ngẫu nhiên trên nhãn thật, không có teacher**
+(`docs/adr/0002-bo-knowledge-distillation.md`). **Nhánh chống giả distill từ trọng số nhập**
+(`docs/adr/0003-distill-chong-gia-tu-trong-so-nhap.md`): mọi student train trên nhãn pool đều
+chặn oan mặt thật của OV5640 vì nhãn CelebA-Spoof dạy phong cách ảnh, còn trọng số minivision
+giữ trọn 62/62; teacher ấy tốt hơn mọi student nên có thứ để distill, và không dùng nhãn thì
+confound không đi theo.
 
 | Kỹ thuật | Chi tiết |
 |---|---|
@@ -1204,12 +1208,17 @@ Ba ràng buộc đi kèm:
 - **Đổi cách dựng thì shard hết giá trị**: sinh lại shard rồi train lại là bắt buộc.
 
 `minifasnet_v2_se` nhận thêm `views: wide`: một backbone width 32 đọc **riêng** view ngữ cảnh 2,7×
-của shard. Đây là thí nghiệm đối chứng cho §22 sau khi trọng số nhập (mục dưới) cho thấy tín hiệu
-của OV5640 nằm ở vành ngữ cảnh: nếu kiến trúc gọn của nhánh học được cùng tín hiệu ấy từ pool thì
-spoof về ~234 ms; nếu nó lại học "căn phòng" thì §22 là chuyện dữ liệu, không phải kiến trúc. Cấu
-hình chạy bằng `--set` trên `minifasnet.yaml` (hạ CelebA, `crop_scale_range` 1,2–2,7 vì board kẹp
-khung khi mặt gần, `occlusion` nhẹ hơn, `chroma: false`), không thêm file; thước đo là 87 khung INT8
-của `measurements.md` §41, không phải val pool.
+của shard, 81×81 (lẻ, không PAD), ba lớp `[sống, phát lại, in]`. Nó được **distill** từ run nhập
+(ADR-0003), không train trên nhãn: `configs/antispoof/minifasnet_distill.yaml` đặt
+`loss.name: antispoof_distill`, `loss.teacher_run` trỏ run `20260916-0728_f20a94a_ec4799` (PReLU
+gốc, float, host), `loss.temperature`; `train.py` nạp teacher đóng băng, thu view về 80×80 cho nó
+và đưa logit của nó vào `SpoofBatch.teacher_logits`; `losses/distill_loss.py` tính KL·T². Ảnh
+của cả pool là đầu vào, nhãn không đọc. Augment theo view wide: `crop_scale_range` 1,2–2,7 với
+xác suất 0,5 vì board kẹp khung khi mặt gần, `occlusion` nhẹ (0,15; 10–25% cạnh) để không che
+mất vành ngữ cảnh, `chroma: false`. Chọn checkpoint bằng **KL trên val**, không bằng EER pool.
+Nghiệm thu bằng bảng bốn dòng cùng thước 87 khung INT8 + tập lớn + `bench_ai`: teacher, bản
+nhập stem tách đang nạp, student distill, student cũ `0107`; student lên `models.lock.json` chỉ
+khi giữ 62/62 và chặn 25/25 với khe không hẹp hơn bản đang nạp.
 
 #### Trọng số nhập từ Silent-Face-Anti-Spoofing, đọc crop ngữ cảnh 2,7×
 
@@ -1915,7 +1924,7 @@ esp32s3-face-attendance/
     ├── TASKS.md                                 # backlog
     ├── DU_LIEU.md                               # dữ liệu đã tải và xử lí — số đo trên đĩa
     ├── FREERTOS.md                              # sổ kiểm lỗi đồng thời, soát lại mỗi khi thêm task
-    ├── adr/{0001-yunet-thay-ulfg.md, ...}       # quyết định kiến trúc, mỗi cái 1 file
+    ├── adr/{0001-yunet-thay-ulfg.md, 0002-bo-knowledge-distillation.md, 0003-distill-chong-gia-tu-trong-so-nhap.md}
     ├── measurements/{arena.md, latency.md, power.md, parity.md}  # số 🔬 đo được trên board
     └── thesis/                                  # bản báo cáo ĐATN
 ```
@@ -2232,7 +2241,7 @@ ml/
 ├── configs/
 │   ├── common/{paths.yaml, hardware.yaml}
 │   ├── detection/{yunet.yaml, quant.yaml}
-│   ├── antispoof/{minifasnet.yaml, minifasnet_v2.yaml, quant.yaml}  # v2: trọng số nhập, crop 2,7× (§3)
+│   ├── antispoof/{minifasnet.yaml, minifasnet_v2.yaml, minifasnet_distill.yaml}  # v2: trọng số nhập; distill: student w32 (ADR-0003)
 │   └── recognition/(2 file cùng tên)
 │
 ├── src/facepipe/
@@ -2304,7 +2313,8 @@ ml/
 │   │   │   │   │                              #   nạp thẳng state_dict; kích hoạt là cờ (§3)
 │   │   │   │   └── blocks.py              # ConvBnAct(relu); SE gate HardSigmoid ReLU6(x+3)/6
 │   │   │   ├── losses/
-│   │   │   │   └── task_loss.py           # BCE live/spoof
+│   │   │   │   ├── task_loss.py           # CE live/spoof trên nhãn; SpoofBatch
+│   │   │   │   └── distill_loss.py        # ★ KL·T² tới logit teacher, không nhãn (ADR-0003)
 │   │   │   ├── postproc/
 │   │   │   │   ├── preproc.py             # ★ ai_engine/src/antispoof/preproc.cpp
 │   │   │   │   └── emit_golden.py         # → contracts/golden/antispoof/preproc/
