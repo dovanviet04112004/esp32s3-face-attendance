@@ -2391,3 +2391,207 @@ nâng kèm ba kênh dễ. Tách theo kênh ở nhánh train là điều kiện �
 | `sat_mean` làm cổng | AUC 1,0000 trong cùng một phòng, nhưng `toi1209` (thật, văn phòng) sat 0,282–0,376 nằm trong dải giả 0,131–0,413 |
 | Lượng tử INT8 làm hỏng | float APCER 0,238 so với INT8 0,286, trong nhiễu của 21 mẫu |
 | Độ phân giải OV5640 xoá vết chụp lại | §40.4, không nguồn nào sụt |
+
+## 41. Trọng số nhập từ minivision ở crop 2,7× — chấm trên khung board đúng như firmware, 16/09
+
+Hai run nhập bằng `import_minifasnet.py` từ `2.7_80x80_MiniFASNetV2.pth` (KẾ HOẠCH §3):
+`20260916-0728_f20a94a_ec4799` giữ PReLU gốc, `20260916-0729_f20a94a_cc06da` thay ReLU. Cả hai
+đi hết thang `30_quantize.sh`; `op_check` chặn run PReLU đúng luật (PRELU ×33 không có trong
+resolver), run ReLU qua với 4 PAD tham chiếu.
+
+### 41.1 Bộ khung và cách chấm
+
+87 khung của `raw/device/ov5640` có nhãn và có mặt do detector `20260831-1616` tìm ra:
+
+| Nhãn | Phiên | Khung |
+|---|---|---|
+| thật (62) | `live1309` 7 · `p2that` 4 · `s20260911a` 11 · `b` 2 · `c` 2 · `d` 36 | 62 |
+| giả (25) | `spoof1309` 007–016, 019–029 (ảnh thẻ trên điện thoại) 21 · `p2gia` 4 | 25 |
+
+Nhãn theo §40.1: `spoof1309_000–006` là thật, `017–018` bỏ. Cách chấm mô phỏng đúng đường
+của board thay vì đường của shard: ô vuông theo `fitted()` của `preproc.cpp` ở 2,7× (đối chiếu
+với `fitted_box` bên ML: **0/87 lệch**), lấy mẫu lại **trung bình vùng nguyên** đúng `cell_bounds`
++ `area_rows` của `pixels.cpp`, lượng tử `rint(v/255/scale) + zp`, chạy bằng chính file
+`.tflite` trên `models.lock.json`. Điểm = softmax lớp sống trên 3 lớp.
+
+### 41.2 Bốn file, một bảng
+
+| File | AUC | p5 thật − p95 giả | thật thấp nhất | giả cao nhất | thật bị loại khi chặn hết giả |
+|---|---|---|---|---|---|
+| PReLU Q0 FP32 | 1,0000 | +0,473 | 0,342 | 0,022 | **0/62** |
+| PReLU Q1 INT8 | 1,0000 | +0,322 | 0,234 | 0,050 | **0/62** |
+| ReLU Q0 FP32 | 0,9981 | +0,146 | 0,054 | 0,102 | 3/62 |
+| **ReLU Q1 INT8** (đang nạp) | 0,9974 | +0,127 | 0,032 | 0,078 | **3/62** |
+
+INT8 thu khe của PReLU từ 0,473 xuống 0,322 nhưng không đổi thứ tự. Ba mặt ReLU mất là
+`s20260911d_052` (0,032), `s20260911d_033` (0,039), `s20260911c_001` (0,066) — cả ba đứng
+**dưới** giả cao nhất `spoof1309_007` (0,078), nên không ngưỡng nào cứu được; đây là việc của
+model, không của ngưỡng. Cùng trọng số ở crop 1,0× (đo 15/09 trên 85 khung, ONNX gốc): AUC
+0,9241, khe −0,041, 21/64 thật bị loại — tín hiệu nằm ở vành ngữ cảnh.
+
+### 41.3 Quét ngưỡng trên INT8
+
+| Ngưỡng | ReLU thật đậu | ReLU giả chặn | PReLU thật đậu | PReLU giả chặn |
+|---|---|---|---|---|
+| 0,04 | 60/62 | 24/25 | 62/62 | 24/25 |
+| 0,06 | 60/62 | 24/25 | 62/62 | 25/25 |
+| **0,08–0,14** | **59/62** | **25/25** | **62/62** | **25/25** |
+| 0,16–0,22 | 58/62 | 25/25 | 62/62 | 25/25 |
+| 0,24–0,30 | 58/62 | 25/25 | 60/62 | 25/25 |
+| 0,50 | 55/62 | 25/25 | 53/62 | 25/25 |
+| 0,70 | 49/62 | 25/25 | 44/62 | 25/25 |
+| 0,75 | 48/62 | 25/25 | 43/62 | 25/25 |
+
+Seed `live_min` chốt **120‰**: nằm trong dải chung 0,08–0,14 của cả hai run, biên tới giả cao
+nhất 0,042 (ReLU) / 0,070 (PReLU), tới mặt thật kế tiếp 0,029 / 0,114. Ngưỡng 750‰ của model
+cũ chặn oan 14/62 ở đây, vì model cũ dồn mặt thật sát 1,0 còn model này trải 0,15–1,0.
+
+**Luật của kho gốc** (`test.py` minivision: argmax trên 3 lớp) trên cùng 87 khung: PReLU
+INT8 đậu **56/62**, ReLU INT8 **57/62**, giả chặn 25/25 cả hai. Véc-tơ của mặt thật thấp
+nhất là `[sống 0,234 · phát lại 0,757 · in 0,009]`: model dồn xác suất sang "phát lại" nhưng
+vẫn cho p_sống gấp 5 lần giả cao nhất. Softmax 3 lớp không hiệu chỉnh cho OV5640; thứ tự
+xếp hạng thì đúng. Ngưỡng trên p_sống chọn theo hai đám điểm của board vì thế giữ nhiều mặt
+thật hơn luật argmax gốc.
+
+### 41.4 Theo phiên, ReLU INT8
+
+| Phiên | n | min | trung vị | max |
+|---|---|---|---|---|
+| `live1309` | 7 | 0,987 | 0,998 | 1,000 |
+| `p2that` | 4 | 1,000 | 1,000 | 1,000 |
+| `s20260911a` | 11 | 0,716 | 0,884 | 0,981 |
+| `s20260911b` | 2 | 0,843 | 0,921 | 0,999 |
+| `s20260911c` | 2 | 0,066 | 0,530 | 0,995 |
+| `s20260911d` | 36 | 0,032 | 0,841 | 0,997 |
+| `spoof1309` (giả) | 21 | 0,000 | 0,001 | 0,078 |
+| `p2gia` (giả) | 4 | 0,001 | 0,006 | 0,037 |
+
+Ba mặt thấp đều ở `s20260911c/d`, phiên dump lúc chỉnh cảm biến. Với PReLU INT8 cùng hai phiên
+ấy có min 0,883 và 0,234.
+
+### 41.5 Vì sao ReLU mất ba mặt, và hệ số PReLU nói gì
+
+2.944 hệ số PReLU trên 33 lớp: trung vị |a| 0,012, p90 0,055, chỉ 4,1% vượt 0,1 — đủ nhỏ để
+đổi sang ReLU không đổi thứ hạng (AUC 0,9974). Nhưng **66% hệ số âm**, và `conv1` — lớp có
+nhiều phần tử nhất (40×40×32) — có trung vị |a| **0,133**, max **0,587**. Ở đó PReLU cho ra
+giá trị dương từ đầu vào âm; ReLU cho 0. Đó là phần hàm mà ReLU không xấp xỉ được, và nó
+cộng dồn thành ba mặt thật rớt. Cách khôi phục không dùng nhãn pool: distill run ReLU từ run
+PReLU cùng kiến trúc trên ảnh không nhãn (đề xuất, chưa duyệt, chưa chạy).
+
+Val pool của model này (test_split 4.032 mẫu, `host_bench`): ReLU FP32 AUC 0,7436 / EER 0,3179,
+INT8 0,7368 / 0,3219. Pool và board **bất đồng** về model này ở mức 0,74 so với 0,997, đúng chiều
+§14 đã đo: nhãn pool là thứ không được dùng để kéo model này đi.
+
+### 41.6 Trên board — `bench_ai`, ReLU INT8, `models_0` gộp cả ba nhánh
+
+| | Giá trị |
+|---|---|
+| `arena_big` dùng (spoof + recog) | **743.468 B**; spoof một mình cấp tới 670 KB |
+| Hint 422.764 B của model cũ | `AllocateTensors` từ chối spoof ở 413 KB |
+| File spoof trên `models_0` | 586 KB (model cũ 424 KB) |
+| spoof, rảnh, 20 lần | **490,3 ms** (model cũ một backbone 234,0 ms) |
+| spoof, có tải preview | 571,2 ms (+16,5%) |
+| detect / recog rảnh | 231,7 / 459,4 ms, không đổi |
+| Một mặt đi hết ba nhánh | 1.181,3 ms rảnh, 1.378,1 ms có tải |
+| RAM nội trống sau nạp | 329 KB, PSRAM 6.865 KB |
+
+Từng op của spoof (`latency.md` §9.1): CONV_2D 332 ms (67,6%), DEPTHWISE 93 ms, **PAD 33 ms
+(6,7%)**, ADD 30 ms, FC 3 ms. Gấp 2,1 lần bản 12/09 vì 40,7 MMAC so với 24,6 MMAC, không vì PAD.
+
+### 41.7 Ba mặt nằm ở `conv1` — đổi từng lớp một, rồi viết lại PReLU của nó bằng op esp-nn
+
+Trên cùng 87 khung, float, đổi PReLU→ReLU theo nhóm lớp (run `0728` làm gốc):
+
+| Biến thể | Số op PReLU | thật bị loại | p5 thật − p95 giả | thật min | giả max |
+|---|---|---|---|---|---|
+| Toàn PReLU | 33 | 0/62 | +0,473 | 0,342 | 0,022 |
+| Toàn ReLU | 0 | 3/62 | +0,145 | 0,054 | 0,102 |
+| **PReLU chỉ ở `conv1`** | 1 | **0/62** | **+0,423** | 0,245 | 0,026 |
+| PReLU `conv1` + `conv2_dw` | 2 | 0/62 | +0,332 | 0,111 | 0,011 |
+| PReLU cả tầng 1 (`conv1`…`conv_3`) | 12 | 0/62 | +0,652 | 0,609 | 0,040 |
+| ReLU **chỉ ở `conv1`**, 32 lớp còn PReLU | 32 | **8/62** | +0,021 | 0,035 | 0,219 |
+
+Đổi từng lớp một sang ReLU: 32 lớp không làm rơi mặt nào (khe xấu nhất +0,256 ở
+`conv_3.model.1.conv`); riêng `conv1` làm rơi 8. Toàn bộ thiệt hại của ReLU nằm ở một lớp có
+hệ số lớn và âm (§41.5).
+
+`stem: split_prelu` (KẾ HOẠCH §3) viết lại PReLU của `conv1` **đúng hàm** bằng hai conv + hai
+depthwise + ADD, toàn op esp-nn. Run `20260916-0854_bcf7a40_e97321`; parity với "PReLU chỉ ở
+`conv1`" trên đầu vào ngẫu nhiên **7,2e-7**. `op_check`: 70 op, 66 esp-nn, PAD ×4 tham chiếu,
+**không PRELU**.
+
+| File `0854` | AUC | p5 thật − p95 giả | thật min | giả max | thật bị loại khi chặn hết giả |
+|---|---|---|---|---|---|
+| Q0 FP32 | 1,0000 | +0,425 | 0,246 | 0,026 | **0/62** |
+| **Q1 INT8** (lên lock) | **1,0000** | **+0,368** | 0,172 | 0,033 | **0/62** |
+
+Trên board (`bench_ai`): spoof **535,3 ms** rảnh, 624,1 ms có tải; `arena_big` dùng **744.428 B**,
+spoof một mình 671 KB (`latency.md` §9.3, `arena.md` §10).
+
+Quét ngưỡng INT8: **0,04–0,16 giữ 62/62 và chặn 25/25**; 0,18–0,28 còn 61/62. Seed 120‰ đứng
+giữa dải, biên 0,087 tới giả cao nhất (`p2gia_003`) và 0,052 tới mặt thật thấp nhất
+(`s20260911a_006`). Ở 0,75 vẫn chặn oan 15/62 — ngưỡng cũ không dùng được với model này dù ở
+bản nào. Pool test_split 4.032 mẫu: FP32 AUC 0,7504, INT8 0,7590 — pool vẫn bất đồng với model
+như §41.5, và không phải thước để chọn.
+
+### 41.8 Chấm run `0854` trên các tập lớn có sẵn — float, ngưỡng 0,12 và 0,50
+
+Cùng model, cùng view 2,7× từ shard (đường JPEG của shard, không phải đường board). Ngưỡng 0,12
+là seed của board; 0,50 để thấy độ dốc.
+
+| Tập | n | thật | giả | AUC | EER | thật đậu @0,12 | giả chặn @0,12 | thật đậu @0,50 | giả chặn @0,50 |
+|---|---|---|---|---|---|---|---|---|---|
+| **OV5640 board, INT8 (§41.7)** | 87 | 62 | 25 | **1,0000** | 0 | **1,000** | **1,000** | 0,871 | 1,000 |
+| pool `test:10:` | 39.072 | 10.580 | 28.492 | 0,7507 | 0,3260 | 0,941 | 0,314 | 0,851 | 0,478 |
+| NUAA | 5.110 | 3.362 | 1.748 | **0,9949** | **0,0378** | 0,955 | 0,969 | 0,789 | 0,997 |
+| LCC-FASD `evaluation` | 7.555 | 314 | 7.241 | 0,8573 | 0,2190 | 0,987 | 0,218 | 0,959 | 0,399 |
+| `unique/val` thật | 360 | 360 | 0 | — | — | 1,000 | — | 1,000 | — |
+| `unique/val` phát lại | 356 | 0 | 356 | — | — | — | 0,680 | — | 0,815 |
+| SynthASpoof bonafide | 2.000 | 2.000 | 0 | — | — | 0,964 | — | 0,897 | — |
+| SynthASpoof in | 2.000 | 0 | 2.000 | — | — | — | 0,696 | — | 0,885 |
+| SynthASpoof iPad | 2.000 | 0 | 2.000 | — | — | — | 0,236 | — | 0,420 |
+| SynthASpoof Samsung | 2.000 | 0 | 2.000 | — | — | — | 0,644 | — | 0,812 |
+| Axon mặt nạ giấy 3D | 288 | 0 | 288 | — | — | — | 0,170 | — | 0,236 |
+| Axon cutout | 120 | 0 | 120 | — | — | — | 0,483 | — | 0,658 |
+| Axon mặt nạ latex | 80 | 0 | 80 | — | — | — | 0,013 | — | 0,013 |
+
+Đọc bảng: model **rất tốt trên OV5640 và NUAA** (hai bộ ảnh camera thật, độ phân giải thấp),
+và **không phải bộ dò vạn năng**: ở ngưỡng 0,12 nó cho lọt 32% phát lại của `unique`, 76% iPad
+của SynthASpoof, 83% mặt nạ giấy và 99% mặt nạ latex (mặt nạ nằm ngoài ba lớp in/sống/phát lại
+của nó). Pool CelebA thì bất đồng hẳn (AUC 0,75). Ngưỡng 0,12 là chỗ tách hai đám điểm **của
+board**; đem sang camera khác thì hai đám chồng lên nhau. Bộ giả của board mới có 25 khung từ
+hai phiên, nên bảng này là lời nhắc đúng lúc: thu thêm đòn tấn công bằng chính OV5640 trước
+khi nói gì về độ phủ.
+
+**`phone_eval` (111 khung điện thoại 1280×720, qua detector, `--frames`)**: AUC 0,8203. Ở 0,12:
+`attack_xa` 20/20 chặn, `attack_gan` 3/3 chặn, **`attack_anh` 0/12 chặn** (ảnh in, mặt 228–245 px,
+crop đủ 2,7×); `live_rat_xa` 20/20, `live_xa` 19/20, `live_kho` 12/12 đậu, **`live_gan` 0/12 và
+`live_vua` 0/12 đậu**. `live_gan` có mặt 686–700 px trong khung cao 720 nên crop chỉ đạt 1,03×
+— đúng kiểu hỏng của 1,0× ở §41.2; `live_vua` đạt 2,06× vẫn rớt, trong khi trên board các mặt
+185–270 px (crop 1,2–1,7×) đậu 0,98+. Khác camera là khác miền; số của `phone_eval` không suy
+ra board, nhưng `attack_anh` lọt trọn là điểm yếu **ảnh in cỡ vừa** cần một phiên chụp bằng
+OV5640 để kiểm.
+
+### 41.9 Ba model có sẵn khác, cùng 87 khung, cùng ô vuông của board — float
+
+| Model | Train trên | Tiền xử lý đúng | Crop | AUC | thật bị loại khi chặn hết giả | p5 thật − p95 giả |
+|---|---|---|---|---|---|---|
+| minivision V2 2,7× PReLU (đối chứng, run `0728`) | bộ riêng | RGB [0,1] (đã gấp) | vuông 2,7× | 1,0000 | 0/62 | +0,473 |
+| **minivision V1SE 4,0×** (`4_0_0_80x80_MiniFASNetV1SE.pth`, sha256 `84ee1d37d96894d5…`) | bộ riêng | **BGR 0–255** | vuông 4,0× | **1,0000** | **0/62** | **+0,553** |
+| minivision V1SE 4,0× | | BGR 0–255 | vuông 2,7× | 1,0000 | 0/62 | +0,525 |
+| minivision V1SE 4,0× | | BGR 0–255 | chữ nhật 4,0× kiểu `CropImage` gốc | 1,0000 | 0/62 | +0,022 |
+| minivision V1SE 4,0× | | RGB 0–255 hoặc chia 255 | vuông 4,0× | 0,83–0,996 | 5–43/62 | ≤ +0,220 |
+| **Ghép V2 2,7× + V1SE 4,0×** (tổng softmax như `test.py` gốc) | | | | **1,0000** | **0/62** | **+0,566**, thật min 0,443 |
+| hairymax `bin_1.5_128` | CelebA-Spoof | BGR/255 | vuông 1,5× | 0,9858 | 6/62 | −0,009 |
+| hairymax `print-replay_1.5_128` | CelebA-Spoof | BGR/255 | vuông 1,5× | 0,9032 | 34/62 | −0,261 |
+| hairymax `bin_128` / `print-replay_128` | CelebA-Spoof | BGR/255 | vuông 1,0× | 0,39 / 0,59 | 62 / 47/62 | < −0,6 |
+
+Ba điều đọc ra:
+- **V1SE 4,0× của minivision là ứng viên thứ hai**, khe rộng hơn V2 (+0,553 so với +0,473) và ghép
+  hai model rộng nhất (+0,566, mặt thật thấp nhất 0,443). Cùng bẫy tiền xử lý với V2: model card
+  nói chia 255, thực tế cần **BGR 0–255**, sai là mất 39–43/62 mặt thật. Giá: kiến trúc có SE
+  (`MEAN`, `MUL`, `SIGMOID`) và PReLU, cùng cỡ 1,8M nên 🔬 cỡ 500 ms nữa nếu ghép; chưa export.
+- Ô vuông trượt của board **thắng hẳn** quy tắc chữ nhật kéo giãn của kho gốc trên cả hai model
+  (+0,553 so với +0,022): kéo giãn phá tỉ lệ viền máy.
+- Hai model của hairymax **train trên CelebA-Spoof** thì hỏng đúng như model tự train của mình
+  (§14, §41.8): CelebA là nguồn của vấn đề, không phải kiến trúc hay thủ thuật train.

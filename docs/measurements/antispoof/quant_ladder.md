@@ -141,3 +141,30 @@ cùng run, cùng split, cùng 4.032 mẫu:
 Một mình CLE gây ra toàn bộ thiệt hại; bias correction vô hại; tăng mẫu calib không cứu
 được vì calib không phải nguyên nhân. Cơ chế ở `measurements.md` §32.
 
+## 6. Hai run nhập từ minivision — thang chạy 16/09, CLE tắt
+
+Kiến trúc `minifasnet_v2`, 80×80, một view 2,7×, ba lớp. Trọng số không train trên pool
+(KẾ HOẠCH §3), nên val pool ở đây đo **mức bất đồng giữa pool và model**, không đo chất lượng
+model; chất lượng đọc ở `measurements.md` §41 trên khung của chính OV5640.
+
+| Nhãn | Run | Kích hoạt | `op_check` |
+|---|---|---|---|
+| `0728` | `20260916-0728_f20a94a_ec4799` | PReLU gốc | **chặn**: PRELU ×33 ngoài resolver |
+| `0729` | `20260916-0729_f20a94a_cc06da` | ReLU | qua: PAD ×4 tham chiếu, còn lại esp-nn |
+| **`0854`** | `20260916-0854_bcf7a40_e97321` | ReLU, `stem: split_prelu` | qua: 70 op, PAD ×4 tham chiếu, **không PRELU** |
+
+| Model | Q | Pool EER | Pool AUC | Board: thật giữ / giả chặn (§41) | Kích thước | head arena | latency spoof |
+|---|---|---|---|---|---|---|---|
+| `0728` | Q0 FP32 | — | — | 62/62 · 25/25 | 1.694 KB | — | — |
+| `0728` | Q1 | — | — | **62/62 · 25/25** | 586 KB | 🔬 | 🔬 (§41.7) |
+| `0729` | Q0 FP32 | 0,3179 | 0,7436 | 59/62 · 25/25 | 1.694 KB | — | — |
+| **`0729`** | **Q1** | 0,3219 | 0,7368 | **59/62 · 25/25** | **586 KB** | **670 KB một mình, 743.468 B chung với recog** | **490,3 ms** |
+| `0854` | Q0 FP32 | 0,3169 | 0,7504 | 62/62 · 25/25 | 1.694 KB | — | — |
+| **`0854`** | **Q1** | 0,3126 | 0,7590 | **62/62 · 25/25** | **586 KB** | **671 KB một mình, 744.428 B chung với recog** | **535,3 ms** |
+
+Pool của `0728` không chấm vì thang dừng ở `op_check` trước bước chấm; số board của nó chấm bằng
+đường của §41.1. Q1 so với Q0 trên board: PReLU giữ nguyên 0/62, ReLU giữ nguyên 3/62 — lượng
+tử không đổi thứ tự ở cả hai, chỉ thu khe (0,473 → 0,322 và 0,146 → 0,127).
+
+Cả hai run đều là **A0 với trọng số nhập**, không phải arm §3.7; bảng này dựng đường export cho
+chúng và ghi số, không chốt cấu hình lượng tử.

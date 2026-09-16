@@ -1203,6 +1203,14 @@ Ba ràng buộc đi kèm:
   mục dưới nói tới.
 - **Đổi cách dựng thì shard hết giá trị**: sinh lại shard rồi train lại là bắt buộc.
 
+`minifasnet_v2_se` nhận thêm `views: wide`: một backbone width 32 đọc **riêng** view ngữ cảnh 2,7×
+của shard. Đây là thí nghiệm đối chứng cho §22 sau khi trọng số nhập (mục dưới) cho thấy tín hiệu
+của OV5640 nằm ở vành ngữ cảnh: nếu kiến trúc gọn của nhánh học được cùng tín hiệu ấy từ pool thì
+spoof về ~234 ms; nếu nó lại học "căn phòng" thì §22 là chuyện dữ liệu, không phải kiến trúc. Cấu
+hình chạy bằng `--set` trên `minifasnet.yaml` (hạ CelebA, `crop_scale_range` 1,2–2,7 vì board kẹp
+khung khi mặt gần, `occlusion` nhẹ hơn, `chroma: false`), không thêm file; thước đo là 87 khung INT8
+của `measurements.md` §41, không phải val pool.
+
 #### Trọng số nhập từ Silent-Face-Anti-Spoofing, đọc crop ngữ cảnh 2,7×
 
 Model thứ hai của nhánh là `minifasnet_v2`: kiến trúc MiniFASNetV2 của minivision-ai
@@ -1222,6 +1230,7 @@ vùng như board:
 |---|---|---|---|---|
 | PReLU (gốc) | **1,0000** | **+0,468** | 21/21 | **0/64** |
 | ReLU (thay) | 0,9978 | +0,200 | 21/21 | 3/64 |
+| **ReLU, `stem: split_prelu`**, INT8 trên 87 khung | **1,0000** | **+0,368** | 25/25 | **0/62** |
 
 Cùng model ở crop 1,0× của mục trên: AUC 0,9241, khe −0,041, 21/64 thật bị loại. Tín hiệu
 nằm ở vành ngữ cảnh — viền máy, tay cầm, mép màn — không ở da mặt.
@@ -1236,7 +1245,7 @@ cả `ml/` lẫn `kLive` của firmware. Nhãn 1 của pool rơi vào lớp phá
 động `Shape→Gather→Concat→Reshape`. PReLU bị §3 cấm và `latency.md` đo tốn 37–49% thời gian;
 `activation: relu` trong config bỏ nó. Chuỗi flatten thay bằng `Reshape` tĩnh, batch ghim 1.
 `PAD ×4` **giữ lại**: map 80→40→20→10→5 chẵn ở mọi stride-2, mà `conv_6_dw` là kernel 5×5 trên
-map 5×5 nên đổi 80→81 là đổi hình dạng trọng số. Resolver antispoof đăng ký thêm `PAD`.
+map 5×5 nên đổi 80→81 là đổi hình dạng trọng số. Resolver antispoof đăng ký thêm `PAD`; bốn PAD đo trên board tốn 33 ms, 6,7% thời gian spoof (`latency.md` §9).
 
 **Ba mặt thật ReLU đánh mất nằm ở một lớp.** Đổi từng lớp PReLU sang ReLU một mình trên 87 khung
 board: 32 lớp không làm rơi mặt nào, riêng `conv1` (hệ số trung vị |a| 0,133, max 0,587, 66% âm)

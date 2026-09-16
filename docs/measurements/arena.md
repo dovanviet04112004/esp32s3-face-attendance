@@ -324,3 +324,30 @@ fps của phiên LCD đều lấy trên bản `dev`, nên khi quay lại việc 
 CPU 0 lúc thì `main` lúc thì `cam`. Đây là chuyện của app test chứ không phải của kiosk: menu
 tương tác dò `stdin` không nhường, còn firmware chính không có menu và chạy cả tiếng không một
 lần watchdog kêu. Không sửa, ghi lại để lần sau đọc log `bench_mem` đừng tưởng kiosk hỏng.
+
+---
+
+## 10. Ảnh spoof bằng trọng số nhập — `arena_big` lên 743.468 B, 16/09
+
+Spoof `20260916-0729` (MiniFASNetV2 minivision, 80×80, ReLU) thay bản một backbone. Hint cũ
+422.764 B làm `AllocateTensors` **từ chối** spoof ở 413 KB. Đo bằng `bench_ai` với hint tạm
+1.048.576 B rồi ghi lại hint theo số `used`:
+
+| | Bản 12/09 (§8) | Bản 16/09 |
+|---|---|---|
+| spoof một mình, `arena at` | 210 KB | **670 KB** |
+| recog cộng thêm | 412 KB | 726 KB |
+| `arena_big` `used` | 422.764 B | **743.468 B** |
+| `arena_big` cấp theo hint | 422.912 B (413 KB) | **744.448 B (727 KB)** |
+| file spoof trên `models_0` | 424 KB | **586 KB** |
+| `models.bin` | — | 1.500.896 B |
+| RAM nội trống sau init | 331 KB | 329 KB |
+| PSRAM trống sau init | 7.537 KB | 6.865 KB |
+
+Bản lên lock là stem tách `20260916-0854` (§41.7 của antispoof): spoof một mình **671 KB**, chung với
+recog **744.428 B** `used` — thêm 960 B so với bản ReLU trơn cho hai tensor 40×40×32 của nhánh
+âm. Hai entry dùng chung `arena_big` (antispoof, recognition) cùng mang **744.428 B** theo luật §3.8.
+Kiểm lại sau khi đóng gói với hint mới: `recog: arena at 726 of 727 KB`, 20 lần chạy mỗi nhánh
+đều qua — khít, không dư. Vì sao spoof cần 670 KB: lớp `conv_23` mở 32→103 kênh trên map 40×40
+(164.800 B) rồi PAD ra 41×41×103 (173.103 B) trước depthwise stride 2, hai tensor ấy sống cùng
+lúc trong `head`.

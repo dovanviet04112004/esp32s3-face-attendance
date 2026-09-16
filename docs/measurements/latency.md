@@ -351,3 +351,67 @@ xếp chồng tail trên một `MicroAllocator` (§3.8).
 Bảng "việc cần làm" ở mục 4 còn dòng chưa thử: **ngừng preview lúc spoof + recog chạy, 🔬 ~190
 ms**. Riêng nó gần như trả hết 234 ms của backbone thứ hai, và đổi lại là màn hình đứng trong
 quãng mà giao diện đang hiện `Đang nhận diện...` (§4.5.5h.1) nên người dùng không đọc ra là treo.
+
+---
+
+## 9. Nhánh chống giả bằng trọng số nhập MiniFASNetV2 — đo 16/09
+
+Ảnh `models_0`: detect `20260831-1616`, spoof **`20260916-0729`** (trọng số minivision, ReLU thay
+PReLU, 80×80, ba lớp; `measurements/antispoof` §41), recog `20260908-1750`. Cùng cấu hình mục 1,
+`bench_ai` với `CONFIG_AI_PROFILING=y`, 20 lần mỗi nhánh.
+
+| Nhánh | Rảnh | Có tải preview | Bản 12/09 (mục 7) |
+|---|---|---|---|
+| detect | 231,7 ms | 269,8 ms | 232,5 ms |
+| **anti-spoof** | **490,3 ms** | 571,2 ms (+16,5%) | 234,0 ms |
+| recognition | 459,4 ms | 537,0 ms | 458,0 ms |
+| **Một mặt đi hết ba nhánh** | **1.181,3 ms** | 1.378,1 ms | 924,5 ms |
+
+### 9.1 Từng op của spoof — 491.202 µs
+
+| Op | µs | % | ESP-NN |
+|---|---|---|---|
+| CONV_2D | 332.261 | 67,6% | ✅ |
+| DEPTHWISE_CONV_2D | 93.292 | 19,0% | ✅ |
+| PAD | 33.146 | 6,7% | ❌ |
+| ADD | 29.708 | 6,0% | ✅ |
+| FULLY_CONNECTED | 2.795 | 0,6% | ✅ |
+
+**Vì sao gấp 2,1 lần bản 12/09.** Không phải vì PAD: bốn PAD của map chẵn tốn 33 ms, 6,7%. Là vì
+phép tính: bản `minifasnet_v2_se` 81×81 có **24,6 MMAC**, bản nhập có **40,7 MMAC** (1,65×), gần
+hết ở `CONV_2D` 1×1 mở kênh lên 103/231/308 trên map 40×40 và 20×20 (`conv_23`, `conv_34`,
+`conv_45`). Phần còn lại là 12 `ADD` dư (30 ms) và PAD. 93,3% thời gian nằm trên kernel esp-nn,
+nên đường giảm tiếp là kiến trúc, không phải op.
+
+### 9.2 Bản PReLU gốc, đo một lần để có số, không nạp
+
+Cùng trọng số, giữ 33 PReLU (run `20260916-0728`), đăng ký `PRELU` tạm trong `bench_ai` cho đúng
+một lần đo, không commit, không nạp:
+
+| Op | µs | % | ESP-NN |
+|---|---|---|---|
+| CONV_2D | 331.999 | 45,7% | ✅ |
+| **PRELU** | **236.291** | **32,6%** | ❌ |
+| DEPTHWISE_CONV_2D | 92.445 | 12,7% | ✅ |
+| PAD | 33.012 | 4,5% | ❌ |
+| ADD | 29.276 | 4,0% | ✅ |
+| FULLY_CONNECTED | 2.881 | 0,4% | ✅ |
+
+spoof **727,2 ms** rảnh, 847,2 ms có tải; `arena_big` dùng 746.380 B. 33 PReLU trên 607.000
+phần tử tốn 236 ms, tức **389 ns một phần tử** qua kernel tham chiếu — gấp 1,48 lần cả nhánh
+ReLU. Số này đóng câu hỏi "hay cứ giữ PReLU": không, và §9.3 cho thấy không cần.
+
+### 9.3 Stem tách PReLU của `conv1` — bản lên `models.lock.json`
+
+Run `20260916-0854`: PReLU của `conv1` viết lại bằng một `CONV_2D`, một `DEPTHWISE_CONV_2D` và
+một `ADD` thêm vào (`measurements/antispoof` §41.7). Đo cùng cấu hình, 20 lần:
+
+| | ReLU trơn `0729` | **Stem tách `0854`** | PReLU gốc `0728` |
+|---|---|---|---|
+| spoof rảnh | 490,3 ms | **535,3 ms** | 727,2 ms |
+| spoof có tải preview | 571,2 ms | 624,1 ms | 847,2 ms |
+| thật giữ / giả chặn, INT8, 87 khung | 59/62 · 25/25 | **62/62 · 25/25** | 62/62 · 25/25 |
+| op ngoài esp-nn | PAD ×4 | PAD ×4 | PAD ×4 + PRELU ×33 |
+
+Stem tách trả **+45 ms** (9,2%) cho ba mặt thật, so với +237 ms nếu giữ PReLU. Một mặt đi hết
+ba nhánh với bản này: 🔬 chưa cộng lại từ log cuối, đọc ở `bench_0854` khi ghi lock.

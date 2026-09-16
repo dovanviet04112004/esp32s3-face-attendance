@@ -1604,3 +1604,84 @@ bằng 0**.
 điện thoại sát ống kính, màn hình sáng hết cỡ. Mệnh đề "mờ ⇒ giả" vẫn **chưa thể bác bỏ**,
 mà chưa bác bỏ được thì chưa phải bằng chứng. Ca chụp theo nút bấm dựng ngày 15/09 lưu được
 12 khung RAW trên board mỗi chuyến, đủ cho phép bác bỏ đó.
+
+---
+
+# 17. Đổi hướng ngày 16/09: nhập trọng số đã train, và tín hiệu nằm ở vành ngữ cảnh
+
+## 17.1. Phép thử gỡ nút
+
+Sau bảy lần chạy cùng một kiểu hỏng (§16.7), phép thử rẻ nhất còn lại là đem một model
+chống giả **train ở nơi khác** về chấm trên khung của OV5640. Chọn MiniFASNetV2 của minivision
+(Silent-Face-Anti-Spoofing, `2.7_80x80_MiniFASNetV2.pth`, Apache-2.0) vì cùng họ kiến trúc với
+nhánh đang dùng.
+
+Hai lỗi phải sửa trước khi đọc được số: model card ghi sai tiền xử lý. Model nhận **BGR thang
+0–255** (không chia 255) và lớp sống ở **chỉ số 1** trong `[in, sống, phát lại]`. Thử bốn biến
+thể tiền xử lý trên ảnh pool cho khoảng cách logit 4,1 với BGR 0–255 so với 0,097 khi chia 255.
+
+## 17.2. Kết quả: cùng trọng số, hai crop, hai thế giới
+
+Trên 85 khung OV5640 (§14), cắt bằng đúng quy tắc ô vuông của firmware:
+
+| Crop | AUC | p5 thật − p95 giả | thật bị loại khi chặn hết giả |
+|---|---|---|---|
+| 1,0× (như nhánh đang dùng) | 0,9241 | −0,041 | 21/64 |
+| **2,7×** | **1,0000** | **+0,468** | **0/64** |
+
+Kết luận rút ra không phải "model họ tốt hơn". Là **crop 1,0× vứt tín hiệu đi**: viền máy, tay
+cầm, mép màn hình nằm ngoài hộp mặt. §22 của measurements đã bác 2,7× vì nhánh wide train trên
+CelebA-Spoof học "phòng thường = giả"; lỗi ấy thuộc **dữ liệu train**, không thuộc ngữ cảnh.
+Trọng số train ở nơi khác không mang confound đó.
+
+## 17.3. Nhập thành run của mình
+
+`import_minifasnet.py` viết run đúng cấu trúc §4.2: `config.resolved.yaml`, `split.lock`,
+`env.txt`, `ckpt/{best,last}.pth` ở định dạng của `Trainer`, nên thang lượng tử, `update_lock`
+và resume nhìn nó như mọi run. Ba khác biệt tiền xử lý **gấp vào trọng số**: đảo BGR→RGB và
+nhân 255 vào `conv1`, hoán vị hàng của `prob` thành `[sống, phát lại, in]` để `LIVE = 0` giữ
+nguyên ở ML và firmware. Parity với ONNX gốc 2,4e-6.
+
+Firmware đổi ba chỗ: `kFaceScale` 1,0 → 2,7 (`fitted()` đã là bản C của `fitted_box`, 0/87
+khung lệch), softmax đọc số lớp từ tensor, resolver thêm `PAD`.
+
+## 17.4. PReLU: bộ op cấm nó, và ba mặt thật đi theo nó
+
+Đồ thị gốc có 33 PReLU — kernel tham chiếu, §3 cấm. Hệ số học được nhỏ (trung vị |a| 0,012) nên
+đổi sang ReLU **giữ thứ hạng** (AUC 0,9974) nhưng **mất 3/62 mặt thật** dưới cả giả cao nhất.
+Không ngưỡng nào cứu được.
+
+Đổi từng lớp một thì thấy: 32 lớp đổi sang ReLU không rơi mặt nào; riêng `conv1` (trung vị |a|
+0,133, max 0,587, **66% hệ số âm**) rơi 8/62. Toàn bộ thiệt hại của ReLU nằm ở **một lớp**.
+
+Và lớp ấy viết lại được **chính xác** bằng op esp-nn: PReLU(t) = ReLU(t) − a·ReLU(−t), lớp kế
+tiếp là depthwise tuyến tính theo kênh, nên dựng hai nhánh `ReLU(BN(Wx))` và `ReLU(−BN(Wx))`
+rồi cộng sau depthwise thứ hai có trọng số −a·γ/σ·w. Thêm một CONV_2D, một DEPTHWISE và một
+ADD; không PRELU; parity với "PReLU chỉ ở conv1" là 7,2e-7. Không train, không distill, không
+đụng ADR-0002.
+
+| INT8 trên 87 khung board | thật giữ | giả chặn | khe |
+|---|---|---|---|
+| PReLU gốc (không nạp được) | 62/62 | 25/25 | +0,322 |
+| ReLU trơn | 59/62 | 25/25 | +0,127 |
+| **ReLU + stem tách** (lên board) | **62/62** | **25/25** | **+0,368** |
+
+## 17.5. Ngưỡng là chỗ tách hai đám điểm, không phải số mặc định
+
+Model này trải mặt thật **0,17–1,0** và ép giả xuống **dưới 0,04**; ngưỡng 0,75 của model cũ
+chặn oan 15/62. Luật của kho gốc (argmax 3 lớp) cũng chặn oan 5–6/62 vì softmax 3 lớp không
+hiệu chỉnh cho camera này. Seed `live_min` chốt **120‰**: dải 0,04–0,16 giữ 62/62 và chặn
+25/25, biên hai phía 0,052 / 0,087.
+
+## 17.6. Giá trên board và chỗ đứng
+
+Spoof **490 ms** (bản 12/09: 234 ms) — không vì PAD (33 ms, 6,7%) mà vì **40,7 MMAC so với
+24,6 MMAC**; `arena_big` lên 743.468 B (bản ReLU trơn). PReLU gốc đo một lần để có số: **727 ms**, riêng
+33 PRELU 236 ms (32,6%), tức giữ PReLU là trả thêm 48% thời gian cho cùng độ chính xác mà stem
+tách đã đạt (`latency.md` §9.2). Stem tách đo được **535 ms** (+45 ms so với ReLU trơn) và `arena_big`
+744.428 B — đó là bản nạp lên board.
+
+Chỗ đứng: lần đầu có một bản INT8 **giữ trọn 62 mặt thật và chặn trọn 25 khung giả** của chính
+OV5640, toàn op esp-nn. Bộ giả vẫn là hai phiên (một điện thoại, một bộ ảnh in); 12 khung RAW
+mỗi chuyến của ca chụp §16.7 giờ là việc kế tiếp, để xem tín hiệu vành ngữ cảnh có sống qua
+điện thoại khác, ảnh in sát ống kính và màn sáng hết cỡ không.
