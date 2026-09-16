@@ -2596,6 +2596,27 @@ Ba điều đọc ra:
 - Hai model của hairymax **train trên CelebA-Spoof** thì hỏng đúng như model tự train của mình
   (§14, §41.8): CelebA là nguồn của vấn đề, không phải kiến trúc hay thủ thuật train.
 
+**Đợt hai, 16/09 chiều: quét thêm 12 model công khai**, cùng 87 khung, cùng ô vuông board, float,
+đúng tiền xử lý tài liệu ghi (chỗ nào tài liệu thiếu thì thử các biến thể và ghi rõ là đoán):
+
+| Model | Nguồn / train | Cỡ | Đầu vào | Crop tốt nhất | AUC | thật bị loại | khe |
+|---|---|---|---|---|---|---|---|
+| Faceplugin `fr_liveness.onnx` | SDK thương mại, JS; train không rõ | 1,89 MB | 128, RGB 0–255, 3 lớp, crop 2,7× | 2,7× | 0,9981 | **3/62** | +0,352 |
+| ModelScope `cv_manual_face-liveness_flrgb` (Alibaba) | dữ liệu riêng | 1,36 MB | 112, mở 96/112 mỗi bên ≈ 2,7× rồi cắt giữa 112/128; chuẩn hoá và chỉ số sống **đoán** ((x−127,5)/128, RGB, live=1) | 2,7× | 0,9961 | **2/62** | +0,093 |
+| OpenVINO OMZ `anti-spoof-mn3` (MobileNetV3, kprokofi) | CelebA-Spoof | 12,3 MB | 128, RGB, mean/scale riêng | 1,0× | 0,9613 | 9/62 | −0,153 |
+| HF `hoangnguyenduc3009/face-liveness-vit` | CelebA-Spoof | 2,1 MB | 224, ImageNet | — | 0,19–0,51 | 62/62 | < −0,7 |
+| `abbas1123/vision-liveness-service` MobileNetV3 | LFW + giả **tổng hợp** | 6,1 MB | 160, ImageNet | 1,3× | 0,7942 | 42/62 | −0,118 |
+| DeePixBiS (`Saiyam26`) | NUAA 863 ảnh | 13 MB | 224, (x/255−0,5)/0,5 | 1,0× | 0,7910 | 31/62 | −0,405 |
+| HF `thusinh1969/BrightoSV_AntiSpoof_V1.5-SE` | — | 1,9 MB | — | không tải được: repo gated | — | — | — |
+| HF `nguyenkhoa/mobilevitv2_Liveness_detection` | không rõ | 17,7 MB | 256 | chưa chấm: cần `transformers` | — | — | — |
+| HF `litert-community/Silent-Face-Anti-Spoofing-LiteRT`, `QingHeYang/…-onnx`, `AI-DaBingGe/SilentFAS` | minivision đóng gói lại | — | — | cùng trọng số đã chấm | — | — | — |
+| HF ViT-base / DINOv2 liveness (`nguyenkhoa`, `jdp8`, `Molkaatb`) | CelebA | 343 MB | 224 | không chấm: ngoài cỡ board 30 lần | — | — | — |
+
+Đọc ra: trong 15 model công khai đã sờ tới, **chỉ hai model của minivision giữ trọn 62 mặt thật**;
+Faceplugin và Alibaba đứng ngay sau (2–3 mặt), đều dùng crop ngữ cảnh ~2,7× — một xác nhận độc lập
+thứ ba cho §41.2. Mọi model train trên CelebA-Spoof (hairymax, OMZ, ViT) và trên NUAA nhỏ hay giả
+tổng hợp đều hỏng trên OV5640. Không còn ứng viên công khai nào chưa thử trong cỡ board.
+
 **V1SE 4,0× và bản ghép trên các tập lớn** (float, view wide 2,7× của shard, cùng cột với §41.8; V2 ở
 đây là run `0728` PReLU gốc, không phải `0854`):
 
