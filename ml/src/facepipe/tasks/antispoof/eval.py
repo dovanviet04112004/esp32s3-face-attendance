@@ -223,6 +223,46 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     return cfg, model, (example,), names, ["logits"]
 
 
+def calibrate_live_bias(run: Path, frames: Path, detector: Path, device: torch.device) -> float:
+    """Shift the live logit so the frames' clean window straddles an even split.
+
+    A constant on one logit cannot reorder anything, so no frame changes side;
+    it moves the operating point off the flat tail of the softmax, where the
+    per-mille threshold in NVS has too few steps to sit safely (KEHOACH 3).
+    """
+    cfg, model = load_run(run)
+    model.to(device).eval()
+    detect, priors = load_detector(detector, device)
+    rows = score_frames(model, detect, priors, frames, int(cfg.model.input_hw[0]), device)
+    scores = np.array([s for _f, _n, s, _side in rows if not np.isnan(s)])
+    labels = np.array([frame_label(f) for f, _n, s, _side in rows if not np.isnan(s)])
+    live, attack = scores[labels == LIVE], scores[labels != LIVE]
+    if not live.size or not attack.size or live.min() <= attack.max():
+        raise ValueError("frames give no clean window; calibrate on a set the run already separates")
+    # The midpoint in log-odds, which is where an even split lands after the shift.
+    middle = np.sqrt(live.min() * attack.max())
+    return float(-np.log(middle / (1.0 - middle)))
+
+
+def fold_live_bias(run: Path, shift: float, live_index: int = LIVE) -> Path:
+    """Fold the shift into the classifier bias and keep the original beside it."""
+    path = run / "ckpt" / "best.pth"
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    keep = run / "ckpt" / "best.uncalibrated.pth"
+    if not keep.exists():
+        torch.save(payload, keep)
+    for holder in ("model", "ema"):
+        state = payload.get(holder)
+        state = state.get("module") if holder == "ema" and state else state
+        if not state:
+            continue
+        for key in ("classifier.bias", "prob.bias"):
+            if key in state:
+                state[key][live_index] += shift
+    torch.save(payload, path)
+    return path
+
+
 def named(spec: str | list[str]) -> str:
     """A split reads as one spec or as several; the report names whichever it got."""
     return (spec if isinstance(spec, str) else "+".join(map(str, spec)))[:24]
@@ -429,6 +469,11 @@ def main(argv: list[str] | None = None) -> int:
         help="drop frames whose face is narrower than this, the served range of KEHOACH 3",
     )
     parser.add_argument(
+        "--calibrate-live-bias",
+        action="store_true",
+        help="fold a constant into the live logit so --frames straddle an even split",
+    )
+    parser.add_argument(
         "--thresholds",
         type=float,
         nargs="+",
@@ -438,6 +483,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     device = torch.device(args.device)
+    if args.calibrate_live_bias:
+        if args.frames is None or args.detector is None:
+            parser.error("--calibrate-live-bias needs --frames and --detector")
+        shift = calibrate_live_bias(args.run, args.frames, args.detector, device)
+        print(f"live logit shift {shift:+.4f} folded into {fold_live_bias(args.run, shift)}")
+        return 0
     cfg, model = load_run(args.run)
     model = model.to(device)
     if args.frames is not None:
