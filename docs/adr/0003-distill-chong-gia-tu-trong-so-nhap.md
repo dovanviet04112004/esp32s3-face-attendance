@@ -59,6 +59,31 @@ Phạm vi: **chỉ nhánh chống giả**. Detect và recognition giữ nguyên 
   logit là đủ cho bài toán ba lớp; distill đặc trưng chỉ cân nhắc khi logit không đủ, và khi
   đó phải qua ADR khác.
 
+## Kết quả đo được, 16/09
+
+Student `20260916-1109_00e506a_73d457` đạt mốc nghiệm thu và **lên `models.lock.json`**:
+
+| | teacher | bản nhập `0854` | student |
+|---|---|---|---|
+| board 87 khung INT8 | 0/62 · 25/25 | 0/62 · 25/25 | **0/62 · 25/25** |
+| khe logit (nấc INT8) | 57 | 53 | **49** |
+| spoof trên board | — | 535,3 ms | **234,1 ms** |
+| `arena_big` | — | 744.428 B | **422.764 B** |
+| op ngoài esp-nn | — | PAD ×4 | **không có** |
+
+Distill cho ra thứ mà bảy lần train trên nhãn không cho: một model width 32 **giữ trọn 62 mặt thật**
+của OV5640. Bản train trên nhãn cùng kiến trúc mất 51/62 (`measurements.md` §41.9).
+
+Hai điều phải đọc kèm. **Ảnh in là chỗ student thua**: teacher dìm NUAA xuống 0,000, student để 0,177;
+phép lọc thông thấp cho thấy toàn bộ chênh lệch nằm dưới 3 px, tức trần năng lực của width 32
+(§42.5). Đổi lại student **hơn ở đòn màn hình** (iPad 50,2% so với 23,8%). **Giai đoạn thêm nguồn ảnh
+in bị loại**: nó mua 11 điểm chặn ảnh in nhưng trả 18% khe board (§42.7).
+
+Một bước mới vào đường xuất: **căn bias**. Cộng hằng số vào logit lớp sống không đổi thứ tự nên 0/87
+khung đổi phán quyết, chỉ dịch điểm vận hành khỏi đuôi phẳng của softmax, nơi `live_min` theo phần
+nghìn chỉ còn 19 nấc; sau khi căn là 320 nấc và `live_min` gieo **500‰**. Hàm ở
+`tasks/antispoof/eval.py`, bản chưa căn giữ ở `ckpt/best.uncalibrated.pth`.
+
 ## Hệ quả kéo theo
 
 - KẾ HOẠCH §3 lớp 2: "ba model train trên nhãn thật, không teacher" thành "hai model"; nhánh

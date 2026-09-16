@@ -27,7 +27,7 @@
 | Nhánh | Model | Link code / weight | Thông số | License |
 |---|---|---|---|---|
 | **Detect** | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750** đo ở **độ phân giải gốc**, không phải ở 160×120 của dự án này (§3 lớp 2); ra box **+ 5 landmark** | **MIT** |
-| **Anti-spoof** | **MiniFASNetV2 trọng số nhập, stem tách** trên crop ngữ cảnh 2,7× (§3); student **MiniFASNetV2-SE width 32** distill từ nó (ADR-0003) | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — trọng số `2.7_80x80_MiniFASNetV2.pth`, kiến trúc ở `src/model_lib/MiniFASNet.py` | **432.832 params**, 40,7 MMAC @80×80, spoof 535 ms trên board; student ≈0,26M params, 24,6 MMAC @81×81 | Apache-2.0 (code và weight upstream) |
+| **Anti-spoof** | **MiniFASNetV2-SE width 32** trên crop ngữ cảnh 2,7×, distill từ trọng số MiniFASNetV2 nhập (ADR-0003) | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — trọng số `2.7_80x80_MiniFASNetV2.pth`, kiến trúc ở `src/model_lib/MiniFASNet.py` | **262.875 params**, 24,6 MMAC @81×81, spoof **234 ms** trên board; teacher nhập 432.832 params, 40,7 MMAC, 535 ms | Apache-2.0 (code và weight upstream) |
 | **Recognition** | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | **1.20M params** (đo trên bản trong repo), 4.58MB FP32 → **~1.2MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
 
 **Hai ràng buộc thiết kế quyết định bộ 3 này:**
@@ -53,9 +53,9 @@
 | Nhánh | Params | ≈ INT8 |
 |---|---|---|
 | Detect (YuNet) | 75.631 | 76 KB |
-| Anti-spoof (MiniFASNetV2 nhập, stem tách) | 432.832 | **586 KB** đo trên board 16/09 |
+| Anti-spoof (MiniFASNetV2-SE w32, distill) | 262.875 | **425 KB** đo trên board 16/09 |
 | Recognition (MobileFaceNet, embedding 512-D) | 1.199.488 | 720 KB đo trên board |
-| **Tổng** | 1.707.951 | **1.464 KB trong 2 MB** (§6.1), gồm cả detect 158 KB |
+| **Tổng** | 1.537.994 | **1.303 KB trong 2 MB** (§6.1), gồm cả detect 158 KB |
 
 **Đã export và đo trên board 12/09**: ba file `.tflite` INT8 chiếm 1.302 KB trong partition
 `models_0` 2 MB, còn dư 746 KB. Cột KB là kích thước file thật, gồm cả overhead flatbuffer,
@@ -1235,8 +1235,17 @@ khung giả; `SpoofShardDataset.scale_target()` bốc trong đúng khoảng từ
 **không** sửa được là lệch phân bố scale giữa hai lớp của chính bộ đo, việc ấy cần đòn tấn công chụp
 ở xa. Chọn checkpoint bằng **KL trên val**, không bằng EER pool.
 Nghiệm thu bằng bảng bốn dòng cùng thước 87 khung INT8 + tập lớn + `bench_ai`: teacher, bản
-nhập stem tách đang nạp, student distill, student cũ `0107`; student lên `models.lock.json` chỉ
-khi giữ 62/62 và chặn 25/25 với khe không hẹp hơn bản đang nạp.
+nhập stem tách, student distill, student cũ `0107`. Kết quả 16/09: student
+`20260916-1109` giữ **62/62**, chặn **25/25**, khe 49 nấc INT8 so với 53 của bản nhập, chạy
+**234 ms thay vì 535** và dùng **423 KB arena thay vì 744**, bộ op toàn esp-nn không PAD — **lên
+`models.lock.json`** (ADR-0003, `measurements.md` §42). Chỗ nó thua là ảnh in, và phép lọc thông thấp
+chốt nguyên nhân là trần năng lực của width 32 chứ không phải dữ liệu hay hiệu chuẩn.
+
+Đường xuất của student có thêm một bước **căn bias**: `eval.py --calibrate-live-bias` cộng một hằng
+số vào logit lớp sống rồi gấp vào `classifier.bias`, giữ bản gốc ở `ckpt/best.uncalibrated.pth`. Phép
+cộng hằng số không đổi thứ tự nên không khung nào đổi phán quyết và khe logit giữ nguyên; nó chỉ đưa
+điểm vận hành khỏi đuôi phẳng của softmax, nơi `live_min` lưu theo phần nghìn chỉ còn 19 nấc dùng
+được. Sau khi căn, cửa sổ là 320 nấc và `live_min` gieo **500‰**.
 
 #### Trọng số nhập từ Silent-Face-Anti-Spoofing, đọc crop ngữ cảnh 2,7×
 
@@ -2832,7 +2841,7 @@ public:
 
 **Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL`/`FACE_OUT_OF_FRAME` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
 
-Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision`. `live_min` gieo **120‰**, đo 16/09 trên 62 khung thật và 25 khung giả **đều chụp bằng chính OV5640**, chấm bằng file INT8 trên `models.lock.json` qua đúng crop và lấy mẫu của firmware (`docs/measurements/antispoof` §41): mọi khung giả đứng dưới 0,078, mặt thật thấp nhất còn giữ được ở 0,149, nên dải 0,08–0,14 chặn sạch và 120‰ nằm giữa dải với biên hai phía ≥ 0,029; cùng ngưỡng ấy giữ trọn 62/62 mặt thật với run PReLU của cùng trọng số. Model này cho mặt thật trải 0,15–1,0 chứ không dồn sát 1, nên ngưỡng 750‰ của model cũ chặn oan 14/62. Bộ giả mới có hai phiên, một điện thoại và một bộ ảnh in, nên E8-T12 vẫn phải chốt lại khi có thêm đòn tấn công. `detect_min` gieo **350‰**, đo 13/09 trên board sau khi sửa thứ tự byte RGB565 (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức sàn 500‰ cũ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` hạ **113 → 100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức hụt cổng cũ đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên lại.
+Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision`. `live_min` gieo **500‰**, đo 16/09 trên 62 khung thật và 25 khung giả **đều chụp bằng chính OV5640**, chấm bằng file INT8 trên `models.lock.json` qua đúng crop và lấy mẫu của firmware (`docs/measurements/antispoof` §42.2): mọi khung giả đứng dưới 0,316, mặt thật thấp nhất ở 0,636, nên 500‰ nằm giữa với biên hai phía 0,184 và 0,136. Con số tròn ấy có được nhờ bước căn bias của §3: không có nó thì cửa sổ chỉ rộng 19‰ và một sai số gieo vài phần nghìn là lật phán quyết. Bộ giả mới có hai phiên, một điện thoại và một bộ ảnh in, nên E8-T12 vẫn phải chốt lại khi có thêm đòn tấn công. `detect_min` gieo **350‰**, đo 13/09 trên board sau khi sửa thứ tự byte RGB565 (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức sàn 500‰ cũ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` hạ **113 → 100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức hụt cổng cũ đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên lại.
 
 `match_min` 🔬 chưa đo.
 
