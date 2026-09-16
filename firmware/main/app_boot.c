@@ -33,7 +33,7 @@ static const char *TAG = "app_boot";
 #define TZ_CAP 40
 // Raise only when a seed below changes, and read KEHOACH 6.2.1 first: it
 // overwrites whatever SET_CONFIG had put there.
-#define APP_SEED_VER 4
+#define APP_SEED_VER 5
 #define NVS_DETECT_MIN "detect_min"
 #define NVS_LIVE_MIN "live_min"
 #define NVS_MATCH_MIN "match_min"
