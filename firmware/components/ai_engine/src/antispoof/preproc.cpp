@@ -8,8 +8,8 @@ namespace ai {
 
 namespace {
 
-// CROP_SCALES in ml/data/prepare/celeba_spoof_parquet.py: the face crop is 1.0 of the box.
-constexpr float kFaceScale = 1.0f;
+// CROP_SCALES["wide"] in ml/data/prepare/celeba_spoof_parquet.py: the context crop (KEHOACH 3).
+constexpr float kFaceScale = 2.7f;
 constexpr float kPixelMean = 0.0f;
 constexpr float kPixelSpan = 255.0f;
 
