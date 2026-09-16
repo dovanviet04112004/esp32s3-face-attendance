@@ -2595,3 +2595,38 @@ Ba điều đọc ra:
   (+0,553 so với +0,022): kéo giãn phá tỉ lệ viền máy.
 - Hai model của hairymax **train trên CelebA-Spoof** thì hỏng đúng như model tự train của mình
   (§14, §41.8): CelebA là nguồn của vấn đề, không phải kiến trúc hay thủ thuật train.
+
+**V1SE 4,0× và bản ghép trên các tập lớn** (float, view wide 2,7× của shard, cùng cột với §41.8; V2 ở
+đây là run `0728` PReLU gốc, không phải `0854`):
+
+| Tập | V2 PReLU: AUC · giả chặn @0,12 | V1SE: AUC · giả chặn @0,12 | Ghép: AUC · giả chặn @0,12 |
+|---|---|---|---|
+| pool `test:10:` | 0,7994 · 0,445 | **0,8208** · 0,415 | 0,8169 · 0,391 |
+| NUAA | 0,9998 · 0,998 | 0,9999 · 0,999 | **1,0000** · 0,998 |
+| LCC `evaluation` | 0,8855 · 0,350 | 0,8720 · 0,333 | 0,8877 · 0,297 |
+| `unique` phát lại | — · 0,806 | — · **0,817** | — · 0,806 |
+| SynthASpoof in / iPad / Samsung | 0,862 / 0,233 / 0,733 | 0,863 / 0,228 / 0,712 | 0,853 / 0,204 / 0,698 |
+| Axon giấy 3D / cutout / latex | 0,191 / 0,617 / 0,000 | 0,146 / 0,542 / 0,000 | 0,160 / 0,542 / 0,000 |
+| `phone_eval` `attack_anh` chặn | 8/12 | **12/12** | 10/12 |
+| `phone_eval` `live_xa` đậu | 4/20 | **20/20** | 20/20 |
+
+Thật đậu @0,12 xấp xỉ nhau ở mọi tập (0,90–1,00). V1SE **ngang V2** trên tập lớn, hơn ở ảnh in cỡ
+vừa của `phone_eval`; bản ghép không hơn hai model đơn ở đâu ngoài biên trên board. Không đáng
+trả gấp đôi latency.
+
+**PReLU so với ReLU trên tập lớn — cái mà 87 khung không thấy.** Cùng trọng số, run `0728` PReLU
+và run `0854` (stem tách, 32 lớp ReLU) đều 62/62 · 25/25 trên board, nhưng trên tập lớn:
+
+| Tập | `0854` stem tách | `0728` PReLU đủ |
+|---|---|---|
+| NUAA EER | 0,0378 | **0,0051** |
+| LCC AUC · giả chặn @0,12 | 0,8573 · 0,218 | **0,8855 · 0,350** |
+| `unique` phát lại chặn @0,12 | 0,680 | **0,806** |
+| SynthASpoof in / Samsung chặn @0,12 | 0,696 / 0,644 | **0,862 / 0,733** |
+| pool AUC | 0,7507 | 0,7994 |
+
+32 lớp ReLU còn lại **trả giá bằng độ tổng quát** ngoài miền board, dù bộ 25 khung giả của board
+không lộ ra. Phép tách của `conv1` áp được cho mọi lớp PReLU, vì lớp kế tiếp luôn tuyến tính:
+depthwise thì theo kênh, còn 1×1 `project` thì hấp thụ −a vào cột trọng số (W·diag(a)). Mỗi lớp
+tách tốn thêm một conv trước và một conv sau, nên chỉ đáng cho vài lớp; chọn lớp nào cần một
+lượt đổi-từng-lớp trên chính các tập trên (chưa chạy).
