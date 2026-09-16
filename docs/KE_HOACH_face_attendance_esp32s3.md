@@ -1234,12 +1234,20 @@ cả `ml/` lẫn `kLive` của firmware. Nhãn 1 của pool rơi vào lớp phá
 
 **Bộ op, đối chiếu với §3 lớp 1.** Đồ thị gốc mang `PRelu ×33`, `PAD ×4` và một chuỗi flatten
 động `Shape→Gather→Concat→Reshape`. PReLU bị §3 cấm và `latency.md` đo tốn 37–49% thời gian;
-`activation: relu` trong config bỏ nó — hệ số học được nhỏ (trung vị |a| 0,012) nên hàm đổi
-ít, nhưng đủ để khe hẹp lại như bảng trên. Chuỗi flatten thay bằng `Reshape` tĩnh, batch ghim
-1. `PAD ×4` **giữ lại**: map 80→40→20→10→5 chẵn ở mọi stride-2, mà `conv_6_dw` là kernel
-5×5 trên map 5×5 nên đổi 80→81 là đổi hình dạng trọng số. Resolver antispoof đăng ký thêm
-`PAD`; 🔬 chi phí bốn `PAD` chưa đo trên board. Sau hai phép sửa, 67 op còn lại 4 op ngoài
-esp-nn.
+`activation: relu` trong config bỏ nó. Chuỗi flatten thay bằng `Reshape` tĩnh, batch ghim 1.
+`PAD ×4` **giữ lại**: map 80→40→20→10→5 chẵn ở mọi stride-2, mà `conv_6_dw` là kernel 5×5 trên
+map 5×5 nên đổi 80→81 là đổi hình dạng trọng số. Resolver antispoof đăng ký thêm `PAD`.
+
+**Ba mặt thật ReLU đánh mất nằm ở một lớp.** Đổi từng lớp PReLU sang ReLU một mình trên 87 khung
+board: 32 lớp không làm rơi mặt nào, riêng `conv1` (hệ số trung vị |a| 0,133, max 0,587, 66% âm)
+làm rơi 8/62; giữ PReLU đúng ở `conv1` và ReLU 32 lớp còn lại giữ **0/62**, khe +0,423. Vì
+PReLU(t) = ReLU(t) − a·ReLU(−t) và lớp kế tiếp `conv2_dw` là depthwise **tuyến tính theo kênh**,
+hàm ấy viết lại **chính xác** bằng op esp-nn: `stem: split_prelu` dựng hai nhánh
+`conv_pos = ReLU(BN₁(W·x))`, `conv_neg = ReLU(−BN₁(W·x))` (trọng số −W, BN đảo dấu), rồi
+`act(BN₂(DW_w(conv_pos)) + DW_{−a·γ₂/σ₂·w}(conv_neg))` — thêm một `CONV_2D` 1,4 MMAC, một
+`DEPTHWISE_CONV_2D` 0,5 MMAC và một `ADD`, không có `PRELU`. Importer gấp các hệ số vào trọng số
+và kiểm parity với bản PReLU-ở-conv1 trước khi ghi run. Đây là đường lên `models.lock.json`
+của nhánh; bản ReLU trơn giữ lại làm đối chứng.
 
 **Hai run, một nút.** `import_minifasnet.py` viết run đúng cấu trúc §4.2 — `config.resolved.yaml`,
 `split.lock`, `env.txt`, `ckpt/{best,last}.pth` ở định dạng checkpoint của `Trainer` — nên
