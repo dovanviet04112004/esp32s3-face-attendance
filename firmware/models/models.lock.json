@@ -7,14 +7,14 @@
   },
   "antispoof": {
     "file": "minifasnet_int8.tflite",
-    "sha256": "57f1f4f5c10409d9c3b47ec02179511c2aadda53e6d6b35695561661205ef57e",
-    "run_id": "antispoof/20260912-0107_fd87e15_5728fa",
-    "arena_bytes": 422764
+    "sha256": "06f5082cba502d3c0d1351a2d899319ec528500c10f08b231811b5892cdf5414",
+    "run_id": "antispoof/20260916-0729_f20a94a_cc06da",
+    "arena_bytes": 743468
   },
   "recognition": {
     "file": "mobilefacenet_int8.tflite",
     "sha256": "f77969e342ab10b49782b1241aef1b1ecabc4519c8cbf6129a463d9bbe983ad3",
     "run_id": "recognition/20260908-1750_ea985b1_bfed2e",
-    "arena_bytes": 422764
+    "arena_bytes": 743468
   }
 }
