@@ -1225,7 +1225,15 @@ vuông vào khung nên scale đạt được phụ thuộc cỡ mặt: trên boa
 giả ở 0,8–1,7×. Chỉ CelebA có ảnh đủ rộng (39% mẫu ≥ 2,0×), các nguồn khác đã là crop mặt sẵn nên
 không bao giờ vượt 1,4×; mà loader cấp một slot luồng mỗi thư mục nên split 16 slot pha loãng CelebA
 còn 1/16 và chỉ phủ 13% dải mặt thật của board. `CelebA ×6 + unique_live + unique_replay` đưa con số
-ấy lên 28%, trần của pool là 29% (`measurements.md` §41.10). Chọn checkpoint bằng **KL trên val**, không bằng EER pool.
+ấy lên 28%, trần của pool là 29% (`measurements.md` §41.10).
+
+Và scale phải **phủ đều cả dải**, không chỉ một góc: board chạy 0,76–2,69× tuỳ cự ly người đứng.
+`crop_scale` cũ bốc đều trên dải rồi kẹp, nên ảnh rộng dồn về trần của nó và sàn 1,2 không chạm dải
+khung giả; `SpoofShardDataset.scale_target()` bốc trong đúng khoảng từng ảnh có với số mũ
+`crop_scale_bias`, và `[0,75; 2,7]` với `bias: 4` cho mọi ô rộng 0,3× đều có ≥ 6% mẫu. Lợi ích đo
+được là student thấy **ảnh giả ở mọi cự ly**, kể cả dải xa mà 25 khung giả của board chưa có; thứ nó
+**không** sửa được là lệch phân bố scale giữa hai lớp của chính bộ đo, việc ấy cần đòn tấn công chụp
+ở xa. Chọn checkpoint bằng **KL trên val**, không bằng EER pool.
 Nghiệm thu bằng bảng bốn dòng cùng thước 87 khung INT8 + tập lớn + `bench_ai`: teacher, bản
 nhập stem tách đang nạp, student distill, student cũ `0107`; student lên `models.lock.json` chỉ
 khi giữ 62/62 và chặn 25/25 với khe không hẹp hơn bản đang nạp.

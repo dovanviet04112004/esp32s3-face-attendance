@@ -34,6 +34,9 @@ CROP_SCALE_RANGE = (0.7, 1.2)
 # This crop can only narrow, so an ungated draw moves every sample off the scale
 # the kiosk builds and starves the wide branch of context (KEHOACH 3, layer 2).
 CROP_SCALE_PROBABILITY = 0.15
+# Exponent on the draw inside one sample's own headroom; above 1 it leans towards
+# the widest the frame holds, which is what evens the scales out (measurements 41.10).
+CROP_SCALE_BIAS = 1.0
 # Spans both pools the branch meets, so neither end can cue the label (KEHOACH 1.3).
 QUALITY_RANGE = (30, 95)
 RECOMPRESS_PROBABILITY = 0.5
@@ -451,6 +454,7 @@ class SpoofShardDataset(IterableDataset):
         backlight_range: tuple[float, float] = BACKLIGHT_RANGE,
         crop_scale_range: tuple[float, float] = CROP_SCALE_RANGE,
         crop_scale_probability: float = CROP_SCALE_PROBABILITY,
+        crop_scale_bias: float = CROP_SCALE_BIAS,
         occlusion_probability: float = OCCLUSION_PROBABILITY,
         occlusion_side_range: tuple[float, float] = OCCLUSION_SIDE_RANGE,
         roll_probability: float = ROLL_PROBABILITY,
@@ -460,6 +464,8 @@ class SpoofShardDataset(IterableDataset):
         keep_wide: bool = True,
         interleave: int = INTERLEAVE_SHARDS,
     ) -> None:
+        if crop_scale_bias <= 0:
+            raise ValueError(f"crop_scale_bias must be positive, got {crop_scale_bias}")
         if splits is None:
             self.shards = shard_paths(root)
             if not self.shards:
@@ -481,6 +487,7 @@ class SpoofShardDataset(IterableDataset):
         self.photometric_probability = photometric_probability
         self.crop_scale_range = crop_scale_range
         self.crop_scale_probability = crop_scale_probability
+        self.crop_scale_bias = crop_scale_bias
         self.exposure_contrast_range = tuple(exposure_contrast_range)
         self.white_balance_range = tuple(white_balance_range)
         self.backlight_range = tuple(backlight_range)
@@ -551,6 +558,18 @@ class SpoofShardDataset(IterableDataset):
                 )
             live = standing
 
+    def scale_target(self, rng: random.Random, held: float) -> float:
+        """A crop scale drawn inside what this frame holds, so none of the draw is wasted.
+
+        Drawing over the whole range and clamping piles every wide frame onto its
+        own ceiling, which leaves the far half of the board's range unseen.
+        """
+        low, high = self.crop_scale_range
+        ceiling = min(high, held)
+        if ceiling <= low:
+            return ceiling
+        return low + (ceiling - low) * rng.random() ** (1.0 / self.crop_scale_bias)
+
     def __iter__(self) -> Iterator[SpoofSample]:
         info = get_worker_info()
         rng = random.Random(self.seed + self.epoch + (info.id if info else 0))
@@ -560,7 +579,7 @@ class SpoofShardDataset(IterableDataset):
                 sample = horizontal_flip(sample)
             if self.train:
                 drawn = rng.random() < self.crop_scale_probability
-                target = rng.uniform(*self.crop_scale_range) if drawn else sample.wide_scale
+                target = self.scale_target(rng, sample.wide_scale) if drawn else sample.wide_scale
                 sample = crop_scale(sample, target, self.size)
                 if not self.keep_wide:
                     sample = replace(sample, wide=None)

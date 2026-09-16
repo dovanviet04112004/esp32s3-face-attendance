@@ -43,10 +43,13 @@ data:
     # and 20% without it, so it would teach the student that blur means attack (41.10).
     photometric_probability: 0.0
     backlight_range: [0.0, 0.0]
-    # The board clamps the square to the frame when a face is near: real faces at
-    # 40 cm reach only 1.2 to 1.7x, so the student must meet that range (KEHOACH 3).
-    crop_scale_range: [1.2, 2.7]
-    crop_scale_probability: 0.5
+    # The whole range fitted() can reach on the board, floor included: a face too
+    # near the lens gives less than 1.0 (measurements 41.10).
+    crop_scale_range: [0.75, 2.7]
+    crop_scale_probability: 1.0
+    # Leans the draw towards the widest each frame holds, which is the scarce end;
+    # 4 flattens the coverage without starving the near end (measurements 41.10).
+    crop_scale_bias: 4.0
     # Light: a wide patch over the context would hide the very bezel the model reads.
     occlusion_probability: 0.15
     occlusion_side_range: [0.10, 0.25]
@@ -56,9 +59,9 @@ data:
     translate_range: 0.10
 
 train:
-  # Every label-trained run peaked on the board within five epochs; twenty is
-  # enough to see whether the student tracks the teacher, and resume extends it.
-  epochs: 20
+  # Chasing a frozen teacher, not labels: the divergence still falls past epoch
+  # nine, where a label-trained run has long since peaked (measurements 41.10).
+  epochs: 40
   amp: true
   ema_decay: 0.999
   grad_clip_norm: 5.0

@@ -499,3 +499,32 @@ def test_input_names_follow_the_views_key():
     assert input_names(cfg(views="both")) == ["tight", "wide"]
     assert input_names(cfg(view="wide")) == ["wide"]
     assert keeps_wide(cfg(views="wide")) and not keeps_wide(cfg(views="tight"))
+
+
+def test_scale_target_stays_inside_what_the_frame_holds():
+    import random
+
+    from facepipe.tasks.antispoof.data import SpoofShardDataset
+
+    dataset = SpoofShardDataset.__new__(SpoofShardDataset)
+    dataset.crop_scale_range = (0.75, 2.7)
+    dataset.crop_scale_bias = 4.0
+    rng = random.Random(0)
+    for held in (0.9, 1.35, 2.7):
+        drawn = [dataset.scale_target(rng, held) for _ in range(400)]
+        assert min(drawn) >= min(0.75, held) - 1e-9
+        assert max(drawn) <= min(2.7, held) + 1e-9
+    # A bias above one leans the draw towards the widest the frame holds.
+    high = [dataset.scale_target(rng, 2.7) for _ in range(2000)]
+    dataset.crop_scale_bias = 1.0
+    flat = [dataset.scale_target(rng, 2.7) for _ in range(2000)]
+    assert sum(high) / len(high) > sum(flat) / len(flat)
+
+
+def test_scale_target_refuses_a_bias_of_zero():
+    import pytest
+
+    from facepipe.tasks.antispoof.data import SpoofShardDataset
+
+    with pytest.raises(ValueError):
+        SpoofShardDataset(root=Path("."), size=81, crop_scale_bias=0.0)

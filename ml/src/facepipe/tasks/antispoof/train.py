@@ -25,6 +25,7 @@ from facepipe.core.seed import seed_everything
 from facepipe.core.trainer import Trainer, resolve_device
 
 from .data import (
+    CROP_SCALE_BIAS,
     CROP_SCALE_PROBABILITY,
     CROP_SCALE_RANGE,
     EXPOSURE_CONTRAST_RANGE,
@@ -86,6 +87,7 @@ def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
         white_balance_range=tuple(params.get("white_balance_range", WHITE_BALANCE_RANGE)),
         crop_scale_range=tuple(params.get("crop_scale_range", CROP_SCALE_RANGE)),
         crop_scale_probability=float(params.get("crop_scale_probability", CROP_SCALE_PROBABILITY)),
+        crop_scale_bias=float(params.get("crop_scale_bias", CROP_SCALE_BIAS)),
         occlusion_probability=float(params.get("occlusion_probability", OCCLUSION_PROBABILITY)),
         occlusion_side_range=tuple(params.get("occlusion_side_range", OCCLUSION_SIDE_RANGE)),
         roll_probability=float(params.get("roll_probability", ROLL_PROBABILITY)),

@@ -2717,6 +2717,36 @@ với nhãn CelebA là 0,876 ở dải [1,0; 1,2) nhưng **0,543** ở [2,5; 2,7
 ảnh chụp rộng, hoặc nhãn CelebA ở đó là nhãn phong cách ảnh (§41.5). Phép đo này không tách được hai
 khả năng; thước quyết định vẫn là 87 khung của board.
 
-Hai run bỏ dở: `20260916-1011` (photometric bật) dừng ở epoch 3, KL val 3,50 → 4,71 → 1,62 → 1,13;
-`20260916-1029` (photometric tắt, split cũ) dừng ở epoch 1 khi bảng trên chỉ ra split sai dải,
-KL val 2,96 → 2,98. Khoảng 3,5 phút một epoch.
+#### Phủ đều cả dải, không chỉ một góc
+
+Chọn split mới vẫn chưa đủ: `crop_scale` bốc `target` **đều trên cả dải rồi mới kẹp** bằng
+`min(target, wide_scale)`, nên mọi ảnh rộng đều dồn về đúng trần của nó và phần dải xa bị bỏ trống,
+còn sàn 1,2 thì **không bao giờ chạm dải 0,76–1,2 của khung giả trên board**. `scale_target()` thay
+bằng cách bốc **trong đúng khoảng từng ảnh có**, `low + (ceiling − low)·u^(1/bias)`, nên không lần
+bốc nào bị phí; `bias > 1` kéo về phía rộng, là đầu khan hiếm.
+
+Tỉ lệ mẫu theo ô, so với hai phân bố của board (ô đều lý tưởng = 0,14):
+
+| Cấu hình | 0,7–1,0 | 1,0–1,3 | 1,3–1,6 | 1,6–1,9 | 1,9–2,2 | 2,2–2,5 | 2,5–2,8 | lệch chuẩn |
+|---|---|---|---|---|---|---|---|---|
+| board mặt thật | 0,00 | 0,00 | 0,00 | 0,02 | 0,29 | 0,40 | 0,29 | |
+| board khung giả | 0,16 | 0,16 | 0,08 | 0,60 | 0,00 | 0,00 | 0,00 | |
+| `[1,2; 2,7]` p 0,5 (bản đầu) | 0,03 | 0,14 | 0,25 | 0,24 | 0,14 | 0,09 | 0,12 | 0,072 |
+| `[0,75; 2,7]` p 1,0 bias 1 | 0,29 | 0,27 | 0,19 | 0,12 | 0,07 | 0,04 | 0,02 | 0,102 |
+| `[0,75; 2,7]` p 1,0 bias 3 | 0,08 | 0,23 | 0,24 | 0,20 | 0,11 | 0,09 | 0,05 | 0,073 |
+| **`[0,75; 2,7]` p 1,0 bias 4** | **0,06** | **0,20** | **0,24** | **0,21** | **0,13** | **0,10** | **0,06** | **0,068** |
+| `[0,75; 2,7]` p 1,0 bias 6 | 0,04 | 0,17 | 0,23 | 0,23 | 0,13 | 0,12 | 0,09 | 0,065 |
+
+Chốt bias 4: cả hai đầu đều ≥ 0,06, không đầu nào bỏ trống. bias 6 phủ đầu rộng tốt hơn nhưng bỏ
+đói đầu gần, mà đó là chỗ **khung giả của board** đứng.
+
+**Thứ augment này làm được và không làm được.** Nó cho student thấy **ảnh giả ở mọi cự ly**, kể cả
+1,9–2,7× mà 25 khung giả của board chưa bao giờ có (21% mẫu giả sau augment nằm trên 1,9×) — đó là
+phần giá trị thật. Nhưng nó **không** xoá được confound của bộ đo: lệch phân bố scale giữa hai lớp
+trong pool chỉ giảm từ 0,281 xuống 0,263 (L1 trên 7 ô), vì scale lưu trong shard vốn khác nhau theo
+nguồn. Confound của 87 khung board chỉ đóng được bằng **đòn tấn công chụp ở xa**, không bằng augment.
+
+Ba run bỏ dở: `20260916-1011` (photometric bật) dừng ở epoch 3, KL val 3,50 → 4,71 → 1,62 → 1,13;
+`20260916-1029` (photometric tắt, split cũ) dừng ở epoch 1; `20260916-1043` (split mới, augment cũ)
+dừng ở epoch 9, KL val 3,34 → 0,697 và **vẫn đang giảm đều** — 20 epoch có thể chưa tới đáy, đó là
+lý do `resume` nằm trong quy trình. Khoảng 1,8 phút một epoch với split mới.
