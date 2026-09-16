@@ -31,11 +31,10 @@ data:
   prefetch_factor: 4
   params:
     shards: data/interim/antispoof/celeba_spoof_crops
-    # Images only, labels unread, so CelebA's share is harmless here (ADR-0003).
-    train_split: ["train:0:60", lcc_training,
-                  synth_bonafide, synth_ipad, synth_samsung, synth_webcam, synth_print,
-                  unique_live, unique_replay, unique_live, unique_replay, unique_live,
-                  unique_replay, unique_live, unique_replay, unique_live, unique_replay]
+    # One stream slot per folder, so CelebA takes six: it is the only source wide
+    # enough to reach the 2.0 to 2.7x the board's live faces sit at (measurements 41.10).
+    train_split: ["train:0:10", "train:10:20", "train:20:30", "train:30:40",
+                  "train:40:50", "train:50:60", unique_live, unique_replay]
     val_split: ["test:0:10", lcc_development, unique_live_val, unique_replay_val]
     test_split: "test:10:"
     recompress_probability: 0.5
