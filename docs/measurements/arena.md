@@ -351,3 +351,19 @@ Kiểm lại sau khi đóng gói với hint mới: `recog: arena at 726 of 727 K
 đều qua — khít, không dư. Vì sao spoof cần 670 KB: lớp `conv_23` mở 32→103 kênh trên map 40×40
 (164.800 B) rồi PAD ra 41×41×103 (173.103 B) trước depthwise stride 2, hai tensor ấy sống cùng
 lúc trong `head`.
+
+---
+
+## 11. Student width 32 — `arena_big` về lại 422.764 B, 16/09
+
+Spoof `20260916-1109` (ADR-0003) thay bản nhập `0854`:
+
+| | bản nhập `0854` | student `1109` |
+|---|---|---|
+| spoof một mình, `arena at` | 671 KB | **210 KB** |
+| `arena_big` `used` chung với recog | 744.428 B | **422.764 B** |
+| file spoof trên `models_0` | 586 KB | **425 KB** |
+| MMAC | 42,6 | 24,6 |
+
+Lãi **321.664 B PSRAM** so với bản nhập, và trùng đúng con số của bản một backbone 12/09 (§8) vì cùng
+kiến trúc width 32 — chỉ khác view đọc vào là crop ngữ cảnh 2,7× thay vì crop mặt 1,0×.

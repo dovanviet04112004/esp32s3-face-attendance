@@ -2750,3 +2750,104 @@ Ba run bỏ dở: `20260916-1011` (photometric bật) dừng ở epoch 3, KL val
 `20260916-1029` (photometric tắt, split cũ) dừng ở epoch 1; `20260916-1043` (split mới, augment cũ)
 dừng ở epoch 9, KL val 3,34 → 0,697 và **vẫn đang giảm đều** — 20 epoch có thể chưa tới đáy, đó là
 lý do `resume` nằm trong quy trình. Khoảng 1,8 phút một epoch với split mới.
+
+## 42. Student width 32 distill từ trọng số nhập — ADR-0003, 16/09
+
+`minifasnet_v2_se` width 32, một backbone trên view ngữ cảnh 2,7×, 81×81, ba lớp, distill từ run
+`20260916-0728` (teacher PReLU, float, host) bằng KL·T² ở T = 4, **không đọc nhãn**. Run
+`20260916-1109_00e506a_73d457`, 40 epoch, KL val 3,35 → 0,440.
+
+### 42.1 Bộ op: sạch hơn cả bản đang nạp
+
+| | ADD | AVG_POOL | CONV_2D | DEPTHWISE | FC | MUL | ngoài esp-nn |
+|---|---|---|---|---|---|---|---|
+| `0854` đang nạp | 12 | — | 32 | 17 | 2 | — | **PAD ×4** |
+| student `1109` | 7 | 10 | 42 | 12 | 2 | 20 | **không có** |
+
+81×81 lẻ ở mọi stride-2 gấp PAD vào tích chập, đúng như §3 lớp 1 thiết kế.
+
+### 42.2 Trên board, 87 khung, INT8 đã căn bias
+
+| | `0854` | student `1109` |
+|---|---|---|
+| mặt thật giữ / khung giả chặn | 62/62 · 25/25 | **62/62 · 25/25** |
+| AUC | 1,0000 | 1,0000 |
+| khe logit p5–p95 | 4,17 = **53 nấc INT8** | 3,83 = **49 nấc** |
+| cửa sổ ngưỡng | 0,026–0,246 = 220‰ | **0,316–0,636 = 320‰** |
+| `spoof1309` màn điện thoại, cao nhất | 0,050 | 0,209 |
+| `p2gia` ảnh in qua OV5640, cao nhất | 0,033 | 0,316 |
+| mặt thật thấp nhất | 0,172 | 0,636 |
+
+Ngưỡng vận hành **0,50**, biên hai phía 0,184 và 0,136.
+
+### 42.3 Trên board: tài nguyên
+
+| | `0854` | student |
+|---|---|---|
+| spoof rảnh / có tải preview | 535,3 / 624,1 ms | **234,1 / 273,8 ms** |
+| một lượt ba nhánh | 1.181 ms | **925 ms** |
+| `arena_big` | 744.428 B | **422.764 B** |
+| file trên `models_0` | 586 KB | **425 KB** |
+| MMAC | 42,6 | **24,6** |
+
+🔬 Cộng theo `kStableDetects = 2` thì một lượt chấm công là 1.460 ms so với 1.159 ms, chưa đo đầu-cuối.
+
+### 42.4 Tập ngoài, mỗi model ở điểm vận hành riêng
+
+| Tập | `0854` | student |
+|---|---|---|
+| pool `test:10:` AUC · thật qua · giả chặn | 0,752 · 96,2% · 26,3% | **0,774** · 96,4% · 26,1% |
+| NUAA | 0,999 · 99,9% · **96,7%** | 0,901 · 93,7% · 70,0% |
+| LCC eval | 0,826 · 99,0% · 16,3% | **0,870** · 98,4% · **19,4%** |
+| `unique` phát lại | — · — · 66,3% | — · — · **72,8%** |
+| SynthASpoof bonafide | — · 97,1% · — | — · **98,2%** · — |
+| SynthASpoof in | — · — · **62,4%** | — · — · 56,0% |
+| SynthASpoof iPad | — · — · 23,8% | — · — · **50,2%** |
+| SynthASpoof Samsung | — · — · **73,5%** | — · — · 67,1% |
+| `phone_eval` ACER | ~0,27 | **0,192** |
+| `phone_eval` ảnh in `attack_anh` | 10/12 | **12/12** |
+
+**Hình dạng của khác biệt**: student hơn ở **đòn màn hình** (iPad 50,2% so với 23,8%, `unique` phát lại
+72,8% so với 66,3%) và kém ở **ảnh in** (NUAA 70,0% so với 96,7%).
+
+### 42.5 Vì sao kém ở ảnh in — phép lọc thông thấp
+
+Trên NUAA, `wide_scale` trung vị **2,59**, tức không thiếu ngữ cảnh. Điểm mặt thật hai bên như nhau
+(0,985 so với 0,990); chênh nằm ở điểm ảnh in: teacher dìm xuống **0,000**, student để **0,177**.
+
+Xoá dần chi tiết mịn rồi chấm lại:
+
+| NUAA | teacher `0854` | student | chênh |
+|---|---|---|---|
+| ảnh nguyên | 1,000 | 0,971 | 0,028 |
+| bỏ chi tiết < 2 px | 0,953 | 0,850 | 0,103 |
+| bỏ chi tiết < 3 px | 0,854 | 0,852 | **0,002** |
+
+Bỏ chi tiết dưới 3 px thì **hai model bằng nhau tuyệt đối**. Toàn bộ lợi thế của teacher với ảnh in
+nằm ở kết cấu hạt mực và vân giấy, mà width 32 không đủ bộ lọc ở độ phân giải cao để mã hoá. Đây là
+**trần năng lực**, không phải lỗi dữ liệu, hiệu chuẩn hay miền ảnh — cả ba đã bị bác bằng phép đo
+riêng (§41.10, RGB565, KL theo miền).
+
+### 42.6 Căn bias: cùng một quyết định, khác thang đọc
+
+Cộng một hằng số vào logit lớp sống không đổi thứ tự, nên **0/87 khung đổi phán quyết** và khe logit
+giữ nguyên 3,83. Nó chỉ dịch điểm vận hành khỏi đuôi phẳng của softmax, nơi `live_min` lưu theo phần
+nghìn có quá ít nấc:
+
+| | cửa sổ trước | cửa sổ sau khi căn |
+|---|---|---|
+| `0854` | 220‰ | 556‰ |
+| student `1109` | **19‰** | **385‰** (float) · 320‰ (INT8) |
+
+Hằng số **+4,5184** gấp vào `classifier.bias[0]`; bản chưa căn giữ ở `ckpt/best.uncalibrated.pth`.
+Sau khi căn, `live_min` gieo **500‰** là con số tự nhiên cho mọi đời model về sau.
+
+### 42.7 Giai đoạn kết cấu — đã thử và loại
+
+Run `20260916-1251`, tiếp từ `1109`, epoch 40 → 52, thêm `synth_print`, `synth_ipad`, `lcc_training`
+vào luồng đầu vào. Kết quả: SynthASpoof in 56,0% → 66,9%, `phone_eval` ACER 0,192 → 0,179, nhưng
+**khe board 49 → 40 nấc (−18%)** và NUAA AUC 0,901 → 0,894. Đổi biên ở chỗ thiết bị chạy lấy vài
+điểm ở tập không triển khai là lỗ, nên **giữ `1109`**. `1251` để lại làm đối chứng.
+
+Cảnh báo cách đọc: watcher trong lúc train báo NUAA AUC 0,984–0,991 vì chỉ lấy 1.024 mẫu đầu, lệch
+lớp; số đủ 5.110 mẫu mới đúng.

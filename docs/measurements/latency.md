@@ -415,3 +415,25 @@ một `ADD` thêm vào (`measurements/antispoof` §41.7). Đo cùng cấu hình,
 
 Stem tách trả **+45 ms** (9,2%) cho ba mặt thật, so với +237 ms nếu giữ PReLU. Một mặt đi hết
 ba nhánh với bản này: 🔬 chưa cộng lại từ log cuối, đọc ở `bench_0854` khi ghi lock.
+
+---
+
+## 10. Student width 32 thay bản nhập — đo 16/09
+
+`models_0` mang spoof `20260916-1109` (ADR-0003, `measurements/antispoof` §42). Cùng cấu hình mục 1.
+
+| Nhánh | Rảnh | Có tải preview | Bản nhập `0854` |
+|---|---|---|---|
+| detect | 232,5 ms | 270,7 ms | 232,5 ms |
+| **anti-spoof** | **234,1 ms** | **273,8 ms** | 535,3 ms |
+| recognition | 460,0 ms | 537,0 ms | 460,0 ms |
+| **Một lượt ba nhánh** | **925,2 ms** | **1.080,1 ms** | 1.181,3 ms |
+
+Nhánh spoof về đúng mức của bản một backbone 12/09 (234,0 ms) trong khi giữ 62/62 và 25/25 trên khung
+của board, thứ bản 12/09 không làm được (nó mất 51/62, `measurements/antispoof` §41.9).
+
+🔬 Một lượt **chấm công** cộng theo `kStableDetects = 2`: 1.159 ms so với 1.460 ms của bản nhập, tức
+nhánh spoof hạ từ 37% xuống 20% tổng thời gian. Chưa đo đầu-cuối trên board.
+
+Ngân sách §6.4 vẫn trượt: 360 ms cho ba nhánh, đang 925 ms. Chỗ tốn nhất giờ là recognition 460 ms
+và detect 232 ms mỗi khung, không còn là spoof.

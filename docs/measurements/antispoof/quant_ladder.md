@@ -168,3 +168,25 @@ tử không đổi thứ tự ở cả hai, chỉ thu khe (0,473 → 0,322 và 0
 
 Cả hai run đều là **A0 với trọng số nhập**, không phải arm §3.7; bảng này dựng đường export cho
 chúng và ghi số, không chốt cấu hình lượng tử.
+
+## 7. Student width 32 distill từ trọng số nhập — 16/09, CLE tắt
+
+`minifasnet_v2_se` width 32, view wide 2,7×, 81×81, ba lớp, distill từ `20260916-0728` (ADR-0003).
+Val pool ở đây **không phải thước chọn**: nhãn pool không được đọc lúc train, và §42.4 cho thấy nó
+xếp hạng ngược với board. Thước là 87 khung OV5640.
+
+| Nhãn | Run | Ghi chú |
+|---|---|---|
+| `1109` | `20260916-1109_00e506a_73d457` | 40 epoch, đã căn bias +4,5184 — **bản chốt** |
+| `1251` | `20260916-1251_00e506a_1bc7e5` | tiếp 12 epoch với nguồn ảnh in, loại ở §42.7 |
+
+| Model | Q | Pool EER | Pool AUC | Board: thật giữ / giả chặn | Khe board | Kích thước | head arena | latency spoof |
+|---|---|---|---|---|---|---|---|---|
+| `1109` | Q0 FP32 | 0,3242 | 0,7682 | 62/62 · 25/25 | 49 nấc | 1.046 KB | — | — |
+| **`1109`** | **Q1** | 0,3281 | 0,7639 | **62/62 · 25/25** | **49 nấc** | **425 KB** | **210 KB một mình, 422.764 B chung với recog** | **234,1 ms** |
+| `1251` | Q1 | 0,3088 | 0,7787 | 62/62 · 25/25 | 40 nấc | 425 KB | 210 KB | 234 ms 🔬 |
+
+`op_check`: 93 op, **toàn bộ esp-nn, không PAD** — sạch hơn bản nhập vốn còn PAD ×4.
+
+Q1 so với Q0 trên board: khe giữ nguyên 49 nấc, mặt thật thấp nhất 0,667 → 0,639, khung giả cao nhất
+0,334 → 0,328. Lượng tử không ăn biên.
