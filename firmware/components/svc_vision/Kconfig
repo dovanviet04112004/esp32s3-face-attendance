@@ -12,12 +12,12 @@ menu "Vision pipeline"
 
     config VISION_SEED_LIVE_MIN_PERMILLE
         int "Seed for the liveness floor (per mille)"
-        default 750
+        default 120
         range 1 999
         help
-            Written to NVS key vision/live_min on the first boot only. The
-            sweep in antispoof measurements 33 puts every attack below 686
-            and costs one live frame in 57 here; device attacks move it.
+            Written to NVS key vision/live_min on the first boot only. On the
+            board's own frames the imported model puts every attack under 78
+            and the lowest kept live face at 149 (antispoof measurements 41).
 
     config VISION_SEED_MATCH_MIN_PERMILLE
         int "Seed for the cosine match floor (per mille)"
