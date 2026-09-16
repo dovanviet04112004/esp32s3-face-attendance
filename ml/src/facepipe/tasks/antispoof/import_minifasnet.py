@@ -25,6 +25,7 @@ from facepipe.core.trainer import CKPT_BEST, CKPT_FORMAT_VER, CKPT_LAST, resolve
 from .model import minifasnet_v2  # noqa: F401  registers "minifasnet_v2"
 
 PIXEL_LEVELS = 255.0
+BN_EPS = 1e-5
 # Upstream columns are [print, live, replay]; the loss and the board want live first.
 CLASS_ORDER = (1, 2, 0)
 PARITY_TOLERANCE = 1e-4
@@ -38,15 +39,39 @@ def upstream_state(path: Path) -> dict[str, torch.Tensor]:
     return {k.removeprefix("module.").replace(".prelu.", ".act."): v for k, v in raw.items()}
 
 
-def folded(state: dict[str, torch.Tensor], activation: str) -> dict[str, torch.Tensor]:
-    """Fold channel order, pixel range and class order into the weights."""
+def folded(state: dict[str, torch.Tensor], activation: str, stem: str) -> dict[str, torch.Tensor]:
+    """Fold channel order, pixel range, class order and the split stem into the weights."""
     out = dict(state)
     first = out["conv1.conv.weight"]
     # BGR to RGB along the input axis, and [0,255] to [0,1] at the same place.
     out["conv1.conv.weight"] = first.flip(1).contiguous() * PIXEL_LEVELS
     out["prob.weight"] = out["prob.weight"][list(CLASS_ORDER)].contiguous()
+    if stem == "split_prelu":
+        out = split_stem(out)
     if activation == "relu":
         out = {k: v for k, v in out.items() if not k.endswith(".act.weight")}
+    return out
+
+
+def split_stem(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    """conv1 and conv2_dw as SplitPReLUStem weights; the algebra is in KEHOACH 3."""
+    out = {k: v for k, v in state.items()
+           if not (k.startswith("conv1.") or k.startswith("conv2_dw."))}
+    slope = state["conv1.act.weight"]
+    for k, v in state.items():
+        if k.startswith("conv1.") and not k.endswith(".act.weight"):
+            out["stem.conv_pos." + k[len("conv1."):]] = v
+        if k.startswith("conv2_dw.") and not k.endswith(".act.weight"):
+            out["stem.dw_pos." + k[len("conv2_dw."):]] = v
+    # ReLU(-BN1(Wx)): negate the kernel, and turn BN1 into -BN1 of its own input.
+    out["stem.conv_neg.conv.weight"] = -state["conv1.conv.weight"]
+    out["stem.conv_neg.bn.weight"] = state["conv1.bn.weight"]
+    out["stem.conv_neg.bn.bias"] = -state["conv1.bn.bias"]
+    out["stem.conv_neg.bn.running_mean"] = -state["conv1.bn.running_mean"]
+    out["stem.conv_neg.bn.running_var"] = state["conv1.bn.running_var"]
+    out["stem.conv_neg.bn.num_batches_tracked"] = state["conv1.bn.num_batches_tracked"]
+    bn_scale = state["conv2_dw.bn.weight"] / torch.sqrt(state["conv2_dw.bn.running_var"] + BN_EPS)
+    out["stem.dw_neg.weight"] = -(slope * bn_scale).view(-1, 1, 1, 1) * state["conv2_dw.conv.weight"]
     return out
 
 
@@ -65,6 +90,23 @@ def parity(model: torch.nn.Module, onnx_path: Path, size: int) -> float:
             theirs = session.run(None, {name: pixels[:, ::-1].copy()})[0][0][list(CLASS_ORDER)]
             ours = model(torch.from_numpy(pixels / PIXEL_LEVELS)).numpy()[0]
             worst = max(worst, float(np.abs(theirs - ours).max()))
+    return worst
+
+
+def stem_parity(model: torch.nn.Module, state: dict[str, torch.Tensor], params: dict, size: int) -> float:
+    """Largest gap between the split stem and PReLU kept at conv1, ReLU elsewhere."""
+    reference = MODELS.build({"name": "minifasnet_v2", "params": {**params, "stem": "plain"}})
+    reference.load_state_dict(folded(state, str(params.get("activation", "relu")), "plain"), strict=True)
+    reference.conv1.act = torch.nn.PReLU(state["conv1.act.weight"].numel())
+    reference.conv1.act.weight.data.copy_(state["conv1.act.weight"])
+    reference.eval()
+    model.eval()
+    rng = np.random.default_rng(1)
+    worst = 0.0
+    with torch.no_grad():
+        for _ in range(PARITY_SAMPLES):
+            pixels = torch.from_numpy(rng.random((1, 3, size, size), dtype=np.float32))
+            worst = max(worst, float((reference(pixels) - model(pixels)).abs().max()))
     return worst
 
 
@@ -101,14 +143,21 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_config(args.cfg, args.set)
     seed_everything(cfg.run.seed, deterministic=cfg.run.deterministic)
     activation = str(cfg.model.params.get("activation", "relu"))
+    stem = str(cfg.model.params.get("stem", "plain"))
     size = int(cfg.model.input_hw[0])
 
+    state = upstream_state(args.weights)
     model = MODELS.build({"name": cfg.model.name, "params": dict(cfg.model.params)})
-    model.load_state_dict(folded(upstream_state(args.weights), activation), strict=True)
+    model.load_state_dict(folded(state, activation, stem), strict=True)
 
+    if stem == "split_prelu":
+        gap = stem_parity(model, state, dict(cfg.model.params), size)
+        if gap > PARITY_TOLERANCE:
+            raise SystemExit(f"stem parity gap {gap:.3e} exceeds {PARITY_TOLERANCE:.0e}; nothing written")
+        print(f"split stem vs PReLU at conv1: max|diff| {gap:.3e}")
     if args.onnx is not None:
-        if activation != "prelu":
-            raise SystemExit("parity against the upstream graph holds only for activation=prelu")
+        if activation != "prelu" or stem != "plain":
+            raise SystemExit("parity against the upstream graph holds only for the plain PReLU model")
         gap = parity(model, args.onnx, size)
         if gap > PARITY_TOLERANCE:
             raise SystemExit(f"parity gap {gap:.3e} exceeds {PARITY_TOLERANCE:.0e}; nothing written")

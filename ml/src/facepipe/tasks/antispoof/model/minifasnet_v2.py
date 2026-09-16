@@ -90,6 +90,27 @@ class Residual(nn.Module):
         return self.model(x)
 
 
+class SplitPReLUStem(nn.Module):
+    """conv1's PReLU as two ReLU branches, so the graph carries no PRELU op (KEHOACH 3).
+
+    PReLU(t) = ReLU(t) - a * ReLU(-t), and the depthwise conv that follows is
+    linear per channel, so the a-scaled branch folds into a second depthwise.
+    """
+
+    def __init__(self, out_c: int, dw_c: int, activation: str) -> None:
+        super().__init__()
+        self.conv_pos = ConvBlock(3, out_c, (3, 3), (2, 2), (1, 1), activation="relu")
+        self.conv_neg = ConvBlock(3, out_c, (3, 3), (2, 2), (1, 1), activation="relu")
+        self.dw_pos = ConvBlock(out_c, dw_c, (3, 3), (1, 1), (1, 1), groups=dw_c,
+                                activation=activation)
+        self.dw_neg = nn.Conv2d(out_c, dw_c, (3, 3), stride=(1, 1), padding=(1, 1), groups=dw_c,
+                                bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        pos = self.dw_pos.bn(self.dw_pos.conv(self.conv_pos(x)))
+        return self.dw_pos.act(pos + self.dw_neg(self.conv_neg(x)))
+
+
 @MODELS.register("minifasnet_v2")
 class MiniFASNetV2(nn.Module):
     """The upstream classifier over one face crop, three classes out.
@@ -106,11 +127,14 @@ class MiniFASNetV2(nn.Module):
         input_size: int = 80,
         view: str = "wide",
         chroma: bool = False,
+        stem: str = "plain",
         drop_p: float = 0.2,
     ) -> None:
         super().__init__()
         if view not in ("tight", "wide"):
             raise ValueError(f"view must be 'tight' or 'wide', got {view!r}")
+        if stem not in ("plain", "split_prelu"):
+            raise ValueError(f"stem must be 'plain' or 'split_prelu', got {stem!r}")
         if chroma:
             raise ValueError("the imported weights read three planes; chroma must stay off")
         self.chroma = False
@@ -121,8 +145,12 @@ class MiniFASNetV2(nn.Module):
         k, act = KEEP, activation
         closing = input_size // (2 ** DOWNSAMPLES)
 
-        self.conv1 = ConvBlock(3, k[0], (3, 3), (2, 2), (1, 1), activation=act)
-        self.conv2_dw = ConvBlock(k[0], k[1], (3, 3), (1, 1), (1, 1), groups=k[1], activation=act)
+        if stem == "split_prelu":
+            self.stem = SplitPReLUStem(k[0], k[1], act)
+        else:
+            self.conv1 = ConvBlock(3, k[0], (3, 3), (2, 2), (1, 1), activation=act)
+            self.conv2_dw = ConvBlock(k[0], k[1], (3, 3), (1, 1), (1, 1), groups=k[1],
+                                      activation=act)
         self.conv_23 = DepthWise((k[1], k[2]), (k[2], k[3]), (k[3], k[4]), groups=k[3],
                                  activation=act)
         self.conv_3 = Residual(
@@ -159,7 +187,7 @@ class MiniFASNetV2(nn.Module):
             x = views[1] if self.view == "wide" else views[0]
         else:
             x = views
-        x = self.conv2_dw(self.conv1(x))
+        x = self.stem(x) if hasattr(self, "stem") else self.conv2_dw(self.conv1(x))
         x = self.conv_3(self.conv_23(x))
         x = self.conv_4(self.conv_34(x))
         x = self.conv_5(self.conv_45(x))

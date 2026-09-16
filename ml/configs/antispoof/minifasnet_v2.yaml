@@ -24,6 +24,9 @@ model:
     # the skin, and 1.0x loses 21 of 64 real faces with these weights (KEHOACH 3).
     view: wide
     chroma: false
+    # conv1 keeps its PReLU as two ReLU branches joined by an ADD: that one layer
+    # carries the three real faces plain ReLU loses, and no PRELU op results (KEHOACH 3).
+    stem: split_prelu
 
 data:
   name: celeba_spoof
