@@ -1203,6 +1203,55 @@ Ba ràng buộc đi kèm:
   mục dưới nói tới.
 - **Đổi cách dựng thì shard hết giá trị**: sinh lại shard rồi train lại là bắt buộc.
 
+#### Trọng số nhập từ Silent-Face-Anti-Spoofing, đọc crop ngữ cảnh 2,7×
+
+Model thứ hai của nhánh là `minifasnet_v2`: kiến trúc MiniFASNetV2 của minivision-ai
+(`keep_dict['1.8M_']`, không SE), trọng số `2.7_80x80_MiniFASNetV2.pth` từ kho
+Silent-Face-Anti-Spoofing (sha256 bắt đầu `a5eb02e1843f19b5`, giấy phép Apache-2.0). Nó
+**không train trên pool của dự án**; giá trị nằm đúng ở đó.
+
+**Vì sao 2,7× đúng với model này mà sai với model train trên CelebA (§22).** §22 đo model
+train trên CelebA-Spoof, nơi mặt thật là ảnh sự kiện studio còn mặt giả là người cầm ảnh
+trong phòng thường: "phòng thường" trở thành nhãn, và view ngữ cảnh học đúng đường tắt ấy.
+Kết luận đó là về **dữ liệu train**, không phải về ngữ cảnh. Trọng số minivision train trên
+bộ riêng không mang confound này. Đo trên 85 khung OV5640 (64 thật, 21 giả, 6 phiên, gồm cả
+nền cửa gỗ của §22), cắt bằng chính `fitted()` của firmware ở 2,7× và lấy mẫu lại trung bình
+vùng như board:
+
+| kích hoạt | AUC | p5 thật − p95 giả | bắt giả ở 3 thật bị chặn | thật bị loại khi chặn hết giả |
+|---|---|---|---|---|
+| PReLU (gốc) | **1,0000** | **+0,468** | 21/21 | **0/64** |
+| ReLU (thay) | 0,9978 | +0,200 | 21/21 | 3/64 |
+
+Cùng model ở crop 1,0× của mục trên: AUC 0,9241, khe −0,041, 21/64 thật bị loại. Tín hiệu
+nằm ở vành ngữ cảnh — viền máy, tay cầm, mép màn — không ở da mặt.
+
+**Ba khác biệt tiền xử lý gấp vào trọng số, không viết vào code chạy.** Upstream đọc BGR
+thang 0–255 và xuất `[in, sống, phát lại]`; `import_minifasnet.py` đảo trục kênh vào và nhân
+255 vào `conv1` để model nhận RGB thang `[0,1]` đúng như `to_tensor` và `Quantizer(0, 255)`
+sẵn có, và hoán vị hàng của `prob` thành `[sống, phát lại, in]` để `LIVE = 0` giữ nguyên ở
+cả `ml/` lẫn `kLive` của firmware. Nhãn 1 của pool rơi vào lớp phát lại, đúng đòn của bộ này.
+
+**Bộ op, đối chiếu với §3 lớp 1.** Đồ thị gốc mang `PRelu ×33`, `PAD ×4` và một chuỗi flatten
+động `Shape→Gather→Concat→Reshape`. PReLU bị §3 cấm và `latency.md` đo tốn 37–49% thời gian;
+`activation: relu` trong config bỏ nó — hệ số học được nhỏ (trung vị |a| 0,012) nên hàm đổi
+ít, nhưng đủ để khe hẹp lại như bảng trên. Chuỗi flatten thay bằng `Reshape` tĩnh, batch ghim
+1. `PAD ×4` **giữ lại**: map 80→40→20→10→5 chẵn ở mọi stride-2, mà `conv_6_dw` là kernel
+5×5 trên map 5×5 nên đổi 80→81 là đổi hình dạng trọng số. Resolver antispoof đăng ký thêm
+`PAD`; 🔬 chi phí bốn `PAD` chưa đo trên board. Sau hai phép sửa, 67 op còn lại 4 op ngoài
+esp-nn.
+
+**Hai run, một nút.** `import_minifasnet.py` viết run đúng cấu trúc §4.2 — `config.resolved.yaml`,
+`split.lock`, `env.txt`, `ckpt/{best,last}.pth` ở định dạng checkpoint của `Trainer` — nên
+`30_quantize.sh`, `update_lock.py` và `21_train_spoof.sh train.resume=` chạy như với mọi run.
+Cờ `activation` cho ra hai run; latency và số đo INT8 trên board quyết định run nào lên
+`models.lock.json`. Nếu ReLU giữ 3 mặt thật bị loại sau INT8 thì fine-tune ngắn từ chính
+run ấy là bước kế tiếp, không phải train lại từ đầu.
+
+**Ràng buộc §22 vẫn đứng nguyên cho `minifasnet_v2_se`**: model đó train trên pool này và
+vẫn đọc 1,0×. Hai model, hai crop, cùng một `fitted()`; `kFaceScale` trong `preproc.cpp` đi theo
+model đang nạp.
+
 #### Hộp mặt phải đến từ detector, không từ chú thích của dataset
 
 Dùng chung một hàm cắt là chưa đủ nếu hai bên đưa vào **hai hộp khác nhau**. CelebA-Spoof
@@ -2166,7 +2215,7 @@ ml/
 ├── configs/
 │   ├── common/{paths.yaml, hardware.yaml}
 │   ├── detection/{yunet.yaml, quant.yaml}
-│   ├── antispoof/  (2 file cùng tên)
+│   ├── antispoof/{minifasnet.yaml, minifasnet_v2.yaml, quant.yaml}  # v2: trọng số nhập, crop 2,7× (§3)
 │   └── recognition/(2 file cùng tên)
 │
 ├── src/facepipe/
@@ -2234,6 +2283,8 @@ ml/
 │   │   │   ├── README.md
 │   │   │   ├── model/
 │   │   │   │   ├── minifasnet_v2_se.py
+│   │   │   │   ├── minifasnet_v2.py           # ★ MiniFASNetV2 upstream, tên thuộc tính giữ nguyên để
+│   │   │   │   │                              #   nạp thẳng state_dict; kích hoạt là cờ (§3)
 │   │   │   │   └── blocks.py              # ConvBnAct(relu); SE gate HardSigmoid ReLU6(x+3)/6
 │   │   │   ├── losses/
 │   │   │   │   └── task_loss.py           # BCE live/spoof
@@ -2243,6 +2294,8 @@ ml/
 │   │   │   ├── data.py                    # patch crop 1.0×/2.7×, augment in ảnh + màn hình
 │   │   │   ├── quant.py
 │   │   │   ├── train.py
+│   │   │   ├── import_minifasnet.py       # ★ .pth upstream → run đúng cấu trúc §4.2, gấp BGR/255/lớp vào
+│   │   │   │                              #   trọng số, kiểm parity với ONNX gốc trước khi ghi (§3)
 │   │   │   └── eval.py                    # ACER, HTER cross-dataset, ROC tập tự thu
 │   │   │
 │   │   └── recognition/
