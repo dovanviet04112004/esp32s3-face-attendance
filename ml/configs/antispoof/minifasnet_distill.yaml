@@ -40,7 +40,9 @@ data:
     test_split: "test:10:"
     recompress_probability: 0.5
     quality_range: [30, 95]
-    photometric_probability: 0.5
+    # Off: the teacher calls 59% of the pool's live faces attacks under this block
+    # and 20% without it, so it would teach the student that blur means attack (41.10).
+    photometric_probability: 0.0
     backlight_range: [0.0, 0.0]
     # The board clamps the square to the frame when a face is near: real faces at
     # 40 cm reach only 1.2 to 1.7x, so the student must meet that range (KEHOACH 3).
