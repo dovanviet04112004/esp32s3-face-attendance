@@ -1,0 +1,84 @@
+# MiniFASNetV2 with the weights minivision-ai published, reading the 2.7x context
+# crop; the pool is for fine-tuning and calibration, not for training (KEHOACH 3).
+
+run:
+  task: antispoof
+  seed: 42
+  deterministic: true
+  tags: [minifasnet_v2, imported]
+  notes: Silent-Face-Anti-Spoofing 2.7_80x80_MiniFASNetV2, live/replay/print out
+
+model:
+  name: minifasnet_v2
+  # Pinned by the weights: conv_6_dw is a 5x5 kernel over the 5x5 map that 80
+  # leaves, so the four PADs an even map costs are paid, not designed away (KEHOACH 3).
+  input_hw: [80, 80]
+  params:
+    # Rows are permuted at import to [live, replay, print], so LIVE stays 0.
+    num_classes: 3
+    embedding: 128
+    # relu: PReLU has no esp-nn kernel and cost 37 to 49% of pipeline time
+    # (latency.md); the imported slopes have median |a| 0.012 (KEHOACH 3).
+    activation: relu
+    # The context crop: on the camera the signal is the bezel and the hand, not
+    # the skin, and 1.0x loses 21 of 64 real faces with these weights (KEHOACH 3).
+    view: wide
+    chroma: false
+
+data:
+  name: celeba_spoof
+  batch_size: 96
+  num_workers: 12
+  prefetch_factor: 4
+  params:
+    shards: data/interim/antispoof/celeba_spoof_crops
+    train_split: ["train:0:60", lcc_training,
+                  synth_bonafide, synth_ipad, synth_samsung, synth_webcam, synth_print,
+                  unique_live, unique_replay, unique_live, unique_replay, unique_live,
+                  unique_replay, unique_live, unique_replay, unique_live, unique_replay]
+    val_split: ["test:0:10", lcc_development, unique_live_val, unique_replay_val]
+    test_split: "test:10:"
+    recompress_probability: 0.5
+    quality_range: [30, 95]
+    photometric_probability: 0.5
+    backlight_range: [0.0, 0.0]
+    crop_scale_range: [0.7, 1.0]
+    crop_scale_probability: 0.15
+    occlusion_probability: 0.25
+    occlusion_side_range: [0.20, 0.45]
+    roll_probability: 0.35
+    roll_range: [-18.0, 18.0]
+    translate_probability: 0.5
+    translate_range: 0.10
+
+train:
+  # A fine-tune from converged weights, so a short schedule at a tenth of the
+  # scratch rate; the imported run itself has epoch 0 and no steps.
+  epochs: 6
+  amp: true
+  ema_decay: 0.999
+  grad_clip_norm: 5.0
+  val_every_epochs: 1
+  channels_last: true
+  compile: false
+
+optim:
+  name: sgd
+  lr: 0.002
+  weight_decay: 0.0005
+  params:
+    momentum: 0.9
+    nesterov: true
+
+sched:
+  name: cosine
+  warmup_epochs: 1
+  min_lr: 0.00001
+
+loss:
+  # 128 889 attacks over 72 498 live, counted on the shards (measurements 40.6).
+  live_weight: 1.776
+  # Three outputs, so the class weight has three entries; live is the first.
+  num_classes: 3
+  patch_weight: 0.0
+  label_smoothing: 0.05

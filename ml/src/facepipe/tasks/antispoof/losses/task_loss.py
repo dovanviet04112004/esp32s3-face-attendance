@@ -35,9 +35,10 @@ class SpoofTaskLoss(nn.Module):
         live_weight: float = 2.11,
         label_smoothing: float = 0.0,
         patch_weight: float = 0.0,
+        num_classes: int = 2,
     ) -> None:
         super().__init__()
-        weight = torch.tensor([live_weight, 1.0], dtype=torch.float32)
+        weight = torch.tensor([live_weight] + [1.0] * (num_classes - 1), dtype=torch.float32)
         self.register_buffer("class_weight", weight)
         self.label_smoothing = label_smoothing
         self.patch_weight = patch_weight

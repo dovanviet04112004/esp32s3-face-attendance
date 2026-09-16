@@ -36,9 +36,10 @@ def torch_batches(cfg: object, split: str | None, samples: int):
     from .eval import build_loader, input_names
 
     split = split or cfg.data.params["val_split"]
+    names = input_names(cfg)
     for tight, wide, *_rest in build_loader(cfg, split):
-        if len(input_names(cfg)) > 1:
+        if len(names) > 1:
             yield (tight[:samples], wide[:samples])
         else:
-            yield tight[:samples]
+            yield (wide if names == ["wide"] else tight)[:samples]
         return

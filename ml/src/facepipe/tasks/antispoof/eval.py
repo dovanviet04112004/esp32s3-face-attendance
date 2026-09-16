@@ -177,7 +177,7 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     from facepipe.core.config import load_run_config
     from facepipe.core.registry import MODELS
 
-    from .model import minifasnet_v2_se  # noqa: F401  registers the model
+    from .model import minifasnet_v2, minifasnet_v2_se  # noqa: F401  registers both models
 
     cfg = load_run_config(run)
     # best.pth appears only after the first validation, so a run stopped inside
@@ -191,9 +191,10 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     state = {k: v for k, v in state.items() if ".patch." not in k}
     # A config without a views key belongs to a two-view run; its weights say so,
     # and writing it back is what makes the loader hand that run its second view.
-    cfg.model.params.setdefault(
-        "views", "both" if any(k.startswith("wide.") for k in state) else "tight"
-    )
+    if cfg.model.name == "minifasnet_v2_se":
+        cfg.model.params.setdefault(
+            "views", "both" if any(k.startswith("wide.") for k in state) else "tight"
+        )
     model = MODELS.build({"name": cfg.model.name, "params": dict(cfg.model.params)})
     model.load_state_dict(state)
     return cfg, model
@@ -211,8 +212,8 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     model = model if model is not None else load_run(run)[1]
     model.eval()
     height, width = cfg.model.input_hw
-    # The traced module decides the graph inputs; a config need not name views.
-    names = ["tight", "wide"] if getattr(model, "wide", None) is not None else ["tight"]
+    # A two-backbone module names its own inputs; any other reads the config.
+    names = ["tight", "wide"] if getattr(model, "wide", None) is not None else input_names(cfg)
     planes = 4 if getattr(model, "chroma", False) else 3
     views = tuple(torch.zeros(1, planes, height, width) for _ in names)
     example = views if len(names) > 1 else views[0]
@@ -231,12 +232,16 @@ def wants_chroma(cfg: object) -> bool:
 
 def keeps_wide(cfg: object) -> bool:
     """Whether this run's model reads the context crop at all."""
-    return (cfg.model.params or {}).get("views", "tight") == "both"
+    params = cfg.model.params or {}
+    return params.get("views", "tight") == "both" or params.get("view") == "wide"
 
 
 def input_names(cfg: object) -> list[str]:
-    """The graph's inputs in order: the face crop, and the context crop if the model has one."""
-    return ["tight", "wide"] if keeps_wide(cfg) else ["tight"]
+    """The graph's inputs in order, which is also what calibration keys its samples by."""
+    params = cfg.model.params or {}
+    if params.get("views", "tight") == "both":
+        return ["tight", "wide"]
+    return ["wide"] if params.get("view") == "wide" else ["tight"]
 
 
 def frame_label(folder: str) -> int:
