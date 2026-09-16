@@ -2673,10 +2673,50 @@ nằm thấp (§41.4). Distill với mục tiêu ấy là dạy student "mờ �
 về 0 trong `minifasnet_distill.yaml`. 19% mặt thật pool bị teacher gọi giả **trên ảnh sạch** là
 bất đồng giữa nhãn CelebA và teacher (§41.5), không phải lỗi pipeline.
 
-Cùng phép đo cho thấy view wide của shard **hiếm khi đạt 2,7×**: `wide_scale` đạt được có trung vị
-1,35, p90 2,0–2,3, chỉ 4–8% từ 2,5× trở lên, vì ảnh nguồn CelebA là chân dung cắt sát nên
-`fitted_box` kẹp vào biên ảnh. Student vì thế thấy nhiều ngữ cảnh 1,1–2,0× (đúng dải board kẹp
-khung khi mặt gần) và ít ngữ cảnh đầy 2,7×; đó là giới hạn của pool, ghi lại để đọc kết quả.
+#### Dải crop: board đứng ở đâu, pool cho được bao nhiêu
 
-Run đầu (`20260916-1011`, photometric bật) dừng ở epoch 3 khi phát hiện điều trên: KL val
-3,50 → 4,71 → 1,62 → 1,13, ~3,5 phút một epoch.
+`kFaceScale` là 2,7 nhưng `fitted()` kẹp ô vuông vào khung, nên **scale đạt được** phụ thuộc cỡ mặt.
+Đo trên 87 khung:
+
+| | n | min | p10 | trung vị | p90 | max |
+|---|---|---|---|---|---|---|
+| mặt thật | 62 | 1,62 | 2,02 | **2,22** | 2,67 | 2,69 |
+| khung giả | 25 | 0,76 | 0,97 | **1,50** | 1,61 | 1,66 |
+
+Hai dải **gần như rời nhau** (thật min 1,62 so với giả max 1,66) vì điện thoại tấn công đưa sát ống
+kính nên mặt to và ô vuông bị kẹp. Đây là một confound của bộ 25 khung giả hiện có, phải ghi ra: một
+phần khe +0,368 có thể đến từ "mặt to thì ít ngữ cảnh" chứ không chỉ từ viền máy. Đòn tấn công ở xa
+là phép bác bỏ còn thiếu.
+
+Pool cho được bao nhiêu trong hai dải ấy (đo trên chính pipeline train):
+
+| Nguồn | trung vị `wide_scale` | ≥ 2,0× |
+|---|---|---|
+| CelebA (`train:*`) | 1,84 | **0,39** |
+| `unique_live` / `unique_replay` | 1,55 / 1,48 | 0,11 / 0,13 |
+| `lcc_training` | 1,22 | 0,00 |
+| SynthASpoof (bonafide, ipad, print) | 1,24–1,29 | 0,00 |
+
+Chỉ CelebA có ảnh đủ rộng, vì các nguồn kia đã là crop mặt sẵn. Mà loader cấp **một slot luồng mỗi
+thư mục**, nên split 16 slot cũ pha loãng CelebA còn 1/16: trung vị tụt xuống 1,34 và chỉ **13%** mẫu
+rơi vào dải mặt thật của board — student sẽ học hàm của teacher ở đúng chỗ board **không** đứng.
+
+| Split | trung vị | trong dải thật của board [2,0; 2,7] | trong dải giả [0,7; 1,7] |
+|---|---|---|---|
+| 16 slot (bản đầu) | 1,34 | 0,13 | 0,76 |
+| CelebA ×6 + lcc + 3 synth + unique | 1,41 | 0,16 | 0,68 |
+| **CelebA ×6 + `unique_live` + `unique_replay`** | **1,71** | **0,28** | **0,49** |
+| chỉ CelebA | 1,72 | 0,29 | 0,66 |
+
+Chốt dòng in đậm: phủ cả hai dải của board, 0,28 so với 0,13 của bản đầu. Trần là 0,29 — giới hạn của
+ảnh nguồn, không sửa bằng cấu hình được, vì `crop_scale` chỉ thu hẹp chứ không nới rộng được ô vuông
+đã lưu trong shard.
+
+Thêm một số phải ghi: trên `val_split`, teacher **càng nhiều ngữ cảnh càng lệch nhãn pool** — AUC so
+với nhãn CelebA là 0,876 ở dải [1,0; 1,2) nhưng **0,543** ở [2,5; 2,7). Hai cách đọc: teacher lẫn ở
+ảnh chụp rộng, hoặc nhãn CelebA ở đó là nhãn phong cách ảnh (§41.5). Phép đo này không tách được hai
+khả năng; thước quyết định vẫn là 87 khung của board.
+
+Hai run bỏ dở: `20260916-1011` (photometric bật) dừng ở epoch 3, KL val 3,50 → 4,71 → 1,62 → 1,13;
+`20260916-1029` (photometric tắt, split cũ) dừng ở epoch 1 khi bảng trên chỉ ra split sai dải,
+KL val 2,96 → 2,98. Khoảng 3,5 phút một epoch.

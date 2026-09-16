@@ -1218,7 +1218,14 @@ xác suất 0,5 vì board kẹp khung khi mặt gần, `occlusion` nhẹ (0,15; 
 mất vành ngữ cảnh, `chroma: false`, và **`photometric_probability: 0`**: đo trên chính pipeline
 train, khối nhiễu/mờ/phơi sáng làm teacher gọi 59% mặt thật là giả so với 20% trên ảnh sạch,
 trong khi năm augment còn lại không đổi phán quyết của nó (`measurements.md` §41.10); distill
-là học hàm của teacher trên miền cần dùng, không phải dạy nó "mờ là giả". Chọn checkpoint bằng **KL trên val**, không bằng EER pool.
+là học hàm của teacher trên miền cần dùng, không phải dạy nó "mờ là giả".
+
+`train_split` chọn theo **dải crop**, không theo tỉ lệ tấn công, vì nhãn không đọc. `fitted()` kẹp ô
+vuông vào khung nên scale đạt được phụ thuộc cỡ mặt: trên board mặt thật đứng ở 2,0–2,7× còn khung
+giả ở 0,8–1,7×. Chỉ CelebA có ảnh đủ rộng (39% mẫu ≥ 2,0×), các nguồn khác đã là crop mặt sẵn nên
+không bao giờ vượt 1,4×; mà loader cấp một slot luồng mỗi thư mục nên split 16 slot pha loãng CelebA
+còn 1/16 và chỉ phủ 13% dải mặt thật của board. `CelebA ×6 + unique_live + unique_replay` đưa con số
+ấy lên 28%, trần của pool là 29% (`measurements.md` §41.10). Chọn checkpoint bằng **KL trên val**, không bằng EER pool.
 Nghiệm thu bằng bảng bốn dòng cùng thước 87 khung INT8 + tập lớn + `bench_ai`: teacher, bản
 nhập stem tách đang nạp, student distill, student cũ `0107`; student lên `models.lock.json` chỉ
 khi giữ 62/62 và chặn 25/25 với khe không hẹp hơn bản đang nạp.
