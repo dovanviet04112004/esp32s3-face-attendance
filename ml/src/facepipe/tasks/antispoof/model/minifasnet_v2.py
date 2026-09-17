@@ -12,10 +12,15 @@ from torch import nn
 
 from facepipe.core.registry import MODELS
 
-# keep_dict['1.8M_'] upstream: every channel count the blocks are wired with.
-KEEP = (32, 32, 103, 103, 64, 13, 13, 64, 13, 13, 64, 13, 13, 64, 13, 13, 64, 231, 231, 128,
-        231, 231, 128, 52, 52, 128, 26, 26, 128, 77, 77, 128, 26, 26, 128, 26, 26, 128, 308,
-        308, 128, 26, 26, 128, 26, 26, 128, 512, 512)
+# keep_dict upstream: every channel count the blocks are wired with; V2 reads '1.8M_', V1 '1.8M'.
+KEEP_TABLES = {
+    "1.8M_": (32, 32, 103, 103, 64, 13, 13, 64, 13, 13, 64, 13, 13, 64, 13, 13, 64, 231, 231, 128,
+              231, 231, 128, 52, 52, 128, 26, 26, 128, 77, 77, 128, 26, 26, 128, 26, 26, 128, 308,
+              308, 128, 26, 26, 128, 26, 26, 128, 512, 512),
+    "1.8M": (32, 32, 103, 103, 64, 13, 13, 64, 26, 26, 64, 13, 13, 64, 52, 52, 64, 231, 231, 128,
+             154, 154, 128, 52, 52, 128, 26, 26, 128, 52, 52, 128, 26, 26, 128, 26, 26, 128, 308,
+             308, 128, 26, 26, 128, 26, 26, 128, 512, 512),
+}
 # Four stride-2 stages, so the closing depthwise kernel is the map they leave.
 DOWNSAMPLES = 4
 FLAT_FEATURES = 512
@@ -156,6 +161,7 @@ class MiniFASNetV2(nn.Module):
         stem: str = "plain",
         drop_p: float = 0.2,
         squeeze_excite: bool = False,
+        keep: str = "1.8M_",
     ) -> None:
         super().__init__()
         if view not in ("tight", "wide"):
@@ -164,12 +170,14 @@ class MiniFASNetV2(nn.Module):
             raise ValueError(f"stem must be 'plain' or 'split_prelu', got {stem!r}")
         if chroma:
             raise ValueError("the imported weights read three planes; chroma must stay off")
+        if keep not in KEEP_TABLES:
+            raise ValueError(f"keep must be one of {sorted(KEEP_TABLES)}, got {keep!r}")
         self.chroma = False
         if input_size % (2 ** DOWNSAMPLES) != 0:
             raise ValueError(f"input_size must be a multiple of {2 ** DOWNSAMPLES}, got {input_size}")
         self.view = view
         self.embedding_size = embedding
-        k, act = KEEP, activation
+        k, act = KEEP_TABLES[keep], activation
         closing = input_size // (2 ** DOWNSAMPLES)
 
         if stem == "split_prelu":
