@@ -2775,7 +2775,7 @@ lý do `resume` nằm trong quy trình. Khoảng 1,8 phút một epoch với spl
 | khe logit p5–p95 | 4,17 = **53 nấc INT8** | 3,83 = **49 nấc** |
 | cửa sổ ngưỡng | 0,026–0,246 = 220‰ | **0,316–0,636 = 320‰** |
 | `spoof1309` màn điện thoại, cao nhất | 0,050 | 0,209 |
-| `p2gia` ảnh in qua OV5640, cao nhất | 0,033 | 0,316 |
+| `p2gia` màn điện thoại thứ hai kề ống kính, cao nhất | 0,033 | 0,316 |
 | mặt thật thấp nhất | 0,172 | 0,636 |
 
 Ngưỡng vận hành **0,50**, biên hai phía 0,184 và 0,136.
