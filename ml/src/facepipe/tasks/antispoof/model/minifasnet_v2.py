@@ -19,6 +19,8 @@ KEEP = (32, 32, 103, 103, 64, 13, 13, 64, 13, 13, 64, 13, 13, 64, 13, 13, 64, 23
 # Four stride-2 stages, so the closing depthwise kernel is the map they leave.
 DOWNSAMPLES = 4
 FLAT_FEATURES = 512
+# ResidualSE upstream hands every closing block this reduction.
+SE_REDUCTION = 4
 
 
 def activation_for(name: str, channels: int) -> nn.Module:
@@ -58,31 +60,55 @@ class LinearBlock(nn.Module):
         return self.bn(self.conv(x))
 
 
+class SqueezeExcite(nn.Module):
+    """Channel gate in the upstream SEModule field names; the sigmoid has no esp-nn kernel."""
+
+    def __init__(self, channels: int, reduction: int) -> None:
+        super().__init__()
+        self.fc1 = nn.Conv2d(channels, channels // reduction, 1, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels // reduction)
+        self.fc2 = nn.Conv2d(channels // reduction, channels, 1, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        gate = torch.relu(self.bn1(self.fc1(x.mean((2, 3), keepdim=True))))
+        return x * torch.sigmoid(self.bn2(self.fc2(gate)))
+
+
 class DepthWise(nn.Module):
-    """Pointwise expand, depthwise, pointwise project, with an optional skip."""
+    """Pointwise expand, depthwise, pointwise project, with an optional skip and gate."""
 
     def __init__(self, c1, c2, c3, residual: bool = False, kernel=(3, 3), stride=(2, 2),
-                 padding=(1, 1), groups: int = 1, activation: str = "relu") -> None:
+                 padding=(1, 1), groups: int = 1, activation: str = "relu",
+                 se_reduction: int = 0) -> None:
         super().__init__()
         self.conv = ConvBlock(c1[0], c1[1], activation=activation)
         self.conv_dw = ConvBlock(c2[0], c2[1], kernel, stride, padding, groups=c2[0],
                                  activation=activation)
         self.project = LinearBlock(c3[0], c3[1])
         self.residual = residual
+        if se_reduction:
+            self.se_module = SqueezeExcite(c3[1], se_reduction)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.project(self.conv_dw(self.conv(x)))
-        return x + out if self.residual else out
+        if not self.residual:
+            return out
+        if hasattr(self, "se_module"):
+            out = self.se_module(out)
+        return x + out
 
 
 class Residual(nn.Module):
     """A run of skip-connected DepthWise blocks, held under `model` as upstream does."""
 
-    def __init__(self, c1, c2, c3, num_block: int, groups: int, activation: str) -> None:
+    def __init__(self, c1, c2, c3, num_block: int, groups: int, activation: str,
+                 squeeze_excite: bool = False) -> None:
         super().__init__()
         self.model = nn.Sequential(*[
             DepthWise(c1[i], c2[i], c3[i], residual=True, stride=(1, 1), groups=groups,
-                      activation=activation)
+                      activation=activation,
+                      se_reduction=SE_REDUCTION if squeeze_excite and i == num_block - 1 else 0)
             for i in range(num_block)
         ])
 
@@ -129,6 +155,7 @@ class MiniFASNetV2(nn.Module):
         chroma: bool = False,
         stem: str = "plain",
         drop_p: float = 0.2,
+        squeeze_excite: bool = False,
     ) -> None:
         super().__init__()
         if view not in ("tight", "wide"):
@@ -157,7 +184,7 @@ class MiniFASNetV2(nn.Module):
             [(k[4], k[5]), (k[7], k[8]), (k[10], k[11]), (k[13], k[14])],
             [(k[5], k[6]), (k[8], k[9]), (k[11], k[12]), (k[14], k[15])],
             [(k[6], k[7]), (k[9], k[10]), (k[12], k[13]), (k[15], k[16])],
-            num_block=4, groups=k[4], activation=act)
+            num_block=4, groups=k[4], activation=act, squeeze_excite=squeeze_excite)
         self.conv_34 = DepthWise((k[16], k[17]), (k[17], k[18]), (k[18], k[19]), groups=k[19],
                                  activation=act)
         self.conv_4 = Residual(
@@ -167,14 +194,14 @@ class MiniFASNetV2(nn.Module):
              (k[35], k[36])],
             [(k[21], k[22]), (k[24], k[25]), (k[27], k[28]), (k[30], k[31]), (k[33], k[34]),
              (k[36], k[37])],
-            num_block=6, groups=k[19], activation=act)
+            num_block=6, groups=k[19], activation=act, squeeze_excite=squeeze_excite)
         self.conv_45 = DepthWise((k[37], k[38]), (k[38], k[39]), (k[39], k[40]), groups=k[40],
                                  activation=act)
         self.conv_5 = Residual(
             [(k[40], k[41]), (k[43], k[44])],
             [(k[41], k[42]), (k[44], k[45])],
             [(k[42], k[43]), (k[45], k[46])],
-            num_block=2, groups=k[40], activation=act)
+            num_block=2, groups=k[40], activation=act, squeeze_excite=squeeze_excite)
         self.conv_6_sep = ConvBlock(k[46], k[47], activation=act)
         self.conv_6_dw = LinearBlock(k[47], k[48], (closing, closing), groups=k[48])
         self.linear = nn.Linear(FLAT_FEATURES, embedding, bias=False)
