@@ -2851,3 +2851,110 @@ vào luồng đầu vào. Kết quả: SynthASpoof in 56,0% → 66,9%, `phone_ev
 
 Cảnh báo cách đọc: watcher trong lúc train báo NUAA AUC 0,984–0,991 vì chỉ lấy 1.024 mẫu đầu, lệch
 lớp; số đủ 5.110 mẫu mới đúng.
+
+## 43. Quét đợt ba model công khai ngoài minivision, và nhập facenox — 18/09
+
+Mục đích: tìm model có trọng số công khai, RGB một khung, cỡ board, **chưa có trong §41.9**, đem về
+chấm cùng thước. Nguồn quét: HF (`anti-spoof`, `liveness`, `spoof`), GitHub (API + topic), ModelScope,
+PaddleHub, các model zoo STM32 / NXP / Espressif / Sipeed, FeatherNet, CDCN. Loại ngay: mọi ViT /
+DINOv2 / ResNet18 (≥ 44 MB), YOLOv8 "liveness", SDK thương mại nhị phân (KBY-AI, FaceOnLive,
+MiniAiLive, Doubango, 3DiVi), ModelScope `flir` (IR) và `flxc` (nhấp màn hình), CDCN (không ai phát
+hành trọng số), STM32 zoo (không có mục chống giả). Còn năm ứng viên:
+
+| Model | Nguồn / train | Cỡ | Đầu vào | Tải |
+|---|---|---|---|---|
+| **facenox `face-antispoof-onnx`** (commit `fa6489f`) | MiniFASNetV2-SE retrain trên CelebA-Spoof, sống vs {in, phát lại}, bỏ mặt nạ | 1,9 MB ONNX · 0,47M tham số · **104 MMAC** | 128, RGB [0,1], crop 1,5× | sha `af2381b88f3876926…` |
+| syaringan357 `FaceAntiSpoofing.tflite` | Deep Tree Learning (CVPR19), train không rõ | 4,1 MB | 256, RGB [0,1], 8 lá | sha `a980757d55e2835a2…` |
+| zeusees HyperFAS `fas.h5` | MobileNet-0.5 Keras, 360k ảnh riêng + NUAA/CASIA/OULU/SiW | 3,7 MB · 0,86M | 224, BGR (x−127,5)/127,5, ô 1,2× | sha `db3014e5c16ad453d…` |
+| pourfard M8 `w.onnx` | MobileNetV3-small, dữ liệu riêng, **không tài liệu tiền xử lý** | 6,5 MB | 256 | sha `78db60bf9500cd86a…` |
+| trushkin-ilya FeatherNetA RGB (CASIA-SURF CeFA) | 0,35M, 80 MFLOP | — | 224 | **không tải được**: cả 3 link Drive trả 404 |
+
+### 43.1 Trên 87 khung board, ô vuông `fitted_box`, lấy mẫu BOX của PIL, float
+
+Harness này khác §41.1 ở phép lấy mẫu (PIL BOX thay cho trung bình vùng đúng `pixels.cpp`), nên có
+đối chứng cùng harness: run `0728` (V2 PReLU, 2,7×) cho khe **+0,417** ở đây so với +0,473 ở §41.9.
+
+| Model | crop tốt nhất | AUC | thật bị loại | p5 thật − p95 giả |
+|---|---|---|---|---|
+| đối chứng V2 PReLU `0728` 2,7× | 2,7× | 1,0000 | 0/62 | +0,417 |
+| đối chứng `0854` stem tách, cùng harness | 2,7× · 2,0× · 1,5× | 1,0000 | 0/62 | +0,467 · +0,810 · +0,632 |
+| **facenox, RGB** | **1,5×** | **1,0000** | **0/62** | **+0,819** (thật min 0,835, giả max 0,170) |
+| facenox, RGB | 2,7× (crop của firmware) | 0,9890 | 5/62 | −0,071 |
+| facenox, RGB | 1,0× | 0,9606 | 16/62 | −0,365 |
+| DTN tflite | mọi crop | 0,12–0,25 | 55–62/62 | luật `spoof > 0,2` gốc chặn oan 58–60/62 thật |
+| HyperFAS | 1,2× BGR (đúng tài liệu) | 0,9174 | 22/62 | −0,489 |
+| pourfard M8 | tốt nhất trong 18 biến thể đoán | 0,9503 | 21/62 | −0,139 |
+
+Đọc ra: **facenox là model đầu tiên ngoài minivision giữ trọn 62 mặt thật**, và khe của nó rộng
+nhất trong mọi model đơn từng chấm, kể cả V1SE (+0,553 ở §41.9). Nhưng nó chỉ sống ở **crop 1,5×**
+của chính nó; ở 2,7× của firmware mất 5/62. Ba model kia hỏng, không thử lại. Một quan sát phụ
+cần ghi: `0854` ở 2,0× cho khe +0,810 so với +0,467 ở 2,7× trên bộ này — nhưng bộ 25 khung giả đều
+kề ống kính nên crop của chúng không đổi khi hạ scale, chỉ crop mặt thật đổi; số này mang confound
+§41.10 và không đủ để đề xuất đổi `kFaceScale`.
+
+### 43.2 facenox trên các tập lớn, crop 1,5× cắt lại từ view wide của shard
+
+Điểm vận hành riêng của nó: `p ≥ 0,5` (cột @0,5) và luật gốc của repo `logit_real − logit_spoof ≥ 0,5`
+(cột @repo, tức `p ≥ 0,622`). Cột so sánh lấy từ §41.9 (V2 `0728`, V1SE, @0,12) và §42.4 (`0854`,
+student `1109`, điểm vận hành riêng).
+
+| Tập | facenox @0,5 · @repo | V1SE 4,0× | V2 `0728` | `0854` | student `1109` |
+|---|---|---|---|---|---|
+| NUAA AUC · giả chặn | **0,9994** · **1,000** · 1,000 | 0,9999 · 0,999 | 0,9998 · 0,998 | 0,999 · 0,967 | 0,901 · 0,700 |
+| NUAA thật đậu | 0,894 · 0,851 | ~0,95 | 0,955 | 0,999 | 0,937 |
+| LCC eval AUC · giả chặn | **0,895** · **0,707** · 0,746 | 0,872 · 0,333 | 0,886 · 0,350 | 0,826 · 0,163 | 0,870 · 0,194 |
+| SynthASpoof in chặn | **0,907** · 0,931 | 0,863 | 0,862 | 0,624 | 0,560 |
+| SynthASpoof iPad chặn | 0,190 · 0,226 | 0,228 | 0,233 | 0,238 | **0,502** |
+| SynthASpoof Samsung chặn | **0,885** · 0,912 | 0,712 | 0,733 | 0,735 | 0,671 |
+| SynthASpoof webcam chặn | 0,848 · 0,883 | — | — | — | — |
+| SynthASpoof bonafide đậu | 0,983 · 0,981 | — | 0,964 | 0,971 | 0,982 |
+| `unique` phát lại chặn | 0,742 · 0,772 | **0,817** | 0,806 | 0,663 | 0,728 |
+| `unique` thật đậu | **0,756** · 0,744 ✗ | 1,000 | 1,000 | 1,000 | 1,000 |
+| Axon mặt nạ giấy 3D / cutout / latex | 0,378 / 0,875 / 0,013 | 0,146 / 0,542 / 0 | 0,191 / 0,617 / 0 | — | — |
+| Axon silicone / vải 3D / giấy bọc | 0,159 / 0,076 / 0,212 | — | — | — | — |
+| `phone_eval` ảnh in `attack_anh` chặn | 9/12 · **11/12** | 12/12 | 8/12 | 10/12 | 12/12 |
+| `phone_eval` điện thoại xa `attack_xa` chặn | **5/20** · 6/20 ✗ | — | 20/20 | — | — |
+| `phone_eval` `live_xa` đậu | **11/20** · 9/20 ✗ | 20/20 | 4/20 | 19/20 | — |
+| `phone_eval` `live_gan` / `live_vua` / `live_kho` / `live_rat_xa` đậu | 12/12 · 12/12 · 12/12 · 20/20 | — | 0/12 · 0/12 · 12/12 · 20/20 | — | — |
+| pool `test:10:` AUC | 0,956 (miền train của nó) | 0,821 | 0,799 | 0,752 | 0,774 |
+
+Hình dạng: facenox là **model chuyên ảnh in**: đứng đầu ở NUAA, SynthASpoof in, LCC, và không thua
+mặt nạ giấy. Đổi lại nó **chặn oan** 24% selfie cầm tay của `unique` và 45% mặt thật ở xa, và **cho
+lọt 75% điện thoại ở xa** (`attack_xa`), đúng chỗ V2 chặn 20/20. Nó không phải "toàn diện hơn"
+V1SE: V1SE không mất một mặt thật nào ở đâu và chặn phát lại tốt hơn; facenox mua ảnh in bằng
+mặt thật ở xa và điện thoại ở xa. Đặc điểm hợp với vai **teacher cho ảnh in** hơn là model nạp.
+
+### 43.3 Nhập facenox thành run của nhánh
+
+Checkpoint `models/best/98.20/best_model.pth` (2,97 MB, sha `290ad61b0ece12a42…`) là `MultiFTNet`:
+classifier `MiniFASNetV2SE` dưới tiền tố `model.` cộng đầu phụ Fourier `FTGenerator` (128 → 128 → 64 →
+1, ba conv 3×3). Config lưu kèm: `input_size 128`, `num_classes 2`, **`ft_weight 0.0`** — đầu FT có
+trong đồ thị nhưng **không được train** ở checkpoint này. Recipe đọc từ mã của họ: CelebA-Spoof
+`spoof_categories [[0], [1,2,3,7,8,9]]` (bỏ 4–6 mặt nạ giấy cắt và 10 mặt nạ 3D), ô 1,5× quanh hộp,
+`RandomResizedCrop(scale 0.9–1.1)` + `ColorJitter(0.4, 0.4, 0.4, 0.1)`, ToTensor không chuẩn hoá,
+SGD lr 0,1 mom 0,9 wd 5e-4, MultiStep [10, 15, 22, 30] γ 0,1, 50 epoch, dropout 0,75, val 20%
+đạt 98,2%. Checkpoint train đầy đủ `models/checkpoints/minifasv2 (128x128)/checkpoint_best.pth`
+(5,8 MB, có optimizer) cũng đã tải về.
+
+`import_minifasnet.py` nhận `--source facenox`: bỏ tiền tố `model.`, bỏ `FTGenerator.*`,
+`logits` → `prob`, không lật kênh, không nhân 255, hai lớp giữ nguyên thứ tự [sống, giả]. Port
+`minifasnet_v2.py` thêm `squeeze_excite` (SE ở khối cuối của `conv_3/4/5`, sau `project`, trước cộng
+residual, reduction 4, tên trường `se_module.fc1/bn1/fc2/bn2` như upstream). Hai run:
+
+| Run | Biến thể | Parity | 87 khung, 1,5× | 87 khung, 2,7× |
+|---|---|---|---|---|
+| `20260918-0100_2613aa2_bc7535` | PReLU nguyên | 2,4e-6 với ONNX của họ | 0/62 · 25/25 · **+0,819** | 5/62 · −0,071 |
+| `20260918-0100_2613aa2_55e1a6` | stem tách `conv1`, 32 lớp ReLU | 7e-7 với bản giữ PReLU ở `conv1` | 0/62 · 25/25 · +0,628 (float) · **+0,732 INT8** | 13/62 float · 14/62 INT8 |
+
+Hệ số PReLU của họ: `conv1` median |a| 0,034, max 0,31; toàn mạng median 0,004, 59% âm — cùng
+kiểu với minivision, nên stem tách áp được nguyên xi, giá là khe 0,819 → 0,628 (float).
+
+**Bậc lượng tử Q1 của bản stem tách**: 644 KB INT8, op: `CONV_2D` ×39, `DEPTHWISE_CONV_2D` ×18, `ADD`
+×13, `MUL` ×3, `FULLY_CONNECTED` ×2 (esp-nn); `PAD` ×4, **`LOGISTIC` ×3, `MEAN` ×3** tham chiếu, hai op
+sau **chưa có trong resolver nhánh** nên `op_check` chặn, thang dừng ở đó đúng như thiết kế.
+
+**Vì sao chưa lên board**: 104 MMAC gấp 2,4 lần teacher `0854` (42,6 MMAC, 535 ms) → 🔬 cỡ 1,3 s;
+`conv_6_dw` 8×8 khoá vào 128 px nên không hạ độ phân giải được nếu không train lại; và nó cần
+`kFaceScale` 1,5 thay 2,7 của firmware (KẾ HOẠCH §3), cộng hai op mới trong resolver. Cả ba đều là
+đổi kiến trúc, phải qua §1.2. Giá trị ngay: một **teacher thứ hai chuyên ảnh in** giữ trọn mặt thật
+của board, để distill vào student width 32 cùng với teacher minivision (chưa làm, cần ADR).
