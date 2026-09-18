@@ -432,21 +432,46 @@ Siết vừa tay; siết mạnh là nứt mép.
 không đồng bộ với lúc firmware ghi. Đo trên board: một khung 320×480 RGB565 (307 KB) mất
 **31,7 ms** để ghi ở 80 MHz, còn chu kỳ quét mặc định là **17,5 ms** — nên trong lúc ghi,
 tia quét lướt qua vùng đang ghi ~1,8 lần và mỗi lần để lại một vết cắt ngang giữa phần khung
-mới và phần khung cũ. Mặt người di chuyển thấy rõ.
+mới và phần khung cũ. Mặt người di chuyển thấy rõ. Khấc **chỉ nhìn thấy được khi ảnh chuyển
+động nhanh**: cảnh đứng yên thì khung rách trông y hệt khung lành, nên nghiệm thu phải vuốt tay
+trước ống kính chứ không phải nhìn màn tĩnh.
 
 Điều kiện để hết hẳn: **con trỏ ghi phải chạy trước tia quét trọn cả khung**. Cần hai thứ:
 
 | Điều kiện | Cách đạt |
 |---|---|
 | Chu kỳ quét **dài hơn** thời gian ghi | `FRMCTR1 (0xB1) = 0x81 0x1F` → **42,98 ms** đo được (23,26 Hz) |
-| Bắt đầu ghi ngay trước lúc tia quét về dòng 0 | Đọc `GET_SCANLINE (0x45)` qua `SDO` mỗi 1 ms, thấy bộ đếm vào đoạn **220…241** thì ghi |
+| Bắt đầu ghi khi tia quét còn cách vạch cuộn vòng một quãng **có sàn và có trần** | Đọc `GET_SCANLINE (0x45)` qua `SDO` mỗi 1 ms, thấy bộ đếm vào đoạn **160…200** thì ghi |
 
-Bộ đếm của `0x45` chạy **0…241**, mỗi đơn vị bằng 2 dòng vật lý. Bắt đầu ở đoạn cuối chứ
-không đợi đúng lúc cuộn vòng: con trỏ ghi xuất phát từ dòng 0 trong khi tia quét còn đang
-quét 44 dòng cuối, nên có đà trước; tia quét cuộn về 0 rồi đuổi theo với tốc độ 90 µs/dòng
-so với 66 µs/dòng của con trỏ ghi — ghi nhanh hơn quét **36%**, không bao giờ bị bắt kịp.
-Đọc `0x45` không được thì ghi ngay như không có khoá pha: một khung bị xé tốt hơn một preview
-đứng hình.
+Bộ đếm của `0x45` chạy **0…241** đều đặn 172 µs mỗi đơn vị (dump 240 lần đọc liên tiếp,
+18/09), tức mỗi đơn vị bằng 2 dòng vật lý và trọn một vòng là 41,6 ms. Bắt đầu ở đoạn cuối chứ
+không đợi đúng lúc cuộn vòng: con trỏ ghi xuất phát từ dòng 0 trong khi tia quét còn đang quét
+nốt phần dưới, nên có **quãng chạy đà** trước khi bị đuổi.
+
+**Cửa sổ phải có trần, không chỉ có sàn.** Một ngưỡng đơn "từ 220 trở lên" chấp nhận cả giá trị
+241, mà ở đó quãng chạy đà chỉ còn **0,17 ms** — gần như không có. Khung nào rơi đúng mép ấy thì
+chỉ cần lượt vẽ chậm hơn thường vài ms là bị vượt, và đó là lý do khấc quay lại từng đợt trong
+vài giây đầu sau khi bật nguồn, lúc Wi-Fi bắt tay và SNTP chỉnh giờ còn đang chiếm lõi 0.
+
+Gọi `H` là quãng chạy đà, `T` là thời gian ghi trọn khung. Tia quét đi 11,54 dòng/ms. Ngòi ghi bị
+đuổi kịp ở dòng `R = H / (T/480 − 1/11,54)`; hết khấc khi `R > 480`. Bảng dưới là hệ quả trực tiếp:
+
+| Bộ đếm lúc bắt đầu | `H` | `T` chậm nhất còn an toàn |
+|---|---|---|
+| 241 | 0,17 ms | 41,7 ms |
+| 220 | 3,8 ms | 44 ms |
+| 200 | 7,2 ms | 47 ms |
+| 160 | 14,1 ms | 53 ms |
+
+Nên cửa sổ là **160…200**: sàn 160 giữ độ rộng cửa sổ (41 đơn vị, 7,1 ms) **rộng hơn** đoạn
+220…241 cũ nên thời gian chờ trung bình **ngắn hơn**, còn trần 200 bảo đảm mọi khung đều có ít
+nhất 7,2 ms chạy đà. Thời gian ghi đo được là 33–36 ms, đỉnh 40 ms, nên biên đi từ 2 ms lên
+**11 ms** mà không giảm một điểm ảnh nào và không đổi tốc độ khung.
+
+Đọc `0x45` không được thì **đọc lại tối đa 4 lần** rồi mới ghi như không có khoá pha. Lần đọc đầu
+ngay sau một lượt ghi panel luôn trả giá trị ngoài dải, và bỏ cuộc ngay lần đầu làm **49 % số
+khung** ghi lệch nhịp trong im lặng (đo 18/09, 616/1.260 khung). Một khung bị xé vẫn tốt hơn một
+preview đứng hình, nhưng chỉ sau khi đã thử lại.
 
 **Đọc thanh ghi qua `esp_lcd` cần một điều `esp_lcd` không nói ra.** Sau mỗi giao dịch của
 nó, `esp_lcd_panel_io_spi` **tắt driver ngõ ra của chân DC** (`post_cb` gọi
