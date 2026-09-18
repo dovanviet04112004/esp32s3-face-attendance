@@ -46,7 +46,7 @@ def upstream_state(path: Path, source: str) -> dict[str, torch.Tensor]:
 
 
 def folded(state: dict[str, torch.Tensor], activation: str, stem: str,
-           source: str = "minivision") -> dict[str, torch.Tensor]:
+           source: str = "minivision", prob_bias: bool = False) -> dict[str, torch.Tensor]:
     """Fold channel order, pixel range, class order and the split stem into the weights."""
     out = dict(state)
     if source == "minivision":
@@ -54,6 +54,8 @@ def folded(state: dict[str, torch.Tensor], activation: str, stem: str,
         # BGR to RGB along the input axis, and [0,255] to [0,1] at the same place.
         out["conv1.conv.weight"] = first.flip(1).contiguous() * PIXEL_LEVELS
         out["prob.weight"] = out["prob.weight"][list(CLASS_ORDER)].contiguous()
+    if prob_bias:
+        out["prob.bias"] = torch.zeros(out["prob.weight"].shape[0])
     if stem == "split_prelu":
         out = split_stem(out)
     if activation == "relu":
@@ -108,8 +110,8 @@ def stem_parity(model: torch.nn.Module, state: dict[str, torch.Tensor], params: 
                 source: str) -> float:
     """Largest gap between the split stem and PReLU kept at conv1, ReLU elsewhere."""
     reference = MODELS.build({"name": "minifasnet_v2", "params": {**params, "stem": "plain"}})
-    reference.load_state_dict(folded(state, str(params.get("activation", "relu")), "plain", source),
-                              strict=True)
+    reference.load_state_dict(folded(state, str(params.get("activation", "relu")), "plain", source,
+                                     bool(params.get("prob_bias", False))), strict=True)
     reference.conv1.act = torch.nn.PReLU(state["conv1.act.weight"].numel())
     reference.conv1.act.weight.data.copy_(state["conv1.act.weight"])
     reference.eval()
@@ -162,7 +164,8 @@ def main(argv: list[str] | None = None) -> int:
 
     state = upstream_state(args.weights, args.source)
     model = MODELS.build({"name": cfg.model.name, "params": dict(cfg.model.params)})
-    model.load_state_dict(folded(state, activation, stem, args.source), strict=True)
+    prob_bias = bool(cfg.model.params.get("prob_bias", False))
+    model.load_state_dict(folded(state, activation, stem, args.source, prob_bias), strict=True)
 
     if stem == "split_prelu":
         gap = stem_parity(model, state, dict(cfg.model.params), size, args.source)

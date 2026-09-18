@@ -162,6 +162,7 @@ class MiniFASNetV2(nn.Module):
         drop_p: float = 0.2,
         squeeze_excite: bool = False,
         keep: str = "1.8M_",
+        prob_bias: bool = False,
     ) -> None:
         super().__init__()
         if view not in ("tight", "wide"):
@@ -215,7 +216,8 @@ class MiniFASNetV2(nn.Module):
         self.linear = nn.Linear(FLAT_FEATURES, embedding, bias=False)
         self.bn = nn.BatchNorm1d(embedding)
         self.drop = nn.Dropout(p=drop_p)
-        self.prob = nn.Linear(embedding, num_classes, bias=False)
+        # Upstream has no bias here; the export path needs one to fold the live shift into.
+        self.prob = nn.Linear(embedding, num_classes, bias=prob_bias)
 
     def forward(self, views: torch.Tensor | tuple[torch.Tensor, ...]) -> torch.Tensor:
         if isinstance(views, (tuple, list)):

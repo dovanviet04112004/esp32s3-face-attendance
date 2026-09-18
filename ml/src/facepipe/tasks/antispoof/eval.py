@@ -251,6 +251,7 @@ def fold_live_bias(run: Path, shift: float, live_index: int = LIVE) -> Path:
     keep = run / "ckpt" / "best.uncalibrated.pth"
     if not keep.exists():
         torch.save(payload, keep)
+    folded_into = 0
     for holder in ("model", "ema"):
         state = payload.get(holder)
         state = state.get("module") if holder == "ema" and state else state
@@ -259,6 +260,9 @@ def fold_live_bias(run: Path, shift: float, live_index: int = LIVE) -> Path:
         for key in ("classifier.bias", "prob.bias"):
             if key in state:
                 state[key][live_index] += shift
+                folded_into += 1
+    if folded_into == 0:
+        raise ValueError("the classifier has no bias to fold the shift into; import with prob_bias")
     torch.save(payload, path)
     return path
 
