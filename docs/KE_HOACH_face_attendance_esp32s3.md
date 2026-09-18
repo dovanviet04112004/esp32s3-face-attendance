@@ -3064,6 +3064,23 @@ gõ **chữ không dấu** — bộ gõ tiếng Việt là một hệ thống ri
 gọi `svc_vision_enrol_next()` rồi đứng chờ chính `MATCH` của người vừa thêm, nên "thêm thành
 công" là câu nói sau khi máy **đã nhận lại được**, không phải sau khi ghi xong file.
 
+**Đếm lần từ chối phải cùng nhịp với pipeline, và nhịp ấy là từng mẫu.** Màn `Capture` bỏ cuộc
+theo số lần bị gọi ảnh giả, `svc_vision` ngừng xác thực theo `kEnrolSpoofTries` — hai con số này
+**buộc phải reset cùng lúc**. Màn đếm dồn cả lượt trong khi pipeline đếm từng mẫu thì người thật
+bị đá ra oan: rải ba lần từ chối qua ba mẫu là đủ hỏng, mà BPCER đo được ở `live_min` 750‰ là
+1,75% nên chuyện ấy xảy ra thật trong ánh sáng xấu. Ngược lại màn đếm rộng hơn pipeline thì
+pipeline bỏ cuộc trước, màn đứng đợi hết hạn 15 s rồi mới báo — một khoảng treo không lý do. Cả
+hai vì thế reset ở đầu **mỗi mẫu**, và dòng "lần n/3" trên kính đếm đúng số lần của mẫu đang lấy.
+
+**Đăng ký hỏng giữa chừng phải dọn sạch dấu vết.** Mẫu nào đậu là `keep()` ghi ngay vào bảng và
+gọi `svc_facedb_persist()` — đúng, vì mất điện giữa chừng không được mất người đã lấy xong. Nhưng
+khi màn bỏ cuộc, những mẫu đã lỡ ghi **vẫn nằm lại**: bảng có một người mang `employee_id` thật,
+chỉ một template, **nhận diện được**, trong khi người vận hành vừa đọc "Chưa lấy được mẫu" và tin
+là không có gì xảy ra. Một người chỉ có mẫu chính diện sẽ trượt ngay khi hơi nghiêng mặt, và
+không ai hiểu vì sao — lỗi âm thầm tệ hơn việc phải đăng ký lại. Nên `main` xoá người ấy khi màn
+rời đi mà chưa đủ ba mẫu, dùng lại đúng `svc_facedb_remove` + `svc_facedb_persist` của màn Danh
+sách. `main` là chỗ duy nhất biết `employee_id` thật, vì màn chỉ gửi mã chỗ `kNewPerson`.
+
 **Đăng ký không được đẻ ra một lần chấm công.** Ngay sau mẫu đầu, máy nhận ra người đang đứng đó và `svc_vision` bắn `MATCH` như mọi khi — `svc_attendance` mở cửa, ghi bản ghi, màn hiện "Đã chấm công" giữa lúc người ta đang quay mặt sang trái. Thấy trên board 13/09. Nên `ai_task` **không đẩy kết quả vào `q_result`** khi màn `Capture` đang mở: khung vẫn chạy đủ ba model để lấy mẫu, chỉ có đường nghiệp vụ là im. Câu xác nhận của việc thêm người do chính `CaptureScreen` nói, không mượn thẻ chấm công của màn `Scan`.
 
 ##### h.1) Màn `Scan` — khung ngắm là thứ sửa lỗi "đứng xa không chấm được"
