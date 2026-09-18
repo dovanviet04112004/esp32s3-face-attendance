@@ -3045,3 +3045,33 @@ kèm AUC: khác AUC là khác phân biệt, cùng AUC mà khác tỉ lệ đậu
 Sau tối ưu, **V1SE INT8 hơn V2 INT8 ở mọi cột giả** trừ Axon cutout, và hơn hẳn ở mặt thật ở xa;
 thua ở tỉ lệ thật đậu trên NUAA / bonafide / LCC ở ngưỡng 0,5 chưa căn. Cả ba đều không chống được mặt
 nạ latex, silicone, vải — ngoài phạm vi nhánh (KẾ HOẠCH §3).
+
+### 43.6 V1SE lên `models.lock.json` — căn bias, đường board, 18/09
+
+Quyết định ở ADR-0004. Bước căn bias lộ một lỗi: `fold_live_bias` tìm khoá `prob.bias` hay
+`classifier.bias`, mà lớp `prob` của port nhập theo upstream **không có bias**, nên hàm không gấp
+gì, vẫn ghi checkpoint và báo thành công — INT8 sau "căn" cho số y hệt trước (thật min 0,073).
+Sửa: port nhận `prob_bias`, importer khởi tạo bias 0, và hàm gấp **raise** khi không tìm thấy khoá.
+Run nhập lại với `prob_bias: true` là `20260918-1050_aa7e463_e66877`; hằng số căn trên 87 khung là
+**+5,0051** vào logit lớp sống, gấp vào `prob.bias`, bản chưa căn ở `ckpt/best.uncalibrated.pth`.
+
+Chấm bằng đúng đường board của §41.1 (`fitted()` 2,7×, trung bình vùng nguyên theo `cell_bounds` +
+`area_rows`, `rint(v/255/scale) + zp`), harness dựng lại và kiểm bằng hai mốc đã ghi ở §42.2:
+
+| INT8 Q1, đường board | thật giữ · giả chặn | thật min | giả max | cửa sổ `live_min` | khe logit p5–p95 |
+|---|---|---|---|---|---|
+| `0854` V2 stem tách (mốc, §42.2) | 62/62 · 25/25 | 0,172 | 0,033 | 139‰ | 53 nấc |
+| `1109` student đã căn (mốc, §42.2) | 62/62 · 25/25 | 0,636 | 0,316 | 320‰ | 49 nấc |
+| **`1050` V1SE stem tách, đã căn** | **62/62 · 25/25** | **0,950** | **0,323** | **628‰** (0,323–0,950) | **84 nấc** = 6,93 logit |
+
+Hai mốc trùng số §42.2 đến chữ số thứ ba, nên harness là đúng đường board. Khe logit của V1SE rộng
+1,6 lần bản `0854` và 1,7 lần student; `live_min` **500‰** đang gieo nằm giữa cửa sổ với biên 0,450 về
+phía mặt thật và 0,177 về phía giả, không cần đổi seed. p5 mặt thật 0,994, p95 giả 0,146.
+
+Trên board sau khi nạp: app `aa7e463`, `arena_big` **748.544 B** (hint 748.524 làm tròn 16), spoof
+dùng **675 của 731 KB**, file 600,6 KB trên `models_0`, `vision up: … live 0.500`. Latency không đo
+lại vì graph trùng `0118` (`latency.md` §11: 581 ms rảnh, 677 ms có tải). Crop của firmware giữ
+`kFaceScale` 2,7: §43.4 cho thấy 4,0× và 2,7× là cùng một ô trên khung 320 px.
+
+**Chưa đo**: đòn giấy (tiền, ảnh in, thẻ) với V1SE trên board chỉ có thể thử trực tiếp như §43 đã
+làm với `0854`; chưa có khung OV5640 nào cho các đòn ấy.

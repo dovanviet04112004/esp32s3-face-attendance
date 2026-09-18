@@ -367,3 +367,22 @@ Spoof `20260916-1109` (ADR-0003) thay bản nhập `0854`:
 
 Lãi **321.664 B PSRAM** so với bản nhập, và trùng đúng con số của bản một backbone 12/09 (§8) vì cùng
 kiến trúc width 32 — chỉ khác view đọc vào là crop ngữ cảnh 2,7× thay vì crop mặt 1,0×.
+
+---
+
+## 12. V1SE nhập thay student — `arena_big` lên 748.524 B, 18/09
+
+Spoof `20260918-1050_aa7e463_e66877` (ADR-0004) thay student `1109`; số từ `bench_ai` trên graph
+`0118` cùng kiến trúc và từ log boot của app chính:
+
+| | student `1109` | bản nhập `0854` | **V1SE `1050`** |
+|---|---|---|---|
+| spoof một mình, `arena at` | 210 KB | 671 KB | **675 KB** |
+| `arena_big` `used` chung với recog | 422.764 B | 744.428 B | **748.524 B** (board làm tròn 16: 748.544) |
+| file spoof trên `models_0` | 425 KB | 586 KB | **600,6 KB** |
+| MMAC | 24,6 | 42,6 | 42,7 |
+
+`max(head)` lại là spoof (675 KB) thay cho recog (412 KB), nên `arena_big` trả lại đúng khoản lãi của
+§11 cộng **4.096 B** so với `0854`; phần chênh đúng cỡ các vector gộp 1×1 và vector cổng của ba khối
+SE, chưa tách từng tensor để chốt. Vẫn trong PSRAM, dưới cap `CONFIG_AI_ARENA_BIG_KB` 1536 KB. Ứng viên facenox cùng đợt cần 1.684.700 B và bị loại ở đây
+(`quant_ladder.md` §8).

@@ -210,6 +210,10 @@ với `input_size 128`, hai lớp. Cả hai qua `stem: split_prelu`, 32 lớp Re
 | **`0118`** | **Q1** | **62/62 · 25/25, khe +0,559** | **602,5 KB** | **675 KB một mình, 748.524 B chung với recog** | **581,0 ms** rảnh · 677,4 ms tải |
 | `0100` | Q0 FP32 | 62/62 · 25/25, khe +0,628 ở 1,5× | 1.855 KB | — | — |
 | `0100` | Q1 | 62/62 · 25/25, khe +0,732 ở 1,5× | 644,1 KB | **1.589 KB một mình, 1.684.700 B chung** — vượt cap `CONFIG_AI_ARENA_BIG_KB` 1536 | 1.452,4 ms rảnh · 1.691,1 ms tải |
+| **`1050`** `20260918-1050_aa7e463_e66877` | **Q1** | **62/62 · 25/25, đường board: thật min 0,950, giả max 0,323, 84 nấc** (§43.6) | **600,6 KB** | **675 KB một mình, 748.524 B chung** | **581,0 ms** (cùng graph `0118`) |
+
+`1050` là `0118` nhập lại với `prob_bias: true` rồi căn bias +5,0051 trước khi xuất; đây là bản trên
+`models.lock.json` (ADR-0004). `op_check` qua sau khi resolver nhánh đăng ký `LOGISTIC` và `MEAN`.
 
 Hai số board đo bằng `bench_ai` với resolver **đăng ký tạm** `LOGISTIC` và `MEAN` (không commit, như
 §9.2 của `latency.md` đã làm với PRELU); facenox còn phải nới cap arena trong `sdkconfig` của riêng
