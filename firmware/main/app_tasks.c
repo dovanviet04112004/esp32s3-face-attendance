@@ -61,7 +61,6 @@ static int64_t asleep_for_ms(void)
 #define TOF_TASK_PRIORITY 6
 #define TOF_TASK_STACK_BYTES 3072
 #define TOF_POLL_MS 100
-#define WAKE_MODELS_HOLD_MS 4000
 #define WAKE_SCREEN_HOLD_MS 20000
 #define SCREEN_DIM_PERCENT 0
 #define UI_BACKLIGHT_PERCENT 100
@@ -256,7 +255,6 @@ static void ai_task(void *arg)
     const esp_err_t watched = esp_task_wdt_add(NULL);
     ESP_LOGI(TAG, "ai on core %d, watchdog %s", AI_TASK_CORE, esp_err_to_name(watched));
     bool had_face = false;
-    bool working = true;
 
     for (;;) {
         camera_fb_t *frame = NULL;
@@ -270,29 +268,6 @@ static void ai_task(void *arg)
         svc_vision_result_t result = { 0 };
         s_seen_width = frame->width;
         s_seen_height = frame->height;
-        // Taking samples needs every model, and the person doing it stands where
-        // the range sensor cannot see them.
-        if (ui_kiosk_enrolling()) {
-            stay_awake("enrolling");
-        }
-        if (asleep_for_ms() > WAKE_MODELS_HOLD_MS) {
-            drv_camera_release(frame);
-            esp_task_wdt_reset();
-            if (working) {
-                // A box nobody refreshes would keep drifting across the glass.
-                working = false;
-                had_face = false;
-                s_seen_width = 0;
-                ui_kiosk_on_faces(NULL, 0, 0, 0, 0.0f);
-                ui_kiosk_on_stage(UI_KIOSK_STAGE_NO_FACE);
-                ESP_LOGI(TAG, "models asleep, nobody within the range gate");
-            }
-            continue;
-        }
-        if (!working) {
-            working = true;
-            ESP_LOGI(TAG, "models awake");
-        }
         const esp_err_t err = svc_vision_step(frame, &result);
         if ((result.faces > 0) != had_face) {
             had_face = result.faces > 0;
