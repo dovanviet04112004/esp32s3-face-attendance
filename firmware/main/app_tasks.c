@@ -61,6 +61,8 @@ static int64_t asleep_for_ms(void)
 #define TOF_TASK_PRIORITY 6
 #define TOF_TASK_STACK_BYTES 3072
 #define TOF_POLL_MS 100
+#define PRESENCE_WAIT_MS 50
+#define SOUND_WAIT_MS 20
 #define WAKE_SCREEN_HOLD_MS 20000
 #define SCREEN_DIM_PERCENT 0
 #define UI_BACKLIGHT_PERCENT 100
@@ -541,7 +543,10 @@ static void tof_task(void *arg)
         }
         present = now;
         const app_presence_t edge = present ? APP_PRESENCE_ON : APP_PRESENCE_OFF;
-        xQueueSend(wiring->presence, &edge, 0);
+        // A lost edge strands the machine in one state, so it cannot be silent.
+        if (xQueueSend(wiring->presence, &edge, pdMS_TO_TICKS(PRESENCE_WAIT_MS)) != pdTRUE) {
+            ESP_LOGE(TAG, "presence %s dropped, queue full", present ? "on" : "off");
+        }
         if (present) {
             xEventGroupSetBits(wiring->flags, APP_EG_PRESENT);
         } else {
@@ -583,21 +588,26 @@ static void announce(const app_wiring_t *wiring, svc_attendance_state_t state)
         return;
     }
     const app_sound_t sound = APP_SOUND_OK;
-    xQueueSend(wiring->sounds, &sound, 0);
+    if (xQueueSend(wiring->sounds, &sound, pdMS_TO_TICKS(SOUND_WAIT_MS)) != pdTRUE) {
+        ESP_LOGW(TAG, "grant sound dropped, audio queue full");
+    }
 }
 
 // A full queue costs a resend at most, since flash already holds every record
 // that reaches here (KEHOACH 5.3, 6.2.6).
 static void offer_uplink(const app_wiring_t *wiring)
 {
+    static bool said_full;
     storage_attend_record_t record;
     if (svc_attendance_last_record(&record) != ESP_OK) {
         return;
     }
-    if (xQueueSend(wiring->uplink, &record, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "uplink queue full, record %" PRIu32 " waits on flash",
+    const bool sent = xQueueSend(wiring->uplink, &record, 0) == pdTRUE;
+    if (!sent && !said_full) {
+        ESP_LOGW(TAG, "uplink queue full from record %" PRIu32 " on, flash keeps them",
                  svc_attendance_records());
     }
+    said_full = !sent;
 }
 
 static void attend_task(void *arg)
