@@ -3077,9 +3077,18 @@ gọi `svc_facedb_persist()` — đúng, vì mất điện giữa chừng không
 khi màn bỏ cuộc, những mẫu đã lỡ ghi **vẫn nằm lại**: bảng có một người mang `employee_id` thật,
 chỉ một template, **nhận diện được**, trong khi người vận hành vừa đọc "Chưa lấy được mẫu" và tin
 là không có gì xảy ra. Một người chỉ có mẫu chính diện sẽ trượt ngay khi hơi nghiêng mặt, và
-không ai hiểu vì sao — lỗi âm thầm tệ hơn việc phải đăng ký lại. Nên `main` xoá người ấy khi màn
-rời đi mà chưa đủ ba mẫu, dùng lại đúng `svc_facedb_remove` + `svc_facedb_persist` của màn Danh
-sách. `main` là chỗ duy nhất biết `employee_id` thật, vì màn chỉ gửi mã chỗ `kNewPerson`.
+không ai hiểu vì sao — lỗi âm thầm tệ hơn việc phải đăng ký lại.
+
+Nhưng xoá thẳng cũng phí: công lấy mẫu đã bỏ ra rồi, và cái hỏng thường chỉ là ánh sáng hay tư
+thế của **một** mẫu. Nên màn hỏng đưa ra **hai nút**, người vận hành chọn:
+
+| Nút | Việc |
+|---|---|
+| **Thử lại** | Lấy lại từ mẫu đầu, **giữ nguyên `employee_id` và tên**. `FaceDb::enroll` thay thế theo cặp `(employee_id, template_idx)` nên ba mẫu mới đè lên ba mẫu cũ, không đẻ bản ghi thừa. Màn không rời đi nên `main` vẫn giữ mã người ấy |
+| **Thoát** | Rời về `Menu`. `main` **xoá người dở dang** bằng `svc_facedb_remove` + `svc_facedb_persist`, đúng đường màn Danh sách đang dùng |
+
+`main` là chỗ duy nhất biết `employee_id` thật, vì màn chỉ gửi mã chỗ `kNewPerson`; nó xoá khi
+thấy màn đã rời mà chưa đủ ba mẫu.
 
 **Đăng ký không được đẻ ra một lần chấm công.** Ngay sau mẫu đầu, máy nhận ra người đang đứng đó và `svc_vision` bắn `MATCH` như mọi khi — `svc_attendance` mở cửa, ghi bản ghi, màn hiện "Đã chấm công" giữa lúc người ta đang quay mặt sang trái. Thấy trên board 13/09. Nên `ai_task` **không đẩy kết quả vào `q_result`** khi màn `Capture` đang mở: khung vẫn chạy đủ ba model để lấy mẫu, chỉ có đường nghiệp vụ là im. Câu xác nhận của việc thêm người do chính `CaptureScreen` nói, không mượn thẻ chấm công của màn `Scan`.
 
