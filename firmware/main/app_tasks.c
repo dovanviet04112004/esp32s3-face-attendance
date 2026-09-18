@@ -697,9 +697,12 @@ static void attend_task(void *arg)
         }
         svc_vision_result_t result;
         if (xQueueReceive(wiring->results, &result, pdMS_TO_TICKS(ATTEND_TICK_MS)) == pdTRUE) {
-            // The machine drops this kind, so letting it reach the line would
-            // reword the glass over an event nothing else acted on.
-            if (result.kind != SVC_VISION_FACE_OUT_OF_FRAME) {
+            // Aiming guidance has its own channel, and letting it through here
+            // downgrades a refusal into a vague one (KEHOACH 4.5.5h.1).
+            const bool verdict_about_a_face = result.kind == SVC_VISION_MATCH ||
+                                              result.kind == SVC_VISION_UNKNOWN ||
+                                              result.kind == SVC_VISION_SPOOF;
+            if (verdict_about_a_face) {
                 last_kind = result.kind;
                 last_employee = result.employee_id;
                 memcpy(last_name, result.name, sizeof(last_name));
