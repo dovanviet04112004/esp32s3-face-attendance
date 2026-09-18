@@ -25,7 +25,8 @@ tối ưu — PReLU nguyên → stem tách ReLU → INT8 — rồi đo cùng th�
 
 Nhánh chống giả chạy **MiniFASNetV1SE của minivision** (`keep: 1.8M`, ba khối SE), nhập nguyên
 trọng số qua `import_minifasnet.py`, `conv1` PReLU viết thành stem tách hai nhánh ReLU, 32 lớp còn
-lại ReLU, INT8 Q1, căn bias trước khi xuất, đọc crop ngữ cảnh 2,7× của firmware như cũ. Ba khối SE
+lại ReLU, INT8 Q1, **không căn bias** (hằng số 0: bộ căn hiện có chỉ có màn hình và hằng số nó sinh
+ra đẩy tờ tiền qua ngưỡng, `measurements.md` §43.7), đọc crop ngữ cảnh 2,7× của firmware như cũ. Ba khối SE
 giữ Sigmoid gốc: resolver nhánh đăng ký thêm `LOGISTIC` và `MEAN`, chạy kernel tham chiếu trên vector
 đã gộp về 1×1. Student `20260916-1109` giữ nguyên trong repo làm phương án nhẹ, không xoá.
 

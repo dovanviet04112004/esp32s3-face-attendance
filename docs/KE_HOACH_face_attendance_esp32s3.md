@@ -1245,12 +1245,15 @@ student cho qua mọi đòn giấy** — tờ tiền, ảnh in, thẻ — trong 
 Vì thế student **rời `models.lock.json`** và giữ vai phương án nhẹ; model nhánh là **V1SE nhập**
 (mục dưới, ADR-0004).
 
-Đường xuất của nhánh có thêm một bước **căn bias** cho mọi model lên lock: `eval.py
---calibrate-live-bias` cộng một hằng số vào logit lớp sống rồi gấp vào bias của lớp phân loại
-(`classifier.bias` hay `prob.bias`), giữ bản gốc ở `ckpt/best.uncalibrated.pth`. Phép cộng hằng số
-không đổi thứ tự nên không khung nào đổi phán quyết và khe logit giữ nguyên; nó chỉ đưa điểm vận
-hành khỏi đuôi phẳng của softmax, nơi `live_min` lưu theo phần nghìn có quá ít nấc dùng được (student
-19 nấc trước căn, 320 sau). Sau khi căn, `live_min` gieo **500‰** cho mọi đời model.
+Đường xuất của nhánh có một bước **căn bias** tuỳ chọn: `eval.py --calibrate-live-bias` cộng một
+hằng số vào logit lớp sống rồi gấp vào bias của lớp phân loại (`classifier.bias` hay `prob.bias`,
+model nhập cần `prob_bias: true`), giữ bản gốc ở `ckpt/best.uncalibrated.pth`. Phép cộng hằng số
+không đổi thứ tự nên không khung nào đổi phán quyết và khe logit giữ nguyên; nó chỉ dịch điểm vận
+hành về giữa cửa sổ của **bộ căn**. Vì thế bộ căn quyết định tất cả: nó phải gồm đúng những khung
+kiosk sẽ chấm (qua `square_fits` và `face_min_px`) và phía giả phải có đòn khó nhất định chống. Bộ
+87 khung hiện có chỉ có màn hình kề ống kính ở phía giả, nên hằng số nó sinh ra đẩy tờ tiền lên trên
+0,5 (`measurements.md` §43.7); student cần căn (cửa sổ 19‰ trước, 320‰ sau), V1SE **không** căn (hằng
+số 0) vì 500‰ đã nằm giữa tiền và mặt thật ở thang gốc. `live_min` gieo **500‰** cho mọi đời model.
 
 #### Trọng số nhập từ Silent-Face-Anti-Spoofing, đọc crop ngữ cảnh 2,7×
 

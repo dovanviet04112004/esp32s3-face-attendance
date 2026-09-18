@@ -3069,9 +3069,40 @@ Hai mốc trùng số §42.2 đến chữ số thứ ba, nên harness là đúng
 phía mặt thật và 0,177 về phía giả, không cần đổi seed. p5 mặt thật 0,994, p95 giả 0,146.
 
 Trên board sau khi nạp: app `aa7e463`, `arena_big` **748.544 B** (hint 748.524 làm tròn 16), spoof
-dùng **675 của 731 KB**, file 600,6 KB trên `models_0`, `vision up: … live 0.500`. Latency không đo
-lại vì graph trùng `0118` (`latency.md` §11: 581 ms rảnh, 677 ms có tải). Crop của firmware giữ
-`kFaceScale` 2,7: §43.4 cho thấy 4,0× và 2,7× là cùng một ô trên khung 320 px.
+dùng **675 của 731 KB**, `vision up: … live 0.500`. Latency không đo lại vì graph trùng `0118`
+(`latency.md` §11: 581 ms rảnh, 677 ms có tải). Crop của firmware giữ `kFaceScale` 2,7: §43.4 cho
+thấy 4,0× và 2,7× là cùng một ô trên khung 320 px.
 
-**Chưa đo**: đòn giấy (tiền, ảnh in, thẻ) với V1SE trên board chỉ có thể thử trực tiếp như §43 đã
-làm với `0854`; chưa có khung OV5640 nào cho các đòn ấy.
+### 43.7 Bước căn bias bị rút lại — tờ tiền lọt, và bộ khung căn chỉ có màn hình
+
+Thử trực tiếp ngay sau khi nạp: **tờ tiền được gọi là sống**. Log 60 giây (bro giơ tiền, không khớp
+ai, match ≤ 0,22): 19 lần chấm, điểm đã căn 0,41–0,99, tức **chưa căn 0,005–0,321**, 13/19 lần qua
+0,5. Cơ chế: hằng số +5,0051 là điểm giữa log-odds của mặt thật thấp nhất (0,121) và khung giả cao
+nhất (0,003) trong bộ căn, mà bộ căn chỉ có **màn điện thoại kề ống kính**, đòn dễ nhất với V1SE.
+Mọi đòn "khó hơn màn hình" ở 0,015–0,32 vì thế bị kéo lên trên 0,5. Bản `0854` từng chặn tiền là
+bản **chưa căn**; căn theo cùng quy tắc thì nó cũng lọt.
+
+Hai điều nữa lộ ra khi soi bộ 87 khung qua **đúng cổng của firmware** (`square_fits` ô 1,0× nằm trọn
+trong khung, mặt ≥ 100 px, `pipeline.cpp`):
+
+| | qua cổng | bị chặn trước khi chấm |
+|---|---|---|
+| mặt thật (62) | 48 | 14: 12 sát mép, 2 dưới 100 px |
+| khung giả (25) | **3** | **22** `spoof1309`/`p2gia`: điện thoại kề đến mức ô 1,0× tràn khung |
+
+Tức 22/25 khung giả của bộ đo là khung kiosk **không bao giờ đưa vào model** — nó bảo "lùi lại".
+Bộ đo vẫn đúng cho việc so model, nhưng **không dùng được làm bộ căn**: phía giả chỉ còn 3 khung,
+đều 0,000. Và hai mặt thật thấp nhất của V1SE là `s20260911d_033` (nghiêng gần 90°, 0,121, qua cổng)
+và `s20260911a_008` (mặt cắt cụt ở đáy, 0,159, bị cổng chặn); mặt thật thứ ba là **0,518**, p5 của
+48 khung qua cổng là 0,545.
+
+Đặt cạnh nhau ở thang **chưa căn**: tờ tiền ≤ 0,321 (19 lần chấm), màn hình ≤ 0,003, mặt thật qua cổng
+≥ 0,518 trừ một khung nghiêng 90°. **`live_min` 500‰ đang gieo nằm đúng giữa mà không cần hằng số
+nào**, nên V1SE nạp **hằng số 0**: `ckpt/best.pth` trả về bản chưa căn, xuất lại INT8 602,6 KB
+(sha `71ec3d307931…`), lock trỏ lại, `models_0` ghi lại. Giá: khung nghiêng 90° rớt xuống 0,121, một
+tư thế recognition cũng không khớp được.
+
+**Quy tắc rút ra, ghi vào KẾ HOẠCH §3 lớp 2**: phép căn chỉ hợp lệ khi bộ căn có **đủ hai lớp qua
+cổng của firmware**, phía giả phải có đòn khó nhất định chống (giấy). Chưa có khung OV5640 nào của
+tiền, ảnh in, thẻ; có ~10 khung ấy thì cả bộ căn lẫn bộ đo mới nói được về giấy bằng số, không bằng
+thử trực tiếp.
