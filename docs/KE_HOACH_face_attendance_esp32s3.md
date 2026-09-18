@@ -539,8 +539,8 @@ trên đều là chữa nhầm bệnh.
    cho dãy LED, và nó sụt áp — nháy ở **mọi** mức duty, kể cả DC, đúng như đo được.
 2. **Đường nguồn và đất của module.** `TASKS.md` E7-T16 đã ghi bench này **phạm luật 1, 2 và 3 của
    bảng mass §2.5**. Cấp riêng cho module và cho đất về thẳng domino.
-3. **Tụ lọc ngay tại module.** §2.5 mới bắt 470 µF ở amp, **không có gì ở LCD**. Thêm 100 µF cộng
-   100 nF sát chân nguồn của module.
+3. **Tụ lọc ngay tại module — đã có và đã loại.** §2.5 bắt sẵn **100 µF gần LCD**, bench đã cắm,
+   và vẫn nháy. Nên tụ trữ không phải chỗ thiếu.
 4. **Đuôi cáp.** Cùng ngày đã một lần gây nửa panel tối hơn nửa kia. Độ phân giải, số màu và fps của ảnh **không đổi** — 23,26 Hz là nhịp
 làm mới của panel, không phải nhịp đổi nội dung (camera quyết định, 14,19 fps).
 
