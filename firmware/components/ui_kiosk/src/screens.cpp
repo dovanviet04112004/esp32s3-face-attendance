@@ -456,6 +456,7 @@ public:
         kept_ = 0;
         took_ = false;
         failed_ = false;
+        why_ = nullptr;
         begin();
     }
 
@@ -484,11 +485,7 @@ public:
             return false;
         }
         if (failed_) {
-            if (since_ms_ < kDoneShowMs) {
-                return false;
-            }
-            manager().go(ScreenId::Menu);
-            return true;
+            return false;
         }
         if (took_) {
             if (since_ms_ < kSampleGapMs) {
@@ -506,6 +503,10 @@ public:
             failed_ = true;
             since_ms_ = 0;
             return true;
+        }
+        const char *refused = refusal(seen.verdict);
+        if (refused != nullptr) {
+            why_ = refused;
         }
         if (!armed_) {
             watch(seen);
@@ -540,6 +541,9 @@ public:
         top_bar(to, nullptr);
         if (failed_) {
             to.text_centred(kAskY, "Chưa lấy được mẫu", DRV_LCD_WARN);
+            if (why_ != nullptr) {
+                to.text_centred(kHintY, why_, DRV_LCD_INK);
+            }
         } else if (done()) {
             char line[STORAGE_NAME_CAP + 16];
             snprintf(line, sizeof(line), "Đã thêm %.*s", STORAGE_NAME_CAP - 1,
@@ -559,7 +563,8 @@ public:
         guide(to, done() ? DRV_LCD_ACCENT : DRV_LCD_WARN, nullptr);
         if (failed_ || done()) {
             button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH,
-                   done() ? "Xác nhận" : "Huỷ", done() ? DRV_LCD_ACCENT : DRV_LCD_INK, held_);
+                   done() ? "Xác nhận" : "Đã hiểu", done() ? DRV_LCD_ACCENT : DRV_LCD_WARN,
+                   held_);
             return;
         }
         const int step = gauge(seen);
@@ -579,6 +584,7 @@ public:
 
 private:
     static constexpr int kFootY = APP_LCD_V_RES - kRowH - kPad;
+    const char *why_ = nullptr;
     static constexpr const char *kAsk[kSamples] = { "Nhìn thẳng vào camera",
                                                     "Quay nhẹ sang trái",
                                                     "Quay nhẹ sang phải" };
