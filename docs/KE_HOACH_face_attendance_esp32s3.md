@@ -3102,7 +3102,23 @@ Bốn trạng thái của khung, màu là thông tin chứ không phải trang t
 
 **Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Bốn trạng thái trên là bốn cổng của
 pipeline (§4.5.5d): không có mặt, mặt dưới `face_min_px`, ô 1,0× tràn khung, qua cổng. `main` dịch
-`svc_vision_kind_t` sang `ui_kiosk_stage_t`, `ui_kiosk` vẽ. Bản 13/09 từng để màn tự so hộp mặt với
+sang `ui_kiosk_stage_t`, `ui_kiosk` vẽ.
+
+**Trạng thái đi theo đường nhanh, phán quyết đi theo đường chậm — hai kênh, không gộp.** Cổng thứ
+tư, "qua cổng, đang chạy model", **không thể** đi bằng `svc_vision_kind_t` như ba cổng kia. Hai lẽ,
+cả hai đều đo được. Thứ nhất, `svc_vision_step()` **chặn 1,5 giây** để chạy spoof rồi recog, mà
+`main` chỉ đọc `kind` sau khi step trả về: người báo tin đang bận làm đúng cái việc cần báo, nên
+câu "Đang nhận diện..." chỉ tới nơi khi việc đã xong. Thứ hai, lúc ấy phán quyết cũng vừa tới, mà
+§4.5.5h.1 lại tắt mọi hướng dẫn từ lúc có bất kỳ phán quyết nào — câu vừa bật đã bị chính phán
+quyết dập. Đo trên board 18/09: **gần như không bao giờ thấy "Đang nhận diện..."**, màn nhảy thẳng
+từ "Lại gần hơn" sang kết quả.
+
+Nên cổng thứ tư đi bằng **bộ quan sát** của §4.5.5d — thứ vốn đã bắn ngay sau detect và trước hai
+model chậm, chính là lý do nó tồn tại. `VisionPipeline` chấm ba phép kiểm hình học (có mặt,
+`face_min_px`, ô 1,0× lọt khung) **trước** khi gọi bộ quan sát, rồi gửi kết quả kèm danh sách hộp.
+`main` dịch nó sang `ui_kiosk_stage_t`; `svc_vision_kind_t` giữ đúng vai trò phán quyết nghiệp vụ
+cho `svc_attendance`. Không tốn thêm một mili giây nào: ba phép kiểm ấy là số học thuần, và chúng
+vốn đã chạy ngay sau đó. Bản 13/09 từng để màn tự so hộp mặt với
 khung ngắm và báo `Đang nhận diện...` cho một khuôn mặt pipeline đang từ chối vì tràn khung — hai
 câu trả lời cho một câu hỏi, và câu của màn sai. Khung ngắm vì thế là **hình vẽ tĩnh** quy từ cổng
 `face_min_px` ra pixel panel, không phải một phép kiểm, và không đẻ thêm ngưỡng nghiệp vụ nào cho
