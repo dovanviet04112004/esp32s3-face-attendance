@@ -14,6 +14,7 @@
 #include "drv_tof.h"
 #include "drv_touch.h"
 #include "esp_heap_caps.h"
+#include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
@@ -34,6 +35,7 @@ static const char *TAG = "app_tasks";
 static int s_seen_width;
 static int s_seen_height;
 static _Atomic int64_t s_awake_at_ms;
+static _Atomic uint32_t s_gate_mm;
 
 // Nobody in front means no model runs at all, which is where most of the
 // energy goes (KEHOACH 3 layer 5).
@@ -74,6 +76,8 @@ static int64_t asleep_for_ms(void)
 #define ATTEND_TASK_PRIORITY 4
 #define ATTEND_TASK_STACK_BYTES 4096
 #define ATTEND_TICK_MS 200
+#define SETTINGS_REFRESH_MS 3000
+#define SETTINGS_LINE_CAP 40
 #define NET_TASK_CORE 0
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
@@ -197,7 +201,7 @@ static void cam_task(void *arg)
         }
         drv_camera_expose(frame);
         const drv_lcd_overlay_t *overlay = ui_kiosk_overlay();
-        const bool held_open = overlay != NULL && overlay->opaque;
+        const bool held_open = (overlay != NULL && overlay->opaque) || ui_kiosk_enrolling();
         const bool wanted = held_open || asleep_for_ms() <= WAKE_SCREEN_HOLD_MS;
         if (wanted != lit) {
             lit = wanted;
@@ -266,6 +270,11 @@ static void ai_task(void *arg)
         svc_vision_result_t result = { 0 };
         s_seen_width = frame->width;
         s_seen_height = frame->height;
+        // Taking samples needs every model, and the person doing it stands where
+        // the range sensor cannot see them.
+        if (ui_kiosk_enrolling()) {
+            stay_awake("enrolling");
+        }
         if (asleep_for_ms() > WAKE_MODELS_HOLD_MS) {
             drv_camera_release(frame);
             esp_task_wdt_reset();
@@ -301,7 +310,7 @@ static void ai_task(void *arg)
                 // Enrolling keeps attendance out of it, but a refused sample still
                 // has to reach the glass or the screen waits mute (KEHOACH 4.5.5h.2).
                 if (result.kind == SVC_VISION_SPOOF) {
-                    ui_kiosk_on_verdict(APP_UI_SPOOF, 0, "");
+                    ui_kiosk_enrol_refused();
                 }
             // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
             } else if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) !=
@@ -330,6 +339,41 @@ static void touch_task(void *arg)
         stay_awake("touch");
         ui_kiosk_on_touch(true, points[0].x, points[0].y);
     }
+}
+
+// Main is the one layer that can see all of these, and none of them costs a
+// flash read, so the page stays cheap to refresh (KEHOACH 4.5.5h.4).
+static void show_settings(void)
+{
+    static char text[UI_KIOSK_SETTINGS_LINES][SETTINGS_LINE_CAP];
+    const char *lines[UI_KIOSK_SETTINGS_LINES];
+    const esp_app_desc_t *app = esp_app_get_description();
+    int n = 0;
+    snprintf(text[n], SETTINGS_LINE_CAP, "Phiên bản: %.20s", app != NULL ? app->version : "?");
+    lines[n] = text[n];
+    ++n;
+    snprintf(text[n], SETTINGS_LINE_CAP, "Wi-Fi: %s, rớt %" PRIu32 " lần",
+             net_wifi_is_connected() ? "đã nối" : "chưa nối", net_wifi_disconnects());
+    lines[n] = text[n];
+    ++n;
+    snprintf(text[n], SETTINGS_LINE_CAP, "Người trong bảng: %u", (unsigned)svc_facedb_count());
+    lines[n] = text[n];
+    ++n;
+    snprintf(text[n], SETTINGS_LINE_CAP, "Bản ghi chấm công: %" PRIu32, svc_attendance_records());
+    lines[n] = text[n];
+    ++n;
+    snprintf(text[n], SETTINGS_LINE_CAP, "Bật máy trong: %" PRIu32 " cm",
+             atomic_load(&s_gate_mm) / 10);
+    lines[n] = text[n];
+    ++n;
+    snprintf(text[n], SETTINGS_LINE_CAP, "Mặt nhỏ nhất: %d px", svc_vision_face_min_px());
+    lines[n] = text[n];
+    ++n;
+    snprintf(text[n], SETTINGS_LINE_CAP, "RAM nội còn: %u KB",
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
+    lines[n] = text[n];
+    ++n;
+    ui_kiosk_set_settings(lines, n);
 }
 
 static void show_people(void)
@@ -482,6 +526,7 @@ static void tof_task(void *arg)
     const app_wiring_t *wiring = arg;
     SemaphoreHandle_t ready = drv_tof_ready_signal();
     const uint32_t gate_mm = presence_gate_mm();
+    atomic_store(&s_gate_mm, gate_mm);
     bool present = false;
     int settling = TOF_SETTLE_POLLS;
 
@@ -607,6 +652,13 @@ static void attend_task(void *arg)
         }
         svc_attendance_tick(sys_time_now_ms());
 
+        {
+            static int64_t settings_at_ms;
+            if (sys_time_now_ms() - settings_at_ms > SETTINGS_REFRESH_MS) {
+                settings_at_ms = sys_time_now_ms();
+                show_settings();
+            }
+        }
         const svc_attendance_state_t state = svc_attendance_state();
         if (state != last_state) {
             ESP_LOGI(TAG, "attendance state %d to %d on vision %d", (int)last_state, (int)state,

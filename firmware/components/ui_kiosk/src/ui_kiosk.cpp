@@ -306,6 +306,26 @@ void ui_kiosk_enrol_kept(void)
     }
 }
 
+void ui_kiosk_enrol_refused(void)
+{
+    if (s_ready) {
+        ui::enrol_refused();
+        s_dirty = true;
+    }
+}
+
+void ui_kiosk_set_settings(const char *const *lines, int count)
+{
+    if (!s_ready || lines == NULL) {
+        return;
+    }
+    const int kept = count < UI_KIOSK_SETTINGS_LINES ? count : UI_KIOSK_SETTINGS_LINES;
+    for (int i = 0; i < kept; ++i) {
+        ui::settings_line(i, lines[i] != NULL ? lines[i] : "");
+    }
+    s_dirty = true;
+}
+
 const drv_lcd_overlay_t *ui_kiosk_overlay(void)
 {
     return s_shown.load(std::memory_order_acquire);

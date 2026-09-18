@@ -40,6 +40,8 @@ constexpr int64_t kPoseHoldMs = 300;
 constexpr int64_t kPoseWaitMs = 6000;
 constexpr int64_t kSampleWaitMs = 15000;
 constexpr int kGaugeSteps = 12;
+constexpr int kSpoofGiveUp = 3;
+constexpr int64_t kRefusalShowMs = 2500;
 constexpr int kAskY = 40;
 constexpr int kDotsY = 66;
 constexpr int kGaugeY = 82;
@@ -457,6 +459,8 @@ public:
         took_ = false;
         failed_ = false;
         why_ = nullptr;
+        spoofs_ = 0;
+        refused_ms_ = kRefusalShowMs;
         begin();
     }
 
@@ -481,11 +485,13 @@ public:
         since_ms_ += dt_ms;
         // The operator ends this screen, not a timer: the line naming who joined
         // the table has to survive a glance away (KEHOACH 4.5.5h.2).
-        if (kept_ >= kSamples) {
+        if (kept_ >= kSamples || failed_) {
             return false;
         }
-        if (failed_) {
-            return false;
+        const bool was_refusing = refusing();
+        refused_ms_ += dt_ms;
+        if (was_refusing != refusing()) {
+            return true;
         }
         if (took_) {
             if (since_ms_ < kSampleGapMs) {
@@ -503,10 +509,6 @@ public:
             failed_ = true;
             since_ms_ = 0;
             return true;
-        }
-        const char *refused = refusal(seen.verdict);
-        if (refused != nullptr) {
-            why_ = refused;
         }
         if (!armed_) {
             watch(seen);
@@ -536,6 +538,22 @@ public:
 
     bool done() const noexcept { return kept_ >= kSamples; }
 
+    // The pipeline stops trying at the same count, so idling out the budget
+    // after that only shows a pose prompt to a photograph (KEHOACH 4.5.5h.2).
+    void refused_one() noexcept
+    {
+        ++spoofs_;
+        refused_ms_ = 0;
+        why_ = refusal(APP_UI_SPOOF);
+        if (spoofs_ >= kSpoofGiveUp) {
+            enrol_request().waiting = false;
+            failed_ = true;
+            since_ms_ = 0;
+        }
+    }
+
+    bool refusing() const noexcept { return spoofs_ > 0 && refused_ms_ < kRefusalShowMs; }
+
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         top_bar(to, nullptr);
@@ -549,6 +567,10 @@ public:
             snprintf(line, sizeof(line), "Đã thêm %.*s", STORAGE_NAME_CAP - 1,
                      enrol_request().name);
             to.text_centred(kAskY, line, DRV_LCD_ACCENT);
+        } else if (refusing()) {
+            char line[48];
+            snprintf(line, sizeof(line), "%s · lần %d/%d", why_, spoofs_, kSpoofGiveUp);
+            to.text_centred(kAskY, line, DRV_LCD_WARN);
         } else {
             to.text_centred(kAskY, kAsk[kept_], DRV_LCD_INK);
         }
@@ -567,17 +589,16 @@ public:
                    held_);
             return;
         }
-        const int step = gauge(seen);
-        meter(to, step, step >= kGaugeSteps ? DRV_LCD_ACCENT : DRV_LCD_WARN);
-        const char *line = refusal(seen.verdict);
-        if (line == nullptr) {
-            line = hint(seen);
-        }
-        if (line == nullptr) {
-            line = armed_ ? "Giữ nguyên" : nullptr;
-        }
-        if (line != nullptr) {
-            to.text_centred(kHintY, line, DRV_LCD_INK);
+        if (!refusing()) {
+            const int step = gauge(seen);
+            meter(to, step, step >= kGaugeSteps ? DRV_LCD_ACCENT : DRV_LCD_WARN);
+            const char *line = hint(seen);
+            if (line == nullptr) {
+                line = armed_ ? "Giữ nguyên" : nullptr;
+            }
+            if (line != nullptr) {
+                to.text_centred(kHintY, line, DRV_LCD_INK);
+            }
         }
         button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Huỷ", DRV_LCD_INK, held_);
     }
@@ -702,6 +723,8 @@ private:
     }
 
     int kept_ = 0;
+    int spoofs_ = 0;
+    int64_t refused_ms_ = 0;
     int64_t since_ms_ = 0;
     int64_t wait_ms_ = 0;
     int64_t pose_ms_ = 0;
@@ -909,6 +932,16 @@ void people_delivered() noexcept
 void enrol_kept() noexcept
 {
     s_capture.kept_one();
+}
+
+void enrol_refused() noexcept
+{
+    s_capture.refused_one();
+}
+
+void settings_line(int at, const char *text) noexcept
+{
+    s_settings.say(at, text);
 }
 
 People &people() noexcept

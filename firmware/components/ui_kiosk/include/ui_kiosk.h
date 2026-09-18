@@ -74,6 +74,18 @@ bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *na
  */
 void ui_kiosk_enrol_kept(void);
 
+/** Tell the enrol flow the pipeline turned the offered face away as a spoof.
+ *  @ctx ai_task | non-blocking | every refusal, the screen does the counting
+ */
+void ui_kiosk_enrol_refused(void);
+
+#define UI_KIOSK_SETTINGS_LINES 8
+
+/** Hand the settings page its lines, main's view of the kiosk (KEHOACH 4.5.5h.4).
+ *  @ctx ui_task | non-blocking | copied, at most UI_KIOSK_SETTINGS_LINES
+ */
+void ui_kiosk_set_settings(const char *const *lines, int count);
+
 /** One row of the people list, filled by main from the table it can reach. */
 typedef struct {
     uint32_t employee_id;

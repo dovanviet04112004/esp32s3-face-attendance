@@ -91,6 +91,12 @@ RemoveRequest &remove_request() noexcept;
 /** The capture screen counts a sample when the pipeline really kept one. */
 void enrol_kept() noexcept;
 
+/** The capture screen counts a sample the pipeline turned away as a spoof. */
+void enrol_refused() noexcept;
+
+/** One line of the settings page, handed down by main (KEHOACH 4.5.5h.4). */
+void settings_line(int at, const char *text) noexcept;
+
 /** What the people screen shows, handed down by main (KEHOACH 4.5.4 rule 2). */
 struct People {
     bool wanted;
