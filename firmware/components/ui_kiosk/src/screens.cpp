@@ -536,8 +536,9 @@ public:
         if (failed_) {
             to.text_centred(kAskY, "Chưa lấy được mẫu", DRV_LCD_WARN);
         } else if (done()) {
-            char line[STORAGE_NAME_CAP + 12];
-            snprintf(line, sizeof(line), "Đã thêm %s", enrol_request().name);
+            char line[STORAGE_NAME_CAP + 16];
+            snprintf(line, sizeof(line), "Đã thêm %.*s", STORAGE_NAME_CAP - 1,
+                     enrol_request().name);
             to.text_centred(kAskY, line, DRV_LCD_ACCENT);
         } else {
             to.text_centred(kAskY, kAsk[kept_], DRV_LCD_INK);
