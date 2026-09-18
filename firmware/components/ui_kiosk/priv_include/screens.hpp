@@ -30,6 +30,7 @@ struct Sight {
     ui_kiosk_stage_t stage;               // what svc_vision is doing with it
     float yaw;                            // 0 facing the lens (KEHOACH 4.5.5h.2)
     app_ui_verdict_t verdict;
+    uint32_t track;                       // which face the pipeline is on
     uint32_t employee_id;
     char name[STORAGE_NAME_CAP];
 };

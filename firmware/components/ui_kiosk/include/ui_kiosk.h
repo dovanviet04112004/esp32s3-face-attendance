@@ -38,7 +38,7 @@ typedef enum {
  *  @param yaw of the tracked face, 0 facing the lens (KEHOACH 4.5.5h.2)
  */
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
-                       float yaw);
+                       float yaw, uint32_t track);
 
 /** Tell the screens what the pipeline decided about that face.
  *  @ctx ai_task | non-blocking | one per step, after svc_vision_step

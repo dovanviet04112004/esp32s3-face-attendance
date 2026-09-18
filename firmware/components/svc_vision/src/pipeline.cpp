@@ -128,6 +128,7 @@ void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
         stable_ = 1;
         since_verdict_ = -1;
         matched_ = false;
+        ++track_;
         // A new track can be a different person, so the tries start over.
         enrol_spoofs_ = 0;
     }
@@ -220,7 +221,7 @@ void VisionPipeline::tell(const svc_vision_result_t &out, size_t count) noexcept
             boxes[kept++].yaw = yaw_of(faces_[i].landmarks);
         }
     }
-    seen_cb_(boxes, kept, seen_ctx_);
+    seen_cb_(boxes, kept, track_, seen_ctx_);
 }
 
 svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcept

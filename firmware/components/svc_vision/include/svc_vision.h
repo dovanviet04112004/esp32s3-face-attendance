@@ -61,7 +61,8 @@ esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds);
 /** Called inside a step the moment detect has run, ahead of the slow models.
  *  @ctx ai_task | must not block: the pipeline is holding the frame
  */
-typedef void (*svc_vision_seen_cb_t)(const svc_vision_box_t *boxes, uint8_t count, void *ctx);
+typedef void (*svc_vision_seen_cb_t)(const svc_vision_box_t *boxes, uint8_t count, uint32_t track,
+                                     void *ctx);
 
 /** Hear where the faces are as soon as the detector knows, not when the step ends.
  *  @ctx task | non-blocking | one observer, NULL to drop it (KEHOACH 4.5.5d)

@@ -79,6 +79,7 @@ private:
     svc_vision_thresholds_t thresholds_{};
     ai_engine_face_t faces_[kMaxFaces]{};
     int misses_ = 0;
+    uint32_t track_ = 0;                  // bumped whenever follow() opens a new one
     uint32_t enrol_id_ = 0;
     uint16_t enrol_idx_ = 0;
     char enrol_name_[STORAGE_NAME_CAP] = {};

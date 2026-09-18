@@ -179,11 +179,15 @@ public:
         (void)dt_ms;
         // Any verdict silences the guidance until that face leaves or the machine
         // takes up somebody else; a refusal also stays on the glass (KEHOACH 4.5.5h.1).
+        const bool same_face = seen.face && seen.track == track_;
         const bool answered = seen.verdict > APP_UI_SCANNING ||
-                              (answered_ && seen.face && seen.verdict != APP_UI_SCANNING);
+                              (answered_ && same_face && seen.verdict != APP_UI_SCANNING);
         const bool carded = seen.verdict == APP_UI_GRANTED;
         const char *fresh = refusal(seen.verdict);
         const char *refused = carded ? nullptr : (fresh != nullptr ? fresh : (answered ? refused_ : nullptr));
+        if (seen.verdict > APP_UI_SCANNING) {
+            track_ = seen.track;
+        }
         if (answered == answered_ && carded == carded_ && refused == refused_) {
             return false;
         }
@@ -270,6 +274,7 @@ private:
     bool answered_ = false;
     bool carded_ = false;
     const char *refused_ = nullptr;
+    uint32_t track_ = 0;
 };
 
 class MenuScreen final : public Screen {

@@ -183,7 +183,7 @@ esp_err_t ui_kiosk_init(void)
 }
 
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
-                       float yaw)
+                       float yaw, uint32_t track)
 {
     // The tracked face leads the list (KEHOACH 4.5.5d), and the guide is about
     // the person being served, not about whoever else is in shot.
@@ -191,6 +191,7 @@ void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame
     (void)frame_height;
     (void)boxes;
     const bool face = count > 0;
+    s_seen.track = track;
     // Capture reads the turn every tick, so it lands whether or not the box moved.
     s_seen.yaw = face ? yaw : 0.0f;
     if (face != s_seen.face) {

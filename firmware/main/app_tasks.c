@@ -263,11 +263,11 @@ static void cam_task(void *arg)
 
 // svc_vision calls this the moment detect has run, which is what keeps the box
 // on the glass half a second fresher than the whole step (KEHOACH 4.5.5d).
-static void on_seen(const svc_vision_box_t *boxes, uint8_t count, void *ctx)
+static void on_seen(const svc_vision_box_t *boxes, uint8_t count, uint32_t track, void *ctx)
 {
     (void)ctx;
     ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height,
-                      count > 0 ? boxes[0].yaw : 0.0f);
+                      count > 0 ? boxes[0].yaw : 0.0f, track);
 }
 
 // Only svc_vision knows which gate a face failed, and a screen that guesses will
@@ -307,7 +307,7 @@ static void ai_task(void *arg)
                 working = false;
                 had_face = false;
                 s_seen_width = 0;
-                ui_kiosk_on_faces(NULL, 0, 0, 0, 0.0f);
+                ui_kiosk_on_faces(NULL, 0, 0, 0, 0.0f, 0);
                 ui_kiosk_on_stage(UI_KIOSK_STAGE_NO_FACE);
                 ESP_LOGI(TAG, "models asleep, %lld ms since %s", (long long)asleep_for_ms(),
                          atomic_load(&s_awake_by));
