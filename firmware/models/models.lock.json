@@ -7,7 +7,7 @@
   },
   "antispoof": {
     "file": "minifasnet_int8.tflite",
-    "sha256": "599a8061582530eee612e6f0c023bfcd4bac37d53e2ed18ebd55cdecbaba4e3b",
+    "sha256": "71ec3d3079310f105ec317cdb26d7efa7170a365a02b1c538a2aed2022c31773",
     "run_id": "antispoof/20260918-1050_aa7e463_e66877",
     "arena_bytes": 748524
   },
