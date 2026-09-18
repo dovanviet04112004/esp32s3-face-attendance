@@ -47,7 +47,8 @@ static const char *TAG = "drv_lcd";
 #define INVERSION_COLUMN 0x00
 #define SCANLINE_REG 0x45
 #define SCANLINE_UNITS 242
-#define SCANLINE_LEAD 220
+#define SCANLINE_LEAD_MIN 160
+#define SCANLINE_LEAD_MAX 200
 #define SCANLINE_RETRIES 4
 #define SYNC_TICK_CEILING 60
 #define CS_FRAME_GAP_US 1
@@ -183,7 +184,12 @@ static void wait_for_scan_lead(void)
              ++again) {
             line = scan_line();
         }
-        if (line < 0 || line > SCANLINE_UNITS || line >= SCANLINE_LEAD) {
+        if (line < 0 || line > SCANLINE_UNITS) {
+            return;
+        }
+        // Both ends matter: the ceiling is what leaves the write a run-up the
+        // scan cannot close (KEHOACH 2.3A).
+        if (line >= SCANLINE_LEAD_MIN && line <= SCANLINE_LEAD_MAX) {
             return;
         }
         vTaskDelay(1);
