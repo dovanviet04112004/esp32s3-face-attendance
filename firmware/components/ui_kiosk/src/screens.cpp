@@ -710,7 +710,9 @@ private:
         float low = -kFrontalYaw;
         float high = kFrontalYaw;
         if (kept_ > 0) {
-            const float edge = reach();
+            // The screen has settled the pose; the pipeline only has to catch a
+            // face that came back to frontal (KEHOACH 4.5.5h.2).
+            const float edge = reach() < kFrontalYaw ? reach() : kFrontalYaw;
             low = wanted() > 0.0f ? edge : -kOpenYaw;
             high = wanted() > 0.0f ? kOpenYaw : -edge;
         }
@@ -742,8 +744,6 @@ public:
     bool opaque() const noexcept override { return true; }
 
     explicit ListScreen(const char *title) noexcept : title_(title) {}
-
-    void on_enter() noexcept override { lines_ = 0; }
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
