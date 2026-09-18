@@ -74,6 +74,14 @@ TEST_CASE("the heap floor under the running kiosk", "[bench_mem]")
            largest / KB);
     printf("  psram floor %" PRIu32 " KB\n", psram / KB);
     printf("  KEHOACH 6.4 still owes %u KB to wifi, lvgl and the crop buffers\n", PENDING_KB);
+    // A region that serves 32-bit access only still counts as internal, so the
+    // byte-addressable total is the one a buffer can actually be cut from.
+    printf("  8-bit internal: free %u B, largest %u B\n",
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    printf("  dma internal: largest %u B\n",
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     TEST_ASSERT_GREATER_THAN_UINT32(0, internal);
     TEST_ASSERT_GREATER_THAN_UINT32(0, psram);
 }

@@ -437,6 +437,10 @@ các đệm lớp phủ của `ui_kiosk`.
 **chưa có mặt người nào** trước camera nên mới chỉ có detect chạy — ghi chú của §9.1 còn nguyên.
 `ui` cấp 8 KB mà chỉ dùng hơn 1 KB, còn dư 6.772 B.
 
+> Bảng chi tiết **ai ăn bao nhiêu RAM nội** — tĩnh theo component, ngăn xếp từng task, bản đồ
+> vùng heap — nằm ở `ram.md`. Điểm phải nhớ: heap nội **không liền một khối**, heap chính 244 KB
+> đã đầy với mảnh lớn nhất 4 KB, và cả 31 KB liền mạch nằm ở một vùng riêng chưa ai đụng tới.
+
 ### 13.2 Hệ quả cho `net_mqtt` + TLS (E10-T6)
 
 Còn **40 KB RAM nội, mảnh liền lớn nhất 31 KB**, và khoản duy nhất của §6.4 chưa trả là bắt

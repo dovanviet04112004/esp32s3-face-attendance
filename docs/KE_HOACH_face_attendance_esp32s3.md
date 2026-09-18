@@ -1992,7 +1992,8 @@ esp32s3-face-attendance/
     ├── DU_LIEU.md                               # dữ liệu đã tải và xử lí — số đo trên đĩa
     ├── FREERTOS.md                              # sổ kiểm lỗi đồng thời, soát lại mỗi khi thêm task
     ├── adr/{0001-yunet-thay-ulfg.md, 0002-bo-knowledge-distillation.md, 0003-distill-chong-gia-tu-trong-so-nhap.md, 0004-v1se-thay-student-chong-gia.md}
-    ├── measurements/{arena.md, latency.md, power.md, parity.md}  # số 🔬 đo được trên board
+    ├── measurements/{arena.md, latency.md, power.md, parity.md, ram.md}  # số 🔬 đo được trên board
+    │                 └ {antispoof,detection,recognition}/        # số theo nhánh model
     └── thesis/                                  # bản báo cáo ĐATN
 ```
 
@@ -4278,7 +4279,14 @@ và một phiên Wi-Fi vào mạng thật đều đã lên.
 | đáy PSRAM | 5.844 KB | 5.070 KB |
 
 Đáy vẫn phẳng qua sáu mẫu nên không có chỗ rò; hệ chỉ đơn giản đã chi thêm 31 KB cho những thứ
-mới. **Khoản duy nhất của bảng trên còn chưa trả là bắt tay TLS**, và đó là chỗ chật: mặc định
+mới. **Bảng chi tiết từng thành phần — tĩnh theo component, ngăn xếp từng task, các khối DMA
+lớn — nằm ở `docs/measurements/ram.md`.** Hai điều bảng ước tính ở đầu §6.4 không nói ra mà số
+đo nói: **đệm bounce của LCD 61.440 B cộng đệm DMA của camera 30.720 B là 92 KB, hơn một nửa
+heap lúc boot, và không có đường nào đẩy sang PSRAM**; còn heap nội **không phải một khối** —
+heap chính 244 KB đã đầy (mảnh lớn nhất 4 KB, đáy 1.708 B), toàn bộ 31 KB liền mạch nằm ở một
+vùng riêng chưa ai từng xin. Nên "còn 40 KB" không có nghĩa là xin được một khối 40 KB.
+
+**Khoản duy nhất của bảng trên còn chưa trả là bắt tay TLS**, và đó là chỗ chật: mặc định
 mbedTLS của IDF là đệm vào 16 KB cộng đệm ra 4 KB **mỗi phiên**, trong đó đệm vào phải là một
 dải liền 16 KB lấy từ đúng mảnh 31 KB; cộng ngăn xếp `mqtt_task` 6 KB và `sync_task` 5 KB của
 §5.2, 40 KB tiêu gần hết trước khi phân tích chuỗi chứng thư. **E10-T6 vì thế không được bắt
