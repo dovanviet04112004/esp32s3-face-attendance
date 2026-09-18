@@ -1783,7 +1783,7 @@ Bốn luật:
 | **`MicroMutableOpResolver` riêng từng model** | Chỉ đăng ký đúng op cần → giảm vài chục KB flash so với `AllOpsResolver` |
 | Cấu hình sdkconfig | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB` · `CONFIG_ESP32S3_DATA_CACHE_64KB` · `CONFIG_SPIRAM_SPEED_80M` · `CONFIG_SPIRAM_MODE_OCT` · `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240` · `CONFIG_COMPILER_OPTIMIZATION_PERF` |
 | Hot path vào IRAM | Hàm hậu xử lý (NMS, affine warp) đặt `IRAM_ATTR` nếu profiler chỉ ra nghẽn |
-| Chạy tuần tự + early exit | ToF không thấy người **4 giây** → **không chạy model nào**; thêm một phút nữa thì camera và màn cũng nghỉ. Ba mức nghỉ và danh sách nguồn đánh thức ở **§5.4**. Detect không thấy mặt → **dừng**, không chạy spoof/recog. Spoof fail → không chạy recog. Tiết kiệm ~70% năng lượng |
+| Chạy tuần tự + early exit | Không dấu hiệu nào của người trong **một phút** → **model, camera và màn nghỉ cùng lúc**. Hai mức nghỉ và danh sách nguồn đánh thức ở **§5.4**. Detect không thấy mặt → **dừng**, không chạy spoof/recog. Spoof fail → không chạy recog. Tiết kiệm ~70% năng lượng |
 | Cache embedding | Chỉ chạy recog khi spoof pass **và** box ổn định qua 2 frame liên tiếp |
 
 ### Lớp 6 — Đo lường (làm song song, không để cuối)
@@ -3891,11 +3891,18 @@ một việc: ghi lại mốc ấy.
 
 | Mức | Điều kiện | Tắt gì | Cắt được (§2.5, 🔬 chưa đo trên board này) |
 |---|---|---|---|
-| **L0 — thức** | vừa có nguồn đánh thức, hoặc màn phủ kín đang mở, hoặc đang lấy mẫu đăng ký | — | 0 |
-| **L1 — model nghỉ** | 4 s không nguồn nào | `ai_task` bỏ `svc_vision_step`; xoá hộp mặt trên kính và báo `NO_FACE` một lần | phần CPU của core 1 |
-| **L2 — máy nghỉ** | **60 s** không nguồn nào | thêm: đèn nền tắt, **ST7796 vào `SLPIN`**, **OV5640 vào standby mềm**, `cam_task` thôi lấy khung, `touch_task` giãn 40 → 160 ms, `ui_task` giãn 20 → 200 ms, `attend_task` thôi dựng trang cài đặt | ~100 mA đèn + ~120 mA camera + phần bộ điều khiển panel và số lần đánh thức CPU |
+| **Thức** | vừa có nguồn đánh thức, hoặc màn phủ kín đang mở, hoặc đang lấy mẫu đăng ký | — | 0 |
+| **Nghỉ** | **60 s** không nguồn nào | `ai_task` bỏ `svc_vision_step`, xoá hộp mặt trên kính và báo `NO_FACE` một lần; thêm: đèn nền tắt, **ST7796 vào `SLPIN`**, **OV5640 vào standby mềm**, `cam_task` thôi lấy khung, `touch_task` giãn 40 → 160 ms, `ui_task` giãn 20 → 200 ms, `attend_task` thôi dựng trang cài đặt | ~100 mA đèn + ~120 mA camera + phần bộ điều khiển panel và số lần đánh thức CPU |
 
-Ngưỡng L2 là **một phút** chứ không phải hai chục giây: người đứng đọc màn hình, quay đi lấy thẻ
+**Đúng hai mức, không ba.** Bản đầu cho model nghỉ sớm ở 4 giây rồi mới tắt màn ở phút thứ nhất,
+và khoảng giữa ấy là một vùng chết: màn sáng, preview chạy, người dùng thấy một cái máy đang
+sống, mà **không model nào nhìn khung hình**. Tệ hơn, model đã ngủ thì nó không thấy được mặt
+nữa, nên nguồn "mặt giữ thức" mất tác dụng và việc chấm công quay về phụ thuộc mỗi ToF — đúng
+cái §4.5.5f cấm. Đổi lại chỉ được **CPU của core 1**, khoản nhỏ nhất trong ba, trong khi camera
+120 mA và đèn nền 100 mA vẫn bật suốt vùng chết ấy. Không đáng, nên bỏ: **màn sáng thì máy làm
+việc đầy đủ, màn tắt thì mọi thứ nghỉ cùng lúc.**
+
+Ngưỡng nghỉ là **một phút** chứ không phải hai chục giây: người đứng đọc màn hình, quay đi lấy thẻ
 rồi quay lại vẫn nằm trong cùng một lượt, và mỗi lần vào L2 phải trả lại 120 ms của `SLPOUT` cộng
 thời gian camera khoá lại PLL. Nghỉ quá sớm là trả giá đánh thức nhiều hơn phần điện tiết kiệm.
 
