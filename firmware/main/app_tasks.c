@@ -65,7 +65,7 @@ static int64_t asleep_for_ms(void)
     return esp_timer_get_time() / 1000 - (holding ? face_ms : woke_ms);
 }
 
-typedef enum { REST_NONE, REST_MODELS, REST_ALL } rest_t;
+typedef enum { REST_NONE, REST_ALL } rest_t;
 
 #define CAM_TASK_CORE 0
 #define CAM_TASK_PRIORITY 7
@@ -77,7 +77,6 @@ typedef enum { REST_NONE, REST_MODELS, REST_ALL } rest_t;
 #define TOF_POLL_MS 100
 #define PRESENCE_WAIT_MS 50
 #define SOUND_WAIT_MS 20
-#define REST_MODELS_MS 4000
 #define REST_ALL_MS 60000
 #define REST_POLL_MS 40
 #define SCREEN_DIM_PERCENT 0
@@ -129,11 +128,7 @@ static rest_t rest_level(const drv_lcd_overlay_t *overlay)
     if ((overlay != NULL && overlay->opaque) || ui_kiosk_enrolling()) {
         return REST_NONE;
     }
-    const int64_t idle_ms = asleep_for_ms();
-    if (idle_ms > REST_ALL_MS) {
-        return REST_ALL;
-    }
-    return idle_ms > REST_MODELS_MS ? REST_MODELS : REST_NONE;
+    return asleep_for_ms() > REST_ALL_MS ? REST_ALL : REST_NONE;
 }
 
 static void report_rate(int frames, int64_t elapsed_us)
@@ -312,7 +307,7 @@ static void ai_task(void *arg)
     bool working = true;
 
     for (;;) {
-        if (rest_level(ui_kiosk_overlay()) != REST_NONE) {
+        if (rest_level(ui_kiosk_overlay()) == REST_ALL) {
             esp_task_wdt_reset();
             camera_fb_t *stale = NULL;
             // Holding one of four buffers for a minute starves the sensor.
