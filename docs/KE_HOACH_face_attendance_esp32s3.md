@@ -3098,7 +3098,7 @@ Bốn trạng thái của khung, màu là thông tin chứ không phải trang t
 | mặt tràn ra ngoài khung vì đứng quá gần | hổ phách | `Lùi lại một chút` |
 | mặt qua cổng, pipeline đang làm việc | xanh mint | `Đang nhận diện...` |
 | xong, đạt | xanh mint | thẻ dấu tích + tên ở dải dưới |
-| xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt rời khung** |
+| xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt ấy rời khung hoặc pipeline bắt sang người khác** |
 
 **Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Bốn trạng thái trên là bốn cổng của
 pipeline (§4.5.5d): không có mặt, mặt dưới `face_min_px`, ô 1,0× tràn khung, qua cổng. `main` dịch
@@ -3115,7 +3115,23 @@ từ chối nói bằng hổ phách cộng câu chữ chứ không bằng màu t
 hơn`, `Lùi lại một chút` — đều tắt từ lúc có **bất kỳ** phán quyết nào, đạt hay từ chối, cho tới
 khi **khuôn mặt ấy rời khung** hoặc pipeline bắt sang người khác (`Detecting`). Lý do như nhau:
 §4.5.5d không xác thực lại một track đã khớp, và một track bị từ chối chỉ được thử lại theo nhịp
-`kRetryDetects` của pipeline, nên bảo người ta "đang nhận diện" giữa hai lần thử là nói sai. Đo
+`kRetryDetects` của pipeline, nên bảo người ta "đang nhận diện" giữa hai lần thử là nói sai.
+
+**"Người khác" phải đi từ pipeline sang màn bằng một con số, không suy ra được từ một cờ.** Màn
+chỉ nhận một `bool` "có mặt hay không", nên nó **không phân biệt được** khuôn mặt cũ còn đứng đó
+với một khuôn mặt mới vừa thay chỗ. Hậu quả đo được: sau một lượt `SPOOF`, máy trạng thái hết
+`Denied` 2 s cộng `Cooldown` 1,5 s rồi về `Idle`, nhưng dòng "Ảnh giả, mời thử lại" **vẫn nằm
+nguyên trên kính chừng nào còn bất kỳ khuôn mặt nào trong khung** — kể cả mặt người kế tiếp, vốn
+chưa hề bị từ chối. Nó chỉ chịu biến mất khi camera không thấy ai, mà ở kiosk thì người sau
+thường bước vào trước khi người trước ra khỏi khung. Cộng thêm `kRetryDetects` = 3 lượt dò mà
+người sau phải chờ khi họ đứng trùng chỗ người trước (IoU ≥ 0,5 là cùng một track, §4.5.5d), tổng
+cộng khoảng 2,5 giây người mới đứng nhìn lời từ chối của người cũ.
+
+`VisionPipeline` vì thế đánh **số hiệu track**, tăng đúng mỗi lần `follow()` mở một track mới, và
+gửi kèm danh sách hộp mặt cho người quan sát. Màn `Scan` giữ dòng từ chối chừng nào số hiệu chưa
+đổi, và xoá ngay khi nó đổi. Giữ nguyên được cả hai điều đang đúng: cùng một khuôn mặt thì lời
+từ chối không nhấp nháy theo nhịp thử lại, còn người khác bước vào thì màn sạch ngay. Không đụng
+tới `kRetryDetects`, tức không nới một chút nào cho ảnh giả giơ lì. Đo
 trên board 14/09 khi chốt này chỉ áp cho câu đầu và chỉ cho phán quyết đạt: chấm xong đứng yên
 thì màn nhảy sang câu căn khung ngay khi thẻ hết giờ; giơ ảnh giả đứng yên thì `Ảnh giả, mời
 thử lại` và `Đang nhận diện...` **đảo nhau mỗi ~2 giây** theo nhịp thử lại (18/09). Vì thế dòng từ
