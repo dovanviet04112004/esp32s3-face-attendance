@@ -1,11 +1,14 @@
 #include "app_config.h"
 #include "bsp_board.h"
 #include "driver/gpio.h"
+#include "driver/spi_master.h"
 #include "drv_lcd.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include <inttypes.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "unity.h"
@@ -32,6 +35,8 @@ static const char *TAG = "test_panel";
 #define WRAP_EARLY 40
 #define WRAP_LATE 200
 #define WRAP_CEILING_MS 20000
+#define SWEEP_READS 2000
+#define ST7796S_ID 0x007796
 
 static int64_t s_wrap_at[WRAP_FRAMES + 1];
 
@@ -188,6 +193,83 @@ TEST_CASE("what the panel reports about its own rails, white against black",
     }
 }
 
+static uint32_t read_id_with(spi_device_handle_t reader)
+{
+    uint8_t raw[4] = {0};
+    gpio_set_direction(APP_LCD_DC_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(APP_LCD_CS_GPIO, 1);
+    esp_rom_delay_us(1);
+    gpio_set_level(APP_LCD_CS_GPIO, 0);
+    gpio_set_level(APP_LCD_DC_GPIO, 0);
+    spi_transaction_t cmd = {
+        .flags = SPI_TRANS_USE_TXDATA,
+        .length = 8,
+        .tx_data = {CHIP_ID_REG},
+    };
+    if (spi_device_polling_transmit(reader, &cmd) == ESP_OK) {
+        gpio_set_level(APP_LCD_DC_GPIO, 1);
+        spi_transaction_t rd = {
+            .flags = SPI_TRANS_USE_RXDATA,
+            .rxlength = 32,
+        };
+        if (spi_device_polling_transmit(reader, &rd) == ESP_OK) {
+            memcpy(raw, rd.rx_data, 4);
+        }
+    }
+    gpio_set_level(APP_LCD_CS_GPIO, 1);
+    esp_rom_delay_us(1);
+    gpio_set_level(APP_LCD_CS_GPIO, 0);
+    return ((uint32_t)raw[0] << 24) | ((uint32_t)raw[1] << 16) | ((uint32_t)raw[2] << 8) | raw[3];
+}
+
+static int shift_that_lands_on_the_id(uint32_t stream)
+{
+    for (int bit = 0; bit <= 2; ++bit) {
+        if (((stream << bit) >> 8) == ST7796S_ID) {
+            return bit;
+        }
+    }
+    return -1;
+}
+
+TEST_CASE("which read clock and input delay bring the chip id back whole", "[drv_lcd][manual]")
+{
+    static const int clocks_hz[] = {1000000, 2000000, 3000000, 4000000, 6000000};
+    static const int delays_ns[] = {0, 25, 50, 75, 100};
+    panel_up();
+    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(WHITE));
+    printf("  clock  delay   best value  share  shift\n");
+    for (size_t c = 0; c < sizeof(clocks_hz) / sizeof(clocks_hz[0]); ++c) {
+        for (size_t d = 0; d < sizeof(delays_ns) / sizeof(delays_ns[0]); ++d) {
+            const spi_device_interface_config_t cfg = {
+                .clock_speed_hz = clocks_hz[c],
+                .mode = 0,
+                .spics_io_num = GPIO_NUM_NC,
+                .queue_size = 1,
+                .input_delay_ns = delays_ns[d],
+                .flags = SPI_DEVICE_HALFDUPLEX,
+            };
+            spi_device_handle_t reader = NULL;
+            TEST_ASSERT_EQUAL(ESP_OK, spi_bus_add_device(bsp_lcd_spi_host(), &cfg, &reader));
+            uint32_t seen[PROBE_SLOTS] = {0};
+            int count[PROBE_SLOTS + 1] = {0};
+            for (int i = 0; i < SWEEP_READS; ++i) {
+                tally(seen, count, read_id_with(reader));
+            }
+            int best = 0;
+            for (int i = 1; i < PROBE_SLOTS; ++i) {
+                best = count[i] > count[best] ? i : best;
+            }
+            int actual_hz = 0;
+            spi_device_get_actual_freq(reader, &actual_hz);
+            printf("  %d asked %6d real %5d ns   %08" PRIx32 "  %3d%%   %d\n",
+                   clocks_hz[c] / 1000000, actual_hz, delays_ns[d], seen[best],
+                   100 * count[best] / SWEEP_READS, shift_that_lands_on_the_id(seen[best]));
+            TEST_ASSERT_EQUAL(ESP_OK, spi_bus_remove_device(reader));
+        }
+    }
+}
+
 static int collect_wraps(void)
 {
     int wraps = 0;
@@ -220,17 +302,28 @@ TEST_CASE("the panel's own oscillator timed under a white fill and under a black
         TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(fills[f]));
         const int wraps = collect_wraps();
         TEST_ASSERT_GREATER_THAN_INT(WRAP_FRAMES / 2, wraps);
-        int64_t shortest = INT64_MAX, longest = 0;
+        int64_t shortest = INT64_MAX;
         for (int i = 1; i < wraps; ++i) {
             const int64_t period = s_wrap_at[i] - s_wrap_at[i - 1];
             shortest = period < shortest ? period : shortest;
-            longest = period > longest ? period : longest;
         }
-        const int64_t span = s_wrap_at[wraps - 1] - s_wrap_at[0];
-        const int64_t mean = span / (wraps - 1);
-        printf("  fill %04x: %d frames, mean %lld us (%lld mHz), shortest %lld, longest %lld,"
+        // A descheduled poll loop misses a wrap and reports two frames as one,
+        // so only periods close to the shortest are a frame.
+        const int64_t ceiling = shortest + shortest / 10;
+        int64_t total = 0, widest = 0;
+        int kept = 0;
+        for (int i = 1; i < wraps; ++i) {
+            const int64_t period = s_wrap_at[i] - s_wrap_at[i - 1];
+            if (period <= ceiling) {
+                total += period;
+                widest = period > widest ? period : widest;
+                kept++;
+            }
+        }
+        TEST_ASSERT_GREATER_THAN_INT(0, kept);
+        printf("  fill %04x: %d of %d frames kept, mean %lld us, shortest %lld, longest %lld,"
                " spread %lld us\n",
-               fills[f], wraps, mean, 1000000000LL / mean, shortest, longest, longest - shortest);
+               fills[f], kept, wraps - 1, total / kept, shortest, widest, widest - shortest);
     }
 }
 
