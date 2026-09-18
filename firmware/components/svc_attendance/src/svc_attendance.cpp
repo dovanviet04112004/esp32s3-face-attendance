@@ -34,6 +34,7 @@ uint32_t s_last_employee = 0;
 int64_t s_last_stamp_ms = 0;
 storage_attend_record_t s_last_record = {};
 bool s_have_record = false;
+bool s_served = false;
 bool s_left_since_grant = true;
 
 uint32_t hold_of(attend::St state)
@@ -70,7 +71,7 @@ bool liveness_allows(float live_score)
 
 bool stamped_recently(uint32_t employee_id, int64_t now_ms)
 {
-    if (!s_have_record || employee_id != s_last_employee) {
+    if (!s_served || employee_id != s_last_employee) {
         return false;
     }
     const int64_t window_ms = (int64_t)s_policy.dedup_min * kMinutesToMs;
@@ -105,6 +106,7 @@ esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool d
         s_have_record = true;
         s_last_employee = record.employee_id;
         s_last_stamp_ms = now_ms;
+        s_served = true;
         ++s_records;
     }
     ESP_LOGI(TAG, "record %" PRIu32 " employee %" PRIu32 " flags 0x%02X: %s", s_records,
@@ -248,6 +250,20 @@ extern "C" esp_err_t svc_attendance_on_presence(bool present)
     }
     const svc_vision_result_t empty = {};
     apply(present ? attend::Ev::PresenceOn : attend::Ev::PresenceOff, &empty, s_state_since_ms);
+    return ESP_OK;
+}
+
+extern "C" esp_err_t svc_attendance_note_served(uint32_t employee_id, int64_t now_ms)
+{
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_last_employee = employee_id;
+    s_last_stamp_ms = now_ms;
+    s_served = true;
+    s_left_since_grant = false;
+    ESP_LOGI(TAG, "employee %" PRIu32 " served without a record, next grant needs an arrival",
+             employee_id);
     return ESP_OK;
 }
 

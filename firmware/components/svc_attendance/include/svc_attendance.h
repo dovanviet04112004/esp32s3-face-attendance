@@ -55,6 +55,12 @@ esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result, int64_t no
  */
 esp_err_t svc_attendance_on_presence(bool present);
 
+/** Count this employee as just served, so their next grant needs an arrival.
+ *  @ctx task | non-blocking | used after an enrolment (KEHOACH 4.5.5h.2)
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE
+ */
+esp_err_t svc_attendance_note_served(uint32_t employee_id, int64_t now_ms);
+
 /** Advance the timers that carry Granted, Denied and Cooldown along.
  *  @ctx task | non-blocking | call on a tick of at most a few hundred ms
  */

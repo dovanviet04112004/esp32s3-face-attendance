@@ -296,7 +296,6 @@ static void ai_task(void *arg)
     ESP_LOGI(TAG, "ai on core %d, watchdog %s", AI_TASK_CORE, esp_err_to_name(watched));
     bool had_face = false;
     bool working = true;
-    bool enrolled_in_shot = false;
 
     for (;;) {
         if (rest_level(ui_kiosk_overlay()) == REST_ALL) {
@@ -348,20 +347,12 @@ static void ai_task(void *arg)
             if (ui_kiosk_enrolling()) {
                 // Enrolling keeps attendance out of it, but a refused sample still
                 // has to reach the glass or the screen waits mute (KEHOACH 4.5.5h.2).
-                enrolled_in_shot = true;
                 if (result.kind == SVC_VISION_SPOOF) {
                     ui_kiosk_enrol_refused();
                 }
-                continue;
-            }
-            // A new template matches its own face at once (KEHOACH 4.5.5h.2).
-            if (enrolled_in_shot && result.kind == SVC_VISION_NO_FACE) {
-                enrolled_in_shot = false;
-                ESP_LOGI(TAG, "the face just enrolled has left, attendance live again");
-            }
             // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
-            if (!enrolled_in_shot &&
-                xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) != pdTRUE) {
+            } else if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) !=
+                       pdTRUE) {
                 ESP_LOGE(TAG, "result %d dropped, attend queue full", (int)result.kind);
             }
         }
@@ -456,6 +447,11 @@ static void ui_task(void *arg)
             // The enrolled track has already matched, and a matched track is
             // never verified again (KEHOACH 4.5.5d).
             svc_vision_reset();
+            // A new template matches its own face at once, and that is not an
+            // arrival (KEHOACH 4.5.5h.2).
+            if (new_employee != 0 && ui_kiosk_enrol_complete()) {
+                svc_attendance_note_served(new_employee, sys_time_now_ms());
+            }
             // Leaving early must not keep a person nobody finished adding.
             if (new_employee != 0 && !ui_kiosk_enrol_complete() &&
                 svc_facedb_remove(new_employee) == ESP_OK) {
