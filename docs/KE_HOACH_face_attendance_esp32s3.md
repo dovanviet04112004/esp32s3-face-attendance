@@ -3800,9 +3800,9 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `cam_task` | `drv_camera` | 0 | 7 | 4 KB | mỗi frame (~15 fps) | `esp_camera_fb_get()` → vẽ preview kèm overlay của `ui_kiosk` → đẩy con trỏ vào `q_frame_ai` (overwrite) |
 | `tof_task` | `drv_tof` | 0 | 6 | 3 KB | ngắt GPIO3 / poll 100 ms | Đọc khoảng cách → phát `EVT_PRESENCE_ON/OFF`, đánh thức hệ thống |
 | `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Nạp `snd/ok.wav` từ partition `assets` **một lần lúc lên**, giữ PCM trong PSRAM rồi phát khi có `APP_SOUND_OK`: mở cửa xong không phải đọc file |
-| `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt GPIO14 | Đọc GT911 → `q_touch` |
+| `touch_task` | `drv_touch` | 0 | 5 | 3 KB | poll 40 ms | Đọc GT911 → ô `s_touch` của `ui_kiosk` (§5.3) |
 | **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
-| `ui_task` | `ui_kiosk` | 0 | 4 | 8 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, xử lý `q_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
+| `ui_task` | `ui_kiosk` | 0 | 4 | 8 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota` | 0 | 3 | 8 KB | khi có lệnh `down/ota` | Tải firmware / models, verify sha256, ghi partition |
@@ -3816,7 +3816,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 
 | Đối tượng | Kiểu | Kích thước | Gửi | Nhận | Vì sao đặt ở đây |
 |---|---|---|---|---|---|
-| `q_frame_ai` | Queue, **depth 1**, `camera_fb_t*` | 1 × 4 B | `cam_task` | `ai_task` | Depth 1 + `xQueueOverwrite`: **luôn xử lý frame mới nhất**, frame cũ trả về pool ngay → không dồn RAM, không trễ tích luỹ |
+| `q_frame_ai` | Queue, **depth 1**, `camera_fb_t*` | 1 × 4 B | `cam_task` | `ai_task` | Depth 1, **luôn xử lý frame mới nhất** → không dồn RAM, không trễ tích luỹ. Người gửi **nhận trước rồi mới gửi**, không dùng `xQueueOverwrite`: khung bị đẩy ra phải được trả về pool bằng tay, mà `xQueueOverwrite` vứt con trỏ đi lặng lẽ và pool rỉ máu sau vài giây |
 
 **Không có hàng đợi preview, và đó là một quyết định đo được.** Ý cũ — `cam_task` đẩy khung
 sang `ui_task` để `ui_task` vẽ — thêm **một task nữa giữ khung**, mà `fb_count` = 4 hiện chỉ vừa
@@ -3830,10 +3830,10 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 **Không có semaphore giữa ISR camera và `cam_task`.** `esp_camera_fb_get()` đã tự chặn cho tới khi có khung, nên một binary semaphore nữa chỉ là tầng chờ thứ hai chờ đúng thứ mà tầng dưới đã chờ.
 
 | `q_result` | Queue, depth 4, `svc_vision_result_t` | 4 × ~104 B | `ai_task` | `attend_task` | Tách hẳn tính toán khỏi nghiệp vụ |
-| `q_touch` | Queue, depth 8, `touch_evt_t` | 8 × 8 B | `touch_task` | `ui_task` | Không mất thao tác vuốt nhanh |
+| `s_touch` | **`std::atomic<int32_t>`** trong `ui_kiosk`, không phải queue | 4 B | `touch_task` | `ui_task` | Điểm chạm là **mức, không phải chuỗi sự kiện**: `ui_task` chỉ cần biết ngón tay *đang* ở đâu tại mỗi nhịp 20 ms. Hàng đợi ở đây phát lại những điểm đã cũ và làm nút bấm trễ theo độ sâu hàng đợi. Một người ghi, một người đọc, `release`/`acquire` — không khoá, không mất, không cũ. Ngón nhấc lên lưu `-1` và `ui_task` dựng lại cú thả từ điểm cuối |
 | `q_audio` | Queue, depth 4, `sound_id_t` | 4 × 4 B | `attend_task`, `ui_task` | `audio_task` | Phát âm không được chặn nghiệp vụ |
-| `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | Đầy thì ghi thẳng LittleFS, không mất bản ghi |
-| `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý |
+| `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
+| `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
 | **`m_spi_lcd`** | Mutex | — | `ui_task`, `ota_task` (màn hình tiến trình) | — | 1 bus SPI, tránh xé khung hình |
 | **`m_facedb`** | Mutex | — | `ai_task` (đọc), `mqtt_task` (ghi khi enroll) | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
