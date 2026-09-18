@@ -1,5 +1,6 @@
 #include "drv_lcd.h"
 
+#include <inttypes.h>
 #include <string.h>
 
 #include "app_config.h"
@@ -141,8 +142,9 @@ static void slow_the_scan(void)
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_B}, 1);
 }
 
-static void chip_id(uint8_t *out)
+static uint32_t chip_id(void)
 {
+    uint8_t raw[CHIP_ID_BYTES] = {0};
     gpio_set_direction(APP_LCD_DC_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(APP_LCD_CS_GPIO, 1);
     esp_rom_delay_us(CS_FRAME_GAP_US);
@@ -160,12 +162,16 @@ static void chip_id(uint8_t *out)
             .rxlength = CHIP_ID_BYTES * 8,
         };
         if (spi_device_polling_transmit(s_reader, &rd) == ESP_OK) {
-            memcpy(out, rd.rx_data, CHIP_ID_BYTES);
+            memcpy(raw, rd.rx_data, CHIP_ID_BYTES);
         }
     }
     gpio_set_level(APP_LCD_CS_GPIO, 1);
     esp_rom_delay_us(CS_FRAME_GAP_US);
     gpio_set_level(APP_LCD_CS_GPIO, 0);
+    const uint32_t stream = ((uint32_t)raw[0] << 24) | ((uint32_t)raw[1] << 16) |
+                            ((uint32_t)raw[2] << 8) | raw[3];
+    // The 4-line read clocks one dummy bit out ahead of the data (DS V1.0 9.3.17).
+    return (stream << 1) >> 8;
 }
 
 static int scan_line(void)
@@ -292,11 +298,8 @@ esp_err_t drv_lcd_init(void)
     APP_RETURN_ON_ERR(backlight_up(), TAG, "backlight");
     APP_RETURN_ON_ERR(panel_up(), TAG, "panel");
     APP_RETURN_ON_ERR(reader_up(), TAG, "scanline reader");
-    uint8_t id[CHIP_ID_BYTES] = {0};
-    chip_id(id);
-    ESP_LOGI(TAG, "panel id %02x %02x %02x %02x at %dx%d, %d bounce of %d B, scanline reads %d",
-             id[0], id[1], id[2], id[3], APP_LCD_H_RES, APP_LCD_V_RES, BOUNCE_COUNT, BOUNCE_BYTES,
-             scan_line());
+    ESP_LOGI(TAG, "panel id %06" PRIx32 " at %dx%d, %d bounce of %d B, scanline reads %d",
+             chip_id(), APP_LCD_H_RES, APP_LCD_V_RES, BOUNCE_COUNT, BOUNCE_BYTES, scan_line());
     return ESP_OK;
 }
 
