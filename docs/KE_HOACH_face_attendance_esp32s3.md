@@ -3251,11 +3251,22 @@ cổng tương đương, tức cùng một hoàn cảnh mà cửa thì khoá cò
 và bỏ qua hoàn toàn phán quyết đi kèm. Bị `SPOOF` liên tục thì màn đứng im **không giới hạn**,
 không một dòng giải thích, lối ra duy nhất là nút "Huỷ". Hai luật:
 
-- **Nói ra lý do.** `SPOOF`, `FACE_SMALL`, `FACE_OUT_OF_FRAME` đều có câu riêng ngay dưới khung
-  ngắm, dùng lại đúng chữ của §4.5.5h.1 chứ không đặt bộ chữ thứ hai.
-- **Bỏ cuộc tử tế sau 15 giây** một mẫu không đậu: xoá những mẫu đã lấy đúng như đường huỷ, báo
-  "Chưa lấy được mẫu" **kèm lý do gần nhất** bằng đúng bộ chữ của §4.5.5h.1, rồi chờ một lần chạm
-  **"Đã hiểu"** mới về `Menu`. Chờ chạm chứ không hẹn giờ: câu báo lỗi mà tự biến mất thì người
+- **Nói ra lý do, và mỗi lúc chỉ một câu.** `SPOOF`, `FACE_SMALL`, `FACE_OUT_OF_FRAME` dùng
+  lại đúng chữ của §4.5.5h.1 chứ không đặt bộ chữ thứ hai. Thứ tự ưu tiên: **từ chối** > **căn
+  khung** > **tư thế**. Một câu từ chối đang hiện thì câu nhắc tư thế và vạch chỉ hướng **ẩn đi**;
+  "Ảnh giả" nằm trên "Quay nhẹ sang trái" là bảo người ta xoay tấm ảnh, và đó là thứ làm màn này
+  trông ngớ ngẩn.
+- **Từ chối đi theo đường riêng, có đếm.** Phán quyết chấm công đi qua bộ khử trùng của
+  `ui_kiosk` (cùng một câu tới lần hai thì giữ chữ, không báo lại), nên lần từ chối thứ hai
+  trở đi **không tới được** màn lấy mẫu — màn im trong khi pipeline vẫn đang từ chối. Vì thế
+  `main` báo từ chối bằng `ui_kiosk_enrol_refused()`, đối xứng với `ui_kiosk_enrol_kept()`, và
+  màn hiện **"Ảnh giả · lần 2/3"** để người vận hành biết còn mấy lượt.
+- **Bỏ cuộc ngay khi hết lượt, không đợi đồng hồ.** Lần từ chối thứ `kEnrolSpoofTries` là màn
+  chuyển sang thất bại **tức thì**: pipeline đã đóng đường xác thực ở đúng con số ấy, nên chờ thêm
+  tới hạn 15 s là mười mấy giây đứng nhìn một câu nhắc tư thế vô nghĩa. Hạn 15 giây vẫn giữ cho
+  trường hợp không có từ chối nào mà mẫu cũng không đậu (mặt rời khung, bảng không trả lời).
+  Cả hai đường đều xoá những mẫu đã lấy đúng như đường huỷ, báo "Chưa lấy được mẫu" **kèm lý do
+  gần nhất**, rồi chờ một lần chạm **"Đã hiểu"** mới về `Menu`. Chờ chạm chứ không hẹn giờ: câu báo lỗi mà tự biến mất thì người
   vận hành giơ ảnh giả bị chặn sẽ không biết vì sao và thử lại mãi, còn nút thì luôn có sẵn nên
   không ai bị nhốt. ⚠️ Khác hẳn luật 5 ở trên: hết giờ vì **tư thế** thì lấy khung tốt nhất đã
   thấy, còn hết giờ vì **liveness** thì **tuyệt đối không được lấy** — nhận đại một mẫu ở đây là
@@ -3334,6 +3345,19 @@ phải nằm sẵn **theo thứ tự byte của panel** — đường preview kh
 `ui_kiosk` giữ **hai ô overlay** và công bố bằng một phép ghi con trỏ nguyên tử: nó chỉ điền vào
 ô đang không được công bố rồi mới đổi con trỏ, `cam_task` đọc con trỏ một lần cho cả khung. Không
 khoá nào trên đường vẽ, và cái giá đúng bằng **một khung chậm** ở lần đổi thẻ.
+
+##### h.4) Màn `Settings` — trang tình trạng, chưa phải trang chỉnh
+
+Bảng NVS `ui` (§6.2.1) khai `brightness`, `volume`, `lang` cho phép sửa từ đây, nhưng đó là việc
+của E10 giai đoạn sau. Trước khi có ô chỉnh, màn này **không được là trang trắng**: một màn có tên
+trong menu mà mở ra không có gì là lỗi trong mắt người dùng, không phải "chưa làm".
+
+Nên `Settings` là **trang tình trạng chỉ đọc**, tám dòng do `main` điền qua
+`ui_kiosk_set_settings()` vài giây một lần từ những gì nó với tới được mà không đọc flash:
+phiên bản firmware, Wi-Fi nối hay chưa và rớt bao lần, số người trong bảng, số bản ghi chấm công,
+khoảng cách bật máy, cỡ mặt nhỏ nhất, RAM nội còn. Không dòng nào đọc NVS theo chu kỳ, vì đọc
+flash qua SPI1 là tắt cache và ngắt trên cả hai lõi (§5.1). `ui_kiosk` chỉ hiện chữ; nó không
+gọi tầng dịch vụ nào (§4.5.4). Khi có ô chỉnh, ba khoá của bảng `ui` xếp lên đầu trang này.
 
 ##### i) Vòng đời đối tượng — dựng một lần, không bao giờ hủy
 
