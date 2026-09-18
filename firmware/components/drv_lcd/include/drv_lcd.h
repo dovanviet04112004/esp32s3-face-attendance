@@ -96,6 +96,13 @@ esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height,
  */
 esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565);
 
+/** Read a panel status register over the same line the scanline counter uses.
+ *  @ctx task | blocking | no lock, so keep it off the blit path
+ *  @param reg command byte, one the panel answers with data
+ *  @ret its first three reply bytes packed big-endian, 0 when init has not run
+ */
+uint32_t drv_lcd_read_reg(uint8_t reg);
+
 /** Where a rectangle of the sensor frame lands on the panel.
  *  @ctx any | non-blocking | the same centre slice drv_lcd_blit_frame shows
  *  @param box x1,y1,x2,y2 in frame pixels; out takes panel pixels, clamped

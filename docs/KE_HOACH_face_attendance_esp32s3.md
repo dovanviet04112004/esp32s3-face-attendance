@@ -558,6 +558,29 @@ thời gian nạp.
 | Tần số quét `0xB1` | 24 Hz → bỏ hẳn lệnh, về mặc định ~60 Hz | không đổi |
 | Độ sáng đèn nền | 100 % → 70 → 40 → 20 → 10 → 5 % | **mức nào cũng nháy** |
 | Băm xung đèn nền | LEDC 5 kHz → **kéo thẳng chân lên cao, DC phẳng** | **vẫn nháy** |
+| Trạng thái nguồn `0x0A` | 30.000 lượt đọc nền trắng, 30.000 nền đen | `BSTON = 1` mọi lượt |
+| Tự kiểm `0x0F` | 30.000 lượt mỗi nền | `D7 D6 = 1 1`, `D0 = 0`, **không đổi lượt nào** |
+
+**Chính panel khai là nó khoẻ, và khai giống hệt nhau ở trắng lẫn đen (19/09).** `RDDPM (0x0A)`
+trả `BSTON = 1` — bơm điện tích đang chạy — cùng `SLPOUT`, `NORON`, `DISON` đều bật, suốt 60.000
+lượt đọc. `RDDSDR (0x0F)` trả `D7 = 1` nạp thanh ghi đạt, `D6 = 1` chức năng đạt, `D0 = 0`
+checksum khớp, **không lệch một lượt nào** trong 30.000 lượt mỗi nền. Nếu rail sập dưới tải nền
+trắng thì hai thanh ghi này phải động đậy. Chúng không. Giả thuyết "bơm điện tích đói dòng" vì
+thế **không có bằng chứng**, và đường "cấp nguồn riêng" cũng mất phần lớn cơ sở.
+
+Hai con số nữa chốt lại vùng đã loại. **Thư viện `esp_lcd_st7796` không ghi `0xB1`** — bảng khởi
+tạo của nó chỉ có `0xf0/0xb4/0xb7/0xe8/0xc1/0xc2/0xc5/0xe0/0xe1`. Nên phép thử "bỏ lệnh `0xB1`"
+đúng là thả panel về mặc định **60,1 Hz** thật, không phải âm tính giả; nhịp quét vô can. Và
+`PWR1 (0xC0)` mặc định `0x80` đọc theo bảng bit §9.3.9 là `AVDDS = 2` → **AVDD 6,60 V**, trong
+khi `GVDD = 3,85 + 1,50 = 5,35 V`, tức còn **1,25 V** biên — không phải sát trần. Nấc duy nhất
+còn lại là `AVDDS = 3` → 6,80 V, mua thêm 0,2 V.
+
+**Dị thường duy nhất đo được: 18 % lượt đọc SPI từ panel bị hỏng bit.** `RDID4 (0xD3)` là hằng số
+trong silicon, đọc 30.000 lần thì đúng 82,0 % ở nền trắng và 80,7 % ở nền đen, phần còn lại là
+lật một hai bit (`0x77`→`0x7f`, `0x96`→`0x9e`). Tỷ lệ **không** theo nội dung màn hình nên nó
+không phải dòng lái cột. Byte đầu của mỗi lượt đọc thì sạch (`0x0F` đúng 30.000/30.000), sai số
+tăng dần theo vị trí byte — dấu hiệu của điểm lấy mẫu sát sườn tín hiệu, hoặc của chính đường
+dây. Cùng đế cắm ấy tối 19/09 còn cho một cơn GT911 trượt I2C liên tục rồi tự hết.
 
 Phép thử cuối là phép quyết định: nền trắng tĩnh, **không một byte nào đi trên SPI**, đèn nền là
 một mức **DC phẳng không băm xung** — mà vẫn nhấp nháy. Ở trạng thái đó **không còn thứ gì trong

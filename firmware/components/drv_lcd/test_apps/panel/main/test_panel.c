@@ -4,6 +4,8 @@
 #include "drv_lcd.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "unity.h"
@@ -20,6 +22,12 @@ static const char *TAG = "test_panel";
 #define OVER_FULL 250
 #define COLOUR_HOLD_MS 700
 #define SWEEP_HOLD_MS 4000
+#define POWER_MODE_REG 0x0A
+#define SELF_TEST_REG 0x0F
+#define CHIP_ID_REG 0xD3
+#define PROBE_MS 6000
+#define PROBE_BURST 200
+#define PROBE_SLOTS 5
 
 // The hand-judged cases run first, so they cannot lean on the case below.
 static void panel_up(void)
@@ -123,6 +131,55 @@ TEST_CASE("white held at each backlight level, then with the lamp driven flat",
     TEST_ASSERT_EQUAL(ESP_OK, gpio_set_level(APP_LCD_BLK_GPIO, 1));
     printf("  lamp driven flat, no pwm: watch again for %d ms\n", SWEEP_HOLD_MS * 3);
     vTaskDelay(pdMS_TO_TICKS(SWEEP_HOLD_MS * 3));
+}
+
+static void tally(uint32_t *seen, int *count, uint32_t value)
+{
+    for (int i = 0; i < PROBE_SLOTS; ++i) {
+        if (count[i] == 0 || seen[i] == value) {
+            seen[i] = value;
+            count[i]++;
+            return;
+        }
+    }
+    count[PROBE_SLOTS]++;
+}
+
+static void report(const char *what, const uint32_t *seen, const int *count)
+{
+    printf("    %s:", what);
+    for (int i = 0; i < PROBE_SLOTS && count[i] > 0; ++i) {
+        printf(" %06" PRIx32 " x%d", seen[i], count[i]);
+    }
+    printf(" | past the table %d\n", count[PROBE_SLOTS]);
+}
+
+TEST_CASE("what the panel reports about its own rails, white against black",
+          "[drv_lcd][manual]")
+{
+    static const uint16_t fills[] = {WHITE, 0};
+    panel_up();
+    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_backlight(100));
+    for (size_t f = 0; f < sizeof(fills) / sizeof(fills[0]); ++f) {
+        TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(fills[f]));
+        uint32_t mode_seen[PROBE_SLOTS] = {0}, test_seen[PROBE_SLOTS] = {0};
+        uint32_t id_seen[PROBE_SLOTS] = {0};
+        int mode_count[PROBE_SLOTS + 1] = {0}, test_count[PROBE_SLOTS + 1] = {0};
+        int id_count[PROBE_SLOTS + 1] = {0};
+        const int64_t until = esp_timer_get_time() + (int64_t)PROBE_MS * 1000;
+        while (esp_timer_get_time() < until) {
+            for (int i = 0; i < PROBE_BURST; ++i) {
+                tally(mode_seen, mode_count, drv_lcd_read_reg(POWER_MODE_REG));
+                tally(test_seen, test_count, drv_lcd_read_reg(SELF_TEST_REG));
+                tally(id_seen, id_count, drv_lcd_read_reg(CHIP_ID_REG));
+            }
+            vTaskDelay(1);
+        }
+        printf("  fill %04x\n", fills[f]);
+        report("power mode 0x0A", mode_seen, mode_count);
+        report("self test  0x0F", test_seen, test_count);
+        report("chip id    0xD3", id_seen, id_count);
+    }
 }
 
 TEST_CASE("corner marks name the panel's origin and axis directions", "[drv_lcd]")

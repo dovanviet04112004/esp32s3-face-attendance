@@ -142,8 +142,11 @@ static void slow_the_scan(void)
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_B}, 1);
 }
 
-static uint32_t chip_id(void)
+uint32_t drv_lcd_read_reg(uint8_t reg)
 {
+    if (s_reader == NULL) {
+        return 0;
+    }
     uint8_t raw[CHIP_ID_BYTES] = {0};
     gpio_set_direction(APP_LCD_DC_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(APP_LCD_CS_GPIO, 1);
@@ -153,7 +156,7 @@ static uint32_t chip_id(void)
     spi_transaction_t cmd = {
         .flags = SPI_TRANS_USE_TXDATA,
         .length = 8,
-        .tx_data = {CHIP_ID_REG},
+        .tx_data = {reg},
     };
     if (spi_device_polling_transmit(s_reader, &cmd) == ESP_OK) {
         gpio_set_level(APP_LCD_DC_GPIO, 1);
@@ -299,7 +302,8 @@ esp_err_t drv_lcd_init(void)
     APP_RETURN_ON_ERR(panel_up(), TAG, "panel");
     APP_RETURN_ON_ERR(reader_up(), TAG, "scanline reader");
     ESP_LOGI(TAG, "panel id %06" PRIx32 " at %dx%d, %d bounce of %d B, scanline reads %d",
-             chip_id(), APP_LCD_H_RES, APP_LCD_V_RES, BOUNCE_COUNT, BOUNCE_BYTES, scan_line());
+             drv_lcd_read_reg(CHIP_ID_REG), APP_LCD_H_RES, APP_LCD_V_RES, BOUNCE_COUNT,
+             BOUNCE_BYTES, scan_line());
     return ESP_OK;
 }
 
