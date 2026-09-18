@@ -48,6 +48,7 @@ static const char *TAG = "drv_lcd";
 #define SCANLINE_REG 0x45
 #define SCANLINE_UNITS 242
 #define SCANLINE_LEAD 220
+#define SCANLINE_RETRIES 4
 #define SYNC_TICK_CEILING 60
 #define CS_FRAME_GAP_US 1
 
@@ -175,9 +176,13 @@ static void wait_for_scan_lead(void)
 {
     drain_bounce();
     for (int tick = 0; tick < SYNC_TICK_CEILING; ++tick) {
-        const int line = scan_line();
-        // A reading past the counter's range means the sync line is not
-        // answering, and an unsynced frame beats a stalled preview.
+        // The first read after a panel write lands outside the counter's range,
+        // so a lone reading out there is worth one more try (KEHOACH 2.3A).
+        int line = scan_line();
+        for (int again = 0; again < SCANLINE_RETRIES && (line < 0 || line > SCANLINE_UNITS);
+             ++again) {
+            line = scan_line();
+        }
         if (line < 0 || line > SCANLINE_UNITS || line >= SCANLINE_LEAD) {
             return;
         }
