@@ -3926,8 +3926,17 @@ cảm biến giữ thức tồi. Đo trên board 18/09: `presence on at 228 mm` 
 Mốc nghỉ đếm từ lần ToF cuối nên model **ngủ lúc 108,9 s, giữa một lượt chấm công đang chạy**.
 Cấm bộ dò giữ thức là chấp nhận lỗi ấy.
 
-Nên có **hai mốc, không phải một**: mốc đánh thức do năm nguồn trên ghi, và mốc "còn mặt trên
-kính" do `result.faces > 0` ghi. Mức nghỉ tính từ mốc muộn hơn, **với một trần**: mặt chỉ được
+**Và "có mặt" phải là mặt qua được cổng `face_min_px`, không phải một ứng viên bất kỳ.** Đo trên
+board 18/09 với bản lấy `result.faces > 0`: suốt **92 giây không ai đứng trước máy**, ToF không
+ra một dòng `presence on` nào, mà bộ dò vẫn nhấp nháy ra ứng viên và kiosk **không hề nghỉ** —
+mọi phán quyết trong quãng ấy là `FACE_SMALL` hoặc `FACE_OUT_OF_FRAME`, tức không ứng viên nào
+đủ tư cách để chạy spoof hay recog. Máy chỉ nghỉ ở giây 123 khi trần hết hạn, nghĩa là cái giữ
+nó thức là nhiễu chứ không phải người. Cổng `face_min_px` của §4.5.5d đã là ranh giới "đủ gần để
+làm việc"; dùng lại đúng nó thì một người thật đang chấm công vẫn giữ được máy, còn hoạ tiết
+tường thì không.
+
+Nên có **hai mốc, không phải một**: mốc đánh thức do năm nguồn trên ghi, và mốc "còn mặt làm việc
+được trên kính" do khuôn mặt chính **qua cổng `face_min_px`** ghi. Mức nghỉ tính từ mốc muộn hơn, **với một trần**: mặt chỉ được
 kéo dài thêm tối đa `FACE_HOLD_CAP_MS` **kể từ lần đánh thức thật gần nhất**. Quá trần thì mốc
 mặt bị bỏ qua và ToF hoặc ngón tay phải xác nhận lại. Trần ấy chính là cái chặn vòng tự nuôi:
 bộ dò bám nhầm hoạ tiết tường — dải điểm nhiễu của §4.5.5d là 0,14–0,37, sát sàn `detect_min`
