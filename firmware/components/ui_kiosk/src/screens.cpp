@@ -20,6 +20,7 @@ constexpr int kMenuW = 44;
 constexpr int kRowH = 58;
 constexpr int kRowGap = 12;
 constexpr int kPad = 16;
+constexpr int kFootGap = 12;
 constexpr int kRadius = 10;
 constexpr int kEdge = 2;
 constexpr int kRingR = 30;
@@ -458,27 +459,25 @@ private:
 
 class CaptureScreen final : public Screen {
 public:
-    void on_enter() noexcept override
-    {
-        kept_ = 0;
-        took_ = false;
-        failed_ = false;
-        why_ = nullptr;
-        spoofs_ = 0;
-        refused_ms_ = kRefusalShowMs;
-        begin();
-    }
+    void on_enter() noexcept override { restart(); }
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        const bool on_foot = inside(x, y, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH);
+        const int wide = APP_LCD_H_RES - 2 * kPad;
+        const int half = failed_ ? (wide - kFootGap) / 2 : wide;
+        const bool on_left = inside(x, y, kPad, kFootY, half, kRowH);
+        const bool on_right = failed_ && inside(x, y, kPad + half + kFootGap, kFootY, half, kRowH);
         if (down) {
-            held_ = on_foot;
+            held_ = on_left ? 1 : (on_right ? 2 : 0);
             return true;
         }
-        const bool fire = held_ && on_foot;
-        held_ = false;
-        if (fire) {
+        const int fired = (held_ == 1 && on_left) ? 1 : ((held_ == 2 && on_right) ? 2 : 0);
+        held_ = 0;
+        if (fired == 1 && failed_) {
+            restart();
+            return true;
+        }
+        if (fired != 0) {
             enrol_request().waiting = false;
             manager().go(ScreenId::Menu);
         }
@@ -588,10 +587,16 @@ public:
             }
         }
         guide(to, done() ? DRV_LCD_ACCENT : DRV_LCD_WARN, nullptr);
-        if (failed_ || done()) {
-            button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH,
-                   done() ? "Xác nhận" : "Đã hiểu", done() ? DRV_LCD_ACCENT : DRV_LCD_WARN,
-                   held_);
+        if (done()) {
+            button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Xác nhận", DRV_LCD_ACCENT,
+                   held_ == 1);
+            return;
+        }
+        if (failed_) {
+            const int half = (APP_LCD_H_RES - 2 * kPad - kFootGap) / 2;
+            button(to, kPad, kFootY, half, kRowH, "Thử lại", DRV_LCD_ACCENT, held_ == 1);
+            button(to, kPad + half + kFootGap, kFootY, half, kRowH, "Thoát", DRV_LCD_INK,
+                   held_ == 2);
             return;
         }
         if (!refusing()) {
@@ -605,7 +610,7 @@ public:
                 to.text_centred(kHintY, line, DRV_LCD_INK);
             }
         }
-        button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Huỷ", DRV_LCD_INK, held_);
+        button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Huỷ", DRV_LCD_INK, held_ == 1);
     }
 
 private:
@@ -699,8 +704,23 @@ private:
         return wrong_ ? turn < 0.0f : turn < -kWrongYaw;
     }
 
+    // Retry keeps the id and the name, so the three fresh samples overwrite the
+    // three old ones by (employee_id, template_idx) (KEHOACH 4.5.5h.2).
+    void restart() noexcept
+    {
+        kept_ = 0;
+        took_ = false;
+        failed_ = false;
+        why_ = nullptr;
+        refused_ms_ = kRefusalShowMs;
+        begin();
+    }
+
     void begin() noexcept
     {
+        // The pipeline counts its tries per sample, and a screen counting any
+        // other way either gives up early or waits out a dead budget.
+        spoofs_ = 0;
         since_ms_ = 0;
         wait_ms_ = 0;
         pose_ms_ = 0;
@@ -741,7 +761,7 @@ private:
     bool armed_ = false;
     bool wrong_ = false;
     bool failed_ = false;
-    bool held_ = false;
+    int held_ = 0;                        // 0 none, 1 left button, 2 right
 };
 
 class ListScreen final : public Screen {
@@ -942,6 +962,11 @@ void enrol_kept() noexcept
 void enrol_refused() noexcept
 {
     s_capture.refused_one();
+}
+
+bool enrol_complete() noexcept
+{
+    return s_capture.done();
 }
 
 void settings_line(int at, const char *text) noexcept

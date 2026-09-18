@@ -116,6 +116,11 @@ void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count);
  */
 bool ui_kiosk_enrolling(void);
 
+/** Whether the last enrolment took all of its samples (KEHOACH 4.5.5h.2).
+ *  @ctx any | non-blocking | read after ui_kiosk_enrolling goes false
+ */
+bool ui_kiosk_enrol_complete(void);
+
 /** The cover map to paint over this frame.
  *  @ctx cam_task | non-blocking | read once per frame
  *  @ret NULL until the first screen has been painted

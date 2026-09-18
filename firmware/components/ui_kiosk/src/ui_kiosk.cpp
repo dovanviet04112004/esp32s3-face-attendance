@@ -299,6 +299,11 @@ bool ui_kiosk_enrolling(void)
     return s_ready && ui::manager().at() == ui::ScreenId::Capture;
 }
 
+bool ui_kiosk_enrol_complete(void)
+{
+    return s_ready && ui::enrol_complete();
+}
+
 void ui_kiosk_enrol_kept(void)
 {
     if (s_ready) {

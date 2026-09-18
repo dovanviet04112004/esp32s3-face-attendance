@@ -92,6 +92,9 @@ RemoveRequest &remove_request() noexcept;
 /** The capture screen counts a sample when the pipeline really kept one. */
 void enrol_kept() noexcept;
 
+/** Whether the capture screen holds all of its samples. */
+bool enrol_complete() noexcept;
+
 /** The capture screen counts a sample the pipeline turned away as a spoof. */
 void enrol_refused() noexcept;
 

@@ -447,6 +447,12 @@ static void ui_task(void *arg)
             // The enrolled track has already matched, and a matched track is
             // never verified again (KEHOACH 4.5.5d).
             svc_vision_reset();
+            // Leaving early must not keep a person nobody finished adding.
+            if (new_employee != 0 && !ui_kiosk_enrol_complete() &&
+                svc_facedb_remove(new_employee) == ESP_OK) {
+                ESP_LOGW(TAG, "enrol %" PRIu32 " left unfinished, dropped: %s", new_employee,
+                         esp_err_to_name(svc_facedb_persist()));
+            }
             new_employee = 0;
         }
         enrolling = now_enrolling;
