@@ -3238,6 +3238,28 @@ thì người thứ hai **ghi đè cả ba mẫu** của người thứ nhất, 
 nhất biến mất khỏi danh sách. Bảng đọc không được thì hàm trả 0 và luồng thêm người **dừng lại
 có báo**, chứ không ghi vào mã của người khác.
 
+**Lấy xong không tự đi đâu cả: người vận hành xác nhận rồi mới rời màn.** Mẫu thứ ba đậu thì
+`Capture` hiện tên vừa thêm và một nút **"Xác nhận"**, đứng yên chờ. Chạm nút mới rời, và rời về
+**`Menu`** chứ không về `Scan`. Ba lý do, xếp theo sức nặng:
+
+1. **Thêm người là thao tác của người vận hành, không phải của người đi chấm công.** Họ đang
+   đứng tại máy và thường làm tiếp: thêm người nữa, hoặc mở `People` soi lại danh sách. Trả họ về
+   màn nhận diện là bắt đi lại từ đầu qua `Menu` cho mỗi việc kế tiếp.
+2. **Câu xác nhận không được biến mất theo đồng hồ.** Hẹn giờ rồi tự chuyển nghĩa là ai ngẩng lên
+   muộn vài giây sẽ không bao giờ biết máy đã ghi tên gì, hay đã ghi chưa.
+3. **Một lần chạm là một lần người thật xác nhận.** Đây là thao tác ghi vào bảng khuôn mặt, thứ
+   mọi lớp chống giả phía sau dựa vào; kết thúc nó bằng một hành động có chủ ý rẻ hơn nhiều so với
+   một bản ghi sai không ai để ý.
+
+Đường **thất bại** vẫn tự về `Menu` như cũ: ở đó không có gì để xác nhận, và giữ người lại trước
+một câu báo lỗi là đúng thứ luật 5 ở trên cấm.
+
+**Hướng sắp tới của mã số, chưa làm.** Mã sẽ do server cấp: người quản trị tạo hồ sơ trên hệ
+thống trước, kiosk nhập mã ấy rồi mới lấy mẫu, nên `(employee_id, template_idx)` trên thiết bị
+khớp thẳng với hồ sơ trên server và không còn phụ thuộc vào bảng cục bộ. Tới lúc đó
+`svc_facedb_next_employee_id()` chỉ còn là đường lùi khi mất mạng. Hiện tại giữ nguyên cách cấp
+mã cục bộ ở trên.
+
 ##### h.3) Màn `People` — xoá người bằng hai lần chạm, không bằng hộp thoại
 
 Thêm được thì phải xoá được, nếu không một lần gõ nhầm tên là vĩnh viễn. `People` liệt kê mỗi
