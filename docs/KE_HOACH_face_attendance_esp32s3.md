@@ -4289,10 +4289,14 @@ vùng riêng chưa ai từng xin. Nên "còn 40 KB" không có nghĩa là xin đ
 **Khoản duy nhất của bảng trên còn chưa trả là bắt tay TLS**, và đó là chỗ chật: mặc định
 mbedTLS của IDF là đệm vào 16 KB cộng đệm ra 4 KB **mỗi phiên**, trong đó đệm vào phải là một
 dải liền 16 KB lấy từ đúng mảnh 31 KB; cộng ngăn xếp `mqtt_task` 6 KB và `sync_task` 5 KB của
-§5.2, 40 KB tiêu gần hết trước khi phân tích chuỗi chứng thư. **E10-T6 vì thế không được bắt
-đầu bằng code**: phải chốt trước một trong ba cần gạt Kconfig ở `arena.md` §13.2 — đẩy heap
-mbedTLS sang PSRAM (`SPIRAM_USE_MALLOC` đã bật nên đủ điều kiện), hạ `MBEDTLS_SSL_IN_CONTENT_LEN`
-theo chuỗi chứng thư thật của broker, hoặc bật đệm động. Cả ba đều là cấu hình, không đụng code.
+§5.2, 40 KB tiêu gần hết trước khi phân tích chuỗi chứng thư. **Đã chốt 18/09: `MBEDTLS_EXTERNAL_MEM_ALLOC=y`**, khai ở
+`sdkconfig.defaults.esp32s3` vì đây là quyết định của board chứ không của một profile. Chọn nó
+thay vì hạ `MBEDTLS_SSL_IN_CONTENT_LEN` hay bật đệm động vì cả hai cách kia **vẫn giữ TLS trong
+RAM nội** — chỉ giảm bớt phần ăn — trong khi cách này đưa hẳn sang nơi còn 5 MB và trả lại
+nguyên vẹn lưới an toàn 32 KB của DMA. Hạ ngưỡng còn thêm một rủi ro không đáng: bản tin bắt tay
+lớn hơn đệm là **hỏng tay bắt**, mà kích thước chuỗi chứng thư thì do broker quyết. Cái giá là
+bắt tay chạy trên PSRAM nên chậm hơn, 🔬 chưa đo — bắt tay chỉ xảy ra lúc nối lại, không phải
+mỗi bản ghi. Nghiệm trên board sau khi gạt: Wi-Fi vẫn nối được và SNTP vẫn chỉnh được giờ.
 
 ---
 

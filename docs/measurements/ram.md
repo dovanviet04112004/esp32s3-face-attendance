@@ -217,13 +217,19 @@ cả lưới an toàn 32 KB của DMA** ở §4.1.
 | `bench` / `prod` | 31.744 B | vừa — **nhưng nó ăn đúng cái lưới an toàn 32 KB của DMA ở §4.1**, còn lại ~15 KB |
 | `dev` | 7.668 B | **không** |
 
-Ba cần gạt, **đều là Kconfig, không sửa một dòng code**, chưa chốt cái nào:
+Ba cần gạt, **đều là Kconfig, không sửa một dòng code**. **Đã chốt cái đầu, 18/09:**
 
 | Cần gạt | Thu về | Cái giá |
 |---|---|---|
 | `MBEDTLS_EXTERNAL_MEM_ALLOC=y` | toàn bộ heap mbedTLS sang PSRAM (còn 5 MB) | bắt tay chạy trên PSRAM nên chậm hơn; đủ điều kiện vì `SPIRAM_USE_MALLOC=y` |
 | hạ `MBEDTLS_SSL_IN_CONTENT_LEN` từ 16.384 | tới 14 KB RAM nội | 🔬 phải biết chuỗi chứng thư thật của broker — đặt thấp quá là **hỏng bắt tay**, không phải chậm |
 | `MBEDTLS_DYNAMIC_BUFFER=y` | trả đệm lại giữa hai lần bắt tay | mỗi lần nối lại phải xin lại, gặp heap đầy thì trượt |
+
+**Chốt `MBEDTLS_EXTERNAL_MEM_ALLOC=y`**, khai ở `sdkconfig.defaults.esp32s3` — quyết định của
+board, không của một profile. Hai cách kia **vẫn để TLS trong RAM nội**, chỉ bớt phần ăn; cách này
+đưa hẳn sang nơi còn 5 MB và trả lại nguyên vẹn lưới 32 KB của DMA. Hạ `IN_CONTENT_LEN` còn rủi ro
+không đáng: chuỗi chứng thư do broker quyết, đặt hụt là hỏng bắt tay chứ không phải chậm.
+Nghiệm sau khi gạt: dựng sạch, Wi-Fi nối được, SNTP chỉnh được giờ. 🔬 chưa đo bắt tay chậm bao nhiêu.
 
 ---
 
