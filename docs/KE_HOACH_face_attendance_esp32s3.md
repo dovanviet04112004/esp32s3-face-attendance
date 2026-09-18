@@ -1783,7 +1783,7 @@ Bốn luật:
 | **`MicroMutableOpResolver` riêng từng model** | Chỉ đăng ký đúng op cần → giảm vài chục KB flash so với `AllOpsResolver` |
 | Cấu hình sdkconfig | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB` · `CONFIG_ESP32S3_DATA_CACHE_64KB` · `CONFIG_SPIRAM_SPEED_80M` · `CONFIG_SPIRAM_MODE_OCT` · `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240` · `CONFIG_COMPILER_OPTIMIZATION_PERF` |
 | Hot path vào IRAM | Hàm hậu xử lý (NMS, affine warp) đặt `IRAM_ATTR` nếu profiler chỉ ra nghẽn |
-| Chạy tuần tự + early exit | ToF không thấy người → **không chạy model nào**. Detect không thấy mặt → **dừng**, không chạy spoof/recog. Spoof fail → không chạy recog. Tiết kiệm ~70% năng lượng |
+| Chạy tuần tự + early exit | Detect không thấy mặt → **dừng**, không chạy spoof/recog. Spoof fail → không chạy recog. Tiết kiệm ~70% năng lượng. **ToF không phải là cổng của chuỗi này** — nó tắt đèn nền chứ không tắt model (§4.5.5f) |
 | Cache embedding | Chỉ chạy recog khi spoof pass **và** box ổn định qua 2 frame liên tiếp |
 
 ### Lớp 6 — Đo lường (làm song song, không để cuối)
@@ -2965,6 +2965,8 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 `Verifying` tồn tại cho đường xác thực nhiều khung của §4.5.5d: `svc_vision` tự giữ nhịp thử lại, nên tầng này chỉ cần một trạng thái chờ có `Timeout` để không kẹt nếu `ai_task` chết.
 
 **Một khuôn mặt cũng mở được máy, không chỉ ToF.** `PresenceOn` là **một cạnh**: chấm xong, máy về `Idle`, người vẫn đứng nguyên chỗ cũ nên không có cạnh nào nữa và ToF không mở máy lần thứ hai. Đo trên board 13/09: chỉ nghe ToF thì sau lần chấm đầu, mọi lần sau im cho tới khi reset. Bốn sự kiện thị giác ở `Idle` vì thế cũng mở máy — thấy mặt tức là có người, dù ToF chưa kịp nhả cạnh nào.
+
+**Cho nên cổng "có người" của ToF chỉ được tắt đèn nền, không được tắt model.** Cùng một phép đo 13/09 nói rằng nghe mỗi ToF là hỏng đường chấm công, mà bỏ `svc_vision_step` khi ToF không thấy ai chính là nghe mỗi ToF — lần này còn chặt hơn, vì không có phán quyết nào để `Idle` nhận nữa. Nón nhìn 27° của VL53L1X (§2.3D) hẹp hơn góc camera nhiều: người đứng lệch, ngồi, hay cao thấp hơn trục cảm biến thì ToF đọc 65535 mm trong khi camera vẫn thấy rõ mặt — máy im hẳn và không có cách nào chấm được. Cùng cái bẫy ấy đã treo màn lấy mẫu của §4.5.5h.2 khi người vận hành đứng ngoài tầm. Giá phải trả cho việc để detect chạy liên tục là **1,3 fps preview** (đo 18/09: 12,9 fps khi model chạy, 14,187 fps khi không), và đó là giá đúng: mất 1,3 fps thì người dùng không thấy, mất đường chấm công thì kiosk vô dụng. Đèn nền thì ngược lại — nó chỉ cần biết có ai đứng trước máy hay không, nên cạnh của ToF cộng một lần chạm màn là đủ.
 
 **Nhưng mở máy không được tiêu mất chính phán quyết đã mở nó.** Mỗi sự kiện ở `Idle` làm đúng việc nó mang: `FaceSmall` mở máy rồi chờ, còn `Match` **cấp luôn** và `Spoof` / `Unknown` **từ chối luôn**. Đo trên board 13/09: khi `Match` ở `Idle` chỉ chuyển sang `Detecting`, lần khớp đầu bị tiêu vào việc mở máy, mà §4.5.5d **không xác thực lại một track đã khớp** nên lần khớp thứ hai chỉ tới khi người dùng cử động đủ để track mất dấu (IoU < 0,5) — người đưa mặt vào khung rồi đứng yên **không bao giờ chấm được**, phải nhúc nhích mới xong. Cùng một lẽ ấy, `Denied` và `Cooldown` nhận `Match`: 3,5 giây giữ màn hình từ chối không được phép nuốt một lần khớp thật, người bị từ chối oan phải được chấm ngay ở vòng thử lại kế tiếp chứ không đứng đợi hết giờ. Chống chấm trùng vẫn là việc của `attend.dedup_min` nên không đường nào trong số này đẻ ra bản ghi thừa.
 
