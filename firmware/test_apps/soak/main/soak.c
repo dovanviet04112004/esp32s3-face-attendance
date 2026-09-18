@@ -12,7 +12,9 @@
 
 #define TASK_SLOTS 32
 #define STACK_FLOOR_BYTES 512
-#define HEAP_DRIFT_BYTES (32 * 1024)
+// The dev profile runs with about 20 KB of internal heap free, so the window
+// has to be smaller than that and the comparison has to be signed.
+#define HEAP_DRIFT_BYTES (8 * 1024)
 #define WARMUP_MS 30000
 #define SAMPLE_MS 30000
 #define SMOKE_MS 60000
@@ -138,8 +140,8 @@ TEST_CASE("heap and stacks hold across the soak window", "[soak]")
             print_sample(elapsed_ms, &now, &first);
         }
         TEST_ASSERT_GREATER_THAN_UINT32(STACK_FLOOR_BYTES, now.thinnest_bytes);
-        TEST_ASSERT_GREATER_THAN_UINT32(first.internal_free - HEAP_DRIFT_BYTES,
-                                        now.internal_free);
+        const int32_t drift = (int32_t)now.internal_free - (int32_t)first.internal_free;
+        TEST_ASSERT_GREATER_THAN_INT32(-(int32_t)HEAP_DRIFT_BYTES, drift);
     }
     sample_t last;
     take_sample(&last);
