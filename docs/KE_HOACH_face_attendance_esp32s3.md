@@ -497,8 +497,29 @@ của camera. Đo 11/09 bằng cách quét `0xC5` trên xám 50% ở 23,26 Hz, m
 dải êm để còn biên hai phía cho trôi nhiệt. Trên thang xám 5 dải (đen, 25%, 50%, 75%, trắng) thì
 **dải trắng vẫn rung** ở cả `0x2C`, `0x30`, `0x34` với đảo cực 1-dot (`0xB4 = 0x01`, mặc định thư
 viện) và cả 2-dot (`0x02`); chuyển sang **column inversion (`0xB4 = 0x00`)** thì trắng êm. `drv_lcd`
-cài cả hai. 🔬 Chấm bằng mắt lúc 11/09 khuya dưới đèn học; **nghiệm thu lại ban ngày trên ảnh
-camera** trước khi coi là xong. Độ phân giải, số màu và fps của ảnh **không đổi** — 23,26 Hz là nhịp
+cài cả hai.
+
+**Nghiệm thu 18/09 lật lại kết luận trên: VCOM vô can.** Quét lại cả dải `0x00`–`0x3C`, 16 bậc,
+bấm tay từng bậc trên nền trắng — **gần như không đổi gì**, nên `0x30` của 11/09 là trùng hợp chứ
+không phải nhân quả. Hai quan sát mới cắt gọn bài toán: nhấp nháy thấy rõ **trên màn `Menu`**, mà
+màn ấy là lớp phủ kín nên `cam_task` vẽ đúng một lần rồi thôi — lúc nó rung, **không một byte nào
+đi trên SPI**, loại sạch camera, khấc hình và khoá pha. Và nó **nặng hơn khi quét nhanh hơn**,
+tức ngược hẳn với cơ chế "nạp lại thưa quá" ở đoạn trên.
+
+Datasheet ST7796S §9.3.9–9.3.11 chỉ đúng chỗ. **`PWR3 (0xC2)`**: `D3-D2 = SOP[1:0]` là *source
+driving current level*, `D1-D0 = GOP[1:0]` là *gamma driving current*, thang `00` không chạy,
+`01` thấp, `10` vừa, `11` cao. Thư viện cài `0xA7`, nibble thấp `0111` → **SOP = Low**, tức dòng
+lái cột ở mức thấp nhất khác không. Đó chính là dòng nạp điện dung điểm ảnh trong từng dòng quét,
+nên quét nhanh hơn thì thời gian nạp ngắn hơn và điểm ảnh không tới đủ áp — sáng tối theo nhịp,
+không đụng gì tới VCOM. **`PWR2 (0xC1)`** cùng chiều: `VRH[6:0]` đặt GVDD, thư viện cài `0x06` =
+**3,85 V** trong khi mặc định của chính con chip là `0x13` = **4,50 V**, tức biên độ lái cột cũng
+bị hạ. `PWR1 (0xC0)` đặt VGH/VGL và AVDD thì không ai ghi, để nguyên mặc định — nó không dính tới
+thời gian nạp.
+
+`drv_lcd` vì thế cài **`0xC2 = 0xAF`** (SOP cao, GOP cao). Nếu còn rung thì nấc tiếp theo là
+`0xC1 = 0x13`, đưa GVDD về đúng mặc định chip. Cái giá của cả hai là panel ăn dòng và nóng hơn
+một chút; cả hai giá trị đều nằm trong bảng datasheet, không phải số tự nghĩ ra. 🔬 Chấm bằng
+mắt, **nghiệm thu lại ban ngày trên ảnh camera** trước khi coi là xong. Độ phân giải, số màu và fps của ảnh **không đổi** — 23,26 Hz là nhịp
 làm mới của panel, không phải nhịp đổi nội dung (camera quyết định, 14,19 fps).
 
 **Đã thử và loại: giữ 57 Hz gốc bằng cách đổi cửa sổ pha.** Trên giấy còn một cách không phải
