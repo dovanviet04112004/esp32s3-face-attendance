@@ -3225,6 +3225,20 @@ cho một phép thử lặp, và người vận hành thấy từng lượt trê
 Luật này đứng **trên** luật 5 của đoạn trên: hết giờ vì tư thế thì lấy khung quay nhiều nhất đã
 thấy, nhưng hết giờ vì chống giả thì không lấy gì hết, kể cả khung tốt nhất đã thấy.
 
+**Hai ngưỡng cho một tư thế: ngưỡng để bắt đầu và ngưỡng để giữ.** Màn hình chỉ xin mẫu khi góc
+quay đã vượt **0,20** đúng phía và giữ 300 ms — đó là ngưỡng *bắt đầu*, và nó là của `ui_kiosk`.
+Pipeline kiểm lại góc trên **đúng khung nó xác thực**, cách lúc xin tới 1,6 s, mà góc từ điểm mốc
+nhiễu theo từng khung: cùng một cái đầu quay trái đo ra từ −0,041 tới −0,532 (bảng trên). Đặt cùng
+0,20 cho phép kiểm lại là bắt một số nhiễu vượt ngưỡng lần nữa, và mỗi lần trượt tốn trọn một lượt
+xác thực. Đo trên board 18/09: mẫu quay trái **năm lượt, 8 giây**, cả năm đều sống 0,98–0,99, bốn
+lượt đầu bị chính phép kiểm góc gạt.
+
+Nên ngưỡng *giữ* của pipeline chỉ hỏi một câu: mặt **còn ở đúng phía và chưa quay về chính diện**,
+tức vượt dải ±0,10 (`kFrontalYaw`) về phía đã xin. Ai đã giữ 0,20 được 300 ms mà tụt về dưới 0,10
+trong lượt kế là đã quay về nhìn thẳng thật, và khung đó **phải** bị gạt. Khi màn hình đã nới ngưỡng
+bắt đầu xuống dưới 0,10 (luật 5, sau 6 giây) thì ngưỡng giữ theo xuống cùng, không thì màn xin một
+tư thế mà pipeline không bao giờ chấp nhận.
+
 **Đường đi của con số.** Góc quay tính ở `svc_vision`, nơi duy nhất biết ngữ nghĩa của điểm mốc,
 rồi đi theo `svc_vision_box_t` ra ngoài — `main` chuyển tiếp cho `ui_kiosk` đúng như nó đang
 chuyển hộp mặt, nên không có luật tầng nào bị phá (§4.5.4). `ui_kiosk` **chỉ vẽ**, không tự tính
