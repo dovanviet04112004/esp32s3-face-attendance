@@ -175,17 +175,19 @@ public:
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
     {
         (void)dt_ms;
-        // A track that granted is never verified again (KEHOACH 4.5.5d), so every
-        // line guiding the face into the frame is a lie until that face leaves.
-        const bool answered = seen.verdict == APP_UI_GRANTED ||
-                              (answered_ && seen.face && seen.verdict != APP_UI_SCANNING &&
-                               refusal(seen.verdict) == nullptr);
+        // Any verdict silences the guidance until that face leaves or the machine
+        // takes up somebody else; a refusal also stays on the glass (KEHOACH 4.5.5h.1).
+        const bool answered = seen.verdict > APP_UI_SCANNING ||
+                              (answered_ && seen.face && seen.verdict != APP_UI_SCANNING);
         const bool carded = seen.verdict == APP_UI_GRANTED;
-        if (answered == answered_ && carded == carded_) {
+        const char *fresh = refusal(seen.verdict);
+        const char *refused = carded ? nullptr : (fresh != nullptr ? fresh : (answered ? refused_ : nullptr));
+        if (answered == answered_ && carded == carded_ && refused == refused_) {
             return false;
         }
         answered_ = answered;
         carded_ = carded;
+        refused_ = refused;
         return true;
     }
 
@@ -213,6 +215,9 @@ public:
         uint8_t tone = DRV_LCD_INK;
         const char *prompt = "Đưa khuôn mặt vào khung";
         const char *line = refusal(seen.verdict);
+        if (line == nullptr) {
+            line = refused_;
+        }
         if (line != nullptr) {
             tone = DRV_LCD_WARN;
             prompt = nullptr;
@@ -262,6 +267,7 @@ private:
     bool held_ = false;
     bool answered_ = false;
     bool carded_ = false;
+    const char *refused_ = nullptr;
 };
 
 class MenuScreen final : public Screen {
