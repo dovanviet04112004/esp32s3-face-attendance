@@ -4280,7 +4280,7 @@ và một phiên Wi-Fi vào mạng thật đều đã lên.
 
 Đáy vẫn phẳng qua sáu mẫu nên không có chỗ rò; hệ chỉ đơn giản đã chi thêm 31 KB cho những thứ
 mới. **Bảng chi tiết từng thành phần — tĩnh theo component, ngăn xếp từng task, các khối DMA
-lớn — nằm ở `docs/measurements/ram.md`.** Hai điều bảng ước tính ở đầu §6.4 không nói ra mà số
+lớn, và sổ PSRAM khép được tới 0,24 % — nằm ở `docs/measurements/ram.md`.** Hai điều bảng ước tính ở đầu §6.4 không nói ra mà số
 đo nói: **đệm bounce của LCD 61.440 B cộng đệm DMA của camera 30.720 B là 92 KB, hơn một nửa
 heap lúc boot, và không có đường nào đẩy sang PSRAM**; còn heap nội **không phải một khối** —
 heap chính 244 KB đã đầy (mảnh lớn nhất 4 KB, đáy 1.708 B), toàn bộ 31 KB liền mạch nằm ở một

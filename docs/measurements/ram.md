@@ -1,7 +1,7 @@
-# RAM nội — ai ăn bao nhiêu
+# RAM — ai ăn bao nhiêu
 
-Sổ đo của **RAM nội (SRAM)**. PSRAM và arena của model nằm ở `arena.md`; ở đây chỉ nói về
-512 KB trong chip, vì đó là thứ khan hiếm.
+Sổ đo bộ nhớ chạy: **RAM nội (SRAM) ở §1–§5**, **PSRAM ở §6**. Số chi tiết của riêng arena TFLM
+nằm ở `arena.md`; ở đây là toàn cảnh, để trả lời đúng một câu hỏi — thứ nào đang giữ bao nhiêu.
 
 Ba nguồn số, **không được trộn**: phần tĩnh lấy từ `idf.py size-components` của đúng bản dựng;
 ngăn xếp task và các khối lớn lấy từ hằng số trong code; phần còn lại đo trên board bằng
@@ -158,9 +158,13 @@ với mặt thật (E8-T9 còn nợ).
 
 - **Heap chính đã đầy.** 244 KB chỉ còn 8 KB trống, mảnh lớn nhất **4 KB**, và đáy của nó là
   **1.708 B**. Mọi lần `malloc` bình thường đều rơi vào đây.
-- **Vùng 32 KB ở `0x3fcb3c5c` chưa ai từng xin một byte** (0 khối). Nó qua được cả
-  `MALLOC_CAP_8BIT` lẫn `MALLOC_CAP_DMA` nên **dùng được thật**, chỉ là bộ cấp phát duyệt heap
-  chính trước và chưa lần nào phải tràn sang.
+- **Vùng 32 KB ở `0x3fcb3c5c` chưa ai từng xin một byte** (0 khối), và log boot nói thẳng nó là
+  gì: `esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations`. Đó là
+  `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL` = 32.768. Vì `CONFIG_SPIRAM_USE_MALLOC=y` cho `malloc()`
+  thường trả về PSRAM, IDF **tách riêng** chừng này RAM nội ra khỏi vùng `malloc` thường, để
+  những chỗ *bắt buộc* phải nội hoặc phải DMA luôn còn chỗ. Nên nó **dùng được** (qua cả
+  `MALLOC_CAP_8BIT` lẫn `MALLOC_CAP_DMA`) nhưng nó là **lưới an toàn của DMA**, không phải chỗ
+  trống để tiêu.
 - Nên câu "còn 40 KB" **không** có nghĩa là xin được một khối 40 KB. Xin **≤ 4 KB** thì lấy ở
   heap chính; xin **4–31 KB** thì rơi vào vùng riêng kia và **chỉ xin được một lần**.
 - Đây **không phải phân mảnh**. Phân mảnh là nhiều mảnh nhỏ rời rạc do cấp phát rồi giải phóng
@@ -189,9 +193,15 @@ Một phiên TLS mặc định của IDF cần **đệm vào 16.384 B liền m�
 (`MBEDTLS_ASYMMETRIC_CONTENT_LEN` bật sẵn), cộng ngăn xếp `mqtt_task` 6 KB và `sync_task` 5 KB
 của §5.2 — ngăn xếp cũng lấy từ RAM nội.
 
+**Vì sao nó không tự rơi xuống PSRAM như những khối to khác.** `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL`
+= 16.384, nghĩa là `malloc()` thường xin dưới mức đó thì nằm nội, từ mức đó trở lên **được phép**
+xuống PSRAM — một đệm 16.384 B lẽ ra vừa chạm ngưỡng. Nhưng `CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC=y`
+(mặc định của IDF) **ép mbedTLS xin `MALLOC_CAP_INTERNAL`**, nên luật ngưỡng kia không áp dụng.
+Đó đúng là cái công tắc phải gạt.
+
 | Profile | Mảnh lớn nhất | Đệm vào 16 KB có vừa không |
 |---|---|---|
-| `bench` / `prod` | 31.744 B | vừa, nhưng ăn trọn vùng riêng, còn ~15 KB ở đó |
+| `bench` / `prod` | 31.744 B | vừa — **nhưng nó ăn đúng cái lưới an toàn 32 KB của DMA ở §4.1**, còn lại ~15 KB |
 | `dev` | 7.668 B | **không** |
 
 Ba cần gạt, **đều là Kconfig, không sửa một dòng code**, chưa chốt cái nào:
@@ -204,7 +214,48 @@ Ba cần gạt, **đều là Kconfig, không sửa một dòng code**, chưa ch�
 
 ---
 
-## 6. Còn nợ
+## 6. PSRAM — 8 MB, và nó giữ gần hết những thứ to
+
+Đo cùng lượt `bench_mem` 18/09:
+
+| Mốc | PSRAM trống |
+|---|---|
+| trước `app_boot` | 8.189 KB |
+| sau `app_boot` | 5.198 KB |
+| kiosk chạy, đáy 6 mẫu | **5.070 KB** |
+
+Tức hệ đang giữ **3.119 KB**. Khác với RAM nội, sổ này **khép được**:
+
+| Khoản | Bytes | Nguồn |
+|---|---|---|
+| **Khung ảnh camera** | **1.228.800** | `CAM_FB_COUNT` 4 × 480×320 RGB565, `CAMERA_FB_IN_PSRAM` |
+| **`arena_big`** (spoof + recog dùng chung) | **748.544** | log boot; `arena.md` §12 |
+| **Bảng khuôn mặt** | **580.064** | `svc_facedb`: 1.000 bản ghi × 576 B + header + `norm_sq` 4 KB |
+| **Hai lớp phủ của giao diện** | **307.200** | `ui_kiosk`: `kSlots` 2 × 320×480 × 1 B/điểm |
+| **`arena_fast`** (detect) | **190.464** | log boot |
+| **Clip âm thanh** | **131.072** | `AUDIO_CLIP_CAP_BYTES`, nạp một lần lúc `audio_task` lên |
+| **Cộng** | **3.186.144** (3.111 KB) | |
+| Đo thật | 3.193.856 (3.119 KB) | |
+| **Chưa quy được** | **7.712 B (0,24 %)** | vặt vãnh của littlefs, vfs, driver |
+
+Ba điều đọc ra từ bảng này:
+
+- **Khung ảnh camera là khoản to nhất của cả hệ**, 1,2 MB, và nó **đã** ở PSRAM đúng chỗ. Bốn
+  khung là để `cam_task` không bao giờ đói trong lúc `ai_task` còn giữ một khung; hạ xuống 3 thu
+  về 300 KB PSRAM mà PSRAM thì đang thừa 5 MB, nên **không có lý do hạ**.
+- **Hai arena cộng lại 939 KB** — chính là 224 KB RAM nội mà §6.4 đã đổi lấy +23,4 ms mỗi khung
+  cho detect. Đổi đúng: PSRAM còn 5 MB, RAM nội còn 40 KB.
+- **Bảng khuôn mặt cấp cứng cho 1.000 người** (`CONFIG_FACEDB_CAPACITY`) dù mới có vài người.
+  Đây là 567 KB cấp một lần lúc boot, không lớn dần. Không đụng, nhưng phải biết là nó ở đó khi
+  đọc con số PSRAM.
+
+**PSRAM không phải chỗ chật.** Còn 5.070 KB, và phần lớn thứ có thể chuyển sang đó thì đã chuyển
+rồi. Đó là lý do cần gạt đúng cho TLS ở §5 là **đẩy mbedTLS sang đây**, chứ không phải đi cắt xén
+RAM nội.
+
+---
+
+## 7. Còn nợ
 
 - 🔬 **Chưa khép sổ được từng byte.** Bảng §3 chỉ liệt kê những khối lớn có tên trong code;
   phần IDF tự xin (đệm Wi-Fi động, pbuf của lwIP, hàng đợi, littlefs, NVS) chưa tách ra được.
@@ -213,3 +264,4 @@ Ba cần gạt, **đều là Kconfig, không sửa một dòng code**, chưa ch�
 - 🔬 Watermark của `ai` phải đo lại **khi có mặt thật trước camera**, vì số 1.284 B hiện tại
   mới chỉ có detect chạy.
 - 🔬 Chưa đo lại sau khi cắt ngăn xếp `ui` xuống 4.096.
+- PSRAM thì **đã khép sổ**, chỉ còn 7.712 B chưa quy được — không cần truy thêm.
