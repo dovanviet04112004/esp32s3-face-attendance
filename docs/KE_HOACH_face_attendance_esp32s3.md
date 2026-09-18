@@ -454,7 +454,7 @@ Siết vừa tay; siết mạnh là nứt mép.
 | GND | GND | | |
 | SCL / SCK | **GPIO42** | SPI CLK | **80 MHz** — ở 40 MHz một khung 307 KB mất 61 ms, màn hiện hai khoảnh khắc cùng lúc và mặt di chuyển thấy rõ vạch |
 | SDA / MOSI | **GPIO41** | SPI MOSI | |
-| SDO / MISO | **GPIO43** | Đọc thanh ghi panel | Chỉ dùng cho `GET_SCANLINE` để khoá pha (xem dưới). Đọc **3 MHz**: dưới 2 MHz ESP32 lấy mẫu sai, trên 6,6 MHz vượt chu kỳ đọc 150 ns của datasheet |
+| SDO / MISO | **GPIO43** | Đọc thanh ghi panel | Khoá pha đọc `GET_SCANLINE`, chẩn đoán đọc `RDDPM`/`RDDSDR`/`RDID4` (xem dưới). Đọc **4 MHz**: 1–2 MHz không ra dữ liệu, **3 MHz chỉ đúng 42 %**, 4 MHz đúng 99,99 %, trên 6,6 MHz vượt chu kỳ đọc 150 ns của datasheet |
 | CS | **GPIO47** | Chip select | |
 | DC / RS | **GPIO39** | Data / Command | Chân thường. Không đặt trên GPIO45: board LCD hay có pull-up ở DC, mà GPIO45 là strapping VDD_SPI — kéo lên lúc reset là chọn flash 1.8 V và board không boot |
 | RES | **GPIO40** | Reset panel | (nguyên là SD_DATA — trống vì không dùng microSD) |
@@ -575,12 +575,35 @@ tạo của nó chỉ có `0xf0/0xb4/0xb7/0xe8/0xc1/0xc2/0xc5/0xe0/0xe1`. Nên p
 khi `GVDD = 3,85 + 1,50 = 5,35 V`, tức còn **1,25 V** biên — không phải sát trần. Nấc duy nhất
 còn lại là `AVDDS = 3` → 6,80 V, mua thêm 0,2 V.
 
-**Dị thường duy nhất đo được: 18 % lượt đọc SPI từ panel bị hỏng bit.** `RDID4 (0xD3)` là hằng số
-trong silicon, đọc 30.000 lần thì đúng 82,0 % ở nền trắng và 80,7 % ở nền đen, phần còn lại là
-lật một hai bit (`0x77`→`0x7f`, `0x96`→`0x9e`). Tỷ lệ **không** theo nội dung màn hình nên nó
-không phải dòng lái cột. Byte đầu của mỗi lượt đọc thì sạch (`0x0F` đúng 30.000/30.000), sai số
-tăng dần theo vị trí byte — dấu hiệu của điểm lấy mẫu sát sườn tín hiệu, hoặc của chính đường
-dây. Cùng đế cắm ấy tối 19/09 còn cho một cơn GT911 trượt I2C liên tục rồi tự hết.
+**Xung đọc 3 MHz là xung hỏng, và nó giấu mặt suốt từ đầu.** `RDID4 (0xD3)` là hằng số trong
+silicon nên mọi lượt đọc phải ra một giá trị; ở 3 MHz nó chỉ ra đúng **42 %**, và tỷ lệ ấy trôi
+từ 82 % xuống 1,6 % giữa hai lượt đo cách nhau 15 phút mà không ai đụng code. Quét 5 mức xung ×
+5 mức `input_delay_ns`, mỗi ô 2.000 lượt đọc, trên chính bus đó:
+
+| Xin | Driver sinh thật | Giá trị trội | Ổn định |
+|---|---|---|---|
+| 1 MHz | 1.000 kHz | `ffffffff` | không có dữ liệu |
+| 2 MHz | 2.000 kHz | `007fdf7f` | 100 % nhưng sai |
+| **3 MHz** | **2.962 kHz** | `003bcb7f` | **42 %** |
+| **4 MHz** | **4.000 kHz** | `003bcb7f` | **100 %** |
+| 6 MHz | 6.153 kHz | `003bcb3f` | 100 % |
+
+`input_delay_ns` từ 0 đến 100 ns **không đổi một phần trăm nào**, nên đây không phải chuyện bù
+trễ dưới mức một bit. 🔬 Vì sao đúng mức 2.962 kHz hỏng trong khi 4.000 và 6.153 kHz đều sạch
+thì chưa giải thích được; số đo lặp lại ở hai lần chạy khác nhau nên cứ chốt theo số đo.
+`APP_LCD_READ_HZ` để **4 MHz**: sau đó `0xD3` đúng **30.198/30.200**, `0x0A` 30.199/30.200,
+`0x0F` 30.200/30.200. Đây cũng là lý do `SCANLINE_RETRIES` phải bằng 4 — khoá pha đi qua đúng
+đường đọc ấy, và nó đã chạy suốt với chưa tới nửa số lượt đọc là thật.
+
+**Dao động nội của panel phẳng, nên nguồn không phải thủ phạm.** Bộ đếm dòng chạy bằng dao động
+nội của ST7796S mà tần số dao động thì ăn theo điện áp, nên bấm giờ chu kỳ khung là đo gián tiếp
+được nguồn — và phép này không cần giải mã bit nào, chỉ cần thấy bộ đếm vòng về 0. Đo 200 khung
+mỗi nền, bỏ các lượt lỡ nhịp do task bị chen: nền trắng **42.566 µs**, dao động **91 µs (0,21 %)**;
+nền đen **42.876 µs**, dao động **119 µs (0,28 %)**. Nếu rail sụt rồi hồi theo một nhịp mắt nhìn
+thấy được thì chu kỳ khung phải nhảy theo đúng nhịp ấy. Nó phẳng tới 0,2 %. Cộng với `BSTON` và
+`RDDSDR` đứng yên, **ba phép đọc độc lập đều nói nguồn không bị điều biến**. Chênh 0,73 % giữa
+trắng và đen là ổn định và ngược chiều với giả thuyết sụt áp (trắng **nhanh** hơn), nên nó không
+phải cơ chế nhấp nháy.
 
 Phép thử cuối là phép quyết định: nền trắng tĩnh, **không một byte nào đi trên SPI**, đèn nền là
 một mức **DC phẳng không băm xung** — mà vẫn nhấp nháy. Ở trạng thái đó **không còn thứ gì trong
