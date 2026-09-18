@@ -447,11 +447,6 @@ static void ui_task(void *arg)
             // The enrolled track has already matched, and a matched track is
             // never verified again (KEHOACH 4.5.5d).
             svc_vision_reset();
-            // A new template matches its own face at once, and that is not an
-            // arrival (KEHOACH 4.5.5h.2).
-            if (new_employee != 0 && ui_kiosk_enrol_complete()) {
-                svc_attendance_note_served(new_employee, sys_time_now_ms());
-            }
             // Leaving early must not keep a person nobody finished adding.
             if (new_employee != 0 && !ui_kiosk_enrol_complete() &&
                 svc_facedb_remove(new_employee) == ESP_OK) {
