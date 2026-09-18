@@ -193,11 +193,24 @@ Một phiên TLS mặc định của IDF cần **đệm vào 16.384 B liền m�
 (`MBEDTLS_ASYMMETRIC_CONTENT_LEN` bật sẵn), cộng ngăn xếp `mqtt_task` 6 KB và `sync_task` 5 KB
 của §5.2 — ngăn xếp cũng lấy từ RAM nội.
 
-**Vì sao nó không tự rơi xuống PSRAM như những khối to khác.** `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL`
-= 16.384, nghĩa là `malloc()` thường xin dưới mức đó thì nằm nội, từ mức đó trở lên **được phép**
-xuống PSRAM — một đệm 16.384 B lẽ ra vừa chạm ngưỡng. Nhưng `CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC=y`
-(mặc định của IDF) **ép mbedTLS xin `MALLOC_CAP_INTERNAL`**, nên luật ngưỡng kia không áp dụng.
-Đó đúng là cái công tắc phải gạt.
+**Vì sao nó không tự rơi xuống PSRAM như những khối to khác.** `CONFIG_SPIRAM_USE_MALLOC=y` cho
+`malloc()` thường trả về PSRAM, phân theo cỡ: `heap_caps_malloc_default` xin **≤**
+`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` (16.384 B) thì thử RAM nội trước, lớn hơn mới thử PSRAM
+trước. Nhưng **mbedTLS không đi qua `malloc()`**: IDF cấp cho nó một bộ cấp phát riêng ở
+`components/mbedtls/port/esp_mem.c`, và một nút radio trong Kconfig quyết định thẳng nó xin
+loại RAM nào.
+
+```c
+#ifdef CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC
+    return heap_caps_calloc(n, size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#elif CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC
+    return heap_caps_calloc(n, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+```
+
+Đang bật nhánh trên. Nên đây **không phải chuyện thiếu chỗ mà là một mặc định ép sai chỗ**: luật
+theo cỡ ở trên không bao giờ được hỏi tới, mọi cấp phát của TLS đều đòi RAM nội bất kể lớn nhỏ,
+và vì `MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT` không kèm `MALLOC_CAP_DEFAULT` nên nó **lấy được
+cả lưới an toàn 32 KB của DMA** ở §4.1.
 
 | Profile | Mảnh lớn nhất | Đệm vào 16 KB có vừa không |
 |---|---|---|
