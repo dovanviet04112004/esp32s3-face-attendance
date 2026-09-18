@@ -4268,6 +4268,24 @@ Con số phải mang sang E10-T1 không phải 71 KB mà là **mảnh liền m�
 LVGL xin quá mức đó ở RAM nội sẽ trượt dù tổng còn trống, đúng cơ chế đã hạ `arena_fast` xuống
 PSRAM; heap LVGL vì thế nằm ở PSRAM, nơi còn 5,8 MB.
 
+**Đo lại 18/09 khi hai khoản kia đã trả** (`arena.md` §13): giao diện sáu màn hình, `audio_task`
+và một phiên Wi-Fi vào mạng thật đều đã lên.
+
+| Mốc | 13/09 | **18/09** |
+|---|---|---|
+| đáy RAM nội, kiosk chạy | 71 KB | **40 KB** |
+| mảnh liền mạch lớn nhất | 32 KB | **31 KB** |
+| đáy PSRAM | 5.844 KB | 5.070 KB |
+
+Đáy vẫn phẳng qua sáu mẫu nên không có chỗ rò; hệ chỉ đơn giản đã chi thêm 31 KB cho những thứ
+mới. **Khoản duy nhất của bảng trên còn chưa trả là bắt tay TLS**, và đó là chỗ chật: mặc định
+mbedTLS của IDF là đệm vào 16 KB cộng đệm ra 4 KB **mỗi phiên**, trong đó đệm vào phải là một
+dải liền 16 KB lấy từ đúng mảnh 31 KB; cộng ngăn xếp `mqtt_task` 6 KB và `sync_task` 5 KB của
+§5.2, 40 KB tiêu gần hết trước khi phân tích chuỗi chứng thư. **E10-T6 vì thế không được bắt
+đầu bằng code**: phải chốt trước một trong ba cần gạt Kconfig ở `arena.md` §13.2 — đẩy heap
+mbedTLS sang PSRAM (`SPIRAM_USE_MALLOC` đã bật nên đủ điều kiện), hạ `MBEDTLS_SSL_IN_CONTENT_LEN`
+theo chuỗi chứng thư thật của broker, hoặc bật đệm động. Cả ba đều là cấu hình, không đụng code.
+
 ---
 
 ## 7. Backend, Frontend, Deploy

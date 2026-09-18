@@ -386,3 +386,87 @@ Spoof `20260918-1050_aa7e463_e66877` (ADR-0004) thay student `1109`; số từ `
 §11 cộng **4.096 B** so với `0854`; phần chênh đúng cỡ các vector gộp 1×1 và vector cổng của ba khối
 SE, chưa tách từng tensor để chốt. Vẫn trong PSRAM, dưới cap `CONFIG_AI_ARENA_BIG_KB` 1536 KB. Ứng viên facenox cùng đợt cần 1.684.700 B và bị loại ở đây
 (`quant_ladder.md` §8).
+
+---
+
+## 13. Đo lại RAM đỉnh sau khi có UI, loa và Wi-Fi vào mạng — E8-T9, 18/09
+
+Lượt 13/09 (§9) ghi rõ hai khoản của §6.4 **chưa trả đồng nào**: giao diện chưa tồn tại, và
+Wi-Fi quay số mà không vào được mạng nên không có phiên TCP. Từ đó `ui_kiosk` lên với sáu màn
+hình cộng lớp phủ, `audio_task` giữ clip trong PSRAM, và lượt này Wi-Fi **vào mạng thật**
+(`ip 192.168.185.107`, SNTP chỉnh đồng hồ ở 40,3 s). Cùng dụng cụ, cùng profile `bench`.
+
+| Mốc | Đáy RAM nội 13/09 | **Đáy RAM nội 18/09** | Đáy PSRAM 18/09 |
+|---|---|---|---|
+| trước `app_boot` | 255.483 B (249 KB) | **248.331 B (242 KB)** | 8.189 KB |
+| sau `app_boot`, ba model đã nạp | 97.811 B (95 KB) | **85.699 B (83 KB)** | 5.198 KB |
+| kiosk chạy, 6 mẫu cách nhau 10 s | 73.323 B (71 KB) | **41.531 B (40 KB)** | **5.070 KB** |
+
+Đáy đứng **nguyên 41.531 B qua cả sáu mẫu**, heap vẫn phẳng, không có chỗ rò theo khung.
+Mảnh liền mạch lớn nhất lúc kết thúc: **31 KB** (13/09: 32 KB).
+
+RAM nội mất thêm **31.792 B** so với 13/09, chia ba chỗ: 7.152 B là `.bss` của `ui_kiosk` và
+`drv_audio` (thấy ngay ở mốc trước `app_boot`), 4.960 B nữa hiện ra sau `app_boot`, phần còn
+lại là ba task mới cộng phiên TCP thật. PSRAM mất 774 KB, phần lớn là 128 KB clip âm thanh và
+các đệm lớp phủ của `ui_kiosk`.
+
+### 13.1 Watermark từng task
+
+| Task | Prio | Stack trống 13/09 | **18/09** |
+|---|---|---|---|
+| `ipc0` | 1 | 444 B | **444 B** |
+| `ipc1` | 24 | 532 B | 564 B |
+| `IDLE1` | 0 | 784 B | 784 B |
+| `IDLE0` | 0 | 792 B | 792 B |
+| **`ai`** | 5 | 1.524 B | **1.284 B** |
+| `Tmr Svc` | 1 | 1.448 B | 1.448 B |
+| `sys_evt` | 20 | 1.568 B | 1.472 B |
+| `touch` | 5 | — | 1.484 B |
+| `tof` | 6 | 1.560 B | 1.640 B |
+| `tcpip` | 18 | 2.240 B | 1.736 B |
+| `audio` | 6 | — | 2.364 B |
+| `cam` | 7 | 2.768 B | 2.672 B |
+| `attend` | 4 | 2.812 B | 2.836 B |
+| `esp_timer` | 22 | 3.124 B | 3.124 B |
+| `cam_task` (`esp32-camera`) | 23 | 3.356 B | 3.344 B |
+| `wifi` | 23 | 4.540 B | 4.316 B |
+| `ui` | 4 | — | 6.772 B |
+| `main` | 1 | 5.824 B | 5.632 B |
+
+`ai` mỏng đi 240 B và vẫn là task mỏng nhất của dự án: **1.284 / 8.192 B**. Số này vẫn đo lúc
+**chưa có mặt người nào** trước camera nên mới chỉ có detect chạy — ghi chú của §9.1 còn nguyên.
+`ui` cấp 8 KB mà chỉ dùng hơn 1 KB, còn dư 6.772 B.
+
+### 13.2 Hệ quả cho `net_mqtt` + TLS (E10-T6)
+
+Còn **40 KB RAM nội, mảnh liền lớn nhất 31 KB**, và khoản duy nhất của §6.4 chưa trả là bắt
+tay TLS. Mặc định mbedTLS của IDF 6.0 là `MBEDTLS_ASYMMETRIC_CONTENT_LEN=y` với đệm vào
+**16.384 B** và đệm ra **4.096 B**, tức **20 KB mỗi phiên TLS**, mà đệm vào phải xin **một dải
+liền 16 KB** từ đúng mảnh 31 KB kia. Cộng ngăn xếp `mqtt_task` 6 KB và `sync_task` 5 KB của
+§5.2 — ngăn xếp task lấy từ RAM nội — thì 40 KB tiêu gần hết trước khi phân tích chuỗi chứng
+thư của broker.
+
+Ba cần gạt, đều là Kconfig, **không sửa một dòng code nào**, chưa chốt cái nào:
+
+| Cần gạt | Thu về | Cái giá |
+|---|---|---|
+| `MBEDTLS_EXTERNAL_MEM_ALLOC=y` | toàn bộ heap mbedTLS sang PSRAM (còn 5 MB) | mbedTLS chạy trên PSRAM, chậm hơn; đã đủ điều kiện vì `SPIRAM_USE_MALLOC=y` |
+| `MBEDTLS_SSL_IN_CONTENT_LEN` hạ từ 16.384 | tới 14 KB RAM nội | 🔬 phải đo chuỗi chứng thư thật của broker: bản tin bắt tay lớn hơn đệm là hỏng tay bắt, không phải chậm |
+| `MBEDTLS_DYNAMIC_BUFFER=y` | trả đệm lại giữa hai lần bắt tay | mỗi lần nối lại phải xin lại, gặp phân mảnh thì trượt |
+
+### 13.3 Khoản "mất ~52 KB chưa quy được" của E8-T9 đã quy xong
+
+Bản chẩn đoán sáng 18/09 đo trên profile **`dev`** cho đáy **9.983 B** và mảnh liền lớn nhất
+**7.668 B**, đem so với đáy 73.323 B ngày 13/09 thì thành "mất 63 KB không biết vì đâu". Hai
+phép đo ấy **khác profile**, nên phép trừ vô nghĩa. Đo lại cùng profile thì tách được sạch:
+
+| Phép trừ | Cùng điều kiện gì | Chênh |
+|---|---|---|
+| `bench` 13/09 → `bench` 18/09 | cùng profile, khác lượng code | **31.792 B** — UI, loa, phiên TCP thật |
+| `bench` 18/09 → `dev` 18/09 | cùng lượng code, khác profile | **31.548 B** — `HEAP_POISONING_LIGHT` và `-Og` |
+| tổng | | 63.340 B = đúng 73.323 − 9.983 |
+
+Nên **một nửa khoản hụt là cái giá của profile gỡ lỗi, không phải của tính năng mới**. Hệ quả
+thực tế: bản `dev` còn mảnh liền lớn nhất **7.668 B** thì `net_mqtt` + TLS **không có cửa** —
+đệm vào 16 KB không xin nổi. Muốn thử MQTT trên board phải nạp bản `bench` hoặc `prod`, và số
+40 KB / 31 KB ở trên mới là số để cân E10-T6.
