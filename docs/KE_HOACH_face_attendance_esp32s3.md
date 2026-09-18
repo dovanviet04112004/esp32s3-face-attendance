@@ -3919,30 +3919,26 @@ thời gian camera khoá lại PLL. Nghỉ quá sớm là trả giá đánh th�
 đánh thức là vòng tự nuôi: bộ dò còn báo thấy mặt thì máy không bao giờ nghỉ, đúng hay sai cũng
 vậy. Việc phát hiện có người là của cảm biến khoảng cách và của ngón tay, không phải của model.
 
-**Nhưng *giữ thức* khác *đánh thức*, và bộ dò được phép giữ.** ToF là cảm biến đánh thức tốt và
-cảm biến giữ thức tồi. Đo trên board 18/09: `presence on at 228 mm` lúc 103,9 s rồi
-`presence off at 65535 mm` lúc **104,8 s** — mất dấu sau 0,9 giây — trong khi camera còn ra
-`verdict 6, match 0.838` (ghi được bản ghi), rồi `match 0.900`, rồi một phán quyết nữa ở 108,5 s.
-Mốc nghỉ đếm từ lần ToF cuối nên model **ngủ lúc 108,9 s, giữa một lượt chấm công đang chạy**.
-Cấm bộ dò giữ thức là chấp nhận lỗi ấy.
+**Bộ dò không được giữ thức, và đây là số đo nói ra điều đó.** Ý tưởng cho khuôn mặt gia hạn
+mốc nghỉ đã thử và đã bỏ trong cùng ngày 18/09. Bản đầu nhận mọi ứng viên: 92 giây không ai đứng
+trước máy, ToF không ra một dòng `presence on`, mà kiosk không hề nghỉ vì bộ dò nhấp nháy ra ứng
+viên `FACE_SMALL` và `FACE_OUT_OF_FRAME`. Bản sau siết lại, chỉ nhận khuôn mặt qua cổng
+`face_min_px`: **80 giây, đúng một dòng `face in` và không bao giờ `face out`** — bộ dò bám một
+vật trong khung đủ lớn để qua cổng và giữ máy thức liên tục. Kết luận: ở bố trí này camera
+**không phân biệt được người với vật giống khuôn mặt** đủ tin để đem gác nguồn điện, còn cảm
+biến khoảng cách thì có. Nên danh sách nguồn ở trên là danh sách đầy đủ, không có ngoại lệ cho
+model — cả đánh thức lẫn giữ thức.
 
-**Và "có mặt" phải là mặt qua được cổng `face_min_px`, không phải một ứng viên bất kỳ.** Đo trên
-board 18/09 với bản lấy `result.faces > 0`: suốt **92 giây không ai đứng trước máy**, ToF không
-ra một dòng `presence on` nào, mà bộ dò vẫn nhấp nháy ra ứng viên và kiosk **không hề nghỉ** —
-mọi phán quyết trong quãng ấy là `FACE_SMALL` hoặc `FACE_OUT_OF_FRAME`, tức không ứng viên nào
-đủ tư cách để chạy spoof hay recog. Máy chỉ nghỉ ở giây 123 khi trần hết hạn, nghĩa là cái giữ
-nó thức là nhiễu chứ không phải người. Cổng `face_min_px` của §4.5.5d đã là ranh giới "đủ gần để
-làm việc"; dùng lại đúng nó thì một người thật đang chấm công vẫn giữ được máy, còn hoạ tiết
-tường thì không.
-
-Nên có **hai mốc, không phải một**: mốc đánh thức do năm nguồn trên ghi, và mốc "còn mặt làm việc
-được trên kính" do khuôn mặt chính **qua cổng `face_min_px`** ghi. Mức nghỉ tính từ mốc muộn hơn, **với một trần**: mặt chỉ được
-kéo dài thêm tối đa `FACE_HOLD_CAP_MS` **kể từ lần đánh thức thật gần nhất**. Quá trần thì mốc
-mặt bị bỏ qua và ToF hoặc ngón tay phải xác nhận lại. Trần ấy chính là cái chặn vòng tự nuôi:
-bộ dò bám nhầm hoạ tiết tường — dải điểm nhiễu của §4.5.5d là 0,14–0,37, sát sàn `detect_min`
-0,350 — giữ được nhiều nhất một khoảng có hạn chứ không giữ mãi. Một lượt chấm công đầy đủ mất
-≈ 1,8 s và một lượt đăng ký ba mẫu mất hàng chục giây, nên trần đặt ở **120 s** là rộng gấp
-nhiều lần việc thật mà vẫn hữu hạn.
+**Đổi lại, ToF phải chịu được nhiễu.** Lý do người ta muốn cho khuôn mặt giữ thức là một lỗi
+thật: đo 18/09, `presence on at 228 mm` rồi `presence off at 65535 mm` **0,9 giây sau**, trong
+khi camera còn nhận diện đúng người ấy thêm bốn giây — và 65535 là số `main` tự gán khi range
+status khác 0, chứ không phải khoảng cách đo được. VL53L1X trả một **range status** cho từng
+lượt đo: 0 hợp lệ, 1 sigma fail (có vật nhưng nhiễu), 2 signal fail (thường là trống), 4 ngoài
+dải, 5 wraparound. Lấy **một mẫu** status khác 0 làm bằng chứng "hết người" là sai cỡ bài toán:
+cổng này quyết định **có ai đứng đó hay không**, không phải đo khoảng cách chính xác. Vì vậy
+`tof_task` đòi **`PRESENCE_AWAY_SAMPLES` mẫu liên tiếp** không thấy gì trong tầm rồi mới hạ cờ,
+tức nửa giây ở nhịp 100 ms; dải trễ 60 mm của §5.3 lo chuyện khoảng cách dao động quanh ngưỡng,
+còn bộ đếm này lo chuyện mẫu rớt.
 
 **Giới hạn đã biết, và cách đỡ.** Nón nhìn của VL53L1X là 27°, hẹp hơn góc camera. Người đứng
 lệch trục hoặc ngoài `present_mm` thì ToF không thấy, và ở L2 thì camera cũng đang ngủ nên không
