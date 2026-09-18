@@ -30,6 +30,7 @@ typedef enum {
     SVC_VISION_NO_FACE,                   // the frame lost every face
     SVC_VISION_FACE_SMALL,                // a face is there, too far for recognition
     SVC_VISION_FACE_OUT_OF_FRAME,         // the 1.0x crop would run off the frame
+    SVC_VISION_FACE_OK,                   // through the gates, the slow models are next
     SVC_VISION_SPOOF,                     // liveness below the floor
     SVC_VISION_UNKNOWN,                   // live, no template close enough
     SVC_VISION_MATCH,                     // live and matched
@@ -62,7 +63,7 @@ esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds);
  *  @ctx ai_task | must not block: the pipeline is holding the frame
  */
 typedef void (*svc_vision_seen_cb_t)(const svc_vision_box_t *boxes, uint8_t count, uint32_t track,
-                                     void *ctx);
+                                     svc_vision_kind_t stage, void *ctx);
 
 /** Hear where the faces are as soon as the detector knows, not when the step ends.
  *  @ctx task | non-blocking | one observer, NULL to drop it (KEHOACH 4.5.5d)

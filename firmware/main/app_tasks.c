@@ -261,15 +261,6 @@ static void cam_task(void *arg)
     }
 }
 
-// svc_vision calls this the moment detect has run, which is what keeps the box
-// on the glass half a second fresher than the whole step (KEHOACH 4.5.5d).
-static void on_seen(const svc_vision_box_t *boxes, uint8_t count, uint32_t track, void *ctx)
-{
-    (void)ctx;
-    ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height,
-                      count > 0 ? boxes[0].yaw : 0.0f, track);
-}
-
 // Only svc_vision knows which gate a face failed, and a screen that guesses will
 // claim work the pipeline is not doing (KEHOACH 4.5.5h.1).
 static ui_kiosk_stage_t stage_of(svc_vision_kind_t kind)
@@ -284,6 +275,17 @@ static ui_kiosk_stage_t stage_of(svc_vision_kind_t kind)
         default:
             return UI_KIOSK_STAGE_WORKING;
     }
+}
+
+// svc_vision calls this the moment detect has run, which is what keeps the box
+// on the glass half a second fresher than the whole step (KEHOACH 4.5.5d).
+static void on_seen(const svc_vision_box_t *boxes, uint8_t count, uint32_t track,
+                    svc_vision_kind_t stage, void *ctx)
+{
+    (void)ctx;
+    ui_kiosk_on_faces(&boxes[0].box[0], count, s_seen_width, s_seen_height,
+                      count > 0 ? boxes[0].yaw : 0.0f, track);
+    ui_kiosk_on_stage(stage_of(stage));
 }
 
 static void ai_task(void *arg)
@@ -340,7 +342,6 @@ static void ai_task(void *arg)
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "vision step %s", esp_err_to_name(err));
         } else if (result.kind != SVC_VISION_NONE) {
-            ui_kiosk_on_stage(stage_of(result.kind));
             ESP_LOGI(TAG, "verdict %d, live %.3f, match %.3f, id %u", (int)result.kind,
                      result.live_score, result.match_score, (unsigned)result.employee_id);
             if (ui_kiosk_enrolling()) {

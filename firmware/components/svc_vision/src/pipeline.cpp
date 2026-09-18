@@ -202,7 +202,8 @@ void VisionPipeline::enrol_next(uint32_t employee_id, uint16_t template_idx, con
     enrol_id_ = employee_id;
 }
 
-void VisionPipeline::tell(const svc_vision_result_t &out, size_t count) noexcept
+void VisionPipeline::tell(const svc_vision_result_t &out, size_t count,
+                          svc_vision_kind_t stage) noexcept
 {
     if (seen_cb_ == nullptr) {
         return;
@@ -221,7 +222,7 @@ void VisionPipeline::tell(const svc_vision_result_t &out, size_t count) noexcept
             boxes[kept++].yaw = yaw_of(faces_[i].landmarks);
         }
     }
-    seen_cb_(boxes, kept, track_, seen_ctx_);
+    seen_cb_(boxes, kept, track_, stage, seen_ctx_);
 }
 
 svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcept
@@ -238,7 +239,7 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
             return out;
         }
         stable_ = 0;
-        tell(out, 0);
+        tell(out, 0, SVC_VISION_NO_FACE);
         if (seen_ != Seen::Nothing) {
             seen_ = Seen::Nothing;
             out.kind = SVC_VISION_NO_FACE;
@@ -250,17 +251,23 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     memcpy(out.primary.box, primary.box, sizeof(out.primary.box));
     out.primary.yaw = yaw_of(primary.landmarks);
     follow(primary);
+    // Three arithmetic checks scored here so the glass learns the stage on the
+    // fast path, not after the slow models return (KEHOACH 4.5.5h.1).
+    const bool small = side_of(primary.box) < static_cast<float>(thresholds_.face_min_px);
+    const bool fits = square_fits(primary.box, frame.width, frame.height);
+    const svc_vision_kind_t stage = small ? SVC_VISION_FACE_SMALL
+                                          : (fits ? SVC_VISION_FACE_OK : SVC_VISION_FACE_OUT_OF_FRAME);
     // The slow models below hold this step for up to a second, and a box that
     // waits for them is a second old by the time it is drawn (KEHOACH 4.5.5d).
-    tell(out, count);
-    if (side_of(primary.box) < static_cast<float>(thresholds_.face_min_px)) {
+    tell(out, count, stage);
+    if (small) {
         if (seen_ != Seen::Small) {
             seen_ = Seen::Small;
             out.kind = SVC_VISION_FACE_SMALL;
         }
         return out;
     }
-    if (!square_fits(primary.box, frame.width, frame.height)) {
+    if (!fits) {
         stable_ = 0;
         if (seen_ != Seen::Edge) {
             seen_ = Seen::Edge;

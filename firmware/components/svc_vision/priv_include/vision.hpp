@@ -70,7 +70,7 @@ private:
     void follow(const ai_engine_face_t &primary) noexcept;
     bool may_verify() const noexcept;
     void verify(const ai_engine_frame_t &frame, const ai_engine_face_t &primary, svc_vision_result_t &out) noexcept;
-    void tell(const svc_vision_result_t &out, size_t count) noexcept;
+    void tell(const svc_vision_result_t &out, size_t count, svc_vision_kind_t stage) noexcept;
 
     IDetector &detector_;
     ILiveness &liveness_;
