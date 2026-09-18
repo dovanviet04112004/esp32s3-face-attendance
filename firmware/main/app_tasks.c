@@ -296,6 +296,7 @@ static void ai_task(void *arg)
     ESP_LOGI(TAG, "ai on core %d, watchdog %s", AI_TASK_CORE, esp_err_to_name(watched));
     bool had_face = false;
     bool working = true;
+    bool enrolled_in_shot = false;
 
     for (;;) {
         if (rest_level(ui_kiosk_overlay()) == REST_ALL) {
@@ -347,12 +348,20 @@ static void ai_task(void *arg)
             if (ui_kiosk_enrolling()) {
                 // Enrolling keeps attendance out of it, but a refused sample still
                 // has to reach the glass or the screen waits mute (KEHOACH 4.5.5h.2).
+                enrolled_in_shot = true;
                 if (result.kind == SVC_VISION_SPOOF) {
                     ui_kiosk_enrol_refused();
                 }
+                continue;
+            }
+            // A new template matches its own face at once (KEHOACH 4.5.5h.2).
+            if (enrolled_in_shot && result.kind == SVC_VISION_NO_FACE) {
+                enrolled_in_shot = false;
+                ESP_LOGI(TAG, "the face just enrolled has left, attendance live again");
+            }
             // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
-            } else if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) !=
-                       pdTRUE) {
+            if (!enrolled_in_shot &&
+                xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) != pdTRUE) {
                 ESP_LOGE(TAG, "result %d dropped, attend queue full", (int)result.kind);
             }
         }
