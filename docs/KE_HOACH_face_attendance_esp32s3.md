@@ -3209,21 +3209,18 @@ chống giả mạnh nhất của hệ thành lớp yếu nhất đúng ở ch�
 Đo trên board 18/09: giơ ảnh giả trước màn đăng ký, máy từ chối một lúc rồi **vẫn ghi được một
 mẫu**. Sau đó kẻ tấn công là người dùng hợp lệ và mọi lớp phía sau mất nghĩa.
 
-Hai chốt, và phải có cả hai vì mỗi cái chặn một nửa vấn đề:
+Một chốt duy nhất: **`kEnrolSpoofTries` = 3**. Quá ba lần bị chấm giả trong một mẫu thì
+`may_verify()` đóng đường xác thực cho tới hết mẫu, nên kẻ tấn công có đúng ba lượt chứ không phải
+vô hạn, còn mặt thật đậu ngay lượt đầu và **không trả thêm một giây nào**. Chọn chặn số lượt thay
+vì nâng riêng ngưỡng cho đăng ký, vì ngưỡng đã có nguồn duy nhất ở `vision.live_min` (§4.9) và
+nâng nó sẽ kéo theo cả đường chấm công.
 
-| Chốt | Giá trị | Chặn cái gì |
-|---|---|---|
-| `kEnrolSpoofTries` | 3 | **Số lần được thử**. Quá 3 lần bị chấm giả thì `may_verify()` đóng đường cho tới hết mẫu, nên kẻ tấn công có đúng 3 lượt chứ không phải vô hạn |
-| `kEnrolLiveRun` | 2 | **Ăn may một khung**. Mẫu chỉ được giữ khi hai khung xác thực **liên tiếp** đều vượt sàn; một khung dưới sàn là đếm lại |
-
-Chọn hai con này thay vì nâng riêng ngưỡng cho đăng ký, vì ngưỡng đã có nguồn duy nhất ở
-`vision.live_min` (§4.9) và nâng nó sẽ kéo theo cả đường chấm công.
-
-**Con số phải nhân ra thời gian trước khi chốt.** Một khung xác thực đầy đủ mất ≈ 1,5 s (§4.5.5d),
-mà hạn mỗi mẫu là 15 s. Đòi 5 khung liên tiếp là **hơn 7 s cho một mẫu** và chỉ cần một khung
-trượt là đếm lại — đo trên board 18/09: thêm người mới **không bao giờ xong**. Ở mức 2 thì mặt
-thật tốn ≈ 3 s mỗi mẫu, nằm gọn trong hạn, còn ảnh giả phải vượt sàn hai lần liên tiếp trong
-tối đa ba lượt.
+**Đã thử và loại: đòi nhiều khung liên tiếp vượt sàn.** Nghe hợp lý vì ảnh giả thỉnh thoảng vượt
+còn mặt thật vượt liên tục, nhưng con số phải **nhân ra thời gian**: một khung xác thực đầy đủ mất
+≈ 1,5 s (§4.5.5d), hạn mỗi mẫu là 15 s, và `follow()` đếm lại từ đầu mỗi khi hộp mặt lệch quá
+IoU 0,5 — người đang quay đầu lấy mẫu 2 và 3 lệch liên tục. Đo trên board 18/09: chuỗi 5 khung
+**không bao giờ xong**, chuỗi 2 khung vẫn treo ở mẫu quay. Bộ đếm lượt đủ dùng: ba lượt là quá ít
+cho một phép thử lặp, và người vận hành thấy từng lượt trên màn (h.2 bên dưới).
 
 Luật này đứng **trên** luật 5 của đoạn trên: hết giờ vì tư thế thì lấy khung quay nhiều nhất đã
 thấy, nhưng hết giờ vì chống giả thì không lấy gì hết, kể cả khung tốt nhất đã thấy.
