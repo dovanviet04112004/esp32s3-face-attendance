@@ -516,10 +516,32 @@ không đụng gì tới VCOM. **`PWR2 (0xC1)`** cùng chiều: `VRH[6:0]` đặ
 bị hạ. `PWR1 (0xC0)` đặt VGH/VGL và AVDD thì không ai ghi, để nguyên mặc định — nó không dính tới
 thời gian nạp.
 
-`drv_lcd` vì thế cài **`0xC2 = 0xAF`** (SOP cao, GOP cao). Nếu còn rung thì nấc tiếp theo là
-`0xC1 = 0x13`, đưa GVDD về đúng mặc định chip. Cái giá của cả hai là panel ăn dòng và nóng hơn
-một chút; cả hai giá trị đều nằm trong bảng datasheet, không phải số tự nghĩ ra. 🔬 Chấm bằng
-mắt, **nghiệm thu lại ban ngày trên ảnh camera** trước khi coi là xong. Độ phân giải, số màu và fps của ảnh **không đổi** — 23,26 Hz là nhịp
+**Thử hết bốn nút ấy 18/09 và không nút nào ăn thua.** Bảng dưới là toàn bộ vùng đã loại, ghi lại
+để không ai đi lại:
+
+| Đổi gì | Từ → tới | Kết quả |
+|---|---|---|
+| VCOM `0xC5` | quét cả dải `0x00`–`0x3C`, 16 bậc | không đổi |
+| Dòng lái cột `0xC2` | `0xA7` (SOP Low) → `0xAF` (SOP High) | không đổi |
+| Tần số quét `0xB1` | 24 Hz → bỏ hẳn lệnh, về mặc định ~60 Hz | không đổi |
+| Độ sáng đèn nền | 100 % → 70 → 40 → 20 → 10 → 5 % | **mức nào cũng nháy** |
+| Băm xung đèn nền | LEDC 5 kHz → **kéo thẳng chân lên cao, DC phẳng** | **vẫn nháy** |
+
+Phép thử cuối là phép quyết định: nền trắng tĩnh, **không một byte nào đi trên SPI**, đèn nền là
+một mức **DC phẳng không băm xung** — mà vẫn nhấp nháy. Ở trạng thái đó **không còn thứ gì trong
+firmware đang điều biến cái gì cả**. Nên nguyên nhân nằm ngoài phần mềm, và mọi thanh ghi phía
+trên đều là chữa nhầm bệnh.
+
+**Chỗ phải soi tiếp là điện, theo thứ tự này:**
+
+1. **Chân `BLK` có đi qua MOSFET không, hay nối thẳng vào GPIO21?** §2.3A đã viết sẵn điều kiện:
+   *"nếu backlight > 40 mA → qua MOSFET N (AO3400)"*. Nối thẳng thì chính chân ESP là nguồn dòng
+   cho dãy LED, và nó sụt áp — nháy ở **mọi** mức duty, kể cả DC, đúng như đo được.
+2. **Đường nguồn và đất của module.** `TASKS.md` E7-T16 đã ghi bench này **phạm luật 1, 2 và 3 của
+   bảng mass §2.5**. Cấp riêng cho module và cho đất về thẳng domino.
+3. **Tụ lọc ngay tại module.** §2.5 mới bắt 470 µF ở amp, **không có gì ở LCD**. Thêm 100 µF cộng
+   100 nF sát chân nguồn của module.
+4. **Đuôi cáp.** Cùng ngày đã một lần gây nửa panel tối hơn nửa kia. Độ phân giải, số màu và fps của ảnh **không đổi** — 23,26 Hz là nhịp
 làm mới của panel, không phải nhịp đổi nội dung (camera quyết định, 14,19 fps).
 
 **Đã thử và loại: giữ 57 Hz gốc bằng cách đổi cửa sổ pha.** Trên giấy còn một cách không phải

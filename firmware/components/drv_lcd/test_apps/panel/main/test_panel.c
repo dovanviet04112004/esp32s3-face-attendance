@@ -1,5 +1,6 @@
 #include "app_config.h"
 #include "bsp_board.h"
+#include "driver/gpio.h"
 #include "drv_lcd.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -18,11 +19,20 @@ static const char *TAG = "test_panel";
 #define WHITE 0xFFFF
 #define OVER_FULL 250
 #define COLOUR_HOLD_MS 700
+#define SWEEP_HOLD_MS 4000
+
+// The hand-judged cases run first, so they cannot lean on the case below.
+static void panel_up(void)
+{
+    const esp_err_t board = bsp_board_init();
+    TEST_ASSERT_TRUE(board == ESP_OK || board == ESP_ERR_INVALID_STATE);
+    const esp_err_t lcd = drv_lcd_init();
+    TEST_ASSERT_TRUE(lcd == ESP_OK || lcd == ESP_ERR_INVALID_STATE);
+}
 
 TEST_CASE("init brings the panel up and refuses a second time", "[drv_lcd]")
 {
-    TEST_ASSERT_EQUAL(ESP_OK, bsp_board_init());
-    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_init());
+    panel_up();
     TEST_ASSERT_NOT_NULL(drv_lcd_panel());
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, drv_lcd_init());
 }
@@ -81,11 +91,38 @@ TEST_CASE("red, green, blue and white each reach the glass", "[drv_lcd][manual]"
 {
     static const uint16_t colours[] = {RGB565(0xFF, 0, 0), RGB565(0, 0xFF, 0),
                                        RGB565(0, 0, 0xFF), WHITE};
+    panel_up();
     TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_backlight(100));
     for (size_t i = 0; i < sizeof(colours) / sizeof(colours[0]); ++i) {
         TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(colours[i]));
         vTaskDelay(pdMS_TO_TICKS(COLOUR_HOLD_MS));
     }
+}
+
+TEST_CASE("white held at each backlight level, then with the lamp driven flat",
+          "[drv_lcd][manual]")
+{
+    static const uint8_t levels[] = {100, 70, 40, 20, 10, 5, 100};
+    panel_up();
+    // A static fill with no camera in the picture: flicker seen here belongs to
+    // the panel or the lamp, never to the exposure loop (KEHOACH 2.3A).
+    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(WHITE));
+    for (size_t i = 0; i < sizeof(levels) / sizeof(levels[0]); ++i) {
+        TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_backlight(levels[i]));
+        printf("  backlight %u%%, hold %d ms and watch the glass\n", levels[i], SWEEP_HOLD_MS);
+        vTaskDelay(pdMS_TO_TICKS(SWEEP_HOLD_MS));
+    }
+    const gpio_config_t flat = {
+        .pin_bit_mask = 1ULL << APP_LCD_BLK_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    };
+    // Taking the pad back from ledc leaves the lamp lit with no pwm on it.
+    TEST_ASSERT_EQUAL(ESP_OK, gpio_config(&flat));
+    TEST_ASSERT_EQUAL(ESP_OK, gpio_set_level(APP_LCD_BLK_GPIO, 1));
+    printf("  lamp driven flat, no pwm: watch again for %d ms\n", SWEEP_HOLD_MS * 3);
+    vTaskDelay(pdMS_TO_TICKS(SWEEP_HOLD_MS * 3));
 }
 
 TEST_CASE("corner marks name the panel's origin and axis directions", "[drv_lcd]")
@@ -114,6 +151,10 @@ TEST_CASE("corner marks name the panel's origin and axis directions", "[drv_lcd]
 
 void app_main(void)
 {
+    // The hand-judged cases go first so the corner marks still end on the glass.
+    UNITY_BEGIN();
+    unity_run_tests_by_tag("[manual]", false);
+    UNITY_END();
     UNITY_BEGIN();
     unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
