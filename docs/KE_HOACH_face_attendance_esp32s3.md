@@ -3209,11 +3209,21 @@ chống giả mạnh nhất của hệ thành lớp yếu nhất đúng ở ch�
 Đo trên board 18/09: giơ ảnh giả trước màn đăng ký, máy từ chối một lúc rồi **vẫn ghi được một
 mẫu**. Sau đó kẻ tấn công là người dùng hợp lệ và mọi lớp phía sau mất nghĩa.
 
-Nên **một mẫu đăng ký chỉ được giữ khi điểm chống giả vượt sàn ở `kEnrolLiveRun` khung xác thực
-liên tiếp ngay trước đó**; một khung dưới sàn là chuỗi đếm lại từ đầu. Chọn cách này thay vì nâng
-riêng ngưỡng cho đăng ký vì ngưỡng đã có nguồn duy nhất ở `vision.live_min` (§4.9) và nâng nó sẽ
-kéo theo cả đường chấm công. Chuỗi liên tiếp đánh vào đúng thứ phép thử lặp khai thác: ảnh giả
-thỉnh thoảng vượt sàn, mặt thật thì vượt **liên tục**.
+Hai chốt, và phải có cả hai vì mỗi cái chặn một nửa vấn đề:
+
+| Chốt | Giá trị | Chặn cái gì |
+|---|---|---|
+| `kEnrolSpoofTries` | 3 | **Số lần được thử**. Quá 3 lần bị chấm giả thì `may_verify()` đóng đường cho tới hết mẫu, nên kẻ tấn công có đúng 3 lượt chứ không phải vô hạn |
+| `kEnrolLiveRun` | 2 | **Ăn may một khung**. Mẫu chỉ được giữ khi hai khung xác thực **liên tiếp** đều vượt sàn; một khung dưới sàn là đếm lại |
+
+Chọn hai con này thay vì nâng riêng ngưỡng cho đăng ký, vì ngưỡng đã có nguồn duy nhất ở
+`vision.live_min` (§4.9) và nâng nó sẽ kéo theo cả đường chấm công.
+
+**Con số phải nhân ra thời gian trước khi chốt.** Một khung xác thực đầy đủ mất ≈ 1,5 s (§4.5.5d),
+mà hạn mỗi mẫu là 15 s. Đòi 5 khung liên tiếp là **hơn 7 s cho một mẫu** và chỉ cần một khung
+trượt là đếm lại — đo trên board 18/09: thêm người mới **không bao giờ xong**. Ở mức 2 thì mặt
+thật tốn ≈ 3 s mỗi mẫu, nằm gọn trong hạn, còn ảnh giả phải vượt sàn hai lần liên tiếp trong
+tối đa ba lượt.
 
 Luật này đứng **trên** luật 5 của đoạn trên: hết giờ vì tư thế thì lấy khung quay nhiều nhất đã
 thấy, nhưng hết giờ vì chống giả thì không lấy gì hết, kể cả khung tốt nhất đã thấy.

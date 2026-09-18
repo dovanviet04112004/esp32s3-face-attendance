@@ -85,6 +85,7 @@ private:
     float enrol_yaw_min_ = 0.0f;
     float enrol_yaw_max_ = 0.0f;
     int enrol_live_run_ = 0;
+    int enrol_spoofs_ = 0;
     svc_vision_seen_cb_t seen_cb_ = nullptr;
     void *seen_ctx_ = nullptr;
     float tracked_[4]{};
