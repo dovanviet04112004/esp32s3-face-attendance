@@ -461,12 +461,12 @@ public:
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        const bool on_cancel = inside(x, y, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH);
+        const bool on_foot = inside(x, y, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH);
         if (down) {
-            held_ = on_cancel;
+            held_ = on_foot;
             return true;
         }
-        const bool fire = held_ && on_cancel;
+        const bool fire = held_ && on_foot;
         held_ = false;
         if (fire) {
             enrol_request().waiting = false;
@@ -478,11 +478,16 @@ public:
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
     {
         since_ms_ += dt_ms;
-        if (failed_ || kept_ >= kSamples) {
+        // The operator ends this screen, not a timer: the line naming who joined
+        // the table has to survive a glance away (KEHOACH 4.5.5h.2).
+        if (kept_ >= kSamples) {
+            return false;
+        }
+        if (failed_) {
             if (since_ms_ < kDoneShowMs) {
                 return false;
             }
-            manager().go(failed_ ? ScreenId::Menu : ScreenId::Scan);
+            manager().go(ScreenId::Menu);
             return true;
         }
         if (took_) {
@@ -553,7 +558,8 @@ public:
         }
         guide(to, done() ? DRV_LCD_ACCENT : DRV_LCD_WARN, nullptr);
         if (failed_ || done()) {
-            button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Huỷ", DRV_LCD_INK, held_);
+            button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH,
+                   done() ? "Xác nhận" : "Huỷ", done() ? DRV_LCD_ACCENT : DRV_LCD_INK, held_);
             return;
         }
         const int step = gauge(seen);
