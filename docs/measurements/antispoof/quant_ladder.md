@@ -190,3 +190,29 @@ xếp hạng ngược với board. Thước là 87 khung OV5640.
 
 Q1 so với Q0 trên board: khe giữ nguyên 49 nấc, mặt thật thấp nhất 0,667 → 0,639, khung giả cao nhất
 0,334 → 0,328. Lượng tử không ăn biên.
+
+## 8. Hai run nhập có khối SE: V1SE của minivision và facenox — thang chạy 18/09, CLE tắt
+
+Cùng `minifasnet_v2` với `squeeze_excite: true`; V1SE dùng bảng kênh `keep: 1.8M`, facenox `1.8M_`
+với `input_size 128`, hai lớp. Cả hai qua `stem: split_prelu`, 32 lớp ReLU. Val pool không chấm
+(`SCORE=0`) vì thang dừng ở `op_check` như thiết kế; chất lượng đọc ở `measurements.md` §43.
+
+| Nhãn | Run | Trọng số gốc | `op_check` |
+|---|---|---|---|
+| `5d7b35` | `20260918-0118_c1d09c8_5d7b35` | V1SE PReLU nguyên, parity 9,5e-7 với module upstream | chặn: PRELU ×33 |
+| **`0118`** | `20260918-0118_c1d09c8_0ad0a8` | V1SE stem tách, parity 1,4e-6 | **chặn: `LOGISTIC` ×3, `MEAN` ×3 ngoài resolver**; PAD ×4 tham chiếu; còn lại esp-nn |
+| `bc7535` | `20260918-0100_2613aa2_bc7535` | facenox PReLU nguyên, parity 2,4e-6 với ONNX của họ | chặn: PRELU ×33 |
+| **`0100`** | `20260918-0100_2613aa2_55e1a6` | facenox stem tách, parity 7e-7 | chặn: `LOGISTIC` ×3, `MEAN` ×3; PAD ×4 |
+
+| Model | Q | Board 87 khung (§43.4) | Kích thước | head arena | latency spoof |
+|---|---|---|---|---|---|
+| `0118` | Q0 FP32 | 62/62 · 25/25, khe +0,595 | 1.694 KB | — | — |
+| **`0118`** | **Q1** | **62/62 · 25/25, khe +0,559** | **602,5 KB** | **675 KB một mình, 748.524 B chung với recog** | **581,0 ms** rảnh · 677,4 ms tải |
+| `0100` | Q0 FP32 | 62/62 · 25/25, khe +0,628 ở 1,5× | 1.855 KB | — | — |
+| `0100` | Q1 | 62/62 · 25/25, khe +0,732 ở 1,5× | 644,1 KB | **1.589 KB một mình, 1.684.700 B chung** — vượt cap `CONFIG_AI_ARENA_BIG_KB` 1536 | 1.452,4 ms rảnh · 1.691,1 ms tải |
+
+Hai số board đo bằng `bench_ai` với resolver **đăng ký tạm** `LOGISTIC` và `MEAN` (không commit, như
+§9.2 của `latency.md` đã làm với PRELU); facenox còn phải nới cap arena trong `sdkconfig` của riêng
+app bench lên 3072 KB mới nạp được. Q1 so với Q0 trên 87 khung: V1SE thu khe 0,595 → 0,559 (không đổi
+thứ tự), facenox **nới** 0,628 → 0,732 nhưng mặt thật thấp nhất tụt 0,295 → 0,259; trên NUAA thì
+INT8 của facenox mất mặt thật rõ (đậu 0,701 → 0,671, §43.5), V1SE gần như không (0,906 → 0,895).

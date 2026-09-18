@@ -437,3 +437,21 @@ nhánh spoof hạ từ 37% xuống 20% tổng thời gian. Chưa đo đầu-cu�
 
 Ngân sách §6.4 vẫn trượt: 360 ms cho ba nhánh, đang 925 ms. Chỗ tốn nhất giờ là recognition 460 ms
 và detect 232 ms mỗi khung, không còn là spoof.
+
+## 11. Hai ứng viên có khối SE trên board — đo 18/09, không nạp
+
+Cùng `bench_ai`, cùng ba test, 20 lượt mỗi số, resolver nhánh chống giả **đăng ký tạm** `LOGISTIC` và
+`MEAN` cho đúng lần đo này (build không commit, `MicroMutableOpResolver<10>`); facenox còn cần nới
+`CONFIG_AI_ARENA_BIG_KB` 1536 → 3072 trong `sdkconfig` của app bench, cũng không commit.
+
+| Model INT8 Q1, stem tách | MMAC | file | spoof rảnh | spoof có tải | ba nhánh rảnh | ba nhánh tải | arena_big |
+|---|---|---|---|---|---|---|---|
+| V2 `0854` (§9.3, đối chứng) | 42,6 | 586 KB | 535,3 ms | 624,1 ms | 1.181 ms | — | 744.428 B |
+| **V1SE `0118`** | 42,7 | 602,5 KB | **581,0 ms** | **677,4 ms** | 1.272 ms | 1.483 ms | 748.524 B |
+| facenox `0100`, 128 px | 108,9 | 644,1 KB | 1.452,4 ms | 1.691,1 ms | 2.143 ms | 2.497 ms | **1.684.700 B** |
+| student `1109` (§10, đang nạp) | 24,6 | 425 KB | 234,1 ms | 273,8 ms | 925 ms | — | 422.764 B |
+
+Đọc ra: V1SE tốn thêm **46 ms** so với V2 cùng cỡ MMAC — đúng phần ba khối SE chạy kernel tham chiếu
+trên vector đã gộp, rẻ như dự đoán. facenox tốn gấp 2,7 lần V2 vì 108,9 MMAC ở 128 px, và **không
+vừa cap arena 1,5 MB** của firmware (§6.4), nên không có đường nạp mà không đổi ngân sách bộ nhớ.
+Không có bảng từng op vì build bench này không bật profiler.

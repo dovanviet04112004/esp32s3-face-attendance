@@ -2958,3 +2958,90 @@ sau **chưa có trong resolver nhánh** nên `op_check` chặn, thang dừng ở
 `kFaceScale` 1,5 thay 2,7 của firmware (KẾ HOẠCH §3), cộng hai op mới trong resolver. Cả ba đều là
 đổi kiến trúc, phải qua §1.2. Giá trị ngay: một **teacher thứ hai chuyên ảnh in** giữ trọn mặt thật
 của board, để distill vào student width 32 cùng với teacher minivision (chưa làm, cần ADR).
+
+### 43.4 Ba model, ba trạng thái, cùng một thước — 87 khung và latency board
+
+Mỗi model đi qua đúng một đường tối ưu: PReLU nguyên (float) → `stem: split_prelu`, 32 lớp ReLU
+(float) → Q1 INT8. Harness §43.1, mỗi model ở crop của chính nó. V1SE đo cả 2,7× và 4,0×: **hai số
+trùng nhau** ở bản stem tách và INT8 vì khung 480×320 đã kẹp ô vuông của mọi mặt ≥ 119 px về 320,
+tức 4,0× và 2,7× là cùng một crop trên bộ này; chỉ bản PReLU khác (+0,442 so với +0,588) do vài mặt
+nhỏ. V1SE cũng có thể chạy ở `kFaceScale` 2,7 hiện có của firmware mà không đổi gì.
+
+Cả **chín** ô đều giữ 62/62 mặt thật và chặn 25/25 khung giả. Khe p5 thật − p95 giả:
+
+| Model · crop | PReLU float | stem tách float | INT8 Q1 | INT8: thật min · giả max |
+|---|---|---|---|---|
+| V2 minivision · 2,7× (`0728` → `0854`) | +0,417 | +0,467 | +0,365 | 0,161 · 0,028 |
+| **V1SE minivision · 2,7×** (`5d7b35` → `0ad0a8` → `0118`) | +0,442 | **+0,595** | **+0,559** | 0,073 · 0,003 |
+| facenox · 1,5× (`bc7535` → `55e1a6` → `0100`) | **+0,819** | +0,628 | +0,732 | 0,259 · 0,165 |
+
+| Model INT8 | MMAC | spoof rảnh | spoof có tải | arena_big | vừa cap 1,5 MB |
+|---|---|---|---|---|---|
+| V2 `0854` | 42,6 | 535 ms | 624 ms | 744 KB | ✅ |
+| **V1SE `0118`** | 42,7 | **581 ms** | 677 ms | 749 KB | ✅ |
+| facenox `0100` | 108,9 | 1.452 ms | 1.691 ms | **1.645 KB** | ❌ |
+
+Latency và arena đo bằng `bench_ai` với resolver đăng ký tạm `LOGISTIC` + `MEAN` (`latency.md` §11).
+Đọc ra: đường tối ưu **không đổi thứ tự** mặt thật/giả ở model nào; nó thu khe của V2 (0,467 → 0,365)
+và của V1SE (0,595 → 0,559) chừng 6–22%, còn facenox INT8 lại rộng hơn bản float tách (0,628 → 0,732)
+nhưng trả bằng mặt thật thấp nhất tụt 0,295 → 0,259. **V1SE INT8 có khe rộng gấp 1,5 lần V2 INT8 với
+giá 46 ms**; facenox bị loại khỏi board bởi arena và 1,45 s, bất kể khe.
+
+### 43.5 Ba model, ba trạng thái trên các tập lớn — `p_sống ≥ 0,5`, crop của từng model
+
+Cùng đường cắt lại từ view wide của shard (§43.2), V2 và V1SE ở 2,7×, facenox ở 1,5×; `phone_eval`
+qua detector rồi `fitted_box`. Cột: **P** = PReLU nguyên float, **T** = stem tách ReLU float,
+**I** = INT8 Q1 của bản tách. Ngưỡng 0,5 chung cho mọi ô, chưa căn bias, nên các cột "thật đậu" đọc
+kèm AUC: khác AUC là khác phân biệt, cùng AUC mà khác tỉ lệ đậu là lệch điểm vận hành.
+
+**Giả bị chặn** (cao là tốt):
+
+| Tập | V2 P | V2 T | V2 I | V1SE P | V1SE T | V1SE I | fx P | fx T | fx I |
+|---|---|---|---|---|---|---|---|---|---|
+| NUAA (AUC) | 1,0000 | 0,9993 | 0,9990 | 1,0000 | 0,9999 | 0,9999 | 0,9994 | 0,9980 | 0,9970 |
+| NUAA | 1,000 | 0,998 | 0,997 | 1,000 | 0,999 | 0,999 | 1,000 | 1,000 | 1,000 |
+| LCC eval (AUC) | **0,892** | 0,866 | 0,864 | 0,876 | 0,856 | 0,853 | **0,895** | 0,867 | 0,866 |
+| LCC eval | 0,490 | 0,347 | 0,312 | 0,477 | 0,553 | 0,558 | **0,707** | 0,722 | **0,729** |
+| SynthASpoof in | 0,953 | 0,889 | 0,880 | 0,955 | **0,972** | **0,970** | 0,907 | 0,670 | 0,649 |
+| SynthASpoof iPad | 0,310 | 0,272 | 0,261 | 0,328 | 0,485 | **0,515** | 0,190 | 0,250 | 0,238 |
+| SynthASpoof Samsung | 0,819 | 0,715 | 0,694 | 0,791 | 0,861 | **0,865** | **0,885** | 0,850 | 0,849 |
+| SynthASpoof webcam | 0,841 | 0,839 | 0,836 | 0,890 | **0,938** | **0,938** | 0,848 | 0,862 | 0,875 |
+| `unique` phát lại | 0,815 | 0,798 | 0,781 | **0,829** | 0,820 | 0,823 | 0,742 | 0,812 | 0,829 |
+| Axon giấy 3D | 0,271 | 0,219 | 0,208 | 0,222 | 0,306 | 0,306 | **0,378** | 0,365 | 0,365 |
+| Axon cutout | 0,742 | 0,583 | 0,567 | 0,725 | 0,675 | 0,692 | **0,875** | 0,833 | 0,800 |
+| Axon latex / silicone / vải 3D | 0,04 / 0,00 / 0,03 | 0,01 / 0,01 / 0,05 | 0,01 / 0,01 / 0,05 | 0,01 / 0,00 / 0,09 | 0,05 / 0,01 / 0,14 | 0,06 / 0,02 / 0,14 | 0,01 / 0,16 / 0,08 | 0,06 / 0,27 / 0,11 | 0,06 / 0,26 / 0,12 |
+| Axon phát lại màn / điện thoại | 0,91 / 0,94 | 0,84 / 0,93 | 0,82 / 0,91 | 0,89 / 0,78 | 0,89 / 0,81 | 0,89 / 0,85 | 0,80 / 0,94 | 0,87 / 0,96 | 0,87 / 0,96 |
+| `phone_eval` ảnh in `attack_anh` | 12/12 | **0/12** | 1/12 | 12/12 | 12/12 | **12/12** | 9/12 | 8/12 | 3/12 |
+| `phone_eval` điện thoại xa `attack_xa` | 20/20 | 20/20 | 20/20 | 20/20 | 20/20 | 20/20 | **5/20** | 13/20 | 15/20 |
+| `phone_eval` `attack_gan` | 3/3 | 3/3 | 2/3 | 2/3 | 2/3 | 2/3 | 3/3 | 3/3 | 3/3 |
+
+**Mặt thật đậu** (cao là tốt):
+
+| Tập | V2 P | V2 T | V2 I | V1SE P | V1SE T | V1SE I | fx P | fx T | fx I |
+|---|---|---|---|---|---|---|---|---|---|
+| NUAA | 0,969 | 0,927 | 0,924 | 0,954 | 0,906 | 0,895 | 0,894 | 0,701 | 0,671 |
+| LCC eval | 0,965 | 0,955 | 0,965 | 0,959 | 0,904 | 0,901 | 0,866 | 0,841 | 0,838 |
+| SynthASpoof bonafide | 0,925 | 0,949 | 0,954 | 0,925 | 0,838 | 0,812 | **0,983** | 0,973 | 0,973 |
+| `unique` thật | 0,983 | 1,000 | 1,000 | 0,967 | 1,000 | 1,000 | 0,756 | 0,722 | 0,739 |
+| Axon selfie | 0,958 | 0,958 | 0,958 | 1,000 | 1,000 | 1,000 | 1,000 | 0,917 | 0,917 |
+| `phone_eval` `live_xa` | 2/20 | 9/20 | 13/20 | 20/20 | 20/20 | **19/20** | 11/20 | 14/20 | 12/20 |
+| `phone_eval` `live_gan` · `live_vua` | 0 · 0 | 0 · 0 | 0 · 0 | 0 · 0 | 0 · 0 | 0 · 0 | 12 · 12 | 0 · 12 | 0 · 12 |
+| `phone_eval` `live_kho` · `live_rat_xa` | 12 · 20 | 12 · 20 | 12 · 20 | 12 · 20 | 12 · 20 | 12 · 20 | 12 · 20 | 12 · 20 | 12 · 20 |
+
+**Đường tối ưu trả giá khác nhau ở ba model, và đó là kết quả chính của mục này:**
+
+- **V2 trả giá đắt nhất.** Đổi 32 lớp sang ReLU làm LCC AUC 0,892 → 0,866, SynthASpoof in 0,953 →
+  0,889, Samsung 0,819 → 0,715, và **ảnh in cỡ vừa từ 12/12 xuống 0/12**. INT8 sau đó gần như không
+  đổi gì thêm. Chỗ mất là ở phép đổi kích hoạt, không ở lượng tử.
+- **V1SE chịu phép đổi tốt nhất.** NUAA AUC không đổi, LCC AUC 0,876 → 0,856, còn mọi cột giả **tăng**
+  (in 0,955 → 0,972, iPad 0,328 → 0,515, Samsung 0,791 → 0,861, webcam 0,890 → 0,938) trong khi ảnh in
+  cỡ vừa giữ 12/12 và `live_xa` giữ 20/20. Cái nó trả là **điểm vận hành trượt xuống**: mặt thật đậu
+  ở 0,5 tụt (NUAA 0,954 → 0,906, bonafide 0,925 → 0,838) với AUC gần nguyên, tức là lệch calib, đúng
+  thứ bước căn bias §42.6 dịch lại được mà không đổi thứ tự.
+- **facenox không chịu được phép đổi.** Mặt thật NUAA 0,894 → 0,701, SynthASpoof in 0,907 → 0,670,
+  `live_gan` 12/12 → 0/12; INT8 còn kéo ảnh in cỡ vừa xuống 3/12. Thế mạnh ảnh in của nó nằm trong
+  chính các hệ số PReLU, và bản phải nạp lên board không giữ được thế mạnh ấy.
+
+Sau tối ưu, **V1SE INT8 hơn V2 INT8 ở mọi cột giả** trừ Axon cutout, và hơn hẳn ở mặt thật ở xa;
+thua ở tỉ lệ thật đậu trên NUAA / bonafide / LCC ở ngưỡng 0,5 chưa căn. Cả ba đều không chống được mặt
+nạ latex, silicone, vải — ngoài phạm vi nhánh (KẾ HOẠCH §3).
