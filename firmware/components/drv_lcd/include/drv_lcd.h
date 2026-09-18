@@ -103,6 +103,12 @@ esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565
  */
 uint32_t drv_lcd_read_reg(uint8_t reg);
 
+/** Where the panel's scan sits, counted in the two-line units it reports.
+ *  @ctx task | blocking | no lock, so keep it off the blit path
+ *  @ret 0 to 241, or -1 when the read does not answer
+ */
+int drv_lcd_scan_line(void);
+
 /** Where a rectangle of the sensor frame lands on the panel.
  *  @ctx any | non-blocking | the same centre slice drv_lcd_blit_frame shows
  *  @param box x1,y1,x2,y2 in frame pixels; out takes panel pixels, clamped

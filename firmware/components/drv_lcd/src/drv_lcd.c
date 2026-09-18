@@ -307,6 +307,11 @@ esp_err_t drv_lcd_init(void)
     return ESP_OK;
 }
 
+int drv_lcd_scan_line(void)
+{
+    return s_reader != NULL ? scan_line() : -1;
+}
+
 esp_err_t drv_lcd_backlight(uint8_t percent)
 {
     const uint32_t duty = (percent > 100 ? 100u : percent) * BLK_DUTY_MAX / 100u;

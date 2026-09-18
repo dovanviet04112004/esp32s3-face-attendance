@@ -28,6 +28,12 @@ static const char *TAG = "test_panel";
 #define PROBE_MS 6000
 #define PROBE_BURST 200
 #define PROBE_SLOTS 5
+#define WRAP_FRAMES 200
+#define WRAP_EARLY 40
+#define WRAP_LATE 200
+#define WRAP_CEILING_MS 20000
+
+static int64_t s_wrap_at[WRAP_FRAMES + 1];
 
 // The hand-judged cases run first, so they cannot lean on the case below.
 static void panel_up(void)
@@ -179,6 +185,52 @@ TEST_CASE("what the panel reports about its own rails, white against black",
         report("power mode 0x0A", mode_seen, mode_count);
         report("self test  0x0F", test_seen, test_count);
         report("chip id    0xD3", id_seen, id_count);
+    }
+}
+
+static int collect_wraps(void)
+{
+    int wraps = 0;
+    int prev = drv_lcd_scan_line();
+    const int64_t give_up = esp_timer_get_time() + (int64_t)WRAP_CEILING_MS * 1000;
+    while (wraps <= WRAP_FRAMES && esp_timer_get_time() < give_up) {
+        const int now = drv_lcd_scan_line();
+        if (now < 0) {
+            continue;
+        }
+        // A bit flip can fake a wrap, so both ends of the ramp have to agree.
+        if (prev > WRAP_LATE && now < WRAP_EARLY) {
+            s_wrap_at[wraps++] = esp_timer_get_time();
+            vTaskDelay(1);
+            prev = drv_lcd_scan_line();
+            continue;
+        }
+        prev = now;
+    }
+    return wraps;
+}
+
+TEST_CASE("the panel's own oscillator timed under a white fill and under a black one",
+          "[drv_lcd][manual]")
+{
+    static const uint16_t fills[] = {WHITE, 0};
+    panel_up();
+    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_backlight(100));
+    for (size_t f = 0; f < sizeof(fills) / sizeof(fills[0]); ++f) {
+        TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(fills[f]));
+        const int wraps = collect_wraps();
+        TEST_ASSERT_GREATER_THAN_INT(WRAP_FRAMES / 2, wraps);
+        int64_t shortest = INT64_MAX, longest = 0;
+        for (int i = 1; i < wraps; ++i) {
+            const int64_t period = s_wrap_at[i] - s_wrap_at[i - 1];
+            shortest = period < shortest ? period : shortest;
+            longest = period > longest ? period : longest;
+        }
+        const int64_t span = s_wrap_at[wraps - 1] - s_wrap_at[0];
+        const int64_t mean = span / (wraps - 1);
+        printf("  fill %04x: %d frames, mean %lld us (%lld mHz), shortest %lld, longest %lld,"
+               " spread %lld us\n",
+               fills[f], wraps, mean, 1000000000LL / mean, shortest, longest, longest - shortest);
     }
 }
 
