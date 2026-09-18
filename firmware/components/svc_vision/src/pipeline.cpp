@@ -12,6 +12,8 @@ constexpr float kSameFaceIou = 0.5f;
 // A verdict other than MATCH is retried after this many detects on the same
 // track: 320 ms each, and six of them is a person standing still for 2.8 s.
 constexpr int kRetryDetects = 3;
+// Enrolling asks liveness on every frame, so one lucky frame must not be a sample.
+constexpr int kEnrolLiveRun = 5;
 // The detector drops a frame here and there on a face that never moved.
 constexpr int kMissesLost = 2;
 
@@ -91,6 +93,7 @@ void VisionPipeline::reset() noexcept
     since_verdict_ = -1;
     matched_ = false;
     seen_ = Seen::Nothing;
+    enrol_live_run_ = 0;
 }
 
 const ai_engine_face_t &VisionPipeline::pick(size_t count) const noexcept
@@ -125,6 +128,8 @@ void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
         stable_ = 1;
         since_verdict_ = -1;
         matched_ = false;
+        // A new track can be a different person, so the live run starts over.
+        enrol_live_run_ = 0;
     }
     memcpy(tracked_, primary.box, sizeof(tracked_));
 }
@@ -150,8 +155,12 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
             out.kind = SVC_VISION_SPOOF;
             matched_ = false;
             since_verdict_ = 0;
+            enrol_live_run_ = 0;
             return;
         }
+        ++enrol_live_run_;
+    } else {
+        enrol_live_run_ = kEnrolLiveRun;
     }
     float scale = 0.0f;
     if (embedder_.embed(frame, primary.landmarks, embedding_, sizeof(embedding_), &scale) != ESP_OK) {
@@ -162,7 +171,8 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     // A request outlives a table that refused the sample, so the next verified
     // frame tries again (KEHOACH 4.5.5d).
     const float turn = yaw_of(primary.landmarks);
-    if (enrol_id_ != 0 && turn >= enrol_yaw_min_ && turn <= enrol_yaw_max_ &&
+    if (enrol_id_ != 0 && enrol_live_run_ >= kEnrolLiveRun && turn >= enrol_yaw_min_ &&
+        turn <= enrol_yaw_max_ &&
         matcher_.keep(embedding_, scale, enrol_id_, enrol_idx_, enrol_name_) == ESP_OK) {
         enrol_id_ = 0;
     }
@@ -191,6 +201,7 @@ void VisionPipeline::enrol_next(uint32_t employee_id, uint16_t template_idx, con
     enrol_idx_ = template_idx;
     enrol_yaw_min_ = yaw_min;
     enrol_yaw_max_ = yaw_max;
+    enrol_live_run_ = 0;
     enrol_id_ = employee_id;
 }
 

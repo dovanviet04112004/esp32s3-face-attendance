@@ -3199,6 +3199,25 @@ chế*:
 Mẫu đầu cũng có điều kiện, ngược lại: **phải đủ chính diện**. Người bắt đầu ở tư thế đã quay mà
 không bị chặn thì cả ba mẫu lại cùng một phía.
 
+**Đăng ký thử chống giả trên mọi khung, nên một khung may mắn là đủ để lọt.** Lúc chấm công,
+`may_verify()` chỉ mở đường xác thực **một lần cho mỗi vệt mặt**: `matched_` đóng nó lại, và một
+phán quyết `SPOOF` phải đợi `kRetryDetects` lần dò nữa. Lúc đăng ký thì `enrol_id_ != 0` mở đường
+ấy **trên mọi khung**, liên tục cho tới khi có một mẫu đậu. Bộ lọc chặn 95 % số khung đem thử vài
+chục lần thì lọt gần như chắc chắn — đó là phép thử lặp, không phải model yếu, và nó biến lớp
+chống giả mạnh nhất của hệ thành lớp yếu nhất đúng ở chỗ hậu quả nặng nhất.
+
+Đo trên board 18/09: giơ ảnh giả trước màn đăng ký, máy từ chối một lúc rồi **vẫn ghi được một
+mẫu**. Sau đó kẻ tấn công là người dùng hợp lệ và mọi lớp phía sau mất nghĩa.
+
+Nên **một mẫu đăng ký chỉ được giữ khi điểm chống giả vượt sàn ở `kEnrolLiveRun` khung xác thực
+liên tiếp ngay trước đó**; một khung dưới sàn là chuỗi đếm lại từ đầu. Chọn cách này thay vì nâng
+riêng ngưỡng cho đăng ký vì ngưỡng đã có nguồn duy nhất ở `vision.live_min` (§4.9) và nâng nó sẽ
+kéo theo cả đường chấm công. Chuỗi liên tiếp đánh vào đúng thứ phép thử lặp khai thác: ảnh giả
+thỉnh thoảng vượt sàn, mặt thật thì vượt **liên tục**.
+
+Luật này đứng **trên** luật 5 của đoạn trên: hết giờ vì tư thế thì lấy khung quay nhiều nhất đã
+thấy, nhưng hết giờ vì chống giả thì không lấy gì hết, kể cả khung tốt nhất đã thấy.
+
 **Đường đi của con số.** Góc quay tính ở `svc_vision`, nơi duy nhất biết ngữ nghĩa của điểm mốc,
 rồi đi theo `svc_vision_box_t` ra ngoài — `main` chuyển tiếp cho `ui_kiosk` đúng như nó đang
 chuyển hộp mặt, nên không có luật tầng nào bị phá (§4.5.4). `ui_kiosk` **chỉ vẽ**, không tự tính
