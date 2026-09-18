@@ -23,7 +23,7 @@ static TaskStatus_t s_tasks[TASK_SLOTS];
 
 // IDF sizes its own ipc0 and ipc1 to sit a few hundred bytes from full, so the
 // floor covers the tasks app_tasks.c creates and the rest is only reported.
-static const char *kOwnTasks[] = { "cam", "tof", "ai", "attend" };
+static const char *kOwnTasks[] = { "cam", "tof", "ai", "attend", "ui", "touch", "audio", "net" };
 
 typedef struct {
     uint32_t thinnest_bytes;
