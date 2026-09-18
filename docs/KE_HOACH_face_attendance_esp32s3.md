@@ -302,6 +302,15 @@ bằng bảng dưới tính, chỉ khác kích thước vật lý — nên nó k
 tới lỗ bắt vít và vỏ máy. Header chính **14 chân một hàng**, gộp cả LCD lẫn cảm ứng; khe microSD
 trên module có hàng chân riêng ở cạnh đối diện và không dùng (`RES` mượn GPIO40 vốn là `SD_DATA`).
 
+**Nhà sản xuất không cam kết con điều khiển.** Bảng thông số của module ghi ô "驱动芯片" là
+**`ILI9486 / ILI9488 / ST7796S`** — ba con, hàng nào có thì lắp con ấy. Ba con dùng chung phần
+lớn tập lệnh chuẩn MIPI DCS nên vẫn lên hình với cùng một đoạn khởi tạo, nhưng **dải `0xB0`–`0xC7`
+thì mỗi con một nghĩa**: `0xC0` của ST7796S là AVDD/VGH/VGL còn của ILI9486 là hai thanh ghi `VRH`,
+`0xC5` của ST7796S nhận **một** tham số VCOM còn của ILI9488 nhận **bốn**. Ghi mù vào dải đó là
+ghi vào một bản đồ thanh ghi có thể không phải của con đang cắm. Vì vậy `drv_lcd_init()` đọc
+`RDID4` (`0xD3`) rồi in mã chip ra log boot: ST7796S trả `00 77 96`, ILI9486 trả `00 94 86`,
+ILI9488 trả `00 94 88`. Đường đọc đã có sẵn — chính đường đọc dòng quét `0x45` của §2.3A.
+
 **Thứ tự chân trên header**, đọc dọc hàng 14 chân:
 
 ```
@@ -360,35 +369,37 @@ trình. Nên chọn **8 mm**: 8,5 không phải chiều dài bán sẵn, còn 8 
 Bắt đế cắm xuống board trước, đặt tấm màn lên, rồi mới siết vít — siết trước là ép chân vào đế
 lệch trục.
 
-**Kích thước tấm màn: 107 × 61 mm** (đo 12/09). Nó quyết định luôn chiều cao board đế: 107 mm
-cộng chỗ cho hàng chữ tên chân ở **cả hai đầu** là **121 mm** — mỗi đầu phải chừa đủ 4,3 mm cho
-một chuỗi như `CTP_SDA` cộng lề mép. Tấm màn vì thế phủ gần trọn chiều cao board, và dải còn
-lại dưới mép tấm màn không nhét vừa một con tụ nào. Vì thế tụ `C4` của màn nằm **bên
-trái** tấm màn, trong khe giữa devkit và tấm màn, chân dương **thẳng hàng với chân `VCC` của
-`J3`** và cách nó **18,4 mm**; nó là tụ trữ chứ không phải tụ lọc cao tần nên quãng đó chấp
-nhận được, còn lọc cao tần thì module màn tự mang.
+**Kích thước tấm màn: 108,04 × 61,74 mm**, theo bản vẽ cơ khí của `KMRTM40045`. Nó quyết định
+luôn chiều cao board đế: 108,04 mm cộng chỗ cho hàng chữ tên chân ở **cả hai đầu** là **121 mm**
+— mỗi đầu phải chừa đủ 4,3 mm cho một chuỗi như `CTP_SDA` cộng lề mép, và ở 121 mm mỗi đầu còn
+**6,48 mm**. Tấm màn vì thế phủ gần trọn chiều cao board, và dải còn lại dưới mép tấm màn không
+nhét vừa một con tụ nào. Vì thế tụ `C4` của màn nằm **bên trái** tấm màn, trong khe giữa devkit
+và tấm màn, chân dương **thẳng hàng với chân `VCC` của `J3`** và cách nó **18,4 mm**; nó là tụ
+trữ chứ không phải tụ lọc cao tần nên quãng đó chấp nhận được, còn lọc cao tần thì module màn
+tự mang.
 
-Khe đó rộng **8,76 mm** cho một thân tụ 6,3 mm, tức hở đều **0,98 mm** hai bên — và để có được
+Khe đó rộng **8,39 mm** cho một thân tụ 6,3 mm. Tụ đứng yên mà mép tấm màn lấn về phía nó, nên
+hai bên không hở đều: **0,98 mm** phía devkit và **0,61 mm** phía tấm màn — và để có được
 chừng đó thì devkit phải dịch sang trái 2 mm. Đường bao của devkit vì thế chỉ còn cách mép trái
 board 1,75 mm, nhưng đường bao đó **cố ý vẽ rộng hơn thân thật** (§2.6 không có datasheet cho
 board này), nên mép thật của module vẫn cách mép board khoảng 4 mm.
 
-**Kính không nằm giữa PCB, và chỗ dôi ra là chỗ để hàng chân với lỗ vít.** Vùng hiển thị của
-tấm 4,0" tỉ lệ 3:2 là **84,5 × 56,4 mm** (suy từ đường chéo, không phải số đo), nên so với PCB
-107 × 61:
+**Kính không nằm giữa PCB, và chỗ dôi ra là chỗ để hàng chân với lỗ vít.** Vùng hiển thị ghi
+trên bản vẽ là **83,52 × 55,68 mm**, nên so với PCB 108,04 × 61,74:
 
 | Chiều | PCB | Kính | Dôi mỗi bên |
 |---|---|---|---|
-| Rộng | 61 | 56,4 | **2,3 mm** |
-| Dài | 107 | 84,5 | **11,2 mm** |
+| Rộng | 61,74 | 55,68 | **3,03 mm** |
+| Dài | 108,04 | 83,52 | **12,26 mm** |
 
-Hai con số đó ràng buộc thiết kế theo hai hướng ngược nhau. Cạnh dài chỉ dôi **2,3 mm** nên
+Hai con số đó ràng buộc thiết kế theo hai hướng ngược nhau. Cạnh dài chỉ dôi **3,03 mm** nên
 **không khoan được lỗ vít ở giữa hai cạnh dài** — lỗ Ø3,5 cần nhiều hơn thế. Cạnh ngắn dôi
-**11,2 mm**, đủ rộng cho cả hàng chân lẫn hai lỗ vít, và đó là lý do bốn lỗ đặt ở **bốn góc**:
+**12,26 mm**, đủ rộng cho cả hàng chân lẫn hai lỗ vít, và đó là lý do bốn lỗ đặt ở **bốn góc**:
 góc là chỗ duy nhất có vật liệu.
 
-Cùng con số đó chặn khoảng lùi của hàng chân ≤ **11,2 mm** — hàng chân phải nằm trong dải dôi,
-không thể chui xuống dưới kính.
+Cùng con số đó chặn khoảng lùi của hàng chân ≤ **12,26 mm** — hàng chân phải nằm trong dải dôi,
+không thể chui xuống dưới kính. Kính **không cân giữa theo cạnh dài**: đầu mang hàng 14 chân dôi
+nhiều hơn đầu kia, nên 12,26 mm là số cân giữa chứ không phải số đo của từng đầu.
 
 **Hàng chân nằm ngang hàng với hai lỗ vít đầu dưới**, nhích về phía mép khoảng **1 mm** (nhìn
 trên module 12/09). Nhờ đó hai khoảng lùi không còn độc lập: đo lỗ là biết luôn hàng chân, nên
@@ -403,15 +414,25 @@ tới tâm lỗ** chứ không đo tới mép tấm — mép tấm rồi suy ra 
 
 | Hằng số | Đang đặt | Nguồn |
 |---|---|---|
+| `LCD_PANEL` | **61,74 × 108,04 mm** | Bản vẽ cơ khí `KMRTM40045` |
 | `LCD_HOLE_PITCH` | **55,0 × 102,0 mm** | Đo tâm–tâm trên tấm màn 12/09 |
-| `LCD_HOLE_INSET` | 3,00 / 2,50 mm | Suy ra: `(107 − 102)/2` và `(61 − 55)/2` — **hai chiều không bằng nhau** |
+| `LCD_HOLE_INSET` | 3,37 / 3,02 mm | Suy ra: `(61,74 − 55)/2` và `(108,04 − 102)/2` — **hai chiều không bằng nhau** |
 | `LCD_HEADER_DROP` | 1,0 mm | Hàng chân thấp hơn hàng lỗ bao nhiêu, nhìn trên module |
-| `LCD_HEADER_INSET` | 1,5 mm | Suy ra: `LCD_HOLE_INSET dọc − LCD_HEADER_DROP` |
+| `LCD_HEADER_INSET` | 2,02 mm | Suy ra: `LCD_HOLE_INSET dọc − LCD_HEADER_DROP` |
 
-**Hai phép đo tự kiểm chéo nhau.** Khoảng cách giữa hàng 14 chân và hàng 4 chân microSD đo được
-**104 mm**; từ chuỗi trên mà suy thì phải là `107 − 1,5 − 1,5 = 104`. Khớp. Nếu lúc đo lỗ mà kẹp
-thước theo mép ngoài thay vì tâm–tâm thì chuỗi ấy cho ra **100,5 mm**, lệch hẳn — nên phép đo thứ
-hai chốt luôn rằng phép thứ nhất đọc đúng cách.
+**Ba phép đo tự kiểm chéo nhau.** Khoảng cách giữa hàng 14 chân và hàng 4 chân microSD đo được
+**104 mm**; từ chuỗi trên mà suy thì phải là `108,04 − 2,02 − 2,02 = 104,00`. Khớp. Bản vẽ ghi
+tâm lỗ lùi vào **3,00 mm** theo cạnh dài và **3,42 mm** theo cạnh ngắn, cho `108,04 − 2 × 3,00 =
+102,04` và `61,74 − 2 × 3,42 = 54,90` — lệch bước đo tâm–tâm **0,04** và **0,10 mm**, đều nhỏ hơn
+0,35 mm mà vít M3 còn xê dịch được trong lỗ Ø3,5. Nếu lúc đo lỗ mà kẹp thước theo mép ngoài thay
+vì tâm–tâm thì chuỗi ấy cho ra **100,5 mm**, lệch hẳn — nên phép đo thứ hai chốt luôn rằng phép
+thứ nhất đọc đúng cách.
+
+**Sửa `LCD_PANEL` không dịch một lỗ khoan nào.** Bốn lỗ và hai hàng chân neo vào bước đo tâm–tâm
+với khoảng cách hai hàng, cả hai đều đo thẳng trên module; `LCD_PANEL` chỉ nuôi hình chữ nhật
+đứt nét của tấm màn và các phép kiểm chồng lấn. Toạ độ sinh ra giữ nguyên `H1`…`H4` ở
+(44,55 / 99,55) × (9,50 / 111,50) và `J14` ở `y = 8,50`; thứ duy nhất đổi là mép tấm màn nhích
+ra **0,37 mm** mỗi bên cạnh dài và **0,52 mm** mỗi đầu cạnh ngắn.
 
 ⚠️ Theo chiều dọc, lỗ Ø3,5 thụt vào 2,50 mm nên chỉ còn **0,75 mm vật liệu** tới mép tấm màn.
 Siết vừa tay; siết mạnh là nứt mép.
