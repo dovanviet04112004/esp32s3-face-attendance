@@ -16,9 +16,9 @@ STOCK = Path("/mnt/d/KiCad/share/kicad/footprints")
 LOCAL = Path("hardware/lib/footprints/kiosk.pretty")
 BOARD_W, BOARD_H = 158.0, 121.0
 EDGE = 0.0
-# Panel PCB measured off the module. It stands 8.5 mm up on J3 and covers its
+# Panel PCB per the KMRTM40045 drawing. It stands 8.5 mm up on J3 and covers its
 # rectangle whole, so nothing taller than that may sit inside (KEHOACH 2.3A).
-LCD_PANEL = (61.0, 107.0)
+LCD_PANEL = (61.74, 108.04)
 # Hole centre to hole centre across the panel, measured on it. The two insets that
 # follow are not equal, and the header row sits 1 mm outside the near one (KEHOACH 2.3A).
 LCD_HOLE_PITCH = (55.0, 102.0)
@@ -27,7 +27,7 @@ LCD_HOLE_INSET = ((LCD_PANEL[0] - LCD_HOLE_PITCH[0]) / 2,
 LCD_HEADER_DROP = 1.0
 LCD_HEADER_INSET = LCD_HOLE_INSET[1] - LCD_HEADER_DROP
 # The two rows measure 104 mm apart on the panel, which puts the far one the same
-# 1.5 mm in as the near one - the mirror section 2.3A assumed, now read off it.
+# 2.02 mm in as the near one - the mirror section 2.3A assumed (KEHOACH 2.3A).
 LCD_SD_INSET = LCD_HEADER_INSET
 HOLE_FP = "MountingHole:MountingHole_3.2mm_M3"
 
@@ -40,9 +40,9 @@ PLACEMENT = {
     # Between the left row's names clearing the board edge and C4's can still fitting.
     "U1": (20.0, 64.0, 0),
     # Low enough that the panel's far edge clears the top of the board, since the
-    # panel reaches 107 mm up from wherever its header lands.
+    # panel reaches 108.04 mm up from wherever its header lands.
     "J3": (55.54, 112.5, 90),
-    # A 107 mm panel leaves no strip under itself, so its capacitor goes beside it,
+    # A 108 mm panel leaves no strip under itself, so its capacitor goes beside it,
     # centred in the gap and with its plus leg on the same line as the panel's VCC.
     "C4": (37.90, 112.5, 90),
     # Sockets under a module sit centred across its outline (KEHOACH 2.3I).
