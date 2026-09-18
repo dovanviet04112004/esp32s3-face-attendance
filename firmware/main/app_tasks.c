@@ -1,6 +1,7 @@
 #include "app_tasks.h"
 
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <string.h>
 
 #include "ai_engine.h"
@@ -32,6 +33,23 @@ static const char *TAG = "app_tasks";
 // What frame the pipeline is holding, so its observer can stamp the boxes.
 static int s_seen_width;
 static int s_seen_height;
+static _Atomic int64_t s_awake_at_ms;
+
+// Nobody in front means no model runs at all, which is where most of the
+// energy goes (KEHOACH 3 layer 5).
+static const char *_Atomic s_awake_by = "boot";
+
+static void stay_awake(const char *why)
+{
+    atomic_store(&s_awake_by, why);
+    atomic_store(&s_awake_at_ms, esp_timer_get_time() / 1000);
+}
+
+// Elapsed time only, so the clock sntp steps must not be the one asked.
+static int64_t asleep_for_ms(void)
+{
+    return esp_timer_get_time() / 1000 - atomic_load(&s_awake_at_ms);
+}
 
 #define CAM_TASK_CORE 0
 #define CAM_TASK_PRIORITY 7
@@ -41,6 +59,10 @@ static int s_seen_height;
 #define TOF_TASK_PRIORITY 6
 #define TOF_TASK_STACK_BYTES 3072
 #define TOF_POLL_MS 100
+#define WAKE_MODELS_HOLD_MS 4000
+#define WAKE_SCREEN_HOLD_MS 20000
+#define SCREEN_DIM_PERCENT 0
+#define UI_BACKLIGHT_PERCENT 100
 #define TOF_SETTLE_POLLS 5
 #define PRESENCE_HYSTERESIS_MM 60
 #define AI_TASK_CORE 1
@@ -163,6 +185,8 @@ static void cam_task(void *arg)
     uint32_t drawn_serial = 0;
     esp_err_t last_blit = ESP_OK;
 
+    bool lit = true;
+
     for (;;) {
         camera_fb_t *frame = drv_camera_grab();
         if (frame == NULL) {
@@ -172,7 +196,17 @@ static void cam_task(void *arg)
             continue;
         }
         drv_camera_expose(frame);
-        const esp_err_t err = show(ui_kiosk_overlay(), frame, &drawn_serial);
+        const drv_lcd_overlay_t *overlay = ui_kiosk_overlay();
+        const bool held_open = overlay != NULL && overlay->opaque;
+        const bool wanted = held_open || asleep_for_ms() <= WAKE_SCREEN_HOLD_MS;
+        if (wanted != lit) {
+            lit = wanted;
+            drv_lcd_backlight(lit ? UI_BACKLIGHT_PERCENT : SCREEN_DIM_PERCENT);
+            drawn_serial = 0;
+            ESP_LOGI(TAG, "panel %s, %lld ms since %s", lit ? "lit" : "dark",
+                     (long long)asleep_for_ms(), atomic_load(&s_awake_by));
+        }
+        const esp_err_t err = lit ? show(overlay, frame, &drawn_serial) : ESP_OK;
         offer_to_ai(wiring->frames, frame);
         if (err != last_blit) {
             ESP_LOGE(TAG, "blit %s", esp_err_to_name(err));
@@ -218,6 +252,7 @@ static void ai_task(void *arg)
     const esp_err_t watched = esp_task_wdt_add(NULL);
     ESP_LOGI(TAG, "ai on core %d, watchdog %s", AI_TASK_CORE, esp_err_to_name(watched));
     bool had_face = false;
+    bool working = true;
 
     for (;;) {
         camera_fb_t *frame = NULL;
@@ -231,6 +266,24 @@ static void ai_task(void *arg)
         svc_vision_result_t result = { 0 };
         s_seen_width = frame->width;
         s_seen_height = frame->height;
+        if (asleep_for_ms() > WAKE_MODELS_HOLD_MS) {
+            drv_camera_release(frame);
+            esp_task_wdt_reset();
+            if (working) {
+                // A box nobody refreshes would keep drifting across the glass.
+                working = false;
+                had_face = false;
+                s_seen_width = 0;
+                ui_kiosk_on_faces(NULL, 0, 0, 0, 0.0f);
+                ui_kiosk_on_stage(UI_KIOSK_STAGE_NO_FACE);
+                ESP_LOGI(TAG, "models asleep, nobody within the range gate");
+            }
+            continue;
+        }
+        if (!working) {
+            working = true;
+            ESP_LOGI(TAG, "models awake");
+        }
         const esp_err_t err = svc_vision_step(frame, &result);
         if ((result.faces > 0) != had_face) {
             had_face = result.faces > 0;
@@ -274,6 +327,7 @@ static void touch_task(void *arg)
             ui_kiosk_on_touch(false, 0, 0);
             continue;
         }
+        stay_awake("touch");
         ui_kiosk_on_touch(true, points[0].x, points[0].y);
     }
 }
@@ -439,7 +493,13 @@ static void tof_task(void *arg)
         }
         uint16_t distance_mm = 0;
         bool status_ok = false;
-        if (drv_tof_read_mm(&distance_mm, &status_ok) != ESP_OK) {
+        const esp_err_t ranged = drv_tof_read_mm(&distance_mm, &status_ok);
+        if (ranged != ESP_OK) {
+            // No sample yet is the normal gap between measurements; a broken
+            // sensor is not, and it must not be what puts the kiosk to sleep.
+            if (ranged != ESP_ERR_TIMEOUT) {
+                stay_awake("tof broken");
+            }
             continue;
         }
         // The first rangings carry nothing behind them: one read 59 mm into an
@@ -453,6 +513,9 @@ static void tof_task(void *arg)
         const uint32_t reading_mm = status_ok ? distance_mm : UINT16_MAX;
         const uint32_t edge_mm = present ? gate_mm + PRESENCE_HYSTERESIS_MM : gate_mm;
         const bool now = reading_mm <= edge_mm;
+        if (now) {
+            stay_awake("tof near");
+        }
         if (now == present) {
             continue;
         }
@@ -587,6 +650,7 @@ esp_err_t app_tasks_start(void)
     if (wiring == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
+    stay_awake("boot");
     // Core 1 stays clear for ai_task, whose one Invoke holds a core for
     // 100-400 ms and would stall everything sharing it (KEHOACH 5.1).
     const EventBits_t up = xEventGroupGetBits(wiring->flags);
