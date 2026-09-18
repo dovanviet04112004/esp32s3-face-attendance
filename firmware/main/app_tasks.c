@@ -35,7 +35,6 @@ static const char *TAG = "app_tasks";
 static int s_seen_width;
 static int s_seen_height;
 static _Atomic int64_t s_awake_at_ms;
-static _Atomic int64_t s_face_at_ms;
 static _Atomic uint32_t s_gate_mm;
 
 // Nobody in front means no model runs at all, which is where most of the
@@ -48,21 +47,10 @@ static void stay_awake(const char *why)
     atomic_store(&s_awake_at_ms, esp_timer_get_time() / 1000);
 }
 
-#define FACE_HOLD_CAP_MS 120000
-
-// The detector may hold the kiosk open but may never open it (KEHOACH 5.4).
-static void face_on_glass(void)
-{
-    atomic_store(&s_face_at_ms, esp_timer_get_time() / 1000);
-}
-
 // Elapsed time only, so the clock sntp steps must not be the one asked.
 static int64_t asleep_for_ms(void)
 {
-    const int64_t woke_ms = atomic_load(&s_awake_at_ms);
-    const int64_t face_ms = atomic_load(&s_face_at_ms);
-    const bool holding = face_ms > woke_ms && face_ms - woke_ms <= FACE_HOLD_CAP_MS;
-    return esp_timer_get_time() / 1000 - (holding ? face_ms : woke_ms);
+    return esp_timer_get_time() / 1000 - atomic_load(&s_awake_at_ms);
 }
 
 typedef enum { REST_NONE, REST_ALL } rest_t;
@@ -83,6 +71,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define UI_BACKLIGHT_PERCENT 100
 #define TOF_SETTLE_POLLS 5
 #define PRESENCE_HYSTERESIS_MM 60
+#define PRESENCE_AWAY_SAMPLES 5
 #define AI_TASK_CORE 1
 #define AI_TASK_PRIORITY 5
 #define AI_TASK_STACK_BYTES 8192
@@ -342,9 +331,6 @@ static void ai_task(void *arg)
         s_seen_width = frame->width;
         s_seen_height = frame->height;
         const esp_err_t err = svc_vision_step(frame, &result);
-        if (result.faces > 0) {
-            face_on_glass();
-        }
         if ((result.faces > 0) != had_face) {
             had_face = result.faces > 0;
             ESP_LOGI(TAG, "face %s, %u seen", had_face ? "in" : "out", (unsigned)result.faces);
@@ -583,6 +569,7 @@ static void tof_task(void *arg)
     atomic_store(&s_gate_mm, gate_mm);
     bool present = false;
     int settling = TOF_SETTLE_POLLS;
+    int away = PRESENCE_AWAY_SAMPLES;
 
     for (;;) {
         if (ready != NULL) {
@@ -611,7 +598,14 @@ static void tof_task(void *arg)
         // status is nobody standing there rather than nothing to report.
         const uint32_t reading_mm = status_ok ? distance_mm : UINT16_MAX;
         const uint32_t edge_mm = present ? gate_mm + PRESENCE_HYSTERESIS_MM : gate_mm;
-        const bool now = reading_mm <= edge_mm;
+        // One bad range status is not an answer to whether somebody is standing
+        // there, so absence has to hold for a run of samples (KEHOACH 5.4).
+        if (reading_mm <= edge_mm) {
+            away = 0;
+        } else if (away < PRESENCE_AWAY_SAMPLES) {
+            ++away;
+        }
+        const bool now = away < PRESENCE_AWAY_SAMPLES;
         if (now) {
             stay_awake("tof near");
         }
