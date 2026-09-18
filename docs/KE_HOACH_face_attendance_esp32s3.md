@@ -3092,6 +3092,16 @@ thấy màn đã rời mà chưa đủ ba mẫu.
 
 **Đăng ký không được đẻ ra một lần chấm công.** Ngay sau mẫu đầu, máy nhận ra người đang đứng đó và `svc_vision` bắn `MATCH` như mọi khi — `svc_attendance` mở cửa, ghi bản ghi, màn hiện "Đã chấm công" giữa lúc người ta đang quay mặt sang trái. Thấy trên board 13/09. Nên `ai_task` **không đẩy kết quả vào `q_result`** khi màn `Capture` đang mở: khung vẫn chạy đủ ba model để lấy mẫu, chỉ có đường nghiệp vụ là im. Câu xác nhận của việc thêm người do chính `CaptureScreen` nói, không mượn thẻ chấm công của màn `Scan`.
 
+**Lá chắn ấy phải dài hơn thời gian màn mở.** Đóng màn lấy mẫu là hết chặn, mà người vừa đăng ký
+**vẫn đứng nguyên đó** và giờ đã có mặt trong bảng — nên khung kế tiếp cho `MATCH` và máy chấm
+công luôn: mở cửa, kêu loa, ghi một bản ghi mà không ai định tạo. Người vận hành chỉ thấy khi bấm
+`Đóng` ở màn `Menu`, vì màn ấy che mất màn `Scan`. Đo trên board: ngay sau `enrol 16 sample 0` là
+`verdict 6, live 0.997, match 1.000, id 16` — người mới khớp chính mình ở điểm tuyệt đối, chỉ
+1,3 giây sau mẫu đầu. Đường nghiệp vụ vì thế **im tiếp cho tới khi pipeline báo `NO_FACE` một
+lần** sau khi màn đóng, tức cho tới khi người ấy rời khung. Dùng `NO_FACE` chứ không dùng đồng hồ
+đếm ngược: đứng lâu bao nhiêu cũng không thành một lần chấm công, mà bước ra rồi vào lại thì máy
+sống ngay, đúng luật "một lần cấp quyền đòi một lần *đến*" của §4.5.5f.
+
 ##### h.1) Màn `Scan` — khung ngắm là thứ sửa lỗi "đứng xa không chấm được"
 
 Máy chấm công thương mại (ZKTeco SpeedFace, Hikvision MinMoe) đều để một **khung ngắm đứng yên
