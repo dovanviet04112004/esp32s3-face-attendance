@@ -37,6 +37,9 @@ static const char *TAG = "test_panel";
 #define WRAP_CEILING_MS 20000
 #define SWEEP_READS 2000
 #define ST7796S_ID 0x007796
+#define LAMP_ROUNDS 3
+#define LAMP_AWAKE_MS 10000
+#define LAMP_ASLEEP_MS 15000
 
 static int64_t s_wrap_at[WRAP_FRAMES + 1];
 
@@ -47,6 +50,34 @@ static void panel_up(void)
     TEST_ASSERT_TRUE(board == ESP_OK || board == ESP_ERR_INVALID_STATE);
     const esp_err_t lcd = drv_lcd_init();
     TEST_ASSERT_TRUE(lcd == ESP_OK || lcd == ESP_ERR_INVALID_STATE);
+}
+
+// Declared ahead of the other hand-judged cases so it reaches the glass first.
+TEST_CASE("the lamp on its own, panel asleep and no pwm anywhere", "[drv_lcd][manual]")
+{
+    const gpio_config_t flat = {
+        .pin_bit_mask = 1ULL << APP_LCD_BLK_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    };
+    panel_up();
+    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_backlight(100));
+    // Taking the pad back from ledc leaves the lamp lit with no pwm on it.
+    TEST_ASSERT_EQUAL(ESP_OK, gpio_config(&flat));
+    TEST_ASSERT_EQUAL(ESP_OK, gpio_set_level(APP_LCD_BLK_GPIO, 1));
+    for (int round = 0; round < LAMP_ROUNDS; ++round) {
+        TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_sleep(false));
+        TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(WHITE));
+        printf("  round %d: white, panel awake, %d ms\n", round + 1, LAMP_AWAKE_MS);
+        vTaskDelay(pdMS_TO_TICKS(LAMP_AWAKE_MS));
+        TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_sleep(true));
+        printf("  round %d: panel asleep, lamp still lit, %d ms, watch the edge bleed\n",
+               round + 1, LAMP_ASLEEP_MS);
+        vTaskDelay(pdMS_TO_TICKS(LAMP_ASLEEP_MS));
+    }
+    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_sleep(false));
+    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(WHITE));
 }
 
 TEST_CASE("init brings the panel up and refuses a second time", "[drv_lcd]")
