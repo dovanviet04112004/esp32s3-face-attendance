@@ -68,16 +68,19 @@ TEST_CASE("the lamp on its own, panel asleep and no pwm anywhere", "[drv_lcd][ma
     TEST_ASSERT_EQUAL(ESP_OK, gpio_set_level(APP_LCD_BLK_GPIO, 1));
     for (int round = 0; round < LAMP_ROUNDS; ++round) {
         TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_sleep(false));
-        TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(WHITE));
-        printf("  round %d: white, panel awake, %d ms\n", round + 1, LAMP_AWAKE_MS);
+        // Black while awake and untwisted glass while asleep, so the two phases
+        // cannot be mistaken for each other on a normally white panel.
+        TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(0));
+        printf("  round %d: DARK, panel awake driving black, %d ms, power mode %06" PRIx32 "\n",
+               round + 1, LAMP_AWAKE_MS, drv_lcd_read_reg(POWER_MODE_REG));
         vTaskDelay(pdMS_TO_TICKS(LAMP_AWAKE_MS));
         TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_sleep(true));
-        printf("  round %d: panel asleep, lamp still lit, %d ms, watch the edge bleed\n",
-               round + 1, LAMP_ASLEEP_MS);
+        printf("  round %d: BRIGHT, panel asleep, lamp alone, %d ms, power mode %06" PRIx32 "\n",
+               round + 1, LAMP_ASLEEP_MS, drv_lcd_read_reg(POWER_MODE_REG));
         vTaskDelay(pdMS_TO_TICKS(LAMP_ASLEEP_MS));
     }
     TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_sleep(false));
-    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(WHITE));
+    TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_fill(0));
 }
 
 TEST_CASE("init brings the panel up and refuses a second time", "[drv_lcd]")
