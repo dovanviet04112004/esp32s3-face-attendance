@@ -310,6 +310,17 @@ thì mỗi con một nghĩa**: `0xC0` của ST7796S là AVDD/VGH/VGL còn của 
 ghi vào một bản đồ thanh ghi có thể không phải của con đang cắm. Vì vậy `drv_lcd_init()` đọc
 `RDID4` (`0xD3`) rồi in mã chip ra log boot: ST7796S trả `00 77 96`, ILI9486 trả `00 94 86`,
 ILI9488 trả `00 94 88`. Đường đọc đã có sẵn — chính đường đọc dòng quét `0x45` của §2.3A.
+**Đo 19/09: `panel id 007796`** — module này là ST7796S, nên bản đồ thanh ghi đang dùng là đúng.
+
+**Giao thức đọc 4 dây chèn một bit dummy, và nó dịch mọi giá trị đọc được.** Chuỗi thô của
+`RDID4` về là `00 3b cb 7f`; bỏ **đúng một bit đầu** mới ra `00 77 96`. Hệ quả nằm ở chỗ khác:
+`scan_line()` đọc `0x45` cùng kiểu và **không** bỏ bit ấy, nên 16 bit nó lấy là `N15…N1` chứ
+không phải `N15…N0` — con số đọc ra là **N/2**. Vậy dải `0…241` mà `SCANLINE_UNITS` chốt thực ra
+là bộ đếm **`0…483`** đọc ở nửa độ phân giải, và **484 = 480 + VFP 2 + VBP 2** đúng bằng tổng số
+dòng một khung khi `BPC (0xB5)` để mặc định. Ba số đo tự khớp: 41,6 ms ÷ 242 nấc = 172 µs mỗi
+nấc, mỗi nấc 2 dòng thật → 86 µs mỗi dòng, 484 × 86 µs = 41,6 ms = **24,0 Hz**, đúng con số
+`FRMCTR1 = 0x81 0x1F` tính ra từ công thức §9.3.2. Khoá pha **không sai** vì nó chỉ cần vị trí
+tương đối và đơn điệu; nhưng ai đọc `SCANLINE_UNITS` mà tưởng panel có 242 dòng thì sai gấp đôi.
 
 **Thứ tự chân trên header**, đọc dọc hàng 14 chân:
 
