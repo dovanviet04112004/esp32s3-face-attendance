@@ -52,6 +52,9 @@ static const char *TAG = "drv_lcd";
 #define INVERSION_REG 0xB4
 // White still flickers under 1-dot and 2-dot inversion at 23 Hz; column inversion measured calm.
 #define INVERSION_COLUMN 0x00
+// The module ships one of ili9486, ili9488 or st7796s (KMRTM40045 spec sheet).
+#define CHIP_ID_REG 0xD3
+#define CHIP_ID_BYTES 4
 #define SCANLINE_REG 0x45
 #define SCANLINE_UNITS 242
 #define SCANLINE_LEAD_MIN 160
@@ -136,6 +139,33 @@ static void slow_the_scan(void)
     esp_lcd_panel_io_tx_param(s_io, INVERSION_REG, (uint8_t[]){INVERSION_COLUMN}, 1);
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_A}, 1);
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_B}, 1);
+}
+
+static void chip_id(uint8_t *out)
+{
+    gpio_set_direction(APP_LCD_DC_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(APP_LCD_CS_GPIO, 1);
+    esp_rom_delay_us(CS_FRAME_GAP_US);
+    gpio_set_level(APP_LCD_CS_GPIO, 0);
+    gpio_set_level(APP_LCD_DC_GPIO, 0);
+    spi_transaction_t cmd = {
+        .flags = SPI_TRANS_USE_TXDATA,
+        .length = 8,
+        .tx_data = {CHIP_ID_REG},
+    };
+    if (spi_device_polling_transmit(s_reader, &cmd) == ESP_OK) {
+        gpio_set_level(APP_LCD_DC_GPIO, 1);
+        spi_transaction_t rd = {
+            .flags = SPI_TRANS_USE_RXDATA,
+            .rxlength = CHIP_ID_BYTES * 8,
+        };
+        if (spi_device_polling_transmit(s_reader, &rd) == ESP_OK) {
+            memcpy(out, rd.rx_data, CHIP_ID_BYTES);
+        }
+    }
+    gpio_set_level(APP_LCD_CS_GPIO, 1);
+    esp_rom_delay_us(CS_FRAME_GAP_US);
+    gpio_set_level(APP_LCD_CS_GPIO, 0);
 }
 
 static int scan_line(void)
@@ -262,8 +292,11 @@ esp_err_t drv_lcd_init(void)
     APP_RETURN_ON_ERR(backlight_up(), TAG, "backlight");
     APP_RETURN_ON_ERR(panel_up(), TAG, "panel");
     APP_RETURN_ON_ERR(reader_up(), TAG, "scanline reader");
-    ESP_LOGI(TAG, "st7796 up at %dx%d, %d bounce of %d B, scanline reads %d", APP_LCD_H_RES,
-             APP_LCD_V_RES, BOUNCE_COUNT, BOUNCE_BYTES, scan_line());
+    uint8_t id[CHIP_ID_BYTES] = {0};
+    chip_id(id);
+    ESP_LOGI(TAG, "panel id %02x %02x %02x %02x at %dx%d, %d bounce of %d B, scanline reads %d",
+             id[0], id[1], id[2], id[3], APP_LCD_H_RES, APP_LCD_V_RES, BOUNCE_COUNT, BOUNCE_BYTES,
+             scan_line());
     return ESP_OK;
 }
 
