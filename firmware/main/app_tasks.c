@@ -35,6 +35,7 @@ static const char *TAG = "app_tasks";
 static int s_seen_width;
 static int s_seen_height;
 static _Atomic int64_t s_awake_at_ms;
+static _Atomic int64_t s_face_at_ms;
 static _Atomic uint32_t s_gate_mm;
 
 // Nobody in front means no model runs at all, which is where most of the
@@ -47,11 +48,24 @@ static void stay_awake(const char *why)
     atomic_store(&s_awake_at_ms, esp_timer_get_time() / 1000);
 }
 
+#define FACE_HOLD_CAP_MS 120000
+
+// The detector may hold the kiosk open but may never open it (KEHOACH 5.4).
+static void face_on_glass(void)
+{
+    atomic_store(&s_face_at_ms, esp_timer_get_time() / 1000);
+}
+
 // Elapsed time only, so the clock sntp steps must not be the one asked.
 static int64_t asleep_for_ms(void)
 {
-    return esp_timer_get_time() / 1000 - atomic_load(&s_awake_at_ms);
+    const int64_t woke_ms = atomic_load(&s_awake_at_ms);
+    const int64_t face_ms = atomic_load(&s_face_at_ms);
+    const bool holding = face_ms > woke_ms && face_ms - woke_ms <= FACE_HOLD_CAP_MS;
+    return esp_timer_get_time() / 1000 - (holding ? face_ms : woke_ms);
 }
+
+typedef enum { REST_NONE, REST_MODELS, REST_ALL } rest_t;
 
 #define CAM_TASK_CORE 0
 #define CAM_TASK_PRIORITY 7
@@ -63,7 +77,9 @@ static int64_t asleep_for_ms(void)
 #define TOF_POLL_MS 100
 #define PRESENCE_WAIT_MS 50
 #define SOUND_WAIT_MS 20
-#define WAKE_SCREEN_HOLD_MS 20000
+#define REST_MODELS_MS 4000
+#define REST_ALL_MS 60000
+#define REST_POLL_MS 40
 #define SCREEN_DIM_PERCENT 0
 #define UI_BACKLIGHT_PERCENT 100
 #define TOF_SETTLE_POLLS 5
@@ -91,11 +107,13 @@ static int64_t asleep_for_ms(void)
 #define TOUCH_TASK_PRIORITY 5
 #define TOUCH_TASK_STACK_BYTES 3072
 #define TOUCH_POLL_MS 40
+#define TOUCH_REST_POLL_MS 160
 #define TOUCH_POINTS 1
 #define UI_TASK_CORE 0
 #define UI_TASK_PRIORITY 4
 #define UI_TASK_STACK_BYTES 8192
 #define UI_TICK_MS 20
+#define UI_REST_TICK_MS 200
 #define UI_GROUND_RGB565 0x0821
 #define AUDIO_TASK_CORE 0
 #define AUDIO_TASK_PRIORITY 6
@@ -103,6 +121,20 @@ static int64_t asleep_for_ms(void)
 #define AUDIO_CLIP_PATH "/assets/snd/ok.wav"
 #define AUDIO_CLIP_CAP_BYTES (128 * 1024)
 #define WAV_HEADER_MIN 44
+
+// A screen that covers the panel and the enrolment screen both hold the kiosk
+// open, and neither of them is a wake source (KEHOACH 5.4).
+static rest_t rest_level(const drv_lcd_overlay_t *overlay)
+{
+    if ((overlay != NULL && overlay->opaque) || ui_kiosk_enrolling()) {
+        return REST_NONE;
+    }
+    const int64_t idle_ms = asleep_for_ms();
+    if (idle_ms > REST_ALL_MS) {
+        return REST_ALL;
+    }
+    return idle_ms > REST_MODELS_MS ? REST_MODELS : REST_NONE;
+}
 
 static void report_rate(int frames, int64_t elapsed_us)
 {
@@ -189,10 +221,36 @@ static void cam_task(void *arg)
     int frames = 0;
     uint32_t drawn_serial = 0;
     esp_err_t last_blit = ESP_OK;
-
-    bool lit = true;
+    bool resting = false;
+    bool relight = false;
 
     for (;;) {
+        const drv_lcd_overlay_t *overlay = ui_kiosk_overlay();
+        const bool wanted = rest_level(overlay) == REST_ALL;
+        if (wanted != resting) {
+            resting = wanted;
+            if (resting) {
+                drv_lcd_backlight(SCREEN_DIM_PERCENT);
+                drv_lcd_sleep(true);
+                drv_camera_rest(true);
+            } else {
+                drv_camera_rest(false);
+                drv_lcd_sleep(false);
+                drawn_serial = 0;
+                // Panel memory still holds the old scene, so the lamp waits.
+                relight = true;
+                // The rate window spans the whole nap otherwise, and prints a
+                // frame rate the kiosk never ran at.
+                window_started = esp_timer_get_time();
+                frames = 0;
+            }
+            ESP_LOGI(TAG, "panel and sensor %s, %lld ms since %s", resting ? "asleep" : "awake",
+                     (long long)asleep_for_ms(), atomic_load(&s_awake_by));
+        }
+        if (resting) {
+            vTaskDelay(pdMS_TO_TICKS(REST_POLL_MS));
+            continue;
+        }
         camera_fb_t *frame = drv_camera_grab();
         if (frame == NULL) {
             // Spinning here at this priority would starve the idle task and
@@ -201,18 +259,12 @@ static void cam_task(void *arg)
             continue;
         }
         drv_camera_expose(frame);
-        const drv_lcd_overlay_t *overlay = ui_kiosk_overlay();
-        const bool held_open = (overlay != NULL && overlay->opaque) || ui_kiosk_enrolling();
-        const bool wanted = held_open || asleep_for_ms() <= WAKE_SCREEN_HOLD_MS;
-        if (wanted != lit) {
-            lit = wanted;
-            drv_lcd_backlight(lit ? UI_BACKLIGHT_PERCENT : SCREEN_DIM_PERCENT);
-            drawn_serial = 0;
-            ESP_LOGI(TAG, "panel %s, %lld ms since %s", lit ? "lit" : "dark",
-                     (long long)asleep_for_ms(), atomic_load(&s_awake_by));
-        }
-        const esp_err_t err = lit ? show(overlay, frame, &drawn_serial) : ESP_OK;
+        const esp_err_t err = show(overlay, frame, &drawn_serial);
         offer_to_ai(wiring->frames, frame);
+        if (relight && err == ESP_OK) {
+            relight = false;
+            drv_lcd_backlight(UI_BACKLIGHT_PERCENT);
+        }
         if (err != last_blit) {
             ESP_LOGE(TAG, "blit %s", esp_err_to_name(err));
             last_blit = err;
@@ -257,8 +309,32 @@ static void ai_task(void *arg)
     const esp_err_t watched = esp_task_wdt_add(NULL);
     ESP_LOGI(TAG, "ai on core %d, watchdog %s", AI_TASK_CORE, esp_err_to_name(watched));
     bool had_face = false;
+    bool working = true;
 
     for (;;) {
+        if (rest_level(ui_kiosk_overlay()) != REST_NONE) {
+            esp_task_wdt_reset();
+            camera_fb_t *stale = NULL;
+            // Holding one of four buffers for a minute starves the sensor.
+            while (xQueueReceive(wiring->frames, &stale, 0) == pdTRUE) {
+                drv_camera_release(stale);
+            }
+            if (working) {
+                working = false;
+                had_face = false;
+                s_seen_width = 0;
+                ui_kiosk_on_faces(NULL, 0, 0, 0, 0.0f);
+                ui_kiosk_on_stage(UI_KIOSK_STAGE_NO_FACE);
+                ESP_LOGI(TAG, "models asleep, %lld ms since %s", (long long)asleep_for_ms(),
+                         atomic_load(&s_awake_by));
+            }
+            vTaskDelay(pdMS_TO_TICKS(REST_POLL_MS));
+            continue;
+        }
+        if (!working) {
+            working = true;
+            ESP_LOGI(TAG, "models awake");
+        }
         camera_fb_t *frame = NULL;
         // A dry queue is the camera's fault, so feeding the watchdog here keeps
         // the panic pointed at the task that stopped (KEHOACH 5.1).
@@ -271,6 +347,9 @@ static void ai_task(void *arg)
         s_seen_width = frame->width;
         s_seen_height = frame->height;
         const esp_err_t err = svc_vision_step(frame, &result);
+        if (result.faces > 0) {
+            face_on_glass();
+        }
         if ((result.faces > 0) != had_face) {
             had_face = result.faces > 0;
             ESP_LOGI(TAG, "face %s, %u seen", had_face ? "in" : "out", (unsigned)result.faces);
@@ -306,7 +385,8 @@ static void touch_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(TOUCH_POLL_MS));
+        const bool resting = rest_level(ui_kiosk_overlay()) == REST_ALL;
+        vTaskDelay(pdMS_TO_TICKS(resting ? TOUCH_REST_POLL_MS : TOUCH_POLL_MS));
         drv_touch_point_t points[TOUCH_POINTS];
         uint8_t count = 0;
         if (drv_touch_read(points, TOUCH_POINTS, &count) != ESP_OK || count == 0) {
@@ -376,8 +456,10 @@ static void ui_task(void *arg)
     uint32_t new_employee = 0;
 
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(UI_TICK_MS));
-        ui_kiosk_tick(UI_TICK_MS);
+        const uint32_t tick_ms =
+            rest_level(ui_kiosk_overlay()) == REST_ALL ? UI_REST_TICK_MS : UI_TICK_MS;
+        vTaskDelay(pdMS_TO_TICKS(tick_ms));
+        ui_kiosk_tick(tick_ms);
         const bool now_enrolling = ui_kiosk_enrolling();
         if (enrolling && !now_enrolling) {
             // The enrolled track has already matched, and a matched track is
@@ -639,7 +721,9 @@ static void attend_task(void *arg)
 
         {
             static int64_t settings_at_ms;
-            if (sys_time_now_ms() - settings_at_ms > SETTINGS_REFRESH_MS) {
+            // Nobody can read a sleeping panel, and the page walks the heap.
+            const bool readable = rest_level(ui_kiosk_overlay()) != REST_ALL;
+            if (readable && sys_time_now_ms() - settings_at_ms > SETTINGS_REFRESH_MS) {
                 settings_at_ms = sys_time_now_ms();
                 show_settings();
             }

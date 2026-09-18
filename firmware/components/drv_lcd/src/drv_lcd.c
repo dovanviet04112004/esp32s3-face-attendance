@@ -31,6 +31,13 @@ static const char *TAG = "drv_lcd";
 #define BOUNCE_BYTES (BOUNCE_PIXELS * (int)sizeof(uint16_t))
 #define BOUNCE_COUNT 2
 #define BOUNCE_WAIT_MS 200
+// The st7796 component ships disp_on_off but no disp_sleep, so these go raw.
+#define SLEEP_IN_CMD 0x10
+#define SLEEP_OUT_CMD 0x11
+#define DISPLAY_OFF_CMD 0x28
+#define DISPLAY_ON_CMD 0x29
+#define SLEEP_OUT_SETTLE_MS 120
+#define SLEEP_IN_SETTLE_MS 5
 #define CMDSET_REG 0xF0
 #define CMDSET_UNLOCK_A 0xC3
 #define CMDSET_UNLOCK_B 0x96
@@ -265,6 +272,22 @@ esp_err_t drv_lcd_backlight(uint8_t percent)
     const uint32_t duty = (percent > 100 ? 100u : percent) * BLK_DUTY_MAX / 100u;
     APP_RETURN_ON_ERR(ledc_set_duty(LEDC_LOW_SPEED_MODE, BLK_CHANNEL, duty), TAG, "duty");
     return ledc_update_duty(LEDC_LOW_SPEED_MODE, BLK_CHANNEL);
+}
+
+esp_err_t drv_lcd_sleep(bool sleeping)
+{
+    if (s_io == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const uint8_t first = sleeping ? DISPLAY_OFF_CMD : SLEEP_OUT_CMD;
+    const uint8_t second = sleeping ? SLEEP_IN_CMD : DISPLAY_ON_CMD;
+    APP_RETURN_ON_ERR(esp_lcd_panel_io_tx_param(s_io, first, NULL, 0), TAG, "first");
+    vTaskDelay(pdMS_TO_TICKS(sleeping ? SLEEP_IN_SETTLE_MS : SLEEP_OUT_SETTLE_MS));
+    APP_RETURN_ON_ERR(esp_lcd_panel_io_tx_param(s_io, second, NULL, 0), TAG, "second");
+    if (sleeping) {
+        vTaskDelay(pdMS_TO_TICKS(SLEEP_IN_SETTLE_MS));
+    }
+    return ESP_OK;
 }
 
 static esp_err_t claim_bounce(uint16_t **out)

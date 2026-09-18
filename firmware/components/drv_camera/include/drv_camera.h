@@ -39,6 +39,12 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame);
  */
 void drv_camera_exposure_state(int *level, int *exposure, int *gain16);
 
+/** Put the sensor into software standby or bring it back (KEHOACH 5.4).
+ *  @ctx task | blocking on SCCB, and on frames when waking
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE while the sensor is down
+ */
+esp_err_t drv_camera_rest(bool resting);
+
 #ifdef __cplusplus
 }
 #endif

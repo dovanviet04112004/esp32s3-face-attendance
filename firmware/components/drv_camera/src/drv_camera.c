@@ -4,6 +4,8 @@
 #include "app_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "drv_camera";
 
@@ -38,6 +40,10 @@ static const char *TAG = "drv_camera";
 #define VTS_MASK 0xFFFF
 #define HZ5060_CTRL00_REG 0x3C00
 #define HZ5060_CTRL01_REG 0x3C01
+// OV5640 software power down, datasheet rev 2.51 table 4-2.
+#define SYSTEM_CTRL0_REG 0x3008
+#define SYSTEM_CTRL0_STANDBY 0x40
+#define WAKE_SETTLE_MS 20
 #define BAND_50HZ_BIT 0x04
 #define BAND_MANUAL_BIT 0x80
 
@@ -282,6 +288,32 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
         s_gain16 = gain16;
     }
     s_settle = METER_SETTLE_FRAMES;
+    return ESP_OK;
+}
+
+esp_err_t drv_camera_rest(bool resting)
+{
+    sensor_t *sensor = esp_camera_sensor_get();
+    if (!s_ready || sensor == NULL || sensor->set_reg == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    // The pwdn pin is not wired to a gpio, so standby goes over sccb (KEHOACH 5.4).
+    const int wrote = sensor->set_reg(sensor, SYSTEM_CTRL0_REG, SYSTEM_CTRL0_STANDBY,
+                                      resting ? SYSTEM_CTRL0_STANDBY : 0);
+    if (wrote < 0) {
+        return ESP_FAIL;
+    }
+    if (resting) {
+        return ESP_OK;
+    }
+    vTaskDelay(pdMS_TO_TICKS(WAKE_SETTLE_MS));
+    // Frames already in the pool carry the exposure of a pll still catching up.
+    for (int i = 0; i < BAND_DRAIN_FRAMES; ++i) {
+        camera_fb_t *stale = esp_camera_fb_get();
+        if (stale != NULL) {
+            esp_camera_fb_return(stale);
+        }
+    }
     return ESP_OK;
 }
 

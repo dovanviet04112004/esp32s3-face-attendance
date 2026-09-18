@@ -70,6 +70,12 @@ esp_err_t drv_lcd_init(void);
  */
 esp_err_t drv_lcd_backlight(uint8_t percent);
 
+/** Stop or restart the panel controller itself, not just its lamp (KEHOACH 5.4).
+ *  @ctx task | blocking | waking holds the caller for the datasheet's 120 ms
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE
+ */
+esp_err_t drv_lcd_sleep(bool sleeping);
+
 /** Copy RGB565 pixels into a rectangle of panel memory.
  *  @ctx task | blocking | the buffer must survive the call
  *  @param x2,y2 one past the last column and row, as esp_lcd expects
