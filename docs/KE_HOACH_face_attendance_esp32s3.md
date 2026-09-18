@@ -3243,10 +3243,13 @@ không một dòng giải thích, lối ra duy nhất là nút "Huỷ". Hai lu�
 
 - **Nói ra lý do.** `SPOOF`, `FACE_SMALL`, `FACE_OUT_OF_FRAME` đều có câu riêng ngay dưới khung
   ngắm, dùng lại đúng chữ của §4.5.5h.1 chứ không đặt bộ chữ thứ hai.
-- **Bỏ cuộc tử tế sau 15 giây** một mẫu không đậu: xoá những mẫu đã lấy đúng như đường huỷ, về
-  `Menu`, báo "Chưa lấy được mẫu". ⚠️ Khác hẳn luật 5 ở trên: hết giờ vì **tư thế** thì lấy khung
-  tốt nhất đã thấy, còn hết giờ vì **liveness** thì **tuyệt đối không được lấy** — nhận đại một
-  mẫu ở đây là tự tay ghi khuôn mặt giả vào bảng.
+- **Bỏ cuộc tử tế sau 15 giây** một mẫu không đậu: xoá những mẫu đã lấy đúng như đường huỷ, báo
+  "Chưa lấy được mẫu" **kèm lý do gần nhất** bằng đúng bộ chữ của §4.5.5h.1, rồi chờ một lần chạm
+  **"Đã hiểu"** mới về `Menu`. Chờ chạm chứ không hẹn giờ: câu báo lỗi mà tự biến mất thì người
+  vận hành giơ ảnh giả bị chặn sẽ không biết vì sao và thử lại mãi, còn nút thì luôn có sẵn nên
+  không ai bị nhốt. ⚠️ Khác hẳn luật 5 ở trên: hết giờ vì **tư thế** thì lấy khung tốt nhất đã
+  thấy, còn hết giờ vì **liveness** thì **tuyệt đối không được lấy** — nhận đại một mẫu ở đây là
+  tự tay ghi khuôn mặt giả vào bảng.
 
 **Người thêm tại kiosk lấy mã số ở đâu.** Kiosk không có server để cấp mã, nên `main` hỏi
 `svc_facedb_next_employee_id()` — **một hơn mã lớn nhất còn sống trong bảng** — đúng **một lần
@@ -3270,8 +3273,9 @@ có báo**, chứ không ghi vào mã của người khác.
    mọi lớp chống giả phía sau dựa vào; kết thúc nó bằng một hành động có chủ ý rẻ hơn nhiều so với
    một bản ghi sai không ai để ý.
 
-Đường **thất bại** vẫn tự về `Menu` như cũ: ở đó không có gì để xác nhận, và giữ người lại trước
-một câu báo lỗi là đúng thứ luật 5 ở trên cấm.
+Đường **thất bại** cũng dừng lại chờ chạm, nhưng bằng nút **"Đã hiểu"** và kèm lý do: nó mang
+thông tin người vận hành cần để quyết định làm gì tiếp, mà một câu chạy qua trong hai giây thì
+không mang được gì cả.
 
 **Hướng sắp tới của mã số, chưa làm.** Mã sẽ do server cấp: người quản trị tạo hồ sơ trên hệ
 thống trước, kiosk nhập mã ấy rồi mới lấy mẫu, nên `(employee_id, template_idx)` trên thiết bị
