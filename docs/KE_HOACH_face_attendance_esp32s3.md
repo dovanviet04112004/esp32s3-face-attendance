@@ -3097,10 +3097,17 @@ thấy màn đã rời mà chưa đủ ba mẫu.
 công luôn: mở cửa, kêu loa, ghi một bản ghi mà không ai định tạo. Người vận hành chỉ thấy khi bấm
 `Đóng` ở màn `Menu`, vì màn ấy che mất màn `Scan`. Đo trên board: ngay sau `enrol 16 sample 0` là
 `verdict 6, live 0.997, match 1.000, id 16` — người mới khớp chính mình ở điểm tuyệt đối, chỉ
-1,3 giây sau mẫu đầu. Đường nghiệp vụ vì thế **im tiếp cho tới khi pipeline báo `NO_FACE` một
-lần** sau khi màn đóng, tức cho tới khi người ấy rời khung. Dùng `NO_FACE` chứ không dùng đồng hồ
-đếm ngược: đứng lâu bao nhiêu cũng không thành một lần chấm công, mà bước ra rồi vào lại thì máy
-sống ngay, đúng luật "một lần cấp quyền đòi một lần *đến*" của §4.5.5f.
+1,3 giây sau mẫu đầu. Cách sửa **không** được là một cái chốt toàn cục trong `ai_task` chờ `NO_FACE`: đo hôm nay cho
+thấy bộ dò bám một vật trong phòng **suốt 80 giây không nhả một lần nào**, nên chốt ấy không bao
+giờ mở và **cả kiosk mất khả năng chấm công** cho tới khi khởi động lại. Một lá chắn có thể kẹt
+vĩnh viễn thì tệ hơn hẳn cái lỗi nó định chữa.
+
+Đường đúng đã có sẵn ở §4.5.5f: **một lần cấp quyền đòi một lần *đến***. Đăng ký xong là `main`
+báo cho `svc_attendance` rằng người ấy **vừa được phục vụ**, y như vừa chấm công xong — `Grant`
+cho đúng `employee_id` ấy bị chặn cho tới khi có một lần *đến* mới, mà `apply()` ghi nhận bằng ba
+đường độc lập: `NoFace`, `PresenceOff` của ToF, hoặc **thấy một `employee_id` khác**. Ba đường
+nghĩa là không đường nào kẹt được cả ba. Và quan trọng nhất: lá chắn chỉ bọc **một người**, nên
+người khác bước tới vẫn chấm công bình thường ngay lập tức — hỏng một người còn hơn hỏng cả máy.
 
 ##### h.1) Màn `Scan` — khung ngắm là thứ sửa lỗi "đứng xa không chấm được"
 
