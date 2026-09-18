@@ -3117,6 +3117,16 @@ khi **khuôn mặt ấy rời khung** hoặc pipeline bắt sang người khác 
 §4.5.5d không xác thực lại một track đã khớp, và một track bị từ chối chỉ được thử lại theo nhịp
 `kRetryDetects` của pipeline, nên bảo người ta "đang nhận diện" giữa hai lần thử là nói sai.
 
+**Chỉ phán quyết về một khuôn mặt mới được sửa lời trên dải dưới.** `main` giữ loại phán quyết
+cuối để dịch sang câu chữ mỗi khi máy trạng thái đổi trạng thái, nhưng ba loại `NO_FACE`,
+`FACE_SMALL`, `FACE_OUT_OF_FRAME` **không phải phán quyết** — chúng là hướng dẫn căn khung và đã
+có kênh riêng là `ui_kiosk_stage_t`. Để chúng ghi đè thì lý do từ chối **tự xuống cấp thành câu
+mơ hồ**: giơ ảnh giả cho máy nói "Ảnh giả, mời thử lại", rút ảnh ra là pipeline bắn `NO_FACE`,
+rồi 2 giây sau `Denied → Cooldown` dịch `verdict_for(Cooldown, NO_FACE)` thành `APP_UI_DENIED` và
+màn đổi sang "Chưa nhận được, thử lại" — thay một câu đúng bằng một câu không nói gì. Nên chỉ
+`MATCH`, `UNKNOWN` và `SPOOF` được cập nhật loại phán quyết cuối; `APP_UI_DENIED` ở lại làm lưới
+cho trạng thái không lường trước chứ không còn là đường đi bình thường.
+
 **"Người khác" phải đi từ pipeline sang màn bằng một con số, không suy ra được từ một cờ.** Màn
 chỉ nhận một `bool` "có mặt hay không", nên nó **không phân biệt được** khuôn mặt cũ còn đứng đó
 với một khuôn mặt mới vừa thay chỗ. Hậu quả đo được: sau một lượt `SPOOF`, máy trạng thái hết
