@@ -3067,36 +3067,36 @@ Bốn trạng thái của khung, màu là thông tin chứ không phải trang t
 |---|---|---|
 | chờ, không thấy ai | trắng mờ | `Đưa khuôn mặt vào khung` |
 | thấy mặt nhưng nhỏ hơn cổng | hổ phách | `Lại gần hơn` |
-| mặt đủ lớn nhưng nằm ngoài khung | hổ phách | `Đưa mặt vào giữa khung` |
 | mặt tràn ra ngoài khung vì đứng quá gần | hổ phách | `Lùi lại một chút` |
-| mặt nằm trong khung, ba model đang chạy | xanh mint | `Đang nhận diện...` |
+| mặt qua cổng, pipeline đang làm việc | xanh mint | `Đang nhận diện...` |
 | xong, đạt | xanh mint | thẻ dấu tích + tên ở dải dưới |
-| xong, từ chối | hổ phách | một dòng chữ ở dải dưới |
+| xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt rời khung** |
 
-**Khung ngắm là một phép kiểm, không phải một hình vẽ.** `ui_kiosk` đưa hộp của **mặt đang được
-bám** (§4.5.5d xếp nó đứng đầu danh sách) qua `drv_lcd_frame_to_panel()` — đúng dải ảnh mà
-preview đang chiếu — rồi so với hình chữ nhật khung ngắm. Thấy trên board 13/09: màn chỉ hỏi
-"có mặt nào đủ to không", nên một khuôn mặt nằm hẳn dưới đáy preview, ngoài khung, vẫn được báo
-`Đang nhận diện...`. Phép so này là **lời khuyên chứ không phải cổng**: cổng vẫn là `face_min_px`
-cộng hình học §3 "Chốt 1" ở `svc_vision`, nên khung ngắm **không đẻ thêm ngưỡng nghiệp vụ** nào
-cho §4.9, và người đứng lệch một chút vẫn chấm được — chỉ là màn hình chỉ cho họ chỗ đứng tốt hơn.
+**Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Bốn trạng thái trên là bốn cổng của
+pipeline (§4.5.5d): không có mặt, mặt dưới `face_min_px`, ô 1,0× tràn khung, qua cổng. `main` dịch
+`svc_vision_kind_t` sang `ui_kiosk_stage_t`, `ui_kiosk` vẽ. Bản 13/09 từng để màn tự so hộp mặt với
+khung ngắm và báo `Đang nhận diện...` cho một khuôn mặt pipeline đang từ chối vì tràn khung — hai
+câu trả lời cho một câu hỏi, và câu của màn sai. Khung ngắm vì thế là **hình vẽ tĩnh** quy từ cổng
+`face_min_px` ra pixel panel, không phải một phép kiểm, và không đẻ thêm ngưỡng nghiệp vụ nào cho
+§4.9.
 
 Bản đồ phủ mang **bốn màu** (§4.5.5h): trắng, viền đen, xanh mint, hổ phách. Không có đỏ, nên
 từ chối nói bằng hổ phách cộng câu chữ chứ không bằng màu thứ năm.
 
 **Đã trả lời rồi thì thôi hướng dẫn.** Mọi câu nhắc căn khung — `Đang nhận diện...`, `Lại gần
-hơn`, `Đưa mặt vào giữa khung`, `Lùi lại một chút` — đều tắt từ lúc có phán quyết cho tới khi
-**khuôn mặt ấy rời khung**, không riêng câu đầu. Lý do như nhau: §4.5.5d không xác thực lại một
-track đã khớp, nên hướng dẫn người ta căn lại là hướng dẫn một việc vô nghĩa. Đo trên board
-14/09 khi chốt này chỉ áp cho một câu: chấm xong đứng yên thì màn nhảy sang `Đưa mặt vào giữa
-khung` ngay sau khi thẻ kết quả hết giờ. Một phán quyết **từ chối** thì xoá cờ ấy lập tức, nếu
-không người sau giơ ảnh giả sẽ vẫn thấy thẻ "Đã chấm công" của người trước.
+hơn`, `Lùi lại một chút` — đều tắt từ lúc có **bất kỳ** phán quyết nào, đạt hay từ chối, cho tới
+khi **khuôn mặt ấy rời khung** hoặc pipeline bắt sang người khác (`Detecting`). Lý do như nhau:
+§4.5.5d không xác thực lại một track đã khớp, và một track bị từ chối chỉ được thử lại theo nhịp
+`kRetryDetects` của pipeline, nên bảo người ta "đang nhận diện" giữa hai lần thử là nói sai. Đo
+trên board 14/09 khi chốt này chỉ áp cho câu đầu và chỉ cho phán quyết đạt: chấm xong đứng yên
+thì màn nhảy sang câu căn khung ngay khi thẻ hết giờ; giơ ảnh giả đứng yên thì `Ảnh giả, mời
+thử lại` và `Đang nhận diện...` **đảo nhau mỗi ~2 giây** theo nhịp thử lại (18/09). Vì thế dòng từ
+chối **giữ trên kính khi khuôn mặt còn đó**, chỉ hạ khi mặt rời khung, khi có phán quyết mới, hay
+khi máy bắt sang người khác; thẻ đạt giữ đồng hồ riêng 1,5 s để một khuôn mặt đã chấm đứng yên
+không ghim thẻ mãi. Thẻ của người trước không bao giờ được hiện cho người sau: `Detecting` hạ nó.
 
-**So khung ngắm phải có trễ.** Hộp của detector rung vài pixel mỗi khung, mà phép so ban đầu là
-biên cứng — lệch một pixel là nhảy `Ready` → `Outside`. Ở ~14 fps thì câu chữ dưới khung đảo qua
-lại mấy lần một giây. Nên khuôn mặt **đã ở trong** khung được nới thêm **14 px** mỗi phía trước
-khi bị coi là ra ngoài; vào khung thì vẫn khắt khe. Trễ áp cho cả phép so "quá gần", vì kích
-thước hộp cũng rung.
+**Câu chữ phải đọc được.** `svc_vision` đổi ý mỗi bước, nhanh hơn mắt, nên một câu nhắc giữ tối
+thiểu **700 ms** trước khi câu khác thay; riêng "mất mặt" là tin ngay lập tức.
 
 Ba thứ còn lại trên `Scan`: **thanh trên** mang giờ, ngày và dấu Wi-Fi; nút **ba gạch** góc phải
 mở `Menu` — ba hình chữ nhật vẽ thẳng, vì bảng chữ 22 px chỉ có ASCII và tiếng Việt nên một ký
