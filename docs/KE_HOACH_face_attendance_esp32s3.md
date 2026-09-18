@@ -610,6 +610,29 @@ một mức **DC phẳng không băm xung** — mà vẫn nhấp nháy. Ở tr�
 firmware đang điều biến cái gì cả**. Nên nguyên nhân nằm ngoài phần mềm, và mọi thanh ghi phía
 trên đều là chữa nhầm bệnh.
 
+**Chốt 19/09: nhấp nháy là của đèn nền, không phải của tấm kính.** Cho panel ngủ hẳn bằng
+`DISPOFF` + `SLPIN` mà vẫn giữ chân đèn nền ở mức cao, không băm xung. `RDDPM` đọc về xác nhận
+panel đã xuống thật: `BSTON = 0` bơm điện tích tắt, `SLPOUT = 0`, `DISON = 0`. Tấm này là loại
+**normally white** nên cắt hết điện lái thì kính trong suốt và màn sáng trắng — trong module lúc
+ấy **chỉ còn dãy LED hoạt động**. Chủ repo nhìn: **vẫn nháy**. Vậy mọi thanh ghi của ST7796S đều
+vô can, và cả vùng đã loại ở bảng trên là loại đúng nhưng loại nhầm hệ thống.
+
+**Vì sao đi lạc cả ngày.** Quan sát "nền trắng nháy, màn `Menu` tối thì đỡ" đã bị dùng làm bằng
+chứng rằng nội dung màn hình dính líu, tức là phía kính. Nó không chứng minh được điều đó: đèn
+nền sáng như nhau ở cả hai nền, chỉ có lớp kính chắn bớt. Đèn nền phập phồng 5 % thì nền trắng
+cho lọt ~100 % và mắt thấy đủ 5 %, nền tối cho lọt ~10 % và mắt thấy 0,5 %. **Một lỗi đèn nền và
+một lỗi kính nhìn từ ngoài giống hệt nhau qua phép so đó.**
+
+**Và vì sao panel đo ra sạch.** ST7796S tự ổn áp các rail của nó bằng bơm điện tích nội, nên
+gợn trên `VCC` không lọt vào `BSTON`, `RDDSDR` hay dao động nội. Dãy LED thì **không có gì ổn áp
+cả** — nó mắc qua điện trở, nên độ sáng bám thẳng theo `VCC`. Hai hệ thống dùng chung một chân
+nguồn nhưng một bên miễn nhiễm còn một bên thì không, và đó là lý do ba phép đọc trong chip đều
+phẳng trong khi mắt vẫn thấy nháy.
+
+**Vùng còn lại đúng bằng đường đèn nền:** GPIO21 → chân `LED` của module → `Q1` với `R4`/`R5` →
+dãy LED → đất, cộng với `VCC` nuôi dãy ấy. `VCC` hiện lấy ở **chân 3V3 của devkit**, dùng chung
+với ESP32-S3 chạy 240 MHz, PSRAM 80 MHz và camera.
+
 **Chỗ phải soi tiếp là điện, theo thứ tự này:**
 
 1. **Chân `BLK` có đi qua MOSFET không, hay nối thẳng vào GPIO21?** §2.3A đã viết sẵn điều kiện:
