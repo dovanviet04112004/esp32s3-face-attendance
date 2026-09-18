@@ -3092,6 +3092,47 @@ thấy màn đã rời mà chưa đủ ba mẫu.
 
 **Đăng ký không được đẻ ra một lần chấm công.** Ngay sau mẫu đầu, máy nhận ra người đang đứng đó và `svc_vision` bắn `MATCH` như mọi khi — `svc_attendance` mở cửa, ghi bản ghi, màn hiện "Đã chấm công" giữa lúc người ta đang quay mặt sang trái. Thấy trên board 13/09. Nên `ai_task` **không đẩy kết quả vào `q_result`** khi màn `Capture` đang mở: khung vẫn chạy đủ ba model để lấy mẫu, chỉ có đường nghiệp vụ là im. Câu xác nhận của việc thêm người do chính `CaptureScreen` nói, không mượn thẻ chấm công của màn `Scan`.
 
+**Lá chắn ấy dài đúng bằng thời gian màn mở, và không dài hơn.** Đóng màn lấy mẫu ra thì người
+vừa đăng ký, nếu còn đứng đó, sẽ được chấm công ngay — và **đó là đúng**: họ đang có mặt ở máy
+thật, bản ghi sinh ra là bản ghi thật. Cái §4.5.5h.2 cấm là chuyện khác hẳn: thẻ "Đã chấm công"
+nhảy ra **giữa lúc người ta đang quay mặt lấy mẫu thứ hai**, tức trong lòng một việc chưa xong.
+
+Hai cách chặn dài hơn thế đã thử trên board và **cả hai đều hỏng nặng hơn cái chúng chữa**. Một
+cái chốt toàn cục trong `ai_task` chờ `NO_FACE` thì không bao giờ mở, vì bộ dò bám một vật trong
+phòng suốt 80 giây không nhả — **cả kiosk mất khả năng chấm công** tới khi khởi động lại. Đánh
+dấu người mới là "vừa được phục vụ" để đòi một lần *đến* mới thì nhẹ hơn nhưng vẫn sai: người ta
+đứng nguyên tại chỗ nên lần *đến* ấy không tới, màn kẹt ở "Đang nhận diện..." cho hết cửa sổ
+`dedup_min`. Bài học chung: **đừng bắt người dùng làm một việc họ không có lý do gì để biết là
+phải làm.**
+
+**Đếm lần từ chối phải cùng nhịp với pipeline, và nhịp ấy là từng mẫu.** Màn `Capture` bỏ cuộc
+theo số lần bị gọi ảnh giả, `svc_vision` ngừng xác thực theo `kEnrolSpoofTries` — hai con số này
+**buộc phải reset cùng lúc**. Màn đếm dồn cả lượt trong khi pipeline đếm từng mẫu thì người thật
+bị đá ra oan: rải ba lần từ chối qua ba mẫu là đủ hỏng, mà BPCER đo được ở `live_min` 750‰ là
+1,75% nên chuyện ấy xảy ra thật trong ánh sáng xấu. Ngược lại màn đếm rộng hơn pipeline thì
+pipeline bỏ cuộc trước, màn đứng đợi hết hạn 15 s rồi mới báo — một khoảng treo không lý do. Cả
+hai vì thế reset ở đầu **mỗi mẫu**, và dòng "lần n/3" trên kính đếm đúng số lần của mẫu đang lấy.
+
+**Đăng ký hỏng giữa chừng phải dọn sạch dấu vết.** Mẫu nào đậu là `keep()` ghi ngay vào bảng và
+gọi `svc_facedb_persist()` — đúng, vì mất điện giữa chừng không được mất người đã lấy xong. Nhưng
+khi màn bỏ cuộc, những mẫu đã lỡ ghi **vẫn nằm lại**: bảng có một người mang `employee_id` thật,
+chỉ một template, **nhận diện được**, trong khi người vận hành vừa đọc "Chưa lấy được mẫu" và tin
+là không có gì xảy ra. Một người chỉ có mẫu chính diện sẽ trượt ngay khi hơi nghiêng mặt, và
+không ai hiểu vì sao — lỗi âm thầm tệ hơn việc phải đăng ký lại.
+
+Nhưng xoá thẳng cũng phí: công lấy mẫu đã bỏ ra rồi, và cái hỏng thường chỉ là ánh sáng hay tư
+thế của **một** mẫu. Nên màn hỏng đưa ra **hai nút**, người vận hành chọn:
+
+| Nút | Việc |
+|---|---|
+| **Thử lại** | Lấy lại từ mẫu đầu, **giữ nguyên `employee_id` và tên**. `FaceDb::enroll` thay thế theo cặp `(employee_id, template_idx)` nên ba mẫu mới đè lên ba mẫu cũ, không đẻ bản ghi thừa. Màn không rời đi nên `main` vẫn giữ mã người ấy |
+| **Thoát** | Rời về `Menu`. `main` **xoá người dở dang** bằng `svc_facedb_remove` + `svc_facedb_persist`, đúng đường màn Danh sách đang dùng |
+
+`main` là chỗ duy nhất biết `employee_id` thật, vì màn chỉ gửi mã chỗ `kNewPerson`; nó xoá khi
+thấy màn đã rời mà chưa đủ ba mẫu.
+
+**Đăng ký không được đẻ ra một lần chấm công.** Ngay sau mẫu đầu, máy nhận ra người đang đứng đó và `svc_vision` bắn `MATCH` như mọi khi — `svc_attendance` mở cửa, ghi bản ghi, màn hiện "Đã chấm công" giữa lúc người ta đang quay mặt sang trái. Thấy trên board 13/09. Nên `ai_task` **không đẩy kết quả vào `q_result`** khi màn `Capture` đang mở: khung vẫn chạy đủ ba model để lấy mẫu, chỉ có đường nghiệp vụ là im. Câu xác nhận của việc thêm người do chính `CaptureScreen` nói, không mượn thẻ chấm công của màn `Scan`.
+
 **Lá chắn ấy phải dài hơn thời gian màn mở.** Đóng màn lấy mẫu là hết chặn, mà người vừa đăng ký
 **vẫn đứng nguyên đó** và giờ đã có mặt trong bảng — nên khung kế tiếp cho `MATCH` và máy chấm
 công luôn: mở cửa, kêu loa, ghi một bản ghi mà không ai định tạo. Người vận hành chỉ thấy khi bấm
