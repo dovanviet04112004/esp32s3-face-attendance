@@ -1783,7 +1783,7 @@ Bốn luật:
 | **`MicroMutableOpResolver` riêng từng model** | Chỉ đăng ký đúng op cần → giảm vài chục KB flash so với `AllOpsResolver` |
 | Cấu hình sdkconfig | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB` · `CONFIG_ESP32S3_DATA_CACHE_64KB` · `CONFIG_SPIRAM_SPEED_80M` · `CONFIG_SPIRAM_MODE_OCT` · `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240` · `CONFIG_COMPILER_OPTIMIZATION_PERF` |
 | Hot path vào IRAM | Hàm hậu xử lý (NMS, affine warp) đặt `IRAM_ATTR` nếu profiler chỉ ra nghẽn |
-| Chạy tuần tự + early exit | Detect không thấy mặt → **dừng**, không chạy spoof/recog. Spoof fail → không chạy recog. Tiết kiệm ~70% năng lượng. **ToF không phải là cổng của chuỗi này** — nó tắt đèn nền chứ không tắt model (§4.5.5f) |
+| Chạy tuần tự + early exit | ToF không thấy người **4 giây** → **không chạy model nào**; thêm một phút nữa thì camera và màn cũng nghỉ. Ba mức nghỉ và danh sách nguồn đánh thức ở **§5.4**. Detect không thấy mặt → **dừng**, không chạy spoof/recog. Spoof fail → không chạy recog. Tiết kiệm ~70% năng lượng |
 | Cache embedding | Chỉ chạy recog khi spoof pass **và** box ổn định qua 2 frame liên tiếp |
 
 ### Lớp 6 — Đo lường (làm song song, không để cuối)
@@ -2967,7 +2967,7 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 
 **Một khuôn mặt cũng mở được máy, không chỉ ToF.** `PresenceOn` là **một cạnh**: chấm xong, máy về `Idle`, người vẫn đứng nguyên chỗ cũ nên không có cạnh nào nữa và ToF không mở máy lần thứ hai. Đo trên board 13/09: chỉ nghe ToF thì sau lần chấm đầu, mọi lần sau im cho tới khi reset. Bốn sự kiện thị giác ở `Idle` vì thế cũng mở máy — thấy mặt tức là có người, dù ToF chưa kịp nhả cạnh nào.
 
-**Cho nên cổng "có người" của ToF chỉ được tắt đèn nền, không được tắt model.** Cùng một phép đo 13/09 nói rằng nghe mỗi ToF là hỏng đường chấm công, mà bỏ `svc_vision_step` khi ToF không thấy ai chính là nghe mỗi ToF — lần này còn chặt hơn, vì không có phán quyết nào để `Idle` nhận nữa. Nón nhìn 27° của VL53L1X (§2.3D) hẹp hơn góc camera nhiều: người đứng lệch, ngồi, hay cao thấp hơn trục cảm biến thì ToF đọc 65535 mm trong khi camera vẫn thấy rõ mặt — máy im hẳn và không có cách nào chấm được. Cùng cái bẫy ấy đã treo màn lấy mẫu của §4.5.5h.2 khi người vận hành đứng ngoài tầm. Giá phải trả cho việc để detect chạy liên tục là **1,3 fps preview** (đo 18/09: 12,9 fps khi model chạy, 14,187 fps khi không), và đó là giá đúng: mất 1,3 fps thì người dùng không thấy, mất đường chấm công thì kiosk vô dụng. Đèn nền thì ngược lại — nó chỉ cần biết có ai đứng trước máy hay không, nên cạnh của ToF cộng một lần chạm màn là đủ.
+**Cổng "có người" của ToF cho model nghỉ, nhưng không được là lối vào duy nhất.** Phép đo 13/09 ở trên nói nghe mỗi ToF là hỏng đường chấm công, và bỏ `svc_vision_step` khi ToF không thấy ai thì còn chặt hơn — không còn phán quyết nào để `Idle` nhận. Nón nhìn 27° của VL53L1X (§2.3D) hẹp hơn góc camera: người đứng lệch trục hay ngoài `present_mm` thì ToF đọc 65535 mm trong khi camera vẫn thấy rõ mặt. Vì thế §5.4 giữ **chạm màn** làm nguồn đánh thức thứ hai và giữ GT911 thức suốt: ai mà cảm biến không thấy thì chạm một cái là máy dậy. Với người thật sự đến chấm công, đứng trước kiosk trong `present_mm` là nằm gọn trong nón nên ca này không xảy ra; ca hỏng thật đã gặp là màn lấy mẫu của §4.5.5h.2, nơi người vận hành đứng lùi ra, và nó được giữ thức bằng nguồn đánh thức riêng. Giá của việc cho model chạy liên tục thay vì nghỉ là **1,3 fps preview** (đo 18/09: 12,9 so với 14,187 fps) cộng toàn bộ khoản điện của §5.4 — không đáng, khi đã có đường đỡ.
 
 **Nhưng mở máy không được tiêu mất chính phán quyết đã mở nó.** Mỗi sự kiện ở `Idle` làm đúng việc nó mang: `FaceSmall` mở máy rồi chờ, còn `Match` **cấp luôn** và `Spoof` / `Unknown` **từ chối luôn**. Đo trên board 13/09: khi `Match` ở `Idle` chỉ chuyển sang `Detecting`, lần khớp đầu bị tiêu vào việc mở máy, mà §4.5.5d **không xác thực lại một track đã khớp** nên lần khớp thứ hai chỉ tới khi người dùng cử động đủ để track mất dấu (IoU < 0,5) — người đưa mặt vào khung rồi đứng yên **không bao giờ chấm được**, phải nhúc nhích mới xong. Cùng một lẽ ấy, `Denied` và `Cooldown` nhận `Match`: 3,5 giây giữ màn hình từ chối không được phép nuốt một lần khớp thật, người bị từ chối oan phải được chấm ngay ở vòng thử lại kế tiếp chứ không đứng đợi hết giờ. Chống chấm trùng vẫn là việc của `attend.dedup_min` nên không đường nào trong số này đẻ ra bản ghi thừa.
 
@@ -3872,6 +3872,94 @@ Thứ tự lấy khoá cố định trên toàn dự án: `m_facedb_io` → `m_f
 flash là đường duy nhất như vậy, và nó ra ngoài bằng `m_facedb_io`: lấy `m_facedb_io`, lấy
 `m_facedb` đúng lúc nén và đóng dấu header rồi thả ngay, ghi flash dưới một mình `m_facedb_io`.
 Người ghi khác chờ ở cửa `m_facedb_io`; `ai_task` không chờ gì cả.
+
+### 5.4 Các mức nghỉ và đường đánh thức
+
+Ý đồ này trước nay nằm rải rác — §2.3D chọn GPIO3 cho ngắt VL53L1X **vì nó là RTC GPIO, dùng
+được làm nguồn đánh thức**; §2.6 bỏ luôn chân SQW của DS3231 với lý do "đánh thức đã có ngắt
+VL53L1X"; §3 lớp 5 đòi "ToF không thấy người → không chạy model nào, tiết kiệm ~70%". Không mục
+nào đặc tả **máy nghỉ thế nào**, nên mục này làm việc đó.
+
+**Vì sao đáng làm.** Bảng §2.5 lúc rảnh, chưa tính loa và servo: ESP32-S3 ~100 mA, OV5640 đang
+stream **120 mA**, LCD cộng đèn nền ~100 mA, VL53L1X 20 mA, GT911 5 mA — tổng ~345 mA. Tắt mỗi
+đèn nền là cắt được chưa tới một phần ba. Hai khoản còn lại, **camera và CPU**, mới là phần
+§3 lớp 5 nhắm tới.
+
+**Một mốc thời gian, hai ngưỡng, ba mức.** Mốc là `esp_timer_get_time()` — đơn điệu, vì SNTP
+chỉnh đồng hồ tường và một đồng hồ bị chỉnh từng làm màn nháy. Mọi nguồn đánh thức chỉ làm đúng
+một việc: ghi lại mốc ấy.
+
+| Mức | Điều kiện | Tắt gì | Cắt được (§2.5, 🔬 chưa đo trên board này) |
+|---|---|---|---|
+| **L0 — thức** | vừa có nguồn đánh thức, hoặc màn phủ kín đang mở, hoặc đang lấy mẫu đăng ký | — | 0 |
+| **L1 — model nghỉ** | 4 s không nguồn nào | `ai_task` bỏ `svc_vision_step`; xoá hộp mặt trên kính và báo `NO_FACE` một lần | phần CPU của core 1 |
+| **L2 — máy nghỉ** | **60 s** không nguồn nào | thêm: đèn nền tắt, **ST7796 vào `SLPIN`**, **OV5640 vào standby mềm**, `cam_task` thôi lấy khung, `touch_task` giãn 40 → 160 ms, `ui_task` giãn 20 → 200 ms, `attend_task` thôi dựng trang cài đặt | ~100 mA đèn + ~120 mA camera + phần bộ điều khiển panel và số lần đánh thức CPU |
+
+Ngưỡng L2 là **một phút** chứ không phải hai chục giây: người đứng đọc màn hình, quay đi lấy thẻ
+rồi quay lại vẫn nằm trong cùng một lượt, và mỗi lần vào L2 phải trả lại 120 ms của `SLPOUT` cộng
+thời gian camera khoá lại PLL. Nghỉ quá sớm là trả giá đánh thức nhiều hơn phần điện tiết kiệm.
+
+**Danh sách nguồn đánh thức là danh sách đóng.** Chỉ năm thứ dưới đây được ghi lại mốc:
+
+1. ToF đọc được khoảng cách trong `vision.present_mm` — **mỗi lượt poll**, không chỉ lúc qua cạnh
+2. Chạm màn GT911
+3. Màn lấy mẫu đăng ký đang mở (`ui_kiosk_enrolling()`)
+4. Một màn phủ kín đang mở
+5. `drv_tof_read_mm` trả lỗi **thật** — khác `ESP_ERR_TIMEOUT`, vốn chỉ là "chưa tới lượt đo" và
+   xảy ra mỗi 100 ms. Lưới an toàn: cảm biến hỏng thì máy phải thức, không phải ngủ vĩnh viễn
+
+**Đầu ra của model không nằm trong danh sách, và đây là luật.** Lấy `result.faces > 0` làm nguồn
+đánh thức là vòng tự nuôi: bộ dò còn báo thấy mặt thì máy không bao giờ nghỉ, đúng hay sai cũng
+vậy. Việc phát hiện có người là của cảm biến khoảng cách và của ngón tay, không phải của model.
+
+**Nhưng *giữ thức* khác *đánh thức*, và bộ dò được phép giữ.** ToF là cảm biến đánh thức tốt và
+cảm biến giữ thức tồi. Đo trên board 18/09: `presence on at 228 mm` lúc 103,9 s rồi
+`presence off at 65535 mm` lúc **104,8 s** — mất dấu sau 0,9 giây — trong khi camera còn ra
+`verdict 6, match 0.838` (ghi được bản ghi), rồi `match 0.900`, rồi một phán quyết nữa ở 108,5 s.
+Mốc nghỉ đếm từ lần ToF cuối nên model **ngủ lúc 108,9 s, giữa một lượt chấm công đang chạy**.
+Cấm bộ dò giữ thức là chấp nhận lỗi ấy.
+
+Nên có **hai mốc, không phải một**: mốc đánh thức do năm nguồn trên ghi, và mốc "còn mặt trên
+kính" do `result.faces > 0` ghi. Mức nghỉ tính từ mốc muộn hơn, **với một trần**: mặt chỉ được
+kéo dài thêm tối đa `FACE_HOLD_CAP_MS` **kể từ lần đánh thức thật gần nhất**. Quá trần thì mốc
+mặt bị bỏ qua và ToF hoặc ngón tay phải xác nhận lại. Trần ấy chính là cái chặn vòng tự nuôi:
+bộ dò bám nhầm hoạ tiết tường — dải điểm nhiễu của §4.5.5d là 0,14–0,37, sát sàn `detect_min`
+0,350 — giữ được nhiều nhất một khoảng có hạn chứ không giữ mãi. Một lượt chấm công đầy đủ mất
+≈ 1,8 s và một lượt đăng ký ba mẫu mất hàng chục giây, nên trần đặt ở **120 s** là rộng gấp
+nhiều lần việc thật mà vẫn hữu hạn.
+
+**Giới hạn đã biết, và cách đỡ.** Nón nhìn của VL53L1X là 27°, hẹp hơn góc camera. Người đứng
+lệch trục hoặc ngoài `present_mm` thì ToF không thấy, và ở L2 thì camera cũng đang ngủ nên không
+ai thấy họ. Đường đỡ là **chạm màn** — nguồn đánh thức số 2 — và đó là lý do GT911 không được
+ngủ theo. Với người thật sự đến chấm công thì ca này không xảy ra: đứng trước kiosk trong 70 cm
+là nằm gọn trong nón. Ca hỏng thật đã gặp là **màn lấy mẫu đăng ký**, nơi người vận hành đứng
+lùi ra — đã đỡ bằng nguồn số 3.
+
+**Màn nghỉ sâu hơn mức tắt đèn.** Tắt đèn nền chỉ cắt dãy LED; bộ điều khiển ST7796 vẫn chạy dao
+động, bơm điện tích VCOM và các tầng lái hàng/cột. `SLPIN` (0x10) tắt hẳn những thứ đó. Thành
+phần `esp_lcd_st7796` trong `managed_components` **chỉ cài `disp_on_off`, không cài `disp_sleep`**,
+nên `esp_lcd_panel_disp_sleep()` trả `ESP_ERR_NOT_SUPPORTED`; `drv_lcd` gửi thẳng `SLPIN`/`SLPOUT`
+qua `esp_lcd_panel_io_tx_param`, đúng cách nó đã gửi VCOM và tần số khung ở §2.3A. Sửa
+`managed_components` là cấm (CLAUDE.md §6). Trình tự theo datasheet: ngủ là `DISPOFF` → `SLPIN`,
+thức là `SLPOUT` → **chờ 120 ms** → `DISPON`. 120 ms đó **trùng với lúc camera khoá lại PLL** nên
+không cộng dồn vào thời gian đánh thức thấy được.
+
+**Camera nghỉ bằng thanh ghi, không bằng `esp_camera_deinit()`.** Chân PWDN của OV5640 **không
+nối vào GPIO nào** (§2.3), nên đường duy nhất là ghi `0x3008` bit 6 qua SCCB. Không được gỡ hẳn
+driver: `deinit` trả lại hai đệm DMA 15.360 B ở RAM nội, mà §6.4 đo được mảnh liền lớn nhất của
+heap chính chỉ còn **4 KB** — xin lại rất có thể trượt, và lúc đó camera chết hẳn chứ không phải
+chậm. Lúc thức lại phải **bỏ vài khung đầu**: cảm biến cần khoá lại PLL và AEC, khung đầu ra
+trong lúc đó không dùng được.
+
+**Không dùng deep sleep, và chưa dùng light sleep.** Deep sleep mất phiên Wi-Fi và boot lại mất
+~3 s, mà kiosk phải nhận lệnh từ server bất cứ lúc nào — loại. Light sleep tự động cần
+`CONFIG_PM_ENABLE` với DFS, mà DFS đổi tần số APB, còn XCLK của camera lấy từ LEDC, SPI của LCD
+và I2S của loa đều dẫn xuất từ APB: **chưa thử, chưa đo**, để riêng một lượt. Chân GPIO3 của
+§2.3D vẫn giữ nguyên vai trò nguồn đánh thức RTC cho bản chạy pin sau này.
+
+🔬 **Phải đo, chưa có số**: dòng thật ở bốn trạng thái (L0 sáng, L0 tối, L1, L2); thời gian
+camera ra khỏi standby cho tới khung dùng được. Thời gian bật lại đèn nền **đã đo: 22 ms** kể từ
+lúc ToF thấy người ở 52 mm.
 
 ---
 
