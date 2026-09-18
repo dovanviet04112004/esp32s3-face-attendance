@@ -27,7 +27,7 @@
 | Nhánh | Model | Link code / weight | Thông số | License |
 |---|---|---|---|---|
 | **Detect** | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750** đo ở **độ phân giải gốc**, không phải ở 160×120 của dự án này (§3 lớp 2); ra box **+ 5 landmark** | **MIT** |
-| **Anti-spoof** | **MiniFASNetV2-SE width 32** trên crop ngữ cảnh 2,7×, distill từ trọng số MiniFASNetV2 nhập (ADR-0003) | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — trọng số `2.7_80x80_MiniFASNetV2.pth`, kiến trúc ở `src/model_lib/MiniFASNet.py` | **262.875 params**, 24,6 MMAC @81×81, spoof **234 ms** trên board; teacher nhập 432.832 params, 40,7 MMAC, 535 ms | Apache-2.0 (code và weight upstream) |
+| **Anti-spoof** | **MiniFASNetV1SE** của minivision, nhập nguyên trọng số, `conv1` PReLU viết thành stem tách hai nhánh ReLU, ba khối SE giữ Sigmoid, đọc crop ngữ cảnh 2,7× (ADR-0004) | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — trọng số `4_0_0_80x80_MiniFASNetV1SE.pth`, kiến trúc ở `src/model_lib/MiniFASNet.py` | **431.958 params**, 42,7 MMAC @80×80, spoof **581 ms** trên board; student distill width 32 (ADR-0003) 262.875 params, 234 ms giữ làm phương án nhẹ | Apache-2.0 (code và weight upstream) |
 | **Recognition** | **MobileFaceNet (MBF)** | Cùng repo `arcface_torch`, backbone `mbf`, config `configs/*_mbf` | **1.20M params** (đo trên bản trong repo), 4.58MB FP32 → **~1.2MB INT8**, embedding 512-D | Research-only ⚠️ (code MIT, weight/data non-commercial) |
 
 **Hai ràng buộc thiết kế quyết định bộ 3 này:**
@@ -53,9 +53,9 @@
 | Nhánh | Params | ≈ INT8 |
 |---|---|---|
 | Detect (YuNet) | 75.631 | 76 KB |
-| Anti-spoof (MiniFASNetV2-SE w32, distill) | 262.875 | **425 KB** đo trên board 16/09 |
+| Anti-spoof (MiniFASNetV1SE nhập, stem tách) | 431.958 | **603 KB** đo trên board 18/09 |
 | Recognition (MobileFaceNet, embedding 512-D) | 1.199.488 | 720 KB đo trên board |
-| **Tổng** | 1.537.994 | **1.303 KB trong 2 MB** (§6.1), gồm cả detect 158 KB |
+| **Tổng** | 1.707.077 | **1.481 KB trong 2 MB** (§6.1), gồm cả detect 158 KB |
 
 **Đã export và đo trên board 12/09**: ba file `.tflite` INT8 chiếm 1.302 KB trong partition
 `models_0` 2 MB, còn dư 746 KB. Cột KB là kích thước file thật, gồm cả overhead flatbuffer,
@@ -1003,7 +1003,7 @@ Xếp theo đúng thứ tự thực hiện.
 
 | Kỹ thuật | Nội dung | Áp cho |
 |---|---|---|
-| Chọn op thân thiện INT8 | Thay SiLU/HardSwish/GELU/**PReLU** → **ReLU6** hoặc **ReLU**. Sigmoid trong khối SE → **HardSigmoid dạng ReLU6(x+3)/6** | cả 3 |
+| Chọn op thân thiện INT8 | Thay SiLU/HardSwish/GELU/**PReLU** → **ReLU6** hoặc **ReLU**. Sigmoid trong khối SE → **HardSigmoid dạng ReLU6(x+3)/6** khi tự train. **Trọng số nhập có SE** thì giữ Sigmoid gốc: `LOGISTIC` và `MEAN` chạy kernel tham chiếu trên vector đã gộp về 1×1, ba khối tốn **46 ms** đo trên board (`latency.md` §11), đổi HardSigmoid là đổi hàm đã học | cả 3 |
 | Kiểm tra op TFLM/ESP-NN **trước khi train** | ESP-NN chỉ tăng tốc: `CONV_2D`, `DEPTHWISE_CONV_2D`, `FULLY_CONNECTED`, `ADD`, `MUL`, `AVG/MAX_POOL`, `SOFTMAX`. Op ngoài danh sách → rơi về kernel C tham chiếu, chậm 10–40× | cả 3 |
 | Tránh op không có kernel | `RESIZE_BILINEAR` động, `TRANSPOSE_CONV`, `GATHER`, `ARGMAX` → chuyển ra hậu xử lý viết tay bằng C | detect (NMS, decode anchor) |
 | Số kênh về bội số 8/16 | ESP-NN SIMD nạp 16 byte/lần; kênh lẻ = padding phí | cả 3 |
@@ -1042,7 +1042,7 @@ Từng nhánh chọn gì:
 | Nhánh | Activation | Vì sao |
 |---|---|---|
 | detection | `ReLU6` viết cứng trong `blocks.py` | Không chạy CLE, dải chặn có lợi cho INT8 |
-| anti-spoof | `ReLU` qua config | **Không chạy CLE** — đo 12/09 cho thấy nó làm EER sau INT8 tăng 53% (`measurements/antispoof` §32). `ReLU` vẫn giữ vì nó không tốn gì so với `ReLU6` và để ngỏ đường bật lại CLE nếu kiến trúc đổi. `HardSigmoid` của khối SE vẫn là `ReLU6(x+3)/6`, đó là công thức của cổng chứ không phải activation của conv |
+| anti-spoof | `ReLU` qua config, `conv1` giữ PReLU dưới dạng **stem tách** hai nhánh ReLU + ADD | **Không chạy CLE** — đo 12/09 cho thấy nó làm EER sau INT8 tăng 53% (`measurements/antispoof` §32). `ReLU` vẫn giữ vì nó không tốn gì so với `ReLU6` và để ngỏ đường bật lại CLE nếu kiến trúc đổi. Khối SE của trọng số nhập giữ **Sigmoid** gốc (`LOGISTIC` tham chiếu, xem lớp 1); student tự train dùng `HardSigmoid` `ReLU6(x+3)/6` |
 | recognition | `ReLU` qua config | Chạy CLE — `ReLU6` chỉ giữ được 15/48 cặp conv, `ReLU` giữ đủ 48/48 |
 
 ### Lớp 2 — Huấn luyện
@@ -1237,22 +1237,34 @@ khung giả; `SpoofShardDataset.scale_target()` bốc trong đúng khoảng từ
 Nghiệm thu bằng bảng bốn dòng cùng thước 87 khung INT8 + tập lớn + `bench_ai`: teacher, bản
 nhập stem tách, student distill, student cũ `0107`. Kết quả 16/09: student
 `20260916-1109` giữ **62/62**, chặn **25/25**, khe 49 nấc INT8 so với 53 của bản nhập, chạy
-**234 ms thay vì 535** và dùng **423 KB arena thay vì 744**, bộ op toàn esp-nn không PAD — **lên
-`models.lock.json`** (ADR-0003, `measurements.md` §42). Chỗ nó thua là ảnh in, và phép lọc thông thấp
-chốt nguyên nhân là trần năng lực của width 32 chứ không phải dữ liệu hay hiệu chuẩn.
+**234 ms thay vì 535** và dùng **423 KB arena thay vì 744**, bộ op toàn esp-nn không PAD
+(ADR-0003, `measurements.md` §42). Chỗ nó thua là ảnh in, và phép lọc thông thấp chốt nguyên nhân là
+trần năng lực của width 32 chứ không phải dữ liệu hay hiệu chuẩn. **Thử trực tiếp 17/09 trên board,
+student cho qua mọi đòn giấy** — tờ tiền, ảnh in, thẻ — trong khi bản nhập chặn 15/15 lượt
+(`measurements.md` §43); bộ 25 khung giả của board toàn đòn màn hình nên 25/25 chưa từng đo giấy.
+Vì thế student **rời `models.lock.json`** và giữ vai phương án nhẹ; model nhánh là **V1SE nhập**
+(mục dưới, ADR-0004).
 
-Đường xuất của student có thêm một bước **căn bias**: `eval.py --calibrate-live-bias` cộng một hằng
-số vào logit lớp sống rồi gấp vào `classifier.bias`, giữ bản gốc ở `ckpt/best.uncalibrated.pth`. Phép
-cộng hằng số không đổi thứ tự nên không khung nào đổi phán quyết và khe logit giữ nguyên; nó chỉ đưa
-điểm vận hành khỏi đuôi phẳng của softmax, nơi `live_min` lưu theo phần nghìn chỉ còn 19 nấc dùng
-được. Sau khi căn, cửa sổ là 320 nấc và `live_min` gieo **500‰**.
+Đường xuất của nhánh có thêm một bước **căn bias** cho mọi model lên lock: `eval.py
+--calibrate-live-bias` cộng một hằng số vào logit lớp sống rồi gấp vào bias của lớp phân loại
+(`classifier.bias` hay `prob.bias`), giữ bản gốc ở `ckpt/best.uncalibrated.pth`. Phép cộng hằng số
+không đổi thứ tự nên không khung nào đổi phán quyết và khe logit giữ nguyên; nó chỉ đưa điểm vận
+hành khỏi đuôi phẳng của softmax, nơi `live_min` lưu theo phần nghìn có quá ít nấc dùng được (student
+19 nấc trước căn, 320 sau). Sau khi căn, `live_min` gieo **500‰** cho mọi đời model.
 
 #### Trọng số nhập từ Silent-Face-Anti-Spoofing, đọc crop ngữ cảnh 2,7×
 
-Model thứ hai của nhánh là `minifasnet_v2`: kiến trúc MiniFASNetV2 của minivision-ai
-(`keep_dict['1.8M_']`, không SE), trọng số `2.7_80x80_MiniFASNetV2.pth` từ kho
-Silent-Face-Anti-Spoofing (sha256 bắt đầu `a5eb02e1843f19b5`, giấy phép Apache-2.0). Nó
-**không train trên pool của dự án**; giá trị nằm đúng ở đó.
+Port `minifasnet_v2` dựng cả hai kiến trúc minivision-ai theo tên bảng kênh: `keep: 1.8M_` là
+MiniFASNetV2 (không SE, trọng số `2.7_80x80_MiniFASNetV2.pth`, sha256 bắt đầu `a5eb02e1843f19b5`),
+`keep: 1.8M` cộng `squeeze_excite: true` là **MiniFASNetV1SE** (trọng số
+`4_0_0_80x80_MiniFASNetV1SE.pth`, sha256 bắt đầu `84ee1d37d96894d5`), cả hai Apache-2.0 từ kho
+Silent-Face-Anti-Spoofing; `import_minifasnet.py --source` còn nhận trọng số facenox (MiniFASNetV2-SE
+128 px, CelebA-Spoof) để đối chứng. Chúng **không train trên pool của dự án**; giá trị nằm đúng ở đó.
+**V1SE là model trên `models.lock.json`** từ 18/09 (ADR-0004): cùng 87 khung và cùng đường tối ưu,
+nó giữ khe INT8 +0,559 so với +0,365 của V2, chặn ảnh in cỡ vừa 12/12 nơi V2 sau đổi ReLU còn 0–1/12,
+và chỉ tốn thêm 46 ms cho ba khối SE (`measurements/antispoof` §43.4–43.5). Phần dưới đây viết cho
+V2 lúc nhập lần đầu; phép tách stem, gấp tiền xử lý và bộ op áp y nguyên cho V1SE, thêm `LOGISTIC`
+×3 và `MEAN` ×3 của SE.
 
 **Vì sao 2,7× đúng với model này mà sai với model train trên CelebA (§22).** §22 đo model
 train trên CelebA-Spoof, nơi mặt thật là ảnh sự kiện studio còn mặt giả là người cầm ảnh
@@ -1814,7 +1826,7 @@ Tail nhỏ hơn head nhiều — cỡ vài chục KB mỗi model (metadata theo 
 | Arena | Ở đâu | Dùng cho | Kích thước |
 |---|---|---|---|
 | `arena_fast` | **PSRAM**, align 16 B; `AI_ARENA_FAST_INTERNAL` đổi sang SRAM nội | **detect một mình**, `MicroAllocator` riêng | `tail_det + head_det` = **189.628 B** đo thật |
-| `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` = **422.764 B** đo thật 12/09 với spoof một backbone (spoof chiếm 210 KB, recog nâng lên 412 KB); bản hai backbone từng chiếm 823.148 B |
+| `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` = **748.524 B** đo thật 18/09 với V1SE nhập (spoof chiếm 675 KB, recog 412 KB); student width 32 chỉ cần 422.764 B, bản hai backbone từng chiếm 823.148 B |
 
 Vẫn là hai arena dù cùng ở PSRAM: `arena_big` gộp được vì spoof và recog chạy nối nhau **sau khi** detect xong, nên `head` của chúng chồng lên nhau an toàn. detect chạy mỗi frame, không chia `head` với ai.
 
@@ -1951,7 +1963,7 @@ esp32s3-face-attendance/
     ├── TASKS.md                                 # backlog
     ├── DU_LIEU.md                               # dữ liệu đã tải và xử lí — số đo trên đĩa
     ├── FREERTOS.md                              # sổ kiểm lỗi đồng thời, soát lại mỗi khi thêm task
-    ├── adr/{0001-yunet-thay-ulfg.md, 0002-bo-knowledge-distillation.md, 0003-distill-chong-gia-tu-trong-so-nhap.md}
+    ├── adr/{0001-yunet-thay-ulfg.md, 0002-bo-knowledge-distillation.md, 0003-distill-chong-gia-tu-trong-so-nhap.md, 0004-v1se-thay-student-chong-gia.md}
     ├── measurements/{arena.md, latency.md, power.md, parity.md}  # số 🔬 đo được trên board
     └── thesis/                                  # bản báo cáo ĐATN
 ```
@@ -3299,8 +3311,8 @@ components/ai_engine/
 │   ├── antispoof/
 │   │   ├── spoof_model.hpp                # lớp + op của nhánh, không ra khỏi thư mục này
 │   │   ├── spoof_model.cpp
-│   │   ├── ops.cpp                        # MicroMutableOpResolver<7>, đếm trên graph thật
-│   │   └── preproc.cpp                    # crop + resize 81×81
+│   │   ├── ops.cpp                        # MicroMutableOpResolver<10>, đếm trên graph thật; LOGISTIC + MEAN cho khối SE nhập
+│   │   └── preproc.cpp                    # crop 2,7× + resize về cạnh graph khai (80 hoặc 81)
 │   └── recognition/
 │       ├── recog_model.hpp                # lớp + op của nhánh, không ra khỏi thư mục này
 │       ├── recog_model.cpp
@@ -4064,7 +4076,7 @@ Font không nằm ở đây: bảng chữ 1bpp của kiosk biên dịch thẳng 
 | LCD frame buffer 320×480 RGB565 | 300 KB | **PSRAM** | `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` | |
 | LCD bounce buffer (2 × 20 dòng) | 2 × 19.2 KB | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội |
 | **`arena_fast`** — detect một mình @160×120 | **189.628 B** đo thật | **PSRAM** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_SPIRAM)` | Không nhánh nào nằm vừa SRAM nội (§6.4); `ai_engine` cấp theo `arena_hint` rồi làm tròn lên bội KB |
-| **`arena_big`** — anti-spoof @81×81 và recognition @113×113 **chung một `MicroAllocator`** | **422.764 B** đo thật 12/09 | **PSRAM** | như trên | `Σ tail + max(head)` theo §3.8, không phải tổng hai arena. Bản hai backbone từng chiếm 823.148 B |
+| **`arena_big`** — anti-spoof @80×80 và recognition @113×113 **chung một `MicroAllocator`** | **748.524 B** đo thật 18/09 (V1SE nhập); 422.764 B với student width 32 | **PSRAM** | như trên | `Σ tail + max(head)` theo §3.8, không phải tổng hai arena. Bản hai backbone từng chiếm 823.148 B |
 | Trọng số 3 model `.tflite` | ~1.7 MB | **Flash mmap** | `esp_partition_mmap` | Không tốn RAM |
 | Ảnh crop 113×113×3 int8 (recog input) | 38.3 KB | **SRAM** | static buffer | Vào thẳng `Invoke()` |
 | Ảnh crop 81×81×3 int8 (spoof input) | 19.7 KB | **SRAM** | static buffer | |
@@ -4092,7 +4104,7 @@ Font không nằm ở đây: bảng chữ 1bpp của kiosk biên dịch thẳng 
 | Arena | Dùng | Cấp | Ở đâu | So với bảng trên |
 |---|---|---|---|---|
 | `arena_fast` — detect một mình | 189.628 B | 224 KB | SRAM nội | vượt **49 KB** |
-| `arena_big` — spoof + recog chung | 422.764 B | 466 KB | PSRAM | bảng này không tính, vì chỉ tính SRAM |
+| `arena_big` — spoof + recog chung | 748.524 B | 466 KB | PSRAM | bảng này không tính, vì chỉ tính SRAM |
 
 Nạp cả ba trong `bench_ai` xong, RAM nội còn **111 KB**. Nhưng `bench_ai` chưa có Wi-Fi,
 LVGL, camera lẫn LCD, nên năm dòng dưới của bảng vẫn chưa chi đồng nào: 55 + 53 + 42 + 57 +
@@ -4114,7 +4126,8 @@ buộc là DMA nội, nên không có cách nào giữ `arena_fast` ở SRAM mà
 
 Đường quay lại khi model nhỏ đi: **thu nhỏ model trước, bật `AI_ARENA_FAST_INTERNAL=y` sau**.
 `arena_big` đã nhỏ đi hai lần và cả hai đều là số đo: hạ `width` của recognition xuống 32
-đưa 823.148 B về 476.188 B, bỏ nhánh ngữ cảnh của anti-spoof đưa tiếp về **422.764 B**.
+đưa 823.148 B về 476.188 B, bỏ nhánh ngữ cảnh của anti-spoof đưa tiếp về 422.764 B; rồi lên lại
+**748.524 B** khi V1SE nhập thay student (ADR-0004), vì đầu spoof 675 KB lớn hơn đầu recog 412 KB.
 `arena_fast` chỉ nhỏ đi khi chính detect nhỏ đi.
 
 Bảng trên là ngân sách **tổng**, mà thứ chặn `arena_fast` lại là dải liền mạch (§3.8).
