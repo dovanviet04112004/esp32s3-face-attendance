@@ -20,6 +20,8 @@ export const envSchema = z.object({
 
   SEED_ADMIN_PASSWORD: z.string().min(8).optional(),
 
+  TEMPLATE_ENCRYPTION_KEY: z.string().min(44),
+
   CORS_ORIGIN: z.string().min(1),
 
   MQTT_URL: z.string().min(1),

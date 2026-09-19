@@ -5,6 +5,11 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import type { ApproveDeviceDto, ListDevicesDto, UpdateDeviceDto } from "./dto/device.dto.js";
 
+interface HeartbeatFacts {
+  fwVersion: string;
+  modelVersion: string;
+}
+
 @Injectable()
 export class DevicesService {
   private readonly log = new Logger(DevicesService.name);
@@ -53,6 +58,20 @@ export class DevicesService {
     return this.db.device.update({
       where: { id },
       data: { status: "REVOKED", tokenHash: null, online: false },
+    });
+  }
+
+  /** Record what a heartbeat says about a kiosk, creating its row if needed. */
+  async applyHeartbeat(deviceId: string, beat: HeartbeatFacts, at: Date): Promise<void> {
+    await this.seen(deviceId, at);
+    await this.db.device.update({
+      where: { id: deviceId },
+      data: {
+        fwVersion: beat.fwVersion,
+        modelVersion: beat.modelVersion,
+        lastSeenAt: at,
+        online: true,
+      },
     });
   }
 
