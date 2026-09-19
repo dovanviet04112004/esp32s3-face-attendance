@@ -4227,11 +4227,26 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
 | `ui_task` | `ui_kiosk` | 0 | 4 | 4 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
-| `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB | esp-mqtt tự tạo | pub/sub, TLS |
+| `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB **ở PSRAM** | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota` | 0 | 3 | 8 KB | khi có lệnh `down/ota` | Tải firmware / models, verify sha256, ghi partition |
 | `sync_task` | `sync_service` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, xoá khỏi hàng đợi |
 | `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ 30 s chỉ để biết là không có sóng. **Tạm**: tách thành `mqtt_task` và `sync_task` ở E10-T6 |
 | `wifi` / `lwip` | hệ thống IDF | 0 | 18–23 | — | — | Do IDF quản lý, không tự tạo |
+
+**Ngăn xếp `mqtt_task` nằm ở PSRAM.** `CONFIG_MQTT_TASK_STACK_ON_EXTERNAL_MEMORY` đẩy 6 KB ấy
+ra bộ nhớ ngoài; khối điều khiển task vẫn ở RAM nội. Không phải chọn cho nhanh mà là chọn cho
+chạy được: heap nội đo trên `dev` còn **1.848 B trong vùng chính 225 KB**, và mảnh liền lớn nhất
+của cả hệ là 5.620 B — esp-mqtt xin 6.144 B nên nó không khởi động nổi. Đây không phải phân
+mảnh: vùng giữ mảnh ấy có **đúng một** khối trống. RAM nội đơn giản là đã hết, mà 92 KB trong đó
+là hai bộ đệm DMA của màn hình và camera, thứ **bắt buộc** phải ở RAM nội.
+
+Luật kèm theo của IDF là ngăn xếp ở PSRAM không được chạm khi cache flash tắt. Điều kiện ấy
+thoả về mặt cấu trúc: `spi_flash_disable_interrupts_caches_and_other_cpu()` đỗ hẳn lõi kia và
+tắt ngắt suốt lượt ghi flash, nên không task nào chạy được lúc đó. Cùng chính sách với
+`MBEDTLS_EXTERNAL_MEM_ALLOC` và hai arena TFLM: **RAM nội để dành cho DMA**.
+
+`ota_task` 8 KB **chưa có chỗ** trên `dev` — không vùng nào còn 8 KB liền. Nới thật thì phải hạ
+đệm bounce LCD, không phải đẩy thêm ngăn xếp sang PSRAM.
 
 **`ui_task` lấy 4 KB chứ không 8 KB.** `ram.md` §3.1 đo trên `bench` thấy nó còn trống 6.772 B
 trên 8.192 B cấp, tức cả vòng đời chỉ chạm **1.420 B**; 4.096 B để lại biên 2.676 B. Bốn KB thu
