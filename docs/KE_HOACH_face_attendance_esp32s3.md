@@ -2849,7 +2849,8 @@ firmware/
 │   │                                 #   app_main.c để `test_apps/soak` dựng đúng
 │   │                                 #   chuỗi mà kiosk dựng, không phải bản chép lại
 │   ├── app_tasks.{c,h}       [C]     # xTaskCreatePinnedToCore (§5)
-│   └── app_wiring.{c,h}      [C]     # ★ nối queue/event giữa các component
+│   ├── app_wiring.{c,h}      [C]     # ★ nối queue/event giữa các component
+│   └── app_console.{c,h}     [C]     # ★ nạp NVS qua USB, Kconfig tắt ở bản prod (§6.2.1)
 │
 ├── components/                       # ── 100% CODE TỰ VIẾT ──
 │   ├── common/            [C]    L0  # kiểu dữ liệu, error code, event id, ring buffer, gen_payload.h
@@ -4421,7 +4422,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | Namespace | Key | Kiểu | Ghi chú |
 |---|---|---|---|
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
-| `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_host`, `mqtt_port`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz` | str / u32 | token xoay vòng khi còn 7 ngày; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó |
+| `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz` | str / u32 | token xoay vòng khi còn 7 ngày; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt |
@@ -4443,6 +4444,36 @@ gõ tay không bảo đảm được, và trên bàn phát triển thì `erase-f
 Cái giá là `kiosk-a1b2c3d4e5f6` không đọc ra nghĩa. Tên cho người đọc nằm ở bảng device của
 backend (§4.6), khoá theo `deviceId` — đó mới là chỗ đúng của nó, vì tên đổi được còn khoá khử
 trùng thì không.
+
+**`device/mqtt_uri` là một chuỗi, không phải cặp host với port.** Đường từ bàn thí nghiệm ra
+hiện trường đổi **cả scheme** chứ không chỉ địa chỉ:
+
+```
+bàn      mqtt://192.168.x.x:1883     không TLS
+thật     mqtts://mqtt.<domain>:8883  TLS, cert CA nhúng trong firmware (§7.2)
+```
+
+Tách thành `mqtt_host` với `mqtt_port` thì scheme phải nằm ở khoá thứ ba, hoặc suy ra từ số
+port — mà suy từ port là đúng loại lỗi âm thầm cần tránh: gõ nhầm một chữ số là kiosk gửi dữ
+liệu chấm công **không mã hoá** và không có gì kêu lên. Một URI duy nhất thì `esp-mqtt` nhận
+thẳng, và chuyển môi trường là đổi **một giá trị, không sửa dòng code nào**.
+
+Chốt chặn đi kèm nằm ở lúc biên dịch: bản `prod` **từ chối mọi URI không bắt đầu bằng `mqtts://`**
+ngay tại `net_mqtt`, nên bàn chạy plaintext được còn hiện trường thì không thể nhầm.
+
+**Nạp NVS bằng console qua USB, và console bị chặn lúc biên dịch.** `main/app_console.c` nhận
+`nvs set <ns> <key> <value>` rồi ghi qua `sys_storage`, nên **không giá trị bí mật nào tồn tại
+dưới dạng file ở bất kỳ đâu** — khác hẳn một bản firmware một nhịp gõ thẳng giá trị vào mã
+nguồn, thứ sống theo thư mục tạm rồi biến mất cùng nó.
+
+Cũng không dùng `nvs_partition_gen.py`: nó ghi đè **cả phân vùng**, cuốn theo `sys/boot_count`
+— nửa cao của mọi `local_id` — nên nạp địa chỉ broker xong là thiết bị **sinh lại những
+`local_id` đã gửi đi rồi**, và server khử trùng bằng đúng khoá ấy sẽ nuốt các bản ghi mới như
+bản trùng. Mất bản ghi chấm công, im lặng.
+
+Console chặn bằng `Kconfig` mặc định **tắt**, bật ở `sdkconfig.dev` và `sdkconfig.bench`; bản
+`prod` không biên dịch một dòng nào của nó. Cờ lúc chạy không đủ: một cờ nằm trong chính NVS mà
+console ghi được thì console tự mở lại được chính nó.
 
 **Gieo một lần là không đủ: bộ gieo phải có số hiệu.** Luật "boot đầu gieo, sau đó NVS sở hữu"
 đúng cho giá trị người vận hành đã đặt, nhưng nó khoá luôn cả những thiết bị **chưa ai đặt gì**:
