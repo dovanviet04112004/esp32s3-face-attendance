@@ -4175,7 +4175,7 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`REVOKED`), templateIdx, updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
-| `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, direction(`IN`/`OUT`), score, livenessScore, synced, photoUrl |
+| `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
 | `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, url, sha256, sizeBytes, minFwVersion, runId, rolloutState |
 | `AuditLog` | actorId, action, target, meta(json), ts |
@@ -4213,6 +4213,19 @@ phát hành, không phải của thiết bị nhận.
 **`FaceTemplate.embedding` là dữ liệu sinh trắc: mã hoá lúc lưu, không bao giờ nằm trong DTO đọc
 thường** (§7.5). `templateIdx` đi kèm vì khoá nghiệp vụ là `(employeeId, templateIdx)`, và
 `enroll_payload.schema.json` đã mang trường ấy sẵn.
+
+**Ba cờ của `AttendanceRecord` là lời khai của máy về hoàn cảnh, không phải trạng thái đồng bộ.**
+`attendance_record.schema.json` gửi lên `doorOpened`, `capturedOffline` và `clockUnsynced`; giữ
+cả ba vì mỗi cái trả lời một câu mà cột khác không trả lời được. `clockUnsynced` là cái đắt nhất:
+nó nói **dấu thời gian của chính bản ghi ấy không dựa trên NTP** — máy vừa mất điện, pin RTC cạn —
+nên một bảng công không đánh dấu nó là một bảng công sai giờ mà không ai biết. Một cột "đã đồng
+bộ" thì ngược lại là vô nghĩa ở phía máy chủ: bản ghi nằm trong bảng nghĩa là nó đã tới.
+
+**Thiết bị lạ gặp trên broker được ghi ở `PENDING`.** §7.3 giao việc tạo dòng `Device` cho
+`POST /devices/register`, nhưng đường ấy là E13-T9; tới lúc đó một kiosk có credential vẫn phát
+lên topic của nó. Máy chủ vì thế tạo dòng ở trạng thái `PENDING` ngay lần đầu thấy — **đúng trạng
+thái §7.3 muốn cho một máy chưa ai nhận**, chỉ đến bằng cửa khác — thay vì vứt bản ghi vì khoá
+ngoại. Khi E13-T9 tồn tại thì HTTPS là cửa chính, còn cửa này là lưới an toàn.
 
 **MQTT topic** (định nghĩa gốc ở `contracts/mqtt_topics.yaml`)
 
