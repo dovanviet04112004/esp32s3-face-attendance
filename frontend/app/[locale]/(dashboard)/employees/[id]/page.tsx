@@ -6,7 +6,11 @@ import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 
-import { EmployeeForm, type EmployeeDraft } from "@/components/forms/employee-form";
+import {
+  EmployeeForm,
+  type DepartmentChoice,
+  type EmployeeDraft,
+} from "@/components/forms/employee-form";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { useRouter } from "@/i18n/navigation";
@@ -16,7 +20,7 @@ interface Employee {
   id: number;
   code: string;
   fullName: string;
-  department: string | null;
+  departmentId: string | null;
   active: boolean;
 }
 
@@ -42,6 +46,11 @@ export default function EmployeePage() {
     queryFn: async () => (await api.get<Employee>(`/employees/${id}`)).data,
   });
 
+  const departments = useQuery({
+    queryKey: ["departments"],
+    queryFn: async () => (await api.get<DepartmentChoice[]>("/departments")).data,
+  });
+
   const devices = useQuery({
     queryKey: ["devices"],
     queryFn: async () => (await api.get<{ rows: Device[] }>("/devices")).data,
@@ -52,7 +61,7 @@ export default function EmployeePage() {
       api.patch(`/employees/${id}`, {
         code: draft.code,
         fullName: draft.fullName,
-        department: draft.department || undefined,
+        departmentId: draft.departmentId || undefined,
         active: draft.active,
       }),
     onSuccess: () => {
@@ -91,9 +100,10 @@ export default function EmployeePage() {
           start={{
             code: employee.data.code,
             fullName: employee.data.fullName,
-            department: employee.data.department ?? "",
+            departmentId: employee.data.departmentId ?? "",
             active: employee.data.active,
           }}
+          departments={departments.data ?? []}
           showActive
           busy={save.isPending}
           fault={fault}

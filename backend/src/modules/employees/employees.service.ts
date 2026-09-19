@@ -11,6 +11,13 @@ import type {
 
 const UNIQUE_VIOLATION = "P2002";
 
+// One join rather than a lookup per row: the table shows a department by name.
+const EMPLOYEE_VIEW = {
+  department: { select: { id: true, code: true, name: true } },
+  jobTitle: { select: { id: true, code: true, name: true } },
+  manager: { select: { id: true, code: true, fullName: true } },
+} as const;
+
 @Injectable()
 export class EmployeesService {
   constructor(private readonly db: PrismaService) {}
@@ -33,6 +40,7 @@ export class EmployeesService {
         skip: query.skip,
         take: query.take,
         orderBy: { code: "asc" },
+        include: EMPLOYEE_VIEW,
       }),
       this.db.employee.count({ where }),
     ]);
@@ -40,7 +48,7 @@ export class EmployeesService {
   }
 
   async get(id: number): Promise<Employee> {
-    const found = await this.db.employee.findUnique({ where: { id } });
+    const found = await this.db.employee.findUnique({ where: { id }, include: EMPLOYEE_VIEW });
     if (!found) {
       throw new NotFoundException(`no employee ${id}`);
     }

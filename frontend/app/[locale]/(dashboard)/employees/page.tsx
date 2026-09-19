@@ -13,7 +13,7 @@ interface Employee {
   id: number;
   code: string;
   fullName: string;
-  department: string | null;
+  department: { id: string; name: string } | null;
   active: boolean;
 }
 
@@ -31,7 +31,7 @@ export default function EmployeesPage() {
   const columns: Column<Employee>[] = [
     { header: t("code"), cell: (row) => <span className="font-mono">{row.code}</span> },
     { header: t("fullName"), cell: (row) => row.fullName },
-    { header: t("department"), cell: (row) => row.department ?? common("empty") },
+    { header: t("department"), cell: (row) => row.department?.name ?? common("empty") },
     {
       header: t("status"),
       cell: (row) => (

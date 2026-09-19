@@ -5,16 +5,24 @@ import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 export interface EmployeeDraft {
   code: string;
   fullName: string;
-  department: string;
+  departmentId: string;
   active: boolean;
+}
+
+export interface DepartmentChoice {
+  id: string;
+  code: string;
+  name: string;
 }
 
 interface Props {
   start: EmployeeDraft;
+  departments: DepartmentChoice[];
   showActive: boolean;
   busy: boolean;
   fault: string | null;
@@ -22,7 +30,15 @@ interface Props {
   onCancel: () => void;
 }
 
-export function EmployeeForm({ start, showActive, busy, fault, onSubmit, onCancel }: Props) {
+export function EmployeeForm({
+  start,
+  departments,
+  showActive,
+  busy,
+  fault,
+  onSubmit,
+  onCancel,
+}: Props) {
   const t = useTranslations("employees");
   const common = useTranslations("common");
   const [draft, setDraft] = useState(start);
@@ -61,13 +77,19 @@ export function EmployeeForm({ start, showActive, busy, fault, onSubmit, onCance
       <label className="mt-4 block text-sm font-medium" htmlFor="department">
         {t("department")}
       </label>
-      <Input
+      <Select
         id="department"
-        maxLength={64}
-        value={draft.department}
-        onChange={(e) => setDraft({ ...draft, department: e.target.value })}
+        value={draft.departmentId}
+        onChange={(e) => setDraft({ ...draft, departmentId: e.target.value })}
         className="mt-1"
-      />
+      >
+        <option value="">{common("empty")}</option>
+        {departments.map((department) => (
+          <option key={department.id} value={department.id}>
+            {department.name}
+          </option>
+        ))}
+      </Select>
 
       {showActive ? (
         <label className="mt-4 flex items-center gap-2 text-sm">

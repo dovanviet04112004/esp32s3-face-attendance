@@ -1,15 +1,19 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
-import { EmployeeForm, type EmployeeDraft } from "@/components/forms/employee-form";
+import {
+  EmployeeForm,
+  type DepartmentChoice,
+  type EmployeeDraft,
+} from "@/components/forms/employee-form";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 
-const BLANK: EmployeeDraft = { code: "", fullName: "", department: "", active: true };
+const BLANK: EmployeeDraft = { code: "", fullName: "", departmentId: "", active: true };
 
 export default function NewEmployeePage() {
   const t = useTranslations("employees");
@@ -18,12 +22,17 @@ export default function NewEmployeePage() {
   const cache = useQueryClient();
   const [fault, setFault] = useState<string | null>(null);
 
+  const departments = useQuery({
+    queryKey: ["departments"],
+    queryFn: async () => (await api.get<DepartmentChoice[]>("/departments")).data,
+  });
+
   const create = useMutation({
     mutationFn: (draft: EmployeeDraft) =>
       api.post("/employees", {
         code: draft.code,
         fullName: draft.fullName,
-        department: draft.department || undefined,
+        departmentId: draft.departmentId || undefined,
       }),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ["employees"] });
@@ -43,6 +52,7 @@ export default function NewEmployeePage() {
       <div className="mt-6">
         <EmployeeForm
           start={BLANK}
+          departments={departments.data ?? []}
           showActive={false}
           busy={create.isPending}
           fault={fault}
