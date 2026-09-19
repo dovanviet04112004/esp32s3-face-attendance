@@ -3,27 +3,16 @@
 import { useTranslations } from "next-intl";
 import { useEffect, type ReactNode } from "react";
 
-import { Link, usePathname, useRouter } from "@/i18n/navigation";
+import { Sidebar } from "@/components/nav/sidebar";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/auth";
 
-const PAGES = [
-  { href: "/overview", key: "overview" },
-  { href: "/employees", key: "employees" },
-  { href: "/attendance", key: "attendance" },
-  { href: "/devices", key: "devices" },
-  { href: "/shifts", key: "shifts" },
-  { href: "/reports", key: "reports" },
-  { href: "/settings", key: "settings" },
-] as const;
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("nav");
-  const app = useTranslations("app");
   const router = useRouter();
-  const here = usePathname();
-  const { accessToken, role, clear } = useSession();
+  const { accessToken, clear } = useSession();
 
   useEffect(() => {
     if (accessToken) {
@@ -53,32 +42,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="w-56 shrink-0 border-r border-(--color-line) bg-(--color-surface) p-4">
-        <p className="px-2 text-sm font-semibold">{app("name")}</p>
-        <p className="px-2 pb-4 text-xs text-(--color-muted)">{role}</p>
-        <nav className="flex flex-col gap-1">
-          {PAGES.map((page) => (
-            <Link
-              key={page.href}
-              href={page.href}
-              className={cn(
-                "rounded-lg px-2 py-2 text-sm",
-                here === page.href
-                  ? "bg-(--color-accent) text-white"
-                  : "hover:bg-(--color-ground)",
-              )}
-            >
-              {t(page.key)}
-            </Link>
-          ))}
-        </nav>
-        <button
-          onClick={signOut}
-          className="mt-6 w-full rounded-lg px-2 py-2 text-left text-sm text-(--color-muted) hover:bg-(--color-ground)"
-        >
-          {t("signOut")}
-        </button>
-      </aside>
+      <Sidebar onSignOut={signOut} />
       <main className="flex-1 p-8">{children}</main>
     </div>
   );

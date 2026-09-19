@@ -1,6 +1,6 @@
 import axios, { AxiosError, type AxiosRequestConfig } from "axios";
 
-import { roleOf, useSession } from "./auth";
+import { claimsOf, useSession } from "./auth";
 import { env } from "./env";
 
 export const api = axios.create({
@@ -28,7 +28,7 @@ async function renew(): Promise<string | null> {
       { withCredentials: true },
     );
     const token = res.data.accessToken;
-    useSession.getState().setSession(token, roleOf(token) ?? "VIEWER");
+    useSession.getState().setSession(token, claimsOf(token));
     return token;
   } catch {
     useSession.getState().clear();

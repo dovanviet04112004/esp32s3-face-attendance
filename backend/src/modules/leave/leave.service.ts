@@ -1,5 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import type { Prisma, Request as LeaveRequest, RequestState } from "@prisma/client";
+import type {
+  LeaveBalance,
+  LeaveType,
+  Prisma,
+  Request as LeaveRequest,
+  RequestState,
+} from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -19,6 +25,18 @@ export class LeaveService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
   ) {}
+
+  types(): Promise<LeaveType[]> {
+    return this.db.leaveType.findMany({ where: { active: true }, orderBy: { code: "asc" } });
+  }
+
+  /** What this person has left of each kind, as of a day they choose. */
+  async balances(employeeId: number, year: number): Promise<LeaveBalance[]> {
+    return this.db.leaveBalance.findMany({
+      where: { employeeId, year },
+      include: { leaveType: { select: { id: true, code: true, name: true } } },
+    });
+  }
 
   async submit(viewer: Viewer, body: SubmitRequestDto): Promise<LeaveRequest> {
     if (viewer.employeeId === null) {

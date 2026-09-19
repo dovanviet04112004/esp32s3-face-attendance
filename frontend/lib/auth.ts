@@ -1,11 +1,17 @@
 import { create } from "zustand";
 
-export type Role = "ADMIN" | "HR" | "VIEWER";
+export type Role = "ADMIN" | "HR" | "PAYROLL" | "MANAGER" | "EMPLOYEE" | "VIEWER";
+
+export interface Claims {
+  role: Role | null;
+  employeeId: number | null;
+}
 
 interface Session {
   accessToken: string | null;
   role: Role | null;
-  setSession: (accessToken: string, role: Role) => void;
+  employeeId: number | null;
+  setSession: (accessToken: string, claims: Claims) => void;
   clear: () => void;
 }
 
@@ -13,19 +19,25 @@ interface Session {
 export const useSession = create<Session>((set) => ({
   accessToken: null,
   role: null,
-  setSession: (accessToken, role) => set({ accessToken, role }),
-  clear: () => set({ accessToken: null, role: null }),
+  employeeId: null,
+  setSession: (accessToken, claims) =>
+    set({ accessToken, role: claims.role, employeeId: claims.employeeId }),
+  clear: () => set({ accessToken: null, role: null, employeeId: null }),
 }));
 
-export function roleOf(accessToken: string): Role | null {
+/** Unverified: the api decides what is allowed, this only draws the menu. */
+export function claimsOf(accessToken: string): Claims {
   const body = accessToken.split(".")[1];
   if (!body) {
-    return null;
+    return { role: null, employeeId: null };
   }
   try {
     const claims = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
-    return (claims.role as Role) ?? null;
+    return {
+      role: (claims.role as Role) ?? null,
+      employeeId: typeof claims.employeeId === "number" ? claims.employeeId : null,
+    };
   } catch {
-    return null;
+    return { role: null, employeeId: null };
   }
 }

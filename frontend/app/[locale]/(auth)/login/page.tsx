@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
-import { roleOf, useSession } from "@/lib/auth";
+import { claimsOf, useSession } from "@/lib/auth";
 
 export default function LoginPage() {
   const t = useTranslations("login");
@@ -26,7 +26,7 @@ export default function LoginPage() {
     try {
       const res = await api.post<{ accessToken: string }>("/auth/login", { email, password });
       const token = res.data.accessToken;
-      setSession(token, roleOf(token) ?? "VIEWER");
+      setSession(token, claimsOf(token));
       router.replace("/overview");
     } catch {
       // The api answers the same for a wrong address and a wrong password, and
