@@ -96,3 +96,6 @@ Thumbs.db
 
 # Ultralytics ghi vao runs_dir cua no khi project la duong dan tuong doi
 /runs/
+
+# TypeScript incremental build state
+*.tsbuildinfo

@@ -1,0 +1,232 @@
+// Twelve tables of KEHOACH 4.6. Lists the contracts already own stay String
+// here, so contracts/schema stays their one source (KEHOACH 4.9).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  HR
+  VIEWER
+}
+
+enum DeviceStatus {
+  PENDING
+  APPROVED
+  REVOKED
+}
+
+enum EnrollmentState {
+  ASSIGNED
+  ENROLLED
+  REVOKED
+}
+
+enum CommandState {
+  QUEUED
+  SENT
+  DONE
+  REJECTED
+  EXPIRED
+}
+
+enum RolloutState {
+  DRAFT
+  ROLLING
+  PAUSED
+  COMPLETED
+}
+
+model User {
+  id               String          @id @default(uuid())
+  email            String          @unique
+  passwordHash     String
+  role             Role            @default(VIEWER)
+  refreshTokenHash String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  issuedCommands   DeviceCommand[]
+  auditLogs        AuditLog[]
+}
+
+model Employee {
+  id               Int                @id @default(autoincrement())
+  code             String             @unique
+  fullName         String
+  department       String?
+  active           Boolean            @default(true)
+  embeddingVersion String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  templates        FaceTemplate[]
+  enrollments      DeviceEnrollment[]
+  attendance       AttendanceRecord[]
+  shifts           ShiftAssignment[]
+}
+
+model FaceTemplate {
+  id          String   @id @default(uuid())
+  employeeId  Int
+  templateIdx Int
+  // Biometric data: encrypted at rest and never returned by a read API
+  // (KEHOACH 7.5).
+  embedding   Bytes
+  scale       Float
+  quality     Int?
+  capturedAt  DateTime
+  updatedAt   DateTime @updatedAt
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, templateIdx])
+}
+
+model Device {
+  id            String             @id @db.VarChar(32)
+  serial        String?            @unique
+  name          String?
+  location      String?
+  status        DeviceStatus       @default(PENDING)
+  tokenHash     String?
+  fwVersion     String?
+  modelVersion  String?
+  // The server half of the convergence cursor: compared against the number
+  // every heartbeat carries (KEHOACH 7.5).
+  rosterVersion Int                @default(0)
+  lastSeenAt    DateTime?
+  online        Boolean            @default(false)
+  approvedAt    DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  enrollments   DeviceEnrollment[]
+  commands      DeviceCommand[]
+  events        DeviceEvent[]
+  attendance    AttendanceRecord[]
+
+  @@index([status])
+}
+
+model DeviceEnrollment {
+  deviceId    String          @db.VarChar(32)
+  employeeId  Int
+  state       EnrollmentState @default(ASSIGNED)
+  templateIdx Int?
+  updatedAt   DateTime        @updatedAt
+  device      Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  employee    Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([deviceId, employeeId])
+}
+
+model DeviceCommand {
+  cmdId      String       @id @db.Uuid
+  deviceId   String       @db.VarChar(32)
+  action     String
+  payload    Json?
+  issuedById String?
+  expiresAt  DateTime?
+  state      CommandState @default(QUEUED)
+  resultNote String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  device     Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  issuedBy   User?        @relation(fields: [issuedById], references: [id], onDelete: SetNull)
+
+  @@index([deviceId, state])
+}
+
+model DeviceEvent {
+  id            BigInt   @id @default(autoincrement())
+  deviceId      String   @db.VarChar(32)
+  type          String
+  severity      String
+  employeeId    Int?
+  livenessScore Float?
+  cmdId         String?  @db.Uuid
+  errorCode     Int?
+  message       String?
+  ts            DateTime
+  receivedAt    DateTime @default(now())
+  device        Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, ts])
+  @@index([type, ts])
+}
+
+model AttendanceRecord {
+  id            BigInt   @id @default(autoincrement())
+  // Decimal string, not a number: the kiosk counter is uint64, which overruns
+  // both exact JSON integers and a signed BIGINT column.
+  localId       String   @db.VarChar(20)
+  deviceId      String   @db.VarChar(32)
+  employeeId    Int
+  ts            DateTime
+  direction     String
+  score         Float?
+  livenessScore Float?
+  synced        Boolean  @default(true)
+  photoUrl      String?
+  createdAt     DateTime @default(now())
+  device        Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@unique([deviceId, localId])
+  @@index([employeeId, ts])
+  @@index([ts])
+}
+
+model Shift {
+  id           String            @id @default(uuid())
+  name         String            @unique
+  startTime    String
+  endTime      String
+  graceMinutes Int               @default(0)
+  active       Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  assignments  ShiftAssignment[]
+}
+
+model ShiftAssignment {
+  id         String   @id @default(uuid())
+  shiftId    String
+  employeeId Int
+  validFrom  DateTime
+  validTo    DateTime?
+  shift      Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftId, employeeId, validFrom])
+}
+
+model Release {
+  releaseId    String       @id @db.Uuid
+  target       String
+  version      String
+  url          String
+  sha256       String       @db.Char(64)
+  sizeBytes    Int
+  minFwVersion String?
+  runId        String?
+  rolloutState RolloutState @default(DRAFT)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([target, version])
+}
+
+model AuditLog {
+  id       BigInt   @id @default(autoincrement())
+  actorId  String?
+  action   String
+  target   String
+  meta     Json?
+  ts       DateTime @default(now())
+  actor    User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([ts])
+}
