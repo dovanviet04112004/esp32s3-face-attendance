@@ -228,7 +228,11 @@ def check_runs_and_density(
     return problems
 
 
-def check_c_like(path: Path, lines: list[str], is_header: bool) -> list[Problem]:
+def check_c_like(
+    path: Path, lines: list[str], is_header: bool, allows_doc: bool | None = None
+) -> list[Problem]:
+    if allows_doc is None:
+        allows_doc = is_header
     problems: list[Problem] = []
     comments: list[tuple[int, str]] = []
     comment_lines: set[int] = set()
@@ -265,10 +269,10 @@ def check_c_like(path: Path, lines: list[str], is_header: bool) -> list[Problem]
             closes = "*/" in masked[block_idx + 2 :]
             comments.append((lineno, line[block_idx:]))
             comment_lines.add(lineno)
-            if not is_header:
-                rule = "2.3" if doc else "2.6"
-                what = "doc comment" if doc else "block comment"
-                problems.append(Problem(path, lineno, rule, f"{what} in a body file"))
+            if doc and not allows_doc:
+                problems.append(Problem(path, lineno, "2.3", "doc comment in a body file"))
+            elif not doc and not is_header:
+                problems.append(Problem(path, lineno, "2.6", "block comment in a body file"))
             if not closes:
                 in_block = True
                 block_start = lineno
@@ -393,7 +397,10 @@ def check_file(path: Path) -> list[Problem]:
     if path.suffix in PY_SUFFIXES:
         return check_python(path, lines) + check_docstrings(path, source)
     is_header = path.suffix in C_HEADER_SUFFIXES
-    return check_c_like(path, lines, is_header)
+    # Section 2.6 gives TypeScript TSDoc at exported symbols, which the C body
+    # rule would otherwise refuse outright.
+    allows_doc = is_header or path.suffix in TS_SUFFIXES
+    return check_c_like(path, lines, is_header, allows_doc)
 
 
 def main() -> int:
