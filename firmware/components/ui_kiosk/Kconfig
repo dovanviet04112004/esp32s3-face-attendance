@@ -4,8 +4,23 @@ menu "Kiosk screen"
         string "Name the board button enrols under"
         default "Nhân viên 1"
         help
-            The enrol screen of E10-T7 replaces this. Until it exists the board
-            button is the only way to add a face, and NVS key device/enrol_name
-            overrides this at run time.
+            The board button is the fallback path for adding a face, and NVS key
+            device/enrol_name overrides this at run time.
+
+    config UI_SEED_BRIGHTNESS
+        int "Backlight percent a kiosk starts life at"
+        range 10 100
+        default 100
+        help
+            Seeds NVS ui/brightness on first boot, the way svc_vision seeds its
+            thresholds. The settings slider owns the key after that (KEHOACH 6.2.1).
+
+    config UI_SEED_VOLUME
+        int "Speaker percent a kiosk starts life at"
+        range 0 100
+        default 70
+        help
+            Seeds NVS ui/volume on first boot. Only the door chime uses it, so a
+            quiet office can take it to zero without losing a refusal message.
 
 endmenu

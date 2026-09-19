@@ -79,12 +79,66 @@ void ui_kiosk_enrol_kept(void);
  */
 void ui_kiosk_enrol_refused(void);
 
-#define UI_KIOSK_SETTINGS_LINES 8
+#define UI_KIOSK_FACTS 8
 
-/** Hand the settings page its lines, main's view of the kiosk (KEHOACH 4.5.5h.4).
- *  @ctx ui_task | non-blocking | copied, at most UI_KIOSK_SETTINGS_LINES
+/** One label and its value on the device page (KEHOACH 4.5.5h.4). */
+typedef struct {
+    char label[24];
+    char value[32];
+} ui_kiosk_fact_t;
+
+/** Hand the device page what main knows without reading flash.
+ *  @ctx ui_task | non-blocking | copied, at most UI_KIOSK_FACTS
  */
-void ui_kiosk_set_settings(const char *const *lines, int count);
+void ui_kiosk_set_facts(const ui_kiosk_fact_t *facts, int count);
+
+/** What the settings page says on its Wi-Fi row. */
+typedef struct {
+    bool joined;
+    char ssid[33];
+    int rssi_dbm;
+} ui_kiosk_net_t;
+
+/** Tell the screens where the radio stands.
+ *  @ctx any | non-blocking
+ */
+void ui_kiosk_set_net(const ui_kiosk_net_t *net);
+
+/** Seed what the two settings sliders rest at, from main's copy of NVS.
+ *  @ctx ui_task | non-blocking
+ */
+void ui_kiosk_set_levels(uint8_t brightness, uint8_t volume);
+
+/** Which level a slider is reporting. */
+typedef enum {
+    UI_KIOSK_LEVEL_BRIGHTNESS = 0,
+    UI_KIOSK_LEVEL_VOLUME,
+} ui_kiosk_level_t;
+
+/** Take a level the operator is turning, if one moved since the last call.
+ *  @ctx ui_task | non-blocking | settled goes true on the touch that ends a drag,
+ *       and only then may the caller write NVS (KEHOACH 4.5.5h.4)
+ *  @ret false when nothing moved
+ */
+bool ui_kiosk_take_level(ui_kiosk_level_t *which, uint8_t *percent, bool *settled);
+
+/** One employee the server has assigned to this kiosk but nobody has enrolled. */
+typedef struct {
+    uint32_t employee_id;
+    char name[STORAGE_NAME_CAP];
+} ui_kiosk_pending_t;
+
+#define UI_KIOSK_PENDING_ROWS 8
+
+/** Hand the enrol screen the people waiting for a face (KEHOACH 7.5).
+ *  @ctx any | non-blocking | copied, at most UI_KIOSK_PENDING_ROWS
+ */
+void ui_kiosk_set_pending(const ui_kiosk_pending_t *rows, int count);
+
+/** True when the enrol screen has opened and wants that list refreshed.
+ *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
+ */
+bool ui_kiosk_take_pending_request(void);
 
 /** One row of the people list, filled by main from the table it can reach. */
 typedef struct {
@@ -150,6 +204,11 @@ bool ui_kiosk_enrolling(void);
  *  @ctx any | non-blocking | read after ui_kiosk_enrolling goes false
  */
 bool ui_kiosk_enrol_complete(void);
+
+/** The colour a screen that covers the panel clears it to.
+ *  @ctx any | non-blocking | panel byte order, from the one palette
+ */
+uint16_t ui_kiosk_ground_rgb565(void);
 
 /** The cover map to paint over this frame.
  *  @ctx cam_task | non-blocking | read once per frame

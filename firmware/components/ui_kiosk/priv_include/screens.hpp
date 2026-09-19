@@ -1,4 +1,4 @@
-/** The five screens and the manager that owns them (KEHOACH 4.5.5h).
+/** The eight screens and the manager that owns them (KEHOACH 4.5.5h).
  *  @ctx ui_task | non-blocking | screens are built once and never destroyed
  */
 #pragma once
@@ -20,10 +20,9 @@ enum class ScreenId {
     People,
     Settings,
     Wifi,
+    Device,
     Count,
 };
-
-/** Where the tracked face sits against the guide frame. */
 
 /** What the kiosk knows about the person in front of it, as a screen sees it. */
 struct Sight {
@@ -36,10 +35,6 @@ struct Sight {
     uint32_t employee_id;
     char name[STORAGE_NAME_CAP];
 };
-
-/** Read a face box already mapped to panel pixels against the guide frame.
- *  @ctx any | non-blocking | the guide rectangle lives with the screens
- */
 
 class Screen {
 public:
@@ -100,8 +95,26 @@ bool enrol_complete() noexcept;
 /** The capture screen counts a sample the pipeline turned away as a spoof. */
 void enrol_refused() noexcept;
 
-/** One line of the settings page, handed down by main (KEHOACH 4.5.5h.4). */
-void settings_line(int at, const char *text) noexcept;
+/** What the device page shows, handed down by main (KEHOACH 4.5.4 rule 2). */
+struct Facts {
+    int count;
+    ui_kiosk_fact_t row[UI_KIOSK_FACTS];
+};
+
+Facts &facts() noexcept;
+
+/** Where the radio stands, as the settings row shows it. */
+ui_kiosk_net_t &net() noexcept;
+
+/** The two levels the sliders sit at, and whether main has yet to hear about it. */
+struct Level {
+    uint8_t percent;
+    bool changed;
+    bool settled;
+};
+
+Level &brightness() noexcept;
+Level &volume() noexcept;
 
 /** What the people screen shows, handed down by main (KEHOACH 4.5.4 rule 2). */
 struct People {
@@ -111,6 +124,15 @@ struct People {
 };
 
 People &people() noexcept;
+
+/** The employees the server assigned but nobody has enrolled yet (KEHOACH 7.5). */
+struct Pending {
+    bool wanted;
+    int count;
+    ui_kiosk_pending_t row[UI_KIOSK_PENDING_ROWS];
+};
+
+Pending &pending() noexcept;
 
 /** What the wifi screen shows and what it wants, handed down by main. */
 struct Networks {
@@ -145,5 +167,6 @@ Screen *capture_screen() noexcept;
 Screen *people_screen() noexcept;
 Screen *settings_screen() noexcept;
 Screen *wifi_screen() noexcept;
+Screen *device_screen() noexcept;
 
 }  // namespace ui

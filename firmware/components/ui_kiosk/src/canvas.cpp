@@ -1,70 +1,27 @@
 #include "canvas.hpp"
 
+#include <math.h>
 #include <string.h>
-
-#include "kiosk_sans_22.h"
 
 namespace ui {
 
 namespace {
 
-uint32_t code_point(const char **at)
-{
-    const uint8_t *p = (const uint8_t *)*at;
-    uint32_t code = *p++;
-    int extra = 0;
-    if ((code & 0xE0u) == 0xC0u) {
-        code &= 0x1Fu;
-        extra = 1;
-    } else if ((code & 0xF0u) == 0xE0u) {
-        code &= 0x0Fu;
-        extra = 2;
-    } else if ((code & 0xF8u) == 0xF0u) {
-        code &= 0x07u;
-        extra = 3;
-    }
-    for (int i = 0; i < extra && (*p & 0xC0u) == 0x80u; ++i) {
-        code = (code << 6) | (*p++ & 0x3Fu);
-    }
-    *at = (const char *)p;
-    return code;
-}
+constexpr uint32_t kEllipsis = 0x2026;
 
-const kiosk_glyph_t *glyph_of(uint32_t code)
+uint8_t coverage_at(float distance, float radius)
 {
-    int low = 0;
-    int high = (int)kiosk_sans_22_count - 1;
-    while (low <= high) {
-        const int mid = (low + high) / 2;
-        const uint32_t here = kiosk_sans_22_glyphs[mid].code;
-        if (here == code) {
-            return &kiosk_sans_22_glyphs[mid];
-        }
-        if (here < code) {
-            low = mid + 1;
-        } else {
-            high = mid - 1;
-        }
+    const float over = radius - distance + 0.5f;
+    if (over <= 0.0f) {
+        return 0;
     }
-    return nullptr;
+    if (over >= 1.0f) {
+        return DRV_LCD_COVER_FULL;
+    }
+    return (uint8_t)(over * (float)DRV_LCD_COVER_FULL);
 }
 
 }  // namespace
-
-int Canvas::text_width(const char *utf8) noexcept
-{
-    int width = 0;
-    while (*utf8 != '\0') {
-        const kiosk_glyph_t *glyph = glyph_of(code_point(&utf8));
-        width += glyph != nullptr ? glyph->adv : 0;
-    }
-    return width;
-}
-
-int Canvas::line_height() noexcept
-{
-    return kiosk_sans_22_line_h;
-}
 
 // Wiping all 153 KB costs more than the painting does, and everything outside
 // the spans the last screen touched is already zero.
@@ -97,21 +54,40 @@ void Canvas::touched(int x1, int y1, int x2, int y2) noexcept
     }
 }
 
+void Canvas::offer_painted() noexcept
+{
+    memcpy(send_x1_, row_x1_, sizeof(send_x1_));
+    memcpy(send_x2_, row_x2_, sizeof(send_x2_));
+}
+
+// A differing row goes out whole: the opaque path grounds a whole strip, so
+// anything outside a mask lands blank on the panel.
+void Canvas::diff_from(const uint8_t *base) noexcept
+{
+    for (int row = 0; row < height_; ++row) {
+        const uint8_t *mine = cells_ + (size_t)row * width_;
+        const uint8_t *theirs = base + (size_t)row * width_;
+        const bool same = memcmp(mine, theirs, (size_t)width_) == 0;
+        send_x1_[row] = same ? (int16_t)width_ : 0;
+        send_x2_[row] = same ? 0 : (int16_t)width_;
+    }
+}
+
 int Canvas::regions(Region *out, int cap) const noexcept
 {
     int kept = 0;
     int row = 0;
     while (row < height_ && kept < cap) {
-        if (row_x2_[row] <= row_x1_[row]) {
+        if (send_x2_[row] <= send_x1_[row]) {
             ++row;
             continue;
         }
-        int left = row_x1_[row];
-        int right = row_x2_[row];
+        int left = send_x1_[row];
+        int right = send_x2_[row];
         const int top = row;
-        while (row < height_ && row_x2_[row] > row_x1_[row]) {
-            left = row_x1_[row] < left ? row_x1_[row] : left;
-            right = row_x2_[row] > right ? row_x2_[row] : right;
+        while (row < height_ && send_x2_[row] > send_x1_[row]) {
+            left = send_x1_[row] < left ? send_x1_[row] : left;
+            right = send_x2_[row] > right ? send_x2_[row] : right;
             ++row;
         }
         out[kept].x = (int16_t)left;
@@ -123,7 +99,16 @@ int Canvas::regions(Region *out, int cap) const noexcept
     return kept;
 }
 
-void Canvas::fill(int x, int y, int w, int h, uint8_t value) noexcept
+void Canvas::put(int x, int y, uint8_t cell) noexcept
+{
+    if (x < 0 || x >= width_ || y < 0 || y >= height_) {
+        return;
+    }
+    cells_[(size_t)y * width_ + x] = cell;
+    touched(x, y, x + 1, y + 1);
+}
+
+void Canvas::fill(int x, int y, int w, int h, uint8_t colour) noexcept
 {
     const int x1 = x > 0 ? x : 0;
     const int y1 = y > 0 ? y : 0;
@@ -132,62 +117,112 @@ void Canvas::fill(int x, int y, int w, int h, uint8_t value) noexcept
     if (x2 <= x1 || y2 <= y1) {
         return;
     }
+    const uint8_t cell = DRV_LCD_CELL(colour, DRV_LCD_COVER_FULL);
     for (int row = y1; row < y2; ++row) {
-        memset(cells_ + (size_t)row * width_ + x1, value, (size_t)(x2 - x1));
+        memset(cells_ + (size_t)row * width_ + x1, cell, (size_t)(x2 - x1));
     }
     touched(x1, y1, x2, y2);
 }
 
-void Canvas::frame(int x, int y, int w, int h, int edge, uint8_t value) noexcept
+void Canvas::frame(int x, int y, int w, int h, int edge, uint8_t colour) noexcept
 {
-    fill(x, y, w, edge, value);
-    fill(x, y + h - edge, w, edge, value);
-    fill(x, y, edge, h, value);
-    fill(x + w - edge, y, edge, h, value);
+    fill(x, y, w, edge, colour);
+    fill(x, y + h - edge, w, edge, colour);
+    fill(x, y, edge, h, colour);
+    fill(x + w - edge, y, edge, h, colour);
 }
 
-// Corners come off with one circle test per pixel, which is cheap enough at the
-// handful of frames a screen change costs.
-void Canvas::rounded(int x, int y, int w, int h, int radius, int edge, uint8_t value) noexcept
+void Canvas::card(int x, int y, int w, int h, int radius, uint8_t colour) noexcept
 {
-    frame(x, y, w, h, edge, value);
-    const int inner = (radius - edge) * (radius - edge);
-    const int outer = radius * radius;
-    for (int dy = 0; dy < radius; ++dy) {
-        for (int dx = 0; dx < radius; ++dx) {
-            const int rx = radius - dx;
-            const int ry = radius - dy;
-            const int at = rx * rx + ry * ry;
-            const bool on = at <= outer && at >= inner;
-            const bool off = at > outer;
-            const int left = x + dx;
-            const int right = x + w - 1 - dx;
-            const int top = y + dy;
-            const int bottom = y + h - 1 - dy;
-            if (off) {
-                fill(left, top, 1, 1, 0);
-                fill(right, top, 1, 1, 0);
-                fill(left, bottom, 1, 1, 0);
-                fill(right, bottom, 1, 1, 0);
-            } else if (on) {
-                fill(left, top, 1, 1, value);
-                fill(right, top, 1, 1, value);
-                fill(left, bottom, 1, 1, value);
-                fill(right, bottom, 1, 1, value);
+    const int r = radius * 2 <= h ? radius : h / 2;
+    fill(x, y + r, w, h - 2 * r, colour);
+    fill(x + r, y, w - 2 * r, r, colour);
+    fill(x + r, y + h - r, w - 2 * r, r, colour);
+    const float centre = (float)r - 0.5f;
+    for (int dy = 0; dy < r; ++dy) {
+        for (int dx = 0; dx < r; ++dx) {
+            const float ox = centre - (float)dx;
+            const float oy = centre - (float)dy;
+            const uint8_t level = coverage_at(sqrtf(ox * ox + oy * oy), (float)r);
+            if (level == 0) {
+                continue;
+            }
+            const uint8_t cell = DRV_LCD_CELL(colour, level);
+            put(x + dx, y + dy, cell);
+            put(x + w - 1 - dx, y + dy, cell);
+            put(x + dx, y + h - 1 - dy, cell);
+            put(x + w - 1 - dx, y + h - 1 - dy, cell);
+        }
+    }
+}
+
+void Canvas::outline(int x, int y, int w, int h, int radius, int edge, uint8_t colour) noexcept
+{
+    const int r = radius * 2 <= h ? radius : h / 2;
+    fill(x, y + r, edge, h - 2 * r, colour);
+    fill(x + w - edge, y + r, edge, h - 2 * r, colour);
+    fill(x + r, y, w - 2 * r, edge, colour);
+    fill(x + r, y + h - edge, w - 2 * r, edge, colour);
+    const float centre = (float)r - 0.5f;
+    const float inner = (float)(r - edge);
+    for (int dy = 0; dy < r; ++dy) {
+        for (int dx = 0; dx < r; ++dx) {
+            const float ox = centre - (float)dx;
+            const float oy = centre - (float)dy;
+            const float d = sqrtf(ox * ox + oy * oy);
+            const uint8_t out = coverage_at(d, (float)r);
+            const uint8_t in = coverage_at(d, inner);
+            if (out <= in) {
+                continue;
+            }
+            const uint8_t cell = DRV_LCD_CELL(colour, (uint8_t)(out - in));
+            put(x + dx, y + dy, cell);
+            put(x + w - 1 - dx, y + dy, cell);
+            put(x + dx, y + h - 1 - dy, cell);
+            put(x + w - 1 - dx, y + h - 1 - dy, cell);
+        }
+    }
+}
+
+void Canvas::disc(int cx, int cy, int radius, uint8_t colour) noexcept
+{
+    for (int dy = -radius; dy <= radius; ++dy) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            const uint8_t level =
+                coverage_at(sqrtf((float)(dx * dx + dy * dy)), (float)radius);
+            if (level != 0) {
+                put(cx + dx, cy + dy, DRV_LCD_CELL(colour, level));
             }
         }
     }
 }
 
-void Canvas::stamp(int pen_x, int top, const char *utf8, uint8_t value) noexcept
+void Canvas::ring(int cx, int cy, int radius, int thick, uint8_t colour) noexcept
 {
-    while (*utf8 != '\0') {
-        const kiosk_glyph_t *glyph = glyph_of(code_point(&utf8));
+    const float inner = (float)(radius - thick);
+    for (int dy = -radius; dy <= radius; ++dy) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            const float d = sqrtf((float)(dx * dx + dy * dy));
+            const uint8_t out = coverage_at(d, (float)radius);
+            const uint8_t in = coverage_at(d, inner);
+            if (out > in) {
+                put(cx + dx, cy + dy, DRV_LCD_CELL(colour, (uint8_t)(out - in)));
+            }
+        }
+    }
+}
+
+void Canvas::stamp(theme::Font face, int pen_x, int top, const char *utf8, int bytes,
+                   uint8_t colour, bool behind) noexcept
+{
+    const uint8_t *blob = theme::bitmap_of(face);
+    const char *walk = utf8;
+    while (walk < utf8 + bytes && *walk != '\0') {
+        const kiosk_glyph_t *glyph = theme::glyph_of(face, theme::next_code(&walk));
         if (glyph == nullptr) {
             continue;
         }
-        const uint8_t *bits = &kiosk_sans_22_bitmap[glyph->at];
-        const int stride = (glyph->w + 7) / 8;
+        const int stride = (glyph->w + 1) / 2;
         for (int gy = 0; gy < glyph->h; ++gy) {
             const int row = top + glyph->off_y + gy;
             if (row < 0 || row >= height_) {
@@ -198,40 +233,76 @@ void Canvas::stamp(int pen_x, int top, const char *utf8, uint8_t value) noexcept
                 if (col < 0 || col >= width_) {
                     continue;
                 }
-                if ((bits[gy * stride + gx / 8] & (0x80u >> (gx % 8))) == 0) {
+                const uint8_t packed = blob[glyph->at + gy * stride + gx / 2];
+                const uint8_t level = (gx % 2) == 0 ? (packed >> 4) : (packed & 0x0Fu);
+                if (level == 0) {
                     continue;
                 }
                 uint8_t *cell = &cells_[(size_t)row * width_ + col];
-                if (value != DRV_LCD_EDGE || *cell == 0) {
-                    *cell = value;
-                    touched(col, row, col + 1, row + 1);
+                // The shadow pass only fills what the ink has not claimed.
+                if (behind && *cell != 0) {
+                    continue;
                 }
+                *cell = DRV_LCD_CELL(colour, level);
+                touched(col, row, col + 1, row + 1);
             }
         }
         pen_x += glyph->adv;
     }
 }
 
-void Canvas::text(int x, int y, const char *utf8, uint8_t ink) noexcept
+int Canvas::span_of(theme::Font face, const char *utf8, int bytes) noexcept
 {
+    int used = 0;
+    const char *walk = utf8;
+    while (walk < utf8 + bytes && *walk != '\0') {
+        const kiosk_glyph_t *glyph = theme::glyph_of(face, theme::next_code(&walk));
+        used += glyph != nullptr ? glyph->adv : 0;
+    }
+    return used;
+}
+
+int Canvas::start_x(theme::Font face, int x, int max_w, const char *utf8, int bytes,
+                    Align align) const noexcept
+{
+    if (align == Align::Left) {
+        return x;
+    }
+    int used = span_of(face, utf8, bytes);
+    if (bytes < (int)strlen(utf8)) {
+        const kiosk_glyph_t *dots = theme::glyph_of(face, kEllipsis);
+        used += dots != nullptr ? dots->adv : 0;
+    }
+    return align == Align::Centre ? x + (max_w - used) / 2 : x + max_w - used;
+}
+
+void Canvas::text(theme::Font face, int x, int y, int max_w, const char *utf8, uint8_t colour,
+                  Align align) noexcept
+{
+    const int bytes = theme::fits(face, utf8, max_w);
+    const int pen = start_x(face, x, max_w, utf8, bytes, align);
+    stamp(face, pen, y, utf8, bytes, colour, false);
+    if (bytes < (int)strlen(utf8)) {
+        stamp(face, pen + span_of(face, utf8, bytes), y, "\xE2\x80\xA6", 3, colour, false);
+    }
+}
+
+void Canvas::text_on_video(theme::Font face, int x, int y, int max_w, const char *utf8,
+                           uint8_t colour, Align align) noexcept
+{
+    const int bytes = theme::fits(face, utf8, max_w);
+    const int pen = start_x(face, x, max_w, utf8, bytes, align);
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
             if (dx != 0 || dy != 0) {
-                stamp(x + dx, y + dy, utf8, DRV_LCD_EDGE);
+                stamp(face, pen + dx, y + dy, utf8, bytes, DRV_LCD_EDGE, true);
             }
         }
     }
-    stamp(x, y, utf8, ink);
-}
-
-void Canvas::text_centred(int y, const char *utf8, uint8_t ink) noexcept
-{
-    text((width_ - text_width(utf8)) / 2, y, utf8, ink);
-}
-
-void Canvas::text_centred_in(int x, int w, int y, const char *utf8, uint8_t ink) noexcept
-{
-    text(x + (w - text_width(utf8)) / 2, y, utf8, ink);
+    stamp(face, pen, y, utf8, bytes, colour, false);
+    if (bytes < (int)strlen(utf8)) {
+        stamp(face, pen + span_of(face, utf8, bytes), y, "\xE2\x80\xA6", 3, colour, false);
+    }
 }
 
 }  // namespace ui

@@ -9,6 +9,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "screens.hpp"
+#include "theme.hpp"
 
 namespace {
 
@@ -25,16 +26,6 @@ constexpr int64_t kShowMs = 1500;
 constexpr int64_t kStageDwellMs = 700;
 constexpr int64_t kClockPollMs = 1000;
 
-constexpr uint16_t kWhite = 0xFFFF;
-constexpr uint16_t kMint = 0x27EC;
-constexpr uint16_t kAmber = 0xFD20;
-constexpr uint16_t kShadow = 0x0000;
-
-constexpr uint16_t wire(uint16_t rgb565)
-{
-    return (uint16_t)((rgb565 >> 8) | (rgb565 << 8));
-}
-
 // One map per slot: cam_task reads the published one for a whole frame while
 // ui_task paints the other (KEHOACH 4.5.5h).
 ui::Canvas *s_canvas[kSlots];
@@ -43,6 +34,8 @@ std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
 std::atomic<int> s_held{ -1 };
 std::atomic<bool> s_covers{ false };
 int s_next;
+int s_glass = -1;                         // slot the panel is showing, -1 for none
+bool s_glass_opaque;
 uint32_t s_serial;
 bool s_ready;
 bool s_dirty = true;
@@ -61,12 +54,26 @@ int64_t s_minute_shown = -1;
 
 // The whole panel is one map, but only the rectangle a screen touched is worth
 // sending: the rest is zero and would cost a scan of 153 KB every frame.
-void publish(const ui::Canvas &from)
+void publish(ui::Canvas &from)
 {
+    const bool opaque = ui::manager().current()->opaque();
+    // cam_task repaints the panel from the sensor every frame, so an overlay over
+    // video has to carry every painted cell; only drv_lcd_paint owns the glass.
+    if (opaque && s_glass_opaque && s_glass >= 0 && s_glass != s_next) {
+        from.diff_from(s_canvas[s_glass]->cells());
+    } else {
+        from.offer_painted();
+    }
     drv_lcd_overlay_t *target = &s_slot[s_next];
     memset(target, 0, sizeof(*target));
     ui::Canvas::Region region[DRV_LCD_OVERLAY_MASKS];
-    const int kept = from.regions(region, DRV_LCD_OVERLAY_MASKS);
+    int kept = from.regions(region, DRV_LCD_OVERLAY_MASKS);
+    // A full house means regions ran out of room and dropped the rest, which
+    // would leave stale pixels; the whole map costs more but says everything.
+    if (kept == DRV_LCD_OVERLAY_MASKS) {
+        from.offer_painted();
+        kept = from.regions(region, DRV_LCD_OVERLAY_MASKS);
+    }
     for (int i = 0; i < kept; ++i) {
         drv_lcd_mask_t *mask = &target->mask[i];
         mask->x = region[i].x;
@@ -75,16 +82,15 @@ void publish(const ui::Canvas &from)
         mask->h = region[i].h;
         mask->stride = APP_LCD_H_RES;
         mask->cover = from.cells() + (size_t)region[i].y * APP_LCD_H_RES + region[i].x;
-        mask->ink_rgb565 = wire(kWhite);
-        mask->edge_rgb565 = wire(kShadow);
-        mask->accent_rgb565 = wire(kMint);
-        mask->warn_rgb565 = wire(kAmber);
+        mask->palette = ui::theme::palette();
     }
     target->masks = (uint8_t)kept;
-    target->opaque = ui::manager().current()->opaque();
+    target->opaque = opaque;
     s_covers.store(target->opaque, std::memory_order_release);
     target->serial = ++s_serial;
     s_shown.store(target, std::memory_order_release);
+    s_glass = s_next;
+    s_glass_opaque = opaque;
 }
 
 // Every screen paints the clock, and a repaint needs a reason, so the minute
@@ -177,6 +183,7 @@ esp_err_t ui_kiosk_init(void)
     ui::manager().attach(ui::ScreenId::People, ui::people_screen());
     ui::manager().attach(ui::ScreenId::Settings, ui::settings_screen());
     ui::manager().attach(ui::ScreenId::Wifi, ui::wifi_screen());
+    ui::manager().attach(ui::ScreenId::Device, ui::device_screen());
     memset(s_slot, 0, sizeof(s_slot));
     memset(&s_seen, 0, sizeof(s_seen));
     s_ready = true;
@@ -383,16 +390,87 @@ void ui_kiosk_enrol_refused(void)
     }
 }
 
-void ui_kiosk_set_settings(const char *const *lines, int count)
+void ui_kiosk_set_facts(const ui_kiosk_fact_t *facts, int count)
 {
-    if (!s_ready || lines == NULL) {
+    if (!s_ready || facts == NULL) {
         return;
     }
-    const int kept = count < UI_KIOSK_SETTINGS_LINES ? count : UI_KIOSK_SETTINGS_LINES;
-    for (int i = 0; i < kept; ++i) {
-        ui::settings_line(i, lines[i] != NULL ? lines[i] : "");
+    const int kept = count < UI_KIOSK_FACTS ? count : UI_KIOSK_FACTS;
+    ui::facts().count = kept > 0 ? kept : 0;
+    if (kept > 0) {
+        memcpy(ui::facts().row, facts, sizeof(ui_kiosk_fact_t) * (size_t)kept);
     }
     s_dirty = true;
+}
+
+void ui_kiosk_set_net(const ui_kiosk_net_t *net)
+{
+    if (!s_ready || net == NULL) {
+        return;
+    }
+    if (memcmp(&ui::net(), net, sizeof(*net)) != 0) {
+        ui::net() = *net;
+        s_dirty = true;
+    }
+}
+
+void ui_kiosk_set_levels(uint8_t brightness, uint8_t volume)
+{
+    if (!s_ready) {
+        return;
+    }
+    ui::brightness().percent = brightness;
+    ui::volume().percent = volume;
+    s_dirty = true;
+}
+
+bool ui_kiosk_take_level(ui_kiosk_level_t *which, uint8_t *percent, bool *settled)
+{
+    if (!s_ready || which == NULL || percent == NULL || settled == NULL) {
+        return false;
+    }
+    ui::Level *level = NULL;
+    if (ui::brightness().changed) {
+        level = &ui::brightness();
+        *which = UI_KIOSK_LEVEL_BRIGHTNESS;
+    } else if (ui::volume().changed) {
+        level = &ui::volume();
+        *which = UI_KIOSK_LEVEL_VOLUME;
+    } else {
+        return false;
+    }
+    *percent = level->percent;
+    *settled = level->settled;
+    level->changed = false;
+    level->settled = false;
+    return true;
+}
+
+void ui_kiosk_set_pending(const ui_kiosk_pending_t *rows, int count)
+{
+    if (!s_ready) {
+        return;
+    }
+    const int kept = count < UI_KIOSK_PENDING_ROWS ? count : UI_KIOSK_PENDING_ROWS;
+    ui::pending().count = kept > 0 ? kept : 0;
+    if (rows != NULL && kept > 0) {
+        memcpy(ui::pending().row, rows, sizeof(ui_kiosk_pending_t) * (size_t)kept);
+    }
+    s_dirty = true;
+}
+
+bool ui_kiosk_take_pending_request(void)
+{
+    if (!s_ready || !ui::pending().wanted) {
+        return false;
+    }
+    ui::pending().wanted = false;
+    return true;
+}
+
+uint16_t ui_kiosk_ground_rgb565(void)
+{
+    return ui::theme::palette()[DRV_LCD_GROUND];
 }
 
 const drv_lcd_overlay_t *ui_kiosk_overlay(void)
