@@ -124,6 +124,7 @@ class Topic:
         self.qos = int(spec.get("qos", 0))
         self.retained = bool(spec.get("retained", False))
         self.last_will = bool(spec.get("last_will", False))
+        self.interval_s = spec.get("interval_seconds")
         self.schema = spec.get("schema")
         self.c_name = snake(self.name)
         self.c_upper = screaming(self.name)
@@ -405,6 +406,10 @@ def render_topics_header(topics: list[Topic], id_max: int) -> str:
             f"#define GEN_TOPIC_{topic.c_upper}_IS_LAST_WILL "
             f"{'true' if topic.last_will else 'false'}\n"
         )
+        if topic.interval_s is not None:
+            parts.append(
+                f"#define GEN_TOPIC_{topic.c_upper}_INTERVAL_S {int(topic.interval_s)}\n"
+            )
     parts.append("\n")
 
     for topic in topics:
