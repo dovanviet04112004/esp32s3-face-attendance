@@ -40,11 +40,13 @@ jobs:
 
       - name: Regenerate and fail on drift
         run: |
-          ./tools/gen_from_schema.sh
+          pip install --quiet pyyaml
+          python3 tools/gen_contracts.py
           git diff --exit-code -- \
             backend/src/common/generated \
             frontend/types/generated \
-            firmware/components/common/include/gen_payload.h
+            firmware/components/common/include/gen_payload.h \
+            firmware/components/common/include/gen_topics.h
 
       - name: Generated header compiles as C and C++
         run: |
@@ -65,11 +67,11 @@ jobs:
           void cJSON_AddBoolToObject(cJSON *o, const char *k, bool v);
           void cJSON_AddItemToObject(cJSON *o, const char *k, cJSON *v);
           EOF
-          echo '#include "gen_payload.h"' > /tmp/cjson/probe.c
+          printf '#include "gen_payload.h"\n#include "gen_topics.h"\n' > /tmp/cjson/probe.c
           cp /tmp/cjson/probe.c /tmp/cjson/probe.cpp
-          gcc -std=c11 -Wall -Wextra -fsyntax-only \
+          gcc -std=c11 -Wall -Wextra -Wconversion -fsyntax-only \
             -I/tmp/cjson -Ifirmware/components/common/include /tmp/cjson/probe.c
-          g++ -std=gnu++17 -Wall -Wextra -fsyntax-only \
+          g++ -std=gnu++17 -Wall -Wextra -Wconversion -fsyntax-only \
             -I/tmp/cjson -Ifirmware/components/common/include /tmp/cjson/probe.cpp
 
       - name: Comment rules
