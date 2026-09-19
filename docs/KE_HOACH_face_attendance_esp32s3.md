@@ -5923,3 +5923,276 @@ của màu nhấn không đổi: nó dành cho hành động chính, không rả
 **Màn hình tối thiểu để chạy được**: danh bạ nhân viên, hồ sơ một người, cây tổ chức, đơn nghỉ
 phép, hộp chờ duyệt, bảng công tháng, phiếu lương của tôi, chạy kỳ lương, cấu hình chính sách.
 Chín màn ấy là ranh giới giữa "chạy được" và "trình diễn được".
+
+### 9.13 Bản đồ phân hệ đầy đủ
+
+Mười sáu phân hệ. Cột *giai đoạn* không phải để hoãn việc — nó nói **cái gì chặn cái gì**: một
+phân hệ chỉ vào được giai đoạn sau khi thứ nó đứng trên đã có thật.
+
+| # | Phân hệ | Giữ gì | GĐ |
+|---|---|---|---|
+| 1 | **Hồ sơ và tổ chức** | nhân viên, phòng ban (cây), chức danh, hợp đồng, người phụ thuộc | 1 |
+| 2 | **Quyền và phạm vi** | vai, phạm vi dòng, nhật ký thay đổi | 1 |
+| 3 | **Chấm công** | lượt quẹt, ngày công, ca, ngày lễ, sửa tay có vết | 1 |
+| 4 | **Nghỉ phép** | loại phép, số dư, đơn, luồng duyệt | 1 |
+| 5 | **Lương** | mức lương theo thời hạn, kỳ, lượt chạy, phiếu, dòng phiếu | 2 |
+| 6 | **Chính sách pháp lý** | giảm trừ, tỷ lệ bảo hiểm, biểu thuế — đều có ngày hiệu lực | 2 |
+| 7 | **Cổng nhân viên** | hồ sơ của tôi, công của tôi, phép của tôi, phiếu lương của tôi | 2 |
+| 8 | **Cổng quản lý** | hộp chờ duyệt, nhóm của tôi, lịch nghỉ nhóm | 2 |
+| 9 | **Tài liệu và chính sách nội bộ** | văn bản có phiên bản, xác nhận đã đọc | 3 |
+| 10 | **Onboarding / offboarding** | danh sách việc theo mẫu, bàn giao, thu hồi quyền | 3 |
+| 11 | **Tài sản cấp phát** | máy móc, thẻ, đồng phục — cấp, thu, mất | 3 |
+| 12 | **Đánh giá và mục tiêu** | chu kỳ đánh giá, mục tiêu OKR/KPI, phản hồi | 3 |
+| 13 | **Đào tạo** | khoá, ghi danh, kết quả, chứng chỉ có hạn | 4 |
+| 14 | **Tuyển dụng** | tin tuyển, ứng viên, vòng phỏng vấn, thư mời | 4 |
+| 15 | **Khảo sát và ghi nhận** | khảo sát nhanh, ghi nhận đóng góp, thông báo nội bộ | 4 |
+| 16 | **Phân tích nhân sự** | biến động, nghỉ việc, chi phí lương, chuyên cần | 4 |
+
+**Giai đoạn 1 là thứ không có thì không có gì khác chạy được.** Không có cây tổ chức thì không
+có người duyệt; không có ngày công thì không có lương. Giai đoạn 2 biến nó thành thứ nhân viên
+mở ra hằng ngày. Giai đoạn 3 và 4 là bề rộng.
+
+**Một luật chung cho cả mười sáu**: phân hệ nào cũng gắn vào `employeeId` và **không phân hệ
+nào sở hữu bản sao hồ sơ nhân viên**. Chép tên và phòng ban sang bảng tuyển dụng hay bảng đánh
+giá là tạo ra hai sự thật, và cái sai sẽ luôn là cái không ai nhớ tới (cùng nguyên tắc §4.9).
+
+### 9.14 Vòng đời nhân viên là xương sống nối các phân hệ
+
+Các phân hệ không đứng cạnh nhau, chúng nối vào một trục:
+
+```
+ứng viên ──► nhận việc ──► đang làm ──────────────► nghỉ việc
+   │            │             │                        │
+ tuyển       onboarding    chấm công                offboarding
+ dụng        tài sản       nghỉ phép                thu hồi quyền
+ (14)        tài liệu      lương                    thu tài sản
+             (10, 11, 9)   đánh giá, đào tạo        lương chốt cuối
+                           (3,4,5,12,13)            (10, 11, 5)
+```
+
+**Chuyển trạng thái là sự kiện, không phải một ô để sửa.** Nhận việc sinh hợp đồng, sinh số dư
+phép theo tỷ lệ còn lại của năm, sinh danh sách việc onboarding, và mở tài khoản. Nghỉ việc
+khoá tài khoản **ngay**, nhưng giữ hồ sơ vĩnh viễn, chạy lương chốt cuối, và mở danh sách thu
+hồi. Viết mỗi việc ấy thành một chỗ bấm riêng là bảo đảm có ngày ai đó quên một bước.
+
+**Một người nghỉ việc không bao giờ bị xoá.** Bảng lương năm ngoái phải tra ra được họ. Cờ
+`active` tắt, tài khoản khoá, dữ liệu sinh trắc **xoá** (§7.5 — mẫu khuôn mặt là thứ duy nhất
+bị xoá thật), hồ sơ ở lại.
+
+### 9.15 Kiến trúc thông tin: ba loại màn hình, không phải một danh sách dài
+
+Phần mềm HR chết vì thanh bên hai mươi mục ngang hàng nhau. Chữa bằng cách phân loại **theo
+việc người ta đang làm**, không theo tên phân hệ:
+
+| Loại | Trả lời câu hỏi | Ví dụ |
+|---|---|---|
+| **Việc** | *tôi phải làm gì bây giờ* | hộp chờ duyệt, danh sách onboarding, kỳ lương đang mở |
+| **Tra cứu** | *tình hình thế nào* | danh bạ, bảng công, lịch nghỉ, cây tổ chức |
+| **Cấu hình** | *hệ thống chạy theo luật nào* | loại phép, ca, chính sách thuế, mẫu onboarding |
+| **Báo cáo** | *xu hướng ra sao* | biến động nhân sự, chi phí lương, chuyên cần |
+
+**Bốn loại này ở bốn nơi khác nhau trên màn hình.** Việc nằm ở trang chủ và mang số đếm trên
+thanh bên. Tra cứu nằm ở thanh bên chính. Cấu hình nằm sau một mục *Thiết lập* riêng, vì người
+ta mở nó vài lần một quý. Báo cáo nằm riêng vì nó là chỗ người ta ngồi lâu.
+
+**Thanh bên chia nhóm và gập được, có số đếm.** Số đếm trên *Chờ duyệt* là thứ cho phép một
+trưởng phòng biết có việc mà **không phải mở trang** — và nó là lý do người ta quay lại mỗi
+ngày. Không có nó thì mọi thứ đều phải nhớ.
+
+```
+Tôi            ▸ Trang của tôi · Công của tôi · Phép của tôi · Phiếu lương
+Chờ duyệt (3)  ▸ Nghỉ phép (2) · Tăng ca (1)
+Nhân sự        ▸ Danh bạ · Cây tổ chức · Hợp đồng · Onboarding
+Thời gian      ▸ Bảng công · Ca làm · Nghỉ phép · Ngày lễ
+Lương          ▸ Kỳ lương · Phiếu lương · Bảng lương ngân hàng
+Thiết bị       ▸ Kiosk · Bản phát hành
+Báo cáo        ▸ Chuyên cần · Biến động · Chi phí lương
+Thiết lập      ▸ Chính sách · Loại phép · Vai trò · Tài liệu
+```
+
+**Nhóm nào rỗng với vai của người đang xem thì không hiện.** Một nhân viên thường thấy đúng hai
+nhóm đầu. Làm mờ đi thay vì ẩn là cố ý khoe những gì họ không được đụng.
+
+**Mỗi phân hệ có đúng một màn hình "về một người".** Hồ sơ nhân viên là trang có tab: thông tin,
+hợp đồng, chấm công, nghỉ phép, lương, tài sản, đào tạo. Không rải mỗi thứ một trang rồi bắt HR
+tìm lại người đó bảy lần.
+
+### 9.16 Các phân hệ mở rộng: quyết định đáng ghi trước
+
+Không mô tả lại từng tính năng — chỉ ghi chỗ dễ làm sai.
+
+**Tài liệu và chính sách (9).** Văn bản có **phiên bản**, và xác nhận đã đọc gắn vào **đúng
+phiên bản** người ta đã đọc. Gắn vào tên tài liệu là mất khả năng chứng minh ai đã đọc bản nào
+— thứ duy nhất có giá trị khi có tranh chấp.
+
+**Onboarding / offboarding (10).** Mẫu danh sách việc theo chức danh và phòng ban, sinh ra bản
+thể hiện có người phụ trách và hạn. **Offboarding chạy ngược lại và phải chặn được**: chưa thu
+tài sản, chưa bàn giao thì kỳ lương cuối không chốt được.
+
+**Tài sản (11).** Mỗi lần cấp và thu là một **bản ghi chuyển giao**, không phải sửa ô `holder`.
+Câu hỏi "cái máy này từng qua tay ai" chỉ trả lời được nếu lịch sử là dòng chứ không phải ô.
+
+**Đánh giá và mục tiêu (12).** Chu kỳ đánh giá **đóng băng** bảng lương và chức danh tại thời
+điểm chốt, vì một bản đánh giá đọc lại sau hai năm phải nói đúng bối cảnh lúc đó.
+
+**Đào tạo (13).** Chứng chỉ có **hạn**, và hạn phải sinh ra nhắc nhở. Một chứng chỉ an toàn lao
+động hết hạn mà không ai biết là rủi ro pháp lý, không phải thiếu sót dữ liệu.
+
+**Tuyển dụng (14).** Ứng viên **không phải** nhân viên và không nằm chung bảng. Chuyển thành
+nhân viên là một phép chuyển có chủ đích, sinh `Employee` mới và để lại liên kết ngược.
+
+**Khảo sát (15).** Khảo sát ẩn danh phải **thật sự** ẩn danh: lưu câu trả lời tách khỏi người
+trả lời, và không lưu thứ gì đủ để ghép lại. Nửa vời ở đây tệ hơn không làm, vì nó hứa một điều
+không giữ được.
+
+**Phân tích (16).** Mọi con số đọc từ bảng tổng hợp đã dựng sẵn, không đọc từ bảng giao dịch.
+Đây là §9.9 luật 1 nói lại ở tầng báo cáo.
+
+### 9.17 Mười hai việc người lao động thật sự cần
+
+Danh sách này không suy từ bảng tính năng của phần mềm khác. Nó là những câu người ta hỏi HR
+qua tin nhắn, và mỗi câu chưa có chỗ trả lời là một lần HR phải trả lời tay.
+
+**1. Giải trình công.** Máy hỏng, quên quẹt, đứng sai góc, đi công tác — ngày đó thành vắng mặt
+và **trừ vào lương**. Đây là thiếu sót nặng nhất của một hệ chấm công không có cổng: người bị
+trừ không có đường tự sửa. Cần đơn giải trình có ảnh hoặc lý do, gửi tới cấp trên, duyệt xong
+thì ghi vào `AttendanceDay` **kèm dấu là đã sửa** (§9.8) — không bao giờ ghi đè con số máy đo.
+
+**2. Đăng ký tăng ca trước, không xin sau.** Luật lao động đòi tăng ca có sự đồng ý; thực tế
+phần mềm đòi nó có **duyệt trước**, nếu không thì mọi phút ở lại muộn đều thành tăng ca và bảng
+lương mất kiểm soát. Nên phút ngoài ca chỉ thành tiền khi khớp một đăng ký đã duyệt.
+
+**3. Công tác và làm từ xa.** Cùng lý do với mục 1, nhưng đăng ký **trước** chứ không giải trình
+sau. Ngày đã đăng ký thì kiosk không thấy mặt cũng không tính vắng.
+
+**4. Phiếu lương phải tự giải thích được.** Câu hỏi thật không phải "tháng này bao nhiêu" mà
+*"sao tháng này ít hơn tháng trước"*. Nên phiếu lương hiện **chênh lệch so với kỳ trước theo
+từng khoản**, và khoản nào đổi thì nói vì sao: nghỉ không lương ba ngày, thêm một người phụ
+thuộc, chạm trần bảo hiểm. Không có phần này thì mỗi kỳ lương là một đợt tin nhắn cho HR.
+
+**5. Giấy xác nhận công tác và xác nhận thu nhập.** Vay ngân hàng, làm visa, đăng ký học. Tự
+xin trong cổng, HR duyệt, hệ sinh văn bản có số hiệu và lưu lại đã cấp cho ai.
+
+**6. Đổi thông tin cá nhân phải qua duyệt — nhất là số tài khoản.** Cho sửa thẳng số tài khoản
+là mở đúng cánh cửa mà kẻ chiếm tài khoản cần. Đổi tài khoản ngân hàng là **đơn có duyệt**, có
+thông báo về email cũ, và không có hiệu lực với kỳ lương đang chạy.
+
+**7. Một chỗ xem mọi đơn của tôi.** Nghỉ phép, tăng ca, giải trình, đổi thông tin — cùng một
+danh sách, cùng một cách hiện trạng thái. Rải mỗi loại một trang là bắt người ta nhớ mình đã
+gửi cái gì ở đâu.
+
+**8. Lịch ca của tôi, xem trước được.** Người làm ca cần biết tháng sau mình vào ca nào để sắp
+xếp việc nhà. Ca phân xong mà chỉ HR thấy thì phân ca vô dụng.
+
+**9. Số dư phép **tại một ngày**, không phải hôm nay.** Câu hỏi luôn là "nếu tôi nghỉ tuần sau
+thì còn mấy ngày", nên ô số dư phải tính theo ngày người ta chọn, kể cả đơn đang chờ.
+
+**10. Quyết toán thuế cuối năm.** Bản kê thu nhập cả năm và thuế đã nộp, cộng đường đăng ký
+người phụ thuộc. Cả hai đều đang là việc HR làm tay cho từng người.
+
+**11. Khiếu nại phiếu lương thành hồ sơ, không thành tin nhắn.** Có kênh chính thức, có hạn trả
+lời, có kết quả lưu lại. Một tranh chấp lương giải quyết qua tin nhắn là một tranh chấp không
+chứng minh được về sau.
+
+**12. Biết đơn của mình đang ở đâu.** Thông báo khi đơn được duyệt, bị từ chối, hay **nằm quá
+lâu không ai động tới** — cái thứ ba là cái người ta bức xúc nhất và phần mềm hay quên nhất.
+
+### 9.18 Mười hai việc HR thật sự cần
+
+**1. Hợp đồng sắp hết hạn.** Bỏ lỡ hạn tái ký thì hợp đồng xác định thời hạn **tự thành không
+xác định thời hạn** theo luật — một hậu quả pháp lý vĩnh viễn sinh ra từ một ô lịch không ai
+nhìn. Cần nhắc theo mốc 30 / 15 / 7 ngày, và danh sách phải mở được từ trang chủ.
+
+**2. Thử việc sắp kết thúc.** Cùng loại rủi ro: hết thử việc mà không quyết là mặc nhiên nhận
+chính thức.
+
+**3. Bảng ngoại lệ của hôm nay.** Không phải "ai đi làm" — mà **ai lệch**: chưa quẹt, quẹt muộn,
+quẹt một lần rồi biến mất, nghỉ không đơn. Danh sách ngắn mà hành động được, mở mỗi sáng.
+
+**4. Danh sách kiểm trước khi chốt lương.** Trước khi `LOCKED` (§9.6), hệ phải tự liệt kê cái
+gì còn treo: đơn nghỉ chưa duyệt, giải trình chưa xử, ngày công thiếu, người chưa có mức lương
+hiệu lực. **Chốt kỳ khi còn mục treo phải cần xác nhận có ghi tên người xác nhận.**
+
+**5. Nhập hàng loạt từ Excel.** Ba mươi nghìn người không gõ tay được, và dữ liệu đầu vào luôn
+bẩn. Nên nhập theo hai nhịp: **chạy thử ra báo cáo lỗi từng dòng**, rồi mới nhập thật. Nhập
+thẳng rồi sửa sau là cách chắc chắn nhất để có dữ liệu rác vĩnh viễn.
+
+**6. Điều chỉnh lương hàng loạt.** Tăng lương cả công ty hay cả một phòng là việc một lần một
+năm nhưng bắt buộc. Sinh ra **một loạt dòng `CompensationRecord` mới cùng ngày hiệu lực**
+(§9.6), xem trước được trước khi ghi.
+
+**7. Tái cơ cấu tổ chức.** Chuyển cả một phòng sang cấp trên khác, gộp hai phòng, đổi người quản
+lý hàng loạt. Phải xem trước ai bị ảnh hưởng, vì đổi `managerId` là đổi luôn ai duyệt đơn của
+họ và ai nhìn thấy dữ liệu của họ (§9.4).
+
+**8. Lương chốt cuối khi nghỉ việc.** Trợ cấp thôi việc, phép năm chưa dùng quy ra tiền, thu hồi
+tạm ứng, đối trừ tài sản chưa trả. Đây là phép tính khác hẳn lương tháng và làm tay thì sai.
+
+**9. Thưởng chạy tách khỏi lương tháng.** Thưởng tết, thưởng hiệu quả. Là **lượt chạy riêng trên
+cùng kỳ**, vì thuế của khoản thưởng tính cùng kỳ chi trả nhưng nguồn và người duyệt thì khác.
+
+**10. Tạm ứng lương.** Đơn, duyệt, chi, rồi **tự khấu trừ ở kỳ sau**. Không có đường này thì nó
+vẫn xảy ra, chỉ là xảy ra ngoài hệ thống.
+
+**11. Ai đang giữ tài sản gì.** Mỗi lần cấp và thu là một dòng chuyển giao (§9.16), và danh sách
+"chưa trả" phải nối được vào offboarding.
+
+**12. Số liệu nộp cho cơ quan nhà nước.** Xem §9.19.
+
+### 9.19 Nghĩa vụ pháp lý ở Việt Nam
+
+Ba nhóm, và nhóm thứ ba là nhóm hệ này **bắt buộc** phải làm vì bản chất của nó.
+
+**Báo cáo lao động và bảo hiểm.** Mẫu **D02-LT** — báo cáo tình hình sử dụng lao động kèm danh
+sách tham gia BHXH, BHYT, BHTN — nộp **hai lần một năm**, trước ngày 5 tháng 6 và trước ngày 5
+tháng 12, theo Quyết định 1040/QĐ-BHXH sửa bởi 948/QĐ-BHXH. Nó cần đúng những trường hệ này đã
+giữ: họ tên, mã BHXH, ngày sinh, giới tính, số giấy tờ tuỳ thân, chức danh, loại hợp đồng và
+thời hạn, mức lương cùng phụ cấp. **Nên nó phải xuất được, không phải chép tay.** Ngoài ra là
+báo tăng, báo giảm, báo điều chỉnh khi có người vào, ra hoặc đổi lương.
+
+**Thuế thu nhập cá nhân.** Khấu trừ và kê khai theo kỳ, và **quyết toán năm** cho từng người.
+Dữ liệu đã nằm ở `PayslipLine` (§9.6) nếu từng khoản là một dòng — đây là lý do thứ hai để
+không nhét phiếu lương vào một ô JSON.
+
+**Bảo vệ dữ liệu cá nhân — và chỗ này hệ chấm công khuôn mặt không có đường vòng.** Nghị định
+**13/2023/NĐ-CP**, hiệu lực 01/07/2023, xếp **dữ liệu sinh trắc học, gồm đặc điểm khuôn mặt,
+vào nhóm dữ liệu cá nhân nhạy cảm**. Hệ này lưu embedding khuôn mặt trên kiosk và bản mã hoá ở
+server, nên nó **là** bên xử lý dữ liệu nhạy cảm, không phải một phần mềm quản lý thông thường.
+Bốn nghĩa vụ kéo theo, và cả bốn đều là việc phải dựng chứ không phải điều khoản để dán vào
+hợp đồng:
+
+- **Đồng ý riêng cho dữ liệu sinh trắc**, tách khỏi hợp đồng lao động, ghi lại thời điểm và
+  phiên bản văn bản đã đồng ý (§9.16 mục tài liệu). Đồng ý gộp vào hợp đồng là đồng ý không
+  chứng minh được.
+- **Đánh giá tác động xử lý dữ liệu** theo Điều 24, và khai bộ phận phụ trách với Bộ Công an.
+- **Nhật ký truy cập**: ai đã xem hoặc xuất dữ liệu sinh trắc, lúc nào. `AuditLog` đã có, phải
+  phủ tới đây.
+- **Quyền xoá**. Một người nghỉ việc thì mẫu khuôn mặt **xoá thật** ở cả server lẫn mọi kiosk
+  từng nhận — hồ sơ nhân sự ở lại, sinh trắc thì không (§9.14). Đây là thứ duy nhất trong hệ bị
+  xoá thật, và §7.5 đã có đường `DELETE` xuống kiosk để làm việc đó.
+
+### 9.20 Sáu thứ cắt ngang mọi phân hệ
+
+Không thuộc phân hệ nào, nhưng thiếu thì phân hệ nào cũng khó dùng.
+
+**Nhập và xuất hàng loạt.** Mọi bảng lớn cần nhập từ Excel theo hai nhịp — chạy thử, xem báo cáo
+lỗi từng dòng, rồi nhập thật — và xuất ra định dạng mở được bằng Excel (kèm BOM, cùng lý do đã
+gặp ở bảng chấm công).
+
+**Trung tâm thông báo.** Một chỗ trong ứng dụng, cộng email cho thứ cần rời khỏi ứng dụng. Mỗi
+người tự chọn nhận gì. Không có nó thì hoặc gửi quá nhiều rồi bị bỏ qua, hoặc gửi quá ít rồi
+đơn nằm chết.
+
+**Uỷ quyền duyệt.** Cấp trên nghỉ phép thì đơn của cấp dưới không được đứng lại. Uỷ quyền có
+thời hạn, và **việc đã duyệt ghi tên người duyệt thật**, không ghi tên người uỷ quyền.
+
+**Nhiều pháp nhân.** Ở quy mô này công ty thường có nhiều chi nhánh hoặc nhiều pháp nhân, mà
+lương và báo cáo BHXH nộp **theo từng pháp nhân**. Nên `LegalEntity` phải có từ đầu và mọi bảng
+lương gắn vào nó — thêm vào sau là sửa mọi truy vấn.
+
+**Điện thoại là thiết bị chính của người lao động, không phải máy tính.** Công nhân không có
+máy để mở cổng nhân viên. Bốn màn của §9.10 dành cho `EMPLOYEE` phải dùng được trên màn hình
+hẹp; phần quản trị thì không cần.
+
+**Tìm kiếm toàn cục.** Một ô tìm ra người, phòng ban, đơn, phiếu lương. Ở ba mươi nghìn hồ sơ,
+điều hướng bằng menu là quá chậm cho việc HR làm nhiều nhất trong ngày: tìm một người.
