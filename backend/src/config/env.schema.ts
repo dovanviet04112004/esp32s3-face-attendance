@@ -14,6 +14,11 @@ export const envSchema = z.object({
 
   DEVICE_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90),
   DEVICE_BOOTSTRAP_TOKEN: z.string().min(16),
+  JWT_DEVICE_SECRET: z.string().min(32),
+
+  LOGIN_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(5),
+
+  SEED_ADMIN_PASSWORD: z.string().min(8).optional(),
 
   CORS_ORIGIN: z.string().min(1),
 

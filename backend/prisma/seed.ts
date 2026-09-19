@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import "dotenv/config";
 
 import { validateEnv } from "../src/config/env.schema.js";
+import { hashPassword } from "../src/modules/auth/password.js";
 
 const SEED_ADMIN_EMAIL = "admin@kiosk.local";
 const SEED_SHIFT_NAME = "Hành chính";
@@ -14,16 +15,14 @@ const prisma = new PrismaClient({
 });
 
 async function main(): Promise<void> {
-  // The auth module owns password hashing (E11-T2); a seed that invented its
-  // own would be a second scheme to keep in step.
+  if (!env.SEED_ADMIN_PASSWORD) {
+    throw new Error("set SEED_ADMIN_PASSWORD before seeding");
+  }
+  const passwordHash = await hashPassword(env.SEED_ADMIN_PASSWORD);
   const admin = await prisma.user.upsert({
     where: { email: SEED_ADMIN_EMAIL },
-    update: {},
-    create: {
-      email: SEED_ADMIN_EMAIL,
-      passwordHash: "seed-placeholder-replaced-by-e11-t2",
-      role: "ADMIN",
-    },
+    update: { passwordHash },
+    create: { email: SEED_ADMIN_EMAIL, passwordHash, role: "ADMIN" },
   });
 
   const shift = await prisma.shift.upsert({

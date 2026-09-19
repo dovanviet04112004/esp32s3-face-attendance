@@ -26,11 +26,11 @@
   "include": [
     "src/**/*",
     "prisma/**/*",
-    "prisma.config.ts"
+    "prisma.config.ts",
+    "test/**/*"
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "test"
+    "dist"
   ]
 }

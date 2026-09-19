@@ -4,6 +4,7 @@ import { EventEmitterModule } from "@nestjs/event-emitter";
 import { configModule } from "./config/configuration.js";
 import { DatabaseModule } from "./database/database.module.js";
 import { AttendanceModule } from "./modules/attendance/attendance.module.js";
+import { AuthModule } from "./modules/auth/auth.module.js";
 import { MqttModule } from "./modules/mqtt/mqtt.module.js";
 
 @Module({
@@ -11,6 +12,7 @@ import { MqttModule } from "./modules/mqtt/mqtt.module.js";
     configModule,
     EventEmitterModule.forRoot(),
     DatabaseModule,
+    AuthModule,
     MqttModule,
     AttendanceModule,
   ],

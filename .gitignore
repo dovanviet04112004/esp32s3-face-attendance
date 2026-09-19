@@ -99,3 +99,6 @@ Thumbs.db
 
 # TypeScript incremental build state
 *.tsbuildinfo
+
+# TypeScript output built only to run the e2e suite
+dist-test/
