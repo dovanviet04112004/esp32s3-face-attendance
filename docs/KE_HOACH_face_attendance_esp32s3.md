@@ -2905,7 +2905,7 @@ firmware/
 │   ├── svc_vision/        [C++]  L4  # detect mỗi khung, chuỗi spoof → recog khi mặt ổn định (§4.5.5d)
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
 │   ├── svc_sync/          [C++]  L5  # hàng đợi offline → MQTT
-│   └── ui_kiosk/          [C++]  L6  # 5 màn hình vẽ thẳng lên panel + bộ bám hộp (§4.5.5h)
+│   └── ui_kiosk/          [C++]  L6  # 6 màn hình vẽ thẳng lên panel + bộ bám hộp (§4.5.5h)
 │
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
@@ -3296,7 +3296,7 @@ public:
 };
 ```
 
-Năm màn hình cùng vòng đời, thêm màn hình mới không đụng `ScreenManager`. Đây là chỗ virtual đáng giá nhất và cũng rẻ nhất (mỗi lần chuyển màn mới gọi 1 lần).
+Sáu màn hình cùng vòng đời, thêm màn hình mới không đụng `ScreenManager`. Đây là chỗ virtual đáng giá nhất và cũng rẻ nhất (mỗi lần chuyển màn mới gọi 1 lần).
 
 **Không dùng LVGL, và đó là hệ quả của chính đoạn dưới.** §4.5.5h đã chốt vùng preview vẽ
 thẳng, không qua LVGL — mà **màn hình chính của kiosk chính là preview**. Để LVGL vào thì hai
@@ -3832,7 +3832,7 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 | `svc_door` | `IDoor`, `ServoDoor`, `FakeDoor` | Adapter bọc driver C, ra ngoài bằng handle mờ | Chạy máy trạng thái chấm công trên host với cửa giả |
 | `svc_attendance` | `AttendanceFsm` | Bảng `constexpr`, **không** virtual | Nhìn hết sơ đồ trạng thái trong 1 màn hình |
 | `svc_sync` | `UplinkQueue`, `IPersist`, `ILink` | Composition | Thay LittleFS **và** broker bằng fake khi test: luật "con trỏ đi sau ack" của §6.2.6 chỉ kiểm được khi ép được cả hai bên trả lỗi |
-| `ui_kiosk` | `Screen` → 5 lớp con, `ScreenManager`, `BoxTracker` | Kế thừa; bộ bám là giá trị thuần | Năm màn hình cùng vòng đời; hộp mặt theo khung hình, không theo nhịp detect |
+| `ui_kiosk` | `Screen` → 6 lớp con, `ScreenManager`, `BoxTracker` | Kế thừa; bộ bám là giá trị thuần | Sáu màn hình cùng vòng đời; hộp mặt theo khung hình, không theo nhịp detect |
 
 #### 4.5.6 `ai_engine` — mỗi model một thư mục
 
@@ -5203,6 +5203,34 @@ không phải của broker.
 lúc biên dịch để nhúng, nên bản sao ấy nằm trong cây firmware và được commit; khoá riêng của CA
 cùng cặp khoá máy chủ thì không rời `deploy/emqx/certs/`.
 
+
+### 7.6 Đổi Wi-Fi trên màn hình, không qua dây
+
+**Console USB là công cụ bàn thí nghiệm, không phải sản phẩm.** `set wifi ssid` đổi được mạng mà
+không phải nạp lại firmware, và điều đó đúng — nhưng nó đòi cắm cáp vào một máy tính có ESP-IDF.
+Kiosk treo trên tường trong phòng khác thì không ai làm được thao tác ấy, và đó là lúc cần đổi
+mạng nhất: công ty đổi router, đổi mật khẩu, dọn sang phòng mới.
+
+Màn hình **Wi-Fi** làm đúng việc một chiếc điện thoại làm: quét, liệt kê theo cường độ sóng,
+chạm chọn, gõ mật khẩu, kết nối. Bàn phím ở đây **không dùng chung với bàn phím nhập tên** — tên
+người chỉ cần chữ cái, còn mật khẩu Wi-Fi cần cả hoa, thường, số và ký hiệu, nên nó có ba bộ ký
+tự đổi bằng một phím chuyển.
+
+**Quét chạy ở `sync_task`, không ở `ui_task`.** `esp_wifi_scan_start(NULL, true)` chặn 2–4 giây
+và thả link trong lúc quét; đặt nó trên task vẽ màn hình là **màn hình đứng hình** đúng lúc người
+dùng vừa bấm. `ui_kiosk` chỉ giương cờ xin quét, `sync_task` quét rồi trả danh sách về — cùng
+đường mà `People` đã dùng cho danh sách người.
+
+**Chỉ ghi NVS khi mạng thật sự trả lời.** `net_wifi_join` đặt cấu hình, gọi `esp_wifi_connect`,
+chờ tới `WIFI_JOIN_WAIT_MS`, và **chỉ khi vào được** mới ghi `wifi/ssid` với `wifi/pass`. Ghi
+trước rồi mới thử là cách một lỗi gõ mật khẩu khoá kiosk khỏi đúng cái mạng nó vẫn đang dùng
+được — sau lần khởi động kế tiếp thì không còn đường nào vào nữa.
+
+**Hai kiểu struct cho một danh sách mạng, có chủ ý.** `net_wifi_ap_t` là của radio,
+`ui_kiosk_ap_t` là của màn hình; tầng nối dây chuyển đổi. Cho `ui_kiosk` (L6) gọi thẳng
+`net_wifi` (L3) thì màn hình biết về sóng radio, và §4.5.4 dựng ra để chặn đúng chuyện đó.
+
+---
 
 ### 7.5 Vòng đời nhân viên — server giữ danh tính, máy giữ khuôn mặt
 
