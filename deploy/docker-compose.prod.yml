@@ -1,0 +1,78 @@
+# The VPS stack (KEHOACH 4.8). Layered over docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  traefik:
+    image: traefik:v3
+    container_name: kiosk-traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8883:8883"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    depends_on:
+      api:
+        condition: service_started
+
+  api:
+    build:
+      context: ../backend
+    container_name: kiosk-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_DEVICE_SECRET: ${JWT_DEVICE_SECRET}
+      DEVICE_BOOTSTRAP_TOKEN: ${DEVICE_BOOTSTRAP_TOKEN}
+      TEMPLATE_ENCRYPTION_KEY: ${TEMPLATE_ENCRYPTION_KEY}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      MQTT_URL: mqtts://emqx:8883
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${EMQX_OPS_PASSWORD}
+      MQTT_CA_CERT_PATH: /certs/ca.crt
+    volumes:
+      - ./emqx/certs/ca.crt:/certs/ca.crt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.api.rule: Host(`${API_DOMAIN}`)
+      traefik.http.routers.api.entrypoints: websecure
+      traefik.http.routers.api.tls.certresolver: letsencrypt
+      traefik.http.routers.api.middlewares: security-headers@file
+      traefik.http.services.api.loadbalancer.server.port: "3000"
+
+  postgres:
+    # The published port of the base file is dropped: on a public machine the
+    # database answers only on the compose network.
+    ports: !override []
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  redis:
+    ports: !override []
+
+  emqx:
+    # Traefik owns 8883 on the host and forwards it whole, so the broker keeps
+    # the certificate a flashed kiosk already trusts.
+    ports: !override []
+
+volumes:
+  letsencrypt:

@@ -1,0 +1,27 @@
+# Traefik dynamic configuration (KEHOACH 4.8).
+
+tcp:
+  routers:
+    mqtts:
+      entryPoints:
+        - mqtts
+      rule: "HostSNI(`*`)"
+      service: emqx
+      # No tls block on purpose: passthrough. Terminating here would hand the
+      # kiosk a certificate its pinned CA never signed.
+  services:
+    emqx:
+      loadBalancer:
+        servers:
+          - address: "emqx:8883"
+
+http:
+  middlewares:
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true

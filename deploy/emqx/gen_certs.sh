@@ -22,8 +22,9 @@ fi
 mkdir -p "$CERTS"
 cd "$CERTS"
 
-# A SAN entry per address, typed so an IP literal validates as an IP.
-san=""
+# A SAN entry per address, typed so an IP literal validates as an IP. The
+# compose service name goes in unasked: that is how the api dials the broker.
+san="DNS:emqx,"
 for addr in "$@"; do
     if [[ "$addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         san+="IP:$addr,"
