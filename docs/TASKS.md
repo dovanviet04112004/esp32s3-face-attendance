@@ -364,6 +364,211 @@ của E10-T16 cần lỗi thật xảy ra; E13-T6 đo lần cuối phải sau E1
 
 ---
 
+## E15 — Nền nhân sự: tổ chức, hồ sơ, quyền theo dòng
+
+Giai đoạn 1 của §9.13. Không epic nào của §9 chạy trước epic này: nó mở ba thứ đang chặn — cây
+tổ chức, đường đăng nhập cho người lao động, và phạm vi nhìn thấy theo dòng.
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E15-T1 | `LegalEntity` (§9.20) — nhiều pháp nhân từ đầu, vì lương và BHXH nộp theo từng pháp nhân | Thêm pháp nhân thứ hai không phải sửa truy vấn nào | E11-T3 |
+| E15-T2 | `Department` cây tự tham chiếu + `JobTitle`; migration đổ `Employee.department` dạng chuỗi sang khoá ngoại | Không nhân viên nào mất phòng ban sau migration | E15-T1 |
+| E15-T3 | `Employee` mở rộng: `departmentId`, `jobTitleId`, `managerId`, `hireDate`, liên lạc, `taxCode`, `bankAccount`, mã BHXH | Đủ ô để chạy lương và xuất D02-LT; `managerId` không tạo được vòng | E15-T2 |
+| E15-T4 | `EmploymentContract` nhiều bản một người, có loại, hạn, và mốc thử việc | Tái ký sinh dòng mới, không sửa dòng cũ | E15-T3 |
+| E15-T5 | `User.employeeId` + `Role` thêm `EMPLOYEE`, `MANAGER`, `PAYROLL`; tạo tài khoản hàng loạt từ danh sách nhân viên | Một nhân viên đăng nhập được và **chỉ** thấy hồ sơ của mình | E15-T3, E11-T2 |
+| E15-T6 | **`Viewer` và phạm vi dòng ở tầng service** (§9.4) | `MANAGER` gọi API của người ngoài nhóm nhận 404, không phải 403 — 403 là xác nhận người đó có tồn tại | E15-T5 |
+| E15-T7 | Cây dưới quyền bằng CTE đệ quy trên `managerId`, có nhớ đệm, xoá đệm khi đổi cấp trên | Cây 10.000 người trả dưới 50 ms khi đệm ấm 🔬 | E15-T6 |
+| E15-T8 | Máy trạng thái vòng đời (§9.14): nhận việc sinh hợp đồng, số dư phép theo tỷ lệ, tài khoản; nghỉ việc khoá tài khoản và mở danh sách thu hồi | Một phép chuyển, không phải bảy chỗ bấm rời nhau | E15-T4, E15-T5 |
+| E15-T9 | `AuditLog` phủ hồ sơ, hợp đồng, vai trò, lương | Đổi lương hay vai trò tra ngược được ai làm, lúc nào | E15-T4 |
+| E15-T10 | Nhắc **hợp đồng sắp hết hạn** và **thử việc sắp hết** ở mốc 30/15/7 ngày (§9.18) | Danh sách mở được từ trang chủ HR; bỏ lỡ hạn không còn là chuyện im lặng | E15-T4 |
+
+---
+
+## E16 — Ngày công và quy mô
+
+Vừa dựng đầu vào cho bảng lương vừa chữa chỗ gãy đã đo ở §9.2.
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E16-T1 | Bảng `AttendanceDay` + chỉ mục `(employeeId, date)` và `(date)` | Một dòng mỗi người mỗi ngày, có trạng thái và ca áp dụng | E15-T3 |
+| E16-T2 | Job `timesheet` dựng ngày hôm trước: giờ vào đầu, ra cuối, phút làm, muộn, về sớm, tăng ca | Chạy lại cùng ngày ra cùng kết quả; **hôm nay không nằm trong bảng** (§9.8) | E16-T1, E11-T6 |
+| E16-T3 | **Viết lại `reports.service.build()` bằng phép gộp SQL trên `AttendanceDay`**, bỏ lối nạp về Node rồi gom bằng `Map` | Báo cáo một tháng ở 30k nhân viên không nạp quá 30k dòng; có số đo trước/sau | E16-T2, E16-T9 |
+| E16-T4 | Sửa tay ngày công có vết: `adjustedBy`, `adjustReason`, số máy đo gốc không bị ghi đè | Một ngày đã sửa vẫn tra ra được con số ban đầu | E16-T1, E15-T6 |
+| E16-T5 | Phân trang bằng con trỏ thay `OFFSET` (§9.9 luật 3) | Trang thứ 1.000 trả nhanh ngang trang đầu 🔬 | E16-T1 |
+| E16-T6 | `pg_trgm` + GIN trên tên và mã nhân viên | Tìm "nguyen" trên 30k hồ sơ dùng chỉ mục, không quét bảng | E15-T3 |
+| E16-T7 | Đếm gần đúng khi vượt ngưỡng (§9.9 luật 6) | Trang danh sách không quét toàn bảng chỉ để vẽ thanh phân trang | E16-T5 |
+| E16-T8 | 🔬 Phân mảnh `AttendanceRecord` theo tháng khi bảng thật sự lớn | Truy vấn một tháng chạm một mảnh; dọn quá hạn là `DROP` một mảnh | E16-T3 |
+| E16-T9 | Bộ dữ liệu giả **30.000 nhân viên × 90 ngày**, sinh bằng script, không commit dữ liệu | Có số đo thật cho T3, T5, T6 trong `docs/measurements/` | E16-T2 |
+| E16-T10 | `Holiday` theo năm và theo pháp nhân, đổ vào `AttendanceDay` | Ngày lễ không bị tính là vắng | E16-T1 |
+| E16-T11 | **Bảng ngoại lệ hôm nay** (§9.18 mục 3): chưa quẹt, quẹt muộn, quẹt một lần rồi mất, nghỉ không đơn | Danh sách ngắn, hành động được, mở mỗi sáng | E16-T2 |
+
+---
+
+## E17 — Nghỉ phép, tăng ca, giải trình công
+
+Ba luồng đơn, một khung duyệt. Gộp vì chúng chia chung máy trạng thái, chung hộp chờ duyệt và
+chung đường ghi vào `AttendanceDay`.
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E17-T1 | Khung đơn chung: máy trạng thái `DRAFT → PENDING → APPROVED \| REJECTED \| CANCELLED`, người duyệt suy từ `managerId` | Chuyển trạng thái sai bị từ chối ở service, không chỉ ở giao diện | E15-T7 |
+| E17-T2 | **Uỷ quyền duyệt có thời hạn** (§9.20); việc đã duyệt ghi tên **người duyệt thật** | Cấp trên nghỉ phép thì đơn không đứng lại | E17-T1 |
+| E17-T3 | `LeaveType`: có trả lương hay không, ngày tích luỹ, trần chuyển năm | Khai được phép năm, ốm, không lương, chế độ | E15-T2 |
+| E17-T4 | `LeaveBalance` một dòng mỗi người mỗi loại mỗi năm, mang cả `taken` lẫn `pending` (§9.5) | Số dư đọc bằng một dòng, không cộng dồn cả lịch sử | E17-T3, E15-T3 |
+| E17-T5 | Giữ chỗ số dư lúc gửi, trừ thật lúc duyệt, hoàn `pending` khi từ chối hay huỷ | Gửi ba đơn chồng nhau không được duyệt cả ba | E17-T4, E17-T1 |
+| E17-T6 | **Chặn đơn chồng ngày ở tầng dữ liệu** bằng ràng buộc loại trừ trên khoảng ngày | Hai request song song cùng xin một ngày chỉ một cái qua | E17-T5 |
+| E17-T7 | Số dư phép **tại một ngày được chọn**, không phải hôm nay (§9.17 mục 9) | Trả lời được "nghỉ tuần sau thì còn mấy ngày", tính cả đơn đang chờ | E17-T4 |
+| E17-T8 | **Đăng ký tăng ca trước** (§9.17 mục 2): phút ngoài ca chỉ thành tiền khi khớp một đăng ký đã duyệt | Ở lại muộn không tự thành tăng ca | E17-T1, E16-T2 |
+| E17-T9 | **Giải trình công** (§9.17 mục 1): đơn kèm lý do, duyệt xong ghi `AttendanceDay` **kèm dấu đã sửa** | Người bị máy bỏ sót tự sửa được, và số máy đo vẫn còn | E16-T4, E17-T1 |
+| E17-T10 | **Công tác và làm từ xa**, đăng ký trước | Ngày đã đăng ký thì kiosk không thấy mặt cũng không tính vắng | E17-T1, E16-T2 |
+| E17-T11 | Ngày nghỉ duyệt xong ghi vào `AttendanceDay` trạng thái `LEAVE` | Bảng công và bảng lương đọc một nguồn | E16-T2, E17-T5 |
+| E17-T12 | Nhắc **đơn nằm quá lâu không ai động tới** (§9.17 mục 12) | Đơn không chết lặng trong hộp của một người đang bận | E17-T1, E22-T2 |
+
+---
+
+## E18 — Lương và chính sách pháp lý
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E18-T1 | `CompensationRecord` có `effectiveFrom`, **không sửa đè** (§9.6); lương cơ bản tách khỏi lương đóng bảo hiểm | Tăng lương thêm dòng; phiếu tháng cũ tính lại ra số cũ | E15-T3 |
+| E18-T2 | `Dependent` cho giảm trừ người phụ thuộc, có khoảng hiệu lực | Người phụ thuộc thêm giữa năm chỉ giảm trừ từ tháng đăng ký | E15-T3 |
+| E18-T3 | `PayrollPolicy` + `TaxBracket` có `effectiveFrom`; gieo số 2026: giảm trừ **15,5 tr** bản thân, **6,2 tr** người phụ thuộc, BHXH **8%**, BHYT **1,5%**, BHTN **1%**, trần **20 lần mức tham chiếu** (§9.7) | Đổi chính sách là thêm dòng, không sửa code | E11-T1 |
+| E18-T4 | `PayrollPeriod` `OPEN → LOCKED → PAID`, `PayrollRun` nhiều lượt một kỳ | Chạy nháp xem trước được | E18-T1 |
+| E18-T5 | **Danh sách kiểm trước khi chốt** (§9.18 mục 4): đơn chưa duyệt, giải trình chưa xử, ngày công thiếu, người chưa có mức lương | Chốt khi còn mục treo cần xác nhận **có ghi tên người xác nhận** | E18-T4, E17-T11 |
+| E18-T6 | **Chốt kỳ đóng băng đầu vào** (§9.6): dữ liệu tới muộn vào kỳ sau dạng truy lĩnh | Con số đã gửi cho nhân viên không tự đổi sau lưng họ | E18-T5 |
+| E18-T7 | Phép tính: lương theo ngày công, tăng ca theo luật, bảo hiểm, thuế luỹ tiến, thực nhận | Bộ ca kiểm có số làm tay đối chiếu, gồm ca chạm trần bảo hiểm và ca nhiều người phụ thuộc | E18-T3, E16-T2, E17-T8 |
+| E18-T8 | `Payslip` + `PayslipLine` mỗi khoản một dòng, **không JSON**; tiền lưu `Decimal` | "Quý này trả bao nhiêu tăng ca toàn công ty" trả lời bằng một phép gộp SQL | E18-T7 |
+| E18-T9 | **Chênh lệch so với kỳ trước theo từng khoản** (§9.17 mục 4) | Phiếu lương tự trả lời "sao tháng này ít hơn" | E18-T8 |
+| E18-T10 | Chạy lương theo lô qua BullMQ, chia theo phòng ban, **idempotent theo `(runId, employeeId)`** | Giao hai lần không đẻ hai phiếu; 30k người chạy trong cửa sổ đo được 🔬 | E18-T8, E16-T9 |
+| E18-T11 | Gửi phiếu: **mặc định thông báo kèm đường dẫn**; đính kèm PDF là lựa chọn phải bật, khi bật thì đặt mật khẩu (§9.11) | Không phiếu lương nào nằm trần trong hộp thư trừ khi có người cố ý bật | E18-T8, E11-T7 |
+| E18-T12 | **Điều chỉnh lương hàng loạt** (§9.18 mục 6): sinh loạt `CompensationRecord` cùng ngày hiệu lực, xem trước trước khi ghi | Tăng lương cả phòng không phải sửa từng người | E18-T1 |
+| E18-T13 | **Thưởng chạy tách** trên cùng kỳ (§9.18 mục 9) | Thưởng tết và thưởng hiệu quả có lượt riêng, người duyệt riêng | E18-T4 |
+| E18-T14 | **Tạm ứng lương**: đơn, duyệt, chi, **tự khấu trừ kỳ sau** | Việc vẫn xảy ra nhưng không còn xảy ra ngoài hệ thống | E18-T8, E17-T1 |
+| E18-T15 | **Lương chốt cuối khi nghỉ việc**: trợ cấp, phép chưa dùng quy đổi, thu hồi tạm ứng, đối trừ tài sản | Nghỉ việc không còn là phép tính làm tay | E18-T14, E15-T8, E23-T3 |
+| E18-T16 | Xuất bảng lương ngân hàng và bảng cho kế toán, định dạng cấu hình được | File nộp được mà không sửa tay | E18-T8 |
+
+---
+
+## E19 — Cổng nhân viên và cổng quản lý
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E19-T1 | Trang chủ đổi theo vai (§9.10): bốn khuôn mặt trên **một** ứng dụng | Một người đăng nhập thấy đúng việc của mình ở màn đầu | E15-T6 |
+| E19-T2 | `me/`: hồ sơ, công tháng này, số phép, phiếu lương của tôi | Nhân viên tự tra được mà không hỏi HR | E19-T1, E18-T8 |
+| E19-T3 | **Hộp chờ duyệt**: mỗi dòng đủ ngữ cảnh để quyết tại chỗ — ai, loại gì, mấy ngày, còn dư bao nhiêu, ai khác trong nhóm cũng nghỉ hôm đó | Duyệt một đơn không phải mở thêm màn nào | E17-T1 |
+| E19-T4 | Màn gửi đơn dùng chung cho nghỉ phép, tăng ca, giải trình, công tác | Bốn loại đơn, một thói quen | E17-T9, E17-T10 |
+| E19-T5 | **Một chỗ xem mọi đơn của tôi** (§9.17 mục 7) | Không phải nhớ đã gửi cái gì ở đâu | E19-T4 |
+| E19-T6 | **Lịch ca của tôi**, xem trước tháng sau (§9.17 mục 8) | Người làm ca sắp xếp được việc nhà | E11-T6 |
+| E19-T7 | **Xin giấy xác nhận công tác và thu nhập** (§9.17 mục 5): xin, duyệt, sinh văn bản có số hiệu | HR không còn soạn tay từng cái | E19-T2, E18-T8 |
+| E19-T8 | **Đổi thông tin cá nhân qua duyệt**, riêng số tài khoản có thông báo về email cũ và không ảnh hưởng kỳ đang chạy (§9.17 mục 6) | Chiếm tài khoản không đổi được nơi nhận lương | E19-T2, E17-T1 |
+| E19-T9 | **Khiếu nại phiếu lương thành hồ sơ** (§9.17 mục 11): có hạn trả lời, có kết quả lưu lại | Tranh chấp lương chứng minh được về sau | E18-T8, E17-T1 |
+| E19-T10 | Cây tổ chức xem được và điều hướng được | Mở một phòng ban thấy người và cấp dưới của nó | E15-T7 |
+| E19-T11 | Hồ sơ một người là **một trang có tab** (§9.15): thông tin, hợp đồng, chấm công, phép, lương, tài sản, đào tạo | HR không phải tìm lại cùng một người bảy lần | E19-T1 |
+| E19-T12 | Bảng công tháng cho HR: sửa được, có vết, lọc theo phòng ban | Sửa một ngày để lại người sửa và lý do | E16-T4 |
+| E19-T13 | Màn chạy kỳ lương: xem trước, đối chiếu, chốt, phát hành | Không ai chốt nhầm kỳ vì màn nói rõ đang ở bước nào | E18-T6 |
+| E19-T14 | Màn chính sách: giảm trừ, tỷ lệ, biểu thuế, có ngày hiệu lực | Đổi chính sách không cần lập trình viên | E18-T3 |
+
+---
+
+## E20 — Giao diện và kiến trúc thông tin
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E20-T1 | Thanh bên theo §9.15: chia nhóm, gập được, **số đếm việc đang chờ**, nhóm rỗng với vai thì không hiện | Trưởng phòng biết có việc mà không phải mở trang | E19-T1 |
+| E20-T2 | **Tìm kiếm toàn cục** (§9.20): một ô ra người, phòng ban, đơn, phiếu lương | Việc HR làm nhiều nhất trong ngày mất một thao tác | E16-T6 |
+| E20-T3 | Bộ hình thức §9.12: nhãn trạng thái **có chữ không chỉ có màu**, cột số căn phải chữ số đều bề ngang, cột khoá đứng yên khi cuộn ngang, tiền và giờ luôn có đơn vị | Người không phân biệt được đỏ với lục vẫn đọc được mọi trạng thái | E20-T1 |
+| E20-T4 | `DataTable` nâng cấp: sắp xếp, chọn nhiều dòng, thao tác hàng loạt, cột ẩn hiện được, nhớ theo người dùng | Bảng thành công cụ, không còn là bản in | E20-T3 |
+| E20-T5 | **Cỡ chạm cho màn cảm ứng** (§9.21.2): đo được nút thường **40 px**, nút nhỏ **32 px**, ô tích **16 px** — cả ba dưới ngưỡng 44 px, nên `components/ui/` cần cỡ riêng chứ không chỉnh cỡ đang dùng cho chuột | Mọi đích chạm ≥ 44 × 44 px trên màn hẹp | E20-T3 |
+| E20-T6 | **Thanh tab dưới đáy thay thanh bên trên màn hẹp** (§9.21.1): `EMPLOYEE` bốn mục, `MANAGER` năm mục có số đếm | Thanh bên không còn nuốt một phần ba bề ngang điện thoại | E20-T1 |
+| E20-T7 | **Bảng thành thẻ trên màn hẹp** (§9.21.1): mỗi dòng một thẻ ba thông tin, chạm mở chi tiết, **không cuộn ngang** | Không màn hẹp nào còn cuộn ngang một bảng bảy cột | E20-T4 |
+| E20-T8 | **Hành động chính neo ở đáy** trong vùng ngón cái; *Duyệt* và *Từ chối* nằm cuối thẻ sau nội dung; hành động phá huỷ không sát hành động thường dùng | Duyệt một đơn bằng một tay, không phải với tay lên góc trên | E20-T6 |
+| E20-T9 | **Bộ lọc thành tấm trượt lên từ đáy** trên màn hẹp | Lọc bảng công trên điện thoại không còn là hàng nút chen chúc | E20-T7 |
+| E20-T10 | Chế độ tối, theo hệ điều hành và ghi nhớ lựa chọn | Người trực đêm không bị chói | E20-T3 |
+| E20-T11 | Mọi chuỗi mới đi qua `messages/{vi,en}.json` (CLAUDE.md §3.1) | `npm run typecheck` sạch, không chuỗi nào nằm trong `.tsx` | E12-T8 |
+| E20-T12 | `public/{favicon.ico, logo.svg}` — thứ §4.7 khai mà chưa có | Tab trình duyệt không còn biểu tượng mặc định | — |
+| E20-T13 | Trạng thái rỗng, trạng thái lỗi và khung xương chờ tải cho mọi bảng | Màn hình không bao giờ trắng trơn không nói gì | E20-T4 |
+
+---
+
+## E21 — Tuân thủ pháp lý
+
+Epic riêng vì nó không phải tính năng — nó là nghĩa vụ, và §9.19 cho thấy hệ này rơi vào diện
+xử lý dữ liệu nhạy cảm vì chính bản chất chấm công bằng khuôn mặt.
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E21-T1 | **Đồng ý riêng cho dữ liệu sinh trắc**, tách khỏi hợp đồng, ghi thời điểm và **phiên bản văn bản** đã đồng ý | Chứng minh được ai đã đồng ý với bản nào | E23-T4, E15-T4 |
+| E21-T2 | **Nhật ký truy cập dữ liệu sinh trắc**: ai xem, ai xuất, lúc nào | `AuditLog` phủ tới đọc, không chỉ tới ghi | E15-T9 |
+| E21-T3 | **Quyền xoá**: nghỉ việc thì mẫu khuôn mặt xoá thật ở server **và mọi kiosk từng nhận**, hồ sơ ở lại | Một lệnh, xác nhận được trên board | E15-T8, E10-T20 |
+| E21-T4 | Đánh giá tác động xử lý dữ liệu theo Điều 24, ghi ở `docs/` | Có hồ sơ để nộp khi được hỏi | E21-T1 |
+| E21-T5 | **Xuất D02-LT** — báo cáo lao động và danh sách BHXH/BHYT/BHTN, đúng trường, theo pháp nhân | Nộp được trước 5/6 và 5/12 mà không chép tay | E15-T3, E18-T1 |
+| E21-T6 | Báo tăng, báo giảm, báo điều chỉnh BHXH khi có người vào, ra, đổi lương | Ba việc hằng tháng của HR thành ba lần bấm | E21-T5 |
+| E21-T7 | **Quyết toán thuế TNCN năm** cho từng người, bản kê thu nhập và thuế đã nộp | Dữ liệu lấy thẳng từ `PayslipLine`, không tính lại | E18-T8 |
+| E21-T8 | Đăng ký người phụ thuộc từ cổng nhân viên, HR duyệt | Giảm trừ không còn là việc nhắn tin cho HR | E18-T2, E19-T4 |
+
+---
+
+## E22 — Nền tảng cắt ngang
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E22-T1 | **Nhập hàng loạt hai nhịp** (§9.20): chạy thử ra báo cáo lỗi từng dòng, rồi mới ghi | Nhập 30.000 hồ sơ mà không sinh dữ liệu rác | E15-T3 |
+| E22-T2 | **Trung tâm thông báo**: trong ứng dụng cộng email, mỗi người tự chọn nhận gì | Đơn không nằm chết, và không ai bị ngập thư | E11-T7 |
+| E22-T3 | Xuất hàng loạt mọi bảng ra Excel, kèm BOM | Mở bằng Excel không thành ký tự rác | E22-T1 |
+| E22-T4 | **Tái cơ cấu tổ chức** (§9.18 mục 7): chuyển phòng, gộp phòng, đổi cấp trên hàng loạt, xem trước ai bị ảnh hưởng | Đổi `managerId` hàng loạt không âm thầm đổi ai thấy dữ liệu của ai | E15-T7, E22-T1 |
+| E22-T5 | Hàng đợi `timesheet` và `payroll` vào `queues.ts`, có `attempts` và `backoff` | Việc nặng không chạy trong một request | E16-T2, E18-T10 |
+| E22-T6 | Bộ e2e cho phạm vi dòng: mỗi vai thử chạm dữ liệu ngoài phạm vi | Không endpoint nào quên lọc | E15-T6 |
+
+---
+
+## E23 — Vòng đời: onboarding, tài sản, tài liệu
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E23-T1 | Mẫu danh sách việc onboarding theo chức danh và phòng ban, sinh bản thể hiện có người phụ trách và hạn | Nhận việc không còn là danh sách trong đầu ai đó | E15-T8 |
+| E23-T2 | Offboarding chạy ngược và **chặn được**: chưa thu tài sản, chưa bàn giao thì kỳ lương cuối không chốt | Không ai rời đi còn cầm tài sản mà lương vẫn chốt | E23-T3, E18-T15 |
+| E23-T3 | `Asset` + **bản ghi chuyển giao** mỗi lần cấp và thu (§9.16) | "Máy này từng qua tay ai" trả lời được | E15-T3 |
+| E23-T4 | Tài liệu có **phiên bản**; xác nhận đã đọc gắn vào **đúng phiên bản** | Chứng minh được ai đã đọc bản nào | E15-T3 |
+| E23-T5 | Theo dõi hồ sơ còn thiếu của từng người | HR biết ai chưa nộp gì mà không phải rà tay | E23-T4 |
+
+---
+
+## E24 — Bề rộng: đánh giá, đào tạo, tuyển dụng, phân tích
+
+Giai đoạn 4 của §9.13. Không cái nào chặn việc trả lương, nên chúng đứng sau.
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E24-T1 | Chu kỳ đánh giá + mục tiêu OKR/KPI; chu kỳ chốt thì **đóng băng** chức danh và lương tại thời điểm đó (§9.16) | Đọc lại sau hai năm vẫn đúng bối cảnh | E18-T1 |
+| E24-T2 | Phản hồi liên tục và tự đánh giá | Đánh giá không dồn hết vào một tuần cuối năm | E24-T1 |
+| E24-T3 | Khoá đào tạo, ghi danh, kết quả; **chứng chỉ có hạn sinh nhắc nhở** | Chứng chỉ an toàn lao động hết hạn không còn là chuyện im lặng | E22-T2 |
+| E24-T4 | Tuyển dụng: tin, ứng viên, vòng phỏng vấn, thư mời. **Ứng viên không nằm chung bảng với nhân viên**; chuyển đổi là phép có chủ đích, để lại liên kết ngược | Nhận việc sinh `Employee` mới, không sửa ứng viên thành nhân viên | E15-T8 |
+| E24-T5 | Khảo sát; **ẩn danh là ẩn danh thật** — câu trả lời lưu tách khỏi người trả lời, không lưu thứ đủ để ghép lại | Không hứa một điều không giữ được | E15-T5 |
+| E24-T6 | Phân tích nhân sự: biến động, nghỉ việc, chi phí lương, chuyên cần — **đọc từ bảng tổng hợp, không đọc bảng giao dịch** (§9.9 luật 1) | Báo cáo không chậm dần theo tuổi hệ thống | E16-T3, E18-T8 |
+| E24-T7 | Ghi nhận đóng góp và thông báo nội bộ | — | E22-T2 |
+
+---
+
+
+## E25 — PWA: cài được, chạy khi mất mạng, đẩy thông báo
+
+§9.21 chốt **PWA chứ không phải app native**: web push nay chạy trên cả iOS, và native chỉ
+đáng khi phải chạm sâu vào phần cứng — mà phần cứng ở đây là cái kiosk.
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E25-T1 | `manifest.json` + biểu tượng nhiều cỡ; cài được từ trình duyệt và chạy toàn màn hình | Thêm vào màn hình chính trên Android và iOS đều mở ra không thanh địa chỉ | E20-T12 |
+| E25-T2 | Service worker: vỏ ứng dụng và tài nguyên tĩnh chạy khi mất mạng | Mở trong hầm gửi xe không ra trang lỗi của trình duyệt | E25-T1 |
+| E25-T3 | **Thứ đã xem phải xem lại được khi mất mạng** (§9.21.3 luật 1): phiếu lương gần nhất, số dư phép, lịch ca của tôi | Xem được ca mai khi không có sóng | E25-T2, E19-T2 |
+| E25-T4 | **Đơn gửi lúc mất mạng xếp hàng, không mất**, đồng bộ khi có sóng, và **nói rõ đang chờ gửi** | Không ai phải gửi lại ba lần vì im lặng | E25-T2, E19-T4 |
+| E25-T5 | Web Push: đăng ký, khoá VAPID, huỷ đăng ký khi đăng xuất | Đẩy tới được máy thật, không chỉ tới trình duyệt đang mở | E22-T2 |
+| E25-T6 | **Bốn loại thông báo đẩy và chỉ bốn** (§9.21.4): đơn đã quyết, có đơn chờ duyệt, phiếu lương đã phát, hợp đồng sắp hết hạn — mỗi loại tắt riêng | Người dùng không tắt sạch vì bị làm phiền | E25-T5 |
+| E25-T7 | **Không đẩy nội dung nhạy cảm vào màn khoá**: báo có phiếu lương, không báo con số | Màn khoá không lộ lương cho người cầm máy hộ | E25-T6 |
+| E25-T8 | Chụp ảnh kèm đơn giải trình công bằng camera điện thoại | Người bị máy bỏ sót chứng minh được bằng ảnh | E17-T9, E25-T1 |
+| E25-T9 | 🔬 Đo tải trang đầu trên máy Android tầm thấp và mạng 3G | Có số đo thật, không phải đo trên máy làm việc | E25-T2 |
+
+---
+
 ## Bảng song song
 
 | Epic | Chạy được cùng lúc với |
@@ -382,5 +587,16 @@ của E10-T16 cần lỗi thật xảy ra; E13-T6 đo lần cuối phải sau E1
 | E12 Frontend | E8–E11 |
 | E13 Bảo mật + OTA | — |
 | E14 Báo cáo | — |
+| E15 Nền nhân sự | E13 |
+| E16 Ngày công + quy mô | E17 |
+| E17 Đơn từ và duyệt | E16, E18 |
+| E18 Lương | E19, E20 |
+| E19 Cổng nhân viên | E20, E21 |
+| E20 Giao diện HR | E19, E21 |
+| E21 Tuân thủ pháp lý | E19, E20 |
+| E22 Nền tảng cắt ngang | E16–E21 |
+| E23 Vòng đời | E24 |
+| E24 Bề rộng | E23 |
+| E25 PWA điện thoại | E20–E22 |
 
 Muốn rút ngắn thì cắt E6 xuống mức tối thiểu: giữ nguyên train bằng task loss nhưng bỏ tập tự thu E3-T8, chấm bằng CelebA-Spoof. Vẫn có sản phẩm chạy, đổi lại số liveness không nói được gì về miền thiết bị.

@@ -6196,3 +6196,90 @@ hẹp; phần quản trị thì không cần.
 
 **Tìm kiếm toàn cục.** Một ô tìm ra người, phòng ban, đơn, phiếu lương. Ở ba mươi nghìn hồ sơ,
 điều hướng bằng menu là quá chậm cho việc HR làm nhiều nhất trong ngày: tìm một người.
+
+### 9.21 Điện thoại: thiết bị chính của phần lớn người dùng
+
+Ở một công ty vài nghìn người, **số người có máy tính là thiểu số**. Công nhân, nhân viên kho,
+lái xe, bảo vệ — họ chỉ có điện thoại. Nếu cổng nhân viên chỉ dùng được trên máy tính thì mọi
+thứ §9.17 hứa đều quay về thành tin nhắn cho HR, và cả phần này thành trang trí.
+
+**PWA, không phải ứng dụng native.** Cài được từ trình duyệt, chạy toàn màn hình, nhận thông
+báo đẩy — và **web push nay chạy trên cả iOS**. Native chỉ đáng khi phải chạm sâu vào phần cứng
+(BLE, AR, cảm biến chạy nền), mà trong hệ này phần cứng **chính là cái kiosk**, không phải cái
+điện thoại. Chọn native ở đây là nhận thêm hai bản dựng, hai vòng duyệt cửa hàng và hai chỗ để
+quên vá, đổi lại không được gì.
+
+**Không chấm công bằng điện thoại — và đây là quyết định, không phải thiếu sót.** Phần mềm HR
+trong nước hay có chấm công GPS. Hệ này **cố ý không làm**, vì toàn bộ §3 và §6 tồn tại để một
+lượt chấm công không giả được: có liveness, có mẫu khuôn mặt, có phần cứng đặt tại chỗ. Thêm
+một đường GPS giả được trong ba mươi giây là tự phá đúng thứ mình vừa xây. Điện thoại ở đây để
+**xem và gửi đơn**, không để chấm công.
+
+#### 9.21.1 Hai mô hình điều hướng, không phải một cái thu nhỏ
+
+Thanh bên của §9.15 là cấu trúc đúng cho màn rộng và **sai hoàn toàn cho màn hẹp**: nó nuốt
+một phần ba bề ngang hoặc trốn sau một nút mà không ai bấm.
+
+| | Màn rộng | Màn hẹp |
+|---|---|---|
+| Điều hướng chính | thanh bên chia nhóm, gập được | **thanh tab dưới đáy**, tối đa 5 mục |
+| Hành động chính | nút trong trang | **neo ở đáy**, trong tầm ngón cái |
+| Bảng | nhiều cột, cuộn ngang | **thẻ một dòng một người**, không cuộn ngang |
+| Bộ lọc | hàng ngang trên bảng | **tấm trượt lên từ đáy** |
+
+Thanh tab của `EMPLOYEE` có đúng bốn mục: **Trang chủ · Chấm công · Đơn từ · Lương**.
+`MANAGER` thêm mục thứ năm **Chờ duyệt** mang số đếm. Quá năm mục thì mục nào cũng hẹp và
+chạm nhầm — đó là lý do trần năm, không phải thẩm mỹ.
+
+**Bảng trên màn hẹp không phải là bảng.** Cuộn ngang một bảng bảy cột trên điện thoại là thao
+tác không ai làm. Mỗi dòng thành một thẻ mang ba thông tin quan trọng nhất, chạm vào mở chi
+tiết. Cột nào không lọt vào ba thứ đó thì nó không quan trọng như mình tưởng.
+
+#### 9.21.2 Vùng ngón cái quyết định chỗ đặt nút
+
+Người ta cầm điện thoại một tay, và **góc trên bên kia của màn hình là chỗ khó với nhất**. Nên:
+
+- Hành động chính nằm **ở đáy**, không ở đầu trang. Nút *Duyệt* và *Từ chối* của một đơn nằm
+  dưới cùng thẻ, sau khi đã đọc hết nội dung — vừa đúng tầm tay vừa đúng thứ tự đọc.
+- Hành động **phá huỷ không đặt cạnh hành động thường dùng**. Xoá không nằm sát Lưu.
+- Điều hướng lùi dùng cả cử chỉ vuốt lẫn nút, vì một nửa số người không biết cử chỉ.
+
+**Mọi đích chạm tối thiểu 44 × 44 px.** Bộ primitive hiện tại **chưa đạt**: đo ra nút thường
+**40 px**, nút nhỏ **32 px**, ô tích **16 px**. Ba con số ấy đều dưới ngưỡng, nên `components/ui/`
+cần một cỡ cho màn cảm ứng chứ không phải chỉnh lại cỡ đang dùng cho chuột.
+
+#### 9.21.3 Mạng yếu là trạng thái thường, không phải lỗi
+
+Nhà xưởng, tầng hầm, ngoài công trường. Ba luật:
+
+1. **Thứ đã xem phải xem lại được khi mất mạng.** Phiếu lương gần nhất, số dư phép, lịch ca của
+   tôi — service worker giữ bản đã tải. Một người mở ứng dụng trong hầm gửi xe để xem ca mai
+   phải thấy được ca mai.
+2. **Đơn gửi lúc mất mạng thì xếp hàng, không mất.** Ghi lại, đồng bộ khi có sóng, và **nói rõ
+   là đang chờ gửi** — im lặng ở đây là người ta gửi lại ba lần.
+3. **Tải trang đầu phải nhẹ.** Máy Android tầm thấp trên 3G là cấu hình thật của người dùng
+   này, không phải trường hợp biên.
+
+#### 9.21.4 Thông báo đẩy là thứ khiến cổng nhân viên được dùng
+
+Không có thông báo thì một cổng tự phục vụ chỉ được mở khi người ta nhớ ra nó. Bốn loại đáng
+đẩy, và **chỉ bốn**: đơn của tôi đã được quyết, có đơn chờ tôi duyệt, phiếu lương kỳ này đã
+phát, và hợp đồng của tôi sắp hết hạn. Mỗi loại tắt riêng được.
+
+**Không đẩy nội dung nhạy cảm vào màn khoá.** "Phiếu lương tháng 9 đã có" là đủ; con số thì
+nằm sau lần đăng nhập, cùng lý do §9.11 không đính kèm phiếu vào email.
+
+#### 9.21.5 Màn nào lên điện thoại, màn nào không — nói thẳng
+
+Trả lời "tất cả" là câu trả lời dễ và sai. Một màn chốt kỳ lương cho ba mươi nghìn người, hay
+một màn nhập hàng loạt, hay một màn tái cơ cấu tổ chức — nhồi chúng vào màn hẹp không làm chúng
+dễ tiếp cận hơn, chỉ làm chúng **nguy hiểm hơn**.
+
+| Nhóm màn | Điện thoại |
+|---|---|
+| Mọi thứ của `EMPLOYEE`: trang của tôi, công, đơn từ, lương, lịch ca | **ưu tiên màn hẹp** — thiết kế cho điện thoại trước |
+| `MANAGER`: hộp chờ duyệt, nhóm của tôi, lịch nghỉ nhóm | **ưu tiên màn hẹp** |
+| HR tra cứu: danh bạ, hồ sơ một người, cây tổ chức | dùng được, nhưng thiết kế cho màn rộng trước |
+| HR thao tác nặng: chốt lương, nhập hàng loạt, tái cơ cấu, sửa bảng công | **chỉ màn rộng** — và nói rõ điều đó thay vì để nó vỡ âm thầm |
+
+Luật rút ra: **màn nào hỏng được dữ liệu ở quy mô lớn thì không nằm cách một ngón tay cái.**
