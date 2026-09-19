@@ -21,6 +21,7 @@ typedef struct {
     QueueHandle_t sounds;                 // q_audio
     QueueHandle_t uplink;                 // q_uplink
     QueueHandle_t commands;               // q_cmd
+    QueueHandle_t events;                 // q_event
     EventGroupHandle_t flags;             // eg_system
 } app_wiring_t;
 

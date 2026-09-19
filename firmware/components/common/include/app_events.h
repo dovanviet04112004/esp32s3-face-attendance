@@ -43,6 +43,20 @@ typedef enum {
 #define APP_EG_OTA_RUNNING 0x20u
 #define APP_EG_PRESENT 0x40u
 
+// What a task knows when something goes wrong: the identity and the clock are
+// the sender's business, so they are not in here (KEHOACH 7.1).
+typedef struct {
+    int type;                             // device_event_type_t
+    int severity;                         // device_event_severity_t
+    uint32_t employee_id;
+    int32_t error_code;
+    float liveness;
+    char note[48];
+    bool has_employee;
+    bool has_error;
+    bool has_liveness;
+} app_event_t;
+
 #ifdef __cplusplus
 }
 #endif
