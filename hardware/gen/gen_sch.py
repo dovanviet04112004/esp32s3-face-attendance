@@ -40,7 +40,7 @@ DEVKIT_RIGHT = [
 ]
 
 LCD = [
-    ("VCC", "+3V3"), ("GND", "GND"), ("CS", "LCD_CS"), ("RESET", "LCD_RST"),
+    ("VCC", "+3V3_LCD"), ("GND", "GND"), ("CS", "LCD_CS"), ("RESET", "LCD_RST"),
     ("D/C", "LCD_DC"), ("SDI", "LCD_MOSI"), ("SCK", "LCD_SCK"), ("LED", "LCD_BLK"),
     ("SDO", "LCD_SDO"), ("NC", None), ("CTP_SDA", "I2C_SDA"), ("CTP_SCL", "I2C_SCL"),
     ("CTP_INT", "TOUCH_INT"), ("CTP_RST", "TOUCH_RST"),
@@ -68,6 +68,8 @@ AMP = [("LRC", "AUDIO_LRC"), ("BCLK", "AUDIO_BCLK"), ("DIN", "AUDIO_DIN"),
 # Plug order on an SG90; reversed, the servo's ground lands on the pin GPIO38
 # is driving, because ground and signal sit at the two ends (KEHOACH 2.3F).
 SERVO = [("GND", "GND"), ("VCC", "+5V_R2"), ("PWM", "SERVO_PWM")]
+# Nothing regulates the backlight string, so it gets a rail of its own (KEHOACH 2.5).
+REGULATOR = [("VIN", "+5V_R1"), ("GND", "GND"), ("VOUT", "+3V3_LCD")]
 JACK1 = [("+5V", "+5V_R1"), ("GND", "GND")]
 JACK2 = [("+5V", "+5V_R2"), ("GND", "GND")]
 TAP1 = [("+5V", "+5V_R1"), ("GND", "GND")]
@@ -89,6 +91,7 @@ PARTS = [
     ("J9", "SG90 servo", SERVO, [], 182.0, 102.87),
     ("J10", "Jack 5V rail 1", JACK1, [], 182.0, 160.02),
     ("J11", "Jack 5V rail 2", JACK2, [], 182.0, 215.9),
+    ("U2", "AMS1117-3.3 - rail rieng cho LCD", REGULATOR, [], 182.0, 250.0),
 ]
 
 # ref, value, top net, bottom net, x, y. Each one is drawn beside the load it holds
@@ -98,7 +101,8 @@ TWO_PIN = [
     ("C1", "1000uF", "+5V_R1", "GND", 182.0, 187.96),
     ("C2", "470uF", "+5V_R1", "GND", 182.0, 73.66),
     ("C3", "470uF", "+5V_R2", "GND", 182.0, 132.08),
-    ("C4", "100uF", "+3V3", "GND", 132.0, 48.26),
+    ("C4", "100uF", "+3V3_LCD", "GND", 132.0, 48.26),
+    ("C5", "470uF", "+5V_R1", "GND", 182.0, 272.0),
 ]
 
 FONT = "(effects (font (size 1.27 1.27)))"
@@ -119,10 +123,12 @@ FOOTPRINTS = {
     # Both supplies are screw terminals: they carry the peak amps of section 2.5.
     "J10": TERMINAL, "J11": TERMINAL,
     "J16": HEADER.format(2), "J18": HEADER.format(2),
+    "U2": SOCKET.format(3),
     "R1": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
     "C1": "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm",
     "C2": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
     "C3": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
+    "C5": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
     # Same 2.50 mm holes as the 6.3 mm can, but the panel leaves a 7.30 mm gap
     # and only a 5 mm body clears it either side (KEHOACH 2.5).
     "C4": "Capacitor_THT:CP_Radial_D5.0mm_P2.50mm",

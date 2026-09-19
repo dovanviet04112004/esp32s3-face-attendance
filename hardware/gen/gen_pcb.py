@@ -45,6 +45,9 @@ PLACEMENT = {
     # A 108 mm panel leaves no strip under itself, so its capacitor goes beside it,
     # centred in the gap and with its plus leg on the same line as the panel's VCC.
     "C4": (37.90, 112.5, 90),
+    # Clear of the devkit outline, one short branch from the panel's ground pin.
+    "U2": (20.0, 106.0, 90),
+    "C5": (8.0, 104.0, 90),
     # Sockets under a module sit centred across its outline (KEHOACH 2.3I).
     # Right of the panel, three bands. Band 1, y 6..54: the I2C parts.
     "J13": (130.85, 34.32, 180),
@@ -109,6 +112,7 @@ MODULE_AREA = {
     "J7 MAX98357A": (109.85, 60.0, 129.85, 80.0),
     "J15 USB-C": (105.9, 104.0, 118.9, 119.0),
     "J17 microUSB": (119.5, 104.0, 132.5, 119.0),
+    "U2 AMS1117-3.3": (16.0, 101.0, 29.0, 111.0),
 }
 
 
@@ -313,16 +317,19 @@ GROUND_TIE = ("J10.2", "J11.2")
 # Rules 2, 6 and 7: a rail is drawn, not searched. Each heavy load reaches its own
 # terminal on its own copper, and each reservoir hangs on the load it holds up.
 RAIL_TREE = {
+    # U2 alone may hang off another's branch: it regulates, so rule 6 buys nothing.
     "+5V_R1": [("J10.1", "U1.20"), ("J10.1", "J7.7"), ("J10.1", "C1.1"), ("J7.7", "C2.1"),
-               ("J10.1", "J16.1")],
+               ("J10.1", "J16.1"), ("U1.20", "U2.1"), ("U2.1", "C5.1")],
     "+5V_R2": [("J11.1", "J9.2"), ("J9.2", "C3.1"), ("J11.1", "J18.1")],
     "GND@tie": [GROUND_TIE],
-    # Four branches leave J10.2, which has the room; every pad wedged in a row carries
-    # at most two, because its neighbours leave it only the two ways out.
+    # Four branches leave J10.2, which has the room; a pad wedged in a row carries two.
+    # The panel's return closes on U2.2 and goes no further (KEHOACH 2.5 rule 8).
     "GND@1": [("J10.2", "J7.6"), ("J7.6", "C2.2"), ("J10.2", "C1.2"), ("J10.2", "U1.40"),
-              ("J10.2", "J16.2"), ("U1.40", "C4.2"), ("C4.2", "J3.2"), ("J3.2", "J4.2"),
-              ("J4.2", "J5.3"), ("J5.3", "J6.6")],
+              ("J10.2", "J16.2"), ("U1.40", "C5.2"), ("C5.2", "U2.2"), ("U2.2", "C4.2"),
+              ("C4.2", "J3.2"), ("J3.2", "J4.2"), ("J4.2", "J5.3"), ("J5.3", "J6.6")],
     "GND@2": [("J11.2", "J9.1"), ("J9.1", "C3.2"), ("J11.2", "J18.2")],
+    # Last: it shares the back layer with two grounds that have less room than it.
+    "+3V3_LCD": [("U2.3", "C4.1"), ("C4.1", "J3.1")],
 }
 
 
