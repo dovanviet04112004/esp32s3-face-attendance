@@ -1,0 +1,13 @@
+menu "Kiosk application"
+
+    config APP_CONSOLE
+        bool "Provisioning console on the USB port"
+        default n
+        help
+            Serves nvs get and nvs set over USB so wifi and broker settings
+            reach NVS without any file holding a secret (KEHOACH 6.2.1).
+            Off here and on in sdkconfig.dev and sdkconfig.bench: a prod image
+            compiles none of it, because a runtime flag would live in the very
+            NVS the console can write and could re-enable itself.
+
+endmenu
