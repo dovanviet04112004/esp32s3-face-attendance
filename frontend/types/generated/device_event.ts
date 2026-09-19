@@ -7,7 +7,9 @@ export interface DeviceEvent {
   deviceId: string;
   /** Epoch milliseconds UTC. */
   ts: number;
-  type: "SPOOF_DETECTED" | "UNKNOWN_FACE" | "QUALITY_REJECTED" | "DOOR_OPENED_MANUALLY" | "DOOR_FAULT" | "CAMERA_FAULT" | "TOF_FAULT" | "LCD_FAULT" | "AUDIO_FAULT" | "STORAGE_FAULT" | "FACEDB_CORRUPT" | "MODEL_LOAD_FAILED" | "OTA_FAILED" | "OTA_ROLLED_BACK" | "TIME_UNSYNCED" | "BOOTED";
+  type: "SPOOF_DETECTED" | "UNKNOWN_FACE" | "QUALITY_REJECTED" | "DOOR_OPENED_MANUALLY" | "DOOR_FAULT" | "CAMERA_FAULT" | "TOF_FAULT" | "LCD_FAULT" | "AUDIO_FAULT" | "STORAGE_FAULT" | "FACEDB_CORRUPT" | "MODEL_LOAD_FAILED" | "OTA_FAILED" | "OTA_ROLLED_BACK" | "TIME_UNSYNCED" | "BOOTED" | "COMMAND_DONE" | "COMMAND_REJECTED";
+  /** Present on COMMAND_DONE and COMMAND_REJECTED: the cmdId of the command this reports on. */
+  cmdId?: string;
   severity: "INFO" | "WARN" | "ERROR";
   /** Short human-readable detail. Never put biometric data here. */
   message?: string;

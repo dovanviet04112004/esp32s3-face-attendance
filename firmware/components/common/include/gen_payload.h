@@ -423,6 +423,8 @@ typedef enum {
     DEVICE_EVENT_TYPE_OTA_ROLLED_BACK = 13,
     DEVICE_EVENT_TYPE_TIME_UNSYNCED = 14,
     DEVICE_EVENT_TYPE_BOOTED = 15,
+    DEVICE_EVENT_TYPE_COMMAND_DONE = 16,
+    DEVICE_EVENT_TYPE_COMMAND_REJECTED = 17,
 } device_event_type_t;
 
 static inline const char *device_event_type_str(device_event_type_t v)
@@ -444,6 +446,8 @@ static inline const char *device_event_type_str(device_event_type_t v)
     case DEVICE_EVENT_TYPE_OTA_ROLLED_BACK: return "OTA_ROLLED_BACK";
     case DEVICE_EVENT_TYPE_TIME_UNSYNCED: return "TIME_UNSYNCED";
     case DEVICE_EVENT_TYPE_BOOTED: return "BOOTED";
+    case DEVICE_EVENT_TYPE_COMMAND_DONE: return "COMMAND_DONE";
+    case DEVICE_EVENT_TYPE_COMMAND_REJECTED: return "COMMAND_REJECTED";
     default: return "";
     }
 }
@@ -467,6 +471,8 @@ static inline bool device_event_type_parse(const char *s, device_event_type_t *o
     if (strcmp(s, "OTA_ROLLED_BACK") == 0) { *out = DEVICE_EVENT_TYPE_OTA_ROLLED_BACK; return true; }
     if (strcmp(s, "TIME_UNSYNCED") == 0) { *out = DEVICE_EVENT_TYPE_TIME_UNSYNCED; return true; }
     if (strcmp(s, "BOOTED") == 0) { *out = DEVICE_EVENT_TYPE_BOOTED; return true; }
+    if (strcmp(s, "COMMAND_DONE") == 0) { *out = DEVICE_EVENT_TYPE_COMMAND_DONE; return true; }
+    if (strcmp(s, "COMMAND_REJECTED") == 0) { *out = DEVICE_EVENT_TYPE_COMMAND_REJECTED; return true; }
     return false;
 }
 
@@ -499,11 +505,13 @@ typedef struct {
     char device_id[33];
     int64_t ts;
     device_event_type_t type;
+    char cmd_id[37];
     device_event_severity_t severity;
     char message[201];
     uint32_t employee_id;
     float liveness_score;
     int64_t error_code;
+    bool has_cmd_id;
     bool has_message;
     bool has_employee_id;
     bool has_liveness_score;
@@ -532,6 +540,11 @@ static inline bool device_event_from_json(const cJSON *root, device_event_t *out
         if (!device_event_type_parse(item->valuestring, &out->type)) { return false; }
     } else {
         return false;
+    }
+    item = cJSON_GetObjectItemCaseSensitive(root, "cmdId");
+    if (cJSON_IsString(item) && item->valuestring != NULL) {
+        strncpy(out->cmd_id, item->valuestring, sizeof(out->cmd_id) - 1);
+        out->has_cmd_id = true;
     }
     item = cJSON_GetObjectItemCaseSensitive(root, "severity");
     if (cJSON_IsString(item) && item->valuestring != NULL) {
@@ -570,6 +583,9 @@ static inline cJSON *device_event_to_json(const device_event_t *in)
     cJSON_AddStringToObject(root, "deviceId", in->device_id);
     cJSON_AddNumberToObject(root, "ts", (double) in->ts);
     cJSON_AddStringToObject(root, "type", device_event_type_str(in->type));
+    if (in->has_cmd_id) {
+        cJSON_AddStringToObject(root, "cmdId", in->cmd_id);
+    }
     cJSON_AddStringToObject(root, "severity", device_event_severity_str(in->severity));
     if (in->has_message) {
         cJSON_AddStringToObject(root, "message", in->message);
