@@ -22,7 +22,7 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import type { AccessClaims } from "../auth/auth.types.js";
 import { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
-import { UsersService, type PublicUser } from "./users.service.js";
+import { UsersService, type ProvisionedAccount, type PublicUser } from "./users.service.js";
 
 @ApiTags("users")
 @ApiBearerAuth()
@@ -36,6 +36,13 @@ export class UsersController {
   @ApiOperation({ summary: "List accounts; a password hash never leaves here" })
   list(@Query() query: Pagination): Promise<Page<PublicUser>> {
     return this.users.list(query as PaginationDto);
+  }
+
+  @Post("provision")
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "Open a login for employees who have none (KEHOACH 9.4)" })
+  provision(): Promise<ProvisionedAccount[]> {
+    return this.users.provision();
   }
 
   @Post()

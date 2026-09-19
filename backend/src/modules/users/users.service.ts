@@ -1,8 +1,17 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { randomBytes } from "node:crypto";
+
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import type { Role, User } from "@prisma/client";
 
 import type { Page, PaginationDto } from "../../common/dto/pagination.dto.js";
 import { PrismaService } from "../../database/prisma.service.js";
+
 import { hashPassword } from "../auth/password.js";
 import type { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
 
@@ -19,9 +28,56 @@ const VISIBLE = {
   updatedAt: true,
 } as const;
 
+/** What an admin sees once after provisioning, and never again. */
+export interface ProvisionedAccount {
+  employeeCode: string;
+  email: string;
+  password: string;
+  role: string;
+}
+
 @Injectable()
 export class UsersService {
+  private readonly log = new Logger(UsersService.name);
+
   constructor(private readonly db: PrismaService) {}
+
+
+  /** Open a login for every active employee who has an address and none yet.
+   *  Whoever has people reporting to them starts as MANAGER, so the approval
+   *  inbox is not empty on day one (KEHOACH 9.4).
+   */
+  async provision(): Promise<ProvisionedAccount[]> {
+    const waiting = await this.db.employee.findMany({
+      where: { active: true, login: null, personalEmail: { not: null } },
+      select: { id: true, code: true, personalEmail: true, _count: { select: { reports: true } } },
+      orderBy: { code: "asc" },
+    });
+    const made: ProvisionedAccount[] = [];
+    for (const person of waiting) {
+      // Shown to the admin once and never stored in the clear.
+      const password = randomBytes(12).toString("base64url");
+      const role = person._count.reports > 0 ? "MANAGER" : "EMPLOYEE";
+      try {
+        await this.db.user.create({
+          data: {
+            email: person.personalEmail as string,
+            passwordHash: await hashPassword(password),
+            role,
+            employeeId: person.id,
+          },
+        });
+      } catch (error) {
+        if (isCode(error, UNIQUE_VIOLATION)) {
+          continue;
+        }
+        throw error;
+      }
+      made.push({ employeeCode: person.code, email: person.personalEmail as string, password, role });
+    }
+    this.log.log(`opened ${made.length} employee login(s)`);
+    return made;
+  }
 
   async list(query: PaginationDto): Promise<Page<PublicUser>> {
     const [rows, total] = await Promise.all([

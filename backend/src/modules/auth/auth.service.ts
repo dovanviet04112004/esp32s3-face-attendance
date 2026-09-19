@@ -70,7 +70,11 @@ export class AuthService {
 
   private async issue(user: User): Promise<IssuedTokens> {
     const jti = randomUUID();
-    const access: AccessClaims = { sub: user.id, role: user.role };
+    const access: AccessClaims = {
+      sub: user.id,
+      role: user.role,
+      ...(user.employeeId !== null ? { employeeId: user.employeeId } : {}),
+    };
     const refresh: RefreshClaims = { sub: user.id, jti };
     const accessToken = this.jwt.sign(access, {
       secret: this.config.get("JWT_ACCESS_SECRET", { infer: true }),

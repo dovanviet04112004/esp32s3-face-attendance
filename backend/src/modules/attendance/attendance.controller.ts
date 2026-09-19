@@ -4,6 +4,7 @@ import type { AttendanceRecord } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
+import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { AttendanceService } from "./attendance.service.js";
 import { ListAttendanceDto } from "./dto/attendance.dto.js";
@@ -17,7 +18,10 @@ export class AttendanceController {
 
   @Get()
   @ApiOperation({ summary: "The punches themselves, which the roll-up only counts" })
-  list(@Query() query: ListAttendanceDto): Promise<Page<AttendanceRecord>> {
-    return this.attendance.list(query);
+  list(
+    @Query() query: ListAttendanceDto,
+    @CurrentViewer() viewer: Viewer,
+  ): Promise<Page<AttendanceRecord>> {
+    return this.attendance.list(query, viewer);
   }
 }

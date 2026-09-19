@@ -1,6 +1,15 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  IsBoolean,
+  IsDateString,
+  IsEmail,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
@@ -34,6 +43,64 @@ export class CreateEmployeeDto {
   @Type(() => Number)
   @IsInt()
   managerId?: number;
+
+  @ApiPropertyOptional({ example: "nv0002@example.com" })
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(128)
+  personalEmail?: string;
+
+  @ApiPropertyOptional({ maxLength: 20 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phone?: string;
+
+  @ApiPropertyOptional({ description: "Joined on; leave blank if unknown" })
+  @IsOptional()
+  @IsDateString()
+  hireDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @ApiPropertyOptional({ maxLength: 20 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  nationalId?: string;
+
+  @ApiPropertyOptional({ maxLength: 20 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  taxCode?: string;
+
+  @ApiPropertyOptional({ description: "Needed by the D02-LT filing (KEHOACH 9.19)", maxLength: 20 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  socialInsuranceNo?: string;
+
+  @ApiPropertyOptional({ maxLength: 32 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  bankAccount?: string;
+
+  @ApiPropertyOptional({ maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  bankName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  jobTitleId?: string;
 }
 
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {

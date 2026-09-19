@@ -1,9 +1,10 @@
 import type { Role } from "@prisma/client";
 
-/** What an access token carries, and what a guarded handler sees. */
+/** What a guarded handler sees; employeeId saves row scope a lookup (KEHOACH 9.4). */
 export interface AccessClaims {
   sub: string;
   role: Role;
+  employeeId?: number;
 }
 
 /** What a refresh token carries; jti is the half the database can revoke. */

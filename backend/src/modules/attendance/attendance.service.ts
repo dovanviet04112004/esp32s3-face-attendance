@@ -3,6 +3,8 @@ import type { Prisma, AttendanceRecord as Punch } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { AttendanceRecord } from "../../common/generated/attendance_record.js";
+import { ScopeService } from "../../common/scope/scope.service.js";
+import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { DevicesService } from "../devices/devices.service.js";
 import type { ListAttendanceDto } from "./dto/attendance.dto.js";
@@ -19,13 +21,20 @@ export class AttendanceService {
   constructor(
     private readonly db: PrismaService,
     private readonly devices: DevicesService,
+    private readonly scope: ScopeService,
   ) {}
 
   /** One page of punches, newest first, narrowed by the filters the caller sends. */
-  async list(query: ListAttendanceDto): Promise<Page<Punch>> {
-    const where: Prisma.AttendanceRecordWhereInput = {};
-    if (query.employeeId !== undefined) {
+  async list(query: ListAttendanceDto, viewer: Viewer): Promise<Page<Punch>> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const where: Prisma.AttendanceRecordWhereInput = {
+      ...ScopeService.narrow("employeeId", visible),
+    };
+    // An explicit filter narrows further, it never widens past the scope.
+    if (query.employeeId !== undefined && (visible === null || visible.includes(query.employeeId))) {
       where.employeeId = query.employeeId;
+    } else if (query.employeeId !== undefined) {
+      return { rows: [], total: 0 };
     }
     if (query.deviceId !== undefined) {
       where.deviceId = query.deviceId;

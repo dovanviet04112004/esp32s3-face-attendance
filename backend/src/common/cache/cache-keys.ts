@@ -5,6 +5,7 @@ export const CACHE = {
   deviceStatus: (id: string) => ({ key: `dev:${id}:status`, ttlSeconds: 45 }),
   report: (type: string, range: string) => ({ key: `report:${type}:${range}`, ttlSeconds: 900 }),
   activeShifts: () => ({ key: "shift:active", ttlSeconds: 1800 }),
+  reportsTo: (employeeId: number) => ({ key: `scope:under:${employeeId}`, ttlSeconds: 300 }),
 } as const;
 
 /** What a cached entry is allowed to be: anything Postgres can rebuild. */

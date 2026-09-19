@@ -2,6 +2,8 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import type { Employee, Prisma } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { ScopeService } from "../../common/scope/scope.service.js";
+import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import type {
   CreateEmployeeDto,
@@ -20,10 +22,15 @@ const EMPLOYEE_VIEW = {
 
 @Injectable()
 export class EmployeesService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly scope: ScopeService,
+  ) {}
 
-  async list(query: ListEmployeesDto): Promise<Page<Employee>> {
+  async list(query: ListEmployeesDto, viewer: Viewer): Promise<Page<Employee>> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
     const where: Prisma.EmployeeWhereInput = {
+      ...ScopeService.narrow("id", visible),
       ...(query.departmentId ? { departmentId: query.departmentId } : {}),
       ...(query.search
         ? {
@@ -47,7 +54,12 @@ export class EmployeesService {
     return { rows, total };
   }
 
-  async get(id: number): Promise<Employee> {
+  async get(id: number, viewer: Viewer): Promise<Employee> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    // Out of scope answers the same as absent: 403 would confirm they exist.
+    if (visible !== null && !visible.includes(id)) {
+      throw new NotFoundException(`no employee ${id}`);
+    }
     const found = await this.db.employee.findUnique({ where: { id }, include: EMPLOYEE_VIEW });
     if (!found) {
       throw new NotFoundException(`no employee ${id}`);
@@ -57,7 +69,7 @@ export class EmployeesService {
 
   async create(body: CreateEmployeeDto): Promise<Employee> {
     try {
-      return await this.db.employee.create({ data: body });
+      return await this.db.employee.create({ data: dated(body) });
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException(`employee code ${body.code} is taken`);
@@ -66,10 +78,10 @@ export class EmployeesService {
     }
   }
 
-  async update(id: number, body: UpdateEmployeeDto): Promise<Employee> {
-    await this.get(id);
+  async update(id: number, body: UpdateEmployeeDto, viewer: Viewer): Promise<Employee> {
+    await this.get(id, viewer);
     try {
-      return await this.db.employee.update({ where: { id }, data: body });
+      return await this.db.employee.update({ where: { id }, data: dated(body) });
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException(`employee code ${body.code} is taken`);
@@ -82,10 +94,20 @@ export class EmployeesService {
    *  someone who left still has a history. E11-T6 turns this into a roster
    *  push that reaches the kiosks (KEHOACH 7.5).
    */
-  async deactivate(id: number): Promise<Employee> {
-    await this.get(id);
+  async deactivate(id: number, viewer: Viewer): Promise<Employee> {
+    await this.get(id, viewer);
     return this.db.employee.update({ where: { id }, data: { active: false } });
   }
+}
+
+// The dto carries ISO days because that is what a form sends; the column is a
+// date, and Prisma wants the object.
+function dated<T extends { hireDate?: string; dateOfBirth?: string }>(body: T) {
+  return {
+    ...body,
+    ...(body.hireDate ? { hireDate: new Date(body.hireDate) } : {}),
+    ...(body.dateOfBirth ? { dateOfBirth: new Date(body.dateOfBirth) } : {}),
+  };
 }
 
 function isCode(error: unknown, code: string): boolean {

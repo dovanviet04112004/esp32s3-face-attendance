@@ -16,6 +16,7 @@ import type { Employee } from "@prisma/client";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
+import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import {
   CreateEmployeeDto,
@@ -33,13 +34,16 @@ export class EmployeesController {
 
   @Get()
   @ApiOperation({ summary: "List employees, newest code first" })
-  list(@Query() query: ListEmployeesDto): Promise<Page<Employee>> {
-    return this.employees.list(query);
+  list(@Query() query: ListEmployeesDto, @CurrentViewer() viewer: Viewer): Promise<Page<Employee>> {
+    return this.employees.list(query, viewer);
   }
 
   @Get(":id")
-  get(@Param("id", ParseIntPipe) id: number): Promise<Employee> {
-    return this.employees.get(id);
+  get(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentViewer() viewer: Viewer,
+  ): Promise<Employee> {
+    return this.employees.get(id, viewer);
   }
 
   @Post()
@@ -54,14 +58,18 @@ export class EmployeesController {
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() body: UpdateEmployeeDto,
+    @CurrentViewer() viewer: Viewer,
   ): Promise<Employee> {
-    return this.employees.update(id, body);
+    return this.employees.update(id, body, viewer);
   }
 
   @Delete(":id")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Retire an employee; the row and its history stay" })
-  deactivate(@Param("id", ParseIntPipe) id: number): Promise<Employee> {
-    return this.employees.deactivate(id);
+  deactivate(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentViewer() viewer: Viewer,
+  ): Promise<Employee> {
+    return this.employees.deactivate(id, viewer);
   }
 }

@@ -3,6 +3,7 @@ import { EventEmitterModule } from "@nestjs/event-emitter";
 
 import { configModule } from "./config/configuration.js";
 import { DatabaseModule } from "./database/database.module.js";
+import { ScopeModule } from "./common/scope/scope.module.js";
 import { AttendanceModule } from "./modules/attendance/attendance.module.js";
 import { OrgModule } from "./modules/org/org.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
@@ -26,6 +27,7 @@ import { QueueModule } from "./queue/queue.module.js";
     DatabaseModule,
     AuthModule,
     MqttModule,
+    ScopeModule,
     AttendanceModule,
     OrgModule,
     EmployeesModule,
