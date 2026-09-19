@@ -101,6 +101,16 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.2.1
+  espressif/mqtt:
+    component_hash: fb18bc3b65aa8c94693a9811ffc322cca8a65d92d5ec84983d3e385080e3969c
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.0
   idf:
     source:
       type: idf
@@ -121,8 +131,9 @@ direct_dependencies:
 - espressif/esp32-camera
 - espressif/esp_lcd_st7796
 - espressif/esp_lcd_touch_gt911
+- espressif/mqtt
 - idf
 - joltwallet/littlefs
-manifest_hash: 048e01d0197fed3487aa70a148af43059151f0b10293dcbb9f0ae627faa621f3
+manifest_hash: 526a75019d7cf6fce6743f115bcf94c4c2b119c1d0b6dfba6dbe67aa2f0a1c07
 target: esp32s3
 version: 3.0.0

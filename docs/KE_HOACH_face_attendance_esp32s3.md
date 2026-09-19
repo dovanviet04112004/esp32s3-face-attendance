@@ -2793,14 +2793,33 @@ dependencies:
   idf: ">=5.3"
   espressif/esp32-camera: "^2.0"
   espressif/esp-tflite-micro: "^1.4.0"
-  espressif/esp-nn: "^1.3.2"
+  espressif/esp-nn: "==1.3.2"
   espressif/esp_lcd_st7796: "^1.3"
   espressif/esp_lcd_touch_gt911: "^1.1"
+  espressif/mqtt: "^1.1"
   joltwallet/littlefs: "^1.16"
 ```
 `espressif/esp_lcd_st7796` có trên registry (đã kéo về bản 1.4.0), nên `drv_lcd` gọi nó chứ không tự viết panel driver.
 
-**`esp-nn` khai thẳng dù `esp-tflite-micro` đã kéo nó theo.** Ràng buộc gián tiếp là `>=1.1.1`, mà các bản esp-nn cũ có lỗi trong kernel INT8 — sai số ở đây không làm build fail, nó chỉ làm model trả ra số khác trên board so với trên host, tức là đúng thứ khó lần nhất. Ghim sàn ở bản mới nhất để một lần resolve lại không tụt xuống bản cũ.
+**`espressif/mqtt` phải khai dù đây là thư viện của Espressif.** ESP-IDF v6 đã đưa `esp-mqtt` ra
+khỏi lõi: `components/mqtt/` trong IDF chỉ còn `test_apps/`, nên `REQUIRES mqtt` trơ sẽ fail ở
+bước resolve chứ không phải lúc link.
+
+**`esp-nn` khai thẳng dù `esp-tflite-micro` đã kéo nó theo, và ghim bản chính xác.** Ràng buộc
+gián tiếp là `>=1.1.1`, mà các bản esp-nn cũ có lỗi trong kernel INT8 — sai số ở đây không làm
+build fail, nó chỉ làm model trả ra số khác trên board so với trên host, tức là đúng thứ khó
+lần nhất.
+
+Ghim **sàn** chặn được chiều tụt xuống nhưng không chặn chiều ngược lại, và chiều ngược lại mới
+là chiều đã cắn: thêm một dependency bất kỳ làm trình quản lý giải lại cả cây, `^1.3.2` kéo
+esp-nn lên 1.4.0, kernel mới xin scratch buffer khác đi, `head` của detect phình **~32 KB**, và
+`ai_engine_init()` abort ngay lúc boot. Không dòng code nào của dự án đổi.
+
+Vì vậy **mọi số trong `docs/measurements/arena.md` chỉ đúng với đúng bản esp-nn đã đo**, và
+`==1.3.2` là cách duy nhất giữ chúng có nghĩa. Nâng bản esp-nn là một việc có chủ đích: đo lại
+arena cả ba nhánh, cập nhật `arena_hint` trong `meta.json` với `contracts/models.lock.json`,
+rồi mới đổi con số ở đây — không phải thứ được phép xảy ra như tác dụng phụ của việc thêm một
+thư viện không liên quan.
 
 ```
 third_party/
