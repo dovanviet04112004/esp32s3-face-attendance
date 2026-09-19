@@ -136,7 +136,13 @@ def iter_source_files(targets: list[Path]) -> list[Path]:
 
 
 def strip_string_literals(line: str) -> str:
-    return re.sub(r"(\"(\\.|[^\"\\])*\"|'(\\.|[^'\\])*')", '""', line)
+    # Backticks count: a url inside a template literal carries // and would
+    # otherwise read as the start of a comment.
+    return re.sub(
+        r"(\"(\\.|[^\"\\])*\"|'(\\.|[^'\\])*'|`(\\.|[^`\\])*`)",
+        '""',
+        line,
+    )
 
 
 def find_line_comment(line: str, markers: tuple[str, ...]) -> tuple[int, str] | None:
