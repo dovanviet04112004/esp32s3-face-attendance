@@ -4385,10 +4385,9 @@ một phút thì rẻ hơn một cây Radix mang theo mười gói phụ thuộc
 ```
 frontend/
 ├── app/
-│   ├── layout.tsx                    # chỉ <html lang> + font, không giao diện
 │   ├── globals.css
 │   └── [locale]/                     # ★ vi | en — mọi route nằm dưới đây
-│       ├── layout.tsx                # NextIntlClientProvider + providers
+│       ├── layout.tsx                # layout gốc: <html lang={locale}> + provider
 │       ├── (auth)/login/page.tsx
 │       └── (dashboard)/
 │           ├── layout.tsx            # sidebar + guard
@@ -4423,6 +4422,11 @@ và mọi `<Link>` phải đi qua `i18n/navigation.ts`; đổi lại, một link
 đúng thứ tiếng người gửi đang thấy, và trang render sẵn ở phía server đã đúng ngôn ngữ ngay
 lần vẽ đầu — cookie thì server không biết trước, nên hoặc chớp một nhịp tiếng sai hoặc phải bỏ
 render sẵn. `middleware.ts` đẩy `/` về `/vi` để địa chỉ trần vẫn mở được.
+
+**Không có `app/layout.tsx`.** Layout gốc là `app/[locale]/layout.tsx`, vì `<html lang>` phải
+mang đúng mã ngôn ngữ đang hiện: một layout đứng trên `[locale]` thì chưa biết locale, nên nó
+chỉ có thể ghi cứng một giá trị và sẽ khai sai với nửa số người dùng — trình đọc màn hình chọn
+giọng theo thuộc tính ấy.
 
 **`vi.json` là nguồn kiểu, `en.json` là bản phải theo.** `types/messages.d.ts` khai
 `type Messages = typeof import("../messages/vi.json")`, nên một khoá có ở `vi` mà thiếu ở `en`
