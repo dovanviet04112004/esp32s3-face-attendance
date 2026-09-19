@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
+#include "gen_payload.h"
 #include "storage_format.h"
 
 #ifdef __cplusplus
@@ -40,6 +41,7 @@ typedef struct {
     QueueHandle_t commands;               // q_cmd
     QueueHandle_t events;                 // q_event
     QueueHandle_t roster;                 // q_roster
+    QueueHandle_t ota;                    // q_ota, depth 1
     EventGroupHandle_t flags;             // eg_system
 } app_wiring_t;
 

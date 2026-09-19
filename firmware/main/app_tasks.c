@@ -19,6 +19,7 @@
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "net_mqtt.h"
+#include "net_ota.h"
 #include "net_wifi.h"
 #include "storage_format.h"
 #include "svc_attendance.h"
@@ -118,6 +119,11 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define EVENT_FAULT_GAP_MS 60000
 #define EVENT_PERSON_GAP_MS 2000
 #define NET_TASK_CORE 0
+#define OTA_TASK_CORE 0
+#define OTA_TASK_PRIORITY 3
+#define OTA_TASK_STACK_BYTES 8192
+#define OTA_SETTLE_MS 30000
+#define OTA_REBOOT_WAIT_MS 1500
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
 #define JOIN_WAIT_MS 30000
@@ -338,12 +344,34 @@ static void take_roster_push(const char *payload, size_t len)
     }
 }
 
+// Same rule as a command: the callback parses and hands over, because pulling a
+// firmware image takes tens of seconds and this task carries the whole link.
+static void take_ota_offer(const char *payload, size_t len)
+{
+    cJSON *root = cJSON_ParseWithLength(payload, len);
+    ota_manifest_t offer = { 0 };
+    const bool understood = root != NULL && ota_manifest_from_json(root, &offer);
+    cJSON_Delete(root);
+    if (!understood) {
+        ESP_LOGW(TAG, "ota manifest does not match the schema, dropped");
+        return;
+    }
+    const app_wiring_t *wiring = app_wiring();
+    if (wiring == NULL || xQueueSend(wiring->ota, &offer, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "ota offer %s dropped, one is already in hand", offer.release_id);
+    }
+}
+
 // Runs on the esp-mqtt task, which must not block: parse here, act in sync_task.
 static void on_broker_message(gen_topic_id_t topic, const char *payload, size_t len, void *ctx)
 {
     (void)ctx;
     if (topic == GEN_TOPIC_ENROLL) {
         take_roster_push(payload, len);
+        return;
+    }
+    if (topic == GEN_TOPIC_OTA) {
+        take_ota_offer(payload, len);
         return;
     }
     if (topic != GEN_TOPIC_CMD) {
@@ -364,6 +392,37 @@ static void on_broker_message(gen_topic_id_t topic, const char *payload, size_t 
     }
 }
 
+static void start_broker(void)
+{
+    const net_mqtt_config_t broker = {
+        .on_state = on_broker_state,
+        .on_message = on_broker_message,
+    };
+    const esp_err_t link = net_mqtt_start(&broker);
+    if (link != ESP_OK) {
+        ESP_LOGW(TAG, "no broker: %s", esp_err_to_name(link));
+    }
+}
+
+// A build that cannot state its own MAJOR.MINOR.PATCH cannot claim it meets a
+// minimum, so an unparseable version fails the test (KEHOACH 6.2.2).
+static bool fw_at_least(const char *wanted)
+{
+    const esp_app_desc_t *app = esp_app_get_description();
+    unsigned mine[3] = { 0 };
+    unsigned theirs[3] = { 0 };
+    if (app == NULL || sscanf(app->version, "%u.%u.%u", &mine[0], &mine[1], &mine[2]) != 3 ||
+        sscanf(wanted, "%u.%u.%u", &theirs[0], &theirs[1], &theirs[2]) != 3) {
+        return false;
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (mine[i] != theirs[i]) {
+            return mine[i] > theirs[i];
+        }
+    }
+    return true;
+}
+
 // One shot: the clock needs a netif, so the wait belongs off app_main and the
 // task leaves once the correction is under way.
 static void net_task(void *arg)
@@ -376,14 +435,7 @@ static void net_task(void *arg)
     }
     xEventGroupSetBits(app_wiring()->flags, APP_EG_WIFI_OK);
     // Ahead of the clock because a missing sntp host ends this task early.
-    const net_mqtt_config_t broker = {
-        .on_state = on_broker_state,
-        .on_message = on_broker_message,
-    };
-    const esp_err_t link = net_mqtt_start(&broker);
-    if (link != ESP_OK) {
-        ESP_LOGW(TAG, "no broker: %s", esp_err_to_name(link));
-    }
+    start_broker();
     char host[SNTP_HOST_CAP] = { 0 };
     const esp_err_t stored = sys_storage_get_str(STORAGE_NS_DEVICE, NVS_SNTP_HOST, host,
                                                  sizeof(host));
@@ -827,6 +879,20 @@ static void take_commands(const app_wiring_t *wiring, svc_door_t door)
     }
 }
 
+// A fresh image is on trial until it signs for the slot, and "it booted" is too
+// weak a claim: a broken model image boots fine and then recognises nobody.
+static void settle_this_build(const app_wiring_t *wiring, int64_t up_ms)
+{
+    static bool signed_off;
+    if (signed_off || !net_ota_on_trial() || up_ms < OTA_SETTLE_MS) {
+        return;
+    }
+    if ((xEventGroupGetBits(wiring->flags) & APP_EG_AI_READY) == 0) {
+        return;
+    }
+    signed_off = net_ota_mark_valid() == ESP_OK;
+}
+
 static void sync_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
@@ -855,6 +921,7 @@ static void sync_task(void *arg)
             // one, since a drain opens the cursor on flash every call.
             nudged = xQueueReceive(wiring->uplink, &nudge, pdMS_TO_TICKS(SYNC_TICK_MS)) == pdTRUE;
         }
+        settle_this_build(wiring, esp_timer_get_time() / 1000);
         take_wifi();
         take_commands(wiring, door);
         take_roster(wiring);
@@ -1210,6 +1277,66 @@ static void offer_enrolled(const app_wiring_t *wiring, uint32_t employee_id,
         if (xQueueSend(wiring->roster, &op, pdMS_TO_TICKS(ROSTER_OFFER_WAIT_MS)) != pdTRUE) {
             ESP_LOGW(TAG, "enrol report for sample %u dropped", (unsigned)idx);
         }
+    }
+}
+
+// An image that fails silently is one nobody can account for, so the reason
+// leaves the kiosk while the kiosk is still the one running.
+static void ota_refused(const ota_manifest_t *offer, const char *why)
+{
+    app_event_t event = { 0 };
+    event.type = DEVICE_EVENT_TYPE_OTA_FAILED;
+    event.severity = DEVICE_EVENT_SEVERITY_ERROR;
+    strlcpy(event.note, why, sizeof(event.note));
+    note_event(&event);
+    ESP_LOGE(TAG, "ota %s refused: %s", offer->release_id, why);
+}
+
+// The broker link is dropped for the download: a second TLS session does not
+// fit beside it, and a firmware install ends in a reboot anyway (KEHOACH 5.3).
+static void ota_task(void *arg)
+{
+    const app_wiring_t *wiring = arg;
+    for (;;) {
+        ota_manifest_t offer;
+        if (xQueueReceive(wiring->ota, &offer, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if (offer.target != OTA_MANIFEST_TARGET_FIRMWARE) {
+            ota_refused(&offer, "only FIRMWARE installs, models wait on E13-T2");
+            continue;
+        }
+        if (offer.has_min_fw_version && !fw_at_least(offer.min_fw_version)) {
+            ota_refused(&offer, "this build is older than the image asks for");
+            continue;
+        }
+        const net_ota_image_t image = {
+            .url = offer.url,
+            .sha256 = offer.sha256,
+            .size_bytes = (size_t)offer.size_bytes,
+        };
+        char why[NET_OTA_WHY_CAP] = { 0 };
+        // Vetted while the link is still up: a manifest refused on arithmetic
+        // does not get to cost the broker connection.
+        if (net_ota_check(&image, why, sizeof(why)) != ESP_OK) {
+            ota_refused(&offer, why);
+            continue;
+        }
+        ESP_LOGW(TAG, "ota %s: %s, %lld bytes", offer.release_id, offer.version,
+                 (long long)offer.size_bytes);
+        net_mqtt_stop();
+        const esp_err_t took = net_ota_firmware(&image, why, sizeof(why));
+        if (took != ESP_OK) {
+            ESP_LOGE(TAG, "ota %s failed: %s (%s)", offer.release_id, why,
+                     esp_err_to_name(took));
+            // The link comes back so the failure can be reported at all.
+            start_broker();
+            ota_refused(&offer, why);
+            continue;
+        }
+        ESP_LOGW(TAG, "ota %s armed, rebooting into it", offer.release_id);
+        vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_WAIT_MS));
+        esp_restart();
     }
 }
 
@@ -1576,6 +1703,7 @@ static const app_task_spec_t kTasks[] = {
     { attend_task, "attend", ATTEND_TASK_STACK_BYTES, ATTEND_TASK_PRIORITY, ATTEND_TASK_CORE, 0 },
     { net_task, "net", NET_TASK_STACK_BYTES, NET_TASK_PRIORITY, NET_TASK_CORE, 0 },
     { sync_task, "sync", SYNC_TASK_STACK_BYTES, SYNC_TASK_PRIORITY, SYNC_TASK_CORE, 0 },
+    { ota_task, "ota", OTA_TASK_STACK_BYTES, OTA_TASK_PRIORITY, OTA_TASK_CORE, 0 },
 };
 
 #define TASK_COUNT (sizeof(kTasks) / sizeof(kTasks[0]))
