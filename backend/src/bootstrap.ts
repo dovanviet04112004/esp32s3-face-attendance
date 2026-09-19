@@ -4,9 +4,17 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 
+import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
+import { AuditInterceptor } from "./common/interceptors/audit.interceptor.js";
 import type { Env } from "./config/env.schema.js";
+import { AuditService } from "./modules/audit/audit.service.js";
 
-/** Attach every cross-cutting concern, so a test runs what the server runs. */
+// Row ids are BigInt, which JSON.stringify refuses outright, so every reply
+// carrying one would be a 500 until it is told what to do with them.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function toJSON(this: bigint) {
+  return this.toString();
+};
+
 export function configure(app: INestApplication): void {
   const config = app.get(ConfigService<Env, true>);
 
@@ -28,5 +36,7 @@ export function configure(app: INestApplication): void {
     .build();
   SwaggerModule.setup("docs", app, () => SwaggerModule.createDocument(app, swagger));
 
+  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new AuditInterceptor(app.get(AuditService)));
   app.enableShutdownHooks();
 }
