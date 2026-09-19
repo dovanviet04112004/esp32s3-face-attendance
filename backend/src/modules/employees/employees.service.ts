@@ -17,7 +17,7 @@ export class EmployeesService {
 
   async list(query: ListEmployeesDto): Promise<Page<Employee>> {
     const where: Prisma.EmployeeWhereInput = {
-      ...(query.department ? { department: query.department } : {}),
+      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
       ...(query.search
         ? {
             OR: [

@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
@@ -17,11 +17,23 @@ export class CreateEmployeeDto {
   @MaxLength(64)
   fullName!: string;
 
-  @ApiPropertyOptional({ maxLength: 64 })
+  @ApiPropertyOptional({ description: "Department id, from the org tree (KEHOACH 9.3)" })
   @IsOptional()
   @IsString()
   @MaxLength(64)
-  department?: string;
+  departmentId?: string;
+
+  @ApiPropertyOptional({ description: "Which legal entity employs them (KEHOACH 9.20)" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  legalEntityId?: string;
+
+  @ApiPropertyOptional({ description: "Who approves this person's requests" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  managerId?: number;
 }
 
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {
@@ -43,5 +55,5 @@ export class ListEmployeesDto extends PaginationDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
-  department?: string;
+  departmentId?: string;
 }

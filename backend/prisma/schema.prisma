@@ -1,5 +1,6 @@
-// Twelve tables of KEHOACH 4.6. Lists the contracts already own stay String
-// here, so contracts/schema stays their one source (KEHOACH 4.9).
+// The kiosk tables of KEHOACH 4.6 plus the HR tables of KEHOACH 9.3. Lists the
+// contracts already own stay String here, so contracts/schema stays their one
+// source (KEHOACH 4.9).
 
 generator client {
   provider = "prisma-client-js"
@@ -12,7 +13,25 @@ datasource db {
 enum Role {
   ADMIN
   HR
+  PAYROLL
+  MANAGER
+  EMPLOYEE
   VIEWER
+}
+
+enum ContractKind {
+  PROBATION
+  FIXED_TERM
+  INDEFINITE
+  SEASONAL
+  INTERNSHIP
+}
+
+enum ContractState {
+  DRAFT
+  ACTIVE
+  ENDED
+  TERMINATED
 }
 
 enum DeviceStatus {
@@ -47,26 +66,125 @@ model User {
   email            String          @unique
   passwordHash     String
   role             Role            @default(VIEWER)
+  // Kept apart from Employee on purpose: a leaver's record has to stay for old
+  // payrolls while their login has to die at once (KEHOACH 9.3).
+  employeeId       Int?            @unique
+  active           Boolean         @default(true)
   refreshTokenHash String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  employee         Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   issuedCommands   DeviceCommand[]
   auditLogs        AuditLog[]
 }
 
+/**
+ * One payroll and one social-insurance filing per entity (KEHOACH 9.20).
+ */
+model LegalEntity {
+  id          String       @id @default(uuid())
+  code        String       @unique
+  name        String
+  taxCode     String?
+  address     String?
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  departments Department[]
+  employees   Employee[]
+}
+
+model Department {
+  id            String       @id @default(uuid())
+  legalEntityId String
+  code          String
+  name          String
+  parentId      String?
+  costCentre    String?
+  headId        Int?
+  active        Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  legalEntity   LegalEntity  @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+  parent        Department?  @relation("DepartmentTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children      Department[] @relation("DepartmentTree")
+  employees     Employee[]
+
+  @@unique([legalEntityId, code])
+  @@index([parentId])
+}
+
+model JobTitle {
+  id        String     @id @default(uuid())
+  code      String     @unique
+  name      String
+  grade     Int?
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  employees Employee[]
+}
+
+model EmploymentContract {
+  id           String        @id @default(uuid())
+  employeeId   Int
+  kind         ContractKind
+  state        ContractState @default(DRAFT)
+  number       String?
+  startDate    DateTime      @db.Date
+  // Null for an indefinite contract; a fixed term that lapses unnoticed turns
+  // indefinite by law, which is what the expiry alert exists for (KEHOACH 9.18).
+  endDate      DateTime?     @db.Date
+  probationEnd DateTime?     @db.Date
+  signedAt     DateTime?
+  note         String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  employee     Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, startDate])
+  @@index([state, endDate])
+  @@index([state, probationEnd])
+}
+
 model Employee {
-  id               Int                @id @default(autoincrement())
-  code             String             @unique
-  fullName         String
-  department       String?
-  active           Boolean            @default(true)
-  embeddingVersion String?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  templates        FaceTemplate[]
-  enrollments      DeviceEnrollment[]
-  attendance       AttendanceRecord[]
-  shifts           ShiftAssignment[]
+  id                Int                  @id @default(autoincrement())
+  code              String               @unique
+  fullName          String
+  legalEntityId     String?
+  departmentId      String?
+  jobTitleId        String?
+  managerId         Int?
+  hireDate          DateTime?            @db.Date
+  leaveDate         DateTime?            @db.Date
+  dateOfBirth       DateTime?            @db.Date
+  personalEmail     String?
+  phone             String?
+  nationalId        String?
+  taxCode           String?
+  socialInsuranceNo String?
+  bankAccount       String?
+  bankName          String?
+  photoUrl          String?
+  active            Boolean              @default(true)
+  embeddingVersion  String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  legalEntity       LegalEntity?         @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+  department        Department?          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  jobTitle          JobTitle?            @relation(fields: [jobTitleId], references: [id], onDelete: Restrict)
+  manager           Employee?            @relation("ReportsTo", fields: [managerId], references: [id], onDelete: SetNull)
+  reports           Employee[]           @relation("ReportsTo")
+  login             User?
+  contracts         EmploymentContract[]
+  templates         FaceTemplate[]
+  enrollments       DeviceEnrollment[]
+  attendance        AttendanceRecord[]
+  shifts            ShiftAssignment[]
+
+  @@index([departmentId, active])
+  @@index([managerId])
+  @@index([legalEntityId, active])
 }
 
 model FaceTemplate {
@@ -158,25 +276,25 @@ model DeviceEvent {
 }
 
 model AttendanceRecord {
-  id            BigInt   @id @default(autoincrement())
+  id              BigInt   @id @default(autoincrement())
   // Decimal string, not a number: the kiosk counter is uint64, which overruns
   // both exact JSON integers and a signed BIGINT column.
-  localId       String   @db.VarChar(20)
-  deviceId      String   @db.VarChar(32)
-  employeeId    Int
-  ts            DateTime
-  direction     String
-  score         Float?
-  livenessScore Float?
-  doorOpened    Boolean  @default(false)
-  capturedOffline Boolean @default(false)
+  localId         String   @db.VarChar(20)
+  deviceId        String   @db.VarChar(32)
+  employeeId      Int
+  ts              DateTime
+  direction       String
+  score           Float?
+  livenessScore   Float?
+  doorOpened      Boolean  @default(false)
+  capturedOffline Boolean  @default(false)
   // The kiosk saying its own timestamp predates any NTP correction, so a
   // report can mark the row rather than quietly trust it (KEHOACH 6.2.5).
-  clockUnsynced Boolean  @default(false)
-  photoUrl      String?
-  createdAt     DateTime @default(now())
-  device        Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  clockUnsynced   Boolean  @default(false)
+  photoUrl        String?
+  createdAt       DateTime @default(now())
+  device          Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@unique([deviceId, localId])
   @@index([employeeId, ts])
@@ -196,13 +314,13 @@ model Shift {
 }
 
 model ShiftAssignment {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   shiftId    String
   employeeId Int
   validFrom  DateTime
   validTo    DateTime?
-  shift      Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift      Shift     @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([shiftId, employeeId, validFrom])
 }
@@ -224,13 +342,13 @@ model Release {
 }
 
 model AuditLog {
-  id       BigInt   @id @default(autoincrement())
-  actorId  String?
-  action   String
-  target   String
-  meta     Json?
-  ts       DateTime @default(now())
-  actor    User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  id      BigInt   @id @default(autoincrement())
+  actorId String?
+  action  String
+  target  String
+  meta    Json?
+  ts      DateTime @default(now())
+  actor   User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([ts])
 }

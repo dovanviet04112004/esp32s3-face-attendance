@@ -12,6 +12,7 @@ const SEED_ACCOUNTS = [
   { email: "hr@kiosk.local", role: "HR" },
   { email: "viewer@kiosk.local", role: "VIEWER" },
 ] as const;
+const SEED_ENTITY_CODE = "DEFAULT";
 const SEED_SHIFT_NAME = "Hành chính";
 const SEED_VALID_FROM = new Date("2026-01-01T00:00:00Z");
 
@@ -39,10 +40,28 @@ async function main(): Promise<void> {
     create: { name: SEED_SHIFT_NAME, startTime: "08:00", endTime: "17:30", graceMinutes: 10 },
   });
 
+  const entity = await prisma.legalEntity.upsert({
+    where: { code: SEED_ENTITY_CODE },
+    update: {},
+    create: { code: SEED_ENTITY_CODE, name: "Công ty" },
+  });
+
+  const department = await prisma.department.upsert({
+    where: { legalEntityId_code: { legalEntityId: entity.id, code: "PB0001" } },
+    update: {},
+    create: { legalEntityId: entity.id, code: "PB0001", name: "Kỹ thuật" },
+  });
+
   const employee = await prisma.employee.upsert({
     where: { code: "NV0001" },
     update: {},
-    create: { code: "NV0001", fullName: "Nguyễn Văn A", department: "Kỹ thuật" },
+    create: {
+      code: "NV0001",
+      fullName: "Nguyễn Văn A",
+      legalEntityId: entity.id,
+      departmentId: department.id,
+      hireDate: SEED_VALID_FROM,
+    },
   });
 
   await prisma.shiftAssignment.upsert({
