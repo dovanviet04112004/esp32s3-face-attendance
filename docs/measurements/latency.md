@@ -458,30 +458,90 @@ Không có bảng từng op vì build bench này không bật profiler.
 
 ---
 
-## 12. Lock chuyển sang lớp V1SE — chưa đo lại trên board
+## 12. Lock V1SE, đo trên board — 19/09
 
 `contracts/models.lock.json` khoá anti-spoof `antispoof/20260918-1050_aa7e463_e66877`, arena
-**748.524 B**, file 602 KB. Con số arena trùng khít ứng viên V1SE `0118` ở §11, nên đây là cùng
-một đồ thị, khác run train. Mục §10 (student `1109`, 425 KB, 234,1 ms) **không còn mô tả bản
-đang nạp**.
+**748.524 B**, file 602 KB. `models_0` đóng lại từ chính lock ngay trước khi đo
+(`50_pack_and_flash.sh`, 1.517.600 B, hash verified), nên board chạy đúng bộ file trong lock chứ
+không phải bản còn sót. Mục §10 (student `1109`, 234,1 ms) **không còn mô tả bản đang nạp**.
 
-| Nhánh | Nguồn số | Rảnh | Có tải preview |
+`bench_ai` build riêng với `CONFIG_AI_PROFILING=y`, 20 lần chạy mỗi nhánh, cấu hình chip như mục 1.
+
+| Nhánh | Rảnh | Có tải preview | Tăng |
 |---|---|---|---|
-| detect | §10, đo 16/09 | 232,5 ms | 270,7 ms |
-| anti-spoof | 🔬 §11, đo trên V1SE `0118` cùng arena | **581,0 ms** | 677,4 ms |
-| recognition | §10, đo 16/09 | 460,0 ms | 537,0 ms |
-| **Một lượt ba nhánh** | | **🔬 1.273 ms** | **🔬 1.483 ms** |
+| detect | **232,5 ms** | 270,6 ms | +16,4% |
+| **anti-spoof** | **580,7 ms** | 677,4 ms | +16,7% |
+| recognition | **459,9 ms** | 536,7 ms | +16,7% |
+| **Một lượt ba nhánh** | **1.273,2 ms** | **1.484,7 ms** | **+16,6%** |
 
-🔬 Chính run `1050` chưa qua `bench_ai` lần nào. 581,0 ms là số của `0118`, dùng được vì hai bản
-chung đồ thị và latency không phụ thuộc trọng số — nhưng nó vẫn là số của một file khác.
+Lệch giữa 20 lần chạy dưới **0,25%** ở cả ba nhánh. Tải preview là một task core 0 chuyển
+4.282 KB/s PSRAM (424 khung, 127.200 KB trong 29.704 ms), đúng lưu lượng camera + LCD tạo ra.
+Mức phạt 16,6% trùng khít §7 (16,8%) và §1 (16,6%): đặc tính của bus, không của model.
 
-**Ngân sách §6.4 trượt 3,5 lần**, không phải 2,6 lần như §10 ghi. Chỗ tốn nhất đổi ngôi: anti-spoof
-581 ms vượt recognition 460 ms, và detect 232 ms vẫn chạy mỗi khung.
+**Ngân sách §6.4 trượt 3,5 lần**, không phải 2,6 lần như §10 ghi. Và thứ tự tốn kém đổi ngôi:
+anti-spoof 581 ms vượt recognition 460 ms.
 
-### 12.1 Vì sao esp-nn 1.4.0 không cứu được chỗ này
+### 12.1 Arena và bộ nhớ, đo cùng lần
 
-Đo ba `.tflite` của chính lock, đếm lớp qua được cổng `in_ch × out_ch > 24.576` — cổng bật đường
-panel 1×1 **và** đường chia nhân của conv trong esp-nn 1.4.0:
+| | Giá trị |
+|---|---|
+| `arena_fast` (detect) | 189.628 B trong 190.464 B cấp phát |
+| `arena_big` (spoof + recog) | **748.524 B** trong 748.544 B |
+| Đầu vào | detect 57.600 B, spoof 19.200 B, recog 38.307 B |
+| RAM nội còn rảnh sau init | 252 KB |
+| PSRAM còn rảnh | 7.156 KB |
+
+Arena cấp theo `arena_hint` của ảnh `models_0`, sai số dưới 1 KB ở cả hai — Kconfig chỉ còn là trần.
+
+### 12.2 Từng op
+
+**detect — 230.090 µs**
+
+| Op | µs | % | ESP-NN |
+|---|---|---|---|
+| CONV_2D | 129.575 | 56,31% | ✅ |
+| DEPTHWISE_CONV_2D | 84.272 | 36,63% | ✅ |
+| PAD | 8.277 | 3,60% | ❌ |
+| MAX_POOL_2D | 3.886 | 1,69% | ✅ |
+| ADD | 3.658 | 1,59% | ✅ |
+| RESIZE_NEAREST_NEIGHBOR | 422 | 0,18% | ❌ |
+
+**anti-spoof V1SE — 579.256 µs**
+
+| Op | µs | % | ESP-NN |
+|---|---|---|---|
+| CONV_2D | 350.324 | 60,48% | ✅ |
+| DEPTHWISE_CONV_2D | 106.300 | 18,35% | ✅ |
+| ADD | 38.397 | 6,63% | ✅ |
+| **PAD** | 33.083 | 5,71% | ❌ |
+| **MEAN** | 32.117 | 5,54% | ❌ |
+| MUL | 15.397 | 2,66% | ✅ |
+| FULLY_CONNECTED | 2.787 | 0,48% | ✅ |
+| LOGISTIC | 850 | 0,15% | ❌ |
+
+**recognition — 457.875 µs**
+
+| Op | µs | % | ESP-NN |
+|---|---|---|---|
+| CONV_2D | 273.387 | 59,71% | ✅ |
+| DEPTHWISE_CONV_2D | 134.590 | 29,39% | ✅ |
+| ADD | 33.330 | 7,28% | ✅ |
+| FULLY_CONNECTED | 16.568 | 3,62% | ✅ |
+
+**94,1% cả pipeline nằm trên kernel esp-nn.** Phần còn lại là 74.749 µs: `PAD` 41,4 ms,
+`MEAN` 32,1 ms, `LOGISTIC` 0,85 ms, `RESIZE` 0,42 ms. `recognition` đạt **100%** — ở nhánh ấy
+không còn gì nhặt ở mức op, chỉ còn kiến trúc.
+
+**`MEAN` không đi qua esp-nn dù esp-nn có kernel cho nó.** `esp-tflite-micro` chỉ có bản esp-nn
+cho `add`, `conv`, `depthwise_conv`, `fully_connected`, `mul`, `pooling`, `softmax`;
+`reduce.cc` không có. Nên `esp_nn_mean_s8_esp32s3.c` là code chết ở mọi phiên bản esp-nn, và
+32,1 ms của `MEAN` chỉ mất đi khi đổi khối SE sang `AVERAGE_POOL_2D` (§4) hoặc khi upstream
+thêm đường dẫn.
+
+### 12.3 esp-nn 1.4.0 không cứu được chỗ này — E13-T11
+
+Đường panel 1×1 và đường chia nhân của conv trong 1.4.0 dùng chung một cổng:
+`in_ch × out_ch > 24.576`. Đếm trên chính ba `.tflite` của lock:
 
 | Nhánh | CONV_2D | Qua ngưỡng panel | DEPTHWISE | `out_ht ≥ 4`, chia nhân được |
 |---|---:|---:|---:|---:|
@@ -489,10 +549,16 @@ panel 1×1 **và** đường chia nhân của conv trong esp-nn 1.4.0:
 | anti-spoof | 40,4 MMAC | 13,8% | 2,3 MMAC | 99,4% |
 | recognition | 61,3 MMAC | 3,4% | 5,5 MMAC | 99,4% |
 
-Ghép với tỉ lệ thời gian từng op (§2, §9.1): thời gian nằm trên lớp mà đường panel chạm tới được
-là 🔬 **63,9 ms trên 1.273 ms — 5,0%**, và panel chỉ bỏ phần đọc lại filter chứ không xoá lớp.
-Hệ số width 32 (§4) đã kéo mọi lớp 1×1 xuống dưới đúng cái ngưỡng ấy.
+Nhân với thời gian `CONV_2D` đo ở §12.2, thời gian nằm trên lớp mà đường panel chạm tới được là
+**57,6 ms trên 1.273 ms — 4,5%**, và panel chỉ bỏ phần đọc lại filter chứ không xoá lớp. Hệ số
+width 32 (§4) đã kéo mọi lớp 1×1 xuống dưới đúng cái ngưỡng 1.4.0 nhắm tới.
 
-Phần chia nhân được rộng là **depthwise**, 99% số lớp, và nó không đòi scratch thêm: 🔬 **302,6 ms
-chia đôi**, tức trần −151 ms (−11,9%). Giá là một task 8 KB stack RAM nội ở ưu tiên
-`configMAX_PRIORITIES - 2` ≈ 23, bám **core 0** — đúng nhân của `cam_task` ưu tiên 7.
+Phần chia nhân được rộng là **depthwise**, 99% số lớp và không đòi scratch thêm: **323,0 ms**,
+tức trần −161 ms. Cộng `ADD` + `MUL` (90,8 ms, chỉ phần `size ≥ 8192`) và nửa của 57,6 ms trên,
+trần tuyệt đối là 🔬 **−235 ms (−18,5%)** với giả định chia hoàn hảo và không mất phí đồng bộ.
+
+Giá: một task **8 KB stack RAM nội** ở ưu tiên `configMAX_PRIORITIES - 2` ≈ 23, bám **core 0** —
+đúng nhân của `cam_task` ưu tiên 7. Không bật dual-core thì lãi chỉ còn ~1,5%.
+
+Đường quay lại: nếu sau này chốt model rộng hơn (facenox 108,9 MMAC ở §11, hay bản SE rộng),
+cổng 24 KB bắt đầu mở và bảng này phải đếm lại.
