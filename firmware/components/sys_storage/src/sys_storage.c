@@ -11,6 +11,7 @@
 #include "app_err.h"
 #include "esp_crc.h"
 #include "esp_littlefs.h"
+#include "esp_mac.h"
 #include "esp_spiffs.h"
 #include "esp_log.h"
 #include "esp_partition.h"
@@ -29,6 +30,8 @@ static const char *TAG = "sys_storage";
 #define ASSETS_POINT "/assets"
 #define NVS_LEGACY_NAMESPACE "kiosk"
 #define NVS_BOOT_COUNT "boot_count"
+#define NVS_SERIAL "serial"
+#define DEVICE_ID_PREFIX "kiosk-"
 #define LOG_NAME_PREFIX "attend."
 #define LOG_HEADER_BYTES sizeof(storage_file_header_t)
 #define LOG_RECORD_BYTES sizeof(storage_attend_record_t)
@@ -199,6 +202,21 @@ esp_err_t sys_storage_init(void)
 uint32_t sys_storage_boot_count(void)
 {
     return s_boot_count;
+}
+
+esp_err_t sys_storage_device_id(char *out, size_t cap)
+{
+    if (out == NULL || cap < STORAGE_DEVICE_ID_CAP) { return ESP_ERR_INVALID_SIZE; }
+    if (sys_storage_get_str(STORAGE_NS_DEVICE, NVS_SERIAL, out, cap) == ESP_OK &&
+        out[0] != '\0') {
+        return ESP_OK;
+    }
+    uint8_t mac[6] = { 0 };
+    // eFuse survives erase-flash, so a wiped kiosk keeps its identity (KEHOACH 6.2.1).
+    APP_RETURN_ON_ERR(esp_efuse_mac_get_default(mac), TAG, "efuse mac");
+    snprintf(out, cap, DEVICE_ID_PREFIX "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2],
+             mac[3], mac[4], mac[5]);
+    return ESP_OK;
 }
 
 esp_err_t sys_storage_get_u32(const char *ns, const char *key, uint32_t *value)

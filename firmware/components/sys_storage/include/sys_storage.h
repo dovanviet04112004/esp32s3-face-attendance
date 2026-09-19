@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "gen_topics.h"
 #include "storage_format.h"
 
 #ifdef __cplusplus
@@ -56,6 +57,15 @@ esp_err_t sys_storage_set_str(const char *ns, const char *key, const char *value
  *  @ctx any | non-blocking | the high half of every attendance local_id
  */
 uint32_t sys_storage_boot_count(void);
+
+#define STORAGE_DEVICE_ID_CAP (GEN_TOPIC_DEVICE_ID_MAX + 1)
+
+/** The identity every record and every topic of this kiosk carries.
+ *  @ctx task | blocking | takes m_littlefs | device/serial wins over the eFuse
+ *  @param cap at least STORAGE_DEVICE_ID_CAP
+ *  @ret ESP_OK | ESP_ERR_INVALID_SIZE | ESP_FAIL when the eFuse read fails
+ */
+esp_err_t sys_storage_device_id(char *out, size_t cap);
 
 /** Replace a file so a power cut leaves either the old bytes or the new ones.
  *  @ctx task | blocking | takes m_littlefs | writes through a temporary

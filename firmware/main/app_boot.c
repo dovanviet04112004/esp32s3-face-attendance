@@ -155,6 +155,11 @@ static void start_vision(EventGroupHandle_t flags)
 esp_err_t app_boot(void)
 {
     ESP_ERROR_CHECK(sys_storage_init());
+    char device_id[STORAGE_DEVICE_ID_CAP] = { 0 };
+    if (sys_storage_device_id(device_id, sizeof(device_id)) != ESP_OK) {
+        ESP_LOGE(TAG, "no device id: nothing this kiosk records can be attributed");
+    }
+    ESP_LOGI(TAG, "kiosk %s, boot %" PRIu32, device_id, sys_storage_boot_count());
     // The arena needs one contiguous run the drivers below would fragment (KEHOACH 3.8).
     ESP_ERROR_CHECK(ai_engine_init());
     ESP_ERROR_CHECK(app_wiring_init());
