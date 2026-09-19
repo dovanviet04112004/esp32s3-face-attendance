@@ -91,7 +91,7 @@ Cột DIRAM = `.bss` + `.data` + code IRAM của chính thư viện đó.
 
 | Khoản | Bytes | Nguồn | Có đẩy sang PSRAM được không |
 |---|---|---|---|
-| **Đệm bounce của LCD** | **61.440** | `drv_lcd.c`: `BOUNCE_ROWS` 48 × `APP_LCD_H_RES` 320 × 2 B × 2 đệm | **Không** — `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL`, SPI DMA không đọc thẳng PSRAM |
+| **Đệm bounce của LCD** | **40.960** | `drv_lcd.c`: `BOUNCE_ROWS` 32 × `APP_LCD_H_RES` 320 × 2 B × 2 đệm | **Không** — `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL`, SPI DMA không đọc thẳng PSRAM |
 | **Đệm DMA của camera** | **30.720** | driver esp32-camera: `dma_half_buffer` 15.360 B × 2 | **Không** — cùng lý do; khung ảnh thì đã ở PSRAM (`CAMERA_FB_IN_PSRAM`, 4 khung) |
 | Ngăn xếp 8 task của dự án | 38.912 | `app_tasks.c` | Không — ngăn xếp FreeRTOS lấy từ RAM nội |
 | Ngăn xếp task của IDF | ~30.976 | Kconfig, xem 3.1 | Không |
@@ -105,7 +105,7 @@ bộ đệm DMA của màn hình và camera**.
 | Task | Cấp | Còn trống (đo `bench` 18/09) | Nguồn |
 |---|---|---|---|
 | `ai` | 8.192 | **1.284** | `AI_TASK_STACK_BYTES` |
-| `ui` | 8.192 | 6.772 | `UI_TASK_STACK_BYTES` |
+| `ui` | **4.096** | 6.772 trên 8.192 lúc đo | `UI_TASK_STACK_BYTES`, cắt 19/09 |
 | `wifi` | 6.656 | 4.316 | driver Wi-Fi |
 | `cam` | 4.096 | 2.640 | `CAM_TASK_STACK_BYTES` |
 | `attend` | 4.096 | 2.836 | `ATTEND_TASK_STACK_BYTES` |
@@ -125,8 +125,8 @@ bộ đệm DMA của màn hình và camera**.
 ⚠️ `main` báo trống nhiều hơn mức cấp vì `bench_mem` chạy trong chính task ấy sau khi IDF đã
 nới nó; đây là số của app đo, không phải của kiosk.
 
-**Hai chỗ thừa thấy ngay**: `ui` cấp 8.192 mà chỉ chạm hơn 1,4 KB — cắt còn 4.096 là thu về
-**4 KB**. `ai` thì ngược lại, chỉ còn **1.284 B** và đó là lúc **chưa có mặt người nào** trước
+**Hai chỗ thừa thấy ngay**: `ui` cấp 8.192 mà chỉ chạm hơn 1,4 KB — **đã cắt còn 4.096 ngày
+19/09**, thu về 4 KB, còn biên 2.676 B. `ai` thì ngược lại, chỉ còn **1.284 B** và đó là lúc **chưa có mặt người nào** trước
 camera, tức mới chạy detect; spoof và recog đi sâu hơn nên **không được cắt** và phải đo lại
 với mặt thật (E8-T9 còn nợ).
 
@@ -231,6 +231,19 @@ board, không của một profile. Hai cách kia **vẫn để TLS trong RAM n�
 không đáng: chuỗi chứng thư do broker quyết, đặt hụt là hỏng bắt tay chứ không phải chậm.
 Nghiệm sau khi gạt: dựng sạch, Wi-Fi nối được, SNTP chỉnh được giờ. 🔬 chưa đo bắt tay chậm bao nhiêu.
 
+**Cần gạt thứ tư, chốt 19/09: `MQTT_TASK_STACK_ON_EXTERNAL_MEMORY=y`.** Ba cần gạt trên lo phần
+heap của mbedTLS; còn lại **ngăn xếp 6.144 B mà esp-mqtt tự xin cho task của nó**, và nó xin
+liền một khối từ RAM nội. Bản `dev` chỉ có 4.596 B liền nên `esp_mqtt_client_start()` trả
+`Error create mqtt task`. Lựa chọn này đẩy ngăn xếp ấy sang PSRAM, khối điều khiển task vẫn ở
+RAM nội, cùng chính sách với `MBEDTLS_EXTERNAL_MEM_ALLOC` và hai arena TFLM.
+
+Điều kiện an toàn của IDF là ngăn xếp ở PSRAM không được chạm khi cache flash tắt, và nó thoả về
+mặt cấu trúc: `spi_flash_disable_interrupts_caches_and_other_cpu()` đỗ lõi kia và tắt ngắt suốt
+lượt ghi, nên không task nào chạy. 🔬 Giá tốc độ không tách được khỏi nhiễu mạng: năm lượt nối
+của cùng một binary cho 565, 1.292, 654, 2.532 và 1.253 ms.
+
+Số sau khi gạt nằm ở §8.
+
 ---
 
 ## 6. PSRAM — 8 MB, và nó giữ gần hết những thứ to
@@ -282,5 +295,54 @@ RAM nội.
   dựng và nạp riêng, chưa làm.
 - 🔬 Watermark của `ai` phải đo lại **khi có mặt thật trước camera**, vì số 1.284 B hiện tại
   mới chỉ có detect chạy.
-- 🔬 Chưa đo lại sau khi cắt ngăn xếp `ui` xuống 4.096.
+- 🔬 Watermark của `ui` sau khi cắt xuống 4.096 chưa đo lại; §8 chỉ đo heap toàn cục.
+- 🔬 `ota_task` 8 KB chưa tồn tại, nên §8 mới là phép trừ chứ chưa phải phép đo.
 - PSRAM thì **đã khép sổ**, chỉ còn 7.712 B chưa quy được — không cần truy thêm.
+
+---
+
+## 8. Sau khi MQTT lên — đo 19/09 trên kiosk thật, profile `dev`
+
+Đọc bằng lệnh `heap` của `app_console`, lúc broker đã nối và preview đang chạy. Sáu mẫu cách
+nhau 5 s cho cùng một con số, nên không rò.
+
+### 8.1 Ba thay đổi và cái mỗi thay đổi trả về
+
+| Bước | Mảnh liền lớn nhất | Tổng trống |
+|---|---|---|
+| Trước, `mqtt_task` không tạo nổi | 4.596 | 8.495 |
+| Cắt `ui` 8.192 → 4.096 | 5.620 | 12.663 |
+| `MQTT_TASK_STACK_ON_EXTERNAL_MEMORY=y` | 5.364 | 29.083 |
+| `BOUNCE_ROWS` 48 → 32 | **22.516** | **33.015** |
+
+Hai điều bảng này nói mà phép cộng không nói. Cắt `ui` thu về đủ 4 KB **tổng** nhưng chỉ 1 KB
+vào **mảnh lớn nhất** — 3 KB kia rơi vào vùng khác. Và đẩy ngăn xếp MQTT sang PSRAM làm mảnh lớn
+nhất **nhỏ đi** 256 B, vì khối điều khiển task vẫn ở RAM nội: nó mua 6 KB tổng và trả lại một ít
+liền mạch. Chỉ `BOUNCE_ROWS` là trả về cả hai, vì 20 KB ấy nằm đúng trong vùng DMA nội và gộp
+được.
+
+### 8.2 Bản đồ vùng, cùng lượt đo
+
+| Vùng | Dài | Trống | Mảnh lớn nhất | Số mảnh trống | Dùng được cho ngăn xếp task |
+|---|---|---|---|---|---|
+| `0x3fcb75bc` | 32.767 | 23.311 | **22.516** | 1 | **có** |
+| `0x600fe000` | 8.168 | 4.700 | 4.596 | 1 | **không** — RTCRAM, vùng địa chỉ riêng |
+| `0x3fce9710` | 22.308 | 8 | 0 | 1 | đầy |
+| `0x3fcb2740` | 225.232 | 4.636 | 3.700 | 7 | không đủ cỡ |
+| **Tổng** | | **32.655** | **22.516** | | đáy từng đo 24.739 |
+
+**"Còn 33 KB" không có nghĩa xin được khối 33 KB.** 4.700 B là RTCRAM mà FreeRTOS không đặt
+ngăn xếp lên được, 4.636 B còn lại là bảy khe nhỏ giữa 289 khối đã cấp. Chúng vẫn phục vụ hàng
+trăm cấp phát nhỏ, chỉ không gom thành khối lớn.
+
+### 8.3 Đủ cho hai task còn lại của §5.2
+
+```
+22.516 − 5.120 (sync_task) − 8.192 (ota_task) ≈ 9,2 KB còn liền
+```
+
+`prod` và `bench` rộng hơn ~20 KB nữa vì không mang canary lẫn `-Og`. `ota_task` tạo theo yêu
+cầu chứ không thường trú, nên lúc nó chạy còn phải chia chỗ với đệm tải OTA — đo lại khi E13-T1
+có code.
+
+---
