@@ -42,6 +42,14 @@ else
     echo "ca: new authority, valid $CA_DAYS days"
 fi
 
+# A kiosk trusts the authority, not the broker, so an authority it has never
+# been flashed with locks the whole fleet out with nothing to see (KEHOACH 4.8).
+PINNED="$HERE/../../firmware/components/net_mqtt/certs/broker_ca.crt"
+if [[ -f "$PINNED" ]] && ! cmp -s ca.crt "$PINNED"; then
+    echo "ca: WARNING, this differs from the one built into the firmware" >&2
+    echo "    every kiosk will refuse this broker until it is reflashed" >&2
+fi
+
 openssl genrsa -out broker.key 2048 2>/dev/null
 openssl req -new -key broker.key -subj "/CN=$1" -out broker.csr
 openssl x509 -req -in broker.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
