@@ -995,22 +995,26 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         const int ask_y = theme::kBarH + theme::kGapS;
+        uint8_t tone = DRV_LCD_INK;
+        char line[64];
+        // One line, one place. A correction and an instruction are the same kind
+        // of sentence, and the guide leaves room for exactly one of them.
         if (failed_) {
-            to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, "Chưa lấy được mẫu", DRV_LCD_WARN,
-                             Align::Centre);
+            snprintf(line, sizeof(line), "%s", why_ != nullptr ? why_ : "Chưa lấy được mẫu");
+            tone = DRV_LCD_WARN;
         } else if (done()) {
-            char line[STORAGE_NAME_CAP + 16];
             snprintf(line, sizeof(line), "Đã thêm %s", enrol_request().name);
-            to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, line, DRV_LCD_OK, Align::Centre);
+            tone = DRV_LCD_OK;
         } else if (refusing()) {
-            char line[64];
             snprintf(line, sizeof(line), "Ảnh giả · %d/%d", spoofs_, kSpoofGiveUp);
-            to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, line, DRV_LCD_WARN,
-                             Align::Centre);
+            tone = DRV_LCD_WARN;
         } else {
-            to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, kAsk[kept_], DRV_LCD_INK,
-                             Align::Centre);
+            const char *fix = hint(seen);
+            const char *say = fix != nullptr ? fix : (armed_ ? "Giữ nguyên" : kAsk[kept_]);
+            snprintf(line, sizeof(line), "%s", say);
+            tone = fix != nullptr ? DRV_LCD_WARN : DRV_LCD_INK;
         }
+        to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, line, tone, Align::Centre);
         dots(to, ask_y + theme::line_height(Font::Strong) + 3);
         guide(to, done() ? DRV_LCD_OK : DRV_LCD_ACCENT);
         if (done()) {
@@ -1024,21 +1028,7 @@ public:
                             DRV_LCD_ACCENT, DRV_LCD_INK, held_ == 1);
             widgets::button(to, theme::kGutter + half + theme::kGapM, kFootY, half,
                             theme::kButtonH, "Thoát", DRV_LCD_SURFACE, DRV_LCD_INK, held_ == 2);
-            if (why_ != nullptr) {
-                to.text_on_video(Font::Body, theme::kGutter, kPromptY, theme::kContentW, why_,
-                                 DRV_LCD_INK, Align::Centre);
-            }
             return;
-        }
-        if (!refusing()) {
-            const char *line = hint(seen);
-            if (line == nullptr) {
-                line = armed_ ? "Giữ nguyên" : nullptr;
-            }
-            if (line != nullptr) {
-                to.text_on_video(Font::Body, theme::kGutter, kPromptY, theme::kContentW, line,
-                                 DRV_LCD_INK, Align::Centre);
-            }
         }
         widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH, "Huỷ",
                         DRV_LCD_SURFACE, DRV_LCD_INK, held_ == 1);
