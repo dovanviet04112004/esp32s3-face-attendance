@@ -25,6 +25,7 @@
 #include "svc_facedb.h"
 #include "svc_sync.h"
 #include "gen_payload.h"
+#include "mbedtls/base64.h"
 #include "svc_vision.h"
 #include "sys_storage.h"
 #include "sys_time.h"
@@ -95,6 +96,9 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define MODEL_VERSION_CAP 33
 #define NVS_MODEL_VERSION "version"
 #define NVS_ACTIVE_SLOT "active_slot"
+#define NVS_ROSTER_VER "roster_ver"
+#define EMBEDDING_VERSION_CAP 33
+#define MODEL_ENTRY_RECOG "recog"
 #define EVENT_PAYLOAD_CAP 384
 #define CMD_SEEN_RING 8
 #define SYNC_TICK_MS 250
@@ -173,10 +177,9 @@ static int64_t event_gap_ms(int type)
 // The valve sits with the producer so one stuck sensor never fills the queue.
 static void note_event(const app_event_t *event)
 {
-    static int64_t last_ms[DEVICE_EVENT_TYPE_COMMAND_REJECTED + 1];
+    static int64_t last_ms[DEVICE_EVENT_TYPE_COUNT];
     const app_wiring_t *wiring = app_wiring();
-    if (wiring == NULL || event->type < 0 ||
-        event->type > DEVICE_EVENT_TYPE_COMMAND_REJECTED) {
+    if (wiring == NULL || event->type < 0 || event->type >= DEVICE_EVENT_TYPE_COUNT) {
         return;
     }
     const int64_t now_ms = esp_timer_get_time() / 1000;
@@ -236,10 +239,93 @@ static void on_broker_state(bool up, void *ctx)
     }
 }
 
+// A template made by another recognition model must be refused rather than
+// compared across models, so both sides need the same name for this one.
+static void embedding_version(char *out, size_t cap)
+{
+    const storage_models_header_t *header = NULL;
+    if (sys_storage_models_open(&header) == ESP_OK && header != NULL) {
+        for (uint32_t i = 0; i < header->count && i < STORAGE_MODEL_COUNT; ++i) {
+            if (strcmp(header->entry[i].name, MODEL_ENTRY_RECOG) != 0) {
+                continue;
+            }
+            const uint8_t *sha = header->entry[i].sha256;
+            snprintf(out, cap, "recog-%02x%02x%02x%02x%02x%02x%02x%02x", sha[0], sha[1], sha[2],
+                     sha[3], sha[4], sha[5], sha[6], sha[7]);
+            return;
+        }
+    }
+    strlcpy(out, "none", cap);
+}
+
+static uint32_t roster_version(void)
+{
+    uint32_t version = 0;
+    sys_storage_get_u32(STORAGE_NS_DEVICE, NVS_ROSTER_VER, &version);
+    return version;
+}
+
+static void take_roster_push(const char *payload, size_t len)
+{
+    cJSON *root = cJSON_ParseWithLength(payload, len);
+    enroll_payload_t wire = { 0 };
+    const bool understood = root != NULL && enroll_payload_from_json(root, &wire);
+    cJSON_Delete(root);
+    if (!understood) {
+        ESP_LOGW(TAG, "roster push does not match the schema, dropped");
+        return;
+    }
+    app_roster_t op = { 0 };
+    op.op = wire.op;
+    op.employee_id = wire.employee_id;
+    op.template_idx = wire.template_idx;
+    op.quality = wire.has_quality ? wire.quality : 0;
+    op.scale = wire.scale;
+    op.updated_at = wire.updated_at;
+    op.roster_version = (uint32_t)wire.roster_version;
+    op.has_roster_version = wire.has_roster_version;
+    if (wire.has_full_name) {
+        strlcpy(op.name, wire.full_name, sizeof(op.name));
+    }
+    if (wire.op == ENROLL_PAYLOAD_OP_UPSERT) {
+        char mine[EMBEDDING_VERSION_CAP] = { 0 };
+        embedding_version(mine, sizeof(mine));
+        if (strcmp(mine, wire.embedding_version) != 0) {
+            // Comparing across models is worse than refusing (KEHOACH 7.5).
+            app_event_t refused = { 0 };
+            refused.type = DEVICE_EVENT_TYPE_ROSTER_REJECTED;
+            refused.severity = DEVICE_EVENT_SEVERITY_WARN;
+            refused.employee_id = wire.employee_id;
+            refused.has_employee = true;
+            snprintf(refused.note, sizeof(refused.note), "kiosk embeds %.*s",
+                     (int)sizeof(refused.note) - 16, mine);
+            note_event(&refused);
+            return;
+        }
+        size_t got = 0;
+        if (mbedtls_base64_decode((unsigned char *)op.embedding, sizeof(op.embedding), &got,
+                                  (const unsigned char *)wire.embedding,
+                                  strlen(wire.embedding)) != 0 ||
+            got != sizeof(op.embedding)) {
+            ESP_LOGW(TAG, "roster embedding is %u bytes, want %u", (unsigned)got,
+                     (unsigned)sizeof(op.embedding));
+            return;
+        }
+    }
+    const app_wiring_t *wiring = app_wiring();
+    if (wiring == NULL || xQueueSend(wiring->roster, &op, 0) != pdTRUE) {
+        ESP_LOGE(TAG, "roster op for %" PRIu32 " dropped, queue full", op.employee_id);
+    }
+}
+
 // Runs on the esp-mqtt task, which must not block: parse here, act in sync_task.
 static void on_broker_message(gen_topic_id_t topic, const char *payload, size_t len, void *ctx)
 {
     (void)ctx;
+    if (topic == GEN_TOPIC_ENROLL) {
+        take_roster_push(payload, len);
+        return;
+    }
     if (topic != GEN_TOPIC_CMD) {
         ESP_LOGI(TAG, "topic %d, %u bytes, nothing consumes it yet", (int)topic, (unsigned)len);
         return;
@@ -336,6 +422,10 @@ static void publish_heartbeat(void)
     beat.active_slot = (uint8_t)slot;
     beat.boot_count = sys_storage_boot_count();
     beat.has_boot_count = true;
+    beat.roster_version = roster_version();
+    beat.has_roster_version = true;
+    embedding_version(beat.embedding_version, sizeof(beat.embedding_version));
+    beat.has_embedding_version = true;
 
     cJSON *root = heartbeat_to_json(&beat);
     if (root == NULL) {
@@ -397,6 +487,83 @@ static void publish_event(device_event_type_t type, device_event_severity_t seve
         strlcpy(event.note, message, sizeof(event.note));
     }
     send_event(&event, cmd_id);
+}
+
+// The cursor is written after the table, so a power cut costs one push again
+// rather than a device claiming a version it never applied (KEHOACH 7.5).
+static bool apply_roster(const app_roster_t *op)
+{
+    esp_err_t done = ESP_ERR_NOT_SUPPORTED;
+    const char *refusal = NULL;
+    switch (op->op) {
+    case ENROLL_PAYLOAD_OP_UPSERT:
+        done = svc_facedb_enroll(op->employee_id, op->template_idx, op->quality, op->embedding,
+                                 op->scale, op->name);
+        break;
+    case ENROLL_PAYLOAD_OP_DELETE_EMPLOYEE:
+        done = svc_facedb_remove(op->employee_id);
+        break;
+    case ENROLL_PAYLOAD_OP_DELETE: refusal = "one template at a time needs a facedb api"; break;
+    case ENROLL_PAYLOAD_OP_REPLACE_ALL: refusal = "full resync needs a facedb clear"; break;
+    default: refusal = "the pending list screen is not built yet"; break;
+    }
+    if (refusal != NULL) {
+        app_event_t event = { 0 };
+        event.type = DEVICE_EVENT_TYPE_ROSTER_REJECTED;
+        event.severity = DEVICE_EVENT_SEVERITY_WARN;
+        event.employee_id = op->employee_id;
+        event.has_employee = true;
+        strlcpy(event.note, refusal, sizeof(event.note));
+        note_event(&event);
+        return false;
+    }
+    if (done != ESP_OK) {
+        app_event_t event = { 0 };
+        event.type = DEVICE_EVENT_TYPE_ROSTER_REJECTED;
+        event.severity = DEVICE_EVENT_SEVERITY_ERROR;
+        event.employee_id = op->employee_id;
+        event.has_employee = true;
+        event.error_code = (int32_t)done;
+        event.has_error = true;
+        strlcpy(event.note, esp_err_to_name(done), sizeof(event.note));
+        note_event(&event);
+        return false;
+    }
+    ESP_LOGI(TAG, "roster %s employee %" PRIu32,
+             enroll_payload_op_str((enroll_payload_op_t)op->op), op->employee_id);
+    return true;
+}
+
+// A kiosk joining a fleet takes the whole roster as a run of upserts, so the
+// table is written once for the batch rather than once per person.
+static void take_roster(const app_wiring_t *wiring)
+{
+    app_roster_t op;
+    uint32_t reached = 0;
+    bool changed = false;
+    bool versioned = false;
+    while (xQueueReceive(wiring->roster, &op, 0) == pdTRUE) {
+        if (!apply_roster(&op)) {
+            continue;
+        }
+        changed = true;
+        if (op.has_roster_version) {
+            reached = op.roster_version;
+            versioned = true;
+        }
+    }
+    if (!changed) {
+        return;
+    }
+    const esp_err_t saved = svc_facedb_persist();
+    if (saved != ESP_OK) {
+        note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, saved, "face table would not save");
+        return;
+    }
+    if (versioned) {
+        sys_storage_set_u32(STORAGE_NS_DEVICE, NVS_ROSTER_VER, reached);
+    }
+    ESP_LOGI(TAG, "roster saved, now at version %" PRIu32, roster_version());
 }
 
 // A kiosk has something to say at boot while the broker answers seconds later,
@@ -541,6 +708,7 @@ static void sync_task(void *arg)
             nudged = xQueueReceive(wiring->uplink, &nudge, pdMS_TO_TICKS(SYNC_TICK_MS)) == pdTRUE;
         }
         take_commands(wiring, door);
+        take_roster(wiring);
         take_events(wiring);
         const int64_t now_ms = esp_timer_get_time() / 1000;
         if (net_mqtt_is_up() && now_ms - beat_ms >= GEN_TOPIC_HEARTBEAT_INTERVAL_S * 1000) {

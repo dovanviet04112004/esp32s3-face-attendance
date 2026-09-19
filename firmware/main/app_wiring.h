@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
+#include "storage_format.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,6 +15,21 @@ extern "C" {
 
 /** Every handle a task needs, filled once and never replaced.
  */
+// One roster op already decoded: the esp-mqtt task may not block, and base64
+// is cheap while writing the face table is not (KEHOACH 7.5).
+typedef struct {
+    int op;                               // enroll_payload_op_t
+    uint32_t employee_id;
+    uint16_t template_idx;
+    uint8_t quality;
+    float scale;
+    int64_t updated_at;
+    uint32_t roster_version;
+    bool has_roster_version;
+    char name[STORAGE_NAME_CAP];
+    int8_t embedding[STORAGE_EMBED_DIM];
+} app_roster_t;
+
 typedef struct {
     QueueHandle_t frames;                 // q_frame_ai, depth 1, newest wins
     QueueHandle_t results;                // q_result
@@ -22,6 +38,7 @@ typedef struct {
     QueueHandle_t uplink;                 // q_uplink
     QueueHandle_t commands;               // q_cmd
     QueueHandle_t events;                 // q_event
+    QueueHandle_t roster;                 // q_roster
     EventGroupHandle_t flags;             // eg_system
 } app_wiring_t;
 
