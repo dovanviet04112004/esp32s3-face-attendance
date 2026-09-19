@@ -2905,11 +2905,11 @@ firmware/
 │   ├── svc_vision/        [C++]  L4  # detect mỗi khung, chuỗi spoof → recog khi mặt ổn định (§4.5.5d)
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
 │   ├── svc_sync/          [C++]  L5  # hàng đợi offline → MQTT
-│   └── ui_kiosk/          [C++]  L6  # 6 màn hình vẽ thẳng lên panel + bộ bám hộp (§4.5.5h)
+│   └── ui_kiosk/          [C++]  L6  # 7 màn hình vẽ thẳng lên panel + bộ bám hộp (§4.5.5h)
 │
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
-│   ├── fonts/{gen_font.py, kiosk_sans_22.{c,h}}   # 1bpp, sinh từ TTF, ui_kiosk đè lên preview
+│   ├── fonts/{gen_font.py, kiosk_ui_{15,20,24,28}.{c,h}}  # 4bpp khử răng cưa, sinh từ Ubuntu Sans
 │   ├── icons/  ├── sounds/{ok.wav, denied.wav, spoof.wav}
 │   └── build_assets.py               # → build/assets.bin (image SPIFFS)
 │
@@ -3301,12 +3301,22 @@ Sáu màn hình cùng vòng đời, thêm màn hình mới không đụng `Scree
 **Không dùng LVGL, và đó là hệ quả của chính đoạn dưới.** §4.5.5h đã chốt vùng preview vẽ
 thẳng, không qua LVGL — mà **màn hình chính của kiosk chính là preview**. Để LVGL vào thì hai
 bộ vẽ cùng ghi một panel SPI, đúng thứ `m_spi_lcd` sinh ra để chặn, và mỗi lần chuyển màn là
-một lần bàn giao panel — chỗ mà xé hình hay quay lại. Nên cả năm màn dùng **một bộ vẽ duy
-nhất**: `Canvas` là một **cover map 1 byte mỗi pixel** (0 = để lọt video, `INK` / `EDGE` /
-`ACCENT` = màu), chữ lấy từ bảng glyph 1bpp `assets/fonts/` sinh sẵn từ TTF, và `drv_lcd` cắt
+một lần bàn giao panel — chỗ mà xé hình hay quay lại. Nên mọi màn dùng **một bộ vẽ duy nhất**:
+`Canvas` là một **cover map 1 byte mỗi pixel** mang chỉ số bảng màu cộng độ phủ (xem đoạn bảng
+màu ở §4.5.5h), chữ lấy từ bảng glyph 4bpp `assets/fonts/` sinh sẵn từ TTF, và `drv_lcd` cắt
 map ấy theo từng dải 48 dòng ngay trong vòng gom khung. Cái giá phải trả là bàn phím, danh
-sách và nút bấm **tự viết**, mỗi thứ cỡ trăm dòng; cái được là không thêm thư viện, không thêm
-48 KB heap, và **không bao giờ có hai người ghi panel**.
+sách, thanh trượt và nút bấm **tự viết**, mỗi thứ cỡ trăm dòng; cái được là không thêm thư
+viện, không thêm 48 KB heap, và **không bao giờ có hai người ghi panel**.
+
+**Tự vẽ thì phải tự có hệ thống, không thì ra giao diện chắp vá.** Không có LVGL nghĩa là
+không có ai chặn một màn hình đặt chữ đè lên nhau hay tràn khỏi panel, và đó là lỗi đã xảy ra
+thật: đo bảng glyph cũ, dòng `Đưa khuôn mặt vào khung` rộng **331 px trên panel 320 px** — câu
+chữ người dùng nhìn cả ngày bị cắt cụt hai đầu. Nên `ui_kiosk` khai **`theme` và `widgets`**
+làm tầng bắt buộc đi qua: `theme` giữ bảng màu, thang chữ và nấc giãn cách; `widgets` giữ
+những thứ lặp lại (nút, dòng danh sách, thanh trượt, công tắc, biểu tượng) cộng **phép xếp
+dọc** tự cộng dồn toạ độ. Màn hình mô tả *có những gì*, không tự tính `y`. Chữ dài **tự cắt
+đuôi bằng `…`** ngay trong hàm vẽ chứ không trông vào người viết màn hình đếm ký tự, vì tên
+người và tên Wi-Fi là dữ liệu chạy lúc chạy, không đoán trước được.
 
 **Không ai bàn giao panel cho ai.** Ý đầu là màn không video thì `ui_task` lấy `m_spi_lcd` và
 tự đẩy khung hình — nhưng mỗi lần chuyển màn khi ấy là một lần đổi chủ giữa hai task đang chạy,
@@ -3323,16 +3333,26 @@ mỗi khung chỉ quét đúng ngần ấy byte thay vì 153 KB.
 **Đường đi giữa các màn:**
 
 ```
-Scan ──ba gạch──> Menu ──"Thêm người"──> Enroll ──gõ tên, OK──> Capture ──đủ mẫu──> Scan
- ▲                 │                        │                     │
- │                 ├──"Danh sách"──> People  │                     │
- │                 ├──"Cài đặt"────> Settings                      │
- └─────────────────┴──────────── Đóng / Huỷ ───────────────────────┘
+Scan ──ba gạch──> Menu ──"Thêm người"──> Enroll ──chọn tên──> Capture ──đủ mẫu──> Scan
+ ▲                 │                        │                   │
+ │                 ├──"Danh sách"──> People  │                   │
+ │                 └──"Cài đặt"────> Settings ──"Wi-Fi"──> Wifi   │
+ └───────────────────────────── Đóng / Huỷ ──────────────────────┘
 ```
 
-`Enroll` là màn **bàn phím**: một ô tên, lưới chữ A–Z cộng phím cách, xoá và OK. Bàn phím chỉ
-gõ **chữ không dấu** — bộ gõ tiếng Việt là một hệ thống riêng, không phải việc của kiosk; tên
-đủ dấu đi vào bằng `SET_CONFIG` từ server (§6.2.1) hoặc luồng đăng ký trên web. `CaptureScreen`
+`Enroll` là màn **danh sách chờ**, không phải màn bàn phím. Gõ tên là thao tác tệ nhất có thể
+đặt lên một màn 3,5 inch, và nó còn sai về dữ liệu: §7.5 đã cho server giữ hồ sơ nhân viên và
+đẩy xuống lệnh `ASSIGN` kèm `employeeId` cùng tên đủ dấu. Người vận hành vì thế **chọn một
+dòng** rồi đưa mặt vào khung — máy đã biết người ấy là ai, không ai phải đánh vần lại.
+
+Bàn phím còn đó làm **đường lui**, xếp cuối danh sách là dòng *Tự nhập tên*, và chỉ đường lui
+ấy mới gõ chữ không dấu: bộ gõ tiếng Việt là một hệ thống riêng, không phải việc của kiosk.
+Đường lui tồn tại vì hai ca thật — máy chưa từng nối server, và người cần thêm ngay trong lúc
+mạng chết. Người thêm theo đường ấy nhận mã số ở **dải riêng** của §7.5 nên không bao giờ đụng
+mã server cấp, và §7.5 đã có đường báo ngược lên bằng `up/enroll`.
+
+Danh sách chờ trống thì màn này **không được là trang trắng**: nó nói thẳng rằng chưa có ai
+được giao từ server và chỉ vào đúng dòng *Tự nhập tên*. `CaptureScreen`
 gọi `svc_vision_enrol_next()` rồi đứng chờ chính `MATCH` của người vừa thêm, nên "thêm thành
 công" là câu nói sau khi máy **đã nhận lại được**, không phải sau khi ghi xong file.
 
@@ -3480,8 +3500,22 @@ câu trả lời cho một câu hỏi, và câu của màn sai. Khung ngắm vì
 `face_min_px` ra pixel panel, không phải một phép kiểm, và không đẻ thêm ngưỡng nghiệp vụ nào cho
 §4.9.
 
-Bản đồ phủ mang **bốn màu** (§4.5.5h): trắng, viền đen, xanh mint, hổ phách. Không có đỏ, nên
-từ chối nói bằng hổ phách cộng câu chữ chứ không bằng màu thứ năm.
+**Bản đồ phủ mang chỉ số bảng màu cộng độ phủ, không mang màu.** Mỗi ô là một byte chia đôi:
+4 bit thấp là chỉ số trong bảng màu dùng chung (0 = để lọt video), 4 bit cao là **độ phủ** 0–15.
+`drv_lcd` tra `palette[idx]` rồi trộn theo độ phủ với cái đang nằm dưới. Ba điều đi ra từ cách
+chia ấy. Thứ nhất, vòng gom dải đổi từ chuỗi bốn phép so sang **một phép tra bảng**, nên nó
+*nhanh hơn* bảng bốn màu cứng chứ không đắt hơn. Thứ hai, số màu thôi bị trần bốn: bảng hiện
+khai nền, mặt nổi, đường kẻ, mực, mực mờ, nhấn, đạt, cảnh báo, nguy hiểm và viền — đủ để một
+màn hình có **nền và thẻ nổi** thay vì chỉ có nét vẽ trên video. Thứ ba, chữ **khử được răng
+cưa**: bảng glyph 4bpp đưa thẳng độ phủ vào 4 bit cao.
+
+Độ phủ 15 là đặc hoàn toàn và đi đường tắt không trộn; chỉ viền glyph mới trộn thật. Phần trong
+nét chữ và mọi mảng đặc vì thế vẫn chỉ tốn một phép tra, và phép trộn RGB565 chỉ chạy trên
+đúng những pixel ở rìa.
+
+**Đỏ có mặt, và chỉ cho một việc.** Xoá một người là thao tác không lùi được, nên nó là chỗ
+duy nhất dùng màu nguy hiểm. Từ chối chấm công vẫn nói bằng hổ phách cộng câu chữ: người bị
+từ chối oan không đáng bị màn hình quát bằng màu đỏ (§4.5.5d, `kUnknownTries`).
 
 **Đã trả lời rồi thì thôi hướng dẫn.** Mọi câu nhắc căn khung — `Đang nhận diện...`, `Lại gần
 hơn`, `Lùi lại một chút` — đều tắt từ lúc có **bất kỳ** phán quyết nào, đạt hay từ chối, cho tới
@@ -3768,10 +3802,14 @@ components/ui_kiosk/
 ├── include/ui_kiosk.h                    # mặt tiền C: init · on_faces · on_verdict · on_touch · tick · overlay
 ├── priv_include/box_tracker.hpp          # BoxTracker: set(hộp, khung) · update(khung) · box()
 ├── priv_include/canvas.hpp               # Canvas: bản đồ phủ 1 byte/điểm, hình + chữ + vùng đã vẽ
-├── priv_include/screens.hpp              # Screen base + ScreenManager + 6 màn hình
+├── priv_include/theme.hpp                # bảng màu · thang chữ · nấc giãn cách · phép xếp dọc
+├── priv_include/widgets.hpp              # nút · dòng · thanh trượt · công tắc · biểu tượng
+├── priv_include/screens.hpp              # Screen base + ScreenManager + 7 màn hình
 ├── src/box_tracker.cpp
 ├── src/canvas.cpp
-├── src/screens.cpp                       # Scan · Menu · Enrol · Capture · People · Settings
+├── src/theme.cpp
+├── src/widgets.cpp
+├── src/screens.cpp                       # Scan · Menu · Enrol · Capture · People · Settings · Wifi
 ├── src/ui_kiosk.cpp                      # hai ô canvas, hai ô overlay, công bố nguyên tử
 └── test_apps/tracker/{main/test_tracker.cpp, CMakeLists.txt, pytest_tracker.py}   # khung tổng hợp, không cần camera
 ```
@@ -3788,18 +3826,32 @@ phải nằm sẵn **theo thứ tự byte của panel** — đường preview kh
 ô đang không được công bố rồi mới đổi con trỏ, `cam_task` đọc con trỏ một lần cho cả khung. Không
 khoá nào trên đường vẽ, và cái giá đúng bằng **một khung chậm** ở lần đổi thẻ.
 
-##### h.4) Màn `Settings` — trang tình trạng, chưa phải trang chỉnh
+##### h.4) Màn `Settings` — trang chỉnh, và là chỗ duy nhất đi vào Wi-Fi
 
-Bảng NVS `ui` (§6.2.1) khai `brightness`, `volume`, `lang` cho phép sửa từ đây, nhưng đó là việc
-của E10 giai đoạn sau. Trước khi có ô chỉnh, màn này **không được là trang trắng**: một màn có tên
-trong menu mà mở ra không có gì là lỗi trong mắt người dùng, không phải "chưa làm".
+**Menu gốc chỉ mang việc, không mang thiết bị.** Nó có đúng ba dòng — *Thêm người*, *Danh sách*,
+*Cài đặt* — vì ba dòng ấy là ba thứ người vận hành mở ra để **làm một việc**. Wi-Fi không phải
+một việc, nó là một thuộc tính của máy, nên nó nằm **trong** Cài đặt như mọi điện thoại đặt nó,
+không phải một dòng ngang hàng ở menu gốc. Luật chung: cái gì trả lời *"máy đang thế nào"* thì
+vào Cài đặt; cái gì trả lời *"tôi muốn làm gì"* mới được đứng ở menu gốc.
 
-Nên `Settings` là **trang tình trạng chỉ đọc**, tám dòng do `main` điền qua
-`ui_kiosk_set_settings()` vài giây một lần từ những gì nó với tới được mà không đọc flash:
-phiên bản firmware, Wi-Fi nối hay chưa và rớt bao lần, số người trong bảng, số bản ghi chấm công,
-khoảng cách bật máy, cỡ mặt nhỏ nhất, RAM nội còn. Không dòng nào đọc NVS theo chu kỳ, vì đọc
-flash qua SPI1 là tắt cache và ngắt trên cả hai lõi (§5.1). `ui_kiosk` chỉ hiện chữ; nó không
-gọi tầng dịch vụ nào (§4.5.4). Khi có ô chỉnh, ba khoá của bảng `ui` xếp lên đầu trang này.
+Trang Cài đặt xếp theo đúng thứ tự một người đi tìm: **thao tác trước, trạng thái sau**.
+
+| Nhóm | Dòng | Nguồn |
+|---|---|---|
+| Mạng | `Wi-Fi` — tên mạng đang nối + biểu tượng vạch sóng, chạm để mở màn Wi-Fi | `net_wifi` qua `main` |
+| Màn hình | `Độ sáng` — thanh trượt | `ui/brightness` (§6.2.1) → `drv_lcd_backlight` |
+| Âm thanh | `Âm lượng` — thanh trượt | `ui/volume` (§6.2.1) → `drv_audio_set_volume` |
+| Máy | phiên bản firmware · số người · số bản ghi chờ gửi · RAM nội còn · mã máy | `main` điền vài giây một lần |
+
+**Thanh trượt ghi NVS khi thả tay, không khi kéo.** Kéo một thanh trượt sinh vài chục lần chạm;
+ghi NVS mỗi lần là ghi flash theo nhịp ngón tay, đúng thứ §6 cấm. Nên phần cứng nghe **ngay** ở
+mỗi lần chạm — đèn nền và âm lượng đổi tức thì để người ta thấy mình đang chỉnh cái gì — còn NVS
+chỉ nhận **một** phép ghi lúc ngón tay rời màn.
+
+Bốn dòng trạng thái vẫn do `main` điền qua `ui_kiosk_set_settings()` từ những gì nó với tới
+được **mà không đọc flash**: đọc flash qua SPI1 là tắt cache và ngắt trên cả hai lõi (§5.1).
+`ui_kiosk` chỉ hiện chữ và trả về con số người dùng vặn; nó không gọi tầng dịch vụ nào và không
+chạm NVS (§4.5.4 luật 2) — `main` cầm cả hai đầu ấy.
 
 ##### i) Vòng đời đối tượng — dựng một lần, không bao giờ hủy
 
@@ -4895,7 +4947,7 @@ Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ
 
 **Máy chỉ lên tiếng khi nó mở cửa.** Bảng ban đầu có bốn tiếng `ok / denied / spoof / enroll`; giờ chỉ còn `ok.wav`. Một lần từ chối đã hiện chữ và đổi màu khung ngắm ngay trước mặt người đứng đó (§4.5.5h.1), còn phát tiếng cho nó thì **thông báo cái trượt của người ta ra cả phòng** — kiosk đặt ở cửa, người xung quanh nghe được. Tiếng nói "xong rồi, đi được" là thứ duy nhất người dùng cần nghe mà không phải nhìn màn. `attend_task` vì thế chỉ đẩy `APP_SOUND_OK` vào `q_audio`, và bảng `app_sound_t` giữ nguyên bốn giá trị để không phá hợp đồng của `app_events.h`.
 
-Font không nằm ở đây: bảng chữ 1bpp của kiosk biên dịch thẳng vào ảnh firmware (`assets/fonts/kiosk_sans_22.c`, §4.5.5h), vì nó phải vẽ được trước khi mount xong bất cứ thứ gì.
+Font không nằm ở đây: bốn bảng chữ 4bpp của kiosk biên dịch thẳng vào ảnh firmware (`assets/fonts/kiosk_ui_{15,20,24,28}.c`, §4.5.5h), vì chúng phải vẽ được trước khi mount xong bất cứ thứ gì.
 
 ### 6.3 Bảng dữ liệu — nằm ở đâu và vì sao
 
@@ -4912,7 +4964,7 @@ Font không nằm ở đây: bảng chữ 1bpp của kiosk biên dịch thẳng 
 | Bảng embedding (500 người × 512 chiều) | 1 MB nếu float32 — **256 KB nếu int8** | **PSRAM** (cache) + `storage` (bản gốc) | `MALLOC_CAP_SPIRAM` | Cosine search quét toàn bảng → phải ở RAM. **Khuyến nghị int8 + scale**, mất < 0.3% accuracy |
 | Log chấm công offline | tới 4 MB | **Flash LittleFS** | append-only | Chịu được mất điện |
 | Cert TLS + device JWT | ~4 KB | **NVS mã hoá** | `nvs_flash` + NVS encryption | |
-| Cover map của `ui_kiosk` | 320×104 + 168×46 + 320×480 (màn không video) | **PSRAM** | `heap_caps_malloc` | 1 byte mỗi pixel: 0 để lọt video, còn lại là mực / viền / nhấn (§4.5.5h) |
+| Cover map của `ui_kiosk` | 320×104 + 168×46 + 320×480 (màn không video) | **PSRAM** | `heap_caps_malloc` | 1 byte mỗi pixel: 4 bit chỉ số bảng màu (0 để lọt video) + 4 bit độ phủ (§4.5.5h) |
 | Wi-Fi + lwIP buffer | ~55 KB | **SRAM (bắt buộc)** | IDF tự quản | Không thể để PSRAM |
 | Stack 10 task | ~53 KB | **SRAM (bắt buộc)** | FreeRTOS | |
 
@@ -5010,7 +5062,7 @@ Con số phải mang sang E10-T1 không phải 71 KB mà là **mảnh liền m�
 LVGL xin quá mức đó ở RAM nội sẽ trượt dù tổng còn trống, đúng cơ chế đã hạ `arena_fast` xuống
 PSRAM; heap LVGL vì thế nằm ở PSRAM, nơi còn 5,8 MB.
 
-**Đo lại 18/09 khi hai khoản kia đã trả** (`arena.md` §13): giao diện sáu màn hình, `audio_task`
+**Đo lại 18/09 khi hai khoản kia đã trả** (`arena.md` §13): giao diện bảy màn hình, `audio_task`
 và một phiên Wi-Fi vào mạng thật đều đã lên.
 
 | Mốc | 13/09 | **18/09** |
@@ -5215,6 +5267,18 @@ Màn hình **Wi-Fi** làm đúng việc một chiếc điện thoại làm: qué
 chạm chọn, gõ mật khẩu, kết nối. Bàn phím ở đây **không dùng chung với bàn phím nhập tên** — tên
 người chỉ cần chữ cái, còn mật khẩu Wi-Fi cần cả hoa, thường, số và ký hiệu, nên nó có ba bộ ký
 tự đổi bằng một phím chuyển.
+
+**Nó vào từ Cài đặt, không từ menu gốc** (§4.5.5h.4): Wi-Fi là thuộc tính của máy, không phải
+một việc người vận hành mở máy ra để làm.
+
+**Cường độ sóng vẽ bằng vạch, không bằng số.** `-67` là đơn vị của người làm radio; bốn vạch cao
+dần là thứ mọi người đã đọc được sẵn từ điện thoại. Ngưỡng chia vạch là chuyện **hiển thị**, không
+phải ngưỡng nghiệp vụ, nên nó không sinh khoá nào cho §4.9. Mạng có khoá mang thêm hình ổ khoá.
+
+**Danh sách tự làm mới trong lúc đang mở.** Đứng nhìn một danh sách chết cho tới khi bấm "Quét
+lại" là thứ chỉ có trên thiết bị nhúng; điện thoại quét lại nền và danh sách tự đổi. Màn này
+xin quét lại mỗi `WIFI_RESCAN_MS` chừng nào nó còn đang hiện danh sách, và **dừng hẳn** khi
+người dùng đã chuyển sang gõ mật khẩu — quét thả link, nên quét trong lúc đang nối là tự phá.
 
 **Quét chạy ở `sync_task`, không ở `ui_task`.** `esp_wifi_scan_start(NULL, true)` chặn 2–4 giây
 và thả link trong lúc quét; đặt nó trên task vẽ màn hình là **màn hình đứng hình** đúng lúc người
