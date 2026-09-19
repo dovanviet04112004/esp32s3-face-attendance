@@ -168,11 +168,97 @@ def ts_fields(props: dict, required: list, indent: str) -> str:
     return "".join(out)
 
 
+def camel(name: str) -> str:
+    head, *rest = pascal(name)
+    return head.lower() + "".join(rest)
+
+
+def zod_expr(spec: dict) -> str:
+    kind = spec.get("type")
+    if "enum" in spec and kind == "string":
+        return "z.enum([" + ", ".join(json.dumps(v) for v in spec["enum"]) + "])"
+    if "enum" in spec and kind == "integer":
+        return "z.union([" + ", ".join(f"z.literal({v})" for v in spec["enum"]) + "])"
+    if kind == "string":
+        out = "z.string()"
+        if "minLength" in spec:
+            out += f".min({spec['minLength']})"
+        if "maxLength" in spec:
+            out += f".max({spec['maxLength']})"
+        if "pattern" in spec:
+            out += f".regex(new RegExp({json.dumps(spec['pattern'])}))"
+        return out
+    if kind in ("integer", "number"):
+        out = "z.number()" + (".int()" if kind == "integer" else "")
+        if "minimum" in spec:
+            out += f".min({spec['minimum']})"
+        if "exclusiveMinimum" in spec:
+            out += f".gt({spec['exclusiveMinimum']})"
+        if "maximum" in spec:
+            out += f".max({spec['maximum']})"
+        return out
+    if kind == "boolean":
+        return "z.boolean()"
+    if kind == "object":
+        inner = zod_fields(spec.get("properties", {}), spec.get("required", []), "  ")
+        return "z.object({\n" + inner + "})"
+    return "z.unknown()"
+
+
+def zod_fields(props: dict, required: list, indent: str) -> str:
+    out = []
+    for name, spec in props.items():
+        tail = "" if name in required else ".optional()"
+        out.append(f"{indent}{name}: {zod_expr(spec)}{tail},\n")
+    return "".join(out)
+
+
+def zod_conditionals(model: Model) -> str:
+    """Render `if/then` required-field rules as one superRefine block."""
+    rules = []
+    for clause in model.schema.get("allOf", []):
+        when = clause.get("if", {}).get("properties", {})
+        needs = clause.get("then", {}).get("required", [])
+        if len(when) != 1 or not needs:
+            continue
+        field, match = next(iter(when.items()))
+        if "const" not in match:
+            continue
+        names = ", ".join(json.dumps(n) for n in needs)
+        rules.append(
+            f"    if (value.{field} === {json.dumps(match['const'])}) {{\n"
+            f"      for (const name of [{names}] as const) {{\n"
+            f"        if (value[name] === undefined) {{\n"
+            f"          ctx.addIssue({{\n"
+            f"            code: \"custom\",\n"
+            f"            path: [name],\n"
+            f"            message: `${{name}} is required when {field} is "
+            f"{match['const']}`,\n"
+            f"          }});\n"
+            f"        }}\n"
+            f"      }}\n"
+            f"    }}\n"
+        )
+    if not rules:
+        return ""
+    return "\n  .superRefine((value, ctx) => {\n" + "".join(rules) + "  })"
+
+
 def render_ts(model: Model) -> str:
     body = ts_fields(model.properties, model.required, "  ")
     description = model.schema.get("description", "")
     doc = f"/** {description} */\n" if description else ""
-    return banner(model.source) + "\n" + doc + f"export interface {model.title} {{\n{body}}}\n"
+    interface = f"export interface {model.title} {{\n{body}}}\n"
+    closed = model.schema.get("additionalProperties") is False
+    opener = "z.strictObject({" if closed else "z.object({"
+    schema = (
+        f"\nexport const {camel(model.stem)}Schema = {opener}\n"
+        + zod_fields(model.properties, model.required, "  ")
+        + "})"
+        + zod_conditionals(model)
+        + ";\n"
+    )
+    return banner(model.source) + '\nimport { z } from "zod";\n\n' + doc + interface + schema
 
 
 def render_ts_index(models: list[Model]) -> str:
@@ -488,9 +574,26 @@ def render_topics_header(topics: list[Topic], id_max: int) -> str:
     return "".join(parts)
 
 
+def schema_stem(topic: Topic) -> str:
+    return topic.schema.rsplit("/", 1)[-1].split(".")[0] if topic.schema else ""
+
+
+def schema_const(topic: Topic) -> str:
+    """The zod export validating this topic's payload, or a permissive stand-in."""
+    stem = schema_stem(topic)
+    return f"{camel(stem)}Schema" if stem else "z.unknown()"
+
+
 def render_topics_ts(topics: list[Topic], id_max: int) -> str:
+    used = sorted({schema_stem(t) for t in topics if t.schema})
+    # A topic carries the validator its own yaml entry names, so no caller keeps
+    # a second table of which schema belongs to which topic.
+    imports = "".join(f'import {{ {camel(s)}Schema }} from "./{s}.js";\n' for s in used)
     parts = [
         banner("contracts/mqtt_topics.yaml"),
+        "\n",
+        'import { z, type ZodType } from "zod";\n\n',
+        imports,
         "\n",
         f"export const DEVICE_ID_MAX_LEN = {id_max};\n\n",
         "export type TopicName =\n",
@@ -504,6 +607,7 @@ def render_topics_ts(topics: list[Topic], id_max: int) -> str:
     parts.append("  readonly lastWill: boolean;\n")
     parts.append("  build(deviceId: string): string;\n")
     parts.append("  readonly wildcard: string;\n")
+    parts.append("  readonly schema: ZodType;\n")
     parts.append("}\n\n")
     parts.append("export const TOPICS: { readonly [K in TopicName]: TopicSpec } = {\n")
     for topic in topics:
@@ -521,6 +625,7 @@ def render_topics_ts(topics: list[Topic], id_max: int) -> str:
             f"    build: (deviceId: string) => `{head_tpl}${{deviceId}}{tail_tpl}`,\n"
         )
         parts.append(f"    wildcard: {json.dumps(wildcard)},\n")
+        parts.append(f"    schema: {schema_const(topic)},\n")
         parts.append("  },\n")
     parts.append("};\n")
     return "".join(parts)
