@@ -3532,6 +3532,21 @@ khi **khuôn mặt ấy rời khung** hoặc pipeline bắt sang người khác 
 §4.5.5d không xác thực lại một track đã khớp, và một track bị từ chối chỉ được thử lại theo nhịp
 `kRetryDetects` của pipeline, nên bảo người ta "đang nhận diện" giữa hai lần thử là nói sai.
 
+**Và luật ấy chỉ được thi hành ở một nơi: `svc_vision`.** Câu "đang nhận diện" là lời khẳng định
+rằng có model đang chạy, mà chỉ pipeline biết điều đó. Cho màn hình tự suy ra từ việc *nó đã
+nhận được phán quyết hay chưa* là dựng **nguồn sự thật thứ hai** cho cùng một sự kiện, và hai
+nguồn thì sẽ lệch: pipeline đóng sổ một track bằng `matched_`, còn màn hình chỉ biết đóng sổ khi
+có phán quyết **đi tới được nó**. Phán quyết ấy đi qua máy trạng thái chấm công, mà máy trạng
+thái có quyền không đổi trạng thái — chống chấm trùng là đúng một ca như vậy. Khi đó pipeline đã
+thôi nhìn khuôn mặt ấy trong khi màn hình vẫn nói nó đang nhìn, **và không có gì gỡ ra được**.
+
+Nên bảng trạng thái mang thêm một giá trị: **`FACE_SETTLED`** — có mặt trong khung, và máy **đã
+xong việc** với nó. Bất biến đi kèm, và nó là điều kiện đủ để câu "đang nhận diện" không bao giờ
+treo: **`FACE_OK` chỉ được báo ở đúng những bước mà `may_verify()` cho đi tiếp.** Hễ pipeline
+không định chạy model nào nữa trên track này thì nó nói `FACE_SETTLED`, và màn hình im lặng —
+không hướng dẫn, không khẳng định. Màn hình không còn suy luận gì về việc máy có đang làm hay
+không; nó chỉ chép lại.
+
 **Chỉ phán quyết về một khuôn mặt mới được sửa lời trên dải dưới.** `main` giữ loại phán quyết
 cuối để dịch sang câu chữ mỗi khi máy trạng thái đổi trạng thái, nhưng ba loại `NO_FACE`,
 `FACE_SMALL`, `FACE_OUT_OF_FRAME` **không phải phán quyết** — chúng là hướng dẫn căn khung và đã
