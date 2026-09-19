@@ -18,6 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKIP_DIR_PARTS = {
     ".git",
     "build",
+    "dist",
+    "dist-test",
     "node_modules",
     "managed_components",
     "third_party",
