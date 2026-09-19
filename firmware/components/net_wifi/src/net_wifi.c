@@ -209,6 +209,21 @@ esp_err_t net_wifi_rssi_dbm(int *out)
     return ESP_OK;
 }
 
+esp_err_t net_wifi_ssid(char *out, size_t cap)
+{
+    if (out == NULL || cap == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    out[0] = '\0';
+    if (!net_wifi_is_connected()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    wifi_ap_record_t ap;
+    APP_RETURN_ON_ERR(esp_wifi_sta_get_ap_info(&ap), TAG, "ap info");
+    strlcpy(out, (const char *)ap.ssid, cap);
+    return ESP_OK;
+}
+
 uint32_t net_wifi_disconnects(void)
 {
     return s_disconnects;

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -62,6 +63,12 @@ esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms)
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE offline | ESP_ERR_INVALID_ARG
  */
 esp_err_t net_wifi_rssi_dbm(int *out);
+
+/** Name of the access point the station is on, empty when it is on none.
+ *  @ctx task | non-blocking
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE offline | ESP_ERR_INVALID_ARG
+ */
+esp_err_t net_wifi_ssid(char *out, size_t cap);
 
 #ifdef __cplusplus
 }
