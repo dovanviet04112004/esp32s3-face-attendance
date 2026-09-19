@@ -127,6 +127,12 @@ bool ui_kiosk_enrol_complete(void);
  */
 const drv_lcd_overlay_t *ui_kiosk_overlay(void);
 
+/** How many overlays have been published since boot.
+ *  @ctx any | non-blocking | two inside one blit means a slot got reused mid-read
+ *  @ret a count that only rises
+ */
+uint32_t ui_kiosk_publishes(void);
+
 #ifdef __cplusplus
 }
 #endif

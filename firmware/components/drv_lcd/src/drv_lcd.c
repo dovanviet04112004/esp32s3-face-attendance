@@ -492,6 +492,9 @@ esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565
     if (overlay == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+    // This writes the whole panel too, so it tears the same way a frame does
+    // when the scan catches the write pointer (KEHOACH 2.3A).
+    wait_for_scan_lead();
     const int rows_per_strip = BOUNCE_PIXELS / APP_LCD_H_RES;
     for (int y = 0; y < APP_LCD_V_RES; y += rows_per_strip) {
         const int rows =

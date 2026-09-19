@@ -40,6 +40,7 @@ constexpr uint16_t wire(uint16_t rgb565)
 ui::Canvas *s_canvas[kSlots];
 drv_lcd_overlay_t s_slot[kSlots];
 std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
+std::atomic<uint32_t> s_published{ 0 };
 int s_next;
 uint32_t s_serial;
 bool s_ready;
@@ -83,6 +84,7 @@ void publish(const ui::Canvas &from)
     target->serial = ++s_serial;
     s_next = (s_next + 1) % kSlots;
     s_shown.store(target, std::memory_order_release);
+    s_published.fetch_add(1, std::memory_order_release);
 }
 
 // Every screen paints the clock, and a repaint needs a reason, so the minute
@@ -335,4 +337,9 @@ void ui_kiosk_set_settings(const char *const *lines, int count)
 const drv_lcd_overlay_t *ui_kiosk_overlay(void)
 {
     return s_shown.load(std::memory_order_acquire);
+}
+
+uint32_t ui_kiosk_publishes(void)
+{
+    return s_published.load(std::memory_order_acquire);
 }
