@@ -346,3 +346,32 @@ cầu chứ không thường trú, nên lúc nó chạy còn phải chia chỗ v
 có code.
 
 ---
+
+## 9. Sau khi `sync_task` lên — đo 19/09, profile `dev`
+
+`svc_sync` nối vào `app_tasks.c` (core 0, prio 2, 5.120 B stack). Đọc bằng lệnh `heap` của
+console ngay trên kiosk đang chạy đủ tải preview.
+
+| | Trước `sync_task` (§8) | Sau | Đổi |
+|---|---:|---:|---:|
+| Internal free | 33.015 B | **27.015 B** | −6.000 B |
+| Khối liền lớn nhất | 22.516 B | **17.396 B** | −5.120 B |
+| `min_free` từ lúc boot | — | 18.087 B | |
+| PSRAM free | — | 5.151.908 B | |
+
+**Khối liền tụt đúng bằng stack, không hơn một byte**: 22.516 − 5.120 = 17.396. Dự đoán ở §8.3
+trúng tuyệt đối, tức 5 KB ấy lấy nguyên từ mảnh liền lớn nhất chứ không nhặt từ chỗ vụn — đúng
+cách FreeRTOS cấp stack.
+
+Bản đồ vùng lúc đó:
+
+```
+0x3fcb763c  32.767 B   free 17.931   <- manh lien lon nhat
+0x600fe000   8.168 B   free  4.700   <- RTCRAM, khong chua duoc stack
+0x3fce9710  22.308 B   free      8   <- da day
+0x3fcb27c0 225.104 B   free  4.376   <- da day
+```
+
+`ota_task` 8.192 B của §5.2 vẫn lọt trong 17.396 B còn lại. Sau nó còn ~9,2 KB liền, nên
+**E13-T1 là task cuối cùng còn chỗ ở profile `dev`** — thêm task thường trú nữa thì phải lấy
+thêm từ đâu đó, không còn biên.
