@@ -5203,6 +5203,74 @@ không phải của broker.
 lúc biên dịch để nhúng, nên bản sao ấy nằm trong cây firmware và được commit; khoá riêng của CA
 cùng cặp khoá máy chủ thì không rời `deploy/emqx/certs/`.
 
+
+### 7.5 Vòng đời nhân viên — server giữ danh tính, máy giữ khuôn mặt
+
+**Hiện tại kiosk tự bịa `employee_id`.** `svc_facedb_next_employee_id()` lấy id lớn nhất trong
+bảng rồi cộng một. Với một máy thì chạy; với hai máy thì **cả hai cùng sinh ra id 1 cho hai
+người khác nhau**, và lúc gộp dữ liệu lên server không có cách nào tách ra. Đây là lỗi phải sửa
+trước khi có máy thứ hai, không phải tính năng còn thiếu.
+
+**Chia vai theo vòng đời, không theo nơi bấm nút.** Một nhân viên tồn tại trong công ty nhiều
+năm; một template khuôn mặt tồn tại trên **một máy cụ thể** và mất khi máy hỏng. Hai thứ vòng
+đời khác nhau thì không được chung một bản ghi:
+
+| Thứ | Chủ sở hữu | Khoá |
+|---|---|---|
+| Nhân viên tồn tại, tên, mã nhân sự | **server** | `employeeId` do server cấp |
+| Khuôn mặt đã có trên máy nào chưa | **server**, một dòng cho mỗi cặp | `(employeeId, deviceId)` |
+| Template thật | máy, và bản sao ở server | `(employeeId, templateIdx)` |
+
+**Trạng thái "đã thêm" phải theo từng máy, không phải một cờ.** Một fleet 5 kiosk thì "đã thêm"
+không trả lời được câu "thêm ở đâu". Dựng nó thành cờ boolean là thứ sẽ phải đập đi ngay khi
+gắn máy thứ hai.
+
+**Người vận hành *chọn* nhân viên, không *gõ* UID.** Gõ tay một mã dài trên bàn phím cảm ứng là
+mời gọi gõ nhầm — mà gõ nhầm ở đây nghĩa là **buộc khuôn mặt người này vào hồ sơ người kia**, một
+lỗi im lặng và nghiêm trọng: người A chấm công ra tên người B, và không ai phát hiện cho tới khi
+đối chiếu bảng lương. Nên server đẩy xuống **danh sách đang chờ đăng ký ở chính máy này**, màn
+hình hiện tên, người vận hành bấm chọn. Nếu buộc phải gõ thì gõ **mã ngắn** rồi màn hình **hiện
+tên lấy về để xác nhận trước khi chụp** — mấu chốt là con người phải thấy tên trước khi khuôn
+mặt bị gắn vào đó.
+
+**Tên hiển thị lấy từ server, không gõ lại ở máy.** Server đã có tên. Gõ lại là tạo hai cách
+viết cho một người, mà cái hiện trên màn hình sau khi khớp lại là cái gõ ở máy. Chỉ khi mất mạng
+mới cho gõ tay.
+
+**Báo "đã thêm" phải đi đường ít nhất một lần.** Máy có thể đăng ký lúc rớt mạng. Nếu tin báo
+ấy là một `publish` bắn đi rồi quên thì trạng thái trên server **lặng lẽ lệch** với thực tế dưới
+máy, và không ai biết cho tới khi ai đó không chấm được. Dùng lại đúng bộ máy của `svc_sync`:
+ghi xuống flash, gửi, đẩy con trỏ **sau** ack.
+
+**Xoá là chiều nguy hiểm nhất, và nó phải *hội tụ* chứ không *áp delta*.** Một lệnh xoá gửi lúc
+máy đang mất mạng mà chỉ gửi một lần thì **không bao giờ tới**, và hậu quả là khuôn mặt người đã
+nghỉ việc vẫn mở được cửa — hỏng nặng nhất mà hệ này có thể hỏng. Nên máy không chỉ nghe lệnh
+xoá: nó mang **số hiệu phiên bản danh sách** trong `heartbeat`, server thấy số cũ thì đẩy phần
+còn thiếu xuống, **kể cả các lượt xoá**. Máy mất mạng một tuần rồi nối lại vẫn tự về đúng trạng
+thái.
+
+`storage_face_record_t` đã có `STORAGE_FACE_FLAG_DELETED`, nên bia mộ có sẵn ở tầng lưu trữ:
+xoá mềm giữ được `employeeId` để đối chiếu, và `compact()` dọn khi quá 30% (§6.2.4).
+
+**Xoá ở màn hình máy là một *yêu cầu*, không phải sự thật.** Nếu máy tự xoá rồi coi như xong,
+lần hội tụ kế tiếp server sẽ đẩy người đó **quay lại**. Nên thao tác ấy gửi lên server, server
+quyết, rồi kết quả chảy xuống theo đúng đường hội tụ.
+
+**Template có rời khỏi máy không — đây là quyết định về quyền riêng tư, không phải kỹ thuật.**
+Nếu có: máy thứ hai nhận được người mà không phải chụp lại, và máy cháy flash thì khôi phục
+được. Nếu không: mỗi người phải đứng chụp ở từng máy, và một lần hỏng flash là mất sạch. Bản
+thân `enroll_payload.schema.json` đã có `embedding` cùng `updatedAt` — người viết schema đã giả
+định template có đi. **Chốt: template đi lên**, và vì nó là **dữ liệu sinh trắc**, server phải
+mã hoá lúc lưu và không bao giờ trả nó ra API đọc thường.
+
+**Đăng ký cần mạng, chấm công thì không.** Đăng ký là việc hành chính làm một lần, có người
+đứng cạnh; chấm công là việc hàng ngày phải chạy khi mất mạng. Bắt đăng ký phải có server là
+cách duy nhất giữ không gian id sạch — và nó xoá luôn chỗ `next_employee_id()` tự bịa ở trên.
+
+**Hợp đồng còn thiếu ba thứ cho tất cả những điều trên**: một topic `up/enroll` (chiều lên chưa
+tồn tại), một khoá tương quan để báo kết quả đăng ký, và `rosterVersion` trong `heartbeat`. Ba
+thứ ấy chốt cùng E11 vì chúng là giao thức hai đầu, không phải việc riêng của firmware.
+
 ---
 
 ## 8. Thứ tự thực hiện
