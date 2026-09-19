@@ -555,16 +555,17 @@ chỉ chính xác ~15% (cùng một giá trị thanh ghi đo hai lần ra 37,3 m
 đo preview chạy song song với AI thì chậm đi **16,6%** — blit sẽ thành ~37 ms khi `ai_task`
 chạy, lúc đó mức 30 Hz hết biên còn mức 23,26 Hz vẫn dư 14%.
 
-**Quét 23,26 Hz thì panel nhấp nháy, và cái chữa là VCOM chứ không phải tần số.** Điểm ảnh TFT
-được nạp lại thưa hơn nên mọi lệch điện áp chung (VCOM, `0xC5`) hiện ra thành rung sáng; ở 57 Hz
-cùng độ lệch đó mắt không thấy. Thư viện `esp_lcd_st7796` cài `0xC5 = 0x18` cho panel chung, và
-module này rung với giá trị đó — thấy rõ trên **xám tĩnh 50%**, tức là lỗi của panel, không phải
-của camera. Đo 11/09 bằng cách quét `0xC5` trên xám 50% ở 23,26 Hz, mỗi mức 6 s, mắt chấm:
-`0x00`–`0x28` rung, **`0x2C`–`0x34` êm**, `0x38`–`0x3C` rung lại. `drv_lcd` cài **`0x30`**, giữa
-dải êm để còn biên hai phía cho trôi nhiệt. Trên thang xám 5 dải (đen, 25%, 50%, 75%, trắng) thì
-**dải trắng vẫn rung** ở cả `0x2C`, `0x30`, `0x34` với đảo cực 1-dot (`0xB4 = 0x01`, mặc định thư
-viện) và cả 2-dot (`0x02`); chuyển sang **column inversion (`0xB4 = 0x00`)** thì trắng êm. `drv_lcd`
-cài cả hai.
+**`drv_lcd` chỉ ghi đúng một thanh ghi của panel: `FRMCTR1 (0xB1)`.** VCOM `0xC5` và kiểu đảo
+cực `0xB4` để nguyên như thư viện `esp_lcd_st7796` cài, vì **không phép đo nào đứng vững sau lưng
+việc đổi chúng**: quét `0xC5` cả dải `0x00`–`0x3C`, 16 bậc, trên nền trắng cho kết quả **phẳng**
+(bảng vùng đã loại ở dưới), còn nhấp nháy thì hoá ra là của **đèn nền** chứ không của tấm kính —
+cho panel ngủ hẳn mà dãy LED vẫn sáng thì nó vẫn nháy.
+
+Lần đo 11/09 từng chấm bằng mắt rằng `0x2C`–`0x34` êm còn column inversion làm dải trắng êm;
+cả hai kết quả ấy **không lặp lại được** ở lần nghiệm thu 18/09 với cùng cách đo và cùng module.
+Bài học ghi lại vì nó tái diễn được: **chấm bằng mắt trên một hiện tượng có nguyên nhân khác
+đang chi phối thì cho ra tương quan giả**, và một thanh ghi ghi theo tương quan giả là một thanh
+ghi không ai giải thích được về sau.
 
 **Nghiệm thu 18/09 lật lại kết luận trên: VCOM vô can.** Quét lại cả dải `0x00`–`0x3C`, 16 bậc,
 bấm tay từng bậc trên nền trắng — **gần như không đổi gì**, nên `0x30` của 11/09 là trùng hợp chứ
