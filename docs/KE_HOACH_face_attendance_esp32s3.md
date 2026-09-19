@@ -4148,6 +4148,19 @@ có `cmdId` lẫn loại sự kiện nào cho kết quả lệnh. Đây là hợ
 hợp đồng bị mở rộng: thêm `cmdId` (tuỳ chọn) cùng hai giá trị `COMMAND_DONE` và
 `COMMAND_REJECTED` là viết nốt điều nó đã hứa. Không phá vỡ gì vì chưa có ai tiêu thụ.
 
+**`up/event` — người phát chỉ ghi nhận, `sync_task` mới nói.** Bốn nơi trong firmware đã phát
+hiện đúng những tình huống hợp đồng liệt kê, và cả bốn đều **không được phép chờ mạng**:
+`ai_task` mất khung (`CAMERA_FAULT`), `tof_task` đọc lỗi khác timeout (`TOF_FAULT`),
+`attend_task` thấy `SPOOF`/`UNKNOWN`, và đường ghi log hỏng (`STORAGE_FAULT`). Nên chúng bỏ một
+bản ghi 72 B vào `q_event` rồi đi tiếp; `sync_task` gắn `deviceId` với `ts` và phát.
+
+**Và phải có van, vì lỗi phần cứng thì lặp.** Một camera hỏng sinh sự kiện mỗi 2 giây, tức
+1.800 gói mỗi giờ cho đúng một sự thật. Mỗi loại sự kiện vì thế có **khoảng cách tối thiểu
+riêng**: 60 s cho nhóm hỏng hóc — đủ để server thấy nó dai dẳng mà không bị ngập — và 2 s cho
+`SPOOF_DETECTED` với `UNKNOWN_FACE`, vì hai cái đó là **người**, không phải trạng thái, và hai
+lần thử cách nhau 5 giây là hai sự kiện thật. Van đặt ở người phát chứ không ở người gửi: chặn
+sớm thì hàng đợi không bao giờ đầy vì một sự thật duy nhất.
+
 
 **JWT — 2 loại token**
 
@@ -4382,6 +4395,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `q_audio` | Queue, depth 4, `sound_id_t` | 4 × 4 B | `attend_task`, `ui_task` | `audio_task` | Phát âm không được chặn nghiệp vụ |
 | `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
 | `q_cmd` | Queue, depth 4, `device_command_t` | 4 × ~160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
+| `q_event` | Queue, depth 8, `app_event_t` | 8 × 72 B | `ai_task`, `tof_task`, `attend_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 72 B chứ không phải `device_event_t` 304 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
 | `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
 | **`m_spi_lcd`** | Mutex | — | `ui_task`, `ota_task` (màn hình tiến trình) | — | 1 bus SPI, tránh xé khung hình |
