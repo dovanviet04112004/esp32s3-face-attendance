@@ -74,6 +74,8 @@ hardware/export/*.rpt
 *.key
 *.crt
 secrets/
+# Sinh bằng deploy/emqx/gen_certs.sh; khoá riêng không bao giờ rời máy dựng
+deploy/emqx/certs/
 
 # ── Công cụ AI agent — chỉ dùng ở máy local, không lên remote ──
 .claude/

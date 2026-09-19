@@ -6,9 +6,8 @@ services:
     container_name: kiosk-emqx
     restart: unless-stopped
     ports:
-      # 8883 here carries the demo cert baked into the image, whose private key
-      # is public, so production publishes 8883 alone (KEHOACH 4.8).
-      - "1883:1883"
+      # Only MQTTS reaches the network; emqx.conf keeps 1883 on the container's
+      # own loopback for emqx ctl (KEHOACH 7.4).
       - "8883:8883"
       # The dashboard never leaves the host: bound to loopback on purpose.
       - "127.0.0.1:18083:18083"
@@ -20,6 +19,10 @@ services:
       # offline of a kiosk that is powered off across a broker restart.
       EMQX_RETAINER__BACKEND__STORAGE_TYPE: disc
     volumes:
+      - ./emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./emqx/acl.conf:/opt/emqx/etc/kiosk-acl.conf:ro
+      # A separate path leaves the image's own demo certs where EMQX expects them.
+      - ./emqx/certs:/opt/emqx/etc/kiosk-certs:ro
       - emqx-data:/opt/emqx/data
       - emqx-log:/opt/emqx/log
     healthcheck:
