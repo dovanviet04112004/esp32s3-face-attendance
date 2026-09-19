@@ -34,6 +34,29 @@ bool net_wifi_is_connected(void);
  */
 uint32_t net_wifi_disconnects(void);
 
+#define NET_WIFI_SSID_CAP 33
+#define NET_WIFI_PASS_CAP 65
+#define NET_WIFI_SCAN_CAP 12
+
+/** One access point the radio heard. */
+typedef struct {
+    char ssid[NET_WIFI_SSID_CAP];
+    int rssi_dbm;
+    bool open;                            // no passphrase needed
+} net_wifi_ap_t;
+
+/** Sweep the channels and fill out with the strongest networks heard.
+ *  @ctx task | blocking 2-4 s | never call it from ui_task, it repaints
+ *  @ret how many it wrote, never more than cap
+ */
+size_t net_wifi_scan(net_wifi_ap_t *out, size_t cap);
+
+/** Store credentials and bring the station back up on them.
+ *  @ctx task | blocking | writes wifi/ssid and wifi/pass (KEHOACH 6.2.1)
+ *  @ret ESP_OK | ESP_ERR_INVALID_ARG | ESP_ERR_TIMEOUT when it will not join
+ */
+esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms);
+
 /** Signal strength of the access point the station is on.
  *  @ctx task | non-blocking | dBm, negative; untouched when not connected
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE offline | ESP_ERR_INVALID_ARG

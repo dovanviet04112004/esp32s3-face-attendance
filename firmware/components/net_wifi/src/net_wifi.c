@@ -138,6 +138,63 @@ bool net_wifi_is_connected(void)
     return s_state != NULL && (xEventGroupGetBits(s_state) & CONNECTED_BIT) != 0;
 }
 
+size_t net_wifi_scan(net_wifi_ap_t *out, size_t cap)
+{
+    if (out == NULL || cap == 0 || s_state == NULL) {
+        return 0;
+    }
+    // A blocking sweep is what keeps the caller from having to hold state
+    // across an event, and the radio drops the link for its duration.
+    if (esp_wifi_scan_start(NULL, true) != ESP_OK) {
+        return 0;
+    }
+    uint16_t heard = (uint16_t)(cap < NET_WIFI_SCAN_CAP ? cap : NET_WIFI_SCAN_CAP);
+    wifi_ap_record_t found[NET_WIFI_SCAN_CAP];
+    if (esp_wifi_scan_get_ap_records(&heard, found) != ESP_OK) {
+        esp_wifi_clear_ap_list();
+        return 0;
+    }
+    size_t kept = 0;
+    for (uint16_t i = 0; i < heard && kept < cap; ++i) {
+        if (found[i].ssid[0] == '\0') {
+            continue;
+        }
+        strlcpy(out[kept].ssid, (const char *)found[i].ssid, sizeof(out[kept].ssid));
+        out[kept].rssi_dbm = found[i].rssi;
+        out[kept].open = found[i].authmode == WIFI_AUTH_OPEN;
+        ++kept;
+    }
+    ESP_LOGI(TAG, "scan heard %u networks, kept %u", (unsigned)heard, (unsigned)kept);
+    return kept;
+}
+
+esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms)
+{
+    if (ssid == NULL || ssid[0] == '\0' || s_state == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const char *secret = pass != NULL ? pass : "";
+    wifi_config_t cfg = { 0 };
+    strlcpy((char *)cfg.sta.ssid, ssid, sizeof(cfg.sta.ssid));
+    strlcpy((char *)cfg.sta.password, secret, sizeof(cfg.sta.password));
+    cfg.sta.threshold.authmode = secret[0] == '\0' ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+    xEventGroupClearBits(s_state, CONNECTED_BIT);
+    esp_wifi_disconnect();
+    APP_RETURN_ON_ERR(esp_wifi_set_config(WIFI_IF_STA, &cfg), TAG, "config");
+    APP_RETURN_ON_ERR(esp_wifi_connect(), TAG, "connect");
+    const esp_err_t joined = net_wifi_wait_connected(timeout_ms);
+    if (joined != ESP_OK) {
+        ESP_LOGW(TAG, "%s refused us, credentials not written", ssid);
+        return joined;
+    }
+    // Only a network that answered is worth keeping: a typo written to nvs
+    // locks the kiosk out of the one network it can still reach.
+    APP_RETURN_ON_ERR(sys_storage_set_str(STORAGE_NS_WIFI, NVS_SSID, ssid), TAG, "ssid");
+    APP_RETURN_ON_ERR(sys_storage_set_str(STORAGE_NS_WIFI, NVS_PASS, secret), TAG, "pass");
+    ESP_LOGI(TAG, "joined %s and kept it", ssid);
+    return ESP_OK;
+}
+
 esp_err_t net_wifi_rssi_dbm(int *out)
 {
     if (out == NULL) {
