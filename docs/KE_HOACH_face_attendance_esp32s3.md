@@ -4147,11 +4147,18 @@ backend/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
     │   ├── users/    ├── employees/  ├── devices/   ├── enrollment/
     │   ├── attendance/ ├── shifts/   ├── reports/   ├── models/
-    │   ├── mqtt/     ├── realtime/   └── audit/
+    │   ├── mqtt/     ├── realtime/   ├── audit/
+    │   │                             # ── §9 quản trị nhân sự ──
+    │   ├── org/                      # Department (cây), JobTitle, hợp đồng
+    │   ├── leave/                    # loại phép, số dư, đơn, luồng duyệt
+    │   ├── payroll/                  # kỳ lương, lượt chạy, phiếu, dòng phiếu
+    │   ├── compensation/             # lương theo thời hạn, người phụ thuộc
+    │   ├── policy/                   # PayrollPolicy + TaxBracket theo ngày hiệu lực
+    │   └── timesheet/                # AttendanceDay: từ lượt quẹt thành ngày công
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
     │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
-    │   └── processors/{image, report, notify}.processor.ts
+    │   └── processors/{image, report, notify, timesheet, payroll}.processor.ts
     └── database/{database.module.ts, prisma.service.ts, redis.service.ts}
 ```
 
@@ -4396,7 +4403,15 @@ frontend/
 │           ├── employees/{page.tsx, [id]/page.tsx, new/page.tsx}
 │           ├── attendance/{page.tsx, [id]/page.tsx}  # [id] là nhân viên: lịch sử của họ
 │           ├── devices/{page.tsx, [id]/page.tsx}      # online, OTA, log
-│           ├── shifts/page.tsx  ├── reports/page.tsx  └── settings/page.tsx
+│           ├── shifts/page.tsx  ├── reports/page.tsx  ├── settings/page.tsx
+│           │                                          # ── §9 quản trị nhân sự ──
+│           ├── me/{page.tsx, attendance/page.tsx, leave/page.tsx, payslips/page.tsx}
+│           ├── approvals/page.tsx                     # hộp chờ duyệt của MANAGER
+│           ├── org/{page.tsx, departments/page.tsx}   # cây tổ chức
+│           ├── leave/{page.tsx, [id]/page.tsx}        # HR nhìn toàn bộ đơn
+│           ├── timesheet/page.tsx                     # bảng công tháng, sửa có vết
+│           ├── payroll/{page.tsx, [periodId]/page.tsx}
+│           └── policy/page.tsx                        # giảm trừ, tỷ lệ, biểu thuế
 ├── messages/{vi.json, en.json}       # ★ catalogue — vi.json là nguồn kiểu (§3.1 CLAUDE.md)
 ├── i18n/
 │   ├── routing.ts                    # danh sách locale + locale mặc định
@@ -4565,6 +4580,9 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
 | Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
 | Ngưỡng nghiệp vụ (**tin cậy phát hiện mặt**, khớp mặt, liveness, chống trùng) | NVS trên kiosk, `SET_CONFIG` từ server | đọc cấu hình lúc chạy |
+| Giảm trừ gia cảnh, tỷ lệ BHXH/BHYT/BHTN, trần đóng | bảng `PayrollPolicy`, có `effectiveFrom` (§9.7) | đọc chính sách **hiệu lực tại ngày cuối kỳ**, không đọc "hiện tại" |
+| Biểu thuế luỹ tiến từng phần | bảng `TaxBracket`, có `effectiveFrom` (§9.7) | như trên |
+| Lương cơ bản, lương đóng bảo hiểm, phụ cấp | `CompensationRecord`, có `effectiveFrom` (§9.6) | **thêm dòng mới**, không sửa đè dòng cũ |
 | Chuỗi hiển thị trên kiosk | `ui_kiosk/priv_include/strings.hpp` (`enum class StrId`) | `ui::text(StrId::X)`, **không gõ chuỗi vào `screens.cpp`** |
 | Chuỗi hiển thị trên dashboard | `frontend/messages/{vi,en}.json` | `useTranslations()` của next-intl |
 | Ngôn ngữ đang chọn | kiosk: NVS `ui/lang` (§6.2.1) · dashboard: đoạn locale đầu URL | `ui_kiosk_set_language()` · `params.locale` |
@@ -5646,3 +5664,262 @@ Firmware nền chạy song song với ba nhánh model, không phải đợi.
 **Dữ liệu — nguồn thật đang dùng** (trang chủ của dataset ở §1.2): [WIDER FACE](https://huggingface.co/datasets/wider_face) · [RetinaFace 5-landmark](https://github.com/deepinsight/insightface/tree/master/detection/retinaface) · [CelebA-Spoof](https://huggingface.co/datasets/Ar4ikov/celebA_spoof) · [NUAA](https://huggingface.co/datasets/akahana/anti-spoofing-nuaaaa) · [UniqueData live](https://huggingface.co/datasets/UniqueData/anti-spoofing_Real) · [UniqueData replay](https://huggingface.co/datasets/UniqueData/anti-spoofing_replay) · [AxonData masks](https://huggingface.co/datasets/AxonData/face-anti-spoofing-dataset) · [MS1MV3](https://huggingface.co/datasets/gaunernst/ms1mv3-recordio) · [Glint360K](https://huggingface.co/datasets/gaunernst/glint360k-wds-gz) · [benchmark nhận diện](https://huggingface.co/datasets/gaunernst/face-recognition-eval)
 
 **Nền tảng**: [esp-tflite-micro](https://components.espressif.com/components/espressif/esp-tflite-micro) · [ESP-NN](https://github.com/espressif/esp-nn) · [TFLite Micro memory management](https://github.com/tensorflow/tflite-micro/blob/main/tensorflow/lite/micro/docs/memory_management.md) · [esp32-camera](https://github.com/espressif/esp32-camera) · [ESP-IDF partition table](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/partition-tables.html) · [Pinout board GOOUUU ESP32-S3-CAM](https://github.com/profharris/GOOUUU_ESP32-S3-CAM)
+
+---
+
+## 9. Quản trị nhân sự — từ bảng chấm công thành hệ HR
+
+### 9.1 Ranh giới: cái gì thuộc phần này, cái gì không
+
+Phần §1–§8 dựng một **thiết bị chấm công** và một bảng điều khiển cho nó. Phần này dựng thứ
+dùng dữ liệu ấy: hồ sơ nhân sự, nghỉ phép, lương, và cổng cho chính người lao động. Ranh giới
+đặt ở đúng một chỗ: **kiosk không biết gì về lương**. Nó gửi lượt chấm công và nhận danh sách
+người cần nhận diện, hết. Mọi thứ trong §9 sống ở server.
+
+Lý do không chỉ là gọn: firmware đi qua OTA và một board ngoài hiện trường có thể chạy bản cũ
+hàng tháng. Cho nó biết quy tắc tính công là chấp nhận việc hai máy cạnh nhau tính khác nhau
+cùng một ngày.
+
+**Ngoài phạm vi, có chủ ý**: tuyển dụng, đánh giá năng lực, đào tạo. Ba thứ ấy là hệ riêng,
+gắn vào HR qua `employeeId` chứ không chia bảng, và không có cái nào chặn việc trả lương.
+
+### 9.2 Ba chỗ hệ hiện tại không đỡ nổi quy mô này
+
+Không phải phỏng đoán — cả ba đọc ra được từ code đang chạy.
+
+**Bảng tổng hợp nạp toàn bộ bản ghi vào Node.** `reports.service.ts` gọi `findMany` trên cả
+dải thời gian rồi gom bằng một `Map` trong JavaScript. Ở 30 nghìn nhân viên, hai lượt mỗi ngày,
+một tháng là **1,8 triệu dòng** phải qua mạng, qua bộ giải mã, rồi nằm trong heap Node cùng lúc.
+Đây là chỗ gãy trước tiên và gãy dứt khoát.
+
+**`User` và `Employee` không nối với nhau.** Hai bảng rời, không khoá ngoại nào. Nghĩa là
+**người lao động hiện không đăng nhập được** — chỉ có tài khoản quản trị. Không có cổng nhân
+viên nào dựng được trước khi sửa chỗ này.
+
+**`Employee.department` là một chuỗi.** Không có cây tổ chức, không có người quản lý trực tiếp,
+nên câu hỏi "ai duyệt đơn này" và "trưởng phòng thấy được những ai" không có đường trả lời.
+
+### 9.3 Mô hình dữ liệu
+
+Nhóm theo việc, không theo bảng. Mọi bảng dưới đây nằm ở `backend/prisma/schema.prisma`.
+
+**Tổ chức**
+
+| Bảng | Giữ gì | Ghi chú thiết kế |
+|---|---|---|
+| `Department` | mã, tên, `parentId`, trung tâm chi phí, trưởng đơn vị | cây tự tham chiếu; truy vấn con cháu bằng CTE đệ quy |
+| `JobTitle` | mã, tên, bậc | tách khỏi phòng ban: một chức danh tồn tại ở nhiều phòng |
+| `EmploymentContract` | loại, ngày bắt đầu, ngày kết thúc, trạng thái | **nhiều bản một người**, vì tái ký là hợp đồng mới chứ không phải sửa hợp đồng cũ |
+
+**Nhân sự** — `Employee` mở rộng: `departmentId`, `jobTitleId`, `managerId` (tự tham chiếu),
+`hireDate`, `dateOfBirth`, `personalEmail`, `phone`, `taxCode`, `bankAccount`, `photoUrl`.
+`department` dạng chuỗi **bỏ đi**, dữ liệu cũ đổ sang `Department` theo tên.
+
+**Đăng nhập** — `User` thêm `employeeId` (tuỳ chọn, duy nhất). Tài khoản quản trị thuần vẫn để
+trống ô ấy; tài khoản của người lao động trỏ về hồ sơ của họ. **Không gộp hai bảng**: một người
+nghỉ việc thì hồ sơ phải ở lại vĩnh viễn cho bảng lương năm cũ, còn tài khoản thì phải tắt ngay.
+Hai vòng đời khác nhau là hai bảng.
+
+**Nghỉ phép** — `LeaveType`, `LeaveBalance`, `LeaveRequest`, `LeaveApproval`.
+
+**Lương** — `CompensationRecord`, `PayrollPeriod`, `PayrollRun`, `Payslip`, `PayslipLine`,
+`Dependent`.
+
+**Chính sách** — `PayrollPolicy`, `TaxBracket`. Xem §9.7.
+
+**Ngày công** — `AttendanceDay`. Xem §9.8.
+
+### 9.4 Vai trò và phạm vi nhìn thấy
+
+`Role` hiện có `ADMIN`, `HR`, `VIEWER`. Bộ đó không tả nổi bài toán này, vì **quyền ở đây không
+phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng nào"**.
+
+| Vai | Thấy | Sửa |
+|---|---|---|
+| `EMPLOYEE` | hồ sơ của **chính mình**, chấm công của mình, phép của mình, phiếu lương của mình | đơn nghỉ phép của mình, vài ô liên lạc |
+| `MANAGER` | mọi thứ của `EMPLOYEE`, cộng **cây dưới quyền mình** | duyệt hoặc từ chối đơn của cấp dưới |
+| `HR` | toàn bộ hồ sơ, chấm công, nghỉ phép | hồ sơ, hợp đồng, phép, phân ca |
+| `PAYROLL` | như `HR`, cộng **lương và phiếu lương** | chạy kỳ lương, chốt kỳ |
+| `ADMIN` | tất cả, cộng thiết bị và người dùng | tất cả |
+
+**Tách `PAYROLL` khỏi `HR` là quyết định có chủ ý.** Người sửa hồ sơ và người chốt bảng lương
+không nên là cùng một tài khoản: ai đổi được lương cơ bản rồi tự chạy kỳ lương thì không còn
+ai đối chiếu. Tách ra là bước rẻ nhất để có được điều đó.
+
+**Phạm vi dòng thi hành ở tầng service, không ở tầng controller.** Guard chỉ trả lời "vai này
+được gọi đường này không"; câu hỏi "được thấy dòng nào" phải đi vào chính mệnh đề `where`. Đặt
+nó ở controller là sớm muộn có một endpoint quên lọc và trả cả bảng lương công ty cho một người.
+Nên mọi service của §9 nhận một **`Viewer`** (id người gọi, vai, id nhân viên, tập phòng ban
+dưới quyền) và tự thu hẹp truy vấn.
+
+Cây dưới quyền tính bằng **CTE đệ quy trên `managerId`**, có nhớ đệm, vì một trưởng bộ phận ở
+công ty mười nghìn người có thể có vài nghìn cấp dưới và hỏi lại mỗi request là tự phạt.
+
+### 9.5 Nghỉ phép
+
+`LeaveType` khai từng loại: phép năm, nghỉ ốm, nghỉ không lương, nghỉ chế độ. Mỗi loại mang
+**có trả lương hay không**, số ngày tích luỹ một năm, và trần chuyển sang năm sau.
+
+`LeaveBalance` giữ **một dòng mỗi người mỗi loại mỗi năm**: số ngày được hưởng, đã dùng, chuyển
+từ năm trước. Không tính lại từ đầu mỗi lần hỏi — một phép cộng trên cả lịch sử là thứ chậm dần
+đều theo tuổi hệ thống.
+
+`LeaveRequest` đi qua máy trạng thái `DRAFT → PENDING → APPROVED | REJECTED | CANCELLED`.
+
+**Số dư trừ lúc duyệt, không trừ lúc gửi đơn.** Gửi đơn mà trừ ngay thì một đơn bị từ chối phải
+hoàn lại, và mọi phép hoàn lại đều là chỗ để lệch. Nhưng **số dư phải được giữ chỗ** lúc gửi,
+nếu không một người gửi ba đơn chồng nhau sẽ được duyệt cả ba. Nên `LeaveBalance` mang hai ô:
+`taken` (đã duyệt) và `pending` (đang chờ), và phép kiểm là `entitled - taken - pending >= xin`.
+
+**Đơn chồng ngày bị chặn ở tầng dữ liệu**, bằng ràng buộc loại trừ trên khoảng ngày, chứ không
+chỉ kiểm trong code — hai request song song thì phép kiểm trong code cho qua cả hai.
+
+Một ngày nghỉ đã duyệt **ghi vào `AttendanceDay`** của ngày đó với trạng thái tương ứng, nên
+bảng công và bảng lương không phải hỏi hai nguồn rồi tự hoà giải.
+
+### 9.6 Lương
+
+**Lương là dữ liệu có thời hạn, không phải một ô để sửa đè.** `CompensationRecord` mang
+`effectiveFrom` và không bao giờ bị sửa tại chỗ: tăng lương là **thêm một dòng**. Phiếu lương
+tháng Ba phải tính bằng mức của tháng Ba kể cả khi tháng Tư đã tăng, và cách duy nhất giữ được
+điều đó sau hai năm là không bao giờ đánh mất mức cũ.
+
+Mỗi dòng giữ: lương cơ bản, **lương đóng bảo hiểm** (khác lương cơ bản ở rất nhiều nơi), phụ
+cấp cố định, và lý do thay đổi.
+
+**Kỳ lương và lượt chạy tách nhau.** `PayrollPeriod` là tháng lương, có trạng thái
+`OPEN → LOCKED → PAID`. `PayrollRun` là **một lần tính**, và một kỳ có thể có nhiều lượt: chạy
+nháp, xem, sửa, chạy lại. Chỉ khi kỳ `LOCKED` thì phiếu mới là bản chính thức.
+
+**Chốt kỳ đóng băng đầu vào.** Sau khi `LOCKED`, một lượt chấm công gửi muộn hoặc một đơn nghỉ
+duyệt muộn **không** đổi phiếu đã phát. Nó vào kỳ sau như một khoản truy lĩnh. Không có luật này
+thì con số đã gửi cho nhân viên có thể tự đổi sau lưng họ.
+
+`Payslip` giữ tổng; `PayslipLine` giữ từng khoản, mỗi khoản một dòng với mã, nhãn và số tiền,
+phân loại thành khoản cộng và khoản trừ. **Không nhét vào một ô JSON**: câu hỏi "quý này trả
+bao nhiêu tiền tăng ca toàn công ty" phải trả lời được bằng một phép gộp SQL.
+
+Tiền lưu bằng **số nguyên đơn vị đồng**, không dùng dấu phẩy động. `Decimal` của Postgres cho
+cột tổng.
+
+### 9.7 Thuế và bảo hiểm là dữ liệu, không phải hằng số trong code
+
+Đây là chỗ §4.9 áp dụng mạnh nhất, vì các con số này **đổi theo nghị quyết**, không theo ý
+người viết code. Mức giảm trừ gia cảnh vừa tăng 40% từ 01/01/2026 theo Nghị quyết
+110/2025/UBTVQH15 — **15.500.000 đ/tháng** cho bản thân và **6.200.000 đ** mỗi người phụ thuộc,
+thay cho 11 triệu và 4,4 triệu. Một hệ gõ 11.000.000 vào một hàm sẽ trả sai lương cho cả công
+ty vào đúng kỳ đầu năm, và không ai biết cho tới khi có người khiếu nại.
+
+Nên hai bảng, cả hai có `effectiveFrom`:
+
+- `PayrollPolicy` — giảm trừ bản thân, giảm trừ người phụ thuộc, tỷ lệ BHXH **8%**, BHYT
+  **1,5%**, BHTN **1%** phía người lao động, và **trần đóng bằng 20 lần mức tham chiếu**.
+- `TaxBracket` — biểu thuế luỹ tiến từng phần, mỗi bậc một dòng.
+
+Phép tính lương **luôn hỏi chính sách có hiệu lực tại ngày cuối kỳ**, không hỏi "chính sách hiện
+tại". Tính lại một kỳ cũ vì thế ra đúng con số cũ.
+
+### 9.8 Từ lượt chấm công thành ngày công
+
+`AttendanceRecord` là sự kiện thô: người này quẹt mặt lúc này ở máy này. Bảng lương cần thứ
+khác hẳn: **ngày này người này làm bao nhiêu phút, muộn bao nhiêu, tăng ca bao nhiêu**.
+
+`AttendanceDay` giữ đúng thứ ấy, một dòng mỗi người mỗi ngày: giờ vào đầu, giờ ra cuối, phút
+làm việc, phút muộn, phút về sớm, phút tăng ca, trạng thái (`WORKED`, `LEAVE`, `HOLIDAY`,
+`ABSENT`, `WEEKEND`), và ca áp dụng.
+
+**Một bảng, hai việc, và đó là lý do nó đáng có.** Nó vừa là đầu vào của bảng lương, vừa là thứ
+chữa chỗ gãy ở §9.2: báo cáo đọc **ba mươi nghìn dòng một ngày** thay vì một triệu tám trăm
+nghìn lượt quẹt.
+
+Dựng bằng một job chạy đêm cho ngày hôm trước, cộng một lượt dựng lại theo yêu cầu khi có sửa
+chữa thủ công. **Ngày hôm nay không nằm trong bảng** — nó tính trực tiếp từ lượt quẹt, vì hôm
+nay còn đang diễn ra và một dòng tổng kết giữa chừng là một dòng sai.
+
+Sửa tay được, nhưng **phải để lại vết**: `AttendanceDay` mang `adjustedBy` và `adjustReason`.
+Một bảng công mà HR sửa được không dấu vết thì không dùng để trả lương được.
+
+### 9.9 Truy vấn khi số nhân viên lên hàng chục nghìn
+
+Sáu luật, mỗi luật chữa một chỗ gãy cụ thể.
+
+**1. Không bao giờ gom ở Node.** Mọi con số tổng hợp đi bằng `groupBy` hoặc SQL gộp. Luật này
+tồn tại vì §9.2 cho thấy chính hệ này đã vi phạm nó.
+
+**2. `AttendanceRecord` chia mảnh theo tháng.** Phân mảnh dải trên `ts`, một mảnh một tháng.
+Truy vấn một tháng chỉ chạm một mảnh, và dọn dữ liệu quá hạn là `DROP` một mảnh chứ không phải
+`DELETE` vài triệu dòng. Chỉ làm khi bảng thật sự lớn — phân mảnh sớm là tự thêm việc vận hành
+mà chưa được gì.
+
+**3. Danh sách dài đi bằng con trỏ, không bằng `OFFSET`.** `OFFSET 50000` bắt Postgres đếm qua
+50 nghìn dòng rồi vứt đi. Bảng nhân viên và bảng chấm công dùng khoá con trỏ `(ts, id)`.
+
+**4. Tìm tên có dấu đi bằng chỉ mục ba chữ.** `ILIKE '%nguyen%'` không dùng được chỉ mục B-tree.
+Cần `pg_trgm` với chỉ mục GIN trên tên và mã.
+
+**5. Việc sống lâu hơn một request thì vào hàng đợi.** Chạy lương cho ba mươi nghìn người không
+phải là một lượt HTTP. `PayrollRun` chia lô theo phòng ban, mỗi lô một job BullMQ, có `attempts`
+và `backoff`, và **idempotent theo `(runId, employeeId)`** để giao hai lần không đẻ hai phiếu.
+
+**6. Đếm chính xác chỉ khi cần chính xác.** `COUNT(*)` trên bảng vài triệu dòng là quét toàn
+bảng. Phân trang hiển thị "hơn 10.000" thay vì con số đúng khi vượt ngưỡng.
+
+Chỉ mục đi kèm: `Employee(departmentId, active)`, `Employee(managerId)`,
+`AttendanceDay(employeeId, date)`, `AttendanceDay(date)`, `LeaveRequest(employeeId, state)`,
+`LeaveRequest(state, from)`, `Payslip(runId)`, `Payslip(employeeId, periodId)`.
+
+### 9.10 Cổng nhân viên và cổng quản lý
+
+**Một ứng dụng, ba khuôn mặt, không phải ba ứng dụng.** Cùng một bản Next.js, và trang chủ đổi
+theo vai. Dựng riêng một cổng nhân viên nghĩa là nuôi hai bản đăng nhập, hai bộ gọi API và hai
+chỗ để quên vá.
+
+| Vai | Trang chủ mở ra cái gì |
+|---|---|
+| `EMPLOYEE` | chấm công tháng này của mình, số phép còn lại, phiếu lương gần nhất, nút xin nghỉ |
+| `MANAGER` | **hộp chờ duyệt**, ai vắng hôm nay, lịch nghỉ của nhóm |
+| `HR` / `PAYROLL` | nhân sự biến động, chấm công bất thường, tình trạng kỳ lương |
+| `ADMIN` | như trên, cộng sức khoẻ thiết bị |
+
+**Hộp chờ duyệt là màn hình quan trọng nhất của `MANAGER`.** Nó phải trả lời một câu trong hai
+giây: *còn gì đang đợi tôi*. Không phải một bảng để lọc, mà một danh sách việc, mỗi dòng có đủ
+ngữ cảnh để quyết ngay tại chỗ — ai, loại phép gì, mấy ngày, còn bao nhiêu dư, ai khác trong
+nhóm cũng nghỉ hôm đó.
+
+### 9.11 Phiếu lương gửi đi bằng đường nào
+
+**Mặc định gửi thông báo kèm đường dẫn, không đính kèm phiếu.** Một phiếu lương PDF trong hộp
+thư là một phiếu lương nằm trong bản sao lưu của nhà cung cấp mail, trong máy chủ trung chuyển,
+và trong mọi lần chuyển tiếp nhầm. Đường dẫn vào cổng nhân viên thì đòi đăng nhập và để lại
+nhật ký ai đã xem.
+
+Vẫn có đường đính kèm cho nơi bắt buộc phải làm vậy, nhưng nó là **một lựa chọn phải bật**, và
+khi bật thì PDF đặt mật khẩu. Không đặt nó làm mặc định.
+
+Gửi đi qua hàng đợi `notify` đã có, một job một người, idempotent theo `payslipId` — hàng đợi
+giao ít nhất một lần, và không ai muốn nhận phiếu lương hai lần.
+
+### 9.12 Giao diện: nhịp của một hệ quản trị nhân sự
+
+Đây là phần mềm người ta mở tám tiếng một ngày, không phải trang giới thiệu. Nên nhịp của nó là
+**dày mà đọc được**, không phải thoáng mà rỗng.
+
+**Bốn luật hình thức**
+
+1. **Dẫn bằng việc, không dẫn bằng số.** Trang chủ của người duyệt mở ra danh sách việc đang
+   đợi, không mở ra bốn thẻ số liệu to. Thẻ số liệu to chỉ đúng khi con số ấy là thứ người ta
+   vào để xem, và với HR thì hiếm khi vậy.
+2. **Trạng thái mang hình dạng, không chỉ mang màu.** Đang chờ, đã duyệt, từ chối, quá hạn —
+   mỗi thứ một viên nhãn có chữ. Màu là lớp thứ hai, vì một phần trăm nam giới không phân biệt
+   được đỏ với lục.
+3. **Bảng là công cụ, không phải bản in.** Cột số căn phải và dùng chữ số đều bề ngang; hàng
+   giữ nguyên chiều cao; cột quan trọng đứng yên khi cuộn ngang.
+4. **Tiền và giờ không bao giờ hiện trần.** Một con số lương luôn đi kèm đơn vị và kỳ; một con
+   số giờ luôn nói rõ là giờ làm hay giờ tăng ca.
+
+**Bảng màu** giữ nguyên bộ đã có ở `globals.css` và thêm đúng những gì trạng thái đòi. Vai trò
+của màu nhấn không đổi: nó dành cho hành động chính, không rải khắp nơi.
+
+**Màn hình tối thiểu để chạy được**: danh bạ nhân viên, hồ sơ một người, cây tổ chức, đơn nghỉ
+phép, hộp chờ duyệt, bảng công tháng, phiếu lương của tôi, chạy kỳ lương, cấu hình chính sách.
+Chín màn ấy là ranh giới giữa "chạy được" và "trình diễn được".
