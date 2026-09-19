@@ -176,7 +176,9 @@ def render_ts(model: Model) -> str:
 
 
 def render_ts_index(models: list[Model]) -> str:
-    lines = [f'export * from "./{m.stem}";' for m in models]
+    # The .js suffix is what an ESM resolver wants, and TypeScript maps it back
+    # to the .ts file beside it.
+    lines = [f'export * from "./{m.stem}.js";' for m in models]
     return banner("contracts/schema/") + "\n" + "\n".join(lines) + "\n"
 
 
