@@ -3829,9 +3829,11 @@ components/ui_kiosk/
 ├── priv_include/theme.hpp                # bảng màu · thang chữ · nấc giãn cách · phép xếp dọc
 ├── priv_include/widgets.hpp              # nút · dòng · thanh trượt · công tắc · biểu tượng
 ├── priv_include/screens.hpp              # Screen base + ScreenManager + 8 màn hình
+├── priv_include/strings.hpp              # StrId + ui::text() — catalogue Việt/Anh
 ├── src/box_tracker.cpp
 ├── src/canvas.cpp
 ├── src/theme.cpp
+├── src/strings.cpp                       # bảng [ngôn ngữ][StrId], nằm trong flash
 ├── src/widgets.cpp
 ├── src/screens.cpp                       # Scan · Menu · Enrol · Capture · People · Settings · Wifi · Device
 ├── src/ui_kiosk.cpp                      # hai ô canvas, hai ô overlay, công bố nguyên tử
@@ -3870,10 +3872,32 @@ nối, nên phần lớn lần mở Cài đặt kết thúc ngay ở đó.
 
 | Thẻ | Dòng | Kiểu | Nguồn |
 |---|---|---|---|
-| Máy | `Thiết bị của tôi` | mở trang | màn `Device` |
+| Máy | `Ngôn ngữ` / `Language` | công tắc hai nấc `VI` · `EN` | `ui/lang` (§6.2.1) → `ui_kiosk_set_language()` |
+| | `Thiết bị của tôi` | mở trang | màn `Device` |
 | Mạng | `Wi-Fi` | mở trang, giá trị = tên mạng đang nối | `net_wifi` qua `main` |
 | Màn hình và âm thanh | `Độ sáng` | thanh trượt | `ui/brightness` (§6.2.1) → `drv_lcd_backlight` |
 | | `Âm lượng` | thanh trượt | `ui/volume` (§6.2.1) → `drv_audio_set_volume` |
+
+**Dòng ngôn ngữ đứng đầu thẻ đầu, và nhãn của nó mang cả hai thứ tiếng.** Người cần đổi ngôn
+ngữ là người **không đọc được ngôn ngữ đang hiện**, nên mọi quy tắc xếp trang thông thường —
+"ít dùng thì để dưới" — đảo dấu ở đúng dòng này: nó phải tìm thấy được mà không cần đọc gì.
+Hai nấc `VI` · `EN` viết bằng chữ Latin không dấu vì lý do ấy, và nhãn giữ nguyên cả hai tên ở
+mọi ngôn ngữ. Đây là dòng duy nhất trong máy không đi qua catalogue.
+
+**Catalogue là một bảng hằng trong flash, không phải file nạp lúc chạy.** `strings.cpp` khai
+`const char *const table[Lang::Count][StrId::Count]`, tức mọi chuỗi nằm ở `.rodata` và đổi ngôn
+ngữ chỉ là đổi một chỉ số — không cấp phát, không đọc flash qua SPI1, nên `ui_task` gọi được
+trong chính vòng vẽ (§5.1 cấm đọc flash ở đó). Giá phải trả là ~3 KB flash cho 57 chuỗi hai thứ
+tiếng, rẻ hơn nhiều so với một phân vùng asset và một đường nạp.
+
+**Không sinh lại font khi thêm tiếng Anh.** `gen_font.py` đã rasterise trọn ASCII 0x20–0x7E,
+mà tiếng Anh không dùng ký tự nào ngoài dải đó, nên bốn bảng glyph giữ nguyên từng byte. Luật
+kèm theo: **chuỗi tiếng Anh không được mang ký tự ngoài ASCII cộng `·…°`** — một dấu gạch dài
+hay dấu nháy cong sẽ lặng lẽ biến mất khỏi màn hình chứ không báo lỗi.
+
+**Câu tiếng Anh dài hơn thì bị cắt, không làm vỡ hàng.** `Canvas::text()` đã cắt bằng `…` ở
+`max_w`, nên rủi ro duy nhất là một nhãn cụt nghĩa — thứ phải xử lý bằng cách chọn từ ngắn hơn
+lúc viết catalogue, không phải bằng cách nới ô.
 
 **Thông tin máy là một trang riêng, không phải mấy dòng nhét cuối trang Cài đặt.** Phiên bản
 firmware, mã máy, số người trong bảng, số bản ghi chờ gửi, RAM còn — người ta tìm chúng đúng
@@ -4339,34 +4363,58 @@ sớm thì hàng đợi không bao giờ đầy vì một sự thật duy nhất
 
 ### 4.7 `frontend/` — Next.js trên Vercel
 
-**Stack**: Next.js 15 (App Router) · TypeScript · TailwindCSS · shadcn/ui · TanStack Query · Zustand · Recharts · socket.io-client
+**Stack**: Next.js 16 (App Router) · React 19 · TypeScript · TailwindCSS 4 · next-intl · TanStack Query · Zustand · Recharts · socket.io-client
+
+Primitive giao diện (`button`, `input`, `select`, …) **viết tay trong `components/ui/`**, không
+lấy shadcn/ui. shadcn phát code vào repo rồi mình phải nuôi tiếp, nên nó chỉ lời khi dùng nhiều
+component; ở đây trang nào cũng là bảng với biểu mẫu, và một `<Button>` 30 dòng đọc hết trong
+một phút thì rẻ hơn một cây Radix mang theo mười gói phụ thuộc.
 
 ```
 frontend/
 ├── app/
-│   ├── layout.tsx  ├── globals.css
-│   ├── (auth)/login/page.tsx
-│   └── (dashboard)/
-│       ├── layout.tsx                # sidebar + guard
-│       ├── overview/page.tsx         # thẻ số liệu + biểu đồ + luồng sự kiện realtime
-│       ├── employees/{page.tsx, [id]/page.tsx, new/page.tsx}
-│       ├── attendance/{page.tsx, [id]/page.tsx}
-│       ├── devices/{page.tsx, [id]/page.tsx}      # online, OTA, log
-│       ├── shifts/page.tsx  ├── reports/page.tsx  └── settings/page.tsx
+│   ├── layout.tsx                    # chỉ <html lang> + font, không giao diện
+│   ├── globals.css
+│   └── [locale]/                     # ★ vi | en — mọi route nằm dưới đây
+│       ├── layout.tsx                # NextIntlClientProvider + providers
+│       ├── (auth)/login/page.tsx
+│       └── (dashboard)/
+│           ├── layout.tsx            # sidebar + guard
+│           ├── overview/page.tsx     # thẻ số liệu + biểu đồ + luồng sự kiện realtime
+│           ├── employees/{page.tsx, [id]/page.tsx, new/page.tsx}
+│           ├── attendance/{page.tsx, [id]/page.tsx}
+│           ├── devices/{page.tsx, [id]/page.tsx}      # online, OTA, log
+│           ├── shifts/page.tsx  ├── reports/page.tsx  └── settings/page.tsx
+├── messages/{vi.json, en.json}       # ★ catalogue — vi.json là nguồn kiểu (§3.1 CLAUDE.md)
+├── i18n/
+│   ├── routing.ts                    # danh sách locale + locale mặc định
+│   ├── navigation.ts                 # Link và useRouter có mang locale
+│   └── request.ts                    # nạp catalogue cho phía server
 ├── public/{favicon.ico, logo.svg}
 ├── components/{ui/, charts/, tables/, forms/}
 ├── lib/
-│   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.4)
+│   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.9)
 │   ├── api.ts                        # axios + interceptor tự refresh khi 401
 │   └── ws.ts  └── auth.ts
 ├── hooks/  ├── store/
 ├── types/
-│   └── generated/                    # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
+│   ├── generated/                    # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
+│   └── messages.d.ts                 # ★ khai Messages = typeof vi.json, chốt en.json đủ khoá
 ├── .env.example                      # ✅ commit — mọi biến, giá trị giả
 ├── .env.local                        # ❌ gitignore — giá trị thật
-├── middleware.ts
+├── middleware.ts                     # `/` → `/vi`, và chặn route không có locale
 └── next.config.ts
 ```
+
+**Locale nằm trên URL chứ không nằm trong cookie.** Giá phải trả là mọi route thụt vào một cấp
+và mọi `<Link>` phải đi qua `i18n/navigation.ts`; đổi lại, một link gửi cho người khác mở ra
+đúng thứ tiếng người gửi đang thấy, và trang render sẵn ở phía server đã đúng ngôn ngữ ngay
+lần vẽ đầu — cookie thì server không biết trước, nên hoặc chớp một nhịp tiếng sai hoặc phải bỏ
+render sẵn. `middleware.ts` đẩy `/` về `/vi` để địa chỉ trần vẫn mở được.
+
+**`vi.json` là nguồn kiểu, `en.json` là bản phải theo.** `types/messages.d.ts` khai
+`type Messages = typeof import("../messages/vi.json")`, nên một khoá có ở `vi` mà thiếu ở `en`
+là lỗi `tsc` chứ không phải một dòng chữ lạ hiện trên màn khách hàng (§3.1 luật 1).
 
 **Biến môi trường của frontend là công khai.** Mọi thứ có tiền tố `NEXT_PUBLIC_` đi thẳng vào
 bundle mà trình duyệt tải về. Không bao giờ đặt secret ở đó — không JWT ký, không khoá MinIO,
@@ -4483,6 +4531,9 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
 | Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
 | Ngưỡng nghiệp vụ (**tin cậy phát hiện mặt**, khớp mặt, liveness, chống trùng) | NVS trên kiosk, `SET_CONFIG` từ server | đọc cấu hình lúc chạy |
+| Chuỗi hiển thị trên kiosk | `ui_kiosk/priv_include/strings.hpp` (`enum class StrId`) | `ui::text(StrId::X)`, **không gõ chuỗi vào `screens.cpp`** |
+| Chuỗi hiển thị trên dashboard | `frontend/messages/{vi,en}.json` | `useTranslations()` của next-intl |
+| Ngôn ngữ đang chọn | kiosk: NVS `ui/lang` (§6.2.1) · dashboard: đoạn locale đầu URL | `ui_kiosk_set_language()` · `params.locale` |
 
 **Ba luật đi kèm:**
 
@@ -4773,7 +4824,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver` | str / u32 | token xoay vòng khi còn 7 ngày; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
-| `ui` | `brightness` (u8), `volume` (u8), `lang` (str) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt |
+| `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
 | `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `present_mm` (u32, mm) | | bốn ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
 
