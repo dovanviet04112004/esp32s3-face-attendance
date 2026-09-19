@@ -4094,9 +4094,10 @@ backend/
 ├── package.json  ├── tsconfig.json  ├── tsconfig.build.json  ├── nest-cli.json
 ├── prisma.config.ts                  # ★ url của datasource + lệnh seed (Prisma 7)
 ├── prisma/{schema.prisma, migrations/, seed.ts}
-├── test/app.e2e-spec.ts              # e2e, chạy bằng runner sẵn có của Node
+├── test/*.e2e-spec.ts                # e2e, chạy bằng runner sẵn có của Node
 └── src/
-    ├── main.ts                       # helmet, CORS (origin Vercel), ValidationPipe, Swagger
+    ├── main.ts                       # chỉ mở cổng; mọi cấu hình nằm ở bootstrap.ts
+    ├── bootstrap.ts                  # ★ helmet, CORS, cookie, ValidationPipe, Swagger
     ├── app.module.ts
     ├── config/
     │   ├── env.schema.ts             # ★ zod — NƠI DUY NHẤT đọc process.env (§4.4)
@@ -4122,6 +4123,13 @@ backend/
 bản CommonJS nào, nên `backend/package.json` cũng phải khai `"type": "module"`. Hệ quả chạm vào
 mọi file: import tương đối phải mang đuôi `.js` kể cả khi nguồn là `.ts`, và bộ sinh của
 `contracts/` phát đúng dạng ấy. TypeScript ghim ở 6.x vì `ts-jest` chặn trên ở `<7`.
+
+**Cấu hình ứng dụng nằm ở `bootstrap.ts`, không ở `main.ts`.** `main.ts` chạy ngay khi được
+nhập, nên một bộ test muốn dựng ứng dụng thật buộc phải dựng lại cấu hình bằng tay — và bản
+dựng lại ấy **âm thầm khác bản thật**: thiếu Swagger, thiếu helmet, thiếu đúng một tuỳ chọn nào
+đó, rồi test xanh cho một ứng dụng không ai chạy. Một hàm nhận `INestApplication` và gắn đủ mọi
+thứ lên nó thì `main.ts` gọi được mà bộ test cũng gọi được, và cái chạy trong test **là cái
+chạy trên máy chủ**.
 
 **E2E chạy bằng `node --test`, không phải Jest.** Jest nạp module ESM qua registry riêng của
 nó, và `@nestjs/throttler` là CommonJS `require()` vào `@nestjs/common` vốn là ESM — Jest gọi đó
