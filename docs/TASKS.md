@@ -569,6 +569,30 @@ Giai đoạn 4 của §9.13. Không cái nào chặn việc trả lương, nên 
 
 ---
 
+
+## E26 — Dữ liệu: sao lưu, di trú an toàn, nhìn thấy truy vấn chậm
+
+§9.22. Epic này không thêm màn hình nào, và là epic mà thiếu nó thì mọi epic khác đang đặt
+cược vào may mắn.
+
+| ID | Task | Xong khi | Chặn bởi |
+|---|---|---|---|
+| E26-T1 | Sao lưu hằng ngày **cộng lưu trữ WAL liên tục**, mã hoá, cất ngoài máy chủ đang chạy | Phục hồi được tới **một thời điểm bất kỳ**, không chỉ tới nửa đêm | E11-T8 |
+| E26-T2 | **Kiểm phục hồi định kỳ**: dựng lại vào CSDL tạm, đếm dòng các bảng không dựng lại được, **bấm giờ** | Có RTO đo được, không phải RTO ước lượng 🔬 | E26-T1 |
+| E26-T3 | Sao lưu **tôn trọng quyền xoá**: bản cũ không giữ mẫu khuôn mặt của người đã nghỉ quá hạn lưu (§9.22.1) | Sao lưu không thành chỗ trú của dữ liệu lẽ ra đã xoá | E21-T3, E26-T1 |
+| E26-T4 | Luật **nở rồi co** cho mọi migration phá huỷ: thêm cột, đổ dữ liệu, bỏ cột **ở lần phát hành sau** | Quay lui được ở mọi bước | — |
+| E26-T5 | Đổ dữ liệu theo lô, chạy lại được, ngoài giờ cao điểm | `UPDATE` năm triệu dòng không khoá API | E26-T4 |
+| E26-T6 | Chạy thử migration trên bản sao và **bấm giờ** trước khi chạm bản thật | Biết trước một migration khoá bảng bao lâu | E26-T2 |
+| E26-T7 | Ràng buộc ở tầng dữ liệu (§9.22.4): khoá ngoại thật, loại trừ khoảng ngày, `CHECK` cho số không được âm | Hai request song song không lách được phép kiểm trong code | E17-T6 |
+| E26-T8 | `pg_stat_statements`, xếp hạng theo **tổng thời gian**; nhật ký câu chậm kèm tham số | Truy vấn chậm lộ ra trước khi người dùng kêu | E11-T1 |
+| E26-T9 | `EXPLAIN` một lượt cho mọi truy vấn mới trên bảng lớn; quét toàn bảng thì hoặc có chỉ mục hoặc có lý do ghi lại | Không chỉ mục nào bị quên âm thầm | E26-T8 |
+| E26-T10 | Theo dõi kích thước bảng và độ phình theo tuần | Biết khi nào tới lúc chia mảnh, không đoán | E26-T8 |
+| E26-T11 | PgBouncer chế độ transaction khi vượt một bản chạy | Chạm trần CPU trước, không chạm trần kết nối | E11-T8 |
+| E26-T12 | **Báo cáo nặng đọc bản sao**; thứ vừa ghi xong đọc bản chính | Lượt gộp toàn công ty không làm chậm kiosk đang chấm công | E26-T11, E16-T3 |
+| E26-T13 | Chính sách lưu trữ theo bảng (§9.22.7); dọn bằng `DROP` mảnh, không bằng `DELETE` hàng triệu dòng | Dọn dữ liệu quá hạn là thao tác tức thì | E16-T8 |
+
+---
+
 ## Bảng song song
 
 | Epic | Chạy được cùng lúc với |
@@ -598,5 +622,6 @@ Giai đoạn 4 của §9.13. Không cái nào chặn việc trả lương, nên 
 | E23 Vòng đời | E24 |
 | E24 Bề rộng | E23 |
 | E25 PWA điện thoại | E20–E22 |
+| E26 Dữ liệu và sao lưu | mọi epic khác |
 
 Muốn rút ngắn thì cắt E6 xuống mức tối thiểu: giữ nguyên train bằng task loss nhưng bỏ tập tự thu E3-T8, chấm bằng CelebA-Spoof. Vẫn có sản phẩm chạy, đổi lại số liveness không nói được gì về miền thiết bị.

@@ -6283,3 +6283,116 @@ dễ tiếp cận hơn, chỉ làm chúng **nguy hiểm hơn**.
 | HR thao tác nặng: chốt lương, nhập hàng loạt, tái cơ cấu, sửa bảng công | **chỉ màn rộng** — và nói rõ điều đó thay vì để nó vỡ âm thầm |
 
 Luật rút ra: **màn nào hỏng được dữ liệu ở quy mô lớn thì không nằm cách một ngón tay cái.**
+
+### 9.22 Dữ liệu: cái gì mất được, cái gì không
+
+Mọi phần trên đây đều giả định dữ liệu còn đó. Mục này nói cái gì giữ nó còn đó.
+
+#### 9.22.1 Phân loại theo khả năng dựng lại, không theo độ quan trọng
+
+Hỏi "cái nào quan trọng" thì câu trả lời luôn là "tất cả". Hỏi **"mất rồi có dựng lại được
+không"** thì ra được thứ tự hành động.
+
+| Loại | Ví dụ | Mất thì sao | Bảo vệ |
+|---|---|---|---|
+| **Không dựng lại được** | lượt chấm công, đơn đã duyệt, phiếu lương đã phát, nhật ký kiểm toán | mất vĩnh viễn, và là tranh chấp lao động | sao lưu + WAL, kiểm phục hồi định kỳ |
+| **Dựng lại được nhưng đắt** | hồ sơ nhân sự, cây tổ chức, hợp đồng | nhập lại từ giấy, hàng tuần công | sao lưu hằng ngày |
+| **Dựng lại được** | bảng ngày công, số liệu báo cáo, nội dung đệm | chạy lại job là có | không cần sao lưu riêng |
+| **Không được phép giữ lâu** | mẫu khuôn mặt của người đã nghỉ | rủi ro pháp lý khi **còn**, không phải khi mất | xoá thật (§9.19) |
+
+Dòng cuối là dòng ngược đời và là dòng dễ quên nhất: với dữ liệu sinh trắc, **giữ lại mới là
+lỗi**. Sao lưu cũng phải tôn trọng điều đó — một bản sao lưu ba năm tuổi chứa embedding của
+người đã nghỉ vẫn là dữ liệu nhạy cảm đang được lưu trữ.
+
+#### 9.22.2 Sao lưu: ba câu hỏi phải trả lời bằng số
+
+Một lịch sao lưu không nói lên điều gì. Ba con số mới nói:
+
+- **RPO — chấp nhận mất bao nhiêu?** Với lượt chấm công và phiếu lương, câu trả lời là **gần
+  bằng không**, nên chỉ sao lưu mỗi đêm là không đủ: cần **lưu trữ WAL liên tục** để phục hồi
+  tới một thời điểm bất kỳ.
+- **RTO — chấp nhận dừng bao lâu?** Kiosk vẫn chấm công được khi server chết (hàng đợi offline
+  của §6.2.6), nên áp lực thấp hơn vẻ ngoài. Nhưng ngày trả lương thì khác hẳn.
+- **Phục hồi mất bao lâu thật?** Con số duy nhất có giá trị là con số **đã bấm giờ trên một
+  lần phục hồi thật**. Một bản sao lưu chưa từng phục hồi thử là một giả định, không phải một
+  bản sao lưu.
+
+**Kiểm phục hồi định kỳ là một task, không phải một lời hứa.** Dựng lại từ bản sao lưu vào một
+cơ sở dữ liệu tạm, đếm số dòng của các bảng không dựng lại được, và ghi thời gian. Không có
+bước này thì cả mục 9.22 chỉ là văn.
+
+**Sao lưu phải mã hoá và phải để ngoài máy chủ đang chạy.** Sao lưu nằm cùng ổ với dữ liệu gốc
+bảo vệ được đúng một tình huống: xoá nhầm. Nó không bảo vệ được hỏng ổ, không bảo vệ được mã
+độc tống tiền, và không bảo vệ được xoá nhầm cả máy.
+
+#### 9.22.3 Di trú lược đồ: không bao giờ phá và dựng trong cùng một lần
+
+Bài học vừa gặp khi chuyển `Employee.department` từ chuỗi sang khoá ngoại: cách an toàn là
+**nở rồi mới co**, ba nhịp và **không dồn vào một lần phát hành**:
+
+1. **Nở** — thêm cột mới, để cột cũ nguyên. Bản cũ của ứng dụng vẫn chạy.
+2. **Đổ dữ liệu** — chuyển sang cột mới, kiểm đếm đủ.
+3. **Co** — bỏ cột cũ, ở lần phát hành sau, khi đã chắc không còn ai đọc nó.
+
+Gộp ba nhịp vào một migration thì lúc quay lui không còn đường: cột cũ đã mất.
+
+**Ba luật kèm theo.**
+
+- **Đổi dữ liệu tách khỏi đổi lược đồ.** Một `UPDATE` trên năm triệu dòng khoá bảng đủ lâu để
+  API hết giờ. Đổ dữ liệu đi theo lô, chạy được lại, và ngoài giờ cao điểm.
+- **Sửa một migration đã chạy là chuyện không làm.** Sai thì thêm migration mới. Đây cũng là lý
+  do không được lấy `migrate reset` làm cách sửa lỗi: xoá cả cơ sở dữ liệu để sửa một ô là đổi
+  một lỗi nhỏ lấy mất toàn bộ dữ liệu không dựng lại được.
+- **Migration chạy trên bản sao trước khi chạy trên bản thật**, và bấm giờ ở đó.
+
+#### 9.22.4 Ràng buộc đặt ở cơ sở dữ liệu, không chỉ ở tầng ứng dụng
+
+Phép kiểm trong code chỉ đúng khi **mọi** đường ghi đều đi qua nó, mà không bao giờ đủ: còn
+migration, còn script sửa tay, còn hai request chạy song song. Nên những thứ sau nằm ở tầng dữ
+liệu:
+
+- khoá ngoại thật, không phải "id trỏ tới" bằng niềm tin;
+- `unique(deviceId, localId)` chống trùng chấm công — đã có từ §4.3;
+- ràng buộc loại trừ chặn đơn nghỉ chồng ngày (§9.5), vì hai request song song thì phép kiểm
+  trong code cho qua cả hai;
+- `CHECK` cho thứ không bao giờ được âm: số ngày phép, số tiền trên dòng phiếu lương.
+
+#### 9.22.5 Nhìn thấy truy vấn chậm trước khi người dùng thấy
+
+Ở ba mươi nghìn nhân viên, một truy vấn thiếu chỉ mục không hỏng ngay — nó **chậm dần** cho tới
+ngày không ai chịu nổi, và lúc đó không ai nhớ đã thêm gì.
+
+- Bật `pg_stat_statements` và xem bảng xếp hạng theo **tổng thời gian**, không theo thời gian
+  trung bình: một truy vấn 20 ms chạy một triệu lần tốn hơn một truy vấn 2 giây chạy mười lần.
+- Ghi nhật ký mọi câu vượt ngưỡng, kèm tham số.
+- Mỗi truy vấn mới trên bảng lớn phải **xem `EXPLAIN` một lần** trước khi lên, và nếu nó quét
+  toàn bảng thì hoặc có chỉ mục hoặc có lý do ghi lại.
+- Theo dõi **kích thước bảng và độ phình** theo tuần. Bảng lượt chấm công lớn nhanh nhất và là
+  bảng đầu tiên cần chia mảnh (§9.9 luật 2).
+
+#### 9.22.6 Kết nối và bản sao đọc
+
+Mỗi tiến trình Node giữ một bể kết nối, mà Postgres tính mỗi kết nối là một tiến trình. Nhân
+lên vài bản chạy là chạm trần trước khi chạm giới hạn CPU. Nên khi vượt một bản chạy, **đặt
+PgBouncer ở giữa** ở chế độ transaction.
+
+**Báo cáo nặng đọc từ bản sao, không đọc từ bản chính.** Một lượt gộp toàn công ty không được
+phép làm chậm lượt ghi của kiosk đang chấm công. Kèm theo một luật: bản sao có **độ trễ**, nên
+thứ vừa ghi xong mà đọc ngay thì đọc ở bản chính — phiếu lương vừa phát là ví dụ.
+
+#### 9.22.7 Giữ bao lâu, và xoá thế nào
+
+Giữ mãi mọi thứ vừa tốn vừa là rủi ro. Nhưng dữ liệu lao động có thời hiệu pháp lý, nên **mặc
+định là giữ**, và chỉ dọn thứ có lý do dọn:
+
+| Dữ liệu | Giữ | Vì sao |
+|---|---|---|
+| Lượt chấm công, phiếu lương, hợp đồng | **giữ lâu dài** | thời hiệu tranh chấp lao động và nghĩa vụ lưu trữ |
+| Nhật ký sự kiện thiết bị | vài tháng | chỉ dùng để chẩn đoán |
+| Bảng ngày công | dựng lại được, nhưng giữ vì nó là đầu vào bảng lương đã chốt | |
+| Mẫu khuôn mặt của người đã nghỉ | **xoá ngay** | §9.19 — giữ mới là lỗi |
+| Nhật ký truy cập dữ liệu nhạy cảm | giữ lâu hơn dữ liệu nó mô tả | nó là bằng chứng cho chính việc xoá |
+
+**Xoá theo lô và xoá được lại.** Dọn vài triệu dòng bằng một `DELETE` là khoá bảng và phình
+WAL. Chia mảnh theo tháng rồi `DROP` một mảnh là tức thì (§9.9 luật 2) — đây là lý do thứ hai
+để chia mảnh, ngoài tốc độ truy vấn.
