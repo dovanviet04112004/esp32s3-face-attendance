@@ -3892,8 +3892,15 @@ hơn lúc viết catalogue, không nới ô.
 **Catalogue là một bảng hằng trong flash, không phải file nạp lúc chạy.** `strings.cpp` khai
 `const char *const table[Lang::Count][StrId::Count]`, tức mọi chuỗi nằm ở `.rodata` và đổi ngôn
 ngữ chỉ là đổi một chỉ số — không cấp phát, không đọc flash qua SPI1, nên `ui_task` gọi được
-trong chính vòng vẽ (§5.1 cấm đọc flash ở đó). Giá phải trả là ~3 KB flash cho 57 chuỗi hai thứ
-tiếng, rẻ hơn nhiều so với một phân vùng asset và một đường nạp.
+trong chính vòng vẽ (§5.1 cấm đọc flash ở đó). Giá phải trả đo trên `strings.cpp.obj` là
+**2.685 B** flash cho 57 chuỗi hai thứ tiếng, rẻ hơn nhiều so với một phân vùng asset và một
+đường nạp.
+
+**Bảng phải đủ và phải đúng thứ tự, và trình biên dịch nói điều đó chứ không phải người đọc.**
+`strings.cpp` chốt hai `static_assert`: số dòng bằng `StrId::Count`, và dòng thứ `i` mang đúng
+`StrId` thứ `i`. Thiếu một chuỗi là không biên dịch được; xếp nhầm chỗ một dòng cũng vậy. Đó là
+cách §3.1 luật 1 của `CLAUDE.md` được thi hành ở phía firmware, tương ứng với `tsc` ở phía
+dashboard.
 
 **Không sinh lại font khi thêm tiếng Anh.** `gen_font.py` đã rasterise trọn ASCII 0x20–0x7E,
 mà tiếng Anh không dùng ký tự nào ngoài dải đó, nên bốn bảng glyph giữ nguyên từng byte. Luật
