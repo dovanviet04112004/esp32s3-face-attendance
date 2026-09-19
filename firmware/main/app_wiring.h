@@ -26,6 +26,7 @@ typedef struct {
     int64_t updated_at;
     uint32_t roster_version;
     bool has_roster_version;
+    bool outbound;                        // report it, do not apply it
     char name[STORAGE_NAME_CAP];
     int8_t embedding[STORAGE_EMBED_DIM];
 } app_roster_t;

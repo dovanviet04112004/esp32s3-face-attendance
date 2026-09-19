@@ -18,7 +18,8 @@ static const char *TAG = "app_wiring";
 // hold the esp-mqtt task and the attendance going up with it.
 #define COMMAND_DEPTH 4
 #define EVENT_DEPTH 8
-#define ROSTER_DEPTH 2
+// Three templates of one person go out together, so two is one short.
+#define ROSTER_DEPTH 4
 
 static app_wiring_t s_wiring;
 static bool s_ready;

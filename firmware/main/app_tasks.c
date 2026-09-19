@@ -105,6 +105,13 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define OPEN_DOOR_DEFAULT_MS 3000
 #define REBOOT_DRAIN_MS 400
 #define WIFI_JOIN_WAIT_MS 12000
+// A server issues the low half; anything a kiosk mints alone sits above it,
+// salted by device so two machines never land on the same number (KEHOACH 7.5).
+#define LOCAL_ID_MARK 0x80000000u
+#define LOCAL_ID_SALT_BITS 15
+#define ENROLL_REPORT_CAP 1024
+#define ENROL_SAMPLES 3
+#define ROSTER_OFFER_WAIT_MS 200
 #define EVENT_FAULT_GAP_MS 60000
 #define EVENT_PERSON_GAP_MS 2000
 #define NET_TASK_CORE 0
@@ -257,6 +264,16 @@ static void embedding_version(char *out, size_t cap)
         }
     }
     strlcpy(out, "none", cap);
+}
+
+static uint32_t local_employee_floor(void)
+{
+    char id[STORAGE_DEVICE_ID_CAP] = { 0 };
+    if (sys_storage_device_id(id, sizeof(id)) != ESP_OK) {
+        return LOCAL_ID_MARK;
+    }
+    const uint32_t salt = sys_storage_crc32(id, strlen(id)) & ((1u << LOCAL_ID_SALT_BITS) - 1u);
+    return LOCAL_ID_MARK | (salt << 16);
 }
 
 static uint32_t roster_version(void)
@@ -490,6 +507,48 @@ static void publish_event(device_event_type_t type, device_event_severity_t seve
     send_event(&event, cmd_id);
 }
 
+// The server owns identity, so a face captured here has to reach it or the
+// person exists on one machine and nowhere else (KEHOACH 7.5).
+static void report_enrolled(const app_roster_t *op)
+{
+    // One caller, and 900 bytes of base64 has no business on a 5 KB stack.
+    static char payload[ENROLL_REPORT_CAP];
+    enroll_payload_t wire = { 0 };
+    wire.op = ENROLL_PAYLOAD_OP_UPSERT;
+    wire.employee_id = op->employee_id;
+    wire.template_idx = op->template_idx;
+    wire.updated_at = sys_time_now_ms();
+    wire.scale = op->scale;
+    wire.quality = op->quality;
+    wire.has_quality = true;
+    if (sys_storage_device_id(wire.device_id, sizeof(wire.device_id)) == ESP_OK) {
+        wire.has_device_id = true;
+    }
+    strlcpy(wire.full_name, op->name, sizeof(wire.full_name));
+    wire.has_full_name = true;
+    embedding_version(wire.embedding_version, sizeof(wire.embedding_version));
+    size_t wrote = 0;
+    if (mbedtls_base64_encode((unsigned char *)wire.embedding, sizeof(wire.embedding), &wrote,
+                              (const unsigned char *)op->embedding,
+                              sizeof(op->embedding)) != 0) {
+        return;
+    }
+    cJSON *root = enroll_payload_to_json(&wire);
+    if (root == NULL) {
+        return;
+    }
+    const bool printed = cJSON_PrintPreallocated(root, payload, sizeof(payload), 0);
+    cJSON_Delete(root);
+    if (!printed) {
+        ESP_LOGW(TAG, "enrol report will not fit %d B", ENROLL_REPORT_CAP);
+        return;
+    }
+    const esp_err_t sent = net_mqtt_publish(GEN_TOPIC_ENROLL_REPORT, payload, strlen(payload),
+                                            CONFIG_SYNC_ACK_TIMEOUT_MS);
+    ESP_LOGI(TAG, "reported %" PRIu32 " sample %u: %s", op->employee_id,
+             (unsigned)op->template_idx, esp_err_to_name(sent));
+}
+
 // The cursor is written after the table, so a power cut costs one push again
 // rather than a device claiming a version it never applied (KEHOACH 7.5).
 static bool apply_roster(const app_roster_t *op)
@@ -544,6 +603,10 @@ static void take_roster(const app_wiring_t *wiring)
     bool changed = false;
     bool versioned = false;
     while (xQueueReceive(wiring->roster, &op, 0) == pdTRUE) {
+        if (op.outbound) {
+            report_enrolled(&op);
+            continue;
+        }
         if (!apply_roster(&op)) {
             continue;
         }
@@ -1036,14 +1099,37 @@ static void show_people(void)
     ui_kiosk_set_people(rows, (int)found);
 }
 
+// Publishing at QoS 1 waits for an ack, and ui_task repaints every 20 ms, so
+// the templates go out through the task that already talks to the broker.
+static void offer_enrolled(const app_wiring_t *wiring, uint32_t employee_id,
+                           const char *name)
+{
+    for (uint16_t idx = 0; idx < ENROL_SAMPLES; ++idx) {
+        app_roster_t op = { 0 };
+        op.outbound = true;
+        op.op = ENROLL_PAYLOAD_OP_UPSERT;
+        op.employee_id = employee_id;
+        op.template_idx = idx;
+        if (svc_facedb_template(employee_id, idx, op.embedding, sizeof(op.embedding), &op.scale,
+                                &op.quality) != ESP_OK) {
+            continue;
+        }
+        strlcpy(op.name, name, sizeof(op.name));
+        if (xQueueSend(wiring->roster, &op, pdMS_TO_TICKS(ROSTER_OFFER_WAIT_MS)) != pdTRUE) {
+            ESP_LOGW(TAG, "enrol report for sample %u dropped", (unsigned)idx);
+        }
+    }
+}
+
 // The screens ask for a face and svc_vision answers with the next one it
 // embeds, so the enrol flow needs no camera path of its own (KEHOACH 4.5.5h).
 static void ui_task(void *arg)
 {
-    (void)arg;
+    const app_wiring_t *wiring = arg;
     bool armed = false;
     bool enrolling = false;
     uint32_t new_employee = 0;
+    char new_name[STORAGE_NAME_CAP] = { 0 };
 
     for (;;) {
         const uint32_t tick_ms =
@@ -1062,6 +1148,7 @@ static void ui_task(void *arg)
                          esp_err_to_name(svc_facedb_persist()));
             }
             new_employee = 0;
+            new_name[0] = '\0';
         }
         enrolling = now_enrolling;
         if (armed && !svc_vision_enrol_pending()) {
@@ -1073,6 +1160,9 @@ static void ui_task(void *arg)
                 ESP_LOGI(TAG, "enrol %" PRIu32 " saved in %lld ms: %s", new_employee,
                          (long long)((esp_timer_get_time() - started_us) / 1000),
                          esp_err_to_name(saved));
+                if (saved == ESP_OK) {
+                    offer_enrolled(wiring, new_employee, new_name);
+                }
             }
         }
         if (ui_kiosk_take_people_request()) {
@@ -1106,13 +1196,15 @@ static void ui_task(void *arg)
         // All three samples of one person share the id taken for the first
         // (KEHOACH 4.5.5h.2).
         if (employee_id == 0) {
-            new_employee = new_employee != 0 ? new_employee : svc_facedb_next_employee_id();
+            new_employee = new_employee != 0 ? new_employee
+                                             : svc_facedb_next_employee_id(local_employee_floor());
             employee_id = new_employee;
         }
         if (employee_id == 0) {
             ESP_LOGE(TAG, "no id for %s, face table did not answer", name);
             continue;
         }
+        strlcpy(new_name, name, sizeof(new_name));
         const esp_err_t asked =
             svc_vision_enrol_next(employee_id, template_idx, name, yaw_min, yaw_max);
         armed = asked == ESP_OK;
