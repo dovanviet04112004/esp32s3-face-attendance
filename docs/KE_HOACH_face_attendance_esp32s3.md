@@ -4458,11 +4458,18 @@ kiosk gửi dữ liệu chấm công **không mã hoá** mà không gì kêu lê
 xuất xưởng trỏ về cùng một chỗ và NVS chỉ ghi đè khi khách tự dựng server riêng (§7.3); và bản
 `prod` **từ chối mọi URI không bắt đầu bằng `mqtts://`**.
 
+**Chuỗi rỗng tính là vắng mặt.** Mọi nơi đọc một khoá `str` của bảng trên phải coi độ dài 0
+giống hệt `ESP_ERR_NVS_NOT_FOUND` rồi rơi về giá trị lùi. NVS giữ được chuỗi rỗng, nên phân biệt
+"có khoá" với "có giá trị" là phân biệt sai: `net_provision` hỏi `device/jwt` để biết còn phải
+đăng ký hay không (§7.3), và một khoá rỗng đọc ra `ESP_OK` sẽ khiến nó tưởng đã có token rồi
+**bỏ hẳn bước đăng ký, không một dòng log**.
+
 **Ghi NVS trên bàn đi qua console, không qua ảnh phân vùng.** `main/app_console.c` nhận
-`set`/`get` trên USB rồi ghi qua `sys_storage`, nên không giá trị bí mật nào phải tồn tại dưới
-dạng file. `Kconfig` của nó mặc định tắt và chỉ bật ở `sdkconfig.dev` với `sdkconfig.bench`, nên
-bản `prod` không biên dịch một dòng nào — một cờ lúc chạy thì không đủ, vì cờ ấy nằm trong chính
-NVS mà console ghi được.
+`set`/`get`/`del` trên USB rồi ghi qua `sys_storage`, nên không giá trị bí mật nào phải tồn tại
+dưới dạng file. `del` có mặt vì thiếu nó thì cách duy nhất để dọn một khoá là đặt chuỗi rỗng,
+tức tạo ra đúng trạng thái mà luật ngay trên phải đi vá. `Kconfig` của nó mặc định tắt và chỉ
+bật ở `sdkconfig.dev` với `sdkconfig.bench`, nên bản `prod` không biên dịch một dòng nào — một
+cờ lúc chạy thì không đủ, vì cờ ấy nằm trong chính NVS mà console ghi được.
 
 `nvs_partition_gen.py` bị loại vì nó ghi đè **cả phân vùng**, cuốn theo `sys/boot_count` — nửa
 cao của mọi `local_id`. Nạp lại địa chỉ broker bằng đường ấy là thiết bị sinh lại những
