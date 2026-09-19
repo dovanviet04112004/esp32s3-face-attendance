@@ -2905,7 +2905,7 @@ firmware/
 │   ├── svc_vision/        [C++]  L4  # detect mỗi khung, chuỗi spoof → recog khi mặt ổn định (§4.5.5d)
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
 │   ├── svc_sync/          [C++]  L5  # hàng đợi offline → MQTT
-│   └── ui_kiosk/          [C++]  L6  # 7 màn hình vẽ thẳng lên panel + bộ bám hộp (§4.5.5h)
+│   └── ui_kiosk/          [C++]  L6  # 8 màn hình vẽ thẳng lên panel + bộ bám hộp (§4.5.5h)
 │
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
@@ -3318,6 +3318,12 @@ dọc** tự cộng dồn toạ độ. Màn hình mô tả *có những gì*, kh
 đuôi bằng `…`** ngay trong hàm vẽ chứ không trông vào người viết màn hình đếm ký tự, vì tên
 người và tên Wi-Fi là dữ liệu chạy lúc chạy, không đoán trước được.
 
+**Một dòng, dùng lại ở khắp nơi.** Menu, Cài đặt, Danh sách người và Wi-Fi đều là *danh sách
+những dòng chạm được*, nên cả bốn vẽ bằng **cùng một widget**: ô biểu tượng, nhãn, giá trị xám,
+mũi tên. Nhờ vậy bo góc, chiều cao, lề trong và màu lúc nhấn giống nhau ở mọi màn mà không ai
+phải nhớ con số — đổi một chỗ là đổi cả máy. Màn hình nào cũng tự đi ra khỏi kiểu chung thì
+giao diện thành chắp vá, và đó đúng là thứ tầng này dựng ra để chặn.
+
 **Không ai bàn giao panel cho ai.** Ý đầu là màn không video thì `ui_task` lấy `m_spi_lcd` và
 tự đẩy khung hình — nhưng mỗi lần chuyển màn khi ấy là một lần đổi chủ giữa hai task đang chạy,
 đúng chỗ xé hình hay sinh ra. Thay vào đó **`cam_task` vẫn là người duy nhất ghi panel ở mọi
@@ -3334,10 +3340,13 @@ mỗi khung chỉ quét đúng ngần ấy byte thay vì 153 KB.
 
 ```
 Scan ──ba gạch──> Menu ──"Thêm người"──> Enroll ──chọn tên──> Capture ──đủ mẫu──> Scan
- ▲                 │                        │                   │
- │                 ├──"Danh sách"──> People  │                   │
- │                 └──"Cài đặt"────> Settings ──"Wi-Fi"──> Wifi   │
- └───────────────────────────── Đóng / Huỷ ──────────────────────┘
+ ▲                 │                                                              │
+ │                 ├──"Danh sách"──> People                                        │
+ │                 │                                                              │
+ │                 └──"Cài đặt"───> Settings ──"Wi-Fi"─────> Wifi                  │
+ │                                     │                                          │
+ │                                     └──"Thiết bị của tôi"──> Device             │
+ └────────────────────────────── Đóng / Huỷ ───────────────────────────────────────┘
 ```
 
 `Enroll` là màn **danh sách chờ**, không phải màn bàn phím. Gõ tên là thao tác tệ nhất có thể
@@ -3804,12 +3813,12 @@ components/ui_kiosk/
 ├── priv_include/canvas.hpp               # Canvas: bản đồ phủ 1 byte/điểm, hình + chữ + vùng đã vẽ
 ├── priv_include/theme.hpp                # bảng màu · thang chữ · nấc giãn cách · phép xếp dọc
 ├── priv_include/widgets.hpp              # nút · dòng · thanh trượt · công tắc · biểu tượng
-├── priv_include/screens.hpp              # Screen base + ScreenManager + 7 màn hình
+├── priv_include/screens.hpp              # Screen base + ScreenManager + 8 màn hình
 ├── src/box_tracker.cpp
 ├── src/canvas.cpp
 ├── src/theme.cpp
 ├── src/widgets.cpp
-├── src/screens.cpp                       # Scan · Menu · Enrol · Capture · People · Settings · Wifi
+├── src/screens.cpp                       # Scan · Menu · Enrol · Capture · People · Settings · Wifi · Device
 ├── src/ui_kiosk.cpp                      # hai ô canvas, hai ô overlay, công bố nguyên tử
 └── test_apps/tracker/{main/test_tracker.cpp, CMakeLists.txt, pytest_tracker.py}   # khung tổng hợp, không cần camera
 ```
@@ -3834,22 +3843,36 @@ một việc, nó là một thuộc tính của máy, nên nó nằm **trong** C
 không phải một dòng ngang hàng ở menu gốc. Luật chung: cái gì trả lời *"máy đang thế nào"* thì
 vào Cài đặt; cái gì trả lời *"tôi muốn làm gì"* mới được đứng ở menu gốc.
 
-Trang Cài đặt xếp theo đúng thứ tự một người đi tìm: **thao tác trước, trạng thái sau**.
+**Trang Cài đặt là những thẻ nhóm, không phải một danh sách trơ.** Nền xám nhạt, mỗi nhóm là
+một **thẻ trắng bo góc** nổi trên nền ấy, các nhóm cách nhau một khoảng. Đó là cách mọi hệ
+điều hành điện thoại xếp trang này, và nó có lý do: mắt đọc bốn nhóm ba dòng nhanh hơn đọc một
+cột mười hai dòng, vì khoảng trắng giữa hai thẻ đã làm sẵn việc phân loại.
 
-| Nhóm | Dòng | Nguồn |
-|---|---|---|
-| Mạng | `Wi-Fi` — tên mạng đang nối + biểu tượng vạch sóng, chạm để mở màn Wi-Fi | `net_wifi` qua `main` |
-| Màn hình | `Độ sáng` — thanh trượt | `ui/brightness` (§6.2.1) → `drv_lcd_backlight` |
-| Âm thanh | `Âm lượng` — thanh trượt | `ui/volume` (§6.2.1) → `drv_audio_set_volume` |
-| Máy | phiên bản firmware · số người · số bản ghi chờ gửi · RAM nội còn · mã máy | `main` điền vài giây một lần |
+Mỗi dòng có đúng bốn phần, trái sang phải: **ô biểu tượng vuông bo góc** mang màu riêng của
+nhóm, **nhãn**, **giá trị** màu xám, và **mũi tên `>`** khi dòng ấy mở ra một trang. Giá trị
+xám là thứ trả lời câu hỏi mà không bắt người ta chạm vào: dòng Wi-Fi hiện luôn tên mạng đang
+nối, nên phần lớn lần mở Cài đặt kết thúc ngay ở đó.
+
+| Thẻ | Dòng | Kiểu | Nguồn |
+|---|---|---|---|
+| Máy | `Thiết bị của tôi` | mở trang | màn `Device` |
+| Mạng | `Wi-Fi` | mở trang, giá trị = tên mạng đang nối | `net_wifi` qua `main` |
+| Màn hình và âm thanh | `Độ sáng` | thanh trượt | `ui/brightness` (§6.2.1) → `drv_lcd_backlight` |
+| | `Âm lượng` | thanh trượt | `ui/volume` (§6.2.1) → `drv_audio_set_volume` |
+
+**Thông tin máy là một trang riêng, không phải mấy dòng nhét cuối trang Cài đặt.** Phiên bản
+firmware, mã máy, số người trong bảng, số bản ghi chờ gửi, RAM còn — người ta tìm chúng đúng
+một lần mỗi vài tháng, lúc có sự cố. Để chúng nằm thường trực dưới hai thanh trượt là bắt mọi
+lần chỉnh độ sáng phải cuộn qua một bảng số không ai đang cần. Màn `Device` giữ chúng, và
+dòng *Thiết bị của tôi* là đường vào.
 
 **Thanh trượt ghi NVS khi thả tay, không khi kéo.** Kéo một thanh trượt sinh vài chục lần chạm;
 ghi NVS mỗi lần là ghi flash theo nhịp ngón tay, đúng thứ §6 cấm. Nên phần cứng nghe **ngay** ở
 mỗi lần chạm — đèn nền và âm lượng đổi tức thì để người ta thấy mình đang chỉnh cái gì — còn NVS
 chỉ nhận **một** phép ghi lúc ngón tay rời màn.
 
-Bốn dòng trạng thái vẫn do `main` điền qua `ui_kiosk_set_settings()` từ những gì nó với tới
-được **mà không đọc flash**: đọc flash qua SPI1 là tắt cache và ngắt trên cả hai lõi (§5.1).
+Dòng trạng thái vẫn do `main` điền qua `ui_kiosk_set_settings()` từ những gì nó với tới được
+**mà không đọc flash**: đọc flash qua SPI1 là tắt cache và ngắt trên cả hai lõi (§5.1).
 `ui_kiosk` chỉ hiện chữ và trả về con số người dùng vặn; nó không gọi tầng dịch vụ nào và không
 chạm NVS (§4.5.4 luật 2) — `main` cầm cả hai đầu ấy.
 
@@ -5062,7 +5085,7 @@ Con số phải mang sang E10-T1 không phải 71 KB mà là **mảnh liền m�
 LVGL xin quá mức đó ở RAM nội sẽ trượt dù tổng còn trống, đúng cơ chế đã hạ `arena_fast` xuống
 PSRAM; heap LVGL vì thế nằm ở PSRAM, nơi còn 5,8 MB.
 
-**Đo lại 18/09 khi hai khoản kia đã trả** (`arena.md` §13): giao diện bảy màn hình, `audio_task`
+**Đo lại 18/09 khi hai khoản kia đã trả** (`arena.md` §13): giao diện tám màn hình, `audio_task`
 và một phiên Wi-Fi vào mạng thật đều đã lên.
 
 | Mốc | 13/09 | **18/09** |
