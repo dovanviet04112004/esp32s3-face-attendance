@@ -45,9 +45,9 @@ size_t svc_facedb_people(svc_facedb_person_t *out, size_t cap)
     return s_db.people(out, cap);
 }
 
-uint32_t svc_facedb_next_employee_id(void)
+uint32_t svc_facedb_next_employee_id(uint32_t floor)
 {
-    return s_db.next_employee_id();
+    return s_db.next_employee_id(floor);
 }
 
 esp_err_t svc_facedb_remove(uint32_t employee_id)

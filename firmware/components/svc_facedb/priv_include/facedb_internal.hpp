@@ -98,7 +98,7 @@ public:
     esp_err_t templet(uint32_t employee_id, uint16_t template_idx, int8_t *emb,
                       size_t cap, float *scale, uint8_t *quality) noexcept;
     size_t people(svc_facedb_person_t *out, size_t cap) noexcept;
-    uint32_t next_employee_id() noexcept;
+    uint32_t next_employee_id(uint32_t floor) noexcept;
     esp_err_t persist() noexcept;
     size_t active() const noexcept { return active_; }
 
