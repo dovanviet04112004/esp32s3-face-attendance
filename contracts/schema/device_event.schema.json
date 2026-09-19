@@ -34,8 +34,15 @@
         "OTA_FAILED",
         "OTA_ROLLED_BACK",
         "TIME_UNSYNCED",
-        "BOOTED"
+        "BOOTED",
+        "COMMAND_DONE",
+        "COMMAND_REJECTED"
       ]
+    },
+    "cmdId": {
+      "type": "string",
+      "maxLength": 36,
+      "description": "Present on COMMAND_DONE and COMMAND_REJECTED: the cmdId of the command this reports on."
     },
     "severity": {
       "type": "string",
