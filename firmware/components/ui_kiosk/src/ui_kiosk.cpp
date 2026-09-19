@@ -196,6 +196,7 @@ void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame
     s_seen.track = track;
     // Capture reads the turn every tick, so it lands whether or not the box moved.
     s_seen.yaw = face ? yaw : 0.0f;
+    ++s_seen.samples;
     if (face != s_seen.face) {
         s_seen.face = face;
         s_dirty = true;

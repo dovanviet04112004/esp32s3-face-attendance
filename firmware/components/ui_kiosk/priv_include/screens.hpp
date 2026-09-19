@@ -29,6 +29,7 @@ struct Sight {
     bool face;                            // the detector has one
     ui_kiosk_stage_t stage;               // what svc_vision is doing with it
     float yaw;                            // 0 facing the lens (KEHOACH 4.5.5h.2)
+    uint32_t samples;                     // detects landed, so a screen can filter
     app_ui_verdict_t verdict;
     uint32_t track;                       // which face the pipeline is on
     uint32_t employee_id;

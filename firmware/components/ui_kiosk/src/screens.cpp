@@ -37,6 +37,8 @@ constexpr float kOpenYaw = 10.0f;
 // Enters the wrong-way line here and leaves it at zero, so a jittering landmark
 // cannot flicker the text (KEHOACH 4.5.5h.2 rule 3).
 constexpr float kWrongYaw = 0.03f;
+// A landmark spike lands in one detect, and every pose gate reads one detect.
+constexpr int kYawVotes = 3;
 constexpr int64_t kPoseHoldMs = 300;
 constexpr int64_t kPoseWaitMs = 6000;
 constexpr int64_t kSampleWaitMs = 15000;
@@ -143,6 +145,13 @@ void ring(Canvas &to, int cx, int cy, int radius, int thick, uint8_t tone)
             }
         }
     }
+}
+
+float median_of(const float *three)
+{
+    const float lo = three[0] < three[1] ? three[0] : three[1];
+    const float hi = three[0] < three[1] ? three[1] : three[0];
+    return three[2] < lo ? lo : (three[2] > hi ? hi : three[2]);
 }
 
 const char *prompt_for(ui_kiosk_stage_t stage)
@@ -486,6 +495,7 @@ public:
 
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
     {
+        feed(seen);
         since_ms_ += dt_ms;
         // The operator ends this screen, not a timer: the line naming who joined
         // the table has to survive a glance away (KEHOACH 4.5.5h.2).
@@ -633,6 +643,34 @@ private:
 
     float wanted() const noexcept { return kept_ == 1 ? kTurnSign : -kTurnSign; }
 
+    // yaw_of() reads zero at "nose between the eyes", which sits off the lens by
+    // a different amount on every face and every mounting (KEHOACH 4.5.5h.2).
+    float origin() const noexcept
+    {
+        return origin_n_ > 0 ? origin_sum_ / (float)origin_n_ : 0.0f;
+    }
+
+    void feed(const Sight &seen) noexcept
+    {
+        if (seen.samples == sampled_) {
+            return;
+        }
+        sampled_ = seen.samples;
+        if (!seen.face) {
+            voted_ = 0;
+            return;
+        }
+        votes_[ring_] = seen.yaw;
+        ring_ = (ring_ + 1) % kYawVotes;
+        voted_ = voted_ < kYawVotes ? voted_ + 1 : voted_;
+        yaw_ = voted_ < kYawVotes ? seen.yaw : median_of(votes_);
+        // The frontal sample is the one stretch known to face the lens.
+        if (kept_ == 0 && yaw_ > -kTurnYaw && yaw_ < kTurnYaw) {
+            origin_sum_ += yaw_;
+            ++origin_n_;
+        }
+    }
+
     // Six seconds of trying settles for the best turn this person managed rather
     // than keeping them at the screen (KEHOACH 4.5.5h.2).
     float reach() const noexcept
@@ -649,9 +687,9 @@ private:
             return false;
         }
         if (kept_ == 0) {
-            return seen.yaw > -kFrontalYaw && seen.yaw < kFrontalYaw;
+            return yaw_ > -kFrontalYaw && yaw_ < kFrontalYaw;
         }
-        return seen.yaw * wanted() >= reach();
+        return (yaw_ - origin()) * wanted() >= reach();
     }
 
     void watch(const Sight &seen) noexcept
@@ -659,7 +697,7 @@ private:
         if (!seen.face || kept_ == 0) {
             return;
         }
-        const float turn = seen.yaw * wanted();
+        const float turn = (yaw_ - origin()) * wanted();
         best_ = turn > best_ ? turn : best_;
     }
 
@@ -673,9 +711,9 @@ private:
         if (posed(seen)) {
             return kGaugeSteps;
         }
-        const float off = seen.yaw < 0.0f ? -seen.yaw : seen.yaw;
+        const float off = yaw_ < 0.0f ? -yaw_ : yaw_;
         float part = kept_ == 0 ? kFrontalYaw / (off > 0.0f ? off : kFrontalYaw)
-                                : seen.yaw * wanted() / reach();
+                                : (yaw_ - origin()) * wanted() / reach();
         part = part < 0.0f ? 0.0f : (part > 1.0f ? 1.0f : part);
         return (int)(part * (float)(kGaugeSteps - 1));
     }
@@ -700,7 +738,7 @@ private:
         if (!seen.face || kept_ == 0) {
             return false;
         }
-        const float turn = seen.yaw * wanted();
+        const float turn = (yaw_ - origin()) * wanted();
         return wrong_ ? turn < 0.0f : turn < -kWrongYaw;
     }
 
@@ -709,6 +747,11 @@ private:
     void restart() noexcept
     {
         kept_ = 0;
+        origin_sum_ = 0.0f;
+        origin_n_ = 0;
+        voted_ = 0;
+        ring_ = 0;
+        yaw_ = 0.0f;
         took_ = false;
         failed_ = false;
         why_ = nullptr;
@@ -732,14 +775,15 @@ private:
 
     void arm() noexcept
     {
-        float low = -kFrontalYaw;
-        float high = kFrontalYaw;
+        const float mid = origin();
+        float low = mid - kFrontalYaw;
+        float high = mid + kFrontalYaw;
         if (kept_ > 0) {
             // The screen has settled the pose; the pipeline only has to catch a
             // face that came back to frontal (KEHOACH 4.5.5h.2).
             const float edge = reach() < kFrontalYaw ? reach() : kFrontalYaw;
-            low = wanted() > 0.0f ? edge : -kOpenYaw;
-            high = wanted() > 0.0f ? kOpenYaw : -edge;
+            low = wanted() > 0.0f ? mid + edge : -kOpenYaw;
+            high = wanted() > 0.0f ? kOpenYaw : mid - edge;
         }
         enrol_request().employee_id = kNewPerson;
         enrol_request().template_idx = (uint16_t)kept_;
@@ -756,6 +800,13 @@ private:
     int64_t wait_ms_ = 0;
     int64_t pose_ms_ = 0;
     float best_ = 0.0f;
+    float origin_sum_ = 0.0f;           // frontal readings, summed for a mean
+    int origin_n_ = 0;
+    uint32_t sampled_ = 0;              // last Sight::samples folded in
+    float votes_[kYawVotes] = {};
+    int ring_ = 0;
+    int voted_ = 0;
+    float yaw_ = 0.0f;                  // the de-spiked turn every gate reads
     int step_ = -1;
     bool took_ = false;
     bool armed_ = false;
