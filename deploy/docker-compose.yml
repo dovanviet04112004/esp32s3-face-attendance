@@ -1,11 +1,13 @@
+name: kiosk
+
 services:
   emqx:
-    image: emqx/emqx:5
+    image: emqx/emqx:6.3.1
     container_name: kiosk-emqx
     restart: unless-stopped
     ports:
-      # 1883 carries no TLS and serves net_mqtt until E13-T4 issues the certs.
-      # Production publishes 8883 alone (KEHOACH 7.2).
+      # 8883 here carries the demo cert baked into the image, whose private key
+      # is public, so production publishes 8883 alone (KEHOACH 4.8).
       - "1883:1883"
       - "8883:8883"
       # The dashboard never leaves the host: bound to loopback on purpose.
@@ -14,6 +16,9 @@ services:
       EMQX_NODE__NAME: emqx@127.0.0.1
       EMQX_NODE__COOKIE: ${EMQX_NODE_COOKIE}
       EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD}
+      # EMQX keeps retained messages in RAM by default, which loses the LWT
+      # offline of a kiosk that is powered off across a broker restart.
+      EMQX_RETAINER__BACKEND__STORAGE_TYPE: disc
     volumes:
       - emqx-data:/opt/emqx/data
       - emqx-log:/opt/emqx/log
