@@ -100,6 +100,8 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define SYNC_TICK_MS 250
 #define OPEN_DOOR_DEFAULT_MS 3000
 #define REBOOT_DRAIN_MS 400
+#define EVENT_FAULT_GAP_MS 60000
+#define EVENT_PERSON_GAP_MS 2000
 #define NET_TASK_CORE 0
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
@@ -157,6 +159,66 @@ static void on_time_synced(void *arg)
     if (wiring != NULL) {
         xEventGroupSetBits(wiring->flags, APP_EG_TIME_OK);
     }
+}
+
+// A broken sensor repeats, a person does not: one fault every minute is enough
+// to show it is stuck, while two spoof tries five seconds apart are two tries.
+static int64_t event_gap_ms(int type)
+{
+    return type == DEVICE_EVENT_TYPE_SPOOF_DETECTED || type == DEVICE_EVENT_TYPE_UNKNOWN_FACE
+               ? EVENT_PERSON_GAP_MS
+               : EVENT_FAULT_GAP_MS;
+}
+
+// The valve sits with the producer so one stuck sensor never fills the queue.
+static void note_event(const app_event_t *event)
+{
+    static int64_t last_ms[DEVICE_EVENT_TYPE_COMMAND_REJECTED + 1];
+    const app_wiring_t *wiring = app_wiring();
+    if (wiring == NULL || event->type < 0 ||
+        event->type > DEVICE_EVENT_TYPE_COMMAND_REJECTED) {
+        return;
+    }
+    const int64_t now_ms = esp_timer_get_time() / 1000;
+    if (last_ms[event->type] != 0 && now_ms - last_ms[event->type] < event_gap_ms(event->type)) {
+        return;
+    }
+    last_ms[event->type] = now_ms;
+    if (xQueueSend(wiring->events, event, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "event %d dropped, queue full", event->type);
+    }
+}
+
+// A refused face is a fact the server wants, and the score that refused it is
+// the only way to tell a photograph from a bad frame.
+static void note_verdict(const svc_vision_result_t *result)
+{
+    app_event_t event = { 0 };
+    if (result->kind == SVC_VISION_SPOOF) {
+        event.type = DEVICE_EVENT_TYPE_SPOOF_DETECTED;
+        event.severity = DEVICE_EVENT_SEVERITY_WARN;
+        event.liveness = result->live_score;
+        event.has_liveness = true;
+        strlcpy(event.note, "liveness below the floor", sizeof(event.note));
+    } else if (result->kind == SVC_VISION_UNKNOWN) {
+        event.type = DEVICE_EVENT_TYPE_UNKNOWN_FACE;
+        event.severity = DEVICE_EVENT_SEVERITY_INFO;
+        strlcpy(event.note, "no template close enough", sizeof(event.note));
+    } else {
+        return;
+    }
+    note_event(&event);
+}
+
+static void note_fault(int type, esp_err_t err, const char *note)
+{
+    app_event_t event = { 0 };
+    event.type = type;
+    event.severity = DEVICE_EVENT_SEVERITY_ERROR;
+    event.error_code = (int32_t)err;
+    event.has_error = true;
+    strlcpy(event.note, note, sizeof(event.note));
+    note_event(&event);
 }
 
 static void on_broker_state(bool up, void *ctx)
@@ -290,24 +352,29 @@ static void publish_heartbeat(void)
     net_mqtt_publish(GEN_TOPIC_HEARTBEAT, payload, strlen(payload), 0);
 }
 
-static void publish_event(device_event_type_t type, device_event_severity_t severity,
-                          const char *cmd_id, const char *message)
+static void send_event(const app_event_t *from, const char *cmd_id)
 {
     device_event_t event = { 0 };
     if (sys_storage_device_id(event.device_id, sizeof(event.device_id)) != ESP_OK) {
         return;
     }
     event.ts = sys_time_now_ms();
-    event.type = type;
-    event.severity = severity;
+    event.type = (device_event_type_t)from->type;
+    event.severity = (device_event_severity_t)from->severity;
     if (cmd_id != NULL && cmd_id[0] != '\0') {
         strlcpy(event.cmd_id, cmd_id, sizeof(event.cmd_id));
         event.has_cmd_id = true;
     }
-    if (message != NULL && message[0] != '\0') {
-        strlcpy(event.message, message, sizeof(event.message));
+    if (from->note[0] != '\0') {
+        strlcpy(event.message, from->note, sizeof(event.message));
         event.has_message = true;
     }
+    event.employee_id = from->employee_id;
+    event.has_employee_id = from->has_employee;
+    event.error_code = from->error_code;
+    event.has_error_code = from->has_error;
+    event.liveness_score = from->liveness;
+    event.has_liveness_score = from->has_liveness;
     cJSON *root = device_event_to_json(&event);
     if (root == NULL) {
         return;
@@ -317,6 +384,31 @@ static void publish_event(device_event_type_t type, device_event_severity_t seve
     cJSON_Delete(root);
     if (printed) {
         net_mqtt_publish(GEN_TOPIC_EVENT, payload, strlen(payload), CONFIG_SYNC_ACK_TIMEOUT_MS);
+    }
+}
+
+static void publish_event(device_event_type_t type, device_event_severity_t severity,
+                          const char *cmd_id, const char *message)
+{
+    app_event_t event = { 0 };
+    event.type = type;
+    event.severity = severity;
+    if (message != NULL) {
+        strlcpy(event.note, message, sizeof(event.note));
+    }
+    send_event(&event, cmd_id);
+}
+
+// A kiosk has something to say at boot while the broker answers seconds later,
+// so an event queues until the link is there to carry it.
+static void take_events(const app_wiring_t *wiring)
+{
+    if (!net_mqtt_is_up()) {
+        return;
+    }
+    app_event_t event;
+    while (xQueueReceive(wiring->events, &event, 0) == pdTRUE) {
+        send_event(&event, NULL);
     }
 }
 
@@ -430,7 +522,11 @@ static void sync_task(void *arg)
         return;
     }
     svc_door_t door = svc_door_servo();
-    publish_event(DEVICE_EVENT_TYPE_BOOTED, DEVICE_EVENT_SEVERITY_INFO, NULL, NULL);
+    app_event_t booted = { 0 };
+    booted.type = DEVICE_EVENT_TYPE_BOOTED;
+    booted.severity = DEVICE_EVENT_SEVERITY_INFO;
+    snprintf(booted.note, sizeof(booted.note), "boot %" PRIu32, sys_storage_boot_count());
+    note_event(&booted);
     esp_err_t said = ESP_FAIL;
     uint32_t batches = 0;
     int64_t beat_ms = 0;
@@ -445,6 +541,7 @@ static void sync_task(void *arg)
             nudged = xQueueReceive(wiring->uplink, &nudge, pdMS_TO_TICKS(SYNC_TICK_MS)) == pdTRUE;
         }
         take_commands(wiring, door);
+        take_events(wiring);
         const int64_t now_ms = esp_timer_get_time() / 1000;
         if (net_mqtt_is_up() && now_ms - beat_ms >= GEN_TOPIC_HEARTBEAT_INTERVAL_S * 1000) {
             beat_ms = now_ms;
@@ -456,6 +553,10 @@ static void sync_task(void *arg)
         drain_ms = now_ms;
         const esp_err_t drained = svc_sync_drain();
         more = drained == ESP_ERR_NOT_FINISHED;
+        if (drained != ESP_OK && !more && drained != ESP_ERR_INVALID_STATE &&
+            drained != ESP_ERR_TIMEOUT) {
+            note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, drained, "attendance log unreadable");
+        }
         // A backlog is when progress is worth watching, so a long drain says
         // where it has got to rather than only speaking once it ends.
         if (drained != said || ++batches % SYNC_REPORT_BATCHES == 0) {
@@ -633,6 +734,7 @@ static void ai_task(void *arg)
         if (xQueueReceive(wiring->frames, &frame, pdMS_TO_TICKS(FRAME_WAIT_MS)) != pdTRUE) {
             esp_task_wdt_reset();
             ESP_LOGE(TAG, "no frame in %d ms", FRAME_WAIT_MS);
+            note_fault(DEVICE_EVENT_TYPE_CAMERA_FAULT, ESP_ERR_TIMEOUT, "no frame from the sensor");
             continue;
         }
         svc_vision_result_t result = { 0 };
@@ -659,9 +761,11 @@ static void ai_task(void *arg)
                     ui_kiosk_enrol_refused();
                 }
             // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
-            } else if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) !=
-                       pdTRUE) {
-                ESP_LOGE(TAG, "result %d dropped, attend queue full", (int)result.kind);
+            } else {
+                note_verdict(&result);
+                if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) != pdTRUE) {
+                    ESP_LOGE(TAG, "result %d dropped, attend queue full", (int)result.kind);
+                }
             }
         }
         // Only IDLE1 feeds its own watchdog slot, so it needs a turn (KEHOACH 5.1).
@@ -900,6 +1004,7 @@ static void tof_task(void *arg)
             // sensor is not, and it must not be what puts the kiosk to sleep.
             if (ranged != ESP_ERR_TIMEOUT) {
                 stay_awake("tof broken");
+                note_fault(DEVICE_EVENT_TYPE_TOF_FAULT, ranged, "range read failed");
             }
             continue;
         }
