@@ -43,6 +43,14 @@ topics:
     values: [online, offline]
     description: Connection state. offline is the broker-published LWT; the kiosk publishes online after CONNACK.
 
+  - name: enroll_report
+    topic: kiosk/{deviceId}/up/enroll
+    direction: up
+    qos: 1
+    retained: false
+    schema: schema/enroll_payload.schema.json
+    description: What an operator did at the machine - a face captured, or a removal asked for. The server owns identity; this is the kiosk telling it what changed under its own hands.
+
   - name: cmd
     topic: kiosk/{deviceId}/down/cmd
     direction: down

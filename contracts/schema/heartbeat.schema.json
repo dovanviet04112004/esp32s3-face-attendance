@@ -54,12 +54,25 @@
     },
     "activeSlot": {
       "type": "integer",
-      "enum": [0, 1],
+      "enum": [
+        0,
+        1
+      ],
       "description": "Which models partition is in use, models_0 or models_1."
     },
     "bootCount": {
       "type": "integer",
       "minimum": 0
+    },
+    "rosterVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Roster generation this device has applied. A number behind the server's own is how a kiosk that missed a deletion while offline gets told about it."
+    },
+    "embeddingVersion": {
+      "type": "string",
+      "maxLength": 32,
+      "description": "Recognition model this device compares with. A template pushed under any other value is refused, so this is the string a server has to match."
     }
   }
 }

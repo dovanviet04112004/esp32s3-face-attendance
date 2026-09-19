@@ -5267,9 +5267,35 @@ mã hoá lúc lưu và không bao giờ trả nó ra API đọc thường.
 đứng cạnh; chấm công là việc hàng ngày phải chạy khi mất mạng. Bắt đăng ký phải có server là
 cách duy nhất giữ không gian id sạch — và nó xoá luôn chỗ `next_employee_id()` tự bịa ở trên.
 
-**Hợp đồng còn thiếu ba thứ cho tất cả những điều trên**: một topic `up/enroll` (chiều lên chưa
-tồn tại), một khoá tương quan để báo kết quả đăng ký, và `rosterVersion` trong `heartbeat`. Ba
-thứ ấy chốt cùng E11 vì chúng là giao thức hai đầu, không phải việc riêng của firmware.
+**Hai luật khó nhất đã nằm sẵn trong `enroll_payload.schema.json` từ trước**, và chúng đúng:
+`embeddingVersion` — *"A kiosk running a different model must refuse the template rather than
+compare across models"* — và `updatedAt` — *"the kiosk keeps the newer of two conflicting
+pushes"*. Cùng với `REPLACE_ALL` cho đường resync toàn phần, ba thứ ấy là xương sống của đồng bộ
+và không phải nghĩ lại.
+
+**Ba thứ hợp đồng còn thiếu, nay chốt:**
+
+| Thêm | Ở đâu | Làm gì |
+|---|---|---|
+| Topic `kiosk/{deviceId}/up/enroll` | `mqtt_topics.yaml`, QoS 1 | Chiều lên: máy báo đã chụp được ai, hoặc người vận hành xin xoá ai |
+| `rosterVersion` | `enroll_payload` **và** `heartbeat` | Con trỏ hội tụ |
+| `ASSIGN` / `REVOKE` | enum `op` | Server báo trước "máy này sắp đăng ký người X, tên là Y" |
+
+**`rosterVersion` là con trỏ, không phải số phiên bản để so sánh chơi.** Mỗi lệnh server đẩy
+xuống mang theo **số mà máy sẽ đứng ở đó sau khi áp xong**; máy lưu lại và khai trong mọi
+`heartbeat`. Server thấy số cũ hơn số nó giữ cho máy ấy thì đẩy đúng phần còn thiếu. **Không cần
+ack riêng cho từng lệnh**: chính heartbeat là ack, và nó lặp mỗi 30 giây nên một lần rơi gói tự
+lành. Đây đúng hình dạng con trỏ `cursor.bin` của §6.2.5, chỉ chạy ngược chiều.
+
+**`ASSIGN` là thứ bỏ được phép gõ UID.** Server đẩy xuống `employeeId` kèm `fullName` mà không
+kèm embedding; máy hiện thành danh sách chờ, người vận hành bấm chọn rồi chụp. `REVOKE` rút lại
+khi phân công đổi. Nhờ vậy id **luôn do server cấp**, và chỗ `svc_facedb_next_employee_id()` tự
+bịa biến mất.
+
+**Thứ tự làm, vì không phải phần nào cũng đợi được backend.** Chuyển tải làm trước: máy áp được
+`UPSERT` với `DELETE_EMPLOYEE` từ `down/enroll`, khai `rosterVersion` trong heartbeat, và báo
+lên `up/enroll` sau mỗi lần đăng ký tại chỗ. `ASSIGN` cần một màn hình danh sách chờ (E10-T1),
+`DELETE` một template và `REPLACE_ALL` cần `svc_facedb` mọc thêm API — ba thứ ấy đi sau.
 
 ---
 
