@@ -22,10 +22,10 @@ MISANS = str(Path.home() / ".local/share/fonts/MiSansLatinVF.ttf")
 
 # Size, weight axis, and the role each face carries in theme.hpp.
 FACES = [
-    (15, 400, "caption"),
-    (20, 400, "body"),
-    (24, 500, "strong"),
-    (28, 600, "title"),
+    (15, 450, "caption"),
+    (20, 430, "body"),
+    (24, 600, "strong"),
+    (28, 700, "title"),
 ]
 
 
