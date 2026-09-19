@@ -453,16 +453,16 @@ chung đường ghi vào `AttendanceDay`.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E19-T1 | Trang chủ đổi theo vai (§9.10): bốn khuôn mặt trên **một** ứng dụng | Một người đăng nhập thấy đúng việc của mình ở màn đầu | E15-T6 |
-| E19-T2 | `me/`: hồ sơ, công tháng này, số phép, phiếu lương của tôi | Nhân viên tự tra được mà không hỏi HR | E19-T1, E18-T8 |
-| E19-T3 | **Hộp chờ duyệt**: mỗi dòng đủ ngữ cảnh để quyết tại chỗ — ai, loại gì, mấy ngày, còn dư bao nhiêu, ai khác trong nhóm cũng nghỉ hôm đó | Duyệt một đơn không phải mở thêm màn nào | E17-T1 |
-| E19-T4 | Màn gửi đơn dùng chung cho nghỉ phép, tăng ca, giải trình, công tác | Bốn loại đơn, một thói quen | E17-T9, E17-T10 |
-| E19-T5 | **Một chỗ xem mọi đơn của tôi** (§9.17 mục 7) | Không phải nhớ đã gửi cái gì ở đâu | E19-T4 |
+| ~~E19-T1~~ | Trang chủ đổi theo vai — **Xong 20/09.** Một ứng dụng, thanh bên chia nhóm theo **việc người ta đang làm** chứ không theo tên phân hệ; nhóm rỗng với vai đang xem thì **ẩn hẳn, không làm mờ** — làm mờ là khoe thứ họ không được đụng | Một người đăng nhập thấy đúng việc của mình ở màn đầu | E15-T6 |
+| ~~E19-T2~~ | `me/` — **Xong 20/09.** Trang của tôi mở ra số phép còn lại, đơn đang chờ và đường vào; kèm `me/attendance` là lượt quẹt của chính mình. 🔬 Phiếu lương chờ E18 | Nhân viên tự tra được mà không hỏi HR | E19-T1, E18-T8 |
+| ~~E19-T3~~ | **Hộp chờ duyệt** — **Xong 20/09.** Mỗi thẻ mang đủ ngữ cảnh để quyết tại chỗ: ai, loại gì, loại phép nào, mấy ngày, lý do. Nút *Duyệt* và *Từ chối* nằm **cuối thẻ, sau phần đọc** — vừa đúng thứ tự đọc vừa trong tầm ngón cái (§9.21.2). 🔬 Còn hiện ai khác trong nhóm cũng nghỉ hôm đó | Duyệt một đơn không phải mở thêm màn nào | E17-T1 |
+| ~~E19-T4~~ | Màn gửi đơn dùng chung — **Xong 20/09.** Một biểu mẫu cho cả năm loại, vì sau lưng là một bảng và trước mặt là một thói quen. **409 của API thành câu người đọc sửa được**: trùng ngày, hay không đủ số dư | Bốn loại đơn, một thói quen | E17-T9, E17-T10 |
+| ~~E19-T5~~ | Một chỗ xem mọi đơn của tôi — **Xong 20/09.** Gửi, xem trạng thái, huỷ đơn đang chờ, cùng một danh sách | Không phải nhớ đã gửi cái gì ở đâu | E19-T4 |
 | E19-T6 | **Lịch ca của tôi**, xem trước tháng sau (§9.17 mục 8) | Người làm ca sắp xếp được việc nhà | E11-T6 |
 | E19-T7 | **Xin giấy xác nhận công tác và thu nhập** (§9.17 mục 5): xin, duyệt, sinh văn bản có số hiệu | HR không còn soạn tay từng cái | E19-T2, E18-T8 |
 | E19-T8 | **Đổi thông tin cá nhân qua duyệt**, riêng số tài khoản có thông báo về email cũ và không ảnh hưởng kỳ đang chạy (§9.17 mục 6) | Chiếm tài khoản không đổi được nơi nhận lương | E19-T2, E17-T1 |
 | E19-T9 | **Khiếu nại phiếu lương thành hồ sơ** (§9.17 mục 11): có hạn trả lời, có kết quả lưu lại | Tranh chấp lương chứng minh được về sau | E18-T8, E17-T1 |
-| E19-T10 | Cây tổ chức xem được và điều hướng được | Mở một phòng ban thấy người và cấp dưới của nó | E15-T7 |
+| ~~E19-T10~~ | Cây tổ chức — **Xong 20/09.** API trả phẳng kèm `parentId`, giao diện dựng hình một lần | Mở một phòng ban thấy người và cấp dưới của nó | E15-T7 |
 | E19-T11 | Hồ sơ một người là **một trang có tab** (§9.15): thông tin, hợp đồng, chấm công, phép, lương, tài sản, đào tạo | HR không phải tìm lại cùng một người bảy lần | E19-T1 |
 | E19-T12 | Bảng công tháng cho HR: sửa được, có vết, lọc theo phòng ban | Sửa một ngày để lại người sửa và lý do | E16-T4 |
 | E19-T13 | Màn chạy kỳ lương: xem trước, đối chiếu, chốt, phát hành | Không ai chốt nhầm kỳ vì màn nói rõ đang ở bước nào | E18-T6 |
@@ -474,9 +474,9 @@ chung đường ghi vào `AttendanceDay`.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E20-T1 | Thanh bên theo §9.15: chia nhóm, gập được, **số đếm việc đang chờ**, nhóm rỗng với vai thì không hiện | Trưởng phòng biết có việc mà không phải mở trang | E19-T1 |
+| ~~E20-T1~~ | Thanh bên theo §9.15 — **Xong 20/09.** Chia nhóm, **số đếm đơn đang chờ** làm tươi mỗi phút, nhóm rỗng thì ẩn. Khoá điều hướng **ràng kiểu vào `vi.json`**, nên đổi tên một khoá là vỡ build chứ không phải hiện khoá thô lên thanh bên | Trưởng phòng biết có việc mà không phải mở trang | E19-T1 |
 | E20-T2 | **Tìm kiếm toàn cục** (§9.20): một ô ra người, phòng ban, đơn, phiếu lương | Việc HR làm nhiều nhất trong ngày mất một thao tác | E16-T6 |
-| E20-T3 | Bộ hình thức §9.12: nhãn trạng thái **có chữ không chỉ có màu**, cột số căn phải chữ số đều bề ngang, cột khoá đứng yên khi cuộn ngang, tiền và giờ luôn có đơn vị | Người không phân biệt được đỏ với lục vẫn đọc được mọi trạng thái | E20-T1 |
+| E20-T3 | Bộ hình thức §9.12 — **Một nửa xong 20/09**: nhãn trạng thái là **viên có chữ**, màu chỉ là lớp thứ hai; cột số dùng `tabular-nums`. 🔬 Còn cột khoá đứng yên khi cuộn ngang, và tiền/giờ luôn kèm đơn vị | Người không phân biệt được đỏ với lục vẫn đọc được mọi trạng thái | E20-T1 |
 | E20-T4 | `DataTable` nâng cấp: sắp xếp, chọn nhiều dòng, thao tác hàng loạt, cột ẩn hiện được, nhớ theo người dùng | Bảng thành công cụ, không còn là bản in | E20-T3 |
 | E20-T5 | **Cỡ chạm cho màn cảm ứng** (§9.21.2): đo được nút thường **40 px**, nút nhỏ **32 px**, ô tích **16 px** — cả ba dưới ngưỡng 44 px, nên `components/ui/` cần cỡ riêng chứ không chỉnh cỡ đang dùng cho chuột | Mọi đích chạm ≥ 44 × 44 px trên màn hẹp | E20-T3 |
 | E20-T6 | **Thanh tab dưới đáy thay thanh bên trên màn hẹp** (§9.21.1): `EMPLOYEE` bốn mục, `MANAGER` năm mục có số đếm | Thanh bên không còn nuốt một phần ba bề ngang điện thoại | E20-T1 |
