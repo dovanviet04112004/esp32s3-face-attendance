@@ -455,3 +455,44 @@ Cùng `bench_ai`, cùng ba test, 20 lượt mỗi số, resolver nhánh chống 
 trên vector đã gộp, rẻ như dự đoán. facenox tốn gấp 2,7 lần V2 vì 108,9 MMAC ở 128 px, và **không
 vừa cap arena 1,5 MB** của firmware (§6.4), nên không có đường nạp mà không đổi ngân sách bộ nhớ.
 Không có bảng từng op vì build bench này không bật profiler.
+
+---
+
+## 12. Lock chuyển sang lớp V1SE — chưa đo lại trên board
+
+`contracts/models.lock.json` khoá anti-spoof `antispoof/20260918-1050_aa7e463_e66877`, arena
+**748.524 B**, file 602 KB. Con số arena trùng khít ứng viên V1SE `0118` ở §11, nên đây là cùng
+một đồ thị, khác run train. Mục §10 (student `1109`, 425 KB, 234,1 ms) **không còn mô tả bản
+đang nạp**.
+
+| Nhánh | Nguồn số | Rảnh | Có tải preview |
+|---|---|---|---|
+| detect | §10, đo 16/09 | 232,5 ms | 270,7 ms |
+| anti-spoof | 🔬 §11, đo trên V1SE `0118` cùng arena | **581,0 ms** | 677,4 ms |
+| recognition | §10, đo 16/09 | 460,0 ms | 537,0 ms |
+| **Một lượt ba nhánh** | | **🔬 1.273 ms** | **🔬 1.483 ms** |
+
+🔬 Chính run `1050` chưa qua `bench_ai` lần nào. 581,0 ms là số của `0118`, dùng được vì hai bản
+chung đồ thị và latency không phụ thuộc trọng số — nhưng nó vẫn là số của một file khác.
+
+**Ngân sách §6.4 trượt 3,5 lần**, không phải 2,6 lần như §10 ghi. Chỗ tốn nhất đổi ngôi: anti-spoof
+581 ms vượt recognition 460 ms, và detect 232 ms vẫn chạy mỗi khung.
+
+### 12.1 Vì sao esp-nn 1.4.0 không cứu được chỗ này
+
+Đo ba `.tflite` của chính lock, đếm lớp qua được cổng `in_ch × out_ch > 24.576` — cổng bật đường
+panel 1×1 **và** đường chia nhân của conv trong esp-nn 1.4.0:
+
+| Nhánh | CONV_2D | Qua ngưỡng panel | DEPTHWISE | `out_ht ≥ 4`, chia nhân được |
+|---|---:|---:|---:|---:|
+| detect | 21,3 MMAC | **0,0%** | 3,9 MMAC | 99,1% |
+| anti-spoof | 40,4 MMAC | 13,8% | 2,3 MMAC | 99,4% |
+| recognition | 61,3 MMAC | 3,4% | 5,5 MMAC | 99,4% |
+
+Ghép với tỉ lệ thời gian từng op (§2, §9.1): thời gian nằm trên lớp mà đường panel chạm tới được
+là 🔬 **63,9 ms trên 1.273 ms — 5,0%**, và panel chỉ bỏ phần đọc lại filter chứ không xoá lớp.
+Hệ số width 32 (§4) đã kéo mọi lớp 1×1 xuống dưới đúng cái ngưỡng ấy.
+
+Phần chia nhân được rộng là **depthwise**, 99% số lớp, và nó không đòi scratch thêm: 🔬 **302,6 ms
+chia đôi**, tức trần −151 ms (−11,9%). Giá là một task 8 KB stack RAM nội ở ưu tiên
+`configMAX_PRIORITIES - 2` ≈ 23, bám **core 0** — đúng nhân của `cam_task` ưu tiên 7.
