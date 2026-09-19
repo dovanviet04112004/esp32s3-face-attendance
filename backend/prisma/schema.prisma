@@ -168,7 +168,11 @@ model AttendanceRecord {
   direction     String
   score         Float?
   livenessScore Float?
-  synced        Boolean  @default(true)
+  doorOpened    Boolean  @default(false)
+  capturedOffline Boolean @default(false)
+  // The kiosk saying its own timestamp predates any NTP correction, so a
+  // report can mark the row rather than quietly trust it (KEHOACH 6.2.5).
+  clockUnsynced Boolean  @default(false)
   photoUrl      String?
   createdAt     DateTime @default(now())
   device        Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
