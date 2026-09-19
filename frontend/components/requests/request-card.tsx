@@ -108,23 +108,12 @@ export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
             placeholder={t("note")}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="h-11 min-w-40 flex-1"
+            className="min-w-40 flex-1"
           />
-          <Button
-            type="button"
-            disabled={busy}
-            onClick={() => onDecide(true, note)}
-            className="h-11"
-          >
+          <Button type="button" disabled={busy} onClick={() => onDecide(true, note)}>
             {t("approve")}
           </Button>
-          <Button
-            type="button"
-            tone="danger"
-            disabled={busy}
-            onClick={() => onDecide(false, note)}
-            className="h-11"
-          >
+          <Button type="button" tone="danger" disabled={busy} onClick={() => onDecide(false, note)}>
             {t("reject")}
           </Button>
         </div>
@@ -136,7 +125,7 @@ export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
           tone="quiet"
           disabled={busy}
           onClick={onCancel}
-          className="mt-4 h-11"
+          className="mt-4"
         >
           {busy ? common("saving") : t("cancel")}
         </Button>

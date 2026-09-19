@@ -7,8 +7,8 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
     <input
       className={cn(
         "h-10 w-full rounded-lg border border-(--color-line) bg-(--color-surface) px-3 text-sm",
-        "placeholder:text-(--color-muted) focus-visible:outline-2 focus-visible:outline-offset-2",
-        "focus-visible:outline-(--color-accent)",
+        "pointer-coarse:h-11 placeholder:text-(--color-muted)",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)",
         className,
       )}
       {...rest}

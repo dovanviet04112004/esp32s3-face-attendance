@@ -44,7 +44,7 @@ export function Sidebar({ onSignOut }: { onSignOut: () => void }) {
                   href={item.href}
                   aria-current={here === item.href ? "page" : undefined}
                   className={cn(
-                    "flex items-center justify-between rounded-lg px-2 py-2 text-sm",
+                    "flex items-center justify-between rounded-lg px-2 py-2 text-sm pointer-coarse:min-h-11",
                     here === item.href
                       ? "bg-(--color-accent) text-white"
                       : "hover:bg-(--color-ground)",
@@ -72,7 +72,7 @@ export function Sidebar({ onSignOut }: { onSignOut: () => void }) {
 
       <button
         onClick={onSignOut}
-        className="mt-4 w-full rounded-lg px-2 py-2 text-left text-sm text-(--color-muted) hover:bg-(--color-ground)"
+        className="mt-4 w-full rounded-lg px-2 py-2 text-left text-sm text-(--color-muted) hover:bg-(--color-ground) pointer-coarse:min-h-11"
       >
         {t("signOut")}
       </button>

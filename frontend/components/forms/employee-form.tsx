@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
@@ -92,15 +93,12 @@ export function EmployeeForm({
       </Select>
 
       {showActive ? (
-        <label className="mt-4 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={draft.active}
-            onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
-            className="size-4 accent-(--color-accent)"
-          />
-          {t("activeLabel")}
-        </label>
+        <Checkbox
+          className="mt-4"
+          checked={draft.active}
+          onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
+          label={t("activeLabel")}
+        />
       ) : null}
 
       {fault ? (

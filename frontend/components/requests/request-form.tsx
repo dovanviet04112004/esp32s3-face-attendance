@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
@@ -92,7 +93,7 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
         id="kind"
         value={kind}
         onChange={(e) => setKind(e.target.value as RequestKind)}
-        className="mt-1 h-11"
+        className="mt-1"
       >
         {KINDS.map((one) => (
           <option key={one} value={one}>
@@ -111,7 +112,7 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
             required
             value={leaveTypeId}
             onChange={(e) => setLeaveTypeId(e.target.value)}
-            className="mt-1 h-11"
+            className="mt-1"
           >
             <option value="">{common("empty")}</option>
             {(types.data ?? []).map((one) => (
@@ -134,7 +135,7 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
             required
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="mt-1 h-11"
+            className="mt-1"
           />
         </div>
         <div className="flex-1">
@@ -147,21 +148,18 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
             required
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="mt-1 h-11"
+            className="mt-1"
           />
         </div>
       </div>
 
       {kind === "LEAVE" ? (
-        <label className="mt-4 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={halfDay}
-            onChange={(e) => setHalfDay(e.target.checked)}
-            className="size-5 accent-(--color-accent)"
-          />
-          {t("halfDay")}
-        </label>
+        <Checkbox
+          className="mt-4"
+          checked={halfDay}
+          onChange={(e) => setHalfDay(e.target.checked)}
+          label={t("halfDay")}
+        />
       ) : null}
 
       {wantsMinutes ? (
@@ -175,7 +173,7 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
             min={0}
             value={minutes}
             onChange={(e) => setMinutes(e.target.value)}
-            className="mt-1 h-11"
+            className="mt-1"
           />
         </>
       ) : null}
@@ -189,7 +187,7 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
         maxLength={500}
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        className="mt-1 h-11"
+        className="mt-1"
       />
 
       {fault ? (
@@ -199,10 +197,10 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
       ) : null}
 
       <div className="mt-5 flex gap-2">
-        <Button type="submit" disabled={file.isPending} className="h-11">
+        <Button type="submit" disabled={file.isPending}>
           {file.isPending ? t("submitting") : t("submit")}
         </Button>
-        <Button type="button" tone="quiet" onClick={onCancel} className="h-11">
+        <Button type="button" tone="quiet" onClick={onCancel}>
           {common("cancel")}
         </Button>
       </div>
