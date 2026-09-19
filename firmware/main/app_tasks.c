@@ -72,7 +72,8 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define REST_ALL_MS 60000
 #define REST_POLL_MS 40
 #define SCREEN_DIM_PERCENT 0
-#define UI_BACKLIGHT_PERCENT 100
+#define UI_NVS_BRIGHTNESS "brightness"
+#define UI_NVS_VOLUME "volume"
 #define TOF_SETTLE_POLLS 5
 #define PRESENCE_HYSTERESIS_MM 60
 #define PRESENCE_AWAY_SAMPLES 5
@@ -86,7 +87,8 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define ATTEND_TASK_STACK_BYTES 4096
 #define ATTEND_TICK_MS 200
 #define SETTINGS_REFRESH_MS 3000
-#define SETTINGS_LINE_CAP 40
+#define FACT_LABEL_CAP 24
+#define FACT_VALUE_CAP 32
 #define SYNC_TASK_CORE 0
 #define SYNC_TASK_PRIORITY 2
 #define SYNC_TASK_STACK_BYTES 5120
@@ -133,7 +135,6 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define UI_TASK_STACK_BYTES 4096
 #define UI_TICK_MS 20
 #define UI_REST_TICK_MS 200
-#define UI_GROUND_RGB565 0x0821
 #define AUDIO_TASK_CORE 0
 #define AUDIO_TASK_PRIORITY 6
 #define AUDIO_TASK_STACK_BYTES 4096
@@ -549,6 +550,47 @@ static void report_enrolled(const app_roster_t *op)
              (unsigned)op->template_idx, esp_err_to_name(sent));
 }
 
+static ui_kiosk_pending_t s_pending[UI_KIOSK_PENDING_ROWS];
+static int s_pending_count;
+static _Atomic uint8_t s_brightness = 100;
+
+static void offer_pending(void)
+{
+    ui_kiosk_set_pending(s_pending, s_pending_count);
+}
+
+static bool assign_pending(const app_roster_t *op)
+{
+    for (int i = 0; i < s_pending_count; ++i) {
+        if (s_pending[i].employee_id == op->employee_id) {
+            strlcpy(s_pending[i].name, op->name, sizeof(s_pending[i].name));
+            offer_pending();
+            return true;
+        }
+    }
+    if (s_pending_count >= UI_KIOSK_PENDING_ROWS) {
+        return false;
+    }
+    s_pending[s_pending_count].employee_id = op->employee_id;
+    strlcpy(s_pending[s_pending_count].name, op->name, sizeof(s_pending[0].name));
+    ++s_pending_count;
+    offer_pending();
+    return true;
+}
+
+static void revoke_pending(uint32_t employee_id)
+{
+    for (int i = 0; i < s_pending_count; ++i) {
+        if (s_pending[i].employee_id != employee_id) {
+            continue;
+        }
+        s_pending[i] = s_pending[s_pending_count - 1];
+        --s_pending_count;
+        offer_pending();
+        return;
+    }
+}
+
 // The cursor is written after the table, so a power cut costs one push again
 // rather than a device claiming a version it never applied (KEHOACH 7.5).
 static bool apply_roster(const app_roster_t *op)
@@ -563,9 +605,16 @@ static bool apply_roster(const app_roster_t *op)
     case ENROLL_PAYLOAD_OP_DELETE_EMPLOYEE:
         done = svc_facedb_remove(op->employee_id);
         break;
+    case ENROLL_PAYLOAD_OP_ASSIGN:
+        done = assign_pending(op) ? ESP_OK : ESP_ERR_NO_MEM;
+        break;
+    case ENROLL_PAYLOAD_OP_REVOKE:
+        revoke_pending(op->employee_id);
+        done = ESP_OK;
+        break;
     case ENROLL_PAYLOAD_OP_DELETE: refusal = "one template at a time needs a facedb api"; break;
     case ENROLL_PAYLOAD_OP_REPLACE_ALL: refusal = "full resync needs a facedb clear"; break;
-    default: refusal = "the pending list screen is not built yet"; break;
+    default: refusal = "unknown roster op"; break;
     }
     if (refusal != NULL) {
         app_event_t event = { 0 };
@@ -610,13 +659,17 @@ static void take_roster(const app_wiring_t *wiring)
         if (!apply_roster(&op)) {
             continue;
         }
-        changed = true;
+        changed = changed || (op.op != ENROLL_PAYLOAD_OP_ASSIGN &&
+                              op.op != ENROLL_PAYLOAD_OP_REVOKE);
         if (op.has_roster_version) {
             reached = op.roster_version;
             versioned = true;
         }
     }
     if (!changed) {
+        if (versioned) {
+            sys_storage_set_u32(STORAGE_NS_DEVICE, NVS_ROSTER_VER, reached);
+        }
         return;
     }
     const esp_err_t saved = svc_facedb_persist();
@@ -858,7 +911,7 @@ static esp_err_t show(const drv_lcd_overlay_t *overlay, const camera_fb_t *frame
         return ESP_OK;
     }
     *drawn_serial = overlay->serial;
-    return drv_lcd_paint(overlay, UI_GROUND_RGB565);
+    return drv_lcd_paint(overlay, ui_kiosk_ground_rgb565());
 }
 
 static void cam_task(void *arg)
@@ -913,7 +966,7 @@ static void cam_task(void *arg)
         offer_to_ai(wiring->frames, frame);
         if (relight && err == ESP_OK) {
             relight = false;
-            drv_lcd_backlight(UI_BACKLIGHT_PERCENT);
+            drv_lcd_backlight(atomic_load(&s_brightness));
         }
         if (err != last_blit) {
             ESP_LOGE(TAG, "blit %s", esp_err_to_name(err));
@@ -1053,37 +1106,64 @@ static void touch_task(void *arg)
 
 // Main is the one layer that can see all of these, and none of them costs a
 // flash read, so the page stays cheap to refresh (KEHOACH 4.5.5h.4).
-static void show_settings(void)
+static void say(ui_kiosk_fact_t *fact, const char *label, const char *fmt, ...)
 {
-    static char text[UI_KIOSK_SETTINGS_LINES][SETTINGS_LINE_CAP];
-    const char *lines[UI_KIOSK_SETTINGS_LINES];
+    va_list args;
+    va_start(args, fmt);
+    strlcpy(fact->label, label, sizeof(fact->label));
+    vsnprintf(fact->value, sizeof(fact->value), fmt, args);
+    va_end(args);
+}
+
+static void show_facts(void)
+{
+    ui_kiosk_fact_t fact[UI_KIOSK_FACTS];
     const esp_app_desc_t *app = esp_app_get_description();
+    char device_id[STORAGE_DEVICE_ID_CAP] = { 0 };
+    sys_storage_device_id(device_id, sizeof(device_id));
     int n = 0;
-    snprintf(text[n], SETTINGS_LINE_CAP, "Phiên bản: %.20s", app != NULL ? app->version : "?");
-    lines[n] = text[n];
-    ++n;
-    snprintf(text[n], SETTINGS_LINE_CAP, "Wi-Fi: %s, rớt %" PRIu32 " lần",
-             net_wifi_is_connected() ? "đã nối" : "chưa nối", net_wifi_disconnects());
-    lines[n] = text[n];
-    ++n;
-    snprintf(text[n], SETTINGS_LINE_CAP, "Người trong bảng: %u", (unsigned)svc_facedb_count());
-    lines[n] = text[n];
-    ++n;
-    snprintf(text[n], SETTINGS_LINE_CAP, "Bản ghi chấm công: %" PRIu32, svc_attendance_records());
-    lines[n] = text[n];
-    ++n;
-    snprintf(text[n], SETTINGS_LINE_CAP, "Bật máy trong: %" PRIu32 " cm",
-             atomic_load(&s_gate_mm) / 10);
-    lines[n] = text[n];
-    ++n;
-    snprintf(text[n], SETTINGS_LINE_CAP, "Mặt nhỏ nhất: %d px", svc_vision_face_min_px());
-    lines[n] = text[n];
-    ++n;
-    snprintf(text[n], SETTINGS_LINE_CAP, "RAM nội còn: %u KB",
-             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
-    lines[n] = text[n];
-    ++n;
-    ui_kiosk_set_settings(lines, n);
+    say(&fact[n++], "Phiên bản", "%.20s", app != NULL ? app->version : "?");
+    say(&fact[n++], "Mã máy", "%s", device_id);
+    say(&fact[n++], "Người đã thêm", "%u", (unsigned)svc_facedb_count());
+    say(&fact[n++], "Bản ghi", "%" PRIu32, svc_attendance_records());
+    say(&fact[n++], "Wi-Fi rớt", "%" PRIu32 " lần", net_wifi_disconnects());
+    say(&fact[n++], "Bật máy trong", "%" PRIu32 " cm", atomic_load(&s_gate_mm) / 10);
+    say(&fact[n++], "Mặt nhỏ nhất", "%d px", svc_vision_face_min_px());
+    say(&fact[n++], "RAM nội còn", "%u KB",
+        (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
+    ui_kiosk_set_facts(fact, n);
+}
+
+static void show_net(void)
+{
+    ui_kiosk_net_t net = { 0 };
+    net.joined = net_wifi_is_connected();
+    if (net.joined) {
+        net_wifi_ssid(net.ssid, sizeof(net.ssid));
+        net_wifi_rssi_dbm(&net.rssi_dbm);
+    }
+    ui_kiosk_set_net(&net);
+}
+
+// The lamp and the amplifier answer every touch so the operator sees what they
+// are turning; NVS hears only the touch that ends the drag (KEHOACH 4.5.5h.4).
+static void take_levels(void)
+{
+    ui_kiosk_level_t which = UI_KIOSK_LEVEL_BRIGHTNESS;
+    uint8_t percent = 0;
+    bool settled = false;
+    while (ui_kiosk_take_level(&which, &percent, &settled)) {
+        const bool lamp = which == UI_KIOSK_LEVEL_BRIGHTNESS;
+        if (lamp) {
+            atomic_store(&s_brightness, percent);
+            drv_lcd_backlight(percent);
+        } else {
+            drv_audio_set_volume(percent);
+        }
+        if (settled) {
+            sys_storage_set_u32(STORAGE_NS_UI, lamp ? UI_NVS_BRIGHTNESS : UI_NVS_VOLUME, percent);
+        }
+    }
 }
 
 static void show_people(void)
@@ -1165,8 +1245,12 @@ static void ui_task(void *arg)
                 }
             }
         }
+        take_levels();
         if (ui_kiosk_take_people_request()) {
             show_people();
+        }
+        if (ui_kiosk_take_pending_request()) {
+            offer_pending();
         }
         uint32_t going = 0;
         if (ui_kiosk_take_remove(&going)) {
@@ -1200,6 +1284,7 @@ static void ui_task(void *arg)
                                              : svc_facedb_next_employee_id(local_employee_floor());
             employee_id = new_employee;
         }
+        new_employee = employee_id;
         if (employee_id == 0) {
             ESP_LOGE(TAG, "no id for %s, face table did not answer", name);
             continue;
@@ -1432,7 +1517,8 @@ static void attend_task(void *arg)
             const bool readable = rest_level() != REST_ALL;
             if (readable && sys_time_now_ms() - settings_at_ms > SETTINGS_REFRESH_MS) {
                 settings_at_ms = sys_time_now_ms();
-                show_settings();
+                show_facts();
+                show_net();
             }
         }
         const svc_attendance_state_t state = svc_attendance_state();

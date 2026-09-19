@@ -33,7 +33,7 @@ static const char *TAG = "app_boot";
 #define TZ_CAP 40
 // Raise only when a seed below changes, and read KEHOACH 6.2.1 first: it
 // overwrites whatever SET_CONFIG had put there.
-#define APP_SEED_VER 5
+#define APP_SEED_VER 6
 #define NVS_DETECT_MIN "detect_min"
 #define NVS_LIVE_MIN "live_min"
 #define NVS_MATCH_MIN "match_min"
@@ -41,6 +41,8 @@ static const char *TAG = "app_boot";
 #define NVS_PRESENT_MM "present_mm"
 #define NVS_DEDUP_MIN "dedup_min"
 #define NVS_ALLOW_NO_SPOOF "allow_no_spoof"
+#define NVS_BRIGHTNESS "brightness"
+#define NVS_VOLUME "volume"
 #define PERMILLE 1000.0f
 
 #ifdef CONFIG_ATTEND_SEED_ALLOW_NO_SPOOF
@@ -63,6 +65,8 @@ static const app_seed_t kSeeds[] = {
     { STORAGE_NS_VISION, NVS_PRESENT_MM, CONFIG_VISION_SEED_PRESENT_MM },
     { STORAGE_NS_ATTEND, NVS_DEDUP_MIN, CONFIG_ATTEND_SEED_DEDUP_MIN },
     { STORAGE_NS_ATTEND, NVS_ALLOW_NO_SPOOF, ATTEND_SEED_ALLOW_NO_SPOOF },
+    { STORAGE_NS_UI, NVS_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS },
+    { STORAGE_NS_UI, NVS_VOLUME, CONFIG_UI_SEED_VOLUME },
 };
 
 static bool rtc_ntp_marker(void)
@@ -166,8 +170,11 @@ esp_err_t app_boot(void)
     seed_settings();
     ESP_ERROR_CHECK(bsp_board_init());
     ESP_ERROR_CHECK(drv_lcd_init());
-    ESP_ERROR_CHECK(drv_lcd_backlight(100));
+    const uint8_t lamp = (uint8_t)setting(STORAGE_NS_UI, NVS_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS);
+    const uint8_t loud = (uint8_t)setting(STORAGE_NS_UI, NVS_VOLUME, CONFIG_UI_SEED_VOLUME);
+    ESP_ERROR_CHECK(drv_lcd_backlight(lamp));
     ESP_ERROR_CHECK(ui_kiosk_init());
+    ui_kiosk_set_levels(lamp, loud);
     ESP_ERROR_CHECK(drv_ioexp_init());
     // A silent clock costs the trust of a timestamp, not the kiosk (KEHOACH 6.2.5).
     const esp_err_t clock = sys_time_init(rtc_ntp_marker());
