@@ -250,6 +250,8 @@ const char *prompt_for(ui_kiosk_stage_t stage)
             return "Lùi lại một chút";
         case UI_KIOSK_STAGE_WORKING:
             return "Đang nhận diện…";
+        case UI_KIOSK_STAGE_SETTLED:
+            return nullptr;
         default:
             return "Đưa khuôn mặt vào khung";
     }
@@ -419,6 +421,10 @@ public:
             prompt = nullptr;
         } else if (answered_) {
             tone = DRV_LCD_OK;
+            prompt = nullptr;
+        } else if (seen.stage == UI_KIOSK_STAGE_SETTLED) {
+            // The kiosk has finished with this face: no guidance, no claim.
+            tone = DRV_LCD_ACCENT;
             prompt = nullptr;
         } else if (seen.stage == UI_KIOSK_STAGE_WORKING && !stuck_) {
             tone = seen.face ? DRV_LCD_ACCENT : DRV_LCD_INK;

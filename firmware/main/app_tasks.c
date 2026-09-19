@@ -1001,6 +1001,8 @@ static ui_kiosk_stage_t stage_of(svc_vision_kind_t kind)
             return UI_KIOSK_STAGE_TOO_FAR;
         case SVC_VISION_FACE_OUT_OF_FRAME:
             return UI_KIOSK_STAGE_TOO_CLOSE;
+        case SVC_VISION_FACE_SETTLED:
+            return UI_KIOSK_STAGE_SETTLED;
         default:
             return UI_KIOSK_STAGE_WORKING;
     }

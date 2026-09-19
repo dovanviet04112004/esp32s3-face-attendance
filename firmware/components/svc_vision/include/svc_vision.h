@@ -30,10 +30,11 @@ typedef enum {
     SVC_VISION_NO_FACE,                   // the frame lost every face
     SVC_VISION_FACE_SMALL,                // a face is there, too far for recognition
     SVC_VISION_FACE_OUT_OF_FRAME,         // the 1.0x crop would run off the frame
-    SVC_VISION_FACE_OK,                   // through the gates, the slow models are next
+    SVC_VISION_FACE_OK,                   // through the gates, a model runs this step
     SVC_VISION_SPOOF,                     // liveness below the floor
     SVC_VISION_UNKNOWN,                   // live, no template close enough
     SVC_VISION_MATCH,                     // live and matched
+    SVC_VISION_FACE_SETTLED,              // in frame, and the kiosk is done with it
 } svc_vision_kind_t;
 
 typedef struct {

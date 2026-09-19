@@ -31,6 +31,7 @@ typedef enum {
     UI_KIOSK_STAGE_NO_FACE,
     UI_KIOSK_STAGE_TOO_FAR,               // under vision.face_min_px
     UI_KIOSK_STAGE_TOO_CLOSE,             // the 1.0x crop would leave the frame
+    UI_KIOSK_STAGE_SETTLED,               // a face is there and the kiosk has finished
 } ui_kiosk_stage_t;
 
 /** Tell the screens what the detector saw, in sensor frame pixels.

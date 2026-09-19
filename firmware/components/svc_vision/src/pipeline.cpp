@@ -279,8 +279,12 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     // fast path, not after the slow models return (KEHOACH 4.5.5h.1).
     const bool small = side_of(primary.box) < static_cast<float>(thresholds_.face_min_px);
     const bool fits = square_fits(primary.box, frame.width, frame.height);
-    const svc_vision_kind_t stage = small ? SVC_VISION_FACE_SMALL
-                                          : (fits ? SVC_VISION_FACE_OK : SVC_VISION_FACE_OUT_OF_FRAME);
+    // Saying FACE_OK is saying a model runs this step, and only this line knows
+    // whether one will (KEHOACH 4.5.5h.1).
+    const bool working = stable_ >= kStableDetects ? may_verify() : true;
+    const svc_vision_kind_t settled = working ? SVC_VISION_FACE_OK : SVC_VISION_FACE_SETTLED;
+    const svc_vision_kind_t stage =
+        small ? SVC_VISION_FACE_SMALL : (fits ? settled : SVC_VISION_FACE_OUT_OF_FRAME);
     // The slow models below hold this step for up to a second, and a box that
     // waits for them is a second old by the time it is drawn (KEHOACH 4.5.5d).
     tell(out, count, stage);
