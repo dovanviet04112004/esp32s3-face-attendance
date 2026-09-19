@@ -20,6 +20,7 @@ typedef struct {
     QueueHandle_t presence;               // q_presence
     QueueHandle_t sounds;                 // q_audio
     QueueHandle_t uplink;                 // q_uplink
+    QueueHandle_t commands;               // q_cmd
     EventGroupHandle_t flags;             // eg_system
 } app_wiring_t;
 

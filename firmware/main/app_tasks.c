@@ -95,6 +95,11 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define MODEL_VERSION_CAP 33
 #define NVS_MODEL_VERSION "version"
 #define NVS_ACTIVE_SLOT "active_slot"
+#define EVENT_PAYLOAD_CAP 384
+#define CMD_SEEN_RING 8
+#define SYNC_TICK_MS 250
+#define OPEN_DOOR_DEFAULT_MS 3000
+#define REBOOT_DRAIN_MS 400
 #define NET_TASK_CORE 0
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
@@ -169,11 +174,26 @@ static void on_broker_state(bool up, void *ctx)
     }
 }
 
+// Runs on the esp-mqtt task, which must not block: parse here, act in sync_task.
 static void on_broker_message(gen_topic_id_t topic, const char *payload, size_t len, void *ctx)
 {
     (void)ctx;
-    ESP_LOGI(TAG, "broker sent topic %d, %u bytes: %.*s", (int)topic, (unsigned)len, (int)len,
-             payload);
+    if (topic != GEN_TOPIC_CMD) {
+        ESP_LOGI(TAG, "topic %d, %u bytes, nothing consumes it yet", (int)topic, (unsigned)len);
+        return;
+    }
+    cJSON *root = cJSON_ParseWithLength(payload, len);
+    device_command_t cmd = { 0 };
+    const bool understood = root != NULL && device_command_from_json(root, &cmd);
+    cJSON_Delete(root);
+    if (!understood) {
+        ESP_LOGW(TAG, "command does not match the schema, dropped");
+        return;
+    }
+    const app_wiring_t *wiring = app_wiring();
+    if (wiring == NULL || xQueueSend(wiring->commands, &cmd, 0) != pdTRUE) {
+        ESP_LOGE(TAG, "command %s dropped, queue full", cmd.cmd_id);
+    }
 }
 
 // One shot: the clock needs a netif, so the wait belongs off app_main and the
@@ -270,6 +290,136 @@ static void publish_heartbeat(void)
     net_mqtt_publish(GEN_TOPIC_HEARTBEAT, payload, strlen(payload), 0);
 }
 
+static void publish_event(device_event_type_t type, device_event_severity_t severity,
+                          const char *cmd_id, const char *message)
+{
+    device_event_t event = { 0 };
+    if (sys_storage_device_id(event.device_id, sizeof(event.device_id)) != ESP_OK) {
+        return;
+    }
+    event.ts = sys_time_now_ms();
+    event.type = type;
+    event.severity = severity;
+    if (cmd_id != NULL && cmd_id[0] != '\0') {
+        strlcpy(event.cmd_id, cmd_id, sizeof(event.cmd_id));
+        event.has_cmd_id = true;
+    }
+    if (message != NULL && message[0] != '\0') {
+        strlcpy(event.message, message, sizeof(event.message));
+        event.has_message = true;
+    }
+    cJSON *root = device_event_to_json(&event);
+    if (root == NULL) {
+        return;
+    }
+    char payload[EVENT_PAYLOAD_CAP];
+    const bool printed = cJSON_PrintPreallocated(root, payload, sizeof(payload), 0);
+    cJSON_Delete(root);
+    if (printed) {
+        net_mqtt_publish(GEN_TOPIC_EVENT, payload, strlen(payload), CONFIG_SYNC_ACK_TIMEOUT_MS);
+    }
+}
+
+// A command the kiosk cannot run yet is refused by name: the server learns it
+// arrived and why it stopped, which silence never tells it.
+static const char *unsupported(device_command_action_t action)
+{
+    switch (action) {
+    case DEVICE_COMMAND_ACTION_SET_CONFIG: return "SET_CONFIG has no config path yet";
+    case DEVICE_COMMAND_ACTION_RELOAD_FACEDB: return "svc_facedb loads once at boot";
+    case DEVICE_COMMAND_ACTION_CLEAR_LOGS: return "no log erase api yet";
+    case DEVICE_COMMAND_ACTION_ROTATE_TOKEN: return "waits on provisioning, E13-T4";
+    case DEVICE_COMMAND_ACTION_SET_ACTIVE_SLOT: return "waits on model A/B, E13-T2";
+    default: return NULL;
+    }
+}
+
+static void run_command(const device_command_t *cmd, svc_door_t door)
+{
+    const char *refusal = unsupported(cmd->action);
+    if (refusal != NULL) {
+        publish_event(DEVICE_EVENT_TYPE_COMMAND_REJECTED, DEVICE_EVENT_SEVERITY_WARN,
+                      cmd->cmd_id, refusal);
+        return;
+    }
+    char note[64] = { 0 };
+    esp_err_t done = ESP_OK;
+    switch (cmd->action) {
+    case DEVICE_COMMAND_ACTION_OPEN_DOOR: {
+        const uint32_t hold_ms = cmd->has_open_ms ? (uint32_t)cmd->open_ms : OPEN_DOOR_DEFAULT_MS;
+        done = svc_door_open(door, hold_ms);
+        snprintf(note, sizeof(note), "door held %" PRIu32 " ms", hold_ms);
+        break;
+    }
+    case DEVICE_COMMAND_ACTION_SYNC_TIME: {
+        char host[SNTP_HOST_CAP] = { 0 };
+        done = sys_storage_get_str(STORAGE_NS_DEVICE, NVS_SNTP_HOST, host, sizeof(host));
+        if (done == ESP_OK) {
+            done = sys_time_sync_start(host, on_time_synced, NULL);
+        }
+        strlcpy(note, "sntp asked again", sizeof(note));
+        break;
+    }
+    case DEVICE_COMMAND_ACTION_DIAGNOSTICS:
+        publish_heartbeat();
+        strlcpy(note, "heartbeat published", sizeof(note));
+        break;
+    case DEVICE_COMMAND_ACTION_REBOOT:
+        publish_event(DEVICE_EVENT_TYPE_COMMAND_DONE, DEVICE_EVENT_SEVERITY_WARN, cmd->cmd_id,
+                      "rebooting");
+        // The result needs the radio, which esp_restart takes away.
+        vTaskDelay(pdMS_TO_TICKS(REBOOT_DRAIN_MS));
+        esp_restart();
+        return;
+    default:
+        done = ESP_ERR_NOT_SUPPORTED;
+        break;
+    }
+    if (done != ESP_OK) {
+        snprintf(note, sizeof(note), "%s", esp_err_to_name(done));
+    }
+    publish_event(done == ESP_OK ? DEVICE_EVENT_TYPE_COMMAND_DONE
+                                 : DEVICE_EVENT_TYPE_COMMAND_REJECTED,
+                  done == ESP_OK ? DEVICE_EVENT_SEVERITY_INFO : DEVICE_EVENT_SEVERITY_ERROR,
+                  cmd->cmd_id, note);
+}
+
+// QoS 1 may deliver the same command twice, so a repeat is ordinary traffic
+// rather than an attack, and the second copy is simply not run again.
+static bool already_ran(const char *cmd_id)
+{
+    static char seen[CMD_SEEN_RING][sizeof(((device_command_t *)0)->cmd_id)];
+    static size_t at;
+    for (size_t i = 0; i < CMD_SEEN_RING; ++i) {
+        if (strcmp(seen[i], cmd_id) == 0) {
+            return true;
+        }
+    }
+    strlcpy(seen[at], cmd_id, sizeof(seen[at]));
+    at = (at + 1) % CMD_SEEN_RING;
+    return false;
+}
+
+static void take_commands(const app_wiring_t *wiring, svc_door_t door)
+{
+    device_command_t cmd;
+    while (xQueueReceive(wiring->commands, &cmd, 0) == pdTRUE) {
+        if (already_ran(cmd.cmd_id)) {
+            ESP_LOGI(TAG, "command %s seen before, not run again", cmd.cmd_id);
+            continue;
+        }
+        // A deadline means nothing on a clock no NTP has ever set.
+        const bool clock_trusted = sys_time_source() == SYS_TIME_SOURCE_RTC_NTP;
+        if (cmd.has_expires_at && clock_trusted && sys_time_now_ms() > cmd.expires_at) {
+            publish_event(DEVICE_EVENT_TYPE_COMMAND_REJECTED, DEVICE_EVENT_SEVERITY_WARN,
+                          cmd.cmd_id, "expired before it was read");
+            continue;
+        }
+        ESP_LOGI(TAG, "command %s: %s", cmd.cmd_id, device_command_action_str(cmd.action));
+        run_command(&cmd, door);
+    }
+}
+
 static void sync_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
@@ -279,22 +429,31 @@ static void sync_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
+    svc_door_t door = svc_door_servo();
+    publish_event(DEVICE_EVENT_TYPE_BOOTED, DEVICE_EVENT_SEVERITY_INFO, NULL, NULL);
     esp_err_t said = ESP_FAIL;
     uint32_t batches = 0;
     int64_t beat_ms = 0;
+    int64_t drain_ms = 0;
     bool more = false;
+    bool nudged = false;
     for (;;) {
         if (!more) {
             storage_attend_record_t nudge;
-            // q_uplink is a nudge, not where the record lives: flash already
-            // holds it, so a timeout here is the retry (KEHOACH 5.3).
-            xQueueReceive(wiring->uplink, &nudge, pdMS_TO_TICKS(SYNC_POLL_MS));
+            // The short tick is for commands; the log is only read on the long
+            // one, since a drain opens the cursor on flash every call.
+            nudged = xQueueReceive(wiring->uplink, &nudge, pdMS_TO_TICKS(SYNC_TICK_MS)) == pdTRUE;
         }
+        take_commands(wiring, door);
         const int64_t now_ms = esp_timer_get_time() / 1000;
         if (net_mqtt_is_up() && now_ms - beat_ms >= GEN_TOPIC_HEARTBEAT_INTERVAL_S * 1000) {
             beat_ms = now_ms;
             publish_heartbeat();
         }
+        if (!more && !nudged && now_ms - drain_ms < SYNC_POLL_MS) {
+            continue;
+        }
+        drain_ms = now_ms;
         const esp_err_t drained = svc_sync_drain();
         more = drained == ESP_ERR_NOT_FINISHED;
         // A backlog is when progress is worth watching, so a long drain says
