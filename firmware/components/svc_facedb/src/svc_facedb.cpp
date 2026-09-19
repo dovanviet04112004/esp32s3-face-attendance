@@ -55,6 +55,12 @@ esp_err_t svc_facedb_remove(uint32_t employee_id)
     return s_db.remove(employee_id);
 }
 
+esp_err_t svc_facedb_template(uint32_t employee_id, uint16_t template_idx, int8_t *emb, size_t cap,
+                              float *scale, uint8_t *quality)
+{
+    return s_db.templet(employee_id, template_idx, emb, cap, scale, quality);
+}
+
 esp_err_t svc_facedb_persist(void)
 {
     return s_db.persist();

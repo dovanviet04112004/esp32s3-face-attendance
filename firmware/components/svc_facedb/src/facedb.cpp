@@ -228,6 +228,31 @@ esp_err_t FaceDb::remove(uint32_t employee_id) noexcept
     return hits > 0 ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
+esp_err_t FaceDb::templet(uint32_t employee_id, uint16_t template_idx, int8_t *emb, size_t cap,
+                          float *scale, uint8_t *quality) noexcept
+{
+    if (emb == nullptr || cap < STORAGE_EMBED_DIM || scale == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    app::LockGuard lock(mutex_, kLockMs);
+    if (!lock.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    for (size_t i = 0; i < table_.count(); ++i) {
+        const storage_face_record_t *rec = table_.record(i);
+        if (!live(*rec) || rec->employee_id != employee_id || rec->template_idx != template_idx) {
+            continue;
+        }
+        memcpy(emb, rec->embedding, STORAGE_EMBED_DIM);
+        *scale = rec->scale;
+        if (quality != nullptr) {
+            *quality = rec->quality;
+        }
+        return ESP_OK;
+    }
+    return ESP_ERR_NOT_FOUND;
+}
+
 size_t FaceDb::people(svc_facedb_person_t *out, size_t cap) noexcept
 {
     app::LockGuard lock(mutex_, kLockMs);

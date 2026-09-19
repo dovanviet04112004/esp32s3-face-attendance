@@ -44,6 +44,14 @@ esp_err_t svc_facedb_lookup(const int8_t *emb, float scale, svc_facedb_match_t *
 esp_err_t svc_facedb_enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
                             const int8_t *emb, float scale, const char *name);
 
+/** Read one stored template back out, for reporting it to the server.
+ *  @ctx task | blocking | takes m_facedb
+ *  @param emb at least STORAGE_EMBED_DIM bytes; quality may be NULL
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND | ESP_ERR_INVALID_ARG | ESP_ERR_TIMEOUT
+ */
+esp_err_t svc_facedb_template(uint32_t employee_id, uint16_t template_idx, int8_t *emb,
+                              size_t cap, float *scale, uint8_t *quality);
+
 /** One enrolled person, however many templates they carry. */
 typedef struct {
     uint32_t employee_id;
