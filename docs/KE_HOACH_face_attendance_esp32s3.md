@@ -4429,8 +4429,16 @@ chỉ có thể ghi cứng một giá trị và sẽ khai sai với nửa số n
 giọng theo thuộc tính ấy.
 
 **`vi.json` là nguồn kiểu, `en.json` là bản phải theo.** `types/messages.d.ts` khai
-`type Messages = typeof import("../messages/vi.json")`, nên một khoá có ở `vi` mà thiếu ở `en`
-là lỗi `tsc` chứ không phải một dòng chữ lạ hiện trên màn khách hàng (§3.1 luật 1).
+`Messages = typeof vi.json` để gọi sai khoá là lỗi ngay tại chỗ gọi; còn việc `en.json` có đủ
+khoá hay không thì `i18n/request.ts` chốt bằng một phép so tập khoá hai chiều — thiếu một khoá
+hoặc thừa một khoá đều không biên dịch được, và thông báo lỗi gọi thẳng tên khoá (§3.1 luật 1).
+
+**`npm run typecheck` xoá `tsconfig.tsbuildinfo` trước khi chạy, và đó không phải thói quen
+thừa.** `incremental` của TypeScript **không** theo dõi nội dung file `.json`, nên lượt chạy
+nóng sai cả hai chiều — đo 20/09: nó bỏ qua khoá vừa bị xoá khỏi `en.json`, rồi sau khi khoá
+được trả lại vẫn tiếp tục báo thiếu, tức vừa âm tính giả vừa dương tính giả. Bỏ hẳn
+`incremental` không được vì `next build` tự ghi lại nó vào `tsconfig.json`, nên chỗ sửa nằm ở
+chính lệnh kiểm. Một lượt kiểm lạnh tốn 0,25 s, nên không mất gì.
 
 **Biến môi trường của frontend là công khai.** Mọi thứ có tiền tố `NEXT_PUBLIC_` đi thẳng vào
 bundle mà trình duyệt tải về. Không bao giờ đặt secret ở đó — không JWT ký, không khoá MinIO,
