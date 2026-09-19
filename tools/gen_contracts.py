@@ -194,7 +194,9 @@ def render_c_enums(model: Model) -> str:
         entries = "".join(
             f"    {prefix}_{screaming(v)} = {i},\n" for i, v in enumerate(spec["enum"])
         )
-        out.append(f"typedef enum {{\n{entries}}} {name};\n\n")
+        # A caller sizing an array by the last value writes a bound that a new
+        # enum member silently walks past, so the count comes from here.
+        out.append(f"typedef enum {{\n{entries}    {prefix}_COUNT = {len(spec['enum'])},\n}} {name};\n\n")
         out.append(f"static inline const char *{name[:-2]}_str({name} v)\n{{\n")
         out.append("    switch (v) {\n")
         for value in spec["enum"]:

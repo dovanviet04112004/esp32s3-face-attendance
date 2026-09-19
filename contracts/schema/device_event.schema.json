@@ -36,7 +36,8 @@
         "TIME_UNSYNCED",
         "BOOTED",
         "COMMAND_DONE",
-        "COMMAND_REJECTED"
+        "COMMAND_REJECTED",
+        "ROSTER_REJECTED"
       ]
     },
     "cmdId": {
