@@ -871,6 +871,13 @@ static void ui_task(void *arg)
         if (armed && !svc_vision_enrol_pending()) {
             armed = false;
             ui_kiosk_enrol_kept();
+            if (ui_kiosk_enrol_complete()) {
+                const int64_t started_us = esp_timer_get_time();
+                const esp_err_t saved = svc_facedb_persist();
+                ESP_LOGI(TAG, "enrol %" PRIu32 " saved in %lld ms: %s", new_employee,
+                         (long long)((esp_timer_get_time() - started_us) / 1000),
+                         esp_err_to_name(saved));
+            }
         }
         if (ui_kiosk_take_people_request()) {
             show_people();

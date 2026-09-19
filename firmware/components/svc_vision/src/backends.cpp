@@ -51,8 +51,9 @@ esp_err_t FacedbMatcher::best(const int8_t *emb, float scale, uint32_t *employee
 esp_err_t FacedbMatcher::keep(const int8_t *emb, float scale, uint32_t employee_id,
                               uint16_t template_idx, const char *name) noexcept
 {
-    const esp_err_t added = svc_facedb_enroll(employee_id, template_idx, 255, emb, scale, name);
-    return added == ESP_OK ? svc_facedb_persist() : added;
+    // The table stays in ram until the last sample lands: persisting each one
+    // writes 552 KB three times and can leave a half-added person on flash.
+    return svc_facedb_enroll(employee_id, template_idx, 255, emb, scale, name);
 }
 
 }  // namespace vision
