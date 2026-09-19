@@ -2,6 +2,8 @@
 // Source: contracts/schema/ota_manifest.schema.json
 // Regenerate: ./tools/gen_contracts.py
 
+import { z } from "zod";
+
 /** Server to kiosk update offer. Firmware and models roll independently: the models partition is A/B on its own, so a model update never reflashes the app. */
 export interface OtaManifest {
   releaseId: string;
@@ -22,3 +24,16 @@ export interface OtaManifest {
   /** Install without waiting for the idle window. */
   forced?: boolean;
 }
+
+export const otaManifestSchema = z.strictObject({
+  releaseId: z.string(),
+  target: z.enum(["FIRMWARE", "MODELS", "ASSETS"]),
+  version: z.string().max(32),
+  url: z.string().max(512).regex(new RegExp("^https://")),
+  sha256: z.string().regex(new RegExp("^[0-9a-f]{64}$")),
+  sizeBytes: z.number().int().min(1),
+  signature: z.string().max(1024).optional(),
+  minFwVersion: z.string().max(32).optional(),
+  runId: z.string().max(128).optional(),
+  forced: z.boolean().optional(),
+});

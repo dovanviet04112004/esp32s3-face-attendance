@@ -2,6 +2,8 @@
 // Source: contracts/schema/device_cmd.schema.json
 // Regenerate: ./tools/gen_contracts.py
 
+import { z } from "zod";
+
 /** Server to kiosk command. The kiosk answers on the event topic; cmdId lets the server correlate the two. */
 export interface DeviceCommand {
   /** Server-generated. The kiosk ignores a cmdId it has already executed. */
@@ -29,3 +31,23 @@ export interface DeviceCommand {
     wakeDistanceCm?: number;
   };
 }
+
+export const deviceCmdSchema = z.strictObject({
+  cmdId: z.string(),
+  ts: z.number().int().min(0),
+  expiresAt: z.number().int().min(0).optional(),
+  action: z.enum(["OPEN_DOOR", "REBOOT", "SET_CONFIG", "SYNC_TIME", "RELOAD_FACEDB", "ROTATE_TOKEN", "CLEAR_LOGS", "SET_ACTIVE_SLOT", "DIAGNOSTICS"]),
+  issuedBy: z.string().max(64).optional(),
+  openMs: z.number().int().min(100).max(30000).optional(),
+  activeSlot: z.union([z.literal(0), z.literal(1)]).optional(),
+  config: z.object({
+  brightness: z.number().int().min(0).max(255).optional(),
+  volume: z.number().int().min(0).max(255).optional(),
+  lang: z.enum(["vi", "en"]).optional(),
+  detectThreshold: z.number().min(0).max(1).optional(),
+  matchThreshold: z.number().min(0).max(1).optional(),
+  livenessThreshold: z.number().min(0).max(1).optional(),
+  dedupWindowMinutes: z.number().int().min(0).max(1440).optional(),
+  wakeDistanceCm: z.number().int().min(10).max(200).optional(),
+}).optional(),
+});
