@@ -2797,9 +2797,18 @@ dependencies:
   espressif/esp_lcd_st7796: "^1.3"
   espressif/esp_lcd_touch_gt911: "^1.1"
   espressif/mqtt: "^1.1"
+  espressif/cjson: "^1.7.19"
   joltwallet/littlefs: "^1.16"
 ```
 `espressif/esp_lcd_st7796` có trên registry (đã kéo về bản 1.4.0), nên `drv_lcd` gọi nó chứ không tự viết panel driver.
+
+**`espressif/cjson` vì payload là code sinh, không phải chuỗi gõ tay.** `tools/gen_contracts.py`
+sinh `gen_payload.h` từ `contracts/schema/`, và bản C nó sinh ra dựng payload bằng cJSON. Dựng
+JSON bằng `snprintf` thì không cần thư viện nào, nhưng khi ấy khuôn payload nằm ở hai chỗ —
+schema và chuỗi định dạng — và §4.3 cấm đúng chuyện đó. IDF v6 đã bỏ `json` khỏi lõi giống như
+đã bỏ `esp-mqtt`, nên `REQUIRES json` trơ fail ở bước resolve; tên trên registry là
+`espressif/cjson`. `svc_sync` là component đầu tiên biên dịch `gen_payload.h`, nên đây cũng là
+lần đầu ràng buộc này lộ ra.
 
 **`espressif/mqtt` phải khai dù đây là thư viện của Espressif.** ESP-IDF v6 đã đưa `esp-mqtt` ra
 khỏi lõi: `components/mqtt/` trong IDF chỉ còn `test_apps/`, nên `REQUIRES mqtt` trơ sẽ fail ở
@@ -3822,7 +3831,7 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 | `svc_facedb` | `FaceDb`, `IMatcher` | Strategy | Đổi thuật toán so khớp khi quy mô tăng |
 | `svc_door` | `IDoor`, `ServoDoor`, `FakeDoor` | Adapter bọc driver C, ra ngoài bằng handle mờ | Chạy máy trạng thái chấm công trên host với cửa giả |
 | `svc_attendance` | `AttendanceFsm` | Bảng `constexpr`, **không** virtual | Nhìn hết sơ đồ trạng thái trong 1 màn hình |
-| `svc_sync` | `UplinkQueue`, `IPersist` | Composition | Thay LittleFS bằng RAM fake khi test |
+| `svc_sync` | `UplinkQueue`, `IPersist`, `ILink` | Composition | Thay LittleFS **và** broker bằng fake khi test: luật "con trỏ đi sau ack" của §6.2.6 chỉ kiểm được khi ép được cả hai bên trả lỗi |
 | `ui_kiosk` | `Screen` → 5 lớp con, `ScreenManager`, `BoxTracker` | Kế thừa; bộ bám là giá trị thuần | Năm màn hình cùng vòng đời; hộp mặt theo khung hình, không theo nhịp detect |
 
 #### 4.5.6 `ai_engine` — mỗi model một thư mục
