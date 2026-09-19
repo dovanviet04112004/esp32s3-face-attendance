@@ -4431,57 +4431,43 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `present_mm` (u32, mm) | | bốn ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
 
-**`device/serial` có giá trị lùi suy từ eFuse, không phải khoá bắt buộc nạp tay.** Thiếu khoá
-này thì `sys_storage` dựng `deviceId` từ MAC nhà máy: `kiosk-` cộng 12 hex thường của
-`esp_efuse_mac_get_default`, tổng 18 ký tự nên lọt `^[A-Za-z0-9_-]{4,32}$` mà
-`attendance_record.schema.json` đòi. NVS có khoá thì khoá thắng, đúng đường `device/tz` đã đi.
+**`device/serial` là danh tính, không phải bí mật.** Thiếu khoá thì `sys_storage` dựng
+`deviceId` từ MAC nhà máy: `kiosk-` cộng 12 hex thường của `esp_efuse_mac_get_default`, 18 ký
+tự, lọt `^[A-Za-z0-9_-]{4,32}$` mà `attendance_record.schema.json` đòi; NVS có khoá thì khoá
+thắng, đúng đường `device/tz` đè lên `CONFIG_SYS_TIME_TZ`.
 
-Lý do nó **không** đi chung đường với `wifi/ssid` và `wifi/pass`: hai khoá kia là bí mật, còn
-đây là **danh tính**, mà server khử trùng bằng `unique(deviceId, localId)` (§4.6). `deviceId`
-đổi một lần là toàn bộ bản ghi cũ trên server mồ côi — không trùng, không mất, chỉ là không ai
-nối được chúng với thiết bị nữa. eFuse do Espressif nung sẵn và **`erase-flash` không chạm tới**,
-nên cùng một board là cùng một `deviceId` vĩnh viễn, kể cả sau khi xoá sạch NVS — điều một chuỗi
-gõ tay không bảo đảm được, và trên bàn phát triển thì `erase-flash` chạy liên tục.
+Chỗ khác `wifi/pass` nằm ở hậu quả khi sai. Server khử trùng bằng `unique(deviceId, localId)`
+(§4.6), nên `deviceId` đổi một lần là mọi bản ghi cũ mồ côi — không trùng, không mất, chỉ là
+không ai nối được chúng với thiết bị nữa. eFuse do Espressif nung sẵn và **`erase-flash` không
+chạm tới**, nên một board giữ nguyên tên qua cả lần xoá sạch NVS. Cái giá là
+`kiosk-a1b2c3d4e5f6` không đọc ra nghĩa; tên cho người đọc nằm ở bảng device của backend (§4.6),
+vì tên đổi được còn khoá khử trùng thì không.
 
-Cái giá là `kiosk-a1b2c3d4e5f6` không đọc ra nghĩa. Tên cho người đọc nằm ở bảng device của
-backend (§4.6), khoá theo `deviceId` — đó mới là chỗ đúng của nó, vì tên đổi được còn khoá khử
-trùng thì không.
-
-**`device/mqtt_uri` là một chuỗi, không phải cặp host với port.** Đường từ bàn thí nghiệm ra
-hiện trường đổi **cả scheme** chứ không chỉ địa chỉ:
+**`device/mqtt_uri` mang cả scheme trong một chuỗi.** `esp-mqtt` nhận thẳng URI, nên đổi môi
+trường là đổi một giá trị chứ không sửa dòng code nào:
 
 ```
 bàn      mqtt://192.168.x.x:1883     không TLS
 thật     mqtts://mqtt.<domain>:8883  TLS, cert CA nhúng trong firmware (§7.2)
 ```
 
-Tách thành `mqtt_host` với `mqtt_port` thì scheme phải nằm ở khoá thứ ba, hoặc suy ra từ số
-port — mà suy từ port là đúng loại lỗi âm thầm cần tránh: gõ nhầm một chữ số là kiosk gửi dữ
-liệu chấm công **không mã hoá** và không có gì kêu lên. Một URI duy nhất thì `esp-mqtt` nhận
-thẳng, và chuyển môi trường là đổi **một giá trị, không sửa dòng code nào**.
+Hai dòng ấy khác nhau **cả scheme**, nên một cặp địa chỉ với cổng sẽ đẩy scheme sang khoá thứ ba
+hoặc bắt suy ra từ số cổng — suy từ cổng là lỗi âm thầm đắt nhất ở đây: gõ nhầm một chữ số là
+kiosk gửi dữ liệu chấm công **không mã hoá** mà không gì kêu lên. Hai chốt chặn đi kèm đều nằm
+ở lúc biên dịch: giá trị lùi là `Kconfig` của `net_mqtt`, vì máy chủ là của bên bán nên mọi máy
+xuất xưởng trỏ về cùng một chỗ và NVS chỉ ghi đè khi khách tự dựng server riêng (§7.3); và bản
+`prod` **từ chối mọi URI không bắt đầu bằng `mqtts://`**.
 
-Chốt chặn đi kèm nằm ở lúc biên dịch: bản `prod` **từ chối mọi URI không bắt đầu bằng `mqtts://`**
-ngay tại `net_mqtt`, nên bàn chạy plaintext được còn hiện trường thì không thể nhầm.
+**Ghi NVS trên bàn đi qua console, không qua ảnh phân vùng.** `main/app_console.c` nhận
+`set`/`get` trên USB rồi ghi qua `sys_storage`, nên không giá trị bí mật nào phải tồn tại dưới
+dạng file. `Kconfig` của nó mặc định tắt và chỉ bật ở `sdkconfig.dev` với `sdkconfig.bench`, nên
+bản `prod` không biên dịch một dòng nào — một cờ lúc chạy thì không đủ, vì cờ ấy nằm trong chính
+NVS mà console ghi được.
 
-**Giá trị lùi của nó là `Kconfig`, không phải rỗng.** Máy chủ là của bên bán, nên mọi máy xuất
-xưởng trỏ về cùng một chỗ và địa chỉ ấy là **hằng số của bản build**, đi cùng cert CA nhúng
-trong firmware. NVS chỉ ghi đè khi một khách tự dựng server riêng — đúng đường `device/tz` đè
-lên `CONFIG_SYS_TIME_TZ`. Để rỗng thì mỗi máy bán ra lại đòi một người cắm USB gõ địa chỉ vào,
-thứ không nhân lên được (§7.3).
-
-**Nạp NVS bằng console qua USB, và console bị chặn lúc biên dịch.** `main/app_console.c` nhận
-`nvs set <ns> <key> <value>` rồi ghi qua `sys_storage`, nên **không giá trị bí mật nào tồn tại
-dưới dạng file ở bất kỳ đâu** — khác hẳn một bản firmware một nhịp gõ thẳng giá trị vào mã
-nguồn, thứ sống theo thư mục tạm rồi biến mất cùng nó.
-
-Cũng không dùng `nvs_partition_gen.py`: nó ghi đè **cả phân vùng**, cuốn theo `sys/boot_count`
-— nửa cao của mọi `local_id` — nên nạp địa chỉ broker xong là thiết bị **sinh lại những
-`local_id` đã gửi đi rồi**, và server khử trùng bằng đúng khoá ấy sẽ nuốt các bản ghi mới như
-bản trùng. Mất bản ghi chấm công, im lặng.
-
-Console chặn bằng `Kconfig` mặc định **tắt**, bật ở `sdkconfig.dev` và `sdkconfig.bench`; bản
-`prod` không biên dịch một dòng nào của nó. Cờ lúc chạy không đủ: một cờ nằm trong chính NVS mà
-console ghi được thì console tự mở lại được chính nó.
+`nvs_partition_gen.py` bị loại vì nó ghi đè **cả phân vùng**, cuốn theo `sys/boot_count` — nửa
+cao của mọi `local_id`. Nạp lại địa chỉ broker bằng đường ấy là thiết bị sinh lại những
+`local_id` đã gửi đi, và server khử trùng bằng đúng khoá đó sẽ nuốt bản ghi mới như bản trùng:
+mất bản ghi chấm công, im lặng. Đường nạp ngoài hiện trường không dùng console — xem §7.3.
 
 **Gieo một lần là không đủ: bộ gieo phải có số hiệu.** Luật "boot đầu gieo, sau đó NVS sở hữu"
 đúng cho giá trị người vận hành đã đặt, nhưng nó khoá luôn cả những thiết bị **chưa ai đặt gì**:
@@ -4916,7 +4902,7 @@ bị `Kconfig` loại khỏi bản `prod`.
 |---|---|---|
 | `deviceId` | Có | **eFuse MAC**, 0 thao tác (§6.2.1) |
 | Cert CA của server | Không | Nhúng trong firmware |
-| `device/mqtt_uri` | Không | **`Kconfig` của bản build**, NVS chỉ ghi đè khi khách tự dựng server |
+| `device/mqtt_uri` | Không | **`Kconfig` của bản build**, NVS chỉ ghi đè khi khách tự dựng server (§6.2.1) |
 | Token bootstrap | Không, theo **lô firmware** | Nhúng trong firmware |
 | `wifi/ssid`, `wifi/pass` | Có, theo nơi lắp | Người lắp gõ **trên màn kiosk** (E10-T5 còn nợ) |
 | `device/jwt`, `mqtt_user`, `mqtt_pass` | Có | Máy **tự xin** ở bước 3 dưới đây |
