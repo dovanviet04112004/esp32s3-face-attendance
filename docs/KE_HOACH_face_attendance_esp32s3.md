@@ -4402,6 +4402,7 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | Ngân sách phần cứng, ngưỡng arena | `ml/configs/common/hardware.yaml` | nạp config |
 | URL, host, port, secret, chuỗi kết nối — backend và frontend | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` · `lib/env.ts` |
 | URL và credential trên kiosk | NVS `device/*` (§6.2.1), giá trị lùi khai ở `Kconfig` của component | đọc qua `sys_storage`, **không gõ vào `.c`** |
+| Số hiệu firmware | `PROJECT_VER` trong `firmware/CMakeLists.txt` | `esp_app_get_description()->version`, **không gõ lại ở đâu** |
 | Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
 | Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
 | Ngưỡng nghiệp vụ (**tin cậy phát hiện mặt**, khớp mặt, liveness, chống trùng) | NVS trên kiosk, `SET_CONFIG` từ server | đọc cấu hình lúc chạy |
@@ -4802,6 +4803,22 @@ Thiết bị suy giảm được thì tầng trên phải hỏi trạng thái tr
 `app_main` đã bảo đảm nó có.
 
 **A/B model**: `nvs:model/active_slot` quyết định dùng partition nào. OTA ghi vào slot *không* active → verify sha256 → đổi `active_slot` → reboot. Nếu boot sau đó lỗi (`ai_engine_init` fail) thì `app_main` trả `active_slot` về giá trị cũ và reboot lại. Rollback model độc lập với rollback firmware.
+
+**`fwVersion` phải so sánh được, nên nó là `MAJOR.MINOR.PATCH`.** Không đặt `PROJECT_VER`
+thì ESP-IDF lấy `git describe`, ra chuỗi kiểu `4a98339-dirty` — chuỗi ấy **nói được máy đang
+chạy commit nào nhưng không nói được cái nào mới hơn**, mà `minFwVersion` của
+`ota_manifest.schema.json` tồn tại đúng để trả lời câu ấy: chặn một ảnh model mới rơi xuống
+firmware quá cũ để đọc nó. So hai chuỗi băm thì không chặn được gì.
+
+Nguồn duy nhất là `PROJECT_VER` trong `firmware/CMakeLists.txt` (§4.9), từ đó `esp_app_desc_t`
+mang đi khắp nơi: heartbeat, trang *Thiết bị của tôi*, và phép so của OTA. **Truy vết vẫn còn
+nguyên mà không cần nhét băm git vào chuỗi version**: `esp_app_get_elf_sha256()` định danh
+chính xác bản build, và nó không phải là thứ đem ra so lớn bé nên hai vai không giẫm nhau.
+
+**`modelVersion` thì ngược lại — nó là danh tính, không phải thứ tự.** §6.2.2 đã chốt: gặp
+embedding của model khác thì **từ chối**, chứ không so xem cái nào mới hơn, vì hai không gian
+vector khác nhau thì không có "mới hơn". Nên `modelVersion` giữ nguyên dạng băm; chỉ `fwVersion`
+mang số hiệu có thứ tự.
 
 #### 6.2.3 LittleFS (partition `storage`, 4 MB) — bố cục file
 
