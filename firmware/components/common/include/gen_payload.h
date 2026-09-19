@@ -17,6 +17,7 @@ extern "C" {
 typedef enum {
     ATTENDANCE_RECORD_DIRECTION_IN = 0,
     ATTENDANCE_RECORD_DIRECTION_OUT = 1,
+    ATTENDANCE_RECORD_DIRECTION_COUNT = 2,
 } attendance_record_direction_t;
 
 static inline const char *attendance_record_direction_str(attendance_record_direction_t v)
@@ -152,6 +153,7 @@ static inline cJSON *attendance_record_to_json(const attendance_record_t *in)
 typedef enum {
     DEVICE_COMMAND_CONFIG_LANG_VI = 0,
     DEVICE_COMMAND_CONFIG_LANG_EN = 1,
+    DEVICE_COMMAND_CONFIG_LANG_COUNT = 2,
 } device_command_config_lang_t;
 
 static inline const char *device_command_config_lang_str(device_command_config_lang_t v)
@@ -280,6 +282,7 @@ typedef enum {
     DEVICE_COMMAND_ACTION_CLEAR_LOGS = 6,
     DEVICE_COMMAND_ACTION_SET_ACTIVE_SLOT = 7,
     DEVICE_COMMAND_ACTION_DIAGNOSTICS = 8,
+    DEVICE_COMMAND_ACTION_COUNT = 9,
 } device_command_action_t;
 
 static inline const char *device_command_action_str(device_command_action_t v)
@@ -425,6 +428,8 @@ typedef enum {
     DEVICE_EVENT_TYPE_BOOTED = 15,
     DEVICE_EVENT_TYPE_COMMAND_DONE = 16,
     DEVICE_EVENT_TYPE_COMMAND_REJECTED = 17,
+    DEVICE_EVENT_TYPE_ROSTER_REJECTED = 18,
+    DEVICE_EVENT_TYPE_COUNT = 19,
 } device_event_type_t;
 
 static inline const char *device_event_type_str(device_event_type_t v)
@@ -448,6 +453,7 @@ static inline const char *device_event_type_str(device_event_type_t v)
     case DEVICE_EVENT_TYPE_BOOTED: return "BOOTED";
     case DEVICE_EVENT_TYPE_COMMAND_DONE: return "COMMAND_DONE";
     case DEVICE_EVENT_TYPE_COMMAND_REJECTED: return "COMMAND_REJECTED";
+    case DEVICE_EVENT_TYPE_ROSTER_REJECTED: return "ROSTER_REJECTED";
     default: return "";
     }
 }
@@ -473,6 +479,7 @@ static inline bool device_event_type_parse(const char *s, device_event_type_t *o
     if (strcmp(s, "BOOTED") == 0) { *out = DEVICE_EVENT_TYPE_BOOTED; return true; }
     if (strcmp(s, "COMMAND_DONE") == 0) { *out = DEVICE_EVENT_TYPE_COMMAND_DONE; return true; }
     if (strcmp(s, "COMMAND_REJECTED") == 0) { *out = DEVICE_EVENT_TYPE_COMMAND_REJECTED; return true; }
+    if (strcmp(s, "ROSTER_REJECTED") == 0) { *out = DEVICE_EVENT_TYPE_ROSTER_REJECTED; return true; }
     return false;
 }
 
@@ -480,6 +487,7 @@ typedef enum {
     DEVICE_EVENT_SEVERITY_INFO = 0,
     DEVICE_EVENT_SEVERITY_WARN = 1,
     DEVICE_EVENT_SEVERITY_ERROR = 2,
+    DEVICE_EVENT_SEVERITY_COUNT = 3,
 } device_event_severity_t;
 
 static inline const char *device_event_severity_str(device_event_severity_t v)
@@ -609,6 +617,7 @@ typedef enum {
     ENROLL_PAYLOAD_OP_REPLACE_ALL = 3,
     ENROLL_PAYLOAD_OP_ASSIGN = 4,
     ENROLL_PAYLOAD_OP_REVOKE = 5,
+    ENROLL_PAYLOAD_OP_COUNT = 6,
 } enroll_payload_op_t;
 
 static inline const char *enroll_payload_op_str(enroll_payload_op_t v)
@@ -920,6 +929,7 @@ typedef enum {
     OTA_MANIFEST_TARGET_FIRMWARE = 0,
     OTA_MANIFEST_TARGET_MODELS = 1,
     OTA_MANIFEST_TARGET_ASSETS = 2,
+    OTA_MANIFEST_TARGET_COUNT = 3,
 } ota_manifest_target_t;
 
 static inline const char *ota_manifest_target_str(ota_manifest_target_t v)
