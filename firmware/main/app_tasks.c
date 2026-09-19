@@ -112,9 +112,9 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 
 // A screen that covers the panel and the enrolment screen both hold the kiosk
 // open, and neither of them is a wake source (KEHOACH 5.4).
-static rest_t rest_level(const drv_lcd_overlay_t *overlay)
+static rest_t rest_level(void)
 {
-    if ((overlay != NULL && overlay->opaque) || ui_kiosk_enrolling()) {
+    if (ui_kiosk_screen_covers() || ui_kiosk_enrolling()) {
         return REST_NONE;
     }
     return asleep_for_ms() > REST_ALL_MS ? REST_ALL : REST_NONE;
@@ -215,7 +215,7 @@ static void cam_task(void *arg)
 
     for (;;) {
         const drv_lcd_overlay_t *overlay = ui_kiosk_hold();
-        const bool wanted = rest_level(overlay) == REST_ALL;
+        const bool wanted = rest_level() == REST_ALL;
         if (wanted != resting) {
             resting = wanted;
             if (resting) {
@@ -318,7 +318,7 @@ static void ai_task(void *arg)
     bool working = true;
 
     for (;;) {
-        if (rest_level(ui_kiosk_overlay()) == REST_ALL) {
+        if (rest_level() == REST_ALL) {
             esp_task_wdt_reset();
             camera_fb_t *stale = NULL;
             // Holding one of four buffers for a minute starves the sensor.
@@ -387,7 +387,7 @@ static void touch_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        const bool resting = rest_level(ui_kiosk_overlay()) == REST_ALL;
+        const bool resting = rest_level() == REST_ALL;
         vTaskDelay(pdMS_TO_TICKS(resting ? TOUCH_REST_POLL_MS : TOUCH_POLL_MS));
         drv_touch_point_t points[TOUCH_POINTS];
         uint8_t count = 0;
@@ -459,7 +459,7 @@ static void ui_task(void *arg)
 
     for (;;) {
         const uint32_t tick_ms =
-            rest_level(ui_kiosk_overlay()) == REST_ALL ? UI_REST_TICK_MS : UI_TICK_MS;
+            rest_level() == REST_ALL ? UI_REST_TICK_MS : UI_TICK_MS;
         vTaskDelay(pdMS_TO_TICKS(tick_ms));
         ui_kiosk_tick(tick_ms);
         const bool now_enrolling = ui_kiosk_enrolling();
@@ -741,7 +741,7 @@ static void attend_task(void *arg)
         {
             static int64_t settings_at_ms;
             // Nobody can read a sleeping panel, and the page walks the heap.
-            const bool readable = rest_level(ui_kiosk_overlay()) != REST_ALL;
+            const bool readable = rest_level() != REST_ALL;
             if (readable && sys_time_now_ms() - settings_at_ms > SETTINGS_REFRESH_MS) {
                 settings_at_ms = sys_time_now_ms();
                 show_settings();

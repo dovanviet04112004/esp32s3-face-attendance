@@ -133,6 +133,11 @@ const drv_lcd_overlay_t *ui_kiosk_overlay(void);
  */
 const drv_lcd_overlay_t *ui_kiosk_hold(void);
 
+/** Whether the screen on the glass hides the camera behind it.
+ *  @ctx any | non-blocking | answers without touching an overlay slot
+ */
+bool ui_kiosk_screen_covers(void);
+
 /** Give back the slot claimed by ui_kiosk_hold.
  *  @ctx task | non-blocking | safe to call without a matching hold
  */

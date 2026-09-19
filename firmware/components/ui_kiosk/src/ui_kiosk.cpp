@@ -44,6 +44,7 @@ std::atomic<uint32_t> s_published{ 0 };
 std::atomic<uint32_t> s_presses{ 0 };
 std::atomic<uint32_t> s_slot_gen[kSlots];
 std::atomic<int> s_held{ -1 };
+std::atomic<bool> s_covers{ false };
 int s_next;
 uint32_t s_serial;
 bool s_ready;
@@ -84,6 +85,7 @@ void publish(const ui::Canvas &from)
     }
     target->masks = (uint8_t)kept;
     target->opaque = ui::manager().current()->opaque();
+    s_covers.store(target->opaque, std::memory_order_release);
     target->serial = ++s_serial;
     s_shown.store(target, std::memory_order_release);
     s_published.fetch_add(1, std::memory_order_release);
@@ -368,6 +370,11 @@ uint32_t ui_kiosk_publishes(void)
 uint32_t ui_kiosk_presses(void)
 {
     return s_presses.load(std::memory_order_acquire);
+}
+
+bool ui_kiosk_screen_covers(void)
+{
+    return s_covers.load(std::memory_order_acquire);
 }
 
 const drv_lcd_overlay_t *ui_kiosk_hold(void)
