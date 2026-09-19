@@ -138,6 +138,20 @@ bool net_wifi_is_connected(void)
     return s_state != NULL && (xEventGroupGetBits(s_state) & CONNECTED_BIT) != 0;
 }
 
+esp_err_t net_wifi_rssi_dbm(int *out)
+{
+    if (out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!net_wifi_is_connected()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    wifi_ap_record_t ap;
+    APP_RETURN_ON_ERR(esp_wifi_sta_get_ap_info(&ap), TAG, "ap info");
+    *out = ap.rssi;
+    return ESP_OK;
+}
+
 uint32_t net_wifi_disconnects(void)
 {
     return s_disconnects;

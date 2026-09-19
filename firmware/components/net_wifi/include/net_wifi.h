@@ -34,6 +34,12 @@ bool net_wifi_is_connected(void);
  */
 uint32_t net_wifi_disconnects(void);
 
+/** Signal strength of the access point the station is on.
+ *  @ctx task | non-blocking | dBm, negative; untouched when not connected
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE offline | ESP_ERR_INVALID_ARG
+ */
+esp_err_t net_wifi_rssi_dbm(int *out);
+
 #ifdef __cplusplus
 }
 #endif
