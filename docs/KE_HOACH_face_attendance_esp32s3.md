@@ -2872,6 +2872,7 @@ firmware/
 │   ├── net_wifi/          [C]    L3
 │   ├── net_mqtt/          [C]    L3
 │   ├── net_ota/           [C]    L3
+│   ├── net_provision/     [C]    L3  # xin credential lần đầu qua HTTPS (§7.3)
 │   ├── svc_door/          [C++]  L4  # IDoor + ServoDoor bọc drv_servo, FakeDoor cho test
 │   ├── svc_vision/        [C++]  L4  # detect mỗi khung, chuỗi spoof → recog khi mặt ổn định (§4.5.5d)
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
@@ -2950,7 +2951,7 @@ Quy tắc header:
 | L2 | `sys_time` | C | `common`, `lwip`, `bsp_board` |
 | L3 | `ai_engine` | C++ | `common`, `sys_storage`, `esp-tflite-micro` |
 | L3 | `svc_facedb` | C++ | `common`, `sys_storage` |
-| L3 | `net_wifi` / `net_mqtt` / `net_ota` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_https_ota` |
+| L3 | `net_wifi` / `net_mqtt` / `net_ota` / `net_provision` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_https_ota` / `esp_http_client` |
 | L4 | `svc_door` | C++ | `common`, `bsp_board`, `drv_servo`, `esp_timer` |
 | L4 | `svc_vision` | C++ | `common`, `ai_engine`, `svc_facedb`, `drv_camera` |
 | L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_facedb`, `sys_storage`, `sys_time`, `svc_door`, `drv_audio` |
@@ -4155,7 +4156,8 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | Đường dẫn dataset | `ml/configs/common/paths.yaml` | nạp config |
 | Siêu tham số train, `input_hw` | `ml/configs/<nhánh>/*.yaml` | nạp config |
 | Ngân sách phần cứng, ngưỡng arena | `ml/configs/common/hardware.yaml` | nạp config |
-| URL, host, port, secret, chuỗi kết nối | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` · `lib/env.ts` |
+| URL, host, port, secret, chuỗi kết nối — backend và frontend | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` · `lib/env.ts` |
+| URL và credential trên kiosk | NVS `device/*` (§6.2.1), giá trị lùi khai ở `Kconfig` của component | đọc qua `sys_storage`, **không gõ vào `.c`** |
 | Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
 | Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
 | Ngưỡng nghiệp vụ (**tin cậy phát hiện mặt**, khớp mặt, liveness, chống trùng) | NVS trên kiosk, `SET_CONFIG` từ server | đọc cấu hình lúc chạy |
@@ -4460,6 +4462,12 @@ thẳng, và chuyển môi trường là đổi **một giá trị, không sửa
 
 Chốt chặn đi kèm nằm ở lúc biên dịch: bản `prod` **từ chối mọi URI không bắt đầu bằng `mqtts://`**
 ngay tại `net_mqtt`, nên bàn chạy plaintext được còn hiện trường thì không thể nhầm.
+
+**Giá trị lùi của nó là `Kconfig`, không phải rỗng.** Máy chủ là của bên bán, nên mọi máy xuất
+xưởng trỏ về cùng một chỗ và địa chỉ ấy là **hằng số của bản build**, đi cùng cert CA nhúng
+trong firmware. NVS chỉ ghi đè khi một khách tự dựng server riêng — đúng đường `device/tz` đè
+lên `CONFIG_SYS_TIME_TZ`. Để rỗng thì mỗi máy bán ra lại đòi một người cắm USB gõ địa chỉ vào,
+thứ không nhân lên được (§7.3).
 
 **Nạp NVS bằng console qua USB, và console bị chặn lúc biên dịch.** `main/app_console.c` nhận
 `nvs set <ns> <key> <value>` rồi ghi qua `sys_storage`, nên **không giá trị bí mật nào tồn tại
@@ -4895,6 +4903,58 @@ mỗi bản ghi. Nghiệm trên board sau khi gạt: Wi-Fi vẫn nối được 
 | OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
 | Rate limit | `@nestjs/throttler` cho `/auth/login` |
+
+### 7.3 Vòng đời thiết bị — từ dây chuyền tới lúc thu hồi
+
+§7.2 nói JWT xoay vòng khi còn 7 ngày, nhưng **không nói cái JWT đầu tiên ở đâu ra**. Mục này
+lấp chỗ đó, và ràng buộc thiết kế của nó là: **một máy xuất xưởng không được đòi ai gõ gì vào
+nó**. Mọi giá trị riêng từng máy hoặc do phần cứng sinh ra, hoặc do máy tự xin, chứ không do
+người cắm USB nhập tay — cách ấy không nhân lên được quá vài chục máy, và `app_console` vốn đã
+bị `Kconfig` loại khỏi bản `prod`.
+
+| Giá trị | Mỗi máy một khác | Tới thiết bị bằng cách nào |
+|---|---|---|
+| `deviceId` | Có | **eFuse MAC**, 0 thao tác (§6.2.1) |
+| Cert CA của server | Không | Nhúng trong firmware |
+| `device/mqtt_uri` | Không | **`Kconfig` của bản build**, NVS chỉ ghi đè khi khách tự dựng server |
+| Token bootstrap | Không, theo **lô firmware** | Nhúng trong firmware |
+| `wifi/ssid`, `wifi/pass` | Có, theo nơi lắp | Người lắp gõ **trên màn kiosk** (E10-T5 còn nợ) |
+| `device/jwt`, `mqtt_user`, `mqtt_pass` | Có | Máy **tự xin** ở bước 3 dưới đây |
+
+**Sáu bước:**
+
+1. **Xuất xưởng** — nạp firmware có Secure Boot v2 và Flash Encryption (§7.2). Không ai gõ gì
+   riêng cho từng máy; hai máy cạnh nhau nhận đúng cùng một ảnh nhị phân.
+2. **Lắp đặt** — cấp điện. Không có `wifi/ssid` thì kiosk mở thẳng màn hình chọn Wi-Fi.
+3. **Đăng ký** — có mạng nhưng chưa có `device/jwt`, kiosk gọi `POST /devices/register` qua
+   HTTPS, kèm token bootstrap và `deviceId`. Máy chủ tạo bản ghi trạng thái `pending` và trả
+   **202**, chưa cấp token. Kiosk hiện `deviceId` của chính nó lên màn rồi hỏi lại theo chu kỳ
+   lùi bậc.
+4. **Nhận máy** — admin thấy máy `pending` trong dashboard, đối chiếu `deviceId` in trên màn,
+   bấm duyệt rồi đặt tên người đọc được và vị trí. Lần hỏi kế tiếp trả **200** kèm JWT 90 ngày
+   và cặp `mqtt_user`/`mqtt_pass`; kiosk ghi NVS và **không bao giờ dùng lại token bootstrap**.
+5. **Chạy** — MQTTS bằng credential riêng, xoay vòng theo §7.2.
+6. **Thu hồi** — admin gỡ máy: API từ chối token, ACL của EMQX đóng, kiosk nhận lỗi xác thực
+   rồi **quay về bước 3**.
+
+**Vì sao cấp token sau khi duyệt chứ không trước.** Cấp trước thì một máy chưa ai nhận vẫn nối
+được broker và đẩy dữ liệu vào, nên máy chủ phải chứa bản ghi của một thiết bị không ai chịu
+trách nhiệm — hoặc phải đẻ thêm một tầng ACL riêng cho trạng thái `pending`. Giữ nó ở `202` thì
+thiết bị chưa được nhận **không có gì để nối bằng**, và không cần ACL đặc biệt nào.
+
+**`deviceId` quay lại sau factory reset là chuyện bình thường, không phải lỗi.** Nút BOOT giữ 5 s
+(§2) xoá `wifi`, `device` và bảng khuôn mặt, nhưng eFuse thì không xoá được, nên máy trở lại
+bước 3 với **đúng cái tên cũ**. Máy chủ vì thế phải cho một `deviceId` đã biết đăng ký lại, đánh
+dấu bản ghi cũ là đã thu hồi và đòi duyệt lại từ đầu. Bản ghi chấm công cũ giữ nguyên `deviceId`
+ấy và nằm trong lịch sử của chính thiết bị đó.
+
+**Token bootstrap là mắt xích yếu nhất, và ghi ra đây để không ai tưởng nó mạnh.** Nó dùng chung
+cho cả lô nên rò một máy là rò cả lô. Ba thứ giữ thiệt hại ở mức chấp nhận được: nó **chỉ gọi
+được `POST /devices/register`** chứ không mở gì khác; máy đăng ký trộm nằm ở `pending` vĩnh viễn
+cho tới khi một con người bấm duyệt; và Flash Encryption khiến không đọc được nó ra khỏi flash.
+Xoay vòng nó là một bản OTA. Muốn chắc hơn thì phải **cấp cert riêng từng máy ngay trên dây
+chuyền và dùng mTLS** — mạnh hơn hẳn, nhưng đòi một trạm nạp có CA riêng, nên để khi sản lượng
+đủ lớn mới đáng.
 
 ---
 
