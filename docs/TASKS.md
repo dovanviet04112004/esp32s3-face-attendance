@@ -411,12 +411,12 @@ chung đường ghi vào `AttendanceDay`.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E17-T1 | Khung đơn chung: máy trạng thái `DRAFT → PENDING → APPROVED \| REJECTED \| CANCELLED`, người duyệt suy từ `managerId` | Chuyển trạng thái sai bị từ chối ở service, không chỉ ở giao diện | E15-T7 |
-| E17-T2 | **Uỷ quyền duyệt có thời hạn** (§9.20); việc đã duyệt ghi tên **người duyệt thật** | Cấp trên nghỉ phép thì đơn không đứng lại | E17-T1 |
-| E17-T3 | `LeaveType`: có trả lương hay không, ngày tích luỹ, trần chuyển năm | Khai được phép năm, ốm, không lương, chế độ | E15-T2 |
-| E17-T4 | `LeaveBalance` một dòng mỗi người mỗi loại mỗi năm, mang cả `taken` lẫn `pending` (§9.5) | Số dư đọc bằng một dòng, không cộng dồn cả lịch sử | E17-T3, E15-T3 |
-| E17-T5 | Giữ chỗ số dư lúc gửi, trừ thật lúc duyệt, hoàn `pending` khi từ chối hay huỷ | Gửi ba đơn chồng nhau không được duyệt cả ba | E17-T4, E17-T1 |
-| E17-T6 | **Chặn đơn chồng ngày ở tầng dữ liệu** bằng ràng buộc loại trừ trên khoảng ngày | Hai request song song cùng xin một ngày chỉ một cái qua | E17-T5 |
+| ~~E17-T1~~ | Khung đơn chung — **Xong 20/09.** **Một bảng `Request` cho cả bốn loại** (nghỉ phép, tăng ca, giải trình, công tác), vì chúng chung máy trạng thái, chung hộp chờ duyệt và chung đường tới người duyệt; thêm loại thứ năm là thêm một giá trị enum, không phải một bảng. Chuyển trạng thái sai bị từ chối ở service. **Đo**: duyệt một đơn đã duyệt trả **409** | Chuyển trạng thái sai bị từ chối ở service | E15-T7 |
+| ~~E17-T2~~ | Uỷ quyền duyệt có thời hạn — **Xong 20/09.** `ApprovalDelegation` có khoảng ngày; đơn gửi lúc cấp trên đang vắng **tự đi tới người đứng thay**, và hộp chờ duyệt của người đứng thay gom cả đơn của người uỷ quyền. Việc đã duyệt ghi tên **người duyệt thật** | Cấp trên nghỉ phép thì đơn không đứng lại | E17-T1 |
+| ~~E17-T3~~ | `LeaveType` — **Xong 20/09.** Có trả lương hay không, ngày tích luỹ một năm, trần chuyển năm | Khai được phép năm, ốm, không lương, chế độ | E15-T2 |
+| ~~E17-T4~~ | `LeaveBalance` mang cả `taken` lẫn `pending` — **Xong 20/09.** Một dòng mỗi người mỗi loại mỗi năm, đọc một dòng chứ không cộng dồn lịch sử | Số dư đọc bằng một dòng | E17-T3, E15-T3 |
+| ~~E17-T5~~ | Giữ chỗ lúc gửi, trừ thật lúc duyệt — **Xong 20/09, đo hết vòng.** Gửi đơn 3 ngày → `12/0/3`; duyệt → `12/3/0`; từ chối hoặc huỷ thì hoàn `pending`. **Hold và insert nằm cùng một transaction**, nên đơn bị ràng buộc chặn không để lại giữ chỗ ma — đo lại sau khi bị chặn vẫn là `12/3/0` | Gửi ba đơn chồng nhau không được duyệt cả ba | E17-T4, E17-T1 |
+| ~~E17-T6~~ | **Chặn đơn chồng ngày ở tầng dữ liệu** — **Xong 20/09.** `EXCLUDE USING gist` trên `(employeeId, daterange)` với `btree_gist`, chỉ áp cho đơn `PENDING` hoặc `APPROVED` nên đơn bị từ chối không khoá ngày về sau. **Đo**: chèn thẳng bằng SQL hai đơn chồng nhau thì Postgres từ chối cái thứ hai; qua API trả **409** kèm câu người đọc hiểu. **Một bẫy**: Prisma gói SQLSTATE `23P01` vào phần chữ chứ không phơi thành trường, nên nhận dạng lỗi phải đọc cả message — không sửa thì lỗi này ra **500** | Hai request song song cùng xin một ngày chỉ một cái qua | E17-T5 |
 | E17-T7 | Số dư phép **tại một ngày được chọn**, không phải hôm nay (§9.17 mục 9) | Trả lời được "nghỉ tuần sau thì còn mấy ngày", tính cả đơn đang chờ | E17-T4 |
 | E17-T8 | **Đăng ký tăng ca trước** (§9.17 mục 2): phút ngoài ca chỉ thành tiền khi khớp một đăng ký đã duyệt | Ở lại muộn không tự thành tăng ca | E17-T1, E16-T2 |
 | E17-T9 | **Giải trình công** (§9.17 mục 1): đơn kèm lý do, duyệt xong ghi `AttendanceDay` **kèm dấu đã sửa** | Người bị máy bỏ sót tự sửa được, và số máy đo vẫn còn | E16-T4, E17-T1 |

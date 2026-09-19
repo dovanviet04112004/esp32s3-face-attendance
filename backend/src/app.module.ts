@@ -5,6 +5,7 @@ import { configModule } from "./config/configuration.js";
 import { DatabaseModule } from "./database/database.module.js";
 import { ScopeModule } from "./common/scope/scope.module.js";
 import { AttendanceModule } from "./modules/attendance/attendance.module.js";
+import { LeaveModule } from "./modules/leave/leave.module.js";
 import { OrgModule } from "./modules/org/org.module.js";
 import { TimesheetModule } from "./modules/timesheet/timesheet.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
@@ -30,6 +31,7 @@ import { QueueModule } from "./queue/queue.module.js";
     MqttModule,
     ScopeModule,
     AttendanceModule,
+    LeaveModule,
     OrgModule,
     TimesheetModule,
     EmployeesModule,

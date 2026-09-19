@@ -179,6 +179,11 @@ model Employee {
   login             User?
   contracts         EmploymentContract[]
   days              AttendanceDay[]
+  balances          LeaveBalance[]
+  requests          Request[]
+  approvals         Request[]            @relation("ApprovesRequests")
+  delegatesAway     ApprovalDelegation[] @relation("DelegatesAway")
+  delegatesFor      ApprovalDelegation[] @relation("DelegatesFor")
   templates         FaceTemplate[]
   enrollments       DeviceEnrollment[]
   attendance        AttendanceRecord[]
@@ -407,4 +412,107 @@ model Holiday {
 
   @@unique([legalEntityId, date])
   @@index([date])
+}
+
+enum RequestKind {
+  LEAVE
+  OVERTIME
+  ATTENDANCE_FIX
+  BUSINESS_TRIP
+  REMOTE_WORK
+}
+
+enum RequestState {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveType {
+  id           String         @id @default(uuid())
+  code         String         @unique
+  name         String
+  paid         Boolean        @default(true)
+  daysPerYear  Decimal        @default(0) @db.Decimal(5, 1)
+  carryOverMax Decimal        @default(0) @db.Decimal(5, 1)
+  active       Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  balances     LeaveBalance[]
+  requests     Request[]
+}
+
+/**
+ * One row per person per type per year: a balance read is one row, not a sum
+ * over the whole history, which only gets slower (KEHOACH 9.5).
+ */
+model LeaveBalance {
+  id          String    @id @default(uuid())
+  employeeId  Int
+  leaveTypeId String
+  year        Int
+  entitled    Decimal   @default(0) @db.Decimal(5, 1)
+  carriedOver Decimal   @default(0) @db.Decimal(5, 1)
+  taken       Decimal   @default(0) @db.Decimal(5, 1)
+  // Held by requests still waiting: without it three overlapping requests all
+  // pass the check and all get approved (KEHOACH 9.5).
+  pending     Decimal   @default(0) @db.Decimal(5, 1)
+  updatedAt   DateTime  @updatedAt
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@index([employeeId, year])
+}
+
+/**
+ * Leave, overtime, an attendance correction and a trip are one table: they
+ * share a state machine, an inbox and a route to the approver (KEHOACH 9.5).
+ */
+model Request {
+  id            String       @id @default(uuid())
+  employeeId    Int
+  kind          RequestKind
+  state         RequestState @default(DRAFT)
+  leaveTypeId   String?
+  fromDate      DateTime     @db.Date
+  toDate        DateTime     @db.Date
+  fromAt        DateTime?
+  toAt          DateTime?
+  halfDay       Boolean      @default(false)
+  days          Decimal      @default(0) @db.Decimal(5, 1)
+  minutes       Int          @default(0)
+  reason        String
+  attachmentUrl String?
+  approverId    Int?
+  decidedById   String?
+  decidedAt     DateTime?
+  decisionNote  String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  employee      Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType     LeaveType?   @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+  approver      Employee?    @relation("ApprovesRequests", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, state])
+  @@index([state, fromDate])
+  @@index([approverId, state])
+}
+
+/**
+ * A stand-in while somebody is away, so requests do not wait on one person.
+ */
+model ApprovalDelegation {
+  id        String   @id @default(uuid())
+  fromId    Int
+  toId      Int
+  fromDate  DateTime @db.Date
+  toDate    DateTime @db.Date
+  createdAt DateTime @default(now())
+  delegator Employee @relation("DelegatesAway", fields: [fromId], references: [id], onDelete: Cascade)
+  delegate  Employee @relation("DelegatesFor", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([fromId, fromDate, toDate])
 }
