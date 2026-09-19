@@ -4428,6 +4428,22 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `present_mm` (u32, mm) | | bốn ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
 
+**`device/serial` có giá trị lùi suy từ eFuse, không phải khoá bắt buộc nạp tay.** Thiếu khoá
+này thì `sys_storage` dựng `deviceId` từ MAC nhà máy: `kiosk-` cộng 12 hex thường của
+`esp_efuse_mac_get_default`, tổng 18 ký tự nên lọt `^[A-Za-z0-9_-]{4,32}$` mà
+`attendance_record.schema.json` đòi. NVS có khoá thì khoá thắng, đúng đường `device/tz` đã đi.
+
+Lý do nó **không** đi chung đường với `wifi/ssid` và `wifi/pass`: hai khoá kia là bí mật, còn
+đây là **danh tính**, mà server khử trùng bằng `unique(deviceId, localId)` (§4.6). `deviceId`
+đổi một lần là toàn bộ bản ghi cũ trên server mồ côi — không trùng, không mất, chỉ là không ai
+nối được chúng với thiết bị nữa. eFuse do Espressif nung sẵn và **`erase-flash` không chạm tới**,
+nên cùng một board là cùng một `deviceId` vĩnh viễn, kể cả sau khi xoá sạch NVS — điều một chuỗi
+gõ tay không bảo đảm được, và trên bàn phát triển thì `erase-flash` chạy liên tục.
+
+Cái giá là `kiosk-a1b2c3d4e5f6` không đọc ra nghĩa. Tên cho người đọc nằm ở bảng device của
+backend (§4.6), khoá theo `deviceId` — đó mới là chỗ đúng của nó, vì tên đổi được còn khoá khử
+trùng thì không.
+
 **Gieo một lần là không đủ: bộ gieo phải có số hiệu.** Luật "boot đầu gieo, sau đó NVS sở hữu"
 đúng cho giá trị người vận hành đã đặt, nhưng nó khoá luôn cả những thiết bị **chưa ai đặt gì**:
 một phép đo mới đổi `Kconfig` thì thiết bị đã boot một lần vẫn giữ số cũ, im lặng, mãi mãi.
