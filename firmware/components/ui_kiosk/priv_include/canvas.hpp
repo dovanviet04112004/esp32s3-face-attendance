@@ -48,7 +48,6 @@ public:
     void offer_painted() noexcept;
 
     void fill(int x, int y, int w, int h, uint8_t colour) noexcept;
-    void frame(int x, int y, int w, int h, int edge, uint8_t colour) noexcept;
 
     /** A solid rounded rectangle with anti-aliased corners: every card here. */
     void card(int x, int y, int w, int h, int radius, uint8_t colour) noexcept;

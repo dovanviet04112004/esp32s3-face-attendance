@@ -34,7 +34,6 @@ std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
 std::atomic<int> s_held{ -1 };
 std::atomic<bool> s_covers{ false };
 int s_next;
-int s_glass = -1;                         // slot the panel is showing, -1 for none
 uint32_t s_serial;
 uint32_t s_sent;                          // serial of the last map published
 std::atomic<uint32_t> s_on_glass{ 0 };    // serial cam_task last put on the panel
@@ -80,7 +79,6 @@ void publish(ui::Canvas &from)
     s_covers.store(target->opaque, std::memory_order_release);
     target->serial = ++s_serial;
     s_shown.store(target, std::memory_order_release);
-    s_glass = s_next;
     s_sent = target->serial;
 }
 
@@ -477,12 +475,15 @@ void ui_kiosk_shown(uint32_t serial)
     s_on_glass.store(serial, std::memory_order_release);
 }
 
-bool ui_kiosk_take_vision_reset(void)
+bool ui_kiosk_take_vision_reset(bool *stuck)
 {
-    if (!s_ready || !ui::vision_reset()) {
+    if (!s_ready || ui::vision_reset() == ui::Restart::No) {
         return false;
     }
-    ui::vision_reset() = false;
+    if (stuck != nullptr) {
+        *stuck = ui::vision_reset() == ui::Restart::Stuck;
+    }
+    ui::vision_reset() = ui::Restart::No;
     // The screens hold nothing of what the last look decided, so the first
     // fresh sight is what the person in front of the kiosk is judged on.
     s_seen.face = false;

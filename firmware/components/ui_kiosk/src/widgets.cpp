@@ -215,11 +215,11 @@ void draw_volume(Canvas &to, int x, int y, int size, uint8_t colour)
     }
 }
 
-void draw_chevron(Canvas &to, int x, int y, int size, uint8_t colour, bool back)
+void draw_back(Canvas &to, int x, int y, int size, uint8_t colour)
 {
     const int mid = y + size / 2;
-    const int tip = back ? x + size / 3 : x + size * 2 / 3;
-    const int tail = back ? x + size * 2 / 3 : x + size / 3;
+    const int tip = x + size / 3;
+    const int tail = x + size * 2 / 3;
     const int reach = size / 4;
     stroke(to, tail, mid - reach, tip, mid, 3, colour);
     stroke(to, tail, mid + reach, tip, mid, 3, colour);
@@ -230,12 +230,6 @@ void draw_check(Canvas &to, int x, int y, int size, uint8_t colour)
     stroke(to, x + size / 5, y + size / 2, x + size * 5 / 12, y + size * 7 / 10, 3, colour);
     stroke(to, x + size * 5 / 12, y + size * 7 / 10, x + size * 4 / 5, y + size * 3 / 10, 3,
            colour);
-}
-
-void draw_close(Canvas &to, int x, int y, int size, uint8_t colour)
-{
-    stroke(to, x + size / 4, y + size / 4, x + size * 3 / 4, y + size * 3 / 4, 3, colour);
-    stroke(to, x + size * 3 / 4, y + size / 4, x + size / 4, y + size * 3 / 4, 3, colour);
 }
 
 void draw_menu(Canvas &to, int x, int y, int size, uint8_t colour)
@@ -281,10 +275,8 @@ void icon(Canvas &to, int x, int y, int size, Icon which, uint8_t colour) noexce
         case Icon::Device: draw_device(to, x, y, size, colour); break;
         case Icon::Brightness: draw_brightness(to, x, y, size, colour); break;
         case Icon::Volume: draw_volume(to, x, y, size, colour); break;
-        case Icon::Chevron: draw_chevron(to, x, y, size, colour, false); break;
-        case Icon::Back: draw_chevron(to, x, y, size, colour, true); break;
+        case Icon::Back: draw_back(to, x, y, size, colour); break;
         case Icon::Check: draw_check(to, x, y, size, colour); break;
-        case Icon::Close: draw_close(to, x, y, size, colour); break;
         case Icon::Menu: draw_menu(to, x, y, size, colour); break;
         default: break;
     }
@@ -404,7 +396,7 @@ void header(Canvas &to, const char *title, bool back) noexcept
 {
     const int y = theme::kBarH;
     if (back) {
-        draw_chevron(to, kBackX, y, kBackBox, DRV_LCD_ACCENT, true);
+        draw_back(to, kBackX, y, kBackBox, DRV_LCD_ACCENT);
     }
     to.text(theme::Font::Title, theme::kGutter, Canvas::centre_y(theme::Font::Title, y, kBackBox),
             APP_LCD_H_RES - 2 * theme::kGutter, title, DRV_LCD_INK, Align::Centre);

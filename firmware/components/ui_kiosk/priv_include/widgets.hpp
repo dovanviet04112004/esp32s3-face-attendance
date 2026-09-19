@@ -23,10 +23,8 @@ enum class Icon : uint8_t {
     Keyboard,
     Sliders,
     Backspace,
-    Chevron,
     Back,
     Check,
-    Close,
     Menu,
     None,
 };

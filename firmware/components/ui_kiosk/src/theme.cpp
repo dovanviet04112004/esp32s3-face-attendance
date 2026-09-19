@@ -63,10 +63,6 @@ const uint8_t kLineHeights[(int)Font::Count] = {
     kiosk_ui_15_line_h, kiosk_ui_20_line_h, kiosk_ui_24_line_h, kiosk_ui_28_line_h,
 };
 
-const uint8_t kAscents[(int)Font::Count] = {
-    kiosk_ui_15_ascent, kiosk_ui_20_ascent, kiosk_ui_24_ascent, kiosk_ui_28_ascent,
-};
-
 uint32_t code_point(const char **at)
 {
     const uint8_t *p = (const uint8_t *)*at;
@@ -131,11 +127,6 @@ uint32_t next_code(const char **at) noexcept
 int line_height(Font face) noexcept
 {
     return kLineHeights[(int)face];
-}
-
-int ascent(Font face) noexcept
-{
-    return kAscents[(int)face];
 }
 
 int text_width(Font face, const char *utf8) noexcept

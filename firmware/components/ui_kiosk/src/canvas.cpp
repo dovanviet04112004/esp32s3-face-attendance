@@ -118,14 +118,6 @@ void Canvas::fill(int x, int y, int w, int h, uint8_t colour) noexcept
     touched(x1, y1, x2, y2);
 }
 
-void Canvas::frame(int x, int y, int w, int h, int edge, uint8_t colour) noexcept
-{
-    fill(x, y, w, edge, colour);
-    fill(x, y + h - edge, w, edge, colour);
-    fill(x, y, edge, h, colour);
-    fill(x + w - edge, y, edge, h, colour);
-}
-
 void Canvas::card(int x, int y, int w, int h, int radius, uint8_t colour) noexcept
 {
     const int r = radius * 2 <= h ? radius : h / 2;

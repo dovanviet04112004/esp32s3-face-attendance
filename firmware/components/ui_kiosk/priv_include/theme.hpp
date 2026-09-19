@@ -40,7 +40,6 @@ constexpr int kContentW = APP_LCD_H_RES - 2 * kGutter;
 const uint16_t *palette() noexcept;
 
 int line_height(Font face) noexcept;
-int ascent(Font face) noexcept;
 int text_width(Font face, const char *utf8) noexcept;
 
 /** The glyph for a code point in one face, or NULL when the face lacks it.

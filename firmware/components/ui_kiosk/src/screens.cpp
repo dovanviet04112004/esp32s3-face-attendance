@@ -164,7 +164,7 @@ JoinRequest s_join;
 Facts s_facts;
 ui_kiosk_net_t s_net;
 Level s_brightness = { 70, false, false };
-bool s_vision_reset;
+Restart s_vision_reset = Restart::No;
 Level s_volume = { 60, false, false };
 
 bool inside(int x, int y, int bx, int by, int bw, int bh)
@@ -345,7 +345,7 @@ public:
         stuck_ = false;
         // The person standing here now gets a fresh look, not whatever the
         // pipeline settled on while a menu covered the preview.
-        s_vision_reset = true;
+        s_vision_reset = Restart::Returned;
     }
 
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
@@ -368,7 +368,7 @@ public:
         watched_ = seen.track;
         const bool stuck = working_ms_ >= kWorkingCeilingMs;
         if (stuck && !stuck_) {
-            s_vision_reset = true;
+            s_vision_reset = Restart::Stuck;
         }
         if (answered == answered_ && carded == carded_ && refused == refused_ &&
             stuck == stuck_) {
@@ -1369,9 +1369,9 @@ public:
             busy_ = kNothing;
             return true;
         }
-        // Scanning drops the link, so a list that refreshes itself has to stop
-        // the moment the operator starts joining one (KEHOACH 7.6).
-        if (step_ != Step::Choosing || busy_ != kNothing) {
+        // A sweep takes the radio off its channel and flaps the broker link, so
+        // only a kiosk still hunting for a network refreshes itself (KEHOACH 7.6).
+        if (step_ != Step::Choosing || busy_ != kNothing || s_net.joined) {
             return false;
         }
         idle_ms_ += dt_ms;
@@ -1620,7 +1620,7 @@ ui_kiosk_net_t &net() noexcept
     return s_net;
 }
 
-bool &vision_reset() noexcept
+Restart &vision_reset() noexcept
 {
     return s_vision_reset;
 }

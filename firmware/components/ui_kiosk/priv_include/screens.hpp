@@ -103,8 +103,14 @@ struct Facts {
 
 Facts &facts() noexcept;
 
-/** Set when the preview wants svc_vision started over (KEHOACH 4.5.5h.1). */
-bool &vision_reset() noexcept;
+/** Why the preview wants svc_vision started over (KEHOACH 4.5.5h.1). */
+enum class Restart : uint8_t {
+    No = 0,
+    Returned,                             // the operator came back from a menu
+    Stuck,                                // a face outlived every verdict it is owed
+};
+
+Restart &vision_reset() noexcept;
 
 /** Where the radio stands, as the settings row shows it. */
 ui_kiosk_net_t &net() noexcept;
