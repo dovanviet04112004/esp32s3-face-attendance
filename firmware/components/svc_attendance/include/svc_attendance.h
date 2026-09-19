@@ -55,6 +55,11 @@ esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result, int64_t no
  */
 esp_err_t svc_attendance_on_presence(bool present);
 
+/** Tell the machine whether the broker is reachable right now.
+ *  @ctx any | non-blocking | sets flags bit1 on records stamped without it
+ */
+void svc_attendance_set_link(bool up);
+
 /** Advance the timers that carry Granted, Denied and Cooldown along.
  *  @ctx task | non-blocking | call on a tick of at most a few hundred ms
  */

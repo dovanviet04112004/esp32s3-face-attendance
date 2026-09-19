@@ -1,5 +1,7 @@
 #include "svc_attendance.h"
 
+#include <atomic>
+
 #include <string.h>
 
 #include "attendance.hpp"
@@ -28,6 +30,7 @@ uint32_t s_seq = 0;
 uint32_t s_records = 0;
 uint32_t s_last_employee = 0;
 int64_t s_last_stamp_ms = 0;
+std::atomic<bool> s_link_up{false};
 storage_attend_record_t s_last_record = {};
 bool s_have_record = false;
 bool s_left_since_grant = true;
@@ -90,7 +93,8 @@ esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool d
     record.direction = STORAGE_ATTEND_DIR_IN;
     record.match_score = to_q88(result->match_score);
     record.liveness_score = to_q88(result->live_score);
-    record.flags = (uint8_t)((door_opened ? STORAGE_ATTEND_FLAG_DOOR : 0) | STORAGE_ATTEND_FLAG_OFFLINE |
+    record.flags = (uint8_t)((door_opened ? STORAGE_ATTEND_FLAG_DOOR : 0) |
+                             (s_link_up.load() ? 0 : STORAGE_ATTEND_FLAG_OFFLINE) |
                              (sys_time_source() == SYS_TIME_SOURCE_RTC_NTP ? 0 : STORAGE_ATTEND_FLAG_NO_NTP));
     record.model_version = 1;
     record.crc32 = esp_crc32_le(0, (const uint8_t *)&record, offsetof(storage_attend_record_t, crc32));
@@ -245,6 +249,11 @@ extern "C" esp_err_t svc_attendance_on_presence(bool present)
     const svc_vision_result_t empty = {};
     apply(present ? attend::Ev::PresenceOn : attend::Ev::PresenceOff, &empty, s_state_since_ms);
     return ESP_OK;
+}
+
+extern "C" void svc_attendance_set_link(bool up)
+{
+    s_link_up.store(up);
 }
 
 extern "C" esp_err_t svc_attendance_tick(int64_t now_ms)
