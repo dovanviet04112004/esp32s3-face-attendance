@@ -4118,6 +4118,36 @@ giây, không phải vài trăm lần đọc.
 Một chuỗi rỗng nói dối nhiều hơn một digest: backend cần biết máy đang chạy bộ model nào, và
 câu trả lời ấy luôn có sẵn trên chính thiết bị.
 
+**`down/cmd` — ba luật, và cả ba đều vì QoS 1 là "ít nhất một lần".** Broker được phép giao
+lại một gói đã giao, nên **lệnh trùng là chuyện bình thường, không phải tấn công**. Kiosk giữ
+vòng 8 `cmdId` gần nhất và **bỏ im lặng** cái nào đã chạy; `expiresAt` quá hạn thì từ chối, vì
+một `OPEN_DOOR` kẹt trong hàng đợi broker nửa tiếng rồi mới tới là cánh cửa mở cho người đã đi
+khỏi.
+
+**Nhưng `expiresAt` bị bỏ qua khi đồng hồ không đáng tin.** `sys_time_source()` nói giờ có từng
+được NTP đặt hay không (§6.2.5); chưa thì phép so sánh thời hạn vô nghĩa. Từ chối lệnh trong
+trạng thái ấy là khoá cửa điều khiển từ xa đúng lúc cần nó nhất — máy vừa mất điện, pin RTC
+cạn, và người quản trị đang cố với tới nó.
+
+**`sync_task` tiêu thụ, với hai nhịp khác nhau.** Nó thức mỗi 250 ms để lệnh không phải đợi,
+nhưng **chỉ xả log mỗi 5 s** hoặc khi `q_uplink` nhắc: `svc_sync_drain()` mở con trỏ trên
+LittleFS mỗi lần gọi, nên gọi 4 lần mỗi giây là đọc flash 4 lần/giây để hỏi một câu hầu như
+luôn có cùng câu trả lời.
+
+**Lệnh nào chạy được bây giờ là lệnh có sẵn API đã kiểm.** `OPEN_DOOR` (`svc_door_open`),
+`REBOOT` (`esp_restart`), `SYNC_TIME` (`sys_time_sync_start`) và `DIAGNOSTICS` — cái cuối phát
+ngay một `heartbeat` thay vì đẻ định dạng mới, vì heartbeat **đã là** ảnh chụp sức khoẻ của máy.
+Năm lệnh còn lại trả `COMMAND_REJECTED` kèm tên việc sẽ mở chúng: `SET_CONFIG` và
+`RELOAD_FACEDB` (chưa có API nạp lại), `CLEAR_LOGS`, `ROTATE_TOKEN` (E13-T4), `SET_ACTIVE_SLOT`
+(E13-T2). Từ chối có lý do đọc được hơn hẳn im lặng: server biết lệnh **tới nơi** và biết vì sao
+không chạy.
+
+**`device_event` phải mọc thêm chỗ để mang kết quả.** `mqtt_topics.yaml` mô tả `up/event` là
+"spoof attempts, hardware faults, manual door opens, **command results**" — nhưng schema không
+có `cmdId` lẫn loại sự kiện nào cho kết quả lệnh. Đây là hợp đồng **chưa viết xong**, không phải
+hợp đồng bị mở rộng: thêm `cmdId` (tuỳ chọn) cùng hai giá trị `COMMAND_DONE` và
+`COMMAND_REJECTED` là viết nốt điều nó đã hứa. Không phá vỡ gì vì chưa có ai tiêu thụ.
+
 
 **JWT — 2 loại token**
 
@@ -4351,6 +4381,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `s_touch` | **`std::atomic<int32_t>`** trong `ui_kiosk`, không phải queue | 4 B | `touch_task` | `ui_task` | Điểm chạm là **mức, không phải chuỗi sự kiện**: `ui_task` chỉ cần biết ngón tay *đang* ở đâu tại mỗi nhịp 20 ms. Hàng đợi ở đây phát lại những điểm đã cũ và làm nút bấm trễ theo độ sâu hàng đợi. Một người ghi, một người đọc, `release`/`acquire` — không khoá, không mất, không cũ. Ngón nhấc lên lưu `-1` và `ui_task` dựng lại cú thả từ điểm cuối |
 | `q_audio` | Queue, depth 4, `sound_id_t` | 4 × 4 B | `attend_task`, `ui_task` | `audio_task` | Phát âm không được chặn nghiệp vụ |
 | `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
+| `q_cmd` | Queue, depth 4, `device_command_t` | 4 × ~160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
 | `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
 | **`m_spi_lcd`** | Mutex | — | `ui_task`, `ota_task` (màn hình tiến trình) | — | 1 bus SPI, tránh xé khung hình |
