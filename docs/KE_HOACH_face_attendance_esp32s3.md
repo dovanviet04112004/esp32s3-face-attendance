@@ -2094,7 +2094,7 @@ Ba số đo dẫn tới cách chia này:
 | §6.4 còn phải chi | 267 KB | 267 KB |
 | **Cân đối** | **−156 KB** | **+68 KB** |
 
-Trong 267 KB đó có 61.440 B bounce buffer LCD **bắt buộc `MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL`** — không có đường đẩy sang PSRAM. Nên đây không phải chọn nhanh hay chậm mà là chọn chạy được hay không: **23,3 ms mỗi frame đổi lấy 224 KB**, và 23,3 ms đó chỉ là 1,3% của một lượt chấm công 1.758 ms.
+Trong 267 KB đó có 40.960 B bounce buffer LCD **bắt buộc `MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL`** — không có đường đẩy sang PSRAM. Nên đây không phải chọn nhanh hay chậm mà là chọn chạy được hay không: **23,3 ms mỗi frame đổi lấy 224 KB**, và 23,3 ms đó chỉ là 1,3% của một lượt chấm công 1.758 ms.
 
 `AI_ARENA_FAST_INTERNAL` giữ đường quay lại: model nhỏ đi tới mức 267 KB kia vừa chỗ thì bật `y` là detect về SRAM nội, không sửa một dòng code nào.
 
@@ -4784,7 +4784,7 @@ Font không nằm ở đây: bảng chữ 1bpp của kiosk biên dịch thẳng 
 |---|---|---|---|---|
 | Camera FB ×4 (480×320 RGB565) | 4 × 300 KB = 1.200 KB | **PSRAM** | `fb_location = CAMERA_FB_IN_PSRAM`, `fb_count = 4`, `grab_mode = CAMERA_GRAB_LATEST` | Quá lớn cho SRAM. Một cấu hình cho cả preview và AI (§2.1), nên không có buffer riêng cho nhánh AI. **Cần 4 chứ không phải 3**: `ai_task` giữ một khung tới 2 giây và `cam_task` giữ một khung suốt lúc vẽ, nên với 3 khung cảm biến không còn chỗ để lấp khung kế tiếp và chu kỳ thành *lấp + xử lý* thay vì `max(lấp, xử lý)` — đo 11/09: preview **8,1 fps** với 3 khung, **14,18 fps** với 4, cùng phòng cùng bản (`docs/measurements/latency.md` §6) |
 | LCD frame buffer 320×480 RGB565 | 300 KB | **PSRAM** | `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` | |
-| LCD bounce buffer (2 × 48 dòng) | 2 × 30.720 B = **61.440 B** | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội. Hai đệm chứ không một: nạp lại cái đang chờ truyền là thứ vẽ ra sọc dọc (E7-T5). **48 dòng là 1/10 khung, chọn tròn chứ chưa đo** — xem luật ngay dưới §6.4 |
+| LCD bounce buffer (2 × 32 dòng) | 2 × 20.480 B = **40.960 B** | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội. Hai đệm chứ không một: nạp lại cái đang chờ truyền là thứ vẽ ra sọc dọc (E7-T5). **32 dòng chốt bằng bảng đo 19/09** — xem luật ngay dưới §6.4 |
 | **`arena_fast`** — detect một mình @160×120 | **189.628 B** đo thật | **PSRAM** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_SPIRAM)` | Không nhánh nào nằm vừa SRAM nội (§6.4); `ai_engine` cấp theo `arena_hint` rồi làm tròn lên bội KB |
 | **`arena_big`** — anti-spoof @80×80 và recognition @113×113 **chung một `MicroAllocator`** | **748.524 B** đo thật 18/09 (V1SE nhập); 422.764 B với student width 32 | **PSRAM** | như trên | `Σ tail + max(head)` theo §3.8, không phải tổng hai arena. Bản hai backbone từng chiếm 823.148 B |
 | Trọng số 3 model `.tflite` | ~1.7 MB | **Flash mmap** | `esp_partition_mmap` | Không tốn RAM |
@@ -4804,25 +4804,43 @@ Font không nằm ở đây: bảng chữ 1bpp của kiosk biên dịch thẳng 
 | `.data` + `.bss` firmware (LVGL, TFLM, driver) | ~70 KB |
 | Wi-Fi + lwIP (BT tắt) | ~55 KB |
 | Stack 10 task | ~53 KB |
-| LCD bounce + DMA descriptor | **~62 KB** |
+| LCD bounce + DMA descriptor | **~42 KB** |
 | Buffer ảnh crop (spoof + recog) | ~57 KB |
 | Heap dự phòng (malloc lặt vặt, TLS handshake ~30 KB) | ~60 KB |
-| **Còn lại cho arena** | **≈ 155 KB** |
+| **Còn lại cho arena** | **≈ 175 KB** |
 
-**Đệm bounce 61.440 B là khoản lớn thứ hai của RAM nội, và con số 48 dòng chưa từng được đo.**
-`drv_lcd` cấp hai đệm 30.720 B, đúng 1/10 khung 307.200 B — một lựa chọn tròn ở E7-T5, không
-phải kết quả đo. Hạ xuống 32 dòng thu về **20.480 B**, đủ cho `ota_task` 8 KB cộng biên tử tế
-cho `sync_task` (§5.2), nhưng nó đổi số lượt DMA mỗi khung từ 10 lên 15.
+**Đệm bounce 40.960 B là khoản lớn thứ hai của RAM nội.** `drv_lcd` cấp hai đệm 20.480 B. Con
+số cũ là 48 dòng — đúng 1/10 khung 307.200 B, một lựa chọn tròn ở E7-T5 không kèm số đo — và
+32 dòng thu về **20.480 B**, đủ cho `ota_task` 8 KB cộng biên tử tế cho `sync_task` (§5.2), với
+giá là 15 lượt DMA mỗi khung thay vì 10.
 
-Ràng buộc phải giữ khi đụng vào: **`T_w` phải lọt trong một khung quét**. Ở 80 MHz, đẩy hết
-307.200 B mất **30,7 ms** trên giấy, 31,7 ms đo thật. Panel chạy **24 Hz** (`drv_lcd` ghi `0xB1`)
-nên chu kỳ là 41,7 ms và biên còn **~10 ms**; ở mặc định 60 Hz chu kỳ chỉ 16,7 ms, tức phép ghi
-tràn sang khung sau và xé hình là chắc chắn. Đó là lý do 24 Hz tồn tại, không phải để tiết kiệm
-gì cả.
+Ràng buộc phải giữ khi đụng vào là điều kiện của §2.3A: **`T_w < 2·T_s`**. Panel chạy **24 Hz**
+(`drv_lcd` ghi `0xB1`) nên `T_s` = 41,7 ms và trần là **83,4 ms** — tia quét chạy trước con trỏ
+ghi suốt vòng đầu và chỉ đuổi kịp ở vòng sau, nên phép ghi được phép dài hơn một khung, chỉ
+không được dài hơn hai.
 
-Năm lượt DMA thêm vào ăn vào đúng biên 10 ms ấy. Nên đổi `BOUNCE_ROWS` là **một task riêng có
-bảng đo**: `T_w` và fps ở 48, 32, 20 dòng, cộng một lượt nhìn kính tìm khấc ở từng mức. Không
-được đổi chỉ vì cần RAM.
+Quét 19/09, mỗi mức 5 mẫu preview, `T_w` đo từ sau khoá pha tới strip cuối:
+
+| Dòng | Strip mỗi khung | `T_w` median | `T_w` max | Biên tới 83,4 ms | fps | Hai đệm |
+|---|---|---|---|---|---|---|
+| 48 | 10 | 37,8 ms | 42,5 ms | 40,9 ms | 11,58–13,61 | 61.440 B |
+| **32** | 15 | **38,9 ms** | 41,6 ms | 41,8 ms | 12,30–13,48 | **40.960 B** |
+| 20 | 24 | 44,2 ms | 49,2 ms | 34,2 ms | 11,47–12,98 | 25.600 B |
+
+**Cả ba đều thừa biên, và mắt không thấy khấc ở mức nào** — chủ repo nhìn kính từng mức. Chốt
+**32**: thu về 20.480 B với giá 1,1 ms, trong khi 20 dòng đòi thêm 6,4 ms để lấy thêm 15 KB.
+6,4 ms ấy không miễn phí dù không xé: nó là thời gian CPU của `cam_task` trên **core 0**, nơi
+§5.2 đã ghi là core đông. 20 dòng vẫn còn đó, đã đo và đã nhìn, nếu sau này cần thêm RAM.
+
+🔬 **Bảng này so ba mức được, nhưng không so chính xác được.** `T_w` đo bằng đồng hồ tường nên
+nó gồm cả lúc `cam_task` bị chiếm chỗ trên core 0, và phép quét không khoá tải AI lẫn ánh sáng.
+Bằng chứng: chính bản 32 dòng ấy, đo lại lúc có mặt người và gain 64/16, cho `T_w` **43,7–51,2 ms**
+thay vì 37,3–41,6 ms của lượt quét, và fps 11,0–11,5 thay vì 12,3–13,5. Chênh lệch giữa ba mức
+nhỏ hơn chênh lệch do tải gây ra, nên **thứ bảng này chốt được là "cả ba đều dưới trần 83,4 ms",
+không phải "mức nào nhanh hơn mức nào bao nhiêu"**. fps thì trần camera 14,19 đã chặn trước rồi.
+
+Muốn con số sạch thì phải đo trong `test_apps` không có AI và ánh sáng cố định — chưa cần, vì
+quyết định chỉ dựa vào trần.
 
 **Hệ quả, sau khi E8-T7 đo thật** (`docs/measurements/arena.md`):
 
@@ -4846,7 +4864,7 @@ nhận:
 | detect | 209,1 ms | **232,5 ms** (+23,4) |
 
 Trả 224 KB lại cho hệ thu về **220 KB RAM nội đo thật**, giá là **+23,4 ms mỗi frame** trên
-detect, tức 2,0% của một lượt 1.159 ms. Trong 267 KB kia có 61.440 B bounce buffer LCD bắt
+detect, tức 2,0% của một lượt 1.159 ms. Trong 267 KB kia có 40.960 B bounce buffer LCD bắt
 buộc là DMA nội, nên không có cách nào giữ `arena_fast` ở SRAM mà vẫn đủ chỗ cho LCD.
 
 Đường quay lại khi model nhỏ đi: **thu nhỏ model trước, bật `AI_ARENA_FAST_INTERNAL=y` sau**.

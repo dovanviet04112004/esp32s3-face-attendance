@@ -121,6 +121,12 @@ bool drv_lcd_frame_to_panel(int src_width, int src_height, const float box[4], i
  */
 esp_err_t drv_lcd_fill(uint16_t rgb565);
 
+/** Microseconds the last full-frame blit spent writing, past the phase wait.
+ *  @ctx any | non-blocking | 0 until the first frame has gone out
+ *  @ret the T_w of KEHOACH 6.4, which must stay inside one scan period
+ */
+uint32_t drv_lcd_blit_us(void);
+
 /** Panel handle for the LVGL port to drive.
  *  @ctx any | non-blocking
  */

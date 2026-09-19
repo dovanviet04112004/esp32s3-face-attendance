@@ -14,6 +14,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_st7796.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -27,7 +28,7 @@ static const char *TAG = "drv_lcd";
 #define BLK_DUTY_MAX ((1u << BLK_DUTY_BITS) - 1u)
 #define PANEL_CMD_BITS 8
 #define PANEL_PARAM_BITS 8
-#define BOUNCE_ROWS 48
+#define BOUNCE_ROWS 32
 #define BOUNCE_PIXELS (APP_LCD_H_RES * BOUNCE_ROWS)
 #define BOUNCE_BYTES (BOUNCE_PIXELS * (int)sizeof(uint16_t))
 #define BOUNCE_COUNT 2
@@ -61,6 +62,7 @@ static const char *TAG = "drv_lcd";
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_panel_io_handle_t s_io;
 static uint16_t *s_bounce[BOUNCE_COUNT];
+static uint32_t s_blit_us;
 static SemaphoreHandle_t s_bounce_free;
 static int s_next;
 static uint16_t s_column_map[APP_LCD_H_RES];
@@ -455,6 +457,7 @@ esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height,
     }
     build_column_map(src_width, taken_width);
     wait_for_scan_lead();
+    const int64_t started_us = esp_timer_get_time();
     const int rows_per_strip = BOUNCE_PIXELS / APP_LCD_H_RES;
     const uint16_t *src = pixels;
 
@@ -476,7 +479,13 @@ esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height,
         }
         APP_RETURN_ON_ERR(send_bounce(0, y, APP_LCD_H_RES, y + rows, dst), TAG, "strip");
     }
+    s_blit_us = (uint32_t)(esp_timer_get_time() - started_us);
     return ESP_OK;
+}
+
+uint32_t drv_lcd_blit_us(void)
+{
+    return s_blit_us;
 }
 
 esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565)
