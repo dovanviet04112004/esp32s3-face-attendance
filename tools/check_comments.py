@@ -111,7 +111,10 @@ def is_skipped(path: Path) -> bool:
         parts = path.relative_to(REPO_ROOT).parts
     except ValueError:
         parts = path.parts
-    return bool(SKIP_DIR_PARTS.intersection(parts))
+    if SKIP_DIR_PARTS.intersection(parts):
+        return True
+    # idf.py -B puts a second profile in build_<name>, generated the same way.
+    return any(part.startswith("build_") for part in parts)
 
 
 def iter_source_files(targets: list[Path]) -> list[Path]:

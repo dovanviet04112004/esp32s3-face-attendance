@@ -100,7 +100,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define TOUCH_POINTS 1
 #define UI_TASK_CORE 0
 #define UI_TASK_PRIORITY 4
-#define UI_TASK_STACK_BYTES 8192
+#define UI_TASK_STACK_BYTES 4096
 #define UI_TICK_MS 20
 #define UI_REST_TICK_MS 200
 #define UI_GROUND_RGB565 0x0821

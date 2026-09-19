@@ -4225,13 +4225,19 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Nạp `snd/ok.wav` từ partition `assets` **một lần lúc lên**, giữ PCM trong PSRAM rồi phát khi có `APP_SOUND_OK`: mở cửa xong không phải đọc file |
 | `touch_task` | `drv_touch` | 0 | 5 | 3 KB | poll 40 ms | Đọc GT911 → ô `s_touch` của `ui_kiosk` (§5.3) |
 | **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
-| `ui_task` | `ui_kiosk` | 0 | 4 | 8 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
+| `ui_task` | `ui_kiosk` | 0 | 4 | 4 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota` | 0 | 3 | 8 KB | khi có lệnh `down/ota` | Tải firmware / models, verify sha256, ghi partition |
 | `sync_task` | `sync_service` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, xoá khỏi hàng đợi |
 | `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ 30 s chỉ để biết là không có sóng. **Tạm**: tách thành `mqtt_task` và `sync_task` ở E10-T6 |
 | `wifi` / `lwip` | hệ thống IDF | 0 | 18–23 | — | — | Do IDF quản lý, không tự tạo |
+
+**`ui_task` lấy 4 KB chứ không 8 KB.** `ram.md` §3.1 đo trên `bench` thấy nó còn trống 6.772 B
+trên 8.192 B cấp, tức cả vòng đời chỉ chạm **1.420 B**; 4.096 B để lại biên 2.676 B. Bốn KB thu
+về đi thẳng cho ngăn xếp mà esp-mqtt tự xin lúc `mqtt_task` lên, thứ mà bản `dev` không còn chỗ
+liền mạch để cấp (§6.4). `ai_task` **không** cắt được dù cùng cấp 8 KB: nó chỉ còn 1.284 B trống,
+và đó là lúc mới chạy detect — spoof với recog đi sâu hơn.
 
 > **Quy tắc priority**: mọi task ứng dụng phải < 18 để không chèn Wi-Fi stack. Task có deadline cứng (cam, tof, audio) đặt cao hơn task chỉ cần "mượt mắt" (ui) và task nền (sync).
 
