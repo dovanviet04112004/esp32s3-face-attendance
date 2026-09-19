@@ -2,9 +2,13 @@
 
 #include <string.h>
 
+#include "esp_log.h"
+
 namespace vision {
 
 namespace {
+
+const char *TAG = "vision";
 
 // Recognition runs only once the box has held still this many detects (KEHOACH 3, layer 5).
 constexpr int kStableDetects = 2;
@@ -12,6 +16,7 @@ constexpr float kSameFaceIou = 0.5f;
 // A verdict other than MATCH is retried after this many detects on the same
 // track: 320 ms each, and six of them is a person standing still for 2.8 s.
 constexpr int kRetryDetects = 3;
+constexpr int kUnknownTries = 2;
 // Enrolling asks liveness on every frame, so the number of tries is bounded.
 constexpr int kEnrolSpoofTries = 3;
 // The detector drops a frame here and there on a face that never moved.
@@ -94,6 +99,8 @@ void VisionPipeline::reset() noexcept
     matched_ = false;
     seen_ = Seen::Nothing;
     enrol_spoofs_ = 0;
+    unknown_tries_ = 0;
+    tracking_ = false;
 }
 
 const ai_engine_face_t &VisionPipeline::pick(size_t count) const noexcept
@@ -119,7 +126,8 @@ const ai_engine_face_t &VisionPipeline::pick(size_t count) const noexcept
 
 void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
 {
-    if (stable_ > 0 && iou(tracked_, primary.box) >= kSameFaceIou) {
+    // Overlap alone decides identity, so zeroing stable_ never ends a track.
+    if (tracking_ && iou(tracked_, primary.box) >= kSameFaceIou) {
         ++stable_;
         if (since_verdict_ >= 0) {
             ++since_verdict_;
@@ -131,7 +139,9 @@ void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
         ++track_;
         // A new track can be a different person, so the tries start over.
         enrol_spoofs_ = 0;
+        unknown_tries_ = 0;
     }
+    tracking_ = true;
     memcpy(tracked_, primary.box, sizeof(tracked_));
 }
 
@@ -148,7 +158,10 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
 {
     if (liveness_.available()) {
         float live = -1.0f;
-        if (liveness_.score(frame, primary.box, &live) != ESP_OK) {
+        const esp_err_t scored = liveness_.score(frame, primary.box, &live);
+        if (scored != ESP_OK) {
+            // Every return below leaves the glass saying it is still working.
+            ESP_LOGW(TAG, "no verdict: liveness %s", esp_err_to_name(scored));
             return;
         }
         out.live_score = live;
@@ -161,7 +174,10 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
         }
     }
     float scale = 0.0f;
-    if (embedder_.embed(frame, primary.landmarks, embedding_, sizeof(embedding_), &scale) != ESP_OK) {
+    const esp_err_t embedded = embedder_.embed(frame, primary.landmarks, embedding_,
+                                               sizeof(embedding_), &scale);
+    if (embedded != ESP_OK) {
+        ESP_LOGW(TAG, "no verdict: embed %s", esp_err_to_name(embedded));
         return;
     }
     uint32_t employee_id = 0;
@@ -177,15 +193,22 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     const esp_err_t found = matcher_.best(embedding_, scale, &employee_id, &score, name, sizeof(name));
     // A table that never answered is not a verdict about this face (KEHOACH 5.3).
     if (found != ESP_OK && found != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "no verdict: facedb %s", esp_err_to_name(found));
         return;
     }
     out.match_score = score;
     matched_ = found == ESP_OK && score >= thresholds_.match_min_score;
     since_verdict_ = 0;
     if (matched_) {
+        unknown_tries_ = 0;
         out.kind = SVC_VISION_MATCH;
         out.employee_id = employee_id;
         memcpy(out.name, name, sizeof(out.name));
+        return;
+    }
+    // Refusing on the first sample calls an employee a stranger and grants them
+    // a second later, because match_min drops 31% of genuine frames (KEHOACH 4.5.5d).
+    if (++unknown_tries_ < kUnknownTries) {
         return;
     }
     out.kind = SVC_VISION_UNKNOWN;
@@ -239,6 +262,7 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
             return out;
         }
         stable_ = 0;
+        tracking_ = false;
         tell(out, 0, SVC_VISION_NO_FACE);
         if (seen_ != Seen::Nothing) {
             seen_ = Seen::Nothing;

@@ -91,6 +91,8 @@ private:
     float tracked_[4]{};
     int stable_ = 0;
     int since_verdict_ = -1;
+    int unknown_tries_ = 0;               // verdicts withheld on this track
+    bool tracking_ = false;               // tracked_ holds the last detect's box
     bool matched_ = false;
     Seen seen_ = Seen::Nothing;
     int8_t embedding_[SVC_FACEDB_EMBED_BYTES]{};
