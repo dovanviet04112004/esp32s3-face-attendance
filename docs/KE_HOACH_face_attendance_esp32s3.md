@@ -4082,7 +4082,7 @@ Thứ cần bí mật thì gọi vòng qua Route Handler chạy trên server c�
 deploy/
 ├── docker-compose.yml  ├── docker-compose.prod.yml  ├── .env.example
 ├── traefik/{traefik.yml, dynamic.yml}     # TLS tự động Let's Encrypt
-├── emqx/{emqx.conf, certs/}               # listener MQTTS, auth và ACL gọi về `api`
+├── emqx/{emqx.conf, acl.conf, gen_certs.sh, certs/}   # listener MQTTS, auth và ACL
 └── postgres/init.sql
 ```
 
@@ -4888,7 +4888,7 @@ mỗi bản ghi. Nghiệm trên board sau khi gạt: Wi-Fi vẫn nối được 
 
 | Hạng mục | Cách làm |
 |---|---|
-| Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware, user/pass riêng từng device; EMQX hỏi `api` qua HTTP để chấm auth và ACL, ACL chỉ mở `kiosk/{chính nó}/#` |
+| Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware, user/pass riêng từng device; EMQX hỏi `api` qua HTTP để chấm auth và ACL, ACL chỉ mở `kiosk/{chính nó}/#` — xem §7.4 cho phần đã dựng được trước khi có `api` |
 | Device token | JWT 90 ngày lưu **NVS encrypted**, xoay vòng tự động khi còn 7 ngày |
 | Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke |
 | Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu |
@@ -4948,6 +4948,33 @@ cho tới khi một con người bấm duyệt; và Flash Encryption khiến kh�
 Xoay vòng nó là một bản OTA. Muốn chắc hơn thì phải **cấp cert riêng từng máy ngay trên dây
 chuyền và dùng mTLS** — mạnh hơn hẳn, nhưng đòi một trạm nạp có CA riêng, nên để khi sản lượng
 đủ lớn mới đáng.
+
+### 7.4 Broker trước khi có `api`
+
+§7.2 giao cho EMQX hỏi `api` qua HTTP mỗi lần một kiosk nối, nhưng `api` là E11 và chưa tồn tại.
+Phần dựng được ngay là **hình dạng phía thiết bị**, và nó là bản cuối:
+
+| Thứ | Giá trị | Đổi gì khi E13-T4 tới |
+|---|---|---|
+| Cổng | `8883`, TLS | không |
+| Cert CA | tự ký, nhúng trong firmware | thay bằng CA thật, firmware nạp lại |
+| Username | `deviceId` | không |
+| Password | token của máy | không |
+| ACL | `kiosk/{username}/#`, ngoài ra cấm | không |
+| **Nơi EMQX tra cứu** | `built_in_database` | **đổi sang `http` gọi `api`** |
+
+Chỉ hàng cuối đổi. `net_mqtt` gửi đúng một bộ `deviceId` cộng token cộng CA trong cả hai trường
+hợp, nên nó viết một lần và không sửa lại — đó là lý do dựng TLS với xác thực ngay từ đầu thay
+vì chạy nặc danh rồi quay lại.
+
+**Cái mất khi chưa có `api`**: thu hồi một máy phải sửa `built_in_database` bằng tay thay vì
+admin bấm một nút, và token không tự xoay vòng được (§7.2). Hai thứ ấy đều là việc của `api`,
+không phải của broker.
+
+**`gen_certs.sh` sinh CA và cert máy chủ, `certs/` không bao giờ commit.** `.gitignore` chặn
+`*.pem`, `*.key`, `*.crt`. Ngoại lệ đúng một file: **cert CA là công khai** và firmware cần nó
+lúc biên dịch để nhúng, nên bản sao ấy nằm trong cây firmware và được commit; khoá riêng của CA
+cùng cặp khoá máy chủ thì không rời `deploy/emqx/certs/`.
 
 ---
 
