@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useFormatter, useTranslations } from "next-intl";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { api } from "@/lib/api";
@@ -14,28 +15,10 @@ interface Tally {
   unsyncedClock: number;
 }
 
-function clock(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString("vi-VN") : "—";
-}
-
-const COLUMNS: Column<Tally>[] = [
-  { header: "Nhân viên", cell: (row) => row.fullName },
-  { header: "Lượt", cell: (row) => row.punches, numeric: true },
-  { header: "Lần đầu", cell: (row) => clock(row.firstAt) },
-  { header: "Lần cuối", cell: (row) => clock(row.lastAt) },
-  {
-    header: "Giờ không tin được",
-    numeric: true,
-    cell: (row) =>
-      row.unsyncedClock > 0 ? (
-        <span className="text-(--color-danger)">{row.unsyncedClock}</span>
-      ) : (
-        <span className="text-(--color-muted)">0</span>
-      ),
-  },
-];
-
 export default function AttendancePage() {
+  const t = useTranslations("attendance");
+  const common = useTranslations("common");
+  const format = useFormatter();
   const year = new Date().getFullYear();
   const from = new Date(Date.UTC(year, 0, 1)).toISOString();
   const to = new Date(Date.UTC(year + 1, 0, 1)).toISOString();
@@ -45,18 +28,37 @@ export default function AttendancePage() {
       (await api.get<Tally[]>(`/reports/attendance?from=${from}&to=${to}`)).data,
   });
 
+  function clock(iso: string | null) {
+    return iso ? format.dateTime(new Date(iso), "medium") : common("empty");
+  }
+
+  const columns: Column<Tally>[] = [
+    { header: t("employee"), cell: (row) => row.fullName },
+    { header: t("punches"), cell: (row) => row.punches, numeric: true },
+    { header: t("firstAt"), cell: (row) => clock(row.firstAt) },
+    { header: t("lastAt"), cell: (row) => clock(row.lastAt) },
+    {
+      header: t("unsyncedClock"),
+      numeric: true,
+      cell: (row) =>
+        row.unsyncedClock > 0 ? (
+          <span className="text-(--color-danger)">{row.unsyncedClock}</span>
+        ) : (
+          <span className="text-(--color-muted)">0</span>
+        ),
+    },
+  ];
+
   return (
     <section>
-      <h1 className="text-lg font-semibold">Chấm công</h1>
-      <p className="mt-1 mb-6 text-sm text-(--color-muted)">
-        Năm {year}. Cột cuối đếm bản ghi mà kiosk tự khai là giờ chưa đồng bộ NTP
-      </p>
+      <h1 className="text-lg font-semibold">{t("title")}</h1>
+      <p className="mt-1 mb-6 text-sm text-(--color-muted)">{t("lead")}</p>
       <DataTable
-        columns={COLUMNS}
+        columns={columns}
         rows={rollup.data}
         keyOf={(row) => String(row.employeeId)}
         pending={rollup.isPending}
-        empty="Chưa có lượt chấm công nào trong năm"
+        empty={t("rangeEmpty")}
       />
     </section>
   );

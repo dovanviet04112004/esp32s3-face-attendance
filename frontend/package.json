@@ -10,7 +10,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "rm -f tsconfig.tsbuildinfo && tsc --noEmit"
   },
   "keywords": [],
   "type": "module",
@@ -21,6 +21,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.47.0",
     "next": "^16.3.5",
+    "next-intl": "^4.14.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "recharts": "^3.10.1",

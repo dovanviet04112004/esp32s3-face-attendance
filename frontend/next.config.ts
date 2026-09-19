@@ -1,3 +1,4 @@
+import createNextIntlPlugin from "next-intl/plugin";
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
@@ -5,4 +6,6 @@ const config: NextConfig = {
   typedRoutes: true,
 };
 
-export default config;
+const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
+
+export default withNextIntl(config);

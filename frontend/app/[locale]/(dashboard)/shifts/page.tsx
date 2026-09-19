@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { api } from "@/lib/api";
@@ -14,35 +15,34 @@ interface Shift {
   active: boolean;
 }
 
-const COLUMNS: Column<Shift>[] = [
-  { header: "Ca", cell: (row) => row.name },
-  { header: "Bắt đầu", cell: (row) => row.startTime, numeric: true },
-  { header: "Kết thúc", cell: (row) => row.endTime, numeric: true },
-  { header: "Dung sai (phút)", cell: (row) => row.graceMinutes, numeric: true },
-  {
-    header: "Trạng thái",
-    cell: (row) => (
-      <span className={row.active ? "text-(--color-ok)" : "text-(--color-muted)"}>
-        {row.active ? "đang dùng" : "đã ngưng"}
-      </span>
-    ),
-  },
-];
-
 export default function ShiftsPage() {
+  const t = useTranslations("shifts");
   const shifts = useQuery({
     queryKey: ["shifts"],
     queryFn: async () => (await api.get<Shift[]>("/shifts")).data,
   });
 
+  const columns: Column<Shift>[] = [
+    { header: t("name"), cell: (row) => row.name },
+    { header: t("startTime"), cell: (row) => row.startTime, numeric: true },
+    { header: t("endTime"), cell: (row) => row.endTime, numeric: true },
+    { header: t("graceMinutes"), cell: (row) => row.graceMinutes, numeric: true },
+    {
+      header: t("status"),
+      cell: (row) => (
+        <span className={row.active ? "text-(--color-ok)" : "text-(--color-muted)"}>
+          {row.active ? t("active") : t("retired")}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <section>
-      <h1 className="text-lg font-semibold">Ca làm</h1>
-      <p className="mt-1 mb-6 text-sm text-(--color-muted)">
-        Ca đã ngưng vẫn đọc được, vì phân công cũ còn trỏ vào nó
-      </p>
+      <h1 className="text-lg font-semibold">{t("title")}</h1>
+      <p className="mt-1 mb-6 text-sm text-(--color-muted)">{t("lead")}</p>
       <DataTable
-        columns={COLUMNS}
+        columns={columns}
         rows={shifts.data}
         keyOf={(row) => row.id}
         pending={shifts.isPending}

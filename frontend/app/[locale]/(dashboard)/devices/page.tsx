@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,8 @@ interface Device {
 }
 
 export default function DevicesPage() {
+  const t = useTranslations("devices");
+  const common = useTranslations("common");
   const role = useSession((s) => s.role);
   const cache = useQueryClient();
   const devices = useQuery({
@@ -31,31 +34,36 @@ export default function DevicesPage() {
 
   const columns: Column<Device>[] = [
     {
-      header: "Thiết bị",
+      header: t("device"),
       cell: (row) => (
         <div>
-          <p>{row.name ?? "chưa đặt tên"}</p>
+          <p>{row.name ?? t("unnamed")}</p>
           <p className="font-mono text-xs text-(--color-muted)">{row.id}</p>
         </div>
       ),
     },
-    { header: "Vị trí", cell: (row) => row.location ?? "—" },
-    { header: "Firmware", cell: (row) => row.fwVersion ?? "—" },
-    { header: "Danh sách", cell: (row) => row.rosterVersion, numeric: true },
+    { header: t("location"), cell: (row) => row.location ?? common("empty") },
+    { header: t("firmware"), cell: (row) => row.fwVersion ?? common("empty") },
+    { header: t("roster"), cell: (row) => row.rosterVersion, numeric: true },
     {
-      header: "Kết nối",
+      header: t("link"),
       cell: (row) => (
         <span className={row.online ? "text-(--color-ok)" : "text-(--color-muted)"}>
-          {row.online ? "đang kết nối" : "ngoại tuyến"}
+          {row.online ? t("online") : t("offline")}
         </span>
       ),
     },
     {
-      header: "Trạng thái",
+      header: t("status"),
       cell: (row) =>
         row.status === "PENDING" && role === "ADMIN" ? (
-          <Button size="sm" tone="quiet" onClick={() => approve.mutate(row.id)}>
-            Duyệt máy
+          <Button
+            size="sm"
+            tone="quiet"
+            disabled={approve.isPending}
+            onClick={() => approve.mutate(row.id)}
+          >
+            {approve.isPending ? t("approving") : t("approve")}
           </Button>
         ) : (
           <span className="text-(--color-muted)">{row.status}</span>
@@ -65,10 +73,8 @@ export default function DevicesPage() {
 
   return (
     <section>
-      <h1 className="text-lg font-semibold">Thiết bị</h1>
-      <p className="mt-1 mb-6 text-sm text-(--color-muted)">
-        Máy chưa ai nhận nằm ở PENDING cho tới khi một người đối chiếu mã trên màn hình
-      </p>
+      <h1 className="text-lg font-semibold">{t("title")}</h1>
+      <p className="mt-1 mb-6 text-sm text-(--color-muted)">{t("lead")}</p>
       <DataTable
         columns={columns}
         rows={devices.data?.rows}

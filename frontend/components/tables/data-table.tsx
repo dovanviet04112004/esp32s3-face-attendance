@@ -1,3 +1,6 @@
+"use client";
+
+import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
 export interface Column<T> {
@@ -15,11 +18,12 @@ interface Props<T> {
 }
 
 export function DataTable<T>({ columns, rows, keyOf, pending, empty }: Props<T>) {
+  const t = useTranslations("common");
   if (pending) {
-    return <p className="text-sm text-(--color-muted)">Đang tải…</p>;
+    return <p className="text-sm text-(--color-muted)">{t("loading")}</p>;
   }
   if (!rows?.length) {
-    return <p className="text-sm text-(--color-muted)">{empty ?? "Chưa có dữ liệu"}</p>;
+    return <p className="text-sm text-(--color-muted)">{empty ?? t("noData")}</p>;
   }
   return (
     <div className="overflow-x-auto rounded-xl border border-(--color-line) bg-(--color-surface)">

@@ -1,23 +1,26 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useEffect, type ReactNode } from "react";
 
+import { Link, usePathname, useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/auth";
 
 const PAGES = [
-  { href: "/overview", label: "Tổng quan" },
-  { href: "/employees", label: "Nhân viên" },
-  { href: "/attendance", label: "Chấm công" },
-  { href: "/devices", label: "Thiết bị" },
-  { href: "/shifts", label: "Ca làm" },
-  { href: "/reports", label: "Báo cáo" },
+  { href: "/overview", key: "overview" },
+  { href: "/employees", key: "employees" },
+  { href: "/attendance", key: "attendance" },
+  { href: "/devices", key: "devices" },
+  { href: "/shifts", key: "shifts" },
+  { href: "/reports", key: "reports" },
+  { href: "/settings", key: "settings" },
 ] as const;
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
+  const t = useTranslations("nav");
+  const app = useTranslations("app");
   const router = useRouter();
   const here = usePathname();
   const { accessToken, role, clear } = useSession();
@@ -45,13 +48,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   if (!accessToken) {
-    return <main className="grid min-h-screen place-items-center text-sm">Đang mở phiên…</main>;
+    return <main className="grid min-h-screen place-items-center text-sm">{t("opening")}</main>;
   }
 
   return (
     <div className="flex min-h-screen">
       <aside className="w-56 shrink-0 border-r border-(--color-line) bg-(--color-surface) p-4">
-        <p className="px-2 text-sm font-semibold">Chấm công</p>
+        <p className="px-2 text-sm font-semibold">{app("name")}</p>
         <p className="px-2 pb-4 text-xs text-(--color-muted)">{role}</p>
         <nav className="flex flex-col gap-1">
           {PAGES.map((page) => (
@@ -65,7 +68,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   : "hover:bg-(--color-ground)",
               )}
             >
-              {page.label}
+              {t(page.key)}
             </Link>
           ))}
         </nav>
@@ -73,7 +76,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           onClick={signOut}
           className="mt-6 w-full rounded-lg px-2 py-2 text-left text-sm text-(--color-muted) hover:bg-(--color-ground)"
         >
-          Đăng xuất
+          {t("signOut")}
         </button>
       </aside>
       <main className="flex-1 p-8">{children}</main>
