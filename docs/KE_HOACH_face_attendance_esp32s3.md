@@ -3878,11 +3878,16 @@ nối, nên phần lớn lần mở Cài đặt kết thúc ngay ở đó.
 | Màn hình và âm thanh | `Độ sáng` | thanh trượt | `ui/brightness` (§6.2.1) → `drv_lcd_backlight` |
 | | `Âm lượng` | thanh trượt | `ui/volume` (§6.2.1) → `drv_audio_set_volume` |
 
-**Dòng ngôn ngữ đứng đầu thẻ đầu, và nhãn của nó mang cả hai thứ tiếng.** Người cần đổi ngôn
-ngữ là người **không đọc được ngôn ngữ đang hiện**, nên mọi quy tắc xếp trang thông thường —
-"ít dùng thì để dưới" — đảo dấu ở đúng dòng này: nó phải tìm thấy được mà không cần đọc gì.
-Hai nấc `VI` · `EN` viết bằng chữ Latin không dấu vì lý do ấy, và nhãn giữ nguyên cả hai tên ở
-mọi ngôn ngữ. Đây là dòng duy nhất trong máy không đi qua catalogue.
+**Dòng ngôn ngữ đứng đầu thẻ đầu, và thứ nhận ra được là hai nấc `VI` · `EN`, không phải nhãn.**
+Người cần đổi ngôn ngữ là người **không đọc được ngôn ngữ đang hiện**, nên quy tắc xếp trang
+thông thường — "ít dùng thì để dưới" — đảo dấu ở đúng dòng này: nó phải tìm thấy được mà không
+cần đọc gì. Hai mã hai chữ cái làm việc ấy; nhãn thì đi qua catalogue như mọi dòng khác.
+
+Nhãn **không** mang cả hai thứ tiếng, vì ô chứa nó không đủ rộng: một dòng cài đặt chừa 200 px
+cho nhãn cộng giá trị, công tắc chiếm 76 px, nên nhãn còn 110 px — đo trên chính bảng advance
+đã sinh thì `Ngôn ngữ` là 93 px và `Language` là 92 px, đều lọt, còn `Ngôn ngữ / Language` là
+**205 px** và sẽ bị cắt thành `Ngôn ng…`. Đây là ví dụ đúng của luật ngay dưới: chọn từ ngắn
+hơn lúc viết catalogue, không nới ô.
 
 **Catalogue là một bảng hằng trong flash, không phải file nạp lúc chạy.** `strings.cpp` khai
 `const char *const table[Lang::Count][StrId::Count]`, tức mọi chuỗi nằm ở `.rodata` và đổi ngôn
