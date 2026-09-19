@@ -22,6 +22,12 @@ export const envSchema = z.object({
 
   TEMPLATE_ENCRYPTION_KEY: z.string().min(44),
 
+  // Empty is how .env.example turns it off, so empty must read as unset.
+  NOTIFY_WEBHOOK_URL: z
+    .string()
+    .optional()
+    .transform((held) => (held ? held : undefined)),
+
   CORS_ORIGIN: z.string().min(1),
 
   MQTT_URL: z.string().min(1),
