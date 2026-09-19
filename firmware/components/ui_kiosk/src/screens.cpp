@@ -111,6 +111,11 @@ int key_x(int i)
     return left + kWideKey + kKeyGap + (i - 19) * (kKeyW + kKeyGap);
 }
 
+bool above_keys(int y)
+{
+    return y < kFieldY;
+}
+
 int bottom_row_y()
 {
     return kKeyTop + 3 * (kKeyH + kKeyVGap);
@@ -185,7 +190,7 @@ int signal_level(int rssi_dbm)
 
 void status_bar(Canvas &to, bool on_video)
 {
-    const uint8_t ink = on_video ? DRV_LCD_SURFACE : DRV_LCD_INK;
+    const uint8_t ink = DRV_LCD_INK;
     const uint8_t rest = on_video ? DRV_LCD_EDGE : DRV_LCD_LINE;
     char now[8] = { 0 };
     clock_text(now, sizeof(now));
@@ -282,7 +287,7 @@ void keyboard(Canvas &to, int layer, int held, const char *enter)
     to.card(enter_x(), row4, kEnterKey, kKeyH, kKeyRadius,
             held == kOk ? DRV_LCD_SURFACE_HI : DRV_LCD_ACCENT);
     to.text(Font::Body, enter_x(), Canvas::centre_y(Font::Body, row4, kKeyH), kEnterKey, enter,
-            DRV_LCD_SURFACE, Align::Centre);
+            DRV_LCD_INK, Align::Centre);
 }
 
 int key_hit(int x, int y)
@@ -366,12 +371,16 @@ public:
         char now[8] = { 0 };
         clock_text(now, sizeof(now));
         to.text_on_video(Font::Caption, theme::kGutter,
-                         Canvas::centre_y(Font::Caption, 0, theme::kBarH), 80, now,
-                         DRV_LCD_SURFACE);
+                         Canvas::centre_y(Font::Caption, 0, theme::kBarH), 80, now, DRV_LCD_INK);
+        const int box = 22;
+        widgets::wifi_bars(to, APP_LCD_H_RES - kMenuBox - box - theme::kGapS,
+                           (theme::kBarH - box) / 2, box,
+                           s_net.joined ? signal_level(s_net.rssi_dbm) : 0, DRV_LCD_INK,
+                           DRV_LCD_EDGE);
         widgets::icon(to, APP_LCD_H_RES - kMenuBox, 0, kMenuBox, widgets::Icon::Menu,
-                      held_ ? DRV_LCD_ACCENT : DRV_LCD_SURFACE);
+                      held_ ? DRV_LCD_ACCENT : DRV_LCD_INK);
 
-        uint8_t tone = DRV_LCD_SURFACE;
+        uint8_t tone = DRV_LCD_INK;
         const char *prompt = "Đưa khuôn mặt vào khung";
         const char *line = refusal(seen.verdict);
         if (line == nullptr) {
@@ -384,7 +393,7 @@ public:
             tone = DRV_LCD_OK;
             prompt = nullptr;
         } else if (seen.stage == UI_KIOSK_STAGE_WORKING) {
-            tone = seen.face ? DRV_LCD_ACCENT : DRV_LCD_SURFACE;
+            tone = seen.face ? DRV_LCD_ACCENT : DRV_LCD_INK;
             prompt = seen.face ? prompt_for(seen.stage) : prompt;
         } else if (seen.stage != UI_KIOSK_STAGE_NO_FACE) {
             tone = DRV_LCD_WARN;
@@ -392,7 +401,7 @@ public:
         }
         guide(to, tone);
         if (prompt != nullptr) {
-            to.text_on_video(Font::Strong, kWideX, kPromptY, kWideW, prompt, DRV_LCD_SURFACE,
+            to.text_on_video(Font::Strong, kWideX, kPromptY, kWideW, prompt, DRV_LCD_INK,
                              Align::Centre);
         }
 
@@ -423,7 +432,7 @@ private:
         const int cy = kBandY + kBandH / 2;
         to.disc(cx, cy, kRingR, DRV_LCD_OK);
         widgets::icon(to, cx - kRingR / 2, cy - kRingR / 2, kRingR, widgets::Icon::Check,
-                      DRV_LCD_SURFACE);
+                      DRV_LCD_INK);
         const int text_x = cx + kRingR + theme::kGapM;
         const int room = theme::kGutter + theme::kContentW - theme::kGapM - text_x;
         const int block = theme::line_height(Font::Strong) + theme::line_height(Font::Caption) + 4;
@@ -485,7 +494,7 @@ private:
     static constexpr const char *kLabels[kRows] = { "Thêm người", "Danh sách", "Cài đặt" };
     static constexpr widgets::Icon kIcons[kRows] = { widgets::Icon::PersonAdd,
                                                      widgets::Icon::List,
-                                                     widgets::Icon::Brightness };
+                                                     widgets::Icon::Sliders };
     static constexpr uint8_t kTints[kRows] = { DRV_LCD_ACCENT, DRV_LCD_OK, DRV_LCD_DIM };
 
     static int row_at(int x, int y) noexcept
@@ -696,7 +705,9 @@ public:
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        const int hit = widgets::on_back(x, y) ? kBack : (typing_ ? key_hit(x, y) : row_at(x, y));
+        const int hit = widgets::on_back(x, y) || (typing_ && above_keys(y))
+                            ? kBack
+                            : (typing_ ? key_hit(x, y) : row_at(x, y));
         if (down) {
             held_ = hit;
             return true;
@@ -969,25 +980,25 @@ public:
             to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, line, DRV_LCD_WARN,
                              Align::Centre);
         } else {
-            to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, kAsk[kept_], DRV_LCD_SURFACE,
+            to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, kAsk[kept_], DRV_LCD_INK,
                              Align::Centre);
         }
         dots(to, ask_y + theme::line_height(Font::Strong) + 3);
         guide(to, done() ? DRV_LCD_OK : DRV_LCD_ACCENT);
         if (done()) {
             widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH,
-                            "Xác nhận", DRV_LCD_OK, DRV_LCD_SURFACE, held_ == 1);
+                            "Xác nhận", DRV_LCD_OK, DRV_LCD_INK, held_ == 1);
             return;
         }
         if (failed_) {
             const int half = (theme::kContentW - theme::kGapM) / 2;
             widgets::button(to, theme::kGutter, kFootY, half, theme::kButtonH, "Thử lại",
-                            DRV_LCD_ACCENT, DRV_LCD_SURFACE, held_ == 1);
+                            DRV_LCD_ACCENT, DRV_LCD_INK, held_ == 1);
             widgets::button(to, theme::kGutter + half + theme::kGapM, kFootY, half,
                             theme::kButtonH, "Thoát", DRV_LCD_SURFACE, DRV_LCD_INK, held_ == 2);
             if (why_ != nullptr) {
                 to.text_on_video(Font::Body, theme::kGutter, kPromptY, theme::kContentW, why_,
-                                 DRV_LCD_SURFACE, Align::Centre);
+                                 DRV_LCD_INK, Align::Centre);
             }
             return;
         }
@@ -998,7 +1009,7 @@ public:
             }
             if (line != nullptr) {
                 to.text_on_video(Font::Body, theme::kGutter, kPromptY, theme::kContentW, line,
-                                 DRV_LCD_SURFACE, Align::Centre);
+                                 DRV_LCD_INK, Align::Centre);
             }
         }
         widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH, "Huỷ",
@@ -1020,7 +1031,7 @@ private:
             const int x = left + i * (pill_w + gap);
             const bool lit = i < kept_;
             const bool at = i == kept_ && !done();
-            to.card(x, y, pill_w, 8, 4, lit ? DRV_LCD_OK : (at ? DRV_LCD_ACCENT : DRV_LCD_EDGE));
+            to.card(x, y, pill_w, 8, 4, lit ? DRV_LCD_OK : (at ? DRV_LCD_ACCENT : DRV_LCD_DIM));
         }
     }
 
@@ -1352,8 +1363,9 @@ public:
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        const int hit =
-            widgets::on_back(x, y) ? kBack : (step_ == Step::Typing ? key_hit(x, y) : row_at(x, y));
+        const int hit = widgets::on_back(x, y) || (step_ == Step::Typing && above_keys(y))
+                            ? kBack
+                            : (step_ == Step::Typing ? key_hit(x, y) : row_at(x, y));
         if (down) {
             held_ = hit;
             return true;
@@ -1423,8 +1435,9 @@ private:
         chosen_ = fire;
         failed_ = kNothing;
         typed_[0] = '\0';
-        if (networks().row[fire].open) {
-            ask_join();
+        // A network already in NVS joins on one touch, the way a phone does.
+        if (networks().row[fire].open || networks().row[fire].saved) {
+            ask_join(networks().row[fire].saved);
             return true;
         }
         step_ = Step::Typing;
@@ -1450,7 +1463,7 @@ private:
             return true;
         }
         if (fire == kOk) {
-            ask_join();
+            ask_join(false);
             return true;
         }
         if (at + 1 >= sizeof(typed_)) {
@@ -1461,10 +1474,11 @@ private:
         return true;
     }
 
-    void ask_join() noexcept
+    void ask_join(bool stored) noexcept
     {
         strlcpy(join_request().ssid, networks().row[chosen_].ssid, sizeof(join_request().ssid));
         strlcpy(join_request().pass, typed_, sizeof(join_request().pass));
+        join_request().stored = stored;
         join_request().answered = false;
         join_request().waiting = true;
         busy_ = chosen_;
@@ -1488,9 +1502,11 @@ private:
                 widgets::divider(to, theme::kGutter, y, theme::kContentW);
             }
             const bool here = s_net.joined && strcmp(ap.ssid, s_net.ssid) == 0;
-            const char *state = i == busy_ ? "Đang nối…"
-                                           : (i == failed_ ? "Sai mật khẩu"
-                                                           : (here ? "Đã nối" : nullptr));
+            const char *state =
+                i == busy_ ? "Đang nối…"
+                           : (i == failed_ ? "Sai mật khẩu"
+                                           : (here ? "Đã nối"
+                                                   : (ap.saved ? "Đã lưu" : nullptr)));
             const widgets::Row what = { ap.ssid,
                                         state,
                                         widgets::Icon::None,
@@ -1500,7 +1516,10 @@ private:
                                                                : (here ? DRV_LCD_ACCENT
                                                                        : DRV_LCD_INK)),
                                         signal_level(ap.rssi_dbm),
-                                        ap.open ? widgets::Icon::None : widgets::Icon::Lock };
+                                        // A row already saying where it stands
+                                        // has no room left to say it is locked.
+                                        (ap.open || state != nullptr) ? widgets::Icon::None
+                                                                      : widgets::Icon::Lock };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
         }
     }

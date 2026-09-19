@@ -180,7 +180,17 @@ esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms)
     if (ssid == NULL || ssid[0] == '\0' || s_state == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    const char *secret = pass != NULL ? pass : "";
+    char kept[PASS_CAP] = { 0 };
+    // A network already in NVS rejoins without anyone retyping its passphrase,
+    // and the secret never leaves this layer to do it (KEHOACH 4.5.4).
+    if (pass == NULL) {
+        char known[SSID_CAP] = { 0 };
+        if (credentials(known, sizeof(known), kept, sizeof(kept)) != ESP_OK ||
+            strcmp(known, ssid) != 0) {
+            return ESP_ERR_NOT_FOUND;
+        }
+    }
+    const char *secret = pass != NULL ? pass : kept;
     wifi_config_t cfg = { 0 };
     strlcpy((char *)cfg.sta.ssid, ssid, sizeof(cfg.sta.ssid));
     strlcpy((char *)cfg.sta.password, secret, sizeof(cfg.sta.password));

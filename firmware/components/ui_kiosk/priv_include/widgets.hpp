@@ -21,6 +21,7 @@ enum class Icon : uint8_t {
     Brightness,
     Volume,
     Keyboard,
+    Sliders,
     Backspace,
     Chevron,
     Back,
@@ -33,8 +34,8 @@ enum class Icon : uint8_t {
 /** A line of a given thickness, rounded at both ends. */
 void stroke(Canvas &to, int x0, int y0, int x1, int y1, int thick, uint8_t colour) noexcept;
 
-/** Four rising bars, lit up to level. Bars read at 20 px where arcs turn to mush.
- *  @ctx ui_task | non-blocking | level 0 leaves every bar in rest
+/** The wifi fan: a dot and three arcs, lit up to level.
+ *  @ctx ui_task | non-blocking | level 0 leaves the whole glyph in rest
  */
 void wifi_bars(Canvas &to, int x, int y, int size, int level, uint8_t colour,
                uint8_t rest) noexcept;
@@ -59,7 +60,7 @@ struct Row {
     uint8_t tint;
     bool chevron;
     uint8_t label_colour;
-    int bars;                             // 0..4 draws a meter, below 0 the tile
+    int bars;                             // 0..4 draws a fan, below 0 the tile
     Icon trail;                           // sits left of the value, None for none
 };
 

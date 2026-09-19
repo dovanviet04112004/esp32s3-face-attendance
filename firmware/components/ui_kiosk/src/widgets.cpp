@@ -23,48 +23,72 @@ int clampi(int v, int low, int high)
     return v < low ? low : (v > high ? high : v);
 }
 
-// A ring band kept to the 90 degree wedge that opens away from the viewer, which
-// is the shape every wifi meter draws.
-void arc_up(Canvas &to, int cx, int cy, int radius, int thick, uint8_t colour)
+// One band of a fan opening upwards, anti-aliased across its thickness. The
+// hard ring test this replaces turned to mush anywhere under about 40 px.
+void arc_band(Canvas &to, int cx, int cy, float radius, float thick, uint8_t colour)
 {
-    for (int dy = -radius; dy <= 0; ++dy) {
-        for (int dx = -radius; dx <= radius; ++dx) {
-            if (-dy < (dx < 0 ? -dx : dx)) {
+    const int reach = (int)(radius + thick) + 1;
+    for (int dy = -reach; dy <= 0; ++dy) {
+        for (int dx = -reach; dx <= reach; ++dx) {
+            const float ax = dx < 0 ? (float)-dx : (float)dx;
+            // The fan spans about 100 degrees, so it reads as wifi and not as a
+            // full ring with its bottom rubbed out.
+            if (ax > (float)-dy * 1.2f) {
                 continue;
             }
             const float d = sqrtf((float)(dx * dx + dy * dy));
-            if (d <= (float)radius && d >= (float)(radius - thick)) {
-                to.fill(cx + dx, cy + dy, 1, 1, colour);
+            const float off = d - radius;
+            const float over = thick * 0.5f - (off < 0.0f ? -off : off) + 0.5f;
+            if (over <= 0.0f) {
+                continue;
             }
+            const uint8_t level = over >= 1.0f
+                                      ? DRV_LCD_COVER_FULL
+                                      : (uint8_t)(over * (float)DRV_LCD_COVER_FULL);
+            to.put_cell(cx + dx, cy + dy, DRV_LCD_CELL(colour, level));
         }
     }
 }
 
-void bars_of(Canvas &to, int x, int y, int size, int level, uint8_t lit, uint8_t rest)
+void fan_of(Canvas &to, int x, int y, int size, int level, uint8_t lit, uint8_t rest)
 {
-    const int bar = size / 6;
-    const int gap = (size - 4 * bar) / 3;
-    const int foot = y + size - size / 8;
-    for (int i = 0; i < 4; ++i) {
-        const int tall = size / 4 + i * size / 5;
-        to.card(x + i * (bar + gap), foot - tall, bar, tall, bar / 2, i < level ? lit : rest);
+    const int cx = x + size / 2;
+    const int cy = y + (int)((float)size * 0.80f);
+    const float thick = (float)size * 0.11f + 1.0f;
+    to.disc(cx, cy, (int)((float)size * 0.09f) + 1, level > 0 ? lit : rest);
+    for (int band = 1; band <= 3; ++band) {
+        arc_band(to, cx, cy, (float)size * (0.16f + 0.20f * (float)band), thick,
+                 band < level ? lit : rest);
     }
 }
 
 void draw_wifi(Canvas &to, int x, int y, int size, uint8_t colour)
 {
-    bars_of(to, x, y, size, 4, colour, colour);
+    fan_of(to, x, y, size, 4, colour, colour);
 }
 
 void draw_lock(Canvas &to, int x, int y, int size, uint8_t colour)
 {
-    const int body_h = size / 2;
-    const int body_w = size * 2 / 3;
+    const int body_h = size * 2 / 5;
+    const int body_w = size * 3 / 5;
     const int bx = x + (size - body_w) / 2;
-    const int by = y + size - body_h - size / 12;
+    const int by = y + size - body_h - size / 8;
     to.card(bx, by, body_w, body_h, 3, colour);
-    const int r = body_w / 3;
-    arc_up(to, x + size / 2, by + 1, r, 2, colour);
+    // The shackle is a half ring on two legs, not a wedge: a quarter arc at this
+    // size reads as a smudge sitting on a block.
+    const int r = body_w * 2 / 5;
+    const int cx = x + size / 2;
+    const int cy = by - size / 6;
+    for (int dy = -r; dy <= 0; ++dy) {
+        for (int dx = -r; dx <= r; ++dx) {
+            const float d = sqrtf((float)(dx * dx + dy * dy));
+            if (d <= (float)r && d >= (float)(r - 2)) {
+                to.fill(cx + dx, cy + dy, 1, 1, colour);
+            }
+        }
+    }
+    to.fill(cx - r, cy, 2, by - cy, colour);
+    to.fill(cx + r - 1, cy, 2, by - cy, colour);
 }
 
 void draw_person(Canvas &to, int x, int y, int size, uint8_t colour)
@@ -75,20 +99,33 @@ void draw_person(Canvas &to, int x, int y, int size, uint8_t colour)
     to.card(x + (size - body_w) / 2, y + size / 2 + 2, body_w, size / 3, size / 6, colour);
 }
 
+void draw_sliders(Canvas &to, int x, int y, int size, uint8_t colour)
+{
+    const int left = x + size / 6;
+    const int right = x + size - size / 6;
+    for (int i = 0; i < 2; ++i) {
+        const int row = y + size / 3 + i * size / 3;
+        stroke(to, left, row, right, row, 2, colour);
+        to.disc(i == 0 ? right - size / 4 : left + size / 4, row, size / 8, colour);
+    }
+}
+
 void draw_backspace(Canvas &to, int x, int y, int size, uint8_t colour)
 {
-    const int h = size / 2;
+    const int h = size * 2 / 5;
     const int top = y + (size - h) / 2;
-    const int tip = x + size / 6;
-    const int right = x + size - size / 6;
-    to.card(x + size / 3, top, right - x - size / 3, h, 3, colour);
-    for (int i = 0; i < h / 2; ++i) {
-        to.fill(tip + i, top + h / 2 - i, 1, 2 * i + 1, colour);
+    const int mid = top + h / 2;
+    const int tip = x + size / 8;
+    const int body = x + size / 2 - size / 8;
+    to.card(body, top, x + size - size / 8 - body, h, 2, colour);
+    for (int i = 0; i <= body - tip; ++i) {
+        const int reach = (h / 2) * i / (body - tip);
+        to.fill(tip + i, mid - reach, 1, 2 * reach + 1, colour);
     }
-    const int cx = x + size / 2 + 2;
-    const int arm = h / 5;
-    stroke(to, cx - arm, top + h / 2 - arm, cx + arm, top + h / 2 + arm, 2, DRV_LCD_SURFACE);
-    stroke(to, cx + arm, top + h / 2 - arm, cx - arm, top + h / 2 + arm, 2, DRV_LCD_SURFACE);
+    const int cx = body + (x + size - size / 8 - body) / 2;
+    const int arm = h / 4;
+    stroke(to, cx - arm, mid - arm, cx + arm, mid + arm, 2, DRV_LCD_GROUND);
+    stroke(to, cx + arm, mid - arm, cx - arm, mid + arm, 2, DRV_LCD_GROUND);
 }
 
 void draw_keyboard(Canvas &to, int x, int y, int size, uint8_t colour)
@@ -142,14 +179,15 @@ void draw_brightness(Canvas &to, int x, int y, int size, uint8_t colour)
     const int cx = x + size / 2;
     const int cy = y + size / 2;
     to.disc(cx, cy, size / 5, colour);
-    const int from = size / 5 + 3;
-    const int to_r = size / 2 - 1;
+    // Rays start well clear of the core: closer together they read as a blot.
+    const float from = (float)size * 0.32f;
+    const float reach = (float)size * 0.5f;
     for (int i = 0; i < 8; ++i) {
         const float a = (float)i * 3.14159265f / 4.0f;
         const float ux = cosf(a);
         const float uy = sinf(a);
-        stroke(to, cx + (int)(ux * from), cy + (int)(uy * from), cx + (int)(ux * to_r),
-               cy + (int)(uy * to_r), 3, colour);
+        stroke(to, cx + (int)(ux * from), cy + (int)(uy * from), cx + (int)(ux * reach),
+               cy + (int)(uy * reach), 2, colour);
     }
 }
 
@@ -227,7 +265,7 @@ void stroke(Canvas &to, int x0, int y0, int x1, int y1, int thick, uint8_t colou
 void wifi_bars(Canvas &to, int x, int y, int size, int level, uint8_t colour,
                uint8_t rest) noexcept
 {
-    bars_of(to, x, y, size, level, colour, rest);
+    fan_of(to, x, y, size, level, colour, rest);
 }
 
 void icon(Canvas &to, int x, int y, int size, Icon which, uint8_t colour) noexcept
@@ -238,6 +276,7 @@ void icon(Canvas &to, int x, int y, int size, Icon which, uint8_t colour) noexce
         case Icon::Person: draw_person(to, x, y, size, colour); break;
         case Icon::PersonAdd: draw_person_add(to, x, y, size, colour); break;
         case Icon::Keyboard: draw_keyboard(to, x, y, size, colour); break;
+        case Icon::Sliders: draw_sliders(to, x, y, size, colour); break;
         case Icon::Backspace: draw_backspace(to, x, y, size, colour); break;
         case Icon::List: draw_list(to, x, y, size, colour); break;
         case Icon::Device: draw_device(to, x, y, size, colour); break;
@@ -255,8 +294,8 @@ void icon(Canvas &to, int x, int y, int size, Icon which, uint8_t colour) noexce
 void icon_tile(Canvas &to, int x, int y, int size, Icon which, uint8_t tint) noexcept
 {
     to.card(x, y, size, size, kTileRadius, tint);
-    const int inset = size / 5;
-    icon(to, x + inset, y + inset, size - 2 * inset, which, DRV_LCD_SURFACE);
+    const int inset = size / 6;
+    icon(to, x + inset, y + inset, size - 2 * inset, which, DRV_LCD_INK);
 }
 
 void card(Canvas &to, int x, int y, int w, int h) noexcept
@@ -278,8 +317,8 @@ void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) 
     int pen = x + kRowPad;
     const int mid = y + (h - kTile) / 2;
     if (what.bars >= 0) {
-        bars_of(to, pen + kTile / 4, mid + kTile / 6, kTile * 2 / 3, what.bars, DRV_LCD_ACCENT,
-                DRV_LCD_LINE);
+        fan_of(to, pen + kTile / 6, mid + kTile / 6, kTile * 2 / 3, what.bars, DRV_LCD_ACCENT,
+               DRV_LCD_LINE);
         pen += kTile + kRowPad;
     } else if (what.glyph != Icon::None) {
         icon_tile(to, pen, mid, kTile, what.glyph, what.tint);
@@ -294,9 +333,13 @@ void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) 
     const int line = Canvas::centre_y(theme::Font::Body, y, h);
     int room = right - pen;
     if (what.value != nullptr) {
-        // The value is the answer; a long name is the thing that gives way.
+        // A label that already fits keeps its width; only a long one gives way,
+        // and never below what still reads as a name.
         const int wide = theme::text_width(theme::Font::Body, what.value);
-        const int spare = room - kLabelFloor;
+        const int named = theme::text_width(theme::Font::Body, what.label);
+        const int after = room - named - theme::kGapM;
+        const int floor_left = room - kLabelFloor;
+        const int spare = after > floor_left ? after : floor_left;
         const int given = wide < spare ? wide : spare;
         to.text(theme::Font::Body, right - given, line, given, what.value, DRV_LCD_DIM,
                 Align::Right);
@@ -304,7 +347,7 @@ void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) 
         room = right - pen;
     }
     if (what.trail != Icon::None) {
-        const int box = 20;
+        const int box = 26;
         right -= box;
         icon(to, right, y + (h - box) / 2, box, what.trail, DRV_LCD_DIM);
         room = right - pen - theme::kGapS;
@@ -341,8 +384,8 @@ int slider_percent(int x, int row_x, int row_w) noexcept
 void key_cap(Canvas &to, int x, int y, int w, int h, const char *label, Icon glyph, bool down,
              bool muted) noexcept
 {
-    const uint8_t face = down ? DRV_LCD_ACCENT : (muted ? DRV_LCD_SURFACE_HI : DRV_LCD_SURFACE);
-    const uint8_t ink = down ? DRV_LCD_SURFACE : DRV_LCD_INK;
+    const uint8_t face = down ? DRV_LCD_ACCENT : (muted ? DRV_LCD_SURFACE : DRV_LCD_SURFACE_HI);
+    const uint8_t ink = DRV_LCD_INK;
     to.card(x, y, w, h, kKeyRadius, face);
     if (glyph != Icon::None) {
         const int box = h * 2 / 3;

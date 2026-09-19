@@ -54,7 +54,8 @@ size_t net_wifi_scan(net_wifi_ap_t *out, size_t cap);
 
 /** Store credentials and bring the station back up on them.
  *  @ctx task | blocking | writes wifi/ssid and wifi/pass (KEHOACH 6.2.1)
- *  @ret ESP_OK | ESP_ERR_INVALID_ARG | ESP_ERR_TIMEOUT when it will not join
+ *  @param pass NULL rejoins on the passphrase NVS already holds for this ssid
+ *  @ret ESP_OK | ESP_ERR_INVALID_ARG | ESP_ERR_NOT_FOUND | ESP_ERR_TIMEOUT
  */
 esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms);
 

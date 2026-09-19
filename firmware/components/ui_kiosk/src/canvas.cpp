@@ -8,6 +8,7 @@ namespace ui {
 namespace {
 
 constexpr uint32_t kEllipsis = 0x2026;
+constexpr uint8_t kHaloFloor = 5;
 
 uint8_t coverage_at(float distance, float radius)
 {
@@ -60,19 +61,6 @@ void Canvas::offer_painted() noexcept
     memcpy(send_x2_, row_x2_, sizeof(send_x2_));
 }
 
-// A differing row goes out whole: the opaque path grounds a whole strip, so
-// anything outside a mask lands blank on the panel.
-void Canvas::diff_from(const uint8_t *base) noexcept
-{
-    for (int row = 0; row < height_; ++row) {
-        const uint8_t *mine = cells_ + (size_t)row * width_;
-        const uint8_t *theirs = base + (size_t)row * width_;
-        const bool same = memcmp(mine, theirs, (size_t)width_) == 0;
-        send_x1_[row] = same ? (int16_t)width_ : 0;
-        send_x2_[row] = same ? 0 : (int16_t)width_;
-    }
-}
-
 int Canvas::regions(Region *out, int cap) const noexcept
 {
     int kept = 0;
@@ -99,12 +87,18 @@ int Canvas::regions(Region *out, int cap) const noexcept
     return kept;
 }
 
+// Strokes and rings are laid down as overlapping discs, so a later rim must
+// not erase an earlier centre: same colour keeps whichever covers more.
 void Canvas::put(int x, int y, uint8_t cell) noexcept
 {
     if (x < 0 || x >= width_ || y < 0 || y >= height_) {
         return;
     }
-    cells_[(size_t)y * width_ + x] = cell;
+    uint8_t *at = &cells_[(size_t)y * width_ + x];
+    if ((*at & 0x0Fu) == (cell & 0x0Fu) && (*at >> 4) >= (cell >> 4)) {
+        return;
+    }
+    *at = cell;
     touched(x, y, x + 1, y + 1);
 }
 
@@ -240,10 +234,10 @@ void Canvas::stamp(theme::Font face, int pen_x, int top, const char *utf8, int b
                 }
                 uint8_t *cell = &cells_[(size_t)row * width_ + col];
                 // The shadow pass only fills what the ink has not claimed.
-                if (behind && *cell != 0) {
+                if (behind && (*cell != 0 || level < kHaloFloor)) {
                     continue;
                 }
-                *cell = DRV_LCD_CELL(colour, level);
+                *cell = DRV_LCD_CELL(colour, behind ? DRV_LCD_COVER_FULL : level);
                 touched(col, row, col + 1, row + 1);
             }
         }

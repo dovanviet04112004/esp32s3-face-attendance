@@ -72,6 +72,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define REST_ALL_MS 60000
 #define REST_POLL_MS 40
 #define SCREEN_DIM_PERCENT 0
+#define WIFI_NVS_SSID "ssid"
 #define UI_NVS_BRIGHTNESS "brightness"
 #define UI_NVS_VOLUME "volume"
 #define TOF_SETTLE_POLLS 5
@@ -692,19 +693,23 @@ static void take_wifi(void)
         const size_t count = net_wifi_scan(heard, UI_KIOSK_WIFI_ROWS);
         // Two shapes on purpose: the screen has no business knowing the radio.
         ui_kiosk_ap_t shown[UI_KIOSK_WIFI_ROWS];
+        char known[NET_WIFI_SSID_CAP] = { 0 };
+        sys_storage_get_str(STORAGE_NS_WIFI, WIFI_NVS_SSID, known, sizeof(known));
         for (size_t i = 0; i < count; ++i) {
             strlcpy(shown[i].ssid, heard[i].ssid, sizeof(shown[i].ssid));
             shown[i].rssi_dbm = heard[i].rssi_dbm;
             shown[i].open = heard[i].open;
+            shown[i].saved = known[0] != '\0' && strcmp(known, heard[i].ssid) == 0;
         }
         ui_kiosk_set_networks(shown, (int)count);
     }
     char ssid[NET_WIFI_SSID_CAP] = { 0 };
     char pass[NET_WIFI_PASS_CAP] = { 0 };
-    if (!ui_kiosk_take_wifi_join(ssid, sizeof(ssid), pass, sizeof(pass))) {
+    bool stored = false;
+    if (!ui_kiosk_take_wifi_join(ssid, sizeof(ssid), pass, sizeof(pass), &stored)) {
         return;
     }
-    const esp_err_t joined = net_wifi_join(ssid, pass, WIFI_JOIN_WAIT_MS);
+    const esp_err_t joined = net_wifi_join(ssid, stored ? NULL : pass, WIFI_JOIN_WAIT_MS);
     ESP_LOGI(TAG, "join %s: %s", ssid, esp_err_to_name(joined));
     ui_kiosk_wifi_joined(joined);
 }

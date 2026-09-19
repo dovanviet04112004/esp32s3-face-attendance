@@ -42,12 +42,9 @@ public:
      */
     int regions(Region *out, int cap) const noexcept;
 
-    /** Narrow the next regions() to the cells that differ from base.
-     *  @ctx ui_task | non-blocking | base is another slot's map, same size
+    /** Hand regions() every cell this screen painted.
+     *  @ctx ui_task | non-blocking | call once per paint, ahead of regions
      */
-    void diff_from(const uint8_t *base) noexcept;
-
-    /** Offer every painted cell instead, for a screen the glass has not seen. */
     void offer_painted() noexcept;
 
     void fill(int x, int y, int w, int h, uint8_t colour) noexcept;
@@ -74,6 +71,11 @@ public:
     /** The same, ringed in EDGE so it stays legible over live video. */
     void text_on_video(theme::Font face, int x, int y, int max_w, const char *utf8, uint8_t colour,
                        Align align = Align::Left) noexcept;
+
+    /** Write one cell, keeping the denser of the two when the colour matches.
+     *  @ctx ui_task | non-blocking | for shapes laid down as overlapping pieces
+     */
+    void put_cell(int x, int y, uint8_t cell) noexcept { put(x, y, cell); }
 
     /** Vertically centre a line inside a row of this height. */
     static int centre_y(theme::Font face, int top, int height) noexcept

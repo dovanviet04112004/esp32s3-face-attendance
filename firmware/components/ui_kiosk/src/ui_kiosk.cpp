@@ -35,7 +35,6 @@ std::atomic<int> s_held{ -1 };
 std::atomic<bool> s_covers{ false };
 int s_next;
 int s_glass = -1;                         // slot the panel is showing, -1 for none
-bool s_glass_opaque;
 uint32_t s_serial;
 uint32_t s_sent;                          // serial of the last map published
 std::atomic<uint32_t> s_on_glass{ 0 };    // serial cam_task last put on the panel
@@ -59,23 +58,13 @@ int64_t s_minute_shown = -1;
 void publish(ui::Canvas &from)
 {
     const bool opaque = ui::manager().current()->opaque();
-    // cam_task repaints the panel from the sensor every frame, so an overlay over
-    // video has to carry every painted cell; only drv_lcd_paint owns the glass.
-    if (opaque && s_glass_opaque && s_glass >= 0 && s_glass != s_next) {
-        from.diff_from(s_canvas[s_glass]->cells());
-    } else {
-        from.offer_painted();
-    }
+    // Every painted cell goes out: sending only the difference from the map on
+    // the glass draws a screen in pieces the moment that assumption slips.
+    from.offer_painted();
     drv_lcd_overlay_t *target = &s_slot[s_next];
     memset(target, 0, sizeof(*target));
     ui::Canvas::Region region[DRV_LCD_OVERLAY_MASKS];
-    int kept = from.regions(region, DRV_LCD_OVERLAY_MASKS);
-    // A full house means regions ran out of room and dropped the rest, which
-    // would leave stale pixels; the whole map costs more but says everything.
-    if (kept == DRV_LCD_OVERLAY_MASKS) {
-        from.offer_painted();
-        kept = from.regions(region, DRV_LCD_OVERLAY_MASKS);
-    }
+    const int kept = from.regions(region, DRV_LCD_OVERLAY_MASKS);
     for (int i = 0; i < kept; ++i) {
         drv_lcd_mask_t *mask = &target->mask[i];
         mask->x = region[i].x;
@@ -92,7 +81,6 @@ void publish(ui::Canvas &from)
     target->serial = ++s_serial;
     s_shown.store(target, std::memory_order_release);
     s_glass = s_next;
-    s_glass_opaque = opaque;
     s_sent = target->serial;
 }
 
@@ -355,13 +343,17 @@ void ui_kiosk_set_networks(const ui_kiosk_ap_t *found, int count)
     s_dirty = true;
 }
 
-bool ui_kiosk_take_wifi_join(char *ssid, size_t ssid_cap, char *pass, size_t pass_cap)
+bool ui_kiosk_take_wifi_join(char *ssid, size_t ssid_cap, char *pass, size_t pass_cap,
+                             bool *stored)
 {
     if (!s_ready || ssid == nullptr || pass == nullptr || !ui::join_request().waiting) {
         return false;
     }
     strlcpy(ssid, ui::join_request().ssid, ssid_cap);
     strlcpy(pass, ui::join_request().pass, pass_cap);
+    if (stored != nullptr) {
+        *stored = ui::join_request().stored;
+    }
     ui::join_request().waiting = false;
     return true;
 }

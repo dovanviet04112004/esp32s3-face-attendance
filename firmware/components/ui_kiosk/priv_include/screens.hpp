@@ -148,6 +148,7 @@ Networks &networks() noexcept;
 struct JoinRequest {
     bool waiting;
     bool answered;
+    bool stored;                          // join on the passphrase already in NVS
     esp_err_t result;
     char ssid[33];
     char pass[UI_KIOSK_WIFI_PASS_CAP];

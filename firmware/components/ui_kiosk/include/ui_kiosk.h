@@ -154,6 +154,7 @@ typedef struct {
     char ssid[33];
     int rssi_dbm;
     bool open;
+    bool saved;                           // credentials for it are already in NVS
 } ui_kiosk_ap_t;
 
 #define UI_KIOSK_WIFI_ROWS 8
@@ -176,8 +177,11 @@ void ui_kiosk_set_networks(const ui_kiosk_ap_t *found, int count);
 
 /** Take the network the operator chose, if they chose one.
  *  @ctx any | non-blocking | true once per choice
+ *  @param stored true when the screen asked for no passphrase because the one
+ *         in NVS already belongs to this network, so pass comes back empty
  */
-bool ui_kiosk_take_wifi_join(char *ssid, size_t ssid_cap, char *pass, size_t pass_cap);
+bool ui_kiosk_take_wifi_join(char *ssid, size_t ssid_cap, char *pass, size_t pass_cap,
+                             bool *stored);
 
 /** Tell the screen how the join went.
  *  @ctx any | non-blocking

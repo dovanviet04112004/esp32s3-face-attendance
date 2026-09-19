@@ -20,18 +20,27 @@ constexpr uint16_t rgb(uint32_t hex)
     return (uint16_t)((packed >> 8) | (packed << 8));
 }
 
-constexpr uint16_t kUnused = rgb(0x000000);
-constexpr uint16_t kInk = rgb(0x101010);
-constexpr uint16_t kEdge = rgb(0x000000);
-constexpr uint16_t kAccent = rgb(0x2E7CF6);
-constexpr uint16_t kWarn = rgb(0xF5A21E);
-constexpr uint16_t kGround = rgb(0xF1F1F1);
-constexpr uint16_t kSurface = rgb(0xFFFFFF);
-constexpr uint16_t kSurfaceHi = rgb(0xE3E3E3);
-constexpr uint16_t kLine = rgb(0xDCDCDC);
-constexpr uint16_t kDim = rgb(0x8C8C8C);
-constexpr uint16_t kOk = rgb(0x21B858);
-constexpr uint16_t kDanger = rgb(0xE8452F);
+// RGB565 gives red and blue 32 steps and green 64, so a grey written as one
+// 8-bit value per channel lands off-neutral and reads pink on a flat fill.
+constexpr uint16_t grey(uint32_t level)
+{
+    const uint32_t g = (level * 63 + 15) / 31;
+    const uint16_t packed = (uint16_t)((level << 11) | (g << 5) | level);
+    return (uint16_t)((packed >> 8) | (packed << 8));
+}
+
+constexpr uint16_t kUnused = grey(0);
+constexpr uint16_t kInk = grey(31);
+constexpr uint16_t kEdge = grey(0);
+constexpr uint16_t kAccent = rgb(0x3482FF);
+constexpr uint16_t kWarn = rgb(0xFFD60A);
+constexpr uint16_t kGround = grey(2);
+constexpr uint16_t kSurface = grey(6);
+constexpr uint16_t kSurfaceHi = grey(11);
+constexpr uint16_t kLine = grey(9);
+constexpr uint16_t kDim = grey(19);
+constexpr uint16_t kOk = rgb(0x30D158);
+constexpr uint16_t kDanger = rgb(0xFF453A);
 
 constexpr uint16_t kPalette[DRV_LCD_COLOURS] = {
     kUnused, kInk,  kEdge, kAccent,    kWarn, kGround,
