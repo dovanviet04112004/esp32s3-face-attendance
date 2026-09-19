@@ -51,6 +51,7 @@ bool net_mqtt_is_up(void);
  *  @ctx task | blocking | QoS and retain come from the contract, not the caller
  *  @param timeout_ms how long to wait for the ack; ignored at QoS 0
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE offline | ESP_ERR_TIMEOUT unacknowledged
+ *       | ESP_ERR_INVALID_ARG no payload | ESP_ERR_INVALID_SIZE unknown topic
  */
 esp_err_t net_mqtt_publish(gen_topic_id_t topic, const char *payload, size_t len,
                            uint32_t timeout_ms);

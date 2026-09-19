@@ -199,7 +199,7 @@ TEST_CASE("stopping takes the link down and a second stop is refused", "[net_mqt
     TEST_ASSERT_EQUAL(ESP_OK, net_mqtt_stop());
     TEST_ASSERT_FALSE(net_mqtt_is_up());
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, net_mqtt_stop());
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE,
                       net_mqtt_publish(GEN_TOPIC_HEARTBEAT, "{}", 2, ACK_TIMEOUT_MS));
 }
 

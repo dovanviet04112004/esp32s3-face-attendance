@@ -245,10 +245,10 @@ uint32_t net_mqtt_disconnects(void)
 esp_err_t net_mqtt_publish(gen_topic_id_t topic, const char *payload, size_t len,
                            uint32_t timeout_ms)
 {
-    if (s_link.client == NULL || payload == NULL) {
+    if (payload == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (!s_link.up) {
+    if (s_link.client == NULL || !s_link.up) {
         return ESP_ERR_INVALID_STATE;
     }
     char name[GEN_TOPIC_MAX_LEN];

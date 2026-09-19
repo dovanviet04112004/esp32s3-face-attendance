@@ -1,0 +1,3 @@
+dependencies:
+  joltwallet/littlefs: "^1.16"
+  espressif/mqtt: "^1.1"
