@@ -49,7 +49,10 @@
     "feedEmpty": "Nothing has happened since this page opened",
     "live": "listening",
     "reconnecting": "reconnecting…",
-    "dropped": "disconnected"
+    "dropped": "disconnected",
+    "feedAttendance": "Check-in",
+    "feedEvent": "Event",
+    "feedDevice": "Device"
   },
   "employees": {
     "title": "Employees",
@@ -82,8 +85,6 @@
     "unsyncedClock": "Untrusted clock",
     "from": "From",
     "to": "To",
-    "device": "Device",
-    "allDevices": "Every device",
     "rangeEmpty": "Nobody checked in during this range",
     "badRange": "The start date has to come before the end date"
   },
@@ -111,8 +112,9 @@
     "detailTitle": "Device detail",
     "lastSeen": "Last heard from",
     "never": "never",
-    "eventsTitle": "Recent events",
-    "eventsEmpty": "This kiosk has sent no events"
+    "eventsTitle": "Live events",
+    "eventsEmpty": "Nothing since this page opened",
+    "models": "Model image"
   },
   "shifts": {
     "title": "Shifts",

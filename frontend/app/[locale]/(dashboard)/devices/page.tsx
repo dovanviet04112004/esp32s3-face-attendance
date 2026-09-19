@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
+import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 
@@ -36,10 +37,10 @@ export default function DevicesPage() {
     {
       header: t("device"),
       cell: (row) => (
-        <div>
+        <Link href={`/devices/${row.id}`} className="block hover:underline">
           <p>{row.name ?? t("unnamed")}</p>
           <p className="font-mono text-xs text-(--color-muted)">{row.id}</p>
-        </div>
+        </Link>
       ),
     },
     { header: t("location"), cell: (row) => row.location ?? common("empty") },

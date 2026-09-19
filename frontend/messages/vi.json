@@ -49,7 +49,10 @@
     "feedEmpty": "Chưa có sự kiện nào kể từ lúc mở trang",
     "live": "đang nghe",
     "reconnecting": "đang nối lại…",
-    "dropped": "mất kết nối"
+    "dropped": "mất kết nối",
+    "feedAttendance": "Chấm công",
+    "feedEvent": "Sự kiện",
+    "feedDevice": "Thiết bị"
   },
   "employees": {
     "title": "Nhân viên",
@@ -82,8 +85,6 @@
     "unsyncedClock": "Giờ không tin được",
     "from": "Từ ngày",
     "to": "Đến ngày",
-    "device": "Thiết bị",
-    "allDevices": "Mọi thiết bị",
     "rangeEmpty": "Chưa có lượt chấm công nào trong khoảng này",
     "badRange": "Ngày bắt đầu phải trước ngày kết thúc"
   },
@@ -111,8 +112,9 @@
     "detailTitle": "Chi tiết máy",
     "lastSeen": "Nghe thấy lần cuối",
     "never": "chưa bao giờ",
-    "eventsTitle": "Sự kiện gần đây",
-    "eventsEmpty": "Máy chưa gửi sự kiện nào"
+    "eventsTitle": "Sự kiện trực tiếp",
+    "eventsEmpty": "Chưa có gì kể từ lúc mở trang",
+    "models": "Ảnh model"
   },
   "shifts": {
     "title": "Ca làm",
