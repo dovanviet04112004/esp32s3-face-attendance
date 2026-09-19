@@ -23,6 +23,7 @@
 #include "storage_format.h"
 #include "svc_attendance.h"
 #include "svc_facedb.h"
+#include "svc_sync.h"
 #include "svc_vision.h"
 #include "sys_storage.h"
 #include "sys_time.h"
@@ -84,6 +85,11 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define ATTEND_TICK_MS 200
 #define SETTINGS_REFRESH_MS 3000
 #define SETTINGS_LINE_CAP 40
+#define SYNC_TASK_CORE 0
+#define SYNC_TASK_PRIORITY 2
+#define SYNC_TASK_STACK_BYTES 5120
+#define SYNC_POLL_MS 5000
+#define SYNC_REPORT_BATCHES 8
 #define NET_TASK_CORE 0
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
@@ -150,6 +156,7 @@ static void on_broker_state(bool up, void *ctx)
     if (wiring == NULL) {
         return;
     }
+    svc_attendance_set_link(up);
     if (up) {
         xEventGroupSetBits(wiring->flags, APP_EG_MQTT_OK);
     } else {
@@ -195,6 +202,40 @@ static void net_task(void *arg)
     const esp_err_t sync = sys_time_sync_start(host, on_time_synced, NULL);
     ESP_LOGI(TAG, "sntp against %s: %s", host, esp_err_to_name(sync));
     vTaskDelete(NULL);
+}
+
+static void sync_task(void *arg)
+{
+    const app_wiring_t *wiring = arg;
+    const esp_err_t ready = svc_sync_init();
+    if (ready != ESP_OK) {
+        ESP_LOGE(TAG, "uplink will not start: %s", esp_err_to_name(ready));
+        vTaskDelete(NULL);
+        return;
+    }
+    esp_err_t said = ESP_FAIL;
+    uint32_t batches = 0;
+    bool more = false;
+    for (;;) {
+        if (!more) {
+            storage_attend_record_t nudge;
+            // q_uplink is a nudge, not where the record lives: flash already
+            // holds it, so a timeout here is the retry (KEHOACH 5.3).
+            xQueueReceive(wiring->uplink, &nudge, pdMS_TO_TICKS(SYNC_POLL_MS));
+        }
+        const esp_err_t drained = svc_sync_drain();
+        more = drained == ESP_ERR_NOT_FINISHED;
+        // A backlog is when progress is worth watching, so a long drain says
+        // where it has got to rather than only speaking once it ends.
+        if (drained != said || ++batches % SYNC_REPORT_BATCHES == 0) {
+            said = drained;
+            const svc_sync_stats_t stats = svc_sync_stats();
+            ESP_LOGI(TAG, "uplink %s: %" PRIu32 " acked, %" PRIu32 " stalled, %" PRIu32 " resent",
+                     esp_err_to_name(drained), stats.acked, stats.stalled, stats.orphans);
+        }
+        // The log lock has to be free between batches or attend_task waits.
+        vTaskDelay(1);
+    }
 }
 
 // Depth 1 and the newest frame wins, so the frame it displaces has to be handed
@@ -796,6 +837,7 @@ static const app_task_spec_t kTasks[] = {
     { audio_task, "audio", AUDIO_TASK_STACK_BYTES, AUDIO_TASK_PRIORITY, AUDIO_TASK_CORE, 0 },
     { attend_task, "attend", ATTEND_TASK_STACK_BYTES, ATTEND_TASK_PRIORITY, ATTEND_TASK_CORE, 0 },
     { net_task, "net", NET_TASK_STACK_BYTES, NET_TASK_PRIORITY, NET_TASK_CORE, 0 },
+    { sync_task, "sync", SYNC_TASK_STACK_BYTES, SYNC_TASK_PRIORITY, SYNC_TASK_CORE, 0 },
 };
 
 #define TASK_COUNT (sizeof(kTasks) / sizeof(kTasks[0]))
