@@ -4088,10 +4088,11 @@ Dùng khi cần đo nhanh giữa lúc đang gỡ lỗi. **Không dùng để ch�
 
 ```
 backend/
-├── Dockerfile                        # multi-stage: build → node:22-alpine
+├── Dockerfile                        # multi-stage: build → node:24-alpine
 ├── .env.example                      # ✅ commit — mọi biến, giá trị giả
 ├── .env                              # ❌ gitignore — giá trị thật, không bao giờ commit
-├── package.json  ├── tsconfig.json  ├── nest-cli.json
+├── package.json  ├── tsconfig.json  ├── tsconfig.build.json  ├── nest-cli.json
+├── prisma.config.ts                  # ★ url của datasource + lệnh seed (Prisma 7)
 ├── prisma/{schema.prisma, migrations/, seed.ts}
 ├── test/{app.e2e-spec.ts, jest-e2e.json}      # e2e mặc định của NestJS
 └── src/
@@ -4114,8 +4115,20 @@ backend/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
     │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
     │   └── processors/{image, report, notify}.processor.ts
-    └── database/{prisma.service.ts, redis.service.ts}
+    └── database/{database.module.ts, prisma.service.ts, redis.service.ts}
 ```
+
+**Khối này là ESM, không phải CommonJS.** NestJS 12 phát hành `"type": "module"` và không còn
+bản CommonJS nào, nên `backend/package.json` cũng phải khai `"type": "module"`. Hệ quả chạm vào
+mọi file: import tương đối phải mang đuôi `.js` kể cả khi nguồn là `.ts`, và bộ sinh của
+`contracts/` phát đúng dạng ấy. TypeScript ghim ở 6.x vì `ts-jest` chặn trên ở `<7`.
+
+**Prisma 7 tách url ra khỏi `schema.prisma`.** Khối `datasource` chỉ còn khai `provider`; chuỗi
+kết nối nằm ở `prisma.config.ts`, và `PrismaClient` nhận một driver adapter (`@prisma/adapter-pg`)
+thay vì tự mở kết nối. `prisma.config.ts` với `prisma/seed.ts` là **hai tiến trình CLI riêng**,
+không bao giờ khởi động Nest, nên chúng tự nạp `.env` — ngoại lệ duy nhất của luật một cửa ở
+§4.9. `seed.ts` vẫn gọi `validateEnv()`; `prisma.config.ts` chỉ cần đúng một biến và lấy nó
+bằng helper `env()` của chính Prisma, vì file ấy được CLI nạp trước khi mã của khối chạy.
 
 **Redis giữ hai vai, một kết nối** — `database/redis.service.ts` sở hữu client, `cache/` và
 `queue/` cùng dùng. Hai vai này không được lẫn: hàng đợi mất job là mất việc, cache mất key
