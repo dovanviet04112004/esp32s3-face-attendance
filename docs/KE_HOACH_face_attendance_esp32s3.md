@@ -4075,21 +4075,45 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | `api` | build từ `backend/` | 3000 (nội bộ) | NestJS |
 | `postgres` | postgres:16-alpine | 5432 (nội bộ) | volume `pgdata` |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
-| `emqx` | emqx/emqx:5 | 8883, 18083 **nội bộ** | auth và ACL hỏi `api` qua HTTP; dashboard không ra ngoài |
+| `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth và ACL hỏi `api` qua HTTP; dashboard không ra ngoài |
 | `minio` (tùy chọn) | minio/minio | 9000 | ảnh chấm công |
 | `backup` | postgres + cron | — | dump hằng đêm |
 
 Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, trỏ `NEXT_PUBLIC_API_URL=https://api.<domain>`.
 
 **Vì sao EMQX chứ không phải mosquitto.** Bảy topic của `contracts/mqtt_topics.yaml` chỉ đòi
-QoS 1, retained và LWT — mosquitto làm đủ, và nó tốn ~5 MB RAM so với ~200 MB của EMQX. Chỗ
-quyết định nằm ở **§7.2**: device token là JWT xoay vòng khi còn 7 ngày, và ACL phải chặn mỗi
-kiosk trong đúng `kiosk/{chính nó}/#`. Với mosquitto, cả hai thứ ấy sống trong file `passwd` và
-`acl`, nên mỗi lần xoay token là backend phải ghi lại file rồi bắt broker nạp lại — một đường
-điều khiển thứ hai nằm ngoài backend, trong khi backend mới là nguồn sự thật của token. EMQX
-hỏi thẳng `api` qua HTTP cho cả auth lẫn ACL, nên xoay token **không đụng tới broker**. Đổi lại
-200 MB RAM trên VPS và một cổng dashboard `18083` **bắt buộc không được ra ngoài** — traefik chỉ
-cho nó qua sau xác thực, hoặc không map ra ngoài Docker network.
+QoS 1, retained và LWT — mosquitto làm đủ, và nó tốn ~5 MB RAM so với **382 MB** đo được của
+EMQX. Chỗ quyết định nằm ở **§7.2**: device token là JWT xoay vòng khi còn 7 ngày, và ACL phải
+chặn mỗi kiosk trong đúng `kiosk/{chính nó}/#`. Với mosquitto, cả hai thứ ấy sống trong file
+`passwd` và `acl`, nên mỗi lần xoay token là backend phải ghi lại file rồi bắt broker nạp lại —
+một đường điều khiển thứ hai nằm ngoài backend, trong khi backend mới là nguồn sự thật của
+token. EMQX hỏi thẳng `api` qua HTTP cho cả auth lẫn ACL, nên xoay token **không đụng tới
+broker**. Đổi lại 382 MB RAM trên VPS và một cổng dashboard `18083` **bắt buộc không được ra
+ngoài** — traefik chỉ cho nó qua sau xác thực, hoặc không map ra ngoài Docker network.
+
+**Vì sao ghim đúng `6.3.1`.** Repo `emqx/emqx` không có tag trôi nổi cho dòng 5 — `emqx/emqx:5`
+không tồn tại, dòng 5 chỉ phát hành bản đầy đủ kiểu `5.10.5`, nên ghim số đầy đủ là bắt buộc chứ
+không phải lựa chọn. Cả hai dòng đều đóng gói **bản Enterprise kèm license `community`** (10 triệu
+session, TPS vô hạn, hết hạn 2029-03-01), nên lùi về 5.x không đổi được điều khoản license, mà còn
+tốn thêm RAM: 5.10.5 đo được **484 MB lúc nhàn rỗi** so với 382 MB của 6.3.1 sau khi đã chạy test.
+Dòng 6 vừa mới hơn vừa nhẹ hơn.
+
+**Trạng thái mặc định của image là mở, và đó là việc của E13-T4.** Container vừa dựng có
+`authentication = []` (cho nặc danh vào) và ACL mặc định `{allow, {security_profile, legacy}}`
+(mở mọi topic trừ `$SYS/#`). Listener `8883` chạy được ngay bằng cert demo nằm sẵn trong image,
+nhưng khoá riêng của cert đó công khai trong mọi bản EMQX nên nó **chỉ dùng được ở bàn thí
+nghiệm**. Ba thứ ấy — authn gọi `api`, ACL theo `kiosk/{chính nó}/#`, cert thật — là nội dung
+của `emqx/emqx.conf` và `emqx/certs/`, làm ở E13-T4. Image còn bật sẵn listener `ws:8083` và
+`wss:8084` bên trong container; compose không map chúng ra ngoài và không có kế hoạch map.
+
+**Retained phải ghi xuống đĩa, không để mặc định.** EMQX mặc định
+`retainer.backend.storage_type = ram`, nên restart broker là mất sạch retained — đo được 0 bản
+ghi còn lại sau `docker compose restart`. `contracts/mqtt_topics.yaml` hứa retained cho
+`up/status` và `up/heartbeat`, và chỗ hứa ấy vỡ đúng vào ca tệ nhất: kiosk **đang bật** nối lại
+rồi tự đăng `online` nên tự lành, còn kiosk **đang tắt** không đăng gì cả, nên `offline` do LWT
+để lại biến mất và dashboard §4.7 không phân biệt nổi "đang tắt" với "chưa từng tồn tại" — một
+kiosk hỏng cả tuần trông y như chưa bao giờ được lắp. `docker-compose.yml` vì thế đặt
+`EMQX_RETAINER__BACKEND__STORAGE_TYPE=disc`, và đã đo lại: retained sống qua restart.
 
 Firmware **không biết và không cần biết** đầu kia là broker nào: `net_mqtt` nói MQTT chuẩn qua
 `esp-mqtt`, nên đổi broker là việc của `deploy/` và cert, không sửa một dòng firmware nào.
