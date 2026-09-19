@@ -513,9 +513,23 @@ dồn dập trên màn `Cài đặt` thì mỗi lần chạm đẻ hai lượt v
 10 vết cắt mỗi giây** và chữ trông như nhấp nháy. Giá của việc chờ là ~16 ms mỗi lượt vẽ lại, mà
 màn phủ kín chỉ vẽ khi có sự kiện chứ không vẽ 14 lần/giây, nên không mất gì.
 
-**Không phải lỗi hai khoang overlay.** Đo 19/09 trong lúc chạm: `ui_task` publish **~11 lượt/giây**
-chứ không phải mỗi nhịp 20 ms, nên chỉ **3/720 khung** gặp cảnh khoang bị dùng lại giữa chừng —
-một khung mỗi ~18 giây, quá hiếm để thành hiện tượng nhìn thấy được. Hai khoang là **đủ**.
+**Hai khoang overlay là một lỗi riêng, và nó mới là thứ làm chữ nháy lúc chạm.** `cam_task` cầm
+con trỏ overlay suốt một lượt blit ~50 ms, còn `ui_task` thì **xoá** khoang trước khi vẽ lại. Với
+hai khoang, chỉ cần `ui_task` publish **một** lượt trong khi blit đang chạy là nhịp sau nó quay về
+xoá đúng khoang người đọc đang đọc. Đo 19/09 bằng bộ đếm thế hệ từng khoang, trong lúc chạm
+**457 lần** trên màn preview: **156/660 khung = 23,6 %** đọc trúng khoang đang bị xoá, tức ~3,3
+khung hỏng mỗi giây ở 14 fps.
+
+Phép đếm đầu tiên chấm **0/720** vì nó đếm nhầm thứ: nó hỏi "có hai lượt publish trong một blit
+không", mà hỏng xảy ra ngay ở **lượt xoá tiếp theo sau lượt publish thứ nhất**, lúc bộ đếm publish
+mới bằng 1. Bài học: đếm đúng cái sự kiện gây hỏng, đừng đếm một thứ tương quan với nó.
+
+**Cách chữa không tốn thêm byte PSRAM nào** — không thêm khoang thứ ba, vì mỗi khoang là một
+canvas 153.600 ô và sổ PSRAM chỉ còn 7,7 KB. `cam_task` **giữ chỗ** khoang nó đang đọc;
+`ui_task` chỉ vẽ vào khoang **không phải khoang đang hiện trên kính và cũng không phải khoang
+đang bị giữ**, không còn khoang nào rảnh thì **bỏ nhịp đó và giữ `s_dirty`**. Giao diện vốn không
+hiện nổi quá một overlay mỗi lượt blit, nên publish nhanh hơn người tiêu thụ chỉ là vừa phí vừa
+hỏng; trần nhịp cập nhật tụt về đúng nhịp blit ~14 lần/giây.
 
 **Đọc thanh ghi qua `esp_lcd` cần một điều `esp_lcd` không nói ra.** Sau mỗi giao dịch của
 nó, `esp_lcd_panel_io_spi` **tắt driver ngõ ra của chân DC** (`post_cb` gọi
