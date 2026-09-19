@@ -16,6 +16,7 @@
 #include "drv_tof.h"
 #include "drv_touch.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "net_wifi.h"
 #include "svc_attendance.h"
 #include "svc_door.h"
@@ -29,6 +30,10 @@ static const char *TAG = "app_boot";
 
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
 #define NVS_SEED_VER "seed_ver"
+#define NVS_LAST_OTA "last_ota_result"
+#define OTA_MODELS_ON_TRIAL 1u
+#define OTA_MODELS_KEPT 2u
+#define OTA_MODELS_UNDONE 3u
 #define NVS_TZ "tz"
 #define TZ_CAP 40
 // Raise only when a seed below changes, and read KEHOACH 6.2.1 first: it
@@ -68,6 +73,32 @@ static const app_seed_t kSeeds[] = {
     { STORAGE_NS_UI, NVS_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS },
     { STORAGE_NS_UI, NVS_VOLUME, CONFIG_UI_SEED_VOLUME },
 };
+
+// The one failure a kiosk can undo alone, and last_ota_result is what stops it
+// undoing the same thing twice (KEHOACH 6.2.1).
+static void load_models(void)
+{
+    const esp_err_t loaded = ai_engine_init();
+    uint32_t trial = 0;
+    sys_storage_get_u32(STORAGE_NS_SYS, NVS_LAST_OTA, &trial);
+    if (loaded == ESP_OK) {
+        if (trial == OTA_MODELS_ON_TRIAL) {
+            sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_KEPT);
+            ESP_LOGW(TAG, "models slot %u keeps the seat", (unsigned)sys_storage_models_slot());
+        }
+        return;
+    }
+    ESP_LOGE(TAG, "models would not load: %s", esp_err_to_name(loaded));
+    if (trial != OTA_MODELS_ON_TRIAL) {
+        // Nothing to go back to, so the kiosk says so and carries on blind
+        // rather than rebooting into the same wall.
+        ESP_ERROR_CHECK(loaded);
+        return;
+    }
+    sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_UNDONE);
+    sys_storage_models_revert();
+    esp_restart();
+}
 
 static bool rtc_ntp_marker(void)
 {
@@ -165,7 +196,7 @@ esp_err_t app_boot(void)
     }
     ESP_LOGI(TAG, "kiosk %s, boot %" PRIu32, device_id, sys_storage_boot_count());
     // The arena needs one contiguous run the drivers below would fragment (KEHOACH 3.8).
-    ESP_ERROR_CHECK(ai_engine_init());
+    load_models();
     ESP_ERROR_CHECK(app_wiring_init());
     seed_settings();
     ESP_ERROR_CHECK(bsp_board_init());

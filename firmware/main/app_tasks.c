@@ -124,6 +124,8 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define OTA_TASK_STACK_BYTES 8192
 #define OTA_SETTLE_MS 30000
 #define OTA_REBOOT_WAIT_MS 1500
+#define NVS_LAST_OTA "last_ota_result"
+#define OTA_MODELS_ON_TRIAL 1u
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
 #define JOIN_WAIT_MS 30000
@@ -1302,8 +1304,9 @@ static void ota_task(void *arg)
         if (xQueueReceive(wiring->ota, &offer, portMAX_DELAY) != pdTRUE) {
             continue;
         }
-        if (offer.target != OTA_MANIFEST_TARGET_FIRMWARE) {
-            ota_refused(&offer, "only FIRMWARE installs, models wait on E13-T2");
+        const bool models = offer.target == OTA_MANIFEST_TARGET_MODELS;
+        if (!models && offer.target != OTA_MANIFEST_TARGET_FIRMWARE) {
+            ota_refused(&offer, "ASSETS has no path yet");
             continue;
         }
         if (offer.has_min_fw_version && !fw_at_least(offer.min_fw_version)) {
@@ -1318,14 +1321,19 @@ static void ota_task(void *arg)
         char why[NET_OTA_WHY_CAP] = { 0 };
         // Vetted while the link is still up: a manifest refused on arithmetic
         // does not get to cost the broker connection.
-        if (net_ota_check(&image, why, sizeof(why)) != ESP_OK) {
+        if (net_ota_check(&image, models, why, sizeof(why)) != ESP_OK) {
             ota_refused(&offer, why);
             continue;
         }
         ESP_LOGW(TAG, "ota %s: %s, %lld bytes", offer.release_id, offer.version,
                  (long long)offer.size_bytes);
         net_mqtt_stop();
-        const esp_err_t took = net_ota_firmware(&image, why, sizeof(why));
+        const esp_err_t took = models ? net_ota_models(&image, why, sizeof(why))
+                                      : net_ota_firmware(&image, why, sizeof(why));
+        if (took == ESP_OK && models) {
+            // The slot only counts once a boot has read it (KEHOACH 6.2.1).
+            sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_ON_TRIAL);
+        }
         if (took != ESP_OK) {
             ESP_LOGE(TAG, "ota %s failed: %s (%s)", offer.release_id, why,
                      esp_err_to_name(took));

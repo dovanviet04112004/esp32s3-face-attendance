@@ -10,6 +10,7 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "sys_storage.h"
 #include "mbedtls/md.h"
 
 static const char *TAG = "net_ota";
@@ -55,10 +56,10 @@ static void say(char *why, size_t cap, const char *text)
 
 // A manifest the kiosk cannot satisfy is cheaper to turn away at the door than
 // to discover halfway through a partition.
-static esp_err_t vet(const net_ota_image_t *image, const esp_partition_t *slot, char *why,
-                     size_t cap)
+static esp_err_t vet(const net_ota_image_t *image, const esp_partition_t *slot, bool unsized,
+                     char *why, size_t cap)
 {
-    if (image == NULL || image->url == NULL || slot == NULL) {
+    if (image == NULL || image->url == NULL || (slot == NULL && !unsized)) {
         say(why, cap, "manifest incomplete");
         return ESP_ERR_INVALID_ARG;
     }
@@ -70,14 +71,27 @@ static esp_err_t vet(const net_ota_image_t *image, const esp_partition_t *slot, 
         say(why, cap, "sha256 is not 64 hex digits");
         return ESP_ERR_INVALID_ARG;
     }
-    if (image->size_bytes == 0 || image->size_bytes > slot->size) {
+    if (image->size_bytes == 0 || (!unsized && image->size_bytes > slot->size)) {
         say(why, cap, "image does not fit the slot");
         return ESP_ERR_INVALID_SIZE;
     }
     return ESP_OK;
 }
 
-static esp_err_t pull(esp_http_client_handle_t http, esp_ota_handle_t slot, uint8_t *chunk,
+typedef esp_err_t (*sink_fn)(void *ctx, const void *data, size_t len);
+
+static esp_err_t to_app_slot(void *ctx, const void *data, size_t len)
+{
+    return esp_ota_write(*(esp_ota_handle_t *)ctx, data, len);
+}
+
+static esp_err_t to_models_slot(void *ctx, const void *data, size_t len)
+{
+    (void)ctx;
+    return sys_storage_models_stage_write(data, len);
+}
+
+static esp_err_t pull(esp_http_client_handle_t http, sink_fn sink, void *ctx, uint8_t *chunk,
                       size_t want, char *digest, char *why, size_t cap)
 {
     mbedtls_md_context_t sha;
@@ -100,7 +114,7 @@ static esp_err_t pull(esp_http_client_handle_t http, esp_ota_handle_t slot, uint
             break;
         }
         mbedtls_md_update(&sha, chunk, (size_t)read);
-        const esp_err_t written = esp_ota_write(slot, chunk, (size_t)read);
+        const esp_err_t written = sink(ctx, chunk, (size_t)read);
         if (written != ESP_OK) {
             say(why, cap, "the slot refused a write");
             mbedtls_md_free(&sha);
@@ -119,15 +133,108 @@ static esp_err_t pull(esp_http_client_handle_t http, esp_ota_handle_t slot, uint
     return ESP_OK;
 }
 
-esp_err_t net_ota_check(const net_ota_image_t *image, char *why, size_t cap)
+static esp_http_client_handle_t dial(const net_ota_image_t *image, char *why, size_t cap)
 {
-    return vet(image, esp_ota_get_next_update_partition(NULL), why, cap);
+    const esp_http_client_config_t cfg = {
+        .url = image->url,
+        .timeout_ms = HTTP_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .keep_alive_enable = false,
+    };
+    esp_http_client_handle_t http = esp_http_client_init(&cfg);
+    if (http == NULL) {
+        say(why, cap, "no room for a tls session");
+        return NULL;
+    }
+    const char *stopped = NULL;
+    if (esp_http_client_open(http, 0) != ESP_OK) {
+        stopped = "the server did not answer";
+    } else if (esp_http_client_fetch_headers(http) < 0) {
+        stopped = "no headers from the server";
+    } else if (esp_http_client_get_status_code(http) != HttpStatus_Ok) {
+        stopped = "the server refused the url";
+    }
+    if (stopped != NULL) {
+        say(why, cap, stopped);
+        esp_http_client_cleanup(http);
+        return NULL;
+    }
+    return http;
+}
+
+esp_err_t net_ota_models(const net_ota_image_t *image, char *why, size_t cap)
+{
+    const esp_err_t vetted = vet(image, NULL, true, why, cap);
+    if (vetted != ESP_OK) {
+        return vetted;
+    }
+    // The connection is opened first: erasing three megabytes for a url that
+    // turns out to be dead costs seconds and the spare image with it.
+    esp_http_client_handle_t http = dial(image, why, cap);
+    if (http == NULL) {
+        return ESP_FAIL;
+    }
+    uint8_t *chunk = heap_caps_malloc(CHUNK_BYTES, MALLOC_CAP_SPIRAM);
+    esp_err_t err = chunk != NULL ? ESP_OK : ESP_ERR_NO_MEM;
+    if (err != ESP_OK) {
+        say(why, cap, "no room for a download buffer");
+    } else {
+        err = sys_storage_models_stage_begin(image->size_bytes);
+        if (err != ESP_OK) {
+            say(why, cap, "the spare slot would not take it");
+        }
+    }
+    char digest[SHA256_HEX_LEN + 1] = { 0 };
+    if (err == ESP_OK) {
+        err = pull(http, to_models_slot, NULL, chunk, image->size_bytes, digest, why, cap);
+    }
+    esp_http_client_close(http);
+    esp_http_client_cleanup(http);
+    heap_caps_free(chunk);
+    if (err == ESP_OK) {
+        err = sys_storage_models_stage_end();
+        if (err != ESP_OK) {
+            say(why, cap, "the staged image has no usable header");
+        }
+    }
+    if (err == ESP_OK && strcmp(digest, image->sha256) != 0) {
+        ESP_LOGE(TAG, "digest %s, manifest %s", digest, image->sha256);
+        say(why, cap, "sha256 does not match");
+        err = ESP_ERR_INVALID_CRC;
+    }
+    if (err != ESP_OK) {
+        sys_storage_models_stage_abort();
+        return err;
+    }
+    // Only now: the slot the kiosk is running keeps serving until it reboots.
+    err = sys_storage_models_activate();
+    if (err != ESP_OK) {
+        say(why, cap, "the slot would not arm");
+    }
+    return err;
+}
+
+esp_err_t net_ota_check(const net_ota_image_t *image, bool models, char *why, size_t cap)
+{
+    if (!models) {
+        return vet(image, esp_ota_get_next_update_partition(NULL), false, why, cap);
+    }
+    const esp_err_t shaped = vet(image, NULL, true, why, cap);
+    if (shaped != ESP_OK) {
+        return shaped;
+    }
+    const size_t room = sys_storage_models_slot_bytes();
+    if (room == 0 || image->size_bytes > room) {
+        say(why, cap, "image does not fit the slot");
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return ESP_OK;
 }
 
 esp_err_t net_ota_firmware(const net_ota_image_t *image, char *why, size_t cap)
 {
     const esp_partition_t *slot = esp_ota_get_next_update_partition(NULL);
-    const esp_err_t vetted = vet(image, slot, why, cap);
+    const esp_err_t vetted = vet(image, slot, false, why, cap);
     if (vetted != ESP_OK) {
         return vetted;
     }
@@ -167,7 +274,7 @@ esp_err_t net_ota_firmware(const net_ota_image_t *image, char *why, size_t cap)
         }
     }
     if (err == ESP_OK) {
-        err = pull(http, writing, chunk, image->size_bytes, digest, why, cap);
+        err = pull(http, to_app_slot, &writing, chunk, image->size_bytes, digest, why, cap);
     }
     esp_http_client_close(http);
     esp_http_client_cleanup(http);

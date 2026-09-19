@@ -4,6 +4,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -26,7 +27,8 @@ typedef struct {
  *       caller that has to spend something to download can spend nothing here
  *  @ret ESP_OK | ESP_ERR_INVALID_ARG | ESP_ERR_INVALID_SIZE
  */
-esp_err_t net_ota_check(const net_ota_image_t *image, char *why, size_t cap);
+esp_err_t net_ota_check(const net_ota_image_t *image, bool models, char *why,
+                        size_t cap);
 
 /** Download into the inactive app partition and arm it for the next boot.
  *  @ctx ota_task | blocking, tens of seconds | why takes NET_OTA_WHY_CAP bytes
@@ -34,6 +36,14 @@ esp_err_t net_ota_check(const net_ota_image_t *image, char *why, size_t cap);
  *       | ESP_ERR_INVALID_CRC when the digest disagrees | ESP_FAIL on transport
  */
 esp_err_t net_ota_firmware(const net_ota_image_t *image, char *why, size_t cap);
+
+/** Download into the models slot this boot is not reading and arm it.
+ *  @ctx ota_task | blocking, erasing 3 MB then pulling the image | why takes
+ *       NET_OTA_WHY_CAP bytes
+ *  @ret ESP_OK and the caller reboots | ESP_ERR_INVALID_ARG on a refused
+ *       manifest | ESP_ERR_INVALID_CRC on a bad digest or header
+ */
+esp_err_t net_ota_models(const net_ota_image_t *image, char *why, size_t cap);
 
 /** Tell the bootloader this build works, so it stops holding a rollback.
  *  @ctx task | non-blocking | a settled build takes no harm from it
