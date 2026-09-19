@@ -78,6 +78,19 @@ uint32_t svc_facedb_next_employee_id(uint32_t floor);
  */
 esp_err_t svc_facedb_remove(uint32_t employee_id);
 
+/** Soft-delete one template of one employee.
+ *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND when that pair is not held | ESP_ERR_TIMEOUT
+ */
+esp_err_t svc_facedb_remove_template(uint32_t employee_id, uint16_t template_idx);
+
+/** Soft-delete every template, for the clear half of a full resync.
+ *  @ctx task | blocking | takes m_facedb | the kiosk matches nobody until
+ *       the upserts that follow arrive (KEHOACH 7.5)
+ *  @ret ESP_OK | ESP_ERR_TIMEOUT
+ */
+esp_err_t svc_facedb_clear(void);
+
 /** Write the table to flash in two phases, compacting once over 30 percent of it is dead.
  *  @ctx task | blocking, seconds for a full table | takes m_facedb, then m_littlefs inside
  *  @ret ESP_OK | ESP_FAIL when the rename chain did not complete | ESP_ERR_TIMEOUT

@@ -95,6 +95,8 @@ public:
     esp_err_t enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
                      const int8_t *emb, float scale, const char *name) noexcept;
     esp_err_t remove(uint32_t employee_id) noexcept;
+    esp_err_t remove_template(uint32_t employee_id, uint16_t template_idx) noexcept;
+    esp_err_t clear() noexcept;
     esp_err_t templet(uint32_t employee_id, uint16_t template_idx, int8_t *emb,
                       size_t cap, float *scale, uint8_t *quality) noexcept;
     size_t people(svc_facedb_person_t *out, size_t cap) noexcept;

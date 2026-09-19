@@ -646,6 +646,12 @@ static void revoke_pending(uint32_t employee_id)
     }
 }
 
+static void revoke_all_pending(void)
+{
+    s_pending_count = 0;
+    offer_pending();
+}
+
 // The cursor is written after the table, so a power cut costs one push again
 // rather than a device claiming a version it never applied (KEHOACH 7.5).
 static bool apply_roster(const app_roster_t *op)
@@ -667,8 +673,15 @@ static bool apply_roster(const app_roster_t *op)
         revoke_pending(op->employee_id);
         done = ESP_OK;
         break;
-    case ENROLL_PAYLOAD_OP_DELETE: refusal = "one template at a time needs a facedb api"; break;
-    case ENROLL_PAYLOAD_OP_REPLACE_ALL: refusal = "full resync needs a facedb clear"; break;
+    case ENROLL_PAYLOAD_OP_DELETE:
+        done = svc_facedb_remove_template(op->employee_id, op->template_idx);
+        break;
+    case ENROLL_PAYLOAD_OP_REPLACE_ALL:
+        // The upserts that refill the table follow this one, and the kiosk
+        // matches nobody until they land (KEHOACH 7.5).
+        revoke_all_pending();
+        done = svc_facedb_clear();
+        break;
     default: refusal = "unknown roster op"; break;
     }
     if (refusal != NULL) {
