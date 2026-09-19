@@ -18,6 +18,7 @@
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
+#include "net_mqtt.h"
 #include "net_wifi.h"
 #include "storage_format.h"
 #include "svc_attendance.h"
@@ -142,6 +143,27 @@ static void on_time_synced(void *arg)
     }
 }
 
+static void on_broker_state(bool up, void *ctx)
+{
+    (void)ctx;
+    const app_wiring_t *wiring = app_wiring();
+    if (wiring == NULL) {
+        return;
+    }
+    if (up) {
+        xEventGroupSetBits(wiring->flags, APP_EG_MQTT_OK);
+    } else {
+        xEventGroupClearBits(wiring->flags, APP_EG_MQTT_OK);
+    }
+}
+
+static void on_broker_message(gen_topic_id_t topic, const char *payload, size_t len, void *ctx)
+{
+    (void)ctx;
+    ESP_LOGI(TAG, "broker sent topic %d, %u bytes: %.*s", (int)topic, (unsigned)len, (int)len,
+             payload);
+}
+
 // One shot: the clock needs a netif, so the wait belongs off app_main and the
 // task leaves once the correction is under way.
 static void net_task(void *arg)
@@ -153,6 +175,15 @@ static void net_task(void *arg)
         return;
     }
     xEventGroupSetBits(app_wiring()->flags, APP_EG_WIFI_OK);
+    // Ahead of the clock because a missing sntp host ends this task early.
+    const net_mqtt_config_t broker = {
+        .on_state = on_broker_state,
+        .on_message = on_broker_message,
+    };
+    const esp_err_t link = net_mqtt_start(&broker);
+    if (link != ESP_OK) {
+        ESP_LOGW(TAG, "no broker: %s", esp_err_to_name(link));
+    }
     char host[SNTP_HOST_CAP] = { 0 };
     const esp_err_t stored = sys_storage_get_str(STORAGE_NS_DEVICE, NVS_SNTP_HOST, host,
                                                  sizeof(host));

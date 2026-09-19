@@ -14,6 +14,8 @@ __pycache__/
 
 # ── Firmware ──
 firmware/build/
+# idf.py -B <dir> cho profile khac; sinh ra lai duoc tai cho
+firmware/build_*/
 firmware/sdkconfig
 firmware/sdkconfig.old
 firmware/managed_components/
@@ -76,6 +78,8 @@ hardware/export/*.rpt
 secrets/
 # Sinh bằng deploy/emqx/gen_certs.sh; khoá riêng không bao giờ rời máy dựng
 deploy/emqx/certs/
+# Cert CA là công khai và firmware nhúng nó lúc biên dịch (KẾ HOẠCH §7.4)
+!firmware/components/net_mqtt/certs/broker_ca.crt
 
 # ── Công cụ AI agent — chỉ dùng ở máy local, không lên remote ──
 .claude/
