@@ -505,6 +505,18 @@ ngay sau một lượt ghi panel luôn trả giá trị ngoài dải, và bỏ c
 khung** ghi lệch nhịp trong im lặng (đo 18/09, 616/1.260 khung). Một khung bị xé vẫn tốt hơn một
 preview đứng hình, nhưng chỉ sau khi đã thử lại.
 
+**Khoá pha áp cho cả hai đường vẽ, không riêng đường preview.** Màn phủ kín đi qua
+`drv_lcd_paint` chứ không qua `drv_lcd_blit_frame`, mà nó cũng ghi trọn 320×480 và cũng mất
+~31 ms. Ngòi ghi chạy 15,5 dòng/ms còn tia quét 11,6 dòng/ms, nhanh hơn **1,33 lần**, nên mỗi
+lượt vẽ lại **cắt ngang màn đúng một lần** nếu không chờ pha. Một lượt thì không ai thấy; chạm
+dồn dập trên màn `Cài đặt` thì mỗi lần chạm đẻ hai lượt vẽ lại (ấn và nhả), **chạm 5 lần/giây là
+10 vết cắt mỗi giây** và chữ trông như nhấp nháy. Giá của việc chờ là ~16 ms mỗi lượt vẽ lại, mà
+màn phủ kín chỉ vẽ khi có sự kiện chứ không vẽ 14 lần/giây, nên không mất gì.
+
+**Không phải lỗi hai khoang overlay.** Đo 19/09 trong lúc chạm: `ui_task` publish **~11 lượt/giây**
+chứ không phải mỗi nhịp 20 ms, nên chỉ **3/720 khung** gặp cảnh khoang bị dùng lại giữa chừng —
+một khung mỗi ~18 giây, quá hiếm để thành hiện tượng nhìn thấy được. Hai khoang là **đủ**.
+
 **Đọc thanh ghi qua `esp_lcd` cần một điều `esp_lcd` không nói ra.** Sau mỗi giao dịch của
 nó, `esp_lcd_panel_io_spi` **tắt driver ngõ ra của chân DC** (`post_cb` gọi
 `gpio_ll_output_disable`) và chỉ bật lại trong `pre_cb` của giao dịch kế. Một lệnh đọc gửi
