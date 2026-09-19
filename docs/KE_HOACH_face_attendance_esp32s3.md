@@ -450,7 +450,7 @@ Siết vừa tay; siết mạnh là nứt mép.
 
 | Chân LCD | GPIO | Vai trò | Lưu ý |
 |---|---|---|---|
-| VCC | 3V3 | | |
+| VCC | **`+3V3_LCD`** | Rail riêng | **Không lấy `+3V3` của devkit**: dãy LED đèn nền không có gì ổn áp nên độ sáng bám thẳng theo rail, mà rail ấy còn nuôi lõi 240 MHz với PSRAM 80 MHz. **Cũng không nuôi 5 V**: trở treo `CTP_SCL` của module lấy điện từ chính `VCC` (§2.5 luật 8, 9) |
 | GND | GND | | |
 | SCL / SCK | **GPIO42** | SPI CLK | **80 MHz** — ở 40 MHz một khung 307 KB mất 61 ms, màn hiện hai khoảnh khắc cùng lúc và mặt di chuyển thấy rõ vạch |
 | SDA / MOSI | **GPIO41** | SPI MOSI | |
@@ -630,8 +630,14 @@ nguồn nhưng một bên miễn nhiễm còn một bên thì không, và đó l
 phẳng trong khi mắt vẫn thấy nháy.
 
 **Vùng còn lại đúng bằng đường đèn nền:** GPIO21 → chân `LED` của module → `Q1` với `R4`/`R5` →
-dãy LED → đất, cộng với `VCC` nuôi dãy ấy. `VCC` hiện lấy ở **chân 3V3 của devkit**, dùng chung
-với ESP32-S3 chạy 240 MHz, PSRAM 80 MHz và camera.
+dãy LED → đất, cộng với `VCC` nuôi dãy ấy.
+
+**Nghiệm thu trên bàn 19/09: đổi `VCC` sang một nguồn khác thì hết nháy.** Chủ repo cấp 5 V lấy
+ở chân khác của devkit — tức vẫn cùng cổng USB và cùng đất, chỉ khác chỗ là nó **không đi qua con
+ổn áp 3,3 V đang nuôi lõi với PSRAM**. Nền tĩnh thì sạch hẳn. Chạy full app thì nháy quay lại,
+vì lúc đó camera, Wi-Fi và ba model kéo `VBUS` lẫn đất cùng lắc. Hai quan sát ấy chốt cơ chế:
+**gợn trên rail nuôi dãy LED**, không phải tấm kính. Board đế vì thế đổi theo §2.5 luật 8 — rail
+`+3V3_LCD` riêng do `U2` cấp, đất tấm màn đóng lại ngay tại chân đất `U2`.
 
 **Chỗ phải soi tiếp là điện, theo thứ tự này:**
 
@@ -995,7 +1001,12 @@ Tách rail 1 khỏi rail 2 vì hai đỉnh trùng nhau: kiosk phát tiếng báo
 
 **Rail 2 không được là sạc dự phòng.** Sạc dự phòng tự ngắt ngõ ra khi tải dưới ngưỡng vài chục mA, mà servo đứng yên gần như không ăn dòng — đo 10/09 trên bàn: servo "chết" dù xung ở GPIO38 đúng từng micro giây, chỉ vì sạc đã tắt từ lúc nào. Kiosk thật dùng adapter 5 V thường; trên bàn thử thì phải giữ tải liên tục (servo quét, hoặc tải giả) cho sạc không ngủ.
 
-Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân nguồn servo, 100 µF gần LCD.
+Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân nguồn servo, 470 µF ở đầu vào
+`U2`, 100 µF ở đầu ra `U2` ngay sát tấm màn.
+
+**Tấm màn không ăn thẳng `+3V3` của devkit nữa.** Rail riêng `+3V3_LCD` do `U2` — một module ổn
+áp 3,3 V ba chân cắm đế — lấy từ `+5V_R1` mà ra, và chỉ nuôi đúng `J3.1`. Ba cảm biến I2C với
+trở treo `R1` vẫn ở `+3V3` của devkit. `U2` tiêu tán `(5 − 3,3) × 0,1 A ≈ 0,17 W`, không cần tản.
 
 Con 100 µF của màn phải là loại **thân Ø5 mm**, không phải Ø6,3. Khe nó nằm rộng 7,30 mm (§2.3A) nên thân 6,3 chỉ hở 0,25 mm mỗi bên, còn 5 mm hở 0,90. Bước chân hai loại đều 2,50 mm nên **lỗ khoan giống hệt nhau** — mua nhầm loại to vẫn cắm vừa, chỉ là sát.
 
@@ -1025,8 +1036,38 @@ chạy qua đoạn đồng mà devkit đang lấy điện, nó kéo sụt đúng
 | 6 | Mỗi tải nặng đi **thẳng** từ domino của nó, không mượn nhánh của tải khác. `J10 → U1` và `J10 → J7` là **hai nhánh song song**, không bao giờ là `J10 → U1 → J7` | Nối chuỗi là dòng đỉnh của amp chạy qua đoạn đồng của devkit — tái hiện đúng cú brownout đã đo ở §2.3E, lần này trên board in |
 | 7 | Tụ trữ bám vào **chân tải**, không bám vào domino: `C2` treo trên `J7.VIN`, `C3` trên `J9.VCC` | Bám domino là tụ nạp cho cả rail thay vì cho riêng tải, mất tác dụng của luật 3 |
 
+#### Tải nhìn thấy được — hai luật rút ra từ vụ nhấp nháy 19/09
+
+Bảy luật trên bảo vệ thứ **nghe được** (amp) và thứ **đo được** (sụt áp devkit). Dãy LED đèn nền
+là loại thứ ba: nó **nhìn thấy được**, và nó không có gì ổn áp — độ sáng bám thẳng theo hiệu điện
+thế đặt lên nó. Một gợn 1 % trên rail là 1 % độ sáng, mà mắt người thấy được mức đó.
+
+| # | Luật | Hỏng thế nào nếu bỏ |
+|---|---|---|
+| 8 | Tải **không tự ổn áp mà mắt nhìn thấy được** phải có **ổn áp riêng**, và chân đất của ổn áp phải là **cùng một nút cục bộ** với chân đất của tải. Không phải chỉ một nhánh đồng riêng | `LCD` ăn chung ngõ ra LDO của devkit với lõi 240 MHz và PSRAM 80 MHz: **đo 19/09, nhấp nháy thấy rõ trên nền trắng**, không thanh ghi nào của ST7796S chữa được vì lỗi không nằm ở tấm kính |
+| 9 | Rail nuôi một module **dùng chung bus với ESP** phải là **3,3 V**. Trở treo của module lấy điện từ rail của chính nó | Cấp 5 V cho module màn thì trở treo `SCL` của nó kéo đường I2C vượt mức chân ESP chịu được: **đo 19/09, trượt SCL 0,76 % so với 0,10 %, p = 0,00001** |
+
+Luật 8 giải thích luôn vì sao chỉ tách đường **dương** là không đủ: mốc đất của tải cũng lắc theo
+dòng của tải khác, mà LDO giữ ngõ ra so với **chân đất của chính nó**, nên hễ đất của tải và đất
+của ổn áp là một nút thì mọi dao động chung đẩy cả hai đầu đi cùng nhau và tải không thấy gì.
+Trên board đế điều đó thành chuỗi `U1.40 → C5.2 → U2.2 → C4.2 → J3.2`: đất tấm màn đóng lại ở
+chân đất `U2` chứ không đi tiếp.
+
+**Luật 9 loại thẳng phương án nối `J3.1` vào `+5V_R1`**, dù module có khai là ăn được 5 V.
+
+`U2` là tải **duy nhất** được phép mượn nhánh của tải khác (`U1.20 → U2.1`, tức luật 6 không áp).
+Lý do là cơ chế của luật 6 không còn: nó ăn **100 mA đều đặn**, không có đỉnh để đẩy sang ai, còn
+đỉnh 350 mA của devkit tới đầu vào `U2` thì rơi trên ~110 mm đồng 1,0 mm thành **18 mV**, và LDO
+với biên dropout 1,7 V nuốt gọn. Đổi lại được đoạn 5 V ngắn thay vì kéo 115 mm cắt ngang board.
+
 Hai luật này khai thẳng trong `hardware/gen/gen_pcb.py` ở `RAIL_TREE` — từng đoạn dây một, chứ
 không để thuật toán tự tìm cây ngắn nhất. Cây ngắn nhất sẽ nối chuỗi, vì nối chuỗi thì ngắn hơn.
+
+**Chân giữa của một hàng ba chỉ có hai lối ra.** `U2.2` bị `U2.1` và `U2.3` kẹp hai bên nên chỉ
+đi lên hoặc đi xuống được; khai cho nó ba mối là router quay 8 lượt rip-up rồi bỏ cuộc. Chuỗi
+đúng cho nó đúng một mối vào từ trên và một mối ra dưới. Cùng lý do, `C5` phải đặt **đứng** để
+chân dương ra ngang còn chân âm ra dọc, chứ nằm ngang thì hai chân cùng một hướng và chân này
+chắn chân kia.
 
 ⚠️ **Chân `5V` của devkit nối với VBUS của USB.** Chính phép đo ở §2.3E chứng minh: lúc lấy điện
 cho amp từ chân đó thì đường USB của board rớt. Nghĩa là khi vừa cắm USB vừa vặn dây vào `J10`,
