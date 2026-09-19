@@ -4386,6 +4386,7 @@ một phút thì rẻ hơn một cây Radix mang theo mười gói phụ thuộc
 frontend/
 ├── app/
 │   ├── globals.css
+│   ├── providers.tsx                 # QueryClient dựng một lần mỗi phiên trình duyệt
 │   └── [locale]/                     # ★ vi | en — mọi route nằm dưới đây
 │       ├── layout.tsx                # layout gốc: <html lang={locale}> + provider
 │       ├── (auth)/login/page.tsx
@@ -4393,7 +4394,7 @@ frontend/
 │           ├── layout.tsx            # sidebar + guard
 │           ├── overview/page.tsx     # thẻ số liệu + biểu đồ + luồng sự kiện realtime
 │           ├── employees/{page.tsx, [id]/page.tsx, new/page.tsx}
-│           ├── attendance/{page.tsx, [id]/page.tsx}
+│           ├── attendance/{page.tsx, [id]/page.tsx}  # [id] là nhân viên: lịch sử của họ
 │           ├── devices/{page.tsx, [id]/page.tsx}      # online, OTA, log
 │           ├── shifts/page.tsx  ├── reports/page.tsx  └── settings/page.tsx
 ├── messages/{vi.json, en.json}       # ★ catalogue — vi.json là nguồn kiểu (§3.1 CLAUDE.md)
@@ -4402,12 +4403,13 @@ frontend/
 │   ├── navigation.ts                 # Link và useRouter có mang locale
 │   └── request.ts                    # nạp catalogue cho phía server
 ├── public/{favicon.ico, logo.svg}
-├── components/{ui/, charts/, tables/, forms/}
+├── components/{ui/, tables/, forms/}
 ├── lib/
 │   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.9)
 │   ├── api.ts                        # axios + interceptor tự refresh khi 401
-│   └── ws.ts  └── auth.ts
-├── hooks/  ├── store/
+│   ├── ws.ts                         # socket.io /feed, và xoá cache query theo tin
+│   ├── auth.ts                       # kho phiên zustand + đọc vai từ token
+│   └── cn.ts                         # gộp class Tailwind, lớp sau thắng lớp trước
 ├── types/
 │   ├── generated/                    # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
 │   └── messages.d.ts                 # ★ khai Messages = typeof vi.json, chốt en.json đủ khoá
@@ -4416,6 +4418,14 @@ frontend/
 ├── middleware.ts                     # `/` → `/vi`, và chặn route không có locale
 └── next.config.ts
 ```
+
+**Bản ghi chấm công có đường đọc riêng, không chỉ có bản tổng hợp.** `GET /reports/attendance`
+trả số lượt theo người — đủ cho biểu đồ và bảng công, **không đủ để tra một lượt**. Nên
+`attendance` của backend có controller riêng trả chính các bản ghi, lọc theo người, theo máy và
+theo khoảng, phân trang chặn ở 200 dòng. Thiếu nó thì một lượt chấm công chỉ nhìn thấy được
+đúng một lần, lúc nó chạy qua feed realtime, và sau đó không ai tra lại được — trong khi dữ
+liệu vẫn nằm nguyên trong bảng. Hai chỉ mục `@@index([employeeId, ts])` và `@@index([ts])` của
+§6 có sẵn cho đúng hai phép lọc này.
 
 **Locale nằm trên URL chứ không nằm trong cookie.** Giá phải trả là mọi route thụt vào một cấp
 và mọi `<Link>` phải đi qua `i18n/navigation.ts`; đổi lại, một link gửi cho người khác mở ra
