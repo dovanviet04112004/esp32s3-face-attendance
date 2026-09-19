@@ -10,6 +10,8 @@
 extern "C" {
 #endif
 
+#ifndef KIOSK_GLYPH_T_DEFINED
+#define KIOSK_GLYPH_T_DEFINED
 typedef struct {
     uint16_t code;                        // unicode code point
     uint8_t w;
@@ -17,14 +19,15 @@ typedef struct {
     int8_t off_x;
     int8_t off_y;                         // from the line top, not the baseline
     uint8_t adv;                          // pen movement after this glyph
-    uint16_t at;                          // first byte in the bitmap blob
+    uint32_t at;                          // first byte in the bitmap blob
 } kiosk_glyph_t;
+#endif
 
-extern const uint8_t kiosk_sans_22_line_h;
-extern const uint8_t kiosk_sans_22_ascent;
-extern const uint16_t kiosk_sans_22_count;
-extern const uint8_t kiosk_sans_22_bitmap[];
-extern const kiosk_glyph_t kiosk_sans_22_glyphs[];
+extern const uint8_t kiosk_ui_20_line_h;
+extern const uint8_t kiosk_ui_20_ascent;
+extern const uint16_t kiosk_ui_20_count;
+extern const uint8_t kiosk_ui_20_bitmap[];
+extern const kiosk_glyph_t kiosk_ui_20_glyphs[];
 
 #ifdef __cplusplus
 }
