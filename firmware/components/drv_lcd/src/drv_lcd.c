@@ -383,24 +383,40 @@ static void build_column_map(int src_width, int taken_width)
     s_map_width = src_width;
 }
 
+// The channels straddle a byte boundary, so a blend has to happen in natural
+// order and turn over again on the way out.
+static inline uint16_t blend_565(uint16_t over, uint16_t under, uint8_t cover)
+{
+    const uint16_t a = __builtin_bswap16(over);
+    const uint16_t b = __builtin_bswap16(under);
+    const int r = (((a >> 11) & 0x1F) * cover + ((b >> 11) & 0x1F) * (15 - cover)) / 15;
+    const int g = (((a >> 5) & 0x3F) * cover + ((b >> 5) & 0x3F) * (15 - cover)) / 15;
+    const int c = ((a & 0x1F) * cover + (b & 0x1F) * (15 - cover)) / 15;
+    return __builtin_bswap16((uint16_t)((r << 11) | (g << 5) | c));
+}
+
 static void paint_mask(const drv_lcd_mask_t *mask, uint16_t *strip, int top, int rows)
 {
     const int y1 = mask->y > top ? mask->y : top;
     const int y2 = mask->y + mask->h < top + rows ? mask->y + mask->h : top + rows;
     const int x1 = mask->x > 0 ? mask->x : 0;
     const int x2 = mask->x + mask->w < APP_LCD_H_RES ? mask->x + mask->w : APP_LCD_H_RES;
+    const uint16_t *palette = mask->palette;
     for (int y = y1; y < y2; ++y) {
         const uint8_t *cover = mask->cover + (size_t)(y - mask->y) * mask->stride + (x1 - mask->x);
         uint16_t *out = strip + (size_t)(y - top) * APP_LCD_H_RES + x1;
         for (int x = 0; x < x2 - x1; ++x) {
-            if (cover[x] == DRV_LCD_INK) {
-                out[x] = mask->ink_rgb565;
-            } else if (cover[x] == DRV_LCD_EDGE) {
-                out[x] = mask->edge_rgb565;
-            } else if (cover[x] == DRV_LCD_ACCENT) {
-                out[x] = mask->accent_rgb565;
-            } else if (cover[x] == DRV_LCD_WARN) {
-                out[x] = mask->warn_rgb565;
+            const uint8_t cell = cover[x];
+            const uint8_t idx = cell & 0x0Fu;
+            if (idx == DRV_LCD_CLEAR) {
+                continue;
+            }
+            const uint8_t level = cell >> 4;
+            // Glyph interiors and every solid fill land here; only the rim blends.
+            if (level >= DRV_LCD_COVER_FULL) {
+                out[x] = palette[idx];
+            } else {
+                out[x] = blend_565(palette[idx], out[x], level);
             }
         }
     }
@@ -488,6 +504,25 @@ uint32_t drv_lcd_blit_us(void)
     return s_blit_us;
 }
 
+// A screen that lit one row publishes one mask, and every other strip of the
+// panel already holds what it should (KEHOACH 4.5.5h).
+static bool strip_wanted(const drv_lcd_overlay_t *overlay, int top, int rows)
+{
+    for (int i = 0; i < overlay->masks; ++i) {
+        const drv_lcd_mask_t *mask = &overlay->mask[i];
+        if (mask->y < top + rows && mask->y + mask->h > top) {
+            return true;
+        }
+    }
+    for (int i = 0; i < overlay->boxes; ++i) {
+        const drv_lcd_box_t *box = &overlay->box[i];
+        if (box->y1 < top + rows && box->y2 > top) {
+            return true;
+        }
+    }
+    return false;
+}
+
 esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565)
 {
     if (overlay == NULL) {
@@ -500,6 +535,9 @@ esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565
     for (int y = 0; y < APP_LCD_V_RES; y += rows_per_strip) {
         const int rows =
             (y + rows_per_strip <= APP_LCD_V_RES) ? rows_per_strip : APP_LCD_V_RES - y;
+        if (!strip_wanted(overlay, y, rows)) {
+            continue;
+        }
         uint16_t *dst = NULL;
         APP_RETURN_ON_ERR(claim_bounce(&dst), TAG, "bounce");
         for (int i = 0; i < rows * APP_LCD_H_RES; ++i) {

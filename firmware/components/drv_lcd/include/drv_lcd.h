@@ -16,26 +16,37 @@ extern "C" {
 #define DRV_LCD_OVERLAY_MASKS 8
 #define DRV_LCD_OVERLAY_BOXES 4
 
+#define DRV_LCD_CLEAR 0                   // lets the video or the ground through
 #define DRV_LCD_INK 1
-#define DRV_LCD_EDGE 2
+#define DRV_LCD_EDGE 2                    // the shadow that keeps ink legible on video
 #define DRV_LCD_ACCENT 3
 #define DRV_LCD_WARN 4
+#define DRV_LCD_GROUND 5
+#define DRV_LCD_SURFACE 6
+#define DRV_LCD_SURFACE_HI 7
+#define DRV_LCD_LINE 8
+#define DRV_LCD_DIM 9
+#define DRV_LCD_OK 10
+#define DRV_LCD_DANGER 11
+#define DRV_LCD_COLOURS 12
+
+#define DRV_LCD_COVER_FULL 15             // opaque, and the path that skips blending
+
+/** Pack a palette index and a 0..15 coverage into one cover cell. */
+#define DRV_LCD_CELL(idx, cov) ((uint8_t)((idx) | ((cov) << 4)))
 
 /** Text laid over the preview: one byte a pixel saying what to paint there.
- *  Colours are already in panel byte order, because the preview path does not
- *  swap on the way out (KEHOACH 4.5.5h).
+ *  The low nibble indexes palette, the high nibble is coverage; index 0 leaves
+ *  what is underneath. palette is in panel byte order (KEHOACH 4.5.5h).
  */
 typedef struct {
     int16_t x;
     int16_t y;
     int16_t w;
     int16_t h;
-    const uint8_t *cover;                 // 0 leaves the video, else INK, EDGE or ACCENT
+    const uint8_t *cover;                 // DRV_LCD_CELL cells, 0 leaves the video
     int16_t stride;                       // cells per row, so a sub-rectangle can be sent
-    uint16_t ink_rgb565;
-    uint16_t edge_rgb565;
-    uint16_t accent_rgb565;
-    uint16_t warn_rgb565;
+    const uint16_t *palette;              // DRV_LCD_COLOURS entries
 } drv_lcd_mask_t;
 
 /** A hollow rectangle drawn over the preview, in panel pixels. */
