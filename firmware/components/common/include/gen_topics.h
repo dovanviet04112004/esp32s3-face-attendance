@@ -21,10 +21,11 @@ typedef enum {
     GEN_TOPIC_HEARTBEAT = 1,
     GEN_TOPIC_EVENT = 2,
     GEN_TOPIC_STATUS = 3,
-    GEN_TOPIC_CMD = 4,
-    GEN_TOPIC_ENROLL = 5,
-    GEN_TOPIC_OTA = 6,
-    GEN_TOPIC_NONE = 7,
+    GEN_TOPIC_ENROLL_REPORT = 4,
+    GEN_TOPIC_CMD = 5,
+    GEN_TOPIC_ENROLL = 6,
+    GEN_TOPIC_OTA = 7,
+    GEN_TOPIC_NONE = 8,
 } gen_topic_id_t;
 
 #define GEN_TOPIC_ATTENDANCE_QOS 1
@@ -40,6 +41,9 @@ typedef enum {
 #define GEN_TOPIC_STATUS_QOS 1
 #define GEN_TOPIC_STATUS_RETAIN true
 #define GEN_TOPIC_STATUS_IS_LAST_WILL true
+#define GEN_TOPIC_ENROLL_REPORT_QOS 1
+#define GEN_TOPIC_ENROLL_REPORT_RETAIN false
+#define GEN_TOPIC_ENROLL_REPORT_IS_LAST_WILL false
 #define GEN_TOPIC_CMD_QOS 1
 #define GEN_TOPIC_CMD_RETAIN false
 #define GEN_TOPIC_CMD_IS_LAST_WILL false
@@ -102,6 +106,19 @@ static inline bool gen_topic_status(const char *device_id, char *out, size_t cap
     return true;
 }
 
+static inline bool gen_topic_enroll_report(const char *device_id, char *out, size_t cap)
+{
+    if (device_id == NULL || out == NULL) { return false; }
+    const size_t id_len = strlen(device_id);
+    if (id_len == 0 || id_len > GEN_TOPIC_DEVICE_ID_MAX) { return false; }
+    const size_t need = 6 + id_len + 10 + 1;
+    if (cap < need) { return false; }
+    memcpy(out, "kiosk/", 6);
+    memcpy(out + 6, device_id, id_len);
+    memcpy(out + 6 + id_len, "/up/enroll", 10 + 1);
+    return true;
+}
+
 static inline bool gen_topic_cmd(const char *device_id, char *out, size_t cap)
 {
     if (device_id == NULL || out == NULL) { return false; }
@@ -149,6 +166,7 @@ static inline gen_topic_id_t gen_topic_classify(const char *topic, const char *d
     if (gen_topic_heartbeat(device_id, built, sizeof(built)) && strcmp(topic, built) == 0) { return GEN_TOPIC_HEARTBEAT; }
     if (gen_topic_event(device_id, built, sizeof(built)) && strcmp(topic, built) == 0) { return GEN_TOPIC_EVENT; }
     if (gen_topic_status(device_id, built, sizeof(built)) && strcmp(topic, built) == 0) { return GEN_TOPIC_STATUS; }
+    if (gen_topic_enroll_report(device_id, built, sizeof(built)) && strcmp(topic, built) == 0) { return GEN_TOPIC_ENROLL_REPORT; }
     if (gen_topic_cmd(device_id, built, sizeof(built)) && strcmp(topic, built) == 0) { return GEN_TOPIC_CMD; }
     if (gen_topic_enroll(device_id, built, sizeof(built)) && strcmp(topic, built) == 0) { return GEN_TOPIC_ENROLL; }
     if (gen_topic_ota(device_id, built, sizeof(built)) && strcmp(topic, built) == 0) { return GEN_TOPIC_OTA; }
@@ -174,6 +192,7 @@ static inline bool gen_topic_build(gen_topic_id_t id, const char *device_id, cha
     case GEN_TOPIC_HEARTBEAT: return gen_topic_heartbeat(device_id, out, cap);
     case GEN_TOPIC_EVENT: return gen_topic_event(device_id, out, cap);
     case GEN_TOPIC_STATUS: return gen_topic_status(device_id, out, cap);
+    case GEN_TOPIC_ENROLL_REPORT: return gen_topic_enroll_report(device_id, out, cap);
     case GEN_TOPIC_CMD: return gen_topic_cmd(device_id, out, cap);
     case GEN_TOPIC_ENROLL: return gen_topic_enroll(device_id, out, cap);
     case GEN_TOPIC_OTA: return gen_topic_ota(device_id, out, cap);
@@ -188,6 +207,7 @@ static inline uint8_t gen_topic_qos(gen_topic_id_t id)
     case GEN_TOPIC_HEARTBEAT: return GEN_TOPIC_HEARTBEAT_QOS;
     case GEN_TOPIC_EVENT: return GEN_TOPIC_EVENT_QOS;
     case GEN_TOPIC_STATUS: return GEN_TOPIC_STATUS_QOS;
+    case GEN_TOPIC_ENROLL_REPORT: return GEN_TOPIC_ENROLL_REPORT_QOS;
     case GEN_TOPIC_CMD: return GEN_TOPIC_CMD_QOS;
     case GEN_TOPIC_ENROLL: return GEN_TOPIC_ENROLL_QOS;
     case GEN_TOPIC_OTA: return GEN_TOPIC_OTA_QOS;
@@ -202,6 +222,7 @@ static inline bool gen_topic_retain(gen_topic_id_t id)
     case GEN_TOPIC_HEARTBEAT: return GEN_TOPIC_HEARTBEAT_RETAIN;
     case GEN_TOPIC_EVENT: return GEN_TOPIC_EVENT_RETAIN;
     case GEN_TOPIC_STATUS: return GEN_TOPIC_STATUS_RETAIN;
+    case GEN_TOPIC_ENROLL_REPORT: return GEN_TOPIC_ENROLL_REPORT_RETAIN;
     case GEN_TOPIC_CMD: return GEN_TOPIC_CMD_RETAIN;
     case GEN_TOPIC_ENROLL: return GEN_TOPIC_ENROLL_RETAIN;
     case GEN_TOPIC_OTA: return GEN_TOPIC_OTA_RETAIN;

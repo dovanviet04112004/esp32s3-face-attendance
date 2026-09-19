@@ -9,6 +9,7 @@ export type TopicName =
   | "heartbeat"
   | "event"
   | "status"
+  | "enroll_report"
   | "cmd"
   | "enroll"
   | "ota"
@@ -60,6 +61,15 @@ export const TOPICS: { readonly [K in TopicName]: TopicSpec } = {
     lastWill: true,
     build: (deviceId: string) => `kiosk/${deviceId}/up/status`,
     wildcard: "kiosk/+/up/status",
+  },
+  "enroll_report": {
+    name: "enroll_report",
+    direction: "up",
+    qos: 1,
+    retained: false,
+    lastWill: false,
+    build: (deviceId: string) => `kiosk/${deviceId}/up/enroll`,
+    wildcard: "kiosk/+/up/enroll",
   },
   "cmd": {
     name: "cmd",

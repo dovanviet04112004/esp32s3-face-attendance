@@ -607,6 +607,8 @@ typedef enum {
     ENROLL_PAYLOAD_OP_DELETE = 1,
     ENROLL_PAYLOAD_OP_DELETE_EMPLOYEE = 2,
     ENROLL_PAYLOAD_OP_REPLACE_ALL = 3,
+    ENROLL_PAYLOAD_OP_ASSIGN = 4,
+    ENROLL_PAYLOAD_OP_REVOKE = 5,
 } enroll_payload_op_t;
 
 static inline const char *enroll_payload_op_str(enroll_payload_op_t v)
@@ -616,6 +618,8 @@ static inline const char *enroll_payload_op_str(enroll_payload_op_t v)
     case ENROLL_PAYLOAD_OP_DELETE: return "DELETE";
     case ENROLL_PAYLOAD_OP_DELETE_EMPLOYEE: return "DELETE_EMPLOYEE";
     case ENROLL_PAYLOAD_OP_REPLACE_ALL: return "REPLACE_ALL";
+    case ENROLL_PAYLOAD_OP_ASSIGN: return "ASSIGN";
+    case ENROLL_PAYLOAD_OP_REVOKE: return "REVOKE";
     default: return "";
     }
 }
@@ -627,6 +631,8 @@ static inline bool enroll_payload_op_parse(const char *s, enroll_payload_op_t *o
     if (strcmp(s, "DELETE") == 0) { *out = ENROLL_PAYLOAD_OP_DELETE; return true; }
     if (strcmp(s, "DELETE_EMPLOYEE") == 0) { *out = ENROLL_PAYLOAD_OP_DELETE_EMPLOYEE; return true; }
     if (strcmp(s, "REPLACE_ALL") == 0) { *out = ENROLL_PAYLOAD_OP_REPLACE_ALL; return true; }
+    if (strcmp(s, "ASSIGN") == 0) { *out = ENROLL_PAYLOAD_OP_ASSIGN; return true; }
+    if (strcmp(s, "REVOKE") == 0) { *out = ENROLL_PAYLOAD_OP_REVOKE; return true; }
     return false;
 }
 
@@ -641,12 +647,16 @@ typedef struct {
     char embedding_version[33];
     char full_name[65];
     char employee_code[33];
+    int64_t roster_version;
+    char device_id[33];
     bool has_embedding;
     bool has_scale;
     bool has_quality;
     bool has_embedding_version;
     bool has_full_name;
     bool has_employee_code;
+    bool has_roster_version;
+    bool has_device_id;
 } enroll_payload_t;
 
 static inline bool enroll_payload_from_json(const cJSON *root, enroll_payload_t *out)
@@ -708,6 +718,16 @@ static inline bool enroll_payload_from_json(const cJSON *root, enroll_payload_t 
         strncpy(out->employee_code, item->valuestring, sizeof(out->employee_code) - 1);
         out->has_employee_code = true;
     }
+    item = cJSON_GetObjectItemCaseSensitive(root, "rosterVersion");
+    if (cJSON_IsNumber(item)) {
+        out->roster_version = (int64_t) item->valuedouble;
+        out->has_roster_version = true;
+    }
+    item = cJSON_GetObjectItemCaseSensitive(root, "deviceId");
+    if (cJSON_IsString(item) && item->valuestring != NULL) {
+        strncpy(out->device_id, item->valuestring, sizeof(out->device_id) - 1);
+        out->has_device_id = true;
+    }
     return true;
 }
 
@@ -738,6 +758,12 @@ static inline cJSON *enroll_payload_to_json(const enroll_payload_t *in)
     if (in->has_employee_code) {
         cJSON_AddStringToObject(root, "employeeCode", in->employee_code);
     }
+    if (in->has_roster_version) {
+        cJSON_AddNumberToObject(root, "rosterVersion", (double) in->roster_version);
+    }
+    if (in->has_device_id) {
+        cJSON_AddStringToObject(root, "deviceId", in->device_id);
+    }
     return root;
 }
 
@@ -754,6 +780,8 @@ typedef struct {
     int64_t pending_uplink_count;
     uint8_t active_slot;
     int64_t boot_count;
+    int64_t roster_version;
+    char embedding_version[33];
     bool has_rssi_dbm;
     bool has_heap_free_bytes;
     bool has_heap_min_free_bytes;
@@ -761,6 +789,8 @@ typedef struct {
     bool has_pending_uplink_count;
     bool has_active_slot;
     bool has_boot_count;
+    bool has_roster_version;
+    bool has_embedding_version;
 } heartbeat_t;
 
 static inline bool heartbeat_from_json(const cJSON *root, heartbeat_t *out)
@@ -833,6 +863,16 @@ static inline bool heartbeat_from_json(const cJSON *root, heartbeat_t *out)
         out->boot_count = (int64_t) item->valuedouble;
         out->has_boot_count = true;
     }
+    item = cJSON_GetObjectItemCaseSensitive(root, "rosterVersion");
+    if (cJSON_IsNumber(item)) {
+        out->roster_version = (int64_t) item->valuedouble;
+        out->has_roster_version = true;
+    }
+    item = cJSON_GetObjectItemCaseSensitive(root, "embeddingVersion");
+    if (cJSON_IsString(item) && item->valuestring != NULL) {
+        strncpy(out->embedding_version, item->valuestring, sizeof(out->embedding_version) - 1);
+        out->has_embedding_version = true;
+    }
     return true;
 }
 
@@ -866,6 +906,12 @@ static inline cJSON *heartbeat_to_json(const heartbeat_t *in)
     }
     if (in->has_boot_count) {
         cJSON_AddNumberToObject(root, "bootCount", (double) in->boot_count);
+    }
+    if (in->has_roster_version) {
+        cJSON_AddNumberToObject(root, "rosterVersion", (double) in->roster_version);
+    }
+    if (in->has_embedding_version) {
+        cJSON_AddStringToObject(root, "embeddingVersion", in->embedding_version);
     }
     return root;
 }

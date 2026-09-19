@@ -2,10 +2,10 @@
 // Source: contracts/schema/enroll_payload.schema.json
 // Regenerate: ./tools/gen_contracts.py
 
-/** Server to kiosk face template push. Carries the int8 embedding and its dequant scale exactly as they land in the 552-byte record of KEHOACH 6.2.4. */
+/** Face roster traffic in both directions. Server to kiosk pushes templates and assignments; kiosk to server reports what an operator did at the machine. Carries the int8 embedding and its dequant scale exactly as they land in the 552-byte record of KEHOACH 6.2.4. */
 export interface EnrollPayload {
-  /** DELETE removes one template, DELETE_EMPLOYEE removes every template of the employee, REPLACE_ALL is the full-resync path. */
-  op: "UPSERT" | "DELETE" | "DELETE_EMPLOYEE" | "REPLACE_ALL";
+  /** DELETE removes one template, DELETE_EMPLOYEE removes every template of the employee, REPLACE_ALL is the full-resync path. ASSIGN names an employee the kiosk should expect to enroll and carries no embedding, REVOKE withdraws that expectation. */
+  op: "UPSERT" | "DELETE" | "DELETE_EMPLOYEE" | "REPLACE_ALL" | "ASSIGN" | "REVOKE";
   employeeId: number;
   /** One employee holds several templates: frontal, glasses, low light. */
   templateIdx: number;
@@ -22,4 +22,8 @@ export interface EnrollPayload {
   /** Shown on the kiosk screen after a match. Display only. */
   fullName?: string;
   employeeCode?: string;
+  /** Server to kiosk: the roster generation this device stands at once it has applied this op. The kiosk reports it back in every heartbeat, which is what lets the server push exactly what a machine missed while it was offline. */
+  rosterVersion?: number;
+  /** Kiosk to server only: which machine is reporting. */
+  deviceId?: string;
 }
