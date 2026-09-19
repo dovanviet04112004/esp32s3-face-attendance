@@ -3544,6 +3544,36 @@ mỗi mẫu là một `template_idx`, và vẽ ba ô vuông sáng dần. Câu nh
 Bỏ dở giữa chừng thì những mẫu đã lấy **bị xoá**, vì một người chỉ có mẫu chính diện sẽ nhận
 kém ở mọi tư thế khác và đó là lỗi khó truy sau này.
 
+**Hai lượt quay đo từ chính hướng nhìn thẳng của người ấy, không đo từ số 0.** `yaw_of()` chiếu
+độ lệch mũi lên trục hai mắt, nên số 0 của nó là "mũi nằm giữa hai mắt theo trục ấy" chứ không
+phải "người này đang nhìn vào ống kính". Mặt không cân, camera gá hơi chéo, hay đầu hơi nghiêng
+đều đẩy mốc đi. Đo 19/09 trên board, ba khung có nhãn "đang nhìn thẳng ống kính": **−0,01 ·
++0,10 · +0,10**, trung bình **+0,063**, trong khi `kFrontalYaw` = 0,10.
+
+Ba khung ấy nói hai điều, và cả hai đều lớn so với `kTurnYaw` = 0,20: **mốc lệch ~+0,06** và
+**nhiễu từng lần detect cỡ ±0,05**. Lệch mốc làm một bên quay phải đi xa hơn bên kia — xin
+`yaw ≤ −0,20` là đi **0,27**, xin `yaw ≥ +0,20` là đi **0,13**. Nhiễu thì làm mọi phép so trên
+một lần detect đơn lẻ thành tung đồng xu, **kể cả phép đo mốc**: lấy mốc bằng đúng một khung là
+đổi một thiên lệch cố định lấy một thiên lệch ngẫu nhiên, lần này lệch trái, lần sau lệch phải.
+
+Nên `Capture` dựng mốc bằng **trung bình**. Mọi lần detect trong suốt mẫu chính diện có
+`|yaw| < kTurnYaw` đều cộng vào, `origin()` là trung bình cộng ấy. Dải ±0,20 rộng hơn hẳn phân
+bố của một người đang nhìn thẳng nên không cắt cụt mẫu — cắt cụt ở ±`kFrontalYaw` mới là thứ kéo
+trung bình lệch xuống — mà vẫn loại được một cú quay thật. Và mỗi lần detect đi qua một phép
+**bỏ phiếu trung vị trên ba giá trị gần nhất** trước khi tới bất kỳ cổng nào, để một landmark
+nhảy một khung không tự mình mở được cổng tư thế. `posed`, `gauge`, `astray` và cửa sổ gửi xuống
+`svc_vision_enrol_next` đều đọc giá trị đã lọc và tính trên `yaw − origin()`.
+
+Cửa sổ của **mẫu chính diện** cũng đặt quanh mốc ấy — `origin() ± kFrontalYaw` — chứ không quanh
+số 0. Màn hình đã chốt người này đang nhìn thẳng; việc của pipeline chỉ là bắt đúng khung đó, mà
+đưa nó một dải hẹp bằng đúng cổng của màn hình thì riêng nhiễu đã đủ làm rơi hết khung và mẫu
+không bao giờ được lấy. Mốc sống qua cả ba mẫu và chỉ xoá khi **Thử lại**.
+
+Cách này đúng kể cả khi mốc bằng 0: nó khử lệch của từng khuôn mặt và của từng lần gá camera,
+chứ không phải đi bù một con số đo được một lần. Giới hạn còn lại đã biết: cổng chính diện vẫn
+là một dải tuyệt đối `|yaw| < kFrontalYaw`, nên một người có độ lệch tự nhiên vượt 0,10 sẽ không
+qua nổi mẫu đầu. Chưa gặp trên board, nhưng người đo 19/09 đã nằm sát vạch.
+
 **Câu nhắc tư thế phải là điều kiện, không phải lời đề nghị.** Bản đầu chỉ đổi chữ rồi lấy
 **khung verified kế tiếp bất kỳ**, cách nhau tối thiểu 400 ms — không có phép so nào kiểm mặt
 có quay hay không. Đứng yên nhìn thẳng suốt cả ba lượt vẫn lấy đủ 3 mẫu và vẫn báo "Đã thêm",
