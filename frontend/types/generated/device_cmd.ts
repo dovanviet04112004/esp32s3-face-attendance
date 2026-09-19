@@ -1,6 +1,6 @@
 // GENERATED FILE - DO NOT EDIT.
 // Source: contracts/schema/device_cmd.schema.json
-// Regenerate: ./tools/gen_from_schema.sh
+// Regenerate: ./tools/gen_contracts.py
 
 /** Server to kiosk command. The kiosk answers on the event topic; cmdId lets the server correlate the two. */
 export interface DeviceCommand {

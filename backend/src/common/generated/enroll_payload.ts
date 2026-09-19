@@ -1,6 +1,6 @@
 // GENERATED FILE - DO NOT EDIT.
 // Source: contracts/schema/enroll_payload.schema.json
-// Regenerate: ./tools/gen_from_schema.sh
+// Regenerate: ./tools/gen_contracts.py
 
 /** Server to kiosk face template push. Carries the int8 embedding and its dequant scale exactly as they land in the 552-byte record of KEHOACH 6.2.4. */
 export interface EnrollPayload {

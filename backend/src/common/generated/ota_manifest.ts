@@ -1,6 +1,6 @@
 // GENERATED FILE - DO NOT EDIT.
 // Source: contracts/schema/ota_manifest.schema.json
-// Regenerate: ./tools/gen_from_schema.sh
+// Regenerate: ./tools/gen_contracts.py
 
 /** Server to kiosk update offer. Firmware and models roll independently: the models partition is A/B on its own, so a model update never reflashes the app. */
 export interface OtaManifest {

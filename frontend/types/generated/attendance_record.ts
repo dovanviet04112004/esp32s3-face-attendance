@@ -1,6 +1,6 @@
 // GENERATED FILE - DO NOT EDIT.
 // Source: contracts/schema/attendance_record.schema.json
-// Regenerate: ./tools/gen_from_schema.sh
+// Regenerate: ./tools/gen_contracts.py
 
 /** One attendance punch produced by a kiosk. Mirrors the 48-byte on-device record of KEHOACH 6.2.5, widened to wire types. */
 export interface AttendanceRecord {

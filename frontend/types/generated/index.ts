@@ -1,6 +1,6 @@
 // GENERATED FILE - DO NOT EDIT.
 // Source: contracts/schema/
-// Regenerate: ./tools/gen_from_schema.sh
+// Regenerate: ./tools/gen_contracts.py
 
 export * from "./attendance_record";
 export * from "./device_cmd";

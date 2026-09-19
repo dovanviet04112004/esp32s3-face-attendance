@@ -1,6 +1,6 @@
 // GENERATED FILE - DO NOT EDIT.
 // Source: contracts/schema/device_event.schema.json
-// Regenerate: ./tools/gen_from_schema.sh
+// Regenerate: ./tools/gen_contracts.py
 
 /** Anything the kiosk wants the server to know about that is not an attendance punch: spoof attempts, hardware faults, doors opened by hand. */
 export interface DeviceEvent {

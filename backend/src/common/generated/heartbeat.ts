@@ -1,6 +1,6 @@
 // GENERATED FILE - DO NOT EDIT.
 // Source: contracts/schema/heartbeat.schema.json
-// Regenerate: ./tools/gen_from_schema.sh
+// Regenerate: ./tools/gen_contracts.py
 
 /** Periodic liveness and health sample from a kiosk. Published retained at QoS 0, so the last one always describes the current state. */
 export interface Heartbeat {
