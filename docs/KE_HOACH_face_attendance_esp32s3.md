@@ -4063,7 +4063,7 @@ Thứ cần bí mật thì gọi vòng qua Route Handler chạy trên server c�
 deploy/
 ├── docker-compose.yml  ├── docker-compose.prod.yml  ├── .env.example
 ├── traefik/{traefik.yml, dynamic.yml}     # TLS tự động Let's Encrypt
-├── mosquitto/{mosquitto.conf, acl, passwd}
+├── emqx/{emqx.conf, certs/}               # listener MQTTS, auth và ACL gọi về `api`
 └── postgres/init.sql
 ```
 
@@ -4075,11 +4075,24 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | `api` | build từ `backend/` | 3000 (nội bộ) | NestJS |
 | `postgres` | postgres:16-alpine | 5432 (nội bộ) | volume `pgdata` |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
-| `mosquitto` | eclipse-mosquitto:2 | 8883 | user/pass riêng từng device + ACL |
+| `emqx` | emqx/emqx:5 | 8883, 18083 **nội bộ** | auth và ACL hỏi `api` qua HTTP; dashboard không ra ngoài |
 | `minio` (tùy chọn) | minio/minio | 9000 | ảnh chấm công |
 | `backup` | postgres + cron | — | dump hằng đêm |
 
 Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, trỏ `NEXT_PUBLIC_API_URL=https://api.<domain>`.
+
+**Vì sao EMQX chứ không phải mosquitto.** Bảy topic của `contracts/mqtt_topics.yaml` chỉ đòi
+QoS 1, retained và LWT — mosquitto làm đủ, và nó tốn ~5 MB RAM so với ~200 MB của EMQX. Chỗ
+quyết định nằm ở **§7.2**: device token là JWT xoay vòng khi còn 7 ngày, và ACL phải chặn mỗi
+kiosk trong đúng `kiosk/{chính nó}/#`. Với mosquitto, cả hai thứ ấy sống trong file `passwd` và
+`acl`, nên mỗi lần xoay token là backend phải ghi lại file rồi bắt broker nạp lại — một đường
+điều khiển thứ hai nằm ngoài backend, trong khi backend mới là nguồn sự thật của token. EMQX
+hỏi thẳng `api` qua HTTP cho cả auth lẫn ACL, nên xoay token **không đụng tới broker**. Đổi lại
+200 MB RAM trên VPS và một cổng dashboard `18083` **bắt buộc không được ra ngoài** — traefik chỉ
+cho nó qua sau xác thực, hoặc không map ra ngoài Docker network.
+
+Firmware **không biết và không cần biết** đầu kia là broker nào: `net_mqtt` nói MQTT chuẩn qua
+`esp-mqtt`, nên đổi broker là việc của `deploy/` và cert, không sửa một dòng firmware nào.
 
 `ci/contracts.yml` là workflow quan trọng nhất: chạy lại generator từ `contracts/schema/`, fail nếu code sinh ra khác code đã commit. Đây là thứ chặn 3 khối trôi khỏi nhau.
 
@@ -4775,7 +4788,7 @@ mỗi bản ghi. Nghiệm trên board sau khi gạt: Wi-Fi vẫn nối được 
 │ traefik ─┬─► NestJS API ─┬─► PostgreSQL              │
 │          │               ├─► Redis + BullMQ          │
 │          │               └─► MinIO (ảnh)             │
-│          └─► mosquitto (MQTTS, ACL theo deviceId)    │
+│          └─► EMQX (MQTTS, auth+ACL hỏi API)          │
 └──────────────────────┬────────────────────────────────┘
                        │ HTTPS + WebSocket
                        ▼
@@ -4786,9 +4799,10 @@ mỗi bản ghi. Nghiệm trên board sau khi gạt: Wi-Fi vẫn nối được 
 
 | Hạng mục | Cách làm |
 |---|---|
-| Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware, client cert hoặc user/pass riêng từng device + ACL chỉ cho topic `kiosk/{chính nó}/#` |
+| Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware, user/pass riêng từng device; EMQX hỏi `api` qua HTTP để chấm auth và ACL, ACL chỉ mở `kiosk/{chính nó}/#` |
 | Device token | JWT 90 ngày lưu **NVS encrypted**, xoay vòng tự động khi còn 7 ngày |
 | Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke |
+| Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu |
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
 | OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
