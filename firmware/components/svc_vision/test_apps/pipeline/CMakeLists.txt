@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 
 set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../../")
-set(COMPONENTS main common sys_storage ai_engine svc_facedb drv_camera bsp_board svc_vision unity)
+set(COMPONENTS main common sys_storage ai_engine svc_facedb drv_camera bsp_board svc_vision unity
+               esp_driver_usb_serial_jtag)
 
 # The board is one board: test apps take its clock, cache and psram
 # settings from the same file the firmware does.

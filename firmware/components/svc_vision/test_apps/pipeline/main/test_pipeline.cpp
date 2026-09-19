@@ -1,5 +1,7 @@
 #include <string.h>
 
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "unity.h"
 #include "vision.hpp"
 
@@ -14,10 +16,10 @@ constexpr float kSpoofScore = 0.1f;
 constexpr float kMatchScore = 0.83f;
 constexpr float kStrangerScore = 0.31f;
 constexpr uint32_t kEmployee = 42;
-constexpr int kRetryDetects = 6;
+constexpr int kRetryDetects = 3;
 
 uint16_t s_pixels[4];
-const ai_engine_frame_t kFrame = { s_pixels, kFrameW, kFrameH };
+const ai_engine_frame_t kFrame = { s_pixels, kFrameW, kFrameH, true };
 
 class FakeDetector final : public vision::IDetector {
 public:
@@ -98,8 +100,12 @@ public:
 class FakeMatcher final : public vision::IMatcher {
 public:
     esp_err_t answer = ESP_OK;
+    esp_err_t kept_answer = ESP_OK;
     float score = kMatchScore;
     int calls = 0;
+    int keeps = 0;
+    uint32_t kept_id = 0;
+    uint16_t kept_idx = 0;
 
     esp_err_t best(const int8_t *, float, uint32_t *employee_id, float *out, char *name,
                    size_t name_cap) noexcept override
@@ -111,6 +117,15 @@ public:
             name[0] = '\0';
         }
         return answer;
+    }
+
+    esp_err_t keep(const int8_t *, float, uint32_t employee_id, uint16_t template_idx,
+                   const char *) noexcept override
+    {
+        ++keeps;
+        kept_id = employee_id;
+        kept_idx = template_idx;
+        return kept_answer;
     }
 };
 
@@ -181,6 +196,7 @@ TEST_CASE("no face is reported once, and a returning face starts over", "[svc_vi
     rig.step();
     TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
     rig.detector.count = 0;
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
     TEST_ASSERT_EQUAL(SVC_VISION_NO_FACE, rig.step());
     TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
     rig.detector.one(100.0f, 80.0f, kBigFace);
@@ -258,15 +274,54 @@ TEST_CASE("a stranger and an empty table both come back unknown", "[svc_vision]"
     rig.detector.one(100.0f, 80.0f, kBigFace);
     rig.step();
     svc_vision_result_t result = rig.pipeline.step(kFrame);
-    TEST_ASSERT_EQUAL(SVC_VISION_UNKNOWN, result.kind);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, result.kind);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, kStrangerScore, result.match_score);
+    for (int i = 0; i < kRetryDetects - 1; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    }
+    TEST_ASSERT_EQUAL(SVC_VISION_UNKNOWN, rig.step());
 
     Rig empty;
     empty.matcher.answer = ESP_ERR_NOT_FOUND;
     empty.detector.one(100.0f, 80.0f, kBigFace);
     empty.step();
-    result = empty.pipeline.step(kFrame);
-    TEST_ASSERT_EQUAL(SVC_VISION_UNKNOWN, result.kind);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, empty.pipeline.step(kFrame).kind);
+    for (int i = 0; i < kRetryDetects - 1; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, empty.step());
+    }
+    TEST_ASSERT_EQUAL(SVC_VISION_UNKNOWN, empty.step());
+}
+
+// match_min drops 31% of an enrolled person's frames (E8-T12), so a verdict on
+// the first sample calls an employee a stranger and grants them a second later.
+TEST_CASE("a face that falls short once is never called a stranger", "[svc_vision]")
+{
+    Rig rig;
+    rig.matcher.score = kStrangerScore;
+    rig.detector.one(100.0f, 80.0f, kBigFace);
+    rig.step();
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.pipeline.step(kFrame).kind);
+    rig.matcher.score = kMatchScore;
+    for (int i = 0; i < kRetryDetects - 1; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    }
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
+}
+
+// The square is sized by the head and bounded by the short side of the frame, so
+// a person standing off centre trips the geometry gate over and over.
+TEST_CASE("a face that dips out of the square keeps its track and still answers", "[svc_vision]")
+{
+    Rig rig;
+    rig.matcher.score = kStrangerScore;
+    rig.detector.one(100.0f, 150.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    rig.detector.one(100.0f, 180.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_FACE_OUT_OF_FRAME, rig.step());
+    rig.detector.one(100.0f, 150.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    TEST_ASSERT_EQUAL(SVC_VISION_UNKNOWN, rig.step());
 }
 
 TEST_CASE("a larger newcomer waits until the face being served has left", "[svc_vision]")
@@ -325,6 +380,12 @@ TEST_CASE("every face is reported up to the cap and the largest is followed", "[
 
 extern "C" void app_main(void)
 {
+    // The whole suite prints in a few ms, and the console drops whatever will
+    // not fit the 64-byte usb fifo unless a driver stands behind it.
+    usb_serial_jtag_driver_config_t console = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    if (usb_serial_jtag_driver_install(&console) == ESP_OK) {
+        usb_serial_jtag_vfs_use_driver();
+    }
     UNITY_BEGIN();
     unity_run_all_tests();
     UNITY_END();
