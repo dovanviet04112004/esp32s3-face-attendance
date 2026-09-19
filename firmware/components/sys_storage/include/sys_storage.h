@@ -122,6 +122,11 @@ esp_err_t sys_storage_attend_cursor_get(storage_cursor_t *out);
  */
 esp_err_t sys_storage_attend_cursor_set(const storage_cursor_t *cursor);
 
+/** How many records the cursor has not passed yet.
+ *  @ctx task | blocking | takes m_littlefs | one stat per log file, no reads
+ */
+esp_err_t sys_storage_attend_pending(uint32_t *out);
+
 /** Read the record a cursor points at and hand back the cursor after it.
  *  @ctx task | blocking | takes m_littlefs
  *  @param next untouched unless a record is returned

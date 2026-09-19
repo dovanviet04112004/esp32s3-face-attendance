@@ -623,6 +623,35 @@ esp_err_t sys_storage_attend_cursor_get(storage_cursor_t *out)
     return ESP_OK;
 }
 
+esp_err_t sys_storage_attend_pending(uint32_t *out)
+{
+    if (!s_ready || out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    storage_cursor_t at;
+    load_cursor(&at);
+    const uint32_t newest = newest_log_index();
+    char path[PATH_MAX_LEN];
+    uint32_t records = 0;
+    for (uint32_t index = at.file_index; index <= newest; ++index) {
+        log_path_of(index, path, sizeof(path));
+        const long size = file_size(path);
+        if (size < (long)LOG_HEADER_BYTES) {
+            continue;
+        }
+        uint32_t bytes = (uint32_t)size - LOG_HEADER_BYTES;
+        if (index == at.file_index) {
+            const uint32_t passed = at.offset - LOG_HEADER_BYTES;
+            bytes = bytes > passed ? bytes - passed : 0;
+        }
+        records += bytes / LOG_RECORD_BYTES;
+    }
+    give();
+    *out = records;
+    return ESP_OK;
+}
+
 // A file goes only once the cursor sits past it, and only once per session per
 // name, so a cursor moving inside one file costs no lookups (KEHOACH 6.2.6).
 static void drop_synced_logs(uint32_t below)
