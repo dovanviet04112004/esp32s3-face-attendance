@@ -319,6 +319,32 @@ duyệt, rồi mới sửa.
 | E13-T12 | 🔬 **Đo lại `BOUNCE_ROWS` của `drv_lcd` rồi mới chốt.** Hiện 48 dòng × 2 đệm = **61.440 B RAM nội**, khoản lớn thứ hai sau đệm DMA camera. Truy git thấy 48 vào từ E7-T5 (`f405cd1`) như **1/10 khung, chọn tròn, không kèm số đo** — commit ấy chỉ giải thích vì sao cần bounce và vì sao cần hai cái. Kế hoạch §6.4 lại khai 20 dòng suốt từ đầu, tức ngân sách hụt 20 KB so với thực tế cho tới 19/09. Hạ xuống 32 dòng thu về **20.480 B** — đủ cho `ota_task` 8 KB (hiện không vùng nào chứa nổi) cộng biên tử tế cho `sync_task`, thứ đang chỉ dư 244 B. Ràng buộc không được phá: `T_w` 31,7 ms phải lọt trong chu kỳ quét 41,7 ms của 24 Hz, biên ~10 ms; 48→32 dòng đưa số lượt DMA mỗi khung từ 10 lên 15 và ăn vào đúng biên ấy | Bảng `T_w` với fps ở 48/32/20 dòng, cộng một lượt nhìn kính tìm khấc ở từng mức; không mức nào xé hình thì lấy mức nhỏ nhất | E7-T16 |
 | E13-T6 | 🔬 Đo lại toàn bộ lần cuối: arena, latency, RAM đỉnh, dòng, accuracy | `docs/measurements/` đầy đủ cho báo cáo | E13-T2 |
 
+### Firmware dừng ở đâu — chốt 19/09
+
+Phần firmware chạy đủ trên board. Việc còn lại **không chờ thêm code firmware nào**,
+mà chờ đúng một mốc: `E11-T8` dựng xong trên VPS. Đi hết E11 theo thứ tự là kết thúc
+ngay chỗ firmware nối lại, nên không có khoảng chết.
+
+| Mở lại khi có deploy | Vì sao đứng |
+|---|---|
+| E13-T1 🔬 đường tải thật | Mọi nhánh từ chối đã đo; thiếu đúng khúc tải, cần URL HTTPS có CA công khai |
+| E13-T2 🔬 cài thật | Như trên, thêm một ràng buộc riêng: `models.bin` không được đặt ở URL công khai vì weight train từ dataset research-only |
+| E13-T4 ACL theo `deviceId` | Broker đang cho nặc danh vào, ACL mở |
+| E13-T5 xoay vòng device token | Chặn bởi E13-T4 |
+| E13-T7 `net_provision` | Cần `POST /devices/register` của E13-T9 |
+| E13-T8 màn chờ duyệt | Cần luồng duyệt của E13-T7 |
+| E10-T17 vòng đời nhân viên | Giao thức hai đầu, chốt cùng E11-T6 |
+| Năm lệnh `down/cmd` còn từ chối | `SET_CONFIG`, `RELOAD_FACEDB`, `CLEAR_LOGS`, roster `DELETE` và `REPLACE_ALL` |
+
+**Làm được ngay, không chờ ai**: E13-T10 (`device/mqtt_uri` lùi về `Kconfig`),
+E13-T12 (🔬 đo lại `BOUNCE_ROWS`), E10-T8 (soak 24 giờ).
+
+**Hoãn có chủ ý**: E13-T3 Secure Boot là thao tác **một chiều**, board hết nạp lại tự
+do nên cần chủ repo quyết riêng. E13-T11 esp-nn 1.4.0 đã đo và chưa đáng đổi.
+
+**Chờ phần cứng chứ không chờ deploy**: E10-T9 cần đồng hồ đo dòng; bốn producer lỗi
+của E10-T16 cần lỗi thật xảy ra; E13-T6 đo lần cuối phải sau E13-T2.
+
 ---
 
 ## E14 — Báo cáo ĐATN
