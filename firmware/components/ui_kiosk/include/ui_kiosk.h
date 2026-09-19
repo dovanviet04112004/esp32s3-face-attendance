@@ -95,10 +95,40 @@ typedef struct {
 
 #define UI_KIOSK_PEOPLE_ROWS 8
 
+/** One network the radio heard, as the settings screen shows it. */
+typedef struct {
+    char ssid[33];
+    int rssi_dbm;
+    bool open;
+} ui_kiosk_ap_t;
+
+#define UI_KIOSK_WIFI_ROWS 8
+#define UI_KIOSK_WIFI_PASS_CAP 65
+
 /** True when a screen has opened that needs the list refreshed.
  *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
  */
 bool ui_kiosk_take_people_request(void);
+
+/** Whether the wifi screen is asking for a fresh sweep of the channels.
+ *  @ctx any | non-blocking | scanning blocks, so never answer it on ui_task
+ */
+bool ui_kiosk_take_wifi_scan(void);
+
+/** Hand the screen what the sweep heard.
+ *  @ctx any | non-blocking
+ */
+void ui_kiosk_set_networks(const ui_kiosk_ap_t *found, int count);
+
+/** Take the network the operator chose, if they chose one.
+ *  @ctx any | non-blocking | true once per choice
+ */
+bool ui_kiosk_take_wifi_join(char *ssid, size_t ssid_cap, char *pass, size_t pass_cap);
+
+/** Tell the screen how the join went.
+ *  @ctx any | non-blocking
+ */
+void ui_kiosk_wifi_joined(esp_err_t result);
 
 /** Collect the employee the people screen asked to delete.
  *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken

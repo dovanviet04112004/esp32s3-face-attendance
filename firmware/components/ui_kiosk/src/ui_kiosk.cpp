@@ -176,6 +176,7 @@ esp_err_t ui_kiosk_init(void)
     ui::manager().attach(ui::ScreenId::Capture, ui::capture_screen());
     ui::manager().attach(ui::ScreenId::People, ui::people_screen());
     ui::manager().attach(ui::ScreenId::Settings, ui::settings_screen());
+    ui::manager().attach(ui::ScreenId::Wifi, ui::wifi_screen());
     memset(s_slot, 0, sizeof(s_slot));
     memset(&s_seen, 0, sizeof(s_seen));
     s_ready = true;
@@ -309,6 +310,50 @@ void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count)
     ui::people().count = count < UI_KIOSK_PEOPLE_ROWS ? count : UI_KIOSK_PEOPLE_ROWS;
     memcpy(ui::people().row, people, sizeof(ui_kiosk_person_t) * ui::people().count);
     ui::people_delivered();
+    s_dirty = true;
+}
+
+bool ui_kiosk_take_wifi_scan(void)
+{
+    if (!s_ready || !ui::networks().wanted) {
+        return false;
+    }
+    ui::networks().wanted = false;
+    return true;
+}
+
+void ui_kiosk_set_networks(const ui_kiosk_ap_t *found, int count)
+{
+    if (!s_ready) {
+        return;
+    }
+    const int kept = count < UI_KIOSK_WIFI_ROWS ? count : UI_KIOSK_WIFI_ROWS;
+    ui::networks().count = kept > 0 ? kept : 0;
+    if (found != nullptr && kept > 0) {
+        memcpy(ui::networks().row, found, sizeof(ui_kiosk_ap_t) * (size_t)kept);
+    }
+    ui::networks().fresh = true;
+    s_dirty = true;
+}
+
+bool ui_kiosk_take_wifi_join(char *ssid, size_t ssid_cap, char *pass, size_t pass_cap)
+{
+    if (!s_ready || ssid == nullptr || pass == nullptr || !ui::join_request().waiting) {
+        return false;
+    }
+    strlcpy(ssid, ui::join_request().ssid, ssid_cap);
+    strlcpy(pass, ui::join_request().pass, pass_cap);
+    ui::join_request().waiting = false;
+    return true;
+}
+
+void ui_kiosk_wifi_joined(esp_err_t result)
+{
+    if (!s_ready) {
+        return;
+    }
+    ui::join_request().result = result;
+    ui::join_request().answered = true;
     s_dirty = true;
 }
 

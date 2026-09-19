@@ -104,6 +104,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define SYNC_TICK_MS 250
 #define OPEN_DOOR_DEFAULT_MS 3000
 #define REBOOT_DRAIN_MS 400
+#define WIFI_JOIN_WAIT_MS 12000
 #define EVENT_FAULT_GAP_MS 60000
 #define EVENT_PERSON_GAP_MS 2000
 #define NET_TASK_CORE 0
@@ -566,6 +567,32 @@ static void take_roster(const app_wiring_t *wiring)
     ESP_LOGI(TAG, "roster saved, now at version %" PRIu32, roster_version());
 }
 
+// Sweeping the channels blocks for seconds and drops the link while it runs,
+// so it belongs on the lowest-priority task rather than the one that repaints.
+static void take_wifi(void)
+{
+    if (ui_kiosk_take_wifi_scan()) {
+        net_wifi_ap_t heard[UI_KIOSK_WIFI_ROWS];
+        const size_t count = net_wifi_scan(heard, UI_KIOSK_WIFI_ROWS);
+        // Two shapes on purpose: the screen has no business knowing the radio.
+        ui_kiosk_ap_t shown[UI_KIOSK_WIFI_ROWS];
+        for (size_t i = 0; i < count; ++i) {
+            strlcpy(shown[i].ssid, heard[i].ssid, sizeof(shown[i].ssid));
+            shown[i].rssi_dbm = heard[i].rssi_dbm;
+            shown[i].open = heard[i].open;
+        }
+        ui_kiosk_set_networks(shown, (int)count);
+    }
+    char ssid[NET_WIFI_SSID_CAP] = { 0 };
+    char pass[NET_WIFI_PASS_CAP] = { 0 };
+    if (!ui_kiosk_take_wifi_join(ssid, sizeof(ssid), pass, sizeof(pass))) {
+        return;
+    }
+    const esp_err_t joined = net_wifi_join(ssid, pass, WIFI_JOIN_WAIT_MS);
+    ESP_LOGI(TAG, "join %s: %s", ssid, esp_err_to_name(joined));
+    ui_kiosk_wifi_joined(joined);
+}
+
 // A kiosk has something to say at boot while the broker answers seconds later,
 // so an event queues until the link is there to carry it.
 static void take_events(const app_wiring_t *wiring)
@@ -707,6 +734,7 @@ static void sync_task(void *arg)
             // one, since a drain opens the cursor on flash every call.
             nudged = xQueueReceive(wiring->uplink, &nudge, pdMS_TO_TICKS(SYNC_TICK_MS)) == pdTRUE;
         }
+        take_wifi();
         take_commands(wiring, door);
         take_roster(wiring);
         take_events(wiring);

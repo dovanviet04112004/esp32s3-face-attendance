@@ -19,6 +19,7 @@ enum class ScreenId {
     Capture,
     People,
     Settings,
+    Wifi,
     Count,
 };
 
@@ -111,6 +112,27 @@ struct People {
 
 People &people() noexcept;
 
+/** What the wifi screen shows and what it wants, handed down by main. */
+struct Networks {
+    bool wanted;
+    bool fresh;
+    int count;
+    ui_kiosk_ap_t row[UI_KIOSK_WIFI_ROWS];
+};
+
+Networks &networks() noexcept;
+
+/** Where the wifi screen leaves the network the operator picked. */
+struct JoinRequest {
+    bool waiting;
+    bool answered;
+    esp_err_t result;
+    char ssid[33];
+    char pass[UI_KIOSK_WIFI_PASS_CAP];
+};
+
+JoinRequest &join_request() noexcept;
+
 /** Tell the people screen its list has been refreshed, so a row that asked to
  *  go stops saying so whether or not the table let it.
  */
@@ -122,5 +144,6 @@ Screen *enrol_screen() noexcept;
 Screen *capture_screen() noexcept;
 Screen *people_screen() noexcept;
 Screen *settings_screen() noexcept;
+Screen *wifi_screen() noexcept;
 
 }  // namespace ui

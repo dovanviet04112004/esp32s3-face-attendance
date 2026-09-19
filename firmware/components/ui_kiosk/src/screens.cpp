@@ -54,6 +54,8 @@ ScreenManager s_manager;
 EnrolRequest s_request;
 RemoveRequest s_remove;
 People s_people_list;
+Networks s_networks;
+JoinRequest s_join;
 
 void button(Canvas &to, int x, int y, int w, int h, const char *label, uint8_t tone, bool held)
 {
@@ -308,9 +310,12 @@ public:
                 manager().go(ScreenId::People);
                 break;
             case 2:
-                manager().go(ScreenId::Settings);
+                manager().go(ScreenId::Wifi);
                 break;
             case 3:
+                manager().go(ScreenId::Settings);
+                break;
+            case 4:
                 manager().go(ScreenId::Scan);
                 break;
             default:
@@ -331,8 +336,8 @@ public:
     }
 
 private:
-    static constexpr int kRows = 4;
-    static constexpr const char *kLabels[kRows] = { "Thêm người", "Danh sách", "Cài đặt",
+    static constexpr int kRows = 5;
+    static constexpr const char *kLabels[kRows] = { "Thêm người", "Danh sách", "Wi-Fi", "Cài đặt",
                                                     "Đóng" };
 
     static int row_y(int i) noexcept { return kBarH + 60 + i * (kRowH + kRowGap); }
@@ -969,7 +974,248 @@ private:
     uint32_t going_ = 0;
 };
 
+
+class WifiScreen final : public Screen {
+public:
+    bool opaque() const noexcept override { return true; }
+
+    void on_enter() noexcept override
+    {
+        step_ = Step::Looking;
+        networks().wanted = true;
+        networks().fresh = false;
+        typed_[0] = '\0';
+        chosen_ = kNothing;
+        held_ = kNothing;
+        set_ = 0;
+    }
+
+    bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
+    {
+        (void)dt_ms;
+        (void)seen;
+        if (step_ == Step::Looking && networks().fresh) {
+            step_ = Step::Choosing;
+            return true;
+        }
+        if (step_ == Step::Joining && join_request().answered) {
+            join_request().answered = false;
+            step_ = join_request().result == ESP_OK ? Step::Joined : Step::Refused;
+            return true;
+        }
+        return false;
+    }
+
+    bool on_touch(int x, int y, bool down) noexcept override
+    {
+        const int hit = step_ == Step::Typing ? key_at(x, y) : row_at(x, y);
+        if (down) {
+            held_ = hit;
+            return true;
+        }
+        const int fire = held_ == hit ? hit : kNothing;
+        held_ = kNothing;
+        if (fire == kNothing) {
+            return true;
+        }
+        if (fire == kBack) {
+            manager().go(ScreenId::Menu);
+            return true;
+        }
+        return step_ == Step::Typing ? typing(fire) : choosing(fire);
+    }
+
+    void paint(Canvas &to, const Sight &seen) noexcept override
+    {
+        (void)seen;
+        top_bar(to, nullptr);
+        to.text_centred(kBarH + 12, "Wi-Fi", DRV_LCD_INK);
+        switch (step_) {
+        case Step::Looking: to.text_centred(kRowTop, "Đang quét…", DRV_LCD_EDGE); break;
+        case Step::Choosing: paint_list(to); break;
+        case Step::Typing: paint_keys(to); break;
+        case Step::Joining: to.text_centred(kRowTop, "Đang kết nối…", DRV_LCD_EDGE); break;
+        case Step::Joined: to.text_centred(kRowTop, "Đã kết nối", DRV_LCD_ACCENT); break;
+        case Step::Refused: to.text_centred(kRowTop, "Không vào được", DRV_LCD_WARN); break;
+        }
+        if (step_ != Step::Typing) {
+            button(to, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH, "Quay lại", DRV_LCD_INK,
+                   held_ == kBack);
+        }
+    }
+
+private:
+    enum class Step : uint8_t { Looking, Choosing, Typing, Joining, Joined, Refused };
+
+    static constexpr int kNothing = -1;
+    static constexpr int kBack = -2;
+    static constexpr int kRescan = -3;
+    static constexpr int kFootY = APP_LCD_V_RES - kRowH - kPad;
+    static constexpr int kRowTop = kBarH + 60;
+    static constexpr int kRowStep = 36;
+    static constexpr int kCols = 7;
+    static constexpr int kKeys = 28;
+    static constexpr int kKeyW = 40;
+    static constexpr int kKeyH = 40;
+    static constexpr int kKeyGap = 4;
+    static constexpr int kKeyTop = 150;
+    static constexpr int kDel = 100;
+    static constexpr int kShift = 101;
+    static constexpr int kCancel = 102;
+    static constexpr int kJoin = 103;
+    // Three sets of exactly kKeys, because a passphrase is not a name.
+    static constexpr const char *kSets[3] = { "abcdefghijklmnopqrstuvwxyz@.",
+                                              "ABCDEFGHIJKLMNOPQRSTUVWXYZ-_",
+                                              "0123456789!@#$%^&*()-_+=.,?/" };
+
+    static int key_x(int i) noexcept
+    {
+        const int left = (APP_LCD_H_RES - (kCols * kKeyW + (kCols - 1) * kKeyGap)) / 2;
+        return left + (i % kCols) * (kKeyW + kKeyGap);
+    }
+
+    static int key_y(int i) noexcept { return kKeyTop + (i / kCols) * (kKeyH + kKeyGap); }
+
+    static int key_at(int x, int y) noexcept
+    {
+        for (int i = 0; i < kKeys; ++i) {
+            if (inside(x, y, key_x(i), key_y(i), kKeyW, kKeyH)) {
+                return i;
+            }
+        }
+        const int half = (APP_LCD_H_RES - 2 * kPad - kFootGap) / 2;
+        if (inside(x, y, kPad, kFootY - kRowH - 8, half, kRowH)) { return kDel; }
+        if (inside(x, y, kPad + half + kFootGap, kFootY - kRowH - 8, half, kRowH)) { return kShift; }
+        if (inside(x, y, kPad, kFootY, half, kRowH)) { return kCancel; }
+        if (inside(x, y, kPad + half + kFootGap, kFootY, half, kRowH)) { return kJoin; }
+        return kNothing;
+    }
+
+    int row_at(int x, int y) const noexcept
+    {
+        if (inside(x, y, kPad, kFootY, APP_LCD_H_RES - 2 * kPad, kRowH)) {
+            return kBack;
+        }
+        if (step_ != Step::Choosing) {
+            return kNothing;
+        }
+        for (int i = 0; i < networks().count; ++i) {
+            if (inside(x, y, kPad - 6, kRowTop + i * kRowStep - 6, APP_LCD_H_RES - 2 * kPad + 12,
+                       kRowStep)) {
+                return i;
+            }
+        }
+        const int at = kRowTop + networks().count * kRowStep;
+        return inside(x, y, kPad, at, APP_LCD_H_RES - 2 * kPad, kRowH) ? kRescan : kNothing;
+    }
+
+    bool choosing(int fire) noexcept
+    {
+        if (fire == kRescan) {
+            step_ = Step::Looking;
+            networks().fresh = false;
+            networks().wanted = true;
+            return true;
+        }
+        if (fire < 0 || fire >= networks().count) {
+            return true;
+        }
+        chosen_ = fire;
+        typed_[0] = '\0';
+        if (networks().row[fire].open) {
+            ask_join();
+            return true;
+        }
+        step_ = Step::Typing;
+        set_ = 0;
+        return true;
+    }
+
+    bool typing(int fire) noexcept
+    {
+        const size_t at = strlen(typed_);
+        if (fire == kDel) {
+            if (at > 0) { typed_[at - 1] = '\0'; }
+            return true;
+        }
+        if (fire == kShift) {
+            set_ = (set_ + 1) % 3;
+            return true;
+        }
+        if (fire == kCancel) {
+            step_ = Step::Choosing;
+            return true;
+        }
+        if (fire == kJoin) {
+            ask_join();
+            return true;
+        }
+        if (fire >= 0 && fire < kKeys && at + 1 < sizeof(typed_)) {
+            typed_[at] = kSets[set_][fire];
+            typed_[at + 1] = '\0';
+        }
+        return true;
+    }
+
+    void ask_join() noexcept
+    {
+        strlcpy(join_request().ssid, networks().row[chosen_].ssid, sizeof(join_request().ssid));
+        strlcpy(join_request().pass, typed_, sizeof(join_request().pass));
+        join_request().answered = false;
+        join_request().waiting = true;
+        step_ = Step::Joining;
+    }
+
+    void paint_list(Canvas &to) noexcept
+    {
+        if (networks().count == 0) {
+            to.text_centred(kRowTop, "Không thấy mạng nào", DRV_LCD_WARN);
+        }
+        for (int i = 0; i < networks().count; ++i) {
+            const ui_kiosk_ap_t &ap = networks().row[i];
+            const int y = kRowTop + i * kRowStep;
+            if (i == held_) {
+                to.rounded(kPad - 6, y - 6, APP_LCD_H_RES - 2 * kPad + 12, kRowStep, kRadius,
+                           kEdge, DRV_LCD_ACCENT);
+            }
+            to.text(kPad, y, ap.ssid, DRV_LCD_INK);
+            char tail[16];
+            snprintf(tail, sizeof(tail), "%d%s", ap.rssi_dbm, ap.open ? "" : " ·");
+            to.text(APP_LCD_H_RES - kPad - Canvas::text_width(tail), y, tail, DRV_LCD_EDGE);
+        }
+        button(to, kPad, kRowTop + networks().count * kRowStep, APP_LCD_H_RES - 2 * kPad, kRowH,
+               "Quét lại", DRV_LCD_INK, held_ == kRescan);
+    }
+
+    void paint_keys(Canvas &to) noexcept
+    {
+        to.text(kPad, kBarH + 40, networks().row[chosen_].ssid, DRV_LCD_EDGE);
+        to.rounded(kPad, kBarH + 72, APP_LCD_H_RES - 2 * kPad, 44, kRadius, kEdge, DRV_LCD_ACCENT);
+        to.text(kPad + 12, kBarH + 72 + (44 - Canvas::line_height()) / 2,
+                typed_[0] != '\0' ? typed_ : "…", DRV_LCD_INK);
+        for (int i = 0; i < kKeys; ++i) {
+            char label[8] = { 0 };
+            snprintf(label, sizeof(label), "%c", kSets[set_][i]);
+            button(to, key_x(i), key_y(i), kKeyW, kKeyH, label, DRV_LCD_INK, held_ == i);
+        }
+        const int half = (APP_LCD_H_RES - 2 * kPad - kFootGap) / 2;
+        button(to, kPad, kFootY - kRowH - 8, half, kRowH, "Xoá", DRV_LCD_INK, held_ == kDel);
+        button(to, kPad + half + kFootGap, kFootY - kRowH - 8, half, kRowH,
+               set_ == 2 ? "abc" : (set_ == 0 ? "ABC" : "123"), DRV_LCD_INK, held_ == kShift);
+        button(to, kPad, kFootY, half, kRowH, "Huỷ", DRV_LCD_INK, held_ == kCancel);
+        button(to, kPad + half + kFootGap, kFootY, half, kRowH, "Kết nối", DRV_LCD_ACCENT,
+               held_ == kJoin);
+    }
+
+    Step step_ = Step::Looking;
+    int held_ = kNothing;
+    int chosen_ = kNothing;
+    int set_ = 0;
+    char typed_[UI_KIOSK_WIFI_PASS_CAP] = {};
+};
+
 PeopleScreen s_people;
+WifiScreen s_wifi;
 ListScreen s_settings("Cài đặt");
 
 }  // namespace
@@ -988,6 +1234,16 @@ void ScreenManager::go(ScreenId id) noexcept
 ScreenManager &manager() noexcept
 {
     return s_manager;
+}
+
+Networks &networks() noexcept
+{
+    return s_networks;
+}
+
+JoinRequest &join_request() noexcept
+{
+    return s_join;
 }
 
 EnrolRequest &enrol_request() noexcept
@@ -1053,6 +1309,11 @@ Screen *capture_screen() noexcept
 Screen *people_screen() noexcept
 {
     return &s_people;
+}
+
+Screen *wifi_screen() noexcept
+{
+    return &s_wifi;
 }
 
 Screen *settings_screen() noexcept
