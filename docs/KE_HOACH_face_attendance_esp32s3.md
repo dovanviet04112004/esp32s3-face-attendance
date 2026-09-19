@@ -4088,6 +4088,37 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `kiosk/{deviceId}/down/enroll` | server → kiosk | 1 | thêm/xoá embedding |
 | `kiosk/{deviceId}/down/ota` | server → kiosk | 1 | url + sha256 firmware hoặc model |
 
+**`heartbeat` dựng ở tầng nối dây, không ở component nào.** Payload của nó gom số từ khắp nơi:
+`fwVersion` ở `esp_app_format`, `rssiDbm` ở `net_wifi`, `bootCount` với `activeSlot` ở
+`sys_storage`, ba số heap ở bộ cấp phát, `pendingUplinkCount` ở log chấm công. Không component
+nào thấy đủ chừng ấy, và §4.5.4 cấm với ngang hoặc với lên — nên **`main` (L7) dựng payload**,
+đúng chỗ duy nhất nhìn được cả hệ.
+
+**Và `sync_task` mang nó, không đẻ task mới.** Một nhịp 30 giây không đáng một task: task rẻ
+nhất cũng tốn 4–5 KB RAM nội, mà §6.4 đo còn 17.396 B liền. `sync_task` vốn đã thức mỗi 5 s ở
+ưu tiên 2 và đã là đường lên của thiết bị; thêm một phép chia thời gian vào vòng lặp của nó là
+xong. Chu kỳ đọc từ `GEN_TOPIC_HEARTBEAT_INTERVAL_S` do `mqtt_topics.yaml` sinh ra, không gõ
+lại vào code (§4.9).
+
+**QoS 0 nhưng retained — hai lựa chọn ngược nhau và cả hai đều có lý.** QoS 0 vì một nhịp rơi
+sẽ có nhịp khác sau 30 giây: trả giá ack cho một mẫu sắp hết hạn là phí. Retained vì một
+subscriber nối muộn cần biết **trạng thái hiện tại ngay**, chứ không phải đợi tới 30 giây mới
+biết kiosk còn sống. Hai thuộc tính trả lời hai câu hỏi khác nhau.
+
+**`pendingUplinkCount` là trường đáng giá nhất trong đó.** `status` = `online` chỉ nói kiosk
+đang nối; nó không phân biệt được máy đang theo kịp với máy **đang tụt lại**. Một kiosk
+`online` mà tồn 900 bản ghi là máy có vấn đề, và không trường nào khác trong heartbeat nhìn
+thấy điều đó. Đếm bằng **kích thước file**, không đọc bản ghi: log là lưới 48 B cố định sau
+header 32 B và xoay vòng ở 256 KB, nên một `stat` mỗi file là đủ — vài chục lần `stat` mỗi 30
+giây, không phải vài trăm lần đọc.
+
+**`modelVersion` có đường lui.** §6.2.1 giao nó cho `nvs model/version`, mà khoá ấy chỉ được
+đặt khi OTA model A/B (E13-T2) tồn tại. Chưa có thì heartbeat mang **crc32 của header ảnh
+`models_0`** — trường ấy phủ cả ba `sha256` của ba model nên nó đổi khi bất kỳ model nào đổi.
+Một chuỗi rỗng nói dối nhiều hơn một digest: backend cần biết máy đang chạy bộ model nào, và
+câu trả lời ấy luôn có sẵn trên chính thiết bị.
+
+
 **JWT — 2 loại token**
 
 | Loại | Thời hạn | Nơi lưu | Payload |
@@ -4272,7 +4303,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB **ở PSRAM** | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota` | 0 | 3 | 8 KB | khi có lệnh `down/ota` | Tải firmware / models, verify sha256, ghi partition |
-| `sync_task` | `sync_service` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, xoá khỏi hàng đợi |
+| `sync_task` | `svc_sync` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, đẩy con trỏ; và **phát `up/heartbeat` mỗi `GEN_TOPIC_HEARTBEAT_INTERVAL_S`** |
 | `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ 30 s chỉ để biết là không có sóng. **Tạm**: tách thành `mqtt_task` và `sync_task` ở E10-T6 |
 | `wifi` / `lwip` | hệ thống IDF | 0 | 18–23 | — | — | Do IDF quản lý, không tự tạo |
 
