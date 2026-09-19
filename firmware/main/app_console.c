@@ -7,6 +7,7 @@
 #include "app_err.h"
 #include "argtable3/argtable3.h"
 #include "esp_console.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "sys_storage.h"
 
@@ -106,6 +107,19 @@ static int del_cmd(int argc, char **argv)
     return 0;
 }
 
+static int heap_cmd(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    ESP_LOGI(TAG, "internal %u B free, largest %u B; psram %u B free, largest %u B",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+    return 0;
+}
+
 static void register_commands(void)
 {
     s_set.ns = arg_str1(NULL, NULL, "<ns>", "namespace of KEHOACH 6.2.1");
@@ -141,6 +155,13 @@ static void register_commands(void)
         .func = del_cmd,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&del));
+
+    const esp_console_cmd_t heap = {
+        .command = "heap",
+        .help = "Show every internal heap region and its largest free block",
+        .func = heap_cmd,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&heap));
 }
 
 esp_err_t app_console_start(void)

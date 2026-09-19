@@ -208,12 +208,9 @@ esp_err_t net_mqtt_start(const net_mqtt_config_t *config)
                  esp_err_to_name(running),
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-        heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
         return running;
     }
-    ESP_LOGI(TAG, "dialling %s, internal ram %u B free, largest block %u B", uri,
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    ESP_LOGI(TAG, "dialling %s", uri);
     return ESP_OK;
 }
 
