@@ -142,6 +142,48 @@ esp_err_t sys_storage_attend_read(const storage_cursor_t *at, storage_attend_rec
  */
 esp_err_t sys_storage_models_open(const storage_models_header_t **header);
 
+/** Which of the two model partitions this boot mapped (KEHOACH 6.2.2).
+ *  @ctx any | non-blocking | 0 until a staged image has taken over
+ */
+uint8_t sys_storage_models_slot(void);
+
+/** How much a staged image may take, so a caller can refuse one on arithmetic.
+ *  @ctx any | non-blocking | 0 when the spare partition is missing
+ */
+size_t sys_storage_models_slot_bytes(void);
+
+/** Erase the slot this boot is not using and open it for a fresh image.
+ *  @ctx task | blocking, erasing 3 MB takes seconds | one stage at a time
+ *  @ret ESP_OK | ESP_ERR_INVALID_SIZE past the slot | ESP_ERR_INVALID_STATE
+ */
+esp_err_t sys_storage_models_stage_begin(size_t size_bytes);
+
+/** Append to the staged slot.
+ *  @ctx task | blocking | ESP_ERR_INVALID_SIZE past the staged length
+ */
+esp_err_t sys_storage_models_stage_write(const void *data, size_t len);
+
+/** Close the staged slot and read its header back off the flash.
+ *  @ctx task | blocking | the slot stays inactive either way
+ *  @ret ESP_OK | ESP_ERR_INVALID_SIZE when short | ESP_ERR_INVALID_CRC
+ */
+esp_err_t sys_storage_models_stage_end(void);
+
+/** Give up on a stage, leaving the running slot untouched.
+ *  @ctx task | non-blocking
+ */
+esp_err_t sys_storage_models_stage_abort(void);
+
+/** Point the next boot at the staged slot.
+ *  @ctx task | blocking | takes effect on reboot, nothing is remapped here
+ */
+esp_err_t sys_storage_models_activate(void);
+
+/** Put the previous slot back, for a boot that could not load what it found.
+ *  @ctx task | blocking | takes effect on the next boot (KEHOACH 6.2.2)
+ */
+esp_err_t sys_storage_models_revert(void);
+
 /** Find one model inside the mapped partition by its packed name.
  *  @ctx any | non-blocking | valid only after sys_storage_models_open
  *  @param arena_hint_bytes the arena this model runs in, 0 when unmeasured; may be NULL

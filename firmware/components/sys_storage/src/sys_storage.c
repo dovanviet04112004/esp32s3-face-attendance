@@ -25,7 +25,10 @@ static const char *TAG = "sys_storage";
 #define MOUNT_POINT "/lfs"
 #define SCRATCH_DIR MOUNT_POINT "/tmp"
 #define PARTITION_STORAGE "storage"
-#define PARTITION_MODELS "models_0"
+#define PARTITION_MODELS_A "models_0"
+#define PARTITION_MODELS_B "models_1"
+#define NVS_ACTIVE_SLOT "active_slot"
+#define STAGE_CHUNK_BYTES 4096
 #define PARTITION_ASSETS "assets"
 #define ASSETS_POINT "/assets"
 #define NVS_LEGACY_NAMESPACE "kiosk"
@@ -55,9 +58,29 @@ static uint32_t s_boot_count;
 static bool s_ready;
 
 static const storage_models_header_t *s_models;
+static const esp_partition_t *s_stage;    // the slot being written, NULL when idle
+static size_t s_stage_at;
+static size_t s_stage_want;
 static const uint8_t *s_models_base;
 static size_t s_models_bytes;
 static esp_partition_mmap_handle_t s_models_map;
+
+// active_slot names which of the two images this boot trusts; an unwritten key
+// means slot 0, which is where the flashing tool puts the first image.
+static uint8_t active_slot(void)
+{
+    uint32_t slot = 0;
+    if (sys_storage_get_u32(STORAGE_NS_MODEL, NVS_ACTIVE_SLOT, &slot) != ESP_OK) {
+        return 0;
+    }
+    return slot == 1 ? 1 : 0;
+}
+
+static const esp_partition_t *slot_partition(uint8_t slot)
+{
+    return esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY,
+                                    slot == 1 ? PARTITION_MODELS_B : PARTITION_MODELS_A);
+}
 
 static esp_err_t take(void)
 {
@@ -734,8 +757,7 @@ esp_err_t sys_storage_models_open(const storage_models_header_t **header)
         *header = s_models;
         return ESP_OK;
     }
-    const esp_partition_t *part = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, PARTITION_MODELS);
+    const esp_partition_t *part = slot_partition(active_slot());
     if (part == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
@@ -764,8 +786,106 @@ esp_err_t sys_storage_models_open(const storage_models_header_t **header)
     s_models_base = base;
     s_models = candidate;
     *header = s_models;
-    ESP_LOGI(TAG, "models v%" PRIu32 ", %" PRIu32 " entries", s_models->format_ver,
-             s_models->count);
+    ESP_LOGI(TAG, "models v%" PRIu32 ", %" PRIu32 " entries, slot %u", s_models->format_ver,
+             s_models->count, (unsigned)active_slot());
+    return ESP_OK;
+}
+
+uint8_t sys_storage_models_slot(void)
+{
+    return active_slot();
+}
+
+size_t sys_storage_models_slot_bytes(void)
+{
+    const esp_partition_t *spare = slot_partition(active_slot() == 0 ? 1 : 0);
+    return spare != NULL ? spare->size : 0;
+}
+
+esp_err_t sys_storage_models_stage_begin(size_t size_bytes)
+{
+    if (!s_ready || s_stage != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    // Always the slot this boot is not reading: erasing the live one would take
+    // the kiosk down mid-write with nothing to fall back to (KEHOACH 6.2.2).
+    const esp_partition_t *spare = slot_partition(active_slot() == 0 ? 1 : 0);
+    if (spare == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (size_bytes == 0 || size_bytes > spare->size) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    APP_RETURN_ON_ERR(esp_partition_erase_range(spare, 0, spare->size), TAG, "erase spare");
+    s_stage = spare;
+    s_stage_at = 0;
+    s_stage_want = size_bytes;
+    ESP_LOGI(TAG, "staging %u B into %s", (unsigned)size_bytes, spare->label);
+    return ESP_OK;
+}
+
+esp_err_t sys_storage_models_stage_write(const void *data, size_t len)
+{
+    if (s_stage == NULL || data == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_stage_at + len > s_stage_want) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    APP_RETURN_ON_ERR(esp_partition_write(s_stage, s_stage_at, data, len), TAG, "stage write");
+    s_stage_at += len;
+    return ESP_OK;
+}
+
+esp_err_t sys_storage_models_stage_end(void)
+{
+    if (s_stage == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const bool whole = s_stage_at == s_stage_want;
+    storage_models_header_t head;
+    esp_err_t err = whole ? esp_partition_read(s_stage, 0, &head, sizeof(head))
+                          : ESP_ERR_INVALID_SIZE;
+    if (err == ESP_OK) {
+        const uint32_t crc = esp_crc32_le(0, (const uint8_t *)&head,
+                                          offsetof(storage_models_header_t, crc32));
+        // Read back from flash, not from the caller's buffer: what the next boot
+        // mmaps is the only copy that matters.
+        if (head.magic != STORAGE_MODELS_MAGIC || head.format_ver != STORAGE_MODELS_VER ||
+            crc != head.crc32) {
+            ESP_LOGE(TAG, "staged image has no usable header");
+            err = ESP_ERR_INVALID_CRC;
+        }
+    }
+    s_stage = NULL;
+    s_stage_at = 0;
+    s_stage_want = 0;
+    return err;
+}
+
+esp_err_t sys_storage_models_stage_abort(void)
+{
+    s_stage = NULL;
+    s_stage_at = 0;
+    s_stage_want = 0;
+    return ESP_OK;
+}
+
+esp_err_t sys_storage_models_activate(void)
+{
+    const uint8_t next = active_slot() == 0 ? 1 : 0;
+    APP_RETURN_ON_ERR(sys_storage_set_u32(STORAGE_NS_MODEL, NVS_ACTIVE_SLOT, next), TAG, "slot");
+    ESP_LOGW(TAG, "models slot %u takes over at the next boot", (unsigned)next);
+    return ESP_OK;
+}
+
+esp_err_t sys_storage_models_revert(void)
+{
+    const uint8_t bad = active_slot();
+    const uint8_t back = bad == 0 ? 1 : 0;
+    APP_RETURN_ON_ERR(sys_storage_set_u32(STORAGE_NS_MODEL, NVS_ACTIVE_SLOT, back), TAG, "slot");
+    ESP_LOGE(TAG, "models slot %u would not load, falling back to %u", (unsigned)bad,
+             (unsigned)back);
     return ESP_OK;
 }
 
