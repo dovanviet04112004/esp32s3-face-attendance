@@ -1,0 +1,22 @@
+menu "Attendance uplink"
+
+    config SYNC_BATCH_RECORDS
+        int "Records one drain sends before it hands the task back"
+        default 16
+        range 1 256
+        help
+            A drain holds m_littlefs for its whole run, so a boundless batch
+            would block attend_task for as long as the backlog is deep. One
+            batch of 16 at QoS 1 is well under a second on a healthy link,
+            and a caller that sees ESP_ERR_NOT_FINISHED simply calls again.
+
+    config SYNC_ACK_TIMEOUT_MS
+        int "How long a record waits for the broker's puback"
+        default 5000
+        range 500 30000
+        help
+            Longer than a keepalive round trip on a slow link, short enough
+            that a dead broker does not hold the batch for a minute. The
+            cursor does not move until this ack arrives (KEHOACH 6.2.6).
+
+endmenu
