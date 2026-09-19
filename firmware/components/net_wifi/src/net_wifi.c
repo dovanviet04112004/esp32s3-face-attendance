@@ -14,6 +14,9 @@
 
 static const char *TAG = "net_wifi";
 
+#define SCAN_DWELL_MIN_MS 40
+#define SCAN_DWELL_MAX_MS 80
+
 #define NVS_SSID "ssid"
 #define NVS_PASS "pass"
 #define SSID_CAP 33
@@ -143,9 +146,13 @@ size_t net_wifi_scan(net_wifi_ap_t *out, size_t cap)
     if (out == NULL || cap == 0 || s_state == NULL) {
         return 0;
     }
-    // A blocking sweep is what keeps the caller from having to hold state
-    // across an event, and the radio drops the link for its duration.
-    if (esp_wifi_scan_start(NULL, true) != ESP_OK) {
+    // The radio leaves its own channel for the whole sweep, so the per-channel
+    // dwell is capped to stay inside the AP's inactivity window.
+    const wifi_scan_config_t sweep = {
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = { .active = { .min = SCAN_DWELL_MIN_MS, .max = SCAN_DWELL_MAX_MS } },
+    };
+    if (esp_wifi_scan_start(&sweep, true) != ESP_OK) {
         return 0;
     }
     uint16_t heard = (uint16_t)(cap < NET_WIFI_SCAN_CAP ? cap : NET_WIFI_SCAN_CAP);
