@@ -905,13 +905,18 @@ static esp_err_t show(const drv_lcd_overlay_t *overlay, const camera_fb_t *frame
     }
     if (!overlay->opaque) {
         *drawn_serial = 0;
-        return drv_lcd_blit_frame(frame->buf, frame->width, frame->height, overlay);
+        const esp_err_t drawn =
+            drv_lcd_blit_frame(frame->buf, frame->width, frame->height, overlay);
+        ui_kiosk_shown(overlay->serial);
+        return drawn;
     }
     if (overlay->serial == *drawn_serial) {
         return ESP_OK;
     }
+    const esp_err_t drawn = drv_lcd_paint(overlay, ui_kiosk_ground_rgb565());
     *drawn_serial = overlay->serial;
-    return drv_lcd_paint(overlay, ui_kiosk_ground_rgb565());
+    ui_kiosk_shown(overlay->serial);
+    return drawn;
 }
 
 static void cam_task(void *arg)

@@ -210,6 +210,12 @@ bool ui_kiosk_enrol_complete(void);
  */
 uint16_t ui_kiosk_ground_rgb565(void);
 
+/** Say which overlay the panel is now showing.
+ *  @ctx cam_task | non-blocking | a repaint that skips this call stalls the
+ *       screens on purpose: the next map is only a delta against this one
+ */
+void ui_kiosk_shown(uint32_t serial);
+
 /** The cover map to paint over this frame.
  *  @ctx cam_task | non-blocking | read once per frame
  *  @ret NULL until the first screen has been painted

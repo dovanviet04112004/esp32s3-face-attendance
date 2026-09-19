@@ -37,6 +37,8 @@ int s_next;
 int s_glass = -1;                         // slot the panel is showing, -1 for none
 bool s_glass_opaque;
 uint32_t s_serial;
+uint32_t s_sent;                          // serial of the last map published
+std::atomic<uint32_t> s_on_glass{ 0 };    // serial cam_task last put on the panel
 bool s_ready;
 bool s_dirty = true;
 
@@ -91,6 +93,7 @@ void publish(ui::Canvas &from)
     s_shown.store(target, std::memory_order_release);
     s_glass = s_next;
     s_glass_opaque = opaque;
+    s_sent = target->serial;
 }
 
 // Every screen paints the clock, and a repaint needs a reason, so the minute
@@ -253,6 +256,11 @@ void ui_kiosk_tick(uint32_t dt_ms)
     if (!s_dirty) {
         return;
     }
+    // Publishing again over a map the panel never took would drop whatever that
+    // map alone carried, because the next one is only a delta against it.
+    if (s_sent != 0 && s_on_glass.load(std::memory_order_acquire) != s_sent) {
+        return;
+    }
     const drv_lcd_overlay_t *glass = s_shown.load(std::memory_order_acquire);
     const int reading = s_held.load(std::memory_order_acquire);
     int free_slot = -1;
@@ -335,9 +343,13 @@ void ui_kiosk_set_networks(const ui_kiosk_ap_t *found, int count)
         return;
     }
     const int kept = count < UI_KIOSK_WIFI_ROWS ? count : UI_KIOSK_WIFI_ROWS;
-    ui::networks().count = kept > 0 ? kept : 0;
-    if (found != nullptr && kept > 0) {
+    // A sweep that heard nothing while the last one heard plenty is the radio
+    // being busy, not a room that emptied, so the list it replaces stands.
+    if (kept > 0 && found != nullptr) {
+        ui::networks().count = kept;
         memcpy(ui::networks().row, found, sizeof(ui_kiosk_ap_t) * (size_t)kept);
+    } else if (!ui::networks().fresh) {
+        ui::networks().count = 0;
     }
     ui::networks().fresh = true;
     s_dirty = true;
@@ -466,6 +478,11 @@ bool ui_kiosk_take_pending_request(void)
     }
     ui::pending().wanted = false;
     return true;
+}
+
+void ui_kiosk_shown(uint32_t serial)
+{
+    s_on_glass.store(serial, std::memory_order_release);
 }
 
 uint16_t ui_kiosk_ground_rgb565(void)
