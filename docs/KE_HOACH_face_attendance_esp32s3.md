@@ -4157,14 +4157,49 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 |---|---|
 | `User` | id, email, passwordHash, role(`ADMIN`/`HR`/`VIEWER`), refreshTokenHash |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
-| `FaceTemplate` | id, employeeId, embedding(`Bytes` int8[512]), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, tokenHash, fwVersion, modelVersion, lastSeenAt, online |
+| `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, fwVersion, modelVersion, rosterVersion, lastSeenAt, online |
+| `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`REVOKED`), templateIdx, updatedAt |
+| `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
+| `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, direction(`IN`/`OUT`), score, livenessScore, synced, photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
-| `ModelRelease` | version, sha256, sizeBytes, url, runId, rolloutState |
+| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, url, sha256, sizeBytes, minFwVersion, runId, rolloutState |
 | `AuditLog` | actorId, action, target, meta(json), ts |
 
-`AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của kiosk — unique index `(deviceId, localId)`.
+Mười hai bảng. `AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của
+kiosk — unique index `(deviceId, localId)`.
+
+**`Device.status` tồn tại vì §7.3 trả hai mã khác nhau cho cùng một lời gọi.**
+`POST /devices/register` trả 202 khi máy còn `PENDING` và 200 khi đã duyệt, nên trạng thái ấy
+phải là một cột chứ không suy ra từ chỗ `tokenHash` có rỗng hay không: một máy bị thu hồi cũng
+có `tokenHash` rỗng mà ý nghĩa ngược hẳn.
+
+**`Device.rosterVersion` là nửa server của con trỏ hội tụ.** Máy khai số của nó trong mọi
+`heartbeat`; server so với số mình giữ rồi đẩy đúng phần còn thiếu (§7.5). Không lưu thì mỗi
+lần một máy nối lại đều phải đẩy toàn bộ danh sách.
+
+**`DeviceEnrollment` là một dòng cho mỗi cặp `(employeeId, deviceId)`, không phải một cờ trên
+`Employee`.** Một fleet năm kiosk thì "đã thêm" không trả lời được câu "thêm ở đâu", và `ASSIGN`
+của §7.5 cần chỗ đứng trước khi có template: máy hiện danh sách chờ từ chính các dòng `ASSIGNED`.
+
+**`DeviceCommand` giữ lệnh đã gửi để kết quả có chỗ nối vào.** `down/cmd` mang `cmdId`, kết quả
+quay về `up/event` kèm đúng `cmdId`. Không lưu lệnh thì kết quả là một dòng mồ côi, và câu hỏi
+"ai bấm mở cửa lúc chín giờ, lệnh có chạy không" không có nơi nào trả lời.
+
+**`DeviceEvent` tách khỏi `AuditLog` vì hai bảng trả lời hai câu khác nhau.** `AuditLog` ghi việc
+**người** làm nên luôn có `actorId`; `up/event` là việc **máy** gặp — `CAMERA_FAULT`,
+`STORAGE_FAULT` — và không có actor nào. Trộn chung là đẻ ra một cột `actorId` rỗng ở phân nửa
+số dòng, rồi mọi truy vấn phải nhớ lọc nó.
+
+**`Release` mang cả firmware lẫn model vì `ota_manifest.schema.json` có `target` ba giá trị.**
+Một bảng riêng cho model thì bản firmware không có chỗ đứng, trong khi hai thứ đi chung đúng một
+luồng phát hành và đúng một bản kê khai. `minFwVersion` nằm ở đây vì nó là thuộc tính của bản
+phát hành, không phải của thiết bị nhận.
+
+**`FaceTemplate.embedding` là dữ liệu sinh trắc: mã hoá lúc lưu, không bao giờ nằm trong DTO đọc
+thường** (§7.5). `templateIdx` đi kèm vì khoá nghiệp vụ là `(employeeId, templateIdx)`, và
+`enroll_payload.schema.json` đã mang trường ấy sẵn.
 
 **MQTT topic** (định nghĩa gốc ở `contracts/mqtt_topics.yaml`)
 

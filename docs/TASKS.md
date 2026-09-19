@@ -277,7 +277,7 @@ duyệt, rồi mới sửa.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E11-T1 | Khởi tạo NestJS + Prisma schema 8 bảng + migration + seed | `npx prisma migrate dev` chạy sạch | E1-T3 |
+| E11-T1 | Khởi tạo NestJS + Prisma schema 12 bảng (§4.6) + migration + seed | `npx prisma migrate dev` chạy sạch | E1-T3 |
 | E11-T2 | `auth` — JWT access/refresh + RolesGuard + device token | Test e2e đăng nhập và refresh | E11-T1 |
 | E11-T3 | CRUD `employees` `devices` `shifts` | Swagger đầy đủ | E11-T2 |
 | E11-T4 | `mqtt` module — subscribe topic up, publish topic down | Nhận được bản ghi từ EMQX | E11-T1 |
