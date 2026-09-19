@@ -69,6 +69,10 @@ services:
   redis:
     ports: !override []
 
+  minio:
+    # The console is an operator tool, reached over ssh rather than the web.
+    ports: !override []
+
   emqx:
     # Traefik owns 8883 on the host and forwards it whole, so the broker keeps
     # the certificate a flashed kiosk already trusts.

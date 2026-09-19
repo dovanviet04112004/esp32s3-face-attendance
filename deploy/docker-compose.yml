@@ -68,8 +68,31 @@ services:
       timeout: 5s
       retries: 12
 
+  minio:
+    # Released on quay.io; the Docker Hub name refuses an anonymous pull.
+    image: quay.io/minio/minio:latest
+    container_name: kiosk-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      # 9000 is the s3 api the backend speaks; the console is for people, and
+      # its host port moves because 9001 is a popular number.
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9011}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
 volumes:
   emqx-data:
   emqx-log:
   pgdata:
   redisdata:
+  miniodata:
