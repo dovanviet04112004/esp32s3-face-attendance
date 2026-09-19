@@ -2205,7 +2205,7 @@ esp32s3-face-attendance/
 ├── backend/       NestJS
 ├── frontend/      Next.js → Vercel
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
-├── tools/         Script ngang khối: gen_from_schema · check_comments · check_layers
+├── tools/         Script ngang khối: gen_contracts · check_comments · check_layers
 │                   · check_schematic · check_pcb
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
@@ -2265,13 +2265,30 @@ contracts/
 └── README.md
 ```
 
-`tools/gen_from_schema.sh` sinh ra:
+`tools/gen_contracts.py` sinh ra:
 
-| Đích | File sinh ra | Ai dùng |
+| Nguồn | File sinh ra | Ai dùng |
 |---|---|---|
-| TypeScript | `backend/src/common/generated/*.ts` | DTO + validation của NestJS |
-| TypeScript | `frontend/types/generated/*.ts` | React |
-| C header | `firmware/components/common/include/gen_payload.h` | struct + hàm serialize/parse |
+| `contracts/schema/` | `backend/src/common/generated/*.ts` | DTO + validation của NestJS |
+| `contracts/schema/` | `frontend/types/generated/*.ts` | React |
+| `contracts/schema/` | `firmware/components/common/include/gen_payload.h` | struct + hàm serialize/parse |
+| `contracts/mqtt_topics.yaml` | `firmware/components/common/include/gen_topics.h` | `net_mqtt` dựng topic, QoS, retained |
+| `contracts/mqtt_topics.yaml` | `backend/src/common/generated/topics.ts` | module `mqtt` của NestJS (E11-T4) |
+
+**Một điểm vào duy nhất, không phải hai script.** Hai nguồn trong `contracts/` nuôi năm đích,
+nhưng CI chỉ gọi **một** lệnh rồi `git diff --exit-code`. Tách thành hai script là đẻ ra chỗ
+thứ hai có thể quên, mà triệu chứng của việc quên là code sinh ra lệch âm thầm — đúng thứ
+`ci/contracts.yml` sinh ra để chặn. Generator chia module bên trong theo nguồn, không chia theo
+file thực thi.
+
+**Frontend không nhận bảng topic.** Nó lấy dữ liệu qua REST và WebSocket của `api` chứ không nối
+thẳng vào broker (§4.7), nên phát `topics.ts` sang đó là phát một hợp đồng mà không ai bên ấy
+dùng — và một hợp đồng không ai dùng là một hợp đồng không ai phát hiện ra lúc nó sai.
+
+**Topic dựng bằng hàm, không bằng chuỗi định dạng.** `gen_topics.h` phát mỗi topic một hàm nhận
+buffer của người gọi cộng một macro chốt độ dài tối đa, thay vì phát hằng `"kiosk/%s/up/..."`
+để nơi gọi tự `snprintf`. Chuỗi định dạng đẩy việc canh buffer ra từng nơi gọi, nên tràn là lỗi
+lúc chạy; hàm với macro độ dài biến nó thành lỗi lúc biên dịch.
 
 **File sinh ra không được sửa tay.** CI chạy lại generator rồi `git diff --exit-code` — lệch là fail.
 
@@ -2295,13 +2312,13 @@ contracts/
 | Loại | Ví dụ | Git |
 |---|---|---|
 | Source | code, config YAML, schema, file split `.txt`, asset gốc (font, WAV, icon) | ✅ commit |
-| Sinh từ `contracts/schema/` | `*/generated/*`, `gen_payload.h` | ✅ commit — không sửa tay, CI sinh lại rồi `git diff --exit-code` |
+| Sinh từ `contracts/` | `*/generated/*`, `gen_payload.h`, `gen_topics.h` | ✅ commit — không sửa tay, CI sinh lại rồi `git diff --exit-code` |
 | Sinh ra từ source, sinh lại được tại chỗ | `sdkconfig`, `managed_components/`, `build/` | ❌ gitignore |
 | Artifact nặng | checkpoint, `.onnx`, `.tflite`, ảnh dataset | ❌ gitignore — lưu ngoài (NAS/S3), ghi sha256 vào lock file |
 | Dữ liệu thô | dataset tải về | ❌ gitignore — mô tả trong `manifest.yaml` |
 | Cấu hình công cụ AI agent | `CLAUDE.md`, `.claude/`, `.cursor/` | ❌ gitignore — chỉ tồn tại ở máy local |
 
-Bốn thứ **bắt buộc commit** dù là dữ liệu hoặc code sinh tự động: `contracts/golden/` (vài trăm KB), `ml/data/splits/`, `contracts/models.lock.json`, và toàn bộ code sinh từ `contracts/schema/`. Mất chúng là mất khả năng tái lập, hoặc mất chốt chặn giữ ba khối khớp nhau.
+Bốn thứ **bắt buộc commit** dù là dữ liệu hoặc code sinh tự động: `contracts/golden/` (vài trăm KB), `ml/data/splits/`, `contracts/models.lock.json`, và toàn bộ code sinh từ `contracts/`. Mất chúng là mất khả năng tái lập, hoặc mất chốt chặn giữ ba khối khớp nhau.
 
 ---
 
@@ -4118,7 +4135,7 @@ kiosk hỏng cả tuần trông y như chưa bao giờ được lắp. `docker-c
 Firmware **không biết và không cần biết** đầu kia là broker nào: `net_mqtt` nói MQTT chuẩn qua
 `esp-mqtt`, nên đổi broker là việc của `deploy/` và cert, không sửa một dòng firmware nào.
 
-`ci/contracts.yml` là workflow quan trọng nhất: chạy lại generator từ `contracts/schema/`, fail nếu code sinh ra khác code đã commit. Đây là thứ chặn 3 khối trôi khỏi nhau.
+`ci/contracts.yml` là workflow quan trọng nhất: chạy lại generator từ `contracts/`, fail nếu code sinh ra khác code đã commit. Đây là thứ chặn 3 khối trôi khỏi nhau.
 
 ---
 
