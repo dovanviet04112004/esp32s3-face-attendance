@@ -47,12 +47,6 @@ static const char *TAG = "drv_lcd";
 #define FRAME_RATE_REG 0xB1
 #define FRAME_RATE_DIVA 0x81
 #define FRAME_RATE_RTNA 0x1F
-#define VCOM_REG 0xC5
-// Mid-range: the sweep across 0x00-0x3C measures flat on this panel (KEHOACH 2.3A).
-#define VCOM_LEVEL 0x30
-#define INVERSION_REG 0xB4
-// Column inversion, and it does not touch the flicker either (KEHOACH 2.3A).
-#define INVERSION_COLUMN 0x00
 // The module ships one of ili9486, ili9488 or st7796s (KMRTM40045 spec sheet).
 #define CHIP_ID_REG 0xD3
 #define READ_REG_BYTES 4
@@ -136,8 +130,6 @@ static void slow_the_scan(void)
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_UNLOCK_B}, 1);
     esp_lcd_panel_io_tx_param(s_io, FRAME_RATE_REG,
                               (uint8_t[]){FRAME_RATE_DIVA, FRAME_RATE_RTNA}, 2);
-    esp_lcd_panel_io_tx_param(s_io, VCOM_REG, (uint8_t[]){VCOM_LEVEL}, 1);
-    esp_lcd_panel_io_tx_param(s_io, INVERSION_REG, (uint8_t[]){INVERSION_COLUMN}, 1);
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_A}, 1);
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_B}, 1);
 }
