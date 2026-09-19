@@ -292,12 +292,12 @@ duyệt, rồi mới sửa.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E12-T1 | Khởi tạo Next.js + Tailwind + shadcn/ui + `lib/api.ts` có interceptor refresh | Đăng nhập được | E11-T2 |
-| E12-T2 | Layout dashboard + guard route | Chưa đăng nhập bị chặn | E12-T1 |
-| E12-T3 | Trang `employees` + `enrollment` | Thêm/sửa/xoá được | E11-T3 |
-| E12-T4 | Trang `attendance` + bộ lọc + export | Xem được lịch sử | E11-T5 |
-| E12-T5 | Trang `devices` — trạng thái online, OTA | Thấy heartbeat | E11-T6 |
-| E12-T6 | Trang `overview` — biểu đồ + luồng realtime | Sự kiện hiện tức thời | E11-T7 |
+| E12-T1 | Khởi tạo Next.js + Tailwind + shadcn/ui + `lib/api.ts` có interceptor refresh **Viết và chạy 20/09.** Next 16 trên React 19, Tailwind 4, đúng cây §4.7. **Access token giữ trong bộ nhớ, không chỗ nào khác**: `localStorage` là đưa nó cho mọi script trang từng nạp, mà cookie refresh vốn đã sống qua reload. **Một lượt gia hạn phục vụ mọi request cùng rơi vào một lần hết hạn**, nên trang sáu ô chỉ tiêu một refresh token chứ không phải sáu; cờ `retried` chặn vòng lặp khi chính lượt refresh trả 401. Màn đăng nhập **lặp lại đúng một câu của API** cho sai email và sai mật khẩu — nói thêm ở đây là phá đúng lý do API nói ít. Hai thói quen mang từ backend sang đều sai và trình biên dịch bắt được: `moduleResolution: bundler` **không dùng đuôi `.js`** (ngược với ESM của api), và `typedRoutes` từ chối sidebar trỏ tới trang chưa tồn tại. **Đo**: build sản phẩm prerender 9 route; trang login trả form; và đúng lượt trao đổi trình duyệt thật sự làm — preflight **204** kèm origin với `Allow-Credentials: true`, login **200** token 208 ký tự, cookie refresh về **`HttpOnly; Max-Age=604800`**, tức 7 ngày suy từ `JWT_REFRESH_TTL` chứ không gõ lại. 🔬 Chưa bấm thật bằng trình duyệt: máy chưa có bộ headless | Đăng nhập được | E11-T2 |
+| E12-T2 | Layout dashboard + guard route **Viết và chạy 20/09.** Sidebar sáu mục với nút đăng xuất; layout chặn ở tầng client: kho phiên rỗng thì **thử mở lại phiên bằng cookie refresh đúng một lần** rồi mới đẩy về `/login`, vì reload xoá kho chứ không xoá cookie. Vai trò đọc từ token **chỉ để vẽ menu** — quyền thật do API quyết, nên một token bị sửa cùng lắm vẽ thừa một nút rồi ăn 403 | Chưa đăng nhập bị chặn | E12-T1 |
+| E12-T3 | Trang `employees` + `enrollment` **Nửa đọc xong 20/09**: bảng nhân viên lấy từ `/employees`, hiện mã, tên, bộ phận và trạng thái đang làm hay đã nghỉ. 🔬 Còn nửa ghi: thêm, sửa, và màn phân công `ASSIGN` xuống kiosk | Thêm/sửa/xoá được | E11-T3 |
+| E12-T4 | Trang `attendance` + bộ lọc + export **Nửa đọc xong 20/09**: bảng tổng hợp theo người trong năm, kèm **cột đếm bản ghi mà kiosk tự khai giờ chưa đồng bộ NTP** — thứ một bảng công không đánh dấu thì không ai kiểm lại được. 🔬 Còn bộ lọc theo khoảng, theo người, và xuất file | Xem được lịch sử | E11-T5 |
+| E12-T5 | Trang `devices` — trạng thái online, OTA **Nửa đọc xong 20/09**: bảng thiết bị hiện firmware, số hiệu danh sách, trạng thái kết nối, và **nút duyệt máy chỉ hiện với ADMIN** cho máy đang `PENDING`. 🔬 Còn phần OTA: chọn bản phát hành rồi mời xuống máy | Thấy heartbeat | E11-T6 |
+| E12-T6 | Trang `overview` — biểu đồ + luồng realtime **Nửa đọc xong 20/09**: thẻ thiết bị ở `overview`, biểu đồ cột số lượt theo người ở `reports` (Recharts). 🔬 Còn **luồng realtime** — `lib/ws.ts` chưa viết, nên sự kiện từ gateway chưa chảy lên màn | Sự kiện hiện tức thời | E11-T7 |
 | E12-T7 | Deploy Vercel + CORS/cookie cho domain chéo | Chạy trên domain thật | E11-T8 |
 
 ---
