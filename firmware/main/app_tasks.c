@@ -24,6 +24,7 @@
 #include "svc_attendance.h"
 #include "svc_facedb.h"
 #include "svc_sync.h"
+#include "gen_payload.h"
 #include "svc_vision.h"
 #include "sys_storage.h"
 #include "sys_time.h"
@@ -90,6 +91,10 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define SYNC_TASK_STACK_BYTES 5120
 #define SYNC_POLL_MS 5000
 #define SYNC_REPORT_BATCHES 8
+#define HEARTBEAT_PAYLOAD_CAP 384
+#define MODEL_VERSION_CAP 33
+#define NVS_MODEL_VERSION "version"
+#define NVS_ACTIVE_SLOT "active_slot"
 #define NET_TASK_CORE 0
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
@@ -204,6 +209,67 @@ static void net_task(void *arg)
     vTaskDelete(NULL);
 }
 
+// Until OTA writes model/version the image's own digest is the honest answer:
+// the header crc covers all three model hashes (KEHOACH 7.1).
+static void model_version(char *out, size_t cap)
+{
+    if (sys_storage_get_str(STORAGE_NS_MODEL, NVS_MODEL_VERSION, out, cap) == ESP_OK &&
+        out[0] != '\0') {
+        return;
+    }
+    const storage_models_header_t *header = NULL;
+    if (sys_storage_models_open(&header) == ESP_OK && header != NULL) {
+        snprintf(out, cap, "img-%08" PRIx32, header->crc32);
+        return;
+    }
+    strlcpy(out, "none", cap);
+}
+
+static void publish_heartbeat(void)
+{
+    heartbeat_t beat = { 0 };
+    if (sys_storage_device_id(beat.device_id, sizeof(beat.device_id)) != ESP_OK) {
+        return;
+    }
+    model_version(beat.model_version, sizeof(beat.model_version));
+    const esp_app_desc_t *app = esp_app_get_description();
+    strlcpy(beat.fw_version, app != NULL ? app->version : "", sizeof(beat.fw_version));
+    beat.ts = sys_time_now_ms();
+    beat.uptime_seconds = esp_timer_get_time() / 1000000;
+
+    int rssi = 0;
+    beat.has_rssi_dbm = net_wifi_rssi_dbm(&rssi) == ESP_OK;
+    beat.rssi_dbm = rssi;
+    beat.heap_free_bytes = (int64_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    beat.heap_min_free_bytes = (int64_t)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+    beat.psram_free_bytes = (int64_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    beat.has_heap_free_bytes = true;
+    beat.has_heap_min_free_bytes = true;
+    beat.has_psram_free_bytes = true;
+    uint32_t pending = 0;
+    beat.has_pending_uplink_count = sys_storage_attend_pending(&pending) == ESP_OK;
+    beat.pending_uplink_count = pending;
+    uint32_t slot = 0;
+    beat.has_active_slot = sys_storage_get_u32(STORAGE_NS_MODEL, NVS_ACTIVE_SLOT, &slot) == ESP_OK;
+    beat.active_slot = (uint8_t)slot;
+    beat.boot_count = sys_storage_boot_count();
+    beat.has_boot_count = true;
+
+    cJSON *root = heartbeat_to_json(&beat);
+    if (root == NULL) {
+        return;
+    }
+    char payload[HEARTBEAT_PAYLOAD_CAP];
+    const bool printed = cJSON_PrintPreallocated(root, payload, sizeof(payload), 0);
+    cJSON_Delete(root);
+    if (!printed) {
+        ESP_LOGW(TAG, "heartbeat will not fit %d B", HEARTBEAT_PAYLOAD_CAP);
+        return;
+    }
+    // QoS 0 carries no ack, so this returns as soon as the packet is queued.
+    net_mqtt_publish(GEN_TOPIC_HEARTBEAT, payload, strlen(payload), 0);
+}
+
 static void sync_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
@@ -215,6 +281,7 @@ static void sync_task(void *arg)
     }
     esp_err_t said = ESP_FAIL;
     uint32_t batches = 0;
+    int64_t beat_ms = 0;
     bool more = false;
     for (;;) {
         if (!more) {
@@ -222,6 +289,11 @@ static void sync_task(void *arg)
             // q_uplink is a nudge, not where the record lives: flash already
             // holds it, so a timeout here is the retry (KEHOACH 5.3).
             xQueueReceive(wiring->uplink, &nudge, pdMS_TO_TICKS(SYNC_POLL_MS));
+        }
+        const int64_t now_ms = esp_timer_get_time() / 1000;
+        if (net_mqtt_is_up() && now_ms - beat_ms >= GEN_TOPIC_HEARTBEAT_INTERVAL_S * 1000) {
+            beat_ms = now_ms;
+            publish_heartbeat();
         }
         const esp_err_t drained = svc_sync_drain();
         more = drained == ESP_ERR_NOT_FINISHED;
