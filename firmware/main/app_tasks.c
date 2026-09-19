@@ -76,6 +76,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define WIFI_NVS_SSID "ssid"
 #define UI_NVS_BRIGHTNESS "brightness"
 #define UI_NVS_VOLUME "volume"
+#define UI_NVS_LANGUAGE "lang"
 #define TOF_SETTLE_POLLS 5
 #define PRESENCE_HYSTERESIS_MM 60
 #define PRESENCE_AWAY_SAMPLES 5
@@ -1200,11 +1201,11 @@ static void touch_task(void *arg)
 
 // Main is the one layer that can see all of these, and none of them costs a
 // flash read, so the page stays cheap to refresh (KEHOACH 4.5.5h.4).
-static void say(ui_kiosk_fact_t *fact, const char *label, const char *fmt, ...)
+static void say(ui_kiosk_fact_t *fact, ui_kiosk_fact_kind_t kind, const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    strlcpy(fact->label, label, sizeof(fact->label));
+    fact->kind = kind;
     vsnprintf(fact->value, sizeof(fact->value), fmt, args);
     va_end(args);
 }
@@ -1216,14 +1217,14 @@ static void show_facts(void)
     char device_id[STORAGE_DEVICE_ID_CAP] = { 0 };
     sys_storage_device_id(device_id, sizeof(device_id));
     int n = 0;
-    say(&fact[n++], "Phiên bản", "%.20s", app != NULL ? app->version : "?");
-    say(&fact[n++], "Mã máy", "%s", device_id);
-    say(&fact[n++], "Người đã thêm", "%u", (unsigned)svc_facedb_count());
-    say(&fact[n++], "Bản ghi", "%" PRIu32, svc_attendance_records());
-    say(&fact[n++], "Wi-Fi rớt", "%" PRIu32 " lần", net_wifi_disconnects());
-    say(&fact[n++], "Bật máy trong", "%" PRIu32 " cm", atomic_load(&s_gate_mm) / 10);
-    say(&fact[n++], "Mặt nhỏ nhất", "%d px", svc_vision_face_min_px());
-    say(&fact[n++], "RAM nội còn", "%u KB",
+    say(&fact[n++], UI_KIOSK_FACT_VERSION, "%.20s", app != NULL ? app->version : "?");
+    say(&fact[n++], UI_KIOSK_FACT_DEVICE_ID, "%s", device_id);
+    say(&fact[n++], UI_KIOSK_FACT_ENROLLED, "%u", (unsigned)svc_facedb_count());
+    say(&fact[n++], UI_KIOSK_FACT_RECORDS, "%" PRIu32, svc_attendance_records());
+    say(&fact[n++], UI_KIOSK_FACT_WIFI_DROPS, "%" PRIu32, net_wifi_disconnects());
+    say(&fact[n++], UI_KIOSK_FACT_WAKE_WITHIN, "%" PRIu32 " cm", atomic_load(&s_gate_mm) / 10);
+    say(&fact[n++], UI_KIOSK_FACT_MIN_FACE, "%d px", svc_vision_face_min_px());
+    say(&fact[n++], UI_KIOSK_FACT_RAM_FREE, "%u KB",
         (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
     ui_kiosk_set_facts(fact, n);
 }
@@ -1257,6 +1258,15 @@ static void take_levels(void)
         if (settled) {
             sys_storage_set_u32(STORAGE_NS_UI, lamp ? UI_NVS_BRIGHTNESS : UI_NVS_VOLUME, percent);
         }
+    }
+}
+
+// The picker runs on ui_task, so the one NVS write lands off the paint path.
+static void take_language(void)
+{
+    const char *picked = NULL;
+    if (ui_kiosk_take_language(&picked)) {
+        sys_storage_set_str(STORAGE_NS_UI, UI_NVS_LANGUAGE, picked);
     }
 }
 
@@ -1415,6 +1425,7 @@ static void ui_task(void *arg)
             }
         }
         take_levels();
+        take_language();
         if (ui_kiosk_take_people_request()) {
             show_people();
         }

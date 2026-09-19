@@ -48,6 +48,7 @@ static const char *TAG = "app_boot";
 #define NVS_ALLOW_NO_SPOOF "allow_no_spoof"
 #define NVS_BRIGHTNESS "brightness"
 #define NVS_VOLUME "volume"
+#define NVS_LANGUAGE "lang"
 #define PERMILLE 1000.0f
 
 #ifdef CONFIG_ATTEND_SEED_ALLOW_NO_SPOOF
@@ -206,6 +207,10 @@ esp_err_t app_boot(void)
     ESP_ERROR_CHECK(drv_lcd_backlight(lamp));
     ESP_ERROR_CHECK(ui_kiosk_init());
     ui_kiosk_set_levels(lamp, loud);
+    // An absent key reads as an empty string, which the kiosk takes as Vietnamese.
+    char lang[8] = { 0 };
+    sys_storage_get_str(STORAGE_NS_UI, NVS_LANGUAGE, lang, sizeof(lang));
+    ui_kiosk_set_language(lang);
     ESP_ERROR_CHECK(drv_ioexp_init());
     // A silent clock costs the trust of a timestamp, not the kiosk (KEHOACH 6.2.5).
     const esp_err_t clock = sys_time_init(rtc_ntp_marker());

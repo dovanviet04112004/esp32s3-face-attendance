@@ -16,6 +16,13 @@ constexpr int kBackBox = 40;
 constexpr int kBackX = 8;
 constexpr int kKeyRadius = 8;
 constexpr int kLabelFloor = 72;
+constexpr int kSegmentW = 80;
+constexpr int kSegmentH = 32;
+
+int segment_x(int row_x, int row_w)
+{
+    return row_x + row_w - kRowPad - kSegmentW;
+}
 
 int clampi(int v, int low, int high)
 {
@@ -173,6 +180,16 @@ void draw_device(Canvas &to, int x, int y, int size, uint8_t colour)
     stroke(to, bx + w / 3, by + h - 5, bx + w * 2 / 3, by + h - 5, 2, colour);
 }
 
+void draw_globe(Canvas &to, int x, int y, int size, uint8_t colour)
+{
+    const int r = size / 2 - 1;
+    const int cx = x + size / 2;
+    const int cy = y + size / 2;
+    to.ring(cx, cy, r, 2, colour);
+    stroke(to, cx - r, cy, cx + r, cy, 2, colour);
+    to.outline(cx - r / 2, cy - r, r, 2 * r, r / 2, 2, colour);
+}
+
 void draw_brightness(Canvas &to, int x, int y, int size, uint8_t colour)
 {
     const int cx = x + size / 2;
@@ -273,6 +290,7 @@ void icon(Canvas &to, int x, int y, int size, Icon which, uint8_t colour) noexce
         case Icon::Backspace: draw_backspace(to, x, y, size, colour); break;
         case Icon::List: draw_list(to, x, y, size, colour); break;
         case Icon::Device: draw_device(to, x, y, size, colour); break;
+        case Icon::Globe: draw_globe(to, x, y, size, colour); break;
         case Icon::Brightness: draw_brightness(to, x, y, size, colour); break;
         case Icon::Volume: draw_volume(to, x, y, size, colour); break;
         case Icon::Back: draw_back(to, x, y, size, colour); break;
@@ -355,6 +373,38 @@ void slider_row(Canvas &to, int x, int y, int w, int h, Icon which, uint8_t tint
     }
     to.disc(track_x + lit, track_y + kTrackH / 2, kKnobR, DRV_LCD_SURFACE);
     to.ring(track_x + lit, track_y + kTrackH / 2, kKnobR, 2, DRV_LCD_LINE);
+}
+
+void segment_row(Canvas &to, int x, int y, int w, int h, Icon which, uint8_t tint,
+                 const char *label, const char *left, const char *right, bool right_on,
+                 bool pressed) noexcept
+{
+    if (pressed) {
+        to.card(x, y, w, h, theme::kRadiusS, DRV_LCD_SURFACE_HI);
+    }
+    icon_tile(to, x + kRowPad, y + (h - kTile) / 2, kTile, which, tint);
+    const int box = segment_x(x, w);
+    const int top = y + (h - kSegmentH) / 2;
+    const int half = kSegmentW / 2;
+    const int line = Canvas::centre_y(theme::Font::Caption, top, kSegmentH);
+    to.card(box, top, kSegmentW, kSegmentH, kSegmentH / 2, DRV_LCD_LINE);
+    to.card(right_on ? box + half : box, top, half, kSegmentH, kSegmentH / 2, DRV_LCD_ACCENT);
+    to.text(theme::Font::Caption, box, line, half, left,
+            right_on ? DRV_LCD_DIM : DRV_LCD_INK, Align::Centre);
+    to.text(theme::Font::Caption, box + half, line, half, right,
+            right_on ? DRV_LCD_INK : DRV_LCD_DIM, Align::Centre);
+    const int pen = x + kRowPad + kTile + kRowPad;
+    to.text(theme::Font::Body, pen, Canvas::centre_y(theme::Font::Body, y, h),
+            box - pen - theme::kGapM, label, DRV_LCD_INK);
+}
+
+int segment_hit(int x, int row_x, int row_w) noexcept
+{
+    const int box = segment_x(row_x, row_w);
+    if (x < box || x >= box + kSegmentW) {
+        return -1;
+    }
+    return x < box + kSegmentW / 2 ? 0 : 1;
 }
 
 int slider_percent(int x, int row_x, int row_w) noexcept

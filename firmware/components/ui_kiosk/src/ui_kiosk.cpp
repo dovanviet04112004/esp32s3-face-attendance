@@ -9,6 +9,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "screens.hpp"
+#include "strings.hpp"
 #include "theme.hpp"
 
 namespace {
@@ -424,6 +425,22 @@ void ui_kiosk_set_levels(uint8_t brightness, uint8_t volume)
     ui::brightness().percent = brightness;
     ui::volume().percent = volume;
     s_dirty = true;
+}
+
+void ui_kiosk_set_language(const char *code)
+{
+    ui::set_language(ui::language_of(code));
+    s_dirty = true;
+}
+
+bool ui_kiosk_take_language(const char **code)
+{
+    if (!s_ready || code == NULL || !ui::language_changed()) {
+        return false;
+    }
+    *code = ui::language_code(ui::language());
+    ui::language_changed() = false;
+    return true;
 }
 
 bool ui_kiosk_take_level(ui_kiosk_level_t *which, uint8_t *percent, bool *settled)

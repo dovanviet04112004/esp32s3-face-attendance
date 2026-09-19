@@ -82,9 +82,23 @@ void ui_kiosk_enrol_refused(void);
 
 #define UI_KIOSK_FACTS 8
 
-/** One label and its value on the device page (KEHOACH 4.5.5h.4). */
+/** Which reading a device page row carries (KEHOACH 4.5.5h.4). */
+typedef enum {
+    UI_KIOSK_FACT_VERSION = 0,
+    UI_KIOSK_FACT_DEVICE_ID,
+    UI_KIOSK_FACT_ENROLLED,
+    UI_KIOSK_FACT_RECORDS,
+    UI_KIOSK_FACT_WIFI_DROPS,
+    UI_KIOSK_FACT_WAKE_WITHIN,
+    UI_KIOSK_FACT_MIN_FACE,
+    UI_KIOSK_FACT_RAM_FREE,
+} ui_kiosk_fact_kind_t;
+
+/** One reading on the device page; wording the label is the kiosk's job.
+ *  Units that read the same in both languages stay in value (CLAUDE.md 3.1).
+ */
 typedef struct {
-    char label[24];
+    ui_kiosk_fact_kind_t kind;
     char value[32];
 } ui_kiosk_fact_t;
 
@@ -109,6 +123,17 @@ void ui_kiosk_set_net(const ui_kiosk_net_t *net);
  *  @ctx ui_task | non-blocking
  */
 void ui_kiosk_set_levels(uint8_t brightness, uint8_t volume);
+
+/** Seed the language from NVS ui/lang; an absent or unknown code is Vietnamese.
+ *  @ctx task | non-blocking | KEHOACH 6.2.1
+ */
+void ui_kiosk_set_language(const char *code);
+
+/** Take the language the operator picked, so main can store it.
+ *  @ctx ui_task | non-blocking | one shot, and code points at static storage
+ *  @ret false when nobody picked one
+ */
+bool ui_kiosk_take_language(const char **code);
 
 /** Which level a slider is reporting. */
 typedef enum {

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "strings.hpp"
 #include "widgets.hpp"
 
 namespace ui {
@@ -166,6 +167,7 @@ ui_kiosk_net_t s_net;
 Level s_brightness = { 70, false, false };
 Restart s_vision_reset = Restart::No;
 Level s_volume = { 60, false, false };
+bool s_language_changed = false;
 
 bool inside(int x, int y, int bx, int by, int bw, int bh)
 {
@@ -245,15 +247,15 @@ const char *prompt_for(ui_kiosk_stage_t stage)
 {
     switch (stage) {
         case UI_KIOSK_STAGE_TOO_FAR:
-            return "Lại gần hơn";
+            return text(StrId::ScanTooFar);
         case UI_KIOSK_STAGE_TOO_CLOSE:
-            return "Lùi lại một chút";
+            return text(StrId::ScanTooClose);
         case UI_KIOSK_STAGE_WORKING:
-            return "Đang nhận diện…";
+            return text(StrId::ScanWorking);
         case UI_KIOSK_STAGE_SETTLED:
             return nullptr;
         default:
-            return "Đưa khuôn mặt vào khung";
+            return text(StrId::ScanFrame);
     }
 }
 
@@ -261,13 +263,35 @@ const char *refusal(app_ui_verdict_t verdict)
 {
     switch (verdict) {
         case APP_UI_SPOOF:
-            return "Ảnh giả, mời thử lại";
+            return text(StrId::ScanSpoof);
         case APP_UI_UNKNOWN:
-            return "Chưa có trong hệ thống";
+            return text(StrId::ScanUnknown);
         case APP_UI_DENIED:
-            return "Chưa nhận được, thử lại";
+            return text(StrId::ScanDenied);
         default:
             return nullptr;
+    }
+}
+
+const char *fact_label(ui_kiosk_fact_kind_t kind)
+{
+    switch (kind) {
+        case UI_KIOSK_FACT_DEVICE_ID:
+            return text(StrId::DeviceId);
+        case UI_KIOSK_FACT_ENROLLED:
+            return text(StrId::DeviceEnrolled);
+        case UI_KIOSK_FACT_RECORDS:
+            return text(StrId::DeviceRecords);
+        case UI_KIOSK_FACT_WIFI_DROPS:
+            return text(StrId::DeviceWifiDrops);
+        case UI_KIOSK_FACT_WAKE_WITHIN:
+            return text(StrId::DeviceWakeWithin);
+        case UI_KIOSK_FACT_MIN_FACE:
+            return text(StrId::DeviceMinFace);
+        case UI_KIOSK_FACT_RAM_FREE:
+            return text(StrId::DeviceRamFree);
+        default:
+            return text(StrId::DeviceVersion);
     }
 }
 
@@ -411,7 +435,7 @@ public:
                       held_ ? DRV_LCD_ACCENT : DRV_LCD_INK);
 
         uint8_t tone = DRV_LCD_INK;
-        const char *prompt = "Đưa khuôn mặt vào khung";
+        const char *prompt = text(StrId::ScanFrame);
         const char *line = refusal(seen.verdict);
         if (line == nullptr) {
             line = refused_;
@@ -458,7 +482,7 @@ private:
         if (seen.name[0] != '\0') {
             snprintf(who, sizeof(who), "%s", seen.name);
         } else {
-            snprintf(who, sizeof(who), "Mã %u", (unsigned)seen.employee_id);
+            snprintf(who, sizeof(who), text(StrId::ScanCodeFmt), (unsigned)seen.employee_id);
         }
         to.card(theme::kGutter, kBandY, theme::kContentW, kBandH, theme::kRadius,
                 DRV_LCD_SURFACE);
@@ -472,7 +496,7 @@ private:
         const int block = theme::line_height(Font::Strong) + theme::line_height(Font::Caption) + 4;
         to.text(Font::Strong, text_x, cy - block / 2, room, who, DRV_LCD_INK);
         to.text(Font::Caption, text_x, cy - block / 2 + theme::line_height(Font::Strong) + 4, room,
-                "Đã chấm công", DRV_LCD_OK);
+                text(StrId::ScanCheckedIn), DRV_LCD_OK);
     }
 
     bool held_ = false;
@@ -511,24 +535,25 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
-        page(to, "Quản lý", false);
+        page(to, text(StrId::MenuTitle), false);
         widgets::card(to, theme::kGutter, kContentY, theme::kContentW, kRows * kRowH);
         for (int i = 0; i < kRows; ++i) {
             const int y = kContentY + i * kRowH;
             if (i > 0) {
                 widgets::divider(to, theme::kGutter, y, theme::kContentW);
             }
-            const widgets::Row what = { kLabels[i], nullptr,     kIcons[i], kTints[i],
+            const widgets::Row what = { text(kLabels[i]), nullptr, kIcons[i], kTints[i],
                                         DRV_LCD_INK, -1,          widgets::Icon::None };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
         }
-        widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH, "Đóng",
+        widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH, text(StrId::MenuClose),
                         DRV_LCD_SURFACE, DRV_LCD_ACCENT, held_ == kBack);
     }
 
 private:
     static constexpr int kRows = 3;
-    static constexpr const char *kLabels[kRows] = { "Thêm người", "Danh sách", "Cài đặt" };
+    static constexpr StrId kLabels[kRows] = { StrId::MenuEnrol, StrId::MenuPeople,
+                                              StrId::MenuSettings };
     static constexpr widgets::Icon kIcons[kRows] = { widgets::Icon::PersonAdd,
                                                      widgets::Icon::List,
                                                      widgets::Icon::Sliders };
@@ -570,6 +595,9 @@ public:
         }
         if (down) {
             held_ = row_at(x, y);
+            picked_ = held_ == kLanguage
+                          ? widgets::segment_hit(x, theme::kGutter, theme::kContentW)
+                          : kNothing;
             return true;
         }
         const int was = held_;
@@ -582,6 +610,7 @@ public:
             return true;
         }
         switch (was) {
+            case kLanguage: choose_language(x); break;
             case kDevice: manager().go(ScreenId::Device); break;
             case kWifi: manager().go(ScreenId::Wifi); break;
             case kBack: manager().go(ScreenId::Menu); break;
@@ -593,16 +622,21 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
-        page(to, "Cài đặt", true);
-        widgets::card(to, theme::kGutter, device_y(), theme::kContentW, kRowH);
-        const widgets::Row me = { "Thiết bị của tôi", nullptr, widgets::Icon::Device,
+        page(to, text(StrId::MenuSettings), true);
+        widgets::card(to, theme::kGutter, lang_y(), theme::kContentW, 2 * kRowH);
+        widgets::segment_row(to, theme::kGutter, lang_y(), theme::kContentW, kRowH,
+                             widgets::Icon::Globe, DRV_LCD_ACCENT, text(StrId::SettingsLanguage),
+                             language_badge(Lang::Vi), language_badge(Lang::En),
+                             language() == Lang::En, held_ == kLanguage);
+        widgets::divider(to, theme::kGutter, device_y(), theme::kContentW);
+        const widgets::Row me = { text(StrId::SettingsDevice), nullptr, widgets::Icon::Device,
                                   DRV_LCD_DIM,        DRV_LCD_INK, -1, widgets::Icon::None };
         widgets::row(to, theme::kGutter, device_y(), theme::kContentW, kRowH, me,
                      held_ == kDevice);
 
         widgets::card(to, theme::kGutter, wifi_y(), theme::kContentW, kRowH);
         const widgets::Row net = { "Wi-Fi",
-                                   s_net.joined ? s_net.ssid : "Chưa nối",
+                                   s_net.joined ? s_net.ssid : text(StrId::SettingsNotJoined),
                                    widgets::Icon::Wifi,
                                    DRV_LCD_ACCENT,
                                    DRV_LCD_INK,
@@ -611,7 +645,7 @@ public:
         widgets::row(to, theme::kGutter, wifi_y(), theme::kContentW, kRowH, net, held_ == kWifi);
 
         widgets::group_label(to, theme::kGutter, label_y(), theme::kContentW,
-                             "Màn hình và âm thanh");
+                             text(StrId::SettingsDisplay));
         widgets::card(to, theme::kGutter, slider_y(0), theme::kContentW, 2 * kRowH);
         widgets::slider_row(to, theme::kGutter, slider_y(0), theme::kContentW, kRowH,
                             widgets::Icon::Brightness, DRV_LCD_WARN, s_brightness.percent,
@@ -622,14 +656,18 @@ public:
     }
 
 private:
-    static constexpr int kDevice = 0;
-    static constexpr int kWifi = 1;
-    static constexpr int kBright = 2;
-    static constexpr int kVolume = 3;
+    static constexpr int kLanguage = 0;
+    static constexpr int kDevice = 1;
+    static constexpr int kWifi = 2;
+    static constexpr int kBright = 3;
+    static constexpr int kVolume = 4;
 
-    static int device_y() noexcept { return kContentY; }
-    static int wifi_y() noexcept { return device_y() + kRowH + theme::kGapL; }
-    static int label_y() noexcept { return wifi_y() + kRowH + theme::kGapL; }
+    static int lang_y() noexcept { return kContentY; }
+    static int device_y() noexcept { return lang_y() + kRowH; }
+    // Four rows and two sliders leave 25 px under the last card at kGapM, and
+    // none at kGapL, so the cards sit a notch closer here than elsewhere.
+    static int wifi_y() noexcept { return device_y() + kRowH + theme::kGapM; }
+    static int label_y() noexcept { return wifi_y() + kRowH + theme::kGapM; }
     static int slider_y(int i) noexcept
     {
         return label_y() + theme::line_height(Font::Caption) + theme::kGapS + i * kRowH;
@@ -646,6 +684,9 @@ private:
         if (widgets::on_back(x, y)) {
             return kBack;
         }
+        if (inside(x, y, theme::kGutter, lang_y(), theme::kContentW, kRowH)) {
+            return kLanguage;
+        }
         if (inside(x, y, theme::kGutter, device_y(), theme::kContentW, kRowH)) {
             return kDevice;
         }
@@ -653,6 +694,18 @@ private:
             return kWifi;
         }
         return kNothing;
+    }
+
+    // The finger has to land and lift on the same half, the way a button works.
+    void choose_language(int x) noexcept
+    {
+        const int side = widgets::segment_hit(x, theme::kGutter, theme::kContentW);
+        const Lang want = side == 1 ? Lang::En : Lang::Vi;
+        if (side < 0 || side != picked_ || want == language()) {
+            return;
+        }
+        set_language(want);
+        language_changed() = true;
     }
 
     static void drag(int which, int x) noexcept
@@ -672,6 +725,7 @@ private:
     }
 
     int held_ = kNothing;
+    int picked_ = kNothing;               // segment half the finger landed on
 };
 
 class DeviceScreen final : public Screen {
@@ -696,10 +750,10 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
-        page(to, "Thiết bị của tôi", true);
+        page(to, text(StrId::SettingsDevice), true);
         const int rows = list_fits(s_facts.count, kFactH, kListEnd);
         if (rows == 0) {
-            to.text(Font::Body, theme::kGutter, kContentY, theme::kContentW, "Chưa có số liệu",
+            to.text(Font::Body, theme::kGutter, kContentY, theme::kContentW, text(StrId::DeviceNoFacts),
                     DRV_LCD_DIM, Align::Centre);
         } else {
             widgets::card(to, theme::kGutter, kContentY, theme::kContentW, rows * kFactH);
@@ -712,10 +766,11 @@ public:
             }
             const int pen = theme::kGutter + theme::kGapM;
             const int room = theme::kContentW - 2 * theme::kGapM;
-            const int label_w = theme::text_width(Font::Body, s_facts.row[i].label);
+            const char *name = fact_label(s_facts.row[i].kind);
+            const int label_w = theme::text_width(Font::Body, name);
             const int given = room - label_w - theme::kGapM;
-            to.text(Font::Body, pen, Canvas::centre_y(Font::Body, y, kFactH), label_w,
-                    s_facts.row[i].label, DRV_LCD_INK);
+            to.text(Font::Body, pen, Canvas::centre_y(Font::Body, y, kFactH), label_w, name,
+                    DRV_LCD_INK);
             to.text(Font::Caption, pen + room - given, Canvas::centre_y(Font::Caption, y, kFactH),
                     given, s_facts.row[i].value, DRV_LCD_DIM, Align::Right);
         }
@@ -766,7 +821,7 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
-        page(to, "Thêm người", true);
+        page(to, text(StrId::MenuEnrol), true);
         if (typing_) {
             paint_keys(to);
             return;
@@ -858,7 +913,7 @@ private:
         widgets::card(to, theme::kGutter, kContentY, theme::kContentW, (count + 1) * kRowH);
         if (count == 0) {
             to.text(Font::Caption, theme::kGutter, kContentY + (count + 1) * kRowH + theme::kGapM,
-                    theme::kContentW, "Chưa ai được giao từ máy chủ", DRV_LCD_DIM, Align::Centre);
+                    theme::kContentW, text(StrId::EnrolNobody), DRV_LCD_DIM, Align::Centre);
         }
         for (int i = 0; i < count; ++i) {
             const int y = list_y(i);
@@ -876,7 +931,7 @@ private:
         if (count > 0) {
             widgets::divider(to, theme::kGutter, at, theme::kContentW);
         }
-        const widgets::Row self = { "Tự nhập tên", nullptr, widgets::Icon::Keyboard,
+        const widgets::Row self = { text(StrId::EnrolTypeName), nullptr, widgets::Icon::Keyboard,
                                     DRV_LCD_DIM,   DRV_LCD_INK, -1, widgets::Icon::None };
         widgets::row(to, theme::kGutter, at, theme::kContentW, kRowH, self, held_ == kSelf);
     }
@@ -884,9 +939,9 @@ private:
     void paint_keys(Canvas &to) noexcept
     {
         to.text(Font::Caption, theme::kGutter, kFieldHintY, theme::kContentW,
-                "Tên hiện trên máy", DRV_LCD_DIM);
-        field(to, typed_, "Gõ tên không dấu");
-        keyboard(to, layer_, held_, "Tiếp");
+                text(StrId::EnrolNameHint), DRV_LCD_DIM);
+        field(to, typed_, text(StrId::EnrolNameEmpty));
+        keyboard(to, layer_, held_, text(StrId::EnrolNext));
     }
 
     bool typing_ = false;
@@ -1006,17 +1061,17 @@ public:
         // One line, one place. A correction and an instruction are the same kind
         // of sentence, and the guide leaves room for exactly one of them.
         if (failed_) {
-            snprintf(line, sizeof(line), "%s", why_ != nullptr ? why_ : "Chưa lấy được mẫu");
+            snprintf(line, sizeof(line), "%s", why_ != nullptr ? why_ : text(StrId::CaptureNoSample));
             tone = DRV_LCD_WARN;
         } else if (done()) {
-            snprintf(line, sizeof(line), "Đã thêm %s", enrol_request().name);
+            snprintf(line, sizeof(line), text(StrId::CaptureAddedFmt), enrol_request().name);
             tone = DRV_LCD_OK;
         } else if (refusing()) {
-            snprintf(line, sizeof(line), "Ảnh giả · %d/%d", spoofs_, kSpoofGiveUp);
+            snprintf(line, sizeof(line), text(StrId::CaptureSpoofFmt), spoofs_, kSpoofGiveUp);
             tone = DRV_LCD_WARN;
         } else {
             const char *fix = hint(seen);
-            const char *say = fix != nullptr ? fix : (armed_ ? "Giữ nguyên" : kAsk[kept_]);
+            const char *say = fix != nullptr ? fix : (armed_ ? text(StrId::CaptureHold) : text(kAsk[kept_]));
             snprintf(line, sizeof(line), "%s", say);
             tone = fix != nullptr ? DRV_LCD_WARN : DRV_LCD_INK;
         }
@@ -1025,26 +1080,27 @@ public:
         guide(to, done() ? DRV_LCD_OK : DRV_LCD_ACCENT);
         if (done()) {
             widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH,
-                            "Xác nhận", DRV_LCD_OK, DRV_LCD_INK, held_ == 1);
+                            text(StrId::CaptureConfirm), DRV_LCD_OK, DRV_LCD_INK, held_ == 1);
             return;
         }
         if (failed_) {
             const int half = (theme::kContentW - theme::kGapM) / 2;
-            widgets::button(to, theme::kGutter, kFootY, half, theme::kButtonH, "Thử lại",
+            widgets::button(to, theme::kGutter, kFootY, half, theme::kButtonH, text(StrId::CaptureRetry),
                             DRV_LCD_ACCENT, DRV_LCD_INK, held_ == 1);
             widgets::button(to, theme::kGutter + half + theme::kGapM, kFootY, half,
-                            theme::kButtonH, "Thoát", DRV_LCD_SURFACE, DRV_LCD_INK, held_ == 2);
+                            theme::kButtonH, text(StrId::CaptureQuit), DRV_LCD_SURFACE, DRV_LCD_INK,
+                            held_ == 2);
             return;
         }
-        widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH, "Huỷ",
+        widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH, text(StrId::CaptureCancel),
                         DRV_LCD_SURFACE, DRV_LCD_INK, held_ == 1);
     }
 
 private:
     const char *why_ = nullptr;
-    static constexpr const char *kAsk[kSamples] = { "Nhìn thẳng vào camera",
-                                                    "Quay nhẹ sang trái",
-                                                    "Quay nhẹ sang phải" };
+    static constexpr StrId kAsk[kSamples] = { StrId::CaptureLookAhead,
+                                              StrId::CaptureTurnLeft,
+                                              StrId::CaptureTurnRight };
 
     void dots(Canvas &to, int y) const noexcept
     {
@@ -1146,7 +1202,7 @@ private:
         if (kept_ == 0) {
             return nullptr;
         }
-        return wrong_ ? "Quay ngược lại" : nullptr;
+        return wrong_ ? text(StrId::CaptureTurnBack) : nullptr;
     }
 
     // Any turn against the asked side counts, not only a wide one: silence is
@@ -1278,10 +1334,10 @@ public:
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
-        page(to, "Danh sách", true);
+        page(to, text(StrId::MenuPeople), true);
         const int count = shown();
         if (people().count == 0) {
-            to.text(Font::Body, theme::kGutter, kContentY, theme::kContentW, "Chưa có ai",
+            to.text(Font::Body, theme::kGutter, kContentY, theme::kContentW, text(StrId::PeopleEmpty),
                     DRV_LCD_DIM, Align::Centre);
         } else {
             widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * kRowH);
@@ -1295,14 +1351,14 @@ public:
             }
             char tail[24];
             if (leaving) {
-                snprintf(tail, sizeof(tail), "Đang xoá…");
+                snprintf(tail, sizeof(tail), "%s", text(StrId::PeopleRemoving));
             } else if (i == armed_) {
-                snprintf(tail, sizeof(tail), "Chạm để xoá");
+                snprintf(tail, sizeof(tail), "%s", text(StrId::PeopleTapRemove));
             } else {
-                snprintf(tail, sizeof(tail), "%u mẫu", (unsigned)who.templates);
+                snprintf(tail, sizeof(tail), text(StrId::PeopleTemplatesFmt), (unsigned)who.templates);
             }
             const bool hot = i == armed_ || leaving;
-            const widgets::Row what = { who.name[0] != '\0' ? who.name : "Chưa đặt tên",
+            const widgets::Row what = { who.name[0] != '\0' ? who.name : text(StrId::PeopleUnnamed),
                                         tail,
                                         widgets::Icon::Person,
                                         (uint8_t)(hot ? DRV_LCD_DANGER : DRV_LCD_ACCENT),
@@ -1416,7 +1472,7 @@ public:
         page(to, "Wi-Fi", true);
         switch (step_) {
             case Step::Typing: paint_keys(to); break;
-            case Step::Looking: note(to, "Đang quét…", DRV_LCD_DIM); break;
+            case Step::Looking: note(to, text(StrId::WifiScanning), DRV_LCD_DIM); break;
             default: paint_list(to); break;
         }
     }
@@ -1514,7 +1570,7 @@ private:
     {
         const int count = shown();
         if (networks().count == 0) {
-            note(to, "Không thấy mạng nào", DRV_LCD_DIM);
+            note(to, text(StrId::WifiNone), DRV_LCD_DIM);
             return;
         }
         widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * kRowH);
@@ -1526,10 +1582,11 @@ private:
             }
             const bool here = s_net.joined && strcmp(ap.ssid, s_net.ssid) == 0;
             const char *state =
-                i == busy_ ? "Đang nối…"
-                           : (i == failed_ ? "Sai mật khẩu"
-                                           : (here ? "Đã nối"
-                                                   : (ap.saved ? "Đã lưu" : nullptr)));
+                i == busy_ ? text(StrId::WifiJoining)
+                           : (i == failed_ ? text(StrId::WifiWrongPass)
+                                           : (here ? text(StrId::WifiJoined)
+                                                   : (ap.saved ? text(StrId::WifiSaved)
+                                                               : nullptr)));
             const widgets::Row what = { ap.ssid,
                                         state,
                                         widgets::Icon::None,
@@ -1550,8 +1607,8 @@ private:
     {
         to.text(Font::Caption, theme::kGutter, kFieldHintY, theme::kContentW,
                 networks().row[chosen_].ssid, DRV_LCD_DIM);
-        field(to, typed_, "Mật khẩu");
-        keyboard(to, set_, held_, "Nối");
+        field(to, typed_, text(StrId::WifiPassword));
+        keyboard(to, set_, held_, text(StrId::WifiJoin));
     }
 
     Step step_ = Step::Looking;
@@ -1633,6 +1690,11 @@ Level &brightness() noexcept
 Level &volume() noexcept
 {
     return s_volume;
+}
+
+bool &language_changed() noexcept
+{
+    return s_language_changed;
 }
 
 Pending &pending() noexcept

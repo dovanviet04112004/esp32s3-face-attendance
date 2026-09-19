@@ -18,6 +18,7 @@ enum class Icon : uint8_t {
     PersonAdd,
     List,
     Device,
+    Globe,
     Brightness,
     Volume,
     Keyboard,
@@ -66,6 +67,18 @@ void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) 
 /** A row whose right half is a track the finger drags. */
 void slider_row(Canvas &to, int x, int y, int w, int h, Icon which, uint8_t tint, int percent,
                 uint8_t colour) noexcept;
+
+/** A row carrying a two-position switch, each side holding a short code.
+ *  @ctx ui_task | non-blocking | right_on picks which side is lit
+ */
+void segment_row(Canvas &to, int x, int y, int w, int h, Icon which, uint8_t tint,
+                 const char *label, const char *left, const char *right, bool right_on,
+                 bool pressed) noexcept;
+
+/** Which side of a segment row a touch chose: 0 left, 1 right, below 0 neither.
+ *  @ctx ui_task | non-blocking | the caller has already placed the touch in the row
+ */
+int segment_hit(int x, int row_x, int row_w) noexcept;
 
 /** Where a touch inside a slider row lands, as a percentage. */
 int slider_percent(int x, int row_x, int row_w) noexcept;
