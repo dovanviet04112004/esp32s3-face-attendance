@@ -86,7 +86,19 @@
     "from": "From",
     "to": "To",
     "rangeEmpty": "Nobody checked in during this range",
-    "badRange": "The start date has to come before the end date"
+    "badRange": "The start date has to come before the end date",
+    "historyTitle": "Punch history",
+    "at": "When",
+    "direction": "Direction",
+    "deviceCol": "Kiosk",
+    "score": "Match",
+    "flags": "Flags",
+    "flagDoor": "door opened",
+    "flagOffline": "offline",
+    "flagClock": "clock off",
+    "historyEmpty": "This person has no punches yet",
+    "viewHistory": "History",
+    "ofPunches": "{count} punches"
   },
   "devices": {
     "title": "Devices",

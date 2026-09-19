@@ -1,8 +1,11 @@
 import { Injectable, Logger } from "@nestjs/common";
+import type { Prisma, AttendanceRecord as Punch } from "@prisma/client";
 
+import type { Page } from "../../common/dto/pagination.dto.js";
 import type { AttendanceRecord } from "../../common/generated/attendance_record.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { DevicesService } from "../devices/devices.service.js";
+import type { ListAttendanceDto } from "./dto/attendance.dto.js";
 
 const FOREIGN_KEY_VIOLATION = "P2003";
 
@@ -17,6 +20,35 @@ export class AttendanceService {
     private readonly db: PrismaService,
     private readonly devices: DevicesService,
   ) {}
+
+  /** One page of punches, newest first, narrowed by the filters the caller sends. */
+  async list(query: ListAttendanceDto): Promise<Page<Punch>> {
+    const where: Prisma.AttendanceRecordWhereInput = {};
+    if (query.employeeId !== undefined) {
+      where.employeeId = query.employeeId;
+    }
+    if (query.deviceId !== undefined) {
+      where.deviceId = query.deviceId;
+    }
+    if (query.from !== undefined || query.to !== undefined) {
+      where.ts = {
+        ...(query.from !== undefined ? { gte: new Date(query.from) } : {}),
+        ...(query.to !== undefined ? { lt: new Date(query.to) } : {}),
+      };
+    }
+    // Both halves of one transaction so the pager's total cannot describe a
+    // different set of rows than the page above it.
+    const [rows, total] = await this.db.$transaction([
+      this.db.attendanceRecord.findMany({
+        where,
+        orderBy: { ts: "desc" },
+        skip: query.skip,
+        take: query.take,
+      }),
+      this.db.attendanceRecord.count({ where }),
+    ]);
+    return { rows, total };
+  }
 
   /** Store one punch, or recognise it as one already held. */
   async record(punch: AttendanceRecord, receivedAt: Date): Promise<PunchOutcome> {

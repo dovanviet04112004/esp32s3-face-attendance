@@ -86,7 +86,19 @@
     "from": "Từ ngày",
     "to": "Đến ngày",
     "rangeEmpty": "Chưa có lượt chấm công nào trong khoảng này",
-    "badRange": "Ngày bắt đầu phải trước ngày kết thúc"
+    "badRange": "Ngày bắt đầu phải trước ngày kết thúc",
+    "historyTitle": "Lịch sử chấm công",
+    "at": "Thời điểm",
+    "direction": "Chiều",
+    "deviceCol": "Máy",
+    "score": "Khớp",
+    "flags": "Dấu",
+    "flagDoor": "mở cửa",
+    "flagOffline": "ngoại tuyến",
+    "flagClock": "giờ lệch",
+    "historyEmpty": "Người này chưa có lượt chấm công nào",
+    "viewHistory": "Lịch sử",
+    "ofPunches": "{count} lượt"
   },
   "devices": {
     "title": "Thiết bị",

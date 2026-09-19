@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 
 interface Tally {
@@ -77,7 +78,17 @@ export default function AttendancePage() {
   }
 
   const columns: Column<Tally>[] = [
-    { header: t("employee"), cell: (row) => row.fullName },
+    {
+      header: t("employee"),
+      cell: (row) => (
+        <Link
+          href={`/attendance/${row.employeeId}`}
+          className="text-(--color-accent) hover:underline"
+        >
+          {row.fullName}
+        </Link>
+      ),
+    },
     { header: t("punches"), cell: (row) => row.punches, numeric: true },
     { header: t("firstAt"), cell: (row) => clock(row.firstAt) },
     { header: t("lastAt"), cell: (row) => clock(row.lastAt) },
