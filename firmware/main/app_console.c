@@ -12,7 +12,10 @@
 
 static const char *TAG = "app_console";
 
-#define VALUE_CAP 192
+// A 90-day device JWT is the longest value KEHOACH 6.2.1 stores.
+#define VALUE_CAP 1024
+#define CMDLINE_CAP (VALUE_CAP + 128)
+#define REPL_STACK_BYTES 8192
 #define PROMPT "kiosk> "
 
 static struct {
@@ -28,18 +31,29 @@ static struct {
     struct arg_end *end;
 } s_get;
 
+static struct {
+    struct arg_str *ns;
+    struct arg_str *key;
+    struct arg_end *end;
+} s_del;
+
 static int set_cmd(int argc, char **argv)
 {
     if (arg_parse(argc, argv, (void **)&s_set) != 0) {
         arg_print_errors(stderr, s_set.end, argv[0]);
         return 1;
     }
-    const esp_err_t err =
-        sys_storage_set_str(s_set.ns->sval[0], s_set.key->sval[0], s_set.value->sval[0]);
-    // The value is echoed back as a length so a password never reaches the log.
-    ESP_LOGI(TAG, "set %s/%s to %u chars: %s", s_set.ns->sval[0], s_set.key->sval[0],
-             (unsigned)strlen(s_set.value->sval[0]), esp_err_to_name(err));
-    return err == ESP_OK ? 0 : 1;
+    const char *ns = s_set.ns->sval[0];
+    const char *key = s_set.key->sval[0];
+    const unsigned len = (unsigned)strlen(s_set.value->sval[0]);
+    const esp_err_t err = sys_storage_set_str(ns, key, s_set.value->sval[0]);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "set %s/%s: %s", ns, key, esp_err_to_name(err));
+        return 1;
+    }
+    // A length rather than the value keeps a typed password out of the log.
+    ESP_LOGI(TAG, "set %s/%s to %u chars", ns, key, len);
+    return 0;
 }
 
 // The secrets of KEHOACH 6.2.1, which read back as a length and never as a value.
@@ -75,6 +89,23 @@ static int get_cmd(int argc, char **argv)
     return 0;
 }
 
+static int del_cmd(int argc, char **argv)
+{
+    if (arg_parse(argc, argv, (void **)&s_del) != 0) {
+        arg_print_errors(stderr, s_del.end, argv[0]);
+        return 1;
+    }
+    const char *ns = s_del.ns->sval[0];
+    const char *key = s_del.key->sval[0];
+    const esp_err_t err = sys_storage_erase_key(ns, key);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "del %s/%s: %s", ns, key, esp_err_to_name(err));
+        return 1;
+    }
+    ESP_LOGI(TAG, "del %s/%s", ns, key);
+    return 0;
+}
+
 static void register_commands(void)
 {
     s_set.ns = arg_str1(NULL, NULL, "<ns>", "namespace of KEHOACH 6.2.1");
@@ -99,6 +130,17 @@ static void register_commands(void)
         .func = get_cmd,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&get));
+
+    s_del.ns = arg_str1(NULL, NULL, "<ns>", "namespace of KEHOACH 6.2.1");
+    s_del.key = arg_str1(NULL, NULL, "<key>", "key inside that namespace");
+    s_del.end = arg_end(2);
+    const esp_console_cmd_t del = {
+        .command = "del",
+        .help = "Drop one NVS key so it reads as absent",
+        .argtable = &s_del,
+        .func = del_cmd,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&del));
 }
 
 esp_err_t app_console_start(void)
@@ -106,7 +148,8 @@ esp_err_t app_console_start(void)
     esp_console_repl_t *repl = NULL;
     esp_console_repl_config_t config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
     config.prompt = PROMPT;
-    config.max_cmdline_length = VALUE_CAP + VALUE_CAP;
+    config.max_cmdline_length = CMDLINE_CAP;
+    config.task_stack_size = REPL_STACK_BYTES;
     // Leaving history unsaved is what keeps a typed password off the flash.
     config.history_save_path = NULL;
 

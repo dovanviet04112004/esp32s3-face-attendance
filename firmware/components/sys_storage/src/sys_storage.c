@@ -268,6 +268,24 @@ esp_err_t sys_storage_set_str(const char *ns, const char *key, const char *value
     return err;
 }
 
+esp_err_t sys_storage_erase_key(const char *ns, const char *key)
+{
+    if (!s_ready || ns == NULL || key == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    nvs_handle_t handle;
+    esp_err_t err = namespace_handle(ns, &handle);
+    if (err == ESP_OK) {
+        err = nvs_erase_key(handle, key);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
+    give();
+    return err;
+}
+
 esp_err_t sys_storage_set_u32(const char *ns, const char *key, uint32_t value)
 {
     if (!s_ready || ns == NULL || key == NULL) {

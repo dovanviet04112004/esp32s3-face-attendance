@@ -53,6 +53,12 @@ esp_err_t sys_storage_get_str(const char *ns, const char *key, char *out, size_t
  */
 esp_err_t sys_storage_set_str(const char *ns, const char *key, const char *value);
 
+/** Drop one key so it reads as absent rather than as an empty value.
+ *  @ctx task | blocking | takes m_littlefs
+ *  @ret ESP_OK | ESP_ERR_NVS_NOT_FOUND when no such key exists
+ */
+esp_err_t sys_storage_erase_key(const char *ns, const char *key);
+
 /** How many times this device has booted, counted up once per init.
  *  @ctx any | non-blocking | the high half of every attendance local_id
  */
