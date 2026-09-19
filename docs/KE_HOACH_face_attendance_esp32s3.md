@@ -5183,7 +5183,14 @@ thiết bị.** Thiết bị khai tên nào cũng được, nhưng nó chỉ n�
 vậy không thêm phép kiểm nào trong firmware: nó sẽ là code phòng thủ không phòng được gì.
 
 Khi E13-T4 chuyển sang backend `http`, hai vai này thành hai câu trả lời của `api` thay vì hai
-khối trong file — hình dạng quyền giữ nguyên, chỉ nơi tra cứu đổi. `net_mqtt` gửi đúng một bộ `deviceId` cộng token cộng CA trong cả hai trường
+khối trong file — hình dạng quyền giữ nguyên, chỉ nơi tra cứu đổi.
+
+**`deploy/watch.sh` là vai dịch vụ ấy dùng bằng tay.** Nó đăng nhập `svc-ops` với
+`EMQX_OPS_PASSWORD` trong `deploy/.env` rồi nghe `kiosk/+/up/#`. Đường thay thế — bật
+`emqx ctl trace` theo client — **chết cùng container**: một lần `docker compose up -d
+--force-recreate` để đổi ACL là trace biến mất mà không báo gì, và người đang `tail -f` chỉ thấy
+một file đứng im. Tài khoản thì nằm trong `built_in_database` trên volume `emqx-data`, nên nó
+sống qua restart. `net_mqtt` gửi đúng một bộ `deviceId` cộng token cộng CA trong cả hai trường
 hợp, nên nó viết một lần và không sửa lại — đó là lý do dựng TLS với xác thực ngay từ đầu thay
 vì chạy nặc danh rồi quay lại.
 
