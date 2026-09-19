@@ -4363,6 +4363,24 @@ kiosk hỏng cả tuần trông y như chưa bao giờ được lắp. `docker-c
 Firmware **không biết và không cần biết** đầu kia là broker nào: `net_mqtt` nói MQTT chuẩn qua
 `esp-mqtt`, nên đổi broker là việc của `deploy/` và cert, không sửa một dòng firmware nào.
 
+**Broker gọi bằng tên, không bao giờ bằng IP.** Một địa chỉ `192.168.x.x` chỉ định tuyến được
+trong đúng một LAN, nên kiosk cắm IP vào `device/mqtt_uri` là kiosk chết ngay khi ai đó đổi
+router — mà §7.6 vừa cho người vận hành đổi Wi-Fi ngay trên màn hình. Tên còn giữ cho **TLS**
+đúng nghĩa: `esp-tls` đối chiếu host trong URI với SAN của chứng thư, và đó là thứ chặn kiosk
+bị bẻ sang broker giả, nên tắt phép kiểm ấy cho tiện là bỏ luôn lớp bảo vệ.
+
+**Ba thứ bất biến, mọi thứ còn lại thay được.** CA nằm trong ảnh firmware (`broker_ca.crt`, hạn
+10 năm), **tên** broker, và `device/mqtt_uri`. Chứng thư máy chủ do chính CA ấy ký và sống
+ngắn hơn nhiều; dời broker sang VPS khác, đổi IP, cấp lại sau khi hết hạn — tất cả chỉ là ký
+lại một chứng thư và sửa một bản ghi DNS. **Không con kiosk nào phải nạp lại.** Điều ngược lại
+mới đắt: sinh CA mới là phải nạp lại toàn bộ đội máy, nên `gen_certs.sh` **dùng lại CA sẵn có**
+và chỉ tạo CA khi chưa có cái nào.
+
+`gen_certs.sh` nhận danh sách tên và IP làm tham số, đưa hết vào SAN. Một chứng thư phủ cả tên
+dùng sau này lẫn IP dùng ở bàn thí nghiệm thì không phải cấp lại lúc chuyển sang VPS — chỉ đổi
+`mqtt_uri` sang tên, còn chứng thư đã khai sẵn tên ấy từ đầu. Khoá riêng của cả CA lẫn máy chủ
+không rời `deploy/emqx/certs/`, và `.gitignore` chặn cả thư mục.
+
 `ci/contracts.yml` là workflow quan trọng nhất: chạy lại generator từ `contracts/`, fail nếu code sinh ra khác code đã commit. Đây là thứ chặn 3 khối trôi khỏi nhau.
 
 ---
