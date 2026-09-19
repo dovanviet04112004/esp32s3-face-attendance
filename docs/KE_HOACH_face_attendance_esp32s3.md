@@ -4405,7 +4405,7 @@ frontend/
 │           ├── devices/{page.tsx, [id]/page.tsx}      # online, OTA, log
 │           ├── shifts/page.tsx  ├── reports/page.tsx  ├── settings/page.tsx
 │           │                                          # ── §9 quản trị nhân sự ──
-│           ├── me/{page.tsx, attendance/page.tsx, leave/page.tsx, payslips/page.tsx}
+│           ├── me/{page.tsx, attendance/page.tsx, requests/page.tsx, payslips/page.tsx}
 │           ├── approvals/page.tsx                     # hộp chờ duyệt của MANAGER
 │           ├── org/{page.tsx, departments/page.tsx}   # cây tổ chức
 │           ├── leave/{page.tsx, [id]/page.tsx}        # HR nhìn toàn bộ đơn
@@ -4418,13 +4418,24 @@ frontend/
 │   ├── navigation.ts                 # Link và useRouter có mang locale
 │   └── request.ts                    # nạp catalogue cho phía server
 ├── public/{favicon.ico, logo.svg}
-├── components/{ui/, tables/, forms/}
+├── components/
+│   ├── ui/                           # primitive: button, input, select, checkbox, sheet,
+│   │                                 #   skeleton, empty, money, theme-toggle
+│   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx}   # ★ rộng thì thanh bên, hẹp thì tab đáy
+│   ├── tables/{data-table.tsx, card-list.tsx}        # ★ một định nghĩa cột, hai hình thức
+│   ├── forms/employee-form.tsx
+│   ├── requests/{request-card.tsx, request-form.tsx}
+│   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
+│   └── payroll/{payslip-view.tsx, run-progress.tsx}
 ├── lib/
 │   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.9)
 │   ├── api.ts                        # axios + interceptor tự refresh khi 401
 │   ├── ws.ts                         # socket.io /feed, và xoá cache query theo tin
 │   ├── auth.ts                       # kho phiên zustand + đọc vai từ token
-│   └── cn.ts                         # gộp class Tailwind, lớp sau thắng lớp trước
+│   ├── cn.ts                         # gộp class Tailwind, lớp sau thắng lớp trước
+│   ├── nav.ts                        # ★ điều hướng theo vai; khoá ràng kiểu vào vi.json
+│   ├── theme.ts                      # ★ sáng/tối: mặc định theo hệ điều hành, nhớ lựa chọn
+│   └── format.ts                     # ★ tiền, giờ công, ngày — số nào cũng kèm đơn vị
 ├── types/
 │   ├── generated/                    # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
 │   └── messages.d.ts                 # ★ khai Messages = typeof vi.json, chốt en.json đủ khoá
@@ -4433,6 +4444,30 @@ frontend/
 ├── middleware.ts                     # `/` → `/vi`, và chặn route không có locale
 └── next.config.ts
 ```
+
+**`components/` chia theo miền nghiệp vụ, không chia theo hình dạng.** Một thư mục `cards/` gom
+mọi thứ có viền bo góc lại với nhau chỉ nói được rằng chúng trông giống nhau, và ngày thẻ đơn
+từ cần thêm nút duyệt thì người sửa phải đọc cả thẻ thiết bị lẫn thẻ nhân viên để biết mình có
+làm vỡ cái nào không. `requests/`, `payroll/`, `search/` đứng riêng vì chúng đổi cùng nhịp với
+đúng một module backend; `ui/` là ngoại lệ duy nhất được chia theo hình dạng, vì primitive
+không thuộc miền nào.
+
+**Một định nghĩa cột, hai hình thức hiển thị.** `tables/data-table.tsx` và `tables/card-list.tsx`
+nhận **cùng một mảng cột**: bảng vẽ chúng thành hàng, danh sách thẻ vẽ ba cột đầu thành một
+thẻ và giấu phần còn lại sau một lần chạm (§9.21.1). Viết hai bộ cột riêng cho hai bề ngang là
+cách chắc chắn để tháng sau cột *Đi muộn* có trên máy tính mà không có trên điện thoại — thứ
+người dùng đọc là **thiếu số liệu**, không phải thiếu một cột.
+
+**Thanh điều hướng cũng có hai hình thức, và chúng đọc chung `lib/nav.ts`.** Màn rộng dựng
+`nav/sidebar.tsx`; màn hẹp dựng `nav/tab-bar.tsx` với tối đa năm mục lấy từ chính danh sách ấy,
+vì thanh bên 240 px nuốt mất một phần ba bề ngang điện thoại. Hai file, một nguồn: thêm một
+trang là sửa `lib/nav.ts`, không phải nhớ ra còn một chỗ thứ hai.
+
+**Cỡ chạm là biến thể riêng, không phải phép chỉnh cỡ đang dùng.** `size="md"` cao 40 px là
+đúng cho chuột — con trỏ chính xác tới từng điểm ảnh. Ngón tay thì không, nên §9.21.2 đòi
+44 × 44 px, và cách đáp ứng là thêm `size="touch"` rồi cho `ui/` tự chọn theo `pointer: coarse`,
+chứ không nâng `md` lên 44 px cho tất cả. Nâng tất cả thì mọi bảng dày thêm 10% chiều cao trên
+màn hình mà người dùng đang dùng chuột, đổi lấy một lợi ích họ không nhận được.
 
 **Bản ghi chấm công có đường đọc riêng, không chỉ có bản tổng hợp.** `GET /reports/attendance`
 trả số lượt theo người — đủ cho biểu đồ và bảng công, **không đủ để tra một lượt**. Nên
