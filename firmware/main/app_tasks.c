@@ -376,7 +376,9 @@ static void ai_task(void *arg)
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "vision step %s", esp_err_to_name(err));
         } else if (result.kind != SVC_VISION_NONE) {
-            ESP_LOGI(TAG, "verdict %d, live %.3f, match %.3f, id %u", (int)result.kind,
+            ESP_LOGI(TAG, "verdict %d, face %d px yaw %+.2f, live %.3f, match %.3f, id %u",
+                     (int)result.kind,
+                     (int)(result.primary.box[2] - result.primary.box[0]), result.primary.yaw,
                      result.live_score, result.match_score, (unsigned)result.employee_id);
             if (ui_kiosk_enrolling()) {
                 // Enrolling keeps attendance out of it, but a refused sample still
