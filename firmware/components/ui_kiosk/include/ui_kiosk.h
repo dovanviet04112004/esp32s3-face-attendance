@@ -127,11 +127,34 @@ bool ui_kiosk_enrol_complete(void);
  */
 const drv_lcd_overlay_t *ui_kiosk_overlay(void);
 
+/** Take the overlay on the glass and claim its slot against repainting.
+ *  @ctx task | non-blocking | one caller only, and each hold needs its release
+ *  @ret the same pointer ui_kiosk_overlay gives, NULL until the first publish
+ */
+const drv_lcd_overlay_t *ui_kiosk_hold(void);
+
+/** Give back the slot claimed by ui_kiosk_hold.
+ *  @ctx task | non-blocking | safe to call without a matching hold
+ */
+void ui_kiosk_release(void);
+
 /** How many overlays have been published since boot.
  *  @ctx any | non-blocking | two inside one blit means a slot got reused mid-read
  *  @ret a count that only rises
  */
 uint32_t ui_kiosk_publishes(void);
+
+/** How many touch-down edges have arrived since boot.
+ *  @ctx any | non-blocking | tells a log window apart from an idle one
+ *  @ret a count that only rises
+ */
+uint32_t ui_kiosk_presses(void);
+
+/** How many times the slot behind this overlay has been repainted.
+ *  @ctx any | non-blocking | read it either side of a pass over the cells
+ *  @ret a count that only rises, 0 for a pointer this module never handed out
+ */
+uint32_t ui_kiosk_slot_age(const drv_lcd_overlay_t *overlay);
 
 #ifdef __cplusplus
 }

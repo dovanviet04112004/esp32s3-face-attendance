@@ -41,6 +41,9 @@ ui::Canvas *s_canvas[kSlots];
 drv_lcd_overlay_t s_slot[kSlots];
 std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
 std::atomic<uint32_t> s_published{ 0 };
+std::atomic<uint32_t> s_presses{ 0 };
+std::atomic<uint32_t> s_slot_gen[kSlots];
+std::atomic<int> s_held{ -1 };
 int s_next;
 uint32_t s_serial;
 bool s_ready;
@@ -82,7 +85,6 @@ void publish(const ui::Canvas &from)
     target->masks = (uint8_t)kept;
     target->opaque = ui::manager().current()->opaque();
     target->serial = ++s_serial;
-    s_next = (s_next + 1) % kSlots;
     s_shown.store(target, std::memory_order_release);
     s_published.fetch_add(1, std::memory_order_release);
 }
@@ -220,6 +222,9 @@ void ui_kiosk_on_touch(bool down, int x, int y)
     if (!s_ready) {
         return;
     }
+    if (down) {
+        s_presses.fetch_add(1, std::memory_order_release);
+    }
     s_touch.store(down ? ((x & 0xFFFF) << 12) | (y & 0xFFF) : -1, std::memory_order_release);
 }
 
@@ -244,7 +249,23 @@ void ui_kiosk_tick(uint32_t dt_ms)
     if (!s_dirty) {
         return;
     }
+    const drv_lcd_overlay_t *glass = s_shown.load(std::memory_order_acquire);
+    const int reading = s_held.load(std::memory_order_acquire);
+    int free_slot = -1;
+    for (int i = 0; i < kSlots; ++i) {
+        if (&s_slot[i] != glass && i != reading) {
+            free_slot = i;
+            break;
+        }
+    }
+    // Painting over the slot on the glass or the one being read is what makes a
+    // frame carry half of two overlays, so a full house waits a tick.
+    if (free_slot < 0) {
+        return;
+    }
     s_dirty = false;
+    s_next = free_slot;
+    s_slot_gen[s_next].fetch_add(1, std::memory_order_release);
     ui::Canvas &canvas = *s_canvas[s_next];
     canvas.clear();
     ui::manager().current()->paint(canvas, s_seen);
@@ -342,4 +363,37 @@ const drv_lcd_overlay_t *ui_kiosk_overlay(void)
 uint32_t ui_kiosk_publishes(void)
 {
     return s_published.load(std::memory_order_acquire);
+}
+
+uint32_t ui_kiosk_presses(void)
+{
+    return s_presses.load(std::memory_order_acquire);
+}
+
+const drv_lcd_overlay_t *ui_kiosk_hold(void)
+{
+    const drv_lcd_overlay_t *glass = s_shown.load(std::memory_order_acquire);
+    for (int i = 0; i < kSlots; ++i) {
+        if (glass == &s_slot[i]) {
+            s_held.store(i, std::memory_order_release);
+            return glass;
+        }
+    }
+    s_held.store(-1, std::memory_order_release);
+    return glass;
+}
+
+void ui_kiosk_release(void)
+{
+    s_held.store(-1, std::memory_order_release);
+}
+
+uint32_t ui_kiosk_slot_age(const drv_lcd_overlay_t *overlay)
+{
+    for (int i = 0; i < kSlots; ++i) {
+        if (overlay == &s_slot[i]) {
+            return s_slot_gen[i].load(std::memory_order_acquire);
+        }
+    }
+    return 0;
 }

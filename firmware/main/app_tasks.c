@@ -120,14 +120,15 @@ static rest_t rest_level(const drv_lcd_overlay_t *overlay)
     return asleep_for_ms() > REST_ALL_MS ? REST_ALL : REST_NONE;
 }
 
-static void report_rate(int frames, int clobbered, uint32_t redraws, int64_t elapsed_us)
+static void report_rate(int frames, int clobbered, uint32_t redraws, uint32_t taps,
+                        int64_t elapsed_us)
 {
     const int mfps = elapsed_us > 0 ? (int)((int64_t)frames * 1000000000 / elapsed_us) : 0;
     int level = 0, exposure = 0, gain16 = 0;
     drv_camera_exposure_state(&level, &exposure, &gain16);
-    ESP_LOGI(TAG, "preview %d.%03d fps, %" PRIu32 " overlays published, %d of %d clobbered,"
-                  " level %d, gain %d/16", mfps / 1000, mfps % 1000, redraws, clobbered, frames,
-             level, gain16);
+    ESP_LOGI(TAG, "preview %d.%03d fps, %" PRIu32 " taps, %" PRIu32 " published, %d of %d"
+                  " clobbered, level %d, gain %d/16", mfps / 1000, mfps % 1000, taps, redraws,
+             clobbered, frames, level, gain16);
 }
 
 // The marker is what tells a later boot that this clock has been verified, and
@@ -206,13 +207,14 @@ static void cam_task(void *arg)
     int frames = 0;
     int clobbered = 0;
     uint32_t published_from = ui_kiosk_publishes();
+    uint32_t pressed_from = ui_kiosk_presses();
     uint32_t drawn_serial = 0;
     esp_err_t last_blit = ESP_OK;
     bool resting = false;
     bool relight = false;
 
     for (;;) {
-        const drv_lcd_overlay_t *overlay = ui_kiosk_overlay();
+        const drv_lcd_overlay_t *overlay = ui_kiosk_hold();
         const bool wanted = rest_level(overlay) == REST_ALL;
         if (wanted != resting) {
             resting = wanted;
@@ -235,24 +237,27 @@ static void cam_task(void *arg)
                      (long long)asleep_for_ms(), atomic_load(&s_awake_by));
         }
         if (resting) {
+            ui_kiosk_release();
             vTaskDelay(pdMS_TO_TICKS(REST_POLL_MS));
             continue;
         }
         camera_fb_t *frame = drv_camera_grab();
         if (frame == NULL) {
+            ui_kiosk_release();
             // Spinning here at this priority would starve the idle task and
             // trip the watchdog, so a dry pool costs one tick, not the core.
             vTaskDelay(1);
             continue;
         }
         drv_camera_expose(frame);
-        const uint32_t held_from = ui_kiosk_publishes();
+        const uint32_t held_from = ui_kiosk_slot_age(overlay);
         const esp_err_t err = show(overlay, frame, &drawn_serial);
-        // Two publishes inside one blit put the second in the slot this frame
-        // still reads from, since ui_kiosk keeps only two.
-        if (ui_kiosk_publishes() - held_from >= 2) {
+        // The cells this pass reads are the ones ui_kiosk wipes to draw the next
+        // overlay, and two slots is only enough while the reader stays ahead.
+        if (overlay != NULL && ui_kiosk_slot_age(overlay) != held_from) {
             ++clobbered;
         }
+        ui_kiosk_release();
         offer_to_ai(wiring->frames, frame);
         if (relight && err == ESP_OK) {
             relight = false;
@@ -264,9 +269,11 @@ static void cam_task(void *arg)
         }
         if (++frames >= RATE_WINDOW_FRAMES) {
             const uint32_t now_published = ui_kiosk_publishes();
+            const uint32_t now_pressed = ui_kiosk_presses();
             report_rate(frames, clobbered, now_published - published_from,
-                        esp_timer_get_time() - window_started);
+                        now_pressed - pressed_from, esp_timer_get_time() - window_started);
             published_from = now_published;
+            pressed_from = now_pressed;
             window_started = esp_timer_get_time();
             frames = 0;
             clobbered = 0;
