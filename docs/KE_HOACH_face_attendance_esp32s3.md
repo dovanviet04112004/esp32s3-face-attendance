@@ -5079,7 +5079,35 @@ Phần dựng được ngay là **hình dạng phía thiết bị**, và nó là
 | ACL | `kiosk/{username}/#`, ngoài ra cấm | không |
 | **Nơi EMQX tra cứu** | `built_in_database` | **đổi sang `http` gọi `api`** |
 
-Chỉ hàng cuối đổi. `net_mqtt` gửi đúng một bộ `deviceId` cộng token cộng CA trong cả hai trường
+Chỉ hàng cuối đổi.
+
+**ACL phải có hai vai, không phải một.** Luật `kiosk/${username}/#` nhốt mỗi máy trong nhánh
+của chính nó, và đó đúng là thứ cần cho thiết bị. Nhưng `api` của E11 phải đọc bản ghi của
+**mọi** kiosk — `kiosk/+/up/#` — và đẩy lệnh xuống **mọi** kiosk — `kiosk/+/down/#`. Không luật
+nào trong hai luật hiện có cho phép chuyện đó, nên `{deny, all}` chặn backend ngay từ gói
+SUBSCRIBE đầu tiên. Đây là lỗ hổng lộ ra khi viết `svc_sync`, không phải khi làm E11: nếu để
+tới lúc ấy mới phát hiện thì nó xuất hiện dưới dạng "backend không nhận được gì" với broker
+lặng thinh.
+
+| Vai | Tên đăng nhập | Được đọc | Được ghi |
+|---|---|---|---|
+| Thiết bị | `kiosk-<12 hex>` hoặc serial do vận hành đặt | `kiosk/{chính nó}/#` | `kiosk/{chính nó}/#` |
+| Dịch vụ | **`svc-<tên>`** | `kiosk/+/up/#` | `kiosk/+/down/#` |
+
+**Vai dịch vụ bị cấm ghi lên `up/` một cách tường minh**, dù nó chẳng cần tới. Lý do là bất
+đối xứng của hai chiều: một bản ghi trên `up/` là **lời khai của thiết bị** — nó đi vào bảng
+chấm công và trở thành bằng chứng ai có mặt lúc mấy giờ. Một tiến trình phía máy chủ bị chiếm
+mà vẫn giả được `up/attendance` thì bảng chấm công không còn nói lên điều gì. Luật `deny` đặt
+**trước** hai luật `allow`, vì EMQX đọc file ACL từ trên xuống và dừng ở luật khớp đầu tiên.
+
+**Tiền tố `svc-` là tên dành riêng, và thứ thực thi nó là việc cấp tài khoản chứ không phải
+thiết bị.** Thiết bị khai tên nào cũng được, nhưng nó chỉ nối được nếu `built_in_database` có
+đúng tài khoản ấy — mà tài khoản chỉ do người vận hành tạo. Nên một kiosk lỡ đặt serial
+`svc-sanh` không tự leo quyền được; phải có người vừa đặt tên ấy **vừa** tạo tài khoản ấy. Vì
+vậy không thêm phép kiểm nào trong firmware: nó sẽ là code phòng thủ không phòng được gì.
+
+Khi E13-T4 chuyển sang backend `http`, hai vai này thành hai câu trả lời của `api` thay vì hai
+khối trong file — hình dạng quyền giữ nguyên, chỉ nơi tra cứu đổi. `net_mqtt` gửi đúng một bộ `deviceId` cộng token cộng CA trong cả hai trường
 hợp, nên nó viết một lần và không sửa lại — đó là lý do dựng TLS với xác thực ngay từ đầu thay
 vì chạy nặc danh rồi quay lại.
 
