@@ -33,6 +33,12 @@
 #define STORAGE_ATTEND_ROTATE_BYTES (256 * 1024)
 #define STORAGE_CURSOR_MAGIC 0x31554341u  // 'ACU1'
 #define STORAGE_CURSOR_VER 1u
+#define STORAGE_ATTEND_FLAG_DOOR 0x01u    // the door opened for this punch
+#define STORAGE_ATTEND_FLAG_OFFLINE 0x02u // stamped with no broker link
+#define STORAGE_ATTEND_FLAG_NO_NTP 0x04u  // ts came from a clock never NTP set
+#define STORAGE_ATTEND_DIR_IN 0u
+#define STORAGE_ATTEND_DIR_OUT 1u
+#define STORAGE_ATTEND_SCORE_ONE 256      // Q8.8: a score of 1.0
 
 /** One model inside the packed image, found by name rather than by position.
  */

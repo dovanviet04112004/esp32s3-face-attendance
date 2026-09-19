@@ -17,11 +17,7 @@ constexpr uint32_t kDeniedMs = 2000;
 constexpr uint32_t kCooldownMs = 1500;
 constexpr uint32_t kVerifyingMs = 5000;
 constexpr uint32_t kDoorHoldMs = 3000;
-constexpr uint16_t kQ88One = 256;
 constexpr int64_t kMinutesToMs = 60 * 1000;
-constexpr uint8_t kFlagDoorOpen = 0x01;
-constexpr uint8_t kFlagOffline = 0x02;
-constexpr uint8_t kFlagTimeUnsynced = 0x04;
 
 attend::St s_state = attend::St::Idle;
 svc_door_t s_door = nullptr;
@@ -57,7 +53,7 @@ uint16_t to_q88(float score)
     if (score <= 0.0f) {
         return 0;
     }
-    const float scaled = score * kQ88One + 0.5f;
+    const float scaled = score * STORAGE_ATTEND_SCORE_ONE + 0.5f;
     return scaled >= 65535.0f ? 65535u : (uint16_t)scaled;
 }
 
@@ -91,11 +87,11 @@ esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool d
     record.local_id = ((uint64_t)sys_storage_boot_count() << 32) | ++s_seq;
     record.employee_id = result->employee_id;
     record.ts_ms = now_ms;
-    record.direction = 0;
+    record.direction = STORAGE_ATTEND_DIR_IN;
     record.match_score = to_q88(result->match_score);
     record.liveness_score = to_q88(result->live_score);
-    record.flags = (uint8_t)((door_opened ? kFlagDoorOpen : 0) | kFlagOffline |
-                             (sys_time_source() == SYS_TIME_SOURCE_RTC_NTP ? 0 : kFlagTimeUnsynced));
+    record.flags = (uint8_t)((door_opened ? STORAGE_ATTEND_FLAG_DOOR : 0) | STORAGE_ATTEND_FLAG_OFFLINE |
+                             (sys_time_source() == SYS_TIME_SOURCE_RTC_NTP ? 0 : STORAGE_ATTEND_FLAG_NO_NTP));
     record.model_version = 1;
     record.crc32 = esp_crc32_le(0, (const uint8_t *)&record, offsetof(storage_attend_record_t, crc32));
 
