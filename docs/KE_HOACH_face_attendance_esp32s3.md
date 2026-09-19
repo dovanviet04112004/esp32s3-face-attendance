@@ -5844,7 +5844,11 @@ Một bảng công mà HR sửa được không dấu vết thì không dùng đ
 Sáu luật, mỗi luật chữa một chỗ gãy cụ thể.
 
 **1. Không bao giờ gom ở Node.** Mọi con số tổng hợp đi bằng `groupBy` hoặc SQL gộp. Luật này
-tồn tại vì §9.2 cho thấy chính hệ này đã vi phạm nó.
+tồn tại vì §9.2 cho thấy chính hệ này đã vi phạm nó, và cái giá đo được ngày 20/09 trên
+**5.002 nhân viên với 300.001 lượt quẹt một tháng**: gom ở Node mất **3.245 ms** và kéo heap từ
+15 lên **586 MB**; gộp ở Postgres mất **82 ms** và heap nhích 3 MB. Nhanh hơn **40 lần**, và
+chỗ khác biệt thật không phải tốc độ mà là bộ nhớ — nhân tuyến tính lên 30.000 nhân viên thì
+cách cũ cần ~3,5 GB heap cho một báo cáo, tức là chết chứ không phải chậm.
 
 **2. `AttendanceRecord` chia mảnh theo tháng.** Phân mảnh dải trên `ts`, một mảnh một tháng.
 Truy vấn một tháng chỉ chạm một mảnh, và dọn dữ liệu quá hạn là `DROP` một mảnh chứ không phải

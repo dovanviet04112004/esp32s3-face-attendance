@@ -18,6 +18,20 @@ export const envSchema = z.object({
 
   LOGIN_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(5),
 
+  // The server clock is UTC, so this decides every day boundary (KEHOACH 9.8).
+  APP_TIMEZONE: z
+    .string()
+    .min(1)
+    .default("Asia/Ho_Chi_Minh")
+    .refine((zone) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: zone });
+        return true;
+      } catch {
+        return false;
+      }
+    }, "APP_TIMEZONE must be an IANA zone name"),
+
   SEED_ADMIN_PASSWORD: z.string().min(8).optional(),
 
   TEMPLATE_ENCRYPTION_KEY: z.string().min(44),

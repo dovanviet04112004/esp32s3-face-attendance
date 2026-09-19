@@ -43,29 +43,37 @@ export class ReportsService {
     return queued.id ?? "";
   }
 
+  /** Grouped in Postgres: a month of punches does not belong in the heap. */
   private async build(from: Date, to: Date): Promise<AttendanceTally[]> {
-    const rows = await this.db.attendanceRecord.findMany({
-      where: { ts: { gte: from, lte: to } },
-      include: { employee: { select: { fullName: true } } },
-      orderBy: { ts: "asc" },
-    });
-    const byEmployee = new Map<number, AttendanceTally>();
-    for (const row of rows) {
-      const held = byEmployee.get(row.employeeId) ?? {
-        employeeId: row.employeeId,
-        fullName: row.employee.fullName,
-        punches: 0,
-        firstAt: null,
-        lastAt: null,
-        unsyncedClock: 0,
-      };
-      held.punches += 1;
-      held.firstAt = held.firstAt ?? row.ts.toISOString();
-      held.lastAt = row.ts.toISOString();
-      // A row the kiosk marked is a row whose time nobody should trust.
-      held.unsyncedClock += row.clockUnsynced ? 1 : 0;
-      byEmployee.set(row.employeeId, held);
-    }
-    return [...byEmployee.values()];
+    const rows = await this.db.$queryRaw<
+      {
+        employeeId: number;
+        fullName: string;
+        punches: bigint;
+        firstAt: Date | null;
+        lastAt: Date | null;
+        unsyncedClock: bigint;
+      }[]
+    >`
+      SELECT a."employeeId",
+             e."fullName",
+             count(*)                                        AS "punches",
+             min(a."ts")                                     AS "firstAt",
+             max(a."ts")                                     AS "lastAt",
+             count(*) FILTER (WHERE a."clockUnsynced")        AS "unsyncedClock"
+      FROM "AttendanceRecord" a
+      JOIN "Employee" e ON e."id" = a."employeeId"
+      WHERE a."ts" >= ${from} AND a."ts" <= ${to}
+      GROUP BY a."employeeId", e."fullName"
+      ORDER BY e."fullName"
+    `;
+    return rows.map((row) => ({
+      employeeId: row.employeeId,
+      fullName: row.fullName,
+      punches: Number(row.punches),
+      firstAt: row.firstAt?.toISOString() ?? null,
+      lastAt: row.lastAt?.toISOString() ?? null,
+      unsyncedClock: Number(row.unsyncedClock),
+    }));
   }
 }

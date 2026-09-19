@@ -6,6 +6,7 @@ import { DatabaseModule } from "./database/database.module.js";
 import { ScopeModule } from "./common/scope/scope.module.js";
 import { AttendanceModule } from "./modules/attendance/attendance.module.js";
 import { OrgModule } from "./modules/org/org.module.js";
+import { TimesheetModule } from "./modules/timesheet/timesheet.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { DevicesModule } from "./modules/devices/devices.module.js";
@@ -30,6 +31,7 @@ import { QueueModule } from "./queue/queue.module.js";
     ScopeModule,
     AttendanceModule,
     OrgModule,
+    TimesheetModule,
     EmployeesModule,
     DevicesModule,
     ShiftsModule,

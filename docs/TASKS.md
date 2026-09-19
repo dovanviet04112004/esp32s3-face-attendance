@@ -390,15 +390,15 @@ Vừa dựng đầu vào cho bảng lương vừa chữa chỗ gãy đã đo ở
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E16-T1 | Bảng `AttendanceDay` + chỉ mục `(employeeId, date)` và `(date)` | Một dòng mỗi người mỗi ngày, có trạng thái và ca áp dụng | E15-T3 |
-| E16-T2 | Job `timesheet` dựng ngày hôm trước: giờ vào đầu, ra cuối, phút làm, muộn, về sớm, tăng ca | Chạy lại cùng ngày ra cùng kết quả; **hôm nay không nằm trong bảng** (§9.8) | E16-T1, E11-T6 |
-| E16-T3 | **Viết lại `reports.service.build()` bằng phép gộp SQL trên `AttendanceDay`**, bỏ lối nạp về Node rồi gom bằng `Map` | Báo cáo một tháng ở 30k nhân viên không nạp quá 30k dòng; có số đo trước/sau | E16-T2, E16-T9 |
+| ~~E16-T1~~ | Bảng `AttendanceDay` + `Holiday` + chỉ mục `(employeeId, date)` và `(date)` — **Xong 20/09.** Giữ cả `measuredMinutes` **bên cạnh** `workedMinutes`, nên một ngày bị sửa tay vẫn tra ra được số máy đo | Một dòng mỗi người mỗi ngày, có trạng thái và ca áp dụng | E15-T3 |
+| ~~E16-T2~~ | Job dựng ngày công — **Xong 20/09.** Gộp lượt quẹt thành giờ vào đầu, ra cuối, phút làm, muộn, về sớm, tăng ca theo ca được phân; upsert trên `(employeeId, date)` nên **chạy lại ra cùng kết quả**, và lần dựng lại **không xoá phần sửa tay**. **Từ chối dựng ngày hôm nay** vì một ngày còn đang diễn ra thì dòng tổng kết là dòng sai. Múi giờ đi qua `APP_TIMEZONE` chứ không gõ cứng: máy chủ chạy UTC nên biến đó quyết định mọi ranh giới ngày — đo lại thấy 17:30Z ngày 19 **đã là ngày 20 ở VN**, và cửa sổ một ngày VN là 17:00Z→17:00Z | Chạy lại cùng ngày ra cùng kết quả; hôm nay không nằm trong bảng | E16-T1, E11-T6 |
+| ~~E16-T3~~ | **Viết lại phép gộp báo cáo bằng SQL** — **Xong 20/09, đo thật.** Bỏ hẳn lối `findMany` cả dải rồi gom bằng `Map`. **Đo trên 5.002 nhân viên và 300.001 lượt quẹt**: gom ở Node **3.245 ms**, heap 15 → **586 MB**, 300.001 dòng về Node; gộp ở Postgres **82 ms**, heap +3 MB, 5.001 dòng. Nhân lên 30.000 nhân viên thì cách cũ cần ~3,5 GB heap cho một báo cáo. Kết quả hai bên khớp nhau trên dữ liệu thật | Báo cáo một tháng ở 30k nhân viên không nạp quá 30k dòng | E16-T2, E16-T9 |
 | E16-T4 | Sửa tay ngày công có vết: `adjustedBy`, `adjustReason`, số máy đo gốc không bị ghi đè | Một ngày đã sửa vẫn tra ra được con số ban đầu | E16-T1, E15-T6 |
 | E16-T5 | Phân trang bằng con trỏ thay `OFFSET` (§9.9 luật 3) | Trang thứ 1.000 trả nhanh ngang trang đầu 🔬 | E16-T1 |
 | E16-T6 | `pg_trgm` + GIN trên tên và mã nhân viên | Tìm "nguyen" trên 30k hồ sơ dùng chỉ mục, không quét bảng | E15-T3 |
 | E16-T7 | Đếm gần đúng khi vượt ngưỡng (§9.9 luật 6) | Trang danh sách không quét toàn bảng chỉ để vẽ thanh phân trang | E16-T5 |
 | E16-T8 | 🔬 Phân mảnh `AttendanceRecord` theo tháng khi bảng thật sự lớn | Truy vấn một tháng chạm một mảnh; dọn quá hạn là `DROP` một mảnh | E16-T3 |
-| E16-T9 | Bộ dữ liệu giả **30.000 nhân viên × 90 ngày**, sinh bằng script, không commit dữ liệu | Có số đo thật cho T3, T5, T6 trong `docs/measurements/` | E16-T2 |
+| ~~E16-T9~~ | Bộ dữ liệu giả — **Xong 20/09.** Sinh bằng `INSERT … SELECT generate_series` trong Postgres (13 s cho 300k dòng), mã nhân viên mang tiền tố `LOAD` nên xoá sạch được bằng một câu. **Một bẫy đã sập**: `employeeId * 1000000` để dựng `localId` **tràn `integer`** ở id thứ 2.148 — `localId` vốn là chuỗi nên phải ghép chuỗi, không nhân | Có số đo thật cho T3, T5, T6 | E16-T2 |
 | E16-T10 | `Holiday` theo năm và theo pháp nhân, đổ vào `AttendanceDay` | Ngày lễ không bị tính là vắng | E16-T1 |
 | E16-T11 | **Bảng ngoại lệ hôm nay** (§9.18 mục 3): chưa quẹt, quẹt muộn, quẹt một lần rồi mất, nghỉ không đơn | Danh sách ngắn, hành động được, mở mỗi sáng | E16-T2 |
 

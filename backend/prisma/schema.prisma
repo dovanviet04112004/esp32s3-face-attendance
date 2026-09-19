@@ -92,6 +92,7 @@ model LegalEntity {
   updatedAt   DateTime     @updatedAt
   departments Department[]
   employees   Employee[]
+  holidays    Holiday[]
 }
 
 model Department {
@@ -177,6 +178,7 @@ model Employee {
   reports           Employee[]           @relation("ReportsTo")
   login             User?
   contracts         EmploymentContract[]
+  days              AttendanceDay[]
   templates         FaceTemplate[]
   enrollments       DeviceEnrollment[]
   attendance        AttendanceRecord[]
@@ -351,4 +353,58 @@ model AuditLog {
   actor   User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([ts])
+}
+
+enum DayState {
+  WORKED
+  LEAVE
+  HOLIDAY
+  WEEKEND
+  ABSENT
+}
+
+/**
+ * One row per person per day: what payroll reads, and what keeps a report
+ * from loading every punch of a month into memory (KEHOACH 9.8).
+ */
+model AttendanceDay {
+  id                BigInt    @id @default(autoincrement())
+  employeeId        Int
+  date              DateTime  @db.Date
+  state             DayState  @default(ABSENT)
+  shiftId           String?
+  firstIn           DateTime?
+  lastOut           DateTime?
+  workedMinutes     Int       @default(0)
+  lateMinutes       Int       @default(0)
+  earlyLeaveMinutes Int       @default(0)
+  overtimeMinutes   Int       @default(0)
+  punchCount        Int       @default(0)
+  clockUnsynced     Boolean   @default(false)
+  // What the device measured, kept whole when a correction lands on top, so a
+  // corrected day can still show what the machine saw (KEHOACH 9.8).
+  measuredMinutes   Int?
+  adjustedById      String?
+  adjustReason      String?
+  adjustedAt        DateTime?
+  builtAt           DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  employee          Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@index([employeeId, date])
+}
+
+model Holiday {
+  id            String       @id @default(uuid())
+  legalEntityId String?
+  date          DateTime     @db.Date
+  name          String
+  paid          Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+
+  @@unique([legalEntityId, date])
+  @@index([date])
 }
