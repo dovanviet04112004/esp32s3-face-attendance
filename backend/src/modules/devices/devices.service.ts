@@ -75,6 +75,12 @@ export class DevicesService {
     });
   }
 
+  /** Follow the retained status topic, which the broker writes on a last will. */
+  async setOnline(deviceId: string, online: boolean, at: Date): Promise<void> {
+    await this.seen(deviceId, at);
+    await this.db.device.update({ where: { id: deviceId }, data: { online, lastSeenAt: at } });
+  }
+
   /** Note that a device spoke; an unknown one lands at PENDING (KEHOACH 7.3). */
   async seen(deviceId: string, at: Date): Promise<void> {
     const known = await this.db.device.findUnique({ where: { id: deviceId } });

@@ -10,7 +10,11 @@ import { EmployeesModule } from "./modules/employees/employees.module.js";
 import { EnrollmentModule } from "./modules/enrollment/enrollment.module.js";
 import { ModelsModule } from "./modules/models/models.module.js";
 import { MqttModule } from "./modules/mqtt/mqtt.module.js";
+import { RealtimeModule } from "./modules/realtime/realtime.module.js";
+import { ReportsModule } from "./modules/reports/reports.module.js";
 import { ShiftsModule } from "./modules/shifts/shifts.module.js";
+import { CacheModule } from "./common/cache/cache.module.js";
+import { QueueModule } from "./queue/queue.module.js";
 
 @Module({
   imports: [
@@ -25,6 +29,10 @@ import { ShiftsModule } from "./modules/shifts/shifts.module.js";
     ShiftsModule,
     EnrollmentModule,
     ModelsModule,
+    CacheModule,
+    QueueModule,
+    RealtimeModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}
