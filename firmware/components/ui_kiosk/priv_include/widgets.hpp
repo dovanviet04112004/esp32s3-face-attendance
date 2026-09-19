@@ -14,11 +14,14 @@ namespace widgets {
 enum class Icon : uint8_t {
     Wifi = 0,
     Lock,
+    Person,
     PersonAdd,
     List,
     Device,
     Brightness,
     Volume,
+    Keyboard,
+    Backspace,
     Chevron,
     Back,
     Check,
@@ -30,7 +33,9 @@ enum class Icon : uint8_t {
 /** A line of a given thickness, rounded at both ends. */
 void stroke(Canvas &to, int x0, int y0, int x1, int y1, int thick, uint8_t colour) noexcept;
 
-/** Four wifi bands filled up to level, the rest left faint. */
+/** Four rising bars, lit up to level. Bars read at 20 px where arcs turn to mush.
+ *  @ctx ui_task | non-blocking | level 0 leaves every bar in rest
+ */
 void wifi_bars(Canvas &to, int x, int y, int size, int level, uint8_t colour,
                uint8_t rest) noexcept;
 
@@ -54,6 +59,8 @@ struct Row {
     uint8_t tint;
     bool chevron;
     uint8_t label_colour;
+    int bars;                             // 0..4 draws a meter, below 0 the tile
+    Icon trail;                           // sits left of the value, None for none
 };
 
 void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) noexcept;
@@ -64,6 +71,10 @@ void slider_row(Canvas &to, int x, int y, int w, int h, Icon which, uint8_t tint
 
 /** Where a touch inside a slider row lands, as a percentage. */
 int slider_percent(int x, int row_x, int row_w) noexcept;
+
+/** A key cap: rounded, with either a label or a glyph centred in it. */
+void key_cap(Canvas &to, int x, int y, int w, int h, const char *label, Icon glyph, bool down,
+             bool muted) noexcept;
 
 /** A filled pill, the shape every confirm and cancel here takes. */
 void button(Canvas &to, int x, int y, int w, int h, const char *label, uint8_t face, uint8_t ink,

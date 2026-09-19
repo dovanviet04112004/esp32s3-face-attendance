@@ -21,17 +21,17 @@ constexpr uint16_t rgb(uint32_t hex)
 }
 
 constexpr uint16_t kUnused = rgb(0x000000);
-constexpr uint16_t kInk = rgb(0x1A1A1C);
+constexpr uint16_t kInk = rgb(0x101010);
 constexpr uint16_t kEdge = rgb(0x000000);
-constexpr uint16_t kAccent = rgb(0x0A84FF);
-constexpr uint16_t kWarn = rgb(0xFF9F0A);
-constexpr uint16_t kGround = rgb(0xF2F2F6);
+constexpr uint16_t kAccent = rgb(0x2E7CF6);
+constexpr uint16_t kWarn = rgb(0xF5A21E);
+constexpr uint16_t kGround = rgb(0xF1F1F1);
 constexpr uint16_t kSurface = rgb(0xFFFFFF);
-constexpr uint16_t kSurfaceHi = rgb(0xE4E4EA);
-constexpr uint16_t kLine = rgb(0xD9D9DF);
-constexpr uint16_t kDim = rgb(0x8A8A8E);
-constexpr uint16_t kOk = rgb(0x34C759);
-constexpr uint16_t kDanger = rgb(0xFF3B30);
+constexpr uint16_t kSurfaceHi = rgb(0xE3E3E3);
+constexpr uint16_t kLine = rgb(0xDCDCDC);
+constexpr uint16_t kDim = rgb(0x8C8C8C);
+constexpr uint16_t kOk = rgb(0x21B858);
+constexpr uint16_t kDanger = rgb(0xE8452F);
 
 constexpr uint16_t kPalette[DRV_LCD_COLOURS] = {
     kUnused, kInk,  kEdge, kAccent,    kWarn, kGround,
