@@ -4094,7 +4094,7 @@ backend/
 ├── package.json  ├── tsconfig.json  ├── tsconfig.build.json  ├── nest-cli.json
 ├── prisma.config.ts                  # ★ url của datasource + lệnh seed (Prisma 7)
 ├── prisma/{schema.prisma, migrations/, seed.ts}
-├── test/{app.e2e-spec.ts, jest-e2e.json}      # e2e mặc định của NestJS
+├── test/app.e2e-spec.ts              # e2e, chạy bằng runner sẵn có của Node
 └── src/
     ├── main.ts                       # helmet, CORS (origin Vercel), ValidationPipe, Swagger
     ├── app.module.ts
@@ -4122,6 +4122,14 @@ backend/
 bản CommonJS nào, nên `backend/package.json` cũng phải khai `"type": "module"`. Hệ quả chạm vào
 mọi file: import tương đối phải mang đuôi `.js` kể cả khi nguồn là `.ts`, và bộ sinh của
 `contracts/` phát đúng dạng ấy. TypeScript ghim ở 6.x vì `ts-jest` chặn trên ở `<7`.
+
+**E2E chạy bằng `node --test`, không phải Jest.** Jest nạp module ESM qua registry riêng của
+nó, và `@nestjs/throttler` là CommonJS `require()` vào `@nestjs/common` vốn là ESM — Jest gọi đó
+là vòng `require(esm)` và từ chối, trong khi Node chạy được từ v22. Runner của Node không có
+tầng ấy. Đổi lại nó **không tự biên dịch TypeScript**: `tsx` dùng esbuild mà esbuild không phát
+`emitDecoratorMetadata`, thứ DI của Nest dựa vào để đọc kiểu tham số constructor, nên bộ test
+được `tsc` biên dịch ra `dist-test/` rồi mới chạy. Chậm hơn một nhịp biên dịch, đổi lấy việc
+**thứ đem ra chạy là thứ trình biên dịch thật sự phát ra**, không phải một bản dịch thứ hai.
 
 **Prisma 7 tách url ra khỏi `schema.prisma`.** Khối `datasource` chỉ còn khai `provider`; chuỗi
 kết nối nằm ở `prisma.config.ts`, và `PrismaClient` nhận một driver adapter (`@prisma/adapter-pg`)
