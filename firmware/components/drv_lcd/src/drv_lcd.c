@@ -48,14 +48,14 @@ static const char *TAG = "drv_lcd";
 #define FRAME_RATE_DIVA 0x81
 #define FRAME_RATE_RTNA 0x1F
 #define VCOM_REG 0xC5
-// The library's 0x18 leaves this module flickering at 23 Hz; 0x2C-0x34 measured calm (KEHOACH 2.3A).
+// Mid-range: the sweep across 0x00-0x3C measures flat on this panel (KEHOACH 2.3A).
 #define VCOM_LEVEL 0x30
 #define INVERSION_REG 0xB4
-// White still flickers under 1-dot and 2-dot inversion at 23 Hz; column inversion measured calm.
+// Column inversion, and it does not touch the flicker either (KEHOACH 2.3A).
 #define INVERSION_COLUMN 0x00
 // The module ships one of ili9486, ili9488 or st7796s (KMRTM40045 spec sheet).
 #define CHIP_ID_REG 0xD3
-#define CHIP_ID_BYTES 4
+#define READ_REG_BYTES 4
 #define SCANLINE_REG 0x45
 #define SCANLINE_UNITS 242
 #define SCANLINE_LEAD_MIN 160
@@ -147,7 +147,7 @@ uint32_t drv_lcd_read_reg(uint8_t reg)
     if (s_reader == NULL) {
         return 0;
     }
-    uint8_t raw[CHIP_ID_BYTES] = {0};
+    uint8_t raw[READ_REG_BYTES] = {0};
     gpio_set_direction(APP_LCD_DC_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(APP_LCD_CS_GPIO, 1);
     esp_rom_delay_us(CS_FRAME_GAP_US);
@@ -162,10 +162,10 @@ uint32_t drv_lcd_read_reg(uint8_t reg)
         gpio_set_level(APP_LCD_DC_GPIO, 1);
         spi_transaction_t rd = {
             .flags = SPI_TRANS_USE_RXDATA,
-            .rxlength = CHIP_ID_BYTES * 8,
+            .rxlength = READ_REG_BYTES * 8,
         };
         if (spi_device_polling_transmit(s_reader, &rd) == ESP_OK) {
-            memcpy(raw, rd.rx_data, CHIP_ID_BYTES);
+            memcpy(raw, rd.rx_data, READ_REG_BYTES);
         }
     }
     gpio_set_level(APP_LCD_CS_GPIO, 1);

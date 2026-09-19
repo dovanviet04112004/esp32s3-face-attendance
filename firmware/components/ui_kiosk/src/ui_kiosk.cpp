@@ -40,9 +40,6 @@ constexpr uint16_t wire(uint16_t rgb565)
 ui::Canvas *s_canvas[kSlots];
 drv_lcd_overlay_t s_slot[kSlots];
 std::atomic<const drv_lcd_overlay_t *> s_shown{ nullptr };
-std::atomic<uint32_t> s_published{ 0 };
-std::atomic<uint32_t> s_presses{ 0 };
-std::atomic<uint32_t> s_slot_gen[kSlots];
 std::atomic<int> s_held{ -1 };
 std::atomic<bool> s_covers{ false };
 int s_next;
@@ -88,7 +85,6 @@ void publish(const ui::Canvas &from)
     s_covers.store(target->opaque, std::memory_order_release);
     target->serial = ++s_serial;
     s_shown.store(target, std::memory_order_release);
-    s_published.fetch_add(1, std::memory_order_release);
 }
 
 // Every screen paints the clock, and a repaint needs a reason, so the minute
@@ -224,9 +220,6 @@ void ui_kiosk_on_touch(bool down, int x, int y)
     if (!s_ready) {
         return;
     }
-    if (down) {
-        s_presses.fetch_add(1, std::memory_order_release);
-    }
     s_touch.store(down ? ((x & 0xFFFF) << 12) | (y & 0xFFF) : -1, std::memory_order_release);
 }
 
@@ -267,7 +260,6 @@ void ui_kiosk_tick(uint32_t dt_ms)
     }
     s_dirty = false;
     s_next = free_slot;
-    s_slot_gen[s_next].fetch_add(1, std::memory_order_release);
     ui::Canvas &canvas = *s_canvas[s_next];
     canvas.clear();
     ui::manager().current()->paint(canvas, s_seen);
@@ -362,16 +354,6 @@ const drv_lcd_overlay_t *ui_kiosk_overlay(void)
     return s_shown.load(std::memory_order_acquire);
 }
 
-uint32_t ui_kiosk_publishes(void)
-{
-    return s_published.load(std::memory_order_acquire);
-}
-
-uint32_t ui_kiosk_presses(void)
-{
-    return s_presses.load(std::memory_order_acquire);
-}
-
 bool ui_kiosk_screen_covers(void)
 {
     return s_covers.load(std::memory_order_acquire);
@@ -393,14 +375,4 @@ const drv_lcd_overlay_t *ui_kiosk_hold(void)
 void ui_kiosk_release(void)
 {
     s_held.store(-1, std::memory_order_release);
-}
-
-uint32_t ui_kiosk_slot_age(const drv_lcd_overlay_t *overlay)
-{
-    for (int i = 0; i < kSlots; ++i) {
-        if (overlay == &s_slot[i]) {
-            return s_slot_gen[i].load(std::memory_order_acquire);
-        }
-    }
-    return 0;
 }
