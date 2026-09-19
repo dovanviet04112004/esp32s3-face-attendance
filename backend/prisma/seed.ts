@@ -6,6 +6,12 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 
 const SEED_ADMIN_EMAIL = "admin@kiosk.local";
+// One password for all three: a dev seed, and the roles are what differ.
+const SEED_ACCOUNTS = [
+  { email: SEED_ADMIN_EMAIL, role: "ADMIN" },
+  { email: "hr@kiosk.local", role: "HR" },
+  { email: "viewer@kiosk.local", role: "VIEWER" },
+] as const;
 const SEED_SHIFT_NAME = "Hành chính";
 const SEED_VALID_FROM = new Date("2026-01-01T00:00:00Z");
 
@@ -19,11 +25,13 @@ async function main(): Promise<void> {
     throw new Error("set SEED_ADMIN_PASSWORD before seeding");
   }
   const passwordHash = await hashPassword(env.SEED_ADMIN_PASSWORD);
-  const admin = await prisma.user.upsert({
-    where: { email: SEED_ADMIN_EMAIL },
-    update: { passwordHash },
-    create: { email: SEED_ADMIN_EMAIL, passwordHash, role: "ADMIN" },
-  });
+  for (const account of SEED_ACCOUNTS) {
+    await prisma.user.upsert({
+      where: { email: account.email },
+      update: { passwordHash, role: account.role },
+      create: { email: account.email, passwordHash, role: account.role },
+    });
+  }
 
   const shift = await prisma.shift.upsert({
     where: { name: SEED_SHIFT_NAME },
@@ -49,7 +57,8 @@ async function main(): Promise<void> {
     create: { shiftId: shift.id, employeeId: employee.id, validFrom: SEED_VALID_FROM },
   });
 
-  console.log(`seeded admin ${admin.email}, shift ${shift.name}, employee ${employee.code}`);
+  const who = SEED_ACCOUNTS.map((a) => a.role).join(", ");
+  console.log(`seeded ${who}, shift ${shift.name}, employee ${employee.code}`);
 }
 
 main()

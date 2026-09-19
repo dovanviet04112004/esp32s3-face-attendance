@@ -32,6 +32,8 @@ const MINUTE_MS = 60_000;
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy, DeviceStrategy],
-  exports: [AuthService],
+  // Re-exported so a module with a guarded controller gets the one
+  // registration rather than starting its own.
+  exports: [AuthService, PassportModule],
 })
 export class AuthModule {}

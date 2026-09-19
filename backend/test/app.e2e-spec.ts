@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 
-import { ValidationPipe, type INestApplication } from "@nestjs/common";
+import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import cookieParser from "cookie-parser";
 import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
+import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
 
@@ -28,8 +28,7 @@ describe("auth (e2e)", () => {
     password = validateEnv().SEED_ADMIN_PASSWORD ?? "";
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
-    app.use(cookieParser());
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
+    configure(app);
     await app.init();
     http = app.getHttpServer();
   });
