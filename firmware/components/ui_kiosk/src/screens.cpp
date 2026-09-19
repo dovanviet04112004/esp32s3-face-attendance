@@ -60,6 +60,9 @@ constexpr int kGaugeSteps = 12;
 constexpr int kSpoofGiveUp = 3;
 constexpr int64_t kRefusalShowMs = 2500;
 constexpr int64_t kRescanMs = 15000;
+// A stranger needs 2.9 s to be refused at worst (KEHOACH 4.5.5d), so past
+// double that the pipeline owes an answer it is not going to give.
+constexpr int64_t kWorkingCeilingMs = 6000;
 
 // A phone keyboard, because the operator's thumbs already know where the
 // letters are: ten, nine, then seven under a shift and a backspace.
@@ -161,6 +164,7 @@ JoinRequest s_join;
 Facts s_facts;
 ui_kiosk_net_t s_net;
 Level s_brightness = { 70, false, false };
+bool s_vision_reset;
 Level s_volume = { 60, false, false };
 
 bool inside(int x, int y, int bx, int by, int bw, int bh)
@@ -328,9 +332,22 @@ void field(Canvas &to, const char *text, const char *hint)
 
 class ScanScreen final : public Screen {
 public:
+    void on_enter() noexcept override
+    {
+        answered_ = false;
+        carded_ = false;
+        refused_ = nullptr;
+        track_ = 0;
+        held_ = false;
+        working_ms_ = 0;
+        stuck_ = false;
+        // The person standing here now gets a fresh look, not whatever the
+        // pipeline settled on while a menu covered the preview.
+        s_vision_reset = true;
+    }
+
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
     {
-        (void)dt_ms;
         // Any verdict silences the guidance until that face leaves or the machine
         // takes up somebody else; a refusal also stays on the glass (KEHOACH 4.5.5h.1).
         const bool same_face = seen.face && seen.track == track_;
@@ -342,12 +359,23 @@ public:
         if (seen.verdict > APP_UI_SCANNING) {
             track_ = seen.track;
         }
-        if (answered == answered_ && carded == carded_ && refused == refused_) {
+        // Saying work is happening is a claim, and one that outlives every
+        // verdict the pipeline could owe is a lie the glass keeps telling.
+        const bool claiming = seen.face && seen.stage == UI_KIOSK_STAGE_WORKING && !answered;
+        working_ms_ = claiming && seen.track == watched_ ? working_ms_ + (int64_t)dt_ms : 0;
+        watched_ = seen.track;
+        const bool stuck = working_ms_ >= kWorkingCeilingMs;
+        if (stuck && !stuck_) {
+            s_vision_reset = true;
+        }
+        if (answered == answered_ && carded == carded_ && refused == refused_ &&
+            stuck == stuck_) {
             return false;
         }
         answered_ = answered;
         carded_ = carded;
         refused_ = refused;
+        stuck_ = stuck;
         return true;
     }
 
@@ -392,7 +420,7 @@ public:
         } else if (answered_) {
             tone = DRV_LCD_OK;
             prompt = nullptr;
-        } else if (seen.stage == UI_KIOSK_STAGE_WORKING) {
+        } else if (seen.stage == UI_KIOSK_STAGE_WORKING && !stuck_) {
             tone = seen.face ? DRV_LCD_ACCENT : DRV_LCD_INK;
             prompt = seen.face ? prompt_for(seen.stage) : prompt;
         } else if (seen.stage != UI_KIOSK_STAGE_NO_FACE) {
@@ -444,6 +472,9 @@ private:
     bool held_ = false;
     bool answered_ = false;
     bool carded_ = false;
+    bool stuck_ = false;
+    int64_t working_ms_ = 0;
+    uint32_t watched_ = 0;                // track the working clock belongs to
     const char *refused_ = nullptr;
     uint32_t track_ = 0;
 };
@@ -481,8 +512,8 @@ public:
             if (i > 0) {
                 widgets::divider(to, theme::kGutter, y, theme::kContentW);
             }
-            const widgets::Row what = { kLabels[i],   nullptr, kIcons[i],          kTints[i],
-                                        true,          DRV_LCD_INK, -1, widgets::Icon::None };
+            const widgets::Row what = { kLabels[i], nullptr,     kIcons[i], kTints[i],
+                                        DRV_LCD_INK, -1,          widgets::Icon::None };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
         }
         widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH, "Đóng",
@@ -558,9 +589,8 @@ public:
         (void)seen;
         page(to, "Cài đặt", true);
         widgets::card(to, theme::kGutter, device_y(), theme::kContentW, kRowH);
-        const widgets::Row me = { "Thiết bị của tôi", nullptr,     widgets::Icon::Device,
-                                  DRV_LCD_DIM,        true,        DRV_LCD_INK,
-                                  -1,                 widgets::Icon::None };
+        const widgets::Row me = { "Thiết bị của tôi", nullptr, widgets::Icon::Device,
+                                  DRV_LCD_DIM,        DRV_LCD_INK, -1, widgets::Icon::None };
         widgets::row(to, theme::kGutter, device_y(), theme::kContentW, kRowH, me,
                      held_ == kDevice);
 
@@ -569,7 +599,6 @@ public:
                                    s_net.joined ? s_net.ssid : "Chưa nối",
                                    widgets::Icon::Wifi,
                                    DRV_LCD_ACCENT,
-                                   true,
                                    DRV_LCD_INK,
                                    -1,
                                    widgets::Icon::None };
@@ -834,16 +863,15 @@ private:
             snprintf(code, sizeof(code), "%u", (unsigned)s_pending.row[i].employee_id);
             const widgets::Row what = { s_pending.row[i].name, code,
                                         widgets::Icon::PersonAdd, DRV_LCD_ACCENT,
-                                        true, DRV_LCD_INK, -1, widgets::Icon::None };
+                                        DRV_LCD_INK, -1, widgets::Icon::None };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
         }
         const int at = self_y();
         if (count > 0) {
             widgets::divider(to, theme::kGutter, at, theme::kContentW);
         }
-        const widgets::Row self = { "Tự nhập tên", nullptr,     widgets::Icon::Keyboard,
-                                    DRV_LCD_DIM,   true,        DRV_LCD_INK,
-                                    -1,            widgets::Icon::None };
+        const widgets::Row self = { "Tự nhập tên", nullptr, widgets::Icon::Keyboard,
+                                    DRV_LCD_DIM,   DRV_LCD_INK, -1, widgets::Icon::None };
         widgets::row(to, theme::kGutter, at, theme::kContentW, kRowH, self, held_ == kSelf);
     }
 
@@ -1282,7 +1310,6 @@ public:
                                         tail,
                                         widgets::Icon::Person,
                                         (uint8_t)(hot ? DRV_LCD_DANGER : DRV_LCD_ACCENT),
-                                        false,
                                         (uint8_t)(hot ? DRV_LCD_DANGER : DRV_LCD_INK),
                                         -1,
                                         widgets::Icon::None };
@@ -1511,7 +1538,6 @@ private:
                                         state,
                                         widgets::Icon::None,
                                         0,
-                                        false,
                                         (uint8_t)(i == failed_ ? DRV_LCD_DANGER
                                                                : (here ? DRV_LCD_ACCENT
                                                                        : DRV_LCD_INK)),
@@ -1596,6 +1622,11 @@ Facts &facts() noexcept
 ui_kiosk_net_t &net() noexcept
 {
     return s_net;
+}
+
+bool &vision_reset() noexcept
+{
+    return s_vision_reset;
 }
 
 Level &brightness() noexcept

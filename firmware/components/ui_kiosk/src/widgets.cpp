@@ -10,7 +10,6 @@ namespace {
 constexpr int kTile = 38;
 constexpr int kTileRadius = 11;
 constexpr int kRowPad = 14;
-constexpr int kChevronW = 10;
 constexpr int kTrackH = 8;
 constexpr int kKnobR = 13;
 constexpr int kBackBox = 40;
@@ -325,11 +324,6 @@ void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) 
         pen += kTile + kRowPad;
     }
     int right = x + w - kRowPad;
-    if (what.chevron) {
-        right -= kChevronW;
-        draw_chevron(to, right, mid, kTile, DRV_LCD_DIM, false);
-        right -= theme::kGapS;
-    }
     const int line = Canvas::centre_y(theme::Font::Body, y, h);
     int room = right - pen;
     if (what.value != nullptr) {

@@ -477,6 +477,22 @@ void ui_kiosk_shown(uint32_t serial)
     s_on_glass.store(serial, std::memory_order_release);
 }
 
+bool ui_kiosk_take_vision_reset(void)
+{
+    if (!s_ready || !ui::vision_reset()) {
+        return false;
+    }
+    ui::vision_reset() = false;
+    // The screens hold nothing of what the last look decided, so the first
+    // fresh sight is what the person in front of the kiosk is judged on.
+    s_seen.face = false;
+    s_seen.stage = UI_KIOSK_STAGE_NO_FACE;
+    s_seen.verdict = APP_UI_IDLE;
+    s_wanted = UI_KIOSK_STAGE_NO_FACE;
+    s_dirty = true;
+    return true;
+}
+
 uint16_t ui_kiosk_ground_rgb565(void)
 {
     return ui::theme::palette()[DRV_LCD_GROUND];

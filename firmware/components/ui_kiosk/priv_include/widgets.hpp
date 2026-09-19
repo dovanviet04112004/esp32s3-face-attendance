@@ -58,7 +58,6 @@ struct Row {
     const char *value;                    // NULL leaves the right side to the chevron
     Icon glyph;
     uint8_t tint;
-    bool chevron;
     uint8_t label_colour;
     int bars;                             // 0..4 draws a fan, below 0 the tile
     Icon trail;                           // sits left of the value, None for none

@@ -1255,6 +1255,12 @@ static void ui_task(void *arg)
                 }
             }
         }
+        // The screen asks for this on returning to the preview and whenever a
+        // face has sat in WORKING past any verdict the pipeline could owe.
+        if (ui_kiosk_take_vision_reset()) {
+            svc_vision_reset();
+            ESP_LOGI(TAG, "vision restarted at the preview's request");
+        }
         take_levels();
         if (ui_kiosk_take_people_request()) {
             show_people();

@@ -209,6 +209,13 @@ bool ui_kiosk_enrolling(void);
  */
 bool ui_kiosk_enrol_complete(void);
 
+/** Whether the scan screen wants the pipeline started over.
+ *  @ctx ui_task | non-blocking | one shot: true on returning to the preview, and
+ *       again whenever a face has sat in WORKING past any verdict it could owe
+ *  @ret false when nothing is asking
+ */
+bool ui_kiosk_take_vision_reset(void);
+
 /** The colour a screen that covers the panel clears it to.
  *  @ctx any | non-blocking | panel byte order, from the one palette
  */
