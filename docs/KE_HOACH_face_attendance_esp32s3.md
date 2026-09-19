@@ -531,6 +531,15 @@ canvas 153.600 ô và sổ PSRAM chỉ còn 7,7 KB. `cam_task` **giữ chỗ** k
 hiện nổi quá một overlay mỗi lượt blit, nên publish nhanh hơn người tiêu thụ chỉ là vừa phí vừa
 hỏng; trần nhịp cập nhật tụt về đúng nhịp blit ~14 lần/giây.
 
+**Soát cùng lượt tìm ra bốn chỗ nữa cùng loại.** `rest_level()` hỏi "màn có phủ kín không" bằng
+cách đọc thẳng trường `opaque` **trong khoang overlay**, và nó được gọi từ bốn task khác không
+hề giữ chỗ. Câu hỏi ấy giờ trả lời bằng một cờ riêng do `publish()` đặt, nên không task nào phải
+chạm vào bộ nhớ khoang để biết. Cùng nguyên tắc: **thứ nhiều task cùng hỏi thì đừng để nó nằm
+trong vùng nhớ đang được ghi lại.**
+
+Nghiệm thu 19/09 sau khi sửa: **490 lần chạm trải khắp preview, `Menu` và `Cài đặt`, 0/840 khung
+hỏng** (trước là 23,6 %), fps 12,9–14,2 không đổi, không dòng lỗi nào.
+
 **Đọc thanh ghi qua `esp_lcd` cần một điều `esp_lcd` không nói ra.** Sau mỗi giao dịch của
 nó, `esp_lcd_panel_io_spi` **tắt driver ngõ ra của chân DC** (`post_cb` gọi
 `gpio_ll_output_disable`) và chỉ bật lại trong `pre_cb` của giao dịch kế. Một lệnh đọc gửi
