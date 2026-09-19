@@ -306,6 +306,10 @@ duyệt, rồi mới sửa.
 | E13-T3 | Bật NVS encryption + Flash Encryption + Secure Boot v2 | Dump flash không đọc được token | E13-T1 |
 | E13-T4 | MQTTS: cert CA nhúng, ACL theo deviceId | Device A không sub được topic device B | E11-T8 |
 | E13-T5 | Xoay vòng device token khi còn 7 ngày | Token tự đổi | E13-T4 |
+| E13-T7 | `net_provision` — boot đầu không có `device/jwt` thì gọi `POST /devices/register` qua HTTPS kèm token bootstrap và `deviceId` eFuse, hỏi lại lùi bậc khi máy chủ trả 202, ghi JWT với `mqtt_user`/`mqtt_pass` vào NVS khi trả 200 (KẾ HOẠCH §7.3) | Board trắng NVS tự có credential sau khi admin bấm duyệt, không ai gõ gì | E11-T8, E13-T4 |
+| E13-T8 | Màn "chờ duyệt" hiện `deviceId` của chính máy để admin đối chiếu, và màn chọn Wi-Fi cho người lắp — trả nốt món E10-T5 còn nợ | Máy mới cắm điện vào là lắp được mà không cần USB | E13-T7, E10-T1 |
+| E13-T9 | Phía API: `POST /devices/register` nhận token bootstrap, trả 202 khi `pending` và 200 khi đã duyệt; cho `deviceId` đã biết đăng ký lại sau factory reset và đòi duyệt lại; rate limit theo IP | Đăng ký trộm nằm `pending` mãi; máy reset xong duyệt lại được | E11-T8 |
+| E13-T10 | `device/mqtt_uri` lấy giá trị lùi từ `Kconfig` của `net_mqtt`, NVS chỉ ghi đè; bản `prod` từ chối URI không phải `mqtts://` | Bản prod nạp URI `mqtt://` thì không nối, có log rõ | E10-T6 |
 | E13-T6 | 🔬 Đo lại toàn bộ lần cuối: arena, latency, RAM đỉnh, dòng, accuracy | `docs/measurements/` đầy đủ cho báo cáo | E13-T2 |
 
 ---
