@@ -62,9 +62,42 @@ services:
     # The published port of the base file is dropped: on a public machine the
     # database answers only on the compose network.
     ports: !override []
+    # Archiving needs the push script inside this container, because postgres
+    # runs archive_command itself rather than handing the segment to anybody.
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - backups:/backups
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/archive.conf:/etc/postgresql/archive.conf:ro
+      - ./backup/wal-push.sh:/usr/local/bin/wal-push.sh:ro
+    environment:
+      BACKUP_DIR: /backups
+      AGE_RECIPIENT: ${AGE_RECIPIENT}
+
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      BACKUP_DIR: /backups
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      AGE_RECIPIENT: ${AGE_RECIPIENT}
+      AGE_KEY_FILE: /keys/age.key
+      TZ: ${APP_TIMEZONE:-Asia/Ho_Chi_Minh}
+    volumes:
+      - backups:/backups
+      - ${AGE_KEY_FILE:-./backup/age.key}:/keys/age.key:ro
 
   redis:
     ports: !override []
@@ -80,3 +113,6 @@ services:
 
 volumes:
   letsencrypt:
+  # A separate volume on purpose: a backup on the database's own disk dies
+  # with it, and on a real host this is a mount from somewhere else.
+  backups:
