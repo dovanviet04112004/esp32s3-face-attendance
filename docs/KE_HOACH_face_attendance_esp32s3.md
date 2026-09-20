@@ -6168,6 +6168,17 @@ thì ghi vào `AttendanceDay` **kèm dấu là đã sửa** (§9.8) — không b
 phần mềm đòi nó có **duyệt trước**, nếu không thì mọi phút ở lại muộn đều thành tăng ca và bảng
 lương mất kiểm soát. Nên phút ngoài ca chỉ thành tiền khi khớp một đăng ký đã duyệt.
 
+**Khớp thế nào, nói rõ bằng một công thức.** Mỗi ngày trả **`min(phút máy đo, phút được duyệt
+cho ngày đó)`**, và một đăng ký trải nhiều ngày thì số phút của nó **chia đều cho số ngày nó
+phủ**. Hai vế của phép `min` chặn hai chiều lạm dụng khác nhau: không ai được trả nhiều hơn số
+đã duyệt, và cũng không ai được trả cho giờ mình không thật sự ở lại. Ngày không có đăng ký nào
+phủ thì **tăng ca bằng không**, dù máy có đo được bao nhiêu.
+
+Chia đều là một lựa chọn, không phải sự thật — người ta có thể ở lại bốn tiếng hôm thứ Hai và
+không tiếng nào hôm thứ Ba. Nhưng cách còn lại là bắt người duyệt nhập số phút cho từng ngày,
+và một biểu mẫu như vậy thì không ai điền. Ai cần chính xác theo ngày thì gửi mỗi ngày một
+đăng ký, và công thức trên tự ra đúng.
+
 **3. Công tác và làm từ xa.** Cùng lý do với mục 1, nhưng đăng ký **trước** chứ không giải trình
 sau. Ngày đã đăng ký thì kiosk không thấy mặt cũng không tính vắng.
 
