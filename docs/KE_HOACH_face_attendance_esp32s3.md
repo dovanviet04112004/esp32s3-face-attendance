@@ -6066,6 +6066,20 @@ và mỗi lượt chạy có quyền xếp khác đi. Con trỏ là **chuỗi m�
 trần** ở `MAX_OFFSET`. Quá trần thì từ chối kèm mã, và câu trả lời là dùng con trỏ. Một giới hạn
 từ chối thẳng tốt hơn một truy vấn chậm dần mà không ai thấy nó chậm từ lúc nào.
 
+**Hai cái bẫy khiến con trỏ chỉ trông giống con trỏ.** Thứ nhất, chỉ mục phải phủ **đúng cặp
+khoá**: với chỉ mục chỉ trên `ts`, câu lệnh con trỏ vẫn quét ngược từ đầu rồi *lọc bỏ* — đo ở độ
+sâu 50.000 thì `Rows Removed by Filter: 50001`, tức vẫn tuyến tính theo độ sâu, chỉ là mặc áo
+con trỏ. Thứ hai, **phép so sánh phải thành chặn chỉ mục chứ không thành bộ lọc**: dạng
+`(ts, id) < (x, y)` thì Postgres cho `Index Cond` (0,49 ms), còn dạng `ts < x OR (ts = x AND
+id < y)` — thứ duy nhất ORM phát ra được — thì cho `Filter` (14,98 ms). Cách giữ cả hai: thêm
+một vế `ts <= x` **trông thừa** bên cạnh, vì đó là vế duy nhất thành `Index Cond`; khi ấy phần
+bị lọc chỉ còn bằng **số dòng trùng `ts`**, không còn theo độ sâu (0,99 ms). Vế thừa ấy không
+được phép bị ai dọn đi vì tưởng nó lặp lại điều kiện phía sau.
+
+Đo sau khi làm, 300.001 lượt quẹt, trang 50 dòng: con trỏ **2,23 → 2,19 → 1,47 → 1,36 ms** ở
+trang 1, 100, 500, 1.000; `OFFSET` **1,08 → 2,24 → 4,98 → 7,26 ms**. Con trỏ đắt hơn ở trang
+đầu và phẳng từ đó trở đi — đúng thứ cần: trang thứ 1.000 rẻ ngang trang đầu.
+
 **4. Tìm tên có dấu đi bằng chỉ mục ba chữ.** `ILIKE '%nguyen%'` không dùng được chỉ mục B-tree.
 Cần `pg_trgm` với chỉ mục GIN trên tên và mã.
 
