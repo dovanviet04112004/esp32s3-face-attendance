@@ -8,6 +8,7 @@ export const AUDIT_SUBJECTS = {
   ASSET: "asset",
   ORG: "org",
   POLICY: "policy",
+  DEVICE: "device",
   ROUTE: "route",
 } as const;
 
@@ -55,6 +56,10 @@ export const AUDIT_ACTIONS = {
   ORG_HOLIDAY_DELETE: "org.holidayDelete",
 
   POLICY_CREATE: "policy.create",
+
+  DEVICE_REGISTER: "device.register",
+  DEVICE_TOKEN_ISSUE: "device.tokenIssue",
+  DEVICE_RESET: "device.reset",
 
   ROUTE_WRITE: "route.write",
 } as const;

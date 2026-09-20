@@ -1,5 +1,5 @@
-import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString, MaxLength } from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
@@ -21,6 +21,33 @@ export class UpdateDeviceDto {
 
 /** Approving is where a person puts a readable name on a serial (KEHOACH 7.3). */
 export class ApproveDeviceDto extends UpdateDeviceDto {}
+
+const DEVICE_ID_MAX = 32;
+const BOOTSTRAP_MIN = 16;
+const BOOTSTRAP_MAX = 256;
+const VERSION_MAX = 32;
+
+/** What a kiosk with an empty NVS can say about itself: the id burned into its
+ *  eFuse, and the secret its firmware batch carries (KEHOACH 7.3).
+ */
+export class RegisterDeviceDto {
+  @ApiProperty({ maxLength: DEVICE_ID_MAX, example: "kiosk-2884859fd3c8" })
+  @IsString()
+  @MaxLength(DEVICE_ID_MAX)
+  deviceId!: string;
+
+  @ApiProperty({ minLength: BOOTSTRAP_MIN, maxLength: BOOTSTRAP_MAX })
+  @IsString()
+  @MinLength(BOOTSTRAP_MIN)
+  @MaxLength(BOOTSTRAP_MAX)
+  bootstrapToken!: string;
+
+  @ApiPropertyOptional({ maxLength: VERSION_MAX })
+  @IsOptional()
+  @IsString()
+  @MaxLength(VERSION_MAX)
+  fwVersion?: string;
+}
 
 export class ListDevicesDto extends PaginationDto {
   @ApiPropertyOptional({ enum: DEVICE_STATUS })

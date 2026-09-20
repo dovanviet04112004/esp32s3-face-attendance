@@ -468,7 +468,8 @@
     "TASK_ALREADY_DONE": "Somebody has already marked this done.",
     "CONTRACT_NOT_FOUND": "No such contract.",
     "DEPARTMENT_NOT_FOUND": "No such department.",
-    "HOLIDAY_ALREADY_SET": "That date is already a holiday."
+    "HOLIDAY_ALREADY_SET": "That date is already a holiday.",
+    "DEVICE_BOOTSTRAP_REJECTED": "This machine is not accepted into the system."
   },
   "search": {
     "label": "Search",

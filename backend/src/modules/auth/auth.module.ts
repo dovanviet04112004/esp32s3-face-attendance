@@ -6,6 +6,7 @@ import { ThrottlerModule } from "@nestjs/throttler";
 
 import type { Env } from "../../config/env.schema.js";
 import { AuthController } from "./auth.controller.js";
+import { THROTTLE } from "./auth.types.js";
 import { AuthService } from "./auth.service.js";
 import { DeviceStrategy } from "./strategies/device.strategy.js";
 import { JwtRefreshStrategy } from "./strategies/jwt-refresh.strategy.js";
@@ -21,9 +22,17 @@ const MINUTE_MS = 60_000;
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>) => ({
+        // Two buckets because five a minute is a number picked for a person
+        // typing a password, not for a fleet polling with backoff.
         throttlers: [
           {
+            name: THROTTLE.login,
             limit: config.get("LOGIN_ATTEMPTS_PER_MINUTE", { infer: true }),
+            ttl: MINUTE_MS,
+          },
+          {
+            name: THROTTLE.deviceRegister,
+            limit: config.get("DEVICE_REGISTER_ATTEMPTS_PER_MINUTE", { infer: true }),
             ttl: MINUTE_MS,
           },
         ],

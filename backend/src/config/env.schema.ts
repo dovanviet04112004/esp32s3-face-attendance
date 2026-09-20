@@ -18,6 +18,7 @@ export const envSchema = z.object({
 
   LOGIN_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(5),
   SESSIONS_PER_USER: z.coerce.number().int().positive().default(10),
+  DEVICE_REGISTER_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(12),
 
   // The server clock is UTC, so this decides every day boundary (KEHOACH 9.8).
   APP_TIMEZONE: z

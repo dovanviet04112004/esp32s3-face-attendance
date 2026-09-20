@@ -468,7 +468,8 @@
     "TASK_ALREADY_DONE": "Việc này đã có người đánh dấu xong.",
     "CONTRACT_NOT_FOUND": "Không tìm thấy hợp đồng này.",
     "DEPARTMENT_NOT_FOUND": "Không tìm thấy phòng ban này.",
-    "HOLIDAY_ALREADY_SET": "Ngày này đã có trong lịch nghỉ."
+    "HOLIDAY_ALREADY_SET": "Ngày này đã có trong lịch nghỉ.",
+    "DEVICE_BOOTSTRAP_REJECTED": "Máy này không được nhận vào hệ thống."
   },
   "search": {
     "label": "Tìm kiếm",

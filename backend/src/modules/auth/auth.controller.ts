@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { ThrottlerGuard } from "@nestjs/throttler";
+import { SkipThrottle, ThrottlerGuard } from "@nestjs/throttler";
 import type { CookieOptions, Request, Response } from "express";
 
 import { NotAudited } from "../../common/decorators/audited.decorator.js";
@@ -19,7 +19,7 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { JwtRefreshGuard } from "../../common/guards/jwt-refresh.guard.js";
 import type { Env } from "../../config/env.schema.js";
 import { AuthService, ttlToMs, type IssuedTokens } from "./auth.service.js";
-import { REFRESH_COOKIE, type AccessClaims, type RefreshClaims } from "./auth.types.js";
+import { REFRESH_COOKIE, THROTTLE, type AccessClaims, type RefreshClaims } from "./auth.types.js";
 import { LoginDto } from "./dto/login.dto.js";
 
 const REFRESH_PATH = "/auth";
@@ -35,6 +35,9 @@ export class AuthController {
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @UseGuards(ThrottlerGuard)
+  @SkipThrottle({ [THROTTLE.deviceRegister]: true })
+  // Every bucket a route does not name governs it too, and the loosest of them
+  // wins, so each door here skips the other's allowance (KEHOACH 7.2).
   @ApiOperation({ summary: "Exchange an email and password for an access token" })
   async login(
     @Body() body: LoginDto,
