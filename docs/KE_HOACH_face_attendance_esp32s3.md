@@ -6784,7 +6784,7 @@ gán vào nhiều kiosk, và hợp đồng đã phân biệt sẵn `ASSIGN` ("ch
 còn lại và chuyển chúng sang `ENROLLED`** — để nguyên `ASSIGN` chính là thứ khiến cửa thứ hai
 hỏi lại.
 
-Ba điều kèm theo, mỗi điều bịt một khe khác nhau:
+Năm điều kèm theo, mỗi điều bịt một khe khác nhau:
 
 - **Chất lượng quyết định, không phải thứ tự tới.** Hai cửa cùng lấy được thì bản mờ có thể tới
   sau, và một `upsert` trơ sẽ đè bản tốt. Điều kiện `quality` nằm trong `WHERE` của chính lệnh
@@ -6796,9 +6796,21 @@ Ba điều kèm theo, mỗi điều bịt một khe khác nhau:
   bản bắt đầu bằng phép trừ, nên một máy giữ nhiều người hơn số đếm của nó sẽ sinh phiên bản
   âm, bị hợp đồng từ chối, và **đúng cái cửa cần đẩy lại cả danh sách là cái cửa không bao giờ
   nhận được**. Nâng số đếm lên bằng số dòng trước khi phát lại.
-- **Kiosk không được lùi phiên bản.** Hai lần đẩy có thể tới lệch thứ tự; bản tin có số phiên
-  bản **không lớn hơn** số đang giữ thì bỏ qua, và số đang giữ không bao giờ giảm. Hiện firmware
-  nhận số của bản tin cuối cùng trong lô một cách vô điều kiện — nó **tự chữa** vì số lùi khiến
-  heartbeat báo thấp rồi máy chủ đồng bộ lại cả danh sách, nhưng trong khoảng đó cửa ấy cầm sai
-  mặt. 🔬 Chưa sửa, chưa đo trên board.
+- **Kiosk chỉ lùi phiên bản khi máy chủ bảo nó lùi.** Giao ít nhất một lần nghĩa là hai lần
+  đẩy có thể tới lệch thứ tự, và một bản tin cũ tới sau vừa ghi đè mặt mới vừa kéo số đếm
+  xuống. Luật ở firmware có hai nửa. Bản tin **đếm tăng** — `ASSIGN`, `UPSERT`, `DELETE`,
+  `DELETE_EMPLOYEE`, `REVOKE` — mang số phiên bản **không lớn hơn** số đang giữ thì bỏ hẳn:
+  không áp dụng, không ghi số. `REPLACE_ALL` thì ngược lại, **luôn áp dụng và đặt số đang giữ
+  bằng số nó mang**, kể cả khi số ấy nhỏ hơn.
+- **Vì sao `REPLACE_ALL` được miễn.** Nó không phải một bước đếm mà là một lời tuyên bố lại:
+  `resync` phát cả danh sách từ mốc `top − số dòng`, và một cửa sống lâu có số phiên bản lớn
+  hơn số người nó giữ rất nhiều — mỗi lượt gán, thu hồi, hay lan mẫu đều đẩy số lên trong khi
+  số dòng thì không. **Mốc mở màn gần như luôn thấp hơn số kiosk đang giữ.** Đem cùng phép so
+  sánh áp lên `REPLACE_ALL` là vứt bỏ phần đầu của mọi lượt đồng bộ lại, và cái mất không phải
+  số dòng mà là **hai thứ đúng ra phải biến mất**. Chạy chính vị từ ấy trên lượt `resync` máy
+  chủ phát thật — kiosk đang ở 98 giữ một người đã nghỉ và một mẫu cũ, máy chủ ở 100 với ba
+  người: luật miễn `REPLACE_ALL` ra đúng ba dòng, mẫu mới, không còn người đã nghỉ; luật lọc
+  tất ra **bốn dòng, mặt người đã nghỉ vẫn mở được cửa, mẫu cũ vẫn nguyên — mà số phiên bản vẫn
+  là 100 nên heartbeat báo khớp**. Hỏng im lặng, đúng thứ luật này sinh ra để chặn.
+  🔬 Vị từ đo trên máy chủ dựng, chưa đo trên board: hàng đợi, NVS và bảng mặt chưa ai thấy chạy.
 
