@@ -4,6 +4,7 @@ import type {
   LeaveType,
   Prisma,
   Request as LeaveRequest,
+  RequestKind,
   RequestState,
 } from "@prisma/client";
 
@@ -18,6 +19,7 @@ import type { DecideRequestDto, ListRequestsDto, SubmitRequestDto } from "./dto/
 const EXCLUSION_VIOLATION = "23P01";
 const HALF = 0.5;
 const MS_PER_DAY = 86_400_000;
+const OFF_SITE: RequestKind[] = ["BUSINESS_TRIP", "REMOTE_WORK"];
 
 /** One person's standing in one leave type, on a day they picked. */
 export interface BalanceAsOf {
@@ -200,7 +202,12 @@ export class LeaveService {
         await this.settle(tx, held, body.approve);
       }
       if (held.kind === "LEAVE" && !held.halfDay && body.approve) {
-        await this.timesheet.markLeave(tx, held.employeeId, held.fromDate, held.toDate);
+        await this.timesheet.markApproved(tx, held.employeeId, held.fromDate, held.toDate, "LEAVE");
+      }
+      // Registered in advance, so a kiosk that never sees their face is not
+      // evidence of anything (KEHOACH 9.17 item 3).
+      if (OFF_SITE.includes(held.kind) && body.approve) {
+        await this.timesheet.markApproved(tx, held.employeeId, held.fromDate, held.toDate, "WORKED");
       }
       if (held.kind === "ATTENDANCE_FIX" && body.approve) {
         await this.timesheet.applyFix(

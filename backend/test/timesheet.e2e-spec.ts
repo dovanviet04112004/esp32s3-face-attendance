@@ -23,12 +23,12 @@ const BEHIND = "NV9102";
 const MEASURED = "NV9103";
 const HALF = "NV9104";
 const FIXED = "NV9105";
-const MADE_CODES = [AHEAD, BEHIND, MEASURED, HALF, FIXED];
+const TRIP = "NV9106";
+const REMOTE = "NV9107";
+const MADE_CODES = [AHEAD, BEHIND, MEASURED, HALF, FIXED, TRIP, REMOTE];
 
-// A correction is filed by the person it belongs to, and no seeded account is
-// attached to an employee. The login is made here rather than through
-// provisioning, which opens one for everyone waiting and would race the leave
-// suite for the same people.
+// Made here rather than by provisioning, which opens a login for everyone
+// waiting and would race the leave suite for the same people.
 const FILER_EMAIL = "nv9105@kiosk.local";
 const FILER_PASSWORD = "kiosk-e2e-password";
 
@@ -188,6 +188,45 @@ describe("timesheet leave (e2e)", () => {
   it("does not turn a half day into a whole day of leave", async () => {
     assert.equal(await approveLeave(HALF, true), 201);
     assert.equal(await stateOf(HALF), "ABSENT");
+  });
+
+  it("does not count a registered trip as an absence when the build runs", async () => {
+    await db.request.create({
+      data: {
+        employeeId: idOf.get(TRIP) as number,
+        kind: "BUSINESS_TRIP",
+        state: "APPROVED",
+        fromDate: date,
+        toDate: date,
+        days: 1,
+        reason: "e2e",
+      },
+    });
+    await timesheet.build(DAY);
+    const row = await rowOf(TRIP);
+    assert.equal(row?.state, "WORKED");
+    assert.equal(row?.punchCount, 0, "the kiosk saw nobody and must not claim it did");
+  });
+
+  it("clears the absence when remote work is approved after the build", async () => {
+    assert.equal(await stateOf(REMOTE), "ABSENT");
+    const filed = await db.request.create({
+      data: {
+        employeeId: idOf.get(REMOTE) as number,
+        kind: "REMOTE_WORK",
+        state: "PENDING",
+        fromDate: date,
+        toDate: date,
+        days: 1,
+        reason: "e2e",
+      },
+    });
+    const decided = await request(http)
+      .post(`/requests/${filed.id}/decide`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ approve: true });
+    assert.equal(decided.status, 201);
+    assert.equal(await stateOf(REMOTE), "WORKED");
   });
 
   it("refuses a correction that reaches across more than one day", async () => {

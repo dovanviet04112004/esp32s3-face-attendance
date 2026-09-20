@@ -144,14 +144,20 @@ export class TimesheetService {
   }
 
   /**
-   * Turn days already counted absent into leave, for an approval that lands
-   * after the build has run. A day the device saw, or a hand correction, is
-   * left alone.
+   * Turn days already counted absent into what an approved request makes
+   * them, for an approval that lands after the build has run. A day the
+   * device saw, or a hand correction, is left alone.
    */
-  markLeave(tx: Prisma.TransactionClient, employeeId: number, from: Date, to: Date): Promise<number> {
+  markApproved(
+    tx: Prisma.TransactionClient,
+    employeeId: number,
+    from: Date,
+    to: Date,
+    state: "LEAVE" | "WORKED",
+  ): Promise<number> {
     return tx.$executeRaw`
       UPDATE "AttendanceDay"
-         SET "state" = 'LEAVE', "updatedAt" = now()
+         SET "state" = ${state}::"DayState", "updatedAt" = now()
        WHERE "employeeId" = ${employeeId}
          AND "date" BETWEEN ${from}::date AND ${to}::date
          AND "state" = 'ABSENT'
@@ -232,13 +238,13 @@ export class TimesheetService {
       this.db.request.findMany({
         // A half day cannot be one day state, so only whole days come through.
         where: {
-          kind: "LEAVE",
+          kind: { in: ["LEAVE", "BUSINESS_TRIP", "REMOTE_WORK"] },
           state: "APPROVED",
           halfDay: false,
           fromDate: { lte: date },
           toDate: { gte: date },
         },
-        select: { employeeId: true },
+        select: { employeeId: true, kind: true },
       }),
     ]);
     const shifts = await this.shiftsOn(date);
@@ -261,12 +267,18 @@ export class TimesheetService {
     }
 
     const weekend = [SATURDAY, SUNDAY].includes(date.getUTCDay());
-    const onLeave = new Set(approved.map((row) => row.employeeId));
+    const onLeave = new Set(
+      approved.filter((row) => row.kind === "LEAVE").map((row) => row.employeeId),
+    );
+    const offSite = new Set(
+      approved.filter((row) => row.kind !== "LEAVE").map((row) => row.employeeId),
+    );
     const rows = staff.map((person) =>
       this.dayOf(person.id, date, seen.get(person.id), shifts.get(person.id), {
         holiday: holiday !== null,
         weekend,
         leave: onLeave.has(person.id),
+        offSite: offSite.has(person.id),
       }),
     );
     await this.write(date, rows);
@@ -332,7 +344,7 @@ export class TimesheetService {
     date: Date,
     marks: { first: Date; last: Date; count: number; unsynced: boolean } | undefined,
     shift: ShiftClock | undefined,
-    calendar: { holiday: boolean; weekend: boolean; leave: boolean },
+    calendar: { holiday: boolean; weekend: boolean; leave: boolean; offSite: boolean },
   ): DayRow {
     if (!marks) {
       // A holiday belongs to everyone, so it does not spend anyone's leave.
@@ -342,7 +354,9 @@ export class TimesheetService {
           ? "WEEKEND"
           : calendar.leave
             ? "LEAVE"
-            : "ABSENT";
+            : calendar.offSite
+              ? "WORKED"
+              : "ABSENT";
       return { employeeId, date, state, shiftId: shift?.shiftId ?? null, punchCount: 0 };
     }
     const inAt = minutesIntoDay(marks.first, this.zone);
