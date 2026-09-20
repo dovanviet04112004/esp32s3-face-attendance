@@ -33,7 +33,8 @@
     "more": "Thêm",
     "close": "Đóng",
     "payroll": "Kỳ lương",
-    "policy": "Chính sách lương"
+    "policy": "Chính sách lương",
+    "timesheetHr": "Bảng công"
   },
   "common": {
     "loading": "Đang tải…",
@@ -375,7 +376,8 @@
     "ADVANCE_PAY_DENIED": "Bạn không có quyền chi tạm ứng.",
     "ADVANCE_ALREADY_DECIDED": "Đơn tạm ứng này đã được xử lý.",
     "ADVANCE_NOT_APPROVED": "Đơn tạm ứng chưa được duyệt.",
-    "SELF_DECIDE": "Không thể tự duyệt đơn của chính mình."
+    "SELF_DECIDE": "Không thể tự duyệt đơn của chính mình.",
+    "RUN_KIND_NOT_READY": "Phép tính cho kiểu lượt chạy này chưa dựng."
   },
   "search": {
     "label": "Tìm kiếm",
@@ -386,5 +388,40 @@
     "kindDepartment": "Phòng ban",
     "kindRequest": "Đơn",
     "kindPayslip": "Phiếu lương"
+  },
+  "timesheet": {
+    "title": "Bảng công",
+    "lead": "Tổng theo người trong khoảng đã chọn; chạm một người để xem từng ngày.",
+    "from": "Từ ngày",
+    "to": "Đến ngày",
+    "department": "Phòng ban",
+    "allDepartments": "Tất cả phòng ban",
+    "employee": "Nhân viên",
+    "workedDays": "Ngày làm",
+    "leaveDays": "Ngày nghỉ phép",
+    "absentDays": "Ngày vắng",
+    "workedHours": "Giờ làm",
+    "lateMinutes": "Đi muộn",
+    "overtime": "Tăng ca",
+    "adjusted": "Đã sửa tay",
+    "empty": "Chưa dựng ngày công cho khoảng này",
+    "emptyHint": "Bấm Dựng lại để gộp lượt quẹt thành ngày công.",
+    "rebuild": "Dựng lại",
+    "rebuilding": "Đang dựng…",
+    "built": "Dựng xong {days} ngày, {rows} dòng",
+    "correct": "Sửa",
+    "correctTitle": "Sửa ngày công",
+    "correctReason": "Lý do sửa",
+    "correctMinutes": "Số phút làm việc",
+    "correctState": "Trạng thái",
+    "measured": "Máy đo được",
+    "traced": "Sửa bởi",
+    "stateWORKED": "Đi làm",
+    "stateLEAVE": "Nghỉ phép",
+    "stateHOLIDAY": "Ngày lễ",
+    "stateWEEKEND": "Cuối tuần",
+    "stateABSENT": "Vắng",
+    "day": "Ngày",
+    "days": "Từng ngày"
   }
 }

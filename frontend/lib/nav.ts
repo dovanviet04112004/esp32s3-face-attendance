@@ -68,7 +68,8 @@ export const NAV: NavGroup[] = [
   {
     key: "groupTime",
     items: [
-      { href: "/attendance", key: "timesheet", icon: CalendarDays, roles: PEOPLE_DESK },
+      { href: "/timesheet", key: "timesheetHr", icon: CalendarDays, roles: PEOPLE_DESK },
+      { href: "/attendance", key: "timesheet", icon: CalendarCheck, roles: PEOPLE_DESK },
       { href: "/leave", key: "leave", icon: FileText, roles: PEOPLE_DESK },
       { href: "/shifts", key: "shifts", icon: Clock, roles: PEOPLE_DESK },
     ],

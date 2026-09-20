@@ -33,7 +33,8 @@
     "more": "More",
     "close": "Close",
     "payroll": "Payroll",
-    "policy": "Pay policy"
+    "policy": "Pay policy",
+    "timesheetHr": "Timesheet"
   },
   "common": {
     "loading": "Loading…",
@@ -375,7 +376,8 @@
     "ADVANCE_PAY_DENIED": "You may not pay advances out.",
     "ADVANCE_ALREADY_DECIDED": "This advance has already been answered.",
     "ADVANCE_NOT_APPROVED": "This advance has not been approved.",
-    "SELF_DECIDE": "You cannot decide your own request."
+    "SELF_DECIDE": "You cannot decide your own request.",
+    "RUN_KIND_NOT_READY": "The calculation for this kind of run is not built yet."
   },
   "search": {
     "label": "Search",
@@ -386,5 +388,40 @@
     "kindDepartment": "Department",
     "kindRequest": "Request",
     "kindPayslip": "Payslip"
+  },
+  "timesheet": {
+    "title": "Timesheet",
+    "lead": "Totals per person for the range; tap somebody to see their days.",
+    "from": "From",
+    "to": "To",
+    "department": "Department",
+    "allDepartments": "All departments",
+    "employee": "Employee",
+    "workedDays": "Days worked",
+    "leaveDays": "Leave days",
+    "absentDays": "Absent days",
+    "workedHours": "Hours worked",
+    "lateMinutes": "Late",
+    "overtime": "Overtime",
+    "adjusted": "Corrected",
+    "empty": "No day rows built for this range",
+    "emptyHint": "Press Rebuild to fold punches into days.",
+    "rebuild": "Rebuild",
+    "rebuilding": "Rebuilding…",
+    "built": "Built {days} days, {rows} rows",
+    "correct": "Correct",
+    "correctTitle": "Correct a day",
+    "correctReason": "Why",
+    "correctMinutes": "Minutes worked",
+    "correctState": "State",
+    "measured": "The device measured",
+    "traced": "Corrected by",
+    "stateWORKED": "Worked",
+    "stateLEAVE": "On leave",
+    "stateHOLIDAY": "Public holiday",
+    "stateWEEKEND": "Weekend",
+    "stateABSENT": "Absent",
+    "day": "Date",
+    "days": "Day by day"
   }
 }

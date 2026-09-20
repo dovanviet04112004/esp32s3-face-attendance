@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { AttendanceDay, DayState } from "@prisma/client";
 
@@ -6,7 +6,7 @@ import type { Env } from "../../config/env.schema.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
-import type { ListDaysDto } from "./dto/timesheet.dto.js";
+import type { CorrectDayDto, ListDaysDto } from "./dto/timesheet.dto.js";
 import { clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
 
 const SATURDAY = 6;
@@ -31,6 +31,19 @@ interface DayRow {
 export interface BuildReport {
   days: number;
   rows: number;
+}
+
+export interface DaySummary {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  workedDays: number;
+  leaveDays: number;
+  absentDays: number;
+  workedMinutes: number;
+  lateMinutes: number;
+  overtimeMinutes: number;
+  adjustedDays: number;
 }
 
 interface ShiftClock {
@@ -71,6 +84,59 @@ export class TimesheetService {
       },
       orderBy: [{ date: "asc" }, { employeeId: "asc" }],
       take: 5000,
+    });
+  }
+
+  /**
+   * One row per person for a month. Reading every day row into the browser is
+   * thirty thousand times thirty rows for one screen (KEHOACH 9.9).
+   */
+  async summary(viewer: Viewer, query: ListDaysDto): Promise<DaySummary[]> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const from = dayAsDate(query.from);
+    const to = dayAsDate(query.to);
+    return this.db.$queryRaw<DaySummary[]>`
+      SELECT e."id" AS "employeeId", e."code", e."fullName",
+             count(*) FILTER (WHERE d."state" = 'WORKED')::int  AS "workedDays",
+             count(*) FILTER (WHERE d."state" = 'LEAVE')::int   AS "leaveDays",
+             count(*) FILTER (WHERE d."state" = 'ABSENT')::int  AS "absentDays",
+             coalesce(sum(d."workedMinutes"), 0)::int           AS "workedMinutes",
+             coalesce(sum(d."lateMinutes"), 0)::int             AS "lateMinutes",
+             coalesce(sum(d."overtimeMinutes"), 0)::int         AS "overtimeMinutes",
+             count(*) FILTER (WHERE d."adjustedById" IS NOT NULL)::int AS "adjustedDays"
+        FROM "AttendanceDay" d
+        JOIN "Employee" e ON e."id" = d."employeeId"
+       WHERE d."date" BETWEEN ${from} AND ${to}
+         AND (${visible}::int[] IS NULL OR d."employeeId" = ANY(${visible}::int[]))
+         AND (${query.departmentId ?? null}::text IS NULL OR e."departmentId" = ${query.departmentId ?? null})
+       GROUP BY e."id", e."code", e."fullName"
+       ORDER BY e."code"
+       LIMIT 500
+    `;
+  }
+
+  /**
+   * A hand correction that leaves a trace, and never overwrites what the
+   * device measured (KEHOACH 9.8).
+   */
+  async correct(viewer: Viewer, id: string, body: CorrectDayDto): Promise<AttendanceDay> {
+    const held = await this.db.attendanceDay.findUnique({ where: { id: BigInt(id) } });
+    if (!held) {
+      throw new NotFoundException("DAY_NOT_FOUND");
+    }
+    if (body.workedMinutes === undefined && body.state === undefined) {
+      throw new BadRequestException("NOTHING_TO_CORRECT");
+    }
+    return this.db.attendanceDay.update({
+      where: { id: held.id },
+      data: {
+        state: body.state ?? held.state,
+        workedMinutes: body.workedMinutes ?? held.workedMinutes,
+        measuredMinutes: held.measuredMinutes ?? held.workedMinutes,
+        adjustedById: viewer.userId,
+        adjustReason: body.reason,
+        adjustedAt: new Date(),
+      },
     });
   }
 
