@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { useFault } from "@/lib/fault";
 
 const SHORTEST = 12;
 
-export default function SetPasswordPage() {
+function SetPasswordForm() {
   const t = useTranslations("setPassword");
   const app = useTranslations("app");
   const router = useRouter();
@@ -102,5 +102,14 @@ export default function SetPasswordPage() {
         </p>
       </form>
     </main>
+  );
+}
+
+// The token arrives in the query string, which the prerender does not have.
+export default function SetPasswordPage() {
+  return (
+    <Suspense>
+      <SetPasswordForm />
+    </Suspense>
   );
 }
