@@ -66,6 +66,13 @@ export class BalanceQueryDto {
   @IsOptional()
   @IsDateString()
   asOf?: string;
+
+  @ApiPropertyOptional({ description: "Whose balance; the caller's own when left out" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  employeeId?: number;
 }
 
 export class DecideRequestDto {

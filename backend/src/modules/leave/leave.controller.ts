@@ -22,14 +22,12 @@ export class LeaveController {
   }
 
   @Get("leave-balances")
-  @ApiOperation({ summary: "What this viewer has left on a day they choose" })
+  @ApiOperation({ summary: "What somebody has left on a day of the caller's choosing" })
   balances(
     @CurrentViewer() viewer: Viewer,
     @Query() query: BalanceQueryDto,
   ): Promise<BalanceAsOf[]> {
-    return viewer.employeeId === null
-      ? Promise.resolve([])
-      : this.leave.balancesAsOf(viewer.employeeId, new Date(query.asOf ?? Date.now()));
+    return this.leave.balancesFor(viewer, query.employeeId, new Date(query.asOf ?? Date.now()));
   }
 
   @Post("requests")

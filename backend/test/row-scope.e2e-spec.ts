@@ -188,6 +188,28 @@ describe("row scope (e2e)", () => {
     }
   });
 
+  // Both take an employee id now, so both are a way in if either forgets.
+  it("answers for somebody else only to a viewer who may read them", async () => {
+    const stranger = idOf.get(STRANGER) as number;
+    const report = idOf.get(MINE) as number;
+    for (const path of [`/leave-balances?employeeId=${stranger}`, `/payslips?employeeId=${stranger}`]) {
+      assert.equal((await as("mine")(path)).status, 404, `${path} answered for a stranger`);
+    }
+    assert.equal((await as("boss")(`/leave-balances?employeeId=${report}`)).status, 200);
+    assert.equal((await as("hr")(`/leave-balances?employeeId=${stranger}`)).status, 200);
+  });
+
+  it("narrows a payslip list to the person asked about, not to everyone in scope", async () => {
+    const stranger = idOf.get(STRANGER) as number;
+    const res = await as("hr")(`/payslips?employeeId=${stranger}`);
+    assert.equal(res.status, 200);
+    const rows = res.body as { employeeId: number }[];
+    assert.ok(
+      rows.every((row) => row.employeeId === stranger),
+      "the filter was dropped and the whole scope came back",
+    );
+  });
+
   it("refuses a manager loop rather than letting the walk find one", async () => {
     const res = await request(http)
       .patch(`/employees/${idOf.get(BOSS) as number}`)

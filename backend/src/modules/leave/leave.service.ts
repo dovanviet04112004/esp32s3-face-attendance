@@ -68,6 +68,21 @@ export class LeaveService {
    * in. A day held by a request nobody has answered is a day already gone,
    * so it leaves `remaining` the moment the request is filed.
    */
+  /** Somebody's balance, theirs by default. Asking about another person goes
+   *  through the same scope as reading their record does.
+   */
+  async balancesFor(viewer: Viewer, employeeId: number | undefined, asOf: Date): Promise<BalanceAsOf[]> {
+    const whose = employeeId ?? viewer.employeeId;
+    if (whose === null || whose === undefined) {
+      return [];
+    }
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (visible !== null && !visible.includes(whose)) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+    return this.balancesAsOf(whose, asOf);
+  }
+
   async balancesAsOf(employeeId: number, asOf: Date): Promise<BalanceAsOf[]> {
     const year = asOf.getUTCFullYear();
     const yearEnd = new Date(Date.UTC(year, 11, 31));

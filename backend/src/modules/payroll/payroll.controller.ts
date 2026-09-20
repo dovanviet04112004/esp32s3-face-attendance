@@ -142,8 +142,9 @@ export class PayrollController {
     @CurrentViewer() viewer: Viewer,
     @Query("periodId") periodId?: string,
     @Query("runId") runId?: string,
+    @Query("employeeId", new ParseIntPipe({ optional: true })) employeeId?: number,
   ): Promise<PayslipRow[]> {
-    return this.payroll.payslips(viewer, periodId, runId);
+    return this.payroll.payslips(viewer, periodId, runId, employeeId);
   }
 
   @Get("payslips/:id")

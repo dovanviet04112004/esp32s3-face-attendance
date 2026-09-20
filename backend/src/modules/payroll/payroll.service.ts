@@ -911,13 +911,26 @@ export class PayrollService {
     };
   }
 
-  async payslips(viewer: Viewer, periodId?: string, runId?: string): Promise<PayslipRow[]> {
+  async payslips(
+    viewer: Viewer,
+    periodId?: string,
+    runId?: string,
+    employeeId?: number,
+  ): Promise<PayslipRow[]> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (employeeId !== undefined && visible !== null && !visible.includes(employeeId)) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
     return this.db.payslip.findMany({
+      // Both clauses write the same key, so a spread would let the scope
+      // overwrite the asked-for employee and answer with everybody.
       where: {
-        ...(periodId ? { periodId } : {}),
-        ...(runId ? { runId } : {}),
-        ...(visible === null ? {} : { employeeId: { in: visible } }),
+        AND: [
+          periodId ? { periodId } : {},
+          runId ? { runId } : {},
+          employeeId === undefined ? {} : { employeeId },
+          visible === null ? {} : { employeeId: { in: visible } },
+        ],
       },
       include: { period: { select: { year: true, month: true, state: true } } },
       orderBy: [{ periodId: "desc" }, { employeeId: "asc" }],
