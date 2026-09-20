@@ -5913,11 +5913,20 @@ phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng 
 
 | Vai | Thấy | Sửa |
 |---|---|---|
+| `VIEWER` | **chỉ chính mình** — vai mặc định của một tài khoản chưa ai giao việc | không gì |
 | `EMPLOYEE` | hồ sơ của **chính mình**, chấm công của mình, phép của mình, phiếu lương của mình | đơn nghỉ phép của mình, vài ô liên lạc |
 | `MANAGER` | mọi thứ của `EMPLOYEE`, cộng **cây dưới quyền mình** | duyệt hoặc từ chối đơn của cấp dưới |
 | `HR` | toàn bộ hồ sơ, chấm công, nghỉ phép | hồ sơ, hợp đồng, phép, phân ca |
 | `PAYROLL` | như `HR`, cộng **lương và phiếu lương** | chạy kỳ lương, chốt kỳ |
 | `ADMIN` | tất cả, cộng thiết bị và người dùng | tất cả |
+
+**`VIEWER` là vai mặc định, nên nó phải là vai *hẹp nhất*, không phải vai rộng nhất.** `User.role`
+mặc định `VIEWER`; nếu vai ấy nằm trong nhóm không thu hẹp phạm vi thì **mọi tài khoản mới sinh
+ra đã đọc được cả công ty** — và đường đọc nào không gắn `@Roles` thì không có gì chặn nó. Một
+vai mặc định rộng là thứ sai theo hướng tệ nhất: sai âm thầm, và sai với **tài khoản chưa ai
+kịp nghĩ tới**. `VIEWER` vì vậy thu hẹp về đúng hồ sơ của chính nó, y như `EMPLOYEE`; muốn có
+người chỉ đọc mà đọc được cả công ty thì đó là một vai phải **giao có chủ đích**, không phải
+thứ rơi ra từ giá trị mặc định.
 
 **Tách `PAYROLL` khỏi `HR` là quyết định có chủ ý.** Người sửa hồ sơ và người chốt bảng lương
 không nên là cùng một tài khoản: ai đổi được lương cơ bản rồi tự chạy kỳ lương thì không còn
@@ -6333,6 +6342,37 @@ nhóm đầu. Làm mờ đi thay vì ẩn là cố ý khoe những gì họ khô
 **Mỗi phân hệ có đúng một màn hình "về một người".** Hồ sơ nhân viên là trang có tab: thông tin,
 hợp đồng, chấm công, nghỉ phép, lương, tài sản, đào tạo. Không rải mỗi thứ một trang rồi bắt HR
 tìm lại người đó bảy lần.
+
+**Mỗi vai có đúng một danh sách trang, và danh sách ấy khai ở một chỗ.** Bảng dưới là nguồn duy
+nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
+
+| Trang | ADMIN | HR | PAYROLL | MANAGER | EMPLOYEE | VIEWER |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| `Tôi` (5 trang tự phục vụ) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `Chờ duyệt` | ✓ | ✓ | ✓ | ✓ | – | – |
+| `Danh bạ` | ✓ | ✓ | ✓ | ✓ | – | – |
+| `Cây tổ chức` | ✓ | ✓ | – | ✓ | – | – |
+| `Phòng ban` | ✓ | ✓ | – | – | – | – |
+| `Bảng công` · `Chấm công` | ✓ | ✓ | ✓ | ✓ | – | – |
+| `Nghỉ phép` (toàn bộ đơn) | ✓ | ✓ | – | ✓ | – | – |
+| `Ca làm` | ✓ | ✓ | – | – | – | – |
+| `Báo cáo` | ✓ | ✓ | ✓ | – | – | – |
+| `Kỳ lương` · `Chính sách lương` | ✓ | ✓ đọc | ✓ | – | – | – |
+| `Tổng quan` · `Kiosk` | ✓ | – | – | – | – | – |
+| `Cài đặt` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+**Hai luật giữ cho bảng này không mục.**
+
+**Luật 1 — một trang chỉ vào danh sách của một vai khi vai ấy *làm được gì đó* trên trang.** Vai
+đọc được nhưng bấm gì cũng bị từ chối thì trang ấy là một lời mời đi vào ngõ cụt. Khi cả trang
+chỉ để đọc với một vai — như `Kỳ lương` với `HR` — thì **các nút ghi ẩn đi theo vai**, chứ
+không hiện ra để trả `403`.
+
+**Luật 2 — một thứ chờ quyết định thì nằm ở `Chờ duyệt`, không nằm trên trang tự phục vụ.** Đơn
+nghỉ, người phụ thuộc, khiếu nại phiếu lương, giấy xác nhận, đổi thông tin cá nhân — tất cả về
+một hộp. Để hộp duyệt ở ngay trang người lao động gửi đơn thì **cùng một việc có hai địa chỉ**,
+và người trực hộp phải nhớ hôm nay còn phải mở thêm trang nào nữa. Trang tự phục vụ chỉ gửi và
+theo dõi; nó không quyết.
 
 ### 9.16 Các phân hệ mở rộng: quyết định đáng ghi trước
 
