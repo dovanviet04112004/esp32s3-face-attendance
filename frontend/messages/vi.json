@@ -456,7 +456,15 @@
     "MANAGER_CYCLE": "Sắp xếp này tạo thành vòng cấp trên.",
     "REORG_NEEDS_A_SELECTION": "Chọn phòng ban hoặc danh sách người cần chuyển.",
     "REORG_NEEDS_A_DESTINATION": "Chọn phòng ban mới hoặc cấp trên mới.",
-    "REORG_MOVES_NOBODY": "Không có ai khớp lựa chọn này."
+    "REORG_MOVES_NOBODY": "Không có ai khớp lựa chọn này.",
+    "CHECKLIST_ALREADY_STARTED": "Người này đã có danh sách việc loại này rồi.",
+    "CHECKLIST_NOT_FOUND": "Chưa mở danh sách việc cho người này.",
+    "NO_CHECKLIST_TEMPLATE": "Chưa có mẫu danh sách việc nào khớp chức danh và phòng ban này.",
+    "TASK_NOT_FOUND": "Không tìm thấy việc này.",
+    "TASK_ALREADY_DONE": "Việc này đã có người đánh dấu xong.",
+    "CONTRACT_NOT_FOUND": "Không tìm thấy hợp đồng này.",
+    "DEPARTMENT_NOT_FOUND": "Không tìm thấy phòng ban này.",
+    "HOLIDAY_ALREADY_SET": "Ngày này đã có trong lịch nghỉ."
   },
   "search": {
     "label": "Tìm kiếm",

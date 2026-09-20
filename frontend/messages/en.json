@@ -456,7 +456,15 @@
     "MANAGER_CYCLE": "That arrangement makes a loop of managers.",
     "REORG_NEEDS_A_SELECTION": "Choose a department or a list of people to move.",
     "REORG_NEEDS_A_DESTINATION": "Choose a new department or a new manager.",
-    "REORG_MOVES_NOBODY": "Nobody matches that selection."
+    "REORG_MOVES_NOBODY": "Nobody matches that selection.",
+    "CHECKLIST_ALREADY_STARTED": "This person already has a checklist of that kind.",
+    "CHECKLIST_NOT_FOUND": "No checklist has been started for this person.",
+    "NO_CHECKLIST_TEMPLATE": "No template matches this job title and department.",
+    "TASK_NOT_FOUND": "No such task.",
+    "TASK_ALREADY_DONE": "Somebody has already marked this done.",
+    "CONTRACT_NOT_FOUND": "No such contract.",
+    "DEPARTMENT_NOT_FOUND": "No such department.",
+    "HOLIDAY_ALREADY_SET": "That date is already a holiday."
   },
   "search": {
     "label": "Search",
