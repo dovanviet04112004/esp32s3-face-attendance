@@ -1,4 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
+
+import { IMPORT_MAX_BYTES } from "../import.js";
 import { Type } from "class-transformer";
 import {
   IsBoolean,
@@ -123,4 +125,11 @@ export class ListEmployeesDto extends PaginationDto {
   @IsString()
   @MaxLength(64)
   departmentId?: string;
+}
+
+export class ImportCsvDto {
+  @ApiProperty({ description: "The whole file, as text" })
+  @IsString()
+  @MaxLength(IMPORT_MAX_BYTES)
+  csv!: string;
 }

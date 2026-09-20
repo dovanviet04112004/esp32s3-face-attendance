@@ -6,6 +6,7 @@ import {
   Param,
   ParseIntPipe,
   Patch,
+  Header,
   Post,
   Query,
   UseGuards,
@@ -20,10 +21,12 @@ import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import {
   CreateEmployeeDto,
+  ImportCsvDto,
   ListEmployeesDto,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
 import { EmployeesService } from "./employees.service.js";
+import { IMPORT_COLUMNS, type ImportReport } from "./import.js";
 
 @ApiTags("employees")
 @ApiBearerAuth()
@@ -36,6 +39,25 @@ export class EmployeesController {
   @ApiOperation({ summary: "List employees, newest code first" })
   list(@Query() query: ListEmployeesDto, @CurrentViewer() viewer: Viewer): Promise<Page<Employee>> {
     return this.employees.list(query, viewer);
+  }
+
+  @Post("import")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Dry run by default; apply=true writes when nothing is wrong" })
+  importCsv(
+    @CurrentViewer() viewer: Viewer,
+    @Body() body: ImportCsvDto,
+    @Query("apply") apply?: string,
+  ): Promise<ImportReport> {
+    return this.employees.importCsv(viewer, body.csv, apply === "true");
+  }
+
+  @Get("import/template")
+  @Roles("ADMIN", "HR")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @ApiOperation({ summary: "An empty file with the columns this import reads" })
+  template(): string {
+    return `\ufeff${IMPORT_COLUMNS.join(",")}\r\n`;
   }
 
   @Get(":id")

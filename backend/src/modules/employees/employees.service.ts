@@ -10,8 +10,22 @@ import type {
   ListEmployeesDto,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
+import {
+  checkRepeats,
+  checkShape,
+  readRows,
+  type ImportReport,
+  type ImportRow,
+  type RowFault,
+} from "./import.js";
 
 const UNIQUE_VIOLATION = "P2002";
+const kWriteChunk = 2_000;
+const kTransactionMs = 600_000;
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 // One join rather than a lookup per row: the table shows a department by name.
 const EMPLOYEE_VIEW = {
@@ -26,6 +40,162 @@ export class EmployeesService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
   ) {}
+
+
+  /**
+   * Two passes over one file, and the same code decides both: a dry run that
+   * cannot reach the writes is a dry run that lies about them.
+   */
+  async importCsv(viewer: Viewer, text: string, apply: boolean): Promise<ImportReport> {
+    const read = readRows(text);
+    const faults: RowFault[] = [...read.faults];
+    read.rows.forEach((row, at) => faults.push(...checkShape(row, at)));
+    faults.push(...checkRepeats(read.rows));
+
+    const [departments, titles, people] = await Promise.all([
+      this.db.department.findMany({ select: { id: true, code: true } }),
+      this.db.jobTitle.findMany({ select: { id: true, code: true } }),
+      this.db.employee.findMany({ select: { id: true, code: true } }),
+    ]);
+    const departmentBy = new Map(departments.map((one) => [one.code, one.id]));
+    const titleBy = new Map(titles.map((one) => [one.code, one.id]));
+    const personBy = new Map(people.map((one) => [one.code, one.id]));
+    // A manager named in the file counts as known, so a whole department can
+    // arrive in one upload without ordering the lines by seniority.
+    const arriving = new Set(read.rows.map((row) => row.code).filter(Boolean) as string[]);
+
+    read.rows.forEach((row, at) => {
+      const line = at + 2;
+      if (row.departmentCode && !departmentBy.has(row.departmentCode)) {
+        faults.push({ row: line, column: "departmentCode", code: "DEPARTMENT_UNKNOWN", value: row.departmentCode });
+      }
+      if (row.jobTitleCode && !titleBy.has(row.jobTitleCode)) {
+        faults.push({ row: line, column: "jobTitleCode", code: "JOB_TITLE_UNKNOWN", value: row.jobTitleCode });
+      }
+      if (row.managerCode && !personBy.has(row.managerCode) && !arriving.has(row.managerCode)) {
+        faults.push({ row: line, column: "managerCode", code: "MANAGER_UNKNOWN", value: row.managerCode });
+      }
+    });
+
+    const toUpdate = read.rows.filter((row) => row.code && personBy.has(row.code)).length;
+    const report: ImportReport = {
+      applied: false,
+      rows: read.rows.length,
+      toCreate: read.rows.length - toUpdate,
+      toUpdate,
+      faults: faults.sort((a, b) => a.row - b.row),
+    };
+    if (!apply || faults.length > 0) {
+      return report;
+    }
+    await this.writeAll(viewer, read.rows, departmentBy, titleBy);
+    return { ...report, applied: true };
+  }
+
+  private async writeAll(
+    viewer: Viewer,
+    rows: ImportRow[],
+    departmentBy: Map<string, string>,
+    titleBy: Map<string, string>,
+  ): Promise<void> {
+    await this.db.$transaction(
+      async (tx) => {
+        for (let at = 0; at < rows.length; at += kWriteChunk) {
+          await this.writeChunk(tx, viewer, rows.slice(at, at + kWriteChunk), departmentBy, titleBy);
+        }
+        // Managers are linked once every person in the file exists, so a line
+        // may name a manager that arrives later in the same upload.
+        const bosses = rows.filter((row) => row.managerCode);
+        for (let at = 0; at < bosses.length; at += kWriteChunk) {
+          const slice = bosses.slice(at, at + kWriteChunk);
+          await tx.$executeRaw`
+            UPDATE "Employee" e
+               SET "managerId" = boss."id", "updatedAt" = now()
+              FROM unnest(${slice.map((row) => row.code as string)}::text[],
+                          ${slice.map((row) => row.managerCode as string)}::text[])
+                   AS v("code", "bossCode")
+              JOIN "Employee" boss ON boss."code" = v."bossCode"
+             WHERE e."code" = v."code"
+          `;
+        }
+        const paid = rows.filter((row) => row.baseSalary && row.insuranceSalary);
+        for (let at = 0; at < paid.length; at += kWriteChunk) {
+          const slice = paid.slice(at, at + kWriteChunk);
+          await tx.$executeRaw`
+            INSERT INTO "CompensationRecord" (
+              "id", "employeeId", "effectiveFrom", "baseSalary", "insuranceSalary",
+              "reason", "createdById", "createdAt")
+            SELECT gen_random_uuid(), e."id", v."from"::date,
+                   v."base"::numeric, v."insurance"::numeric,
+                   'ADJUSTMENT'::"PayReason", ${viewer.userId}, now()
+              FROM unnest(${slice.map((row) => row.code as string)}::text[],
+                          ${slice.map((row) => row.hireDate ?? todayIso())}::text[],
+                          ${slice.map((row) => row.baseSalary as string)}::text[],
+                          ${slice.map((row) => row.insuranceSalary as string)}::text[])
+                   AS v("code", "from", "base", "insurance")
+              JOIN "Employee" e ON e."code" = v."code"
+            ON CONFLICT ("employeeId", "effectiveFrom") DO UPDATE SET
+              "baseSalary" = EXCLUDED."baseSalary",
+              "insuranceSalary" = EXCLUDED."insuranceSalary"
+          `;
+        }
+      },
+      { timeout: kTransactionMs, maxWait: kTransactionMs },
+    );
+  }
+
+  /** One statement for a slice of the file: a round trip per row is what turns
+   *  thirty thousand people into a minute of waiting.
+   */
+  private writeChunk(
+    tx: Prisma.TransactionClient,
+    viewer: Viewer,
+    rows: ImportRow[],
+    departmentBy: Map<string, string>,
+    titleBy: Map<string, string>,
+  ): Promise<number> {
+    void viewer;
+    return tx.$executeRaw`
+      INSERT INTO "Employee" (
+        "code", "fullName", "personalEmail", "phone", "dateOfBirth", "gender",
+        "nationalId", "taxCode", "socialInsuranceNo", "departmentId", "jobTitleId",
+        "hireDate", "active", "locale", "createdAt", "updatedAt")
+      SELECT v."code", v."fullName", v."personalEmail", v."phone",
+             v."dateOfBirth"::date, v."gender"::"Gender",
+             v."nationalId", v."taxCode", v."socialInsuranceNo",
+             v."departmentId", v."jobTitleId", v."hireDate"::date,
+             true, 'vi', now(), now()
+        FROM unnest(
+               ${rows.map((row) => row.code as string)}::text[],
+               ${rows.map((row) => row.fullName as string)}::text[],
+               ${rows.map((row) => row.personalEmail ?? null)}::text[],
+               ${rows.map((row) => row.phone ?? null)}::text[],
+               ${rows.map((row) => row.dateOfBirth ?? null)}::text[],
+               ${rows.map((row) => row.gender ?? null)}::text[],
+               ${rows.map((row) => row.nationalId ?? null)}::text[],
+               ${rows.map((row) => row.taxCode ?? null)}::text[],
+               ${rows.map((row) => row.socialInsuranceNo ?? null)}::text[],
+               ${rows.map((row) => (row.departmentCode ? departmentBy.get(row.departmentCode) ?? null : null))}::text[],
+               ${rows.map((row) => (row.jobTitleCode ? titleBy.get(row.jobTitleCode) ?? null : null))}::text[],
+               ${rows.map((row) => row.hireDate ?? null)}::text[]
+             ) AS v("code", "fullName", "personalEmail", "phone", "dateOfBirth",
+                    "gender", "nationalId", "taxCode", "socialInsuranceNo",
+                    "departmentId", "jobTitleId", "hireDate")
+      ON CONFLICT ("code") DO UPDATE SET
+        "fullName" = EXCLUDED."fullName",
+        "personalEmail" = EXCLUDED."personalEmail",
+        "phone" = EXCLUDED."phone",
+        "dateOfBirth" = EXCLUDED."dateOfBirth",
+        "gender" = EXCLUDED."gender",
+        "nationalId" = EXCLUDED."nationalId",
+        "taxCode" = EXCLUDED."taxCode",
+        "socialInsuranceNo" = EXCLUDED."socialInsuranceNo",
+        "departmentId" = EXCLUDED."departmentId",
+        "jobTitleId" = EXCLUDED."jobTitleId",
+        "hireDate" = EXCLUDED."hireDate",
+        "updatedAt" = now()
+    `;
+  }
 
   async list(query: ListEmployeesDto, viewer: Viewer): Promise<Page<Employee>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
