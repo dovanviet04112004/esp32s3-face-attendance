@@ -1,15 +1,19 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 
+import { DisputeCard, type Dispute } from "@/components/payroll/dispute-card";
 import { PayslipView, useLineName, type Payslip } from "@/components/payroll/payslip-view";
 import { Button } from "@/components/ui/button";
 import { Empty, Failed } from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { useFault } from "@/lib/fault";
 import { money } from "@/lib/format";
 
 interface PayslipRow {
@@ -29,9 +33,15 @@ interface Delta {
 
 export default function MyPayslipsPage() {
   const t = useTranslations("payroll");
+  const d = useTranslations("disputes");
   const locale = useLocale();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [claim, setClaim] = useState("");
+  const [lineCode, setLineCode] = useState("");
+  const [refused, setRefused] = useState<string | null>(null);
   const nameOf = useLineName();
+  const cache = useQueryClient();
+  const faultOf = useFault();
 
   const mine = useQuery({
     queryKey: ["payslips", "mine"],
@@ -52,9 +62,38 @@ export default function MyPayslipsPage() {
     queryFn: async () => (await api.get<Delta[]>(`/payslips/${chosen}/compare`)).data,
   });
 
+  const disputes = useQuery({
+    queryKey: ["payslip-disputes", "mine"],
+    queryFn: async () =>
+      (await api.get<{ rows: Dispute[] }>("/payslip-disputes")).data.rows,
+  });
+
+  const raise = useMutation({
+    mutationFn: async () =>
+      api.post("/payslip-disputes", {
+        payslipId: chosen,
+        claim,
+        ...(lineCode === "" ? {} : { lineCode }),
+      }),
+    onSuccess: () => {
+      setClaim("");
+      setRefused(null);
+      void cache.invalidateQueries({ queryKey: ["payslip-disputes"] });
+    },
+    onError: (fell) => setRefused(faultOf(fell)),
+  });
+
+  const withdraw = useMutation({
+    mutationFn: async (id: string) => api.post(`/payslip-disputes/${id}/withdraw`, {}),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["payslip-disputes"] }),
+    onError: (fell) => setRefused(faultOf(fell)),
+  });
+
   if (mine.isError) {
     return <Failed onRetry={() => mine.refetch()} />;
   }
+
+  const onThisSlip = (disputes.data ?? []).filter((one) => one.payslipId === chosen);
 
   return (
     <section>
@@ -112,6 +151,70 @@ export default function MyPayslipsPage() {
                   </div>
                 ))}
               </dl>
+            </section>
+          ) : null}
+
+          {chosen && slip.data && slip.data.state !== "DRAFT" ? (
+            <section className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+              <h2 className="text-sm font-medium">{d("title")}</h2>
+              <p className="mt-1 text-sm text-(--color-muted)">{d("lead")}</p>
+
+              <form
+                className="mt-3 flex flex-col gap-2"
+                onSubmit={(event: FormEvent) => {
+                  event.preventDefault();
+                  raise.mutate();
+                }}
+              >
+                <label className="text-sm font-medium" htmlFor="lineCode">
+                  {d("line")}
+                </label>
+                <Select
+                  id="lineCode"
+                  value={lineCode}
+                  onChange={(event) => setLineCode(event.target.value)}
+                >
+                  <option value="">{d("lineAny")}</option>
+                  {slip.data.lines.map((one) => (
+                    <option key={one.id} value={one.code}>
+                      {nameOf(one.code, one.label)}
+                    </option>
+                  ))}
+                </Select>
+                <label className="text-sm font-medium" htmlFor="claim">
+                  {d("claim")}
+                </label>
+                <Input
+                  id="claim"
+                  required
+                  value={claim}
+                  placeholder={d("claimHint")}
+                  onChange={(event) => setClaim(event.target.value)}
+                />
+                {refused ? (
+                  <p role="alert" className="text-sm text-(--color-danger)">
+                    {refused}
+                  </p>
+                ) : null}
+                <Button type="submit" size="sm" disabled={raise.isPending} className="self-start">
+                  {raise.isPending ? d("raising") : d("raise")}
+                </Button>
+              </form>
+
+              {onThisSlip.length === 0 ? (
+                <p className="mt-3 text-sm text-(--color-muted)">{d("empty")}</p>
+              ) : (
+                <ul className="mt-3 flex flex-col gap-2">
+                  {onThisSlip.map((one) => (
+                    <DisputeCard
+                      key={one.id}
+                      dispute={one}
+                      busy={withdraw.isPending}
+                      onWithdraw={(id) => withdraw.mutate(id)}
+                    />
+                  ))}
+                </ul>
+              )}
             </section>
           ) : null}
         </>
