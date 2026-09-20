@@ -5757,12 +5757,25 @@ trống ô ấy; tài khoản của người lao động trỏ về hồ sơ c�
 nghỉ việc thì hồ sơ phải ở lại vĩnh viễn cho bảng lương năm cũ, còn tài khoản thì phải tắt ngay.
 Hai vòng đời khác nhau là hai bảng.
 
-**Nghỉ phép** — `LeaveType`, `LeaveBalance`, `LeaveRequest`, `LeaveApproval`.
+**Nghỉ phép** — `LeaveType`, `LeaveBalance`, `Request`, `ApprovalDelegation`. Nghỉ phép, tăng
+ca, sửa công, công tác và làm từ xa dùng **chung một bảng `Request`**: chúng có cùng máy trạng
+thái, cùng hộp chờ duyệt và cùng đường tới người duyệt, nên tách thành năm bảng là chép năm lần
+cùng một logic. Xem §9.5.
 
-**Lương** — `CompensationRecord`, `PayrollPeriod`, `PayrollRun`, `Payslip`, `PayslipLine`,
-`Dependent`.
+**Lương** — `CompensationRecord`, `CompensationAllowance`, `PayrollPeriod`, `PayrollRun`,
+`Payslip`, `PayslipLine`, `Dependent`, `RetroAdjustment`, `SalaryAdvance`.
 
-**Chính sách** — `PayrollPolicy`, `TaxBracket`. Xem §9.7.
+Ba bảng trong số đó tồn tại vì một câu hỏi mà bảng khác không trả lời được:
+
+| Bảng | Câu hỏi nó trả lời | Vì sao không gộp |
+|---|---|---|
+| `CompensationAllowance` | "quý này công ty trả bao nhiêu tiền ăn trưa" | một ô `allowances` tổng thì câu hỏi ấy phải mở từng bản ghi ra đọc |
+| `RetroAdjustment` | "khoản này thuộc kỳ nào, trả ở kỳ nào" | kỳ đã chốt không được mở lại (§9.6), nên khoản tới muộn phải có chỗ đứng riêng |
+| `SalaryAdvance` | "ai đang nợ tạm ứng, khấu trừ vào phiếu nào" | việc này vẫn xảy ra; không có bảng thì nó xảy ra trong tin nhắn |
+
+**Chính sách** — `PayrollPolicy`, `TaxBracket`. Xem §9.7. Mọi tỷ lệ lưu bằng **điểm cơ bản
+kiểu nguyên** (`800` là 8%), không lưu số thực: một phép nhân dấu phẩy động trong bảng lương là
+một đồng lệch mà không ai truy ra được nguồn.
 
 **Ngày công** — `AttendanceDay`. Xem §9.8.
 
