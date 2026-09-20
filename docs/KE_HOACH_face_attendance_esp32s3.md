@@ -6560,8 +6560,14 @@ một phần ba bề ngang hoặc trốn sau một nút mà không ai bấm.
 | Bảng | nhiều cột, cuộn ngang | **thẻ một dòng một người**, không cuộn ngang |
 | Bộ lọc | hàng ngang trên bảng | **tấm trượt lên từ đáy** |
 
-Thanh tab có đúng năm mục, giống nhau cho mọi vai: **Trang chủ · Lịch ca · Chấm công · Đơn từ ·
-Lương**. Quá năm thì mục nào cũng hẹp và chạm nhầm — đó là lý do trần năm, không phải thẩm mỹ.
+Thanh tab có đúng năm ô: **Trang chủ · Lịch ca · Chấm công · Đơn từ · Lương**. Quá năm thì mục
+nào cũng hẹp và chạm nhầm — đó là lý do trần năm, không phải thẩm mỹ.
+
+**Vai bàn giấy đổi ô thứ năm lấy nút "Thêm", và đó là đánh đổi chứ không phải ngoại lệ bỏ quên.**
+`HR`, `PAYROLL`, `ADMIN` có mười mấy đích tới, không cách nào nhét vừa năm ô, nên ô cuối thành
+cửa vào phần còn lại và `Lương` lùi vào trong. Chấp nhận được vì họ là nhóm **ít dùng điện
+thoại nhất** và có thanh bên đầy đủ trên máy tính; người lao động — nhóm chỉ có điện thoại —
+giữ nguyên năm ô.
 
 **Hộp chờ duyệt không nằm trong thanh tab, nó nằm trên thanh trên cùng cạnh chuông.** Ban đầu
 nó là mục thứ năm của `MANAGER`, và cách ấy hỏng ngay khi có mục thứ sáu: một người quản lý
