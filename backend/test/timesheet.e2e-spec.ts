@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { hashPassword } from "../src/modules/auth/password.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
 
 // A Monday the seed never touches, inside the partition range, with no holiday
@@ -25,8 +26,11 @@ const FIXED = "NV9105";
 const MADE_CODES = [AHEAD, BEHIND, MEASURED, HALF, FIXED];
 
 // A correction is filed by the person it belongs to, and no seeded account is
-// attached to an employee, so the suite opens one the way an admin would.
+// attached to an employee. The login is made here rather than through
+// provisioning, which opens one for everyone waiting and would race the leave
+// suite for the same people.
 const FILER_EMAIL = "nv9105@kiosk.local";
+const FILER_PASSWORD = "kiosk-e2e-password";
 
 describe("timesheet leave (e2e)", () => {
   let app: INestApplication;
@@ -37,14 +41,12 @@ describe("timesheet leave (e2e)", () => {
   let filerToken = "";
   let leaveTypeId = "";
   const idOf = new Map<string, number>();
-  // Provisioning opens a login for anyone waiting, not only this suite's own.
-  const opened: string[] = [];
 
   const date = new Date(`${DAY}T00:00:00.000Z`);
 
   async function sweep(): Promise<void> {
     await db.attendanceDay.deleteMany({ where: { date } });
-    await db.user.deleteMany({ where: { email: { in: [FILER_EMAIL, ...opened] } } });
+    await db.user.deleteMany({ where: { email: FILER_EMAIL } });
     await db.employee.deleteMany({ where: { code: { in: MADE_CODES } } });
   }
 
@@ -114,7 +116,6 @@ describe("timesheet leave (e2e)", () => {
           active: true,
           departmentId: template.departmentId,
           legalEntityId: template.legalEntityId,
-          personalEmail: code === FIXED ? FILER_EMAIL : null,
         },
       });
       idOf.set(code, made.id);
@@ -123,17 +124,17 @@ describe("timesheet leave (e2e)", () => {
       });
     }
 
-    const provisioned = await request(http)
-      .post("/users/provision")
-      .set("Authorization", `Bearer ${adminToken}`);
-    assert.equal(provisioned.status, 201, "could not open employee logins");
-    const accounts = provisioned.body as { employeeCode: string; email: string; password: string }[];
-    opened.push(...accounts.map((one) => one.email));
-    const account = accounts.find((one) => one.employeeCode === FIXED);
-    assert.ok(account, "provisioning skipped the person filing the correction");
+    await db.user.create({
+      data: {
+        email: FILER_EMAIL,
+        passwordHash: await hashPassword(FILER_PASSWORD),
+        role: "EMPLOYEE",
+        employeeId: idOf.get(FIXED) as number,
+      },
+    });
     const asFiler = await request(http)
       .post("/auth/login")
-      .send({ email: FILER_EMAIL, password: account.password });
+      .send({ email: FILER_EMAIL, password: FILER_PASSWORD });
     assert.equal(asFiler.status, 200, "the filing account could not sign in");
     filerToken = asFiler.body.accessToken;
   });
