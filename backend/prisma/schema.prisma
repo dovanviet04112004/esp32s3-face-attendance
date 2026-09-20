@@ -19,6 +19,11 @@ enum Role {
   VIEWER
 }
 
+enum Gender {
+  MALE
+  FEMALE
+}
+
 enum ContractKind {
   PROBATION
   FIXED_TERM
@@ -161,6 +166,9 @@ model Employee {
   hireDate          DateTime?            @db.Date
   leaveDate         DateTime?            @db.Date
   dateOfBirth       DateTime?            @db.Date
+  // Two values because the insurance form has two; unknown stays null and
+  // the export leaves the cell empty rather than guessing (KEHOACH 9.19).
+  gender            Gender?
   personalEmail     String?
   phone             String?
   // Mail is generated on the server, where no request carries a language.
