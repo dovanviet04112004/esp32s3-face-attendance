@@ -18,7 +18,10 @@ export function Sidebar({ onSignOut }: { onSignOut: () => void }) {
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-(--color-line) bg-(--color-surface) p-3 md:flex">
-      <p className="px-2 pt-1 text-sm font-semibold">{app("name")}</p>
+      <div className="flex items-center gap-2 px-2 pt-1">
+        <img src="/logo.svg" alt="" width={20} height={20} />
+        <p className="text-sm font-semibold">{app("name")}</p>
+      </div>
       <p className="px-2 pb-4 text-xs text-(--color-muted)">{role}</p>
 
       <nav className="flex flex-1 flex-col gap-4 overflow-y-auto">

@@ -28,7 +28,11 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: LocaleParams): Promise<Metadata> {
   const { locale } = await params;
   const t = await getTranslations({ locale: known(locale), namespace: "app" });
-  return { title: t("name"), description: t("description") };
+  return {
+    title: t("name"),
+    description: t("description"),
+    icons: { icon: "/favicon.ico", apple: "/logo.svg" },
+  };
 }
 
 export default async function LocaleLayout({ children, params }: LocaleParams & { children: ReactNode }) {

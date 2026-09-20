@@ -9,6 +9,7 @@ export function TopBar({ onSignOut }: { onSignOut: () => void }) {
 
   return (
     <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-(--color-line) bg-(--color-surface) px-3 py-2 md:hidden">
+      <img src="/logo.svg" alt="" width={22} height={22} />
       <p className="flex-1 truncate text-sm font-semibold">{app("name")}</p>
       <button
         type="button"
