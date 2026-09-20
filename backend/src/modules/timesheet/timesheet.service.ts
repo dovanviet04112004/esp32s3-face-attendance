@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { AttendanceDay, DayState, Prisma } from "@prisma/client";
 
@@ -6,6 +12,8 @@ import type { Env } from "../../config/env.schema.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
+import { QUEUE, type TimesheetJob } from "../../queue/queues.js";
 import type { CorrectDayDto, ListDaysDto } from "./dto/timesheet.dto.js";
 import { clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
 
@@ -61,6 +69,7 @@ export class TimesheetService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly config: ConfigService<Env, true>,
+    @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
   private get zone(): string {
@@ -194,6 +203,17 @@ export class TimesheetService {
         "adjustedAt" = EXCLUDED."adjustedAt",
         "updatedAt" = now()
     `;
+  }
+
+  /**
+   * Hand a range to the worker. A month is thirty statements over the whole
+   * roster, which is minutes, and a request that long is a request that dies
+   * behind the proxy rather than one that finishes.
+   */
+  async scheduleBuild(from: string, to: string): Promise<{ jobId: string }> {
+    const job: TimesheetJob = { type: "build", from, to };
+    const queued = await this.queues[QUEUE.timesheet].add("build", job);
+    return { jobId: String(queued.id) };
   }
 
   /** Build every finished day in a range, oldest first. */

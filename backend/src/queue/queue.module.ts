@@ -29,6 +29,7 @@ export type Queues = Record<QueueName, Queue>;
           [QUEUE.report]: make(QUEUE.report),
           [QUEUE.notify]: make(QUEUE.notify),
           [QUEUE.payroll]: make(QUEUE.payroll),
+          [QUEUE.timesheet]: make(QUEUE.timesheet),
         };
       },
     },

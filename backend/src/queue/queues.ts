@@ -3,6 +3,7 @@ export const QUEUE = {
   report: "report",
   notify: "notify",
   payroll: "payroll",
+  timesheet: "timesheet",
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -37,3 +38,12 @@ export interface RunJob {
 
 /** Neither trusts the queue for exactly-once: they read the row. */
 export type PayrollJob = DeliverJob | RunJob;
+
+/** A day build is an upsert on (employee, date): arriving twice is a no-op. */
+export interface BuildJob {
+  type: "build";
+  from: string;
+  to: string;
+}
+
+export type TimesheetJob = BuildJob;

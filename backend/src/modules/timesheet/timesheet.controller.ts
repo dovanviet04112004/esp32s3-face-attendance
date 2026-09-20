@@ -41,8 +41,8 @@ export class TimesheetController {
 
   @Post("build")
   @Roles("ADMIN", "HR", "PAYROLL")
-  @ApiOperation({ summary: "Fold punches into days for a finished range" })
-  build(@Body() body: BuildDaysDto): Promise<BuildReport> {
-    return this.timesheet.buildRange(body.from, body.to);
+  @ApiOperation({ summary: "Queue the fold from punches into days; asking twice queues twice" })
+  build(@Body() body: BuildDaysDto): Promise<{ jobId: string }> {
+    return this.timesheet.scheduleBuild(body.from, body.to);
   }
 }
