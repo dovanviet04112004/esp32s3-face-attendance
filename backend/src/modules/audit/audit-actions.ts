@@ -55,6 +55,11 @@ export const AUDIT_ACTIONS = {
   ORG_HOLIDAY_CREATE: "org.holidayCreate",
   ORG_HOLIDAY_DELETE: "org.holidayDelete",
 
+  CERTIFICATE_ASK: "certificate.ask",
+  CERTIFICATE_ISSUE: "certificate.issue",
+  CERTIFICATE_REJECT: "certificate.reject",
+  CERTIFICATE_READ: "certificate.read",
+
   POLICY_CREATE: "policy.create",
 
   DEVICE_REGISTER: "device.register",

@@ -212,6 +212,25 @@ export default function MyPage() {
       </div>
 
       <div className="mt-8 flex items-baseline justify-between">
+        <h2 className="text-sm font-medium">{t("selfService")}</h2>
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {[
+          { href: "/me/letters" as const, label: t("askLetter"), hint: t("askLetterHint") },
+          { href: "/me/payslips" as const, label: t("myPayslips"), hint: t("myPayslipsHint") },
+        ].map((one) => (
+          <Link
+            key={one.href}
+            href={one.href}
+            className="rounded-xl border border-(--color-line) bg-(--color-surface) p-4 hover:bg-(--color-ground)"
+          >
+            <p className="text-sm font-medium">{one.label}</p>
+            <p className="mt-1 text-sm text-(--color-muted)">{one.hint}</p>
+          </Link>
+        ))}
+      </div>
+
+      <div className="mt-8 flex items-baseline justify-between">
         <h2 className="text-sm font-medium">{t("pendingRequests")}</h2>
         <Link href="/me/requests" className="text-sm text-(--color-accent) hover:underline">
           {r("mine")}

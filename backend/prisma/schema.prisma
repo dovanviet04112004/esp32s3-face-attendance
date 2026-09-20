@@ -84,6 +84,7 @@ model User {
   auditLogs      AuditLog[]
   assetMoves     AssetTransfer[]
   tasksDone      ChecklistTask[]
+  certificates   Certificate[]
 }
 
 /**
@@ -255,6 +256,7 @@ model Employee {
   pushSubs          PushSubscription[]
   assetsHeld        Asset[]
   assetMoves        AssetTransfer[]
+  certificates      Certificate[]
   checklistRuns     ChecklistRun[]
   ownedTasks        ChecklistTask[]     @relation("OwnsTasks")
 
@@ -503,6 +505,17 @@ enum RequestKind {
   REMOTE_WORK
 }
 
+enum CertificateKind {
+  EMPLOYMENT
+  INCOME
+}
+
+enum CertificateState {
+  REQUESTED
+  ISSUED
+  REJECTED
+}
+
 enum RequestState {
   DRAFT
   PENDING
@@ -552,6 +565,31 @@ model LeaveBalance {
  * Leave, overtime, an attendance correction and a trip are one table: they
  * share a state machine, an inbox and a route to the approver (KEHOACH 9.5).
  */
+/**
+ * A letter somebody asks HR for, and the register of what was handed out.
+ * The serial is the point: a letter nobody can trace back is not proof
+ * (KEHOACH 9.17 item 5).
+ */
+model Certificate {
+  id         String           @id @default(uuid())
+  employeeId Int
+  kind       CertificateKind
+  state      CertificateState @default(REQUESTED)
+  purpose    String
+  months     Int?
+  serial     String?          @unique
+  issuedAt   DateTime?
+  issuedById String?
+  note       String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  employee   Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  issuedBy   User?            @relation(fields: [issuedById], references: [id], onDelete: SetNull)
+
+  @@index([state, createdAt])
+  @@index([employeeId, createdAt])
+}
+
 model Request {
   id            String       @id @default(uuid())
   employeeId    Int

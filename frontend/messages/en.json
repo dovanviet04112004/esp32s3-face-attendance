@@ -293,7 +293,12 @@
     "dependentStateENDED": "Ended",
     "pendingRequests": "Waiting on approval",
     "thisMonth": "This month",
-    "noProfile": "This account is not attached to an employee record"
+    "noProfile": "This account is not attached to an employee record",
+    "selfService": "Do it yourself",
+    "askLetter": "Letters",
+    "askLetterHint": "Employment or income, numbered by HR",
+    "myPayslips": "Payslips",
+    "myPayslipsHint": "Issued periods and what changed since the last one"
   },
   "payroll": {
     "title": "Payslip",
@@ -470,7 +475,12 @@
     "DEPARTMENT_NOT_FOUND": "No such department.",
     "HOLIDAY_ALREADY_SET": "That date is already a holiday.",
     "DEVICE_BOOTSTRAP_REJECTED": "This machine is not accepted into the system.",
-    "SETUP_LINK_SPENT": "This link has been used or has expired. Ask HR for a new one."
+    "SETUP_LINK_SPENT": "This link has been used or has expired. Ask HR for a new one.",
+    "CERTIFICATE_NOT_FOUND": "No such letter.",
+    "CERTIFICATE_ALREADY_DECIDED": "This request has already been answered.",
+    "CERTIFICATE_NOT_ISSUED": "The letter has not been issued yet.",
+    "HR_ONLY": "Only the HR desk can do this.",
+    "NO_EMPLOYEE_RECORD": "This account is not linked to an employee record."
   },
   "search": {
     "label": "Search",
@@ -582,5 +592,30 @@
     "awayLEAVE": "Leave",
     "awayBUSINESS_TRIP": "Business trip",
     "awayREMOTE_WORK": "Remote"
+  },
+  "certificates": {
+    "title": "Letters",
+    "lead": "Ask for a letter of employment or of income; HR approves and numbers it.",
+    "ask": "Ask for one",
+    "asking": "Sending…",
+    "kind": "Kind",
+    "EMPLOYMENT": "Letter of employment",
+    "INCOME": "Letter of income",
+    "purpose": "What it is for",
+    "purposeHint": "For example: a bank loan, a visa, a course",
+    "months": "Pay periods to include",
+    "state": "Status",
+    "REQUESTED": "Waiting",
+    "ISSUED": "Issued",
+    "REJECTED": "Turned down",
+    "serial": "Number",
+    "askedOn": "Asked on",
+    "view": "View",
+    "issue": "Issue",
+    "reject": "Turn down",
+    "person": "Employee",
+    "empty": "Nothing asked for yet",
+    "print": "Print",
+    "close": "Close"
   }
 }

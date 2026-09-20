@@ -14,6 +14,7 @@ import { PolicyModule } from "./modules/policy/policy.module.js";
 import { NotificationsModule } from "./modules/notifications/notifications.module.js";
 import { SearchModule } from "./modules/search/search.module.js";
 import { TimesheetModule } from "./modules/timesheet/timesheet.module.js";
+import { CertificatesModule } from "./modules/certificates/certificates.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
 import { AssetsModule } from "./modules/assets/assets.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
@@ -58,6 +59,7 @@ import { QueueModule } from "./queue/queue.module.js";
     RealtimeModule,
     ReportsModule,
     AuditModule,
+    CertificatesModule,
     UsersModule,
   ],
 })

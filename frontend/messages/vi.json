@@ -293,7 +293,12 @@
     "dependentStateENDED": "Đã kết thúc",
     "pendingRequests": "Đơn đang chờ",
     "thisMonth": "Tháng này",
-    "noProfile": "Tài khoản này chưa gắn với hồ sơ nhân viên"
+    "noProfile": "Tài khoản này chưa gắn với hồ sơ nhân viên",
+    "selfService": "Tự làm",
+    "askLetter": "Giấy xác nhận",
+    "askLetterHint": "Xác nhận công tác hoặc thu nhập, nhân sự cấp số",
+    "myPayslips": "Phiếu lương",
+    "myPayslipsHint": "Các kỳ đã phát và chênh lệch với kỳ trước"
   },
   "payroll": {
     "title": "Phiếu lương",
@@ -470,7 +475,12 @@
     "DEPARTMENT_NOT_FOUND": "Không tìm thấy phòng ban này.",
     "HOLIDAY_ALREADY_SET": "Ngày này đã có trong lịch nghỉ.",
     "DEVICE_BOOTSTRAP_REJECTED": "Máy này không được nhận vào hệ thống.",
-    "SETUP_LINK_SPENT": "Liên kết này đã dùng rồi hoặc đã hết hạn. Nhờ nhân sự phát lại."
+    "SETUP_LINK_SPENT": "Liên kết này đã dùng rồi hoặc đã hết hạn. Nhờ nhân sự phát lại.",
+    "CERTIFICATE_NOT_FOUND": "Không tìm thấy giấy xác nhận này.",
+    "CERTIFICATE_ALREADY_DECIDED": "Yêu cầu này đã được xử lý rồi.",
+    "CERTIFICATE_NOT_ISSUED": "Giấy chưa được cấp nên chưa có văn bản.",
+    "HR_ONLY": "Chỉ bộ phận nhân sự làm được việc này.",
+    "NO_EMPLOYEE_RECORD": "Tài khoản này chưa gắn với hồ sơ nhân viên nào."
   },
   "search": {
     "label": "Tìm kiếm",
@@ -582,5 +592,30 @@
     "awayLEAVE": "Nghỉ phép",
     "awayBUSINESS_TRIP": "Công tác",
     "awayREMOTE_WORK": "Làm từ xa"
+  },
+  "certificates": {
+    "title": "Giấy xác nhận",
+    "lead": "Xin giấy xác nhận công tác hoặc thu nhập; nhân sự duyệt rồi cấp số.",
+    "ask": "Xin giấy",
+    "asking": "Đang gửi…",
+    "kind": "Loại giấy",
+    "EMPLOYMENT": "Xác nhận công tác",
+    "INCOME": "Xác nhận thu nhập",
+    "purpose": "Dùng để làm gì",
+    "purposeHint": "Ví dụ: vay ngân hàng, làm visa, đăng ký học",
+    "months": "Số kỳ lương ghi vào giấy",
+    "state": "Trạng thái",
+    "REQUESTED": "Chờ duyệt",
+    "ISSUED": "Đã cấp",
+    "REJECTED": "Bị từ chối",
+    "serial": "Số hiệu",
+    "askedOn": "Ngày xin",
+    "view": "Xem giấy",
+    "issue": "Cấp giấy",
+    "reject": "Từ chối",
+    "person": "Nhân viên",
+    "empty": "Chưa có yêu cầu nào",
+    "print": "In",
+    "close": "Đóng"
   }
 }
