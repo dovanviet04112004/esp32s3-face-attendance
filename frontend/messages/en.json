@@ -116,7 +116,14 @@
     "assigned": "Assigned to {device}",
     "assignNone": "No kiosk has been approved yet",
     "codeTaken": "Somebody already has this code",
-    "emptyHint": "Nobody in the directory yet. Add the first person to start."
+    "emptyHint": "Nobody in the directory yet. Add the first person to start.",
+    "export": "Export",
+    "import": "Import",
+    "importDry": "Dry run: {rows} rows, {created} to create, {updated} to update.",
+    "importDone": "Imported: {created} created, {updated} updated.",
+    "importFaults": "{n} faults left — fix the file and pick it again.",
+    "importLine": "line {n}",
+    "importApply": "Apply"
   },
   "attendance": {
     "title": "Attendance",
