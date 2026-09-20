@@ -19,6 +19,33 @@ const EXCLUSION_VIOLATION = "23P01";
 const HALF = 0.5;
 const MS_PER_DAY = 86_400_000;
 
+/** One person's standing in one leave type, on a day they picked. */
+export interface BalanceAsOf {
+  leaveTypeId: string;
+  code: string;
+  name: string;
+  paid: boolean;
+  year: number;
+  entitled: number;
+  carriedOver: number;
+  taken: number;
+  pending: number;
+  remaining: number;
+  bookedAfter: number;
+}
+
+type Countable = Pick<LeaveBalance, "entitled" | "carriedOver" | "taken" | "pending">;
+
+/** Days still free to book. The one place this subtraction happens. */
+export function freeDays(balance: Countable): number {
+  return (
+    Number(balance.entitled) +
+    Number(balance.carriedOver) -
+    Number(balance.taken) -
+    Number(balance.pending)
+  );
+}
+
 @Injectable()
 export class LeaveService {
   private readonly log = new Logger(LeaveService.name);
@@ -34,12 +61,45 @@ export class LeaveService {
     return this.db.leaveType.findMany({ where: { active: true }, orderBy: { code: "asc" } });
   }
 
-  /** What this person has left of each kind, as of a day they choose. */
-  async balances(employeeId: number, year: number): Promise<LeaveBalance[]> {
-    return this.db.leaveBalance.findMany({
-      where: { employeeId, year },
-      include: { leaveType: { select: { id: true, code: true, name: true } } },
-    });
+  /**
+   * What this person still has to book in the leave year a chosen day falls
+   * in. A day held by a request nobody has answered is a day already gone,
+   * so it leaves `remaining` the moment the request is filed.
+   */
+  async balancesAsOf(employeeId: number, asOf: Date): Promise<BalanceAsOf[]> {
+    const year = asOf.getUTCFullYear();
+    const yearEnd = new Date(Date.UTC(year, 11, 31));
+    const [rows, later] = await Promise.all([
+      this.db.leaveBalance.findMany({
+        where: { employeeId, year },
+        include: { leaveType: { select: { id: true, code: true, name: true, paid: true } } },
+        orderBy: { leaveType: { code: "asc" } },
+      }),
+      this.db.request.groupBy({
+        by: ["leaveTypeId"],
+        where: {
+          employeeId,
+          kind: "LEAVE",
+          state: { in: ["PENDING", "APPROVED"] },
+          fromDate: { gt: asOf, lte: yearEnd },
+        },
+        _sum: { days: true },
+      }),
+    ]);
+    const afterwards = new Map(later.map((one) => [one.leaveTypeId, Number(one._sum.days ?? 0)]));
+    return rows.map((row) => ({
+      leaveTypeId: row.leaveTypeId,
+      code: row.leaveType.code,
+      name: row.leaveType.name,
+      paid: row.leaveType.paid,
+      year,
+      entitled: Number(row.entitled),
+      carriedOver: Number(row.carriedOver),
+      taken: Number(row.taken),
+      pending: Number(row.pending),
+      remaining: freeDays(row),
+      bookedAfter: afterwards.get(row.leaveTypeId) ?? 0,
+    }));
   }
 
   async submit(viewer: Viewer, body: SubmitRequestDto): Promise<LeaveRequest> {
@@ -274,9 +334,7 @@ export class LeaveService {
     const balance = await tx.leaveBalance.findUnique({
       where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } },
     });
-    const left = balance
-      ? Number(balance.entitled) + Number(balance.carriedOver) - Number(balance.taken) - Number(balance.pending)
-      : 0;
+    const left = balance ? freeDays(balance) : 0;
     if (left < days) {
       throw new ConflictException("LEAVE_BALANCE_SHORT");
     }

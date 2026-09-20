@@ -2,19 +2,19 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
+import { useState } from "react";
 
 import { StatePill, type RequestRow } from "@/components/requests/request-card";
+import { Input } from "@/components/ui/input";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 
 interface Balance {
-  id: string;
-  entitled: string;
-  carriedOver: string;
-  taken: string;
-  pending: string;
-  leaveType: { id: string; code: string; name: string };
+  leaveTypeId: string;
+  name: string;
+  remaining: number;
+  bookedAfter: number;
 }
 
 interface Me {
@@ -24,13 +24,8 @@ interface Me {
   department: { id: string; name: string } | null;
 }
 
-function left(balance: Balance): number {
-  return (
-    Number(balance.entitled) +
-    Number(balance.carriedOver) -
-    Number(balance.taken) -
-    Number(balance.pending)
-  );
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export default function MyPage() {
@@ -38,6 +33,7 @@ export default function MyPage() {
   const r = useTranslations("requests");
   const common = useTranslations("common");
   const employeeId = useSession((s) => s.employeeId);
+  const [asOf, setAsOf] = useState(today);
 
   const me = useQuery({
     queryKey: ["employees", employeeId],
@@ -46,9 +42,9 @@ export default function MyPage() {
   });
 
   const balances = useQuery({
-    queryKey: ["leave-balances"],
+    queryKey: ["leave-balances", asOf],
     enabled: employeeId !== null,
-    queryFn: async () => (await api.get<Balance[]>("/leave-balances")).data,
+    queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${asOf}`)).data,
   });
 
   const waiting = useQuery({
@@ -74,7 +70,18 @@ export default function MyPage() {
         {me.data ? `${me.data.code}${me.data.department ? ` · ${me.data.department.name}` : ""}` : " "}
       </p>
 
-      <h2 className="mt-8 text-sm font-medium">{t("leaveLeft")}</h2>
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-medium">{t("leaveLeft")}</h2>
+        <label className="flex items-center gap-2 text-sm text-(--color-muted)">
+          {t("asOf")}
+          <Input
+            type="date"
+            value={asOf}
+            onChange={(event) => setAsOf(event.target.value || today())}
+            className="w-44"
+          />
+        </label>
+      </div>
       <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {balances.isPending ? (
           <p className="text-sm text-(--color-muted)">{common("loading")}</p>
@@ -83,12 +90,17 @@ export default function MyPage() {
         ) : (
           (balances.data ?? []).map((balance) => (
             <article
-              key={balance.id}
+              key={balance.leaveTypeId}
               className="rounded-xl border border-(--color-line) bg-(--color-surface) p-4"
             >
-              <p className="text-xs text-(--color-muted)">{balance.leaveType.name}</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{left(balance)}</p>
+              <p className="text-xs text-(--color-muted)">{balance.name}</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">{balance.remaining}</p>
               <p className="text-xs text-(--color-muted)">{t("daysUnit")}</p>
+              {balance.bookedAfter > 0 ? (
+                <p className="mt-2 text-xs text-(--color-warn)">
+                  {t("bookedAfter", { days: balance.bookedAfter })}
+                </p>
+              ) : null}
             </article>
           ))
         )}

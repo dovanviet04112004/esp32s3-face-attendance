@@ -249,6 +249,8 @@
     "title": "My page",
     "greeting": "Hello {name}",
     "leaveLeft": "Leave left",
+    "asOf": "As of",
+    "bookedAfter": "Booked after this date: {days} day(s)",
     "daysUnit": "days",
     "pendingRequests": "Waiting on approval",
     "thisMonth": "This month",

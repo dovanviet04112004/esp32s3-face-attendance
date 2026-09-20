@@ -61,6 +61,13 @@ export class SubmitRequestDto {
   attachmentUrl?: string;
 }
 
+export class BalanceQueryDto {
+  @ApiPropertyOptional({ example: "2026-11-15", description: "Defaults to today" })
+  @IsOptional()
+  @IsDateString()
+  asOf?: string;
+}
+
 export class DecideRequestDto {
   @ApiProperty({ description: "True approves it, false turns it down" })
   @IsBoolean()

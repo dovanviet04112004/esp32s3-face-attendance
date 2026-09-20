@@ -249,6 +249,8 @@
     "title": "Trang của tôi",
     "greeting": "Chào {name}",
     "leaveLeft": "Phép còn lại",
+    "asOf": "Tính đến ngày",
+    "bookedAfter": "Đã đặt sau ngày này: {days} ngày",
     "daysUnit": "ngày",
     "pendingRequests": "Đơn đang chờ",
     "thisMonth": "Tháng này",

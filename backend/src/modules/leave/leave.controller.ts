@@ -1,13 +1,13 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import type { LeaveBalance, LeaveType, Request as LeaveRequest } from "@prisma/client";
+import type { LeaveType, Request as LeaveRequest } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { DecideRequestDto, ListRequestsDto, SubmitRequestDto } from "./dto/request.dto.js";
-import { LeaveService } from "./leave.service.js";
+import { BalanceQueryDto, DecideRequestDto, ListRequestsDto, SubmitRequestDto } from "./dto/request.dto.js";
+import { LeaveService, type BalanceAsOf } from "./leave.service.js";
 
 @ApiTags("requests")
 @ApiBearerAuth()
@@ -22,11 +22,14 @@ export class LeaveController {
   }
 
   @Get("leave-balances")
-  @ApiOperation({ summary: "What this viewer has left this year" })
-  balances(@CurrentViewer() viewer: Viewer): Promise<LeaveBalance[]> {
+  @ApiOperation({ summary: "What this viewer has left on a day they choose" })
+  balances(
+    @CurrentViewer() viewer: Viewer,
+    @Query() query: BalanceQueryDto,
+  ): Promise<BalanceAsOf[]> {
     return viewer.employeeId === null
       ? Promise.resolve([])
-      : this.leave.balances(viewer.employeeId, new Date().getUTCFullYear());
+      : this.leave.balancesAsOf(viewer.employeeId, new Date(query.asOf ?? Date.now()));
   }
 
   @Post("requests")
