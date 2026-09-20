@@ -5927,20 +5927,31 @@ dưới quyền) và tự thu hẹp truy vấn.
 Cây dưới quyền tính bằng **CTE đệ quy trên `managerId`**, có nhớ đệm, vì một trưởng bộ phận ở
 công ty mười nghìn người có thể có vài nghìn cấp dưới và hỏi lại mỗi request là tự phạt.
 
-**Mở đăng nhập hàng loạt là việc duy nhất của §9 cố ý không vào hàng đợi.** Luật 5 của §9.9 nói
-việc sống lâu hơn một request thì đẩy xuống hàng đợi, và lệnh này vi phạm điều đó một cách có
-chủ ý: **kết quả của nó phải tới tay một con người đúng một lần**. Mật khẩu sinh ra chỉ tồn tại
-trong chính câu trả lời — máy chủ giữ băm, không giữ bản rõ — nên một job chạy nền không có chỗ
-nào để trả nó về. Đổi lại, lệnh phải **tự giới hạn**: mỗi lượt mở nhiều nhất `PROVISION_BATCH`
-tài khoản và nói còn bao nhiêu người đang chờ, để người vận hành gọi lại. Đo thật: **302 tài
-khoản mất 8.604 ms**, tức 28,7 ms mỗi cái, gần như toàn bộ là băm mật khẩu; ba mươi nghìn người
-sẽ là **860 giây trong một request**, và một lượt đứt giữa chừng để lại hàng trăm tài khoản mà
-**không ai biết mật khẩu** — chỉ quản trị viên đặt lại từng cái một mới cứu được.
+**Mở đăng nhập hàng loạt không sinh mật khẩu nào.** Bản đầu có sinh, và nó hỏng theo hai cách
+đo được. Mỗi tài khoản tốn một lần băm scrypt — **302 tài khoản mất 8.604 ms**, tức ba mươi
+nghìn người là **860 giây trong một request**, không proxy nào chờ nổi. Và mật khẩu sinh ra chỉ
+tồn tại **trong chính câu trả lời**, nên một lượt đứt giữa chừng để lại hàng trăm tài khoản mà
+không ai đăng nhập được, cứu bằng cách quản trị viên đặt lại từng cái một. Một lệnh mà **hỏng
+nửa chừng là mất dữ liệu** thì không phải lệnh chạy lại được.
 
-Cách đúng cho một đợt di trú thật là **không sinh mật khẩu nào cả**: tạo tài khoản chưa dùng
-được rồi gửi mỗi người một liên kết đặt mật khẩu dùng một lần. Khi ấy lệnh trở thành một lượt
-chèn hàng loạt không băm gì, chạy nền được, và không có gì để mất khi đứt. Chưa làm, và ghi ra
-đây để không ai tưởng giới hạn ở trên là câu trả lời cuối cùng.
+Nay lệnh tạo **tài khoản chưa dùng được**, kèm mỗi người một **liên kết đặt mật khẩu dùng một
+lần** gửi qua thư. Bốn điều đi theo, mỗi điều bịt một chỗ:
+
+- **Cột băm mật khẩu giữ một giá trị không khớp được với gì.** Nó không rỗng, nên đường đăng
+  nhập **không mọc thêm một nhánh `null`** — thứ mà quên kiểm một chỗ là mở toang. Phép so
+  khớp vốn đã từ chối mọi lược đồ nó không biết, nên một tài khoản chưa đặt mật khẩu **hỏng
+  đóng** mà không cần biết gì về khái niệm ấy.
+- **Máy chủ giữ băm của liên kết, không giữ liên kết.** Bản rõ rời hệ thống đúng một lần, trong
+  thư. Rò cơ sở dữ liệu không cho ai đặt lại mật khẩu của người khác.
+- **Gửi thư vào hàng đợi, và giao hai lần là vô hại**: cùng một liên kết tới hai lần thì lần
+  dùng đầu đóng nó lại. Đây mới là hình dạng §9.9 luật 5 muốn, và bản có mật khẩu không thể có
+  vì job nền không có chỗ trả bản rõ về cho người.
+- **Không còn gì để mất khi đứt.** Lượt chạy lại mở tiếp cho những người vẫn chưa có tài khoản;
+  thư mất thì phát lại liên kết. `PROVISION_BATCH` vẫn còn nhưng đổi nghĩa: nó giới hạn **cỡ
+  câu lệnh**, không còn giới hạn thời gian, vì không còn phép băm nào trong đường đi.
+
+Liên kết có hạn `PASSWORD_SETUP_TTL_HOURS` và **dùng một lần**. Hết hạn hoặc đã dùng thì người
+lao động nhờ quản trị viên phát lại — đó là cùng một lệnh, không phải một luồng thứ hai.
 
 ### 9.5 Nghỉ phép
 
