@@ -29,6 +29,14 @@ describe("auth (e2e)", () => {
   let password: string;
   let http: ReturnType<INestApplication["getHttpServer"]>;
   let db: PrismaService;
+  // The allowance runs per minute over the whole suite, so the last case has
+  // to know how much of it the cases above already used.
+  let spent = 0;
+
+  async function signIn(email: string, secret: string): Promise<request.Response> {
+    spent += 1;
+    return request(http).post("/auth/login").send({ email, password: secret });
+  }
 
   before(async () => {
     password = SIGNER_PASSWORD;
@@ -51,23 +59,19 @@ describe("auth (e2e)", () => {
   });
 
   it("refuses a wrong password without saying which half was wrong", async () => {
-    const res = await request(http)
-      .post("/auth/login")
-      .send({ email: SIGNER_EMAIL, password: "not-the-password" });
+    const res = await signIn(SIGNER_EMAIL, "not-the-password");
     assert.equal(res.status, 401);
     assert.equal(res.body.message, "CREDENTIALS_REJECTED");
   });
 
   it("gives an unknown address the same answer as a wrong password", async () => {
-    const res = await request(http)
-      .post("/auth/login")
-      .send({ email: "nobody@kiosk.local", password: "not-the-password" });
+    const res = await signIn("nobody@kiosk.local", "not-the-password");
     assert.equal(res.status, 401);
     assert.equal(res.body.message, "CREDENTIALS_REJECTED");
   });
 
   it("signs in, hands back an access token and sets an httpOnly refresh cookie", async () => {
-    const res = await request(http).post("/auth/login").send({ email: SIGNER_EMAIL, password });
+    const res = await signIn(SIGNER_EMAIL, password);
     assert.equal(res.status, 200);
     assert.equal(typeof res.body.accessToken, "string");
     const jar = (res.headers["set-cookie"] ?? []) as unknown as string[];
@@ -76,7 +80,7 @@ describe("auth (e2e)", () => {
   });
 
   it("accepts the access token on a guarded route and reports the role", async () => {
-    const login = await request(http).post("/auth/login").send({ email: SIGNER_EMAIL, password });
+    const login = await signIn(SIGNER_EMAIL, password);
     const me = await request(http)
       .get("/auth/me")
       .set("Authorization", `Bearer ${login.body.accessToken}`);
@@ -90,19 +94,19 @@ describe("auth (e2e)", () => {
   });
 
   it("trades the refresh cookie for a new pair", async () => {
-    const login = await request(http).post("/auth/login").send({ email: SIGNER_EMAIL, password });
+    const login = await signIn(SIGNER_EMAIL, password);
     const res = await request(http).post("/auth/refresh").set("Cookie", cookieFrom(login.headers));
     assert.equal(res.status, 200);
     assert.equal(typeof res.body.accessToken, "string");
   });
 
   it("treats a refresh cookie used twice as a replay and drops the session", async () => {
-    const login = await request(http).post("/auth/login").send({ email: SIGNER_EMAIL, password });
-    const spent = cookieFrom(login.headers);
-    const first = await request(http).post("/auth/refresh").set("Cookie", spent);
+    const login = await signIn(SIGNER_EMAIL, password);
+    const used = cookieFrom(login.headers);
+    const first = await request(http).post("/auth/refresh").set("Cookie", used);
     assert.equal(first.status, 200);
 
-    const replay = await request(http).post("/auth/refresh").set("Cookie", spent);
+    const replay = await request(http).post("/auth/refresh").set("Cookie", used);
     assert.equal(replay.status, 401);
 
     // The session drops whole, so the token the replay raced dies with it.
@@ -113,17 +117,15 @@ describe("auth (e2e)", () => {
   });
 
   // Declared last on purpose: it spends the login allowance for the minute.
-  it("stops answering login once the allowance for the minute is gone", async () => {
+  it("answers login exactly its own allowance of times, then stops", async () => {
     const allowance = validateEnv().LOGIN_ATTEMPTS_PER_MINUTE;
-    let refused = 0;
-    for (let attempt = 0; attempt <= allowance + 1; attempt += 1) {
-      const res = await request(http)
-        .post("/auth/login")
-        .send({ email: SIGNER_EMAIL, password: "not-the-password" });
-      if (res.status === 429) {
-        refused += 1;
-      }
+    let refused = false;
+    for (let attempt = 0; attempt <= allowance + 2 && !refused; attempt += 1) {
+      refused = (await signIn(SIGNER_EMAIL, "not-the-password")).status === 429;
     }
-    assert.ok(refused > 0, "the throttler never refused a login");
+    assert.ok(refused, "the throttler never refused a login");
+    // Counting refusals alone passes at any limit, including one raised by a
+    // second bucket added somewhere else entirely.
+    assert.equal(spent - 1, allowance, "login is answering to somebody else's allowance");
   });
 });
