@@ -5,6 +5,7 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { toCsv } from "../payroll/payroll.service.js";
 import type {
   CreateEmployeeDto,
   ListEmployeesDto,
@@ -13,6 +14,7 @@ import type {
 import {
   checkRepeats,
   checkShape,
+  IMPORT_COLUMNS,
   readRows,
   type ImportReport,
   type ImportRow,
@@ -22,6 +24,13 @@ import {
 const UNIQUE_VIOLATION = "P2002";
 const kWriteChunk = 2_000;
 const kTransactionMs = 600_000;
+// Without it Excel reads the file as the local code page and every
+// Vietnamese name in it turns to mojibake.
+const kByteOrderMark = "\ufeff";
+
+function asDay(value: Date | null): string {
+  return value ? value.toISOString().slice(0, 10) : "";
+}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -195,6 +204,42 @@ export class EmployeesService {
         "hireDate" = EXCLUDED."hireDate",
         "updatedAt" = now()
     `;
+  }
+
+  /**
+   * The same columns the import reads, filled in. Exporting into a shape the
+   * importer will not take back is how a round trip turns into retyping.
+   */
+  async exportCsv(viewer: Viewer): Promise<string> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const rows = await this.db.employee.findMany({
+      where: ScopeService.narrow("id", visible),
+      include: {
+        department: { select: { code: true } },
+        jobTitle: { select: { code: true } },
+        manager: { select: { code: true } },
+        compensation: { orderBy: { effectiveFrom: "desc" }, take: 1 },
+      },
+      orderBy: { code: "asc" },
+    });
+    const body = rows.map((one) => [
+      one.code,
+      one.fullName,
+      one.personalEmail ?? "",
+      one.phone ?? "",
+      asDay(one.dateOfBirth),
+      one.gender ?? "",
+      one.nationalId ?? "",
+      one.taxCode ?? "",
+      one.socialInsuranceNo ?? "",
+      one.department?.code ?? "",
+      one.jobTitle?.code ?? "",
+      one.manager?.code ?? "",
+      asDay(one.hireDate),
+      one.compensation[0]?.baseSalary.toFixed(0) ?? "",
+      one.compensation[0]?.insuranceSalary.toFixed(0) ?? "",
+    ]);
+    return kByteOrderMark + toCsv([...IMPORT_COLUMNS], body);
   }
 
   async list(query: ListEmployeesDto, viewer: Viewer): Promise<Page<Employee>> {

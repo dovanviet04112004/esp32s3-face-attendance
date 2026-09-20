@@ -52,6 +52,14 @@ export class EmployeesController {
     return this.employees.importCsv(viewer, body.csv, apply === "true");
   }
 
+  @Get("export")
+  @Roles("ADMIN", "HR")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @ApiOperation({ summary: "Every person this viewer may read, in the import's own columns" })
+  exportCsv(@CurrentViewer() viewer: Viewer): Promise<string> {
+    return this.employees.exportCsv(viewer);
+  }
+
   @Get("import/template")
   @Roles("ADMIN", "HR")
   @Header("Content-Type", "text/csv; charset=utf-8")
