@@ -142,7 +142,7 @@ describe("sessions across devices (e2e)", () => {
     await auth.signIn(EMAIL, FIRST_PASSWORD, { userAgent: "e2e-b/1.0" });
     assert.ok((await live()) >= 2);
 
-    await users.update(userId, { password: NEXT_PASSWORD });
+    await users.update(userId, userId, { password: NEXT_PASSWORD });
     assert.equal(await live(), 0, "a password nobody else knows left a device signed in");
   });
 

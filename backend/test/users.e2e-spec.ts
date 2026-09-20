@@ -94,10 +94,10 @@ describe("users and audit (e2e)", () => {
   it("wrote down the changes an administrator made", async () => {
     const res = await request(http).get("/audit").set("Authorization", `Bearer ${admin}`);
     assert.equal(res.status, 200);
-    const made = (res.body.rows as { action: string; target: string }[]).find(
-      (row) => row.action === "POST" && row.target.includes("users"),
-    );
+    const made = (res.body.rows as { action: string; subjectType: string; subjectId: string }[])
+      .find((row) => row.action === "user.create" && row.subjectId === madeId);
     assert.ok(made, "creating an account left no trace in the audit log");
+    assert.equal(made.subjectType, "user");
   });
 
   it("answers every error in one shape", async () => {
