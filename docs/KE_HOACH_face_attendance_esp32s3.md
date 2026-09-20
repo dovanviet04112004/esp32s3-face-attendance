@@ -6563,6 +6563,13 @@ một phần ba bề ngang hoặc trốn sau một nút mà không ai bấm.
 Thanh tab có đúng năm ô: **Trang chủ · Lịch ca · Chấm công · Đơn từ · Lương**. Quá năm thì mục
 nào cũng hẹp và chạm nhầm — đó là lý do trần năm, không phải thẩm mỹ.
 
+**Năm ô ấy là cố định, và tính năng tự phục vụ mới đi vào `Trang của tôi` chứ không xin thêm ô.**
+Ba lần thêm một đích tới cho người lao động là ba lần thanh tab vỡ, và mỗi lần chữa bằng cách
+xếp lại thứ tự thì lần sau lại vỡ tiếp — đó là dấu hiệu cấu trúc, không phải chuyện ưu tiên.
+Thanh tab trả lời **câu hỏi người ta mở máy lên để hỏi**, và số câu hỏi ấy không tăng theo số
+tính năng. Giấy xác nhận, đăng ký người phụ thuộc, quyết toán thuế — mỗi năm dùng vài lần — là
+**thẻ trên trang chủ**, nơi vốn đã là chỗ để liệt kê những thứ làm được.
+
 **Vai bàn giấy đổi ô thứ năm lấy nút "Thêm", và đó là đánh đổi chứ không phải ngoại lệ bỏ quên.**
 `HR`, `PAYROLL`, `ADMIN` có mười mấy đích tới, không cách nào nhét vừa năm ô, nên ô cuối thành
 cửa vào phần còn lại và `Lương` lùi vào trong. Chấp nhận được vì họ là nhóm **ít dùng điện
