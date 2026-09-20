@@ -298,7 +298,9 @@
     "askLetter": "Letters",
     "askLetterHint": "Employment or income, numbered by HR",
     "myPayslips": "Payslips",
-    "myPayslipsHint": "Issued periods and what changed since the last one"
+    "myPayslipsHint": "Issued periods and what changed since the last one",
+    "askProfile": "Change a personal detail",
+    "askProfileHint": "Email, phone, where your pay goes — ask, and HR answers"
   },
   "payroll": {
     "title": "Payslip",
@@ -624,5 +626,40 @@
     "empty": "Nothing asked for yet",
     "print": "Print",
     "close": "Close"
+  },
+  "profile": {
+    "title": "Change a personal detail",
+    "lead": "A change is a request; HR reads it before the record moves.",
+    "field": "What to change",
+    "fieldPERSONAL_EMAIL": "Contact email",
+    "fieldPHONE": "Phone number",
+    "fieldBANK": "Account your pay goes to",
+    "fieldNATIONAL_ID": "National id",
+    "fieldTAX_CODE": "Tax code",
+    "fieldSOCIAL_INSURANCE_NO": "Social insurance number",
+    "held": "On file",
+    "blank": "(none)",
+    "personalEmail": "New email",
+    "phone": "New phone number",
+    "bankName": "Bank",
+    "bankAccount": "Account number",
+    "nationalId": "New national id",
+    "taxCode": "New tax code",
+    "socialInsuranceNo": "New social insurance number",
+    "reason": "Reason (optional)",
+    "ask": "Send request",
+    "asking": "Sending…",
+    "bankWarning": "Changing where your pay goes warns the address on file, and leaves a locked period alone.",
+    "noticeTo": "Warning goes to",
+    "statePENDING": "Waiting",
+    "stateAPPROVED": "Written to the record",
+    "stateREJECTED": "Turned down",
+    "stateCANCELLED": "Taken back",
+    "approve": "Approve",
+    "reject": "Turn down",
+    "cancel": "Take back",
+    "person": "Employee",
+    "askedOn": "Asked on",
+    "empty": "No requests yet"
   }
 }

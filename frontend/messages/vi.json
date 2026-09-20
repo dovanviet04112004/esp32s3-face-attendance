@@ -298,7 +298,9 @@
     "askLetter": "Giấy xác nhận",
     "askLetterHint": "Xác nhận công tác hoặc thu nhập, nhân sự cấp số",
     "myPayslips": "Phiếu lương",
-    "myPayslipsHint": "Các kỳ đã phát và chênh lệch với kỳ trước"
+    "myPayslipsHint": "Các kỳ đã phát và chênh lệch với kỳ trước",
+    "askProfile": "Đổi thông tin cá nhân",
+    "askProfileHint": "Email, điện thoại, tài khoản nhận lương — gửi yêu cầu, nhân sự duyệt"
   },
   "payroll": {
     "title": "Phiếu lương",
@@ -624,5 +626,40 @@
     "empty": "Chưa có yêu cầu nào",
     "print": "In",
     "close": "Đóng"
+  },
+  "profile": {
+    "title": "Đổi thông tin cá nhân",
+    "lead": "Sửa thông tin là gửi một yêu cầu; nhân sự xem rồi mới ghi vào hồ sơ.",
+    "field": "Mục cần đổi",
+    "fieldPERSONAL_EMAIL": "Email liên lạc",
+    "fieldPHONE": "Số điện thoại",
+    "fieldBANK": "Tài khoản nhận lương",
+    "fieldNATIONAL_ID": "Số CCCD",
+    "fieldTAX_CODE": "Mã số thuế",
+    "fieldSOCIAL_INSURANCE_NO": "Số sổ bảo hiểm",
+    "held": "Đang lưu",
+    "blank": "(chưa có)",
+    "personalEmail": "Email mới",
+    "phone": "Số điện thoại mới",
+    "bankName": "Ngân hàng",
+    "bankAccount": "Số tài khoản",
+    "nationalId": "Số CCCD mới",
+    "taxCode": "Mã số thuế mới",
+    "socialInsuranceNo": "Số sổ bảo hiểm mới",
+    "reason": "Lý do (không bắt buộc)",
+    "ask": "Gửi yêu cầu",
+    "asking": "Đang gửi…",
+    "bankWarning": "Đổi tài khoản nhận lương sẽ có thư báo về địa chỉ email đang lưu, và không đổi kỳ lương đã chốt.",
+    "noticeTo": "Thư báo gửi tới",
+    "statePENDING": "Chờ duyệt",
+    "stateAPPROVED": "Đã ghi vào hồ sơ",
+    "stateREJECTED": "Bị từ chối",
+    "stateCANCELLED": "Đã rút",
+    "approve": "Duyệt",
+    "reject": "Từ chối",
+    "cancel": "Rút yêu cầu",
+    "person": "Nhân viên",
+    "askedOn": "Ngày gửi",
+    "empty": "Chưa có yêu cầu nào"
   }
 }
