@@ -4460,7 +4460,7 @@ frontend/
 │   └── messages.d.ts                 # ★ khai Messages = typeof vi.json, chốt en.json đủ khoá
 ├── .env.example                      # ✅ commit — mọi biến, giá trị giả
 ├── .env.local                        # ❌ gitignore — giá trị thật
-├── middleware.ts                     # `/` → `/vi`, và chặn route không có locale
+├── proxy.ts                          # `/` → `/vi`, và chặn route không có locale
 └── next.config.ts
 ```
 
@@ -4519,7 +4519,9 @@ liệu vẫn nằm nguyên trong bảng. Hai chỉ mục `@@index([employeeId, t
 và mọi `<Link>` phải đi qua `i18n/navigation.ts`; đổi lại, một link gửi cho người khác mở ra
 đúng thứ tiếng người gửi đang thấy, và trang render sẵn ở phía server đã đúng ngôn ngữ ngay
 lần vẽ đầu — cookie thì server không biết trước, nên hoặc chớp một nhịp tiếng sai hoặc phải bỏ
-render sẵn. `middleware.ts` đẩy `/` về `/vi` để địa chỉ trần vẫn mở được.
+render sẵn. `proxy.ts` đẩy `/` về `/vi` để địa chỉ trần vẫn mở được — tên file là quy ước
+Next 16 đặt cho thứ vẫn gọi là middleware, chạy trong chính tiến trình Next; lớp proxy thật
+của hệ là Traefik ở §11, hai thứ không dính nhau.
 
 **Không có `app/layout.tsx`.** Layout gốc là `app/[locale]/layout.tsx`, vì `<html lang>` phải
 mang đúng mã ngôn ngữ đang hiện: một layout đứng trên `[locale]` thì chưa biết locale, nên nó
@@ -6602,6 +6604,29 @@ và cái giá của từng đường:
 | Không chia, chỉ đánh chỉ mục theo `ts` | giữ nguyên chống trùng | bảng lớn dần vô hạn, xoá theo hạn lưu là `DELETE` hàng triệu dòng |
 | Chia theo `ts`, khoá `(deviceId, localId, ts)` | cắt mảnh, xoá bằng `DROP` | chống trùng gãy nếu `ts` từng bị sửa |
 | Chia theo `ts`, thêm bảng chống trùng riêng không chia | giữ cả hai | bảng chống trùng lớn đúng bằng bảng gốc, chỉ nhẹ hơn về bề rộng |
+
+**Chốt: đường thứ nhất — không chia `AttendanceRecord`, chỉ đánh chỉ mục theo `ts`.**
+
+Ba lý do, theo thứ tự quan trọng.
+
+Thứ nhất, hai đường còn lại đều đem **rủi ro tiền** đổi lấy **tiện lợi vận hành**, và đó là sai
+hướng. Chống trùng hỏng không kêu: nó không đổ lỗi, không ghi log, nó chỉ đẻ thêm một lượt chấm
+công, rồi lượt ấy thành một ngày công, rồi thành một dòng trên phiếu lương. Còn bảng phình to
+thì kêu ngay, kêu sớm, và có nhiều cách chữa.
+
+Thứ hai, bảng mà bảng lương thật sự đọc là `AttendanceDay`, và **nó đã chia mảnh rồi**.
+`AttendanceRecord` là bản ghi thô: một tháng của toàn công ty truy vấn đúng một mảnh
+`AttendanceDay`, không ai phải quét bảng thô để tính lương. Cái giá của việc không chia bảng thô
+vì thế nhỏ hơn nhiều so với vẻ ngoài của nó.
+
+Thứ ba, chưa có số đo nào nói bảng thô đang gây đau. Quyết định đổi khoá duy nhất của một bảng
+đang giữ đúng dữ liệu tiền lương cần một bảng đo đứng sau, không phải một linh cảm về quy mô.
+
+**Điều kiện mở lại quyết định này**, ghi rõ để lần sau không phải bàn từ đầu: khi `DELETE` theo
+hạn lưu trên `AttendanceRecord` vượt cửa sổ bảo trì, **hoặc** khi có người thật sự dựng đường
+hiệu chỉnh `ts` cho bản ghi `clockUnsynced` (§6.2.5). Vế thứ hai quan trọng hơn vế thứ nhất:
+ngày nào `ts` còn bất biến sau khi nhận thì đường thứ hai vẫn còn khả thi, mất vế ấy là mất luôn
+lựa chọn.
 
 #### 9.22.3c Nở rồi co, và một công cụ giữ luật thay cho trí nhớ
 
