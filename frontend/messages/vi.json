@@ -398,7 +398,8 @@
     "BIOMETRIC_CONSENT_MISSING": "Người này chưa đồng ý cho dùng dữ liệu khuôn mặt.",
     "CONSENT_NOT_YOURS": "Bạn chỉ được ký đồng ý cho chính mình.",
     "CONSENT_ALREADY_GRANTED": "Đã có một đồng ý còn hiệu lực.",
-    "CONSENT_NOT_GRANTED": "Chưa có đồng ý nào để rút."
+    "CONSENT_NOT_GRANTED": "Chưa có đồng ý nào để rút.",
+    "NETWORK_UNREACHABLE": "Không gọi được máy chủ. Kiểm tra API có đang chạy ở địa chỉ trang này gọi tới không."
   },
   "search": {
     "label": "Tìm kiếm",

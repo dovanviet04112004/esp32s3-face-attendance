@@ -8,30 +8,32 @@ import { Input } from "@/components/ui/input";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { claimsOf, useSession } from "@/lib/auth";
+import { useFault } from "@/lib/fault";
 
 export default function LoginPage() {
   const t = useTranslations("login");
   const app = useTranslations("app");
   const router = useRouter();
   const setSession = useSession((s) => s.setSession);
+  const faultOf = useFault();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [refused, setRefused] = useState(false);
+  const [refused, setRefused] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
-    setRefused(false);
+    setRefused(null);
     try {
       const res = await api.post<{ accessToken: string }>("/auth/login", { email, password });
       const token = res.data.accessToken;
       setSession(token, claimsOf(token));
       router.replace("/overview");
-    } catch {
-      // The api answers the same for a wrong address and a wrong password, and
-      // one flag on this side keeps that true here too.
-      setRefused(true);
+    } catch (fell: unknown) {
+      // The api answers CREDENTIALS_REJECTED for a wrong address and a wrong
+      // password alike, so telling the truth here still says neither.
+      setRefused(faultOf(fell));
     } finally {
       setBusy(false);
     }
@@ -74,7 +76,7 @@ export default function LoginPage() {
 
         {refused ? (
           <p role="alert" className="mt-4 text-sm text-(--color-danger)">
-            {t("refused")}
+            {refused}
           </p>
         ) : null}
 

@@ -398,7 +398,8 @@
     "BIOMETRIC_CONSENT_MISSING": "This person has not agreed to face data being used.",
     "CONSENT_NOT_YOURS": "You may only agree for yourself.",
     "CONSENT_ALREADY_GRANTED": "A live agreement already exists.",
-    "CONSENT_NOT_GRANTED": "There is no agreement to withdraw."
+    "CONSENT_NOT_GRANTED": "There is no agreement to withdraw.",
+    "NETWORK_UNREACHABLE": "Could not reach the server. Check the API is running at the address this page calls."
   },
   "search": {
     "label": "Search",

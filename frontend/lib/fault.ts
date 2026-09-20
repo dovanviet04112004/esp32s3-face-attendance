@@ -11,7 +11,11 @@ function codeOf(fell: unknown): string {
   if (!isAxiosError(fell)) {
     return "";
   }
-  const body = fell.response?.data as { message?: string | string[] } | undefined;
+  // No response at all is the network, not the api.
+  if (!fell.response) {
+    return "NETWORK_UNREACHABLE";
+  }
+  const body = fell.response.data as { message?: string | string[] } | undefined;
   const held = body?.message;
   return Array.isArray(held) ? (held[0] ?? "") : (held ?? "");
 }
