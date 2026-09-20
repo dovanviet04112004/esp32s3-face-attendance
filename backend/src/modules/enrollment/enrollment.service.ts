@@ -115,8 +115,7 @@ export class EnrollmentService {
       return;
     }
     const sealed = sealTemplate(Buffer.from(report.embedding, "base64"), this.key());
-    // Quality decides, not arrival order: two kiosks enrolling the same face
-    // means the blurrier one can land second (KEHOACH 9.23 rule 7).
+    // Quality decides, not arrival order (KEHOACH 9.23 rule 7).
     const kept = await this.db.$executeRaw`
       INSERT INTO "FaceTemplate" (
         "id", "employeeId", "templateIdx", "embedding", "scale", "quality",
@@ -160,9 +159,15 @@ export class EnrollmentService {
       include: { employee: true },
       orderBy: { employeeId: "asc" },
     });
+    // The repair path has to work from any state: a counter standing behind
+    // its own roster would send a negative version and be refused.
+    const top = Math.max(device.rosterVersion, rows.length);
+    if (top !== device.rosterVersion) {
+      await this.db.device.update({ where: { id: deviceId }, data: { rosterVersion: top } });
+    }
     // Every message in the run carries the version the kiosk reaches by
     // applying it, so a dropped one leaves it short and the next beat retries.
-    let version = device.rosterVersion - rows.length;
+    let version = top - rows.length;
     await this.send(deviceId, {
       op: "REPLACE_ALL",
       employeeId: NO_EMPLOYEE,
@@ -258,8 +263,7 @@ export class EnrollmentService {
       }
       const version = await this.bump(device);
       await this.send(row.deviceId, await this.templateFor(row, version, row.deviceId));
-      // The door now holds the face, so it stops being a door waiting to take
-      // one: leaving it ASSIGNED is what makes a second kiosk ask again.
+      // Left ASSIGNED, this door would ask for a face it now holds.
       await this.db.deviceEnrollment.update({
         where: { deviceId_employeeId: { deviceId: row.deviceId, employeeId } },
         data: { state: "ENROLLED", templateIdx: FIRST_TEMPLATE },
