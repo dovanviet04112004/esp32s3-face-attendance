@@ -58,8 +58,11 @@ describe("users and audit (e2e)", () => {
       .send({ email: MADE_EMAIL, password: MADE_PASSWORD, role: "HR" });
     assert.equal(res.status, 201);
     assert.equal(res.body.role, "HR");
-    assert.equal(res.body.passwordHash, undefined);
-    assert.equal(res.body.refreshTokenHash, undefined);
+    assert.deepEqual(
+      Object.keys(res.body).sort(),
+      ["createdAt", "email", "id", "role", "updatedAt"],
+      "the account answer carries a field nobody chose to publish",
+    );
     madeId = res.body.id;
   });
 
