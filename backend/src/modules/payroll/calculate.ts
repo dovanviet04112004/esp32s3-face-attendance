@@ -95,6 +95,14 @@ export interface CalcResult {
   netPay: Dong;
 }
 
+/** What a reader of a stored payslip matches on, so the name of a component
+ *  is written once and read everywhere (CLAUDE.md 4.9).
+ */
+export const LINE_RELIEF_SELF = "DEDUCT_SELF";
+export const LINE_RELIEF_DEPENDENT = "DEDUCT_DEPENDENT";
+export const LINE_TAX = "PIT";
+export const LINE_EXEMPT_OVERTIME = "OT_EXEMPT";
+
 interface OvertimeBand {
   code: string;
   minutes: number;
@@ -243,16 +251,16 @@ export function calculate(input: CalcInput): CalcResult {
 
   const taxableIncome = atLeastZero(taxableEarnings - overtimeExempt);
   if (overtimeExempt > 0n) {
-    lines.push({ kind: "INFO", code: "OT_EXEMPT", amount: overtimeExempt });
+    lines.push({ kind: "INFO", code: LINE_EXEMPT_OVERTIME, amount: overtimeExempt });
   }
 
   const familyDeduction =
     policy.selfDeduction + policy.dependentDeduction * BigInt(input.dependentCount);
-  lines.push({ kind: "INFO", code: "DEDUCT_SELF", amount: policy.selfDeduction });
+  lines.push({ kind: "INFO", code: LINE_RELIEF_SELF, amount: policy.selfDeduction });
   if (input.dependentCount > 0) {
     lines.push({
       kind: "INFO",
-      code: "DEDUCT_DEPENDENT",
+      code: LINE_RELIEF_DEPENDENT,
       amount: policy.dependentDeduction * BigInt(input.dependentCount),
       quantity: input.dependentCount,
     });
@@ -260,7 +268,7 @@ export function calculate(input: CalcInput): CalcResult {
 
   const assessable = atLeastZero(taxableIncome - insuranceEmployee - familyDeduction);
   const personalIncomeTax = taxOn(assessable, policy.brackets);
-  lines.push({ kind: "DEDUCTION", code: "PIT", amount: personalIncomeTax });
+  lines.push({ kind: "DEDUCTION", code: LINE_TAX, amount: personalIncomeTax });
 
   for (const deduction of input.deductions) {
     lines.push({
