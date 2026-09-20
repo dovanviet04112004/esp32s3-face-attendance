@@ -5,11 +5,11 @@ import { ConfigService } from "@nestjs/config";
 import type { Queue } from "bullmq";
 
 import { CACHE } from "../../common/cache/cache-keys.js";
+import { toExcelCsv } from "../../common/csv.js";
 import { CacheService } from "../../common/cache/cache.service.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { PolicyService } from "../policy/policy.service.js";
-import { toCsv } from "../payroll/payroll.service.js";
 import { dayWindow, localDay } from "../timesheet/local-day.js";
 import { QUEUE, type ReportJob } from "../../queue/queues.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
@@ -51,9 +51,6 @@ const D02_COLUMNS: { at: number; head: string }[] = [
 // Columns 8 to 11 and 18 to 19 describe labour categories and hazardous work
 // that nothing in this system records, so they go out empty.
 const D02_UNHELD = new Set([8, 9, 10, 11, 18, 19]);
-// Excel reads a csv as the local code page unless this says otherwise, and
-// every Vietnamese name in the file turns to mojibake when it does.
-const kByteOrderMark = "\ufeff";
 const kAllowanceColumns = 5;
 const kMonthPad = 2;
 
@@ -465,12 +462,9 @@ export class ReportsService {
       );
     });
 
-    return (
-      kByteOrderMark +
-      toCsv(
-        D02_COLUMNS.map((column) => column.head),
-        rows,
-      )
+    return toExcelCsv(
+      D02_COLUMNS.map((column) => column.head),
+      rows,
     );
   }
 

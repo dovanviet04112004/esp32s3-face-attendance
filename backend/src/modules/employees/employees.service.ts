@@ -4,8 +4,8 @@ import type { Employee, Prisma } from "@prisma/client";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import { toExcelCsv } from "../../common/csv.js";
 import { PrismaService } from "../../database/prisma.service.js";
-import { toCsv } from "../payroll/payroll.service.js";
 import type {
   CreateEmployeeDto,
   ListEmployeesDto,
@@ -24,10 +24,6 @@ import {
 const UNIQUE_VIOLATION = "P2002";
 const kWriteChunk = 2_000;
 const kTransactionMs = 600_000;
-// Without it Excel reads the file as the local code page and every
-// Vietnamese name in it turns to mojibake.
-const kByteOrderMark = "\ufeff";
-
 function asDay(value: Date | null): string {
   return value ? value.toISOString().slice(0, 10) : "";
 }
@@ -239,7 +235,7 @@ export class EmployeesService {
       one.compensation[0]?.baseSalary.toFixed(0) ?? "",
       one.compensation[0]?.insuranceSalary.toFixed(0) ?? "",
     ]);
-    return kByteOrderMark + toCsv([...IMPORT_COLUMNS], body);
+    return toExcelCsv([...IMPORT_COLUMNS], body);
   }
 
   async list(query: ListEmployeesDto, viewer: Viewer): Promise<Page<Employee>> {

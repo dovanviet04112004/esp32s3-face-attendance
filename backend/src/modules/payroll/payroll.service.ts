@@ -15,6 +15,7 @@ import type {
   Prisma,
 } from "@prisma/client";
 
+import { toCsv } from "../../common/csv.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -79,19 +80,6 @@ export type PayslipDetail = Payslip & { lines: PayslipLine[] };
 export type PayslipRow = Payslip & { period: { year: number; month: number; state: PeriodState } };
 
 export type ExportKind = "bank" | "ledger";
-
-function cell(value: string): string {
-  // A name with a comma or a quote in it has broken more payment files than
-  // any other single thing, so every cell is quoted and quotes are doubled.
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
-/** Every cell quoted; no byte order mark, because the bank file this also
- *  writes is read by a parser, not by Excel.
- */
-export function toCsv(header: string[], rows: string[][]): string {
-  return [header, ...rows].map((row) => row.map(cell).join(",")).join("\r\n");
-}
 
 export interface PayslipDelta {
   code: string;
