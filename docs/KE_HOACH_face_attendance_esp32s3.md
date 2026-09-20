@@ -6853,10 +6853,17 @@ không truy vấn nào gộp được chúng. Nay mọi tên nằm ở `audit-ac
 là chuỗi sẽ gõ sai, và không ai liệt kê được hệ thống ghi lại những gì.
 
 **Luật 3 — chủ thể là một cặp, không phải một chuỗi.** `target` cũ khi thì là đường dẫn
-(`/users/:id`), khi thì là mã nhân viên (`412`), và không gì trong dòng cho biết đang là loại
-nào. Tách thành `subjectType` với `subjectId` thì câu **"mọi thứ từng xảy ra với nhân viên
-412"** mới có chỉ mục để chạy — mà đó chính là hình dạng của việc truy ngược: người ta tra từ
-**đối tượng**, không tra từ route.
+(`/users/:id`), khi thì là mã nhân viên (`412`), khi thì là **số người bị di chuyển** trong một
+lượt tái cơ cấu. Không gì trong dòng cho biết đang là loại nào. Tách thành `subjectType` với
+`subjectId` thì câu **"mọi thứ từng xảy ra với nhân viên 412"** mới có chỉ mục để chạy — mà đó
+chính là hình dạng của việc truy ngược: người ta tra từ **đối tượng**, không tra từ route.
+
+Hai hệ quả bắt buộc. **Chủ thể là thứ người ta mở trang ra xem**, nên lương, hợp đồng, nghỉ
+việc và mỗi lượt đọc dữ liệu sinh trắc đều nằm dưới **chính nhân viên ấy**, còn mã hợp đồng thì
+vào `meta` — chia nhỏ chủ thể ra thành `pay`, `contract`, `biometric` là chia đôi câu chuyện của
+một con người thành ba bảng con không nối được với nhau. Và **mỗi loại chủ thể chỉ dùng một loại
+định danh**: `employee.offboard` từng ghi mã nhân viên trong khi mọi dòng khác ghi id, nên lượt
+nghỉ việc vô hình với chính truy vấn dựng ra để tìm nó.
 
 **Luật 4 — thứ đổi được thành tiền hoặc thành quyền thì ghi cả trước lẫn sau.** Biết lương
 thành 20 triệu mà không biết nó vốn là bao nhiêu là nửa câu trả lời, và nửa thiếu đúng là nửa
