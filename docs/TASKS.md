@@ -527,7 +527,7 @@ xử lý dữ liệu nhạy cảm vì chính bản chất chấm công bằng kh
 |---|---|---|---|
 | E23-T1 | Mẫu danh sách việc onboarding theo chức danh và phòng ban, sinh bản thể hiện có người phụ trách và hạn | Nhận việc không còn là danh sách trong đầu ai đó | E15-T8 |
 | E23-T2 | Offboarding chạy ngược và **chặn được**: chưa thu tài sản, chưa bàn giao thì kỳ lương cuối không chốt | Không ai rời đi còn cầm tài sản mà lương vẫn chốt | E23-T3, E18-T15 |
-| E23-T3 | `Asset` + **bản ghi chuyển giao** mỗi lần cấp và thu (§9.16) | "Máy này từng qua tay ai" trả lời được | E15-T3 |
+| ~~E23-T3~~ | **Xong 20/09.** Hai bảng, **một phép ghi**. `AssetTransfer` là lịch sử; `Asset.holderId` chỉ là **bản tóm tắt của dòng mới nhất**, giữ ở đó vì câu "ai đang cầm" được hỏi nhiều hơn hẳn câu "từng qua tay ai" — và `handOver` viết cả hai trong **một giao dịch** nên bản tóm tắt không thể lệch khỏi thứ nó tóm tắt. Ba phép từ chối, đều là những trạng thái sẽ sinh ra một dòng mâu thuẫn với dòng trước: cấp thứ đang có người giữ, thu thứ chưa cấp, thu từ **nhầm người**. Ca test khoá đúng điều quan trọng: sau ba lần giao nhận, người giữ đầu tiên **vẫn còn trong lịch sử** | "Máy này từng qua tay ai" trả lời được | E15-T3 |
 | E23-T4 | Tài liệu có **phiên bản**; xác nhận đã đọc gắn vào **đúng phiên bản** | Chứng minh được ai đã đọc bản nào | E15-T3 |
 | E23-T5 | Theo dõi hồ sơ còn thiếu của từng người | HR biết ai chưa nộp gì mà không phải rà tay | E23-T4 |
 
