@@ -6,7 +6,9 @@ import { CACHE, SCOPE_PREFIX } from "../cache/cache-keys.js";
 import { CacheService } from "../cache/cache.service.js";
 import type { Viewer } from "./viewer.js";
 
-const UNSCOPED: ReadonlySet<string> = new Set(["ADMIN", "HR", "PAYROLL", "VIEWER"]);
+// VIEWER is the default on a fresh account, so it narrows like EMPLOYEE does:
+// a role nobody assigned must not read the company (KEHOACH 9.4).
+const UNSCOPED: ReadonlySet<string> = new Set(["ADMIN", "HR", "PAYROLL"]);
 const MAX_DEPTH = 64;
 
 @Injectable()

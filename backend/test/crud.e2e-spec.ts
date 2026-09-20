@@ -55,13 +55,15 @@ describe("crud (e2e)", () => {
     await app.close();
   });
 
-  it("lets a viewer read employees", async () => {
+  // The default role reads the route and gets its own rows, which for an
+  // account with no employee record is none (KEHOACH 9.4).
+  it("lets a viewer read employees, and hands them nobody", async () => {
     const res = await request(http)
       .get("/employees")
       .set("Authorization", `Bearer ${token.viewer}`);
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(res.body.rows));
-    assert.ok(res.body.total >= 1);
+    assert.equal(res.body.total, 0);
   });
 
   it("refuses a viewer trying to create an employee", async () => {
@@ -107,7 +109,7 @@ describe("crud (e2e)", () => {
 
     const still = await request(http)
       .get(`/employees/${madeEmployeeId}`)
-      .set("Authorization", `Bearer ${token.viewer}`);
+      .set("Authorization", `Bearer ${token.hr}`);
     assert.equal(still.status, 200);
   });
 

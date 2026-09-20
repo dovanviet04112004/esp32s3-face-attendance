@@ -152,8 +152,23 @@ describe("row scope (e2e)", () => {
 
   it("lets the unscoped roles see everyone", async () => {
     const stranger = idOf.get(STRANGER) as number;
-    for (const who of ["admin", "hr", "viewer"]) {
+    for (const who of ["admin", "hr"]) {
       assert.equal((await as(who)(`/employees/${stranger}`)).status, 200, `${who} lost sight`);
+    }
+  });
+
+  // It is the default on a new account, so it has to be the narrowest role
+  // rather than the widest (KEHOACH 9.4).
+  it("narrows the default role to its own record", async () => {
+    const stranger = idOf.get(STRANGER) as number;
+    assert.equal((await as("viewer")(`/employees/${stranger}`)).status, 404);
+    for (const path of ["/employees?take=200", "/attendance", "/payslips"]) {
+      const res = await as("viewer")(path);
+      assert.equal(res.status, 200, `viewer could not read ${path}`);
+      assert.ok(
+        !JSON.stringify(res.body).includes(STRANGER),
+        `${path} handed the whole company to an account nobody assigned`,
+      );
     }
   });
 
