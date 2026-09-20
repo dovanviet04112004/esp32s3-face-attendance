@@ -399,7 +399,7 @@ Vừa dựng đầu vào cho bảng lương vừa chữa chỗ gãy đã đo ở
 | E16-T7 | Đếm gần đúng khi vượt ngưỡng (§9.9 luật 6) | Trang danh sách không quét toàn bảng chỉ để vẽ thanh phân trang | E16-T5 |
 | E16-T8 | 🔬 Phân mảnh `AttendanceRecord` theo tháng khi bảng thật sự lớn | Truy vấn một tháng chạm một mảnh; dọn quá hạn là `DROP` một mảnh | E16-T3 |
 | ~~E16-T9~~ | Bộ dữ liệu giả — **Xong 20/09.** Sinh bằng `INSERT … SELECT generate_series` trong Postgres (13 s cho 300k dòng), mã nhân viên mang tiền tố `LOAD` nên xoá sạch được bằng một câu. **Một bẫy đã sập**: `employeeId * 1000000` để dựng `localId` **tràn `integer`** ở id thứ 2.148 — `localId` vốn là chuỗi nên phải ghép chuỗi, không nhân | Có số đo thật cho T3, T5, T6 | E16-T2 |
-| E16-T10 | `Holiday` theo năm và theo pháp nhân, đổ vào `AttendanceDay` | Ngày lễ không bị tính là vắng | E16-T1 |
+| ~~E16-T10~~ | **Xong 20/09.** Nhập được ngày lễ — trước đó bảng có, phép dựng công đọc nó, mà **không đường nào ghi vào**, nên Tết bị tính là vắng và trừ lương. Kèm sửa ràng buộc: hai ngày lễ toàn công ty cùng ngày đều lọt vì Postgres coi hai `NULL` là khác nhau. `Holiday` theo năm và theo pháp nhân, đổ vào `AttendanceDay` | Ngày lễ không bị tính là vắng | E16-T1 |
 | ~~E16-T11~~ | **Xong 20/09.** Hôm nay không nằm trong `AttendanceDay` nên đọc thẳng lượt quẹt: chưa quẹt, quẹt một lần, hoặc vào muộn quá giờ ân hạn. Nghỉ phép/công tác/làm từ xa đã duyệt thì **không phải ngoại lệ**. **Bảng ngoại lệ hôm nay** (§9.18 mục 3): chưa quẹt, quẹt muộn, quẹt một lần rồi mất, nghỉ không đơn | Danh sách ngắn, hành động được, mở mỗi sáng | E16-T2 |
 
 ---
@@ -577,14 +577,14 @@ cược vào may mắn.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E26-T1 | Sao lưu hằng ngày **cộng lưu trữ WAL liên tục**, mã hoá, cất ngoài máy chủ đang chạy | Phục hồi được tới **một thời điểm bất kỳ**, không chỉ tới nửa đêm | E11-T8 |
-| E26-T2 | **Kiểm phục hồi định kỳ**: dựng lại vào CSDL tạm, đếm dòng các bảng không dựng lại được, **bấm giờ** | Có RTO đo được, không phải RTO ước lượng 🔬 | E26-T1 |
+| ~~E26-T1~~ | **Xong 20/09.** Bản đêm mã hoá bằng **khoá công khai** — máy ghi được nhưng không đọc lại được bản cũ. Đo trên CSDL sống: **6,78 MB trong 1,59 s**, grep không ra tên nào, `age` từ chối mở khi không có khoá riêng. WAL liên tục kiểm trên container vứt đi: 3 segment, đều mã hoá, và script **từ chối ghi đè** segment đã lưu. Sao lưu hằng ngày **cộng lưu trữ WAL liên tục**, mã hoá, cất ngoài máy chủ đang chạy | Phục hồi được tới **một thời điểm bất kỳ**, không chỉ tới nửa đêm | E11-T8 |
+| ~~E26-T2~~ | **Xong 20/09.** Dựng bản mới nhất vào CSDL vứt đi: **646 160 dòng trong 16 giây**, và **39/39 bảng khớp đúng số dòng** với bản đang chạy. Bản đầu của chính bài kiểm này **sai**: nó đọc `n_live_tup` là ước lượng của ANALYZE, nên bản vừa phục hồi báo bốn bảng lớn nhất là rỗng. **Kiểm phục hồi định kỳ**: dựng lại vào CSDL tạm, đếm dòng các bảng không dựng lại được, **bấm giờ** | Có RTO đo được, không phải RTO ước lượng 🔬 | E26-T1 |
 | E26-T3 | Sao lưu **tôn trọng quyền xoá**: bản cũ không giữ mẫu khuôn mặt của người đã nghỉ quá hạn lưu (§9.22.1) | Sao lưu không thành chỗ trú của dữ liệu lẽ ra đã xoá | E21-T3, E26-T1 |
 | E26-T4 | Luật **nở rồi co** cho mọi migration phá huỷ: thêm cột, đổ dữ liệu, bỏ cột **ở lần phát hành sau** | Quay lui được ở mọi bước | — |
 | E26-T5 | Đổ dữ liệu theo lô, chạy lại được, ngoài giờ cao điểm | `UPDATE` năm triệu dòng không khoá API | E26-T4 |
 | E26-T6 | Chạy thử migration trên bản sao và **bấm giờ** trước khi chạm bản thật | Biết trước một migration khoá bảng bao lâu | E26-T2 |
-| E26-T7 | Ràng buộc ở tầng dữ liệu (§9.22.4): khoá ngoại thật, loại trừ khoảng ngày, `CHECK` cho số không được âm | Hai request song song không lách được phép kiểm trong code | E17-T6 |
-| E26-T8 | `pg_stat_statements`, xếp hạng theo **tổng thời gian**; nhật ký câu chậm kèm tham số | Truy vấn chậm lộ ra trước khi người dùng kêu | E11-T1 |
+| ~~E26-T7~~ | **Xong 20/09.** 19 ràng buộc `CHECK`; bảy phép thử ghi bậy đều bị **cơ sở dữ liệu** từ chối, gồm thuế suất 150% và tháng thứ mười ba. `netPay` cố ý vẫn âm được (tạm ứng lớn), nhưng **không được vượt lương gộp**. Ràng buộc ở tầng dữ liệu (§9.22.4): khoá ngoại thật, loại trừ khoảng ngày, `CHECK` cho số không được âm | Hai request song song không lách được phép kiểm trong code | E17-T6 |
+| ~~E26-T8~~ | **Xong 20/09.** `pg_stat_statements` nạp và tạo, xếp theo **tổng thời gian**; câu quá 500 ms ghi log kèm tham số. `pg_stat_statements`, xếp hạng theo **tổng thời gian**; nhật ký câu chậm kèm tham số | Truy vấn chậm lộ ra trước khi người dùng kêu | E11-T1 |
 | E26-T9 | `EXPLAIN` một lượt cho mọi truy vấn mới trên bảng lớn; quét toàn bảng thì hoặc có chỉ mục hoặc có lý do ghi lại | Không chỉ mục nào bị quên âm thầm | E26-T8 |
 | E26-T10 | Theo dõi kích thước bảng và độ phình theo tuần | Biết khi nào tới lúc chia mảnh, không đoán | E26-T8 |
 | E26-T11 | PgBouncer chế độ transaction khi vượt một bản chạy | Chạm trần CPU trước, không chạm trần kết nối | E11-T8 |
