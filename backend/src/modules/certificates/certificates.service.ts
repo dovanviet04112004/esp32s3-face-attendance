@@ -54,9 +54,14 @@ export class CertificatesService {
 
   async list(viewer: Viewer, query: ListCertificatesDto): Promise<Page<Certificate>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
+    // Both clauses write employeeId, so an AND keeps the narrower of the two
+    // rather than letting one silently replace the other.
     const where: Prisma.CertificateWhereInput = {
-      ...ScopeService.narrow("employeeId", visible),
-      ...(query.state ? { state: query.state } : {}),
+      AND: [
+        ScopeService.narrow("employeeId", visible),
+        query.state ? { state: query.state } : {},
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
+      ],
     };
     const [rows, found] = await Promise.all([
       this.db.certificate.findMany({

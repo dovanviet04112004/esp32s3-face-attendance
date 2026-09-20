@@ -11,8 +11,8 @@ import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { useFault } from "@/lib/fault";
 import { useSession } from "@/lib/auth";
+import { useFault } from "@/lib/fault";
 
 const KINDS = ["EMPLOYMENT", "INCOME"] as const;
 const MONTH_CHOICES = [1, 3, 6, 12];
@@ -29,16 +29,13 @@ interface Letter {
   employee?: { code: string; fullName: string };
 }
 
-const DESK = ["ADMIN", "HR", "PAYROLL"];
-
 export default function MyLettersPage() {
   const t = useTranslations("certificates");
   const common = useTranslations("common");
   const format = useFormatter();
   const cache = useQueryClient();
   const faultOf = useFault();
-  const role = useSession((s) => s.role);
-  const mayIssue = role !== null && DESK.includes(role);
+  const employeeId = useSession((one) => one.employeeId);
 
   const [kind, setKind] = useState<(typeof KINDS)[number]>("EMPLOYMENT");
   const [purpose, setPurpose] = useState("");
@@ -47,8 +44,10 @@ export default function MyLettersPage() {
   const [refused, setRefused] = useState<string | null>(null);
 
   const letters = useQuery({
-    queryKey: ["certificates"],
-    queryFn: async () => (await api.get<{ rows: Letter[] }>("/certificates")).data.rows,
+    queryKey: ["certificates", "mine", employeeId],
+    enabled: employeeId !== null,
+    queryFn: async () =>
+      (await api.get<{ rows: Letter[] }>(`/certificates?employeeId=${employeeId}`)).data.rows,
   });
 
   const ask = useMutation({
@@ -63,13 +62,6 @@ export default function MyLettersPage() {
       setRefused(null);
       void cache.invalidateQueries({ queryKey: ["certificates"] });
     },
-    onError: (fell) => setRefused(faultOf(fell)),
-  });
-
-  const decide = useMutation({
-    mutationFn: async (what: { id: string; how: "issue" | "reject" }) =>
-      api.post(`/certificates/${what.id}/${what.how}`, {}),
-    onSuccess: () => void cache.invalidateQueries({ queryKey: ["certificates"] }),
     onError: (fell) => setRefused(faultOf(fell)),
   });
 
@@ -206,25 +198,6 @@ export default function MyLettersPage() {
                   <Button size="sm" tone="quiet" onClick={() => open.mutate(one.id)}>
                     {t("view")}
                   </Button>
-                ) : null}
-                {mayIssue && one.state === "REQUESTED" ? (
-                  <>
-                    <Button
-                      size="sm"
-                      disabled={decide.isPending}
-                      onClick={() => decide.mutate({ id: one.id, how: "issue" })}
-                    >
-                      {t("issue")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      tone="quiet"
-                      disabled={decide.isPending}
-                      onClick={() => decide.mutate({ id: one.id, how: "reject" })}
-                    >
-                      {t("reject")}
-                    </Button>
-                  </>
                 ) : null}
               </div>
             </li>

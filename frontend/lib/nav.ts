@@ -43,8 +43,13 @@ export interface NavGroup {
 }
 
 const EVERYONE: Role[] = [];
-const DECIDERS: Role[] = ["MANAGER", "ADMIN", "HR"];
-const PEOPLE_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
+const DECIDERS: Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
+// A manager's own job is their team, and every one of these narrows to the
+// subtree on its own (KEHOACH 9.4).
+const TEAM: Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
+const TEAM_TIME: Role[] = ["ADMIN", "HR", "MANAGER"];
+const PEOPLE_DESK: Role[] = ["ADMIN", "HR"];
+const PAY_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 const OPERATORS: Role[] = ["ADMIN"];
 
 /** Screens grouped by what somebody is doing, not by module (KEHOACH 9.15). */
@@ -75,26 +80,26 @@ export const NAV: NavGroup[] = [
   {
     key: "groupPeople",
     items: [
-      { href: "/employees", key: "directory", icon: Users, roles: PEOPLE_DESK },
-      { href: "/org", key: "orgChart", icon: Network, roles: PEOPLE_DESK },
+      { href: "/employees", key: "directory", icon: Users, roles: TEAM },
+      { href: "/org", key: "orgChart", icon: Network, roles: TEAM_TIME },
       { href: "/org/departments", key: "departments", icon: Building2, roles: PEOPLE_DESK },
     ],
   },
   {
     key: "groupTime",
     items: [
-      { href: "/timesheet", key: "timesheetHr", icon: CalendarDays, roles: PEOPLE_DESK },
-      { href: "/attendance", key: "attendance", icon: ScanFace, roles: PEOPLE_DESK },
-      { href: "/leave", key: "leave", icon: CalendarOff, roles: PEOPLE_DESK },
+      { href: "/timesheet", key: "timesheetHr", icon: CalendarDays, roles: TEAM },
+      { href: "/attendance", key: "attendance", icon: ScanFace, roles: TEAM },
+      { href: "/leave", key: "leave", icon: CalendarOff, roles: TEAM_TIME },
       { href: "/shifts", key: "shifts", icon: Clock, roles: PEOPLE_DESK },
-      { href: "/reports", key: "reports", icon: ChartColumn, roles: PEOPLE_DESK },
+      { href: "/reports", key: "reports", icon: ChartColumn, roles: PAY_DESK },
     ],
   },
   {
     key: "groupPay",
     items: [
-      { href: "/payroll", key: "payroll", icon: Wallet, roles: PEOPLE_DESK },
-      { href: "/policy", key: "policy", icon: Scale, roles: PEOPLE_DESK },
+      { href: "/payroll", key: "payroll", icon: Wallet, roles: PAY_DESK },
+      { href: "/policy", key: "policy", icon: Scale, roles: PAY_DESK },
     ],
   },
   {

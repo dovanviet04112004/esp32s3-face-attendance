@@ -43,4 +43,10 @@ export class ListCertificatesDto extends PaginationDto {
   @IsOptional()
   @IsEnum(STATES)
   state?: (typeof STATES)[number];
+
+  @ApiPropertyOptional({ description: "Whose letters; everything in scope when left out" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  employeeId?: number;
 }

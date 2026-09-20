@@ -26,7 +26,6 @@ type FieldName = keyof typeof FIELDS;
 type Column = (typeof FIELDS)[FieldName][number];
 
 const FIELD_NAMES = Object.keys(FIELDS) as FieldName[];
-const DESK = ["ADMIN", "HR"];
 
 interface Change {
   id: string;
@@ -56,8 +55,6 @@ export default function MyProfilePage() {
   const cache = useQueryClient();
   const faultOf = useFault();
   const employeeId = useSession((s) => s.employeeId);
-  const role = useSession((s) => s.role);
-  const mayDecide = role !== null && DESK.includes(role);
 
   const [field, setField] = useState<FieldName>("BANK");
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -71,8 +68,10 @@ export default function MyProfilePage() {
   });
 
   const changes = useQuery({
-    queryKey: ["profile-changes"],
-    queryFn: async () => (await api.get<{ rows: Change[] }>("/profile-changes")).data.rows,
+    queryKey: ["profile-changes", "mine", employeeId],
+    enabled: employeeId !== null,
+    queryFn: async () =>
+      (await api.get<{ rows: Change[] }>(`/profile-changes?employeeId=${employeeId}`)).data.rows,
   });
 
   const ask = useMutation({
@@ -91,13 +90,11 @@ export default function MyProfilePage() {
     onError: (fell) => setRefused(faultOf(fell)),
   });
 
-  const decide = useMutation({
-    mutationFn: async (what: { id: string; how: "approve" | "reject" | "cancel" }) =>
-      api.post(`/profile-changes/${what.id}/${what.how}`, {}),
+  const cancel = useMutation({
+    mutationFn: async (id: string) => api.post(`/profile-changes/${id}/cancel`, {}),
     onSuccess: () => {
       setRefused(null);
       void cache.invalidateQueries({ queryKey: ["profile-changes"] });
-      void cache.invalidateQueries({ queryKey: ["employees", employeeId] });
     },
     onError: (fell) => setRefused(faultOf(fell)),
   });
@@ -238,38 +235,16 @@ export default function MyProfilePage() {
               {one.reason ? <p className="mt-1 text-sm">{one.reason}</p> : null}
               {one.note ? <p className="mt-1 text-sm text-(--color-danger)">{one.note}</p> : null}
 
-              {one.state === "PENDING" ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {mayDecide ? (
-                    <>
-                      <Button
-                        size="sm"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ id: one.id, how: "approve" })}
-                      >
-                        {t("approve")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        tone="quiet"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ id: one.id, how: "reject" })}
-                      >
-                        {t("reject")}
-                      </Button>
-                    </>
-                  ) : null}
-                  {one.employeeId === employeeId ? (
-                    <Button
-                      size="sm"
-                      tone="quiet"
-                      disabled={decide.isPending}
-                      onClick={() => decide.mutate({ id: one.id, how: "cancel" })}
-                    >
-                      {t("cancel")}
-                    </Button>
-                  ) : null}
-                </div>
+              {one.state === "PENDING" && one.employeeId === employeeId ? (
+                <Button
+                  size="sm"
+                  tone="quiet"
+                  className="mt-3"
+                  disabled={cancel.isPending}
+                  onClick={() => cancel.mutate(one.id)}
+                >
+                  {t("cancel")}
+                </Button>
               ) : null}
             </li>
           ))}

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
 import { money } from "@/lib/format";
@@ -39,13 +40,16 @@ export default function MyPayslipsPage() {
   const [claim, setClaim] = useState("");
   const [lineCode, setLineCode] = useState("");
   const [refused, setRefused] = useState<string | null>(null);
+  const employeeId = useSession((one) => one.employeeId);
   const nameOf = useLineName();
   const cache = useQueryClient();
   const faultOf = useFault();
 
   const mine = useQuery({
-    queryKey: ["payslips", "mine"],
-    queryFn: async () => (await api.get<PayslipRow[]>("/payslips")).data,
+    queryKey: ["payslips", "mine", employeeId],
+    enabled: employeeId !== null,
+    queryFn: async () =>
+      (await api.get<PayslipRow[]>(`/payslips?employeeId=${employeeId}`)).data,
   });
 
   const chosen = openId ?? mine.data?.[0]?.id ?? null;
@@ -63,9 +67,10 @@ export default function MyPayslipsPage() {
   });
 
   const disputes = useQuery({
-    queryKey: ["payslip-disputes", "mine"],
+    queryKey: ["payslip-disputes", "mine", employeeId],
+    enabled: employeeId !== null,
     queryFn: async () =>
-      (await api.get<{ rows: Dispute[] }>("/payslip-disputes")).data.rows,
+      (await api.get<{ rows: Dispute[] }>(`/payslip-disputes?employeeId=${employeeId}`)).data.rows,
   });
 
   const raise = useMutation({

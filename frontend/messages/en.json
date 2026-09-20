@@ -297,7 +297,9 @@
     "statePENDING": "waiting",
     "stateAPPROVED": "approved",
     "stateREJECTED": "rejected",
-    "stateCANCELLED": "cancelled"
+    "stateCANCELLED": "cancelled",
+    "waiting": "{count} things waiting on you",
+    "nothingWaiting": "Nothing is waiting on you"
   },
   "me": {
     "title": "My page",

@@ -210,6 +210,42 @@ describe("letters of employment and income (e2e)", () => {
     assert.equal((res.body as { rows: Letter[] }).rows.length, 0);
   });
 
+  // The self service page asks for its own list, and the desk sees everybody,
+  // so the filter has to survive the scope clause beside it.
+  it("narrows the list to one person when asked, even for an unscoped viewer", async () => {
+    const employee = await db.employee.findUniqueOrThrow({ where: { code: CODE } });
+    // A second person has to own a letter, or every row matches whatever the
+    // filter says and the assertion cannot fail.
+    const theirLetter = await request(http)
+      .post("/certificates")
+      .set("Authorization", `Bearer ${theirs}`)
+      .send({ kind: "EMPLOYMENT", purpose: PURPOSE });
+    assert.equal(theirLetter.status, 201);
+
+    const whole = await request(http).get("/certificates").set("Authorization", `Bearer ${desk}`);
+    assert.equal(whole.status, 200);
+    assert.ok(
+      (whole.body as { rows: { employeeId: number }[] }).rows.some(
+        (row) => row.employeeId !== employee.id,
+      ),
+      "the desk list holds only one person, so the filter proves nothing",
+    );
+    const narrowed = await request(http)
+      .get(`/certificates?employeeId=${employee.id}`)
+      .set("Authorization", `Bearer ${desk}`);
+    assert.equal(narrowed.status, 200);
+    const rows = (narrowed.body as { rows: { employeeId: number }[] }).rows;
+    assert.ok(rows.length > 0, "the person this suite made has no letters");
+    assert.ok(
+      rows.every((row) => row.employeeId === employee.id),
+      "the filter was dropped and the whole scope came back",
+    );
+    assert.ok(
+      (whole.body as { rows: unknown[] }).rows.length >= rows.length,
+      "the unfiltered list is somehow smaller than the filtered one",
+    );
+  });
+
   it("files every step under the person it is about", async () => {
     const employee = await db.employee.findUniqueOrThrow({ where: { code: CODE } });
     const res = await request(http)
