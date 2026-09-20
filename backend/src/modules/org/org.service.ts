@@ -1,14 +1,93 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Department, JobTitle, LegalEntity } from "@prisma/client";
+import type { Department, EmploymentContract, JobTitle, LegalEntity } from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service.js";
-import type { CreateDepartmentDto, UpdateDepartmentDto } from "./dto/org.dto.js";
+import { AuditService } from "../audit/audit.service.js";
+import type {
+  CreateContractDto,
+  CreateDepartmentDto,
+  DecideContractDto,
+  UpdateDepartmentDto,
+} from "./dto/org.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
 
 @Injectable()
 export class OrgService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
+
+  contracts(employeeId: number): Promise<EmploymentContract[]> {
+    return this.db.employmentContract.findMany({
+      where: { employeeId },
+      orderBy: { startDate: "desc" },
+    });
+  }
+
+  /**
+   * Re-signing is a new contract, not an edit of the old one: the old terms
+   * are what a dispute two years from now asks about (KEHOACH 9.3).
+   */
+  async addContract(
+    body: CreateContractDto,
+    actorId: string,
+  ): Promise<EmploymentContract> {
+    const made = await this.db.employmentContract.create({
+      data: {
+        employeeId: body.employeeId,
+        kind: body.kind,
+        number: body.number ?? null,
+        startDate: new Date(body.startDate),
+        endDate: body.endDate ? new Date(body.endDate) : null,
+        probationEnd: body.probationEnd ? new Date(body.probationEnd) : null,
+        note: body.note ?? null,
+      },
+    });
+    await this.audit.record({
+      actorId,
+      action: "contract.create",
+      target: made.id,
+      meta: { employeeId: body.employeeId, kind: body.kind, endDate: body.endDate ?? null },
+    });
+    return made;
+  }
+
+  /** Only one contract stands at a time, so activating one ends the others. */
+  async decideContract(
+    id: string,
+    body: DecideContractDto,
+    actorId: string,
+  ): Promise<EmploymentContract> {
+    const held = await this.db.employmentContract.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("CONTRACT_NOT_FOUND");
+    }
+    const moved = await this.db.$transaction(async (tx) => {
+      if (body.state === "ACTIVE") {
+        await tx.employmentContract.updateMany({
+          where: { employeeId: held.employeeId, state: "ACTIVE", id: { not: id } },
+          data: { state: "ENDED" },
+        });
+      }
+      return tx.employmentContract.update({
+        where: { id },
+        data: {
+          state: body.state,
+          note: body.note ?? held.note,
+          signedAt: body.state === "ACTIVE" ? (held.signedAt ?? new Date()) : held.signedAt,
+        },
+      });
+    });
+    await this.audit.record({
+      actorId,
+      action: `contract.${body.state.toLowerCase()}`,
+      target: id,
+      meta: { employeeId: held.employeeId },
+    });
+    return moved;
+  }
 
   entities(): Promise<LegalEntity[]> {
     return this.db.legalEntity.findMany({ where: { active: true }, orderBy: { code: "asc" } });
