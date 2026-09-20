@@ -108,6 +108,7 @@ export class TimesheetService {
         JOIN "Employee" e ON e."id" = d."employeeId"
        WHERE d."date" BETWEEN ${from} AND ${to}
          AND (${visible}::int[] IS NULL OR d."employeeId" = ANY(${visible}::int[]))
+         AND (${query.employeeId ?? null}::int IS NULL OR d."employeeId" = ${query.employeeId ?? null}::int)
          AND (${query.departmentId ?? null}::text IS NULL OR e."departmentId" = ${query.departmentId ?? null})
        GROUP BY e."id", e."code", e."fullName"
        ORDER BY e."code"
