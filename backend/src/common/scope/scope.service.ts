@@ -1,11 +1,13 @@
-import { Injectable } from "@nestjs/common";
+import { ConflictException, Injectable } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service.js";
-import { CACHE } from "../cache/cache-keys.js";
+import { CACHE, SCOPE_PREFIX } from "../cache/cache-keys.js";
 import { CacheService } from "../cache/cache.service.js";
 import type { Viewer } from "./viewer.js";
 
 const UNSCOPED: ReadonlySet<string> = new Set(["ADMIN", "HR", "PAYROLL", "VIEWER"]);
+const MAX_DEPTH = 64;
 
 @Injectable()
 export class ScopeService {
@@ -34,13 +36,39 @@ export class ScopeService {
       const rows = await this.db.$queryRaw<{ id: number }[]>`
         WITH RECURSIVE below AS (
           SELECT "id" FROM "Employee" WHERE "id" = ${rootEmployeeId}
-          UNION ALL
+          UNION
           SELECT e."id" FROM "Employee" e JOIN below b ON e."managerId" = b."id"
         )
         SELECT "id" FROM below
       `;
       return rows.map((row) => row.id);
     });
+  }
+
+  /** Every key goes: one move reshapes every subtree above both its ends. */
+  async forgetScopes(): Promise<void> {
+    await this.cache.drop(SCOPE_PREFIX);
+  }
+
+  /** A loop makes the walk above return the whole ring; refuse to make one. */
+  async assertNoManagerCycle(tx: Prisma.TransactionClient, employeeIds: number[]): Promise<void> {
+    if (employeeIds.length === 0) {
+      return;
+    }
+    const looped = await tx.$queryRaw<{ start: number }[]>`
+      WITH RECURSIVE up AS (
+        SELECT "id" AS "start", "managerId" AS "at", 1 AS "depth"
+          FROM "Employee" WHERE "id" = ANY(${employeeIds}::int[])
+        UNION ALL
+        SELECT u."start", e."managerId", u."depth" + 1
+          FROM up u JOIN "Employee" e ON e."id" = u."at"
+         WHERE u."at" IS NOT NULL AND u."depth" < ${MAX_DEPTH}
+      )
+      SELECT DISTINCT "start" FROM up WHERE "at" = "start"
+    `;
+    if (looped.length > 0) {
+      throw new ConflictException("MANAGER_CYCLE");
+    }
   }
 
   /** Fold a scope into a where clause; null ids narrow nothing. */
