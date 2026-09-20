@@ -49,7 +49,15 @@
     "no": "No",
     "failed": "That did not go through, try again",
     "required": "This cannot be empty",
-    "noData": "Nothing here yet"
+    "noData": "Nothing here yet",
+    "failedHint": "The network may have dropped, or the server is busy. Try once more.",
+    "columns": "Columns",
+    "chosen": "{count} selected",
+    "chooseRow": "Select row",
+    "chooseAll": "Select all",
+    "more": "Show more",
+    "less": "Show less",
+    "close": "Close"
   },
   "login": {
     "lead": "Sign in to reach the control panel",
@@ -92,7 +100,8 @@
     "assignAction": "Assign",
     "assigned": "Assigned to {device}",
     "assignNone": "No kiosk has been approved yet",
-    "codeTaken": "Somebody already has this code"
+    "codeTaken": "Somebody already has this code",
+    "emptyHint": "Nobody in the directory yet. Add the first person to start."
   },
   "attendance": {
     "title": "Attendance",

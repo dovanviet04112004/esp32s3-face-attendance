@@ -23,12 +23,26 @@ export default function ShiftsPage() {
   });
 
   const columns: Column<Shift>[] = [
-    { header: t("name"), cell: (row) => row.name },
-    { header: t("startTime"), cell: (row) => row.startTime, numeric: true },
-    { header: t("endTime"), cell: (row) => row.endTime, numeric: true },
-    { header: t("graceMinutes"), cell: (row) => row.graceMinutes, numeric: true },
+    { id: "name", header: t("name"), sticky: true, sortBy: (row) => row.name, cell: (row) => row.name },
     {
+      id: "startTime",
+      header: t("startTime"),
+      numeric: true,
+      sortBy: (row) => row.startTime,
+      cell: (row) => row.startTime,
+    },
+    { id: "endTime", header: t("endTime"), numeric: true, cell: (row) => row.endTime },
+    {
+      id: "graceMinutes",
+      header: t("graceMinutes"),
+      numeric: true,
+      sortBy: (row) => row.graceMinutes,
+      cell: (row) => row.graceMinutes,
+    },
+    {
+      id: "status",
       header: t("status"),
+      sortBy: (row) => (row.active ? 1 : 0),
       cell: (row) => (
         <span className={row.active ? "text-(--color-ok)" : "text-(--color-muted)"}>
           {row.active ? t("active") : t("retired")}
@@ -42,10 +56,13 @@ export default function ShiftsPage() {
       <h1 className="text-lg font-semibold">{t("title")}</h1>
       <p className="mt-1 mb-6 text-sm text-(--color-muted)">{t("lead")}</p>
       <DataTable
+        id="shifts"
         columns={columns}
         rows={shifts.data}
         keyOf={(row) => row.id}
         pending={shifts.isPending}
+        failed={shifts.isError}
+        onRetry={() => shifts.refetch()}
       />
     </section>
   );

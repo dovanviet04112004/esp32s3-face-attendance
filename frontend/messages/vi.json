@@ -49,7 +49,15 @@
     "no": "Không",
     "failed": "Không xong được, thử lại",
     "required": "Không được để trống",
-    "noData": "Chưa có dữ liệu"
+    "noData": "Chưa có dữ liệu",
+    "failedHint": "Có thể mạng vừa đứt hoặc máy chủ đang bận. Thử lại một lượt.",
+    "columns": "Cột",
+    "chosen": "Đã chọn {count}",
+    "chooseRow": "Chọn dòng",
+    "chooseAll": "Chọn tất cả",
+    "more": "Xem thêm",
+    "less": "Thu gọn",
+    "close": "Đóng"
   },
   "login": {
     "lead": "Đăng nhập để vào bảng điều khiển",
@@ -92,7 +100,8 @@
     "assignAction": "Giao",
     "assigned": "Đã giao cho {device}",
     "assignNone": "Chưa có máy nào được duyệt",
-    "codeTaken": "Mã này đã có người dùng"
+    "codeTaken": "Mã này đã có người dùng",
+    "emptyHint": "Chưa có ai trong danh bạ. Thêm người đầu tiên để bắt đầu."
   },
   "attendance": {
     "title": "Chấm công",

@@ -32,13 +32,21 @@ export default function MyAttendancePage() {
   });
 
   const columns: Column<Punch>[] = [
-    { header: t("at"), cell: (row) => format.dateTime(new Date(row.ts), "medium") },
-    { header: t("direction"), cell: (row) => row.direction },
     {
+      id: "at",
+      header: t("at"),
+      sticky: true,
+      sortBy: (row) => row.ts,
+      cell: (row) => format.dateTime(new Date(row.ts), "medium"),
+    },
+    { id: "direction", header: t("direction"), cell: (row) => row.direction },
+    {
+      id: "deviceCol",
       header: t("deviceCol"),
       cell: (row) => <span className="font-mono text-xs">{row.deviceId}</span>,
     },
     {
+      id: "flags",
       header: t("flags"),
       cell: (row) =>
         row.clockUnsynced ? (
@@ -58,10 +66,13 @@ export default function MyAttendancePage() {
       <h1 className="text-lg font-semibold">{me("thisMonth")}</h1>
       <p className="mt-1 mb-6 text-sm text-(--color-muted)">{t("lead")}</p>
       <DataTable
+        id="my-attendance"
         columns={columns}
         rows={punches.data?.rows}
         keyOf={(row) => row.id}
         pending={punches.isPending}
+        failed={punches.isError}
+        onRetry={() => punches.refetch()}
         empty={t("historyEmpty")}
       />
     </section>

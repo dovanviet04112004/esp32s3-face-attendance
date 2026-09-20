@@ -35,7 +35,10 @@ export default function DevicesPage() {
 
   const columns: Column<Device>[] = [
     {
+      id: "device",
       header: t("device"),
+      sticky: true,
+      sortBy: (row) => row.name ?? row.id,
       cell: (row) => (
         <Link href={`/devices/${row.id}`} className="block hover:underline">
           <p>{row.name ?? t("unnamed")}</p>
@@ -43,11 +46,24 @@ export default function DevicesPage() {
         </Link>
       ),
     },
-    { header: t("location"), cell: (row) => row.location ?? common("empty") },
-    { header: t("firmware"), cell: (row) => row.fwVersion ?? common("empty") },
-    { header: t("roster"), cell: (row) => row.rosterVersion, numeric: true },
     {
+      id: "location",
+      header: t("location"),
+      sortBy: (row) => row.location ?? "",
+      cell: (row) => row.location ?? common("empty"),
+    },
+    { id: "firmware", header: t("firmware"), cell: (row) => row.fwVersion ?? common("empty") },
+    {
+      id: "roster",
+      header: t("roster"),
+      numeric: true,
+      sortBy: (row) => row.rosterVersion,
+      cell: (row) => row.rosterVersion,
+    },
+    {
+      id: "link",
       header: t("link"),
+      sortBy: (row) => (row.online ? 1 : 0),
       cell: (row) => (
         <span className={row.online ? "text-(--color-ok)" : "text-(--color-muted)"}>
           {row.online ? t("online") : t("offline")}
@@ -55,6 +71,7 @@ export default function DevicesPage() {
       ),
     },
     {
+      id: "status",
       header: t("status"),
       cell: (row) =>
         row.status === "PENDING" && role === "ADMIN" ? (
@@ -77,10 +94,13 @@ export default function DevicesPage() {
       <h1 className="text-lg font-semibold">{t("title")}</h1>
       <p className="mt-1 mb-6 text-sm text-(--color-muted)">{t("lead")}</p>
       <DataTable
+        id="devices"
         columns={columns}
         rows={devices.data?.rows}
         keyOf={(row) => row.id}
         pending={devices.isPending}
+        failed={devices.isError}
+        onRetry={() => devices.refetch()}
       />
     </section>
   );

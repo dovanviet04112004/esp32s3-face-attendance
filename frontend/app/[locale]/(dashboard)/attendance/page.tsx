@@ -79,7 +79,10 @@ export default function AttendancePage() {
 
   const columns: Column<Tally>[] = [
     {
+      id: "employee",
       header: t("employee"),
+      sticky: true,
+      sortBy: (row) => row.fullName,
       cell: (row) => (
         <Link
           href={`/attendance/${row.employeeId}`}
@@ -89,12 +92,20 @@ export default function AttendancePage() {
         </Link>
       ),
     },
-    { header: t("punches"), cell: (row) => row.punches, numeric: true },
-    { header: t("firstAt"), cell: (row) => clock(row.firstAt) },
-    { header: t("lastAt"), cell: (row) => clock(row.lastAt) },
     {
+      id: "punches",
+      header: t("punches"),
+      numeric: true,
+      sortBy: (row) => row.punches,
+      cell: (row) => row.punches,
+    },
+    { id: "firstAt", header: t("firstAt"), cell: (row) => clock(row.firstAt) },
+    { id: "lastAt", header: t("lastAt"), cell: (row) => clock(row.lastAt) },
+    {
+      id: "unsyncedClock",
       header: t("unsyncedClock"),
       numeric: true,
+      sortBy: (row) => row.unsyncedClock,
       cell: (row) =>
         row.unsyncedClock > 0 ? (
           <span className="text-(--color-danger)">{row.unsyncedClock}</span>
@@ -157,10 +168,13 @@ export default function AttendancePage() {
         </p>
       ) : (
         <DataTable
+          id="attendance-rollup"
           columns={columns}
           rows={shown}
           keyOf={(row) => String(row.employeeId)}
           pending={rollup.isPending}
+          failed={rollup.isError}
+          onRetry={() => rollup.refetch()}
           empty={t("rangeEmpty")}
         />
       )}

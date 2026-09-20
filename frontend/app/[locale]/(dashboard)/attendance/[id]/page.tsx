@@ -48,18 +48,28 @@ export default function PunchHistoryPage() {
   });
 
   const columns: Column<Punch>[] = [
-    { header: t("at"), cell: (row) => format.dateTime(new Date(row.ts), "medium") },
-    { header: t("direction"), cell: (row) => row.direction },
     {
+      id: "at",
+      header: t("at"),
+      sticky: true,
+      sortBy: (row) => row.ts,
+      cell: (row) => format.dateTime(new Date(row.ts), "medium"),
+    },
+    { id: "direction", header: t("direction"), cell: (row) => row.direction },
+    {
+      id: "deviceCol",
       header: t("deviceCol"),
       cell: (row) => <span className="font-mono text-xs">{row.deviceId}</span>,
     },
     {
+      id: "score",
       header: t("score"),
       numeric: true,
+      sortBy: (row) => row.score ?? -1,
       cell: (row) => (row.score === null ? common("empty") : row.score.toFixed(2)),
     },
     {
+      id: "flags",
       header: t("flags"),
       cell: (row) => {
         const marks: string[] = [];
@@ -95,9 +105,12 @@ export default function PunchHistoryPage() {
         {punches.data ? t("ofPunches", { count: punches.data.total }) : " "}
       </p>
       <DataTable
+        id="employee-attendance"
         columns={columns}
         rows={punches.data?.rows}
         keyOf={(row) => row.id}
+        failed={punches.isError}
+        onRetry={() => punches.refetch()}
         pending={punches.isPending}
         empty={t("historyEmpty")}
       />

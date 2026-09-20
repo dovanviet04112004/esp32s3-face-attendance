@@ -29,11 +29,24 @@ export default function EmployeesPage() {
   });
 
   const columns: Column<Employee>[] = [
-    { header: t("code"), cell: (row) => <span className="font-mono">{row.code}</span> },
-    { header: t("fullName"), cell: (row) => row.fullName },
-    { header: t("department"), cell: (row) => row.department?.name ?? common("empty") },
     {
+      id: "code",
+      header: t("code"),
+      sticky: true,
+      sortBy: (row) => row.code,
+      cell: (row) => <span className="font-mono">{row.code}</span>,
+    },
+    { id: "fullName", header: t("fullName"), sortBy: (row) => row.fullName, cell: (row) => row.fullName },
+    {
+      id: "department",
+      header: t("department"),
+      sortBy: (row) => row.department?.name ?? "",
+      cell: (row) => row.department?.name ?? common("empty"),
+    },
+    {
+      id: "status",
       header: t("status"),
+      sortBy: (row) => (row.active ? 1 : 0),
       cell: (row) => (
         <span className={row.active ? "text-(--color-ok)" : "text-(--color-muted)"}>
           {row.active ? t("working") : t("left")}
@@ -44,6 +57,7 @@ export default function EmployeesPage() {
 
   if (mayWrite) {
     columns.push({
+      id: "edit",
       header: "",
       cell: (row) => (
         <Link
@@ -72,10 +86,21 @@ export default function EmployeesPage() {
         ) : null}
       </div>
       <DataTable
+        id="employees"
         columns={columns}
         rows={employees.data?.rows}
         keyOf={(row) => String(row.id)}
         pending={employees.isPending}
+        failed={employees.isError}
+        onRetry={() => employees.refetch()}
+        emptyHint={t("emptyHint")}
+        emptyAction={
+          mayWrite ? (
+            <Link href="/employees/new">
+              <Button size="sm">{t("new")}</Button>
+            </Link>
+          ) : undefined
+        }
       />
     </section>
   );
