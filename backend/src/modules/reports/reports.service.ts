@@ -8,9 +8,107 @@ import { CACHE } from "../../common/cache/cache-keys.js";
 import { CacheService } from "../../common/cache/cache.service.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { toCsv } from "../payroll/payroll.service.js";
 import { dayWindow, localDay } from "../timesheet/local-day.js";
 import { QUEUE, type ReportJob } from "../../queue/queues.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
+
+/**
+ * D02-LT is one table, not a pair of increase and decrease lists, and it runs
+ * to 27 columns (Quyet dinh 1040/QD-BHXH, sua doi boi 948/QD-BHXH).
+ */
+const D02_COLUMNS: { at: number; head: string }[] = [
+  { at: 1, head: "(1) STT" },
+  { at: 2, head: "(2) Họ và tên" },
+  { at: 3, head: "(3) Mã số BHXH" },
+  { at: 4, head: "(4) Ngày sinh" },
+  { at: 5, head: "(5) Giới tính" },
+  { at: 6, head: "(6) Số CCCD/Hộ chiếu" },
+  { at: 7, head: "(7) Chức danh, công việc" },
+  { at: 8, head: "(8) Phân loại lao động" },
+  { at: 9, head: "(9) Phân loại lao động" },
+  { at: 10, head: "(10) Phân loại lao động" },
+  { at: 11, head: "(11) Phân loại lao động" },
+  { at: 12, head: "(12) Tiền lương" },
+  { at: 13, head: "(13) Phụ cấp" },
+  { at: 14, head: "(14) Phụ cấp" },
+  { at: 15, head: "(15) Phụ cấp" },
+  { at: 16, head: "(16) Phụ cấp" },
+  { at: 17, head: "(17) Phụ cấp" },
+  { at: 18, head: "(18) Nghề nặng nhọc từ" },
+  { at: 19, head: "(19) Nghề nặng nhọc đến" },
+  { at: 20, head: "(20) HĐLĐ không xác định thời hạn từ" },
+  { at: 21, head: "(21) HĐLĐ xác định thời hạn từ" },
+  { at: 22, head: "(22) HĐLĐ xác định thời hạn đến" },
+  { at: 23, head: "(23) Hợp đồng khác từ" },
+  { at: 24, head: "(24) Hợp đồng khác đến" },
+  { at: 25, head: "(25) Bắt đầu đóng" },
+  { at: 26, head: "(26) Kết thúc đóng" },
+  { at: 27, head: "(27) Ghi chú" },
+];
+
+// Columns 8 to 11 and 18 to 19 describe labour categories and hazardous work
+// that nothing in this system records, so they go out empty.
+const D02_UNHELD = new Set([8, 9, 10, 11, 18, 19]);
+// Excel reads a csv as the local code page unless this says otherwise, and
+// every Vietnamese name in the file turns to mojibake when it does.
+const kByteOrderMark = "\ufeff";
+const kAllowanceColumns = 5;
+const kMonthPad = 2;
+
+const GENDER_WORD: Record<string, string> = { MALE: "Nam", FEMALE: "Nữ" };
+
+interface Fillable {
+  socialInsuranceNo: string | null;
+  dateOfBirth: Date | null;
+  gender: string | null;
+  nationalId: string | null;
+  hireDate: Date | null;
+  leaveDate: Date | null;
+  active: boolean;
+}
+
+/** What the filing still needs, written into the row it belongs to, because a
+ *  blank cell in a submitted form is found by the officer, not by anyone here.
+ */
+function missingFrom(one: Fillable, hasContract: boolean): string {
+  const gaps: string[] = [];
+  if (!one.socialInsuranceNo) {
+    gaps.push("thiếu mã số BHXH");
+  }
+  if (!one.dateOfBirth) {
+    gaps.push("thiếu ngày sinh");
+  }
+  if (!one.gender) {
+    gaps.push("thiếu giới tính");
+  }
+  if (!one.nationalId) {
+    gaps.push("thiếu số giấy tờ");
+  }
+  if (!one.hireDate) {
+    gaps.push("thiếu ngày vào làm");
+  }
+  if (!hasContract) {
+    gaps.push("chưa có hợp đồng hiệu lực");
+  }
+  if (!one.active && !one.leaveDate) {
+    gaps.push("đã nghỉ nhưng chưa ghi ngày nghỉ");
+  }
+  return gaps.join("; ");
+}
+
+function asDate(value: Date | null | undefined): string {
+  return value ? value.toISOString().slice(0, 10) : "";
+}
+
+/** The form wants a month, written the way the form writes one. */
+function asMonth(value: Date | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+  const month = String(value.getUTCMonth() + 1).padStart(kMonthPad, "0");
+  return `${month}/${value.getUTCFullYear()}`;
+}
 
 /** One employee's punches inside a range. */
 export interface AttendanceTally {
@@ -200,5 +298,100 @@ export class ReportsService {
       lastAt: row.lastAt?.toISOString() ?? null,
       unsyncedClock: Number(row.unsyncedClock),
     }));
+  }
+
+  /**
+   * The roster that fills D02-LT, one row per person still on the books on the
+   * closing day, as a csv the official template takes by position.
+   */
+  async d02(legalEntityId: string, on: Date): Promise<string> {
+    const staff = await this.db.employee.findMany({
+      where: {
+        legalEntityId,
+        AND: [
+          // A missing hire date must not quietly drop somebody from a filing:
+          // an empty return reads as "this company employs nobody".
+          { OR: [{ hireDate: null }, { hireDate: { lte: on } }] },
+          { OR: [{ leaveDate: null }, { leaveDate: { gte: on } }] },
+        ],
+      },
+      select: {
+        fullName: true,
+        active: true,
+        socialInsuranceNo: true,
+        dateOfBirth: true,
+        gender: true,
+        nationalId: true,
+        hireDate: true,
+        leaveDate: true,
+        jobTitle: { select: { name: true } },
+        contracts: {
+          // In force on the closing day, not in force today: a filing for June
+          // asks what June looked like, and by now that term may have ended.
+          where: {
+            state: { in: ["ACTIVE", "ENDED"] },
+            startDate: { lte: on },
+            OR: [{ endDate: null }, { endDate: { gte: on } }],
+          },
+          orderBy: { startDate: "desc" },
+          take: 1,
+          select: { kind: true, startDate: true, endDate: true },
+        },
+        compensation: {
+          where: { effectiveFrom: { lte: on } },
+          orderBy: { effectiveFrom: "desc" },
+          take: 1,
+          select: {
+            insuranceSalary: true,
+            allowances: {
+              where: { insurable: true },
+              orderBy: { code: "asc" },
+              select: { amount: true },
+            },
+          },
+        },
+      },
+      orderBy: { code: "asc" },
+    });
+
+    const rows = staff.map((one, index) => {
+      const cells = new Map<number, string>();
+      cells.set(1, String(index + 1));
+      cells.set(2, one.fullName);
+      cells.set(3, one.socialInsuranceNo ?? "");
+      cells.set(4, asDate(one.dateOfBirth));
+      cells.set(5, one.gender ? (GENDER_WORD[one.gender] ?? "") : "");
+      cells.set(6, one.nationalId ?? "");
+      cells.set(7, one.jobTitle?.name ?? "");
+      cells.set(12, one.compensation[0]?.insuranceSalary.toFixed(0) ?? "");
+      const extras = one.compensation[0]?.allowances ?? [];
+      for (let slot = 0; slot < kAllowanceColumns; slot += 1) {
+        cells.set(13 + slot, extras[slot]?.amount.toFixed(0) ?? "");
+      }
+      const contract = one.contracts[0];
+      if (contract?.kind === "INDEFINITE") {
+        cells.set(20, asDate(contract.startDate));
+      } else if (contract?.kind === "FIXED_TERM") {
+        cells.set(21, asDate(contract.startDate));
+        cells.set(22, asDate(contract.endDate));
+      } else if (contract) {
+        cells.set(23, asDate(contract.startDate));
+        cells.set(24, asDate(contract.endDate));
+      }
+      cells.set(25, asMonth(one.hireDate));
+      cells.set(26, asMonth(one.leaveDate));
+      cells.set(27, missingFrom(one, contract !== undefined));
+      return D02_COLUMNS.map((column) =>
+        D02_UNHELD.has(column.at) ? "" : (cells.get(column.at) ?? ""),
+      );
+    });
+
+    return (
+      kByteOrderMark +
+      toCsv(
+        D02_COLUMNS.map((column) => column.head),
+        rows,
+      )
+    );
   }
 }

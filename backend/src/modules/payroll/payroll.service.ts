@@ -86,7 +86,10 @@ function cell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
-function toCsv(header: string[], rows: string[][]): string {
+/** Every cell quoted; no byte order mark, because the bank file this also
+ *  writes is read by a parser, not by Excel.
+ */
+export function toCsv(header: string[], rows: string[][]): string {
   return [header, ...rows].map((row) => row.map(cell).join(",")).join("\r\n");
 }
 
