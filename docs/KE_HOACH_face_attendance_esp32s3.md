@@ -4154,7 +4154,8 @@ backend/
     │   ├── payroll/                  # kỳ lương, lượt chạy, phiếu, dòng phiếu
     │   ├── compensation/             # lương theo thời hạn, người phụ thuộc
     │   ├── policy/                   # PayrollPolicy + TaxBracket theo ngày hiệu lực
-    │   └── timesheet/                # AttendanceDay: từ lượt quẹt thành ngày công
+    │   ├── timesheet/                # AttendanceDay: từ lượt quẹt thành ngày công
+    │   └── search/                   # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
     │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
@@ -4188,6 +4189,13 @@ thay vì tự mở kết nối. `prisma.config.ts` với `prisma/seed.ts` là **
 không bao giờ khởi động Nest, nên chúng tự nạp `.env` — ngoại lệ duy nhất của luật một cửa ở
 §4.9. `seed.ts` vẫn gọi `validateEnv()`; `prisma.config.ts` chỉ cần đúng một biến và lấy nó
 bằng helper `env()` của chính Prisma, vì file ấy được CLI nạp trước khi mã của khối chạy.
+
+**`search/` là module riêng vì nó cắt ngang, không thuộc về ai.** Nó đọc `Employee`,
+`Department`, `Request` và `Payslip`; nhét nó vào `employees/` là bắt module nhân viên biết về
+bảng lương, còn chia thành bốn endpoint tìm kiếm là bắt giao diện gọi bốn lần rồi tự ghép. Một
+module chỉ đọc, **không sở hữu bảng nào**, và mọi truy vấn của nó đi qua `ScopeService` đúng như
+các module khác — tìm kiếm là đường rò rỉ dữ liệu dễ quên nhất, vì nó trả về mẩu thông tin chứ
+không trả về bản ghi đầy đủ.
 
 **Redis giữ hai vai, một kết nối** — `database/redis.service.ts` sở hữu client, `cache/` và
 `queue/` cùng dùng. Hai vai này không được lẫn: hàng đợi mất job là mất việc, cache mất key
