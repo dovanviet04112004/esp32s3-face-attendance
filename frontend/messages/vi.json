@@ -33,7 +33,8 @@
     "policy": "Chính sách lương",
     "timesheetHr": "Bảng công",
     "departments": "Phòng ban",
-    "groupOps": "Vận hành"
+    "groupOps": "Vận hành",
+    "myShifts": "Lịch ca"
   },
   "common": {
     "loading": "Đang tải…",
@@ -570,5 +571,16 @@
     "mismatch": "Hai lần nhập chưa giống nhau",
     "noToken": "Đường dẫn thiếu mã. Mở lại đúng liên kết trong thư.",
     "toLogin": "Về trang đăng nhập"
+  },
+  "myShifts": {
+    "title": "Lịch ca của tôi",
+    "lead": "Ca của tháng này và các tháng tới, để sắp xếp việc nhà trước.",
+    "earlier": "Tháng trước",
+    "later": "Tháng sau",
+    "working": "{count} ngày vào ca",
+    "none": "Không ca",
+    "awayLEAVE": "Nghỉ phép",
+    "awayBUSINESS_TRIP": "Công tác",
+    "awayREMOTE_WORK": "Làm từ xa"
   }
 }

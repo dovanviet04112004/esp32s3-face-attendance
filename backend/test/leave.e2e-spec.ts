@@ -90,7 +90,6 @@ describe("leave balance (e2e)", () => {
         code: CODE,
         fullName: "Thử số dư phép",
         active: true,
-        personalEmail: EMAIL,
         departmentId: template.departmentId,
         legalEntityId: template.legalEntityId,
       },

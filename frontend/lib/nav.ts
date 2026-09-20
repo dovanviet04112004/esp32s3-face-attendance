@@ -3,6 +3,7 @@ import {
   CalendarCheck,
   CalendarDays,
   CalendarOff,
+  CalendarRange,
   ChartColumn,
   Clock,
   Cpu,
@@ -32,7 +33,7 @@ export interface NavItem {
   icon: LucideIcon;
   roles?: Role[];
   badge?: "approvals";
-  /** Kept out of the phone's nav; the top bar carries it beside sign-out. */
+  /** Kept out of the phone's tab bar; the top bar carries it (KEHOACH 9.21.1). */
   deskOnly?: boolean;
 }
 
@@ -53,6 +54,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/me", key: "myPage", icon: User, roles: EVERYONE },
       { href: "/me/attendance", key: "myAttendance", icon: CalendarCheck, roles: EVERYONE },
+      { href: "/me/shifts", key: "myShifts", icon: CalendarRange, roles: EVERYONE },
       { href: "/me/requests", key: "myLeave", icon: FileText, roles: EVERYONE },
       { href: "/me/payslips", key: "myPayslips", icon: Receipt, roles: EVERYONE },
     ],
@@ -60,7 +62,14 @@ export const NAV: NavGroup[] = [
   {
     key: "groupApprovals",
     items: [
-      { href: "/approvals", key: "approvals", icon: Inbox, roles: DECIDERS, badge: "approvals" },
+      {
+        href: "/approvals",
+        key: "approvals",
+        icon: Inbox,
+        roles: DECIDERS,
+        badge: "approvals",
+        deskOnly: true,
+      },
     ],
   },
   {
@@ -111,9 +120,8 @@ export function navFor(role: Role | null): NavGroup[] {
 
 const kTabSlots = 5;
 
-// The four of KEHOACH 9.21.1 with the manager's fifth in the place it earns:
-// above payslips, so the badge survives on a role with too many destinations.
-const TAB_ORDER: NavKey[] = ["myPage", "approvals", "myAttendance", "myLeave", "myPayslips"];
+// The five of KEHOACH 9.21.1, in the order somebody opens the app to ask.
+const TAB_ORDER: NavKey[] = ["myPage", "myShifts", "myAttendance", "myLeave", "myPayslips"];
 
 export interface TabLayout {
   items: NavItem[];

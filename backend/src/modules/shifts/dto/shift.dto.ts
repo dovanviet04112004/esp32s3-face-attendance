@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsInt,
   IsOptional,
+  Max,
   IsString,
   Matches,
   MaxLength,
@@ -58,4 +59,29 @@ export class AssignShiftDto {
   @IsOptional()
   @IsDateString()
   validTo?: string;
+}
+
+const FIRST_YEAR = 2020;
+const LAST_YEAR = 2100;
+
+export class RosterDto {
+  @ApiProperty({ minimum: FIRST_YEAR, maximum: LAST_YEAR })
+  @Type(() => Number)
+  @IsInt()
+  @Min(FIRST_YEAR)
+  @Max(LAST_YEAR)
+  year!: number;
+
+  @ApiProperty({ minimum: 1, maximum: 12 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  month!: number;
+
+  @ApiPropertyOptional({ description: "Somebody else's, when the caller may see them" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  employeeId?: number;
 }

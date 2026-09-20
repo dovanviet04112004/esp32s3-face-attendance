@@ -1,15 +1,108 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Shift, ShiftAssignment } from "@prisma/client";
 
+import { ScopeService } from "../../common/scope/scope.service.js";
+import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
-import type { AssignShiftDto, CreateShiftDto, UpdateShiftDto } from "./dto/shift.dto.js";
+import type { AssignShiftDto, CreateShiftDto, RosterDto, UpdateShiftDto } from "./dto/shift.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
 const FOREIGN_KEY_VIOLATION = "P2003";
+const SATURDAY = 6;
+const SUNDAY = 0;
+
+/** What somebody is doing on one future day, which is not what they did on a
+ *  past one: a planned day has no measurement (KEHOACH 9.17 item 8).
+ */
+export interface PlannedDay {
+  date: string;
+  shift: { id: string; name: string; startTime: string; endTime: string } | null;
+  holiday: string | null;
+  weekend: boolean;
+  away: string | null;
+}
 
 @Injectable()
 export class ShiftsService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly scope: ScopeService,
+  ) {}
+
+  /**
+   * One person's month ahead. A shift roster nobody but HR can read is a
+   * roster that has not been published (KEHOACH 9.17 item 8).
+   */
+  async roster(viewer: Viewer, query: RosterDto): Promise<PlannedDay[]> {
+    const employeeId = await this.whose(viewer, query.employeeId);
+    const from = new Date(Date.UTC(query.year, query.month - 1, 1));
+    const to = new Date(Date.UTC(query.year, query.month, 1));
+    const [assignments, holidays, away] = await Promise.all([
+      this.db.shiftAssignment.findMany({
+        where: {
+          employeeId,
+          validFrom: { lt: to },
+          OR: [{ validTo: null }, { validTo: { gte: from } }],
+        },
+        include: { shift: true },
+        orderBy: { validFrom: "asc" },
+      }),
+      this.db.holiday.findMany({ where: { date: { gte: from, lt: to } } }),
+      // The same four conditions the day build uses, so a day planned here and
+      // the same day once measured cannot disagree (KEHOACH 9.8).
+      this.db.request.findMany({
+        where: {
+          employeeId,
+          kind: { in: ["LEAVE", "BUSINESS_TRIP", "REMOTE_WORK"] },
+          state: "APPROVED",
+          halfDay: false,
+          fromDate: { lt: to },
+          toDate: { gte: from },
+        },
+        select: { kind: true, fromDate: true, toDate: true },
+      }),
+    ]);
+    const holidayOn = new Map(holidays.map((one) => [asDay(one.date), one.name]));
+    const days: PlannedDay[] = [];
+    for (let at = new Date(from); at < to; at.setUTCDate(at.getUTCDate() + 1)) {
+      const date = new Date(at);
+      // Later assignments win: a roster change is a new row, not an edit.
+      const holding = assignments.filter(
+        (one) => one.validFrom <= date && (one.validTo === null || one.validTo >= date),
+      );
+      const current = holding[holding.length - 1];
+      days.push({
+        date: asDay(date),
+        shift: current
+          ? {
+              id: current.shift.id,
+              name: current.shift.name,
+              startTime: current.shift.startTime,
+              endTime: current.shift.endTime,
+            }
+          : null,
+        holiday: holidayOn.get(asDay(date)) ?? null,
+        weekend: [SATURDAY, SUNDAY].includes(date.getUTCDay()),
+        away: away.find((one) => one.fromDate <= date && one.toDate >= date)?.kind ?? null,
+      });
+    }
+    return days;
+  }
+
+  /** Whose roster a caller may read: their own, or somebody in their scope. */
+  private async whose(viewer: Viewer, asked?: number): Promise<number> {
+    if (asked === undefined) {
+      if (viewer.employeeId === null) {
+        throw new ForbiddenException("NO_EMPLOYEE_RECORD");
+      }
+      return viewer.employeeId;
+    }
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (visible !== null && !visible.includes(asked)) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+    return asked;
+  }
 
   list(): Promise<Shift[]> {
     return this.db.shift.findMany({ orderBy: { startTime: "asc" } });
@@ -87,4 +180,8 @@ export class ShiftsService {
 
 function isCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function asDay(value: Date): string {
+  return value.toISOString().slice(0, 10);
 }

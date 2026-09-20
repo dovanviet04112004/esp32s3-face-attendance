@@ -33,7 +33,8 @@
     "policy": "Pay policy",
     "timesheetHr": "Timesheet",
     "departments": "Departments",
-    "groupOps": "Operations"
+    "groupOps": "Operations",
+    "myShifts": "My shifts"
   },
   "common": {
     "loading": "Loading…",
@@ -570,5 +571,16 @@
     "mismatch": "Those two do not match",
     "noToken": "This address carries no code. Open the link from your email.",
     "toLogin": "Back to sign in"
+  },
+  "myShifts": {
+    "title": "My shifts",
+    "lead": "This month and the ones ahead, so you can plan around them.",
+    "earlier": "Earlier month",
+    "later": "Later month",
+    "working": "{count} days on shift",
+    "none": "No shift",
+    "awayLEAVE": "Leave",
+    "awayBUSINESS_TRIP": "Business trip",
+    "awayREMOTE_WORK": "Remote"
   }
 }

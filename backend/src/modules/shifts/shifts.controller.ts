@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
@@ -16,8 +17,9 @@ import type { Shift, ShiftAssignment } from "@prisma/client";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
-import { AssignShiftDto, CreateShiftDto, UpdateShiftDto } from "./dto/shift.dto.js";
-import { ShiftsService } from "./shifts.service.js";
+import { AssignShiftDto, CreateShiftDto, UpdateShiftDto , RosterDto } from "./dto/shift.dto.js";
+import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
+import { ShiftsService, type PlannedDay } from "./shifts.service.js";
 
 @ApiTags("shifts")
 @ApiBearerAuth()
@@ -29,6 +31,12 @@ export class ShiftsController {
   @Get()
   list(): Promise<Shift[]> {
     return this.shifts.list();
+  }
+
+  @Get("roster")
+  @ApiOperation({ summary: "One person's month ahead: shift, holiday, days away" })
+  roster(@Query() query: RosterDto, @CurrentViewer() viewer: Viewer): Promise<PlannedDay[]> {
+    return this.shifts.roster(viewer, query);
   }
 
   @Get(":id")
