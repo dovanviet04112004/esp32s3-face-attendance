@@ -385,7 +385,8 @@
     "advanceSETTLED": "Recovered",
     "advanceCANCELLED": "Withdrawn",
     "advanceLead": "Approve, then pay; the next payroll run recovers it.",
-    "LEAVERS_HOLDING_ASSETS": "Leavers still holding assets"
+    "LEAVERS_HOLDING_ASSETS": "Leavers still holding assets",
+    "DISPUTES_OVERDUE": "Disputes past their deadline"
   },
   "policy": {
     "title": "Pay policy",
@@ -489,7 +490,12 @@
     "PROFILE_SELF_DECIDE": "Whoever asked for a change cannot be the one who approves it.",
     "PROFILE_NOT_YOURS": "This request is not yours.",
     "HR_ONLY": "Only the HR desk can do this.",
-    "NO_EMPLOYEE_RECORD": "This account is not linked to an employee record."
+    "NO_EMPLOYEE_RECORD": "This account is not linked to an employee record.",
+    "PAYSLIP_NOT_ISSUED": "The payslip has not been issued, so there is nothing to dispute yet.",
+    "DISPUTE_ALREADY_OPEN": "A dispute about this is already waiting for an answer.",
+    "DISPUTE_NOT_FOUND": "No such dispute.",
+    "DISPUTE_ALREADY_ANSWERED": "This dispute has already been answered.",
+    "DISPUTE_NOT_YOURS": "This dispute is not yours."
   },
   "search": {
     "label": "Search",

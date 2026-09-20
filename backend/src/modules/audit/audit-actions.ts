@@ -65,6 +65,10 @@ export const AUDIT_ACTIONS = {
   PROFILE_REJECT: "profile.reject",
   PROFILE_CANCEL: "profile.cancel",
 
+  DISPUTE_RAISE: "dispute.raise",
+  DISPUTE_ANSWER: "dispute.answer",
+  DISPUTE_WITHDRAW: "dispute.withdraw",
+
   POLICY_CREATE: "policy.create",
 
   DEVICE_REGISTER: "device.register",

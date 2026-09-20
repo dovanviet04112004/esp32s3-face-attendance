@@ -179,8 +179,15 @@ export class PayrollService {
    */
   async checklist(periodId: string): Promise<ChecklistItem[]> {
     const period = await this.requirePeriod(periodId);
-    const [pendingRequests, missingPay, unbuiltDays, openCorrections, strays, stillHolding] =
-      await Promise.all([
+    const [
+      pendingRequests,
+      missingPay,
+      unbuiltDays,
+      openCorrections,
+      strays,
+      stillHolding,
+      lateDisputes,
+    ] = await Promise.all([
       this.db.request.count({
         where: { state: "PENDING", fromDate: { lte: period.endDate }, toDate: { gte: period.startDate } },
       }),
@@ -220,6 +227,17 @@ export class PayrollService {
           assetsHeld: { some: { state: "ISSUED" } },
         },
       }),
+      // A deadline nobody feels is a decoration, so an unanswered one costs
+      // somebody a signature here (KEHOACH 9.17 item 11).
+      this.db.payslipDispute.count({
+        where: {
+          state: "OPEN",
+          dueAt: { lt: new Date() },
+          ...(period.legalEntityId
+            ? { payslip: { period: { legalEntityId: period.legalEntityId } } }
+            : {}),
+        },
+      }),
     ]);
     return [
       { code: "REQUESTS_PENDING", count: pendingRequests },
@@ -228,6 +246,7 @@ export class PayrollService {
       { code: "NO_ATTENDANCE_DAYS", count: unbuiltDays },
       { code: "NO_LEGAL_ENTITY", count: strays },
       { code: "LEAVERS_HOLDING_ASSETS", count: stillHolding },
+      { code: "DISPUTES_OVERDUE", count: lateDisputes },
     ];
   }
 

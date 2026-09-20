@@ -385,7 +385,8 @@
     "advanceSETTLED": "Đã khấu trừ",
     "advanceCANCELLED": "Đã huỷ",
     "advanceLead": "Duyệt xong rồi chi; kỳ lương sau tự khấu trừ.",
-    "LEAVERS_HOLDING_ASSETS": "Rời đi còn giữ tài sản"
+    "LEAVERS_HOLDING_ASSETS": "Rời đi còn giữ tài sản",
+    "DISPUTES_OVERDUE": "Khiếu nại quá hạn trả lời"
   },
   "policy": {
     "title": "Chính sách lương",
@@ -489,7 +490,12 @@
     "PROFILE_SELF_DECIDE": "Người gửi đơn không tự duyệt được đơn của mình.",
     "PROFILE_NOT_YOURS": "Đơn này không phải của bạn.",
     "HR_ONLY": "Chỉ bộ phận nhân sự làm được việc này.",
-    "NO_EMPLOYEE_RECORD": "Tài khoản này chưa gắn với hồ sơ nhân viên nào."
+    "NO_EMPLOYEE_RECORD": "Tài khoản này chưa gắn với hồ sơ nhân viên nào.",
+    "PAYSLIP_NOT_ISSUED": "Phiếu lương chưa phát hành nên chưa khiếu nại được.",
+    "DISPUTE_ALREADY_OPEN": "Khoản này đã có một khiếu nại đang chờ trả lời.",
+    "DISPUTE_NOT_FOUND": "Không tìm thấy khiếu nại này.",
+    "DISPUTE_ALREADY_ANSWERED": "Khiếu nại này đã được trả lời rồi.",
+    "DISPUTE_NOT_YOURS": "Khiếu nại này không phải của bạn."
   },
   "search": {
     "label": "Tìm kiếm",

@@ -87,6 +87,7 @@ model User {
   certificates   Certificate[]
   profileAsks    ProfileChange[] @relation("AsksProfileChanges")
   profileCalls   ProfileChange[] @relation("DecidesProfileChanges")
+  disputesAnswered PayslipDispute[]
 }
 
 /**
@@ -260,6 +261,7 @@ model Employee {
   assetMoves        AssetTransfer[]
   certificates      Certificate[]
   profileChanges    ProfileChange[]
+  disputes          PayslipDispute[]
   checklistRuns     ChecklistRun[]
   ownedTasks        ChecklistTask[]     @relation("OwnsTasks")
 
@@ -519,6 +521,17 @@ enum CertificateState {
   REJECTED
 }
 
+enum DisputeState {
+  OPEN
+  ANSWERED
+  WITHDRAWN
+}
+
+enum DisputeOutcome {
+  UPHELD
+  REJECTED
+}
+
 enum ProfileField {
   PERSONAL_EMAIL
   PHONE
@@ -603,6 +616,36 @@ model Certificate {
 
   @@index([state, createdAt])
   @@index([employeeId, createdAt])
+}
+
+/**
+ * A figure somebody disputes, the deadline for answering it, and what the
+ * answer was worth. An upheld one points at the adjustment that paid it: a
+ * dispute settled in words proves nothing later (KEHOACH 9.17 item 11).
+ */
+model PayslipDispute {
+  id           String           @id @default(uuid())
+  payslipId    String
+  employeeId   Int
+  lineCode     String?
+  claim        String
+  state        DisputeState     @default(OPEN)
+  dueAt        DateTime
+  outcome      DisputeOutcome?
+  answer       String?
+  answeredAt   DateTime?
+  answeredById String?
+  retroId      String?          @unique
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  payslip      Payslip          @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  employee     Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  answeredBy   User?            @relation(fields: [answeredById], references: [id], onDelete: SetNull)
+  retro        RetroAdjustment? @relation(fields: [retroId], references: [id], onDelete: SetNull)
+
+  @@index([state, dueAt])
+  @@index([employeeId, createdAt])
+  @@index([payslipId, state])
 }
 
 /**
@@ -943,6 +986,7 @@ model Payslip {
   employee          Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   policy            PayrollPolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
   lines             PayslipLine[]
+  disputes          PayslipDispute[]
 
   // A redelivered batch job lands on the same row rather than a second payslip.
   @@unique([runId, employeeId])
@@ -1006,6 +1050,7 @@ model RetroAdjustment {
   employee        Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   sourcePeriod    PayrollPeriod  @relation("RetroSource", fields: [sourcePeriodId], references: [id], onDelete: Cascade)
   appliedPeriod   PayrollPeriod? @relation("RetroApplied", fields: [appliedPeriodId], references: [id], onDelete: SetNull)
+  dispute         PayslipDispute?
 
   @@index([employeeId, state])
   @@index([state, sourcePeriodId])
@@ -1096,6 +1141,7 @@ enum NoticeKind {
   REQUEST_WAITING
   PAYSLIP_ISSUED
   CONTRACT_ENDING
+  DISPUTE_ANSWERED
 }
 
 enum NoticeChannel {
