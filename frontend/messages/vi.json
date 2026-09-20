@@ -418,6 +418,7 @@
     "SHIFT_ALREADY_ASSIGNED": "Người này đã vào ca đó từ ngày ấy rồi.",
     "CREDENTIALS_REJECTED": "Email hoặc mật khẩu không đúng.",
     "REFRESH_REPLAYED": "Phiên đăng nhập đã hết hiệu lực, đăng nhập lại.",
+    "SESSION_CLOSED": "Thiết bị này đã đăng xuất, đăng nhập lại.",
     "EMPLOYEE_NOT_FOUND": "Không tìm thấy nhân viên này.",
     "PAY_WRITE_DENIED": "Bạn không có quyền sửa mức lương.",
     "PAYROLL_WRITE_DENIED": "Bạn không có quyền chạy lương.",

@@ -17,18 +17,11 @@ import type { CookieOptions, Request, Response } from "express";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { JwtRefreshGuard } from "../../common/guards/jwt-refresh.guard.js";
 import type { Env } from "../../config/env.schema.js";
-import { AuthService, type IssuedTokens } from "./auth.service.js";
+import { AuthService, ttlToMs, type IssuedTokens } from "./auth.service.js";
 import { REFRESH_COOKIE, type AccessClaims, type RefreshClaims } from "./auth.types.js";
 import { LoginDto } from "./dto/login.dto.js";
 
 const REFRESH_PATH = "/auth";
-const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
-
-/** Read a jwt lifetime like `7d` so the cookie cannot outlive its token. */
-function ttlToMs(ttl: string): number {
-  const match = /^(\d+)([smhd])$/.exec(ttl);
-  return match ? Number(match[1]) * UNIT_MS[match[2]] : Number(ttl) * 1000;
-}
 
 @ApiTags("auth")
 @Controller("auth")
@@ -44,9 +37,13 @@ export class AuthController {
   @ApiOperation({ summary: "Exchange an email and password for an access token" })
   async login(
     @Body() body: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ accessToken: string }> {
-    const tokens = await this.auth.signIn(body.email, body.password);
+    const tokens = await this.auth.signIn(body.email, body.password, {
+      userAgent: req.get("user-agent"),
+      ip: req.ip,
+    });
     return this.handOver(tokens, res);
   }
 
@@ -67,7 +64,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
-    await this.auth.revoke((req.user as AccessClaims).sub);
+    await this.auth.close((req.user as AccessClaims).sid);
     res.clearCookie(REFRESH_COOKIE, this.cookieOptions());
   }
 

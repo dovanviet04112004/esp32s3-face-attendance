@@ -4,16 +4,17 @@ import type { Role } from "@prisma/client";
 export interface AccessClaims {
   sub: string;
   role: Role;
+  sid: string;
   employeeId?: number;
 }
 
-/** What a refresh token carries; jti is the half the database can revoke. */
+/** What a refresh token carries; sid names the row, jti the token it accepts. */
 export interface RefreshClaims {
   sub: string;
+  sid: string;
   jti: string;
 }
 
-/** What a kiosk token carries once E13-T9 issues one. */
 export interface DeviceClaims {
   deviceId: string;
   serial?: string;

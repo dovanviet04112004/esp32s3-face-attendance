@@ -322,9 +322,10 @@ export class EmployeesService {
     const leaveDate = new Date(body.leaveDate);
     await this.db.$transaction(async (tx) => {
       await tx.employee.update({ where: { id }, data: { leaveDate, active: false } });
-      await tx.user.updateMany({
-        where: { employeeId: id },
-        data: { active: false, refreshTokenHash: null },
+      await tx.user.updateMany({ where: { employeeId: id }, data: { active: false } });
+      await tx.session.updateMany({
+        where: { user: { employeeId: id }, revokedAt: null },
+        data: { revokedAt: new Date() },
       });
     });
     await this.audit.record({

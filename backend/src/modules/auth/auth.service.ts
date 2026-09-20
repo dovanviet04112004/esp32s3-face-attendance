@@ -10,10 +10,23 @@ import { PrismaService } from "../../database/prisma.service.js";
 import type { AccessClaims, DeviceClaims, RefreshClaims } from "./auth.types.js";
 import { verifyPassword } from "./password.js";
 
-/** A signed pair, plus the lifetime the cookie should carry. */
+const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+
+/** Read a jwt lifetime like `7d`, so no row or cookie outlives its token. */
+export function ttlToMs(ttl: string): number {
+  const match = /^(\d+)([smhd])$/.exec(ttl);
+  return match ? Number(match[1]) * UNIT_MS[match[2]] : Number(ttl) * 1000;
+}
+
 export interface IssuedTokens {
   accessToken: string;
   refreshToken: string;
+}
+
+/** What the session row records about the device it belongs to. */
+export interface SignedInFrom {
+  userAgent?: string;
+  ip?: string;
 }
 
 @Injectable()
@@ -26,7 +39,7 @@ export class AuthService {
     private readonly config: ConfigService<Env, true>,
   ) {}
 
-  async signIn(email: string, password: string): Promise<IssuedTokens> {
+  async signIn(email: string, password: string, from: SignedInFrom): Promise<IssuedTokens> {
     const user = await this.db.user.findUnique({ where: { email } });
     // The same answer whether the address is unknown or the password is wrong,
     // so a caller cannot learn which addresses exist.
@@ -36,32 +49,53 @@ export class AuthService {
     if (!user || !ok || !user.active) {
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
     }
-    return this.issue(user);
+    await this.makeRoom(user.id);
+    return this.issue(user, null, from);
   }
 
-  /** Trade a refresh token for a new pair. A jti that misses the stored hash
-   *  is a replay of a spent token, and drops the whole session.
+  /** Trade a refresh token for a new pair. A jti that misses the hash its own
+   *  session holds is a replay, and costs that one device its session.
    */
   async rotate(claims: RefreshClaims): Promise<IssuedTokens> {
-    const user = await this.db.user.findUnique({ where: { id: claims.sub } });
-    if (!user?.refreshTokenHash || user.refreshTokenHash !== fingerprint(claims.jti)) {
-      if (user) {
-        await this.revoke(user.id);
-        this.log.warn(`refresh replayed for ${user.email}, session dropped`);
-      }
+    const session = await this.db.session.findUnique({
+      where: { id: claims.sid },
+      include: { user: true },
+    });
+    const now = new Date();
+    if (
+      !session ||
+      session.userId !== claims.sub ||
+      session.revokedAt !== null ||
+      session.expiresAt <= now
+    ) {
+      throw new UnauthorizedException("SESSION_CLOSED");
+    }
+    if (session.tokenHash !== fingerprint(claims.jti)) {
+      // The other devices proved nothing wrong, so they keep their rows.
+      await this.close(session.id);
+      this.log.warn(`refresh replayed on session ${session.id}, that device signed out`);
       throw new UnauthorizedException("REFRESH_REPLAYED");
     }
-    if (!user.active) {
-      await this.revoke(user.id);
+    if (!session.user.active) {
+      await this.closeAll(session.userId);
       throw new UnauthorizedException("ACCOUNT_CLOSED");
     }
-    return this.issue(user);
+    return this.issue(session.user, session.id, {});
   }
 
-  async revoke(userId: string): Promise<void> {
-    await this.db.user.update({
-      where: { id: userId },
-      data: { refreshTokenHash: null },
+  /** Sign one device out, leaving the rest of them signed in. */
+  async close(sessionId: string): Promise<void> {
+    await this.db.session.updateMany({
+      where: { id: sessionId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  /** Sign every device out at once: leaving, or a password nobody else knows. */
+  async closeAll(userId: string): Promise<void> {
+    await this.db.session.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
     });
   }
 
@@ -74,14 +108,60 @@ export class AuthService {
     });
   }
 
-  private async issue(user: User): Promise<IssuedTokens> {
+  /** Drop what a login would otherwise pile up: spent rows, then the oldest
+   *  device once this account holds as many as it is allowed (KEHOACH 9.23).
+   */
+  private async makeRoom(userId: string): Promise<void> {
+    const now = new Date();
+    await this.db.session.deleteMany({
+      where: { userId, OR: [{ expiresAt: { lte: now } }, { revokedAt: { not: null } }] },
+    });
+    const cap = this.config.get("SESSIONS_PER_USER", { infer: true });
+    const spare = await this.db.session.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: now } },
+      orderBy: { lastSeenAt: "desc" },
+      select: { id: true },
+      skip: cap - 1,
+    });
+    if (spare.length > 0) {
+      await this.db.session.deleteMany({ where: { id: { in: spare.map((one) => one.id) } } });
+    }
+  }
+
+  private async issue(
+    user: User,
+    sessionId: string | null,
+    from: SignedInFrom,
+  ): Promise<IssuedTokens> {
     const jti = randomUUID();
+    const tokenHash = fingerprint(jti);
+    const expiresAt = new Date(
+      Date.now() + ttlToMs(this.config.get("JWT_REFRESH_TTL", { infer: true })),
+    );
+    const session =
+      sessionId === null
+        ? await this.db.session.create({
+            data: {
+              userId: user.id,
+              tokenHash,
+              expiresAt,
+              userAgent: from.userAgent ?? null,
+              ip: from.ip ?? null,
+            },
+            select: { id: true },
+          })
+        : await this.db.session.update({
+            where: { id: sessionId },
+            data: { tokenHash, expiresAt, lastSeenAt: new Date() },
+            select: { id: true },
+          });
     const access: AccessClaims = {
       sub: user.id,
       role: user.role,
+      sid: session.id,
       ...(user.employeeId !== null ? { employeeId: user.employeeId } : {}),
     };
-    const refresh: RefreshClaims = { sub: user.id, jti };
+    const refresh: RefreshClaims = { sub: user.id, sid: session.id, jti };
     const accessToken = this.jwt.sign(access, {
       secret: this.config.get("JWT_ACCESS_SECRET", { infer: true }),
       expiresIn: this.config.get("JWT_ACCESS_TTL", { infer: true }),
@@ -89,10 +169,6 @@ export class AuthService {
     const refreshToken = this.jwt.sign(refresh, {
       secret: this.config.get("JWT_REFRESH_SECRET", { infer: true }),
       expiresIn: this.config.get("JWT_REFRESH_TTL", { infer: true }),
-    });
-    await this.db.user.update({
-      where: { id: user.id },
-      data: { refreshTokenHash: fingerprint(jti) },
     });
     return { accessToken, refreshToken };
   }

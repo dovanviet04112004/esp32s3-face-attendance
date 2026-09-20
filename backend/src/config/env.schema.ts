@@ -17,6 +17,7 @@ export const envSchema = z.object({
   JWT_DEVICE_SECRET: z.string().min(32),
 
   LOGIN_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(5),
+  SESSIONS_PER_USER: z.coerce.number().int().positive().default(10),
 
   // The server clock is UTC, so this decides every day boundary (KEHOACH 9.8).
   APP_TIMEZONE: z

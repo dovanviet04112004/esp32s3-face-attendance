@@ -67,22 +67,42 @@ enum RolloutState {
 }
 
 model User {
-  id               String          @id @default(uuid())
-  email            String          @unique
-  passwordHash     String
-  role             Role            @default(VIEWER)
+  id             String          @id @default(uuid())
+  email          String          @unique
+  passwordHash   String
+  role           Role            @default(VIEWER)
   // Kept apart from Employee on purpose: a leaver's record has to stay for old
   // payrolls while their login has to die at once (KEHOACH 9.3).
-  employeeId       Int?            @unique
-  active           Boolean         @default(true)
-  refreshTokenHash String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  employee         Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-  issuedCommands   DeviceCommand[]
-  auditLogs        AuditLog[]
-  assetMoves       AssetTransfer[]
-  tasksDone        ChecklistTask[]
+  employeeId     Int?            @unique
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  employee       Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  sessions       Session[]
+  issuedCommands DeviceCommand[]
+  auditLogs      AuditLog[]
+  assetMoves     AssetTransfer[]
+  tasksDone      ChecklistTask[]
+}
+
+/**
+ * One row per device somebody is signed in on, so a second login reads as a
+ * second device rather than as a theft (KEHOACH 9.23 rule 5).
+ */
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
 }
 
 /**

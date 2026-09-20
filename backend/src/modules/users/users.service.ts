@@ -112,17 +112,25 @@ export class UsersService {
 
   async update(id: string, body: UpdateUserDto): Promise<PublicUser> {
     await this.get(id);
-    return this.db.user.update({
-      where: { id },
-      data: {
-        ...(body.email ? { email: body.email } : {}),
-        ...(body.role ? { role: body.role as Role } : {}),
-        // A new password retires the session that used the old one.
-        ...(body.password
-          ? { passwordHash: await hashPassword(body.password), refreshTokenHash: null }
-          : {}),
-      },
-      select: VISIBLE,
+    const passwordHash = body.password ? await hashPassword(body.password) : undefined;
+    return this.db.$transaction(async (tx) => {
+      const saved = await tx.user.update({
+        where: { id },
+        data: {
+          ...(body.email ? { email: body.email } : {}),
+          ...(body.role ? { role: body.role as Role } : {}),
+          ...(passwordHash ? { passwordHash } : {}),
+        },
+        select: VISIBLE,
+      });
+      if (passwordHash) {
+        // A new password signs out every device the old one opened.
+        await tx.session.updateMany({
+          where: { userId: id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+      return saved;
     });
   }
 

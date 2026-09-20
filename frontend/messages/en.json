@@ -418,6 +418,7 @@
     "SHIFT_ALREADY_ASSIGNED": "This person already starts that shift on that date.",
     "CREDENTIALS_REJECTED": "That email and password do not match.",
     "REFRESH_REPLAYED": "The session has expired. Sign in again.",
+    "SESSION_CLOSED": "This device has been signed out. Sign in again.",
     "EMPLOYEE_NOT_FOUND": "No such employee.",
     "PAY_WRITE_DENIED": "You may not change pay records.",
     "PAYROLL_WRITE_DENIED": "You may not run payroll.",
