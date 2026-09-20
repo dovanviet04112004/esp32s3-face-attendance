@@ -31,7 +31,9 @@ const YEAR = 2033;
 const MONTH = 7;
 const NET = "12345678";
 
-const MAIL_WAIT_MS = 15000;
+// Budgets the backlog, not the delivery: the notice queues behind every other
+// job on the shared notify queue, which this sink unblocks by listening.
+const MAIL_WAIT_MS = 45000;
 const MAIL_POLL_MS = 100;
 
 interface Change {
