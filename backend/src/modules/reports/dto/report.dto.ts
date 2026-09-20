@@ -21,3 +21,18 @@ export class D02QueryDto {
   @IsDateString()
   on!: string;
 }
+
+export class InsuranceRangeDto {
+  @ApiProperty({ description: "The entity the filing is for" })
+  @IsString()
+  @MaxLength(64)
+  legalEntityId!: string;
+
+  @ApiProperty({ example: "2026-09-01" })
+  @IsDateString()
+  from!: string;
+
+  @ApiProperty({ example: "2026-09-30" })
+  @IsDateString()
+  to!: string;
+}

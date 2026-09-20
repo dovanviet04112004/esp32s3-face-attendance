@@ -4,8 +4,13 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
-import { D02QueryDto, RangeDto } from "./dto/report.dto.js";
-import { ReportsService, type AttendanceTally, type Attention } from "./reports.service.js";
+import { D02QueryDto, InsuranceRangeDto, RangeDto } from "./dto/report.dto.js";
+import {
+  ReportsService,
+  type AttendanceTally,
+  type Attention,
+  type InsuranceChanges,
+} from "./reports.service.js";
 
 @ApiTags("reports")
 @ApiBearerAuth()
@@ -27,6 +32,17 @@ export class ReportsController {
   @ApiOperation({ summary: "The roster that fills D02-LT for one legal entity" })
   d02(@Query() query: D02QueryDto): Promise<string> {
     return this.reports.d02(query.legalEntityId, new Date(query.on));
+  }
+
+  @Get("insurance-changes")
+  @Roles("ADMIN", "HR", "PAYROLL")
+  @ApiOperation({ summary: "Who started, who stopped, whose base moved" })
+  insuranceChanges(@Query() query: InsuranceRangeDto): Promise<InsuranceChanges> {
+    return this.reports.insuranceChanges(
+      query.legalEntityId,
+      new Date(query.from),
+      new Date(query.to),
+    );
   }
 
   @Get("attendance")

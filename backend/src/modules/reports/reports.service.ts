@@ -8,6 +8,7 @@ import { CACHE } from "../../common/cache/cache-keys.js";
 import { CacheService } from "../../common/cache/cache.service.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { PolicyService } from "../policy/policy.service.js";
 import { toCsv } from "../payroll/payroll.service.js";
 import { dayWindow, localDay } from "../timesheet/local-day.js";
 import { QUEUE, type ReportJob } from "../../queue/queues.js";
@@ -57,6 +58,83 @@ const kAllowanceColumns = 5;
 const kMonthPad = 2;
 
 const GENDER_WORD: Record<string, string> = { MALE: "Nam", FEMALE: "Nữ" };
+
+/** Why a person's insurance standing moved this month. Codes, not sentences:
+ *  the dashboard turns them into words (CLAUDE.md 3.1).
+ */
+export type ChangeReason = "HIRED" | "LEFT" | "UNPAID_14" | "SALARY_UP" | "SALARY_DOWN";
+
+export interface InsuranceChange {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  socialInsuranceNo: string | null;
+  reason: ChangeReason;
+  effectiveFrom: string;
+  fromSalary: string | null;
+  toSalary: string | null;
+}
+
+export interface InsuranceChanges {
+  unpaidDayThreshold: number;
+  increases: InsuranceChange[];
+  decreases: InsuranceChange[];
+  adjustments: InsuranceChange[];
+}
+
+interface MovedRow {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  socialInsuranceNo: string | null;
+  effectiveFrom: Date;
+  fromSalary: string | null;
+  toSalary: string | null;
+}
+
+interface AwayRow {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  socialInsuranceNo: string | null;
+  days: number;
+}
+
+const PERSON_FIELDS = {
+  id: true,
+  code: true,
+  fullName: true,
+  socialInsuranceNo: true,
+  hireDate: true,
+  leaveDate: true,
+} as const;
+
+interface Person {
+  id: number;
+  code: string;
+  fullName: string;
+  socialInsuranceNo: string | null;
+}
+
+function asChange(one: Person, reason: ChangeReason, on: Date): InsuranceChange {
+  return {
+    employeeId: one.id,
+    code: one.code,
+    fullName: one.fullName,
+    socialInsuranceNo: one.socialInsuranceNo,
+    reason,
+    effectiveFrom: asDate(on),
+    fromSalary: null,
+    toSalary: null,
+  };
+}
+
+/** No earlier record means a base registered for the first time, which is a
+ *  rise from nothing rather than a cut.
+ */
+function wentUp(before: string | null, after: string | null): boolean {
+  return BigInt(after ?? "0") >= BigInt(before ?? "0");
+}
 
 interface Fillable {
   socialInsuranceNo: string | null;
@@ -153,6 +231,7 @@ export class ReportsService {
     private readonly db: PrismaService,
     private readonly cache: CacheService,
     private readonly config: ConfigService<Env, true>,
+    private readonly policy: PolicyService,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -393,5 +472,89 @@ export class ReportsService {
         rows,
       )
     );
+  }
+
+  /**
+   * The three filings a month of ordinary churn owes the insurance office:
+   * who started, who stopped, and whose contribution base moved.
+   */
+  async insuranceChanges(legalEntityId: string, from: Date, to: Date): Promise<InsuranceChanges> {
+    const policy = await this.policy.effectiveAt(to, legalEntityId);
+    const threshold = policy.noContributionUnpaidDays;
+    const [joined, gone, moved, away] = await Promise.all([
+      this.db.employee.findMany({
+        where: { legalEntityId, hireDate: { gte: from, lte: to } },
+        select: PERSON_FIELDS,
+        orderBy: { code: "asc" },
+      }),
+      this.db.employee.findMany({
+        where: { legalEntityId, leaveDate: { gte: from, lte: to } },
+        select: PERSON_FIELDS,
+        orderBy: { code: "asc" },
+      }),
+      this.db.$queryRaw<MovedRow[]>`
+        SELECT e."id" AS "employeeId", e."code", e."fullName", e."socialInsuranceNo",
+               c."effectiveFrom",
+               prev."insuranceSalary"::text AS "fromSalary",
+               c."insuranceSalary"::text    AS "toSalary"
+          FROM "CompensationRecord" c
+          JOIN "Employee" e ON e."id" = c."employeeId"
+          LEFT JOIN LATERAL (
+            SELECT p."insuranceSalary"
+              FROM "CompensationRecord" p
+             WHERE p."employeeId" = c."employeeId"
+               AND p."effectiveFrom" < c."effectiveFrom"
+             ORDER BY p."effectiveFrom" DESC
+             LIMIT 1
+          ) prev ON true
+         WHERE e."legalEntityId" = ${legalEntityId}
+           AND c."effectiveFrom" BETWEEN ${from}::date AND ${to}::date
+           AND prev."insuranceSalary" IS DISTINCT FROM c."insuranceSalary"
+         ORDER BY c."effectiveFrom", e."code"
+      `,
+      this.db.$queryRaw<AwayRow[]>`
+        SELECT e."id" AS "employeeId", e."code", e."fullName", e."socialInsuranceNo",
+               count(*)::int AS "days"
+          FROM "AttendanceDay" d
+          JOIN "Employee" e ON e."id" = d."employeeId"
+          LEFT JOIN LATERAL (
+            SELECT t."paid"
+              FROM "Request" r
+              JOIN "LeaveType" t ON t."id" = r."leaveTypeId"
+             WHERE r."employeeId" = d."employeeId"
+               AND r."kind" = 'LEAVE' AND r."state" = 'APPROVED'
+               AND d."date" BETWEEN r."fromDate" AND r."toDate"
+             LIMIT 1
+          ) lt ON true
+         WHERE e."legalEntityId" = ${legalEntityId}
+           AND d."date" BETWEEN ${from}::date AND ${to}::date
+           AND (d."state" = 'ABSENT' OR (d."state" = 'LEAVE' AND lt."paid" IS NOT TRUE))
+         GROUP BY e."id", e."code", e."fullName", e."socialInsuranceNo"
+        HAVING count(*) >= ${threshold}
+         ORDER BY e."code"
+      `,
+    ]);
+
+    const newly = new Set(joined.map((one) => one.id));
+    const increases = joined.map((one) => asChange(one, "HIRED", one.hireDate as Date));
+    const decreases = [
+      ...gone.map((one) => asChange(one, "LEFT", one.leaveDate as Date)),
+      // Fourteen unpaid days stops the contribution for the month, the same
+      // rule the payslip applies (KEHOACH 9.7).
+      ...away.map((one) => asChange({ ...one, id: one.employeeId }, "UNPAID_14", to)),
+    ];
+    const adjustments = moved
+      .filter((row) => !newly.has(row.employeeId))
+      .map((row) => ({
+        employeeId: row.employeeId,
+        code: row.code,
+        fullName: row.fullName,
+        socialInsuranceNo: row.socialInsuranceNo,
+        reason: wentUp(row.fromSalary, row.toSalary) ? ("SALARY_UP" as const) : ("SALARY_DOWN" as const),
+        effectiveFrom: asDate(row.effectiveFrom),
+        fromSalary: row.fromSalary,
+        toSalary: row.toSalary,
+      }));
+    return { unpaidDayThreshold: threshold, increases, decreases, adjustments };
   }
 }
