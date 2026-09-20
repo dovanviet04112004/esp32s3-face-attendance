@@ -160,6 +160,36 @@ export class TimesheetService {
     `;
   }
 
+  /**
+   * Put an approved correction on a day, creating the row when the build has
+   * not reached it. The first correction keeps what the device measured in
+   * `measuredMinutes`, and later ones leave that first number alone.
+   */
+  applyFix(
+    tx: Prisma.TransactionClient,
+    employeeId: number,
+    date: Date,
+    minutes: number,
+    byUserId: string,
+    reason: string,
+  ): Promise<number> {
+    return tx.$executeRaw`
+      INSERT INTO "AttendanceDay" (
+        "employeeId", "date", "state", "workedMinutes", "measuredMinutes",
+        "punchCount", "adjustedById", "adjustReason", "adjustedAt", "builtAt", "updatedAt")
+      VALUES (${employeeId}::int, ${date}::date, 'WORKED', ${minutes}::int, 0,
+              0, ${byUserId}, ${reason}, now(), now(), now())
+      ON CONFLICT ("employeeId", "date") DO UPDATE SET
+        "state" = 'WORKED',
+        "workedMinutes" = EXCLUDED."workedMinutes",
+        "measuredMinutes" = coalesce("AttendanceDay"."measuredMinutes", "AttendanceDay"."workedMinutes"),
+        "adjustedById" = EXCLUDED."adjustedById",
+        "adjustReason" = EXCLUDED."adjustReason",
+        "adjustedAt" = EXCLUDED."adjustedAt",
+        "updatedAt" = now()
+    `;
+  }
+
   /** Build every finished day in a range, oldest first. */
   async buildRange(from: string, to: string): Promise<BuildReport> {
     let days = 0;

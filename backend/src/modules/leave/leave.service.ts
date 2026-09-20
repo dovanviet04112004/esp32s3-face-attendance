@@ -51,6 +51,9 @@ export class LeaveService {
     if (to < from) {
       throw new BadRequestException("DATE_RANGE_BACKWARDS");
     }
+    if (body.kind === "ATTENDANCE_FIX") {
+      this.checkFixable(from, to);
+    }
     const days = body.halfDay ? HALF : Math.round((to.getTime() - from.getTime()) / MS_PER_DAY) + 1;
     const approverId = await this.approverFor(viewer.employeeId, from);
 
@@ -91,6 +94,19 @@ export class LeaveService {
     return filed;
   }
 
+  /** One finished day: a longer range leaves `minutes` ambiguous, and a day
+   *  still running would freeze at the claimed figure, because a corrected day
+   *  is the one thing the nightly build will not touch.
+   */
+  private checkFixable(from: Date, to: Date): void {
+    if (from.getTime() !== to.getTime()) {
+      throw new BadRequestException("FIX_ONE_DAY_ONLY");
+    }
+    if (from.toISOString().slice(0, 10) >= this.timesheet.today()) {
+      throw new BadRequestException("FIX_DAY_NOT_FINISHED");
+    }
+  }
+
   /** One request, if this viewer is allowed to know it exists. */
   async one(viewer: Viewer, id: string): Promise<LeaveRequest> {
     const held = await this.db.request.findUnique({
@@ -125,6 +141,16 @@ export class LeaveService {
       }
       if (held.kind === "LEAVE" && !held.halfDay && body.approve) {
         await this.timesheet.markLeave(tx, held.employeeId, held.fromDate, held.toDate);
+      }
+      if (held.kind === "ATTENDANCE_FIX" && body.approve) {
+        await this.timesheet.applyFix(
+          tx,
+          held.employeeId,
+          held.fromDate,
+          held.minutes,
+          viewer.userId,
+          held.reason,
+        );
       }
       return tx.request.update({
         where: { id },

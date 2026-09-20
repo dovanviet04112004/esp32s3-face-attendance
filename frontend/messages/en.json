@@ -395,6 +395,8 @@
     "RUN_IS_NOT_A_BONUS": "That run is not a bonus run.",
     "NOTHING_TO_CORRECT": "Nothing changed to save.",
     "DAY_NOT_FOUND": "No such day row.",
+    "FIX_ONE_DAY_ONLY": "A correction covers one day. File one request per day.",
+    "FIX_DAY_NOT_FINISHED": "That day has not finished yet.",
     "BIOMETRIC_CONSENT_MISSING": "This person has not agreed to face data being used.",
     "CONSENT_NOT_YOURS": "You may only agree for yourself.",
     "CONSENT_ALREADY_GRANTED": "A live agreement already exists.",

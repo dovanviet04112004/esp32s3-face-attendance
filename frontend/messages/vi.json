@@ -395,6 +395,8 @@
     "RUN_IS_NOT_A_BONUS": "Lượt này không phải lượt thưởng.",
     "NOTHING_TO_CORRECT": "Chưa đổi gì để lưu.",
     "DAY_NOT_FOUND": "Không tìm thấy ngày công này.",
+    "FIX_ONE_DAY_ONLY": "Mỗi đơn giải trình chỉ cho một ngày. Hỏng nhiều ngày thì gửi mỗi ngày một đơn.",
+    "FIX_DAY_NOT_FINISHED": "Ngày này chưa kết thúc, chưa giải trình được.",
     "BIOMETRIC_CONSENT_MISSING": "Người này chưa đồng ý cho dùng dữ liệu khuôn mặt.",
     "CONSENT_NOT_YOURS": "Bạn chỉ được ký đồng ý cho chính mình.",
     "CONSENT_ALREADY_GRANTED": "Đã có một đồng ý còn hiệu lực.",

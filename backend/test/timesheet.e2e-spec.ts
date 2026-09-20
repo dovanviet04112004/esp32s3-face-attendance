@@ -21,7 +21,12 @@ const AHEAD = "NV9101";
 const BEHIND = "NV9102";
 const MEASURED = "NV9103";
 const HALF = "NV9104";
-const MADE_CODES = [AHEAD, BEHIND, MEASURED, HALF];
+const FIXED = "NV9105";
+const MADE_CODES = [AHEAD, BEHIND, MEASURED, HALF, FIXED];
+
+// A correction is filed by the person it belongs to, and no seeded account is
+// attached to an employee, so the suite opens one the way an admin would.
+const FILER_EMAIL = "nv9105@kiosk.local";
 
 describe("timesheet leave (e2e)", () => {
   let app: INestApplication;
@@ -29,14 +34,22 @@ describe("timesheet leave (e2e)", () => {
   let db: PrismaService;
   let timesheet: TimesheetService;
   let adminToken = "";
+  let filerToken = "";
   let leaveTypeId = "";
   const idOf = new Map<string, number>();
+  // Provisioning opens a login for anyone waiting, not only this suite's own.
+  const opened: string[] = [];
 
   const date = new Date(`${DAY}T00:00:00.000Z`);
 
   async function sweep(): Promise<void> {
     await db.attendanceDay.deleteMany({ where: { date } });
+    await db.user.deleteMany({ where: { email: { in: [FILER_EMAIL, ...opened] } } });
     await db.employee.deleteMany({ where: { code: { in: MADE_CODES } } });
+  }
+
+  async function rowOf(code: string) {
+    return db.attendanceDay.findFirst({ where: { employeeId: idOf.get(code), date } });
   }
 
   async function stateOf(code: string): Promise<string> {
@@ -101,6 +114,7 @@ describe("timesheet leave (e2e)", () => {
           active: true,
           departmentId: template.departmentId,
           legalEntityId: template.legalEntityId,
+          personalEmail: code === FIXED ? FILER_EMAIL : null,
         },
       });
       idOf.set(code, made.id);
@@ -108,7 +122,28 @@ describe("timesheet leave (e2e)", () => {
         data: { employeeId: made.id, leaveTypeId, year: 2026, entitled: 12 },
       });
     }
+
+    const provisioned = await request(http)
+      .post("/users/provision")
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert.equal(provisioned.status, 201, "could not open employee logins");
+    const accounts = provisioned.body as { employeeCode: string; email: string; password: string }[];
+    opened.push(...accounts.map((one) => one.email));
+    const account = accounts.find((one) => one.employeeCode === FIXED);
+    assert.ok(account, "provisioning skipped the person filing the correction");
+    const asFiler = await request(http)
+      .post("/auth/login")
+      .send({ email: FILER_EMAIL, password: account.password });
+    assert.equal(asFiler.status, 200, "the filing account could not sign in");
+    filerToken = asFiler.body.accessToken;
   });
+
+  async function fileFix(from: string, to: string, minutes: number): Promise<request.Response> {
+    return request(http)
+      .post("/requests")
+      .set("Authorization", `Bearer ${filerToken}`)
+      .send({ kind: "ATTENDANCE_FIX", fromDate: from, toDate: to, minutes, reason: "quên quẹt" });
+  }
 
   after(async () => {
     await sweep();
@@ -152,5 +187,43 @@ describe("timesheet leave (e2e)", () => {
   it("does not turn a half day into a whole day of leave", async () => {
     assert.equal(await approveLeave(HALF, true), 201);
     assert.equal(await stateOf(HALF), "ABSENT");
+  });
+
+  it("refuses a correction that reaches across more than one day", async () => {
+    const res = await fileFix(DAY, "2026-03-17", 480);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "FIX_ONE_DAY_ONLY");
+  });
+
+  it("refuses a correction for a day that has not finished", async () => {
+    const running = timesheet.today();
+    const res = await fileFix(running, running, 480);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "FIX_DAY_NOT_FINISHED");
+  });
+
+  it("writes an approved correction onto the day and keeps the measured figure", async () => {
+    const filed = await fileFix(DAY, DAY, 480);
+    assert.equal(filed.status, 201);
+    const decided = await request(http)
+      .post(`/requests/${filed.body.id}/decide`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ approve: true });
+    assert.equal(decided.status, 201);
+
+    const row = await rowOf(FIXED);
+    assert.ok(row);
+    assert.equal(row.state, "WORKED");
+    assert.equal(row.workedMinutes, 480);
+    assert.equal(row.measuredMinutes, 0, "what the device saw has to survive");
+    assert.equal(row.adjustReason, "quên quẹt");
+    assert.ok(row.adjustedById, "a correction has to name who made it");
+  });
+
+  it("leaves a corrected day alone when the day is built again", async () => {
+    await timesheet.build(DAY);
+    const row = await rowOf(FIXED);
+    assert.equal(row?.state, "WORKED");
+    assert.equal(row?.workedMinutes, 480);
   });
 });
