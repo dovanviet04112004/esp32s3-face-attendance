@@ -4156,7 +4156,8 @@ backend/
     │   ├── compensation/             # lương theo thời hạn, người phụ thuộc
     │   ├── policy/                   # PayrollPolicy + TaxBracket theo ngày hiệu lực
     │   ├── timesheet/                # AttendanceDay: từ lượt quẹt thành ngày công
-    │   └── search/                   # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
+    │   ├── search/                   # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
+    │   └── notifications/            # ★ §9.21.4 — bốn loại, ba kênh, mỗi loại tắt riêng
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
     │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
@@ -5812,6 +5813,8 @@ Ba bảng trong số đó tồn tại vì một câu hỏi mà bảng khác khô
 | `SalaryAdvance` | "ai đang nợ tạm ứng, khấu trừ vào phiếu nào" | việc này vẫn xảy ra; không có bảng thì nó xảy ra trong tin nhắn |
 | `BonusItem` | "khoản thưởng này thuộc lượt nào, của ai, bao nhiêu" | lượt thưởng cần đầu vào riêng; nhét vào `CompensationRecord` là biến một khoản một lần thành mức lương thường xuyên |
 
+**Thông báo** — `Notification`, `NotificationPreference`, `PushSubscription`. Xem §9.21.4.
+
 **Chính sách** — `PayrollPolicy`, `TaxBracket`. Xem §9.7. Mọi tỷ lệ lưu bằng **điểm cơ bản
 kiểu nguyên** (`800` là 8%), không lưu số thực: một phép nhân dấu phẩy động trong bảng lương là
 một đồng lệch mà không ai truy ra được nguồn.
@@ -6419,6 +6422,28 @@ phát, và hợp đồng của tôi sắp hết hạn. Mỗi loại tắt riêng
 
 **Không đẩy nội dung nhạy cảm vào màn khoá.** "Phiếu lương tháng 9 đã có" là đủ; con số thì
 nằm sau lần đăng nhập, cùng lý do §9.11 không đính kèm phiếu vào email.
+
+**Luật này phải do kiểu dữ liệu giữ, không do người viết nhớ.** `Notification` **không có cột
+nào chứa câu chữ**: nó giữ `kind` là enum bốn giá trị, cộng vài tham chiếu (`requestId`,
+`periodId`, số ngày còn lại). Câu hiển thị dựng ở phía đọc — frontend cho chuông trong ứng
+dụng, service worker cho màn khoá — và cả hai lấy chữ từ catalogue. Không có chỗ nào để lỡ tay
+nhét số tiền vào, vì không có cột nào nhận được một số tiền.
+
+**Ba kênh, bật tắt theo từng loại.**
+
+| Kênh | Mặc định | Ghi chú |
+|---|---|---|
+| Trong ứng dụng | **bật** cả bốn loại | Rẻ, không làm phiền, và là nơi xem lại |
+| Đẩy tới máy | **bật** cả bốn loại | Đây là thứ khiến cổng được mở |
+| Email | **tắt** cả bốn loại | Phiếu lương đã có đường thư riêng ở §9.11; bật thêm ở đây là gửi hai lần cùng một tin |
+
+**Một thông báo hỏng không được làm hỏng việc nó mô tả.** Duyệt một đơn xong mà không gửi được
+thông báo thì đơn **vẫn đã duyệt** — cùng luật với `AuditService`: mất lời nhắn còn hơn huỷ việc
+đã làm.
+
+**`PushSubscription` khoá theo `endpoint`, không khoá theo người.** Một người có điện thoại và
+máy tính là hai đăng ký; đăng xuất thì xoá đúng đăng ký của máy ấy. Nhà cung cấp trả `404` hoặc
+`410` nghĩa là đăng ký đã chết — xoá ngay, đừng thử lại, vì nó sẽ không bao giờ sống lại.
 
 #### 9.21.5 Màn nào lên điện thoại, màn nào không — nói thẳng
 
