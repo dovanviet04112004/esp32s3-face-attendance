@@ -107,8 +107,9 @@ export default function TimesheetPage() {
   });
 
   const rebuild = useMutation({
-    mutationFn: () => api.post("/timesheet/build", { from: range.from, to: range.to }),
-    onSuccess: () => void cache.invalidateQueries({ queryKey: ["timesheet"] }),
+    mutationFn: async () =>
+      (await api.post<{ jobId: string }>("/timesheet/build", { from: range.from, to: range.to }))
+        .data,
   });
 
   const correct = useMutation({
@@ -264,12 +265,17 @@ export default function TimesheetPage() {
       </form>
 
       {rebuild.data ? (
-        <p className="mb-3 text-sm text-(--color-ok)">
-          {t("built", {
-            days: (rebuild.data.data as { days: number }).days,
-            rows: (rebuild.data.data as { rows: number }).rows,
-          })}
-        </p>
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <p className="text-sm text-(--color-ok)">{t("buildQueued")}</p>
+          <Button
+            type="button"
+            tone="quiet"
+            size="sm"
+            onClick={() => void cache.invalidateQueries({ queryKey: ["timesheet"] })}
+          >
+            {t("refresh")}
+          </Button>
+        </div>
       ) : null}
 
       <DataTable

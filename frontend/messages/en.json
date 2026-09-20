@@ -491,7 +491,9 @@
     "stateWEEKEND": "Weekend",
     "stateABSENT": "Absent",
     "day": "Date",
-    "days": "Day by day"
+    "days": "Day by day",
+    "buildQueued": "Rebuild queued. Refresh once it has run.",
+    "refresh": "Refresh"
   },
   "notices": {
     "title": "Notifications",

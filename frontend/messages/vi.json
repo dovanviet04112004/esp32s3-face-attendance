@@ -491,7 +491,9 @@
     "stateWEEKEND": "Cuối tuần",
     "stateABSENT": "Vắng",
     "day": "Ngày",
-    "days": "Từng ngày"
+    "days": "Từng ngày",
+    "buildQueued": "Đã xếp hàng dựng lại. Chạy xong thì bấm làm mới.",
+    "refresh": "Làm mới"
   },
   "notices": {
     "title": "Thông báo",
