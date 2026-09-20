@@ -4242,7 +4242,8 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 
 | Bảng | Cột đáng chú ý |
 |---|---|
-| `User` | id, email, passwordHash, role(`ADMIN`/`HR`/`VIEWER`), refreshTokenHash |
+| `User` | id, email, passwordHash, role(`ADMIN`/`HR`/`VIEWER`), employeeId, active |
+| `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt — một dòng mỗi thiết bị (§9.23 luật 5) |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
 | `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, fwVersion, modelVersion, rosterVersion, lastSeenAt, online |
@@ -6767,13 +6768,23 @@ máy. Đo thật: hai mươi lượt cấp cùng một tài sản trên một b�
 cho tải. Đã qua Traefik là không còn gì xếp hàng giúp nữa. Nên thử nghiệm đồng thời trên một
 bản chạy chỉ dùng để **bắt lỗi**, không bao giờ dùng để **kết luận an toàn**.
 
-**Luật 5 — một người có nhiều thiết bị.** Lưu đúng một `refreshTokenHash` trên `User` nghĩa là
-một tài khoản chỉ giữ được một phiên. Tệ hơn: khi lượt gia hạn thứ hai không khớp, hệ coi đó là
-token bị đánh cắp và **xoá sạch phiên** — nên đăng nhập trên điện thoại rồi trên laptop thì
-**mất cả hai** trong vòng một chu kỳ token. Đo thật: A và B cùng đăng nhập đều 200, rồi cả hai
-gia hạn đều **401**. Một lần đăng nhập thứ hai bình thường không được phép trông giống một vụ
-trộm, mà với một ô duy nhất thì nó không thể trông khác. Phiên phải là **dòng**, mỗi thiết bị
-một dòng — cùng lý do §9.16 mục 11 bắt lịch sử tài sản là dòng chứ không phải ô.
+**Luật 5 — một người có nhiều thiết bị, nên phiên là dòng chứ không phải ô.** Giữ đúng một
+`refreshTokenHash` trên `User` thì một tài khoản chỉ đăng nhập được một chỗ. Tệ hơn là cách nó
+hỏng: lượt gia hạn thứ hai không khớp ô, hệ coi là token bị đánh cắp và **xoá sạch phiên**, nên
+đăng nhập điện thoại rồi laptop là **mất cả hai** trong một chu kỳ token. Đo thật lúc còn một ô:
+A và B cùng đăng nhập đều 200, rồi cả hai lượt gia hạn đều **401**. Một lần đăng nhập thứ hai
+bình thường không được phép trông giống một vụ trộm, mà với một ô duy nhất thì nó **không thể
+trông khác** — cùng lý do §9.16 mục 11 bắt lịch sử tài sản là dòng.
+
+`Session` vì thế giữ một dòng mỗi thiết bị, và token gia hạn mang **hai** thứ: `sid` chỉ dòng,
+`jti` chỉ token mà dòng ấy còn nhận. Tách ra như vậy thì phát hiện dùng lại mới **khu trú được**
+— lượt gia hạn cầm `jti` đã tiêu chỉ đóng đúng dòng của nó, các thiết bị khác chưa chứng tỏ điều
+gì nên giữ nguyên phiên. Ba việc đóng **tất cả**: nghỉ việc, đổi mật khẩu, và tài khoản bị tắt.
+Một lượt đăng nhập cũng là một lượt dọn: xoá dòng đã hết hạn hoặc đã đóng, rồi bỏ thiết bị lâu
+nhất nếu tài khoản chạm trần `SESSIONS_PER_USER` — bảng phiên không được phép là bảng chỉ lớn
+lên. Đo sau khi sửa: điện thoại và laptop cùng gia hạn đều **200**; một lượt dùng lại trên điện
+thoại giết đúng phiên điện thoại còn laptop vẫn **200**; đổi mật khẩu đưa số phiên sống về **0**;
+mở quá trần thì số dòng dừng đúng ở trần.
 
 **Luật 6 — thử đồng thời là một phép đo, và phải ghi số.** Mỗi chỗ nghi ngờ thì bắn N request
 song song rồi đếm dòng trong cơ sở dữ liệu. Con số vào `docs/measurements/`, không vào trí nhớ.
