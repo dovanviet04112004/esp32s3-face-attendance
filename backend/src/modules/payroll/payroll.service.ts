@@ -176,18 +176,40 @@ export class PayrollService {
     if (open.length > 0 && !body.acceptOpenItems) {
       throw new BadRequestException("CHECKLIST_NOT_CLEAR");
     }
-    const locked = await this.db.payrollPeriod.update({
-      where: { id: periodId },
-      data: {
-        state: "LOCKED",
-        lockedAt: new Date(),
-        lockedById: viewer.userId,
-        lockNote: body.note ?? null,
-      },
-    });
-    await this.db.payslip.updateMany({
-      where: { periodId, state: "DRAFT" },
-      data: { state: "ISSUED", issuedAt: new Date() },
+    // Issuing and spending are one act: a half-applied lock leaves a period
+    // closed with its back payments still owed.
+    const locked = await this.db.$transaction(async (tx) => {
+      const shut = await tx.payrollPeriod.update({
+        where: { id: periodId },
+        data: {
+          state: "LOCKED",
+          lockedAt: new Date(),
+          lockedById: viewer.userId,
+          lockNote: body.note ?? null,
+        },
+      });
+      await tx.payslip.updateMany({
+        where: { periodId, state: "DRAFT" },
+        data: { state: "ISSUED", issuedAt: new Date() },
+      });
+      await tx.$executeRaw`
+        UPDATE "RetroAdjustment" a
+           SET "state" = 'APPLIED', "appliedPeriodId" = ${periodId}
+          FROM "Payslip" p
+         WHERE p."periodId" = ${periodId}
+           AND p."employeeId" = a."employeeId"
+           AND a."state" = 'PENDING'
+      `;
+      await tx.$executeRaw`
+        UPDATE "SalaryAdvance" a
+           SET "state" = 'SETTLED', "settledAt" = now(), "payslipId" = p."id"
+          FROM "Payslip" p
+         WHERE p."periodId" = ${periodId}
+           AND p."employeeId" = a."employeeId"
+           AND a."state" = 'PAID'
+           AND a."payslipId" IS NULL
+      `;
+      return shut;
     });
     await this.audit.record({
       actorId: viewer.userId,
@@ -238,11 +260,9 @@ export class PayrollService {
   async execute(viewer: Viewer, runId: string): Promise<PayrollRun> {
     this.mayWrite(viewer);
     const run = await this.requireRunnable(runId);
-    await this.queues[QUEUE.payroll].add(
-      "run",
-      { type: "run", runId } satisfies PayrollJob,
-      { jobId: `run-${runId}` },
-    );
+    // BullMQ keeps completed jobs, so a job id derived from the run would let
+    // only the first start do anything; RUNNING is what stops a double start.
+    await this.queues[QUEUE.payroll].add("run", { type: "run", runId } satisfies PayrollJob);
     await this.audit.record({ actorId: viewer.userId, action: "payroll.queue", target: runId });
     return this.db.payrollRun.update({
       where: { id: run.id },
@@ -509,16 +529,6 @@ export class PayrollService {
       }
     }
     await this.db.payslipLine.createMany({ data: lineRows });
-
-    const settled = written.map((slip) => slip.employeeId);
-    await this.db.retroAdjustment.updateMany({
-      where: { employeeId: { in: settled }, state: "PENDING" },
-      data: { state: "APPLIED", appliedPeriodId: period.id },
-    });
-    await this.db.salaryAdvance.updateMany({
-      where: { employeeId: { in: settled }, state: "PAID", payslipId: null },
-      data: { state: "SETTLED", settledAt: new Date() },
-    });
 
     return { gross, net, done: written.length };
   }

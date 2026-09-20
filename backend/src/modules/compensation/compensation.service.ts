@@ -112,7 +112,7 @@ export class CompensationService {
         JOIN "CompensationRecord" c ON c."employeeId" = e."id"
        WHERE e."active" = true
          AND c."effectiveFrom" <= ${on}
-         AND (${body.departmentId ?? null}::uuid IS NULL OR e."departmentId" = ${body.departmentId ?? null}::uuid)
+         AND (${body.departmentId ?? null}::text IS NULL OR e."departmentId" = ${body.departmentId ?? null})
          AND (${chosen}::int[] IS NULL OR e."id" = ANY(${chosen}::int[]))
        ORDER BY e."id", c."effectiveFrom" DESC
     `;

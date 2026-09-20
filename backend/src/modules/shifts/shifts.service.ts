@@ -65,7 +65,7 @@ export class ShiftsService {
       });
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException("that employee already starts this shift on that date");
+        throw new ConflictException("SHIFT_ALREADY_ASSIGNED");
       }
       if (isCode(error, FOREIGN_KEY_VIOLATION)) {
         throw new NotFoundException(`no employee ${body.employeeId}`);

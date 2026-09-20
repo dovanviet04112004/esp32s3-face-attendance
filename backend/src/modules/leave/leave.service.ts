@@ -40,12 +40,12 @@ export class LeaveService {
 
   async submit(viewer: Viewer, body: SubmitRequestDto): Promise<LeaveRequest> {
     if (viewer.employeeId === null) {
-      throw new ForbiddenException("this account is not attached to an employee");
+      throw new ForbiddenException("NOT_AN_EMPLOYEE");
     }
     const from = new Date(body.fromDate);
     const to = new Date(body.toDate);
     if (to < from) {
-      throw new BadRequestException("the end date comes before the start date");
+      throw new BadRequestException("DATE_RANGE_BACKWARDS");
     }
     const days = body.halfDay ? HALF : Math.round((to.getTime() - from.getTime()) / MS_PER_DAY) + 1;
     const approverId = await this.approverFor(viewer.employeeId, from);
@@ -53,7 +53,7 @@ export class LeaveService {
     return this.db.$transaction(async (tx) => {
       if (body.kind === "LEAVE") {
         if (!body.leaveTypeId) {
-          throw new BadRequestException("leave needs a type");
+          throw new BadRequestException("LEAVE_TYPE_REQUIRED");
         }
         await this.hold(tx, viewer.employeeId as number, body.leaveTypeId, from.getUTCFullYear(), days);
       }
@@ -76,7 +76,7 @@ export class LeaveService {
         });
       } catch (error) {
         if (isCode(error, EXCLUSION_VIOLATION)) {
-          throw new ConflictException("those days overlap leave you already asked for");
+          throw new ConflictException("LEAVE_OVERLAP");
         }
         throw error;
       }
@@ -87,10 +87,10 @@ export class LeaveService {
   async decide(viewer: Viewer, id: string, body: DecideRequestDto): Promise<LeaveRequest> {
     const held = await this.db.request.findUnique({ where: { id } });
     if (!held) {
-      throw new NotFoundException(`no request ${id}`);
+      throw new NotFoundException("REQUEST_NOT_FOUND");
     }
     if (held.state !== "PENDING") {
-      throw new ConflictException(`request ${id} is already ${held.state.toLowerCase()}`);
+      throw new ConflictException("REQUEST_ALREADY_DECIDED");
     }
     await this.mayDecide(viewer, held.employeeId);
     const next: RequestState = body.approve ? "APPROVED" : "REJECTED";
@@ -145,10 +145,10 @@ export class LeaveService {
   async cancel(viewer: Viewer, id: string): Promise<LeaveRequest> {
     const held = await this.db.request.findUnique({ where: { id } });
     if (!held || held.employeeId !== viewer.employeeId) {
-      throw new NotFoundException(`no request ${id}`);
+      throw new NotFoundException("REQUEST_NOT_FOUND");
     }
     if (held.state !== "PENDING") {
-      throw new ConflictException(`request ${id} is already ${held.state.toLowerCase()}`);
+      throw new ConflictException("REQUEST_ALREADY_DECIDED");
     }
     return this.db.$transaction(async (tx) => {
       if (held.kind === "LEAVE" && held.leaveTypeId) {
@@ -184,10 +184,11 @@ export class LeaveService {
       return;
     }
     // Deciding your own request is the one thing a manager may not do.
-    throw new ForbiddenException("that request is not yours to decide");
+    throw new ForbiddenException("NOT_YOUR_REQUEST");
   }
 
-  private async approverFor(employeeId: number, on: Date): Promise<number | null> {
+  /** Who decides for this person on a date, honouring a delegation. */
+  async approverFor(employeeId: number, on: Date): Promise<number | null> {
     const person = await this.db.employee.findUnique({
       where: { id: employeeId },
       select: { managerId: true },
@@ -219,7 +220,7 @@ export class LeaveService {
       ? Number(balance.entitled) + Number(balance.carriedOver) - Number(balance.taken) - Number(balance.pending)
       : 0;
     if (left < days) {
-      throw new ConflictException(`only ${left} day(s) left, and that asks for ${days}`);
+      throw new ConflictException("LEAVE_BALANCE_SHORT");
     }
     await tx.leaveBalance.update({
       where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } },

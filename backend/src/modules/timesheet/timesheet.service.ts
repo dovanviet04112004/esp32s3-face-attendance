@@ -152,7 +152,7 @@ export class TimesheetService {
         "employeeId", "date", "state", "shiftId", "firstIn", "lastOut",
         "workedMinutes", "lateMinutes", "earlyLeaveMinutes", "overtimeMinutes",
         "punchCount", "clockUnsynced", "measuredMinutes", "builtAt", "updatedAt")
-      SELECT v."employeeId", ${date}::date, v."state"::"DayState", v."shiftId"::uuid,
+      SELECT v."employeeId", ${date}::date, v."state"::"DayState", v."shiftId",
              v."firstIn", v."lastOut", v."workedMinutes", v."lateMinutes",
              v."earlyLeaveMinutes", v."overtimeMinutes", v."punchCount",
              v."clockUnsynced", v."measuredMinutes", now(), now()

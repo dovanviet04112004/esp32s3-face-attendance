@@ -42,7 +42,7 @@ describe("auth (e2e)", () => {
       .post("/auth/login")
       .send({ email: ADMIN_EMAIL, password: "not-the-password" });
     assert.equal(res.status, 401);
-    assert.equal(res.body.message, "email or password is wrong");
+    assert.equal(res.body.message, "CREDENTIALS_REJECTED");
   });
 
   it("gives an unknown address the same answer as a wrong password", async () => {
@@ -50,7 +50,7 @@ describe("auth (e2e)", () => {
       .post("/auth/login")
       .send({ email: "nobody@kiosk.local", password: "not-the-password" });
     assert.equal(res.status, 401);
-    assert.equal(res.body.message, "email or password is wrong");
+    assert.equal(res.body.message, "CREDENTIALS_REJECTED");
   });
 
   it("signs in, hands back an access token and sets an httpOnly refresh cookie", async () => {

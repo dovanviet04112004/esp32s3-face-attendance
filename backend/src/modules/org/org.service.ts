@@ -61,7 +61,7 @@ export class OrgService {
     let at: string | null = parentId;
     while (at) {
       if (at === id) {
-        throw new ConflictException("that parent sits under this department");
+        throw new ConflictException("DEPARTMENT_CYCLE");
       }
       const up: { parentId: string | null } | null = await this.db.department.findUnique({
         where: { id: at },

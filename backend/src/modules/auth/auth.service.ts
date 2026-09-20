@@ -32,7 +32,7 @@ export class AuthService {
     // so a caller cannot learn which addresses exist.
     const ok = user ? await verifyPassword(password, user.passwordHash) : false;
     if (!user || !ok) {
-      throw new UnauthorizedException("email or password is wrong");
+      throw new UnauthorizedException("CREDENTIALS_REJECTED");
     }
     return this.issue(user);
   }
@@ -47,7 +47,7 @@ export class AuthService {
         await this.revoke(user.id);
         this.log.warn(`refresh replayed for ${user.email}, session dropped`);
       }
-      throw new UnauthorizedException("refresh token is not the current one");
+      throw new UnauthorizedException("REFRESH_REPLAYED");
     }
     return this.issue(user);
   }

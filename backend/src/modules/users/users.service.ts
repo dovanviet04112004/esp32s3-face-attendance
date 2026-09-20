@@ -129,13 +129,13 @@ export class UsersService {
   /** Remove an account, unless it is the last one that can manage accounts. */
   async remove(id: string, actorId: string): Promise<void> {
     if (id === actorId) {
-      throw new BadRequestException("an account cannot delete itself");
+      throw new BadRequestException("CANNOT_DELETE_SELF");
     }
     const target = await this.get(id);
     if (target.role === "ADMIN") {
       const admins = await this.db.user.count({ where: { role: "ADMIN" } });
       if (admins <= 1) {
-        throw new BadRequestException("the last administrator cannot be removed");
+        throw new BadRequestException("LAST_ADMIN");
       }
     }
     await this.db.user.delete({ where: { id } });
