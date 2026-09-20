@@ -29,6 +29,8 @@ export interface NavItem {
   icon: LucideIcon;
   roles?: Role[];
   badge?: "approvals";
+  /** Kept out of the phone's nav; the top bar carries it beside sign-out. */
+  deskOnly?: boolean;
 }
 
 export interface NavGroup {
@@ -70,7 +72,7 @@ export const NAV: NavGroup[] = [
     key: "groupTime",
     items: [
       { href: "/timesheet", key: "timesheetHr", icon: CalendarDays, roles: PEOPLE_DESK },
-      { href: "/attendance", key: "timesheet", icon: CalendarCheck, roles: PEOPLE_DESK },
+      { href: "/attendance", key: "attendance", icon: CalendarCheck, roles: PEOPLE_DESK },
       { href: "/leave", key: "leave", icon: FileText, roles: PEOPLE_DESK },
       { href: "/shifts", key: "shifts", icon: Clock, roles: PEOPLE_DESK },
     ],
@@ -95,7 +97,7 @@ export const NAV: NavGroup[] = [
   },
   {
     key: "groupSettings",
-    items: [{ href: "/settings", key: "settings", icon: Settings, roles: EVERYONE }],
+    items: [{ href: "/settings", key: "settings", icon: Settings, roles: EVERYONE, deskOnly: true }],
   },
 ];
 
@@ -109,24 +111,37 @@ export function navFor(role: Role | null): NavGroup[] {
 
 const kTabSlots = 5;
 
-// Tabs rank by what a person does about their own work (KEHOACH 9.21.1).
-const TAB_ORDER: NavKey[] = ["myPage", "approvals", "myAttendance", "myLeave", "settings"];
+// The four of KEHOACH 9.21.1 with the manager's fifth in the place it earns:
+// above payslips, so the badge survives on a role with too many destinations.
+const TAB_ORDER: NavKey[] = ["myPage", "approvals", "myAttendance", "myLeave", "myPayslips"];
 
 export interface TabLayout {
   items: NavItem[];
   rest: NavGroup[];
 }
 
-/** Five targets fit across a phone, so a longer menu keeps its tail in a sheet. */
+/** Five targets fit across a phone, so a longer menu keeps its tail in a sheet.
+ *  The sheet holds only what the tabs left out: a destination in both places
+ *  makes the menu look long while saying nothing new.
+ */
 export function tabsFor(role: Role | null): TabLayout {
-  const groups = navFor(role);
+  const groups = navFor(role).map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.deskOnly),
+  }));
   const flat = groups.flatMap((group) => group.items);
   const ranked = TAB_ORDER.map((key) => flat.find((item) => item.key === key)).filter(
     (item): item is NavItem => item !== undefined,
   );
-  const spare = flat.filter((item) => !ranked.includes(item));
-  if (spare.length === 0) {
-    return { items: ranked.slice(0, kTabSlots), rest: [] };
-  }
-  return { items: ranked.slice(0, kTabSlots - 1), rest: groups };
+  // The menu button is a slot like any other, so a role that needs one gets
+  // four destinations and not five.
+  const needsMenu = flat.length > kTabSlots;
+  const items = ranked.slice(0, needsMenu ? kTabSlots - 1 : kTabSlots);
+  const shown = new Set(items.map((item) => item.href));
+  const rest = needsMenu
+    ? groups
+        .map((group) => ({ ...group, items: group.items.filter((item) => !shown.has(item.href)) }))
+        .filter((group) => group.items.length > 0)
+    : [];
+  return { items, rest };
 }

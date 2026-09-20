@@ -46,7 +46,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <TopBar onSignOut={signOut} />
         <main className="flex-1 p-4 pb-24 md:p-8 md:pb-8">{children}</main>
       </div>
-      <TabBar onSignOut={signOut} />
+      <TabBar />
     </div>
   );
 }

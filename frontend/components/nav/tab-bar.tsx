@@ -36,7 +36,7 @@ function Tab({ item, active, waiting }: { item: NavItem; active: boolean; waitin
   );
 }
 
-export function TabBar({ onSignOut }: { onSignOut: () => void }) {
+export function TabBar() {
   const t = useTranslations("nav");
   const here = usePathname();
   const { role } = useSession();
@@ -97,13 +97,6 @@ export function TabBar({ onSignOut }: { onSignOut: () => void }) {
               </div>
             </div>
           ))}
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="flex min-h-11 items-center rounded-lg px-2 text-left text-sm text-(--color-muted) hover:bg-(--color-ground)"
-          >
-            {t("signOut")}
-          </button>
         </div>
       </Sheet>
     </>

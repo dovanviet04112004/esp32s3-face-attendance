@@ -1,10 +1,11 @@
 "use client";
 
-import { LogOut } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { NoticeBell } from "@/components/notifications/bell";
 import { GlobalSearch } from "@/components/search/global-search";
+import { Link } from "@/i18n/navigation";
 
 export function TopBar({ onSignOut }: { onSignOut: () => void }) {
   const t = useTranslations("nav");
@@ -18,6 +19,13 @@ export function TopBar({ onSignOut }: { onSignOut: () => void }) {
         <GlobalSearch />
       </div>
       <NoticeBell />
+      <Link
+        href="/settings"
+        aria-label={t("settings")}
+        className="grid size-11 shrink-0 place-items-center rounded-lg text-(--color-muted) hover:bg-(--color-ground) md:hidden"
+      >
+        <Settings className="size-5" aria-hidden />
+      </Link>
       <button
         type="button"
         aria-label={t("signOut")}
