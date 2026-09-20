@@ -6,7 +6,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { CreatePeriodDto, CreateRunDto, LockPeriodDto } from "./dto/payroll.dto.js";
+import { AddBonusDto, CreatePeriodDto, CreateRunDto, LockPeriodDto } from "./dto/payroll.dto.js";
 import {
   PayrollService,
   type ChecklistItem,
@@ -95,6 +95,17 @@ export class PayrollController {
   @Roles("ADMIN", "PAYROLL")
   createRun(@CurrentViewer() viewer: Viewer, @Body() body: CreateRunDto): Promise<PayrollRun> {
     return this.payroll.createRun(viewer, body);
+  }
+
+  @Post("payroll-runs/:id/bonus")
+  @Roles("ADMIN", "PAYROLL")
+  @ApiOperation({ summary: "Load the amounts a bonus run pays; running uses them" })
+  setBonus(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+    @Body() body: AddBonusDto,
+  ): Promise<{ items: number }> {
+    return this.payroll.setBonus(viewer, id, body.items);
   }
 
   @Post("payroll-runs/:id/execute")

@@ -377,7 +377,16 @@
     "ADVANCE_ALREADY_DECIDED": "Đơn tạm ứng này đã được xử lý.",
     "ADVANCE_NOT_APPROVED": "Đơn tạm ứng chưa được duyệt.",
     "SELF_DECIDE": "Không thể tự duyệt đơn của chính mình.",
-    "RUN_KIND_NOT_READY": "Phép tính cho kiểu lượt chạy này chưa dựng."
+    "RUN_KIND_NOT_READY": "Phép tính cho kiểu lượt chạy này chưa dựng.",
+    "BONUS_RUN_HAS_NO_ITEMS": "Lượt thưởng chưa có khoản nào để chi.",
+    "BONUS_NEEDS_A_REGULAR_PAYSLIP": "Có người chưa có phiếu lương tháng của kỳ này; chạy lương tháng trước đã.",
+    "RUN_IS_NOT_A_BONUS": "Lượt này không phải lượt thưởng.",
+    "NOTHING_TO_CORRECT": "Chưa đổi gì để lưu.",
+    "DAY_NOT_FOUND": "Không tìm thấy ngày công này.",
+    "BIOMETRIC_CONSENT_MISSING": "Người này chưa đồng ý cho dùng dữ liệu khuôn mặt.",
+    "CONSENT_NOT_YOURS": "Bạn chỉ được ký đồng ý cho chính mình.",
+    "CONSENT_ALREADY_GRANTED": "Đã có một đồng ý còn hiệu lực.",
+    "CONSENT_NOT_GRANTED": "Chưa có đồng ý nào để rút."
   },
   "search": {
     "label": "Tìm kiếm",

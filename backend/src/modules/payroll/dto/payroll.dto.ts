@@ -1,6 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { RunKind } from "@prisma/client";
+import { Type } from "class-transformer";
 import {
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEnum,
@@ -11,6 +14,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from "class-validator";
 
 export class CreatePeriodDto {
@@ -78,4 +82,41 @@ export class LockPeriodDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+}
+
+export class BonusItemDto {
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  employeeId!: number;
+
+  @ApiProperty({ example: "TET" })
+  @IsString()
+  @MaxLength(32)
+  code!: string;
+
+  @ApiPropertyOptional({ example: "Thuong Tet 2026" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  label?: string;
+
+  @ApiProperty({ example: 20000000 })
+  @IsInt()
+  @Min(0)
+  amount!: number;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  taxable?: boolean;
+}
+
+export class AddBonusDto {
+  @ApiProperty({ type: [BonusItemDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => BonusItemDto)
+  items!: BonusItemDto[];
 }

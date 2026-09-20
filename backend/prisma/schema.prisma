@@ -199,6 +199,7 @@ model Employee {
   advances          SalaryAdvance[]
   advanceApprovals  SalaryAdvance[]      @relation("ApprovesAdvances")
   consents          BiometricConsent[]
+  bonuses           BonusItem[]
 
   @@index([departmentId, active])
   @@index([managerId])
@@ -742,6 +743,7 @@ model PayrollRun {
   createdAt     DateTime      @default(now())
   period        PayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
   payslips      Payslip[]
+  bonuses       BonusItem[]
 
   @@index([periodId, state])
 }
@@ -908,4 +910,24 @@ model BiometricConsent {
 
   @@index([employeeId, state])
   @@index([state, grantedAt])
+}
+
+/**
+ * One amount for one person in one bonus run. A one-off kept as pay would
+ * become a standing salary the next month (KEHOACH 9.18).
+ */
+model BonusItem {
+  id         String     @id @default(uuid())
+  runId      String
+  employeeId Int
+  code       String
+  label      String?
+  amount     Decimal    @db.Decimal(14, 0)
+  taxable    Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  run        PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, employeeId, code])
+  @@index([employeeId])
 }

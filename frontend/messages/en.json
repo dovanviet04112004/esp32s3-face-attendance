@@ -377,7 +377,16 @@
     "ADVANCE_ALREADY_DECIDED": "This advance has already been answered.",
     "ADVANCE_NOT_APPROVED": "This advance has not been approved.",
     "SELF_DECIDE": "You cannot decide your own request.",
-    "RUN_KIND_NOT_READY": "The calculation for this kind of run is not built yet."
+    "RUN_KIND_NOT_READY": "The calculation for this kind of run is not built yet.",
+    "BONUS_RUN_HAS_NO_ITEMS": "This bonus run has no amounts to pay.",
+    "BONUS_NEEDS_A_REGULAR_PAYSLIP": "Somebody has no monthly payslip for this period; run the monthly pay first.",
+    "RUN_IS_NOT_A_BONUS": "That run is not a bonus run.",
+    "NOTHING_TO_CORRECT": "Nothing changed to save.",
+    "DAY_NOT_FOUND": "No such day row.",
+    "BIOMETRIC_CONSENT_MISSING": "This person has not agreed to face data being used.",
+    "CONSENT_NOT_YOURS": "You may only agree for yourself.",
+    "CONSENT_ALREADY_GRANTED": "A live agreement already exists.",
+    "CONSENT_NOT_GRANTED": "There is no agreement to withdraw."
   },
   "search": {
     "label": "Search",
