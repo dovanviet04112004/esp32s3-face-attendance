@@ -5749,8 +5749,13 @@ Nhóm theo việc, không theo bảng. Mọi bảng dưới đây nằm ở `bac
 | `EmploymentContract` | loại, ngày bắt đầu, ngày kết thúc, trạng thái | **nhiều bản một người**, vì tái ký là hợp đồng mới chứ không phải sửa hợp đồng cũ |
 
 **Nhân sự** — `Employee` mở rộng: `departmentId`, `jobTitleId`, `managerId` (tự tham chiếu),
-`hireDate`, `dateOfBirth`, `personalEmail`, `phone`, `taxCode`, `bankAccount`, `photoUrl`.
-`department` dạng chuỗi **bỏ đi**, dữ liệu cũ đổ sang `Department` theo tên.
+`hireDate`, `dateOfBirth`, `personalEmail`, `phone`, `taxCode`, `bankAccount`, `photoUrl`,
+`locale`. `department` dạng chuỗi **bỏ đi**, dữ liệu cũ đổ sang `Department` theo tên.
+
+`locale` mặc định `vi` và tồn tại vì **thư hệ thống gửi đi không có chỗ nào để hỏi người nhận
+muốn đọc thứ tiếng gì**. Dashboard lấy ngôn ngữ từ URL, kiosk lấy từ NVS; một job chạy lúc hai
+giờ sáng thì không có cả hai. Không có cột này thì hoặc mọi người nhận tiếng Việt, hoặc người
+gửi phải đoán.
 
 **Đăng nhập** — `User` thêm `employeeId` (tuỳ chọn, duy nhất). Tài khoản quản trị thuần vẫn để
 trống ô ấy; tài khoản của người lao động trỏ về hồ sơ của họ. **Không gộp hai bảng**: một người
@@ -5959,8 +5964,30 @@ nhật ký ai đã xem.
 Vẫn có đường đính kèm cho nơi bắt buộc phải làm vậy, nhưng nó là **một lựa chọn phải bật**, và
 khi bật thì PDF đặt mật khẩu. Không đặt nó làm mặc định.
 
-Gửi đi qua hàng đợi `notify` đã có, một job một người, idempotent theo `payslipId` — hàng đợi
-giao ít nhất một lần, và không ai muốn nhận phiếu lương hai lần.
+Gửi đi qua hàng đợi riêng `payroll`, một job một người, **idempotent theo `payslipId`** —
+hàng đợi giao ít nhất một lần, và không ai muốn nhận phiếu lương hai lần. Tính idempotent nằm
+ở **cột `sentAt` của `Payslip`**, không nằm ở bộ nhớ của worker: worker khởi động lại thì bộ
+nhớ mất, còn cột thì không.
+
+Tách khỏi `notify` vì hai việc có hậu quả khác nhau khi hỏng: một webhook thiết bị gửi trượt
+là mất một dòng cảnh báo, một phiếu lương gửi trượt là một người không biết tháng này mình
+được trả bao nhiêu. Chúng đáng có số lần thử lại và hàng chờ riêng.
+
+**Thư gửi theo `Employee.locale`, và nội dung thư nằm ở đúng một chỗ.** Thư là bề mặt thứ tư
+có chữ cho người đọc, ngoài ba bề mặt ở CLAUDE.md §3.1; nó không đi qua catalogue của kiosk hay
+của dashboard, vì cả hai đều ở phía client còn thư thì sinh ở server. Nên nó có bảng chữ riêng
+trong khối backend, hai ngôn ngữ, và **mặc định tiếng Việt** đúng như luật 4.
+
+| Biến môi trường | Dùng làm gì | Thiếu thì sao |
+|---|---|---|
+| `MAIL_HOST`, `MAIL_PORT` | máy chủ SMTP | không gửi, chỉ ghi log và bỏ qua |
+| `MAIL_USER`, `MAIL_PASSWORD` | đăng nhập SMTP | gửi không xác thực |
+| `MAIL_FROM` | địa chỉ người gửi | dùng `MAIL_USER` |
+| `APP_PUBLIC_URL` | gốc của đường dẫn trong thư | không sinh được link, coi như thiếu cấu hình |
+
+**Đính kèm PDF chưa dựng.** §9.11 cho phép nó như một lựa chọn phải bật kèm mật khẩu; chừng nào
+đường sinh PDF và đặt mật khẩu chưa có thì lựa chọn ấy **không tồn tại trong API**, chứ không
+phải có mà không làm gì.
 
 ### 9.12 Giao diện: nhịp của một hệ quản trị nhân sự
 
