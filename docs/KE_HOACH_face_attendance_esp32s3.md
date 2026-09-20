@@ -4444,7 +4444,9 @@ frontend/
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
 │   ├── ui/                           # primitive: button, input, select, checkbox, sheet,
-│   │                                 #   skeleton, empty, money, theme-toggle
+│   │                                 #   skeleton, empty, money, theme-toggle,
+│   │                                 #   bottom-bar, filter-bar  ★ §9.21.2 — màn hẹp thì
+│   │                                 #   hành động chính neo đáy, bộ lọc thành tấm trượt
 │   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx, waiting-count.ts}
 │   │                                 # ★ rộng thì thanh bên, hẹp thì tab đáy; số đơn
 │   │                                 #   đang chờ là một hook dùng chung cho cả ba
