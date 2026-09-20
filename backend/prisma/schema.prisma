@@ -355,8 +355,8 @@ model AttendanceRecord {
   employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@unique([deviceId, localId])
-  @@index([employeeId, ts])
-  @@index([ts])
+  @@index([employeeId, ts, id])
+  @@index([ts, id])
 }
 
 model Shift {

@@ -416,6 +416,7 @@
     "CANNOT_DELETE_SELF": "Không thể tự xoá tài khoản của mình.",
     "LAST_ADMIN": "Không thể xoá quản trị viên cuối cùng.",
     "SHIFT_ALREADY_ASSIGNED": "Người này đã vào ca đó từ ngày ấy rồi.",
+    "CURSOR_INVALID": "Vị trí trang không hợp lệ, tải lại danh sách.",
     "CREDENTIALS_REJECTED": "Email hoặc mật khẩu không đúng.",
     "REFRESH_REPLAYED": "Phiên đăng nhập đã hết hiệu lực, đăng nhập lại.",
     "SESSION_CLOSED": "Thiết bị này đã đăng xuất, đăng nhập lại.",

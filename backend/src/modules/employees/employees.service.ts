@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Employee, Prisma } from "@prisma/client";
 
+import { decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -276,17 +277,23 @@ export class EmployeesService {
           }
         : {}),
     };
+    // Code is unique, so resuming needs no tiebreak and the comparison stays
+    // one index bound (KEHOACH 9.9 rule 3).
+    const from = query.cursor ? decodeCursor(query.cursor) : null;
+    const resumed: Prisma.EmployeeWhereInput = from
+      ? { AND: [where, { code: { gt: from.sortValue } }] }
+      : where;
     const [rows, total] = await Promise.all([
       this.db.employee.findMany({
-        where,
-        skip: query.skip,
+        where: resumed,
+        skip: from ? 0 : query.skip,
         take: query.take,
-        orderBy: { code: "asc" },
+        orderBy: [{ code: "asc" }, { id: "asc" }],
         include: EMPLOYEE_VIEW,
       }),
       this.db.employee.count({ where }),
     ]);
-    return { rows, total };
+    return { rows, total, next: nextCursor(rows, query.take, (row) => row.code) };
   }
 
   async get(id: number, viewer: Viewer): Promise<Employee> {

@@ -416,6 +416,7 @@
     "CANNOT_DELETE_SELF": "An account cannot delete itself.",
     "LAST_ADMIN": "The last administrator cannot be removed.",
     "SHIFT_ALREADY_ASSIGNED": "This person already starts that shift on that date.",
+    "CURSOR_INVALID": "That page position is not valid. Reload the list.",
     "CREDENTIALS_REJECTED": "That email and password do not match.",
     "REFRESH_REPLAYED": "The session has expired. Sign in again.",
     "SESSION_CLOSED": "This device has been signed out. Sign in again.",
