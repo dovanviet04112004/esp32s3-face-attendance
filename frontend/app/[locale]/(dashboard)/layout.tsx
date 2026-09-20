@@ -7,7 +7,7 @@ import { Sidebar } from "@/components/nav/sidebar";
 import { TabBar } from "@/components/nav/tab-bar";
 import { TopBar } from "@/components/nav/top-bar";
 import { useRouter } from "@/i18n/navigation";
-import { api } from "@/lib/api";
+import { api, reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 
 
@@ -20,16 +20,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     if (accessToken) {
       return;
     }
-    // A reload empties the store but not the refresh cookie, so one attempt to
-    // reopen the session comes first and the login form is the fallback.
-    api
-      .post("/auth/refresh")
-      .catch(() => undefined)
-      .finally(() => {
-        if (!useSession.getState().accessToken) {
-          router.replace("/login");
-        }
-      });
+    // A reload empties the store but not the refresh cookie, so the cookie
+    // gets one chance and the login form is the fallback.
+    void reopenSession().then((token) => {
+      if (!token) {
+        router.replace("/login");
+      }
+    });
   }, [accessToken, router]);
 
   async function signOut() {

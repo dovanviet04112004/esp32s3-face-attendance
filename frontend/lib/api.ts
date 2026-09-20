@@ -36,6 +36,14 @@ async function renew(): Promise<string | null> {
   }
 }
 
+/** Trade the refresh cookie for a session; racing callers share one renewal. */
+export function reopenSession(): Promise<string | null> {
+  renewing ??= renew().finally(() => {
+    renewing = null;
+  });
+  return renewing;
+}
+
 api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
@@ -44,12 +52,7 @@ api.interceptors.response.use(
       throw error;
     }
     failed.retried = true;
-    // One renewal serves every request that raced into the same expiry, so a
-    // page with six panels does not spend six refresh tokens.
-    renewing ??= renew().finally(() => {
-      renewing = null;
-    });
-    const token = await renewing;
+    const token = await reopenSession();
     if (!token) {
       throw error;
     }
