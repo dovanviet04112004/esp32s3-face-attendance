@@ -1,6 +1,6 @@
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -16,6 +16,9 @@ interface LocaleParams {
 function known(locale: string): Locale {
   return hasLocale(routing.locales, locale) ? locale : routing.defaultLocale;
 }
+
+// env(safe-area-inset-*) stays zero unless the page claims the rounded corners.
+export const viewport: Viewport = { viewportFit: "cover" };
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));

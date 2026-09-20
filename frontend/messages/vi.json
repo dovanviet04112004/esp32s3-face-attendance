@@ -29,7 +29,9 @@
     "groupPay": "Lương",
     "groupDevices": "Thiết bị",
     "groupReports": "Báo cáo",
-    "groupSettings": "Thiết lập"
+    "groupSettings": "Thiết lập",
+    "more": "Thêm",
+    "close": "Đóng"
   },
   "common": {
     "loading": "Đang tải…",

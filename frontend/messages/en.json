@@ -29,7 +29,9 @@
     "groupPay": "Pay",
     "groupDevices": "Devices",
     "groupReports": "Reports",
-    "groupSettings": "Settings"
+    "groupSettings": "Settings",
+    "more": "More",
+    "close": "Close"
   },
   "common": {
     "loading": "Loading…",

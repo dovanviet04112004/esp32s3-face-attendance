@@ -4,6 +4,8 @@ import { useTranslations } from "next-intl";
 import { useEffect, type ReactNode } from "react";
 
 import { Sidebar } from "@/components/nav/sidebar";
+import { TabBar } from "@/components/nav/tab-bar";
+import { TopBar } from "@/components/nav/top-bar";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
@@ -43,7 +45,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <Sidebar onSignOut={signOut} />
-      <main className="flex-1 p-8">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar onSignOut={signOut} />
+        <main className="flex-1 p-4 pb-24 md:p-8 md:pb-8">{children}</main>
+      </div>
+      <TabBar onSignOut={signOut} />
     </div>
   );
 }
