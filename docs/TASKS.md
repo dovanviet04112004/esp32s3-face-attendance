@@ -430,22 +430,22 @@ chung đường ghi vào `AttendanceDay`.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E18-T1 | `CompensationRecord` có `effectiveFrom`, **không sửa đè** (§9.6); lương cơ bản tách khỏi lương đóng bảo hiểm | Tăng lương thêm dòng; phiếu tháng cũ tính lại ra số cũ | E15-T3 |
-| E18-T2 | `Dependent` cho giảm trừ người phụ thuộc, có khoảng hiệu lực | Người phụ thuộc thêm giữa năm chỉ giảm trừ từ tháng đăng ký | E15-T3 |
-| E18-T3 | `PayrollPolicy` + `TaxBracket` có `effectiveFrom`; gieo số 2026: giảm trừ **15,5 tr** bản thân, **6,2 tr** người phụ thuộc, BHXH **8%**, BHYT **1,5%**, BHTN **1%**, trần **20 lần mức tham chiếu** (§9.7) | Đổi chính sách là thêm dòng, không sửa code | E11-T1 |
-| E18-T4 | `PayrollPeriod` `OPEN → LOCKED → PAID`, `PayrollRun` nhiều lượt một kỳ | Chạy nháp xem trước được | E18-T1 |
-| E18-T5 | **Danh sách kiểm trước khi chốt** (§9.18 mục 4): đơn chưa duyệt, giải trình chưa xử, ngày công thiếu, người chưa có mức lương | Chốt khi còn mục treo cần xác nhận **có ghi tên người xác nhận** | E18-T4, E17-T11 |
-| E18-T6 | **Chốt kỳ đóng băng đầu vào** (§9.6): dữ liệu tới muộn vào kỳ sau dạng truy lĩnh | Con số đã gửi cho nhân viên không tự đổi sau lưng họ | E18-T5 |
-| E18-T7 | Phép tính: lương theo ngày công, tăng ca theo luật, bảo hiểm, thuế luỹ tiến, thực nhận | Bộ ca kiểm có số làm tay đối chiếu, gồm ca chạm trần bảo hiểm và ca nhiều người phụ thuộc | E18-T3, E16-T2, E17-T8 |
-| E18-T8 | `Payslip` + `PayslipLine` mỗi khoản một dòng, **không JSON**; tiền lưu `Decimal` | "Quý này trả bao nhiêu tăng ca toàn công ty" trả lời bằng một phép gộp SQL | E18-T7 |
-| E18-T9 | **Chênh lệch so với kỳ trước theo từng khoản** (§9.17 mục 4) | Phiếu lương tự trả lời "sao tháng này ít hơn" | E18-T8 |
+| ~~E18-T1~~ | **Xong 20/09.** `CompensationRecord` + `CompensationAllowance`, mỗi phụ cấp một dòng nên câu hỏi "quý này trả bao nhiêu tiền ăn" là một phép gộp. `CompensationRecord` có `effectiveFrom`, **không sửa đè** (§9.6); lương cơ bản tách khỏi lương đóng bảo hiểm | Tăng lương thêm dòng; phiếu tháng cũ tính lại ra số cũ | E15-T3 |
+| ~~E18-T2~~ | **Xong 20/09.** `Dependent` có `fromMonth`/`toMonth`, đếm theo ngày cuối kỳ nên người đăng ký giữa năm chỉ giảm trừ từ tháng ấy. `Dependent` cho giảm trừ người phụ thuộc, có khoảng hiệu lực | Người phụ thuộc thêm giữa năm chỉ giảm trừ từ tháng đăng ký | E15-T3 |
+| ~~E18-T3~~ | **Xong 20/09.** Gieo đủ số 2026 và **ngưỡng 14 ngày không lương miễn đóng**. 🔬 Biểu thuế 5 bậc và lương tối thiểu vùng phải đối chiếu văn bản trước khi chạy thật — chúng là dữ liệu nên sửa bằng một dòng. `PayrollPolicy` + `TaxBracket` có `effectiveFrom`; gieo số 2026: giảm trừ **15,5 tr** bản thân, **6,2 tr** người phụ thuộc, BHXH **8%**, BHYT **1,5%**, BHTN **1%**, trần **20 lần mức tham chiếu** (§9.7) | Đổi chính sách là thêm dòng, không sửa code | E11-T1 |
+| ~~E18-T4~~ | **Xong 20/09.** `OPEN → LOCKED → PAID`, một kỳ nhiều lượt; chạy lại một lượt nháp cho **đúng tổng cũ**, đo hai lần ra 377 633 653 887 / 301 263 926 229. `PayrollPeriod` `OPEN → LOCKED → PAID`, `PayrollRun` nhiều lượt một kỳ | Chạy nháp xem trước được | E18-T1 |
+| ~~E18-T5~~ | **Xong 20/09.** Năm mục, gồm một mục tự tìm ra khi chạy thật: **người chưa gắn pháp nhân** thì mọi lượt chạy bỏ qua họ mà không ai biết. Chốt khi còn mục treo đòi tích ô và ghi tên người tích. **Danh sách kiểm trước khi chốt** (§9.18 mục 4): đơn chưa duyệt, giải trình chưa xử, ngày công thiếu, người chưa có mức lương | Chốt khi còn mục treo cần xác nhận **có ghi tên người xác nhận** | E18-T4, E17-T11 |
+| ~~E18-T6~~ | **Xong 20/09.** Đo trên API: chốt khi checklist chưa sạch → **400**; chốt có xác nhận → ghi `lockNote`; chạy lại sau khi chốt → **400 PERIOD_NOT_OPEN**. Khoản tới muộn đi `RetroAdjustment`, đã thấy rơi vào kỳ sau. **Chốt kỳ đóng băng đầu vào** (§9.6): dữ liệu tới muộn vào kỳ sau dạng truy lĩnh | Con số đã gửi cho nhân viên không tự đổi sau lưng họ | E18-T5 |
+| ~~E18-T7~~ | **Xong 20/09.** Hàm thuần trên số nguyên, **11 ca kiểm có số làm tay**. Chạy thật 5 001 người trong **14,3 giây**. Một phiếu đối chiếu tay khớp từng dòng: gốc 141 923 077, trần bảo hiểm 46,8 tr, thuế 28 358 177, thực nhận 108 650 900. Phép tính: lương theo ngày công, tăng ca theo luật, bảo hiểm, thuế luỹ tiến, thực nhận | Bộ ca kiểm có số làm tay đối chiếu, gồm ca chạm trần bảo hiểm và ca nhiều người phụ thuộc | E18-T3, E16-T2, E17-T8 |
+| ~~E18-T8~~ | **Xong 20/09.** 36 674 dòng phiếu; ràng buộc duy nhất chuyển sang `(payslipId, ordinal)` vì hai khoản truy lĩnh cùng mã từ hai kỳ là hai số tiền thật, chỉ mục `code` giữ nguyên cho phép gộp toàn công ty. `Payslip` + `PayslipLine` mỗi khoản một dòng, **không JSON**; tiền lưu `Decimal` | "Quý này trả bao nhiêu tăng ca toàn công ty" trả lời bằng một phép gộp SQL | E18-T7 |
+| ~~E18-T9~~ | **Xong 20/09.** `GET /payslips/:id/compare` trả chênh lệch từng khoản so với kỳ gần nhất. **Chênh lệch so với kỳ trước theo từng khoản** (§9.17 mục 4) | Phiếu lương tự trả lời "sao tháng này ít hơn" | E18-T8 |
 | E18-T10 | Chạy lương theo lô qua BullMQ, chia theo phòng ban, **idempotent theo `(runId, employeeId)`** | Giao hai lần không đẻ hai phiếu; 30k người chạy trong cửa sổ đo được 🔬 | E18-T8, E16-T9 |
-| E18-T11 | Gửi phiếu: **mặc định thông báo kèm đường dẫn**; đính kèm PDF là lựa chọn phải bật, khi bật thì đặt mật khẩu (§9.11) | Không phiếu lương nào nằm trần trong hộp thư trừ khi có người cố ý bật | E18-T8, E11-T7 |
-| E18-T12 | **Điều chỉnh lương hàng loạt** (§9.18 mục 6): sinh loạt `CompensationRecord` cùng ngày hiệu lực, xem trước trước khi ghi | Tăng lương cả phòng không phải sửa từng người | E18-T1 |
+| ~~E18-T11~~ | **Xong 20/09.** Đo trên hộp thư SMTP cục bộ: **5 001 job xếp hàng trong 327 ms**, ba người có địa chỉ nhận đúng thư, tiếng Việt và tiếng Anh theo `Employee.locale`, link không đính kèm. Chạy lần hai: **không thư nào đi lại**. Đính kèm PDF **chưa dựng** nên không có trong API. Gửi phiếu: **mặc định thông báo kèm đường dẫn**; đính kèm PDF là lựa chọn phải bật, khi bật thì đặt mật khẩu (§9.11) | Không phiếu lương nào nằm trần trong hộp thư trừ khi có người cố ý bật | E18-T8, E11-T7 |
+| ~~E18-T12~~ | **Xong 20/09.** Xem trước rồi mới ghi; lấy mức hiện hành bằng **một truy vấn `DISTINCT ON`** chứ không một truy vấn mỗi người. **Điều chỉnh lương hàng loạt** (§9.18 mục 6): sinh loạt `CompensationRecord` cùng ngày hiệu lực, xem trước trước khi ghi | Tăng lương cả phòng không phải sửa từng người | E18-T1 |
 | E18-T13 | **Thưởng chạy tách** trên cùng kỳ (§9.18 mục 9) | Thưởng tết và thưởng hiệu quả có lượt riêng, người duyệt riêng | E18-T4 |
 | E18-T14 | **Tạm ứng lương**: đơn, duyệt, chi, **tự khấu trừ kỳ sau** | Việc vẫn xảy ra nhưng không còn xảy ra ngoài hệ thống | E18-T8, E17-T1 |
 | E18-T15 | **Lương chốt cuối khi nghỉ việc**: trợ cấp, phép chưa dùng quy đổi, thu hồi tạm ứng, đối trừ tài sản | Nghỉ việc không còn là phép tính làm tay | E18-T14, E15-T8, E23-T3 |
-| E18-T16 | Xuất bảng lương ngân hàng và bảng cho kế toán, định dạng cấu hình được | File nộp được mà không sửa tay | E18-T8 |
+| ~~E18-T16~~ | **Xong 20/09.** Hai định dạng: file ngân hàng và file kế toán. Mọi ô đều bọc nháy và nhân đôi nháy bên trong — thử với tên có cả dấu phẩy lẫn dấu nháy, đọc ngược lại vẫn đúng 6 cột, 5 001 dòng. Xuất bảng lương ngân hàng và bảng cho kế toán, định dạng cấu hình được | File nộp được mà không sửa tay | E18-T8 |
 
 ---
 
@@ -463,10 +463,10 @@ chung đường ghi vào `AttendanceDay`.
 | E19-T8 | **Đổi thông tin cá nhân qua duyệt**, riêng số tài khoản có thông báo về email cũ và không ảnh hưởng kỳ đang chạy (§9.17 mục 6) | Chiếm tài khoản không đổi được nơi nhận lương | E19-T2, E17-T1 |
 | E19-T9 | **Khiếu nại phiếu lương thành hồ sơ** (§9.17 mục 11): có hạn trả lời, có kết quả lưu lại | Tranh chấp lương chứng minh được về sau | E18-T8, E17-T1 |
 | ~~E19-T10~~ | Cây tổ chức — **Xong 20/09.** API trả phẳng kèm `parentId`, giao diện dựng hình một lần | Mở một phòng ban thấy người và cấp dưới của nó | E15-T7 |
-| E19-T11 | Hồ sơ một người là **một trang có tab** (§9.15): thông tin, hợp đồng, chấm công, phép, lương, tài sản, đào tạo | HR không phải tìm lại cùng một người bảy lần | E19-T1 |
+| E19-T11 | **Một nửa xong 20/09**: `me/payslips` là trang phiếu lương của chính mình, có chênh lệch với kỳ trước. 🔬 Hồ sơ HR dạng tab chưa có. Hồ sơ một người là **một trang có tab** (§9.15): thông tin, hợp đồng, chấm công, phép, lương, tài sản, đào tạo | HR không phải tìm lại cùng một người bảy lần | E19-T1 |
 | E19-T12 | Bảng công tháng cho HR: sửa được, có vết, lọc theo phòng ban | Sửa một ngày để lại người sửa và lý do | E16-T4 |
-| E19-T13 | Màn chạy kỳ lương: xem trước, đối chiếu, chốt, phát hành | Không ai chốt nhầm kỳ vì màn nói rõ đang ở bước nào | E18-T6 |
-| E19-T14 | Màn chính sách: giảm trừ, tỷ lệ, biểu thuế, có ngày hiệu lực | Đổi chính sách không cần lập trình viên | E18-T3 |
+| ~~E19-T13~~ | **Xong 20/09.** Danh sách kiểm nằm **trên** các lượt chạy vì nó là thứ phải đọc trước khi chốt; lượt đang chạy tự làm tươi 2 giây một lần rồi ngừng khi xong. Màn chạy kỳ lương: xem trước, đối chiếu, chốt, phát hành | Không ai chốt nhầm kỳ vì màn nói rõ đang ở bước nào | E18-T6 |
+| ~~E19-T14~~ | **Xong 20/09.** Màn chính sách chỉ đọc: giảm trừ, hai phía tỷ lệ, hai trần, hệ số tăng ca, năm bậc thuế. 🔬 Sửa qua màn chưa có, còn phải gọi API. Màn chính sách: giảm trừ, tỷ lệ, biểu thuế, có ngày hiệu lực | Đổi chính sách không cần lập trình viên | E18-T3 |
 
 ---
 
@@ -477,16 +477,16 @@ chung đường ghi vào `AttendanceDay`.
 | ~~E20-T1~~ | Thanh bên theo §9.15 — **Xong 20/09.** Chia nhóm, **số đếm đơn đang chờ** làm tươi mỗi phút, nhóm rỗng thì ẩn. Khoá điều hướng **ràng kiểu vào `vi.json`**, nên đổi tên một khoá là vỡ build chứ không phải hiện khoá thô lên thanh bên | Trưởng phòng biết có việc mà không phải mở trang | E19-T1 |
 | E20-T2 | **Tìm kiếm toàn cục** (§9.20): một ô ra người, phòng ban, đơn, phiếu lương | Việc HR làm nhiều nhất trong ngày mất một thao tác | E16-T6 |
 | E20-T3 | Bộ hình thức §9.12 — **Một nửa xong 20/09**: nhãn trạng thái là **viên có chữ**, màu chỉ là lớp thứ hai; cột số dùng `tabular-nums`. 🔬 Còn cột khoá đứng yên khi cuộn ngang, và tiền/giờ luôn kèm đơn vị | Người không phân biệt được đỏ với lục vẫn đọc được mọi trạng thái | E20-T1 |
-| E20-T4 | `DataTable` nâng cấp: sắp xếp, chọn nhiều dòng, thao tác hàng loạt, cột ẩn hiện được, nhớ theo người dùng | Bảng thành công cụ, không còn là bản in | E20-T3 |
-| E20-T5 | **Cỡ chạm cho màn cảm ứng** (§9.21.2): đo được nút thường **40 px**, nút nhỏ **32 px**, ô tích **16 px** — cả ba dưới ngưỡng 44 px, nên `components/ui/` cần cỡ riêng chứ không chỉnh cỡ đang dùng cho chuột | Mọi đích chạm ≥ 44 × 44 px trên màn hẹp | E20-T3 |
-| E20-T6 | **Thanh tab dưới đáy thay thanh bên trên màn hẹp** (§9.21.1): `EMPLOYEE` bốn mục, `MANAGER` năm mục có số đếm | Thanh bên không còn nuốt một phần ba bề ngang điện thoại | E20-T1 |
+| ~~E20-T4~~ | **Xong 20/09.** Sắp xếp, chọn nhiều dòng, khe thao tác hàng loạt, ẩn hiện cột, nhớ trong `localStorage` theo từng bảng. Cột mang `id` riêng vì tiêu đề là chuỗi đã dịch — đổi ngôn ngữ là mất hết lựa chọn đã nhớ. `DataTable` nâng cấp: sắp xếp, chọn nhiều dòng, thao tác hàng loạt, cột ẩn hiện được, nhớ theo người dùng | Bảng thành công cụ, không còn là bản in | E20-T3 |
+| ~~E20-T5~~ | **Xong 20/09.** Ba primitive có biến thể `pointer-coarse`, `Checkbox` mới đặt đích chạm lên cả hàng nhãn thay vì phóng to ô tích. Cả bộ gộp vào **một khối `@media (pointer:coarse)` 403 byte**, nên bảng dùng chuột không cao thêm. **Cỡ chạm cho màn cảm ứng** (§9.21.2): đo được nút thường **40 px**, nút nhỏ **32 px**, ô tích **16 px** — cả ba dưới ngưỡng 44 px, nên `components/ui/` cần cỡ riêng chứ không chỉnh cỡ đang dùng cho chuột | Mọi đích chạm ≥ 44 × 44 px trên màn hẹp | E20-T3 |
+| ~~E20-T6~~ | **Xong 20/09.** Dưới `md` thì thanh bên ẩn, thanh tab đáy lên; cả hai đọc `lib/nav.ts`. Nhân viên bốn tab, quản lý năm tab có số đếm, HR giữ phần đuôi sau tab **Thêm**. Số đơn chờ gom vào một hook nên ba bề mặt chỉ hỏi một lần. **Thanh tab dưới đáy thay thanh bên trên màn hẹp** (§9.21.1): `EMPLOYEE` bốn mục, `MANAGER` năm mục có số đếm | Thanh bên không còn nuốt một phần ba bề ngang điện thoại | E20-T1 |
 | E20-T7 | **Bảng thành thẻ trên màn hẹp** (§9.21.1): mỗi dòng một thẻ ba thông tin, chạm mở chi tiết, **không cuộn ngang** | Không màn hẹp nào còn cuộn ngang một bảng bảy cột | E20-T4 |
 | E20-T8 | **Hành động chính neo ở đáy** trong vùng ngón cái; *Duyệt* và *Từ chối* nằm cuối thẻ sau nội dung; hành động phá huỷ không sát hành động thường dùng | Duyệt một đơn bằng một tay, không phải với tay lên góc trên | E20-T6 |
 | E20-T9 | **Bộ lọc thành tấm trượt lên từ đáy** trên màn hẹp | Lọc bảng công trên điện thoại không còn là hàng nút chen chúc | E20-T7 |
-| E20-T10 | Chế độ tối, theo hệ điều hành và ghi nhớ lựa chọn | Người trực đêm không bị chói | E20-T3 |
+| ~~E20-T10~~ | **Xong 20/09.** Ba trạng thái sáng/tối/theo máy; script trong `head` nên lần vẽ đầu đã đúng màu. Đo trên CSS đã build: cả `@media` lẫn `[data-theme]` mang đủ bộ token. Chế độ tối, theo hệ điều hành và ghi nhớ lựa chọn | Người trực đêm không bị chói | E20-T3 |
 | E20-T11 | Mọi chuỗi mới đi qua `messages/{vi,en}.json` (CLAUDE.md §3.1) | `npm run typecheck` sạch, không chuỗi nào nằm trong `.tsx` | E12-T8 |
-| E20-T12 | `public/{favicon.ico, logo.svg}` — thứ §4.7 khai mà chưa có | Tab trình duyệt không còn biểu tượng mặc định | — |
-| E20-T13 | Trạng thái rỗng, trạng thái lỗi và khung xương chờ tải cho mọi bảng | Màn hình không bao giờ trắng trơn không nói gì | E20-T4 |
+| ~~E20-T12~~ | **Xong 20/09.** Sinh pixel-chính-xác ở 32 px với khử răng cưa 4×, nặng **390 byte**; cùng hình dạng thành `logo.svg` cho thanh bên, thanh trên và màn hình chính iOS. `public/{favicon.ico, logo.svg}` — thứ §4.7 khai mà chưa có | Tab trình duyệt không còn biểu tượng mặc định | — |
+| ~~E20-T13~~ | **Xong 20/09.** `Empty`, `Failed` có nút thử lại, và khung xương cao bằng dòng thật nên trang không nhảy khi dữ liệu về. Trạng thái rỗng, trạng thái lỗi và khung xương chờ tải cho mọi bảng | Màn hình không bao giờ trắng trơn không nói gì | E20-T4 |
 
 ---
 
