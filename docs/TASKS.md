@@ -513,7 +513,7 @@ xử lý dữ liệu nhạy cảm vì chính bản chất chấm công bằng kh
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
 | E22-T1 | **Nhập hàng loạt hai nhịp** (§9.20): chạy thử ra báo cáo lỗi từng dòng, rồi mới ghi | Nhập 30.000 hồ sơ mà không sinh dữ liệu rác | E15-T3 |
-| E22-T2 | **Trung tâm thông báo**: trong ứng dụng cộng email, mỗi người tự chọn nhận gì | Đơn không nằm chết, và không ai bị ngập thư | E11-T7 |
+| ~~E22-T2~~ | **Xong 20/09.** Bốn loại × ba kênh, mỗi ô tắt riêng. Email **mặc định tắt cả bốn** vì phiếu lương đã có đường thư riêng ở §9.11. Đo: tắt `REQUEST_DECIDED` trong ứng dụng thì lần quyết sau **không sinh dòng nào** cho người gửi, mà người duyệt vẫn nhận của họ. **Trung tâm thông báo**: trong ứng dụng cộng email, mỗi người tự chọn nhận gì | Đơn không nằm chết, và không ai bị ngập thư | E11-T7 |
 | E22-T3 | Xuất hàng loạt mọi bảng ra Excel, kèm BOM | Mở bằng Excel không thành ký tự rác | E22-T1 |
 | E22-T4 | **Tái cơ cấu tổ chức** (§9.18 mục 7): chuyển phòng, gộp phòng, đổi cấp trên hàng loạt, xem trước ai bị ảnh hưởng | Đổi `managerId` hàng loạt không âm thầm đổi ai thấy dữ liệu của ai | E15-T7, E22-T1 |
 | E22-T5 | Hàng đợi `timesheet` và `payroll` vào `queues.ts`, có `attempts` và `backoff` | Việc nặng không chạy trong một request | E16-T2, E18-T10 |
@@ -561,9 +561,9 @@ Giai đoạn 4 của §9.13. Không cái nào chặn việc trả lương, nên 
 | ~~E25-T2~~ | **Xong 20/09.** Service worker **1 591 byte, ba quy tắc**, viết tay thay vì sinh danh sách precache: tĩnh có băm thì cache trước, điều hướng và đọc API thì mạng trước có dự phòng. `POST` không bao giờ cache. Service worker: vỏ ứng dụng và tài nguyên tĩnh chạy khi mất mạng | Mở trong hầm gửi xe không ra trang lỗi của trình duyệt | E25-T1 |
 | ~~E25-T3~~ | **Xong 20/09.** Đọc API rơi về bản đã lưu khi mất mạng, nên phiếu lương gần nhất và số dư phép vẫn mở được. **Thứ đã xem phải xem lại được khi mất mạng** (§9.21.3 luật 1): phiếu lương gần nhất, số dư phép, lịch ca của tôi | Xem được ca mai khi không có sóng | E25-T2, E19-T2 |
 | E25-T4 | **Đơn gửi lúc mất mạng xếp hàng, không mất**, đồng bộ khi có sóng, và **nói rõ đang chờ gửi** | Không ai phải gửi lại ba lần vì im lặng | E25-T2, E19-T4 |
-| E25-T5 | Web Push: đăng ký, khoá VAPID, huỷ đăng ký khi đăng xuất | Đẩy tới được máy thật, không chỉ tới trình duyệt đang mở | E22-T2 |
-| E25-T6 | **Bốn loại thông báo đẩy và chỉ bốn** (§9.21.4): đơn đã quyết, có đơn chờ duyệt, phiếu lương đã phát, hợp đồng sắp hết hạn — mỗi loại tắt riêng | Người dùng không tắt sạch vì bị làm phiền | E25-T5 |
-| E25-T7 | **Không đẩy nội dung nhạy cảm vào màn khoá**: báo có phiếu lương, không báo con số | Màn khoá không lộ lương cho người cầm máy hộ | E25-T6 |
+| ~~E25-T5~~ | **Xong 20/09.** Khoá VAPID sinh tại chỗ, đăng ký **khoá theo `endpoint`** nên đăng xuất máy này không làm câm máy kia. Đo thật: payload mã hoá **210 byte** ký VAPID tới nơi. Web Push: đăng ký, khoá VAPID, huỷ đăng ký khi đăng xuất | Đẩy tới được máy thật, không chỉ tới trình duyệt đang mở | E22-T2 |
+| ~~E25-T6~~ | **Xong 20/09.** Đúng bốn loại — enum bốn giá trị nên không thêm được loại thứ năm mà không sửa lược đồ. Hợp đồng sắp hết hạn chạy lịch 07:00 qua hàng đợi sẵn có, mốc 30/15/7; quét hai lần thì lần sau báo 0. **Bốn loại thông báo đẩy và chỉ bốn** (§9.21.4): đơn đã quyết, có đơn chờ duyệt, phiếu lương đã phát, hợp đồng sắp hết hạn — mỗi loại tắt riêng | Người dùng không tắt sạch vì bị làm phiền | E25-T5 |
+| ~~E25-T7~~ | **Xong 20/09.** Luật này do **kiểu dữ liệu** giữ: `Notification` không có cột nào nhận được một câu chữ hay một số tiền; câu dựng ở phía đọc. Payload push chỉ mang mã, tham chiếu và thẻ ngôn ngữ. **Không đẩy nội dung nhạy cảm vào màn khoá**: báo có phiếu lương, không báo con số | Màn khoá không lộ lương cho người cầm máy hộ | E25-T6 |
 | E25-T8 | Chụp ảnh kèm đơn giải trình công bằng camera điện thoại | Người bị máy bỏ sót chứng minh được bằng ảnh | E17-T9, E25-T1 |
 | E25-T9 | 🔬 Đo tải trang đầu trên máy Android tầm thấp và mạng 3G | Có số đo thật, không phải đo trên máy làm việc | E25-T2 |
 
