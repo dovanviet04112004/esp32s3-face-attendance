@@ -5927,6 +5927,21 @@ dưới quyền) và tự thu hẹp truy vấn.
 Cây dưới quyền tính bằng **CTE đệ quy trên `managerId`**, có nhớ đệm, vì một trưởng bộ phận ở
 công ty mười nghìn người có thể có vài nghìn cấp dưới và hỏi lại mỗi request là tự phạt.
 
+**Mở đăng nhập hàng loạt là việc duy nhất của §9 cố ý không vào hàng đợi.** Luật 5 của §9.9 nói
+việc sống lâu hơn một request thì đẩy xuống hàng đợi, và lệnh này vi phạm điều đó một cách có
+chủ ý: **kết quả của nó phải tới tay một con người đúng một lần**. Mật khẩu sinh ra chỉ tồn tại
+trong chính câu trả lời — máy chủ giữ băm, không giữ bản rõ — nên một job chạy nền không có chỗ
+nào để trả nó về. Đổi lại, lệnh phải **tự giới hạn**: mỗi lượt mở nhiều nhất `PROVISION_BATCH`
+tài khoản và nói còn bao nhiêu người đang chờ, để người vận hành gọi lại. Đo thật: **302 tài
+khoản mất 8.604 ms**, tức 28,7 ms mỗi cái, gần như toàn bộ là băm mật khẩu; ba mươi nghìn người
+sẽ là **860 giây trong một request**, và một lượt đứt giữa chừng để lại hàng trăm tài khoản mà
+**không ai biết mật khẩu** — chỉ quản trị viên đặt lại từng cái một mới cứu được.
+
+Cách đúng cho một đợt di trú thật là **không sinh mật khẩu nào cả**: tạo tài khoản chưa dùng
+được rồi gửi mỗi người một liên kết đặt mật khẩu dùng một lần. Khi ấy lệnh trở thành một lượt
+chèn hàng loạt không băm gì, chạy nền được, và không có gì để mất khi đứt. Chưa làm, và ghi ra
+đây để không ai tưởng giới hạn ở trên là câu trả lời cuối cùng.
+
 ### 9.5 Nghỉ phép
 
 `LeaveType` khai từng loại: phép năm, nghỉ ốm, nghỉ không lương, nghỉ chế độ. Mỗi loại mang
