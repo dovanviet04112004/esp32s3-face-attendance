@@ -6792,6 +6792,10 @@ Ba điều kèm theo, mỗi điều bịt một khe khác nhau:
   95 và bỏ bản 40.
 - **Báo cáo phải đến từ cửa đã được giao người ấy.** Máy chủ nhận dữ liệu sinh trắc thì không
   được chỉ dựa vào phép xác thực của broker: không có dòng `DeviceEnrollment` thì từ chối.
+- **Đường sửa chữa phải chạy được từ chính trạng thái cần sửa.** `resync` từng suy ra phiên
+  bản bắt đầu bằng phép trừ, nên một máy giữ nhiều người hơn số đếm của nó sẽ sinh phiên bản
+  âm, bị hợp đồng từ chối, và **đúng cái cửa cần đẩy lại cả danh sách là cái cửa không bao giờ
+  nhận được**. Nâng số đếm lên bằng số dòng trước khi phát lại.
 - **Kiosk không được lùi phiên bản.** Hai lần đẩy có thể tới lệch thứ tự; bản tin có số phiên
   bản **không lớn hơn** số đang giữ thì bỏ qua, và số đang giữ không bao giờ giảm. Hiện firmware
   nhận số của bản tin cuối cùng trong lô một cách vô điều kiện — nó **tự chữa** vì số lùi khiến
