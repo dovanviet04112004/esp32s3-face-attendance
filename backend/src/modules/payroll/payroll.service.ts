@@ -8,6 +8,7 @@ import {
 import type {
   Payslip,
   PayslipLine,
+  PayslipState,
   PayrollPeriod,
   PayrollRun,
   PeriodState,
@@ -22,7 +23,17 @@ import { QUEUE, type PayrollJob } from "../../queue/queues.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
-import { calculate, taxOn, type CalcAllowance, type CalcDeduction, type CalcExtra } from "./calculate.js";
+import {
+  calculate,
+  taxOn,
+  LINE_EXEMPT_OVERTIME,
+  LINE_RELIEF_DEPENDENT,
+  LINE_RELIEF_SELF,
+  LINE_TAX,
+  type CalcAllowance,
+  type CalcDeduction,
+  type CalcExtra,
+} from "./calculate.js";
 import type {
   BonusItemDto,
   CreatePeriodDto,
@@ -84,6 +95,50 @@ export interface PayslipDelta {
   thisPeriod: string;
   lastPeriod: string;
   difference: string;
+}
+
+/** One month of a year statement, every figure as the payslip holds it. */
+export interface TaxYearMonth {
+  periodId: string;
+  month: number;
+  grossPay: string;
+  taxableIncome: string;
+  insuranceEmployee: string;
+  reliefSelf: string;
+  reliefDependent: string;
+  exemptOvertime: string;
+  taxWithheld: string;
+  netPay: string;
+}
+
+export interface TaxYearStatement {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  taxCode: string | null;
+  year: number;
+  policyId: string;
+  months: TaxYearMonth[];
+  grossTotal: string;
+  taxableTotal: string;
+  insuranceTotal: string;
+  reliefSelfTotal: string;
+  reliefDependentTotal: string;
+  exemptOvertimeTotal: string;
+  assessableTotal: string;
+  taxDue: string;
+  taxWithheld: string;
+  difference: string;
+}
+
+// A draft is a number nobody has stood behind, so it is not income yet.
+const ISSUED_STATES: PayslipState[] = ["ISSUED", "SENT", "VIEWED"];
+const READ_BACK = [LINE_RELIEF_SELF, LINE_RELIEF_DEPENDENT, LINE_EXEMPT_OVERTIME, LINE_TAX];
+
+function sumOf(lines: { code: string; amount: Prisma.Decimal }[], code: string): Dong {
+  return lines
+    .filter((line) => line.code === code)
+    .reduce((total, line) => total + toDong(line.amount), 0n);
 }
 
 @Injectable()
@@ -697,7 +752,7 @@ export class PayrollService {
         payslipId: "",
         ordinal: rows.length + 1,
         kind: "DEDUCTION",
-        code: "PIT",
+        code: LINE_TAX,
         amount: tax.toString(),
       });
       linesOf.set(employeeId, rows);
@@ -739,6 +794,78 @@ export class PayrollService {
         netTotal: net.toString(),
       },
     });
+  }
+
+  /**
+   * One person's year for the tax office: every figure is read back from the
+   * issued payslips, and only the annual band is applied here.
+   */
+  async taxYear(viewer: Viewer, employeeId: number, year: number): Promise<TaxYearStatement> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (visible !== null && !visible.includes(employeeId)) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+    const who = await this.db.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true, code: true, fullName: true, taxCode: true, legalEntityId: true },
+    });
+    if (!who) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+    const payslips = await this.db.payslip.findMany({
+      where: { employeeId, state: { in: ISSUED_STATES }, period: { year } },
+      include: {
+        period: { select: { month: true } },
+        lines: { where: { code: { in: READ_BACK } }, select: { code: true, amount: true } },
+      },
+      orderBy: { period: { month: "asc" } },
+    });
+
+    const months: TaxYearMonth[] = payslips.map((slip) => ({
+      periodId: slip.periodId,
+      month: slip.period.month,
+      grossPay: slip.grossPay.toFixed(0),
+      taxableIncome: slip.taxableIncome.toFixed(0),
+      insuranceEmployee: slip.insuranceEmployee.toFixed(0),
+      reliefSelf: sumOf(slip.lines, LINE_RELIEF_SELF).toString(),
+      reliefDependent: sumOf(slip.lines, LINE_RELIEF_DEPENDENT).toString(),
+      exemptOvertime: sumOf(slip.lines, LINE_EXEMPT_OVERTIME).toString(),
+      taxWithheld: sumOf(slip.lines, LINE_TAX).toString(),
+      netPay: slip.netPay.toFixed(0),
+    }));
+
+    const total = (pick: (one: TaxYearMonth) => string): Dong =>
+      months.reduce((sum, one) => sum + BigInt(pick(one)), 0n);
+    const taxable = total((one) => one.taxableIncome);
+    const insurance = total((one) => one.insuranceEmployee);
+    const reliefSelf = total((one) => one.reliefSelf);
+    const reliefDependent = total((one) => one.reliefDependent);
+    const withheld = total((one) => one.taxWithheld);
+
+    // The band table in force at the close of the year settles the whole year.
+    const policy = await this.policy.effectiveAt(new Date(Date.UTC(year, 11, 31)), who.legalEntityId);
+    const assessable = atLeastZero(taxable - insurance - reliefSelf - reliefDependent);
+    const due = taxOn(assessable, asCalcPolicy(policy).brackets);
+
+    return {
+      employeeId: who.id,
+      code: who.code,
+      fullName: who.fullName,
+      taxCode: who.taxCode,
+      year,
+      policyId: policy.id,
+      months,
+      grossTotal: total((one) => one.grossPay).toString(),
+      taxableTotal: taxable.toString(),
+      insuranceTotal: insurance.toString(),
+      reliefSelfTotal: reliefSelf.toString(),
+      reliefDependentTotal: reliefDependent.toString(),
+      exemptOvertimeTotal: total((one) => one.exemptOvertime).toString(),
+      assessableTotal: assessable.toString(),
+      taxDue: due.toString(),
+      taxWithheld: withheld.toString(),
+      difference: (due - withheld).toString(),
+    };
   }
 
   async payslips(viewer: Viewer, periodId?: string, runId?: string): Promise<PayslipRow[]> {

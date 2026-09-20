@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Header, Param, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { PayrollPeriod, PayrollRun } from "@prisma/client";
 
@@ -14,6 +24,7 @@ import {
   type PayslipDetail,
   type PayslipRow,
   type ExportKind,
+  type TaxYearStatement,
 } from "./payroll.service.js";
 
 @ApiTags("payroll")
@@ -113,6 +124,16 @@ export class PayrollController {
   @ApiOperation({ summary: "Calculate every payslip in the run" })
   execute(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayrollRun> {
     return this.payroll.execute(viewer, id);
+  }
+
+  @Get("tax-year/:employeeId")
+  @ApiOperation({ summary: "A year of income and tax withheld, read back from the payslips" })
+  taxYear(
+    @CurrentViewer() viewer: Viewer,
+    @Param("employeeId", ParseIntPipe) employeeId: number,
+    @Query("year", ParseIntPipe) year: number,
+  ): Promise<TaxYearStatement> {
+    return this.payroll.taxYear(viewer, employeeId, year);
   }
 
   @Get("payslips")
