@@ -4144,7 +4144,8 @@ backend/
     │   ├── generated/                # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
     │   ├── guards/{jwt-auth.guard.ts, roles.guard.ts, device-auth.guard.ts}
     │   ├── cache/{cache.module.ts, cache.service.ts, cache-keys.ts}
-    │   ├── decorators/  ├── interceptors/  ├── filters/  └── dto/
+    │   ├── decorators/  ├── interceptors/  ├── filters/  ├── dto/
+    │   └── csv.ts                    # ★ một bộ ghi CSV cho cả ba nơi xuất file
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
     │   ├── users/    ├── employees/  ├── devices/   ├── enrollment/
