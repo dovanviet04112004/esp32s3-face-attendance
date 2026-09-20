@@ -31,7 +31,9 @@ export class AuthService {
     // The same answer whether the address is unknown or the password is wrong,
     // so a caller cannot learn which addresses exist.
     const ok = user ? await verifyPassword(password, user.passwordHash) : false;
-    if (!user || !ok) {
+    // A closed account answers like a wrong password on purpose: the caller
+    // has proved nothing yet, so it must not learn the address exists.
+    if (!user || !ok || !user.active) {
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
     }
     return this.issue(user);
@@ -48,6 +50,10 @@ export class AuthService {
         this.log.warn(`refresh replayed for ${user.email}, session dropped`);
       }
       throw new UnauthorizedException("REFRESH_REPLAYED");
+    }
+    if (!user.active) {
+      await this.revoke(user.id);
+      throw new UnauthorizedException("ACCOUNT_CLOSED");
     }
     return this.issue(user);
   }
