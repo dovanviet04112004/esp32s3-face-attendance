@@ -6087,8 +6087,23 @@ Cần `pg_trgm` với chỉ mục GIN trên tên và mã.
 phải là một lượt HTTP. `PayrollRun` chia lô theo phòng ban, mỗi lô một job BullMQ, có `attempts`
 và `backoff`, và **idempotent theo `(runId, employeeId)`** để giao hai lần không đẻ hai phiếu.
 
-**6. Đếm chính xác chỉ khi cần chính xác.** `COUNT(*)` trên bảng vài triệu dòng là quét toàn
-bảng. Phân trang hiển thị "hơn 10.000" thay vì con số đúng khi vượt ngưỡng.
+**6. Đếm chính xác chỉ khi cần chính xác.** `COUNT(*)` không dừng sớm được: nó quét hết mọi
+dòng khớp điều kiện, kể cả khi người hỏi chỉ định nhìn năm mươi dòng đầu. Đo trên 300.001 lượt
+quẹt: đếm đủ **11,63 ms**, đếm đủ có lọc **21,64 ms** — trong khi lấy chính trang ấy bằng con
+trỏ chỉ mất **1,36 ms**. Sau khi luật 3 xong, **đếm trở thành phần đắt nhất của một trang**,
+gấp khoảng tám lần phần lấy dữ liệu.
+
+Cách chữa là **đếm có trần**: `COUNT(*)` trên một truy vấn con đã `LIMIT`, nên chi phí theo
+**trần** chứ không theo số dòng của bảng. Đo: **2,20 ms** không lọc, **3,49 ms** có lọc. Đếm
+tới trần thì trả về trần kèm dấu "chưa chính xác", và giao diện đọc nó thành "hơn 10.000".
+
+**Trần đếm bằng đúng `MAX_OFFSET` của luật 3, và đó không phải trùng hợp.** Một tổng số lớn hơn
+trần offset chỉ mô tả những trang mà chính luật 3 đã từ chối mở — đếm chính xác tới đó là trả
+tiền cho một con số không ai bấm tới được. Hai hằng số này phải đi cùng nhau; tách ra là để lại
+một bên đếm những trang bên kia không cho tới.
+
+Danh sách nhỏ **không mất gì**: dưới trần thì con số vẫn chính xác như cũ, và một bộ lọc hẹp
+kéo kết quả xuống dưới trần cũng thế. Chỉ danh sách thật sự dài mới thấy chữ "hơn".
 
 Chỉ mục đi kèm: `Employee(departmentId, active)`, `Employee(managerId)`,
 `AttendanceDay(employeeId, date)`, `AttendanceDay(date)`, `LeaveRequest(employeeId, state)`,
