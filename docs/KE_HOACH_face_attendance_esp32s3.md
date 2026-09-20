@@ -2212,6 +2212,7 @@ esp32s3-face-attendance/
     ├── TASKS.md                                 # backlog
     ├── DU_LIEU.md                               # dữ liệu đã tải và xử lí — số đo trên đĩa
     ├── FREERTOS.md                              # sổ kiểm lỗi đồng thời, soát lại mỗi khi thêm task
+    ├── DPIA.md                                  # ★ đánh giá tác động Điều 24 — hồ sơ nộp được
     ├── adr/{0001-yunet-thay-ulfg.md, 0002-bo-knowledge-distillation.md, 0003-distill-chong-gia-tu-trong-so-nhap.md, 0004-v1se-thay-student-chong-gia.md}
     ├── measurements/{arena.md, latency.md, power.md, parity.md, ram.md}  # số 🔬 đo được trên board
     │                 └ {antispoof,detection,recognition}/        # số theo nhánh model
