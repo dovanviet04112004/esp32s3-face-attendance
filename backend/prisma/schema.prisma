@@ -93,6 +93,8 @@ model LegalEntity {
   departments Department[]
   employees   Employee[]
   holidays    Holiday[]
+  policies    PayrollPolicy[]
+  periods     PayrollPeriod[]
 }
 
 model Department {
@@ -188,6 +190,12 @@ model Employee {
   enrollments       DeviceEnrollment[]
   attendance        AttendanceRecord[]
   shifts            ShiftAssignment[]
+  compensation      CompensationRecord[]
+  dependents        Dependent[]
+  payslips          Payslip[]
+  retros            RetroAdjustment[]
+  advances          SalaryAdvance[]
+  advanceApprovals  SalaryAdvance[]      @relation("ApprovesAdvances")
 
   @@index([departmentId, active])
   @@index([managerId])
@@ -515,4 +523,356 @@ model ApprovalDelegation {
   delegate  Employee @relation("DelegatesFor", fields: [toId], references: [id], onDelete: Cascade)
 
   @@index([fromId, fromDate, toDate])
+}
+
+enum PayReason {
+  HIRE
+  PROMOTION
+  ANNUAL_REVIEW
+  ADJUSTMENT
+  TRANSFER
+  OTHER
+}
+
+/**
+ * Pay is dated, not a field to overwrite: a raise appends a row, so a March
+ * payslip recomputed in December still uses March's figure (KEHOACH 9.6).
+ */
+model CompensationRecord {
+  id              String                  @id @default(uuid())
+  employeeId      Int
+  effectiveFrom   DateTime                @db.Date
+  baseSalary      Decimal                 @db.Decimal(14, 0)
+  // What insurance is charged on, which many employers set below base pay.
+  insuranceSalary Decimal                 @db.Decimal(14, 0)
+  reason          PayReason               @default(ADJUSTMENT)
+  note            String?
+  createdById     String?
+  createdAt       DateTime                @default(now())
+  employee        Employee                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  allowances      CompensationAllowance[]
+
+  @@unique([employeeId, effectiveFrom])
+  @@index([employeeId, effectiveFrom])
+}
+
+/**
+ * One row per fixed allowance so a quarter's lunch cost is a sum, not a scan
+ * through JSON (KEHOACH 9.6).
+ */
+model CompensationAllowance {
+  id        String             @id @default(uuid())
+  recordId  String
+  code      String
+  label     String
+  amount    Decimal            @db.Decimal(14, 0)
+  taxable   Boolean            @default(true)
+  insurable Boolean            @default(false)
+  record    CompensationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, code])
+  @@index([code])
+}
+
+enum DependentRelation {
+  CHILD
+  SPOUSE
+  PARENT
+  SIBLING
+  OTHER
+}
+
+enum DependentState {
+  PENDING
+  ACTIVE
+  REJECTED
+  ENDED
+}
+
+/**
+ * A dependant registered mid-year deducts from its registered month, so the
+ * window is stored rather than a single flag (KEHOACH 9.7).
+ */
+model Dependent {
+  id           String            @id @default(uuid())
+  employeeId   Int
+  fullName     String
+  relation     DependentRelation
+  dateOfBirth  DateTime?         @db.Date
+  taxCode      String?
+  nationalId   String?
+  fromMonth    DateTime          @db.Date
+  toMonth      DateTime?         @db.Date
+  state        DependentState    @default(PENDING)
+  decidedById  String?
+  decidedAt    DateTime?
+  decisionNote String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  employee     Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, state])
+  @@index([state, fromMonth])
+}
+
+/**
+ * Deductions, contribution rates and overtime multiples as data, because they
+ * change by resolution rather than by release (KEHOACH 9.7).
+ */
+model PayrollPolicy {
+  id                         String        @id @default(uuid())
+  legalEntityId              String?
+  effectiveFrom              DateTime      @db.Date
+  selfDeduction              Decimal       @db.Decimal(14, 0)
+  dependentDeduction         Decimal       @db.Decimal(14, 0)
+  // Basis points keep every rate an integer, so no rounding rides on a float.
+  socialRateBp               Int
+  healthRateBp               Int
+  unemploymentRateBp         Int
+  employerSocialRateBp       Int
+  employerHealthRateBp       Int
+  employerUnemploymentRateBp Int
+  referenceWage              Decimal       @db.Decimal(14, 0)
+  socialCapMultiple          Int           @default(20)
+  regionalMinimumWage        Decimal       @db.Decimal(14, 0)
+  unemploymentCapMultiple    Int           @default(20)
+  standardDaysPerMonth       Decimal       @db.Decimal(5, 2)
+  overtimeWeekdayBp          Int           @default(15000)
+  overtimeWeekendBp          Int           @default(20000)
+  overtimeHolidayBp          Int           @default(30000)
+  nightPremiumBp             Int           @default(3000)
+  note                       String?
+  createdAt                  DateTime      @default(now())
+  legalEntity                LegalEntity?  @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  brackets                   TaxBracket[]
+  payslips                   Payslip[]
+
+  @@unique([legalEntityId, effectiveFrom])
+  @@index([effectiveFrom])
+}
+
+/**
+ * One row per progressive band; the top band leaves upToAmount null.
+ */
+model TaxBracket {
+  id         String        @id @default(uuid())
+  policyId   String
+  ordinal    Int
+  upToAmount Decimal?      @db.Decimal(14, 0)
+  rateBp     Int
+  policy     PayrollPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, ordinal])
+}
+
+enum PeriodState {
+  OPEN
+  LOCKED
+  PAID
+}
+
+/**
+ * The pay month. Locking freezes its inputs, so a figure already sent to
+ * somebody cannot move behind their back (KEHOACH 9.6).
+ */
+model PayrollPeriod {
+  id            String            @id @default(uuid())
+  legalEntityId String?
+  year          Int
+  month         Int
+  state         PeriodState       @default(OPEN)
+  startDate     DateTime          @db.Date
+  endDate       DateTime          @db.Date
+  payDate       DateTime?         @db.Date
+  lockedAt      DateTime?
+  lockedById    String?
+  lockNote      String?
+  paidAt        DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  legalEntity   LegalEntity?      @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  runs          PayrollRun[]
+  payslips      Payslip[]
+  retroSource   RetroAdjustment[] @relation("RetroSource")
+  retroApplied  RetroAdjustment[] @relation("RetroApplied")
+
+  @@unique([legalEntityId, year, month])
+  @@index([state, year, month])
+}
+
+enum RunKind {
+  REGULAR
+  BONUS
+  FINAL_SETTLEMENT
+}
+
+enum RunState {
+  DRAFT
+  RUNNING
+  DONE
+  FAILED
+  DISCARDED
+}
+
+/**
+ * One attempt at calculating a period. A period holds many, so a draft can be
+ * run, read and thrown away without touching what was issued (KEHOACH 9.6).
+ */
+model PayrollRun {
+  id            String        @id @default(uuid())
+  periodId      String
+  kind          RunKind       @default(REGULAR)
+  state         RunState      @default(DRAFT)
+  label         String?
+  departmentId  String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  employeeCount Int           @default(0)
+  doneCount     Int           @default(0)
+  failedCount   Int           @default(0)
+  grossTotal    Decimal       @default(0) @db.Decimal(16, 0)
+  netTotal      Decimal       @default(0) @db.Decimal(16, 0)
+  createdById   String?
+  note          String?
+  createdAt     DateTime      @default(now())
+  period        PayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  payslips      Payslip[]
+
+  @@index([periodId, state])
+}
+
+enum PayslipState {
+  DRAFT
+  ISSUED
+  SENT
+  VIEWED
+}
+
+model Payslip {
+  id                String        @id @default(uuid())
+  runId             String
+  periodId          String
+  employeeId        Int
+  policyId          String
+  state             PayslipState  @default(DRAFT)
+  workedDays        Decimal       @default(0) @db.Decimal(6, 2)
+  paidLeaveDays     Decimal       @default(0) @db.Decimal(6, 2)
+  unpaidDays        Decimal       @default(0) @db.Decimal(6, 2)
+  workedMinutes     Int           @default(0)
+  overtimeMinutes   Int           @default(0)
+  grossPay          Decimal       @default(0) @db.Decimal(14, 0)
+  taxableIncome     Decimal       @default(0) @db.Decimal(14, 0)
+  insuranceEmployee Decimal       @default(0) @db.Decimal(14, 0)
+  insuranceEmployer Decimal       @default(0) @db.Decimal(14, 0)
+  personalIncomeTax Decimal       @default(0) @db.Decimal(14, 0)
+  deductionsTotal   Decimal       @default(0) @db.Decimal(14, 0)
+  netPay            Decimal       @default(0) @db.Decimal(14, 0)
+  issuedAt          DateTime?
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  run               PayrollRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  period            PayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  employee          Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  policy            PayrollPolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  lines             PayslipLine[]
+
+  // A redelivered batch job lands on the same row rather than a second payslip.
+  @@unique([runId, employeeId])
+  @@index([employeeId, periodId])
+  @@index([periodId, state])
+}
+
+enum LineKind {
+  EARNING
+  DEDUCTION
+  EMPLOYER_COST
+  INFO
+}
+
+/**
+ * Every component is its own row, so company-wide overtime for a quarter is
+ * one grouped query rather than a walk through documents (KEHOACH 9.6).
+ */
+model PayslipLine {
+  id        String   @id @default(uuid())
+  payslipId String
+  ordinal   Int
+  kind      LineKind
+  code      String
+  // Only set where the text comes from data somebody typed, such as an
+  // allowance name; a standard component is named by its code (CLAUDE.md 3.1).
+  label     String?
+  amount    Decimal  @db.Decimal(14, 0)
+  quantity  Decimal? @db.Decimal(10, 2)
+  rateBp    Int?
+  payslip   Payslip  @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+
+  @@unique([payslipId, code])
+  @@index([code])
+}
+
+enum RetroState {
+  PENDING
+  APPLIED
+  CANCELLED
+}
+
+/**
+ * What arrived after its period locked. It is paid in a later period instead
+ * of reopening one that has already been sent out (KEHOACH 9.6).
+ */
+model RetroAdjustment {
+  id              String         @id @default(uuid())
+  employeeId      Int
+  sourcePeriodId  String
+  appliedPeriodId String?
+  code            String
+  label           String?
+  amount          Decimal        @db.Decimal(14, 0)
+  state           RetroState     @default(PENDING)
+  reason          String
+  createdById     String?
+  createdAt       DateTime       @default(now())
+  employee        Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  sourcePeriod    PayrollPeriod  @relation("RetroSource", fields: [sourcePeriodId], references: [id], onDelete: Cascade)
+  appliedPeriod   PayrollPeriod? @relation("RetroApplied", fields: [appliedPeriodId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, state])
+  @@index([state, sourcePeriodId])
+}
+
+enum AdvanceState {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+  SETTLED
+  CANCELLED
+}
+
+/**
+ * An advance already happens; keeping it here makes the next payslip deduct it
+ * instead of somebody remembering to (KEHOACH 9.18).
+ */
+model SalaryAdvance {
+  id           String       @id @default(uuid())
+  employeeId   Int
+  amount       Decimal      @db.Decimal(14, 0)
+  reason       String
+  state        AdvanceState @default(PENDING)
+  requestedAt  DateTime     @default(now())
+  approverId   Int?
+  decidedById  String?
+  decidedAt    DateTime?
+  decisionNote String?
+  paidAt       DateTime?
+  settledAt    DateTime?
+  payslipId    String?
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  approver     Employee?    @relation("ApprovesAdvances", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, state])
+  @@index([state, requestedAt])
 }
