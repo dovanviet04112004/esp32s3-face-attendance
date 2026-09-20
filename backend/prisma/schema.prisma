@@ -163,6 +163,8 @@ model Employee {
   dateOfBirth       DateTime?            @db.Date
   personalEmail     String?
   phone             String?
+  // Mail is generated on the server, where no request carries a language.
+  locale            String               @default("vi")
   nationalId        String?
   taxCode           String?
   socialInsuranceNo String?

@@ -44,6 +44,26 @@ export const envSchema = z.object({
 
   CORS_ORIGIN: z.string().min(1),
 
+  // No host is how a deployment turns payslip mail off (KEHOACH 9.11).
+  MAIL_HOST: z
+    .string()
+    .optional()
+    .transform((held) => (held ? held : undefined)),
+  MAIL_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  MAIL_USER: z
+    .string()
+    .optional()
+    .transform((held) => (held ? held : undefined)),
+  MAIL_PASSWORD: z
+    .string()
+    .optional()
+    .transform((held) => (held ? held : undefined)),
+  MAIL_FROM: z
+    .string()
+    .optional()
+    .transform((held) => (held ? held : undefined)),
+  APP_PUBLIC_URL: z.string().min(1),
+
   MQTT_URL: z.string().min(1),
   MQTT_USERNAME: z.string().min(1),
   MQTT_PASSWORD: z.string().min(1),

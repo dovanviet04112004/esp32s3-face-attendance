@@ -25,7 +25,11 @@ export type Queues = Record<QueueName, Queue>;
         };
         const make = (name: QueueName): Queue =>
           new Queue(name, { connection: redis.client, defaultJobOptions: defaults });
-        return { [QUEUE.report]: make(QUEUE.report), [QUEUE.notify]: make(QUEUE.notify) };
+        return {
+          [QUEUE.report]: make(QUEUE.report),
+          [QUEUE.notify]: make(QUEUE.notify),
+          [QUEUE.payroll]: make(QUEUE.payroll),
+        };
       },
     },
   ],

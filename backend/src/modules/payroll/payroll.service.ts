@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type {
   Payslip,
   PayslipLine,
@@ -11,6 +17,8 @@ import type {
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
+import { QUEUE, type PayrollJob } from "../../queue/queues.js";
 import { AuditService } from "../audit/audit.service.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
 import { calculate, type CalcAllowance, type CalcDeduction, type CalcExtra } from "./calculate.js";
@@ -53,6 +61,18 @@ export type PayslipDetail = Payslip & { lines: PayslipLine[] };
 
 export type PayslipRow = Payslip & { period: { year: number; month: number; state: PeriodState } };
 
+export type ExportKind = "bank" | "ledger";
+
+function cell(value: string): string {
+  // A name with a comma or a quote in it has broken more payment files than
+  // any other single thing, so every cell is quoted and quotes are doubled.
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function toCsv(header: string[], rows: string[][]): string {
+  return [header, ...rows].map((row) => row.map(cell).join(",")).join("\r\n");
+}
+
 export interface PayslipDelta {
   code: string;
   thisPeriod: string;
@@ -67,6 +87,7 @@ export class PayrollService {
     private readonly scope: ScopeService,
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
+    @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
   private mayWrite(viewer: Viewer): void {
@@ -532,6 +553,102 @@ export class PayrollService {
       }
     }
     return deltas;
+  }
+
+  /**
+   * Queue one job per payslip that has not gone out. A job already queued is
+   * harmless: the worker reads sentAt, so a second copy does nothing.
+   */
+  async deliver(viewer: Viewer, periodId: string): Promise<{ queued: number }> {
+    this.mayWrite(viewer);
+    const period = await this.requirePeriod(periodId);
+    if (period.state === "OPEN") {
+      throw new BadRequestException("PERIOD_NOT_LOCKED");
+    }
+    const waiting = await this.db.payslip.findMany({
+      where: { periodId, sentAt: null, state: { not: "DRAFT" } },
+      select: { id: true },
+    });
+    const queue = this.queues[QUEUE.payroll];
+    await queue.addBulk(
+      waiting.map((slip) => ({
+        name: "deliver",
+        data: { type: "deliver", payslipId: slip.id } satisfies PayrollJob,
+        opts: { jobId: `payslip-${slip.id}` },
+      })),
+    );
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: "payroll.deliver",
+      target: periodId,
+      meta: { queued: waiting.length },
+    });
+    return { queued: waiting.length };
+  }
+
+  /**
+   * The file a bank or an accountant takes. Columns are chosen by kind rather
+   * than hand-edited afterwards, which is where a payment file goes wrong.
+   */
+  async exportRows(viewer: Viewer, periodId: string, kind: ExportKind): Promise<string> {
+    this.mayWrite(viewer);
+    const period = await this.requirePeriod(periodId);
+    if (period.state === "OPEN") {
+      throw new BadRequestException("PERIOD_NOT_LOCKED");
+    }
+    const rows = await this.db.payslip.findMany({
+      where: { periodId, state: { not: "DRAFT" } },
+      include: {
+        employee: {
+          select: {
+            code: true,
+            fullName: true,
+            bankName: true,
+            bankAccount: true,
+            department: { select: { code: true, name: true, costCentre: true } },
+          },
+        },
+      },
+      orderBy: { employee: { code: "asc" } },
+    });
+    const reference = `LUONG ${String(period.month).padStart(2, "0")}${period.year}`;
+    if (kind === "bank") {
+      return toCsv(
+        ["code", "fullName", "bankName", "bankAccount", "amount", "reference"],
+        rows.map((row) => [
+          row.employee.code,
+          row.employee.fullName,
+          row.employee.bankName ?? "",
+          row.employee.bankAccount ?? "",
+          row.netPay.toFixed(0),
+          reference,
+        ]),
+      );
+    }
+    return toCsv(
+      [
+        "code",
+        "fullName",
+        "costCentre",
+        "department",
+        "gross",
+        "insuranceEmployee",
+        "insuranceEmployer",
+        "tax",
+        "net",
+      ],
+      rows.map((row) => [
+        row.employee.code,
+        row.employee.fullName,
+        row.employee.department?.costCentre ?? "",
+        row.employee.department?.name ?? "",
+        row.grossPay.toFixed(0),
+        row.insuranceEmployee.toFixed(0),
+        row.insuranceEmployer.toFixed(0),
+        row.personalIncomeTax.toFixed(0),
+        row.netPay.toFixed(0),
+      ]),
+    );
   }
 
   private async requirePeriod(periodId: string): Promise<PayrollPeriod> {

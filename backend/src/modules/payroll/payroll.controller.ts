@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { PayrollPeriod, PayrollRun } from "@prisma/client";
 
@@ -13,6 +13,7 @@ import {
   type PayslipDelta,
   type PayslipDetail,
   type PayslipRow,
+  type ExportKind,
 } from "./payroll.service.js";
 
 @ApiTags("payroll")
@@ -59,6 +60,29 @@ export class PayrollController {
   @Roles("ADMIN", "PAYROLL")
   markPaid(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayrollPeriod> {
     return this.payroll.markPaid(viewer, id);
+  }
+
+  @Post("payroll-periods/:id/deliver")
+  @Roles("ADMIN", "PAYROLL")
+  @ApiOperation({ summary: "Send every issued payslip as a link, not an attachment" })
+  deliver(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+  ): Promise<{ queued: number }> {
+    return this.payroll.deliver(viewer, id);
+  }
+
+  @Get("payroll-periods/:id/export")
+  @Roles("ADMIN", "PAYROLL")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @ApiOperation({ summary: "The payment file for a bank, or the one for accounting" })
+  exportRows(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+    @Query("kind") kind?: string,
+  ): Promise<string> {
+    const wanted: ExportKind = kind === "ledger" ? "ledger" : "bank";
+    return this.payroll.exportRows(viewer, id, wanted);
   }
 
   @Get("payroll-periods/:id/runs")

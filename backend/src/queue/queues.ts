@@ -2,13 +2,11 @@
 export const QUEUE = {
   report: "report",
   notify: "notify",
+  payroll: "payroll",
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
 
-/** Roll up attendance for a range; BullMQ may deliver it twice, so it writes
- *  nothing a second run would change.
- */
 export interface ReportJob {
   type: "monthly";
   from: string;
@@ -18,4 +16,10 @@ export interface ReportJob {
 export interface NotifyJob {
   deviceId: string;
   reason: string;
+}
+
+/** One payslip; the worker reads Payslip.sentAt, not the queue. */
+export interface PayrollJob {
+  type: "deliver";
+  payslipId: string;
 }
