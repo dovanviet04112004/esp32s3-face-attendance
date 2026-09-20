@@ -1,20 +1,33 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 
 import { StatePill, type RequestRow } from "@/components/requests/request-card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { useFault } from "@/lib/fault";
 
 interface Balance {
   leaveTypeId: string;
   name: string;
   remaining: number;
   bookedAfter: number;
+}
+
+const RELATIONS = ["CHILD", "SPOUSE", "PARENT", "SIBLING", "OTHER"] as const;
+
+interface Dependent {
+  id: string;
+  fullName: string;
+  relation: (typeof RELATIONS)[number];
+  fromMonth: string;
+  state: "PENDING" | "ACTIVE" | "REJECTED" | "ENDED";
 }
 
 interface Me {
@@ -34,6 +47,12 @@ export default function MyPage() {
   const common = useTranslations("common");
   const employeeId = useSession((s) => s.employeeId);
   const [asOf, setAsOf] = useState(today);
+  const [dependentName, setDependentName] = useState("");
+  const [relation, setRelation] = useState<(typeof RELATIONS)[number]>("CHILD");
+  const [fromMonth, setFromMonth] = useState(today);
+  const [fault, setFault] = useState<string | null>(null);
+  const cache = useQueryClient();
+  const faultOf = useFault();
 
   const me = useQuery({
     queryKey: ["employees", employeeId],
@@ -45,6 +64,23 @@ export default function MyPage() {
     queryKey: ["leave-balances", asOf],
     enabled: employeeId !== null,
     queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${asOf}`)).data,
+  });
+
+  const dependents = useQuery({
+    queryKey: ["dependents", employeeId],
+    enabled: employeeId !== null,
+    queryFn: async () =>
+      (await api.get<Dependent[]>(`/employees/${employeeId}/dependents`)).data,
+  });
+
+  const addDependent = useMutation({
+    mutationFn: () =>
+      api.post("/dependents", { fullName: dependentName, relation, fromMonth }),
+    onSuccess: () => {
+      setDependentName("");
+      void cache.invalidateQueries({ queryKey: ["dependents"] });
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   const waiting = useQuery({
@@ -103,6 +139,75 @@ export default function MyPage() {
               ) : null}
             </article>
           ))
+        )}
+      </div>
+
+      <h2 className="mt-8 text-sm font-medium">{t("dependentsTitle")}</h2>
+      <p className="mt-1 text-sm text-(--color-muted)">{t("dependentsLead")}</p>
+
+      <form
+        className="mt-3 flex flex-wrap items-end gap-2"
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          setFault(null);
+          addDependent.mutate();
+        }}
+      >
+        <Input
+          aria-label={t("dependentName")}
+          required
+          maxLength={120}
+          value={dependentName}
+          onChange={(event) => setDependentName(event.target.value)}
+          className="min-w-48 flex-1"
+        />
+        <Select
+          aria-label={t("dependentRelation")}
+          value={relation}
+          onChange={(event) => setRelation(event.target.value as (typeof RELATIONS)[number])}
+          className="w-40"
+        >
+          {RELATIONS.map((one) => (
+            <option key={one} value={one}>
+              {t(`relation${one}`)}
+            </option>
+          ))}
+        </Select>
+        <Input
+          aria-label={t("dependentFrom")}
+          type="date"
+          required
+          value={fromMonth}
+          onChange={(event) => setFromMonth(event.target.value)}
+          className="w-44"
+        />
+        <Button type="submit" disabled={addDependent.isPending}>
+          {addDependent.isPending ? common("saving") : t("dependentAdd")}
+        </Button>
+      </form>
+
+      {fault ? (
+        <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+          {fault}
+        </p>
+      ) : null}
+
+      <div className="mt-3 rounded-xl border border-(--color-line) bg-(--color-surface)">
+        {dependents.data?.length ? (
+          <ul className="divide-y divide-(--color-line)">
+            {dependents.data.map((one) => (
+              <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
+                <span className="text-(--color-muted)">{t(`relation${one.relation}`)}</span>
+                <span className="tabular-nums text-(--color-muted)">
+                  {one.fromMonth.slice(0, 10)}
+                </span>
+                <span className="text-xs">{t(`dependentState${one.state}`)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-4 py-6 text-sm text-(--color-muted)">{t("dependentsEmpty")}</p>
         )}
       </div>
 

@@ -4,12 +4,28 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
 import { RequestCard, type RequestRow } from "@/components/requests/request-card";
+import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/auth";
+
+const DEPENDENT_DECIDERS = ["ADMIN", "PAYROLL"];
+const RELATIONS = ["CHILD", "SPOUSE", "PARENT", "SIBLING", "OTHER"] as const;
+
+interface WaitingDependent {
+  id: string;
+  fullName: string;
+  relation: (typeof RELATIONS)[number];
+  fromMonth: string;
+  employee: { id: number; code: string; fullName: string };
+}
 
 export default function ApprovalsPage() {
   const t = useTranslations("requests");
+  const me = useTranslations("me");
   const common = useTranslations("common");
   const cache = useQueryClient();
+  const role = useSession((s) => s.role);
+  const mayDecideDependents = role !== null && DEPENDENT_DECIDERS.includes(role);
 
   const inbox = useQuery({
     queryKey: ["requests", "inbox"],
@@ -23,6 +39,19 @@ export default function ApprovalsPage() {
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ["requests"] });
     },
+  });
+
+  const dependents = useQuery({
+    queryKey: ["dependents", "waiting"],
+    enabled: mayDecideDependents,
+    queryFn: async () =>
+      (await api.get<WaitingDependent[]>("/dependents?state=PENDING")).data,
+  });
+
+  const decideDependent = useMutation({
+    mutationFn: (what: { id: string; approve: boolean }) =>
+      api.post(`/dependents/${what.id}/decide`, { approve: what.approve }),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["dependents"] }),
   });
 
   return (
@@ -48,6 +77,43 @@ export default function ApprovalsPage() {
       ) : (
         <p className="text-sm text-(--color-muted)">{t("inboxEmpty")}</p>
       )}
+      {mayDecideDependents && dependents.data?.length ? (
+        <>
+          <h2 className="mt-8 text-sm font-medium">{me("dependentsTitle")}</h2>
+          <div className="mt-2 rounded-xl border border-(--color-line) bg-(--color-surface)">
+            <ul className="divide-y divide-(--color-line)">
+              {dependents.data.map((one) => (
+                <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                  <span className="min-w-0 flex-1 truncate">
+                    {one.employee.fullName} · {one.fullName}
+                  </span>
+                  <span className="text-(--color-muted)">{me(`relation${one.relation}`)}</span>
+                  <span className="tabular-nums text-(--color-muted)">
+                    {one.fromMonth.slice(0, 10)}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={decideDependent.isPending}
+                    onClick={() => decideDependent.mutate({ id: one.id, approve: true })}
+                  >
+                    {t("approve")}
+                  </Button>
+                  <Button
+                    type="button"
+                    tone="quiet"
+                    size="sm"
+                    disabled={decideDependent.isPending}
+                    onClick={() => decideDependent.mutate({ id: one.id, approve: false })}
+                  >
+                    {t("reject")}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }
