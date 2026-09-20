@@ -376,5 +376,15 @@
     "ADVANCE_ALREADY_DECIDED": "This advance has already been answered.",
     "ADVANCE_NOT_APPROVED": "This advance has not been approved.",
     "SELF_DECIDE": "You cannot decide your own request."
+  },
+  "search": {
+    "label": "Search",
+    "placeholder": "People, departments, requests, payslips…  ( / )",
+    "looking": "Looking…",
+    "nothing": "Nothing matched",
+    "kindEmployee": "Employee",
+    "kindDepartment": "Department",
+    "kindRequest": "Request",
+    "kindPayslip": "Payslip"
   }
 }

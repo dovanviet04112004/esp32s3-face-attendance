@@ -376,5 +376,15 @@
     "ADVANCE_ALREADY_DECIDED": "Đơn tạm ứng này đã được xử lý.",
     "ADVANCE_NOT_APPROVED": "Đơn tạm ứng chưa được duyệt.",
     "SELF_DECIDE": "Không thể tự duyệt đơn của chính mình."
+  },
+  "search": {
+    "label": "Tìm kiếm",
+    "placeholder": "Tìm người, phòng ban, đơn, phiếu lương…  ( / )",
+    "looking": "Đang tìm…",
+    "nothing": "Không có kết quả nào",
+    "kindEmployee": "Nhân viên",
+    "kindDepartment": "Phòng ban",
+    "kindRequest": "Đơn",
+    "kindPayslip": "Phiếu lương"
   }
 }
