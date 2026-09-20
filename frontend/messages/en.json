@@ -61,7 +61,8 @@
     "more": "Show more",
     "less": "Show less",
     "close": "Close",
-    "sure": "Sure?"
+    "sure": "Sure?",
+    "filters": "Filters"
   },
   "login": {
     "lead": "Sign in to reach the control panel",

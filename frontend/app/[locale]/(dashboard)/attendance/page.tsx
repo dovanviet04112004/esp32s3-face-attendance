@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { Input } from "@/components/ui/input";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
@@ -120,7 +121,14 @@ export default function AttendancePage() {
       <h1 className="text-lg font-semibold">{t("title")}</h1>
       <p className="mt-1 text-sm text-(--color-muted)">{t("lead")}</p>
 
-      <div className="mt-6 mb-6 flex flex-wrap items-end gap-3">
+      <div className="mt-6" />
+      <FilterBar
+        extra={
+          <Button type="button" tone="quiet" disabled={shown.length === 0} onClick={exportCsv}>
+            {common("export")}
+          </Button>
+        }
+      >
         <div>
           <label className="block text-xs text-(--color-muted)" htmlFor="from">
             {t("from")}
@@ -157,10 +165,7 @@ export default function AttendancePage() {
             className="mt-1 w-56"
           />
         </div>
-        <Button type="button" tone="quiet" disabled={shown.length === 0} onClick={exportCsv}>
-          {common("export")}
-        </Button>
-      </div>
+      </FilterBar>
 
       {backwards ? (
         <p role="alert" className="text-sm text-(--color-danger)">

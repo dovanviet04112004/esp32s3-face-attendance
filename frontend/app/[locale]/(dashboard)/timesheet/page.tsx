@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
@@ -214,7 +215,21 @@ export default function TimesheetPage() {
       <h1 className="text-lg font-semibold">{t("title")}</h1>
       <p className="mt-1 mb-4 text-sm text-(--color-muted)">{t("lead")}</p>
 
-      <form className="mb-4 flex flex-wrap items-end gap-2" onSubmit={apply}>
+      <FilterBar
+        onApply={apply}
+        extra={
+          mayCorrect ? (
+            <Button
+              type="button"
+              tone="quiet"
+              disabled={rebuild.isPending}
+              onClick={() => rebuild.mutate()}
+            >
+              {rebuild.isPending ? t("rebuilding") : t("rebuild")}
+            </Button>
+          ) : null
+        }
+      >
         <div>
           <label className="block text-xs text-(--color-muted)" htmlFor="from">
             {t("from")}
@@ -256,13 +271,7 @@ export default function TimesheetPage() {
             ))}
           </Select>
         </div>
-        <Button type="submit">{common("apply")}</Button>
-        {mayCorrect ? (
-          <Button type="button" tone="quiet" disabled={rebuild.isPending} onClick={() => rebuild.mutate()}>
-            {rebuild.isPending ? t("rebuilding") : t("rebuild")}
-          </Button>
-        ) : null}
-      </form>
+      </FilterBar>
 
       {rebuild.data ? (
         <div className="mb-3 flex flex-wrap items-center gap-3">

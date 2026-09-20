@@ -5,6 +5,7 @@ import { useFormatter, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { BottomBar } from "@/components/ui/bottom-bar";
 import { Empty } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -140,9 +141,11 @@ export default function MyLettersPage() {
           </p>
         ) : null}
 
-        <Button type="submit" disabled={ask.isPending} className="mt-4">
-          {ask.isPending ? t("asking") : t("ask")}
-        </Button>
+        <BottomBar>
+          <Button type="submit" disabled={ask.isPending}>
+            {ask.isPending ? t("asking") : t("ask")}
+          </Button>
+        </BottomBar>
       </form>
 
       {letters.isPending ? <Skeleton className="mt-4 h-40 w-full" /> : null}

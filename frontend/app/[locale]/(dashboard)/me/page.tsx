@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { StatePill, type RequestRow } from "@/components/requests/request-card";
@@ -12,6 +12,7 @@ import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { days, minutes } from "@/lib/format";
 
 interface Balance {
   leaveTypeId: string;
@@ -45,6 +46,7 @@ export default function MyPage() {
   const t = useTranslations("me");
   const r = useTranslations("requests");
   const common = useTranslations("common");
+  const locale = useLocale();
   const employeeId = useSession((s) => s.employeeId);
   const [asOf, setAsOf] = useState(today);
   const [dependentName, setDependentName] = useState("");
@@ -244,7 +246,7 @@ export default function MyPage() {
             {pending.map((row) => (
               <li key={row.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                 <span>
-                  {r(`kind${row.kind}`)} · {Number(row.days)} {t("daysUnit")}
+                  {r(`kind${row.kind}`)} · {days(Number(row.days), locale)}
                 </span>
                 <StatePill state={row.state} />
               </li>

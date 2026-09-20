@@ -138,6 +138,13 @@ export function DataTable<T>({
   const allOn = ordered.length > 0 && ordered.every((row) => chosen.has(keyOf(row)));
   const picked = ordered.filter((row) => chosen.has(keyOf(row)));
 
+  // Without the stacking order the cells sliding sideways paint over the frozen
+  // one; the offset clears the selection box when the table has one.
+  const frozen = cn(
+    "sticky bg-(--color-surface) border-e border-(--color-line)",
+    selectable ? "start-10" : "start-0",
+  );
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 pb-2">
@@ -166,7 +173,7 @@ export function DataTable<T>({
           <thead>
             <tr className="border-b border-(--color-line) text-left text-(--color-muted)">
               {selectable ? (
-                <th className="w-10 px-4 py-3">
+                <th className="sticky start-0 z-20 w-10 bg-(--color-surface) px-4 py-3">
                   <Checkbox
                     className="min-h-0"
                     aria-label={t("chooseAll")}
@@ -191,7 +198,8 @@ export function DataTable<T>({
                   }
                   className={cn(
                     "px-4 py-3 font-medium",
-                    column.sticky && "sticky start-0 bg-(--color-surface)",
+                    column.sticky && frozen,
+                    column.sticky && "z-20",
                   )}
                 >
                   {column.sortBy ? (
@@ -222,7 +230,7 @@ export function DataTable<T>({
               return (
                 <tr key={key} className="border-b border-(--color-line) last:border-0">
                   {selectable ? (
-                    <td className="px-4 py-3">
+                    <td className="sticky start-0 z-10 bg-(--color-surface) px-4 py-3">
                       <Checkbox
                         className="min-h-0"
                         aria-label={t("chooseRow")}
@@ -238,7 +246,8 @@ export function DataTable<T>({
                       className={cn(
                         "px-4 py-3",
                         column.numeric && "tabular-nums",
-                        column.sticky && "sticky start-0 bg-(--color-surface)",
+                        column.sticky && frozen,
+                        column.sticky && "z-10",
                       )}
                     >
                       {column.cell(row)}

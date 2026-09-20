@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { BottomBar } from "@/components/ui/bottom-bar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -107,14 +108,14 @@ export function EmployeeForm({
         </p>
       ) : null}
 
-      <div className="mt-6 flex gap-2">
+      <BottomBar className="md:mt-6 md:flex">
         <Button type="submit" disabled={busy}>
           {busy ? common("saving") : common("save")}
         </Button>
         <Button type="button" tone="quiet" onClick={onCancel}>
           {common("cancel")}
         </Button>
-      </div>
+      </BottomBar>
     </form>
   );
 }

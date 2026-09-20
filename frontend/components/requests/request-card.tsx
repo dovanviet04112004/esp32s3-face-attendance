@@ -1,11 +1,12 @@
 "use client";
 
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
+import { days, minutes } from "@/lib/format";
 
 export type RequestKind =
   | "LEAVE"
@@ -62,6 +63,7 @@ export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
   const t = useTranslations("requests");
   const common = useTranslations("common");
   const format = useFormatter();
+  const locale = useLocale();
   const [note, setNote] = useState("");
 
   const span =
@@ -79,7 +81,7 @@ export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
           <p className="mt-0.5 text-xs text-(--color-muted)">
             {t(`kind${row.kind}`)}
             {row.leaveType ? ` · ${row.leaveType.name}` : ""}
-            {row.minutes > 0 ? ` · ${row.minutes} ${t("minutes").toLowerCase()}` : ""}
+            {row.minutes > 0 ? ` · ${minutes(row.minutes, locale)}` : ""}
           </p>
         </div>
         <StatePill state={row.state} />
@@ -92,7 +94,7 @@ export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
         </div>
         <div className="flex justify-between gap-3 sm:block">
           <dt className="text-xs text-(--color-muted)">{t("days")}</dt>
-          <dd className="tabular-nums">{Number(row.days)}</dd>
+          <dd className="tabular-nums">{days(Number(row.days), locale)}</dd>
         </div>
       </dl>
 
