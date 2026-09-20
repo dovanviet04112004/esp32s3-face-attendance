@@ -375,7 +375,8 @@
     "advancePAID": "Paid out",
     "advanceSETTLED": "Recovered",
     "advanceCANCELLED": "Withdrawn",
-    "advanceLead": "Approve, then pay; the next payroll run recovers it."
+    "advanceLead": "Approve, then pay; the next payroll run recovers it.",
+    "LEAVERS_HOLDING_ASSETS": "Leavers still holding assets"
   },
   "policy": {
     "title": "Pay policy",
@@ -446,7 +447,16 @@
     "CONSENT_NOT_YOURS": "You may only agree for yourself.",
     "CONSENT_ALREADY_GRANTED": "A live agreement already exists.",
     "CONSENT_NOT_GRANTED": "There is no agreement to withdraw.",
-    "NETWORK_UNREACHABLE": "Could not reach the server. Check the API is running at the address this page calls."
+    "NETWORK_UNREACHABLE": "Could not reach the server. Check the API is running at the address this page calls.",
+    "ACCOUNT_CLOSED": "This account has been closed.",
+    "ASSET_NOT_FOUND": "No such asset.",
+    "ASSET_ALREADY_ISSUED": "Somebody is already holding this asset.",
+    "ASSET_NOT_ISSUED": "This asset is not out with anyone.",
+    "ASSET_HELD_BY_SOMEBODY_ELSE": "Somebody else is holding this asset.",
+    "MANAGER_CYCLE": "That arrangement makes a loop of managers.",
+    "REORG_NEEDS_A_SELECTION": "Choose a department or a list of people to move.",
+    "REORG_NEEDS_A_DESTINATION": "Choose a new department or a new manager.",
+    "REORG_MOVES_NOBODY": "Nobody matches that selection."
   },
   "search": {
     "label": "Search",

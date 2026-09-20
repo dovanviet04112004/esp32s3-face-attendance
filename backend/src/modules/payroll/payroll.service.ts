@@ -178,7 +178,8 @@ export class PayrollService {
    */
   async checklist(periodId: string): Promise<ChecklistItem[]> {
     const period = await this.requirePeriod(periodId);
-    const [pendingRequests, missingPay, unbuiltDays, openCorrections, strays] = await Promise.all([
+    const [pendingRequests, missingPay, unbuiltDays, openCorrections, strays, stillHolding] =
+      await Promise.all([
       this.db.request.count({
         where: { state: "PENDING", fromDate: { lte: period.endDate }, toDate: { gte: period.startDate } },
       }),
@@ -209,6 +210,15 @@ export class PayrollService {
       period.legalEntityId
         ? this.db.employee.count({ where: { active: true, legalEntityId: null } })
         : Promise.resolve(0),
+      // Somebody who left this month and still holds a laptop: the last payslip
+      // is the last moment anything can be set against (KEHOACH 9.16 item 10).
+      this.db.employee.count({
+        where: {
+          leaveDate: { gte: period.startDate, lte: period.endDate },
+          ...(period.legalEntityId ? { legalEntityId: period.legalEntityId } : {}),
+          assetsHeld: { some: { state: "ISSUED" } },
+        },
+      }),
     ]);
     return [
       { code: "REQUESTS_PENDING", count: pendingRequests },
@@ -216,6 +226,7 @@ export class PayrollService {
       { code: "NO_COMPENSATION", count: missingPay },
       { code: "NO_ATTENDANCE_DAYS", count: unbuiltDays },
       { code: "NO_LEGAL_ENTITY", count: strays },
+      { code: "LEAVERS_HOLDING_ASSETS", count: stillHolding },
     ];
   }
 

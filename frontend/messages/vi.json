@@ -375,7 +375,8 @@
     "advancePAID": "Đã chi",
     "advanceSETTLED": "Đã khấu trừ",
     "advanceCANCELLED": "Đã huỷ",
-    "advanceLead": "Duyệt xong rồi chi; kỳ lương sau tự khấu trừ."
+    "advanceLead": "Duyệt xong rồi chi; kỳ lương sau tự khấu trừ.",
+    "LEAVERS_HOLDING_ASSETS": "Rời đi còn giữ tài sản"
   },
   "policy": {
     "title": "Chính sách lương",
@@ -446,7 +447,16 @@
     "CONSENT_NOT_YOURS": "Bạn chỉ được ký đồng ý cho chính mình.",
     "CONSENT_ALREADY_GRANTED": "Đã có một đồng ý còn hiệu lực.",
     "CONSENT_NOT_GRANTED": "Chưa có đồng ý nào để rút.",
-    "NETWORK_UNREACHABLE": "Không gọi được máy chủ. Kiểm tra API có đang chạy ở địa chỉ trang này gọi tới không."
+    "NETWORK_UNREACHABLE": "Không gọi được máy chủ. Kiểm tra API có đang chạy ở địa chỉ trang này gọi tới không.",
+    "ACCOUNT_CLOSED": "Tài khoản đã bị đóng.",
+    "ASSET_NOT_FOUND": "Không tìm thấy tài sản này.",
+    "ASSET_ALREADY_ISSUED": "Tài sản này đang có người giữ.",
+    "ASSET_NOT_ISSUED": "Tài sản này chưa cấp cho ai.",
+    "ASSET_HELD_BY_SOMEBODY_ELSE": "Người đang giữ tài sản này là người khác.",
+    "MANAGER_CYCLE": "Sắp xếp này tạo thành vòng cấp trên.",
+    "REORG_NEEDS_A_SELECTION": "Chọn phòng ban hoặc danh sách người cần chuyển.",
+    "REORG_NEEDS_A_DESTINATION": "Chọn phòng ban mới hoặc cấp trên mới.",
+    "REORG_MOVES_NOBODY": "Không có ai khớp lựa chọn này."
   },
   "search": {
     "label": "Tìm kiếm",
