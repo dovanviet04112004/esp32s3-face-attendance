@@ -5863,8 +5863,17 @@ ty vào đúng kỳ đầu năm, và không ai biết cho tới khi có người
 Nên hai bảng, cả hai có `effectiveFrom`:
 
 - `PayrollPolicy` — giảm trừ bản thân, giảm trừ người phụ thuộc, tỷ lệ BHXH **8%**, BHYT
-  **1,5%**, BHTN **1%** phía người lao động, và **trần đóng bằng 20 lần mức tham chiếu**.
+  **1,5%**, BHTN **1%** phía người lao động, tỷ lệ phía công ty, **trần đóng bằng 20 lần mức
+  tham chiếu**, ngày công chuẩn mỗi tháng, hệ số tăng ca, và **ngưỡng ngày không lương miễn
+  đóng**.
 - `TaxBracket` — biểu thuế luỹ tiến từng phần, mỗi bậc một dòng.
+
+**Tháng không đi làm thì không đóng bảo hiểm, và đó là một cột chứ không phải một số trong
+hàm.** Luật BHXH miễn đóng cho tháng người lao động **không làm việc và không hưởng lương từ
+14 ngày làm việc trở lên**. Bỏ quy tắc này thì phiếu lương của người nghỉ không lương cả tháng
+ra **thực nhận âm**: thu nhập bằng 0 mà vẫn trừ 10,5% của lương đóng bảo hiểm. Con số 14 nằm ở
+`PayrollPolicy.noContributionUnpaidDays` vì nó do luật đặt, và ngày luật đổi thì thêm một dòng
+chính sách là xong.
 
 Phép tính lương **luôn hỏi chính sách có hiệu lực tại ngày cuối kỳ**, không hỏi "chính sách hiện
 tại". Tính lại một kỳ cũ vì thế ra đúng con số cũ.
