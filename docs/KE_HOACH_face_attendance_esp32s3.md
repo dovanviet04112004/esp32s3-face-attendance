@@ -5784,7 +5784,7 @@ thái, cùng hộp chờ duyệt và cùng đường tới người duyệt, nê
 cùng một logic. Xem §9.5.
 
 **Lương** — `CompensationRecord`, `CompensationAllowance`, `PayrollPeriod`, `PayrollRun`,
-`Payslip`, `PayslipLine`, `Dependent`, `RetroAdjustment`, `SalaryAdvance`.
+`Payslip`, `PayslipLine`, `Dependent`, `RetroAdjustment`, `SalaryAdvance`, `BonusItem`.
 
 Ba bảng trong số đó tồn tại vì một câu hỏi mà bảng khác không trả lời được:
 
@@ -5793,6 +5793,7 @@ Ba bảng trong số đó tồn tại vì một câu hỏi mà bảng khác khô
 | `CompensationAllowance` | "quý này công ty trả bao nhiêu tiền ăn trưa" | một ô `allowances` tổng thì câu hỏi ấy phải mở từng bản ghi ra đọc |
 | `RetroAdjustment` | "khoản này thuộc kỳ nào, trả ở kỳ nào" | kỳ đã chốt không được mở lại (§9.6), nên khoản tới muộn phải có chỗ đứng riêng |
 | `SalaryAdvance` | "ai đang nợ tạm ứng, khấu trừ vào phiếu nào" | việc này vẫn xảy ra; không có bảng thì nó xảy ra trong tin nhắn |
+| `BonusItem` | "khoản thưởng này thuộc lượt nào, của ai, bao nhiêu" | lượt thưởng cần đầu vào riêng; nhét vào `CompensationRecord` là biến một khoản một lần thành mức lương thường xuyên |
 
 **Chính sách** — `PayrollPolicy`, `TaxBracket`. Xem §9.7. Mọi tỷ lệ lưu bằng **điểm cơ bản
 kiểu nguyên** (`800` là 8%), không lưu số thực: một phép nhân dấu phẩy động trong bảng lương là
@@ -6247,6 +6248,22 @@ tạm ứng, đối trừ tài sản chưa trả. Đây là phép tính khác h�
 
 **9. Thưởng chạy tách khỏi lương tháng.** Thưởng tết, thưởng hiệu quả. Là **lượt chạy riêng trên
 cùng kỳ**, vì thuế của khoản thưởng tính cùng kỳ chi trả nhưng nguồn và người duyệt thì khác.
+
+**Thuế của lượt thưởng là phần thuế tăng thêm, không phải thuế tính lại từ đầu.** Thuế TNCN luỹ
+tiến trên **tổng thu nhập của kỳ**, nên một phiếu thưởng tính thuế độc lập sẽ rơi vào bậc thấp
+và thu thiếu; còn tính lại cả kỳ rồi phát phiếu thứ hai thì trả lương hai lần. Công thức đúng
+là hiệu:
+
+```
+thuế thưởng = thuế(thu nhập tính thuế kỳ + thưởng) − thuế(thu nhập tính thuế kỳ)
+```
+
+Nên lượt thưởng **bắt buộc chạy sau lượt lương tháng của cùng kỳ** và đọc phiếu thường của người
+đó làm nền. Không có phiếu nền thì từ chối, chứ không lặng lẽ coi nền bằng không.
+
+**Thưởng không vào nền đóng bảo hiểm.** Nền đóng là mức lương theo hợp đồng cộng phụ cấp có
+tính chất lương, và một khoản thưởng một lần không phải thứ đó — nên phiếu thưởng không có dòng
+bảo hiểm nào, cả phía người lao động lẫn phía công ty.
 
 **10. Tạm ứng lương.** Đơn, duyệt, chi, rồi **tự khấu trừ ở kỳ sau**. Không có đường này thì nó
 vẫn xảy ra, chỉ là xảy ra ngoài hệ thống.
