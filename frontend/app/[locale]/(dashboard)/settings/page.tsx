@@ -18,7 +18,6 @@ import { useFault } from "@/lib/fault";
 interface OpenedAccount {
   employeeCode: string;
   email: string;
-  password: string;
   role: string;
 }
 
@@ -134,7 +133,7 @@ export default function SettingsPage() {
                   <li key={one.email} className="flex flex-wrap gap-x-3">
                     <span className="min-w-24">{one.employeeCode}</span>
                     <span className="min-w-48 flex-1 truncate">{one.email}</span>
-                    <span className="select-all">{one.password}</span>
+                    <span className="text-(--color-muted)">{one.role}</span>
                   </li>
                 ))}
               </ul>

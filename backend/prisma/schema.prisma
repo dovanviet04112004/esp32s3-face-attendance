@@ -79,6 +79,7 @@ model User {
   updatedAt      DateTime        @updatedAt
   employee       Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   sessions       Session[]
+  passwordSetups PasswordSetup[]
   issuedCommands DeviceCommand[]
   auditLogs      AuditLog[]
   assetMoves     AssetTransfer[]
@@ -102,6 +103,23 @@ model Session {
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+/**
+ * A one-time link that lets somebody set their first password. The server
+ * holds the hash; the link itself leaves once, by mail (KEHOACH 9.4).
+ */
+model PasswordSetup {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
   @@index([expiresAt])
 }
 

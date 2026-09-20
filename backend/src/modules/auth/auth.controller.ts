@@ -21,6 +21,7 @@ import type { Env } from "../../config/env.schema.js";
 import { AuthService, ttlToMs, type IssuedTokens } from "./auth.service.js";
 import { REFRESH_COOKIE, THROTTLE, type AccessClaims, type RefreshClaims } from "./auth.types.js";
 import { LoginDto } from "./dto/login.dto.js";
+import { SetPasswordDto } from "./dto/set-password.dto.js";
 
 const REFRESH_PATH = "/auth";
 
@@ -49,6 +50,15 @@ export class AuthController {
       ip: req.ip,
     });
     return this.handOver(tokens, res);
+  }
+
+  @Post("set-password")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(ThrottlerGuard)
+  @SkipThrottle({ [THROTTLE.deviceRegister]: true })
+  @ApiOperation({ summary: "Spend a one-time link to set a first password" })
+  async setPassword(@Body() body: SetPasswordDto): Promise<void> {
+    await this.auth.setPassword(body.token, body.password);
   }
 
   @Post("refresh")

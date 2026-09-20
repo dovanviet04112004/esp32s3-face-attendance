@@ -217,11 +217,11 @@
     "vi": "Tiếng Việt",
     "en": "English",
     "provisionTitle": "Open employee logins",
-    "provisionLead": "Every active employee with a personal email and no account gets a login. Anyone with people reporting to them starts as a manager.",
+    "provisionLead": "Every active employee with a personal email and no account is emailed a link to set their own password. Anyone with people reporting to them starts as a manager.",
     "provisionRun": "Open logins",
     "provisionRunning": "Opening…",
     "provisionNone": "Nobody is waiting. An employee with no personal email on file cannot be given one.",
-    "provisionOnce": "These passwords are shown this once. Leave the page and they are gone.",
+    "provisionOnce": "Each person gets an email with a link to set their own password.",
     "accountTitle": "Account",
     "role": "Role",
     "themeTitle": "Appearance",
@@ -470,7 +470,8 @@
     "CONTRACT_NOT_FOUND": "No such contract.",
     "DEPARTMENT_NOT_FOUND": "No such department.",
     "HOLIDAY_ALREADY_SET": "That date is already a holiday.",
-    "DEVICE_BOOTSTRAP_REJECTED": "This machine is not accepted into the system."
+    "DEVICE_BOOTSTRAP_REJECTED": "This machine is not accepted into the system.",
+    "SETUP_LINK_SPENT": "This link has been used or has expired. Ask HR for a new one."
   },
   "search": {
     "label": "Search",
@@ -560,5 +561,16 @@
     "addHoliday": "Add holiday",
     "removeHoliday": "Remove",
     "holidaysEmpty": "No holidays entered for this year"
+  },
+  "setPassword": {
+    "lead": "Set a password to open your account",
+    "password": "New password",
+    "again": "Type it again",
+    "hint": "At least {count} characters.",
+    "submit": "Set password",
+    "saving": "Saving…",
+    "mismatch": "Those two do not match",
+    "noToken": "This address carries no code. Open the link from your email.",
+    "toLogin": "Back to sign in"
   }
 }

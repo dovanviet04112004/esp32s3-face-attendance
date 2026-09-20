@@ -1,8 +1,9 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,16 +12,25 @@ import type { Role, User } from "@prisma/client";
 
 import { ConfigService } from "@nestjs/config";
 
+import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
+import { QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
+
 import type { Env } from "../../config/env.schema.js";
 import type { Page, PaginationDto } from "../../common/dto/pagination.dto.js";
 import { PrismaService } from "../../database/prisma.service.js";
 
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { hashPassword } from "../auth/password.js";
+import { hashPassword, UNUSABLE_PASSWORD } from "../auth/password.js";
 import type { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
+const LINK_BYTES = 32;
+const HOUR_MS = 3_600_000;
+
+function fingerprint(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 /** A user as an api may show one: no hash, no refresh fingerprint. */
 export type PublicUser = Pick<User, "id" | "email" | "role" | "createdAt" | "updatedAt">;
@@ -33,11 +43,10 @@ const VISIBLE = {
   updatedAt: true,
 } as const;
 
-/** What an admin sees once after provisioning, and never again. */
+/** Who got an invitation. No secret here: the link goes to them, not here. */
 export interface ProvisionedAccount {
   employeeCode: string;
   email: string;
-  password: string;
   role: string;
 }
 
@@ -55,6 +64,7 @@ export class UsersService {
     private readonly db: PrismaService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
+    @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
 
@@ -67,35 +77,71 @@ export class UsersService {
     const batch = this.config.get("PROVISION_BATCH", { infer: true });
     const waiting = await this.db.employee.findMany({
       where: unopened,
-      select: { id: true, code: true, personalEmail: true, _count: { select: { reports: true } } },
+      select: {
+        id: true,
+        code: true,
+        personalEmail: true,
+        locale: true,
+        _count: { select: { reports: true } },
+      },
       orderBy: { code: "asc" },
       take: batch,
     });
-    const made: ProvisionedAccount[] = [];
-    for (const person of waiting) {
-      // Shown to the admin once and never stored in the clear.
-      const password = randomBytes(12).toString("base64url");
-      const role = person._count.reports > 0 ? "MANAGER" : "EMPLOYEE";
-      try {
-        await this.db.user.create({
-          data: {
-            email: person.personalEmail as string,
-            passwordHash: await hashPassword(password),
-            role,
-            employeeId: person.id,
-          },
-        });
-      } catch (error) {
-        if (isCode(error, UNIQUE_VIOLATION)) {
-          continue;
-        }
-        throw error;
-      }
-      made.push({ employeeCode: person.code, email: person.personalEmail as string, password, role });
+    const invites = waiting.map((person) => ({
+      userId: randomUUID(),
+      link: randomBytes(LINK_BYTES).toString("base64url"),
+      person,
+    }));
+    const expiresAt = new Date(
+      Date.now() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * HOUR_MS,
+    );
+    // Both statements or neither: an account with no link is one nobody can
+    // reach, and a link with no account points at nothing.
+    await this.db.$transaction([
+      this.db.user.createMany({
+        data: invites.map((one) => ({
+          id: one.userId,
+          email: one.person.personalEmail as string,
+          passwordHash: UNUSABLE_PASSWORD,
+          role: one.person._count.reports > 0 ? "MANAGER" : "EMPLOYEE",
+          employeeId: one.person.id,
+        })),
+        skipDuplicates: true,
+      }),
+      this.db.passwordSetup.createMany({
+        data: invites.map((one) => ({
+          userId: one.userId,
+          tokenHash: fingerprint(one.link),
+          expiresAt,
+        })),
+        skipDuplicates: true,
+      }),
+    ]);
+    const opened = await this.db.user.findMany({
+      where: { id: { in: invites.map((one) => one.userId) } },
+      select: { id: true },
+    });
+    const landed = new Set(opened.map((one) => one.id));
+    const root = this.config.get("APP_PUBLIC_URL", { infer: true });
+    for (const one of invites.filter((each) => landed.has(each.userId))) {
+      await this.queues[QUEUE.notify].add("password-setup", {
+        type: "password-setup",
+        userId: one.userId,
+        link: `${root}/${one.person.locale}/set-password?token=${one.link}`,
+      } satisfies PasswordSetupJob);
     }
     const left = await this.db.employee.count({ where: unopened });
-    this.log.log(`opened ${made.length} employee login(s), ${left} still waiting`);
-    return { accounts: made, waiting: left };
+    this.log.log(`invited ${landed.size} employee(s), ${left} still waiting`);
+    return {
+      accounts: invites
+        .filter((one) => landed.has(one.userId))
+        .map((one) => ({
+          employeeCode: one.person.code,
+          email: one.person.personalEmail as string,
+          role: one.person._count.reports > 0 ? "MANAGER" : "EMPLOYEE",
+        })),
+      waiting: left,
+    };
   }
 
   async list(query: PaginationDto): Promise<Page<PublicUser>> {

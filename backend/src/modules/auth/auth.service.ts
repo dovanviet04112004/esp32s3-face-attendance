@@ -8,7 +8,7 @@ import type { User } from "@prisma/client";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import type { AccessClaims, DeviceClaims, RefreshClaims } from "./auth.types.js";
-import { verifyPassword } from "./password.js";
+import { hashPassword, verifyPassword } from "./password.js";
 
 const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
@@ -81,6 +81,28 @@ export class AuthService {
       throw new UnauthorizedException("ACCOUNT_CLOSED");
     }
     return this.issue(session.user, session.id, {});
+  }
+
+  /** Redeem a one-time link; spending it closes it (KEHOACH 9.4). */
+  async setPassword(token: string, password: string): Promise<void> {
+    const setup = await this.db.passwordSetup.findUnique({
+      where: { tokenHash: fingerprint(token) },
+      include: { user: { select: { id: true, active: true } } },
+    });
+    const now = new Date();
+    if (!setup || setup.usedAt !== null || setup.expiresAt <= now || !setup.user.active) {
+      throw new UnauthorizedException("SETUP_LINK_SPENT");
+    }
+    const passwordHash = await hashPassword(password);
+    await this.db.$transaction([
+      this.db.passwordSetup.update({ where: { id: setup.id }, data: { usedAt: now } }),
+      this.db.user.update({ where: { id: setup.user.id }, data: { passwordHash } }),
+      this.db.session.updateMany({
+        where: { userId: setup.user.id, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
+    this.log.log(`account ${setup.user.id} set its own password`);
   }
 
   /** Sign one device out, leaving the rest of them signed in. */

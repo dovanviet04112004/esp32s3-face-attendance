@@ -217,11 +217,11 @@
     "vi": "Tiếng Việt",
     "en": "English",
     "provisionTitle": "Mở đăng nhập cho nhân viên",
-    "provisionLead": "Mỗi nhân viên đang làm việc, có email cá nhân và chưa có tài khoản sẽ được mở một login. Ai có người báo cáo thì vào vai quản lý.",
+    "provisionLead": "Mỗi nhân viên đang làm việc, có email cá nhân và chưa có tài khoản sẽ nhận một thư mời tự đặt mật khẩu. Ai có người báo cáo thì vào vai quản lý.",
     "provisionRun": "Mở đăng nhập",
     "provisionRunning": "Đang mở…",
     "provisionNone": "Không ai đang chờ. Nhân viên chưa có email cá nhân trong hồ sơ thì không mở được.",
-    "provisionOnce": "Mật khẩu chỉ hiện một lần này. Rời trang là không xem lại được nữa.",
+    "provisionOnce": "Mỗi người nhận một thư kèm liên kết tự đặt mật khẩu.",
     "accountTitle": "Tài khoản",
     "role": "Quyền",
     "themeTitle": "Giao diện",
@@ -470,7 +470,8 @@
     "CONTRACT_NOT_FOUND": "Không tìm thấy hợp đồng này.",
     "DEPARTMENT_NOT_FOUND": "Không tìm thấy phòng ban này.",
     "HOLIDAY_ALREADY_SET": "Ngày này đã có trong lịch nghỉ.",
-    "DEVICE_BOOTSTRAP_REJECTED": "Máy này không được nhận vào hệ thống."
+    "DEVICE_BOOTSTRAP_REJECTED": "Máy này không được nhận vào hệ thống.",
+    "SETUP_LINK_SPENT": "Liên kết này đã dùng rồi hoặc đã hết hạn. Nhờ nhân sự phát lại."
   },
   "search": {
     "label": "Tìm kiếm",
@@ -560,5 +561,16 @@
     "addHoliday": "Thêm ngày lễ",
     "removeHoliday": "Xoá",
     "holidaysEmpty": "Chưa nhập ngày lễ nào cho năm nay"
+  },
+  "setPassword": {
+    "lead": "Đặt mật khẩu để mở tài khoản của bạn",
+    "password": "Mật khẩu mới",
+    "again": "Nhập lại mật khẩu",
+    "hint": "Ít nhất {count} ký tự.",
+    "submit": "Đặt mật khẩu",
+    "saving": "Đang đặt…",
+    "mismatch": "Hai lần nhập chưa giống nhau",
+    "noToken": "Đường dẫn thiếu mã. Mở lại đúng liên kết trong thư.",
+    "toLogin": "Về trang đăng nhập"
   }
 }

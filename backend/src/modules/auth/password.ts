@@ -11,6 +11,8 @@ const SALT_BYTES = 16;
 const KEY_BYTES = 64;
 const SCHEME = "scrypt";
 
+export const UNUSABLE_PASSWORD = "none$";
+
 /** Hash a password for storage, salt included in the returned string. */
 export async function hashPassword(plain: string): Promise<string> {
   const salt = randomBytes(SALT_BYTES);

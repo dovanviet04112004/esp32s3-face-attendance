@@ -5,7 +5,10 @@ import { Worker } from "bullmq";
 import type { Env } from "../../config/env.schema.js";
 import { RedisService } from "../../database/redis.service.js";
 import { ContractAlertsService } from "../../modules/notifications/contract-alerts.service.js";
-import { QUEUE, type NotifyJob } from "../queues.js";
+import { MailerService } from "../../modules/notifications/mailer.service.js";
+import { setupMail } from "../../modules/payroll/mail-text.js";
+import { PrismaService } from "../../database/prisma.service.js";
+import { QUEUE, type NotifyJob, type PasswordSetupJob } from "../queues.js";
 
 const POST_TIMEOUT_MS = 10000;
 
@@ -17,6 +20,8 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly redis: RedisService,
     private readonly alerts: ContractAlertsService,
+    private readonly mailer: MailerService,
+    private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -27,6 +32,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         const body = job.data as NotifyJob;
         if (body.type === "contracts-ending") {
           await this.alerts.sweep();
+          return;
+        }
+        if (body.type === "password-setup") {
+          await this.mailSetup(body);
           return;
         }
         const url = this.config.get("NOTIFY_WEBHOOK_URL", { infer: true });
@@ -51,6 +60,23 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker.on("failed", (job, error) => {
       this.log.error(`notify ${job?.id} failed: ${error.message}`);
     });
+  }
+
+  private async mailSetup(job: PasswordSetupJob): Promise<void> {
+    const account = await this.db.user.findUnique({
+      where: { id: job.userId },
+      select: { email: true, employee: { select: { fullName: true, locale: true } } },
+    });
+    if (!account) {
+      this.log.warn(`account ${job.userId} is gone, no invitation to send`);
+      return;
+    }
+    const body = setupMail(account.employee?.locale ?? "vi", {
+      fullName: account.employee?.fullName ?? account.email,
+      url: job.link,
+      hours: this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }),
+    });
+    await this.mailer.send(account.email, body);
   }
 
   async onModuleDestroy(): Promise<void> {
