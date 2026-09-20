@@ -12,8 +12,8 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
 
-// One account holds one refresh token (KEHOACH 9.23 rule 5), so this suite
-// needs an identity no parallel suite signs in as.
+// The last case spends the login allowance for the minute, so this suite needs
+// an identity no parallel suite signs in as.
 const SIGNER_EMAIL = "e2eauth@kiosk.local";
 const SIGNER_PASSWORD = "kiosk-e2e-password";
 
