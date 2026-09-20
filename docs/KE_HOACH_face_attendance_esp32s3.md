@@ -6048,7 +6048,23 @@ Truy vấn một tháng chỉ chạm một mảnh, và dọn dữ liệu quá h�
 mà chưa được gì.
 
 **3. Danh sách dài đi bằng con trỏ, không bằng `OFFSET`.** `OFFSET 50000` bắt Postgres đếm qua
-50 nghìn dòng rồi vứt đi. Bảng nhân viên và bảng chấm công dùng khoá con trỏ `(ts, id)`.
+50 nghìn dòng rồi vứt đi, và cái giá đi thẳng theo độ sâu — đo trên **300.001 lượt quẹt**: trang
+đầu **3,0 ms**, `OFFSET 49950` **18,8 ms**, `OFFSET 249950` **118,1 ms**.
+
+Nhưng tiền không phải lý do chính. `OFFSET` **trả sai** khi có người ghi vào giữa hai trang: một
+lượt quẹt mới rơi lên đầu danh sách thì mọi thứ dịch xuống một ô, và trang sau lặp lại đúng một
+dòng trang trước đã hiện. Đo thật: chèn một lượt quẹt giữa trang 1 và trang 2 thì `OFFSET` lặp
+**1 dòng**, con trỏ lặp **0**. Một bảng chấm công của công ty đang chạy thì **luôn** có người ghi
+vào giữa hai trang — đó là điều kiện bình thường, không phải ngoại lệ.
+
+Khoá con trỏ phải là **một cặp có thứ tự toàn phần**: `(ts, id)` cho lượt quẹt, `(code, id)` cho
+nhân viên. Thiếu vế `id` thì hàng nghìn dòng cùng `ts` không có thứ tự xác định nào giữa chúng,
+và mỗi lượt chạy có quyền xếp khác đi. Con trỏ là **chuỗi mờ** phía client: nó mã hoá cặp khoá
+ấy, để không ai dựng con trỏ bằng tay rồi phụ thuộc vào hình dạng bên trong.
+
+`OFFSET` không bị bỏ hẳn — phân trang nông vẫn rẻ và giao diện số trang cần nó — nhưng bị **chặn
+trần** ở `MAX_OFFSET`. Quá trần thì từ chối kèm mã, và câu trả lời là dùng con trỏ. Một giới hạn
+từ chối thẳng tốt hơn một truy vấn chậm dần mà không ai thấy nó chậm từ lúc nào.
 
 **4. Tìm tên có dấu đi bằng chỉ mục ba chữ.** `ILIKE '%nguyen%'` không dùng được chỉ mục B-tree.
 Cần `pg_trgm` với chỉ mục GIN trên tên và mã.
