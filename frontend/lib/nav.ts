@@ -8,9 +8,12 @@ import {
   Inbox,
   LayoutDashboard,
   Network,
+  Receipt,
+  Scale,
   Settings,
   User,
   Users,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -46,6 +49,7 @@ export const NAV: NavGroup[] = [
       { href: "/me", key: "myPage", icon: User, roles: EVERYONE },
       { href: "/me/attendance", key: "myAttendance", icon: CalendarCheck, roles: EVERYONE },
       { href: "/me/requests", key: "myLeave", icon: FileText, roles: EVERYONE },
+      { href: "/me/payslips", key: "myPayslips", icon: Receipt, roles: EVERYONE },
     ],
   },
   {
@@ -67,6 +71,13 @@ export const NAV: NavGroup[] = [
       { href: "/attendance", key: "timesheet", icon: CalendarDays, roles: PEOPLE_DESK },
       { href: "/leave", key: "leave", icon: FileText, roles: PEOPLE_DESK },
       { href: "/shifts", key: "shifts", icon: Clock, roles: PEOPLE_DESK },
+    ],
+  },
+  {
+    key: "groupPay",
+    items: [
+      { href: "/payroll", key: "payroll", icon: Wallet, roles: PEOPLE_DESK },
+      { href: "/policy", key: "policy", icon: Scale, roles: PEOPLE_DESK },
     ],
   },
   {

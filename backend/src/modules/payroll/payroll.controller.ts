@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import type { Payslip, PayrollPeriod, PayrollRun } from "@prisma/client";
+import type { PayrollPeriod, PayrollRun } from "@prisma/client";
 
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
@@ -12,6 +12,7 @@ import {
   type ChecklistItem,
   type PayslipDelta,
   type PayslipDetail,
+  type PayslipRow,
 } from "./payroll.service.js";
 
 @ApiTags("payroll")
@@ -85,7 +86,7 @@ export class PayrollController {
     @CurrentViewer() viewer: Viewer,
     @Query("periodId") periodId?: string,
     @Query("runId") runId?: string,
-  ): Promise<Payslip[]> {
+  ): Promise<PayslipRow[]> {
     return this.payroll.payslips(viewer, periodId, runId);
   }
 

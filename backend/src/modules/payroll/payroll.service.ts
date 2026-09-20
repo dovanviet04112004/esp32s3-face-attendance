@@ -1,5 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Payslip, PayslipLine, PayrollPeriod, PayrollRun, Prisma } from "@prisma/client";
+import type {
+  Payslip,
+  PayslipLine,
+  PayrollPeriod,
+  PayrollRun,
+  PeriodState,
+  Prisma,
+} from "@prisma/client";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -43,6 +50,8 @@ export interface ChecklistItem {
 }
 
 export type PayslipDetail = Payslip & { lines: PayslipLine[] };
+
+export type PayslipRow = Payslip & { period: { year: number; month: number; state: PeriodState } };
 
 export interface PayslipDelta {
   code: string;
@@ -459,7 +468,7 @@ export class PayrollService {
     return { gross, net, done: written.length };
   }
 
-  async payslips(viewer: Viewer, periodId?: string, runId?: string): Promise<Payslip[]> {
+  async payslips(viewer: Viewer, periodId?: string, runId?: string): Promise<PayslipRow[]> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     return this.db.payslip.findMany({
       where: {
@@ -467,7 +476,8 @@ export class PayrollService {
         ...(runId ? { runId } : {}),
         ...(visible === null ? {} : { employeeId: { in: visible } }),
       },
-      orderBy: { employeeId: "asc" },
+      include: { period: { select: { year: true, month: true, state: true } } },
+      orderBy: [{ periodId: "desc" }, { employeeId: "asc" }],
       take: 500,
     });
   }
