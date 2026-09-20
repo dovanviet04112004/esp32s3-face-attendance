@@ -33,7 +33,8 @@ export default function SettingsPage() {
   const faultOf = useFault();
 
   const provision = useMutation({
-    mutationFn: async () => (await api.post<OpenedAccount[]>("/users/provision")).data,
+    mutationFn: async () =>
+      (await api.post<{ accounts: OpenedAccount[]; waiting: number }>("/users/provision")).data,
   });
 
   function choose(next: Locale) {
@@ -116,15 +117,20 @@ export default function SettingsPage() {
             </p>
           ) : null}
 
-          {provision.data?.length === 0 ? (
+          {provision.data?.accounts.length === 0 ? (
             <p className="mt-3 text-sm text-(--color-muted)">{t("provisionNone")}</p>
           ) : null}
 
-          {provision.data?.length ? (
+          {provision.data?.accounts.length ? (
             <div className="mt-3">
               <p className="text-sm text-(--color-warn)">{t("provisionOnce")}</p>
+              {provision.data.waiting > 0 ? (
+                <p className="mt-1 text-sm text-(--color-muted)">
+                  {t("provisionWaiting", { count: provision.data.waiting })}
+                </p>
+              ) : null}
               <ul className="mt-2 flex flex-col gap-1 font-mono text-xs">
-                {provision.data.map((one) => (
+                {provision.data.accounts.map((one) => (
                   <li key={one.email} className="flex flex-wrap gap-x-3">
                     <span className="min-w-24">{one.employeeCode}</span>
                     <span className="min-w-48 flex-1 truncate">{one.email}</span>

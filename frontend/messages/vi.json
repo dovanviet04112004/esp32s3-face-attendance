@@ -228,7 +228,8 @@
     "themeLead": "Mặc định theo hệ điều hành; chọn tay thì máy này nhớ.",
     "themeSystem": "Theo máy",
     "themeLight": "Sáng",
-    "themeDark": "Tối"
+    "themeDark": "Tối",
+    "provisionWaiting": "Còn {count} người chưa được mở, bấm lại để tiếp tục."
   },
   "requests": {
     "title": "Đơn từ",

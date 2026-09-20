@@ -9,6 +9,9 @@ import {
 } from "@nestjs/common";
 import type { Role, User } from "@prisma/client";
 
+import { ConfigService } from "@nestjs/config";
+
+import type { Env } from "../../config/env.schema.js";
 import type { Page, PaginationDto } from "../../common/dto/pagination.dto.js";
 import { PrismaService } from "../../database/prisma.service.js";
 
@@ -38,6 +41,12 @@ export interface ProvisionedAccount {
   role: string;
 }
 
+/** `waiting` is how many people this call left for the next one (KEHOACH 9.4). */
+export interface Provisioning {
+  accounts: ProvisionedAccount[];
+  waiting: number;
+}
+
 @Injectable()
 export class UsersService {
   private readonly log = new Logger(UsersService.name);
@@ -45,6 +54,7 @@ export class UsersService {
   constructor(
     private readonly db: PrismaService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
 
@@ -52,11 +62,14 @@ export class UsersService {
    *  Whoever has people reporting to them starts as MANAGER, so the approval
    *  inbox is not empty on day one (KEHOACH 9.4).
    */
-  async provision(): Promise<ProvisionedAccount[]> {
+  async provision(): Promise<Provisioning> {
+    const unopened = { active: true, login: null, personalEmail: { not: null } } as const;
+    const batch = this.config.get("PROVISION_BATCH", { infer: true });
     const waiting = await this.db.employee.findMany({
-      where: { active: true, login: null, personalEmail: { not: null } },
+      where: unopened,
       select: { id: true, code: true, personalEmail: true, _count: { select: { reports: true } } },
       orderBy: { code: "asc" },
+      take: batch,
     });
     const made: ProvisionedAccount[] = [];
     for (const person of waiting) {
@@ -80,8 +93,9 @@ export class UsersService {
       }
       made.push({ employeeCode: person.code, email: person.personalEmail as string, password, role });
     }
-    this.log.log(`opened ${made.length} employee login(s)`);
-    return made;
+    const left = await this.db.employee.count({ where: unopened });
+    this.log.log(`opened ${made.length} employee login(s), ${left} still waiting`);
+    return { accounts: made, waiting: left };
   }
 
   async list(query: PaginationDto): Promise<Page<PublicUser>> {

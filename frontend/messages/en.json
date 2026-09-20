@@ -228,7 +228,8 @@
     "themeLead": "Follows the system by default; a manual choice stays on this device.",
     "themeSystem": "System",
     "themeLight": "Light",
-    "themeDark": "Dark"
+    "themeDark": "Dark",
+    "provisionWaiting": "{count} people still have no login. Run it again to carry on."
   },
   "requests": {
     "title": "Requests",

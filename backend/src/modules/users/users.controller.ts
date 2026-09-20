@@ -22,7 +22,7 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import type { AccessClaims } from "../auth/auth.types.js";
 import { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
-import { UsersService, type ProvisionedAccount, type PublicUser } from "./users.service.js";
+import { UsersService, type Provisioning, type PublicUser } from "./users.service.js";
 
 function actorOf(req: Request): string {
   return (req.user as AccessClaims).sub;
@@ -45,7 +45,7 @@ export class UsersController {
   @Post("provision")
   @Roles("ADMIN")
   @ApiOperation({ summary: "Open a login for employees who have none (KEHOACH 9.4)" })
-  provision(): Promise<ProvisionedAccount[]> {
+  provision(): Promise<Provisioning> {
     return this.users.provision();
   }
 
