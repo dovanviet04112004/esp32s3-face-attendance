@@ -82,7 +82,18 @@
     "dropped": "disconnected",
     "feedAttendance": "Check-in",
     "feedEvent": "Event",
-    "feedDevice": "Device"
+    "feedDevice": "Device",
+    "attention": "Needs a decision today",
+    "contractsEnding": "Contracts ending",
+    "contractsHint": "A fixed term left to lapse becomes indefinite by law.",
+    "probationEnding": "Probation ending",
+    "probationHint": "Probation that ends undecided becomes a permanent hire.",
+    "exceptionsToday": "Off pattern today",
+    "daysLeft": "{count} days left",
+    "reasonNO_PUNCH": "No punch",
+    "reasonLATE": "Late",
+    "reasonSTILL_IN": "One punch only",
+    "attentionClear": "Nothing waiting"
   },
   "employees": {
     "title": "Employees",

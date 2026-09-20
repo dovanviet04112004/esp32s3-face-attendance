@@ -82,7 +82,18 @@
     "dropped": "mất kết nối",
     "feedAttendance": "Chấm công",
     "feedEvent": "Sự kiện",
-    "feedDevice": "Thiết bị"
+    "feedDevice": "Thiết bị",
+    "attention": "Cần xử lý hôm nay",
+    "contractsEnding": "Hợp đồng sắp hết hạn",
+    "contractsHint": "Để hết hạn mà không tái ký thì hợp đồng xác định thời hạn tự thành không xác định thời hạn.",
+    "probationEnding": "Sắp hết thử việc",
+    "probationHint": "Hết thử việc mà không quyết là mặc nhiên nhận chính thức.",
+    "exceptionsToday": "Lệch giờ hôm nay",
+    "daysLeft": "còn {count} ngày",
+    "reasonNO_PUNCH": "Chưa quẹt",
+    "reasonLATE": "Đi muộn",
+    "reasonSTILL_IN": "Quẹt một lần",
+    "attentionClear": "Không có gì cần xử lý"
   },
   "employees": {
     "title": "Nhân viên",

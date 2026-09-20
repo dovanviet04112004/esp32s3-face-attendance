@@ -5,7 +5,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { RangeDto } from "./dto/report.dto.js";
-import { ReportsService, type AttendanceTally } from "./reports.service.js";
+import { ReportsService, type AttendanceTally, type Attention } from "./reports.service.js";
 
 @ApiTags("reports")
 @ApiBearerAuth()
@@ -13,6 +13,13 @@ import { ReportsService, type AttendanceTally } from "./reports.service.js";
 @Controller("reports")
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
+
+  @Get("attention")
+  @Roles("ADMIN", "HR", "PAYROLL")
+  @ApiOperation({ summary: "What needs a decision today (KEHOACH 9.18)" })
+  attention(): Promise<Attention> {
+    return this.reports.attention();
+  }
 
   @Get("attendance")
   @ApiOperation({ summary: "Punches per employee in a range, served from cache" })
