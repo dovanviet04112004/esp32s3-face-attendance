@@ -6572,6 +6572,36 @@ Gộp ba nhịp vào một migration thì lúc quay lui không còn đường: c
   một lỗi nhỏ lấy mất toàn bộ dữ liệu không dựng lại được.
 - **Migration chạy trên bản sao trước khi chạy trên bản thật**, và bấm giờ ở đó.
 
+#### 9.22.3b Chia mảnh: `AttendanceDay` chia được, `AttendanceRecord` thì không
+
+Hai bảng lớn nhất, và chúng **không cùng một câu trả lời** — khác biệt nằm ở khoá duy nhất.
+
+**`AttendanceDay` chia theo tháng, không vướng gì.** Khoá duy nhất của nó là
+`(employeeId, date)`, mà `date` **chính là khoá chia mảnh**, nên Postgres chấp nhận thẳng. Đây
+cũng là bảng đáng chia nhất: bảng lương và mọi báo cáo đọc nó theo khoảng ngày, nên cắt mảnh là
+cắt luôn phần lớn công việc quét.
+
+**`AttendanceRecord` thì chia sẽ làm yếu chống trùng, nên dừng lại và hỏi.** Khoá của nó là
+`(deviceId, localId)` — **toàn cục, không có ngày trong đó** — và đó là thứ giữ cơ chế giao ít
+nhất một lần ở §6.2.6: kiosk gửi lại bản ghi chưa được ack, máy chủ nhận ra bản trùng bằng đúng
+cặp ấy. Postgres đòi **mọi khoá duy nhất trên bảng chia mảnh phải chứa khoá chia mảnh**, nên
+chia theo `ts` buộc khoá thành `(deviceId, localId, ts)`.
+
+Cặp ba ấy *có vẻ* vẫn chống trùng được, vì bản gửi lại mang đúng `ts` cũ. Nhưng nó chỉ đúng
+chừng nào **không ai từng sửa `ts` sau khi nhận** — và §6.2.5 để ngỏ đúng chuyện đó: bản ghi có
+`clockUnsynced` là bản ghi có đồng hồ sai, và một ngày nào đó sẽ có người muốn hiệu chỉnh nó.
+Hiệu chỉnh xong, bản gửi lại rơi vào mảnh khác và **trùng lặp âm thầm** — thành một lượt chấm
+công thừa, rồi thành tiền.
+
+Nên đây là **quyết định phải hỏi trước, không phải tối ưu hoá được tự làm** (§1.2). Ba đường đi
+và cái giá của từng đường:
+
+| Đường | Được gì | Mất gì |
+|---|---|---|
+| Không chia, chỉ đánh chỉ mục theo `ts` | giữ nguyên chống trùng | bảng lớn dần vô hạn, xoá theo hạn lưu là `DELETE` hàng triệu dòng |
+| Chia theo `ts`, khoá `(deviceId, localId, ts)` | cắt mảnh, xoá bằng `DROP` | chống trùng gãy nếu `ts` từng bị sửa |
+| Chia theo `ts`, thêm bảng chống trùng riêng không chia | giữ cả hai | bảng chống trùng lớn đúng bằng bảng gốc, chỉ nhẹ hơn về bề rộng |
+
 #### 9.22.4 Ràng buộc đặt ở cơ sở dữ liệu, không chỉ ở tầng ứng dụng
 
 Phép kiểm trong code chỉ đúng khi **mọi** đường ghi đều đi qua nó, mà không bao giờ đủ: còn
