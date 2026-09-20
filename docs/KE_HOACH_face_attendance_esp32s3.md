@@ -4421,7 +4421,9 @@ frontend/
 ├── components/
 │   ├── ui/                           # primitive: button, input, select, checkbox, sheet,
 │   │                                 #   skeleton, empty, money, theme-toggle
-│   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx}   # ★ rộng thì thanh bên, hẹp thì tab đáy
+│   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx, waiting-count.ts}
+│   │                                 # ★ rộng thì thanh bên, hẹp thì tab đáy; số đơn
+│   │                                 #   đang chờ là một hook dùng chung cho cả ba
 │   ├── tables/{data-table.tsx, card-list.tsx}        # ★ một định nghĩa cột, hai hình thức
 │   ├── forms/employee-form.tsx
 │   ├── requests/{request-card.tsx, request-form.tsx}
