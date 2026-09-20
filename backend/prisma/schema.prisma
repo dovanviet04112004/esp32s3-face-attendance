@@ -388,7 +388,7 @@ enum DayState {
  * from loading every punch of a month into memory (KEHOACH 9.8).
  */
 model AttendanceDay {
-  id                BigInt    @id @default(autoincrement())
+  id                BigInt    @default(autoincrement())
   employeeId        Int
   date              DateTime  @db.Date
   state             DayState  @default(ABSENT)
@@ -411,6 +411,9 @@ model AttendanceDay {
   updatedAt         DateTime  @updatedAt
   employee          Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
+  // Partitioned by month on date, so date is in the primary key: Postgres
+  // requires the partition key in every unique key (KEHOACH 9.22.3b).
+  @@id([id, date])
   @@unique([employeeId, date])
   @@index([date])
   @@index([employeeId, date])

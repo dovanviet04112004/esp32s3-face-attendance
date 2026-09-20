@@ -120,7 +120,9 @@ export class TimesheetService {
    * device measured (KEHOACH 9.8).
    */
   async correct(viewer: Viewer, id: string, body: CorrectDayDto): Promise<AttendanceDay> {
-    const held = await this.db.attendanceDay.findUnique({ where: { id: BigInt(id) } });
+    // The key is (id, date) since the table is partitioned, and a caller
+    // holding only an id still finds the row through the key's first column.
+    const held = await this.db.attendanceDay.findFirst({ where: { id: BigInt(id) } });
     if (!held) {
       throw new NotFoundException("DAY_NOT_FOUND");
     }
@@ -128,7 +130,7 @@ export class TimesheetService {
       throw new BadRequestException("NOTHING_TO_CORRECT");
     }
     return this.db.attendanceDay.update({
-      where: { id: held.id },
+      where: { id_date: { id: held.id, date: held.date } },
       data: {
         state: body.state ?? held.state,
         workedMinutes: body.workedMinutes ?? held.workedMinutes,
