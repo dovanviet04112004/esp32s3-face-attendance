@@ -2206,6 +2206,7 @@ esp32s3-face-attendance/
 ├── frontend/      Next.js → Vercel
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
 ├── tools/         Script ngang khối: gen_contracts · check_comments · check_layers
+│               · check_migrations · check_error_codes
 │                   · check_schematic · check_pcb · check_migrations
 │                   · check_schematic · check_pcb
 └── docs/
