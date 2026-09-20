@@ -14,6 +14,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { SearchModule } from "./modules/search/search.module.js";
 import { TimesheetModule } from "./modules/timesheet/timesheet.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
+import { AssetsModule } from "./modules/assets/assets.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { DevicesModule } from "./modules/devices/devices.module.js";
 import { EmployeesModule } from "./modules/employees/employees.module.js";
@@ -32,6 +33,7 @@ import { QueueModule } from "./queue/queue.module.js";
     configModule,
     EventEmitterModule.forRoot(),
     DatabaseModule,
+    AssetsModule,
     AuthModule,
     MqttModule,
     ScopeModule,

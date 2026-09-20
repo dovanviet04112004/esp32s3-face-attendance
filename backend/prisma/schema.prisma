@@ -81,6 +81,7 @@ model User {
   employee         Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   issuedCommands   DeviceCommand[]
   auditLogs        AuditLog[]
+  assetMoves       AssetTransfer[]
 }
 
 /**
@@ -211,6 +212,8 @@ model Employee {
   notices           Notification[]
   noticePrefs       NotificationPreference[]
   pushSubs          PushSubscription[]
+  assetsHeld        Asset[]
+  assetMoves        AssetTransfer[]
 
   @@index([departmentId, active])
   @@index([managerId])
@@ -1010,4 +1013,60 @@ model PushSubscription {
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
+}
+
+enum AssetState {
+  IN_STOCK
+  ISSUED
+  RETURNED
+  RETIRED
+  LOST
+}
+
+enum AssetCondition {
+  NEW
+  GOOD
+  WORN
+  DAMAGED
+}
+
+/**
+ * What the company lends out. `holderId` is a summary of the newest transfer,
+ * kept because "who has it" is asked far more often than "who has had it"
+ * (KEHOACH 9.3).
+ */
+model Asset {
+  id          String          @id @default(uuid())
+  code        String          @unique
+  name        String
+  kind        String
+  serialNo    String?
+  state       AssetState      @default(IN_STOCK)
+  holderId    Int?
+  note        String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  holder      Employee?       @relation(fields: [holderId], references: [id], onDelete: SetNull)
+  transfers   AssetTransfer[]
+
+  @@index([state, kind])
+  @@index([holderId])
+}
+
+/** One row per hand-over, in either direction: this is the history. */
+model AssetTransfer {
+  id         String         @id @default(uuid())
+  assetId    String
+  employeeId Int
+  issued     Boolean
+  at         DateTime       @default(now())
+  condition  AssetCondition @default(GOOD)
+  note       String?
+  byUserId   String?
+  asset      Asset          @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  byUser     User?          @relation(fields: [byUserId], references: [id], onDelete: SetNull)
+
+  @@index([assetId, at])
+  @@index([employeeId, issued])
 }
