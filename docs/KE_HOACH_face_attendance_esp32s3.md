@@ -6560,9 +6560,20 @@ một phần ba bề ngang hoặc trốn sau một nút mà không ai bấm.
 | Bảng | nhiều cột, cuộn ngang | **thẻ một dòng một người**, không cuộn ngang |
 | Bộ lọc | hàng ngang trên bảng | **tấm trượt lên từ đáy** |
 
-Thanh tab của `EMPLOYEE` có đúng bốn mục: **Trang chủ · Chấm công · Đơn từ · Lương**.
-`MANAGER` thêm mục thứ năm **Chờ duyệt** mang số đếm. Quá năm mục thì mục nào cũng hẹp và
-chạm nhầm — đó là lý do trần năm, không phải thẩm mỹ.
+Thanh tab có đúng năm mục, giống nhau cho mọi vai: **Trang chủ · Lịch ca · Chấm công · Đơn từ ·
+Lương**. Quá năm thì mục nào cũng hẹp và chạm nhầm — đó là lý do trần năm, không phải thẩm mỹ.
+
+**Hộp chờ duyệt không nằm trong thanh tab, nó nằm trên thanh trên cùng cạnh chuông.** Ban đầu
+nó là mục thứ năm của `MANAGER`, và cách ấy hỏng ngay khi có mục thứ sáu: một người quản lý
+cũng là một người lao động, nên nhét *việc của người khác* vào thanh dành cho *việc của mình*
+là bắt hai thứ tranh nhau năm ô. Thanh trên cùng hợp hơn vì hộp duyệt **giống cái chuông hơn là
+giống một trang**: nó là thứ chờ mình xử lý, có số đếm, và cần **nhìn thấy từ mọi màn** chứ
+không chỉ khi đang đứng ở tầng gốc. Đổi lại, số đếm hiện liên tục thay vì biến mất sau một lần
+chạm — với vai có nhiều đích tới mức phải có nút "Thêm", trước đây nó bị chôn hẳn.
+
+Năm mục ấy là **việc của chính mình**, và thứ tự theo câu hỏi người ta mở máy lên để hỏi: hôm
+nay thế nào, mai vào ca nào, tháng này đi làm đủ chưa, đơn của tôi tới đâu, tháng rồi lĩnh bao
+nhiêu. `Lịch ca` đứng thứ hai vì với người làm ca, đó là câu hỏi mở ứng dụng lên để hỏi.
 
 **Bảng trên màn hẹp không phải là bảng.** Cuộn ngang một bảng bảy cột trên điện thoại là thao
 tác không ai làm. Mỗi dòng thành một thẻ mang ba thông tin quan trọng nhất, chạm vào mở chi
