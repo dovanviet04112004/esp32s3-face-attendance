@@ -66,8 +66,8 @@ export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
 
   const span =
     row.fromDate === row.toDate
-      ? format.dateTime(new Date(row.fromDate), "medium")
-      : `${format.dateTime(new Date(row.fromDate), "medium")} → ${format.dateTime(new Date(row.toDate), "medium")}`;
+      ? format.dateTime(new Date(row.fromDate), "day")
+      : `${format.dateTime(new Date(row.fromDate), "day")} → ${format.dateTime(new Date(row.toDate), "day")}`;
 
   return (
     <article className="rounded-xl border border-(--color-line) bg-(--color-surface) p-4">

@@ -25,5 +25,13 @@ export default getRequestConfig(async ({ requestLocale }) => {
   return {
     locale,
     messages: (await import(`../messages/${locale}.json`)).default,
+    // next-intl ships no named formats, so asking for one it does not hold
+    // throws and the cell renders nothing.
+    formats: {
+      dateTime: {
+        medium: { dateStyle: "medium", timeStyle: "short" },
+        day: { dateStyle: "medium" },
+      },
+    },
   };
 });
