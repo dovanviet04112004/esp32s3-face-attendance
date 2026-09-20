@@ -17,7 +17,8 @@ export function Sidebar({ onSignOut }: { onSignOut: () => void }) {
   const waiting = useWaitingCount(role);
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r border-(--color-line) bg-(--color-surface) p-3 md:flex">
+    // The nav below scrolls on its own only while this box stays viewport-tall.
+    <aside className="hidden w-60 shrink-0 flex-col border-r border-(--color-line) bg-(--color-surface) p-3 md:sticky md:top-0 md:flex md:h-screen">
       <div className="flex items-center gap-2 px-2 pt-1">
         <img src="/logo.svg" alt="" width={20} height={20} />
         <p className="text-sm font-semibold">{app("name")}</p>
