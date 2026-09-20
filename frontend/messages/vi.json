@@ -479,6 +479,13 @@
     "CERTIFICATE_NOT_FOUND": "Không tìm thấy giấy xác nhận này.",
     "CERTIFICATE_ALREADY_DECIDED": "Yêu cầu này đã được xử lý rồi.",
     "CERTIFICATE_NOT_ISSUED": "Giấy chưa được cấp nên chưa có văn bản.",
+    "PROFILE_FIELD_EMPTY": "Còn ô chưa điền. Đổi tài khoản phải có cả tên ngân hàng và số tài khoản.",
+    "PROFILE_NO_CHANGE": "Giá trị mới trùng với giá trị đang lưu.",
+    "PROFILE_CHANGE_PENDING": "Mục này đã có một đơn đang chờ duyệt.",
+    "PROFILE_CHANGE_NOT_FOUND": "Không tìm thấy đơn đổi thông tin này.",
+    "PROFILE_CHANGE_DECIDED": "Đơn này đã được trả lời rồi.",
+    "PROFILE_SELF_DECIDE": "Người gửi đơn không tự duyệt được đơn của mình.",
+    "PROFILE_NOT_YOURS": "Đơn này không phải của bạn.",
     "HR_ONLY": "Chỉ bộ phận nhân sự làm được việc này.",
     "NO_EMPLOYEE_RECORD": "Tài khoản này chưa gắn với hồ sơ nhân viên nào."
   },

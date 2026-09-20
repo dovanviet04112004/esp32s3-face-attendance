@@ -257,6 +257,15 @@ export class PayrollService {
         where: { periodId, state: "DRAFT" },
         data: { state: "ISSUED", issuedAt: new Date() },
       });
+      // Where the money lands is an input too, and locking freezes inputs
+      // (KEHOACH 9.6).
+      await tx.$executeRaw`
+        UPDATE "Payslip" p
+           SET "bankName" = e."bankName", "bankAccount" = e."bankAccount"
+          FROM "Employee" e
+         WHERE p."periodId" = ${periodId}
+           AND p."employeeId" = e."id"
+      `;
       await tx.$executeRaw`
         UPDATE "RetroAdjustment" a
            SET "state" = 'APPLIED', "appliedPeriodId" = ${periodId}
@@ -998,8 +1007,6 @@ export class PayrollService {
           select: {
             code: true,
             fullName: true,
-            bankName: true,
-            bankAccount: true,
             department: { select: { code: true, name: true, costCentre: true } },
           },
         },
@@ -1013,8 +1020,8 @@ export class PayrollService {
         rows.map((row) => [
           row.employee.code,
           row.employee.fullName,
-          row.employee.bankName ?? "",
-          row.employee.bankAccount ?? "",
+          row.bankName ?? "",
+          row.bankAccount ?? "",
           row.netPay.toFixed(0),
           reference,
         ]),

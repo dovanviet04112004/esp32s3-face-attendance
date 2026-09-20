@@ -31,7 +31,13 @@ export interface PasswordSetupJob {
   link: string;
 }
 
-export type NotifyJob = WebhookJob | ContractsEndingJob | PasswordSetupJob;
+/** Only the row id rides here; the address is on the row (KEHOACH 9.17.6). */
+export interface ProfileNoticeJob {
+  type: "profile-notice";
+  changeId: string;
+}
+
+export type NotifyJob = WebhookJob | ContractsEndingJob | PasswordSetupJob | ProfileNoticeJob;
 
 export interface DeliverJob {
   type: "deliver";

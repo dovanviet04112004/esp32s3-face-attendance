@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from "@nestjs/swagger";
 
 import { IMPORT_MAX_BYTES } from "../import.js";
 import { Type } from "class-transformer";
@@ -105,7 +105,13 @@ export class CreateEmployeeDto {
   jobTitleId?: string;
 }
 
-export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {
+/** Where the pay goes is set when the record opens and moves only through an
+ *  approval afterwards, so it has no column here (KEHOACH 9.17 item 6 rule 1).
+ */
+export class UpdateEmployeeDto extends OmitType(PartialType(CreateEmployeeDto), [
+  "bankAccount",
+  "bankName",
+] as const) {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()

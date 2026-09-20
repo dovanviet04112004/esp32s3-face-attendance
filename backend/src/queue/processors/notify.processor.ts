@@ -6,9 +6,10 @@ import type { Env } from "../../config/env.schema.js";
 import { RedisService } from "../../database/redis.service.js";
 import { ContractAlertsService } from "../../modules/notifications/contract-alerts.service.js";
 import { MailerService } from "../../modules/notifications/mailer.service.js";
-import { setupMail } from "../../modules/payroll/mail-text.js";
+import { profileNoticeMail, setupMail } from "../../modules/payroll/mail-text.js";
+import { PROFILE_FIELDS } from "../../modules/profile/profile-fields.js";
 import { PrismaService } from "../../database/prisma.service.js";
-import { QUEUE, type NotifyJob, type PasswordSetupJob } from "../queues.js";
+import { QUEUE, type NotifyJob, type PasswordSetupJob, type ProfileNoticeJob } from "../queues.js";
 
 const POST_TIMEOUT_MS = 10000;
 
@@ -36,6 +37,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === "password-setup") {
           await this.mailSetup(body);
+          return;
+        }
+        if (body.type === "profile-notice") {
+          await this.mailNotice(body);
           return;
         }
         const url = this.config.get("NOTIFY_WEBHOOK_URL", { infer: true });
@@ -77,6 +82,29 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       hours: this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }),
     });
     await this.mailer.send(account.email, body);
+  }
+
+  private async mailNotice(job: ProfileNoticeJob): Promise<void> {
+    const change = await this.db.profileChange.findUnique({
+      where: { id: job.changeId },
+      include: { employee: { select: { fullName: true, locale: true } } },
+    });
+    const notice = change ? PROFILE_FIELDS[change.field].notice : null;
+    if (!change?.noticeTo || notice === null) {
+      this.log.warn(`change ${job.changeId} has nowhere to warn`);
+      return;
+    }
+    const body = profileNoticeMail(change.employee.locale, {
+      fullName: change.employee.fullName,
+      change: notice,
+      decidedOn: (change.decidedAt ?? change.createdAt).toISOString().slice(0, 10),
+    });
+    if (await this.mailer.send(change.noticeTo, body)) {
+      await this.db.profileChange.update({
+        where: { id: change.id },
+        data: { noticeSentAt: new Date() },
+      });
+    }
   }
 
   async onModuleDestroy(): Promise<void> {

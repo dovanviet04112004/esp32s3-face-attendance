@@ -60,6 +60,11 @@ export const AUDIT_ACTIONS = {
   CERTIFICATE_REJECT: "certificate.reject",
   CERTIFICATE_READ: "certificate.read",
 
+  PROFILE_ASK: "profile.ask",
+  PROFILE_APPROVE: "profile.approve",
+  PROFILE_REJECT: "profile.reject",
+  PROFILE_CANCEL: "profile.cancel",
+
   POLICY_CREATE: "policy.create",
 
   DEVICE_REGISTER: "device.register",

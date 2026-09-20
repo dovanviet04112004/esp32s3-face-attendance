@@ -479,6 +479,13 @@
     "CERTIFICATE_NOT_FOUND": "No such letter.",
     "CERTIFICATE_ALREADY_DECIDED": "This request has already been answered.",
     "CERTIFICATE_NOT_ISSUED": "The letter has not been issued yet.",
+    "PROFILE_FIELD_EMPTY": "A box is still empty. A bank change needs both the bank and the account number.",
+    "PROFILE_NO_CHANGE": "The new value matches what the record already holds.",
+    "PROFILE_CHANGE_PENDING": "A change to this is already waiting for a decision.",
+    "PROFILE_CHANGE_NOT_FOUND": "No such change request.",
+    "PROFILE_CHANGE_DECIDED": "This request has already been answered.",
+    "PROFILE_SELF_DECIDE": "Whoever asked for a change cannot be the one who approves it.",
+    "PROFILE_NOT_YOURS": "This request is not yours.",
     "HR_ONLY": "Only the HR desk can do this.",
     "NO_EMPLOYEE_RECORD": "This account is not linked to an employee record."
   },

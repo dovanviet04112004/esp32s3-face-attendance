@@ -97,3 +97,51 @@ const SETUP: Record<MailLocale, (facts: SetupMailFacts) => MailBody> = {
 export function setupMail(locale: string, facts: SetupMailFacts): MailBody {
   return SETUP[readsAs(locale)](facts);
 }
+
+export type NoticedChange = "BANK" | "PERSONAL_EMAIL";
+
+export interface ProfileNoticeFacts {
+  fullName: string;
+  change: NoticedChange;
+  decidedOn: string;
+}
+
+const CHANGED: Record<MailLocale, Record<NoticedChange, string>> = {
+  vi: { BANK: "số tài khoản nhận lương", PERSONAL_EMAIL: "địa chỉ email liên lạc" },
+  en: { BANK: "the account your pay goes to", PERSONAL_EMAIL: "your contact email address" },
+};
+
+/** The address this reaches may have gone stale enough to belong to somebody
+ *  else, so it names what moved and never the new value (KEHOACH 9.17 item 6
+ *  rule 3).
+ */
+const PROFILE: Record<MailLocale, (facts: ProfileNoticeFacts) => MailBody> = {
+  vi: (facts) => ({
+    subject: "Thông tin cá nhân của bạn vừa được đổi",
+    text: [
+      `Chào ${facts.fullName},`,
+      "",
+      `Ngày ${facts.decidedOn}, ${CHANGED.vi[facts.change]} trong hồ sơ của bạn`,
+      "đã được đổi theo một đơn đã duyệt.",
+      "",
+      "Thư này không kèm giá trị mới và không cần trả lời.",
+      "Nếu không phải bạn yêu cầu, báo ngay cho bộ phận nhân sự.",
+    ].join("\n"),
+  }),
+  en: (facts) => ({
+    subject: "Something in your record has changed",
+    text: [
+      `Hello ${facts.fullName},`,
+      "",
+      `On ${facts.decidedOn}, ${CHANGED.en[facts.change]} was changed`,
+      "through an approved request.",
+      "",
+      "This message carries no new value and needs no reply.",
+      "If you did not ask for it, tell HR straight away.",
+    ].join("\n"),
+  }),
+};
+
+export function profileNoticeMail(locale: string, facts: ProfileNoticeFacts): MailBody {
+  return PROFILE[readsAs(locale)](facts);
+}

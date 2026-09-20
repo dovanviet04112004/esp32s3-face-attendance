@@ -85,6 +85,8 @@ model User {
   assetMoves     AssetTransfer[]
   tasksDone      ChecklistTask[]
   certificates   Certificate[]
+  profileAsks    ProfileChange[] @relation("AsksProfileChanges")
+  profileCalls   ProfileChange[] @relation("DecidesProfileChanges")
 }
 
 /**
@@ -257,6 +259,7 @@ model Employee {
   assetsHeld        Asset[]
   assetMoves        AssetTransfer[]
   certificates      Certificate[]
+  profileChanges    ProfileChange[]
   checklistRuns     ChecklistRun[]
   ownedTasks        ChecklistTask[]     @relation("OwnsTasks")
 
@@ -516,6 +519,22 @@ enum CertificateState {
   REJECTED
 }
 
+enum ProfileField {
+  PERSONAL_EMAIL
+  PHONE
+  BANK
+  NATIONAL_ID
+  TAX_CODE
+  SOCIAL_INSURANCE_NO
+}
+
+enum ProfileChangeState {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum RequestState {
   DRAFT
   PENDING
@@ -562,10 +581,6 @@ model LeaveBalance {
 }
 
 /**
- * Leave, overtime, an attendance correction and a trip are one table: they
- * share a state machine, an inbox and a route to the approver (KEHOACH 9.5).
- */
-/**
  * A letter somebody asks HR for, and the register of what was handed out.
  * The serial is the point: a letter nobody can trace back is not proof
  * (KEHOACH 9.17 item 5).
@@ -590,6 +605,39 @@ model Certificate {
   @@index([employeeId, createdAt])
 }
 
+/**
+ * One asked-for change to somebody's own record, waiting on a second pair of
+ * eyes. `noticeTo` is taken when the change is asked for, so a takeover
+ * cannot redirect its own warning (KEHOACH 9.17 item 6 rule 3).
+ */
+model ProfileChange {
+  id           String             @id @default(uuid())
+  employeeId   Int
+  field        ProfileField
+  oldValue     Json?
+  newValue     Json
+  state        ProfileChangeState @default(PENDING)
+  reason       String?
+  noticeTo     String?
+  noticeSentAt DateTime?
+  askedById    String?
+  decidedById  String?
+  decidedAt    DateTime?
+  note         String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  employee     Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  askedBy      User?              @relation("AsksProfileChanges", fields: [askedById], references: [id], onDelete: SetNull)
+  decidedBy    User?              @relation("DecidesProfileChanges", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([state, createdAt])
+  @@index([employeeId, createdAt])
+}
+
+/**
+ * Leave, overtime, an attendance correction and a trip are one table: they
+ * share a state machine, an inbox and a route to the approver (KEHOACH 9.5).
+ */
 model Request {
   id            String       @id @default(uuid())
   employeeId    Int
@@ -881,6 +929,10 @@ model Payslip {
   personalIncomeTax Decimal       @default(0) @db.Decimal(14, 0)
   deductionsTotal   Decimal       @default(0) @db.Decimal(14, 0)
   netPay            Decimal       @default(0) @db.Decimal(14, 0)
+  // Copied from the employee when the period locks: the destination is an
+  // input, and locking freezes inputs (KEHOACH 9.6).
+  bankName          String?
+  bankAccount       String?
   issuedAt          DateTime?
   sentAt            DateTime?
   viewedAt          DateTime?
