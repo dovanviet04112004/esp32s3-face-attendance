@@ -4151,7 +4151,8 @@ backend/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
     │   ├── users/    ├── employees/  ├── devices/   ├── enrollment/
     │   ├── attendance/ ├── shifts/   ├── reports/   ├── models/
-    │   ├── mqtt/     ├── realtime/   ├── audit/
+    │   ├── mqtt/     ├── realtime/
+    │   ├── audit/audit-actions.ts    # ★ §9.24 — tên hành động, khai một chỗ
     │   │                             # ── §9 quản trị nhân sự ──
     │   ├── org/                      # Department (cây), JobTitle, hợp đồng
     │   ├── leave/                    # loại phép, số dư, đơn, luồng duyệt
@@ -4253,7 +4254,7 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
 | `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, url, sha256, sizeBytes, minFwVersion, runId, rolloutState |
-| `AuditLog` | actorId, action, target, meta(json), ts |
+| `AuditLog` | actorId, action(từ `audit-actions.ts`), subjectType, subjectId, meta(json), ts — §9.24 |
 
 Mười hai bảng. `AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của
 kiosk — unique index `(deviceId, localId)`.
@@ -6825,3 +6826,49 @@ Năm điều kèm theo, mỗi điều bịt một khe khác nhau:
   là 100 nên heartbeat báo khớp**. Hỏng im lặng, đúng thứ luật này sinh ra để chặn.
   🔬 Vị từ đo trên máy chủ dựng, chưa đo trên board: hàng đợi, NVS và bảng mặt chưa ai thấy chạy.
 
+
+---
+
+### 9.24 Nhật ký kiểm toán: một bảng, một câu hỏi, một bộ từ vựng
+
+`AuditLog` sinh ra để trả lời đúng một câu: **ai đã làm gì với thứ này, lúc nào**. Mọi quyết
+định dưới đây chỉ là hệ quả của việc giữ câu ấy trả lời được khi bảng có vài triệu dòng.
+
+**Vấn đề đo được trước khi sửa.** Bảng có 7.488 dòng, trong đó **2.774 dòng (37%) là `/auth`** —
+gần như toàn bộ là đăng nhập và gia hạn token. Một lượt gia hạn xảy ra mỗi `JWT_ACCESS_TTL` cho
+**mỗi thiết bị**, mà §9.23 luật 5 vừa cho một người nhiều thiết bị, nên con số ấy chỉ có một
+hướng đi. Ở quy mô §9.9 giả định, riêng gia hạn đã đủ để nhật ký kiểm toán thành **bảng lớn
+nhất trong cơ sở dữ liệu**, và lần đổi lương duy nhất trong ngày nằm lẫn giữa hàng vạn dòng
+không ai từng đọc.
+
+**Luật 1 — một lượt gia hạn không phải một quyết định.** Ghi cái gì thì hỏi: sau này có ai truy
+ngược tới nó không. Đăng nhập thì có; gia hạn token là **cùng phiên ấy đi tiếp**, không ai quyết
+định gì. Route nào như vậy thì đánh dấu ngay tại chỗ khai nó bằng `@NotAudited()`, chứ không để
+bộ chặn đoán theo đường dẫn — đường dẫn đổi thì phép đoán lệch mà không ai biết.
+
+**Luật 2 — `action` có đúng một bộ từ vựng, khai một chỗ.** Trước đó cột này chứa lẫn lộn động
+từ HTTP (`POST`) với tên nghiệp vụ (`compensation.create`), tức hai ngôn ngữ trong một cột và
+không truy vấn nào gộp được chúng. Nay mọi tên nằm ở `audit-actions.ts`, **đúng cùng lý do
+§4.3 bắt tên khoá cache nằm ở `cache-keys.ts` và tên hàng đợi ở `queues.ts`**: chuỗi gõ rời rạc
+là chuỗi sẽ gõ sai, và không ai liệt kê được hệ thống ghi lại những gì.
+
+**Luật 3 — chủ thể là một cặp, không phải một chuỗi.** `target` cũ khi thì là đường dẫn
+(`/users/:id`), khi thì là mã nhân viên (`412`), và không gì trong dòng cho biết đang là loại
+nào. Tách thành `subjectType` với `subjectId` thì câu **"mọi thứ từng xảy ra với nhân viên
+412"** mới có chỉ mục để chạy — mà đó chính là hình dạng của việc truy ngược: người ta tra từ
+**đối tượng**, không tra từ route.
+
+**Luật 4 — thứ đổi được thành tiền hoặc thành quyền thì ghi cả trước lẫn sau.** Biết lương
+thành 20 triệu mà không biết nó vốn là bao nhiêu là nửa câu trả lời, và nửa thiếu đúng là nửa
+người ta cần khi có tranh chấp. Lương và vai trò vì thế ghi `{ from, to }`. **Hồ sơ cá nhân thì
+ngược lại: chỉ ghi tên trường đã đổi, không ghi giá trị** — nhật ký không được trở thành bản sao
+thứ hai của dữ liệu cá nhân, vì quyền xoá ở §9.22.1 sẽ phải đuổi theo cả hai chỗ.
+
+**Luật 5 — bộ chặn toàn cục ở lại, nhưng là lưới đỡ.** Một route mới mà không ai nhớ ghi nhật
+ký vẫn để lại dấu, dưới `subjectType` là `route`. Lưới đỡ nói được **ai, lúc nào, đụng vào đâu**;
+nó không nói được **đổi thành gì** — nên thấy một hành động quan trọng còn nằm ở `route` thì đó
+là việc chưa làm xong, không phải đã phủ.
+
+**Luật 6 — ghi nhật ký hỏng thì không được làm hỏng việc.** `record()` nuốt lỗi và chỉ log:
+mất một dòng ghi chú còn hơn huỷ chính thao tác mà nó mô tả. Đổi lại, nó **không nằm trong giao
+dịch** của thao tác ấy, và đó là đánh đổi có chủ ý chứ không phải sơ suất.
