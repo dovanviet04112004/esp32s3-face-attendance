@@ -4435,6 +4435,7 @@ frontend/
 │   ├── ws.ts                         # socket.io /feed, và xoá cache query theo tin
 │   ├── auth.ts                       # kho phiên zustand + đọc vai từ token
 │   ├── cn.ts                         # gộp class Tailwind, lớp sau thắng lớp trước
+│   ├── fault.ts                      # ★ mã lỗi API → câu; NƠI DUY NHẤT làm việc đó
 │   ├── nav.ts                        # ★ điều hướng theo vai; khoá ràng kiểu vào vi.json
 │   ├── theme.ts                      # ★ sáng/tối: mặc định theo hệ điều hành, nhớ lựa chọn
 │   └── format.ts                     # ★ tiền, giờ công, ngày — số nào cũng kèm đơn vị
@@ -4464,6 +4465,12 @@ người dùng đọc là **thiếu số liệu**, không phải thiếu một c
 `nav/sidebar.tsx`; màn hẹp dựng `nav/tab-bar.tsx` với tối đa năm mục lấy từ chính danh sách ấy,
 vì thanh bên 240 px nuốt mất một phần ba bề ngang điện thoại. Hai file, một nguồn: thêm một
 trang là sửa `lib/nav.ts`, không phải nhớ ra còn một chỗ thứ hai.
+
+**Mã lỗi thành câu ở đúng một chỗ.** §3.1 luật 2 nói backend phát mã chứ không phát câu; hệ
+quả là frontend phải có chỗ đổi mã thành câu, và chỗ ấy là `lib/fault.ts` cùng nhánh `errors`
+của catalogue. Trước khi có nó, biểu mẫu đơn từ phải **dò chuỗi tiếng Anh** trong `message` để
+đoán chuyện gì xảy ra — đổi một chữ trong câu lỗi là hỏng một nhánh xử lý mà không ai biết, và
+nửa số lỗi rơi vào câu chung chung "Không xong được".
 
 **Cỡ chạm là biến thể riêng, không phải phép chỉnh cỡ đang dùng.** `size="md"` cao 40 px là
 đúng cho chuột — con trỏ chính xác tới từng điểm ảnh. Ngón tay thì không, nên §9.21.2 đòi
