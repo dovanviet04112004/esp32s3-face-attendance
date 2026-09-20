@@ -200,6 +200,9 @@ model Employee {
   advanceApprovals  SalaryAdvance[]      @relation("ApprovesAdvances")
   consents          BiometricConsent[]
   bonuses           BonusItem[]
+  notices           Notification[]
+  noticePrefs       NotificationPreference[]
+  pushSubs          PushSubscription[]
 
   @@index([departmentId, active])
   @@index([managerId])
@@ -929,5 +932,69 @@ model BonusItem {
   employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([runId, employeeId, code])
+  @@index([employeeId])
+}
+
+enum NoticeKind {
+  REQUEST_DECIDED
+  REQUEST_WAITING
+  PAYSLIP_ISSUED
+  CONTRACT_ENDING
+}
+
+enum NoticeChannel {
+  IN_APP
+  PUSH
+  EMAIL
+}
+
+/**
+ * No column here can hold a sentence or an amount, which is what keeps a
+ * salary figure off a lock screen (KEHOACH 9.21.4).
+ */
+model Notification {
+  id         String     @id @default(uuid())
+  employeeId Int
+  kind       NoticeKind
+  requestId  String?
+  periodId   String?
+  payslipId  String?
+  contractId String?
+  daysLeft   Int?
+  approved   Boolean?
+  readAt     DateTime?
+  createdAt  DateTime   @default(now())
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, readAt])
+  @@index([employeeId, createdAt])
+}
+
+model NotificationPreference {
+  employeeId Int
+  kind       NoticeKind
+  channel    NoticeChannel
+  on         Boolean  @default(true)
+  updatedAt  DateTime @updatedAt
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, kind, channel])
+}
+
+/**
+ * Keyed by endpoint: a phone and a laptop are two of these, and signing out on
+ * one must not silence the other (KEHOACH 9.21.4).
+ */
+model PushSubscription {
+  id         String   @id @default(uuid())
+  employeeId Int
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastSentAt DateTime?
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
   @@index([employeeId])
 }

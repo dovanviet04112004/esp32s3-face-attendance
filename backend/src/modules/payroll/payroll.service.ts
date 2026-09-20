@@ -20,6 +20,7 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { QUEUE, type PayrollJob } from "../../queue/queues.js";
 import { AuditService } from "../audit/audit.service.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
 import { calculate, taxOn, type CalcAllowance, type CalcDeduction, type CalcExtra } from "./calculate.js";
 import type {
@@ -92,6 +93,7 @@ export class PayrollService {
     private readonly scope: ScopeService,
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
+    private readonly notices: NotificationsService,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -222,6 +224,16 @@ export class PayrollService {
       target: periodId,
       meta: { openItems: open.map((item) => item.code) },
     });
+    const told = await this.db.payslip.findMany({
+      where: { periodId, state: "ISSUED" },
+      select: { employeeId: true },
+      distinct: ["employeeId"],
+    });
+    await this.notices.raiseMany(
+      told.map((row) => row.employeeId),
+      "PAYSLIP_ISSUED",
+      { periodId },
+    );
     return locked;
   }
 

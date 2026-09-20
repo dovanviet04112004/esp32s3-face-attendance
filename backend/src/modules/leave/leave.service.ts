@@ -11,6 +11,7 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
 import type { DecideRequestDto, ListRequestsDto, SubmitRequestDto } from "./dto/request.dto.js";
 
 const EXCLUSION_VIOLATION = "23P01";
@@ -24,6 +25,7 @@ export class LeaveService {
   constructor(
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
+    private readonly notices: NotificationsService,
   ) {}
 
   types(): Promise<LeaveType[]> {
@@ -50,7 +52,7 @@ export class LeaveService {
     const days = body.halfDay ? HALF : Math.round((to.getTime() - from.getTime()) / MS_PER_DAY) + 1;
     const approverId = await this.approverFor(viewer.employeeId, from);
 
-    return this.db.$transaction(async (tx) => {
+    const filed = await this.db.$transaction(async (tx) => {
       if (body.kind === "LEAVE") {
         if (!body.leaveTypeId) {
           throw new BadRequestException("LEAVE_TYPE_REQUIRED");
@@ -81,6 +83,10 @@ export class LeaveService {
         throw error;
       }
     });
+    if (approverId !== null) {
+      await this.notices.raise(approverId, "REQUEST_WAITING", { requestId: filed.id });
+    }
+    return filed;
   }
 
   /** Approve or turn down, moving the balance only on the way through. */
@@ -95,7 +101,7 @@ export class LeaveService {
     await this.mayDecide(viewer, held.employeeId);
     const next: RequestState = body.approve ? "APPROVED" : "REJECTED";
 
-    return this.db.$transaction(async (tx) => {
+    const decided = await this.db.$transaction(async (tx) => {
       if (held.kind === "LEAVE" && held.leaveTypeId) {
         await this.settle(tx, held, body.approve);
       }
@@ -109,6 +115,11 @@ export class LeaveService {
         },
       });
     });
+    await this.notices.raise(held.employeeId, "REQUEST_DECIDED", {
+      requestId: id,
+      approved: body.approve,
+    });
+    return decided;
   }
 
   /** What is waiting on this viewer to answer. */

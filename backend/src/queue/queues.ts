@@ -13,10 +13,17 @@ export interface ReportJob {
   to: string;
 }
 
-export interface NotifyJob {
+export interface WebhookJob {
+  type?: "webhook";
   deviceId: string;
   reason: string;
 }
+
+export interface ContractsEndingJob {
+  type: "contracts-ending";
+}
+
+export type NotifyJob = WebhookJob | ContractsEndingJob;
 
 export interface DeliverJob {
   type: "deliver";

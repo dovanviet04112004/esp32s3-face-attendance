@@ -64,6 +64,17 @@ export const envSchema = z.object({
     .transform((held) => (held ? held : undefined)),
   APP_PUBLIC_URL: z.string().min(1),
 
+  // No public key is how a deployment turns push off (KEHOACH 9.21.4).
+  VAPID_PUBLIC_KEY: z
+    .string()
+    .optional()
+    .transform((held) => (held ? held : undefined)),
+  VAPID_PRIVATE_KEY: z
+    .string()
+    .optional()
+    .transform((held) => (held ? held : undefined)),
+  VAPID_SUBJECT: z.string().default("mailto:no-reply@example.com"),
+
   MQTT_URL: z.string().min(1),
   MQTT_USERNAME: z.string().min(1),
   MQTT_PASSWORD: z.string().min(1),

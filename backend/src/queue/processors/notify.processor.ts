@@ -4,6 +4,7 @@ import { Worker } from "bullmq";
 
 import type { Env } from "../../config/env.schema.js";
 import { RedisService } from "../../database/redis.service.js";
+import { ContractAlertsService } from "../../modules/notifications/contract-alerts.service.js";
 import { QUEUE, type NotifyJob } from "../queues.js";
 
 const POST_TIMEOUT_MS = 10000;
@@ -15,6 +16,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly redis: RedisService,
+    private readonly alerts: ContractAlertsService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -23,6 +25,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       QUEUE.notify,
       async (job) => {
         const body = job.data as NotifyJob;
+        if (body.type === "contracts-ending") {
+          await this.alerts.sweep();
+          return;
+        }
         const url = this.config.get("NOTIFY_WEBHOOK_URL", { infer: true });
         if (!url) {
           this.log.warn(`${body.deviceId}: ${body.reason} (no webhook configured)`);
