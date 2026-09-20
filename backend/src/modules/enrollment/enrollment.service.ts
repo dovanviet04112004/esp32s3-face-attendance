@@ -107,24 +107,34 @@ export class EnrollmentService {
       this.log.warn(`${deviceId} reported ${report.op}, which carries no template`);
       return;
     }
-    const sealed = sealTemplate(Buffer.from(report.embedding, "base64"), this.key());
-    await this.db.faceTemplate.upsert({
-      where: {
-        employeeId_templateIdx: {
-          employeeId: report.employeeId,
-          templateIdx: report.templateIdx,
-        },
-      },
-      update: { embedding: sealed, scale: report.scale, quality: report.quality },
-      create: {
-        employeeId: report.employeeId,
-        templateIdx: report.templateIdx,
-        embedding: sealed,
-        scale: report.scale,
-        quality: report.quality,
-        capturedAt: new Date(report.updatedAt),
-      },
+    const asked = await this.db.deviceEnrollment.findUnique({
+      where: { deviceId_employeeId: { deviceId, employeeId: report.employeeId } },
     });
+    if (!asked) {
+      this.log.warn(`${deviceId} reported a face for ${report.employeeId}, which it was never given`);
+      return;
+    }
+    const sealed = sealTemplate(Buffer.from(report.embedding, "base64"), this.key());
+    // Quality decides, not arrival order: two kiosks enrolling the same face
+    // means the blurrier one can land second (KEHOACH 9.23 rule 7).
+    const kept = await this.db.$executeRaw`
+      INSERT INTO "FaceTemplate" (
+        "id", "employeeId", "templateIdx", "embedding", "scale", "quality",
+        "capturedAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${report.employeeId}::int, ${report.templateIdx}::int,
+              ${sealed}, ${report.scale}::double precision, ${report.quality ?? null}::int,
+              ${new Date(report.updatedAt)}, now())
+      ON CONFLICT ("employeeId", "templateIdx") DO UPDATE SET
+        "embedding" = EXCLUDED."embedding",
+        "scale" = EXCLUDED."scale",
+        "quality" = EXCLUDED."quality",
+        "capturedAt" = EXCLUDED."capturedAt",
+        "updatedAt" = now()
+      WHERE coalesce("FaceTemplate"."quality", 0) <= coalesce(EXCLUDED."quality", 0)
+    `;
+    if (kept === 0) {
+      this.log.log(`${deviceId} reported a poorer capture for ${report.employeeId}, keeping the held one`);
+    }
     if (report.embeddingVersion) {
       await this.db.employee.update({
         where: { id: report.employeeId },
@@ -135,6 +145,7 @@ export class EnrollmentService {
       where: { deviceId, employeeId: report.employeeId },
       data: { state: "ENROLLED", templateIdx: report.templateIdx },
     });
+    await this.spread(deviceId, report.employeeId);
     this.log.log(`${deviceId} enrolled employee ${report.employeeId}`);
   }
 
@@ -229,6 +240,33 @@ export class EnrollmentService {
    * enrolling at once each read the same old number, and the version a kiosk
    * is told to reach has to count every change (KEHOACH 6.2.6).
    */
+
+  /** Each door would otherwise hold only what it captured itself, and no
+   *  heartbeat reports that difference (KEHOACH 9.23 rule 7).
+   */
+  private async spread(fromDeviceId: string, employeeId: number): Promise<void> {
+    const others = await this.db.deviceEnrollment.findMany({
+      where: { employeeId, deviceId: { not: fromDeviceId } },
+      include: {
+        employee: { select: { fullName: true, code: true, embeddingVersion: true } },
+      },
+    });
+    for (const row of others) {
+      const device = await this.db.device.findUnique({ where: { id: row.deviceId } });
+      if (!device) {
+        continue;
+      }
+      const version = await this.bump(device);
+      await this.send(row.deviceId, await this.templateFor(row, version, row.deviceId));
+      // The door now holds the face, so it stops being a door waiting to take
+      // one: leaving it ASSIGNED is what makes a second kiosk ask again.
+      await this.db.deviceEnrollment.update({
+        where: { deviceId_employeeId: { deviceId: row.deviceId, employeeId } },
+        data: { state: "ENROLLED", templateIdx: FIRST_TEMPLATE },
+      });
+    }
+  }
+
   private async bump(device: Device): Promise<number> {
     const moved = await this.db.device.update({
       where: { id: device.id },
