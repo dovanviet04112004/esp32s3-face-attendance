@@ -9,7 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
-import { parseCsv } from "../src/modules/employees/import.js";
+import { IMPORT_COLUMNS, parseCsv } from "../src/modules/employees/import.js";
 
 const PREFIX = "E2EIMP";
 const HEAD = "code,fullName,managerCode,dateOfBirth,gender,baseSalary,insuranceSalary";
@@ -148,5 +148,26 @@ describe("employee import (e2e)", () => {
     assert.equal(staff?.fullName, "Tên đã đổi");
     assert.equal(staff?.compensation.length, 1, "one effective date holds one record");
     assert.equal(staff?.compensation[0]?.insuranceSalary.toFixed(0), "11000000");
+  });
+
+  it("exports in the shape the import takes straight back", async () => {
+    const res = await request(http)
+      .get("/employees/export")
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    assert.ok(res.text.startsWith("\ufeff"), "Excel needs the byte order mark");
+
+    const grid = parseCsv(res.text);
+    assert.deepEqual(grid[0], [...IMPORT_COLUMNS], "the header is the importer's own");
+
+    const mine = grid.filter((line) => (line[0] ?? "").startsWith(PREFIX));
+    assert.ok(mine.length >= 2, "the two rows this suite made are in the file");
+
+    // Fed back whole: a round trip that needs editing first is not one. The
+    // count is a floor, since a parallel suite may drop its own rows meanwhile.
+    const report = await send(res.text, false);
+    assert.equal(report.faults.length, 0, "the file this system writes is a file it accepts");
+    assert.equal(report.rows, grid.length - 1);
+    assert.ok(report.toUpdate >= mine.length, "the people already here read back as updates");
   });
 });
