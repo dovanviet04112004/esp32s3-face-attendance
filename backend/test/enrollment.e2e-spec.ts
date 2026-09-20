@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setTimeout as sleep } from "node:timers/promises";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { after, before, describe, it, mock } from "node:test";
@@ -50,7 +51,8 @@ const CODE = "NV9100";
 const RACERS = ["NV9111", "NV9112", "NV9113", "NV9114", "NV9115", "NV9116"];
 const EMBEDDING_BYTES = 512;
 const RELEASE_VERSION = "9.9.9";
-const SETTLE_MS = 600;
+const SETTLE_MS = 15000;
+const SETTLE_POLL_MS = 50;
 
 function embedding(): string {
   const raw = Buffer.alloc(EMBEDDING_BYTES);
@@ -135,6 +137,26 @@ describe("enrollment and releases (e2e)", () => {
     assert.equal(now.rosterVersion, before.rosterVersion + 1);
   });
 
+  // Waits on the round trip's last write rather than guessing how long it
+  // takes: the template row lands first, the pair turns ENROLLED after it.
+  async function settled() {
+    for (let waited = 0; waited < SETTLE_MS; waited += SETTLE_POLL_MS) {
+      const [row, pair] = await Promise.all([
+        db.faceTemplate.findUnique({
+          where: { employeeId_templateIdx: { employeeId, templateIdx: 0 } },
+        }),
+        db.deviceEnrollment.findUnique({
+          where: { deviceId_employeeId: { deviceId: DEVICE_ID, employeeId } },
+        }),
+      ]);
+      if (row && pair?.state === "ENROLLED") {
+        return { row, pair };
+      }
+      await sleep(SETTLE_POLL_MS);
+    }
+    throw new Error(`the enrolment did not land in ${SETTLE_MS} ms`);
+  }
+
   it("stores what the kiosk reports, sealed rather than in the clear", async () => {
     await publishAsKiosk(DEVICE_ID, {
       op: "UPSERT",
@@ -145,11 +167,7 @@ describe("enrollment and releases (e2e)", () => {
       scale: 0.0125,
       embeddingVersion: "recog-f77969e342ab10b4",
     });
-    await new Promise((done) => setTimeout(done, SETTLE_MS));
-
-    const held = await db.faceTemplate.findUniqueOrThrow({
-      where: { employeeId_templateIdx: { employeeId, templateIdx: 0 } },
-    });
+    const { row: held, pair } = await settled();
     const stored = Buffer.from(held.embedding);
     assert.notEqual(stored.toString("base64"), sample, "the template was stored in the clear");
     assert.ok(stored.length > EMBEDDING_BYTES, "a sealed template carries an iv and a tag");
@@ -157,9 +175,6 @@ describe("enrollment and releases (e2e)", () => {
     const opened = openTemplate(held.embedding, validateEnv().TEMPLATE_ENCRYPTION_KEY);
     assert.equal(opened.toString("base64"), sample);
 
-    const pair = await db.deviceEnrollment.findUniqueOrThrow({
-      where: { deviceId_employeeId: { deviceId: DEVICE_ID, employeeId } },
-    });
     assert.equal(pair.state, "ENROLLED");
   });
 

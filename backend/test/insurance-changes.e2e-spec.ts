@@ -15,6 +15,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 const FROM = "2026-04-01";
 const TO = "2026-04-30";
 
+const SEED_ENTITY = "DEFAULT";
 const JOINED = "NV9701";
 const GONE = "NV9702";
 const RAISED = "NV9703";
@@ -73,10 +74,10 @@ describe("insurance changes (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     token = signedIn.body.accessToken;
 
-    const template = await db.employee.findFirstOrThrow({
-      where: { active: true, legalEntityId: { not: null } },
-    });
-    entityId = template.legalEntityId as string;
+    // Named, not whichever entity turns up first: only this one carries the
+    // seeded policy this report reads its threshold from.
+    const holder = await db.legalEntity.findUniqueOrThrow({ where: { code: SEED_ENTITY } });
+    entityId = holder.id;
 
     async function make(code: string, over: Record<string, unknown> = {}): Promise<number> {
       const made = await db.employee.create({

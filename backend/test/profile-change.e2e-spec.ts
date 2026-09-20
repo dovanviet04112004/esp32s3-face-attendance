@@ -12,6 +12,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { ProfileService } from "../src/modules/profile/profile.service.js";
 
 const CODE = "E2EPR01";
 const OTHER = "E2EPR02";
@@ -31,9 +32,7 @@ const YEAR = 2033;
 const MONTH = 7;
 const NET = "12345678";
 
-// Budgets the backlog, not the delivery: the notice queues behind every other
-// job on the shared notify queue, which this sink unblocks by listening.
-const MAIL_WAIT_MS = 45000;
+const MAIL_WAIT_MS = 15000;
 const MAIL_POLL_MS = 100;
 
 interface Change {
@@ -368,6 +367,9 @@ describe("changing a personal detail through an approval (e2e)", () => {
         .set("Authorization", `Bearer ${desk}`);
       assert.equal(given.status, 201);
 
+      // Straight at what the worker calls: every process in this run shares one
+      // notify queue, so waiting on it measures the queue rather than the mail.
+      assert.equal(await app.get(ProfileService).mailNotice(row.id), true);
       const letter = await sink.waitFor(MOVED);
       assert.match(letter, new RegExp(`RCPT TO:\\s*<${MOVED}>`, "i"));
       // Quoted-printable may fold a long line mid-number, so joining first

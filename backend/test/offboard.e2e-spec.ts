@@ -15,6 +15,8 @@ const LEAVER = "E2EOB01";
 const EMAIL = "e2eob@kiosk.local";
 const PASSWORD = "kiosk-e2e-password";
 const ASSET = "E2EOB-AS1";
+const YEAR = 2039;
+const MONTH = 6;
 
 interface Report {
   code: string;
@@ -38,6 +40,7 @@ describe("offboarding (e2e)", () => {
     await db.asset.deleteMany({ where: { code: ASSET } });
     await db.user.deleteMany({ where: { email: EMAIL } });
     await db.employee.deleteMany({ where: { code: LEAVER } });
+    await db.payrollPeriod.deleteMany({ where: { year: YEAR } });
   }
 
   before(async () => {
@@ -77,9 +80,15 @@ describe("offboarding (e2e)", () => {
         employeeId,
       },
     });
-    const period = await db.payrollPeriod.findFirstOrThrow({
-      orderBy: [{ year: "desc" }, { month: "desc" }],
-      select: { id: true, startDate: true },
+    // Its own period, not whichever one is newest: another suite adding a
+    // later one would move this assertion onto somebody else's entity.
+    const period = await db.payrollPeriod.create({
+      data: {
+        year: YEAR,
+        month: MONTH,
+        startDate: new Date(Date.UTC(YEAR, MONTH - 1, 1)),
+        endDate: new Date(Date.UTC(YEAR, MONTH, 0)),
+      },
     });
     periodId = period.id;
     lastDay = period.startDate.toISOString().slice(0, 10);
