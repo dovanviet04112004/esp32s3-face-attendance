@@ -15,7 +15,6 @@ const LEAVER = "E2EOB01";
 const EMAIL = "e2eob@kiosk.local";
 const PASSWORD = "kiosk-e2e-password";
 const ASSET = "E2EOB-AS1";
-const LAST_DAY = "2026-09-15";
 
 interface Report {
   code: string;
@@ -30,6 +29,10 @@ describe("offboarding (e2e)", () => {
   let token = "";
   let employeeId = 0;
   let refreshCookie = "";
+  let periodId = "";
+  // Taken from the period this suite checks, so the leaving date cannot
+  // drift out of the window that makes the checklist count it.
+  let lastDay = "";
 
   async function sweep(): Promise<void> {
     await db.asset.deleteMany({ where: { code: ASSET } });
@@ -74,6 +77,13 @@ describe("offboarding (e2e)", () => {
         employeeId,
       },
     });
+    const period = await db.payrollPeriod.findFirstOrThrow({
+      orderBy: [{ year: "desc" }, { month: "desc" }],
+      select: { id: true, startDate: true },
+    });
+    periodId = period.id;
+    lastDay = period.startDate.toISOString().slice(0, 10);
+
     const asset = await db.asset.create({
       data: { code: ASSET, name: "Máy chưa thu", kind: "LAPTOP" },
     });
@@ -99,7 +109,7 @@ describe("offboarding (e2e)", () => {
     const res = await request(http)
       .post(`/employees/${employeeId}/offboard`)
       .set("Authorization", `Bearer ${token}`)
-      .send({ leaveDate: LAST_DAY, reason: "e2e" });
+      .send({ leaveDate: lastDay, reason: "e2e" });
     assert.equal(res.status, 201);
     const report = res.body as Report;
     assert.equal(report.code, LEAVER);
@@ -111,7 +121,7 @@ describe("offboarding (e2e)", () => {
 
     const person = await db.employee.findUnique({ where: { id: employeeId } });
     assert.equal(person?.active, false);
-    assert.equal(person?.leaveDate?.toISOString().slice(0, 10), LAST_DAY);
+    assert.equal(person?.leaveDate?.toISOString().slice(0, 10), lastDay);
   });
 
   it("shuts the login the same moment, both ways in", async () => {
@@ -123,13 +133,8 @@ describe("offboarding (e2e)", () => {
   });
 
   it("puts the unreturned asset in front of whoever locks the period", async () => {
-    const period = await db.payrollPeriod.findFirst({
-      where: { year: 2026, month: 9 },
-      select: { id: true },
-    });
-    assert.ok(period, "the seed has a September period");
     const res = await request(http)
-      .get(`/payroll-periods/${period.id}/checklist`)
+      .get(`/payroll-periods/${periodId}/checklist`)
       .set("Authorization", `Bearer ${token}`);
     assert.equal(res.status, 200);
     const item = (res.body as { code: string; count: number }[]).find(
