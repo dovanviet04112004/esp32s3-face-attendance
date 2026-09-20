@@ -185,7 +185,21 @@
   "reports": {
     "title": "Reports",
     "lead": "Check-ins per person, {year}",
-    "punches": "Punches"
+    "punches": "Punches",
+    "insuranceTitle": "Insurance increases, decreases and adjustments",
+    "insuranceLead": "Three monthly filings, from start dates, leaving dates, and a contribution base that moved.",
+    "entity": "Legal entity",
+    "from": "From",
+    "to": "To",
+    "increases": "Increases",
+    "decreases": "Decreases",
+    "adjustments": "Base adjustments",
+    "reasonHIRED": "started",
+    "reasonLEFT": "left",
+    "reasonUNPAID_14": "14 unpaid days reached",
+    "reasonSALARY_UP": "pay rise",
+    "reasonSALARY_DOWN": "pay cut",
+    "andMore": "{n} more"
   },
   "settings": {
     "title": "Settings",

@@ -185,7 +185,21 @@
   "reports": {
     "title": "Báo cáo",
     "lead": "Số lượt chấm công theo người, năm {year}",
-    "punches": "Lượt"
+    "punches": "Lượt",
+    "insuranceTitle": "Báo tăng, báo giảm, điều chỉnh BHXH",
+    "insuranceLead": "Ba việc hằng tháng, tính từ ngày vào, ngày nghỉ, và mức lương đóng bảo hiểm thay đổi.",
+    "entity": "Pháp nhân",
+    "from": "Từ ngày",
+    "to": "Đến ngày",
+    "increases": "Báo tăng",
+    "decreases": "Báo giảm",
+    "adjustments": "Điều chỉnh mức đóng",
+    "reasonHIRED": "vào làm",
+    "reasonLEFT": "nghỉ việc",
+    "reasonUNPAID_14": "đủ 14 ngày không lương",
+    "reasonSALARY_UP": "tăng lương",
+    "reasonSALARY_DOWN": "giảm lương",
+    "andMore": "còn {n} dòng nữa"
   },
   "settings": {
     "title": "Cài đặt",
