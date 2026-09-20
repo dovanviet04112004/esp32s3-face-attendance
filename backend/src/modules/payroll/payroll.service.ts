@@ -237,12 +237,46 @@ export class PayrollService {
    */
   async execute(viewer: Viewer, runId: string): Promise<PayrollRun> {
     this.mayWrite(viewer);
-    const run = await this.db.payrollRun.findUnique({ where: { id: runId }, include: { period: true } });
+    const run = await this.requireRunnable(runId);
+    await this.queues[QUEUE.payroll].add(
+      "run",
+      { type: "run", runId } satisfies PayrollJob,
+      { jobId: `run-${runId}` },
+    );
+    await this.audit.record({ actorId: viewer.userId, action: "payroll.queue", target: runId });
+    return this.db.payrollRun.update({
+      where: { id: run.id },
+      data: { state: "RUNNING", startedAt: new Date(), doneCount: 0, failedCount: 0 },
+    });
+  }
+
+  private async requireRunnable(runId: string): Promise<PayrollRun & { period: PayrollPeriod }> {
+    const run = await this.db.payrollRun.findUnique({
+      where: { id: runId },
+      include: { period: true },
+    });
     if (!run) {
       throw new NotFoundException("RUN_NOT_FOUND");
     }
     if (run.period.state !== "OPEN") {
       throw new BadRequestException("PERIOD_NOT_OPEN");
+    }
+    if (run.state === "RUNNING") {
+      throw new BadRequestException("RUN_ALREADY_RUNNING");
+    }
+    return run;
+  }
+
+  /** The work itself, called by the worker. A second delivery of the same job
+   *  recomputes the same run rather than doubling it.
+   */
+  async runNow(runId: string): Promise<PayrollRun> {
+    const run = await this.db.payrollRun.findUnique({
+      where: { id: runId },
+      include: { period: true },
+    });
+    if (!run) {
+      throw new NotFoundException("RUN_NOT_FOUND");
     }
 
     const period = run.period;
@@ -282,7 +316,7 @@ export class PayrollService {
     }
 
     await this.audit.record({
-      actorId: viewer.userId,
+      actorId: run.createdById ?? undefined,
       action: "payroll.run",
       target: runId,
       meta: { employees: ids.length, payslips: done },

@@ -18,8 +18,15 @@ export interface NotifyJob {
   reason: string;
 }
 
-/** One payslip; the worker reads Payslip.sentAt, not the queue. */
-export interface PayrollJob {
+export interface DeliverJob {
   type: "deliver";
   payslipId: string;
 }
+
+export interface RunJob {
+  type: "run";
+  runId: string;
+}
+
+/** Neither trusts the queue for exactly-once: they read the row. */
+export type PayrollJob = DeliverJob | RunJob;

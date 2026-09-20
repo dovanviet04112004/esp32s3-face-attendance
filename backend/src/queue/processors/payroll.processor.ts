@@ -7,7 +7,8 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { RedisService } from "../../database/redis.service.js";
 import { payslipMail } from "../../modules/payroll/mail-text.js";
-import { QUEUE, type PayrollJob } from "../queues.js";
+import { PayrollService } from "../../modules/payroll/payroll.service.js";
+import { QUEUE, type DeliverJob, type PayrollJob } from "../queues.js";
 
 @Injectable()
 export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
@@ -18,6 +19,7 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly db: PrismaService,
     private readonly redis: RedisService,
+    private readonly payroll: PayrollService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -25,11 +27,25 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
     this.mail = this.transport();
     this.worker = new Worker(
       QUEUE.payroll,
-      (job) => this.deliver(job.data as PayrollJob),
+      async (job) => {
+        const body = job.data as PayrollJob;
+        if (body.type === "run") {
+          await this.payroll.runNow(body.runId);
+          return;
+        }
+        await this.deliver(body);
+      },
       { connection: this.redis.client },
     );
     this.worker.on("failed", (job, error) => {
       this.log.error(`payroll ${job?.id} failed: ${error.message}`);
+      const body = job?.data as PayrollJob | undefined;
+      // Out of attempts, so the run says so rather than sitting on RUNNING.
+      if (body?.type === "run" && job !== undefined && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+        void this.db.payrollRun
+          .update({ where: { id: body.runId }, data: { state: "FAILED", finishedAt: new Date() } })
+          .catch(() => undefined);
+      }
     });
   }
 
@@ -55,7 +71,7 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async deliver(job: PayrollJob): Promise<void> {
+  private async deliver(job: DeliverJob): Promise<void> {
     const slip = await this.db.payslip.findUnique({
       where: { id: job.payslipId },
       include: {
