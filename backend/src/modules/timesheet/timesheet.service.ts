@@ -241,6 +241,8 @@ export class TimesheetService {
              ) AS v("employeeId", "state", "shiftId", "firstIn", "lastOut",
                     "workedMinutes", "lateMinutes", "earlyLeaveMinutes",
                     "overtimeMinutes", "punchCount", "clockUnsynced", "measuredMinutes")
+        -- A person deleted since the read must not fail the whole day's write.
+        JOIN "Employee" e ON e."id" = v."employeeId"
       ON CONFLICT ("employeeId", "date") DO UPDATE SET
         "state" = EXCLUDED."state",
         "shiftId" = EXCLUDED."shiftId",
