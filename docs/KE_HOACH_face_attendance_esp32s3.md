@@ -6777,3 +6777,24 @@ một dòng — cùng lý do §9.16 mục 11 bắt lịch sử tài sản là d�
 
 **Luật 6 — thử đồng thời là một phép đo, và phải ghi số.** Mỗi chỗ nghi ngờ thì bắn N request
 song song rồi đếm dòng trong cơ sở dữ liệu. Con số vào `docs/measurements/`, không vào trí nhớ.
+
+**Luật 7 — một người, nhiều cửa: máy này nhận mặt thì máy kia phải thôi hỏi.** Người mới được
+gán vào nhiều kiosk, và hợp đồng đã phân biệt sẵn `ASSIGN` ("chờ người này tới lấy mặt") với
+`UPSERT` ("đây là mặt rồi"). Nên khi một cửa lấy được mặt, máy chủ phải **đẩy mẫu sang mọi cửa
+còn lại và chuyển chúng sang `ENROLLED`** — để nguyên `ASSIGN` chính là thứ khiến cửa thứ hai
+hỏi lại.
+
+Ba điều kèm theo, mỗi điều bịt một khe khác nhau:
+
+- **Chất lượng quyết định, không phải thứ tự tới.** Hai cửa cùng lấy được thì bản mờ có thể tới
+  sau, và một `upsert` trơ sẽ đè bản tốt. Điều kiện `quality` nằm trong `WHERE` của chính lệnh
+  ghi, nên **kết quả không phụ thuộc bản nào tới trước** — đo bốn lượt song song đều giữ bản
+  95 và bỏ bản 40.
+- **Báo cáo phải đến từ cửa đã được giao người ấy.** Máy chủ nhận dữ liệu sinh trắc thì không
+  được chỉ dựa vào phép xác thực của broker: không có dòng `DeviceEnrollment` thì từ chối.
+- **Kiosk không được lùi phiên bản.** Hai lần đẩy có thể tới lệch thứ tự; bản tin có số phiên
+  bản **không lớn hơn** số đang giữ thì bỏ qua, và số đang giữ không bao giờ giảm. Hiện firmware
+  nhận số của bản tin cuối cùng trong lô một cách vô điều kiện — nó **tự chữa** vì số lùi khiến
+  heartbeat báo thấp rồi máy chủ đồng bộ lại cả danh sách, nhưng trong khoảng đó cửa ấy cầm sai
+  mặt. 🔬 Chưa sửa, chưa đo trên board.
+
