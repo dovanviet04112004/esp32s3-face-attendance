@@ -1,6 +1,8 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+import { isProduction } from "@/lib/env";
 import { useEffect, useState, type ReactNode } from "react";
 
 const STALE_MS = 30_000;
@@ -16,9 +18,17 @@ export function Providers({ children }: { children: ReactNode }) {
         },
       }),
   );
-  // Registered after paint so it never delays the first screen.
   useEffect(() => {
     if (!("serviceWorker" in navigator)) {
+      return;
+    }
+    if (!isProduction) {
+      // A worker an earlier run installed keeps serving its own chunks.
+      void navigator.serviceWorker
+        .getRegistrations()
+        .then((held) => Promise.all(held.map((one) => one.unregister())))
+        .then(() => caches?.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))))
+        .catch(() => undefined);
       return;
     }
     const register = () => void navigator.serviceWorker.register("/sw.js").catch(() => undefined);

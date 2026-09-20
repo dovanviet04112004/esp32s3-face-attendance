@@ -1,6 +1,9 @@
-const SHELL = "shell-v1";
-const READS = "reads-v1";
+// Bumping these is what evicts an older worker's store: activate keeps only
+// the names listed here, so a name that never changes can never be evicted.
+const SHELL = "shell-v2";
+const READS = "reads-v2";
 const KEEP = [SHELL, READS];
+const LOCAL = ["localhost", "127.0.0.1"];
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -48,7 +51,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   const url = new URL(request.url);
-  if (url.origin === self.location.origin && url.pathname.startsWith("/_next/static/")) {
+  // A dev build reuses chunk names, so holding the first copy of one pins the
+  // whole app to the first build the browser ever saw.
+  const addressed = !LOCAL.includes(url.hostname);
+  if (addressed && url.origin === self.location.origin && url.pathname.startsWith("/_next/static/")) {
     event.respondWith(cacheFirst(request));
     return;
   }
