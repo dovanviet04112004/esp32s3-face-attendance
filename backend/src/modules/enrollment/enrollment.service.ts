@@ -5,7 +5,9 @@ import type { Device, DeviceEnrollment } from "@prisma/client";
 import type { EnrollPayload } from "../../common/generated/enroll_payload.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AuditService } from "../audit/audit.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
+import { ConsentService } from "./consent.service.js";
 import { openTemplate, sealTemplate } from "./template-crypto.js";
 
 const NO_EMPLOYEE = 0;
@@ -18,11 +20,14 @@ export class EnrollmentService {
   constructor(
     private readonly db: PrismaService,
     private readonly mqtt: MqttService,
+    private readonly consent: ConsentService,
+    private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
   /** Tell a kiosk to expect this person, so nobody types a UID (KEHOACH 7.5). */
   async assign(deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
+    await this.consent.require(employeeId);
     const [device, employee] = await Promise.all([this.device(deviceId), this.employee(employeeId)]);
     const row = await this.db.deviceEnrollment.upsert({
       where: { deviceId_employeeId: { deviceId, employeeId } },
@@ -60,6 +65,40 @@ export class EnrollmentService {
       deviceId,
     });
     return row;
+  }
+
+  /**
+   * Erase a person's face on every kiosk holding it. The personnel record
+   * stays; the biometric does not (Nghi dinh 13/2023, KEHOACH 9.19).
+   */
+  async erase(employeeId: number, actorId: string, why: string): Promise<{ devices: number }> {
+    const rows = await this.db.deviceEnrollment.findMany({ where: { employeeId } });
+    await this.db.faceTemplate.deleteMany({ where: { employeeId } });
+    await this.db.employee.update({ where: { id: employeeId }, data: { embeddingVersion: null } });
+    for (const row of rows) {
+      const device = await this.db.device.findUnique({ where: { id: row.deviceId } });
+      if (!device) {
+        continue;
+      }
+      const version = await this.bump(device);
+      await this.send(row.deviceId, {
+        op: "DELETE_EMPLOYEE",
+        employeeId,
+        templateIdx: FIRST_TEMPLATE,
+        updatedAt: Date.now(),
+        rosterVersion: version,
+        deviceId: row.deviceId,
+      });
+    }
+    await this.db.deviceEnrollment.updateMany({ where: { employeeId }, data: { state: "REVOKED" } });
+    await this.audit.record({
+      actorId,
+      action: "biometric.erase",
+      target: String(employeeId),
+      meta: { devices: rows.length, why },
+    });
+    this.log.warn(`erased biometrics for ${employeeId} on ${rows.length} kiosk(s): ${why}`);
+    return { devices: rows.length };
   }
 
   /** Store what a kiosk says it captured, sealed, and mark the pair enrolled. */
@@ -164,6 +203,13 @@ export class EnrollmentService {
         deviceId,
       };
     }
+    // Handing a template to a kiosk is a read of sensitive data, and the log
+    // has to cover reads, not only writes (KEHOACH 9.19).
+    await this.audit.record({
+      action: "biometric.read",
+      target: String(row.employeeId),
+      meta: { deviceId, templateIdx: held.templateIdx },
+    });
     return {
       op: "UPSERT",
       employeeId: row.employeeId,

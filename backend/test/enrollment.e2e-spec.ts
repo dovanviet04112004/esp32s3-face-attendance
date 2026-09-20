@@ -96,11 +96,29 @@ describe("enrollment and releases (e2e)", () => {
       .set("Authorization", `Bearer ${admin}`)
       .send({ code: CODE, fullName: "Phạm Thị D" });
     employeeId = made.body.id;
+    await request(http)
+      .post("/biometric-consents")
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ employeeId, noticeVersion: "test-v1", method: "PAPER" });
   });
 
   after(async () => {
     await sweep();
     await app.close();
+  });
+
+  it("refuses to enrol a face nobody agreed to hand over", async () => {
+    const other = await request(http)
+      .post("/employees")
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ code: `${CODE}X`, fullName: "Chưa đồng ý" });
+    const res = await request(http)
+      .post("/enrollments")
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ deviceId: DEVICE_ID, employeeId: other.body.id });
+    assert.equal(res.status, 403);
+    assert.equal(res.body.message, "BIOMETRIC_CONSENT_MISSING");
+    await db.employee.delete({ where: { id: other.body.id } });
   });
 
   it("assigns a person to a kiosk and moves the roster on by one", async () => {

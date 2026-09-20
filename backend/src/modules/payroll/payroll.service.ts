@@ -284,6 +284,11 @@ export class PayrollService {
     if (run.state === "RUNNING") {
       throw new BadRequestException("RUN_ALREADY_RUNNING");
     }
+    // A bonus and a final settlement are different arithmetic; running them
+    // through the monthly path would pay a second full salary.
+    if (run.kind !== "REGULAR") {
+      throw new BadRequestException("RUN_KIND_NOT_READY");
+    }
     return run;
   }
 

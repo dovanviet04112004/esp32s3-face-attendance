@@ -198,6 +198,7 @@ model Employee {
   retros            RetroAdjustment[]
   advances          SalaryAdvance[]
   advanceApprovals  SalaryAdvance[]      @relation("ApprovesAdvances")
+  consents          BiometricConsent[]
 
   @@index([departmentId, active])
   @@index([managerId])
@@ -881,4 +882,30 @@ model SalaryAdvance {
 
   @@index([employeeId, state])
   @@index([state, requestedAt])
+}
+
+enum ConsentState {
+  GRANTED
+  WITHDRAWN
+}
+
+/**
+ * Facial features are sensitive personal data under Nghi dinh 13/2023, so the
+ * agreement stands apart from the employment contract and names the text that
+ * was agreed to (KEHOACH 9.19).
+ */
+model BiometricConsent {
+  id            String       @id @default(uuid())
+  employeeId    Int
+  noticeVersion String
+  state         ConsentState @default(GRANTED)
+  method        String
+  grantedAt     DateTime     @default(now())
+  withdrawnAt   DateTime?
+  recordedById  String?
+  note          String?
+  employee      Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, state])
+  @@index([state, grantedAt])
 }
