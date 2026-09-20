@@ -4160,7 +4160,8 @@ backend/
     │   ├── timesheet/                # AttendanceDay: từ lượt quẹt thành ngày công
     │   ├── search/                   # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
     │   ├── notifications/            # ★ §9.21.4 — bốn loại, ba kênh, mỗi loại tắt riêng
-    │   └── assets/                   # ★ §9.16 mục 11 — cấp và thu là dòng, không phải ô
+    │   ├── assets/                   # ★ §9.16 mục 11 — cấp và thu là dòng, không phải ô
+    │   └── onboarding/               # ★ §9.16 mục 10 — mẫu theo chức danh, sinh ra bản thể hiện
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
     │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
@@ -5848,6 +5849,23 @@ kiểu nguyên** (`800` là 8%), không lưu số thực: một phép nhân dấ
 một đồng lệch mà không ai truy ra được nguồn.
 
 **Ngày công** — `AttendanceDay`. Xem §9.8.
+
+**Nhận việc và nghỉ việc** — `ChecklistTemplate`, `ChecklistTemplateItem`, `ChecklistRun`,
+`ChecklistTask`. Xem §9.16 mục 10. Mẫu khai theo **chức danh và phòng ban**; lúc một người vào
+hoặc ra thì **sinh ra một bản thể hiện** và từ đó hai bên không còn dính nhau nữa.
+
+Tách mẫu khỏi bản thể hiện vì sửa mẫu **không được** đổi việc đã giao cho người đang làm dở.
+Hạn khai bằng **số ngày lệch so với mốc** chứ không phải ngày tuyệt đối — mốc là ngày vào làm
+hoặc ngày nghỉ, và số âm là hợp lệ: "thu lại thẻ ra vào" phải xong **trước** ngày cuối.
+
+Người phụ trách giải ra lúc sinh: `MANAGER` thành cấp trên của chính người đó, `SELF` thành họ,
+`HR` **để trống ô người** và chỉ giữ vai — một việc thuộc về một quầy chứ không thuộc về một
+người là sự thật, và gán bừa cho một ai đó là làm hỏng sự thật ấy.
+
+| Bảng | Câu hỏi nó trả lời | Vì sao không gộp |
+|---|---|---|
+| `ChecklistTemplate` | "người mới ở vị trí này cần làm những gì" | mẫu sống lâu hơn từng lượt và sửa được mà không đụng lượt đang chạy |
+| `ChecklistTask` | "việc này của ai, hạn nào, xong chưa" | một ô JSON trong `Employee` thì không lọc được "ai đang trễ" |
 
 **Tài sản** — `Asset`, `AssetTransfer`. Xem §9.16 mục 11. `Asset` giữ **hiện trạng** (mã, loại,
 mô tả, số sê-ri, ai đang giữ); `AssetTransfer` giữ **lịch sử**, một dòng cho mỗi lần cấp và mỗi
