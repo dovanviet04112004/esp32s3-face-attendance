@@ -4453,7 +4453,8 @@ frontend/
 │   ├── requests/{request-card.tsx, request-form.tsx}
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
 │   ├── notifications/{bell.tsx, notice-list.tsx, push-switch.tsx}   # ★ §9.21.4
-│   └── payroll/{payslip-view.tsx, run-progress.tsx}
+│   └── payroll/{payslip-view.tsx, run-progress.tsx, dispute-card.tsx}
+│                                     # ★ §9.17 mục 11 — một thẻ khiếu nại, hai phía đọc
 ├── lib/
 │   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.9)
 │   ├── api.ts                        # axios + interceptor tự refresh khi 401
