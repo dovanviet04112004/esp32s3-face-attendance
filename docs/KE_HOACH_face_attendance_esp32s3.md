@@ -5848,6 +5848,20 @@ một đồng lệch mà không ai truy ra được nguồn.
 
 **Ngày công** — `AttendanceDay`. Xem §9.8.
 
+**Tài sản** — `Asset`, `AssetTransfer`. Xem §9.16 mục 11. `Asset` giữ **hiện trạng** (mã, loại,
+mô tả, số sê-ri, ai đang giữ); `AssetTransfer` giữ **lịch sử**, một dòng cho mỗi lần cấp và mỗi
+lần thu, kèm người thao tác và tình trạng lúc giao nhận.
+
+Hai bảng chứ không một, và ô `holderId` trên `Asset` **không phải là sự thật gốc** — nó là bản
+tóm tắt của dòng chuyển giao mới nhất, giữ ở đó vì câu hỏi "ai đang cầm" được hỏi nhiều lần hơn
+câu hỏi "từng qua tay ai". Sửa ô ấy mà không ghi dòng là làm mất lịch sử, nên mọi đường ghi đi
+qua một phép duy nhất viết cả hai trong một giao dịch.
+
+| Bảng | Câu hỏi nó trả lời | Vì sao không gộp |
+|---|---|---|
+| `Asset` | "cái máy mã TS0142 giờ ai cầm, còn dùng được không" | không có ô tóm tắt thì mỗi lần hỏi phải đọc hết lịch sử |
+| `AssetTransfer` | "cái máy này từng qua tay ai, hỏng từ lần giao nào" | một ô `holder` bị ghi đè không trả lời được câu nào trong hai câu đó |
+
 ### 9.4 Vai trò và phạm vi nhìn thấy
 
 `Role` hiện có `ADMIN`, `HR`, `VIEWER`. Bộ đó không tả nổi bài toán này, vì **quyền ở đây không
