@@ -253,9 +253,9 @@ export class PayrollService {
   }
 
   /**
-   * Calculate every payslip in a run. Inputs are read as six grouped queries
-   * rather than one query per person, which is the difference between minutes
-   * and hours at thirty thousand people (KEHOACH 9.9).
+   * Calculate every payslip in a run. Overtime pays the lesser of the measured
+   * minutes and the approved ones for that day (KEHOACH 9.17), and the inputs
+   * are six grouped queries rather than one per person (KEHOACH 9.9).
    */
   async execute(viewer: Viewer, runId: string): Promise<PayrollRun> {
     this.mayWrite(viewer);
@@ -384,16 +384,29 @@ export class PayrollService {
          WHERE c."employeeId" = ANY(${ids}::int[]) AND c."effectiveFrom" <= ${period.endDate}
       `,
       this.db.$queryRaw<DayTally[]>`
+        WITH paid AS (
+          SELECT d."employeeId", d."state", d."workedMinutes",
+                 LEAST(d."overtimeMinutes", floor(coalesce(a."allowed", 0))::int) AS "overtimePaid"
+            FROM "AttendanceDay" d
+            LEFT JOIN LATERAL (
+              SELECT sum(r."minutes"::numeric / (r."toDate"::date - r."fromDate"::date + 1)) AS "allowed"
+                FROM "Request" r
+               WHERE r."employeeId" = d."employeeId"
+                 AND r."kind" = 'OVERTIME' AND r."state" = 'APPROVED'
+                 AND d."date" BETWEEN r."fromDate" AND r."toDate"
+            ) a ON true
+           WHERE d."employeeId" = ANY(${ids}::int[])
+             AND d."date" BETWEEN ${period.startDate} AND ${period.endDate}
+        )
         SELECT "employeeId",
                count(*) FILTER (WHERE "state" = 'WORKED')::int  AS "workedDays",
                count(*) FILTER (WHERE "state" = 'HOLIDAY')::int AS "holidayDays",
                count(*) FILTER (WHERE "state" = 'ABSENT')::int  AS "absentDays",
                coalesce(sum("workedMinutes"), 0)::int           AS "workedMinutes",
-               coalesce(sum("overtimeMinutes") FILTER (WHERE "state" = 'WORKED'), 0)::int  AS "weekdayOt",
-               coalesce(sum("overtimeMinutes") FILTER (WHERE "state" = 'WEEKEND'), 0)::int AS "weekendOt",
-               coalesce(sum("overtimeMinutes") FILTER (WHERE "state" = 'HOLIDAY'), 0)::int AS "holidayOt"
-          FROM "AttendanceDay"
-         WHERE "employeeId" = ANY(${ids}::int[]) AND "date" BETWEEN ${period.startDate} AND ${period.endDate}
+               coalesce(sum("overtimePaid") FILTER (WHERE "state" = 'WORKED'), 0)::int  AS "weekdayOt",
+               coalesce(sum("overtimePaid") FILTER (WHERE "state" = 'WEEKEND'), 0)::int AS "weekendOt",
+               coalesce(sum("overtimePaid") FILTER (WHERE "state" = 'HOLIDAY'), 0)::int AS "holidayOt"
+          FROM paid
          GROUP BY "employeeId"
       `,
       this.db.$queryRaw<LeaveTally[]>`
