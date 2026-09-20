@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { AttendanceDay, DayState } from "@prisma/client";
+import type { AttendanceDay, DayState, Prisma } from "@prisma/client";
 
 import type { Env } from "../../config/env.schema.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -143,6 +143,23 @@ export class TimesheetService {
     });
   }
 
+  /**
+   * Turn days already counted absent into leave, for an approval that lands
+   * after the build has run. A day the device saw, or a hand correction, is
+   * left alone.
+   */
+  markLeave(tx: Prisma.TransactionClient, employeeId: number, from: Date, to: Date): Promise<number> {
+    return tx.$executeRaw`
+      UPDATE "AttendanceDay"
+         SET "state" = 'LEAVE', "updatedAt" = now()
+       WHERE "employeeId" = ${employeeId}
+         AND "date" BETWEEN ${from}::date AND ${to}::date
+         AND "state" = 'ABSENT'
+         AND "punchCount" = 0
+         AND "adjustedById" IS NULL
+    `;
+  }
+
   /** Build every finished day in a range, oldest first. */
   async buildRange(from: string, to: string): Promise<BuildReport> {
     let days = 0;
@@ -174,7 +191,7 @@ export class TimesheetService {
     }
     const { from, to } = dayWindow(day, this.zone);
     const date = dayAsDate(day);
-    const [punches, staff, holiday] = await Promise.all([
+    const [punches, staff, holiday, approved] = await Promise.all([
       this.db.attendanceRecord.findMany({
         where: { ts: { gte: from, lt: to } },
         select: { employeeId: true, ts: true, clockUnsynced: true },
@@ -182,6 +199,17 @@ export class TimesheetService {
       }),
       this.db.employee.findMany({ where: { active: true }, select: { id: true } }),
       this.db.holiday.findFirst({ where: { date } }),
+      this.db.request.findMany({
+        // A half day cannot be one day state, so only whole days come through.
+        where: {
+          kind: "LEAVE",
+          state: "APPROVED",
+          halfDay: false,
+          fromDate: { lte: date },
+          toDate: { gte: date },
+        },
+        select: { employeeId: true },
+      }),
     ]);
     const shifts = await this.shiftsOn(date);
 
@@ -203,7 +231,14 @@ export class TimesheetService {
     }
 
     const weekend = [SATURDAY, SUNDAY].includes(date.getUTCDay());
-    const rows = staff.map((person) => this.dayOf(person.id, date, seen.get(person.id), shifts.get(person.id), holiday !== null, weekend));
+    const onLeave = new Set(approved.map((row) => row.employeeId));
+    const rows = staff.map((person) =>
+      this.dayOf(person.id, date, seen.get(person.id), shifts.get(person.id), {
+        holiday: holiday !== null,
+        weekend,
+        leave: onLeave.has(person.id),
+      }),
+    );
     await this.write(date, rows);
     this.log.log(`built ${rows.length} day(s) for ${day} from ${punches.length} punch(es)`);
     return rows.length;
@@ -265,11 +300,17 @@ export class TimesheetService {
     date: Date,
     marks: { first: Date; last: Date; count: number; unsynced: boolean } | undefined,
     shift: ShiftClock | undefined,
-    holiday: boolean,
-    weekend: boolean,
+    calendar: { holiday: boolean; weekend: boolean; leave: boolean },
   ): DayRow {
     if (!marks) {
-      const state: DayState = holiday ? "HOLIDAY" : weekend ? "WEEKEND" : "ABSENT";
+      // A holiday belongs to everyone, so it does not spend anyone's leave.
+      const state: DayState = calendar.holiday
+        ? "HOLIDAY"
+        : calendar.weekend
+          ? "WEEKEND"
+          : calendar.leave
+            ? "LEAVE"
+            : "ABSENT";
       return { employeeId, date, state, shiftId: shift?.shiftId ?? null, punchCount: 0 };
     }
     const inAt = minutesIntoDay(marks.first, this.zone);

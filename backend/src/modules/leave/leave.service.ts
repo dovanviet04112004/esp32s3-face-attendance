@@ -12,6 +12,7 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { TimesheetService } from "../timesheet/timesheet.service.js";
 import type { DecideRequestDto, ListRequestsDto, SubmitRequestDto } from "./dto/request.dto.js";
 
 const EXCLUSION_VIOLATION = "23P01";
@@ -26,6 +27,7 @@ export class LeaveService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly notices: NotificationsService,
+    private readonly timesheet: TimesheetService,
   ) {}
 
   types(): Promise<LeaveType[]> {
@@ -120,6 +122,9 @@ export class LeaveService {
     const decided = await this.db.$transaction(async (tx) => {
       if (held.kind === "LEAVE" && held.leaveTypeId) {
         await this.settle(tx, held, body.approve);
+      }
+      if (held.kind === "LEAVE" && !held.halfDay && body.approve) {
+        await this.timesheet.markLeave(tx, held.employeeId, held.fromDate, held.toDate);
       }
       return tx.request.update({
         where: { id },
