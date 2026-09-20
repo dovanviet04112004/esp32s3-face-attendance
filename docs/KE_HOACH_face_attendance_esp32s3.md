@@ -5911,6 +5911,34 @@ Nên hai bảng, cả hai có `effectiveFrom`:
   đóng**.
 - `TaxBracket` — biểu thuế luỹ tiến từng phần, mỗi bậc một dòng.
 
+**Số 2026, tra ngày 20/09/2026, kèm nguồn.** Đây là bảng phải đối chiếu lại mỗi khi có nghị
+quyết mới; đừng tin trí nhớ của ai, kể cả của người viết chỗ này.
+
+| Đại lượng | Giá trị | Văn bản |
+|---|---|---|
+| Giảm trừ bản thân | **15.500.000 đ/tháng** từ 01/01/2026 | Nghị quyết 110/2025/UBTVQH15 |
+| Giảm trừ người phụ thuộc | **6.200.000 đ/tháng** | như trên |
+| Biểu thuế | **5 bậc: 5% · 10% · 20% · 30% · 35%** tại các mốc 10 / 30 / 60 / 100 triệu | Luật Thuế TNCN 2025, áp dụng cho kỳ tính thuế từ 01/01/2026 |
+| Người lao động đóng | BHXH **8%**, BHYT **1,5%**, BHTN **1%** | Luật BHXH 2024 |
+| Công ty đóng | BHXH **17,5%** (14 hưu trí + 3 ốm đau thai sản + 0,5 tai nạn lao động), BHYT **3%**, BHTN **1%** | như trên |
+| Mức tham chiếu | **2.340.000 đ** đến 30/06/2026, **2.530.000 đ** từ 01/07/2026 | Nghị định 73/2024/NĐ-CP và bản thay thế |
+| Trần đóng BHXH/BHYT | 20 × mức tham chiếu: **46,8 tr** rồi **50,6 tr** | như trên |
+| Lương tối thiểu vùng I | **5.310.000 đ** từ 01/01/2026 | Nghị định 293/2025/NĐ-CP |
+
+**Mức tham chiếu đổi giữa năm, và đó là bài kiểm cho chính thiết kế này.** Một hệ gõ 2.340.000
+vào hằng số sẽ trả sai bảo hiểm cho nửa sau của năm. Ở đây nó là **hai dòng `PayrollPolicy`**,
+một hiệu lực 01/01 và một hiệu lực 01/07, và phép tính hỏi chính sách tại **ngày cuối kỳ** —
+nên kỳ tháng Sáu tự lấy trần 46,8 triệu còn kỳ tháng Bảy tự lấy 50,6 triệu, không ai phải nhớ.
+
+**Cách kiểm một biểu thuế mà không cần tin ai.** Cơ quan thuế công bố kèm **công thức rút gọn**
+cho từng bậc — bậc 5 là `35% × TNTT − 14,5 triệu`. Hai phép kiểm độc lập rơi ra từ đó, và bộ
+test dùng cả hai:
+
+1. **Liên tục tại mọi ranh giới**: giá trị bậc dưới tại mốc phải bằng giá trị bậc trên tại
+   chính mốc đó. Sai một thuế suất là gãy ngay, ví dụ `10%×30 − 0,5 = 20%×30 − 3,5 = 2,5tr`.
+2. **Khớp với công thức rút gọn** ở vài điểm bất kỳ. Phép cộng từng lát của hàm luỹ tiến và
+   phép trừ một lần của công thức rút gọn là hai đường tính khác nhau cho cùng một con số.
+
 **Tháng không đi làm thì không đóng bảo hiểm, và đó là một cột chứ không phải một số trong
 hàm.** Luật BHXH miễn đóng cho tháng người lao động **không làm việc và không hưởng lương từ
 14 ngày làm việc trở lên**. Bỏ quy tắc này thì phiếu lương của người nghỉ không lương cả tháng
