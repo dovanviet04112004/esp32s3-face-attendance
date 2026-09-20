@@ -24,12 +24,33 @@ const POLICY: CalcPolicy = {
   nightPremiumBp: 3_000,
   brackets: [
     { upToAmount: 10_000_000n, rateBp: 500 },
-    { upToAmount: 30_000_000n, rateBp: 1500 },
-    { upToAmount: 60_000_000n, rateBp: 2500 },
+    { upToAmount: 30_000_000n, rateBp: 1000 },
+    { upToAmount: 60_000_000n, rateBp: 2000 },
     { upToAmount: 100_000_000n, rateBp: 3000 },
     { upToAmount: null, rateBp: 3500 },
   ],
 };
+
+// What the tax office publishes beside the table: rate times income, less a
+// constant per band. Another road to the same figure (KEHOACH 9.7).
+const SHORTCUT: { upTo: bigint | null; rateBp: number; less: bigint }[] = [
+  { upTo: 10_000_000n, rateBp: 500, less: 0n },
+  { upTo: 30_000_000n, rateBp: 1000, less: 500_000n },
+  { upTo: 60_000_000n, rateBp: 2000, less: 3_500_000n },
+  { upTo: 100_000_000n, rateBp: 3000, less: 9_500_000n },
+  { upTo: null, rateBp: 3500, less: 14_500_000n },
+];
+
+function byShortcut(assessable: bigint): bigint {
+  const band = SHORTCUT.find((one) => one.upTo === null || assessable <= one.upTo);
+  if (!band) {
+    return 0n;
+  }
+  // Half up, the same convention a payslip reader expects; the point of this
+  // helper is the table, not the rounding.
+  const scaled = assessable * BigInt(band.rateBp) + 5_000n;
+  return scaled / 10_000n - band.less;
+}
 
 function input(over: Partial<CalcInput> = {}): CalcInput {
   return {
@@ -53,15 +74,44 @@ function amountOf(result: ReturnType<typeof calculate>, code: string): bigint {
 
 describe("payroll calculation", () => {
   it("charges each progressive band only on its own slice", () => {
-    // 20,000,000: 10,000,000 at 5% plus 10,000,000 at 15% = 500,000 + 1,500,000.
-    assert.equal(taxOn(20_000_000n, POLICY.brackets), 2_000_000n);
+    // 20,000,000: 10,000,000 at 5% plus 10,000,000 at 10%.
+    assert.equal(taxOn(20_000_000n, POLICY.brackets), 1_500_000n);
     assert.equal(taxOn(0n, POLICY.brackets), 0n);
     assert.equal(taxOn(10_000_000n, POLICY.brackets), 500_000n);
     // 150,000,000 walks every band including the open-ended one.
     assert.equal(
       taxOn(150_000_000n, POLICY.brackets),
-      500_000n + 3_000_000n + 7_500_000n + 12_000_000n + 17_500_000n,
+      500_000n + 2_000_000n + 6_000_000n + 12_000_000n + 17_500_000n,
     );
+  });
+
+  it("joins at every boundary, which a wrong rate would break", () => {
+    for (const edge of [10_000_000n, 30_000_000n, 60_000_000n, 100_000_000n]) {
+      const below = taxOn(edge, POLICY.brackets);
+      const above = taxOn(edge + 1n, POLICY.brackets);
+      const step = POLICY.brackets.find((one) => one.upToAmount === null || one.upToAmount > edge);
+      assert.equal(above - below, (BigInt(step?.rateBp ?? 0) * 1n) / 10_000n);
+    }
+  });
+
+  it("agrees with the shortcut formula the tax office publishes", () => {
+    const probes = [
+      1n,
+      9_999_999n,
+      10_000_000n,
+      10_000_001n,
+      29_999_999n,
+      30_000_000n,
+      45_000_000n,
+      60_000_000n,
+      99_999_999n,
+      100_000_000n,
+      115_309_077n,
+      500_000_000n,
+    ];
+    for (const probe of probes) {
+      assert.equal(taxOn(probe, POLICY.brackets), byShortcut(probe), `at ${probe}`);
+    }
   });
 
   it("works a full month with no dependants", () => {

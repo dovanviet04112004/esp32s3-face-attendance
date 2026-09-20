@@ -36,11 +36,15 @@ const SEED_POLICY = {
 };
 const SEED_BRACKETS = [
   { ordinal: 1, upToAmount: 10_000_000, rateBp: 500 },
-  { ordinal: 2, upToAmount: 30_000_000, rateBp: 1500 },
-  { ordinal: 3, upToAmount: 60_000_000, rateBp: 2500 },
+  { ordinal: 2, upToAmount: 30_000_000, rateBp: 1000 },
+  { ordinal: 3, upToAmount: 60_000_000, rateBp: 2000 },
   { ordinal: 4, upToAmount: 100_000_000, rateBp: 3000 },
   { ordinal: 5, upToAmount: null, rateBp: 3500 },
 ];
+// The reference wage moves on 1 July, so the second half of 2026 is its own
+// policy row rather than a number somebody remembers to change (KEHOACH 9.7).
+const SEED_SECOND_HALF = new Date("2026-07-01T00:00:00Z");
+const SEED_REFERENCE_WAGE_JULY = 2_530_000;
 
 const env = validateEnv();
 const prisma = new PrismaClient({
@@ -113,12 +117,30 @@ async function main(): Promise<void> {
     create: { ...SEED_POLICY, legalEntityId: entity.id },
   });
 
-  for (const bracket of SEED_BRACKETS) {
-    await prisma.taxBracket.upsert({
-      where: { policyId_ordinal: { policyId: policy.id, ordinal: bracket.ordinal } },
-      update: {},
-      create: { ...bracket, policyId: policy.id },
-    });
+  const july = await prisma.payrollPolicy.upsert({
+    where: {
+      legalEntityId_effectiveFrom: {
+        legalEntityId: entity.id,
+        effectiveFrom: SEED_SECOND_HALF,
+      },
+    },
+    update: {},
+    create: {
+      ...SEED_POLICY,
+      legalEntityId: entity.id,
+      effectiveFrom: SEED_SECOND_HALF,
+      referenceWage: SEED_REFERENCE_WAGE_JULY,
+    },
+  });
+
+  for (const target of [policy, july]) {
+    for (const bracket of SEED_BRACKETS) {
+      await prisma.taxBracket.upsert({
+        where: { policyId_ordinal: { policyId: target.id, ordinal: bracket.ordinal } },
+        update: { upToAmount: bracket.upToAmount, rateBp: bracket.rateBp },
+        create: { ...bracket, policyId: target.id },
+      });
+    }
   }
 
   await prisma.compensationRecord.upsert({
@@ -136,7 +158,7 @@ async function main(): Promise<void> {
   });
 
   const who = SEED_ACCOUNTS.map((a) => a.role).join(", ");
-  console.log(`seeded ${who}, shift ${shift.name}, employee ${employee.code}, ${SEED_BRACKETS.length} tax brackets`);
+  console.log(`seeded ${who}, shift ${shift.name}, employee ${employee.code}, 2 policies x ${SEED_BRACKETS.length} brackets`);
 }
 
 main()
