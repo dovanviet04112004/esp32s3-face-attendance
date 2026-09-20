@@ -123,7 +123,8 @@
     "importDone": "Đã nhập: tạo {created}, sửa {updated}.",
     "importFaults": "Còn {n} lỗi — sửa trong file rồi chọn lại.",
     "importLine": "dòng {n}",
-    "importApply": "Nhập thật"
+    "importApply": "Nhập thật",
+    "countAtLeast": "hơn {count} người"
   },
   "attendance": {
     "title": "Chấm công",
@@ -148,7 +149,8 @@
     "flagClock": "giờ lệch",
     "historyEmpty": "Người này chưa có lượt chấm công nào",
     "viewHistory": "Lịch sử",
-    "ofPunches": "{count} lượt"
+    "ofPunches": "{count} lượt",
+    "ofPunchesAtLeast": "hơn {count} lượt"
   },
   "devices": {
     "title": "Thiết bị",

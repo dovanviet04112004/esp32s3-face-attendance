@@ -89,7 +89,8 @@ export default function EmployeesPage() {
   const employees = useQuery({
     queryKey: ["employees"],
     queryFn: async () =>
-      (await api.get<{ rows: Employee[]; total: number }>("/employees")).data,
+      (await api.get<{ rows: Employee[]; total: number; totalIsExact?: boolean }>("/employees"))
+        .data,
   });
 
   const columns: Column<Employee>[] = [
@@ -140,7 +141,11 @@ export default function EmployeesPage() {
         <div>
           <h1 className="text-lg font-semibold">{t("title")}</h1>
           <p className="mt-1 mb-6 text-sm text-(--color-muted)">
-            {employees.data ? t("count", { count: employees.data.total }) : " "}
+            {employees.data
+              ? t(employees.data.totalIsExact === false ? "countAtLeast" : "count", {
+                  count: employees.data.total,
+                })
+              : " "}
           </p>
         </div>
         {mayWrite ? (

@@ -31,11 +31,12 @@ export class PaginationDto {
   take: number = 50;
 }
 
-/** One page of rows, the total so a table can size its pager, and the cursor
- *  that resumes it; `next` is null on the last page.
+/** One page of rows, a total the pager can size itself from, and the cursor
+ *  that resumes it. An absent `totalIsExact` means the total is exact.
  */
 export interface Page<T> {
   rows: T[];
   total: number;
+  totalIsExact?: boolean;
   next?: string | null;
 }

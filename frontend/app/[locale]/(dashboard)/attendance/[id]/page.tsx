@@ -43,7 +43,9 @@ export default function PunchHistoryPage() {
   const punches = useQuery({
     queryKey: ["attendance", "punches", id],
     queryFn: async () =>
-      (await api.get<{ rows: Punch[]; total: number }>(`/attendance?employeeId=${id}&take=${PAGE}`))
+      (await api.get<{ rows: Punch[]; total: number; totalIsExact?: boolean }>(
+        `/attendance?employeeId=${id}&take=${PAGE}`,
+      ))
         .data,
   });
 
@@ -102,7 +104,11 @@ export default function PunchHistoryPage() {
         {employee.data?.fullName ?? t("historyTitle")}
       </h1>
       <p className="mt-1 mb-6 text-sm text-(--color-muted)">
-        {punches.data ? t("ofPunches", { count: punches.data.total }) : " "}
+        {punches.data
+          ? t(punches.data.totalIsExact === false ? "ofPunchesAtLeast" : "ofPunches", {
+              count: punches.data.total,
+            })
+          : " "}
       </p>
       <DataTable
         id="employee-attendance"

@@ -123,7 +123,8 @@
     "importDone": "Imported: {created} created, {updated} updated.",
     "importFaults": "{n} faults left — fix the file and pick it again.",
     "importLine": "line {n}",
-    "importApply": "Apply"
+    "importApply": "Apply",
+    "countAtLeast": "more than {count} people"
   },
   "attendance": {
     "title": "Attendance",
@@ -148,7 +149,8 @@
     "flagClock": "clock off",
     "historyEmpty": "This person has no punches yet",
     "viewHistory": "History",
-    "ofPunches": "{count} punches"
+    "ofPunches": "{count} punches",
+    "ofPunchesAtLeast": "more than {count} punches"
   },
   "devices": {
     "title": "Devices",

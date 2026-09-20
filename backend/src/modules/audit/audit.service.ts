@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { AuditLog, Prisma } from "@prisma/client";
 
+import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import type { AuditAction, AuditSubject } from "./audit-actions.js";
@@ -40,15 +41,15 @@ export class AuditService {
       ...(query.actorId ? { actorId: query.actorId } : {}),
       ...(query.action ? { action: query.action } : {}),
     };
-    const [rows, total] = await Promise.all([
+    const [rows, found] = await Promise.all([
       this.db.auditLog.findMany({
         where,
         skip: query.skip,
         take: query.take,
         orderBy: { ts: "desc" },
       }),
-      this.db.auditLog.count({ where }),
+      this.db.auditLog.count({ where, take: COUNT_CEILING + 1 }),
     ]);
-    return { rows, total };
+    return { rows, ...countedTo(found) };
   }
 }

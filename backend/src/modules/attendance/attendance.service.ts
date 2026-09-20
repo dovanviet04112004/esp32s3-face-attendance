@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { Prisma, AttendanceRecord as Punch } from "@prisma/client";
 
-import { decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { AttendanceRecord } from "../../common/generated/attendance_record.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -35,7 +35,7 @@ export class AttendanceService {
     if (query.employeeId !== undefined && (visible === null || visible.includes(query.employeeId))) {
       where.employeeId = query.employeeId;
     } else if (query.employeeId !== undefined) {
-      return { rows: [], total: 0, next: null };
+      return { rows: [], total: 0, totalIsExact: true, next: null };
     }
     if (query.deviceId !== undefined) {
       where.deviceId = query.deviceId;
@@ -62,16 +62,20 @@ export class AttendanceService {
         : where;
     // Both halves of one transaction so the pager's total cannot describe a
     // different set of rows than the page above it.
-    const [rows, total] = await this.db.$transaction([
+    const [rows, found] = await this.db.$transaction([
       this.db.attendanceRecord.findMany({
         where: resumed,
         orderBy: [{ ts: "desc" }, { id: "desc" }],
         skip: from ? 0 : query.skip,
         take: query.take,
       }),
-      this.db.attendanceRecord.count({ where }),
+      this.db.attendanceRecord.count({ where, take: COUNT_CEILING + 1 }),
     ]);
-    return { rows, total, next: nextCursor(rows, query.take, (row) => row.ts) };
+    return {
+      rows,
+      ...countedTo(found),
+      next: nextCursor(rows, query.take, (row) => row.ts),
+    };
   }
 
   /** Store one punch, or recognise it as one already held. */

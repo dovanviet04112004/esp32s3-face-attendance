@@ -4,6 +4,16 @@ import { BadRequestException } from "@nestjs/common";
  *  away, so a deep page takes the cursor (KEHOACH 9.9 rule 3). */
 export const MAX_OFFSET = 10_000;
 
+/** A total above the offset ceiling names pages that ceiling already refuses,
+ *  so counting stops there and says so (KEHOACH 9.9 rule 6). */
+export const COUNT_CEILING = MAX_OFFSET;
+
+export function countedTo(found: number): { total: number; totalIsExact: boolean } {
+  return found > COUNT_CEILING
+    ? { total: COUNT_CEILING, totalIsExact: false }
+    : { total: found, totalIsExact: true };
+}
+
 export interface CursorKey {
   sortValue: string;
   id: string;
