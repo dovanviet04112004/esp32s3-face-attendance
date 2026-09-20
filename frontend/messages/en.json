@@ -443,5 +443,28 @@
     "stateABSENT": "Absent",
     "day": "Date",
     "days": "Day by day"
+  },
+  "notices": {
+    "title": "Notifications",
+    "empty": "Nothing yet",
+    "markAll": "Mark all read",
+    "kindREQUEST_DECIDED_true": "Your request was approved",
+    "kindREQUEST_DECIDED_false": "Your request was turned down",
+    "kindREQUEST_WAITING": "A request is waiting on you",
+    "kindPAYSLIP_ISSUED": "This period's payslip is ready",
+    "kindCONTRACT_ENDING": "Your contract ends in {count} days",
+    "pushTitle": "Push notifications",
+    "pushLead": "Turn on to hear even with the page closed.",
+    "pushOn": "On for this device",
+    "pushOff": "Off",
+    "pushEnable": "Turn on for this device",
+    "pushDisable": "Turn off for this device",
+    "pushBlocked": "The browser has blocked notifications; allow them in its settings.",
+    "pushUnsupported": "This device does not support push notifications.",
+    "channelIN_APP": "In the app",
+    "channelPUSH": "Push",
+    "channelEMAIL": "Email",
+    "prefsTitle": "What to hear about",
+    "prefsLead": "Four kinds, each switched on its own."
   }
 }

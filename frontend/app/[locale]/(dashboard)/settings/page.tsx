@@ -3,6 +3,8 @@
 import { useLocale, useTranslations } from "next-intl";
 import { useTransition } from "react";
 
+import { NoticePreferences } from "@/components/notifications/notice-prefs";
+import { PushSwitch } from "@/components/notifications/push-switch";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
@@ -11,6 +13,7 @@ import { cn } from "@/lib/cn";
 
 export default function SettingsPage() {
   const t = useTranslations("settings");
+  const notices = useTranslations("notices");
   const locale = useLocale();
   const here = usePathname();
   const router = useRouter();
@@ -59,6 +62,22 @@ export default function SettingsPage() {
         <p className="mt-1 text-sm text-(--color-muted)">{t("themeLead")}</p>
         <div className="mt-4">
           <ThemeToggle />
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+        <h2 className="text-sm font-medium">{notices("pushTitle")}</h2>
+        <p className="mt-1 text-sm text-(--color-muted)">{notices("pushLead")}</p>
+        <div className="mt-4">
+          <PushSwitch />
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+        <h2 className="text-sm font-medium">{notices("prefsTitle")}</h2>
+        <p className="mt-1 text-sm text-(--color-muted)">{notices("prefsLead")}</p>
+        <div className="mt-4">
+          <NoticePreferences />
         </div>
       </div>
 

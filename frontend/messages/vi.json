@@ -443,5 +443,28 @@
     "stateABSENT": "Vắng",
     "day": "Ngày",
     "days": "Từng ngày"
+  },
+  "notices": {
+    "title": "Thông báo",
+    "empty": "Chưa có thông báo nào",
+    "markAll": "Đánh dấu đã đọc hết",
+    "kindREQUEST_DECIDED_true": "Đơn của bạn đã được duyệt",
+    "kindREQUEST_DECIDED_false": "Đơn của bạn bị từ chối",
+    "kindREQUEST_WAITING": "Có đơn chờ bạn duyệt",
+    "kindPAYSLIP_ISSUED": "Phiếu lương kỳ này đã có",
+    "kindCONTRACT_ENDING": "Hợp đồng của bạn còn {count} ngày",
+    "pushTitle": "Thông báo đẩy",
+    "pushLead": "Bật để nhận tin ngay cả khi không mở trang.",
+    "pushOn": "Đang bật trên máy này",
+    "pushOff": "Đang tắt",
+    "pushEnable": "Bật trên máy này",
+    "pushDisable": "Tắt trên máy này",
+    "pushBlocked": "Trình duyệt đã chặn thông báo; mở lại trong cài đặt trình duyệt.",
+    "pushUnsupported": "Máy này không hỗ trợ thông báo đẩy.",
+    "channelIN_APP": "Trong ứng dụng",
+    "channelPUSH": "Đẩy tới máy",
+    "channelEMAIL": "Email",
+    "prefsTitle": "Nhận thông báo nào",
+    "prefsLead": "Bốn loại, mỗi loại tắt riêng được."
   }
 }

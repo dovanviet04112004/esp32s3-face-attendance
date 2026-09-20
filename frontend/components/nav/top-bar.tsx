@@ -3,6 +3,7 @@
 import { LogOut } from "lucide-react";
 import { useTranslations } from "next-intl";
 
+import { NoticeBell } from "@/components/notifications/bell";
 import { GlobalSearch } from "@/components/search/global-search";
 
 export function TopBar({ onSignOut }: { onSignOut: () => void }) {
@@ -16,6 +17,7 @@ export function TopBar({ onSignOut }: { onSignOut: () => void }) {
       <div className="min-w-0 flex-1 md:max-w-lg">
         <GlobalSearch />
       </div>
+      <NoticeBell />
       <button
         type="button"
         aria-label={t("signOut")}
