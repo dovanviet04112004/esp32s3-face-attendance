@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import { ContractKind, ContractState } from "@prisma/client";
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEnum,
@@ -11,6 +13,9 @@ import {
   Min,
   MinLength,
 } from "class-validator";
+
+// One department at a time; a bigger move is several moves.
+const kReorgMax = 5_000;
 
 export class CreateDepartmentDto {
   @ApiProperty()
@@ -126,4 +131,31 @@ export class CreateHolidayDto {
   @IsOptional()
   @IsBoolean()
   paid?: boolean;
+}
+
+export class ReorgDto {
+  @ApiPropertyOptional({ description: "Move these people; leave out to move a whole department" })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(kReorgMax)
+  employeeCodes?: string[];
+
+  @ApiPropertyOptional({ description: "Move everybody currently in this department" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  fromDepartmentId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  toDepartmentId?: string;
+
+  @ApiPropertyOptional({ description: "Their new manager, by employee code" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  toManagerCode?: string;
 }

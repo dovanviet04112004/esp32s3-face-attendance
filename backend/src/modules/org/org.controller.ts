@@ -28,9 +28,10 @@ import {
   CreateDepartmentDto,
   CreateHolidayDto,
   DecideContractDto,
+  ReorgDto,
   UpdateDepartmentDto,
 } from "./dto/org.dto.js";
-import { OrgService } from "./org.service.js";
+import { OrgService, type ReorgPlan } from "./org.service.js";
 
 @ApiTags("org")
 @ApiBearerAuth()
@@ -97,6 +98,17 @@ export class OrgController {
   @Get("job-titles")
   jobTitles(): Promise<JobTitle[]> {
     return this.org.jobTitles();
+  }
+
+  @Post("org/reorg")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Preview a move by default; apply=true carries it out" })
+  reorg(
+    @CurrentViewer() viewer: Viewer,
+    @Body() body: ReorgDto,
+    @Query("apply") apply?: string,
+  ): Promise<ReorgPlan> {
+    return this.org.reorg(viewer, body, apply === "true");
   }
 
   @Get("departments")

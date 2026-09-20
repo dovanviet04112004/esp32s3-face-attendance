@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type {
   Department,
   EmploymentContract,
@@ -7,6 +12,8 @@ import type {
   LegalEntity,
 } from "@prisma/client";
 
+import { ScopeService } from "../../common/scope/scope.service.js";
+import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import type {
@@ -14,17 +21,167 @@ import type {
   CreateDepartmentDto,
   CreateHolidayDto,
   DecideContractDto,
+  ReorgDto,
   UpdateDepartmentDto,
 } from "./dto/org.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
+
+function byManager(
+  rows: ReorgRow[],
+  pick: (row: ReorgRow) => string | null,
+): { managerCode: string; employees: string[] }[] {
+  const grouped = new Map<string, string[]>();
+  for (const row of rows) {
+    const boss = pick(row);
+    if (boss === null) {
+      continue;
+    }
+    grouped.set(boss, [...(grouped.get(boss) ?? []), row.code]);
+  }
+  return [...grouped].map(([managerCode, employees]) => ({ managerCode, employees }));
+}
+
+/** One person a reorganisation would move, and what it moves them out of. */
+export interface ReorgRow {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  fromDepartment: string | null;
+  toDepartment: string | null;
+  fromManager: string | null;
+  toManager: string | null;
+  pendingRequests: number;
+}
+
+export interface ReorgPlan {
+  applied: boolean;
+  moving: ReorgRow[];
+  losingSight: { managerCode: string; employees: string[] }[];
+  gainingSight: { managerCode: string; employees: string[] }[];
+  requestsReassigned: number;
+}
 
 @Injectable()
 export class OrgService {
   constructor(
     private readonly db: PrismaService,
     private readonly audit: AuditService,
+    private readonly scope: ScopeService,
   ) {}
+
+  /**
+   * What a reorganisation would do, and then, on request, doing it. The two
+   * share one code path so the preview cannot describe a different move from
+   * the one that lands (KEHOACH 9.18 item 7).
+   */
+  async reorg(viewer: Viewer, body: ReorgDto, apply: boolean): Promise<ReorgPlan> {
+    // A body with nothing to narrow by would move the whole company, which is
+    // one typo away from a department id that came out empty.
+    if (!body.employeeCodes?.length && !body.fromDepartmentId) {
+      throw new BadRequestException("REORG_NEEDS_A_SELECTION");
+    }
+    if (!body.toDepartmentId && !body.toManagerCode) {
+      throw new BadRequestException("REORG_NEEDS_A_DESTINATION");
+    }
+    const people = await this.db.employee.findMany({
+      where: {
+        active: true,
+        ...(body.employeeCodes ? { code: { in: body.employeeCodes } } : {}),
+        ...(body.fromDepartmentId ? { departmentId: body.fromDepartmentId } : {}),
+      },
+      select: {
+        id: true,
+        code: true,
+        fullName: true,
+        department: { select: { code: true } },
+        manager: { select: { code: true } },
+      },
+      orderBy: { code: "asc" },
+    });
+    if (people.length === 0) {
+      throw new NotFoundException("REORG_MOVES_NOBODY");
+    }
+
+    const toDepartment = body.toDepartmentId
+      ? await this.db.department.findUnique({
+          where: { id: body.toDepartmentId },
+          select: { id: true, code: true },
+        })
+      : null;
+    if (body.toDepartmentId && !toDepartment) {
+      throw new NotFoundException("DEPARTMENT_NOT_FOUND");
+    }
+    const toManager = body.toManagerCode
+      ? await this.db.employee.findUnique({
+          where: { code: body.toManagerCode },
+          select: { id: true, code: true },
+        })
+      : null;
+    if (body.toManagerCode && !toManager) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+
+    const ids = people.map((one) => one.id);
+    if (toManager && ids.includes(toManager.id)) {
+      throw new ConflictException("MANAGER_CYCLE");
+    }
+    const waiting = await this.db.request.groupBy({
+      by: ["employeeId"],
+      where: { employeeId: { in: ids }, state: "PENDING" },
+      _count: { _all: true },
+    });
+    const waitingBy = new Map(waiting.map((one) => [one.employeeId, one._count._all]));
+
+    const moving: ReorgRow[] = people.map((one) => ({
+      employeeId: one.id,
+      code: one.code,
+      fullName: one.fullName,
+      fromDepartment: one.department?.code ?? null,
+      toDepartment: toDepartment?.code ?? one.department?.code ?? null,
+      fromManager: one.manager?.code ?? null,
+      toManager: toManager ? toManager.code : (one.manager?.code ?? null),
+      pendingRequests: waitingBy.get(one.id) ?? 0,
+    }));
+
+    const changingBoss = moving.filter((one) => one.fromManager !== one.toManager);
+    const plan: ReorgPlan = {
+      applied: false,
+      moving,
+      losingSight: byManager(changingBoss, (one) => one.fromManager),
+      gainingSight: byManager(changingBoss, (one) => one.toManager),
+      requestsReassigned: changingBoss.reduce((total, one) => total + one.pendingRequests, 0),
+    };
+    if (!apply) {
+      return plan;
+    }
+
+    await this.db.$transaction(async (tx) => {
+      await tx.employee.updateMany({
+        where: { id: { in: ids } },
+        data: {
+          ...(toDepartment ? { departmentId: toDepartment.id } : {}),
+          ...(toManager ? { managerId: toManager.id } : {}),
+        },
+      });
+      await this.scope.assertNoManagerCycle(tx, ids);
+      // Left with its old approver, a request reaches somebody who lacks the
+      // standing to see the person, so nobody can answer it.
+      if (toManager) {
+        await tx.request.updateMany({
+          where: { employeeId: { in: ids }, state: "PENDING" },
+          data: { approverId: toManager.id },
+        });
+      }
+    });
+    await this.scope.forgetScopes();
+    await this.audit.record({
+      action: "org.reorg",
+      target: String(ids.length),
+      meta: { by: viewer.userId, toDepartment: toDepartment?.code, toManager: toManager?.code },
+    });
+    return { ...plan, applied: true };
+  }
 
   holidays(year?: number): Promise<Holiday[]> {
     const from = new Date(Date.UTC(year ?? new Date().getUTCFullYear(), 0, 1));
