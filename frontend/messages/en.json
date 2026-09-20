@@ -179,7 +179,12 @@
     "vi": "Tiếng Việt",
     "en": "English",
     "accountTitle": "Account",
-    "role": "Role"
+    "role": "Role",
+    "themeTitle": "Appearance",
+    "themeLead": "Follows the system by default; a manual choice stays on this device.",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark"
   },
   "requests": {
     "title": "Requests",

@@ -12,8 +12,43 @@
   --color-warn: oklch(0.72 0.15 75);
 }
 
-html,
-body {
-  background: var(--color-ground);
-  color: var(--color-ink);
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  /* An explicit light choice outranks a dark operating system. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --color-ink: oklch(0.95 0.01 260);
+      --color-muted: oklch(0.68 0.02 260);
+      --color-line: oklch(0.32 0.015 260);
+      --color-surface: oklch(0.24 0.02 260);
+      --color-ground: oklch(0.19 0.02 260);
+      --color-accent: oklch(0.72 0.14 256);
+      --color-danger: oklch(0.68 0.18 25);
+      --color-ok: oklch(0.72 0.15 150);
+      --color-warn: oklch(0.8 0.14 75);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-ink: oklch(0.95 0.01 260);
+    --color-muted: oklch(0.68 0.02 260);
+    --color-line: oklch(0.32 0.015 260);
+    --color-surface: oklch(0.24 0.02 260);
+    --color-ground: oklch(0.19 0.02 260);
+    --color-accent: oklch(0.72 0.14 256);
+    --color-danger: oklch(0.68 0.18 25);
+    --color-ok: oklch(0.72 0.15 150);
+    --color-warn: oklch(0.8 0.14 75);
+  }
+
+  html,
+  body {
+    background: var(--color-ground);
+    color: var(--color-ink);
+  }
 }

@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import "../globals.css";
 import { Providers } from "../providers";
 import { routing, type Locale } from "@/i18n/routing";
+import { kThemeScript } from "@/lib/theme";
 
 interface LocaleParams {
   params: Promise<{ locale: string }>;
@@ -37,7 +38,10 @@ export default async function LocaleLayout({ children, params }: LocaleParams & 
   }
   setRequestLocale(locale);
   return (
-    <html lang={locale}>
+    <html lang={locale} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: kThemeScript }} />
+      </head>
       <body className="min-h-screen antialiased">
         <NextIntlClientProvider>
           <Providers>{children}</Providers>

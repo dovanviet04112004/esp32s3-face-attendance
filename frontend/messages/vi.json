@@ -179,7 +179,12 @@
     "vi": "Tiếng Việt",
     "en": "English",
     "accountTitle": "Tài khoản",
-    "role": "Quyền"
+    "role": "Quyền",
+    "themeTitle": "Giao diện",
+    "themeLead": "Mặc định theo hệ điều hành; chọn tay thì máy này nhớ.",
+    "themeSystem": "Theo máy",
+    "themeLight": "Sáng",
+    "themeDark": "Tối"
   },
   "requests": {
     "title": "Đơn từ",

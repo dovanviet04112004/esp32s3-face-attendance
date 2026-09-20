@@ -3,6 +3,7 @@
 import { useLocale, useTranslations } from "next-intl";
 import { useTransition } from "react";
 
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
 import { useSession } from "@/lib/auth";
@@ -50,6 +51,14 @@ export default function SettingsPage() {
               {t(code)}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+        <h2 className="text-sm font-medium">{t("themeTitle")}</h2>
+        <p className="mt-1 text-sm text-(--color-muted)">{t("themeLead")}</p>
+        <div className="mt-4">
+          <ThemeToggle />
         </div>
       </div>
 
