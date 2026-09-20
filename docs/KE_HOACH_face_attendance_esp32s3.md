@@ -2206,6 +2206,7 @@ esp32s3-face-attendance/
 ├── frontend/      Next.js → Vercel
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
 ├── tools/         Script ngang khối: gen_contracts · check_comments · check_layers
+│                   · check_schematic · check_pcb · check_migrations
 │                   · check_schematic · check_pcb
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
@@ -6601,6 +6602,29 @@ và cái giá của từng đường:
 | Không chia, chỉ đánh chỉ mục theo `ts` | giữ nguyên chống trùng | bảng lớn dần vô hạn, xoá theo hạn lưu là `DELETE` hàng triệu dòng |
 | Chia theo `ts`, khoá `(deviceId, localId, ts)` | cắt mảnh, xoá bằng `DROP` | chống trùng gãy nếu `ts` từng bị sửa |
 | Chia theo `ts`, thêm bảng chống trùng riêng không chia | giữ cả hai | bảng chống trùng lớn đúng bằng bảng gốc, chỉ nhẹ hơn về bề rộng |
+
+#### 9.22.3c Nở rồi co, và một công cụ giữ luật thay cho trí nhớ
+
+Mọi migration phá huỷ chia làm **hai lần phát hành**: lần này **thêm** cột hoặc bảng mới và đổ
+dữ liệu sang; lần sau mới **bỏ** cái cũ đi. Giữa hai lần ấy, bản cũ của ứng dụng vẫn chạy được
+trên lược đồ mới — và đó là toàn bộ lý do: quay lui một bản phát hành không được biến thành mất
+dữ liệu.
+
+Luật này chết nếu chỉ nằm trong tài liệu, vì người viết migration lúc hai giờ sáng không đọc
+tài liệu. Nên `tools/check_migrations.py` đọc từng file migration và **fail khi một câu lệnh phá
+huỷ đứng một mình**:
+
+| Câu lệnh | Cần gì để được đi qua |
+|---|---|
+| `DROP TABLE` · `DROP COLUMN` | một dòng chú thích ngay trên nó nói rõ bản nào đã đổ dữ liệu sang, dạng `-- contract of <tên migration>` |
+| `ALTER COLUMN ... TYPE` | chú thích `-- widening`, và kiểu mới phải rộng hơn kiểu cũ |
+| `ALTER COLUMN ... SET NOT NULL` | chú thích `-- backfilled by <tên migration>` |
+| `DROP CONSTRAINT` | chú thích `-- replaced by <tên>` |
+| `TRUNCATE` | không bao giờ; không có chú thích nào cho qua |
+
+Một `DROP` có chú thích vẫn là một `DROP` — công cụ không ngăn được người cố tình. Nó ngăn được
+thứ hay xảy ra hơn nhiều: **bỏ quên**, tức viết `DROP COLUMN` trong cùng lần phát hành với lệnh
+thêm cột, vì lúc ấy nó trông hoàn toàn hợp lý.
 
 #### 9.22.4 Ràng buộc đặt ở cơ sở dữ liệu, không chỉ ở tầng ứng dụng
 
