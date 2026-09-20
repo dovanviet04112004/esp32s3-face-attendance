@@ -1,18 +1,28 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from "@nestjs/common";
+import type { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { tap, type Observable } from "rxjs";
 
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../../modules/audit/audit-actions.js";
 import { AuditService } from "../../modules/audit/audit.service.js";
+import { NOT_AUDITED } from "../decorators/audited.decorator.js";
 
 const READ_ONLY = new Set(["GET", "HEAD", "OPTIONS"]);
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    private readonly audit: AuditService,
+    private readonly reflector: Reflector,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const req = context.switchToHttp().getRequest<Request & { user?: { sub?: string } }>();
-    if (READ_ONLY.has(req.method)) {
+    const skip = this.reflector.getAllAndOverride<boolean>(NOT_AUDITED, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (READ_ONLY.has(req.method) || skip) {
       return next.handle();
     }
     return next.handle().pipe(
@@ -21,9 +31,10 @@ export class AuditInterceptor implements NestInterceptor {
         // attempts answers a different question.
         void this.audit.record({
           actorId: req.user?.sub,
-          action: req.method,
-          target: req.route?.path ?? req.path,
-          meta: { params: req.params, query: req.query },
+          action: AUDIT_ACTIONS.ROUTE_WRITE,
+          subject: AUDIT_SUBJECTS.ROUTE,
+          subjectId: req.route?.path ?? req.path,
+          meta: { method: req.method, params: req.params, query: req.query },
         });
       }),
     );

@@ -24,6 +24,10 @@ import type { AccessClaims } from "../auth/auth.types.js";
 import { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
 import { UsersService, type ProvisionedAccount, type PublicUser } from "./users.service.js";
 
+function actorOf(req: Request): string {
+  return (req.user as AccessClaims).sub;
+}
+
 @ApiTags("users")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -46,19 +50,23 @@ export class UsersController {
   }
 
   @Post()
-  create(@Body() body: CreateUserDto): Promise<PublicUser> {
-    return this.users.create(body);
+  create(@Body() body: CreateUserDto, @Req() req: Request): Promise<PublicUser> {
+    return this.users.create(actorOf(req), body);
   }
 
   @Patch(":id")
-  update(@Param("id") id: string, @Body() body: UpdateUserDto): Promise<PublicUser> {
-    return this.users.update(id, body);
+  update(
+    @Param("id") id: string,
+    @Body() body: UpdateUserDto,
+    @Req() req: Request,
+  ): Promise<PublicUser> {
+    return this.users.update(actorOf(req), id, body);
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Remove an account, never the last administrator" })
   remove(@Param("id") id: string, @Req() req: Request): Promise<void> {
-    return this.users.remove(id, (req.user as AccessClaims).sub);
+    return this.users.remove(id, actorOf(req));
   }
 }

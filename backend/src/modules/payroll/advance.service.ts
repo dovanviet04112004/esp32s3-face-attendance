@@ -4,6 +4,7 @@ import type { SalaryAdvance } from "@prisma/client";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { LeaveService } from "../leave/leave.service.js";
 import type { DecideAdvanceDto, RequestAdvanceDto } from "./dto/advance.dto.js";
@@ -66,8 +67,9 @@ export class AdvanceService {
     });
     await this.audit.record({
       actorId: viewer.userId,
-      action: body.approve ? "advance.approve" : "advance.reject",
-      target: id,
+      action: body.approve ? AUDIT_ACTIONS.ADVANCE_APPROVE : AUDIT_ACTIONS.ADVANCE_REJECT,
+      subject: AUDIT_SUBJECTS.ADVANCE,
+      subjectId: id,
     });
     return decided;
   }
@@ -84,7 +86,8 @@ export class AdvanceService {
     if (found.state !== "APPROVED") {
       throw new BadRequestException("ADVANCE_NOT_APPROVED");
     }
-    await this.audit.record({ actorId: viewer.userId, action: "advance.pay", target: id });
+    await this.audit.record({ actorId: viewer.userId, action: AUDIT_ACTIONS.ADVANCE_PAY,
+      subject: AUDIT_SUBJECTS.ADVANCE, subjectId: id });
     return this.db.salaryAdvance.update({
       where: { id },
       data: { state: "PAID", paidAt: new Date() },

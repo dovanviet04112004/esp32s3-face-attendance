@@ -399,16 +399,23 @@ model Release {
   @@unique([target, version])
 }
 
+/**
+ * Who did what to which thing, and when. The subject is a pair so tracing
+ * runs from the object rather than from a route (KEHOACH 9.24).
+ */
 model AuditLog {
-  id      BigInt   @id @default(autoincrement())
-  actorId String?
-  action  String
-  target  String
-  meta    Json?
-  ts      DateTime @default(now())
-  actor   User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  id          BigInt   @id @default(autoincrement())
+  actorId     String?
+  action      String
+  subjectType String
+  subjectId   String
+  meta        Json?
+  ts          DateTime @default(now())
+  actor       User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([ts])
+  @@index([subjectType, subjectId, ts])
+  @@index([actorId, ts])
 }
 
 enum DayState {

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import type { PayrollPolicy, TaxBracket } from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import type { CalcPolicy } from "../payroll/calculate.js";
 import { toDong, toHundredths } from "../payroll/money.js";
@@ -79,8 +80,9 @@ export class PolicyService {
     });
     await this.audit.record({
       actorId: createdById,
-      action: "policy.create",
-      target: made.id,
+      action: AUDIT_ACTIONS.POLICY_CREATE,
+      subject: AUDIT_SUBJECTS.POLICY,
+      subjectId: made.id,
       meta: { effectiveFrom: body.effectiveFrom, brackets: body.brackets.length },
     });
     return made;

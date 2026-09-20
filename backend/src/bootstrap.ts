@@ -1,5 +1,6 @@
 import { ValidationPipe, type INestApplication } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { Reflector } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
 import express, { type NextFunction, type Request, type Response } from "express";
@@ -44,6 +45,6 @@ export function configure(app: INestApplication): void {
   SwaggerModule.setup("docs", app, () => SwaggerModule.createDocument(app, swagger));
 
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new AuditInterceptor(app.get(AuditService)));
+  app.useGlobalInterceptors(new AuditInterceptor(app.get(AuditService), app.get(Reflector)));
   app.enableShutdownHooks();
 }

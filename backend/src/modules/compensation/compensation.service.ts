@@ -10,6 +10,7 @@ import type {
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 
 import type {
@@ -74,6 +75,7 @@ export class CompensationService {
 
   async create(viewer: Viewer, body: CreateCompensationDto): Promise<PayRecord> {
     this.mayWrite(viewer);
+    const held = await this.atDate(body.employeeId, new Date(body.effectiveFrom));
     const made = await this.db.compensationRecord.create({
       data: {
         employeeId: body.employeeId,
@@ -97,9 +99,15 @@ export class CompensationService {
     });
     await this.audit.record({
       actorId: viewer.userId,
-      action: "compensation.create",
-      target: String(body.employeeId),
-      meta: { effectiveFrom: body.effectiveFrom, baseSalary: body.baseSalary },
+      action: AUDIT_ACTIONS.PAY_CREATE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(body.employeeId),
+      meta: {
+        effectiveFrom: body.effectiveFrom,
+        from: held ? String(held.baseSalary) : null,
+        to: String(body.baseSalary),
+        reason: body.reason,
+      },
     });
     return made;
   }
@@ -156,8 +164,9 @@ export class CompensationService {
     const written = await this.db.compensationRecord.createMany({ data: rows, skipDuplicates: true });
     await this.audit.record({
       actorId: viewer.userId,
-      action: "compensation.bulkRaise",
-      target: body.departmentId ?? "selection",
+      action: AUDIT_ACTIONS.PAY_BULK_RAISE,
+      subject: AUDIT_SUBJECTS.ORG,
+      subjectId: body.departmentId ?? "selection",
       meta: { effectiveFrom: body.effectiveFrom, written: written.count },
     });
     return { written: written.count };

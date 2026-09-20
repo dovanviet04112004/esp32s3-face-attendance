@@ -14,6 +14,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import type { CookieOptions, Request, Response } from "express";
 
+import { NotAudited } from "../../common/decorators/audited.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { JwtRefreshGuard } from "../../common/guards/jwt-refresh.guard.js";
 import type { Env } from "../../config/env.schema.js";
@@ -50,6 +51,7 @@ export class AuthController {
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtRefreshGuard)
+  @NotAudited()
   @ApiOperation({ summary: "Trade the refresh cookie for a fresh access token" })
   async refresh(
     @Req() req: Request,

@@ -4,6 +4,7 @@ import type { Asset, AssetTransfer } from "@prisma/client";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import type { CreateAssetDto, HandOverDto, ListAssetsDto } from "./dto/asset.dto.js";
 
@@ -110,8 +111,10 @@ export class AssetsService {
       return tx.asset.findUniqueOrThrow({ where: { id: assetId }, include: { holder: HOLDER } });
     });
     await this.audit.record({
-      action: body.issued ? "asset.issue" : "asset.return",
-      target: asset.code,
+      actorId: viewer.userId,
+      action: body.issued ? AUDIT_ACTIONS.ASSET_ISSUE : AUDIT_ACTIONS.ASSET_RETURN,
+      subject: AUDIT_SUBJECTS.ASSET,
+      subjectId: asset.code,
       meta: { employeeId: body.employeeId, condition: body.condition ?? "GOOD" },
     });
     return moved;

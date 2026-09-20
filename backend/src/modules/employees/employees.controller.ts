@@ -91,8 +91,8 @@ export class EmployeesController {
   @Post()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Create an employee; the server owns the id (KEHOACH 7.5)" })
-  create(@Body() body: CreateEmployeeDto): Promise<Employee> {
-    return this.employees.create(body);
+  create(@Body() body: CreateEmployeeDto, @CurrentViewer() viewer: Viewer): Promise<Employee> {
+    return this.employees.create(viewer, body);
   }
 
   @Patch(":id")

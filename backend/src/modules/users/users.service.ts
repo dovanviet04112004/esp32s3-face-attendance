@@ -12,6 +12,8 @@ import type { Role, User } from "@prisma/client";
 import type { Page, PaginationDto } from "../../common/dto/pagination.dto.js";
 import { PrismaService } from "../../database/prisma.service.js";
 
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
+import { AuditService } from "../audit/audit.service.js";
 import { hashPassword } from "../auth/password.js";
 import type { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
 
@@ -40,7 +42,10 @@ export interface ProvisionedAccount {
 export class UsersService {
   private readonly log = new Logger(UsersService.name);
 
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
 
   /** Open a login for every active employee who has an address and none yet.
@@ -92,9 +97,9 @@ export class UsersService {
     return { rows, total };
   }
 
-  async create(body: CreateUserDto): Promise<PublicUser> {
+  async create(actorId: string, body: CreateUserDto): Promise<PublicUser> {
     try {
-      return await this.db.user.create({
+      const made = await this.db.user.create({
         data: {
           email: body.email,
           role: body.role as Role,
@@ -102,6 +107,14 @@ export class UsersService {
         },
         select: VISIBLE,
       });
+      await this.audit.record({
+        actorId,
+        action: AUDIT_ACTIONS.USER_CREATE,
+        subject: AUDIT_SUBJECTS.USER,
+        subjectId: made.id,
+        meta: { email: made.email, role: made.role },
+      });
+      return made;
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException(`${body.email} already has an account`);
@@ -110,10 +123,10 @@ export class UsersService {
     }
   }
 
-  async update(id: string, body: UpdateUserDto): Promise<PublicUser> {
-    await this.get(id);
+  async update(actorId: string, id: string, body: UpdateUserDto): Promise<PublicUser> {
+    const held = await this.get(id);
     const passwordHash = body.password ? await hashPassword(body.password) : undefined;
-    return this.db.$transaction(async (tx) => {
+    const saved = await this.db.$transaction(async (tx) => {
       const saved = await tx.user.update({
         where: { id },
         data: {
@@ -132,6 +145,24 @@ export class UsersService {
       }
       return saved;
     });
+    if (body.role && body.role !== held.role) {
+      await this.audit.record({
+        actorId,
+        action: AUDIT_ACTIONS.USER_ROLE,
+        subject: AUDIT_SUBJECTS.USER,
+        subjectId: id,
+        meta: { from: held.role, to: body.role },
+      });
+    }
+    if (passwordHash) {
+      await this.audit.record({
+        actorId,
+        action: AUDIT_ACTIONS.USER_PASSWORD,
+        subject: AUDIT_SUBJECTS.USER,
+        subjectId: id,
+      });
+    }
+    return saved;
   }
 
   /** Remove an account, unless it is the last one that can manage accounts. */
@@ -147,6 +178,13 @@ export class UsersService {
       }
     }
     await this.db.user.delete({ where: { id } });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.USER_DELETE,
+      subject: AUDIT_SUBJECTS.USER,
+      subjectId: id,
+      meta: { email: target.email, role: target.role },
+    });
   }
 
   private async get(id: string): Promise<PublicUser> {

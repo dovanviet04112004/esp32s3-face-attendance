@@ -4,6 +4,7 @@ import type { BiometricConsent } from "@prisma/client";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import type { GrantConsentDto } from "./dto/consent.dto.js";
 
@@ -66,8 +67,9 @@ export class ConsentService {
     });
     await this.audit.record({
       actorId: viewer.userId,
-      action: "biometric.consent.grant",
-      target: String(employeeId),
+      action: AUDIT_ACTIONS.BIOMETRIC_CONSENT_GRANT,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(employeeId),
       meta: { noticeVersion: body.noticeVersion, method: body.method },
     });
     return made;
@@ -88,8 +90,9 @@ export class ConsentService {
     });
     await this.audit.record({
       actorId: viewer.userId,
-      action: "biometric.consent.withdraw",
-      target: String(employeeId),
+      action: AUDIT_ACTIONS.BIOMETRIC_CONSENT_WITHDRAW,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(employeeId),
     });
     return dropped;
   }

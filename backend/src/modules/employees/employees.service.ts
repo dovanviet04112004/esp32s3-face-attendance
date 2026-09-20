@@ -6,6 +6,7 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import type {
   CreateEmployeeDto,
@@ -301,9 +302,17 @@ export class EmployeesService {
     return found;
   }
 
-  async create(body: CreateEmployeeDto): Promise<Employee> {
+  async create(viewer: Viewer, body: CreateEmployeeDto): Promise<Employee> {
     try {
-      return await this.db.employee.create({ data: dated(body) });
+      const made = await this.db.employee.create({ data: dated(body) });
+      await this.audit.record({
+        actorId: viewer.userId,
+        action: AUDIT_ACTIONS.EMPLOYEE_CREATE,
+        subject: AUDIT_SUBJECTS.EMPLOYEE,
+        subjectId: String(made.id),
+        meta: { code: made.code },
+      });
+      return made;
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException(`employee code ${body.code} is taken`);
@@ -329,9 +338,11 @@ export class EmployeesService {
       });
     });
     await this.audit.record({
-      action: "employee.offboard",
-      target: person.code,
-      meta: { by: viewer.userId, leaveDate: body.leaveDate, reason: body.reason },
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EMPLOYEE_OFFBOARD,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(id),
+      meta: { code: person.code, leaveDate: body.leaveDate, reason: body.reason },
     });
 
     const [assets, requests, advances] = await Promise.all([
@@ -366,6 +377,20 @@ export class EmployeesService {
       if (body.managerId !== undefined) {
         await this.scope.forgetScopes();
       }
+      // Field names only: a second copy of personal data is a second place the
+      // right to erasure has to reach (KEHOACH 9.24 rule 4).
+      await this.audit.record({
+        actorId: viewer.userId,
+        action: AUDIT_ACTIONS.EMPLOYEE_UPDATE,
+        subject: AUDIT_SUBJECTS.EMPLOYEE,
+        subjectId: String(id),
+        meta: {
+          fields: Object.entries(body)
+            .filter(([, value]) => value !== undefined)
+            .map(([field]) => field)
+            .sort(),
+        },
+      });
       return saved;
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
@@ -381,7 +406,15 @@ export class EmployeesService {
    */
   async deactivate(id: number, viewer: Viewer): Promise<Employee> {
     await this.get(id, viewer);
-    return this.db.employee.update({ where: { id }, data: { active: false } });
+    const closed = await this.db.employee.update({ where: { id }, data: { active: false } });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EMPLOYEE_DEACTIVATE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(id),
+      meta: { code: closed.code },
+    });
+    return closed;
   }
 }
 

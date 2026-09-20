@@ -21,6 +21,7 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { QUEUE, type PayrollJob } from "../../queue/queues.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
@@ -277,8 +278,9 @@ export class PayrollService {
     });
     await this.audit.record({
       actorId: viewer.userId,
-      action: "payroll.lock",
-      target: periodId,
+      action: AUDIT_ACTIONS.PAYROLL_LOCK,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: periodId,
       meta: { openItems: open.map((item) => item.code) },
     });
     const told = await this.db.payslip.findMany({
@@ -300,7 +302,12 @@ export class PayrollService {
     if (period.state !== "LOCKED") {
       throw new BadRequestException("PERIOD_NOT_LOCKED");
     }
-    await this.audit.record({ actorId: viewer.userId, action: "payroll.paid", target: periodId });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.PAYROLL_PAID,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: periodId,
+    });
     return this.db.payrollPeriod.update({
       where: { id: periodId },
       data: { state: "PAID", paidAt: new Date() },
@@ -341,7 +348,12 @@ export class PayrollService {
     // BullMQ keeps completed jobs, so a job id derived from the run would let
     // only the first start do anything; RUNNING is what stops a double start.
     await this.queues[QUEUE.payroll].add("run", { type: "run", runId } satisfies PayrollJob);
-    await this.audit.record({ actorId: viewer.userId, action: "payroll.queue", target: runId });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.PAYROLL_QUEUE,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: runId,
+    });
     return this.db.payrollRun.update({
       where: { id: run.id },
       data: { state: "RUNNING", startedAt: new Date(), doneCount: 0, failedCount: 0 },
@@ -421,8 +433,9 @@ export class PayrollService {
 
     await this.audit.record({
       actorId: run.createdById ?? undefined,
-      action: "payroll.run",
-      target: runId,
+      action: AUDIT_ACTIONS.PAYROLL_RUN,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: runId,
       meta: { employees: ids.length, payslips: done },
     });
     return this.db.payrollRun.update({
@@ -960,8 +973,9 @@ export class PayrollService {
     );
     await this.audit.record({
       actorId: viewer.userId,
-      action: "payroll.deliver",
-      target: periodId,
+      action: AUDIT_ACTIONS.PAYROLL_DELIVER,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: periodId,
       meta: { queued: waiting.length },
     });
     return { queued: waiting.length };

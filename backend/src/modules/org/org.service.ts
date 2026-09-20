@@ -15,6 +15,7 @@ import type {
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import type {
   CreateContractDto,
@@ -176,9 +177,11 @@ export class OrgService {
     });
     await this.scope.forgetScopes();
     await this.audit.record({
-      action: "org.reorg",
-      target: String(ids.length),
-      meta: { by: viewer.userId, toDepartment: toDepartment?.code, toManager: toManager?.code },
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.ORG_REORG,
+      subject: AUDIT_SUBJECTS.ORG,
+      subjectId: toDepartment?.code ?? "selection",
+      meta: { moved: ids.length, toDepartment: toDepartment?.code, toManager: toManager?.code },
     });
     return { ...plan, applied: true };
   }
@@ -206,7 +209,12 @@ export class OrgService {
           paid: body.paid ?? true,
         },
       });
-      await this.audit.record({ actorId, action: "holiday.create", target: made.id });
+      await this.audit.record({
+        actorId,
+        action: AUDIT_ACTIONS.ORG_HOLIDAY_CREATE,
+        subject: AUDIT_SUBJECTS.ORG,
+        subjectId: made.id,
+      });
       return made;
     } catch (error) {
       if ((error as { code?: string }).code === UNIQUE_VIOLATION) {
@@ -218,7 +226,12 @@ export class OrgService {
 
   async removeHoliday(id: string, actorId: string): Promise<{ done: true }> {
     await this.db.holiday.delete({ where: { id } });
-    await this.audit.record({ actorId, action: "holiday.delete", target: id });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.ORG_HOLIDAY_DELETE,
+      subject: AUDIT_SUBJECTS.ORG,
+      subjectId: id,
+    });
     return { done: true };
   }
 
@@ -250,9 +263,10 @@ export class OrgService {
     });
     await this.audit.record({
       actorId,
-      action: "contract.create",
-      target: made.id,
-      meta: { employeeId: body.employeeId, kind: body.kind, endDate: body.endDate ?? null },
+      action: AUDIT_ACTIONS.CONTRACT_CREATE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(body.employeeId),
+      meta: { contractId: made.id, kind: body.kind, endDate: body.endDate ?? null },
     });
     return made;
   }
@@ -285,9 +299,10 @@ export class OrgService {
     });
     await this.audit.record({
       actorId,
-      action: `contract.${body.state.toLowerCase()}`,
-      target: id,
-      meta: { employeeId: held.employeeId },
+      action: AUDIT_ACTIONS.CONTRACT_DECIDE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(held.employeeId),
+      meta: { contractId: id, state: body.state },
     });
     return moved;
   }

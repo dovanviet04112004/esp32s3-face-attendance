@@ -5,6 +5,7 @@ import type { Device, DeviceEnrollment } from "@prisma/client";
 import type { EnrollPayload } from "../../common/generated/enroll_payload.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
 import { ConsentService } from "./consent.service.js";
@@ -93,8 +94,9 @@ export class EnrollmentService {
     await this.db.deviceEnrollment.updateMany({ where: { employeeId }, data: { state: "REVOKED" } });
     await this.audit.record({
       actorId,
-      action: "biometric.erase",
-      target: String(employeeId),
+      action: AUDIT_ACTIONS.BIOMETRIC_ERASE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(employeeId),
       meta: { devices: rows.length, why },
     });
     this.log.warn(`erased biometrics for ${employeeId} on ${rows.length} kiosk(s): ${why}`);
@@ -222,8 +224,9 @@ export class EnrollmentService {
     // Handing a template to a kiosk is a read of sensitive data, and the log
     // has to cover reads, not only writes (KEHOACH 9.19).
     await this.audit.record({
-      action: "biometric.read",
-      target: String(row.employeeId),
+      action: AUDIT_ACTIONS.BIOMETRIC_READ,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(row.employeeId),
       meta: { deviceId, templateIdx: held.templateIdx },
     });
     return {
