@@ -76,7 +76,7 @@ describe("crud (e2e)", () => {
     const res = await request(http)
       .post("/employees")
       .set("Authorization", `Bearer ${token.hr}`)
-      .send({ code: "NV9002", fullName: "Lê Văn C", department: "Kho" });
+      .send({ code: "NV9002", fullName: "Lê Văn C" });
     assert.equal(res.status, 201);
     assert.ok(Number.isInteger(res.body.id));
     madeEmployeeId = res.body.id;

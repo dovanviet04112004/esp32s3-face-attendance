@@ -32,6 +32,7 @@ const SEED_POLICY = {
   regionalMinimumWage: 5_310_000,
   unemploymentCapMultiple: 20,
   standardDaysPerMonth: 26,
+  noContributionUnpaidDays: 14,
 };
 const SEED_BRACKETS = [
   { ordinal: 1, upToAmount: 10_000_000, rateBp: 500 },

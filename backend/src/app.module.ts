@@ -7,6 +7,9 @@ import { ScopeModule } from "./common/scope/scope.module.js";
 import { AttendanceModule } from "./modules/attendance/attendance.module.js";
 import { LeaveModule } from "./modules/leave/leave.module.js";
 import { OrgModule } from "./modules/org/org.module.js";
+import { CompensationModule } from "./modules/compensation/compensation.module.js";
+import { PayrollModule } from "./modules/payroll/payroll.module.js";
+import { PolicyModule } from "./modules/policy/policy.module.js";
 import { TimesheetModule } from "./modules/timesheet/timesheet.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
@@ -33,6 +36,9 @@ import { QueueModule } from "./queue/queue.module.js";
     AttendanceModule,
     LeaveModule,
     OrgModule,
+    PolicyModule,
+    CompensationModule,
+    PayrollModule,
     TimesheetModule,
     EmployeesModule,
     DevicesModule,

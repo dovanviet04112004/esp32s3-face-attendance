@@ -637,6 +637,8 @@ model PayrollPolicy {
   regionalMinimumWage        Decimal       @db.Decimal(14, 0)
   unemploymentCapMultiple    Int           @default(20)
   standardDaysPerMonth       Decimal       @db.Decimal(5, 2)
+  // Luat BHXH: fourteen or more unpaid working days in a month owes nothing.
+  noContributionUnpaidDays   Int           @default(14)
   overtimeWeekdayBp          Int           @default(15000)
   overtimeWeekendBp          Int           @default(20000)
   overtimeHolidayBp          Int           @default(30000)
@@ -809,7 +811,9 @@ model PayslipLine {
   rateBp    Int?
   payslip   Payslip  @relation(fields: [payslipId], references: [id], onDelete: Cascade)
 
-  @@unique([payslipId, code])
+  // Ordered, not keyed by code: two back payments for two months carry the same
+  // code and are still two amounts owed.
+  @@unique([payslipId, ordinal])
   @@index([code])
 }
 
