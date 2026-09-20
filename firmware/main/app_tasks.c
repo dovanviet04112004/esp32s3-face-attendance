@@ -712,44 +712,55 @@ static bool apply_roster(const app_roster_t *op)
     return true;
 }
 
+// Delivery is at least once, so a push repeating or predating the version in
+// hand writes an older face over a newer one (KEHOACH 9.23 rule 7).
+static bool roster_op_is_fresh(const app_roster_t *op, uint32_t held)
+{
+    // REPLACE_ALL restates the roster, so it sets the count (KEHOACH 9.23).
+    if (!op->has_roster_version || op->op == ENROLL_PAYLOAD_OP_REPLACE_ALL) {
+        return true;
+    }
+    if (op->roster_version > held) {
+        return true;
+    }
+    ESP_LOGW(TAG, "roster push at version %" PRIu32 " trails %" PRIu32 ", dropped",
+             op->roster_version, held);
+    return false;
+}
+
 // A kiosk joining a fleet takes the whole roster as a run of upserts, so the
 // table is written once for the batch rather than once per person.
 static void take_roster(const app_wiring_t *wiring)
 {
     app_roster_t op;
-    uint32_t reached = 0;
+    const uint32_t started_at = roster_version();
+    uint32_t held = started_at;
     bool changed = false;
-    bool versioned = false;
     while (xQueueReceive(wiring->roster, &op, 0) == pdTRUE) {
         if (op.outbound) {
             report_enrolled(&op);
             continue;
         }
-        if (!apply_roster(&op)) {
+        if (!roster_op_is_fresh(&op, held) || !apply_roster(&op)) {
             continue;
         }
         changed = changed || (op.op != ENROLL_PAYLOAD_OP_ASSIGN &&
                               op.op != ENROLL_PAYLOAD_OP_REVOKE);
         if (op.has_roster_version) {
-            reached = op.roster_version;
-            versioned = true;
+            held = op.roster_version;
         }
     }
-    if (!changed) {
-        if (versioned) {
-            sys_storage_set_u32(STORAGE_NS_DEVICE, NVS_ROSTER_VER, reached);
+    if (changed) {
+        const esp_err_t saved = svc_facedb_persist();
+        if (saved != ESP_OK) {
+            note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, saved, "face table would not save");
+            return;
         }
-        return;
     }
-    const esp_err_t saved = svc_facedb_persist();
-    if (saved != ESP_OK) {
-        note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, saved, "face table would not save");
-        return;
+    if (held != started_at) {
+        sys_storage_set_u32(STORAGE_NS_DEVICE, NVS_ROSTER_VER, held);
+        ESP_LOGI(TAG, "roster saved, now at version %" PRIu32, held);
     }
-    if (versioned) {
-        sys_storage_set_u32(STORAGE_NS_DEVICE, NVS_ROSTER_VER, reached);
-    }
-    ESP_LOGI(TAG, "roster saved, now at version %" PRIu32, roster_version());
 }
 
 // Sweeping the channels blocks for seconds and drops the link while it runs,
