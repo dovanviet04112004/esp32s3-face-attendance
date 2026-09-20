@@ -34,7 +34,8 @@
     "close": "Đóng",
     "payroll": "Kỳ lương",
     "policy": "Chính sách lương",
-    "timesheetHr": "Bảng công"
+    "timesheetHr": "Bảng công",
+    "departments": "Phòng ban"
   },
   "common": {
     "loading": "Đang tải…",
@@ -466,5 +467,24 @@
     "channelEMAIL": "Email",
     "prefsTitle": "Nhận thông báo nào",
     "prefsLead": "Bốn loại, mỗi loại tắt riêng được."
+  },
+  "org": {
+    "departments": "Phòng ban",
+    "departmentsLead": "Cây tổ chức; đổi cấp trên là đổi luôn ai duyệt đơn và ai nhìn thấy dữ liệu.",
+    "code": "Mã",
+    "name": "Tên",
+    "parent": "Trực thuộc",
+    "costCentre": "Trung tâm chi phí",
+    "headcount": "Số người",
+    "newDepartment": "Thêm phòng ban",
+    "noParent": "Cấp cao nhất",
+    "holidays": "Ngày lễ",
+    "holidaysLead": "Không nhập thì ngày lễ bị tính là vắng và trừ lương.",
+    "holidayName": "Tên ngày lễ",
+    "holidayDate": "Ngày",
+    "holidayPaid": "Hưởng lương",
+    "addHoliday": "Thêm ngày lễ",
+    "removeHoliday": "Xoá",
+    "holidaysEmpty": "Chưa nhập ngày lễ nào cho năm nay"
   }
 }

@@ -34,7 +34,8 @@
     "close": "Close",
     "payroll": "Payroll",
     "policy": "Pay policy",
-    "timesheetHr": "Timesheet"
+    "timesheetHr": "Timesheet",
+    "departments": "Departments"
   },
   "common": {
     "loading": "Loading…",
@@ -466,5 +467,24 @@
     "channelEMAIL": "Email",
     "prefsTitle": "What to hear about",
     "prefsLead": "Four kinds, each switched on its own."
+  },
+  "org": {
+    "departments": "Departments",
+    "departmentsLead": "The org tree; changing a parent changes who approves and who can see.",
+    "code": "Code",
+    "name": "Name",
+    "parent": "Reports to",
+    "costCentre": "Cost centre",
+    "headcount": "People",
+    "newDepartment": "Add department",
+    "noParent": "Top level",
+    "holidays": "Public holidays",
+    "holidaysLead": "Without a row here, a public holiday counts as absent and is docked.",
+    "holidayName": "Name",
+    "holidayDate": "Date",
+    "holidayPaid": "Paid",
+    "addHoliday": "Add holiday",
+    "removeHoliday": "Remove",
+    "holidaysEmpty": "No holidays entered for this year"
   }
 }

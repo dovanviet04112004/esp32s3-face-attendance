@@ -89,6 +89,22 @@ export class LeaveService {
     return filed;
   }
 
+  /** One request, if this viewer is allowed to know it exists. */
+  async one(viewer: Viewer, id: string): Promise<LeaveRequest> {
+    const held = await this.db.request.findUnique({
+      where: { id },
+      include: {
+        employee: { select: { id: true, code: true, fullName: true } },
+        leaveType: { select: { id: true, code: true, name: true } },
+      },
+    });
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+      throw new NotFoundException("REQUEST_NOT_FOUND");
+    }
+    return held;
+  }
+
   /** Approve or turn down, moving the balance only on the way through. */
   async decide(viewer: Viewer, id: string, body: DecideRequestDto): Promise<LeaveRequest> {
     const held = await this.db.request.findUnique({ where: { id } });

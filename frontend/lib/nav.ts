@@ -63,6 +63,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/employees", key: "directory", icon: Users, roles: PEOPLE_DESK },
       { href: "/org", key: "orgChart", icon: Network, roles: PEOPLE_DESK },
+      { href: "/org/departments", key: "departments", icon: Network, roles: PEOPLE_DESK },
     ],
   },
   {

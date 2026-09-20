@@ -47,6 +47,12 @@ export class LeaveController {
     return this.leave.inbox(viewer, query);
   }
 
+  @Get("requests/:id")
+  @ApiOperation({ summary: "One request; declared after inbox so the word is not an id" })
+  one(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<LeaveRequest> {
+    return this.leave.one(viewer, id);
+  }
+
   @Post("requests/:id/decide")
   @ApiOperation({ summary: "Approve or turn down; the balance moves here" })
   decide(
