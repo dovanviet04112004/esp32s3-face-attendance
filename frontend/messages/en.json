@@ -60,7 +60,8 @@
     "chooseAll": "Select all",
     "more": "Show more",
     "less": "Show less",
-    "close": "Close"
+    "close": "Close",
+    "sure": "Sure?"
   },
   "login": {
     "lead": "Sign in to reach the control panel",

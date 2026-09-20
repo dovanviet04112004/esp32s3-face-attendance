@@ -44,8 +44,7 @@ export interface NavGroup {
 
 const EVERYONE: Role[] = [];
 const DECIDERS: Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
-// A manager's own job is their team, and every one of these narrows to the
-// subtree on its own (KEHOACH 9.4).
+// Every page here narrows to the manager's own subtree (KEHOACH 9.4).
 const TEAM: Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
 const TEAM_TIME: Role[] = ["ADMIN", "HR", "MANAGER"];
 const PEOPLE_DESK: Role[] = ["ADMIN", "HR"];
@@ -115,11 +114,18 @@ export const NAV: NavGroup[] = [
   },
 ];
 
-/** An empty group is hidden, not greyed (KEHOACH 9.15). */
-export function navFor(role: Role | null): NavGroup[] {
+/** An empty group is hidden, not greyed (KEHOACH 9.15). An account with no
+ *  employee record has no self service to do, so that group goes too.
+ */
+export function navFor(role: Role | null, hasRecord = true): NavGroup[] {
   return NAV.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !item.roles?.length || (role !== null && item.roles.includes(role))),
+    items:
+      group.key === "me" && !hasRecord
+        ? []
+        : group.items.filter(
+            (item) => !item.roles?.length || (role !== null && item.roles.includes(role)),
+          ),
   })).filter((group) => group.items.length > 0);
 }
 
@@ -137,8 +143,8 @@ export interface TabLayout {
  *  The sheet holds only what the tabs left out: a destination in both places
  *  makes the menu look long while saying nothing new.
  */
-export function tabsFor(role: Role | null): TabLayout {
-  const groups = navFor(role).map((group) => ({
+export function tabsFor(role: Role | null, hasRecord = true): TabLayout {
+  const groups = navFor(role, hasRecord).map((group) => ({
     ...group,
     items: group.items.filter((item) => !item.deskOnly),
   }));
@@ -146,10 +152,12 @@ export function tabsFor(role: Role | null): TabLayout {
   const ranked = TAB_ORDER.map((key) => flat.find((item) => item.key === key)).filter(
     (item): item is NavItem => item !== undefined,
   );
+  // An account with no record of its own has none of the five.
+  const pool = ranked.length > 0 ? ranked : flat;
   // The menu button is a slot like any other, so a role that needs one gets
   // four destinations and not five.
   const needsMenu = flat.length > kTabSlots;
-  const items = ranked.slice(0, needsMenu ? kTabSlots - 1 : kTabSlots);
+  const items = pool.slice(0, needsMenu ? kTabSlots - 1 : kTabSlots);
   const shown = new Set(items.map((item) => item.href));
   const rest = needsMenu
     ? groups

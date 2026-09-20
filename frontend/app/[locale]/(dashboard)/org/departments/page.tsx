@@ -53,6 +53,9 @@ export default function DepartmentsPage() {
   const [holidayDate, setHolidayDate] = useState("");
   const [holidayPaid, setHolidayPaid] = useState(true);
   const [fault, setFault] = useState<string | null>(null);
+  // Taking a public holiday away rebuilds that day for everybody, so the
+  // second click is the confirmation.
+  const [dropping, setDropping] = useState<string | null>(null);
 
   const entities = useQuery({
     queryKey: ["legal-entities"],
@@ -97,7 +100,10 @@ export default function DepartmentsPage() {
 
   const dropHoliday = useMutation({
     mutationFn: (id: string) => api.delete(`/holidays/${id}`),
-    onSuccess: () => void cache.invalidateQueries({ queryKey: ["holidays"] }),
+    onSuccess: () => {
+      setDropping(null);
+      void cache.invalidateQueries({ queryKey: ["holidays"] });
+    },
   });
 
   const nameOf = new Map((departments.data ?? []).map((one) => [one.id, one.name]));
@@ -237,12 +243,15 @@ export default function DepartmentsPage() {
               {mayWrite ? (
                 <Button
                   type="button"
-                  tone="quiet"
+                  tone={dropping === row.id ? "danger" : "quiet"}
                   size="sm"
                   disabled={dropHoliday.isPending}
-                  onClick={() => dropHoliday.mutate(row.id)}
+                  onClick={() =>
+                    dropping === row.id ? dropHoliday.mutate(row.id) : setDropping(row.id)
+                  }
+                  onBlur={() => setDropping(null)}
                 >
-                  {t("removeHoliday")}
+                  {dropping === row.id ? common("sure") : t("removeHoliday")}
                 </Button>
               ) : null}
             </article>

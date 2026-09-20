@@ -39,8 +39,8 @@ function Tab({ item, active, waiting }: { item: NavItem; active: boolean; waitin
 export function TabBar() {
   const t = useTranslations("nav");
   const here = usePathname();
-  const { role } = useSession();
-  const { items, rest } = tabsFor(role);
+  const { role, employeeId } = useSession();
+  const { items, rest } = tabsFor(role, employeeId !== null);
   const waiting = useWaitingCount(role);
   const [open, setOpen] = useState(false);
 

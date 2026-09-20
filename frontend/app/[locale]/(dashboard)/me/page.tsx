@@ -218,7 +218,6 @@ export default function MyPage() {
         {[
           { href: "/me/letters" as const, label: t("askLetter"), hint: t("askLetterHint") },
           { href: "/me/profile" as const, label: t("askProfile"), hint: t("askProfileHint") },
-          { href: "/me/payslips" as const, label: t("myPayslips"), hint: t("myPayslipsHint") },
         ].map((one) => (
           <Link
             key={one.href}

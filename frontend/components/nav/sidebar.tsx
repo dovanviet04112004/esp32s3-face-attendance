@@ -12,8 +12,8 @@ export function Sidebar({ onSignOut }: { onSignOut: () => void }) {
   const t = useTranslations("nav");
   const app = useTranslations("app");
   const here = usePathname();
-  const { role } = useSession();
-  const groups = navFor(role);
+  const { role, employeeId } = useSession();
+  const groups = navFor(role, employeeId !== null);
   const waiting = useWaitingCount(role);
 
   return (
