@@ -5536,6 +5536,13 @@ bị `Kconfig` loại khỏi bản `prod`.
 trách nhiệm — hoặc phải đẻ thêm một tầng ACL riêng cho trạng thái `pending`. Giữ nó ở `202` thì
 thiết bị chưa được nhận **không có gì để nối bằng**, và không cần ACL đặc biệt nào.
 
+**Cái phân biệt "vừa được duyệt" với "đang chạy" là `tokenHash`, không phải trạng thái.** Một
+máy `APPROVED` mà **chưa có** `tokenHash` là máy vừa được admin bấm duyệt và chưa kịp lấy token
+— lượt hỏi kế tiếp trả 200 và lưu băm của token vừa cấp. Một máy `APPROVED` mà **đã có**
+`tokenHash` thì lẽ ra không bao giờ gọi lại `register` nữa, vì nó đã có `device/jwt` trong NVS;
+gọi lại nghĩa là NVS đã mất. Thiếu cột này thì hai tình huống ấy trông giống hệt nhau và máy chủ
+buộc phải đoán.
+
 **`deviceId` quay lại sau factory reset là chuyện bình thường, không phải lỗi.** Nút BOOT giữ 5 s
 (§2) xoá `wifi`, `device` và bảng khuôn mặt, nhưng eFuse thì không xoá được, nên máy trở lại
 bước 3 với **đúng cái tên cũ**. Máy chủ vì thế phải cho một `deviceId` đã biết đăng ký lại, đánh
@@ -5549,6 +5556,16 @@ cho tới khi một con người bấm duyệt; và Flash Encryption khiến kh�
 Xoay vòng nó là một bản OTA. Muốn chắc hơn thì phải **cấp cert riêng từng máy ngay trên dây
 chuyền và dùng mTLS** — mạnh hơn hẳn, nhưng đòi một trạm nạp có CA riêng, nên để khi sản lượng
 đủ lớn mới đáng.
+
+**Điều token bootstrap rò rỉ làm được với máy đang chạy, nói rõ ra vì luật trên không nói.** Cầm
+token lô cộng một `deviceId` đã biết, kẻ tấn công gọi `register` và đẩy đúng máy ấy **về
+`pending`**: kiosk mất quyền, cả cửa ấy ngừng chấm công cho tới khi một người bấm duyệt lại. Đó
+là **từ chối dịch vụ**, và là lựa chọn có chủ ý — vế còn lại là trả 200 kèm token mới cho bất kỳ
+ai hỏi đúng `deviceId`, tức **mạo danh im lặng**. Giữa một sự cố nhìn thấy được và một vụ giả
+danh không ai biết, mục này chọn cái nhìn thấy được. Không phân biệt được hai bên bằng cách nào
+khác: một máy vừa factory reset và một kẻ mạo danh **đều** không xuất trình được token cũ — đó
+là giới hạn của bí mật dùng chung cả lô, không phải của luồng này. mTLS ở đoạn trên là thứ xoá
+hẳn cả hai.
 
 ### 7.4 Broker trước khi có `api`
 
