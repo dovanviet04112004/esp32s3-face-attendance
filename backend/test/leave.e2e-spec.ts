@@ -101,7 +101,7 @@ describe("leave balance (e2e)", () => {
       .post("/users/provision")
       .set("Authorization", `Bearer ${asAdmin.body.accessToken}`);
     assert.equal(provisioned.status, 201, "could not open employee logins");
-    const accounts = provisioned.body as { employeeCode: string; email: string; password: string }[];
+    const accounts = (provisioned.body as { accounts: { employeeCode: string; email: string; password: string }[] }).accounts;
     opened.push(...accounts.map((one) => one.email));
     const mine = accounts.find((one) => one.employeeCode === CODE);
     assert.ok(mine, "provisioning skipped the person under test");

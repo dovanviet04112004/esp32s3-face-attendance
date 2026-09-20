@@ -100,6 +100,32 @@ describe("users and audit (e2e)", () => {
     assert.equal(made.subjectType, "user");
   });
 
+  it("opens no more logins in one call than it is allowed to", async () => {
+    const batch = validateEnv().PROVISION_BATCH;
+    const codes = Array.from({ length: batch + 3 }, (unused, at) => `E2EPV${String(at).padStart(4, "0")}`);
+    await db.employee.deleteMany({ where: { code: { in: codes } } });
+    await db.user.deleteMany({ where: { email: { startsWith: "e2epv-" } } });
+    await db.employee.createMany({
+      data: codes.map((code, at) => ({
+        code,
+        fullName: `Chờ mở ${at}`,
+        active: true,
+        personalEmail: `e2epv-${at}@kiosk.local`,
+      })),
+    });
+
+    const res = await request(http)
+      .post("/users/provision")
+      .set("Authorization", `Bearer ${admin}`);
+    assert.equal(res.status, 201);
+    const done = res.body as { accounts: { email: string }[]; waiting: number };
+    assert.equal(done.accounts.length, batch, "one call opened more logins than the batch allows");
+    assert.ok(done.waiting >= 3, "the answer does not say how many people are still waiting");
+
+    await db.user.deleteMany({ where: { email: { startsWith: "e2epv-" } } });
+    await db.employee.deleteMany({ where: { code: { in: codes } } });
+  });
+
   it("answers every error in one shape", async () => {
     const res = await request(http).get("/audit").set("Authorization", `Bearer ${viewer}`);
     assert.equal(res.status, 403);
