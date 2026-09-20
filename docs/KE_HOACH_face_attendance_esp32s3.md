@@ -4442,6 +4442,7 @@ frontend/
 │   ├── forms/employee-form.tsx
 │   ├── requests/{request-card.tsx, request-form.tsx}
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
+│   ├── notifications/{bell.tsx, notice-list.tsx, push-switch.tsx}   # ★ §9.21.4
 │   └── payroll/{payslip-view.tsx, run-progress.tsx}
 ├── lib/
 │   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.9)
