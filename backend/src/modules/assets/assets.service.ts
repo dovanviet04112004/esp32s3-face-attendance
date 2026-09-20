@@ -80,6 +80,23 @@ export class AssetsService {
       throw new ConflictException("ASSET_HELD_BY_SOMEBODY_ELSE");
     }
     const moved = await this.db.$transaction(async (tx) => {
+      // The state is claimed by the update itself, so two people handing the
+      // same laptop out at once cannot both read it as free.
+      const claimed = await tx.asset.updateMany({
+        where: {
+          id: assetId,
+          ...(body.issued
+            ? { state: { not: "ISSUED" } }
+            : { state: "ISSUED", holderId: body.employeeId }),
+        },
+        data: {
+          state: body.issued ? "ISSUED" : "RETURNED",
+          holderId: body.issued ? body.employeeId : null,
+        },
+      });
+      if (claimed.count === 0) {
+        throw new ConflictException(body.issued ? "ASSET_ALREADY_ISSUED" : "ASSET_NOT_ISSUED");
+      }
       await tx.assetTransfer.create({
         data: {
           assetId,
@@ -90,14 +107,7 @@ export class AssetsService {
           byUserId: viewer.userId,
         },
       });
-      return tx.asset.update({
-        where: { id: assetId },
-        data: {
-          state: body.issued ? "ISSUED" : "RETURNED",
-          holderId: body.issued ? body.employeeId : null,
-        },
-        include: { holder: HOLDER },
-      });
+      return tx.asset.findUniqueOrThrow({ where: { id: assetId }, include: { holder: HOLDER } });
     });
     await this.audit.record({
       action: body.issued ? "asset.issue" : "asset.return",

@@ -47,6 +47,7 @@ async function publishAsKiosk(deviceId: string, payload: unknown): Promise<void>
 
 const DEVICE_ID = "kiosk-e2e-enroll";
 const CODE = "NV9100";
+const RACERS = ["NV9111", "NV9112", "NV9113", "NV9114", "NV9115", "NV9116"];
 const EMBEDDING_BYTES = 512;
 const RELEASE_VERSION = "9.9.9";
 const SETTLE_MS = 600;
@@ -70,7 +71,7 @@ describe("enrollment and releases (e2e)", () => {
   async function sweep(): Promise<void> {
     await db.deviceEnrollment.deleteMany({ where: { deviceId: DEVICE_ID } });
     await db.faceTemplate.deleteMany({ where: { employee: { code: CODE } } });
-    await db.employee.deleteMany({ where: { code: CODE } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, ...RACERS] } } });
     await db.device.deleteMany({ where: { id: DEVICE_ID } });
     await db.release.deleteMany({ where: { version: RELEASE_VERSION } });
   }
@@ -264,5 +265,43 @@ describe("enrollment and releases (e2e)", () => {
 
     const now = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
     assert.equal(now.rosterVersion, before.rosterVersion + 1);
+  });
+
+  it("counts every enrolment when six land at once", async () => {
+    const template = await db.employee.findFirstOrThrow({ where: { active: true } });
+    const made = await Promise.all(
+      RACERS.map((code) =>
+        db.employee.create({
+          data: { code, fullName: `Đăng ký đua ${code}`, active: true, legalEntityId: template.legalEntityId },
+        }),
+      ),
+    );
+    await Promise.all(
+      made.map((one) =>
+        request(http)
+          .post("/biometric-consents")
+          .set("Authorization", `Bearer ${admin}`)
+          .send({ employeeId: one.id, noticeVersion: "2026-01-v1", method: "PAPER" }),
+      ),
+    );
+
+    const before = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
+    const answers = await Promise.all(
+      made.map((one) =>
+        request(http)
+          .post("/enrollments")
+          .set("Authorization", `Bearer ${admin}`)
+          .send({ deviceId: DEVICE_ID, employeeId: one.id }),
+      ),
+    );
+    assert.deepEqual(
+      answers.map((one) => one.status),
+      made.map(() => 201),
+    );
+
+    // The version a kiosk is told to reach has to count every change, so a
+    // counter read in this process and written back loses the ones between.
+    const after = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
+    assert.equal(after.rosterVersion - before.rosterVersion, made.length);
   });
 });

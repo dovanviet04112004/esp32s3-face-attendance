@@ -224,10 +224,18 @@ export class EnrollmentService {
     };
   }
 
+  /**
+   * The counter moves inside the statement, not in this process. Two people
+   * enrolling at once each read the same old number, and the version a kiosk
+   * is told to reach has to count every change (KEHOACH 6.2.6).
+   */
   private async bump(device: Device): Promise<number> {
-    const next = device.rosterVersion + 1;
-    await this.db.device.update({ where: { id: device.id }, data: { rosterVersion: next } });
-    return next;
+    const moved = await this.db.device.update({
+      where: { id: device.id },
+      data: { rosterVersion: { increment: 1 } },
+      select: { rosterVersion: true },
+    });
+    return moved.rosterVersion;
   }
 
   private send(deviceId: string, payload: EnrollPayload): Promise<void> {
