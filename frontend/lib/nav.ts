@@ -1,6 +1,8 @@
 import {
+  Building2,
   CalendarCheck,
   CalendarDays,
+  CalendarOff,
   ChartColumn,
   Clock,
   Cpu,
@@ -10,6 +12,7 @@ import {
   Network,
   Receipt,
   Scale,
+  ScanFace,
   Settings,
   User,
   Users,
@@ -65,16 +68,17 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/employees", key: "directory", icon: Users, roles: PEOPLE_DESK },
       { href: "/org", key: "orgChart", icon: Network, roles: PEOPLE_DESK },
-      { href: "/org/departments", key: "departments", icon: Network, roles: PEOPLE_DESK },
+      { href: "/org/departments", key: "departments", icon: Building2, roles: PEOPLE_DESK },
     ],
   },
   {
     key: "groupTime",
     items: [
       { href: "/timesheet", key: "timesheetHr", icon: CalendarDays, roles: PEOPLE_DESK },
-      { href: "/attendance", key: "attendance", icon: CalendarCheck, roles: PEOPLE_DESK },
-      { href: "/leave", key: "leave", icon: FileText, roles: PEOPLE_DESK },
+      { href: "/attendance", key: "attendance", icon: ScanFace, roles: PEOPLE_DESK },
+      { href: "/leave", key: "leave", icon: CalendarOff, roles: PEOPLE_DESK },
       { href: "/shifts", key: "shifts", icon: Clock, roles: PEOPLE_DESK },
+      { href: "/reports", key: "reports", icon: ChartColumn, roles: PEOPLE_DESK },
     ],
   },
   {
@@ -85,15 +89,11 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    key: "groupDevices",
+    key: "groupOps",
     items: [
       { href: "/overview", key: "overview", icon: LayoutDashboard, roles: OPERATORS },
       { href: "/devices", key: "devices", icon: Cpu, roles: OPERATORS },
     ],
-  },
-  {
-    key: "groupReports",
-    items: [{ href: "/reports", key: "reports", icon: ChartColumn, roles: PEOPLE_DESK }],
   },
   {
     key: "groupSettings",

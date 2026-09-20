@@ -24,18 +24,16 @@
     "directory": "Danh bạ",
     "orgChart": "Cây tổ chức",
     "groupTime": "Thời gian",
-    "timesheet": "Bảng công",
     "leave": "Nghỉ phép",
     "groupPay": "Lương",
-    "groupDevices": "Thiết bị",
-    "groupReports": "Báo cáo",
     "groupSettings": "Thiết lập",
     "more": "Thêm",
     "close": "Đóng",
     "payroll": "Kỳ lương",
     "policy": "Chính sách lương",
     "timesheetHr": "Bảng công",
-    "departments": "Phòng ban"
+    "departments": "Phòng ban",
+    "groupOps": "Vận hành"
   },
   "common": {
     "loading": "Đang tải…",

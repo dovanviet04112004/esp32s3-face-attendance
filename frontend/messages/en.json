@@ -24,18 +24,16 @@
     "directory": "Directory",
     "orgChart": "Org chart",
     "groupTime": "Time",
-    "timesheet": "Timesheet",
     "leave": "Leave",
     "groupPay": "Pay",
-    "groupDevices": "Devices",
-    "groupReports": "Reports",
     "groupSettings": "Settings",
     "more": "More",
     "close": "Close",
     "payroll": "Payroll",
     "policy": "Pay policy",
     "timesheetHr": "Timesheet",
-    "departments": "Departments"
+    "departments": "Departments",
+    "groupOps": "Operations"
   },
   "common": {
     "loading": "Loading…",
