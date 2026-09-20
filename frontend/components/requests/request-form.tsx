@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
 import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
@@ -10,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
+import { useFault } from "@/lib/fault";
 import type { RequestKind } from "./request-card";
 
 const KINDS: RequestKind[] = [
@@ -33,6 +33,7 @@ function today(): string {
 export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const t = useTranslations("requests");
   const common = useTranslations("common");
+  const faultOf = useFault();
   const [kind, setKind] = useState<RequestKind>("LEAVE");
   const [leaveTypeId, setLeaveTypeId] = useState("");
   const [fromDate, setFromDate] = useState(today());
@@ -59,18 +60,7 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
         reason,
       }),
     onSuccess: onDone,
-    onError: (fell: unknown) => {
-      // 409 is the api saying the days clash or the balance is short, and both
-      // are things the person can act on from this form.
-      const message = isAxiosError(fell) ? String(fell.response?.data?.message ?? "") : "";
-      if (message.includes("overlap")) {
-        setFault(t("overlap"));
-      } else if (message.includes("left")) {
-        setFault(t("noBalance"));
-      } else {
-        setFault(common("failed"));
-      }
-    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   function submit(event: FormEvent) {
