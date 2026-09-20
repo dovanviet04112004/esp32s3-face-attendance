@@ -82,6 +82,7 @@ model User {
   issuedCommands   DeviceCommand[]
   auditLogs        AuditLog[]
   assetMoves       AssetTransfer[]
+  tasksDone        ChecklistTask[]
 }
 
 /**
@@ -121,6 +122,7 @@ model Department {
 
   @@unique([legalEntityId, code])
   @@index([parentId])
+  checklists    ChecklistTemplate[]
 }
 
 model JobTitle {
@@ -132,6 +134,7 @@ model JobTitle {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   employees Employee[]
+  checklists   ChecklistTemplate[]
 }
 
 model EmploymentContract {
@@ -214,6 +217,8 @@ model Employee {
   pushSubs          PushSubscription[]
   assetsHeld        Asset[]
   assetMoves        AssetTransfer[]
+  checklistRuns     ChecklistRun[]
+  ownedTasks        ChecklistTask[]     @relation("OwnsTasks")
 
   @@index([departmentId, active])
   @@index([managerId])
@@ -1069,4 +1074,83 @@ model AssetTransfer {
 
   @@index([assetId, at])
   @@index([employeeId, issued])
+}
+
+enum ChecklistKind {
+  ONBOARDING
+  OFFBOARDING
+}
+
+enum TaskOwner {
+  MANAGER
+  SELF
+  HR
+}
+
+/** What somebody at this job title, in this department, has to get through. */
+model ChecklistTemplate {
+  id           String                  @id @default(uuid())
+  kind         ChecklistKind
+  name         String
+  jobTitleId   String?
+  departmentId String?
+  active       Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  jobTitle     JobTitle?               @relation(fields: [jobTitleId], references: [id], onDelete: Cascade)
+  department   Department?             @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  items        ChecklistTemplateItem[]
+  runs         ChecklistRun[]
+
+  @@index([kind, active])
+}
+
+model ChecklistTemplateItem {
+  id         String            @id @default(uuid())
+  templateId String
+  ordinal    Int
+  title      String
+  owner      TaskOwner         @default(HR)
+  // Days from the anchor, and negative is meaningful: a pass comes back
+  // before the last day, not after it (KEHOACH 9.3).
+  dueDays    Int               @default(0)
+  template   ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, ordinal])
+}
+
+/** One person going through one template, frozen at the moment it started. */
+model ChecklistRun {
+  id         String            @id @default(uuid())
+  employeeId Int
+  templateId String
+  kind       ChecklistKind
+  anchorDate DateTime          @db.Date
+  startedAt  DateTime          @default(now())
+  employee   Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  template   ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  tasks      ChecklistTask[]
+
+  @@unique([employeeId, kind])
+  @@index([kind, startedAt])
+}
+
+model ChecklistTask {
+  id         String       @id @default(uuid())
+  runId      String
+  ordinal    Int
+  title      String
+  ownerRole  TaskOwner
+  ownerId    Int?
+  dueOn      DateTime     @db.Date
+  doneAt     DateTime?
+  doneById   String?
+  note       String?
+  run        ChecklistRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  owner      Employee?    @relation("OwnsTasks", fields: [ownerId], references: [id], onDelete: SetNull)
+  doneBy     User?        @relation(fields: [doneById], references: [id], onDelete: SetNull)
+
+  @@unique([runId, ordinal])
+  @@index([ownerId, doneAt])
+  @@index([dueOn, doneAt])
 }

@@ -6,6 +6,7 @@ import { DatabaseModule } from "./database/database.module.js";
 import { ScopeModule } from "./common/scope/scope.module.js";
 import { AttendanceModule } from "./modules/attendance/attendance.module.js";
 import { LeaveModule } from "./modules/leave/leave.module.js";
+import { OnboardingModule } from "./modules/onboarding/onboarding.module.js";
 import { OrgModule } from "./modules/org/org.module.js";
 import { CompensationModule } from "./modules/compensation/compensation.module.js";
 import { PayrollModule } from "./modules/payroll/payroll.module.js";
@@ -39,6 +40,7 @@ import { QueueModule } from "./queue/queue.module.js";
     ScopeModule,
     AttendanceModule,
     LeaveModule,
+    OnboardingModule,
     OrgModule,
     PolicyModule,
     CompensationModule,
