@@ -4165,6 +4165,7 @@ backend/
     │   ├── assets/                   # ★ §9.16 mục 11 — cấp và thu là dòng, không phải ô
     │   ├── certificates/             # ★ §9.17 mục 5 — giấy xác nhận, số hiệu do CSDL cấp
     │   ├── profile/                  # ★ §9.17 mục 6 — đổi thông tin cá nhân qua duyệt
+    │   ├── disputes/                 # ★ §9.17 mục 11 — khiếu nại phiếu lương, có hạn trả lời
     │   └── onboarding/               # ★ §9.16 mục 10 — mẫu theo chức danh, sinh ra bản thể hiện
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
@@ -4682,6 +4683,7 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | URL, host, port, secret, chuỗi kết nối — backend và frontend | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` · `lib/env.ts` |
 | URL và credential trên kiosk | NVS `device/*` (§6.2.1), giá trị lùi khai ở `Kconfig` của component | đọc qua `sys_storage`, **không gõ vào `.c`** |
 | Số hiệu firmware | `PROJECT_VER` trong `firmware/CMakeLists.txt` | `esp_app_get_description()->version`, **không gõ lại ở đâu** |
+| Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
 | Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
 | Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
 | Ngưỡng nghiệp vụ (**tin cậy phát hiện mặt**, khớp mặt, liveness, chống trùng) | NVS trên kiosk, `SET_CONFIG` từ server | đọc cấu hình lúc chạy |
@@ -6441,6 +6443,25 @@ người phụ thuộc. Cả hai đều đang là việc HR làm tay cho từng 
 **11. Khiếu nại phiếu lương thành hồ sơ, không thành tin nhắn.** Có kênh chính thức, có hạn trả
 lời, có kết quả lưu lại. Một tranh chấp lương giải quyết qua tin nhắn là một tranh chấp không
 chứng minh được về sau.
+
+**Khiếu nại gắn vào phiếu, có thể gắn vào một dòng.** Câu hỏi thật không phải "tháng này sai"
+mà "dòng tăng ca này sai", nên bản ghi mang `payslipId` và mã dòng nếu người ta chỉ được. Trả
+lời rồi thì cả hai vế nằm cạnh nhau: con số bị hỏi và câu trả lời cho đúng con số ấy.
+
+**Hạn trả lời cắn ở lần chốt kỳ sau, không nằm im trên một cột.** Một cái hạn không ai cảm
+thấy là một cái hạn trang trí — và im lặng chính là thứ người ta bức xúc nhất (mục 12). Nên
+khiếu nại còn mở mà quá hạn **hiện trong danh sách kiểm trước khi chốt kỳ**, chỗ đã có sẵn
+luật "chốt đè lên mục còn mở thì ghi tên người chấp nhận" (§9.18). Không có ai bị phạt; chỉ có
+một người phải ký tên vào việc bỏ qua.
+
+**Kết quả là tiền, không phải chữ.** Chấp nhận khiếu nại mà kèm số tiền thì sinh luôn
+`RetroAdjustment` trong cùng một giao dịch, và bản ghi khiếu nại giữ id của nó. §9.6 cấm mở lại
+kỳ đã chốt, nên khoản chênh đi vào kỳ sau như mọi khoản truy lĩnh khác. **Chấp nhận mà không
+đính gì vào là một lời hứa, không phải một hồ sơ** — và đây cũng là chỗ đầu tiên trong hệ có ai
+đó *tạo ra* một `RetroAdjustment`: trước đó bảng ấy chỉ có người đọc.
+
+**Phiếu đã phát không bao giờ đổi số vì một khiếu nại.** Kể cả khi khiếu nại đúng. Con số cũ là
+thứ đã gửi cho người ta, và một bản ghi tự sửa sau lưng thì không chứng minh được gì (§9.6).
 
 **12. Biết đơn của mình đang ở đâu.** Thông báo khi đơn được duyệt, bị từ chối, hay **nằm quá
 lâu không ai động tới** — cái thứ ba là cái người ta bức xúc nhất và phần mềm hay quên nhất.
