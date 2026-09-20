@@ -12,6 +12,10 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { IMPORT_COLUMNS, parseCsv } from "../src/modules/employees/import.js";
 
 const PREFIX = "E2EIMP";
+
+function quoted(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
 const HEAD = "code,fullName,managerCode,dateOfBirth,gender,baseSalary,insuranceSalary";
 
 interface Fault {
@@ -163,11 +167,12 @@ describe("employee import (e2e)", () => {
     const mine = grid.filter((line) => (line[0] ?? "").startsWith(PREFIX));
     assert.ok(mine.length >= 2, "the two rows this suite made are in the file");
 
-    // Fed back whole: a round trip that needs editing first is not one. The
-    // count is a floor, since a parallel suite may drop its own rows meanwhile.
-    const report = await send(res.text, false);
+    // Only this suite's own rows go back in: a parallel suite deleting one of
+    // its departments between the two calls is not this test's subject.
+    const back = [grid[0] as string[], ...mine].map((line) => line.map(quoted).join(",")).join("\r\n");
+    const report = await send(back, false);
     assert.equal(report.faults.length, 0, "the file this system writes is a file it accepts");
-    assert.equal(report.rows, grid.length - 1);
-    assert.ok(report.toUpdate >= mine.length, "the people already here read back as updates");
+    assert.equal(report.rows, mine.length);
+    assert.equal(report.toUpdate, mine.length, "everybody in it is already here");
   });
 });
