@@ -18,6 +18,8 @@ import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { QUEUE, type ProfileNoticeJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { MailerService } from "../notifications/mailer.service.js";
+import { profileNoticeMail } from "../payroll/mail-text.js";
 import {
   PROFILE_FIELDS,
   askedValues,
@@ -43,6 +45,7 @@ export class ProfileService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly mailer: MailerService,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -188,6 +191,36 @@ export class ProfileService {
       meta: { field: held.field },
     });
     return dropped;
+  }
+
+  /** Send the warning for a change already decided. The address comes off the
+   *  row, so nothing here can redirect it (KEHOACH 9.17 item 6 rule 3).
+   */
+  async mailNotice(changeId: string): Promise<boolean> {
+    const change = await this.db.profileChange.findUnique({
+      where: { id: changeId },
+      include: { employee: { select: { fullName: true, locale: true } } },
+    });
+    const notice = change ? PROFILE_FIELDS[change.field].notice : null;
+    if (!change?.noticeTo || notice === null) {
+      this.log.warn(`change ${changeId} has nowhere to warn`);
+      return false;
+    }
+    const sent = await this.mailer.send(
+      change.noticeTo,
+      profileNoticeMail(change.employee.locale, {
+        fullName: change.employee.fullName,
+        change: notice,
+        decidedOn: (change.decidedAt ?? change.createdAt).toISOString().slice(0, 10),
+      }),
+    );
+    if (sent) {
+      await this.db.profileChange.update({
+        where: { id: change.id },
+        data: { noticeSentAt: new Date() },
+      });
+    }
+    return sent;
   }
 
   private addressOf(person: Person): string | null {

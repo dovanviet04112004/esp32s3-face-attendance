@@ -1,6 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
@@ -25,6 +34,7 @@ export class RaiseDisputeDto {
 
   @ApiProperty({ maxLength: CLAIM_MAX, example: "Tăng ca tháng này thiếu 4 giờ" })
   @IsString()
+  @MinLength(1)
   @MaxLength(CLAIM_MAX)
   claim!: string;
 }
@@ -36,6 +46,7 @@ export class AnswerDisputeDto {
 
   @ApiProperty({ maxLength: ANSWER_MAX })
   @IsString()
+  @MinLength(1)
   @MaxLength(ANSWER_MAX)
   answer!: string;
 
