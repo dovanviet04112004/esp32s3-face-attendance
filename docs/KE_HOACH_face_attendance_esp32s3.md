@@ -6577,9 +6577,12 @@ Người ta cầm điện thoại một tay, và **góc trên bên kia của mà
 - Hành động **phá huỷ không đặt cạnh hành động thường dùng**. Xoá không nằm sát Lưu.
 - Điều hướng lùi dùng cả cử chỉ vuốt lẫn nút, vì một nửa số người không biết cử chỉ.
 
-**Mọi đích chạm tối thiểu 44 × 44 px.** Bộ primitive hiện tại **chưa đạt**: đo ra nút thường
-**40 px**, nút nhỏ **32 px**, ô tích **16 px**. Ba con số ấy đều dưới ngưỡng, nên `components/ui/`
-cần một cỡ cho màn cảm ứng chứ không phải chỉnh lại cỡ đang dùng cho chuột.
+**Mọi đích chạm tối thiểu 44 × 44 px, và cách đạt nó là theo loại con trỏ chứ không theo bề
+ngang màn.** Nới cỡ theo breakpoint thì một cái tablet cắm chuột phải chịu nút to vô cớ, còn
+một cái điện thoại xoay ngang lại tụt về cỡ chuột. `components/ui/` vì thế khai cỡ cảm ứng dưới
+`pointer-coarse`: nút, ô nhập và ô chọn lên **44 px** khi con trỏ là ngón tay và giữ **40 px**
+khi là chuột, còn ô tích nhỏ thì bọc trong một nhãn cao 44 px thay vì phóng to chính ô. Đo lại
+ngày 20/09: `button`, `input`, `select`, `checkbox` đều đạt trên con trỏ thô.
 
 #### 9.21.3 Mạng yếu là trạng thái thường, không phải lỗi
 
