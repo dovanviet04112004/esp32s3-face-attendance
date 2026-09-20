@@ -306,8 +306,10 @@ export class TimesheetService {
              ) AS v("employeeId", "state", "shiftId", "firstIn", "lastOut",
                     "workedMinutes", "lateMinutes", "earlyLeaveMinutes",
                     "overtimeMinutes", "punchCount", "clockUnsynced", "measuredMinutes")
-        -- A person deleted since the read must not fail the whole day's write.
+        -- A person deleted since the read must not fail the whole day's write,
+        -- and the share lock holds them still until this statement commits.
         JOIN "Employee" e ON e."id" = v."employeeId"
+      FOR SHARE OF e
       ON CONFLICT ("employeeId", "date") DO UPDATE SET
         "state" = EXCLUDED."state",
         "shiftId" = EXCLUDED."shiftId",
