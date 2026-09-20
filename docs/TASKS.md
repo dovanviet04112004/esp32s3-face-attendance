@@ -503,7 +503,7 @@ xử lý dữ liệu nhạy cảm vì chính bản chất chấm công bằng kh
 | ~~E21-T4~~ | **Xong 20/09.** `docs/DPIA.md` — và nó **nói thẳng rủi ro chưa xử**: kiosk chưa bật mã hoá flash nên ai cầm được board thì đọc được embedding. Đánh giá tác động xử lý dữ liệu theo Điều 24, ghi ở `docs/` | Có hồ sơ để nộp khi được hỏi | E21-T1 |
 | E21-T5 | **Xuất D02-LT** — báo cáo lao động và danh sách BHXH/BHYT/BHTN, đúng trường, theo pháp nhân | Nộp được trước 5/6 và 5/12 mà không chép tay | E15-T3, E18-T1 |
 | E21-T6 | Báo tăng, báo giảm, báo điều chỉnh BHXH khi có người vào, ra, đổi lương | Ba việc hằng tháng của HR thành ba lần bấm | E21-T5 |
-| E21-T7 | **Quyết toán thuế TNCN năm** cho từng người, bản kê thu nhập và thuế đã nộp | Dữ liệu lấy thẳng từ `PayslipLine`, không tính lại | E18-T8 |
+| ~~E21-T7~~ | **Xong 20/09.** Khấu trừ theo tháng mà biểu thuế luỹ tiến thì mười hai câu trả lời tháng **không cộng thành câu trả lời năm** — quyết toán chính là chỗ đóng khe đó. Mọi đầu vào đọc ngược từ cái đã lưu: thu nhập chịu thuế và bảo hiểm ở phiếu, hai khoản giảm trừ và thuế đã khấu trừ ở **chính các dòng phiếu**, không lấy theo chính sách hôm nay — phiếu phát hành theo mức giảm trừ năm nào thì giữ mức năm ấy. Phiếu `DRAFT` để ngoài: số chưa ai đứng tên thì chưa phải thu nhập. Ví dụ đo trong test: hai tháng, mỗi tháng 12.100.000 thu nhập tính thuế → khấu trừ tháng **1.420.000**, quyết toán năm **1.920.000**, phải nộp thêm **500.000** | Dữ liệu lấy thẳng từ `PayslipLine`, không tính lại | E18-T8 |
 | E21-T8 | Đăng ký người phụ thuộc từ cổng nhân viên, HR duyệt | Giảm trừ không còn là việc nhắn tin cho HR | E18-T2, E19-T4 |
 
 ---
