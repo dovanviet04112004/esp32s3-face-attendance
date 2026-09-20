@@ -4159,7 +4159,8 @@ backend/
     │   ├── policy/                   # PayrollPolicy + TaxBracket theo ngày hiệu lực
     │   ├── timesheet/                # AttendanceDay: từ lượt quẹt thành ngày công
     │   ├── search/                   # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
-    │   └── notifications/            # ★ §9.21.4 — bốn loại, ba kênh, mỗi loại tắt riêng
+    │   ├── notifications/            # ★ §9.21.4 — bốn loại, ba kênh, mỗi loại tắt riêng
+    │   └── assets/                   # ★ §9.16 mục 11 — cấp và thu là dòng, không phải ô
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
     │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
