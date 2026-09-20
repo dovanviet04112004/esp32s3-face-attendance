@@ -19,7 +19,13 @@ function known(locale: string): Locale {
 }
 
 // env(safe-area-inset-*) stays zero unless the page claims the rounded corners.
-export const viewport: Viewport = { viewportFit: "cover" };
+export const viewport: Viewport = {
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f7f8fa" },
+    { media: "(prefers-color-scheme: dark)", color: "#141821" },
+  ],
+};
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -31,7 +37,9 @@ export async function generateMetadata({ params }: LocaleParams): Promise<Metada
   return {
     title: t("name"),
     description: t("description"),
-    icons: { icon: "/favicon.ico", apple: "/logo.svg" },
+    icons: { icon: "/favicon.ico", apple: "/icon-192.png" },
+    manifest: "/manifest.webmanifest",
+    appleWebApp: { capable: true, title: t("name"), statusBarStyle: "default" },
   };
 }
 
