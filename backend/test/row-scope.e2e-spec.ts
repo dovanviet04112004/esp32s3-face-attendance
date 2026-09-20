@@ -187,4 +187,29 @@ describe("row scope (e2e)", () => {
       assert.equal(res.status, wanted, `${path} answered ${res.status} to a stranger`);
     }
   });
+
+  it("refuses a manager loop rather than letting the walk find one", async () => {
+    const res = await request(http)
+      .patch(`/employees/${idOf.get(BOSS) as number}`)
+      .set("Authorization", `Bearer ${token.admin as string}`)
+      .send({ managerId: idOf.get(MINE) as number });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.message, "MANAGER_CYCLE");
+    const boss = await db.employee.findUnique({ where: { id: idOf.get(BOSS) as number } });
+    assert.equal(boss?.managerId, null, "the refused write left nothing behind");
+  });
+
+  it("moves who can see whom the moment the manager changes", async () => {
+    const stranger = idOf.get(STRANGER) as number;
+    assert.equal((await as("boss")(`/employees/${stranger}`)).status, 404);
+
+    const moved = await request(http)
+      .patch(`/employees/${stranger}`)
+      .set("Authorization", `Bearer ${token.admin as string}`)
+      .send({ managerId: idOf.get(BOSS) as number });
+    assert.equal(moved.status, 200);
+
+    // No waiting for a cache to lapse: the answer has to be right now.
+    assert.equal((await as("boss")(`/employees/${stranger}`)).status, 200);
+  });
 });

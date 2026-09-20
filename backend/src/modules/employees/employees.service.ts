@@ -111,6 +111,7 @@ export class EmployeesService {
         // Managers are linked once every person in the file exists, so a line
         // may name a manager that arrives later in the same upload.
         const bosses = rows.filter((row) => row.managerCode);
+        const touched: number[] = [];
         for (let at = 0; at < bosses.length; at += kWriteChunk) {
           const slice = bosses.slice(at, at + kWriteChunk);
           await tx.$executeRaw`
@@ -122,6 +123,14 @@ export class EmployeesService {
               JOIN "Employee" boss ON boss."code" = v."bossCode"
              WHERE e."code" = v."code"
           `;
+        }
+        if (bosses.length > 0) {
+          const moved = await tx.employee.findMany({
+            where: { code: { in: bosses.map((row) => row.code as string) } },
+            select: { id: true },
+          });
+          touched.push(...moved.map((one) => one.id));
+          await this.scope.assertNoManagerCycle(tx, touched);
         }
         const paid = rows.filter((row) => row.baseSalary && row.insuranceSalary);
         for (let at = 0; at < paid.length; at += kWriteChunk) {
@@ -147,6 +156,7 @@ export class EmployeesService {
       },
       { timeout: kTransactionMs, maxWait: kTransactionMs },
     );
+    await this.scope.forgetScopes();
   }
 
   /** One statement for a slice of the file: a round trip per row is what turns
@@ -292,7 +302,17 @@ export class EmployeesService {
   async update(id: number, body: UpdateEmployeeDto, viewer: Viewer): Promise<Employee> {
     await this.get(id, viewer);
     try {
-      return await this.db.employee.update({ where: { id }, data: dated(body) });
+      const saved = await this.db.$transaction(async (tx) => {
+        const row = await tx.employee.update({ where: { id }, data: dated(body) });
+        if (body.managerId !== undefined) {
+          await this.scope.assertNoManagerCycle(tx, [id]);
+        }
+        return row;
+      });
+      if (body.managerId !== undefined) {
+        await this.scope.forgetScopes();
+      }
+      return saved;
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException(`employee code ${body.code} is taken`);
