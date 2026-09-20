@@ -6737,3 +6737,43 @@ Giữ mãi mọi thứ vừa tốn vừa là rủi ro. Nhưng dữ liệu lao đ
 **Xoá theo lô và xoá được lại.** Dọn vài triệu dòng bằng một `DELETE` là khoá bảng và phình
 WAL. Chia mảnh theo tháng rồi `DROP` một mảnh là tức thì (§9.9 luật 2) — đây là lý do thứ hai
 để chia mảnh, ngoài tốc độ truy vấn.
+
+
+### 9.23 Nhiều người, nhiều thiết bị, nhiều bản chạy
+
+§9.22.4 nói ràng buộc phải nằm ở tầng dữ liệu. Mục này nói **vì sao** và **khi nào** phép kiểm
+trong code là không đủ, vì ở quy mô này chuyện hai người bấm cùng lúc không phải ngoại lệ.
+
+**Luật 1 — cái gì phải duy nhất thì ràng buộc phải ở cơ sở dữ liệu, không ở phép `if`.**
+Tám người cùng thêm một mã nhân viên thì phép `if` trong code cho qua cả tám: mỗi tiến trình
+đọc "chưa có" trước khi ai kịp ghi. Đo thật: tám request song song → **một 201, bảy 409, đúng
+một dòng**, và thứ làm việc đó là `unique(code)` chứ không phải câu lệnh nào trong service.
+
+**Luật 2 — đếm thì đếm trong câu lệnh, đừng đếm trong tiến trình.** `x = x + 1` viết bằng
+JavaScript là đọc–sửa–ghi, và hai lượt song song mất một nhịp. Đo thật: mười lượt đăng ký đồng
+thời xuống một kiosk chỉ đẩy `rosterVersion` **từ 4 lên 6**. Hậu quả không trừu tượng — phiên
+bản danh sách là thứ heartbeat so để biết kiosk có thiếu ai không, nên mất nhịp nghĩa là
+**người đã đăng ký trên máy chủ mà thiếu trên kiosk, còn heartbeat vẫn báo khớp**. Viết bằng
+`SET x = x + 1` thì mười lượt ra đúng mười.
+
+**Luật 3 — đổi trạng thái thì để chính câu lệnh ghi giành lấy trạng thái.** `if (đang rảnh)`
+rồi mới `update` là hai bước, và giữa hai bước có người khác. Điều kiện phải nằm trong `WHERE`
+của chính lệnh ghi, rồi **đếm số dòng đã đổi**: không dòng nào nghĩa là người khác giành trước.
+
+**Luật 4 — một tiến trình Node không phải là một ổ khoá.** Node chạy một luồng nên hai request
+tới cùng lúc thường bị xếp hàng, và một phép kiểm-rồi-ghi **trông như** an toàn khi thử trên
+máy. Đo thật: hai mươi lượt cấp cùng một tài sản trên một bản chạy vẫn ra đúng một dòng — và
+điều đó **không chứng minh gì cả**, vì §9.22.6 nói bản chạy thứ hai là câu trả lời bình thường
+cho tải. Đã qua Traefik là không còn gì xếp hàng giúp nữa. Nên thử nghiệm đồng thời trên một
+bản chạy chỉ dùng để **bắt lỗi**, không bao giờ dùng để **kết luận an toàn**.
+
+**Luật 5 — một người có nhiều thiết bị.** Lưu đúng một `refreshTokenHash` trên `User` nghĩa là
+một tài khoản chỉ giữ được một phiên. Tệ hơn: khi lượt gia hạn thứ hai không khớp, hệ coi đó là
+token bị đánh cắp và **xoá sạch phiên** — nên đăng nhập trên điện thoại rồi trên laptop thì
+**mất cả hai** trong vòng một chu kỳ token. Đo thật: A và B cùng đăng nhập đều 200, rồi cả hai
+gia hạn đều **401**. Một lần đăng nhập thứ hai bình thường không được phép trông giống một vụ
+trộm, mà với một ô duy nhất thì nó không thể trông khác. Phiên phải là **dòng**, mỗi thiết bị
+một dòng — cùng lý do §9.16 mục 11 bắt lịch sử tài sản là dòng chứ không phải ô.
+
+**Luật 6 — thử đồng thời là một phép đo, và phải ghi số.** Mỗi chỗ nghi ngờ thì bắn N request
+song song rồi đếm dòng trong cơ sở dữ liệu. Con số vào `docs/measurements/`, không vào trí nhớ.
