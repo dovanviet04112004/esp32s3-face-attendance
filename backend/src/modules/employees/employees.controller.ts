@@ -23,9 +23,10 @@ import {
   CreateEmployeeDto,
   ImportCsvDto,
   ListEmployeesDto,
+  OffboardDto,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
-import { EmployeesService } from "./employees.service.js";
+import { EmployeesService, type Offboarding } from "./employees.service.js";
 import { IMPORT_COLUMNS, type ImportReport } from "./import.js";
 
 @ApiTags("employees")
@@ -50,6 +51,17 @@ export class EmployeesController {
     @Query("apply") apply?: string,
   ): Promise<ImportReport> {
     return this.employees.importCsv(viewer, body.csv, apply === "true");
+  }
+
+  @Post(":id/offboard")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Close the record and the login, and list what is still out" })
+  offboard(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id", ParseIntPipe) id: number,
+    @Body() body: OffboardDto,
+  ): Promise<Offboarding> {
+    return this.employees.offboard(viewer, id, body);
   }
 
   @Get("export")

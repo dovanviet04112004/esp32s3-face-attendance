@@ -6,8 +6,10 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AuditService } from "../audit/audit.service.js";
 import type {
   CreateEmployeeDto,
+  OffboardDto,
   ListEmployeesDto,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
@@ -22,6 +24,16 @@ import {
 } from "./import.js";
 
 const UNIQUE_VIOLATION = "P2002";
+
+/** What leaving leaves behind, so nobody has to remember to go looking. */
+export interface Offboarding {
+  employeeId: number;
+  code: string;
+  leaveDate: string;
+  assetsOutstanding: { code: string; name: string }[];
+  requestsPending: number;
+  advancesOutstanding: number;
+}
 const kWriteChunk = 2_000;
 const kTransactionMs = 600_000;
 function asDay(value: Date | null): string {
@@ -44,6 +56,7 @@ export class EmployeesService {
   constructor(
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
+    private readonly audit: AuditService,
   ) {}
 
 
@@ -297,6 +310,46 @@ export class EmployeesService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Leaving is one move, not seven places to click: the record closes, the
+   * login dies at once, and what they still hold comes back as a list
+   * somebody has to work through (KEHOACH 9.14).
+   */
+  async offboard(viewer: Viewer, id: number, body: OffboardDto): Promise<Offboarding> {
+    const person = await this.get(id, viewer);
+    const leaveDate = new Date(body.leaveDate);
+    await this.db.$transaction(async (tx) => {
+      await tx.employee.update({ where: { id }, data: { leaveDate, active: false } });
+      await tx.user.updateMany({
+        where: { employeeId: id },
+        data: { active: false, refreshTokenHash: null },
+      });
+    });
+    await this.audit.record({
+      action: "employee.offboard",
+      target: person.code,
+      meta: { by: viewer.userId, leaveDate: body.leaveDate, reason: body.reason },
+    });
+
+    const [assets, requests, advances] = await Promise.all([
+      this.db.asset.findMany({
+        where: { holderId: id, state: "ISSUED" },
+        select: { code: true, name: true },
+        orderBy: { code: "asc" },
+      }),
+      this.db.request.count({ where: { employeeId: id, state: "PENDING" } }),
+      this.db.salaryAdvance.count({ where: { employeeId: id, state: "PAID" } }),
+    ]);
+    return {
+      employeeId: id,
+      code: person.code,
+      leaveDate: body.leaveDate,
+      assetsOutstanding: assets,
+      requestsPending: requests,
+      advancesOutstanding: advances,
+    };
   }
 
   async update(id: number, body: UpdateEmployeeDto, viewer: Viewer): Promise<Employee> {

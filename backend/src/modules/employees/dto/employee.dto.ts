@@ -133,3 +133,15 @@ export class ImportCsvDto {
   @MaxLength(IMPORT_MAX_BYTES)
   csv!: string;
 }
+
+export class OffboardDto {
+  @ApiProperty({ example: "2026-10-31", description: "Their last day" })
+  @IsDateString()
+  leaveDate!: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
