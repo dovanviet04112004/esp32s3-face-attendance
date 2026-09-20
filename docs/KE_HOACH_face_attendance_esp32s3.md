@@ -4426,7 +4426,11 @@ frontend/
 │   ├── routing.ts                    # danh sách locale + locale mặc định
 │   ├── navigation.ts                 # Link và useRouter có mang locale
 │   └── request.ts                    # nạp catalogue cho phía server
-├── public/{favicon.ico, logo.svg}
+├── public/
+│   ├── {favicon.ico, logo.svg}
+│   ├── manifest.webmanifest          # ★ cài được từ trình duyệt, chạy toàn màn hình
+│   ├── icon-{192,512}.png            # ★ biểu tượng màn hình chính
+│   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
 │   ├── ui/                           # primitive: button, input, select, checkbox, sheet,
 │   │                                 #   skeleton, empty, money, theme-toggle
@@ -4474,6 +4478,19 @@ người dùng đọc là **thiếu số liệu**, không phải thiếu một c
 `nav/sidebar.tsx`; màn hẹp dựng `nav/tab-bar.tsx` với tối đa năm mục lấy từ chính danh sách ấy,
 vì thanh bên 240 px nuốt mất một phần ba bề ngang điện thoại. Hai file, một nguồn: thêm một
 trang là sửa `lib/nav.ts`, không phải nhớ ra còn một chỗ thứ hai.
+
+**Service worker viết tay, không dùng thư viện sinh sẵn.** Bộ sinh precache liệt kê từng file
+băm của bản build, nên mỗi lần build lại là một danh sách mới và một lớp công cụ nữa phải nuôi.
+Ở đây chỉ cần ba quy tắc, và ba quy tắc thì đọc hết trong một phút:
+
+| Loại yêu cầu | Cách xử lý | Vì sao |
+|---|---|---|
+| `/_next/static/*` | **Cache trước**, không hỏi mạng | Tên có băm nội dung, nên bản cũ không bao giờ sai |
+| Điều hướng trang | **Mạng trước**, hỏng thì lấy bản đã lưu | Mất mạng trong hầm gửi xe vẫn mở được trang, không ra trang lỗi trình duyệt |
+| `GET` tới API | **Mạng trước**, hỏng thì lấy bản đã lưu | §9.21.3 luật 1: thứ đã xem phải xem lại được — phiếu lương gần nhất, số dư phép |
+
+**Không cache `POST`.** Một đơn gửi lúc mất mạng phải **xếp hàng và nói rõ là đang chờ**
+(§9.21.3), chứ không được lặng lẽ trả về một phản hồi cũ làm người gửi tưởng đã xong.
 
 **Mã lỗi thành câu ở đúng một chỗ.** §3.1 luật 2 nói backend phát mã chứ không phát câu; hệ
 quả là frontend phải có chỗ đổi mã thành câu, và chỗ ấy là `lib/fault.ts` cùng nhánh `errors`
