@@ -9,7 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
-import { MAX_OFFSET } from "../src/common/dto/cursor.dto.js";
+import { COUNT_CEILING, MAX_OFFSET } from "../src/common/dto/cursor.dto.js";
 
 const TAKE = 20;
 const DEVICE = "e2e-paging-door";
@@ -24,6 +24,7 @@ interface Punch {
 interface Answer {
   rows: Punch[];
   total: number;
+  totalIsExact: boolean;
   next: string | null;
 }
 
@@ -154,6 +155,25 @@ describe("paging (e2e)", () => {
     assert.equal(repeatedByCursor, 0, "the cursor repeated a row across a write");
     assert.equal(repeatedByOffset, 1, "the offset drift this rule exists for has gone away");
     await db.attendanceRecord.delete({ where: { id: arriving.id } });
+  });
+
+  it("counts a short list exactly", async () => {
+    const page = await punches(`employeeId=${employeeId}&take=2`);
+    assert.equal(page.total, MADE_PUNCHES);
+    assert.equal(page.totalIsExact, true, "a list well under the ceiling was called approximate");
+  });
+
+  it("stops counting at the ceiling and says the total is a floor", async () => {
+    const page = await punches("take=2");
+    assert.equal(page.total, COUNT_CEILING, "a list past the ceiling reported an exact total");
+    assert.equal(page.totalIsExact, false);
+  });
+
+  it("stops the count at the ceiling instead of reaching the end", async () => {
+    const held = await db.attendanceRecord.count();
+    assert.ok(held > COUNT_CEILING, "this case needs more punches than the ceiling");
+    const bounded = await db.attendanceRecord.count({ take: COUNT_CEILING + 1 });
+    assert.equal(bounded, COUNT_CEILING + 1, "take no longer bounds a count, so every page counts the table");
   });
 
   it("pages the employee list by code as well", async () => {
