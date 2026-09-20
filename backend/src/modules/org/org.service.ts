@@ -1,11 +1,18 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Department, EmploymentContract, JobTitle, LegalEntity } from "@prisma/client";
+import type {
+  Department,
+  EmploymentContract,
+  Holiday,
+  JobTitle,
+  LegalEntity,
+} from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import type {
   CreateContractDto,
   CreateDepartmentDto,
+  CreateHolidayDto,
   DecideContractDto,
   UpdateDepartmentDto,
 } from "./dto/org.dto.js";
@@ -18,6 +25,45 @@ export class OrgService {
     private readonly db: PrismaService,
     private readonly audit: AuditService,
   ) {}
+
+  holidays(year?: number): Promise<Holiday[]> {
+    const from = new Date(Date.UTC(year ?? new Date().getUTCFullYear(), 0, 1));
+    const to = new Date(Date.UTC((year ?? new Date().getUTCFullYear()) + 1, 0, 0));
+    return this.db.holiday.findMany({
+      where: { date: { gte: from, lte: to } },
+      orderBy: { date: "asc" },
+    });
+  }
+
+  /**
+   * Without a row here a public holiday reads as absent and is docked from
+   * pay, because the day build has nothing else to tell them apart.
+   */
+  async addHoliday(body: CreateHolidayDto, actorId: string): Promise<Holiday> {
+    try {
+      const made = await this.db.holiday.create({
+        data: {
+          legalEntityId: body.legalEntityId ?? null,
+          date: new Date(body.date),
+          name: body.name,
+          paid: body.paid ?? true,
+        },
+      });
+      await this.audit.record({ actorId, action: "holiday.create", target: made.id });
+      return made;
+    } catch (error) {
+      if ((error as { code?: string }).code === UNIQUE_VIOLATION) {
+        throw new ConflictException("HOLIDAY_ALREADY_SET");
+      }
+      throw error;
+    }
+  }
+
+  async removeHoliday(id: string, actorId: string): Promise<{ done: true }> {
+    await this.db.holiday.delete({ where: { id } });
+    await this.audit.record({ actorId, action: "holiday.delete", target: id });
+    return { done: true };
+  }
 
   contracts(employeeId: number): Promise<EmploymentContract[]> {
     return this.db.employmentContract.findMany({

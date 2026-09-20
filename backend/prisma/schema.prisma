@@ -425,6 +425,8 @@ model Holiday {
   createdAt     DateTime     @default(now())
   legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
 
+  // The index is NULLS NOT DISTINCT in the migration: two company-wide days on
+  // one date are the same day, and Postgres would otherwise allow both.
   @@unique([legalEntityId, date])
   @@index([date])
 }

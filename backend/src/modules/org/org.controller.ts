@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -10,7 +11,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import type { Department, EmploymentContract, JobTitle, LegalEntity } from "@prisma/client";
+import type {
+  Department,
+  EmploymentContract,
+  Holiday,
+  JobTitle,
+  LegalEntity,
+} from "@prisma/client";
 
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
@@ -19,6 +26,7 @@ import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import {
   CreateContractDto,
   CreateDepartmentDto,
+  CreateHolidayDto,
   DecideContractDto,
   UpdateDepartmentDto,
 } from "./dto/org.dto.js";
@@ -30,6 +38,28 @@ import { OrgService } from "./org.service.js";
 @Controller()
 export class OrgController {
   constructor(private readonly org: OrgService) {}
+
+  @Get("holidays")
+  @ApiOperation({ summary: "Public holidays in a year; the day build reads these" })
+  holidays(@Query("year") year?: string): Promise<Holiday[]> {
+    return this.org.holidays(year ? Number(year) : undefined);
+  }
+
+  @Post("holidays")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Without one, a public holiday is docked as absent" })
+  addHoliday(@CurrentViewer() viewer: Viewer, @Body() body: CreateHolidayDto): Promise<Holiday> {
+    return this.org.addHoliday(body, viewer.userId);
+  }
+
+  @Delete("holidays/:id")
+  @Roles("ADMIN", "HR")
+  removeHoliday(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+  ): Promise<{ done: true }> {
+    return this.org.removeHoliday(id, viewer.userId);
+  }
 
   @Get("employees/:id/contracts")
   @Roles("ADMIN", "HR", "PAYROLL")

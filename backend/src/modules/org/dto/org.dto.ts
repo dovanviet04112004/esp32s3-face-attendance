@@ -104,3 +104,26 @@ export class DecideContractDto {
   @MaxLength(500)
   note?: string;
 }
+
+export class CreateHolidayDto {
+  @ApiPropertyOptional({ description: "Null applies the day to every entity" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  legalEntityId?: string;
+
+  @ApiProperty({ example: "2026-02-17" })
+  @IsDateString()
+  date!: string;
+
+  @ApiProperty({ example: "Mung 1 Tet" })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  name!: string;
+
+  @ApiPropertyOptional({ default: true, description: "An unpaid day still stops it counting absent" })
+  @IsOptional()
+  @IsBoolean()
+  paid?: boolean;
+}
