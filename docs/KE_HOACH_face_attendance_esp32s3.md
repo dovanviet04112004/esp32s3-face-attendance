@@ -4555,7 +4555,8 @@ deploy/
 ├── docker-compose.yml  ├── docker-compose.prod.yml  ├── .env.example
 ├── traefik/{traefik.yml, dynamic.yml}     # TLS tự động Let's Encrypt
 ├── emqx/{emqx.conf, acl.conf, gen_certs.sh, certs/}   # listener MQTTS, auth và ACL
-└── postgres/init.sql
+├── postgres/{init.sql, archive.conf}      # ★ archive.conf bật lưu trữ WAL liên tục
+└── backup/{Dockerfile, backup.sh, restore-drill.sh, wal-push.sh}   # ★ §9.22.2
 ```
 
 CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub Actions chỉ đọc đúng chỗ đó.
@@ -4571,6 +4572,27 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | `backup` | postgres + cron | — | dump hằng đêm |
 
 Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, trỏ `NEXT_PUBLIC_API_URL=https://api.<domain>`.
+
+**Sao lưu: bốn luật, và luật thứ tư là luật duy nhất chứng minh được ba luật kia.**
+
+1. **Bản đầy đủ hằng đêm cộng WAL liên tục.** Chỉ có bản đêm thì mất tối đa một ngày; WAL đẩy
+   liên tục kéo con số ấy xuống còn phút. `archive_mode = on` và `archive_command` đẩy từng
+   segment ngay khi nó đầy.
+2. **Mã hoá trước khi rời máy, bằng khoá công khai.** Máy chạy sao lưu chỉ giữ **khoá công
+   khai** của `age`; nó ghi được bản sao lưu nhưng **không đọc lại được bản cũ**. Ai chiếm được
+   máy chủ vẫn không mở được lịch sử. Khoá riêng cất ngoài hệ thống, và nơi cất nó là một quyết
+   định vận hành chứ không phải một dòng trong compose.
+3. **Không nằm cùng đĩa với bản đang chạy.** Sao lưu ở cùng volume là bản sao, không phải sao
+   lưu — ổ chết là mất cả hai. Thư mục `backup/` trỏ ra một volume khác, và trên VPS thật là một
+   nơi lưu trữ ngoài máy.
+4. **Kiểm phục hồi định kỳ, có số đo.** `restore-drill.sh` dựng bản sao lưu mới nhất vào một cơ
+   sở dữ liệu vứt đi, **đếm dòng từng bảng** và **bấm giờ**. Một bản sao lưu chưa từng phục hồi
+   thử không phải bản sao lưu — nó là một file người ta tin là bản sao lưu, và khác biệt chỉ lộ
+   ra đúng vào ngày tệ nhất.
+
+**Con số phải trả lời được, không phải lời hứa** (§9.22.2): mất tối đa bao nhiêu phút dữ liệu,
+mất bao lâu để dựng lại, và lần kiểm phục hồi gần nhất là khi nào. Hai số đầu do thiết kế quyết,
+số thứ ba do `restore-drill.sh` ghi ra.
 
 **Vì sao EMQX chứ không phải mosquitto.** Bảy topic của `contracts/mqtt_topics.yaml` chỉ đòi
 QoS 1, retained và LWT — mosquitto làm đủ, và nó tốn ~5 MB RAM so với **382 MB** đo được của
