@@ -4163,6 +4163,8 @@ backend/
     │   ├── search/                   # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
     │   ├── notifications/            # ★ §9.21.4 — bốn loại, ba kênh, mỗi loại tắt riêng
     │   ├── assets/                   # ★ §9.16 mục 11 — cấp và thu là dòng, không phải ô
+    │   ├── certificates/             # ★ §9.17 mục 5 — giấy xác nhận, số hiệu do CSDL cấp
+    │   ├── profile/                  # ★ §9.17 mục 6 — đổi thông tin cá nhân qua duyệt
     │   └── onboarding/               # ★ §9.16 mục 10 — mẫu theo chức danh, sinh ra bản thể hiện
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
@@ -4422,7 +4424,7 @@ frontend/
 │           ├── devices/{page.tsx, [id]/page.tsx}      # online, OTA, log
 │           ├── shifts/page.tsx  ├── reports/page.tsx  ├── settings/page.tsx
 │           │                                          # ── §9 quản trị nhân sự ──
-│           ├── me/{page.tsx, attendance/page.tsx, requests/page.tsx, payslips/page.tsx}
+│           ├── me/{page.tsx, attendance/, requests/, payslips/, shifts/, letters/, profile/}
 │           ├── approvals/page.tsx                     # hộp chờ duyệt của MANAGER
 │           ├── org/{page.tsx, departments/page.tsx}   # cây tổ chức
 │           ├── leave/{page.tsx, [id]/page.tsx}        # HR nhìn toàn bộ đơn
@@ -5993,6 +5995,12 @@ nháp, xem, sửa, chạy lại. Chỉ khi kỳ `LOCKED` thì phiếu mới là 
 duyệt muộn **không** đổi phiếu đã phát. Nó vào kỳ sau như một khoản truy lĩnh. Không có luật này
 thì con số đã gửi cho nhân viên có thể tự đổi sau lưng họ.
 
+**Nơi nhận tiền cũng là đầu vào.** Lúc chốt, `Payslip` chép `bankName` và `bankAccount` của
+người đó vào chính nó, và file trả ngân hàng đọc bản chép ấy chứ không đọc hồ sơ nhân viên.
+Thiếu bản chép này thì một đơn đổi tài khoản duyệt trong khoảng giữa lúc chốt và lúc chuyển
+tiền sẽ đổi nơi nhận của một kỳ đã phát phiếu — đúng thứ §9.17 mục 6 cấm, mà cấm ở tầng không
+ai nhìn thấy: số tiền trên phiếu vẫn đúng từng đồng, chỉ có người nhận là khác.
+
 `Payslip` giữ tổng; `PayslipLine` giữ từng khoản, mỗi khoản một dòng với mã, nhãn và số tiền,
 phân loại thành khoản cộng và khoản trừ. **Không nhét vào một ô JSON**: câu hỏi "quý này trả
 bao nhiêu tiền tăng ca toàn công ty" phải trả lời được bằng một phép gộp SQL.
@@ -6393,6 +6401,29 @@ xin trong cổng, HR duyệt, hệ sinh văn bản có số hiệu và lưu lạ
 **6. Đổi thông tin cá nhân phải qua duyệt — nhất là số tài khoản.** Cho sửa thẳng số tài khoản
 là mở đúng cánh cửa mà kẻ chiếm tài khoản cần. Đổi tài khoản ngân hàng là **đơn có duyệt**, có
 thông báo về email cũ, và không có hiệu lực với kỳ lương đang chạy.
+
+Câu trên chỉ thành thật khi có đủ bốn luật dưới đây. **Bỏ một luật thì ba luật còn lại thành
+trang trí**, vì kẻ chiếm tài khoản đi vòng qua chỗ hở chứ không đi vào chỗ đã khoá.
+
+**Luật 1 — không có cửa sau.** `PATCH /employees/:id` **không nhận** `bankAccount` và
+`bankName`. Đặt lần đầu là lúc mở hồ sơ; đổi về sau chỉ có một đường là đơn. Còn để nhân sự
+sửa thẳng thì chốt chặn này chỉ chặn đúng người ngay thẳng, và kịch bản đáng sợ nhất — **tài
+khoản nhân sự** bị chiếm, không phải tài khoản nhân viên — đi thẳng qua cửa sau đó.
+
+**Luật 2 — người xin không phải người duyệt.** Nhân viên tự xin thì đã có người khác duyệt sẵn;
+nhân sự xin hộ mà tự duyệt thì không còn con mắt thứ hai nào. Nên `askedById` khác
+`decidedById`, không có ngoại lệ cho vai nào.
+
+**Luật 3 — địa chỉ báo tin chốt lúc xin, không chốt lúc duyệt, và đổi địa chỉ liên lạc cũng
+là đơn có báo tin.** Thiếu nửa sau, chuỗi tấn công tự vá: chiếm tài khoản → đổi email (im lặng)
+→ đổi số tài khoản → thư cảnh báo bay vào hòm thư của chính kẻ chiếm. Chốt lúc xin còn giữ
+thêm một chuyện: hai đơn gửi sát nhau thì thư vẫn về địa chỉ có trước cả hai. Thư **nói việc
+gì vừa đổi và đổi lúc nào, không chép giá trị mới** — địa chỉ cũ có thể đã cũ tới mức thuộc về
+người khác, và lúc ấy thư cảnh báo lại thành thư rò rỉ.
+
+**Luật 4 — kỳ đã chốt giữ nơi nhận của chính nó** (§9.6). Nhờ luật này, một đơn đã duyệt ghi
+vào hồ sơ **ngay**, không phải nằm chờ kỳ lương đóng: phần cần đóng băng đã đóng băng ở chỗ
+đúng của nó, nên hồ sơ không bao giờ phải nói dối về chính mình.
 
 **7. Một chỗ xem mọi đơn của tôi.** Nghỉ phép, tăng ca, giải trình, đổi thông tin — cùng một
 danh sách, cùng một cách hiện trạng thái. Rải mỗi loại một trang là bắt người ta nhớ mình đã
