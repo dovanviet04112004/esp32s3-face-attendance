@@ -9,7 +9,9 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { hashPassword } from "../src/modules/auth/password.js";
 
+const PASSWORD = "kiosk-e2e-password";
 const CODE = "NV9301";
 const EMAIL = "nv9301@kiosk.local";
 const ENTITLED = 12;
@@ -97,18 +99,21 @@ describe("leave balance (e2e)", () => {
       data: { employeeId: made.id, leaveTypeId, year: 2026, entitled: ENTITLED },
     });
 
-    const provisioned = await request(http)
-      .post("/users/provision")
-      .set("Authorization", `Bearer ${asAdmin.body.accessToken}`);
-    assert.equal(provisioned.status, 201, "could not open employee logins");
-    const accounts = (provisioned.body as { accounts: { employeeCode: string; email: string; password: string }[] }).accounts;
-    opened.push(...accounts.map((one) => one.email));
-    const mine = accounts.find((one) => one.employeeCode === CODE);
-    assert.ok(mine, "provisioning skipped the person under test");
+    // Made here rather than by provisioning: this suite needs an employee who
+    // can sign in, not the invitation flow that password-setup covers.
+    await db.user.create({
+      data: {
+        email: EMAIL,
+        passwordHash: await hashPassword(PASSWORD),
+        role: "EMPLOYEE",
+        employeeId: made.id,
+      },
+    });
+    opened.push(EMAIL);
 
     const asMe = await request(http)
       .post("/auth/login")
-      .send({ email: EMAIL, password: mine.password });
+      .send({ email: EMAIL, password: PASSWORD });
     assert.equal(asMe.status, 200, "the employee account could not sign in");
     token = asMe.body.accessToken;
   });
