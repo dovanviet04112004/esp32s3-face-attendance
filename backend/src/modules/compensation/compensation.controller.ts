@@ -1,6 +1,15 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import type { Dependent } from "@prisma/client";
+import type { Dependent, DependentState } from "@prisma/client";
 
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
@@ -58,6 +67,16 @@ export class CompensationController {
     @Param("id", ParseIntPipe) id: number,
   ): Promise<Dependent[]> {
     return this.pay.dependents(viewer, id);
+  }
+
+  @Get("dependents")
+  @Roles("ADMIN", "HR", "PAYROLL")
+  @ApiOperation({ summary: "Registrations waiting on a decision, in this viewer's scope" })
+  queue(
+    @CurrentViewer() viewer: Viewer,
+    @Query("state") state?: DependentState,
+  ): Promise<Dependent[]> {
+    return this.pay.dependentQueue(viewer, state ?? "PENDING");
   }
 
   @Post("dependents")

@@ -1,10 +1,17 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { CompensationAllowance, CompensationRecord, Dependent, Prisma } from "@prisma/client";
+import type {
+  CompensationAllowance,
+  CompensationRecord,
+  Dependent,
+  DependentState,
+  Prisma,
+} from "@prisma/client";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
+
 import type {
   BulkRaiseDto,
   CreateCompensationDto,
@@ -23,6 +30,7 @@ export interface RaisePreview {
 }
 
 const WRITERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL"]);
+const kQueuePage = 200;
 
 @Injectable()
 export class CompensationService {
@@ -169,6 +177,19 @@ export class CompensationService {
         fromMonth: { lte: monthEnd },
         OR: [{ toMonth: null }, { toMonth: { gte: monthEnd } }],
       },
+    });
+  }
+
+  /** What is waiting on a decision, narrowed to this viewer's people. An
+   *  approval nobody can find is an approval that never happens.
+   */
+  async dependentQueue(viewer: Viewer, state: DependentState): Promise<Dependent[]> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    return this.db.dependent.findMany({
+      where: { state, ...(visible === null ? {} : { employeeId: { in: visible } }) },
+      include: { employee: { select: { id: true, code: true, fullName: true } } },
+      orderBy: { createdAt: "asc" },
+      take: kQueuePage,
     });
   }
 
