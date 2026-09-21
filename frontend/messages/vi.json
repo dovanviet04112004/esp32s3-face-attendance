@@ -750,7 +750,20 @@
     "holidayPaid": "Hưởng lương",
     "addHoliday": "Thêm ngày lễ",
     "removeHoliday": "Xoá",
-    "holidaysEmpty": "Chưa nhập ngày lễ nào cho năm nay"
+    "holidaysEmpty": "Chưa nhập ngày lễ nào cho năm nay",
+    "rename": "Đổi tên phòng ban",
+    "reorgAction": "Chuyển người hàng loạt",
+    "reorgLead": "Xem trước trước khi áp dụng. Bản xem trước cho biết quản lý nào mất quyền nhìn ai.",
+    "reorgFrom": "Từ phòng ban",
+    "reorgTo": "Sang phòng ban",
+    "reorgManager": "Quản lý mới",
+    "reorgManagerHint": "Mã nhân viên, để trống thì giữ nguyên",
+    "reorgPreview": "Xem trước",
+    "reorgApply": "Áp dụng",
+    "reorgWouldMove": "Sẽ chuyển {count} người",
+    "reorgApplied": "Đã chuyển {count} người",
+    "reorgRequests": "{count} đơn đang chờ được chuyển sang người duyệt mới",
+    "reorgLosing": "{count} quản lý mất quyền nhìn một phần nhánh của họ"
   },
   "setPassword": {
     "lead": "Đặt mật khẩu để mở tài khoản của bạn",

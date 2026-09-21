@@ -750,7 +750,20 @@
     "holidayPaid": "Paid",
     "addHoliday": "Add holiday",
     "removeHoliday": "Remove",
-    "holidaysEmpty": "No holidays entered for this year"
+    "holidaysEmpty": "No holidays entered for this year",
+    "rename": "Rename department",
+    "reorgAction": "Move people in bulk",
+    "reorgLead": "Preview before applying. The preview says which managers lose sight of whom.",
+    "reorgFrom": "From department",
+    "reorgTo": "To department",
+    "reorgManager": "New manager",
+    "reorgManagerHint": "Employee code, empty keeps the current one",
+    "reorgPreview": "Preview",
+    "reorgApply": "Apply",
+    "reorgWouldMove": "Would move {count} people",
+    "reorgApplied": "Moved {count} people",
+    "reorgRequests": "{count} pending requests move to the new approver",
+    "reorgLosing": "{count} managers lose sight of part of their branch"
   },
   "setPassword": {
     "lead": "Set a password to open your account",

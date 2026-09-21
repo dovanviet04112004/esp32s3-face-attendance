@@ -89,6 +89,7 @@ export default function ApprovalsPage() {
   const mayIssueLetters = role !== null && LETTER_DESK.includes(role);
   const mayDecideProfile = role !== null && PROFILE_DESK.includes(role);
   const mayDecideAdvances = role !== null && ADVANCE_DECIDERS.includes(role);
+  const mayPayAdvances = role === "ADMIN" || role === "PAYROLL";
 
   const inbox = useQuery({
     queryKey: ["requests", "inbox"],
@@ -166,6 +167,19 @@ export default function ApprovalsPage() {
     queryFn: async () => (await api.get<WaitingAdvance[]>("/advances?state=PENDING")).data,
   });
 
+  // Approving does not move money; a second pair of hands records that it left
+  // and payroll deducts it from there (KEHOACH 9.6).
+  const toPay = useQuery({
+    queryKey: ["advances", "approved"],
+    enabled: mayPayAdvances,
+    queryFn: async () => (await api.get<WaitingAdvance[]>("/advances?state=APPROVED")).data,
+  });
+
+  const markPaid = useMutation({
+    mutationFn: (id: string) => api.post(`/advances/${id}/paid`, {}),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["advances"] }),
+  });
+
   const decideAdvance = useMutation({
     mutationFn: (what: { id: string; approve: boolean }) =>
       api.post(`/advances/${what.id}/decide`, { approve: what.approve }),
@@ -178,6 +192,7 @@ export default function ApprovalsPage() {
     (letters.data?.length ?? 0) +
     (changes.data?.length ?? 0) +
     (advances.data?.length ?? 0) +
+    (toPay.data?.length ?? 0) +
     (dependents.data?.length ?? 0);
 
   if (inbox.isError) {
@@ -311,6 +326,28 @@ export default function ApprovalsPage() {
                 onClick={() => decideAdvance.mutate({ id: one.id, approve: false })}
               >
                 {t("reject")}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Queue>
+
+      <Queue title={pay("advancePay")} count={toPay.data?.length ?? 0}>
+        <ul className="divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
+          {(toPay.data ?? []).map((one) => (
+            <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+              <span className="min-w-0 flex-1 truncate">
+                {one.employee ? `${one.employee.fullName} · ` : ""}
+                {one.reason}
+              </span>
+              <span className="tabular-nums">{money(Number(one.amount), locale)}</span>
+              <Button
+                type="button"
+                size="sm"
+                disabled={markPaid.isPending}
+                onClick={() => markPaid.mutate(one.id)}
+              >
+                {pay("advancePay")}
               </Button>
             </li>
           ))}

@@ -7,6 +7,7 @@ import type { Role } from "@/lib/auth";
 
 export const REQUEST_DECIDERS: Role[] = ["MANAGER", "ADMIN", "HR", "PAYROLL"];
 export const ADVANCE_DECIDERS: Role[] = ["ADMIN", "PAYROLL", "HR", "MANAGER"];
+export const ADVANCE_PAYERS: Role[] = ["ADMIN", "PAYROLL"];
 export const DEPENDENT_DECIDERS: Role[] = ["ADMIN", "PAYROLL"];
 export const DISPUTE_ANSWERERS: Role[] = ["ADMIN", "PAYROLL"];
 export const LETTER_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
@@ -18,10 +19,11 @@ interface Queue {
   roles: Role[];
 }
 
-// The six of KEHOACH 9.15 rule 2, and the badge counts every one of them.
+// Every queue the inbox draws, and the badge counts every one (KEHOACH 9.15).
 const QUEUES: Queue[] = [
   { key: "requests", path: "/requests/inbox?take=1", roles: REQUEST_DECIDERS },
   { key: "advances", path: "/advances?state=PENDING", roles: ADVANCE_DECIDERS },
+  { key: "advances-paying", path: "/advances?state=APPROVED", roles: ADVANCE_PAYERS },
   { key: "dependents", path: "/dependents?state=PENDING", roles: DEPENDENT_DECIDERS },
   { key: "disputes", path: "/payslip-disputes?state=OPEN", roles: DISPUTE_ANSWERERS },
   { key: "certificates", path: "/certificates?state=REQUESTED", roles: LETTER_DESK },
