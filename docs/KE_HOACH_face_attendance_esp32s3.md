@@ -5858,7 +5858,8 @@ thái, cùng hộp chờ duyệt và cùng đường tới người duyệt, nê
 cùng một logic. Xem §9.5.
 
 **Lương** — `CompensationRecord`, `CompensationAllowance`, `PayrollPeriod`, `PayrollRun`,
-`Payslip`, `PayslipLine`, `Dependent`, `RetroAdjustment`, `SalaryAdvance`, `BonusItem`.
+`Payslip`, `PayslipLine`, `Dependent`, `RetroAdjustment`, `SalaryAdvance`, `BonusItem`,
+`SettlementItem`.
 
 Ba bảng trong số đó tồn tại vì một câu hỏi mà bảng khác không trả lời được:
 
@@ -5868,6 +5869,7 @@ Ba bảng trong số đó tồn tại vì một câu hỏi mà bảng khác khô
 | `RetroAdjustment` | "khoản này thuộc kỳ nào, trả ở kỳ nào" | kỳ đã chốt không được mở lại (§9.6), nên khoản tới muộn phải có chỗ đứng riêng |
 | `SalaryAdvance` | "ai đang nợ tạm ứng, khấu trừ vào phiếu nào" | việc này vẫn xảy ra; không có bảng thì nó xảy ra trong tin nhắn |
 | `BonusItem` | "khoản thưởng này thuộc lượt nào, của ai, bao nhiêu" | lượt thưởng cần đầu vào riêng; nhét vào `CompensationRecord` là biến một khoản một lần thành mức lương thường xuyên |
+| `SettlementItem` | "trợ cấp và đối trừ của người nghỉ này là bao nhiêu, ai ký" | `BonusItem` bị ràng `amount >= 0` nên không mang nổi một khoản trừ, và một khoản trợ cấp miễn thuế không phải là một khoản thưởng |
 
 **Thông báo** — `Notification`, `NotificationPreference`, `PushSubscription`. Xem §9.21.4.
 
@@ -6567,6 +6569,54 @@ họ và ai nhìn thấy dữ liệu của họ (§9.4).
 
 **8. Lương chốt cuối khi nghỉ việc.** Trợ cấp thôi việc, phép năm chưa dùng quy ra tiền, thu hồi
 tạm ứng, đối trừ tài sản chưa trả. Đây là phép tính khác hẳn lương tháng và làm tay thì sai.
+
+**Trước khi nói tới chốt cuối, phải trả xong lương tháng cuối.** Một lượt chạy thường lọc
+`active = true`, mà `offboard` tắt cờ ấy ngay lúc bấm. Người nghỉ ngày 20 thì tới ngày chạy
+lương đã `active = false`, **rơi khỏi lượt chạy, và hai mươi ngày công của họ biến mất không để
+lại dấu vết nào** — không lỗi, không mục trong danh sách kiểm, chỉ là một cái tên vắng mặt giữa
+năm nghìn cái tên. Điều kiện đúng không phải "còn làm việc" mà **"chưa nghỉ trước khi kỳ này
+bắt đầu"**: `active = true OR leaveDate >= startDate`. Người nghỉ từ kỳ trước vẫn bị loại, người
+nghỉ giữa kỳ này vẫn được tính đủ những ngày họ đã làm.
+
+**Chốt cuối là một lượt chạy riêng trên cùng kỳ**, kiểu `FINAL_SETTLEMENT`, đứng **cạnh** phiếu
+thường chứ không thay nó — cùng lý do §9.18 mục 9 để lượt thưởng đứng riêng. Phiếu thường trả
+công những ngày đã làm; phiếu chốt cuối trả những thứ chỉ phát sinh **vì** người ta đi.
+
+| Thành phần | Nguồn | Chiều |
+|---|---|---|
+| Phép năm chưa dùng quy ra tiền | `LeaveBalance` của năm nghỉ, phần còn lại × lương ngày | cộng |
+| Trợ cấp thôi việc | **người nhập**, hệ tính sẵn thâm niên và nửa tháng lương để đối chiếu | cộng |
+| Thu hồi tạm ứng chưa trả | `SalaryAdvance` ở `PAID` | trừ |
+| Đối trừ tài sản chưa trả | **người nhập**, hệ liệt kê sẵn tài sản còn cầm | trừ |
+
+**Hai trong bốn là người nhập, và đó là chủ ý chứ không phải chỗ làm dở.** Trợ cấp thôi việc
+theo BLLĐ 2019 điều 46 là nửa tháng lương mỗi năm làm việc **trừ đi thời gian đã đóng bảo hiểm
+thất nghiệp** — mà hệ này không giữ lịch sử đóng BHTN, nên mọi con số nó tự suy ra đều là bịa
+đặt có định dạng đẹp. Tài sản thì `Asset` cố ý **không có cột giá trị**: giá một cái laptop hai
+năm tuổi là một cuộc thương lượng, không phải một phép tra bảng. Cái hệ làm được, và phải làm,
+là **đặt sẵn mọi thứ cần để người ký nhìn thấy**: số năm làm việc tính tới ngày nghỉ, nửa tháng
+lương hiện hành, và danh sách tài sản chưa trả kèm mã. Tự suy ra một con số pháp lý từ dữ liệu
+không đủ thì tệ hơn hẳn việc hỏi một câu.
+
+**Trợ cấp mặc định miễn thuế, phép quy ra tiền thì không.** Thông tư 111/2013 miễn thuế cho
+trợ cấp thôi việc **trong mức luật định**; phần vượt mức thì chịu thuế. Nên `SettlementItem`
+mang cờ `taxable`, mặc định **tắt** cho trợ cấp và **bật** cho mọi thứ khác — phần vượt mức khai
+thành một dòng thứ hai có bật cờ, chứ không sửa cờ của dòng đầu. Tiền phép chưa dùng là thu nhập
+từ tiền lương, luôn chịu thuế.
+
+**Thuế của lượt chốt cuối tính đúng như lượt thưởng**: phần tăng thêm trên nền kỳ, không tính
+lại từ đầu (công thức ở mục 9). Cùng một lý do, và quan trọng hơn là **cùng một đường mã** — hai
+công thức thuế trong một hệ thì sớm muộn chúng lệch nhau.
+
+**Chốt cuối cần phiếu thường của cùng kỳ làm nền, y như lượt thưởng.** Không có nền thì không có
+thu nhập tính thuế để cộng thêm vào, và một phiếu chốt cuối tính thuế độc lập sẽ rơi vào bậc
+thấp nhất. Đây cũng là lý do luật "trả xong lương tháng cuối" ở trên **chặn** luật này: sửa bộ
+lọc của lượt chạy thường không phải việc dọn dẹp bên lề, nó là điều kiện để lượt chốt cuối tồn
+tại được.
+
+**Tiền thực nhận âm được, và không được làm tròn lên số không.** Một người tạm ứng mười triệu
+rồi nghỉ có thể còn nợ công ty. `Payslip_net_within_gross` đã cố ý thả `netPay` xuống dưới không
+vì đúng chuyện này. Một phiếu ép về không là một khoản nợ bị xoá bằng cách không ghi nó.
 
 **9. Thưởng chạy tách khỏi lương tháng.** Thưởng tết, thưởng hiệu quả. Là **lượt chạy riêng trên
 cùng kỳ**, vì thuế của khoản thưởng tính cùng kỳ chi trả nhưng nguồn và người duyệt thì khác.
