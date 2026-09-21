@@ -88,6 +88,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       fullName: account.employee?.fullName ?? account.email,
       url: job.link,
       hours: this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }),
+      reason: job.reason,
     });
     await this.mailer.send(account.email, body);
   }

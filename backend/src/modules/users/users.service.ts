@@ -13,7 +13,7 @@ import type { Role, User } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
+import { QUEUE, type PasswordSetupJob, type SetupReason } from "../../queue/queues.js";
 
 import type { Env } from "../../config/env.schema.js";
 import type { Page, PaginationDto } from "../../common/dto/pagination.dto.js";
@@ -128,6 +128,7 @@ export class UsersService {
         type: "password-setup",
         userId: one.userId,
         link: `${root}/${one.person.locale}/set-password?token=${one.link}`,
+        reason: "opened",
       } satisfies PasswordSetupJob);
     }
     const left = await this.db.employee.count({ where: unopened });
@@ -160,7 +161,7 @@ export class UsersService {
   /** Mints a one-time link and mails it. Nobody but the holder ever knows the
    *  password, which is the same rule the bulk opening follows (KEHOACH 9.4).
    */
-  private async sendSetup(userId: string, locale: string): Promise<void> {
+  private async sendSetup(userId: string, locale: string, why: SetupReason): Promise<void> {
     const link = randomBytes(LINK_BYTES).toString("base64url");
     const expiresAt = new Date(
       Date.now() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * HOUR_MS,
@@ -173,6 +174,7 @@ export class UsersService {
       type: "password-setup",
       userId,
       link: `${root}/${locale}/set-password?token=${link}`,
+      reason: why,
     } satisfies PasswordSetupJob);
   }
 
@@ -187,7 +189,7 @@ export class UsersService {
     if (!held || !held.active) {
       throw new NotFoundException("USER_NOT_FOUND");
     }
-    await this.sendSetup(held.id, held.employee?.locale ?? DEFAULT_MAIL_LOCALE);
+    await this.sendSetup(held.id, held.employee?.locale ?? DEFAULT_MAIL_LOCALE, "forgot");
     await this.audit.record({
       actorId,
       action: AUDIT_ACTIONS.USER_INVITE,
@@ -206,7 +208,7 @@ export class UsersService {
         },
         select: VISIBLE,
       });
-      await this.sendSetup(made.id, DEFAULT_MAIL_LOCALE);
+      await this.sendSetup(made.id, DEFAULT_MAIL_LOCALE, "opened");
       await this.audit.record({
         actorId,
         action: AUDIT_ACTIONS.USER_CREATE,

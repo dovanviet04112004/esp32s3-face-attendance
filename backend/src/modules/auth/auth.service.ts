@@ -153,6 +153,7 @@ export class AuthService {
       type: "password-setup",
       userId: user.id,
       link: `${root}/${user.employee?.locale ?? DEFAULT_MAIL_LOCALE}/set-password?token=${link}`,
+      reason: "forgot",
     } satisfies PasswordSetupJob);
   }
 

@@ -29,10 +29,14 @@ export interface RequestsStaleJob {
 }
 
 /** The link rides here: the server keeps only its hash (KEHOACH 9.4). */
+/** What the letter around the link says: a welcome, or a recovery (KEHOACH 9.4). */
+export type SetupReason = "opened" | "forgot";
+
 export interface PasswordSetupJob {
   type: "password-setup";
   userId: string;
   link: string;
+  reason: SetupReason;
 }
 
 /** Only the row id rides here; the address is on the row (KEHOACH 9.17.6). */

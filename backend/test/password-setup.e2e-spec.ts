@@ -121,6 +121,7 @@ describe("first password (e2e)", () => {
       .map((job) => job.data as PasswordSetupJob)
       .find((data) => data.type === "password-setup" && data.userId === userId);
     assert.ok(mine, "nobody was asked to send the invitation");
+    assert.equal(mine.reason, "opened", "a first invitation went out worded as a recovery");
     link = new URL(mine.link).searchParams.get("token") ?? "";
     assert.ok(link, "the invitation carries no link");
 
@@ -172,6 +173,19 @@ describe("first password (e2e)", () => {
 
     const minted = await db.passwordSetup.count({ where: { userId } });
     assert.ok(minted >= 1, "asking for a link minted none");
+
+    // The link is the same one; the letter around it is not (KEHOACH 9.4).
+    const queued = await queues[QUEUE.notify].getJobs([
+      "waiting",
+      "delayed",
+      "completed",
+      "active",
+    ]);
+    const asked = queued
+      .map((job) => job.data as PasswordSetupJob)
+      .filter((data) => data.type === "password-setup" && data.userId === userId)
+      .some((data) => data.reason === "forgot");
+    assert.ok(asked, "a forgotten password was mailed the welcome letter");
     assert.equal(
       await db.user.count({ where: { email: "nobody-e2eps@kiosk.local" } }),
       0,
