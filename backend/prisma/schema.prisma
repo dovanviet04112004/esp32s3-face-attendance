@@ -272,6 +272,7 @@ model Employee {
   ownedTasks        ChecklistTask[]     @relation("OwnsTasks")
 
   @@index([departmentId, active])
+  @@index([fullName, id])
   @@index([managerId])
   @@index([legalEntityId, active])
   // Every leaver question asks for a date range, not a person: the payroll

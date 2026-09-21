@@ -1,8 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useMemo, useState } from "react";
+import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,15 @@ import { FilterBar } from "@/components/ui/filter-bar";
 import { Input } from "@/components/ui/input";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
+
+const PAGE = 50;
+
+interface TallyPage {
+  rows: Tally[];
+  total: number;
+  totalIsExact?: boolean;
+  next: string | null;
+}
 
 interface Tally {
   employeeId: number;
@@ -38,45 +47,73 @@ export default function AttendancePage() {
   const [to, setTo] = useState(isoDay(new Date(Date.UTC(year + 1, 0, 1))));
   const [who, setWho] = useState("");
 
-  const backwards = from >= to;
-  const rollup = useQuery({
-    queryKey: ["attendance", from, to],
+  const [asked, setAsked] = useState({ from, to, who: "" });
+  const backwards = asked.from >= asked.to;
+
+  // The name filter goes to the roll-up, which pages: filtering here would
+  // only ever search the rows already on screen.
+  function query(cursor: string): string {
+    const span = `from=${new Date(asked.from).toISOString()}&to=${new Date(asked.to).toISOString()}`;
+    const needle = asked.who.trim() ? `&search=${encodeURIComponent(asked.who.trim())}` : "";
+    return `${span}&take=${PAGE}${needle}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+  }
+
+  const rollup = useInfiniteQuery({
+    queryKey: ["attendance", asked],
     enabled: !backwards,
-    queryFn: async () => {
-      const span = `from=${new Date(from).toISOString()}&to=${new Date(to).toISOString()}`;
-      return (await api.get<Tally[]>(`/reports/attendance?${span}`)).data;
-    },
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) =>
+      (await api.get<TallyPage>(`/reports/attendance?${query(pageParam)}`)).data,
+    getNextPageParam: (last) => last.next ?? undefined,
   });
 
-  const shown = useMemo(() => {
-    const needle = who.trim().toLocaleLowerCase();
-    const rows = rollup.data ?? [];
-    return needle ? rows.filter((row) => row.fullName.toLocaleLowerCase().includes(needle)) : rows;
-  }, [rollup.data, who]);
+  const shown = rollup.data?.pages.flatMap((one) => one.rows) ?? [];
+  const counted = rollup.data?.pages[0];
+
+  function apply(event: FormEvent): void {
+    event.preventDefault();
+    setAsked({ from, to, who });
+  }
 
   function clock(iso: string | null) {
     return iso ? format.dateTime(new Date(iso), "medium") : common("empty");
   }
 
-  function exportCsv() {
-    const head = [t("employee"), t("punches"), t("firstAt"), t("lastAt"), t("unsyncedClock")];
-    const body = shown.map((row) =>
-      [row.fullName, row.punches, row.firstAt ?? "", row.lastAt ?? "", row.unsyncedClock]
-        .map(csvCell)
-        .join(","),
-    );
-    // Excel reads a CSV as the system codepage unless the file opens with a BOM,
-    // which turns every Vietnamese name into mojibake.
-    const blob = new Blob(["﻿", [head.map(csvCell).join(","), ...body].join("\r\n")], {
-      type: "text/csv;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `attendance-${from}-${to}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
+  // A file holds the whole range, not the pages a reader happened to open.
+  const exportCsv = useMutation({
+    mutationFn: async () => {
+      const all: Tally[] = [];
+      let cursor = "";
+      for (;;) {
+        const page = (await api.get<TallyPage>(`/reports/attendance?${query(cursor)}`)).data;
+        all.push(...page.rows);
+        if (!page.next) {
+          break;
+        }
+        cursor = page.next;
+      }
+      return all;
+    },
+    onSuccess: (all) => {
+      const head = [t("employee"), t("punches"), t("firstAt"), t("lastAt"), t("unsyncedClock")];
+      const body = all.map((row) =>
+        [row.fullName, row.punches, row.firstAt ?? "", row.lastAt ?? "", row.unsyncedClock]
+          .map(csvCell)
+          .join(","),
+      );
+      // Excel reads a CSV as the system codepage unless the file opens with a BOM,
+      // which turns every Vietnamese name into mojibake.
+      const blob = new Blob(["\ufeff", [head.map(csvCell).join(","), ...body].join("\r\n")], {
+        type: "text/csv;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `attendance-${asked.from}-${asked.to}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    },
+  });
 
   const columns: Column<Tally>[] = [
     {
@@ -123,9 +160,15 @@ export default function AttendancePage() {
 
       <div className="mt-6" />
       <FilterBar
+        onApply={apply}
         extra={
-          <Button type="button" tone="quiet" disabled={shown.length === 0} onClick={exportCsv}>
-            {common("export")}
+          <Button
+            type="button"
+            tone="quiet"
+            disabled={shown.length === 0 || exportCsv.isPending}
+            onClick={() => exportCsv.mutate()}
+          >
+            {exportCsv.isPending ? common("loading") : common("export")}
           </Button>
         }
       >
@@ -148,6 +191,7 @@ export default function AttendancePage() {
           <Input
             id="to"
             type="date"
+            min={from}
             value={to}
             onChange={(e) => setTo(e.target.value)}
             className="mt-1 w-40"
@@ -181,6 +225,26 @@ export default function AttendancePage() {
           failed={rollup.isError}
           onRetry={() => rollup.refetch()}
           empty={t("rangeEmpty")}
+          more={
+            rollup.hasNextPage ? (
+              <div className="mt-3 flex flex-col items-center gap-1">
+                <Button
+                  type="button"
+                  tone="quiet"
+                  disabled={rollup.isFetchingNextPage}
+                  onClick={() => void rollup.fetchNextPage()}
+                >
+                  {rollup.isFetchingNextPage ? common("loading") : common("loadMore")}
+                </Button>
+                <p className="text-xs text-(--color-muted) tabular-nums">
+                  {common(counted?.totalIsExact === false ? "showingOfAtLeast" : "showingOf", {
+                    shown: shown.length,
+                    total: counted?.total ?? 0,
+                  })}
+                </p>
+              </div>
+            ) : null
+          }
         />
       )}
     </section>

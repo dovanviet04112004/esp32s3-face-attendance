@@ -15,6 +15,7 @@ const TAKE = 20;
 const DEVICE = "e2e-paging-door";
 const CODE = "E2EPG01";
 const MADE_PUNCHES = 5;
+const PERSON = "Người bị phân trang";
 
 interface Punch {
   id: string;
@@ -68,7 +69,7 @@ describe("paging (e2e)", () => {
 
     await db.device.create({ data: { id: DEVICE, name: DEVICE, status: "APPROVED" } });
     const made = await db.employee.create({
-      data: { code: CODE, fullName: "Người bị phân trang", active: true },
+      data: { code: CODE, fullName: PERSON, active: true },
     });
     employeeId = made.id;
 
@@ -199,6 +200,45 @@ describe("paging (e2e)", () => {
     assert.ok(
       (second.rows[0]?.code ?? "") > (first.rows[2]?.code ?? ""),
       "the list did not carry on where it stopped",
+    );
+  });
+
+  it("pages the attendance roll-up by name and carries on where it stopped", async () => {
+    const span = "from=2020-01-01T00:00:00.000Z&to=2099-01-01T00:00:00.000Z";
+    const res = await request(http)
+      .get(`/reports/attendance?${span}&take=2`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const first = res.body as { rows: { fullName: string }[]; total: number; next: string | null };
+    assert.ok(first.total >= 1, "the roll-up covered nobody");
+    if (first.next === null) {
+      return;
+    }
+    const more = await request(http)
+      .get(`/reports/attendance?${span}&take=2&cursor=${first.next}`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(more.status, 200);
+    const second = more.body as { rows: { fullName: string }[] };
+    const held = new Set(first.rows.map((row) => row.fullName));
+    assert.equal(
+      second.rows.filter((row) => held.has(row.fullName)).length,
+      0,
+      "the second page of the roll-up repeats a name from the first",
+    );
+  });
+
+  it("narrows the roll-up to the name asked for", async () => {
+    const span = "from=2020-01-01T00:00:00.000Z&to=2099-01-01T00:00:00.000Z";
+    const res = await request(http)
+      .get(`/reports/attendance?${span}&search=${encodeURIComponent(PERSON)}`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const page = res.body as { rows: { fullName: string }[]; total: number };
+    assert.equal(page.total, page.rows.length, "a filtered total disagreed with its own page");
+    assert.equal(
+      page.rows.filter((row) => !row.fullName.includes(PERSON)).length,
+      0,
+      "the filter let somebody else through",
     );
   });
 });

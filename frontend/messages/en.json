@@ -85,7 +85,8 @@
     "showingOf": "Showing {shown} of {total}",
     "loadMore": "Load more",
     "showPassword": "Show password",
-    "hidePassword": "Hide password"
+    "hidePassword": "Hide password",
+    "showingOfAtLeast": "Showing {shown} of more than {total}"
   },
   "login": {
     "lead": "Sign in to reach the control panel",

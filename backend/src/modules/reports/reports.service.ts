@@ -5,6 +5,13 @@ import { ConfigService } from "@nestjs/config";
 import type { Queue } from "bullmq";
 
 import { CACHE } from "../../common/cache/cache-keys.js";
+import {
+  COUNT_CEILING,
+  countedTo,
+  decodeCursor,
+  encodeCursor,
+} from "../../common/dto/cursor.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
@@ -14,6 +21,7 @@ import { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service.js";
 import { PolicyService } from "../policy/policy.service.js";
+import { TallyRangeDto } from "./dto/report.dto.js";
 import { dayWindow, localDay } from "../timesheet/local-day.js";
 import { QUEUE, type ReportJob } from "../../queue/queues.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
@@ -189,6 +197,14 @@ function asMonth(value: Date | null | undefined): string {
   return `${month}/${value.getUTCFullYear()}`;
 }
 
+/** A page of the roll-up is its own cache entry, so a reader deep in the list
+ *  cannot be served the first page and a filter cannot be served unfiltered.
+ */
+function slotOf(from: Date, to: Date, query: TallyRangeDto): string {
+  const span = `${from.toISOString()}_${to.toISOString()}`;
+  return `${span}_${query.take}_${query.search ?? ""}_${query.cursor ?? ""}`;
+}
+
 /** One employee's punches inside a range. */
 export interface AttendanceTally {
   employeeId: number;
@@ -332,24 +348,73 @@ export class ReportsService {
   }
 
   /** Punches per employee between two instants, cached for a quarter hour. */
-  async summary(viewer: Viewer, from: Date, to: Date): Promise<AttendanceTally[]> {
+  async summary(
+    viewer: Viewer,
+    from: Date,
+    to: Date,
+    query: TallyRangeDto,
+  ): Promise<Page<AttendanceTally>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     if (visible !== null && visible.length === 0) {
-      return [];
+      return { rows: [], total: 0, next: null };
     }
-    const range = `${from.toISOString()}_${to.toISOString()}`;
-    const scope = visible === null ? "all" : createHash("sha256").update(visible.join(",")).digest("hex").slice(0, 16);
-    return this.cache.through(CACHE.report("summary", range, scope), () =>
-      this.build(from, to, visible),
+    const scope =
+      visible === null
+        ? "all"
+        : createHash("sha256").update(visible.join(",")).digest("hex").slice(0, 16);
+    return this.cache.through(CACHE.report("summary", slotOf(from, to, query), scope), () =>
+      this.page(from, to, visible, query),
     );
   }
 
-  /** The company-wide entry, built by the queue rather than by a request. No
-   *  viewer means no narrowing, which is why only a job may call it.
+  /** The company-wide first page, built by the queue rather than by a request.
+   *  No viewer means no narrowing, which is why only a job may call it.
    */
-  warm(from: Date, to: Date): Promise<AttendanceTally[]> {
-    const range = `${from.toISOString()}_${to.toISOString()}`;
-    return this.cache.through(CACHE.report("summary", range), () => this.build(from, to, null));
+  warm(from: Date, to: Date): Promise<Page<AttendanceTally>> {
+    const query = new TallyRangeDto();
+    return this.cache.through(CACHE.report("summary", slotOf(from, to, query)), () =>
+      this.page(from, to, null, query),
+    );
+  }
+
+  /** Counting is the expensive half of a page once the cursor is in place, so
+   *  only the page that has a total to show pays for one (KEHOACH 9.9 rule 6).
+   */
+  private async page(
+    from: Date,
+    to: Date,
+    visible: number[] | null,
+    query: TallyRangeDto,
+  ): Promise<Page<AttendanceTally>> {
+    const rows = await this.build(from, to, visible, query);
+    const last = rows[rows.length - 1];
+    const next =
+      rows.length === query.take && last ? encodeCursor(last.fullName, last.employeeId) : null;
+    if (query.cursor) {
+      return { rows, total: rows.length, next };
+    }
+    return { ...countedTo(await this.countTallies(from, to, visible, query.search)), rows, next };
+  }
+
+  private async countTallies(
+    from: Date,
+    to: Date,
+    visible: number[] | null,
+    search: string | undefined,
+  ): Promise<number> {
+    const [seen] = await this.db.$queryRaw<{ found: bigint }[]>`
+      SELECT count(*) AS "found" FROM (
+        SELECT 1
+        FROM "AttendanceRecord" a
+        JOIN "Employee" e ON e."id" = a."employeeId"
+        WHERE a."ts" >= ${from} AND a."ts" <= ${to}
+          ${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
+          ${search ? Prisma.sql`AND e."fullName" ILIKE ${`%${search}%`}` : Prisma.empty}
+        GROUP BY a."employeeId", e."fullName"
+        LIMIT ${COUNT_CEILING + 1}
+      ) x
+    `;
+    return Number(seen?.found ?? 0);
   }
 
   /** Hand a long roll-up to the queue; it outlives the request that asked. */
@@ -362,8 +427,17 @@ export class ReportsService {
     return queued.id ?? "";
   }
 
-  /** Grouped in Postgres: a month of punches does not belong in the heap. */
-  private async build(from: Date, to: Date, visible: number[] | null): Promise<AttendanceTally[]> {
+  /** Grouped in Postgres: a month of punches does not belong in the heap. The
+   *  fullName >= vale beside the pair looks redundant and is the only one that
+   *  becomes an index condition (KEHOACH 9.9 rule 3).
+   */
+  private async build(
+    from: Date,
+    to: Date,
+    visible: number[] | null,
+    query: TallyRangeDto,
+  ): Promise<AttendanceTally[]> {
+    const after = query.cursor ? decodeCursor(query.cursor) : null;
     const rows = await this.db.$queryRaw<
       {
         employeeId: number;
@@ -384,8 +458,16 @@ export class ReportsService {
       JOIN "Employee" e ON e."id" = a."employeeId"
       WHERE a."ts" >= ${from} AND a."ts" <= ${to}
         ${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
+        ${query.search ? Prisma.sql`AND e."fullName" ILIKE ${`%${query.search}%`}` : Prisma.empty}
+        ${
+          after
+            ? Prisma.sql`AND e."fullName" >= ${after.sortValue}
+          AND (e."fullName", e."id") > (${after.sortValue}, ${Number(after.id)})`
+            : Prisma.empty
+        }
       GROUP BY a."employeeId", e."fullName"
-      ORDER BY e."fullName"
+      ORDER BY e."fullName", a."employeeId"
+      LIMIT ${query.take}
     `;
     return rows.map((row) => ({
       employeeId: row.employeeId,

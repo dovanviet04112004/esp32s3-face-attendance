@@ -5,7 +5,13 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { D02QueryDto, InsuranceRangeDto, RangeDto } from "./dto/report.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
+import {
+  D02QueryDto,
+  InsuranceRangeDto,
+  RangeDto,
+  TallyRangeDto,
+} from "./dto/report.dto.js";
 import {
   ReportsService,
   type AttendanceTally,
@@ -51,9 +57,9 @@ export class ReportsController {
   @ApiOperation({ summary: "Punches per employee in a range, served from cache" })
   summary(
     @CurrentViewer() viewer: Viewer,
-    @Query() range: RangeDto,
-  ): Promise<AttendanceTally[]> {
-    return this.reports.summary(viewer, new Date(range.from), new Date(range.to));
+    @Query() range: TallyRangeDto,
+  ): Promise<Page<AttendanceTally>> {
+    return this.reports.summary(viewer, new Date(range.from), new Date(range.to), range);
   }
 
   @Post("attendance/monthly")

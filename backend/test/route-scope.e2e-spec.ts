@@ -132,11 +132,11 @@ describe("route scope (e2e)", () => {
     const narrow = await get(`/reports/attendance?${span}`, "MANAGER");
     assert.equal(narrow.status, 200, JSON.stringify(narrow.body));
 
-    const seen = (narrow.body as { employeeId: number }[]).map((row) => row.employeeId);
+    const seen = (narrow.body.rows as { employeeId: number }[]).map((row) => row.employeeId);
     const outside = seen.filter((id) => id !== bossId && id !== underId);
     assert.deepEqual(outside, [], "the manager was shown people outside their own tree");
     assert.ok(
-      (wide.body as unknown[]).length >= (narrow.body as unknown[]).length,
+      wide.body.total >= narrow.body.total,
       "narrowing gave the manager more than the admin",
     );
   });
@@ -150,7 +150,7 @@ describe("route scope (e2e)", () => {
     const again = await get(`/reports/attendance?${span}`, "MANAGER");
     assert.equal(again.status, 200);
     assert.ok(
-      (wide.body as unknown[]).length >= (again.body as unknown[]).length,
+      wide.body.total >= again.body.total,
       "the manager's narrow answer was served to the admin",
     );
   });

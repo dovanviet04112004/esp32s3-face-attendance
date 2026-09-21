@@ -85,7 +85,8 @@
     "showingOf": "Đang hiện {shown} trong {total}",
     "loadMore": "Tải thêm",
     "showPassword": "Hiện mật khẩu",
-    "hidePassword": "Ẩn mật khẩu"
+    "hidePassword": "Ẩn mật khẩu",
+    "showingOfAtLeast": "Đang hiện {shown} trong hơn {total}"
   },
   "login": {
     "lead": "Đăng nhập để vào bảng điều khiển",
