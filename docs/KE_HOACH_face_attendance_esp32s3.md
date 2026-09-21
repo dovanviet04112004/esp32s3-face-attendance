@@ -5704,6 +5704,19 @@ năm; một template khuôn mặt tồn tại trên **một máy cụ thể** v�
 không trả lời được câu "thêm ở đâu". Dựng nó thành cờ boolean là thứ sẽ phải đập đi ngay khi
 gắn máy thứ hai.
 
+**Ai ghi danh được, và họ nhìn thấy gì để làm việc đó.** Đặt một người mới lên kiosk là việc
+của bàn nhân sự, nên `HR` ghi danh được. Nhưng §9.15 xếp trang `Kiosk` cho **một mình `ADMIN`**,
+và hai điều đó không mâu thuẫn: cái danh sách HR cần là **"gán được vào máy nào"**, không phải
+bảng fleet. Nên đó là một đường riêng của chính phân hệ ghi danh, trả về **mã và tên của những
+máy đã duyệt**, chứ không phải `GET /devices` nới rộng ra cho HR. Nới một đường đọc để một màn
+hình khỏi vỡ là cách một bảng vai mục đi.
+
+**`tokenHash` của thiết bị không bao giờ rời máy chủ.** Nó là băm của chứng chỉ mà kiosk dùng để
+tự xưng; một đường đọc trả cả dòng thì trả luôn cả nó. Cùng luật `User.passwordHash` đã theo, và
+cùng lý do: một giá trị chỉ dùng để **so** thì không có ai ở phía ngoài cần đọc. Đường đọc thiết
+bị vì thế **kê tên cột**, không lấy cả dòng — kê tên thì thêm một cột bí mật vào bảng không tự
+động đẩy nó ra ngoài.
+
 **Người vận hành *chọn* nhân viên, không *gõ* UID.** Gõ tay một mã dài trên bàn phím cảm ứng là
 mời gọi gõ nhầm — mà gõ nhầm ở đây nghĩa là **buộc khuôn mặt người này vào hồ sơ người kia**, một
 lỗi im lặng và nghiêm trọng: người A chấm công ra tên người B, và không ai phát hiện cho tới khi
