@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
+import { keep } from "@/lib/outbox";
 import type { RequestKind } from "./request-card";
 
 const KINDS: RequestKind[] = [
@@ -49,8 +50,8 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
   });
 
   const file = useMutation({
-    mutationFn: () =>
-      api.post("/requests", {
+    mutationFn: async () => {
+      const body = {
         kind,
         leaveTypeId: kind === "LEAVE" ? leaveTypeId : undefined,
         fromDate,
@@ -58,7 +59,20 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
         halfDay: kind === "LEAVE" ? halfDay : undefined,
         minutes: minutes ? Number(minutes) : undefined,
         reason,
-      }),
+      };
+      const clientKey = crypto.randomUUID();
+      try {
+        return await api.post("/requests", { ...body, clientKey });
+      } catch (fell) {
+        // No response at all means nobody refused it, so it waits rather than
+        // being lost (KEHOACH 9.21.3 rule 2).
+        if ((fell as { response?: unknown }).response !== undefined) {
+          throw fell;
+        }
+        await keep({ clientKey, path: "/requests", body, filedAt: Date.now() });
+        return null;
+      }
+    },
     onSuccess: onDone,
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });

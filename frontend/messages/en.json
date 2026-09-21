@@ -304,7 +304,8 @@
     "stateREJECTED": "rejected",
     "stateCANCELLED": "cancelled",
     "waiting": "{count} things waiting on you",
-    "nothingWaiting": "Nothing is waiting on you"
+    "nothingWaiting": "Nothing is waiting on you",
+    "waitingToSend": "{count} request(s) waiting to send. They go out on their own once there is a signal."
   },
   "me": {
     "title": "My page",

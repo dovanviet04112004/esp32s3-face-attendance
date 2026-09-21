@@ -18,6 +18,14 @@ const KINDS = ["LEAVE", "OVERTIME", "ATTENDANCE_FIX", "BUSINESS_TRIP", "REMOTE_W
 const STATES = ["DRAFT", "PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
 
 export class SubmitRequestDto {
+  @ApiPropertyOptional({
+    description: "Minted by the sender; filing it twice returns the same request",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  clientKey?: string;
+
   @ApiProperty({ enum: KINDS })
   @IsEnum(KINDS)
   kind!: (typeof KINDS)[number];

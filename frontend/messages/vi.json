@@ -304,7 +304,8 @@
     "stateREJECTED": "từ chối",
     "stateCANCELLED": "đã huỷ",
     "waiting": "{count} việc đang chờ bạn",
-    "nothingWaiting": "Không có việc nào đang chờ bạn"
+    "nothingWaiting": "Không có việc nào đang chờ bạn",
+    "waitingToSend": "Có {count} đơn đang chờ gửi — máy sẽ tự gửi khi có mạng, không cần gửi lại."
   },
   "me": {
     "title": "Trang của tôi",

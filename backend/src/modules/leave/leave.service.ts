@@ -17,6 +17,7 @@ import { TimesheetService } from "../timesheet/timesheet.service.js";
 import type { DecideRequestDto, ListRequestsDto, SubmitRequestDto } from "./dto/request.dto.js";
 
 const EXCLUSION_VIOLATION = "23P01";
+const UNIQUE_VIOLATION = "P2002";
 const HALF = 0.5;
 const MS_PER_DAY = 86_400_000;
 const OFF_SITE: RequestKind[] = ["BUSINESS_TRIP", "REMOTE_WORK"];
@@ -123,6 +124,17 @@ export class LeaveService {
     if (viewer.employeeId === null) {
       throw new ForbiddenException("NOT_AN_EMPLOYEE");
     }
+    // A redelivery from a phone that lost the answer ends where the first one
+    // did, rather than filing a second request (KEHOACH 9.21.3 rule 2).
+    if (body.clientKey !== undefined) {
+      const already = await this.db.request.findUnique({ where: { clientKey: body.clientKey } });
+      if (already) {
+        if (already.employeeId !== viewer.employeeId) {
+          throw new ForbiddenException("CLIENT_KEY_NOT_YOURS");
+        }
+        return already;
+      }
+    }
     const from = new Date(body.fromDate);
     const to = new Date(body.toDate);
     if (to < from) {
@@ -134,7 +146,7 @@ export class LeaveService {
     const days = body.halfDay ? HALF : Math.round((to.getTime() - from.getTime()) / MS_PER_DAY) + 1;
     const approverId = await this.approverFor(viewer.employeeId, from);
 
-    const filed = await this.db.$transaction(async (tx) => {
+    const file = (): Promise<LeaveRequest> => this.db.$transaction(async (tx) => {
       if (body.kind === "LEAVE") {
         if (!body.leaveTypeId) {
           throw new BadRequestException("LEAVE_TYPE_REQUIRED");
@@ -155,6 +167,7 @@ export class LeaveService {
             minutes: body.minutes ?? 0,
             reason: body.reason,
             attachmentUrl: body.attachmentUrl ?? null,
+            clientKey: body.clientKey ?? null,
             approverId,
           },
         });
@@ -165,6 +178,25 @@ export class LeaveService {
         throw error;
       }
     });
+
+    let filed: LeaveRequest;
+    try {
+      filed = await file();
+    } catch (error) {
+      // Two redeliveries can both miss the read above. Letting this throw is
+      // what rolls back the leave days the loser had already reserved.
+      const raced =
+        body.clientKey !== undefined && isCode(error, UNIQUE_VIOLATION)
+          ? await this.db.request.findUnique({ where: { clientKey: body.clientKey } })
+          : null;
+      if (!raced) {
+        throw error;
+      }
+      if (raced.employeeId !== viewer.employeeId) {
+        throw new ForbiddenException("CLIENT_KEY_NOT_YOURS");
+      }
+      return raced;
+    }
     if (approverId !== null) {
       await this.notices.raise(approverId, "REQUEST_WAITING", { requestId: filed.id });
     }

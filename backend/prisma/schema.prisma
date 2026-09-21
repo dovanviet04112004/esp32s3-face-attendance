@@ -689,6 +689,9 @@ model ProfileChange {
  */
 model Request {
   id            String       @id @default(uuid())
+  // Minted by whoever files it, so a redelivery from a phone that lost the
+  // answer lands on this row instead of a second one (KEHOACH 9.21.3 rule 2).
+  clientKey     String?      @unique
   employeeId    Int
   kind          RequestKind
   state         RequestState @default(DRAFT)

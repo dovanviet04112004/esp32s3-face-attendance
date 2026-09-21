@@ -74,16 +74,20 @@ const SAYS = {
     REQUEST_DECIDED_true: "Đơn của bạn đã được duyệt",
     REQUEST_DECIDED_false: "Đơn của bạn bị từ chối",
     REQUEST_WAITING: "Có đơn chờ bạn duyệt",
+    REQUEST_STALLED: "Đơn của bạn chưa ai quyết",
     PAYSLIP_ISSUED: "Phiếu lương kỳ này đã có",
     CONTRACT_ENDING: "Hợp đồng của bạn sắp hết hạn",
+    DISPUTE_ANSWERED: "Khiếu nại phiếu lương của bạn đã có trả lời",
     title: "Chấm công",
   },
   en: {
     REQUEST_DECIDED_true: "Your request was approved",
     REQUEST_DECIDED_false: "Your request was turned down",
     REQUEST_WAITING: "A request is waiting on you",
+    REQUEST_STALLED: "Your request has no decision yet",
     PAYSLIP_ISSUED: "This period's payslip is ready",
     CONTRACT_ENDING: "Your contract ends soon",
+    DISPUTE_ANSWERED: "Your payslip dispute has an answer",
     title: "Attendance",
   },
 };
@@ -91,8 +95,10 @@ const SAYS = {
 const WHERE = {
   REQUEST_DECIDED: "/me/requests",
   REQUEST_WAITING: "/approvals",
+  REQUEST_STALLED: "/me/requests",
   PAYSLIP_ISSUED: "/me/payslips",
   CONTRACT_ENDING: "/me",
+  DISPUTE_ANSWERED: "/me/payslips",
 };
 
 // The worker's scope is "/", so it cannot read a locale off the url; the

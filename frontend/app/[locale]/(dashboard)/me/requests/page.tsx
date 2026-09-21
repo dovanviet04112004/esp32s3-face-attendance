@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { useOutbox } from "@/lib/outbox";
 import { money } from "@/lib/format";
 
 type AdvanceState = "PENDING" | "APPROVED" | "REJECTED" | "PAID" | "SETTLED" | "CANCELLED";
@@ -52,6 +53,7 @@ export default function MyRequestsPage() {
   const [amount, setAmount] = useState("");
   const [why, setWhy] = useState("");
   const [advanceFault, setAdvanceFault] = useState<string | null>(null);
+  const waiting = useOutbox();
 
   const mine = useQuery({
     queryKey: ["requests", "mine", employeeId],
@@ -96,6 +98,15 @@ export default function MyRequestsPage() {
           </Button>
         ) : null}
       </div>
+
+      {waiting.length > 0 ? (
+        <p
+          role="status"
+          className="mt-4 rounded-lg border border-(--color-warn) px-3 py-2 text-sm text-(--color-warn)"
+        >
+          {t("waitingToSend", { count: waiting.length })}
+        </p>
+      ) : null}
 
       {filing ? (
         <div className="mt-6">

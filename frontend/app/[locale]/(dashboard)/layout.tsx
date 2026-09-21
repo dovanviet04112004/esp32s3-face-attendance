@@ -9,12 +9,17 @@ import { TopBar } from "@/components/nav/top-bar";
 import { useRouter } from "@/i18n/navigation";
 import { api, reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { startOutbox } from "@/lib/outbox";
 
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("nav");
   const router = useRouter();
   const { accessToken, clear } = useSession();
+
+  useEffect(() => {
+    startOutbox();
+  }, []);
 
   useEffect(() => {
     if (accessToken) {
