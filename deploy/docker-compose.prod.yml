@@ -41,6 +41,11 @@ services:
       MQTT_USERNAME: ${MQTT_USERNAME}
       MQTT_PASSWORD: ${EMQX_OPS_PASSWORD}
       MQTT_CA_CERT_PATH: /certs/ca.crt
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USER: ${MAIL_USER}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
     volumes:
       - ./emqx/certs/ca.crt:/certs/ca.crt:ro
     depends_on:
