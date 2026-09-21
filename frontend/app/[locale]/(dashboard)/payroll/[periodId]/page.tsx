@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 
+import { BonusSheet } from "@/components/payroll/bonus-sheet";
 import { RunProgress, type PayrollRun } from "@/components/payroll/run-progress";
 import { SettlementSheet } from "@/components/payroll/settlement-sheet";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { useFault } from "@/lib/fault";
 
 interface ChecklistItem {
   code: string;
@@ -41,6 +43,8 @@ export default function PayrollRunPage() {
   const cache = useQueryClient();
   const [label, setLabel] = useState("");
   const [accept, setAccept] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+  const faultOf = useFault();
 
   const periods = useQuery({
     queryKey: ["payroll-periods"],
@@ -67,7 +71,7 @@ export default function PayrollRunPage() {
   }
 
   const create = useMutation({
-    mutationFn: (kind: "REGULAR" | "FINAL_SETTLEMENT") =>
+    mutationFn: (kind: "REGULAR" | "BONUS" | "FINAL_SETTLEMENT") =>
       api.post("/payroll-runs", { periodId, kind, label: label || undefined }),
     onSuccess: () => {
       setLabel("");
@@ -89,6 +93,27 @@ export default function PayrollRunPage() {
   const pay = useMutation({
     mutationFn: () => api.post(`/payroll-periods/${periodId}/paid`),
     onSuccess: refresh,
+  });
+
+  const exportFile = useMutation({
+    mutationFn: async (kind: "bank" | "ledger") => {
+      const file = (
+        await api.get<string>(`/payroll-periods/${periodId}/export?kind=${kind}`)
+      ).data;
+      const link = document.createElement("a");
+      // The api already opens the file with a BOM, so this must not add one.
+      link.href = URL.createObjectURL(new Blob([file], { type: "text/csv;charset=utf-8" }));
+      link.download = `payroll-${kind}-${periodId}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  const deliver = useMutation({
+    mutationFn: async () =>
+      (await api.post<{ queued: number }>(`/payroll-periods/${periodId}/deliver`)).data,
+    onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   if (periods.isError) {
@@ -157,6 +182,57 @@ export default function PayrollRunPage() {
         ) : null}
       </section>
 
+      {mayWrite && period && period.state !== "OPEN" ? (
+        <section className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+          <h2 className="text-sm font-medium">{t("payoutTitle")}</h2>
+          <p className="mt-1 text-sm text-(--color-muted)">{t("payoutLead")}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              tone="quiet"
+              disabled={exportFile.isPending}
+              onClick={() => {
+                setFault(null);
+                exportFile.mutate("bank");
+              }}
+            >
+              {t("exportBank")}
+            </Button>
+            <Button
+              type="button"
+              tone="quiet"
+              disabled={exportFile.isPending}
+              onClick={() => {
+                setFault(null);
+                exportFile.mutate("ledger");
+              }}
+            >
+              {t("exportLedger")}
+            </Button>
+            <Button
+              type="button"
+              disabled={deliver.isPending}
+              onClick={() => {
+                setFault(null);
+                deliver.mutate();
+              }}
+            >
+              {deliver.isPending ? common("saving") : t("deliver")}
+            </Button>
+          </div>
+          {deliver.data ? (
+            <p className="mt-2 text-sm text-(--color-ok)">
+              {t("delivered", { count: deliver.data.queued })}
+            </p>
+          ) : null}
+          {fault ? (
+            <p role="alert" className="mt-2 text-sm text-(--color-danger)">
+              {fault}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       <h2 className="mt-6 text-sm font-medium">{t("runs")}</h2>
       {mayWrite && period?.state === "OPEN" ? (
         <form
@@ -174,6 +250,14 @@ export default function PayrollRunPage() {
           />
           <Button type="submit" disabled={create.isPending}>
             {create.isPending ? common("saving") : t("newRun")}
+          </Button>
+          <Button
+            type="button"
+            tone="quiet"
+            disabled={create.isPending}
+            onClick={() => create.mutate("BONUS")}
+          >
+            {t("newBonus")}
           </Button>
           <Button
             type="button"
@@ -218,6 +302,14 @@ export default function PayrollRunPage() {
                 </div>
               }
             />
+            {run.kind === "BONUS" ? (
+              <div className="mt-2 ms-4">
+                <BonusSheet
+                  runId={run.id}
+                  editable={mayWrite && period?.state === "OPEN" && run.state !== "RUNNING"}
+                />
+              </div>
+            ) : null}
             {run.kind === "FINAL_SETTLEMENT" ? (
               <div className="mt-2 ms-4">
                 <p className="mb-2 text-sm text-(--color-muted)">{t("settlementLead")}</p>

@@ -25,6 +25,23 @@ interface PayslipRow {
   period?: { year: number; month: number };
 }
 
+const THIS_YEAR = new Date().getUTCFullYear();
+const YEARS = [THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2];
+
+interface TaxYear {
+  year: number;
+  months: { month: number }[];
+  grossTotal: string;
+  insuranceTotal: string;
+  reliefSelfTotal: string;
+  reliefDependentTotal: string;
+  exemptOvertimeTotal: string;
+  assessableTotal: string;
+  taxDue: string;
+  taxWithheld: string;
+  difference: string;
+}
+
 interface Delta {
   code: string;
   thisPeriod: string;
@@ -40,7 +57,14 @@ export default function MyPayslipsPage() {
   const [claim, setClaim] = useState("");
   const [lineCode, setLineCode] = useState("");
   const [refused, setRefused] = useState<string | null>(null);
+  const [year, setYear] = useState(THIS_YEAR);
   const employeeId = useSession((one) => one.employeeId);
+
+  const statement = useQuery({
+    queryKey: ["tax-year", employeeId, year],
+    enabled: employeeId !== null,
+    queryFn: async () => (await api.get<TaxYear>(`/tax-year/${employeeId}?year=${year}`)).data,
+  });
   const nameOf = useLineName();
   const cache = useQueryClient();
   const faultOf = useFault();
@@ -222,6 +246,60 @@ export default function MyPayslipsPage() {
               )}
             </section>
           ) : null}
+
+          <section className="mt-10">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-medium">{t("taxYearTitle")}</h2>
+                <p className="mt-1 text-sm text-(--color-muted)">{t("taxYearLead")}</p>
+              </div>
+              <Select
+                aria-label={t("taxYear")}
+                value={String(year)}
+                onChange={(event) => setYear(Number(event.target.value))}
+                className="w-32"
+              >
+                {YEARS.map((one) => (
+                  <option key={one} value={one}>
+                    {one}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {statement.isPending ? (
+              <SkeletonRows rows={3} columns={2} />
+            ) : !statement.data || statement.data.months.length === 0 ? (
+              <p className="mt-3 text-sm text-(--color-muted)">{t("taxYearEmpty")}</p>
+            ) : (
+              <dl className="mt-3 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+                {(
+                  [
+                    ["taxGross", statement.data.grossTotal],
+                    ["taxInsurance", statement.data.insuranceTotal],
+                    ["taxReliefSelf", statement.data.reliefSelfTotal],
+                    ["taxReliefDependent", statement.data.reliefDependentTotal],
+                    ["taxExemptOvertime", statement.data.exemptOvertimeTotal],
+                    ["taxAssessable", statement.data.assessableTotal],
+                    ["taxDue", statement.data.taxDue],
+                    ["taxWithheld", statement.data.taxWithheld],
+                    ["taxDifference", statement.data.difference],
+                  ] as const
+                ).map(([key, value]) => (
+                  <div
+                    key={key}
+                    className="flex justify-between gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
+                  >
+                    <dt className="text-(--color-muted)">{t(key)}</dt>
+                    <dd className="tabular-nums">{money(Number(value), locale)}</dd>
+                  </div>
+                ))}
+                <p className="mt-3 text-xs text-(--color-muted)">
+                  {t("taxYearMonths", { count: statement.data.months.length })}
+                </p>
+              </dl>
+            )}
+          </section>
         </>
       )}
     </section>

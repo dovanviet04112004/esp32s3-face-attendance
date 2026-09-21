@@ -1,12 +1,15 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Failed } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/auth";
+import { useFault } from "@/lib/fault";
 
 interface Entity {
   id: string;
@@ -45,9 +48,14 @@ function today(): string {
 export default function ReportsPage() {
   const t = useTranslations("reports");
   const common = useTranslations("common");
+  const role = useSession((s) => s.role);
+  const faultOf = useFault();
+  const mayRollUp = role === "ADMIN" || role === "HR";
   const [entityId, setEntityId] = useState("");
   const [changeFrom, setChangeFrom] = useState(firstOfMonth);
   const [changeTo, setChangeTo] = useState(today);
+  const [on, setOn] = useState(today);
+  const [fault, setFault] = useState<string | null>(null);
 
   const entities = useQuery({
     queryKey: ["legal-entities"],
@@ -64,6 +72,30 @@ export default function ReportsPage() {
           `/reports/insurance-changes?legalEntityId=${entity}&from=${changeFrom}&to=${changeTo}`,
         )
       ).data,
+  });
+
+  const d02 = useMutation({
+    mutationFn: async () => {
+      const file = (await api.get<string>(`/reports/d02-lt?legalEntityId=${entity}&on=${on}`)).data;
+      const link = document.createElement("a");
+      // The api already opens the file with a BOM, so this must not add one.
+      link.href = URL.createObjectURL(new Blob([file], { type: "text/csv;charset=utf-8" }));
+      link.download = `d02-lt-${on}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  const rollUp = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<{ jobId: string }>("/reports/attendance/monthly", {
+          from: changeFrom,
+          to: changeTo,
+        })
+      ).data,
+    onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   if (changes.isError) {
@@ -137,6 +169,56 @@ export default function ReportsPage() {
           );
         })}
       </div>
+
+      <h2 className="mt-10 text-sm font-medium">{t("d02Title")}</h2>
+      <p className="mt-1 text-sm text-(--color-muted)">{t("d02Lead")}</p>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <Input
+          aria-label={t("d02On")}
+          type="date"
+          value={on}
+          onChange={(event) => setOn(event.target.value)}
+          className="w-44"
+        />
+        <Button
+          type="button"
+          disabled={entity === "" || d02.isPending}
+          onClick={() => {
+            setFault(null);
+            d02.mutate();
+          }}
+        >
+          {d02.isPending ? common("loading") : t("d02Download")}
+        </Button>
+      </div>
+
+      {mayRollUp ? (
+        <>
+          <h2 className="mt-10 text-sm font-medium">{t("rollUpTitle")}</h2>
+          <p className="mt-1 text-sm text-(--color-muted)">{t("rollUpLead")}</p>
+          <Button
+            type="button"
+            tone="quiet"
+            className="mt-3"
+            disabled={rollUp.isPending}
+            onClick={() => {
+              setFault(null);
+              rollUp.mutate();
+            }}
+          >
+            {rollUp.isPending ? common("saving") : t("rollUpRun")}
+          </Button>
+          {rollUp.data ? (
+            <p className="mt-2 text-sm text-(--color-ok)">{t("rollUpQueued")}</p>
+          ) : null}
+        </>
+      ) : null}
+
+      {fault ? (
+        <p role="alert" className="mt-4 text-sm text-(--color-danger)">
+          {fault}
+        </p>
+      ) : null}
     </section>
   );
 }
