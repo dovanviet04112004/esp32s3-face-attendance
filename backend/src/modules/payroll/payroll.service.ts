@@ -12,8 +12,9 @@ import type {
   PayrollPeriod,
   PayrollRun,
   PeriodState,
-  Prisma,
+  SettlementKind,
 } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { toCsv } from "../../common/csv.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -28,9 +29,12 @@ import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
 import {
   calculate,
   taxOn,
+  LINE_ASSET_OFFSET,
   LINE_EXEMPT_OVERTIME,
+  LINE_LEAVE_PAYOUT,
   LINE_RELIEF_DEPENDENT,
   LINE_RELIEF_SELF,
+  LINE_SEVERANCE,
   LINE_TAX,
   type CalcAllowance,
   type CalcDeduction,
@@ -41,11 +45,55 @@ import type {
   CreatePeriodDto,
   CreateRunDto,
   LockPeriodDto,
+  SettlementItemDto,
 } from "./dto/payroll.dto.js";
-import { atLeastZero, toDong, type Dong } from "./money.js";
+import { atLeastZero, mulDiv, toDong, type Dong } from "./money.js";
 
 const WRITERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL"]);
 const kChunk = 500;
+const kHundred = 100n;
+
+interface Leaver {
+  id: number;
+  code: string;
+  fullName: string;
+  leaveDate: Date | null;
+  baseSalary: string;
+  tenureMonths: number;
+}
+
+export interface SettlementRow {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  leaveDate: string | null;
+  tenureMonths: number;
+  baseSalary: string;
+  halfMonthPay: string;
+  unusedLeaveDays: number;
+  leavePayout: string;
+  assetsHeld: { code: string; name: string }[];
+  typed: {
+    kind: SettlementKind;
+    label: string | null;
+    amount: string;
+    taxable: boolean;
+    note: string | null;
+  }[];
+}
+
+export interface SettlementSheet {
+  runId: string;
+  periodId: string;
+  rows: SettlementRow[];
+}
+
+/** Entitlement plus what carried over, less what is taken or held. */
+function remainingDays(row: { entitled: Prisma.Decimal; carriedOver: Prisma.Decimal; taken: Prisma.Decimal; pending: Prisma.Decimal }): number {
+  return (
+    Number(row.entitled) + Number(row.carriedOver) - Number(row.taken) - Number(row.pending)
+  );
+}
 
 interface DayTally {
   employeeId: number;
@@ -373,6 +421,9 @@ export class PayrollService {
       // Answer here rather than queueing a job that cannot succeed.
       await this.requireBonusReady(run.id, run.periodId);
     }
+    if (run.kind === "FINAL_SETTLEMENT") {
+      await this.requireSettlementReady(run.period);
+    }
     // BullMQ keeps completed jobs, so a job id derived from the run would let
     // only the first start do anything; RUNNING is what stops a double start.
     await this.queues[QUEUE.payroll].add("run", { type: "run", runId } satisfies PayrollJob);
@@ -402,9 +453,6 @@ export class PayrollService {
     if (run.state === "RUNNING") {
       throw new BadRequestException("RUN_ALREADY_RUNNING");
     }
-    if (run.kind === "FINAL_SETTLEMENT") {
-      throw new BadRequestException("RUN_KIND_NOT_READY");
-    }
     return run;
   }
 
@@ -426,10 +474,15 @@ export class PayrollService {
     if (run.kind === "BONUS") {
       return this.runBonus(run.id, period, policy.id, calcPolicy);
     }
+    if (run.kind === "FINAL_SETTLEMENT") {
+      return this.runSettlement(run.id, period, policy.id, calcPolicy);
+    }
 
     const people = await this.db.employee.findMany({
       where: {
-        active: true,
+        // Offboarding clears `active` on the day it is pressed, so filtering on
+        // it drops a mid-month leaver and the days they worked (KEHOACH 9.18.8).
+        OR: [{ active: true }, { leaveDate: { gte: period.startDate } }],
         ...(period.legalEntityId ? { legalEntityId: period.legalEntityId } : {}),
         ...(run.departmentId ? { departmentId: run.departmentId } : {}),
       },
@@ -1083,6 +1136,325 @@ export class PayrollService {
         row.netPay.toFixed(0),
       ]),
     );
+  }
+
+  /**
+   * The evidence a signer needs: tenure, half a month's pay, the leave nobody
+   * took, and what they still hold. The two amounts the system cannot derive
+   * are typed beside this (KEHOACH 9.18.8).
+   */
+  async settlementSheet(viewer: Viewer, runId: string): Promise<SettlementSheet> {
+    this.mayWrite(viewer);
+    const run = await this.db.payrollRun.findUnique({
+      where: { id: runId },
+      include: { period: true },
+    });
+    if (!run) {
+      throw new NotFoundException("RUN_NOT_FOUND");
+    }
+    if (run.kind !== "FINAL_SETTLEMENT") {
+      throw new BadRequestException("RUN_IS_NOT_A_SETTLEMENT");
+    }
+    const period = run.period;
+    const leavers = await this.leaversOf(period);
+    const ids = leavers.map((one) => one.id);
+    const [balances, assets, held] = await Promise.all([
+      this.db.leaveBalance.findMany({
+        where: { employeeId: { in: ids }, year: period.year, leaveType: { paid: true } },
+        include: { leaveType: { select: { code: true, name: true } } },
+      }),
+      this.db.asset.findMany({
+        where: { holderId: { in: ids }, state: "ISSUED" },
+        select: { id: true, code: true, name: true, holderId: true },
+        orderBy: { code: "asc" },
+      }),
+      this.db.settlementItem.findMany({ where: { runId }, orderBy: { kind: "asc" } }),
+    ]);
+    const policy = await this.policy.effectiveAt(period.endDate, period.legalEntityId);
+    const standardDays = asCalcPolicy(policy).standardDayHundredths;
+
+    return {
+      runId,
+      periodId: period.id,
+      rows: leavers.map((one) => {
+        const daily = mulDiv(toDong(one.baseSalary), kHundred, standardDays);
+        const unused = balances
+          .filter((row) => row.employeeId === one.id)
+          .reduce((sum, row) => sum + remainingDays(row), 0);
+        return {
+          employeeId: one.id,
+          code: one.code,
+          fullName: one.fullName,
+          leaveDate: one.leaveDate === null ? null : one.leaveDate.toISOString().slice(0, 10),
+          tenureMonths: one.tenureMonths,
+          baseSalary: toDong(one.baseSalary).toString(),
+          halfMonthPay: mulDiv(toDong(one.baseSalary), 1n, 2n).toString(),
+          unusedLeaveDays: unused,
+          leavePayout: mulDiv(daily, BigInt(Math.round(unused * 100)), kHundred).toString(),
+          assetsHeld: assets
+            .filter((row) => row.holderId === one.id)
+            .map((row) => ({ code: row.code, name: row.name })),
+          typed: held
+            .filter((row) => row.employeeId === one.id)
+            .map((row) => ({
+              kind: row.kind,
+              label: row.label,
+              amount: row.amount.toFixed(0),
+              taxable: row.taxable,
+              note: row.note,
+            })),
+        };
+      }),
+    };
+  }
+
+  /** Load the typed halves of a settlement. Rerunning replaces them. */
+  async setSettlement(
+    viewer: Viewer,
+    runId: string,
+    items: SettlementItemDto[],
+  ): Promise<{ items: number }> {
+    this.mayWrite(viewer);
+    const run = await this.db.payrollRun.findUnique({
+      where: { id: runId },
+      include: { period: true },
+    });
+    if (!run) {
+      throw new NotFoundException("RUN_NOT_FOUND");
+    }
+    if (run.kind !== "FINAL_SETTLEMENT") {
+      throw new BadRequestException("RUN_IS_NOT_A_SETTLEMENT");
+    }
+    const leavers = await this.leaversOf(run.period);
+    const allowed = new Set(leavers.map((one) => one.id));
+    const stray = items.find((item) => !allowed.has(item.employeeId));
+    if (stray) {
+      throw new BadRequestException("EMPLOYEE_DID_NOT_LEAVE_THIS_PERIOD");
+    }
+    await this.db.$transaction([
+      this.db.settlementItem.deleteMany({ where: { runId } }),
+      this.db.settlementItem.createMany({
+        data: items.map((item) => ({
+          runId,
+          employeeId: item.employeeId,
+          kind: item.kind,
+          label: item.label ?? null,
+          amount: item.amount,
+          taxable: item.taxable ?? item.kind !== "SEVERANCE",
+          note: item.note ?? null,
+          createdById: viewer.userId,
+        })),
+      }),
+    ]);
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.PAYROLL_SETTLEMENT,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: runId,
+      meta: { items: items.length },
+    });
+    return { items: items.length };
+  }
+
+  /** Everybody whose leave date falls inside this period, with the pay in
+   *  force on that date and how long they had been there.
+   */
+  private leaversOf(period: PayrollPeriod): Promise<Leaver[]> {
+    return this.db.$queryRaw<Leaver[]>`
+      SELECT e."id", e."code", e."fullName", e."leaveDate",
+             COALESCE(c."baseSalary", 0) AS "baseSalary",
+             COALESCE(
+               EXTRACT(YEAR FROM age(e."leaveDate", e."hireDate")) * 12
+                 + EXTRACT(MONTH FROM age(e."leaveDate", e."hireDate")),
+               0
+             )::int AS "tenureMonths"
+        FROM "Employee" e
+        LEFT JOIN LATERAL (
+          SELECT r."baseSalary" FROM "CompensationRecord" r
+           WHERE r."employeeId" = e."id" AND r."effectiveFrom" <= ${period.endDate}
+           ORDER BY r."effectiveFrom" DESC LIMIT 1
+        ) c ON true
+       WHERE e."leaveDate" >= ${period.startDate} AND e."leaveDate" <= ${period.endDate}
+         ${period.legalEntityId ? Prisma.sql`AND e."legalEntityId" = ${period.legalEntityId}` : Prisma.empty}
+       ORDER BY e."id"
+    `;
+  }
+
+  private async requireSettlementReady(period: PayrollPeriod): Promise<void> {
+    const leavers = await this.leaversOf(period);
+    if (leavers.length === 0) {
+      throw new BadRequestException("PERIOD_HAS_NO_LEAVERS");
+    }
+    const bases = await this.db.payslip.findMany({
+      where: {
+        periodId: period.id,
+        employeeId: { in: leavers.map((one) => one.id) },
+        run: { kind: "REGULAR" },
+      },
+      select: { employeeId: true },
+      distinct: ["employeeId"],
+    });
+    if (bases.length !== leavers.length) {
+      throw new BadRequestException("SETTLEMENT_NEEDS_A_REGULAR_PAYSLIP");
+    }
+  }
+
+  /**
+   * What leaving costs, beside the payslip for the days worked: the leave
+   * nobody took, the figures somebody signed for, and tax on the part that is
+   * not exempt, charged as the increment over the period (KEHOACH 9.18.8).
+   */
+  private async runSettlement(
+    runId: string,
+    period: PayrollPeriod,
+    policyId: string,
+    calcPolicy: ReturnType<typeof asCalcPolicy>,
+  ): Promise<PayrollRun> {
+    const leavers = await this.leaversOf(period);
+    const ids = leavers.map((one) => one.id);
+    const [items, balances, bases, dependents] = await Promise.all([
+      this.db.settlementItem.findMany({ where: { runId }, orderBy: { kind: "asc" } }),
+      this.db.leaveBalance.findMany({
+        where: { employeeId: { in: ids }, year: period.year, leaveType: { paid: true } },
+      }),
+      this.db.payslip.findMany({
+        where: { periodId: period.id, employeeId: { in: ids }, run: { kind: "REGULAR" } },
+        select: { employeeId: true, taxableIncome: true, insuranceEmployee: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      }),
+      this.db.$queryRaw<{ employeeId: number; count: number }[]>`
+        SELECT "employeeId", count(*)::int AS "count"
+          FROM "Dependent"
+         WHERE "employeeId" = ANY(${ids}::int[]) AND "state" = 'ACTIVE'
+           AND "fromMonth" <= ${period.endDate}
+           AND ("toMonth" IS NULL OR "toMonth" >= ${period.endDate})
+         GROUP BY "employeeId"
+      `,
+    ]);
+    const baseOf = new Map<number, (typeof bases)[number]>();
+    for (const row of bases) {
+      if (!baseOf.has(row.employeeId)) {
+        baseOf.set(row.employeeId, row);
+      }
+    }
+    const dependentOf = new Map(dependents.map((row) => [row.employeeId, row.count]));
+
+    await this.db.payslip.deleteMany({ where: { runId } });
+    const slips: Prisma.PayslipCreateManyInput[] = [];
+    const linesOf = new Map<number, Prisma.PayslipLineCreateManyInput[]>();
+    let gross = 0n;
+    let net = 0n;
+
+    for (const one of leavers) {
+      const base = baseOf.get(one.id);
+      if (!base) {
+        continue;
+      }
+      const daily = mulDiv(toDong(one.baseSalary), kHundred, calcPolicy.standardDayHundredths);
+      const unusedHundredths = balances
+        .filter((row) => row.employeeId === one.id)
+        .reduce((sum, row) => sum + BigInt(Math.round(remainingDays(row) * 100)), 0n);
+      const payout = unusedHundredths > 0n ? mulDiv(daily, unusedHundredths, kHundred) : 0n;
+      const own = items.filter((item) => item.employeeId === one.id);
+
+      const rows: Prisma.PayslipLineCreateManyInput[] = [];
+      let earned = payout;
+      let taxablePart = payout;
+      let deducted = 0n;
+      if (payout > 0n) {
+        rows.push({
+          payslipId: "",
+          ordinal: rows.length + 1,
+          kind: "EARNING",
+          code: LINE_LEAVE_PAYOUT,
+          amount: payout.toString(),
+          quantity: (Number(unusedHundredths) / 100).toFixed(2),
+        });
+      }
+      for (const item of own) {
+        const amount = toDong(item.amount);
+        const offset = item.kind === "ASSET_OFFSET";
+        if (offset) {
+          deducted += amount;
+        } else {
+          earned += amount;
+          taxablePart += item.taxable ? amount : 0n;
+        }
+        rows.push({
+          payslipId: "",
+          ordinal: rows.length + 1,
+          kind: offset ? "DEDUCTION" : "EARNING",
+          code: offset ? LINE_ASSET_OFFSET : LINE_SEVERANCE,
+          label: item.label,
+          amount: amount.toString(),
+        });
+      }
+
+      const relief =
+        calcPolicy.selfDeduction +
+        calcPolicy.dependentDeduction * BigInt(dependentOf.get(one.id) ?? 0);
+      const without = atLeastZero(
+        toDong(base.taxableIncome) - toDong(base.insuranceEmployee) - relief,
+      );
+      const tax = taxOn(without + taxablePart, calcPolicy.brackets) - taxOn(without, calcPolicy.brackets);
+      if (tax > 0n) {
+        rows.push({
+          payslipId: "",
+          ordinal: rows.length + 1,
+          kind: "DEDUCTION",
+          code: LINE_TAX,
+          amount: tax.toString(),
+        });
+      }
+      if (rows.length === 0) {
+        continue;
+      }
+      linesOf.set(one.id, rows);
+
+      const takeHome = earned - deducted - tax;
+      gross += earned;
+      net += takeHome;
+      slips.push({
+        runId,
+        periodId: period.id,
+        employeeId: one.id,
+        policyId,
+        grossPay: earned.toString(),
+        taxableIncome: taxablePart.toString(),
+        personalIncomeTax: tax.toString(),
+        deductionsTotal: (deducted + tax).toString(),
+        netPay: takeHome.toString(),
+      });
+    }
+
+    await this.db.payslip.createMany({ data: slips });
+    const written = await this.db.payslip.findMany({
+      where: { runId },
+      select: { id: true, employeeId: true },
+    });
+    const lineRows = written.flatMap((slip) =>
+      (linesOf.get(slip.employeeId) ?? []).map((line) => ({ ...line, payslipId: slip.id })),
+    );
+    await this.db.payslipLine.createMany({ data: lineRows });
+
+    await this.audit.record({
+      action: AUDIT_ACTIONS.PAYROLL_RUN,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: runId,
+      meta: { leavers: ids.length, payslips: written.length },
+    });
+    return this.db.payrollRun.update({
+      where: { id: runId },
+      data: {
+        state: "DONE",
+        finishedAt: new Date(),
+        employeeCount: ids.length,
+        doneCount: written.length,
+        failedCount: ids.length - written.length,
+        grossTotal: gross.toString(),
+        netTotal: net.toString(),
+      },
+    });
   }
 
   private async requirePeriod(periodId: string): Promise<PayrollPeriod> {

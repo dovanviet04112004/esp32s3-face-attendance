@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { RunKind } from "@prisma/client";
+import { RunKind, SettlementKind } from "@prisma/client";
 import { Type } from "class-transformer";
 import {
   ArrayMinSize,
@@ -119,4 +119,45 @@ export class AddBonusDto {
   @ValidateNested({ each: true })
   @Type(() => BonusItemDto)
   items!: BonusItemDto[];
+}
+
+export class SettlementItemDto {
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  employeeId!: number;
+
+  @ApiProperty({ enum: SettlementKind, example: SettlementKind.SEVERANCE })
+  @IsEnum(SettlementKind)
+  kind!: SettlementKind;
+
+  @ApiPropertyOptional({ example: "Tro cap thoi viec 3 nam" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  label?: string;
+
+  @ApiProperty({ example: 15000000, description: "Positive; the sign comes from kind" })
+  @IsInt()
+  @Min(0)
+  amount!: number;
+
+  @ApiPropertyOptional({ default: false, description: "Statutory severance is exempt" })
+  @IsOptional()
+  @IsBoolean()
+  taxable?: boolean;
+
+  @ApiPropertyOptional({ example: "Thoa thuan ngay 20/09" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  note?: string;
+}
+
+export class SetSettlementDto {
+  @ApiProperty({ type: [SettlementItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SettlementItemDto)
+  items!: SettlementItemDto[];
 }

@@ -16,7 +16,13 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { AddBonusDto, CreatePeriodDto, CreateRunDto, LockPeriodDto } from "./dto/payroll.dto.js";
+import {
+  AddBonusDto,
+  CreatePeriodDto,
+  CreateRunDto,
+  LockPeriodDto,
+  SetSettlementDto,
+} from "./dto/payroll.dto.js";
 import {
   PayrollService,
   type ChecklistItem,
@@ -24,6 +30,7 @@ import {
   type PayslipDetail,
   type PayslipRow,
   type ExportKind,
+  type SettlementSheet,
   type TaxYearStatement,
 } from "./payroll.service.js";
 
@@ -117,6 +124,27 @@ export class PayrollController {
     @Body() body: AddBonusDto,
   ): Promise<{ items: number }> {
     return this.payroll.setBonus(viewer, id, body.items);
+  }
+
+  @Get("payroll-runs/:id/settlement")
+  @Roles("ADMIN", "PAYROLL")
+  @ApiOperation({ summary: "Everything a leaver is owed that the system can derive" })
+  settlementSheet(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+  ): Promise<SettlementSheet> {
+    return this.payroll.settlementSheet(viewer, id);
+  }
+
+  @Post("payroll-runs/:id/settlement")
+  @Roles("ADMIN", "PAYROLL")
+  @ApiOperation({ summary: "Load the severance and offsets somebody signed for" })
+  setSettlement(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+    @Body() body: SetSettlementDto,
+  ): Promise<{ items: number }> {
+    return this.payroll.setSettlement(viewer, id, body.items);
   }
 
   @Post("payroll-runs/:id/execute")

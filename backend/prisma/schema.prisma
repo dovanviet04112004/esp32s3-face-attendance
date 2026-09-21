@@ -263,6 +263,7 @@ model Employee {
   profileChanges    ProfileChange[]
   disputes          PayslipDispute[]
   checklistRuns     ChecklistRun[]
+  settlements       SettlementItem[]
   ownedTasks        ChecklistTask[]     @relation("OwnsTasks")
 
   @@index([departmentId, active])
@@ -942,6 +943,7 @@ model PayrollRun {
   period        PayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
   payslips      Payslip[]
   bonuses       BonusItem[]
+  settlements   SettlementItem[]
 
   @@index([periodId, state])
 }
@@ -1133,6 +1135,36 @@ model BonusItem {
   employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([runId, employeeId, code])
+  @@index([employeeId])
+}
+
+enum SettlementKind {
+  SEVERANCE
+  ASSET_OFFSET
+}
+
+/**
+ * What somebody signs for when a person leaves: the two figures the system
+ * cannot derive, because it holds neither an unemployment-insurance history
+ * nor a value for a two-year-old laptop (KEHOACH 9.18 item 8).
+ */
+model SettlementItem {
+  id         String          @id @default(uuid())
+  runId      String
+  employeeId Int
+  kind       SettlementKind
+  label      String?
+  amount     Decimal         @db.Decimal(14, 0)
+  // Statutory severance is exempt up to the legal level; anything above it is
+  // a second row with the flag on, not this row with the flag changed.
+  taxable    Boolean         @default(false)
+  note       String?
+  createdById String?
+  createdAt  DateTime        @default(now())
+  run        PayrollRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([runId, employeeId])
   @@index([employeeId])
 }
 

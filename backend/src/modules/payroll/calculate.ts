@@ -102,6 +102,9 @@ export const LINE_RELIEF_SELF = "DEDUCT_SELF";
 export const LINE_RELIEF_DEPENDENT = "DEDUCT_DEPENDENT";
 export const LINE_TAX = "PIT";
 export const LINE_EXEMPT_OVERTIME = "OT_EXEMPT";
+export const LINE_LEAVE_PAYOUT = "LEAVE_PAYOUT";
+export const LINE_SEVERANCE = "SEVERANCE";
+export const LINE_ASSET_OFFSET = "ASSET_OFFSET";
 
 interface OvertimeBand {
   code: string;
