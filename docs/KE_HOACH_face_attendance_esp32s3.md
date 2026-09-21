@@ -4576,6 +4576,8 @@ deploy/
 ├── emqx/{emqx.conf, acl.conf, gen_certs.sh, certs/}   # listener MQTTS, auth và ACL
 ├── postgres/{init.sql, archive.conf}      # ★ archive.conf bật lưu trữ WAL liên tục
 └── backup/{Dockerfile, backup.sh, restore-drill.sh, wal-push.sh}   # ★ §9.22.2
+              · retention.sh                                     # ★ §9.22.7
+              · table-growth.sh                                  # ★ §9.22.5
 ```
 
 CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub Actions chỉ đọc đúng chỗ đó.
@@ -7100,6 +7102,20 @@ ngày không ai chịu nổi, và lúc đó không ai nhớ đã thêm gì.
   đoán như một số đo.
 - Theo dõi **kích thước bảng và độ phình** theo tuần. Bảng lượt chấm công lớn nhanh nhất và là
   bảng đầu tiên cần chia mảnh (§9.9 luật 2).
+
+  **Một con số hôm nay không nói gì; hai con số cách nhau một tuần mới nói.** Nên
+  `table-growth.sh` không in ra một bản chụp rồi thôi — nó **ghi mỗi lượt xuống một dòng** và
+  so với lượt trước. Câu phải trả lời được là "bảng này tuần rồi to thêm bao nhiêu", và câu ấy
+  chỉ có nghĩa khi có lịch sử.
+
+  **Các dòng ấy nằm ở schema `ops`, không nằm chung với dữ liệu nghiệp vụ.** Prisma sở hữu
+  `public` và mỗi lượt `migrate diff` sẽ đòi xoá bất cứ bảng nào nó không khai; một bảng vận
+  hành đặt ở đó là một bảng chờ bị `DROP` trong migration kế tiếp. Schema riêng thì bộ sinh
+  không nhìn thấy, và không ai phải nhớ né nó.
+
+  **Độ phình đo bằng `n_dead_tup` chứ không bằng `pgstattuple`.** Phép đo chính xác phải quét
+  cả bảng và cần một extension; con số autovacuum vốn đã cập nhật thì miễn phí, có sẵn, và đủ
+  để trả lời câu duy nhất người ta hỏi: có phải vacuum đang không theo kịp không.
 
 #### 9.22.6 Kết nối và bản sao đọc
 
