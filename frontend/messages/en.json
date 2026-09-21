@@ -265,7 +265,21 @@
     "graceMinutes": "Grace (minutes)",
     "status": "Status",
     "active": "in use",
-    "retired": "retired"
+    "retired": "retired",
+    "add": "Add shift",
+    "edit": "Edit",
+    "retire": "Retire",
+    "act": "Actions",
+    "roster": "Roster",
+    "assign": "Assign",
+    "unassign": "Remove",
+    "assigned": "Assigned",
+    "noneAssigned": "Nobody is on this shift yet.",
+    "who": "Find somebody",
+    "whoHint": "Type a code or a name, two characters at least",
+    "validFrom": "From",
+    "validTo": "To",
+    "graceHint": "Arriving inside this window does not count as late."
   },
   "reports": {
     "title": "Reports",

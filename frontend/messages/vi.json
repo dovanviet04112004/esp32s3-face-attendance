@@ -265,7 +265,21 @@
     "graceMinutes": "Dung sai (phút)",
     "status": "Trạng thái",
     "active": "đang dùng",
-    "retired": "đã ngưng"
+    "retired": "đã ngưng",
+    "add": "Thêm ca",
+    "edit": "Sửa",
+    "retire": "Ngừng dùng",
+    "act": "Thao tác",
+    "roster": "Phân ca",
+    "assign": "Gán",
+    "unassign": "Bỏ gán",
+    "assigned": "Đang gán",
+    "noneAssigned": "Chưa gán ai vào ca này.",
+    "who": "Tìm người",
+    "whoHint": "Gõ mã hoặc tên, ít nhất 2 ký tự",
+    "validFrom": "Từ ngày",
+    "validTo": "Đến ngày",
+    "graceHint": "Đi trễ trong khoảng này không tính là trễ."
   },
   "reports": {
     "title": "Báo cáo",
