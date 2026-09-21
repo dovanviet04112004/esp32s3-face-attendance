@@ -6582,12 +6582,19 @@ nghỉ giữa kỳ này vẫn được tính đủ những ngày họ đã làm.
 thường chứ không thay nó — cùng lý do §9.18 mục 9 để lượt thưởng đứng riêng. Phiếu thường trả
 công những ngày đã làm; phiếu chốt cuối trả những thứ chỉ phát sinh **vì** người ta đi.
 
-| Thành phần | Nguồn | Chiều |
-|---|---|---|
-| Phép năm chưa dùng quy ra tiền | `LeaveBalance` của năm nghỉ, phần còn lại × lương ngày | cộng |
-| Trợ cấp thôi việc | **người nhập**, hệ tính sẵn thâm niên và nửa tháng lương để đối chiếu | cộng |
-| Thu hồi tạm ứng chưa trả | `SalaryAdvance` ở `PAID` | trừ |
-| Đối trừ tài sản chưa trả | **người nhập**, hệ liệt kê sẵn tài sản còn cầm | trừ |
+| Thành phần | Nguồn | Chiều | Nằm ở phiếu nào |
+|---|---|---|---|
+| Phép năm chưa dùng quy ra tiền | `LeaveBalance` của năm nghỉ, phần còn lại × lương ngày | cộng | chốt cuối |
+| Trợ cấp thôi việc | **người nhập**, hệ tính sẵn thâm niên và nửa tháng lương để đối chiếu | cộng | chốt cuối |
+| Đối trừ tài sản chưa trả | **người nhập**, hệ liệt kê sẵn tài sản còn cầm | trừ | chốt cuối |
+| Thu hồi tạm ứng chưa trả | `SalaryAdvance` ở `PAID` | trừ | **phiếu thường** |
+
+**Tạm ứng không có dòng riêng ở phiếu chốt cuối, và đó là điều đúng.** Lượt chạy thường đã khấu
+trừ mọi tạm ứng còn treo của mọi người, mỗi kỳ, từ lúc `SalaryAdvance` ra đời; lúc chốt kỳ thì
+chúng chuyển sang `SETTLED` kèm id phiếu đã trừ. Thêm một dòng nữa ở phiếu chốt cuối là **thu
+hai lần cùng một khoản**. Điều khiến việc thu hồi này trước nay hụt đúng với người nghỉ không
+phải là thiếu một dòng, mà là bộ lọc `active = true` ở trên: người nghỉ giữa kỳ không có phiếu
+thường nào, nên không có chỗ nào trừ. Sửa bộ lọc là sửa luôn việc thu hồi.
 
 **Hai trong bốn là người nhập, và đó là chủ ý chứ không phải chỗ làm dở.** Trợ cấp thôi việc
 theo BLLĐ 2019 điều 46 là nửa tháng lương mỗi năm làm việc **trừ đi thời gian đã đóng bảo hiểm
