@@ -112,7 +112,9 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
           ) : null}
         </div>
         <div className="mt-2 rounded-xl border border-(--color-line) bg-(--color-surface)">
-          {rows.data?.length ? (
+          {rows.isPending ? (
+            <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+          ) : rows.data?.length ? (
             <ul className="divide-y divide-(--color-line)">
               {rows.data.map((one) => (
                 <li key={one.id} className="flex flex-wrap gap-3 px-4 py-2 text-sm">
@@ -138,7 +140,9 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
       <section>
         <h2 className="text-sm font-medium">{t("payslipsHere")}</h2>
         <div className="mt-2 rounded-xl border border-(--color-line) bg-(--color-surface)">
-          {payslips.data?.length ? (
+          {payslips.isPending ? (
+            <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+          ) : payslips.data?.length ? (
             <ul className="divide-y divide-(--color-line)">
               {payslips.data.map((one) => (
                 <li key={one.id} className="flex gap-3 px-4 py-2 text-sm">

@@ -374,7 +374,9 @@ export default function ShiftsPage() {
         ) : null}
 
         <h3 className="mt-6 text-sm font-medium">{t("assigned")}</h3>
-        {assignments.data?.length ? (
+        {assignments.isPending ? (
+          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+        ) : assignments.data?.length ? (
           <ul className="mt-2 flex flex-col">
             {assignments.data.map((one) => (
               <li

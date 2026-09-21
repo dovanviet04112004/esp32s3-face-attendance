@@ -404,7 +404,9 @@ export default function EmployeePage() {
 
       {tab === "attendance" ? (
         <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface)">
-          {punches.data?.length ? (
+          {punches.isPending ? (
+            <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+          ) : punches.data?.length ? (
             <ul className="divide-y divide-(--color-line)">
               {punches.data.map((one) => (
                 <li key={one.id} className="flex flex-wrap gap-3 px-4 py-2 text-sm">
@@ -424,7 +426,9 @@ export default function EmployeePage() {
 
       {tab === "leave" ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {balances.data?.length ? (
+          {balances.isPending ? (
+            <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+          ) : balances.data?.length ? (
             balances.data.map((one) => (
               <article
                 key={one.leaveTypeId}

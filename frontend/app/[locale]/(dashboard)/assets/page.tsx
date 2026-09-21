@@ -257,7 +257,9 @@ export default function AssetsPage() {
         title={showing ? `${showing.code} · ${t("history")}` : t("history")}
         closeLabel={common("close")}
       >
-        {history.data?.length ? (
+        {history.isPending ? (
+          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+        ) : history.data?.length ? (
           <ul className="flex flex-col">
             {history.data.map((one) => (
               <li

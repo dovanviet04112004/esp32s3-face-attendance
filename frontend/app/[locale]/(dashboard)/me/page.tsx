@@ -200,7 +200,9 @@ export default function MyPage() {
       ) : null}
 
       <div className="mt-3 rounded-xl border border-(--color-line) bg-(--color-surface)">
-        {dependents.data?.length ? (
+        {dependents.isPending ? (
+          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+        ) : dependents.data?.length ? (
           <ul className="divide-y divide-(--color-line)">
             {dependents.data.map((one) => (
               <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
@@ -244,7 +246,9 @@ export default function MyPage() {
         </Link>
       </div>
       <div className="mt-2 rounded-xl border border-(--color-line) bg-(--color-surface)">
-        {pending.length === 0 ? (
+        {waiting.isPending ? (
+          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+        ) : pending.length === 0 ? (
           <p className="px-4 py-6 text-sm text-(--color-muted)">{r("mineEmpty")}</p>
         ) : (
           <ul className="divide-y divide-(--color-line)">

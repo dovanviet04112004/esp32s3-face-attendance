@@ -225,7 +225,9 @@ export default function DepartmentsPage() {
       ) : null}
 
       <div className="mt-3 flex flex-col gap-2">
-        {holidays.data?.length ? (
+        {holidays.isPending ? (
+          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+        ) : holidays.data?.length ? (
           holidays.data.map((row) => (
             <article
               key={row.id}

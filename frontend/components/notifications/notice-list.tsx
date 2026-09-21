@@ -59,6 +59,7 @@ const WHERE: Record<NoticeKind, string> = {
 
 export function NoticeList({ onGo }: { onGo: () => void }) {
   const t = useTranslations("notices");
+  const common = useTranslations("common");
   const format = useFormatter();
   const cache = useQueryClient();
 
@@ -107,7 +108,9 @@ export function NoticeList({ onGo }: { onGo: () => void }) {
         </Button>
       ) : null}
 
-      {rows.length === 0 ? (
+      {notices.isPending ? (
+        <p className="px-2 py-6 text-center text-sm text-(--color-muted)">{common("loading")}</p>
+      ) : rows.length === 0 ? (
         <p className="px-2 py-6 text-center text-sm text-(--color-muted)">{t("empty")}</p>
       ) : (
         <ul className="flex flex-col">
