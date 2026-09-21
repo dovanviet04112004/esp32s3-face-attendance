@@ -29,7 +29,8 @@ type Who = (typeof WHO)[number]["role"] | "ADMIN";
 
 // What 9.15 and 9.4 say each read is for, and who is left out.
 const READS: { path: string; allowed: Who[] }[] = [
-  { path: "/devices", allowed: ["ADMIN", "HR"] },
+  { path: "/devices", allowed: ["ADMIN"] },
+  { path: "/enrollments/devices", allowed: ["ADMIN", "HR"] },
   { path: "/releases", allowed: ["ADMIN"] },
   { path: "/shifts", allowed: ["ADMIN", "HR"] },
   { path: "/holidays?year=2026", allowed: ["ADMIN", "HR"] },
@@ -157,6 +158,36 @@ describe("route scope (e2e)", () => {
   it("refuses an employee the whole company's attendance", async () => {
     const res = await get("/reports/attendance?from=2026-01-01&to=2026-12-31", "EMPLOYEE");
     assert.equal(res.status, FORBIDDEN);
+  });
+
+  it("lets HR enrol without handing it the fleet", async () => {
+    const fleet = await get("/devices", "HR");
+    assert.equal(fleet.status, FORBIDDEN, "HR was given the fleet page's data");
+    const picker = await get("/enrollments/devices", "HR");
+    assert.equal(picker.status, 200, JSON.stringify(picker.body));
+    for (const row of picker.body as Record<string, unknown>[]) {
+      assert.deepEqual(
+        Object.keys(row).sort(),
+        ["id", "location", "name"],
+        "the picker carries more than a kiosk's name",
+      );
+    }
+  });
+
+  it("never lets a device token hash leave", async () => {
+    const seeded = await db.device.findFirst({ where: { tokenHash: { not: null } } });
+    const listed = await get("/devices?take=50", "ADMIN");
+    assert.equal(listed.status, 200);
+    const rows = (listed.body as { rows: Record<string, unknown>[] }).rows;
+    assert.ok(rows.length > 0, "there is no device to read");
+    for (const row of rows) {
+      assert.ok(!("tokenHash" in row), `${String(row.id)} came back carrying its token hash`);
+    }
+    if (seeded) {
+      const one = await get(`/devices/${seeded.id}`, "ADMIN");
+      assert.equal(one.status, 200);
+      assert.ok(!("tokenHash" in (one.body as object)), "one device came back with its token hash");
+    }
   });
 
   it("drops only the caller's own push subscription", async () => {

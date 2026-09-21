@@ -14,6 +14,12 @@ import { openTemplate, sealTemplate } from "./template-crypto.js";
 const NO_EMPLOYEE = 0;
 const FIRST_TEMPLATE = 0;
 
+export interface AssignableDevice {
+  id: string;
+  name: string | null;
+  location: string | null;
+}
+
 @Injectable()
 export class EnrollmentService {
   private readonly log = new Logger(EnrollmentService.name);
@@ -27,6 +33,15 @@ export class EnrollmentService {
   ) {}
 
   /** Tell a kiosk to expect this person, so nobody types a UID (KEHOACH 7.5). */
+  /** The kiosks a person can be put on, by name (KEHOACH 7.5). */
+  assignable(): Promise<AssignableDevice[]> {
+    return this.db.device.findMany({
+      where: { status: "APPROVED" },
+      select: { id: true, name: true, location: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+    });
+  }
+
   async assign(deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
     await this.consent.require(employeeId);
     const [device, employee] = await Promise.all([this.device(deviceId), this.employee(employeeId)]);

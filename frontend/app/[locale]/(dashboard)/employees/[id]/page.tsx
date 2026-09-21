@@ -47,7 +47,7 @@ interface Employee {
 interface Device {
   id: string;
   name: string | null;
-  status: "PENDING" | "APPROVED" | "REVOKED";
+  location: string | null;
 }
 
 interface Contract {
@@ -129,12 +129,12 @@ export default function EmployeePage() {
     queryFn: async () => (await api.get<DepartmentChoice[]>("/departments")).data,
   });
 
-  // Only the desk that may enrol asks for the fleet; the others would be shown
-  // a picker that answers 403 (KEHOACH 9.15 rule 1).
+  // The enrolment desk asks which kiosks it may assign to, which is not the
+  // fleet: that page belongs to ADMIN alone (KEHOACH 7.5).
   const devices = useQuery({
-    queryKey: ["devices"],
+    queryKey: ["enrollments", "devices"],
     enabled: tab === "info" && mayEnrol,
-    queryFn: async () => (await api.get<{ rows: Device[] }>("/devices")).data,
+    queryFn: async () => (await api.get<Device[]>("/enrollments/devices")).data,
   });
 
   const contracts = useQuery({
@@ -195,12 +195,12 @@ export default function EmployeePage() {
   const assign = useMutation({
     mutationFn: (deviceId: string) => api.post("/enrollments", { deviceId, employeeId: id }),
     onSuccess: (_answer, deviceId) => {
-      const device = devices.data?.rows.find((row) => row.id === deviceId);
+      const device = devices.data?.find((row) => row.id === deviceId);
       setAssigned(device?.name ?? deviceId);
     },
   });
 
-  const approved = devices.data?.rows.filter((row) => row.status === "APPROVED") ?? [];
+  const approved = devices.data ?? [];
 
   if (employee.isPending) {
     return <p className="text-sm text-(--color-muted)">{common("loading")}</p>;

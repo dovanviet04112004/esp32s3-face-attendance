@@ -32,6 +32,27 @@ export interface Registration {
   expiresInDays?: number;
 }
 
+/** Named rather than taken whole: the row carries tokenHash, the hash of the
+ *  credential a kiosk authenticates with (KEHOACH 7.5).
+ */
+const SHOWN = {
+  id: true,
+  serial: true,
+  name: true,
+  location: true,
+  status: true,
+  fwVersion: true,
+  modelVersion: true,
+  rosterVersion: true,
+  lastSeenAt: true,
+  online: true,
+  approvedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+export type PublicDevice = Omit<Device, "tokenHash">;
+
 @Injectable()
 export class DevicesService {
   private readonly log = new Logger(DevicesService.name);
@@ -117,11 +138,12 @@ export class DevicesService {
     });
   }
 
-  async list(query: ListDevicesDto): Promise<Page<Device>> {
+  async list(query: ListDevicesDto): Promise<Page<PublicDevice>> {
     const where: Prisma.DeviceWhereInput = query.status ? { status: query.status } : {};
     const [rows, total] = await Promise.all([
       this.db.device.findMany({
         where,
+        select: SHOWN,
         skip: query.skip,
         take: query.take,
         orderBy: [{ status: "asc" }, { id: "asc" }],
@@ -131,34 +153,36 @@ export class DevicesService {
     return { rows, total };
   }
 
-  async get(id: string): Promise<Device> {
-    const found = await this.db.device.findUnique({ where: { id } });
+  async get(id: string): Promise<PublicDevice> {
+    const found = await this.db.device.findUnique({ where: { id }, select: SHOWN });
     if (!found) {
       throw new NotFoundException(`no device ${id}`);
     }
     return found;
   }
 
-  async update(id: string, body: UpdateDeviceDto): Promise<Device> {
+  async update(id: string, body: UpdateDeviceDto): Promise<PublicDevice> {
     await this.get(id);
-    return this.db.device.update({ where: { id }, data: body });
+    return this.db.device.update({ where: { id }, data: body, select: SHOWN });
   }
 
   /** Accept a machine: a person has matched the id on its screen (KEHOACH 7.3). */
-  async approve(id: string, body: ApproveDeviceDto): Promise<Device> {
+  async approve(id: string, body: ApproveDeviceDto): Promise<PublicDevice> {
     await this.get(id);
     return this.db.device.update({
       where: { id },
       data: { ...body, status: "APPROVED", approvedAt: new Date() },
+      select: SHOWN,
     });
   }
 
   /** Take a machine back; its credentials stop working and it re-registers. */
-  async revoke(id: string): Promise<Device> {
+  async revoke(id: string): Promise<PublicDevice> {
     await this.get(id);
     return this.db.device.update({
       where: { id },
       data: { status: "REVOKED", tokenHash: null, online: false },
+      select: SHOWN,
     });
   }
 

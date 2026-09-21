@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { DeviceEnrollment } from "@prisma/client";
 
@@ -6,7 +6,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { AssignDto } from "./dto/enrollment.dto.js";
-import { EnrollmentService } from "./enrollment.service.js";
+import { EnrollmentService, type AssignableDevice } from "./enrollment.service.js";
 
 @ApiTags("enrollment")
 @ApiBearerAuth()
@@ -14,6 +14,13 @@ import { EnrollmentService } from "./enrollment.service.js";
 @Controller("enrollments")
 export class EnrollmentController {
   constructor(private readonly enrollment: EnrollmentService) {}
+
+  @Get("devices")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "The kiosks a person can be put on, by name" })
+  assignable(): Promise<AssignableDevice[]> {
+    return this.enrollment.assignable();
+  }
 
   @Post()
   @Roles("ADMIN", "HR")
