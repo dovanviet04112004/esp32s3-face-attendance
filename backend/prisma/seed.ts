@@ -6,11 +6,15 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 
 const SEED_ADMIN_EMAIL = "admin@kiosk.local";
-// One password for all three: a dev seed, and the roles are what differ.
+// One password for the lot; the roles are what differ. The two without a code
+// stay unlinked, which the interface has to handle (KEHOACH 9.15).
 const SEED_ACCOUNTS = [
-  { email: SEED_ADMIN_EMAIL, role: "ADMIN" },
-  { email: "hr@kiosk.local", role: "HR" },
-  { email: "viewer@kiosk.local", role: "VIEWER" },
+  { email: SEED_ADMIN_EMAIL, role: "ADMIN", code: null, fullName: null, reportsTo: null },
+  { email: "viewer@kiosk.local", role: "VIEWER", code: null, fullName: null, reportsTo: null },
+  { email: "hr@kiosk.local", role: "HR", code: "NV0010", fullName: "Lê Thị Nhân Sự", reportsTo: null },
+  { email: "payroll@kiosk.local", role: "PAYROLL", code: "NV0011", fullName: "Phạm Văn Lương", reportsTo: null },
+  { email: "manager@kiosk.local", role: "MANAGER", code: "NV0012", fullName: "Vũ Thị Quản Lý", reportsTo: null },
+  { email: "employee@kiosk.local", role: "EMPLOYEE", code: "NV0013", fullName: "Đỗ Văn Nhân Viên", reportsTo: "NV0012" },
 ] as const;
 const SEED_ENTITY_CODE = "DEFAULT";
 const SEED_SHIFT_NAME = "Hành chính";
@@ -56,13 +60,6 @@ async function main(): Promise<void> {
     throw new Error("set SEED_ADMIN_PASSWORD before seeding");
   }
   const passwordHash = await hashPassword(env.SEED_ADMIN_PASSWORD);
-  for (const account of SEED_ACCOUNTS) {
-    await prisma.user.upsert({
-      where: { email: account.email },
-      update: { passwordHash, role: account.role },
-      create: { email: account.email, passwordHash, role: account.role },
-    });
-  }
 
   const shift = await prisma.shift.upsert({
     where: { name: SEED_SHIFT_NAME },
@@ -81,6 +78,41 @@ async function main(): Promise<void> {
     update: {},
     create: { legalEntityId: entity.id, code: "PB0001", name: "Kỹ thuật" },
   });
+
+  for (const account of SEED_ACCOUNTS) {
+    const person = account.code
+      ? await prisma.employee.upsert({
+          where: { code: account.code },
+          update: {},
+          create: {
+            code: account.code,
+            fullName: account.fullName as string,
+            legalEntityId: entity.id,
+            departmentId: department.id,
+            hireDate: SEED_VALID_FROM,
+          },
+        })
+      : null;
+    await prisma.user.upsert({
+      where: { email: account.email },
+      update: { passwordHash, role: account.role, employeeId: person?.id ?? null },
+      create: {
+        email: account.email,
+        passwordHash,
+        role: account.role,
+        employeeId: person?.id ?? null,
+      },
+    });
+  }
+
+  // The manager needs somebody under them or their scope is a list of one.
+  for (const account of SEED_ACCOUNTS.filter((one) => one.reportsTo !== null)) {
+    const boss = await prisma.employee.findUnique({ where: { code: account.reportsTo as string } });
+    await prisma.employee.update({
+      where: { code: account.code as string },
+      data: { managerId: boss?.id ?? null },
+    });
+  }
 
   const employee = await prisma.employee.upsert({
     where: { code: "NV0001" },
