@@ -81,7 +81,8 @@
     "less": "Show less",
     "close": "Close",
     "sure": "Sure?",
-    "filters": "Filters"
+    "filters": "Filters",
+    "showingOf": "Showing {shown} of {total}"
   },
   "login": {
     "lead": "Sign in to reach the control panel",
@@ -325,7 +326,10 @@
     "releaseShaHint": "64 lowercase hex digits. The kiosk checks it before writing.",
     "releaseBytes": "Size (bytes)",
     "releaseAdd": "Register",
-    "releaseSize": "{kb} kB"
+    "releaseSize": "{kb} kB",
+    "statusPENDING": "Waiting",
+    "statusAPPROVED": "Approved",
+    "statusREVOKED": "Revoked"
   },
   "shifts": {
     "title": "Shifts",

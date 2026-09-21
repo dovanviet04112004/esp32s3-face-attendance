@@ -136,7 +136,7 @@ export default function DevicesPage() {
             {approve.isPending ? t("approving") : t("approve")}
           </Button>
         ) : (
-          <span className="text-(--color-muted)">{row.status}</span>
+          <span className="text-(--color-muted)">{t(`status${row.status}`)}</span>
         ),
     },
   ];

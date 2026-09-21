@@ -81,7 +81,8 @@
     "less": "Thu gọn",
     "close": "Đóng",
     "sure": "Chắc chắn?",
-    "filters": "Bộ lọc"
+    "filters": "Bộ lọc",
+    "showingOf": "Đang hiện {shown} trong {total}"
   },
   "login": {
     "lead": "Đăng nhập để vào bảng điều khiển",
@@ -325,7 +326,10 @@
     "releaseShaHint": "64 ký tự hex thường. Máy tự kiểm trước khi ghi.",
     "releaseBytes": "Kích thước (byte)",
     "releaseAdd": "Khai bản",
-    "releaseSize": "{kb} kB"
+    "releaseSize": "{kb} kB",
+    "statusPENDING": "Chờ duyệt",
+    "statusAPPROVED": "Đã duyệt",
+    "statusREVOKED": "Đã thu hồi"
   },
   "shifts": {
     "title": "Ca làm",
