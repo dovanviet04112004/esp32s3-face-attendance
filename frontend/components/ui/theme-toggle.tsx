@@ -31,7 +31,11 @@ export function ThemeToggle() {
   }
 
   return (
-    <div className="inline-flex rounded-lg border border-(--color-line) p-1" role="group">
+    <div
+      role="radiogroup"
+      aria-label={t("themeTitle")}
+      className="inline-flex rounded-lg border border-(--color-line) p-1"
+    >
       {THEMES.map((one) => {
         const { icon: Icon, key } = FACE[one];
         const on = theme === one;
@@ -39,7 +43,8 @@ export function ThemeToggle() {
           <button
             key={one}
             type="button"
-            aria-current={on}
+            role="radio"
+            aria-checked={on}
             onClick={() => choose(one)}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm pointer-coarse:min-h-11",
