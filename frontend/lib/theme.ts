@@ -4,8 +4,8 @@ export const THEMES: Theme[] = ["system", "light", "dark"];
 
 const kStore = "theme";
 
-/** Runs in head so the first paint is already the chosen theme (KEHOACH 9.12). */
-export const kThemeScript = `try{var t=localStorage.getItem('${kStore}');if(t==='dark'||t==='light'){document.documentElement.dataset.theme=t}}catch(e){}`;
+// color-scheme paints the canvas with no stylesheet loaded (KEHOACH 9.12).
+export const kThemeScript = `try{var r=document.documentElement,t=localStorage.getItem('${kStore}');if(t==='dark'||t==='light'){r.dataset.theme=t;r.style.colorScheme=t}else{r.style.colorScheme='light dark'}}catch(e){}`;
 
 export function readTheme(): Theme {
   try {
@@ -18,9 +18,7 @@ export function readTheme(): Theme {
 
 const kPicked = "theme-color-picked";
 
-/** The browser chrome takes its colour from a media query, which cannot see a
- *  choice made in the app, so an explicit theme carries its own tag.
- */
+// A media query cannot see a choice made in the app, so this tag carries it.
 function paintChrome(theme: Theme): void {
   const held = document.head.querySelector(`meta[data-${kPicked}]`);
   if (theme === "system") {
@@ -41,8 +39,10 @@ export function applyTheme(theme: Theme): void {
   const root = document.documentElement;
   if (theme === "system") {
     delete root.dataset.theme;
+    root.style.colorScheme = "light dark";
   } else {
     root.dataset.theme = theme;
+    root.style.colorScheme = theme;
   }
   paintChrome(theme);
   try {
