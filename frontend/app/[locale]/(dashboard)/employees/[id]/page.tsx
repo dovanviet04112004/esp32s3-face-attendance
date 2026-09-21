@@ -106,6 +106,9 @@ interface Consent {
   withdrawnAt: string | null;
 }
 
+// One panel serves every tab, since only the open one is ever mounted.
+const kPanel = "employee-tab-panel";
+
 export default function EmployeePage() {
   const t = useTranslations("employees");
   const format = useFormatter();
@@ -260,7 +263,9 @@ export default function EmployeePage() {
             key={one}
             type="button"
             role="tab"
+            id={`tab-${one}`}
             aria-selected={one === tab}
+            aria-controls={kPanel}
             onClick={() => router.replace(`/employees/${id}?tab=${one}`)}
             className={[
               "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm",
@@ -274,182 +279,184 @@ export default function EmployeePage() {
         ))}
       </div>
 
-      {tab === "info" ? (
-        <div className="mt-6">
-          <EmployeeForm
-            start={{
-              ...EMPTY_DRAFT,
-              code: employee.data.code,
-              fullName: employee.data.fullName,
-              legalEntityId: employee.data.legalEntityId ?? "",
-              departmentId: employee.data.departmentId ?? "",
-              jobTitleId: employee.data.jobTitleId ?? "",
-              active: employee.data.active,
-              personalEmail: employee.data.personalEmail ?? "",
-              phone: employee.data.phone ?? "",
-              hireDate: day(employee.data.hireDate),
-              dateOfBirth: day(employee.data.dateOfBirth),
-              gender: employee.data.gender ?? "",
-              nationalId: employee.data.nationalId ?? "",
-              taxCode: employee.data.taxCode ?? "",
-              socialInsuranceNo: employee.data.socialInsuranceNo ?? "",
-            }}
-            departments={departments.data ?? []}
-            jobTitles={jobTitles.data ?? []}
-            entities={entities.data ?? []}
-            showActive
-            showBank={false}
-            busy={save.isPending}
-            fault={fault}
-            onSubmit={(draft) => {
-              setFault(null);
-              save.mutate(draft);
-            }}
-            onCancel={() => router.replace("/employees")}
-          />
+      <div id={kPanel} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+        {tab === "info" ? (
+          <div className="mt-6">
+            <EmployeeForm
+              start={{
+                ...EMPTY_DRAFT,
+                code: employee.data.code,
+                fullName: employee.data.fullName,
+                legalEntityId: employee.data.legalEntityId ?? "",
+                departmentId: employee.data.departmentId ?? "",
+                jobTitleId: employee.data.jobTitleId ?? "",
+                active: employee.data.active,
+                personalEmail: employee.data.personalEmail ?? "",
+                phone: employee.data.phone ?? "",
+                hireDate: day(employee.data.hireDate),
+                dateOfBirth: day(employee.data.dateOfBirth),
+                gender: employee.data.gender ?? "",
+                nationalId: employee.data.nationalId ?? "",
+                taxCode: employee.data.taxCode ?? "",
+                socialInsuranceNo: employee.data.socialInsuranceNo ?? "",
+              }}
+              departments={departments.data ?? []}
+              jobTitles={jobTitles.data ?? []}
+              entities={entities.data ?? []}
+              showActive
+              showBank={false}
+              busy={save.isPending}
+              fault={fault}
+              onSubmit={(draft) => {
+                setFault(null);
+                save.mutate(draft);
+              }}
+              onCancel={() => router.replace("/employees")}
+            />
 
-          {mayEnrol ? (
-          <div className="mt-10 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-            <h2 className="text-sm font-medium">{t("consentTitle")}</h2>
-            <p className="mt-1 text-sm text-(--color-muted)">{t("consentLead")}</p>
-            {consents.isPending ? (
-              <p className="mt-4 text-sm text-(--color-muted)">{common("loading")}</p>
-            ) : agreed ? (
-              <div className="mt-4">
-                <p className="text-sm text-(--color-ok)">
-                  {t("consentOn", { day: format.dateTime(new Date(agreed.grantedAt), "day") })}
-                </p>
-                <p className="mt-1 text-xs text-(--color-muted)">
-                  {t("consentNotice")} {agreed.noticeVersion} · {agreed.method}
-                </p>
-                <Button
-                  type="button"
-                  tone="danger"
-                  className="mt-3"
-                  disabled={withdraw.isPending}
-                  onClick={() => withdraw.mutate()}
-                >
-                  {withdraw.isPending ? common("saving") : t("consentWithdraw")}
-                </Button>
-                <p className="mt-2 text-xs text-(--color-muted)">{t("consentWithdrawHint")}</p>
-              </div>
-            ) : (
-              <div className="mt-4">
-                <p className="text-sm text-(--color-warn)">{t("consentMissing")}</p>
-                <Button
-                  type="button"
-                  className="mt-3"
-                  disabled={grant.isPending}
-                  onClick={() => grant.mutate()}
-                >
-                  {grant.isPending ? common("saving") : t("consentGrant")}
-                </Button>
-              </div>
-            )}
-          </div>
-          ) : null}
-
-          {mayEnrol ? (
-          <div className="mt-4 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-            <h2 className="text-sm font-medium">{t("assignTitle")}</h2>
-            <p className="mt-1 text-sm text-(--color-muted)">{t("assignLead")}</p>
-            {approved.length === 0 ? (
-              <p className="mt-4 text-sm text-(--color-muted)">{t("assignNone")}</p>
-            ) : (
-              <div className="mt-4 flex gap-2">
-                <Select
-                  aria-label={t("assignTitle")}
-                  value={picked}
-                  onChange={(e) => setPicked(e.target.value)}
-                >
-                  <option value="">{common("empty")}</option>
-                  {approved.map((device) => (
-                    <option key={device.id} value={device.id}>
-                      {device.name ?? device.id}
-                    </option>
-                  ))}
-                </Select>
-                <Button
-                  type="button"
-                  disabled={!picked || assign.isPending}
-                  onClick={() => {
-                    setEnrolFault(null);
-                    assign.mutate(picked);
-                  }}
-                  className="shrink-0"
-                >
-                  {t("assignAction")}
-                </Button>
-              </div>
-            )}
-            {assigned ? (
-              <p className="mt-3 text-sm text-(--color-ok)">{t("assigned", { device: assigned })}</p>
+            {mayEnrol ? (
+            <div className="mt-10 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+              <h2 className="text-sm font-medium">{t("consentTitle")}</h2>
+              <p className="mt-1 text-sm text-(--color-muted)">{t("consentLead")}</p>
+              {consents.isPending ? (
+                <p className="mt-4 text-sm text-(--color-muted)">{common("loading")}</p>
+              ) : agreed ? (
+                <div className="mt-4">
+                  <p className="text-sm text-(--color-ok)">
+                    {t("consentOn", { day: format.dateTime(new Date(agreed.grantedAt), "day") })}
+                  </p>
+                  <p className="mt-1 text-xs text-(--color-muted)">
+                    {t("consentNotice")} {agreed.noticeVersion} · {agreed.method}
+                  </p>
+                  <Button
+                    type="button"
+                    tone="danger"
+                    className="mt-3"
+                    disabled={withdraw.isPending}
+                    onClick={() => withdraw.mutate()}
+                  >
+                    {withdraw.isPending ? common("saving") : t("consentWithdraw")}
+                  </Button>
+                  <p className="mt-2 text-xs text-(--color-muted)">{t("consentWithdrawHint")}</p>
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <p className="text-sm text-(--color-warn)">{t("consentMissing")}</p>
+                  <Button
+                    type="button"
+                    className="mt-3"
+                    disabled={grant.isPending}
+                    onClick={() => grant.mutate()}
+                  >
+                    {grant.isPending ? common("saving") : t("consentGrant")}
+                  </Button>
+                </div>
+              )}
+            </div>
             ) : null}
-            {enrolFault ? (
-              <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-                {enrolFault}
+
+            {mayEnrol ? (
+            <div className="mt-4 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+              <h2 className="text-sm font-medium">{t("assignTitle")}</h2>
+              <p className="mt-1 text-sm text-(--color-muted)">{t("assignLead")}</p>
+              {approved.length === 0 ? (
+                <p className="mt-4 text-sm text-(--color-muted)">{t("assignNone")}</p>
+              ) : (
+                <div className="mt-4 flex gap-2">
+                  <Select
+                    aria-label={t("assignTitle")}
+                    value={picked}
+                    onChange={(e) => setPicked(e.target.value)}
+                  >
+                    <option value="">{common("empty")}</option>
+                    {approved.map((device) => (
+                      <option key={device.id} value={device.id}>
+                        {device.name ?? device.id}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    type="button"
+                    disabled={!picked || assign.isPending}
+                    onClick={() => {
+                      setEnrolFault(null);
+                      assign.mutate(picked);
+                    }}
+                    className="shrink-0"
+                  >
+                    {t("assignAction")}
+                  </Button>
+                </div>
+              )}
+              {assigned ? (
+                <p className="mt-3 text-sm text-(--color-ok)">{t("assigned", { device: assigned })}</p>
+              ) : null}
+              {enrolFault ? (
+                <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+                  {enrolFault}
+                </p>
+              ) : null}
+            </div>
+            ) : null}
+
+            {writesPeople && employee.data.active ? <Offboard employeeId={id} /> : null}
+          </div>
+        ) : null}
+
+        {tab === "contracts" ? <Contracts employeeId={id} mayWrite={writesPeople} /> : null}
+
+        {tab === "attendance" ? (
+          <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface)">
+            {punches.isPending ? (
+              <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+            ) : punches.data?.length ? (
+              <ul className="divide-y divide-(--color-line)">
+                {punches.data.map((one) => (
+                  <li key={one.id} className="flex flex-wrap gap-3 px-4 py-2 text-sm">
+                    <span className="tabular-nums">{format.dateTime(new Date(one.ts), "medium")}</span>
+                    <span className="text-(--color-muted)">{one.direction}</span>
+                    <span className="ml-auto text-xs text-(--color-muted)">{one.deviceId}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-4 py-6 text-sm text-(--color-muted)">
+                {punches.isPending ? common("loading") : a("historyEmpty")}
               </p>
-            ) : null}
+            )}
           </div>
-          ) : null}
+        ) : null}
 
-          {writesPeople && employee.data.active ? <Offboard employeeId={id} /> : null}
-        </div>
-      ) : null}
+        {tab === "leave" ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {balances.isPending ? (
+              <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+            ) : balances.data?.length ? (
+              balances.data.map((one) => (
+                <article
+                  key={one.leaveTypeId}
+                  className="rounded-xl border border-(--color-line) bg-(--color-surface) p-4"
+                >
+                  <p className="text-xs text-(--color-muted)">{one.name}</p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums">{one.remaining}</p>
+                </article>
+              ))
+            ) : (
+              <p className="text-sm text-(--color-muted)">
+                {balances.isPending ? common("loading") : t("leaveEmpty")}
+              </p>
+            )}
+          </div>
+        ) : null}
 
-      {tab === "contracts" ? <Contracts employeeId={id} mayWrite={writesPeople} /> : null}
+        {tab === "pay" ? <Pay employeeId={id} mayWrite={writesPay} /> : null}
 
-      {tab === "attendance" ? (
-        <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface)">
-          {punches.isPending ? (
-            <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-          ) : punches.data?.length ? (
-            <ul className="divide-y divide-(--color-line)">
-              {punches.data.map((one) => (
-                <li key={one.id} className="flex flex-wrap gap-3 px-4 py-2 text-sm">
-                  <span className="tabular-nums">{format.dateTime(new Date(one.ts), "medium")}</span>
-                  <span className="text-(--color-muted)">{one.direction}</span>
-                  <span className="ml-auto text-xs text-(--color-muted)">{one.deviceId}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-4 py-6 text-sm text-(--color-muted)">
-              {punches.isPending ? common("loading") : a("historyEmpty")}
-            </p>
-          )}
-        </div>
-      ) : null}
+        {tab === "assets" ? <Assets employeeId={id} mayWrite={writesPeople} /> : null}
 
-      {tab === "leave" ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {balances.isPending ? (
-            <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-          ) : balances.data?.length ? (
-            balances.data.map((one) => (
-              <article
-                key={one.leaveTypeId}
-                className="rounded-xl border border-(--color-line) bg-(--color-surface) p-4"
-              >
-                <p className="text-xs text-(--color-muted)">{one.name}</p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums">{one.remaining}</p>
-              </article>
-            ))
-          ) : (
-            <p className="text-sm text-(--color-muted)">
-              {balances.isPending ? common("loading") : t("leaveEmpty")}
-            </p>
-          )}
-        </div>
-      ) : null}
+        {tab === "checklist" ? <Checklist employeeId={id} mayWrite={writesPeople} /> : null}
 
-      {tab === "pay" ? <Pay employeeId={id} mayWrite={writesPay} /> : null}
-
-      {tab === "assets" ? <Assets employeeId={id} mayWrite={writesPeople} /> : null}
-
-      {tab === "checklist" ? <Checklist employeeId={id} mayWrite={writesPeople} /> : null}
-
-      {tab === "files" ? <Files employeeId={id} mayWrite={writesPeople} /> : null}
+        {tab === "files" ? <Files employeeId={id} mayWrite={writesPeople} /> : null}
+      </div>
     </section>
   );
 }
