@@ -386,25 +386,24 @@ export default function EmployeesPage() {
             </Link>
           ) : undefined
         }
+        more={
+          employees.hasNextPage ? (
+            <div className="mt-3 flex flex-col items-center gap-1">
+              <Button
+                type="button"
+                tone="quiet"
+                disabled={employees.isFetchingNextPage}
+                onClick={() => void employees.fetchNextPage()}
+              >
+                {employees.isFetchingNextPage ? common("loading") : common("loadMore")}
+              </Button>
+              <p className="text-xs text-(--color-muted) tabular-nums">
+                {common("showingOf", { shown: loaded?.length ?? 0, total: counted?.total ?? 0 })}
+              </p>
+            </div>
+          ) : null
+        }
       />
-
-      {employees.hasNextPage ? (
-        <div className="mt-3 flex flex-col items-center gap-1">
-          <Button
-            type="button"
-            tone="quiet"
-            disabled={employees.isFetchingNextPage}
-            onClick={() => void employees.fetchNextPage()}
-          >
-            {employees.isFetchingNextPage ? common("loading") : common("loadMore")}
-          </Button>
-          {counted ? (
-            <p className="text-xs text-(--color-muted) tabular-nums">
-              {common("showingOf", { shown: loaded?.length ?? 0, total: counted.total })}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
 
       <Sheet
         open={raising}

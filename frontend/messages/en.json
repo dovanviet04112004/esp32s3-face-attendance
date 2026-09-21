@@ -282,7 +282,9 @@
     "historyEmpty": "This person has no punches yet",
     "viewHistory": "History",
     "ofPunches": "{count} punches",
-    "ofPunchesAtLeast": "more than {count} punches"
+    "ofPunchesAtLeast": "more than {count} punches",
+    "directionIN": "In",
+    "directionOUT": "Out"
   },
   "devices": {
     "title": "Devices",

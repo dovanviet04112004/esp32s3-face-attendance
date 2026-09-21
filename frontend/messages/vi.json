@@ -282,7 +282,9 @@
     "historyEmpty": "Người này chưa có lượt chấm công nào",
     "viewHistory": "Lịch sử",
     "ofPunches": "{count} lượt",
-    "ofPunchesAtLeast": "hơn {count} lượt"
+    "ofPunchesAtLeast": "hơn {count} lượt",
+    "directionIN": "Vào",
+    "directionOUT": "Ra"
   },
   "devices": {
     "title": "Thiết bị",

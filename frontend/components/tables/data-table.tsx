@@ -34,6 +34,8 @@ interface Props<T> {
   emptyAction?: ReactNode;
   selectable?: boolean;
   bulk?: (chosen: T[]) => ReactNode;
+  /** Reaching the rows this page did not ask for yet. */
+  more?: ReactNode;
 }
 
 interface Memory {
@@ -82,6 +84,7 @@ export function DataTable<T>({
   emptyAction,
   selectable,
   bulk,
+  more,
 }: Props<T>) {
   const t = useTranslations("common");
   const [memory, setMemory] = useState<Memory>(kFresh);
@@ -267,6 +270,8 @@ export function DataTable<T>({
         chosen={selectable ? chosen : undefined}
         onToggle={selectable ? toggleRow : undefined}
       />
+
+      {more}
 
       <Sheet
         open={picking}
