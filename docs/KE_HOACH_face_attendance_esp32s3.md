@@ -2206,8 +2206,7 @@ esp32s3-face-attendance/
 ├── frontend/      Next.js → Vercel
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
 ├── tools/         Script ngang khối: gen_contracts · check_comments · check_layers
-│               · check_migrations · check_error_codes
-│                   · check_schematic · check_pcb · check_migrations
+│                   · check_migrations · check_error_codes · check_plans
 │                   · check_schematic · check_pcb
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
@@ -7089,7 +7088,16 @@ ngày không ai chịu nổi, và lúc đó không ai nhớ đã thêm gì.
   trung bình: một truy vấn 20 ms chạy một triệu lần tốn hơn một truy vấn 2 giây chạy mười lần.
 - Ghi nhật ký mọi câu vượt ngưỡng, kèm tham số.
 - Mỗi truy vấn mới trên bảng lớn phải **xem `EXPLAIN` một lần** trước khi lên, và nếu nó quét
-  toàn bảng thì hoặc có chỉ mục hoặc có lý do ghi lại.
+  toàn bảng thì hoặc có chỉ mục hoặc có lý do ghi lại. `tools/check_plans.py` giữ luật này:
+  danh sách truy vấn cùng lý do miễn trừ nằm trong chính file ấy, nên thêm một miễn trừ là một
+  dòng trong diff có người đọc, không phải một quyết định trong đầu ai đó.
+
+  **Công cụ này phải biết khi nào nó không đủ tư cách phán.** `EXPLAIN` trên một bảng bảy dòng
+  luôn chọn quét tuần tự, và điều đó **không nói gì** về việc thiếu chỉ mục — gọi nó là lỗi thì
+  ba ngày sau không ai còn chạy công cụ nữa. Nên mỗi bảng có một **sàn số dòng**: dưới sàn thì
+  in ra *chưa đủ dữ liệu để kết luận* và không fail; trên sàn thì một lượt quét tuần tự không
+  có lý do ghi lại là fail. Cùng tinh thần 🔬 của CLAUDE.md §8.10: không trình bày một phỏng
+  đoán như một số đo.
 - Theo dõi **kích thước bảng và độ phình** theo tuần. Bảng lượt chấm công lớn nhanh nhất và là
   bảng đầu tiên cần chia mảnh (§9.9 luật 2).
 
