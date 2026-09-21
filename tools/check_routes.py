@@ -18,6 +18,7 @@ CONTROLLERS = Path("backend/src/modules")
 OPEN: dict[str, str] = {
     "POST /auth/login": "there is no viewer yet",
     "POST /auth/set-password": "a link, not a session",
+    "POST /auth/forgot-password": "an address is all it is offered (KEHOACH 9.4)",
     "POST /auth/refresh": "the cookie is the caller",
     "POST /auth/logout": "ends whatever session presented itself",
     "GET /auth/me": "reads the caller's own claims off the request",

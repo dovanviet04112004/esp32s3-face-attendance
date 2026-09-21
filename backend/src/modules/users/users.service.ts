@@ -21,12 +21,11 @@ import { PrismaService } from "../../database/prisma.service.js";
 
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { UNUSABLE_PASSWORD } from "../auth/password.js";
+import { LINK_BYTES, UNUSABLE_PASSWORD } from "../auth/password.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
 import type { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
-const LINK_BYTES = 32;
 const HOUR_MS = 3_600_000;
 
 function fingerprint(token: string): string {

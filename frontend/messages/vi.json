@@ -94,7 +94,8 @@
     "password": "Mật khẩu",
     "submit": "Đăng nhập",
     "checking": "Đang kiểm tra…",
-    "refused": "Email hoặc mật khẩu không đúng"
+    "refused": "Email hoặc mật khẩu không đúng",
+    "forgot": "Quên mật khẩu?"
   },
   "overview": {
     "title": "Tổng quan",
@@ -408,7 +409,14 @@
     "themeSystem": "Theo máy",
     "themeLight": "Sáng",
     "themeDark": "Tối",
-    "provisionWaiting": "Còn {count} người chưa được mở, bấm lại để tiếp tục."
+    "provisionWaiting": "Còn {count} người chưa được mở, bấm lại để tiếp tục.",
+    "passwordTitle": "Mật khẩu",
+    "passwordLead": "Đổi xong thì mọi thiết bị đang đăng nhập đều bị đăng xuất, kể cả máy này.",
+    "passwordCurrent": "Mật khẩu đang dùng",
+    "passwordNext": "Mật khẩu mới",
+    "passwordHint": "Ít nhất {count} ký tự.",
+    "passwordSubmit": "Đổi mật khẩu",
+    "passwordChanged": "Đã đổi. Đăng nhập lại bằng mật khẩu mới."
   },
   "requests": {
     "title": "Đơn từ",
@@ -855,6 +863,15 @@
     "toLogin": "Về trang đăng nhập",
     "done": "Đã đặt mật khẩu",
     "doneHint": "Tài khoản của bạn đã mở. Đăng nhập bằng mật khẩu vừa đặt."
+  },
+  "forgot": {
+    "lead": "Nhập địa chỉ thư của bạn. Nếu có tài khoản, một liên kết đặt lại mật khẩu sẽ được gửi tới đó.",
+    "email": "Email",
+    "submit": "Gửi liên kết",
+    "asking": "Đang gửi…",
+    "sentTitle": "Đã gửi",
+    "sentHint": "Nếu địa chỉ ấy có tài khoản, liên kết đang trên đường tới. Kiểm tra cả hộp thư rác.",
+    "toLogin": "Về trang đăng nhập"
   },
   "myShifts": {
     "title": "Lịch ca của tôi",

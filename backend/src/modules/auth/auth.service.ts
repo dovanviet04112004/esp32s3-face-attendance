@@ -1,6 +1,6 @@
-import { randomUUID, createHash } from "node:crypto";
+import { randomBytes, randomUUID, createHash } from "node:crypto";
 
-import { Injectable, Logger, UnauthorizedException } from "@nestjs/common";
+import { Inject, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import type { User } from "@prisma/client";
@@ -8,7 +8,10 @@ import type { User } from "@prisma/client";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import type { AccessClaims, DeviceClaims, RefreshClaims } from "./auth.types.js";
-import { hashPassword, verifyPassword } from "./password.js";
+import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
+import { QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
+import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
+import { hashPassword, LINK_BYTES, verifyPassword } from "./password.js";
 
 const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
@@ -37,6 +40,7 @@ export class AuthService {
     private readonly db: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService<Env, true>,
+    @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
   async signIn(email: string, password: string, from: SignedInFrom): Promise<IssuedTokens> {
@@ -103,6 +107,53 @@ export class AuthService {
       }),
     ]);
     this.log.log(`account ${setup.user.id} set its own password`);
+  }
+
+  /** Asks for the password in hand: a session somebody else is holding must
+   *  not be able to shut the owner out of their own account (KEHOACH 9.4).
+   */
+  async changePassword(userId: string, current: string, next: string): Promise<void> {
+    const user = await this.db.user.findUnique({ where: { id: userId } });
+    if (!user || !user.active || !(await verifyPassword(current, user.passwordHash))) {
+      throw new UnauthorizedException("CREDENTIALS_REJECTED");
+    }
+    const passwordHash = await hashPassword(next);
+    const now = new Date();
+    await this.db.$transaction([
+      this.db.user.update({ where: { id: userId }, data: { passwordHash } }),
+      this.db.session.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
+    this.log.log(`account ${userId} changed its own password`);
+  }
+
+  /** Answers the same for an address with an account and one without, so the
+   *  door cannot be read as a list of who works here (KEHOACH 9.4).
+   */
+  async forgot(email: string): Promise<void> {
+    const user = await this.db.user.findUnique({
+      where: { email },
+      select: { id: true, active: true, employee: { select: { locale: true } } },
+    });
+    if (!user || !user.active) {
+      this.log.log("a setup link was asked for by an address with no account");
+      return;
+    }
+    const link = randomBytes(LINK_BYTES).toString("base64url");
+    const expiresAt = new Date(
+      Date.now() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * UNIT_MS.h,
+    );
+    await this.db.passwordSetup.create({
+      data: { userId: user.id, tokenHash: fingerprint(link), expiresAt },
+    });
+    const root = this.config.get("APP_PUBLIC_URL", { infer: true });
+    await this.queues[QUEUE.notify].add("password-setup", {
+      type: "password-setup",
+      userId: user.id,
+      link: `${root}/${user.employee?.locale ?? DEFAULT_MAIL_LOCALE}/set-password?token=${link}`,
+    } satisfies PasswordSetupJob);
   }
 
   /** Sign one device out, leaving the rest of them signed in. */

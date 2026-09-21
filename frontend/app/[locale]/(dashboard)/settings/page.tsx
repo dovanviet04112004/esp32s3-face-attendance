@@ -2,11 +2,12 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 
 import { NoticePreferences } from "@/components/notifications/notice-prefs";
 import { PushSwitch } from "@/components/notifications/push-switch";
 import { Button } from "@/components/ui/button";
+import { PasswordInput } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
@@ -14,6 +15,8 @@ import { api } from "@/lib/api";
 import { useSession, type Role } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
+
+const SHORTEST = 12;
 
 interface OpenedAccount {
   employeeCode: string;
@@ -24,6 +27,7 @@ interface OpenedAccount {
 export default function SettingsPage() {
   const t = useTranslations("settings");
   const roleName = useTranslations("roles");
+  const common = useTranslations("common");
   const notices = useTranslations("notices");
   const nav = useTranslations("nav");
   const locale = useLocale();
@@ -31,8 +35,25 @@ export default function SettingsPage() {
   const router = useRouter();
   const role = useSession((s) => s.role);
   const clear = useSession((s) => s.clear);
-  const [moving, startMoving] = useTransition();
   const faultOf = useFault();
+  const [moving, startMoving] = useTransition();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [changed, setChanged] = useState(false);
+  const [passwordFault, setPasswordFault] = useState<string | null>(null);
+
+  // Every device signs out, this one with them, so the reader lands on the
+  // login page holding the password they have just chosen (KEHOACH 9.23).
+  const change = useMutation({
+    mutationFn: () => api.post("/auth/change-password", { current, next }),
+    onSuccess: () => {
+      setCurrent("");
+      setNext("");
+      setChanged(true);
+      setPasswordFault(null);
+    },
+    onError: (fell: unknown) => setPasswordFault(faultOf(fell)),
+  });
 
   // The cookie dies at the server, the store here, and the page goes to the
   // form: a half-done sign-out leaves somebody looking signed in.
@@ -162,6 +183,63 @@ export default function SettingsPage() {
         <p className="mt-2 text-sm text-(--color-muted)">
           {t("role")}: <span className="font-mono text-(--color-ink)">{role ?? "—"}</span>
         </p>
+        <form
+          className="mt-4 border-t border-(--color-line) pt-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setChanged(false);
+            change.mutate();
+          }}
+        >
+          <h3 className="text-sm font-medium">{t("passwordTitle")}</h3>
+          <p className="mt-1 text-sm text-(--color-muted)">{t("passwordLead")}</p>
+
+          <label className="mt-3 block text-sm font-medium" htmlFor="current">
+            {t("passwordCurrent")}
+          </label>
+          <PasswordInput
+            id="current"
+            autoComplete="current-password"
+            required
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+            showLabel={common("showPassword")}
+            hideLabel={common("hidePassword")}
+            className="mt-1"
+          />
+
+          <label className="mt-3 block text-sm font-medium" htmlFor="next">
+            {t("passwordNext")}
+          </label>
+          <PasswordInput
+            id="next"
+            autoComplete="new-password"
+            required
+            minLength={SHORTEST}
+            value={next}
+            onChange={(event) => setNext(event.target.value)}
+            showLabel={common("showPassword")}
+            hideLabel={common("hidePassword")}
+            className="mt-1"
+          />
+          <p className="mt-1 text-xs text-(--color-muted)">{t("passwordHint", { count: SHORTEST })}</p>
+
+          {changed ? (
+            <p role="status" className="mt-3 text-sm text-(--color-ok)">
+              {t("passwordChanged")}
+            </p>
+          ) : null}
+          {passwordFault ? (
+            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+              {passwordFault}
+            </p>
+          ) : null}
+
+          <Button type="submit" className="mt-3" disabled={change.isPending}>
+            {change.isPending ? common("saving") : t("passwordSubmit")}
+          </Button>
+        </form>
+
         <Button
           type="button"
           tone="quiet"

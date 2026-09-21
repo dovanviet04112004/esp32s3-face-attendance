@@ -5,7 +5,7 @@ import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, PasswordInput } from "@/components/ui/input";
-import { useRouter } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { claimsOf, useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -91,6 +91,12 @@ export default function LoginPage() {
         <Button type="submit" disabled={busy} className="mt-6 w-full">
           {busy ? t("checking") : t("submit")}
         </Button>
+
+        <p className="mt-4 text-center text-sm text-(--color-muted)">
+          <Link href="/forgot-password" className="underline">
+            {t("forgot")}
+          </Link>
+        </p>
       </form>
     </main>
   );

@@ -16,7 +16,7 @@ export class DevicesRegisterController {
 
   @Post("register")
   @UseGuards(ThrottlerGuard)
-  @SkipThrottle({ [THROTTLE.login]: true })
+  @SkipThrottle({ [THROTTLE.login]: true, [THROTTLE.forgot]: true })
   @ApiOperation({ summary: "A kiosk with an empty NVS asking to be let in" })
   @ApiResponse({ status: HttpStatus.ACCEPTED, description: "Waiting for a person to approve it" })
   @ApiResponse({ status: HttpStatus.OK, description: "Approved; carries the device token" })

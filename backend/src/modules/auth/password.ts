@@ -13,6 +13,8 @@ const SCHEME = "scrypt";
 
 export const UNUSABLE_PASSWORD = "none$";
 
+export const LINK_BYTES = 32;
+
 /** Hash a password for storage, salt included in the returned string. */
 export async function hashPassword(plain: string): Promise<string> {
   const salt = randomBytes(SALT_BYTES);

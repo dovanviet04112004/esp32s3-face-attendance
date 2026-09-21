@@ -22,8 +22,8 @@ const MINUTE_MS = 60_000;
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>) => ({
-        // Two buckets because five a minute is a number picked for a person
-        // typing a password, not for a fleet polling with backoff.
+        // Three buckets: a person typing a password, a fleet polling with
+        // backoff, and a door that sends a letter every time it opens.
         throttlers: [
           {
             name: THROTTLE.login,
@@ -34,6 +34,11 @@ const MINUTE_MS = 60_000;
             name: THROTTLE.deviceRegister,
             limit: config.get("DEVICE_REGISTER_ATTEMPTS_PER_MINUTE", { infer: true }),
             ttl: MINUTE_MS,
+          },
+          {
+            name: THROTTLE.forgot,
+            limit: config.get("FORGOT_ATTEMPTS_PER_HOUR", { infer: true }),
+            ttl: MINUTE_MS * 60,
           },
         ],
       }),

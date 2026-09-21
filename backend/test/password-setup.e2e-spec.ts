@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
@@ -9,6 +10,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { AuthService } from "../src/modules/auth/auth.service.js";
 import { UNUSABLE_PASSWORD, verifyPassword } from "../src/modules/auth/password.js";
 import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
 import { QUEUE, type PasswordSetupJob } from "../src/queue/queues.js";
@@ -16,6 +18,8 @@ import { QUEUE, type PasswordSetupJob } from "../src/queue/queues.js";
 const CODE = "E2EPS01";
 const EMAIL = "e2eps@kiosk.local";
 const CHOSEN = "a-password-they-picked";
+const NEXT_ONE = "the-one-after-forgetting";
+const CHANGED = "the-one-they-changed-to";
 
 describe("first password (e2e)", () => {
   let app: INestApplication;
@@ -25,6 +29,7 @@ describe("first password (e2e)", () => {
   let token = "";
   let userId = "";
   let link = "";
+  let auth: AuthService;
 
   async function sweep(): Promise<void> {
     await db.user.deleteMany({ where: { email: EMAIL } });
@@ -35,6 +40,16 @@ describe("first password (e2e)", () => {
     return request(http).post("/auth/login").send({ email: EMAIL, password });
   }
 
+  async function live(): Promise<number> {
+    return db.session.count({ where: { userId, revokedAt: null } });
+  }
+
+  /** Asks the hash rather than the login door, which has an allowance. */
+  async function opensWith(password: string): Promise<boolean> {
+    const held = await db.user.findUniqueOrThrow({ where: { id: userId } });
+    return verifyPassword(password, held.passwordHash);
+  }
+
   before(async () => {
     const env = validateEnv();
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -43,6 +58,7 @@ describe("first password (e2e)", () => {
     await app.init();
     http = app.getHttpServer();
     db = app.get(PrismaService);
+    auth = app.get(AuthService);
     queues = app.get(QUEUE_TOKEN);
     await sweep();
 
@@ -139,6 +155,78 @@ describe("first password (e2e)", () => {
     assert.equal(again.status, 401);
     assert.equal(again.body.message, "SETUP_LINK_SPENT");
     assert.equal((await signIn(CHOSEN)).status, 200, "a refused second use changed the password");
+  });
+
+  it("answers a forgotten password the same whether the address exists or not", async () => {
+    const known = await request(http).post("/auth/forgot-password").send({ email: EMAIL });
+    const unknown = await request(http)
+      .post("/auth/forgot-password")
+      .send({ email: "nobody-e2eps@kiosk.local" });
+    assert.equal(known.status, 204);
+    assert.equal(
+      unknown.status,
+      known.status,
+      "the door answers differently for an address with an account",
+    );
+    assert.deepEqual(unknown.body, known.body, "the two answers differ in their body");
+
+    const minted = await db.passwordSetup.count({ where: { userId } });
+    assert.ok(minted >= 1, "asking for a link minted none");
+    assert.equal(
+      await db.user.count({ where: { email: "nobody-e2eps@kiosk.local" } }),
+      0,
+      "an address nobody owns left a row behind",
+    );
+  });
+
+  it("lets a forgotten password be set again through the link it mailed", async () => {
+    const fresh = randomBytes(32).toString("base64url");
+    await db.passwordSetup.create({
+      data: {
+        userId,
+        tokenHash: createHash("sha256").update(fresh).digest("hex"),
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
+    });
+    const set = await request(http)
+      .post("/auth/set-password")
+      .send({ token: fresh, password: NEXT_ONE });
+    assert.equal(set.status, 204);
+    assert.ok(await opensWith(NEXT_ONE), "the password set through the new link does not open it");
+  });
+
+  it("changes a password only for somebody who holds the current one", async () => {
+    // Signing in goes through the service: the login door is counted by the
+    // minute and this suite would spend the whole allowance on setup.
+    const access = (await auth.signIn(EMAIL, NEXT_ONE, {})).accessToken;
+
+    const wrong = await request(http)
+      .post("/auth/change-password")
+      .set("Authorization", `Bearer ${access}`)
+      .send({ current: "not-the-password", next: "another-long-password" });
+    assert.equal(wrong.status, 401, "a session alone was enough to replace the password");
+    assert.ok(await opensWith(NEXT_ONE), "a refused change moved the password anyway");
+
+    const right = await request(http)
+      .post("/auth/change-password")
+      .set("Authorization", `Bearer ${access}`)
+      .send({ current: NEXT_ONE, next: CHANGED });
+    assert.equal(right.status, 204);
+    assert.ok(await opensWith(CHANGED), "the password it was changed to does not open it");
+    assert.ok(!(await opensWith(NEXT_ONE)), "the old password still opens the account");
+  });
+
+  it("closes every device when a password changes under it", async () => {
+    const access = (await auth.signIn(EMAIL, CHANGED, {})).accessToken;
+    await auth.signIn(EMAIL, CHANGED, {});
+    assert.ok((await live()) >= 2, "the account does not hold the devices this needs");
+
+    const done = await request(http)
+      .post("/auth/change-password")
+      .set("Authorization", `Bearer ${access}`)
+      .send({ current: CHANGED, next: CHOSEN });
+    assert.equal(done.status, 204);
+    assert.equal(await live(), 0, "a password nobody else knows left a device signed in");
   });
 
   it("opens no more logins in one call than it is allowed to", async () => {

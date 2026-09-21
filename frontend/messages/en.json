@@ -94,7 +94,8 @@
     "password": "Password",
     "submit": "Sign in",
     "checking": "Checking…",
-    "refused": "That email or password is wrong"
+    "refused": "That email or password is wrong",
+    "forgot": "Forgot your password?"
   },
   "overview": {
     "title": "Overview",
@@ -408,7 +409,14 @@
     "themeSystem": "System",
     "themeLight": "Light",
     "themeDark": "Dark",
-    "provisionWaiting": "{count} people still have no login. Run it again to carry on."
+    "provisionWaiting": "{count} people still have no login. Run it again to carry on.",
+    "passwordTitle": "Password",
+    "passwordLead": "Changing it signs out every device that is signed in, this one included.",
+    "passwordCurrent": "Current password",
+    "passwordNext": "New password",
+    "passwordHint": "At least {count} characters.",
+    "passwordSubmit": "Change password",
+    "passwordChanged": "Changed. Sign in again with the new one."
   },
   "requests": {
     "title": "Requests",
@@ -855,6 +863,15 @@
     "toLogin": "Back to sign in",
     "done": "Password set",
     "doneHint": "Your account is open. Sign in with the password you just chose."
+  },
+  "forgot": {
+    "lead": "Enter your address. If it has an account, a link to set a new password goes to it.",
+    "email": "Email",
+    "submit": "Send the link",
+    "asking": "Sending…",
+    "sentTitle": "On its way",
+    "sentHint": "If that address has an account, the link is on its way. Look in the spam folder too.",
+    "toLogin": "Back to sign in"
   },
   "myShifts": {
     "title": "My shifts",
