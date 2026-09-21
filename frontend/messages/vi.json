@@ -37,7 +37,9 @@
     "myShifts": "Lịch ca",
     "myDocuments": "Tài liệu của tôi",
     "documents": "Tài liệu",
-    "signingOut": "Đang đăng xuất…"
+    "signingOut": "Đang đăng xuất…",
+    "groupToday": "Hôm nay",
+    "breadcrumb": "Đường dẫn"
   },
   "common": {
     "loading": "Đang tải…",
@@ -229,8 +231,7 @@
   },
   "reports": {
     "title": "Báo cáo",
-    "lead": "Số lượt chấm công theo người, năm {year}",
-    "punches": "Lượt",
+    "lead": "Ba việc hằng tháng và các bản xuất cho cơ quan bảo hiểm. Số lượt chấm công theo người ở trang Chấm công.",
     "insuranceTitle": "Báo tăng, báo giảm, điều chỉnh BHXH",
     "insuranceLead": "Ba việc hằng tháng, tính từ ngày vào, ngày nghỉ, và mức lương đóng bảo hiểm thay đổi.",
     "entity": "Pháp nhân",

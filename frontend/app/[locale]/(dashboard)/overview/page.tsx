@@ -70,6 +70,8 @@ export default function OverviewPage() {
   const { status, items } = useFeed();
   const role = useSession((s) => s.role);
   const mayRead = role === "ADMIN" || role === "HR" || role === "PAYROLL";
+  // The day's work reaches three roles; the fleet beside it reaches one.
+  const runsTheFleet = role === "ADMIN";
   const attention = useQuery({
     queryKey: ["reports", "attention"],
     enabled: mayRead,
@@ -84,11 +86,12 @@ export default function OverviewPage() {
     waiting.exceptionsToday.length === 0;
   const devices = useQuery({
     queryKey: ["devices"],
+    enabled: runsTheFleet,
     queryFn: async () => (await api.get<DevicePage>("/devices")).data,
   });
 
-  if (devices.isError) {
-    return <Failed onRetry={() => void devices.refetch()} />;
+  if (attention.isError) {
+    return <Failed onRetry={() => void attention.refetch()} />;
   }
 
   return (
@@ -176,11 +179,13 @@ export default function OverviewPage() {
           )}
         </section>
       ) : null}
+      {runsTheFleet ? (
       <p className="mt-1 text-sm text-(--color-muted)">
         {devices.isPending
           ? common("loading")
           : t("deviceCount", { count: devices.data?.total ?? 0 })}
       </p>
+      ) : null}
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {devices.data?.rows.map((device) => (
@@ -200,6 +205,7 @@ export default function OverviewPage() {
         ))}
       </div>
 
+      {runsTheFleet ? (
       <div className="mt-8 rounded-xl border border-(--color-line) bg-(--color-surface)">
         <div className="flex items-baseline justify-between border-b border-(--color-line) px-4 py-3">
           <h2 className="text-sm font-medium">{t("feedTitle")}</h2>
@@ -227,6 +233,7 @@ export default function OverviewPage() {
           </ul>
         )}
       </div>
+      ) : null}
     </section>
   );
 }

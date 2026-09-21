@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import { useEffect, type ReactNode } from "react";
 
+import { Breadcrumb } from "@/components/nav/breadcrumb";
 import { Sidebar } from "@/components/nav/sidebar";
 import { TabBar } from "@/components/nav/tab-bar";
 import { TopBar } from "@/components/nav/top-bar";
@@ -57,6 +58,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <TopBar />
         <main className="flex-1">
           <div className="mx-auto w-full max-w-(--width-shell) p-4 pb-24 md:p-8 md:pb-8">
+            <Breadcrumb />
             {children}
           </div>
         </main>

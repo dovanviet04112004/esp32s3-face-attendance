@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -131,9 +130,6 @@ export default function DepartmentsPage() {
 
   return (
     <section>
-      <Link href="/org" className="text-sm text-(--color-accent) hover:underline">
-        ← {t("departments")}
-      </Link>
       <h1 className="mt-2 text-lg font-semibold">{t("departments")}</h1>
       <p className="mt-1 mb-4 text-sm text-(--color-muted)">{t("departmentsLead")}</p>
 

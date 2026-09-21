@@ -54,9 +54,14 @@ const TEAM_TIME: Role[] = ["ADMIN", "HR", "MANAGER"];
 const PEOPLE_DESK: Role[] = ["ADMIN", "HR"];
 const PAY_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 const OPERATORS: Role[] = ["ADMIN"];
+const DAY_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 
 /** Screens grouped by what somebody is doing, not by module (KEHOACH 9.15). */
 export const NAV: NavGroup[] = [
+  {
+    key: "groupToday",
+    items: [{ href: "/overview", key: "overview", icon: LayoutDashboard, roles: DAY_DESK }],
+  },
   {
     key: "me",
     items: [
@@ -122,10 +127,7 @@ export const NAV: NavGroup[] = [
   },
   {
     key: "groupOps",
-    items: [
-      { href: "/overview", key: "overview", icon: LayoutDashboard, roles: OPERATORS },
-      { href: "/devices", key: "devices", icon: Cpu, roles: OPERATORS },
-    ],
+    items: [{ href: "/devices", key: "devices", icon: Cpu, roles: OPERATORS }],
   },
   {
     key: "groupSettings",
@@ -173,6 +175,30 @@ export function allows(role: Role | null, hasRecord: boolean, path: string): boo
 export function homeFor(role: Role | null, hasRecord: boolean): string {
   const groups = navFor(role, hasRecord);
   return groups[0]?.items[0]?.href ?? "/settings";
+}
+
+export interface Crumb {
+  key: NavKey;
+  href: string | null;
+}
+
+/** The way back from a sub-page, read off the table so it never points at a
+ *  page this role cannot open. A parent page gets none (KEHOACH 9.15).
+ */
+export function crumbsFor(role: Role | null, hasRecord: boolean, path: string): Crumb[] {
+  const owner = BY_DEPTH.find((item) => path === item.href || path.startsWith(`${item.href}/`));
+  if (!owner || owner.href === path) {
+    return [];
+  }
+  for (const group of navFor(role, hasRecord)) {
+    if (group.items.some((item) => item.href === owner.href)) {
+      return [
+        { key: group.key, href: null },
+        { key: owner.key, href: owner.href },
+      ];
+    }
+  }
+  return [];
 }
 
 const kTabSlots = 5;

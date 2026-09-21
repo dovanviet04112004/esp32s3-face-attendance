@@ -99,9 +99,6 @@ export default function PayrollRunPage() {
 
   return (
     <section>
-      <Link href="/payroll" className="text-sm text-(--color-accent) hover:underline">
-        ← {t("periods")}
-      </Link>
       <h1 className="mt-2 text-lg font-semibold">
         {period ? `${String(period.month).padStart(2, "0")}/${period.year}` : t("period")}
       </h1>

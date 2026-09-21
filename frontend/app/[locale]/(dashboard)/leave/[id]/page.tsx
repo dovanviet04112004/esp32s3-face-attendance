@@ -8,7 +8,6 @@ import { useState } from "react";
 import { RequestCard, type RequestRow } from "@/components/requests/request-card";
 import { Failed } from "@/components/ui/empty";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -39,9 +38,6 @@ export default function LeaveDetailPage() {
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">
-      <Link href="/leave" className="text-sm text-(--color-accent) hover:underline">
-        ← {t("title")}
-      </Link>
 
       {rows.isError ? (
         <Failed onRetry={() => rows.refetch()} />

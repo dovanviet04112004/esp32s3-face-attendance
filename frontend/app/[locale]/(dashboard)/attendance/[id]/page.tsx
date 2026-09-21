@@ -5,7 +5,6 @@ import { useFormatter, useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
-import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 
 interface Punch {
@@ -97,9 +96,6 @@ export default function PunchHistoryPage() {
 
   return (
     <section>
-      <Link href="/attendance" className="text-sm text-(--color-accent) hover:underline">
-        ← {t("title")}
-      </Link>
       <h1 className="mt-2 text-lg font-semibold">
         {employee.data?.fullName ?? t("historyTitle")}
       </h1>
