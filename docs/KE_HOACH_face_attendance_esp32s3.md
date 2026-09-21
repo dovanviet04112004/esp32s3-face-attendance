@@ -6387,6 +6387,27 @@ nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
 | `Tài liệu` (phát hành, hồ sơ còn thiếu) | ✓ | ✓ | – | – | – | – |
 | `Cài đặt` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
+**Bảng này canh ở đường dẫn, không chỉ canh ở thanh bên.** Ẩn một mục khỏi menu mà vẫn phục vụ
+trang cho ai gõ đúng URL là làm được **một nửa** của luật 1: người ta không nhìn thấy lối vào,
+nhưng lối vào vẫn mở. Và cái URL ấy không cần ai gõ — nó **tự ở lại**: đăng xuất khỏi một vai
+rồi đăng nhập bằng vai hẹp hơn thì trình duyệt vẫn đứng nguyên chỗ cũ. Nên thanh bên và bộ canh
+đường đọc **cùng một bảng**: đường đi tới không nằm trong danh sách của vai đang đăng nhập thì
+thay bằng trang nhà của chính vai ấy.
+
+**Một trang cụ thể được xét bằng dòng của chính nó.** `Phòng ban` nằm dưới `Cây tổ chức` về
+đường dẫn nhưng hẹp hơn về vai, nên phép so phải lấy **tiền tố dài nhất** khớp được, không lấy
+tiền tố đầu tiên — lấy cái đầu tiên thì một quản lý vào được `Phòng ban` qua đúng cái quyền cho
+họ xem `Cây tổ chức`.
+
+**Trang nào không có dòng nào trong bảng thì không mở được.** Đó là chủ ý: thêm một trang mà
+quên xếp nó vào bảng thì nó không chạy, thay vì chạy cho tất cả mọi người. Bảng là nguồn duy
+nhất, và một trang không có trong nguồn duy nhất là một trang chưa được quyết định.
+
+**Đăng nhập xong thì về trang nhà của vai, không về một địa chỉ cố định.** `Tổng quan` là màn
+của `ADMIN`; đẩy mọi vai về đó là mời năm trong sáu vai vào một trang không phải của họ ngay ở
+bước đầu tiên. Trang nhà là **mục đầu tiên trong danh sách của chính vai ấy**, nên nó tự đúng
+khi bảng đổi, và không có danh sách thứ hai để quên cập nhật.
+
 **Hai luật giữ cho bảng này không mục.**
 
 **Luật 1 — một trang chỉ vào danh sách của một vai khi vai ấy *làm được gì đó* trên trang.** Vai
