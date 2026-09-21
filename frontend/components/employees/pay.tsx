@@ -1,6 +1,11 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
@@ -15,6 +20,12 @@ import { money } from "@/lib/format";
 const REASONS = ["HIRE", "PROMOTION", "ANNUAL_REVIEW", "ADJUSTMENT", "TRANSFER", "OTHER"] as const;
 
 type Reason = (typeof REASONS)[number];
+
+interface PayslipPage {
+  rows: PayslipRow[];
+  total: number;
+  next: string | null;
+}
 
 interface PayRecord {
   id: string;
@@ -61,10 +72,17 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
     queryFn: async () => (await api.get<PayRecord[]>(`/employees/${employeeId}/compensation`)).data,
   });
 
-  const payslips = useQuery({
+  const payslips = useInfiniteQuery({
     queryKey: ["payslips", "of", employeeId],
-    queryFn: async () => (await api.get<PayslipRow[]>(`/payslips?employeeId=${employeeId}`)).data,
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const after = pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : "";
+      return (await api.get<PayslipPage>(`/payslips?employeeId=${employeeId}${after}`)).data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
   });
+
+  const slips = payslips.data?.pages.flatMap((one) => one.rows);
 
   const add = useMutation({
     mutationFn: () =>
@@ -142,9 +160,9 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
         <div className="mt-2 rounded-xl border border-(--color-line) bg-(--color-surface)">
           {payslips.isPending ? (
             <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-          ) : payslips.data?.length ? (
+          ) : slips?.length ? (
             <ul className="divide-y divide-(--color-line)">
-              {payslips.data.map((one) => (
+              {slips.map((one) => (
                 <li key={one.id} className="flex gap-3 px-4 py-2 text-sm">
                   <span className="tabular-nums">
                     {one.period ? `${one.period.month}/${one.period.year}` : ""}
@@ -154,10 +172,22 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
               ))}
             </ul>
           ) : (
-            <p className="px-4 py-6 text-sm text-(--color-muted)">
-              {payslips.isPending ? common("loading") : t("payslipsEmpty")}
-            </p>
+            <p className="px-4 py-6 text-sm text-(--color-muted)">{t("payslipsEmpty")}</p>
           )}
+          {payslips.hasNextPage ? (
+            <div className="border-t border-(--color-line) p-2">
+              <Button
+                type="button"
+                tone="quiet"
+                size="sm"
+                className="w-full"
+                disabled={payslips.isFetchingNextPage}
+                onClick={() => void payslips.fetchNextPage()}
+              >
+                {payslips.isFetchingNextPage ? common("loading") : common("loadMore")}
+              </Button>
+            </div>
+          ) : null}
         </div>
       </section>
 

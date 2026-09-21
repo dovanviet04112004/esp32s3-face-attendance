@@ -1,6 +1,11 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
@@ -42,6 +47,12 @@ interface TaxYear {
   difference: string;
 }
 
+interface PayslipPage {
+  rows: PayslipRow[];
+  total: number;
+  next: string | null;
+}
+
 interface Delta {
   code: string;
   thisPeriod: string;
@@ -52,6 +63,7 @@ interface Delta {
 export default function MyPayslipsPage() {
   const t = useTranslations("payroll");
   const d = useTranslations("disputes");
+  const common = useTranslations("common");
   const locale = useLocale();
   const [openId, setOpenId] = useState<string | null>(null);
   const [claim, setClaim] = useState("");
@@ -69,14 +81,20 @@ export default function MyPayslipsPage() {
   const cache = useQueryClient();
   const faultOf = useFault();
 
-  const mine = useQuery({
+  const mine = useInfiniteQuery({
     queryKey: ["payslips", "mine", employeeId],
     enabled: employeeId !== null,
-    queryFn: async () =>
-      (await api.get<PayslipRow[]>(`/payslips?employeeId=${employeeId}`)).data,
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const after = pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : "";
+      return (await api.get<PayslipPage>(`/payslips?employeeId=${employeeId}${after}`)).data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
   });
 
-  const chosen = openId ?? mine.data?.[0]?.id ?? null;
+  const slips = mine.data?.pages.flatMap((one) => one.rows);
+
+  const chosen = openId ?? slips?.[0]?.id ?? null;
 
   const slip = useQuery({
     queryKey: ["payslips", chosen],
@@ -131,7 +149,7 @@ export default function MyPayslipsPage() {
 
       {mine.isPending ? (
         <SkeletonRows rows={3} columns={3} />
-      ) : !mine.data?.length ? (
+      ) : !slips?.length ? (
         <Empty title={t("empty")} />
       ) : (
         <>
@@ -139,7 +157,7 @@ export default function MyPayslipsPage() {
             aria-label={t("myTitle")}
             className="max-h-56 overflow-y-auto rounded-xl border border-(--color-line) bg-(--color-surface) sm:max-h-72"
           >
-            {mine.data.map((row) => (
+            {slips.map((row) => (
               <li key={row.id}>
                 <button
                   type="button"
@@ -161,6 +179,20 @@ export default function MyPayslipsPage() {
                 </button>
               </li>
             ))}
+            {mine.hasNextPage ? (
+              <li className="border-t border-(--color-line) p-2">
+                <Button
+                  type="button"
+                  tone="quiet"
+                  size="sm"
+                  className="w-full"
+                  disabled={mine.isFetchingNextPage}
+                  onClick={() => void mine.fetchNextPage()}
+                >
+                  {mine.isFetchingNextPage ? common("loading") : common("loadMore")}
+                </Button>
+              </li>
+            ) : null}
           </ul>
 
           <div className="mt-4" data-print>

@@ -218,7 +218,7 @@ describe("row scope (e2e)", () => {
     const stranger = idOf.get(STRANGER) as number;
     const res = await as("hr")(`/payslips?employeeId=${stranger}`);
     assert.equal(res.status, 200);
-    const rows = res.body as { employeeId: number }[];
+    const { rows } = res.body as { rows: { employeeId: number }[] };
     assert.ok(
       rows.every((row) => row.employeeId === stranger),
       "the filter was dropped and the whole scope came back",

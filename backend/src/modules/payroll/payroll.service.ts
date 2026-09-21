@@ -17,6 +17,8 @@ import type {
 import { Prisma } from "@prisma/client";
 
 import { toCsv } from "../../common/csv.js";
+import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -44,6 +46,7 @@ import type {
   BonusItemDto,
   CreatePeriodDto,
   CreateRunDto,
+  ListPayslipsDto,
   LockPeriodDto,
   SettlementItemDto,
 } from "./dto/payroll.dto.js";
@@ -964,36 +967,45 @@ export class PayrollService {
     };
   }
 
-  async payslips(
-    viewer: Viewer,
-    periodId?: string,
-    runId?: string,
-    employeeId?: number,
-  ): Promise<PayslipRow[]> {
+  async payslips(viewer: Viewer, query: ListPayslipsDto): Promise<Page<PayslipRow>> {
+    const { periodId, runId, employeeId } = query;
     const visible = await this.scope.visibleEmployeeIds(viewer);
     if (employeeId !== undefined && visible !== null && !visible.includes(employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
-    return this.db.payslip.findMany({
-      // Both clauses write the same key, so a spread would let the scope
-      // overwrite the asked-for employee and answer with everybody.
-      where: {
-        AND: [
-          periodId ? { periodId } : {},
-          runId ? { runId } : {},
-          employeeId === undefined ? {} : { employeeId },
-          visible === null ? {} : { employeeId: { in: visible } },
-        ],
-      },
-      include: { period: { select: { year: true, month: true, state: true } } },
-      // periodId is a uuid, so sorting on it put August ahead of September.
-      orderBy: [
-        { period: { year: "desc" } },
-        { period: { month: "desc" } },
-        { employeeId: "asc" },
+    // Both clauses write the same key, so a spread would let the scope
+    // overwrite the asked-for employee and answer with everybody.
+    const where = {
+      AND: [
+        periodId ? { periodId } : {},
+        runId ? { runId } : {},
+        employeeId === undefined ? {} : { employeeId },
+        visible === null ? {} : { employeeId: { in: visible } },
       ],
-      take: 500,
-    });
+    };
+    const [rows, found] = await Promise.all([
+      this.db.payslip.findMany({
+        where,
+        include: { period: { select: { year: true, month: true, state: true } } },
+        // A bonus run gives one person two slips in a month, so id breaks the
+        // tie that period and employee leave (KEHOACH 9.9 rule 3).
+        orderBy: [
+          { period: { year: "desc" } },
+          { period: { month: "desc" } },
+          { employeeId: "asc" },
+          { id: "asc" },
+        ],
+        take: query.take,
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      }),
+      this.db.payslip.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    const last = rows[rows.length - 1];
+    return {
+      ...countedTo(found),
+      rows,
+      next: rows.length === query.take && last ? last.id : null,
+    };
   }
 
   /** What one person may read about themselves, with every component. */

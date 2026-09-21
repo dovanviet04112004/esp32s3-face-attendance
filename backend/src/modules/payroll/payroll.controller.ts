@@ -16,10 +16,12 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import {
   AddBonusDto,
   CreatePeriodDto,
   CreateRunDto,
+  ListPayslipsDto,
   LockPeriodDto,
   SetSettlementDto,
 } from "./dto/payroll.dto.js";
@@ -168,11 +170,9 @@ export class PayrollController {
   @ApiOperation({ summary: "Payslips this viewer may read, narrowed by their scope" })
   payslips(
     @CurrentViewer() viewer: Viewer,
-    @Query("periodId") periodId?: string,
-    @Query("runId") runId?: string,
-    @Query("employeeId", new ParseIntPipe({ optional: true })) employeeId?: number,
-  ): Promise<PayslipRow[]> {
-    return this.payroll.payslips(viewer, periodId, runId, employeeId);
+    @Query() query: ListPayslipsDto,
+  ): Promise<Page<PayslipRow>> {
+    return this.payroll.payslips(viewer, query);
   }
 
   @Get("payslips/:id")

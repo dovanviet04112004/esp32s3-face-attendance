@@ -17,6 +17,8 @@ import {
   ValidateNested,
 } from "class-validator";
 
+import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+
 export class CreatePeriodDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -160,4 +162,27 @@ export class SetSettlementDto {
   @ValidateNested({ each: true })
   @Type(() => SettlementItemDto)
   items!: SettlementItemDto[];
+}
+
+/** One period of a company is one row per employee, so this pages like the
+ *  other long lists (KEHOACH 9.9 rule 3).
+ */
+export class ListPayslipsDto extends PaginationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  periodId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  runId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  employeeId?: number;
 }
