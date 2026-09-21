@@ -6218,10 +6218,20 @@ trong khối backend, hai ngôn ngữ, và **mặc định tiếng Việt** đú
 
 | Biến môi trường | Dùng làm gì | Thiếu thì sao |
 |---|---|---|
-| `MAIL_HOST`, `MAIL_PORT` | máy chủ SMTP | không gửi, chỉ ghi log và bỏ qua |
+| `MAIL_HOST`, `MAIL_PORT` | máy chủ SMTP | dev và test ghi log rồi bỏ qua; `production` **chết lúc boot** |
 | `MAIL_USER`, `MAIL_PASSWORD` | đăng nhập SMTP | gửi không xác thực |
 | `MAIL_FROM` | địa chỉ người gửi | dùng `MAIL_USER` |
 | `APP_PUBLIC_URL` | gốc của đường dẫn trong thư | không sinh được link, coi như thiếu cấu hình |
+
+**`MAIL_HOST` trống là hai chuyện khác nhau ở hai môi trường.** Lúc phát triển, bắt cắm SMTP mới
+chạy được backend là một rào vô ích, nên thư đi vào log và mọi thứ khác vẫn sống. Trên máy có
+địa chỉ công khai thì cùng cái nhánh ấy biến **một chốt an ninh thành một dòng log**: thư báo
+"số tài khoản nhận lương của anh vừa bị đổi" là thứ duy nhất §9.17 mục 6 luật 3 dựa vào để một
+lượt chiếm tài khoản không lặng lẽ chuyển lương đi nơi khác, và link đặt mật khẩu là đường duy
+nhất một người mới vào được hệ thống. Cả hai hỏng **không phát ra tiếng nào** — không ngoại lệ,
+không mã lỗi, người gửi thấy "đã gửi". Nên `NODE_ENV=production` mà thiếu `MAIL_HOST` thì
+`validateEnv()` ném ngay, cùng chỗ với mọi biến bắt buộc khác: thà không lên được còn hơn lên
+rồi nuốt thư.
 
 **Đính kèm PDF chưa dựng.** §9.11 cho phép nó như một lựa chọn phải bật kèm mật khẩu; chừng nào
 đường sinh PDF và đặt mật khẩu chưa có thì lựa chọn ấy **không tồn tại trong API**, chứ không
