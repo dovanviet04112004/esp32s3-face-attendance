@@ -274,6 +274,9 @@ model Employee {
   @@index([departmentId, active])
   @@index([managerId])
   @@index([legalEntityId, active])
+  // Every leaver question asks for a date range, not a person: the payroll
+  // checklist and the settlement run both start here (KEHOACH 9.18 item 8).
+  @@index([leaveDate])
 }
 
 model FaceTemplate {
