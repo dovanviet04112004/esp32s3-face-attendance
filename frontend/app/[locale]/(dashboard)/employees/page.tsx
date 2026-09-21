@@ -1,16 +1,20 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Sheet } from "@/components/ui/sheet";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { money } from "@/lib/format";
 
 interface Employee {
   id: number;
@@ -27,6 +31,27 @@ interface ImportFault {
   value: string;
 }
 
+interface Named {
+  id: string;
+  code: string;
+  name: string;
+}
+
+interface RaisePreview {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  currentBase: string;
+  nextBase: string;
+}
+
+function firstOfNextMonth(): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
 interface ImportReport {
   applied: boolean;
   rows: number;
@@ -38,6 +63,7 @@ interface ImportReport {
 export default function EmployeesPage() {
   const t = useTranslations("employees");
   const common = useTranslations("common");
+  const locale = useLocale();
   const role = useSession((s) => s.role);
   const mayWrite = role === "ADMIN" || role === "HR";
   const cache = useQueryClient();
@@ -46,6 +72,13 @@ export default function EmployeesPage() {
   const [csv, setCsv] = useState("");
   const [report, setReport] = useState<ImportReport | null>(null);
   const [fault, setFault] = useState<string | null>(null);
+  const [raising, setRaising] = useState(false);
+  const [raiseFault, setRaiseFault] = useState<string | null>(null);
+  const [raiseDept, setRaiseDept] = useState("");
+  const [effectiveFrom, setEffectiveFrom] = useState(firstOfNextMonth);
+  const [percent, setPercent] = useState("");
+  const [flat, setFlat] = useState("");
+  const paysPeople = role === "ADMIN" || role === "PAYROLL";
 
   const check = useMutation({
     mutationFn: async (text: string) =>
@@ -73,6 +106,31 @@ export default function EmployeesPage() {
       link.click();
       URL.revokeObjectURL(link.href);
     },
+  });
+
+  const departments = useQuery({
+    queryKey: ["departments"],
+    enabled: raising,
+    queryFn: async () => (await api.get<Named[]>("/departments")).data,
+  });
+
+  const raise = useMutation({
+    mutationFn: async (apply: boolean) => {
+      const body = {
+        departmentId: raiseDept || undefined,
+        effectiveFrom,
+        percentBp: percent ? Math.round(Number(percent) * 100) : undefined,
+        amount: flat ? Number(flat) : undefined,
+        reason: "ANNUAL_REVIEW",
+      };
+      if (!apply) {
+        const rows = (await api.post<RaisePreview[]>("/compensation/bulk/preview", body)).data;
+        return { preview: rows, written: null as number | null };
+      }
+      const done = (await api.post<{ written: number }>("/compensation/bulk", body)).data;
+      return { preview: [] as RaisePreview[], written: done.written };
+    },
+    onError: (fell: unknown) => setRaiseFault(faultOf(fell)),
   });
 
   const template = useMutation({
@@ -175,6 +233,18 @@ export default function EmployeesPage() {
             >
               {t("importTemplate")}
             </Button>
+            {paysPeople ? (
+              <Button
+                size="sm"
+                tone="quiet"
+                onClick={() => {
+                  raise.reset();
+                  setRaising(true);
+                }}
+              >
+                {t("raiseAction")}
+              </Button>
+            ) : null}
             <input
               ref={picker}
               type="file"
@@ -246,6 +316,142 @@ export default function EmployeesPage() {
           ) : undefined
         }
       />
+
+      <Sheet
+        open={raising}
+        onClose={() => setRaising(false)}
+        title={t("raiseAction")}
+        closeLabel={common("close")}
+        className="sm:max-w-2xl"
+      >
+        <p className="text-sm text-(--color-muted)">{t("raiseLead")}</p>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="block text-xs text-(--color-muted)" htmlFor="raiseDept">
+              {t("raiseDept")}
+            </label>
+            <Select
+              id="raiseDept"
+              value={raiseDept}
+              onChange={(event) => setRaiseDept(event.target.value)}
+              className="mt-1"
+            >
+              <option value="">{t("raiseEveryone")}</option>
+              {(departments.data ?? []).map((one) => (
+                <option key={one.id} value={one.id}>
+                  {one.code} · {one.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs text-(--color-muted)" htmlFor="raiseFrom">
+              {t("raiseFrom")}
+            </label>
+            <Input
+              id="raiseFrom"
+              type="date"
+              value={effectiveFrom}
+              onChange={(event) => setEffectiveFrom(event.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-(--color-muted)" htmlFor="raisePercent">
+              {t("raisePercent")}
+            </label>
+            <Input
+              id="raisePercent"
+              type="number"
+              min={0}
+              step="0.1"
+              value={percent}
+              onChange={(event) => {
+                setPercent(event.target.value);
+                setFlat("");
+              }}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-(--color-muted)" htmlFor="raiseFlat">
+              {t("raiseFlat")}
+            </label>
+            <Input
+              id="raiseFlat"
+              type="number"
+              min={0}
+              value={flat}
+              onChange={(event) => {
+                setFlat(event.target.value);
+                setPercent("");
+              }}
+              className="mt-1"
+            />
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-(--color-muted)">{t("raiseEitherHint")}</p>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            tone="quiet"
+            disabled={raise.isPending || (percent === "" && flat === "")}
+            onClick={() => {
+              setRaiseFault(null);
+              raise.mutate(false);
+            }}
+          >
+            {raise.isPending ? common("loading") : t("raisePreview")}
+          </Button>
+          <Button
+            type="button"
+            tone="danger"
+            disabled={raise.isPending || !raise.data || raise.data.preview.length === 0}
+            onClick={() => {
+              setRaiseFault(null);
+              raise.mutate(true);
+            }}
+          >
+            {t("raiseApply")}
+          </Button>
+        </div>
+
+        {raiseFault ? (
+          <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+            {raiseFault}
+          </p>
+        ) : null}
+
+        {raise.data?.written !== null && raise.data?.written !== undefined ? (
+          <p className="mt-3 text-sm text-(--color-ok)">
+            {t("raiseWritten", { count: raise.data.written })}
+          </p>
+        ) : null}
+
+        {raise.data && raise.data.preview.length > 0 ? (
+          <div className="mt-3 text-sm">
+            <p className="text-(--color-warn)">
+              {t("raiseWouldWrite", { count: raise.data.preview.length })}
+            </p>
+            <ul className="mt-2 flex max-h-64 flex-col overflow-y-auto">
+              {raise.data.preview.slice(0, 50).map((one) => (
+                <li
+                  key={one.employeeId}
+                  className="flex flex-wrap gap-x-3 border-b border-(--color-line) py-1.5 text-xs last:border-0"
+                >
+                  <span className="font-mono">{one.code}</span>
+                  <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
+                  <span className="tabular-nums text-(--color-muted)">
+                    {money(Number(one.currentBase), locale)} → {money(Number(one.nextBase), locale)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </Sheet>
     </section>
   );
 }

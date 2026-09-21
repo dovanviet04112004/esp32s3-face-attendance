@@ -205,7 +205,19 @@
     "offboardAssets": "Còn giữ {count} tài sản",
     "offboardRequests": "Còn {count} đơn chưa quyết",
     "offboardAdvances": "Còn {count} khoản tạm ứng chưa thu",
-    "importTemplate": "Tải mẫu CSV"
+    "importTemplate": "Tải mẫu CSV",
+    "raiseAction": "Nâng lương hàng loạt",
+    "raiseLead": "Xem trước rồi mới ghi. Mỗi người nhận một dòng lương mới, dòng cũ giữ nguyên.",
+    "raiseDept": "Phòng ban",
+    "raiseEveryone": "Toàn công ty",
+    "raiseFrom": "Hiệu lực từ",
+    "raisePercent": "Tăng (%)",
+    "raiseFlat": "Tăng (đồng)",
+    "raiseEitherHint": "Nhập một trong hai; gõ ô này thì ô kia tự xoá.",
+    "raisePreview": "Xem trước",
+    "raiseApply": "Ghi",
+    "raiseWouldWrite": "Sẽ ghi {count} dòng lương mới",
+    "raiseWritten": "Đã ghi {count} dòng lương mới"
   },
   "attendance": {
     "title": "Chấm công",

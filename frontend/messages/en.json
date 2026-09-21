@@ -205,7 +205,19 @@
     "offboardAssets": "Still holding {count} assets",
     "offboardRequests": "{count} requests still undecided",
     "offboardAdvances": "{count} advances still outstanding",
-    "importTemplate": "CSV template"
+    "importTemplate": "CSV template",
+    "raiseAction": "Bulk raise",
+    "raiseLead": "Preview before writing. Each person gets a new pay row; the old one stays.",
+    "raiseDept": "Department",
+    "raiseEveryone": "Whole company",
+    "raiseFrom": "Effective from",
+    "raisePercent": "Raise (%)",
+    "raiseFlat": "Raise (dong)",
+    "raiseEitherHint": "One or the other; typing in one clears the other.",
+    "raisePreview": "Preview",
+    "raiseApply": "Write",
+    "raiseWouldWrite": "Would write {count} new pay rows",
+    "raiseWritten": "Wrote {count} new pay rows"
   },
   "attendance": {
     "title": "Attendance",
