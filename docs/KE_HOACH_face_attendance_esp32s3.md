@@ -4161,7 +4161,7 @@ backend/
     │   ├── policy/                   # PayrollPolicy + TaxBracket theo ngày hiệu lực
     │   ├── timesheet/                # AttendanceDay: từ lượt quẹt thành ngày công
     │   ├── search/                   # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
-    │   ├── notifications/            # ★ §9.21.4 — bốn loại, ba kênh, mỗi loại tắt riêng
+    │   ├── notifications/            # ★ §9.21.4 — sáu loại, ba kênh, mỗi loại tắt riêng
     │   ├── assets/                   # ★ §9.16 mục 11 — cấp và thu là dòng, không phải ô
     │   ├── certificates/             # ★ §9.17 mục 5 — giấy xác nhận, số hiệu do CSDL cấp
     │   ├── profile/                  # ★ §9.17 mục 6 — đổi thông tin cá nhân qua duyệt
@@ -6519,6 +6519,22 @@ thứ đã gửi cho người ta, và một bản ghi tự sửa sau lưng thì 
 **12. Biết đơn của mình đang ở đâu.** Thông báo khi đơn được duyệt, bị từ chối, hay **nằm quá
 lâu không ai động tới** — cái thứ ba là cái người ta bức xúc nhất và phần mềm hay quên nhất.
 
+**"Quá lâu" phải là một con số, không phải một cảm giác.** Đơn còn `PENDING` được đếm từ lúc
+gửi, và ở **mốc 3, 7, 14 ngày** thì một lượt quét hằng ngày nhắc lại. Mốc chứ không phải nhắc
+mỗi ngày: nhắc mỗi ngày là thứ người ta tắt sau tuần đầu, và một thông báo bị tắt thì im lặng
+y như không có. Cùng lý do ấy, mỗi mốc chỉ nói **đúng một lần** — dấu vết là chính dòng
+`Notification` đã sinh ra, không phải một cột "đã nhắc" trên `Request`, vì một cột như thế trả
+lời được "đã nhắc chưa" nhưng không trả lời được "nhắc mấy lần rồi".
+
+**Một lần quá hạn nói với hai người, và nói hai câu khác nhau.** Người duyệt nhận
+`REQUEST_WAITING` lần nữa, vì việc vẫn nằm ở họ. Người gửi nhận `REQUEST_STALLED` — đây mới là
+vế "biết đơn của mình đang ở đâu", và nó tồn tại để câu trả lời không còn phải là một tin nhắn
+hỏi thăm. Gộp hai người vào một loại là bắt một trong hai đọc một câu viết cho người kia.
+
+**Quá hạn cũng phải nhìn thấy được ở chỗ người ta quyết, không chỉ ở chuông.** Thẻ trong hộp
+chờ duyệt mang số ngày đã chờ khi đã qua mốc đầu, đúng luật §9.12 luật 2: trạng thái mang hình
+dạng chứ không chỉ mang màu.
+
 ### 9.18 Mười hai việc HR thật sự cần
 
 **1. Hợp đồng sắp hết hạn.** Bỏ lỡ hạn tái ký thì hợp đồng xác định thời hạn **tự thành không
@@ -6727,16 +6743,31 @@ Nhà xưởng, tầng hầm, ngoài công trường. Ba luật:
 
 #### 9.21.4 Thông báo đẩy là thứ khiến cổng nhân viên được dùng
 
-Không có thông báo thì một cổng tự phục vụ chỉ được mở khi người ta nhớ ra nó. Bốn loại đáng
-đẩy, và **chỉ bốn**: đơn của tôi đã được quyết, có đơn chờ tôi duyệt, phiếu lương kỳ này đã
-phát, và hợp đồng của tôi sắp hết hạn. Mỗi loại tắt riêng được.
+Không có thông báo thì một cổng tự phục vụ chỉ được mở khi người ta nhớ ra nó. Sáu loại đáng
+đẩy, và **chỉ sáu**. Mỗi loại tắt riêng được.
+
+| `kind` | Nói gì | Tới ai |
+|---|---|---|
+| `REQUEST_DECIDED` | đơn của tôi đã được quyết | người gửi |
+| `REQUEST_WAITING` | có đơn chờ tôi duyệt | người duyệt |
+| `REQUEST_STALLED` | đơn của tôi chưa ai động tới (§9.17 mục 12) | người gửi |
+| `PAYSLIP_ISSUED` | phiếu lương kỳ này đã phát | người nhận lương |
+| `CONTRACT_ENDING` | hợp đồng của tôi sắp hết hạn | người ký |
+| `DISPUTE_ANSWERED` | khiếu nại phiếu lương của tôi đã có trả lời | người khiếu nại |
+
+**Thêm một giá trị vào enum là thêm việc ở cả hai đầu, không phải một.** Phía ghi chỉ cần một
+dòng; phía đọc cần một biểu tượng, một đường dẫn, một câu trong cả hai catalogue, và một ô
+trong bảng bật tắt. Thiếu bất kỳ cái nào thì loại ấy **không hiện ra được** — bảng tra ở
+frontend là `Record` phủ kín enum nên một khoá vắng mặt trả `undefined`, và cái chuông vỡ cho
+đúng những người nhận được nó. Vì vậy enum này và bảng trên đây là **một hợp đồng**, không phải
+một danh sách gợi ý.
 
 **Không đẩy nội dung nhạy cảm vào màn khoá.** "Phiếu lương tháng 9 đã có" là đủ; con số thì
 nằm sau lần đăng nhập, cùng lý do §9.11 không đính kèm phiếu vào email.
 
 **Luật này phải do kiểu dữ liệu giữ, không do người viết nhớ.** `Notification` **không có cột
-nào chứa câu chữ**: nó giữ `kind` là enum bốn giá trị, cộng vài tham chiếu (`requestId`,
-`periodId`, số ngày còn lại). Câu hiển thị dựng ở phía đọc — frontend cho chuông trong ứng
+nào chứa câu chữ**: nó giữ `kind` là enum sáu giá trị, cộng vài tham chiếu (`requestId`,
+`periodId`, số ngày còn lại, số ngày đã chờ). Câu hiển thị dựng ở phía đọc — frontend cho chuông trong ứng
 dụng, service worker cho màn khoá — và cả hai lấy chữ từ catalogue. Không có chỗ nào để lỡ tay
 nhét số tiền vào, vì không có cột nào nhận được một số tiền.
 
@@ -6744,9 +6775,9 @@ nhét số tiền vào, vì không có cột nào nhận được một số ti�
 
 | Kênh | Mặc định | Ghi chú |
 |---|---|---|
-| Trong ứng dụng | **bật** cả bốn loại | Rẻ, không làm phiền, và là nơi xem lại |
-| Đẩy tới máy | **bật** cả bốn loại | Đây là thứ khiến cổng được mở |
-| Email | **tắt** cả bốn loại | Phiếu lương đã có đường thư riêng ở §9.11; bật thêm ở đây là gửi hai lần cùng một tin |
+| Trong ứng dụng | **bật** cả sáu loại | Rẻ, không làm phiền, và là nơi xem lại |
+| Đẩy tới máy | **bật** cả sáu loại | Đây là thứ khiến cổng được mở |
+| Email | **tắt** cả sáu loại | Phiếu lương đã có đường thư riêng ở §9.11; bật thêm ở đây là gửi hai lần cùng một tin |
 
 **Một thông báo hỏng không được làm hỏng việc nó mô tả.** Duyệt một đơn xong mà không gửi được
 thông báo thì đơn **vẫn đã duyệt** — cùng luật với `AuditService`: mất lời nhắn còn hơn huỷ việc
