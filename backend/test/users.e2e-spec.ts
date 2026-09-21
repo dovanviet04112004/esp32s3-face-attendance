@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
@@ -41,8 +42,14 @@ describe("users and audit (e2e)", () => {
     viewer = await sign("viewer@kiosk.local");
   });
 
-  after(async () => {
+  async function sweep(): Promise<void> {
+    const held = await db.user.findMany({ where: { email: MADE_EMAIL }, select: { id: true } });
+    await db.passwordSetup.deleteMany({ where: { userId: { in: held.map((one) => one.id) } } });
     await db.user.deleteMany({ where: { email: MADE_EMAIL } });
+  }
+
+  after(async () => {
+    await sweep();
     await app.close();
   });
 
@@ -55,7 +62,7 @@ describe("users and audit (e2e)", () => {
     const res = await request(http)
       .post("/users")
       .set("Authorization", `Bearer ${admin}`)
-      .send({ email: MADE_EMAIL, password: MADE_PASSWORD, role: "HR" });
+      .send({ email: MADE_EMAIL, role: "HR" });
     assert.equal(res.status, 201);
     assert.equal(res.body.role, "HR");
     assert.deepEqual(
@@ -66,20 +73,59 @@ describe("users and audit (e2e)", () => {
     madeId = res.body.id;
   });
 
-  it("lets the new account sign in with the password it was given", async () => {
+  it("opens the account closed, with a link waiting and no password that works", async () => {
+    const held = await db.user.findUniqueOrThrow({
+      where: { email: MADE_EMAIL },
+      select: { passwordHash: true, _count: { select: { passwordSetups: true } } },
+    });
+    assert.equal(held._count.passwordSetups, 1, "no setup link was minted for the new account");
     const res = await request(http)
       .post("/auth/login")
       .send({ email: MADE_EMAIL, password: MADE_PASSWORD });
-    assert.equal(res.status, 200);
-    assert.equal(typeof res.body.accessToken, "string");
+    assert.equal(res.status, 401, "an account nobody has set a password for let somebody in");
   });
 
-  it("refuses a password too short to be worth hashing", async () => {
+  it("lets it in once, and only once, after the link is spent", async () => {
+    const link = randomBytes(32).toString("base64url");
+    await db.passwordSetup.create({
+      data: {
+        userId: madeId,
+        tokenHash: createHash("sha256").update(link).digest("hex"),
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
+    });
+    const set = await request(http)
+      .post("/auth/set-password")
+      .send({ token: link, password: MADE_PASSWORD });
+    assert.equal(set.status, 204, JSON.stringify(set.body));
+
+    const inside = await request(http)
+      .post("/auth/login")
+      .send({ email: MADE_EMAIL, password: MADE_PASSWORD });
+    assert.equal(inside.status, 200);
+
+    const again = await request(http)
+      .post("/auth/set-password")
+      .send({ token: link, password: MADE_PASSWORD });
+    assert.equal(again.status, 401, "a spent link set a password a second time");
+  });
+
+  it("refuses a password handed in on the create call", async () => {
     const res = await request(http)
       .post("/users")
       .set("Authorization", `Bearer ${admin}`)
-      .send({ email: "short@kiosk.local", password: "short", role: "VIEWER" });
-    assert.equal(res.status, 400);
+      .send({ email: "typed@kiosk.local", role: "VIEWER", password: "a-long-enough-password" });
+    assert.equal(res.status, 400, "an administrator was allowed to choose somebody's password");
+  });
+
+  it("mails the link again for an account that cannot recall its password", async () => {
+    const before = await db.passwordSetup.count({ where: { userId: madeId } });
+    const res = await request(http)
+      .post(`/users/${madeId}/invite`)
+      .set("Authorization", `Bearer ${admin}`);
+    assert.equal(res.status, 204);
+    const after = await db.passwordSetup.count({ where: { userId: madeId } });
+    assert.equal(after, before + 1, "resending the invitation minted no new link");
   });
 
   it("refuses to delete the last administrator", async () => {

@@ -10,6 +10,7 @@ import { setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
 import { StaleRequestsService } from "../../modules/notifications/stale-requests.service.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { DEFAULT_MAIL_LOCALE } from "../../modules/payroll/mail-text.js";
 import { QUEUE, type NotifyJob, type PasswordSetupJob } from "../queues.js";
 
 const POST_TIMEOUT_MS = 10000;
@@ -83,7 +84,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       this.log.warn(`account ${job.userId} is gone, no invitation to send`);
       return;
     }
-    const body = setupMail(account.employee?.locale ?? "vi", {
+    const body = setupMail(account.employee?.locale ?? DEFAULT_MAIL_LOCALE, {
       fullName: account.employee?.fullName ?? account.email,
       url: job.link,
       hours: this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }),

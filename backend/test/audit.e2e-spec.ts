@@ -91,7 +91,7 @@ describe("audit trail (e2e)", () => {
     const account = await request(http)
       .post("/users")
       .set("Authorization", `Bearer ${token}`)
-      .send({ email: ACCOUNT, password: "a-long-enough-password", role: "VIEWER" });
+      .send({ email: ACCOUNT, role: "VIEWER" });
     assert.equal(account.status, 201);
     accountId = account.body.id;
   });

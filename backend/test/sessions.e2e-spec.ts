@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
@@ -142,7 +143,17 @@ describe("sessions across devices (e2e)", () => {
     await auth.signIn(EMAIL, FIRST_PASSWORD, { userAgent: "e2e-b/1.0" });
     assert.ok((await live()) >= 2);
 
-    await users.update(userId, userId, { password: NEXT_PASSWORD });
+    // The only way a password is ever set is a one-time link, so the test
+    // mints one the way provisioning does and spends it.
+    const link = randomBytes(32).toString("base64url");
+    await db.passwordSetup.create({
+      data: {
+        userId,
+        tokenHash: createHash("sha256").update(link).digest("hex"),
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
+    });
+    await auth.setPassword(link, NEXT_PASSWORD);
     assert.equal(await live(), 0, "a password nobody else knows left a device signed in");
   });
 

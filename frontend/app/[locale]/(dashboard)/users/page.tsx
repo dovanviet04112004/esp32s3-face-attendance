@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
-import { Input, PasswordInput } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
@@ -44,7 +44,7 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<Account | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [sent, setSent] = useState<string | null>(null);
   const [role, setRole] = useState<Settable>("VIEWER");
 
   const rows = useQuery({
@@ -57,12 +57,11 @@ export default function UsersPage() {
     setAdding(false);
     setEditing(null);
     setEmail("");
-    setPassword("");
     void cache.invalidateQueries({ queryKey: ["users"] });
   }
 
   const add = useMutation({
-    mutationFn: () => api.post("/users", { email, password, role }),
+    mutationFn: () => api.post("/users", { email, role }),
     onSuccess: done,
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
@@ -70,6 +69,15 @@ export default function UsersPage() {
   const change = useMutation({
     mutationFn: (one: Account) => api.patch(`/users/${one.id}`, { role }),
     onSuccess: done,
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  const reinvite = useMutation({
+    mutationFn: (one: Account) => api.post(`/users/${one.id}/invite`, {}),
+    onSuccess: (unused, one) => {
+      setFault(null);
+      setSent(one.email);
+    },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
@@ -128,6 +136,17 @@ export default function UsersPage() {
           </Button>
           <Button
             type="button"
+            tone="quiet"
+            size="sm"
+            disabled={reinvite.isPending && reinvite.variables?.id === row.id}
+            onClick={() => reinvite.mutate(row)}
+          >
+            {reinvite.isPending && reinvite.variables?.id === row.id
+              ? common("saving")
+              : t("resend")}
+          </Button>
+          <Button
+            type="button"
             tone={dropping === row.id ? "danger" : "quiet"}
             size="sm"
             disabled={remove.isPending && remove.variables?.id === row.id}
@@ -156,6 +175,12 @@ export default function UsersPage() {
     <section>
       <h1 className="text-lg font-semibold">{t("title")}</h1>
       <p className="mt-1 mb-4 text-sm text-(--color-muted)">{t("lead")}</p>
+
+      {sent ? (
+        <p role="status" className="mb-3 text-sm text-(--color-ok)">
+          {t("resent", { email: sent })}
+        </p>
+      ) : null}
 
       <Button
         type="button"
@@ -203,21 +228,7 @@ export default function UsersPage() {
             className="mt-1"
           />
 
-          <label className="mt-4 block text-sm font-medium" htmlFor="userPassword">
-            {t("password")}
-          </label>
-          <PasswordInput
-            id="userPassword"
-            autoComplete="new-password"
-            required
-            minLength={12}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            showLabel={common("showPassword")}
-            hideLabel={common("hidePassword")}
-            className="mt-1"
-          />
-          <p className="mt-1 text-xs text-(--color-muted)">{t("passwordHint")}</p>
+          <p className="mt-2 text-sm text-(--color-muted)">{t("inviteLead")}</p>
 
           <label className="mt-4 block text-sm font-medium" htmlFor="userRole">
             {t("role")}

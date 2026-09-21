@@ -25,7 +25,7 @@ export const AUDIT_ACTIONS = {
 
   USER_CREATE: "user.create",
   USER_ROLE: "user.role",
-  USER_PASSWORD: "user.password",
+  USER_INVITE: "user.invite",
   USER_DELETE: "user.delete",
 
   CONTRACT_CREATE: "contract.create",

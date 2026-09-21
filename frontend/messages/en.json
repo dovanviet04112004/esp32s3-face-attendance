@@ -1108,12 +1108,13 @@
     "role": "Role",
     "createdAt": "Opened",
     "act": "Actions",
-    "add": "Add account",
+    "add": "Invite an account",
     "changeRole": "Change role",
     "remove": "Remove",
-    "password": "Password",
-    "passwordHint": "Twelve characters at least.",
     "roleHint": "Payroll and Line manager follow the employee record; open those from provisioning in Settings.",
-    "adminOnly": "This page is for administrators."
+    "adminOnly": "This page is for administrators.",
+    "inviteLead": "A setup link goes to this address. The password is chosen by its holder and nobody else ever sees it.",
+    "resend": "Resend link",
+    "resent": "A link is on its way to {email}."
   }
 }

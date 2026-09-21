@@ -21,7 +21,8 @@ import { PrismaService } from "../../database/prisma.service.js";
 
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { hashPassword, UNUSABLE_PASSWORD } from "../auth/password.js";
+import { UNUSABLE_PASSWORD } from "../auth/password.js";
+import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
 import type { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
@@ -157,16 +158,56 @@ export class UsersService {
     return { rows, total };
   }
 
+  /** Mints a one-time link and mails it. Nobody but the holder ever knows the
+   *  password, which is the same rule the bulk opening follows (KEHOACH 9.4).
+   */
+  private async sendSetup(userId: string, locale: string): Promise<void> {
+    const link = randomBytes(LINK_BYTES).toString("base64url");
+    const expiresAt = new Date(
+      Date.now() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * HOUR_MS,
+    );
+    await this.db.passwordSetup.create({
+      data: { userId, tokenHash: fingerprint(link), expiresAt },
+    });
+    const root = this.config.get("APP_PUBLIC_URL", { infer: true });
+    await this.queues[QUEUE.notify].add("password-setup", {
+      type: "password-setup",
+      userId,
+      link: `${root}/${locale}/set-password?token=${link}`,
+    } satisfies PasswordSetupJob);
+  }
+
+  /** Sends the link again, which is how a forgotten password is recovered
+   *  without anybody else ever holding one.
+   */
+  async invite(actorId: string, id: string): Promise<void> {
+    const held = await this.db.user.findUnique({
+      where: { id },
+      select: { id: true, active: true, employee: { select: { locale: true } } },
+    });
+    if (!held || !held.active) {
+      throw new NotFoundException("USER_NOT_FOUND");
+    }
+    await this.sendSetup(held.id, held.employee?.locale ?? DEFAULT_MAIL_LOCALE);
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.USER_INVITE,
+      subject: AUDIT_SUBJECTS.USER,
+      subjectId: id,
+    });
+  }
+
   async create(actorId: string, body: CreateUserDto): Promise<PublicUser> {
     try {
       const made = await this.db.user.create({
         data: {
           email: body.email,
           role: body.role as Role,
-          passwordHash: await hashPassword(body.password),
+          passwordHash: UNUSABLE_PASSWORD,
         },
         select: VISIBLE,
       });
+      await this.sendSetup(made.id, DEFAULT_MAIL_LOCALE);
       await this.audit.record({
         actorId,
         action: AUDIT_ACTIONS.USER_CREATE,
@@ -185,25 +226,13 @@ export class UsersService {
 
   async update(actorId: string, id: string, body: UpdateUserDto): Promise<PublicUser> {
     const held = await this.get(id);
-    const passwordHash = body.password ? await hashPassword(body.password) : undefined;
-    const saved = await this.db.$transaction(async (tx) => {
-      const saved = await tx.user.update({
-        where: { id },
-        data: {
-          ...(body.email ? { email: body.email } : {}),
-          ...(body.role ? { role: body.role as Role } : {}),
-          ...(passwordHash ? { passwordHash } : {}),
-        },
-        select: VISIBLE,
-      });
-      if (passwordHash) {
-        // A new password signs out every device the old one opened.
-        await tx.session.updateMany({
-          where: { userId: id, revokedAt: null },
-          data: { revokedAt: new Date() },
-        });
-      }
-      return saved;
+    const saved = await this.db.user.update({
+      where: { id },
+      data: {
+        ...(body.email ? { email: body.email } : {}),
+        ...(body.role ? { role: body.role as Role } : {}),
+      },
+      select: VISIBLE,
     });
     if (body.role && body.role !== held.role) {
       await this.audit.record({
@@ -212,14 +241,6 @@ export class UsersService {
         subject: AUDIT_SUBJECTS.USER,
         subjectId: id,
         meta: { from: held.role, to: body.role },
-      });
-    }
-    if (passwordHash) {
-      await this.audit.record({
-        actorId,
-        action: AUDIT_ACTIONS.USER_PASSWORD,
-        subject: AUDIT_SUBJECTS.USER,
-        subjectId: id,
       });
     }
     return saved;

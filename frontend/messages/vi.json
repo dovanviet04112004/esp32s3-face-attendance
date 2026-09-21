@@ -1108,12 +1108,13 @@
     "role": "Vai",
     "createdAt": "Mở ngày",
     "act": "Thao tác",
-    "add": "Thêm tài khoản",
+    "add": "Mời tài khoản",
     "changeRole": "Đổi vai",
     "remove": "Xoá",
-    "password": "Mật khẩu",
-    "passwordHint": "Ít nhất 12 ký tự.",
     "roleHint": "Vai Tiền lương và Quản lý trực tiếp lấy theo hồ sơ nhân viên, mở bằng nút cấp tài khoản ở Cài đặt.",
-    "adminOnly": "Trang này chỉ dành cho quản trị viên."
+    "adminOnly": "Trang này chỉ dành cho quản trị viên.",
+    "inviteLead": "Hệ thống gửi một liên kết đặt mật khẩu tới địa chỉ này. Mật khẩu do chính người đó đặt, không ai khác biết.",
+    "resend": "Gửi lại liên kết",
+    "resent": "Đã gửi liên kết tới {email}."
   }
 }

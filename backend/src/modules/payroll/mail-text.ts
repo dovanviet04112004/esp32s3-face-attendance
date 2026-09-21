@@ -12,7 +12,10 @@ export interface MailBody {
   text: string;
 }
 
-const kDefault: MailLocale = "vi";
+/** Mail carries no request, so an account with no record reads this one. */
+export const DEFAULT_MAIL_LOCALE: MailLocale = "vi";
+
+const kDefault = DEFAULT_MAIL_LOCALE;
 
 /**
  * Mail is written on the server, where no request carries a language, so the

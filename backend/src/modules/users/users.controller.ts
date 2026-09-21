@@ -50,8 +50,16 @@ export class UsersController {
   }
 
   @Post()
+  @ApiOperation({ summary: "Open a login and mail its one-time setup link" })
   create(@Body() body: CreateUserDto, @Req() req: Request): Promise<PublicUser> {
     return this.users.create(actorOf(req), body);
+  }
+
+  @Post(":id/invite")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Mail the setup link again, for a password nobody can recall" })
+  invite(@Param("id") id: string, @Req() req: Request): Promise<void> {
+    return this.users.invite(actorOf(req), id);
   }
 
   @Patch(":id")
