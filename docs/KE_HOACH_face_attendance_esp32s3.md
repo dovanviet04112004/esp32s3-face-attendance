@@ -4466,6 +4466,7 @@ frontend/
 │   ├── api.ts                        # axios + interceptor tự refresh khi 401
 │   ├── ws.ts                         # socket.io /feed, và xoá cache query theo tin
 │   ├── auth.ts                       # kho phiên zustand + đọc vai từ token
+│   ├── outbox.ts                     # ★ §9.21.3 luật 2 — đơn chưa gửi, IndexedDB
 │   ├── cn.ts                         # gộp class Tailwind, lớp sau thắng lớp trước
 │   ├── fault.ts                      # ★ mã lỗi API → câu; NƠI DUY NHẤT làm việc đó
 │   ├── nav.ts                        # ★ điều hướng theo vai; khoá ràng kiểu vào vi.json
@@ -6846,6 +6847,26 @@ Nhà xưởng, tầng hầm, ngoài công trường. Ba luật:
    phải thấy được ca mai.
 2. **Đơn gửi lúc mất mạng thì xếp hàng, không mất.** Ghi lại, đồng bộ khi có sóng, và **nói rõ
    là đang chờ gửi** — im lặng ở đây là người ta gửi lại ba lần.
+
+   **Hàng đợi nằm ở trang, không nằm ở Background Sync.** API ấy gọn hơn nhưng Safari trên iOS
+   không có, mà iOS chính là lý do §9.21 chọn PWA. Một cơ chế chạy ở mọi nơi hơn hai cơ chế mà
+   một cái im lặng trên nửa số máy. Nên: IndexedDB giữ đơn chưa gửi, và ba lúc thử lại — khi
+   trình duyệt báo `online`, khi người ta mở lại ứng dụng, và một nhịp chậm trong lúc mở.
+
+   **Xếp hàng là giao ít nhất một lần, nên đơn phải mang khoá của chính nó.** Một đơn gửi đi
+   rồi mất phản hồi trên đường về là chuyện thường của mạng yếu; lần thử sau không phân biệt
+   được nó với một đơn chưa tới. Đây **đúng bài toán §4.3 đã giải cho kiosk** bằng
+   `unique(deviceId, localId)`, và cái điện thoại không phải một bài toán khác. Nên `Request`
+   mang `clientKey` do máy gửi sinh ra, duy nhất toàn bảng.
+
+   **Khoá trùng trả về đơn đã có, không trả 409.** Đây là chỗ dễ chọn sai: 409 đúng về mặt
+   giao thức nhưng biến một lần giao lại thành một lỗi người dùng nhìn thấy, trong khi việc họ
+   định làm **đã xong rồi**. Trả lại chính dòng ấy thì lần thử thứ hai và thứ mười đều kết thúc
+   ở cùng một chỗ, và hàng đợi xoá mục ấy đi mà không phải đoán.
+
+   **Ràng buộc chống chồng ngày không thay được khoá này.** Nó chỉ phủ `kind = 'LEAVE'` (§9.5),
+   nên một đơn tăng ca hay một đơn giải trình công giao lại hai lần sẽ thành hai dòng. Dựa vào
+   nó là dựa vào một hàng rào chỉ chắn một trong năm lối.
 3. **Tải trang đầu phải nhẹ.** Máy Android tầm thấp trên 3G là cấu hình thật của người dùng
    này, không phải trường hợp biên.
 
