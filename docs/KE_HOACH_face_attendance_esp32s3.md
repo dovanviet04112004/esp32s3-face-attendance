@@ -2207,7 +2207,7 @@ esp32s3-face-attendance/
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
 ├── tools/         Script ngang khối: gen_contracts · check_comments · check_layers
 │                   · check_migrations · check_error_codes · check_plans
-│                   · check_schematic · check_pcb
+│                   · backfill · check_schematic · check_pcb
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
     ├── TASKS.md                                 # backlog
@@ -6988,6 +6988,24 @@ Gộp ba nhịp vào một migration thì lúc quay lui không còn đường: c
 
 - **Đổi dữ liệu tách khỏi đổi lược đồ.** Một `UPDATE` trên năm triệu dòng khoá bảng đủ lâu để
   API hết giờ. Đổ dữ liệu đi theo lô, chạy được lại, và ngoài giờ cao điểm.
+
+  `tools/backfill.py` là chỗ luật này sống. Mỗi lô là **một giao dịch riêng**, nên không có lúc
+  nào bảng bị giữ lâu hơn một lô; giữa hai lô có một quãng nghỉ khai bằng tham số, để lượt ghi
+  của kiosk chen vào được.
+
+  **Điều kiện `--where` phải tự co lại, và đó là toàn bộ cơ chế chạy-lại-được.** Không có con
+  trỏ nào được lưu ở đâu cả: vị từ chọn đúng những dòng **chưa xong**, và mệnh đề `--set` làm
+  chúng thôi khớp. Dừng giữa chừng rồi chạy lại là tiếp tục, vì những dòng đã xong không còn
+  được chọn nữa. Một con trỏ lưu ngoài là thứ sẽ lệch khỏi dữ liệu nó trỏ vào — mất file con
+  trỏ thì phải chạy lại từ đầu, mà chạy lại từ đầu là đúng thứ cơ chế này tránh.
+
+  **Vì thế công cụ phải chứng minh vị từ co lại, không phải tin.** Sau mỗi lô nó đếm lại số
+  dòng còn khớp; số ấy không giảm nghĩa là `--set` không làm dòng thôi khớp, và một vòng lặp
+  vô hạn ghi đè cùng một triệu dòng thì im lặng hơn hẳn một lỗi. Gặp vậy thì **dừng và nói ra**,
+  không chạy tiếp.
+
+  **Chạy khô là mặc định**, như `retention.sh`: in ra số dòng khớp, số lô, và kế hoạch của một
+  lô, rồi không ghi gì.
 - **Sửa một migration đã chạy là chuyện không làm.** Sai thì thêm migration mới. Đây cũng là lý
   do không được lấy `migrate reset` làm cách sửa lỗi: xoá cả cơ sở dữ liệu để sửa một ô là đổi
   một lỗi nhỏ lấy mất toàn bộ dữ liệu không dựng lại được.
