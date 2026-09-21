@@ -8,6 +8,7 @@ export const AUDIT_SUBJECTS = {
   ASSET: "asset",
   ORG: "org",
   POLICY: "policy",
+  DOCUMENT: "document",
   DEVICE: "device",
   ROUTE: "route",
 } as const;
@@ -43,6 +44,12 @@ export const AUDIT_ACTIONS = {
   ADVANCE_APPROVE: "advance.approve",
   ADVANCE_REJECT: "advance.reject",
   ADVANCE_PAY: "advance.pay",
+
+  DOCUMENT_CREATE: "document.create",
+  DOCUMENT_PUBLISH: "document.publish",
+  DOCUMENT_ACK: "document.ack",
+  FILE_TYPE_CREATE: "fileType.create",
+  FILE_RECEIVE: "file.receive",
 
   ASSET_ISSUE: "asset.issue",
   ASSET_RETURN: "asset.return",

@@ -15,6 +15,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { SearchModule } from "./modules/search/search.module.js";
 import { TimesheetModule } from "./modules/timesheet/timesheet.module.js";
 import { CertificatesModule } from "./modules/certificates/certificates.module.js";
+import { DocumentsModule } from "./modules/documents/documents.module.js";
 import { DisputesModule } from "./modules/disputes/disputes.module.js";
 import { ProfileModule } from "./modules/profile/profile.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
@@ -62,6 +63,7 @@ import { QueueModule } from "./queue/queue.module.js";
     ReportsModule,
     AuditModule,
     CertificatesModule,
+    DocumentsModule,
     ProfileModule,
     DisputesModule,
     UsersModule,

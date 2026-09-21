@@ -162,9 +162,11 @@ model Department {
   children      Department[] @relation("DepartmentTree")
   employees     Employee[]
 
+  checklists    ChecklistTemplate[]
+  documents     Document[]
+
   @@unique([legalEntityId, code])
   @@index([parentId])
-  checklists    ChecklistTemplate[]
 }
 
 model JobTitle {
@@ -177,6 +179,7 @@ model JobTitle {
   updatedAt DateTime   @updatedAt
   employees Employee[]
   checklists   ChecklistTemplate[]
+  documents    Document[]
 }
 
 model EmploymentContract {
@@ -264,6 +267,8 @@ model Employee {
   disputes          PayslipDispute[]
   checklistRuns     ChecklistRun[]
   settlements       SettlementItem[]
+  documentAcks      DocumentAck[]
+  personnelFiles    PersonnelFile[]
   ownedTasks        ChecklistTask[]     @relation("OwnsTasks")
 
   @@index([departmentId, active])
@@ -1136,6 +1141,110 @@ model BonusItem {
 
   @@unique([runId, employeeId, code])
   @@index([employeeId])
+}
+
+enum DocumentKind {
+  POLICY
+  HANDBOOK
+  NOTICE
+}
+
+/**
+ * Something the company publishes and expects people to read. It owns no
+ * text of its own: every word lives in a version (KEHOACH 9.16 item 9).
+ */
+model Document {
+  id           String            @id @default(uuid())
+  code         String            @unique
+  title        String
+  kind         DocumentKind      @default(POLICY)
+  // Both blank means everybody. A person reads it when each filled one matches
+  // them, so a general policy and a lab policy both apply rather than compete.
+  departmentId String?
+  jobTitleId   String?
+  active       Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  department   Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  jobTitle     JobTitle?         @relation(fields: [jobTitleId], references: [id], onDelete: SetNull)
+  versions     DocumentVersion[]
+
+  @@index([active, departmentId])
+  @@index([active, jobTitleId])
+}
+
+/**
+ * One published wording, never edited again. Changing a policy means the next
+ * version, which is what puts the whole company back at unread.
+ */
+model DocumentVersion {
+  id            String        @id @default(uuid())
+  documentId    String
+  version       Int
+  body          String
+  summary       String?
+  publishedAt   DateTime      @default(now())
+  publishedById String?
+  document      Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  acks          DocumentAck[]
+
+  @@unique([documentId, version])
+  @@index([documentId, publishedAt])
+}
+
+/**
+ * Keyed by version, never by document: an acknowledgement that survives an
+ * edit to the text it acknowledges proves nothing (KEHOACH 9.16 item 9).
+ */
+model DocumentAck {
+  id         String          @id @default(uuid())
+  versionId  String
+  employeeId Int
+  ackAt      DateTime        @default(now())
+  version    DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, employeeId])
+  @@index([employeeId, ackAt])
+}
+
+/** A kind of paper the personnel file is supposed to contain. */
+model PersonnelFileType {
+  id        String          @id @default(uuid())
+  code      String          @unique
+  name      String
+  required  Boolean         @default(true)
+  // Set where the paper itself expires, such as a health check, so an expired
+  // one counts as missing rather than as filed.
+  validMonths Int?
+  ordinal   Int             @default(0)
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  files     PersonnelFile[]
+
+  @@index([active, ordinal])
+}
+
+/**
+ * A receipt for one piece of paper somebody handed in. It holds no scan: the
+ * original is the paper, and there is no object store yet (KEHOACH 9.16.9).
+ */
+model PersonnelFile {
+  id           String            @id @default(uuid())
+  employeeId   Int
+  typeId       String
+  receivedAt   DateTime          @db.Date
+  receivedById String?
+  expiresAt    DateTime?         @db.Date
+  note         String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  employee     Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type         PersonnelFileType @relation(fields: [typeId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, typeId])
+  @@index([typeId, expiresAt])
 }
 
 enum SettlementKind {

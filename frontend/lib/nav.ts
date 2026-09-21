@@ -7,7 +7,9 @@ import {
   ChartColumn,
   Clock,
   Cpu,
+  BookOpenCheck,
   FileText,
+  FolderCheck,
   Inbox,
   LayoutDashboard,
   Network,
@@ -61,6 +63,13 @@ export const NAV: NavGroup[] = [
       { href: "/me/shifts", key: "myShifts", icon: CalendarRange, roles: EVERYONE },
       { href: "/me/requests", key: "myLeave", icon: FileText, roles: EVERYONE },
       { href: "/me/payslips", key: "myPayslips", icon: Receipt, roles: EVERYONE },
+      {
+        href: "/me/documents",
+        key: "myDocuments",
+        icon: BookOpenCheck,
+        roles: EVERYONE,
+        deskOnly: true,
+      },
     ],
   },
   {
@@ -82,6 +91,7 @@ export const NAV: NavGroup[] = [
       { href: "/employees", key: "directory", icon: Users, roles: TEAM },
       { href: "/org", key: "orgChart", icon: Network, roles: TEAM_TIME },
       { href: "/org/departments", key: "departments", icon: Building2, roles: PEOPLE_DESK },
+      { href: "/documents", key: "documents", icon: FolderCheck, roles: PEOPLE_DESK, deskOnly: true },
     ],
   },
   {

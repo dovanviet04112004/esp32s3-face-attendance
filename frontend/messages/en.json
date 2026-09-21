@@ -34,7 +34,9 @@
     "timesheetHr": "Timesheet",
     "departments": "Departments",
     "groupOps": "Operations",
-    "myShifts": "My shifts"
+    "myShifts": "My shifts",
+    "myDocuments": "My documents",
+    "documents": "Documents"
   },
   "common": {
     "loading": "Loading…",
@@ -748,5 +750,36 @@
     "inboxEmpty": "No dispute is waiting",
     "person": "Employee",
     "paid": "An adjustment for the next period has been made"
+  },
+  "documents": {
+    "title": "Documents and files",
+    "lead": "Publish versioned wording, and see who is short of a paper.",
+    "myTitle": "My documents",
+    "myLead": "The newest wording of everything that applies to you. A signature binds to the version you read.",
+    "code": "Code",
+    "docTitle": "Title",
+    "add": "Add a document",
+    "none": "No documents yet",
+    "noneHint": "Add one, then publish its first version.",
+    "noneToRead": "Nothing to read",
+    "noneToReadHint": "New wording will appear here.",
+    "nextVersion": "Wording of the next version",
+    "publish": "Publish",
+    "publishWarning": "Publishing asks everybody to sign again. A published version is never edited.",
+    "neverPublished": "Never published",
+    "versionLine": "Version {version}",
+    "read": "Read",
+    "hide": "Collapse",
+    "sign": "I have read and understood",
+    "signed": "Signed",
+    "signedOn": "Signed on {when}",
+    "unread": "Unread",
+    "whoSigned": "Who has signed",
+    "gapsTitle": "Missing papers",
+    "gapsLead": "Working people short of a required paper, or holding an expired one.",
+    "missing": "Not handed in",
+    "expired": "Expired",
+    "noGaps": "Nobody is short of a paper",
+    "noGapsHint": "Every working person has the required papers on file."
   }
 }

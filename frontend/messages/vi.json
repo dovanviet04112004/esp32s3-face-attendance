@@ -34,7 +34,9 @@
     "timesheetHr": "Bảng công",
     "departments": "Phòng ban",
     "groupOps": "Vận hành",
-    "myShifts": "Lịch ca"
+    "myShifts": "Lịch ca",
+    "myDocuments": "Tài liệu của tôi",
+    "documents": "Tài liệu"
   },
   "common": {
     "loading": "Đang tải…",
@@ -748,5 +750,36 @@
     "inboxEmpty": "Không có khiếu nại nào đang chờ",
     "person": "Nhân viên",
     "paid": "Đã lập khoản trả bù cho kỳ sau"
+  },
+  "documents": {
+    "title": "Tài liệu và hồ sơ",
+    "lead": "Phát hành văn bản có phiên bản, và xem ai còn thiếu giấy tờ gì.",
+    "myTitle": "Tài liệu của tôi",
+    "myLead": "Bản mới nhất của những văn bản áp dụng cho bạn. Ký nhận gắn với đúng bản bạn đọc.",
+    "code": "Mã",
+    "docTitle": "Tên văn bản",
+    "add": "Thêm văn bản",
+    "none": "Chưa có văn bản nào",
+    "noneHint": "Thêm một văn bản rồi phát hành bản đầu tiên.",
+    "noneToRead": "Không có văn bản nào cần đọc",
+    "noneToReadHint": "Khi có bản mới, nó sẽ hiện ở đây.",
+    "nextVersion": "Nội dung bản kế tiếp",
+    "publish": "Phát hành",
+    "publishWarning": "Phát hành bản mới thì mọi người phải ký nhận lại. Bản đã phát không sửa được.",
+    "neverPublished": "Chưa phát hành",
+    "versionLine": "Bản {version}",
+    "read": "Đọc",
+    "hide": "Thu lại",
+    "sign": "Tôi đã đọc và hiểu",
+    "signed": "Đã ký nhận",
+    "signedOn": "Đã ký nhận ngày {when}",
+    "unread": "Chưa đọc",
+    "whoSigned": "Ai đã ký nhận",
+    "gapsTitle": "Hồ sơ còn thiếu",
+    "gapsLead": "Người đang làm việc mà thiếu giấy bắt buộc, hoặc giấy đã quá hạn.",
+    "missing": "Chưa nộp",
+    "expired": "Quá hạn",
+    "noGaps": "Không ai thiếu giấy tờ",
+    "noGapsHint": "Mọi người đang làm việc đều đủ hồ sơ bắt buộc."
   }
 }
