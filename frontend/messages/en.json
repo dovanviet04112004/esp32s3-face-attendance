@@ -422,7 +422,21 @@
     "advanceCANCELLED": "Withdrawn",
     "advanceLead": "Approve, then pay; the next payroll run recovers it.",
     "LEAVERS_HOLDING_ASSETS": "Leavers still holding assets",
-    "DISPUTES_OVERDUE": "Disputes past their deadline"
+    "DISPUTES_OVERDUE": "Disputes past their deadline",
+    "newSettlement": "Settlement run",
+    "settlement": "Final settlement",
+    "settlementLead": "This run pays what leaving costs. It sits beside the monthly payslip rather than replacing it.",
+    "settlementEmpty": "Nobody left in this period",
+    "settlementEmptyHint": "A settlement run covers only people whose leave date falls inside the period.",
+    "leaveDate": "Leave date",
+    "tenure": "Tenure",
+    "tenureYears": "{years}y {months}m",
+    "halfMonthPay": "Half a month's pay",
+    "leavePayout": "Untaken leave",
+    "stillHolding": "Still holding",
+    "severance": "Severance (tax exempt)",
+    "assetOffset": "Asset offset",
+    "saveSettlement": "Save the amounts"
   },
   "policy": {
     "title": "Pay policy",

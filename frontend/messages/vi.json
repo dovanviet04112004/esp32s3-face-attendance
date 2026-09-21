@@ -422,7 +422,21 @@
     "advanceCANCELLED": "Đã huỷ",
     "advanceLead": "Duyệt xong rồi chi; kỳ lương sau tự khấu trừ.",
     "LEAVERS_HOLDING_ASSETS": "Rời đi còn giữ tài sản",
-    "DISPUTES_OVERDUE": "Khiếu nại quá hạn trả lời"
+    "DISPUTES_OVERDUE": "Khiếu nại quá hạn trả lời",
+    "newSettlement": "Lượt chốt cuối",
+    "settlement": "Chốt cuối khi nghỉ việc",
+    "settlementLead": "Lượt này trả những khoản phát sinh vì người ta nghỉ, đứng cạnh phiếu lương tháng chứ không thay nó.",
+    "settlementEmpty": "Kỳ này không có ai nghỉ việc",
+    "settlementEmptyHint": "Lượt chốt cuối chỉ tính cho người có ngày nghỉ nằm trong kỳ.",
+    "leaveDate": "Ngày nghỉ",
+    "tenure": "Thâm niên",
+    "tenureYears": "{years} năm {months} tháng",
+    "halfMonthPay": "Nửa tháng lương",
+    "leavePayout": "Phép chưa dùng",
+    "stillHolding": "Còn giữ tài sản",
+    "severance": "Trợ cấp thôi việc (miễn thuế)",
+    "assetOffset": "Đối trừ tài sản",
+    "saveSettlement": "Lưu các khoản"
   },
   "policy": {
     "title": "Chính sách lương",

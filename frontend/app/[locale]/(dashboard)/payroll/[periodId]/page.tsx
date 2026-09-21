@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 
 import { RunProgress, type PayrollRun } from "@/components/payroll/run-progress";
+import { SettlementSheet } from "@/components/payroll/settlement-sheet";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Empty, Failed } from "@/components/ui/empty";
@@ -66,8 +67,8 @@ export default function PayrollRunPage() {
   }
 
   const create = useMutation({
-    mutationFn: () =>
-      api.post("/payroll-runs", { periodId, kind: "REGULAR", label: label || undefined }),
+    mutationFn: (kind: "REGULAR" | "FINAL_SETTLEMENT") =>
+      api.post("/payroll-runs", { periodId, kind, label: label || undefined }),
     onSuccess: () => {
       setLabel("");
       refresh();
@@ -165,7 +166,7 @@ export default function PayrollRunPage() {
           className="mt-2 flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            create.mutate();
+            create.mutate("REGULAR");
           }}
         >
           <Input
@@ -177,6 +178,14 @@ export default function PayrollRunPage() {
           <Button type="submit" disabled={create.isPending}>
             {create.isPending ? common("saving") : t("newRun")}
           </Button>
+          <Button
+            type="button"
+            tone="quiet"
+            disabled={create.isPending}
+            onClick={() => create.mutate("FINAL_SETTLEMENT")}
+          >
+            {t("newSettlement")}
+          </Button>
         </form>
       ) : null}
 
@@ -187,8 +196,8 @@ export default function PayrollRunPage() {
           <Empty title={t("empty")} hint={t("emptyHint")} />
         ) : (
           runs.data.map((run) => (
+            <div key={run.id}>
             <RunProgress
-              key={run.id}
               run={run}
               action={
                 <div className="flex flex-wrap gap-2">
@@ -212,6 +221,16 @@ export default function PayrollRunPage() {
                 </div>
               }
             />
+            {run.kind === "FINAL_SETTLEMENT" ? (
+              <div className="mt-2 ms-4">
+                <p className="mb-2 text-sm text-(--color-muted)">{t("settlementLead")}</p>
+                <SettlementSheet
+                  runId={run.id}
+                  editable={mayWrite && period?.state === "OPEN" && run.state !== "RUNNING"}
+                />
+              </div>
+            ) : null}
+            </div>
           ))
         )}
       </div>
