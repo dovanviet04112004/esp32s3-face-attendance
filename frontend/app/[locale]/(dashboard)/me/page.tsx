@@ -161,34 +161,40 @@ export default function MyPage() {
           addDependent.mutate();
         }}
       >
-        <Input
-          aria-label={t("dependentName")}
-          required
-          maxLength={120}
-          value={dependentName}
-          onChange={(event) => setDependentName(event.target.value)}
-          className="min-w-48 flex-1"
-        />
-        <Select
-          aria-label={t("dependentRelation")}
-          value={relation}
-          onChange={(event) => setRelation(event.target.value as (typeof RELATIONS)[number])}
-          className="w-40"
-        >
-          {RELATIONS.map((one) => (
-            <option key={one} value={one}>
-              {t(`relation${one}`)}
-            </option>
-          ))}
-        </Select>
-        <Input
-          aria-label={t("dependentFrom")}
-          type="date"
-          required
-          value={fromMonth}
-          onChange={(event) => setFromMonth(event.target.value)}
-          className="w-44"
-        />
+        <label className="block min-w-48 flex-1 text-xs text-(--color-muted)">
+          {t("dependentName")}
+          <Input
+            required
+            maxLength={120}
+            value={dependentName}
+            onChange={(event) => setDependentName(event.target.value)}
+            className="mt-1"
+          />
+        </label>
+        <label className="block w-40 text-xs text-(--color-muted)">
+          {t("dependentRelation")}
+          <Select
+            value={relation}
+            onChange={(event) => setRelation(event.target.value as (typeof RELATIONS)[number])}
+            className="mt-1"
+          >
+            {RELATIONS.map((one) => (
+              <option key={one} value={one}>
+                {t(`relation${one}`)}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="block w-44 text-xs text-(--color-muted)">
+          {t("dependentFrom")}
+          <Input
+            type="date"
+            required
+            value={fromMonth}
+            onChange={(event) => setFromMonth(event.target.value)}
+            className="mt-1"
+          />
+        </label>
         <Button type="submit" disabled={addDependent.isPending}>
           {addDependent.isPending ? common("saving") : t("dependentAdd")}
         </Button>

@@ -111,32 +111,38 @@ export default function ReportsPage() {
       <p className="mt-1 text-sm text-(--color-muted)">{t("insuranceLead")}</p>
 
       <div className="mt-3 flex flex-wrap items-end gap-2">
-        <Select
-          aria-label={t("entity")}
-          value={entity}
-          onChange={(event) => setEntityId(event.target.value)}
-          className="w-56"
-        >
-          {(entities.data ?? []).map((one) => (
-            <option key={one.id} value={one.id}>
-              {one.name}
-            </option>
-          ))}
-        </Select>
-        <Input
-          aria-label={t("from")}
-          type="date"
-          value={changeFrom}
-          onChange={(event) => setChangeFrom(event.target.value)}
-          className="w-44"
-        />
-        <Input
-          aria-label={t("to")}
-          type="date"
-          value={changeTo}
-          onChange={(event) => setChangeTo(event.target.value)}
-          className="w-44"
-        />
+        <label className="block w-56 text-xs text-(--color-muted)">
+          {t("entity")}
+          <Select
+            value={entity}
+            onChange={(event) => setEntityId(event.target.value)}
+            className="mt-1"
+          >
+            {(entities.data ?? []).map((one) => (
+              <option key={one.id} value={one.id}>
+                {one.name}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="block w-44 text-xs text-(--color-muted)">
+          {t("from")}
+          <Input
+            type="date"
+            value={changeFrom}
+            onChange={(event) => setChangeFrom(event.target.value)}
+            className="mt-1"
+          />
+        </label>
+        <label className="block w-44 text-xs text-(--color-muted)">
+          {t("to")}
+          <Input
+            type="date"
+            value={changeTo}
+            onChange={(event) => setChangeTo(event.target.value)}
+            className="mt-1"
+          />
+        </label>
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
@@ -173,13 +179,15 @@ export default function ReportsPage() {
       <h2 className="mt-10 text-sm font-medium">{t("d02Title")}</h2>
       <p className="mt-1 text-sm text-(--color-muted)">{t("d02Lead")}</p>
       <div className="mt-3 flex flex-wrap items-end gap-2">
-        <Input
-          aria-label={t("d02On")}
-          type="date"
-          value={on}
-          onChange={(event) => setOn(event.target.value)}
-          className="w-44"
-        />
+        <label className="block w-44 text-xs text-(--color-muted)">
+          {t("d02On")}
+          <Input
+            type="date"
+            value={on}
+            onChange={(event) => setOn(event.target.value)}
+            className="mt-1"
+          />
+        </label>
         <Button
           type="button"
           disabled={entity === "" || d02.isPending}

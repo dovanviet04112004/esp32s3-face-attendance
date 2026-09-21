@@ -144,27 +144,31 @@ export default function DepartmentsPage() {
             addDepartment.mutate();
           }}
         >
-          <Input
-            aria-label={t("name")}
-            required
-            maxLength={120}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="min-w-48 flex-1"
-          />
-          <Select
-            aria-label={t("parent")}
-            value={parentId}
-            onChange={(event) => setParentId(event.target.value)}
-            className="w-56"
-          >
-            <option value="">{t("noParent")}</option>
-            {(departments.data ?? []).map((one) => (
-              <option key={one.id} value={one.id}>
-                {one.name}
-              </option>
-            ))}
-          </Select>
+          <label className="block min-w-48 flex-1 text-xs text-(--color-muted)">
+            {t("name")}
+            <Input
+              required
+              maxLength={120}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="mt-1"
+            />
+          </label>
+          <label className="block w-56 text-xs text-(--color-muted)">
+            {t("parent")}
+            <Select
+              value={parentId}
+              onChange={(event) => setParentId(event.target.value)}
+              className="mt-1"
+            >
+              <option value="">{t("noParent")}</option>
+              {(departments.data ?? []).map((one) => (
+                <option key={one.id} value={one.id}>
+                  {one.name}
+                </option>
+              ))}
+            </Select>
+          </label>
           <Button type="submit" disabled={addDepartment.isPending}>
             {addDepartment.isPending ? common("saving") : t("newDepartment")}
           </Button>
@@ -199,22 +203,26 @@ export default function DepartmentsPage() {
             addHoliday.mutate();
           }}
         >
-          <Input
-            aria-label={t("holidayDate")}
-            type="date"
-            required
-            value={holidayDate}
-            onChange={(event) => setHolidayDate(event.target.value)}
-            className="w-44"
-          />
-          <Input
-            aria-label={t("holidayName")}
-            required
-            maxLength={120}
-            value={holidayName}
-            onChange={(event) => setHolidayName(event.target.value)}
-            className="min-w-48 flex-1"
-          />
+          <label className="block w-44 text-xs text-(--color-muted)">
+            {t("holidayDate")}
+            <Input
+              type="date"
+              required
+              value={holidayDate}
+              onChange={(event) => setHolidayDate(event.target.value)}
+              className="mt-1"
+            />
+          </label>
+          <label className="block min-w-48 flex-1 text-xs text-(--color-muted)">
+            {t("holidayName")}
+            <Input
+              required
+              maxLength={120}
+              value={holidayName}
+              onChange={(event) => setHolidayName(event.target.value)}
+              className="mt-1"
+            />
+          </label>
           <Checkbox
             checked={holidayPaid}
             onChange={(event) => setHolidayPaid(event.target.checked)}
