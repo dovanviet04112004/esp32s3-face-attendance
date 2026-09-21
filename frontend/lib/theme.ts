@@ -16,6 +16,27 @@ export function readTheme(): Theme {
   }
 }
 
+const kPicked = "theme-color-picked";
+
+/** The browser chrome takes its colour from a media query, which cannot see a
+ *  choice made in the app, so an explicit theme carries its own tag.
+ */
+function paintChrome(theme: Theme): void {
+  const held = document.head.querySelector(`meta[data-${kPicked}]`);
+  if (theme === "system") {
+    held?.remove();
+    return;
+  }
+  const ground = getComputedStyle(document.documentElement)
+    .getPropertyValue("--color-ground")
+    .trim();
+  const tag = held ?? document.createElement("meta");
+  tag.setAttribute("name", "theme-color");
+  tag.setAttribute("content", ground);
+  tag.setAttribute(`data-${kPicked}`, "");
+  document.head.append(tag);
+}
+
 export function applyTheme(theme: Theme): void {
   const root = document.documentElement;
   if (theme === "system") {
@@ -23,6 +44,7 @@ export function applyTheme(theme: Theme): void {
   } else {
     root.dataset.theme = theme;
   }
+  paintChrome(theme);
   try {
     if (theme === "system") {
       window.localStorage.removeItem(kStore);
