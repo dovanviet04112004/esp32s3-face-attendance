@@ -24,7 +24,7 @@
     "directory": "Danh bạ",
     "orgChart": "Cây tổ chức",
     "groupTime": "Thời gian",
-    "leave": "Nghỉ phép",
+    "leave": "Đơn từ",
     "groupPay": "Lương",
     "groupSettings": "Thiết lập",
     "more": "Thêm",
@@ -308,7 +308,11 @@
     "stateCANCELLED": "đã huỷ",
     "waiting": "{count} việc đang chờ bạn",
     "nothingWaiting": "Không có việc nào đang chờ bạn",
-    "waitingToSend": "Có {count} đơn đang chờ gửi — máy sẽ tự gửi khi có mạng, không cần gửi lại."
+    "waitingToSend": "Có {count} đơn đang chờ gửi — máy sẽ tự gửi khi có mạng, không cần gửi lại.",
+    "deskLead": "Sổ đơn của cả nhánh bạn quản lý, mọi loại và mọi trạng thái. Việc đang chờ chính bạn duyệt nằm ở Chờ duyệt.",
+    "anyKind": "Mọi loại",
+    "anyState": "Mọi trạng thái",
+    "gone": "Không tìm thấy đơn này, hoặc nó nằm ngoài phạm vi bạn xem được."
   },
   "me": {
     "title": "Trang của tôi",

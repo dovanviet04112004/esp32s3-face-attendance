@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
 import { Failed } from "@/components/ui/empty";
@@ -10,8 +10,10 @@ import { RequestCard, type RequestRow } from "@/components/requests/request-card
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { money } from "@/lib/format";
 
 const DEPENDENT_DECIDERS = ["ADMIN", "PAYROLL"];
+const ADVANCE_DECIDERS = ["ADMIN", "PAYROLL", "HR", "MANAGER"];
 const DISPUTE_ANSWERERS = ["ADMIN", "PAYROLL"];
 const LETTER_DESK = ["ADMIN", "HR", "PAYROLL"];
 const PROFILE_DESK = ["ADMIN", "HR"];
@@ -29,6 +31,13 @@ interface Letter {
   id: string;
   kind: "EMPLOYMENT" | "INCOME";
   purpose: string;
+  employee?: { code: string; fullName: string };
+}
+
+interface WaitingAdvance {
+  id: string;
+  amount: string;
+  reason: string;
   employee?: { code: string; fullName: string };
 }
 
@@ -68,13 +77,16 @@ export default function ApprovalsPage() {
   const d = useTranslations("disputes");
   const c = useTranslations("certificates");
   const p = useTranslations("profile");
+  const pay = useTranslations("payroll");
   const common = useTranslations("common");
+  const locale = useLocale();
   const cache = useQueryClient();
   const role = useSession((s) => s.role);
   const mayDecideDependents = role !== null && DEPENDENT_DECIDERS.includes(role);
   const mayAnswerDisputes = role !== null && DISPUTE_ANSWERERS.includes(role);
   const mayIssueLetters = role !== null && LETTER_DESK.includes(role);
   const mayDecideProfile = role !== null && PROFILE_DESK.includes(role);
+  const mayDecideAdvances = role !== null && ADVANCE_DECIDERS.includes(role);
 
   const inbox = useQuery({
     queryKey: ["requests", "inbox"],
@@ -146,11 +158,24 @@ export default function ApprovalsPage() {
     onSuccess: () => void cache.invalidateQueries({ queryKey: ["profile-changes"] }),
   });
 
+  const advances = useQuery({
+    queryKey: ["advances", "waiting"],
+    enabled: mayDecideAdvances,
+    queryFn: async () => (await api.get<WaitingAdvance[]>("/advances?state=PENDING")).data,
+  });
+
+  const decideAdvance = useMutation({
+    mutationFn: (what: { id: string; approve: boolean }) =>
+      api.post(`/advances/${what.id}/decide`, { approve: what.approve }),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["advances"] }),
+  });
+
   const waiting =
     (inbox.data?.rows.length ?? 0) +
     (waitingDisputes.data?.length ?? 0) +
     (letters.data?.length ?? 0) +
     (changes.data?.length ?? 0) +
+    (advances.data?.length ?? 0) +
     (dependents.data?.length ?? 0);
 
   if (inbox.isError) {
@@ -253,6 +278,37 @@ export default function ApprovalsPage() {
                 onClick={() => decideChange.mutate({ id: one.id, how: "reject" })}
               >
                 {p("reject")}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Queue>
+
+      <Queue title={pay("advances")} count={advances.data?.length ?? 0}>
+        <ul className="divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
+          {(advances.data ?? []).map((one) => (
+            <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+              <span className="min-w-0 flex-1 truncate">
+                {one.employee ? `${one.employee.fullName} · ` : ""}
+                {one.reason}
+              </span>
+              <span className="tabular-nums">{money(Number(one.amount), locale)}</span>
+              <Button
+                type="button"
+                size="sm"
+                disabled={decideAdvance.isPending}
+                onClick={() => decideAdvance.mutate({ id: one.id, approve: true })}
+              >
+                {t("approve")}
+              </Button>
+              <Button
+                type="button"
+                tone="quiet"
+                size="sm"
+                disabled={decideAdvance.isPending}
+                onClick={() => decideAdvance.mutate({ id: one.id, approve: false })}
+              >
+                {t("reject")}
               </Button>
             </li>
           ))}

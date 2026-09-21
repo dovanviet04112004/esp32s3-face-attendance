@@ -7,7 +7,7 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { LeaveService } from "../leave/leave.service.js";
-import type { DecideAdvanceDto, RequestAdvanceDto } from "./dto/advance.dto.js";
+import type { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
 
 const PAYERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL"]);
 const DECIDERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL", "HR", "MANAGER"]);
@@ -21,10 +21,14 @@ export class AdvanceService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(viewer: Viewer): Promise<SalaryAdvance[]> {
+  async list(viewer: Viewer, query: ListAdvancesDto = {}): Promise<SalaryAdvance[]> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     return this.db.salaryAdvance.findMany({
-      where: visible === null ? {} : { employeeId: { in: visible } },
+      where: {
+        ...(visible === null ? {} : { employeeId: { in: visible } }),
+        ...(query.state ? { state: query.state } : {}),
+      },
+      include: { employee: { select: { id: true, code: true, fullName: true } } },
       orderBy: { requestedAt: "desc" },
       take: 200,
     });

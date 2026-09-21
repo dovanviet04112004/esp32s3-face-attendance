@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { SalaryAdvance } from "@prisma/client";
 
@@ -6,7 +6,7 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { AdvanceService } from "./advance.service.js";
-import { DecideAdvanceDto, RequestAdvanceDto } from "./dto/advance.dto.js";
+import { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
 
 @ApiTags("advances")
 @ApiBearerAuth()
@@ -17,8 +17,11 @@ export class AdvanceController {
 
   @Get()
   @ApiOperation({ summary: "Advances this viewer may see, narrowed by their scope" })
-  list(@CurrentViewer() viewer: Viewer): Promise<SalaryAdvance[]> {
-    return this.advances.list(viewer);
+  list(
+    @CurrentViewer() viewer: Viewer,
+    @Query() query: ListAdvancesDto,
+  ): Promise<SalaryAdvance[]> {
+    return this.advances.list(viewer, query);
   }
 
   @Post()

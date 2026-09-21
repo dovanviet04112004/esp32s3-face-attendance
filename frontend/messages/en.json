@@ -24,7 +24,7 @@
     "directory": "Directory",
     "orgChart": "Org chart",
     "groupTime": "Time",
-    "leave": "Leave",
+    "leave": "Requests",
     "groupPay": "Pay",
     "groupSettings": "Settings",
     "more": "More",
@@ -308,7 +308,11 @@
     "stateCANCELLED": "cancelled",
     "waiting": "{count} things waiting on you",
     "nothingWaiting": "Nothing is waiting on you",
-    "waitingToSend": "{count} request(s) waiting to send. They go out on their own once there is a signal."
+    "waitingToSend": "{count} request(s) waiting to send. They go out on their own once there is a signal.",
+    "deskLead": "Every request in the branch you cover, all kinds and all states. What waits on you to decide sits in Approvals.",
+    "anyKind": "Any kind",
+    "anyState": "Any state",
+    "gone": "No such request, or it falls outside what you may see."
   },
   "me": {
     "title": "My page",

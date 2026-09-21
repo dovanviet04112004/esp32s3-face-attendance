@@ -38,6 +38,9 @@ export default function LeaveDetailPage() {
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">
+      <h1 className="text-lg font-semibold">
+        {row ? `${row.employee?.fullName ?? t("title")} · ${t(`kind${row.kind}`)}` : t("title")}
+      </h1>
 
       {rows.isError ? (
         <Failed onRetry={() => rows.refetch()} />
@@ -59,7 +62,7 @@ export default function LeaveDetailPage() {
           />
         </div>
       ) : (
-        <p className="mt-4 text-sm text-(--color-muted)">{t("mineEmpty")}</p>
+        <p className="mt-4 text-sm text-(--color-muted)">{t("gone")}</p>
       )}
 
       {fault ? (
