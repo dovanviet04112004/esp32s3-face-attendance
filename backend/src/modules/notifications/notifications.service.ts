@@ -4,6 +4,7 @@ import type { NoticeChannel, NoticeKind, Notification, Prisma } from "@prisma/cl
 import webpush from "web-push";
 
 import type { Env } from "../../config/env.schema.js";
+import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js";
 
@@ -122,8 +123,16 @@ export class NotificationsService {
     });
   }
 
-  async unsubscribe(endpoint: string): Promise<void> {
-    await this.db.pushSubscription.deleteMany({ where: { endpoint } });
+  /** Only the owner drops a device: the endpoint alone is a guessable name for
+   *  somebody else's phone (KEHOACH 9.4).
+   */
+  async unsubscribe(viewer: Viewer, endpoint: string): Promise<void> {
+    if (viewer.employeeId === null) {
+      return;
+    }
+    await this.db.pushSubscription.deleteMany({
+      where: { endpoint, employeeId: viewer.employeeId },
+    });
   }
 
   /**

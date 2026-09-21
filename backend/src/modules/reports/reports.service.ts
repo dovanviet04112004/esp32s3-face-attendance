@@ -5,9 +5,13 @@ import { ConfigService } from "@nestjs/config";
 import type { Queue } from "bullmq";
 
 import { CACHE } from "../../common/cache/cache-keys.js";
+import { ScopeService } from "../../common/scope/scope.service.js";
+import type { Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
 import { CacheService } from "../../common/cache/cache.service.js";
 import type { Env } from "../../config/env.schema.js";
+import { Prisma } from "@prisma/client";
+
 import { PrismaService } from "../../database/prisma.service.js";
 import { PolicyService } from "../policy/policy.service.js";
 import { dayWindow, localDay } from "../timesheet/local-day.js";
@@ -227,6 +231,7 @@ export class ReportsService {
   constructor(
     private readonly db: PrismaService,
     private readonly cache: CacheService,
+    private readonly scope: ScopeService,
     private readonly config: ConfigService<Env, true>,
     private readonly policy: PolicyService,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
@@ -327,9 +332,24 @@ export class ReportsService {
   }
 
   /** Punches per employee between two instants, cached for a quarter hour. */
-  summary(from: Date, to: Date): Promise<AttendanceTally[]> {
+  async summary(viewer: Viewer, from: Date, to: Date): Promise<AttendanceTally[]> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (visible !== null && visible.length === 0) {
+      return [];
+    }
     const range = `${from.toISOString()}_${to.toISOString()}`;
-    return this.cache.through(CACHE.report("summary", range), () => this.build(from, to));
+    const scope = visible === null ? "all" : createHash("sha256").update(visible.join(",")).digest("hex").slice(0, 16);
+    return this.cache.through(CACHE.report("summary", range, scope), () =>
+      this.build(from, to, visible),
+    );
+  }
+
+  /** The company-wide entry, built by the queue rather than by a request. No
+   *  viewer means no narrowing, which is why only a job may call it.
+   */
+  warm(from: Date, to: Date): Promise<AttendanceTally[]> {
+    const range = `${from.toISOString()}_${to.toISOString()}`;
+    return this.cache.through(CACHE.report("summary", range), () => this.build(from, to, null));
   }
 
   /** Hand a long roll-up to the queue; it outlives the request that asked. */
@@ -343,7 +363,7 @@ export class ReportsService {
   }
 
   /** Grouped in Postgres: a month of punches does not belong in the heap. */
-  private async build(from: Date, to: Date): Promise<AttendanceTally[]> {
+  private async build(from: Date, to: Date, visible: number[] | null): Promise<AttendanceTally[]> {
     const rows = await this.db.$queryRaw<
       {
         employeeId: number;
@@ -363,6 +383,7 @@ export class ReportsService {
       FROM "AttendanceRecord" a
       JOIN "Employee" e ON e."id" = a."employeeId"
       WHERE a."ts" >= ${from} AND a."ts" <= ${to}
+        ${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
       GROUP BY a."employeeId", e."fullName"
       ORDER BY e."fullName"
     `;

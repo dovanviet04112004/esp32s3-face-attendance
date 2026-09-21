@@ -81,8 +81,11 @@ export class NotificationsController {
 
   @Delete("subscribe")
   @ApiOperation({ summary: "Drop this device, leaving the person's others alone" })
-  async unsubscribe(@Query("endpoint") endpoint: string): Promise<{ done: true }> {
-    await this.notices.unsubscribe(endpoint);
+  async unsubscribe(
+    @CurrentViewer() viewer: Viewer,
+    @Query("endpoint") endpoint: string,
+  ): Promise<{ done: true }> {
+    await this.notices.unsubscribe(viewer, endpoint);
     return { done: true };
   }
 }

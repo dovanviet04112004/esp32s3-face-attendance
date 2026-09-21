@@ -17,12 +17,14 @@ export class DevicesController {
   constructor(private readonly devices: DevicesService) {}
 
   @Get()
+  @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "List kiosks, machines waiting for approval first" })
   list(@Query() query: ListDevicesDto): Promise<Page<Device>> {
     return this.devices.list(query);
   }
 
   @Get(":id")
+  @Roles("ADMIN")
   get(@Param("id") id: string): Promise<Device> {
     return this.devices.get(id);
   }

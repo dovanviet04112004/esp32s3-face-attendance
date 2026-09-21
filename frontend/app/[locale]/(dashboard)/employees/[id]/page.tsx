@@ -31,6 +31,7 @@ const TAB_KEY = {
   assets: "tabAssets",
 } as const;
 const CONTRACT_ROLES = ["ADMIN", "HR", "PAYROLL"];
+const ENROL_DESK = ["ADMIN", "HR"];
 const PUNCHES = 20;
 
 type Tab = (typeof TABS)[number];
@@ -107,6 +108,7 @@ export default function EmployeePage() {
   const id = Number(params.id);
   const role = useSession((s) => s.role);
   const seesContracts = role !== null && CONTRACT_ROLES.includes(role);
+  const mayEnrol = role !== null && ENROL_DESK.includes(role);
 
   const asked = search.get("tab") as Tab | null;
   const tab: Tab = asked && TABS.includes(asked) ? asked : "info";
@@ -127,9 +129,11 @@ export default function EmployeePage() {
     queryFn: async () => (await api.get<DepartmentChoice[]>("/departments")).data,
   });
 
+  // Only the desk that may enrol asks for the fleet; the others would be shown
+  // a picker that answers 403 (KEHOACH 9.15 rule 1).
   const devices = useQuery({
     queryKey: ["devices"],
-    enabled: tab === "info",
+    enabled: tab === "info" && mayEnrol,
     queryFn: async () => (await api.get<{ rows: Device[] }>("/devices")).data,
   });
 
@@ -255,6 +259,7 @@ export default function EmployeePage() {
             onCancel={() => router.replace("/employees")}
           />
 
+          {mayEnrol ? (
           <div className="mt-10 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
             <h2 className="text-sm font-medium">{t("assignTitle")}</h2>
             <p className="mt-1 text-sm text-(--color-muted)">{t("assignLead")}</p>
@@ -288,6 +293,7 @@ export default function EmployeePage() {
               <p className="mt-3 text-sm text-(--color-ok)">{t("assigned", { device: assigned })}</p>
             ) : null}
           </div>
+          ) : null}
         </div>
       ) : null}
 

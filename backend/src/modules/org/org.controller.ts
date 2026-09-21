@@ -41,6 +41,7 @@ export class OrgController {
   constructor(private readonly org: OrgService) {}
 
   @Get("holidays")
+  @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Public holidays in a year; the day build reads these" })
   holidays(@Query("year") year?: string): Promise<Holiday[]> {
     return this.org.holidays(year ? Number(year) : undefined);
@@ -91,11 +92,13 @@ export class OrgController {
   }
 
   @Get("legal-entities")
+  @Roles("ADMIN", "HR", "PAYROLL")
   entities(): Promise<LegalEntity[]> {
     return this.org.entities();
   }
 
   @Get("job-titles")
+  @Roles("ADMIN", "HR")
   jobTitles(): Promise<JobTitle[]> {
     return this.org.jobTitles();
   }
@@ -112,6 +115,7 @@ export class OrgController {
   }
 
   @Get("departments")
+  @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
   @ApiOperation({ summary: "The tree flat, with parentId, so a caller shapes it once" })
   departments(@Query("legalEntityId") legalEntityId?: string): Promise<Department[]> {
     return this.org.departments(legalEntityId);

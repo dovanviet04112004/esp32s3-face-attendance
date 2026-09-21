@@ -29,6 +29,7 @@ export class ShiftsController {
   constructor(private readonly shifts: ShiftsService) {}
 
   @Get()
+  @Roles("ADMIN", "HR")
   list(): Promise<Shift[]> {
     return this.shifts.list();
   }
@@ -40,6 +41,7 @@ export class ShiftsController {
   }
 
   @Get(":id")
+  @Roles("ADMIN", "HR")
   get(@Param("id") id: string): Promise<Shift> {
     return this.shifts.get(id);
   }
@@ -64,6 +66,7 @@ export class ShiftsController {
   }
 
   @Get(":id/assignments")
+  @Roles("ADMIN", "HR")
   assignments(@Param("id") id: string): Promise<ShiftAssignment[]> {
     return this.shifts.assignments(id);
   }

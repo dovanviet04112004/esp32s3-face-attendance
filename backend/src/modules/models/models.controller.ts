@@ -17,6 +17,7 @@ export class ModelsController {
   constructor(private readonly models: ModelsService) {}
 
   @Get()
+  @Roles("ADMIN")
   list(): Promise<Release[]> {
     return this.models.list();
   }
