@@ -4458,6 +4458,8 @@ frontend/
 │   │                                 #   đang chờ là một hook dùng chung cho cả ba
 │   ├── tables/{data-table.tsx, card-list.tsx}        # ★ một định nghĩa cột, hai hình thức
 │   ├── forms/employee-form.tsx
+│   ├── employees/{contracts.tsx, pay.tsx, assets.tsx, checklist.tsx, files.tsx,
+│   │              offboard.tsx}      # ★ một tab của hồ sơ một người, đọc và ghi
 │   ├── requests/{request-card.tsx, request-form.tsx}
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
 │   ├── notifications/{bell.tsx, notice-list.tsx, push-switch.tsx}   # ★ §9.21.4
