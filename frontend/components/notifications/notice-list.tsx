@@ -1,7 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, Inbox, Receipt, SquareCheck, type LucideIcon } from "lucide-react";
+import {
+  CalendarClock,
+  Inbox,
+  MessageSquareReply,
+  Receipt,
+  SquareCheck,
+  TimerOff,
+  type LucideIcon,
+} from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
@@ -12,8 +20,10 @@ import { cn } from "@/lib/cn";
 export type NoticeKind =
   | "REQUEST_DECIDED"
   | "REQUEST_WAITING"
+  | "REQUEST_STALLED"
   | "PAYSLIP_ISSUED"
-  | "CONTRACT_ENDING";
+  | "CONTRACT_ENDING"
+  | "DISPUTE_ANSWERED";
 
 export interface Notice {
   id: string;
@@ -21,7 +31,9 @@ export interface Notice {
   requestId: string | null;
   periodId: string | null;
   contractId: string | null;
+  payslipId: string | null;
   daysLeft: number | null;
+  daysWaited: number | null;
   approved: boolean | null;
   readAt: string | null;
   createdAt: string;
@@ -30,15 +42,19 @@ export interface Notice {
 const FACE: Record<NoticeKind, LucideIcon> = {
   REQUEST_DECIDED: SquareCheck,
   REQUEST_WAITING: Inbox,
+  REQUEST_STALLED: TimerOff,
   PAYSLIP_ISSUED: Receipt,
   CONTRACT_ENDING: CalendarClock,
+  DISPUTE_ANSWERED: MessageSquareReply,
 };
 
 const WHERE: Record<NoticeKind, string> = {
   REQUEST_DECIDED: "/me/requests",
   REQUEST_WAITING: "/approvals",
+  REQUEST_STALLED: "/me/requests",
   PAYSLIP_ISSUED: "/me/payslips",
   CONTRACT_ENDING: "/me",
+  DISPUTE_ANSWERED: "/me/payslips",
 };
 
 export function NoticeList({ onGo }: { onGo: () => void }) {
@@ -64,7 +80,15 @@ export function NoticeList({ onGo }: { onGo: () => void }) {
     if (notice.kind === "CONTRACT_ENDING") {
       return t("kindCONTRACT_ENDING", { count: notice.daysLeft ?? 0 });
     }
-    return notice.kind === "REQUEST_WAITING" ? t("kindREQUEST_WAITING") : t("kindPAYSLIP_ISSUED");
+    if (notice.kind === "REQUEST_STALLED") {
+      return t("kindREQUEST_STALLED", { count: notice.daysWaited ?? 0 });
+    }
+    if (notice.kind === "REQUEST_WAITING") {
+      return t("kindREQUEST_WAITING");
+    }
+    return notice.kind === "DISPUTE_ANSWERED"
+      ? t("kindDISPUTE_ANSWERED")
+      : t("kindPAYSLIP_ISSUED");
   }
 
   const rows = notices.data ?? [];

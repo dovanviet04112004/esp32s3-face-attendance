@@ -17,12 +17,19 @@ interface Preference {
 
 const KIND_KEY: Record<
   NoticeKind,
-  "kindREQUEST_WAITING" | "kindPAYSLIP_ISSUED" | "kindCONTRACT_ENDING" | "kindREQUEST_DECIDED_true"
+  | "kindREQUEST_WAITING"
+  | "kindREQUEST_STALLED"
+  | "kindPAYSLIP_ISSUED"
+  | "kindCONTRACT_ENDING"
+  | "kindDISPUTE_ANSWERED"
+  | "kindREQUEST_DECIDED_true"
 > = {
   REQUEST_DECIDED: "kindREQUEST_DECIDED_true",
   REQUEST_WAITING: "kindREQUEST_WAITING",
+  REQUEST_STALLED: "kindREQUEST_STALLED",
   PAYSLIP_ISSUED: "kindPAYSLIP_ISSUED",
   CONTRACT_ENDING: "kindCONTRACT_ENDING",
+  DISPUTE_ANSWERED: "kindDISPUTE_ANSWERED",
 };
 
 const CHANNEL_KEY: Record<Channel, "channelIN_APP" | "channelPUSH" | "channelEMAIL"> = {
@@ -34,8 +41,10 @@ const CHANNEL_KEY: Record<Channel, "channelIN_APP" | "channelPUSH" | "channelEMA
 const KINDS: NoticeKind[] = [
   "REQUEST_DECIDED",
   "REQUEST_WAITING",
+  "REQUEST_STALLED",
   "PAYSLIP_ISSUED",
   "CONTRACT_ENDING",
+  "DISPUTE_ANSWERED",
 ];
 const CHANNELS: Channel[] = ["IN_APP", "PUSH", "EMAIL"];
 
@@ -74,7 +83,9 @@ export function NoticePreferences() {
           {KINDS.map((kind) => (
             <tr key={kind} className="border-t border-(--color-line)">
               <td className="py-2 pe-3">
-                {kind === "CONTRACT_ENDING" ? t(KIND_KEY[kind], { count: 30 }) : t(KIND_KEY[kind])}
+                {kind === "CONTRACT_ENDING" || kind === "REQUEST_STALLED"
+                  ? t(KIND_KEY[kind], { count: kind === "CONTRACT_ENDING" ? 30 : 7 })
+                  : t(KIND_KEY[kind])}
               </td>
               {CHANNELS.map((channel) => (
                 <td key={channel} className="px-3 py-2">

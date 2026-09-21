@@ -8,6 +8,7 @@ import { ContractAlertsService } from "../../modules/notifications/contract-aler
 import { MailerService } from "../../modules/notifications/mailer.service.js";
 import { setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
+import { StaleRequestsService } from "../../modules/notifications/stale-requests.service.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE, type NotifyJob, type PasswordSetupJob } from "../queues.js";
 
@@ -23,6 +24,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly alerts: ContractAlertsService,
     private readonly mailer: MailerService,
     private readonly profile: ProfileService,
+    private readonly stale: StaleRequestsService,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
   ) {}
@@ -34,6 +36,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         const body = job.data as NotifyJob;
         if (body.type === "contracts-ending") {
           await this.alerts.sweep();
+          return;
+        }
+        if (body.type === "requests-stale") {
+          await this.stale.sweep();
           return;
         }
         if (body.type === "password-setup") {

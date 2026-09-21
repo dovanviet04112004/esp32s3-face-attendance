@@ -26,10 +26,13 @@ export interface RequestRow {
   days: string;
   minutes: number;
   reason: string;
+  createdAt: string;
   decisionNote: string | null;
   employee: { id: number; code: string; fullName: string } | null;
   leaveType: { id: string; code: string; name: string } | null;
 }
+
+const kDayMs = 86_400_000;
 
 const TONE: Record<RequestState, string> = {
   DRAFT: "border-(--color-line) text-(--color-muted)",
@@ -49,6 +52,11 @@ export function StatePill({ state }: { state: RequestState }) {
       {t(`state${state}`)}
     </span>
   );
+}
+
+/** Whole days between filing and now, which is what the sweep also counts. */
+function waited(since: string): number {
+  return Math.floor((Date.now() - new Date(since).getTime()) / kDayMs);
 }
 
 interface Props {
@@ -84,7 +92,14 @@ export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
             {row.minutes > 0 ? ` · ${minutes(row.minutes, locale)}` : ""}
           </p>
         </div>
-        <StatePill state={row.state} />
+        <div className="flex items-center gap-2">
+          {row.state === "PENDING" ? (
+            <span className="rounded-full border border-(--color-line) px-2 py-0.5 text-xs tabular-nums text-(--color-muted)">
+              {t("waited", { count: waited(row.createdAt) })}
+            </span>
+          ) : null}
+          <StatePill state={row.state} />
+        </div>
       </div>
 
       <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">

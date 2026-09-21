@@ -24,6 +24,10 @@ export interface ContractsEndingJob {
   type: "contracts-ending";
 }
 
+export interface RequestsStaleJob {
+  type: "requests-stale";
+}
+
 /** The link rides here: the server keeps only its hash (KEHOACH 9.4). */
 export interface PasswordSetupJob {
   type: "password-setup";
@@ -37,7 +41,12 @@ export interface ProfileNoticeJob {
   changeId: string;
 }
 
-export type NotifyJob = WebhookJob | ContractsEndingJob | PasswordSetupJob | ProfileNoticeJob;
+export type NotifyJob =
+  | WebhookJob
+  | ContractsEndingJob
+  | RequestsStaleJob
+  | PasswordSetupJob
+  | ProfileNoticeJob;
 
 export interface DeliverJob {
   type: "deliver";

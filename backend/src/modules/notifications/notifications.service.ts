@@ -14,6 +14,7 @@ export interface NoticeFacts {
   payslipId?: string;
   contractId?: string;
   daysLeft?: number;
+  daysWaited?: number;
   approved?: boolean;
 }
 
@@ -24,8 +25,10 @@ export interface Unread {
 const KINDS: NoticeKind[] = [
   "REQUEST_DECIDED",
   "REQUEST_WAITING",
+  "REQUEST_STALLED",
   "PAYSLIP_ISSUED",
   "CONTRACT_ENDING",
+  "DISPUTE_ANSWERED",
 ];
 
 // Email is off by default everywhere: a payslip already has its own mail path

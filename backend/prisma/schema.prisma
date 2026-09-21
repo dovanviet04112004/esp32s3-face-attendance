@@ -1139,6 +1139,7 @@ model BonusItem {
 enum NoticeKind {
   REQUEST_DECIDED
   REQUEST_WAITING
+  REQUEST_STALLED
   PAYSLIP_ISSUED
   CONTRACT_ENDING
   DISPUTE_ANSWERED
@@ -1163,6 +1164,7 @@ model Notification {
   payslipId  String?
   contractId String?
   daysLeft   Int?
+  daysWaited Int?
   approved   Boolean?
   readAt     DateTime?
   createdAt  DateTime   @default(now())
