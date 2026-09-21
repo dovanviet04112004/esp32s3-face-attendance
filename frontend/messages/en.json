@@ -258,7 +258,8 @@
     "legalEntity": "Legal entity",
     "legalEntityHint": "The D02-LT filing is filtered by this; leaving it empty keeps the person out of the file.",
     "anyDepartment": "Any department",
-    "searchHint": "Code or name"
+    "searchHint": "Code or name",
+    "overdue": "Overdue"
   },
   "attendance": {
     "title": "Attendance",
@@ -1064,7 +1065,8 @@
     "templateItems": "Tasks",
     "templateItemsHint": "Issue laptop and accounts | HR | 0\nSign the contract | HR | 1\nIntroduce to the team | MANAGER | 2",
     "templateItemsRule": "One per line: task | HR or MANAGER or SELF | days from the anchor. A negative number falls before it.",
-    "itemCount": "{count} tasks"
+    "itemCount": "{count} tasks",
+    "overdue": "Overdue"
   },
   "audit": {
     "title": "Audit trail",

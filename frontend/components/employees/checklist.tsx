@@ -148,12 +148,13 @@ export function Checklist({ employeeId, mayWrite }: { employeeId: number; mayWri
                 <span className="text-xs text-(--color-muted)">{t(`owner${one.ownerRole}`)}</span>
                 <span
                   className={cn(
-                    "tabular-nums text-xs",
+                    "text-xs tabular-nums",
                     !one.doneAt && one.dueOn.slice(0, 10) < today()
                       ? "text-(--color-warn)"
                       : "text-(--color-muted)",
                   )}
                 >
+                  {!one.doneAt && one.dueOn.slice(0, 10) < today() ? `${t("overdue")} · ` : ""}
                   {format.dateTime(dayOnly(one.dueOn), "day")}
                 </span>
                 {one.doneAt ? (

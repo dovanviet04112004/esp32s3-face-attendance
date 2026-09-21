@@ -237,15 +237,11 @@ export default function EmployeePage() {
 
   const approved = devices.data ?? [];
 
-  if (employee.isPending) {
-    return <p className="text-sm text-(--color-muted)">{common("loading")}</p>;
-  }
-  if (!employee.data) {
-    return <p className="text-sm text-(--color-danger)">{common("failed")}</p>;
-  }
-
   if (employee.isError) {
     return <Failed onRetry={() => void employee.refetch()} />;
+  }
+  if (employee.isPending || !employee.data) {
+    return <p className="text-sm text-(--color-muted)">{common("loading")}</p>;
   }
 
   return (

@@ -173,10 +173,10 @@ export default function MyLettersPage() {
                   className={[
                     "rounded-full px-2 py-0.5 text-xs",
                     one.state === "ISSUED"
-                      ? "bg-(--color-accent) text-(--color-on-fill)"
+                      ? "border border-(--color-ok) text-(--color-ok)"
                       : one.state === "REJECTED"
-                        ? "bg-(--color-danger) text-(--color-on-fill)"
-                        : "bg-(--color-ground) text-(--color-muted)",
+                        ? "border border-(--color-danger) text-(--color-danger)"
+                        : "border border-(--color-warn) text-(--color-warn)",
                   ].join(" ")}
                 >
                   {t(one.state)}
@@ -218,7 +218,10 @@ export default function MyLettersPage() {
         title={reading?.serial ?? ""}
         closeLabel={t("close")}
       >
-        <pre className="max-h-[60vh] overflow-auto text-xs leading-relaxed whitespace-pre-wrap">
+        <pre
+          data-print
+          className="max-h-[60vh] overflow-auto text-sm leading-relaxed whitespace-pre-wrap"
+        >
           {reading?.text}
         </pre>
         <Button className="mt-4 w-full" onClick={() => window.print()}>

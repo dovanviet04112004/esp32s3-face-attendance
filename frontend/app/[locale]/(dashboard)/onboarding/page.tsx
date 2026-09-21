@@ -258,12 +258,13 @@ export default function OnboardingPage() {
               </div>
               <span
                 className={cn(
-                  "shrink-0 tabular-nums text-xs",
+                  "shrink-0 text-xs tabular-nums",
                   one.dueOn.slice(0, 10) < today()
                     ? "text-(--color-warn)"
                     : "text-(--color-muted)",
                 )}
               >
+                {one.dueOn.slice(0, 10) < today() ? `${t("overdue")} · ` : ""}
                 {format.dateTime(dayOnly(one.dueOn), "day")}
               </span>
               {mayFinish ? (

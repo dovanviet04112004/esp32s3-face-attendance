@@ -258,7 +258,8 @@
     "legalEntity": "Pháp nhân",
     "legalEntityHint": "Mẫu D02-LT lọc theo ô này; để trống là người này không có trong file nộp BHXH.",
     "anyDepartment": "Mọi phòng ban",
-    "searchHint": "Mã hoặc tên"
+    "searchHint": "Mã hoặc tên",
+    "overdue": "Quá hạn"
   },
   "attendance": {
     "title": "Chấm công",
@@ -1064,7 +1065,8 @@
     "templateItems": "Các việc",
     "templateItemsHint": "Cấp máy tính và tài khoản | HR | 0\nKý hợp đồng lao động | HR | 1\nGiới thiệu với tổ nhóm | MANAGER | 2",
     "templateItemsRule": "Mỗi dòng: việc | HR hoặc MANAGER hoặc SELF | số ngày lệch so với mốc. Số âm nghĩa là trước mốc.",
-    "itemCount": "{count} việc"
+    "itemCount": "{count} việc",
+    "overdue": "Quá hạn"
   },
   "audit": {
     "title": "Nhật ký kiểm toán",
