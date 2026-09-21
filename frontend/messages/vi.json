@@ -159,7 +159,8 @@
     "assetsEmpty": "Không giữ tài sản nào",
     "assetName": "Tài sản",
     "assetKind": "Loại",
-    "trainingWaiting": "Tab đào tạo chờ phân hệ đào tạo (§9.16 mục 13)"
+    "trainingWaiting": "Tab đào tạo chờ phân hệ đào tạo (§9.16 mục 13)",
+    "departmentsFailed": "Không tải được danh sách phòng ban, nên ô chọn phòng đang trống."
   },
   "attendance": {
     "title": "Chấm công",

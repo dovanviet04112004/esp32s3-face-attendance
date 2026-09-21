@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
+import { Failed } from "@/components/ui/empty";
 import { StatePill, type RequestRow } from "@/components/requests/request-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,6 +99,10 @@ export default function MyPage() {
   }
 
   const pending = waiting.data?.rows.filter((row) => row.state === "PENDING") ?? [];
+
+  if (me.isError) {
+    return <Failed onRetry={() => void me.refetch()} />;
+  }
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">

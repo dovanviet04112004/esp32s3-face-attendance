@@ -49,6 +49,18 @@ export default function NewEmployeePage() {
   return (
     <section>
       <h1 className="text-lg font-semibold">{t("createTitle")}</h1>
+      {departments.isError ? (
+        <p role="alert" className="mt-4 text-sm text-(--color-danger)">
+          {t("departmentsFailed")}{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => void departments.refetch()}
+          >
+            {common("retry")}
+          </button>
+        </p>
+      ) : null}
       <div className="mt-6">
         <EmployeeForm
           start={BLANK}

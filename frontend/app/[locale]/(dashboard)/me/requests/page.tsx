@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 
+import { Failed } from "@/components/ui/empty";
 import { RequestForm } from "@/components/requests/request-form";
 import { RequestCard, type RequestRow } from "@/components/requests/request-card";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,10 @@ export default function MyRequestsPage() {
     mutationFn: (id: string) => api.post(`/requests/${id}/cancel`, {}),
     onSuccess: () => void cache.invalidateQueries({ queryKey: ["requests"] }),
   });
+
+  if (mine.isError) {
+    return <Failed onRetry={() => void mine.refetch()} />;
+  }
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">

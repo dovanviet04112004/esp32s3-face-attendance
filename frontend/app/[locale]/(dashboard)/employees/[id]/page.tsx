@@ -11,6 +11,7 @@ import {
   type DepartmentChoice,
   type EmployeeDraft,
 } from "@/components/forms/employee-form";
+import { Failed } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { useRouter } from "@/i18n/navigation";
@@ -207,6 +208,10 @@ export default function EmployeePage() {
   }
   if (!employee.data) {
     return <p className="text-sm text-(--color-danger)">{common("failed")}</p>;
+  }
+
+  if (employee.isError) {
+    return <Failed onRetry={() => void employee.refetch()} />;
   }
 
   return (

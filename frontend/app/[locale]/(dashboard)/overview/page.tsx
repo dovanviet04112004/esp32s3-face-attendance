@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
+import { Failed } from "@/components/ui/empty";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
@@ -85,6 +86,10 @@ export default function OverviewPage() {
     queryKey: ["devices"],
     queryFn: async () => (await api.get<DevicePage>("/devices")).data,
   });
+
+  if (devices.isError) {
+    return <Failed onRetry={() => void devices.refetch()} />;
+  }
 
   return (
     <section>

@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
-import { Empty } from "@/components/ui/empty";
+import { Empty, Failed } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 
@@ -59,6 +59,10 @@ export default function MyShiftsPage() {
 
   const days = roster.data ?? [];
   const working = days.filter((one) => one.shift && !one.holiday && !one.away).length;
+
+  if (roster.isError) {
+    return <Failed onRetry={() => void roster.refetch()} />;
+  }
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">

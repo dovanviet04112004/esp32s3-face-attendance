@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { Failed } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
@@ -91,6 +92,10 @@ export default function ReportsPage() {
     queryFn: async () =>
       (await api.get<Tally[]>(`/reports/attendance?from=${from}&to=${to}`)).data,
   });
+
+  if (rollup.isError) {
+    return <Failed onRetry={() => void rollup.refetch()} />;
+  }
 
   return (
     <section>

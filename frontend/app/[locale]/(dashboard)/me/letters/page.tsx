@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { BottomBar } from "@/components/ui/bottom-bar";
-import { Empty } from "@/components/ui/empty";
+import { Empty, Failed } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
@@ -76,6 +76,10 @@ export default function MyLettersPage() {
   function submit(event: FormEvent) {
     event.preventDefault();
     ask.mutate();
+  }
+
+  if (letters.isError) {
+    return <Failed onRetry={() => void letters.refetch()} />;
   }
 
   return (

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
+import { Failed } from "@/components/ui/empty";
 import { api } from "@/lib/api";
 
 interface Department {
@@ -47,6 +48,10 @@ export default function OrgPage() {
     queryKey: ["departments"],
     queryFn: async () => (await api.get<Department[]>("/departments")).data,
   });
+
+  if (departments.isError) {
+    return <Failed onRetry={() => void departments.refetch()} />;
+  }
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
+import { Failed } from "@/components/ui/empty";
 import { RequestCard, type RequestRow, type RequestState } from "@/components/requests/request-card";
 import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
@@ -21,6 +22,10 @@ export default function LeaveDeskPage() {
       (await api.get<{ rows: RequestRow[]; total: number }>(`/requests${state ? `?state=${state}` : ""}`))
         .data,
   });
+
+  if (rows.isError) {
+    return <Failed onRetry={() => void rows.refetch()} />;
+  }
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">

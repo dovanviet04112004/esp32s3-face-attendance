@@ -159,7 +159,8 @@
     "assetsEmpty": "Holding nothing",
     "assetName": "Asset",
     "assetKind": "Kind",
-    "trainingWaiting": "The training tab waits on the training module (KEHOACH 9.16 item 13)"
+    "trainingWaiting": "The training tab waits on the training module (KEHOACH 9.16 item 13)",
+    "departmentsFailed": "The department list did not load, so that picker is empty."
   },
   "attendance": {
     "title": "Attendance",

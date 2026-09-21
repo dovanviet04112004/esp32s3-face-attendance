@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
+import { Failed } from "@/components/ui/empty";
 import { DisputeCard, type Dispute, type Verdict } from "@/components/payroll/dispute-card";
 import { RequestCard, type RequestRow } from "@/components/requests/request-card";
 import { Button } from "@/components/ui/button";
@@ -151,6 +152,10 @@ export default function ApprovalsPage() {
     (letters.data?.length ?? 0) +
     (changes.data?.length ?? 0) +
     (dependents.data?.length ?? 0);
+
+  if (inbox.isError) {
+    return <Failed onRetry={() => void inbox.refetch()} />;
+  }
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">

@@ -5,6 +5,7 @@ import { useFormatter, useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { Failed } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
@@ -89,6 +90,10 @@ export default function DevicePage() {
       it.lastSeenAt ? format.dateTime(new Date(it.lastSeenAt), "medium") : t("never"),
     ],
   ];
+
+  if (device.isError) {
+    return <Failed onRetry={() => void device.refetch()} />;
+  }
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">

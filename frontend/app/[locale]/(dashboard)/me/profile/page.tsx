@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { BottomBar } from "@/components/ui/bottom-bar";
-import { Empty } from "@/components/ui/empty";
+import { Empty, Failed } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -103,6 +103,10 @@ export default function MyProfilePage() {
   function submit(event: FormEvent) {
     event.preventDefault();
     ask.mutate();
+  }
+
+  if (me.isError) {
+    return <Failed onRetry={() => void me.refetch()} />;
   }
 
   return (
