@@ -8,15 +8,17 @@ import { Failed } from "@/components/ui/empty";
 import { DisputeCard, type Dispute, type Verdict } from "@/components/payroll/dispute-card";
 import { RequestCard, type RequestRow } from "@/components/requests/request-card";
 import { Button } from "@/components/ui/button";
+import {
+  ADVANCE_DECIDERS,
+  DEPENDENT_DECIDERS,
+  DISPUTE_ANSWERERS,
+  LETTER_DESK,
+  PROFILE_DESK,
+} from "@/components/nav/waiting-count";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { money } from "@/lib/format";
 
-const DEPENDENT_DECIDERS = ["ADMIN", "PAYROLL"];
-const ADVANCE_DECIDERS = ["ADMIN", "PAYROLL", "HR", "MANAGER"];
-const DISPUTE_ANSWERERS = ["ADMIN", "PAYROLL"];
-const LETTER_DESK = ["ADMIN", "HR", "PAYROLL"];
-const PROFILE_DESK = ["ADMIN", "HR"];
 const RELATIONS = ["CHILD", "SPOUSE", "PARENT", "SIBLING", "OTHER"] as const;
 
 interface WaitingDependent {

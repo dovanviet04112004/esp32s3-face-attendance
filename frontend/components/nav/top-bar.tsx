@@ -7,14 +7,18 @@ import { NoticeBell } from "@/components/notifications/bell";
 import { GlobalSearch } from "@/components/search/global-search";
 import { Link } from "@/i18n/navigation";
 import { useSession } from "@/lib/auth";
+import { navFor } from "@/lib/nav";
 import { useWaitingCount } from "./waiting-count";
 
 export function TopBar() {
   const t = useTranslations("nav");
   const app = useTranslations("app");
-  const { role } = useSession();
+  const { role, employeeId } = useSession();
   const waiting = useWaitingCount(role);
-  const decides = role === "MANAGER" || role === "ADMIN" || role === "HR";
+  // Read off the table, so this icon cannot disagree with the sidebar entry.
+  const decides = navFor(role, employeeId !== null).some((group) =>
+    group.items.some((item) => item.badge === "approvals"),
+  );
 
   return (
     <header className="sticky top-0 z-30 border-b border-(--color-line) bg-(--color-surface)">
