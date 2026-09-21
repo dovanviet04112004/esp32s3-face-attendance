@@ -25,6 +25,7 @@ interface Shift {
 interface Assignment {
   id: string;
   employeeId: number;
+  employee: { id: number; code: string; fullName: string };
   validFrom: string;
   validTo: string | null;
 }
@@ -393,8 +394,11 @@ export default function ShiftsPage() {
                   {format.dateTime(dayOnly(one.validFrom), "day")} →{" "}
                   {one.validTo ? format.dateTime(dayOnly(one.validTo), "day") : common("empty")}
                 </span>
-                <span className="ms-auto font-mono text-xs text-(--color-muted)">
-                  #{one.employeeId}
+                <span className="ms-auto flex min-w-0 items-baseline gap-2">
+                  <span className="truncate">{one.employee.fullName}</span>
+                  <span className="shrink-0 font-mono text-xs text-(--color-muted)">
+                    {one.employee.code}
+                  </span>
                 </span>
                 <Button
                   type="button"

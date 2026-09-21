@@ -6,6 +6,10 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import type { AssignShiftDto, CreateShiftDto, RosterDto, UpdateShiftDto } from "./dto/shift.dto.js";
 
+type RosteredAssignment = ShiftAssignment & {
+  employee: { id: number; code: string; fullName: string };
+};
+
 const UNIQUE_VIOLATION = "P2002";
 const FOREIGN_KEY_VIOLATION = "P2003";
 const SATURDAY = 6;
@@ -137,10 +141,11 @@ export class ShiftsService {
     return this.db.shift.update({ where: { id }, data: { active: false } });
   }
 
-  async assignments(id: string): Promise<ShiftAssignment[]> {
+  async assignments(id: string): Promise<RosteredAssignment[]> {
     await this.get(id);
     return this.db.shiftAssignment.findMany({
       where: { shiftId: id },
+      include: { employee: { select: { id: true, code: true, fullName: true } } },
       orderBy: { validFrom: "desc" },
     });
   }
