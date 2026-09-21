@@ -1,6 +1,6 @@
 "use client";
 
-import { Inbox, LogOut, Settings } from "lucide-react";
+import { Inbox, Settings } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { NoticeBell } from "@/components/notifications/bell";
@@ -9,7 +9,7 @@ import { Link } from "@/i18n/navigation";
 import { useSession } from "@/lib/auth";
 import { useWaitingCount } from "./waiting-count";
 
-export function TopBar({ onSignOut }: { onSignOut: () => void }) {
+export function TopBar() {
   const t = useTranslations("nav");
   const app = useTranslations("app");
   const { role } = useSession();
@@ -17,7 +17,8 @@ export function TopBar({ onSignOut }: { onSignOut: () => void }) {
   const decides = role === "MANAGER" || role === "ADMIN" || role === "HR";
 
   return (
-    <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-(--color-line) bg-(--color-surface) px-3 py-2">
+    <header className="sticky top-0 z-30 border-b border-(--color-line) bg-(--color-surface)">
+      <div className="mx-auto flex w-full max-w-(--width-shell) items-center gap-2 px-4 py-2 md:px-8">
       <img src="/logo.svg" alt="" width={22} height={22} className="md:hidden" />
       <p className="truncate text-sm font-semibold md:hidden">{app("name")}</p>
       <div className="min-w-0 flex-1 md:max-w-lg">
@@ -45,14 +46,7 @@ export function TopBar({ onSignOut }: { onSignOut: () => void }) {
       >
         <Settings className="size-5" aria-hidden />
       </Link>
-      <button
-        type="button"
-        aria-label={t("signOut")}
-        onClick={onSignOut}
-        className="grid size-11 shrink-0 place-items-center rounded-lg text-(--color-muted) hover:bg-(--color-ground) md:hidden"
-      >
-        <LogOut className="size-5" aria-hidden />
-      </button>
+      </div>
     </header>
   );
 }

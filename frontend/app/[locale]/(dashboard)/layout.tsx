@@ -7,7 +7,7 @@ import { Sidebar } from "@/components/nav/sidebar";
 import { TabBar } from "@/components/nav/tab-bar";
 import { TopBar } from "@/components/nav/top-bar";
 import { usePathname, useRouter } from "@/i18n/navigation";
-import { api, reopenSession } from "@/lib/api";
+import { reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { allows, homeFor } from "@/lib/nav";
 import { startOutbox } from "@/lib/outbox";
@@ -46,22 +46,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     router.replace(homeFor(role, hasRecord));
   }, [accessToken, role, hasRecord, here, router]);
 
-  async function signOut() {
-    await api.post("/auth/logout").catch(() => undefined);
-    clear();
-    router.replace("/login");
-  }
-
   if (!accessToken) {
     return <main className="grid min-h-screen place-items-center text-sm">{t("opening")}</main>;
   }
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar onSignOut={signOut} />
+      <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar onSignOut={signOut} />
-        <main className="flex-1 p-4 pb-24 md:p-8 md:pb-8">{children}</main>
+        <TopBar />
+        <main className="flex-1 p-4 pb-24 md:p-8 md:pb-8">
+          <div className="mx-auto w-full max-w-(--width-shell)">{children}</div>
+        </main>
       </div>
       <TabBar />
     </div>

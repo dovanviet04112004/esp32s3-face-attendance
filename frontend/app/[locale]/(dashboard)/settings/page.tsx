@@ -24,12 +24,26 @@ interface OpenedAccount {
 export default function SettingsPage() {
   const t = useTranslations("settings");
   const notices = useTranslations("notices");
+  const nav = useTranslations("nav");
   const locale = useLocale();
   const here = usePathname();
   const router = useRouter();
   const role = useSession((s) => s.role);
+  const clear = useSession((s) => s.clear);
   const [moving, startMoving] = useTransition();
   const faultOf = useFault();
+
+  // The cookie dies at the server, the store here, and the page goes to the
+  // form: a half-done sign-out leaves somebody looking signed in.
+  const leaving = useMutation({
+    mutationFn: async () => {
+      await api.post("/auth/logout").catch(() => undefined);
+    },
+    onSuccess: () => {
+      clear();
+      router.replace("/login");
+    },
+  });
 
   const provision = useMutation({
     mutationFn: async () =>
@@ -45,7 +59,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <section className="max-w-xl">
+    <section className="mx-auto w-full max-w-(--width-read)">
       <h1 className="text-lg font-semibold">{t("title")}</h1>
 
       <div className="mt-6 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
@@ -147,6 +161,15 @@ export default function SettingsPage() {
         <p className="mt-2 text-sm text-(--color-muted)">
           {t("role")}: <span className="font-mono text-(--color-ink)">{role ?? "—"}</span>
         </p>
+        <Button
+          type="button"
+          tone="quiet"
+          className="mt-4"
+          disabled={leaving.isPending}
+          onClick={() => leaving.mutate()}
+        >
+          {leaving.isPending ? nav("signingOut") : nav("signOut")}
+        </Button>
       </div>
     </section>
   );

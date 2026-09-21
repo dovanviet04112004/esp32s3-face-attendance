@@ -49,7 +49,7 @@ export default function OrgPage() {
   });
 
   return (
-    <section className="max-w-2xl">
+    <section className="mx-auto w-full max-w-(--width-read)">
       <h1 className="mb-6 text-lg font-semibold">{t("orgChart")}</h1>
       {departments.isPending ? (
         <p className="text-sm text-(--color-muted)">{common("loading")}</p>

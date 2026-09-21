@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 import { navFor } from "@/lib/nav";
 import { useWaitingCount } from "./waiting-count";
 
-export function Sidebar({ onSignOut }: { onSignOut: () => void }) {
+export function Sidebar() {
   const t = useTranslations("nav");
   const app = useTranslations("app");
   const here = usePathname();
@@ -68,12 +68,6 @@ export function Sidebar({ onSignOut }: { onSignOut: () => void }) {
         ))}
       </nav>
 
-      <button
-        onClick={onSignOut}
-        className="mt-4 w-full rounded-lg px-2 py-2 text-left text-sm text-(--color-muted) hover:bg-(--color-ground) pointer-coarse:min-h-11"
-      >
-        {t("signOut")}
-      </button>
     </aside>
   );
 }

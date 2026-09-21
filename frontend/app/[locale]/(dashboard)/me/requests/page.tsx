@@ -89,7 +89,7 @@ export default function MyRequestsPage() {
   });
 
   return (
-    <section className="max-w-3xl">
+    <section className="mx-auto w-full max-w-(--width-read)">
       <div className="flex items-start justify-between gap-4">
         <h1 className="text-lg font-semibold">{t("mine")}</h1>
         {!filing ? (

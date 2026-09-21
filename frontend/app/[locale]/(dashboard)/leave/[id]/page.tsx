@@ -38,7 +38,7 @@ export default function LeaveDetailPage() {
   const row = rows.data;
 
   return (
-    <section className="max-w-3xl">
+    <section className="mx-auto w-full max-w-(--width-read)">
       <Link href="/leave" className="text-sm text-(--color-accent) hover:underline">
         ← {t("title")}
       </Link>

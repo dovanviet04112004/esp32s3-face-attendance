@@ -153,7 +153,7 @@ export default function ApprovalsPage() {
     (dependents.data?.length ?? 0);
 
   return (
-    <section className="max-w-3xl">
+    <section className="mx-auto w-full max-w-(--width-read)">
       <h1 className="text-lg font-semibold">{t("inbox")}</h1>
       <p className="mt-1 text-sm text-(--color-muted)">
         {inbox.isPending ? common("loading") : t("waiting", { count: waiting })}

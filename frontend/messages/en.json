@@ -36,7 +36,8 @@
     "groupOps": "Operations",
     "myShifts": "My shifts",
     "myDocuments": "My documents",
-    "documents": "Documents"
+    "documents": "Documents",
+    "signingOut": "Signing out…"
   },
   "common": {
     "loading": "Loading…",

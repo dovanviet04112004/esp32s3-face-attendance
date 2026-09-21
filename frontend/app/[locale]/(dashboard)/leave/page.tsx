@@ -23,7 +23,7 @@ export default function LeaveDeskPage() {
   });
 
   return (
-    <section className="max-w-3xl">
+    <section className="mx-auto w-full max-w-(--width-read)">
       <h1 className="text-lg font-semibold">{t("title")}</h1>
 
       <div className="mt-4 mb-6 max-w-48">

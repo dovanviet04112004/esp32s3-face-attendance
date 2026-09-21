@@ -37,6 +37,8 @@ export interface NavItem {
   badge?: "approvals";
   /** Kept out of the phone's tab bar; the top bar carries it (KEHOACH 9.21.1). */
   deskOnly?: boolean;
+  /** Judged by the guard, skipped by the menu (KEHOACH 9.15). */
+  unlisted?: boolean;
 }
 
 export interface NavGroup {
@@ -89,6 +91,13 @@ export const NAV: NavGroup[] = [
     key: "groupPeople",
     items: [
       { href: "/employees", key: "directory", icon: Users, roles: TEAM },
+      {
+        href: "/employees/new",
+        key: "directory",
+        icon: Users,
+        roles: PEOPLE_DESK,
+        unlisted: true,
+      },
       { href: "/org", key: "orgChart", icon: Network, roles: TEAM_TIME },
       { href: "/org/departments", key: "departments", icon: Building2, roles: PEOPLE_DESK },
       { href: "/documents", key: "documents", icon: FolderCheck, roles: PEOPLE_DESK, deskOnly: true },
@@ -134,7 +143,9 @@ export function navFor(role: Role | null, hasRecord = true): NavGroup[] {
       group.key === "me" && !hasRecord
         ? []
         : group.items.filter(
-            (item) => !item.roles?.length || (role !== null && item.roles.includes(role)),
+            (item) =>
+              !item.unlisted &&
+              (!item.roles?.length || (role !== null && item.roles.includes(role))),
           ),
   })).filter((group) => group.items.length > 0);
 }
@@ -149,6 +160,9 @@ export function allows(role: Role | null, hasRecord: boolean, path: string): boo
   const owner = BY_DEPTH.find((item) => path === item.href || path.startsWith(`${item.href}/`));
   if (!owner) {
     return false;
+  }
+  if (owner.roles?.length) {
+    return role !== null && owner.roles.includes(role);
   }
   return navFor(role, hasRecord).some((group) =>
     group.items.some((item) => item.href === owner.href),

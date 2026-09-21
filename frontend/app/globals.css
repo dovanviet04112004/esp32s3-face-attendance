@@ -10,6 +10,10 @@
   --color-danger: oklch(0.58 0.2 25);
   --color-ok: oklch(0.65 0.16 150);
   --color-warn: oklch(0.72 0.15 75);
+
+  /* The shell every page sits in, and the narrower column reading text keeps. */
+  --width-shell: 88rem;
+  --width-read: 48rem;
 }
 
 @layer base {
