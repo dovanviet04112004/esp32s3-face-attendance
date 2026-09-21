@@ -4464,7 +4464,8 @@ frontend/
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
 │   ├── notifications/{bell.tsx, notice-list.tsx, push-switch.tsx}   # ★ §9.21.4
 │   ├── documents/{document-reader.tsx, file-gaps.tsx}   # ★ §9.16 mục 9
-│   └── payroll/{payslip-view.tsx, run-progress.tsx, dispute-card.tsx, settlement-sheet.tsx}
+│   └── payroll/{payslip-view.tsx, run-progress.tsx, dispute-card.tsx, settlement-sheet.tsx,
+│                bonus-sheet.tsx}     # ★ số tiền của lượt thưởng, nhập trước khi chạy
 │                                     # ★ §9.17 mục 11 — một thẻ khiếu nại, hai phía đọc
 ├── lib/
 │   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.9)
