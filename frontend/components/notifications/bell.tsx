@@ -46,7 +46,7 @@ export function NoticeBell() {
           <span
             className={cn(
               "absolute top-1 right-1 min-w-4 rounded-full bg-(--color-warn) px-1",
-              "text-[10px] leading-4 text-white tabular-nums",
+              "text-[10px] leading-4 text-(--color-on-fill) tabular-nums",
             )}
           >
             {waiting > kMaxShown ? `${kMaxShown}+` : waiting}

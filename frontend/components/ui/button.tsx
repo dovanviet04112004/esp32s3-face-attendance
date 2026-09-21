@@ -9,9 +9,9 @@ const styles = cva(
   {
     variants: {
       tone: {
-        solid: "bg-(--color-accent) text-white hover:opacity-90",
-        quiet: "border border-(--color-line) bg-(--color-surface) hover:bg-(--color-ground)",
-        danger: "bg-(--color-danger) text-white hover:opacity-90",
+        solid: "bg-(--color-accent) text-(--color-on-fill) hover:opacity-90",
+        quiet: "border border-(--color-field) bg-(--color-surface) hover:bg-(--color-ground)",
+        danger: "bg-(--color-danger) text-(--color-on-fill) hover:opacity-90",
       },
       size: {
         md: "h-10 px-4 pointer-coarse:h-11",

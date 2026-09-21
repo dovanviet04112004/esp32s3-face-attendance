@@ -43,7 +43,7 @@ export function ThemeToggle() {
             onClick={() => choose(one)}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm pointer-coarse:min-h-11",
-              on ? "bg-(--color-accent) text-white" : "text-(--color-muted) hover:bg-(--color-ground)",
+              on ? "bg-(--color-accent) text-(--color-on-fill)" : "text-(--color-muted) hover:bg-(--color-ground)",
             )}
           >
             <Icon className="size-4" />

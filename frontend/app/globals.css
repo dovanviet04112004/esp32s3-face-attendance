@@ -4,12 +4,18 @@
   --color-ink: oklch(0.21 0.02 260);
   --color-muted: oklch(0.55 0.02 260);
   --color-line: oklch(0.92 0.01 260);
+
+  /* A divider may whisper, but the edge of a control is what says it is one. */
+  --color-field: oklch(0.65 0.01 260);
   --color-surface: oklch(1 0 0);
   --color-ground: oklch(0.98 0.005 260);
-  --color-accent: oklch(0.58 0.17 256);
-  --color-danger: oklch(0.58 0.2 25);
-  --color-ok: oklch(0.65 0.16 150);
-  --color-warn: oklch(0.72 0.15 75);
+
+  /* Reading order flips with the theme: dark ink sits on a light fill. */
+  --color-on-fill: oklch(1 0 0);
+  --color-accent: oklch(0.55 0.17 256);
+  --color-danger: oklch(0.57 0.2 25);
+  --color-ok: oklch(0.53 0.16 150);
+  --color-warn: oklch(0.55 0.15 75);
 
   /* The shell every page sits in, and the narrower column reading text keeps. */
   --width-shell: 88rem;
@@ -28,8 +34,10 @@
       --color-ink: oklch(0.95 0.01 260);
       --color-muted: oklch(0.68 0.02 260);
       --color-line: oklch(0.32 0.015 260);
+      --color-field: oklch(0.53 0.015 260);
       --color-surface: oklch(0.24 0.02 260);
       --color-ground: oklch(0.19 0.02 260);
+      --color-on-fill: oklch(0.16 0.02 260);
       --color-accent: oklch(0.72 0.14 256);
       --color-danger: oklch(0.68 0.18 25);
       --color-ok: oklch(0.72 0.15 150);
@@ -42,8 +50,10 @@
     --color-ink: oklch(0.95 0.01 260);
     --color-muted: oklch(0.68 0.02 260);
     --color-line: oklch(0.32 0.015 260);
+    --color-field: oklch(0.53 0.015 260);
     --color-surface: oklch(0.24 0.02 260);
     --color-ground: oklch(0.19 0.02 260);
+    --color-on-fill: oklch(0.16 0.02 260);
     --color-accent: oklch(0.72 0.14 256);
     --color-danger: oklch(0.68 0.18 25);
     --color-ok: oklch(0.72 0.15 150);

@@ -77,7 +77,7 @@ export default function SettingsPage() {
               className={cn(
                 "rounded-md px-4 py-1.5 text-sm disabled:opacity-60 pointer-coarse:min-h-11",
                 code === locale
-                  ? "bg-(--color-accent) text-white"
+                  ? "bg-(--color-accent) text-(--color-on-fill)"
                   : "text-(--color-muted) hover:bg-(--color-ground)",
               )}
             >

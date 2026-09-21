@@ -68,7 +68,7 @@ export function DisputeCard({ dispute, mayAnswer, onAnswer, onWithdraw, busy }: 
         {dispute.outcome ? (
           <span
             className={[
-              "rounded-full px-2 py-0.5 text-xs text-white",
+              "rounded-full px-2 py-0.5 text-xs text-(--color-on-fill)",
               dispute.outcome === "UPHELD" ? "bg-(--color-accent)" : "bg-(--color-danger)",
             ].join(" ")}
           >

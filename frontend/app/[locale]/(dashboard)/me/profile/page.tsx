@@ -212,9 +212,9 @@ export default function MyProfilePage() {
                   className={[
                     "rounded-full px-2 py-0.5 text-xs",
                     one.state === "APPROVED"
-                      ? "bg-(--color-accent) text-white"
+                      ? "bg-(--color-accent) text-(--color-on-fill)"
                       : one.state === "REJECTED"
-                        ? "bg-(--color-danger) text-white"
+                        ? "bg-(--color-danger) text-(--color-on-fill)"
                         : "bg-(--color-ground) text-(--color-muted)",
                   ].join(" ")}
                 >

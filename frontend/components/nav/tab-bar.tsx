@@ -26,7 +26,7 @@ function Tab({ item, active, waiting }: { item: NavItem; active: boolean; waitin
       <span className="relative">
         <Icon className="size-5" aria-hidden />
         {item.badge === "approvals" && waiting > 0 ? (
-          <span className="absolute -top-1 -right-2 min-w-4 rounded-full bg-(--color-warn) px-1 text-[10px] leading-4 text-white tabular-nums">
+          <span className="absolute -top-1 -right-2 min-w-4 rounded-full bg-(--color-warn) px-1 text-[10px] leading-4 text-(--color-on-fill) tabular-nums">
             {waiting}
           </span>
         ) : null}
@@ -87,7 +87,7 @@ export function TabBar() {
                       <Icon className="size-4 text-(--color-muted)" aria-hidden />
                       <span className="flex-1">{t(item.key)}</span>
                       {item.badge === "approvals" && waiting > 0 ? (
-                        <span className="rounded-full bg-(--color-warn) px-1.5 text-[11px] text-white tabular-nums">
+                        <span className="rounded-full bg-(--color-warn) px-1.5 text-[11px] text-(--color-on-fill) tabular-nums">
                           {waiting}
                         </span>
                       ) : null}

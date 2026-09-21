@@ -42,11 +42,11 @@ export function Sidebar() {
                     aria-current={active ? "page" : undefined}
                     className={cn(
                       "flex items-center gap-2 rounded-lg px-2 py-2 text-sm pointer-coarse:min-h-11",
-                      active ? "bg-(--color-accent) text-white" : "hover:bg-(--color-ground)",
+                      active ? "bg-(--color-accent) text-(--color-on-fill)" : "hover:bg-(--color-ground)",
                     )}
                   >
                     <Icon
-                      className={cn("size-4", active ? "text-white" : "text-(--color-muted)")}
+                      className={cn("size-4", active ? "text-(--color-on-fill)" : "text-(--color-muted)")}
                       aria-hidden
                     />
                     <span className="flex-1">{t(item.key)}</span>
@@ -54,7 +54,7 @@ export function Sidebar() {
                       <span
                         className={cn(
                           "rounded-full px-1.5 py-0.5 text-[11px] tabular-nums",
-                          active ? "bg-white/20" : "bg-(--color-warn) text-white",
+                          active ? "bg-(--color-on-fill)/20" : "bg-(--color-warn) text-(--color-on-fill)",
                         )}
                       >
                         {waiting}
