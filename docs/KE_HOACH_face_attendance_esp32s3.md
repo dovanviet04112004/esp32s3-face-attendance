@@ -7140,6 +7140,33 @@ Giữ mãi mọi thứ vừa tốn vừa là rủi ro. Nhưng dữ liệu lao đ
 | Mẫu khuôn mặt của người đã nghỉ | **xoá ngay** | §9.19 — giữ mới là lỗi |
 | Nhật ký truy cập dữ liệu nhạy cảm | giữ lâu hơn dữ liệu nó mô tả | nó là bằng chứng cho chính việc xoá |
 
+**Xoá ở bảng chính mà quên bản sao lưu là chưa xoá.** Một lệnh xoá chạy hôm nay không chạm được
+vào cái file `pg_dump` viết tháng trước, nên **bản sao lưu là chỗ trú cuối cùng của dữ liệu lẽ
+ra đã biến mất** — và là chỗ không ai nghĩ tới khi trả lời một yêu cầu xoá.
+
+Nên **bản dump tách làm hai**, theo đúng bảng phân loại trên:
+
+| File | Chứa gì | Giữ |
+|---|---|---|
+| `<db>-<stamp>.dump.age` | mọi thứ **trừ** `FaceTemplate` | dài, theo thời hiệu lao động |
+| `<db>-<stamp>.biometric.dump.age` | **chỉ** `FaceTemplate` | `BIOMETRIC_KEEP_DAYS`, mặc định 7 |
+
+Điều này biến một lời hứa mơ hồ thành **một con số viết được vào thông báo quyền riêng tư**:
+một mẫu bị xoá hôm nay biến mất khỏi **mọi** bản sao lưu trong vòng `BIOMETRIC_KEEP_DAYS` ngày.
+Không phải "sớm nhất có thể".
+
+**Cái giá là có thật và là cái giá đúng.** Phục hồi từ một bản cũ hơn bảy ngày thì fleet không
+nhận ra ai cho tới khi mọi người ghi danh lại. Với dữ liệu sinh trắc thì đó là đánh đổi đúng
+chiều: §9.22.1 xếp nó vào loại **rủi ro nằm ở việc còn, không nằm ở việc mất**.
+
+**`BiometricConsent` ở lại bản chính, có chủ ý.** Nó là nhật ký, không phải mẫu; nó là **bằng
+chứng rằng việc xoá đã xảy ra**, nên nó phải sống lâu hơn thứ nó mô tả — đúng dòng cuối bảng
+trên.
+
+**Và luật này phải có người kiểm, không thì nó là một comment.** Lượt diễn tập phục hồi dựng
+bản chính rồi **đếm `FaceTemplate`**; khác 0 là hỏng. Ai gỡ mất cờ loại trừ sẽ biết vào Chủ
+nhật kế tiếp, chứ không biết vào ngày có người hỏi.
+
 **Xoá theo lô và xoá được lại.** Dọn vài triệu dòng bằng một `DELETE` là khoá bảng và phình
 WAL. Chia mảnh theo tháng rồi `DROP` một mảnh là tức thì (§9.9 luật 2) — đây là lý do thứ hai
 để chia mảnh, ngoài tốc độ truy vấn.
