@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Empty, Failed } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
+import { Sheet } from "@/components/ui/sheet";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
@@ -44,6 +45,8 @@ export default function PayrollRunPage() {
   const [label, setLabel] = useState("");
   const [accept, setAccept] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
+  // Mail reaches everyone in the period and cannot be recalled, so it asks.
+  const [sending, setSending] = useState(false);
   const faultOf = useFault();
 
   const periods = useQuery({
@@ -211,13 +214,12 @@ export default function PayrollRunPage() {
             </Button>
             <Button
               type="button"
-              disabled={deliver.isPending}
               onClick={() => {
                 setFault(null);
-                deliver.mutate();
+                setSending(true);
               }}
             >
-              {deliver.isPending ? common("saving") : t("deliver")}
+              {t("deliver")}
             </Button>
           </div>
           {deliver.data ? (
@@ -232,6 +234,25 @@ export default function PayrollRunPage() {
           ) : null}
         </section>
       ) : null}
+
+      <Sheet
+        open={sending}
+        onClose={() => setSending(false)}
+        title={t("deliver")}
+        closeLabel={common("close")}
+      >
+        <p className="text-sm text-(--color-muted)">{t("deliverWarn")}</p>
+        <Button
+          type="button"
+          className="mt-4 w-full"
+          disabled={deliver.isPending}
+          onClick={() => {
+            deliver.mutate(undefined, { onSuccess: () => setSending(false) });
+          }}
+        >
+          {deliver.isPending ? common("saving") : t("deliverGo")}
+        </Button>
+      </Sheet>
 
       <h2 className="mt-6 text-sm font-medium">{t("runs")}</h2>
       {mayWrite && period?.state === "OPEN" ? (

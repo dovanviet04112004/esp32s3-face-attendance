@@ -64,10 +64,12 @@ interface Props {
   /** Decide is only offered where the api would accept it. */
   onDecide?: (approve: boolean, note: string) => void;
   onCancel?: () => void;
+  /** First click arms, second acts: withdrawing cannot be undone from here. */
+  armed?: boolean;
   busy?: boolean;
 }
 
-export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
+export function RequestCard({ row, onDecide, onCancel, armed, busy }: Props) {
   const t = useTranslations("requests");
   const common = useTranslations("common");
   const format = useFormatter();
@@ -139,12 +141,12 @@ export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
       {onCancel && row.state === "PENDING" ? (
         <Button
           type="button"
-          tone="quiet"
+          tone={armed ? "danger" : "quiet"}
           disabled={busy}
           onClick={onCancel}
           className="mt-4"
         >
-          {busy ? common("saving") : t("cancel")}
+          {busy ? common("saving") : armed ? common("sure") : t("cancel")}
         </Button>
       ) : null}
     </article>

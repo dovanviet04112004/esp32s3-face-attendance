@@ -620,7 +620,9 @@
     "taxAssessable": "Thu nhập tính thuế",
     "taxDue": "Thuế phải nộp",
     "taxWithheld": "Thuế đã khấu trừ",
-    "taxDifference": "Chênh lệch"
+    "taxDifference": "Chênh lệch",
+    "deliverWarn": "Phiếu lương sẽ gửi tới hộp thư của từng người trong kỳ này. Thư đã gửi thì không thu lại được.",
+    "deliverGo": "Gửi ngay"
   },
   "policy": {
     "title": "Chính sách lương",

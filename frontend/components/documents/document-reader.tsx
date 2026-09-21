@@ -101,10 +101,12 @@ export function DocumentReader() {
               <Button
                 type="button"
                 className="mt-3"
-                disabled={sign.isPending}
+                disabled={sign.isPending && sign.variables === row.versionId}
                 onClick={() => sign.mutate(row.versionId)}
               >
-                {sign.isPending ? common("saving") : t("sign")}
+                {sign.isPending && sign.variables === row.versionId
+                  ? common("saving")
+                  : t("sign")}
               </Button>
             ) : null}
 

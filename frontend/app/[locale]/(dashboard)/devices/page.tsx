@@ -130,10 +130,10 @@ export default function DevicesPage() {
           <Button
             size="sm"
             tone="quiet"
-            disabled={approve.isPending}
+            disabled={approve.isPending && approve.variables === row.id}
             onClick={() => approve.mutate(row.id)}
           >
-            {approve.isPending ? t("approving") : t("approve")}
+            {approve.isPending && approve.variables === row.id ? t("approving") : t("approve")}
           </Button>
         ) : (
           <span className="text-(--color-muted)">{t(`status${row.status}`)}</span>

@@ -247,7 +247,7 @@ export default function MyProfilePage() {
                   size="sm"
                   tone="quiet"
                   className="mt-3"
-                  disabled={cancel.isPending}
+                  disabled={cancel.isPending && cancel.variables === one.id}
                   onClick={() => cancel.mutate(one.id)}
                 >
                   {t("cancel")}

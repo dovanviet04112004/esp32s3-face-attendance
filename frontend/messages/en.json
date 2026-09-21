@@ -620,7 +620,9 @@
     "taxAssessable": "Assessable income",
     "taxDue": "Tax due",
     "taxWithheld": "Tax withheld",
-    "taxDifference": "Difference"
+    "taxDifference": "Difference",
+    "deliverWarn": "A payslip goes to every person in this period. Mail that has gone cannot be recalled.",
+    "deliverGo": "Send now"
   },
   "policy": {
     "title": "Pay policy",

@@ -198,7 +198,7 @@ export default function ShiftsPage() {
                 type="button"
                 tone={retiring === row.id ? "danger" : "quiet"}
                 size="sm"
-                disabled={retire.isPending}
+                disabled={retire.isPending && retire.variables?.id === row.id}
                 onClick={() => (retiring === row.id ? retire.mutate(row) : setRetiring(row.id))}
                 onBlur={() => setRetiring(null)}
               >
@@ -404,7 +404,7 @@ export default function ShiftsPage() {
                   type="button"
                   tone={dropping === one.id ? "danger" : "quiet"}
                   size="sm"
-                  disabled={unassign.isPending}
+                  disabled={unassign.isPending && unassign.variables?.id === one.id}
                   onClick={() => (dropping === one.id ? unassign.mutate(one) : setDropping(one.id))}
                   onBlur={() => setDropping(null)}
                 >

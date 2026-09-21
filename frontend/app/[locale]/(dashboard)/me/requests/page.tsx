@@ -10,6 +10,7 @@ import { RequestCard, type RequestRow } from "@/components/requests/request-card
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { useOutbox } from "@/lib/outbox";
@@ -24,6 +25,16 @@ interface Advance {
   state: AdvanceState;
   decisionNote: string | null;
 }
+
+// The same four tones the request pill uses, so one page speaks one language.
+const ADVANCE_TONE: Record<AdvanceState, string> = {
+  PENDING: "border-(--color-warn) text-(--color-warn)",
+  APPROVED: "border-(--color-ok) text-(--color-ok)",
+  PAID: "border-(--color-ok) text-(--color-ok)",
+  SETTLED: "border-(--color-line) text-(--color-muted)",
+  REJECTED: "border-(--color-danger) text-(--color-danger)",
+  CANCELLED: "border-(--color-line) text-(--color-muted)",
+};
 
 const ADVANCE_KEY: Record<
   AdvanceState,
@@ -55,6 +66,8 @@ export default function MyRequestsPage() {
   const [why, setWhy] = useState("");
   const [advanceFault, setAdvanceFault] = useState<string | null>(null);
   const waiting = useOutbox();
+  // Withdrawing is the one move an employee cannot take back themselves.
+  const [dropping, setDropping] = useState<string | null>(null);
 
   const mine = useQuery({
     queryKey: ["requests", "mine", employeeId],
@@ -133,8 +146,9 @@ export default function MyRequestsPage() {
             <RequestCard
               key={row.id}
               row={row}
-              busy={cancel.isPending}
-              onCancel={() => cancel.mutate(row.id)}
+              busy={cancel.isPending && cancel.variables === row.id}
+              armed={dropping === row.id}
+              onCancel={() => (dropping === row.id ? cancel.mutate(row.id) : setDropping(row.id))}
             />
           ))
         ) : (
@@ -153,27 +167,39 @@ export default function MyRequestsPage() {
           ask.mutate();
         }}
       >
-        <Input
-          aria-label={pay("advanceAmount")}
-          type="number"
-          min={1}
-          required
-          value={amount}
-          onChange={(event) => setAmount(event.target.value)}
-          className="w-40"
-        />
-        <Input
-          aria-label={t("reason")}
-          required
-          maxLength={500}
-          value={why}
-          onChange={(event) => setWhy(event.target.value)}
-          className="min-w-48 flex-1"
-        />
+        <label className="block w-44 text-xs text-(--color-muted)">
+          {pay("advanceAmount")}
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1000}
+            required
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            className="mt-1"
+          />
+        </label>
+        <label className="block min-w-48 flex-1 text-xs text-(--color-muted)">
+          {t("reason")}
+          <Input
+            required
+            maxLength={500}
+            value={why}
+            onChange={(event) => setWhy(event.target.value)}
+            className="mt-1"
+          />
+        </label>
         <Button type="submit" disabled={ask.isPending}>
           {ask.isPending ? common("saving") : pay("advanceNew")}
         </Button>
       </form>
+      {amount !== "" && Number(amount) > 0 ? (
+        <p className="mt-1 text-xs text-(--color-muted) tabular-nums">
+          {money(Number(amount), locale)}
+        </p>
+      ) : null}
+
       {advanceFault ? (
         <p role="alert" className="mt-2 text-sm text-(--color-danger)">
           {advanceFault}
@@ -181,7 +207,9 @@ export default function MyRequestsPage() {
       ) : null}
 
       <div className="mt-3 flex flex-col gap-2">
-        {advances.data?.length ? (
+        {advances.isPending ? (
+          <p className="text-sm text-(--color-muted)">{common("loading")}</p>
+        ) : advances.data?.length ? (
           advances.data.map((row) => (
             <article
               key={row.id}
@@ -189,18 +217,26 @@ export default function MyRequestsPage() {
             >
               <span className="tabular-nums">{money(Number(row.amount), locale)}</span>
               <span className="min-w-0 flex-1 truncate text-(--color-muted)">{row.reason}</span>
-              <span className="rounded-full border border-(--color-line) px-2 py-0.5 text-xs">
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-xs",
+                  ADVANCE_TONE[row.state],
+                )}
+              >
                 {pay(ADVANCE_KEY[row.state])}
               </span>
               {row.state === "PENDING" ? (
                 <Button
                   type="button"
-                  tone="quiet"
+                  tone={dropping === row.id ? "danger" : "quiet"}
                   size="sm"
-                  disabled={drop.isPending}
-                  onClick={() => drop.mutate(row.id)}
+                  disabled={drop.isPending && drop.variables === row.id}
+                  onClick={() =>
+                    dropping === row.id ? drop.mutate(row.id) : setDropping(row.id)
+                  }
+                  onBlur={() => setDropping(null)}
                 >
-                  {t("cancel")}
+                  {dropping === row.id ? common("sure") : t("cancel")}
                 </Button>
               ) : null}
             </article>

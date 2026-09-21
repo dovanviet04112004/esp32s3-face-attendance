@@ -130,7 +130,7 @@ export default function UsersPage() {
             type="button"
             tone={dropping === row.id ? "danger" : "quiet"}
             size="sm"
-            disabled={remove.isPending}
+            disabled={remove.isPending && remove.variables?.id === row.id}
             onClick={() => {
               setFault(null);
               if (dropping === row.id) {

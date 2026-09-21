@@ -271,13 +271,15 @@ export default function OnboardingPage() {
                   type="button"
                   tone="quiet"
                   size="sm"
-                  disabled={finish.isPending}
+                  disabled={finish.isPending && finish.variables === one.id}
                   onClick={() => {
                     setFault(null);
                     finish.mutate(one.id);
                   }}
                 >
-                  {finish.isPending ? common("saving") : t("finish")}
+                  {finish.isPending && finish.variables === one.id
+                    ? common("saving")
+                    : t("finish")}
                 </Button>
               ) : null}
             </li>
