@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, Network, Receipt, Search, User, type LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { useRouter } from "@/i18n/navigation";
@@ -35,6 +35,9 @@ const KIND_KEY: Record<HitKind, "kindEmployee" | "kindDepartment" | "kindRequest
     payslip: "kindPayslip",
   };
 
+// A slash belongs to whatever is being typed into, not to the search box.
+const TYPED_IN = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+
 const kDebounceMs = 200;
 const kMinLength = 2;
 
@@ -42,9 +45,11 @@ export function GlobalSearch() {
   const t = useTranslations("search");
   const router = useRouter();
   const box = useRef<HTMLInputElement>(null);
+  const listId = useId();
   const [typed, setTyped] = useState("");
   const [term, setTerm] = useState("");
   const [open, setOpen] = useState(false);
+  const [at, setAt] = useState(0);
 
   // One request per pause in typing, not one per keystroke.
   useEffect(() => {
@@ -54,7 +59,11 @@ export function GlobalSearch() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
-      if (event.key === "/" && document.activeElement?.tagName !== "INPUT") {
+      const held = document.activeElement as HTMLElement | null;
+      const typing =
+        held !== null &&
+        (TYPED_IN.has(held.tagName) || held.isContentEditable);
+      if (event.key === "/" && !typing) {
         event.preventDefault();
         box.current?.focus();
       }
@@ -80,6 +89,26 @@ export function GlobalSearch() {
   }
 
   const rows = hits.data ?? [];
+  const showing = open && term.trim().length >= kMinLength;
+  const active = rows[at];
+
+  function walk(event: React.KeyboardEvent<HTMLInputElement>): void {
+    if (!showing || rows.length === 0) {
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setAt((held) => (held + 1) % rows.length);
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setAt((held) => (held - 1 + rows.length) % rows.length);
+    }
+    if (event.key === "Enter" && active) {
+      event.preventDefault();
+      go(active);
+    }
+  }
 
   return (
     <div className="relative min-w-0 flex-1">
@@ -92,33 +121,48 @@ export function GlobalSearch() {
         type="search"
         aria-label={t("label")}
         placeholder={t("placeholder")}
+        role="combobox"
+        aria-expanded={showing}
+        aria-controls={listId}
+        aria-activedescendant={showing && active ? `${listId}-${at}` : undefined}
+        aria-autocomplete="list"
         value={typed}
         onChange={(event) => {
           setTyped(event.target.value);
+          setAt(0);
           setOpen(true);
         }}
+        onKeyDown={walk}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         className="ps-9"
       />
 
-      {open && term.trim().length >= kMinLength ? (
-        <div className="absolute inset-x-0 top-full z-40 mt-1 max-h-80 overflow-y-auto rounded-xl border border-(--color-line) bg-(--color-surface) p-1 shadow-lg">
+      {showing ? (
+        <div
+          id={listId}
+          role="listbox"
+          className="absolute inset-x-0 top-full z-40 mt-1 max-h-80 overflow-y-auto rounded-xl border border-(--color-line) bg-(--color-surface) p-1 shadow-lg"
+        >
           {hits.isPending ? (
             <p className="px-3 py-2 text-sm text-(--color-muted)">{t("looking")}</p>
           ) : rows.length === 0 ? (
             <p className="px-3 py-2 text-sm text-(--color-muted)">{t("nothing")}</p>
           ) : (
-            rows.map((hit) => {
+            rows.map((hit, index) => {
               const Icon = FACE[hit.kind];
               return (
                 <button
                   key={`${hit.kind}:${hit.id}`}
+                  id={`${listId}-${index}`}
+                  role="option"
+                  aria-selected={index === at}
                   type="button"
-                  onMouseDown={() => go(hit)}
+                  onPointerDown={() => go(hit)}
+                  onMouseEnter={() => setAt(index)}
                   className={cn(
                     "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-start text-sm",
-                    "hover:bg-(--color-ground)",
+                    index === at ? "bg-(--color-ground)" : "",
                   )}
                 >
                   <Icon className="size-4 shrink-0 text-(--color-muted)" aria-hidden />
