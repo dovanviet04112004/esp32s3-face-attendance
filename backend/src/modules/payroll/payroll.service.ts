@@ -986,7 +986,12 @@ export class PayrollService {
         ],
       },
       include: { period: { select: { year: true, month: true, state: true } } },
-      orderBy: [{ periodId: "desc" }, { employeeId: "asc" }],
+      // periodId is a uuid, so sorting on it put August ahead of September.
+      orderBy: [
+        { period: { year: "desc" } },
+        { period: { month: "desc" } },
+        { employeeId: "asc" },
+      ],
       take: 500,
     });
   }

@@ -135,20 +135,33 @@ export default function MyPayslipsPage() {
         <Empty title={t("empty")} />
       ) : (
         <>
-          <div className="flex flex-wrap gap-2">
+          <ul
+            aria-label={t("myTitle")}
+            className="max-h-56 overflow-y-auto rounded-xl border border-(--color-line) bg-(--color-surface) sm:max-h-72"
+          >
             {mine.data.map((row) => (
-              <Button
-                key={row.id}
-                type="button"
-                tone={row.id === chosen ? "solid" : "quiet"}
-                size="sm"
-                onClick={() => setOpenId(row.id)}
-              >
-                {row.period ? `${row.period.month}/${row.period.year}` : t("period")}
-                <span className="tabular-nums">{money(Number(row.netPay), locale)}</span>
-              </Button>
+              <li key={row.id}>
+                <button
+                  type="button"
+                  aria-current={row.id === chosen ? "true" : undefined}
+                  onClick={() => setOpenId(row.id)}
+                  className={cn(
+                    "flex min-h-11 w-full items-center justify-between gap-3 border-b border-(--color-line) px-4 text-sm last:border-0",
+                    row.id === chosen
+                      ? "bg-(--color-ground) font-medium"
+                      : "hover:bg-(--color-ground)",
+                  )}
+                >
+                  <span className="tabular-nums">
+                    {row.period
+                      ? `${String(row.period.month).padStart(2, "0")}/${row.period.year}`
+                      : t("period")}
+                  </span>
+                  <span className="tabular-nums">{money(Number(row.netPay), locale)}</span>
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
 
           <div className="mt-4" data-print>
             {slip.isPending ? (
