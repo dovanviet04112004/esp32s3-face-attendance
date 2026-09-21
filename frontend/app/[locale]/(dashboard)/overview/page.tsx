@@ -29,10 +29,16 @@ interface Exception {
   minutes: number;
 }
 
+interface Heap<T> {
+  rows: T[];
+  total: number;
+  totalIsExact: boolean;
+}
+
 interface Attention {
-  contractsEnding: Expiring[];
-  probationEnding: Expiring[];
-  exceptionsToday: Exception[];
+  contractsEnding: Heap<Expiring>;
+  probationEnding: Heap<Expiring>;
+  exceptionsToday: Heap<Exception>;
 }
 
 const REASON_KEY: Record<ExceptionReason, "reasonNO_PUNCH" | "reasonLATE" | "reasonSTILL_IN"> = {
@@ -71,7 +77,7 @@ const kPileRows = 6;
 interface PileProps<T> {
   title: string;
   hint?: string;
-  rows: T[];
+  heap: Heap<T>;
   keyOf: (row: T) => string;
   href: (row: T) => string;
   name: (row: T) => string;
@@ -80,12 +86,12 @@ interface PileProps<T> {
 }
 
 /** One column of what needs attention, which says so when it holds back rows. */
-function Pile<T>({ title, hint, rows, keyOf, href, name, aside, numeric }: PileProps<T>) {
+function Pile<T>({ title, hint, heap, keyOf, href, name, aside, numeric }: PileProps<T>) {
   const common = useTranslations("common");
-  if (rows.length === 0) {
+  if (heap.rows.length === 0) {
     return null;
   }
-  const shown = rows.slice(0, kPileRows);
+  const shown = heap.rows.slice(0, kPileRows);
   return (
     <div>
       <p className="text-xs font-medium text-(--color-warn) uppercase">{title}</p>
@@ -102,9 +108,12 @@ function Pile<T>({ title, hint, rows, keyOf, href, name, aside, numeric }: PileP
           </li>
         ))}
       </ul>
-      {rows.length > shown.length ? (
+      {heap.total > shown.length ? (
         <p className="mt-1.5 text-xs text-(--color-muted) tabular-nums">
-          {common("showingOf", { shown: shown.length, total: rows.length })}
+          {common(heap.totalIsExact ? "showingOf" : "showingOfAtLeast", {
+            shown: shown.length,
+            total: heap.total,
+          })}
         </p>
       ) : null}
     </div>
@@ -129,9 +138,9 @@ export default function OverviewPage() {
   const waiting = attention.data;
   const quiet =
     waiting !== undefined &&
-    waiting.contractsEnding.length === 0 &&
-    waiting.probationEnding.length === 0 &&
-    waiting.exceptionsToday.length === 0;
+    waiting.contractsEnding.rows.length === 0 &&
+    waiting.probationEnding.rows.length === 0 &&
+    waiting.exceptionsToday.rows.length === 0;
   const devices = useQuery({
     queryKey: ["devices"],
     enabled: runsTheFleet,
@@ -156,7 +165,7 @@ export default function OverviewPage() {
               <Pile
                 title={t("contractsEnding")}
                 hint={t("contractsHint")}
-                rows={waiting.contractsEnding}
+                heap={waiting.contractsEnding}
                 keyOf={(row) => row.contractId}
                 href={(row) => `/employees/${row.employeeId}`}
                 name={(row) => row.fullName}
@@ -166,7 +175,7 @@ export default function OverviewPage() {
               <Pile
                 title={t("probationEnding")}
                 hint={t("probationHint")}
-                rows={waiting.probationEnding}
+                heap={waiting.probationEnding}
                 keyOf={(row) => row.contractId}
                 href={(row) => `/employees/${row.employeeId}`}
                 name={(row) => row.fullName}
@@ -175,7 +184,7 @@ export default function OverviewPage() {
               />
               <Pile
                 title={t("exceptionsToday")}
-                rows={waiting.exceptionsToday}
+                heap={waiting.exceptionsToday}
                 keyOf={(row) => String(row.employeeId)}
                 href={(row) => `/attendance/${row.employeeId}`}
                 name={(row) => row.fullName}

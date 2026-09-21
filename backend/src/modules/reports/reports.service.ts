@@ -233,14 +233,32 @@ export interface Exception {
   minutes: number;
 }
 
+/** A pile of what needs attention, and whether the count is the whole of it. */
+export interface Pile<T> {
+  rows: T[];
+  total: number;
+  totalIsExact: boolean;
+}
+
 export interface Attention {
-  contractsEnding: Expiring[];
-  probationEnding: Expiring[];
-  exceptionsToday: Exception[];
+  contractsEnding: Pile<Expiring>;
+  probationEnding: Pile<Expiring>;
+  exceptionsToday: Pile<Exception>;
 }
 
 const kHorizonDays = 30;
 const kMsPerDay = 86_400_000;
+
+/** A desk reads the first screenful, so the query asks for one row past the
+ *  cap and that row becomes the word "more" rather than a silent cut.
+ */
+const kAttentionCap = 200;
+
+function pileOf<T>(rows: T[]): Pile<T> {
+  return rows.length > kAttentionCap
+    ? { rows: rows.slice(0, kAttentionCap), total: kAttentionCap, totalIsExact: false }
+    : { rows, total: rows.length, totalIsExact: true };
+}
 
 @Injectable()
 export class ReportsService {
@@ -272,7 +290,7 @@ export class ReportsService {
          WHERE c."state" = 'ACTIVE' AND e."active" = true
            AND c."endDate" IS NOT NULL AND c."endDate" <= ${horizon}
          ORDER BY c."endDate"
-         LIMIT 200
+         LIMIT ${kAttentionCap + 1}
       `,
       this.db.$queryRaw<Expiring[]>`
         SELECT c."id" AS "contractId", e."id" AS "employeeId", e."code", e."fullName",
@@ -283,11 +301,15 @@ export class ReportsService {
          WHERE c."state" = 'ACTIVE' AND e."active" = true
            AND c."probationEnd" IS NOT NULL AND c."probationEnd" <= ${horizon}
          ORDER BY c."probationEnd"
-         LIMIT 200
+         LIMIT ${kAttentionCap + 1}
       `,
       this.exceptionsOn(today, zone),
     ]);
-    return { contractsEnding: contracts, probationEnding: probation, exceptionsToday: exceptions };
+    return {
+      contractsEnding: pileOf(contracts),
+      probationEnding: pileOf(probation),
+      exceptionsToday: pileOf(exceptions),
+    };
   }
 
   /**
@@ -343,7 +365,7 @@ export class ReportsService {
                 + split_part(h."startTime", ':', 2)::int + h."graceMinutes"
          )
        ORDER BY e."code"
-       LIMIT 200
+       LIMIT ${kAttentionCap + 1}
     `;
   }
 
