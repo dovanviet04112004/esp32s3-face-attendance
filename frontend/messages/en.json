@@ -28,6 +28,7 @@
     "groupPay": "Pay",
     "groupSettings": "Settings",
     "more": "More",
+    "primary": "Main navigation",
     "close": "Close",
     "payroll": "Payroll",
     "policy": "Pay policy",
@@ -43,7 +44,16 @@
     "onboarding": "Checklists",
     "assets": "Assets",
     "users": "Accounts",
-    "audit": "Audit"
+    "audit": "Audit",
+    "skip": "Skip to main content"
+  },
+  "roles": {
+    "ADMIN": "Administrator",
+    "HR": "HR",
+    "PAYROLL": "Payroll",
+    "MANAGER": "Line manager",
+    "EMPLOYEE": "Employee",
+    "VIEWER": "Viewer"
   },
   "common": {
     "loading": "Loading…",
@@ -1078,7 +1088,7 @@
     "remove": "Remove",
     "password": "Password",
     "passwordHint": "Twelve characters at least.",
-    "roleHint": "PAYROLL and MANAGER follow the employee record; open those from provisioning in Settings.",
+    "roleHint": "Payroll and Line manager follow the employee record; open those from provisioning in Settings.",
     "adminOnly": "This page is for administrators."
   }
 }

@@ -28,6 +28,7 @@
     "groupPay": "Lương",
     "groupSettings": "Thiết lập",
     "more": "Thêm",
+    "primary": "Điều hướng chính",
     "close": "Đóng",
     "payroll": "Kỳ lương",
     "policy": "Chính sách lương",
@@ -43,7 +44,16 @@
     "onboarding": "Nhận việc",
     "assets": "Tài sản",
     "users": "Tài khoản",
-    "audit": "Nhật ký"
+    "audit": "Nhật ký",
+    "skip": "Tới nội dung chính"
+  },
+  "roles": {
+    "ADMIN": "Quản trị hệ thống",
+    "HR": "Nhân sự",
+    "PAYROLL": "Tiền lương",
+    "MANAGER": "Quản lý trực tiếp",
+    "EMPLOYEE": "Nhân viên",
+    "VIEWER": "Chỉ xem"
   },
   "common": {
     "loading": "Đang tải…",
@@ -1078,7 +1088,7 @@
     "remove": "Xoá",
     "password": "Mật khẩu",
     "passwordHint": "Ít nhất 12 ký tự.",
-    "roleHint": "Vai PAYROLL và MANAGER lấy theo hồ sơ nhân viên, mở bằng nút cấp tài khoản ở Cài đặt.",
+    "roleHint": "Vai Tiền lương và Quản lý trực tiếp lấy theo hồ sơ nhân viên, mở bằng nút cấp tài khoản ở Cài đặt.",
     "adminOnly": "Trang này chỉ dành cho quản trị viên."
   }
 }

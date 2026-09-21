@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { useSession, type Role } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 
 // The three CreateUserDto accepts. An account for a PAYROLL or MANAGER
@@ -22,7 +22,7 @@ type Settable = (typeof SETTABLE)[number];
 interface Account {
   id: string;
   email: string;
-  role: string;
+  role: Role;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,6 +32,7 @@ const PAGE = 50;
 export default function UsersPage() {
   const t = useTranslations("users");
   const common = useTranslations("common");
+  const roleName = useTranslations("roles");
   const format = useFormatter();
   const cache = useQueryClient();
   const faultOf = useFault();
@@ -93,8 +94,8 @@ export default function UsersPage() {
     {
       id: "role",
       header: t("role"),
-      sortBy: (row) => row.role,
-      cell: (row) => <span className="font-mono text-xs">{row.role}</span>,
+      sortBy: (row) => roleName(row.role),
+      cell: (row) => roleName(row.role),
     },
     {
       id: "createdAt",
@@ -220,7 +221,7 @@ export default function UsersPage() {
           >
             {SETTABLE.map((one) => (
               <option key={one} value={one}>
-                {one}
+                {roleName(one)}
               </option>
             ))}
           </Select>
@@ -263,7 +264,7 @@ export default function UsersPage() {
           >
             {SETTABLE.map((one) => (
               <option key={one} value={one}>
-                {one}
+                {roleName(one)}
               </option>
             ))}
           </Select>

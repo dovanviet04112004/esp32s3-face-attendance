@@ -11,18 +11,19 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { useSession, type Role } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
 
 interface OpenedAccount {
   employeeCode: string;
   email: string;
-  role: string;
+  role: Role;
 }
 
 export default function SettingsPage() {
   const t = useTranslations("settings");
+  const roleName = useTranslations("roles");
   const notices = useTranslations("notices");
   const nav = useTranslations("nav");
   const locale = useLocale();
@@ -147,7 +148,7 @@ export default function SettingsPage() {
                   <li key={one.email} className="flex flex-wrap gap-x-3">
                     <span className="min-w-24">{one.employeeCode}</span>
                     <span className="min-w-48 flex-1 truncate">{one.email}</span>
-                    <span className="text-(--color-muted)">{one.role}</span>
+                    <span className="text-(--color-muted)">{roleName(one.role)}</span>
                   </li>
                 ))}
               </ul>

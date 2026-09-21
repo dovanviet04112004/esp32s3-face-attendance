@@ -53,10 +53,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:start-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-(--color-accent) focus:px-4 focus:py-2 focus:text-sm focus:text-(--color-on-fill)"
+      >
+        {t("skip")}
+      </a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="flex-1">
+        <main id="main" className="flex-1">
           <div className="mx-auto w-full max-w-(--width-shell) p-4 pb-24 md:p-8 md:pb-8">
             <Breadcrumb />
             {children}

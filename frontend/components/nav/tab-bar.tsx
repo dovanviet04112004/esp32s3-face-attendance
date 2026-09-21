@@ -49,14 +49,20 @@ export function TabBar() {
   return (
     <>
       <nav
-        aria-label={t("more")}
+        aria-label={t("primary")}
         className="fixed inset-x-0 bottom-0 z-40 flex border-t border-(--color-line) bg-(--color-surface) pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         {items.map((item) => (
           <Tab key={item.href} item={item} active={current === item.href} waiting={waiting} />
         ))}
         {rest.length > 0 ? (
-          <button type="button" onClick={() => setOpen(true)} className={tabClass(false)}>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            className={tabClass(false)}
+          >
             <Ellipsis className="size-5" aria-hidden />
             <span>{t("more")}</span>
           </button>

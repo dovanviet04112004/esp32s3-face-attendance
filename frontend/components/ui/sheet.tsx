@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
@@ -17,6 +17,7 @@ interface Props {
 // showModal gives escape, the focus trap and the backdrop without a library.
 export function Sheet({ open, onClose, title, closeLabel, children, className }: Props) {
   const box = useRef<HTMLDialogElement>(null);
+  const heading = useId();
 
   useEffect(() => {
     const dialog = box.current;
@@ -34,6 +35,7 @@ export function Sheet({ open, onClose, title, closeLabel, children, className }:
   return (
     <dialog
       ref={box}
+      aria-labelledby={heading}
       onClose={onClose}
       onClick={(event) => {
         if (event.target === box.current) {
@@ -49,7 +51,9 @@ export function Sheet({ open, onClose, title, closeLabel, children, className }:
       )}
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 id={heading} className="text-sm font-semibold">
+          {title}
+        </h2>
         <button
           type="button"
           aria-label={closeLabel}

@@ -11,13 +11,14 @@ import { useWaitingCount } from "./waiting-count";
 export function Sidebar() {
   const t = useTranslations("nav");
   const app = useTranslations("app");
+  const roleName = useTranslations("roles");
   const here = usePathname();
   const { role, employeeId } = useSession();
   const groups = navFor(role, employeeId !== null);
   const waiting = useWaitingCount(role);
-
   // A detail page belongs to the entry that owns it, so the trail stays lit.
   const current = ownerOf(here)?.href;
+
   return (
     // The nav below scrolls on its own only while this box stays viewport-tall.
     <aside className="hidden w-60 shrink-0 flex-col border-r border-(--color-line) bg-(--color-surface) p-3 md:sticky md:top-0 md:flex md:h-screen">
@@ -25,7 +26,7 @@ export function Sidebar() {
         <img src="/logo.svg" alt="" width={20} height={20} />
         <p className="text-sm font-semibold">{app("name")}</p>
       </div>
-      <p className="px-2 pb-4 text-xs text-(--color-muted)">{role}</p>
+      <p className="px-2 pb-4 text-xs text-(--color-muted)">{role ? roleName(role) : null}</p>
 
       <nav className="flex flex-1 flex-col gap-4 overflow-y-auto">
         {groups.map((group) => (
