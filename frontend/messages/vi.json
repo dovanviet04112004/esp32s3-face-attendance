@@ -331,14 +331,12 @@
     "releaseTarget": "Loại",
     "releaseVersion": "Phiên bản",
     "releaseUrl": "Địa chỉ tải",
-    "releaseSha": "sha256",
-    "releaseShaHint": "64 ký tự hex thường. Máy tự kiểm trước khi ghi.",
-    "releaseBytes": "Kích thước (byte)",
     "releaseAdd": "Khai bản",
     "releaseSize": "{kb} kB",
     "statusPENDING": "Chờ duyệt",
     "statusAPPROVED": "Đã duyệt",
-    "statusREVOKED": "Đã thu hồi"
+    "statusREVOKED": "Đã thu hồi",
+    "releaseMeasured": "Máy chủ tự đọc file ở địa chỉ trên để lấy sha256 và kích thước. Ảnh lớn hơn phân vùng sẽ bị từ chối."
   },
   "shifts": {
     "title": "Ca làm",

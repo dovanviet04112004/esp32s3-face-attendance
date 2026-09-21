@@ -1,9 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import { ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ConflictException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Release } from "@prisma/client";
 
 import type { OtaManifest } from "../../common/generated/ota_manifest.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
 import type { CreateReleaseDto } from "./dto/release.dto.js";
@@ -17,16 +25,51 @@ export class ModelsService {
   constructor(
     private readonly db: PrismaService,
     private readonly mqtt: MqttService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  /** Reads the image once and reports what it is. A digest typed by hand is a
+   *  digest that can disagree with the file, and the kiosk finds out last.
+   */
+  private async measure(url: string): Promise<{ sha256: string; sizeBytes: number }> {
+    const ceiling = this.config.get("OTA_MAX_BYTES", { infer: true });
+    const stop = AbortSignal.timeout(this.config.get("OTA_FETCH_TIMEOUT_MS", { infer: true }));
+    let answer: Response;
+    try {
+      answer = await fetch(url, { signal: stop, redirect: "follow" });
+    } catch {
+      throw new BadRequestException("RELEASE_UNREACHABLE");
+    }
+    if (!answer.ok || !answer.body) {
+      throw new BadRequestException("RELEASE_UNREACHABLE");
+    }
+    const digest = createHash("sha256");
+    let sizeBytes = 0;
+    for await (const chunk of answer.body as AsyncIterable<Uint8Array>) {
+      sizeBytes += chunk.byteLength;
+      if (sizeBytes > ceiling) {
+        throw new BadRequestException("RELEASE_TOO_BIG");
+      }
+      digest.update(chunk);
+    }
+    if (sizeBytes === 0) {
+      throw new BadRequestException("RELEASE_EMPTY");
+    }
+    return { sha256: digest.digest("hex"), sizeBytes };
+  }
 
   list(): Promise<Release[]> {
     return this.db.release.findMany({ orderBy: { createdAt: "desc" } });
   }
 
   async create(body: CreateReleaseDto): Promise<Release> {
+    const measured = await this.measure(body.url);
+    this.log.log(
+      `${body.target} ${body.version} measured ${measured.sizeBytes} bytes, ${measured.sha256}`,
+    );
     try {
       return await this.db.release.create({
-        data: { ...body, releaseId: randomUUID() },
+        data: { ...body, ...measured, releaseId: randomUUID() },
       });
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -186,22 +187,23 @@ describe("enrollment and releases (e2e)", () => {
     assert.ok(res.body.rosterVersion >= 1);
   });
 
-  it("registers a release and offers it as a manifest the kiosk can read", async () => {
-    const made = await request(http)
-      .post("/releases")
-      .set("Authorization", `Bearer ${admin}`)
-      .send({
+  it("offers a registered release as a manifest the kiosk can read", async () => {
+    // The row is written straight in: what is under test here is the manifest,
+    // and registering one reads the image over the network.
+    const made = await db.release.create({
+      data: {
+        releaseId: randomUUID(),
         target: "MODELS",
         version: RELEASE_VERSION,
         url: "https://example.com/models.bin",
         sha256: "a".repeat(64),
         sizeBytes: 1517600,
         minFwVersion: "0.9.0",
-      });
-    assert.equal(made.status, 201);
+      },
+    });
 
     const offered = await request(http)
-      .post(`/releases/${made.body.releaseId}/offer/${DEVICE_ID}`)
+      .post(`/releases/${made.releaseId}/offer/${DEVICE_ID}`)
       .set("Authorization", `Bearer ${admin}`);
     assert.equal(offered.status, 201);
     const checked = otaManifestSchema.safeParse(offered.body);
@@ -209,18 +211,18 @@ describe("enrollment and releases (e2e)", () => {
     assert.equal(offered.body.target, "MODELS");
   });
 
-  it("refuses a release whose digest is not 64 hex digits", async () => {
+  it("refuses a release it cannot read, rather than recording a guess", async () => {
     const res = await request(http)
       .post("/releases")
       .set("Authorization", `Bearer ${admin}`)
       .send({
         target: "FIRMWARE",
         version: "9.9.8",
-        url: "https://example.com/kiosk.bin",
-        sha256: "not-a-digest",
-        sizeBytes: 1,
+        // Nothing listens on port 1, so this fails to connect without a network.
+        url: "https://127.0.0.1:1/kiosk.bin",
       });
     assert.equal(res.status, 400);
+    assert.equal(res.body.message, "RELEASE_UNREACHABLE");
   });
 
   it("refuses a release url that is not https", async () => {
@@ -231,8 +233,6 @@ describe("enrollment and releases (e2e)", () => {
         target: "FIRMWARE",
         version: "9.9.7",
         url: "http://example.com/kiosk.bin",
-        sha256: "b".repeat(64),
-        sizeBytes: 1,
       });
     assert.equal(res.status, 400);
   });

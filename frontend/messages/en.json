@@ -331,14 +331,12 @@
     "releaseTarget": "Target",
     "releaseVersion": "Version",
     "releaseUrl": "Download url",
-    "releaseSha": "sha256",
-    "releaseShaHint": "64 lowercase hex digits. The kiosk checks it before writing.",
-    "releaseBytes": "Size (bytes)",
     "releaseAdd": "Register",
     "releaseSize": "{kb} kB",
     "statusPENDING": "Waiting",
     "statusAPPROVED": "Approved",
-    "statusREVOKED": "Revoked"
+    "statusREVOKED": "Revoked",
+    "releaseMeasured": "The server reads the file at that address for its sha256 and size. An image larger than the partition is refused."
   },
   "shifts": {
     "title": "Shifts",

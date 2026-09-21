@@ -43,8 +43,6 @@ export default function DevicesPage() {
   const [target, setTarget] = useState<Target>("FIRMWARE");
   const [version, setVersion] = useState("");
   const [url, setUrl] = useState("");
-  const [sha256, setSha] = useState("");
-  const [sizeBytes, setSize] = useState("");
   const [fault, setFault] = useState<string | null>(null);
   const devices = useQuery({
     queryKey: ["devices"],
@@ -67,13 +65,9 @@ export default function DevicesPage() {
         target,
         version,
         url,
-        sha256,
-        sizeBytes: Number(sizeBytes),
       }),
     onSuccess: () => {
       setUrl("");
-      setSha("");
-      setSize("");
       void cache.invalidateQueries({ queryKey: ["releases"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
@@ -222,34 +216,7 @@ export default function DevicesPage() {
                 className="mt-1"
               />
             </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs text-(--color-muted)" htmlFor="relSha">
-                {t("releaseSha")}
-              </label>
-              <Input
-                id="relSha"
-                required
-                pattern="[0-9a-f]{64}"
-                value={sha256}
-                onChange={(event) => setSha(event.target.value.toLowerCase())}
-                className="mt-1 font-mono text-xs"
-              />
-              <p className="mt-1 text-xs text-(--color-muted)">{t("releaseShaHint")}</p>
-            </div>
-            <div>
-              <label className="block text-xs text-(--color-muted)" htmlFor="relSize">
-                {t("releaseBytes")}
-              </label>
-              <Input
-                id="relSize"
-                type="number"
-                min={1}
-                required
-                value={sizeBytes}
-                onChange={(event) => setSize(event.target.value)}
-                className="mt-1"
-              />
-            </div>
+            <p className="text-xs text-(--color-muted) sm:col-span-2">{t("releaseMeasured")}</p>
             <div className="flex items-end">
               <Button type="submit" disabled={register.isPending}>
                 {register.isPending ? common("saving") : t("releaseAdd")}
