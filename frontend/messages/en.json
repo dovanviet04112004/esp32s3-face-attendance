@@ -455,7 +455,8 @@
     "deskLead": "Every request in the branch you cover, all kinds and all states. What waits on you to decide sits in Approvals.",
     "anyKind": "Any kind",
     "anyState": "Any state",
-    "gone": "No such request, or it falls outside what you may see."
+    "gone": "No such request, or it falls outside what you may see.",
+    "backwards": "The end date cannot fall before the start."
   },
   "me": {
     "title": "My page",

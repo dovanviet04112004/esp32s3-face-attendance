@@ -193,6 +193,7 @@ export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWri
           <Input
             id="contractEnd"
             type="date"
+            min={startDate}
             value={endDate}
             onChange={(event) => setEndDate(event.target.value)}
             className="mt-1"
@@ -205,6 +206,7 @@ export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWri
           <Input
             id="contractProbation"
             type="date"
+            min={startDate}
             value={probationEnd}
             onChange={(event) => setProbationEnd(event.target.value)}
             className="mt-1"

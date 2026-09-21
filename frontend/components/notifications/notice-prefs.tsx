@@ -91,9 +91,13 @@ export function NoticePreferences() {
                 <td key={channel} className="px-3 py-2">
                   <Checkbox
                     className="min-h-0"
-                    aria-label={`${kind} ${channel}`}
+                    aria-label={`${t(KIND_KEY[kind], { count: 0 })} · ${t(CHANNEL_KEY[channel])}`}
                     checked={on(kind, channel)}
-                    disabled={set.isPending}
+                    disabled={
+                      set.isPending &&
+                      set.variables?.kind === kind &&
+                      set.variables?.channel === channel
+                    }
                     onChange={(event) =>
                       set.mutate({ kind, channel, on: event.target.checked })
                     }

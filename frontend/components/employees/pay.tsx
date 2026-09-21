@@ -186,12 +186,18 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
           <Input
             id="payBase"
             type="number"
+            inputMode="numeric"
             min={0}
             required
             value={baseSalary}
             onChange={(event) => setBaseSalary(event.target.value)}
             className="mt-1"
           />
+          {baseSalary !== "" && Number(baseSalary) > 0 ? (
+            <p className="mt-1 text-xs text-(--color-muted) tabular-nums">
+              {money(Number(baseSalary), locale)}
+            </p>
+          ) : null}
 
           <label className="mt-4 block text-sm font-medium" htmlFor="payInsurance">
             {t("payInsurance")}
@@ -199,12 +205,18 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
           <Input
             id="payInsurance"
             type="number"
+            inputMode="numeric"
             min={0}
             required
             value={insuranceSalary}
             onChange={(event) => setInsuranceSalary(event.target.value)}
             className="mt-1"
           />
+          {insuranceSalary !== "" && Number(insuranceSalary) > 0 ? (
+            <p className="mt-1 text-xs text-(--color-muted) tabular-nums">
+              {money(Number(insuranceSalary), locale)}
+            </p>
+          ) : null}
           <p className="mt-1 text-xs text-(--color-muted)">{t("payInsuranceHint")}</p>
 
           <label className="mt-4 block text-sm font-medium" htmlFor="payReason">

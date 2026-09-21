@@ -98,11 +98,17 @@ export function BonusSheet({ runId, editable }: { runId: string; editable: boole
             <Input
               id="bonusAmount"
               type="number"
+              inputMode="numeric"
               min={0}
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
               className="mt-1"
             />
+            {amount !== "" && Number(amount) > 0 ? (
+              <p className="mt-1 text-xs text-(--color-muted) tabular-nums">
+                {money(Number(amount), locale)}
+              </p>
+            ) : null}
           </div>
           <div className="min-w-44 flex-1">
             <label className="block text-xs text-(--color-muted)" htmlFor="bonusWho">

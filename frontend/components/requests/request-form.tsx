@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
+import { BottomBar } from "@/components/ui/bottom-bar";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,8 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
   const [minutes, setMinutes] = useState("");
   const [reason, setReason] = useState("");
   const [fault, setFault] = useState<string | null>(null);
+  // The api rejects a backwards span, and the form can say so without asking.
+  const backwards = toDate < fromDate;
 
   const types = useQuery({
     queryKey: ["leave-types"],
@@ -150,12 +153,17 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
             id="toDate"
             type="date"
             required
+            min={fromDate}
+            aria-invalid={backwards}
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
             className="mt-1"
           />
         </div>
       </div>
+      {backwards ? (
+        <p className="mt-1 text-xs text-(--color-danger)">{t("backwards")}</p>
+      ) : null}
 
       {kind === "LEAVE" ? (
         <Checkbox
@@ -185,13 +193,14 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
       <label className="mt-4 block text-sm font-medium" htmlFor="reason">
         {t("reason")}
       </label>
-      <Input
+      <textarea
         id="reason"
         required
+        rows={3}
         maxLength={500}
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        className="mt-1"
+        className="mt-1 w-full rounded-lg border border-(--color-field) bg-(--color-surface) p-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
       />
 
       {fault ? (
@@ -200,14 +209,14 @@ export function RequestForm({ onDone, onCancel }: { onDone: () => void; onCancel
         </p>
       ) : null}
 
-      <div className="mt-5 flex gap-2">
-        <Button type="submit" disabled={file.isPending}>
+      <BottomBar>
+        <Button type="submit" disabled={file.isPending || backwards}>
           {file.isPending ? t("submitting") : t("submit")}
         </Button>
         <Button type="button" tone="quiet" onClick={onCancel}>
           {common("cancel")}
         </Button>
-      </div>
+      </BottomBar>
     </form>
   );
 }

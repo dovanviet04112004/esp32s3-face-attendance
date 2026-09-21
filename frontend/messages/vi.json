@@ -455,7 +455,8 @@
     "deskLead": "Sổ đơn của cả nhánh bạn quản lý, mọi loại và mọi trạng thái. Việc đang chờ chính bạn duyệt nằm ở Chờ duyệt.",
     "anyKind": "Mọi loại",
     "anyState": "Mọi trạng thái",
-    "gone": "Không tìm thấy đơn này, hoặc nó nằm ngoài phạm vi bạn xem được."
+    "gone": "Không tìm thấy đơn này, hoặc nó nằm ngoài phạm vi bạn xem được.",
+    "backwards": "Ngày kết thúc phải từ ngày bắt đầu trở đi."
   },
   "me": {
     "title": "Trang của tôi",
