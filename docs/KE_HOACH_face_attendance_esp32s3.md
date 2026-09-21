@@ -4416,7 +4416,9 @@ frontend/
 │   ├── providers.tsx                 # QueryClient dựng một lần mỗi phiên trình duyệt
 │   └── [locale]/                     # ★ vi | en — mọi route nằm dưới đây
 │       ├── layout.tsx                # layout gốc: <html lang={locale}> + provider
-│       ├── (auth)/login/page.tsx
+│       ├── (auth)/{login, set-password, forgot-password}/page.tsx
+│       │                                 # ★ §9.4 — một liên kết dùng một lần phục vụ
+│       │                                 #   cả lần đặt đầu lẫn lần quên
 │       └── (dashboard)/
 │           ├── layout.tsx            # sidebar + guard
 │           ├── overview/page.tsx     # thẻ số liệu + biểu đồ + luồng sự kiện realtime
@@ -6017,8 +6019,23 @@ lần** gửi qua thư. Bốn điều đi theo, mỗi điều bịt một chỗ:
   thư mất thì phát lại liên kết. `PROVISION_BATCH` vẫn còn nhưng đổi nghĩa: nó giới hạn **cỡ
   câu lệnh**, không còn giới hạn thời gian, vì không còn phép băm nào trong đường đi.
 
-Liên kết có hạn `PASSWORD_SETUP_TTL_HOURS` và **dùng một lần**. Hết hạn hoặc đã dùng thì người
-lao động nhờ quản trị viên phát lại — đó là cùng một lệnh, không phải một luồng thứ hai.
+Liên kết có hạn `PASSWORD_SETUP_TTL_HOURS` và **dùng một lần**. Hết hạn, đã dùng, hay quên mất
+mật khẩu — cả ba đi qua **đúng liên kết ấy**, và có ba cửa mở nó: lượt mở tài khoản đầu tiên,
+quản trị viên phát lại, và chính người ấy tự xin từ màn đăng nhập. Một luồng khôi phục thứ hai
+là một chỗ nữa để quên vá.
+
+**Màn xin lại trả lời giống hệt nhau dù địa chỉ ấy có tài khoản hay không.** Một câu trả lời
+khác đi biến nó thành chỗ dò danh sách nhân sự của công ty: gõ vào một tệp email và đọc xem cái
+nào được nhận. Nó cũng có nhịp riêng, `FORGOT_ATTEMPTS_PER_HOUR` tính theo **giờ** chứ không
+theo phút như cửa đăng nhập, vì mỗi lượt ở đây gửi đi một lá thư chứ không chỉ tốn một phép so.
+
+**Đổi mật khẩu thì phải nhập mật khẩu đang dùng.** Một phiên bị chiếm vốn đã đọc được mọi thứ;
+cho nó đổi luôn mật khẩu là cho nó **khoá chủ tài khoản ra ngoài**, và người mất tài khoản hết
+đường tự lấy lại. Hỏi lại mật khẩu cũ không cứu được dữ liệu đã lộ — nó giữ cho cửa quay lại
+vẫn mở. Tài khoản chưa từng đặt mật khẩu không đi cửa này được: băm của nó không khớp với gì,
+nên đường duy nhất của nó vẫn là liên kết.
+
+Cả hai đường đều **đóng mọi phiên**, như §9.23 đòi ở cùng một câu với nghỉ việc và tắt tài khoản.
 
 ### 9.5 Nghỉ phép
 
