@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, PasswordInput } from "@/components/ui/input";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { claimsOf, useSession } from "@/lib/auth";
@@ -14,6 +14,7 @@ import { homeFor } from "@/lib/nav";
 export default function LoginPage() {
   const t = useTranslations("login");
   const app = useTranslations("app");
+  const common = useTranslations("common");
   const router = useRouter();
   const setSession = useSession((s) => s.setSession);
   const faultOf = useFault();
@@ -24,6 +25,9 @@ export default function LoginPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (busy) {
+      return;
+    }
     setBusy(true);
     setRefused(null);
     try {
@@ -57,6 +61,7 @@ export default function LoginPage() {
           id="email"
           type="email"
           autoComplete="username"
+          autoFocus
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -66,13 +71,14 @@ export default function LoginPage() {
         <label className="mt-4 block text-sm font-medium" htmlFor="password">
           {t("password")}
         </label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="current-password"
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          showLabel={common("showPassword")}
+          hideLabel={common("hidePassword")}
           className="mt-1"
         />
 

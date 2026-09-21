@@ -83,7 +83,9 @@
     "sure": "Chắc chắn?",
     "filters": "Bộ lọc",
     "showingOf": "Đang hiện {shown} trong {total}",
-    "loadMore": "Tải thêm"
+    "loadMore": "Tải thêm",
+    "showPassword": "Hiện mật khẩu",
+    "hidePassword": "Ẩn mật khẩu"
   },
   "login": {
     "lead": "Đăng nhập để vào bảng điều khiển",
@@ -842,7 +844,9 @@
     "saving": "Đang đặt…",
     "mismatch": "Hai lần nhập chưa giống nhau",
     "noToken": "Đường dẫn thiếu mã. Mở lại đúng liên kết trong thư.",
-    "toLogin": "Về trang đăng nhập"
+    "toLogin": "Về trang đăng nhập",
+    "done": "Đã đặt mật khẩu",
+    "doneHint": "Tài khoản của bạn đã mở. Đăng nhập bằng mật khẩu vừa đặt."
   },
   "myShifts": {
     "title": "Lịch ca của tôi",

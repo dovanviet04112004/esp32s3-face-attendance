@@ -83,7 +83,9 @@
     "sure": "Sure?",
     "filters": "Filters",
     "showingOf": "Showing {shown} of {total}",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "login": {
     "lead": "Sign in to reach the control panel",
@@ -842,7 +844,9 @@
     "saving": "Saving…",
     "mismatch": "Those two do not match",
     "noToken": "This address carries no code. Open the link from your email.",
-    "toLogin": "Back to sign in"
+    "toLogin": "Back to sign in",
+    "done": "Password set",
+    "doneHint": "Your account is open. Sign in with the password you just chose."
   },
   "myShifts": {
     "title": "My shifts",

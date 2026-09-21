@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, PasswordInput } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
@@ -206,13 +206,15 @@ export default function UsersPage() {
           <label className="mt-4 block text-sm font-medium" htmlFor="userPassword">
             {t("password")}
           </label>
-          <Input
+          <PasswordInput
             id="userPassword"
-            type="password"
+            autoComplete="new-password"
             required
             minLength={12}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            showLabel={common("showPassword")}
+            hideLabel={common("hidePassword")}
             className="mt-1"
           />
           <p className="mt-1 text-xs text-(--color-muted)">{t("passwordHint")}</p>
