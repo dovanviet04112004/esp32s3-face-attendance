@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { DocumentKind } from "@prisma/client";
+import { Type } from "class-transformer";
 import {
   IsBoolean,
   IsDateString,
@@ -12,6 +13,8 @@ import {
   Min,
   MinLength,
 } from "class-validator";
+
+import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
 export class CreateDocumentDto {
   @ApiProperty({ example: "NOI-QUY-LAO-DONG" })
@@ -101,4 +104,15 @@ export class ReceiveFileDto {
   @IsString()
   @MaxLength(240)
   note?: string;
+}
+
+/** One row per person a document reaches, so it pages (KEHOACH 9.9 rule 3). */
+export class ListReadersDto extends PaginationDto {}
+
+export class ListGapsDto extends PaginationDto {
+  @ApiPropertyOptional({ description: "Narrow to one person's own record" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  employeeId?: number;
 }

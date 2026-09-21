@@ -5,6 +5,7 @@ import type { Document, DocumentVersion, PersonnelFileType } from "@prisma/clien
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import {
   DocumentsService,
@@ -16,6 +17,8 @@ import {
 import {
   CreateDocumentDto,
   CreateFileTypeDto,
+  ListGapsDto,
+  ListReadersDto,
   PublishVersionDto,
   ReceiveFileDto,
 } from "./dto/documents.dto.js";
@@ -53,8 +56,12 @@ export class DocumentsController {
   @Get("documents/:id/readers")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Who a version reaches, and who has signed for it" })
-  readers(@Param("id") id: string, @Query("version") version?: string): Promise<ReaderRow[]> {
-    return this.documents.readers(id, version === undefined ? undefined : Number(version));
+  readers(
+    @Param("id") id: string,
+    @Query() query: ListReadersDto,
+    @Query("version") version?: string,
+  ): Promise<Page<ReaderRow>> {
+    return this.documents.readers(id, query, version === undefined ? undefined : Number(version));
   }
 
   @Get("me/documents")
@@ -106,7 +113,7 @@ export class DocumentsController {
   @Get("personnel-files/gaps")
   @Roles("ADMIN", "HR", "MANAGER")
   @ApiOperation({ summary: "Who is short of a required paper, or holds an expired one" })
-  gaps(@CurrentViewer() viewer: Viewer): Promise<Gap[]> {
-    return this.documents.gaps(viewer);
+  gaps(@CurrentViewer() viewer: Viewer, @Query() query: ListGapsDto): Promise<Page<Gap>> {
+    return this.documents.gaps(viewer, query);
   }
 }

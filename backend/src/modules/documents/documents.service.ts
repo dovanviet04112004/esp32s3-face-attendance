@@ -2,6 +2,13 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { Document, DocumentVersion, PersonnelFileType } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 
+import {
+  COUNT_CEILING,
+  countedTo,
+  decodeCursor,
+  encodeCursor,
+} from "../../common/dto/cursor.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -10,6 +17,8 @@ import { AuditService } from "../audit/audit.service.js";
 import type {
   CreateDocumentDto,
   CreateFileTypeDto,
+  ListGapsDto,
+  ListReadersDto,
   PublishVersionDto,
   ReceiveFileDto,
 } from "./dto/documents.dto.js";
@@ -192,7 +201,14 @@ export class DocumentsService {
   }
 
   /** Who a version reaches, and which of them have signed for it. */
-  async readers(documentId: string, version?: number): Promise<ReaderRow[]> {
+  /** Whoever has not signed comes first, because that is the list a desk acts
+   *  on, and the cursor carries that flag beside the code (KEHOACH 9.9 rule 3).
+   */
+  async readers(
+    documentId: string,
+    query: ListReadersDto,
+    version?: number,
+  ): Promise<Page<ReaderRow>> {
     const wanted = await this.db.documentVersion.findFirst({
       where: { documentId, ...(version === undefined ? {} : { version }) },
       orderBy: { version: "desc" },
@@ -202,16 +218,41 @@ export class DocumentsService {
       throw new NotFoundException("VERSION_NOT_FOUND");
     }
     const target = wanted.document;
-    return this.db.$queryRaw<ReaderRow[]>`
-      SELECT e."id" AS "employeeId", e."code", e."fullName", a."ackAt"
-        FROM "Employee" e
-        LEFT JOIN "DocumentAck" a
-               ON a."employeeId" = e."id" AND a."versionId" = ${wanted.id}
+    const after = query.cursor ? decodeCursor(query.cursor) : null;
+    const reach = Prisma.sql`
        WHERE e."active" = true
          AND (${target.departmentId}::text IS NULL OR e."departmentId" = ${target.departmentId})
-         AND (${target.jobTitleId}::text IS NULL OR e."jobTitleId" = ${target.jobTitleId})
-       ORDER BY a."ackAt" NULLS FIRST, e."code"
-    `;
+         AND (${target.jobTitleId}::text IS NULL OR e."jobTitleId" = ${target.jobTitleId})`;
+    const [rows, counted] = await Promise.all([
+      this.db.$queryRaw<ReaderRow[]>`
+        SELECT e."id" AS "employeeId", e."code", e."fullName", a."ackAt"
+          FROM "Employee" e
+          LEFT JOIN "DocumentAck" a
+                 ON a."employeeId" = e."id" AND a."versionId" = ${wanted.id}
+        ${reach}
+          AND (
+            ${after?.sortValue ?? null}::text IS NULL
+            OR ((CASE WHEN a."ackAt" IS NULL THEN '0' ELSE '1' END) || e."code")
+               > ${after?.sortValue ?? null}::text
+          )
+         ORDER BY (CASE WHEN a."ackAt" IS NULL THEN '0' ELSE '1' END) || e."code"
+         LIMIT ${query.take}
+      `,
+      this.db.$queryRaw<{ found: bigint }[]>`
+        SELECT count(*) AS "found" FROM (
+          SELECT 1 FROM "Employee" e ${reach} LIMIT ${COUNT_CEILING + 1}
+        ) x
+      `,
+    ]);
+    const last = rows[rows.length - 1];
+    return {
+      ...countedTo(Number(counted[0]?.found ?? 0)),
+      rows,
+      next:
+        rows.length === query.take && last
+          ? encodeCursor(`${last.ackAt === null ? "0" : "1"}${last.code}`, last.employeeId)
+          : null,
+    };
   }
 
   fileTypes(): Promise<PersonnelFileType[]> {
@@ -293,11 +334,15 @@ export class DocumentsService {
    * Who is short of what. A subtraction rather than a column, so adding a
    * required kind changes the answer without touching a row (KEHOACH 9.16.9).
    */
-  async gaps(viewer: Viewer): Promise<Gap[]> {
+  /** Paged by the person rather than by the row: a page that ended halfway
+   *  through somebody would show them as missing less than they are.
+   */
+  async gaps(viewer: Viewer, query: ListGapsDto): Promise<Page<Gap>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     if (visible !== null && visible.length === 0) {
-      return [];
+      return { rows: [], total: 0, next: null };
     }
+    const after = query.cursor ? decodeCursor(query.cursor).sortValue : null;
     const rows = await this.db.$queryRaw<
       {
         employeeId: number;
@@ -316,9 +361,24 @@ export class DocumentsService {
         FROM "Employee" e
         CROSS JOIN "PersonnelFileType" t
         LEFT JOIN "PersonnelFile" f ON f."employeeId" = e."id" AND f."typeId" = t."id"
-       WHERE e."active" = true AND t."active" = true AND t."required" = true
+       WHERE e."id" IN (
+               SELECT e2."id"
+                 FROM "Employee" e2
+                 CROSS JOIN "PersonnelFileType" t2
+                 LEFT JOIN "PersonnelFile" f2
+                        ON f2."employeeId" = e2."id" AND f2."typeId" = t2."id"
+                WHERE e2."active" = true AND t2."active" = true AND t2."required" = true
+                  AND (f2."id" IS NULL
+                       OR (f2."expiresAt" IS NOT NULL AND f2."expiresAt" < CURRENT_DATE))
+                  ${visible === null ? Prisma.empty : Prisma.sql`AND e2."id" = ANY(${visible}::int[])`}
+                  AND (${query.employeeId ?? null}::int IS NULL OR e2."id" = ${query.employeeId ?? null}::int)
+                  AND (${after}::text IS NULL OR e2."code" > ${after}::text)
+                GROUP BY e2."id", e2."code"
+                ORDER BY e2."code"
+                LIMIT ${query.take}
+             )
+         AND t."active" = true AND t."required" = true
          AND (f."id" IS NULL OR (f."expiresAt" IS NOT NULL AND f."expiresAt" < CURRENT_DATE))
-         ${visible === null ? Prisma.empty : Prisma.sql`AND e."id" = ANY(${visible}::int[])`}
        ORDER BY e."code", t."ordinal", t."code"
     `;
     const byPerson = new Map<number, Gap>();
@@ -338,6 +398,26 @@ export class DocumentsService {
       }
       byPerson.set(row.employeeId, held);
     }
-    return [...byPerson.values()];
+    const people = [...byPerson.values()];
+    const last = people[people.length - 1];
+    const [counted] = await this.db.$queryRaw<{ found: bigint }[]>`
+      SELECT count(*) AS "found" FROM (
+        SELECT e."id"
+          FROM "Employee" e
+          CROSS JOIN "PersonnelFileType" t
+          LEFT JOIN "PersonnelFile" f ON f."employeeId" = e."id" AND f."typeId" = t."id"
+         WHERE e."active" = true AND t."active" = true AND t."required" = true
+           AND (f."id" IS NULL OR (f."expiresAt" IS NOT NULL AND f."expiresAt" < CURRENT_DATE))
+           ${visible === null ? Prisma.empty : Prisma.sql`AND e."id" = ANY(${visible}::int[])`}
+           AND (${query.employeeId ?? null}::int IS NULL OR e."id" = ${query.employeeId ?? null}::int)
+         GROUP BY e."id"
+         LIMIT ${COUNT_CEILING + 1}
+      ) x
+    `;
+    return {
+      ...countedTo(Number(counted?.found ?? 0)),
+      rows: people,
+      next: people.length === query.take && last ? encodeCursor(last.code, last.employeeId) : null,
+    };
   }
 }

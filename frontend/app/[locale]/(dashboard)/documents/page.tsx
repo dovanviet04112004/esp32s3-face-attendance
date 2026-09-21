@@ -93,7 +93,8 @@ export default function DocumentsPage() {
   const readers = useQuery({
     queryKey: ["documents", open, "readers"],
     enabled: open !== null,
-    queryFn: async () => (await api.get<Reader[]>(`/documents/${open}/readers`)).data,
+    queryFn: async () =>
+      (await api.get<{ rows: Reader[] }>(`/documents/${open}/readers`)).data.rows,
   });
 
   function done(): void {

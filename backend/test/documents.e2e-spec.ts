@@ -23,6 +23,7 @@ const HEALTH_MONTHS = 12;
 // The seed carries one department, and a targeted document is only proved by
 // somebody standing outside it.
 const OTHER_DEPT = "PB9D";
+const OWN_DEPT = "PB9DIN";
 
 interface ToRead {
   documentId: string;
@@ -57,7 +58,7 @@ describe("documents (e2e)", () => {
     await db.employee.deleteMany({ where: { code: { in: [READER, OUTSIDER] } } });
     await db.document.deleteMany({ where: { code: { in: [GENERAL, TARGETED] } } });
     await db.personnelFileType.deleteMany({ where: { code: { in: [CCCD, HEALTH] } } });
-    await db.department.deleteMany({ where: { code: OTHER_DEPT } });
+    await db.department.deleteMany({ where: { code: { in: [OTHER_DEPT, OWN_DEPT] } } });
   }
 
   async function mine(): Promise<ToRead[]> {
@@ -79,10 +80,10 @@ describe("documents (e2e)", () => {
 
   async function gaps(): Promise<Gap[]> {
     const res = await request(http)
-      .get("/personnel-files/gaps")
+      .get(`/personnel-files/gaps?employeeId=${readerId}`)
       .set("Authorization", `Bearer ${adminToken}`);
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    return res.body as Gap[];
+    return (res.body as { rows: Gap[] }).rows;
   }
 
   function gapOf(rows: Gap[], employeeId: number): Gap {
@@ -110,21 +111,23 @@ describe("documents (e2e)", () => {
     const template = await db.employee.findFirstOrThrow({
       where: { active: true, departmentId: { not: null } },
     });
+    const entity = (
+      await db.department.findUniqueOrThrow({ where: { id: template.departmentId as string } })
+    ).legalEntityId;
     const other = await db.department.create({
-      data: {
-        code: OTHER_DEPT,
-        name: "Phòng thử tài liệu",
-        legalEntityId: (await db.department.findUniqueOrThrow({
-          where: { id: template.departmentId as string },
-        })).legalEntityId,
-      },
+      data: { code: OTHER_DEPT, name: "Phòng thử tài liệu", legalEntityId: entity },
+    });
+    // The reader gets a department of their own, so "and nobody else" is a
+    // claim about one person rather than about whoever a page happened to hold.
+    const own = await db.department.create({
+      data: { code: OWN_DEPT, name: "Phòng của người đọc", legalEntityId: entity },
     });
 
     const person = await db.employee.create({
       data: {
         code: READER,
         fullName: "Thử tài liệu",
-        departmentId: template.departmentId,
+        departmentId: own.id,
         legalEntityId: template.legalEntityId,
       },
     });
@@ -155,7 +158,7 @@ describe("documents (e2e)", () => {
 
     for (const [code, title, departmentId] of [
       [GENERAL, "Nội quy chung", null],
-      [TARGETED, "Quy định phòng", template.departmentId],
+      [TARGETED, "Quy định phòng", own.id],
     ] as const) {
       const res = await request(http)
         .post("/documents")
@@ -206,8 +209,10 @@ describe("documents (e2e)", () => {
       .get(`/documents/${targetedId}/readers`)
       .set("Authorization", `Bearer ${adminToken}`);
     assert.equal(reach.status, 200);
-    const ids = (reach.body as { employeeId: number }[]).map((one) => one.employeeId);
-    assert.ok(ids.includes(readerId), "the reader is inside the target department");
+    const ids = (reach.body as { rows: { employeeId: number }[] }).rows.map(
+      (one) => one.employeeId,
+    );
+    assert.deepEqual(ids, [readerId], "the targeted document reached somebody else too");
     assert.ok(!ids.includes(outsiderId), "somebody else's department was reached");
   });
 

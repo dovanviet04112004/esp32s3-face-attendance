@@ -52,11 +52,14 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
     queryFn: async () => (await api.get<FileType[]>("/personnel-file-types")).data,
   });
 
+  // Asking for one person rather than reading the whole company and picking
+  // them out, which a paged answer cannot be searched for anyway.
   const gaps = useQuery({
-    queryKey: ["personnel-files", "gaps"],
-    queryFn: async () => (await api.get<Gap[]>("/personnel-files/gaps")).data,
+    queryKey: ["personnel-files", "gaps", employeeId],
+    queryFn: async () =>
+      (await api.get<{ rows: Gap[] }>(`/personnel-files/gaps?employeeId=${employeeId}`)).data.rows,
   });
-  const mine = gaps.data?.find((one) => one.employeeId === employeeId);
+  const mine = gaps.data?.[0];
 
   const receive = useMutation({
     mutationFn: () =>

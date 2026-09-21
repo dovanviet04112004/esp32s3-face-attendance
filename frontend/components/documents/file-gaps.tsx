@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
+import { Button } from "@/components/ui/button";
 import { Empty, Failed } from "@/components/ui/empty";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
@@ -11,6 +12,12 @@ interface Named {
   typeId: string;
   code: string;
   name: string;
+}
+
+interface GapPage {
+  rows: Gap[];
+  total: number;
+  next: string | null;
 }
 
 interface Gap {
@@ -25,10 +32,18 @@ interface Gap {
 export function FileGaps() {
   const t = useTranslations("documents");
 
-  const gaps = useQuery({
+  const common = useTranslations("common");
+  const gaps = useInfiniteQuery({
     queryKey: ["personnel-files", "gaps"],
-    queryFn: async () => (await api.get<Gap[]>("/personnel-files/gaps")).data,
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const after = pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : "";
+      return (await api.get<GapPage>(`/personnel-files/gaps${after}`)).data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
   });
+
+  const rows = gaps.data?.pages.flatMap((one) => one.rows) ?? [];
 
   if (gaps.isError) {
     return <Failed onRetry={() => gaps.refetch()} />;
@@ -36,13 +51,13 @@ export function FileGaps() {
   if (gaps.isPending) {
     return <SkeletonRows rows={3} columns={3} />;
   }
-  if (gaps.data.length === 0) {
+  if (rows.length === 0) {
     return <Empty title={t("noGaps")} hint={t("noGapsHint")} />;
   }
 
   return (
     <ul className="flex flex-col gap-2">
-      {gaps.data.map((row) => (
+      {rows.map((row) => (
         <li
           key={row.employeeId}
           className="rounded-xl border border-(--color-line) bg-(--color-surface) p-3"
@@ -64,6 +79,19 @@ export function FileGaps() {
           ) : null}
         </li>
       ))}
+      {gaps.hasNextPage ? (
+        <li className="flex justify-center">
+          <Button
+            type="button"
+            tone="quiet"
+            size="sm"
+            disabled={gaps.isFetchingNextPage}
+            onClick={() => void gaps.fetchNextPage()}
+          >
+            {gaps.isFetchingNextPage ? common("loading") : common("loadMore")}
+          </Button>
+        </li>
+      ) : null}
     </ul>
   );
 }
