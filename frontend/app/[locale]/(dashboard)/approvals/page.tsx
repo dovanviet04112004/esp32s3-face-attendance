@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
 import { Failed } from "@/components/ui/empty";
@@ -17,7 +17,7 @@ import {
 } from "@/components/nav/waiting-count";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { money } from "@/lib/format";
+import { dayOnly, money } from "@/lib/format";
 
 const RELATIONS = ["CHILD", "SPOUSE", "PARENT", "SIBLING", "OTHER"] as const;
 
@@ -75,6 +75,7 @@ function Queue({ title, count, children }: { title: string; count: number; child
 
 export default function ApprovalsPage() {
   const t = useTranslations("requests");
+  const format = useFormatter();
   const me = useTranslations("me");
   const d = useTranslations("disputes");
   const c = useTranslations("certificates");
@@ -362,7 +363,9 @@ export default function ApprovalsPage() {
                 {one.employee.fullName} · {one.fullName}
               </span>
               <span className="text-(--color-muted)">{me(`relation${one.relation}`)}</span>
-              <span className="tabular-nums text-(--color-muted)">{one.fromMonth.slice(0, 10)}</span>
+              <span className="tabular-nums text-(--color-muted)">
+                {format.dateTime(dayOnly(one.fromMonth), "day")}
+              </span>
               <Button
                 type="button"
                 size="sm"

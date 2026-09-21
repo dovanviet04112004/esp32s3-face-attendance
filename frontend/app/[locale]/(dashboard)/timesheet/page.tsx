@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
@@ -13,7 +13,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { hours, minutes as asMinutes } from "@/lib/format";
+import { dayOnly, hours, minutes as asMinutes } from "@/lib/format";
 
 type DayState = "WORKED" | "LEAVE" | "HOLIDAY" | "WEEKEND" | "ABSENT";
 
@@ -69,6 +69,7 @@ function today(): string {
 
 export default function TimesheetPage() {
   const t = useTranslations("timesheet");
+  const format = useFormatter();
   const common = useTranslations("common");
   const locale = useLocale();
   const role = useSession((s) => s.role);
@@ -312,7 +313,7 @@ export default function TimesheetPage() {
               key={day.id}
               className="flex flex-wrap items-center justify-between gap-2 border-b border-(--color-line) py-2 text-sm last:border-0"
             >
-              <span className="tabular-nums">{day.date.slice(0, 10)}</span>
+              <span className="tabular-nums">{format.dateTime(dayOnly(day.date), "day")}</span>
               <span className={cn(day.state === "ABSENT" && "text-(--color-warn)")}>
                 {t(STATE_KEY[day.state])}
               </span>

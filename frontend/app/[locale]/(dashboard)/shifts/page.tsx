@@ -1,13 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
+import { dayOnly } from "@/lib/format";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -42,6 +43,7 @@ function today(): string {
 
 export default function ShiftsPage() {
   const t = useTranslations("shifts");
+  const format = useFormatter();
   const common = useTranslations("common");
   const cache = useQueryClient();
   const role = useSession((s) => s.role);
@@ -384,7 +386,8 @@ export default function ShiftsPage() {
                 className="flex items-center gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
               >
                 <span className="tabular-nums">
-                  {one.validFrom.slice(0, 10)} → {one.validTo ? one.validTo.slice(0, 10) : "—"}
+                  {format.dateTime(dayOnly(one.validFrom), "day")} →{" "}
+                  {one.validTo ? format.dateTime(dayOnly(one.validTo), "day") : common("empty")}
                 </span>
                 <span className="ms-auto font-mono text-xs text-(--color-muted)">
                   #{one.employeeId}

@@ -1,12 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { dayOnly } from "@/lib/format";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 
@@ -36,6 +37,7 @@ function today(): string {
 
 export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: boolean }) {
   const t = useTranslations("documents");
+  const format = useFormatter();
   const common = useTranslations("common");
   const cache = useQueryClient();
   const faultOf = useFault();
@@ -102,7 +104,7 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
                 <span className="font-mono text-xs text-(--color-muted)">{one.code}</span>
                 <span className="min-w-0 flex-1">{one.name}</span>
                 <span className="text-(--color-warn)">
-                  {t("expiredOn")} {one.expiresAt.slice(0, 10)}
+                  {t("expiredOn")} {format.dateTime(dayOnly(one.expiresAt), "day")}
                 </span>
               </li>
             ))}

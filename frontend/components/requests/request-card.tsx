@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
-import { days, minutes } from "@/lib/format";
+import { dayOnly, days, minutes } from "@/lib/format";
 
 export type RequestKind =
   | "LEAVE"
@@ -76,8 +76,8 @@ export function RequestCard({ row, onDecide, onCancel, busy }: Props) {
 
   const span =
     row.fromDate === row.toDate
-      ? format.dateTime(new Date(row.fromDate), "day")
-      : `${format.dateTime(new Date(row.fromDate), "day")} → ${format.dateTime(new Date(row.toDate), "day")}`;
+      ? format.dateTime(dayOnly(row.fromDate), "day")
+      : `${format.dateTime(dayOnly(row.fromDate), "day")} → ${format.dateTime(dayOnly(row.toDate), "day")}`;
 
   return (
     <article className="rounded-xl border border-(--color-line) bg-(--color-surface) p-4">

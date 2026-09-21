@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
+import { dayOnly } from "@/lib/format";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
@@ -67,6 +68,7 @@ function parseItems(text: string): { title: string; owner: string; dueDays: numb
 
 export default function OnboardingPage() {
   const t = useTranslations("onboarding");
+  const format = useFormatter();
   const common = useTranslations("common");
   const cache = useQueryClient();
   const role = useSession((s) => s.role);
@@ -262,7 +264,7 @@ export default function OnboardingPage() {
                     : "text-(--color-muted)",
                 )}
               >
-                {one.dueOn.slice(0, 10)}
+                {format.dateTime(dayOnly(one.dueOn), "day")}
               </span>
               {mayFinish ? (
                 <Button

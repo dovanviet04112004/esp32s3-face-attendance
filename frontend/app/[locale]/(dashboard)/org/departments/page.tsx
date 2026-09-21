@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { dayOnly } from "@/lib/format";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -40,6 +41,7 @@ function thisYear(): number {
 
 export default function DepartmentsPage() {
   const t = useTranslations("org");
+  const format = useFormatter();
   const common = useTranslations("common");
   const role = useSession((s) => s.role);
   const mayWrite = role === "ADMIN" || role === "HR";
@@ -233,7 +235,7 @@ export default function DepartmentsPage() {
               key={row.id}
               className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-(--color-line) bg-(--color-surface) p-3 text-sm"
             >
-              <span className="tabular-nums">{row.date.slice(0, 10)}</span>
+              <span className="tabular-nums">{format.dateTime(dayOnly(row.date), "day")}</span>
               <span className="min-w-0 flex-1 truncate">{row.name}</span>
               <span className="text-xs text-(--color-muted)">
                 {row.paid ? t("holidayPaid") : common("no")}

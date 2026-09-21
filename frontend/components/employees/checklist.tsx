@@ -2,12 +2,13 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { dayOnly } from "@/lib/format";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
@@ -40,6 +41,7 @@ function today(): string {
 
 export function Checklist({ employeeId, mayWrite }: { employeeId: number; mayWrite: boolean }) {
   const t = useTranslations("onboarding");
+  const format = useFormatter();
   const common = useTranslations("common");
   const cache = useQueryClient();
   const faultOf = useFault();
@@ -152,7 +154,7 @@ export function Checklist({ employeeId, mayWrite }: { employeeId: number; mayWri
                       : "text-(--color-muted)",
                   )}
                 >
-                  {one.dueOn.slice(0, 10)}
+                  {format.dateTime(dayOnly(one.dueOn), "day")}
                 </span>
                 {one.doneAt ? (
                   <span className="text-xs text-(--color-ok)">{t("done")}</span>

@@ -1,12 +1,13 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
+import { dayOnly } from "@/lib/format";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 
@@ -25,6 +26,7 @@ function today(): string {
 
 export function Offboard({ employeeId }: { employeeId: number }) {
   const t = useTranslations("employees");
+  const format = useFormatter();
   const common = useTranslations("common");
   const cache = useQueryClient();
   const faultOf = useFault();
@@ -69,7 +71,9 @@ export function Offboard({ employeeId }: { employeeId: number }) {
 
       {left ? (
         <div className="mt-4 rounded-lg border border-(--color-line) p-3 text-sm">
-          <p className="text-(--color-ok)">{t("offboardDone", { day: left.leaveDate.slice(0, 10) })}</p>
+          <p className="text-(--color-ok)">
+            {t("offboardDone", { day: format.dateTime(dayOnly(left.leaveDate), "day") })}
+          </p>
           {left.assetsOutstanding.length > 0 ? (
             <p className="mt-2 text-(--color-warn)">
               {t("offboardAssets", { count: left.assetsOutstanding.length })}:{" "}

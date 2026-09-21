@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ interface Transfer {
 
 export function Assets({ employeeId, mayWrite }: { employeeId: number; mayWrite: boolean }) {
   const t = useTranslations("assets");
+  const format = useFormatter();
   const common = useTranslations("common");
   const cache = useQueryClient();
   const faultOf = useFault();
@@ -274,7 +275,7 @@ export function Assets({ employeeId, mayWrite }: { employeeId: number; mayWrite:
                 key={one.id}
                 className="flex flex-wrap gap-x-3 gap-y-1 border-b border-(--color-line) py-2 text-sm last:border-0"
               >
-                <span className="tabular-nums">{one.at.slice(0, 10)}</span>
+                <span className="tabular-nums">{format.dateTime(new Date(one.at), "day")}</span>
                 <span className={one.issued ? "text-(--color-warn)" : "text-(--color-ok)"}>
                   {one.issued ? t("wentOut") : t("cameBack")}
                 </span>

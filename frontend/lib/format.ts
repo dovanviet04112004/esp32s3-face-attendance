@@ -10,6 +10,11 @@ function unit(locale: string, name: string, display: "short" | "long"): Intl.Num
   });
 }
 
+export function dayOnly(iso: string): Date {
+  const [year, month, day] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 /** Dong, whole units only, since the currency has no minor unit in practice. */
 export function money(amount: number, locale: string): string {
   return new Intl.NumberFormat(locale, {

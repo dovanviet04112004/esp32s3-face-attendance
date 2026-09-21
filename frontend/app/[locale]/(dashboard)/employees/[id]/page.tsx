@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useParams, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
@@ -108,6 +108,7 @@ interface Consent {
 
 export default function EmployeePage() {
   const t = useTranslations("employees");
+  const format = useFormatter();
   const a = useTranslations("attendance");
   const common = useTranslations("common");
   const router = useRouter();
@@ -320,7 +321,7 @@ export default function EmployeePage() {
             ) : agreed ? (
               <div className="mt-4">
                 <p className="text-sm text-(--color-ok)">
-                  {t("consentOn", { day: agreed.grantedAt.slice(0, 10) })}
+                  {t("consentOn", { day: format.dateTime(new Date(agreed.grantedAt), "day") })}
                 </p>
                 <p className="mt-1 text-xs text-(--color-muted)">
                   {t("consentNotice")} {agreed.noticeVersion} · {agreed.method}
@@ -410,7 +411,7 @@ export default function EmployeePage() {
             <ul className="divide-y divide-(--color-line)">
               {punches.data.map((one) => (
                 <li key={one.id} className="flex flex-wrap gap-3 px-4 py-2 text-sm">
-                  <span className="tabular-nums">{one.ts.replace("T", " ").slice(0, 19)}</span>
+                  <span className="tabular-nums">{format.dateTime(new Date(one.ts), "medium")}</span>
                   <span className="text-(--color-muted)">{one.direction}</span>
                   <span className="ml-auto text-xs text-(--color-muted)">{one.deviceId}</span>
                 </li>

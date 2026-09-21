@@ -1,12 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 
 import { Empty, Failed } from "@/components/ui/empty";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { money, percent } from "@/lib/format";
+import { dayOnly, money, percent } from "@/lib/format";
 
 interface Bracket {
   id: string;
@@ -51,6 +51,7 @@ function Row({ label, value }: { label: string; value: string }) {
 
 export default function PolicyPage() {
   const t = useTranslations("policy");
+  const format = useFormatter();
   const locale = useLocale();
 
   const policies = useQuery({
@@ -78,7 +79,7 @@ export default function PolicyPage() {
             className="mb-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4"
           >
             <h2 className="text-sm font-semibold">
-              {t("effectiveFrom")} {policy.effectiveFrom.slice(0, 10)}
+              {t("effectiveFrom")} {format.dateTime(dayOnly(policy.effectiveFrom), "day")}
             </h2>
             {policy.note ? (
               <p className="mt-1 text-sm text-(--color-muted)">{policy.note}</p>

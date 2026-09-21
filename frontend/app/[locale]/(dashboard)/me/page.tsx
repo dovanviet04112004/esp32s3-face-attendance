@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { Failed } from "@/components/ui/empty";
@@ -13,7 +13,7 @@ import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { days, minutes } from "@/lib/format";
+import { dayOnly, days, minutes } from "@/lib/format";
 
 interface Balance {
   leaveTypeId: string;
@@ -45,6 +45,7 @@ function today(): string {
 
 export default function MyPage() {
   const t = useTranslations("me");
+  const format = useFormatter();
   const r = useTranslations("requests");
   const common = useTranslations("common");
   const locale = useLocale();
@@ -209,7 +210,7 @@ export default function MyPage() {
                 <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
                 <span className="text-(--color-muted)">{t(`relation${one.relation}`)}</span>
                 <span className="tabular-nums text-(--color-muted)">
-                  {one.fromMonth.slice(0, 10)}
+                  {format.dateTime(dayOnly(one.fromMonth), "day")}
                 </span>
                 <span className="text-xs">{t(`dependentState${one.state}`)}</span>
               </li>
