@@ -1083,7 +1083,8 @@
     "subjectpolicy": "Policy",
     "subjectdocument": "Document",
     "subjectdevice": "Device",
-    "subjectroute": "Api call"
+    "subjectroute": "Api call",
+    "foundAtLeast": "At least {count} entries"
   },
   "users": {
     "title": "Accounts",

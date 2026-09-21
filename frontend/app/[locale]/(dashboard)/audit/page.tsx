@@ -1,10 +1,11 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
+import { Button } from "@/components/ui/button";
 import { FilterBar } from "@/components/ui/filter-bar";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -37,6 +38,16 @@ interface Entry {
 
 const PAGE = 50;
 
+// The API refuses an offset past this, so the last page it can reach is here.
+const MAX_OFFSET = 10_000;
+
+interface EntryPage {
+  rows: Entry[];
+  total: number;
+  totalIsExact?: boolean;
+  next?: string | null;
+}
+
 export default function AuditPage() {
   const t = useTranslations("audit");
   const common = useTranslations("common");
@@ -60,11 +71,22 @@ export default function AuditPage() {
     );
   }
 
-  const rows = useQuery({
+  const entries = useInfiniteQuery({
     queryKey: ["audit", where],
-    queryFn: async () =>
-      (await api.get<{ rows: Entry[]; total: number }>(`/audit?take=${PAGE}&${where}`)).data,
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) =>
+      (await api.get<EntryPage>(`/audit?take=${PAGE}&skip=${pageParam}&${where}`)).data,
+    // The log counts by offset, not by cursor, and stops at the same ceiling.
+    getNextPageParam: (last, all) => {
+      const seen = all.reduce((sum, one) => sum + one.rows.length, 0);
+      return last.rows.length === PAGE && seen < Math.min(last.total, MAX_OFFSET)
+        ? seen
+        : undefined;
+    },
   });
+
+  const rows = entries.data?.pages.flatMap((one) => one.rows);
+  const counted = entries.data?.pages[0];
 
   const columns: Column<Entry>[] = [
     {
@@ -155,19 +177,40 @@ export default function AuditPage() {
       </FilterBar>
 
       <p className="mb-2 text-sm text-(--color-muted)">
-        {rows.data ? t("found", { count: rows.data.total }) : " "}
+        {counted
+          ? t(counted.totalIsExact === false ? "foundAtLeast" : "found", {
+              count: counted.total,
+            })
+          : " "}
       </p>
 
       <DataTable
         id="audit"
         columns={columns}
-        rows={rows.data?.rows}
+        rows={rows}
         keyOf={(row) => row.id}
-        pending={rows.isPending}
-        failed={rows.isError}
-        onRetry={() => rows.refetch()}
+        pending={entries.isPending}
+        failed={entries.isError}
+        onRetry={() => entries.refetch()}
         empty={t("empty")}
         emptyHint={t("emptyHint")}
+        more={
+          entries.hasNextPage ? (
+            <div className="mt-3 flex flex-col items-center gap-1">
+              <Button
+                type="button"
+                tone="quiet"
+                disabled={entries.isFetchingNextPage}
+                onClick={() => void entries.fetchNextPage()}
+              >
+                {entries.isFetchingNextPage ? common("loading") : common("loadMore")}
+              </Button>
+              <p className="text-xs text-(--color-muted) tabular-nums">
+                {common("showingOf", { shown: rows?.length ?? 0, total: counted?.total ?? 0 })}
+              </p>
+            </div>
+          ) : null
+        }
       />
     </section>
   );

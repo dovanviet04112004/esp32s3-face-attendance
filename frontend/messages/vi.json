@@ -1083,7 +1083,8 @@
     "subjectpolicy": "Chính sách",
     "subjectdocument": "Tài liệu",
     "subjectdevice": "Thiết bị",
-    "subjectroute": "Lượt gọi API"
+    "subjectroute": "Lượt gọi API",
+    "foundAtLeast": "Ít nhất {count} bản ghi"
   },
   "users": {
     "title": "Tài khoản",
