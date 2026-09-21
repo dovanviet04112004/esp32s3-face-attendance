@@ -3,6 +3,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { isProduction } from "@/lib/env";
+import { applyTheme, readTheme } from "@/lib/theme";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 const STALE_MS = 30_000;
@@ -17,9 +19,7 @@ function build(): QueryClient {
 
 let held: QueryClient | undefined;
 
-/** One per browser session: this provider sits under [locale], so switching
- *  language remounts it and a client built in state loses every cached answer.
- */
+// One per browser session: under [locale], a client in state loses its cache.
 function clientForSession(): QueryClient {
   if (typeof window === "undefined") {
     return build();
@@ -30,6 +30,10 @@ function clientForSession(): QueryClient {
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(clientForSession);
+  const here = usePathname();
+
+  // A component-rendered script never runs on a client render (KEHOACH 9.12).
+  useEffect(() => applyTheme(readTheme()), [here]);
   useEffect(() => {
     if (!("serviceWorker" in navigator)) {
       return;
