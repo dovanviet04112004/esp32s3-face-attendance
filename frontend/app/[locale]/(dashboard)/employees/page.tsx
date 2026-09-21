@@ -75,6 +75,17 @@ export default function EmployeesPage() {
     },
   });
 
+  const template = useMutation({
+    mutationFn: async () => {
+      const file = (await api.get<string>("/employees/import/template")).data;
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([file], { type: "text/csv;charset=utf-8" }));
+      link.download = "employees-template.csv";
+      link.click();
+      URL.revokeObjectURL(link.href);
+    },
+  });
+
   function takeFile(event: ChangeEvent<HTMLInputElement>): void {
     const file = event.target.files?.[0];
     if (!file) {
@@ -155,6 +166,14 @@ export default function EmployeesPage() {
             </Button>
             <Button size="sm" tone="quiet" onClick={() => picker.current?.click()}>
               {t("import")}
+            </Button>
+            <Button
+              size="sm"
+              tone="quiet"
+              disabled={template.isPending}
+              onClick={() => template.mutate()}
+            >
+              {t("importTemplate")}
             </Button>
             <input
               ref={picker}

@@ -204,7 +204,8 @@
     "offboardDone": "Recorded as leaving on {day}",
     "offboardAssets": "Still holding {count} assets",
     "offboardRequests": "{count} requests still undecided",
-    "offboardAdvances": "{count} advances still outstanding"
+    "offboardAdvances": "{count} advances still outstanding",
+    "importTemplate": "CSV template"
   },
   "attendance": {
     "title": "Attendance",
@@ -266,7 +267,18 @@
     "resync": "Push the roster",
     "resynced": "Pushed, roster version {version}.",
     "revoke": "Revoke access",
-    "revokeWarn": "The kiosk stops recording attendance and has to register again from scratch. Templates already on it stay there until it takes an erase."
+    "revokeWarn": "The kiosk stops recording attendance and has to register again from scratch. Templates already on it stay there until it takes an erase.",
+    "releasesTitle": "Releases",
+    "releasesLead": "Register one before any kiosk can be offered it.",
+    "releasesEmpty": "None registered, so the OTA card on a device page has nothing to offer.",
+    "releaseTarget": "Target",
+    "releaseVersion": "Version",
+    "releaseUrl": "Download url",
+    "releaseSha": "sha256",
+    "releaseShaHint": "64 lowercase hex digits. The kiosk checks it before writing.",
+    "releaseBytes": "Size (bytes)",
+    "releaseAdd": "Register",
+    "releaseSize": "{kb} kB"
   },
   "shifts": {
     "title": "Shifts",
@@ -917,7 +929,15 @@
     "fileNote": "Note",
     "requiredMark": "required",
     "received": "Recorded.",
-    "expiryHint": "Expiry follows from the paper type, not from a field."
+    "expiryHint": "Expiry follows from the paper type, not from a field.",
+    "typesTitle": "Required papers",
+    "typesLead": "Adding a type changes who counts as short of one, with no row to edit.",
+    "typesEmpty": "No types declared, so nobody counts as missing anything.",
+    "typeName": "Type name",
+    "addType": "Add type",
+    "validMonthsField": "Valid (months)",
+    "validMonths": "valid {count} months",
+    "noExpiry": "no expiry"
   },
   "assets": {
     "title": "Assets",
@@ -971,7 +991,18 @@
     "lead": "Unfinished work in the branch you cover, soonest due first.",
     "lateCount": "{count} past their due date",
     "allDone": "Nothing left",
-    "allDoneHint": "Every open list is finished."
+    "allDoneHint": "Every open list is finished.",
+    "showTemplates": "Templates",
+    "hideTemplates": "Hide templates",
+    "templatesTitle": "Checklist templates",
+    "templatesLead": "The most specific template wins. With none matching, starting a list fails rather than going quiet.",
+    "templatesEmpty": "No templates yet, so no list can be opened for anybody.",
+    "templateName": "Template name",
+    "templateAdd": "Add template",
+    "templateItems": "Tasks",
+    "templateItemsHint": "Issue laptop and accounts | HR | 0\nSign the contract | HR | 1\nIntroduce to the team | MANAGER | 2",
+    "templateItemsRule": "One per line: task | HR or MANAGER or SELF | days from the anchor. A negative number falls before it.",
+    "itemCount": "{count} tasks"
   },
   "audit": {
     "title": "Audit trail",

@@ -19,6 +19,14 @@ interface Version {
   summary: string | null;
 }
 
+interface FileType {
+  id: string;
+  code: string;
+  name: string;
+  required: boolean;
+  validMonths: number | null;
+}
+
 interface Doc {
   id: string;
   code: string;
@@ -45,6 +53,37 @@ export default function DocumentsPage() {
   const [body, setBody] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<string | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
+  const [typeCode, setTypeCode] = useState("");
+  const [typeName, setTypeName] = useState("");
+  const [typeMonths, setTypeMonths] = useState("");
+
+  const types = useQuery({
+    queryKey: ["personnel-file-types"],
+    queryFn: async () => (await api.get<FileType[]>("/personnel-file-types")).data,
+  });
+
+  const addFileType = useMutation({
+    mutationFn: () =>
+      api.post("/personnel-file-types", {
+        code: typeCode,
+        name: typeName,
+        required: true,
+        validMonths: typeMonths ? Number(typeMonths) : undefined,
+      }),
+    onSuccess: () => {
+      setTypeCode("");
+      setTypeName("");
+      setTypeMonths("");
+      void cache.invalidateQueries({ queryKey: ["personnel-file-types"] });
+    },
+    onError: (fell: unknown) => setRefused(faultOf(fell)),
+  });
+
+  function addType(event: FormEvent): void {
+    event.preventDefault();
+    setRefused(null);
+    addFileType.mutate();
+  }
 
   const docs = useQuery({
     queryKey: ["documents"],
@@ -197,6 +236,71 @@ export default function DocumentsPage() {
       <h2 className="mt-8 text-sm font-medium">{t("gapsTitle")}</h2>
       <p className="mt-1 mb-2 text-sm text-(--color-muted)">{t("gapsLead")}</p>
       <FileGaps />
+
+      <h2 className="mt-8 text-sm font-medium">{t("typesTitle")}</h2>
+      <p className="mt-1 text-sm text-(--color-muted)">{t("typesLead")}</p>
+      <ul className="mt-2 divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
+        {(types.data ?? []).map((one) => (
+          <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
+            <span className="font-mono text-xs text-(--color-muted)">{one.code}</span>
+            <span className="min-w-0 flex-1">{one.name}</span>
+            {one.required ? (
+              <span className="text-xs text-(--color-warn)">{t("requiredMark")}</span>
+            ) : null}
+            <span className="text-xs text-(--color-muted)">
+              {one.validMonths ? t("validMonths", { count: one.validMonths }) : t("noExpiry")}
+            </span>
+          </li>
+        ))}
+        {types.isSuccess && (types.data ?? []).length === 0 ? (
+          <li className="px-4 py-6 text-sm text-(--color-muted)">{t("typesEmpty")}</li>
+        ) : null}
+      </ul>
+
+      <form onSubmit={addType} className="mt-3 flex flex-wrap items-end gap-2">
+        <div className="w-32">
+          <label className="block text-xs text-(--color-muted)" htmlFor="typeCode">
+            {t("code")}
+          </label>
+          <Input
+            id="typeCode"
+            required
+            maxLength={64}
+            value={typeCode}
+            onChange={(event) => setTypeCode(event.target.value.toUpperCase())}
+            className="mt-1"
+          />
+        </div>
+        <div className="min-w-48 flex-1">
+          <label className="block text-xs text-(--color-muted)" htmlFor="typeName">
+            {t("typeName")}
+          </label>
+          <Input
+            id="typeName"
+            required
+            maxLength={200}
+            value={typeName}
+            onChange={(event) => setTypeName(event.target.value)}
+            className="mt-1"
+          />
+        </div>
+        <div className="w-36">
+          <label className="block text-xs text-(--color-muted)" htmlFor="typeMonths">
+            {t("validMonthsField")}
+          </label>
+          <Input
+            id="typeMonths"
+            type="number"
+            min={1}
+            value={typeMonths}
+            onChange={(event) => setTypeMonths(event.target.value)}
+            className="mt-1"
+          />
+        </div>
+        <Button type="submit" disabled={addFileType.isPending}>
+          {addFileType.isPending ? common("saving") : t("addType")}
+        </Button>
+      </form>
     </section>
   );
 }

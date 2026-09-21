@@ -204,7 +204,8 @@
     "offboardDone": "Đã ghi nhận nghỉ việc ngày {day}",
     "offboardAssets": "Còn giữ {count} tài sản",
     "offboardRequests": "Còn {count} đơn chưa quyết",
-    "offboardAdvances": "Còn {count} khoản tạm ứng chưa thu"
+    "offboardAdvances": "Còn {count} khoản tạm ứng chưa thu",
+    "importTemplate": "Tải mẫu CSV"
   },
   "attendance": {
     "title": "Chấm công",
@@ -266,7 +267,18 @@
     "resync": "Đẩy lại danh sách",
     "resynced": "Đã đẩy, phiên bản danh sách {version}.",
     "revoke": "Thu hồi quyền",
-    "revokeWarn": "Máy sẽ không chấm công được nữa và phải đăng ký lại từ đầu. Mẫu khuôn mặt đã nạp vẫn nằm trên máy cho tới khi nó nhận lệnh xoá."
+    "revokeWarn": "Máy sẽ không chấm công được nữa và phải đăng ký lại từ đầu. Mẫu khuôn mặt đã nạp vẫn nằm trên máy cho tới khi nó nhận lệnh xoá.",
+    "releasesTitle": "Bản phát hành",
+    "releasesLead": "Khai một bản rồi mới mời được máy nào cập nhật lên nó.",
+    "releasesEmpty": "Chưa có bản nào, nên thẻ OTA ở trang máy không mời được gì.",
+    "releaseTarget": "Loại",
+    "releaseVersion": "Phiên bản",
+    "releaseUrl": "Địa chỉ tải",
+    "releaseSha": "sha256",
+    "releaseShaHint": "64 ký tự hex thường. Máy tự kiểm trước khi ghi.",
+    "releaseBytes": "Kích thước (byte)",
+    "releaseAdd": "Khai bản",
+    "releaseSize": "{kb} kB"
   },
   "shifts": {
     "title": "Ca làm",
@@ -917,7 +929,15 @@
     "fileNote": "Ghi chú",
     "requiredMark": "bắt buộc",
     "received": "Đã ghi nhận.",
-    "expiryHint": "Hạn suy từ loại giấy, không phải nhập tay."
+    "expiryHint": "Hạn suy từ loại giấy, không phải nhập tay.",
+    "typesTitle": "Loại giấy tờ bắt buộc",
+    "typesLead": "Thêm một loại là câu hỏi \"ai còn thiếu\" đổi ngay, không phải sửa dòng nào.",
+    "typesEmpty": "Chưa khai loại giấy nào, nên chưa ai bị coi là thiếu.",
+    "typeName": "Tên loại",
+    "addType": "Thêm loại",
+    "validMonthsField": "Hạn (tháng)",
+    "validMonths": "hạn {count} tháng",
+    "noExpiry": "không hạn"
   },
   "assets": {
     "title": "Tài sản",
@@ -971,7 +991,18 @@
     "lead": "Việc chưa xong trong nhánh bạn quản lý, hạn gần nhất lên trước.",
     "lateCount": "{count} việc đã quá hạn",
     "allDone": "Không còn việc nào",
-    "allDoneHint": "Mọi danh sách đang mở đều đã làm xong."
+    "allDoneHint": "Mọi danh sách đang mở đều đã làm xong.",
+    "showTemplates": "Mẫu danh sách",
+    "hideTemplates": "Ẩn mẫu",
+    "templatesTitle": "Mẫu danh sách việc",
+    "templatesLead": "Mẫu cụ thể nhất thắng. Không mẫu nào khớp thì mở danh sách sẽ báo lỗi, không im lặng.",
+    "templatesEmpty": "Chưa có mẫu nào, nên chưa mở được danh sách cho ai.",
+    "templateName": "Tên mẫu",
+    "templateAdd": "Thêm mẫu",
+    "templateItems": "Các việc",
+    "templateItemsHint": "Cấp máy tính và tài khoản | HR | 0\nKý hợp đồng lao động | HR | 1\nGiới thiệu với tổ nhóm | MANAGER | 2",
+    "templateItemsRule": "Mỗi dòng: việc | HR hoặc MANAGER hoặc SELF | số ngày lệch so với mốc. Số âm nghĩa là trước mốc.",
+    "itemCount": "{count} việc"
   },
   "audit": {
     "title": "Nhật ký kiểm toán",

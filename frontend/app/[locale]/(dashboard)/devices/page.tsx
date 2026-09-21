@@ -2,12 +2,27 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
+import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { useFault } from "@/lib/fault";
+
+const TARGETS = ["FIRMWARE", "MODELS", "ASSETS"] as const;
+
+type Target = (typeof TARGETS)[number];
+
+interface Release {
+  releaseId: string;
+  target: Target;
+  version: string;
+  sizeBytes: number;
+}
 
 interface Device {
   id: string;
@@ -24,6 +39,13 @@ export default function DevicesPage() {
   const common = useTranslations("common");
   const role = useSession((s) => s.role);
   const cache = useQueryClient();
+  const faultOf = useFault();
+  const [target, setTarget] = useState<Target>("FIRMWARE");
+  const [version, setVersion] = useState("");
+  const [url, setUrl] = useState("");
+  const [sha256, setSha] = useState("");
+  const [sizeBytes, setSize] = useState("");
+  const [fault, setFault] = useState<string | null>(null);
   const devices = useQuery({
     queryKey: ["devices"],
     queryFn: async () => (await api.get<{ rows: Device[]; total: number }>("/devices")).data,
@@ -32,6 +54,36 @@ export default function DevicesPage() {
     mutationFn: (id: string) => api.post(`/devices/${id}/approve`, {}),
     onSuccess: () => cache.invalidateQueries({ queryKey: ["devices"] }),
   });
+
+  const releases = useQuery({
+    queryKey: ["releases"],
+    enabled: role === "ADMIN",
+    queryFn: async () => (await api.get<Release[]>("/releases")).data,
+  });
+
+  const register = useMutation({
+    mutationFn: () =>
+      api.post("/releases", {
+        target,
+        version,
+        url,
+        sha256,
+        sizeBytes: Number(sizeBytes),
+      }),
+    onSuccess: () => {
+      setUrl("");
+      setSha("");
+      setSize("");
+      void cache.invalidateQueries({ queryKey: ["releases"] });
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  function publish(event: FormEvent): void {
+    event.preventDefault();
+    setFault(null);
+    register.mutate();
+  }
 
   const columns: Column<Device>[] = [
     {
@@ -102,6 +154,116 @@ export default function DevicesPage() {
         failed={devices.isError}
         onRetry={() => devices.refetch()}
       />
+
+      {role === "ADMIN" ? (
+        <section className="mt-8 max-w-2xl rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+          <h2 className="text-sm font-medium">{t("releasesTitle")}</h2>
+          <p className="mt-1 text-sm text-(--color-muted)">{t("releasesLead")}</p>
+
+          <ul className="mt-3 flex flex-col">
+            {(releases.data ?? []).map((one) => (
+              <li
+                key={one.releaseId}
+                className="flex flex-wrap items-center gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
+              >
+                <span className="font-medium">{one.target}</span>
+                <span className="font-mono text-xs">{one.version}</span>
+                <span className="ms-auto text-xs text-(--color-muted)">
+                  {t("releaseSize", { kb: Math.round(one.sizeBytes / 1024) })}
+                </span>
+              </li>
+            ))}
+            {releases.isSuccess && (releases.data ?? []).length === 0 ? (
+              <li className="py-2 text-sm text-(--color-muted)">{t("releasesEmpty")}</li>
+            ) : null}
+          </ul>
+
+          <form onSubmit={publish} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs text-(--color-muted)" htmlFor="relTarget">
+                {t("releaseTarget")}
+              </label>
+              <Select
+                id="relTarget"
+                value={target}
+                onChange={(event) => setTarget(event.target.value as Target)}
+                className="mt-1"
+              >
+                {TARGETS.map((one) => (
+                  <option key={one} value={one}>
+                    {one}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs text-(--color-muted)" htmlFor="relVersion">
+                {t("releaseVersion")}
+              </label>
+              <Input
+                id="relVersion"
+                required
+                placeholder="0.9.2"
+                value={version}
+                onChange={(event) => setVersion(event.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-(--color-muted)" htmlFor="relUrl">
+                {t("releaseUrl")}
+              </label>
+              <Input
+                id="relUrl"
+                required
+                type="url"
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-(--color-muted)" htmlFor="relSha">
+                {t("releaseSha")}
+              </label>
+              <Input
+                id="relSha"
+                required
+                pattern="[0-9a-f]{64}"
+                value={sha256}
+                onChange={(event) => setSha(event.target.value.toLowerCase())}
+                className="mt-1 font-mono text-xs"
+              />
+              <p className="mt-1 text-xs text-(--color-muted)">{t("releaseShaHint")}</p>
+            </div>
+            <div>
+              <label className="block text-xs text-(--color-muted)" htmlFor="relSize">
+                {t("releaseBytes")}
+              </label>
+              <Input
+                id="relSize"
+                type="number"
+                min={1}
+                required
+                value={sizeBytes}
+                onChange={(event) => setSize(event.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button type="submit" disabled={register.isPending}>
+                {register.isPending ? common("saving") : t("releaseAdd")}
+              </Button>
+            </div>
+          </form>
+
+          {fault ? (
+            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+              {fault}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
     </section>
   );
 }
