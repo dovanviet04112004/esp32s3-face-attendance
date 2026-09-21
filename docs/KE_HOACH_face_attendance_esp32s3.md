@@ -6532,8 +6532,10 @@ vế "biết đơn của mình đang ở đâu", và nó tồn tại để câu 
 hỏi thăm. Gộp hai người vào một loại là bắt một trong hai đọc một câu viết cho người kia.
 
 **Quá hạn cũng phải nhìn thấy được ở chỗ người ta quyết, không chỉ ở chuông.** Thẻ trong hộp
-chờ duyệt mang số ngày đã chờ khi đã qua mốc đầu, đúng luật §9.12 luật 2: trạng thái mang hình
-dạng chứ không chỉ mang màu.
+chờ duyệt mang số ngày đã chờ, và mang nó **từ ngày đầu chứ không từ mốc đầu**: một cái ngưỡng
+ở phía vẽ là bản sao thứ hai của ba con số trên kia, mà §4.9 cấm đúng chuyện đó — bản sao sẽ
+lệch, và lệch ở đây nghĩa là cái thẻ nói một đằng còn cái chuông nói một nẻo. Con số tự nó đủ
+to dần; không cần ai gác cửa cho nó. Nhãn có chữ chứ không chỉ có màu, đúng §9.12 luật 2.
 
 ### 9.18 Mười hai việc HR thật sự cần
 
