@@ -6,14 +6,13 @@ import { useTranslations } from "next-intl";
 import { useState } from "react";
 
 import {
+  EMPTY_DRAFT,
   EmployeeForm,
   type DepartmentChoice,
   type EmployeeDraft,
 } from "@/components/forms/employee-form";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
-
-const BLANK: EmployeeDraft = { code: "", fullName: "", departmentId: "", active: true };
 
 export default function NewEmployeePage() {
   const t = useTranslations("employees");
@@ -27,12 +26,34 @@ export default function NewEmployeePage() {
     queryFn: async () => (await api.get<DepartmentChoice[]>("/departments")).data,
   });
 
+  const jobTitles = useQuery({
+    queryKey: ["job-titles"],
+    queryFn: async () => (await api.get<DepartmentChoice[]>("/job-titles")).data,
+  });
+
+  const entities = useQuery({
+    queryKey: ["legal-entities"],
+    queryFn: async () => (await api.get<DepartmentChoice[]>("/legal-entities")).data,
+  });
+
   const create = useMutation({
     mutationFn: (draft: EmployeeDraft) =>
       api.post("/employees", {
         code: draft.code,
         fullName: draft.fullName,
+        legalEntityId: draft.legalEntityId || undefined,
         departmentId: draft.departmentId || undefined,
+        jobTitleId: draft.jobTitleId || undefined,
+        personalEmail: draft.personalEmail || undefined,
+        phone: draft.phone || undefined,
+        hireDate: draft.hireDate || undefined,
+        dateOfBirth: draft.dateOfBirth || undefined,
+        gender: draft.gender || undefined,
+        nationalId: draft.nationalId || undefined,
+        taxCode: draft.taxCode || undefined,
+        socialInsuranceNo: draft.socialInsuranceNo || undefined,
+        bankAccount: draft.bankAccount || undefined,
+        bankName: draft.bankName || undefined,
       }),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ["employees"] });
@@ -63,9 +84,12 @@ export default function NewEmployeePage() {
       ) : null}
       <div className="mt-6">
         <EmployeeForm
-          start={BLANK}
+          start={EMPTY_DRAFT}
           departments={departments.data ?? []}
+          jobTitles={jobTitles.data ?? []}
+          entities={entities.data ?? []}
           showActive={false}
+          showBank
           busy={create.isPending}
           fault={fault}
           onSubmit={(draft) => {

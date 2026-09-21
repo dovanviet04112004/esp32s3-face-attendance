@@ -13,6 +13,7 @@ import { Files } from "@/components/employees/files";
 import { Offboard } from "@/components/employees/offboard";
 import { Pay } from "@/components/employees/pay";
 import {
+  EMPTY_DRAFT,
   EmployeeForm,
   type DepartmentChoice,
   type EmployeeDraft,
@@ -59,8 +60,22 @@ interface Employee {
   id: number;
   code: string;
   fullName: string;
+  legalEntityId: string | null;
   departmentId: string | null;
+  jobTitleId: string | null;
   active: boolean;
+  personalEmail: string | null;
+  phone: string | null;
+  hireDate: string | null;
+  dateOfBirth: string | null;
+  gender: "MALE" | "FEMALE" | null;
+  nationalId: string | null;
+  taxCode: string | null;
+  socialInsuranceNo: string | null;
+}
+
+function day(value: string | null): string {
+  return value ? value.slice(0, 10) : "";
 }
 
 interface Device {
@@ -129,6 +144,18 @@ export default function EmployeePage() {
     queryFn: async () => (await api.get<DepartmentChoice[]>("/departments")).data,
   });
 
+  const jobTitles = useQuery({
+    queryKey: ["job-titles"],
+    enabled: tab === "info" && writesPeople,
+    queryFn: async () => (await api.get<DepartmentChoice[]>("/job-titles")).data,
+  });
+
+  const entities = useQuery({
+    queryKey: ["legal-entities"],
+    enabled: tab === "info" && writesPeople,
+    queryFn: async () => (await api.get<DepartmentChoice[]>("/legal-entities")).data,
+  });
+
   // The enrolment desk asks which kiosks it may assign to, which is not the
   // fleet: that page belongs to ADMIN alone (KEHOACH 7.5).
   const devices = useQuery({
@@ -155,7 +182,17 @@ export default function EmployeePage() {
       api.patch(`/employees/${id}`, {
         code: draft.code,
         fullName: draft.fullName,
+        legalEntityId: draft.legalEntityId || undefined,
         departmentId: draft.departmentId || undefined,
+        jobTitleId: draft.jobTitleId || undefined,
+        personalEmail: draft.personalEmail || undefined,
+        phone: draft.phone || undefined,
+        hireDate: draft.hireDate || undefined,
+        dateOfBirth: draft.dateOfBirth || undefined,
+        gender: draft.gender || undefined,
+        nationalId: draft.nationalId || undefined,
+        taxCode: draft.taxCode || undefined,
+        socialInsuranceNo: draft.socialInsuranceNo || undefined,
         active: draft.active,
       }),
     onSuccess: () => {
@@ -244,13 +281,27 @@ export default function EmployeePage() {
         <div className="mt-6">
           <EmployeeForm
             start={{
+              ...EMPTY_DRAFT,
               code: employee.data.code,
               fullName: employee.data.fullName,
+              legalEntityId: employee.data.legalEntityId ?? "",
               departmentId: employee.data.departmentId ?? "",
+              jobTitleId: employee.data.jobTitleId ?? "",
               active: employee.data.active,
+              personalEmail: employee.data.personalEmail ?? "",
+              phone: employee.data.phone ?? "",
+              hireDate: day(employee.data.hireDate),
+              dateOfBirth: day(employee.data.dateOfBirth),
+              gender: employee.data.gender ?? "",
+              nationalId: employee.data.nationalId ?? "",
+              taxCode: employee.data.taxCode ?? "",
+              socialInsuranceNo: employee.data.socialInsuranceNo ?? "",
             }}
             departments={departments.data ?? []}
+            jobTitles={jobTitles.data ?? []}
+            entities={entities.data ?? []}
             showActive
+            showBank={false}
             busy={save.isPending}
             fault={fault}
             onSubmit={(draft) => {

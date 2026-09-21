@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from "@nestjs/swagger";
+import { Gender } from "@prisma/client";
 
 import { IMPORT_MAX_BYTES } from "../import.js";
 import { Type } from "class-transformer";
@@ -6,6 +7,7 @@ import {
   IsBoolean,
   IsDateString,
   IsEmail,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -67,6 +69,11 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsDateString()
   dateOfBirth?: string;
+
+  @ApiPropertyOptional({ enum: Gender })
+  @IsOptional()
+  @IsEnum(Gender)
+  gender?: Gender;
 
   @ApiPropertyOptional({ maxLength: 20 })
   @IsOptional()
