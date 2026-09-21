@@ -623,7 +623,8 @@
     "taxWithheld": "Thuế đã khấu trừ",
     "taxDifference": "Chênh lệch",
     "deliverWarn": "Phiếu lương sẽ gửi tới hộp thư của từng người trong kỳ này. Thư đã gửi thì không thu lại được.",
-    "deliverGo": "Gửi ngay"
+    "deliverGo": "Gửi ngay",
+    "printSlip": "In phiếu"
   },
   "policy": {
     "title": "Chính sách lương",

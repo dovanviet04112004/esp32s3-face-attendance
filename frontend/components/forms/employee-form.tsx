@@ -119,7 +119,7 @@ export function EmployeeForm({
   }
 
   return (
-    <form onSubmit={submit} className="max-w-2xl">
+    <form onSubmit={submit}>
       <h2 className="text-sm font-medium">{t("sectionWho")}</h2>
       <div className="mt-2 grid gap-4 sm:grid-cols-2">
         <Field id="code" label={t("code")}>

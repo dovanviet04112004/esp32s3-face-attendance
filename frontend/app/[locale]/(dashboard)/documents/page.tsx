@@ -187,7 +187,7 @@ export default function DocumentsPage() {
                 rows={4}
                 value={body[doc.id] ?? ""}
                 onChange={(e) => setBody((was) => ({ ...was, [doc.id]: e.target.value }))}
-                className="mt-1 w-full rounded-lg border border-(--color-line) bg-(--color-surface) p-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-(--color-field) bg-(--color-surface) p-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
               />
               <p className="mt-1 text-xs text-(--color-muted)">{t("publishWarning")}</p>
 
@@ -195,10 +195,15 @@ export default function DocumentsPage() {
                 <Button
                   type="button"
                   size="sm"
-                  disabled={publish.isPending || !(body[doc.id] ?? "").trim()}
+                  disabled={
+                    (publish.isPending && publish.variables === doc.id) ||
+                    !(body[doc.id] ?? "").trim()
+                  }
                   onClick={() => publish.mutate(doc.id)}
                 >
-                  {publish.isPending ? common("saving") : t("publish")}
+                  {publish.isPending && publish.variables === doc.id
+                    ? common("saving")
+                    : t("publish")}
                 </Button>
                 {latest ? (
                   <Button

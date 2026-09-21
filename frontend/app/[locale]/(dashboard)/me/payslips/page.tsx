@@ -150,13 +150,25 @@ export default function MyPayslipsPage() {
             ))}
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4" data-print>
             {slip.isPending ? (
               <SkeletonRows rows={6} columns={2} />
             ) : slip.data ? (
               <PayslipView slip={slip.data} />
             ) : null}
           </div>
+
+          {slip.data ? (
+            <Button
+              type="button"
+              tone="quiet"
+              size="sm"
+              className="mt-3"
+              onClick={() => window.print()}
+            >
+              {t("printSlip")}
+            </Button>
+          ) : null}
 
           {delta.data && delta.data.length > 0 ? (
             <section className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">

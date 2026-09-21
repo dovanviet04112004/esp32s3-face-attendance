@@ -68,7 +68,7 @@ export default function NewEmployeePage() {
   });
 
   return (
-    <section>
+    <section className="mx-auto w-full max-w-(--width-read)">
       <h1 className="text-lg font-semibold">{t("createTitle")}</h1>
       {departments.isError ? (
         <p role="alert" className="mt-4 text-sm text-(--color-danger)">

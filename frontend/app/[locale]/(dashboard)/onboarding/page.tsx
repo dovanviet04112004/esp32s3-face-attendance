@@ -224,7 +224,7 @@ export default function OnboardingPage() {
               value={items}
               onChange={(event) => setItems(event.target.value)}
               placeholder={t("templateItemsHint")}
-              className="mt-1 w-full rounded-lg border border-(--color-line) bg-(--color-surface) px-3 py-2 font-mono text-xs"
+              className="mt-1 w-full rounded-lg border border-(--color-field) bg-(--color-surface) px-3 py-2 font-mono text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
             />
             <p className="mt-1 text-xs text-(--color-muted)">{t("templateItemsRule")}</p>
 
