@@ -5,7 +5,8 @@ set -eu
 
 : "${PGHOST:?}" "${PGUSER:?}" "${PGDATABASE:?}" "${BACKUP_DIR:?}" "${AGE_KEY_FILE:?}"
 
-newest=$(ls -1t "${BACKUP_DIR}"/${PGDATABASE}-*.dump.age 2>/dev/null | head -1)
+newest=$(ls -1t "${BACKUP_DIR}"/${PGDATABASE}-*.dump.age 2>/dev/null \
+    | grep -v '\.biometric\.dump\.age$' | head -1)
 if [ -z "${newest}" ]; then
     echo "no backup to drill" >&2
     exit 1
@@ -44,6 +45,17 @@ total=$(psql --dbname "${drill}" --tuples-only --no-align --command \
     "SELECT coalesce(sum(rows), 0) FROM (${counts}) t")
 echo "tables that came back empty: ${empty}"
 echo "rows restored in total: ${total}"
+
+# A rule nobody checks is a comment. Whoever drops the exclude flag finds out
+# here rather than on the day somebody asks to be erased (KEHOACH 9.22.7).
+templates=$(psql --dbname "${drill}" --tuples-only --no-align --command \
+    'SELECT count(*) FROM "FaceTemplate"')
+if [ "${templates}" != "0" ]; then
+    echo "the main dump carries ${templates} face template(s); it must carry none" >&2
+    psql --dbname postgres -c "DROP DATABASE \"${drill}\""
+    exit 1
+fi
+echo "face templates in the main dump: 0"
 
 psql --dbname postgres -c "DROP DATABASE \"${drill}\""
 echo "drill finished in ${took}s"

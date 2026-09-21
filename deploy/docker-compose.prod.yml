@@ -97,6 +97,7 @@ services:
       PGDATABASE: ${POSTGRES_DB}
       BACKUP_DIR: /backups
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      BIOMETRIC_KEEP_DAYS: ${BIOMETRIC_KEEP_DAYS:-7}
       AGE_RECIPIENT: ${AGE_RECIPIENT}
       AGE_KEY_FILE: /keys/age.key
       TZ: ${APP_TIMEZONE:-Asia/Ho_Chi_Minh}
