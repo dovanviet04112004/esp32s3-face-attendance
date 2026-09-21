@@ -9,6 +9,7 @@ import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { claimsOf, useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { homeFor } from "@/lib/nav";
 
 export default function LoginPage() {
   const t = useTranslations("login");
@@ -28,8 +29,9 @@ export default function LoginPage() {
     try {
       const res = await api.post<{ accessToken: string }>("/auth/login", { email, password });
       const token = res.data.accessToken;
-      setSession(token, claimsOf(token));
-      router.replace("/overview");
+      const claims = claimsOf(token);
+      setSession(token, claims);
+      router.replace(homeFor(claims.role, claims.employeeId !== null));
     } catch (fell: unknown) {
       // The api answers CREDENTIALS_REJECTED for a wrong address and a wrong
       // password alike, so telling the truth here still says neither.

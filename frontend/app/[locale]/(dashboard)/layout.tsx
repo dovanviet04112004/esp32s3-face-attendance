@@ -6,16 +6,19 @@ import { useEffect, type ReactNode } from "react";
 import { Sidebar } from "@/components/nav/sidebar";
 import { TabBar } from "@/components/nav/tab-bar";
 import { TopBar } from "@/components/nav/top-bar";
-import { useRouter } from "@/i18n/navigation";
+import { usePathname, useRouter } from "@/i18n/navigation";
 import { api, reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { allows, homeFor } from "@/lib/nav";
 import { startOutbox } from "@/lib/outbox";
 
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("nav");
   const router = useRouter();
-  const { accessToken, clear } = useSession();
+  const here = usePathname();
+  const { accessToken, role, employeeId, clear } = useSession();
+  const hasRecord = employeeId !== null;
 
   useEffect(() => {
     startOutbox();
@@ -33,6 +36,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       }
     });
   }, [accessToken, router]);
+
+  // The sidebar hides what a role cannot use, but the address bar keeps the
+  // last one: signing in as a narrower role leaves it standing there (9.15).
+  useEffect(() => {
+    if (!accessToken || allows(role, hasRecord, here)) {
+      return;
+    }
+    router.replace(homeFor(role, hasRecord));
+  }, [accessToken, role, hasRecord, here, router]);
 
   async function signOut() {
     await api.post("/auth/logout").catch(() => undefined);

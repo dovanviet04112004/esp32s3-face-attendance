@@ -139,6 +139,28 @@ export function navFor(role: Role | null, hasRecord = true): NavGroup[] {
   })).filter((group) => group.items.length > 0);
 }
 
+// Longest first: Departments sits under the org chart but is narrower.
+const BY_DEPTH: NavItem[] = NAV.flatMap((group) => group.items).sort(
+  (left, right) => right.href.length - left.href.length,
+);
+
+/** Whether this account may open this path. No row means no opening it. */
+export function allows(role: Role | null, hasRecord: boolean, path: string): boolean {
+  const owner = BY_DEPTH.find((item) => path === item.href || path.startsWith(`${item.href}/`));
+  if (!owner) {
+    return false;
+  }
+  return navFor(role, hasRecord).some((group) =>
+    group.items.some((item) => item.href === owner.href),
+  );
+}
+
+/** The first destination of this account's own list (KEHOACH 9.15). */
+export function homeFor(role: Role | null, hasRecord: boolean): string {
+  const groups = navFor(role, hasRecord);
+  return groups[0]?.items[0]?.href ?? "/settings";
+}
+
 const kTabSlots = 5;
 
 // The five of KEHOACH 9.21.1, in the order somebody opens the app to ask.
