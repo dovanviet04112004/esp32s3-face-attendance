@@ -258,7 +258,15 @@
     "never": "never",
     "eventsTitle": "Live events",
     "eventsEmpty": "Nothing since this page opened",
-    "models": "Model image"
+    "models": "Model image",
+    "careTitle": "Device care",
+    "careLead": "Rename it, push the roster again, or take its access away.",
+    "rename": "Rename and relocate",
+    "deviceName": "Device name",
+    "resync": "Push the roster",
+    "resynced": "Pushed, roster version {version}.",
+    "revoke": "Revoke access",
+    "revokeWarn": "The kiosk stops recording attendance and has to register again from scratch. Templates already on it stay there until it takes an erase."
   },
   "shifts": {
     "title": "Shifts",

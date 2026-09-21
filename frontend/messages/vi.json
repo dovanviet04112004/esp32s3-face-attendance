@@ -258,7 +258,15 @@
     "never": "chưa bao giờ",
     "eventsTitle": "Sự kiện trực tiếp",
     "eventsEmpty": "Chưa có gì kể từ lúc mở trang",
-    "models": "Ảnh model"
+    "models": "Ảnh model",
+    "careTitle": "Quản trị thiết bị",
+    "careLead": "Đổi tên, đẩy lại danh sách, hoặc thu hồi quyền của máy.",
+    "rename": "Đổi tên và vị trí",
+    "deviceName": "Tên máy",
+    "resync": "Đẩy lại danh sách",
+    "resynced": "Đã đẩy, phiên bản danh sách {version}.",
+    "revoke": "Thu hồi quyền",
+    "revokeWarn": "Máy sẽ không chấm công được nữa và phải đăng ký lại từ đầu. Mẫu khuôn mặt đã nạp vẫn nằm trên máy cho tới khi nó nhận lệnh xoá."
   },
   "shifts": {
     "title": "Ca làm",

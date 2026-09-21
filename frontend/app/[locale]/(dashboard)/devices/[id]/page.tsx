@@ -7,9 +7,12 @@ import { useMemo, useState } from "react";
 
 import { Failed } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Sheet } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { useFault } from "@/lib/fault";
 import { useFeed } from "@/lib/ws";
 
 interface Device {
@@ -42,6 +45,12 @@ export default function DevicePage() {
   const { items } = useFeed();
   const [picked, setPicked] = useState("");
   const [offered, setOffered] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
+  const faultOf = useFault();
 
   const device = useQuery({
     queryKey: ["devices", id],
@@ -60,6 +69,35 @@ export default function DevicePage() {
       setOffered(device.data?.name ?? id);
       void cache.invalidateQueries({ queryKey: ["devices", id] });
     },
+  });
+
+  const rename = useMutation({
+    mutationFn: () =>
+      api.patch(`/devices/${id}`, {
+        name: name || undefined,
+        location: location || undefined,
+      }),
+    onSuccess: () => {
+      setEditing(false);
+      void cache.invalidateQueries({ queryKey: ["devices"] });
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  const revoke = useMutation({
+    mutationFn: () => api.post(`/devices/${id}/revoke`, {}),
+    onSuccess: () => {
+      setRevoking(false);
+      void cache.invalidateQueries({ queryKey: ["devices"] });
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  const resync = useMutation({
+    mutationFn: async () =>
+      (await api.post<{ rosterVersion: number }>(`/enrollments/${id}/resync`, {})).data,
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["devices", id] }),
+    onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   const mine = useMemo(
@@ -152,6 +190,119 @@ export default function DevicePage() {
           ) : null}
         </div>
       ) : null}
+
+      {role === "ADMIN" ? (
+        <div className="mt-4 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+          <h2 className="text-sm font-medium">{t("careTitle")}</h2>
+          <p className="mt-1 text-sm text-(--color-muted)">{t("careLead")}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              tone="quiet"
+              onClick={() => {
+                setFault(null);
+                setName(it.name ?? "");
+                setLocation(it.location ?? "");
+                setEditing(true);
+              }}
+            >
+              {t("rename")}
+            </Button>
+            <Button
+              type="button"
+              tone="quiet"
+              disabled={resync.isPending}
+              onClick={() => {
+                setFault(null);
+                resync.mutate();
+              }}
+            >
+              {resync.isPending ? common("saving") : t("resync")}
+            </Button>
+            {it.status === "APPROVED" ? (
+              <Button
+                type="button"
+                tone="danger"
+                onClick={() => {
+                  setFault(null);
+                  setRevoking(true);
+                }}
+              >
+                {t("revoke")}
+              </Button>
+            ) : null}
+          </div>
+          {resync.data ? (
+            <p className="mt-3 text-sm text-(--color-ok)">
+              {t("resynced", { version: resync.data.rosterVersion })}
+            </p>
+          ) : null}
+          {fault ? (
+            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+              {fault}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <Sheet
+        open={editing}
+        onClose={() => setEditing(false)}
+        title={t("rename")}
+        closeLabel={common("close")}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            setFault(null);
+            rename.mutate();
+          }}
+        >
+          <label className="block text-sm font-medium" htmlFor="deviceName">
+            {t("deviceName")}
+          </label>
+          <Input
+            id="deviceName"
+            maxLength={64}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="mt-1"
+          />
+
+          <label className="mt-4 block text-sm font-medium" htmlFor="deviceLocation">
+            {t("location")}
+          </label>
+          <Input
+            id="deviceLocation"
+            maxLength={64}
+            value={location}
+            onChange={(event) => setLocation(event.target.value)}
+            className="mt-1"
+          />
+
+          <Button type="submit" disabled={rename.isPending} className="mt-4">
+            {rename.isPending ? common("saving") : common("save")}
+          </Button>
+        </form>
+      </Sheet>
+
+      <Sheet
+        open={revoking}
+        onClose={() => setRevoking(false)}
+        title={t("revoke")}
+        closeLabel={common("close")}
+      >
+        <p className="text-sm text-(--color-muted)">{t("revokeWarn")}</p>
+        <Button
+          type="button"
+          tone="danger"
+          className="mt-4"
+          disabled={revoke.isPending}
+          onClick={() => revoke.mutate()}
+        >
+          {revoke.isPending ? common("saving") : t("revoke")}
+        </Button>
+      </Sheet>
 
       <div className="mt-8 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface)">
         <h2 className="border-b border-(--color-line) px-4 py-3 text-sm font-medium">
