@@ -4,6 +4,7 @@ import type { SalaryAdvance } from "@prisma/client";
 
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { AdvanceService } from "./advance.service.js";
 import { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
@@ -20,7 +21,7 @@ export class AdvanceController {
   list(
     @CurrentViewer() viewer: Viewer,
     @Query() query: ListAdvancesDto,
-  ): Promise<SalaryAdvance[]> {
+  ): Promise<Page<SalaryAdvance>> {
     return this.advances.list(viewer, query);
   }
 

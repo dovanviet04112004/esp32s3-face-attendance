@@ -12,6 +12,8 @@ import {
   Min,
 } from "class-validator";
 
+import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+
 export class BuildDaysDto {
   @ApiProperty({ example: "2026-08-01" })
   @IsDateString()
@@ -22,7 +24,7 @@ export class BuildDaysDto {
   to!: string;
 }
 
-export class ListDaysDto {
+export class ListDaysDto extends PaginationDto {
   @ApiProperty({ example: "2026-08-01" })
   @IsDateString()
   from!: string;

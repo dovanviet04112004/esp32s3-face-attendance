@@ -5,6 +5,7 @@ import type { AttendanceDay } from "@prisma/client";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { BuildDaysDto, CorrectDayDto, ListDaysDto } from "./dto/timesheet.dto.js";
 import { TimesheetService, type BuildReport, type DaySummary } from "./timesheet.service.js";
@@ -24,7 +25,7 @@ export class TimesheetController {
 
   @Get("summary")
   @ApiOperation({ summary: "One row per person for a range, totals only" })
-  summary(@CurrentViewer() viewer: Viewer, @Query() query: ListDaysDto): Promise<DaySummary[]> {
+  summary(@CurrentViewer() viewer: Viewer, @Query() query: ListDaysDto): Promise<Page<DaySummary>> {
     return this.timesheet.summary(viewer, query);
   }
 

@@ -78,7 +78,7 @@ export default function MyRequestsPage() {
 
   const advances = useQuery({
     queryKey: ["advances"],
-    queryFn: async () => (await api.get<Advance[]>("/advances")).data,
+    queryFn: async () => (await api.get<{ rows: Advance[] }>("/advances")).data.rows,
   });
 
   const ask = useMutation({

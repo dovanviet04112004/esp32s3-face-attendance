@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { SalaryAdvance } from "@prisma/client";
 
+import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -21,17 +23,30 @@ export class AdvanceService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(viewer: Viewer, query: ListAdvancesDto = {}): Promise<SalaryAdvance[]> {
+  async list(viewer: Viewer, query: ListAdvancesDto): Promise<Page<SalaryAdvance>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    return this.db.salaryAdvance.findMany({
-      where: {
-        ...(visible === null ? {} : { employeeId: { in: visible } }),
-        ...(query.state ? { state: query.state } : {}),
-      },
-      include: { employee: { select: { id: true, code: true, fullName: true } } },
-      orderBy: { requestedAt: "desc" },
-      take: 200,
-    });
+    const where = {
+      ...(visible === null ? {} : { employeeId: { in: visible } }),
+      ...(query.state ? { state: query.state } : {}),
+    };
+    const [rows, found] = await Promise.all([
+      this.db.salaryAdvance.findMany({
+        where,
+        include: { employee: { select: { id: true, code: true, fullName: true } } },
+        // requestedAt repeats when a queue files several at once, so id
+        // settles the order the cursor resumes from (KEHOACH 9.9 rule 3).
+        orderBy: [{ requestedAt: "desc" }, { id: "asc" }],
+        take: query.take,
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      }),
+      this.db.salaryAdvance.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    const last = rows[rows.length - 1];
+    return {
+      ...countedTo(found),
+      rows,
+      next: rows.length === query.take && last ? last.id : null,
+    };
   }
 
   async submit(viewer: Viewer, body: RequestAdvanceDto): Promise<SalaryAdvance> {

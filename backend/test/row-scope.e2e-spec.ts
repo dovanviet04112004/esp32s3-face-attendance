@@ -147,7 +147,11 @@ describe("row scope (e2e)", () => {
       `/timesheet/summary?from=${MONTH.from}&to=${MONTH.to}&employeeId=${stranger}`,
     );
     assert.equal(summary.status, 200);
-    assert.deepEqual(summary.body, [], "a narrowed summary of somebody else is empty, not theirs");
+    assert.deepEqual(
+      summary.body.rows,
+      [],
+      "a narrowed summary of somebody else is empty, not theirs",
+    );
   });
 
   it("lets the unscoped roles see everyone", async () => {

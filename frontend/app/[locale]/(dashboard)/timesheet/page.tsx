@@ -1,6 +1,11 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
@@ -16,6 +21,13 @@ import { cn } from "@/lib/cn";
 import { dayOnly, hours, minutes as asMinutes } from "@/lib/format";
 
 type DayState = "WORKED" | "LEAVE" | "HOLIDAY" | "WEEKEND" | "ABSENT";
+
+interface SummaryPage {
+  rows: Summary[];
+  total: number;
+  totalIsExact?: boolean;
+  next: string | null;
+}
 
 interface Summary {
   employeeId: number;
@@ -92,10 +104,18 @@ export default function TimesheetPage() {
     queryFn: async () => (await api.get<Department[]>("/departments")).data,
   });
 
-  const rows = useQuery({
+  const rows = useInfiniteQuery({
     queryKey: ["timesheet", "summary", where],
-    queryFn: async () => (await api.get<Summary[]>(`/timesheet/summary?${where}`)).data,
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const after = pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : "";
+      return (await api.get<SummaryPage>(`/timesheet/summary?${where}${after}`)).data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
   });
+
+  const shown = rows.data?.pages.flatMap((one) => one.rows);
+  const counted = rows.data?.pages[0];
 
   const days = useQuery({
     queryKey: ["timesheet", "days", openFor?.employeeId, range],
@@ -291,11 +311,31 @@ export default function TimesheetPage() {
       <DataTable
         id="timesheet"
         columns={columns}
-        rows={rows.data}
+        rows={shown}
         keyOf={(row) => String(row.employeeId)}
         pending={rows.isPending}
         failed={rows.isError}
         onRetry={() => rows.refetch()}
+        more={
+          rows.hasNextPage ? (
+            <div className="mt-3 flex flex-col items-center gap-1">
+              <Button
+                type="button"
+                tone="quiet"
+                disabled={rows.isFetchingNextPage}
+                onClick={() => void rows.fetchNextPage()}
+              >
+                {rows.isFetchingNextPage ? common("loading") : common("loadMore")}
+              </Button>
+              <p className="text-xs text-(--color-muted) tabular-nums">
+                {common(counted?.totalIsExact === false ? "showingOfAtLeast" : "showingOf", {
+                  shown: shown?.length ?? 0,
+                  total: counted?.total ?? 0,
+                })}
+              </p>
+            </div>
+          ) : null
+        }
         empty={t("empty")}
         emptyHint={t("emptyHint")}
       />

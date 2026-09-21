@@ -164,7 +164,8 @@ export default function ApprovalsPage() {
   const advances = useQuery({
     queryKey: ["advances", "waiting"],
     enabled: mayDecideAdvances,
-    queryFn: async () => (await api.get<WaitingAdvance[]>("/advances?state=PENDING")).data,
+    queryFn: async () =>
+      (await api.get<{ rows: WaitingAdvance[] }>("/advances?state=PENDING")).data.rows,
   });
 
   // Approving does not move money; a second pair of hands records that it left
@@ -172,7 +173,8 @@ export default function ApprovalsPage() {
   const toPay = useQuery({
     queryKey: ["advances", "approved"],
     enabled: mayPayAdvances,
-    queryFn: async () => (await api.get<WaitingAdvance[]>("/advances?state=APPROVED")).data,
+    queryFn: async () =>
+      (await api.get<{ rows: WaitingAdvance[] }>("/advances?state=APPROVED")).data.rows,
   });
 
   const markPaid = useMutation({

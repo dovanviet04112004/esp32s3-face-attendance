@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsBoolean, IsEnum, IsInt, IsString, MaxLength, Min, IsOptional } from "class-validator";
 
+import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+
 const STATES = ["PENDING", "APPROVED", "REJECTED", "PAID", "SETTLED", "CANCELLED"] as const;
 
 export class RequestAdvanceDto {
@@ -15,7 +17,7 @@ export class RequestAdvanceDto {
   reason!: string;
 }
 
-export class ListAdvancesDto {
+export class ListAdvancesDto extends PaginationDto {
   @ApiPropertyOptional({ enum: STATES })
   @IsOptional()
   @IsEnum(STATES)

@@ -9,6 +9,13 @@ import { ConfigService } from "@nestjs/config";
 import type { AttendanceDay, DayState, Prisma } from "@prisma/client";
 
 import type { Env } from "../../config/env.schema.js";
+import {
+  COUNT_CEILING,
+  countedTo,
+  decodeCursor,
+  encodeCursor,
+} from "../../common/dto/cursor.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -100,10 +107,33 @@ export class TimesheetService {
    * One row per person for a month. Reading every day row into the browser is
    * thirty thousand times thirty rows for one screen (KEHOACH 9.9).
    */
-  async summary(viewer: Viewer, query: ListDaysDto): Promise<DaySummary[]> {
+  /** A month of a company is one row per person, so it pages by the employee
+   *  code, which is unique and therefore a total order (KEHOACH 9.9 rule 3).
+   */
+  async summary(viewer: Viewer, query: ListDaysDto): Promise<Page<DaySummary>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const from = dayAsDate(query.from);
     const to = dayAsDate(query.to);
+    const after = query.cursor ? decodeCursor(query.cursor).sortValue : null;
+    const [rows, found] = await Promise.all([
+      this.countedRows(query, visible, from, to, after),
+      this.countPeople(query, visible, from, to),
+    ]);
+    const last = rows[rows.length - 1];
+    return {
+      ...countedTo(found),
+      rows,
+      next: rows.length === query.take && last ? encodeCursor(last.code, last.employeeId) : null,
+    };
+  }
+
+  private countedRows(
+    query: ListDaysDto,
+    visible: number[] | null,
+    from: Date,
+    to: Date,
+    after: string | null,
+  ): Promise<DaySummary[]> {
     return this.db.$queryRaw<DaySummary[]>`
       SELECT e."id" AS "employeeId", e."code", e."fullName",
              count(*) FILTER (WHERE d."state" = 'WORKED')::int  AS "workedDays",
@@ -119,10 +149,33 @@ export class TimesheetService {
          AND (${visible}::int[] IS NULL OR d."employeeId" = ANY(${visible}::int[]))
          AND (${query.employeeId ?? null}::int IS NULL OR d."employeeId" = ${query.employeeId ?? null}::int)
          AND (${query.departmentId ?? null}::text IS NULL OR e."departmentId" = ${query.departmentId ?? null})
+         AND (${after}::text IS NULL OR e."code" > ${after}::text)
        GROUP BY e."id", e."code", e."fullName"
        ORDER BY e."code"
-       LIMIT 500
+       LIMIT ${query.take}
     `;
+  }
+
+  private async countPeople(
+    query: ListDaysDto,
+    visible: number[] | null,
+    from: Date,
+    to: Date,
+  ): Promise<number> {
+    const [seen] = await this.db.$queryRaw<{ found: bigint }[]>`
+      SELECT count(*) AS "found" FROM (
+        SELECT 1
+          FROM "AttendanceDay" d
+          JOIN "Employee" e ON e."id" = d."employeeId"
+         WHERE d."date" BETWEEN ${from} AND ${to}
+           AND (${visible}::int[] IS NULL OR d."employeeId" = ANY(${visible}::int[]))
+           AND (${query.employeeId ?? null}::int IS NULL OR d."employeeId" = ${query.employeeId ?? null}::int)
+           AND (${query.departmentId ?? null}::text IS NULL OR e."departmentId" = ${query.departmentId ?? null})
+         GROUP BY e."id"
+         LIMIT ${COUNT_CEILING + 1}
+      ) x
+    `;
+    return Number(seen?.found ?? 0);
   }
 
   /**

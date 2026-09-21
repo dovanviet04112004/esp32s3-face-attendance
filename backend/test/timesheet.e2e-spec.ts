@@ -163,7 +163,9 @@ describe("timesheet leave (e2e)", () => {
       .get(`/timesheet/summary?from=${DAY}&to=${DAY}&employeeId=${idOf.get(AHEAD)}`)
       .set("Authorization", `Bearer ${adminToken}`);
     assert.equal(res.status, 200);
-    const rows = res.body as { employeeId: number; leaveDays: number; absentDays: number }[];
+    const { rows } = res.body as {
+      rows: { employeeId: number; leaveDays: number; absentDays: number }[];
+    };
     const row = rows.find((one) => one.employeeId === idOf.get(AHEAD));
     assert.ok(row, "the person on leave is missing from the summary");
     assert.equal(row.leaveDays, 1);
