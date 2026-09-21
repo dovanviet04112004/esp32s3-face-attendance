@@ -4693,6 +4693,7 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | URL và credential trên kiosk | NVS `device/*` (§6.2.1), giá trị lùi khai ở `Kconfig` của component | đọc qua `sys_storage`, **không gõ vào `.c`** |
 | Số hiệu firmware | `PROJECT_VER` trong `firmware/CMakeLists.txt` | `esp_app_get_description()->version`, **không gõ lại ở đâu** |
 | Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
+| Phiên bản văn bản đồng ý sinh trắc đang phát | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — **máy chủ điền, client không gửi**: giá trị ghi vào `BiometricConsent` phải là bản mà chính máy chủ đang phát, nên để client gửi kèm là mở đường ghi một phiên bản không tồn tại |
 | Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
 | Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
 | Ngưỡng nghiệp vụ (**tin cậy phát hiện mặt**, khớp mặt, liveness, chống trùng) | NVS trên kiosk, `SET_CONFIG` từ server | đọc cấu hình lúc chạy |
