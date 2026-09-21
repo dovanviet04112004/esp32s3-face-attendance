@@ -4450,11 +4450,12 @@ frontend/
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
 │   ├── ui/                           # primitive: button, input, select, checkbox, sheet,
-│   │                                 #   skeleton, empty, money, theme-toggle,
+│   │                                 #   skeleton, empty, pill, theme-toggle,
 │   │                                 #   bottom-bar, filter-bar  ★ §9.21.2 — màn hẹp thì
 │   │                                 #   hành động chính neo đáy, bộ lọc thành tấm trượt
-│   │                                 #   pill.tsx  ★ §9.12 luật 2 — bốn tông trạng thái,
-│   │                                 #   khai một chỗ cho cả tám phân hệ
+│   │                                 #   ★ §9.12 luật 2 — pill giữ bốn tông trạng thái,
+│   │                                 #   khai một chỗ cho cả tám phân hệ. Tiền không có
+│   │                                 #   primitive: nó là hàm ở lib/format.ts
 │   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx, breadcrumb.tsx, waiting-count.ts}
 │   │                                 # ★ rộng thì thanh bên, hẹp thì tab đáy; số đơn
 │   │                                 #   đang chờ là một hook dùng chung cho cả ba
