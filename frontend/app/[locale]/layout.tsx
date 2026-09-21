@@ -51,13 +51,16 @@ export default async function LocaleLayout({ children, params }: LocaleParams & 
   }
   setRequestLocale(locale);
   const theme = asTheme((await cookies()).get(kThemeCookie)?.value);
+  // Extensions reach html and body first, so a class React never wrote is not
+  // a mismatch worth reporting (KEHOACH 9.12).
   return (
     <html
       lang={locale}
       data-theme={theme === "system" ? undefined : theme}
       style={{ colorScheme: schemeOf(theme) }}
+      suppressHydrationWarning
     >
-      <body className="min-h-screen antialiased">
+      <body className="min-h-screen antialiased" suppressHydrationWarning>
         <NextIntlClientProvider>
           <Providers>{children}</Providers>
         </NextIntlClientProvider>
