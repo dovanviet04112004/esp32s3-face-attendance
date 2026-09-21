@@ -3,7 +3,7 @@
 import { useLocale, useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/cn";
+import { StatePill, type Tone } from "@/components/ui/pill";
 import { money } from "@/lib/format";
 
 export type RunState = "DRAFT" | "RUNNING" | "DONE" | "FAILED" | "DISCARDED";
@@ -21,12 +21,12 @@ export interface PayrollRun {
   netTotal: string;
 }
 
-const TONE: Record<RunState, string> = {
-  DRAFT: "border-(--color-line) text-(--color-muted)",
-  RUNNING: "border-(--color-warn) text-(--color-warn)",
-  DONE: "border-(--color-ok) text-(--color-ok)",
-  FAILED: "border-(--color-danger) text-(--color-danger)",
-  DISCARDED: "border-(--color-line) text-(--color-muted)",
+const TONE: Record<RunState, Tone> = {
+  DRAFT: "idle",
+  RUNNING: "waiting",
+  DONE: "good",
+  FAILED: "bad",
+  DISCARDED: "idle",
 };
 
 const STATE_KEY: Record<
@@ -54,9 +54,7 @@ export function RunProgress({ run, action }: { run: PayrollRun; action?: ReactNo
             {run.doneCount} / {run.employeeCount} {t("employees")}
           </p>
         </div>
-        <span className={cn("rounded-full border px-2 py-0.5 text-xs", TONE[run.state])}>
-          {t(STATE_KEY[run.state])}
-        </span>
+        <StatePill tone={TONE[run.state]}>{t(STATE_KEY[run.state])}</StatePill>
       </div>
 
       <div

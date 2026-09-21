@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { BottomBar } from "@/components/ui/bottom-bar";
 import { Empty, Failed } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
+import { StatePill, type Tone } from "@/components/ui/pill";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +19,12 @@ import { useFault } from "@/lib/fault";
 const KINDS = ["EMPLOYMENT", "INCOME"] as const;
 const MONTH_CHOICES = [1, 3, 6, 12];
 const DEFAULT_MONTHS = 3;
+
+const LETTER_TONE: Record<Letter["state"], Tone> = {
+  REQUESTED: "waiting",
+  ISSUED: "good",
+  REJECTED: "bad",
+};
 
 interface Letter {
   id: string;
@@ -169,18 +176,7 @@ export default function MyLettersPage() {
             >
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="text-sm font-medium">{t(one.kind)}</span>
-                <span
-                  className={[
-                    "rounded-full px-2 py-0.5 text-xs",
-                    one.state === "ISSUED"
-                      ? "border border-(--color-ok) text-(--color-ok)"
-                      : one.state === "REJECTED"
-                        ? "border border-(--color-danger) text-(--color-danger)"
-                        : "border border-(--color-warn) text-(--color-warn)",
-                  ].join(" ")}
-                >
-                  {t(one.state)}
-                </span>
+                <StatePill tone={LETTER_TONE[one.state]}>{t(one.state)}</StatePill>
                 {one.serial ? (
                   <span className="text-xs text-(--color-muted) tabular-nums">
                     {t("serial")} {one.serial}

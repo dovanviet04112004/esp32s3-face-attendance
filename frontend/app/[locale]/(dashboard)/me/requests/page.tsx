@@ -9,8 +9,8 @@ import { RequestForm } from "@/components/requests/request-form";
 import { RequestCard, type RequestRow } from "@/components/requests/request-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StatePill, type Tone } from "@/components/ui/pill";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { useOutbox } from "@/lib/outbox";
@@ -26,14 +26,13 @@ interface Advance {
   decisionNote: string | null;
 }
 
-// The same four tones the request pill uses, so one page speaks one language.
-const ADVANCE_TONE: Record<AdvanceState, string> = {
-  PENDING: "border-(--color-warn) text-(--color-warn)",
-  APPROVED: "border-(--color-ok) text-(--color-ok)",
-  PAID: "border-(--color-ok) text-(--color-ok)",
-  SETTLED: "border-(--color-line) text-(--color-muted)",
-  REJECTED: "border-(--color-danger) text-(--color-danger)",
-  CANCELLED: "border-(--color-line) text-(--color-muted)",
+const ADVANCE_TONE: Record<AdvanceState, Tone> = {
+  PENDING: "waiting",
+  APPROVED: "good",
+  PAID: "good",
+  SETTLED: "idle",
+  REJECTED: "bad",
+  CANCELLED: "idle",
 };
 
 const ADVANCE_KEY: Record<
@@ -217,14 +216,9 @@ export default function MyRequestsPage() {
             >
               <span className="tabular-nums">{money(Number(row.amount), locale)}</span>
               <span className="min-w-0 flex-1 truncate text-(--color-muted)">{row.reason}</span>
-              <span
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-xs",
-                  ADVANCE_TONE[row.state],
-                )}
-              >
+              <StatePill tone={ADVANCE_TONE[row.state]}>
                 {pay(ADVANCE_KEY[row.state])}
-              </span>
+              </StatePill>
               {row.state === "PENDING" ? (
                 <Button
                   type="button"

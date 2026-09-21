@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/cn";
+import { StatePill as Pill, type Tone } from "@/components/ui/pill";
 import { dayOnly, days, minutes } from "@/lib/format";
 
 export type RequestKind =
@@ -34,24 +34,17 @@ export interface RequestRow {
 
 const kDayMs = 86_400_000;
 
-const TONE: Record<RequestState, string> = {
-  DRAFT: "border-(--color-line) text-(--color-muted)",
-  PENDING: "border-(--color-warn) text-(--color-warn)",
-  APPROVED: "border-(--color-ok) text-(--color-ok)",
-  REJECTED: "border-(--color-danger) text-(--color-danger)",
-  CANCELLED: "border-(--color-line) text-(--color-muted)",
+const TONE: Record<RequestState, Tone> = {
+  DRAFT: "idle",
+  PENDING: "waiting",
+  APPROVED: "good",
+  REJECTED: "bad",
+  CANCELLED: "idle",
 };
 
-/** A status reads as a word first and a colour second, so it survives a reader
- *  who cannot tell red from green (KEHOACH 9.12).
- */
 export function StatePill({ state }: { state: RequestState }) {
   const t = useTranslations("requests");
-  return (
-    <span className={cn("rounded-full border px-2 py-0.5 text-xs", TONE[state])}>
-      {t(`state${state}`)}
-    </span>
-  );
+  return <Pill tone={TONE[state]}>{t(`state${state}`)}</Pill>;
 }
 
 /** Whole days between filing and now, which is what the sweep also counts. */
@@ -96,9 +89,7 @@ export function RequestCard({ row, onDecide, onCancel, armed, busy }: Props) {
         </div>
         <div className="flex items-center gap-2">
           {row.state === "PENDING" ? (
-            <span className="rounded-full border border-(--color-line) px-2 py-0.5 text-xs tabular-nums text-(--color-muted)">
-              {t("waited", { count: waited(row.createdAt) })}
-            </span>
+            <Pill className="tabular-nums">{t("waited", { count: waited(row.createdAt) })}</Pill>
           ) : null}
           <StatePill state={row.state} />
         </div>

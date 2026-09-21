@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
+import { StatePill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Empty, Failed } from "@/components/ui/empty";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -64,16 +65,9 @@ export function DocumentReader() {
           >
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-sm font-medium">{row.title}</p>
-              <span
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-xs",
-                  row.ackAt === null
-                    ? "border-(--color-warn) text-(--color-warn)"
-                    : "border-(--color-ok) text-(--color-ok)",
-                )}
-              >
+              <StatePill tone={row.ackAt === null ? "waiting" : "good"}>
                 {row.ackAt === null ? t("unread") : t("signed")}
-              </span>
+              </StatePill>
             </div>
             <p className="mt-1 text-xs text-(--color-muted)">
               {t("versionLine", { version: row.version })} ·{" "}

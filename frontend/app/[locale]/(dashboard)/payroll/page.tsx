@@ -4,13 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
+import { StatePill, type Tone } from "@/components/ui/pill";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { cn } from "@/lib/cn";
 
 interface Period {
   id: string;
@@ -20,10 +20,10 @@ interface Period {
   payDate: string | null;
 }
 
-const TONE: Record<Period["state"], string> = {
-  OPEN: "border-(--color-warn) text-(--color-warn)",
-  LOCKED: "border-(--color-accent) text-(--color-accent)",
-  PAID: "border-(--color-ok) text-(--color-ok)",
+const TONE: Record<Period["state"], Tone> = {
+  OPEN: "waiting",
+  LOCKED: "idle",
+  PAID: "good",
 };
 
 const STATE_KEY: Record<Period["state"], "stateOPEN" | "stateLOCKED" | "statePAID"> = {
@@ -69,9 +69,7 @@ export default function PayrollPage() {
       id: "state",
       header: t("state"),
       cell: (row) => (
-        <span className={cn("rounded-full border px-2 py-0.5 text-xs", TONE[row.state])}>
-          {t(STATE_KEY[row.state])}
-        </span>
+        <StatePill tone={TONE[row.state]}>{t(STATE_KEY[row.state])}</StatePill>
       ),
     },
     {

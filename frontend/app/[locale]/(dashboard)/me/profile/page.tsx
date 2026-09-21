@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { BottomBar } from "@/components/ui/bottom-bar";
 import { Empty, Failed } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
+import { StatePill } from "@/components/ui/pill";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
@@ -208,18 +209,13 @@ export default function MyProfilePage() {
             >
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="text-sm font-medium">{t(`field${one.field}`)}</span>
-                <span
-                  className={[
-                    "rounded-full px-2 py-0.5 text-xs",
-                    one.state === "APPROVED"
-                      ? "border border-(--color-ok) text-(--color-ok)"
-                      : one.state === "REJECTED"
-                        ? "border border-(--color-danger) text-(--color-danger)"
-                        : "border border-(--color-warn) text-(--color-warn)",
-                  ].join(" ")}
+                <StatePill
+                  tone={
+                    one.state === "APPROVED" ? "good" : one.state === "REJECTED" ? "bad" : "waiting"
+                  }
                 >
                   {t(`state${one.state}`)}
-                </span>
+                </StatePill>
                 <span className="ml-auto text-xs text-(--color-muted)">
                   {format.dateTime(new Date(one.createdAt), "day")}
                 </span>

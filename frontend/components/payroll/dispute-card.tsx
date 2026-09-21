@@ -3,6 +3,7 @@
 import { useFormatter, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
+import { StatePill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLineName } from "@/components/payroll/payslip-view";
@@ -62,18 +63,11 @@ export function DisputeCard({ dispute, mayAnswer, onAnswer, onWithdraw, busy }: 
         <span className="text-sm font-medium">
           {dispute.lineCode ? nameOf(dispute.lineCode) : t("lineAny")}
         </span>
-        <span className="rounded-full bg-(--color-ground) px-2 py-0.5 text-xs text-(--color-muted)">
-          {t(`state${dispute.state}`)}
-        </span>
+        <StatePill>{t(`state${dispute.state}`)}</StatePill>
         {dispute.outcome ? (
-          <span
-            className={[
-              "rounded-full px-2 py-0.5 text-xs text-(--color-on-fill)",
-              dispute.outcome === "UPHELD" ? "bg-(--color-accent)" : "bg-(--color-danger)",
-            ].join(" ")}
-          >
+          <StatePill tone={dispute.outcome === "UPHELD" ? "good" : "bad"}>
             {t(`outcome${dispute.outcome}`)}
-          </span>
+          </StatePill>
         ) : null}
         <span className={`ml-auto text-xs ${late ? "text-(--color-danger)" : "text-(--color-muted)"}`}>
           {late ? t("overdue") : t("due")}: {format.dateTime(new Date(dispute.dueAt), "day")}

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
+import { CountPill } from "@/components/ui/pill";
 import { Failed } from "@/components/ui/empty";
 import { DisputeCard, type Dispute, type Verdict } from "@/components/payroll/dispute-card";
 import { RequestCard, type RequestRow } from "@/components/requests/request-card";
@@ -64,9 +65,7 @@ function Queue({ title, count, children }: { title: string; count: number; child
     <section className="mt-8">
       <h2 className="flex items-center gap-2 text-sm font-medium">
         {title}
-        <span className="rounded-full bg-(--color-ground) px-2 py-0.5 text-xs tabular-nums text-(--color-muted)">
-          {count}
-        </span>
+        <CountPill>{count}</CountPill>
       </h2>
       <div className="mt-2">{children}</div>
     </section>
