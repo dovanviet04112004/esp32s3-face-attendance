@@ -139,7 +139,9 @@ export class OnboardingService {
         ...(visible === null ? {} : { run: { employeeId: { in: visible } } }),
       },
       include: {
-        run: { select: { kind: true, employee: { select: { code: true, fullName: true } } } },
+        run: {
+          select: { kind: true, employee: { select: { id: true, code: true, fullName: true } } },
+        },
       },
       orderBy: { dueOn: "asc" },
       take: kOpenPage,

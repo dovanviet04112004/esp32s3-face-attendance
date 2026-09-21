@@ -12,12 +12,16 @@ import {
   FolderCheck,
   Inbox,
   LayoutDashboard,
+  ListChecks,
   Network,
+  Package,
   Receipt,
   Scale,
   ScanFace,
+  ScrollText,
   Settings,
   User,
+  UserCog,
   Users,
   Wallet,
   type LucideIcon,
@@ -105,6 +109,8 @@ export const NAV: NavGroup[] = [
       },
       { href: "/org", key: "orgChart", icon: Network, roles: TEAM_TIME },
       { href: "/org/departments", key: "departments", icon: Building2, roles: PEOPLE_DESK },
+      { href: "/onboarding", key: "onboarding", icon: ListChecks, roles: TEAM_TIME, deskOnly: true },
+      { href: "/assets", key: "assets", icon: Package, roles: PEOPLE_DESK, deskOnly: true },
       { href: "/documents", key: "documents", icon: FolderCheck, roles: PEOPLE_DESK, deskOnly: true },
     ],
   },
@@ -131,7 +137,11 @@ export const NAV: NavGroup[] = [
   },
   {
     key: "groupSettings",
-    items: [{ href: "/settings", key: "settings", icon: Settings, roles: EVERYONE, deskOnly: true }],
+    items: [
+      { href: "/users", key: "users", icon: UserCog, roles: OPERATORS, deskOnly: true },
+      { href: "/audit", key: "audit", icon: ScrollText, roles: OPERATORS, deskOnly: true },
+      { href: "/settings", key: "settings", icon: Settings, roles: EVERYONE, deskOnly: true },
+    ],
   },
 ];
 
