@@ -4449,7 +4449,7 @@ frontend/
 │   │                                 #   skeleton, empty, money, theme-toggle,
 │   │                                 #   bottom-bar, filter-bar  ★ §9.21.2 — màn hẹp thì
 │   │                                 #   hành động chính neo đáy, bộ lọc thành tấm trượt
-│   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx, waiting-count.ts}
+│   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx, breadcrumb.tsx, waiting-count.ts}
 │   │                                 # ★ rộng thì thanh bên, hẹp thì tab đáy; số đơn
 │   │                                 #   đang chờ là một hook dùng chung cho cả ba
 │   ├── tables/{data-table.tsx, card-list.tsx}        # ★ một định nghĩa cột, hai hình thức
@@ -6429,10 +6429,34 @@ nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
 | `Ca làm` | ✓ | ✓ | – | – | – | – |
 | `Báo cáo` | ✓ | ✓ | ✓ | – | – | – |
 | `Kỳ lương` · `Chính sách lương` | ✓ | ✓ đọc | ✓ | – | – | – |
-| `Tổng quan` · `Kiosk` | ✓ | – | – | – | – | – |
+| `Cần xử lý hôm nay` | ✓ | ✓ | ✓ | – | – | – |
+| `Kiosk` | ✓ | – | – | – | – | – |
 | `Tài liệu của tôi` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `Tài liệu` (phát hành, hồ sơ còn thiếu) | ✓ | ✓ | – | – | – | – |
 | `Cài đặt` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+**`Cần xử lý hôm nay` là việc của bàn nhân sự, không phải của người trông máy.** Nó liệt kê hợp
+đồng sắp hết hạn, người sắp hết thử việc và ngày lệch giờ hôm nay — ba thứ §9.18 mục 1 và 2 giao
+cho HR, kèm câu "danh sách phải mở được từ trang chủ". Xếp nó vào nhóm thiết bị và khoá cho mỗi
+`ADMIN` là giấu công việc của một vai khỏi chính vai ấy. Dải thiết bị và luồng sự kiện trực tiếp
+trên cùng trang **vẫn chỉ `ADMIN` thấy**: một trang phục vụ ba vai thì phần nào của vai nào hiện
+theo vai ấy, chứ không phải cả trang mở hoặc cả trang đóng.
+
+**Số lượt chấm công theo người chỉ có một trang, và đó là `Chấm công`.** `Báo cáo` từng vẽ lại
+cùng con số từ cùng endpoint với ít cột hơn và không có đường bấm vào một người. Hai trang trả
+lời một câu hỏi thì trang yếu hơn không phải là lựa chọn thứ hai, nó là **chỗ người ta dừng lại
+trước khi thấy trang đúng**. §9.15 chia ba loại màn hình có lý do: đếm lượt quẹt của từng người
+là **tra cứu**, còn `Báo cáo` giữ thứ đúng nghĩa báo cáo — biến động bảo hiểm, D02-LT, lượt gộp
+theo tháng.
+
+**Đường về của một trang con là vệt điều hướng, không phải một nút `←` tự chế.** Tám trang con
+hiện có ba kiểu khác nhau và ba trang **không có đường nào** — ai mở hồ sơ một người từ danh bạ
+rồi muốn quay lại thì chỉ còn nút back của trình duyệt. Vệt ấy **dựng từ chính bảng này**: nhóm,
+rồi trang cha, rồi tiêu đề trang đang mở. Vì nó đọc bảng nên nó không bao giờ chỉ tới chỗ vai
+đang xem không vào được, và vì nó nằm ở khung ngoài nên không trang nào phải nhớ tự vẽ.
+
+**Trang cha không có vệt.** Ở đúng trang cha thì vệt sẽ lặp lại tiêu đề ngay bên dưới nó; vệt chỉ
+xuất hiện khi còn chỗ để quay về.
 
 **Bảng này canh ở đường dẫn, không chỉ canh ở thanh bên.** Ẩn một mục khỏi menu mà vẫn phục vụ
 trang cho ai gõ đúng URL là làm được **một nửa** của luật 1: người ta không nhìn thấy lối vào,
