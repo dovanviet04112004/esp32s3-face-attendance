@@ -23,8 +23,9 @@ export function Breadcrumb() {
   return (
     <nav aria-label={t("breadcrumb")} className="mb-3">
       <ol className="flex flex-wrap items-center gap-1 text-sm text-(--color-muted)">
-        {crumbs.map((crumb) => (
+        {crumbs.map((crumb, at) => (
           <li key={crumb.key} className="flex items-center gap-1">
+            {at > 0 ? <ChevronRight className="size-3.5 shrink-0" aria-hidden /> : null}
             {crumb.href ? (
               <Link
                 href={crumb.href}
@@ -35,7 +36,6 @@ export function Breadcrumb() {
             ) : (
               <span className="px-1">{t(crumb.key)}</span>
             )}
-            <ChevronRight className="size-3.5 shrink-0" aria-hidden />
           </li>
         ))}
       </ol>
