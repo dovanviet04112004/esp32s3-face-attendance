@@ -4428,10 +4428,14 @@ frontend/
 │           ├── me/{page.tsx, attendance/, requests/, payslips/, shifts/, letters/, profile/}
 │           ├── approvals/page.tsx                     # hộp chờ duyệt của MANAGER
 │           ├── org/{page.tsx, departments/page.tsx}   # cây tổ chức
-│           ├── leave/{page.tsx, [id]/page.tsx}        # HR nhìn toàn bộ đơn
+│           ├── leave/{page.tsx, [id]/page.tsx}        # sổ đơn từ, mọi loại mọi trạng thái
 │           ├── timesheet/page.tsx                     # bảng công tháng, sửa có vết
 │           ├── payroll/{page.tsx, [periodId]/page.tsx}
 │           ├── policy/page.tsx                        # giảm trừ, tỷ lệ, biểu thuế
+│           ├── assets/page.tsx                        # ★ §9.16 — sổ tài sản, cấp và thu
+│           ├── onboarding/page.tsx                    # ★ việc nhận/nghỉ việc chưa xong
+│           ├── audit/page.tsx                         # ★ §9.24 — nhật ký kiểm toán
+│           ├── users/page.tsx                         # ★ §9.4 — tài khoản và vai
 │           ├── documents/page.tsx                     # ★ §9.16 mục 9 — phát hành và hồ sơ thiếu
 │           └── me/documents/page.tsx                  # ★ bản phải đọc, và ký nhận đúng bản
 ├── messages/{vi.json, en.json}       # ★ catalogue — vi.json là nguồn kiểu (§3.1 CLAUDE.md)
@@ -6412,8 +6416,19 @@ Thiết lập      ▸ Chính sách · Loại phép · Vai trò · Tài liệu
 nhóm đầu. Làm mờ đi thay vì ẩn là cố ý khoe những gì họ không được đụng.
 
 **Mỗi phân hệ có đúng một màn hình "về một người".** Hồ sơ nhân viên là trang có tab: thông tin,
-hợp đồng, chấm công, nghỉ phép, lương, tài sản, đào tạo. Không rải mỗi thứ một trang rồi bắt HR
-tìm lại người đó bảy lần.
+hợp đồng, chấm công, nghỉ phép, lương, tài sản, nhận việc, hồ sơ giấy. Không rải mỗi thứ một
+trang rồi bắt HR tìm lại người đó bảy lần.
+
+**Tab đọc được thì phải ghi được ngay trên tab ấy.** Một tab hợp đồng chỉ liệt kê hợp đồng, một
+tab lương chỉ liệt kê mốc lương, một tab tài sản chỉ liệt kê thứ đang cầm — cả ba đều là ngõ cụt
+theo đúng luật 1, và cả ba đều có đường ghi ở backend từ lâu: `POST /contracts`,
+`POST /compensation`, `POST /assets/:id/hand-over`. Chỗ ghi đứng cạnh chỗ đọc thì người dùng
+không phải nhớ trang thứ hai, và người viết code không quên rằng hai nửa ấy là một việc.
+
+**Sổ toàn công ty vẫn cần trang riêng, và nó không thay tab.** `Tài sản` trả lời *cái máy này
+đang ở đâu*, tab tài sản trả lời *người này đang cầm gì* — cùng một bảng, hai câu hỏi ngược
+chiều, và ai cũng hỏi cả hai. `Nhận việc` trả lời *việc nào quá hạn trên toàn nhánh*, tab nhận
+việc trả lời *người này còn thiếu bước nào*.
 
 **Mỗi vai có đúng một danh sách trang, và danh sách ấy khai ở một chỗ.** Bảng dưới là nguồn duy
 nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
@@ -6427,6 +6442,9 @@ nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
 | `Phòng ban` | ✓ | ✓ | – | – | – | – |
 | `Bảng công` · `Chấm công` | ✓ | ✓ | ✓ | ✓ | – | – |
 | `Đơn từ` (sổ toàn bộ, mọi loại) | ✓ | ✓ | – | ✓ | – | – |
+| `Tài sản` (sổ cấp phát và thu hồi) | ✓ | ✓ | – | – | – | – |
+| `Nhận việc` (danh sách việc chưa xong) | ✓ | ✓ | – | ✓ | – | – |
+| `Nhật ký` (§9.24) · `Tài khoản` (§9.4) | ✓ | – | – | – | – | – |
 | `Ca làm` | ✓ | ✓ | – | – | – | – |
 | `Báo cáo` | ✓ | ✓ | ✓ | – | – | – |
 | `Kỳ lương` · `Chính sách lương` | ✓ | ✓ đọc | ✓ | – | – | – |
