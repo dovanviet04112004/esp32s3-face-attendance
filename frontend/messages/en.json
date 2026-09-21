@@ -839,7 +839,11 @@
     "reorgWouldMove": "Would move {count} people",
     "reorgApplied": "Moved {count} people",
     "reorgRequests": "{count} pending requests move to the new approver",
-    "reorgLosing": "{count} managers lose sight of part of their branch"
+    "reorgLosing": "{count} managers lose sight of part of their branch",
+    "head": "{count} people",
+    "headHere": "{here} here · {whole} in branch",
+    "collapse": "Collapse",
+    "expand": "Expand"
   },
   "setPassword": {
     "lead": "Set a password to open your account",

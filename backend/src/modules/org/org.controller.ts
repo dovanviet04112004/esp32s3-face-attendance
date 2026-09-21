@@ -31,7 +31,7 @@ import {
   ReorgDto,
   UpdateDepartmentDto,
 } from "./dto/org.dto.js";
-import { OrgService, type ReorgPlan } from "./org.service.js";
+import { OrgService, type DepartmentNode, type ReorgPlan } from "./org.service.js";
 
 @ApiTags("org")
 @ApiBearerAuth()
@@ -117,7 +117,7 @@ export class OrgController {
   @Get("departments")
   @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
   @ApiOperation({ summary: "The tree flat, with parentId, so a caller shapes it once" })
-  departments(@Query("legalEntityId") legalEntityId?: string): Promise<Department[]> {
+  departments(@Query("legalEntityId") legalEntityId?: string): Promise<DepartmentNode[]> {
     return this.org.departments(legalEntityId);
   }
 

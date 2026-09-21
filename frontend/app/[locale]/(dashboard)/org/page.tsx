@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronRight } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -10,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 
@@ -18,6 +20,7 @@ interface Department {
   code: string;
   name: string;
   parentId: string | null;
+  headcount: number;
 }
 
 interface ReorgRow {
@@ -48,43 +51,88 @@ function branchesOf(rows: Department[], parentId: string | null): Department[] {
   return rows.filter((row) => row.parentId === parentId);
 }
 
-function Branch({
-  rows,
-  parentId,
-  depth,
-  onPick,
-}: {
+/** People under a node and everything below it, which is the number an org
+ *  chart is read for; the api counts each node on its own.
+ */
+function subtreeOf(rows: Department[], node: Department): number {
+  return branchesOf(rows, node.id).reduce(
+    (sum, child) => sum + subtreeOf(rows, child),
+    node.headcount,
+  );
+}
+
+interface BranchProps {
   rows: Department[];
   parentId: string | null;
   depth: number;
   onPick: ((one: Department) => void) | null;
-}) {
+  shut: ReadonlySet<string>;
+  onFlip: (id: string) => void;
+}
+
+function Branch({ rows, parentId, depth, onPick, shut, onFlip }: BranchProps) {
+  const t = useTranslations("org");
   return (
     <>
-      {branchesOf(rows, parentId).map((node) => (
-        <li key={node.id}>
-          <div
-            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-(--color-ground)"
-            style={{ paddingInlineStart: `${depth * 20 + 8}px` }}
-          >
-            <span className="font-mono text-xs text-(--color-muted)">{node.code}</span>
-            {onPick ? (
-              <button
-                type="button"
-                onClick={() => onPick(node)}
-                className="text-start text-(--color-accent) hover:underline"
-              >
-                {node.name}
-              </button>
-            ) : (
-              <span>{node.name}</span>
-            )}
-          </div>
-          <ul>
-            <Branch rows={rows} parentId={node.id} depth={depth + 1} onPick={onPick} />
-          </ul>
-        </li>
-      ))}
+      {branchesOf(rows, parentId).map((node) => {
+        const kids = branchesOf(rows, node.id);
+        const open = !shut.has(node.id);
+        const whole = subtreeOf(rows, node);
+        return (
+          <li key={node.id}>
+            <div
+              className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-(--color-ground)"
+              style={{ paddingInlineStart: `${depth * 20 + 8}px` }}
+            >
+              {kids.length > 0 ? (
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-label={t(open ? "collapse" : "expand")}
+                  onClick={() => onFlip(node.id)}
+                  className="grid size-5 shrink-0 place-items-center rounded text-(--color-muted) hover:text-(--color-ink)"
+                >
+                  <ChevronRight
+                    className={cn("size-4 transition-transform", open && "rotate-90")}
+                    aria-hidden
+                  />
+                </button>
+              ) : (
+                <span className="size-5 shrink-0" aria-hidden />
+              )}
+              <span className="font-mono text-xs text-(--color-muted)">{node.code}</span>
+              {onPick ? (
+                <button
+                  type="button"
+                  onClick={() => onPick(node)}
+                  className="text-start text-(--color-accent) hover:underline"
+                >
+                  {node.name}
+                </button>
+              ) : (
+                <span>{node.name}</span>
+              )}
+              <span className="ms-auto shrink-0 text-xs text-(--color-muted) tabular-nums">
+                {kids.length > 0 && whole !== node.headcount
+                  ? t("headHere", { here: node.headcount, whole })
+                  : t("head", { count: node.headcount })}
+              </span>
+            </div>
+            {open && kids.length > 0 ? (
+              <ul>
+                <Branch
+                  rows={rows}
+                  parentId={node.id}
+                  depth={depth + 1}
+                  onPick={onPick}
+                  shut={shut}
+                  onFlip={onFlip}
+                />
+              </ul>
+            ) : null}
+          </li>
+        );
+      })}
     </>
   );
 }
@@ -105,6 +153,18 @@ export default function OrgPage() {
   const [fromDepartmentId, setFrom] = useState("");
   const [toDepartmentId, setTo] = useState("");
   const [toManagerCode, setManager] = useState("");
+  // A branch is open until it is shut, so a fresh tree shows itself whole.
+  const [shut, setShut] = useState<ReadonlySet<string>>(new Set());
+
+  function flip(id: string): void {
+    setShut((held) => {
+      const next = new Set(held);
+      if (!next.delete(id)) {
+        next.add(id);
+      }
+      return next;
+    });
+  }
 
   const departments = useQuery({
     queryKey: ["departments"],
@@ -182,6 +242,8 @@ export default function OrgPage() {
                   }
                 : null
             }
+            shut={shut}
+            onFlip={flip}
           />
         </ul>
       )}

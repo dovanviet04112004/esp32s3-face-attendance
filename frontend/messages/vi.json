@@ -839,7 +839,11 @@
     "reorgWouldMove": "Sẽ chuyển {count} người",
     "reorgApplied": "Đã chuyển {count} người",
     "reorgRequests": "{count} đơn đang chờ được chuyển sang người duyệt mới",
-    "reorgLosing": "{count} quản lý mất quyền nhìn một phần nhánh của họ"
+    "reorgLosing": "{count} quản lý mất quyền nhìn một phần nhánh của họ",
+    "head": "{count} người",
+    "headHere": "{here} ở đây · {whole} cả nhánh",
+    "collapse": "Gấp nhánh",
+    "expand": "Mở nhánh"
   },
   "setPassword": {
     "lead": "Đặt mật khẩu để mở tài khoản của bạn",

@@ -44,6 +44,11 @@ function byManager(
 }
 
 /** One person a reorganisation would move, and what it moves them out of. */
+/** A department plus the people filed directly under it, not its subtree. */
+export interface DepartmentNode extends Department {
+  headcount: number;
+}
+
 export interface ReorgRow {
   employeeId: number;
   code: string;
@@ -316,11 +321,24 @@ export class OrgService {
   }
 
   /** The whole tree flat, carrying parentId so a caller shapes it once. */
-  departments(legalEntityId?: string): Promise<Department[]> {
-    return this.db.department.findMany({
-      where: { active: true, ...(legalEntityId ? { legalEntityId } : {}) },
-      orderBy: [{ legalEntityId: "asc" }, { code: "asc" }],
-    });
+  /** The head count comes back with the tree: an org chart without it answers
+   *  where somebody sits and never how many sit there (KEHOACH 9.18).
+   */
+  async departments(legalEntityId?: string): Promise<DepartmentNode[]> {
+    const narrow = legalEntityId ? { legalEntityId } : {};
+    const [rows, counts] = await Promise.all([
+      this.db.department.findMany({
+        where: { active: true, ...narrow },
+        orderBy: [{ legalEntityId: "asc" }, { code: "asc" }],
+      }),
+      this.db.employee.groupBy({
+        by: ["departmentId"],
+        where: { active: true, departmentId: { not: null }, ...narrow },
+        _count: { _all: true },
+      }),
+    ]);
+    const held = new Map(counts.map((one) => [one.departmentId, one._count._all]));
+    return rows.map((row) => ({ ...row, headcount: held.get(row.id) ?? 0 }));
   }
 
   async createDepartment(body: CreateDepartmentDto): Promise<Department> {
