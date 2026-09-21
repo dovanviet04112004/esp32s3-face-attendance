@@ -167,9 +167,14 @@ const BY_DEPTH: NavItem[] = NAV.flatMap((group) => group.items).sort(
   (left, right) => right.href.length - left.href.length,
 );
 
+/** The menu entry a path belongs to, which a detail page has and never is. */
+export function ownerOf(path: string): NavItem | undefined {
+  return BY_DEPTH.find((item) => path === item.href || path.startsWith(`${item.href}/`));
+}
+
 /** Whether this account may open this path. No row means no opening it. */
 export function allows(role: Role | null, hasRecord: boolean, path: string): boolean {
-  const owner = BY_DEPTH.find((item) => path === item.href || path.startsWith(`${item.href}/`));
+  const owner = ownerOf(path);
   if (!owner) {
     return false;
   }
@@ -196,7 +201,7 @@ export interface Crumb {
  *  page this role cannot open. A parent page gets none (KEHOACH 9.15).
  */
 export function crumbsFor(role: Role | null, hasRecord: boolean, path: string): Crumb[] {
-  const owner = BY_DEPTH.find((item) => path === item.href || path.startsWith(`${item.href}/`));
+  const owner = ownerOf(path);
   if (!owner || owner.href === path) {
     return [];
   }

@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { navFor } from "@/lib/nav";
+import { navFor, ownerOf } from "@/lib/nav";
 import { useWaitingCount } from "./waiting-count";
 
 export function Sidebar() {
@@ -16,6 +16,8 @@ export function Sidebar() {
   const groups = navFor(role, employeeId !== null);
   const waiting = useWaitingCount(role);
 
+  // A detail page belongs to the entry that owns it, so the trail stays lit.
+  const current = ownerOf(here)?.href;
   return (
     // The nav below scrolls on its own only while this box stays viewport-tall.
     <aside className="hidden w-60 shrink-0 flex-col border-r border-(--color-line) bg-(--color-surface) p-3 md:sticky md:top-0 md:flex md:h-screen">
@@ -34,7 +36,7 @@ export function Sidebar() {
             <div className="flex flex-col gap-0.5">
               {group.items.map((item) => {
                 const Icon = item.icon;
-                const active = here === item.href;
+                const active = current === item.href;
                 return (
                   <Link
                     key={item.href}

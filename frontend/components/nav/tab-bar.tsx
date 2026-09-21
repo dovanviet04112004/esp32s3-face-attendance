@@ -8,7 +8,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { Link, usePathname } from "@/i18n/navigation";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { tabsFor, type NavItem } from "@/lib/nav";
+import { ownerOf, tabsFor, type NavItem } from "@/lib/nav";
 import { useWaitingCount } from "./waiting-count";
 
 function tabClass(active: boolean): string {
@@ -43,6 +43,8 @@ export function TabBar() {
   const { items, rest } = tabsFor(role, employeeId !== null);
   const waiting = useWaitingCount(role);
   const [open, setOpen] = useState(false);
+  // A detail page belongs to the entry that owns it, so the tab stays lit.
+  const current = ownerOf(here)?.href;
 
   return (
     <>
@@ -51,7 +53,7 @@ export function TabBar() {
         className="fixed inset-x-0 bottom-0 z-40 flex border-t border-(--color-line) bg-(--color-surface) pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         {items.map((item) => (
-          <Tab key={item.href} item={item} active={here === item.href} waiting={waiting} />
+          <Tab key={item.href} item={item} active={current === item.href} waiting={waiting} />
         ))}
         {rest.length > 0 ? (
           <button type="button" onClick={() => setOpen(true)} className={tabClass(false)}>
