@@ -45,6 +45,9 @@ export default function ShiftsPage() {
   const t = useTranslations("shifts");
   const format = useFormatter();
   const common = useTranslations("common");
+  // Both of these take a shift away from somebody, so a second click asks.
+  const [retiring, setRetiring] = useState<string | null>(null);
+  const [dropping, setDropping] = useState<string | null>(null);
   const cache = useQueryClient();
   const role = useSession((s) => s.role);
   const faultOf = useFault();
@@ -192,12 +195,13 @@ export default function ShiftsPage() {
             {row.active ? (
               <Button
                 type="button"
-                tone="quiet"
+                tone={retiring === row.id ? "danger" : "quiet"}
                 size="sm"
                 disabled={retire.isPending}
-                onClick={() => retire.mutate(row)}
+                onClick={() => (retiring === row.id ? retire.mutate(row) : setRetiring(row.id))}
+                onBlur={() => setRetiring(null)}
               >
-                {t("retire")}
+                {retiring === row.id ? common("sure") : t("retire")}
               </Button>
             ) : null}
           </span>
@@ -394,12 +398,13 @@ export default function ShiftsPage() {
                 </span>
                 <Button
                   type="button"
-                  tone="quiet"
+                  tone={dropping === one.id ? "danger" : "quiet"}
                   size="sm"
                   disabled={unassign.isPending}
-                  onClick={() => unassign.mutate(one)}
+                  onClick={() => (dropping === one.id ? unassign.mutate(one) : setDropping(one.id))}
+                  onBlur={() => setDropping(null)}
                 >
-                  {t("unassign")}
+                  {dropping === one.id ? common("sure") : t("unassign")}
                 </Button>
               </li>
             ))}

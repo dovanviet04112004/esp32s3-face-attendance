@@ -33,6 +33,8 @@ export default function UsersPage() {
   const t = useTranslations("users");
   const common = useTranslations("common");
   const roleName = useTranslations("roles");
+  // Closing an account locks somebody out, so the second click is the answer.
+  const [dropping, setDropping] = useState<string | null>(null);
   const format = useFormatter();
   const cache = useQueryClient();
   const faultOf = useFault();
@@ -126,15 +128,20 @@ export default function UsersPage() {
           </Button>
           <Button
             type="button"
-            tone="quiet"
+            tone={dropping === row.id ? "danger" : "quiet"}
             size="sm"
             disabled={remove.isPending}
             onClick={() => {
               setFault(null);
-              remove.mutate(row);
+              if (dropping === row.id) {
+                remove.mutate(row);
+                return;
+              }
+              setDropping(row.id);
             }}
+            onBlur={() => setDropping(null)}
           >
-            {t("remove")}
+            {dropping === row.id ? common("sure") : t("remove")}
           </Button>
         </span>
       ),
