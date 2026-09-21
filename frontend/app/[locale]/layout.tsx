@@ -1,13 +1,14 @@
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import "../globals.css";
 import { Providers } from "../providers";
 import { routing, type Locale } from "@/i18n/routing";
-import { kThemeScript } from "@/lib/theme";
+import { asTheme, kThemeCookie, schemeOf } from "@/lib/theme";
 
 interface LocaleParams {
   params: Promise<{ locale: string }>;
@@ -49,11 +50,13 @@ export default async function LocaleLayout({ children, params }: LocaleParams & 
     notFound();
   }
   setRequestLocale(locale);
+  const theme = asTheme((await cookies()).get(kThemeCookie)?.value);
   return (
-    <html lang={locale} suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: kThemeScript }} />
-      </head>
+    <html
+      lang={locale}
+      data-theme={theme === "system" ? undefined : theme}
+      style={{ colorScheme: schemeOf(theme) }}
+    >
       <body className="min-h-screen antialiased">
         <NextIntlClientProvider>
           <Providers>{children}</Providers>

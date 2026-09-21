@@ -2,18 +2,25 @@ export type Theme = "system" | "light" | "dark";
 
 export const THEMES: Theme[] = ["system", "light", "dark"];
 
-const kStore = "theme";
+// The server renders the choice onto html, and only a cookie reaches it.
+export const kThemeCookie = "theme";
 
-// color-scheme paints the canvas with no stylesheet loaded (KEHOACH 9.12).
-export const kThemeScript = `try{var r=document.documentElement,t=localStorage.getItem('${kStore}');if(t==='dark'||t==='light'){r.dataset.theme=t;r.style.colorScheme=t}else{r.style.colorScheme='light dark'}}catch(e){}`;
+const kYearSeconds = 31_536_000;
+
+export function asTheme(raw: string | undefined): Theme {
+  return raw === "dark" || raw === "light" ? raw : "system";
+}
+
+/** What the browser paints its own canvas from, with no stylesheet needed. */
+export function schemeOf(theme: Theme): string {
+  return theme === "system" ? "light dark" : theme;
+}
 
 export function readTheme(): Theme {
-  try {
-    const raw = window.localStorage.getItem(kStore);
-    return raw === "dark" || raw === "light" ? raw : "system";
-  } catch {
-    return "system";
-  }
+  const hit = document.cookie
+    .split("; ")
+    .find((one) => one.startsWith(`${kThemeCookie}=`));
+  return asTheme(hit?.slice(kThemeCookie.length + 1));
 }
 
 const kPicked = "theme-color-picked";
@@ -39,19 +46,11 @@ export function applyTheme(theme: Theme): void {
   const root = document.documentElement;
   if (theme === "system") {
     delete root.dataset.theme;
-    root.style.colorScheme = "light dark";
   } else {
     root.dataset.theme = theme;
-    root.style.colorScheme = theme;
   }
+  root.style.colorScheme = schemeOf(theme);
   paintChrome(theme);
-  try {
-    if (theme === "system") {
-      window.localStorage.removeItem(kStore);
-    } else {
-      window.localStorage.setItem(kStore, theme);
-    }
-  } catch {
-    return;
-  }
+  const age = theme === "system" ? 0 : kYearSeconds;
+  document.cookie = `${kThemeCookie}=${theme}; path=/; max-age=${age}; samesite=lax`;
 }
