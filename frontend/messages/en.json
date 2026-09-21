@@ -162,7 +162,15 @@
     "assetName": "Asset",
     "assetKind": "Kind",
     "trainingWaiting": "The training tab waits on the training module (KEHOACH 9.16 item 13)",
-    "departmentsFailed": "The department list did not load, so that picker is empty."
+    "departmentsFailed": "The department list did not load, so that picker is empty.",
+    "consentTitle": "Consent to face data",
+    "consentLead": "Decree 13/2023 treats facial features as sensitive data, so consent is recorded on its own rather than folded into the contract.",
+    "consentMissing": "No consent in force. Without one this person cannot be assigned to a kiosk.",
+    "consentGrant": "Record consent",
+    "consentOn": "Agreed on {day}",
+    "consentNotice": "Notice",
+    "consentWithdraw": "Withdraw consent",
+    "consentWithdrawHint": "Withdrawing erases the face template on every kiosk that holds it, at once."
   },
   "attendance": {
     "title": "Attendance",

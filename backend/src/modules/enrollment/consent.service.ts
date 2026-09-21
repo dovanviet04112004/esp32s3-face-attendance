@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { BiometricConsent } from "@prisma/client";
 
+import type { Env } from "../../config/env.schema.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -16,7 +18,13 @@ export class ConsentService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  /** The notice on offer right now, which a consent record is stamped with. */
+  noticeVersion(): string {
+    return this.config.get("BIOMETRIC_NOTICE_VERSION", { infer: true });
+  }
 
   live(employeeId: number): Promise<BiometricConsent | null> {
     return this.db.biometricConsent.findFirst({
@@ -56,10 +64,11 @@ export class ConsentService {
     if ((await this.live(employeeId)) !== null) {
       throw new BadRequestException("CONSENT_ALREADY_GRANTED");
     }
+    const noticeVersion = body.noticeVersion ?? this.noticeVersion();
     const made = await this.db.biometricConsent.create({
       data: {
         employeeId,
-        noticeVersion: body.noticeVersion,
+        noticeVersion,
         method: body.method,
         recordedById: viewer.userId,
         note: body.note ?? null,
@@ -70,7 +79,7 @@ export class ConsentService {
       action: AUDIT_ACTIONS.BIOMETRIC_CONSENT_GRANT,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(employeeId),
-      meta: { noticeVersion: body.noticeVersion, method: body.method },
+      meta: { noticeVersion, method: body.method },
     });
     return made;
   }

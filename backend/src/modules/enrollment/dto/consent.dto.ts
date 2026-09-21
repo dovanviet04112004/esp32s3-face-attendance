@@ -10,10 +10,11 @@ export class GrantConsentDto {
   @Min(1)
   employeeId?: number;
 
-  @ApiProperty({ example: "2026-01-v1", description: "Which notice text was agreed to" })
+  @ApiPropertyOptional({ description: "Left out, the server stamps the notice it serves" })
+  @IsOptional()
   @IsString()
   @MaxLength(64)
-  noticeVersion!: string;
+  noticeVersion?: string;
 
   @ApiProperty({ enum: METHODS, example: "PORTAL" })
   @IsIn([...METHODS])

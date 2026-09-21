@@ -23,6 +23,7 @@ export const envSchema = z
     PROVISION_BATCH: z.coerce.number().int().positive().max(10000).default(2000),
     PASSWORD_SETUP_TTL_HOURS: z.coerce.number().int().positive().default(72),
     DISPUTE_ANSWER_DAYS: z.coerce.number().int().positive().default(5),
+    BIOMETRIC_NOTICE_VERSION: z.string().min(1).max(64).default("2026-01-v1"),
 
     // The server clock is UTC, so this decides every day boundary (KEHOACH 9.8).
     APP_TIMEZONE: z

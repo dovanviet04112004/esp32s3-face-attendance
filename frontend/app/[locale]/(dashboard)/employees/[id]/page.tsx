@@ -17,6 +17,7 @@ import { Select } from "@/components/ui/select";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { useFault } from "@/lib/fault";
 import { money } from "@/lib/format";
 
 const TABS = ["info", "contracts", "attendance", "leave", "pay", "assets"] as const;
@@ -93,6 +94,15 @@ interface Asset {
   kind: string;
 }
 
+interface Consent {
+  id: string;
+  state: "GRANTED" | "WITHDRAWN";
+  noticeVersion: string;
+  method: string;
+  grantedAt: string;
+  withdrawnAt: string | null;
+}
+
 function day(value: string | null): string {
   return value ? value.slice(0, 10) : "";
 }
@@ -108,6 +118,7 @@ export default function EmployeePage() {
   const search = useSearchParams();
   const id = Number(params.id);
   const role = useSession((s) => s.role);
+  const faultOf = useFault();
   const seesContracts = role !== null && CONTRACT_ROLES.includes(role);
   const mayEnrol = role !== null && ENROL_DESK.includes(role);
 
@@ -116,6 +127,7 @@ export default function EmployeePage() {
   const shown = TABS.filter((one) => one !== "contracts" || seesContracts);
 
   const [fault, setFault] = useState<string | null>(null);
+  const [enrolFault, setEnrolFault] = useState<string | null>(null);
   const [picked, setPicked] = useState("");
   const [assigned, setAssigned] = useState<string | null>(null);
 
@@ -199,6 +211,27 @@ export default function EmployeePage() {
       const device = devices.data?.find((row) => row.id === deviceId);
       setAssigned(device?.name ?? deviceId);
     },
+    onError: (fell: unknown) => setEnrolFault(faultOf(fell)),
+  });
+
+  const consents = useQuery({
+    queryKey: ["biometric-consents", id],
+    enabled: tab === "info" && mayEnrol,
+    queryFn: async () => (await api.get<Consent[]>(`/biometric-consents/${id}`)).data,
+  });
+  const agreed = consents.data?.find((one) => one.state === "GRANTED") ?? null;
+
+  const grant = useMutation({
+    mutationFn: () => api.post("/biometric-consents", { employeeId: id, method: "PAPER" }),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["biometric-consents", id] }),
+  });
+
+  const withdraw = useMutation({
+    mutationFn: () => api.post(`/biometric-consents/${id}/withdraw`, {}),
+    onSuccess: () => {
+      setAssigned(null);
+      void cache.invalidateQueries({ queryKey: ["biometric-consents", id] });
+    },
   });
 
   const approved = devices.data ?? [];
@@ -266,6 +299,47 @@ export default function EmployeePage() {
 
           {mayEnrol ? (
           <div className="mt-10 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
+            <h2 className="text-sm font-medium">{t("consentTitle")}</h2>
+            <p className="mt-1 text-sm text-(--color-muted)">{t("consentLead")}</p>
+            {consents.isPending ? (
+              <p className="mt-4 text-sm text-(--color-muted)">{common("loading")}</p>
+            ) : agreed ? (
+              <div className="mt-4">
+                <p className="text-sm text-(--color-ok)">
+                  {t("consentOn", { day: agreed.grantedAt.slice(0, 10) })}
+                </p>
+                <p className="mt-1 text-xs text-(--color-muted)">
+                  {t("consentNotice")} {agreed.noticeVersion} · {agreed.method}
+                </p>
+                <Button
+                  type="button"
+                  tone="danger"
+                  className="mt-3"
+                  disabled={withdraw.isPending}
+                  onClick={() => withdraw.mutate()}
+                >
+                  {withdraw.isPending ? common("saving") : t("consentWithdraw")}
+                </Button>
+                <p className="mt-2 text-xs text-(--color-muted)">{t("consentWithdrawHint")}</p>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <p className="text-sm text-(--color-warn)">{t("consentMissing")}</p>
+                <Button
+                  type="button"
+                  className="mt-3"
+                  disabled={grant.isPending}
+                  onClick={() => grant.mutate()}
+                >
+                  {grant.isPending ? common("saving") : t("consentGrant")}
+                </Button>
+              </div>
+            )}
+          </div>
+          ) : null}
+
+          {mayEnrol ? (
+          <div className="mt-4 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
             <h2 className="text-sm font-medium">{t("assignTitle")}</h2>
             <p className="mt-1 text-sm text-(--color-muted)">{t("assignLead")}</p>
             {approved.length === 0 ? (
@@ -287,7 +361,10 @@ export default function EmployeePage() {
                 <Button
                   type="button"
                   disabled={!picked || assign.isPending}
-                  onClick={() => assign.mutate(picked)}
+                  onClick={() => {
+                    setEnrolFault(null);
+                    assign.mutate(picked);
+                  }}
                   className="shrink-0"
                 >
                   {t("assignAction")}
@@ -296,6 +373,11 @@ export default function EmployeePage() {
             )}
             {assigned ? (
               <p className="mt-3 text-sm text-(--color-ok)">{t("assigned", { device: assigned })}</p>
+            ) : null}
+            {enrolFault ? (
+              <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+                {enrolFault}
+              </p>
             ) : null}
           </div>
           ) : null}

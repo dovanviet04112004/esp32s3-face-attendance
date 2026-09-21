@@ -162,7 +162,15 @@
     "assetName": "Tài sản",
     "assetKind": "Loại",
     "trainingWaiting": "Tab đào tạo chờ phân hệ đào tạo (§9.16 mục 13)",
-    "departmentsFailed": "Không tải được danh sách phòng ban, nên ô chọn phòng đang trống."
+    "departmentsFailed": "Không tải được danh sách phòng ban, nên ô chọn phòng đang trống.",
+    "consentTitle": "Đồng ý dùng dữ liệu khuôn mặt",
+    "consentLead": "Nghị định 13/2023 xếp đặc điểm khuôn mặt vào dữ liệu nhạy cảm, nên đồng ý phải ghi riêng, không gộp vào hợp đồng.",
+    "consentMissing": "Chưa có đồng ý nào còn hiệu lực. Chưa ghi thì không gán được vào kiosk.",
+    "consentGrant": "Ghi nhận đã đồng ý",
+    "consentOn": "Đã đồng ý ngày {day}",
+    "consentNotice": "Bản văn bản",
+    "consentWithdraw": "Rút lại đồng ý",
+    "consentWithdrawHint": "Rút lại là xoá mẫu khuôn mặt trên mọi kiosk đã nhận, ngay lập tức."
   },
   "attendance": {
     "title": "Chấm công",
