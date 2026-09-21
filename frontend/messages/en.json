@@ -82,7 +82,8 @@
     "close": "Close",
     "sure": "Sure?",
     "filters": "Filters",
-    "showingOf": "Showing {shown} of {total}"
+    "showingOf": "Showing {shown} of {total}",
+    "loadMore": "Load more"
   },
   "login": {
     "lead": "Sign in to reach the control panel",
@@ -253,7 +254,9 @@
     "bankName": "Bank",
     "bankAccount": "Account number",
     "legalEntity": "Legal entity",
-    "legalEntityHint": "The D02-LT filing is filtered by this; leaving it empty keeps the person out of the file."
+    "legalEntityHint": "The D02-LT filing is filtered by this; leaving it empty keeps the person out of the file.",
+    "anyDepartment": "Any department",
+    "searchHint": "Code or name"
   },
   "attendance": {
     "title": "Attendance",

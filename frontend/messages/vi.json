@@ -82,7 +82,8 @@
     "close": "Đóng",
     "sure": "Chắc chắn?",
     "filters": "Bộ lọc",
-    "showingOf": "Đang hiện {shown} trong {total}"
+    "showingOf": "Đang hiện {shown} trong {total}",
+    "loadMore": "Tải thêm"
   },
   "login": {
     "lead": "Đăng nhập để vào bảng điều khiển",
@@ -253,7 +254,9 @@
     "bankName": "Ngân hàng",
     "bankAccount": "Số tài khoản",
     "legalEntity": "Pháp nhân",
-    "legalEntityHint": "Mẫu D02-LT lọc theo ô này; để trống là người này không có trong file nộp BHXH."
+    "legalEntityHint": "Mẫu D02-LT lọc theo ô này; để trống là người này không có trong file nộp BHXH.",
+    "anyDepartment": "Mọi phòng ban",
+    "searchHint": "Mã hoặc tên"
   },
   "attendance": {
     "title": "Chấm công",

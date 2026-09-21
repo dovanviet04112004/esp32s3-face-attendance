@@ -1,12 +1,18 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
@@ -22,6 +28,13 @@ interface Employee {
   fullName: string;
   department: { id: string; name: string } | null;
   active: boolean;
+}
+
+interface EmployeePage {
+  rows: Employee[];
+  total: number;
+  totalIsExact?: boolean;
+  next: string | null;
 }
 
 interface ImportFault {
@@ -67,6 +80,10 @@ export default function EmployeesPage() {
   const role = useSession((s) => s.role);
   const mayWrite = role === "ADMIN" || role === "HR";
   const cache = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
+  // A keystroke is not a query: 5000 rows go out only when the filter is run.
+  const [asked, setAsked] = useState({ search: "", departmentId: "" });
   const faultOf = useFault();
   const picker = useRef<HTMLInputElement>(null);
   const [csv, setCsv] = useState("");
@@ -155,12 +172,28 @@ export default function EmployeesPage() {
       check.mutate(text);
     });
   }
-  const employees = useQuery({
-    queryKey: ["employees"],
-    queryFn: async () =>
-      (await api.get<{ rows: Employee[]; total: number; totalIsExact?: boolean }>("/employees"))
-        .data,
+  const employees = useInfiniteQuery({
+    queryKey: ["employees", asked],
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams();
+      if (asked.search) {
+        params.set("search", asked.search);
+      }
+      if (asked.departmentId) {
+        params.set("departmentId", asked.departmentId);
+      }
+      if (pageParam) {
+        params.set("cursor", pageParam);
+      }
+      const query = params.toString();
+      return (await api.get<EmployeePage>(`/employees${query ? `?${query}` : ""}`)).data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
   });
+
+  const loaded = employees.data?.pages.flatMap((one) => one.rows);
+  const counted = employees.data?.pages[0];
 
   const columns: Column<Employee>[] = [
     {
@@ -210,9 +243,9 @@ export default function EmployeesPage() {
         <div>
           <h1 className="text-lg font-semibold">{t("title")}</h1>
           <p className="mt-1 mb-6 text-sm text-(--color-muted)">
-            {employees.data
-              ? t(employees.data.totalIsExact === false ? "countAtLeast" : "count", {
-                  count: employees.data.total,
+            {counted
+              ? t(counted.totalIsExact === false ? "countAtLeast" : "count", {
+                  count: counted.total,
                 })
               : " "}
           </p>
@@ -299,10 +332,48 @@ export default function EmployeesPage() {
           )}
         </div>
       ) : null}
+      <FilterBar
+        onApply={(event) => {
+          event.preventDefault();
+          setAsked({ search, departmentId });
+        }}
+      >
+        <div>
+          <label className="block text-xs text-(--color-muted)" htmlFor="who">
+            {common("search")}
+          </label>
+          <Input
+            id="who"
+            value={search}
+            placeholder={t("searchHint")}
+            onChange={(event) => setSearch(event.target.value)}
+            className="mt-1 w-56"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-(--color-muted)" htmlFor="inDept">
+            {t("department")}
+          </label>
+          <Select
+            id="inDept"
+            value={departmentId}
+            onChange={(event) => setDepartmentId(event.target.value)}
+            className="mt-1 w-56"
+          >
+            <option value="">{t("anyDepartment")}</option>
+            {(departments.data ?? []).map((one) => (
+              <option key={one.id} value={one.id}>
+                {one.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </FilterBar>
+
       <DataTable
         id="employees"
         columns={columns}
-        rows={employees.data?.rows}
+        rows={loaded}
         keyOf={(row) => String(row.id)}
         pending={employees.isPending}
         failed={employees.isError}
@@ -316,6 +387,24 @@ export default function EmployeesPage() {
           ) : undefined
         }
       />
+
+      {employees.hasNextPage ? (
+        <div className="mt-3 flex flex-col items-center gap-1">
+          <Button
+            type="button"
+            tone="quiet"
+            disabled={employees.isFetchingNextPage}
+            onClick={() => void employees.fetchNextPage()}
+          >
+            {employees.isFetchingNextPage ? common("loading") : common("loadMore")}
+          </Button>
+          {counted ? (
+            <p className="text-xs text-(--color-muted) tabular-nums">
+              {common("showingOf", { shown: loaded?.length ?? 0, total: counted.total })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <Sheet
         open={raising}
