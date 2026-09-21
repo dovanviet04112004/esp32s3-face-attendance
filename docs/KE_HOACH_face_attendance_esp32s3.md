@@ -6425,7 +6425,7 @@ nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
 | `Cây tổ chức` | ✓ | ✓ | – | ✓ | – | – |
 | `Phòng ban` | ✓ | ✓ | – | – | – | – |
 | `Bảng công` · `Chấm công` | ✓ | ✓ | ✓ | ✓ | – | – |
-| `Nghỉ phép` (toàn bộ đơn) | ✓ | ✓ | – | ✓ | – | – |
+| `Đơn từ` (sổ toàn bộ, mọi loại) | ✓ | ✓ | – | ✓ | – | – |
 | `Ca làm` | ✓ | ✓ | – | – | – | – |
 | `Báo cáo` | ✓ | ✓ | ✓ | – | – | – |
 | `Kỳ lương` · `Chính sách lương` | ✓ | ✓ đọc | ✓ | – | – | – |
@@ -6448,6 +6448,25 @@ lời một câu hỏi thì trang yếu hơn không phải là lựa chọn th�
 trước khi thấy trang đúng**. §9.15 chia ba loại màn hình có lý do: đếm lượt quẹt của từng người
 là **tra cứu**, còn `Báo cáo` giữ thứ đúng nghĩa báo cáo — biến động bảo hiểm, D02-LT, lượt gộp
 theo tháng.
+
+**`Chờ duyệt` là hộp thư, `Đơn từ` là sổ, và hai cái trả lời hai câu hỏi khác nhau.** Hộp hỏi
+*cái gì đang đợi tôi* — nó lọc theo **người duyệt là tôi** và chỉ chứa thứ còn treo. Sổ hỏi
+*nhánh của tôi đã xin những gì* — nó lọc theo **phạm vi nhìn thấy** và chứa mọi trạng thái, kể
+cả đơn đã quyết từ năm ngoái. Đặt mặc định của sổ ở *đang chờ* là biến nó thành hộp thứ hai:
+cùng một danh sách hiện ở hai mục thanh bên, và người trực phải đoán mục nào mới là mục thật.
+Sổ mặc định **mọi trạng thái**.
+
+**Một đơn quyết ở hộp hoặc ở trang chi tiết, không quyết ở sổ.** Hộp cho quyết nhanh vì ở đó
+mọi dòng đều đang đợi chính người đang nhìn; sổ thì phần lớn dòng không phải việc của họ, nên
+một hàng nút duyệt trên mỗi dòng là mời bấm nhầm. Sổ **bấm vào được**, và trang chi tiết là nơi
+có đủ bối cảnh để quyết. Một sổ không bấm vào được thì lỗi nặng hơn cả thiếu nút: nó bày ra thứ
+đang treo rồi không cho làm gì với nó, mà trang duy nhất làm được lại **không có đường nào dẫn
+tới**.
+
+**Sổ đơn từ mang đủ năm loại, nên tên nó không phải `Nghỉ phép`.** Cùng một bảng `Request` giữ
+nghỉ phép, tăng ca, giải trình công, công tác và làm từ xa — gọi sổ ấy theo loại đông nhất là
+dạy người dùng rằng bốn loại kia nằm ở đâu đó khác, rồi bắt họ đi tìm. Sổ **lọc theo loại**, và
+tên nó nói đúng thứ nó chứa.
 
 **Đường về của một trang con là vệt điều hướng, không phải một nút `←` tự chế.** Tám trang con
 hiện có ba kiểu khác nhau và ba trang **không có đường nào** — ai mở hồ sơ một người từ danh bạ
@@ -6487,10 +6506,17 @@ chỉ để đọc với một vai — như `Kỳ lương` với `HR` — thì *
 không hiện ra để trả `403`.
 
 **Luật 2 — một thứ chờ quyết định thì nằm ở `Chờ duyệt`, không nằm trên trang tự phục vụ.** Đơn
-nghỉ, người phụ thuộc, khiếu nại phiếu lương, giấy xác nhận, đổi thông tin cá nhân — tất cả về
-một hộp. Để hộp duyệt ở ngay trang người lao động gửi đơn thì **cùng một việc có hai địa chỉ**,
-và người trực hộp phải nhớ hôm nay còn phải mở thêm trang nào nữa. Trang tự phục vụ chỉ gửi và
-theo dõi; nó không quyết.
+nghỉ, **tạm ứng lương**, người phụ thuộc, khiếu nại phiếu lương, giấy xác nhận, đổi thông tin cá
+nhân — cả sáu về một hộp. Để hộp duyệt ở ngay trang người lao động gửi đơn thì **cùng một việc
+có hai địa chỉ**, và người trực hộp phải nhớ hôm nay còn phải mở thêm trang nào nữa. Trang tự
+phục vụ chỉ gửi và theo dõi; nó không quyết.
+
+**Danh sách sáu này là danh sách đóng, và nó được kiểm.** Một đường `decide` ở backend mà không
+có hàng đợi tương ứng trong hộp là một đơn **treo vĩnh viễn**: người gửi thấy *đang chờ*, người
+duyệt không thấy gì, và không có màn hình nào nói rằng có việc bỏ sót. Tạm ứng lương đi đúng
+đường ấy — `POST /advances` có, `POST /advances/:id/decide` có, hộp thì không có hàng đợi nào,
+nên mọi đơn tạm ứng đứng ở `PENDING` và phép trừ tạm ứng của kỳ lương không bao giờ chạy. Thêm
+một đường quyết định thì thêm một hàng đợi trong cùng commit.
 
 ### 9.16 Các phân hệ mở rộng: quyết định đáng ghi trước
 
@@ -6819,7 +6845,12 @@ hợp đồng:
 
 - **Đồng ý riêng cho dữ liệu sinh trắc**, tách khỏi hợp đồng lao động, ghi lại thời điểm và
   phiên bản văn bản đã đồng ý (§9.16 mục tài liệu). Đồng ý gộp vào hợp đồng là đồng ý không
-  chứng minh được.
+  chứng minh được. **Phép ghi đồng ý nằm ngay cạnh phép gán kiosk mà nó chặn**, trên tab thông
+  tin của hồ sơ nhân viên: `POST /enrollments` từ chối bằng `BIOMETRIC_CONSENT_MISSING` khi chưa
+  có đồng ý còn hiệu lực, nên một màn hình ghi danh không có chỗ ghi đồng ý là một nút **không
+  bao giờ bấm thành công** — và câu lỗi nó trả về không nói được người dùng phải đi đâu để sửa.
+  Rút lại cũng ở đó, vì rút lại xoá mẫu trên mọi kiosk và người bấm cần thấy hậu quả ấy viết ra
+  cạnh cái nút.
 - **Đánh giá tác động xử lý dữ liệu** theo Điều 24, và khai bộ phận phụ trách với Bộ Công an.
 - **Nhật ký truy cập**: ai đã xem hoặc xuất dữ liệu sinh trắc, lúc nào. `AuditLog` đã có, phải
   phủ tới đây.
