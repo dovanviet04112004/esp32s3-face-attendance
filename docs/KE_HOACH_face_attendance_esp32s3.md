@@ -6282,6 +6282,25 @@ phải có mà không làm gì.
 Đây là phần mềm người ta mở tám tiếng một ngày, không phải trang giới thiệu. Nên nhịp của nó là
 **dày mà đọc được**, không phải thoáng mà rỗng.
 
+**Bề rộng khai đúng hai con số, và không trang nào tự đặt thêm.** Trên một màn 1900 px, một
+trang khai `max-w-3xl` rồi để nguyên sẽ **dính vào mép trái** với một khoảng trống bằng nửa màn
+bên phải; một trang không khai gì thì kéo bảng ra hết bề ngang và dòng nào cũng phải đưa mắt đi
+một quãng. Hai lỗi ngược nhau, cùng một nguyên nhân: không ai nói bề rộng là bao nhiêu.
+
+| Token | Dùng cho | Vì sao |
+|---|---|---|
+| `--width-shell` | khung ngoài của mọi trang, **căn giữa** | bảng và danh sách cần chỗ, nhưng không cần cả màn |
+| `--width-read` | trang chỉ để đọc hoặc một biểu mẫu, **căn giữa trong khung** | dòng chữ dài quá thì mắt lạc hàng khi xuống dòng |
+
+**Thanh trên dùng chung khung ấy.** Ô tìm kiếm và chuông nằm thẳng hàng với nội dung bên dưới,
+nếu không thì thanh trên căng hết màn còn nội dung thụt vào, và cái lệch ấy nhìn thấy được ở mọi
+trang. Một khung, khai một chỗ, cả hai cùng đọc.
+
+**Đăng xuất là một thao tác tài khoản, nên nó ở *Cài đặt*.** Để nó thành một nút thường trực
+dưới thanh bên là đặt thao tác **không thể hoàn tác** cạnh những mục người ta bấm cả ngày. Tần
+suất dùng của nó là vài lần một ngày, còn hậu quả bấm nhầm là mất hết việc đang làm dở — đó là
+tỷ lệ sai để cho một nút ở tầm tay thường trực.
+
 **Bốn luật hình thức**
 
 1. **Dẫn bằng việc, không dẫn bằng số.** Trang chủ của người duyệt mở ra danh sách việc đang
