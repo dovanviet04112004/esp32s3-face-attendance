@@ -4166,7 +4166,8 @@ backend/
     │   ├── certificates/             # ★ §9.17 mục 5 — giấy xác nhận, số hiệu do CSDL cấp
     │   ├── profile/                  # ★ §9.17 mục 6 — đổi thông tin cá nhân qua duyệt
     │   ├── disputes/                 # ★ §9.17 mục 11 — khiếu nại phiếu lương, có hạn trả lời
-    │   └── onboarding/               # ★ §9.16 mục 10 — mẫu theo chức danh, sinh ra bản thể hiện
+    │   ├── onboarding/               # ★ §9.16 mục 10 — mẫu theo chức danh, sinh ra bản thể hiện
+    │   └── documents/                # ★ §9.16 mục 9 — bản có phiên bản, và hồ sơ còn thiếu
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
     │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
@@ -4431,7 +4432,9 @@ frontend/
 │           ├── leave/{page.tsx, [id]/page.tsx}        # HR nhìn toàn bộ đơn
 │           ├── timesheet/page.tsx                     # bảng công tháng, sửa có vết
 │           ├── payroll/{page.tsx, [periodId]/page.tsx}
-│           └── policy/page.tsx                        # giảm trừ, tỷ lệ, biểu thuế
+│           ├── policy/page.tsx                        # giảm trừ, tỷ lệ, biểu thuế
+│           ├── documents/page.tsx                     # ★ §9.16 mục 9 — phát hành và hồ sơ thiếu
+│           └── me/documents/page.tsx                  # ★ bản phải đọc, và ký nhận đúng bản
 ├── messages/{vi.json, en.json}       # ★ catalogue — vi.json là nguồn kiểu (§3.1 CLAUDE.md)
 ├── i18n/
 │   ├── routing.ts                    # danh sách locale + locale mặc định
@@ -4455,6 +4458,7 @@ frontend/
 │   ├── requests/{request-card.tsx, request-form.tsx}
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
 │   ├── notifications/{bell.tsx, notice-list.tsx, push-switch.tsx}   # ★ §9.21.4
+│   ├── documents/{document-reader.tsx, file-gaps.tsx}   # ★ §9.16 mục 9
 │   └── payroll/{payslip-view.tsx, run-progress.tsx, dispute-card.tsx, settlement-sheet.tsx}
 │                                     # ★ §9.17 mục 11 — một thẻ khiếu nại, hai phía đọc
 ├── lib/
@@ -5879,6 +5883,10 @@ một đồng lệch mà không ai truy ra được nguồn.
 
 **Ngày công** — `AttendanceDay`. Xem §9.8.
 
+**Tài liệu** — `Document`, `DocumentVersion`, `DocumentAck` cho chiều công ty phát ra;
+`PersonnelFileType`, `PersonnelFile` cho chiều người nộp vào. Xem §9.16 mục 9. Hai chiều không
+dùng chung bảng vì chúng trả lời hai câu hỏi ngược nhau.
+
 **Nhận việc và nghỉ việc** — `ChecklistTemplate`, `ChecklistTemplateItem`, `ChecklistRun`,
 `ChecklistTask`. Xem §9.16 mục 10. Mẫu khai theo **chức danh và phòng ban**; lúc một người vào
 hoặc ra thì **sinh ra một bản thể hiện** và từ đó hai bên không còn dính nhau nữa.
@@ -6373,6 +6381,8 @@ nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
 | `Báo cáo` | ✓ | ✓ | ✓ | – | – | – |
 | `Kỳ lương` · `Chính sách lương` | ✓ | ✓ đọc | ✓ | – | – | – |
 | `Tổng quan` · `Kiosk` | ✓ | – | – | – | – | – |
+| `Tài liệu của tôi` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `Tài liệu` (phát hành, hồ sơ còn thiếu) | ✓ | ✓ | – | – | – | – |
 | `Cài đặt` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **Hai luật giữ cho bảng này không mục.**
@@ -6395,6 +6405,45 @@ Không mô tả lại từng tính năng — chỉ ghi chỗ dễ làm sai.
 **Tài liệu và chính sách (9).** Văn bản có **phiên bản**, và xác nhận đã đọc gắn vào **đúng
 phiên bản** người ta đã đọc. Gắn vào tên tài liệu là mất khả năng chứng minh ai đã đọc bản nào
 — thứ duy nhất có giá trị khi có tranh chấp.
+
+**Chữ "tài liệu" che mất hai việc ngược chiều nhau, và chúng không dùng chung một bảng.**
+
+| Chiều | Là gì | Câu hỏi phải trả lời | Bảng |
+|---|---|---|---|
+| Công ty → người | nội quy, chính sách, sổ tay | "ai chưa đọc bản mới nhất" | `Document`, `DocumentVersion`, `DocumentAck` |
+| Người → công ty | CCCD, bằng cấp, giấy khám sức khoẻ | "ai chưa nộp cái gì" | `PersonnelFileType`, `PersonnelFile` |
+
+Gộp lại thì được một bảng có nửa số cột luôn rỗng ở mỗi dòng. Nội dung một bản nội quy là thứ
+công ty **sở hữu và sửa**, nên nó cần phiên bản; một tờ bằng đại học thì không có phiên bản,
+nó chỉ có "đã nhận chưa" và đôi khi "hết hạn ngày nào". Hai câu hỏi khác nhau thì hai hình dạng
+dữ liệu khác nhau.
+
+**Chiều 1 — xác nhận gắn vào `versionId`, không bao giờ gắn vào `documentId`.** Đây không phải
+chi tiết cài đặt, nó **là** tính năng: phát hành bản 2 thì mọi xác nhận của bản 1 vẫn còn
+nguyên giá trị cho bản 1, và cả công ty trở lại trạng thái *chưa đọc bản 2*. Nếu xác nhận gắn
+vào tên tài liệu thì sửa một dòng trong nội quy xong, ai cũng vẫn "đã đọc" — và tờ giấy ấy
+chứng minh đúng một điều: không có gì.
+
+**Bản đã phát hành là bất biến.** Sửa nội dung nghĩa là phát bản kế tiếp, không phải ghi đè.
+Một văn bản sửa được sau lưng người đã ký nhận thì không khác gì không có.
+
+**Ai phải đọc cái gì: khớp thì phải đọc, không khớp thì không nhìn thấy.** `Document` mang
+`departmentId` và `jobTitleId`, cả hai đều được phép rỗng, và **rỗng nghĩa là mọi người**. Một
+người phải đọc khi từng ô hoặc rỗng hoặc trùng với họ. Đây cố ý **không** dùng luật "cụ thể
+nhất thắng" của mẫu onboarding (§9.16 mục 10): mẫu onboarding chọn **một** bản để sinh ra danh
+sách việc, còn nội quy thì chồng lên nhau — nội quy chung và nội quy phòng thí nghiệm đều phải
+đọc, không cái nào thay cái nào.
+
+**Chiều 2 — cái hệ theo dõi là *đã nhận*, không phải *bản scan*.** Với CCCD và bằng cấp thì thứ
+có giá trị pháp lý là bản giấy nằm trong tủ hồ sơ; một file ảnh không thay được nó. Nên
+`PersonnelFile` là **một biên lai**: ai nhận, ngày nào, ghi chú gì, và hạn dùng nếu loại giấy
+ấy có hạn. Ô đính kèm file **chưa có cột**, vì chưa có nơi lưu (§4.8 còn đang bỏ ngỏ) và một
+cột không ai ghi vào là một lời hứa nằm trong schema.
+
+**"Còn thiếu" là một phép trừ, không phải một cột trạng thái.** Người đang làm × loại giấy bắt
+buộc, trừ đi những biên lai đã có, cộng thêm những biên lai đã quá hạn. Giữ thêm một cột
+`complete` trên `Employee` là tạo ra thứ phải đồng bộ mỗi khi ai đó thêm một loại giấy bắt
+buộc mới — và nó sẽ lệch đúng vào lúc cần đọc.
 
 **Onboarding / offboarding (10).** Mẫu danh sách việc theo chức danh và phòng ban, sinh ra bản
 thể hiện có người phụ trách và hạn. **Offboarding chạy ngược lại và phải chặn được**: chưa thu
