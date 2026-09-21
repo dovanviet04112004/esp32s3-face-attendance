@@ -2207,7 +2207,7 @@ esp32s3-face-attendance/
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
 ├── tools/         Script ngang khối: gen_contracts · check_comments · check_layers
 │                   · check_migrations · check_error_codes · check_plans
-│                   · backfill · check_schematic · check_pcb
+│                   · check_routes · backfill · check_schematic · check_pcb
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
     ├── TASKS.md                                 # backlog
@@ -5933,6 +5933,21 @@ phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng 
 | `HR` | toàn bộ hồ sơ, chấm công, nghỉ phép | hồ sơ, hợp đồng, phép, phân ca |
 | `PAYROLL` | như `HR`, cộng **lương và phiếu lương** | chạy kỳ lương, chốt kỳ |
 | `ADMIN` | tất cả, cộng thiết bị và người dùng | tất cả |
+
+**Luật này có một công cụ giữ, vì nó là loại luật sẽ mục.** `tools/check_routes.py` đọc mọi
+controller và fail khi một route **vừa không mang `@Roles` vừa không nhận `@CurrentViewer`** —
+một route như thế không biết ai đang hỏi và cũng không ai bảo nó chặn ai, nên nó trả cả bảng
+cho bất kỳ tài khoản nào đăng nhập được. Hai cách đi qua, và chỉ hai: gắn vai, hoặc nhận người
+gọi rồi thu hẹp theo dòng.
+
+Route cố ý mở cho mọi người — `POST /auth/login`, `GET /leave-types` mà biểu mẫu gửi đơn cần —
+khai tên trong chính file công cụ kèm lý do. Danh sách miễn trừ nằm trong diff có người đọc,
+không nằm trong trí nhớ ai đó.
+
+**Thu hẹp theo dòng thì phải thu hẹp cả khoá đệm.** Một báo cáo đệm theo khoảng thời gian rồi
+mới thêm phạm vi là một báo cáo mà quản lý đọc trước sẽ **cho quản trị đọc lại bản hẹp**, và
+ngược lại. Khoá đệm phải mang phạm vi của người hỏi, nếu không thì lớp đệm biến một phép thu
+hẹp đúng thành một lỗ rò hai chiều.
 
 **`VIEWER` là vai mặc định, nên nó phải là vai *hẹp nhất*, không phải vai rộng nhất.** `User.role`
 mặc định `VIEWER`; nếu vai ấy nằm trong nhóm không thu hẹp phạm vi thì **mọi tài khoản mới sinh
