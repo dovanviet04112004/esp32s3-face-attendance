@@ -4453,6 +4453,8 @@ frontend/
 │   │                                 #   skeleton, empty, money, theme-toggle,
 │   │                                 #   bottom-bar, filter-bar  ★ §9.21.2 — màn hẹp thì
 │   │                                 #   hành động chính neo đáy, bộ lọc thành tấm trượt
+│   │                                 #   pill.tsx  ★ §9.12 luật 2 — bốn tông trạng thái,
+│   │                                 #   khai một chỗ cho cả tám phân hệ
 │   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx, breadcrumb.tsx, waiting-count.ts}
 │   │                                 # ★ rộng thì thanh bên, hẹp thì tab đáy; số đơn
 │   │                                 #   đang chờ là một hook dùng chung cho cả ba
@@ -6316,7 +6318,9 @@ tỷ lệ sai để cho một nút ở tầm tay thường trực.
    vào để xem, và với HR thì hiếm khi vậy.
 2. **Trạng thái mang hình dạng, không chỉ mang màu.** Đang chờ, đã duyệt, từ chối, quá hạn —
    mỗi thứ một viên nhãn có chữ. Màu là lớp thứ hai, vì một phần trăm nam giới không phân biệt
-   được đỏ với lục.
+   được đỏ với lục. **Bốn tông ấy — chờ, tốt, xấu, trung tính — khai đúng một chỗ**, ở
+   `components/ui/pill.tsx`. Mỗi phân hệ tự vẽ lấy viên nhãn của mình thì một trạng thái giống
+   nhau trông khác nhau tuỳ trang, và khi ấy màu không còn nói được gì.
 3. **Bảng là công cụ, không phải bản in.** Cột số căn phải và dùng chữ số đều bề ngang; hàng
    giữ nguyên chiều cao; cột quan trọng đứng yên khi cuộn ngang.
 4. **Tiền và giờ không bao giờ hiện trần.** Một con số lương luôn đi kèm đơn vị và kỳ; một con
