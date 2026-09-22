@@ -11,6 +11,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { clearDeskNotices } from "./teardown.js";
 
 const LONE = "E2EUR01";
 const LONE_MAIL = "e2eur-lone@kiosk.local";
@@ -24,14 +25,8 @@ describe("a request filed by somebody with no manager (e2e)", () => {
   let mine = "";
   let loneId = 0;
 
-  // Desk notices land on seeded logins this suite never deletes, so they
-  // outlive a cascade and have to go by hand.
   async function sweep(): Promise<void> {
-    const mine = await db.request.findMany({
-      where: { employee: { code: LONE } },
-      select: { id: true },
-    });
-    await db.notification.deleteMany({ where: { requestId: { in: mine.map((one) => one.id) } } });
+    await clearDeskNotices(db, [LONE]);
     await db.user.deleteMany({ where: { email: LONE_MAIL } });
     await db.employee.deleteMany({ where: { code: LONE } });
   }

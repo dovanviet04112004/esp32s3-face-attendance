@@ -10,6 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { clearDeskNotices } from "./teardown.js";
 
 const PASSWORD = "kiosk-e2e-password";
 const CODE = "NV9301";
@@ -40,14 +41,8 @@ describe("leave balance (e2e)", () => {
   let leaveTypeId = "";
   const opened: string[] = [];
 
-  // Desk notices land on seeded logins this suite never deletes, so they
-  // outlive a cascade and have to go by hand.
   async function sweep(): Promise<void> {
-    const mine = await db.request.findMany({
-      where: { employee: { code: CODE } },
-      select: { id: true },
-    });
-    await db.notification.deleteMany({ where: { requestId: { in: mine.map((one) => one.id) } } });
+    await clearDeskNotices(db, [CODE]);
     await db.user.deleteMany({ where: { email: { in: [EMAIL, ...opened] } } });
     await db.employee.deleteMany({ where: { code: CODE } });
   }

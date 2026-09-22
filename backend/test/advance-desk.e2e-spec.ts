@@ -11,6 +11,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { clearDeskNotices } from "./teardown.js";
 
 const BOSS = "E2EAD01";
 const BOSS_MAIL = "e2ead-boss@kiosk.local";
@@ -30,14 +31,8 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
   let bossId = 0;
   let filedId = "";
 
-  // Desk notices land on seeded logins this suite never deletes, so they
-  // outlive a cascade and have to go by hand.
   async function sweep(): Promise<void> {
-    const mine = await db.salaryAdvance.findMany({
-      where: { employee: { code: { in: [BOSS, ASKER] } } },
-      select: { id: true },
-    });
-    await db.notification.deleteMany({ where: { advanceId: { in: mine.map((one) => one.id) } } });
+    await clearDeskNotices(db, [BOSS, ASKER]);
     await db.user.deleteMany({ where: { email: { in: [BOSS_MAIL, ASKER_MAIL] } } });
     await db.salaryAdvance.deleteMany({ where: { employee: { code: { in: [BOSS, ASKER] } } } });
     await db.employee.deleteMany({ where: { code: { in: [ASKER, BOSS] } } });
