@@ -392,8 +392,9 @@
     "graceHint": "Arriving inside this window does not count as late."
   },
   "reports": {
+    "rollUpRange": "Range in use",
     "title": "Reports",
-    "lead": "The monthly insurance work and its exports. Punches per person live on the Attendance page.",
+    "lead": "Filings for the insurance office, and the background run that rebuilds the attendance figures behind them. Punch counts per person live on the Attendance page.",
     "insuranceTitle": "Insurance increases, decreases and adjustments",
     "insuranceLead": "Three monthly filings, from start dates, leaving dates, and a contribution base that moved.",
     "entity": "Legal entity",
@@ -413,7 +414,7 @@
     "d02On": "On",
     "d02Download": "Download CSV",
     "rollUpTitle": "Monthly attendance roll-up",
-    "rollUpLead": "Runs in the background over the range chosen above. Asking twice queues one run.",
+    "rollUpLead": "Rebuilds the monthly attendance totals for every month this range touches. Pressing twice queues one run.",
     "rollUpRun": "Queue the roll-up",
     "rollUpQueued": "Queued. Results land when it finishes."
   },

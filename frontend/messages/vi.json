@@ -392,8 +392,9 @@
     "graceHint": "Đi trễ trong khoảng này không tính là trễ."
   },
   "reports": {
+    "rollUpRange": "Khoảng đang dùng",
     "title": "Báo cáo",
-    "lead": "Ba việc hằng tháng và các bản xuất cho cơ quan bảo hiểm. Số lượt chấm công theo người ở trang Chấm công.",
+    "lead": "Bản xuất cho cơ quan bảo hiểm, và lượt chạy nền dựng lại số liệu chuyên cần. Số lượt chấm công theo người ở trang Chấm công.",
     "insuranceTitle": "Báo tăng, báo giảm, điều chỉnh BHXH",
     "insuranceLead": "Ba việc hằng tháng, tính từ ngày vào, ngày nghỉ, và mức lương đóng bảo hiểm thay đổi.",
     "entity": "Pháp nhân",
@@ -413,7 +414,7 @@
     "d02On": "Tại ngày",
     "d02Download": "Tải CSV",
     "rollUpTitle": "Gộp chuyên cần theo tháng",
-    "rollUpLead": "Chạy nền cho khoảng ngày đang chọn ở trên. Bấm hai lần chỉ xếp một lượt.",
+    "rollUpLead": "Dựng lại tổng chuyên cần của mọi tháng mà khoảng ngày này chạm tới. Bấm hai lần chỉ xếp một lượt.",
     "rollUpRun": "Chạy lượt gộp",
     "rollUpQueued": "Đã xếp hàng. Kết quả về khi chạy xong."
   },

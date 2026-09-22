@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Failed } from "@/components/ui/empty";
@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { dayOnly } from "@/lib/format";
 
 interface Entity {
   id: string;
@@ -47,6 +48,7 @@ function today(): string {
 
 export default function ReportsPage() {
   const t = useTranslations("reports");
+  const format = useFormatter();
   const common = useTranslations("common");
   const role = useSession((s) => s.role);
   const faultOf = useFault();
@@ -176,6 +178,33 @@ export default function ReportsPage() {
         })}
       </div>
 
+      {mayRollUp ? (
+        <>
+          <h2 className="mt-10 text-sm font-medium">{t("rollUpTitle")}</h2>
+          <p className="mt-1 text-sm text-(--color-muted)">{t("rollUpLead")}</p>
+          <p className="mt-1 text-sm">
+            <span className="text-(--color-muted)">{t("rollUpRange")}: </span>
+            {format.dateTime(dayOnly(changeFrom), "day")} →{" "}
+            {format.dateTime(dayOnly(changeTo), "day")}
+          </p>
+          <Button
+            type="button"
+            tone="quiet"
+            className="mt-3"
+            disabled={rollUp.isPending}
+            onClick={() => {
+              setFault(null);
+              rollUp.mutate();
+            }}
+          >
+            {rollUp.isPending ? common("saving") : t("rollUpRun")}
+          </Button>
+          {rollUp.data ? (
+            <p className="mt-2 text-sm text-(--color-ok)">{t("rollUpQueued")}</p>
+          ) : null}
+        </>
+      ) : null}
+
       <h2 className="mt-10 text-sm font-medium">{t("d02Title")}</h2>
       <p className="mt-1 text-sm text-(--color-muted)">{t("d02Lead")}</p>
       <div className="mt-3 flex flex-wrap items-end gap-2">
@@ -199,28 +228,6 @@ export default function ReportsPage() {
           {d02.isPending ? common("loading") : t("d02Download")}
         </Button>
       </div>
-
-      {mayRollUp ? (
-        <>
-          <h2 className="mt-10 text-sm font-medium">{t("rollUpTitle")}</h2>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("rollUpLead")}</p>
-          <Button
-            type="button"
-            tone="quiet"
-            className="mt-3"
-            disabled={rollUp.isPending}
-            onClick={() => {
-              setFault(null);
-              rollUp.mutate();
-            }}
-          >
-            {rollUp.isPending ? common("saving") : t("rollUpRun")}
-          </Button>
-          {rollUp.data ? (
-            <p className="mt-2 text-sm text-(--color-ok)">{t("rollUpQueued")}</p>
-          ) : null}
-        </>
-      ) : null}
 
       {fault ? (
         <p role="alert" className="mt-4 text-sm text-(--color-danger)">
