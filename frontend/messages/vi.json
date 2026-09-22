@@ -860,6 +860,7 @@
     "departments": "Phòng ban",
     "departmentsLead": "Đổi cấp trên của một phòng ban là đổi luôn ai duyệt đơn và ai nhìn thấy dữ liệu của người trong đó.",
     "treeLead": "Số người đếm cả nhánh bên dưới, không riêng phòng ban đó.",
+    "units": "{count} đơn vị",
     "code": "Mã",
     "name": "Tên",
     "parent": "Trực thuộc",

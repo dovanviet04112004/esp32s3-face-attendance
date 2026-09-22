@@ -860,6 +860,7 @@
     "departments": "Departments",
     "departmentsLead": "Changing a department parent changes who approves for its people and who can see them.",
     "treeLead": "The headcount covers the whole branch, not the department on its own.",
+    "units": "{count} units",
     "code": "Code",
     "name": "Name",
     "parent": "Reports to",
