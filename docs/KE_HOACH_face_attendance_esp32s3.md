@@ -4452,6 +4452,10 @@ frontend/
 │           ├── org/{page.tsx, departments/page.tsx}   # cây tổ chức
 │           ├── leave/{page.tsx, [id]/page.tsx}        # sổ đơn từ, mọi loại mọi trạng thái
 │           ├── timesheet/page.tsx                     # bảng công tháng, sửa có vết
+│           ├── holidays/page.tsx                      # ★ §9.15 — lịch nghỉ lễ; nó là đầu
+│           │                                          #   vào của bảng công, không thuộc
+│           │                                          #   cây tổ chức (Holiday không có
+│           │                                          #   departmentId, chỉ legalEntityId)
 │           ├── payroll/{page.tsx, [periodId]/page.tsx}
 │           ├── policy/page.tsx                        # giảm trừ, tỷ lệ, biểu thuế
 │           ├── assets/page.tsx                        # ★ §9.16 — sổ tài sản, cấp và thu
