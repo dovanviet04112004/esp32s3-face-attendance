@@ -22,14 +22,13 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-(--color-line) bg-(--color-surface)">
-      <div className="mx-auto flex w-full max-w-(--width-shell) items-center gap-2 px-4 py-2 md:px-8">
-        <img src="/logo.svg" alt="" width={22} height={22} className="md:hidden" />
-        <p className="truncate text-sm font-semibold md:hidden">{app("name")}</p>
+      <div className="group/bar mx-auto flex w-full max-w-(--width-shell) items-center gap-2 px-4 py-2 md:px-8">
+        <img src="/logo.svg" alt={app("name")} width={22} height={22} className="md:hidden" />
         <div className="min-w-0 flex-1 md:max-w-lg">
           <GlobalSearch />
         </div>
 
-        <div className="ms-auto flex shrink-0 items-center gap-1">
+        <div className="ms-auto flex shrink-0 items-center gap-1 group-has-[input:focus]/bar:hidden md:group-has-[input:focus]/bar:flex">
           {decides ? (
             <Link
               href="/approvals"
