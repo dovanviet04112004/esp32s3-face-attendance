@@ -29,6 +29,7 @@ type Subject = (typeof SUBJECTS)[number];
 interface Entry {
   id: string;
   actorId: string | null;
+  actor: { email: string } | null;
   action: string;
   subjectType: Subject;
   subjectId: string;
@@ -117,8 +118,8 @@ export default function AuditPage() {
       id: "actor",
       header: t("actor"),
       cell: (row) =>
-        row.actorId ? (
-          <span className="font-mono text-xs">{row.actorId.slice(0, 8)}</span>
+        row.actor ? (
+          <span className="break-all">{row.actor.email}</span>
         ) : (
           t("system")
         ),

@@ -7,6 +7,9 @@ import { PrismaService } from "../../database/prisma.service.js";
 import type { AuditAction, AuditSubject } from "./audit-actions.js";
 import type { AuditQueryDto } from "./dto/audit-query.dto.js";
 
+/** A log line reads as a person, not as the key their account happens to hold. */
+export type AuditRow = AuditLog & { actor: { email: string } | null };
+
 export interface AuditEntry {
   actorId?: string;
   action: AuditAction;
@@ -34,7 +37,7 @@ export class AuditService {
   }
 
   /** Read it the way somebody traces back: one thing, or one person's doing. */
-  async list(query: AuditQueryDto): Promise<Page<AuditLog>> {
+  async list(query: AuditQueryDto): Promise<Page<AuditRow>> {
     const where: Prisma.AuditLogWhereInput = {
       ...(query.subjectType ? { subjectType: query.subjectType } : {}),
       ...(query.subjectId ? { subjectId: query.subjectId } : {}),
@@ -47,6 +50,7 @@ export class AuditService {
         skip: query.skip,
         take: query.take,
         orderBy: { ts: "desc" },
+        include: { actor: { select: { email: true } } },
       }),
       this.db.auditLog.count({ where, take: COUNT_CEILING + 1 }),
     ]);
