@@ -1,7 +1,7 @@
 {
   "app": {
-    "name": "Chấm công",
-    "description": "Bảng điều khiển hệ thống chấm công nhận diện khuôn mặt"
+    "name": "Nhân Lực",
+    "description": "Nhân sự, chấm công và tiền lương, chạy trên kiosk nhận diện khuôn mặt"
   },
   "nav": {
     "overview": "Tổng quan",

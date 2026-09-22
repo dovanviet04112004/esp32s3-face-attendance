@@ -1,7 +1,7 @@
 {
   "app": {
-    "name": "Attendance",
-    "description": "Control panel for the face recognition attendance system"
+    "name": "Workforce",
+    "description": "People, attendance and payroll, run from a face recognition kiosk"
   },
   "nav": {
     "overview": "Overview",
