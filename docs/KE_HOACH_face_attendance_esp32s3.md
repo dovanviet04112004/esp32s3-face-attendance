@@ -6424,10 +6424,12 @@ nhất theo `(employeeId, kind)`, `LeaveBalance` duy nhất theo `(employeeId, l
 Nhờ vậy một lượt đứt giữa chừng sửa được bằng đúng cái nút đã bấm, và người đã nằm sẵn trong
 hệ từ trước cũng vá được bằng cùng một đường.
 
-**Thiếu khuôn thì bỏ qua và báo lại, không làm hỏng cả lượt.** Không có mẫu danh sách việc nào
-khớp, hay người ấy chưa có địa chỉ thư riêng, đều là chuyện của cấu hình chứ không phải của
-lượt tuyển này; đường ghi trả về **những gì nó đã làm và những gì nó đã bỏ qua**, y như nghỉ
-việc trả về thứ còn treo. Trùng hợp đồng thì mới là lỗi.
+**Không phần nào trong năm thứ ấy làm hỏng cả lượt.** Không có mẫu danh sách việc nào khớp,
+người ấy chưa có địa chỉ thư riêng, hay phần ấy vốn đã có từ lượt trước — cả ba đều là chuyện
+của cấu hình và của lần chạy trước, không phải của lượt tuyển này; đường ghi trả về **những gì
+nó đã làm và những gì nó đã bỏ qua, kèm lý do**, y như nghỉ việc trả về thứ còn treo. Chỉ hai
+điều là lỗi, và cả hai nói về con người chứ không về năm thứ kia: không có hồ sơ ấy, và hồ sơ
+ấy đã nghỉ việc.
 
 **Thư mời xếp hàng sau khi giao dịch đã commit**, không nằm trong nó: đẩy job trong một giao
 dịch là gửi thư cho một lượt có thể rollback. Cái giá là một khe hở giữa commit và lúc xếp
