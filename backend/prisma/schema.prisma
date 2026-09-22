@@ -88,6 +88,9 @@ model User {
   profileAsks    ProfileChange[] @relation("AsksProfileChanges")
   profileCalls   ProfileChange[] @relation("DecidesProfileChanges")
   disputesAnswered PayslipDispute[]
+  notifications  Notification[]
+  noticePrefs    NotificationPreference[]
+  pushDevices    PushSubscription[]
 }
 
 /**
@@ -257,9 +260,6 @@ model Employee {
   advanceApprovals  SalaryAdvance[]      @relation("ApprovesAdvances")
   consents          BiometricConsent[]
   bonuses           BonusItem[]
-  notices           Notification[]
-  noticePrefs       NotificationPreference[]
-  pushSubs          PushSubscription[]
   assetsHeld        Asset[]
   assetMoves        AssetTransfer[]
   certificates      Certificate[]
@@ -1305,7 +1305,9 @@ enum NoticeChannel {
  */
 model Notification {
   id         String     @id @default(uuid())
-  employeeId Int
+  // The login is what opens the bell, and 9.4 opens logins that have no
+  // employee row (KEHOACH 9.21.4).
+  userId     String
   kind       NoticeKind
   requestId  String?
   periodId   String?
@@ -1316,21 +1318,21 @@ model Notification {
   approved   Boolean?
   readAt     DateTime?
   createdAt  DateTime   @default(now())
-  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([employeeId, readAt])
-  @@index([employeeId, createdAt])
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
 }
 
 model NotificationPreference {
-  employeeId Int
-  kind       NoticeKind
-  channel    NoticeChannel
-  on         Boolean  @default(true)
-  updatedAt  DateTime @updatedAt
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  userId    String
+  kind      NoticeKind
+  channel   NoticeChannel
+  on        Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@id([employeeId, kind, channel])
+  @@id([userId, kind, channel])
 }
 
 /**
@@ -1339,16 +1341,16 @@ model NotificationPreference {
  */
 model PushSubscription {
   id         String   @id @default(uuid())
-  employeeId Int
+  userId     String
   endpoint   String   @unique
   p256dh     String
   auth       String
   userAgent  String?
   createdAt  DateTime @default(now())
   lastSentAt DateTime?
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([employeeId])
+  @@index([userId])
 }
 
 enum AssetState {
