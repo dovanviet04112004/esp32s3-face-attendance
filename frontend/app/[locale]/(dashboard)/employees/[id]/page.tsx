@@ -72,6 +72,7 @@ interface Employee {
   nationalId: string | null;
   taxCode: string | null;
   socialInsuranceNo: string | null;
+  manager: { id: number; code: string; fullName: string } | null;
 }
 
 function day(value: string | null): string {
@@ -197,6 +198,7 @@ export default function EmployeePage() {
         nationalId: draft.nationalId || undefined,
         taxCode: draft.taxCode || undefined,
         socialInsuranceNo: draft.socialInsuranceNo || undefined,
+        managerId: draft.managerId ? Number(draft.managerId) : undefined,
         active: draft.active,
       }),
     onSuccess: () => {
@@ -299,13 +301,15 @@ export default function EmployeePage() {
                 nationalId: employee.data.nationalId ?? "",
                 taxCode: employee.data.taxCode ?? "",
                 socialInsuranceNo: employee.data.socialInsuranceNo ?? "",
+                managerId: employee.data.manager ? String(employee.data.manager.id) : "",
               }}
               departments={departments.data ?? []}
               jobTitles={jobTitles.data ?? []}
               entities={entities.data ?? []}
               showActive
               showBank={false}
-              showManager={false}
+              showManager
+              manager={employee.data.manager}
               showOnboard={false}
               busy={save.isPending}
               fault={fault}

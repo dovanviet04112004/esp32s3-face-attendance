@@ -108,6 +108,8 @@ interface Props {
    *  search and has no way back from an id already on the record.
    */
   showManager: boolean;
+  /** The manager already on the record, so an edit form opens showing them. */
+  manager?: Person | null;
   /** Taking somebody on writes five things at once (KEHOACH 9.14), and the
    *  first day it starts from is the hire date, asked here and nowhere else.
    */
@@ -197,9 +199,9 @@ interface Person {
 const kSearchPauseMs = 300;
 const kSearchChars = 2;
 
-function ManagerField({ onPick }: { onPick: (id: string) => void }) {
+function ManagerField({ held, onPick }: { held?: Person | null; onPick: (id: string) => void }) {
   const t = useTranslations("employees");
-  const [typed, setTyped] = useState("");
+  const [typed, setTyped] = useState(held?.code ?? "");
   const [asked, setAsked] = useState("");
 
   useEffect(() => {
@@ -219,11 +221,12 @@ function ManagerField({ onPick }: { onPick: (id: string) => void }) {
   });
 
   const rows = found.data ?? [];
-  const picked = rows.find((one) => one.code === typed);
+  const standing = held && typed === held.code ? held : undefined;
+  const picked = rows.find((one) => one.code === typed) ?? standing;
 
   // Guarded on the value, not the callback: the parent rebuilds onPick on
   // every keystroke, and reporting on each one would feed its own re-render.
-  const reported = useRef("");
+  const reported = useRef(standing ? String(standing.id) : "");
   useEffect(() => {
     const id = picked ? String(picked.id) : "";
     if (id !== reported.current) {
@@ -261,6 +264,7 @@ export function EmployeeForm({
   showActive,
   showBank,
   showManager,
+  manager,
   showOnboard,
   busy,
   fault,
@@ -351,7 +355,9 @@ export function EmployeeForm({
             ))}
           </Select>
         </Field>
-        {showManager ? <ManagerField onPick={(id) => set({ managerId: id })} /> : null}
+        {showManager ? (
+          <ManagerField held={manager} onPick={(id) => set({ managerId: id })} />
+        ) : null}
       </div>
 
       {showOnboard ? (
