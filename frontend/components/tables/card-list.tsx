@@ -16,13 +16,17 @@ interface Props<T> {
   keyOf: (row: T) => string;
   chosen?: ReadonlySet<string>;
   onToggle?: (key: string) => void;
+  /** Which column titles the card; a table's leftmost column is rarely it. */
+  cardLead?: string;
 }
 
 /** The same columns a table draws as rows, drawn as cards (KEHOACH 9.21.1). */
-export function CardList<T>({ columns, rows, keyOf, chosen, onToggle }: Props<T>) {
+export function CardList<T>({ columns, rows, keyOf, chosen, onToggle, cardLead }: Props<T>) {
   const t = useTranslations("common");
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const [lead, ...rest] = columns;
+  const at = Math.max(0, columns.findIndex((column) => column.id === cardLead));
+  const lead = columns[at];
+  const rest = columns.filter((_, index) => index !== at);
   const front = rest.slice(0, kFrontColumns - 1);
   const back = rest.slice(kFrontColumns - 1);
 
@@ -73,7 +77,7 @@ export function CardList<T>({ columns, rows, keyOf, chosen, onToggle }: Props<T>
                 type="button"
                 aria-expanded={shown}
                 onClick={() => flip(key)}
-                className="mt-1 flex min-h-11 w-full items-center justify-center gap-1 text-xs text-(--color-accent)"
+                className="mt-1 flex min-h-11 w-full items-center justify-center gap-1 text-xs text-(--color-muted)"
               >
                 {shown ? t("less") : t("more")}
                 <ChevronDown className={cn("size-4 transition-transform", shown && "rotate-180")} aria-hidden />

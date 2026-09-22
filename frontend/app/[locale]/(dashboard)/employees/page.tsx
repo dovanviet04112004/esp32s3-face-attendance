@@ -227,10 +227,7 @@ export default function EmployeesPage() {
       id: "edit",
       header: "",
       cell: (row) => (
-        <Link
-          href={`/employees/${row.id}`}
-          className="text-(--color-accent) hover:underline"
-        >
+        <Link href={`/employees/${row.id}`} className="underline hover:no-underline">
           {t("edit")}
         </Link>
       ),
@@ -239,10 +236,10 @@ export default function EmployeesPage() {
 
   return (
     <section>
-      <div className="flex items-start justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-lg font-semibold">{t("title")}</h1>
-          <p className="mt-1 mb-6 text-sm text-(--color-muted)">
+          <p className="mt-1 text-sm text-(--color-muted)">
             {counted
               ? t(counted.totalIsExact === false ? "countAtLeast" : "count", {
                   count: counted.total,
@@ -372,6 +369,7 @@ export default function EmployeesPage() {
 
       <DataTable
         id="employees"
+        cardLead="fullName"
         columns={columns}
         rows={loaded}
         keyOf={(row) => String(row.id)}
