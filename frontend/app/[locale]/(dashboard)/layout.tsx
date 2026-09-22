@@ -12,6 +12,7 @@ import { reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { allows, homeFor } from "@/lib/nav";
 import { startOutbox } from "@/lib/outbox";
+import { useFeedConnection } from "@/lib/ws";
 
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -20,6 +21,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const here = usePathname();
   const { accessToken, role, employeeId, clear } = useSession();
   const hasRecord = employeeId !== null;
+  useFeedConnection();
 
   useEffect(() => {
     startOutbox();

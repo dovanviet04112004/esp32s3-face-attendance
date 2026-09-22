@@ -15,6 +15,7 @@ import {
   DISPUTE_ANSWERERS,
   LETTER_DESK,
   PROFILE_DESK,
+  WAITING_POLL_MS,
 } from "@/components/nav/waiting-count";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
@@ -93,6 +94,7 @@ export default function ApprovalsPage() {
 
   const inbox = useQuery({
     queryKey: ["requests", "inbox"],
+    refetchInterval: WAITING_POLL_MS,
     queryFn: async () =>
       (await api.get<{ rows: RequestRow[]; total: number }>("/requests/inbox")).data,
   });
@@ -107,6 +109,7 @@ export default function ApprovalsPage() {
 
   const dependents = useQuery({
     queryKey: ["dependents", "waiting"],
+    refetchInterval: WAITING_POLL_MS,
     enabled: mayDecideDependents,
     queryFn: async () =>
       (await api.get<WaitingDependent[]>("/dependents?state=PENDING")).data,
@@ -120,6 +123,7 @@ export default function ApprovalsPage() {
 
   const waitingDisputes = useQuery({
     queryKey: ["payslip-disputes", "waiting"],
+    refetchInterval: WAITING_POLL_MS,
     enabled: mayAnswerDisputes,
     queryFn: async () =>
       (await api.get<{ rows: Dispute[] }>("/payslip-disputes?state=OPEN")).data.rows,
@@ -137,6 +141,7 @@ export default function ApprovalsPage() {
 
   const letters = useQuery({
     queryKey: ["certificates", "waiting"],
+    refetchInterval: WAITING_POLL_MS,
     enabled: mayIssueLetters,
     queryFn: async () =>
       (await api.get<{ rows: Letter[] }>("/certificates?state=REQUESTED")).data.rows,
@@ -150,6 +155,7 @@ export default function ApprovalsPage() {
 
   const changes = useQuery({
     queryKey: ["profile-changes", "waiting"],
+    refetchInterval: WAITING_POLL_MS,
     enabled: mayDecideProfile,
     queryFn: async () =>
       (await api.get<{ rows: ProfileChange[] }>("/profile-changes?state=PENDING")).data.rows,
@@ -163,6 +169,7 @@ export default function ApprovalsPage() {
 
   const advances = useQuery({
     queryKey: ["advances", "waiting"],
+    refetchInterval: WAITING_POLL_MS,
     enabled: mayDecideAdvances,
     queryFn: async () =>
       (await api.get<{ rows: WaitingAdvance[] }>("/advances?state=PENDING")).data.rows,
@@ -172,6 +179,7 @@ export default function ApprovalsPage() {
   // and payroll deducts it from there (KEHOACH 9.6).
   const toPay = useQuery({
     queryKey: ["advances", "approved"],
+    refetchInterval: WAITING_POLL_MS,
     enabled: mayPayAdvances,
     queryFn: async () =>
       (await api.get<{ rows: WaitingAdvance[] }>("/advances?state=APPROVED")).data.rows,

@@ -14,20 +14,22 @@ export const LETTER_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 export const PROFILE_DESK: Role[] = ["ADMIN", "HR"];
 
 interface Queue {
-  key: string;
+  key: string[];
   path: string;
   roles: Role[];
 }
 
-// Every queue the inbox draws, and the badge counts every one (KEHOACH 9.15).
+export const WAITING_POLL_MS = 60_000;
+
+// Each key sits under the one a decision drops, so acting takes the badge too.
 const QUEUES: Queue[] = [
-  { key: "requests", path: "/requests/inbox?take=1", roles: REQUEST_DECIDERS },
-  { key: "advances", path: "/advances?state=PENDING", roles: ADVANCE_DECIDERS },
-  { key: "advances-paying", path: "/advances?state=APPROVED", roles: ADVANCE_PAYERS },
-  { key: "dependents", path: "/dependents?state=PENDING", roles: DEPENDENT_DECIDERS },
-  { key: "disputes", path: "/payslip-disputes?state=OPEN", roles: DISPUTE_ANSWERERS },
-  { key: "certificates", path: "/certificates?state=REQUESTED", roles: LETTER_DESK },
-  { key: "profile-changes", path: "/profile-changes?state=PENDING", roles: PROFILE_DESK },
+  { key: ["requests", "waiting-count"], path: "/requests/inbox?take=1", roles: REQUEST_DECIDERS },
+  { key: ["advances", "waiting-count", "pending"], path: "/advances?state=PENDING", roles: ADVANCE_DECIDERS },
+  { key: ["advances", "waiting-count", "approved"], path: "/advances?state=APPROVED", roles: ADVANCE_PAYERS },
+  { key: ["dependents", "waiting-count"], path: "/dependents?state=PENDING", roles: DEPENDENT_DECIDERS },
+  { key: ["payslip-disputes", "waiting-count"], path: "/payslip-disputes?state=OPEN", roles: DISPUTE_ANSWERERS },
+  { key: ["certificates", "waiting-count"], path: "/certificates?state=REQUESTED", roles: LETTER_DESK },
+  { key: ["profile-changes", "waiting-count"], path: "/profile-changes?state=PENDING", roles: PROFILE_DESK },
 ];
 
 function countOf(answer: unknown): number {
@@ -44,9 +46,9 @@ function countOf(answer: unknown): number {
 export function useWaitingCount(role: Role | null): number {
   const asked = useQueries({
     queries: QUEUES.map((queue) => ({
-      queryKey: ["waiting", queue.key],
+      queryKey: queue.key,
       enabled: role !== null && queue.roles.includes(role),
-      refetchInterval: 60_000,
+      refetchInterval: WAITING_POLL_MS,
       queryFn: async () => countOf((await api.get(queue.path)).data),
     })),
   });
