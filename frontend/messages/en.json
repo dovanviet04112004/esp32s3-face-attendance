@@ -292,7 +292,7 @@
   },
   "attendance": {
     "title": "Attendance",
-    "lead": "The last column counts records the kiosk itself flagged as an unsynced clock",
+    "lead": "Punches rolled up per person over the chosen range; open a person to see each one. The untrusted-clock column counts records the kiosk itself flagged as an unsynced clock.",
     "employee": "Employee",
     "punches": "Punches",
     "firstAt": "First",

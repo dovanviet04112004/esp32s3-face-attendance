@@ -292,7 +292,7 @@
   },
   "attendance": {
     "title": "Chấm công",
-    "lead": "Cột cuối đếm bản ghi mà kiosk tự khai là giờ chưa đồng bộ NTP",
+    "lead": "Lượt quẹt gộp theo người trong khoảng đã chọn; chạm một người để xem từng lượt. Cột giờ không tin được đếm bản ghi mà kiosk tự khai là đồng hồ chưa đồng bộ NTP.",
     "employee": "Nhân viên",
     "punches": "Lượt",
     "firstAt": "Lần đầu",

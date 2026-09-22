@@ -137,8 +137,6 @@ export default function AttendancePage() {
       sortBy: (row) => row.punches,
       cell: (row) => row.punches,
     },
-    { id: "firstAt", header: t("firstAt"), cell: (row) => clock(row.firstAt) },
-    { id: "lastAt", header: t("lastAt"), cell: (row) => clock(row.lastAt) },
     {
       id: "unsyncedClock",
       header: t("unsyncedClock"),
@@ -151,6 +149,8 @@ export default function AttendancePage() {
           <span className="text-(--color-muted)">0</span>
         ),
     },
+    { id: "firstAt", header: t("firstAt"), cell: (row) => clock(row.firstAt) },
+    { id: "lastAt", header: t("lastAt"), cell: (row) => clock(row.lastAt) },
   ];
 
   return (
