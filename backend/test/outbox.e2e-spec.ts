@@ -33,7 +33,14 @@ describe("filed offline (e2e)", () => {
   let senderId = 0;
   let leaveTypeId = "";
 
+  // Desk notices land on seeded logins this suite never deletes, so they
+  // outlive a cascade and have to go by hand.
   async function sweep(): Promise<void> {
+    const mine = await db.request.findMany({
+      where: { employee: { code: { in: [SENDER, NEIGHBOUR] } } },
+      select: { id: true },
+    });
+    await db.notification.deleteMany({ where: { requestId: { in: mine.map((one) => one.id) } } });
     await db.user.deleteMany({ where: { email: { in: [SENDER_EMAIL, NEIGHBOUR_EMAIL] } } });
     await db.employee.deleteMany({ where: { code: { in: [SENDER, NEIGHBOUR] } } });
   }

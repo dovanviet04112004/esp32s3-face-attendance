@@ -44,7 +44,14 @@ describe("timesheet leave (e2e)", () => {
 
   const date = new Date(`${DAY}T00:00:00.000Z`);
 
+  // Desk notices land on seeded logins this suite never deletes, so they
+  // outlive a cascade and have to go by hand.
   async function sweep(): Promise<void> {
+    const mine = await db.request.findMany({
+      where: { employee: { code: { in: MADE_CODES } } },
+      select: { id: true },
+    });
+    await db.notification.deleteMany({ where: { requestId: { in: mine.map((one) => one.id) } } });
     await db.attendanceDay.deleteMany({ where: { date } });
     await db.user.deleteMany({ where: { email: FILER_EMAIL } });
     await db.employee.deleteMany({ where: { code: { in: MADE_CODES } } });
