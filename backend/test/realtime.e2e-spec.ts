@@ -64,7 +64,10 @@ describe("realtime and reports (e2e)", () => {
       .send({ email: "admin@kiosk.local", password: validateEnv().SEED_ADMIN_PASSWORD });
     admin = login.body.accessToken;
 
-    feed = io(`http://127.0.0.1:${port}/feed`, { transports: ["websocket"] });
+    feed = io(`http://127.0.0.1:${port}/feed`, {
+      transports: ["websocket"],
+      auth: { token: admin },
+    });
     for (const name of Object.keys(seen)) {
       feed.on(name, (body: unknown) => seen[name].push(body));
     }
