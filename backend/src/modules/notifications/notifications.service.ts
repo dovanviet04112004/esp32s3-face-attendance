@@ -159,16 +159,24 @@ export class NotificationsService {
       return;
     }
     try {
-      const off = await this.db.notificationPreference.findMany({
-        where: { employeeId: { in: employeeIds }, kind, channel: "IN_APP", on: false },
-        select: { employeeId: true },
+      // Each channel answers for itself, as 9.21.4 asks: one switch must not
+      // speak for the other in either direction.
+      const held = await this.db.notificationPreference.findMany({
+        where: { employeeId: { in: employeeIds }, kind, channel: { in: ["IN_APP", "PUSH"] } },
+        select: { employeeId: true, channel: true, on: true },
       });
-      const silent = new Set(off.map((row) => row.employeeId));
+      const set = new Map(held.map((row) => [`${row.employeeId}:${row.channel}`, row.on]));
+      const wants = (id: number, channel: NoticeChannel): boolean =>
+        set.get(`${id}:${channel}`) ?? DEFAULT_ON[channel];
       const rows: Prisma.NotificationCreateManyInput[] = employeeIds
-        .filter((id) => !silent.has(id))
+        .filter((id) => wants(id, "IN_APP"))
         .map((employeeId) => ({ employeeId, kind, ...facts }));
-      await this.db.notification.createMany({ data: rows });
-      await Promise.all(rows.map((row) => this.push(row.employeeId, kind, facts)));
+      if (rows.length > 0) {
+        await this.db.notification.createMany({ data: rows });
+      }
+      await Promise.all(
+        employeeIds.filter((id) => wants(id, "PUSH")).map((id) => this.push(id, kind, facts)),
+      );
     } catch (fell) {
       this.log.error(`notices ${kind} were not raised: ${String(fell)}`);
     }
