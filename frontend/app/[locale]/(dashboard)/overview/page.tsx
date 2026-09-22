@@ -191,7 +191,7 @@ export default function OverviewPage() {
               hint={t("contractsHint")}
               heap={waiting.contractsEnding}
               keyOf={(row: Expiring) => row.contractId}
-              href={(row: Expiring) => `/employees/${row.employeeId}`}
+              href={(row: Expiring) => `/employees/${row.employeeId}?tab=contracts`}
               name={(row: Expiring) => row.fullName}
               aside={(row: Expiring) => t("daysLeft", { count: row.daysLeft })}
               numeric
@@ -207,7 +207,7 @@ export default function OverviewPage() {
               hint={t("probationHint")}
               heap={waiting.probationEnding}
               keyOf={(row: Expiring) => row.contractId}
-              href={(row: Expiring) => `/employees/${row.employeeId}`}
+              href={(row: Expiring) => `/employees/${row.employeeId}?tab=contracts`}
               name={(row: Expiring) => row.fullName}
               aside={(row: Expiring) => t("daysLeft", { count: row.daysLeft })}
               numeric

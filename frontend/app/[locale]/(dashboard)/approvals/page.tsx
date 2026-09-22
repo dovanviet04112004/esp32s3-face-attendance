@@ -112,7 +112,7 @@ export default function ApprovalsPage() {
     refetchInterval: WAITING_POLL_MS,
     enabled: mayDecideDependents,
     queryFn: async () =>
-      (await api.get<WaitingDependent[]>("/dependents?state=PENDING")).data,
+      (await api.get<{ rows: WaitingDependent[] }>("/dependents?state=PENDING")).data.rows,
   });
 
   const decideDependent = useMutation({
