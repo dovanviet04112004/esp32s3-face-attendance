@@ -5958,7 +5958,7 @@ phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng 
 |---|---|---|
 | `VIEWER` | **chỉ chính mình** — vai mặc định của một tài khoản chưa ai giao việc | không gì |
 | `EMPLOYEE` | hồ sơ của **chính mình**, chấm công của mình, phép của mình, phiếu lương của mình | đơn nghỉ phép của mình, vài ô liên lạc |
-| `MANAGER` | mọi thứ của `EMPLOYEE`, cộng **cây dưới quyền mình** | duyệt hoặc từ chối đơn của cấp dưới |
+| `MANAGER` | mọi thứ của `EMPLOYEE`, cộng **cây dưới quyền mình** trừ tạm ứng lương (§9.15) | duyệt hoặc từ chối đơn của cấp dưới, trừ tạm ứng lương |
 | `HR` | toàn bộ hồ sơ, chấm công, nghỉ phép | hồ sơ, hợp đồng, phép, phân ca |
 | `PAYROLL` | như `HR`, cộng **lương và phiếu lương** | chạy kỳ lương, chốt kỳ |
 | `ADMIN` | tất cả, cộng thiết bị và người dùng | tất cả |
@@ -6570,6 +6570,28 @@ bàn ấy thay vì không tới đâu. §9.4 vốn đã giao `HR` quyền trên 
 xin không phải người duyệt, và một người nhân sự tự xin thì đơn ấy vẫn cần một người nhân sự
 khác quyết.
 
+**Đơn đi theo cây hay đi thẳng về bàn là do thông tin cần để quyết, không do chức danh.** Hai
+loại đơn hỏi hai câu khác hẳn nhau, và người trả lời được câu này thường mù câu kia:
+
+| Loại đơn | Câu người duyệt phải trả lời | Ai có dữ liệu ấy | Đường đi |
+|---|---|---|---|
+| Nghỉ phép, tăng ca, công tác | *người này vắng thì ai gánh việc* | quản lý trực tiếp | **theo cây**, thủng thì về bàn nhân sự |
+| Tạm ứng lương | *lương bao nhiêu, còn nợ tạm ứng nào, kỳ sau trừ có âm không* | bàn giữ lương | **thẳng về bàn** |
+
+Cây tổ chức không trả lời được câu thứ hai, và đó không phải chuyện phân cấp mà là chuyện quyền
+đọc: bảng trang trên kia **không xếp `MANAGER` vào `Kỳ lương`**, mọi đường đọc lương đều đóng
+với vai ấy. Giao một khoản tiền cho người mà hệ thống cố ý giấu số liệu là bắt họ quyết trong
+lúc bị bịt mắt, rồi ghi tên họ vào nhật ký như thể họ đã cân nhắc.
+
+Nên **tạm ứng lương không có người duyệt riêng**: đơn không mang `approverId`, nó về thẳng bàn.
+`HR` quyết vì §9.4 cho `HR` đọc kỳ lương; `PAYROLL` chi vì `PAYROLL` là vai giữ tiền. **Hai bàn
+khác nhau trên cùng một khoản tiền** — thứ §9.4 đòi khi tách `PAYROLL` khỏi `HR` — và có được
+nó mà không thêm một trạng thái nào, vì duyệt và chi vốn đã là hai bước.
+
+**Tạm ứng ra khỏi phạm vi theo cây.** Quản lý không thấy đơn tạm ứng của cấp dưới. Giữ nó trong
+cây là sai hai lần cùng lúc: bày một con số riêng tư của người khác, và bày một hàng đợi mà vai
+ấy bấm gì cũng bị từ chối — đúng cái Luật 1 dưới đây cấm.
+
 **Một đơn quyết ở hộp hoặc ở trang chi tiết, không quyết ở sổ.** Hộp cho quyết nhanh vì ở đó
 mọi dòng đều đang đợi chính người đang nhìn; sổ thì phần lớn dòng không phải việc của họ, nên
 một hàng nút duyệt trên mỗi dòng là mời bấm nhầm. Sổ **bấm vào được**, và trang chi tiết là nơi
@@ -6627,10 +6649,10 @@ phục vụ chỉ gửi và theo dõi; nó không quyết.
 
 **Danh sách sáu này là danh sách đóng, và nó được kiểm.** Một đường `decide` ở backend mà không
 có hàng đợi tương ứng trong hộp là một đơn **treo vĩnh viễn**: người gửi thấy *đang chờ*, người
-duyệt không thấy gì, và không có màn hình nào nói rằng có việc bỏ sót. Tạm ứng lương đi đúng
-đường ấy — `POST /advances` có, `POST /advances/:id/decide` có, hộp thì không có hàng đợi nào,
-nên mọi đơn tạm ứng đứng ở `PENDING` và phép trừ tạm ứng của kỳ lương không bao giờ chạy. Thêm
-một đường quyết định thì thêm một hàng đợi trong cùng commit.
+duyệt không thấy gì, và không có màn hình nào nói rằng có việc bỏ sót — đơn tạm ứng đứng mãi ở
+`PENDING` thì phép trừ tạm ứng của kỳ lương cũng không bao giờ chạy. Thêm một đường quyết định
+thì thêm một hàng đợi **và** một tin báo trong cùng commit; hàng đợi cho người trực mở ra thấy,
+tin báo cho người không mở trang ấy hôm nay.
 
 ### 9.16 Các phân hệ mở rộng: quyết định đáng ghi trước
 
@@ -7129,12 +7151,19 @@ frontend là `Record` phủ kín enum nên một khoá vắng mặt trả `undef
 đúng những người nhận được nó. Vì vậy enum này và bảng trên đây là **một hợp đồng**, không phải
 một danh sách gợi ý.
 
+**Nên một loại đơn mới mượn `REQUEST_*` chứ không xin một giá trị riêng.** Ba dòng `REQUEST_*`
+nói *có việc chờ tôi* / *việc của tôi đã xong* — chúng không nói việc ấy là nghỉ phép hay tạm
+ứng. Cái phân biệt là **tham chiếu đi kèm**: `requestId` thì mở sổ đơn từ, `advanceId` thì mở
+hàng đợi tạm ứng. Thêm một tham chiếu là thêm một khoá không bắt buộc ở phía ghi và một nhánh
+ở phía đọc; thêm một giá trị enum là thêm sáu thứ ở đoạn trên và một lần chuyển đổi cơ sở dữ
+liệu. Enum đứng yên ở sáu, và nó đứng yên **vì** tin không mang tên loại việc.
+
 **Không đẩy nội dung nhạy cảm vào màn khoá.** "Phiếu lương tháng 9 đã có" là đủ; con số thì
 nằm sau lần đăng nhập, cùng lý do §9.11 không đính kèm phiếu vào email.
 
 **Luật này phải do kiểu dữ liệu giữ, không do người viết nhớ.** `Notification` **không có cột
 nào chứa câu chữ**: nó giữ `kind` là enum sáu giá trị, cộng vài tham chiếu (`requestId`,
-`periodId`, số ngày còn lại, số ngày đã chờ). Câu hiển thị dựng ở phía đọc — frontend cho chuông trong ứng
+`advanceId`, `periodId`, số ngày còn lại, số ngày đã chờ). Câu hiển thị dựng ở phía đọc — frontend cho chuông trong ứng
 dụng, service worker cho màn khoá — và cả hai lấy chữ từ catalogue. Không có chỗ nào để lỡ tay
 nhét số tiền vào, vì không có cột nào nhận được một số tiền.
 
