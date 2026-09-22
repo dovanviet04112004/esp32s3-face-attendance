@@ -3,8 +3,8 @@
 
 The type-level guard in `i18n/request.ts` catches vi.json drifting from
 en.json. It cannot see a code the backend throws that neither file answers,
-because nothing in the frontend names that key. Exit code is 1 when one is
-missing.
+nor a throw carrying a sentence, which no catalogue can answer at all.
+Exit code is 1 when one is missing.
 """
 
 from __future__ import annotations
@@ -20,27 +20,51 @@ CATALOGUES = {
     "en": Path("frontend/messages/en.json"),
 }
 
-THROWN = re.compile(
-    r"(?:BadRequest|NotFound|Conflict|Forbidden|Unauthorized|Gone|"
-    r"UnprocessableEntity)Exception\(\s*\"([A-Z0-9_]+)\""
-)
+HTTP = r"(?:BadRequest|NotFound|Conflict|Forbidden|Unauthorized|Gone|UnprocessableEntity)"
+# The argument list runs to the end of the line, which is where every one of
+# these calls ends; a ternary between two codes is still one call.
+CALL = re.compile(HTTP + r"Exception\(([^\n]*)")
+LITERAL = re.compile(r"\"([^\"]*)\"|`([^`]*)`")
+CODE = re.compile(r"^[A-Z0-9_]+$")
 
 # Raised by the frontend itself when no response arrives, so no backend file
 # mentions it.
 CLIENT_ONLY = {"NETWORK_UNREACHABLE"}
 
 
-def thrown_codes() -> dict[str, list[str]]:
+def codes_in(argument: str) -> tuple[list[str], list[str]]:
+    """The codes a call throws, and the wording it throws instead of one."""
+    codes: list[str] = []
+    prose: list[str] = []
+    for quoted, templated in LITERAL.findall(argument):
+        if templated:
+            prose.append(f"`{templated}`")
+        elif CODE.match(quoted):
+            codes.append(quoted)
+        else:
+            prose.append(f'"{quoted}"')
+    return codes, prose
+
+
+def scan() -> tuple[dict[str, list[str]], list[str]]:
     found: dict[str, list[str]] = {}
+    sentences: list[str] = []
     for path in sorted(BACKEND.rglob("*.ts")):
-        for code in THROWN.findall(path.read_text(encoding="utf-8")):
-            found.setdefault(code, []).append(str(path))
-    return found
+        for at, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for argument in CALL.findall(line):
+                codes, prose = codes_in(argument)
+                for code in codes:
+                    found.setdefault(code, []).append(str(path))
+                for said in prose:
+                    sentences.append(f"{path}:{at}: throws {said}, not a code")
+                if not codes and not prose:
+                    sentences.append(f"{path}:{at}: throws no code at all")
+    return found, sentences
 
 
 def main() -> int:
-    codes = thrown_codes()
-    problems: list[str] = []
+    codes, sentences = scan()
+    problems: list[str] = list(sentences)
     for language, path in CATALOGUES.items():
         if not path.exists():
             print(f"{path}: missing")
