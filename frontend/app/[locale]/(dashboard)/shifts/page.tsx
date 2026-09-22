@@ -231,6 +231,7 @@ export default function ShiftsPage() {
 
       <DataTable
         id="shifts"
+        cardActions="act"
         columns={columns}
         rows={shifts.data}
         keyOf={(row) => row.id}

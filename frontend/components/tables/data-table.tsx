@@ -37,6 +37,7 @@ interface Props<T> {
   /** Reaching the rows this page did not ask for yet. */
   more?: ReactNode;
   cardLead?: string;
+  cardActions?: string;
 }
 
 interface Memory {
@@ -87,6 +88,7 @@ export function DataTable<T>({
   bulk,
   more,
   cardLead,
+  cardActions,
 }: Props<T>) {
   const t = useTranslations("common");
   const [memory, setMemory] = useState<Memory>(kFresh);
@@ -270,6 +272,7 @@ export function DataTable<T>({
         rows={ordered}
         keyOf={keyOf}
         cardLead={cardLead}
+        cardActions={cardActions}
         chosen={selectable ? chosen : undefined}
         onToggle={selectable ? toggleRow : undefined}
       />

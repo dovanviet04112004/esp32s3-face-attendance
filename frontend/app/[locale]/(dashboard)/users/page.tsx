@@ -201,6 +201,7 @@ export default function UsersPage() {
 
       <DataTable
         id="users"
+        cardActions="act"
         columns={columns}
         rows={rows.data?.rows}
         keyOf={(row) => row.id}

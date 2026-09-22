@@ -387,6 +387,7 @@ export default function EmployeesPage() {
 
       <DataTable
         id="employees"
+        cardActions="edit"
         cardLead="fullName"
         columns={columns}
         rows={loaded}
