@@ -6557,6 +6557,19 @@ cả đơn đã quyết từ năm ngoái. Đặt mặc định của sổ ở *�
 cùng một danh sách hiện ở hai mục thanh bên, và người trực phải đoán mục nào mới là mục thật.
 Sổ mặc định **mọi trạng thái**.
 
+**Đơn không có ai ở trên thì rơi về bàn nhân sự, không rơi ra ngoài.** Người chưa được gắn quản
+lý vẫn xin nghỉ được, mà cây tổ chức thì luôn có lúc thủng — người mới, người vừa chuyển bộ
+phận, trưởng nhóm vừa nghỉ. Nếu hộp chỉ lọc *người duyệt là tôi* thì một đơn không có người
+duyệt nằm trong hộp của **không ai**: nó vẫn là `PENDING` trước mắt người xin, không ai được
+báo, và cả phép nhắc đơn treo cũng bỏ qua nó vì nó nhắc theo người duyệt. Đó là hỏng **mở** —
+hệ nhận một việc nó không có đường xử lý, rồi nói với người xin là đang chờ.
+
+Nên hộp của `ADMIN` và `HR` chứa thêm **đơn chưa có người duyệt**, và lúc xin, tin báo đi tới
+bàn ấy thay vì không tới đâu. §9.4 vốn đã giao `HR` quyền trên nghỉ phép, nên đây là đưa đơn về
+đúng người đã có thẩm quyền chứ không phải mở thêm quyền cho ai. **Luật 2 vẫn nguyên**: người
+xin không phải người duyệt, và một người nhân sự tự xin thì đơn ấy vẫn cần một người nhân sự
+khác quyết.
+
 **Một đơn quyết ở hộp hoặc ở trang chi tiết, không quyết ở sổ.** Hộp cho quyết nhanh vì ở đó
 mọi dòng đều đang đợi chính người đang nhìn; sổ thì phần lớn dòng không phải việc của họ, nên
 một hàng nút duyệt trên mỗi dòng là mời bấm nhầm. Sổ **bấm vào được**, và trang chi tiết là nơi
