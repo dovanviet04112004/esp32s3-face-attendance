@@ -8,11 +8,11 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { LeaveService } from "../leave/leave.service.js";
+import { LeaveService, THE_DESK } from "../leave/leave.service.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
 import type { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
 
 const PAYERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL"]);
-const DECIDERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL", "HR", "MANAGER"]);
 
 @Injectable()
 export class AdvanceService {
@@ -21,10 +21,11 @@ export class AdvanceService {
     private readonly scope: ScopeService,
     private readonly leave: LeaveService,
     private readonly audit: AuditService,
+    private readonly notices: NotificationsService,
   ) {}
 
   async list(viewer: Viewer, query: ListAdvancesDto): Promise<Page<SalaryAdvance>> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const where = {
       ...(visible === null ? {} : { employeeId: { in: visible } }),
       ...(query.state ? { state: query.state } : {}),
@@ -53,19 +54,23 @@ export class AdvanceService {
     if (viewer.employeeId === null) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
-    const approverId = await this.leave.approverFor(viewer.employeeId, new Date());
-    return this.db.salaryAdvance.create({
+    const filed = await this.db.salaryAdvance.create({
       data: {
         employeeId: viewer.employeeId,
         amount: body.amount,
         reason: body.reason,
-        approverId,
       },
     });
+    await this.notices.raiseMany(
+      await this.leave.deskIds(viewer.employeeId),
+      "REQUEST_WAITING",
+      { advanceId: filed.id },
+    );
+    return filed;
   }
 
   async decide(viewer: Viewer, id: string, body: DecideAdvanceDto): Promise<SalaryAdvance> {
-    if (!DECIDERS.has(viewer.role)) {
+    if (!THE_DESK.includes(viewer.role)) {
       throw new ForbiddenException("ADVANCE_DECIDE_DENIED");
     }
     const found = await this.require(id);
@@ -89,6 +94,10 @@ export class AdvanceService {
       action: body.approve ? AUDIT_ACTIONS.ADVANCE_APPROVE : AUDIT_ACTIONS.ADVANCE_REJECT,
       subject: AUDIT_SUBJECTS.ADVANCE,
       subjectId: id,
+    });
+    await this.notices.raiseFor(found.employeeId, "REQUEST_DECIDED", {
+      advanceId: id,
+      approved: body.approve,
     });
     return decided;
   }

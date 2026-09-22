@@ -257,7 +257,6 @@ model Employee {
   payslips          Payslip[]
   retros            RetroAdjustment[]
   advances          SalaryAdvance[]
-  advanceApprovals  SalaryAdvance[]      @relation("ApprovesAdvances")
   consents          BiometricConsent[]
   bonuses           BonusItem[]
   assetsHeld        Asset[]
@@ -1090,7 +1089,6 @@ model SalaryAdvance {
   reason       String
   state        AdvanceState @default(PENDING)
   requestedAt  DateTime     @default(now())
-  approverId   Int?
   decidedById  String?
   decidedAt    DateTime?
   decisionNote String?
@@ -1098,7 +1096,6 @@ model SalaryAdvance {
   settledAt    DateTime?
   payslipId    String?
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  approver     Employee?    @relation("ApprovesAdvances", fields: [approverId], references: [id], onDelete: SetNull)
 
   @@index([employeeId, state])
   @@index([state, requestedAt])
@@ -1310,6 +1307,7 @@ model Notification {
   userId     String
   kind       NoticeKind
   requestId  String?
+  advanceId  String?
   periodId   String?
   payslipId  String?
   contractId String?

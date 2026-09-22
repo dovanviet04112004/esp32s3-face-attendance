@@ -32,6 +32,14 @@ export class ScopeService {
     return this.subtree(viewer.employeeId);
   }
 
+  /** Who this viewer sees on rows the tree is no party to (KEHOACH 9.15). */
+  async deskOrSelfEmployeeIds(viewer: Viewer): Promise<number[] | null> {
+    if (UNSCOPED.has(viewer.role)) {
+      return null;
+    }
+    return viewer.employeeId === null ? [] : [viewer.employeeId];
+  }
+
   /** A manager and everyone under them, however deep. */
   async subtree(rootEmployeeId: number): Promise<number[]> {
     return this.cache.through(CACHE.reportsTo(rootEmployeeId), async () => {
@@ -73,7 +81,6 @@ export class ScopeService {
     }
   }
 
-  /** Fold a scope into a where clause; null ids narrow nothing. */
   static narrow<T extends string>(field: T, ids: number[] | null): Record<T, { in: number[] }> | object {
     return ids === null ? {} : ({ [field]: { in: ids } } as Record<T, { in: number[] }>);
   }

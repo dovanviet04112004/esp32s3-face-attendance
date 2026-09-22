@@ -22,9 +22,9 @@ const UNIQUE_VIOLATION = "P2002";
 const HALF = 0.5;
 const MS_PER_DAY = 86_400_000;
 const OFF_SITE: RequestKind[] = ["BUSINESS_TRIP", "REMOTE_WORK"];
-// The same two roles mayDecide already lets through, and the ones 9.4 gives
-// leave to; an unclaimed request waits here.
-const THE_DESK: Role[] = ["ADMIN", "HR"];
+// Where an unclaimed request and every advance wait: 9.4 gives HR both leave
+// and a read on payroll (KEHOACH 9.15).
+export const THE_DESK: Role[] = ["ADMIN", "HR"];
 
 /** One person's standing in one leave type, on a day they picked. */
 export interface BalanceAsOf {

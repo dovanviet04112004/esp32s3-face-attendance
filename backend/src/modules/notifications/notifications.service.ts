@@ -11,6 +11,7 @@ import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js"
 /** What a notice may carry: references and counts, never words or money. */
 export interface NoticeFacts {
   requestId?: string;
+  advanceId?: string;
   periodId?: string;
   payslipId?: string;
   contractId?: string;
