@@ -203,7 +203,10 @@ describe("documents (e2e)", () => {
   });
 
   it("aims a targeted document at its department and nobody else", async () => {
-    const seen = (await mine()).map((row) => row.code).sort();
+    // A company-wide document reaches everybody by design, so the claim is
+    // about the two this suite published, not about the whole shelf.
+    const ours = new Set<string>([GENERAL, TARGETED]);
+    const seen = (await mine()).map((row) => row.code).filter((code) => ours.has(code)).sort();
     assert.deepEqual(seen, [GENERAL, TARGETED].sort());
     const reach = await request(http)
       .get(`/documents/${targetedId}/readers`)
@@ -229,12 +232,16 @@ describe("documents (e2e)", () => {
       .set("Authorization", `Bearer ${mineToken}`);
     assert.equal(res.status, 201, JSON.stringify(res.body));
 
-    const after = (await mine()).find((one) => one.code === GENERAL);
+    const shelf = await mine();
+    const after = shelf.find((one) => one.code === GENERAL);
     assert.ok(after?.ackAt, "the signature did not come back");
+    const left = shelf.filter((one) => one.ackAt === null).map((one) => one.code);
+    assert.ok(left.includes(TARGETED), "the unsigned document stopped being offered");
+    assert.ok(!left.includes(GENERAL), "the signed document is still counted unread");
     const unread = await request(http)
       .get("/me/documents/unread")
       .set("Authorization", `Bearer ${mineToken}`);
-    assert.equal(unread.body.total, 1, "only the targeted document is left unread");
+    assert.equal(unread.body.total, left.length, "the count disagrees with the shelf it counts");
   });
 
   it("puts everybody back at unread when the next wording lands", async () => {

@@ -48,6 +48,8 @@ describe("onboarding (e2e)", () => {
   let goneId = 0;
   let titleId = "";
   let fullYear = 0;
+  let paidTypeId = "";
+  let paidCode = "";
 
   async function sweep(): Promise<void> {
     await db.user.deleteMany({ where: { email: { in: [EMAIL, SECOND_EMAIL] } } });
@@ -122,7 +124,14 @@ describe("onboarding (e2e)", () => {
     });
     goneId = left.id;
 
-    const paid = await db.leaveType.findFirstOrThrow({ where: { active: true, paid: true } });
+    // Onboarding seeds a balance for every active type, so the claims below
+    // name one rather than taking whichever row the table hands back.
+    const paid = await db.leaveType.findFirstOrThrow({
+      where: { active: true, paid: true, daysPerYear: { gt: 0 } },
+      orderBy: { code: "asc" },
+    });
+    paidTypeId = paid.id;
+    paidCode = paid.code;
     fullYear = Number(paid.daysPerYear);
   });
 
@@ -176,7 +185,7 @@ describe("onboarding (e2e)", () => {
 
   it("gives a part of the year's leave to somebody joining in October", async () => {
     const balance = await db.leaveBalance.findFirstOrThrow({
-      where: { employeeId: hireId, year: YEAR },
+      where: { employeeId: hireId, year: YEAR, leaveTypeId: paidTypeId },
     });
     const days = Number(balance.entitled);
     assert.ok(days > 0, "an October hire earned no leave at all");
@@ -191,7 +200,7 @@ describe("onboarding (e2e)", () => {
       .send({ contract: { kind: "INDEFINITE", startDate: NEW_YEAR }, startChecklist: false });
     assert.equal(res.status, 201);
     const seeded = (res.body as Report).leaveSeeded;
-    const paid = seeded.find((one) => one.year === YEAR);
+    const paid = seeded.find((one) => one.year === YEAR && one.code === paidCode);
     assert.equal(Number(paid?.entitled), fullYear, "a full year of service earned less than a year");
   });
 
