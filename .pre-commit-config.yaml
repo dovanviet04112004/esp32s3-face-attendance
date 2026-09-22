@@ -11,6 +11,21 @@ repos:
         entry: python3 tools/check_layers.py
         language: system
         pass_filenames: false
+      - id: check-error-codes
+        name: check api error codes have sentences (CLAUDE.md 3.1)
+        entry: python3 tools/check_error_codes.py
+        language: system
+        pass_filenames: false
+      - id: check-migrations
+        name: check destructive migrations are excused (KE HOACH 9.22.3c)
+        entry: python3 tools/check_migrations.py
+        language: system
+        pass_filenames: false
+      - id: check-routes
+        name: check every route names who may call it (KE HOACH 9.4)
+        entry: python3 tools/check_routes.py
+        language: system
+        pass_filenames: false
       - id: check-schematic
         name: check schematic against the pin map (CLAUDE.md 1.3)
         entry: python3 tools/check_schematic.py

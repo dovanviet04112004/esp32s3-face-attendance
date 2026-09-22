@@ -85,3 +85,14 @@ jobs:
 
       - name: PCB against the schematic
         run: python3 tools/check_pcb.py
+
+      # Three checks that read only files, so they belong on the job that runs
+      # on every push rather than on one gated by a path filter.
+      - name: Every api error code has a sentence in both catalogues
+        run: python3 tools/check_error_codes.py
+
+      - name: Destructive migrations name what makes them safe
+        run: python3 tools/check_migrations.py
+
+      - name: Every route says who may call it
+        run: python3 tools/check_routes.py
