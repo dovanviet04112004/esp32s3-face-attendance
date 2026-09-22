@@ -18,6 +18,7 @@ export class ModelsController {
 
   @Get()
   @Roles("ADMIN")
+  @ApiOperation({ summary: "Every firmware and models image on the register" })
   list(): Promise<Release[]> {
     return this.models.list();
   }

@@ -45,12 +45,14 @@ export class PayrollController {
 
   @Get("payroll-periods")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @ApiOperation({ summary: "Every pay month and the state it is in" })
   periods(@Query("legalEntityId") legalEntityId?: string): Promise<PayrollPeriod[]> {
     return this.payroll.periods(legalEntityId);
   }
 
   @Post("payroll-periods")
   @Roles("ADMIN", "PAYROLL")
+  @ApiOperation({ summary: "Open a pay month" })
   createPeriod(
     @CurrentViewer() viewer: Viewer,
     @Body() body: CreatePeriodDto,
@@ -78,6 +80,7 @@ export class PayrollController {
 
   @Post("payroll-periods/:id/paid")
   @Roles("ADMIN", "PAYROLL")
+  @ApiOperation({ summary: "Mark a locked period paid" })
   markPaid(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayrollPeriod> {
     return this.payroll.markPaid(viewer, id);
   }
@@ -107,12 +110,14 @@ export class PayrollController {
 
   @Get("payroll-periods/:id/runs")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @ApiOperation({ summary: "Every attempt at calculating this period" })
   runs(@Param("id") id: string): Promise<PayrollRun[]> {
     return this.payroll.runs(id);
   }
 
   @Post("payroll-runs")
   @Roles("ADMIN", "PAYROLL")
+  @ApiOperation({ summary: "Start a run: regular, bonus or final settlement" })
   createRun(@CurrentViewer() viewer: Viewer, @Body() body: CreateRunDto): Promise<PayrollRun> {
     return this.payroll.createRun(viewer, body);
   }
@@ -176,6 +181,7 @@ export class PayrollController {
   }
 
   @Get("payslips/:id")
+  @ApiOperation({ summary: "One payslip with every line that makes it up" })
   payslip(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayslipDetail> {
     return this.payroll.payslip(viewer, id);
   }

@@ -63,6 +63,7 @@ export class UsersController {
   }
 
   @Patch(":id")
+  @ApiOperation({ summary: "Change what an account is allowed to do" })
   update(
     @Param("id") id: string,
     @Body() body: UpdateUserDto,

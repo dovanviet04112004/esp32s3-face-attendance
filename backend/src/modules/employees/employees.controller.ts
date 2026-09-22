@@ -101,6 +101,7 @@ export class EmployeesController {
   }
 
   @Get(":id")
+  @ApiOperation({ summary: "One employee, as far as the caller's scope reaches" })
   get(
     @Param("id", ParseIntPipe) id: number,
     @CurrentViewer() viewer: Viewer,
@@ -117,6 +118,7 @@ export class EmployeesController {
 
   @Patch(":id")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Correct an employee record" })
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() body: UpdateEmployeeDto,

@@ -30,6 +30,7 @@ export class ShiftsController {
 
   @Get()
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Every shift, retired ones included" })
   list(): Promise<Shift[]> {
     return this.shifts.list();
   }
@@ -42,18 +43,21 @@ export class ShiftsController {
 
   @Get(":id")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "One shift and the hours it keeps" })
   get(@Param("id") id: string): Promise<Shift> {
     return this.shifts.get(id);
   }
 
   @Post()
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Add a shift" })
   create(@Body() body: CreateShiftDto): Promise<Shift> {
     return this.shifts.create(body);
   }
 
   @Patch(":id")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Change a shift's hours or its grace" })
   update(@Param("id") id: string, @Body() body: UpdateShiftDto): Promise<Shift> {
     return this.shifts.update(id, body);
   }
@@ -67,12 +71,14 @@ export class ShiftsController {
 
   @Get(":id/assignments")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Who works this shift, and from when" })
   assignments(@Param("id") id: string): Promise<ShiftAssignment[]> {
     return this.shifts.assignments(id);
   }
 
   @Post(":id/assignments")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Put somebody on this shift from a date" })
   assign(@Param("id") id: string, @Body() body: AssignShiftDto): Promise<ShiftAssignment> {
     return this.shifts.assign(id, body);
   }
@@ -80,6 +86,7 @@ export class ShiftsController {
   @Delete(":id/assignments/:assignmentId")
   @Roles("ADMIN", "HR")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Take somebody off this shift" })
   unassign(
     @Param("id") id: string,
     @Param("assignmentId") assignmentId: string,

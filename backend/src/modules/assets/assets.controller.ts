@@ -18,12 +18,14 @@ export class AssetsController {
 
   @Get("assets")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "The asset register, narrowed by state or kind" })
   list(@Query() query: ListAssetsDto): Promise<AssetWithHolder[]> {
     return this.assets.list(query);
   }
 
   @Post("assets")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Put an asset on the register" })
   create(@Body() body: CreateAssetDto): Promise<Asset> {
     return this.assets.create(body);
   }

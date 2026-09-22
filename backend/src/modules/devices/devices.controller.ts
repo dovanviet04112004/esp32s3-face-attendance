@@ -24,12 +24,14 @@ export class DevicesController {
 
   @Get(":id")
   @Roles("ADMIN")
+  @ApiOperation({ summary: "One kiosk and what it last reported" })
   get(@Param("id") id: string): Promise<PublicDevice> {
     return this.devices.get(id);
   }
 
   @Patch(":id")
   @Roles("ADMIN")
+  @ApiOperation({ summary: "Rename a kiosk or move it to another door" })
   update(@Param("id") id: string, @Body() body: UpdateDeviceDto): Promise<PublicDevice> {
     return this.devices.update(id, body);
   }

@@ -104,6 +104,7 @@ export class AuthController {
   @Post("logout")
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: "End the session this request presents" })
   @ApiBearerAuth()
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
     await this.auth.close((req.user as AccessClaims).sid);
@@ -112,6 +113,7 @@ export class AuthController {
 
   @Get("me")
   @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: "The claims on the caller's own token" })
   @ApiBearerAuth()
   me(@Req() req: Request): AccessClaims {
     return req.user as AccessClaims;

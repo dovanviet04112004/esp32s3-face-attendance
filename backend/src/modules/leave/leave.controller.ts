@@ -17,6 +17,7 @@ export class LeaveController {
   constructor(private readonly leave: LeaveService) {}
 
   @Get("leave-types")
+  @ApiOperation({ summary: "The kinds of leave a request can name" })
   types(): Promise<LeaveType[]> {
     return this.leave.types();
   }
@@ -65,6 +66,7 @@ export class LeaveController {
   }
 
   @Post("requests/:id/cancel")
+  @ApiOperation({ summary: "Withdraw a request nobody has decided yet" })
   cancel(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<LeaveRequest> {
     return this.leave.cancel(viewer, id);
   }

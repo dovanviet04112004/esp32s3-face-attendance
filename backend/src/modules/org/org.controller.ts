@@ -56,6 +56,7 @@ export class OrgController {
 
   @Delete("holidays/:id")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Take a day off the calendar, which rebuilds it for everybody" })
   removeHoliday(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -93,12 +94,14 @@ export class OrgController {
 
   @Get("legal-entities")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @ApiOperation({ summary: "The entities payroll and insurance report against" })
   entities(): Promise<LegalEntity[]> {
     return this.org.entities();
   }
 
   @Get("job-titles")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "The grade ladder a hire is placed on" })
   jobTitles(): Promise<JobTitle[]> {
     return this.org.jobTitles();
   }
@@ -123,12 +126,14 @@ export class OrgController {
 
   @Post("departments")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Open a department under a parent, or at the top" })
   create(@Body() body: CreateDepartmentDto): Promise<Department> {
     return this.org.createDepartment(body);
   }
 
   @Patch("departments/:id")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Rename a department" })
   update(@Param("id") id: string, @Body() body: UpdateDepartmentDto): Promise<Department> {
     return this.org.updateDepartment(id, body);
   }

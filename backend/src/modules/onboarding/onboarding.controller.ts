@@ -18,12 +18,14 @@ export class OnboardingController {
 
   @Get("checklist-templates")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "The templates a new hire can be started on" })
   templates(@Query("kind") kind?: ChecklistKind): Promise<ChecklistTemplate[]> {
     return this.onboarding.templates(kind);
   }
 
   @Post("checklist-templates")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Add a template and the items it opens" })
   createTemplate(@Body() body: CreateTemplateDto): Promise<ChecklistTemplate> {
     return this.onboarding.createTemplate(body);
   }
@@ -42,6 +44,7 @@ export class OnboardingController {
   }
 
   @Get("employees/:id/checklist")
+  @ApiOperation({ summary: "What is still open on one person's onboarding" })
   run(
     @CurrentViewer() viewer: Viewer,
     @Param("id", ParseIntPipe) id: number,
@@ -51,6 +54,7 @@ export class OnboardingController {
   }
 
   @Post("checklist-tasks/:id/finish")
+  @ApiOperation({ summary: "Mark one onboarding task done" })
   finish(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,

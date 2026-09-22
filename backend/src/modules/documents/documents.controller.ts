@@ -32,12 +32,14 @@ export class DocumentsController {
 
   @Get("documents")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Everything published, whoever it is aimed at" })
   list(): Promise<Document[]> {
     return this.documents.list();
   }
 
   @Post("documents")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Register a document; its wording arrives as a version" })
   create(@CurrentViewer() viewer: Viewer, @Body() body: CreateDocumentDto): Promise<Document> {
     return this.documents.create(viewer, body);
   }
@@ -73,6 +75,7 @@ export class DocumentsController {
   }
 
   @Get("me/documents/unread")
+  @ApiOperation({ summary: "How many versions aimed at the caller are unsigned" })
   unread(@CurrentViewer() viewer: Viewer): Promise<UnreadCount> {
     return viewer.employeeId === null
       ? Promise.resolve({ total: 0 })
@@ -90,12 +93,14 @@ export class DocumentsController {
 
   @Get("personnel-file-types")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "The kinds of paper a personnel file is meant to hold" })
   fileTypes(): Promise<PersonnelFileType[]> {
     return this.documents.fileTypes();
   }
 
   @Post("personnel-file-types")
   @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Add a kind of paper, and how long one stays valid" })
   createFileType(
     @CurrentViewer() viewer: Viewer,
     @Body() body: CreateFileTypeDto,
