@@ -13,6 +13,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
+    "prisma:demo": "tsx prisma/demo.ts",
     "typecheck": "tsc --noEmit",
     "test:e2e": "tsc -p tsconfig.json --outDir dist-test && node --test 'dist-test/test/**/*.e2e-spec.js'",
     "test": "npm run test:e2e"
