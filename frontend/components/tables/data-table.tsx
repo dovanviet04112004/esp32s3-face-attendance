@@ -165,7 +165,7 @@ export function DataTable<T>({
           type="button"
           tone="quiet"
           size="sm"
-          className="ms-auto"
+          className="ms-auto hidden md:inline-flex"
           onClick={() => setPicking(true)}
         >
           <Columns3 className="size-4" aria-hidden />

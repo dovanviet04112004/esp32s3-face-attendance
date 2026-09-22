@@ -84,6 +84,7 @@
     "filters": "Filters",
     "showingOf": "Showing {shown} of {total}",
     "loadMore": "Load more",
+    "tools": "Tools",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
     "showingOfAtLeast": "Showing {shown} of more than {total}",

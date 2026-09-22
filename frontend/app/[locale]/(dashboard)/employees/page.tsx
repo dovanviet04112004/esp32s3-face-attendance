@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { Wrench } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
@@ -89,6 +90,7 @@ export default function EmployeesPage() {
   const [csv, setCsv] = useState("");
   const [report, setReport] = useState<ImportReport | null>(null);
   const [fault, setFault] = useState<string | null>(null);
+  const [tooling, setTooling] = useState(false);
   const [raising, setRaising] = useState(false);
   const [raiseFault, setRaiseFault] = useState<string | null>(null);
   const [raiseDept, setRaiseDept] = useState("");
@@ -234,6 +236,32 @@ export default function EmployeesPage() {
     });
   }
 
+  const tools = (
+    <>
+      <Button size="sm" tone="quiet" disabled={download.isPending} onClick={() => download.mutate()}>
+        {t("export")}
+      </Button>
+      <Button size="sm" tone="quiet" onClick={() => picker.current?.click()}>
+        {t("import")}
+      </Button>
+      <Button size="sm" tone="quiet" disabled={template.isPending} onClick={() => template.mutate()}>
+        {t("importTemplate")}
+      </Button>
+      {paysPeople ? (
+        <Button
+          size="sm"
+          tone="quiet"
+          onClick={() => {
+            raise.reset();
+            setRaising(true);
+          }}
+        >
+          {t("raiseAction")}
+        </Button>
+      ) : null}
+    </>
+  );
+
   return (
     <section>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -249,32 +277,11 @@ export default function EmployeesPage() {
         </div>
         {mayWrite ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" tone="quiet" disabled={download.isPending} onClick={() => download.mutate()}>
-              {t("export")}
+            <div className="hidden flex-wrap items-center gap-2 sm:flex">{tools}</div>
+            <Button size="sm" tone="quiet" className="sm:hidden" onClick={() => setTooling(true)}>
+              <Wrench className="size-4" aria-hidden />
+              {common("tools")}
             </Button>
-            <Button size="sm" tone="quiet" onClick={() => picker.current?.click()}>
-              {t("import")}
-            </Button>
-            <Button
-              size="sm"
-              tone="quiet"
-              disabled={template.isPending}
-              onClick={() => template.mutate()}
-            >
-              {t("importTemplate")}
-            </Button>
-            {paysPeople ? (
-              <Button
-                size="sm"
-                tone="quiet"
-                onClick={() => {
-                  raise.reset();
-                  setRaising(true);
-                }}
-              >
-                {t("raiseAction")}
-              </Button>
-            ) : null}
             <input
               ref={picker}
               type="file"
@@ -366,6 +373,17 @@ export default function EmployeesPage() {
           </Select>
         </div>
       </FilterBar>
+
+      <Sheet
+        open={tooling}
+        onClose={() => setTooling(false)}
+        title={common("tools")}
+        closeLabel={common("close")}
+      >
+        <div className="flex flex-col gap-2" onClick={() => setTooling(false)}>
+          {tools}
+        </div>
+      </Sheet>
 
       <DataTable
         id="employees"
