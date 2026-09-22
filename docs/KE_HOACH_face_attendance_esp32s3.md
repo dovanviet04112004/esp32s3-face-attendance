@@ -7138,6 +7138,18 @@ nào chứa câu chữ**: nó giữ `kind` là enum sáu giá trị, cộng vài
 dụng, service worker cho màn khoá — và cả hai lấy chữ từ catalogue. Không có chỗ nào để lỡ tay
 nhét số tiền vào, vì không có cột nào nhận được một số tiền.
 
+**Tin nhắm vào tài khoản đăng nhập, không nhắm vào hồ sơ nhân viên.** Thứ mở chuông ra đọc là
+một phiên đăng nhập, và **không phải đăng nhập nào cũng là một nhân viên**: §9.4 mở đường tạo
+tài khoản bằng email và vai, nên một quản trị viên hay một bàn nhân sự có thể không có dòng nào
+trong `Employee`. Khoá tin theo hồ sơ nhân viên thì những tài khoản ấy **không nhận được gì**,
+và đó không phải chuyện nhỏ: chúng chính là nơi §9.15 gửi đơn không có ai ở trên tới.
+
+Nên `Notification` và `NotificationPreference` khoá theo `userId`, còn `PushSubscription` giữ
+`endpoint` làm khoá và đổi **chủ sở hữu** sang `userId`. Người nghỉ việc vẫn tra lại được, vì
+§9.14 giữ cả hồ sơ lẫn tài khoản — tài khoản chỉ bị khoá, không bị xoá. Cái giá là một người
+đổi tài khoản sẽ không mang theo tin cũ; đổi lại, **không có đường nào để một tin gửi vào chỗ
+không ai đọc**.
+
 **Hai kênh, bật tắt theo từng loại.**
 
 | Kênh | Mặc định | Ghi chú |
