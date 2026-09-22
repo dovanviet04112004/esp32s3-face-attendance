@@ -4462,6 +4462,10 @@ frontend/
 │           │                                          #   departmentId, chỉ legalEntityId)
 │           ├── payroll/{page.tsx, [periodId]/page.tsx}
 │           ├── policy/page.tsx                        # giảm trừ, tỷ lệ, biểu thuế
+│           ├── leave-types/page.tsx                   # ★ §9.15 — loại phép: số ngày một
+│           │                                          #   năm và số ngày chuyển tiếp. Sửa
+│           │                                          #   được trên màn hình, vì gieo lại
+│           │                                          #   seed không phải một đường quản trị
 │           ├── assets/page.tsx                        # ★ §9.16 — sổ tài sản, cấp và thu
 │           ├── onboarding/page.tsx                    # ★ việc nhận/nghỉ việc chưa xong
 │           ├── audit/page.tsx                         # ★ §9.24 — nhật ký kiểm toán
