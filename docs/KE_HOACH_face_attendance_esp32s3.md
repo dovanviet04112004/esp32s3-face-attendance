@@ -4449,7 +4449,11 @@ frontend/
 │           │                                          # ── §9 quản trị nhân sự ──
 │           ├── me/{page.tsx, attendance/, requests/, payslips/, shifts/, letters/, profile/}
 │           ├── approvals/page.tsx                     # hộp chờ duyệt của MANAGER
-│           ├── org/{page.tsx, departments/page.tsx}   # cây tổ chức
+│           ├── org/page.tsx                           # cây tổ chức — một màn hình, vì
+│           │                                          #   thêm, đổi tên và chuyển nhánh đều
+│           │                                          #   là bốn động từ của một tài nguyên;
+│           │                                          #   tách đôi thì phải đổi trang giữa
+│           │                                          #   lúc thêm và lúc sửa (§9.15)
 │           ├── leave/{page.tsx, [id]/page.tsx}        # sổ đơn từ, mọi loại mọi trạng thái
 │           ├── timesheet/page.tsx                     # bảng công tháng, sửa có vết
 │           ├── holidays/page.tsx                      # ★ §9.15 — lịch nghỉ lễ; nó là đầu
