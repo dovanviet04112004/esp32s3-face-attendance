@@ -20,7 +20,13 @@ interface Department {
   code: string;
   name: string;
   parentId: string | null;
+  costCentre: string | null;
   headcount: number;
+}
+
+interface Entity {
+  id: string;
+  name: string;
 }
 
 interface ReorgRow {
@@ -43,6 +49,7 @@ interface ReorgPlan {
 }
 
 const WRITERS = ["ADMIN", "HR"];
+const kIndentPx = 18;
 
 /** The api returns the tree flat with parentId, so the shape is built once
  *  here rather than guessed on the server (KEHOACH 4.7).
@@ -66,66 +73,77 @@ interface BranchProps {
   parentId: string | null;
   depth: number;
   onPick: ((one: Department) => void) | null;
-  shut: ReadonlySet<string>;
+  open: ReadonlySet<string>;
   onFlip: (id: string) => void;
 }
 
-function Branch({ rows, parentId, depth, onPick, shut, onFlip }: BranchProps) {
+function Branch({ rows, parentId, depth, onPick, open, onFlip }: BranchProps) {
   const t = useTranslations("org");
+  const common = useTranslations("common");
   return (
     <>
       {branchesOf(rows, parentId).map((node) => {
         const kids = branchesOf(rows, node.id);
-        const open = !shut.has(node.id);
+        // The company opens itself and nothing else does: a first look is the
+        // blocks, because forty-five rows say less about shape than nine.
+        const shown = depth === 0 || open.has(node.id);
         const whole = subtreeOf(rows, node);
         return (
           <li key={node.id}>
             <div
               className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-(--color-ground)"
-              style={{ paddingInlineStart: `${depth * 20 + 8}px` }}
+              style={{ paddingInlineStart: `${depth * kIndentPx + 8}px` }}
             >
               {kids.length > 0 ? (
                 <button
                   type="button"
-                  aria-expanded={open}
-                  aria-label={t(open ? "collapse" : "expand")}
+                  aria-expanded={shown}
+                  aria-label={t(shown ? "collapse" : "expand")}
                   onClick={() => onFlip(node.id)}
-                  className="grid size-5 shrink-0 place-items-center rounded text-(--color-muted) hover:text-(--color-ink)"
+                  className="grid size-6 shrink-0 place-items-center rounded text-(--color-muted) hover:text-(--color-ink) pointer-coarse:size-11"
                 >
                   <ChevronRight
-                    className={cn("size-4 transition-transform", open && "rotate-90")}
+                    className={cn("size-4 transition-transform", shown && "rotate-90")}
                     aria-hidden
                   />
                 </button>
               ) : (
-                <span className="size-5 shrink-0" aria-hidden />
+                <span className="size-6 shrink-0 pointer-coarse:size-11" aria-hidden />
               )}
-              <span className="font-mono text-xs text-(--color-muted)">{node.code}</span>
+              <span className="w-20 shrink-0 font-mono text-xs text-(--color-muted)">{node.code}</span>
               {onPick ? (
                 <button
                   type="button"
                   onClick={() => onPick(node)}
-                  className="text-start underline hover:no-underline"
+                  className="min-w-0 flex-1 truncate text-start underline hover:no-underline"
                 >
                   {node.name}
                 </button>
               ) : (
-                <span>{node.name}</span>
+                <span className="min-w-0 flex-1 truncate">{node.name}</span>
               )}
-              <span className="ms-auto shrink-0 text-xs text-(--color-muted) tabular-nums">
+              {kids.length > 0 && !shown ? (
+                <span className="shrink-0 text-xs text-(--color-muted) tabular-nums">
+                  {t("units", { count: kids.length })}
+                </span>
+              ) : null}
+              <span className="w-32 shrink-0 text-end text-xs text-(--color-muted) tabular-nums">
                 {kids.length > 0 && whole !== node.headcount
                   ? t("headHere", { here: node.headcount, whole })
                   : t("head", { count: node.headcount })}
               </span>
+              <span className="hidden w-24 shrink-0 text-end text-xs text-(--color-muted) sm:block">
+                {node.costCentre ?? common("empty")}
+              </span>
             </div>
-            {open && kids.length > 0 ? (
+            {shown && kids.length > 0 ? (
               <ul>
                 <Branch
                   rows={rows}
                   parentId={node.id}
                   depth={depth + 1}
                   onPick={onPick}
-                  shut={shut}
+                  open={open}
                   onFlip={onFlip}
                 />
               </ul>
@@ -148,16 +166,18 @@ export default function OrgPage() {
 
   const [renaming, setRenaming] = useState<Department | null>(null);
   const [moving, setMoving] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newParentId, setNewParent] = useState("");
   const [fault, setFault] = useState<string | null>(null);
   const [fromDepartmentId, setFrom] = useState("");
   const [toDepartmentId, setTo] = useState("");
   const [toManagerCode, setManager] = useState("");
-  // A branch is open until it is shut, so a fresh tree shows itself whole.
-  const [shut, setShut] = useState<ReadonlySet<string>>(new Set());
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
 
   function flip(id: string): void {
-    setShut((held) => {
+    setOpen((held) => {
       const next = new Set(held);
       if (!next.delete(id)) {
         next.add(id);
@@ -169,6 +189,28 @@ export default function OrgPage() {
   const departments = useQuery({
     queryKey: ["departments"],
     queryFn: async () => (await api.get<Department[]>("/departments")).data,
+  });
+
+  const entities = useQuery({
+    queryKey: ["legal-entities"],
+    enabled: mayWrite,
+    queryFn: async () => (await api.get<Entity[]>("/legal-entities")).data,
+  });
+
+  const add = useMutation({
+    mutationFn: () =>
+      api.post("/departments", {
+        legalEntityId: entities.data?.[0]?.id,
+        name: newName,
+        parentId: newParentId || undefined,
+      }),
+    onSuccess: () => {
+      setAdding(false);
+      setNewName("");
+      setNewParent("");
+      void cache.invalidateQueries({ queryKey: ["departments"] });
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   const rename = useMutation({
@@ -211,17 +253,28 @@ export default function OrgPage() {
       <p className="mt-1 text-sm text-(--color-muted)">{o("treeLead")}</p>
 
       {mayWrite ? (
-        <Button
-          type="button"
-          className="mt-4"
-          onClick={() => {
-            setFault(null);
-            reorg.reset();
-            setMoving(true);
-          }}
-        >
-          {o("reorgAction")}
-        </Button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            onClick={() => {
+              setFault(null);
+              setAdding(true);
+            }}
+          >
+            {o("newDepartment")}
+          </Button>
+          <Button
+            type="button"
+            tone="quiet"
+            onClick={() => {
+              setFault(null);
+              reorg.reset();
+              setMoving(true);
+            }}
+          >
+            {o("reorgAction")}
+          </Button>
+        </div>
       ) : null}
 
       {departments.isPending ? (
@@ -229,8 +282,16 @@ export default function OrgPage() {
       ) : rows.length === 0 ? (
         <p className="mt-6 text-sm text-(--color-muted)">{common("noData")}</p>
       ) : (
-        <ul className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-2">
-          <Branch
+        <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-2">
+          <div className="flex items-center gap-2 border-b border-(--color-line) px-2 pb-2 text-xs text-(--color-muted)">
+            <span className="size-6 shrink-0 pointer-coarse:size-11" aria-hidden />
+            <span className="w-20 shrink-0">{o("code")}</span>
+            <span className="min-w-0 flex-1">{o("name")}</span>
+            <span className="w-32 shrink-0 text-end">{o("headcountColumn")}</span>
+            <span className="hidden w-24 shrink-0 text-end sm:block">{o("costCentre")}</span>
+          </div>
+          <ul>
+            <Branch
             rows={rows}
             parentId={null}
             depth={0}
@@ -243,11 +304,56 @@ export default function OrgPage() {
                   }
                 : null
             }
-            shut={shut}
-            onFlip={flip}
-          />
-        </ul>
+              open={open}
+              onFlip={flip}
+            />
+          </ul>
+        </div>
       )}
+
+      <Sheet
+        open={adding}
+        onClose={() => setAdding(false)}
+        title={o("newDepartment")}
+        closeLabel={common("close")}
+      >
+        <label className="block text-xs text-(--color-muted)">
+          {o("name")}
+          <Input
+            required
+            maxLength={120}
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            className="mt-1"
+          />
+        </label>
+        <label className="mt-3 block text-xs text-(--color-muted)">
+          {o("parent")}
+          <Select
+            value={newParentId}
+            onChange={(event) => setNewParent(event.target.value)}
+            className="mt-1"
+          >
+            <option value="">{o("noParent")}</option>
+            {rows.map((one) => (
+              <option key={one.id} value={one.id}>
+                {one.name}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <Button
+          type="button"
+          className="mt-4"
+          disabled={newName === "" || add.isPending}
+          onClick={() => {
+            setFault(null);
+            add.mutate();
+          }}
+        >
+          {add.isPending ? common("saving") : o("newDepartment")}
+        </Button>
+      </Sheet>
 
       <Sheet
         open={renaming !== null}

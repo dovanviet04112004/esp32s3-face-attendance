@@ -1,5 +1,4 @@
 import {
-  Building2,
   CalendarCheck,
   CalendarDays,
   CalendarOff,
@@ -109,7 +108,6 @@ export const NAV: NavGroup[] = [
         unlisted: true,
       },
       { href: "/org", key: "orgChart", icon: Network, roles: TEAM_TIME },
-      { href: "/org/departments", key: "departments", icon: Building2, roles: PEOPLE_DESK },
       { href: "/onboarding", key: "onboarding", icon: ListChecks, roles: TEAM_TIME, deskOnly: true },
       { href: "/assets", key: "assets", icon: Package, roles: PEOPLE_DESK, deskOnly: true },
       { href: "/documents", key: "documents", icon: FolderCheck, roles: PEOPLE_DESK, deskOnly: true },

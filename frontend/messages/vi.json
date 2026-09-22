@@ -34,7 +34,6 @@
     "payroll": "Kỳ lương",
     "policy": "Chính sách lương",
     "timesheetHr": "Bảng công",
-    "departments": "Phòng ban",
     "groupOps": "Vận hành",
     "myShifts": "Lịch ca",
     "myDocuments": "Tài liệu của tôi",
@@ -857,14 +856,13 @@
     "prefsLead": "Sáu loại, mỗi loại tắt riêng được."
   },
   "org": {
-    "departments": "Phòng ban",
-    "departmentsLead": "Đổi cấp trên của một phòng ban là đổi luôn ai duyệt đơn và ai nhìn thấy dữ liệu của người trong đó.",
     "treeLead": "Số người đếm cả nhánh bên dưới, không riêng phòng ban đó.",
     "units": "{count} đơn vị",
     "code": "Mã",
     "name": "Tên",
     "parent": "Trực thuộc",
     "costCentre": "Trung tâm chi phí",
+    "headcountColumn": "Quân số",
     "headcount": "Số người",
     "newDepartment": "Thêm phòng ban",
     "noParent": "Cấp cao nhất",

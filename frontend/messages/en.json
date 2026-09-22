@@ -34,7 +34,6 @@
     "payroll": "Payroll",
     "policy": "Pay policy",
     "timesheetHr": "Timesheet",
-    "departments": "Departments",
     "groupOps": "Operations",
     "myShifts": "My shifts",
     "myDocuments": "My documents",
@@ -857,14 +856,13 @@
     "prefsLead": "Six kinds, each switched off on its own."
   },
   "org": {
-    "departments": "Departments",
-    "departmentsLead": "Changing a department parent changes who approves for its people and who can see them.",
     "treeLead": "The headcount covers the whole branch, not the department on its own.",
     "units": "{count} units",
     "code": "Code",
     "name": "Name",
     "parent": "Reports to",
     "costCentre": "Cost centre",
+    "headcountColumn": "Headcount",
     "headcount": "People",
     "newDepartment": "Add department",
     "noParent": "Top level",
