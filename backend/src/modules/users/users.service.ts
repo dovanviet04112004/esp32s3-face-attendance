@@ -44,6 +44,10 @@ const VISIBLE = {
 } as const;
 
 /** Who got an invitation. No secret here: the link goes to them, not here. */
+export type LoginOpened =
+  | { userId: string; skipped?: undefined }
+  | { userId?: undefined; skipped: "LOGIN_EXISTS" | "NO_EMAIL" | "EMAIL_TAKEN" };
+
 export interface ProvisionedAccount {
   employeeCode: string;
   email: string;
@@ -176,6 +180,46 @@ export class UsersService {
       link: `${root}/${locale}/set-password?token=${link}`,
       reason: why,
     } satisfies PasswordSetupJob);
+  }
+
+  /** Open the login a hire needs, saying why when it opens none. The role is
+   *  read off the org tree, the same way a bulk run reads it (KEHOACH 9.14).
+   */
+  async openFor(employeeId: number): Promise<LoginOpened> {
+    const person = await this.db.employee.findUnique({
+      where: { id: employeeId },
+      select: {
+        id: true,
+        personalEmail: true,
+        locale: true,
+        login: { select: { id: true } },
+        _count: { select: { reports: true } },
+      },
+    });
+    if (person?.login) {
+      return { skipped: "LOGIN_EXISTS" };
+    }
+    if (!person?.personalEmail) {
+      return { skipped: "NO_EMAIL" };
+    }
+    try {
+      const made = await this.db.user.create({
+        data: {
+          email: person.personalEmail,
+          passwordHash: UNUSABLE_PASSWORD,
+          role: person._count.reports > 0 ? "MANAGER" : "EMPLOYEE",
+          employeeId: person.id,
+        },
+        select: { id: true },
+      });
+      await this.sendSetup(made.id, person.locale, "opened");
+      return { userId: made.id };
+    } catch (error) {
+      if (isCode(error, UNIQUE_VIOLATION)) {
+        return { skipped: "EMAIL_TAKEN" };
+      }
+      throw error;
+    }
   }
 
   /** Sends the link again, which is how a forgotten password is recovered

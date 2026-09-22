@@ -1,5 +1,12 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import type { ChecklistKind, ChecklistTask, ChecklistTemplate, Prisma, TaskOwner } from "@prisma/client";
+import type {
+  ChecklistKind,
+  ChecklistTask,
+  ChecklistTemplate,
+  ChecklistTemplateItem,
+  Prisma,
+  TaskOwner,
+} from "@prisma/client";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -12,6 +19,16 @@ export type RunWithTasks = Prisma.ChecklistRunGetPayload<{
 
 const kMsPerDay = 86_400_000;
 const kOpenPage = 200;
+
+/** What planting a run needs off the record: who they are and who owns the
+ *  tasks written for a manager.
+ */
+export interface Hire {
+  id: number;
+  jobTitleId: string | null;
+  departmentId: string | null;
+  managerId: number | null;
+}
 
 @Injectable()
 export class OnboardingService {
@@ -54,6 +71,14 @@ export class OnboardingService {
    * fallback. Nothing matching is not a silent no-op.
    */
   async pickTemplate(kind: ChecklistKind, jobTitleId: string | null, departmentId: string | null) {
+    const best = await this.findTemplate(kind, jobTitleId, departmentId);
+    if (!best) {
+      throw new NotFoundException("NO_CHECKLIST_TEMPLATE");
+    }
+    return best;
+  }
+
+  async findTemplate(kind: ChecklistKind, jobTitleId: string | null, departmentId: string | null) {
     const options = await this.db.checklistTemplate.findMany({
       where: {
         kind,
@@ -71,11 +96,39 @@ export class OnboardingService {
         score: (one.jobTitleId ? 2 : 0) + (one.departmentId ? 1 : 0),
       }))
       .sort((a, b) => b.score - a.score);
-    const best = scored[0]?.one;
-    if (!best) {
-      throw new NotFoundException("NO_CHECKLIST_TEMPLATE");
+    return scored[0]?.one ?? null;
+  }
+
+  /** Plant a run inside somebody else's transaction, or nothing when one is
+   *  already there or no template fits (KEHOACH 9.14).
+   */
+  async plantIn(
+    tx: Prisma.TransactionClient,
+    person: Hire,
+    kind: ChecklistKind,
+    anchorDate: Date,
+  ): Promise<{ runId: string; tasks: number } | null> {
+    const held = await tx.checklistRun.findUnique({
+      where: { employeeId_kind: { employeeId: person.id, kind } },
+    });
+    if (held) {
+      return null;
     }
-    return best;
+    const template = await this.findTemplate(kind, person.jobTitleId, person.departmentId);
+    if (!template) {
+      return null;
+    }
+    const made = await tx.checklistRun.create({
+      data: {
+        employeeId: person.id,
+        templateId: template.id,
+        kind,
+        anchorDate,
+        tasks: { create: tasksOf(template.items, person, anchorDate) },
+      },
+      select: { id: true },
+    });
+    return { runId: made.id, tasks: template.items.length };
   }
 
   /** Turn a template into work somebody owns, with dates it is due by. */
@@ -101,15 +154,7 @@ export class OnboardingService {
         templateId: template.id,
         kind: body.kind,
         anchorDate: anchor,
-        tasks: {
-          create: template.items.map((item) => ({
-            ordinal: item.ordinal,
-            title: item.title,
-            ownerRole: item.owner,
-            ownerId: ownerOf(item.owner, person),
-            dueOn: new Date(anchor.getTime() + item.dueDays * kMsPerDay),
-          })),
-        },
+        tasks: { create: tasksOf(template.items, person, anchor) },
       },
       include: { tasks: { orderBy: { ordinal: "asc" } }, template: { select: { name: true } } },
     });
@@ -171,6 +216,20 @@ export class OnboardingService {
 }
 
 /** HR work belongs to a desk, so the person stays empty and the role carries it. */
+function tasksOf(
+  items: ChecklistTemplateItem[],
+  person: Hire,
+  anchor: Date,
+): Prisma.ChecklistTaskUncheckedCreateWithoutRunInput[] {
+  return items.map((item) => ({
+    ordinal: item.ordinal,
+    title: item.title,
+    ownerRole: item.owner,
+    ownerId: ownerOf(item.owner, person),
+    dueOn: new Date(anchor.getTime() + item.dueDays * kMsPerDay),
+  }));
+}
+
 function ownerOf(owner: TaskOwner, person: { id: number; managerId: number | null }): number | null {
   if (owner === "SELF") {
     return person.id;

@@ -21,6 +21,7 @@ export const AUDIT_ACTIONS = {
   EMPLOYEE_CREATE: "employee.create",
   EMPLOYEE_UPDATE: "employee.update",
   EMPLOYEE_DEACTIVATE: "employee.deactivate",
+  EMPLOYEE_ONBOARD: "employee.onboard",
   EMPLOYEE_OFFBOARD: "employee.offboard",
 
   USER_CREATE: "user.create",

@@ -9,10 +9,13 @@ import { toExcelCsv } from "../../common/csv.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { OnboardingService } from "../onboarding/onboarding.service.js";
+import { UsersService, type LoginOpened } from "../users/users.service.js";
 import type {
   CreateEmployeeDto,
   OffboardDto,
   ListEmployeesDto,
+  OnboardDto,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
 import {
@@ -31,6 +34,40 @@ const UNIQUE_VIOLATION = "P2002";
 // what an int holds, since the answer is read back as one.
 const SERIES = /^(.*?)(\d+)$/;
 const MAX_SERIES_DIGITS = 9;
+
+export interface SeededLeave {
+  code: string;
+  year: number;
+  entitled: number;
+}
+
+/** What joining wrote, and beside it the parts it left alone with a reason. */
+export interface Onboarding {
+  employeeId: number;
+  code: string;
+  startDate: string;
+  contractId: string | null;
+  payId: string | null;
+  leaveSeeded: SeededLeave[];
+  checklist: { runId: string; tasks: number } | null;
+  userId: string | null;
+  skipped: string[];
+}
+
+const kHalfDay = 2;
+const kMsPerDay = 86_400_000;
+
+/** Days earned over the part of the year that is left, rounded to the half
+ *  day that leave is counted in (KEHOACH 9.14).
+ */
+function prorated(daysPerYear: number, start: Date): number {
+  const year = start.getUTCFullYear();
+  const opens = Date.UTC(year, 0, 1);
+  const closes = Date.UTC(year + 1, 0, 1);
+  const whole = (closes - opens) / kMsPerDay;
+  const left = (closes - Math.max(start.getTime(), opens)) / kMsPerDay;
+  return Math.round(((daysPerYear * left) / whole) * kHalfDay) / kHalfDay;
+}
 
 /** What leaving leaves behind, so nobody has to remember to go looking. */
 export interface Offboarding {
@@ -64,6 +101,8 @@ export class EmployeesService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly onboarding: OnboardingService,
+    private readonly users: UsersService,
   ) {}
 
 
@@ -373,6 +412,175 @@ export class EmployeesService {
    * login dies at once, and what they still hold comes back as a list
    * somebody has to work through (KEHOACH 9.14).
    */
+  /**
+   * Joining, with the same shape as leaving: one pass, a report of what it
+   * wrote and what it left alone, and safe to run again (KEHOACH 9.14).
+   */
+  async onboard(viewer: Viewer, id: number, body: OnboardDto): Promise<Onboarding> {
+    const person = await this.db.employee.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        code: true,
+        jobTitleId: true,
+        departmentId: true,
+        managerId: true,
+        leaveDate: true,
+      },
+    });
+    if (!person) {
+      throw new NotFoundException(`no employee ${id}`);
+    }
+    if (person.leaveDate) {
+      throw new ConflictException("EMPLOYEE_HAS_LEFT");
+    }
+    const start = new Date(body.contract.startDate);
+    const skipped: string[] = [];
+
+    const written = await this.db.$transaction(async (tx) => {
+      const contractId = await this.writeContract(tx, person.id, body.contract, skipped);
+      const payId = await this.writePay(tx, person.id, start, body.pay, skipped);
+      const leaveSeeded =
+        body.seedLeave === false ? [] : await this.seedLeave(tx, person.id, start);
+      const checklist =
+        body.startChecklist === false
+          ? null
+          : await this.onboarding.plantIn(tx, person, "ONBOARDING", start);
+      return { contractId, payId, leaveSeeded, checklist };
+    });
+    if (body.startChecklist !== false && !written.checklist) {
+      skipped.push("NO_CHECKLIST_TEMPLATE_OR_ALREADY_STARTED");
+    }
+
+    // Outside the transaction on purpose: the letter must not go out for a
+    // pass that rolls back, and a login opened without one is re-invited.
+    let login: LoginOpened | null = null;
+    if (body.openLogin !== false) {
+      login = await this.users.openFor(person.id);
+      if (login.skipped) {
+        skipped.push(login.skipped);
+      }
+    }
+
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EMPLOYEE_ONBOARD,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(person.id),
+      meta: { code: person.code, startDate: body.contract.startDate, skipped },
+    });
+    return {
+      employeeId: person.id,
+      code: person.code,
+      startDate: body.contract.startDate,
+      contractId: written.contractId,
+      payId: written.payId,
+      leaveSeeded: written.leaveSeeded,
+      checklist: written.checklist,
+      userId: login?.userId ?? null,
+      skipped,
+    };
+  }
+
+  private async writeContract(
+    tx: Prisma.TransactionClient,
+    employeeId: number,
+    body: OnboardDto["contract"],
+    skipped: string[],
+  ): Promise<string | null> {
+    const startDate = new Date(body.startDate);
+    const held = await tx.employmentContract.findFirst({
+      where: { employeeId, startDate },
+      select: { id: true },
+    });
+    if (held) {
+      skipped.push("CONTRACT_EXISTS");
+      return held.id;
+    }
+    // DRAFT, because the onboarding list carries the task of signing it and
+    // only an activation stamps signedAt (KEHOACH 9.14).
+    const made = await tx.employmentContract.create({
+      data: {
+        employeeId,
+        kind: body.kind,
+        startDate,
+        endDate: body.endDate ? new Date(body.endDate) : null,
+        probationEnd: body.probationEnd ? new Date(body.probationEnd) : null,
+        number: body.number ?? null,
+      },
+      select: { id: true },
+    });
+    return made.id;
+  }
+
+  private async writePay(
+    tx: Prisma.TransactionClient,
+    employeeId: number,
+    effectiveFrom: Date,
+    pay: OnboardDto["pay"],
+    skipped: string[],
+  ): Promise<string | null> {
+    if (!pay) {
+      skipped.push("NO_PAY_GIVEN");
+      return null;
+    }
+    const held = await tx.compensationRecord.findUnique({
+      where: { employeeId_effectiveFrom: { employeeId, effectiveFrom } },
+      select: { id: true },
+    });
+    if (held) {
+      skipped.push("PAY_EXISTS");
+      return held.id;
+    }
+    const made = await tx.compensationRecord.create({
+      data: {
+        employeeId,
+        effectiveFrom,
+        baseSalary: pay.baseSalary,
+        insuranceSalary: pay.insuranceSalary,
+        reason: "HIRE",
+      },
+      select: { id: true },
+    });
+    return made.id;
+  }
+
+  private async seedLeave(
+    tx: Prisma.TransactionClient,
+    employeeId: number,
+    start: Date,
+  ): Promise<SeededLeave[]> {
+    const year = start.getUTCFullYear();
+    const types = await tx.leaveType.findMany({
+      where: { active: true },
+      select: { id: true, code: true, daysPerYear: true },
+    });
+    const held = await tx.leaveBalance.findMany({
+      where: { employeeId, year },
+      select: { leaveTypeId: true },
+    });
+    const already = new Set(held.map((one) => one.leaveTypeId));
+    const fresh = types
+      .filter((one) => !already.has(one.id))
+      .map((one) => ({
+        leaveTypeId: one.id,
+        code: one.code,
+        entitled: prorated(Number(one.daysPerYear), start),
+      }));
+    if (fresh.length === 0) {
+      return [];
+    }
+    await tx.leaveBalance.createMany({
+      data: fresh.map((one) => ({
+        employeeId,
+        leaveTypeId: one.leaveTypeId,
+        year,
+        entitled: one.entitled,
+      })),
+    });
+    return fresh.map((one) => ({ code: one.code, year, entitled: one.entitled }));
+  }
+
   async offboard(viewer: Viewer, id: number, body: OffboardDto): Promise<Offboarding> {
     const person = await this.get(id, viewer);
     const leaveDate = new Date(body.leaveDate);

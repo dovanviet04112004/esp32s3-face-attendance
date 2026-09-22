@@ -24,9 +24,10 @@ import {
   ImportCsvDto,
   ListEmployeesDto,
   OffboardDto,
+  OnboardDto,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
-import { EmployeesService, type Offboarding } from "./employees.service.js";
+import { EmployeesService, type Offboarding, type Onboarding } from "./employees.service.js";
 import { IMPORT_COLUMNS, type ImportReport } from "./import.js";
 
 @ApiTags("employees")
@@ -51,6 +52,17 @@ export class EmployeesController {
     @Query("apply") apply?: string,
   ): Promise<ImportReport> {
     return this.employees.importCsv(viewer, body.csv, apply === "true");
+  }
+
+  @Post(":id/onboard")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Take somebody on: contract, pay, leave, checklist and login (KEHOACH 9.14)" })
+  onboard(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() body: OnboardDto,
+    @CurrentViewer() viewer: Viewer,
+  ): Promise<Onboarding> {
+    return this.employees.onboard(viewer, id, body);
   }
 
   @Post(":id/offboard")

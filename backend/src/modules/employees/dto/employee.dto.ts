@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from "@nestjs/swagger";
-import { Gender } from "@prisma/client";
+import { ContractKind, Gender } from "@prisma/client";
 
 import { IMPORT_MAX_BYTES } from "../import.js";
 import { Type } from "class-transformer";
@@ -12,7 +12,9 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  Min,
   MinLength,
+  ValidateNested,
 } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
@@ -145,6 +147,74 @@ export class ImportCsvDto {
   @IsString()
   @MaxLength(IMPORT_MAX_BYTES)
   csv!: string;
+}
+
+export class OnboardContractDto {
+  @ApiProperty({ enum: ContractKind, example: ContractKind.PROBATION })
+  @IsEnum(ContractKind)
+  kind!: ContractKind;
+
+  @ApiProperty({ example: "2026-10-01", description: "Their first day; leave is prorated from it" })
+  @IsDateString()
+  startDate!: string;
+
+  @ApiPropertyOptional({ description: "Absent means indefinite (KEHOACH 9.18)" })
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  probationEnd?: string;
+
+  @ApiPropertyOptional({ maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  number?: string;
+}
+
+export class OnboardPayDto {
+  @ApiProperty({ example: 15_000_000 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  baseSalary!: number;
+
+  @ApiProperty({ example: 15_000_000, description: "What insurance is charged on (KEHOACH 9.6)" })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  insuranceSalary!: number;
+}
+
+export class OnboardDto {
+  @ApiProperty({ type: OnboardContractDto })
+  @ValidateNested()
+  @Type(() => OnboardContractDto)
+  contract!: OnboardContractDto;
+
+  @ApiPropertyOptional({ type: OnboardPayDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => OnboardPayDto)
+  pay?: OnboardPayDto;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  seedLeave?: boolean;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  startChecklist?: boolean;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @IsBoolean()
+  openLogin?: boolean;
 }
 
 export class OffboardDto {
