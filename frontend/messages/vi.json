@@ -664,6 +664,18 @@
     "printSlip": "In phiếu"
   },
   "policy": {
+    "newVersion": "Bản mới",
+    "copyLead": "Chép từ bản đang hiệu lực. Chỉ sửa ô nào thật sự đổi, rồi đặt ngày hiệu lực mới.",
+    "note": "Ghi chú",
+    "social": "BHXH",
+    "health": "BHYT",
+    "unemployment": "BHTN",
+    "unpaidDays": "Ngưỡng ngày không lương",
+    "socialCapMultiple": "Hệ số trần BHXH/BHYT",
+    "unemploymentCapMultiple": "Hệ số trần BHTN",
+    "addBracket": "Thêm bậc",
+    "dropBracket": "Bỏ bậc",
+    "noCeiling": "Bậc cuối, để trống",
     "title": "Chính sách lương",
     "lead": "Giảm trừ, tỷ lệ đóng và biểu thuế, theo ngày hiệu lực. Đổi chính sách là thêm một bản mới có ngày hiệu lực sau, không sửa bản cũ, để phiếu lương đã phát tính lại vẫn ra đúng con số nó đã hiện.",
     "effectiveFrom": "Hiệu lực từ",

@@ -664,6 +664,18 @@
     "printSlip": "Print payslip"
   },
   "policy": {
+    "newVersion": "New version",
+    "copyLead": "Copied from the version in force. Change only what actually changes, then set a new effective date.",
+    "note": "Note",
+    "social": "Social",
+    "health": "Health",
+    "unemployment": "Unemployment",
+    "unpaidDays": "Unpaid-day threshold",
+    "socialCapMultiple": "Social/health cap multiple",
+    "unemploymentCapMultiple": "Unemployment cap multiple",
+    "addBracket": "Add bracket",
+    "dropBracket": "Remove bracket",
+    "noCeiling": "Top bracket, leave empty",
     "title": "Pay policy",
     "lead": "Deductions, contribution rates and the tax table, by effective date. A change is a new version with a later effective date, never an edit, so a payslip already issued still recomputes to the figure it showed.",
     "effectiveFrom": "Effective from",
