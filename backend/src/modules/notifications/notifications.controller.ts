@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { NoticeChannel, NoticeKind, Notification } from "@prisma/client";
 
@@ -10,7 +20,15 @@ import { SetPreferenceDto, SubscribeDto } from "./dto/notifications.dto.js";
 import { ContractAlertsService } from "./contract-alerts.service.js";
 import { NotificationsService, type Unread } from "./notifications.service.js";
 
+// Reading as nobody is an empty answer; writing as nobody is a foreign key.
 const NOBODY = 0;
+
+function mineOrRefuse(viewer: Viewer): number {
+  if (viewer.employeeId === null) {
+    throw new ForbiddenException("NO_EMPLOYEE_RECORD");
+  }
+  return viewer.employeeId;
+}
 
 @ApiTags("notifications")
 @ApiBearerAuth()
@@ -70,13 +88,13 @@ export class NotificationsController {
     @CurrentViewer() viewer: Viewer,
     @Body() body: SetPreferenceDto,
   ): Promise<unknown> {
-    return this.notices.setPreference(viewer.employeeId ?? NOBODY, body);
+    return this.notices.setPreference(mineOrRefuse(viewer), body);
   }
 
   @Post("subscribe")
   @ApiOperation({ summary: "Register this device for push" })
   subscribe(@CurrentViewer() viewer: Viewer, @Body() body: SubscribeDto): Promise<unknown> {
-    return this.notices.subscribe(viewer.employeeId ?? NOBODY, body);
+    return this.notices.subscribe(mineOrRefuse(viewer), body);
   }
 
   @Delete("subscribe")

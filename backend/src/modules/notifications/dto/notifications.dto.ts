@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { NoticeChannel, NoticeKind } from "@prisma/client";
-import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsBoolean, IsEnum, IsIn, IsOptional, IsString, MaxLength } from "class-validator";
 
 export class SubscribeDto {
   @ApiProperty({ description: "The provider's endpoint; it is the key for this device" })
@@ -30,8 +30,9 @@ export class SetPreferenceDto {
   @IsEnum(NoticeKind)
   kind!: NoticeKind;
 
-  @ApiProperty({ enum: NoticeChannel })
-  @IsEnum(NoticeChannel)
+  // Only the channels somebody delivers can be switched (KEHOACH 9.21.4).
+  @ApiProperty({ enum: [NoticeChannel.IN_APP, NoticeChannel.PUSH] })
+  @IsIn([NoticeChannel.IN_APP, NoticeChannel.PUSH])
   channel!: NoticeChannel;
 
   @ApiProperty()

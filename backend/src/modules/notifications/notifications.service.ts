@@ -32,12 +32,15 @@ const KINDS: NoticeKind[] = [
   "DISPUTE_ANSWERED",
 ];
 
-// Email is off by default everywhere: a payslip already has its own mail path
-// at KEHOACH 9.11, and turning it on here would send the news twice.
-const DEFAULT_ON: Record<NoticeChannel, boolean> = {
+// Email stays in the enum for rows already written, but it is not a switch:
+// letters ride their own errand (KEHOACH 9.21.4).
+const OFFERED = ["IN_APP", "PUSH"] as const;
+
+type OfferedChannel = (typeof OFFERED)[number];
+
+const DEFAULT_ON: Record<OfferedChannel, boolean> = {
   IN_APP: true,
   PUSH: true,
-  EMAIL: false,
 };
 
 const kDeadSubscription = [404, 410];
@@ -89,9 +92,8 @@ export class NotificationsService {
   async preferences(employeeId: number): Promise<{ kind: NoticeKind; channel: NoticeChannel; on: boolean }[]> {
     const held = await this.db.notificationPreference.findMany({ where: { employeeId } });
     const known = new Map(held.map((row) => [`${row.kind}:${row.channel}`, row.on]));
-    const channels: NoticeChannel[] = ["IN_APP", "PUSH", "EMAIL"];
     return KINDS.flatMap((kind) =>
-      channels.map((channel) => ({
+      OFFERED.map((channel) => ({
         kind,
         channel,
         on: known.get(`${kind}:${channel}`) ?? DEFAULT_ON[channel],
@@ -166,7 +168,7 @@ export class NotificationsService {
         select: { employeeId: true, channel: true, on: true },
       });
       const set = new Map(held.map((row) => [`${row.employeeId}:${row.channel}`, row.on]));
-      const wants = (id: number, channel: NoticeChannel): boolean =>
+      const wants = (id: number, channel: OfferedChannel): boolean =>
         set.get(`${id}:${channel}`) ?? DEFAULT_ON[channel];
       const rows: Prisma.NotificationCreateManyInput[] = employeeIds
         .filter((id) => wants(id, "IN_APP"))
@@ -185,13 +187,12 @@ export class NotificationsService {
   private async wants(
     employeeId: number,
     kind: NoticeKind,
-  ): Promise<Record<NoticeChannel, boolean>> {
+  ): Promise<Record<OfferedChannel, boolean>> {
     const held = await this.db.notificationPreference.findMany({ where: { employeeId, kind } });
     const known = new Map(held.map((row) => [row.channel, row.on]));
     return {
       IN_APP: known.get("IN_APP") ?? DEFAULT_ON.IN_APP,
       PUSH: known.get("PUSH") ?? DEFAULT_ON.PUSH,
-      EMAIL: known.get("EMAIL") ?? DEFAULT_ON.EMAIL,
     };
   }
 
