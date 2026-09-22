@@ -88,7 +88,7 @@ export function RequestCard({ row, onDecide, onCancel, armed, busy }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {row.state === "PENDING" ? (
+          {row.state === "PENDING" && waited(row.createdAt) > 0 ? (
             <Pill className="tabular-nums">{t("waited", { count: waited(row.createdAt) })}</Pill>
           ) : null}
           <StatePill state={row.state} />

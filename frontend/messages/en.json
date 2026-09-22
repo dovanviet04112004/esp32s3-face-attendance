@@ -485,7 +485,8 @@
     "anyKind": "Any kind",
     "anyState": "Any state",
     "gone": "No such request, or it falls outside what you may see.",
-    "backwards": "The end date cannot fall before the start."
+    "backwards": "The end date cannot fall before the start.",
+    "nothingWaitingGo": "Open the request ledger"
   },
   "me": {
     "title": "My page",

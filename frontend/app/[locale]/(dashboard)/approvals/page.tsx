@@ -17,6 +17,7 @@ import {
   PROFILE_DESK,
   WAITING_POLL_MS,
 } from "@/components/nav/waiting-count";
+import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { dayOnly, money } from "@/lib/format";
@@ -217,7 +218,12 @@ export default function ApprovalsPage() {
       </p>
 
       {!inbox.isPending && waiting === 0 ? (
-        <p className="mt-8 text-sm text-(--color-muted)">{t("nothingWaiting")}</p>
+        <div className="mt-8">
+          <p className="text-sm text-(--color-muted)">{t("nothingWaiting")}</p>
+          <Link href="/leave" className="mt-2 inline-block text-sm text-(--color-accent) hover:underline">
+            {t("nothingWaitingGo")}
+          </Link>
+        </div>
       ) : null}
 
       <Queue title={t("inbox")} count={inbox.data?.rows.length ?? 0}>

@@ -485,7 +485,8 @@
     "anyKind": "Mọi loại",
     "anyState": "Mọi trạng thái",
     "gone": "Không tìm thấy đơn này, hoặc nó nằm ngoài phạm vi bạn xem được.",
-    "backwards": "Ngày kết thúc phải từ ngày bắt đầu trở đi."
+    "backwards": "Ngày kết thúc phải từ ngày bắt đầu trở đi.",
+    "nothingWaitingGo": "Xem sổ đơn từ"
   },
   "me": {
     "title": "Trang của tôi",
