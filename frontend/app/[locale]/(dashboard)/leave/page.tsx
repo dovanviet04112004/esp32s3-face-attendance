@@ -1,12 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 
-import { Failed } from "@/components/ui/empty";
+import { DataTable, type Column } from "@/components/tables/data-table";
 import {
-  RequestCard,
+  StatePill,
   type RequestKind,
   type RequestRow,
   type RequestState,
@@ -14,6 +14,7 @@ import {
 import { Select } from "@/components/ui/select";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
+import { dayOnly, days, minutes } from "@/lib/format";
 
 const STATES: RequestState[] = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"];
 const KINDS: RequestKind[] = [
@@ -26,7 +27,8 @@ const KINDS: RequestKind[] = [
 
 export default function RequestRegisterPage() {
   const t = useTranslations("requests");
-  const common = useTranslations("common");
+  const format = useFormatter();
+  const locale = useLocale();
   // Every state by default: filtering to pending here would repeat the
   // approvals inbox under a second sidebar entry (KEHOACH 9.15).
   const [state, setState] = useState<RequestState | "">("");
@@ -43,12 +45,62 @@ export default function RequestRegisterPage() {
         .data,
   });
 
-  if (rows.isError) {
-    return <Failed onRetry={() => void rows.refetch()} />;
+  function span(row: RequestRow): string {
+    const from = format.dateTime(dayOnly(row.fromDate), "day");
+    return row.fromDate === row.toDate
+      ? from
+      : `${from} → ${format.dateTime(dayOnly(row.toDate), "day")}`;
   }
 
+  const columns: Column<RequestRow>[] = [
+    {
+      id: "who",
+      header: t("who"),
+      sticky: true,
+      sortBy: (row) => row.employee?.fullName ?? "",
+      // The book opens onto the one screen with room to decide (KEHOACH 9.15).
+      cell: (row) => (
+        <Link
+          href={`/leave/${row.id}`}
+          className="whitespace-nowrap underline hover:no-underline"
+        >
+          {row.employee ? row.employee.fullName : t(`kind${row.kind}`)}
+        </Link>
+      ),
+    },
+    {
+      id: "state",
+      header: t("state"),
+      sortBy: (row) => row.state,
+      cell: (row) => <StatePill state={row.state} />,
+    },
+    {
+      id: "kind",
+      header: t("kind"),
+      sortBy: (row) => row.kind,
+      cell: (row) =>
+        `${t(`kind${row.kind}`)}${row.leaveType ? ` · ${row.leaveType.name}` : ""}${
+          row.minutes > 0 ? ` · ${minutes(row.minutes, locale)}` : ""
+        }`,
+    },
+    { id: "range", header: t("range"), sortBy: (row) => row.fromDate, cell: span },
+    {
+      id: "days",
+      header: t("days"),
+      numeric: true,
+      sortBy: (row) => Number(row.days),
+      cell: (row) => days(Number(row.days), locale),
+    },
+    {
+      id: "reason",
+      header: t("reason"),
+      sortBy: (row) => row.reason,
+      cell: (row) => <span className="block max-w-80 truncate">{row.reason}</span>,
+    },
+  ];
+
   return (
-    <section className="mx-auto w-full max-w-(--width-read)">
+    <section>
       <h1 className="text-lg font-semibold">{t("title")}</h1>
       <p className="mt-1 text-sm text-(--color-muted)">{t("deskLead")}</p>
 
@@ -59,9 +111,9 @@ export default function RequestRegisterPage() {
           </label>
           <Select
             id="kind"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as RequestKind | "")}
             className="mt-1"
+            value={kind}
+            onChange={(event) => setKind(event.target.value as RequestKind | "")}
           >
             <option value="">{t("anyKind")}</option>
             {KINDS.map((one) => (
@@ -77,9 +129,9 @@ export default function RequestRegisterPage() {
           </label>
           <Select
             id="state"
-            value={state}
-            onChange={(e) => setState(e.target.value as RequestState | "")}
             className="mt-1"
+            value={state}
+            onChange={(event) => setState(event.target.value as RequestState | "")}
           >
             <option value="">{t("anyState")}</option>
             {STATES.map((one) => (
@@ -91,23 +143,16 @@ export default function RequestRegisterPage() {
         </div>
       </div>
 
-      {rows.isPending ? (
-        <p className="text-sm text-(--color-muted)">{common("loading")}</p>
-      ) : (rows.data?.rows ?? []).length === 0 ? (
-        <p className="text-sm text-(--color-muted)">{common("noData")}</p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {(rows.data?.rows ?? []).map((row) => (
-            <Link
-              key={row.id}
-              href={`/leave/${row.id}`}
-              className="rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent) [&>article]:hover:border-(--color-accent)"
-            >
-              <RequestCard row={row} />
-            </Link>
-          ))}
-        </div>
-      )}
+      <DataTable
+        id="requests"
+        cardLead="who"
+        columns={columns}
+        rows={rows.data?.rows}
+        keyOf={(row) => row.id}
+        pending={rows.isPending}
+        failed={rows.isError}
+        onRetry={() => rows.refetch()}
+      />
     </section>
   );
 }
