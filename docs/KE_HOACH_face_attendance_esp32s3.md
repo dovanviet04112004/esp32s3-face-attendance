@@ -4131,7 +4131,7 @@ backend/
 ├── .env                              # ❌ gitignore — giá trị thật, không bao giờ commit
 ├── package.json  ├── tsconfig.json  ├── tsconfig.build.json  ├── nest-cli.json
 ├── prisma.config.ts                  # ★ url của datasource + lệnh seed (Prisma 7)
-├── prisma/{schema.prisma, migrations/, seed.ts}
+├── prisma/{schema.prisma, migrations/, seed.ts, demo.ts}
 ├── test/*.e2e-spec.ts                # e2e, chạy bằng runner sẵn có của Node
 ├── test/teardown.ts                  # ★ dọn thứ không cascade theo dữ liệu suite tạo ra
 └── src/
@@ -4201,6 +4201,22 @@ thay vì tự mở kết nối. `prisma.config.ts` với `prisma/seed.ts` là **
 không bao giờ khởi động Nest, nên chúng tự nạp `.env` — ngoại lệ duy nhất của luật một cửa ở
 §4.9. `seed.ts` vẫn gọi `validateEnv()`; `prisma.config.ts` chỉ cần đúng một biến và lấy nó
 bằng helper `env()` của chính Prisma, vì file ấy được CLI nạp trước khi mã của khối chạy.
+
+**`seed.ts` và `demo.ts` là hai việc khác nhau, nên là hai file.** `seed.ts` là bộ mồi tối
+thiểu mà bộ test dựa vào: sáu tài khoản, một chính sách lương, một ca. Nó phải chạy trong vài
+giây và ra đúng một kết quả, vì mỗi suite e2e đều gieo trên nó. `demo.ts` dựng một công ty giả
+cỡ vài nghìn người để nhìn giao diện dưới dữ liệu thật — cây phòng ban, thang chức danh, hợp
+đồng, lịch sử chấm công và tiền lương nhiều tháng. Gộp hai thứ này là biến `prisma db seed`
+thành lượt sinh hàng triệu dòng, và bộ test trả giá cho một việc nó không cần.
+
+Hai ràng buộc của `demo.ts`, cả hai đều là lý do nó tồn tại thay vì một file SQL:
+
+1. **Nó gọi `calculate()` của `payroll/`, không tự tính lương.** Một phiếu lương gieo bằng số
+   bịa là một phiếu lương nói dối về chính bộ máy đang được đem đi bảo vệ. Cùng lý do ấy,
+   ngày công phải sinh trước rồi phiếu lương đọc ngược lên nó, đúng chiều mà `PayrollService`
+   đọc — giờ làm thêm chỉ được trả khi có đơn `OVERTIME` đã duyệt phủ lên ngày đó.
+2. **Nó tất định.** Một bộ sinh ngẫu nhiên không hạt giống thì hai lần chạy ra hai công ty, và
+   không ảnh chụp màn hình nào trong báo cáo đối chiếu được với dữ liệu đang nằm trong máy.
 
 **`search/` là module riêng vì nó cắt ngang, không thuộc về ai.** Nó đọc `Employee`,
 `Department`, `Request` và `Payslip`; nhét nó vào `employees/` là bắt module nhân viên biết về
