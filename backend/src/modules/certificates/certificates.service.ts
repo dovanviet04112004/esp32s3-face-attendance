@@ -165,7 +165,7 @@ export class CertificatesService {
         nationalId: held.employee.nationalId,
         jobTitle: held.employee.jobTitle?.name ?? null,
         department: held.employee.department?.name ?? null,
-        entity: held.employee.legalEntity?.name ?? "Công ty",
+        entity: held.employee.legalEntity?.name ?? null,
         hireDate: asDay(held.employee.hireDate),
         contract: held.employee.contracts[0]?.kind ?? null,
         purpose: held.purpose,
