@@ -7,7 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
 import type { NoticeKind } from "./notice-list";
 
-type Channel = "IN_APP" | "PUSH" | "EMAIL";
+// Email is in the enum but nobody delivers it (KEHOACH 9.21.4).
+type Channel = "IN_APP" | "PUSH";
 
 interface Preference {
   kind: NoticeKind;
@@ -32,10 +33,9 @@ const KIND_KEY: Record<
   DISPUTE_ANSWERED: "kindDISPUTE_ANSWERED",
 };
 
-const CHANNEL_KEY: Record<Channel, "channelIN_APP" | "channelPUSH" | "channelEMAIL"> = {
+const CHANNEL_KEY: Record<Channel, "channelIN_APP" | "channelPUSH"> = {
   IN_APP: "channelIN_APP",
   PUSH: "channelPUSH",
-  EMAIL: "channelEMAIL",
 };
 
 const KINDS: NoticeKind[] = [
@@ -46,7 +46,7 @@ const KINDS: NoticeKind[] = [
   "CONTRACT_ENDING",
   "DISPUTE_ANSWERED",
 ];
-const CHANNELS: Channel[] = ["IN_APP", "PUSH", "EMAIL"];
+const CHANNELS: Channel[] = ["IN_APP", "PUSH"];
 
 export function NoticePreferences() {
   const t = useTranslations("notices");

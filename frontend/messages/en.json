@@ -825,7 +825,6 @@
     "pushUnsupported": "This device does not support push notifications.",
     "channelIN_APP": "In the app",
     "channelPUSH": "Push",
-    "channelEMAIL": "Email",
     "prefsTitle": "What to hear about",
     "prefsLead": "Four kinds, each switched on its own."
   },
