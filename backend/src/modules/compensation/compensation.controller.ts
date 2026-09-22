@@ -11,6 +11,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Dependent, DependentState } from "@prisma/client";
 
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
@@ -75,7 +76,7 @@ export class CompensationController {
   queue(
     @CurrentViewer() viewer: Viewer,
     @Query("state") state?: DependentState,
-  ): Promise<Dependent[]> {
+  ): Promise<Page<Dependent>> {
     return this.pay.dependentQueue(viewer, state ?? "PENDING");
   }
 

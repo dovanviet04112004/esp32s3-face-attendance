@@ -9,6 +9,8 @@ import type {
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -192,14 +194,19 @@ export class CompensationService {
   /** What is waiting on a decision, narrowed to this viewer's people. An
    *  approval nobody can find is an approval that never happens.
    */
-  async dependentQueue(viewer: Viewer, state: DependentState): Promise<Dependent[]> {
+  async dependentQueue(viewer: Viewer, state: DependentState): Promise<Page<Dependent>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    return this.db.dependent.findMany({
-      where: { state, ...(visible === null ? {} : { employeeId: { in: visible } }) },
-      include: { employee: { select: { id: true, code: true, fullName: true } } },
-      orderBy: { createdAt: "asc" },
-      take: kQueuePage,
-    });
+    const where = { state, ...(visible === null ? {} : { employeeId: { in: visible } }) };
+    const [rows, found] = await Promise.all([
+      this.db.dependent.findMany({
+        where,
+        include: { employee: { select: { id: true, code: true, fullName: true } } },
+        orderBy: { createdAt: "asc" },
+        take: kQueuePage,
+      }),
+      this.db.dependent.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    return { rows, ...countedTo(found) };
   }
 
   async addDependent(viewer: Viewer, body: CreateDependentDto): Promise<Dependent> {
