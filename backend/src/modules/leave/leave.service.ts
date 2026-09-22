@@ -13,8 +13,11 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
+import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { TimesheetService } from "../timesheet/timesheet.service.js";
+import type { CreateLeaveTypeDto, UpdateLeaveTypeDto } from "./dto/leave-type.dto.js";
 import type { DecideRequestDto, ListRequestsDto, SubmitRequestDto } from "./dto/request.dto.js";
 
 const EXCLUSION_VIOLATION = "23P01";
@@ -62,10 +65,64 @@ export class LeaveService {
     private readonly scope: ScopeService,
     private readonly notices: NotificationsService,
     private readonly timesheet: TimesheetService,
+    private readonly audit: AuditService,
   ) {}
 
   types(): Promise<LeaveType[]> {
     return this.db.leaveType.findMany({ where: { active: true }, orderBy: { code: "asc" } });
+  }
+
+  /** Every kind, retired ones included, which is what a desk editing them
+   *  needs and what the filing form must not offer.
+   */
+  allTypes(): Promise<LeaveType[]> {
+    return this.db.leaveType.findMany({ orderBy: [{ active: "desc" }, { code: "asc" }] });
+  }
+
+  async createType(viewer: Viewer, body: CreateLeaveTypeDto): Promise<LeaveType> {
+    try {
+      const made = await this.db.leaveType.create({
+        data: {
+          code: body.code,
+          name: body.name,
+          paid: body.paid ?? true,
+          daysPerYear: body.daysPerYear,
+          carryOverMax: body.carryOverMax ?? 0,
+        },
+      });
+      await this.audit.record({
+        actorId: viewer.userId,
+        action: AUDIT_ACTIONS.LEAVE_TYPE_CREATE,
+        subject: AUDIT_SUBJECTS.LEAVE_TYPE,
+        subjectId: made.id,
+        meta: { code: made.code, daysPerYear: body.daysPerYear },
+      });
+      return made;
+    } catch (error: unknown) {
+      if (isCode(error, UNIQUE_VIOLATION)) {
+        throw new ConflictException("LEAVE_TYPE_CODE_TAKEN");
+      }
+      throw error;
+    }
+  }
+
+  /** This sets what the next grant hands out. A balance row already on a
+   *  person keeps its own numbers (KEHOACH 9.5).
+   */
+  async updateType(viewer: Viewer, id: string, body: UpdateLeaveTypeDto): Promise<LeaveType> {
+    const held = await this.db.leaveType.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("LEAVE_TYPE_NOT_FOUND");
+    }
+    const saved = await this.db.leaveType.update({ where: { id }, data: body });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.LEAVE_TYPE_UPDATE,
+      subject: AUDIT_SUBJECTS.LEAVE_TYPE,
+      subjectId: id,
+      meta: { code: saved.code, ...body },
+    });
+    return saved;
   }
 
   /**

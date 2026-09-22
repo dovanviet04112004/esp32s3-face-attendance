@@ -138,6 +138,7 @@ export const NAV: NavGroup[] = [
   {
     key: "groupSettings",
     items: [
+      { href: "/leave-types", key: "leaveTypes", icon: CalendarOff, roles: PEOPLE_DESK, deskOnly: true },
       { href: "/users", key: "users", icon: UserCog, roles: OPERATORS, deskOnly: true },
       { href: "/audit", key: "audit", icon: ScrollText, roles: OPERATORS, deskOnly: true },
       { href: "/settings", key: "settings", icon: Settings, roles: EVERYONE, deskOnly: true },

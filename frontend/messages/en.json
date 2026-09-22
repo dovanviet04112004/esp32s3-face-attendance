@@ -44,6 +44,7 @@
     "onboarding": "Checklists",
     "assets": "Assets",
     "users": "Accounts",
+    "leaveTypes": "Leave types",
     "audit": "Audit",
     "skip": "Skip to main content"
   },
@@ -756,6 +757,8 @@
     "LAST_ADMIN": "The last administrator cannot be removed.",
     "LEAVE_BALANCE_SHORT": "There is not enough leave left for this range.",
     "LEAVE_OVERLAP": "These days overlap a request you already filed.",
+    "LEAVE_TYPE_CODE_TAKEN": "That leave type code is taken.",
+    "LEAVE_TYPE_NOT_FOUND": "No such leave type.",
     "LEAVE_TYPE_REQUIRED": "Choose a leave type first.",
     "MANAGER_CYCLE": "That arrangement makes a loop of managers.",
     "NETWORK_UNREACHABLE": "Could not reach the server. Check the API is running at the address this page calls.",
@@ -1213,5 +1216,23 @@
     "inviteLead": "A setup link goes to this address. The password is chosen by its holder and nobody else ever sees it.",
     "resend": "Resend link",
     "resent": "A link is on its way to {email}."
+  },
+  "leaveTypes": {
+    "title": "Leave types",
+    "lead": "What a full year of service earns in each kind, and how much of it may cross into the next year.",
+    "code": "Code",
+    "name": "Name",
+    "paid": "Paid",
+    "unpaid": "Unpaid",
+    "daysPerYear": "Days a year",
+    "carryOverMax": "Carry-over cap",
+    "add": "Add leave type",
+    "edit": "Edit",
+    "save": "Save",
+    "retired": "Retired",
+    "retire": "Retire",
+    "restore": "Use again",
+    "empty": "No leave types yet",
+    "retireLead": "A retired kind stops being offered on the filing form; balances already granted keep their days."
   }
 }

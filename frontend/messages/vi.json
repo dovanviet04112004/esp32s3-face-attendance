@@ -44,6 +44,7 @@
     "onboarding": "Nhận việc",
     "assets": "Tài sản",
     "users": "Tài khoản",
+    "leaveTypes": "Loại phép",
     "audit": "Nhật ký",
     "skip": "Tới nội dung chính"
   },
@@ -756,6 +757,8 @@
     "LAST_ADMIN": "Không thể xoá quản trị viên cuối cùng.",
     "LEAVE_BALANCE_SHORT": "Số phép còn lại không đủ cho khoảng này.",
     "LEAVE_OVERLAP": "Những ngày này trùng với một đơn bạn đã gửi.",
+    "LEAVE_TYPE_CODE_TAKEN": "Mã loại phép này đã có.",
+    "LEAVE_TYPE_NOT_FOUND": "Không tìm thấy loại phép này.",
     "LEAVE_TYPE_REQUIRED": "Chọn loại phép trước đã.",
     "MANAGER_CYCLE": "Sắp xếp này tạo thành vòng cấp trên.",
     "NETWORK_UNREACHABLE": "Không gọi được máy chủ. Kiểm tra API có đang chạy ở địa chỉ trang này gọi tới không.",
@@ -1213,5 +1216,23 @@
     "inviteLead": "Hệ thống gửi một liên kết đặt mật khẩu tới địa chỉ này. Mật khẩu do chính người đó đặt, không ai khác biết.",
     "resend": "Gửi lại liên kết",
     "resent": "Đã gửi liên kết tới {email}."
+  },
+  "leaveTypes": {
+    "title": "Loại phép",
+    "lead": "Số ngày mỗi loại phép cho một năm làm việc đủ, và bao nhiêu ngày được chuyển sang năm sau.",
+    "code": "Mã",
+    "name": "Tên",
+    "paid": "Hưởng lương",
+    "unpaid": "Không lương",
+    "daysPerYear": "Ngày một năm",
+    "carryOverMax": "Chuyển tiếp tối đa",
+    "add": "Thêm loại phép",
+    "edit": "Sửa",
+    "save": "Lưu",
+    "retired": "Đã ngừng",
+    "retire": "Ngừng dùng",
+    "restore": "Dùng lại",
+    "empty": "Chưa có loại phép nào",
+    "retireLead": "Ngừng dùng thì biểu mẫu gửi đơn không còn mời chọn nó nữa; số dư đã cấp giữ nguyên."
   }
 }

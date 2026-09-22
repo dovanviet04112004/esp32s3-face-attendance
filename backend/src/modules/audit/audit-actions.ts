@@ -8,6 +8,7 @@ export const AUDIT_SUBJECTS = {
   ASSET: "asset",
   ORG: "org",
   POLICY: "policy",
+  LEAVE_TYPE: "leaveType",
   DOCUMENT: "document",
   DEVICE: "device",
   ROUTE: "route",
@@ -63,6 +64,9 @@ export const AUDIT_ACTIONS = {
   ORG_REORG: "org.reorg",
   ORG_HOLIDAY_CREATE: "org.holidayCreate",
   ORG_HOLIDAY_DELETE: "org.holidayDelete",
+
+  LEAVE_TYPE_CREATE: "leaveType.create",
+  LEAVE_TYPE_UPDATE: "leaveType.update",
 
   CERTIFICATE_ASK: "certificate.ask",
   CERTIFICATE_ISSUE: "certificate.issue",
