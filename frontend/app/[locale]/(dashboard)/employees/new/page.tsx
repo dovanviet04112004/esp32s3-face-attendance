@@ -13,15 +13,26 @@ import {
   type EmployeeDraft,
 } from "@/components/forms/employee-form";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { Link, useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
+import { useFault } from "@/lib/fault";
+
+interface Taken {
+  id: number;
+  draft: EmployeeDraft;
+}
 
 export default function NewEmployeePage() {
   const t = useTranslations("employees");
   const common = useTranslations("common");
   const router = useRouter();
   const cache = useQueryClient();
+  const faultOf = useFault();
   const [fault, setFault] = useState<string | null>(null);
+  // Held so a hire that fell over at the second step is retried rather than
+  // typed again: the record exists by then (KEHOACH 9.14).
+  const [opened, setOpened] = useState<Taken | null>(null);
 
   const departments = useQuery({
     queryKey: ["departments"],
@@ -44,6 +55,32 @@ export default function NewEmployeePage() {
     queryFn: async () => (await api.get<{ code: string | null }>("/employees/next-code")).data,
   });
 
+  // Their own page is where hiring carries on: contract, pay, checklist and
+  // files are all tabs on it, and the roll is 5006 rows deep (KEHOACH 9.15).
+  function land(id: number): void {
+    router.replace(`/employees/${id}`);
+  }
+
+  const hire = useMutation({
+    mutationFn: ({ id, draft }: Taken) =>
+      api.post(`/employees/${id}/onboard`, {
+        contract: {
+          kind: draft.contractKind,
+          startDate: draft.hireDate,
+          probationEnd: draft.probationEnd || undefined,
+          endDate: draft.contractEnd || undefined,
+        },
+        pay: draft.baseSalary
+          ? {
+              baseSalary: Number(draft.baseSalary),
+              insuranceSalary: Number(draft.insuranceSalary || draft.baseSalary),
+            }
+          : undefined,
+      }),
+    onSuccess: (unused, taken) => land(taken.id),
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
   const create = useMutation({
     mutationFn: (draft: EmployeeDraft) =>
       api.post<{ id: number }>("/employees", {
@@ -64,11 +101,14 @@ export default function NewEmployeePage() {
         bankAccount: draft.bankAccount || undefined,
         bankName: draft.bankName || undefined,
       }),
-    // Their own page is where hiring carries on: contract, pay, checklist and
-    // files are all tabs on it, and the roll is 5006 rows deep (KEHOACH 9.15).
-    onSuccess: (made) => {
+    onSuccess: (made, draft) => {
       void cache.invalidateQueries({ queryKey: ["employees"] });
-      router.replace(`/employees/${made.data.id}`);
+      setOpened({ id: made.data.id, draft });
+      if (!draft.hireDate) {
+        land(made.data.id);
+        return;
+      }
+      hire.mutate({ id: made.data.id, draft });
     },
     onError: (fell: unknown) => {
       // The api answers 409 when the code is taken, which is the one fault a
@@ -77,6 +117,37 @@ export default function NewEmployeePage() {
       setFault(clash ? t("codeTaken") : common("failed"));
     },
   });
+
+  if (opened && hire.isError) {
+    return (
+      <section className="mx-auto w-full max-w-(--width-read)">
+        <h1 className="text-lg font-semibold">{t("hireSkipped")}</h1>
+        <p className="mt-2 text-sm text-(--color-muted)">
+          <span className="font-mono">{opened.draft.code}</span> · {opened.draft.fullName}
+        </p>
+        {fault ? (
+          <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+            {fault}
+          </p>
+        ) : null}
+        <div className="mt-6 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            disabled={hire.isPending}
+            onClick={() => {
+              setFault(null);
+              hire.mutate(opened);
+            }}
+          >
+            {hire.isPending ? common("saving") : t("hireRetry")}
+          </Button>
+          <Button type="button" tone="quiet" onClick={() => land(opened.id)}>
+            {t("hireOpen")}
+          </Button>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="mx-auto w-full max-w-(--width-read)">
@@ -112,7 +183,8 @@ export default function NewEmployeePage() {
           showActive={false}
           showBank
           showManager
-          busy={create.isPending}
+          showOnboard
+          busy={create.isPending || hire.isPending}
           fault={fault}
           onSubmit={(draft) => {
             setFault(null);

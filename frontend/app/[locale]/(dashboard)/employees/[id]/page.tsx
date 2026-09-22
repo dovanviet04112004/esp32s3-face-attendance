@@ -306,6 +306,7 @@ export default function EmployeePage() {
               showActive
               showBank={false}
               showManager={false}
+              showOnboard={false}
               busy={save.isPending}
               fault={fault}
               onSubmit={(draft) => {

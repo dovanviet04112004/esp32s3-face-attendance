@@ -31,7 +31,37 @@ export interface EmployeeDraft {
   socialInsuranceNo: string;
   bankAccount: string;
   bankName: string;
+  contractKind: ContractKind;
+  probationEnd: string;
+  contractEnd: string;
+  baseSalary: string;
+  insuranceSalary: string;
 }
+
+export type ContractKind =
+  | "PROBATION"
+  | "FIXED_TERM"
+  | "INDEFINITE"
+  | "SEASONAL"
+  | "INTERNSHIP";
+
+const KINDS: ContractKind[] = [
+  "PROBATION",
+  "FIXED_TERM",
+  "INDEFINITE",
+  "SEASONAL",
+  "INTERNSHIP",
+];
+
+// Literal keys, not a built string: a missing translation has to break the
+// build rather than print the key on a form (CLAUDE.md 3.1).
+const KIND_KEY = {
+  PROBATION: "kindPROBATION",
+  FIXED_TERM: "kindFIXED_TERM",
+  INDEFINITE: "kindINDEFINITE",
+  SEASONAL: "kindSEASONAL",
+  INTERNSHIP: "kindINTERNSHIP",
+} as const;
 
 export interface DepartmentChoice {
   id: string;
@@ -57,6 +87,11 @@ export const EMPTY_DRAFT: EmployeeDraft = {
   socialInsuranceNo: "",
   bankAccount: "",
   bankName: "",
+  contractKind: "PROBATION",
+  probationEnd: "",
+  contractEnd: "",
+  baseSalary: "",
+  insuranceSalary: "",
 };
 
 interface Props {
@@ -73,6 +108,10 @@ interface Props {
    *  search and has no way back from an id already on the record.
    */
   showManager: boolean;
+  /** Taking somebody on writes five things at once (KEHOACH 9.14), and the
+   *  first day it starts from is the hire date, asked here and nowhere else.
+   */
+  showOnboard: boolean;
   busy: boolean;
   fault: string | null;
   onSubmit: (draft: EmployeeDraft) => void;
@@ -222,6 +261,7 @@ export function EmployeeForm({
   showActive,
   showBank,
   showManager,
+  showOnboard,
   busy,
   fault,
   onSubmit,
@@ -314,6 +354,77 @@ export function EmployeeForm({
         {showManager ? <ManagerField onPick={(id) => set({ managerId: id })} /> : null}
       </div>
 
+      {showOnboard ? (
+        <Group
+          title={t("sectionHire")}
+          lead={t("sectionHireLead")}
+          filled={filledOf([draft.hireDate, draft.baseSalary])}
+          total={2}
+        >
+          <Field id="hireStart" label={t("hireDate")} hint={t("hireStartHint")}>
+            <Input
+              id="hireStart"
+              type="date"
+              value={draft.hireDate}
+              onChange={(e) => set({ hireDate: e.target.value })}
+              className="mt-1"
+            />
+          </Field>
+          <Field id="contractKind" label={t("contractKind")}>
+            <Select
+              id="contractKind"
+              value={draft.contractKind}
+              onChange={(e) => set({ contractKind: e.target.value as ContractKind })}
+              className="mt-1"
+            >
+              {KINDS.map((one) => (
+                <option key={one} value={one}>
+                  {t(KIND_KEY[one])}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field id="probationEnd" label={t("probationEnd")}>
+            <Input
+              id="probationEnd"
+              type="date"
+              value={draft.probationEnd}
+              onChange={(e) => set({ probationEnd: e.target.value })}
+              className="mt-1"
+            />
+          </Field>
+          <Field id="contractEnd" label={t("contractEnd")} hint={t("contractEndHint")}>
+            <Input
+              id="contractEnd"
+              type="date"
+              value={draft.contractEnd}
+              onChange={(e) => set({ contractEnd: e.target.value })}
+              className="mt-1"
+            />
+          </Field>
+          <Field id="baseSalary" label={t("baseSalary")}>
+            <Input
+              id="baseSalary"
+              type="number"
+              min={0}
+              value={draft.baseSalary}
+              onChange={(e) => set({ baseSalary: e.target.value, insuranceSalary: e.target.value })}
+              className="mt-1 tabular-nums"
+            />
+          </Field>
+          <Field id="insuranceSalary" label={t("insuranceSalary")} hint={t("insuranceSalaryHint")}>
+            <Input
+              id="insuranceSalary"
+              type="number"
+              min={0}
+              value={draft.insuranceSalary}
+              onChange={(e) => set({ insuranceSalary: e.target.value })}
+              className="mt-1 tabular-nums"
+            />
+          </Field>
+        </Group>
+      ) : null}
+
       <Group
         title={t("sectionReach")}
         lead={t("sectionReachLead")}
@@ -346,24 +457,26 @@ export function EmployeeForm({
         title={t("sectionFiling")}
         lead={t("sectionFilingLead")}
         filled={filledOf([
-          draft.hireDate,
+          ...(showOnboard ? [] : [draft.hireDate]),
           draft.dateOfBirth,
           draft.gender,
           draft.nationalId,
           draft.taxCode,
           draft.socialInsuranceNo,
         ])}
-        total={6}
+        total={showOnboard ? 5 : 6}
       >
-        <Field id="hireDate" label={t("hireDate")} hint={t("hireDateHint")}>
-          <Input
-            id="hireDate"
-            type="date"
-            value={draft.hireDate}
-            onChange={(e) => set({ hireDate: e.target.value })}
-            className="mt-1"
-          />
-        </Field>
+        {showOnboard ? null : (
+          <Field id="hireDate" label={t("hireDate")} hint={t("hireDateHint")}>
+            <Input
+              id="hireDate"
+              type="date"
+              value={draft.hireDate}
+              onChange={(e) => set({ hireDate: e.target.value })}
+              className="mt-1"
+            />
+          </Field>
+        )}
         <Field id="dateOfBirth" label={t("dateOfBirth")}>
           <Input
             id="dateOfBirth"
