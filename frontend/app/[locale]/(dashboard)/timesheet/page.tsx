@@ -164,10 +164,10 @@ export default function TimesheetPage() {
         <button
           type="button"
           onClick={() => setOpenFor(row)}
-          className="text-start underline hover:no-underline"
+          className="group whitespace-nowrap text-start"
         >
-          <span className="block">{row.fullName}</span>
-          <span className="block font-mono text-xs text-(--color-muted)">{row.code}</span>
+          <span className="underline group-hover:no-underline">{row.fullName}</span>
+          <span className="ms-2 font-mono text-xs text-(--color-muted)">{row.code}</span>
         </button>
       ),
     },
@@ -179,13 +179,6 @@ export default function TimesheetPage() {
       cell: (row) => row.workedDays,
     },
     {
-      id: "leaveDays",
-      header: t("leaveDays"),
-      numeric: true,
-      sortBy: (row) => row.leaveDays,
-      cell: (row) => row.leaveDays,
-    },
-    {
       id: "absentDays",
       header: t("absentDays"),
       numeric: true,
@@ -195,6 +188,13 @@ export default function TimesheetPage() {
           {row.absentDays}
         </span>
       ),
+    },
+    {
+      id: "leaveDays",
+      header: t("leaveDays"),
+      numeric: true,
+      sortBy: (row) => row.leaveDays,
+      cell: (row) => row.leaveDays,
     },
     {
       id: "workedHours",
