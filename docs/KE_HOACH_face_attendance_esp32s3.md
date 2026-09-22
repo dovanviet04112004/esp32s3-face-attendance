@@ -5978,6 +5978,23 @@ mới thêm phạm vi là một báo cáo mà quản lý đọc trước sẽ **
 ngược lại. Khoá đệm phải mang phạm vi của người hỏi, nếu không thì lớp đệm biến một phép thu
 hẹp đúng thành một lỗ rò hai chiều.
 
+**Feed realtime là một đường đọc, và nó chịu đúng hai luật trên.** Một ổ cắm không hỏi ai đang
+nghe là đường rộng nhất trong cả hệ: nó không có `@Roles` để `check_routes.py` soi, không có
+mệnh đề `where` để thu hẹp, và một lần `emit` cho cả namespace là **phát mọi lượt chấm công của
+mọi người cho bất kỳ ai nối được tới cổng**. Nên:
+
+- **Mở ổ cắm phải xuất trình cùng thứ vé mà REST đòi.** Token đi trong `auth` lúc bắt tay; sai
+  hoặc thiếu thì đóng ngay, không phải đóng sau khung đầu tiên.
+- **Mỗi ổ cắm nhớ phạm vi của người mở nó**, lấy từ đúng `visibleEmployeeIds` mà mọi service
+  của §9 đang dùng — không có phép tính phạm vi thứ hai để lệch với phép thứ nhất.
+- **Tin đi theo phạm vi ấy, không theo namespace.** Tin thiết bị chỉ tới `ADMIN`, vì §9.15 xếp
+  `Kiosk` vào riêng vai đó. Tin chấm công tới người thấy được **chính dòng ấy**: `HR` và
+  `PAYROLL` thấy tất, quản lý thấy cây dưới quyền mình, còn lại thấy mình.
+
+Phạm vi chốt lúc bắt tay chứ không tra lại mỗi khung — một lượt quẹt không đáng một CTE đệ quy.
+Cái giá là một lần chuyển bộ phận chỉ ăn vào lần nối lại sau; §9.23 vốn đã đóng mọi phiên ở
+những lần đổi đáng kể, nên cửa sổ lệch đúng bằng tuổi một ổ cắm đang mở.
+
 **`VIEWER` là vai mặc định, nên nó phải là vai *hẹp nhất*, không phải vai rộng nhất.** `User.role`
 mặc định `VIEWER`; nếu vai ấy nằm trong nhóm không thu hẹp phạm vi thì **mọi tài khoản mới sinh
 ra đã đọc được cả công ty** — và đường đọc nào không gắn `@Roles` thì không có gì chặn nó. Một
