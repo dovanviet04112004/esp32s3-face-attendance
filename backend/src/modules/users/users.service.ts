@@ -102,14 +102,23 @@ export class UsersService {
     // Both statements or neither: an account with no link is one nobody can
     // reach, and a link with no account points at nothing.
     await this.db.$transaction(async (tx) => {
+      const asked = invites.map((one) => one.person.id);
+      // Held under a share lock for the insert: somebody offboarded between
+      // the list above and this key breaks it, and the batch opens nothing.
+      const standing = await tx.$queryRaw<{ id: number }[]>`
+        SELECT "id" FROM "Employee" WHERE "id" = ANY(${asked}::int[]) FOR SHARE
+      `;
+      const here = new Set(standing.map((one) => one.id));
       await tx.user.createMany({
-        data: invites.map((one) => ({
-          id: one.userId,
-          email: one.person.personalEmail as string,
-          passwordHash: UNUSABLE_PASSWORD,
-          role: one.person._count.reports > 0 ? "MANAGER" : "EMPLOYEE",
-          employeeId: one.person.id,
-        })),
+        data: invites
+          .filter((one) => here.has(one.person.id))
+          .map((one) => ({
+            id: one.userId,
+            email: one.person.personalEmail as string,
+            passwordHash: UNUSABLE_PASSWORD,
+            role: one.person._count.reports > 0 ? "MANAGER" : "EMPLOYEE",
+            employeeId: one.person.id,
+          })),
         skipDuplicates: true,
       });
       // An address another login already holds gets skipped above, so the
