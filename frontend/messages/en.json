@@ -598,6 +598,7 @@
     "advanceAmount": "Amount",
     "advanceEmpty": "No advance requests yet",
     "advancePay": "Mark as paid",
+    "advanceToPay": "Waiting to be paid",
     "advancePENDING": "Waiting",
     "advanceAPPROVED": "Approved",
     "advanceREJECTED": "Turned down",

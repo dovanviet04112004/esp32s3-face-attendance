@@ -75,6 +75,26 @@ function Queue({ title, count, children }: { title: string; count: number; child
   );
 }
 
+function Rows({ children }: { children: ReactNode }) {
+  return (
+    <ul className="divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
+      {children}
+    </ul>
+  );
+}
+
+// Stacked on a phone so the buttons keep a whole line to themselves; wrapping
+// them mid-row is what put a decision under a name (KEHOACH 9.21.2).
+function Row({ lead, aside, children }: { lead: ReactNode; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <li className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:gap-3">
+      <span className="min-w-0 flex-1 truncate">{lead}</span>
+      {aside === undefined ? null : <span className="shrink-0 sm:text-right">{aside}</span>}
+      <span className="flex shrink-0 gap-2">{children}</span>
+    </li>
+  );
+}
+
 export default function ApprovalsPage() {
   const t = useTranslations("requests");
   const format = useFormatter();
@@ -227,7 +247,7 @@ export default function ApprovalsPage() {
         </div>
       ) : null}
 
-      <Queue title={t("inbox")} count={inbox.data?.rows.length ?? 0}>
+      <Queue title={t("title")} count={inbox.data?.rows.length ?? 0}>
         <div className="flex flex-col gap-3">
           {(inbox.data?.rows ?? []).map((row) => (
             <RequestCard
@@ -255,14 +275,13 @@ export default function ApprovalsPage() {
       </Queue>
 
       <Queue title={c("title")} count={letters.data?.length ?? 0}>
-        <ul className="divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
+        <Rows>
           {(letters.data ?? []).map((one) => (
-            <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-              <span className="min-w-0 flex-1">
-                {one.employee ? `${one.employee.fullName} · ` : ""}
-                {c(one.kind)}
-              </span>
-              <span className="text-(--color-muted)">{one.purpose}</span>
+            <Row
+              key={one.id}
+              lead={`${one.employee ? `${one.employee.fullName} · ` : ""}${c(one.kind)}`}
+              aside={<span className="text-(--color-muted)">{one.purpose}</span>}
+            >
               <Button
                 type="button"
                 size="sm"
@@ -280,22 +299,23 @@ export default function ApprovalsPage() {
               >
                 {c("reject")}
               </Button>
-            </li>
+            </Row>
           ))}
-        </ul>
+        </Rows>
       </Queue>
 
       <Queue title={p("title")} count={changes.data?.length ?? 0}>
-        <ul className="divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
+        <Rows>
           {(changes.data ?? []).map((one) => (
-            <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-              <span className="min-w-0 flex-1">
-                {one.employee ? `${one.employee.fullName} · ` : ""}
-                {p(`field${one.field}`)}
-              </span>
-              <span className="text-(--color-muted)">
-                {reads(one.oldValue, p("blank"))} → {reads(one.newValue, p("blank"))}
-              </span>
+            <Row
+              key={one.id}
+              lead={`${one.employee ? `${one.employee.fullName} · ` : ""}${p(`field${one.field}`)}`}
+              aside={
+                <span className="text-(--color-muted)">
+                  {reads(one.oldValue, p("blank"))} → {reads(one.newValue, p("blank"))}
+                </span>
+              }
+            >
               <Button
                 type="button"
                 size="sm"
@@ -313,20 +333,19 @@ export default function ApprovalsPage() {
               >
                 {p("reject")}
               </Button>
-            </li>
+            </Row>
           ))}
-        </ul>
+        </Rows>
       </Queue>
 
       <Queue title={pay("advances")} count={advances.data?.length ?? 0}>
-        <ul className="divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
+        <Rows>
           {(advances.data ?? []).map((one) => (
-            <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-              <span className="min-w-0 flex-1 truncate">
-                {one.employee ? `${one.employee.fullName} · ` : ""}
-                {one.reason}
-              </span>
-              <span className="tabular-nums">{money(Number(one.amount), locale)}</span>
+            <Row
+              key={one.id}
+              lead={`${one.employee ? `${one.employee.fullName} · ` : ""}${one.reason}`}
+              aside={<span className="font-medium tabular-nums">{money(Number(one.amount), locale)}</span>}
+            >
               <Button
                 type="button"
                 size="sm"
@@ -344,20 +363,19 @@ export default function ApprovalsPage() {
               >
                 {t("reject")}
               </Button>
-            </li>
+            </Row>
           ))}
-        </ul>
+        </Rows>
       </Queue>
 
-      <Queue title={pay("advancePay")} count={toPay.data?.length ?? 0}>
-        <ul className="divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
+      <Queue title={pay("advanceToPay")} count={toPay.data?.length ?? 0}>
+        <Rows>
           {(toPay.data ?? []).map((one) => (
-            <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-              <span className="min-w-0 flex-1 truncate">
-                {one.employee ? `${one.employee.fullName} · ` : ""}
-                {one.reason}
-              </span>
-              <span className="tabular-nums">{money(Number(one.amount), locale)}</span>
+            <Row
+              key={one.id}
+              lead={`${one.employee ? `${one.employee.fullName} · ` : ""}${one.reason}`}
+              aside={<span className="font-medium tabular-nums">{money(Number(one.amount), locale)}</span>}
+            >
               <Button
                 type="button"
                 size="sm"
@@ -366,22 +384,23 @@ export default function ApprovalsPage() {
               >
                 {pay("advancePay")}
               </Button>
-            </li>
+            </Row>
           ))}
-        </ul>
+        </Rows>
       </Queue>
 
       <Queue title={me("dependentsTitle")} count={dependents.data?.length ?? 0}>
-        <ul className="divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
+        <Rows>
           {(dependents.data ?? []).map((one) => (
-            <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-              <span className="min-w-0 flex-1 truncate">
-                {one.employee.fullName} · {one.fullName}
-              </span>
-              <span className="text-(--color-muted)">{me(`relation${one.relation}`)}</span>
-              <span className="tabular-nums text-(--color-muted)">
-                {format.dateTime(dayOnly(one.fromMonth), "day")}
-              </span>
+            <Row
+              key={one.id}
+              lead={`${one.employee.fullName} · ${one.fullName}`}
+              aside={
+                <span className="text-(--color-muted)">
+                  {me(`relation${one.relation}`)} · {format.dateTime(dayOnly(one.fromMonth), "day")}
+                </span>
+              }
+            >
               <Button
                 type="button"
                 size="sm"
@@ -399,9 +418,9 @@ export default function ApprovalsPage() {
               >
                 {t("reject")}
               </Button>
-            </li>
+            </Row>
           ))}
-        </ul>
+        </Rows>
       </Queue>
     </section>
   );

@@ -598,6 +598,7 @@
     "advanceAmount": "Số tiền",
     "advanceEmpty": "Chưa có đơn tạm ứng nào",
     "advancePay": "Đã chi",
+    "advanceToPay": "Chờ chi",
     "advancePENDING": "Chờ duyệt",
     "advanceAPPROVED": "Đã duyệt",
     "advanceREJECTED": "Từ chối",
