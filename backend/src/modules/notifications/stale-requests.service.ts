@@ -3,12 +3,13 @@ import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { QUEUE } from "../../queue/queues.js";
+import { LeaveService } from "../leave/leave.service.js";
 import { NotificationsService } from "./notifications.service.js";
 
 interface Waiting {
   requestId: string;
   employeeId: number;
-  approverId: number;
+  approverId: number | null;
   daysWaited: number;
 }
 
@@ -23,6 +24,7 @@ export class StaleRequestsService implements OnModuleInit {
   constructor(
     private readonly db: PrismaService,
     private readonly notices: NotificationsService,
+    private readonly leave: LeaveService,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -44,7 +46,7 @@ export class StaleRequestsService implements OnModuleInit {
       SELECT r."id" AS "requestId", r."employeeId", r."approverId",
              (CURRENT_DATE - r."createdAt"::date)::int AS "daysWaited"
         FROM "Request" r
-       WHERE r."state" = 'PENDING' AND r."approverId" IS NOT NULL
+       WHERE r."state" = 'PENDING'
          AND (CURRENT_DATE - r."createdAt"::date) = ANY(${MARKS}::int[])
     `;
     let told = 0;
@@ -62,7 +64,12 @@ export class StaleRequestsService implements OnModuleInit {
       }
       const facts = { requestId: row.requestId, daysWaited: row.daysWaited };
       await this.notices.raise(row.employeeId, "REQUEST_STALLED", facts);
-      await this.notices.raise(row.approverId, "REQUEST_WAITING", facts);
+      // An unclaimed request nudges the desk holding it (KEHOACH 9.15).
+      if (row.approverId === null) {
+        await this.notices.raiseMany(await this.leave.deskIds(row.employeeId), "REQUEST_WAITING", facts);
+      } else {
+        await this.notices.raise(row.approverId, "REQUEST_WAITING", facts);
+      }
       told += 1;
     }
     this.log.log(`stale requests swept, ${told} told of ${rows.length} at a mark`);

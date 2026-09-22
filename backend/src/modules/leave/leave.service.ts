@@ -6,6 +6,7 @@ import type {
   Request as LeaveRequest,
   RequestKind,
   RequestState,
+  Role,
 } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
@@ -21,6 +22,9 @@ const UNIQUE_VIOLATION = "P2002";
 const HALF = 0.5;
 const MS_PER_DAY = 86_400_000;
 const OFF_SITE: RequestKind[] = ["BUSINESS_TRIP", "REMOTE_WORK"];
+// The same two roles mayDecide already lets through, and the ones 9.4 gives
+// leave to; an unclaimed request waits here.
+const THE_DESK: Role[] = ["ADMIN", "HR"];
 
 /** One person's standing in one leave type, on a day they picked. */
 export interface BalanceAsOf {
@@ -199,6 +203,12 @@ export class LeaveService {
     }
     if (approverId !== null) {
       await this.notices.raise(approverId, "REQUEST_WAITING", { requestId: filed.id });
+    } else {
+      await this.notices.raiseMany(
+        await this.deskIds(viewer.employeeId as number),
+        "REQUEST_WAITING",
+        { requestId: filed.id },
+      );
     }
     return filed;
   }
@@ -285,13 +295,25 @@ export class LeaveService {
 
   /** What is waiting on this viewer to answer. */
   async inbox(viewer: Viewer, query: ListRequestsDto): Promise<Page<LeaveRequest>> {
-    if (viewer.employeeId === null) {
+    const mine: Prisma.RequestWhereInput[] = [];
+    if (viewer.employeeId !== null) {
+      const standIn = await this.standingInFor(viewer.employeeId);
+      mine.push({ approverId: { in: [viewer.employeeId, ...standIn] } });
+    }
+    // Nobody above the person who asked, so it waits on the desk that holds
+    // leave anyway rather than on nobody (KEHOACH 9.15).
+    if (THE_DESK.includes(viewer.role)) {
+      mine.push({
+        approverId: null,
+        ...(viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } }),
+      });
+    }
+    if (mine.length === 0) {
       return { rows: [], total: 0 };
     }
-    const standIn = await this.standingInFor(viewer.employeeId);
     const where: Prisma.RequestWhereInput = {
       state: "PENDING",
-      approverId: { in: [viewer.employeeId, ...standIn] },
+      OR: mine,
       ...(query.kind ? { kind: query.kind } : {}),
     };
     return this.page(where, query);
@@ -357,6 +379,19 @@ export class LeaveService {
     }
     // Deciding your own request is the one thing a manager may not do.
     throw new ForbiddenException("NOT_YOUR_REQUEST");
+  }
+
+  /** The desk an unclaimed request waits on, minus whoever asked: rule 2 holds
+   *  even when the queue is a role rather than a person (KEHOACH 9.15).
+   */
+  async deskIds(asker: number): Promise<number[]> {
+    const rows = await this.db.user.findMany({
+      where: { active: true, role: { in: THE_DESK }, employeeId: { not: null } },
+      select: { employeeId: true },
+    });
+    return rows
+      .map((row) => row.employeeId as number)
+      .filter((id) => id !== asker);
   }
 
   /** Who decides for this person on a date, honouring a delegation. */
