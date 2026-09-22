@@ -62,6 +62,7 @@ export default function ChangePasswordPage() {
   if (done) {
     return (
       <main className="grid min-h-screen place-items-center px-4">
+        <title>{app("name")}</title>
         <div className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8 text-center">
           <CircleCheck className="mx-auto size-8 text-(--color-ok)" aria-hidden />
           <h1 className="mt-3 text-xl font-semibold">{t("done")}</h1>
@@ -76,6 +77,7 @@ export default function ChangePasswordPage() {
 
   return (
     <main className="grid min-h-screen place-items-center px-4">
+      <title>{app("name")}</title>
       <form
         onSubmit={submit}
         className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8"

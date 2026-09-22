@@ -47,6 +47,7 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center px-4">
+      <title>{app("name")}</title>
       <form
         onSubmit={submit}
         className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8"

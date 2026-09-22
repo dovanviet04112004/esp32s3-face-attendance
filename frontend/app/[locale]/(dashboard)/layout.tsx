@@ -10,13 +10,14 @@ import { TopBar } from "@/components/nav/top-bar";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { allows, homeFor } from "@/lib/nav";
+import { allows, homeFor, ownerOf } from "@/lib/nav";
 import { startOutbox } from "@/lib/outbox";
 import { useFeedConnection } from "@/lib/ws";
 
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("nav");
+  const app = useTranslations("app");
   const router = useRouter();
   const here = usePathname();
   const { accessToken, role, employeeId, clear } = useSession();
@@ -26,6 +27,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     startOutbox();
   }, []);
+
+  const owner = ownerOf(here);
+  // The tab, the history entry and the bookmark read this, off the same table
+  // the sidebar lights up (KEHOACH 9.15).
+  const tab = owner ? `${t(owner.key)} · ${app("name")}` : app("name");
 
   useEffect(() => {
     if (accessToken) {
@@ -55,6 +61,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      <title>{tab}</title>
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:start-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-(--color-accent) focus:px-4 focus:py-2 focus:text-sm focus:text-(--color-on-fill)"
