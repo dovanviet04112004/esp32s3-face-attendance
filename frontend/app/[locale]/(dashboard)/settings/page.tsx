@@ -160,7 +160,7 @@ export default function SettingsPage() {
       <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
         <h2 className="text-sm font-medium">{t("accountTitle")}</h2>
         <p className="mt-2 text-sm text-(--color-muted)">
-          {t("role")}: <span className="font-mono text-(--color-ink)">{role ?? "—"}</span>
+          {t("role")}: <span className="text-(--color-ink)">{role ? roleName(role) : "—"}</span>
         </p>
         <div className="mt-4 border-t border-(--color-line) pt-4">
           <h3 className="text-sm font-medium">{t("passwordTitle")}</h3>

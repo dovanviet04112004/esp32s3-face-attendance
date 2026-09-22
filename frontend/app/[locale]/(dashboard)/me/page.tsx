@@ -153,6 +153,27 @@ export default function MyPage() {
       <h2 className="mt-8 text-sm font-medium">{t("dependentsTitle")}</h2>
       <p className="mt-1 text-sm text-(--color-muted)">{t("dependentsLead")}</p>
 
+      <div className="mt-3 rounded-xl border border-(--color-line) bg-(--color-surface)">
+        {dependents.isPending ? (
+          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
+        ) : dependents.data?.length ? (
+          <ul className="divide-y divide-(--color-line)">
+            {dependents.data.map((one) => (
+              <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
+                <span className="text-(--color-muted)">{t(`relation${one.relation}`)}</span>
+                <span className="tabular-nums text-(--color-muted)">
+                  {format.dateTime(dayOnly(one.fromMonth), "day")}
+                </span>
+                <span className="text-xs">{t(`dependentState${one.state}`)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-4 py-6 text-sm text-(--color-muted)">{t("dependentsEmpty")}</p>
+        )}
+      </div>
+
       <form
         className="mt-3 flex flex-wrap items-end gap-2"
         onSubmit={(event: FormEvent) => {
@@ -205,27 +226,6 @@ export default function MyPage() {
           {fault}
         </p>
       ) : null}
-
-      <div className="mt-3 rounded-xl border border-(--color-line) bg-(--color-surface)">
-        {dependents.isPending ? (
-          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-        ) : dependents.data?.length ? (
-          <ul className="divide-y divide-(--color-line)">
-            {dependents.data.map((one) => (
-              <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-                <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
-                <span className="text-(--color-muted)">{t(`relation${one.relation}`)}</span>
-                <span className="tabular-nums text-(--color-muted)">
-                  {format.dateTime(dayOnly(one.fromMonth), "day")}
-                </span>
-                <span className="text-xs">{t(`dependentState${one.state}`)}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="px-4 py-6 text-sm text-(--color-muted)">{t("dependentsEmpty")}</p>
-        )}
-      </div>
 
       <div className="mt-8 flex items-baseline justify-between">
         <h2 className="text-sm font-medium">{t("selfService")}</h2>
