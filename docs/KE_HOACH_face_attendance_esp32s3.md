@@ -4133,6 +4133,7 @@ backend/
 ├── prisma.config.ts                  # ★ url của datasource + lệnh seed (Prisma 7)
 ├── prisma/{schema.prisma, migrations/, seed.ts}
 ├── test/*.e2e-spec.ts                # e2e, chạy bằng runner sẵn có của Node
+├── test/teardown.ts                  # ★ dọn thứ không cascade theo dữ liệu suite tạo ra
 └── src/
     ├── main.ts                       # chỉ mở cổng; mọi cấu hình nằm ở bootstrap.ts
     ├── bootstrap.ts                  # ★ helmet, CORS, cookie, ValidationPipe, Swagger
