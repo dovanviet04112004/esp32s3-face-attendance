@@ -27,6 +27,11 @@ import {
 
 const UNIQUE_VIOLATION = "P2002";
 
+// A trailing run of digits is what makes a code a series; the width caps it at
+// what an int holds, since the answer is read back as one.
+const SERIES = /^(.*?)(\d+)$/;
+const MAX_SERIES_DIGITS = 9;
+
 /** What leaving leaves behind, so nobody has to remember to go looking. */
 export interface Offboarding {
   employeeId: number;
@@ -311,6 +316,37 @@ export class EmployeesService {
       throw new NotFoundException(`no employee ${id}`);
     }
     return found;
+  }
+
+  /**
+   * A starting point for the code field, never a reservation: the unique index
+   * is what actually settles a clash, and two people opening the form at once
+   * are both handed the same answer.
+   */
+  async nextCode(): Promise<{ code: string | null }> {
+    const [last] = await this.db.employee.findMany({
+      orderBy: { createdAt: "desc" },
+      select: { code: true },
+      take: 1,
+    });
+    const series = SERIES.exec(last?.code ?? "");
+    if (!series) {
+      return { code: null };
+    }
+    const [, prefix, digits] = series;
+    const start = prefix.length + 1;
+    // substr, not substring: a bound parameter makes "substring(x from $1)"
+    // resolve to the regex overload, which reads the offset as a pattern.
+    const [top] = await this.db.$queryRaw<{ n: number | null }[]>`
+      SELECT max(substr(code, ${start})::bigint)::int AS n
+      FROM "Employee"
+      WHERE left(code, ${prefix.length}) = ${prefix}
+        AND substr(code, ${start}) ~ ${`^[0-9]{1,${MAX_SERIES_DIGITS}}$`}
+    `;
+    if (top?.n === null || top?.n === undefined) {
+      return { code: null };
+    }
+    return { code: `${prefix}${String(top.n + 1).padStart(digits.length, "0")}` };
   }
 
   async create(viewer: Viewer, body: CreateEmployeeDto): Promise<Employee> {

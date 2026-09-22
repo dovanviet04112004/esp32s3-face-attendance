@@ -80,6 +80,14 @@ export class EmployeesController {
     return `\ufeff${IMPORT_COLUMNS.join(",")}\r\n`;
   }
 
+  // Declared above :id, which would otherwise take "next-code" for an id.
+  @Get("next-code")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Carry on the numbering the last hire used, or null if none reads as a series" })
+  nextCode(): Promise<{ code: string | null }> {
+    return this.employees.nextCode();
+  }
+
   @Get(":id")
   get(
     @Param("id", ParseIntPipe) id: number,
