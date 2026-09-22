@@ -412,11 +412,7 @@
     "provisionWaiting": "Còn {count} người chưa được mở, bấm lại để tiếp tục.",
     "passwordTitle": "Mật khẩu",
     "passwordLead": "Đổi xong thì mọi thiết bị đang đăng nhập đều bị đăng xuất, kể cả máy này.",
-    "passwordCurrent": "Mật khẩu đang dùng",
-    "passwordNext": "Mật khẩu mới",
-    "passwordHint": "Ít nhất {count} ký tự.",
-    "passwordSubmit": "Đổi mật khẩu",
-    "passwordChanged": "Đã đổi. Đăng nhập lại bằng mật khẩu mới."
+    "passwordGo": "Đổi mật khẩu"
   },
   "requests": {
     "title": "Đơn từ",
@@ -872,6 +868,19 @@
     "sentTitle": "Đã gửi",
     "sentHint": "Nếu địa chỉ ấy có tài khoản, liên kết đang trên đường tới. Kiểm tra cả hộp thư rác.",
     "toLogin": "Về trang đăng nhập"
+  },
+  "changePassword": {
+    "lead": "Đổi mật khẩu cho tài khoản đang đăng nhập",
+    "current": "Mật khẩu đang dùng",
+    "next": "Mật khẩu mới",
+    "hint": "Ít nhất {count} ký tự.",
+    "warn": "Đổi xong thì mọi thiết bị đang đăng nhập đều bị đăng xuất, kể cả máy này.",
+    "submit": "Đổi mật khẩu",
+    "saving": "Đang đổi…",
+    "done": "Đã đổi mật khẩu",
+    "doneHint": "Mọi thiết bị đã bị đăng xuất. Đăng nhập lại bằng mật khẩu vừa đặt.",
+    "toLogin": "Về trang đăng nhập",
+    "back": "Quay lại cài đặt"
   },
   "myShifts": {
     "title": "Lịch ca của tôi",

@@ -412,11 +412,7 @@
     "provisionWaiting": "{count} people still have no login. Run it again to carry on.",
     "passwordTitle": "Password",
     "passwordLead": "Changing it signs out every device that is signed in, this one included.",
-    "passwordCurrent": "Current password",
-    "passwordNext": "New password",
-    "passwordHint": "At least {count} characters.",
-    "passwordSubmit": "Change password",
-    "passwordChanged": "Changed. Sign in again with the new one."
+    "passwordGo": "Change password"
   },
   "requests": {
     "title": "Requests",
@@ -872,6 +868,19 @@
     "sentTitle": "On its way",
     "sentHint": "If that address has an account, the link is on its way. Look in the spam folder too.",
     "toLogin": "Back to sign in"
+  },
+  "changePassword": {
+    "lead": "Change the password for the account you are signed in as",
+    "current": "Current password",
+    "next": "New password",
+    "hint": "At least {count} characters.",
+    "warn": "Changing it signs out every device that is signed in, this one included.",
+    "submit": "Change password",
+    "saving": "Changing…",
+    "done": "Password changed",
+    "doneHint": "Every device has been signed out. Sign in again with the password you just chose.",
+    "toLogin": "Back to sign in",
+    "back": "Back to settings"
   },
   "myShifts": {
     "title": "My shifts",
