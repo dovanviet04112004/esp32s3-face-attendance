@@ -93,6 +93,23 @@ export default function DevicesPage() {
       ),
     },
     {
+      id: "status",
+      header: t("status"),
+      cell: (row) =>
+        row.status === "PENDING" && role === "ADMIN" ? (
+          <Button
+            size="sm"
+            tone="quiet"
+            disabled={approve.isPending && approve.variables === row.id}
+            onClick={() => approve.mutate(row.id)}
+          >
+            {approve.isPending && approve.variables === row.id ? t("approving") : t("approve")}
+          </Button>
+        ) : (
+          <span className="text-(--color-muted)">{t(`status${row.status}`)}</span>
+        ),
+    },
+    {
       id: "location",
       header: t("location"),
       sortBy: (row) => row.location ?? "",
@@ -115,23 +132,6 @@ export default function DevicesPage() {
           {row.online ? t("online") : t("offline")}
         </span>
       ),
-    },
-    {
-      id: "status",
-      header: t("status"),
-      cell: (row) =>
-        row.status === "PENDING" && role === "ADMIN" ? (
-          <Button
-            size="sm"
-            tone="quiet"
-            disabled={approve.isPending && approve.variables === row.id}
-            onClick={() => approve.mutate(row.id)}
-          >
-            {approve.isPending && approve.variables === row.id ? t("approving") : t("approve")}
-          </Button>
-        ) : (
-          <span className="text-(--color-muted)">{t(`status${row.status}`)}</span>
-        ),
     },
   ];
 

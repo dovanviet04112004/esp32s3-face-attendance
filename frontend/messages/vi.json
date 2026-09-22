@@ -320,7 +320,7 @@
   },
   "devices": {
     "title": "Thiết bị",
-    "lead": "Máy chưa ai nhận nằm ở PENDING cho tới khi một người đối chiếu mã trên màn hình",
+    "lead": "Các kiosk đang chạy, và bản phát hành để mời chúng cập nhật. Máy mới tự xin vào và nằm ở Chờ duyệt cho tới khi có người đối chiếu mã hiện trên màn nó.",
     "device": "Thiết bị",
     "unnamed": "chưa đặt tên",
     "location": "Vị trí",

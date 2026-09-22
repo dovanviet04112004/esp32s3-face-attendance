@@ -320,7 +320,7 @@
   },
   "devices": {
     "title": "Devices",
-    "lead": "An unclaimed kiosk stays PENDING until somebody matches the code on its screen",
+    "lead": "The kiosks in service, and the releases they can be offered. A new machine asks to join and waits at Chờ duyệt until somebody matches the code on its screen.",
     "device": "Device",
     "unnamed": "unnamed",
     "location": "Location",
