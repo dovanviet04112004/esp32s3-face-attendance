@@ -107,7 +107,7 @@ export function Assets({ employeeId, mayWrite }: { employeeId: number; mayWrite:
                 <button
                   type="button"
                   onClick={() => setShowing(one)}
-                  className="text-start font-medium text-(--color-accent) hover:underline"
+                  className="text-start font-medium underline hover:no-underline"
                 >
                   {one.name}
                 </button>

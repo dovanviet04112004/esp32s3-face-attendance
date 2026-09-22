@@ -164,7 +164,7 @@ export default function TimesheetPage() {
         <button
           type="button"
           onClick={() => setOpenFor(row)}
-          className="text-start text-(--color-accent) hover:underline"
+          className="text-start underline hover:no-underline"
         >
           <span className="block">{row.fullName}</span>
           <span className="block font-mono text-xs text-(--color-muted)">{row.code}</span>

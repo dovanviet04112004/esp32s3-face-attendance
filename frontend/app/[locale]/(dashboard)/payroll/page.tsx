@@ -60,7 +60,7 @@ export default function PayrollPage() {
       sticky: true,
       sortBy: (row) => row.year * 100 + row.month,
       cell: (row) => (
-        <Link href={`/payroll/${row.id}`} className="text-(--color-accent) hover:underline">
+        <Link href={`/payroll/${row.id}`} className="underline hover:no-underline">
           {String(row.month).padStart(2, "0")}/{row.year}
         </Link>
       ),

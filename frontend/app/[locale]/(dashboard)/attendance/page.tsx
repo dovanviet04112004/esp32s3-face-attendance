@@ -124,7 +124,7 @@ export default function AttendancePage() {
       cell: (row) => (
         <Link
           href={`/attendance/${row.employeeId}`}
-          className="text-(--color-accent) hover:underline"
+          className="underline hover:no-underline"
         >
           {row.fullName}
         </Link>

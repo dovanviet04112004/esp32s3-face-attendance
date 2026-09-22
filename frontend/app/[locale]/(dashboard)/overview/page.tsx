@@ -120,7 +120,7 @@ function Pile<T>({ title, hint, heap, keyOf, href, name, aside, numeric }: PileP
       <ul className="mt-2 flex max-w-sm flex-col gap-0.5 text-sm">
         {shown.map((row) => (
           <li key={keyOf(row)} className="flex justify-between gap-3 py-1 pointer-coarse:min-h-11">
-            <Link href={href(row)} className="truncate text-(--color-accent) hover:underline">
+            <Link href={href(row)} className="truncate underline hover:no-underline">
               {name(row)}
             </Link>
             <span className={cn("shrink-0", numeric ? "tabular-nums" : "text-(--color-muted)")}>

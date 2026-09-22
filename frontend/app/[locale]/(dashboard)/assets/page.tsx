@@ -94,7 +94,7 @@ export default function AssetsPage() {
         <button
           type="button"
           onClick={() => setShowing(row)}
-          className="text-start text-(--color-accent) hover:underline"
+          className="text-start underline hover:no-underline"
         >
           <span className="block">{row.name}</span>
           <span className="block font-mono text-xs text-(--color-muted)">{row.code}</span>
@@ -120,7 +120,7 @@ export default function AssetsPage() {
         row.holder ? (
           <Link
             href={`/employees/${row.holder.id}?tab=assets`}
-            className="text-(--color-accent) hover:underline"
+            className="underline hover:no-underline"
           >
             {row.holder.fullName}
           </Link>
@@ -273,7 +273,7 @@ export default function AssetsPage() {
                 </span>
                 <Link
                   href={`/employees/${one.employeeId}?tab=assets`}
-                  className="text-(--color-accent) hover:underline"
+                  className="underline hover:no-underline"
                 >
                   #{one.employeeId}
                 </Link>

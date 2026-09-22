@@ -248,7 +248,7 @@ export default function OnboardingPage() {
                 <p className="mt-0.5 text-xs text-(--color-muted)">
                   <Link
                     href={`/employees/${one.run.employee.id}?tab=checklist`}
-                    className="text-(--color-accent) hover:underline"
+                    className="underline hover:no-underline"
                   >
                     {one.run.employee.fullName}
                   </Link>
