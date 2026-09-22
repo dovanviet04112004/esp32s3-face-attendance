@@ -131,30 +131,6 @@ export default function DocumentsPage() {
       <h1 className="text-lg font-semibold">{t("title")}</h1>
       <p className="mt-1 text-sm text-(--color-muted)">{t("lead")}</p>
 
-      <form onSubmit={submit} className="mt-4 flex flex-wrap items-end gap-2">
-        <div>
-          <label className="block text-xs text-(--color-muted)" htmlFor="code">
-            {t("code")}
-          </label>
-          <Input id="code" required value={code} onChange={(e) => setCode(e.target.value)} className="mt-1" />
-        </div>
-        <div className="min-w-48 flex-1">
-          <label className="block text-xs text-(--color-muted)" htmlFor="title">
-            {t("docTitle")}
-          </label>
-          <Input id="title" required value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1" />
-        </div>
-        <Button type="submit" disabled={create.isPending}>
-          {create.isPending ? common("saving") : t("add")}
-        </Button>
-      </form>
-
-      {refused ? (
-        <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-          {refused}
-        </p>
-      ) : null}
-
       {docs.isError ? <Failed onRetry={() => docs.refetch()} /> : null}
       {docs.isPending ? <SkeletonRows rows={2} columns={3} /> : null}
       {docs.isSuccess && docs.data.length === 0 ? (
@@ -238,6 +214,30 @@ export default function DocumentsPage() {
           );
         })}
       </ul>
+
+      <form onSubmit={submit} className="mt-4 flex flex-wrap items-end gap-2">
+        <div>
+          <label className="block text-xs text-(--color-muted)" htmlFor="code">
+            {t("code")}
+          </label>
+          <Input id="code" required value={code} onChange={(e) => setCode(e.target.value)} className="mt-1" />
+        </div>
+        <div className="min-w-48 flex-1">
+          <label className="block text-xs text-(--color-muted)" htmlFor="title">
+            {t("docTitle")}
+          </label>
+          <Input id="title" required value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1" />
+        </div>
+        <Button type="submit" disabled={create.isPending}>
+          {create.isPending ? common("saving") : t("add")}
+        </Button>
+      </form>
+
+      {refused ? (
+        <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+          {refused}
+        </p>
+      ) : null}
 
       <h2 className="mt-8 text-sm font-medium">{t("gapsTitle")}</h2>
       <p className="mt-1 mb-2 text-sm text-(--color-muted)">{t("gapsLead")}</p>
