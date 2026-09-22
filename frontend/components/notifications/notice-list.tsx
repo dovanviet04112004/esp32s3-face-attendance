@@ -10,7 +10,7 @@ import {
   TimerOff,
   type LucideIcon,
 } from "lucide-react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useNow, useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
@@ -48,6 +48,10 @@ const FACE: Record<NoticeKind, LucideIcon> = {
   DISPUTE_ANSWERED: MessageSquareReply,
 };
 
+// Relative times need an instant to count from, or the server and the browser
+// each pick their own and the two renders disagree.
+const kTickMs = 60_000;
+
 const WHERE: Record<NoticeKind, string> = {
   REQUEST_DECIDED: "/me/requests",
   REQUEST_WAITING: "/approvals",
@@ -61,6 +65,7 @@ export function NoticeList({ onGo }: { onGo: () => void }) {
   const t = useTranslations("notices");
   const common = useTranslations("common");
   const format = useFormatter();
+  const now = useNow({ updateInterval: kTickMs });
   const cache = useQueryClient();
 
   const notices = useQuery({
@@ -133,7 +138,7 @@ export function NoticeList({ onGo }: { onGo: () => void }) {
                   <span className="min-w-0 flex-1">
                     <span className="block">{say(notice)}</span>
                     <span className="block text-xs text-(--color-muted)">
-                      {format.relativeTime(new Date(notice.createdAt))}
+                      {format.relativeTime(new Date(notice.createdAt), now)}
                     </span>
                   </span>
                   {notice.readAt === null ? (
