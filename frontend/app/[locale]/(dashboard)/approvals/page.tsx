@@ -11,6 +11,7 @@ import { RequestCard, type RequestRow } from "@/components/requests/request-card
 import { Button } from "@/components/ui/button";
 import {
   ADVANCE_DECIDERS,
+  ADVANCE_PAYERS,
   DEPENDENT_DECIDERS,
   DISPUTE_ANSWERERS,
   LETTER_DESK,
@@ -91,7 +92,7 @@ export default function ApprovalsPage() {
   const mayIssueLetters = role !== null && LETTER_DESK.includes(role);
   const mayDecideProfile = role !== null && PROFILE_DESK.includes(role);
   const mayDecideAdvances = role !== null && ADVANCE_DECIDERS.includes(role);
-  const mayPayAdvances = role === "ADMIN" || role === "PAYROLL";
+  const mayPayAdvances = role !== null && ADVANCE_PAYERS.includes(role);
 
   const inbox = useQuery({
     queryKey: ["requests", "inbox"],

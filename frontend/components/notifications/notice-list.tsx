@@ -29,6 +29,7 @@ export interface Notice {
   id: string;
   kind: NoticeKind;
   requestId: string | null;
+  advanceId: string | null;
   periodId: string | null;
   contractId: string | null;
   payslipId: string | null;

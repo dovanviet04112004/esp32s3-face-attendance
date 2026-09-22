@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import type { Role } from "@/lib/auth";
 
 export const REQUEST_DECIDERS: Role[] = ["MANAGER", "ADMIN", "HR", "PAYROLL"];
-export const ADVANCE_DECIDERS: Role[] = ["ADMIN", "PAYROLL", "HR", "MANAGER"];
+export const ADVANCE_DECIDERS: Role[] = ["ADMIN", "HR"];
 export const ADVANCE_PAYERS: Role[] = ["ADMIN", "PAYROLL"];
 export const DEPENDENT_DECIDERS: Role[] = ["ADMIN", "PAYROLL"];
 export const DISPUTE_ANSWERERS: Role[] = ["ADMIN", "PAYROLL"];
