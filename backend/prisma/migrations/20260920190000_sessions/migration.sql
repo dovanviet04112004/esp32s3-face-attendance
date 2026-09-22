@@ -25,6 +25,7 @@ CREATE INDEX "Session_expiresAt_idx" ON "Session"("expiresAt");
 -- AddForeignKey
 ALTER TABLE "Session" ADD CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- The one cell this table replaces. Everyone signed in now holds a token whose
--- jti no answer exists for, so the refresh after this deploy asks for a login.
+-- The one cell this table replaces: the contract of Session.tokenHash answers
+-- for it now, one row per device. Everyone signed in holds a token whose jti
+-- no answer exists for, so the refresh after this deploy asks for a login.
 ALTER TABLE "User" DROP COLUMN "refreshTokenHash";

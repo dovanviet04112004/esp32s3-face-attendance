@@ -26,6 +26,7 @@ UPDATE "AuditLog"
 SET "subjectType" = split_part("action", '.', 1)
 WHERE "subjectType" IS NULL;
 
+-- backfilled by the UPDATE above, which reads the prefix off "action".
 ALTER TABLE "AuditLog" ALTER COLUMN "subjectType" SET NOT NULL;
 
 -- CreateIndex
