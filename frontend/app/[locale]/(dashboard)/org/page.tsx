@@ -105,7 +105,7 @@ function Branch({ rows, parentId, depth, onPick, shut, onFlip }: BranchProps) {
                 <button
                   type="button"
                   onClick={() => onPick(node)}
-                  className="text-start text-(--color-accent) hover:underline"
+                  className="text-start underline hover:no-underline"
                 >
                   {node.name}
                 </button>
@@ -208,6 +208,7 @@ export default function OrgPage() {
   return (
     <section className="mx-auto w-full max-w-(--width-read)">
       <h1 className="text-lg font-semibold">{t("orgChart")}</h1>
+      <p className="mt-1 text-sm text-(--color-muted)">{o("treeLead")}</p>
 
       {mayWrite ? (
         <Button

@@ -841,7 +841,8 @@
   },
   "org": {
     "departments": "Departments",
-    "departmentsLead": "The org tree; changing a parent changes who approves and who can see.",
+    "departmentsLead": "Changing a department parent changes who approves for its people and who can see them.",
+    "treeLead": "The headcount covers the whole branch, not the department on its own.",
     "code": "Code",
     "name": "Name",
     "parent": "Reports to",

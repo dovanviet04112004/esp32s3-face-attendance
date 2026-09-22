@@ -841,7 +841,8 @@
   },
   "org": {
     "departments": "Phòng ban",
-    "departmentsLead": "Cây tổ chức; đổi cấp trên là đổi luôn ai duyệt đơn và ai nhìn thấy dữ liệu.",
+    "departmentsLead": "Đổi cấp trên của một phòng ban là đổi luôn ai duyệt đơn và ai nhìn thấy dữ liệu của người trong đó.",
+    "treeLead": "Số người đếm cả nhánh bên dưới, không riêng phòng ban đó.",
     "code": "Mã",
     "name": "Tên",
     "parent": "Trực thuộc",
