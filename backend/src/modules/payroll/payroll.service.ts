@@ -367,7 +367,7 @@ export class PayrollService {
       select: { employeeId: true },
       distinct: ["employeeId"],
     });
-    await this.notices.raiseMany(
+    await this.notices.raiseManyFor(
       told.map((row) => row.employeeId),
       "PAYSLIP_ISSUED",
       { periodId },

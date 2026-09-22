@@ -61,7 +61,7 @@ export class ContractAlertsService implements OnModuleInit {
       if (already) {
         continue;
       }
-      await this.notices.raise(row.employeeId, "CONTRACT_ENDING", {
+      await this.notices.raiseFor(row.employeeId, "CONTRACT_ENDING", {
         contractId: row.contractId,
         daysLeft: row.daysLeft,
       });

@@ -17,19 +17,15 @@ const kMaxShown = 9;
 export function NoticeBell() {
   const t = useTranslations("notices");
   const common = useTranslations("common");
-  const employeeId = useSession((s) => s.employeeId);
+  const signedIn = useSession((s) => s.accessToken !== null);
   const [open, setOpen] = useState(false);
 
   const unread = useQuery({
     queryKey: ["notifications", "unread"],
-    enabled: employeeId !== null,
+    enabled: signedIn,
     refetchInterval: kPollMs,
     queryFn: async () => (await api.get<{ total: number }>("/notifications/unread")).data.total,
   });
-
-  if (employeeId === null) {
-    return null;
-  }
 
   const waiting = unread.data ?? 0;
 

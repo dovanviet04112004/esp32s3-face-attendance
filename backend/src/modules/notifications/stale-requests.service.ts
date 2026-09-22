@@ -63,12 +63,12 @@ export class StaleRequestsService implements OnModuleInit {
         continue;
       }
       const facts = { requestId: row.requestId, daysWaited: row.daysWaited };
-      await this.notices.raise(row.employeeId, "REQUEST_STALLED", facts);
+      await this.notices.raiseFor(row.employeeId, "REQUEST_STALLED", facts);
       // An unclaimed request nudges the desk holding it (KEHOACH 9.15).
       if (row.approverId === null) {
         await this.notices.raiseMany(await this.leave.deskIds(row.employeeId), "REQUEST_WAITING", facts);
       } else {
-        await this.notices.raise(row.approverId, "REQUEST_WAITING", facts);
+        await this.notices.raiseFor(row.approverId, "REQUEST_WAITING", facts);
       }
       told += 1;
     }

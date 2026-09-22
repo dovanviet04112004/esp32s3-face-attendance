@@ -202,7 +202,7 @@ export class LeaveService {
       return raced;
     }
     if (approverId !== null) {
-      await this.notices.raise(approverId, "REQUEST_WAITING", { requestId: filed.id });
+      await this.notices.raiseFor(approverId, "REQUEST_WAITING", { requestId: filed.id });
     } else {
       await this.notices.raiseMany(
         await this.deskIds(viewer.employeeId as number),
@@ -286,7 +286,7 @@ export class LeaveService {
         },
       });
     });
-    await this.notices.raise(held.employeeId, "REQUEST_DECIDED", {
+    await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", {
       requestId: id,
       approved: body.approve,
     });
@@ -384,14 +384,12 @@ export class LeaveService {
   /** The desk an unclaimed request waits on, minus whoever asked: rule 2 holds
    *  even when the queue is a role rather than a person (KEHOACH 9.15).
    */
-  async deskIds(asker: number): Promise<number[]> {
+  async deskIds(asker: number): Promise<string[]> {
     const rows = await this.db.user.findMany({
-      where: { active: true, role: { in: THE_DESK }, employeeId: { not: null } },
-      select: { employeeId: true },
+      where: { active: true, role: { in: THE_DESK } },
+      select: { id: true, employeeId: true },
     });
-    return rows
-      .map((row) => row.employeeId as number)
-      .filter((id) => id !== asker);
+    return rows.filter((row) => row.employeeId !== asker).map((row) => row.id);
   }
 
   /** Who decides for this person on a date, honouring a delegation. */

@@ -154,7 +154,7 @@ export class DisputesService {
       subjectId: held.payslipId,
       meta: { outcome: body.outcome, retroId: answered.retroId, amount: body.amount ?? null },
     });
-    await this.notices.raise(held.employeeId, "DISPUTE_ANSWERED", { payslipId: held.payslipId });
+    await this.notices.raiseFor(held.employeeId, "DISPUTE_ANSWERED", { payslipId: held.payslipId });
     this.log.log(`dispute ${held.id} answered ${body.outcome}`);
     return answered;
   }

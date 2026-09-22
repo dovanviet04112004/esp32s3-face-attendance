@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Param,
   Post,
@@ -20,16 +19,6 @@ import { SetPreferenceDto, SubscribeDto } from "./dto/notifications.dto.js";
 import { ContractAlertsService } from "./contract-alerts.service.js";
 import { NotificationsService, type Unread } from "./notifications.service.js";
 
-// Reading as nobody is an empty answer; writing as nobody is a foreign key.
-const NOBODY = 0;
-
-function mineOrRefuse(viewer: Viewer): number {
-  if (viewer.employeeId === null) {
-    throw new ForbiddenException("NO_EMPLOYEE_RECORD");
-  }
-  return viewer.employeeId;
-}
-
 @ApiTags("notifications")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -46,25 +35,25 @@ export class NotificationsController {
     @CurrentViewer() viewer: Viewer,
     @Query("unread") unread?: string,
   ): Promise<Notification[]> {
-    return this.notices.list(viewer.employeeId ?? NOBODY, unread === "true");
+    return this.notices.list(viewer.userId, unread === "true");
   }
 
   @Get("unread")
   @ApiOperation({ summary: "How many are waiting, for the bell" })
   unread(@CurrentViewer() viewer: Viewer): Promise<Unread> {
-    return this.notices.unread(viewer.employeeId ?? NOBODY);
+    return this.notices.unread(viewer.userId);
   }
 
   @Post("read")
   @ApiOperation({ summary: "Mark everything read" })
   readAll(@CurrentViewer() viewer: Viewer): Promise<Unread> {
-    return this.notices.markRead(viewer.employeeId ?? NOBODY);
+    return this.notices.markRead(viewer.userId);
   }
 
   @Post(":id/read")
   @ApiOperation({ summary: "Mark one read" })
   readOne(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<Unread> {
-    return this.notices.markRead(viewer.employeeId ?? NOBODY, id);
+    return this.notices.markRead(viewer.userId, id);
   }
 
   @Post("sweep-contracts")
@@ -79,7 +68,7 @@ export class NotificationsController {
   preferences(
     @CurrentViewer() viewer: Viewer,
   ): Promise<{ kind: NoticeKind; channel: NoticeChannel; on: boolean }[]> {
-    return this.notices.preferences(viewer.employeeId ?? NOBODY);
+    return this.notices.preferences(viewer.userId);
   }
 
   @Post("preferences")
@@ -88,13 +77,13 @@ export class NotificationsController {
     @CurrentViewer() viewer: Viewer,
     @Body() body: SetPreferenceDto,
   ): Promise<unknown> {
-    return this.notices.setPreference(mineOrRefuse(viewer), body);
+    return this.notices.setPreference(viewer.userId, body);
   }
 
   @Post("subscribe")
   @ApiOperation({ summary: "Register this device for push" })
   subscribe(@CurrentViewer() viewer: Viewer, @Body() body: SubscribeDto): Promise<unknown> {
-    return this.notices.subscribe(mineOrRefuse(viewer), body);
+    return this.notices.subscribe(viewer.userId, body);
   }
 
   @Delete("subscribe")
