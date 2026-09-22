@@ -24,7 +24,14 @@ describe("a request filed by somebody with no manager (e2e)", () => {
   let mine = "";
   let loneId = 0;
 
+  // Desk notices land on seeded logins this suite never deletes, so they
+  // outlive a cascade and have to go by hand.
   async function sweep(): Promise<void> {
+    const mine = await db.request.findMany({
+      where: { employee: { code: LONE } },
+      select: { id: true },
+    });
+    await db.notification.deleteMany({ where: { requestId: { in: mine.map((one) => one.id) } } });
     await db.user.deleteMany({ where: { email: LONE_MAIL } });
     await db.employee.deleteMany({ where: { code: LONE } });
   }
