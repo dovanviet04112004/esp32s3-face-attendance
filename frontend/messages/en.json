@@ -665,7 +665,7 @@
   },
   "policy": {
     "title": "Pay policy",
-    "lead": "Deductions, contribution rates and the tax table, by effective date.",
+    "lead": "Deductions, contribution rates and the tax table, by effective date. A change is a new version with a later effective date, never an edit, so a payslip already issued still recomputes to the figure it showed.",
     "effectiveFrom": "Effective from",
     "selfDeduction": "Personal deduction",
     "dependentDeduction": "Dependant deduction",

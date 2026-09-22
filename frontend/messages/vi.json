@@ -665,7 +665,7 @@
   },
   "policy": {
     "title": "Chính sách lương",
-    "lead": "Giảm trừ, tỷ lệ đóng và biểu thuế, theo ngày hiệu lực.",
+    "lead": "Giảm trừ, tỷ lệ đóng và biểu thuế, theo ngày hiệu lực. Đổi chính sách là thêm một bản mới có ngày hiệu lực sau, không sửa bản cũ, để phiếu lương đã phát tính lại vẫn ra đúng con số nó đã hiện.",
     "effectiveFrom": "Hiệu lực từ",
     "selfDeduction": "Giảm trừ bản thân",
     "dependentDeduction": "Giảm trừ người phụ thuộc",
