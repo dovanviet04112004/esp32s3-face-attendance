@@ -86,7 +86,8 @@
     "loadMore": "Load more",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
-    "showingOfAtLeast": "Showing {shown} of more than {total}"
+    "showingOfAtLeast": "Showing {shown} of more than {total}",
+    "seeAll": "See all"
   },
   "login": {
     "lead": "Sign in to reach the control panel",
@@ -99,7 +100,7 @@
   },
   "overview": {
     "title": "Overview",
-    "deviceCount": "{count} devices",
+    "deviceCount": "{count, plural, one {# device} other {# devices}}",
     "online": "online",
     "offline": "offline",
     "feedTitle": "Live events",
@@ -116,11 +117,18 @@
     "probationEnding": "Probation ending",
     "probationHint": "Probation that ends undecided becomes a permanent hire.",
     "exceptionsToday": "Off pattern today",
-    "daysLeft": "{count} days left",
+    "daysLeft": "{count, plural, one {# day left} other {# days left}}",
     "reasonNO_PUNCH": "No punch",
     "reasonLATE": "Late",
     "reasonSTILL_IN": "One punch only",
-    "attentionClear": "Nothing waiting"
+    "attentionClear": "Nothing waiting",
+    "waitingTitle": "Waiting on you",
+    "waitingCount": "{count, plural, one {thing to decide} other {things to decide}}",
+    "waitingNone": "Nothing is waiting on you",
+    "waitingGo": "Open the inbox",
+    "fleetTitle": "Kiosks",
+    "dirIN": "In",
+    "dirOUT": "Out"
   },
   "employees": {
     "title": "Employees",

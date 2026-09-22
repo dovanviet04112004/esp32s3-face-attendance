@@ -31,6 +31,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
       dateTime: {
         medium: { dateStyle: "medium", timeStyle: "short" },
         day: { dateStyle: "medium" },
+        clock: { timeStyle: "short" },
       },
     },
   };

@@ -86,7 +86,8 @@
     "loadMore": "Tải thêm",
     "showPassword": "Hiện mật khẩu",
     "hidePassword": "Ẩn mật khẩu",
-    "showingOfAtLeast": "Đang hiện {shown} trong hơn {total}"
+    "showingOfAtLeast": "Đang hiện {shown} trong hơn {total}",
+    "seeAll": "Xem tất cả"
   },
   "login": {
     "lead": "Đăng nhập để vào bảng điều khiển",
@@ -120,7 +121,14 @@
     "reasonNO_PUNCH": "Chưa quẹt",
     "reasonLATE": "Đi muộn",
     "reasonSTILL_IN": "Quẹt một lần",
-    "attentionClear": "Không có gì cần xử lý"
+    "attentionClear": "Không có gì cần xử lý",
+    "waitingTitle": "Đang chờ bạn",
+    "waitingCount": "việc chờ bạn xử lý",
+    "waitingNone": "Không có việc nào chờ bạn",
+    "waitingGo": "Mở hộp chờ duyệt",
+    "fleetTitle": "Kiosk",
+    "dirIN": "Vào",
+    "dirOUT": "Ra"
   },
   "employees": {
     "title": "Nhân viên",
