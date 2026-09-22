@@ -6400,10 +6400,45 @@ Các phân hệ không đứng cạnh nhau, chúng nối vào một trục:
                            (3,4,5,12,13)            (10, 11, 5)
 ```
 
-**Chuyển trạng thái là sự kiện, không phải một ô để sửa.** Nhận việc sinh hợp đồng, sinh số dư
-phép theo tỷ lệ còn lại của năm, sinh danh sách việc onboarding, và mở tài khoản. Nghỉ việc
-khoá tài khoản **ngay**, nhưng giữ hồ sơ vĩnh viễn, chạy lương chốt cuối, và mở danh sách thu
-hồi. Viết mỗi việc ấy thành một chỗ bấm riêng là bảo đảm có ngày ai đó quên một bước.
+**Chuyển trạng thái là sự kiện, không phải một ô để sửa.** Viết mỗi việc kèm theo thành một chỗ
+bấm riêng là bảo đảm có ngày ai đó quên một bước. Hai đầu của trục vì vậy là hai đường ghi,
+`POST /employees/:id/onboard` và `POST /employees/:id/offboard`, đối xứng nhau về hình dạng.
+
+**Nhận việc ghi năm thứ trong một lượt**: hợp đồng, mức lương đầu tiên, số dư phép, danh sách
+việc onboarding, và tài khoản đăng nhập. Ba điều làm nên hình dạng ấy:
+
+- **Hợp đồng sinh ra ở `DRAFT`.** Chính danh sách việc onboarding mang việc *ký hợp đồng lao
+  động*, và một hợp đồng chỉ đóng dấu `signedAt` lúc chuyển sang `ACTIVE`. Sinh thẳng `ACTIVE`
+  là biến việc ấy thành lời nói dối ngay hôm đầu.
+- **Mức lương là một dòng `CompensationRecord` lý do `HIRE`**, không phải một ô trên hồ sơ —
+  §9.6 đòi lương có thời hạn, và mốc đầu tiên là ngày vào làm. Thiếu nó thì phiếu lương đầu
+  tiên tính trên không, và §9.18 mục 4 đã đếm sẵn *người chưa có mức lương hiệu lực* là việc
+  phải đóng trước khi chốt kỳ.
+- **Phép chia theo phần còn lại của năm**: `daysPerYear × số ngày còn lại ÷ số ngày trong năm`,
+  làm tròn về bội 0,5 vì nửa ngày là đơn vị nghỉ nhỏ nhất. Vào ngày 01/10 của một năm 365 ngày,
+  một loại phép 12 ngày cho `3,0`.
+
+**Lượt nhận việc chạy lại được, và chạy lại không nhân đôi thứ gì.** Phần nào đã có thì bỏ qua,
+và điều đó **ràng buộc ở tầng dữ liệu** chứ không phải kiểm trong code: `ChecklistRun` là duy
+nhất theo `(employeeId, kind)`, `LeaveBalance` duy nhất theo `(employeeId, leaveTypeId, year)`.
+Nhờ vậy một lượt đứt giữa chừng sửa được bằng đúng cái nút đã bấm, và người đã nằm sẵn trong
+hệ từ trước cũng vá được bằng cùng một đường.
+
+**Thiếu khuôn thì bỏ qua và báo lại, không làm hỏng cả lượt.** Không có mẫu danh sách việc nào
+khớp, hay người ấy chưa có địa chỉ thư riêng, đều là chuyện của cấu hình chứ không phải của
+lượt tuyển này; đường ghi trả về **những gì nó đã làm và những gì nó đã bỏ qua**, y như nghỉ
+việc trả về thứ còn treo. Trùng hợp đồng thì mới là lỗi.
+
+**Thư mời xếp hàng sau khi giao dịch đã commit**, không nằm trong nó: đẩy job trong một giao
+dịch là gửi thư cho một lượt có thể rollback. Cái giá là một khe hở giữa commit và lúc xếp
+hàng, và §9.4 đã có sẵn đường vá — phát lại liên kết.
+
+**`POST /employees` vẫn là đường ghi một dòng.** Nhập CSV và di trú dữ liệu đi qua nó, nên nó
+không được mọc thêm hợp đồng. Nhận việc là một việc làm **lên** một hồ sơ đã có, đúng như nghỉ
+việc.
+
+**Nghỉ việc** khoá tài khoản **ngay**, nhưng giữ hồ sơ vĩnh viễn, chạy lương chốt cuối, và mở
+danh sách thu hồi.
 
 **Một người nghỉ việc không bao giờ bị xoá.** Bảng lương năm ngoái phải tra ra được họ. Cờ
 `active` tắt, tài khoản khoá, dữ liệu sinh trắc **xoá** (§7.5 — mẫu khuôn mặt là thứ duy nhất
