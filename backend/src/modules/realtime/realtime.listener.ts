@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
 import type { Queue } from "bullmq";
 
-import type { AttendanceRecord } from "../../common/generated/attendance_record.js";
 import type { DeviceEvent } from "../../common/generated/device_event.js";
 import type { Heartbeat } from "../../common/generated/heartbeat.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -48,11 +47,6 @@ export class RealtimeListener {
       const queue: Queue = this.queues[QUEUE.notify];
       await queue.add(QUEUE.notify, { deviceId: message.deviceId, reason: body.type });
     }
-  }
-
-  @OnEvent(KIOSK_EVENT.attendance)
-  onPunch(message: KioskMessage<AttendanceRecord>): void {
-    this.feed.publish(FEED.attendance, message.payload);
   }
 
   @OnEvent(KIOSK_EVENT.heartbeat)
