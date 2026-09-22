@@ -23,25 +23,13 @@ interface Department {
   legalEntityId: string;
 }
 
-interface Holiday {
-  id: string;
-  date: string;
-  name: string;
-  paid: boolean;
-}
-
 interface Entity {
   id: string;
   name: string;
 }
 
-function thisYear(): number {
-  return new Date().getUTCFullYear();
-}
-
 export default function DepartmentsPage() {
   const t = useTranslations("org");
-  const format = useFormatter();
   const common = useTranslations("common");
   const role = useSession((s) => s.role);
   const mayWrite = role === "ADMIN" || role === "HR";
@@ -50,13 +38,7 @@ export default function DepartmentsPage() {
 
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState("");
-  const [holidayName, setHolidayName] = useState("");
-  const [holidayDate, setHolidayDate] = useState("");
-  const [holidayPaid, setHolidayPaid] = useState(true);
   const [fault, setFault] = useState<string | null>(null);
-  // Taking a public holiday away rebuilds that day for everybody, so the
-  // second click is the confirmation.
-  const [dropping, setDropping] = useState<string | null>(null);
 
   const entities = useQuery({
     queryKey: ["legal-entities"],
@@ -66,11 +48,6 @@ export default function DepartmentsPage() {
   const departments = useQuery({
     queryKey: ["departments"],
     queryFn: async () => (await api.get<Department[]>("/departments")).data,
-  });
-
-  const holidays = useQuery({
-    queryKey: ["holidays", thisYear()],
-    queryFn: async () => (await api.get<Holiday[]>(`/holidays?year=${thisYear()}`)).data,
   });
 
   const addDepartment = useMutation({
@@ -86,25 +63,6 @@ export default function DepartmentsPage() {
       void cache.invalidateQueries({ queryKey: ["departments"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
-  });
-
-  const addHoliday = useMutation({
-    mutationFn: () =>
-      api.post("/holidays", { date: holidayDate, name: holidayName, paid: holidayPaid }),
-    onSuccess: () => {
-      setHolidayName("");
-      setHolidayDate("");
-      void cache.invalidateQueries({ queryKey: ["holidays"] });
-    },
-    onError: (fell: unknown) => setFault(faultOf(fell)),
-  });
-
-  const dropHoliday = useMutation({
-    mutationFn: (id: string) => api.delete(`/holidays/${id}`),
-    onSuccess: () => {
-      setDropping(null);
-      void cache.invalidateQueries({ queryKey: ["holidays"] });
-    },
   });
 
   const nameOf = new Map((departments.data ?? []).map((one) => [one.id, one.name]));
@@ -191,83 +149,6 @@ export default function DepartmentsPage() {
         onRetry={() => departments.refetch()}
       />
 
-      <h2 className="mt-8 text-sm font-semibold">{t("holidays")}</h2>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("holidaysLead")}</p>
-
-      {mayWrite ? (
-        <form
-          className="mt-3 flex flex-wrap items-end gap-2"
-          onSubmit={(event: FormEvent) => {
-            event.preventDefault();
-            setFault(null);
-            addHoliday.mutate();
-          }}
-        >
-          <label className="block w-44 text-xs text-(--color-muted)">
-            {t("holidayDate")}
-            <Input
-              type="date"
-              required
-              value={holidayDate}
-              onChange={(event) => setHolidayDate(event.target.value)}
-              className="mt-1"
-            />
-          </label>
-          <label className="block min-w-48 flex-1 text-xs text-(--color-muted)">
-            {t("holidayName")}
-            <Input
-              required
-              maxLength={120}
-              value={holidayName}
-              onChange={(event) => setHolidayName(event.target.value)}
-              className="mt-1"
-            />
-          </label>
-          <Checkbox
-            checked={holidayPaid}
-            onChange={(event) => setHolidayPaid(event.target.checked)}
-            label={t("holidayPaid")}
-          />
-          <Button type="submit" disabled={addHoliday.isPending}>
-            {addHoliday.isPending ? common("saving") : t("addHoliday")}
-          </Button>
-        </form>
-      ) : null}
-
-      <div className="mt-3 flex flex-col gap-2">
-        {holidays.isPending ? (
-          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-        ) : holidays.data?.length ? (
-          holidays.data.map((row) => (
-            <article
-              key={row.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-(--color-line) bg-(--color-surface) p-3 text-sm"
-            >
-              <span className="tabular-nums">{format.dateTime(dayOnly(row.date), "day")}</span>
-              <span className="min-w-0 flex-1 truncate">{row.name}</span>
-              <span className="text-xs text-(--color-muted)">
-                {row.paid ? t("holidayPaid") : common("no")}
-              </span>
-              {mayWrite ? (
-                <Button
-                  type="button"
-                  tone={dropping === row.id ? "danger" : "quiet"}
-                  size="sm"
-                  disabled={dropHoliday.isPending}
-                  onClick={() =>
-                    dropping === row.id ? dropHoliday.mutate(row.id) : setDropping(row.id)
-                  }
-                  onBlur={() => setDropping(null)}
-                >
-                  {dropping === row.id ? common("sure") : t("removeHoliday")}
-                </Button>
-              ) : null}
-            </article>
-          ))
-        ) : (
-          <p className="text-sm text-(--color-muted)">{t("holidaysEmpty")}</p>
-        )}
-      </div>
     </section>
   );
 }
