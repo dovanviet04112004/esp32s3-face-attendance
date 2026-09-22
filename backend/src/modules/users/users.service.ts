@@ -268,7 +268,7 @@ export class UsersService {
       return made;
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException(`${body.email} already has an account`);
+        throw new ConflictException("EMAIL_ALREADY_HAS_ACCOUNT");
       }
       throw error;
     }
@@ -321,7 +321,7 @@ export class UsersService {
   private async get(id: string): Promise<PublicUser> {
     const found = await this.db.user.findUnique({ where: { id }, select: VISIBLE });
     if (!found) {
-      throw new NotFoundException(`no user ${id}`);
+      throw new NotFoundException("USER_NOT_FOUND");
     }
     return found;
   }

@@ -348,11 +348,11 @@ export class EmployeesService {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     // Out of scope answers the same as absent: 403 would confirm they exist.
     if (visible !== null && !visible.includes(id)) {
-      throw new NotFoundException(`no employee ${id}`);
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     const found = await this.db.employee.findUnique({ where: { id }, include: EMPLOYEE_VIEW });
     if (!found) {
-      throw new NotFoundException(`no employee ${id}`);
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return found;
   }
@@ -401,7 +401,7 @@ export class EmployeesService {
       return made;
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException(`employee code ${body.code} is taken`);
+        throw new ConflictException("EMPLOYEE_CODE_TAKEN");
       }
       throw error;
     }
@@ -429,7 +429,7 @@ export class EmployeesService {
       },
     });
     if (!person) {
-      throw new NotFoundException(`no employee ${id}`);
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     if (person.leaveDate) {
       throw new ConflictException("EMPLOYEE_HAS_LEFT");
@@ -649,7 +649,7 @@ export class EmployeesService {
       return saved;
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException(`employee code ${body.code} is taken`);
+        throw new ConflictException("EMPLOYEE_CODE_TAKEN");
       }
       throw error;
     }

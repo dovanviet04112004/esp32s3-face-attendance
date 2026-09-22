@@ -73,7 +73,7 @@ export class ModelsService {
       });
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException(`${body.target} ${body.version} already exists`);
+        throw new ConflictException("RELEASE_ALREADY_EXISTS");
       }
       throw error;
     }
@@ -88,11 +88,11 @@ export class ModelsService {
   async offer(releaseId: string, deviceId: string): Promise<OtaManifest> {
     const release = await this.db.release.findUnique({ where: { releaseId } });
     if (!release) {
-      throw new NotFoundException(`no release ${releaseId}`);
+      throw new NotFoundException("RELEASE_NOT_FOUND");
     }
     const device = await this.db.device.findUnique({ where: { id: deviceId } });
     if (!device) {
-      throw new NotFoundException(`no device ${deviceId}`);
+      throw new NotFoundException("DEVICE_NOT_FOUND");
     }
     const manifest: OtaManifest = {
       releaseId: release.releaseId,

@@ -98,7 +98,7 @@ export class DocumentsService {
       return made;
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException(`document code ${body.code} is taken`);
+        throw new ConflictException("DOCUMENT_CODE_TAKEN");
       }
       throw error;
     }
@@ -283,7 +283,7 @@ export class DocumentsService {
       return made;
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException(`file type ${body.code} is taken`);
+        throw new ConflictException("FILE_TYPE_CODE_TAKEN");
       }
       throw error;
     }

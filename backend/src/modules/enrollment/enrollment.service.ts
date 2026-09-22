@@ -309,7 +309,7 @@ export class EnrollmentService {
   private async device(id: string): Promise<Device> {
     const found = await this.db.device.findUnique({ where: { id } });
     if (!found) {
-      throw new NotFoundException(`no device ${id}`);
+      throw new NotFoundException("DEVICE_NOT_FOUND");
     }
     return found;
   }
@@ -317,7 +317,7 @@ export class EnrollmentService {
   private async employee(id: number) {
     const found = await this.db.employee.findUnique({ where: { id } });
     if (!found) {
-      throw new NotFoundException(`no employee ${id}`);
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return found;
   }

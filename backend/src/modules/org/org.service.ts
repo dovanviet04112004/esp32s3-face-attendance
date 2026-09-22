@@ -347,7 +347,7 @@ export class OrgService {
       return await this.db.department.create({ data: body });
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException(`department code ${body.code} is taken in that entity`);
+        throw new ConflictException("DEPARTMENT_CODE_TAKEN");
       }
       throw error;
     }
@@ -367,7 +367,7 @@ export class OrgService {
     }
     const held = await this.db.department.findUnique({ where: { id: parentId } });
     if (!held) {
-      throw new NotFoundException(`no department ${parentId}`);
+      throw new NotFoundException("DEPARTMENT_NOT_FOUND");
     }
   }
 

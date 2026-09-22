@@ -115,7 +115,7 @@ export class ShiftsService {
   async get(id: string): Promise<Shift> {
     const found = await this.db.shift.findUnique({ where: { id } });
     if (!found) {
-      throw new NotFoundException(`no shift ${id}`);
+      throw new NotFoundException("SHIFT_NOT_FOUND");
     }
     return found;
   }
@@ -125,7 +125,7 @@ export class ShiftsService {
       return await this.db.shift.create({ data: body });
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException(`shift name ${body.name} is taken`);
+        throw new ConflictException("SHIFT_NAME_TAKEN");
       }
       throw error;
     }
@@ -166,7 +166,7 @@ export class ShiftsService {
         throw new ConflictException("SHIFT_ALREADY_ASSIGNED");
       }
       if (isCode(error, FOREIGN_KEY_VIOLATION)) {
-        throw new NotFoundException(`no employee ${body.employeeId}`);
+        throw new NotFoundException("EMPLOYEE_NOT_FOUND");
       }
       throw error;
     }
@@ -177,7 +177,7 @@ export class ShiftsService {
       where: { id: assignmentId, shiftId: id },
     });
     if (!found) {
-      throw new NotFoundException(`no assignment ${assignmentId} on shift ${id}`);
+      throw new NotFoundException("ASSIGNMENT_NOT_FOUND");
     }
     await this.db.shiftAssignment.delete({ where: { id: assignmentId } });
   }

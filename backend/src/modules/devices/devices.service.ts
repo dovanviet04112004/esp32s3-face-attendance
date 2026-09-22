@@ -156,7 +156,7 @@ export class DevicesService {
   async get(id: string): Promise<PublicDevice> {
     const found = await this.db.device.findUnique({ where: { id }, select: SHOWN });
     if (!found) {
-      throw new NotFoundException(`no device ${id}`);
+      throw new NotFoundException("DEVICE_NOT_FOUND");
     }
     return found;
   }
