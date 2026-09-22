@@ -1,13 +1,17 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { ChevronDown } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { BottomBar } from "@/components/ui/bottom-bar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { CountPill } from "@/components/ui/pill";
 import { Select } from "@/components/ui/select";
+import { api } from "@/lib/api";
 
 export interface EmployeeDraft {
   code: string;
@@ -15,6 +19,7 @@ export interface EmployeeDraft {
   legalEntityId: string;
   departmentId: string;
   jobTitleId: string;
+  managerId: string;
   active: boolean;
   personalEmail: string;
   phone: string;
@@ -40,6 +45,7 @@ export const EMPTY_DRAFT: EmployeeDraft = {
   legalEntityId: "",
   departmentId: "",
   jobTitleId: "",
+  managerId: "",
   active: true,
   personalEmail: "",
   phone: "",
@@ -63,6 +69,10 @@ interface Props {
    *  ProfileChange so the change carries a trail (KEHOACH 9.17 item 4).
    */
   showBank: boolean;
+  /** Only where the field starts empty: the picker reads a person out of a
+   *  search and has no way back from an id already on the record.
+   */
+  showManager: boolean;
   busy: boolean;
   fault: string | null;
   onSubmit: (draft: EmployeeDraft) => void;
@@ -91,6 +101,119 @@ function Field({
   );
 }
 
+function filledOf(values: string[]): number {
+  return values.filter((one) => one !== "").length;
+}
+
+/** A group nobody has to fill today, folded away with a count of what is in
+ *  it, so the two fields the server insists on are not hidden among thirteen.
+ */
+function Group({
+  title,
+  lead,
+  filled,
+  total,
+  children,
+}: {
+  title: string;
+  lead?: string;
+  filled: number;
+  total: number;
+  children: ReactNode;
+}) {
+  // Read once: recomputing it would shut the group under somebody who is
+  // clearing the last field in it.
+  const [startOpen] = useState(filled > 0);
+  return (
+    <details
+      open={startOpen}
+      className="group mt-4 rounded-xl border border-(--color-line) bg-(--color-surface)"
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden">
+        <span className="text-sm font-medium">{title}</span>
+        <span className="flex items-center gap-2">
+          <CountPill>
+            {filled}/{total}
+          </CountPill>
+          <ChevronDown
+            className="size-4 text-(--color-muted) transition-transform group-[[open]]:rotate-180"
+            aria-hidden
+          />
+        </span>
+      </summary>
+      <div className="border-t border-(--color-line) px-4 pt-3 pb-4">
+        {lead ? <p className="mb-3 text-sm text-(--color-muted)">{lead}</p> : null}
+        <div className="grid gap-4 sm:grid-cols-2">{children}</div>
+      </div>
+    </details>
+  );
+}
+
+interface Person {
+  id: number;
+  code: string;
+  fullName: string;
+}
+
+const kSearchPauseMs = 300;
+const kSearchChars = 2;
+
+function ManagerField({ onPick }: { onPick: (id: string) => void }) {
+  const t = useTranslations("employees");
+  const [typed, setTyped] = useState("");
+  const [asked, setAsked] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAsked(typed), kSearchPauseMs);
+    return () => clearTimeout(timer);
+  }, [typed]);
+
+  const found = useQuery({
+    queryKey: ["employees", "manager-search", asked],
+    enabled: asked.length >= kSearchChars,
+    queryFn: async () =>
+      (
+        await api.get<{ rows: Person[] }>(
+          `/employees?search=${encodeURIComponent(asked)}`,
+        )
+      ).data.rows,
+  });
+
+  const rows = found.data ?? [];
+  const picked = rows.find((one) => one.code === typed);
+
+  // Guarded on the value, not the callback: the parent rebuilds onPick on
+  // every keystroke, and reporting on each one would feed its own re-render.
+  const reported = useRef("");
+  useEffect(() => {
+    const id = picked ? String(picked.id) : "";
+    if (id !== reported.current) {
+      reported.current = id;
+      onPick(id);
+    }
+  }, [picked, onPick]);
+
+  return (
+    <Field id="manager" label={t("manager")} hint={t("managerHint")}>
+      <Input
+        id="manager"
+        list="managerChoices"
+        value={typed}
+        onChange={(e) => setTyped(e.target.value)}
+        className="mt-1 font-mono"
+      />
+      <datalist id="managerChoices">
+        {rows.map((one) => (
+          <option key={one.id} value={one.code}>
+            {one.fullName}
+          </option>
+        ))}
+      </datalist>
+      {picked ? <p className="mt-1 text-xs text-(--color-ok)">{picked.fullName}</p> : null}
+    </Field>
+  );
+}
+
 export function EmployeeForm({
   start,
   departments,
@@ -98,6 +221,7 @@ export function EmployeeForm({
   entities,
   showActive,
   showBank,
+  showManager,
   busy,
   fault,
   onSubmit,
@@ -187,11 +311,15 @@ export function EmployeeForm({
             ))}
           </Select>
         </Field>
+        {showManager ? <ManagerField onPick={(id) => set({ managerId: id })} /> : null}
       </div>
 
-      <h2 className="mt-6 text-sm font-medium">{t("sectionReach")}</h2>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("sectionReachLead")}</p>
-      <div className="mt-2 grid gap-4 sm:grid-cols-2">
+      <Group
+        title={t("sectionReach")}
+        lead={t("sectionReachLead")}
+        filled={filledOf([draft.personalEmail, draft.phone])}
+        total={2}
+      >
         <Field id="personalEmail" label={t("personalEmail")} hint={t("personalEmailHint")}>
           <Input
             id="personalEmail"
@@ -212,11 +340,21 @@ export function EmployeeForm({
             className="mt-1"
           />
         </Field>
-      </div>
+      </Group>
 
-      <h2 className="mt-6 text-sm font-medium">{t("sectionFiling")}</h2>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("sectionFilingLead")}</p>
-      <div className="mt-2 grid gap-4 sm:grid-cols-2">
+      <Group
+        title={t("sectionFiling")}
+        lead={t("sectionFilingLead")}
+        filled={filledOf([
+          draft.hireDate,
+          draft.dateOfBirth,
+          draft.gender,
+          draft.nationalId,
+          draft.taxCode,
+          draft.socialInsuranceNo,
+        ])}
+        total={6}
+      >
         <Field id="hireDate" label={t("hireDate")} hint={t("hireDateHint")}>
           <Input
             id="hireDate"
@@ -274,33 +412,34 @@ export function EmployeeForm({
             className="mt-1 font-mono"
           />
         </Field>
-      </div>
+      </Group>
 
       {showBank ? (
-        <>
-          <h2 className="mt-6 text-sm font-medium">{t("sectionBank")}</h2>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("sectionBankLead")}</p>
-          <div className="mt-2 grid gap-4 sm:grid-cols-2">
-            <Field id="bankName" label={t("bankName")}>
-              <Input
-                id="bankName"
-                maxLength={120}
-                value={draft.bankName}
-                onChange={(e) => set({ bankName: e.target.value })}
-                className="mt-1"
-              />
-            </Field>
-            <Field id="bankAccount" label={t("bankAccount")}>
-              <Input
-                id="bankAccount"
-                maxLength={64}
-                value={draft.bankAccount}
-                onChange={(e) => set({ bankAccount: e.target.value })}
-                className="mt-1 font-mono"
-              />
-            </Field>
-          </div>
-        </>
+        <Group
+          title={t("sectionBank")}
+          lead={t("sectionBankLead")}
+          filled={filledOf([draft.bankName, draft.bankAccount])}
+          total={2}
+        >
+          <Field id="bankName" label={t("bankName")}>
+            <Input
+              id="bankName"
+              maxLength={120}
+              value={draft.bankName}
+              onChange={(e) => set({ bankName: e.target.value })}
+              className="mt-1"
+            />
+          </Field>
+          <Field id="bankAccount" label={t("bankAccount")}>
+            <Input
+              id="bankAccount"
+              maxLength={64}
+              value={draft.bankAccount}
+              onChange={(e) => set({ bankAccount: e.target.value })}
+              className="mt-1 font-mono"
+            />
+          </Field>
+        </Group>
       ) : (
         <p className="mt-6 text-sm text-(--color-muted)">{t("bankElsewhere")}</p>
       )}

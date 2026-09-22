@@ -243,6 +243,8 @@
     "sectionBankLead": "File chuyển khoản của kỳ lương đọc hai ô này.",
     "bankElsewhere": "Số tài khoản ngân hàng chỉ đổi qua đơn đổi thông tin, để mỗi lần đổi đều có người duyệt và có vết.",
     "jobTitle": "Chức danh",
+    "manager": "Người quản lý",
+    "managerHint": "Gõ mã hoặc tên rồi chọn. Không có người này thì đơn nghỉ phép của họ sẽ không có ai duyệt.",
     "personalEmail": "Email cá nhân",
     "personalEmailHint": "Thiếu ô này thì nút cấp tài khoản ở Cài đặt bỏ qua người này, không báo gì.",
     "phone": "Số điện thoại",

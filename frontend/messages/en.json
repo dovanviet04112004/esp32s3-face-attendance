@@ -243,6 +243,8 @@
     "sectionBankLead": "The period's payment file reads these two.",
     "bankElsewhere": "Bank details change only through a profile-change request, so every change is approved and leaves a trail.",
     "jobTitle": "Job title",
+    "manager": "Manager",
+    "managerHint": "Type a code or a name, then pick. Without one, nobody can approve their leave.",
     "personalEmail": "Personal email",
     "personalEmailHint": "Without this, provisioning in Settings passes over this person and says nothing.",
     "phone": "Phone",

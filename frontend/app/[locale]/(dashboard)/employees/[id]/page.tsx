@@ -305,6 +305,7 @@ export default function EmployeePage() {
               entities={entities.data ?? []}
               showActive
               showBank={false}
+              showManager={false}
               busy={save.isPending}
               fault={fault}
               onSubmit={(draft) => {
