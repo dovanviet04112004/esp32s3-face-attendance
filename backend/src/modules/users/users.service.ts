@@ -101,8 +101,8 @@ export class UsersService {
     );
     // Both statements or neither: an account with no link is one nobody can
     // reach, and a link with no account points at nothing.
-    await this.db.$transaction([
-      this.db.user.createMany({
+    await this.db.$transaction(async (tx) => {
+      await tx.user.createMany({
         data: invites.map((one) => ({
           id: one.userId,
           email: one.person.personalEmail as string,
@@ -111,16 +111,21 @@ export class UsersService {
           employeeId: one.person.id,
         })),
         skipDuplicates: true,
-      }),
-      this.db.passwordSetup.createMany({
-        data: invites.map((one) => ({
-          userId: one.userId,
-          tokenHash: fingerprint(one.link),
-          expiresAt,
-        })),
+      });
+      // An address another login already holds gets skipped above, so the
+      // links follow the rows that landed, not the ones on offer.
+      const born = await tx.user.findMany({
+        where: { id: { in: invites.map((one) => one.userId) } },
+        select: { id: true },
+      });
+      const kept = new Set(born.map((one) => one.id));
+      await tx.passwordSetup.createMany({
+        data: invites
+          .filter((one) => kept.has(one.userId))
+          .map((one) => ({ userId: one.userId, tokenHash: fingerprint(one.link), expiresAt })),
         skipDuplicates: true,
-      }),
-    ]);
+      });
+    });
     const opened = await this.db.user.findMany({
       where: { id: { in: invites.map((one) => one.userId) } },
       select: { id: true },
