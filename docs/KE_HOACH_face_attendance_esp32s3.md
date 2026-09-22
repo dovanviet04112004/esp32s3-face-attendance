@@ -4453,6 +4453,7 @@ frontend/
 │   ├── {favicon.ico, logo.svg}
 │   ├── manifest.webmanifest          # ★ cài được từ trình duyệt, chạy toàn màn hình
 │   ├── icon-{192,512}.png            # ★ biểu tượng màn hình chính
+│   ├── icon-maskable.png             # ★ cùng dấu, chừa lề an toàn cho launcher cắt tròn
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
 │   ├── ui/                           # primitive: button, input, select, checkbox, sheet,
