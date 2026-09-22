@@ -351,8 +351,9 @@ describe("disputing a payslip (e2e)", () => {
   });
 
   it("tells the person their dispute has an answer", async () => {
+    const login = await db.user.findFirstOrThrow({ where: { employeeId } });
     const notice = await db.notification.findFirst({
-      where: { employeeId, kind: "DISPUTE_ANSWERED" },
+      where: { userId: login.id, kind: "DISPUTE_ANSWERED" },
     });
     assert.ok(notice, "nobody told the person the answer had arrived");
     assert.equal(notice.payslipId, issuedSlipId);

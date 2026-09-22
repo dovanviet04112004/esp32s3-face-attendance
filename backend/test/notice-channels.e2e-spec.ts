@@ -27,15 +27,18 @@ describe("notice channels answer for themselves (e2e)", () => {
   let db: PrismaService;
   let notices: NotificationsService;
   const idOf = new Map<string, number>();
+  const loginOf = new Map<string, string>();
   let mine = "";
 
   async function sweep(): Promise<void> {
-    await db.user.deleteMany({ where: { email: MAIL } });
+    await db.user.deleteMany({
+      where: { email: { in: [MAIL, ...CODES.map((one) => `${one.toLowerCase()}@kiosk.local`)] } },
+    });
     await db.employee.deleteMany({ where: { code: { in: CODES } } });
   }
 
   async function heldFor(code: string): Promise<number> {
-    return db.notification.count({ where: { employeeId: idOf.get(code), kind: KIND } });
+    return db.notification.count({ where: { userId: loginOf.get(code), kind: KIND } });
   }
 
   before(async () => {
@@ -52,22 +55,26 @@ describe("notice channels answer for themselves (e2e)", () => {
         data: { code, fullName: `Kênh ${code}`, active: true },
       });
       idOf.set(code, made.id);
+      // A switch belongs to a login, so each fixture needs one.
+      const login = await db.user.create({
+        data: {
+          email: `${code.toLowerCase()}@kiosk.local`,
+          passwordHash: await hashPassword(PASSWORD),
+          role: "EMPLOYEE",
+          employeeId: made.id,
+        },
+      });
+      loginOf.set(code, login.id);
     }
     await db.notificationPreference.create({
-      data: { employeeId: idOf.get(IN_APP_OFF) as number, kind: KIND, channel: "IN_APP", on: false },
+      data: { userId: loginOf.get(IN_APP_OFF) as string, kind: KIND, channel: "IN_APP", on: false },
     });
     await db.notificationPreference.create({
-      data: { employeeId: idOf.get(PUSH_OFF) as number, kind: KIND, channel: "PUSH", on: false },
+      data: { userId: loginOf.get(PUSH_OFF) as string, kind: KIND, channel: "PUSH", on: false },
     });
-    await db.user.create({
-      data: {
-        email: MAIL,
-        passwordHash: await hashPassword(PASSWORD),
-        role: "EMPLOYEE",
-        employeeId: idOf.get(BOTH_ON) as number,
-      },
-    });
-    mine = (await app.get(AuthService).signIn(MAIL, PASSWORD, {})).accessToken;
+    mine = (
+      await app.get(AuthService).signIn(`${BOTH_ON.toLowerCase()}@kiosk.local`, PASSWORD, {})
+    ).accessToken;
   });
 
   after(async () => {
@@ -100,19 +107,24 @@ describe("notice channels answer for themselves (e2e)", () => {
     assert.deepEqual([...new Set(rows.map((row) => row.channel))].sort(), ["IN_APP", "PUSH"]);
   });
 
-  it("refuses to file a switch for an account with no record to hang it on", async () => {
+  it("serves a login that is not an employee, which is where unclaimed work lands", async () => {
     const admin = (
       await app.get(AuthService).signIn("admin@kiosk.local", validateEnv().SEED_ADMIN_PASSWORD ?? "", {})
     ).accessToken;
-    const res = await request(app.getHttpServer())
+    const set = await request(app.getHttpServer())
       .post("/notifications/preferences")
       .set("Authorization", `Bearer ${admin}`)
       .send({ kind: OTHER_KIND, channel: "PUSH", on: false });
-    assert.equal(res.status, 403, "a login with no employee row reached the foreign key");
+    assert.equal(set.status, 201, "an administrator could not switch their own channel");
+
+    const seen = await request(app.getHttpServer())
+      .get("/notifications/unread")
+      .set("Authorization", `Bearer ${admin}`);
+    assert.equal(seen.status, 200, "an administrator could not read their own bell");
   });
 
   it("writes an in-app notice for a whole payroll period at once", async () => {
-    await notices.raiseMany([...idOf.values()], KIND, {});
+    await notices.raiseMany([...loginOf.values()], KIND, {});
     assert.equal(await heldFor(BOTH_ON), 1, "somebody with both channels on was told nothing");
   });
 
@@ -126,7 +138,7 @@ describe("notice channels answer for themselves (e2e)", () => {
 
   it("asks one switch per channel, so neither reads the other's answer", async () => {
     const asked = await db.notificationPreference.findMany({
-      where: { employeeId: idOf.get(PUSH_OFF), kind: KIND },
+      where: { userId: loginOf.get(PUSH_OFF), kind: KIND },
       select: { channel: true, on: true },
     });
     const push = asked.find((row) => row.channel === "PUSH");

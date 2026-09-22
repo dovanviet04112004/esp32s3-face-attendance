@@ -193,9 +193,10 @@ describe("route scope (e2e)", () => {
   it("drops only the caller's own push subscription", async () => {
     const endpoint = "https://push.example.com/e2e-route-scope";
     const mine = await db.employee.findFirstOrThrow({ where: { code: "NV9144R" } });
+    const login = await db.user.findFirstOrThrow({ where: { employeeId: mine.id } });
     await db.pushSubscription.deleteMany({ where: { endpoint } });
     await db.pushSubscription.create({
-      data: { employeeId: mine.id, endpoint, p256dh: "k", auth: "a" },
+      data: { userId: login.id, endpoint, p256dh: "k", auth: "a" },
     });
 
     const stranger = await request(http)

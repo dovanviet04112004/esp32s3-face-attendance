@@ -12,6 +12,7 @@ import { StaleRequestsService } from "../src/modules/notifications/stale-request
 const FILER = "NV9801";
 const APPROVER = "NV9802";
 const kDayMs = 86_400_000;
+const UNREACHABLE = "none$";
 
 function daysAgo(count: number): Date {
   return new Date(Date.now() - count * kDayMs);
@@ -23,6 +24,8 @@ describe("stale requests (e2e)", () => {
   let stale: StaleRequestsService;
   let filerId = 0;
   let approverId = 0;
+  let filerLogin = "";
+  let approverLogin = "";
   const filed: string[] = [];
 
   async function fileAt(waited: number): Promise<string> {
@@ -55,6 +58,7 @@ describe("stale requests (e2e)", () => {
     await app.init();
     db = app.get(PrismaService);
     stale = app.get(StaleRequestsService);
+    await db.user.deleteMany({ where: { email: { in: [`${FILER}@kiosk.local`, `${APPROVER}@kiosk.local`] } } });
     await db.employee.deleteMany({ where: { code: { in: [FILER, APPROVER] } } });
     const boss = await db.employee.create({ data: { code: APPROVER, fullName: "E2E approver" } });
     approverId = boss.id;
@@ -62,11 +66,23 @@ describe("stale requests (e2e)", () => {
       data: { code: FILER, fullName: "E2E filer", managerId: boss.id },
     });
     filerId = person.id;
+    // A notice is addressed to a login, so somebody with none hears nothing.
+    approverLogin = (
+      await db.user.create({
+        data: { email: `${APPROVER}@kiosk.local`, passwordHash: UNREACHABLE, role: "MANAGER", employeeId: approverId },
+      })
+    ).id;
+    filerLogin = (
+      await db.user.create({
+        data: { email: `${FILER}@kiosk.local`, passwordHash: UNREACHABLE, role: "EMPLOYEE", employeeId: filerId },
+      })
+    ).id;
   });
 
   after(async () => {
     await db.notification.deleteMany({ where: { requestId: { in: filed } } });
     await db.request.deleteMany({ where: { id: { in: filed } } });
+    await db.user.deleteMany({ where: { email: { in: [`${FILER}@kiosk.local`, `${APPROVER}@kiosk.local`] } } });
     await db.employee.deleteMany({ where: { code: { in: [FILER, APPROVER] } } });
     await app.close();
   });
@@ -79,8 +95,8 @@ describe("stale requests (e2e)", () => {
     const filer = rows.find((row) => row.kind === "REQUEST_STALLED");
     const approver = rows.find((row) => row.kind === "REQUEST_WAITING");
     assert.ok(filer && approver, "both kinds were raised");
-    assert.equal(filer.employeeId, filerId);
-    assert.equal(approver.employeeId, approverId);
+    assert.equal(filer.userId, filerLogin);
+    assert.equal(approver.userId, approverLogin);
     assert.equal(filer.daysWaited, 3);
   });
 
