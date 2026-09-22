@@ -7125,13 +7125,22 @@ nào chứa câu chữ**: nó giữ `kind` là enum sáu giá trị, cộng vài
 dụng, service worker cho màn khoá — và cả hai lấy chữ từ catalogue. Không có chỗ nào để lỡ tay
 nhét số tiền vào, vì không có cột nào nhận được một số tiền.
 
-**Ba kênh, bật tắt theo từng loại.**
+**Hai kênh, bật tắt theo từng loại.**
 
 | Kênh | Mặc định | Ghi chú |
 |---|---|---|
 | Trong ứng dụng | **bật** cả sáu loại | Rẻ, không làm phiền, và là nơi xem lại |
 | Đẩy tới máy | **bật** cả sáu loại | Đây là thứ khiến cổng được mở |
-| Email | **tắt** cả sáu loại | Phiếu lương đã có đường thư riêng ở §9.11; bật thêm ở đây là gửi hai lần cùng một tin |
+
+**Email nằm trong `NoticeChannel` nhưng không phải một ô để bật.** Thư đã có đường riêng và đi
+theo việc chứ không theo thông báo: phiếu lương ở §9.11, liên kết mật khẩu ở §9.4. Dựng thêm
+một kênh thư ở đây là **gửi hai lần cùng một tin**, và vì nó chở đúng những `kind` kia nên bản
+thứ hai không nói thêm được gì. Giá trị vẫn ở lại trong enum để các dòng đã ghi còn đọc được,
+nhưng **bảng bật tắt chỉ chào hai kênh có người giao**.
+
+**Một ô bật tắt không giao được thứ gì thì tệ hơn là không có ô ấy.** Người bật nó lên không
+nhận được gì và cũng không được báo là sẽ không nhận gì — đúng loại sai âm thầm mà §9.4 gọi tên
+ở chỗ vai mặc định. Nên số kênh bảng ấy chào phải bằng đúng số kênh có đường giao thật.
 
 **Một thông báo hỏng không được làm hỏng việc nó mô tả.** Duyệt một đơn xong mà không gửi được
 thông báo thì đơn **vẫn đã duyệt** — cùng luật với `AuditService`: mất lời nhắn còn hơn huỷ việc
