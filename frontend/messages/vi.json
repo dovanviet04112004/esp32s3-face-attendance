@@ -524,6 +524,9 @@
     "askProfileHint": "Email, điện thoại, tài khoản nhận lương — gửi yêu cầu, nhân sự duyệt"
   },
   "payroll": {
+    "payDate": "Ngày trả",
+    "year": "Năm",
+    "month": "Tháng",
     "title": "Phiếu lương",
     "lead": "Từng khoản một dòng, cộng và trừ tách riêng.",
     "myTitle": "Phiếu lương của tôi",

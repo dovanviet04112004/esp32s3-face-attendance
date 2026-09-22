@@ -524,6 +524,9 @@
     "askProfileHint": "Email, phone, where your pay goes — ask, and HR answers"
   },
   "payroll": {
+    "payDate": "Pay date",
+    "year": "Year",
+    "month": "Month",
     "title": "Payslip",
     "lead": "One row per component, earnings and deductions apart.",
     "myTitle": "My payslips",

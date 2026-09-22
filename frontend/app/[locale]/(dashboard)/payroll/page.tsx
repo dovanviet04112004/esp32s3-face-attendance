@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { StatePill, type Tone } from "@/components/ui/pill";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { dayOnly } from "@/lib/format";
 
 interface Period {
   id: string;
@@ -34,6 +35,7 @@ const STATE_KEY: Record<Period["state"], "stateOPEN" | "stateLOCKED" | "statePAI
 
 export default function PayrollPage() {
   const t = useTranslations("payroll");
+  const format = useFormatter();
   const common = useTranslations("common");
   const role = useSession((s) => s.role);
   const cache = useQueryClient();
@@ -74,8 +76,9 @@ export default function PayrollPage() {
     },
     {
       id: "payDate",
-      header: t("period"),
-      cell: (row) => row.payDate?.slice(0, 10) ?? common("empty"),
+      header: t("payDate"),
+      cell: (row) =>
+        row.payDate ? format.dateTime(dayOnly(row.payDate), "day") : common("empty"),
     },
   ];
 
@@ -92,24 +95,34 @@ export default function PayrollPage() {
             open.mutate();
           }}
         >
-          <Input
-            aria-label={t("period")}
-            type="number"
-            min={2000}
-            max={2100}
-            value={year}
-            onChange={(event) => setYear(event.target.value)}
-            className="w-28"
-          />
-          <Input
-            aria-label={t("period")}
-            type="number"
-            min={1}
-            max={12}
-            value={month}
-            onChange={(event) => setMonth(event.target.value)}
-            className="w-20"
-          />
+          <div className="w-28">
+            <label className="block text-xs text-(--color-muted)" htmlFor="runYear">
+              {t("year")}
+            </label>
+            <Input
+              id="runYear"
+              type="number"
+              min={2000}
+              max={2100}
+              value={year}
+              onChange={(event) => setYear(event.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div className="w-20">
+            <label className="block text-xs text-(--color-muted)" htmlFor="runMonth">
+              {t("month")}
+            </label>
+            <Input
+              id="runMonth"
+              type="number"
+              min={1}
+              max={12}
+              value={month}
+              onChange={(event) => setMonth(event.target.value)}
+              className="mt-1"
+            />
+          </div>
           <Button type="submit" disabled={open.isPending}>
             {open.isPending ? common("saving") : t("newRun")}
           </Button>
