@@ -1201,7 +1201,11 @@ static void touch_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(resting ? TOUCH_REST_POLL_MS : TOUCH_POLL_MS));
         drv_touch_point_t points[TOUCH_POINTS];
         uint8_t count = 0;
-        if (drv_touch_read(points, TOUCH_POINTS, &count) != ESP_OK || count == 0) {
+        // A failed read says nothing about the finger: reporting a lift types a key twice.
+        if (drv_touch_read(points, TOUCH_POINTS, &count) != ESP_OK) {
+            continue;
+        }
+        if (count == 0) {
             ui_kiosk_on_touch(false, 0, 0);
             continue;
         }
