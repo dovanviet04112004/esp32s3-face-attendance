@@ -30,12 +30,17 @@ PIXEL_SPAN = 127.5
 # The deployed embedding output, which is what normalized_int8 reads.
 EMBED_SCALE = 0.038641058
 EMBED_ZERO = 8
+# mobilefacenet_s8.espdl, FRBench MobileFaceNet-ECA: 112 input, both ends at exponent -7.
+ESPDL_SIZE = 112
+ESPDL_INPUT_SCALE = 2.0**-7
+ESPDL_EMBED_SCALE = 2.0**-7
 
 
-def quantized_pixels(image: np.ndarray) -> np.ndarray:
+def quantized_pixels(image: np.ndarray, scale: float = INPUT_SCALE,
+                     zero: int = INPUT_ZERO) -> np.ndarray:
     """The int8 block align_face writes, by the formula in pixels.cpp Quantizer."""
-    scaled = (image.astype(np.float32) - PIXEL_MEAN) / PIXEL_SPAN / np.float32(INPUT_SCALE)
-    return np.clip(np.rint(scaled) + INPUT_ZERO, -128, 127).astype(np.int8)
+    scaled = (image.astype(np.float32) - PIXEL_MEAN) / PIXEL_SPAN / np.float32(scale)
+    return np.clip(np.rint(scaled) + zero, -128, 127).astype(np.int8)
 
 
 def landmark_cases() -> list[np.ndarray]:
@@ -58,39 +63,43 @@ def emit_align(root: Path, rng: np.random.Generator) -> int:
     # rather than an rgb888 frame the board never sees.
     words = rng.integers(0, 1 << 16, FRAME_HW, dtype=np.uint16)
     frame = unpack_rgb565(words).astype(np.uint8)
-    cases = landmark_cases()
-    for index, landmarks in enumerate(cases):
-        matrix = similarity_transform(landmarks, reference_landmarks(ALIGNED_SIZE))
+    # The ESP-DL cases reuse the frame and landmarks at the 112 side, with no draw of their own.
+    cases = [(landmarks, ALIGNED_SIZE, INPUT_SCALE, INPUT_ZERO) for landmarks in landmark_cases()]
+    cases += [(landmarks, ESPDL_SIZE, ESPDL_INPUT_SCALE, 0) for landmarks in landmark_cases()]
+    for index, (landmarks, size, scale, zero) in enumerate(cases):
+        matrix = similarity_transform(landmarks, reference_landmarks(size))
         write_case(
             root / "align" / f"case_{index:03d}.gold",
             {
                 "frame": words,
                 "frame_hw": np.array(FRAME_HW, dtype=np.int32),
                 "landmarks": landmarks.reshape(-1).astype(np.float32),
-                "quant": np.array([INPUT_SCALE, float(INPUT_ZERO)], dtype=np.float32),
+                "quant": np.array([scale, float(zero)], dtype=np.float32),
                 "matrix": matrix.reshape(-1).astype(np.float32),
-                "aligned": quantized_pixels(align(frame, landmarks, ALIGNED_SIZE)),
+                "aligned": quantized_pixels(align(frame, landmarks, size), scale, zero),
             },
         )
     return len(cases)
 
 
-def emit_l2norm(root: Path, rng: np.random.Generator) -> int:
+def emit_l2norm(root: Path, rng: np.random.Generator, espdl_rng: np.random.Generator) -> int:
     """Raw int8 embeddings in, the unit int8 vector and its scale out."""
     raws = [
-        rng.integers(-128, 128, EMBEDDING).astype(np.int8),
-        np.full(EMBEDDING, EMBED_ZERO, dtype=np.int8),
-        np.full(EMBEDDING, 127, dtype=np.int8),
-        (rng.integers(-4, 5, EMBEDDING) + EMBED_ZERO).astype(np.int8),
+        (rng.integers(-128, 128, EMBEDDING).astype(np.int8), EMBED_SCALE, EMBED_ZERO),
+        (np.full(EMBEDDING, EMBED_ZERO, dtype=np.int8), EMBED_SCALE, EMBED_ZERO),
+        (np.full(EMBEDDING, 127, dtype=np.int8), EMBED_SCALE, EMBED_ZERO),
+        ((rng.integers(-4, 5, EMBEDDING) + EMBED_ZERO).astype(np.int8), EMBED_SCALE, EMBED_ZERO),
+        (espdl_rng.integers(-128, 128, EMBEDDING).astype(np.int8), ESPDL_EMBED_SCALE, 0),
+        (np.zeros(EMBEDDING, dtype=np.int8), ESPDL_EMBED_SCALE, 0),
     ]
-    for index, raw in enumerate(raws):
-        dequantized = (raw.astype(np.float32) - EMBED_ZERO) * np.float32(EMBED_SCALE)
+    for index, (raw, embed_scale, embed_zero) in enumerate(raws):
+        dequantized = (raw.astype(np.float32) - embed_zero) * np.float32(embed_scale)
         unit, scale = quantize(l2_normalize(dequantized).astype(np.float32))
         write_case(
             root / "l2norm" / f"case_{index:03d}.gold",
             {
                 "raw": raw,
-                "quant": np.array([EMBED_SCALE, float(EMBED_ZERO)], dtype=np.float32),
+                "quant": np.array([embed_scale, float(embed_zero)], dtype=np.float32),
                 "unit": unit,
                 "scale": np.array([scale], dtype=np.float32),
             },
@@ -128,9 +137,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     rng = np.random.default_rng(args.seed)
+    espdl_rng = np.random.default_rng(args.seed + 1)
     written = {
         "align": emit_align(args.out, rng),
-        "l2norm": emit_l2norm(args.out, rng),
+        "l2norm": emit_l2norm(args.out, rng, espdl_rng),
         "cosine": emit_cosine(args.out, rng),
     }
     for name, count in written.items():
