@@ -8,6 +8,7 @@
 #   ./scripts/50_pack_and_flash.sh                       # pack only
 #   ./scripts/50_pack_and_flash.sh --port /dev/ttyACM0   # pack, then write models_0
 #   ./scripts/50_pack_and_flash.sh --table ../firmware/partitions.prod.csv
+#   ./scripts/50_pack_and_flash.sh --lock <dir>/models.lock.json --models-dir <dir>   # a set under test
 
 set -uo pipefail
 
@@ -18,6 +19,8 @@ IMAGE="${REPO_ROOT}/firmware/build/models.bin"
 TABLE="${REPO_ROOT}/firmware/partitions.dev.csv"
 PARTITION="models_0"
 PORT=""
+LOCK="${REPO_ROOT}/contracts/models.lock.json"
+MODELS_DIR="${REPO_ROOT}/firmware/models"
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m!!\033[0m %s\n' "$*" >&2; }
@@ -28,16 +31,18 @@ while [[ $# -gt 0 ]]; do
         --table)     TABLE="$2"; shift 2 ;;
         --partition) PARTITION="$2"; shift 2 ;;
         --out)       IMAGE="$2"; shift 2 ;;
+        --lock)       LOCK="$2"; shift 2 ;;
+        --models-dir) MODELS_DIR="$2"; shift 2 ;;
         *) warn "unknown argument $1"; exit 1 ;;
     esac
 done
 
 [[ -x "${PY}" ]] || { warn "no venv at ${PY}; run 'uv sync --extra cu130 --extra export' in ml/"; exit 1; }
 
-log "packing ${PARTITION} from contracts/models.lock.json"
+log "packing ${PARTITION} from ${LOCK}"
 "${PY}" -m facepipe.export.pack_models_partition \
-    --lock "${REPO_ROOT}/contracts/models.lock.json" \
-    --models-dir "${REPO_ROOT}/firmware/models" \
+    --lock "${LOCK}" \
+    --models-dir "${MODELS_DIR}" \
     --partitions "${TABLE}" \
     --partition "${PARTITION}" \
     --out "${IMAGE}" || exit 1

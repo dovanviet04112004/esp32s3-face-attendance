@@ -26,7 +26,9 @@ ENTRY_BYTES = 64
 ENTRY_SLOTS = 3
 ENTRY_FORMAT = "<16sII32sHHI"
 CRC_OFFSET = 252
-PAYLOAD_ALIGN = 16                        # esp-nn reads weights aligned
+PAYLOAD_ALIGN = 16                        # esp-nn reads weights aligned; ESP-DL copies otherwise
+# Each runtime is told apart by its file's own magic, never by a header field (KEHOACH 6.2.2).
+PAYLOAD_MAGIC = {"tflm": (4, b"TFL3"), "espdl": (0, b"EDL2")}
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,15 @@ class Model:
     in_h: int
     in_w: int
     arena_hint: int
+
+
+def payload_runtime(path: Path) -> str:
+    """Which runtime a model file is for, from the magic the file itself carries."""
+    head = path.read_bytes()[:8]
+    for runtime, (offset, magic) in PAYLOAD_MAGIC.items():
+        if head[offset:offset + len(magic)] == magic:
+            return runtime
+    raise SystemExit(f"{path.name}: neither a .tflite nor a plain .espdl")
 
 
 def sha256_of(path: Path) -> str:
@@ -88,6 +99,9 @@ def deployed(lock_path: Path, models_dir: Path) -> list[Model]:
                             meta["arena_hint"]))
     if not models:
         raise SystemExit(f"{lock_path} deploys nothing")
+    runtimes = {model.path.name: payload_runtime(model.path) for model in models}
+    if len(set(runtimes.values())) != 1:
+        raise SystemExit(f"{lock_path}: one image holds one runtime, got {runtimes}")
     return models
 
 
@@ -132,7 +146,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{model.entry_name:8s} {model.path.name:28s} {model.in_h}x{model.in_w}  "
               f"{model.path.stat().st_size / 1024.0:8.1f} KB  arena {model.arena_hint}")
     print(f"{args.out}  {len(image) / 1024.0:.1f} KB of {capacity / 1024.0:.0f} KB "
-          f"{args.partition}, {len(models)} of {ENTRY_SLOTS} branches")
+          f"{args.partition}, {len(models)} of {ENTRY_SLOTS} branches, "
+          f"runtime {payload_runtime(models[0].path)}")
     return 0
 
 

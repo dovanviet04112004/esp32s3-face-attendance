@@ -15,6 +15,7 @@ BRANCH_PACKAGE = {
     "minifasnet_v2": "facepipe.tasks.antispoof",
     "yunet": "facepipe.tasks.detection",
     "mobilefacenet": "facepipe.tasks.recognition",
+    "mobilefacenet_eca": "facepipe.tasks.recognition",
 }
 
 

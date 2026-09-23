@@ -9,6 +9,10 @@
 # TFLite quantises activations per tensor, and on the anti-spoof branch that trade
 # costs 53% of EER (measurements/antispoof 32).
 #
+# The ESP-DL rung (ESPDL=1) quantises the same run under that runtime's rules, with
+# equalisation on (KEHOACH 3.7). TFLITE=0 skips the TFLite rungs for a run that
+# only ships on ESP-DL, such as one whose PReLU esp-nn has no kernel for.
+#
 # Which branch a run belongs to comes from its own frozen config, so one
 # invocation can walk runs from all three.
 #
@@ -16,6 +20,7 @@
 #   ./scripts/30_quantize.sh <run-directory> [more run directories ...]
 #   BENCH_LIMIT=0 ./scripts/30_quantize.sh <run>      # score the whole split
 #   SCORE=0 ./scripts/30_quantize.sh <run>            # export only, do not score
+#   TFLITE=0 ./scripts/30_quantize.sh <run>           # the ESP-DL rung alone
 
 set -uo pipefail
 
@@ -25,6 +30,10 @@ BENCH_LIMIT="${BENCH_LIMIT:-4000}"
 CALIB_SAMPLES="${CALIB_SAMPLES:-300}"
 SCORE="${SCORE:-1}"
 CLE="${CLE:-0}"
+TFLITE="${TFLITE:-1}"
+ESPDL="${ESPDL:-1}"
+# Empty reads dl_module_creator.hpp from the firmware's managed esp-dl.
+ESPDL_CREATOR="${ESPDL_CREATOR:-}"
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m!!\033[0m %s\n' "$*" >&2; }
@@ -32,11 +41,20 @@ warn() { printf '\033[33m!!\033[0m %s\n' "$*" >&2; }
 [[ -x "${PY}" ]] || { warn "no venv at ${PY}; run 'uv sync --extra cu130 --extra export' in ml/"; exit 1; }
 [[ $# -gt 0 ]] || { warn "usage: $0 <run-directory> [...]"; exit 1; }
 
-"${PY}" -c "import onnx2tf, tensorflow" 2>/dev/null || {
-    warn "the export extra is missing; run:"
-    warn "  uv sync --extra cu130 --extra export"
-    exit 1
-}
+if [[ "${TFLITE}" == "1" ]]; then
+    "${PY}" -c "import onnx2tf, tensorflow" 2>/dev/null || {
+        warn "the export extra is missing; run:"
+        warn "  uv sync --extra cu130 --extra export --extra espdl"
+        exit 1
+    }
+fi
+if [[ "${ESPDL}" == "1" ]]; then
+    "${PY}" -c "import esp_ppq" >/dev/null 2>&1 || {
+        warn "the espdl extra is missing; run:"
+        warn "  uv sync --extra cu130 --extra export --extra espdl"
+        exit 1
+    }
+fi
 
 read_branch() {
     "${PY}" -c '
@@ -58,6 +76,11 @@ ladder() {
     [[ -n "${branch}" ]] || { warn "cannot tell which branch ${run} belongs to"; return 1; }
     art="${ML_ROOT}/artifacts/${branch}"
     log "${tag}: branch ${branch}, model ${model}"
+
+    if [[ "${ESPDL}" == "1" ]]; then
+        espdl_rung "${run}" "${tag}" "${branch}" "${model}" "${art}" || return 1
+    fi
+    [[ "${TFLITE}" == "1" ]] || return 0
 
     log "${tag}: torch to onnx"
     "${PY}" -m facepipe.export.to_onnx --run "${run}" \
@@ -96,6 +119,22 @@ ladder() {
         "${PY}" "${ML_ROOT}/bench/host_bench.py" \
             --model "${art}/tflite/${file}.tflite" --run "${run}" --limit "${BENCH_LIMIT}"
     done
+}
+
+espdl_rung() {
+    local run="$1" tag="$2" branch="$3" model="$4" art="$5"
+    local out="${art}/espdl/${model}_s8_${tag}.espdl"
+    log "${tag}: Q1 on ESP-DL, ESP-PPQ with equalisation"
+    "${PY}" -m facepipe.compress.quant.ptq_espdl --run "${run}" --out "${out}" \
+        --work "${art}/espdl/work_${tag}" --samples "${CALIB_SAMPLES}" || return 1
+    log "${tag}: operators, and whether ESP-DL has a module for each"
+    local creator=()
+    [[ -n "${ESPDL_CREATOR}" ]] && creator=(--creator "${ESPDL_CREATOR}")
+    "${PY}" -m facepipe.export.espdl_op_check --model "${out}" "${creator[@]}" \
+        --out "${art}/reports/espdl_op_check_${tag}.txt" || return 1
+    [[ "${SCORE}" == "1" ]] || return 0
+    log "${tag}: scoring ${out##*/}"
+    "${PY}" "${ML_ROOT}/bench/host_bench.py" --runtime espdl --model "${out}" --run "${run}"
 }
 
 failed=0
