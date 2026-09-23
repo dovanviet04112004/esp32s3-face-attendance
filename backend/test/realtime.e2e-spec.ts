@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
@@ -12,28 +10,11 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { publishAsKiosk } from "./fixtures.js";
 
 const DEVICE_ID = "kiosk-e2e-feed";
-const DASHBOARD = "http://127.0.0.1:18083/api/v5";
 const SETTLE_MS = 1500;
 const RANGE = { from: "2020-01-01T00:00:00.000Z", to: "2020-01-02T00:00:00.000Z" };
-
-async function publishAsKiosk(topic: string, payload: unknown): Promise<void> {
-  const env = readFileSync(resolve(process.cwd(), "../deploy/.env"), "utf8");
-  const password = /^EMQX_DASHBOARD_PASSWORD=(.*)$/m.exec(env)?.[1]?.trim() ?? "";
-  const auth = await fetch(`${DASHBOARD}/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "admin", password }),
-  });
-  const { token } = (await auth.json()) as { token: string };
-  const sent = await fetch(`${DASHBOARD}/publish`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ topic, qos: 1, payload: JSON.stringify(payload) }),
-  });
-  assert.ok(sent.ok, `broker refused the test publish: ${sent.status}`);
-}
 
 describe("realtime and reports (e2e)", () => {
   let app: INestApplication;

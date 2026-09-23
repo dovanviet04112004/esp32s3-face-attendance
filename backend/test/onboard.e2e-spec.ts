@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { paidLeaveType } from "./fixtures.js";
 
 const HIRE = "E2EON01";
 const FROM_NEW_YEAR = "E2EON02";
@@ -126,10 +127,7 @@ describe("onboarding (e2e)", () => {
 
     // Onboarding seeds a balance for every active type, so the claims below
     // name one rather than taking whichever row the table hands back.
-    const paid = await db.leaveType.findFirstOrThrow({
-      where: { active: true, paid: true, daysPerYear: { gt: 0 } },
-      orderBy: { code: "asc" },
-    });
+    const paid = await paidLeaveType(db);
     paidTypeId = paid.id;
     paidCode = paid.code;
     fullYear = Number(paid.daysPerYear);

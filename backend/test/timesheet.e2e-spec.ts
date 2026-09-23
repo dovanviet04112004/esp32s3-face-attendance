@@ -11,6 +11,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
+import { paidLeaveType } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 // A Monday the seed never touches, inside the partition range, with no holiday
@@ -106,7 +107,7 @@ describe("timesheet leave (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     adminToken = signedIn.body.accessToken;
 
-    const type = await db.leaveType.findFirstOrThrow({ where: { active: true, paid: true } });
+    const type = await paidLeaveType(db);
     leaveTypeId = type.id;
 
     const template = await db.employee.findFirstOrThrow({ where: { active: true } });

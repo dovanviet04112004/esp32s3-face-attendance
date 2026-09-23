@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { paidLeaveType } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const PASSWORD = "kiosk-e2e-password";
@@ -65,7 +66,7 @@ describe("filed offline (e2e)", () => {
     await sweep();
 
     const template = await db.employee.findFirstOrThrow({ where: { active: true } });
-    const annual = await db.leaveType.findFirstOrThrow({ where: { paid: true } });
+    const annual = await paidLeaveType(db);
     leaveTypeId = annual.id;
 
     for (const [code, email] of [

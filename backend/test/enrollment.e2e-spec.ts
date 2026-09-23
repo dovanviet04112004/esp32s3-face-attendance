@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { after, before, describe, it, mock } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
@@ -17,35 +15,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { EnrollmentService } from "../src/modules/enrollment/enrollment.service.js";
 import { openTemplate } from "../src/modules/enrollment/template-crypto.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
-
-const DASHBOARD = "http://127.0.0.1:18083/api/v5";
-
-/** Publish as the kiosk would. The acl denies a service account every up topic
- *  on purpose, so the test borrows the broker's admin api rather than asking
- *  production code for a back door it should not have.
- */
-async function publishAsKiosk(deviceId: string, payload: unknown): Promise<void> {
-  // Anchored on the working directory: the source sits a level above the
-  // compiled copy, so a path relative to the module resolves differently.
-  const env = readFileSync(resolve(process.cwd(), "../deploy/.env"), "utf8");
-  const password = /^EMQX_DASHBOARD_PASSWORD=(.*)$/m.exec(env)?.[1]?.trim() ?? "";
-  const auth = await fetch(`${DASHBOARD}/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "admin", password }),
-  });
-  const { token } = (await auth.json()) as { token: string };
-  const sent = await fetch(`${DASHBOARD}/publish`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({
-      topic: `kiosk/${deviceId}/up/enroll`,
-      qos: 1,
-      payload: JSON.stringify(payload),
-    }),
-  });
-  assert.ok(sent.ok, `broker refused the test publish: ${sent.status}`);
-}
+import { publishAsKiosk } from "./fixtures.js";
 
 const DEVICE_ID = "kiosk-e2e-enroll";
 const CODE = "NV9100";
@@ -159,7 +129,7 @@ describe("enrollment and releases (e2e)", () => {
   }
 
   it("stores what the kiosk reports, sealed rather than in the clear", async () => {
-    await publishAsKiosk(DEVICE_ID, {
+    await publishAsKiosk(`kiosk/${DEVICE_ID}/up/enroll`, {
       op: "UPSERT",
       employeeId,
       templateIdx: 0,

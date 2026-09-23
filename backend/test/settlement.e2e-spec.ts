@@ -11,6 +11,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
 import { PolicyService } from "../src/modules/policy/policy.service.js";
+import { paidLeaveType } from "./fixtures.js";
 
 const YEAR = 2027;
 const MONTH = 6;
@@ -131,7 +132,7 @@ describe("final settlement (e2e)", () => {
       });
     }
 
-    const annual = await db.leaveType.findFirstOrThrow({ where: { paid: true } });
+    const annual = await paidLeaveType(db);
     await db.leaveBalance.create({
       data: {
         employeeId: leaverId,

@@ -10,6 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { paidLeaveType } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const PASSWORD = "kiosk-e2e-password";
@@ -83,7 +84,7 @@ describe("leave balance (e2e)", () => {
       .send({ email: "admin@kiosk.local", password: env.SEED_ADMIN_PASSWORD ?? "" });
     assert.equal(asAdmin.status, 200, "admin could not sign in");
 
-    const type = await db.leaveType.findFirstOrThrow({ where: { active: true, paid: true } });
+    const type = await paidLeaveType(db);
     leaveTypeId = type.id;
 
     const template = await db.employee.findFirstOrThrow({ where: { active: true } });
