@@ -27,9 +27,42 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports: ["5432:5432"]
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports: ["6379:6379"]
+      # Plain 1883 with no authenticator: the suites run the real MQTT client,
+      # and a publish with no broker behind it would wait out the test timeout.
+      emqx:
+        image: emqx/emqx:6.3.1
+        options: >-
+          --health-cmd "emqx ctl status"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports: ["1883:1883"]
 
+    # Throwaway values for a database that lives as long as the job; every
+    # name validateEnv requires without a default is here (config/env.schema.ts).
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://ci:ci@localhost:5432/attendance_ci
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-only-access-secret-0123456789abcdef
+      JWT_REFRESH_SECRET: ci-only-refresh-secret-0123456789abcdef
+      JWT_DEVICE_SECRET: ci-only-device-secret-0123456789abcdef
+      DEVICE_BOOTSTRAP_TOKEN: ci-only-bootstrap-token
+      TEMPLATE_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      SEED_ADMIN_PASSWORD: ci-only-admin-password
+      CORS_ORIGIN: http://localhost:3001
+      APP_PUBLIC_URL: http://localhost:3001
+      MQTT_URL: mqtt://localhost:1883
+      MQTT_USERNAME: ci
+      MQTT_PASSWORD: ci
 
     steps:
       - uses: actions/checkout@v4
@@ -55,9 +88,19 @@ jobs:
         if: steps.guard.outputs.ready == 'true'
         run: npm ci
 
+      # Neither npm ci nor migrate deploy generates the client that tsc imports.
+      - name: Generate Prisma client
+        if: steps.guard.outputs.ready == 'true'
+        run: npx prisma generate
+
       - name: Prisma migrate
         if: steps.guard.outputs.ready == 'true'
         run: npx prisma migrate deploy
+
+      # Every suite signs in as the seed admin (prisma/seed.ts).
+      - name: Seed
+        if: steps.guard.outputs.ready == 'true'
+        run: npx prisma db seed
 
       - name: Typecheck
         if: steps.guard.outputs.ready == 'true'
