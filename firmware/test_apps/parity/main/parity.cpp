@@ -13,7 +13,7 @@
 #include "antispoof/spoof_model.hpp"
 #include "detection/detect_model.hpp"
 #include "recognition/recog_model.hpp"
-#include "tflite_model.hpp"
+#include "tensor_view.hpp"
 
 #define GOLD_ROOT "/lfs"
 #define GOLD_MAGIC 0x444C4F47u
@@ -55,34 +55,6 @@ struct GoldCase {
     uint8_t *blob;
     GoldTensor tensors[MAX_TENSORS];
     size_t count;
-};
-
-// TfLiteIntArray ends in a flexible member, so the shape needs storage of its own.
-union DimsStore {
-    TfLiteIntArray array;
-    struct {
-        int size;
-        int data[MAX_DIMS];
-    } raw;
-};
-
-class GoldenModel final : public ai::ITfliteModel {
-public:
-    GoldenModel(TfLiteTensor *input, TfLiteTensor *outputs, size_t count) noexcept
-        : input_(input), outputs_(outputs), count_(count)
-    {
-    }
-    esp_err_t init(const tflite::Model *, ai::Arena &) noexcept override { return ESP_OK; }
-    TfLiteTensor *input(int) noexcept override { return input_; }
-    TfLiteTensor *output(int index) noexcept override { return &outputs_[index]; }
-    size_t output_count() const noexcept override { return count_; }
-    esp_err_t invoke() noexcept override { return ESP_OK; }
-    const char *name() const noexcept override { return "golden"; }
-
-private:
-    TfLiteTensor *input_;
-    TfLiteTensor *outputs_;
-    size_t count_;
 };
 
 void mount_once()
@@ -163,24 +135,18 @@ int32_t first_int(const GoldCase &gold, const char *name)
     return *reinterpret_cast<const int32_t *>(tensor->data);
 }
 
-TfLiteTensor quantized(DimsStore &dims, int h, int w, int c, void *data, size_t bytes, float scale,
-                       int zero_point)
+ai::TensorView quantized(int h, int w, int c, void *data, size_t bytes, float scale, int zero_point)
 {
-    dims.raw.size = c > 0 ? 4 : 2;
-    dims.raw.data[0] = 1;
-    dims.raw.data[1] = h;
-    dims.raw.data[2] = c > 0 ? w : 0;
-    dims.raw.data[3] = c;
-    if (c <= 0) {
-        dims.raw.data[1] = w;
-    }
-    TfLiteTensor tensor = {};
-    tensor.type = kTfLiteInt8;
-    tensor.dims = &dims.array;
-    tensor.params.scale = scale;
-    tensor.params.zero_point = zero_point;
+    ai::TensorView tensor;
+    tensor.rank = c > 0 ? 4 : 2;
+    tensor.dims[0] = 1;
+    tensor.dims[1] = c > 0 ? h : w;
+    tensor.dims[2] = c > 0 ? w : 0;
+    tensor.dims[3] = c;
+    tensor.scale = scale;
+    tensor.zero_point = zero_point;
     tensor.bytes = bytes;
-    tensor.data.int8 = static_cast<int8_t *>(data);
+    tensor.data = static_cast<int8_t *>(data);
     return tensor;
 }
 
@@ -297,23 +263,21 @@ TEST_CASE("decode turns the golden head tensors into the golden faces", "[parity
         GoldCase gold;
         TEST_ASSERT_TRUE_MESSAGE(load_case(path, gold), path);
 
-        DimsStore input_dims;
         int8_t pixel = 0;
-        TfLiteTensor input = quantized(input_dims, DETECT_H, DETECT_W, 3, &pixel, 1, 1.0f, 0);
-        DimsStore head_dims[HEADS];
-        TfLiteTensor heads[HEADS];
+        const ai::TensorView input = quantized(DETECT_H, DETECT_W, 3, &pixel, 1, 1.0f, 0);
+        ai::TensorView heads[HEADS];
         const float *quant = floats(gold, "quant");
         for (size_t i = 0; i < HEADS; ++i) {
             const GoldTensor *tensor = find(gold, kNames[i]);
             TEST_ASSERT_NOT_NULL_MESSAGE(tensor, kNames[i]);
             const int stride = kStrides[i / LEVELS];
-            heads[i] = quantized(head_dims[i], DETECT_H / stride, DETECT_W / stride,
-                                 static_cast<int>(tensor->dims[2]), const_cast<uint8_t *>(tensor->data),
-                                 tensor->nbytes, quant[2 * i], static_cast<int>(quant[2 * i + 1]));
+            heads[i] = quantized(DETECT_H / stride, DETECT_W / stride, static_cast<int>(tensor->dims[2]),
+                                 const_cast<uint8_t *>(tensor->data), tensor->nbytes, quant[2 * i],
+                                 static_cast<int>(quant[2 * i + 1]));
         }
-        GoldenModel model(&input, heads, HEADS);
         ai_engine_face_t faces[FACE_CAP];
-        const size_t found = ai::decode_faces(model, floats(gold, "min_score")[0], faces, FACE_CAP);
+        const size_t found =
+            ai::decode_faces(input, heads, HEADS, floats(gold, "min_score")[0], faces, FACE_CAP);
         printf("  case %u: board %u face(s), host %d\n", static_cast<unsigned>(c),
                static_cast<unsigned>(found), static_cast<int>(first_int(gold, "found")));
         TEST_ASSERT_EQUAL_INT32(first_int(gold, "found"), static_cast<int32_t>(found));
@@ -348,10 +312,9 @@ TEST_CASE("the anti-spoof crop matches the golden block", "[parity]")
         ai_engine_frame_t frame = { reinterpret_cast<const uint16_t *>(words->data),
                                     static_cast<int>(words->dims[1]), static_cast<int>(words->dims[0]) };
         const float *quant = floats(gold, "quant");
-        DimsStore dims;
-        TfLiteTensor input = quantized(dims, SPOOF_SIDE, SPOOF_SIDE, 3, block, SPOOF_SIDE * SPOOF_SIDE * 3,
-                                       quant[0], static_cast<int>(quant[1]));
-        TEST_ASSERT_EQUAL(ESP_OK, ai::crop_face(frame, floats(gold, "box"), &input, block, input.bytes));
+        const ai::TensorView input = quantized(SPOOF_SIDE, SPOOF_SIDE, 3, block, SPOOF_SIDE * SPOOF_SIDE * 3,
+                                               quant[0], static_cast<int>(quant[1]));
+        TEST_ASSERT_EQUAL(ESP_OK, ai::crop_face(frame, floats(gold, "box"), input, block, input.bytes));
         const GoldTensor *want = find(gold, "cropped");
         TEST_ASSERT_NOT_NULL(want);
         const int delta = compare_int8(block, reinterpret_cast<const int8_t *>(want->data), want->nbytes, "cropped");
@@ -381,11 +344,9 @@ TEST_CASE("align matches the golden block", "[parity]")
         ai_engine_frame_t frame = { reinterpret_cast<const uint16_t *>(words->data),
                                     static_cast<int>(words->dims[1]), static_cast<int>(words->dims[0]) };
         const float *quant = floats(gold, "quant");
-        DimsStore dims;
-        TfLiteTensor input = quantized(dims, ALIGN_SIDE, ALIGN_SIDE, 3, block, ALIGN_SIDE * ALIGN_SIDE * 3,
-                                       quant[0], static_cast<int>(quant[1]));
-        TEST_ASSERT_EQUAL(ESP_OK,
-                          ai::align_face(frame, floats(gold, "landmarks"), &input, block, input.bytes));
+        const ai::TensorView input = quantized(ALIGN_SIDE, ALIGN_SIDE, 3, block, ALIGN_SIDE * ALIGN_SIDE * 3,
+                                               quant[0], static_cast<int>(quant[1]));
+        TEST_ASSERT_EQUAL(ESP_OK, ai::align_face(frame, floats(gold, "landmarks"), input, block, input.bytes));
         const GoldTensor *want = find(gold, "aligned");
         TEST_ASSERT_NOT_NULL(want);
         const int delta = compare_int8(block, reinterpret_cast<const int8_t *>(want->data), want->nbytes, "aligned");
@@ -413,12 +374,11 @@ TEST_CASE("the unit embedding matches the golden vector", "[parity]")
         const GoldTensor *raw = find(gold, "raw");
         TEST_ASSERT_NOT_NULL(raw);
         const float *quant = floats(gold, "quant");
-        DimsStore dims;
-        TfLiteTensor tensor = quantized(dims, 1, EMBED_DIM, 0, const_cast<uint8_t *>(raw->data), EMBED_DIM,
-                                        quant[0], static_cast<int>(quant[1]));
+        const ai::TensorView tensor = quantized(1, EMBED_DIM, 0, const_cast<uint8_t *>(raw->data), EMBED_DIM,
+                                                quant[0], static_cast<int>(quant[1]));
         int8_t unit[EMBED_DIM];
         float scale = 0.0f;
-        TEST_ASSERT_EQUAL_UINT32(EMBED_DIM, ai::normalized_int8(&tensor, unit, sizeof(unit), &scale));
+        TEST_ASSERT_EQUAL_UINT32(EMBED_DIM, ai::normalized_int8(tensor, unit, sizeof(unit), &scale));
         const GoldTensor *want = find(gold, "unit");
         TEST_ASSERT_NOT_NULL(want);
         const int delta = compare_int8(unit, reinterpret_cast<const int8_t *>(want->data), EMBED_DIM, "unit");

@@ -7,7 +7,7 @@
 #include <stdint.h>
 
 #include "ai_engine.h"
-#include "tensorflow/lite/core/c/common.h"
+#include "tensor_view.hpp"
 
 namespace ai {
 
@@ -17,7 +17,7 @@ constexpr int kByteLevels = 256;
 /** One channel's 0..255 value to the tensor's int8 after (v - mean) / span. */
 class Quantizer {
 public:
-    Quantizer(const TfLiteTensor *tensor, float mean, float span) noexcept;
+    Quantizer(const TensorView &tensor, float mean, float span) noexcept;
     int8_t operator()(float value) const noexcept;
     int8_t byte(unsigned value) const noexcept { return table_[value]; }
 

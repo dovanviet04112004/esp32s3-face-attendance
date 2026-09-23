@@ -63,17 +63,17 @@ bool fit(const float landmarks[2 * kLandmarks], float size, Similarity &out)
 
 }  // namespace
 
-esp_err_t align_face(const ai_engine_frame_t &frame, const float landmarks[10], const TfLiteTensor *input,
+esp_err_t align_face(const ai_engine_frame_t &frame, const float landmarks[10], const TensorView &input,
                      int8_t *out, size_t cap_bytes) noexcept
 {
-    if (frame.pixels == nullptr || landmarks == nullptr || input == nullptr || out == nullptr ||
-        input->dims->size != 4 || input->dims->data[3] != kChannels) {
+    if (frame.pixels == nullptr || landmarks == nullptr || !input.valid() || out == nullptr ||
+        input.rank != 4 || input.dims[3] != kChannels) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (cap_bytes < input->bytes) {
+    if (cap_bytes < input.bytes) {
         return ESP_ERR_INVALID_SIZE;
     }
-    const int size = input->dims->data[1];
+    const int size = input.dims[1];
     Similarity m;
     if (!fit(landmarks, static_cast<float>(size), m)) {
         return ESP_ERR_INVALID_ARG;

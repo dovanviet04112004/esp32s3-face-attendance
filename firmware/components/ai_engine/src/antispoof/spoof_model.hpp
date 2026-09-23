@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ai_engine.h"
+#include "tensor_view.hpp"
 #include "tflite_model.hpp"
 
 namespace ai {
@@ -13,14 +14,17 @@ namespace ai {
  */
 tflite::MicroOpResolver &spoof_ops() noexcept;
 
+/** Probability the face is live from the logits of the run that just finished,
+ *  or a negative value when they are not the shape this branch expects.
+ *  @ctx any | non-blocking
+ */
+float live_score(const TensorView &logits) noexcept;
+
 class SpoofModel final : public TfliteModelBase {
 public:
     const char *name() const noexcept override { return "spoof"; }
 
-    /** Probability the face is live, or a negative value when no run has
-     *  produced an output of the shape this branch expects.
-     */
-    float score() noexcept;
+    float score() noexcept { return live_score(view_of(output(0))); }
 
 protected:
     tflite::MicroOpResolver &resolver() noexcept override { return spoof_ops(); }
@@ -32,7 +36,7 @@ protected:
  *  @ctx ai_task | blocking for the resample
  *  @param cap_bytes size of the buffer
  */
-esp_err_t crop_face(const ai_engine_frame_t &frame, const float box[4], const TfLiteTensor *input,
+esp_err_t crop_face(const ai_engine_frame_t &frame, const float box[4], const TensorView &input,
                     int8_t *out, size_t cap_bytes) noexcept;
 
 }  // namespace ai

@@ -12,17 +12,16 @@ constexpr float kInt8Peak = 127.0f;
 
 }  // namespace
 
-size_t normalized_int8(const TfLiteTensor *tensor, int8_t *out, size_t cap_bytes, float *scale) noexcept
+size_t normalized_int8(const TensorView &tensor, int8_t *out, size_t cap_bytes, float *scale) noexcept
 {
-    if (tensor == nullptr || out == nullptr || scale == nullptr || tensor->type != kTfLiteInt8 ||
-        tensor->bytes != kEmbedDim || cap_bytes < kEmbedDim) {
+    if (!tensor.valid() || out == nullptr || scale == nullptr || tensor.bytes != kEmbedDim ||
+        cap_bytes < kEmbedDim) {
         return 0;
     }
     float unit[kEmbedDim];
     float sum_sq = 0.0f;
     for (int i = 0; i < kEmbedDim; ++i) {
-        unit[i] = (static_cast<float>(tensor->data.int8[i]) - static_cast<float>(tensor->params.zero_point)) *
-                  tensor->params.scale;
+        unit[i] = (static_cast<float>(tensor.data[i]) - static_cast<float>(tensor.zero_point)) * tensor.scale;
         sum_sq += unit[i] * unit[i];
     }
     // The floor keeps a dead frame at zero rather than a unit vector pointing anywhere (l2norm.py).

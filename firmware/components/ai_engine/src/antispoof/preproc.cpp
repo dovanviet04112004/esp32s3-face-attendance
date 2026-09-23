@@ -39,22 +39,22 @@ Square fitted(const float box[4], float scale, int width, int height)
 
 }  // namespace
 
-esp_err_t crop_face(const ai_engine_frame_t &frame, const float box[4], const TfLiteTensor *input,
+esp_err_t crop_face(const ai_engine_frame_t &frame, const float box[4], const TensorView &input,
                     int8_t *out, size_t cap_bytes) noexcept
 {
-    const int planes = input != nullptr && input->dims->size == 4 ? input->dims->data[3] : 0;
-    if (frame.pixels == nullptr || box == nullptr || input == nullptr || out == nullptr ||
+    const int planes = input.valid() && input.rank == 4 ? input.dims[3] : 0;
+    if (frame.pixels == nullptr || box == nullptr || !input.valid() || out == nullptr ||
         (planes != kChannels && planes != kChannels + 1)) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (cap_bytes < input->bytes) {
+    if (cap_bytes < input.bytes) {
         return ESP_ERR_INVALID_SIZE;
     }
     if (box[2] <= box[0] || box[3] <= box[1]) {
         return ESP_ERR_INVALID_ARG;
     }
     const Square face = fitted(box, kFaceScale, frame.width, frame.height);
-    resample_square(frame, face.left, face.top, face.side, input->dims->data[1], out,
+    resample_square(frame, face.left, face.top, face.side, input.dims[1], out,
                     Quantizer(input, kPixelMean, kPixelSpan), planes);
     return ESP_OK;
 }

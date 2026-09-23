@@ -174,7 +174,15 @@ extern "C" size_t ai_engine_faces(float min_score, ai_engine_face_t *out, size_t
     if (!s_ready || !s_detected || out == nullptr) {
         return 0;
     }
-    return ai::decode_faces(s_detect, min_score, out, cap);
+    ai::TensorView heads[ai::kDetectHeads];
+    const size_t count = s_detect.output_count();
+    if (count > ai::kDetectHeads) {
+        return 0;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        heads[i] = ai::view_of(s_detect.output(static_cast<int>(i)));
+    }
+    return ai::decode_faces(ai::view_of(s_detect.input(0)), heads, count, min_score, out, cap);
 }
 
 extern "C" esp_err_t ai_engine_detect_frame(const ai_engine_frame_t *frame, ai_engine_letterbox_t *geometry)
@@ -183,7 +191,8 @@ extern "C" esp_err_t ai_engine_detect_frame(const ai_engine_frame_t *frame, ai_e
         return ESP_ERR_INVALID_STATE;
     }
     ai_engine_letterbox_t local;
-    const esp_err_t boxed = ai::letterbox_frame(*frame, s_detect.input(0), geometry != nullptr ? geometry : &local);
+    const esp_err_t boxed =
+        ai::letterbox_frame(*frame, ai::view_of(s_detect.input(0)), geometry != nullptr ? geometry : &local);
     if (boxed != ESP_OK) {
         return boxed;
     }
@@ -192,29 +201,14 @@ extern "C" esp_err_t ai_engine_detect_frame(const ai_engine_frame_t *frame, ai_e
     return err;
 }
 
-extern "C" void ai_engine_face_to_frame(const ai_engine_letterbox_t *geometry, ai_engine_face_t *face)
-{
-    if (geometry == nullptr || face == nullptr || geometry->scale <= 0.0f) {
-        return;
-    }
-    for (int i = 0; i < 4; ++i) {
-        const float pad = (i % 2 == 0) ? static_cast<float>(geometry->pad_x) : static_cast<float>(geometry->pad_y);
-        face->box[i] = (face->box[i] - pad) / geometry->scale;
-    }
-    for (int i = 0; i < 10; ++i) {
-        const float pad = (i % 2 == 0) ? static_cast<float>(geometry->pad_x) : static_cast<float>(geometry->pad_y);
-        face->landmarks[i] = (face->landmarks[i] - pad) / geometry->scale;
-    }
-}
-
 extern "C" esp_err_t ai_engine_recognize_face(const ai_engine_frame_t *frame, const float landmarks[10], int8_t *out,
                                               size_t cap_bytes, float *scale)
 {
     if (!s_ready || s_recog_len == 0 || frame == nullptr || landmarks == nullptr || out == nullptr || scale == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
-    TfLiteTensor *crop = s_recog.input(0);
-    const esp_err_t aligned = ai::align_face(*frame, landmarks, crop, crop->data.int8, crop->bytes);
+    const ai::TensorView crop = ai::view_of(s_recog.input(0));
+    const esp_err_t aligned = ai::align_face(*frame, landmarks, crop, crop.data, crop.bytes);
     if (aligned != ESP_OK) {
         return aligned;
     }
@@ -230,8 +224,8 @@ extern "C" esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const 
     if (!s_ready || s_spoof_len == 0 || frame == nullptr || box == nullptr || live == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
-    TfLiteTensor *input = s_spoof.input(0);
-    const esp_err_t cut = ai::crop_face(*frame, box, input, input->data.int8, s_spoof_len);
+    const ai::TensorView input = ai::view_of(s_spoof.input(0));
+    const esp_err_t cut = ai::crop_face(*frame, box, input, input.data, s_spoof_len);
     if (cut != ESP_OK) {
         return cut;
     }

@@ -7,6 +7,7 @@
 
 #include "arena.hpp"
 #include "esp_err.h"
+#include "tensor_view.hpp"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_op_resolver.h"
 #include "tensorflow/lite/micro/micro_profiler_interface.h"
@@ -23,6 +24,27 @@ tflite::MicroProfilerInterface *profiler() noexcept;
  *  @ctx task | blocking on the console | does nothing when profiling is off
  */
 void profiler_report(const char *name) noexcept;
+
+/** A TFLM tensor seen through TensorView; invalid unless it is int8 of rank 4 or less.
+ *  @ctx any | non-blocking
+ */
+inline TensorView view_of(const TfLiteTensor *tensor) noexcept
+{
+    TensorView view;
+    if (tensor == nullptr || tensor->type != kTfLiteInt8 || tensor->dims == nullptr ||
+        tensor->dims->size > kMaxRank) {
+        return view;
+    }
+    view.data = tensor->data.int8;
+    view.rank = tensor->dims->size;
+    for (int i = 0; i < view.rank; ++i) {
+        view.dims[i] = tensor->dims->data[i];
+    }
+    view.bytes = tensor->bytes;
+    view.scale = tensor->params.scale;
+    view.zero_point = tensor->params.zero_point;
+    return view;
+}
 
 class ITfliteModel {
 public:

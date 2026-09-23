@@ -17,9 +17,9 @@ constexpr size_t kCandidates = 32;
 constexpr float kScoreEps = 1e-6f;
 
 struct Level {
-    const TfLiteTensor *cls = nullptr;
-    const TfLiteTensor *box = nullptr;
-    const TfLiteTensor *kps = nullptr;
+    const TensorView *cls = nullptr;
+    const TensorView *box = nullptr;
+    const TensorView *kps = nullptr;
     int stride = 0;
     int rows = 0;
     int cols = 0;
@@ -27,10 +27,10 @@ struct Level {
 
 ai_engine_face_t s_found[kCandidates];
 
-int level_of(const TfLiteTensor *tensor, int in_h, int in_w)
+int level_of(const TensorView &tensor, int in_h, int in_w)
 {
     for (int i = 0; i < kLevels; ++i) {
-        if (tensor->dims->data[1] == in_h / kStrides[i] && tensor->dims->data[2] == in_w / kStrides[i]) {
+        if (tensor.dims[1] == in_h / kStrides[i] && tensor.dims[2] == in_w / kStrides[i]) {
             return i;
         }
     }
@@ -39,17 +39,16 @@ int level_of(const TfLiteTensor *tensor, int in_h, int in_w)
 
 // The graph lists nine heads in an order the exporter chose; channel count and
 // feature size identify each one without trusting that order.
-bool gather(ITfliteModel &model, Level levels[kLevels])
+bool gather(const TensorView &input, const TensorView *heads, size_t count, Level levels[kLevels])
 {
-    const TfLiteTensor *input = model.input(0);
-    if (input == nullptr || input->dims->size != 4) {
+    if (!input.valid() || input.rank != 4 || heads == nullptr) {
         return false;
     }
-    const int in_h = input->dims->data[1];
-    const int in_w = input->dims->data[2];
-    for (size_t i = 0; i < model.output_count(); ++i) {
-        const TfLiteTensor *tensor = model.output(static_cast<int>(i));
-        if (tensor == nullptr || tensor->dims->size != 4 || tensor->type != kTfLiteInt8) {
+    const int in_h = input.dims[1];
+    const int in_w = input.dims[2];
+    for (size_t i = 0; i < count; ++i) {
+        const TensorView &tensor = heads[i];
+        if (!tensor.valid() || tensor.rank != 4) {
             return false;
         }
         const int level = level_of(tensor, in_h, in_w);
@@ -58,17 +57,17 @@ bool gather(ITfliteModel &model, Level levels[kLevels])
         }
         Level &at = levels[level];
         at.stride = kStrides[level];
-        at.rows = tensor->dims->data[1];
-        at.cols = tensor->dims->data[2];
-        switch (tensor->dims->data[3]) {
+        at.rows = tensor.dims[1];
+        at.cols = tensor.dims[2];
+        switch (tensor.dims[3]) {
         case kClassChannels:
-            at.cls = tensor;
+            at.cls = &tensor;
             break;
         case kBoxChannels:
-            at.box = tensor;
+            at.box = &tensor;
             break;
         case kLandmarkChannels:
-            at.kps = tensor;
+            at.kps = &tensor;
             break;
         default:
             return false;
@@ -82,10 +81,9 @@ bool gather(ITfliteModel &model, Level levels[kLevels])
     return true;
 }
 
-float dequant(const TfLiteTensor *tensor, int index)
+float dequant(const TensorView *tensor, int index)
 {
-    return (static_cast<float>(tensor->data.int8[index]) - static_cast<float>(tensor->params.zero_point)) *
-           tensor->params.scale;
+    return (static_cast<float>(tensor->data[index]) - static_cast<float>(tensor->zero_point)) * tensor->scale;
 }
 
 // Sorted best first; an equal score lands after the earlier prior, the tie order the reference keeps.
@@ -129,16 +127,17 @@ void decode_cell(const Level &level, int row, int col, float score, ai_engine_fa
 
 }  // namespace
 
-size_t decode_faces(ITfliteModel &model, float min_score, ai_engine_face_t *out, size_t cap) noexcept
+size_t decode_faces(const TensorView &input, const TensorView *heads, size_t count, float min_score,
+                    ai_engine_face_t *out, size_t cap) noexcept
 {
     Level levels[kLevels];
-    if (out == nullptr || cap == 0 || !gather(model, levels)) {
+    if (out == nullptr || cap == 0 || !gather(input, heads, count, levels)) {
         return 0;
     }
     // Sigmoid is monotonic, so the floor moves onto the logit and exp runs only for survivors.
     const float floor = min_score < kScoreEps ? kScoreEps : (min_score > 1.0f - kScoreEps ? 1.0f - kScoreEps : min_score);
     const float floor_logit = logf(floor / (1.0f - floor));
-    size_t count = 0;
+    size_t found = 0;
     for (int i = 0; i < kLevels; ++i) {
         const Level &level = levels[i];
         for (int row = 0; row < level.rows; ++row) {
@@ -149,18 +148,18 @@ size_t decode_faces(ITfliteModel &model, float min_score, ai_engine_face_t *out,
                 }
                 ai_engine_face_t face;
                 decode_cell(level, row, col, 1.0f / (1.0f + expf(-logit)), face);
-                count = admit(s_found, count, face);
+                found = admit(s_found, found, face);
             }
         }
     }
-    count = suppress(s_found, count);
-    if (count > cap) {
-        count = cap;
+    found = suppress(s_found, found);
+    if (found > cap) {
+        found = cap;
     }
-    for (size_t i = 0; i < count; ++i) {
+    for (size_t i = 0; i < found; ++i) {
         out[i] = s_found[i];
     }
-    return count;
+    return found;
 }
 
 }  // namespace ai

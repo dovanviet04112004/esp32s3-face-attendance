@@ -67,8 +67,8 @@ void area_rows(const ai_engine_frame_t &frame, const int *col_first, const int *
 
 }  // namespace
 
-Quantizer::Quantizer(const TfLiteTensor *tensor, float mean, float span) noexcept
-    : mean_(mean), span_(span), inverse_scale_(1.0f / tensor->params.scale), zero_point_(tensor->params.zero_point)
+Quantizer::Quantizer(const TensorView &tensor, float mean, float span) noexcept
+    : mean_(mean), span_(span), inverse_scale_(1.0f / tensor.scale), zero_point_(tensor.zero_point)
 {
     for (int v = 0; v < kByteLevels; ++v) {
         table_[v] = (*this)(static_cast<float>(v));
