@@ -59,9 +59,9 @@ jobs:
         if: steps.guard.outputs.ready == 'true'
         run: npx prisma migrate deploy
 
-      - name: Lint
+      - name: Typecheck
         if: steps.guard.outputs.ready == 'true'
-        run: npm run lint
+        run: npm run typecheck
 
       - name: Test
         if: steps.guard.outputs.ready == 'true'
