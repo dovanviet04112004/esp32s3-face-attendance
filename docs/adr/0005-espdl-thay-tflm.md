@@ -1,6 +1,7 @@
 # ADR-0005 — ESP-DL thay TFLite Micro làm runtime deploy, TFLM giữ làm đối chứng
 
-- **Trạng thái**: Chấp nhận. Mặc định Kconfig chỉ chuyển sang ESP-DL khi E9-T31 đạt luật chấp nhận.
+- **Trạng thái**: Chấp nhận. Mặc định Kconfig và `contracts/models.lock.json` sang ESP-DL từ 24/09;
+  lượt kiosk của E9-T31 trượt cổng thì revert cả hai.
 - **Ngày**: 2026-09-23
 - **Liên quan**: ADR-0004 (V1SE giữ nguyên, đổi dạng hàm kích hoạt trên runtime mới); KẾ HOẠCH §1.1,
   §3 lớp 1, 2, 4, 5, §3.7, §3.8, §4.5.1, §4.5.6, §6.1, §6.2.2, §6.3, §6.4; E9-T28..T31;
