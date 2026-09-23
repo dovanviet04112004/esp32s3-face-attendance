@@ -541,7 +541,9 @@ canvas 153.600 ô và sổ PSRAM chỉ còn 7,7 KB. `cam_task` **giữ chỗ** k
 `ui_task` chỉ vẽ vào khoang **không phải khoang đang hiện trên kính và cũng không phải khoang
 đang bị giữ**, không còn khoang nào rảnh thì **bỏ nhịp đó và giữ `s_dirty`**. Giao diện vốn không
 hiện nổi quá một overlay mỗi lượt blit, nên publish nhanh hơn người tiêu thụ chỉ là vừa phí vừa
-hỏng; trần nhịp cập nhật tụt về đúng nhịp blit ~14 lần/giây.
+hỏng; trần nhịp cập nhật tụt về đúng nhịp blit ~14 lần/giây. Trần ấy chỉ áp cho màn **có video**:
+màn phủ kín không có khung camera nào để chờ, nên `cam_task` vẽ nó ngay khi `ui_kiosk` publish
+một overlay mới (§4.5.5h), và trần của nó là thời gian vẽ một lượt chứ không phải nhịp camera.
 
 **Soát cùng lượt tìm ra bốn chỗ nữa cùng loại.** `rest_level()` hỏi "màn có phủ kín không" bằng
 cách đọc thẳng trường `opaque` **trong khoang overlay**, và nó được gọi từ bốn task khác không
@@ -785,7 +787,7 @@ do trình tự reset ở §2.3C quyết định, nên `drv_touch_init()` tự lo
 | GND | GND | |
 | SDA | GPIO1 | bus chung |
 | SCL | GPIO2 | bus chung |
-| **INT** | **GPIO14** | GPIO thật (không qua expander) — cần ngắt độ trễ thấp **và** dùng để chọn địa chỉ lúc power-up |
+| **INT** | **GPIO14** | GPIO thật (không qua expander) — **ngắt báo có điểm chạm mới** cho `touch_task` (§5.2) **và** dùng để chọn địa chỉ lúc power-up. Sườn ngắt đọc từ thanh ghi cấu hình `0x804D` của chính GT911, không gõ cố định |
 | **RST** | **PCF8574 P0** | |
 
 > **Trình tự chọn địa chỉ GT911** (làm trong `drv_touch`): kéo RST = 0 → đặt INT là output, 0 = `0x5D` / 1 = `0x14` → giữ ≥ 10 ms → thả RST = 1 → giữ INT thêm 50 ms → chuyển INT sang input có ngắt.
@@ -3473,6 +3475,12 @@ màn**, và màn không video chỉ **tô kín nền vào cover map của chính
 lớp ấy nhưng không thấy được. Cái giá là một lượt gửi SPI không ai nhìn; cái được là `m_spi_lcd`
 không bao giờ bị tranh và không có đường mã nào chuyển quyền lúc đang chạy.
 
+**Màn phủ kín vẽ theo nhịp UI, không theo nhịp camera.** Khi overlay đang hiện là loại đục,
+`cam_task` chờ `ui_kiosk` publish overlay mới tối đa một chu kỳ khung rồi mới lấy khung cho AI;
+có overlay mới là vẽ ngay. Bàn phím và danh sách vì thế hiện phím vừa bấm sau một nhịp `ui_task`
+cộng một lượt vẽ, thay vì chờ thêm tới một khung camera (~75 ms ở 13 fps). AI vẫn nhận khung như
+cũ, và `cam_task` vẫn là người duy nhất ghi panel.
+
 **Cover map gửi xuống theo hộp bao, không gửi cả màn.** `Canvas` nhớ hình chữ nhật nhỏ nhất
 chứa mọi ô khác 0; `drv_lcd_mask_t` mang thêm `stride` nên nó nhận thẳng một vùng con của bản
 đồ 320×480 mà không phải chép ra. Màn `Scan` chỉ đụng thanh trên, khung ngắm và dải dưới, nên
@@ -4938,12 +4946,12 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 
 | Task | Component | Core | Prio | Stack | Kích hoạt | Nhiệm vụ |
 |---|---|---|---|---|---|---|
-| `cam_task` | `drv_camera` | 0 | 7 | 4 KB | mỗi frame (~15 fps) | `esp_camera_fb_get()` → vẽ preview kèm overlay của `ui_kiosk` → đẩy con trỏ vào `q_frame_ai` (overwrite) |
+| `cam_task` | `drv_camera` | 0 | 7 | 4 KB | mỗi frame (~15 fps); màn phủ kín: thêm mỗi lần overlay đổi | `esp_camera_fb_get()` → vẽ preview kèm overlay của `ui_kiosk` → đẩy con trỏ vào `q_frame_ai` (overwrite). Màn phủ kín: chờ overlay mới tối đa một chu kỳ khung trước khi lấy khung (§4.5.5h) |
 | `tof_task` | `drv_tof` | 0 | 6 | 3 KB | ngắt GPIO3 / poll 100 ms | Đọc khoảng cách → phát `EVT_PRESENCE_ON/OFF`, đánh thức hệ thống |
 | `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Nạp `snd/ok.wav` từ partition `assets` **một lần lúc lên**, giữ PCM trong PSRAM rồi phát khi có `APP_SOUND_OK`: mở cửa xong không phải đọc file |
-| `touch_task` | `drv_touch` | 0 | 5 | 3 KB | poll 40 ms | Đọc GT911 → ô `s_touch` của `ui_kiosk` (§5.3) |
+| `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt INT GPIO14; poll 40 ms chỉ khi đang có ngón tay | Đọc GT911 → ô `s_touch` của `ui_kiosk` (§5.3). Không ai chạm thì không có giao dịch I2C nào ngoài một lượt đọc an toàn mỗi giây, phòng ngắt lỡ |
 | **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
-| `ui_task` | `ui_kiosk` | 0 | 4 | 4 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. Cầm `m_spi_lcd` **chỉ cho màn không có video** |
+| `ui_task` | `ui_kiosk` | 0 | 4 | 4 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. **Không cầm panel**: `cam_task` vẽ mọi màn, kể cả màn phủ kín (§4.5.5h) |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB **ở PSRAM** | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota` | 0 | 3 | 8 KB | khi có lệnh `down/ota` | Tải firmware / models, verify sha256, ghi partition |
@@ -4987,7 +4995,7 @@ thay vì `max(lấp, xử lý)`, đúng cơ chế đã kéo preview **14,18 → 
 Nên khung **không đi đâu cả**: `cam_task` vẽ ngay tại chỗ nó đang cầm khung, và `ui_kiosk` chỉ
 đưa xuống một **ảnh overlay** để đè lên từng dải 20 dòng đúng lúc dải ấy đang được gom (§4.5.5h).
 Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn thêm một lượt quét PSRAM nào.
-`ui_task` vẫn cầm panel qua `m_spi_lcd`, nhưng chỉ cho màn hình **không có video**.
+`ui_task` không cầm panel ở màn nào; màn phủ kín cũng do `cam_task` vẽ, ngay khi overlay đổi (§4.5.5h).
 
 **Không có semaphore giữa ISR camera và `cam_task`.** `esp_camera_fb_get()` đã tự chặn cho tới khi có khung, nên một binary semaphore nữa chỉ là tầng chờ thứ hai chờ đúng thứ mà tầng dưới đã chờ.
 
@@ -5057,7 +5065,7 @@ một việc: ghi lại mốc ấy.
 | Mức | Điều kiện | Tắt gì | Cắt được (§2.5, 🔬 chưa đo trên board này) |
 |---|---|---|---|
 | **Thức** | vừa có nguồn đánh thức, hoặc màn phủ kín đang mở, hoặc đang lấy mẫu đăng ký | — | 0 |
-| **Nghỉ** | **60 s** không nguồn nào | `ai_task` bỏ `svc_vision_step`, xoá hộp mặt trên kính và báo `NO_FACE` một lần; thêm: đèn nền tắt, **ST7796 vào `SLPIN`**, **OV5640 vào standby mềm**, `cam_task` thôi lấy khung, `touch_task` giãn 40 → 160 ms, `ui_task` giãn 20 → 200 ms, `attend_task` thôi dựng trang cài đặt | ~100 mA đèn + ~120 mA camera + phần bộ điều khiển panel và số lần đánh thức CPU |
+| **Nghỉ** | **60 s** không nguồn nào | `ai_task` bỏ `svc_vision_step`, xoá hộp mặt trên kính và báo `NO_FACE` một lần; thêm: đèn nền tắt, **ST7796 vào `SLPIN`**, **OV5640 vào standby mềm**, `cam_task` thôi lấy khung, `touch_task` chỉ còn chờ ngắt INT, `ui_task` giãn 20 → 200 ms, `attend_task` thôi dựng trang cài đặt | ~100 mA đèn + ~120 mA camera + phần bộ điều khiển panel và số lần đánh thức CPU |
 
 **Đúng hai mức, không ba.** Bản đầu cho model nghỉ sớm ở 4 giây rồi mới tắt màn ở phút thứ nhất,
 và khoảng giữa ấy là một vùng chết: màn sáng, preview chạy, người dùng thấy một cái máy đang
