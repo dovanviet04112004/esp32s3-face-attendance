@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -30,6 +31,12 @@ esp_err_t drv_touch_init(void);
  *  @param count receives how many of `points` carry a contact, zero for none
  */
 esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count);
+
+/** Wait for the controller to raise INT, which it does when it has a report.
+ *  @ctx task | blocking up to timeout_ms | one waiter only
+ *  @ret true on INT, false on timeout or with no controller opened
+ */
+bool drv_touch_wait(uint32_t timeout_ms);
 
 /** Controller handle for the LVGL port to poll.
  *  @ctx any | non-blocking

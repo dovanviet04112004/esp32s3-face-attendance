@@ -7,10 +7,12 @@
 #include "bsp_board.h"
 #include "driver/gpio.h"
 #include "drv_ioexp.h"
+#include "esp_attr.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_touch_gt911.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 static const char *TAG = "drv_touch";
@@ -20,9 +22,24 @@ static const char *TAG = "drv_touch";
 #define PRODUCT_ID_REG 0x8140
 #define PRODUCT_ID_LEN 3
 #define PRODUCT_ID_GT911 "911"
+#define MODULE_SWITCH1_REG 0x804D
+#define INT_TRIGGER_MASK 0x03u
+#define INT_TRIGGER_RISING 0x00u
+#define INT_TRIGGER_HIGH 0x03u
 
 static esp_lcd_touch_handle_t s_touch;
 static esp_lcd_panel_io_handle_t s_io;
+static SemaphoreHandle_t s_report;
+
+static void IRAM_ATTR on_report(void *arg)
+{
+    (void)arg;
+    BaseType_t woken = pdFALSE;
+    xSemaphoreGiveFromISR(s_report, &woken);
+    if (woken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
 
 static esp_err_t select_address(void)
 {
@@ -67,6 +84,27 @@ static esp_err_t check_product_id(void)
     return ESP_OK;
 }
 
+static esp_err_t arm_report_interrupt(void)
+{
+    uint8_t module_switch1 = 0;
+    APP_RETURN_ON_ERR(esp_lcd_panel_io_rx_param(s_io, MODULE_SWITCH1_REG, &module_switch1, 1),
+                      TAG, "int mode");
+    // GT911 0x804D bits 1:0 pick INT: 0 rising, 1 falling, 2 low, 3 high (programming guide).
+    const uint8_t trigger = module_switch1 & INT_TRIGGER_MASK;
+    const bool rising = trigger == INT_TRIGGER_RISING || trigger == INT_TRIGGER_HIGH;
+    s_report = xSemaphoreCreateBinary();
+    if (s_report == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    APP_RETURN_ON_ERR(gpio_set_intr_type(APP_TOUCH_INT_GPIO,
+                                         rising ? GPIO_INTR_POSEDGE : GPIO_INTR_NEGEDGE),
+                      TAG, "int edge");
+    APP_RETURN_ON_ERR(gpio_isr_handler_add(APP_TOUCH_INT_GPIO, on_report, NULL), TAG, "int isr");
+    ESP_LOGI(TAG, "int on gpio %d, %s edge (0x804D = 0x%02X)", APP_TOUCH_INT_GPIO,
+             rising ? "rising" : "falling", module_switch1);
+    return ESP_OK;
+}
+
 esp_err_t drv_touch_init(void)
 {
     if (s_touch != NULL) {
@@ -92,6 +130,7 @@ esp_err_t drv_touch_init(void)
         .flags = {.swap_xy = false, .mirror_x = false, .mirror_y = false},
     };
     APP_RETURN_ON_ERR(esp_lcd_touch_new_i2c_gt911(s_io, &cfg, &s_touch), TAG, "gt911");
+    APP_RETURN_ON_ERR(arm_report_interrupt(), TAG, "report interrupt");
     ESP_LOGI(TAG, "gt911 at 0x%02X, %dx%d", APP_TOUCH_I2C_ADDR_LOW, APP_LCD_H_RES, APP_LCD_V_RES);
     return ESP_OK;
 }
@@ -125,6 +164,15 @@ esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count)
     }
     *count = got;
     return ESP_OK;
+}
+
+bool drv_touch_wait(uint32_t timeout_ms)
+{
+    if (s_report == NULL) {
+        vTaskDelay(pdMS_TO_TICKS(timeout_ms));
+        return false;
+    }
+    return xSemaphoreTake(s_report, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
 
 esp_lcd_touch_handle_t drv_touch_handle(void)
