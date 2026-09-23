@@ -22,8 +22,8 @@
 // Camera frames live in psram on the real device, and in bss these would take
 // the internal ram an arena wants. Sizes come from the graphs themselves.
 static int8_t *s_frame;
-static int8_t *s_face;
-static int8_t *s_face;
+static int8_t *s_spoof_face;
+static int8_t *s_recog_face;
 static int8_t *s_embedding;
 
 static int8_t *psram(size_t len, int seed)
@@ -65,13 +65,13 @@ static esp_err_t run_detect(void)
 static esp_err_t run_spoof(void)
 {
     float live = 0.0F;
-    return ai_engine_spoof(s_face, &live);
+    return ai_engine_spoof(s_spoof_face, &live);
 }
 
 static esp_err_t run_recog(void)
 {
     float scale = 0.0F;
-    return ai_engine_recognize(s_face, s_embedding, ai_engine_recog_output_bytes(), &scale);
+    return ai_engine_recognize(s_recog_face, s_embedding, ai_engine_recog_output_bytes(), &scale);
 }
 
 static int64_t time_runs(esp_err_t (*once)(void), const char *label)
@@ -95,8 +95,8 @@ TEST_CASE("all three branches load and report what they took", "[bench_ai]")
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
     TEST_ASSERT_EQUAL(ESP_OK, ai_engine_init());
     s_frame = psram(ai_engine_detect_input_bytes(), 1);
-    s_face = psram(ai_engine_spoof_input_bytes(), 2);
-    s_face = psram(ai_engine_recog_input_bytes(), 4);
+    s_spoof_face = psram(ai_engine_spoof_input_bytes(), 2);
+    s_recog_face = psram(ai_engine_recog_input_bytes(), 4);
     s_embedding = psram(ai_engine_recog_output_bytes(), 5);
 
     ai_engine_arena_stats_t stats;
