@@ -28,7 +28,7 @@ static const char *TAG = "drv_lcd";
 #define BLK_DUTY_MAX ((1u << BLK_DUTY_BITS) - 1u)
 #define PANEL_CMD_BITS 8
 #define PANEL_PARAM_BITS 8
-#define BOUNCE_ROWS 32
+#define BOUNCE_ROWS 20
 #define BOUNCE_PIXELS (APP_LCD_H_RES * BOUNCE_ROWS)
 #define BOUNCE_BYTES (BOUNCE_PIXELS * (int)sizeof(uint16_t))
 #define BOUNCE_COUNT 2
