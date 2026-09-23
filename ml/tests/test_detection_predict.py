@@ -225,9 +225,9 @@ def test_the_floor_is_applied_at_the_input_scale_not_in_original_pixels(tmp_path
     assert kept.tolist() == [1]
 
 
-def test_the_service_floor_is_the_quarter_of_the_recognition_input(tmp_path: Path) -> None:
-    """32 px at the detector is 128 px in the 640x480 frame, above the 112 recog needs."""
-    assert SERVICE_FACE_PX * (640 / INPUT_HW[1]) == pytest.approx(128.0)
+def test_the_service_floor_reaches_the_recognition_input(tmp_path: Path) -> None:
+    """38 px at the detector is 114 px in the 480x320 AI frame, at least the 113 recog warps to."""
+    assert SERVICE_FACE_PX * (480 / INPUT_HW[1]) >= 113
 
 
 def test_an_image_with_no_faces_contributes_no_indices(tmp_path: Path) -> None:
