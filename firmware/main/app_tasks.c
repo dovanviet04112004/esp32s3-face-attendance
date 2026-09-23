@@ -1706,6 +1706,7 @@ static void attend_task(void *arg)
     uint32_t last_employee = 0;
     char last_name[STORAGE_NAME_CAP] = { 0 };
     uint32_t records = svc_attendance_records();
+    uint32_t grants = svc_attendance_grants();
 
     for (;;) {
         app_presence_t edge = APP_PRESENCE_OFF;
@@ -1739,13 +1740,20 @@ static void attend_task(void *arg)
             }
         }
         const svc_attendance_state_t state = svc_attendance_state();
+        const uint32_t granted = svc_attendance_grants();
         if (state != last_state) {
             ESP_LOGI(TAG, "attendance state %d to %d on vision %d", (int)last_state, (int)state,
                      (int)last_kind);
             last_state = state;
             ui_kiosk_on_verdict(verdict_for(state, last_kind), last_employee, last_name);
             announce(wiring, state);
+        } else if (granted != grants) {
+            // Granted to Granted moves no state, so the next person's card hangs on the count.
+            ESP_LOGI(TAG, "granted again in state %d, employee %" PRIu32, (int)state, last_employee);
+            ui_kiosk_on_verdict(APP_UI_GRANTED, last_employee, last_name);
+            announce(wiring, state);
         }
+        grants = granted;
         if (svc_attendance_records() != records) {
             records = svc_attendance_records();
             offer_uplink(wiring);
