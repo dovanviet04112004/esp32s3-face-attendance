@@ -64,6 +64,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define CAM_TASK_PRIORITY 7
 #define CAM_TASK_STACK_BYTES 4096
 #define RATE_WINDOW_FRAMES 60
+#define COVER_WAIT_MS 70
 #define TOF_TASK_CORE 0
 #define TOF_TASK_PRIORITY 6
 #define TOF_TASK_STACK_BYTES 3072
@@ -1055,6 +1056,19 @@ static void cam_task(void *arg)
             ui_kiosk_release();
             vTaskDelay(pdMS_TO_TICKS(REST_POLL_MS));
             continue;
+        }
+        // A covering screen has no video to wait for, so it is drawn on publish (KEHOACH 4.5.5h).
+        if (overlay != NULL && overlay->opaque) {
+            const esp_err_t painted = show(overlay, NULL, &drawn_serial);
+            ui_kiosk_release();
+            if (painted != last_blit) {
+                ESP_LOGE(TAG, "paint %s", esp_err_to_name(painted));
+                last_blit = painted;
+            }
+            if (ui_kiosk_wait_publish(COVER_WAIT_MS)) {
+                continue;
+            }
+            overlay = ui_kiosk_hold();
         }
         camera_fb_t *frame = drv_camera_grab();
         if (frame == NULL) {
