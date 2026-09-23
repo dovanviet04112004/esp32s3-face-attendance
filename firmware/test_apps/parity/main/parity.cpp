@@ -310,7 +310,8 @@ TEST_CASE("the anti-spoof crop matches the golden block", "[parity]")
         const GoldTensor *words = find(gold, "frame");
         TEST_ASSERT_NOT_NULL(words);
         ai_engine_frame_t frame = { reinterpret_cast<const uint16_t *>(words->data),
-                                    static_cast<int>(words->dims[1]), static_cast<int>(words->dims[0]) };
+                                    static_cast<int>(words->dims[1]), static_cast<int>(words->dims[0]),
+                                    false };
         const float *quant = floats(gold, "quant");
         const ai::TensorView input = quantized(SPOOF_SIDE, SPOOF_SIDE, 3, block, SPOOF_SIDE * SPOOF_SIDE * 3,
                                                quant[0], static_cast<int>(quant[1]));
@@ -342,7 +343,8 @@ TEST_CASE("align matches the golden block", "[parity]")
         const GoldTensor *words = find(gold, "frame");
         TEST_ASSERT_NOT_NULL(words);
         ai_engine_frame_t frame = { reinterpret_cast<const uint16_t *>(words->data),
-                                    static_cast<int>(words->dims[1]), static_cast<int>(words->dims[0]) };
+                                    static_cast<int>(words->dims[1]), static_cast<int>(words->dims[0]),
+                                    false };
         const float *quant = floats(gold, "quant");
         const ai::TensorView input = quantized(ALIGN_SIDE, ALIGN_SIDE, 3, block, ALIGN_SIDE * ALIGN_SIDE * 3,
                                                quant[0], static_cast<int>(quant[1]));
