@@ -1,7 +1,7 @@
 """Score a model on the host with its branch's own metric, so a rung compares to the Q0 ceiling.
 
 Three runtimes: onnx (the float graph), tflite (the file TFLM runs) and espdl (ESP-PPQ's
-simulation of the S3 target, which model->test() holds bit for bit to the chip). Three
+simulation of the S3 target, which model->test() holds to the chip within one int8 step). Three
 branches: WIDER val AP, liveness on a split or on the board's own frames, and TAR@FAR on
 the verification benchmarks (KEHOACH 3.7).
 """

@@ -3,7 +3,7 @@
 Per-tensor power-of-two scales are the runtime's rule, so layerwise equalisation
 is on for every branch and activation ranges come from KL on the same 300
 samples the TFLite rung calibrates on (KEHOACH 3.7). The file carries one test
-input and output, which model->test() on the board must reproduce bit for bit.
+input and output, which model->test() on the board must match within one int8 step.
 """
 
 from __future__ import annotations
