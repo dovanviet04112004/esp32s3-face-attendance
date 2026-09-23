@@ -9,6 +9,7 @@ starts by typing through that window to claim the unity menu.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import re
 import time
@@ -53,10 +54,8 @@ def claim(handle: serial.Serial, case: str) -> bool:
         if MENU_PROMPT in buf:
             handle.write(case.encode() + b"\n")
             return True
-        try:
+        with contextlib.suppress(serial.SerialTimeoutException):
             handle.write(b"\n")
-        except serial.SerialTimeoutException:
-            pass
     return False
 
 

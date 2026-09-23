@@ -255,7 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         rule = (
             "CelebA-Spoof giu chia train/valid/test cua upstream (v1_upstream, khong doi); "
             "LCC-FASD giu ba split cua tac gia, training vao pool lap 5 lan, evaluation chi test; "
-            "SynthASpoof test lay 2000 anh trai deu moi kenh, train lay toi da 10000 anh con lai moi kenh"
+            "SynthASpoof test lay 2000 anh trai deu moi kenh, "
+            "train lay toi da 10000 anh con lai moi kenh"
         )
         disjoint = [
             ("lcc_train_ids.txt", "lcc_val_ids.txt", "lcc_test_ids.txt"),

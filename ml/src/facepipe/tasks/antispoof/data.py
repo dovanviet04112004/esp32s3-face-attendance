@@ -40,7 +40,7 @@ CROP_SCALE_BIAS = 1.0
 # Spans both pools the branch meets, so neither end can cue the label (KEHOACH 1.3).
 QUALITY_RANGE = (30, 95)
 RECOMPRESS_PROBABILITY = 0.5
-# Device frames at the gain ceiling, averaged down to the crop, sit at sigma 2.2-2.9 (measurements 24.1).
+# Gain-ceiling device frames averaged down to the crop sit at sigma 2.2-2.9 (measurements 24.1).
 PHOTON_RANGE = (8000.0, 16000.0)
 READ_SIGMA_RANGE = (1.5, 3.0)
 # The rest of the OV5640 path, drawn per sample (KEHOACH section 3, layer 2).
