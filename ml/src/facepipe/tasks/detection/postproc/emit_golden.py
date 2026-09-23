@@ -29,6 +29,11 @@ LEVEL_QUANT = {
     16: {"cls": (0.06135493, 99), "box": (0.01207780, -42), "kps": (0.01943806, -32)},
     32: {"cls": (0.02877619, 85), "box": (0.01116470, -39), "kps": (0.02041816, -25)},
 }
+# The same heads in yunet_s8.espdl: scale 2^exponent, zero point 0 (KEHOACH 3 layer 4).
+ESPDL_EXPONENTS = {8: {"cls": -4, "box": -6, "kps": -6}, 16: {"cls": -3, "box": -6, "kps": -5},
+                   32: {"cls": -4, "box": -6, "kps": -5}}
+ESPDL_QUANT = {stride: {role: (2.0**exponent, 0) for role, exponent in roles.items()}
+               for stride, roles in ESPDL_EXPONENTS.items()}
 CHANNELS = {"cls": 1, "box": 4, "kps": 10}
 
 
@@ -36,14 +41,14 @@ def dequantized(values: np.ndarray, scale: float, zero_point: int) -> torch.Tens
     return torch.from_numpy(((values.astype(np.float32) - zero_point) * scale).astype(np.float32))
 
 
-def decoded(tensors: dict[str, np.ndarray], min_score: float) -> dict[str, np.ndarray]:
+def decoded(tensors: dict[str, np.ndarray], min_score: float, quant: dict) -> dict[str, np.ndarray]:
     """Threshold, cap and suppress, the order decode_faces runs them in."""
     sizes = feature_sizes(INPUT_HW, STRIDES)
     priors = torch.cat(pyramid_priors(sizes, STRIDES))
     parts: dict[str, list[torch.Tensor]] = {"cls": [], "box": [], "kps": []}
     for stride, (rows, cols) in zip(STRIDES, sizes, strict=True):
         for role in parts:
-            scale, zero = LEVEL_QUANT[stride][role]
+            scale, zero = quant[stride][role]
             flat = tensors[f"{role}_{stride}"].reshape(rows * cols, CHANNELS[role])
             parts[role].append(dequantized(flat, scale, zero))
 
@@ -73,16 +78,18 @@ def head_tensors(rng: np.random.Generator, cls_bias: int) -> dict[str, np.ndarra
     return out
 
 
-def emit_decode(root: Path, rng: np.random.Generator) -> int:
+def emit_decode(root: Path, rng: np.random.Generator, espdl_rng: np.random.Generator) -> int:
     # 128 lets a tenth of the cells clear 0.5, 99 leaves a handful, 90 leaves none.
-    cases = [(128, 0.5), (99, 0.5), (90, 0.9)]
-    for index, (cls_bias, min_score) in enumerate(cases):
-        tensors = head_tensors(rng, cls_bias)
-        expected = decoded(tensors, min_score)
+    cases = [(128, 0.5, LEVEL_QUANT, rng), (99, 0.5, LEVEL_QUANT, rng), (90, 0.9, LEVEL_QUANT, rng)]
+    # Its own generator keeps the three TFLite cases above byte for byte.
+    cases.append((16, 0.5, ESPDL_QUANT, espdl_rng))
+    for index, (cls_bias, min_score, quant, source) in enumerate(cases):
+        tensors = head_tensors(source, cls_bias)
+        expected = decoded(tensors, min_score, quant)
         payload = {f"{name}": value for name, value in tensors.items()}
         # Row order is level then role, which is how the board walks them back.
         payload["quant"] = np.array(
-            [[LEVEL_QUANT[s][r][0], float(LEVEL_QUANT[s][r][1])] for s in STRIDES for r in CHANNELS],
+            [[quant[s][r][0], float(quant[s][r][1])] for s in STRIDES for r in CHANNELS],
             dtype=np.float32,
         )
         payload["min_score"] = np.array([min_score], dtype=np.float32)
@@ -120,7 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     rng = np.random.default_rng(args.seed)
-    print(f"{args.out / 'decode'}: {emit_decode(args.out, rng)} case(s)")
+    espdl_rng = np.random.default_rng(args.seed + 1)
+    print(f"{args.out / 'decode'}: {emit_decode(args.out, rng, espdl_rng)} case(s)")
     print(f"{args.out / 'nms'}: {emit_nms(args.out, rng)} case(s)")
     return 0
 
