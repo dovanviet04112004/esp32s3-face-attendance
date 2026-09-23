@@ -250,6 +250,8 @@ const char *prompt_for(ui_kiosk_stage_t stage)
             return text(StrId::ScanTooFar);
         case UI_KIOSK_STAGE_TOO_CLOSE:
             return text(StrId::ScanTooClose);
+        case UI_KIOSK_STAGE_OFF_GUIDE:
+            return text(StrId::ScanFrame);
         case UI_KIOSK_STAGE_WORKING:
             return text(StrId::ScanWorking);
         case UI_KIOSK_STAGE_SETTLED:
@@ -1725,6 +1727,14 @@ bool enrol_complete() noexcept
 People &people() noexcept
 {
     return s_people_list;
+}
+
+void guide_box(int16_t out[4]) noexcept
+{
+    out[0] = kGuideX;
+    out[1] = kGuideY;
+    out[2] = kGuideX + kGuideW;
+    out[3] = kGuideY + kGuideH;
 }
 
 Screen *scan_screen() noexcept

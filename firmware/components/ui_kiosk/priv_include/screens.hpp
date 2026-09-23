@@ -173,6 +173,9 @@ JoinRequest &join_request() noexcept;
  */
 void people_delivered() noexcept;
 
+/** The guide frame the scan screen draws, x1, y1, x2, y2 in panel pixels. */
+void guide_box(int16_t out[4]) noexcept;
+
 Screen *scan_screen() noexcept;
 Screen *menu_screen() noexcept;
 Screen *enrol_screen() noexcept;

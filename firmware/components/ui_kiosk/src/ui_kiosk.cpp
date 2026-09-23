@@ -553,6 +553,11 @@ void ui_kiosk_release(void)
     s_held.store(-1, std::memory_order_release);
 }
 
+void ui_kiosk_guide(int16_t out[4])
+{
+    ui::guide_box(out);
+}
+
 bool ui_kiosk_wait_publish(uint32_t timeout_ms)
 {
     if (s_published == nullptr) {

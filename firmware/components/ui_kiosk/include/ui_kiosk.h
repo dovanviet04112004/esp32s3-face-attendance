@@ -32,6 +32,7 @@ typedef enum {
     UI_KIOSK_STAGE_TOO_FAR,               // under vision.face_min_px
     UI_KIOSK_STAGE_TOO_CLOSE,             // the 1.0x crop would leave the frame
     UI_KIOSK_STAGE_SETTLED,               // a face is there and the kiosk has finished
+    UI_KIOSK_STAGE_OFF_GUIDE,             // under vision.guide_min of it in the guide
 } ui_kiosk_stage_t;
 
 /** Tell the screens what the detector saw, in sensor frame pixels.
@@ -275,6 +276,12 @@ bool ui_kiosk_screen_covers(void);
  *  @ctx task | non-blocking | safe to call without a matching hold
  */
 void ui_kiosk_release(void);
+
+/** The guide frame the scan screen draws, which svc_vision judges faces against.
+ *  @ctx any | non-blocking | a constant, answers ahead of ui_kiosk_init
+ *  @param out x1, y1, x2, y2 in panel pixels
+ */
+void ui_kiosk_guide(int16_t out[4]);
 
 /** Wait for ui_task to publish an overlay newer than the last one waited on.
  *  @ctx cam_task | blocking up to timeout_ms | one waiter only
