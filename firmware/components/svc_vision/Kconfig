@@ -21,11 +21,13 @@ menu "Vision pipeline"
 
     config VISION_SEED_MATCH_MIN_PERMILLE
         int "Seed for the cosine match floor (per mille)"
-        default 600
+        default 450
         range 1 999
         help
             Same rule as the detector seed. Cosine of unit embeddings, so
-            600 means 0.6; the device set fixes the real value (E8-T12).
+            450 means 0.45: 0.063 above the highest real-face impostor the
+            deployed recog scores on 18,998 benchmark pairs (recognition
+            measurements 8). A new recognition model needs its own value.
 
     config VISION_SEED_FACE_MIN_PX
         int "Seed for the smallest face the pipeline verifies (frame pixels)"

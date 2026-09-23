@@ -207,7 +207,7 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
         return;
     }
     // Refusing on the first sample calls an employee a stranger and grants them
-    // a second later, because match_min drops 31% of genuine frames (KEHOACH 4.5.5d).
+    // a second later, because genuine frames do fall under match_min (KEHOACH 4.5.5d).
     if (++unknown_tries_ < kUnknownTries) {
         return;
     }

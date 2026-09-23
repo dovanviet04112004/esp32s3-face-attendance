@@ -292,7 +292,7 @@ TEST_CASE("a stranger and an empty table both come back unknown", "[svc_vision]"
     TEST_ASSERT_EQUAL(SVC_VISION_UNKNOWN, empty.step());
 }
 
-// match_min drops 31% of an enrolled person's frames (E8-T12), so a verdict on
+// An enrolled person's frames do fall under match_min (E8-T12), so a verdict on
 // the first sample calls an employee a stranger and grants them a second later.
 TEST_CASE("a face that falls short once is never called a stranger", "[svc_vision]")
 {
