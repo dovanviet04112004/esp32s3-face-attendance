@@ -4319,6 +4319,7 @@ backend/
 ├── prisma/{schema.prisma, migrations/, seed.ts, demo.ts}
 ├── test/*.e2e-spec.ts                # e2e, chạy bằng runner sẵn có của Node
 ├── test/teardown.ts                  # ★ dọn thứ không cascade theo dữ liệu suite tạo ra
+├── test/fixtures.ts                  # ★ dựng thứ suite cần mà seed tối thiểu không có: loại phép, publish thay kiosk
 └── src/
     ├── main.ts                       # chỉ mở cổng; mọi cấu hình nằm ở bootstrap.ts
     ├── bootstrap.ts                  # ★ helmet, CORS, cookie, ValidationPipe, Swagger
