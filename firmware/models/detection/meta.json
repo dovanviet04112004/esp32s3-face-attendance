@@ -1,7 +1,7 @@
 {
   "in_h": 120,
   "in_w": 160,
-  "arena_hint": 189628,
-  "sha256": "56b3f65dcd07472511d58d8379467f4c3de4637ba9333b9a4c3c5b59dca5b55c",
+  "arena_hint": 0,
+  "sha256": "631b913706dd904489e5ed46558c08aafa114e604870a3d5459cfbb41d377bed",
   "run_id": "detection/20260831-1616_cc931df_36fbea"
 }

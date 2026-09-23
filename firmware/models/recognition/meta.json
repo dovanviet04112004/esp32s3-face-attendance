@@ -1,7 +1,7 @@
 {
-  "in_h": 113,
-  "in_w": 113,
-  "arena_hint": 422764,
-  "sha256": "f77969e342ab10b49782b1241aef1b1ecabc4519c8cbf6129a463d9bbe983ad3",
-  "run_id": "recognition/20260908-1750_ea985b1_bfed2e"
+  "in_h": 112,
+  "in_w": 112,
+  "arena_hint": 0,
+  "sha256": "0191f29670ae5865d9e382aea06027a31c2f7db2f28ee5a199482f472f0f191a",
+  "run_id": "recognition/20260923-2106_59828c4_9a6954"
 }

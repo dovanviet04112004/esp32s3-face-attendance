@@ -1,20 +1,20 @@
 {
   "detection": {
-    "file": "yunet_int8.tflite",
-    "sha256": "56b3f65dcd07472511d58d8379467f4c3de4637ba9333b9a4c3c5b59dca5b55c",
+    "file": "yunet_s8.espdl",
+    "sha256": "631b913706dd904489e5ed46558c08aafa114e604870a3d5459cfbb41d377bed",
     "run_id": "detection/20260831-1616_cc931df_36fbea",
-    "arena_bytes": 189628
+    "arena_bytes": 0
   },
   "antispoof": {
-    "file": "minifasnet_int8.tflite",
-    "sha256": "71ec3d3079310f105ec317cdb26d7efa7170a365a02b1c538a2aed2022c31773",
-    "run_id": "antispoof/20260918-1050_aa7e463_e66877",
-    "arena_bytes": 748524
+    "file": "minifasnet_s8.espdl",
+    "sha256": "7968f4556b7623b07282e8dd0b112937c51bbc119e36400106868dd617f9283d",
+    "run_id": "antispoof/20260918-0118_c1d09c8_5d7b35",
+    "arena_bytes": 0
   },
   "recognition": {
-    "file": "mobilefacenet_int8.tflite",
-    "sha256": "f77969e342ab10b49782b1241aef1b1ecabc4519c8cbf6129a463d9bbe983ad3",
-    "run_id": "recognition/20260908-1750_ea985b1_bfed2e",
-    "arena_bytes": 422764
+    "file": "mobilefacenet_s8.espdl",
+    "sha256": "0191f29670ae5865d9e382aea06027a31c2f7db2f28ee5a199482f472f0f191a",
+    "run_id": "recognition/20260923-2106_59828c4_9a6954",
+    "arena_bytes": 0
   }
 }
