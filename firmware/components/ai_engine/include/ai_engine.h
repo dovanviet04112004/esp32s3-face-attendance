@@ -24,15 +24,16 @@ typedef struct {
     bool fast_internal;                   // true only while it sits in internal sram
 } ai_engine_arena_stats_t;
 
-/** Map the models partition and reserve both arenas.
+/** Map the models partition and build every branch it carries, on the runtime AI_RUNTIME picked.
  *  @ctx task | blocking | call once from app_main, ahead of every driver
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_NO_MEM | ESP_ERR_NOT_FOUND
- *       | ESP_ERR_NOT_SUPPORTED when a graph needs an operator this build omits
+ *       | ESP_ERR_NOT_SUPPORTED when a graph needs an operator this build omits or is for the other runtime
  *       | ESP_ERR_INVALID_CRC | ESP_ERR_INVALID_SIZE
  */
 esp_err_t ai_engine_init(void);
 
-/** Where the two arenas of KEHOACH 3.8 ended up, all zero until init.
+/** Where the two arenas of KEHOACH 3.8 ended up; all zero until init, and always
+ *  on ESP-DL, which sizes each model's memory itself.
  *  @ctx any | non-blocking
  */
 void ai_engine_arena_stats(ai_engine_arena_stats_t *out);

@@ -1,7 +1,47 @@
 menu "AI engine"
 
+    choice AI_RUNTIME
+        prompt "Inference runtime"
+        default AI_RUNTIME_TFLM
+        help
+            Which runtime this image builds and links; the other one's code
+            stays in the tree for the comparison of KEHOACH 3 layer 5. The
+            models partition must carry files of the same runtime.
+
+        config AI_RUNTIME_TFLM
+            bool "TFLite Micro with esp-nn"
+
+        config AI_RUNTIME_ESPDL
+            bool "ESP-DL"
+    endchoice
+
+    config AI_WEIGHTS_PSRAM_DETECT
+        bool "Copy the detection weights into PSRAM"
+        depends on AI_RUNTIME_ESPDL && SPIRAM
+        default y
+        help
+            ESP-DL copies the parameters out of the flash mapping when it
+            builds the graph (param_copy), and reads them over octal PSRAM
+            instead of quad flash. Measured faster on every model tried
+            (KEHOACH 3 layer 5); n reads them in place and spends no PSRAM.
+
+    config AI_WEIGHTS_PSRAM_SPOOF
+        bool "Copy the anti-spoof weights into PSRAM"
+        depends on AI_RUNTIME_ESPDL && SPIRAM
+        default y
+        help
+            As for detection.
+
+    config AI_WEIGHTS_PSRAM_RECOG
+        bool "Copy the recognition weights into PSRAM"
+        depends on AI_RUNTIME_ESPDL && SPIRAM
+        default y
+        help
+            As for detection.
+
     config AI_ARENA_FAST_KB
         int "Ceiling for the detection arena (KB)"
+        depends on AI_RUNTIME_TFLM
         default 224
         range 16 2048
         help
@@ -12,6 +52,7 @@ menu "AI engine"
 
     config AI_ARENA_FAST_INTERNAL
         bool "Ask for the detection arena in internal SRAM"
+        depends on AI_RUNTIME_TFLM
         default n
         help
             Internal SRAM buys detection 23.3 ms per frame, but the 224 KB it
@@ -22,6 +63,7 @@ menu "AI engine"
 
     config AI_ARENA_BIG_KB
         int "Ceiling for the anti-spoof and recognition arena, PSRAM (KB)"
+        depends on AI_RUNTIME_TFLM
         default 1536
         range 64 8192
         help
@@ -34,8 +76,10 @@ menu "AI engine"
         bool "Report ticks per operator after every invoke"
         default n
         help
-            Turns on TFLM's MicroProfiler, which costs roughly 48 KB of static
-            RAM and a print per invoke. E8-T8 uses it to tell an operator with
-            an ESP-NN kernel from one running the reference C path.
+            TFLM: turns on the MicroProfiler, which costs roughly 48 KB of
+            static RAM and a print per invoke; E8-T8 uses it to tell an operator
+            with an ESP-NN kernel from one running the reference C path.
+            ESP-DL: every invoke runs through profile_module and prints the
+            latency of each module, sorted.
 
 endmenu

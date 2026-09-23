@@ -1,0 +1,3 @@
+dependencies:
+  # Pinned exactly: model->test() on the board proves one exporter and runtime pair (KEHOACH 4.5.1).
+  espressif/esp-dl: "==3.3.11"
