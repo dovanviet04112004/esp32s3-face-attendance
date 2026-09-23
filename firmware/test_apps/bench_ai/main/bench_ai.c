@@ -180,8 +180,15 @@ static void time_interleaved(const char *when)
 
 TEST_CASE("all three branches load and report what they took", "[bench_ai]")
 {
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
+    const esp_err_t up = sys_storage_init();
+    TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
+    const size_t internal_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    const size_t psram_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    const int64_t started = esp_timer_get_time();
     TEST_ASSERT_EQUAL(ESP_OK, ai_engine_init());
+    printf("init %lld ms, took internal %u KB and psram %u KB\n", (long long)((esp_timer_get_time() - started) / 1000),
+           (unsigned)((internal_before - heap_caps_get_free_size(MALLOC_CAP_INTERNAL)) / 1024),
+           (unsigned)((psram_before - heap_caps_get_free_size(MALLOC_CAP_SPIRAM)) / 1024));
     s_frame = psram(ai_engine_detect_input_bytes(), 1);
     s_spoof_face = psram(ai_engine_spoof_input_bytes(), 2);
     s_recog_face = psram(ai_engine_recog_input_bytes(), 4);
@@ -245,6 +252,24 @@ TEST_CASE("the same interleaved pass under preview traffic", "[bench_ai]")
     load_start();
     time_interleaved("under load");
     load_stop();
+}
+
+// A runtime that allocates per invoke would leak or fragment over a day of frames (KEHOACH 4.1).
+TEST_CASE("the heap stays where it was across fifty passes", "[bench_ai]")
+{
+    TEST_ASSERT_EQUAL(ESP_OK, run_detect());
+    const size_t internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    const size_t spiram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    for (int i = 0; i < RUNS; ++i) {
+        for (size_t branch = 0; branch < BRANCH_COUNT; ++branch) {
+            TEST_ASSERT_EQUAL(ESP_OK, RUN[branch]());
+        }
+    }
+    printf("after %d passes: internal %d B, psram %d B against the first pass\n", RUNS,
+           (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL) - (int)internal,
+           (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) - (int)spiram);
+    TEST_ASSERT_EQUAL(internal, heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    TEST_ASSERT_EQUAL(spiram, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
 TEST_CASE("what copying the weights to psram and one crc32 over them cost", "[bench_ai]")
