@@ -17,7 +17,9 @@ bool s_ready;
 bool sane(const svc_vision_thresholds_t &t)
 {
     return t.detect_min_score > 0.0f && t.detect_min_score < 1.0f && t.live_min_score >= 0.0f &&
-           t.live_min_score <= 1.0f && t.match_min_score > -1.0f && t.match_min_score <= 1.0f && t.face_min_px > 0;
+           t.live_min_score <= 1.0f && t.match_min_score > -1.0f && t.match_min_score <= 1.0f && t.face_min_px > 0 &&
+           t.guide[2] > t.guide[0] && t.guide[3] > t.guide[1] && t.guide_min_share > 0.0f &&
+           t.guide_min_share <= 1.0f;
 }
 
 }  // namespace
@@ -42,6 +44,9 @@ extern "C" esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds)
     ESP_LOGI(TAG, "detect >= %.2f, live >= %.2f%s, match >= %.2f, face >= %d px", thresholds->detect_min_score,
              thresholds->live_min_score, s_liveness.available() ? "" : " (no spoof branch, skipped)",
              thresholds->match_min_score, thresholds->face_min_px);
+    ESP_LOGI(TAG, "guide x %.0f-%.0f y %.0f-%.0f, %.0f%% of a face inside", thresholds->guide[0],
+             thresholds->guide[2], thresholds->guide[1], thresholds->guide[3],
+             thresholds->guide_min_share * 100.0f);
     return ESP_OK;
 }
 

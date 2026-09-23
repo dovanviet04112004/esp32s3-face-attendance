@@ -17,12 +17,14 @@ extern "C" {
 
 #define SVC_VISION_REPORTED_FACES 4
 
-/** The four business thresholds, read from NVS by main (KEHOACH 4.9). */
+/** The business thresholds from NVS (KEHOACH 4.9) and the guide drawn on the glass. */
 typedef struct {
     float detect_min_score;               // a detection below this is not a face
     float live_min_score;                 // liveness below this is a presentation attack
     float match_min_score;                // cosine below this is a stranger
     int face_min_px;                      // a face narrower than this is not verified
+    float guide[4];                       // x1, y1, x2, y2 of the guide, frame pixels
+    float guide_min_share;                // part of a face box that must lie in guide
 } svc_vision_thresholds_t;
 
 typedef enum {
@@ -35,6 +37,7 @@ typedef enum {
     SVC_VISION_UNKNOWN,                   // live, no template close enough
     SVC_VISION_MATCH,                     // live and matched
     SVC_VISION_FACE_SETTLED,              // in frame, and the kiosk is done with it
+    SVC_VISION_FACE_OFF_GUIDE,            // under guide_min_share of the face in guide
 } svc_vision_kind_t;
 
 typedef struct {

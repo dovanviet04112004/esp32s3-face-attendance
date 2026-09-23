@@ -38,6 +38,16 @@ menu "Vision pipeline"
             distance the guide frame invites measures 107-110 px, so 113 was a
             gate nobody could clear from there (KEHOACH 2.1).
 
+    config VISION_SEED_GUIDE_MIN_PERCENT
+        int "Seed for the share of a face that must sit inside the guide (percent)"
+        default 50
+        range 1 100
+        help
+            Written to NVS key vision/guide_min on the first boot only. Half
+            the face box inside the drawn guide lets someone standing a head
+            off centre check in, and a face that is not on the glass is never
+            judged, since the guide lies inside the preview slice (KEHOACH 4.5.5d).
+
     config VISION_SEED_PRESENT_MM
         int "Seed for the distance that counts as someone standing there (mm)"
         default 700

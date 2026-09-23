@@ -35,6 +35,21 @@ float iou(const float *a, const float *b) noexcept
     return joined > 0.0f ? inter / joined : 0.0f;
 }
 
+float share_inside(const float *box, const float *region) noexcept
+{
+    const float area = (box[2] - box[0]) * (box[3] - box[1]);
+    if (area <= 0.0f) {
+        return 0.0f;
+    }
+    const float left = box[0] > region[0] ? box[0] : region[0];
+    const float top = box[1] > region[1] ? box[1] : region[1];
+    const float right = box[2] < region[2] ? box[2] : region[2];
+    const float bottom = box[3] < region[3] ? box[3] : region[3];
+    const float width = right > left ? right - left : 0.0f;
+    const float height = bottom > top ? bottom - top : 0.0f;
+    return width * height / area;
+}
+
 float side_of(const float *box) noexcept
 {
     const float width = box[2] - box[0];
@@ -121,7 +136,20 @@ const ai_engine_face_t &VisionPipeline::pick(size_t count) const noexcept
             return faces_[best];
         }
     }
-    return largest(faces_, count);
+    // A face off the glass must not take the turn of one standing in the guide (KEHOACH 4.5.5d).
+    size_t best = count;
+    for (size_t i = 0; i < count; ++i) {
+        if (in_guide(faces_[i].box) &&
+            (best == count || side_of(faces_[i].box) > side_of(faces_[best].box))) {
+            best = i;
+        }
+    }
+    return best < count ? faces_[best] : largest(faces_, count);
+}
+
+bool VisionPipeline::in_guide(const float *box) const noexcept
+{
+    return share_inside(box, thresholds_.guide) >= thresholds_.guide_min_share;
 }
 
 void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
@@ -275,16 +303,18 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     memcpy(out.primary.box, primary.box, sizeof(out.primary.box));
     out.primary.yaw = yaw_of(primary.landmarks);
     follow(primary);
-    // Three arithmetic checks scored here so the glass learns the stage on the
+    // Four arithmetic checks scored here so the glass learns the stage on the
     // fast path, not after the slow models return (KEHOACH 4.5.5h.1).
     const bool small = side_of(primary.box) < static_cast<float>(thresholds_.face_min_px);
+    const bool inside = in_guide(primary.box);
     const bool fits = square_fits(primary.box, frame.width, frame.height);
     // Saying FACE_OK is saying a model runs this step, and only this line knows
     // whether one will (KEHOACH 4.5.5h.1).
     const bool working = stable_ >= kStableDetects ? may_verify() : true;
     const svc_vision_kind_t settled = working ? SVC_VISION_FACE_OK : SVC_VISION_FACE_SETTLED;
     const svc_vision_kind_t stage =
-        small ? SVC_VISION_FACE_SMALL : (fits ? settled : SVC_VISION_FACE_OUT_OF_FRAME);
+        small ? SVC_VISION_FACE_SMALL
+              : (!inside ? SVC_VISION_FACE_OFF_GUIDE : (fits ? settled : SVC_VISION_FACE_OUT_OF_FRAME));
     // The slow models below hold this step for up to a second, and a box that
     // waits for them is a second old by the time it is drawn (KEHOACH 4.5.5d).
     tell(out, count, stage);
@@ -292,6 +322,14 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
         if (seen_ != Seen::Small) {
             seen_ = Seen::Small;
             out.kind = SVC_VISION_FACE_SMALL;
+        }
+        return out;
+    }
+    if (!inside) {
+        stable_ = 0;
+        if (seen_ != Seen::OffGuide) {
+            seen_ = Seen::OffGuide;
+            out.kind = SVC_VISION_FACE_OFF_GUIDE;
         }
         return out;
     }
