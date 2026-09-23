@@ -188,7 +188,7 @@ esp_err_t sys_storage_models_revert(void);
  *  @ctx any | non-blocking | valid only after sys_storage_models_open
  *  @param arena_hint_bytes the arena this model runs in, 0 when unmeasured; may be NULL
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND when no entry carries that name
- *       | ESP_ERR_INVALID_SIZE when the entry does not lie inside the image
+ *       | ESP_ERR_INVALID_SIZE when the entry lies outside the image or is neither .tflite nor .espdl
  */
 esp_err_t sys_storage_model_find(const char *name, const void **data, size_t *size,
                                  uint32_t *arena_hint_bytes);
