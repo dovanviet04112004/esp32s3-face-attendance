@@ -8,6 +8,9 @@
 #include "canvas.hpp"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "screens.hpp"
 #include "strings.hpp"
 #include "theme.hpp"
@@ -40,6 +43,7 @@ uint32_t s_sent;                          // serial of the last map published
 std::atomic<uint32_t> s_on_glass{ 0 };    // serial cam_task last put on the panel
 bool s_ready;
 bool s_dirty = true;
+SemaphoreHandle_t s_published;
 
 ui::Sight s_seen;
 ui_kiosk_stage_t s_wanted = UI_KIOSK_STAGE_NO_FACE;
@@ -81,6 +85,7 @@ void publish(ui::Canvas &from)
     target->serial = ++s_serial;
     s_shown.store(target, std::memory_order_release);
     s_sent = target->serial;
+    xSemaphoreGive(s_published);
 }
 
 // Every screen paints the clock, and a repaint needs a reason, so the minute
@@ -156,6 +161,10 @@ esp_err_t ui_kiosk_init(void)
 {
     if (s_ready) {
         return ESP_ERR_INVALID_STATE;
+    }
+    s_published = xSemaphoreCreateBinary();
+    if (s_published == nullptr) {
+        return ESP_ERR_NO_MEM;
     }
     for (int i = 0; i < kSlots; ++i) {
         uint8_t *cells = static_cast<uint8_t *>(
@@ -542,4 +551,13 @@ const drv_lcd_overlay_t *ui_kiosk_hold(void)
 void ui_kiosk_release(void)
 {
     s_held.store(-1, std::memory_order_release);
+}
+
+bool ui_kiosk_wait_publish(uint32_t timeout_ms)
+{
+    if (s_published == nullptr) {
+        vTaskDelay(pdMS_TO_TICKS(timeout_ms));
+        return false;
+    }
+    return xSemaphoreTake(s_published, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }

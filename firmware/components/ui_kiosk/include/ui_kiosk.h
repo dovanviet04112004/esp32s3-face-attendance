@@ -276,6 +276,12 @@ bool ui_kiosk_screen_covers(void);
  */
 void ui_kiosk_release(void);
 
+/** Wait for ui_task to publish an overlay newer than the last one waited on.
+ *  @ctx cam_task | blocking up to timeout_ms | one waiter only
+ *  @ret true when a new overlay is ready to be shown
+ */
+bool ui_kiosk_wait_publish(uint32_t timeout_ms);
+
 #ifdef __cplusplus
 }
 #endif
