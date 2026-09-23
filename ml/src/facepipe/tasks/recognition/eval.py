@@ -59,7 +59,7 @@ def embed(
     from .data import normalize_batch
 
     model.eval()
-    out = np.zeros((len(images), 512), dtype=np.float32)
+    out: np.ndarray | None = None
     for start in range(0, len(images), batch_size):
         chunk = images[start : start + batch_size]
         tensor = torch.from_numpy(chunk).permute(0, 3, 1, 2).to(device)
@@ -68,6 +68,8 @@ def embed(
             vectors = model(normalize_batch(tensor))
             if flip:
                 vectors = vectors + model(normalize_batch(torch.flip(tensor, dims=[3])))
+        if out is None:
+            out = np.zeros((len(images), vectors.shape[1]), dtype=np.float32)
         out[start : start + len(chunk)] = vectors.float().cpu().numpy()
     norms = np.linalg.norm(out, axis=1, keepdims=True)
     return out / np.maximum(norms, 1e-10)
@@ -138,10 +140,11 @@ def evaluate_benchmark(
     device: torch.device,
     batch_size: int = BATCH_SIZE,
     flip: bool = False,
+    size: int = ALIGNED_SIZE,
 ) -> dict[str, float]:
-    """Load one .bin, embed it and score it."""
+    """Load one .bin, embed it at the model's own input side and score it."""
     encoded, issame = read_bin(path)
-    images = decode_images(encoded)
+    images = decode_images(encoded, size)
     embeddings = embed(model, images, device, batch_size, flip)
     return evaluate_pairs(pair_scores(embeddings), issame)
 
@@ -153,13 +156,14 @@ def evaluate_all(
     names: tuple[str, ...] = BENCHMARKS,
     batch_size: int = BATCH_SIZE,
     flip: bool = False,
+    size: int = ALIGNED_SIZE,
 ) -> dict[str, dict[str, float]]:
     """Score every benchmark present under root, skipping the ones that are not."""
     results: dict[str, dict[str, float]] = {}
     for name in names:
         path = Path(root) / f"{name}.bin"
         if path.is_file():
-            results[name] = evaluate_benchmark(model, path, device, batch_size, flip)
+            results[name] = evaluate_benchmark(model, path, device, batch_size, flip, size)
     return results
 
 
@@ -200,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt", type=Path, default=None)
+    parser.add_argument("--run", type=Path, default=None,
+                        help="score this run's best.pth with its frozen config instead of --ckpt")
     parser.add_argument("--benchmarks", type=Path, default=Path("data/raw/recognition/benchmarks"))
     parser.add_argument("--model", default="mobilefacenet")
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
@@ -207,16 +213,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args(argv)
 
-    if args.ckpt is None:
-        parser.error("--ckpt is required")
+    if (args.ckpt is None) == (args.run is None):
+        parser.error("give exactly one of --ckpt or --run")
 
     device = torch.device(args.device)
-    model = MODELS.build({"name": args.model, "params": {}})
-    payload = torch.load(args.ckpt, map_location="cpu", weights_only=False)
-    model.load_state_dict(payload.get("model", payload))
+    if args.run is not None:
+        cfg, model = load_run(args.run)
+        size = int(cfg.model.input_hw[0])
+    else:
+        model = MODELS.build({"name": args.model, "params": {}})
+        payload = torch.load(args.ckpt, map_location="cpu", weights_only=False)
+        model.load_state_dict(payload.get("model", payload))
+        size = ALIGNED_SIZE
     model = model.to(device)
 
-    for name, scores in evaluate_all(model, args.benchmarks, device, flip=args.flip).items():
+    results = evaluate_all(model, args.benchmarks, device, flip=args.flip, size=size)
+    for name, scores in results.items():
         line = " ".join(f"{key}={value:.4f}" for key, value in scores.items())
         print(f"{name:10s} {line}")
     return 0

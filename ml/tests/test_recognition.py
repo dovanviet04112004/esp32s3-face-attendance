@@ -22,7 +22,7 @@ from facepipe.tasks.recognition.data import (
 from facepipe.tasks.recognition.losses import (
     ArcFaceLoss,
 )
-from facepipe.tasks.recognition.model import INPUT_SIZE, MobileFaceNet
+from facepipe.tasks.recognition.model import INPUT_SIZE, MobileFaceNet, MobileFaceNetECA
 from facepipe.tasks.recognition.model.mobilefacenet import FINAL_MAP
 
 EMBEDDING = 512
@@ -55,6 +55,25 @@ def test_the_model_stays_inside_the_flash_budget() -> None:
     """A model over about 1.3M parameters no longer fits the branch's INT8 share."""
     total = sum(p.numel() for p in MobileFaceNet().parameters())
     assert 1_000_000 < total < 1_300_000
+
+
+def test_the_eca_port_emits_a_512_dimensional_embedding_at_112() -> None:
+    model = MobileFaceNetECA().eval()
+    out = model(torch.randn(2, 3, 112, 112))
+    assert out.shape == (2, EMBEDDING)
+
+
+def test_the_eca_port_carries_frbench_parameter_names() -> None:
+    """The published state dict loads strictly only if every name matches upstream's."""
+    keys = MobileFaceNetECA().state_dict().keys()
+    assert "conv_3.layers.0.eca.conv.weight" in keys
+    assert "output_layer.bn.running_var" in keys
+    assert sum(p.numel() for p in MobileFaceNetECA().parameters()) == 1_200_577
+
+
+def test_the_eca_port_refuses_an_input_its_kernel_cannot_close() -> None:
+    with pytest.raises(ValueError):
+        MobileFaceNetECA(input_size=113)
 
 
 def test_the_final_layer_weighs_cells_separately() -> None:

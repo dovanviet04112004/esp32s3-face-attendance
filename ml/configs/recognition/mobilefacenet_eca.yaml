@@ -1,0 +1,60 @@
+# MobileFaceNet-ECA with the weights FRBench published, trained on MS1M with an
+# ArcFace margin and imported whole by import_frbench.py (KEHOACH 1.1, 3 layer 2).
+
+run:
+  task: recognition
+  seed: 42
+  deterministic: true
+  tags: [mobilefacenet_eca, imported, frbench]
+  notes: FRBench weights-v1.0.0 mobilefacenet_arcface_ms1m.pth (sha 0a6c62d8ae6ce2d4), MS1M ArcFace, not trained on this project's data
+
+model:
+  name: mobilefacenet_eca
+  # The published closing kernel is 7x7, which only a 112 input leaves.
+  input_hw: [112, 112]
+  params:
+    num_features: 512
+
+data:
+  name: ms1mv3
+  # 400 MB clear of the paging cliff at 192 (measurements 2).
+  batch_size: 128
+  # Readers are not the constraint on this branch (measurements 2).
+  num_workers: 6
+  prefetch_factor: 4
+  split_files:
+    - data/splits/recognition/v1_identity_disjoint/train_ids.txt
+    - data/splits/recognition/v1_identity_disjoint/val_ids.txt
+  params:
+    shards: data/interim/recognition/ms1mv3_shards
+    benchmarks: data/raw/recognition/benchmarks
+    embedding_dim: 512
+    arcface:
+      scale: 64.0
+      margin: 0.5
+
+train:
+  # Budget for one card, not what the method wants (measurements 2).
+  epochs: 10
+  amp: true
+  # Horizon of ten thousand steps, a quarter of an epoch at this batch size.
+  ema_decay: 0.9999
+  grad_clip_norm: 5.0
+  val_every_epochs: 1
+  # Memory more than speed (measurements 2).
+  compile: true
+  channels_last: true
+
+optim:
+  name: sgd
+  # Linear scaling from arcface_torch's ms1mv3_mbf (measurements 2).
+  lr: 0.0125
+  weight_decay: 0.0005
+  params:
+    momentum: 0.9
+    nesterov: false
+
+sched:
+  name: cosine
+  warmup_epochs: 1
+  min_lr: 0.0000125
