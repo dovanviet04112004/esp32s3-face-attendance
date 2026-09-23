@@ -30,7 +30,18 @@ def quantized(values: np.ndarray, detail: dict) -> np.ndarray:
     scale, zero = detail["quantization"]
     if detail["dtype"] == np.float32 or scale == 0:
         return values.astype(np.float32)
-    return np.clip(np.round(values / scale) + zero, -128, 127).astype(detail["dtype"])
+    # Quantizer in pixels.cpp: float32, times the inverse scale, rint; 2/255 puts pixels on ties.
+    inverse = np.float32(1.0) / np.float32(scale)
+    q = np.rint(values.astype(np.float32) * inverse) + zero
+    return np.clip(q, -128, 127).astype(detail["dtype"])
+
+
+def reference_interpreter(path: Path):
+    """The file on the kernels TFLM and esp-nn reproduce, not on XNNPACK's."""
+    from ai_edge_litert.interpreter import Interpreter, OpResolverType
+
+    return Interpreter(model_path=str(path),
+                       experimental_op_resolver_type=OpResolverType.BUILTIN_REF)
 
 
 def dequantized(values: np.ndarray, detail: dict) -> np.ndarray:
@@ -46,9 +57,7 @@ def scores(model_path: Path, loader, live_index: int, limit: int = 0):
     A limit strides across the split rather than cutting its head off: the
     shards are not shuffled, so the first batches are one class.
     """
-    from ai_edge_litert.interpreter import Interpreter
-
-    interpreter = Interpreter(model_path=str(model_path))
+    interpreter = reference_interpreter(model_path)
     interpreter.allocate_tensors()
     inputs = {}
     for detail in interpreter.get_input_details():
@@ -106,9 +115,7 @@ class TfliteRunner:
     batched = False
 
     def __init__(self, path: Path, shapes: list[tuple[int, ...]]) -> None:
-        from ai_edge_litert.interpreter import Interpreter
-
-        self.interpreter = Interpreter(model_path=str(path))
+        self.interpreter = reference_interpreter(path)
         self.interpreter.allocate_tensors()
         self.inp = self.interpreter.get_input_details()[0]
         self.outs = self.interpreter.get_output_details()
