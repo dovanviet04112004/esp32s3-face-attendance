@@ -14,6 +14,8 @@ import { COUNT_CEILING, MAX_OFFSET } from "../src/common/dto/cursor.dto.js";
 const TAKE = 20;
 const DEVICE = "e2e-paging-door";
 const CODE = "E2EPG01";
+const FILLER = "E2EPG02";
+const FILL_BATCH = 2000;
 const MADE_PUNCHES = 5;
 const PERSON = "Người bị phân trang";
 
@@ -39,8 +41,29 @@ describe("paging (e2e)", () => {
 
   async function sweep(): Promise<void> {
     await db.attendanceRecord.deleteMany({ where: { deviceId: DEVICE } });
-    await db.employee.deleteMany({ where: { code: CODE } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, FILLER] } } });
     await db.device.deleteMany({ where: { id: DEVICE } });
+  }
+
+  // A fresh database holds far fewer punches than the ceiling two cases are about.
+  async function fillPastTheCeiling(): Promise<void> {
+    const missing = COUNT_CEILING + 1 - (await db.attendanceRecord.count({ take: COUNT_CEILING + 1 }));
+    if (missing <= 0) {
+      return;
+    }
+    const filler = await db.employee.create({ data: { code: FILLER, fullName: PERSON, active: true } });
+    for (let from = 0; from < missing; from += FILL_BATCH) {
+      await db.attendanceRecord.createMany({
+        data: Array.from({ length: Math.min(FILL_BATCH, missing - from) }, (unused, at) => ({
+          localId: `E2EPG-F${from + at}`,
+          employeeId: filler.id,
+          deviceId: DEVICE,
+          ts: shared,
+          direction: "IN",
+          score: 0.9,
+        })),
+      });
+    }
   }
 
   async function punches(query: string): Promise<Answer> {
@@ -165,12 +188,14 @@ describe("paging (e2e)", () => {
   });
 
   it("stops counting at the ceiling and says the total is a floor", async () => {
+    await fillPastTheCeiling();
     const page = await punches("take=2");
     assert.equal(page.total, COUNT_CEILING, "a list past the ceiling reported an exact total");
     assert.equal(page.totalIsExact, false);
   });
 
   it("stops the count at the ceiling instead of reaching the end", async () => {
+    await fillPastTheCeiling();
     const held = await db.attendanceRecord.count();
     assert.ok(held > COUNT_CEILING, "this case needs more punches than the ceiling");
     const bounded = await db.attendanceRecord.count({ take: COUNT_CEILING + 1 });

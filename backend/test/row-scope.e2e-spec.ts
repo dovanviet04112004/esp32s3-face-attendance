@@ -22,6 +22,8 @@ const PASSWORD = "kiosk-e2e-password";
 const MADE_EMAILS = [BOSS_EMAIL, MINE_EMAIL];
 
 const MONTH = { from: "2026-09-01", to: "2026-09-19" };
+// A pay period no other suite touches, so its sweep removes only this suite's payslip.
+const PAY_YEAR = 1999;
 
 describe("row scope (e2e)", () => {
   let app: INestApplication;
@@ -31,6 +33,7 @@ describe("row scope (e2e)", () => {
   const idOf = new Map<string, number>();
 
   async function sweep(): Promise<void> {
+    await db.payrollPeriod.deleteMany({ where: { year: PAY_YEAR } });
     await db.user.deleteMany({ where: { email: { in: MADE_EMAILS } } });
     await db.employee.deleteMany({ where: { code: { in: MADE_CODES } } });
   }
@@ -80,6 +83,15 @@ describe("row scope (e2e)", () => {
     await db.employee.update({
       where: { id: idOf.get(MINE) },
       data: { managerId: idOf.get(BOSS) },
+    });
+
+    const policy = await db.payrollPolicy.findFirstOrThrow();
+    const period = await db.payrollPeriod.create({
+      data: { year: PAY_YEAR, month: 1, startDate: new Date("1999-01-01"), endDate: new Date("1999-01-31") },
+    });
+    const run = await db.payrollRun.create({ data: { periodId: period.id } });
+    await db.payslip.create({
+      data: { runId: run.id, periodId: period.id, employeeId: idOf.get(STRANGER) as number, policyId: policy.id },
     });
 
     for (const [email, role, code] of [
@@ -193,7 +205,7 @@ describe("row scope (e2e)", () => {
       where: { employeeId: { notIn: [idOf.get(MINE) as number, idOf.get(BOSS) as number] } },
       select: { id: true },
     });
-    assert.ok(other, "the seed has a payslip belonging to somebody else");
+    assert.ok(other, "the stranger's payslip was never made");
 
     const probes: [string, number][] = [
       [`/payslips/${other.id}`, 404],

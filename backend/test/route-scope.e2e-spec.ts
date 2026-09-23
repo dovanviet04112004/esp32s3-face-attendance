@@ -39,6 +39,8 @@ const READS: { path: string; allowed: Who[] }[] = [
   { path: "/departments", allowed: ["ADMIN", "HR", "PAYROLL", "MANAGER"] },
 ];
 
+const DOOR = "e2e-route-scope-door";
+
 describe("route scope (e2e)", () => {
   let app: INestApplication;
   let http: ReturnType<INestApplication["getHttpServer"]>;
@@ -50,6 +52,7 @@ describe("route scope (e2e)", () => {
   let underId = 0;
 
   async function sweep(): Promise<void> {
+    await db.device.deleteMany({ where: { id: DOOR } });
     await db.user.deleteMany({ where: { email: { in: WHO.map((one) => one.email) } } });
     await db.employee.deleteMany({ where: { code: { in: WHO.map((one) => one.code) } } });
   }
@@ -78,6 +81,7 @@ describe("route scope (e2e)", () => {
     jwt = app.get(JwtService);
     config = app.get(ConfigService);
     await sweep();
+    await db.device.create({ data: { id: DOOR, tokenHash: "e2e-not-a-real-hash" } });
 
     const boss = await db.user.findFirstOrThrow({ where: { email: "admin@kiosk.local" } });
     tokens.set("ADMIN", tokenFor(boss.id, "ADMIN", boss.employeeId));

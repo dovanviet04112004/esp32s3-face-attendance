@@ -19,6 +19,8 @@ const ACCOUNTS = {
   viewer: "viewer@kiosk.local",
 };
 
+const WAITING = "kiosk-e2e-waiting";
+
 describe("crud (e2e)", () => {
   let app: INestApplication;
   let http: ReturnType<INestApplication["getHttpServer"]>;
@@ -29,6 +31,7 @@ describe("crud (e2e)", () => {
 
   // The suite writes real rows, so it clears its own at each end of the run.
   async function sweep(): Promise<void> {
+    await db.device.deleteMany({ where: { id: WAITING } });
     await db.shiftAssignment.deleteMany({ where: { shift: { name: { in: MADE_SHIFTS } } } });
     await db.shift.deleteMany({ where: { name: { in: MADE_SHIFTS } } });
     await db.employee.deleteMany({ where: { code: { in: MADE_CODES } } });
@@ -43,6 +46,7 @@ describe("crud (e2e)", () => {
     http = app.getHttpServer();
     db = app.get(PrismaService);
     await sweep();
+    await db.device.create({ data: { id: WAITING } });
     for (const [role, email] of Object.entries(ACCOUNTS)) {
       const res = await request(http).post("/auth/login").send({ email, password });
       assert.equal(res.status, 200, `${role} could not sign in`);
@@ -115,7 +119,7 @@ describe("crud (e2e)", () => {
 
   it("refuses hr on a device, which only an admin may accept", async () => {
     const res = await request(http)
-      .post("/devices/kiosk-2884859fd3c8/approve")
+      .post(`/devices/${WAITING}/approve`)
       .set("Authorization", `Bearer ${token.hr}`)
       .send({ name: "Cửa trước" });
     assert.equal(res.status, 403);
@@ -123,7 +127,7 @@ describe("crud (e2e)", () => {
 
   it("lets an admin accept a device that was waiting", async () => {
     const res = await request(http)
-      .post("/devices/kiosk-2884859fd3c8/approve")
+      .post(`/devices/${WAITING}/approve`)
       .set("Authorization", `Bearer ${token.admin}`)
       .send({ name: "Cửa trước", location: "Tầng 1" });
     assert.equal(res.status, 201);
