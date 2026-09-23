@@ -4,6 +4,7 @@ sdkconfig.old
 managed_components/
 models/*.tflite
 models/**/*.tflite
+models/**/*.espdl
 components/*/test_apps/build/
 components/*/test_apps/sdkconfig
 components/*/test_apps/sdkconfig.old

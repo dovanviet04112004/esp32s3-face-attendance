@@ -1,6 +1,7 @@
 * text=auto eol=lf
 
 *.tflite    binary
+*.espdl     binary
 *.onnx      binary
 *.pth       binary
 *.npz       binary

@@ -20,10 +20,12 @@ firmware/sdkconfig
 firmware/sdkconfig.old
 firmware/managed_components/
 firmware/models/**/*.tflite
+firmware/models/**/*.espdl
 firmware/models/**/*.bin
 
 # ── Artifact nặng ──
 *.tflite
+*.espdl
 *.onnx
 *.pth
 *.pt
