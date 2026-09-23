@@ -3294,9 +3294,26 @@ public:
 
 **Trượt tiền kiểm hình học không phải là đổi người.** Danh tính của một track do **duy nhất** phép chồng hộp quyết định; `stable_` là bộ đếm riêng, đo hộp ấy đã đứng yên được mấy lần detect, và cổng hình học chỉ xoá bộ đếm ấy chứ không đóng track. Gộp hai thứ vào cùng một biến là cái bẫy: ô vuông 1,0× lấy cỡ theo cạnh dài của đầu nhưng phải lọt cạnh ngắn của khung, nên một người đứng hơi chệch dải giữa trượt cổng ấy liên tục, và mỗi lần trượt lại mở một track mới. Mở track mới thì `kUnknownTries`, `enrol_spoofs_` và `matched_` đều về 0 — người lạ đứng hơi lệch **không bao giờ** đủ hai lần thử để bị kết luận, màn hình đứng mãi ở "Đang nhận diện", còn người vừa chấm công xong thì bị xác thực lại. Track chỉ đóng khi mất mặt (2 bước detect trượt liên tiếp) hoặc khi hộp của lần detect này không chồng hộp lần trước.
 
+**Khung ngắm là một cổng, không chỉ là hình vẽ.** Camera chụp 480×320 nhưng panel chỉ hiện 213 cột
+giữa (cột 133–346, §2.3A), nên một khuôn mặt lệch sang bên qua được mọi cổng khác trong khi người
+đứng trước kính không thấy mình trên màn — và track mới lấy mặt **lớn nhất cả khung**, nên mặt nằm
+ngoài màn còn giành được lượt của người đứng giữa khung ngắm. Cổng hình học thứ tư vì thế là:
+**ít nhất một nửa diện tích hộp mặt nằm trong khung ngắm**, quy ra pixel khung camera
+(x 160–319, y 64–261). Một nửa là đủ rộng để người đứng chệch nửa đầu vẫn được chấm, và đủ chặt để
+mặt nằm ngoài màn không bao giờ được xét: khung ngắm nằm trọn trong dải preview, nên mặt qua cổng
+này luôn hiện trên kính ít nhất một nửa. Track mới chỉ lấy trong số mặt qua cổng ấy (lớn nhất
+trong số đó); không mặt nào qua thì mới lấy mặt lớn nhất cả khung để báo `FACE_OFF_GUIDE`. Mặt đang
+bám trôi ra ngoài thì trượt cổng nhưng **giữ track**, đúng luật đoạn trên.
+
+`main` là tầng duy nhất thấy cả hai hệ toạ độ, nên nó dựng hình chữ nhật này: lấy khung ngắm của
+`ui_kiosk` (pixel panel), đổi sang pixel khung bằng đúng phép chiếu preview của `drv_lcd`, rồi đưa
+vào `svc_vision_init` cùng các ngưỡng. `svc_vision` không biết panel tồn tại; `ui_kiosk` không so
+hộp mặt với khung. Tỉ lệ một nửa là ngưỡng nghiệp vụ: NVS `vision/guide_min` (%), gieo từ `Kconfig`
+`VISION_SEED_GUIDE_MIN_PERCENT` = 50 (§4.9, §6.2.1).
+
 **Ba đường thoát im lặng của `verify()` phải để lại dấu.** Liveness lỗi, embed lỗi, và bảng không trả lời đều trả về không kết luận — đúng, vì không cái nào là một phán quyết về khuôn mặt này — nhưng cả ba đều để màn hình ở "Đang nhận diện" mà không có gì trong log. Mỗi đường ghi một dòng `no verdict: <nguồn> <mã lỗi>`, nếu không thì một khoá bảng kẹt và một model hỏng trông giống hệt nhau từ phía người đứng trước kính.
 
-**Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL`/`FACE_OUT_OF_FRAME` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
+**Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL`/`FACE_OFF_GUIDE`/`FACE_OUT_OF_FRAME` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
 
 Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision`. `live_min` gieo **500‰**, đo 16/09 trên 62 khung thật và 25 khung giả **đều chụp bằng chính OV5640**, chấm bằng file INT8 trên `models.lock.json` qua đúng crop và lấy mẫu của firmware (`docs/measurements/antispoof` §42.2): mọi khung giả đứng dưới 0,316, mặt thật thấp nhất ở 0,636, nên 500‰ nằm giữa với biên hai phía 0,184 và 0,136. Con số tròn ấy có được nhờ bước căn bias của §3: không có nó thì cửa sổ chỉ rộng 19‰ và một sai số gieo vài phần nghìn là lật phán quyết. Bộ giả mới có hai phiên, một điện thoại và một bộ ảnh in, nên E8-T12 vẫn phải chốt lại khi có thêm đòn tấn công. `detect_min` gieo **350‰**, đo 13/09 trên board sau khi sửa thứ tự byte RGB565 (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức sàn 500‰ cũ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` hạ **113 → 100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức hụt cổng cũ đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên lại.
 
@@ -3373,6 +3390,7 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 | `Verifying` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
 | `Verifying` | `Timeout` | `Detecting` | `None` |
 | `Granted` | `Timeout` | `Cooldown` | `Rest` |
+| `Granted` | `Match` của người khác | `Granted` | `Grant` — người sau không chờ cửa người trước đóng |
 | `Denied` | `Match` | `Granted` | `Grant` |
 | `Denied` | `Timeout` | `Cooldown` | `Rest` |
 | `Cooldown` | `Match` | `Granted` | `Grant` |
@@ -3388,6 +3406,13 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 **Nhưng mở máy không được tiêu mất chính phán quyết đã mở nó.** Mỗi sự kiện ở `Idle` làm đúng việc nó mang: `FaceSmall` mở máy rồi chờ, còn `Match` **cấp luôn** và `Spoof` / `Unknown` **từ chối luôn**. Đo trên board 13/09: khi `Match` ở `Idle` chỉ chuyển sang `Detecting`, lần khớp đầu bị tiêu vào việc mở máy, mà §4.5.5d **không xác thực lại một track đã khớp** nên lần khớp thứ hai chỉ tới khi người dùng cử động đủ để track mất dấu (IoU < 0,5) — người đưa mặt vào khung rồi đứng yên **không bao giờ chấm được**, phải nhúc nhích mới xong. Cùng một lẽ ấy, `Denied` và `Cooldown` nhận `Match`: 3,5 giây giữ màn hình từ chối không được phép nuốt một lần khớp thật, người bị từ chối oan phải được chấm ngay ở vòng thử lại kế tiếp chứ không đứng đợi hết giờ. Chống chấm trùng vẫn là việc của `attend.dedup_min` nên không đường nào trong số này đẻ ra bản ghi thừa.
 
 **Một lần cấp quyền đòi một lần *đến*, không phải một lần *khớp*.** Ba đường `Match` ở trên có mặt để một lần khớp thật không bị nuốt, nhưng chúng cũng khiến khuôn mặt **chưa hề rời đi** được cấp quyền lại sau mỗi vòng `Granted → Cooldown → Idle`: `Cooldown` dài 1.500 ms trong khi một vòng AI đầy đủ mất ≈ 1.750 ms, nên máy không bao giờ nghỉ được trọn vẹn. Hậu quả đo trên board 14/09: cửa mở lại và loa kêu lại **mỗi ≈ 4 giây** suốt thời gian người ta còn đứng đó, còn dải kết quả thì nháy sang câu nhắc căn khung rồi quay lại. `dedup_min` không đỡ được vì nó chỉ chặn **bản ghi**, không chặn cửa, tiếng và màn.
+
+**Người sau không chờ cửa của người trước đóng.** `Granted` giữ 2,5 s, mà §4.5.5d không xác thực lại
+một track đã khớp: một `Match` bị bỏ ở `Granted` là người ấy đứng im trước máy **mãi mãi**, cho tới khi
+bước ra rồi vào lại. Nên `Granted` nhận `Match` và cấp lại ngay; cùng người thì luật "một lần đến"
+dưới đây chặn. Trạng thái không đổi (`Granted` → `Granted`) nên `main` không có cạnh nào để vẽ lại
+thẻ hay phát tiếng: `svc_attendance_grants()` đếm mỗi lần cấp, và `main` vẽ thẻ của người mới cùng
+tiếng mở cửa mỗi khi số ấy tăng.
 
 Nên `Grant` bị chặn khi **cùng một `employee_id` còn trong cửa sổ `dedup_min`** *và* chưa có `NoFace` hoặc `PresenceOff` nào kể từ lần cấp trước. Chặn đặt ở **bước chuyển trạng thái** chứ không ở hành động: tiếng và màn bám vào việc *đổi trạng thái*, nên chặn ở hành động thì cửa im mà loa vẫn kêu. Người khác bước tới vẫn được cấp ngay, vì phép so là theo mã nhân viên.
 
@@ -3624,19 +3649,21 @@ trượt khi người quay nhanh (§4.5.5h, đoạn `BoxTracker`). Khung ngắm 
 ngắm nói "đứng vào đây thì máy làm việc được". `BoxTracker` vì thế **ra khỏi đường vẽ**; mã giữ
 lại trong cây cho luồng nào cần bám thật (ví dụ nhiều người cùng khung ở E10-T7).
 
-Bốn trạng thái của khung, màu là thông tin chứ không phải trang trí:
+Các trạng thái của khung, màu là thông tin chứ không phải trang trí:
 
 | Máy đang | Khung | Dòng nhắc dưới khung |
 |---|---|---|
 | chờ, không thấy ai | trắng mờ | `Đưa khuôn mặt vào khung` |
 | thấy mặt nhưng nhỏ hơn cổng | hổ phách | `Lại gần hơn` |
-| mặt tràn ra ngoài khung vì đứng quá gần | hổ phách | `Lùi lại một chút` |
+| thấy mặt nhưng chưa tới một nửa nằm trong khung | hổ phách | `Đưa khuôn mặt vào khung` |
+| trong khung nhưng ô 1,0× tràn khung camera — gần như chỉ khi đứng quá gần | hổ phách | `Lùi lại một chút` |
 | mặt qua cổng, pipeline đang làm việc | xanh mint | `Đang nhận diện...` |
 | xong, đạt | xanh mint | thẻ dấu tích + tên ở dải dưới |
 | xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt ấy rời khung hoặc pipeline bắt sang người khác** |
 
-**Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Bốn trạng thái trên là bốn cổng của
-pipeline (§4.5.5d): không có mặt, mặt dưới `face_min_px`, ô 1,0× tràn khung, qua cổng. `main` dịch
+**Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Các trạng thái trên là các cổng của
+pipeline (§4.5.5d): không có mặt, mặt dưới `face_min_px`, chưa tới nửa mặt trong khung ngắm, ô 1,0×
+tràn khung, qua cổng. `main` dịch
 sang `ui_kiosk_stage_t`, `ui_kiosk` vẽ.
 
 **Trạng thái đi theo đường nhanh, phán quyết đi theo đường chậm — hai kênh, không gộp.** Cổng thứ
@@ -3649,15 +3676,15 @@ quyết dập. Đo trên board 18/09: **gần như không bao giờ thấy "Đan
 từ "Lại gần hơn" sang kết quả.
 
 Nên cổng thứ tư đi bằng **bộ quan sát** của §4.5.5d — thứ vốn đã bắn ngay sau detect và trước hai
-model chậm, chính là lý do nó tồn tại. `VisionPipeline` chấm ba phép kiểm hình học (có mặt,
-`face_min_px`, ô 1,0× lọt khung) **trước** khi gọi bộ quan sát, rồi gửi kết quả kèm danh sách hộp.
+model chậm, chính là lý do nó tồn tại. `VisionPipeline` chấm bốn phép kiểm hình học (có mặt,
+`face_min_px`, nửa mặt trong khung ngắm, ô 1,0× lọt khung) **trước** khi gọi bộ quan sát, rồi gửi kết quả kèm danh sách hộp.
 `main` dịch nó sang `ui_kiosk_stage_t`; `svc_vision_kind_t` giữ đúng vai trò phán quyết nghiệp vụ
 cho `svc_attendance`. Không tốn thêm một mili giây nào: ba phép kiểm ấy là số học thuần, và chúng
 vốn đã chạy ngay sau đó. Bản 13/09 từng để màn tự so hộp mặt với
 khung ngắm và báo `Đang nhận diện...` cho một khuôn mặt pipeline đang từ chối vì tràn khung — hai
 câu trả lời cho một câu hỏi, và câu của màn sai. Khung ngắm vì thế là **hình vẽ tĩnh** quy từ cổng
-`face_min_px` ra pixel panel, không phải một phép kiểm, và không đẻ thêm ngưỡng nghiệp vụ nào cho
-§4.9.
+`face_min_px` ra pixel panel; phép kiểm "mặt có trong khung không" chạy ở `svc_vision` (§4.5.5d) trên
+chính hình chữ nhật ấy quy ra pixel khung camera, nên màn vẫn chỉ chép lại điều pipeline nói.
 
 **Bản đồ phủ mang chỉ số bảng màu cộng độ phủ, không mang màu.** Mỗi ô là một byte chia đôi:
 4 bit thấp là chỉ số trong bảng màu dùng chung (0 = để lọt video), 4 bit cao là **độ phủ** 0–15.
@@ -5206,7 +5233,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
-| `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `present_mm` (u32, mm) | | bốn ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
+| `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `guide_min` (u32, %), `present_mm` (u32, mm) | | năm ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
 
 **`device/serial` là danh tính, không phải bí mật.** Thiếu khoá thì `sys_storage` dựng
