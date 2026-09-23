@@ -83,9 +83,11 @@ lệch 0,0 trên host — và `espdl_op_check.py` chặn loại lỗi này từ 
   partition, và bảng partition không đi qua OTA được.
 - **RAM nội**: 13,6 KB DIRAM tĩnh (180.392 → 194.276 B, đo trên ảnh kiosk) cộng 25–41 KB mỗi model nếu để mặc định; `EspdlModel` đẩy object nhỏ
   sang PSRAM lúc dựng, và đáy RAM nội của kiosk là cổng phủ quyết của E9-T31.
-- **PSRAM**: ~3,1 MB cho ba model thay ~940 KB của hai arena TFLM.
+- **PSRAM**: 3.281 KB cho ba model của bộ deploy, thay 917 KB của hai arena TFLM (đo 23/09,
+  `latency.md` §13.6).
 - Trọng số ở PSRAM thì một phép ghi lố heap **âm thầm sửa model** thay vì crash tại chỗ như ở flash.
 - Recog mới đổi không gian embedding: **mọi khuôn mặt phải đăng ký lại**.
 - `esp-ppq` 1.3.11 khai `onnx<1.18`, venv dùng 1.22 qua `override-dependencies`; bằng chứng
   duy nhất rằng tổ hợp này đúng là `test()` PASS trên board, trong một bước int8.
-- Pipeline dự kiến ~450 ms 🔬: vẫn vượt ngân sách 360 ms, nhưng nhanh ~2,8× so với 1.273 ms.
+- Một lượt ba nhánh của bộ deploy đo được 452 ms rảnh, 523 ms có tải (`latency.md` §13.1): vẫn
+  vượt ngân sách 360 ms, nhưng nhanh 2,8× so với 1.271 ms của TFLM.
