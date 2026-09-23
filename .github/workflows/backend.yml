@@ -63,7 +63,7 @@ jobs:
       MQTT_URL: mqtt://localhost:1883
       MQTT_USERNAME: ci
       MQTT_PASSWORD: ci
-      # The auth suite signs in six times before it spends the allowance on purpose.
+      # The auth suite signs in six times, then spends the whole allowance on purpose.
       LOGIN_ATTEMPTS_PER_MINUTE: "20"
       # The profile suite listens for the mail itself, and a runner may not bind 587.
       MAIL_HOST: 127.0.0.1
