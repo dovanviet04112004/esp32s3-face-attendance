@@ -2000,7 +2000,7 @@ Bốn luật:
 | **Arena ở RAM nội, không PSRAM** | ESP-NN đo person_detection trên S3: **2300 ms → 54 ms** khi bật ESP-NN + arena ở RAM nội. Arena ở PSRAM chậm hơn nhiều lần. 🔬 Đo cả 2 |
 | **Align 16 byte** | `heap_caps_aligned_alloc(16, size, MALLOC_CAP_INTERNAL)` — SIMD của LX7 yêu cầu |
 | **Quy tắc arena** | Xem §3.8 — không phải `max(3)` cũng không phải tổng của 3. Công thức đúng: **Σ tail + max(head)** khi 3 interpreter dùng chung một `MicroAllocator` |
-| **Model nằm trong flash, mmap** | `esp_partition_mmap(models_part, ..., ESP_PARTITION_MMAP_DATA, &ptr)` → trọng số đọc thẳng từ flash qua cache, **tốn 0 byte RAM**. Không nhúng model thành mảng C trong firmware |
+| **Model nằm trong flash, mmap** | `esp_partition_mmap(models_part, ..., ESP_PARTITION_MMAP_DATA, &ptr)` → trọng số đọc thẳng từ flash qua cache, **tốn 0 byte RAM**. Không nhúng model thành mảng C trong firmware. Từng nhánh chép được trọng số sang PSRAM bằng `AI_WEIGHTS_PSRAM_*` (§4.5.6, §6.3), mặc định tắt cho tới khi E9-T28 đo ra lãi |
 | **`MicroMutableOpResolver` riêng từng model** | Chỉ đăng ký đúng op cần → giảm vài chục KB flash so với `AllOpsResolver` |
 | Cấu hình sdkconfig | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB` · `CONFIG_ESP32S3_DATA_CACHE_64KB` · `CONFIG_SPIRAM_SPEED_80M` · `CONFIG_SPIRAM_MODE_OCT` · `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240` · `CONFIG_COMPILER_OPTIMIZATION_PERF` |
 | Hot path vào IRAM | Hàm hậu xử lý (NMS, affine warp) đặt `IRAM_ATTR` nếu profiler chỉ ra nghẽn |
@@ -4013,6 +4013,9 @@ components/ai_engine/
 | `AI_ARENA_FAST_KB` | 224 | `arena_fast` riêng detect. E8-T7 đo detect dùng 189.628 B |
 | `AI_ARENA_BIG_KB` | 1536 | `arena_big`, spoof + recog dùng chung. Đo 823.148 B |
 | `AI_ARENA_FAST_INTERNAL` | n | `n` = `arena_fast` ở PSRAM; `y` = xin SRAM nội trước (§3.8) |
+| `AI_WEIGHTS_PSRAM_DETECT` | n | `y` = lúc `ai_engine_init`, sau khi hai arena đã cấp, chép trọng số detect từ mmap sang PSRAM, sống tới reboot; xin không được thì lùi về mmap và log cảnh báo (§6.3, E9-T28) |
+| `AI_WEIGHTS_PSRAM_SPOOF` | n | như trên, nhánh spoof |
+| `AI_WEIGHTS_PSRAM_RECOG` | n | như trên, nhánh recog |
 
 Xin `arena_fast` ở SRAM nội mà không đủ chỗ thì `Arena` lùi xuống PSRAM và **log cảnh báo** kèm khối liền lớn nhất còn lại — chạy chậm còn hơn không chạy, nhưng phải thấy được là đã lùi.
 
@@ -5374,7 +5377,7 @@ Font không nằm ở đây: bốn bảng chữ 4bpp của kiosk biên dịch th
 | LCD bounce buffer (2 × 32 dòng) | 2 × 20.480 B = **40.960 B** | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội. Hai đệm chứ không một: nạp lại cái đang chờ truyền là thứ vẽ ra sọc dọc (E7-T5). **32 dòng chốt bằng bảng đo 19/09** — xem luật ngay dưới §6.4 |
 | **`arena_fast`** — detect một mình @160×120 | **189.628 B** đo thật | **PSRAM** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_SPIRAM)` | Không nhánh nào nằm vừa SRAM nội (§6.4); `ai_engine` cấp theo `arena_hint` rồi làm tròn lên bội KB |
 | **`arena_big`** — anti-spoof @80×80 và recognition @113×113 **chung một `MicroAllocator`** | **748.524 B** đo thật 18/09 (V1SE nhập); 422.764 B với student width 32 | **PSRAM** | như trên | `Σ tail + max(head)` theo §3.8, không phải tổng hai arena. Bản hai backbone từng chiếm 823.148 B |
-| Trọng số 3 model `.tflite` | ~1.7 MB | **Flash mmap** | `esp_partition_mmap` | Không tốn RAM |
+| Trọng số 3 model `.tflite` | ≈ 1.480 KB (158 + 602 + 720, đo thật) | **Flash mmap**; PSRAM cho nhánh bật `AI_WEIGHTS_PSRAM_*` | `esp_partition_mmap`; bản chép `heap_caps_aligned_alloc(16, …, MALLOC_CAP_SPIRAM)` đặt cùng địa chỉ mod 8 KB với mmap để rơi vào cùng set D-cache | Mmap không tốn RAM và chỉ đọc. Bản chép đổi PSRAM lấy đường octal 8 bit thay cho flash QIO 4 bit, nhưng một phép ghi lố heap sẽ âm thầm sửa trọng số; chỉ bật khi E9-T28 đo ra lãi |
 | Ảnh crop 113×113×3 int8 (recog input) | 38.3 KB | **SRAM** | static buffer | Vào thẳng `Invoke()` |
 | Ảnh crop 81×81×3 int8 (spoof input) | 19.7 KB | **SRAM** | static buffer | |
 | Bảng embedding (500 người × 512 chiều) | 1 MB nếu float32 — **256 KB nếu int8** | **PSRAM** (cache) + `storage` (bản gốc) | `MALLOC_CAP_SPIRAM` | Cosine search quét toàn bảng → phải ở RAM. **Khuyến nghị int8 + scale**, mất < 0.3% accuracy |
