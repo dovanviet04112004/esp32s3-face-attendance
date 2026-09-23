@@ -54,14 +54,14 @@
 |---|---|---|
 | Detect (YuNet `1616`) | 158 KB | 224 KB |
 | Anti-spoof (V1SE nhập) | 603 KB, stem tách `1050` | 551 KB, PReLU nguyên `0118` |
-| Recognition | 720 KB, MobileFaceNet w32 `1750` | 1.415 KB, MobileFaceNet-ECA FRBench |
-| **Tổng** | **1.481 KB** | **2.190 KB** trong **2,25 MB** (§6.1) |
+| Recognition | 720 KB, MobileFaceNet w32 `1750` | 1.386 KB, MobileFaceNet-ECA FRBench |
+| **Tổng** | **1.481 KB** | **2.160 KB** trong **2,25 MB** (§6.1) |
 
 File `.espdl` lớn hơn cùng model ở `.tflite` vì hai lẽ: nó mang theo một cặp vector kiểm thử
 (đầu vào + đầu ra) để `model->test()` so trên chip, và trọng số conv được đệm lên bội 16 kênh
 theo bố cục N16HWC16 của kernel ESP-DL. Recog nặng gấp đôi vì là mạng khác hẳn: width 64
-cộng 15 khối ECA, so với width 32. Số kích thước của bộ ESP-DL đo trên file xuất ở trial
-23/09; file xuất lại từ `30_quantize.sh` ghi vào `models.lock.json`.
+cộng 15 khối ECA, so với width 32. Số của bộ ESP-DL đo trên file `30_quantize.sh` xuất ra; bản
+recog của trial nặng hơn 30 KB vì còn mang 15 op `Expand` kèm cặp lượng tử/giải lượng tử.
 
 ### 1.2 Dữ liệu train — từng model
 
@@ -2009,8 +2009,9 @@ trọng số gốc, nên `30_quantize.sh`, `update_lock.py` và `22_train_recog.
 với mọi run. `--onnx` kiểm parity với một ONNX xuất từ code của chính FRBench trước khi ghi run.
 Fine-tune về sau là một run con, ghi `resumed_from` về run nhập.
 
-**Số trên host, INT8 là mô phỏng ESP-PPQ của đúng đồ thị lên chip** (trial 23/09, `Expand` còn
-nguyên nên chạy được trên host; E9-T29 chấm lại bản không `Expand`):
+**Số trên host, INT8 là mô phỏng ESP-PPQ của đúng đồ thị lên chip.** Bản không `Expand` xuất từ run
+nhập `recognition/20260923-2106_59828c4_9a6954` chấm lại bằng `host_bench.py --runtime espdl` ra
+**đúng từng số** của bản trial còn `Expand`, và FP32 của run khớp bản trial trong 0,001:
 
 | | LFW (acc / TAR@1e-3 / @1e-4) | CFP-FP | AgeDB-30 |
 |---|---|---|---|
@@ -2072,7 +2073,7 @@ Mỗi ảnh firmware chỉ link một runtime, nên flash chỉ trả giá cho c
 | **Quy tắc bộ nhớ** | Xem §3.8 — **Σ tail + max(head)** khi các interpreter dùng chung một `MicroAllocator` | Không có arena chung: mỗi model sở hữu bộ nhớ của mình, cộng dồn. Object nhỏ của model (module, tên tensor) dựng trong guard `heap_caps_malloc_extmem_enable(0)` để nằm ở PSRAM, trả RAM nội cho DMA và Wi-Fi (§6.4) |
 | **Trọng số** | Đọc thẳng từ flash mmap, **0 byte RAM**. Bản chép PSRAM cho TFLM là E9-T28, chưa có | Nhận con trỏ vào chính mmap ấy (`MODEL_LOCATION_IN_FLASH_RODATA`) rồi **chép sang PSRAM** lúc nạp (`param_copy`), từng nhánh bật/tắt bằng `AI_WEIGHTS_PSRAM_*`, mặc định bật: đo 23/09 chép nhanh hơn ở cả năm model thử, 3% ở detect tới 25% ở recog w64 |
 | **Chọn op** | **`MicroMutableOpResolver` riêng từng model** — chỉ đăng ký đúng op cần, giảm vài chục KB flash so với `AllOpsResolver` | Thư viện đăng ký sẵn mọi module, **858 KB flash** khi link; không có cách tỉa mà không sửa code Espressif (CLAUDE.md §6 cấm). Đó là lý do slot OTA lên 2,75 MB (§6.1) |
-| **Kiểm model trên chip** | Parity hậu xử lý qua `contracts/golden/` | Thêm `model->test()`: file `.espdl` mang một cặp vào/ra do ESP-PPQ mô phỏng, chip phải ra **đúng từng bit**. `test_apps/bench_ai` chạy nó cho mọi entry |
+| **Kiểm model trên chip** | Parity hậu xử lý qua `contracts/golden/` | Thêm `model->test()`: file `.espdl` mang một cặp vào/ra do ESP-PPQ mô phỏng, chip phải khớp **trong một bước int8** ở mọi phần tử — sai số `1 + 1e-5` mà `Model::test()` dùng cho tensor int8, không phải trùng từng bit. `test_apps/bench_ai` chạy nó cho mọi entry |
 | Cấu hình sdkconfig | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB` · `CONFIG_ESP32S3_DATA_CACHE_64KB` · `CONFIG_SPIRAM_SPEED_80M` · `CONFIG_SPIRAM_MODE_OCT` · `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240` · `CONFIG_COMPILER_OPTIMIZATION_PERF` |
 | Hot path vào IRAM | Hàm hậu xử lý (NMS, affine warp) đặt `IRAM_ATTR` nếu profiler chỉ ra nghẽn |
 | Chạy tuần tự + early exit | Không dấu hiệu nào của người trong **một phút** → **model, camera và màn nghỉ cùng lúc**. Hai mức nghỉ và danh sách nguồn đánh thức ở **§5.4**. Detect không thấy mặt → **dừng**, không chạy spoof/recog. Spoof fail → không chạy recog. Tiết kiệm ~70% năng lượng |
@@ -2121,8 +2122,8 @@ Mỗi dòng ghi đủ **5 cột** vào `docs/measurements/<nhánh>/quant_ladder.
 |---|---|---|---|---|---|
 
 Accuracy của Q1 ESP-DL chấm trên host bằng bộ mô phỏng của ESP-PPQ (`bench/host_bench.py
---runtime espdl`); mô phỏng ấy trùng từng bit với chip, vì `model->test()` trên board so đúng đầu
-ra của nó.
+--runtime espdl`); mô phỏng ấy khớp chip trong một bước int8 ở mỗi phần tử đầu ra, vì
+`model->test()` trên board so đúng đầu ra của nó với sai số đó.
 
 **Quy tắc chọn**: Q1 phải thoả cả ba ngưỡng — accuracy sụt < 1% so với Q0, arena vừa chỗ đã
 định ở §3.7, latency đạt ngân sách. Không thoả thì đường đi tiếp là **thu nhỏ hoặc đổi kiến
@@ -2257,7 +2258,7 @@ biết bộ cấp phát của mình cần đệm.
 [8] Gộp 3 file của MỘT runtime thành 1 image cho partition `models_0` → flash
                      ▼
 [9] 🔬 Trên board: arena_used_bytes, latency/op, RAM đỉnh, accuracy ảnh thật;
-    ESP-DL thêm model->test() trùng từng bit với mô phỏng
+    ESP-DL thêm model->test(): khớp mô phỏng trong một bước int8
                      ▼
               Đạt? ──Không──► quay lại bước tương ứng (5 / 7 / 1)
                      ▼ Có
@@ -3036,7 +3037,7 @@ firmware/
 │   │   ├── yunet_s8.espdl            # artifact của ml/, KHÔNG commit — đúng runtime của lock
 │   │   └── meta.json                 # ✅ in_h, in_w, arena_hint, sha256, run_id
 │   ├── antispoof/{minifasnet_s8.espdl, meta.json}
-│   └── recognition/{mobilefacenet_eca_s8.espdl, meta.json}
+│   └── recognition/{mobilefacenet_s8.espdl, meta.json}
 │
 ├── test_apps/                        # test TÍCH HỢP toàn hệ (unit test nằm trong component)
 │   ├── parity/                       # đọc contracts/golden/, so sánh postproc C vs Python
@@ -4127,7 +4128,7 @@ components/ai_engine/
 │   ├── detection/
 │   │   ├── detect_model.hpp               # DetectModel : TfliteModelBase, chỉ khai op + tên
 │   │   ├── ops.cpp                        # TFLM — MicroMutableOpResolver<6>, đếm trên graph thật
-│   │   ├── letterbox.cpp                  # khung 480×320 → tensor 160×120, khớp letterbox_params
+│   │   ├── letterbox.cpp                  # khung 480×320 → tensor 160×120, khớp letterbox_params; và phép ngược face_to_frame
 │   │   ├── decode.cpp                     # giải mã anchor — khớp 1:1 ml/tasks/detection/postproc
 │   │   └── nms.cpp
 │   ├── antispoof/
@@ -4137,7 +4138,6 @@ components/ai_engine/
 │   │   └── preproc.cpp                    # crop 2,7× + resize về cạnh graph khai (80 hoặc 81)
 │   └── recognition/
 │       ├── recog_model.hpp                # lớp + op của nhánh, không ra khỏi thư mục này
-│       ├── recog_model.cpp
 │       ├── ops.cpp                        # TFLM — MicroMutableOpResolver<4>, đếm trên graph thật
 │       ├── align.cpp                      # affine warp 5 landmark → cạnh graph khai (112 hoặc 113)
 │       └── l2norm.cpp
@@ -5162,12 +5162,12 @@ coredump,   data, coredump, 0xFA0000,  0x10000,
 
 **Vì sao slot OTA lên 2,75 MB và slot model xuống 2,25 MB.** Thư viện ESP-DL chiếm **858 KB**
 flash khi link, cộng 21 KB `libfbs_model` (đo trên file map của app trial), so với 145 KB của
-TFLM + esp-nn. Ảnh kiosk TFLM đo được 1.330 KB ở `bench` và 1.798 KB ở `dev`, nên ảnh ESP-DL ước
-~2,1 MB ở `bench`/`prod` và **~2,6 MB ở `dev`** 🔬 — cả hai trượt slot 2 MB cũ. Bộ model thì co
-lại được: ba `.espdl` deploy là 2.190 KB, ba `.tflite` đối chứng 1.481 KB, không cái nào cần 3 MB.
-Nên mỗi slot model trả 0,75 MB cho slot OTA liền trước nó. Ảnh `dev` còn biên ~200 KB 🔬, bộ
-`.espdl` còn ~115 KB — `idf.py size` và `pack_models_partition.py` đều kiểm cỡ theo chính bảng
-này, nên vượt là fail lúc build chứ không phải lúc nạp.
+TFLM + esp-nn. Build kiosk profile `dev` đo được: **1.798.352 B** trên TFLM và **2.679.488 B** trên
+ESP-DL — bản sau trượt slot 2 MB cũ. Bộ model thì co lại được: ảnh `models_0` của bộ `.espdl`
+deploy là 2.160 KB, của bộ `.tflite` đối chứng 1.482 KB, không cái nào cần 3 MB. Nên mỗi slot model
+trả 0,75 MB cho slot OTA liền trước nó. Ảnh ESP-DL `dev` còn biên **204 KB** (7%), ảnh model
+ESP-DL còn **144 KB** — `check_sizes.py` của IDF và `pack_models_partition.py` đều kiểm cỡ theo
+chính bảng này, nên vượt là fail lúc build chứ không phải lúc nạp.
 
 Cách chia giữ nguyên offset của `assets`, `storage` và `coredump`, nên LittleFS — bảng mặt và log
 chấm công — không mất. Bảng partition **không đi qua OTA được**: máy đang chạy phải nạp lại qua
@@ -5177,7 +5177,7 @@ USB bảng mới, cả hai slot app và slot model.
 |---|---|---|
 | `nvs` | Wi-Fi credential, device JWT, cấu hình, số serial — bố cục namespace ở §6.2.1 | `nvs_flash` |
 | `nvs_keys` | Khoá AES để mã hoá `nvs`. Chỉ có tác dụng khi bật Flash Encryption | `nvs_flash_secure_init` |
-| `models_0` / `models_1` | Header (magic, version, offset, sha256) + 3 file INT8 của một runtime: `.espdl` 2.190 KB hoặc `.tflite` 1.481 KB | `esp_partition_mmap` → `const void*`, **0 byte RAM**; ESP-DL chép trọng số từ đó sang PSRAM lúc nạp |
+| `models_0` / `models_1` | Header (magic, version, offset, sha256) + 3 file INT8 của một runtime: `.espdl` 2.160 KB hoặc `.tflite` 1.481 KB | `esp_partition_mmap` → `const void*`, **0 byte RAM**; ESP-DL chép trọng số từ đó sang PSRAM lúc nạp |
 | `assets` | Font tiếng Việt, icon LVGL, file WAV thông báo | SPIFFS read-only |
 | `storage` | `db/faces.bin` (embedding), `log/attend.NNN` (append-only), `cfg/`, `tmp/` — bố cục ở §6.2.3 | LittleFS (chống mất điện tốt hơn SPIFFS) |
 
@@ -5297,7 +5297,7 @@ của graph; `arena_hint` của entry `.espdl` là **0**, vì ESP-DL tự lập 
 
 Ảnh do `ml/src/facepipe/export/pack_models_partition.py` gộp: nó đọc `contracts/models.lock.json` để biết nhánh nào đang deploy, đối chiếu sha256 và `meta.json` của từng nhánh, từ chối lock trộn hai runtime, rồi ghi header + ba khối. `ml/scripts/50_pack_and_flash.sh` gọi nó và ghi kết quả xuống `models_0` bằng `parttool.py`.
 
-**So hai phiên bản model không được sửa contract.** Cả hai script nhận `--lock <file>`; mặc định là `contracts/models.lock.json`, tức bản đang deploy. Lock thí nghiệm nằm ở `ml/artifacts/<nhánh>/` — chỗ đã gitignore — chứ không ở `contracts/`, vì nó không phải hợp đồng mà là một lần đo. Nhờ vậy đo bản B là trỏ `--lock` sang file khác rồi flash lại `models_0`, không đụng `contracts/` và không build lại firmware: `ai_engine` đọc kích thước đầu vào từ chính graph và arena từ `arena_hint`, nên hai bản khác kích thước dùng cùng một binary. Giữ **cả hai** bản trên flash cùng lúc thì cần chọn slot lúc boot bằng `nvs:model/active_slot`, và đó là việc của E13-T2.
+**So hai phiên bản model không được sửa contract.** Cả hai script nhận `--lock <file>`; mặc định là `contracts/models.lock.json`, tức bản đang deploy. Lock thí nghiệm nằm ở `ml/artifacts/<nhánh>/`, hoặc `ml/artifacts/device/locks/<bộ>/` khi nó gom cả ba nhánh — chỗ đã gitignore — chứ không ở `contracts/`, vì nó không phải hợp đồng mà là một lần đo; `50_pack_and_flash.sh --lock --models-dir` đóng ảnh từ đó. Vì cùng lý do, `contracts/models.lock.json` chỉ đổi sang bộ `.espdl` **cùng lúc** với `AI_RUNTIME` mặc định của firmware (E9-T31): lock và firmware mặc định mà lệch runtime thì ảnh đóng ra bị `ai_engine` từ chối. Nhờ vậy đo bản B là trỏ `--lock` sang file khác rồi flash lại `models_0`, không đụng `contracts/` và không build lại firmware: `ai_engine` đọc kích thước đầu vào từ chính graph và arena từ `arena_hint`, nên hai bản khác kích thước dùng cùng một binary. Giữ **cả hai** bản trên flash cùng lúc thì cần chọn slot lúc boot bằng `nvs:model/active_slot`, và đó là việc của E13-T2.
 
 **Không phải ngoại vi nào hỏng cũng được chặn boot.** `app_main.c` khởi tạo tuần tự, nhưng
 `ESP_ERROR_CHECK` cho **mọi** lời gọi nghĩa là một con hỏng thì cả máy chấm công không lên.
@@ -5541,7 +5541,7 @@ Font không nằm ở đây: bốn bảng chữ 4bpp của kiosk biên dịch th
 | LCD bounce buffer (2 × 32 dòng) | 2 × 20.480 B = **40.960 B** | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội. Hai đệm chứ không một: nạp lại cái đang chờ truyền là thứ vẽ ra sọc dọc (E7-T5). **32 dòng chốt bằng bảng đo 19/09** — xem luật ngay dưới §6.4 |
 | **`arena_fast`** (TFLM) — detect một mình @160×120 | **189.628 B** đo thật | **PSRAM** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_SPIRAM)` | Không nhánh nào nằm vừa SRAM nội (§6.4); `ai_engine` cấp theo `arena_hint` rồi làm tròn lên bội KB |
 | **`arena_big`** (TFLM) — anti-spoof @80×80 và recognition @113×113 **chung một `MicroAllocator`** | **748.524 B** đo thật 18/09 (V1SE nhập); 422.764 B với student width 32 | **PSRAM** | như trên | `Σ tail + max(head)` theo §3.8, không phải tổng hai arena. Bản hai backbone từng chiếm 823.148 B |
-| Trọng số 3 model | TFLM `.tflite` ≈ 1.480 KB (158 + 602 + 720, đo thật) · ESP-DL `.espdl` ≈ 2.190 KB | TFLM: **flash mmap**. ESP-DL: **PSRAM**, chép từ mmap lúc nạp cho nhánh bật `AI_WEIGHTS_PSRAM_*` (mặc định cả ba) | `esp_partition_mmap`; ESP-DL cấp bản chép bằng chính bộ nạp của nó (`param_copy`) | Mmap không tốn RAM và chỉ đọc. Bản chép đổi PSRAM lấy đường octal 8 bit thay cho flash QIO 4 bit — đo 23/09 nhanh hơn 3–25% tuỳ model — nhưng một phép ghi lố heap sẽ âm thầm sửa trọng số thay vì crash tại chỗ |
+| Trọng số 3 model | TFLM `.tflite` ≈ 1.480 KB (158 + 602 + 720, đo thật) · ESP-DL `.espdl` ≈ 2.160 KB (224 + 551 + 1.386) | TFLM: **flash mmap**. ESP-DL: **PSRAM**, chép từ mmap lúc nạp cho nhánh bật `AI_WEIGHTS_PSRAM_*` (mặc định cả ba) | `esp_partition_mmap`; ESP-DL cấp bản chép bằng chính bộ nạp của nó (`param_copy`) | Mmap không tốn RAM và chỉ đọc. Bản chép đổi PSRAM lấy đường octal 8 bit thay cho flash QIO 4 bit — đo 23/09 nhanh hơn 3–25% tuỳ model — nhưng một phép ghi lố heap sẽ âm thầm sửa trọng số thay vì crash tại chỗ |
 | Ảnh crop recog / spoof (tensor đầu vào) | 113×113×3 hoặc 112×112×3 · 80×80×3 int8 | **PSRAM** | nằm trong arena TFLM hoặc bộ nhớ của `dl::Model` | Hậu xử lý ghi thẳng vào tensor đầu vào của graph, không qua buffer trung gian |
 | **Bộ nhớ riêng của ESP-DL** — tensor, module, tên | ~3,1 MB với trọng số đã chép (trial 23/09: 308 + 748 + ~2.050 KB) 🔬 | **PSRAM**; object nhỏ dựng trong guard `heap_caps_malloc_extmem_enable(0)` | `dl::Model`, `max_internal_size = 0` | Thay chỗ hai arena TFLM (~940 KB). Để trong RAM nội thì mỗi model ăn 25–41 KB (§6.4) |
 | Bảng embedding (500 người × 512 chiều) | 1 MB nếu float32 — **256 KB nếu int8** | **PSRAM** (cache) + `storage` (bản gốc) | `MALLOC_CAP_SPIRAM` | Cosine search quét toàn bảng → phải ở RAM. **Khuyến nghị int8 + scale**, mất < 0.3% accuracy |
@@ -5674,9 +5674,10 @@ lớn hơn đệm là **hỏng tay bắt**, mà kích thước chuỗi chứng t
 bắt tay chạy trên PSRAM nên chậm hơn, 🔬 chưa đo — bắt tay chỉ xảy ra lúc nối lại, không phải
 mỗi bản ghi. Nghiệm trên board sau khi gạt: Wi-Fi vẫn nối được và SNTP vẫn chỉnh được giờ.
 
-**ESP-DL đè thêm lên đúng chỗ chật ấy, và phải trả lại bằng PSRAM.** Đo trên file map: thư viện
-chiếm tĩnh **10,8 KB IRAM + 4,5 KB `.bss`**, tức 15,4 KB rời khỏi đáy 40 KB trước khi nạp model
-nào. App trial còn đo mỗi `dl::Model` ăn **25–41 KB RAM nội**: tensor đã ở PSRAM
+**ESP-DL đè thêm lên đúng chỗ chật ấy, và phải trả lại bằng PSRAM.** Đo trên file map của ảnh
+kiosk: thư viện chiếm tĩnh **10,8 KB IRAM + 4,5 KB `.bss`**; trừ phần tĩnh TFLM không còn link, DIRAM
+tĩnh của cả ảnh đi từ **180.392 B lên 194.276 B**, tức **13,6 KB** rời khỏi đáy 40 KB trước khi nạp
+model nào. App trial còn đo mỗi `dl::Model` ăn **25–41 KB RAM nội**: tensor đã ở PSRAM
 (`max_internal_size = 0`), phần còn lại là vô số `malloc` nhỏ — module, vector, tên tensor — mà
 `SPIRAM_MALLOC_ALWAYSINTERNAL` 16 KB đẩy vào RAM nội trước. Ba model cộng lại ~100 KB, tức vượt
 cả đáy. Nên `EspdlModel` dựng model trong một guard RAII gọi `heap_caps_malloc_extmem_enable(0)`:

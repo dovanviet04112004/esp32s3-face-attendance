@@ -29,7 +29,8 @@ cùng partition, cùng `-O2`, cùng tải preview giả lập, 50 lượt sau 3 
 | **Một lượt ba nhánh** (cùng model) | **1.270,9** | **227,7** | |
 | Một lượt, có tải | 1.481,8 | 257,8 | |
 
-Cả mười lần `model->test()` — đầu ra chip so với mô phỏng ESP-PPQ — trùng từng bit. Độ chính xác
+Cả mười lần `model->test()` — đầu ra chip so với mô phỏng ESP-PPQ — đều PASS, tức khớp trong một
+bước int8 ở mọi phần tử (sai số `1 + 1e-5` của `Model::test()`, không phải trùng từng bit). Độ chính xác
 chấm trên host bằng đúng file chip chạy: detect ngang TFLite (AP ≥ 38 px 0,9497 so với 0,9387),
 anti-spoof ngang trên miền thiết bị, recog **tốt hơn hẳn** file TFLite đang nạp (cùng model w32,
 CFP-FP TAR@1e-3 0,566 so với 0,361).
@@ -80,11 +81,11 @@ lệch 0,0 trên host — và `espdl_op_check.py` chặn loại lỗi này từ 
 
 - **+858 KB flash** cho thư viện, không tỉa được mà không sửa code Espressif; kéo theo đổi bảng
   partition, và bảng partition không đi qua OTA được.
-- **RAM nội**: 15,4 KB tĩnh cộng 25–41 KB mỗi model nếu để mặc định; `EspdlModel` đẩy object nhỏ
+- **RAM nội**: 13,6 KB DIRAM tĩnh (180.392 → 194.276 B, đo trên ảnh kiosk) cộng 25–41 KB mỗi model nếu để mặc định; `EspdlModel` đẩy object nhỏ
   sang PSRAM lúc dựng, và đáy RAM nội của kiosk là cổng phủ quyết của E9-T31.
 - **PSRAM**: ~3,1 MB cho ba model thay ~940 KB của hai arena TFLM.
 - Trọng số ở PSRAM thì một phép ghi lố heap **âm thầm sửa model** thay vì crash tại chỗ như ở flash.
 - Recog mới đổi không gian embedding: **mọi khuôn mặt phải đăng ký lại**.
 - `esp-ppq` 1.3.11 khai `onnx<1.18`, venv dùng 1.22 qua `override-dependencies`; bằng chứng
-  duy nhất rằng tổ hợp này đúng là `test()` trùng từng bit trên board.
+  duy nhất rằng tổ hợp này đúng là `test()` PASS trên board, trong một bước int8.
 - Pipeline dự kiến ~450 ms 🔬: vẫn vượt ngân sách 360 ms, nhưng nhanh ~2,8× so với 1.273 ms.
