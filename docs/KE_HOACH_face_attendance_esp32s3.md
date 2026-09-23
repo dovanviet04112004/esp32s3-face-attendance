@@ -4155,7 +4155,7 @@ components/ai_engine/
 
 | Symbol | Mặc định | Nghĩa |
 |---|---|---|
-| `AI_RUNTIME_TFLM` / `AI_RUNTIME_ESPDL` | **TFLM** cho tới khi E9-T31 đạt, sau đó **ESP-DL** | `choice AI_RUNTIME`. Chọn runtime được biên dịch và link |
+| `AI_RUNTIME_TFLM` / `AI_RUNTIME_ESPDL` | **ESP-DL** | `choice AI_RUNTIME`. Chọn runtime được biên dịch và link. TFLM là bản đối chứng, build bằng overlay `test_apps/bench_ai/sdkconfig.tflm`. Mặc định và `contracts/models.lock.json` luôn cùng runtime (§6.2.2) |
 | `AI_ARENA_FAST_KB` | 224 | TFLM. `arena_fast` riêng detect. E8-T7 đo detect dùng 189.628 B |
 | `AI_ARENA_BIG_KB` | 1536 | TFLM. `arena_big`, spoof + recog dùng chung. Đo 823.148 B |
 | `AI_ARENA_FAST_INTERNAL` | n | TFLM. `n` = `arena_fast` ở PSRAM; `y` = xin SRAM nội trước (§3.8) |
@@ -5297,7 +5297,7 @@ của graph; `arena_hint` của entry `.espdl` là **0**, vì ESP-DL tự lập 
 
 Ảnh do `ml/src/facepipe/export/pack_models_partition.py` gộp: nó đọc `contracts/models.lock.json` để biết nhánh nào đang deploy, đối chiếu sha256 và `meta.json` của từng nhánh, từ chối lock trộn hai runtime, rồi ghi header + ba khối. `ml/scripts/50_pack_and_flash.sh` gọi nó và ghi kết quả xuống `models_0` bằng `parttool.py`.
 
-**So hai phiên bản model không được sửa contract.** Cả hai script nhận `--lock <file>`; mặc định là `contracts/models.lock.json`, tức bản đang deploy. Lock thí nghiệm nằm ở `ml/artifacts/<nhánh>/`, hoặc `ml/artifacts/device/locks/<bộ>/` khi nó gom cả ba nhánh — chỗ đã gitignore — chứ không ở `contracts/`, vì nó không phải hợp đồng mà là một lần đo; `50_pack_and_flash.sh --lock --models-dir` đóng ảnh từ đó. Vì cùng lý do, `contracts/models.lock.json` chỉ đổi sang bộ `.espdl` **cùng lúc** với `AI_RUNTIME` mặc định của firmware (E9-T31): lock và firmware mặc định mà lệch runtime thì ảnh đóng ra bị `ai_engine` từ chối. Nhờ vậy đo bản B là trỏ `--lock` sang file khác rồi flash lại `models_0`, không đụng `contracts/` và không build lại firmware: `ai_engine` đọc kích thước đầu vào từ chính graph và arena từ `arena_hint`, nên hai bản khác kích thước dùng cùng một binary. Giữ **cả hai** bản trên flash cùng lúc thì cần chọn slot lúc boot bằng `nvs:model/active_slot`, và đó là việc của E13-T2.
+**So hai phiên bản model không được sửa contract.** Cả hai script nhận `--lock <file>`; mặc định là `contracts/models.lock.json`, tức bản đang deploy. Lock thí nghiệm nằm ở `ml/artifacts/<nhánh>/`, hoặc `ml/artifacts/device/locks/<bộ>/` khi nó gom cả ba nhánh — chỗ đã gitignore — chứ không ở `contracts/`, vì nó không phải hợp đồng mà là một lần đo; `50_pack_and_flash.sh --lock --models-dir` đóng ảnh từ đó, và ghi `models_0` bằng chính bước `--port` của nó chứ không `esptool` tay. `contracts/models.lock.json` giữ bộ `.espdl` deploy, **cùng runtime** với `AI_RUNTIME` mặc định của firmware, và hai thứ đổi trong hai commit liền nhau: lock và firmware mặc định mà lệch runtime thì ảnh đóng ra bị `ai_engine` từ chối. Bộ `.tflite` đối chứng là lock thí nghiệm `ml/artifacts/device/locks/tflm/`; nội dung đầy đủ của nó còn trong lịch sử git của `contracts/`. Nhờ vậy đo bản B là trỏ `--lock` sang file khác rồi flash lại `models_0`, không đụng `contracts/` và không build lại firmware: `ai_engine` đọc kích thước đầu vào từ chính graph và arena từ `arena_hint`, nên hai bản khác kích thước dùng cùng một binary. Giữ **cả hai** bản trên flash cùng lúc thì cần chọn slot lúc boot bằng `nvs:model/active_slot`, và đó là việc của E13-T2.
 
 **Không phải ngoại vi nào hỏng cũng được chặn boot.** `app_main.c` khởi tạo tuần tự, nhưng
 `ESP_ERROR_CHECK` cho **mọi** lời gọi nghĩa là một con hỏng thì cả máy chấm công không lên.
@@ -5589,9 +5589,10 @@ là core đông.
 **Từ 23/09 chốt 20 dòng, vì ESP-DL cần đúng khoản đó.** Đo `bench_mem` trên kiosk thật, cùng
 board, cùng lúc Wi-Fi lên: đáy RAM nội **36.803 B** với TFLM, **22.787 B** với ESP-DL — thư viện
 esp-dl chiếm tĩnh 13,7 KB (§6.4 dưới, kernel tie728 nằm IRAM), trượt cổng 24 KB của E9-T31. 20
-dòng trả lại 15.360 B, đưa đáy ESP-DL về ngang TFLM 32 dòng 🔬, với cái giá đã đo sẵn ở bảng
-trên: +6,4 ms CPU core 0 mỗi khung và biên `T_w` còn 34,2 ms tới trần. Chủ repo chọn đổi ấy thay
-vì hạ cổng hay giữ TFLM; E9-T31 đo lại fps và khấc ở 20 dòng trên kiosk ESP-DL.
+dòng đo được trả lại 15.280 B: đáy ESP-DL **38.067 B**, ngang TFLM 32 dòng (`measurements/ram.md`
+§10), với cái giá đã đo sẵn ở bảng trên: +6,4 ms CPU core 0 mỗi khung và biên `T_w` còn 34,2 ms
+tới trần. Chủ repo chọn đổi ấy thay vì hạ cổng hay giữ TFLM; E9-T31 đo lại fps và khấc ở 20 dòng
+trên kiosk ESP-DL.
 
 🔬 **Bảng này so ba mức được, nhưng không so chính xác được.** `T_w` đo bằng đồng hồ tường nên
 nó gồm cả lúc `cam_task` bị chiếm chỗ trên core 0, và phép quét không khoá tải AI lẫn ánh sáng.
@@ -5694,8 +5695,10 @@ trong `ai_engine_init()`, trước khi task nào chạy, nên không `malloc` c�
 lwIP và các driver sang PSRAM.
 
 Cổng của E9-T31: kiosk ESP-DL chạy 10 phút có Wi-Fi + MQTT/TLS phải giữ **đáy RAM nội ≥ 24 KB**
-và không một dòng `alloc failed` 🔬. Guard không đỡ được `malloc(MALLOC_CAP_INTERNAL)` tường minh
-nếu ESP-DL tự gọi lúc `run()`; đáy đo được trên kiosk là thứ phủ quyết.
+và không một dòng `alloc failed`. Guard không đỡ được `malloc(MALLOC_CAP_INTERNAL)` tường minh
+nếu ESP-DL tự gọi lúc `run()`; đáy đo được trên kiosk là thứ phủ quyết. `bench_mem` với Wi-Fi,
+chưa có phiên TLS, giữ 38.067 B; phiên TLS thật đo trên build mặc định 🔬, trượt cổng thì revert
+cả lock contract lẫn mặc định `AI_RUNTIME`.
 
 ---
 
