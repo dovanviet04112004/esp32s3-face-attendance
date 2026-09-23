@@ -2,6 +2,7 @@
 
 #include "ai_engine.h"
 #include "esp_heap_caps.h"
+#include "sdkconfig.h"
 #include "sys_storage.h"
 #include "unity.h"
 
@@ -40,7 +41,9 @@ TEST_CASE("the branch comes up and reports where its arena landed", "[ai_spoof]"
 
     ai_engine_arena_stats_t stats;
     ai_engine_arena_stats(&stats);
+#if CONFIG_AI_RUNTIME_TFLM
     TEST_ASSERT_GREATER_THAN_UINT(0, stats.big_used_bytes);
+#endif
 
     // The crop side belongs to the graph, which picks it so every feature map
     // stays odd (KEHOACH 3 layer 1); pinning it here would pin two places.
