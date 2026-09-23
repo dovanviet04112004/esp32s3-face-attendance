@@ -142,6 +142,7 @@ attend::Ev event_of(svc_vision_kind_t kind, bool *carries)
         case SVC_VISION_NO_FACE:
             return attend::Ev::NoFace;
         case SVC_VISION_FACE_SMALL:
+        case SVC_VISION_FACE_OFF_GUIDE:
             return attend::Ev::FaceSmall;
         case SVC_VISION_SPOOF:
             return attend::Ev::Spoof;
