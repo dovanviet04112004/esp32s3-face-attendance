@@ -203,6 +203,37 @@ TEST_CASE("a face that dips under the size gate is still the same arrival", "[sv
     TEST_ASSERT_FALSE(svc_door_is_open(svc_door_fake()));
 }
 
+TEST_CASE("another person matched while the door is open is granted at once", "[svc_attendance]")
+{
+    machine_up(true);
+    s_now_ms += (int64_t)DEDUP_MIN * MINUTE_MS + 1;
+    back_to_idle();
+    svc_attendance_on_presence(true);
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    const uint32_t records = svc_attendance_records();
+    const uint32_t grants = svc_attendance_grants();
+
+    feed(SVC_VISION_MATCH, EMPLOYEE_B, LIVE_SCORE);
+    printf("second person while granted: grants %" PRIu32 " to %" PRIu32 "\n", grants,
+           svc_attendance_grants());
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    TEST_ASSERT_EQUAL(grants + 1, svc_attendance_grants());
+    TEST_ASSERT_EQUAL(records + 1, svc_attendance_records());
+}
+
+TEST_CASE("the same person matched again while the door is open is not granted twice",
+          "[svc_attendance]")
+{
+    machine_up(true);
+    back_to_idle();
+    svc_attendance_on_presence(true);
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    const uint32_t grants = svc_attendance_grants();
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    TEST_ASSERT_EQUAL(grants, svc_attendance_grants());
+}
+
 TEST_CASE("a queue behind the first face keeps its turn", "[svc_attendance]")
 {
     machine_up(true);
