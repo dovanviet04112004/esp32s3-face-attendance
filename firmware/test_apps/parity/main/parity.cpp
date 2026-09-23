@@ -346,11 +346,14 @@ TEST_CASE("align matches the golden block", "[parity]")
                                     static_cast<int>(words->dims[1]), static_cast<int>(words->dims[0]),
                                     false };
         const float *quant = floats(gold, "quant");
-        const ai::TensorView input = quantized(ALIGN_SIDE, ALIGN_SIDE, 3, block, ALIGN_SIDE * ALIGN_SIDE * 3,
-                                               quant[0], static_cast<int>(quant[1]));
-        TEST_ASSERT_EQUAL(ESP_OK, ai::align_face(frame, floats(gold, "landmarks"), input, block, input.bytes));
         const GoldTensor *want = find(gold, "aligned");
         TEST_ASSERT_NOT_NULL(want);
+        // TFLM's recog reads 113 and ESP-DL's 112; each case carries the side it is cut for.
+        const int side = static_cast<int>(want->dims[0]);
+        TEST_ASSERT_LESS_OR_EQUAL_INT(ALIGN_SIDE, side);
+        const ai::TensorView input = quantized(side, side, 3, block, static_cast<size_t>(side) * side * 3,
+                                               quant[0], static_cast<int>(quant[1]));
+        TEST_ASSERT_EQUAL(ESP_OK, ai::align_face(frame, floats(gold, "landmarks"), input, block, input.bytes));
         const int delta = compare_int8(block, reinterpret_cast<const int8_t *>(want->data), want->nbytes, "aligned");
         worst = delta > worst ? delta : worst;
         free_case(gold);
