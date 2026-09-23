@@ -26,6 +26,8 @@ firmware/models/**/*.bin
 # ── Artifact nặng ──
 *.tflite
 *.espdl
+# A Kconfig overlay that picks the runtime, not a model.
+!sdkconfig.espdl
 *.onnx
 *.pth
 *.pt
