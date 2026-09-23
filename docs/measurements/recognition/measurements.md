@@ -307,3 +307,50 @@ Bốn khung cuối là chỗ đáng lo: không có gì "tệ" ở tư thế, ch�
 giữa khung (trần nhà) nên mặt ở mép dưới thiếu sáng, đúng E7-T17 và §9 của anti-spoof. Chọn
 khung đăng ký khác không cứu được: khung tốt nhất (`d_040`) cho median 0,757, tệ nhất (`d_045`)
 0,253.
+
+## 8. Ngưỡng `match_min` cho recog deploy trên ESP-DL — đo 24/09
+
+Model: `mobilefacenet_s8.espdl` trên `contracts/models.lock.json` (MobileFaceNet-ECA, trọng số
+FRBench, run `20260923-2106_59828c4_9a6954`), chạy bằng mô phỏng ESP-PPQ của `bench/host_bench.py`
+(`espdl_runner`, kiểm `content_digest` trùng file lock), cosine của embedding L2 qua `pair_scores`
+của `tasks/recognition/eval.py`, ảnh 112×112, không lật. Sáu benchmark độc lập đọc từ `.bin`;
+`talfw` bị bỏ vì là LFW có nhiễu đối kháng. MS1M của dự án **không** dùng làm người lạ được: FRBench
+train trên chính MS1M, nên người lạ ở đó đều là người model đã thấy.
+
+| Benchmark | Cặp khác người | Khác người: trung bình · độ lệch chuẩn · cao nhất | Cùng người: trung bình |
+|---|---:|---|---:|
+| LFW | 3.000 | 0,014 · 0,074 · 0,337 | 0,641 |
+| CFP-FP (nghiêng 90°) | 3.500 | 0,016 · 0,072 · 0,310 | 0,366 |
+| AgeDB-30 (cách 30 năm) | 3.000 | 0,032 · 0,081 · 0,333 | 0,412 |
+| CALFW (cách tuổi, người lạ chọn cho giống) | 3.000 | 0,027 · 0,084 · **0,387** | 0,498 |
+| CPLFW (cách tư thế) | 3.000 | 0,023 · 0,082 · 0,670 | 0,361 |
+| CFP-FF (hai ảnh chính diện) | 3.500 | 0,016 · 0,074 · 0,293 | 0,632 |
+
+**Hai cặp cao nhất của CPLFW không có mặt dùng được**: 0,670 là nửa mặt sau mũ bảo hiểm ghép với
+một ảnh gần đen, 0,503 là hai mảng nhoè không có mặt. Ảnh không có mặt co embedding về gần một
+hướng. Trên kiosk chúng không tới recog: detect ≥ 350‰, hộp mặt ≥ 100 px và năm landmark đứng
+trước. Bỏ hai cặp đó, cặp khác người cao nhất có mặt thật là **0,387** — sáu cặp kế tiếp
+(0,333–0,387) đều là hai người thật trông giống nhau: cùng giới, cùng lứa, cùng sắc tộc, có cặp
+cùng đeo kính.
+
+| Ngưỡng | Người lạ có mặt thật lọt / 18.998 | Biên trên 0,387 | Người thật qua: LFW · CFP-FF · CALFW · CFP-FP · AgeDB · CPLFW |
+|---|---:|---:|---|
+| 0,30 | 16 | — | 0,989 · 0,985 · 0,884 · 0,688 · 0,840 · 0,652 |
+| 0,35 | 5 | — | 0,982 · 0,974 · 0,842 · 0,572 · 0,720 · 0,572 |
+| 0,40 | 0 | 0,013 | 0,967 · 0,953 · 0,774 · 0,439 · 0,564 · 0,465 |
+| **0,45** | **0** | **0,063** | **0,939 · 0,918 · 0,691 · 0,296 · 0,398 · 0,353** |
+| 0,50 | 0 | 0,113 | 0,878 · 0,863 · 0,573 · 0,183 · 0,240 · 0,248 |
+| 0,60 (seed của `1750`, §7) | 0 | 0,213 | 0,675 · — · — · 0,033 · 0,054 · — |
+
+**Chốt 450‰.** Nó cách trung bình người lạ 5,6 độ lệch chuẩn, cao hơn cặp trông giống nhau nhất
+0,063, và giữ 92–94% cặp cùng người ở hai tập chính diện. Hai kiểu sai không cùng giá: loại oan
+thì người đứng thêm một nhịp (`kUnknownTries` = 2), nhận nhầm thì mở cửa và ghi công cho người
+khác. Seed 600‰ của `1750` loại oan một phần ba người thật ngay trên LFW với model này.
+
+Giới hạn của số này:
+
+- 0 trên 18.998 chỉ chặn tỉ lệ nhận nhầm mỗi phép so dưới ~1,6·10⁻⁴ (95%). Kiosk so 1:N và ra
+  MATCH ngay ở khung đầu vượt ngưỡng, nên mỗi lượt một người lạ đứng trước N template chịu cỡ
+  2 × N lần con số ấy.
+- Cột người thật là benchmark ảnh-với-ảnh. Kiosk so một khung với template của chính camera ấy;
+  tỉ lệ nhận trên OV5640 là E8-T12 🔬.
