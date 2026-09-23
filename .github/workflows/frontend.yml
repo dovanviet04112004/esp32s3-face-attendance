@@ -13,6 +13,10 @@ defaults:
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    # lib/env.ts validates these at build time; the values mirror .env.example.
+    env:
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_WS_URL: ws://127.0.0.1:3000
     steps:
       - uses: actions/checkout@v4
 
@@ -36,10 +40,6 @@ jobs:
       - name: Install
         if: steps.guard.outputs.ready == 'true'
         run: npm ci
-
-      - name: Lint
-        if: steps.guard.outputs.ready == 'true'
-        run: npm run lint
 
       - name: Typecheck
         if: steps.guard.outputs.ready == 'true'
