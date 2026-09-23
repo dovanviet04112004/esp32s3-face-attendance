@@ -44,7 +44,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
-        ports: ["1883:1883"]
+        ports: ["1883:1883", "18083:18083"]
 
     # Throwaway values for a database that lives as long as the job; every
     # name validateEnv requires without a default is here (config/env.schema.ts).
@@ -63,6 +63,12 @@ jobs:
       MQTT_URL: mqtt://localhost:1883
       MQTT_USERNAME: ci
       MQTT_PASSWORD: ci
+      # The auth suite signs in six times before it spends the allowance on purpose.
+      LOGIN_ATTEMPTS_PER_MINUTE: "20"
+      # The profile suite listens for the mail itself, and a runner may not bind 587.
+      MAIL_HOST: 127.0.0.1
+      MAIL_PORT: "2525"
+      MAIL_FROM: no-reply@example.com
 
     steps:
       - uses: actions/checkout@v4
