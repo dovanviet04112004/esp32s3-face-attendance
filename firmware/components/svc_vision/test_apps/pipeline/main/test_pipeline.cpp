@@ -17,6 +17,10 @@ constexpr float kMatchScore = 0.83f;
 constexpr float kStrangerScore = 0.31f;
 constexpr uint32_t kEmployee = 42;
 constexpr int kRetryDetects = 3;
+constexpr float kWholeFrame[4] = { 0.0f, 0.0f, kFrameW, kFrameH };
+// The kiosk's 240x296 guide mapped through the preview slice (KEHOACH 4.5.5d).
+constexpr float kKioskGuide[4] = { 160.0f, 64.0f, 319.0f, 261.0f };
+constexpr float kHalfInside = 0.5f;
 
 uint16_t s_pixels[4];
 const ai_engine_frame_t kFrame = { s_pixels, kFrameW, kFrameH, true };
@@ -136,9 +140,10 @@ struct Rig {
     FakeMatcher matcher;
     vision::VisionPipeline pipeline{ detector, liveness, embedder, matcher };
 
-    Rig()
+    explicit Rig(const float *guide = kWholeFrame)
     {
-        const svc_vision_thresholds_t thresholds = { 0.5f, 0.5f, 0.6f, 113 };
+        const svc_vision_thresholds_t thresholds = { 0.5f, 0.5f, 0.6f, 113, { guide[0], guide[1], guide[2], guide[3] },
+                                                     kHalfInside };
         pipeline.configure(thresholds);
     }
 
@@ -376,6 +381,39 @@ TEST_CASE("every face is reported up to the cap and the largest is followed", "[
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 300.0f, result.primary.box[0]);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f, result.boxes[0].box[0]);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 200.0f, result.boxes[2].box[0]);
+}
+
+TEST_CASE("a face outside the guide is reported once and never verified", "[svc_vision]")
+{
+    Rig rig(kKioskGuide);
+    rig.detector.one(0.0f, 100.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_FACE_OFF_GUIDE, rig.step());
+    for (int i = 0; i < 5; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    }
+    TEST_ASSERT_EQUAL(0, rig.liveness.scores);
+    TEST_ASSERT_EQUAL(0, rig.embedder.embeds);
+}
+
+TEST_CASE("a face with over half of it inside the guide is verified", "[svc_vision]")
+{
+    Rig rig(kKioskGuide);
+    // x 100..250 against a guide from 160: 90 of 150 columns, 60 percent inside.
+    rig.detector.one(100.0f, 80.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
+}
+
+TEST_CASE("a larger face off the glass does not take the turn of one in the guide", "[svc_vision]")
+{
+    Rig rig(kKioskGuide);
+    rig.detector.count = 2;
+    rig.detector.set(0, 0.0f, 60.0f, kBigFace + 40.0f);
+    rig.detector.set(1, 170.0f, 70.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    const svc_vision_result_t served = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, served.kind);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 170.0f, served.primary.box[0]);
 }
 
 extern "C" void app_main(void)
