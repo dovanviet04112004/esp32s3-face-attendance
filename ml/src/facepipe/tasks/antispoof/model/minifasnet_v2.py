@@ -14,12 +14,108 @@ from facepipe.core.registry import MODELS
 
 # keep_dict upstream: every channel count the blocks are wired with; V2 reads '1.8M_', V1 '1.8M'.
 KEEP_TABLES = {
-    "1.8M_": (32, 32, 103, 103, 64, 13, 13, 64, 13, 13, 64, 13, 13, 64, 13, 13, 64, 231, 231, 128,
-              231, 231, 128, 52, 52, 128, 26, 26, 128, 77, 77, 128, 26, 26, 128, 26, 26, 128, 308,
-              308, 128, 26, 26, 128, 26, 26, 128, 512, 512),
-    "1.8M": (32, 32, 103, 103, 64, 13, 13, 64, 26, 26, 64, 13, 13, 64, 52, 52, 64, 231, 231, 128,
-             154, 154, 128, 52, 52, 128, 26, 26, 128, 52, 52, 128, 26, 26, 128, 26, 26, 128, 308,
-             308, 128, 26, 26, 128, 26, 26, 128, 512, 512),
+    "1.8M_": (
+        32,
+        32,
+        103,
+        103,
+        64,
+        13,
+        13,
+        64,
+        13,
+        13,
+        64,
+        13,
+        13,
+        64,
+        13,
+        13,
+        64,
+        231,
+        231,
+        128,
+        231,
+        231,
+        128,
+        52,
+        52,
+        128,
+        26,
+        26,
+        128,
+        77,
+        77,
+        128,
+        26,
+        26,
+        128,
+        26,
+        26,
+        128,
+        308,
+        308,
+        128,
+        26,
+        26,
+        128,
+        26,
+        26,
+        128,
+        512,
+        512,
+    ),
+    "1.8M": (
+        32,
+        32,
+        103,
+        103,
+        64,
+        13,
+        13,
+        64,
+        26,
+        26,
+        64,
+        13,
+        13,
+        64,
+        52,
+        52,
+        64,
+        231,
+        231,
+        128,
+        154,
+        154,
+        128,
+        52,
+        52,
+        128,
+        26,
+        26,
+        128,
+        52,
+        52,
+        128,
+        26,
+        26,
+        128,
+        26,
+        26,
+        128,
+        308,
+        308,
+        128,
+        26,
+        26,
+        128,
+        26,
+        26,
+        128,
+        512,
+        512,
+    ),
 }
 # Four stride-2 stages, so the closing depthwise kernel is the map they leave.
 DOWNSAMPLES = 4
@@ -39,11 +135,20 @@ def activation_for(name: str, channels: int) -> nn.Module:
 class ConvBlock(nn.Module):
     """Convolution, batch norm, activation, in the upstream field names."""
 
-    def __init__(self, in_c: int, out_c: int, kernel=(1, 1), stride=(1, 1), padding=(0, 0),
-                 groups: int = 1, activation: str = "relu") -> None:
+    def __init__(
+        self,
+        in_c: int,
+        out_c: int,
+        kernel=(1, 1),
+        stride=(1, 1),
+        padding=(0, 0),
+        groups: int = 1,
+        activation: str = "relu",
+    ) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(in_c, out_c, kernel, stride=stride, padding=padding,
-                              groups=groups, bias=False)
+        self.conv = nn.Conv2d(
+            in_c, out_c, kernel, stride=stride, padding=padding, groups=groups, bias=False
+        )
         self.bn = nn.BatchNorm2d(out_c)
         self.act = activation_for(activation, out_c)
 
@@ -54,11 +159,13 @@ class ConvBlock(nn.Module):
 class LinearBlock(nn.Module):
     """Convolution and batch norm with no activation, for the projections."""
 
-    def __init__(self, in_c: int, out_c: int, kernel=(1, 1), stride=(1, 1), padding=(0, 0),
-                 groups: int = 1) -> None:
+    def __init__(
+        self, in_c: int, out_c: int, kernel=(1, 1), stride=(1, 1), padding=(0, 0), groups: int = 1
+    ) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(in_c, out_c, kernel, stride=stride, padding=padding,
-                              groups=groups, bias=False)
+        self.conv = nn.Conv2d(
+            in_c, out_c, kernel, stride=stride, padding=padding, groups=groups, bias=False
+        )
         self.bn = nn.BatchNorm2d(out_c)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -83,13 +190,24 @@ class SqueezeExcite(nn.Module):
 class DepthWise(nn.Module):
     """Pointwise expand, depthwise, pointwise project, with an optional skip and gate."""
 
-    def __init__(self, c1, c2, c3, residual: bool = False, kernel=(3, 3), stride=(2, 2),
-                 padding=(1, 1), groups: int = 1, activation: str = "relu",
-                 se_reduction: int = 0) -> None:
+    def __init__(
+        self,
+        c1,
+        c2,
+        c3,
+        residual: bool = False,
+        kernel=(3, 3),
+        stride=(2, 2),
+        padding=(1, 1),
+        groups: int = 1,
+        activation: str = "relu",
+        se_reduction: int = 0,
+    ) -> None:
         super().__init__()
         self.conv = ConvBlock(c1[0], c1[1], activation=activation)
-        self.conv_dw = ConvBlock(c2[0], c2[1], kernel, stride, padding, groups=c2[0],
-                                 activation=activation)
+        self.conv_dw = ConvBlock(
+            c2[0], c2[1], kernel, stride, padding, groups=c2[0], activation=activation
+        )
         self.project = LinearBlock(c3[0], c3[1])
         self.residual = residual
         if se_reduction:
@@ -107,15 +225,25 @@ class DepthWise(nn.Module):
 class Residual(nn.Module):
     """A run of skip-connected DepthWise blocks, held under `model` as upstream does."""
 
-    def __init__(self, c1, c2, c3, num_block: int, groups: int, activation: str,
-                 squeeze_excite: bool = False) -> None:
+    def __init__(
+        self, c1, c2, c3, num_block: int, groups: int, activation: str, squeeze_excite: bool = False
+    ) -> None:
         super().__init__()
-        self.model = nn.Sequential(*[
-            DepthWise(c1[i], c2[i], c3[i], residual=True, stride=(1, 1), groups=groups,
-                      activation=activation,
-                      se_reduction=SE_REDUCTION if squeeze_excite and i == num_block - 1 else 0)
-            for i in range(num_block)
-        ])
+        self.model = nn.Sequential(
+            *[
+                DepthWise(
+                    c1[i],
+                    c2[i],
+                    c3[i],
+                    residual=True,
+                    stride=(1, 1),
+                    groups=groups,
+                    activation=activation,
+                    se_reduction=SE_REDUCTION if squeeze_excite and i == num_block - 1 else 0,
+                )
+                for i in range(num_block)
+            ]
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
@@ -132,10 +260,12 @@ class SplitPReLUStem(nn.Module):
         super().__init__()
         self.conv_pos = ConvBlock(3, out_c, (3, 3), (2, 2), (1, 1), activation="relu")
         self.conv_neg = ConvBlock(3, out_c, (3, 3), (2, 2), (1, 1), activation="relu")
-        self.dw_pos = ConvBlock(out_c, dw_c, (3, 3), (1, 1), (1, 1), groups=dw_c,
-                                activation=activation)
-        self.dw_neg = nn.Conv2d(out_c, dw_c, (3, 3), stride=(1, 1), padding=(1, 1), groups=dw_c,
-                                bias=False)
+        self.dw_pos = ConvBlock(
+            out_c, dw_c, (3, 3), (1, 1), (1, 1), groups=dw_c, activation=activation
+        )
+        self.dw_neg = nn.Conv2d(
+            out_c, dw_c, (3, 3), stride=(1, 1), padding=(1, 1), groups=dw_c, bias=False
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         pos = self.dw_pos.bn(self.dw_pos.conv(self.conv_pos(x)))
@@ -174,43 +304,77 @@ class MiniFASNetV2(nn.Module):
         if keep not in KEEP_TABLES:
             raise ValueError(f"keep must be one of {sorted(KEEP_TABLES)}, got {keep!r}")
         self.chroma = False
-        if input_size % (2 ** DOWNSAMPLES) != 0:
-            raise ValueError(f"input_size must be a multiple of {2 ** DOWNSAMPLES}, got {input_size}")
+        if input_size % (2**DOWNSAMPLES) != 0:
+            raise ValueError(f"input_size must be a multiple of {2**DOWNSAMPLES}, got {input_size}")
         self.view = view
         self.embedding_size = embedding
         k, act = KEEP_TABLES[keep], activation
-        closing = input_size // (2 ** DOWNSAMPLES)
+        closing = input_size // (2**DOWNSAMPLES)
 
         if stem == "split_prelu":
             self.stem = SplitPReLUStem(k[0], k[1], act)
         else:
             self.conv1 = ConvBlock(3, k[0], (3, 3), (2, 2), (1, 1), activation=act)
-            self.conv2_dw = ConvBlock(k[0], k[1], (3, 3), (1, 1), (1, 1), groups=k[1],
-                                      activation=act)
-        self.conv_23 = DepthWise((k[1], k[2]), (k[2], k[3]), (k[3], k[4]), groups=k[3],
-                                 activation=act)
+            self.conv2_dw = ConvBlock(
+                k[0], k[1], (3, 3), (1, 1), (1, 1), groups=k[1], activation=act
+            )
+        self.conv_23 = DepthWise(
+            (k[1], k[2]), (k[2], k[3]), (k[3], k[4]), groups=k[3], activation=act
+        )
         self.conv_3 = Residual(
             [(k[4], k[5]), (k[7], k[8]), (k[10], k[11]), (k[13], k[14])],
             [(k[5], k[6]), (k[8], k[9]), (k[11], k[12]), (k[14], k[15])],
             [(k[6], k[7]), (k[9], k[10]), (k[12], k[13]), (k[15], k[16])],
-            num_block=4, groups=k[4], activation=act, squeeze_excite=squeeze_excite)
-        self.conv_34 = DepthWise((k[16], k[17]), (k[17], k[18]), (k[18], k[19]), groups=k[19],
-                                 activation=act)
+            num_block=4,
+            groups=k[4],
+            activation=act,
+            squeeze_excite=squeeze_excite,
+        )
+        self.conv_34 = DepthWise(
+            (k[16], k[17]), (k[17], k[18]), (k[18], k[19]), groups=k[19], activation=act
+        )
         self.conv_4 = Residual(
-            [(k[19], k[20]), (k[22], k[23]), (k[25], k[26]), (k[28], k[29]), (k[31], k[32]),
-             (k[34], k[35])],
-            [(k[20], k[21]), (k[23], k[24]), (k[26], k[27]), (k[29], k[30]), (k[32], k[33]),
-             (k[35], k[36])],
-            [(k[21], k[22]), (k[24], k[25]), (k[27], k[28]), (k[30], k[31]), (k[33], k[34]),
-             (k[36], k[37])],
-            num_block=6, groups=k[19], activation=act, squeeze_excite=squeeze_excite)
-        self.conv_45 = DepthWise((k[37], k[38]), (k[38], k[39]), (k[39], k[40]), groups=k[40],
-                                 activation=act)
+            [
+                (k[19], k[20]),
+                (k[22], k[23]),
+                (k[25], k[26]),
+                (k[28], k[29]),
+                (k[31], k[32]),
+                (k[34], k[35]),
+            ],
+            [
+                (k[20], k[21]),
+                (k[23], k[24]),
+                (k[26], k[27]),
+                (k[29], k[30]),
+                (k[32], k[33]),
+                (k[35], k[36]),
+            ],
+            [
+                (k[21], k[22]),
+                (k[24], k[25]),
+                (k[27], k[28]),
+                (k[30], k[31]),
+                (k[33], k[34]),
+                (k[36], k[37]),
+            ],
+            num_block=6,
+            groups=k[19],
+            activation=act,
+            squeeze_excite=squeeze_excite,
+        )
+        self.conv_45 = DepthWise(
+            (k[37], k[38]), (k[38], k[39]), (k[39], k[40]), groups=k[40], activation=act
+        )
         self.conv_5 = Residual(
             [(k[40], k[41]), (k[43], k[44])],
             [(k[41], k[42]), (k[44], k[45])],
             [(k[42], k[43]), (k[45], k[46])],
-            num_block=2, groups=k[40], activation=act, squeeze_excite=squeeze_excite)
+            num_block=2,
+            groups=k[40],
+            activation=act,
+            squeeze_excite=squeeze_excite,
+        )
         self.conv_6_sep = ConvBlock(k[46], k[47], activation=act)
         self.conv_6_dw = LinearBlock(k[47], k[48], (closing, closing), groups=k[48])
         self.linear = nn.Linear(FLAT_FEATURES, embedding, bias=False)

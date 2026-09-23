@@ -108,7 +108,12 @@ class Residual(nn.Module):
         super().__init__()
         self.blocks = nn.ModuleList(
             DepthWise(
-                channels, channels, expand, kernel_size, stride=1, padding=padding,
+                channels,
+                channels,
+                expand,
+                kernel_size,
+                stride=1,
+                padding=padding,
                 activation=activation,
             )
             for _ in range(blocks)

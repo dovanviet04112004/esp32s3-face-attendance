@@ -29,7 +29,9 @@ class SpoofDistillLoss(nn.Module):
         self, output: torch.Tensor | tuple[torch.Tensor, ...], batch: SpoofBatch
     ) -> torch.Tensor:
         if batch.teacher_logits is None:
-            raise ValueError("antispoof_distill needs SpoofBatch.teacher_logits; set loss.teacher_run")
+            raise ValueError(
+                "antispoof_distill needs SpoofBatch.teacher_logits; set loss.teacher_run"
+            )
         logits = output[0] if isinstance(output, tuple) else output
         student = nn.functional.log_softmax(logits.float() / self.temperature, dim=1)
         teacher = nn.functional.softmax(batch.teacher_logits.float() / self.temperature, dim=1)

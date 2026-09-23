@@ -37,8 +37,15 @@ def export_onnx(run: Path, out: Path) -> Path:
     fold_bn.fold_linear(model)
     _, traced, example, input_names, output_names = evaluator.export_spec(run, model)
     out.parent.mkdir(parents=True, exist_ok=True)
-    torch.onnx.export(traced, example, str(out), opset_version=to_onnx.OPSET,
-                      input_names=input_names, output_names=output_names, dynamo=False)
+    torch.onnx.export(
+        traced,
+        example,
+        str(out),
+        opset_version=to_onnx.OPSET,
+        input_names=input_names,
+        output_names=output_names,
+        dynamo=False,
+    )
     gap = to_onnx.agreement(traced, out, example)
     print(f"  onnx {out.name}  max|torch-onnx| {gap:.3e}")
     return out
@@ -47,8 +54,10 @@ def export_onnx(run: Path, out: Path) -> Path:
 def calibration(run: Path, samples: int) -> list[torch.Tensor]:
     """The branch's calibration set as NCHW batches of one, the layout ESP-PPQ reads."""
     feeds = tf_to_tflite_int8.calibration_samples(run, None, samples)
-    return [torch.from_numpy(np.ascontiguousarray(next(iter(f.values())).transpose(0, 3, 1, 2)))
-            for f in feeds]
+    return [
+        torch.from_numpy(np.ascontiguousarray(next(iter(f.values())).transpose(0, 3, 1, 2)))
+        for f in feeds
+    ]
 
 
 def setting(equalize: bool = True):
@@ -62,18 +71,32 @@ def setting(equalize: bool = True):
     return chosen
 
 
-def quantize(onnx_path: Path, calib: list[torch.Tensor], out: Path, equalize: bool = True,
-             export: bool = True):
+def quantize(
+    onnx_path: Path,
+    calib: list[torch.Tensor],
+    out: Path,
+    equalize: bool = True,
+    export: bool = True,
+):
     """Quantise and, unless export is off, write out plus the .info and .json beside it."""
     from esp_ppq.api import espdl_quantize_onnx
 
     out.parent.mkdir(parents=True, exist_ok=True)
     return espdl_quantize_onnx(
-        onnx_import_file=str(onnx_path), espdl_export_file=str(out),
-        calib_dataloader=calib, calib_steps=len(calib), input_shape=list(calib[0].shape),
-        target=TARGET, num_of_bits=BITS, collate_fn=lambda batch: batch.to("cpu"),
-        setting=setting(equalize), device="cpu", error_report=False, skip_export=not export,
-        export_test_values=export, verbose=0,
+        onnx_import_file=str(onnx_path),
+        espdl_export_file=str(out),
+        calib_dataloader=calib,
+        calib_steps=len(calib),
+        input_shape=list(calib[0].shape),
+        target=TARGET,
+        num_of_bits=BITS,
+        collate_fn=lambda batch: batch.to("cpu"),
+        setting=setting(equalize),
+        device="cpu",
+        error_report=False,
+        skip_export=not export,
+        export_test_values=export,
+        verbose=0,
     )
 
 
@@ -107,8 +130,10 @@ def main(argv: list[str] | None = None) -> int:
     calib = calibration(args.run, args.samples)
     quantize(onnx_path, calib, args.out, equalize=not args.no_equalization)
     size = args.out.stat().st_size
-    print(f"Q1 espdl  {args.out.name}  {size / 1024.0:.1f} KB  calib {len(calib)} x "
-          f"{tuple(calib[0].shape)}")
+    print(
+        f"Q1 espdl  {args.out.name}  {size / 1024.0:.1f} KB  calib {len(calib)} x "
+        f"{tuple(calib[0].shape)}"
+    )
     return 0
 
 

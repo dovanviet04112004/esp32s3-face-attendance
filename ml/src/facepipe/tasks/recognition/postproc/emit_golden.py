@@ -36,8 +36,9 @@ ESPDL_INPUT_SCALE = 2.0**-7
 ESPDL_EMBED_SCALE = 2.0**-7
 
 
-def quantized_pixels(image: np.ndarray, scale: float = INPUT_SCALE,
-                     zero: int = INPUT_ZERO) -> np.ndarray:
+def quantized_pixels(
+    image: np.ndarray, scale: float = INPUT_SCALE, zero: int = INPUT_ZERO
+) -> np.ndarray:
     """The int8 block align_face writes, by the formula in pixels.cpp Quantizer."""
     scaled = (image.astype(np.float32) - PIXEL_MEAN) / PIXEL_SPAN / np.float32(scale)
     return np.clip(np.rint(scaled) + zero, -128, 127).astype(np.int8)

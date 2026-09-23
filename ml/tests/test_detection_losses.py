@@ -130,42 +130,6 @@ def test_task_loss_reaches_the_model_weights() -> None:
     assert model.backbone.stages[0].conv.weight.grad.abs().sum() > 0
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 @pytest.mark.parametrize(
     "name",
     [

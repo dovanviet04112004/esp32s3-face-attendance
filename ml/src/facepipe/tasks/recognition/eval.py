@@ -196,7 +196,6 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     return cfg, traced, (torch.zeros(1, 3, height, width),), ["face"], ["embedding"]
 
 
-
 def main(argv: list[str] | None = None) -> int:
     from facepipe.core.registry import MODELS
 
@@ -204,8 +203,12 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt", type=Path, default=None)
-    parser.add_argument("--run", type=Path, default=None,
-                        help="score this run's best.pth with its frozen config instead of --ckpt")
+    parser.add_argument(
+        "--run",
+        type=Path,
+        default=None,
+        help="score this run's best.pth with its frozen config instead of --ckpt",
+    )
     parser.add_argument("--benchmarks", type=Path, default=Path("data/raw/recognition/benchmarks"))
     parser.add_argument("--model", default="mobilefacenet")
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)

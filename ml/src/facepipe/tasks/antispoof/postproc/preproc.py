@@ -24,7 +24,9 @@ def unpack_rgb565(words: np.ndarray) -> np.ndarray:
     ).astype(np.uint16)
 
 
-def fitted_square(box: np.ndarray, scale: float, width: int, height: int) -> tuple[float, float, float]:
+def fitted_square(
+    box: np.ndarray, scale: float, width: int, height: int
+) -> tuple[float, float, float]:
     """Left, top and side of the largest square that fits, slid to hold the face."""
     cx, cy = (box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0
     face = max(1.0, max(box[2] - box[0], box[3] - box[1]))
@@ -34,7 +36,9 @@ def fitted_square(box: np.ndarray, scale: float, width: int, height: int) -> tup
     return left, top, side
 
 
-def cell_bounds(origin: float, span: float, count: int, limit: int) -> tuple[np.ndarray, np.ndarray]:
+def cell_bounds(
+    origin: float, span: float, count: int, limit: int
+) -> tuple[np.ndarray, np.ndarray]:
     """Inclusive source index range covering each destination cell.
 
     float32 and `lo + step` rather than `origin + (i + 1) * step`: the device
@@ -43,7 +47,9 @@ def cell_bounds(origin: float, span: float, count: int, limit: int) -> tuple[np.
     step = np.float32(span) / np.float32(count)
     # xtensa contracts origin + i * step into one madd.s, so the product and the
     # sum round once between them; float64 here reproduces that single rounding.
-    low = (np.float64(origin) + np.arange(count, dtype=np.float64) * np.float64(step)).astype(np.float32)
+    low = (np.float64(origin) + np.arange(count, dtype=np.float64) * np.float64(step)).astype(
+        np.float32
+    )
     high = low + step
     first = np.clip(np.floor(low).astype(np.int64), 0, limit - 1)
     last = np.clip(np.ceil(high).astype(np.int64) - 1, 0, limit - 1)
@@ -66,14 +72,23 @@ def resample_square(rgb: np.ndarray, left: float, top: float, side: float, size:
     return block
 
 
-def quantize(block: np.ndarray, scale: float, zero_point: int, mean: float, span: float) -> np.ndarray:
+def quantize(
+    block: np.ndarray, scale: float, zero_point: int, mean: float, span: float
+) -> np.ndarray:
     """The int8 the Quantizer of pixels.cpp writes for each byte."""
     scaled = (block.astype(np.float32) - np.float32(mean)) / np.float32(span) / np.float32(scale)
     return np.clip(np.rint(scaled) + zero_point, -128, 127).astype(np.int8)
 
 
-def crop_face(words: np.ndarray, box: np.ndarray, size: int, scale: float, zero_point: int,
-              mean: float = 0.0, span: float = 255.0) -> np.ndarray:
+def crop_face(
+    words: np.ndarray,
+    box: np.ndarray,
+    size: int,
+    scale: float,
+    zero_point: int,
+    mean: float = 0.0,
+    span: float = 255.0,
+) -> np.ndarray:
     """The int8 block crop_face hands the interpreter, from one RGB565 frame."""
     height, width = words.shape
     left, top, side = fitted_square(box, FACE_SCALE, width, height)

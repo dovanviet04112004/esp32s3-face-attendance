@@ -80,7 +80,7 @@ class SpoofSample:
     wide: np.ndarray | None
     label: int
     wide_scale: float  # scale the wide view actually reached
-    domain: int = 0    # which shard folder it came from (KEHOACH 3)
+    domain: int = 0  # which shard folder it came from (KEHOACH 3)
     face_in_wide: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
     def views(self) -> list[np.ndarray]:
@@ -521,8 +521,10 @@ class SpoofShardDataset(IterableDataset):
         # the split and would otherwise fill the window on its own (KEHOACH 3).
         while shards and len(live) < self.interleave:
             held = {domain for domain, _ in live}
-            at = next((i for i, s in enumerate(shards)
-                       if self.domains.index(s.parent.name) not in held), 0)
+            at = next(
+                (i for i, s in enumerate(shards) if self.domains.index(s.parent.name) not in held),
+                0,
+            )
             shard = shards.pop(at)
             live.append((self.domains.index(shard.parent.name), iter(read_shard(shard))))
 

@@ -41,8 +41,9 @@ def input_shape(model_path: Path) -> tuple[int, int]:
     from ai_edge_litert.interpreter import Interpreter
 
     interpreter = Interpreter(model_path=str(model_path))
-    sizes = {tuple(int(v) for v in detail["shape"][1:3])
-             for detail in interpreter.get_input_details()}
+    sizes = {
+        tuple(int(v) for v in detail["shape"][1:3]) for detail in interpreter.get_input_details()
+    }
     if len(sizes) != 1:
         raise SystemExit(f"{model_path.name}: inputs disagree on size {sorted(sizes)}")
     height, width = sizes.pop()
@@ -63,13 +64,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifacts", type=Path, default=Path("ml/artifacts"))
     parser.add_argument("--lock", type=Path, default=Path("contracts/models.lock.json"))
     parser.add_argument("--models-dir", type=Path, default=Path("firmware/models"))
-    parser.add_argument("--creator", type=Path, default=None,
-                        help="dl_module_creator.hpp for the ESP-DL op check")
+    parser.add_argument(
+        "--creator", type=Path, default=None, help="dl_module_creator.hpp for the ESP-DL op check"
+    )
     args = parser.parse_args(argv)
     runtime = payload_runtime(args.model)
     if runtime == "espdl" and args.arena_bytes != 0:
-        raise SystemExit("an .espdl entry carries arena_bytes 0: ESP-DL sizes its own memory "
-                         "(KEHOACH 3.8)")
+        raise SystemExit(
+            "an .espdl entry carries arena_bytes 0: ESP-DL sizes its own memory (KEHOACH 3.8)"
+        )
 
     branch, _, run_name = args.run_id.partition("/")
     run_dir = args.artifacts / branch / "runs" / run_name
@@ -93,13 +96,22 @@ def main(argv: list[str] | None = None) -> int:
 
     height, width = input_shape(deployed)
     digest = sha256_of(deployed)
-    meta = {"in_h": height, "in_w": width, "arena_hint": args.arena_bytes,
-            "sha256": digest, "run_id": args.run_id}
+    meta = {
+        "in_h": height,
+        "in_w": width,
+        "arena_hint": args.arena_bytes,
+        "sha256": digest,
+        "run_id": args.run_id,
+    }
     (branch_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     lock = json.loads(args.lock.read_text(encoding="utf-8")) if args.lock.is_file() else {}
-    lock[args.branch] = {"file": deployed.name, "sha256": digest, "run_id": args.run_id,
-                         "arena_bytes": args.arena_bytes}
+    lock[args.branch] = {
+        "file": deployed.name,
+        "sha256": digest,
+        "run_id": args.run_id,
+        "arena_bytes": args.arena_bytes,
+    }
     ordered = {branch: lock[branch] for branch in BRANCH_ENTRY if branch in lock}
     args.lock.parent.mkdir(parents=True, exist_ok=True)
     args.lock.write_text(json.dumps(ordered, indent=2) + "\n", encoding="utf-8")
@@ -107,8 +119,10 @@ def main(argv: list[str] | None = None) -> int:
     if mirror.resolve() != args.lock.resolve():
         shutil.copyfile(args.lock, mirror)
 
-    print(f"{args.branch}: {deployed} {height}x{width} {runtime} sha256 {digest[:12]} "
-          f"run {args.run_id}")
+    print(
+        f"{args.branch}: {deployed} {height}x{width} {runtime} sha256 {digest[:12]} "
+        f"run {args.run_id}"
+    )
     return 0
 
 

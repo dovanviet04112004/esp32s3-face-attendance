@@ -330,30 +330,10 @@ def test_the_loss_buffer_follows_the_logits_device() -> None:
     assert loss(logits, batch).dtype == torch.float64
 
 
-
-
 def spoof_batch(labels: list[int], wide_scale: float = 2.7) -> SpoofBatch:
     return SpoofBatch(
         torch.tensor(labels), torch.full((len(labels),), wide_scale, dtype=torch.float32)
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_the_loader_size_comes_from_the_model_input(tmp_path: Path) -> None:
@@ -389,28 +369,10 @@ def test_a_rectangular_input_is_refused(tmp_path: Path) -> None:
         crop_size(load_config(path))
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 def write_split_shards(root: Path, records: int = 8) -> Path:
     for split in ("train", "valid"):
         write_shards(root / split, records=records, shard_size=4)
     return root
-
-
-
-
-
-
 
 
 def run_config(tmp_path: Path, shards: Path) -> Path:
@@ -465,7 +427,9 @@ def test_distill_loss_refuses_a_batch_without_teacher_logits():
     from facepipe.tasks.antispoof.losses.task_loss import SpoofBatch
 
     with pytest.raises(ValueError):
-        SpoofDistillLoss()(torch.zeros(2, 3), SpoofBatch(torch.zeros(2, dtype=torch.long), torch.ones(2)))
+        SpoofDistillLoss()(
+            torch.zeros(2, 3), SpoofBatch(torch.zeros(2, dtype=torch.long), torch.ones(2))
+        )
 
 
 def test_wide_only_model_reads_the_second_view_only():

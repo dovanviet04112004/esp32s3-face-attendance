@@ -26,7 +26,7 @@ ENTRY_BYTES = 64
 ENTRY_SLOTS = 3
 ENTRY_FORMAT = "<16sII32sHHI"
 CRC_OFFSET = 252
-PAYLOAD_ALIGN = 16                        # esp-nn reads weights aligned; ESP-DL copies otherwise
+PAYLOAD_ALIGN = 16  # esp-nn reads weights aligned; ESP-DL copies otherwise
 # Each runtime is told apart by its file's own magic, never by a header field (KEHOACH 6.2.2).
 PAYLOAD_MAGIC = {"tflm": (4, b"TFL3"), "espdl": (0, b"EDL2")}
 
@@ -48,7 +48,7 @@ def payload_runtime(path: Path) -> str:
     """Which runtime a model file is for, from the magic the file itself carries."""
     head = path.read_bytes()[:8]
     for runtime, (offset, magic) in PAYLOAD_MAGIC.items():
-        if head[offset:offset + len(magic)] == magic:
+        if head[offset : offset + len(magic)] == magic:
             return runtime
     raise SystemExit(f"{path.name}: neither a .tflite nor a plain .espdl")
 
@@ -90,13 +90,15 @@ def deployed(lock_path: Path, models_dir: Path) -> list[Model]:
             raise SystemExit(f"{branch}: {path} is missing, run 50_pack_and_flash.sh first")
         digest = sha256_of(path)
         if digest != record["sha256"]:
-            raise SystemExit(f"{branch}: {path.name} hashes {digest[:12]}, "
-                             f"lock says {record['sha256'][:12]}")
+            raise SystemExit(
+                f"{branch}: {path.name} hashes {digest[:12]}, lock says {record['sha256'][:12]}"
+            )
         meta = json.loads((models_dir / branch / "meta.json").read_text(encoding="utf-8"))
         if meta["sha256"] != digest or meta["arena_hint"] != record["arena_bytes"]:
             raise SystemExit(f"{branch}: meta.json and the lock file disagree, rerun update_lock")
-        models.append(Model(branch, entry_name, path, digest, meta["in_h"], meta["in_w"],
-                            meta["arena_hint"]))
+        models.append(
+            Model(branch, entry_name, path, digest, meta["in_h"], meta["in_w"], meta["arena_hint"])
+        )
     if not models:
         raise SystemExit(f"{lock_path} deploys nothing")
     runtimes = {model.path.name: payload_runtime(model.path) for model in models}
@@ -111,9 +113,16 @@ def build_image(models: list[Model], built_at: int) -> bytes:
     entries = b""
     for model in models:
         blob = model.path.read_bytes()
-        entries += struct.pack(ENTRY_FORMAT, model.entry_name.encode(), HEADER_BYTES + len(payload),
-                               len(blob), bytes.fromhex(model.sha256), model.in_h, model.in_w,
-                               model.arena_hint)
+        entries += struct.pack(
+            ENTRY_FORMAT,
+            model.entry_name.encode(),
+            HEADER_BYTES + len(payload),
+            len(blob),
+            bytes.fromhex(model.sha256),
+            model.in_h,
+            model.in_w,
+            model.arena_hint,
+        )
         payload += blob
         payload += bytes(-len(payload) % PAYLOAD_ALIGN)
 
@@ -143,11 +152,15 @@ def main(argv: list[str] | None = None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(image)
     for model in models:
-        print(f"{model.entry_name:8s} {model.path.name:28s} {model.in_h}x{model.in_w}  "
-              f"{model.path.stat().st_size / 1024.0:8.1f} KB  arena {model.arena_hint}")
-    print(f"{args.out}  {len(image) / 1024.0:.1f} KB of {capacity / 1024.0:.0f} KB "
-          f"{args.partition}, {len(models)} of {ENTRY_SLOTS} branches, "
-          f"runtime {payload_runtime(models[0].path)}")
+        print(
+            f"{model.entry_name:8s} {model.path.name:28s} {model.in_h}x{model.in_w}  "
+            f"{model.path.stat().st_size / 1024.0:8.1f} KB  arena {model.arena_hint}"
+        )
+    print(
+        f"{args.out}  {len(image) / 1024.0:.1f} KB of {capacity / 1024.0:.0f} KB "
+        f"{args.partition}, {len(models)} of {ENTRY_SLOTS} branches, "
+        f"runtime {payload_runtime(models[0].path)}"
+    )
     return 0
 
 

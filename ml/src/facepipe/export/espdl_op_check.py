@@ -18,8 +18,9 @@ from facepipe.export.tflite_op_check import repo_root
 
 MAGIC = b"EDL2"
 HEADER_BYTES = 16
-CREATOR_HPP = ("firmware/managed_components/espressif__esp-dl/dl/module/include/"
-               "dl_module_creator.hpp")
+CREATOR_HPP = (
+    "firmware/managed_components/espressif__esp-dl/dl/module/include/dl_module_creator.hpp"
+)
 _REGISTER = re.compile(r'register_module\(\s*"([A-Za-z0-9_]+)"')
 
 
@@ -66,8 +67,11 @@ def content_digest(path: Path) -> str:
         chunks = range(tensor.RawDataLength())
         raw = b"".join(bytes(tensor.RawData(j).BytesAsNumpy()) for j in chunks)
         exponents = tensor.ExponentsAsNumpy().tobytes() if tensor.ExponentsLength() else b""
-        records.append(hashlib.sha256(raw + b"|" + exponents + b"|"
-                                      + tensor.DimsAsNumpy().tobytes()).hexdigest())
+        records.append(
+            hashlib.sha256(
+                raw + b"|" + exponents + b"|" + tensor.DimsAsNumpy().tobytes()
+            ).hexdigest()
+        )
     ops = ",".join(f"{name}x{count}" for name, count in sorted(operators(path).items()))
     return hashlib.sha256(("|".join(sorted(records)) + "#" + ops).encode()).hexdigest()
 
@@ -80,20 +84,28 @@ def registered(creator_hpp: Path) -> set[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, required=True, help="a .espdl file")
-    parser.add_argument("--creator", type=Path, default=None,
-                        help="dl_module_creator.hpp; defaults to the firmware's managed copy")
+    parser.add_argument(
+        "--creator",
+        type=Path,
+        default=None,
+        help="dl_module_creator.hpp; defaults to the firmware's managed copy",
+    )
     parser.add_argument("--out", type=Path, help="where to write the report")
     args = parser.parse_args(argv)
 
     creator = args.creator or repo_root(Path(__file__).resolve()) / CREATOR_HPP
     if not creator.is_file():
-        raise SystemExit(f"{creator} is missing; build the firmware once so the component "
-                         "manager fetches esp-dl")
+        raise SystemExit(
+            f"{creator} is missing; build the firmware once so the component manager fetches esp-dl"
+        )
     known = registered(creator)
     counts = operators(args.model)
     missing = sorted(set(counts) - known)
-    lines = [args.model.name, f"{sum(counts.values())} operator instance(s), "
-             f"{len(known)} module(s) in {creator.name}", ""]
+    lines = [
+        args.model.name,
+        f"{sum(counts.values())} operator instance(s), {len(known)} module(s) in {creator.name}",
+        "",
+    ]
     for name in sorted(counts):
         status = "NO MODULE" if name in missing else "esp-dl"
         lines.append(f"{status:16s} {name:28s} x{counts[name]}")

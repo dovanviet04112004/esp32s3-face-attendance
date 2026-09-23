@@ -55,8 +55,9 @@ def main(argv: list[str] | None = None) -> int:
                 "box": box,
                 "quant": np.array([INPUT_SCALE, float(INPUT_ZERO)], dtype=np.float32),
                 "square": np.array([left, top, side], dtype=np.float32),
-                "cropped": crop_face(words, box, CROP_SIZE, INPUT_SCALE, INPUT_ZERO,
-                                     PIXEL_MEAN, PIXEL_SPAN),
+                "cropped": crop_face(
+                    words, box, CROP_SIZE, INPUT_SCALE, INPUT_ZERO, PIXEL_MEAN, PIXEL_SPAN
+                ),
             },
         )
     print(f"{args.out / 'preproc'}: {len(boxes())} case(s)")

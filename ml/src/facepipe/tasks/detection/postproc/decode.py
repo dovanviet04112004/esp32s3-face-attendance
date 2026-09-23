@@ -24,7 +24,6 @@ def flatten_levels(tensors: list[torch.Tensor]) -> torch.Tensor:
     return torch.cat(flat, dim=1)
 
 
-
 def flatten_output(out: HeadOutput) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Flatten the three branches together, keeping them aligned."""
     return flatten_levels(out.cls), flatten_levels(out.bbox), flatten_levels(out.kps)

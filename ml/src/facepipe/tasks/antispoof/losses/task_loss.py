@@ -44,7 +44,6 @@ class SpoofTaskLoss(nn.Module):
         self.label_smoothing = label_smoothing
         self.patch_weight = patch_weight
 
-
     def forward(
         self,
         output: torch.Tensor | tuple[torch.Tensor, ...],

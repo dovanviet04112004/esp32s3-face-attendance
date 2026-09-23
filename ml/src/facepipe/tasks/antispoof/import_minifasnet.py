@@ -36,15 +36,23 @@ def upstream_state(path: Path, source: str) -> dict[str, torch.Tensor]:
     raw = torch.load(path, map_location="cpu", weights_only=False)
     if source == "facenox":
         # MultiFTNet keeps the classifier under `model.` beside a training-only Fourier head.
-        raw = {k.removeprefix("model.").replace("logits.", "prob."): v
-               for k, v in raw["model_state_dict"].items() if k.startswith("model.")}
+        raw = {
+            k.removeprefix("model.").replace("logits.", "prob."): v
+            for k, v in raw["model_state_dict"].items()
+            if k.startswith("model.")
+        }
     else:
         raw = raw.get("state_dict", raw) if isinstance(raw, dict) else raw
     return {k.removeprefix("module.").replace(".prelu.", ".act."): v for k, v in raw.items()}
 
 
-def folded(state: dict[str, torch.Tensor], activation: str, stem: str,
-           source: str = "minivision", prob_bias: bool = False) -> dict[str, torch.Tensor]:
+def folded(
+    state: dict[str, torch.Tensor],
+    activation: str,
+    stem: str,
+    source: str = "minivision",
+    prob_bias: bool = False,
+) -> dict[str, torch.Tensor]:
     """Fold channel order, pixel range, class order and the split stem into the weights."""
     out = dict(state)
     if source == "minivision":
@@ -63,14 +71,15 @@ def folded(state: dict[str, torch.Tensor], activation: str, stem: str,
 
 def split_stem(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     """conv1 and conv2_dw as SplitPReLUStem weights; the algebra is in KEHOACH 3."""
-    out = {k: v for k, v in state.items()
-           if not (k.startswith("conv1.") or k.startswith("conv2_dw."))}
+    out = {
+        k: v for k, v in state.items() if not (k.startswith("conv1.") or k.startswith("conv2_dw."))
+    }
     slope = state["conv1.act.weight"]
     for k, v in state.items():
         if k.startswith("conv1.") and not k.endswith(".act.weight"):
-            out["stem.conv_pos." + k[len("conv1."):]] = v
+            out["stem.conv_pos." + k[len("conv1.") :]] = v
         if k.startswith("conv2_dw.") and not k.endswith(".act.weight"):
-            out["stem.dw_pos." + k[len("conv2_dw."):]] = v
+            out["stem.dw_pos." + k[len("conv2_dw.") :]] = v
     # ReLU(-BN1(Wx)): negate the kernel, and turn BN1 into -BN1 of its own input.
     out["stem.conv_neg.conv.weight"] = -state["conv1.conv.weight"]
     out["stem.conv_neg.bn.weight"] = state["conv1.bn.weight"]
@@ -79,7 +88,9 @@ def split_stem(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     out["stem.conv_neg.bn.running_var"] = state["conv1.bn.running_var"]
     out["stem.conv_neg.bn.num_batches_tracked"] = state["conv1.bn.num_batches_tracked"]
     bn_scale = state["conv2_dw.bn.weight"] / torch.sqrt(state["conv2_dw.bn.running_var"] + BN_EPS)
-    out["stem.dw_neg.weight"] = -(slope * bn_scale).view(-1, 1, 1, 1) * state["conv2_dw.conv.weight"]
+    out["stem.dw_neg.weight"] = (
+        -(slope * bn_scale).view(-1, 1, 1, 1) * state["conv2_dw.conv.weight"]
+    )
     return out
 
 
@@ -104,12 +115,21 @@ def parity(model: torch.nn.Module, onnx_path: Path, size: int, source: str) -> f
     return worst
 
 
-def stem_parity(model: torch.nn.Module, state: dict[str, torch.Tensor], params: dict, size: int,
-                source: str) -> float:
+def stem_parity(
+    model: torch.nn.Module, state: dict[str, torch.Tensor], params: dict, size: int, source: str
+) -> float:
     """Largest gap between the split stem and PReLU kept at conv1, ReLU elsewhere."""
     reference = MODELS.build({"name": "minifasnet_v2", "params": {**params, "stem": "plain"}})
-    reference.load_state_dict(folded(state, str(params.get("activation", "relu")), "plain", source,
-                                     bool(params.get("prob_bias", False))), strict=True)
+    reference.load_state_dict(
+        folded(
+            state,
+            str(params.get("activation", "relu")),
+            "plain",
+            source,
+            bool(params.get("prob_bias", False)),
+        ),
+        strict=True,
+    )
     reference.conv1.act = torch.nn.PReLU(state["conv1.act.weight"].numel())
     reference.conv1.act.weight.data.copy_(state["conv1.act.weight"])
     reference.eval()
@@ -127,8 +147,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--weights", type=Path, required=True, help="upstream .pth")
     parser.add_argument("--cfg", type=Path, required=True)
-    parser.add_argument("--onnx", type=Path, default=None,
-                        help="source ONNX to check parity against; only valid for prelu")
+    parser.add_argument(
+        "--onnx",
+        type=Path,
+        default=None,
+        help="source ONNX to check parity against; only valid for prelu",
+    )
     parser.add_argument("--source", choices=SOURCES, default="minivision")
     parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
     args = parser.parse_args(argv)
@@ -147,14 +171,18 @@ def main(argv: list[str] | None = None) -> int:
     if stem == "split_prelu":
         gap = stem_parity(model, state, dict(cfg.model.params), size, args.source)
         if gap > PARITY_TOLERANCE:
-            raise SystemExit(f"stem parity gap {gap:.3e} exceeds {PARITY_TOLERANCE:.0e}; nothing written")
+            raise SystemExit(
+                f"stem parity gap {gap:.3e} exceeds {PARITY_TOLERANCE:.0e}; nothing written"
+            )
         print(f"split stem vs PReLU at conv1: max|diff| {gap:.3e}")
     if args.onnx is not None:
         if activation != "prelu" or stem != "plain":
             raise SystemExit("parity against the source graph holds only for the plain PReLU model")
         gap = parity(model, args.onnx, size, args.source)
         if gap > PARITY_TOLERANCE:
-            raise SystemExit(f"parity gap {gap:.3e} exceeds {PARITY_TOLERANCE:.0e}; nothing written")
+            raise SystemExit(
+                f"parity gap {gap:.3e} exceeds {PARITY_TOLERANCE:.0e}; nothing written"
+            )
         print(f"parity vs {args.onnx.name}: max|diff| {gap:.3e}")
 
     run = create_run_dir(cfg)

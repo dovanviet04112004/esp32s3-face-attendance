@@ -90,12 +90,6 @@ def test_the_final_layer_weighs_cells_separately() -> None:
     assert not torch.allclose(learned, pooled, atol=1e-3)
 
 
-
-
-
-
-
-
 def test_arcface_penalises_the_true_class_and_nothing_else() -> None:
     """The margin lowers the target cosine and leaves every other column alone."""
     loss = ArcFaceLoss(num_classes=4, embedding=8)
@@ -138,14 +132,6 @@ def test_arcface_trains_its_own_centres() -> None:
     out = loss(torch.randn(2, 4), RecogTargets(labels=torch.tensor([0, 1])))
     out.backward()
     assert loss.weight.grad is not None and loss.weight.grad.abs().sum() > 0
-
-
-
-
-
-
-
-
 
 
 def test_the_label_map_is_contiguous_from_zero() -> None:
@@ -208,10 +194,6 @@ def test_reading_several_shards_at_once_mixes_identities(tmp_path: Path) -> None
     assert sorted(s.label for s in one) == sorted(s.label for s in many)
     first_four = [sample.label for sample in many][:4]
     assert len({label // 4 for label in first_four}) > 1
-
-
-
-
 
 
 def test_decoding_returns_the_declared_size() -> None:

@@ -100,8 +100,6 @@ def test_the_summary_carries_the_key_the_trainer_selects_on() -> None:
     assert row["auc"] == pytest.approx(1.0)
 
 
-
-
 def test_equal_logits_read_as_an_even_split() -> None:
     assert float(liveness_of(torch.zeros(1, 2))[0]) == pytest.approx(0.5)
 

@@ -112,8 +112,9 @@ def main(argv: list[str] | None = None) -> int:
 
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
         """Verification accuracy on each benchmark, flattened for the logger."""
-        scores = evaluate_all(module, benchmarks, trainer.device, batch_size=cfg.data.batch_size,
-                              size=crop_size(cfg))
+        scores = evaluate_all(
+            module, benchmarks, trainer.device, batch_size=cfg.data.batch_size, size=crop_size(cfg)
+        )
         return {f"{name}_{k}": v for name, values in scores.items() for k, v in values.items()}
 
     trainer = Trainer(

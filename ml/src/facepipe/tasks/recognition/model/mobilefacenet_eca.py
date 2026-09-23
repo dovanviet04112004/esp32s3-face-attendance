@@ -37,8 +37,15 @@ class ECAModule(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, cin: int, cout: int, kernel_size=(1, 1), stride=(1, 1), padding=(0, 0),
-                 groups: int = 1) -> None:
+    def __init__(
+        self,
+        cin: int,
+        cout: int,
+        kernel_size=(1, 1),
+        stride=(1, 1),
+        padding=(0, 0),
+        groups: int = 1,
+    ) -> None:
         super().__init__()
         self.conv = nn.Conv2d(cin, cout, kernel_size, stride, padding, groups=groups, bias=False)
         self.bn = nn.BatchNorm2d(cout)
@@ -49,8 +56,15 @@ class ConvBlock(nn.Module):
 
 
 class LinearBlock(nn.Module):
-    def __init__(self, cin: int, cout: int, kernel_size=(1, 1), stride=(1, 1), padding=(0, 0),
-                 groups: int = 1) -> None:
+    def __init__(
+        self,
+        cin: int,
+        cout: int,
+        kernel_size=(1, 1),
+        stride=(1, 1),
+        padding=(0, 0),
+        groups: int = 1,
+    ) -> None:
         super().__init__()
         self.conv = nn.Conv2d(cin, cout, kernel_size, stride, padding, groups=groups, bias=False)
         self.bn = nn.BatchNorm2d(cout)
@@ -62,8 +76,9 @@ class LinearBlock(nn.Module):
 class DepthWiseSeparableConv(nn.Module):
     """Expand, depthwise, project, then ECA; `groups` is the expanded width (upstream name)."""
 
-    def __init__(self, cin: int, cout: int, stride=(2, 2), groups: int = 1,
-                 residual: bool = False) -> None:
+    def __init__(
+        self, cin: int, cout: int, stride=(2, 2), groups: int = 1, residual: bool = False
+    ) -> None:
         super().__init__()
         self.residual = residual
         self.conv_expand = ConvBlock(cin, groups)
@@ -79,10 +94,12 @@ class DepthWiseSeparableConv(nn.Module):
 class ResidualBlock(nn.Module):
     def __init__(self, channels: int, num_blocks: int, groups: int) -> None:
         super().__init__()
-        self.layers = nn.Sequential(*[
-            DepthWiseSeparableConv(channels, channels, (1, 1), groups, residual=True)
-            for _ in range(num_blocks)
-        ])
+        self.layers = nn.Sequential(
+            *[
+                DepthWiseSeparableConv(channels, channels, (1, 1), groups, residual=True)
+                for _ in range(num_blocks)
+            ]
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.layers(x)
@@ -109,8 +126,10 @@ class MobileFaceNetECA(nn.Module):
     def __init__(self, num_features: int = 512, input_size: int = INPUT_SIZE) -> None:
         super().__init__()
         if input_size != INPUT_SIZE:
-            raise ValueError(f"the published weights close on a {FINAL_MAP}x{FINAL_MAP} kernel, "
-                             f"which only a {INPUT_SIZE} input leaves")
+            raise ValueError(
+                f"the published weights close on a {FINAL_MAP}x{FINAL_MAP} kernel, "
+                f"which only a {INPUT_SIZE} input leaves"
+            )
         self.conv1 = ConvBlock(3, 64, (3, 3), (2, 2), (1, 1))
         self.conv2_dw = ConvBlock(64, 64, (3, 3), (1, 1), (1, 1), groups=64)
         self.conv_23 = DepthWiseSeparableConv(64, 64, (2, 2), groups=128)

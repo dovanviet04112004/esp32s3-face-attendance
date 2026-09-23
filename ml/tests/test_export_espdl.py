@@ -91,8 +91,11 @@ def test_an_espdl_image_keeps_the_header_the_firmware_reads(tmp_path: Path) -> N
 
 def test_registered_reads_the_module_creator(tmp_path: Path) -> None:
     header = tmp_path / "dl_module_creator.hpp"
-    header.write_text('this->register_module("Conv", Conv::deserialize);\n'
-                      'this->register_module( "PRelu", PRelu::deserialize);\n', encoding="utf-8")
+    header.write_text(
+        'this->register_module("Conv", Conv::deserialize);\n'
+        'this->register_module( "PRelu", PRelu::deserialize);\n',
+        encoding="utf-8",
+    )
     assert espdl_op_check.registered(header) == {"Conv", "PRelu"}
 
 
@@ -113,8 +116,15 @@ def export_espdl(model: nn.Module, work: Path, name: str) -> Path:
     from facepipe.compress.quant import ptq_espdl
 
     onnx_path = work / f"{name}.onnx"
-    torch.onnx.export(model.eval(), (torch.zeros(1, 3, 8, 8),), str(onnx_path), opset_version=13,
-                      input_names=["image"], output_names=["out"], dynamo=False)
+    torch.onnx.export(
+        model.eval(),
+        (torch.zeros(1, 3, 8, 8),),
+        str(onnx_path),
+        opset_version=13,
+        input_names=["image"],
+        output_names=["out"],
+        dynamo=False,
+    )
     calib = [torch.rand(1, 3, 8, 8) for _ in range(4)]
     out = work / f"{name}.espdl"
     ptq_espdl.quantize(onnx_path, calib, out)
@@ -128,9 +138,13 @@ def test_the_op_check_catches_expand_and_the_digest_ignores_export_noise(tmp_pat
     first = export_espdl(model, tmp_path, "first")
     second = export_espdl(model, tmp_path, "second")
     header = tmp_path / "dl_module_creator.hpp"
-    header.write_text("".join(f'register_module("{op}", x);\n'
-                              for op in ("Conv", "GlobalAveragePool", "Sigmoid", "Mul")),
-                      encoding="utf-8")
+    header.write_text(
+        "".join(
+            f'register_module("{op}", x);\n'
+            for op in ("Conv", "GlobalAveragePool", "Sigmoid", "Mul")
+        ),
+        encoding="utf-8",
+    )
     assert "Expand" in espdl_op_check.operators(first)
     assert espdl_op_check.main(["--model", str(first), "--creator", str(header)]) == 1
     assert espdl_op_check.input_shape(first) == [1, 8, 8, 3]

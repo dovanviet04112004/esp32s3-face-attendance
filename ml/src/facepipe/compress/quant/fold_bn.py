@@ -58,8 +58,11 @@ def fold(model: nn.Module) -> int:
 def linear_pairs(model: nn.Module) -> list[tuple[str, str]]:
     """Names of every linear layer immediately followed by a 1-D batch norm, in run order."""
     ordered = list(model.named_modules())
-    return [(name, ordered[i + 1][0]) for i, (name, module) in enumerate(ordered[:-1])
-            if isinstance(module, nn.Linear) and isinstance(ordered[i + 1][1], nn.BatchNorm1d)]
+    return [
+        (name, ordered[i + 1][0])
+        for i, (name, module) in enumerate(ordered[:-1])
+        if isinstance(module, nn.Linear) and isinstance(ordered[i + 1][1], nn.BatchNorm1d)
+    ]
 
 
 def fold_linear(model: nn.Module) -> int:

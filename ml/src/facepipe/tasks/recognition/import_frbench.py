@@ -52,11 +52,16 @@ def parity(model: torch.nn.Module, onnx_path: Path, size: int) -> float:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--weights", type=Path, required=True,
-                        help="mobilefacenet_arcface_ms1m.pth")
+    parser.add_argument(
+        "--weights", type=Path, required=True, help="mobilefacenet_arcface_ms1m.pth"
+    )
     parser.add_argument("--cfg", type=Path, required=True)
-    parser.add_argument("--onnx", type=Path, default=None,
-                        help="graph exported from FRBench's own code, to check parity against")
+    parser.add_argument(
+        "--onnx",
+        type=Path,
+        default=None,
+        help="graph exported from FRBench's own code, to check parity against",
+    )
     parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
     args = parser.parse_args(argv)
 
@@ -65,16 +70,19 @@ def main(argv: list[str] | None = None) -> int:
     size = int(cfg.model.input_hw[0])
     digest = sha256_file(args.weights)
     if digest[:16] not in cfg.run.notes:
-        raise SystemExit(f"{args.weights.name} is sha256 {digest[:16]}, which run.notes does not "
-                         "name; the run would record the wrong source")
+        raise SystemExit(
+            f"{args.weights.name} is sha256 {digest[:16]}, which run.notes does not "
+            "name; the run would record the wrong source"
+        )
 
     model = MODELS.build({"name": cfg.model.name, "params": dict(cfg.model.params)})
     model.load_state_dict(upstream_state(args.weights), strict=True)
     if args.onnx is not None:
         gap = parity(model, args.onnx, size)
         if gap > PARITY_TOLERANCE:
-            raise SystemExit(f"parity gap {gap:.3e} exceeds {PARITY_TOLERANCE:.0e}; "
-                             "nothing written")
+            raise SystemExit(
+                f"parity gap {gap:.3e} exceeds {PARITY_TOLERANCE:.0e}; nothing written"
+            )
         print(f"parity vs {args.onnx.name}: max|diff| {gap:.3e}")
 
     run = create_run_dir(cfg)

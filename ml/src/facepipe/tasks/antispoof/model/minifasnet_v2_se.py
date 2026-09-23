@@ -52,9 +52,7 @@ class MiniFASNetBackbone(nn.Module):
         gate = {"squeeze_excite": squeeze_excite, "activation": activation}
         wide = width * 2
         closing = width * 8
-        self.stem = ConvBnAct(
-            in_channels, width, 3, stride=2, padding=1, activation=activation
-        )
+        self.stem = ConvBnAct(in_channels, width, 3, stride=2, padding=1, activation=activation)
         self.stem_dw = ConvBnAct(
             width, width, 3, stride=1, padding=1, groups=width, activation=activation
         )
@@ -82,7 +80,6 @@ class MiniFASNetBackbone(nn.Module):
         flat = torch.flatten(self.head_dw(mapped), 1)
         patch = self.patch(mapped) if self.patch is not None and self.training else None
         return self.embed_bn(self.embed(flat)), patch
-
 
 
 @MODELS.register("minifasnet_v2_se")
@@ -119,7 +116,9 @@ class MiniFASNetV2SE(nn.Module):
             )
 
         self.tight = backbone(patch_supervision) if views in ("tight", "both") else None
-        self.wide = backbone(patch_supervision and views == "wide") if views in ("wide", "both") else None
+        self.wide = (
+            backbone(patch_supervision and views == "wide") if views in ("wide", "both") else None
+        )
         self.drop = nn.Dropout(p=0.2)
         width_out = embedding * (2 if views == "both" else 1)
         self.classifier = nn.Linear(width_out, num_classes)

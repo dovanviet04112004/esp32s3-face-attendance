@@ -109,12 +109,6 @@ def test_the_entry_point_trains_and_writes_a_run(tmp_path: Path) -> None:
     assert (run / "config.resolved.yaml").is_file()
 
 
-
-
-
-
-
-
 def test_a_rectangular_input_is_refused(tmp_path: Path) -> None:
     from facepipe.core.config import load_config
 

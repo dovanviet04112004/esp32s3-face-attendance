@@ -392,10 +392,14 @@ def main(argv: list[str] | None = None) -> int:
             while chunk := list(itertools.islice(images, DETECT_BATCH)):
                 prepared = list(pool.map(lambda raw: detector_input(raw.payload), chunk))
                 boxes = best_faces(model, priors, prepared, device)
-                found = [(raw, box) for raw, box in zip(chunk, boxes, strict=True) if box is not None]
+                found = [
+                    (raw, box) for raw, box in zip(chunk, boxes, strict=True) if box is not None
+                ]
                 missed += len(chunk) - len(found)
                 cropped = list(pool.map(lambda pair: crops_of(pair[0].payload, pair[1]), found))
-                for (raw, _), (members, wide_scale, face_in_wide) in zip(found, cropped, strict=True):
+                for (raw, _), (members, wide_scale, face_in_wide) in zip(
+                    found, cropped, strict=True
+                ):
                     if raw.source not in writers:
                         writers[raw.source] = ShardWriter(args.out / raw.source).__enter__()
                     members["json"] = json.dumps(

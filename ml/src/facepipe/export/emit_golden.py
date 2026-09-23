@@ -64,7 +64,8 @@ def read_case(path: Path) -> dict[str, np.ndarray]:
         dtype, ndim, nbytes = CODE_TO_DTYPE[fields[1]], fields[2], fields[-1]
         shape = tuple(fields[3 : 3 + ndim])
         start = offset + head
-        out[name] = np.frombuffer(blob, dtype=dtype, count=nbytes // np.dtype(dtype).itemsize,
-                                  offset=start).reshape(shape)
+        out[name] = np.frombuffer(
+            blob, dtype=dtype, count=nbytes // np.dtype(dtype).itemsize, offset=start
+        ).reshape(shape)
         offset = start + nbytes + (-nbytes % 4)
     return out

@@ -40,8 +40,9 @@ def reference_interpreter(path: Path):
     """The file on the kernels TFLM and esp-nn reproduce, not on XNNPACK's."""
     from ai_edge_litert.interpreter import Interpreter, OpResolverType
 
-    return Interpreter(model_path=str(path),
-                       experimental_op_resolver_type=OpResolverType.BUILTIN_REF)
+    return Interpreter(
+        model_path=str(path), experimental_op_resolver_type=OpResolverType.BUILTIN_REF
+    )
 
 
 def dequantized(values: np.ndarray, detail: dict) -> np.ndarray:
@@ -119,8 +120,12 @@ class TfliteRunner:
         self.interpreter.allocate_tensors()
         self.inp = self.interpreter.get_input_details()[0]
         self.outs = self.interpreter.get_output_details()
-        nchw = [tuple(int(v) for v in d["shape"][[0, 3, 1, 2]]) if len(d["shape"]) == 4
-                else tuple(int(v) for v in d["shape"]) for d in self.outs]
+        nchw = [
+            tuple(int(v) for v in d["shape"][[0, 3, 1, 2]])
+            if len(d["shape"]) == 4
+            else tuple(int(v) for v in d["shape"])
+            for d in self.outs
+        ]
         # The converter lists heads in its own order; the shapes pair them back up.
         self.order = [nchw.index(tuple(s)) for s in shapes]
 
@@ -296,9 +301,11 @@ def score_antispoof(run, run_dir: Path, cfg, split: str | None, frames: Path | N
     real, fake = live[truth == LIVE], live[truth != LIVE]
     eer = equal_error_rate(live, truth).acer
     line = f"n={live.size}  auc {auc(live, truth):.4f}  eer {eer:.4f}"
-    return (f"{line}  at live_min {floor:.3f}: real kept {int((real >= floor).sum())}/{real.size}"
-            f"  attacks blocked {int((fake < floor).sum())}/{fake.size}"
-            f"  real min {real.min():.3f}  attack max {fake.max():.3f}")
+    return (
+        f"{line}  at live_min {floor:.3f}: real kept {int((real >= floor).sum())}/{real.size}"
+        f"  attacks blocked {int((fake < floor).sum())}/{fake.size}"
+        f"  real min {real.min():.3f}  attack max {fake.max():.3f}"
+    )
 
 
 def score_recognition(run, cfg) -> str:
@@ -322,8 +329,10 @@ def score_recognition(run, cfg) -> str:
         vectors = run_batch(run, x, chunk=32)[0].reshape(len(x), -1)
         vectors /= np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-10)
         result = evaluate_pairs(pair_scores(vectors), issame)
-        cells.append(f"{name} {result['accuracy']:.4f} / {result['tar@far0.001']:.3f}"
-                     f" / {result['tar@far0.0001']:.3f}")
+        cells.append(
+            f"{name} {result['accuracy']:.4f} / {result['tar@far0.001']:.3f}"
+            f" / {result['tar@far0.0001']:.3f}"
+        )
     return "  ".join(cells) + "  (acc / TAR@1e-3 / TAR@1e-4)"
 
 
@@ -333,10 +342,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run", type=Path, required=True, help="run whose split and config apply")
     parser.add_argument("--runtime", choices=("tflite", "onnx", "espdl"), default="tflite")
     parser.add_argument("--split", default=None)
-    parser.add_argument("--device-frames", nargs="?", type=Path, const=ML_ROOT / DEVICE_FRAMES,
-                        default=None, help="score anti-spoof on the board's labelled frames")
-    parser.add_argument("--limit", type=int, default=0,
-                        help="anti-spoof .tflite on a split only; 0 scores the whole split")
+    parser.add_argument(
+        "--device-frames",
+        nargs="?",
+        type=Path,
+        const=ML_ROOT / DEVICE_FRAMES,
+        default=None,
+        help="score anti-spoof on the board's labelled frames",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="anti-spoof .tflite on a split only; 0 scores the whole split",
+    )
     parser.add_argument("--samples", type=int, default=300, help="calibration size of the rung")
     args = parser.parse_args(argv)
 

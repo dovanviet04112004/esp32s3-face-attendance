@@ -448,7 +448,6 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     return cfg, traced, (torch.zeros(1, 3, height, width),), ["image"], outputs
 
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt", type=Path, default=None, help="run a checkpoint over the images")

@@ -238,7 +238,9 @@ def calibrate_live_bias(run: Path, frames: Path, detector: Path, device: torch.d
     labels = np.array([frame_label(f) for f, _n, s, _side in rows if not np.isnan(s)])
     live, attack = scores[labels == LIVE], scores[labels != LIVE]
     if not live.size or not attack.size or live.min() <= attack.max():
-        raise ValueError("frames give no clean window; calibrate on a set the run already separates")
+        raise ValueError(
+            "frames give no clean window; calibrate on a set the run already separates"
+        )
     # The midpoint in log-odds, which is where an even split lands after the shift.
     middle = np.sqrt(live.min() * attack.max())
     return float(-np.log(middle / (1.0 - middle)))

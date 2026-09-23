@@ -112,8 +112,9 @@ def sized(view: torch.Tensor, hw: tuple[int, int]) -> torch.Tensor:
     """The view at the teacher's input size; it reads 80 where the student reads 81."""
     if tuple(view.shape[-2:]) == hw:
         return view
-    return nn.functional.interpolate(view, size=hw, mode="bilinear", align_corners=False,
-                                     antialias=True)
+    return nn.functional.interpolate(
+        view, size=hw, mode="bilinear", align_corners=False, antialias=True
+    )
 
 
 def build_loader(cfg: Config, dataset: SpoofShardDataset, train: bool) -> DataLoader:

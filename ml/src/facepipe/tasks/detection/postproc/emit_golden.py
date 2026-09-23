@@ -30,10 +30,15 @@ LEVEL_QUANT = {
     32: {"cls": (0.02877619, 85), "box": (0.01116470, -39), "kps": (0.02041816, -25)},
 }
 # The same heads in yunet_s8.espdl: scale 2^exponent, zero point 0 (KEHOACH 3 layer 4).
-ESPDL_EXPONENTS = {8: {"cls": -4, "box": -6, "kps": -6}, 16: {"cls": -3, "box": -6, "kps": -5},
-                   32: {"cls": -4, "box": -6, "kps": -5}}
-ESPDL_QUANT = {stride: {role: (2.0**exponent, 0) for role, exponent in roles.items()}
-               for stride, roles in ESPDL_EXPONENTS.items()}
+ESPDL_EXPONENTS = {
+    8: {"cls": -4, "box": -6, "kps": -6},
+    16: {"cls": -3, "box": -6, "kps": -5},
+    32: {"cls": -4, "box": -6, "kps": -5},
+}
+ESPDL_QUANT = {
+    stride: {role: (2.0**exponent, 0) for role, exponent in roles.items()}
+    for stride, roles in ESPDL_EXPONENTS.items()
+}
 CHANNELS = {"cls": 1, "box": 4, "kps": 10}
 
 
@@ -74,7 +79,9 @@ def head_tensors(rng: np.random.Generator, cls_bias: int) -> dict[str, np.ndarra
     for stride, (rows, cols) in zip(STRIDES, feature_sizes(INPUT_HW, STRIDES), strict=True):
         for role, channels in CHANNELS.items():
             low, high = (-128, 128) if role != "cls" else (-128, cls_bias)
-            out[f"{role}_{stride}"] = rng.integers(low, high, (rows, cols, channels)).astype(np.int8)
+            out[f"{role}_{stride}"] = rng.integers(low, high, (rows, cols, channels)).astype(
+                np.int8
+            )
     return out
 
 
