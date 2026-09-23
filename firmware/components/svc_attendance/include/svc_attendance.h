@@ -87,6 +87,11 @@ esp_err_t svc_attendance_last_record(storage_attend_record_t *out);
  */
 uint32_t svc_attendance_records(void);
 
+/** How many grants the machine has made since init, door-only ones included.
+ *  @ctx any | non-blocking | the one edge a grant to the next person leaves
+ */
+uint32_t svc_attendance_grants(void);
+
 #ifdef __cplusplus
 }
 #endif

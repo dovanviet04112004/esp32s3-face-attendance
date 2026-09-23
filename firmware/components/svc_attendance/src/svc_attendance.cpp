@@ -28,6 +28,7 @@ bool s_ready = false;
 int64_t s_state_since_ms = 0;
 uint32_t s_seq = 0;
 uint32_t s_records = 0;
+uint32_t s_grants = 0;
 uint32_t s_last_employee = 0;
 int64_t s_last_stamp_ms = 0;
 std::atomic<bool> s_link_up{false};
@@ -121,6 +122,7 @@ void act_on(attend::Act act, const svc_vision_result_t *result, int64_t now_ms)
             return;
         }
         const bool opened = svc_door_open(s_door, kDoorHoldMs) == ESP_OK;
+        ++s_grants;
         s_left_since_grant = false;
         if (stamped_recently(result->employee_id, now_ms)) {
             ESP_LOGI(TAG, "employee %" PRIu32 " stamped inside the window, door only",
@@ -290,4 +292,9 @@ extern "C" esp_err_t svc_attendance_last_record(storage_attend_record_t *out)
 extern "C" uint32_t svc_attendance_records(void)
 {
     return s_records;
+}
+
+extern "C" uint32_t svc_attendance_grants(void)
+{
+    return s_grants;
 }
