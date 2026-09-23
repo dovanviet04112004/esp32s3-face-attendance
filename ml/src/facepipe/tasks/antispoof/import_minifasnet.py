@@ -8,18 +8,16 @@ live first. Parity against the source's ONNX is checked before a file is written
 from __future__ import annotations
 
 import argparse
-import math
 from pathlib import Path
 
 import numpy as np
 import torch
 
-from facepipe.core.config import Config, load_config
+from facepipe.core.config import load_config
 from facepipe.core.registry import MODELS
 from facepipe.core.run_dir import create_run_dir
-from facepipe.core.scheduler import build_optimizer
-from facepipe.core.seed import capture_rng_state, seed_everything
-from facepipe.core.trainer import CKPT_BEST, CKPT_FORMAT_VER, CKPT_LAST, resolve_device
+from facepipe.core.seed import seed_everything
+from facepipe.core.trainer import CKPT_BEST, CKPT_LAST, imported_checkpoint
 
 from .model import minifasnet_v2  # noqa: F401  registers "minifasnet_v2"
 
@@ -125,27 +123,6 @@ def stem_parity(model: torch.nn.Module, state: dict[str, torch.Tensor], params: 
     return worst
 
 
-def checkpoint(model: torch.nn.Module, cfg: Config, run_id: str) -> dict:
-    """The payload Trainer.save_checkpoint writes, at epoch zero with fresh optimiser state."""
-    device = resolve_device(cfg.train.device)
-    scaler = torch.amp.GradScaler(device.type, enabled=bool(cfg.train.amp))
-    return {
-        "format_ver": CKPT_FORMAT_VER,
-        "epoch": 0,
-        "global_step": 0,
-        "best_metric": math.inf,
-        "best_is_lower": True,
-        "history": [],
-        "model": model.state_dict(),
-        "optimizer": build_optimizer(model, cfg.optim).state_dict(),
-        "scaler": scaler.state_dict(),
-        "rng": capture_rng_state(),
-        "elsewhere": {},
-        "run_id": run_id,
-        "resumed_from": None,
-    }
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--weights", type=Path, required=True, help="upstream .pth")
@@ -181,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"parity vs {args.onnx.name}: max|diff| {gap:.3e}")
 
     run = create_run_dir(cfg)
-    payload = checkpoint(model, cfg, run.run_id)
+    payload = imported_checkpoint(model, cfg, run.run_id)
     torch.save(payload, run.path / "ckpt" / CKPT_LAST)
     torch.save(payload, run.path / "ckpt" / CKPT_BEST)
     print(f"{run.run_id}  activation={activation}  {run.path}")

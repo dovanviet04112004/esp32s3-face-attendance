@@ -33,6 +33,33 @@ RESUMED_FROM_NAME = "resumed_from.txt"
 COMPILE_PREFIX = "_orig_mod."
 
 
+def imported_checkpoint(model: nn.Module, cfg: Config, run_id: str) -> dict[str, Any]:
+    """The payload save_checkpoint writes, at epoch zero with fresh optimiser state.
+
+    For weights that arrive already trained, so a resume or an export reads them
+    like any run this loop wrote.
+    """
+    from facepipe.core.scheduler import build_optimizer
+
+    device = resolve_device(cfg.train.device)
+    scaler = torch.amp.GradScaler(device.type, enabled=bool(cfg.train.amp))
+    return {
+        "format_ver": CKPT_FORMAT_VER,
+        "epoch": 0,
+        "global_step": 0,
+        "best_metric": math.inf,
+        "best_is_lower": True,
+        "history": [],
+        "model": model.state_dict(),
+        "optimizer": build_optimizer(model, cfg.optim).state_dict(),
+        "scaler": scaler.state_dict(),
+        "rng": capture_rng_state(),
+        "elsewhere": {},
+        "run_id": run_id,
+        "resumed_from": None,
+    }
+
+
 def resolve_device(name: str = "auto") -> torch.device:
     """Turn the config string into a device, defaulting to CUDA when present."""
     if name != "auto":
