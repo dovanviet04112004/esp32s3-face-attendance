@@ -1,4 +1,4 @@
-"""Fold every BatchNorm into the convolution in front of it.
+"""Fold every BatchNorm into the convolution or linear layer in front of it.
 
 Equalisation and bias correction both read a layer's weight range, and a range
 measured while BatchNorm still holds a separate scale is not the range the
@@ -51,5 +51,37 @@ def fold(model: nn.Module) -> int:
             bn.bias.zero_()
             bn.running_mean.zero_()
             bn.running_var.fill_(1.0 - bn.eps)
+        done += 1
+    return done
+
+
+def linear_pairs(model: nn.Module) -> list[tuple[str, str]]:
+    """Names of every linear layer immediately followed by a 1-D batch norm, in run order."""
+    ordered = list(model.named_modules())
+    return [(name, ordered[i + 1][0]) for i, (name, module) in enumerate(ordered[:-1])
+            if isinstance(module, nn.Linear) and isinstance(ordered[i + 1][1], nn.BatchNorm1d)]
+
+
+def fold_linear(model: nn.Module) -> int:
+    """Fold each Linear + BatchNorm1d into the Linear and remove the norm; returns the count.
+
+    The norm is replaced, not reset to identity: ESP-PPQ stops at any BatchNorm
+    over a 2-D tensor. That changes the state dict, so fold a copy meant for export.
+    """
+    lookup = dict(model.named_modules())
+    done = 0
+    for linear_name, bn_name in linear_pairs(model):
+        linear, bn = lookup[linear_name], lookup[bn_name]
+        scale = 1.0 / torch.sqrt(bn.running_var + bn.eps)
+        shift = -bn.running_mean * scale
+        if bn.affine:
+            shift = shift * bn.weight + bn.bias
+            scale = scale * bn.weight
+        bias = linear.bias if linear.bias is not None else torch.zeros_like(bn.running_mean)
+        with torch.no_grad():
+            linear.weight.mul_(scale.reshape(-1, 1))
+            linear.bias = nn.Parameter(bias * scale + shift)
+        parent_name, _, attr = bn_name.rpartition(".")
+        setattr(lookup[parent_name] if parent_name else model, attr, nn.Identity())
         done += 1
     return done
