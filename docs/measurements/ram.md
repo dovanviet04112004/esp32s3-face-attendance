@@ -398,3 +398,24 @@ IRAM của esp-dl không dời được mà không sửa code Espressif (CLAUDE.
 
 22.787 B trượt cổng 24 KB mà E9-T31 chốt trước khi đo. Chủ repo chọn trả bằng đệm bounce LCD 20
 dòng (KẾ HOẠCH §6.4), 15.360 B.
+
+### 10.1 Đệm bounce 20 dòng — 23/09
+
+Cùng board, cùng `bench_mem` profile `bench`, ảnh `models_0` của bộ deploy ghi bằng
+`50_pack_and_flash.sh`, Wi-Fi vào mạng thật. MQTT vẫn không nối — broker cấu hình ở
+`192.168.185.251`, board ở `172.19.105.x` — nên số dưới đây vẫn **chưa có phiên TLS** 🔬.
+
+| ESP-DL deploy | 32 dòng | **20 dòng** | Đổi |
+|---|---:|---:|---:|
+| `min_free` RAM nội từ lúc boot | 22.787 B | **38.067 B** | +15.280 B |
+| RAM nội trống lúc chạy (8-bit) | 31.731 B | 47.351 B | +15.620 B |
+| khối liền lớn nhất (cũng là khối DMA lớn nhất) | 18.432 B | 31.744 B | +13.312 B |
+| đáy PSRAM | 2.694 KB | 2.695 KB | +1 KB |
+| preview, trung bình (min–max) của 13–14 mẫu | 14,16 fps (13,90–14,20) | 13,88 fps (13,12–14,31) | −0,28 fps |
+| thời gian vẽ một khung (`blit`), trung bình | 32,9 ms | 35,0 ms | +2,1 ms |
+
+Đáy 38.067 B qua cổng 24 KB, và thu về 15.280 B, khớp 15.360 B dự tính. Preview mất 2% fps; lượt
+TFLM 32 dòng cùng bench là 14,06 fps (13,75–14,20). TFLM ở 20 dòng chưa đo 🔬, nên phần fps chưa
+tách được giữa runtime và đệm bounce.
+
+Tái lập: `ml/artifacts/device/board_20260923/bench_mem_espdl_20rows.log`.

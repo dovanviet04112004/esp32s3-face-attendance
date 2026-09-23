@@ -669,3 +669,22 @@ sang PSRAM. 50 lượt xen kẽ không đổi một byte heap nào, cả RAM n�
 
 Tái lập: `ml/artifacts/device/board_20260923/bench_{tflm,espdl_same,espdl_deploy,espdl_same_noguard}.log`;
 ảnh `models_0` đóng bằng `50_pack_and_flash.sh --lock <bộ>/models.lock.json --models-dir <bộ>`.
+
+### 13.7 Bộ deploy ở `-Og` — 24/09
+
+Cùng `bench_ai`, cùng ảnh `models_0`, chỉ đổi phần biên dịch sang đúng những gì profile `dev` đổi:
+`COMPILER_OPTIMIZATION_DEBUG`, assert bật, stack check `NORM`, heap poisoning `LIGHT`.
+
+| Median, ms | `-O2` (`bench`) | `-Og` (`dev`) | lệch |
+|---|---:|---:|---:|
+| detect, rảnh | 64,1 | 65,0 | +1,5% |
+| spoof, rảnh | 85,2 | 86,5 | +1,5% |
+| recog, rảnh | 302,0 | 304,8 | +0,9% |
+| **lượt xen kẽ, rảnh** | **451,9** | **457,0** | **+1,1%** |
+| **lượt xen kẽ, có tải** | **522,7** | **536,1** | **+2,6%** |
+
+Ba hash đầu ra trùng từng bit với bản `-O2` (`6f273723` · `8750dc3f` · `4a70c3b9`), `test()` PASS cả
+ba graph, 50 lượt không đổi byte heap nào. Vòng nóng nằm trong kernel assembly của esp-dl nên mức
+tối ưu của phần còn lại gần như không đổi gì, như TFLM ở §3.
+
+Tái lập: `ml/artifacts/device/board_20260923/bench_espdl_deploy_og.log`.
