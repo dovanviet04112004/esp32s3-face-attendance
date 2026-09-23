@@ -70,11 +70,6 @@ static esp_err_t attach_ready_line(void)
         .intr_type = GPIO_INTR_NEGEDGE,
     };
     APP_RETURN_ON_ERR(gpio_config(&cfg), TAG, "int pin");
-    const esp_err_t installed = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
-    if (installed != ESP_OK && installed != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "isr service: %s", esp_err_to_name(installed));
-        return installed;
-    }
     return gpio_isr_handler_add(APP_TOF_INT_GPIO, on_ready, NULL);
 }
 

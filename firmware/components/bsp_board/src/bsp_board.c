@@ -2,6 +2,7 @@
 
 #include "app_config.h"
 #include "app_err.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -88,6 +89,7 @@ esp_err_t bsp_board_init(void)
     APP_RETURN_ON_ERR(spi_bus_up(), TAG, "spi bus");
     APP_RETURN_ON_ERR(i2c_bus_up(), TAG, "i2c bus");
     APP_RETURN_ON_ERR(wait_for_bus_devices(), TAG, "i2c devices");
+    APP_RETURN_ON_ERR(gpio_install_isr_service(ESP_INTR_FLAG_IRAM), TAG, "gpio isr service");
     s_ready = true;
     ESP_LOGI(TAG, "spi2 and i2c0 up");
     return ESP_OK;

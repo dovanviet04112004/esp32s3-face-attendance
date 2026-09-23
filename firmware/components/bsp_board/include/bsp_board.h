@@ -11,7 +11,8 @@
 extern "C" {
 #endif
 
-/** Bring up the shared SPI and I2C buses, and wait until I2C carries a transfer.
+/** Bring up the shared SPI and I2C buses and the GPIO interrupt service the INT
+ *  lines share, then wait until I2C carries a transfer.
  *  @ctx task | blocking, up to 500 ms on the i2c wait | call once from app_main
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE if already up
  *       | ESP_ERR_NOT_FOUND when a device at its power-up address stays silent (KEHOACH 2.3)
