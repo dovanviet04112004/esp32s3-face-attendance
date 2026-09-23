@@ -2,7 +2,7 @@ menu "AI engine"
 
     choice AI_RUNTIME
         prompt "Inference runtime"
-        default AI_RUNTIME_TFLM
+        default AI_RUNTIME_ESPDL
         help
             Which runtime this image builds and links; the other one's code
             stays in the tree for the comparison of KEHOACH 3 layer 5. The
