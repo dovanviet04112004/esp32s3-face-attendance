@@ -371,12 +371,27 @@ esp_err_t drv_lcd_blit(int x1, int y1, int x2, int y2, const void *pixels)
     return ESP_OK;
 }
 
-static void build_column_map(int src_width, int taken_width)
+// The sensor is soldered across the board and only ever sees a lying frame, so
+// a standing view is the tallest centre slice that shares the panel's shape.
+static bool preview_slice(int src_width, int src_height, int *left, int *taken_width)
+{
+    if (src_width <= 0 || src_height <= 0) {
+        return false;
+    }
+    const int taken = (src_height * APP_LCD_H_RES) / APP_LCD_V_RES;
+    if (taken <= 0 || taken > src_width) {
+        return false;
+    }
+    *left = (src_width - taken) / 2;
+    *taken_width = taken;
+    return true;
+}
+
+static void build_column_map(int src_width, int left, int taken_width)
 {
     if (s_map_width == src_width) {
         return;
     }
-    const int left = (src_width - taken_width) / 2;
     for (int x = 0; x < APP_LCD_H_RES; ++x) {
         s_column_map[x] = (uint16_t)(left + (x * taken_width) / APP_LCD_H_RES);
     }
@@ -462,16 +477,12 @@ static void paint_overlay(const drv_lcd_overlay_t *overlay, uint16_t *strip, int
 esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height,
                              const drv_lcd_overlay_t *overlay)
 {
-    if (src_width <= 0 || src_height <= 0) {
+    int left = 0;
+    int taken_width = 0;
+    if (!preview_slice(src_width, src_height, &left, &taken_width)) {
         return ESP_ERR_INVALID_SIZE;
     }
-    // The sensor is soldered across the board and only ever sees a lying frame,
-    // so a standing view is the tallest centre slice that shares the panel's shape.
-    const int taken_width = (src_height * APP_LCD_H_RES) / APP_LCD_V_RES;
-    if (taken_width <= 0 || taken_width > src_width) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    build_column_map(src_width, taken_width);
+    build_column_map(src_width, left, taken_width);
     wait_for_scan_lead();
     const int64_t started_us = esp_timer_get_time();
     const int rows_per_strip = BOUNCE_PIXELS / APP_LCD_H_RES;
@@ -560,20 +571,33 @@ static int16_t clamp_to(float value, int limit)
 
 bool drv_lcd_frame_to_panel(int src_width, int src_height, const float box[4], int16_t out[4])
 {
-    if (src_width <= 0 || src_height <= 0 || box == NULL || out == NULL) {
+    int left = 0;
+    int taken_width = 0;
+    if (box == NULL || out == NULL || !preview_slice(src_width, src_height, &left, &taken_width)) {
         return false;
     }
-    const int taken_width = (src_height * APP_LCD_H_RES) / APP_LCD_V_RES;
-    if (taken_width <= 0 || taken_width > src_width) {
-        return false;
-    }
-    const float left = (float)((src_width - taken_width) / 2);
     const float columns = (float)APP_LCD_H_RES / (float)taken_width;
     const float rows = (float)APP_LCD_V_RES / (float)src_height;
-    out[0] = clamp_to((box[0] - left) * columns, APP_LCD_H_RES);
+    out[0] = clamp_to((box[0] - (float)left) * columns, APP_LCD_H_RES);
     out[1] = clamp_to(box[1] * rows, APP_LCD_V_RES);
-    out[2] = clamp_to((box[2] - left) * columns, APP_LCD_H_RES);
+    out[2] = clamp_to((box[2] - (float)left) * columns, APP_LCD_H_RES);
     out[3] = clamp_to(box[3] * rows, APP_LCD_V_RES);
+    return out[2] > out[0] && out[3] > out[1];
+}
+
+bool drv_lcd_panel_to_frame(int src_width, int src_height, const int16_t box[4], float out[4])
+{
+    int left = 0;
+    int taken_width = 0;
+    if (box == NULL || out == NULL || !preview_slice(src_width, src_height, &left, &taken_width)) {
+        return false;
+    }
+    const float columns = (float)taken_width / (float)APP_LCD_H_RES;
+    const float rows = (float)src_height / (float)APP_LCD_V_RES;
+    out[0] = (float)left + (float)box[0] * columns;
+    out[1] = (float)box[1] * rows;
+    out[2] = (float)left + (float)box[2] * columns;
+    out[3] = (float)box[3] * rows;
     return out[2] > out[0] && out[3] > out[1];
 }
 

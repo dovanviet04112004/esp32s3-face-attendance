@@ -127,6 +127,13 @@ int drv_lcd_scan_line(void);
  */
 bool drv_lcd_frame_to_panel(int src_width, int src_height, const float box[4], int16_t out[4]);
 
+/** Where a rectangle of the panel sits in the sensor frame, the inverse of the above.
+ *  @ctx any | non-blocking | the same centre slice drv_lcd_blit_frame shows
+ *  @param box x1,y1,x2,y2 in panel pixels; out takes frame pixels
+ *  @ret false when no slice of that frame shape fits the panel
+ */
+bool drv_lcd_panel_to_frame(int src_width, int src_height, const int16_t box[4], float out[4]);
+
 /** Paint the whole panel one colour.
  *  @ctx task | blocking | goes out through the bounce buffers
  */
