@@ -5,6 +5,7 @@
 #include <inttypes.h>
 
 #include "ai_engine.h"
+#include "app_config.h"
 #include "app_events.h"
 #include "app_wiring.h"
 #include "bsp_board.h"
@@ -43,6 +44,7 @@ static const char *TAG = "app_boot";
 #define NVS_LIVE_MIN "live_min"
 #define NVS_MATCH_MIN "match_min"
 #define NVS_FACE_MIN_PX "face_min_px"
+#define NVS_GUIDE_MIN "guide_min"
 #define NVS_PRESENT_MM "present_mm"
 #define NVS_DEDUP_MIN "dedup_min"
 #define NVS_ALLOW_NO_SPOOF "allow_no_spoof"
@@ -50,6 +52,7 @@ static const char *TAG = "app_boot";
 #define NVS_VOLUME "volume"
 #define NVS_LANGUAGE "lang"
 #define PERMILLE 1000.0f
+#define PERCENT 100.0f
 
 #ifdef CONFIG_ATTEND_SEED_ALLOW_NO_SPOOF
 #define ATTEND_SEED_ALLOW_NO_SPOOF 1u
@@ -68,6 +71,7 @@ static const app_seed_t kSeeds[] = {
     { STORAGE_NS_VISION, NVS_LIVE_MIN, CONFIG_VISION_SEED_LIVE_MIN_PERMILLE },
     { STORAGE_NS_VISION, NVS_MATCH_MIN, CONFIG_VISION_SEED_MATCH_MIN_PERMILLE },
     { STORAGE_NS_VISION, NVS_FACE_MIN_PX, CONFIG_VISION_SEED_FACE_MIN_PX },
+    { STORAGE_NS_VISION, NVS_GUIDE_MIN, CONFIG_VISION_SEED_GUIDE_MIN_PERCENT },
     { STORAGE_NS_VISION, NVS_PRESENT_MM, CONFIG_VISION_SEED_PRESENT_MM },
     { STORAGE_NS_ATTEND, NVS_DEDUP_MIN, CONFIG_ATTEND_SEED_DEDUP_MIN },
     { STORAGE_NS_ATTEND, NVS_ALLOW_NO_SPOOF, ATTEND_SEED_ALLOW_NO_SPOOF },
@@ -138,7 +142,7 @@ static uint32_t setting(const char *ns, const char *key, uint32_t fallback)
 
 static svc_vision_thresholds_t vision_thresholds(void)
 {
-    const svc_vision_thresholds_t thresholds = {
+    svc_vision_thresholds_t thresholds = {
         .detect_min_score =
             setting(STORAGE_NS_VISION, NVS_DETECT_MIN, CONFIG_VISION_SEED_DETECT_MIN_PERMILLE) /
             PERMILLE,
@@ -150,7 +154,14 @@ static svc_vision_thresholds_t vision_thresholds(void)
             PERMILLE,
         .face_min_px =
             (int)setting(STORAGE_NS_VISION, NVS_FACE_MIN_PX, CONFIG_VISION_SEED_FACE_MIN_PX),
+        .guide_min_share =
+            setting(STORAGE_NS_VISION, NVS_GUIDE_MIN, CONFIG_VISION_SEED_GUIDE_MIN_PERCENT) /
+            PERCENT,
     };
+    // The pipeline judges the very rectangle the screen draws (KEHOACH 4.5.5d).
+    int16_t guide[4];
+    ui_kiosk_guide(guide);
+    drv_lcd_panel_to_frame(APP_CAM_H_RES, APP_CAM_V_RES, guide, thresholds.guide);
     return thresholds;
 }
 
