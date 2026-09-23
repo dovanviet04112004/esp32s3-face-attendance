@@ -375,3 +375,26 @@ Bản đồ vùng lúc đó:
 `ota_task` 8.192 B của §5.2 vẫn lọt trong 17.396 B còn lại. Sau nó còn ~9,2 KB liền, nên
 **E13-T1 là task cuối cùng còn chỗ ở profile `dev`** — thêm task thường trú nữa thì phải lấy
 thêm từ đâu đó, không còn biên.
+
+## 10. ESP-DL trên kiosk thật — `bench_mem`, profile `bench`, 23/09 (E9-T31)
+
+`bench_mem` dựng đúng `app_boot` + `app_tasks` của kiosk, Wi-Fi vào mạng thật, preview chạy
+14,18 fps; cùng board, hai lượt nối nhau, chỉ đổi runtime (`AI_RUNTIME`) và ảnh `models_0` tương
+ứng (latency.md §13). MQTT **không** nối được lượt này — broker `192.168.185.251` không trả lời —
+nên chưa có phiên TLS nào trong số dưới đây.
+
+| Đệm bounce LCD 32 dòng | TFLM | ESP-DL deploy | Đổi |
+|---|---:|---:|---:|
+| `min_free` RAM nội từ lúc boot | **36.803 B** | **22.787 B** | −14.016 B |
+| RAM nội trống lúc chạy (8-bit) | 46.207 B | 31.731 B | −14.476 B |
+| khối liền lớn nhất (cũng là khối DMA lớn nhất) | 31.744 B | 18.432 B | −13.312 B |
+| đáy PSRAM | 5.060 KB | 2.694 KB | −2.366 KB |
+
+**Cả 14 KB là phần tĩnh của thư viện**, không phải của model: DIRAM tĩnh của ảnh đi từ 180.392 lên
+194.276 B (+13.884 B), trong đó esp-dl tự mang 10.842 B IRAM — kernel tie728 viết bằng assembly và
+đặt vào IRAM — cùng 4.581 B `.bss`. Ba model dựng xong chỉ lấy **192 B** RAM nội, vì guard của
+`EspdlModel` đẩy mọi `malloc` nhỏ của chúng sang PSRAM; không guard thì là 94 KB (latency.md §13.5).
+IRAM của esp-dl không dời được mà không sửa code Espressif (CLAUDE.md §6).
+
+22.787 B trượt cổng 24 KB mà E9-T31 chốt trước khi đo. Chủ repo chọn trả bằng đệm bounce LCD 20
+dòng (KẾ HOẠCH §6.4), 15.360 B.

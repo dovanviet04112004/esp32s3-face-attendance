@@ -221,3 +221,32 @@ Hai số board đo bằng `bench_ai` với resolver **đăng ký tạm** `LOGIST
 app bench lên 3072 KB mới nạp được. Q1 so với Q0 trên 87 khung: V1SE thu khe 0,595 → 0,559 (không đổi
 thứ tự), facenox **nới** 0,628 → 0,732 nhưng mặt thật thấp nhất tụt 0,295 → 0,259; trên NUAA thì
 INT8 của facenox mất mặt thật rõ (đậu 0,701 → 0,671, §43.5), V1SE gần như không (0,906 → 0,895).
+
+## 9. Q1 trên ESP-DL — 23/09 (E9-T29, KẾ HOẠCH §3.7)
+
+Q1 ESP-DL là PTQ ESP-PPQ `esp32s3` w8a8, layerwise equalization bật, calib KL trên 300 mẫu cùng
+nguồn Q1 TFLite (`compress/quant/ptq_espdl.py`, chặng `ESPDL=1` của `30_quantize.sh`). Chấm bằng
+`bench/host_bench.py` trên **87 khung OV5640 có nhãn** (`data/splits/device/v1/test_device.txt`,
+62 thật · 25 giả), cắt đúng `fitted()` 2,7× và lấy mẫu vùng như firmware; ngưỡng là `live_min`
+500‰ đọc từ Kconfig của `svc_vision`. Hàng ESP-DL là mô phỏng ESP-PPQ, mà `model->test()` trên chip
+giữ trong một bước int8 (latency.md §13.3).
+
+| Run | Q | AUC | thật giữ · giả chặn ở 500‰ | thật thấp nhất | giả cao nhất | Kích thước | Bộ nhớ trên board | Latency board |
+|---|---|---|---|---|---|---|---|---|
+| `1050` tách | Q0 FP32 | 1,0000 | 60/62 · 25/25 | 0,095 | 0,005 | 1.702 KB (ONNX) | — | — |
+| `1050` tách | Q1 TFLite (lock) | 1,0000 | 60/62 · 25/25 | 0,121 | 0,003 | 603 KB | `arena_big` 748.524 B chung recog | 579,5 ms |
+| `1050` tách | Q1 ESP-DL | 1,0000 | 60/62 · 25/25 | 0,116 | 0,010 | 531 KB | 839 KB PSRAM | **83,3 ms** |
+| `0118` PReLU | Q0 FP32 | 1,0000 | 59/62 · 25/25 | 0,185 | 0,011 | 1.701 KB (ONNX) | — | — |
+| **`0118` PReLU** | **Q1 ESP-DL (deploy)** | **1,0000** | **61/62 · 25/25** | **0,455** | 0,005 | 551 KB | 811 KB PSRAM | **85,2 ms** |
+
+Run đầy đủ: `20260918-1050_aa7e463_e66877`, `20260918-0118_c1d09c8_5d7b35` (tag `0118` trùng với
+`…_0ad0a8`; số ở đây là của `…_5d7b35`). Latency là median từng nhánh chạy riêng, lúc rảnh.
+
+Không mốc ESP-DL nào mất gì so với Q0 của chính nó trên 87 khung; bản PReLU còn **giữ thêm hai mặt
+thật** mà FP32 của nó loại (59 → 61), trong khi giả cao nhất vẫn 0,005. `1050` ESP-DL lệch vài phần
+nghìn so với file trial (0,116 so với 0,130 thật thấp nhất) vì repo gập `Linear` + `BatchNorm1d` ở
+tầng torch còn trial gập trên ONNX; phán quyết ở 500‰ không đổi.
+
+Trên split test của CelebA-Spoof (39.072 ảnh), `0118` ESP-DL đạt AUC 0,8193, EER 0,2649 — trọng
+số minivision không train trên pool này, và §43 đã chỉ ra pool ấy đo phong cách ảnh chứ không đo
+sống/giả trên OV5640, nên số này không vào quyết định.

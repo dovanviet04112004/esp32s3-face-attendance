@@ -562,3 +562,110 @@ Giá: một task **8 KB stack RAM nội** ở ưu tiên `configMAX_PRIORITIES - 
 
 Đường quay lại: nếu sau này chốt model rộng hơn (facenox 108,9 MMAC ở §11, hay bản SE rộng),
 cổng 24 KB bắt đầu mở và bảng này phải đếm lại.
+
+## 13. TFLM và ESP-DL trên cùng board, cùng bench — đo 23/09 (E9-T31)
+
+Cùng `firmware/test_apps/bench_ai` (code ở `3a98c39`, esp-nn ghim ở `34fe323`), cùng board kiosk,
+cùng bảng partition 2,75 / 2,25 MB, profile `bench` (`-O2`, profiler tắt), 3 lượt nóng rồi 50 lượt
+bấm giờ, median. Runtime chọn bằng overlay: `SDKCONFIG_DEFAULTS=…/sdkconfig.tflm` hoặc
+`…/sdkconfig.espdl`. "Có tải" là task `memcpy` 300 KB mỗi 70 ms trên core 0, đo được 4,23–4,29 MB/s
+ở mọi lượt. ESP-DL: trọng số chép sang PSRAM (`AI_WEIGHTS_PSRAM_*` = y), tensor ở PSRAM, object
+của model dựng trong guard đẩy `malloc` nhỏ sang PSRAM (KẾ HOẠCH §6.4).
+
+Ba bộ model, mỗi bộ một ảnh `models_0`:
+
+| Bộ | detect | anti-spoof | recog |
+|---|---|---|---|
+| **TFLM** — `contracts/models.lock.json` | `yunet_int8.tflite` `56b3f65d…` · `1616` | `minifasnet_int8.tflite` `71ec3d30…` · `1050` tách | `mobilefacenet_int8.tflite` `f77969e3…` · `1750` w32 |
+| **ESP-DL cùng model** — `ml/artifacts/device/locks/espdl_same/` | `yunet_s8.espdl` `631b9137…` · `1616` | `minifasnet_s8.espdl` `c1c9643f…` · `1050` tách | `mobilefacenet_s8.espdl` `9f3c93db…` · `1750` w32 |
+| **ESP-DL deploy** — `ml/artifacts/device/locks/espdl_deploy/` | như trên | `minifasnet_s8.espdl` `7968f455…` · `0118` PReLU | `mobilefacenet_s8.espdl` `0191f296…` · `2106` FRBench MBF-ECA |
+
+Run id đầy đủ: `detection/20260831-1616_cc931df_36fbea`, `antispoof/20260918-1050_aa7e463_e66877`,
+`antispoof/20260918-0118_c1d09c8_5d7b35`, `recognition/20260908-1750_ea985b1_bfed2e`,
+`recognition/20260923-2106_59828c4_9a6954`. Hai run anti-spoof khác nhau cùng mang tag `0118`
+(`…_0ad0a8` và `…_5d7b35`): gọi run bằng tên đầy đủ, không bằng tag.
+
+### 13.1 Thời gian, median µs
+
+| | TFLM | ESP-DL cùng model | nhanh hơn | ESP-DL deploy |
+|---|---:|---:|---:|---:|
+| detect, rảnh | 231.543 | 63.847 | 3,63× | 64.061 |
+| spoof, rảnh | 579.541 | 83.311 | 6,96× | 85.223 |
+| recog, rảnh | 459.000 | 85.978 | 5,34× | 302.013 |
+| detect, có tải | 271.187 | 73.717 | 3,68× | 73.917 |
+| spoof, có tải | 679.198 | 93.506 | 7,26× | 95.489 |
+| recog, có tải | 539.444 | 95.883 | 5,63× | 352.250 |
+| **Lượt xen kẽ ba nhánh, rảnh** | **1.270.531** | **234.219** | **5,42×** | **451.937** |
+| **Lượt xen kẽ ba nhánh, có tải** | **1.481.440** | **273.967** | **5,41×** | **522.660** |
+
+Lượt xen kẽ là detect → spoof → recog nối nhau, đúng thứ tự `ai_task` chạy (§12). Bộ deploy chậm
+hơn bộ cùng model gần như chỉ ở recog: MobileFaceNet-ECA width 64 với 15 khối ECA mất **302 ms**,
+so với 86 ms của w32 — dưới trần 400 ms mà E9-T31 đặt cho nó, và vẫn nhanh hơn recog TFLM đang
+nạp (459 ms). Ngân sách 360 ms của một lượt vẫn trượt, 452 ms so với 1.271 ms hiện tại.
+
+### 13.2 Bằng chứng TFLM không đổi qua refactor
+
+`bench_ai` in CRC32 của các mặt từ `ai_engine_faces(0, …)`, điểm `live`, embedding cùng `scale`.
+Build TFLM sau refactor `TensorView` (`5408145`) ra **đúng** ba hash của lần chạy ở `0b5b799`,
+trước mọi thay đổi của E9-T30:
+
+| | detect | spoof | recog |
+|---|---|---|---|
+| `0b5b799` | `82c76f3d` (14 mặt) | `5537d6c0` (live 0,992177) | `b62fe94d` |
+| sau refactor | `82c76f3d` (14 mặt) | `5537d6c0` (live 0,992177) | `b62fe94d` |
+
+Lượt xen kẽ rảnh 1.270,5 ms so với 1.270,9 ms của lần trước.
+
+**Lần build đầu sau khi thêm esp-dl hỏng đúng kiểu §4.5.1 cảnh báo.** Thêm dependency làm
+component manager giải lại cây của `bench_ai`, manifest của nó ghi esp-nn `^1.3.2` nên lên 1.4.1,
+và detect xin arena 194.528 B trong khi ảnh cấp 190.464 B ("missing: 30788"), `ai_engine_init`
+trả `ESP_ERR_NOT_SUPPORTED`. `34fe323` ghim `==1.3.2` ở mọi test app; số ở bảng trên là sau đó.
+
+### 13.3 `model->test()` trên chip
+
+Cả sáu graph `.espdl` của hai bộ ESP-DL qua `test()`: detect 223 KB, spoof tách 531 KB, spoof
+PReLU 550 KB, recog w32 651 KB, **recog FRBench 1.385 KB**. `test()` so mọi phần tử int8 với mô
+phỏng ESP-PPQ trong một bước lượng tử (sai số `1 + 1e-5`), không phải từng bit. Recog FRBench
+qua được là vì port nhân broadcast thay cho `expand_as` (KẾ HOẠCH §3 lớp 2); bản trial còn
+`Expand` thì lúc 19:58 cùng ngày đã FAIL và crash lặp.
+
+### 13.4 So với app trial — so đúng loại
+
+Hai con số "một lượt" của trial (227,7 ms rảnh, 257,8 ms có tải) là **tổng median từng nhánh chạy
+riêng**, không phải một lượt xen kẽ. So cùng loại thì code repo lệch trong 5%:
+
+| Từng nhánh riêng, rảnh / có tải | repo | trial | lệch |
+|---|---|---|---|
+| detect | 63,8 / 73,7 ms | 61,9 / 71,8 ms | +3,1% / +2,6% |
+| spoof tách | 83,3 / 93,5 ms | 81,8 / 91,9 ms | +1,8% / +1,7% |
+| recog w32 | 86,0 / 95,9 ms | 84,0 / 94,1 ms | +2,4% / +1,9% |
+| tổng | 233,1 / 263,1 ms | 227,7 / 257,8 ms | +2,4% / +2,1% |
+
+Phần lệch còn lại là chép input qua `ai_engine_*` (57,6 KB cho detect) và hậu xử lý, thứ app trial
+gọi thẳng `model->run()` không có.
+
+### 13.5 Guard đẩy object của model sang PSRAM — A/B
+
+Build tạm không guard, cùng bộ cùng model, không commit:
+
+| | có guard (đang dùng) | không guard |
+|---|---:|---:|
+| RAM nội model lấy lúc dựng | detect 176 B, spoof 0, recog 0 | 39.644 + 31.844 + 25.392 B = **94 KB** |
+| lượt xen kẽ, rảnh | 234,2 ms | 232,2 ms |
+| lượt xen kẽ, có tải | 274,0 ms | 271,8 ms |
+
+Guard tốn **0,8–0,9%** thời gian để trả lại 94 KB RAM nội — giữ.
+
+### 13.6 Bộ nhớ lúc nạp
+
+| | init | PSRAM lấy | RAM nội lấy | PSRAM còn sau init |
+|---|---:|---:|---:|---:|
+| TFLM | 87 ms | 917 KB (hai arena) | 0 | 7.156 KB |
+| ESP-DL cùng model | 278 ms | 2.209 KB | 0 | 5.864 KB |
+| ESP-DL deploy | 437 ms | 3.281 KB | 0 | 4.792 KB |
+
+Dựng từng graph, bộ deploy: detect 82 ms, spoof 119 ms, recog 234 ms — phần lớn là chép trọng số
+sang PSRAM. 50 lượt xen kẽ không đổi một byte heap nào, cả RAM nội lẫn PSRAM, ở cả hai runtime.
+
+Tái lập: `ml/artifacts/device/board_20260923/bench_{tflm,espdl_same,espdl_deploy,espdl_same_noguard}.log`;
+ảnh `models_0` đóng bằng `50_pack_and_flash.sh --lock <bộ>/models.lock.json --models-dir <bộ>`.
