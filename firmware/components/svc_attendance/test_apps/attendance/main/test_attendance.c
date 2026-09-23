@@ -184,6 +184,25 @@ TEST_CASE("a face that never leaves is granted once, and again after it does",
     TEST_ASSERT_TRUE(svc_door_is_open(svc_door_fake()));
 }
 
+TEST_CASE("a face that dips under the size gate is still the same arrival", "[svc_attendance]")
+{
+    machine_up(true);
+    back_to_idle();
+    svc_attendance_on_presence(true);
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    s_now_ms += GRANT_HOLD_MS + 1;
+    svc_attendance_tick(s_now_ms);
+    s_now_ms += COOLDOWN_MS + 1;
+    svc_attendance_tick(s_now_ms);
+    svc_door_close(svc_door_fake());
+
+    feed(SVC_VISION_FACE_SMALL, 0, NO_SPOOF_SCORE);
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    printf("a step back and a match again left state %d\n", (int)svc_attendance_state());
+    TEST_ASSERT_NOT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    TEST_ASSERT_FALSE(svc_door_is_open(svc_door_fake()));
+}
+
 TEST_CASE("a queue behind the first face keeps its turn", "[svc_attendance]")
 {
     machine_up(true);
