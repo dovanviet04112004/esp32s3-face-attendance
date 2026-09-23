@@ -138,7 +138,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define TOUCH_TASK_PRIORITY 5
 #define TOUCH_TASK_STACK_BYTES 3072
 #define TOUCH_POLL_MS 40
-#define TOUCH_REST_POLL_MS 160
+#define TOUCH_IDLE_WAIT_MS 1000
 #define TOUCH_POINTS 1
 #define UI_TASK_CORE 0
 #define UI_TASK_PRIORITY 4
@@ -1196,16 +1196,22 @@ static void ai_task(void *arg)
 static void touch_task(void *arg)
 {
     (void)arg;
+    bool held = false;
     for (;;) {
-        const bool resting = rest_level() == REST_ALL;
-        vTaskDelay(pdMS_TO_TICKS(resting ? TOUCH_REST_POLL_MS : TOUCH_POLL_MS));
+        // A held finger is read on a clock, so a lift the controller never flags still lands.
+        if (held) {
+            vTaskDelay(pdMS_TO_TICKS(TOUCH_POLL_MS));
+        } else {
+            drv_touch_wait(TOUCH_IDLE_WAIT_MS);
+        }
         drv_touch_point_t points[TOUCH_POINTS];
         uint8_t count = 0;
         // A failed read says nothing about the finger: reporting a lift types a key twice.
         if (drv_touch_read(points, TOUCH_POINTS, &count) != ESP_OK) {
             continue;
         }
-        if (count == 0) {
+        held = count > 0;
+        if (!held) {
             ui_kiosk_on_touch(false, 0, 0);
             continue;
         }
