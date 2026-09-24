@@ -123,6 +123,7 @@ export class BackupWatchService implements OnModuleInit {
     const admins = await this.db.user.findMany({
       where: { role: "ADMIN", active: true },
       select: { email: true },
+      orderBy: { email: "asc" },
     });
     const body = backupAlarmMail(DEFAULT_MAIL_LOCALE, {
       problem: finding.problem,
@@ -130,11 +131,21 @@ export class BackupWatchService implements OnModuleInit {
       lastGood: finding.lastGood ? this.local(finding.lastGood) : null,
       detail: finding.detail,
     });
+    // One address refusing must neither silence the rest nor make the retry resend to them.
+    let reached = 0;
     for (const admin of admins) {
-      await this.mailer.send(admin.email, body);
+      try {
+        await this.mailer.send(admin.email, body);
+        reached += 1;
+      } catch (error) {
+        this.log.error(`backup ${finding.problem}: ${admin.email} refused: ${(error as Error).message}`);
+      }
+    }
+    this.log.warn(`backup ${finding.problem}: told ${reached} of ${admins.length} admin(s)`);
+    if (admins.length > 0 && reached === 0) {
+      return;
     }
     await this.redis.client.set(key, now.toISOString(), "EX", kRemindSeconds);
-    this.log.warn(`backup ${finding.problem}: mailed ${admins.length} admin(s)`);
   }
 
   private local(at: Date): string {
