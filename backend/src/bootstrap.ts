@@ -23,6 +23,10 @@ import { RealtimeGateway } from "./modules/realtime/realtime.gateway.js";
 export function configure(app: INestApplication): void {
   const config = app.get(ConfigService<Env, true>);
 
+  const hops = config.get("TRUST_PROXY_HOPS", { infer: true });
+  if (hops > 0) {
+    app.getHttpAdapter().getInstance().set("trust proxy", hops);
+  }
   app.use(helmet());
   // Nest drops its own parser if the stack holds one named jsonParser.
   const readLargeBody = express.json({ limit: IMPORT_MAX_BYTES });
