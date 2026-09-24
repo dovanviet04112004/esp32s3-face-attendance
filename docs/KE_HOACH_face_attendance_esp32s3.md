@@ -4865,9 +4865,11 @@ deploy/
 ├── docker-compose.yml  ├── docker-compose.prod.yml  ├── .env.example
 ├── deploy.sh                              # ★ CD: lệnh duy nhất khoá SSH của GitHub chạy được
 ├── traefik/{traefik.yml, dynamic.yml}     # TLS tự động Let's Encrypt
+│         · cloudflare-only.sh                           # ★ tường lửa 80/443 khi có Cloudflare (§7.2)
 ├── emqx/{emqx.conf, acl.conf, gen_certs.sh, certs/}   # listener MQTTS, auth và ACL
 ├── postgres/{init.sql, postgresql.conf, archive.conf, pg_hba.conf}   # ★ WAL liên tục, cửa sao chép cho bản gốc
 └── backup/{Dockerfile, backup.sh, restore-drill.sh, wal-push.sh, pg-start.sh}   # ★ §9.22.2
+              · offsite.sh                                       # ★ bản sao ngoài máy, luật 3
               · retention.sh                                     # ★ §9.22.7
               · table-growth.sh                                  # ★ §9.22.5
 ```
@@ -4878,11 +4880,11 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 |---|---|---|---|
 | `traefik` | traefik:v3 | 80, 443, 8883 | TLS tự động, reverse proxy, TCP passthrough cho MQTTS. Tài khoản ACME không kèm email: file cấu hình tĩnh không thay biến môi trường, và Let's Encrypt đã thôi gửi mail nhắc hết hạn từ 06/2025 |
 | `api` | `ghcr.io/dovanviet04112004/cckiosk-api:<sha>` — build trên GitHub Actions; máy dev build từ `backend/` | 3000 (nội bộ) | NestJS. Router Traefik của nó là `Host(api) && !PathPrefix(/mqtt)`: `/mqtt/auth` chỉ để EMQX gọi trong mạng compose (§7.4). Volume `releases` giữ file các bản phát hành (§7.7) |
-| `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này, dưới user `postgres`**, nên nó phải có `age` và `zstd`, và phải ghi được `backups/wal/`. Volume `backups` mount ra thuộc `root`, nên entrypoint là `pg-start.sh`: giao `wal/` cho `postgres` rồi mới gọi entrypoint gốc. Thiếu một trong ba thứ thì mọi segment đẩy hỏng, postgres giữ lại hết và đĩa đầy dần — đo 24/09: hỏng quyền 1.759 lần trong 9,5 giờ, `pg_wal` lên 1,1 GB. `pg_hba.conf` nằm trong repo và mở đúng một cửa thêm: kết nối sao chép có mật khẩu từ mạng compose, cho bản gốc của `backup` |
+| `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, `zstd`, `rclone`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này, dưới user `postgres`**, nên nó phải có `age` và `zstd`, và phải ghi được `backups/wal/`. Volume `backups` mount ra thuộc `root`, nên entrypoint là `pg-start.sh`: giao `wal/` cho `postgres` rồi mới gọi entrypoint gốc. Thiếu một trong ba thứ thì mọi segment đẩy hỏng, postgres giữ lại hết và đĩa đầy dần — đo 24/09: hỏng quyền 1.759 lần trong 9,5 giờ, `pg_wal` lên 1,1 GB. `pg_hba.conf` nằm trong repo và mở đúng một cửa thêm: kết nối sao chép có mật khẩu từ mạng compose, cho bản gốc của `backup` |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
 | `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth hai tầng: bảng nội bộ cho `svc-*`, rồi hỏi `api` qua HTTP cho kiosk; ACL là file theo username (§7.4); dashboard không ra ngoài |
 | `minio` (tùy chọn) | minio/minio | 9000 | ảnh chấm công |
-| `backup` | `kiosk-backup:local`, chạy cron | — | mỗi đêm: hai bản logic, một bản gốc vật lý, dọn chuỗi quá hạn, ghi `ops.backup_run` (§9.22.2) |
+| `backup` | `kiosk-backup:local`, chạy cron | — | mỗi đêm: hai bản logic, một bản gốc vật lý, dọn chuỗi quá hạn, ghi `ops.backup_run` (§9.22.2); mỗi 5 phút: chép file mới sang kho ngoài máy (luật 3) |
 
 Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, và chạy dưới **`app.<domain>`**
 (hiện là `app.cckiosk.io.vn`) chứ không dưới `*.vercel.app`. Cookie refresh đặt trên
@@ -5009,14 +5011,42 @@ Frontend không đi đường này: Vercel tự build mỗi lần push khi đã 
    Một file chỉ mang tên thật khi đã ghi xong — ghi ra `.part`, dừng cả dây nếu **bất kỳ** khâu
    nào hỏng (`pipefail`), rồi mới đổi tên. Thiếu điều ấy thì `pg_dump` chết giữa chừng vẫn để
    lại một file mã hoá hợp lệ bọc một bản dump cụt, và script vẫn báo đã ghi.
-3. **Không nằm cùng đĩa với bản đang chạy.** Sao lưu ở cùng volume là bản sao, không phải sao
-   lưu — ổ chết là mất cả hai. Thư mục `backup/` trỏ ra một volume khác, và trên VPS thật là một
-   nơi lưu trữ ngoài máy.
+3. **Một bản nằm ngoài máy.** Volume `backups` nằm trên chính ổ của VPS: nó cứu được xoá nhầm,
+   không cứu được hỏng ổ, nhà cung cấp xoá máy, hay kẻ chiếm máy xoá sạch. Mỗi 5 phút
+   `offsite.sh` trong container `backup` chép bằng `rclone` mọi file đã đổi tên xong mà chưa gửi
+   sang một bucket S3 ngoài máy (Cloudflare R2, `OFFSITE_*`). File đã mã hoá từ trước khi chạm
+   đĩa (luật 2), nên kho ngoài không cần là chỗ tin được. Bốn điều giữ nó đúng:
+   - **Chỉ thêm, không ghi đè, không xoá.** `rclone copyto --ignore-existing`, rồi so md5 của
+     object với file: tên đã có mà khác nội dung là lỗi và object ấy để nguyên. `--immutable`
+     không làm được việc này: đo 24/09, `copyto --immutable` ghi đè một object khác nội dung mà
+     vẫn trả 0. Bucket mang luật khoá (bucket lock) **5 ngày** cho mọi
+     object, nên kẻ chiếm được VPS cùng token của nó vẫn không xoá được 5 ngày gần nhất. Token
+     của VPS chỉ đọc-ghi object trên đúng bucket ấy; token của máy giữ khoá chỉ đọc.
+   - **Bucket tự xoá theo hạn, theo prefix**, không phải VPS:
+
+     | Prefix | File | Luật vòng đời xoá sau |
+     |---|---|---|
+     | `dump/` | logic chính | `BACKUP_KEEP_DAYS` (30) ngày |
+     | `biometric/`, `base/`, `wal/` | ba chuỗi mang `FaceTemplate` | `BIOMETRIC_KEEP_DAYS − 1` (6) ngày |
+
+     Ba chuỗi sinh trắc ngắn hơn một ngày vì R2 xoá object hết hạn có thể trễ tới một ngày, mà
+     lời hứa của §9.22.7 tính tới lúc byte biến mất. Luật vòng đời khai trên bucket chứ không
+     trong repo, nên đổi một trong hai biến là sửa luật bucket cùng lúc.
+   - **Sổ gửi nằm cạnh file.** `backups/.offsite/sent` ghi tên từng file đã lên, nên mỗi lượt chỉ
+     gửi file mới và không phải liệt kê bucket; tên nào hết hạn ở VPS thì rời sổ. Dấu `.sha256`
+     của WAL không đi: chỉ `wal-push.sh` dùng nó.
+   - **Dòng `offsite` của `ops.backup_run` chỉ được ghi khi lượt gửi hết mọi file còn nợ.** Một
+     file gửi mãi không lên thì chuỗi `offsite` cũ dần và luật 5 báo.
+
+   Thiếu `OFFSITE_BUCKET` thì `offsite.sh` không làm gì, và luật 5 báo chuỗi `offsite` cũ: thiếu
+   bản ngoài máy là một lỗi cần người biết, không phải một tuỳ chọn.
 4. **Kiểm phục hồi định kỳ, có số đo, cho cả hai loại.** `restore-drill.sh` dựng bản gốc mới
    nhất cộng mọi WAL sau nó vào một postgres vứt đi ở chế độ standby, chờ phát lại hết, báo
    **giao dịch cuối được phát lại lúc nào**; rồi dựng bản logic chính, **đếm dòng từng bảng** và
-   **bấm giờ**. Một bản sao lưu chưa từng phục hồi thử không phải bản sao lưu — nó là một file
-   người ta tin là bản sao lưu, và khác biệt chỉ lộ ra đúng vào ngày tệ nhất.
+   **bấm giờ**. `restore-drill.sh --offsite` làm đúng hai lượt ấy nhưng kéo từ bucket bằng token
+   chỉ đọc: đó là đường duy nhất còn lại khi VPS mất, nên nó cũng phải được diễn tập. Một bản sao
+   lưu chưa từng phục hồi thử không phải bản sao lưu — nó là một file người ta tin là bản sao
+   lưu, và khác biệt chỉ lộ ra đúng vào ngày tệ nhất.
 5. **Hỏng thì phải có người biết trong 15 phút, không phải vào ngày cần phục hồi.** WAL đẩy hỏng
    là postgres giữ lại mọi segment tới khi đĩa đầy, và cả hệ dừng theo. `backup.sh` ghi một dòng
    vào `ops.backup_run` sau mỗi file đã đổi tên xong; dòng `wal` chỉ được ghi khi, trong 60 s,
@@ -5024,7 +5054,8 @@ Frontend không đi đường này: Vercel tự build mỗi lần push khi đã 
    ấy có trong `wal/`. `pg_basebackup` luôn ép đóng một segment lúc kết thúc, nên đó là mỗi đêm
    một lần thử đầu-cuối đường WAL — và nó bắt được cả `archive_command = /bin/true`, thứ báo đẩy
    thành công mà không ghi gì. Cứ 15 phút `api` hỏi `pg_stat_archiver` và bảng ấy: lượt đẩy gần
-   nhất hỏng, hoặc một chuỗi quá `BACKUP_STALE_HOURS` (26) không có bản mới, thì gửi mail cho
+   nhất hỏng, hoặc một chuỗi (`dump`, `biometric`, `base`, `wal`, `offsite`) quá
+   `BACKUP_STALE_HOURS` (26) không có dòng mới, thì gửi mail cho
    mọi tài khoản ADMIN còn hoạt động, nhắc lại mỗi 24 giờ cho tới khi hết. Một người nhận hỏng
    không chặn người sau, và không làm cả lượt gửi lại. `BACKUP_STALE_HOURS = 0` tắt việc hỏi,
    cho máy dev không có container `backup`. Hỏng ở phía sao lưu không được kéo cơ sở dữ liệu
@@ -6040,16 +6071,29 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 **Cloudflare che web, không che broker.** Gói miễn phí chỉ proxy HTTP và HTTPS. `api` đi qua
 proxy (đám mây cam), còn `mqtt` phải để "DNS only" vì cổng 8883 không qua được, nên **IP thật
 của VPS vẫn tra được qua bản ghi `mqtt`**. Muốn che cả nó thì broker cần một IP riêng hoặc
-Cloudflare Spectrum (trả phí). Bật Cloudflare kéo theo bốn việc, làm cùng lúc:
+Cloudflare Spectrum (trả phí). `app` cũng "DNS only": Vercel tự cấp chứng chỉ cho nó. Bật
+Cloudflare kéo theo năm việc, làm cùng lúc:
 - `deploy/.env` đặt `TRUST_PROXY_HOPS=2` (Cloudflare rồi Traefik) và
   `API_RATE_MIDDLEWARE=rate-cloudflare`.
 - Traefik chỉ tin `X-Forwarded-For` từ dải IP của Cloudflare (`forwardedHeaders.trustedIPs`),
   khai sẵn trong `traefik.yml` từ trước khi bật, vì dải ấy không làm gì khi chưa có Cloudflare.
 - Tường lửa VPS chỉ mở 80 và 443 cho dải IP của Cloudflare. Thiếu nó thì ai biết IP có thể gọi
-  thẳng, tự khai `CF-Connecting-IP` và đi vòng qua hạn mức của Traefik.
+  thẳng, tự khai `CF-Connecting-IP` và đi vòng qua hạn mức của Traefik. **`ufw` không làm được
+  việc này**: Docker mở cổng bằng DNAT, gói tới container đi chuỗi `FORWARD` và không bao giờ gặp
+  luật `ufw` ở `INPUT`, nên `ufw deny 443` không đổi gì. `traefik/cloudflare-only.sh` (chạy bằng
+  root) đặt luật vào `DOCKER-USER`: gói vào từ card mạng ngoài với cổng đích gốc 80 hoặc 443
+  (`conntrack --ctorigdstport`) mà nguồn ngoài dải thì bị bỏ. Dải đọc từ chính `traefik.yml`, một
+  nguồn cho cả hai chỗ; đọc ra rỗng thì script dừng thay vì chặn hết. Luật iptables không sống
+  qua reboot, nên script cài một unit systemd chạy lại nó mỗi lần Docker khởi động; đổi dải thì
+  sửa `traefik.yml` rồi chạy lại script. 8883 và 22 không bị đụng. VPS không có IPv6 toàn cục,
+  nên chỉ có luật IPv4.
 - **Không** bật "Always Use HTTPS" của Cloudflare. Traefik đã tự chuyển 80 sang 443 và chừa đường
   `/.well-known/acme-challenge` cho HTTP-01 của Let's Encrypt; Cloudflare chuyển trước thì chứng
   chỉ gốc hết hạn sau 90 ngày mà không gia hạn được. Chế độ SSL của Cloudflare là "Full (strict)".
+- **Tắt Browser Integrity Check và Bot Fight Mode.** Người gọi `api` phần lớn không phải trình
+  duyệt: kiosk (`esp_http_client`), CI đẩy bản phát hành (`curl`), máy train đẩy model
+  (`Python-urllib`, loại Cloudflare hay chặn theo chữ ký). Không máy nào trong số đó giải được
+  một thử thách JavaScript.
 
 ### 7.3 Vòng đời thiết bị — từ dây chuyền tới lúc thu hồi
 
@@ -8121,13 +8165,20 @@ máy giữ khoá và làm hai lượt, cả hai dựng vào một Postgres tạm
 2. **Logic**: kéo bản logic chính mới nhất, dựng, đếm dòng từng bảng, bấm giờ, và thoát 1 nếu
    nó mang `FaceTemplate`.
 
-Nhịp hằng tuần vì vậy là việc của người, ghi trong TASKS, không phải một dòng cron. Việc máy làm
+Mặc định hai lượt kéo từ VPS qua SSH. `--offsite` kéo từ bucket ngoài máy bằng token chỉ đọc
+(`OFFSITE_ENV_FILE`, mặc định `~/.config/cckiosk/offsite.env`) qua một container `rclone`, nên máy
+giữ khoá không phải cài gì thêm. Tên cơ sở dữ liệu đọc từ tên file của bản gốc; role chủ lấy
+`DRILL_OWNER`, mặc định trùng tên ấy.
+
+Nhịp hằng tuần vì vậy là việc của người, ghi trong TASKS, không phải một dòng cron; mỗi tháng ít
+nhất một lượt trong đó chạy `--offsite`. Việc máy làm
 được thì máy làm: mỗi đêm một lần thử đầu-cuối đường WAL, và mỗi 15 phút một lượt hỏi của `api`
 (§4.8 luật 5).
 
 **Sao lưu phải mã hoá và phải để ngoài máy chủ đang chạy.** Sao lưu nằm cùng ổ với dữ liệu gốc
 bảo vệ được đúng một tình huống: xoá nhầm. Nó không bảo vệ được hỏng ổ, không bảo vệ được mã
-độc tống tiền, và không bảo vệ được xoá nhầm cả máy.
+độc tống tiền, và không bảo vệ được xoá nhầm cả máy. Bản ngoài máy và luật khoá chống xoá của nó
+ở §4.8 luật 3.
 
 #### 9.22.3 Di trú lược đồ: không bao giờ phá và dựng trong cùng một lần
 
@@ -8328,6 +8379,8 @@ Nên **bản dump tách làm hai**, theo đúng bảng phân loại trên:
 
 Điều này biến một lời hứa mơ hồ thành **một con số viết được vào thông báo quyền riêng tư**:
 một mẫu bị xoá hôm nay biến mất khỏi **mọi** bản sao lưu trong vòng `BIOMETRIC_KEEP_DAYS` ngày.
+"Mọi" gồm cả bản ngoài máy: bucket xoá ba chuỗi mang mẫu sớm hơn một ngày để bù độ trễ của chính
+nó (§4.8 luật 3).
 Không phải "sớm nhất có thể". Chuỗi vật lý cho phép tua tới từng phút, nhưng chỉ trong đúng
 cửa sổ ấy — đó là cái giá trả cho lời hứa.
 
