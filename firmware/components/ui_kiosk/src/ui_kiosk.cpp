@@ -439,6 +439,19 @@ void ui_kiosk_set_net(const ui_kiosk_net_t *net)
     }
 }
 
+void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id)
+{
+    if (!s_ready) {
+        return;
+    }
+    ui::Ticket &held = ui::ticket();
+    held.state = state;
+    if (device_id != nullptr) {
+        strlcpy(held.device_id, device_id, sizeof(held.device_id));
+    }
+    s_dirty = true;
+}
+
 void ui_kiosk_set_levels(uint8_t brightness, uint8_t volume)
 {
     if (!s_ready) {

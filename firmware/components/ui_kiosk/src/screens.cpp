@@ -164,6 +164,7 @@ Networks s_networks;
 JoinRequest s_join;
 Facts s_facts;
 ui_kiosk_net_t s_net;
+Ticket s_ticket;
 Level s_brightness = { 70, false, false };
 Restart s_vision_reset = Restart::No;
 Level s_volume = { 60, false, false };
@@ -358,6 +359,23 @@ void field(Canvas &to, const char *text, const char *hint)
             empty ? DRV_LCD_DIM : DRV_LCD_INK);
 }
 
+// A line about the kiosk itself, not the face, in the gap above the guide (KEHOACH 4.5.5h.1).
+void ticket_line(Canvas &to)
+{
+    char line[64] = { 0 };
+    switch (s_ticket.state) {
+    case UI_KIOSK_TICKET_WAITING:
+        snprintf(line, sizeof(line), text(StrId::TicketWaitingFmt), s_ticket.device_id);
+        break;
+    case UI_KIOSK_TICKET_REFUSED: strlcpy(line, text(StrId::TicketRefused), sizeof(line)); break;
+    case UI_KIOSK_TICKET_NO_TOKEN: strlcpy(line, text(StrId::TicketNoToken), sizeof(line)); break;
+    default: return;
+    }
+    to.text_on_video(Font::Caption, kWideX,
+                     Canvas::centre_y(Font::Caption, theme::kBarH, kGuideY - theme::kBarH),
+                     kWideW, line, DRV_LCD_WARN, Align::Centre);
+}
+
 class ScanScreen final : public Screen {
 public:
     void on_enter() noexcept override
@@ -430,6 +448,7 @@ public:
                            DRV_LCD_EDGE);
         widgets::icon(to, APP_LCD_H_RES - kMenuBox, 0, kMenuBox, widgets::Icon::Menu,
                       held_ ? DRV_LCD_ACCENT : DRV_LCD_INK);
+        ticket_line(to);
 
         uint8_t tone = DRV_LCD_INK;
         const char *prompt = text(StrId::ScanFrame);
@@ -1667,6 +1686,11 @@ Facts &facts() noexcept
 ui_kiosk_net_t &net() noexcept
 {
     return s_net;
+}
+
+Ticket &ticket() noexcept
+{
+    return s_ticket;
 }
 
 Restart &vision_reset() noexcept

@@ -128,6 +128,19 @@ typedef struct {
  */
 void ui_kiosk_set_net(const ui_kiosk_net_t *net);
 
+/** Where this kiosk stands with the server's approval (KEHOACH 7.3). */
+typedef enum {
+    UI_KIOSK_TICKET_HELD = 0,             // it can log in; nothing is shown
+    UI_KIOSK_TICKET_WAITING,              // registered, nobody has approved it yet
+    UI_KIOSK_TICKET_REFUSED,              // the server rejects this batch token
+    UI_KIOSK_TICKET_NO_TOKEN,             // this build carries no batch token
+} ui_kiosk_ticket_t;
+
+/** Show or clear the line between the top bar and the guide (KEHOACH 4.5.5h.1).
+ *  @ctx any | non-blocking | device_id copied; NULL keeps the one held
+ */
+void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id);
+
 /** Seed what the two settings sliders rest at, from main's copy of NVS.
  *  @ctx ui_task | non-blocking
  */

@@ -23,6 +23,9 @@ enum class StrId : uint16_t {
     ScanDenied,
     ScanCheckedIn,
     ScanCodeFmt,                          // takes the employee id
+    TicketWaitingFmt,                     // takes the device id
+    TicketRefused,
+    TicketNoToken,
 
     MenuTitle,
     MenuEnrol,

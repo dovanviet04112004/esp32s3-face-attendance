@@ -23,6 +23,9 @@ constexpr Entry kRows[] = {
     { StrId::ScanDenied, "Chưa nhận được, thử lại", "Not recognised" },
     { StrId::ScanCheckedIn, "Đã chấm công", "Checked in" },
     { StrId::ScanCodeFmt, "Mã %u", "ID %u" },
+    { StrId::TicketWaitingFmt, "Chờ duyệt · %s", "Pending · %s" },
+    { StrId::TicketRefused, "Máy chủ không nhận firmware này", "Server refused this firmware" },
+    { StrId::TicketNoToken, "Firmware này chưa có mã lô", "Firmware has no batch token" },
 
     { StrId::MenuTitle, "Quản lý", "Manage" },
     { StrId::MenuEnrol, "Thêm người", "Add person" },

@@ -8,6 +8,7 @@
 #include "app_events.h"
 #include "canvas.hpp"
 #include "storage_format.h"
+#include "sys_storage.h"
 #include "ui_kiosk.h"
 
 namespace ui {
@@ -115,6 +116,14 @@ Restart &vision_reset() noexcept;
 
 /** Where the radio stands, as the settings row shows it. */
 ui_kiosk_net_t &net() noexcept;
+
+/** Where the kiosk stands with the server, and the id an admin matches it by. */
+struct Ticket {
+    ui_kiosk_ticket_t state;
+    char device_id[STORAGE_DEVICE_ID_CAP];
+};
+
+Ticket &ticket() noexcept;
 
 /** The two levels the sliders sit at, and whether main has yet to hear about it. */
 struct Level {
