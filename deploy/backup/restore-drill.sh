@@ -75,9 +75,11 @@ dump=$(remote 'ls -1t "${BACKUP_DIR}/${PGDATABASE}"-*.dump.age | grep -v "\.biom
 [[ -n "${base}" ]] || { echo "no base backup to replay" >&2; exit 1; }
 [[ -n "${dump}" ]] || { echo "no logical dump to restore" >&2; exit 1; }
 
+failed=0
+
 echo "== replay: ${base}"
-started=$(date +%s)
 scratch "${replay_box}" --entrypoint sleep -e PGDATA="${pgdata}" -- infinity
+started=$(date +%s)
 fetch "${base}" | "${docker}" exec -i "${replay_box}" sh -c \
     "set -o pipefail; age --decrypt --identity /keys/age.key | zstd -dc | tar -xf - -C ${pgdata}"
 
@@ -86,12 +88,22 @@ timeline=$("${docker}" exec "${replay_box}" sed -n 's/^START TIMELINE: //p' "${p
 [[ "${start}" =~ ^[0-9A-F]{24}$ ]] || { echo "backup_label names no start segment" >&2; exit 1; }
 
 # Only segments at or after the base's own start can ever be asked for.
-remote "cd \"\${BACKUP_DIR}/wal\" && ls | grep -E '^[0-9A-F]{24}\\.zst\\.age\$' \
-    | awk -v start=${start} '(substr(\$0, 1, 24) \"\") >= (start \"\")' | tar -cf - -T -" \
-    | "${docker}" exec -i "${replay_box}" sh -c 'mkdir -p /wal && tar -xf - -C /wal'
-newest=$("${docker}" exec "${replay_box}" sh -c 'ls /wal | sort | tail -n 1 | cut -c 1-24')
-segments=$("${docker}" exec "${replay_box}" sh -c 'ls /wal | wc -l')
-echo "fetched ${segments} WAL segment(s) from ${start} to ${newest:-none}"
+wanted=$(remote "cd \"\${BACKUP_DIR}/wal\" && ls | grep -E '^[0-9A-F]{24}\\.zst\\.age\$' \
+    | awk -v start=${start} '(substr(\$0, 1, 24) \"\") >= (start \"\")' || true")
+"${docker}" exec "${replay_box}" mkdir -p /wal
+newest=""
+if [[ -n "${wanted}" ]]; then
+    remote "cd \"\${BACKUP_DIR}/wal\" && tar -cf - -T - <<'NAMES'
+${wanted}
+NAMES" | "${docker}" exec -i "${replay_box}" tar -xf - -C /wal
+    newest=$(printf '%s\n' "${wanted}" | sort | tail -n 1 | cut -c 1-24)
+    newest_at=$(remote "stat -c %y \"\${BACKUP_DIR}/wal/${newest}.zst.age\"")
+    echo "fetched $(printf '%s\n' "${wanted}" | wc -l) WAL segment(s) from ${start} to ${newest}"
+    echo "newest segment in the archive written at ${newest_at}"
+else
+    echo "no WAL segment follows the base: the WAL path is dead" >&2
+    failed=1
+fi
 
 # restore_command runs as postgres, so the key and the segments are handed to it.
 "${docker}" exec "${replay_box}" sh -c "chown -R postgres:postgres ${pgdata} /wal /keys && chmod 0700 ${pgdata} && touch ${pgdata}/standby.signal"
@@ -111,7 +123,7 @@ while (( same < settled_polls )); do
     now_at=$(replayed)
     if [[ "${now_at}" == "${last}" ]]; then same=$((same + 1)); else same=0; last="${now_at}"; fi
     polls=$((polls + 1))
-    (( polls <= max_polls )) || { echo "replay never settled, last at ${last}" >&2; exit 1; }
+    (( polls <= max_polls )) || { echo "replay never settled, last at ${last}" >&2; failed=1; break; }
     sleep "${poll_s}"
 done
 took=$(( $(date +%s) - started - settled_polls * poll_s ))
@@ -130,7 +142,7 @@ echo "rows per table after replay:"
 if [[ -n "${newest}" && "${reached}" < "${newest}" ]]; then
     echo "replay stopped at ${reached} but the archive runs to ${newest}: the chain has a gap" >&2
     "${docker}" exec "${replay_box}" tail -n 20 /tmp/postgres.log >&2
-    exit 1
+    failed=1
 fi
 "${docker}" rm -f "${replay_box}" >/dev/null
 
@@ -163,4 +175,8 @@ if [[ "${templates}" != "0" ]]; then
     exit 1
 fi
 echo "face templates in the main dump: 0"
+if (( failed )); then
+    echo "drill failed: the replay pass above says why" >&2
+    exit 1
+fi
 echo "drill finished"
