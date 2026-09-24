@@ -2276,7 +2276,7 @@ biết bộ cấp phát của mình cần đệm.
 ```
 esp32s3-face-attendance/
 ├── .github/
-│   └── workflows/{contracts.yml, ml.yml, firmware.yml, backend.yml, frontend.yml}
+│   └── workflows/{contracts.yml, ml.yml, firmware.yml, backend.yml, frontend.yml, deploy.yml}
 │                   ★ GitHub Actions CHỈ đọc .github/workflows ở gốc repo
 ├── .gitignore  ├── .gitattributes  ├── .editorconfig  ├── .pre-commit-config.yaml
 ├── README.md   ├── LICENSE         ├── Makefile
@@ -4363,6 +4363,7 @@ backend/
     │   ├── users/    ├── employees/  ├── devices/   ├── enrollment/
     │   ├── attendance/ ├── shifts/   ├── reports/   ├── models/
     │   ├── mqtt/     ├── realtime/
+    │   ├── health/                   # ★ §4.8 — cổng kiểm của CD, không cần đăng nhập
     │   ├── audit/audit-actions.ts    # ★ §9.24 — tên hành động, khai một chỗ
     │   │                             # ── §9 quản trị nhân sự ──
     │   ├── org/                      # Department (cây), JobTitle, hợp đồng
@@ -4828,6 +4829,7 @@ Thứ cần bí mật thì gọi vòng qua Route Handler chạy trên server c�
 ```
 deploy/
 ├── docker-compose.yml  ├── docker-compose.prod.yml  ├── .env.example
+├── deploy.sh                              # ★ CD: lệnh duy nhất khoá SSH của GitHub chạy được
 ├── traefik/{traefik.yml, dynamic.yml}     # TLS tự động Let's Encrypt
 ├── emqx/{emqx.conf, acl.conf, gen_certs.sh, certs/}   # listener MQTTS, auth và ACL
 ├── postgres/{init.sql, archive.conf}      # ★ archive.conf bật lưu trữ WAL liên tục
@@ -4841,7 +4843,7 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | Service | Image | Cổng | Ghi chú |
 |---|---|---|---|
 | `traefik` | traefik:v3 | 80, 443, 8883 | TLS tự động, reverse proxy, TCP passthrough cho MQTTS. Tài khoản ACME không kèm email: file cấu hình tĩnh không thay biến môi trường, và Let's Encrypt đã thôi gửi mail nhắc hết hạn từ 06/2025 |
-| `api` | build từ `backend/` | 3000 (nội bộ) | NestJS |
+| `api` | `ghcr.io/dovanviet04112004/cckiosk-api:<sha>` — build trên GitHub Actions; máy dev build từ `backend/` | 3000 (nội bộ) | NestJS |
 | `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này**, nên nó phải có `age`: thiếu thì mọi segment WAL đẩy hỏng, postgres giữ lại hết và đĩa đầy dần |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
 | `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth và ACL hỏi `api` qua HTTP; dashboard không ra ngoài |
@@ -4849,6 +4851,62 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | `backup` | postgres + cron | — | dump hằng đêm |
 
 Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, trỏ `NEXT_PUBLIC_API_URL=https://api.<domain>`.
+
+**Triển khai liên tục: push lên `main` là lên VPS, nhưng chỉ khi test qua.** `deploy.yml` chạy
+khi push lên `main` chạm `backend/`, `contracts/`, `deploy/` hoặc chính hai workflow, và chạy tay
+được (`workflow_dispatch`, nhận một `sha` để lùi về bản cũ). Ba job nối nhau, job sau chỉ chạy khi
+job trước xanh:
+
+| Job | Chạy ở | Làm gì |
+|---|---|---|
+| `test` | GitHub | gọi lại `backend.yml` (`workflow_call`), đủ Postgres + Redis + EMQX như CI. Không qua test thì không có gì rời repo |
+| `image` | GitHub | build `backend/Dockerfile`, đẩy `ghcr.io/dovanviet04112004/cckiosk-api` với hai tag `<sha>` và `latest`, bằng `GITHUB_TOKEN` quyền `packages: write` |
+| `ship` | VPS | SSH vào `deploy@` bằng khoá riêng, chạy `deploy/deploy.sh <sha>` |
+
+`backend.yml` không tự chạy khi push lên `main` nữa, vì `deploy.yml` đã gọi nó; nhánh khác và
+pull request vẫn chạy như cũ. Một lần push chạy test đúng một lần.
+
+**Build ở GitHub, VPS chỉ kéo về.** Đo 24/09 trên chính VPS 1 vCPU / 2 GB: build image `api` mất
+3,5 phút, đỉnh **1.250 MB RAM** cộng swap, trong khi cả stack lúc chạy chỉ ~390 MB (api 128 MB,
+emqx 104, minio 81, postgres 40, traefik 26, redis 5). Build ngay trên máy phục vụ là đem đỉnh ấy
+chồng lên các dịch vụ đang chạy, đúng lúc cần chúng nhất.
+
+**Khoá SSH của GitHub chỉ chạy được một lệnh.** Dòng của nó trong `authorized_keys` mang
+`restrict,command="…/deploy/deploy.sh"`: không shell, không chuyển cổng, sha đi vào qua
+`SSH_ORIGINAL_COMMAND` và `deploy.sh` kiểm đúng 40 ký tự hex trước khi dùng. Lộ khoá này thì
+người ta chỉ deploy lại được một bản đã có trên GHCR. GitHub giữ ba secret: `VPS_HOST`,
+`VPS_SSH_KEY`, `VPS_KNOWN_HOSTS` — host key **ghim sẵn**, không `ssh-keyscan` lúc chạy, vì quét lúc
+chạy là tin bất cứ máy nào đang trả lời địa chỉ ấy.
+
+**VPS không giữ token nào dài hạn.** `ship` đưa `GITHUB_TOKEN` của chính lượt chạy vào stdin,
+`deploy.sh` đăng nhập GHCR, kéo image, đăng xuất; token hết hạn khi job xong. Nhờ vậy image để
+riêng tư cũng được.
+
+**`deploy.sh` làm năm việc, theo thứ tự:**
+
+1. Đưa `~/cckiosk` (bản clone chỉ lấy `deploy/`) về đúng sha: cấu hình compose và traefik đi
+   cùng code, không có lượt nào code mới chạy trên cấu hình cũ.
+2. Ghi `API_TAG=<sha>` vào `.env`, kéo image, `up -d --no-build`. Ghi vào `.env` để một lần
+   `compose up` bằng tay hay một lần khởi động lại máy vẫn chạy đúng bản đã deploy.
+3. Chờ `GET /health` qua mạng compose trả 200, tối đa 90 s. Không đạt thì **lùi về sha ghi ở
+   `.deployed`** và thoát lỗi: job đỏ, bản cũ vẫn phục vụ.
+4. Đạt thì ghi sha mới vào `.deployed`.
+5. Xoá image `api` cũ, giữ đúng hai bản: đang chạy và bản trước để lùi. Mỗi image ~1,1 GB trên
+   ổ 17 GB.
+
+Container `api` chạy `prisma migrate deploy` trước khi nghe, nên lược đồ đi theo image. Lùi bản
+an toàn là nhờ luật "nở rồi co" của §9.22.3: bản cũ vẫn chạy được trên lược đồ mới.
+
+**`GET /health` không cần đăng nhập**: `SELECT 1` lên Postgres và `PING` Redis, 200 khi cả hai
+trả lời, 503 khi không. Nó **không** hỏi broker: EMQX chết thì kiosk mất đường lên nhưng HTTP vẫn
+phục vụ được, và lùi bản không chữa được broker. Compose dùng nó làm `healthcheck` của `api`.
+
+**Lần dựng đầu không nằm trong CD** vì nó sinh ra những thứ không bao giờ được vào git: tạo user
+`deploy` và khoá SSH, `.env` với secret sinh ngay trên máy, chứng thư broker ký bằng CA đang nằm
+trong firmware (khoá CA không rời máy người vận hành), user `svc-api` trong EMQX, và seed tài
+khoản quản trị. Seed chạy từ tầng `build` của image, vì tầng chạy không có `tsx`.
+
+Frontend không đi đường này: Vercel tự build mỗi lần push khi đã nối repo (E12-T7).
 
 **Sao lưu: bốn luật, và luật thứ tư là luật duy nhất chứng minh được ba luật kia.**
 
