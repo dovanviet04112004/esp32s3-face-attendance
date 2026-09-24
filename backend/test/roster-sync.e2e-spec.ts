@@ -209,18 +209,19 @@ describe("roster sync across doors (e2e)", () => {
     );
   });
 
+  // Door A still holds the person; the remove case above leaves door B empty.
   it("sends the whole roster again when a door reports an older version", async () => {
-    const ahead = await versionOf(DOOR_B);
-    const reached = await enrollment.converge(DOOR_B, ahead - 1);
+    const ahead = await versionOf(DOOR_A);
+    const reached = await enrollment.converge(DOOR_A, ahead - 1);
     void reached;
-    assert.equal(await versionOf(DOOR_B), ahead, "a resync does not move the counter on");
+    assert.equal(await versionOf(DOOR_A), ahead, "a resync does not move the counter on");
   });
 
   it("repairs a door whose counter stands behind its own roster", async () => {
-    await db.device.update({ where: { id: DOOR_B }, data: { rosterVersion: 0 } });
+    await db.device.update({ where: { id: DOOR_A }, data: { rosterVersion: 0 } });
     // The only repair path has to work from the state that needs repairing.
-    const reached = await enrollment.resync(DOOR_B);
+    const reached = await enrollment.resync(DOOR_A);
     assert.ok(reached >= 1, "a counter behind its roster sent a negative version and was refused");
-    assert.equal(await versionOf(DOOR_B), reached);
+    assert.equal(await versionOf(DOOR_A), reached);
   });
 });
