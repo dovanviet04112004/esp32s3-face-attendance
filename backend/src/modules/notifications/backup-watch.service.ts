@@ -133,15 +133,18 @@ export class BackupWatchService implements OnModuleInit {
     });
     // One address refusing must neither silence the rest nor make the retry resend to them.
     let reached = 0;
+    let delivered = 0;
     for (const admin of admins) {
       try {
-        await this.mailer.send(admin.email, body);
+        delivered += (await this.mailer.send(admin.email, body)) ? 1 : 0;
         reached += 1;
       } catch (error) {
         this.log.error(`backup ${finding.problem}: ${admin.email} refused: ${(error as Error).message}`);
       }
     }
-    this.log.warn(`backup ${finding.problem}: told ${reached} of ${admins.length} admin(s)`);
+    this.log.warn(
+      `backup ${finding.problem}: ${delivered} of ${admins.length} admin(s) mailed, ${reached - delivered} only logged`,
+    );
     if (admins.length > 0 && reached === 0) {
       return;
     }
