@@ -1,3 +1,5 @@
+import { FORMULA_LEAD } from "../../common/csv.js";
+
 /** Column names are identifiers, so they stay English (CLAUDE.md 3.1). */
 export const IMPORT_COLUMNS = [
   "code",
@@ -130,7 +132,9 @@ export function readRows(text: string): { faults: RowFault[]; rows: ImportRow[] 
   const rows = grid.slice(1).map((line) => {
     const row: ImportRow = {};
     header.forEach((name, at) => {
-      const value = (line[at] ?? "").trim();
+      const raw = (line[at] ?? "").trim();
+      // An export marks a formula cell with a leading ' (KEHOACH 7.2); it comes off again here.
+      const value = raw.startsWith("'") && FORMULA_LEAD.test(raw.slice(1)) ? raw.slice(1) : raw;
       if (value !== "") {
         row[name as ImportColumn] = value;
       }

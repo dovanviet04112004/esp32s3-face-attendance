@@ -9,7 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
-import { IMPORT_COLUMNS, parseCsv } from "../src/modules/employees/import.js";
+import { IMPORT_COLUMNS, parseCsv, readRows } from "../src/modules/employees/import.js";
 
 const PREFIX = "E2EIMP";
 
@@ -152,6 +152,22 @@ describe("employee import (e2e)", () => {
     assert.equal(staff?.fullName, "Tên đã đổi");
     assert.equal(staff?.compensation.length, 1, "one effective date holds one record");
     assert.equal(staff?.compensation[0]?.insuranceSalary.toFixed(0), "11000000");
+  });
+
+  it("exports a formula as text Excel will not run, and imports it back unchanged", async () => {
+    const payload = "=HYPERLINK(\"http://attacker.example\",\"x\")";
+    const row = await db.employee.findFirstOrThrow({ where: { code: { startsWith: PREFIX } } });
+    await db.employee.update({ where: { id: row.id }, data: { phone: payload } });
+    const res = await request(http)
+      .get("/employees/export")
+      .set("Authorization", `Bearer ${token}`);
+    const grid = parseCsv(res.text);
+    const at = (grid[0] as string[]).indexOf("phone");
+    const line = grid.find((cells) => cells[0] === row.code) as string[];
+    assert.equal(line[at], `'${payload}`, "the export handed Excel a live formula");
+    const back = [grid[0] as string[], line].map((cells) => cells.map(quoted).join(",")).join("\r\n");
+    assert.equal(readRows(back).rows[0]?.phone, payload, "the text mark came back in on import");
+    await db.employee.update({ where: { id: row.id }, data: { phone: row.phone } });
   });
 
   it("exports in the shape the import takes straight back", async () => {
