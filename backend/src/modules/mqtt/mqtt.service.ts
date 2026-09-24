@@ -7,6 +7,7 @@ import mqtt, { type IClientOptions, type MqttClient } from "mqtt";
 
 import { TOPICS, type TopicName, type TopicSpec } from "../../common/generated/topics.js";
 import type { Env } from "../../config/env.schema.js";
+import { PrismaService } from "../../database/prisma.service.js";
 import { KIOSK_EVENT, type KioskMessage } from "./mqtt.events.js";
 
 const RECONNECT_MS = 5000;
@@ -20,6 +21,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly config: ConfigService<Env, true>,
     private readonly bus: EventEmitter2,
+    private readonly db: PrismaService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -45,7 +47,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       void this.subscribeUp(client);
     });
     client.on("error", (error) => this.log.error(`broker: ${error.message}`));
-    client.on("message", (topic, payload) => this.dispatch(topic, payload));
+    client.on("message", (topic, payload) => {
+      this.dispatch(topic, payload).catch((error: Error) =>
+        this.log.error(`${topic} not handled: ${error.message}`),
+      );
+    });
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -88,7 +94,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     this.log.log(`subscribed to ${up.length} up topics as ${this.config.get("MQTT_USERNAME", { infer: true })}`);
   }
 
-  private dispatch(topic: string, raw: Buffer): void {
+  private async dispatch(topic: string, raw: Buffer): Promise<void> {
     const match = this.match(topic);
     if (!match) {
       this.log.warn(`no contract for ${topic}`);
@@ -100,6 +106,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       this.log.warn(`${spec.name} from ${deviceId} refused: ${decoded.reason}`);
       return;
     }
+    // A session outlives a revoke until the broker closes it (KEHOACH 7.4).
+    if (!(await this.approved(deviceId))) {
+      this.log.warn(`${spec.name} from ${deviceId} dropped: not an approved kiosk`);
+      return;
+    }
     const parsed = decoded.value;
     const message: KioskMessage = {
       topic: spec.name,
@@ -109,6 +120,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     };
     this.log.debug(`${spec.name} from ${deviceId}, ${raw.length} B`);
     this.bus.emit(KIOSK_EVENT[spec.name as keyof typeof KIOSK_EVENT], message);
+  }
+
+  private async approved(deviceId: string): Promise<boolean> {
+    const held = await this.db.device.findUnique({ where: { id: deviceId }, select: { status: true } });
+    return held?.status === "APPROVED";
   }
 
   private decode(spec: TopicSpec, raw: Buffer): { value: unknown } | { reason: string } {

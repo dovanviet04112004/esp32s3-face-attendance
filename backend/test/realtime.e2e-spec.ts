@@ -13,6 +13,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { publishAsKiosk } from "./fixtures.js";
 
 const DEVICE_ID = "kiosk-e2e-feed";
+const STRANGER_ID = "kiosk-e2e-stranger";
 const SETTLE_MS = 1500;
 const RANGE = { from: "2020-01-01T00:00:00.000Z", to: "2020-01-02T00:00:00.000Z" };
 
@@ -25,8 +26,19 @@ describe("realtime and reports (e2e)", () => {
   const seen: Record<string, unknown[]> = { event: [], device: [], attendance: [] };
 
   async function sweep(): Promise<void> {
-    await db.deviceEvent.deleteMany({ where: { deviceId: DEVICE_ID } });
-    await db.device.deleteMany({ where: { id: DEVICE_ID } });
+    const ids = [DEVICE_ID, STRANGER_ID];
+    await db.deviceEvent.deleteMany({ where: { deviceId: { in: ids } } });
+    await db.device.deleteMany({ where: { id: { in: ids } } });
+  }
+
+  function fault(deviceId: string): Promise<void> {
+    return publishAsKiosk(`kiosk/${deviceId}/up/event`, {
+      deviceId,
+      ts: Date.now(),
+      type: "CAMERA_FAULT",
+      severity: "ERROR",
+      message: "frames stopped",
+    });
   }
 
   before(async () => {
@@ -39,6 +51,7 @@ describe("realtime and reports (e2e)", () => {
     port = address.port;
     db = app.get(PrismaService);
     await sweep();
+    await db.device.create({ data: { id: DEVICE_ID, status: "APPROVED" } });
 
     const login = await request(app.getHttpServer())
       .post("/auth/login")
@@ -64,13 +77,7 @@ describe("realtime and reports (e2e)", () => {
   });
 
   it("keeps a kiosk fault and shows it on the feed at the same time", async () => {
-    await publishAsKiosk(`kiosk/${DEVICE_ID}/up/event`, {
-      deviceId: DEVICE_ID,
-      ts: Date.now(),
-      type: "CAMERA_FAULT",
-      severity: "ERROR",
-      message: "frames stopped",
-    });
+    await fault(DEVICE_ID);
     await new Promise((done) => setTimeout(done, SETTLE_MS));
 
     const held = await db.deviceEvent.findFirst({
@@ -85,10 +92,21 @@ describe("realtime and reports (e2e)", () => {
     assert.ok(shown, "the fault never reached an open dashboard");
   });
 
-  it("writes the device row for a kiosk it had never met", async () => {
-    const device = await db.device.findUnique({ where: { id: DEVICE_ID } });
-    assert.ok(device, "a fault from an unknown kiosk left no device row");
-    assert.equal(device.status, "PENDING");
+  it("drops what a kiosk nobody approved says, and writes no row for it", async () => {
+    await fault(STRANGER_ID);
+    await new Promise((done) => setTimeout(done, SETTLE_MS));
+    assert.equal(await db.device.findUnique({ where: { id: STRANGER_ID } }), null);
+    assert.equal(await db.deviceEvent.count({ where: { deviceId: STRANGER_ID } }), 0);
+    const shown = seen.event.some((body) => (body as { deviceId?: string }).deviceId === STRANGER_ID);
+    assert.equal(shown, false, "a stranger's fault reached the dashboard");
+  });
+
+  it("stops hearing a kiosk the moment it is revoked", async () => {
+    await db.device.update({ where: { id: DEVICE_ID }, data: { status: "REVOKED" } });
+    const kept = await db.deviceEvent.count({ where: { deviceId: DEVICE_ID } });
+    await fault(DEVICE_ID);
+    await new Promise((done) => setTimeout(done, SETTLE_MS));
+    assert.equal(await db.deviceEvent.count({ where: { deviceId: DEVICE_ID } }), kept);
   });
 
   it("answers a report twice and the second one costs no query", async () => {
