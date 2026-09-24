@@ -820,7 +820,9 @@
     "TASK_ALREADY_DONE": "Việc này đã có người đánh dấu xong.",
     "TASK_NOT_FOUND": "Không tìm thấy việc này.",
     "USER_NOT_FOUND": "Không tìm thấy tài khoản này, hoặc tài khoản đã đóng.",
-    "VERSION_NOT_FOUND": "Không tìm thấy bản này của tài liệu."
+    "VERSION_NOT_FOUND": "Không tìm thấy bản này của tài liệu.",
+    "RATE_LIMITED": "Thao tác quá nhanh. Chờ một lát rồi thử lại.",
+    "AUTH_LOCKED": "Tài khoản tạm khoá vì nhập sai mật khẩu nhiều lần. Thử lại sau ít phút, hoặc đặt lại mật khẩu."
   },
   "search": {
     "label": "Tìm kiếm",
