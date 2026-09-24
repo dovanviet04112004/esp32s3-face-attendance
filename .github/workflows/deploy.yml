@@ -68,10 +68,12 @@ jobs:
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
           PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # The key only runs deploy.sh, and the host key is pinned, never scanned.
+        # A quiet pull is an idle flow, and the runner's NAT cuts one at ~4 min.
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy
           chmod 600 ~/.ssh/deploy
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           printf '%s\n' "$PULL_TOKEN" | ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes "deploy@$VPS_HOST" "${{ github.sha }} ${{ github.actor }}"
+            -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+            "deploy@$VPS_HOST" "${{ github.sha }} ${{ github.actor }}"
