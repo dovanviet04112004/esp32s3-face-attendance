@@ -104,6 +104,8 @@ interface Props {
    *  ProfileChange so the change carries a trail (KEHOACH 9.17 item 4).
    */
   showBank: boolean;
+  /** An edit takes the personal email as read-only: changing it is a request with a notice (KEHOACH 9.18 rule 3). */
+  lockEmail?: boolean;
   /** Only where the field starts empty: the picker reads a person out of a
    *  search and has no way back from an id already on the record.
    */
@@ -263,6 +265,7 @@ export function EmployeeForm({
   entities,
   showActive,
   showBank,
+  lockEmail = false,
   showManager,
   manager,
   showOnboard,
@@ -437,12 +440,17 @@ export function EmployeeForm({
         filled={filledOf([draft.personalEmail, draft.phone])}
         total={2}
       >
-        <Field id="personalEmail" label={t("personalEmail")} hint={t("personalEmailHint")}>
+        <Field
+          id="personalEmail"
+          label={t("personalEmail")}
+          hint={lockEmail ? t("personalEmailLocked") : t("personalEmailHint")}
+        >
           <Input
             id="personalEmail"
             type="email"
             maxLength={160}
             value={draft.personalEmail}
+            readOnly={lockEmail}
             onChange={(e) => set({ personalEmail: e.target.value })}
             className="mt-1"
           />

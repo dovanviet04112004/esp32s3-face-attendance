@@ -290,6 +290,15 @@ describe("changing a personal detail through an approval (e2e)", () => {
     );
   });
 
+  it("will not let the desk move the warning address outside a request", async () => {
+    const quiet = await request(http)
+      .patch(`/employees/${employeeId}`)
+      .set("Authorization", `Bearer ${desk}`)
+      .send({ personalEmail: "e2e-quiet-move@attacker.example" });
+    assert.equal(quiet.status, 400, "the desk moved the address a bank change warns without a request");
+    assert.equal((await held()).personalEmail, PERSONAL);
+  });
+
   it("chooses the warning address when the change is asked for, not when it is answered", async () => {
     const askEmail = await request(http)
       .post("/profile-changes")

@@ -114,12 +114,13 @@ export class CreateEmployeeDto {
   jobTitleId?: string;
 }
 
-/** Where the pay goes is set when the record opens and moves only through an
- *  approval afterwards, so it has no column here (KEHOACH 9.17 item 6 rule 1).
+/** Where the pay goes, and the address that hears of a change to it, are set when the record
+ *  opens and move only through an approval afterwards (KEHOACH 9.18 rules 1 and 3).
  */
 export class UpdateEmployeeDto extends OmitType(PartialType(CreateEmployeeDto), [
   "bankAccount",
   "bankName",
+  "personalEmail",
 ] as const) {
   @ApiPropertyOptional()
   @IsOptional()

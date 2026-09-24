@@ -278,6 +278,7 @@
     "hireOpen": "Mở hồ sơ",
     "personalEmail": "Email cá nhân",
     "personalEmailHint": "Thiếu ô này thì nút cấp tài khoản ở Cài đặt bỏ qua người này, không báo gì.",
+    "personalEmailLocked": "Đổi email cá nhân phải qua đơn đổi hồ sơ, để địa chỉ cũ nhận được thư báo.",
     "phone": "Số điện thoại",
     "hireDate": "Ngày vào làm",
     "hireDateHint": "Thâm niên và trợ cấp thôi việc đếm từ ngày này.",

@@ -278,6 +278,7 @@
     "hireOpen": "Open the record",
     "personalEmail": "Personal email",
     "personalEmailHint": "Without this, provisioning in Settings passes over this person and says nothing.",
+    "personalEmailLocked": "Change the personal email through a profile change request, so the old address gets a notice.",
     "phone": "Phone",
     "hireDate": "Hire date",
     "hireDateHint": "Seniority and severance count from this day.",

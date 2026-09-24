@@ -201,7 +201,6 @@ export default function EmployeePage() {
         legalEntityId: draft.legalEntityId || undefined,
         departmentId: draft.departmentId || undefined,
         jobTitleId: draft.jobTitleId || undefined,
-        personalEmail: draft.personalEmail || undefined,
         phone: draft.phone || undefined,
         hireDate: draft.hireDate || undefined,
         dateOfBirth: draft.dateOfBirth || undefined,
@@ -322,6 +321,7 @@ export default function EmployeePage() {
               entities={entities.data ?? []}
               showActive
               showBank={false}
+              lockEmail
               showManager
               manager={employee.data.manager}
               showOnboard={false}
