@@ -619,6 +619,7 @@ cược vào may mắn.
 | E26-T11 | PgBouncer chế độ transaction khi vượt một bản chạy | Chạm trần CPU trước, không chạm trần kết nối | E11-T8 |
 | E26-T12 | **Báo cáo nặng đọc bản sao**; thứ vừa ghi xong đọc bản chính | Lượt gộp toàn công ty không làm chậm kiosk đang chấm công | E26-T11, E16-T3 |
 | ~~E26-T13~~ | **Xong 20/09.** `retention.sh` xoá bằng `DROP` mảnh, **mặc định chạy khô**. Đo trên bản thử: `DELETE` 155 062 dòng mất 55,6 ms còn `DROP` mảnh 16,4 ms — nhưng điểm thật là sau khi xoá 95 038 dòng, mảnh **vẫn 18 MB** và ôm 95 038 dòng chết chờ vacuum. Chính sách lưu trữ theo bảng (§9.22.7); dọn bằng `DROP` mảnh, không bằng `DELETE` hàng triệu dòng | Dọn dữ liệu quá hạn là thao tác tức thì | E16-T8 |
+| E26-T14 | **Kiểm phục hồi hằng tuần từ máy giữ khoá** (§9.22.2). VPS chỉ giữ `AGE_RECIPIENT`, nên `deploy/backup/restore-drill.sh` chạy ở máy chủ repo: `AGE_KEY_FILE=<khoá riêng> restore-drill.sh cckiosk` kéo bản chính mới nhất qua ssh, dựng vào một `postgres:16-alpine` vứt đi, đếm dòng từng bảng, bấm giờ, và thoát 1 nếu bản chính mang mẫu khuôn mặt. Việc định kỳ của người, không phải cron | Mỗi tuần một lượt, kết quả (ngày, file, số dòng, số giây) nối vào ô này; lần đầu chạy ngay sau khi chép khoá về, trước khi gỡ khoá khỏi VPS | E13-T14 |
 
 ---
 
