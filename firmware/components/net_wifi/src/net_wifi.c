@@ -76,7 +76,11 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
         const ip_event_got_ip_t *got = (const ip_event_got_ip_t *)data;
         s_retry_ms = RETRY_FLOOR_MS;
         xEventGroupSetBits(s_state, CONNECTED_BIT);
-        ESP_LOGI(TAG, "connected, ip " IPSTR, IP2STR(&got->ip_info.ip));
+        // Nothing resolves without a DNS server, and DHCP is the only thing handing one out.
+        esp_netif_dns_info_t dns = { 0 };
+        esp_netif_get_dns_info(got->esp_netif, ESP_NETIF_DNS_MAIN, &dns);
+        ESP_LOGI(TAG, "connected, ip " IPSTR ", dns " IPSTR " (type %d)", IP2STR(&got->ip_info.ip),
+                 IP2STR(&dns.ip.u_addr.ip4), (int)dns.ip.type);
     }
 }
 
