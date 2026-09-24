@@ -1,0 +1,29 @@
+menu "Kiosk registration"
+
+    config NET_PROVISION_API_URL
+        string "API the kiosk asks for its ticket"
+        default "https://api.cckiosk.io.vn"
+        help
+            Base of POST /devices/register and GET /devices/me (KEHOACH 7.3).
+            Its certificate chains to a public root, so the IDF bundle is
+            what trusts it, not the broker's own CA.
+
+    config NET_PROVISION_BOOTSTRAP_TOKEN
+        string "Batch token the kiosk registers with"
+        default ""
+        help
+            The DEVICE_BOOTSTRAP_TOKEN of api (KEHOACH 7.3). Never set here:
+            it arrives from firmware/sdkconfig.secrets, which git ignores.
+            Empty means this build never registers.
+
+    config NET_PROVISION_WAIT_MIN_S
+        int "First wait between asks, in seconds"
+        default 10
+        range 5 600
+
+    config NET_PROVISION_WAIT_MAX_S
+        int "Longest wait between asks, in seconds"
+        default 300
+        range 30 3600
+
+endmenu

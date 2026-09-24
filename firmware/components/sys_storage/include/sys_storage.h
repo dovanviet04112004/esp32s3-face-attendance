@@ -30,6 +30,10 @@ esp_err_t sys_storage_init(void);
 #define STORAGE_NS_VISION "vision"
 #define STORAGE_NS_ATTEND "attend"
 
+// The ticket keys of KEHOACH 7.3: net_provision writes them, net_mqtt reads.
+#define STORAGE_KEY_TICKET "jwt"
+#define STORAGE_KEY_TICKET_EXP "jwt_exp"  // u32, the ticket's own exp claim
+
 /** Read one unsigned setting from a namespace of KEHOACH 6.2.1.
  *  @ctx task | blocking | takes m_littlefs (KEHOACH 5.3)
  *  @param ns one of the STORAGE_NS_* names

@@ -34,6 +34,7 @@ LAYERS: dict[str, int] = {
     "net_wifi": 3,
     "net_mqtt": 3,
     "net_ota": 3,
+    "net_provision": 3,
     "svc_door": 4,
     "svc_vision": 4,
     "svc_attendance": 5,
