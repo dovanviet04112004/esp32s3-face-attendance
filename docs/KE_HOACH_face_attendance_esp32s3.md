@@ -4946,10 +4946,16 @@ riêng tư cũng được.
 Container `api` chạy `prisma migrate deploy` trước khi nghe, nên lược đồ đi theo image. Lùi bản
 an toàn là nhờ luật "nở rồi co" của §9.22.3: bản cũ vẫn chạy được trên lược đồ mới.
 
-**`api` tin đúng một chặng proxy.** Mọi request tới `api` production đều đi qua Traefik, nên
-địa chỉ nguồn của socket luôn là container Traefik. `TRUST_PROXY_HOPS=1` cho Express đọc IP
-thật từ `X-Forwarded-For` mà Traefik ghi. Throttler khoá theo IP ấy (§7.2). Dev không qua proxy
-nên để 0: tin một header mà không ai đứng giữa ghi thì ai cũng tự khai IP được.
+**`api` tin đúng số chặng proxy đứng trước nó.** Mọi request tới `api` production đều đi qua
+Traefik, nên địa chỉ nguồn của socket luôn là container Traefik. `TRUST_PROXY_HOPS=1` cho Express
+đọc IP thật từ `X-Forwarded-For` mà Traefik ghi; bật Cloudflare thì là 2 (§7.2). Throttler khoá
+theo IP ấy. Dev không qua proxy nên để 0: tin một header mà không ai đứng giữa ghi thì ai cũng tự
+khai IP được. Traefik bỏ `X-Forwarded-For` của mọi nguồn không nằm trong `trustedIPs`, nên một
+người gọi thẳng không khai được IP giả qua hai chặng ấy.
+
+**`deploy.sh` dựng lại Traefik khi cấu hình của nó đổi**, cùng lý do và cùng cách với EMQX: file
+lẻ bind mount giữ inode cũ sau khi checkout thay file, nên `watch` của Traefik không bao giờ thấy
+`dynamic.yml` mới.
 
 **`GET /health` không cần đăng nhập**: `SELECT 1` lên Postgres và `PING` Redis, 200 khi cả hai
 trả lời, 503 khi không. Nó **không** hỏi broker: EMQX chết thì kiosk mất đường lên nhưng HTTP vẫn
@@ -5947,7 +5953,48 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
 | OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
-| Rate limit | `@nestjs/throttler` cho `/auth/login`, `/auth/forgot-password` và `/devices/register`, khoá theo **IP thật của client**. Sau Traefik mọi request đến từ cùng một IP, nên `api` phải tin đúng một chặng proxy (`TRUST_PROXY_HOPS`, §4.8); thiếu nó thì cả công ty chung một hạn mức đăng nhập, và cả đội kiosk chung một hạn mức đăng ký. `/devices/register` cũng là chỗ máy chờ duyệt hỏi mỗi `DEVICE_POLL_INTERVAL_S`, nên hạn mức của nó (`DEVICE_REGISTER_ATTEMPTS_PER_MINUTE`, mặc định 60) chừa đủ cho vài máy cùng chờ sau một NAT |
+| Rate limit | Ba lớp, đoạn *Chống spam* dưới bảng. Traefik chặn lũ theo IP trước Node; `api` có một hạn mức chung cho **mọi** route theo tài khoản, hạn mức chặt hơn cho việc nặng, và hạn mức riêng cho đăng nhập, quên mật khẩu, đăng ký kiosk; sai mật khẩu nhiều lần thì khoá chính tài khoản ấy bất kể IP |
+| DDoS lưu lượng | Không lớp nào trong app chặn được. DNS đi qua Cloudflare, `api` qua proxy của nó, nên IP thật của VPS không nằm trong bản ghi web. Giới hạn nói rõ ở đoạn *Cloudflare* dưới bảng |
+
+**Chống spam, ba lớp, mỗi lớp chặn một thứ lớp kia không thấy.**
+1. **Traefik, theo IP, trước Node.** Middleware `rateLimit` (trung bình 50 request/giây mỗi IP,
+   cho bật 100) đứng trên router của `api`, nên một cơn lũ từ một IP dừng ở Traefik chứ không
+   tốn một vòng Node nào. Mức ấy rộng có chủ ý: cả một văn phòng sau một NAT dùng chung nó.
+   Traefik lấy IP theo đường request tới (`API_RATE_MIDDLEWARE`): đi thẳng thì là địa chỉ
+   socket (`rate-direct`), sau Cloudflare thì là `CF-Connecting-IP` (`rate-cloudflare`), vì lúc
+   ấy socket nào cũng là của Cloudflare và cả công ty sẽ chung một hạn mức.
+2. **`api`, theo tài khoản, trên mọi route.** Một `ThrottlerGuard` toàn cục đếm theo `sub` của
+   access token **đã kiểm chữ ký**, chưa đăng nhập thì theo IP. Kiểm chữ ký là bắt buộc: đếm theo
+   `sub` tự khai thì kẻ tấn công đổi `sub` mỗi lần là không bao giờ chạm hạn mức. Hạn mức chung
+   `API_REQUESTS_PER_MINUTE` (600, tức 10 request/giây kéo dài, dư cho người thật kể cả khi
+   dashboard tải lại theo feed). Việc nặng mang thêm hạn mức `HEAVY_REQUESTS_PER_MINUTE` (20):
+   xuất Excel, import nhân viên, bảng công tháng, tạo và chạy kỳ lương, gửi phiếu lương. Báo cáo
+   đọc thường không nằm trong đó, vì chúng đi qua cache (§4.9). Ba hạn mức riêng giữ nguyên và
+   **chỉ** áp ở route khai nó: đăng nhập 5/phút/IP, quên mật khẩu 5/giờ/IP, đăng ký kiosk
+   60/phút/IP. `POST /mqtt/auth` và `GET /health` không đếm: người gọi là broker và script deploy
+   trong mạng nội bộ. Vượt hạn mức trả **429** `RATE_LIMITED`.
+3. **Khoá tài khoản, bất kể IP.** Hạn mức đăng nhập đếm theo IP, nên một cuộc dò mật khẩu rải qua
+   nhiều IP nhắm vào một tài khoản lọt qua nó. Sai `LOGIN_LOCK_AFTER` (10) lần liên tiếp cho cùng
+   một email thì email ấy khoá `LOGIN_LOCK_MINUTES` (15) phút: trả **429** `AUTH_LOCKED`, và
+   không chạy scrypt. Bộ đếm nằm ở Redis theo **băm của email đã chuẩn hoá**, đếm cả email không
+   tồn tại, nên việc có bị khoá hay không không tiết lộ tài khoản nào có thật. Đăng nhập đúng
+   hoặc đặt lại mật khẩu thì xoá đếm. Khoá một tài khoản có thật để lại một dòng audit. Redis
+   mất khoá thì khoá được gỡ sớm, không bao giờ khoá nhầm ai: đúng vai "mất khoá thì chỉ yếu
+   đi" của §4.3.
+
+**Cloudflare che web, không che broker.** Gói miễn phí chỉ proxy HTTP và HTTPS. `api` đi qua
+proxy (đám mây cam), còn `mqtt` phải để "DNS only" vì cổng 8883 không qua được, nên **IP thật
+của VPS vẫn tra được qua bản ghi `mqtt`**. Muốn che cả nó thì broker cần một IP riêng hoặc
+Cloudflare Spectrum (trả phí). Bật Cloudflare kéo theo bốn việc, làm cùng lúc:
+- `deploy/.env` đặt `TRUST_PROXY_HOPS=2` (Cloudflare rồi Traefik) và
+  `API_RATE_MIDDLEWARE=rate-cloudflare`.
+- Traefik chỉ tin `X-Forwarded-For` từ dải IP của Cloudflare (`forwardedHeaders.trustedIPs`),
+  khai sẵn trong `traefik.yml` từ trước khi bật, vì dải ấy không làm gì khi chưa có Cloudflare.
+- Tường lửa VPS chỉ mở 80 và 443 cho dải IP của Cloudflare. Thiếu nó thì ai biết IP có thể gọi
+  thẳng, tự khai `CF-Connecting-IP` và đi vòng qua hạn mức của Traefik.
+- **Không** bật "Always Use HTTPS" của Cloudflare. Traefik đã tự chuyển 80 sang 443 và chừa đường
+  `/.well-known/acme-challenge` cho HTTP-01 của Let's Encrypt; Cloudflare chuyển trước thì chứng
+  chỉ gốc hết hạn sau 90 ngày mà không gia hạn được. Chế độ SSL của Cloudflare là "Full (strict)".
 
 ### 7.3 Vòng đời thiết bị — từ dây chuyền tới lúc thu hồi
 
