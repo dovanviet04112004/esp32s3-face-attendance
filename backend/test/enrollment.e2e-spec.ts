@@ -188,11 +188,22 @@ describe("enrollment and releases (e2e)", () => {
       .send({
         target: "FIRMWARE",
         version: "9.9.8",
-        // Nothing listens on port 1, so this fails to connect without a network.
-        url: "https://127.0.0.1:1/kiosk.bin",
+        // .invalid never resolves (RFC 6761), so this fails without a network.
+        url: "https://kiosk.invalid/kiosk.bin",
       });
     assert.equal(res.status, 400);
     assert.equal(res.body.message, "RELEASE_UNREACHABLE");
+  });
+
+  it("will not fetch a release from inside the private network", async () => {
+    for (const url of ["https://127.0.0.1:1/kiosk.bin", "https://169.254.169.254/latest", "https://[::1]/kiosk.bin"]) {
+      const res = await request(http)
+        .post("/releases")
+        .set("Authorization", `Bearer ${admin}`)
+        .send({ target: "FIRMWARE", version: "9.9.6", url });
+      assert.equal(res.status, 400, url);
+      assert.equal(res.body.message, "RELEASE_URL_INTERNAL", `${url} reached the fetch`);
+    }
   });
 
   it("refuses a release url that is not https", async () => {

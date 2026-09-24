@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { lookup } from "node:dns/promises";
+import { BlockList, isIP } from "node:net";
 
 import {
   BadRequestException,
@@ -18,6 +20,28 @@ import type { CreateReleaseDto } from "./dto/release.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
 
+// Where a server-side fetch must never land: compose peers, loopback, cloud metadata (KEHOACH 7.2).
+const INTERNAL = new BlockList();
+for (const [net, bits] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8],
+  ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.168.0.0", 16]] as const) {
+  INTERNAL.addSubnet(net, bits, "ipv4");
+}
+for (const [net, bits] of [["::", 127], ["fc00::", 7], ["fe80::", 10], ["::ffff:0:0", 96]] as const) {
+  INTERNAL.addSubnet(net, bits, "ipv6");
+}
+
+async function refuseInternal(url: string): Promise<void> {
+  const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
+  const family = isIP(host);
+  const found = family ? [{ address: host, family }] : await lookup(host, { all: true }).catch(() => []);
+  if (found.length === 0) {
+    throw new BadRequestException("RELEASE_UNREACHABLE");
+  }
+  if (found.some((one) => INTERNAL.check(one.address, one.family === 6 ? "ipv6" : "ipv4"))) {
+    throw new BadRequestException("RELEASE_URL_INTERNAL");
+  }
+}
+
 @Injectable()
 export class ModelsService {
   private readonly log = new Logger(ModelsService.name);
@@ -34,11 +58,16 @@ export class ModelsService {
   private async measure(url: string): Promise<{ sha256: string; sizeBytes: number }> {
     const ceiling = this.config.get("OTA_MAX_BYTES", { infer: true });
     const stop = AbortSignal.timeout(this.config.get("OTA_FETCH_TIMEOUT_MS", { infer: true }));
+    await refuseInternal(url);
     let answer: Response;
     try {
-      answer = await fetch(url, { signal: stop, redirect: "follow" });
+      answer = await fetch(url, { signal: stop, redirect: "manual" });
     } catch {
       throw new BadRequestException("RELEASE_UNREACHABLE");
+    }
+    // A redirect would take the fetch past the address check above.
+    if (answer.status >= 300 && answer.status < 400) {
+      throw new BadRequestException("RELEASE_REDIRECTED");
     }
     if (!answer.ok || !answer.body) {
       throw new BadRequestException("RELEASE_UNREACHABLE");
