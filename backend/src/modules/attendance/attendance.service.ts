@@ -13,7 +13,7 @@ import type { ListAttendanceDto } from "./dto/attendance.dto.js";
 const FOREIGN_KEY_VIOLATION = "P2003";
 
 /** What became of one punch. */
-export type PunchOutcome = "stored" | "duplicate" | "unknown-employee";
+export type PunchOutcome = "stored" | "duplicate" | "unknown-employee" | "while-revoked";
 
 @Injectable()
 export class AttendanceService {
@@ -81,6 +81,9 @@ export class AttendanceService {
   /** Store one punch, or recognise it as one already held. */
   async record(punch: AttendanceRecord, receivedAt: Date): Promise<PunchOutcome> {
     await this.devices.seen(punch.deviceId, receivedAt);
+    if (await this.devices.outsideFleetAt(punch.deviceId, new Date(punch.ts))) {
+      return "while-revoked";
+    }
     const key = { deviceId: punch.deviceId, localId: punch.localId };
     const held = await this.db.attendanceRecord.findUnique({
       where: { deviceId_localId: key },

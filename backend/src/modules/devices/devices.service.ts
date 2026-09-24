@@ -60,6 +60,8 @@ const SHOWN = {
   lastSeenAt: true,
   online: true,
   approvedAt: true,
+  revokedAt: true,
+  readmittedAt: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -286,7 +288,7 @@ export class DevicesService {
   async approve(id: string, body: ApproveDeviceDto): Promise<PublicDevice> {
     const held = await this.db.device.findUnique({
       where: { id },
-      select: { claimHash: true, claimFailures: true },
+      select: { claimHash: true, claimFailures: true, revokedAt: true, readmittedAt: true },
     });
     if (!held) {
       throw new NotFoundException("DEVICE_NOT_FOUND");
@@ -302,12 +304,15 @@ export class DevicesService {
       await this.db.device.update({ where: { id }, data: { claimFailures: { increment: 1 } } });
       throw new BadRequestException("DEVICE_CLAIM_MISMATCH");
     }
+    const now = new Date();
+    const closesSpan = held.revokedAt !== null && held.readmittedAt === null;
     return this.db.device.update({
       where: { id },
       data: {
         ...named,
         status: "APPROVED",
-        approvedAt: new Date(),
+        approvedAt: now,
+        ...(closesSpan ? { readmittedAt: now } : {}),
         claimHash: null,
         claimFailures: 0,
       },
@@ -320,7 +325,14 @@ export class DevicesService {
     await this.get(id);
     const revoked = await this.db.device.update({
       where: { id },
-      data: { status: "REVOKED", tokenHash: null, prevTokenHash: null, online: false },
+      data: {
+        status: "REVOKED",
+        tokenHash: null,
+        prevTokenHash: null,
+        online: false,
+        revokedAt: new Date(),
+        readmittedAt: null,
+      },
       select: SHOWN,
     });
     await this.broker.closeSession(id);
@@ -350,6 +362,18 @@ export class DevicesService {
   async setOnline(deviceId: string, online: boolean, at: Date): Promise<void> {
     await this.seen(deviceId, at);
     await this.db.device.update({ where: { id: deviceId }, data: { online, lastSeenAt: at } });
+  }
+
+  /** Whether a punch timed at ts falls in the span this kiosk stood outside the fleet (KEHOACH 7.3). */
+  async outsideFleetAt(deviceId: string, ts: Date): Promise<boolean> {
+    const held = await this.db.device.findUnique({
+      where: { id: deviceId },
+      select: { revokedAt: true, readmittedAt: true },
+    });
+    if (!held?.revokedAt || ts < held.revokedAt) {
+      return false;
+    }
+    return held.readmittedAt === null || ts < held.readmittedAt;
   }
 
   /** Note that a device spoke; an unknown one lands at PENDING (KEHOACH 7.3). */

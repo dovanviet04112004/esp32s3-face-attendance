@@ -307,6 +307,9 @@ model Device {
   // sha256(deviceId:code) of the code a pending kiosk shows (KEHOACH 7.3).
   claimHash     String?
   claimFailures Int                @default(0)
+  // Punches timed in [revokedAt, readmittedAt) are refused (KEHOACH 7.3).
+  revokedAt     DateTime?
+  readmittedAt  DateTime?
   fwVersion     String?
   modelVersion  String?
   // The server half of the convergence cursor: compared against the number

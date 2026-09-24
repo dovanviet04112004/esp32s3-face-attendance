@@ -22,6 +22,9 @@ export class AttendanceListener {
     this.log.log(
       `${outcome}: ${punch.deviceId} localId ${punch.localId} employee ${punch.employeeId}`,
     );
+    if (outcome === "while-revoked") {
+      return;
+    }
     // Announced only once the row is written, since the dashboard answers by
     // asking for the list again.
     this.feed.publish(FEED.attendance, punch, punch.employeeId);
