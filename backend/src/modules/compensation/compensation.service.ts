@@ -231,6 +231,14 @@ export class CompensationService {
 
   async decideDependent(viewer: Viewer, id: string, body: DecideDependentDto): Promise<Dependent> {
     this.mayWrite(viewer);
+    const held = await this.db.dependent.findUnique({ where: { id }, select: { employeeId: true } });
+    if (!held) {
+      throw new NotFoundException("DEPENDENT_NOT_FOUND");
+    }
+    // A dependent lowers the claimant's own tax, so the claimant never approves it (KEHOACH 9.4).
+    if (held.employeeId === viewer.employeeId) {
+      throw new ForbiddenException("SELF_DECISION");
+    }
     return this.db.dependent.update({
       where: { id },
       data: {

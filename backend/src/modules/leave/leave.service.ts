@@ -427,14 +427,17 @@ export class LeaveService {
   }
 
   private async mayDecide(viewer: Viewer, employeeId: number): Promise<void> {
+    // No role decides its own request, the desk included (KEHOACH 9.4).
+    if (employeeId === viewer.employeeId) {
+      throw new ForbiddenException("SELF_DECISION");
+    }
     if (["ADMIN", "HR"].includes(viewer.role)) {
       return;
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (visible !== null && visible.includes(employeeId) && employeeId !== viewer.employeeId) {
+    if (visible !== null && visible.includes(employeeId)) {
       return;
     }
-    // Deciding your own request is the one thing a manager may not do.
     throw new ForbiddenException("NOT_YOUR_REQUEST");
   }
 

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type {
   ChecklistKind,
   ChecklistTask,
@@ -207,6 +207,10 @@ export class OnboardingService {
     }
     if (task.doneAt !== null) {
       throw new ConflictException("TASK_ALREADY_DONE");
+    }
+    // The person on the checklist ticks their own tasks, not the desk's or their manager's (KEHOACH 9.4).
+    if (task.run.employeeId === viewer.employeeId && task.ownerRole !== "SELF") {
+      throw new ForbiddenException("SELF_DECISION");
     }
     return this.db.checklistTask.update({
       where: { id: taskId },

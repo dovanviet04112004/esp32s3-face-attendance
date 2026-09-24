@@ -828,7 +828,9 @@
     "RELEASE_URL_INTERNAL": "The download address points inside the private network, and the server will not fetch from it",
     "RELEASE_REDIRECTED": "The download address redirects elsewhere; give the file's final address",
     "PUSH_ENDPOINT_REFUSED": "This browser gave an unknown notification address, and the server will not use it",
-    "PUSH_ENDPOINT_TAKEN": "This device already receives notifications for another account"
+    "PUSH_ENDPOINT_TAKEN": "This device already receives notifications for another account",
+    "SELF_DECISION": "Nobody decides their own request. Ask someone else to decide it.",
+    "DEPENDENT_NOT_FOUND": "This dependent was not found."
   },
   "search": {
     "label": "Search",

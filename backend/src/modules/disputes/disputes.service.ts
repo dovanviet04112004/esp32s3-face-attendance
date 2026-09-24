@@ -1,11 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { PayslipDispute, Prisma } from "@prisma/client";
 
@@ -116,6 +109,10 @@ export class DisputesService {
       throw new ForbiddenException("PAYROLL_WRITE_DENIED");
     }
     const held = await this.open(id);
+    // Payroll answering its own claim would settle its own back pay (KEHOACH 9.4).
+    if (held.employeeId === viewer.employeeId) {
+      throw new ForbiddenException("SELF_DECISION");
+    }
     const slip = await this.db.payslip.findUniqueOrThrow({
       where: { id: held.payslipId },
       select: { periodId: true },

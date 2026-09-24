@@ -828,7 +828,9 @@
     "RELEASE_URL_INTERNAL": "Địa chỉ tải trỏ vào mạng nội bộ, máy chủ không tải từ đó",
     "RELEASE_REDIRECTED": "Địa chỉ tải chuyển hướng sang chỗ khác; hãy đưa địa chỉ cuối cùng của file",
     "PUSH_ENDPOINT_REFUSED": "Trình duyệt này đưa một địa chỉ thông báo lạ, máy chủ không nhận",
-    "PUSH_ENDPOINT_TAKEN": "Thiết bị này đang nhận thông báo cho một tài khoản khác"
+    "PUSH_ENDPOINT_TAKEN": "Thiết bị này đang nhận thông báo cho một tài khoản khác",
+    "SELF_DECISION": "Không ai tự duyệt việc của chính mình. Nhờ một người khác duyệt.",
+    "DEPENDENT_NOT_FOUND": "Không tìm thấy người phụ thuộc này."
   },
   "search": {
     "label": "Tìm kiếm",
