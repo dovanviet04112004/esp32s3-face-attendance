@@ -23,6 +23,11 @@ export const GUARD = {
   accessCutoff: (userId: string) => `auth:cutoff:${userId}`,
 } as const;
 
+/** Reminders already sent: losing one sends the mail again, never skips it (KEHOACH 4.8). */
+export const ALARM = {
+  backup: (problem: string) => `ops:backup-alarm:${problem}`,
+} as const;
+
 /** What a cached entry is allowed to be: anything Postgres can rebuild. */
 export interface CacheEntry {
   key: string;

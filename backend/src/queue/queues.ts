@@ -28,6 +28,10 @@ export interface RequestsStaleJob {
   type: "requests-stale";
 }
 
+export interface BackupWatchJob {
+  type: "backup-watch";
+}
+
 /** The link rides here: the server keeps only its hash (KEHOACH 9.4). */
 /** What the letter around the link says: a welcome, or a recovery (KEHOACH 9.4). */
 export type SetupReason = "opened" | "forgot";
@@ -49,6 +53,7 @@ export type NotifyJob =
   | WebhookJob
   | ContractsEndingJob
   | RequestsStaleJob
+  | BackupWatchJob
   | PasswordSetupJob
   | ProfileNoticeJob;
 

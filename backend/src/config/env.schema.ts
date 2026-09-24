@@ -33,6 +33,7 @@ export const envSchema = z
     PROVISION_BATCH: z.coerce.number().int().positive().max(10000).default(2000),
     PASSWORD_SETUP_TTL_HOURS: z.coerce.number().int().positive().default(72),
     DISPUTE_ANSWER_DAYS: z.coerce.number().int().positive().default(5),
+    BACKUP_STALE_HOURS: z.coerce.number().int().min(0).max(168).default(0),
     BIOMETRIC_NOTICE_VERSION: z.string().min(1).max(64).default("2026-01-v1"),
     OTA_MAX_BYTES: z.coerce.number().int().positive().default(3_145_728),
     OTA_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),

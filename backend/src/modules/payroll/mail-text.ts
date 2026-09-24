@@ -183,3 +183,97 @@ const PROFILE: Record<MailLocale, (facts: ProfileNoticeFacts) => MailBody> = {
 export function profileNoticeMail(locale: string, facts: ProfileNoticeFacts): MailBody {
   return PROFILE[readsAs(locale)](facts);
 }
+
+export type BackupProblem = "WAL_FAILING" | "DUMP_STALE" | "BIOMETRIC_STALE" | "BASE_STALE" | "WAL_STALE";
+
+export interface BackupAlarmFacts {
+  problem: BackupProblem;
+  checkedAt: string;
+  lastGood: string | null;
+  detail: string | null;
+}
+
+const BROKEN: Record<MailLocale, Record<BackupProblem, { title: string; what: string }>> = {
+  vi: {
+    WAL_FAILING: {
+      title: "WAL không đẩy được",
+      what: "Postgres không đẩy được segment WAL vào kho sao lưu, nên nó giữ lại mọi segment chưa đẩy: đĩa đầy dần tới khi cơ sở dữ liệu dừng.",
+    },
+    DUMP_STALE: {
+      title: "bản logic chính cũ",
+      what: "Bản sao lưu logic chính không có bản mới.",
+    },
+    BIOMETRIC_STALE: {
+      title: "bản mẫu khuôn mặt cũ",
+      what: "Bản sao lưu mẫu khuôn mặt không có bản mới.",
+    },
+    BASE_STALE: {
+      title: "bản gốc vật lý cũ",
+      what: "Bản gốc vật lý không có bản mới, nên không tua lại được tới những phút gần đây.",
+    },
+    WAL_STALE: {
+      title: "đường WAL không tới kho",
+      what: "Lượt thử đường WAL hằng đêm không thấy segment nào tới kho sao lưu.",
+    },
+  },
+  en: {
+    WAL_FAILING: {
+      title: "WAL is not being archived",
+      what: "Postgres cannot push WAL segments to the backup archive, so it keeps every one it could not push: the disk fills until the database stops.",
+    },
+    DUMP_STALE: {
+      title: "the main logical dump is stale",
+      what: "The main logical dump has no new copy.",
+    },
+    BIOMETRIC_STALE: {
+      title: "the face template dump is stale",
+      what: "The face template dump has no new copy.",
+    },
+    BASE_STALE: {
+      title: "the physical base backup is stale",
+      what: "The physical base backup has no new copy, so recent minutes cannot be replayed.",
+    },
+    WAL_STALE: {
+      title: "WAL is not reaching the archive",
+      what: "The nightly test of the WAL path saw no segment reach the backup archive.",
+    },
+  },
+};
+
+/** Sent to every active ADMIN and repeated daily until the check passes (KEHOACH 4.8 rule 5). */
+const BACKUP_ALARM: Record<MailLocale, (facts: BackupAlarmFacts) => MailBody> = {
+  vi: (facts) => ({
+    subject: `Sao lưu cần xem ngay: ${BROKEN.vi[facts.problem].title}`,
+    text: [
+      `Lượt kiểm sao lưu lúc ${facts.checkedAt} thấy:`,
+      BROKEN.vi[facts.problem].what,
+      "",
+      `Lần cuối ổn: ${facts.lastGood ?? "chưa từng"}.`,
+      ...(facts.detail ? [`Chi tiết: ${facts.detail}`] : []),
+      "",
+      "Xem trên VPS: docker logs kiosk-postgres",
+      "và docker exec kiosk-backup tail -n 50 /var/log/backup.log",
+      "",
+      "Thư này nhắc lại mỗi 24 giờ cho tới khi hết lỗi.",
+    ].join("\n"),
+  }),
+  en: (facts) => ({
+    subject: `Backups need a look now: ${BROKEN.en[facts.problem].title}`,
+    text: [
+      `The backup check at ${facts.checkedAt} found:`,
+      BROKEN.en[facts.problem].what,
+      "",
+      `Last good: ${facts.lastGood ?? "never"}.`,
+      ...(facts.detail ? [`Detail: ${facts.detail}`] : []),
+      "",
+      "Look on the VPS: docker logs kiosk-postgres",
+      "and docker exec kiosk-backup tail -n 50 /var/log/backup.log",
+      "",
+      "This message repeats every 24 hours until the check passes.",
+    ].join("\n"),
+  }),
+};
+
+export function backupAlarmMail(locale: string, facts: BackupAlarmFacts): MailBody {
+  return BACKUP_ALARM[readsAs(locale)](facts);
+}

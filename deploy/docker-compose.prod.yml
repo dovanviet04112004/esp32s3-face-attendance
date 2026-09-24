@@ -61,6 +61,7 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT}
       # Traefik alone is one hop; Cloudflare in front of it makes two (KEHOACH 4.8).
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      BACKUP_STALE_HOURS: ${BACKUP_STALE_HOURS:-26}
     volumes:
       - ./emqx/certs/ca.crt:/certs/ca.crt:ro
     depends_on:
