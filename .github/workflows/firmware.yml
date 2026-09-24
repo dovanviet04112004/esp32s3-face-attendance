@@ -52,3 +52,67 @@ jobs:
           target: esp32s3
           path: firmware
           command: idf.py size
+
+  # Publishes the fleet's firmware when main carries a PROJECT_VER the server lacks (KEHOACH 7.7).
+  release:
+    needs: firmware
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      API_URL: ${{ vars.API_URL }}
+      RELEASE_PUBLISH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
+      DEVICE_BOOTSTRAP_TOKEN: ${{ secrets.DEVICE_BOOTSTRAP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Ask the server whether this version is out
+        id: ask
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$RELEASE_PUBLISH_TOKEN" ] || [ -z "$DEVICE_BOOTSTRAP_TOKEN" ]; then
+            echo "API_URL, RELEASE_PUBLISH_TOKEN or DEVICE_BOOTSTRAP_TOKEN is not set: nothing published"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version=$(sed -n 's/^set(PROJECT_VER "\(.*\)")$/\1/p' firmware/CMakeLists.txt)
+          [ -n "$version" ] || { echo "no PROJECT_VER in firmware/CMakeLists.txt"; exit 1; }
+          published=$(curl --fail-with-body -sS -H "Authorization: Bearer $RELEASE_PUBLISH_TOKEN" \
+            "$API_URL/releases/published?target=FIRMWARE&version=$version" | jq -r .published)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$published" = "true" ]; then
+            echo "FIRMWARE $version is already published"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Hand the batch token to the build
+        if: steps.ask.outputs.build == 'true'
+        run: |
+          case "$DEVICE_BOOTSTRAP_TOKEN" in
+            *\"*|*\\*) echo "DEVICE_BOOTSTRAP_TOKEN must not hold a quote or a backslash"; exit 1 ;;
+          esac
+          printf 'CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN="%s"\n' "$DEVICE_BOOTSTRAP_TOKEN" > firmware/sdkconfig.secrets
+
+      # Its own directory and sdkconfig, so every release starts from the profile's defaults alone.
+      - name: Build the fleet profile
+        if: steps.ask.outputs.build == 'true'
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v6.0.2
+          target: esp32s3
+          path: firmware
+          command: >-
+            idf.py -B build_release -D SDKCONFIG=build_release/sdkconfig
+            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.${{ vars.FLEET_PROFILE || 'dev' }};sdkconfig.secrets"
+            build
+
+      - name: Publish the image
+        if: steps.ask.outputs.build == 'true'
+        run: |
+          curl --fail-with-body -sS --retry 3 -X POST \
+            -H "Authorization: Bearer $RELEASE_PUBLISH_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @firmware/build_release/face_attendance.bin \
+            "$API_URL/releases?target=FIRMWARE&version=${{ steps.ask.outputs.version }}" | jq '{existing, release: {version: .release.version, sha256: .release.sha256, sizeBytes: .release.sizeBytes}}'
