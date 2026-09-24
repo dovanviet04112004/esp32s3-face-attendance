@@ -174,12 +174,16 @@ bool inside(int x, int y, int bx, int by, int bw, int bh)
     return x >= bx && x < bx + bw && y >= by && y < by + bh;
 }
 
+void time_text(time_t at, char *out, size_t cap)
+{
+    struct tm parts;
+    localtime_r(&at, &parts);
+    snprintf(out, cap, "%02d:%02d", parts.tm_hour, parts.tm_min);
+}
+
 void clock_text(char *out, size_t cap)
 {
-    const time_t now = time(nullptr);
-    struct tm parts;
-    localtime_r(&now, &parts);
-    snprintf(out, cap, "%02d:%02d", parts.tm_hour, parts.tm_min);
+    time_text(time(nullptr), out, cap);
 }
 
 // Bands, not decibels: the reader already knows this shape from a phone.
@@ -365,7 +369,6 @@ public:
         answered_ = false;
         carded_ = false;
         refused_ = nullptr;
-        track_ = 0;
         held_ = false;
         working_ms_ = 0;
         stuck_ = false;
@@ -376,17 +379,15 @@ public:
 
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
     {
-        // Any verdict silences the guidance until that face leaves or the machine
-        // takes up somebody else; a refusal also stays on the glass (KEHOACH 4.5.5h.1).
-        const bool same_face = seen.face && seen.track == track_;
-        const bool answered = seen.verdict > APP_UI_SCANNING ||
-                              (answered_ && same_face && seen.verdict != APP_UI_SCANNING);
-        const bool carded = seen.verdict == APP_UI_GRANTED;
-        const char *fresh = refusal(seen.verdict);
-        const char *refused = carded ? nullptr : (fresh != nullptr ? fresh : (answered ? refused_ : nullptr));
-        if (seen.verdict > APP_UI_SCANNING) {
-            track_ = seen.track;
-        }
+        // A verdict speaks to the face it is about and to nobody else (KEHOACH 4.5.5h.1).
+        const bool theirs = seen.face && seen.track == seen.verdict_track;
+        const bool up = seen.verdict > APP_UI_SCANNING && (theirs || !seen.face);
+        const bool card = seen.verdict == APP_UI_GRANTED || seen.verdict == APP_UI_ALREADY;
+        const bool carded = up && card;
+        const char *fresh = up ? refusal(seen.verdict) : nullptr;
+        const char *kept = theirs ? refused_ : nullptr;
+        const char *refused = carded ? nullptr : (fresh != nullptr ? fresh : kept);
+        const bool answered = theirs || up;
         // Saying work is happening is a claim, and one that outlives every
         // verdict the pipeline could owe is a lie the glass keeps telling.
         const bool claiming = seen.face && seen.stage == UI_KIOSK_STAGE_WORKING && !answered;
@@ -438,11 +439,7 @@ public:
 
         uint8_t tone = DRV_LCD_INK;
         const char *prompt = text(StrId::ScanFrame);
-        const char *line = refusal(seen.verdict);
-        if (line == nullptr) {
-            line = refused_;
-        }
-        if (line != nullptr) {
+        if (refused_ != nullptr) {
             tone = DRV_LCD_WARN;
             prompt = nullptr;
         } else if (answered_) {
@@ -465,14 +462,14 @@ public:
                              Align::Centre);
         }
 
-        if (line != nullptr) {
-            to.text_on_video(Font::Strong, kWideX, kBandY + kBandH / 2, kWideW, line,
+        if (refused_ != nullptr) {
+            to.text_on_video(Font::Strong, kWideX, kBandY + kBandH / 2, kWideW, refused_,
                              DRV_LCD_WARN, Align::Centre);
             return;
         }
         // The card keeps its own clock; the latch above only silences guidance,
         // or a stamped face standing still would pin the card (KEHOACH 4.5.5h.1).
-        if (seen.verdict == APP_UI_GRANTED) {
+        if (carded_) {
             granted(to, seen);
         }
     }
@@ -496,9 +493,17 @@ private:
         const int text_x = cx + kRingR + theme::kGapM;
         const int room = theme::kGutter + theme::kContentW - theme::kGapM - text_x;
         const int block = theme::line_height(Font::Strong) + theme::line_height(Font::Caption) + 4;
+        char said[48];
+        snprintf(said, sizeof(said), "%s", text(StrId::ScanCheckedIn));
+        // A clock never set stamps 0, and 07:00 of 1970 is not when anyone arrived.
+        if (seen.verdict == APP_UI_ALREADY && seen.stamped_ms > 0) {
+            char at[8] = { 0 };
+            time_text((time_t)(seen.stamped_ms / 1000), at, sizeof(at));
+            snprintf(said, sizeof(said), text(StrId::ScanCheckedInAtFmt), at);
+        }
         to.text(Font::Strong, text_x, cy - block / 2, room, who, DRV_LCD_INK);
         to.text(Font::Caption, text_x, cy - block / 2 + theme::line_height(Font::Strong) + 4, room,
-                text(StrId::ScanCheckedIn), DRV_LCD_OK);
+                said, DRV_LCD_OK);
     }
 
     bool held_ = false;
@@ -508,7 +513,6 @@ private:
     int64_t working_ms_ = 0;
     uint32_t watched_ = 0;                // track the working clock belongs to
     const char *refused_ = nullptr;
-    uint32_t track_ = 0;
 };
 
 class MenuScreen final : public Screen {

@@ -1645,39 +1645,53 @@ static void tof_task(void *arg)
     }
 }
 
-static app_ui_verdict_t verdict_for(svc_attendance_state_t state, svc_vision_kind_t kind)
+static app_ui_verdict_t refusal_of(svc_vision_kind_t kind)
 {
-    switch (state) {
-        case SVC_ATTENDANCE_DETECTING:
-        case SVC_ATTENDANCE_VERIFYING:
-            return APP_UI_SCANNING;
-        case SVC_ATTENDANCE_GRANTED:
-            return APP_UI_GRANTED;
-        // Whatever the line says stays up through the rest that follows it.
-        case SVC_ATTENDANCE_DENIED:
-        case SVC_ATTENDANCE_COOLDOWN:
-            if (kind == SVC_VISION_MATCH) {
-                return APP_UI_GRANTED;
-            }
-            if (kind == SVC_VISION_SPOOF) {
-                return APP_UI_SPOOF;
-            }
-            return kind == SVC_VISION_UNKNOWN ? APP_UI_UNKNOWN : APP_UI_DENIED;
+    switch (kind) {
+        case SVC_VISION_SPOOF:
+            return APP_UI_SPOOF;
+        case SVC_VISION_UNKNOWN:
+            return APP_UI_UNKNOWN;
+        // A match the liveness policy refused is the one refusal with no word of its own.
         default:
-            return APP_UI_IDLE;
+            return APP_UI_DENIED;
     }
 }
 
 // The kiosk speaks only when it opens the door: a refusal is already on the
 // glass, and a sound would announce it to the room (KEHOACH 6.2.8).
-static void announce(const app_wiring_t *wiring, svc_attendance_state_t state)
+static void announce(const app_wiring_t *wiring)
 {
-    if (state != SVC_ATTENDANCE_GRANTED) {
-        return;
-    }
     const app_sound_t sound = APP_SOUND_OK;
     if (xQueueSend(wiring->sounds, &sound, pdMS_TO_TICKS(SOUND_WAIT_MS)) != pdTRUE) {
         ESP_LOGW(TAG, "grant sound dropped, audio queue full");
+    }
+}
+
+// Every answer about a face reaches the glass, tagged with its track (KEHOACH 4.5.5h.1).
+static void tell(const app_wiring_t *wiring, const svc_vision_result_t *result,
+                 svc_attendance_said_t said)
+{
+    ui_kiosk_verdict_t shown = { .track = result->track };
+    if (said == SVC_ATTENDANCE_SAID_REFUSED) {
+        shown.verdict = refusal_of(result->kind);
+    } else if (said == SVC_ATTENDANCE_SAID_GRANTED || said == SVC_ATTENDANCE_SAID_ALREADY) {
+        shown.verdict = said == SVC_ATTENDANCE_SAID_GRANTED ? APP_UI_GRANTED : APP_UI_ALREADY;
+        shown.employee_id = result->employee_id;
+        memcpy(shown.name, result->name, sizeof(shown.name));
+        storage_attend_record_t standing;
+        const bool known = svc_attendance_last_record(&standing) == ESP_OK;
+        if (said == SVC_ATTENDANCE_SAID_ALREADY && known) {
+            shown.stamped_ms = standing.ts_ms;
+        }
+    } else {
+        return;
+    }
+    ESP_LOGI(TAG, "told track %" PRIu32 " verdict %d on vision %d, employee %" PRIu32,
+             result->track, (int)shown.verdict, (int)result->kind, result->employee_id);
+    ui_kiosk_on_verdict(&shown);
+    if (said == SVC_ATTENDANCE_SAID_GRANTED) {
+        announce(wiring);
     }
 }
 
@@ -1702,11 +1716,7 @@ static void attend_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
     svc_attendance_state_t last_state = svc_attendance_state();
-    svc_vision_kind_t last_kind = SVC_VISION_NONE;
-    uint32_t last_employee = 0;
-    char last_name[STORAGE_NAME_CAP] = { 0 };
     uint32_t records = svc_attendance_records();
-    uint32_t grants = svc_attendance_grants();
 
     for (;;) {
         app_presence_t edge = APP_PRESENCE_OFF;
@@ -1715,17 +1725,9 @@ static void attend_task(void *arg)
         }
         svc_vision_result_t result;
         if (xQueueReceive(wiring->results, &result, pdMS_TO_TICKS(ATTEND_TICK_MS)) == pdTRUE) {
-            // Aiming guidance has its own channel, and letting it through here
-            // downgrades a refusal into a vague one (KEHOACH 4.5.5h.1).
-            const bool verdict_about_a_face = result.kind == SVC_VISION_MATCH ||
-                                              result.kind == SVC_VISION_UNKNOWN ||
-                                              result.kind == SVC_VISION_SPOOF;
-            if (verdict_about_a_face) {
-                last_kind = result.kind;
-                last_employee = result.employee_id;
-                memcpy(last_name, result.name, sizeof(last_name));
-            }
-            svc_attendance_on_vision(&result, sys_time_now_ms());
+            svc_attendance_said_t said = SVC_ATTENDANCE_SAID_NOTHING;
+            svc_attendance_on_vision(&result, sys_time_now_ms(), &said);
+            tell(wiring, &result, said);
         }
         svc_attendance_tick(sys_time_now_ms());
 
@@ -1740,20 +1742,15 @@ static void attend_task(void *arg)
             }
         }
         const svc_attendance_state_t state = svc_attendance_state();
-        const uint32_t granted = svc_attendance_grants();
         if (state != last_state) {
-            ESP_LOGI(TAG, "attendance state %d to %d on vision %d", (int)last_state, (int)state,
-                     (int)last_kind);
+            ESP_LOGI(TAG, "attendance state %d to %d", (int)last_state, (int)state);
             last_state = state;
-            ui_kiosk_on_verdict(verdict_for(state, last_kind), last_employee, last_name);
-            announce(wiring, state);
-        } else if (granted != grants) {
-            // Granted to Granted moves no state, so the next person's card hangs on the count.
-            ESP_LOGI(TAG, "granted again in state %d, employee %" PRIu32, (int)state, last_employee);
-            ui_kiosk_on_verdict(APP_UI_GRANTED, last_employee, last_name);
-            announce(wiring, state);
+            // Detecting is the machine taking up somebody new (KEHOACH 4.5.5h.1).
+            if (state == SVC_ATTENDANCE_DETECTING) {
+                const ui_kiosk_verdict_t scanning = { .verdict = APP_UI_SCANNING };
+                ui_kiosk_on_verdict(&scanning);
+            }
         }
-        grants = granted;
         if (svc_attendance_records() != records) {
             records = svc_attendance_records();
             offer_uplink(wiring);

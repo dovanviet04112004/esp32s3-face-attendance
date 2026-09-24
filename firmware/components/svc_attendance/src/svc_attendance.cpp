@@ -28,7 +28,6 @@ bool s_ready = false;
 int64_t s_state_since_ms = 0;
 uint32_t s_seq = 0;
 uint32_t s_records = 0;
-uint32_t s_grants = 0;
 uint32_t s_last_employee = 0;
 int64_t s_last_stamp_ms = 0;
 std::atomic<bool> s_link_up{false};
@@ -113,28 +112,28 @@ esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool d
     return err;
 }
 
-void act_on(attend::Act act, const svc_vision_result_t *result, int64_t now_ms)
+svc_attendance_said_t act_on(attend::Act act, const svc_vision_result_t *result, int64_t now_ms)
 {
     if (act == attend::Act::Grant) {
         if (!liveness_allows(result->live_score)) {
             ESP_LOGW(TAG, "match with liveness %.3f refused by policy", result->live_score);
             s_state = attend::St::Denied;
-            return;
+            return SVC_ATTENDANCE_SAID_REFUSED;
         }
         const bool opened = svc_door_open(s_door, kDoorHoldMs) == ESP_OK;
-        ++s_grants;
         s_left_since_grant = false;
         if (stamped_recently(result->employee_id, now_ms)) {
             ESP_LOGI(TAG, "employee %" PRIu32 " stamped inside the window, door only",
                      result->employee_id);
-            return;
+            return SVC_ATTENDANCE_SAID_GRANTED;
         }
         write_record(result, now_ms, opened);
-        return;
+        return SVC_ATTENDANCE_SAID_GRANTED;
     }
     if (act == attend::Act::Rest) {
         svc_door_close(s_door);
     }
+    return act == attend::Act::Refuse ? SVC_ATTENDANCE_SAID_REFUSED : SVC_ATTENDANCE_SAID_NOTHING;
 }
 
 attend::Ev event_of(svc_vision_kind_t kind, bool *carries)
@@ -165,7 +164,7 @@ bool names_who(attend::Ev event)
     return event == attend::Ev::Match || event == attend::Ev::Unknown || event == attend::Ev::Spoof;
 }
 
-void apply(attend::Ev event, const svc_vision_result_t *result, int64_t now_ms)
+svc_attendance_said_t apply(attend::Ev event, const svc_vision_result_t *result, int64_t now_ms)
 {
     // An empty frame is not the only way the last person leaves: a queue keeps a
     // face in shot throughout, so anyone else being seen ends their turn too.
@@ -174,12 +173,16 @@ void apply(attend::Ev event, const svc_vision_result_t *result, int64_t now_ms)
         s_left_since_grant = true;
     }
     const attend::Step step = attend::next(s_state, event);
-    if (!step.moved || (step.act == attend::Act::Grant && same_arrival(result, now_ms))) {
-        return;
+    if (!step.moved) {
+        return SVC_ATTENDANCE_SAID_NOTHING;
+    }
+    // Held at the transition, so no door and no sound, but the face still hears (KEHOACH 4.5.5f).
+    if (step.act == attend::Act::Grant && same_arrival(result, now_ms)) {
+        return SVC_ATTENDANCE_SAID_ALREADY;
     }
     s_state = step.to;
     s_state_since_ms = now_ms;
-    act_on(step.act, result, now_ms);
+    return act_on(step.act, result, now_ms);
 }
 
 }  // namespace
@@ -217,8 +220,12 @@ extern "C" esp_err_t svc_attendance_set_policy(const svc_attendance_policy_t *po
     return ESP_OK;
 }
 
-extern "C" esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result, int64_t now_ms)
+extern "C" esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result, int64_t now_ms,
+                                              svc_attendance_said_t *said)
 {
+    if (said != nullptr) {
+        *said = SVC_ATTENDANCE_SAID_NOTHING;
+    }
     if (!s_ready || result == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -227,7 +234,10 @@ extern "C" esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result,
     if (!carries) {
         return ESP_OK;
     }
-    apply(event, result, now_ms);
+    const svc_attendance_said_t answer = apply(event, result, now_ms);
+    if (said != nullptr) {
+        *said = answer;
+    }
     return ESP_OK;
 }
 
@@ -292,9 +302,4 @@ extern "C" esp_err_t svc_attendance_last_record(storage_attend_record_t *out)
 extern "C" uint32_t svc_attendance_records(void)
 {
     return s_records;
-}
-
-extern "C" uint32_t svc_attendance_grants(void)
-{
-    return s_grants;
 }

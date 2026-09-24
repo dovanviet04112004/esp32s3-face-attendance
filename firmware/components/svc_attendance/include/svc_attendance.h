@@ -31,6 +31,14 @@ typedef struct {
     bool allow_no_spoof;     // open on a negative liveness score, for a bench
 } svc_attendance_policy_t;
 
+/** What one vision event came to, for the screen and the speaker (KEHOACH 4.5.5f). */
+typedef enum {
+    SVC_ATTENDANCE_SAID_NOTHING = 0,      // guidance, or no row in this state
+    SVC_ATTENDANCE_SAID_GRANTED,          // the door opened for this face
+    SVC_ATTENDANCE_SAID_ALREADY,          // stamped this arrival; last_record is theirs
+    SVC_ATTENDANCE_SAID_REFUSED,          // spoof, stranger, or liveness policy refused
+} svc_attendance_said_t;
+
 /** Take the door and the policy; nothing is allocated after this call.
  *  @ctx task | non-blocking | pass svc_door_fake() to run without a board
  *  @ret ESP_OK | ESP_ERR_INVALID_ARG on a null door | ESP_ERR_INVALID_STATE
@@ -46,9 +54,11 @@ esp_err_t svc_attendance_set_policy(const svc_attendance_policy_t *policy);
 /** Feed one vision event, which may open the door and write a record.
  *  @ctx task | blocking on the door and on LittleFS | takes m_door, m_littlefs
  *  @param now_ms the wall clock of KEHOACH 6.2.5, stamped into the record
+ *  @param said what the event came to, or NULL when nobody asks
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE without init
  */
-esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result, int64_t now_ms);
+esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result, int64_t now_ms,
+                                   svc_attendance_said_t *said);
 
 /** Tell the machine whether anyone is standing there.
  *  @ctx task | non-blocking
@@ -86,11 +96,6 @@ esp_err_t svc_attendance_last_record(storage_attend_record_t *out);
  *  @ctx any | non-blocking
  */
 uint32_t svc_attendance_records(void);
-
-/** How many grants the machine has made since init, door-only ones included.
- *  @ctx any | non-blocking | the one edge a grant to the next person leaves
- */
-uint32_t svc_attendance_grants(void);
 
 #ifdef __cplusplus
 }

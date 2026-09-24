@@ -21,7 +21,6 @@ const char *TAG = "ui_kiosk";
 
 constexpr int kSlots = 2;
 alignas(ui::Canvas) uint8_t s_canvas_store[2][sizeof(ui::Canvas)];
-constexpr uint32_t kVerdictShift = 32;
 // How long a card survives with nobody behind it; the next person being served
 // takes it down sooner, so it does not have to be generous.
 constexpr int64_t kShowMs = 1500;
@@ -48,10 +47,11 @@ SemaphoreHandle_t s_published;
 ui::Sight s_seen;
 ui_kiosk_stage_t s_wanted = UI_KIOSK_STAGE_NO_FACE;
 int64_t s_stage_held_ms;
-std::atomic<uint64_t> s_verdict{ 0 };
-char s_name[STORAGE_NAME_CAP];
-uint64_t s_verdict_taken;
-uint64_t s_line_showing;
+// One writer, one reader, and the verdict is wider than a word (KEHOACH 5.3).
+portMUX_TYPE s_offer_lock = portMUX_INITIALIZER_UNLOCKED;
+ui_kiosk_verdict_t s_offer;
+uint32_t s_offer_serial;
+uint32_t s_taken_serial;
 int64_t s_clear_in_ms;
 std::atomic<int32_t> s_touch{ -1 };
 int64_t s_clock_poll_ms;
@@ -122,28 +122,31 @@ void settle_stage(int64_t dt_ms)
 void take_verdict(int64_t dt_ms)
 {
     s_clear_in_ms -= s_clear_in_ms > 0 ? dt_ms : 0;
-    const uint64_t packed = s_verdict.load(std::memory_order_acquire);
-    if (packed != s_verdict_taken) {
-        s_verdict_taken = packed;
-        const app_ui_verdict_t verdict = static_cast<app_ui_verdict_t>(packed >> kVerdictShift);
-        if (verdict > APP_UI_SCANNING) {
-            // The same refusal arriving again is the same news, so the line is
-            // held rather than blanked and flashed back (KEHOACH 4.5.5h).
-            const bool holding = packed == s_line_showing && s_seen.verdict == verdict &&
-                                 verdict != APP_UI_GRANTED;
+    portENTER_CRITICAL(&s_offer_lock);
+    const uint32_t serial = s_offer_serial;
+    const ui_kiosk_verdict_t offer = s_offer;
+    portEXIT_CRITICAL(&s_offer_lock);
+    if (serial != s_taken_serial) {
+        s_taken_serial = serial;
+        if (offer.verdict > APP_UI_SCANNING) {
+            // The same verdict about the same face is the same news, so it is held
+            // rather than blanked and flashed back (KEHOACH 4.5.5h.1).
+            const bool holding =
+                s_seen.verdict == offer.verdict && s_seen.verdict_track == offer.track;
             s_clear_in_ms = kShowMs;
             if (!holding) {
-                s_line_showing = packed;
-                s_seen.verdict = verdict;
-                s_seen.employee_id = static_cast<uint32_t>(packed);
-                strlcpy(s_seen.name, s_name, sizeof(s_seen.name));
+                s_seen.verdict = offer.verdict;
+                s_seen.verdict_track = offer.track;
+                s_seen.employee_id = offer.employee_id;
+                s_seen.stamped_ms = offer.stamped_ms;
+                strlcpy(s_seen.name, offer.name, sizeof(s_seen.name));
                 s_dirty = true;
             }
-        } else if (verdict == APP_UI_SCANNING && s_seen.verdict > APP_UI_SCANNING) {
-            // The machine has taken up somebody else, so the last person's card
-            // must not be what the new one is looking at (KEHOACH 4.5.5h.1).
+        } else if (offer.verdict == APP_UI_SCANNING) {
+            // The machine has taken up somebody new, and nothing said so far is theirs.
             s_clear_in_ms = -1;
-            s_seen.verdict = APP_UI_SCANNING;
+            s_seen.verdict = APP_UI_IDLE;
+            s_seen.verdict_track = 0;
             s_dirty = true;
         }
     }
@@ -215,12 +218,15 @@ void ui_kiosk_on_stage(ui_kiosk_stage_t stage)
     s_wanted = stage;
 }
 
-void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id, const char *name)
+void ui_kiosk_on_verdict(const ui_kiosk_verdict_t *verdict)
 {
-    // The word below is what makes the screen look at this, so it lands second.
-    strlcpy(s_name, name != NULL ? name : "", sizeof(s_name));
-    s_verdict.store(((uint64_t)verdict << kVerdictShift) | employee_id,
-                    std::memory_order_release);
+    if (verdict == nullptr) {
+        return;
+    }
+    portENTER_CRITICAL(&s_offer_lock);
+    s_offer = *verdict;
+    ++s_offer_serial;
+    portEXIT_CRITICAL(&s_offer_lock);
 }
 
 void ui_kiosk_on_touch(bool down, int x, int y)
@@ -515,6 +521,7 @@ bool ui_kiosk_take_vision_reset(bool *stuck)
     s_seen.face = false;
     s_seen.stage = UI_KIOSK_STAGE_NO_FACE;
     s_seen.verdict = APP_UI_IDLE;
+    s_seen.verdict_track = 0;
     s_wanted = UI_KIOSK_STAGE_NO_FACE;
     s_dirty = true;
     return true;

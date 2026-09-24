@@ -30,9 +30,11 @@ struct Sight {
     ui_kiosk_stage_t stage;               // what svc_vision is doing with it
     float yaw;                            // 0 facing the lens (KEHOACH 4.5.5h.2)
     uint32_t samples;                     // detects landed, so a screen can filter
-    app_ui_verdict_t verdict;
+    app_ui_verdict_t verdict;             // on the glass until its clock runs out
     uint32_t track;                       // which face the pipeline is on
+    uint32_t verdict_track;               // which face the last verdict is about
     uint32_t employee_id;
+    int64_t stamped_ms;                   // ALREADY: wall clock of the standing stamp
     char name[STORAGE_NAME_CAP];
 };
 

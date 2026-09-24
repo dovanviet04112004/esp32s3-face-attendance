@@ -22,6 +22,7 @@ enum class StrId : uint16_t {
     ScanUnknown,
     ScanDenied,
     ScanCheckedIn,
+    ScanCheckedInAtFmt,                   // takes the HH:MM of the standing stamp
     ScanCodeFmt,                          // takes the employee id
 
     MenuTitle,

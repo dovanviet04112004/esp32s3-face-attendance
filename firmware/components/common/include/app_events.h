@@ -32,6 +32,7 @@ typedef enum {
     APP_UI_DENIED,
     APP_UI_SPOOF,
     APP_UI_UNKNOWN,
+    APP_UI_ALREADY,                       // this arrival is stamped, the door stays shut
 } app_ui_verdict_t;
 
 // The bits of eg_system, one per question a task is allowed to ask.

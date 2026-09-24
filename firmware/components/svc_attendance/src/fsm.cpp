@@ -22,11 +22,17 @@ constexpr Transition kTable[] = {
     { St::Verifying, Ev::Unknown, St::Denied, Act::Refuse },
     { St::Verifying, Ev::Timeout, St::Detecting, Act::None },
     { St::Granted, Ev::Timeout, St::Cooldown, Act::Rest },
-    // The next person must not wait out this one's door (KEHOACH 4.5.5f).
+    // The next person waits out neither this one's door nor their refusal (KEHOACH 4.5.5f).
     { St::Granted, Ev::Match, St::Granted, Act::Grant },
+    { St::Granted, Ev::Spoof, St::Denied, Act::Refuse },
+    { St::Granted, Ev::Unknown, St::Denied, Act::Refuse },
     { St::Denied, Ev::Match, St::Granted, Act::Grant },
+    { St::Denied, Ev::Spoof, St::Denied, Act::Refuse },
+    { St::Denied, Ev::Unknown, St::Denied, Act::Refuse },
     { St::Denied, Ev::Timeout, St::Cooldown, Act::Rest },
     { St::Cooldown, Ev::Match, St::Granted, Act::Grant },
+    { St::Cooldown, Ev::Spoof, St::Denied, Act::Refuse },
+    { St::Cooldown, Ev::Unknown, St::Denied, Act::Refuse },
     { St::Cooldown, Ev::Timeout, St::Idle, Act::None },
     { St::Cooldown, Ev::PresenceOff, St::Idle, Act::None },
 };

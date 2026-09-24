@@ -47,10 +47,19 @@ void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame
  */
 void ui_kiosk_on_stage(ui_kiosk_stage_t stage);
 
-/** Say what the kiosk decided about that face.
- *  @ctx attend_task | non-blocking | employee_id and name read empty unless granted
+/** One thing the kiosk decided about one face, as the scan screen tells it. */
+typedef struct {
+    app_ui_verdict_t verdict;
+    uint32_t track;                       // the svc_vision track it is about, 0 for none
+    uint32_t employee_id;                 // GRANTED and ALREADY only
+    int64_t stamped_ms;                   // ALREADY: wall clock of the stamp that stands
+    char name[STORAGE_NAME_CAP];          // GRANTED and ALREADY, empty when unnamed
+} ui_kiosk_verdict_t;
+
+/** Say what the kiosk decided about a face, or SCANNING when it takes up someone new.
+ *  @ctx attend_task | non-blocking | copied under a spinlock (KEHOACH 5.3)
  */
-void ui_kiosk_on_verdict(app_ui_verdict_t verdict, uint32_t employee_id, const char *name);
+void ui_kiosk_on_verdict(const ui_kiosk_verdict_t *verdict);
 
 /** Hand one touch to the screen showing.
  *  @ctx touch_task | non-blocking | down = false when the finger lifts
