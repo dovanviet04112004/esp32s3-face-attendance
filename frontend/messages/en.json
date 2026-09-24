@@ -736,6 +736,8 @@
     "DEPARTMENT_CYCLE": "That parent department sits under this one.",
     "DEPARTMENT_NOT_FOUND": "No such department.",
     "DEVICE_BOOTSTRAP_REJECTED": "This machine is not accepted into the system.",
+    "DEVICE_ID_MALFORMED": "A device ID is 4–32 letters, digits, hyphens or underscores.",
+    "DEVICE_TOKEN_REJECTED": "This machine's ticket was revoked or has expired.",
     "DEVICE_NOT_FOUND": "No such device.",
     "DISPUTE_ALREADY_ANSWERED": "This dispute has already been answered.",
     "DISPUTE_ALREADY_OPEN": "A dispute about this is already waiting for an answer.",

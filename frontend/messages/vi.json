@@ -736,6 +736,8 @@
     "DEPARTMENT_CYCLE": "Phòng ban cha đang nằm dưới chính phòng ban này.",
     "DEPARTMENT_NOT_FOUND": "Không tìm thấy phòng ban này.",
     "DEVICE_BOOTSTRAP_REJECTED": "Máy này không được nhận vào hệ thống.",
+    "DEVICE_ID_MALFORMED": "Mã máy chỉ gồm chữ, số, gạch ngang và gạch dưới, dài 4–32 ký tự.",
+    "DEVICE_TOKEN_REJECTED": "Vé của máy đã bị thu hồi hoặc hết hạn.",
     "DEVICE_NOT_FOUND": "Không tìm thấy thiết bị này.",
     "DISPUTE_ALREADY_ANSWERED": "Khiếu nại này đã được trả lời rồi.",
     "DISPUTE_ALREADY_OPEN": "Khoản này đã có một khiếu nại đang chờ trả lời.",
