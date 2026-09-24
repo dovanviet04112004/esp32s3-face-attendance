@@ -3431,7 +3431,7 @@ rồi đi tới đâu:
 | Trả lời | Khi nào | `main` làm gì |
 |---|---|---|
 | `GRANTED` | `Grant` chạy, cửa mở (có hay không có bản ghi mới) | thẻ đạt + tiếng mở cửa |
-| `ALREADY` | `Grant` bị luật "một lần đến" chặn | thẻ đạt kèm giờ bản ghi đang đứng, không tiếng |
+| `ALREADY` | `Grant` bị luật "một lần đến" chặn | không gì mới: khung giữ xanh như sau lần cấp, không thẻ, không tiếng |
 | `REFUSED` | `Refuse`, hoặc `Match` bị quyết định 2 bên dưới từ chối | dòng từ chối theo loại phán quyết |
 | `NOTHING` | hướng dẫn căn khung, hoặc sự kiện không có dòng | không gì |
 
@@ -3440,12 +3440,15 @@ Cạnh trạng thái chỉ còn một việc: vào `Detecting` là máy bắt sa
 
 Nên `Grant` bị chặn khi **cùng một `employee_id` còn trong cửa sổ `dedup_min`** *và* chưa có
 `NoFace` hoặc `PresenceOff` nào kể từ lần cấp trước. Chặn đặt ở **bước chuyển trạng thái**:
-không đổi trạng thái, không mở cửa, không ghi, không phát tiếng. Nhưng **không im**: sự kiện trả
-`ALREADY`, và màn hiện thẻ `Đã chấm công lúc HH:MM` theo giờ của bản ghi đang đứng. Người vừa
-chấm mà nhúc nhích tới mức track đổi (IoU < 0,5) thì pipeline xác thực lại và khớp lại; màn im ở
-chỗ ấy là người ta thấy `Đang nhận diện...` rồi không thấy gì nữa, và đọc là máy hỏng. Người khác
-bước tới vẫn được cấp ngay, vì phép so là theo mã nhân viên. Ra khỏi khung rồi quay lại là một lần
-đến mới: cửa mở, loa kêu, thẻ hiện như thường; bản ghi theo quyết định 1 bên dưới.
+không đổi trạng thái, không mở cửa, không ghi, không phát tiếng. Sự kiện trả `ALREADY`, và màn
+**giữ im**: lượt đến này đã được nói một lần, nên khung giữ xanh như lúc vừa chấm, không thẻ,
+không tiếng. `ALREADY` vẫn phải tới màn, vì nó gắn khung xanh vào track mới: người vừa chấm mà
+nhúc nhích tới mức track đổi (IoU < 0,5) thì pipeline mở track mới và xác thực lại. Trong một
+lượt model ấy `Đang nhận diện...` hiện thoáng qua, và câu ấy không bỏ được: trước khi recog xong
+thì không gì phân biệt người vừa chấm nhúc nhích với người kế tiếp bước vào đúng chỗ, mà giấu câu
+ấy khỏi người kế tiếp là cho họ thấy khung xanh rồi bỏ đi tưởng đã chấm. Người khác bước tới vẫn
+được cấp ngay, vì phép so là theo mã nhân viên. Ra khỏi khung rồi quay lại là một lần đến mới:
+cửa mở, loa kêu, thẻ hiện như thường; bản ghi theo quyết định 1 bên dưới.
 
 **Bốn quyết định nghiệp vụ tầng này giữ, không đẩy xuống dưới:**
 
@@ -3645,7 +3648,7 @@ Các trạng thái của khung, màu là thông tin chứ không phải trang tr
 | trong khung nhưng ô 1,0× tràn khung camera — gần như chỉ khi đứng quá gần | hổ phách | `Lùi lại một chút` |
 | mặt qua cổng, pipeline đang làm việc | xanh mint | `Đang nhận diện...` |
 | xong, đạt | xanh mint | thẻ dấu tích + tên + `Đã chấm công` ở dải dưới |
-| xong, lượt đến này đã chấm rồi | xanh mint | cùng thẻ, câu dưới là `Đã chấm công lúc HH:MM` theo giờ bản ghi; không mở cửa, không tiếng |
+| xong, lượt đến này đã chấm rồi | xanh mint | không gì: không thẻ, không mở cửa, không tiếng |
 | xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt ấy rời khung hoặc pipeline bắt sang người khác** |
 
 **Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Các trạng thái trên là các cổng của
@@ -5024,7 +5027,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 
 | `q_result` | Queue, depth 4, `svc_vision_result_t` | 4 × 156 B | `ai_task` | `attend_task` | Tách hẳn tính toán khỏi nghiệp vụ |
 | `s_touch` | **`std::atomic<int32_t>`** trong `ui_kiosk`, không phải queue | 4 B | `touch_task` | `ui_task` | Điểm chạm là **mức, không phải chuỗi sự kiện**: `ui_task` chỉ cần biết ngón tay *đang* ở đâu tại mỗi nhịp 20 ms. Hàng đợi ở đây phát lại những điểm đã cũ và làm nút bấm trễ theo độ sâu hàng đợi. Một người ghi, một người đọc, `release`/`acquire` — không khoá, không mất, không cũ. Ngón nhấc lên lưu `-1` và `ui_task` dựng lại cú thả từ điểm cuối |
-| `s_verdict` | **`portMUX_TYPE` + một `ui_kiosk_verdict_t`** trong `ui_kiosk`, không phải queue | 56 B | `attend_task` | `ui_task` | Phán quyết cũng là **mức**: màn chỉ cần câu mới nhất, và mỗi nhịp 20 ms so số thứ tự để biết có câu mới. Nhưng nó dài hơn một từ máy (loại, track, mã, giờ chấm, tên), nên một atomic không chở hết, còn chép rời thì tên của người này đi với mã của người kia. Chép dưới spinlock: vài chục byte, không gọi gì bên trong |
+| `s_verdict` | **`portMUX_TYPE` + một `ui_kiosk_verdict_t`** trong `ui_kiosk`, không phải queue | 44 B | `attend_task` | `ui_task` | Phán quyết cũng là **mức**: màn chỉ cần câu mới nhất, và mỗi nhịp 20 ms so số thứ tự để biết có câu mới. Nhưng nó dài hơn một từ máy (loại, track, mã, tên), nên một atomic không chở hết, còn chép rời thì tên của người này đi với mã của người kia. Chép dưới spinlock: vài chục byte, không gọi gì bên trong |
 | `q_audio` | Queue, depth 4, `sound_id_t` | 4 × 4 B | `attend_task`, `ui_task` | `audio_task` | Phát âm không được chặn nghiệp vụ |
 | `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
 | `q_cmd` | Queue, depth 4, `device_command_t` | 4 × ~160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
