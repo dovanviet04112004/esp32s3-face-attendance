@@ -4856,9 +4856,12 @@ Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, và chạ
 `api.<domain>`. `io.vn` nằm trong Public Suffix List, nên `app.` và `api.` là **cùng một site** và
 cookie ấy là cookie bên thứ nhất. Dưới `*.vercel.app` nó thành cookie bên thứ ba: Safari chặn mặc
 định, và người dùng iPhone — thiết bị chính của cổng nhân viên (§9.21) — bị đăng xuất mỗi lần tải
-lại trang. Vercel giữ hai biến, `NEXT_PUBLIC_API_URL=https://api.<domain>` và
-`NEXT_PUBLIC_WS_URL=wss://api.<domain>`; phía `api`, `CORS_ORIGIN` và `APP_PUBLIC_URL` trỏ
-`https://app.<domain>`. DNS có thêm một bản ghi `CNAME app` về địa chỉ Vercel đưa.
+lại trang. Vercel giữ ba biến: `NEXT_PUBLIC_API_URL=https://api.<domain>`,
+`NEXT_PUBLIC_WS_URL=wss://api.<domain>`, và `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — nửa công khai của
+cặp khoá thông báo đẩy (§9.21.4). Phía `api`, `CORS_ORIGIN` và `APP_PUBLIC_URL` trỏ
+`https://app.<domain>`, còn `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` đi từ `.env`
+của VPS vào container như mọi secret khác; nửa riêng không bao giờ rời VPS. Thiếu khoá thì `api`
+vẫn chạy và chỉ tắt thông báo đẩy, nên lỗi quên chuyển biến này không tự lộ ra lúc khởi động. DNS có thêm một bản ghi `CNAME app` về địa chỉ Vercel đưa.
 
 **Triển khai liên tục: push lên `main` là lên VPS, nhưng chỉ khi test qua.** `deploy.yml` chạy
 khi push lên `main` chạm `backend/`, `contracts/`, `deploy/` hoặc chính hai workflow, và chạy tay
