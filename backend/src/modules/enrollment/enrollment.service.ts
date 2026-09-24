@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Device, DeviceEnrollment, FaceTemplate } from "@prisma/client";
+import pg from "pg";
 
 import type { EnrollPayload } from "../../common/generated/enroll_payload.js";
 import type { Env } from "../../config/env.schema.js";
@@ -15,6 +16,7 @@ const NO_EMPLOYEE = 0;
 const FIRST_TEMPLATE = 0;
 // First key of pg_advisory_xact_lock, so one person's captures are taken one at a time.
 const CAPTURE_LOCK = 75;
+const SCRUB_LOCK_WAIT_MS = 5000;
 
 type Named = { fullName: string; code: string; embeddingVersion: string | null };
 type Build = (version: number, deviceId: string) => Promise<EnrollPayload>;
@@ -169,6 +171,7 @@ export class EnrollmentService {
     const employeeId = report.employeeId;
     const session = new Date(report.updatedAt);
     const sealed = sealTemplate(Buffer.from(report.embedding, "base64"), this.key());
+    let overwrote = false;
     const verdict = await this.db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
       const pair = await tx.deviceEnrollment.findUnique({
@@ -188,6 +191,8 @@ export class EnrollmentService {
       }
       if (waiting && held) {
         await tx.faceTemplate.deleteMany({ where: { employeeId } });
+      } else {
+        overwrote = (await tx.faceTemplate.count({ where: { employeeId, templateIdx: report.templateIdx } })) > 0;
       }
       const sample = {
         embedding: sealed,
@@ -223,7 +228,7 @@ export class EnrollmentService {
         this.log.warn(`${deviceId} captured ${employeeId} outside its turn, sending it the held samples`);
         return this.refuse(deviceId, employeeId);
       default:
-        if (verdict === "replaced") {
+        if (verdict === "replaced" || overwrote) {
           await this.scrubTemplates();
         }
         await this.spread(deviceId, employeeId, report.templateIdx, verdict === "replaced");
@@ -232,11 +237,25 @@ export class EnrollmentService {
   }
 
   // A deleted row lives on as a dead tuple, and a physical base copies pages whole (KEHOACH 9.22.7).
+  // Its own connection carries the lock timeout, so a held lock never queues every reader behind it.
   private async scrubTemplates(): Promise<void> {
+    const client = new pg.Client({
+      connectionString: this.config.get("DATABASE_URL", { infer: true }),
+      options: `-c lock_timeout=${SCRUB_LOCK_WAIT_MS}`,
+    });
+    const filenode = async () =>
+      String((await client.query(`SELECT pg_relation_filenode('"FaceTemplate"') AS node`)).rows[0].node);
     try {
-      await this.db.$executeRawUnsafe('VACUUM (FULL) "FaceTemplate"');
+      await client.connect();
+      const held = await filenode();
+      await client.query('VACUUM (FULL) "FaceTemplate"');
+      if ((await filenode()) === held) {
+        this.log.error("FaceTemplate kept its file, so this role cannot rewrite it; the nightly backup does");
+      }
     } catch (error) {
       this.log.error(`FaceTemplate not rewritten, the nightly backup rewrites it: ${(error as Error).message}`);
+    } finally {
+      await client.end().catch(() => undefined);
     }
   }
 
