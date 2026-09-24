@@ -13,6 +13,8 @@ const { configure } = await import("../src/bootstrap.js");
 const { ALARM } = await import("../src/common/cache/cache-keys.js");
 const { PrismaService } = await import("../src/database/prisma.service.js");
 const { RedisService } = await import("../src/database/redis.service.js");
+const { hashPassword } = await import("../src/modules/auth/password.js");
+const { EnrollmentService } = await import("../src/modules/enrollment/enrollment.service.js");
 const { MailerService } = await import("../src/modules/notifications/mailer.service.js");
 const { BackupWatchService, judgeBackups } = await import(
   "../src/modules/notifications/backup-watch.service.js"
@@ -20,14 +22,16 @@ const { BackupWatchService, judgeBackups } = await import(
 
 const PROBLEMS: BackupProblem[] = ["WAL_FAILING", "DUMP_STALE", "BIOMETRIC_STALE", "BASE_STALE", "WAL_STALE"];
 const CHAINS = ["dump", "biometric", "base", "wal"];
+const OPERATOR = "e2e-backup-watch@kiosk.local";
+const CODE = "E2EBKP01";
 const kHourMs = 3_600_000;
 
-describe("backup watch (e2e)", () => {
+describe("backups (e2e)", () => {
   let app: INestApplication;
   let db: InstanceType<typeof PrismaService>;
   let redis: InstanceType<typeof RedisService>;
   let watch: InstanceType<typeof BackupWatchService>;
-  let admins: string[] = [];
+  let operatorId = "";
   const sent: { to: string; body: MailBody }[] = [];
 
   async function makeTable(): Promise<void> {
@@ -48,16 +52,28 @@ describe("backup watch (e2e)", () => {
     `;
   }
 
-  async function forget(kind?: string): Promise<void> {
-    if (kind) {
-      await db.$executeRaw`DELETE FROM ops.backup_run WHERE kind = ${kind}`;
-    } else {
-      await db.$executeRaw`DELETE FROM ops.backup_run`;
-    }
+  async function forget(kind: string): Promise<void> {
+    await db.$executeRaw`DELETE FROM ops.backup_run WHERE kind = ${kind}`;
   }
 
-  function mailed(): string[] {
-    return sent.splice(0).map((one) => one.to).sort();
+  /** What reached the ADMIN this suite owns; every other letter is dropped with it. */
+  function toOperator(): MailBody[] {
+    return sent
+      .splice(0)
+      .filter((one) => one.to === OPERATOR)
+      .map((one) => one.body);
+  }
+
+  async function sweep(): Promise<BackupProblem[]> {
+    return (await watch.sweep()).problems.sort();
+  }
+
+  async function sweepAway(): Promise<void> {
+    await db.user.deleteMany({ where: { email: OPERATOR } });
+    await db.employee.deleteMany({ where: { code: CODE } });
+    for (const problem of PROBLEMS) {
+      await redis.client.del(ALARM.backup(problem));
+    }
   }
 
   before(async () => {
@@ -73,26 +89,24 @@ describe("backup watch (e2e)", () => {
       sent.push({ to, body });
       return true;
     };
-    const held = await db.user.findMany({ where: { role: "ADMIN", active: true }, select: { email: true } });
-    admins = held.map((one) => one.email).sort();
-    assert.ok(admins.length > 0, "the seed made no active ADMIN to mail");
-    for (const problem of PROBLEMS) {
-      await redis.client.del(ALARM.backup(problem));
-    }
+    await sweepAway();
+    const operator = await db.user.create({
+      data: { email: OPERATOR, role: "ADMIN", passwordHash: await hashPassword("e2e-backup-watch-password") },
+    });
+    operatorId = operator.id;
   });
 
   after(async () => {
-    for (const problem of PROBLEMS) {
-      await redis.client.del(ALARM.backup(problem));
-    }
+    await sweepAway();
     await app.close();
   });
 
   it("counts a box that never ran a backup as every chain stale", async () => {
     await db.$executeRawUnsafe("DROP TABLE IF EXISTS ops.backup_run");
-    const { problems } = await watch.sweep();
-    assert.deepEqual(problems.sort(), ["BASE_STALE", "BIOMETRIC_STALE", "DUMP_STALE", "WAL_STALE"]);
-    assert.equal(mailed().length, admins.length * 4, "each problem reaches each ADMIN once");
+    assert.deepEqual(await sweep(), ["BASE_STALE", "BIOMETRIC_STALE", "DUMP_STALE", "WAL_STALE"]);
+    const letters = toOperator().map((one) => one.subject);
+    assert.equal(letters.length, 4, "each problem reaches the ADMIN once");
+    assert.equal(new Set(letters).size, 4, letters.join(" | "));
   });
 
   it("stays quiet once every chain has a fresh run, and forgets what it said", async () => {
@@ -100,31 +114,75 @@ describe("backup watch (e2e)", () => {
     for (const kind of CHAINS) {
       await ran(kind, 1);
     }
-    assert.deepEqual((await watch.sweep()).problems, []);
-    assert.deepEqual(mailed(), []);
+    assert.deepEqual(await sweep(), []);
+    assert.equal(sent.splice(0).length, 0, "a healthy sweep sent mail");
     for (const problem of PROBLEMS) {
       assert.equal(await redis.client.exists(ALARM.backup(problem)), 0, `${problem} is still marked as told`);
     }
   });
 
-  it("mails every active ADMIN when one chain goes stale, and not again the same day", async () => {
+  it("mails the ADMINs when one chain goes stale, and not again the same day", async () => {
     await forget("base");
     await ran("base", 27);
-    assert.deepEqual((await watch.sweep()).problems, ["BASE_STALE"]);
-    assert.deepEqual(mailed(), admins);
-    assert.deepEqual((await watch.sweep()).problems, ["BASE_STALE"]);
-    assert.deepEqual(mailed(), [], "the same stale chain was mailed twice within a day");
+    assert.deepEqual(await sweep(), ["BASE_STALE"]);
+    assert.equal(toOperator().length, 1);
+    assert.deepEqual(await sweep(), ["BASE_STALE"]);
+    assert.equal(sent.splice(0).length, 0, "the same stale chain was mailed twice within a day");
   });
 
   it("mails again when a chain that recovered goes stale a second time", async () => {
     await ran("base", 0);
-    assert.deepEqual((await watch.sweep()).problems, []);
+    assert.deepEqual(await sweep(), []);
     await forget("base");
     await ran("base", 30);
-    assert.deepEqual((await watch.sweep()).problems, ["BASE_STALE"]);
-    const letters = sent.map((one) => one.body.subject);
-    assert.deepEqual(mailed(), admins, "a second outage went unsaid");
-    assert.ok(letters.every((subject) => subject.includes("bản gốc vật lý")), letters.join(" | "));
+    assert.deepEqual(await sweep(), ["BASE_STALE"]);
+    const letters = toOperator();
+    assert.equal(letters.length, 1, "a second outage went unsaid");
+    assert.match(letters[0].subject, /bản gốc vật lý/);
+  });
+
+  it("keeps telling the others when one address refuses", async () => {
+    const mailer = app.get(MailerService);
+    const quiet = mailer.send;
+    mailer.send = async (to: string, body: MailBody) => {
+      if (to !== OPERATOR) {
+        throw new Error("550 mailbox unavailable");
+      }
+      sent.push({ to, body });
+      return true;
+    };
+    try {
+      await redis.client.del(ALARM.backup("BASE_STALE"));
+      assert.deepEqual(await sweep(), ["BASE_STALE"]);
+      assert.equal(toOperator().length, 1, "a refusing address silenced the next one");
+      assert.equal(await redis.client.exists(ALARM.backup("BASE_STALE")), 1, "one letter out still counts as told");
+    } finally {
+      mailer.send = quiet;
+    }
+  });
+
+  it("rewrites FaceTemplate when a face is erased, so no page keeps the old bytes", async () => {
+    const template = await db.employee.findFirstOrThrow({
+      where: { active: true, legalEntityId: { not: null } },
+    });
+    const person = await db.employee.create({
+      data: { code: CODE, fullName: "Xoá mặt thử", active: true, legalEntityId: template.legalEntityId },
+    });
+    await db.faceTemplate.create({
+      data: {
+        employeeId: person.id,
+        templateIdx: 0,
+        embedding: Buffer.alloc(512, 7),
+        scale: 1,
+        capturedAt: new Date(),
+      },
+    });
+    const node = async () =>
+      (await db.$queryRaw<{ node: number }[]>`SELECT pg_relation_filenode('"FaceTemplate"')::int AS "node"`)[0].node;
+    const held = await node();
+    await app.get(EnrollmentService).erase(person.id, operatorId, "e2e");
+    assert.notEqual(await node(), held, "the table kept its file, dead tuple and all");
+    assert.equal(await db.faceTemplate.count({ where: { employeeId: person.id } }), 0);
   });
 
   it("calls the archive failing only while its last push failed", () => {
