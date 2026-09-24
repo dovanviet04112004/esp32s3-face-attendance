@@ -49,6 +49,18 @@ start() {
     "${COMPOSE[@]}" up -d --no-build --remove-orphans
 }
 
+broker_digest() {
+    cat "$HERE/emqx/emqx.conf" "$HERE/emqx/acl.conf" | sha256sum
+}
+
+# A single-file bind mount keeps the inode checkout replaced, so compose alone
+# leaves the broker on its old config (KEHOACH 4.8).
+reload_broker() {
+    [[ "$(broker_digest)" == "$1" ]] && return 0
+    log "broker config changed, recreating emqx"
+    "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate emqx
+}
+
 # The running and the previous image stay for a rollback; each is ~1.1 GB.
 prune() {
     local keep_now="$1" keep_before="$2" tag
@@ -60,7 +72,7 @@ prune() {
 }
 
 main() {
-    local sha actor previous
+    local sha actor previous broker
     read -r sha actor _ <<< "${SSH_ORIGINAL_COMMAND:-${1:-} ${2:-}}"
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { log "expected a 40-character commit sha"; exit 2; }
     [[ "$actor" =~ ^[A-Za-z0-9-]+(\[bot\])?$ ]] || { log "expected the github actor after the sha"; exit 2; }
@@ -70,8 +82,10 @@ main() {
     trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
 
     log "moving to $sha${previous:+ from $previous}"
+    broker="$(broker_digest)"
     checkout "$sha"
     start "$sha"
+    reload_broker "$broker"
     if healthy; then
         echo "$sha" > "$HERE/.deployed"
         prune "$sha" "$previous"
@@ -84,8 +98,10 @@ main() {
         exit 1
     fi
     log "rolling back to $previous"
+    broker="$(broker_digest)"
     checkout "$previous"
     start "$previous"
+    reload_broker "$broker"
     healthy || log "the rollback is not healthy either"
     exit 1
 }

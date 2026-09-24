@@ -18,6 +18,10 @@ services:
       # EMQX keeps retained messages in RAM by default, which loses the LWT
       # offline of a kiosk that is powered off across a broker restart.
       EMQX_RETAINER__BACKEND__STORAGE_TYPE: disc
+      # On a laptop api runs outside compose (npm run start:dev), so the broker asks the host.
+      EMQX_AUTHENTICATION__2__URL: http://host.docker.internal:3000/mqtt/auth
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
       - ./emqx/acl.conf:/opt/emqx/etc/kiosk-acl.conf:ro
