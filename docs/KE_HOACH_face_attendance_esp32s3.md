@@ -4363,7 +4363,7 @@ backend/
 ├── prisma.config.ts                  # ★ url của datasource + lệnh seed (Prisma 7)
 ├── prisma/{schema.prisma, migrations/, seed.ts, demo.ts}
 ├── test/*.e2e-spec.ts                # e2e, chạy bằng runner sẵn có của Node, song song
-├── test/*.e2e-alone-spec.ts          # ★ e2e ghi lên cả bảng, chạy riêng sau cùng
+├── test/*.e2e-alone-spec.ts          # ★ e2e ghi lên cả bảng, chạy sau cùng, từng file một
 ├── test/teardown.ts                  # ★ dọn thứ không cascade theo dữ liệu suite tạo ra
 ├── test/fixtures.ts                  # ★ dựng thứ suite cần mà seed tối thiểu không có: loại phép, publish thay kiosk
 └── src/
@@ -4947,8 +4947,11 @@ riêng tư cũng được.
    tại, API ngoài internet trả 404 trong khi `/health` trong mạng compose vẫn 200. Dựng lại
    `postgres` làm cơ sở dữ liệu tắt vài giây; kiosk xếp hàng offline (§6.2.6). Lượt deploy không
    đụng các thư mục ấy thì không cắt gì.
-5. Chờ `GET /health` qua mạng compose trả 200, tối đa 120 s. Không đạt thì **lùi về sha ghi ở
-   `.deployed`**, làm lại bước 2–4 theo sha ấy, và thoát lỗi: job đỏ, bản cũ vẫn phục vụ.
+5. Chờ `GET /health` qua mạng compose trả 200, tối đa 120 s. Bước 2–4 hỏng hoặc `/health` không
+   đạt thì **lùi về sha ghi ở `.deployed`**, làm lại bước 2–4 theo sha ấy, và thoát lỗi: job đỏ,
+   bản cũ vẫn phục vụ. Bước 2–4 chạy trong một subshell có `set -e`, gọi như một câu lệnh thường:
+   bash bỏ qua `set -e` cho mọi thứ chạy trong một điều kiện, kể cả subshell, nên gọi nó trong
+   `if` là để bước hỏng chạy tiếp các bước sau.
 6. Đạt thì ghi sha mới vào `.deployed`.
 7. Xoá image `api` cũ, giữ đúng hai bản: đang chạy và bản trước để lùi. Mỗi image ~1,1 GB trên
    ổ 17 GB.
@@ -8253,10 +8256,14 @@ ngày bị giữ thành 9.
 trang; bảng nhỏ như `FaceTemplate` hiếm khi chạm ngưỡng autovacuum, và `VACUUM` thường chỉ đánh
 dấu chỗ trống chứ không xoá byte. Bản gốc vật lý chép **nguyên trang**, nên thiếu bước dưới đây
 thì mẫu đã xoá đi theo mọi bản gốc của những đêm sau, và lời hứa N ngày thành vô hạn. Sau mỗi
-lần xoá hay thay mẫu, `api` ghi lại bảng bằng `VACUUM (FULL) "FaceTemplate"` ngay khi commit
-xong: bảng mới chỉ chứa dòng sống, file cũ bị gỡ, và WAL từ lúc ấy chỉ mang trang mới. `backup.sh`
-ghi lại lần nữa trước bản gốc đêm, phòng khi lượt của `api` hỏng. Bảng chỉ vài MB nên khoá độc
-quyền của lệnh ấy tính bằng mili giây 🔬.
+lần xoá hay thay mẫu — kể cả ghi đè một mẫu tại chỗ — `api` ghi lại bảng bằng
+`VACUUM (FULL) "FaceTemplate"` ngay khi commit xong: bảng mới chỉ chứa dòng sống, file cũ bị gỡ,
+và WAL từ lúc ấy chỉ mang trang mới. Lệnh chạy trên một kết nối riêng có `lock_timeout = 5s`:
+khoá độc quyền xếp hàng sau một phiên đang đọc bảng (lượt `pg_dump` đêm chẳng hạn) thì mọi truy
+vấn sau cũng xếp hàng sau nó, nên thà bỏ lượt ấy còn hơn treo cả bảng. `api` so file của bảng
+trước và sau lệnh, vì một role không sở hữu bảng chỉ nhận cảnh báo chứ không nhận lỗi. `backup.sh`
+ghi lại lần nữa trước bản gốc đêm, cùng giới hạn chờ, thử ba lần, phòng khi lượt của `api` hỏng.
+Giữ khoá thì tính bằng mili giây, vì bảng chỉ vài MB 🔬.
 
 **Cái giá là có thật và là cái giá đúng.** Phục hồi từ một bản cũ hơn bảy ngày thì fleet không
 nhận ra ai cho tới khi mọi người ghi danh lại. Với dữ liệu sinh trắc thì đó là đánh đổi đúng
