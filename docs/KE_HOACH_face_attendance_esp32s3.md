@@ -4356,7 +4356,8 @@ backend/
     │   ├── generated/                # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
     │   ├── guards/{jwt-auth.guard.ts, roles.guard.ts, device-auth.guard.ts}
     │   ├── cache/{cache.module.ts, cache.service.ts, cache-keys.ts}
-    │   ├── decorators/  ├── interceptors/  ├── filters/  ├── dto/
+    │   ├── decorators/  ├── filters/  ├── dto/
+    │   ├── interceptors/{audit.interceptor.ts, change.interceptor.ts}   # ★ §9.24 · §9.4 — mỗi lần ghi: một dòng sổ, một tin feed
     │   └── csv.ts                    # ★ một bộ ghi CSV cho cả ba nơi xuất file
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
@@ -6340,15 +6341,54 @@ mọi người cho bất kỳ ai nối được tới cổng**. Nên:
 
 - **Mở ổ cắm phải xuất trình cùng thứ vé mà REST đòi.** Token đi trong `auth` lúc bắt tay; sai
   hoặc thiếu thì đóng ngay, không phải đóng sau khung đầu tiên.
-- **Mỗi ổ cắm nhớ phạm vi của người mở nó**, lấy từ đúng `visibleEmployeeIds` mà mọi service
-  của §9 đang dùng — không có phép tính phạm vi thứ hai để lệch với phép thứ nhất.
-- **Tin đi theo phạm vi ấy, không theo namespace.** Tin thiết bị chỉ tới `ADMIN`, vì §9.15 xếp
-  `Kiosk` vào riêng vai đó. Tin chấm công tới người thấy được **chính dòng ấy**: `HR` và
-  `PAYROLL` thấy tất, quản lý thấy cây dưới quyền mình, còn lại thấy mình.
+- **Mỗi ổ cắm nhớ tài khoản mở nó và phạm vi của tài khoản ấy.** Phạm vi lấy từ đúng
+  `visibleEmployeeIds` mà mọi service của §9 đang dùng — không có phép tính phạm vi thứ hai để
+  lệch với phép thứ nhất.
+- **Tin đi theo người nghe, không theo namespace.** Năm loại tin, ba kiểu người nhận:
+
+| Tin | Mang gì | Tới ai |
+|---|---|---|
+| `device`, `event` | tin của kiosk | chỉ `ADMIN` — §9.15 xếp `Kiosk` vào riêng vai đó |
+| `attendance` | một lượt chấm công | người thấy được **chính dòng ấy**: `HR`, `PAYROLL`, `ADMIN` thấy tất, quản lý thấy cây dưới quyền mình, còn lại thấy mình |
+| `change` | tên tài nguyên vừa bị ghi, không id, không giá trị | như `attendance`, tính theo nhân viên sở hữu dòng vừa ghi |
+| `notice` | `kind` và tham chiếu, đúng thân tin đẩy (§9.21.4) | đúng một tài khoản đăng nhập |
 
 Phạm vi chốt lúc bắt tay chứ không tra lại mỗi khung — một lượt quẹt không đáng một CTE đệ quy.
 Cái giá là một lần chuyển bộ phận chỉ ăn vào lần nối lại sau; §9.23 vốn đã đóng mọi phiên ở
 những lần đổi đáng kể, nên cửa sổ lệch đúng bằng tuổi một ổ cắm đang mở.
+
+**Ghi xong là báo, để không màn nào phải tải lại.** Quản lý duyệt một đơn thì người gửi đang mở
+trang phải thấy kết quả ngay, và một bàn nhân sự thứ hai đang mở cùng danh sách cũng vậy. Nên
+**mọi lần ghi REST thành công** của một người đăng nhập phát một tin `change`, do một interceptor
+toàn cục đứng cạnh `AuditInterceptor` phát chứ không do từng service tự nhớ: đường ghi mới thêm
+có tin mà không ai phải thêm dòng nào.
+
+- **Tin nói *cái gì* đổi, không nói đổi *thành gì*.** Thân tin là các đoạn tĩnh của mẫu route —
+  `/employees/:id/contracts` cho ra `employees`, `contracts`. Trình duyệt nhận thì **tự hỏi lại
+  qua REST**, nên mọi luật thu hẹp ở trên vẫn đứng nguyên: tin không chở được thứ gì mà REST
+  không cho chính người ấy đọc.
+- **Chủ dòng quyết định ai nghe.** Chủ là tham số `:employeeId`, hoặc `:id` ngay sau
+  `employees`, hoặc `employeeId` trên dòng trả về; lô trả về nhiều dòng thì mỗi dòng một chủ;
+  route `me/…` thuộc chính người gọi. Không tìm ra chủ thì chỉ ba vai không bị thu hẹp nghe —
+  trừ **bảng mọi người cùng đọc** (ngày lễ, loại phép, phòng ban, chức danh, pháp nhân, cây tổ
+  chức, tài liệu, ca), những bảng ấy tới mọi người. `auth` không phát gì; `notifications`
+  chỉ tới các máy khác của chính tài khoản ấy.
+- **Tin đi sau khi handler trả về**, tức sau khi giao dịch đã commit. Phát sớm hơn thì trình
+  duyệt hỏi lại và nhận đúng bản cũ — cùng cái bẫy lượt quẹt đã gặp ở `attendance`.
+- **Đoạn đầu khoá query trùng đoạn đầu đường REST nó đọc** — `["requests", …]` đọc `/requests`.
+  Nhờ quy ước ấy `ws.ts` chỉ xoá đúng khoá trùng tên, cộng một bảng nhỏ cho hệ quả lan sang chỗ
+  khác: duyệt đơn nghỉ đổi số dư phép và bảng công, chạy lương đổi phiếu lương, sửa ca đổi lịch
+  ca của tôi.
+- **Gom rồi mới hỏi lại.** Một lô ghi hàng trăm dòng là hàng trăm tin; trình duyệt gom khoá
+  trong 300 ms rồi xoá một lần, cho cả năm loại tin.
+- **Nối lại thì hỏi lại hết.** Tin phát lúc ổ cắm đứt là tin mất, và điện thoại khoá màn là
+  đứt; lần nối lại xoá mọi khoá đang mở chứ không tin rằng không có gì xảy ra.
+- **Vé hết hạn thì trình duyệt tự đổi vé rồi nối lại.** Server cắt ổ cắm mang vé quá hạn ở
+  lần phát kế tiếp, mà socket.io không tự nối lại sau một lần server cắt — thiếu bước này thì
+  một tab mở quá tuổi vé access (15 phút) im lặng mãi. Bị cắt hai lần trong 30 s nghĩa là
+  server từ chối chứ không phải vé hết hạn, nên trang báo mất kết nối thay vì đổi vé liên tục.
+- **Hỏi định kỳ ở lại làm lưới đỡ.** Chuông 60 s và hộp chờ duyệt vẫn tự hỏi, vì có mạng chặn
+  WebSocket, và ổ cắm không nối được thì trang vẫn phải tới được số đúng.
 
 **`VIEWER` là vai mặc định, nên nó phải là vai *hẹp nhất*, không phải vai rộng nhất.** `User.role`
 mặc định `VIEWER`; nếu vai ấy nằm trong nhóm không thu hẹp phạm vi thì **mọi tài khoản mới sinh
@@ -7550,6 +7590,14 @@ nhưng **bảng bật tắt chỉ chào hai kênh có người giao**.
 **Một ô bật tắt không giao được thứ gì thì tệ hơn là không có ô ấy.** Người bật nó lên không
 nhận được gì và cũng không được báo là sẽ không nhận gì — đúng loại sai âm thầm mà §9.4 gọi tên
 ở chỗ vai mặc định. Nên số kênh bảng ấy chào phải bằng đúng số kênh có đường giao thật.
+
+**Chuông đổi ngay lúc tin được ghi, không đợi lượt hỏi.** Mỗi lần `raise` phát tin `notice` qua
+feed (§9.4) tới đúng tài khoản nhận, thân tin là `kind` cộng tham chiếu như tin đẩy. Trang đang
+mở xoá khoá của chuông và của sổ đơn, tạm ứng, phiếu lương, khiếu nại, hợp đồng, nên người gửi
+đơn thấy "Từ chối" ngay trên trang mình đang đứng. Tin ấy **không phải kênh thứ ba** và không có
+ô bật tắt: nó không hiện chữ nào, chỉ báo cho trang rằng dữ liệu của nó đã cũ. Tắt `IN_APP` thì
+chuông không có dòng mới, nhưng sổ đơn vẫn phải đúng. Tin đi sau khi dòng `Notification` đã
+ghi, để lần hỏi lại thấy được nó.
 
 **Một thông báo hỏng không được làm hỏng việc nó mô tả.** Duyệt một đơn xong mà không gửi được
 thông báo thì đơn **vẫn đã duyệt** — cùng luật với `AuditService`: mất lời nhắn còn hơn huỷ việc
