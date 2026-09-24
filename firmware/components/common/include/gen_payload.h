@@ -617,7 +617,8 @@ typedef enum {
     ENROLL_PAYLOAD_OP_REPLACE_ALL = 3,
     ENROLL_PAYLOAD_OP_ASSIGN = 4,
     ENROLL_PAYLOAD_OP_REVOKE = 5,
-    ENROLL_PAYLOAD_OP_COUNT = 6,
+    ENROLL_PAYLOAD_OP_RETAKE = 6,
+    ENROLL_PAYLOAD_OP_COUNT = 7,
 } enroll_payload_op_t;
 
 static inline const char *enroll_payload_op_str(enroll_payload_op_t v)
@@ -629,6 +630,7 @@ static inline const char *enroll_payload_op_str(enroll_payload_op_t v)
     case ENROLL_PAYLOAD_OP_REPLACE_ALL: return "REPLACE_ALL";
     case ENROLL_PAYLOAD_OP_ASSIGN: return "ASSIGN";
     case ENROLL_PAYLOAD_OP_REVOKE: return "REVOKE";
+    case ENROLL_PAYLOAD_OP_RETAKE: return "RETAKE";
     default: return "";
     }
 }
@@ -642,6 +644,7 @@ static inline bool enroll_payload_op_parse(const char *s, enroll_payload_op_t *o
     if (strcmp(s, "REPLACE_ALL") == 0) { *out = ENROLL_PAYLOAD_OP_REPLACE_ALL; return true; }
     if (strcmp(s, "ASSIGN") == 0) { *out = ENROLL_PAYLOAD_OP_ASSIGN; return true; }
     if (strcmp(s, "REVOKE") == 0) { *out = ENROLL_PAYLOAD_OP_REVOKE; return true; }
+    if (strcmp(s, "RETAKE") == 0) { *out = ENROLL_PAYLOAD_OP_RETAKE; return true; }
     return false;
 }
 

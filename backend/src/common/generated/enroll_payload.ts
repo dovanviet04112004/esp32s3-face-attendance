@@ -6,18 +6,18 @@ import { z } from "zod";
 
 /** Face roster traffic in both directions. Server to kiosk pushes templates and assignments; kiosk to server reports what an operator did at the machine. Carries the int8 embedding and its dequant scale exactly as they land in the 552-byte record of KEHOACH 6.2.4. */
 export interface EnrollPayload {
-  /** DELETE removes one template, DELETE_EMPLOYEE removes every template of the employee, REPLACE_ALL is the full-resync path. ASSIGN names an employee the kiosk should expect to enroll and carries no embedding, REVOKE withdraws that expectation. */
-  op: "UPSERT" | "DELETE" | "DELETE_EMPLOYEE" | "REPLACE_ALL" | "ASSIGN" | "REVOKE";
+  /** DELETE removes one template, DELETE_EMPLOYEE removes every template of the employee, REPLACE_ALL is the full-resync path. ASSIGN names an employee the kiosk should expect to enroll and carries no embedding, REVOKE withdraws that expectation. Up from a kiosk, UPSERT reports one sample of a capture session, and DELETE_EMPLOYEE and RETAKE are an operator's requests that the server decides (KEHOACH 7.5). */
+  op: "UPSERT" | "DELETE" | "DELETE_EMPLOYEE" | "REPLACE_ALL" | "ASSIGN" | "REVOKE" | "RETAKE";
   employeeId: number;
   /** One employee holds several templates: frontal, glasses, low light. */
   templateIdx: number;
-  /** Epoch milliseconds UTC. The kiosk keeps the newer of two conflicting pushes. */
+  /** Epoch milliseconds UTC. The kiosk keeps the newer of two conflicting pushes. On a kiosk report it is the start of the capture session, shared by every sample of it, which is how the server tells one session from another (KEHOACH 7.5). */
   updatedAt: number;
   /** 512 int8 values, base64 of the raw bytes. Required for UPSERT. */
   embedding?: string;
   /** Dequant factor for embedding. Required for UPSERT. */
   scale?: number;
-  /** Enrollment image quality; breaks ties when two templates collide. */
+  /** Enrollment image quality. A kiosk capture carries 255, so the server never ranks sessions by it (KEHOACH 9.23 rule 7). */
   quality?: number;
   /** Recognition model that produced the embedding. A kiosk running a different model must refuse the template rather than compare across models. */
   embeddingVersion?: string;
@@ -31,7 +31,7 @@ export interface EnrollPayload {
 }
 
 export const enrollPayloadSchema = z.strictObject({
-  op: z.enum(["UPSERT", "DELETE", "DELETE_EMPLOYEE", "REPLACE_ALL", "ASSIGN", "REVOKE"]),
+  op: z.enum(["UPSERT", "DELETE", "DELETE_EMPLOYEE", "REPLACE_ALL", "ASSIGN", "REVOKE", "RETAKE"]),
   employeeId: z.number().int().min(0).max(2147483647),
   templateIdx: z.number().int().min(0).max(65535),
   updatedAt: z.number().int().min(0),
