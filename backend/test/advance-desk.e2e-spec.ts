@@ -90,17 +90,18 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
   });
 
   it("tells the desk, and tells it about this advance", async () => {
-    const told = await db.notification.findMany({
-      where: { kind: "REQUEST_WAITING", advanceId: filedId },
-      select: { user: { select: { role: true, employeeId: true } } },
+    // One statement: a desk login another suite deletes mid-read is wholly in or out.
+    const told = await db.user.findMany({
+      where: { notifications: { some: { kind: "REQUEST_WAITING", advanceId: filedId } } },
+      select: { role: true, employeeId: true },
     });
     assert.ok(told.length > 0, "nobody was told an advance is waiting");
     assert.ok(
-      told.every((one) => one.user.role === "ADMIN" || one.user.role === "HR"),
+      told.every((one) => one.role === "ADMIN" || one.role === "HR"),
       "somebody off the desk was told to decide an advance",
     );
     assert.ok(
-      !told.some((one) => one.user.employeeId === bossId),
+      !told.some((one) => one.employeeId === bossId),
       "the line manager was told to decide money they cannot see",
     );
   });

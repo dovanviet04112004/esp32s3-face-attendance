@@ -86,12 +86,13 @@ describe("a request filed by somebody with no manager (e2e)", () => {
 
   it("reaches a desk login that is not an employee, which is the whole point", async () => {
     const mineOnly = await db.request.findFirstOrThrow({ where: { employeeId: loneId } });
-    const told = await db.notification.findMany({
-      where: { kind: "REQUEST_WAITING", requestId: mineOnly.id },
-      select: { user: { select: { email: true, employeeId: true } } },
+    // One statement: a desk login another suite deletes mid-read is wholly in or out.
+    const told = await db.user.findMany({
+      where: { notifications: { some: { kind: "REQUEST_WAITING", requestId: mineOnly.id } } },
+      select: { email: true, employeeId: true },
     });
     assert.ok(
-      told.some((one) => one.user.employeeId === null),
+      told.some((one) => one.employeeId === null),
       "a login with no employee row was still unreachable",
     );
   });
