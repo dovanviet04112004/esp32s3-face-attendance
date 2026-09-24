@@ -1,10 +1,13 @@
 name: backend
 
 on:
+  # main runs this through deploy.yml, so a push there tests once (KEHOACH 4.8).
   push:
+    branches-ignore: [main]
     paths: ["backend/**", "contracts/**", ".github/workflows/backend.yml"]
   pull_request:
     paths: ["backend/**", "contracts/**", ".github/workflows/backend.yml"]
+  workflow_call:
 
 defaults:
   run:
