@@ -12,6 +12,7 @@
 #include "unity.h"
 
 #define JOIN_TIMEOUT_MS 20000
+#define TICKET_CAP 1024
 #define MS_PER_S 1000u
 #define JITTER_PERCENT 20u
 // Claims {"deviceId":"kiosk-2884859fd3c8","iat":1790000000,"exp":1797776000}, unpadded.
@@ -108,8 +109,20 @@ TEST_CASE("the link's dns resolves the api and the broker", "[provision][live]")
     TEST_ASSERT_EQUAL(0, resolve("mqtt.cckiosk.io.vn"));
 }
 
+// A buffer shorter than the ticket reads as "absent", so the probe takes a whole one.
+static bool holds_ticket(void)
+{
+    static char held[TICKET_CAP];
+    return sys_storage_get_str(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET, held, sizeof(held)) ==
+               ESP_OK &&
+           held[0] != '\0';
+}
+
 TEST_CASE("the api answers a registration with a verdict, not silence", "[provision][live]")
 {
+    if (holds_ticket()) {
+        TEST_IGNORE_MESSAGE("registering again would send this approved board back to pending");
+    }
     const net_provision_answer_t said = net_provision_register();
     TEST_ASSERT_NOT_EQUAL(NET_PROVISION_UNREACHABLE, said);
     TEST_ASSERT_NOT_EQUAL(NET_PROVISION_DISABLED, said);
@@ -117,9 +130,7 @@ TEST_CASE("the api answers a registration with a verdict, not silence", "[provis
 
 TEST_CASE("a kiosk holding no ticket is told it has none", "[provision][live]")
 {
-    char held[8] = { 0 };
-    if (sys_storage_get_str(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET, held, sizeof(held)) ==
-        ESP_OK) {
+    if (holds_ticket()) {
         TEST_IGNORE_MESSAGE("this board already holds a ticket");
     }
     TEST_ASSERT_EQUAL(NET_PROVISION_REFUSED, net_provision_check());
