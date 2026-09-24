@@ -9,8 +9,8 @@
   "properties": {
     "op": {
       "type": "string",
-      "enum": ["UPSERT", "DELETE", "DELETE_EMPLOYEE", "REPLACE_ALL", "ASSIGN", "REVOKE"],
-      "description": "DELETE removes one template, DELETE_EMPLOYEE removes every template of the employee, REPLACE_ALL is the full-resync path. ASSIGN names an employee the kiosk should expect to enroll and carries no embedding, REVOKE withdraws that expectation."
+      "enum": ["UPSERT", "DELETE", "DELETE_EMPLOYEE", "REPLACE_ALL", "ASSIGN", "REVOKE", "RETAKE"],
+      "description": "DELETE removes one template, DELETE_EMPLOYEE removes every template of the employee, REPLACE_ALL is the full-resync path. ASSIGN names an employee the kiosk should expect to enroll and carries no embedding, REVOKE withdraws that expectation. Up from a kiosk, UPSERT reports one sample of a capture session, and DELETE_EMPLOYEE and RETAKE are an operator's requests that the server decides (KEHOACH 7.5)."
     },
     "employeeId": {
       "type": "integer",
@@ -26,7 +26,7 @@
     "updatedAt": {
       "type": "integer",
       "minimum": 0,
-      "description": "Epoch milliseconds UTC. The kiosk keeps the newer of two conflicting pushes."
+      "description": "Epoch milliseconds UTC. The kiosk keeps the newer of two conflicting pushes. On a kiosk report it is the start of the capture session, shared by every sample of it, which is how the server tells one session from another (KEHOACH 7.5)."
     },
     "embedding": {
       "type": "string",
@@ -44,7 +44,7 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 255,
-      "description": "Enrollment image quality; breaks ties when two templates collide."
+      "description": "Enrollment image quality. A kiosk capture carries 255, so the server never ranks sessions by it (KEHOACH 9.23 rule 7)."
     },
     "embeddingVersion": {
       "type": "string",
