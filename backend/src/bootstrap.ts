@@ -28,6 +28,11 @@ export function configure(app: INestApplication): void {
     app.getHttpAdapter().getInstance().set("trust proxy", hops);
   }
   app.use(helmet());
+  // Only the service worker's per-account drawer may keep a reply (KEHOACH 4.7).
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  });
   // Nest drops its own parser if the stack holds one named jsonParser.
   const readLargeBody = express.json({ limit: IMPORT_MAX_BYTES });
   app.use(IMPORT_PATH, (req: Request, res: Response, next: NextFunction) =>

@@ -86,6 +86,7 @@ describe("auth (e2e)", () => {
       .set("Authorization", `Bearer ${login.body.accessToken}`);
     assert.equal(me.status, 200);
     assert.equal(me.body.role, "HR");
+    assert.equal(me.headers["cache-control"], "no-store", "a shared cache may keep a signed-in reply");
   });
 
   it("refuses a guarded route with no token", async () => {
