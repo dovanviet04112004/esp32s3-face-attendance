@@ -2,12 +2,12 @@ menu "MQTT link"
 
     config NET_MQTT_DEFAULT_URI
         string "Broker URI when NVS holds none"
-        default ""
+        default "mqtts://mqtt.cckiosk.io.vn:8883"
         help
             Fallback for device/mqtt_uri (KEHOACH 6.2.1). A shipped build
             carries the vendor's own broker here so a unit needs nobody to
-            type an address; NVS overrides it for a customer who self-hosts.
-            Empty until that broker exists.
+            type an address; NVS overrides it for a customer who self-hosts
+            and for a bench broker.
 
     config NET_MQTT_REQUIRE_TLS
         bool "Refuse a broker URI that is not mqtts://"

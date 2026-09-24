@@ -25,17 +25,36 @@ typedef void (*net_mqtt_state_cb_t)(bool up, void *ctx);
 typedef void (*net_mqtt_message_cb_t)(gen_topic_id_t topic, const char *payload, size_t len,
                                       void *ctx);
 
+/** Called when the broker refuses the login, which it also does while api is
+ *  down (KEHOACH 7.4); esp-mqtt keeps dialling after it returns.
+ *  @ctx task | non-blocking | from the esp-mqtt task
+ */
+typedef void (*net_mqtt_refused_cb_t)(void *ctx);
+
 typedef struct {
     net_mqtt_state_cb_t on_state;         // may be NULL
     net_mqtt_message_cb_t on_message;     // may be NULL
-    void *ctx;                            // handed back to both callbacks
+    net_mqtt_refused_cb_t on_refused;     // may be NULL
+    void *ctx;                            // handed back to every callback
 } net_mqtt_config_t;
 
 /** Connect and keep reconnecting, publishing the contract's online status.
- *  @ctx task | blocking | reads device/mqtt_uri, mqtt_user, mqtt_pass
+ *  Logs in as mqtt_user or the deviceId, with mqtt_pass or the ticket.
+ *  @ctx task | blocking | reads device/mqtt_uri, mqtt_user, mqtt_pass, jwt
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND with no broker configured | ESP_ERR_INVALID_ARG
  */
 esp_err_t net_mqtt_start(const net_mqtt_config_t *config);
+
+typedef enum {
+    NET_MQTT_LOGIN_NONE = 0,              // nothing to log in with yet
+    NET_MQTT_LOGIN_OVERRIDE,              // device/mqtt_pass, a bench or self-hosted broker
+    NET_MQTT_LOGIN_TICKET,                // device/jwt, the ticket of KEHOACH 7.3
+} net_mqtt_login_t;
+
+/** Which password net_mqtt_start would present, without starting anything.
+ *  @ctx task | blocking | reads device/mqtt_pass, jwt
+ */
+net_mqtt_login_t net_mqtt_login(void);
 
 /** Send the will's offline status, disconnect and release the client.
  *  @ctx task | blocking

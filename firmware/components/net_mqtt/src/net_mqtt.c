@@ -51,6 +51,18 @@ static esp_err_t setting(const char *key, char *out, size_t cap, const char *fal
     return ESP_OK;
 }
 
+// mqtt_pass overrides on a bench broker; a shipped kiosk has only its ticket (KEHOACH 6.2.1).
+static net_mqtt_login_t password(char *out, size_t cap)
+{
+    if (setting(NVS_PASS, out, cap, NULL) == ESP_OK) {
+        return NET_MQTT_LOGIN_OVERRIDE;
+    }
+    if (setting(STORAGE_KEY_TICKET, out, cap, NULL) == ESP_OK) {
+        return NET_MQTT_LOGIN_TICKET;
+    }
+    return NET_MQTT_LOGIN_NONE;
+}
+
 static esp_err_t subscribe_down(void)
 {
     char topic[GEN_TOPIC_MAX_LEN];
@@ -119,6 +131,19 @@ static void on_data(const esp_mqtt_event_handle_t event)
     s_link.config.on_message(id, event->data, (size_t)event->data_len, s_link.config.ctx);
 }
 
+static void on_error(const esp_mqtt_event_handle_t event)
+{
+    const esp_mqtt_error_codes_t *why = event->error_handle;
+    if (why == NULL || why->error_type != MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
+        ESP_LOGW(TAG, "transport error");
+        return;
+    }
+    ESP_LOGW(TAG, "broker refused the login, code %d", (int)why->connect_return_code);
+    if (s_link.config.on_refused != NULL) {
+        s_link.config.on_refused(s_link.config.ctx);
+    }
+}
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;
@@ -129,7 +154,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     case MQTT_EVENT_DISCONNECTED: on_disconnected(); break;
     case MQTT_EVENT_PUBLISHED: on_published(event->msg_id); break;
     case MQTT_EVENT_DATA: on_data(event); break;
-    case MQTT_EVENT_ERROR: ESP_LOGW(TAG, "transport error"); break;
+    case MQTT_EVENT_ERROR: on_error(event); break;
     default: break;
     }
 }
@@ -163,7 +188,7 @@ esp_err_t net_mqtt_start(const net_mqtt_config_t *config)
     if (pass == NULL) {
         return ESP_ERR_NO_MEM;
     }
-    const bool has_pass = setting(NVS_PASS, pass, TOKEN_CAP, NULL) == ESP_OK;
+    const bool has_pass = password(pass, TOKEN_CAP) != NET_MQTT_LOGIN_NONE;
 
     s_link.config = config != NULL ? *config : (net_mqtt_config_t){ 0 };
     s_link.send_lock = xSemaphoreCreateMutex();
@@ -230,6 +255,17 @@ esp_err_t net_mqtt_stop(void)
     vSemaphoreDelete(s_link.acked);
     memset(&s_link, 0, sizeof(s_link));
     return ESP_OK;
+}
+
+net_mqtt_login_t net_mqtt_login(void)
+{
+    char *scratch = heap_caps_calloc(1, TOKEN_CAP, MALLOC_CAP_SPIRAM);
+    if (scratch == NULL) {
+        return NET_MQTT_LOGIN_NONE;
+    }
+    const net_mqtt_login_t login = password(scratch, TOKEN_CAP);
+    heap_caps_free(scratch);
+    return login;
 }
 
 bool net_mqtt_is_up(void)
