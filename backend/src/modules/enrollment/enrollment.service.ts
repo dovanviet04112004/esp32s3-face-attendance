@@ -113,6 +113,7 @@ export class EnrollmentService {
   async erase(employeeId: number, actorId: string, why: string): Promise<{ devices: number }> {
     const rows = await this.db.deviceEnrollment.findMany({ where: { employeeId } });
     await this.db.faceTemplate.deleteMany({ where: { employeeId } });
+    await this.scrubTemplates();
     await this.db.employee.update({ where: { id: employeeId }, data: { embeddingVersion: null } });
     for (const row of rows) {
       const device = await this.db.device.findUnique({ where: { id: row.deviceId } });
@@ -222,8 +223,20 @@ export class EnrollmentService {
         this.log.warn(`${deviceId} captured ${employeeId} outside its turn, sending it the held samples`);
         return this.refuse(deviceId, employeeId);
       default:
+        if (verdict === "replaced") {
+          await this.scrubTemplates();
+        }
         await this.spread(deviceId, employeeId, report.templateIdx, verdict === "replaced");
         this.log.log(`${deviceId} enrolled employee ${employeeId} sample ${report.templateIdx}`);
+    }
+  }
+
+  // A deleted row lives on as a dead tuple, and a physical base copies pages whole (KEHOACH 9.22.7).
+  private async scrubTemplates(): Promise<void> {
+    try {
+      await this.db.$executeRawUnsafe('VACUUM (FULL) "FaceTemplate"');
+    } catch (error) {
+      this.log.error(`FaceTemplate not rewritten, the nightly backup rewrites it: ${(error as Error).message}`);
     }
   }
 
