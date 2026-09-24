@@ -8237,8 +8237,11 @@ trông khác** — cùng lý do §9.16 mục 11 bắt lịch sử tài sản là
 — lượt gia hạn cầm `jti` đã tiêu chỉ đóng đúng dòng của nó, các thiết bị khác chưa chứng tỏ điều
 gì nên giữ nguyên phiên. Bốn việc đóng **tất cả**: nghỉ việc, đổi mật khẩu, tài khoản bị tắt, và
 đổi vai. Đóng phiên chỉ giết refresh token, nên cùng lúc ấy `api` ghi mốc "vé cấp trước giờ này
-là chết" của tài khoản vào Redis; `JwtStrategy` từ chối access token có `iat` sớm hơn mốc. Thiếu
-mốc ấy thì người vừa bị hạ quyền vẫn dùng quyền cũ thêm tối đa 15 phút, cả trên ổ cắm realtime.
+là chết" của tài khoản vào Redis; `JwtStrategy` từ chối access token có `iat` sớm hơn mốc. `iat`
+tính bằng giây, nên vé cấp **đúng giây của mốc** thì hỏi dòng phiên theo `sid`: phiên đã đóng là vé
+chết, phiên mở sau mốc là vé sống. Coi cả giây ấy là chết thì người vừa đặt mật khẩu mà đăng nhập
+ngay trong giây đó nhận về một vé 401. Thiếu mốc ấy thì người vừa bị hạ quyền vẫn dùng quyền cũ
+thêm tối đa 15 phút, cả trên ổ cắm realtime.
 Một lượt đăng nhập cũng là một lượt dọn: xoá dòng đã hết hạn hoặc đã đóng, rồi bỏ thiết bị lâu
 nhất nếu tài khoản chạm trần `SESSIONS_PER_USER` — bảng phiên không được phép là bảng chỉ lớn
 lên. Đo sau khi sửa: điện thoại và laptop cùng gia hạn đều **200**; một lượt dùng lại trên điện
