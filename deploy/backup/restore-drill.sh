@@ -5,12 +5,14 @@ set -euo pipefail
 # Segment names compare as bytes, whatever the caller's locale collates.
 export LC_ALL=C
 
-host="${1:?usage: AGE_KEY_FILE=<private key> restore-drill.sh <ssh host>}"
+source="${1:?usage: AGE_KEY_FILE=<private key> restore-drill.sh <ssh host> | --offsite}"
 : "${AGE_KEY_FILE:?path to the age private key}"
 [[ -r "${AGE_KEY_FILE}" ]] || { echo "cannot read ${AGE_KEY_FILE}" >&2; exit 1; }
 docker="${DOCKER:-docker}"
 replay_box=kiosk-drill-replay
 dump_box=kiosk-drill
+reader_box=kiosk-drill-offsite
+rclone_image=rclone/rclone:1.75.1
 drill=drill
 pgdata=/var/lib/postgresql/data
 poll_s=5
@@ -18,18 +20,75 @@ settled_polls=3
 max_polls=180
 
 cleanup() {
-    "${docker}" rm -f "${replay_box}" "${dump_box}" >/dev/null 2>&1 || true
+    "${docker}" rm -f "${replay_box}" "${dump_box}" "${reader_box}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-# The script goes in on stdin, so nothing in it passes through two shells' quoting.
-remote() {
-    printf '%s\n' "$1" | ssh "${host}" docker exec -i kiosk-backup sh
-}
+# Either source defines fetch, wal_names, wal_tar and written_at, and names db, owner, base and dump.
+if [[ "${source}" == --offsite ]]; then
+    offsite_env="${OFFSITE_ENV_FILE:-${HOME}/.config/cckiosk/offsite.env}"
+    [[ -r "${offsite_env}" ]] || { echo "cannot read ${offsite_env}" >&2; exit 1; }
+    "${docker}" run -d --rm --name "${reader_box}" --tmpfs /cfg:mode=0700 -e RCLONE_CONFIG=/cfg/rclone.conf \
+        --entrypoint sleep "${rclone_image}" infinity >/dev/null
+    # The token goes in on stdin, like the age key: never an argument, never the scratch disk.
+    "${docker}" exec -i "${reader_box}" sh -c 'cat > /cfg/offsite.env' < "${offsite_env}"
+    bucket=$("${docker}" exec "${reader_box}" sh -c '. /cfg/offsite.env && printf "%s\n" "[offsite]" "type = s3" \
+        "provider = ${OFFSITE_PROVIDER:-Cloudflare}" "region = ${OFFSITE_REGION:-auto}" \
+        "endpoint = ${OFFSITE_ENDPOINT}" "access_key_id = ${OFFSITE_ACCESS_KEY_ID}" \
+        "secret_access_key = ${OFFSITE_SECRET_ACCESS_KEY}" "no_check_bucket = true" > /cfg/rclone.conf \
+        && echo "${OFFSITE_BUCKET}"')
+    [[ -n "${bucket}" ]] || { echo "${offsite_env} names no OFFSITE_BUCKET" >&2; exit 1; }
 
-fetch() {
-    ssh "${host}" docker exec kiosk-backup cat "$1"
-}
+    offsite() {
+        "${docker}" exec "${reader_box}" rclone "$@"
+    }
+    fetch() {
+        offsite cat "offsite:${bucket}/$1"
+    }
+    wal_names() {
+        offsite lsf --files-only "offsite:${bucket}/wal/"
+    }
+    wal_tar() {
+        printf '%s\n' "$1" | "${docker}" exec -i "${reader_box}" sh -c 'cat > /tmp/wanted'
+        "${docker}" exec "${reader_box}" sh -c \
+            "rclone copy --quiet --files-from /tmp/wanted 'offsite:${bucket}/wal' /tmp/wal && tar -cf - -C /tmp/wal ."
+    }
+    written_at() {
+        echo "$(offsite lsf --format t "offsite:${bucket}/wal/$1") UTC"
+    }
+    newest() {
+        local name
+        name=$(offsite lsf --files-only "offsite:${bucket}/$1/" | grep -E "$2" | sort | tail -n 1 || true)
+        [[ -z "${name}" ]] || echo "$1/${name}"
+    }
+    base=$(newest base '\.base\.tar\.zst\.age$')
+    dump=$(newest dump '\.dump\.age$')
+    db=$(basename "${base}" | sed -E 's/-[0-9]{8}T[0-9]{6}Z\..*$//')
+    owner="${DRILL_OWNER:-${db}}"
+else
+    # The script goes in on stdin, so nothing in it passes through two shells' quoting.
+    remote() {
+        printf '%s\n' "$1" | ssh "${source}" docker exec -i kiosk-backup sh
+    }
+    fetch() {
+        ssh "${source}" docker exec kiosk-backup cat "$1"
+    }
+    wal_names() {
+        remote 'cd "${BACKUP_DIR}/wal" && ls'
+    }
+    wal_tar() {
+        remote "cd \"\${BACKUP_DIR}/wal\" && tar -cf - -T - <<'NAMES'
+$1
+NAMES"
+    }
+    written_at() {
+        remote "stat -c %y \"\${BACKUP_DIR}/wal/$1\""
+    }
+    db=$(remote 'echo "${PGDATABASE}"')
+    owner=$(remote 'echo "${PGUSER}"')
+    base=$(remote 'ls -1t "${BACKUP_DIR}/${PGDATABASE}"-*.base.tar.zst.age 2>/dev/null | head -n 1')
+    dump=$(remote 'ls -1t "${BACKUP_DIR}/${PGDATABASE}"-*.dump.age | grep -v "\.biometric\.dump\.age$" | head -n 1')
+fi
 
 # A throwaway postgres with age and the key in a tmpfs, never on its disk.
 # Arguments before -- go to docker run, the ones after it to the image.
@@ -68,10 +127,6 @@ counts="SELECT relname, (xpath('/row/n/text()', census))[1]::text::bigint AS row
                   FROM pg_stat_user_tables) counted
          ORDER BY rows DESC"
 
-db=$(remote 'echo "${PGDATABASE}"')
-owner=$(remote 'echo "${PGUSER}"')
-base=$(remote 'ls -1t "${BACKUP_DIR}/${PGDATABASE}"-*.base.tar.zst.age 2>/dev/null | head -n 1')
-dump=$(remote 'ls -1t "${BACKUP_DIR}/${PGDATABASE}"-*.dump.age | grep -v "\.biometric\.dump\.age$" | head -n 1')
 [[ -n "${base}" ]] || { echo "no base backup to replay" >&2; exit 1; }
 [[ -n "${dump}" ]] || { echo "no logical dump to restore" >&2; exit 1; }
 
@@ -87,17 +142,15 @@ start=$("${docker}" exec "${replay_box}" sed -n 's/^START WAL LOCATION: .*(file 
 timeline=$("${docker}" exec "${replay_box}" sed -n 's/^START TIMELINE: //p' "${pgdata}/backup_label")
 [[ "${start}" =~ ^[0-9A-F]{24}$ ]] || { echo "backup_label names no start segment" >&2; exit 1; }
 
-# Only segments at or after the base's own start can ever be asked for.
-wanted=$(remote "cd \"\${BACKUP_DIR}/wal\" && ls | grep -E '^[0-9A-F]{24}\\.zst\\.age\$' \
-    | awk -v start=${start} '(substr(\$0, 1, 24) \"\") >= (start \"\")' || true")
+# Only segments at or after the base's own start can ever be asked for; "" keeps awk comparing text.
+wanted=$(wal_names | grep -E '^[0-9A-F]{24}\.zst\.age$' \
+    | awk -v start="${start}" '(substr($0, 1, 24) "") >= (start "")' || true)
 "${docker}" exec "${replay_box}" mkdir -p /wal
 newest=""
 if [[ -n "${wanted}" ]]; then
-    remote "cd \"\${BACKUP_DIR}/wal\" && tar -cf - -T - <<'NAMES'
-${wanted}
-NAMES" | "${docker}" exec -i "${replay_box}" tar -xf - -C /wal
+    wal_tar "${wanted}" | "${docker}" exec -i "${replay_box}" tar -xf - -C /wal
     newest=$(printf '%s\n' "${wanted}" | sort | tail -n 1 | cut -c 1-24)
-    newest_at=$(remote "stat -c %y \"\${BACKUP_DIR}/wal/${newest}.zst.age\"")
+    newest_at=$(written_at "${newest}.zst.age")
     echo "fetched $(printf '%s\n' "${wanted}" | wc -l) WAL segment(s) from ${start} to ${newest}"
     echo "newest segment in the archive written at ${newest_at}"
 else
