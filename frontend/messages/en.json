@@ -822,7 +822,8 @@
     "USER_NOT_FOUND": "No such account, or it is closed.",
     "VERSION_NOT_FOUND": "No such version of the document.",
     "RATE_LIMITED": "Too many requests. Wait a moment and try again.",
-    "AUTH_LOCKED": "This account is locked for a while after too many wrong passwords. Try again in a few minutes, or reset the password."
+    "AUTH_LOCKED": "This account is locked for a while after too many wrong passwords. Try again in a few minutes, or reset the password.",
+    "DEVICE_ID_RESERVED": "A device name starting with svc- is reserved for services"
   },
   "search": {
     "label": "Search",

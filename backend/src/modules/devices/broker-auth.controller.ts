@@ -5,6 +5,7 @@ import { SkipThrottle } from "@nestjs/throttler";
 import { NotAudited } from "../../common/decorators/audited.decorator.js";
 import { AuthService } from "../auth/auth.service.js";
 import { THROTTLE } from "../auth/auth.types.js";
+import { isServiceName } from "./devices.service.js";
 import { BrokerLoginDto } from "./dto/device.dto.js";
 
 export interface BrokerVerdict {
@@ -24,8 +25,8 @@ export class BrokerAuthController {
   @SkipThrottle({ [THROTTLE.api]: true })
   @ApiOperation({ summary: "Whether a kiosk may log in to the broker" })
   async check(@Body() body: BrokerLoginDto): Promise<BrokerVerdict> {
-    // One client id per ticket, or a valid ticket takes over another kiosk's session.
-    if (body.clientid !== body.username) {
+    // A ticket owns one client id, and a service name logs in only from the broker's table (KEHOACH 7.4).
+    if (body.clientid !== body.username || isServiceName(body.username)) {
       return { result: "deny" };
     }
     const admitted = await this.auth.admitDevice(body.username, body.password);

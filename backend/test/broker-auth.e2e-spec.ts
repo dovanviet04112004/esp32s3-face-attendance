@@ -265,6 +265,21 @@ describe("broker login and device tickets (e2e)", () => {
     assert.equal((await renew(ticket)).status, 401, "a revoked machine renewed its ticket");
   });
 
+  it("refuses to register a name the broker reserves for services", async () => {
+    const res = await request(http)
+      .post("/devices/register")
+      .send({ deviceId: "svc-lobby2", bootstrapToken: validateEnv().DEVICE_BOOTSTRAP_TOKEN, claimCode: "123456" });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "DEVICE_ID_RESERVED");
+    assert.equal(await db.device.findUnique({ where: { id: "svc-lobby2" } }), null);
+  });
+
+  it("denies a service name at the broker even when a row approves it", async () => {
+    const forged = await issued("svc-forged", "APPROVED");
+    assert.equal(await verdict("svc-forged", forged), "deny", "an approved row made a service account");
+    await db.device.delete({ where: { id: "svc-forged" } });
+  });
+
   it("refuses to register a name that cannot be a broker username", async () => {
     const res = await request(http)
       .post("/devices/register")

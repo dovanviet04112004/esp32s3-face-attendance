@@ -822,7 +822,8 @@
     "USER_NOT_FOUND": "Không tìm thấy tài khoản này, hoặc tài khoản đã đóng.",
     "VERSION_NOT_FOUND": "Không tìm thấy bản này của tài liệu.",
     "RATE_LIMITED": "Thao tác quá nhanh. Chờ một lát rồi thử lại.",
-    "AUTH_LOCKED": "Tài khoản tạm khoá vì nhập sai mật khẩu nhiều lần. Thử lại sau ít phút, hoặc đặt lại mật khẩu."
+    "AUTH_LOCKED": "Tài khoản tạm khoá vì nhập sai mật khẩu nhiều lần. Thử lại sau ít phút, hoặc đặt lại mật khẩu.",
+    "DEVICE_ID_RESERVED": "Tên thiết bị bắt đầu bằng svc- là tên dành cho dịch vụ, máy không dùng được"
   },
   "search": {
     "label": "Tìm kiếm",

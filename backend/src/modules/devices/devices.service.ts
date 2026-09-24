@@ -104,6 +104,9 @@ export class DevicesService {
     if (!heartbeatSchema.shape.deviceId.safeParse(body.deviceId).success) {
       throw new BadRequestException("DEVICE_ID_MALFORMED");
     }
+    if (isServiceName(body.deviceId)) {
+      throw new BadRequestException("DEVICE_ID_RESERVED");
+    }
     const claim = claimFingerprint(body.deviceId, body.claimCode);
     const held = await this.db.device.findUnique({ where: { id: body.deviceId } });
     const waiting = this.waiting(body.deviceId);
@@ -388,6 +391,14 @@ export class DevicesService {
       create: { id: deviceId, lastSeenAt: at, online: true },
     });
   }
+}
+
+// The ACL grants fleet-wide rights to this prefix by username (KEHOACH 7.4).
+const SERVICE_PREFIX = "svc-";
+
+/** Whether a name is one the broker gives service rights to, which no device may hold. */
+export function isServiceName(username: string): boolean {
+  return username.toLowerCase().startsWith(SERVICE_PREFIX);
 }
 
 function claimFingerprint(deviceId: string, code: string): string {
