@@ -23,6 +23,8 @@ export interface DeviceClaims {
 export const REFRESH_COOKIE = "kiosk_refresh";
 
 export const THROTTLE = {
+  api: "api",
+  heavy: "heavy",
   login: "login",
   deviceRegister: "deviceRegister",
   forgot: "forgot",

@@ -29,6 +29,7 @@ export const AUDIT_ACTIONS = {
   USER_ROLE: "user.role",
   USER_INVITE: "user.invite",
   USER_DELETE: "user.delete",
+  USER_LOCKED: "user.locked",
 
   CONTRACT_CREATE: "contract.create",
   CONTRACT_DECIDE: "contract.decide",

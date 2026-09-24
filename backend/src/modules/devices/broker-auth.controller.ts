@@ -1,8 +1,10 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { SkipThrottle } from "@nestjs/throttler";
 
 import { NotAudited } from "../../common/decorators/audited.decorator.js";
 import { AuthService } from "../auth/auth.service.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import { BrokerLoginDto } from "./dto/device.dto.js";
 
 export interface BrokerVerdict {
@@ -18,6 +20,8 @@ export class BrokerAuthController {
   @Post("auth")
   @HttpCode(HttpStatus.OK)
   @NotAudited()
+  // The caller is the broker inside compose, speaking for the whole fleet (KEHOACH 7.2).
+  @SkipThrottle({ [THROTTLE.api]: true })
   @ApiOperation({ summary: "Whether a kiosk may log in to the broker" })
   async check(@Body() body: BrokerLoginDto): Promise<BrokerVerdict> {
     // One client id per ticket, or a valid ticket takes over another kiosk's session.

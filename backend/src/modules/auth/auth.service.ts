@@ -3,6 +3,7 @@ import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypt
 import { Inject, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
+import { ThrottlerException } from "@nestjs/throttler";
 import type { User } from "@prisma/client";
 
 import type { Env } from "../../config/env.schema.js";
@@ -11,6 +12,7 @@ import type { AccessClaims, DeviceClaims, RefreshClaims } from "./auth.types.js"
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
+import { LoginLockout } from "./login-lockout.service.js";
 import { hashPassword, LINK_BYTES, verifyPassword } from "./password.js";
 
 const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -55,9 +57,14 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
+    private readonly lockout: LoginLockout,
   ) {}
 
   async signIn(email: string, password: string, from: SignedInFrom): Promise<IssuedTokens> {
+    // A locked email costs no scrypt, known or not (KEHOACH 7.2).
+    if ((await this.lockout.lockedFor(email)) > 0) {
+      throw new ThrottlerException("AUTH_LOCKED");
+    }
     const user = await this.db.user.findUnique({ where: { email } });
     // The same answer whether the address is unknown or the password is wrong,
     // so a caller cannot learn which addresses exist.
@@ -65,8 +72,10 @@ export class AuthService {
     // A closed account answers like a wrong password on purpose: the caller
     // has proved nothing yet, so it must not learn the address exists.
     if (!user || !ok || !user.active) {
+      await this.lockout.missed(email, user?.id ?? null);
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
     }
+    await this.lockout.clear(email);
     await this.makeRoom(user.id);
     return this.issue(user, null, from);
   }
@@ -105,7 +114,7 @@ export class AuthService {
   async setPassword(token: string, password: string): Promise<void> {
     const setup = await this.db.passwordSetup.findUnique({
       where: { tokenHash: fingerprint(token) },
-      include: { user: { select: { id: true, active: true } } },
+      include: { user: { select: { id: true, active: true, email: true } } },
     });
     const now = new Date();
     if (!setup || setup.usedAt !== null || setup.expiresAt <= now || !setup.user.active) {
@@ -120,6 +129,7 @@ export class AuthService {
         data: { revokedAt: now },
       }),
     ]);
+    await this.lockout.clear(setup.user.email);
     this.log.log(`account ${setup.user.id} set its own password`);
   }
 

@@ -1,11 +1,13 @@
 import { Body, Controller, Get, Header, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import {
   D02QueryDto,
   InsuranceRangeDto,
@@ -63,6 +65,7 @@ export class ReportsController {
   }
 
   @Post("attendance/monthly")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Queue a long roll-up; asking twice queues one run" })
   async schedule(@Body() range: RangeDto): Promise<{ jobId: string }> {

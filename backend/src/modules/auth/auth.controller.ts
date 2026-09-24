@@ -11,10 +11,10 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { SkipThrottle, ThrottlerGuard } from "@nestjs/throttler";
 import type { CookieOptions, Request, Response } from "express";
 
 import { NotAudited } from "../../common/decorators/audited.decorator.js";
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { JwtRefreshGuard } from "../../common/guards/jwt-refresh.guard.js";
@@ -40,10 +40,7 @@ export class AuthController {
 
   @Post("login")
   @HttpCode(HttpStatus.OK)
-  @UseGuards(ThrottlerGuard)
-  @SkipThrottle({ [THROTTLE.deviceRegister]: true, [THROTTLE.forgot]: true })
-  // Every bucket a route does not name governs it too, and the loosest of them
-  // wins, so each door here skips the other's allowance (KEHOACH 7.2).
+  @RateBucket(THROTTLE.login)
   @ApiOperation({ summary: "Exchange an email and password for an access token" })
   async login(
     @Body() body: LoginDto,
@@ -59,8 +56,7 @@ export class AuthController {
 
   @Post("set-password")
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(ThrottlerGuard)
-  @SkipThrottle({ [THROTTLE.deviceRegister]: true, [THROTTLE.forgot]: true })
+  @RateBucket(THROTTLE.login)
   @ApiOperation({ summary: "Spend a one-time link to set a first password" })
   async setPassword(@Body() body: SetPasswordDto): Promise<void> {
     await this.auth.setPassword(body.token, body.password);
@@ -68,8 +64,7 @@ export class AuthController {
 
   @Post("forgot-password")
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(ThrottlerGuard)
-  @SkipThrottle({ [THROTTLE.login]: true, [THROTTLE.deviceRegister]: true })
+  @RateBucket(THROTTLE.forgot)
   // The answer is the same for an address with an account and one without, so
   // this door cannot be read as a list of who works here (KEHOACH 9.4).
   @ApiOperation({ summary: "Ask for a setup link by mail; answers alike either way" })

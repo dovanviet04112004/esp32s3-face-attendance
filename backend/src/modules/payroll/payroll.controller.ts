@@ -12,11 +12,13 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { PayrollPeriod, PayrollRun } from "@prisma/client";
 
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import {
   AddBonusDto,
   CreatePeriodDto,
@@ -86,6 +88,7 @@ export class PayrollController {
   }
 
   @Post("payroll-periods/:id/deliver")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Send every issued payslip as a link, not an attachment" })
   deliver(
@@ -96,6 +99,7 @@ export class PayrollController {
   }
 
   @Get("payroll-periods/:id/export")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @ApiOperation({ summary: "The payment file for a bank, or the one for accounting" })
@@ -116,6 +120,7 @@ export class PayrollController {
   }
 
   @Post("payroll-runs")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Start a run: regular, bonus or final settlement" })
   createRun(@CurrentViewer() viewer: Viewer, @Body() body: CreateRunDto): Promise<PayrollRun> {
@@ -155,6 +160,7 @@ export class PayrollController {
   }
 
   @Post("payroll-runs/:id/execute")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Calculate every payslip in the run" })
   execute(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayrollRun> {

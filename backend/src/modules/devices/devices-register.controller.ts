@@ -10,10 +10,10 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
-import { SkipThrottle, ThrottlerGuard } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { ExtractJwt } from "passport-jwt";
 
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { DeviceAuthGuard } from "../../common/guards/device-auth.guard.js";
 import { THROTTLE, type DeviceClaims } from "../auth/auth.types.js";
 import { DevicesService, type Registration } from "./devices.service.js";
@@ -29,8 +29,7 @@ export class DevicesRegisterController {
   constructor(private readonly devices: DevicesService) {}
 
   @Post("register")
-  @UseGuards(ThrottlerGuard)
-  @SkipThrottle({ [THROTTLE.login]: true, [THROTTLE.forgot]: true })
+  @RateBucket(THROTTLE.deviceRegister)
   @ApiOperation({ summary: "A kiosk with an empty NVS asking to be let in" })
   @ApiResponse({ status: HttpStatus.ACCEPTED, description: "Waiting for a person to approve it" })
   @ApiResponse({ status: HttpStatus.OK, description: "Approved; carries the device token" })

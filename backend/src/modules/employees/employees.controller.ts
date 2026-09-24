@@ -15,6 +15,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Employee } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
@@ -27,6 +28,7 @@ import {
   OnboardDto,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import { EmployeesService, type Offboarding, type Onboarding } from "./employees.service.js";
 import { IMPORT_COLUMNS, type ImportReport } from "./import.js";
 
@@ -44,6 +46,7 @@ export class EmployeesController {
   }
 
   @Post("import")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Dry run by default; apply=true writes when nothing is wrong" })
   importCsv(
@@ -77,6 +80,7 @@ export class EmployeesController {
   }
 
   @Get("export")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @ApiOperation({ summary: "Every person this viewer may read, in the import's own columns" })

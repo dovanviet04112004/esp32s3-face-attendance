@@ -16,6 +16,12 @@ export const CACHE = {
   reportsTo: (employeeId: number) => ({ key: `${SCOPE_PREFIX}${employeeId}`, ttlSeconds: 300 }),
 } as const;
 
+/** Counters guarding a door, not a cache of rows: losing one lifts a lock early and never locks anyone (KEHOACH 7.2). */
+export const GUARD = {
+  loginMisses: (emailHash: string) => `auth:miss:${emailHash}`,
+  loginLock: (emailHash: string) => `auth:lock:${emailHash}`,
+} as const;
+
 /** What a cached entry is allowed to be: anything Postgres can rebuild. */
 export interface CacheEntry {
   key: string;

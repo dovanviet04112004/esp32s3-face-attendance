@@ -71,6 +71,11 @@ jobs:
       EMQX_API_PASSWORD: public
       # The auth suite signs in six times, then spends the whole allowance on purpose.
       LOGIN_ATTEMPTS_PER_MINUTE: "20"
+      # Every suite signs in as the one seeded admin and shares one Redis; the limits
+      # suite sets its own low numbers in its own process.
+      API_REQUESTS_PER_MINUTE: "100000"
+      HEAVY_REQUESTS_PER_MINUTE: "100000"
+      LOGIN_LOCK_AFTER: "100"
       # The profile suite listens for the mail itself, and a runner may not bind 587.
       MAIL_HOST: 127.0.0.1
       MAIL_PORT: "2525"
