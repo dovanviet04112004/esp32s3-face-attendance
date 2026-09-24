@@ -335,6 +335,9 @@ model DeviceEnrollment {
   employeeId  Int
   state       EnrollmentState @default(ASSIGNED)
   templateIdx Int?
+  // The capture session this door opened; only it adds to that session (KEHOACH 7.5).
+  sessionAt       DateTime?
+  sessionOpenedAt DateTime?
   updatedAt   DateTime        @updatedAt
   device      Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   employee    Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)

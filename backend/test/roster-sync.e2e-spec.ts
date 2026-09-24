@@ -139,6 +139,22 @@ describe("roster sync across doors (e2e)", () => {
     assert.deepEqual((await samples()).map((one) => [one.idx, one.at]), [[0, FIRST], [1, FIRST]]);
   });
 
+  it("turns away a sample of the held session from a door that did not open it", async () => {
+    const wasAt = await versionOf(DOOR_B);
+    await enrollment.takeReport(DOOR_B, report(DOOR_B, employeeId, 0x99, FIRST, 2));
+    assert.deepEqual((await samples()).map((one) => one.idx), [0, 1], "another door wrote into a session it never opened");
+    assert.ok((await versionOf(DOOR_B)) > wasAt, "the door that tried was not brought back to the held samples");
+  });
+
+  it("turns away a late sample even from the door that opened the session", async () => {
+    await db.deviceEnrollment.update({
+      where: { deviceId_employeeId: { deviceId: DOOR_A, employeeId } },
+      data: { sessionOpenedAt: new Date(Date.now() - 11 * 60_000) },
+    });
+    await enrollment.takeReport(DOOR_A, report(DOOR_A, employeeId, 0x98, FIRST, 2));
+    assert.deepEqual((await samples()).map((one) => one.idx), [0, 1], "a session stayed open past its window");
+  });
+
   it("turns away the other door's session once the first one is held", async () => {
     const wasAt = await versionOf(DOOR_B);
     await enrollment.takeReport(DOOR_B, report(DOOR_B, employeeId, 0x44, SECOND));

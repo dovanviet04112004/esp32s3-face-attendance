@@ -182,7 +182,7 @@ export class EnrollmentService {
       if (waiting && current) {
         return "repeat" as const;
       }
-      if (!(waiting || (pair.state === "ENROLLED" && current))) {
+      if (!(waiting || (pair.state === "ENROLLED" && current && this.opened(pair, session)))) {
         return "refused" as const;
       }
       if (waiting && held) {
@@ -201,7 +201,11 @@ export class EnrollmentService {
       });
       await tx.deviceEnrollment.update({
         where: { deviceId_employeeId: { deviceId, employeeId } },
-        data: { state: "ENROLLED", templateIdx: report.templateIdx },
+        data: {
+          state: "ENROLLED",
+          templateIdx: report.templateIdx,
+          ...(waiting ? { sessionAt: session, sessionOpenedAt: new Date() } : {}),
+        },
       });
       if (report.embeddingVersion) {
         await tx.employee.update({ where: { id: employeeId }, data: { embeddingVersion: report.embeddingVersion } });
@@ -221,6 +225,16 @@ export class EnrollmentService {
         await this.spread(deviceId, employeeId, report.templateIdx, verdict === "replaced");
         this.log.log(`${deviceId} enrolled employee ${employeeId} sample ${report.templateIdx}`);
     }
+  }
+
+  // The session start reaches every kiosk with its samples, so matching it proves nothing on its own (KEHOACH 7.5).
+  private opened(pair: DeviceEnrollment, session: Date): boolean {
+    const windowMs = this.config.get("ENROLL_SESSION_MINUTES", { infer: true }) * 60_000;
+    return (
+      pair.sessionAt?.getTime() === session.getTime() &&
+      pair.sessionOpenedAt !== null &&
+      Date.now() - pair.sessionOpenedAt.getTime() <= windowMs
+    );
   }
 
   private async askedRetake(deviceId: string, employeeId: number): Promise<void> {

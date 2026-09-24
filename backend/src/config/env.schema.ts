@@ -17,6 +17,7 @@ export const envSchema = z
     DEVICE_BOOTSTRAP_TOKEN: z.string().min(16),
     DEVICE_CLAIM_ATTEMPTS: z.coerce.number().int().positive().max(20).default(5),
     DEVICE_POLL_INTERVAL_S: z.coerce.number().int().min(1).max(300).default(5),
+    ENROLL_SESSION_MINUTES: z.coerce.number().int().positive().max(120).default(10),
     JWT_DEVICE_SECRET: z.string().min(32),
 
     LOGIN_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(5),
