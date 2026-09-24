@@ -17,6 +17,20 @@ tcp:
 
 http:
   middlewares:
+    # 50 a second per address with bursts to 100: a whole office behind one NAT shares it (KEHOACH 7.2).
+    rate-direct:
+      rateLimit:
+        average: 50
+        period: 1s
+        burst: 100
+    # Behind Cloudflare every socket is Cloudflare's; the client is in its header.
+    rate-cloudflare:
+      rateLimit:
+        average: 50
+        period: 1s
+        burst: 100
+        sourceCriterion:
+          requestHeaderName: CF-Connecting-IP
     security-headers:
       headers:
         frameDeny: true

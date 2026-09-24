@@ -59,8 +59,8 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
-      # Traefik is the one hop in front, so the throttler keys on the real client.
-      TRUST_PROXY_HOPS: "1"
+      # Traefik alone is one hop; Cloudflare in front of it makes two (KEHOACH 4.8).
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
     volumes:
       - ./emqx/certs/ca.crt:/certs/ca.crt:ro
     depends_on:
@@ -76,7 +76,8 @@ services:
       traefik.http.routers.api.rule: Host(`${API_DOMAIN}`) && !PathPrefix(`/mqtt`)
       traefik.http.routers.api.entrypoints: websecure
       traefik.http.routers.api.tls.certresolver: letsencrypt
-      traefik.http.routers.api.middlewares: security-headers@file
+      # rate-cloudflare once DNS goes through Cloudflare, or every user shares its addresses (KEHOACH 7.2).
+      traefik.http.routers.api.middlewares: security-headers@file,${API_RATE_MIDDLEWARE:-rate-direct}@file
       traefik.http.services.api.loadbalancer.server.port: "3000"
 
   postgres:

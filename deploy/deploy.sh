@@ -61,6 +61,17 @@ reload_broker() {
     "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate emqx
 }
 
+traefik_digest() {
+    cat "$HERE/traefik/traefik.yml" "$HERE/traefik/dynamic.yml" | sha256sum
+}
+
+# Same trap as the broker: the file watch never sees a checkout's new inode (KEHOACH 4.8).
+reload_traefik() {
+    [[ "$(traefik_digest)" == "$1" ]] && return 0
+    log "traefik config changed, recreating traefik"
+    "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate traefik
+}
+
 # The running and the previous image stay for a rollback; each is ~1.1 GB.
 prune() {
     local keep_now="$1" keep_before="$2" tag
@@ -72,7 +83,7 @@ prune() {
 }
 
 main() {
-    local sha actor previous broker
+    local sha actor previous broker proxy
     read -r sha actor _ <<< "${SSH_ORIGINAL_COMMAND:-${1:-} ${2:-}}"
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { log "expected a 40-character commit sha"; exit 2; }
     [[ "$actor" =~ ^[A-Za-z0-9-]+(\[bot\])?$ ]] || { log "expected the github actor after the sha"; exit 2; }
@@ -83,9 +94,11 @@ main() {
 
     log "moving to $sha${previous:+ from $previous}"
     broker="$(broker_digest)"
+    proxy="$(traefik_digest)"
     checkout "$sha"
     start "$sha"
     reload_broker "$broker"
+    reload_traefik "$proxy"
     if healthy; then
         echo "$sha" > "$HERE/.deployed"
         prune "$sha" "$previous"
@@ -99,9 +112,11 @@ main() {
     fi
     log "rolling back to $previous"
     broker="$(broker_digest)"
+    proxy="$(traefik_digest)"
     checkout "$previous"
     start "$previous"
     reload_broker "$broker"
+    reload_traefik "$proxy"
     healthy || log "the rollback is not healthy either"
     exit 1
 }
