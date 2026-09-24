@@ -1365,10 +1365,23 @@ static void ota_refused(const ota_manifest_t *offer, const char *why)
 static ui_kiosk_ticket_t ticket_shown(net_provision_answer_t answer)
 {
     switch (answer) {
+    case NET_PROVISION_WAITING: return UI_KIOSK_TICKET_WAITING;
     case NET_PROVISION_REFUSED: return UI_KIOSK_TICKET_REFUSED;
     case NET_PROVISION_DISABLED: return UI_KIOSK_TICKET_NO_TOKEN;
-    default: return UI_KIOSK_TICKET_WAITING;
+    default: return UI_KIOSK_TICKET_OFFLINE;
     }
+}
+
+// A 202 is a live server waiting on a person, so it sets the pace; only errors back off (KEHOACH 7.3).
+static uint32_t ticket_pause_ms(net_provision_answer_t answer, uint32_t poll_s, uint32_t *failures)
+{
+    if (answer == NET_PROVISION_WAITING && poll_s > 0) {
+        *failures = 0;
+        return net_provision_poll_ms(poll_s, esp_random());
+    }
+    // Only a person or a new image fixes a refused batch, so those ask at the ceiling.
+    const bool hopeless = answer == NET_PROVISION_REFUSED || answer == NET_PROVISION_DISABLED;
+    return net_provision_wait_ms(hopeless ? UINT32_MAX : (*failures)++, esp_random());
 }
 
 // Blocks until a person approves the kiosk; attendance queues offline meanwhile (KEHOACH 7.3).
@@ -1376,19 +1389,28 @@ static void fetch_ticket(const app_wiring_t *wiring)
 {
     char id[STORAGE_DEVICE_ID_CAP] = { 0 };
     sys_storage_device_id(id, sizeof(id));
-    for (uint32_t attempt = 0;; ++attempt) {
-        const net_provision_answer_t answer = net_provision_register(NULL);
+    for (uint32_t failures = 0;;) {
+        uint32_t poll_s = 0;
+        const net_provision_answer_t answer = net_provision_register(&poll_s);
         if (answer == NET_PROVISION_GRANTED) {
             break;
         }
         // Read after the ask: a spent code has just been replaced (KEHOACH 7.3).
         char claim[8] = { 0 };
-        net_provision_claim(claim, sizeof(claim));
+        if (answer == NET_PROVISION_WAITING) {
+            net_provision_claim(claim, sizeof(claim));
+        }
         ui_kiosk_set_ticket(ticket_shown(answer), id, claim);
-        // Only a person or a new image fixes a refused batch, so those ask at the ceiling.
-        const bool hopeless = answer == NET_PROVISION_REFUSED || answer == NET_PROVISION_DISABLED;
-        vTaskDelay(pdMS_TO_TICKS(net_provision_wait_ms(hopeless ? UINT32_MAX : attempt,
-                                                       esp_random())));
+        const uint32_t pause_ms = ticket_pause_ms(answer, poll_s, &failures);
+        if (answer == NET_PROVISION_UNREACHABLE && !net_wifi_is_connected()) {
+            // No link at all: ask the moment it returns, not at the end of the backoff.
+            const esp_err_t link = net_wifi_wait_connected(pause_ms);
+            failures = link == ESP_OK ? 0 : failures;
+            if (link != ESP_ERR_INVALID_STATE) {
+                continue;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(pause_ms));
     }
     ESP_LOGI(TAG, "ticket collected, dialling the broker");
     ui_kiosk_set_ticket(UI_KIOSK_TICKET_HELD, NULL, "");
