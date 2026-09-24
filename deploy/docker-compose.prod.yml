@@ -73,7 +73,7 @@ services:
     labels:
       traefik.enable: "true"
       # /mqtt/auth answers the broker only, over the compose network (KEHOACH 7.4).
-      traefik.http.routers.api.rule: Host(`${API_DOMAIN}`) && !PathPrefix(`/mqtt`)
+      traefik.http.routers.api.rule: Host(`${API_DOMAIN}`) && !PathRegexp(`(?i)^/mqtt`)
       traefik.http.routers.api.entrypoints: websecure
       traefik.http.routers.api.tls.certresolver: letsencrypt
       # rate-cloudflare once DNS goes through Cloudflare, or every user shares its addresses (KEHOACH 7.2).
