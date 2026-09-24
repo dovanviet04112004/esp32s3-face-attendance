@@ -4513,7 +4513,7 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
 | `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online |
-| `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, updatedAt |
+| `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, photoUrl |
@@ -4797,7 +4797,7 @@ băm của bản build, nên mỗi lần build lại là một danh sách mới 
 |---|---|---|
 | `/_next/static/*` | **Cache trước**, không hỏi mạng | Tên có băm nội dung, nên bản cũ không bao giờ sai |
 | Điều hướng trang | **Mạng trước**, hỏng thì lấy bản đã lưu | Mất mạng trong hầm gửi xe vẫn mở được trang, không ra trang lỗi trình duyệt |
-| `GET` tới API | **Mạng trước**, hỏng thì lấy bản đã lưu | §9.21.3 luật 1: thứ đã xem phải xem lại được — phiếu lương gần nhất, số dư phép |
+| `GET` tới API | **Mạng trước**, hỏng thì lấy bản đã lưu, **trong ngăn của chính tài khoản** gửi request (tên ngăn theo `sub` của access token) | §9.21.3 luật 1: thứ đã xem phải xem lại được — phiếu lương gần nhất, số dư phép. Ngăn theo tài khoản vì khoá của Cache Storage là URL, còn token thì không nằm trong khoá: thiếu ngăn là máy dùng chung trả phiếu lương của người trước cho người sau. Đăng xuất thì trang bảo service worker xoá mọi ngăn đọc |
 
 **Không cache `POST`.** Một đơn gửi lúc mất mạng phải **xếp hàng và nói rõ là đang chờ**
 (§9.21.3), chứ không được lặng lẽ trả về một phản hồi cũ làm người gửi tưởng đã xong.
@@ -5954,6 +5954,9 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 | OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
 | Rate limit | Ba lớp, đoạn *Chống spam* dưới bảng. Traefik chặn lũ theo IP trước Node; `api` có một hạn mức chung cho **mọi** route theo tài khoản, hạn mức chặt hơn cho việc nặng, và hạn mức riêng cho đăng nhập, quên mật khẩu, đăng ký kiosk; sai mật khẩu nhiều lần thì khoá chính tài khoản ấy bất kể IP |
+| Server tự tải URL | Lời mời OTA và endpoint web-push là URL người dùng đưa, nên đó là đường SSRF. Tải bản phát hành **không theo redirect**, và từ chối host phân giải ra dải nội bộ, loopback hay link-local. Endpoint web-push chỉ nhận host của các dịch vụ push đã biết (FCM, Mozilla, Apple, Windows), và một endpoint đã thuộc tài khoản khác thì không đổi chủ |
+| File xuất cho Excel | Ô bắt đầu bằng `=`, `+`, `-`, `@`, tab hay CR được thêm `'` đằng trước. Thiếu nó thì một số điện thoại nhân viên tự khai thành công thức chạy trên máy HR |
+| Bộ nhớ đệm trình duyệt | API trả `Cache-Control: no-store`. Service worker giữ lần đọc gần nhất **theo từng tài khoản** và xoá sạch khi đăng xuất (§4.7), nên máy dùng chung không đưa dữ liệu của người trước cho người sau |
 | DDoS lưu lượng | Không lớp nào trong app chặn được. DNS đi qua Cloudflare, `api` qua proxy của nó, nên IP thật của VPS không nằm trong bản ghi web. Giới hạn nói rõ ở đoạn *Cloudflare* dưới bảng |
 
 **Chống spam, ba lớp, mỗi lớp chặn một thứ lớp kia không thấy.**
@@ -6196,8 +6199,10 @@ nó rơi vào tay kẻ cướp. ACL chỉ chặn theo username nên không bắt
   mà không phải đi tìm mặc định.
 
 **`/mqtt/auth` không ra internet.** EMQX gọi thẳng `api:3000` trong mạng compose. Router của
-Traefik cho `api` loại tiền tố `/mqtt`, nên từ ngoài vào đường ấy là 404. Để nó mở thì nó thành
-một cái máy trả lời "vé này còn sống không" cho bất kỳ ai.
+Traefik cho `api` loại tiền tố `/mqtt` **không phân biệt hoa thường** (`PathRegexp` với `(?i)`),
+nên từ ngoài vào đường ấy là 404. `PathPrefix` phân biệt hoa thường trong khi Express định tuyến
+không phân biệt, nên với nó `/MQTT/auth` vẫn lọt vào. Để nó mở thì nó thành một cái máy trả lời
+"vé này còn sống không" cho bất kỳ ai.
 
 **Thu hồi cắt phiên đang mở, vì broker chỉ chấm vé lúc nối.** Đo 24/09 trên production: máy
 đã `REVOKED`, vé đã xoá, mà phiên MQTT mở trước đó vẫn sống. Trong 15 phút server nhận 16
@@ -6238,12 +6243,15 @@ chấm công và trở thành bằng chứng ai có mặt lúc mấy giờ. Mộ
 mà vẫn giả được `up/attendance` thì bảng chấm công không còn nói lên điều gì. Luật `deny` đặt
 **trước** hai luật `allow`, vì EMQX đọc file ACL từ trên xuống và dừng ở luật khớp đầu tiên.
 
-**Tiền tố `svc-` là tên dành riêng, và thứ thực thi nó là việc cấp tài khoản chứ không phải
-thiết bị.** Thiết bị khai tên nào cũng được, nhưng một tên `svc-*` chỉ nối được nếu
-`built_in_database` có đúng tài khoản ấy — mà tài khoản chỉ do người vận hành tạo; `api` không
-bao giờ trả `allow` cho một tên không phải `deviceId` đã duyệt. Nên một kiosk lỡ đặt serial
-`svc-sanh` không tự leo quyền được; phải có người vừa đặt tên ấy **vừa** tạo tài khoản ấy. Vì
-vậy không thêm phép kiểm nào trong firmware: nó sẽ là code phòng thủ không phòng được gì.
+**Tiền tố `svc-` là tên dành riêng, và `api` là chỗ giữ nó.** ACL cấp quyền dịch vụ theo
+**username**, và `/mqtt/auth` trả `allow` cho mọi `deviceId` đã duyệt. Nếu một máy được phép
+tên `svc-sanh` thì chỉ cần một lần admin duyệt vội là nó đọc được mọi `up/` và ghi được mọi
+`down/` của cả đội: mở mọi cửa, cấy mặt vào mọi kiosk. Token lô nằm trong mọi firmware nên ai
+cũng đăng ký được một tên như vậy. Hai chốt, ở đúng hai chỗ có thể sinh ra một phiên như thế:
+`POST /devices/register` từ chối `deviceId` mở đầu bằng `svc-` (`DEVICE_ID_RESERVED`), và
+`/mqtt/auth` trả `deny` cho username ấy dù dòng trên bảng nói gì. Tài khoản `svc-*` thật chỉ đến
+từ `built_in_database`, tầng đứng trước `http`, nên hai chốt không chặn nhầm nó. Firmware không
+cần phép kiểm riêng: máy khai `svc-` chỉ bị từ chối lúc xin vào.
 
 **`deploy/watch.sh` là vai dịch vụ ấy dùng bằng tay.** Nó đăng nhập `svc-ops` với
 `EMQX_OPS_PASSWORD` trong `deploy/.env` rồi nghe `kiosk/+/up/#`. Đường thay thế — bật
@@ -6391,9 +6399,12 @@ mạng vẫn tới nơi.
 3. **Server chỉ nhận mẫu từ cửa đang được giao chụp.** Một lần chụp là một phiên: mọi mẫu của nó
    mang chung `updatedAt`. Cặp ở `ASSIGNED` hoặc `RETAKE` mà nhận một phiên khác phiên đang giữ
    thì phiên ấy thắng: server xoá mọi mẫu cũ của người đó, ghi mẫu mới, chuyển cặp sang
-   `ENROLLED`, rồi đẩy `DELETE_EMPLOYEE` kèm mẫu mới sang mọi cửa khác. Cặp đã `ENROLLED` thì chỉ
-   nhận thêm mẫu **của đúng phiên đang giữ**, tức mẫu thứ hai, thứ ba hoặc một bản gửi trùng.
-   Không so điểm, vì mẫu chụp tại kiosk luôn mang điểm 255.
+   `ENROLLED`, rồi đẩy `DELETE_EMPLOYEE` kèm mẫu mới sang mọi cửa khác. Cửa ấy ghi lại phiên nó
+   vừa mở và lúc mở (`DeviceEnrollment.sessionAt`, `sessionOpenedAt`). Sau đó chỉ **chính cửa đã
+   mở phiên**, trong `ENROLL_SESSION_MINUTES` (10) phút kể từ lúc mở, mới được thêm mẫu của phiên
+   ấy: mẫu thứ hai, thứ ba hoặc một bản gửi trùng. Giờ bắt đầu phiên được phát tới mọi kiosk cùng
+   mẫu, nên nếu chỉ so giờ thì một kiosk bị lấy vé sẽ ghi đè mẫu của bất kỳ ai nó giữ bằng mặt kẻ
+   gian. Không so điểm, vì mẫu chụp tại kiosk luôn mang điểm 255.
 4. **Từ chối thì máy về đúng thứ server giữ.** Cặp đã `REVOKED` thì server đẩy `DELETE_EMPLOYEE`
    cho cửa vừa báo; cặp `ENROLLED` ở một phiên khác thì server đẩy `DELETE_EMPLOYEE` rồi các mẫu
    nó đang giữ. Cả hai đều tăng `rosterVersion` như mọi lệnh khác.
@@ -6596,10 +6607,26 @@ phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng 
 |---|---|---|
 | `VIEWER` | **chỉ chính mình** — vai mặc định của một tài khoản chưa ai giao việc | không gì |
 | `EMPLOYEE` | hồ sơ của **chính mình**, chấm công của mình, phép của mình, phiếu lương của mình | đơn nghỉ phép của mình, vài ô liên lạc |
-| `MANAGER` | mọi thứ của `EMPLOYEE`, cộng **cây dưới quyền mình** trừ tạm ứng lương (§9.15) | duyệt hoặc từ chối đơn của cấp dưới, trừ tạm ứng lương |
+| `MANAGER` | mọi thứ của `EMPLOYEE`, cộng **cây dưới quyền mình** ở những gì cần để quản việc: tên, mã, phòng ban, chức danh, liên lạc, ca, chấm công, nghỉ phép, đơn từ. **Không** thấy của cấp dưới: CCCD, mã số thuế, số BHXH, ngày sinh, tài khoản ngân hàng, lương, phiếu lương, quyết toán thuế, người phụ thuộc, tạm ứng, đơn đổi hồ sơ | duyệt hoặc từ chối đơn của cấp dưới, trừ tạm ứng lương |
 | `HR` | toàn bộ hồ sơ, chấm công, nghỉ phép | hồ sơ, hợp đồng, phép, phân ca |
 | `PAYROLL` | như `HR`, cộng **lương và phiếu lương** | chạy kỳ lương, chốt kỳ |
 | `ADMIN` | tất cả, cộng thiết bị và người dùng | tất cả |
+
+**Quản lý thấy người, không thấy giấy tờ và tiền của người.** Duyệt phép và xếp ca không cần số
+CCCD hay số tài khoản của cấp dưới; một trưởng nhóm đọc được lương cả cây là một cái bảng lương
+bị chép ra ngoài bàn nhân sự. Hai cách thu hẹp, theo loại dữ liệu:
+- **Lương và giấy tờ riêng** — phiếu lương, quyết toán thuế, mức lương, người phụ thuộc, đơn
+  đổi hồ sơ — dùng phạm vi `deskOrSelfEmployeeIds`: bàn nhân sự thấy tất, còn lại chỉ thấy mình,
+  đúng như tạm ứng lương.
+- **Hồ sơ nhân viên** vẫn mở theo cây, nhưng khi người xem là quản lý và dòng không phải của
+  chính họ thì các cột `dateOfBirth`, `nationalId`, `taxCode`, `socialInsuranceNo`,
+  `bankAccount`, `bankName` trả về rỗng. Xuất Excel chỉ dành cho `ADMIN`, `HR`, `PAYROLL`.
+
+**Không ai duyệt việc của chính mình.** Luật 2 của §9.18 áp cho **mọi** thứ duyệt được, không
+riêng đơn đổi hồ sơ: đơn phép và đơn sửa công, khiếu nại lương, người phụ thuộc, việc trong
+checklist mà một vai khác phụ trách. Người duyệt là người xin thì trả `SELF_DECISION`, kể cả
+khi người ấy là `ADMIN`. Hộp chờ duyệt vốn đã giấu đơn của chính mình; luật này chặn cả đường
+gọi thẳng API.
 
 **Luật này có một công cụ giữ, vì nó là loại luật sẽ mục.** `tools/check_routes.py` đọc mọi
 controller và fail khi một route **vừa không mang `@Roles` vừa không nhận `@CurrentViewer`** —
@@ -7779,9 +7806,10 @@ ngày 20/09: `button`, `input`, `select`, `checkbox` đều đạt trên con tr�
 
 Nhà xưởng, tầng hầm, ngoài công trường. Ba luật:
 
-1. **Thứ đã xem phải xem lại được khi mất mạng.** Phiếu lương gần nhất, số dư phép, lịch ca của
-   tôi — service worker giữ bản đã tải. Một người mở ứng dụng trong hầm gửi xe để xem ca mai
-   phải thấy được ca mai.
+1. **Thứ đã xem phải xem lại được khi mất mạng, nhưng chỉ bởi người đã xem.** Phiếu lương gần
+   nhất, số dư phép, lịch ca của tôi — service worker giữ bản đã tải trong ngăn của tài khoản tôi
+   và xoá khi tôi đăng xuất (§4.7). Một người mở ứng dụng trong hầm gửi xe để xem ca mai phải
+   thấy được ca mai.
 2. **Đơn gửi lúc mất mạng thì xếp hàng, không mất.** Ghi lại, đồng bộ khi có sóng, và **nói rõ
    là đang chờ gửi** — im lặng ở đây là người ta gửi lại ba lần.
 
@@ -7940,6 +7968,12 @@ Một lịch sao lưu không nói lên điều gì. Ba con số mới nói:
 **Kiểm phục hồi định kỳ là một task, không phải một lời hứa.** Dựng lại từ bản sao lưu vào một
 cơ sở dữ liệu tạm, đếm số dòng của các bảng không dựng lại được, và ghi thời gian. Không có
 bước này thì cả mục 9.22 chỉ là văn.
+
+**Khoá giải mã không nằm trên máy chủ.** VPS chỉ giữ khoá công khai (`AGE_RECIPIENT`) để mã hoá;
+khoá riêng nằm ở máy chủ repo. Chiếm được VPS vì thế không đọc được bản sao lưu nào, kể cả bản
+chứa sinh trắc. Cái giá là **kiểm phục hồi không còn chạy trên VPS**: `restore-drill.sh` chạy từ
+máy giữ khoá, kéo bản mới nhất qua ssh, dựng vào một Postgres tạm ở máy ấy, đếm dòng và ghi thời
+gian. Nhịp hằng tuần vì vậy là việc của người, ghi trong TASKS, không phải một dòng cron.
 
 **Sao lưu phải mã hoá và phải để ngoài máy chủ đang chạy.** Sao lưu nằm cùng ổ với dữ liệu gốc
 bảo vệ được đúng một tình huống: xoá nhầm. Nó không bảo vệ được hỏng ổ, không bảo vệ được mã
@@ -8201,7 +8235,10 @@ trông khác** — cùng lý do §9.16 mục 11 bắt lịch sử tài sản là
 `Session` vì thế giữ một dòng mỗi thiết bị, và token gia hạn mang **hai** thứ: `sid` chỉ dòng,
 `jti` chỉ token mà dòng ấy còn nhận. Tách ra như vậy thì phát hiện dùng lại mới **khu trú được**
 — lượt gia hạn cầm `jti` đã tiêu chỉ đóng đúng dòng của nó, các thiết bị khác chưa chứng tỏ điều
-gì nên giữ nguyên phiên. Ba việc đóng **tất cả**: nghỉ việc, đổi mật khẩu, và tài khoản bị tắt.
+gì nên giữ nguyên phiên. Bốn việc đóng **tất cả**: nghỉ việc, đổi mật khẩu, tài khoản bị tắt, và
+đổi vai. Đóng phiên chỉ giết refresh token, nên cùng lúc ấy `api` ghi mốc "vé cấp trước giờ này
+là chết" của tài khoản vào Redis; `JwtStrategy` từ chối access token có `iat` sớm hơn mốc. Thiếu
+mốc ấy thì người vừa bị hạ quyền vẫn dùng quyền cũ thêm tối đa 15 phút, cả trên ổ cắm realtime.
 Một lượt đăng nhập cũng là một lượt dọn: xoá dòng đã hết hạn hoặc đã đóng, rồi bỏ thiết bị lâu
 nhất nếu tài khoản chạm trần `SESSIONS_PER_USER` — bảng phiên không được phép là bảng chỉ lớn
 lên. Đo sau khi sửa: điện thoại và laptop cùng gia hạn đều **200**; một lượt dùng lại trên điện
