@@ -2982,7 +2982,8 @@ firmware/
 ├── sdkconfig.defaults                # chung mọi build
 ├── sdkconfig.defaults.esp32s3        # riêng target (PSRAM octal 80M, cache 32/64KB)
 ├── sdkconfig.ci                      # build CI: tắt secure boot, bật assert
-├── sdkconfig.prod                    # Flash Encryption + Secure Boot v2
+├── sdkconfig.prod                    # Flash Encryption + Secure Boot v2, chỉ nhận mqtts://
+├── sdkconfig.secrets                 # ❌ gitignore — token bootstrap của lô, người build tự đặt (§4.5.9)
 ├── partitions.dev.csv                # coredump lớn, không secure boot
 ├── partitions.prod.csv               # §6.1
 ├── dependencies.lock                 # ✅ commit — khoá phiên bản managed_components
@@ -3019,7 +3020,7 @@ firmware/
 │   ├── net_wifi/          [C]    L3
 │   ├── net_mqtt/          [C]    L3
 │   ├── net_ota/           [C]    L3
-│   ├── net_provision/     [C]    L3  # xin credential lần đầu qua HTTPS (§7.3)
+│   ├── net_provision/     [C]    L3  # xin vé, hỏi lại vé qua HTTPS; chạy trên ota_task (§7.3, §5.2)
 │   ├── svc_door/          [C++]  L4  # IDoor + ServoDoor bọc drv_servo, FakeDoor cho test
 │   ├── svc_vision/        [C++]  L4  # detect mỗi khung, chuỗi spoof → recog khi mặt ổn định (§4.5.5d)
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
@@ -3668,6 +3669,14 @@ Các trạng thái của khung, màu là thông tin chứ không phải trang tr
 | xong, lượt đến này đã chấm rồi | xanh mint | không gì: không thẻ, không mở cửa, không tiếng |
 | xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt ấy rời khung hoặc pipeline bắt sang người khác** |
 
+**Máy chưa có vé thì nói ra, ở khoảng giữa thanh trên và khung ngắm.** Trong lúc xin vé (§7.3
+bước 3), màn quét mang một dòng hổ phách `Chờ duyệt · kiosk-a1b2c3d4e5f6`, đúng chuỗi mà admin
+đối chiếu trên dashboard. Máy chủ từ chối token lô thì dòng ấy đổi sang
+`Máy chủ không nhận firmware này`. Có vé là dòng biến mất. Nó không chen vào khung ngắm, không
+chen dòng nhắc dưới khung, và không chặn chấm công: bản ghi vẫn xếp hàng như lúc mất mạng. Dòng
+này nói về **cái máy**, không nói về người đứng trước nó, nên nó đi riêng một đường vào
+`ui_kiosk` (`ui_kiosk_set_ticket()`), không đi qua kênh trạng thái của pipeline.
+
 **Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Các trạng thái trên là các cổng của
 pipeline (§4.5.5d): không có mặt, mặt chưa vào khung ngắm, mặt dưới `face_min_px`, ô 1,0×
 tràn khung, qua cổng. `main` dịch
@@ -4268,8 +4277,22 @@ idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkc
 idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.bench" build
 
 # prod  — bản ship và bản lấy số cuối cho báo cáo
-idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.prod" build
+idf.py -B build_prod -D SDKCONFIG=build_prod/sdkconfig \
+       -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.prod;sdkconfig.secrets" build
 ```
+
+**`prod` dựng trong thư mục của riêng nó.** IDF chỉ lấy `SDKCONFIG_DEFAULTS` cho những khoá
+**chưa có** trong `sdkconfig`, nên dựng `prod` đè lên `sdkconfig` của một lần `dev` là giữ
+nguyên `CONFIG_APP_CONSOLE=y` — một bản ship mang console ghi được mọi khoá NVS qua USB. Thư
+mục và `sdkconfig` riêng thì mỗi lần dựng `prod` đều bắt đầu từ đúng bốn file defaults.
+
+**`sdkconfig.secrets` là file duy nhất mang bí mật vào firmware**, và nó gitignore. Nó giữ đúng
+một dòng `CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN="…"`. `dev` và `bench` nối nó vào khi có, nên
+board trên bàn cũng tự đăng ký được như máy xuất xưởng. Không có file thì token rỗng,
+`net_provision` báo "bản này không mang token lô" và không gọi gì. `prod` thì không có đường
+lùi: `make fw-prod` từ chối dựng khi thiếu file, vì một máy xuất xưởng không tự đăng ký được là
+một máy phải có người cắm USB. `firmware/sdkconfig` cùng các thư mục `build*` cũng chứa token
+sau khi dựng, và đều đã gitignore.
 
 ⚠️ **Không dùng `-DCMAKE_BUILD_TYPE=Release`.** ESP-IDF không hỗ trợ cách đó để đổi mức tối ưu; phải đi qua `CONFIG_COMPILER_OPTIMIZATION_*`.
 
@@ -4301,6 +4324,8 @@ idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkc
 | `AI_PROFILING` (Kconfig riêng) | n | **y** | n | Đo latency từng op: `MicroProfiler` ở TFLM, `profile_module()` ở ESP-DL |
 | `ESP_SYSTEM_PANIC` | `GDBSTUB` | `PRINT_REBOOT` | `PRINT_REBOOT` | |
 | `SECURE_BOOT` / `SECURE_FLASH_ENC` | n | n | **y** | |
+| `NET_MQTT_REQUIRE_TLS` | n | n | **y** | Bàn thử còn nối broker không TLS; bản ship thì không bao giờ (§6.2.1) |
+| `APP_CONSOLE` | y | y | **n** | Console ghi được mọi khoá NVS qua USB (§6.2.1) |
 
 > `bench` cố tình **giống `prod` về tốc độ** (`-O2`, không assert, không poisoning) và chỉ khác ở chỗ còn profiler. Đo trên `dev` rồi báo cáo là số sai — `-Og` chậm hơn đáng kể.
 
@@ -4857,10 +4882,10 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | Service | Image | Cổng | Ghi chú |
 |---|---|---|---|
 | `traefik` | traefik:v3 | 80, 443, 8883 | TLS tự động, reverse proxy, TCP passthrough cho MQTTS. Tài khoản ACME không kèm email: file cấu hình tĩnh không thay biến môi trường, và Let's Encrypt đã thôi gửi mail nhắc hết hạn từ 06/2025 |
-| `api` | `ghcr.io/dovanviet04112004/cckiosk-api:<sha>` — build trên GitHub Actions; máy dev build từ `backend/` | 3000 (nội bộ) | NestJS |
+| `api` | `ghcr.io/dovanviet04112004/cckiosk-api:<sha>` — build trên GitHub Actions; máy dev build từ `backend/` | 3000 (nội bộ) | NestJS. Router Traefik của nó là `Host(api) && !PathPrefix(/mqtt)`: `/mqtt/auth` chỉ để EMQX gọi trong mạng compose (§7.4) |
 | `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này**, nên nó phải có `age`: thiếu thì mọi segment WAL đẩy hỏng, postgres giữ lại hết và đĩa đầy dần |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
-| `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth và ACL hỏi `api` qua HTTP; dashboard không ra ngoài |
+| `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth hai tầng: bảng nội bộ cho `svc-*`, rồi hỏi `api` qua HTTP cho kiosk; ACL là file theo username (§7.4); dashboard không ra ngoài |
 | `minio` (tùy chọn) | minio/minio | 9000 | ảnh chấm công |
 | `backup` | postgres + cron | — | dump hằng đêm |
 
@@ -4907,20 +4932,29 @@ chạy là tin bất cứ máy nào đang trả lời địa chỉ ấy.
 `deploy.sh` đăng nhập GHCR, kéo image, đăng xuất; token hết hạn khi job xong. Nhờ vậy image để
 riêng tư cũng được.
 
-**`deploy.sh` làm năm việc, theo thứ tự:**
+**`deploy.sh` làm sáu việc, theo thứ tự:**
 
 1. Đưa `~/cckiosk` (bản clone chỉ lấy `deploy/`) về đúng sha: cấu hình compose và traefik đi
    cùng code, không có lượt nào code mới chạy trên cấu hình cũ.
 2. Ghi `API_TAG=<sha>` vào `.env`, kéo image, `up -d --no-build`. Ghi vào `.env` để một lần
    `compose up` bằng tay hay một lần khởi động lại máy vẫn chạy đúng bản đã deploy.
-3. Chờ `GET /health` qua mạng compose trả 200, tối đa 90 s. Không đạt thì **lùi về sha ghi ở
+3. `deploy/emqx/` khác với sha cũ thì dựng lại riêng `emqx` bằng `--force-recreate`. Compose
+   không nhìn nội dung file mount, và `git checkout` thay file bằng một inode mới, trong khi
+   bind mount một file lẻ vẫn cầm inode cũ. Không có bước này thì broker **chạy tiếp cấu hình
+   cũ**, và không có gì báo. Các lượt deploy không đụng broker thì không cắt kiosk nào.
+4. Chờ `GET /health` qua mạng compose trả 200, tối đa 120 s. Không đạt thì **lùi về sha ghi ở
    `.deployed`** và thoát lỗi: job đỏ, bản cũ vẫn phục vụ.
-4. Đạt thì ghi sha mới vào `.deployed`.
-5. Xoá image `api` cũ, giữ đúng hai bản: đang chạy và bản trước để lùi. Mỗi image ~1,1 GB trên
+5. Đạt thì ghi sha mới vào `.deployed`.
+6. Xoá image `api` cũ, giữ đúng hai bản: đang chạy và bản trước để lùi. Mỗi image ~1,1 GB trên
    ổ 17 GB.
 
 Container `api` chạy `prisma migrate deploy` trước khi nghe, nên lược đồ đi theo image. Lùi bản
 an toàn là nhờ luật "nở rồi co" của §9.22.3: bản cũ vẫn chạy được trên lược đồ mới.
+
+**`api` tin đúng một chặng proxy.** Mọi request tới `api` production đều đi qua Traefik, nên
+địa chỉ nguồn của socket luôn là container Traefik. `TRUST_PROXY_HOPS=1` cho Express đọc IP
+thật từ `X-Forwarded-For` mà Traefik ghi. Throttler khoá theo IP ấy (§7.2). Dev không qua proxy
+nên để 0: tin một header mà không ai đứng giữa ghi thì ai cũng tự khai IP được.
 
 **`GET /health` không cần đăng nhập**: `SELECT 1` lên Postgres và `PING` Redis, 200 khi cả hai
 trả lời, 503 khi không. Nó **không** hỏi broker: EMQX chết thì kiosk mất đường lên nhưng HTTP vẫn
@@ -4971,12 +5005,12 @@ session, TPS vô hạn, hết hạn 2029-03-01), nên lùi về 5.x không đổ
 tốn thêm RAM: 5.10.5 đo được **484 MB lúc nhàn rỗi** so với 382 MB của 6.3.1 sau khi đã chạy test.
 Dòng 6 vừa mới hơn vừa nhẹ hơn.
 
-**Trạng thái mặc định của image là mở, và đó là việc của E13-T4.** Container vừa dựng có
-`authentication = []` (cho nặc danh vào) và ACL mặc định `{allow, {security_profile, legacy}}`
+**Trạng thái mặc định của image là mở, nên `emqx.conf` phải đóng nó lại.** Container vừa dựng
+có `authentication = []` (cho nặc danh vào) và ACL mặc định `{allow, {security_profile, legacy}}`
 (mở mọi topic trừ `$SYS/#`). Listener `8883` chạy được ngay bằng cert demo nằm sẵn trong image,
 nhưng khoá riêng của cert đó công khai trong mọi bản EMQX nên nó **chỉ dùng được ở bàn thí
-nghiệm**. Ba thứ ấy — authn gọi `api`, ACL theo `kiosk/{chính nó}/#`, cert thật — là nội dung
-của `emqx/emqx.conf` và `emqx/certs/`, làm ở E13-T4. Image còn bật sẵn listener `ws:8083` và
+nghiệm**. Ba thứ ấy — authn hai tầng hỏi `api` (§7.4), ACL theo `kiosk/{chính nó}/#`, cert thật
+— là nội dung của `emqx/emqx.conf` và `emqx/certs/`. Image còn bật sẵn listener `ws:8083` và
 `wss:8084` bên trong container; compose không map chúng ra ngoài và không có kế hoạch map.
 
 **Retained phải ghi xuống đĩa, không để mặc định.** EMQX mặc định
@@ -5030,6 +5064,7 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | Ngân sách phần cứng, ngưỡng arena | `ml/configs/common/hardware.yaml` | nạp config |
 | URL, host, port, secret, chuỗi kết nối — backend và frontend | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` · `lib/env.ts` |
 | URL và credential trên kiosk | NVS `device/*` (§6.2.1), giá trị lùi khai ở `Kconfig` của component | đọc qua `sys_storage`, **không gõ vào `.c`** |
+| Token bootstrap của lô firmware | `firmware/sdkconfig.secrets` — **gitignore**, người build tự đặt, giá trị trùng `DEVICE_BOOTSTRAP_TOKEN` của `api` (§7.3) | Makefile nối file vào `SDKCONFIG_DEFAULTS`, ra `CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN`; `make fw-prod` **dừng** khi file vắng |
 | Số hiệu firmware | `PROJECT_VER` trong `firmware/CMakeLists.txt` | `esp_app_get_description()->version`, **không gõ lại ở đâu** |
 | Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
 | Phiên bản văn bản đồng ý sinh trắc đang phát | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — **máy chủ điền, client không gửi**: giá trị ghi vào `BiometricConsent` phải là bản mà chính máy chủ đang phát, nên để client gửi kèm là mở đường ghi một phiên bản không tồn tại |
@@ -5090,9 +5125,9 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `ui_task` | `ui_kiosk` | 0 | 4 | 4 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. **Không cầm panel**: `cam_task` vẽ mọi màn, kể cả màn phủ kín (§4.5.5h) |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB **ở PSRAM** | esp-mqtt tự tạo | pub/sub, TLS |
-| `ota_task` | `net_ota` | 0 | 3 | 8 KB | khi có lệnh `down/ota` | Tải firmware / models, verify sha256, ghi partition |
+| `ota_task` | `net_ota`, `net_provision` | 0 | 3 | 8 KB | lệnh `down/ota`; bit `NEED_TICKET`; bit `BROKER_REFUSED` | **Giữ phiên HTTPS duy nhất của máy**: tải firmware / models, verify sha256, ghi partition; xin vé khi chưa có, và hỏi lại vé khi broker từ chối (§7.3). Cắt broker trước mỗi phiên |
 | `sync_task` | `svc_sync` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, đẩy con trỏ; và **phát `up/heartbeat` mỗi `GEN_TOPIC_HEARTBEAT_INTERVAL_S`** |
-| `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ 30 s chỉ để biết là không có sóng. **Tạm**: tách thành `mqtt_task` và `sync_task` ở E10-T6 |
+| `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ 30 s chỉ để biết là không có sóng. Có vé thì nối broker, chưa có thì giương `NEED_TICKET` cho `ota_task`; rồi mở SNTP |
 | `wifi` / `lwip` | hệ thống IDF | 0 | 18–23 | — | — | Do IDF quản lý, không tự tạo |
 
 **Ngăn xếp `mqtt_task` nằm ở PSRAM.** `CONFIG_MQTT_TASK_STACK_ON_EXTERNAL_MEMORY` đẩy 6 KB ấy
@@ -5109,6 +5144,12 @@ tắt ngắt suốt lượt ghi flash, nên không task nào chạy được lú
 
 `ota_task` 8 KB **chưa có chỗ** trên `dev` — không vùng nào còn 8 KB liền. Nới thật thì phải hạ
 đệm bounce LCD, không phải đẩy thêm ngăn xếp sang PSRAM.
+
+**Xin vé đi chung `ota_task`, không dựng task riêng.** Hai việc cần đúng một thứ: một phiên
+HTTPS tin bộ CA công khai, chạy trên ngăn xếp RAM nội vì cuối việc là ghi flash (NVS hoặc
+partition), với broker đã cắt. Một task thứ hai là thêm 8 KB RAM nội mà `dev` vốn không còn. Hai
+việc cũng không bao giờ trùng nhau: lệnh `down/ota` chỉ tới qua broker, mà lúc còn xin vé thì
+broker chưa nối. Cái giá là tên task hẹp hơn việc nó làm.
 
 **`ui_task` lấy 4 KB chứ không 8 KB.** `ram.md` §3.1 đo trên `bench` thấy nó còn trống 6.772 B
 trên 8.192 B cấp, tức cả vòng đời chỉ chạm **1.420 B**; 4.096 B để lại biên 2.676 B. Bốn KB thu
@@ -5152,7 +5193,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
 | `s_bounce_free` | Counting semaphore, **2 suất** | — | callback `esp_lcd` | `drv_lcd` | Đệm bounce được trả lại thì mới nạp lượt sau. Có hai đệm nên phải đếm được hai suất: binary chỉ giữ được một, đệm rỗi thứ hai sẽ nằm không. Callback **trả** cờ yield cho `esp_lcd` tự nhường, không tự gọi `portYIELD_FROM_ISR` |
 | `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | Một lần đo xong là một lần đánh thức, không có suất để dồn |
-| `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT`. Thay cho 7 biến cờ rời rạc |
+| `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task`, `ota_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT` `NEED_TICKET` `BROKER_REFUSED`. Thay cho 9 biến cờ rời rạc. `BROKER_REFUSED` do callback của esp-mqtt giương khi CONNACK từ chối, `ota_task` hạ khi đã hỏi `api` xong |
 | `eg_wifi` | EventGroup, nội bộ `net_wifi` | 4 B | handler sự kiện Wi-Fi | `net_wifi_wait_connected()` | `net_wifi` ở L5 không được phụ thuộc lên `app_wiring` ở L7 (§4.5.4), nên trạng thái link phải có chỗ đứng ngay trong component. `net_task` là nơi duy nhất bắc bit này sang `WIFI_OK` của `eg_system` |
 
 **Đường của `EVT_PRESENCE_ON/OFF`.** `drv_tof` chỉ trả khoảng cách (§2.3D), nên `tof_task` là
@@ -5339,7 +5380,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | Namespace | Key | Kiểu | Ghi chú |
 |---|---|---|---|
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
-| `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver` | str / u32 | token xoay vòng khi còn 7 ngày; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại |
+| `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver` | str / u32 | `jwt` là vé máy tự xin (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
@@ -5362,8 +5403,8 @@ vì tên đổi được còn khoá khử trùng thì không.
 trường là đổi một giá trị chứ không sửa dòng code nào:
 
 ```
-bàn      mqtt://192.168.x.x:1883     không TLS
-thật     mqtts://mqtt.<domain>:8883  TLS, cert CA nhúng trong firmware (§7.2)
+bàn      mqtt://192.168.x.x:1883          không TLS, ghi đè bằng NVS
+thật     mqtts://mqtt.cckiosk.io.vn:8883  TLS, cert CA nhúng trong firmware (§7.2)
 ```
 
 Hai dòng ấy khác nhau **cả scheme**, nên một cặp địa chỉ với cổng sẽ đẩy scheme sang khoá thứ ba
@@ -5371,7 +5412,8 @@ hoặc bắt suy ra từ số cổng — suy từ cổng là lỗi âm thầm đ
 kiosk gửi dữ liệu chấm công **không mã hoá** mà không gì kêu lên. Hai chốt chặn đi kèm đều nằm
 ở lúc biên dịch: giá trị lùi là `Kconfig` của `net_mqtt`, vì máy chủ là của bên bán nên mọi máy
 xuất xưởng trỏ về cùng một chỗ và NVS chỉ ghi đè khi khách tự dựng server riêng (§7.3); và bản
-`prod` **từ chối mọi URI không bắt đầu bằng `mqtts://`**.
+`prod` **từ chối mọi URI không bắt đầu bằng `mqtts://`** — `CONFIG_NET_MQTT_REQUIRE_TLS=y`
+nằm trong `sdkconfig.prod`, không nằm trong trí nhớ người build.
 
 **Chuỗi rỗng tính là vắng mặt.** Mọi nơi đọc một khoá `str` của bảng trên phải coi độ dài 0
 giống hệt `ESP_ERR_NVS_NOT_FOUND` rồi rơi về giá trị lùi. NVS giữ được chuỗi rỗng, nên phân biệt
@@ -5886,14 +5928,14 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 
 | Hạng mục | Cách làm |
 |---|---|
-| Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware, user/pass riêng từng device; EMQX hỏi `api` qua HTTP để chấm auth và ACL, ACL chỉ mở `kiosk/{chính nó}/#` — xem §7.4 cho phần đã dựng được trước khi có `api` |
+| Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware; username là `deviceId`, password là JWT riêng của máy; EMQX hỏi `api` qua HTTP để chấm auth, ACL file chỉ mở `kiosk/{chính nó}/#` (§7.4) |
 | Device token | JWT 90 ngày lưu **NVS encrypted**, xoay vòng tự động khi còn 7 ngày |
 | Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke |
 | Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu |
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
 | OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
-| Rate limit | `@nestjs/throttler` cho `/auth/login` |
+| Rate limit | `@nestjs/throttler` cho `/auth/login`, `/auth/forgot-password` và `/devices/register`, khoá theo **IP thật của client**. Sau Traefik mọi request đến từ cùng một IP, nên `api` phải tin đúng một chặng proxy (`TRUST_PROXY_HOPS`, §4.8); thiếu nó thì cả công ty chung một hạn mức đăng nhập, và cả đội kiosk chung một hạn mức đăng ký |
 
 ### 7.3 Vòng đời thiết bị — từ dây chuyền tới lúc thu hồi
 
@@ -5906,27 +5948,45 @@ bị `Kconfig` loại khỏi bản `prod`.
 | Giá trị | Mỗi máy một khác | Tới thiết bị bằng cách nào |
 |---|---|---|
 | `deviceId` | Có | **eFuse MAC**, 0 thao tác (§6.2.1) |
-| Cert CA của server | Không | Nhúng trong firmware |
-| `device/mqtt_uri` | Không | **`Kconfig` của bản build**, NVS chỉ ghi đè khi khách tự dựng server (§6.2.1) |
-| Token bootstrap | Không, theo **lô firmware** | Nhúng trong firmware |
-| `wifi/ssid`, `wifi/pass` | Có, theo nơi lắp | Người lắp gõ **trên màn kiosk** (E10-T5 còn nợ) |
-| `device/jwt`, `mqtt_user`, `mqtt_pass` | Có | Máy **tự xin** ở bước 3 dưới đây |
+| Cert CA của broker | Không | Nhúng trong firmware (`net_mqtt/certs/broker_ca.crt`) |
+| `device/mqtt_uri` | Không | **`Kconfig` của `net_mqtt`**: `mqtts://mqtt.cckiosk.io.vn:8883`. NVS chỉ ghi đè khi khách tự dựng server, hoặc trên bàn thử (§6.2.1) |
+| Địa chỉ API | Không | **`Kconfig` của `net_provision`**: `https://api.cckiosk.io.vn`. Cert của nó là Let's Encrypt, nên máy tin bằng bộ CA công khai của IDF, không bằng CA của broker |
+| Token bootstrap | Không, theo **lô firmware** | Nhúng trong firmware, đổ vào lúc build từ `firmware/sdkconfig.secrets` — file **gitignore**, không bao giờ commit (§4.9) |
+| `wifi/ssid`, `wifi/pass` | Có, theo nơi lắp | Người lắp gõ **trên màn kiosk** |
+| `device/jwt`, `device/jwt_exp` | Có | Máy **tự xin** ở bước 3 dưới đây. Tên đăng nhập MQTT là `deviceId`, mật khẩu là chính JWT ấy (§7.4) |
 
 **Sáu bước:**
 
 1. **Xuất xưởng** — nạp firmware có Secure Boot v2 và Flash Encryption (§7.2). Không ai gõ gì
    riêng cho từng máy; hai máy cạnh nhau nhận đúng cùng một ảnh nhị phân.
 2. **Lắp đặt** — cấp điện. Không có `wifi/ssid` thì kiosk mở thẳng màn hình chọn Wi-Fi.
-3. **Đăng ký** — có mạng nhưng chưa có `device/jwt`, kiosk gọi `POST /devices/register` qua
-   HTTPS, kèm token bootstrap và `deviceId`. Máy chủ tạo bản ghi trạng thái `pending` và trả
-   **202**, chưa cấp token. Kiosk hiện `deviceId` của chính nó lên màn rồi hỏi lại theo chu kỳ
-   lùi bậc.
+3. **Đăng ký** — có mạng nhưng chưa có vé (không `device/jwt`, không `device/mqtt_pass`), kiosk
+   **không nối broker** mà gọi `POST /devices/register` qua HTTPS, kèm token bootstrap,
+   `deviceId` và số hiệu firmware. Máy chủ tạo bản ghi `pending` và trả **202**, chưa cấp gì.
+   Kiosk hiện dải **"Chờ duyệt"** kèm `deviceId` của chính nó trên màn quét, rồi hỏi lại theo
+   lùi bậc: 10 s, nhân đôi mỗi lần tới trần 5 phút, lệch ngẫu nhiên ±20% để một lô máy cắm
+   điện cùng lúc không hỏi cùng nhịp. Máy vẫn chấm công như lúc mất mạng: bản ghi xếp hàng
+   trong LittleFS và lên sau khi có vé. Máy chủ trả **401** (token lô bị từ chối) thì dải đổi
+   sang "Máy chủ không nhận firmware này" và hỏi ở nhịp trần — chỉ một bản OTA hay một lần
+   nạp lại mới chữa được. Không tới được máy chủ, `429` hay `5xx` thì chỉ lùi bậc.
 4. **Nhận máy** — admin thấy máy `pending` trong dashboard, đối chiếu `deviceId` in trên màn,
-   bấm duyệt rồi đặt tên người đọc được và vị trí. Lần hỏi kế tiếp trả **200** kèm JWT 90 ngày
-   và cặp `mqtt_user`/`mqtt_pass`; kiosk ghi NVS và **không bao giờ dùng lại token bootstrap**.
-5. **Chạy** — MQTTS bằng credential riêng, xoay vòng theo §7.2.
-6. **Thu hồi** — admin gỡ máy: API từ chối token, ACL của EMQX đóng, kiosk nhận lỗi xác thực
-   rồi **quay về bước 3**.
+   bấm duyệt rồi đặt tên người đọc được và vị trí. Lần hỏi kế tiếp trả **200** kèm JWT 90 ngày.
+   Kiosk ghi `device/jwt`, lấy `device/jwt_exp` từ claim `exp` của **chính JWT** chứ không cộng
+   vào đồng hồ của mình (đồng hồ máy có thể chưa đúng lúc ấy), tắt dải chờ, nối broker, và
+   **không bao giờ dùng lại token bootstrap**.
+5. **Chạy** — MQTTS bằng `deviceId` cộng JWT, xoay vòng theo §7.2 (E13-T5). Chưa có xoay vòng
+   thì JWT hết hạn sau 90 ngày đi vào bước 6, và máy phải được duyệt lại.
+6. **Thu hồi** — admin gỡ máy: `api` trả `deny` cho lần nối kế tiếp (§7.4), trễ tối đa bằng
+   cache 1 phút của EMQX. Broker từ chối thì kiosk **không tự xoá vé ngay**: nó hỏi
+   `GET /devices/me` bằng chính vé ấy, và chỉ khi câu trả lời là **401** mới xoá `device/jwt`
+   rồi **quay về bước 3**. Không hỏi được thì giữ vé và thử lại broker, hỏi lại tối đa mỗi
+   phút một lần.
+
+**Vì sao không xoá vé ngay khi broker từ chối.** EMQX trả **cùng một mã 5** cho vé sai và cho
+lúc `api` không trả lời (đo 24/09 trên EMQX 6.3.1, §7.4). Xoá vé theo mã ấy là biến một lần
+`api` khởi động lại thành **cả đội kiosk rơi về `pending`**, mỗi máy chờ một người bấm duyệt
+lại. Hỏi `api` trước thì hai trường hợp tách ra được: `api` sống và bảo vé chết thì vé chết
+thật; `api` không trả lời thì không ai biết gì, và không biết thì không xoá.
 
 **Vì sao cấp token sau khi duyệt chứ không trước.** Cấp trước thì một máy chưa ai nhận vẫn nối
 được broker và đẩy dữ liệu vào, nên máy chủ phải chứa bản ghi của một thiết bị không ai chịu
@@ -5964,24 +6024,59 @@ khác: một máy vừa factory reset và một kẻ mạo danh **đều** khôn
 là giới hạn của bí mật dùng chung cả lô, không phải của luồng này. mTLS ở đoạn trên là thứ xoá
 hẳn cả hai.
 
-### 7.4 Broker trước khi có `api`
+### 7.4 Broker hỏi `api`, tài khoản dịch vụ ở lại bảng nội bộ
 
-§7.2 giao cho EMQX hỏi `api` qua HTTP mỗi lần một kiosk nối, nhưng `api` là E11 và chưa tồn tại.
-Phần dựng được ngay là **hình dạng phía thiết bị**, và nó là bản cuối:
+Hình dạng phía thiết bị chốt từ trước khi có `api`, và nó không đổi:
 
-| Thứ | Giá trị | Đổi gì khi E13-T4 tới |
-|---|---|---|
-| Cổng | `8883`, TLS | không |
-| Cert CA | tự ký, nhúng trong firmware | thay bằng CA thật, firmware nạp lại |
-| Username | `deviceId` | không |
-| Password | token của máy | không |
-| ACL | `kiosk/{username}/#`, ngoài ra cấm | không |
-| **Nơi EMQX tra cứu** | `built_in_database` | **đổi sang `http` gọi `api`** |
+| Thứ | Giá trị |
+|---|---|
+| Cổng | `8883`, TLS |
+| Cert CA | tự ký, nhúng trong firmware |
+| Username | `deviceId` |
+| Client ID | **bằng đúng username** |
+| Password | JWT thiết bị của §7.3 |
+| ACL | `kiosk/{username}/#`, ngoài ra cấm |
 
-Chỉ hàng cuối đổi.
+**EMQX tra hai tầng theo thứ tự.** Tầng đầu là `built_in_database`, chỉ giữ tài khoản dịch vụ
+`svc-*`. Tầng sau là `http`: EMQX gửi `username`, `password`, `clientid` tới
+`POST /mqtt/auth` của `api`. Username không có trong bảng nội bộ thì tầng đầu bỏ qua và tầng sau
+trả lời. `api` trả `allow` khi và chỉ khi đủ bốn điều: chữ ký JWT đúng `JWT_DEVICE_SECRET` và
+chưa hết hạn; claim `deviceId` bằng username; máy đang `APPROVED`; sha256 của mật khẩu bằng
+`tokenHash`. Thiếu một điều là `deny`.
+
+**Bảng nội bộ đứng trước là có chủ ý.** `api` tự nối broker bằng một tài khoản `svc-*`. Đặt
+`http` lên trước thì `api` phải trả lời được cho chính mình trước khi nối được, và một lần `api`
+khởi động lại kéo theo cả tài khoản vận hành lẫn `watch.sh`. Đứng sau thì `api` chết chỉ làm
+kiosk mất đường lên. Kiosk vốn đã có hàng đợi offline cho đúng tình huống ấy.
+
+**Client ID phải bằng username.** EMQX nhận ra phiên theo client ID. Một máy có vé thật mà nối
+bằng client ID của máy khác sẽ **cướp phiên của máy kia**: máy kia bị đá ra và lệnh `down/` của
+nó rơi vào tay kẻ cướp. ACL chỉ chặn theo username nên không bắt được chuyện này; phép so ở
+`/mqtt/auth` bắt được.
+
+**Đo 24/09 trên chính EMQX 6.3.1**, bằng một broker thử và một server giả trả `allow`/`deny`:
+
+- `${BIẾN}` trong `emqx.conf` **không** được thay bằng biến môi trường: node không lên nổi,
+  báo `failed_to_resolve`. Nên file giữ URL production `http://api:3000/mqtt/auth`, còn stack dev
+  (api chạy trên máy chủ nhà) đè bằng `EMQX_AUTHENTICATION__2__URL`. Cơ chế đè theo chỉ số mảng
+  của EMQX đã chạy được.
+- Vé sai, client ID lệch, và `api` không trả lời đều ra **cùng mã CONNACK 5** (`not authorized`).
+  Vì thế kiosk phải hỏi `api` trước khi kết luận vé đã chết (§7.3 bước 6).
+- `api` không trả lời thì EMQX **từ chối**, không cho qua (`ignore_backend_failures = false`),
+  trừ một ngoại lệ: kết quả `allow` được cache **1 phút** (`authentication_settings.node_cache`).
+  Một vé vừa đúng vẫn nối lại được trong phút ấy. Đó cũng là độ trễ tối đa của một lần thu hồi.
+  Cả hai giá trị được ghi thẳng vào `emqx.conf`, để người đọc thấy mà không phải đi tìm mặc định.
+
+**`/mqtt/auth` không ra internet.** EMQX gọi thẳng `api:3000` trong mạng compose. Router của
+Traefik cho `api` loại tiền tố `/mqtt`, nên từ ngoài vào đường ấy là 404. Để nó mở thì nó thành
+một cái máy trả lời "vé này còn sống không" cho bất kỳ ai.
+
+**Thu hồi có hiệu lực ở lần nối sau, không cắt phiên đang mở.** Muốn cắt ngay thì `api` phải
+gọi REST của EMQX để đá client, tức thêm một khoá API và một đường nữa vào cổng 18083. Cái giá
+là máy vừa bị gỡ vẫn đẩy được bản ghi cho tới lần mất kết nối kế tiếp.
 
 **ACL phải có hai vai, không phải một.** Luật `kiosk/${username}/#` nhốt mỗi máy trong nhánh
-của chính nó, và đó đúng là thứ cần cho thiết bị. Nhưng `api` của E11 phải đọc bản ghi của
+của chính nó, và đó đúng là thứ cần cho thiết bị. Nhưng `api` phải đọc bản ghi của
 **mọi** kiosk — `kiosk/+/up/#` — và đẩy lệnh xuống **mọi** kiosk — `kiosk/+/down/#`. Không luật
 nào trong hai luật hiện có cho phép chuyện đó, nên `{deny, all}` chặn backend ngay từ gói
 SUBSCRIBE đầu tiên. Đây là lỗ hổng lộ ra khi viết `svc_sync`, không phải khi làm E11: nếu để
@@ -6000,26 +6095,18 @@ mà vẫn giả được `up/attendance` thì bảng chấm công không còn n�
 **trước** hai luật `allow`, vì EMQX đọc file ACL từ trên xuống và dừng ở luật khớp đầu tiên.
 
 **Tiền tố `svc-` là tên dành riêng, và thứ thực thi nó là việc cấp tài khoản chứ không phải
-thiết bị.** Thiết bị khai tên nào cũng được, nhưng nó chỉ nối được nếu `built_in_database` có
-đúng tài khoản ấy — mà tài khoản chỉ do người vận hành tạo. Nên một kiosk lỡ đặt serial
+thiết bị.** Thiết bị khai tên nào cũng được, nhưng một tên `svc-*` chỉ nối được nếu
+`built_in_database` có đúng tài khoản ấy — mà tài khoản chỉ do người vận hành tạo; `api` không
+bao giờ trả `allow` cho một tên không phải `deviceId` đã duyệt. Nên một kiosk lỡ đặt serial
 `svc-sanh` không tự leo quyền được; phải có người vừa đặt tên ấy **vừa** tạo tài khoản ấy. Vì
 vậy không thêm phép kiểm nào trong firmware: nó sẽ là code phòng thủ không phòng được gì.
-
-Khi E13-T4 chuyển sang backend `http`, hai vai này thành hai câu trả lời của `api` thay vì hai
-khối trong file — hình dạng quyền giữ nguyên, chỉ nơi tra cứu đổi.
 
 **`deploy/watch.sh` là vai dịch vụ ấy dùng bằng tay.** Nó đăng nhập `svc-ops` với
 `EMQX_OPS_PASSWORD` trong `deploy/.env` rồi nghe `kiosk/+/up/#`. Đường thay thế — bật
 `emqx ctl trace` theo client — **chết cùng container**: một lần `docker compose up -d
 --force-recreate` để đổi ACL là trace biến mất mà không báo gì, và người đang `tail -f` chỉ thấy
 một file đứng im. Tài khoản thì nằm trong `built_in_database` trên volume `emqx-data`, nên nó
-sống qua restart. `net_mqtt` gửi đúng một bộ `deviceId` cộng token cộng CA trong cả hai trường
-hợp, nên nó viết một lần và không sửa lại — đó là lý do dựng TLS với xác thực ngay từ đầu thay
-vì chạy nặc danh rồi quay lại.
-
-**Cái mất khi chưa có `api`**: thu hồi một máy phải sửa `built_in_database` bằng tay thay vì
-admin bấm một nút, và token không tự xoay vòng được (§7.2). Hai thứ ấy đều là việc của `api`,
-không phải của broker.
+sống qua restart.
 
 **`gen_certs.sh` sinh CA và cert máy chủ, `certs/` không bao giờ commit.** `.gitignore` chặn
 `*.pem`, `*.key`, `*.crt`. Ngoại lệ đúng một file: **cert CA là công khai** và firmware cần nó
