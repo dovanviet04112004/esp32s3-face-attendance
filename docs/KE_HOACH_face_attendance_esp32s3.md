@@ -4840,9 +4840,9 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 
 | Service | Image | Cổng | Ghi chú |
 |---|---|---|---|
-| `traefik` | traefik:v3 | 80, 443, 8883 | TLS tự động, reverse proxy, TCP passthrough cho MQTTS |
+| `traefik` | traefik:v3 | 80, 443, 8883 | TLS tự động, reverse proxy, TCP passthrough cho MQTTS. Tài khoản ACME không kèm email: file cấu hình tĩnh không thay biến môi trường, và Let's Encrypt đã thôi gửi mail nhắc hết hạn từ 06/2025 |
 | `api` | build từ `backend/` | 3000 (nội bộ) | NestJS |
-| `postgres` | postgres:16-alpine | 5432 (nội bộ) | volume `pgdata` |
+| `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này**, nên nó phải có `age`: thiếu thì mọi segment WAL đẩy hỏng, postgres giữ lại hết và đĩa đầy dần |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
 | `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth và ACL hỏi `api` qua HTTP; dashboard không ra ngoài |
 | `minio` (tùy chọn) | minio/minio | 9000 | ảnh chấm công |
