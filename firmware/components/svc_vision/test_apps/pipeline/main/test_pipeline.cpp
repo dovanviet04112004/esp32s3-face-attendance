@@ -133,7 +133,20 @@ public:
     }
 };
 
+struct Heard {
+    svc_vision_kind_t stage = SVC_VISION_NONE;
+    uint32_t track = 0;
+};
+
+void hear(const svc_vision_box_t *, uint8_t, uint32_t track, svc_vision_kind_t stage, void *ctx)
+{
+    Heard *heard = static_cast<Heard *>(ctx);
+    heard->stage = stage;
+    heard->track = track;
+}
+
 struct Rig {
+    Heard heard;
     FakeDetector detector;
     FakeLiveness liveness;
     FakeEmbedder embedder;
@@ -145,6 +158,7 @@ struct Rig {
         const svc_vision_thresholds_t thresholds = { 0.5f, 0.5f, 0.6f, 113, { guide[0], guide[1], guide[2], guide[3] },
                                                      kHalfInside };
         pipeline.configure(thresholds);
+        pipeline.observe(hear, &heard);
     }
 
     svc_vision_kind_t step() { return pipeline.step(kFrame).kind; }
@@ -311,6 +325,40 @@ TEST_CASE("a face that falls short once is never called a stranger", "[svc_visio
         TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
     }
     TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
+}
+
+// A first try under match_min is no verdict, so the glass must keep saying
+// the face is being checked until the retry answers it (KEHOACH 4.5.5h.1).
+TEST_CASE("a face still owed a verdict is still being checked", "[svc_vision]")
+{
+    Rig rig;
+    rig.matcher.score = kStrangerScore;
+    rig.detector.one(100.0f, 80.0f, kBigFace);
+    rig.step();
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    for (int i = 0; i < kRetryDetects - 1; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+        TEST_ASSERT_EQUAL(SVC_VISION_FACE_OK, rig.heard.stage);
+    }
+    TEST_ASSERT_EQUAL(SVC_VISION_UNKNOWN, rig.step());
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    TEST_ASSERT_EQUAL(SVC_VISION_FACE_SETTLED, rig.heard.stage);
+}
+
+TEST_CASE("a verdict names the track the observer was told about", "[svc_vision]")
+{
+    Rig rig;
+    rig.detector.one(20.0f, 20.0f, kBigFace);
+    rig.step();
+    const svc_vision_result_t first = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, first.kind);
+    TEST_ASSERT_EQUAL(rig.heard.track, first.track);
+    rig.detector.one(300.0f, 150.0f, kBigFace);
+    rig.step();
+    const svc_vision_result_t second = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, second.kind);
+    TEST_ASSERT_EQUAL(rig.heard.track, second.track);
+    TEST_ASSERT_NOT_EQUAL(first.track, second.track);
 }
 
 // The square is sized by the head and bounded by the short side of the frame, so
