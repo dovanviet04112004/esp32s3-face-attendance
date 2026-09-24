@@ -128,6 +128,16 @@ services:
       BIOMETRIC_KEEP_DAYS: ${BIOMETRIC_KEEP_DAYS:-7}
       AGE_RECIPIENT: ${AGE_RECIPIENT}
       TZ: ${APP_TIMEZONE:-Asia/Ho_Chi_Minh}
+      # offsite.sh speaks to the bucket as the rclone remote "offsite" (KEHOACH 4.8 rule 3).
+      OFFSITE_BUCKET: ${OFFSITE_BUCKET:-}
+      RCLONE_CONFIG_OFFSITE_TYPE: s3
+      RCLONE_CONFIG_OFFSITE_PROVIDER: ${OFFSITE_PROVIDER:-Cloudflare}
+      RCLONE_CONFIG_OFFSITE_REGION: ${OFFSITE_REGION:-auto}
+      RCLONE_CONFIG_OFFSITE_ENDPOINT: ${OFFSITE_ENDPOINT:-}
+      RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID: ${OFFSITE_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: ${OFFSITE_SECRET_ACCESS_KEY:-}
+      # A token scoped to objects may not ask whether the bucket exists.
+      RCLONE_CONFIG_OFFSITE_NO_CHECK_BUCKET: "true"
     volumes:
       - backups:/backups
 
