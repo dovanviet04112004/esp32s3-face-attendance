@@ -34,6 +34,58 @@ interface Device {
   online: boolean;
 }
 
+/** Approval needs the code on the kiosk's own screen, so only whoever stands at it can
+ *  let it in (KEHOACH 7.3).
+ */
+function Approve({ id }: { id: string }) {
+  const t = useTranslations("devices");
+  const cache = useQueryClient();
+  const faultOf = useFault();
+  const [code, setCode] = useState("");
+  const [fault, setFault] = useState<string | null>(null);
+  const approve = useMutation({
+    mutationFn: () => api.post(`/devices/${id}/approve`, { claimCode: code }),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["devices"] }),
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  function submit(event: FormEvent): void {
+    event.preventDefault();
+    setFault(null);
+    approve.mutate();
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <Input
+          aria-label={t("claimLabel")}
+          inputMode="numeric"
+          autoComplete="off"
+          required
+          placeholder={t("claimPlaceholder")}
+          value={code}
+          onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+          className="w-24 font-mono tabular-nums"
+        />
+        <Button
+          size="sm"
+          tone="quiet"
+          type="submit"
+          disabled={approve.isPending || code.length !== 6}
+        >
+          {approve.isPending ? t("approving") : t("approve")}
+        </Button>
+      </div>
+      {fault ? (
+        <p role="alert" className="text-xs text-(--color-danger)">
+          {fault}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
 export default function DevicesPage() {
   const t = useTranslations("devices");
   const common = useTranslations("common");
@@ -48,11 +100,6 @@ export default function DevicesPage() {
     queryKey: ["devices"],
     queryFn: async () => (await api.get<{ rows: Device[]; total: number }>("/devices")).data,
   });
-  const approve = useMutation({
-    mutationFn: (id: string) => api.post(`/devices/${id}/approve`, {}),
-    onSuccess: () => cache.invalidateQueries({ queryKey: ["devices"] }),
-  });
-
   const releases = useQuery({
     queryKey: ["releases"],
     enabled: role === "ADMIN",
@@ -97,14 +144,7 @@ export default function DevicesPage() {
       header: t("status"),
       cell: (row) =>
         row.status === "PENDING" && role === "ADMIN" ? (
-          <Button
-            size="sm"
-            tone="quiet"
-            disabled={approve.isPending && approve.variables === row.id}
-            onClick={() => approve.mutate(row.id)}
-          >
-            {approve.isPending && approve.variables === row.id ? t("approving") : t("approve")}
-          </Button>
+          <Approve id={row.id} />
         ) : (
           <span className="text-(--color-muted)">{t(`status${row.status}`)}</span>
         ),
