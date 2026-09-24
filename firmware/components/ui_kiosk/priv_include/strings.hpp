@@ -49,10 +49,7 @@ enum class StrId : uint16_t {
     DeviceRamFree,
 
     EnrolNobody,
-    EnrolTypeName,
-    EnrolNameHint,
-    EnrolNameEmpty,
-    EnrolNext,
+    EnrolNobodyHint,
 
     CaptureLookAhead,
     CaptureTurnLeft,

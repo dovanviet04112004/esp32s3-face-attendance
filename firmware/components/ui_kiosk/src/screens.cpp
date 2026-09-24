@@ -42,7 +42,6 @@ constexpr int kKeyRadius = 8;
 
 constexpr int kSamples = 3;
 constexpr int64_t kSampleGapMs = 400;
-constexpr uint32_t kNewPerson = 0;        // main fills in the id (KEHOACH 4.5.5h.2)
 // Measured on the board 14/09: facing the lens holds inside 0.05, a turn either
 // way passes 0.44, and left is the negative one (KEHOACH 4.5.5h.2).
 constexpr float kFrontalYaw = 0.10f;
@@ -797,54 +796,63 @@ public:
 
     void on_enter() noexcept override
     {
-        typing_ = false;
-        layer_ = 1;
-        typed_[0] = '\0';
         held_ = kNothing;
         s_pending.wanted = true;
     }
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        const int hit = widgets::on_back(x, y) || (typing_ && above_keys(y))
-                            ? kBack
-                            : (typing_ ? key_hit(x, y) : row_at(x, y));
+        const int hit = row_at(x, y);
         if (down) {
             held_ = hit;
             return true;
         }
         const int fire = held_ == hit ? hit : kNothing;
         held_ = kNothing;
-        if (fire == kNothing) {
-            return true;
-        }
         if (fire == kBack) {
-            if (typing_) {
-                typing_ = false;
-            } else {
-                manager().go(ScreenId::Menu);
-            }
+            manager().go(ScreenId::Menu);
             return true;
         }
-        return typing_ ? press(fire) : choose(fire);
+        if (fire < 0 || fire >= rows()) {
+            return true;
+        }
+        // Only people the server assigned are enrolled here; a kiosk mints no id (KEHOACH 7.5).
+        enrol_request().employee_id = s_pending.row[fire].employee_id;
+        strlcpy(enrol_request().name, s_pending.row[fire].name, sizeof(enrol_request().name));
+        manager().go(ScreenId::Capture);
+        return true;
     }
 
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
         page(to, text(StrId::MenuEnrol), true);
-        if (typing_) {
-            paint_keys(to);
+        const int count = rows();
+        if (count == 0) {
+            widgets::card(to, theme::kGutter, kContentY, theme::kContentW, kRowH);
+            to.text(Font::Body, theme::kGutter, Canvas::centre_y(Font::Body, kContentY, kRowH),
+                    theme::kContentW, text(StrId::EnrolNobody), DRV_LCD_INK, Align::Centre);
+            to.text(Font::Caption, theme::kGutter, kContentY + kRowH + theme::kGapM,
+                    theme::kContentW, text(StrId::EnrolNobodyHint), DRV_LCD_DIM, Align::Centre);
             return;
         }
-        paint_list(to);
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * kRowH);
+        for (int i = 0; i < count; ++i) {
+            const int y = list_y(i);
+            if (i > 0) {
+                widgets::divider(to, theme::kGutter, y, theme::kContentW);
+            }
+            char code[16];
+            snprintf(code, sizeof(code), "%u", (unsigned)s_pending.row[i].employee_id);
+            const widgets::Row what = { s_pending.row[i].name, code,
+                                        widgets::Icon::PersonAdd, DRV_LCD_ACCENT,
+                                        DRV_LCD_INK, -1, widgets::Icon::None };
+            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
+        }
     }
 
 private:
-    static constexpr int kSelf = -3;
-
-    // The fallback row is always the last one, so the list gives up its seat first.
-    static int rows() noexcept { return list_fits(s_pending.count, kRowH, kListEnd - kRowH); }
+    static int rows() noexcept { return list_fits(s_pending.count, kRowH, kListEnd); }
 
     static int list_y(int i) noexcept { return kContentY + i * kRowH; }
 
@@ -858,106 +866,9 @@ private:
                 return i;
             }
         }
-        return inside(x, y, theme::kGutter, self_y(), theme::kContentW, kRowH) ? kSelf : kNothing;
+        return kNothing;
     }
 
-    static int self_y() noexcept { return list_y(rows()); }
-
-    bool choose(int fire) noexcept
-    {
-        if (fire == kBack) {
-            manager().go(ScreenId::Menu);
-            return true;
-        }
-        if (fire == kSelf) {
-            typing_ = true;
-            layer_ = 1;
-            typed_[0] = '\0';
-            return true;
-        }
-        if (fire < 0 || fire >= rows()) {
-            return true;
-        }
-        enrol_request().employee_id = s_pending.row[fire].employee_id;
-        strlcpy(enrol_request().name, s_pending.row[fire].name, sizeof(enrol_request().name));
-        manager().go(ScreenId::Capture);
-        return true;
-    }
-
-    bool press(int fire) noexcept
-    {
-        const size_t at = strlen(typed_);
-        if (fire == kDel) {
-            if (at > 0) {
-                typed_[at - 1] = '\0';
-            }
-            return true;
-        }
-        if (fire == kShift) {
-            layer_ = layer_ == 1 ? 0 : 1;
-            return true;
-        }
-        if (fire == kLayer) {
-            layer_ = layer_ == 2 ? 0 : 2;
-            return true;
-        }
-        if (fire == kOk) {
-            if (at == 0) {
-                return true;
-            }
-            enrol_request().employee_id = kNewPerson;
-            strlcpy(enrol_request().name, typed_, sizeof(enrol_request().name));
-            manager().go(ScreenId::Capture);
-            return true;
-        }
-        if (at + 1 >= sizeof(typed_)) {
-            return true;
-        }
-        typed_[at] = fire == kSpace ? ' ' : kLayers[layer_][fire];
-        typed_[at + 1] = '\0';
-        return true;
-    }
-
-    void paint_list(Canvas &to) noexcept
-    {
-        const int count = rows();
-        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, (count + 1) * kRowH);
-        if (count == 0) {
-            to.text(Font::Caption, theme::kGutter, kContentY + (count + 1) * kRowH + theme::kGapM,
-                    theme::kContentW, text(StrId::EnrolNobody), DRV_LCD_DIM, Align::Centre);
-        }
-        for (int i = 0; i < count; ++i) {
-            const int y = list_y(i);
-            if (i > 0) {
-                widgets::divider(to, theme::kGutter, y, theme::kContentW);
-            }
-            char code[16];
-            snprintf(code, sizeof(code), "%u", (unsigned)s_pending.row[i].employee_id);
-            const widgets::Row what = { s_pending.row[i].name, code,
-                                        widgets::Icon::PersonAdd, DRV_LCD_ACCENT,
-                                        DRV_LCD_INK, -1, widgets::Icon::None };
-            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
-        }
-        const int at = self_y();
-        if (count > 0) {
-            widgets::divider(to, theme::kGutter, at, theme::kContentW);
-        }
-        const widgets::Row self = { text(StrId::EnrolTypeName), nullptr, widgets::Icon::Keyboard,
-                                    DRV_LCD_DIM,   DRV_LCD_INK, -1, widgets::Icon::None };
-        widgets::row(to, theme::kGutter, at, theme::kContentW, kRowH, self, held_ == kSelf);
-    }
-
-    void paint_keys(Canvas &to) noexcept
-    {
-        to.text(Font::Caption, theme::kGutter, kFieldHintY, theme::kContentW,
-                text(StrId::EnrolNameHint), DRV_LCD_DIM);
-        field(to, typed_, text(StrId::EnrolNameEmpty));
-        keyboard(to, layer_, held_, text(StrId::EnrolNext));
-    }
-
-    bool typing_ = false;
-    int layer_ = 1;                       // a name opens on capitals
-    char typed_[STORAGE_NAME_CAP] = { 0 };
     int held_ = kNothing;
 };
 

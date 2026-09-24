@@ -49,10 +49,7 @@ constexpr Entry kRows[] = {
     { StrId::DeviceRamFree, "RAM nội còn", "RAM free" },
 
     { StrId::EnrolNobody, "Chưa ai được giao từ máy chủ", "Nobody assigned yet" },
-    { StrId::EnrolTypeName, "Tự nhập tên", "Type a name" },
-    { StrId::EnrolNameHint, "Tên hiện trên máy", "Name shown on the kiosk" },
-    { StrId::EnrolNameEmpty, "Gõ tên không dấu", "Letters and numbers" },
-    { StrId::EnrolNext, "Tiếp", "Next" },
+    { StrId::EnrolNobodyHint, "Giao người cho máy này ở trang Nhân viên", "Assign people on the Employees page" },
 
     { StrId::CaptureLookAhead, "Nhìn thẳng vào camera", "Look at the camera" },
     { StrId::CaptureTurnLeft, "Quay nhẹ sang trái", "Turn slightly left" },
