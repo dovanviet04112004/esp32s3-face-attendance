@@ -319,6 +319,9 @@ model Device {
   rosterVersion Int                @default(0)
   lastSeenAt    DateTime?
   online        Boolean            @default(false)
+  // The newest update offer only: its status is read against the heartbeat (KEHOACH 7.7).
+  otaReleaseId  String?            @db.Uuid
+  otaOfferedAt  DateTime?
   approvedAt    DateTime?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
@@ -434,7 +437,10 @@ model Release {
   releaseId    String       @id @db.Uuid
   target       String
   version      String
-  url          String
+  // Empty for every release published through the api; dropped next release (KEHOACH 9.22.3).
+  url          String?
+  // The file in the releases volume, cleared once it is pruned (KEHOACH 7.7).
+  path         String?
   sha256       String       @db.Char(64)
   sizeBytes    Int
   minFwVersion String?

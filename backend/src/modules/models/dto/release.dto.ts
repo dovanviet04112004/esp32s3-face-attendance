@@ -1,22 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import { Type } from "class-transformer";
+import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength } from "class-validator";
 
-const TARGETS = ["FIRMWARE", "MODELS", "ASSETS"] as const;
+import { PUBLISHED_TARGETS, type PublishedTarget } from "../models.service.js";
+
 const SEMVER = /^\d+\.\d+\.\d+$/;
 
-export class CreateReleaseDto {
-  @ApiProperty({ enum: TARGETS })
-  @IsEnum(TARGETS)
-  target!: (typeof TARGETS)[number];
+/** What the publisher states about the file in the body; the file itself is the rest. */
+export class PublishQueryDto {
+  @ApiProperty({ enum: PUBLISHED_TARGETS })
+  @IsIn(PUBLISHED_TARGETS)
+  target!: PublishedTarget;
 
-  @ApiProperty({ example: "0.9.1" })
-  @Matches(SEMVER, { message: "version must read MAJOR.MINOR.PATCH so it can be ordered" })
+  @ApiProperty({ example: "0.9.2", description: "MAJOR.MINOR.PATCH for FIRMWARE, img-<crc32> for MODELS" })
+  @IsString()
+  @MaxLength(32)
   version!: string;
-
-  @ApiProperty({ example: "https://example.com/0.9.1/face_attendance.bin" })
-  @Matches(/^https:\/\//, { message: "url must be https" })
-  @MaxLength(512)
-  url!: string;
 
   @ApiPropertyOptional({ example: "0.9.0", description: "MODELS only" })
   @IsOptional()
@@ -28,4 +27,22 @@ export class CreateReleaseDto {
   @IsString()
   @MaxLength(128)
   runId?: string;
+}
+
+/** The signed part of a download link, which is the whole of its authority. */
+export class ImageLinkDto {
+  @ApiProperty({ example: "kiosk-2884859fd3c8" })
+  @IsString()
+  @MaxLength(32)
+  device!: string;
+
+  @ApiProperty({ description: "Unix seconds after which the link is refused" })
+  @Type(() => Number)
+  @IsInt()
+  exp!: number;
+
+  @ApiProperty({ description: "HMAC-SHA256 of release, device and expiry" })
+  @IsString()
+  @MaxLength(64)
+  sig!: string;
 }

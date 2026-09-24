@@ -11,6 +11,7 @@ export const AUDIT_SUBJECTS = {
   LEAVE_TYPE: "leaveType",
   DOCUMENT: "document",
   DEVICE: "device",
+  RELEASE: "release",
   ROUTE: "route",
 } as const;
 
@@ -90,6 +91,9 @@ export const AUDIT_ACTIONS = {
   DEVICE_REGISTER: "device.register",
   DEVICE_TOKEN_ISSUE: "device.tokenIssue",
   DEVICE_RESET: "device.reset",
+
+  RELEASE_PUBLISH: "release.publish",
+  RELEASE_OFFER: "release.offer",
 
   ROUTE_WRITE: "route.write",
 } as const;

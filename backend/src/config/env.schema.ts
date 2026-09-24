@@ -35,8 +35,19 @@ export const envSchema = z
     DISPUTE_ANSWER_DAYS: z.coerce.number().int().positive().default(5),
     BACKUP_STALE_HOURS: z.coerce.number().int().min(0).max(168).default(0),
     BIOMETRIC_NOTICE_VERSION: z.string().min(1).max(64).default("2026-01-v1"),
-    OTA_MAX_BYTES: z.coerce.number().int().positive().default(3_145_728),
-    OTA_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+    OTA_MAX_BYTES: z.coerce.number().int().positive().default(2_883_584),
+    RELEASE_DIR: z.string().min(1).default("./releases"),
+    RELEASE_LINK_HOURS: z.coerce.number().int().positive().max(168).default(24),
+    API_PUBLIC_URL: z
+      .string()
+      .url()
+      .refine((held) => held.startsWith("https://"), "API_PUBLIC_URL must be https")
+      .default("https://localhost"),
+    RELEASE_PUBLISH_TOKEN: z
+      .string()
+      .optional()
+      .transform((held) => (held ? held : undefined))
+      .refine((held) => held === undefined || held.length >= 32, "RELEASE_PUBLISH_TOKEN needs 32 characters"),
 
     // The server clock is UTC, so this decides every day boundary (KEHOACH 9.8).
     APP_TIMEZONE: z

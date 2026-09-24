@@ -76,7 +76,7 @@ export interface DeviceChange {
 
 export type PublicDevice = Omit<
   Device,
-  "tokenHash" | "prevTokenHash" | "claimHash" | "claimFailures"
+  "tokenHash" | "prevTokenHash" | "claimHash" | "claimFailures" | "otaReleaseId" | "otaOfferedAt"
 >;
 
 @Injectable()

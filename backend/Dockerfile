@@ -27,6 +27,9 @@ COPY --from=build /app/dist ./dist
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 
+# A fresh named volume takes this directory's owner, and the api writes as node (KEHOACH 7.7).
+RUN mkdir -p /releases && chown node:node /releases
+
 USER node
 EXPOSE 3000
 # The schema reaches the database before the first request does.
