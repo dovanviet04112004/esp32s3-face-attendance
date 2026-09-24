@@ -5129,7 +5129,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB **ở PSRAM** | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota`, `net_provision` | 0 | 3 | 8 KB | lệnh `down/ota`; bit `NEED_TICKET`; bit `BROKER_REFUSED` | **Giữ phiên HTTPS duy nhất của máy**: tải firmware / models, verify sha256, ghi partition; xin vé khi chưa có, và hỏi lại vé khi broker từ chối (§7.3). Cắt broker trước mỗi phiên |
 | `sync_task` | `svc_sync` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, đẩy con trỏ; và **phát `up/heartbeat` mỗi `GEN_TOPIC_HEARTBEAT_INTERVAL_S`** |
-| `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ 30 s chỉ để biết là không có sóng. Có vé thì nối broker, chưa có thì giương `NEED_TICKET` cho `ota_task`; rồi mở SNTP |
+| `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ chỉ để biết là không có sóng. Chờ **tới khi có**, không bỏ cuộc sau 30 s: máy mới lắp nhận Wi-Fi từ người lắp gõ trên màn, thường sau lúc boot rất lâu, và bỏ cuộc thì nó không đăng ký cho tới lần khởi động sau. Có vé thì nối broker, chưa có thì giương `NEED_TICKET` cho `ota_task`; rồi mở SNTP. Xong thì tự xoá |
 | `wifi` / `lwip` | hệ thống IDF | 0 | 18–23 | — | — | Do IDF quản lý, không tự tạo |
 
 **Ngăn xếp `mqtt_task` nằm ở PSRAM.** `CONFIG_MQTT_TASK_STACK_ON_EXTERNAL_MEMORY` đẩy 6 KB ấy
