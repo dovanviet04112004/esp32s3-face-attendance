@@ -67,10 +67,13 @@ enum class StrId : uint16_t {
     CaptureCancel,
 
     PeopleEmpty,
-    PeopleRemoving,
-    PeopleTapRemove,
     PeopleTemplatesFmt,                   // takes the template count
     PeopleUnnamed,
+    PersonRetake,
+    PersonRemove,
+    PersonConfirm,
+    PersonNoRoom,
+    EnrolRetake,
 
     WifiScanning,
     WifiNone,

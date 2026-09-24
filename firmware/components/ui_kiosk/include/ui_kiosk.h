@@ -172,10 +172,11 @@ typedef enum {
  */
 bool ui_kiosk_take_level(ui_kiosk_level_t *which, uint8_t *percent, bool *settled);
 
-/** One employee the server has assigned to this kiosk but nobody has enrolled. */
+/** One employee waiting to be captured here: new, or held and up for a retake. */
 typedef struct {
     uint32_t employee_id;
     char name[STORAGE_NAME_CAP];
+    bool retake;                          // this kiosk already holds their face
 } ui_kiosk_pending_t;
 
 #define UI_KIOSK_PENDING_ROWS 8
@@ -243,6 +244,17 @@ void ui_kiosk_wifi_joined(esp_err_t result);
  *  @ret false when nobody is waiting to be removed
  */
 bool ui_kiosk_take_remove(uint32_t *employee_id);
+
+/** Collect the employee the people screen asked to capture again (KEHOACH 7.5).
+ *  @ctx ui_task | non-blocking | one shot | name copied, at least STORAGE_NAME_CAP
+ *  @ret false when nobody is waiting for a retake
+ */
+bool ui_kiosk_take_retake(uint32_t *employee_id, char *name, size_t cap);
+
+/** Say whether device/enroll_out has room, so a full one refuses rather than drops.
+ *  @ctx any | non-blocking
+ */
+void ui_kiosk_set_asks_room(bool room);
 
 /** Hand the list to whichever screen asked for it.
  *  @ctx ui_task | non-blocking | copied, the caller keeps its own array

@@ -22,6 +22,7 @@ enum class ScreenId {
     Settings,
     Wifi,
     Device,
+    Person,
     Count,
 };
 
@@ -87,6 +88,17 @@ struct RemoveRequest {
 };
 
 RemoveRequest &remove_request() noexcept;
+
+/** The person the people screen opened, and a retake the person screen asked for. */
+struct PersonPick {
+    uint32_t employee_id;
+    uint16_t templates;
+    char name[STORAGE_NAME_CAP];
+    bool retake_waiting;
+    bool room;                            // device/enroll_out can take another request
+};
+
+PersonPick &person_pick() noexcept;
 
 /** The capture screen counts a sample when the pipeline really kept one. */
 void enrol_kept() noexcept;
@@ -179,11 +191,6 @@ struct JoinRequest {
 
 JoinRequest &join_request() noexcept;
 
-/** Tell the people screen its list has been refreshed, so a row that asked to
- *  go stops saying so whether or not the table let it.
- */
-void people_delivered() noexcept;
-
 /** The guide frame the scan screen draws, x1, y1, x2, y2 in panel pixels. */
 void guide_box(int16_t out[4]) noexcept;
 
@@ -195,5 +202,6 @@ Screen *people_screen() noexcept;
 Screen *settings_screen() noexcept;
 Screen *wifi_screen() noexcept;
 Screen *device_screen() noexcept;
+Screen *person_screen() noexcept;
 
 }  // namespace ui

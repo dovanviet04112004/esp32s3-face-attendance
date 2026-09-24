@@ -67,10 +67,13 @@ constexpr Entry kRows[] = {
     { StrId::CaptureCancel, "Huỷ", "Cancel" },
 
     { StrId::PeopleEmpty, "Chưa có ai", "Nobody yet" },
-    { StrId::PeopleRemoving, "Đang xoá…", "Removing…" },
-    { StrId::PeopleTapRemove, "Xoá?", "Remove?" },
     { StrId::PeopleTemplatesFmt, "%u mẫu", "%u samples" },
     { StrId::PeopleUnnamed, "Chưa đặt tên", "No name" },
+    { StrId::PersonRetake, "Chụp lại mẫu", "Take new samples" },
+    { StrId::PersonRemove, "Xoá khỏi máy này", "Remove from this kiosk" },
+    { StrId::PersonConfirm, "Chạm lần nữa để xoá", "Tap again to remove" },
+    { StrId::PersonNoRoom, "Cần có mạng để gửi thêm yêu cầu", "Needs a network to send more" },
+    { StrId::EnrolRetake, "Chụp lại", "Retake" },
 
     { StrId::WifiScanning, "Đang quét…", "Scanning…" },
     { StrId::WifiNone, "Không thấy mạng nào", "No networks found" },

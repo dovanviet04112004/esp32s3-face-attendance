@@ -193,6 +193,7 @@ esp_err_t ui_kiosk_init(void)
     ui::manager().attach(ui::ScreenId::Settings, ui::settings_screen());
     ui::manager().attach(ui::ScreenId::Wifi, ui::wifi_screen());
     ui::manager().attach(ui::ScreenId::Device, ui::device_screen());
+    ui::manager().attach(ui::ScreenId::Person, ui::person_screen());
     memset(s_slot, 0, sizeof(s_slot));
     memset(&s_seen, 0, sizeof(s_seen));
     s_ready = true;
@@ -326,6 +327,28 @@ bool ui_kiosk_take_remove(uint32_t *employee_id)
     return true;
 }
 
+bool ui_kiosk_take_retake(uint32_t *employee_id, char *name, size_t cap)
+{
+    if (!s_ready || employee_id == nullptr || name == nullptr || !ui::person_pick().retake_waiting) {
+        return false;
+    }
+    *employee_id = ui::person_pick().employee_id;
+    strlcpy(name, ui::person_pick().name, cap);
+    ui::person_pick().retake_waiting = false;
+    return true;
+}
+
+void ui_kiosk_set_asks_room(bool room)
+{
+    if (!s_ready) {
+        return;
+    }
+    if (ui::person_pick().room != room) {
+        ui::person_pick().room = room;
+        s_dirty = true;
+    }
+}
+
 void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count)
 {
     if (!s_ready) {
@@ -333,7 +356,6 @@ void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count)
     }
     ui::people().count = count < UI_KIOSK_PEOPLE_ROWS ? count : UI_KIOSK_PEOPLE_ROWS;
     memcpy(ui::people().row, people, sizeof(ui_kiosk_person_t) * ui::people().count);
-    ui::people_delivered();
     s_dirty = true;
 }
 

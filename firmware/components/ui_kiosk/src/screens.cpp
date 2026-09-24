@@ -158,6 +158,7 @@ constexpr int kBack = -2;
 ScreenManager s_manager;
 EnrolRequest s_request;
 RemoveRequest s_remove;
+PersonPick s_pick = { 0, 0, { 0 }, false, true };
 People s_people_list;
 Pending s_pending;
 Networks s_networks;
@@ -856,7 +857,8 @@ public:
             }
             char code[16];
             snprintf(code, sizeof(code), "%u", (unsigned)s_pending.row[i].employee_id);
-            const widgets::Row what = { s_pending.row[i].name, code,
+            const char *tail = s_pending.row[i].retake ? text(StrId::EnrolRetake) : code;
+            const widgets::Row what = { s_pending.row[i].name, tail,
                                         widgets::Icon::PersonAdd, DRV_LCD_ACCENT,
                                         DRV_LCD_INK, -1, widgets::Icon::None };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
@@ -1230,11 +1232,7 @@ public:
     {
         people().wanted = true;
         held_ = kNothing;
-        armed_ = kNothing;
-        going_ = 0;
     }
-
-    void delivered() noexcept { going_ = 0; }
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
@@ -1250,18 +1248,13 @@ public:
             return true;
         }
         if (fire < 0 || fire >= people().count) {
-            armed_ = kNothing;
             return true;
         }
-        // The second touch on the same row is the confirmation (KEHOACH 4.5.5h.3).
-        if (fire == armed_) {
-            going_ = people().row[fire].employee_id;
-            remove_request().employee_id = going_;
-            remove_request().waiting = true;
-            armed_ = kNothing;
-            return true;
-        }
-        armed_ = fire;
+        const ui_kiosk_person_t &who = people().row[fire];
+        person_pick().employee_id = who.employee_id;
+        person_pick().templates = who.templates;
+        strlcpy(person_pick().name, who.name, sizeof(person_pick().name));
+        manager().go(ScreenId::Person);
         return true;
     }
 
@@ -1279,24 +1272,16 @@ public:
         for (int i = 0; i < count; ++i) {
             const ui_kiosk_person_t &who = people().row[i];
             const int y = row_y(i);
-            const bool leaving = going_ != 0 && who.employee_id == going_;
             if (i > 0) {
                 widgets::divider(to, theme::kGutter, y, theme::kContentW);
             }
             char tail[24];
-            if (leaving) {
-                snprintf(tail, sizeof(tail), "%s", text(StrId::PeopleRemoving));
-            } else if (i == armed_) {
-                snprintf(tail, sizeof(tail), "%s", text(StrId::PeopleTapRemove));
-            } else {
-                snprintf(tail, sizeof(tail), text(StrId::PeopleTemplatesFmt), (unsigned)who.templates);
-            }
-            const bool hot = i == armed_ || leaving;
+            snprintf(tail, sizeof(tail), text(StrId::PeopleTemplatesFmt), (unsigned)who.templates);
             const widgets::Row what = { who.name[0] != '\0' ? who.name : text(StrId::PeopleUnnamed),
                                         tail,
                                         widgets::Icon::Person,
-                                        (uint8_t)(hot ? DRV_LCD_DANGER : DRV_LCD_ACCENT),
-                                        (uint8_t)(hot ? DRV_LCD_DANGER : DRV_LCD_INK),
+                                        DRV_LCD_ACCENT,
+                                        DRV_LCD_INK,
                                         -1,
                                         widgets::Icon::None };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
@@ -1323,8 +1308,95 @@ private:
     }
 
     int held_ = kNothing;
-    int armed_ = kNothing;
-    uint32_t going_ = 0;
+};
+
+// Both actions are requests the server decides; the kiosk acts on them at once (KEHOACH 7.5).
+class PersonScreen final : public Screen {
+public:
+    bool opaque() const noexcept override { return true; }
+
+    void on_enter() noexcept override
+    {
+        held_ = kNothing;
+        armed_ = false;
+    }
+
+    bool on_touch(int x, int y, bool down) noexcept override
+    {
+        const int hit = row_at(x, y);
+        if (down) {
+            held_ = hit;
+            return true;
+        }
+        const int fire = held_ == hit ? hit : kNothing;
+        held_ = kNothing;
+        if (fire == kBack) {
+            manager().go(ScreenId::People);
+            return true;
+        }
+        if (!person_pick().room) {
+            return true;
+        }
+        if (fire == kRetake) {
+            person_pick().retake_waiting = true;
+            manager().go(ScreenId::Enrol);
+        } else if (fire == kRemove && armed_) {
+            remove_request().employee_id = person_pick().employee_id;
+            remove_request().waiting = true;
+            manager().go(ScreenId::People);
+        } else if (fire == kRemove) {
+            armed_ = true;
+        }
+        return true;
+    }
+
+    void paint(Canvas &to, const Sight &seen) noexcept override
+    {
+        (void)seen;
+        const char *name = person_pick().name[0] != '\0' ? person_pick().name : text(StrId::PeopleUnnamed);
+        page(to, name, true);
+        const bool room = person_pick().room;
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, kRows * kRowH);
+        const uint8_t ink = room ? DRV_LCD_INK : DRV_LCD_DIM;
+        const uint8_t go_tint = room ? DRV_LCD_ACCENT : DRV_LCD_DIM;
+        const uint8_t gone_tint = room ? DRV_LCD_DANGER : DRV_LCD_DIM;
+        const uint8_t gone_ink = room && armed_ ? DRV_LCD_DANGER : ink;
+        const widgets::Row retake = { text(StrId::PersonRetake), nullptr, widgets::Icon::PersonAdd,
+                                      go_tint, ink, -1, widgets::Icon::None };
+        widgets::row(to, theme::kGutter, row_y(kRetake), theme::kContentW, kRowH, retake, held_ == kRetake);
+        widgets::divider(to, theme::kGutter, row_y(kRemove), theme::kContentW);
+        const widgets::Row remove = { text(StrId::PersonRemove), armed_ ? text(StrId::PersonConfirm) : nullptr,
+                                      widgets::Icon::Person, gone_tint, gone_ink, -1,
+                                      widgets::Icon::None };
+        widgets::row(to, theme::kGutter, row_y(kRemove), theme::kContentW, kRowH, remove, held_ == kRemove);
+        if (!room) {
+            to.text(Font::Caption, theme::kGutter, kContentY + kRows * kRowH + theme::kGapM,
+                    theme::kContentW, text(StrId::PersonNoRoom), DRV_LCD_WARN, Align::Centre);
+        }
+    }
+
+private:
+    static constexpr int kRetake = 0;
+    static constexpr int kRemove = 1;
+    static constexpr int kRows = 2;
+
+    static int row_y(int i) noexcept { return kContentY + i * kRowH; }
+
+    static int row_at(int x, int y) noexcept
+    {
+        if (widgets::on_back(x, y)) {
+            return kBack;
+        }
+        for (int i = 0; i < kRows; ++i) {
+            if (inside(x, y, theme::kGutter, row_y(i), theme::kContentW, kRowH)) {
+                return i;
+            }
+        }
+        return kNothing;
+    }
+
+    int held_ = kNothing;
+    bool armed_ = false;
 };
 
 class WifiScreen final : public Screen {
@@ -1560,6 +1632,7 @@ MenuScreen s_menu;
 EnrolScreen s_enrol;
 CaptureScreen s_capture;
 PeopleScreen s_people;
+PersonScreen s_person;
 SettingsScreen s_settings;
 WifiScreen s_wifi;
 DeviceScreen s_device;
@@ -1594,6 +1667,11 @@ JoinRequest &join_request() noexcept
 EnrolRequest &enrol_request() noexcept
 {
     return s_request;
+}
+
+PersonPick &person_pick() noexcept
+{
+    return s_pick;
 }
 
 RemoveRequest &remove_request() noexcept
@@ -1641,10 +1719,6 @@ Pending &pending() noexcept
     return s_pending;
 }
 
-void people_delivered() noexcept
-{
-    s_people.delivered();
-}
 
 void enrol_kept() noexcept
 {
@@ -1707,6 +1781,11 @@ Screen *wifi_screen() noexcept
 Screen *settings_screen() noexcept
 {
     return &s_settings;
+}
+
+Screen *person_screen() noexcept
+{
+    return &s_person;
 }
 
 Screen *device_screen() noexcept
