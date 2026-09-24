@@ -219,14 +219,26 @@ export class AuthService {
     this.bus.emit(SESSIONS_CUT, { userIds } satisfies SessionsCut);
   }
 
-  /** Whether an access token issued at iat predates its account's cutoff. */
-  async accessCut(userId: string, iat: number): Promise<boolean> {
+  /** Whether an access token predates its account's cutoff (KEHOACH 9.23 rule 5). */
+  async accessCut(claims: Pick<AccessClaims, "sub" | "sid">, iat: number): Promise<boolean> {
+    let at: string | null;
     try {
-      const at = await this.redis.client.get(GUARD.accessCutoff(userId));
-      return at !== null && iat <= Number(at);
+      at = await this.redis.client.get(GUARD.accessCutoff(claims.sub));
     } catch {
       return false;
     }
+    if (at === null || iat > Number(at)) {
+      return false;
+    }
+    if (iat < Number(at)) {
+      return true;
+    }
+    // Every cut closes the account's sessions, so the cut's own second is settled by the session row.
+    const session = await this.db.session.findUnique({
+      where: { id: claims.sid },
+      select: { revokedAt: true },
+    });
+    return session === null || session.revokedAt !== null;
   }
 
   /** Sign a kiosk token; a jti keeps two issued within one second apart (KEHOACH 7.3). */

@@ -3,13 +3,16 @@ import { createHash, randomBytes } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
+import { GUARD } from "../src/common/cache/cache-keys.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { RedisService } from "../src/database/redis.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
 import { hashPassword } from "../src/modules/auth/password.js";
@@ -39,6 +42,8 @@ describe("sessions across devices (e2e)", () => {
   let db: PrismaService;
   let auth: AuthService;
   let users: UsersService;
+  let jwt: JwtService;
+  let redis: RedisService;
   let userId = "";
   let phone: Device;
   let laptop: Device;
@@ -77,6 +82,8 @@ describe("sessions across devices (e2e)", () => {
     db = app.get(PrismaService);
     auth = app.get(AuthService);
     users = app.get(UsersService);
+    jwt = app.get(JwtService);
+    redis = app.get(RedisService);
     await db.user.deleteMany({ where: { email: EMAIL } });
     const made = await db.user.create({
       data: { email: EMAIL, passwordHash: await hashPassword(FIRST_PASSWORD), role: "HR" },
@@ -171,11 +178,23 @@ describe("sessions across devices (e2e)", () => {
     assert.equal((await me(held.accessToken)).status, 401, "a demoted account kept using its old token");
     assert.equal(await db.session.count({ where: { userId: made.id, revokedAt: null } }), 0);
 
-    // A token has one-second iat, so the next one is minted past the cutoff's second.
-    await new Promise((done) => setTimeout(done, 2100));
     const fresh = await auth.signIn(email, FIRST_PASSWORD, { userAgent: "e2e-demoted/1.0" });
     assert.equal((await me(fresh.accessToken)).status, 200, "the account could not sign in again");
     await db.user.deleteMany({ where: { email } });
+  });
+
+  it("settles a token from the cutoff's own second by whether its session is open", async () => {
+    const held = await auth.signIn(EMAIL, NEXT_PASSWORD, { userAgent: "e2e-same-second/1.0" });
+    const claims = jwt.decode(held.accessToken) as { iat: number; sid: string };
+    const me = () => request(http).get("/auth/me").set("Authorization", `Bearer ${held.accessToken}`);
+    await redis.client.set(GUARD.accessCutoff(userId), String(claims.iat), "EX", 60);
+    try {
+      assert.equal((await me()).status, 200, "a sign-in in the cutoff's second got a dead token");
+      await auth.close(claims.sid);
+      assert.equal((await me()).status, 401, "a closed session's token outlived the cutoff");
+    } finally {
+      await redis.client.del(GUARD.accessCutoff(userId));
+    }
   });
 
   it("holds no more devices than it is allowed to", async () => {

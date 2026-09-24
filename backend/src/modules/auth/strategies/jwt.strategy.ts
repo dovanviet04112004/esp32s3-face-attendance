@@ -22,7 +22,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
 
   // A signature outlives a demotion or a leave; the cutoff says the token died with its sessions.
   async validate(claims: AccessClaims & { iat?: number }): Promise<AccessClaims> {
-    if (await this.auth.accessCut(claims.sub, claims.iat ?? 0)) {
+    if (await this.auth.accessCut(claims, claims.iat ?? 0)) {
       throw new UnauthorizedException("SESSION_CLOSED");
     }
     return claims;
