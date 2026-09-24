@@ -107,6 +107,8 @@ services:
   backup:
     image: kiosk-backup:local
     build: ./backup
+    # restore-drill.sh reaches the dumps over ssh by this name.
+    container_name: kiosk-backup
     restart: unless-stopped
     depends_on:
       postgres:
@@ -120,11 +122,9 @@ services:
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
       BIOMETRIC_KEEP_DAYS: ${BIOMETRIC_KEEP_DAYS:-7}
       AGE_RECIPIENT: ${AGE_RECIPIENT}
-      AGE_KEY_FILE: /keys/age.key
       TZ: ${APP_TIMEZONE:-Asia/Ho_Chi_Minh}
     volumes:
       - backups:/backups
-      - ${AGE_KEY_FILE:-./backup/age.key}:/keys/age.key:ro
 
   redis:
     ports: !override []
