@@ -30,13 +30,24 @@ export function PushSwitch() {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
       return;
     }
-    if (Notification.permission === "denied") {
-      setStanding("blocked");
-      return;
-    }
-    void navigator.serviceWorker.ready
-      .then((worker) => worker.pushManager.getSubscription())
-      .then((held) => setStanding(held ? "on" : "off"));
+    const read = () => {
+      if (Notification.permission === "denied") {
+        setStanding("blocked");
+        return;
+      }
+      void navigator.serviceWorker.ready
+        .then((worker) => worker.pushManager.getSubscription())
+        .then((held) => setStanding(held ? "on" : "off"));
+    };
+    // A blocked permission is lifted in the browser's own settings, so look again on the way back.
+    const back = () => {
+      if (document.visibilityState === "visible") {
+        read();
+      }
+    };
+    read();
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
   }, []);
 
   const turnOn = useMutation({
