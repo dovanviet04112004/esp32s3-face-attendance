@@ -3443,10 +3443,13 @@ Nên `Grant` bị chặn khi **cùng một `employee_id` còn trong cửa sổ `
 không đổi trạng thái, không mở cửa, không ghi, không phát tiếng. Sự kiện trả `ALREADY`, và màn
 **giữ im**: lượt đến này đã được nói một lần, nên khung giữ xanh như lúc vừa chấm, không thẻ,
 không tiếng. `ALREADY` vẫn phải tới màn, vì nó gắn khung xanh vào track mới: người vừa chấm mà
-nhúc nhích tới mức track đổi (IoU < 0,5) thì pipeline mở track mới và xác thực lại. Trong một
-lượt model ấy `Đang nhận diện...` hiện thoáng qua, và câu ấy không bỏ được: trước khi recog xong
-thì không gì phân biệt người vừa chấm nhúc nhích với người kế tiếp bước vào đúng chỗ, mà giấu câu
-ấy khỏi người kế tiếp là cho họ thấy khung xanh rồi bỏ đi tưởng đã chấm. Người khác bước tới vẫn
+nhúc nhích tới mức track đổi (IoU < 0,5) thì pipeline mở track mới và xác thực lại. Nó chỉ dời
+khung xanh sang track ấy, **không hạ thẻ** đang chạy đồng hồ. Đo trên board 24/09: cả 5 lượt cấp
+trong log đều có track mới ngay lần detect kế tiếp và `ALREADY` ~0,9 s sau, tức nằm gọn trong
+1,5 s của thẻ — nên nhúc nhích lúc thẻ còn trên kính thì không thấy gì. Nhúc nhích sau khi thẻ hết
+giờ thì `Đang nhận diện...` hiện thoáng qua trong một lượt model, và câu ấy không bỏ được: trước
+khi recog xong thì không gì phân biệt người vừa chấm nhúc nhích với người kế tiếp bước vào đúng
+chỗ, mà giấu câu ấy khỏi người kế tiếp là cho họ thấy khung xanh rồi bỏ đi tưởng đã chấm. Người khác bước tới vẫn
 được cấp ngay, vì phép so là theo mã nhân viên. Ra khỏi khung rồi quay lại là một lần đến mới:
 cửa mở, loa kêu, thẻ hiện như thường; bản ghi theo quyết định 1 bên dưới.
 
@@ -3740,11 +3743,10 @@ cộng khoảng 2,5 giây người mới đứng nhìn lời từ chối của n
 `VisionPipeline` vì thế đánh **số hiệu track**, tăng đúng mỗi lần `follow()` mở một track mới, và
 gửi kèm danh sách hộp mặt cho người quan sát. Phán quyết mang cùng con số ấy
 (`svc_vision_result_t.track` → `ui_kiosk_verdict_t.track`), và màn so track đang thấy với **track
-phán quyết nói về**, không với track đang thấy lúc phán quyết tới nơi. So theo cái sau là gán lời
-của người trước cho người vừa bước vào: thẻ hay dòng từ chối còn trong đồng hồ 1,5 s thì người mới
-mất luôn `Đang nhận diện...`, rồi thừa kế lời từ chối hay khung xanh của người cũ chừng nào họ còn
-đứng đó. Màn `Scan` giữ dòng từ chối chừng nào track đang thấy còn là track của nó, và xoá ngay
-khi nó đổi. Giữ nguyên được cả hai điều đang đúng: cùng một khuôn mặt thì lời
+phán quyết nói về**, không với track đang thấy lúc phán quyết tới nơi. So theo cái sau là người
+vừa bước vào **thừa kế** lời từ chối hay khung xanh của người cũ chừng nào họ còn đứng đó. Hết
+đồng hồ 1,5 s, màn `Scan` chỉ giữ dòng từ chối (hay khung xanh) chừng nào track đang thấy còn là
+track của nó, và xoá ngay khi nó đổi. Giữ nguyên được cả hai điều đang đúng: cùng một khuôn mặt thì lời
 từ chối không nhấp nháy theo nhịp thử lại, còn người khác bước vào thì màn sạch ngay. Không đụng
 tới `kRetryDetects`, tức không nới một chút nào cho ảnh giả giơ lì. Đo
 trên board 14/09 khi chốt này chỉ áp cho câu đầu và chỉ cho phán quyết đạt: chấm xong đứng yên
@@ -3752,9 +3754,12 @@ thì màn nhảy sang câu căn khung ngay khi thẻ hết giờ; giơ ảnh gi�
 thử lại` và `Đang nhận diện...` **đảo nhau mỗi ~2 giây** theo nhịp thử lại (18/09). Vì thế dòng từ
 chối **giữ trên kính khi khuôn mặt còn đó**, chỉ hạ khi mặt rời khung, khi có phán quyết mới, hay
 khi máy bắt sang người khác; thẻ đạt giữ đồng hồ riêng 1,5 s để một khuôn mặt đã chấm đứng yên
-không ghim thẻ mãi. Thẻ của người trước không bao giờ được hiện cho người sau: track đổi hoặc máy
-vào `Detecting` là hạ nó ngay. Không còn ai trước máy thì thẻ lẫn dòng từ chối chạy hết đồng hồ
-của mình.
+không ghim thẻ mãi. **Trong 1,5 s ấy thẻ hay dòng chữ đứng yên bất kể ai trước máy**; chỉ
+`Detecting` hay phán quyết kế tiếp mới thay nó. Hạ thẻ ngay khi track đổi thì chính người vừa
+chấm mất thẻ: người ta cử động ngay sau khi được cấp, track mới mở ở lần detect kế tiếp, và đo
+trên board 24/09 thẻ chỉ đứng được ~0,1–0,3 s rồi nhường cho `Đang nhận diện...`. Cái giá là người
+sau bước vào trong 1,5 s ấy nhìn thẻ của người trước cho tới khi phán quyết của chính họ tới —
+không bao giờ lâu hơn, vì hết đồng hồ thì chỉ track của phán quyết còn được giữ.
 
 **Câu chữ phải đọc được.** `svc_vision` đổi ý mỗi bước, nhanh hơn mắt, nên một câu nhắc giữ tối
 thiểu **700 ms** trước khi câu khác thay; riêng "mất mặt" là tin ngay lập tức.
@@ -3766,9 +3771,10 @@ tự như `≡` sẽ ra ô trống; **dải dưới** mang kết quả (§4.5.5h
 
 **Thẻ kết quả tắt khi *người tiếp theo được phục vụ*, không phải khi hết một đồng hồ.** Kiosk
 đặt ở cửa thì phía sau luôn có người chờ, và lúc thẻ của người trước còn trên kính là lúc người
-sau đứng nhìn kết quả không phải của mình. Hai sự kiện nói máy đã sang người khác: **track đổi**
-(§4.5.5d) và trạng thái **`Detecting`**. Cả hai hạ thẻ cũ và mở lại phần hướng dẫn cho người mới.
-Đồng hồ `kShowMs` = 1,5 s chỉ lo trường hợp **không có ai phía sau**. Cùng một câu về cùng một
+sau đứng nhìn kết quả không phải của mình. Hai sự kiện nói máy đang phục vụ người khác: trạng
+thái **`Detecting`**, và **phán quyết của chính người ấy**. Cả hai thay thẻ cũ; `Detecting` còn mở
+lại phần hướng dẫn cho người mới. Đồng hồ `kShowMs` = 1,5 s là trần cho mọi trường hợp còn lại,
+và hết nó thì người mới có hướng dẫn của mình (đoạn trên). Cùng một câu về cùng một
 track đến lại **trong lúc nó còn đang hiện** thì chỉ gia hạn đồng hồ chứ không dựng lại. Một cửa
 sổ im lặng chặn câu lặp thì không dùng được: dài hơn thời gian hiện chữ là nó đẻ ra đúng cái nó
 định chặn, `Chưa có trong hệ thống` sáng, tắt trong lúc máy vẫn đang từ chối, rồi sáng lại. Câu
