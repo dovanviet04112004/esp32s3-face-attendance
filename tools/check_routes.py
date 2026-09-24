@@ -24,6 +24,7 @@ OPEN: dict[str, str] = {
     "GET /auth/me": "reads the caller's own claims off the request",
     "POST /devices/register": "a kiosk, not a person (KEHOACH 7.3)",
     "GET /leave-types": "the filing form needs them and they name no person",
+    "GET /health": "the deploy script asks with no account, and it names no row (KEHOACH 4.8)",
 }
 
 VERBS = re.compile(r'^\s*@(Get|Post|Patch|Put|Delete)\(\s*"?([^"),]*)"?')
