@@ -32,7 +32,7 @@ export interface EnrollPayload {
 
 export const enrollPayloadSchema = z.strictObject({
   op: z.enum(["UPSERT", "DELETE", "DELETE_EMPLOYEE", "REPLACE_ALL", "ASSIGN", "REVOKE"]),
-  employeeId: z.number().int().min(0).max(4294967295),
+  employeeId: z.number().int().min(0).max(2147483647),
   templateIdx: z.number().int().min(0).max(65535),
   updatedAt: z.number().int().min(0),
   embedding: z.string().min(683).max(684).optional(),

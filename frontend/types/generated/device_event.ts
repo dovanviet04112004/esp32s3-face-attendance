@@ -29,7 +29,7 @@ export const deviceEventSchema = z.strictObject({
   cmdId: z.string().max(36).optional(),
   severity: z.enum(["INFO", "WARN", "ERROR"]),
   message: z.string().max(200).optional(),
-  employeeId: z.number().int().min(0).max(4294967295).optional(),
+  employeeId: z.number().int().min(0).max(2147483647).optional(),
   livenessScore: z.number().min(0).max(1).optional(),
   errorCode: z.number().int().optional(),
 });

@@ -28,7 +28,7 @@ export interface AttendanceRecord {
 export const attendanceRecordSchema = z.strictObject({
   deviceId: z.string().regex(new RegExp("^[A-Za-z0-9_-]{4,32}$")),
   localId: z.string().regex(new RegExp("^[0-9]{1,20}$")),
-  employeeId: z.number().int().min(0).max(4294967295),
+  employeeId: z.number().int().min(0).max(2147483647),
   ts: z.number().int().min(0),
   direction: z.enum(["IN", "OUT"]),
   matchScore: z.number().min(-1).max(1),
