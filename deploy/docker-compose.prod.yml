@@ -62,8 +62,12 @@ services:
       # Traefik alone is one hop; Cloudflare in front of it makes two (KEHOACH 4.8).
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       BACKUP_STALE_HOURS: ${BACKUP_STALE_HOURS:-26}
+      RELEASE_DIR: /releases
+      API_PUBLIC_URL: https://${API_DOMAIN}
+      RELEASE_PUBLISH_TOKEN: ${RELEASE_PUBLISH_TOKEN:-}
     volumes:
       - ./emqx/certs/ca.crt:/certs/ca.crt:ro
+      - releases:/releases
     depends_on:
       postgres:
         condition: service_healthy
@@ -146,3 +150,5 @@ volumes:
   # A separate volume on purpose: a backup on the database's own disk dies
   # with it, and on a real host this is a mount from somewhere else.
   backups:
+  # Published firmware and model images, served to kiosks through signed links (KEHOACH 7.7).
+  releases:
