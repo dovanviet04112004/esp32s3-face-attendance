@@ -45,6 +45,7 @@ typedef enum {
 #define APP_EG_PRESENT 0x40u
 #define APP_EG_NEED_TICKET 0x80u         // no login yet, ota_task registers
 #define APP_EG_BROKER_REFUSED 0x100u     // CONNACK refused, ota_task asks api
+#define APP_EG_RENEW_TICKET 0x200u       // ROTATE_TOKEN asked, ota_task renews now
 
 // What a task knows when something goes wrong: the identity and the clock are
 // the sender's business, so they are not in here (KEHOACH 7.1).

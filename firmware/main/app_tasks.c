@@ -128,6 +128,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define OTA_MODELS_ON_TRIAL 1u
 #define TICKET_POLL_MS 1000
 #define TICKET_RECHECK_MS 60000
+#define RENEW_LOOK_MS 60000
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
 #define JOIN_WAIT_MS 30000
@@ -825,7 +826,6 @@ static const char *unsupported(device_command_action_t action)
     case DEVICE_COMMAND_ACTION_SET_CONFIG: return "SET_CONFIG has no config path yet";
     case DEVICE_COMMAND_ACTION_RELOAD_FACEDB: return "svc_facedb loads once at boot";
     case DEVICE_COMMAND_ACTION_CLEAR_LOGS: return "no log erase api yet";
-    case DEVICE_COMMAND_ACTION_ROTATE_TOKEN: return "ticket rotation waits on E13-T5";
     case DEVICE_COMMAND_ACTION_SET_ACTIVE_SLOT: return "waits on model A/B, E13-T2";
     default: return NULL;
     }
@@ -859,6 +859,17 @@ static void run_command(const device_command_t *cmd, svc_door_t door)
         publish_heartbeat();
         strlcpy(note, "heartbeat published", sizeof(note));
         break;
+    case DEVICE_COMMAND_ACTION_ROTATE_TOKEN: {
+        // A bench password set in NVS has no ticket to trade.
+        const app_wiring_t *wiring = app_wiring();
+        const bool ticketed = wiring != NULL && net_mqtt_login() == NET_MQTT_LOGIN_TICKET;
+        done = ticketed ? ESP_OK : ESP_ERR_INVALID_STATE;
+        if (ticketed) {
+            xEventGroupSetBits(wiring->flags, APP_EG_RENEW_TICKET);
+        }
+        strlcpy(note, "ticket renewal queued", sizeof(note));
+        break;
+    }
     case DEVICE_COMMAND_ACTION_REBOOT:
         publish_event(DEVICE_EVENT_TYPE_COMMAND_DONE, DEVICE_EVENT_SEVERITY_WARN, cmd->cmd_id,
                       "rebooting");
@@ -1437,12 +1448,60 @@ static void recheck_ticket(const app_wiring_t *wiring, int64_t *checked_ms)
     start_broker();
 }
 
+typedef struct {
+    int64_t next_ms;                      // esp_timer ms of the next look or try
+    uint32_t failures;
+} renewal_t;
+
+// The exp is the ticket's own, so only a clock NTP has set may be held against it (KEHOACH 7.3).
+static bool renewal_due(const app_wiring_t *wiring, EventBits_t flags, renewal_t *renewal,
+                        int64_t now_ms)
+{
+    const bool asked = (flags & APP_EG_RENEW_TICKET) != 0;
+    if (now_ms < renewal->next_ms || (!asked && sys_time_source() != SYS_TIME_SOURCE_RTC_NTP)) {
+        return false;
+    }
+    uint32_t exp = 0;
+    const bool due = asked || (net_provision_held_exp(&exp) == ESP_OK &&
+                               net_provision_renew_due(exp, sys_time_now_ms()));
+    if (due && net_mqtt_login() == NET_MQTT_LOGIN_TICKET) {
+        return true;
+    }
+    xEventGroupClearBits(wiring->flags, APP_EG_RENEW_TICKET);
+    renewal->next_ms = now_ms + RENEW_LOOK_MS;
+    return false;
+}
+
+static void renew_ticket(const app_wiring_t *wiring, renewal_t *renewal, int64_t now_ms)
+{
+    net_mqtt_stop();
+    const net_provision_answer_t answer = net_provision_renew();
+    if (answer == NET_PROVISION_REFUSED) {
+        ESP_LOGW(TAG, "api refused the renewal, registering again");
+        net_provision_forget();
+        xEventGroupClearBits(wiring->flags, APP_EG_RENEW_TICKET);
+        xEventGroupSetBits(wiring->flags, APP_EG_NEED_TICKET);
+        return;
+    }
+    const bool renewed = answer == NET_PROVISION_GRANTED;
+    if (renewed) {
+        ESP_LOGI(TAG, "ticket renewed, dialling the broker with it");
+        xEventGroupClearBits(wiring->flags, APP_EG_RENEW_TICKET);
+    }
+    // A fresh ticket is weeks from due; the ceiling only keeps a bad exp from looping.
+    const uint32_t attempt = renewed ? UINT32_MAX : renewal->failures;
+    renewal->failures = renewed ? 0 : renewal->failures + 1;
+    renewal->next_ms = now_ms + net_provision_wait_ms(attempt, esp_random());
+    start_broker();
+}
+
 // The broker link is dropped for every HTTPS exchange: a second TLS session does
 // not fit beside it, and a firmware install ends in a reboot anyway (KEHOACH 5.2).
 static void ota_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
     int64_t checked_ms = 0;
+    renewal_t renewal = { 0 };
     for (;;) {
         const EventBits_t flags = xEventGroupGetBits(wiring->flags);
         if (flags & APP_EG_NEED_TICKET) {
@@ -1451,6 +1510,11 @@ static void ota_task(void *arg)
         }
         if (flags & APP_EG_BROKER_REFUSED) {
             recheck_ticket(wiring, &checked_ms);
+        }
+        const int64_t now_ms = esp_timer_get_time() / 1000;
+        if (renewal_due(wiring, flags, &renewal, now_ms)) {
+            renew_ticket(wiring, &renewal, now_ms);
+            continue;
         }
         ota_manifest_t offer;
         if (xQueueReceive(wiring->ota, &offer, pdMS_TO_TICKS(TICKET_POLL_MS)) != pdTRUE) {
