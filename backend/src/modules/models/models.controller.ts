@@ -76,6 +76,14 @@ export class ReleaseFilesController {
     return this.models.publish(query, req);
   }
 
+  @Get("published")
+  @UseGuards(PublishGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Whether a target and version are already published" })
+  published(@Query() query: PublishQueryDto): Promise<{ published: boolean }> {
+    return this.models.published(query.target, query.version);
+  }
+
   @Get(":releaseId/image")
   @ApiOperation({ summary: "The file a signed update link names" })
   async image(

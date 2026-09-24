@@ -30,6 +30,7 @@ OPEN: dict[str, str] = {
     "GET /health": "the deploy script asks with no account, and it names no row (KEHOACH 4.8)",
     "POST /releases": "CI or the training box, held by the publisher token guard (KEHOACH 7.7)",
     "GET /releases/:releaseId/image": "a kiosk holding a link signed for it alone (KEHOACH 7.7)",
+    "GET /releases/published": "CI asking before it builds, held by the publisher token guard (KEHOACH 7.7)",
 }
 
 VERBS = re.compile(r'^\s*@(Get|Post|Patch|Put|Delete)\(\s*"?([^"),]*)"?')

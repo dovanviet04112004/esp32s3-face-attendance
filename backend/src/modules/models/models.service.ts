@@ -163,6 +163,12 @@ export class ModelsService implements OnModuleInit {
     return updates;
   }
 
+  /** Whether a release is already on the register, so the publisher can skip building it. */
+  async published(target: PublishedTarget, version: string): Promise<{ published: boolean }> {
+    const held = await this.db.release.findUnique({ where: { target_version: { target, version } }, select: { releaseId: true } });
+    return { published: held !== null };
+  }
+
   /**
    * Store a release from the body of the publisher's request. Hashed while it
    * is written, so the digest can only describe the file kept (KEHOACH 7.7).
