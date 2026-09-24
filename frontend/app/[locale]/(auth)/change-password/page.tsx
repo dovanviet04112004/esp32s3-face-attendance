@@ -19,7 +19,7 @@ export default function ChangePasswordPage() {
   const common = useTranslations("common");
   const router = useRouter();
   const accessToken = useSession((s) => s.accessToken);
-  const clear = useSession((s) => s.clear);
+  const signOut = useSession((s) => s.signOut);
   const faultOf = useFault();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -51,7 +51,7 @@ export default function ChangePasswordPage() {
       setCurrent("");
       setNext("");
       setDone(true);
-      clear();
+      signOut();
     } catch (fell: unknown) {
       setRefused(faultOf(fell));
     } finally {

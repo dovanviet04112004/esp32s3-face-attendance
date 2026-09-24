@@ -30,7 +30,7 @@ export default function SettingsPage() {
   const here = usePathname();
   const router = useRouter();
   const role = useSession((s) => s.role);
-  const clear = useSession((s) => s.clear);
+  const signOut = useSession((s) => s.signOut);
   const faultOf = useFault();
   const [moving, startMoving] = useTransition();
 
@@ -41,7 +41,7 @@ export default function SettingsPage() {
       await api.post("/auth/logout").catch(() => undefined);
     },
     onSuccess: () => {
-      clear();
+      signOut();
       router.replace("/login");
     },
   });

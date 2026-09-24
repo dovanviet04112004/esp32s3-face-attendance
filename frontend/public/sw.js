@@ -1,9 +1,25 @@
 // Bumping these is what evicts an older worker's store: activate keeps only
 // the names listed here, so a name that never changes can never be evicted.
 const SHELL = "shell-v2";
-const READS = "reads-v2";
-const KEEP = [SHELL, READS];
+// One drawer per account, named READS:<sub>, since Cache Storage keys by URL alone (KEHOACH 4.7).
+const READS = "reads-v3";
+const KEEP = [SHELL];
 const LOCAL = ["localhost", "127.0.0.1"];
+
+function drawer(name) {
+  return name.startsWith(`${READS}:`);
+}
+
+// Unverified on purpose: it only picks the drawer, and the api still checks the token.
+function accountOf(request) {
+  const header = request.headers.get("Authorization") || "";
+  const body = header.startsWith("Bearer ") ? header.slice(7).split(".")[1] : "";
+  try {
+    return JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/"))).sub || null;
+  } catch {
+    return null;
+  }
+}
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -11,7 +27,9 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((names) => Promise.all(names.filter((n) => !KEEP.includes(n)).map((n) => caches.delete(n))))
+      .then((names) =>
+        Promise.all(names.filter((n) => !KEEP.includes(n) && !drawer(n)).map((n) => caches.delete(n))),
+      )
       .then(() => self.clients.claim()),
   );
 });
@@ -28,15 +46,15 @@ async function cacheFirst(request) {
 }
 
 async function networkFirst(request, bucket) {
+  const store = await caches.open(bucket);
   try {
     const fresh = await fetch(request);
     if (fresh.ok) {
-      const store = await caches.open(bucket);
       store.put(request, fresh.clone());
     }
     return fresh;
   } catch (fell) {
-    const held = await caches.match(request);
+    const held = await store.match(request);
     if (held) {
       return held;
     }
@@ -63,8 +81,20 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (url.origin !== self.location.origin) {
-    event.respondWith(networkFirst(request, READS));
+    const account = accountOf(request);
+    // No account, no drawer: an anonymous read is never kept.
+    if (account) {
+      event.respondWith(networkFirst(request, `${READS}:${account}`));
+    }
   }
+});
+
+// Signing out empties every drawer, so a shared browser hands nobody the last person's reads.
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "forget") {
+    return;
+  }
+  event.waitUntil(caches.keys().then((names) => Promise.all(names.filter(drawer).map((n) => caches.delete(n)))));
 });
 
 // The payload carries a kind and references, so the wording is built here and

@@ -13,6 +13,7 @@ interface Session {
   employeeId: number | null;
   setSession: (accessToken: string, claims: Claims) => void;
   clear: () => void;
+  signOut: () => void;
 }
 
 /** The access token lives in memory only (KEHOACH 4.6). */
@@ -23,6 +24,11 @@ export const useSession = create<Session>((set) => ({
   setSession: (accessToken, claims) =>
     set({ accessToken, role: claims.role, employeeId: claims.employeeId }),
   clear: () => set({ accessToken: null, role: null, employeeId: null }),
+  // A failed refresh only clears: it may be the network, and the worker's reads are the offline copy.
+  signOut: () => {
+    set({ accessToken: null, role: null, employeeId: null });
+    navigator.serviceWorker?.controller?.postMessage({ type: "forget" });
+  },
 }));
 
 /** Unverified: the api decides what is allowed, this only draws the menu. */
