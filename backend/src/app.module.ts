@@ -24,6 +24,7 @@ import { AuthModule } from "./modules/auth/auth.module.js";
 import { DevicesModule } from "./modules/devices/devices.module.js";
 import { EmployeesModule } from "./modules/employees/employees.module.js";
 import { EnrollmentModule } from "./modules/enrollment/enrollment.module.js";
+import { HealthModule } from "./modules/health/health.module.js";
 import { ModelsModule } from "./modules/models/models.module.js";
 import { MqttModule } from "./modules/mqtt/mqtt.module.js";
 import { RealtimeModule } from "./modules/realtime/realtime.module.js";
@@ -38,6 +39,7 @@ import { QueueModule } from "./queue/queue.module.js";
     configModule,
     EventEmitterModule.forRoot(),
     DatabaseModule,
+    HealthModule,
     AssetsModule,
     AuthModule,
     MqttModule,
