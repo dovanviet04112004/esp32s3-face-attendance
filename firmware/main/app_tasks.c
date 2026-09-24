@@ -1377,7 +1377,7 @@ static void fetch_ticket(const app_wiring_t *wiring)
     char id[STORAGE_DEVICE_ID_CAP] = { 0 };
     sys_storage_device_id(id, sizeof(id));
     for (uint32_t attempt = 0;; ++attempt) {
-        const net_provision_answer_t answer = net_provision_register();
+        const net_provision_answer_t answer = net_provision_register(NULL);
         if (answer == NET_PROVISION_GRANTED) {
             break;
         }

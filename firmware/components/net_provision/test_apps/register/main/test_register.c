@@ -14,7 +14,10 @@
 #define JOIN_TIMEOUT_MS 20000
 #define TICKET_CAP 1024
 #define MS_PER_S 1000u
+#define S_PER_DAY 86400u
 #define JITTER_PERCENT 20u
+#define SERVER_PACE_S 5u
+#define SOME_EXP 1797776000u
 // Claims {"deviceId":"kiosk-2884859fd3c8","iat":1790000000,"exp":1797776000}, unpadded.
 #define TICKET_PLAIN                                                                             \
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."                                                      \
@@ -56,6 +59,37 @@ TEST_CASE("no wait ever leaves the jittered ceiling", "[provision]")
         const uint32_t waited = net_provision_wait_ms(attempt, UINT32_MAX - attempt);
         TEST_ASSERT_LESS_OR_EQUAL_UINT32(ceiling_ms + spread_of(ceiling_ms), waited);
     }
+}
+
+TEST_CASE("a pending kiosk asks at the server's pace, jittered like the backoff", "[provision]")
+{
+    const uint32_t pace_ms = SERVER_PACE_S * MS_PER_S;
+    TEST_ASSERT_EQUAL_UINT32(pace_ms - spread_of(pace_ms), net_provision_poll_ms(SERVER_PACE_S, 0));
+    TEST_ASSERT_EQUAL_UINT32(pace_ms + spread_of(pace_ms),
+                             net_provision_poll_ms(SERVER_PACE_S, 2 * spread_of(pace_ms)));
+}
+
+TEST_CASE("the server's pace is held between the floor and the ceiling", "[provision]")
+{
+    const uint32_t floor_ms = CONFIG_NET_PROVISION_POLL_FLOOR_S * MS_PER_S;
+    const uint32_t ceiling_ms = CONFIG_NET_PROVISION_WAIT_MAX_S * MS_PER_S;
+    TEST_ASSERT_EQUAL_UINT32(floor_ms, net_provision_poll_ms(0, spread_of(floor_ms)));
+    TEST_ASSERT_EQUAL_UINT32(ceiling_ms, net_provision_poll_ms(UINT32_MAX, spread_of(ceiling_ms)));
+}
+
+TEST_CASE("a ticket is renewed inside its last days and not before", "[provision]")
+{
+    const int64_t window_ms = (int64_t)CONFIG_NET_PROVISION_RENEW_BEFORE_DAYS * S_PER_DAY * MS_PER_S;
+    const int64_t exp_ms = (int64_t)SOME_EXP * MS_PER_S;
+    TEST_ASSERT_FALSE(net_provision_renew_due(SOME_EXP, exp_ms - window_ms - MS_PER_S));
+    TEST_ASSERT_TRUE(net_provision_renew_due(SOME_EXP, exp_ms - window_ms));
+    TEST_ASSERT_TRUE(net_provision_renew_due(SOME_EXP, exp_ms + (int64_t)S_PER_DAY * MS_PER_S));
+}
+
+TEST_CASE("no clock or no exp never asks for a renewal", "[provision]")
+{
+    TEST_ASSERT_FALSE(net_provision_renew_due(SOME_EXP, 0));
+    TEST_ASSERT_FALSE(net_provision_renew_due(0, (int64_t)SOME_EXP * MS_PER_S));
 }
 
 TEST_CASE("exp is read from the ticket's own claims", "[provision]")
@@ -145,9 +179,13 @@ TEST_CASE("the api answers a registration with a verdict, not silence", "[provis
     if (holds_ticket()) {
         TEST_IGNORE_MESSAGE("registering again would send this approved board back to pending");
     }
-    const net_provision_answer_t said = net_provision_register();
+    uint32_t poll_s = 0;
+    const net_provision_answer_t said = net_provision_register(&poll_s);
     TEST_ASSERT_NOT_EQUAL(NET_PROVISION_UNREACHABLE, said);
     TEST_ASSERT_NOT_EQUAL(NET_PROVISION_DISABLED, said);
+    if (said == NET_PROVISION_WAITING) {
+        TEST_ASSERT_GREATER_THAN_UINT32(0, poll_s);
+    }
 }
 
 TEST_CASE("a kiosk holding no ticket is told it has none", "[provision][live]")
@@ -156,6 +194,21 @@ TEST_CASE("a kiosk holding no ticket is told it has none", "[provision][live]")
         TEST_IGNORE_MESSAGE("this board already holds a ticket");
     }
     TEST_ASSERT_EQUAL(NET_PROVISION_REFUSED, net_provision_check());
+}
+
+// Rotates the board's real ticket; the kiosk image logs in with the new one afterwards.
+TEST_CASE("the api trades the held ticket for one that stands", "[provision][live]")
+{
+    if (!holds_ticket()) {
+        TEST_IGNORE_MESSAGE("this board holds no ticket to renew");
+    }
+    uint32_t before_exp = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, net_provision_held_exp(&before_exp));
+    TEST_ASSERT_EQUAL(NET_PROVISION_GRANTED, net_provision_renew());
+    uint32_t after_exp = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, net_provision_held_exp(&after_exp));
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(before_exp, after_exp);
+    TEST_ASSERT_EQUAL(NET_PROVISION_GRANTED, net_provision_check());
 }
 
 void app_main(void)

@@ -26,4 +26,20 @@ menu "Kiosk registration"
         default 300
         range 30 3600
 
+    config NET_PROVISION_POLL_FLOOR_S
+        int "Fastest pace a pending kiosk accepts from the server, in seconds"
+        default 2
+        range 1 60
+        help
+            The 202 names how often to ask (KEHOACH 7.3); a server that
+            says 0 is held to this rather than asked in a tight loop.
+
+    config NET_PROVISION_RENEW_BEFORE_DAYS
+        int "Days before the ticket's exp at which the kiosk renews it"
+        default 7
+        range 1 30
+        help
+            Must stay well under DEVICE_TOKEN_TTL_DAYS of api, or a fresh
+            ticket is due again the moment it lands (KEHOACH 7.3).
+
 endmenu

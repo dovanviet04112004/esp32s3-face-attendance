@@ -19,6 +19,7 @@ static const char *TAG = "net_provision";
 
 #define REGISTER_PATH "/devices/register"
 #define CHECK_PATH "/devices/me"
+#define RENEW_PATH "/devices/me/token"
 #define BEARER "Bearer "
 #define URL_CAP 160
 #define ANSWER_CAP 1024
@@ -27,6 +28,7 @@ static const char *TAG = "net_provision";
 #define HTTP_TIMEOUT_MS 15000
 #define JITTER_PERCENT 20
 #define MS_PER_S 1000u
+#define S_PER_DAY 86400u
 #define HTTP_ACCEPTED 202                 // HttpStatus_Code stops short of it
 #define NVS_CLAIM "claim"
 #define CLAIM_DIGITS 6
@@ -167,18 +169,26 @@ static bool keep_ticket(const char *reply)
 }
 
 // A code typed wrong too often is dead; the next ask carries a fresh one (KEHOACH 7.3).
-static void renew_if_spent(const char *reply)
+static void read_waiting(const char *reply, uint32_t *poll_s)
 {
     cJSON *root = cJSON_Parse(reply);
     if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "claimRenew"))) {
         ESP_LOGW(TAG, "claim code spent, showing a new one");
         sys_storage_erase_key(STORAGE_NS_DEVICE, NVS_CLAIM);
     }
+    const cJSON *pace = cJSON_GetObjectItemCaseSensitive(root, "pollIntervalS");
+    if (poll_s != NULL && cJSON_IsNumber(pace) && pace->valuedouble >= 1 &&
+        pace->valuedouble < (double)UINT32_MAX) {
+        *poll_s = (uint32_t)pace->valuedouble;
+    }
     cJSON_Delete(root);
 }
 
-net_provision_answer_t net_provision_register(void)
+net_provision_answer_t net_provision_register(uint32_t *poll_s)
 {
+    if (poll_s != NULL) {
+        *poll_s = 0;
+    }
     if (CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN[0] == '\0') {
         ESP_LOGW(TAG, "this build carries no batch token, it cannot register");
         return NET_PROVISION_DISABLED;
@@ -201,7 +211,7 @@ net_provision_answer_t net_provision_register(void)
         }
     } else if (answer.status == HTTP_ACCEPTED) {
         said = NET_PROVISION_WAITING;
-        renew_if_spent(answer.body);
+        read_waiting(answer.body, poll_s);
     } else if (answer.status == HttpStatus_Unauthorized) {
         said = NET_PROVISION_REFUSED;
     }
@@ -210,34 +220,74 @@ net_provision_answer_t net_provision_register(void)
     return said;
 }
 
-net_provision_answer_t net_provision_check(void)
+// Sets *held false when NVS has no ticket to present, which is an answer and not a failure.
+static char *bearer_header(bool *held)
 {
+    *held = true;
     char *auth = heap_caps_calloc(1, sizeof(BEARER) + TICKET_CAP, MALLOC_CAP_SPIRAM);
-    answer_t answer;
-    if (auth == NULL || !answer_open(&answer)) {
-        heap_caps_free(auth);
-        return NET_PROVISION_UNREACHABLE;
+    if (auth == NULL) {
+        return NULL;
     }
     strlcpy(auth, BEARER, sizeof(BEARER));
     const size_t head = strlen(BEARER);
     if (sys_storage_get_str(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET, auth + head, TICKET_CAP) !=
             ESP_OK ||
         auth[head] == '\0') {
+        *held = false;
         heap_caps_free(auth);
-        heap_caps_free(answer.body);
-        return NET_PROVISION_REFUSED;
+        return NULL;
     }
-    const esp_err_t sent = exchange(HTTP_METHOD_GET, CHECK_PATH, auth, NULL, &answer);
+    return auth;
+}
+
+static net_provision_answer_t ask_with_ticket(esp_http_client_method_t method, const char *path,
+                                              bool stores_reply)
+{
+    bool held = false;
+    char *auth = bearer_header(&held);
+    answer_t answer;
+    if (auth == NULL || !answer_open(&answer)) {
+        heap_caps_free(auth);
+        return held ? NET_PROVISION_UNREACHABLE : NET_PROVISION_REFUSED;
+    }
+    const esp_err_t sent = exchange(method, path, auth, NULL, &answer);
     heap_caps_free(auth);
     net_provision_answer_t said = NET_PROVISION_UNREACHABLE;
     if (sent == ESP_OK && answer.status == HttpStatus_Ok) {
-        said = NET_PROVISION_GRANTED;
+        said = !stores_reply || keep_ticket(answer.body) ? NET_PROVISION_GRANTED
+                                                         : NET_PROVISION_UNREACHABLE;
     } else if (sent == ESP_OK && answer.status == HttpStatus_Unauthorized) {
         said = NET_PROVISION_REFUSED;
     }
-    ESP_LOGI(TAG, "ticket check answered %d", answer.status);
+    ESP_LOGI(TAG, "%s answered %d", path, answer.status);
     heap_caps_free(answer.body);
     return said;
+}
+
+net_provision_answer_t net_provision_check(void)
+{
+    return ask_with_ticket(HTTP_METHOD_GET, CHECK_PATH, false);
+}
+
+net_provision_answer_t net_provision_renew(void)
+{
+    return ask_with_ticket(HTTP_METHOD_POST, RENEW_PATH, true);
+}
+
+esp_err_t net_provision_held_exp(uint32_t *exp)
+{
+    if (exp == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return sys_storage_get_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, exp) == ESP_OK
+               ? ESP_OK
+               : ESP_ERR_NOT_FOUND;
+}
+
+bool net_provision_renew_due(uint32_t exp, int64_t now_ms)
+{
+    const uint64_t window_s = (uint64_t)CONFIG_NET_PROVISION_RENEW_BEFORE_DAYS * S_PER_DAY;
+    return exp != 0 && now_ms > 0 && (uint64_t)now_ms / MS_PER_S + window_s >= exp;
 }
 
 esp_err_t net_provision_forget(void)
@@ -280,6 +330,20 @@ esp_err_t net_provision_ticket_exp(const char *ticket, uint32_t *exp)
     return found ? ESP_OK : ESP_ERR_INVALID_ARG;
 }
 
+static uint32_t jittered_ms(uint64_t base_ms, uint32_t random)
+{
+    const uint64_t spread = base_ms * JITTER_PERCENT / 100;
+    return (uint32_t)(base_ms - spread + (uint64_t)random % (2 * spread + 1));
+}
+
+uint32_t net_provision_poll_ms(uint32_t poll_s, uint32_t random)
+{
+    uint32_t held_s = poll_s > CONFIG_NET_PROVISION_POLL_FLOOR_S ? poll_s
+                                                                 : CONFIG_NET_PROVISION_POLL_FLOOR_S;
+    held_s = held_s < CONFIG_NET_PROVISION_WAIT_MAX_S ? held_s : CONFIG_NET_PROVISION_WAIT_MAX_S;
+    return jittered_ms((uint64_t)held_s * MS_PER_S, random);
+}
+
 uint32_t net_provision_wait_ms(uint32_t attempt, uint32_t random)
 {
     const uint64_t ceiling = (uint64_t)CONFIG_NET_PROVISION_WAIT_MAX_S * MS_PER_S;
@@ -287,7 +351,5 @@ uint32_t net_provision_wait_ms(uint32_t attempt, uint32_t random)
     for (uint32_t i = 0; i < attempt && base < ceiling; ++i) {
         base *= 2;
     }
-    base = base < ceiling ? base : ceiling;
-    const uint64_t spread = base * JITTER_PERCENT / 100;
-    return (uint32_t)(base - spread + (uint64_t)random % (2 * spread + 1));
+    return jittered_ms(base < ceiling ? base : ceiling, random);
 }
