@@ -3313,7 +3313,7 @@ hộp mặt với khung. Tỉ lệ một nửa là ngưỡng nghiệp vụ: NVS 
 
 **Ba đường thoát im lặng của `verify()` phải để lại dấu.** Liveness lỗi, embed lỗi, và bảng không trả lời đều trả về không kết luận — đúng, vì không cái nào là một phán quyết về khuôn mặt này — nhưng cả ba đều để màn hình ở "Đang nhận diện" mà không có gì trong log. Mỗi đường ghi một dòng `no verdict: <nguồn> <mã lỗi>`, nếu không thì một khoá bảng kẹt và một model hỏng trông giống hệt nhau từ phía người đứng trước kính.
 
-**Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL`/`FACE_OFF_GUIDE`/`FACE_OUT_OF_FRAME` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
+**Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL`/`FACE_OFF_GUIDE`/`FACE_OUT_OF_FRAME` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Mỗi kết quả mang **số hiệu track** của khuôn mặt nó nói về, đúng con số bộ quan sát nhận trong cùng bước: phán quyết đi đường chậm qua `svc_attendance`, và tới màn khi người khác có thể đã bước vào (§4.5.5h.1). Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
 
 Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision`. `live_min` gieo **500‰**, đo 16/09 trên 62 khung thật và 25 khung giả **đều chụp bằng chính OV5640**, chấm bằng file INT8 trên `models.lock.json` qua đúng crop và lấy mẫu của firmware (`docs/measurements/antispoof` §42.2): mọi khung giả đứng dưới 0,316, mặt thật thấp nhất ở 0,636, nên 500‰ nằm giữa với biên hai phía 0,184 và 0,136. Con số tròn ấy có được nhờ bước căn bias của §3: không có nó thì cửa sổ chỉ rộng 19‰ và một sai số gieo vài phần nghìn là lật phán quyết. Bộ giả mới có hai phiên, một điện thoại và một bộ ảnh in, nên E8-T12 vẫn phải chốt lại khi có thêm đòn tấn công. `detect_min` gieo **350‰**, đo 13/09 trên board sau khi sửa thứ tự byte RGB565 (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức sàn 500‰ cũ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` hạ **113 → 100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức hụt cổng cũ đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên lại.
 
@@ -3391,9 +3391,12 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 | `Verifying` | `Timeout` | `Detecting` | `None` |
 | `Granted` | `Timeout` | `Cooldown` | `Rest` |
 | `Granted` | `Match` của người khác | `Granted` | `Grant` — người sau không chờ cửa người trước đóng |
+| `Granted` | `Spoof` / `Unknown` | `Denied` | `Refuse` — người sau bị từ chối ngay, cửa người trước tự đóng theo giờ của nó |
 | `Denied` | `Match` | `Granted` | `Grant` |
+| `Denied` | `Spoof` / `Unknown` | `Denied` | `Refuse` — đồng hồ `Denied` đếm lại |
 | `Denied` | `Timeout` | `Cooldown` | `Rest` |
 | `Cooldown` | `Match` | `Granted` | `Grant` |
+| `Cooldown` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
 | `Cooldown` | `Timeout` | `Idle` | `None` |
 | `Cooldown` | `PresenceOff` | `Idle` | `None` |
 
@@ -3410,11 +3413,39 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 **Người sau không chờ cửa của người trước đóng.** `Granted` giữ 2,5 s, mà §4.5.5d không xác thực lại
 một track đã khớp: một `Match` bị bỏ ở `Granted` là người ấy đứng im trước máy **mãi mãi**, cho tới khi
 bước ra rồi vào lại. Nên `Granted` nhận `Match` và cấp lại ngay; cùng người thì luật "một lần đến"
-dưới đây chặn. Trạng thái không đổi (`Granted` → `Granted`) nên `main` không có cạnh nào để vẽ lại
-thẻ hay phát tiếng: `svc_attendance_grants()` đếm mỗi lần cấp, và `main` vẽ thẻ của người mới cùng
-tiếng mở cửa mỗi khi số ấy tăng.
+dưới đây chặn.
 
-Nên `Grant` bị chặn khi **cùng một `employee_id` còn trong cửa sổ `dedup_min`** *và* chưa có `NoFace` hoặc `PresenceOff` nào kể từ lần cấp trước. Chặn đặt ở **bước chuyển trạng thái** chứ không ở hành động: tiếng và màn bám vào việc *đổi trạng thái*, nên chặn ở hành động thì cửa im mà loa vẫn kêu. Người khác bước tới vẫn được cấp ngay, vì phép so là theo mã nhân viên.
+**Lời từ chối cũng không được nuốt.** Cùng lẽ ấy áp cho `Spoof` và `Unknown`. Thiếu ba dòng
+`Granted` / `Denied` / `Cooldown` nhận hai sự kiện ấy thì người lạ hay ảnh giả bước vào trong 2,5 s
+cửa mở cho người trước, hoặc trong 3,5 s máy đang từ chối người trước, bị bỏ phán quyết: họ đứng
+trước màn trống cho tới lần thử lại kế tiếp sau khi máy đã về `Idle`, tới ~4 s. Cả ba vì thế sang
+`Denied`. `Refuse` không đụng cửa: cửa của người trước tự đóng theo giờ giữ của `svc_door`, hoặc
+khi `Denied` hết giờ, tuỳ cái nào tới trước. `Denied` nhận lại chính nó thì đồng hồ đếm lại, nên
+ảnh giả giơ lì giữ máy ở `Denied` — đúng, vì `Match` vẫn cấp ngay từ đó.
+
+**Máy trả lời từng sự kiện, `main` không đoán từ cạnh trạng thái.** Hai đường tự lặp (`Granted` →
+`Granted`, `Denied` → `Denied`) và đường bị luật "một lần đến" chặn đều không đổi trạng thái, nên
+`main` không có cạnh nào để vẽ hay phát tiếng. `svc_attendance_on_vision()` vì thế nói sự kiện vừa
+rồi đi tới đâu:
+
+| Trả lời | Khi nào | `main` làm gì |
+|---|---|---|
+| `GRANTED` | `Grant` chạy, cửa mở (có hay không có bản ghi mới) | thẻ đạt + tiếng mở cửa |
+| `ALREADY` | `Grant` bị luật "một lần đến" chặn | thẻ đạt kèm giờ bản ghi đang đứng, không tiếng |
+| `REFUSED` | `Refuse`, hoặc `Match` bị quyết định 2 bên dưới từ chối | dòng từ chối theo loại phán quyết |
+| `NOTHING` | hướng dẫn căn khung, hoặc sự kiện không có dòng | không gì |
+
+Cạnh trạng thái chỉ còn một việc: vào `Detecting` là máy bắt sang người mới, và màn hạ mọi lời cũ
+(§4.5.5h.1).
+
+Nên `Grant` bị chặn khi **cùng một `employee_id` còn trong cửa sổ `dedup_min`** *và* chưa có
+`NoFace` hoặc `PresenceOff` nào kể từ lần cấp trước. Chặn đặt ở **bước chuyển trạng thái**:
+không đổi trạng thái, không mở cửa, không ghi, không phát tiếng. Nhưng **không im**: sự kiện trả
+`ALREADY`, và màn hiện thẻ `Đã chấm công lúc HH:MM` theo giờ của bản ghi đang đứng. Người vừa
+chấm mà nhúc nhích tới mức track đổi (IoU < 0,5) thì pipeline xác thực lại và khớp lại; màn im ở
+chỗ ấy là người ta thấy `Đang nhận diện...` rồi không thấy gì nữa, và đọc là máy hỏng. Người khác
+bước tới vẫn được cấp ngay, vì phép so là theo mã nhân viên. Ra khỏi khung rồi quay lại là một lần
+đến mới: cửa mở, loa kêu, thẻ hiện như thường; bản ghi theo quyết định 1 bên dưới.
 
 **Bốn quyết định nghiệp vụ tầng này giữ, không đẩy xuống dưới:**
 
@@ -3581,51 +3612,6 @@ dấu người mới là "vừa được phục vụ" để đòi một lần *�
 `dedup_min`. Bài học chung: **đừng bắt người dùng làm một việc họ không có lý do gì để biết là
 phải làm.**
 
-**Đếm lần từ chối phải cùng nhịp với pipeline, và nhịp ấy là từng mẫu.** Màn `Capture` bỏ cuộc
-theo số lần bị gọi ảnh giả, `svc_vision` ngừng xác thực theo `kEnrolSpoofTries` — hai con số này
-**buộc phải reset cùng lúc**. Màn đếm dồn cả lượt trong khi pipeline đếm từng mẫu thì người thật
-bị đá ra oan: rải ba lần từ chối qua ba mẫu là đủ hỏng, mà BPCER đo được ở `live_min` 750‰ là
-1,75% nên chuyện ấy xảy ra thật trong ánh sáng xấu. Ngược lại màn đếm rộng hơn pipeline thì
-pipeline bỏ cuộc trước, màn đứng đợi hết hạn 15 s rồi mới báo — một khoảng treo không lý do. Cả
-hai vì thế reset ở đầu **mỗi mẫu**, và dòng "lần n/3" trên kính đếm đúng số lần của mẫu đang lấy.
-
-**Đăng ký hỏng giữa chừng phải dọn sạch dấu vết.** Mẫu nào đậu là `keep()` ghi ngay vào bảng và
-gọi `svc_facedb_persist()` — đúng, vì mất điện giữa chừng không được mất người đã lấy xong. Nhưng
-khi màn bỏ cuộc, những mẫu đã lỡ ghi **vẫn nằm lại**: bảng có một người mang `employee_id` thật,
-chỉ một template, **nhận diện được**, trong khi người vận hành vừa đọc "Chưa lấy được mẫu" và tin
-là không có gì xảy ra. Một người chỉ có mẫu chính diện sẽ trượt ngay khi hơi nghiêng mặt, và
-không ai hiểu vì sao — lỗi âm thầm tệ hơn việc phải đăng ký lại.
-
-Nhưng xoá thẳng cũng phí: công lấy mẫu đã bỏ ra rồi, và cái hỏng thường chỉ là ánh sáng hay tư
-thế của **một** mẫu. Nên màn hỏng đưa ra **hai nút**, người vận hành chọn:
-
-| Nút | Việc |
-|---|---|
-| **Thử lại** | Lấy lại từ mẫu đầu, **giữ nguyên `employee_id` và tên**. `FaceDb::enroll` thay thế theo cặp `(employee_id, template_idx)` nên ba mẫu mới đè lên ba mẫu cũ, không đẻ bản ghi thừa. Màn không rời đi nên `main` vẫn giữ mã người ấy |
-| **Thoát** | Rời về `Menu`. `main` **xoá người dở dang** bằng `svc_facedb_remove` + `svc_facedb_persist`, đúng đường màn Danh sách đang dùng |
-
-`main` là chỗ duy nhất biết `employee_id` thật, vì màn chỉ gửi mã chỗ `kNewPerson`; nó xoá khi
-thấy màn đã rời mà chưa đủ ba mẫu.
-
-**Đăng ký không được đẻ ra một lần chấm công.** Ngay sau mẫu đầu, máy nhận ra người đang đứng đó và `svc_vision` bắn `MATCH` như mọi khi — `svc_attendance` mở cửa, ghi bản ghi, màn hiện "Đã chấm công" giữa lúc người ta đang quay mặt sang trái. Thấy trên board 13/09. Nên `ai_task` **không đẩy kết quả vào `q_result`** khi màn `Capture` đang mở: khung vẫn chạy đủ ba model để lấy mẫu, chỉ có đường nghiệp vụ là im. Câu xác nhận của việc thêm người do chính `CaptureScreen` nói, không mượn thẻ chấm công của màn `Scan`.
-
-**Lá chắn ấy phải dài hơn thời gian màn mở.** Đóng màn lấy mẫu là hết chặn, mà người vừa đăng ký
-**vẫn đứng nguyên đó** và giờ đã có mặt trong bảng — nên khung kế tiếp cho `MATCH` và máy chấm
-công luôn: mở cửa, kêu loa, ghi một bản ghi mà không ai định tạo. Người vận hành chỉ thấy khi bấm
-`Đóng` ở màn `Menu`, vì màn ấy che mất màn `Scan`. Đo trên board: ngay sau `enrol 16 sample 0` là
-`verdict 6, live 0.997, match 1.000, id 16` — người mới khớp chính mình ở điểm tuyệt đối, chỉ
-1,3 giây sau mẫu đầu. Cách sửa **không** được là một cái chốt toàn cục trong `ai_task` chờ `NO_FACE`: đo hôm nay cho
-thấy bộ dò bám một vật trong phòng **suốt 80 giây không nhả một lần nào**, nên chốt ấy không bao
-giờ mở và **cả kiosk mất khả năng chấm công** cho tới khi khởi động lại. Một lá chắn có thể kẹt
-vĩnh viễn thì tệ hơn hẳn cái lỗi nó định chữa.
-
-Đường đúng đã có sẵn ở §4.5.5f: **một lần cấp quyền đòi một lần *đến***. Đăng ký xong là `main`
-báo cho `svc_attendance` rằng người ấy **vừa được phục vụ**, y như vừa chấm công xong — `Grant`
-cho đúng `employee_id` ấy bị chặn cho tới khi có một lần *đến* mới, mà `apply()` ghi nhận bằng ba
-đường độc lập: `NoFace`, `PresenceOff` của ToF, hoặc **thấy một `employee_id` khác**. Ba đường
-nghĩa là không đường nào kẹt được cả ba. Và quan trọng nhất: lá chắn chỉ bọc **một người**, nên
-người khác bước tới vẫn chấm công bình thường ngay lập tức — hỏng một người còn hơn hỏng cả máy.
-
 ##### h.1) Màn `Scan` — khung ngắm là thứ sửa lỗi "đứng xa không chấm được"
 
 Máy chấm công thương mại (ZKTeco SpeedFace, Hikvision MinMoe) đều để một **khung ngắm đứng yên
@@ -3658,7 +3644,8 @@ Các trạng thái của khung, màu là thông tin chứ không phải trang tr
 | thấy mặt nhưng chưa tới một nửa nằm trong khung | hổ phách | `Đưa khuôn mặt vào khung` |
 | trong khung nhưng ô 1,0× tràn khung camera — gần như chỉ khi đứng quá gần | hổ phách | `Lùi lại một chút` |
 | mặt qua cổng, pipeline đang làm việc | xanh mint | `Đang nhận diện...` |
-| xong, đạt | xanh mint | thẻ dấu tích + tên ở dải dưới |
+| xong, đạt | xanh mint | thẻ dấu tích + tên + `Đã chấm công` ở dải dưới |
+| xong, lượt đến này đã chấm rồi | xanh mint | cùng thẻ, câu dưới là `Đã chấm công lúc HH:MM` theo giờ bản ghi; không mở cửa, không tiếng |
 | xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt ấy rời khung hoặc pipeline bắt sang người khác** |
 
 **Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Các trạng thái trên là các cổng của
@@ -3718,21 +3705,24 @@ thái có quyền không đổi trạng thái — chống chấm trùng là đú
 thôi nhìn khuôn mặt ấy trong khi màn hình vẫn nói nó đang nhìn, **và không có gì gỡ ra được**.
 
 Nên bảng trạng thái mang thêm một giá trị: **`FACE_SETTLED`** — có mặt trong khung, và máy **đã
-xong việc** với nó. Bất biến đi kèm, và nó là điều kiện đủ để câu "đang nhận diện" không bao giờ
-treo: **`FACE_OK` chỉ được báo ở đúng những bước mà `may_verify()` cho đi tiếp.** Hễ pipeline
-không định chạy model nào nữa trên track này thì nó nói `FACE_SETTLED`, và màn hình im lặng —
-không hướng dẫn, không khẳng định. Màn hình không còn suy luận gì về việc máy có đang làm hay
-không; nó chỉ chép lại.
+trả lời** nó. Bất biến đi kèm: **`FACE_OK` chỉ được báo khi pipeline còn nợ track này một câu trả
+lời** — `may_verify()` cho đi tiếp, hoặc track chưa ra phán quyết nào. Vế sau là ca `kUnknownTries`
+của §4.5.5d: lần thử đầu dưới `match_min` không phải phán quyết, pipeline chờ `kRetryDetects` lần
+detect rồi thử lại, và nói `FACE_SETTLED` trong lúc chờ ấy là để `Đang nhận diện...` tắt rồi bật
+lại trước mặt một nhân viên thật. Câu ấy vẫn không treo được: lần thử thứ hai luôn ra `MATCH`,
+`SPOOF` hoặc `UNKNOWN`, trừ khi model hay bảng không trả lời, và ca ấy có trần
+`kWorkingCeilingMs` của màn. Đã có câu trả lời mà chưa tới lượt thử lại thì pipeline nói
+`FACE_SETTLED`, và màn im — không hướng dẫn, không khẳng định. Màn không suy luận gì về việc máy
+có đang làm hay không; nó chỉ chép lại.
 
-**Chỉ phán quyết về một khuôn mặt mới được sửa lời trên dải dưới.** `main` giữ loại phán quyết
-cuối để dịch sang câu chữ mỗi khi máy trạng thái đổi trạng thái, nhưng ba loại `NO_FACE`,
-`FACE_SMALL`, `FACE_OUT_OF_FRAME` **không phải phán quyết** — chúng là hướng dẫn căn khung và đã
-có kênh riêng là `ui_kiosk_stage_t`. Để chúng ghi đè thì lý do từ chối **tự xuống cấp thành câu
+**Chỉ phán quyết về một khuôn mặt mới được sửa lời trên dải dưới.** `NO_FACE`, `FACE_SMALL`,
+`FACE_OFF_GUIDE`, `FACE_OUT_OF_FRAME` **không phải phán quyết** — chúng là hướng dẫn căn khung và
+đã có kênh riêng là `ui_kiosk_stage_t`. Để chúng ghi đè thì lý do từ chối **tự xuống cấp thành câu
 mơ hồ**: giơ ảnh giả cho máy nói "Ảnh giả, mời thử lại", rút ảnh ra là pipeline bắn `NO_FACE`,
-rồi 2 giây sau `Denied → Cooldown` dịch `verdict_for(Cooldown, NO_FACE)` thành `APP_UI_DENIED` và
-màn đổi sang "Chưa nhận được, thử lại" — thay một câu đúng bằng một câu không nói gì. Nên chỉ
-`MATCH`, `UNKNOWN` và `SPOOF` được cập nhật loại phán quyết cuối; `APP_UI_DENIED` ở lại làm lưới
-cho trạng thái không lường trước chứ không còn là đường đi bình thường.
+và câu đúng bị thay bằng "Chưa nhận được, thử lại" — một câu không nói gì. Nên `main` chỉ vẽ theo
+câu trả lời của `svc_attendance_on_vision()` (§4.5.5f), mà chỉ `MATCH`, `UNKNOWN`, `SPOOF` mới có
+câu trả lời khác `NOTHING`. `APP_UI_DENIED` chỉ còn cho một `MATCH` bị quyết định 2 của §4.5.5f
+từ chối: cửa đóng thì thẻ "Đã chấm công" là nói dối.
 
 **"Người khác" phải đi từ pipeline sang màn bằng một con số, không suy ra được từ một cờ.** Màn
 chỉ nhận một `bool` "có mặt hay không", nên nó **không phân biệt được** khuôn mặt cũ còn đứng đó
@@ -3745,8 +3735,13 @@ người sau phải chờ khi họ đứng trùng chỗ người trước (IoU �
 cộng khoảng 2,5 giây người mới đứng nhìn lời từ chối của người cũ.
 
 `VisionPipeline` vì thế đánh **số hiệu track**, tăng đúng mỗi lần `follow()` mở một track mới, và
-gửi kèm danh sách hộp mặt cho người quan sát. Màn `Scan` giữ dòng từ chối chừng nào số hiệu chưa
-đổi, và xoá ngay khi nó đổi. Giữ nguyên được cả hai điều đang đúng: cùng một khuôn mặt thì lời
+gửi kèm danh sách hộp mặt cho người quan sát. Phán quyết mang cùng con số ấy
+(`svc_vision_result_t.track` → `ui_kiosk_verdict_t.track`), và màn so track đang thấy với **track
+phán quyết nói về**, không với track đang thấy lúc phán quyết tới nơi. So theo cái sau là gán lời
+của người trước cho người vừa bước vào: thẻ hay dòng từ chối còn trong đồng hồ 1,5 s thì người mới
+mất luôn `Đang nhận diện...`, rồi thừa kế lời từ chối hay khung xanh của người cũ chừng nào họ còn
+đứng đó. Màn `Scan` giữ dòng từ chối chừng nào track đang thấy còn là track của nó, và xoá ngay
+khi nó đổi. Giữ nguyên được cả hai điều đang đúng: cùng một khuôn mặt thì lời
 từ chối không nhấp nháy theo nhịp thử lại, còn người khác bước vào thì màn sạch ngay. Không đụng
 tới `kRetryDetects`, tức không nới một chút nào cho ảnh giả giơ lì. Đo
 trên board 14/09 khi chốt này chỉ áp cho câu đầu và chỉ cho phán quyết đạt: chấm xong đứng yên
@@ -3754,7 +3749,9 @@ thì màn nhảy sang câu căn khung ngay khi thẻ hết giờ; giơ ảnh gi�
 thử lại` và `Đang nhận diện...` **đảo nhau mỗi ~2 giây** theo nhịp thử lại (18/09). Vì thế dòng từ
 chối **giữ trên kính khi khuôn mặt còn đó**, chỉ hạ khi mặt rời khung, khi có phán quyết mới, hay
 khi máy bắt sang người khác; thẻ đạt giữ đồng hồ riêng 1,5 s để một khuôn mặt đã chấm đứng yên
-không ghim thẻ mãi. Thẻ của người trước không bao giờ được hiện cho người sau: `Detecting` hạ nó.
+không ghim thẻ mãi. Thẻ của người trước không bao giờ được hiện cho người sau: track đổi hoặc máy
+vào `Detecting` là hạ nó ngay. Không còn ai trước máy thì thẻ lẫn dòng từ chối chạy hết đồng hồ
+của mình.
 
 **Câu chữ phải đọc được.** `svc_vision` đổi ý mỗi bước, nhanh hơn mắt, nên một câu nhắc giữ tối
 thiểu **700 ms** trước khi câu khác thay; riêng "mất mặt" là tin ngay lập tức.
@@ -3765,19 +3762,17 @@ tự như `≡` sẽ ra ô trống; **dải dưới** mang kết quả (§4.5.5h
 đứng — mọi thứ nằm ở mép.
 
 **Thẻ kết quả tắt khi *người tiếp theo được phục vụ*, không phải khi hết một đồng hồ.** Kiosk
-đặt ở cửa thì phía sau luôn có người chờ, và 2,5 giây thẻ của người trước là 2,5 giây người sau
-đứng nhìn kết quả không phải của mình. Máy chuyển sang phục vụ ai đó là một sự kiện đã có sẵn —
-trạng thái `Detecting` — nhưng bản đầu **vứt nó đi** vì nó không phải một phán quyết. Nhận lấy
-nó: nó hạ thẻ cũ xuống và mở lại phần hướng dẫn cho người mới. Đồng hồ 2,5 giây vẫn còn, nhưng
-chỉ để lo trường hợp **không có ai phía sau**. Bản đầu có thêm một cửa sổ im lặng 6 giây chặn cùng một câu hiện lại, để một khuôn mặt
-chưa đăng ký khỏi làm nó nhấp nháy. Nhưng cửa sổ ấy **dài hơn** thời gian hiện chữ, nên nó đẻ ra
-đúng cái nó định chặn, chỉ chậm hơn: `Chưa có trong hệ thống` sáng 2,5 giây, **tắt 3,5 giây
-trong lúc máy vẫn đang từ chối**, rồi sáng lại. Bỏ cửa sổ im lặng; thay bằng: cùng một câu đến
-lại **trong lúc nó còn đang hiện** thì chỉ gia hạn đồng hồ chứ không dựng lại. Câu chữ vì thế
-đứng yên suốt thời gian người ta còn bị từ chối, và tắt 2,5 giây sau khi họ đi.
+đặt ở cửa thì phía sau luôn có người chờ, và lúc thẻ của người trước còn trên kính là lúc người
+sau đứng nhìn kết quả không phải của mình. Hai sự kiện nói máy đã sang người khác: **track đổi**
+(§4.5.5d) và trạng thái **`Detecting`**. Cả hai hạ thẻ cũ và mở lại phần hướng dẫn cho người mới.
+Đồng hồ `kShowMs` = 1,5 s chỉ lo trường hợp **không có ai phía sau**. Cùng một câu về cùng một
+track đến lại **trong lúc nó còn đang hiện** thì chỉ gia hạn đồng hồ chứ không dựng lại. Một cửa
+sổ im lặng chặn câu lặp thì không dùng được: dài hơn thời gian hiện chữ là nó đẻ ra đúng cái nó
+định chặn, `Chưa có trong hệ thống` sáng, tắt trong lúc máy vẫn đang từ chối, rồi sáng lại. Câu
+chữ vì thế đứng yên suốt thời gian người ta còn bị từ chối, và tắt 1,5 s sau khi họ đi.
 
 Đồng hồ ấy đếm lùi theo **bước tick nguyên**, nên phép kiểm phải là "đã qua 0" chứ không phải
-"bằng 0": chỉ cần đổi `UI_TICK_MS` sang một số không chia hết 2.500 là câu chữ **không bao giờ
+"bằng 0": chỉ cần đổi `UI_TICK_MS` sang một số không chia hết 1.500 là câu chữ **không bao giờ
 tắt nữa**.
 
 ##### h.2) Màn `Capture` — đăng ký lấy nhiều mẫu, có vạch tiến trình
@@ -5027,8 +5022,9 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 
 **Không có semaphore giữa ISR camera và `cam_task`.** `esp_camera_fb_get()` đã tự chặn cho tới khi có khung, nên một binary semaphore nữa chỉ là tầng chờ thứ hai chờ đúng thứ mà tầng dưới đã chờ.
 
-| `q_result` | Queue, depth 4, `svc_vision_result_t` | 4 × ~104 B | `ai_task` | `attend_task` | Tách hẳn tính toán khỏi nghiệp vụ |
+| `q_result` | Queue, depth 4, `svc_vision_result_t` | 4 × 156 B | `ai_task` | `attend_task` | Tách hẳn tính toán khỏi nghiệp vụ |
 | `s_touch` | **`std::atomic<int32_t>`** trong `ui_kiosk`, không phải queue | 4 B | `touch_task` | `ui_task` | Điểm chạm là **mức, không phải chuỗi sự kiện**: `ui_task` chỉ cần biết ngón tay *đang* ở đâu tại mỗi nhịp 20 ms. Hàng đợi ở đây phát lại những điểm đã cũ và làm nút bấm trễ theo độ sâu hàng đợi. Một người ghi, một người đọc, `release`/`acquire` — không khoá, không mất, không cũ. Ngón nhấc lên lưu `-1` và `ui_task` dựng lại cú thả từ điểm cuối |
+| `s_verdict` | **`portMUX_TYPE` + một `ui_kiosk_verdict_t`** trong `ui_kiosk`, không phải queue | 56 B | `attend_task` | `ui_task` | Phán quyết cũng là **mức**: màn chỉ cần câu mới nhất, và mỗi nhịp 20 ms so số thứ tự để biết có câu mới. Nhưng nó dài hơn một từ máy (loại, track, mã, giờ chấm, tên), nên một atomic không chở hết, còn chép rời thì tên của người này đi với mã của người kia. Chép dưới spinlock: vài chục byte, không gọi gì bên trong |
 | `q_audio` | Queue, depth 4, `sound_id_t` | 4 × 4 B | `attend_task`, `ui_task` | `audio_task` | Phát âm không được chặn nghiệp vụ |
 | `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
 | `q_cmd` | Queue, depth 4, `device_command_t` | 4 × ~160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
