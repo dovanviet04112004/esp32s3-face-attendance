@@ -62,7 +62,10 @@ const SHOWN = {
   updatedAt: true,
 } as const;
 
-export type PublicDevice = Omit<Device, "tokenHash" | "claimHash" | "claimFailures">;
+export type PublicDevice = Omit<
+  Device,
+  "tokenHash" | "prevTokenHash" | "claimHash" | "claimFailures"
+>;
 
 @Injectable()
 export class DevicesService {
@@ -115,6 +118,7 @@ export class DevicesService {
         data: {
           status: "PENDING",
           tokenHash: null,
+          prevTokenHash: null,
           approvedAt: null,
           online: false,
           claimHash: claim,
@@ -134,6 +138,7 @@ export class DevicesService {
         data: {
           status: "PENDING",
           tokenHash: null,
+          prevTokenHash: null,
           approvedAt: null,
           claimHash: claim,
           claimFailures: 0,
@@ -174,18 +179,55 @@ export class DevicesService {
     const token = this.auth.signDevice({ deviceId: device.id });
     await this.db.device.update({
       where: { id: device.id },
-      data: { tokenHash: deviceFingerprint(token), ...(fwVersion ? { fwVersion } : {}) },
-    });
-    await this.note(AUDIT_ACTIONS.DEVICE_TOKEN_ISSUE, device.id, {
-      expiresInDays: this.config.get("DEVICE_TOKEN_TTL_DAYS", { infer: true }),
+      data: {
+        tokenHash: deviceFingerprint(token),
+        prevTokenHash: null,
+        ...(fwVersion ? { fwVersion } : {}),
+      },
     });
     this.log.log(`${device.id} collected its token`);
-    return {
-      accepted: false,
-      deviceId: device.id,
-      token,
-      expiresInDays: this.config.get("DEVICE_TOKEN_TTL_DAYS", { infer: true }),
-    };
+    return this.handed(device.id, token, {});
+  }
+
+  /**
+   * Trade the ticket a kiosk presents for a fresh one. The ticket on the row
+   * steps back to prevTokenHash; a kiosk asking again with that older ticket,
+   * because the last answer never reached it, gets another fresh one and the
+   * lost one dies (KEHOACH 7.3).
+   */
+  async renew(deviceId: string, presented: string): Promise<Registration> {
+    const held = await this.db.device.findUnique({
+      where: { id: deviceId },
+      select: { tokenHash: true, prevTokenHash: true },
+    });
+    const shown = deviceFingerprint(presented);
+    const current = held?.tokenHash === shown;
+    if (!held || (!current && held.prevTokenHash !== shown)) {
+      throw new UnauthorizedException("DEVICE_TOKEN_REJECTED");
+    }
+    const token = this.auth.signDevice({ deviceId });
+    const moved = await this.db.device.updateMany({
+      where: { id: deviceId, status: "APPROVED", tokenHash: held.tokenHash },
+      data: {
+        tokenHash: deviceFingerprint(token),
+        prevTokenHash: current ? held.tokenHash : held.prevTokenHash,
+      },
+    });
+    if (moved.count === 0) {
+      throw new UnauthorizedException("DEVICE_TOKEN_REJECTED");
+    }
+    this.log.log(`${deviceId} renewed its token`);
+    return this.handed(deviceId, token, { renewed: true });
+  }
+
+  private async handed(
+    deviceId: string,
+    token: string,
+    meta: Record<string, boolean>,
+  ): Promise<Registration> {
+    const expiresInDays = this.config.get("DEVICE_TOKEN_TTL_DAYS", { infer: true });
+    await this.note(AUDIT_ACTIONS.DEVICE_TOKEN_ISSUE, deviceId, { expiresInDays, ...meta });
+    return { accepted: false, deviceId, token, expiresInDays };
   }
 
   private note(action: AuditAction, deviceId: string, meta: Prisma.InputJsonValue): Promise<void> {
@@ -263,7 +305,7 @@ export class DevicesService {
     await this.get(id);
     return this.db.device.update({
       where: { id },
-      data: { status: "REVOKED", tokenHash: null, online: false },
+      data: { status: "REVOKED", tokenHash: null, prevTokenHash: null, online: false },
       select: SHOWN,
     });
   }

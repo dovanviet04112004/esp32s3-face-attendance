@@ -24,6 +24,7 @@ OPEN: dict[str, str] = {
     "GET /auth/me": "reads the caller's own claims off the request",
     "POST /devices/register": "a kiosk, not a person (KEHOACH 7.3)",
     "GET /devices/me": "a kiosk proving its own ticket, held by the device guard (KEHOACH 7.3)",
+    "POST /devices/me/token": "a kiosk trading its own ticket, held by the device guard (KEHOACH 7.3)",
     "POST /mqtt/auth": "the broker asks about a kiosk; traefik keeps it off the internet (KEHOACH 7.4)",
     "GET /leave-types": "the filing form needs them and they name no person",
     "GET /health": "the deploy script asks with no account, and it names no row (KEHOACH 4.8)",

@@ -26,6 +26,15 @@ export function deviceFingerprint(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function sameFingerprint(given: string, kept: string | null): boolean {
+  if (kept === null) {
+    return false;
+  }
+  const a = Buffer.from(given, "hex");
+  const b = Buffer.from(kept, "hex");
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export interface IssuedTokens {
   accessToken: string;
   refreshToken: string;
@@ -178,16 +187,20 @@ export class AuthService {
     });
   }
 
-  /** Sign a kiosk token; E13-T9 hands it out after an admin approves. */
+  /** Sign a kiosk token; a jti keeps two issued within one second apart (KEHOACH 7.3). */
   signDevice(claims: DeviceClaims): string {
     const days = this.config.get("DEVICE_TOKEN_TTL_DAYS", { infer: true });
     return this.jwt.sign(claims, {
       secret: this.config.get("JWT_DEVICE_SECRET", { infer: true }),
       expiresIn: `${days}d`,
+      jwtid: randomUUID(),
     });
   }
 
-  /** Whether a kiosk ticket still stands: live, this device's, approved, this exact token (KEHOACH 7.4). */
+  /** Whether a kiosk ticket still stands: live, this device's, approved, and
+   *  either the ticket on the row or, mid-renewal, the one it replaced. The first
+   *  use of the new ticket retires the old one (KEHOACH 7.3, 7.4).
+   */
   async admitDevice(deviceId: string, token: string): Promise<boolean> {
     let claims: DeviceClaims;
     try {
@@ -202,14 +215,22 @@ export class AuthService {
     }
     const held = await this.db.device.findUnique({
       where: { id: deviceId },
-      select: { status: true, tokenHash: true },
+      select: { status: true, tokenHash: true, prevTokenHash: true },
     });
     if (held?.status !== "APPROVED" || held.tokenHash === null) {
       return false;
     }
-    const given = Buffer.from(deviceFingerprint(token), "hex");
-    const kept = Buffer.from(held.tokenHash, "hex");
-    return given.length === kept.length && timingSafeEqual(given, kept);
+    const given = deviceFingerprint(token);
+    if (!sameFingerprint(given, held.tokenHash)) {
+      return sameFingerprint(given, held.prevTokenHash);
+    }
+    if (held.prevTokenHash !== null) {
+      await this.db.device.updateMany({
+        where: { id: deviceId, tokenHash: held.tokenHash },
+        data: { prevTokenHash: null },
+      });
+    }
+    return true;
   }
 
   /** Drop what a login would otherwise pile up: spent rows, then the oldest

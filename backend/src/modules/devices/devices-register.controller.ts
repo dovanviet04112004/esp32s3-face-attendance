@@ -1,12 +1,25 @@
-import { Body, Controller, Get, HttpStatus, Post, Req, Res, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { SkipThrottle, ThrottlerGuard } from "@nestjs/throttler";
 import type { Request, Response } from "express";
+import { ExtractJwt } from "passport-jwt";
 
 import { DeviceAuthGuard } from "../../common/guards/device-auth.guard.js";
 import { THROTTLE, type DeviceClaims } from "../auth/auth.types.js";
 import { DevicesService, type Registration } from "./devices.service.js";
 import { RegisterDeviceDto } from "./dto/device.dto.js";
+
+const bearer = ExtractJwt.fromAuthHeaderAsBearerToken();
 
 /** A controller of its own so the guards on the rest of `devices` are not
  *  loosened to let an uncredentialled machine through (KEHOACH 7.3). */
@@ -36,5 +49,15 @@ export class DevicesRegisterController {
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Revoked, replaced or expired" })
   mine(@Req() req: Request & { user: DeviceClaims }): { deviceId: string } {
     return { deviceId: req.user.deviceId };
+  }
+
+  @Post("me/token")
+  @UseGuards(DeviceAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "A kiosk trading the ticket it holds for a fresh one (KEHOACH 7.3)" })
+  @ApiResponse({ status: HttpStatus.OK, description: "Carries the new device token" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Revoked, replaced or expired" })
+  renew(@Req() req: Request & { user: DeviceClaims }): Promise<Registration> {
+    return this.devices.renew(req.user.deviceId, bearer(req) ?? "");
   }
 }

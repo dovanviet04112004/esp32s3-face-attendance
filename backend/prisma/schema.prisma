@@ -302,6 +302,8 @@ model Device {
   location      String?
   status        DeviceStatus       @default(PENDING)
   tokenHash     String?
+  // The ticket before a renewal, good until the new one is first used (KEHOACH 7.3).
+  prevTokenHash String?
   // sha256(deviceId:code) of the code a pending kiosk shows (KEHOACH 7.3).
   claimHash     String?
   claimFailures Int                @default(0)
