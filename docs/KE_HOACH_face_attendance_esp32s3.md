@@ -4931,16 +4931,18 @@ riêng tư cũng được.
 
 1. Đưa `~/cckiosk` (bản clone chỉ lấy `deploy/`) về đúng sha: cấu hình compose và traefik đi
    cùng code, không có lượt nào code mới chạy trên cấu hình cũ.
-2. `deploy/backup/` khác với sha cũ thì build lại `kiosk-backup:local` ngay trên VPS. Image ấy
-   không có trên registry, và bước sau chạy `--no-build`, nên thiếu bước này thì một
-   `wal-push.sh` hay một dòng cron mới **không bao giờ lên máy**. `postgres` và `backup` cùng
-   dùng image này, nên bước sau dựng lại cả hai.
+2. `kiosk-backup:local` không mang nhãn băm của `deploy/backup/` hiện tại thì build lại ngay trên
+   VPS, và gắn nhãn mới. Image ấy không có trên registry, và bước sau chạy `--no-build`, nên
+   thiếu bước này thì một `wal-push.sh` hay một dòng cron mới **không bao giờ lên máy**. So với
+   nhãn trên image chứ không so với sha cũ: một lượt build hỏng giữa chừng rồi chạy lại vẫn thấy
+   image còn cũ. `postgres` và `backup` cùng dùng image này, nên bước sau dựng lại cả hai.
 3. Ghi `API_TAG=<sha>` vào `.env`, kéo image, `up -d --no-build`. Ghi vào `.env` để một lần
    `compose up` bằng tay hay một lần khởi động lại máy vẫn chạy đúng bản đã deploy.
-4. Dựng lại bằng `--force-recreate` đúng service nào có file cấu hình đổi so với sha cũ: `emqx`
-   theo `deploy/emqx/`, `traefik` theo `deploy/traefik/`, `postgres` theo `deploy/postgres/`.
-   Compose không nhìn nội dung file mount, và `git checkout` thay file bằng một inode mới, trong
-   khi bind mount một file lẻ vẫn cầm inode cũ. Không có bước này thì service **chạy tiếp cấu
+4. Dựng lại bằng `--force-recreate` đúng service nào có file cấu hình đổi: `emqx` và `traefik`
+   theo `deploy/emqx/`, `deploy/traefik/` so với sha cũ; `postgres` theo nội dung ba file mà
+   chính container đang đọc so với bản checkout, nên một lượt dựng lại hỏng rồi chạy lại vẫn bắt
+   được. Compose không nhìn nội dung file mount, và `git checkout` thay file bằng một inode mới,
+   trong khi bind mount một file lẻ vẫn cầm inode cũ. Không có bước này thì service **chạy tiếp cấu
    hình cũ** và không có gì báo — với Traefik là router `api` trỏ vào một middleware chưa tồn
    tại, API ngoài internet trả 404 trong khi `/health` trong mạng compose vẫn 200. Dựng lại
    `postgres` làm cơ sở dữ liệu tắt vài giây; kiosk xếp hàng offline (§6.2.6). Lượt deploy không
@@ -4992,7 +4994,9 @@ Frontend không đi đường này: Vercel tự build mỗi lần push khi đã 
 
    `archive_timeout = 5min`, nên trong `BIOMETRIC_KEEP_DAYS` ngày gần nhất mất tối đa **5 phút**;
    cũ hơn thì mất tối đa **một ngày** (bản logic đêm). Gốc vật lý và WAL giữ theo hạn sinh trắc
-   vì chúng chứa `FaceTemplate` (§9.22.7). Segment bị ép đóng được postgres ghi số 0 phần còn
+   vì chúng chứa `FaceTemplate` (§9.22.7). `-X fetch` chép WAL viết trong lúc chụp ở **cuối**
+   lượt chụp, nên `wal_keep_size = 256MB` giữ nó lại qua các checkpoint giữa chừng; thiếu nó thì
+   một bản gốc dài hơn một chu kỳ checkpoint hỏng với "segment đã bị xoá". Segment bị ép đóng được postgres ghi số 0 phần còn
    trống, nên nhịp 5 phút không phình đĩa: đo 24/09, một segment 16 MB chỉ mang một lượt ghi
    nén `zstd` còn **~730 byte**, kể cả segment tái dùng sau checkpoint.
 2. **Nén rồi mã hoá bằng khoá công khai, trước khi chạm đĩa.** Máy chạy sao lưu chỉ giữ **khoá
@@ -5011,12 +5015,17 @@ Frontend không đi đường này: Vercel tự build mỗi lần push khi đã 
    người ta tin là bản sao lưu, và khác biệt chỉ lộ ra đúng vào ngày tệ nhất.
 5. **Hỏng thì phải có người biết trong 15 phút, không phải vào ngày cần phục hồi.** WAL đẩy hỏng
    là postgres giữ lại mọi segment tới khi đĩa đầy, và cả hệ dừng theo. `backup.sh` ghi một dòng
-   vào `ops.backup_run` sau mỗi file đã đổi tên xong; dòng `wal` chỉ được ghi khi segment mà
-   `pg_basebackup` ép đóng lúc kết thúc thật sự tới `wal/` trong 60 s — mỗi đêm một lần thử
-   đầu-cuối đường WAL. Cứ 15 phút `api` hỏi `pg_stat_archiver` và bảng ấy: lượt đẩy gần nhất
-   hỏng, hoặc một chuỗi quá `BACKUP_STALE_HOURS` (26) không có bản mới, thì gửi mail cho mọi
-   tài khoản ADMIN còn hoạt động, nhắc lại mỗi 24 giờ cho tới khi hết. `BACKUP_STALE_HOURS = 0`
-   tắt việc hỏi, cho máy dev không có container `backup`.
+   vào `ops.backup_run` sau mỗi file đã đổi tên xong; dòng `wal` chỉ được ghi khi, trong 60 s,
+   `pg_stat_archiver` báo một segment được đẩy sau lúc bản gốc bắt đầu **và** file của segment
+   ấy có trong `wal/`. `pg_basebackup` luôn ép đóng một segment lúc kết thúc, nên đó là mỗi đêm
+   một lần thử đầu-cuối đường WAL — và nó bắt được cả `archive_command = /bin/true`, thứ báo đẩy
+   thành công mà không ghi gì. Cứ 15 phút `api` hỏi `pg_stat_archiver` và bảng ấy: lượt đẩy gần
+   nhất hỏng, hoặc một chuỗi quá `BACKUP_STALE_HOURS` (26) không có bản mới, thì gửi mail cho
+   mọi tài khoản ADMIN còn hoạt động, nhắc lại mỗi 24 giờ cho tới khi hết. Một người nhận hỏng
+   không chặn người sau, và không làm cả lượt gửi lại. `BACKUP_STALE_HOURS = 0` tắt việc hỏi,
+   cho máy dev không có container `backup`. Hỏng ở phía sao lưu không được kéo cơ sở dữ liệu
+   chết theo: `pg-start.sh` không giao được `wal/` thì chỉ cảnh báo và để postgres chạy, để lỗi
+   hiện ra thành đẩy WAL hỏng mà lượt hỏi bắt được.
 
 **`wal-push.sh` giữ đúng hợp đồng của `archive_command`.** Trả 0 là nói với postgres "segment đã
 an toàn, xoá được", nên chỉ trả 0 khi bản mã hoá và dấu `sha256` của bản gốc đã `sync` xuống đĩa
@@ -8019,7 +8028,9 @@ máy giữ khoá và làm hai lượt, cả hai dựng vào một Postgres tạm
 1. **Tua**: kéo bản gốc vật lý mới nhất, đọc segment bắt đầu trong `backup_label`, kéo mọi WAL
    từ segment ấy trở đi, dựng ở chế độ standby, chờ tới khi phát lại đứng yên. Báo **giao dịch
    cuối được phát lại lúc nào** và **segment mới nhất trong kho lúc nào** — hiệu hai mốc ấy là
-   phần sẽ mất nếu máy chủ chết đúng lúc kéo về.
+   phần sẽ mất nếu máy chủ chết đúng lúc kéo về. Hỏng khi phát lại dừng trước segment mới nhất
+   (chuỗi có lỗ) hoặc khi sau bản gốc không có segment nào (đường WAL chết); lượt logic vẫn chạy
+   để báo cáo đủ, rồi mới thoát 1.
 2. **Logic**: kéo bản logic chính mới nhất, dựng, đếm dòng từng bảng, bấm giờ, và thoát 1 nếu
    nó mang `FaceTemplate`.
 
@@ -8237,6 +8248,15 @@ cửa sổ ấy — đó là cái giá trả cho lời hứa.
 cũ hơn N ngày trừ một giờ, lúc chạy đêm. `find -mtime +N` thì làm khác hẳn: nó bỏ phần lẻ của
 ngày, nên chỉ bắt file từ **N + 1** ngày tuổi, cộng một nhịp đêm thành gần N + 2 — một lời hứa 7
 ngày bị giữ thành 9.
+
+**Xoá một dòng chưa xoá byte của nó.** `DELETE` hay `UPDATE` để bản cũ lại thành tuple chết trong
+trang; bảng nhỏ như `FaceTemplate` hiếm khi chạm ngưỡng autovacuum, và `VACUUM` thường chỉ đánh
+dấu chỗ trống chứ không xoá byte. Bản gốc vật lý chép **nguyên trang**, nên thiếu bước dưới đây
+thì mẫu đã xoá đi theo mọi bản gốc của những đêm sau, và lời hứa N ngày thành vô hạn. Sau mỗi
+lần xoá hay thay mẫu, `api` ghi lại bảng bằng `VACUUM (FULL) "FaceTemplate"` ngay khi commit
+xong: bảng mới chỉ chứa dòng sống, file cũ bị gỡ, và WAL từ lúc ấy chỉ mang trang mới. `backup.sh`
+ghi lại lần nữa trước bản gốc đêm, phòng khi lượt của `api` hỏng. Bảng chỉ vài MB nên khoá độc
+quyền của lệnh ấy tính bằng mili giây 🔬.
 
 **Cái giá là có thật và là cái giá đúng.** Phục hồi từ một bản cũ hơn bảy ngày thì fleet không
 nhận ra ai cho tới khi mọi người ghi danh lại. Với dữ liệu sinh trắc thì đó là đánh đổi đúng
