@@ -37,6 +37,23 @@ describe("broker login and device tickets (e2e)", () => {
     return token;
   }
 
+  function renew(token: string): request.Test {
+    return request(http).post("/devices/me/token").set("Authorization", `Bearer ${token}`);
+  }
+
+  async function renewed(token: string): Promise<string> {
+    const res = await renew(token);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.deviceId, KIOSK);
+    assert.ok((res.body.expiresInDays ?? 0) > 0);
+    return res.body.token as string;
+  }
+
+  async function previous(): Promise<string | null> {
+    const row = await db.device.findUnique({ where: { id: KIOSK }, select: { prevTokenHash: true } });
+    return row?.prevTokenHash ?? null;
+  }
+
   function login(username: string, password: string, clientid = username): request.Test {
     return request(http).post("/mqtt/auth").send({ username, password, clientid });
   }
@@ -122,6 +139,41 @@ describe("broker login and device tickets (e2e)", () => {
     assert.equal(res.status, 401);
   });
 
+  it("never signs the same ticket twice, even within one second", () => {
+    assert.notEqual(auth.signDevice({ deviceId: KIOSK }), auth.signDevice({ deviceId: KIOSK }));
+  });
+
+  it("keeps the old ticket good until the fresh one is first used", async () => {
+    const fresh = await renewed(ticket);
+    assert.notEqual(fresh, ticket);
+    assert.equal(await verdict(KIOSK, ticket), "allow", "renewing locked out the ticket still held");
+    assert.equal(await verdict(KIOSK, fresh), "allow");
+    assert.equal(await previous(), null, "using the fresh ticket left the old one alive");
+    assert.equal(await verdict(KIOSK, ticket), "deny", "the old ticket outlived the fresh one's first use");
+    ticket = fresh;
+  });
+
+  it("hands a kiosk whose answer was lost another ticket, and the lost one dies", async () => {
+    const lost = await renewed(ticket);
+    const second = await renewed(ticket);
+    assert.equal(await verdict(KIOSK, lost), "deny", "a ticket nobody received still opens the door");
+    assert.equal(await verdict(KIOSK, ticket), "allow", "retrying stranded the kiosk");
+    assert.equal(await verdict(KIOSK, second), "allow");
+    assert.equal(await verdict(KIOSK, ticket), "deny");
+    ticket = second;
+  });
+
+  it("will not renew a ticket that has run out, nor one it never issued", async () => {
+    const stale = app.get(JwtService).sign(
+      { deviceId: KIOSK, exp: Math.floor(Date.now() / 1000) - 60 },
+      { secret: validateEnv().JWT_DEVICE_SECRET },
+    );
+    assert.equal((await renew(stale)).status, 401);
+    const stranger = auth.signDevice({ deviceId: KIOSK });
+    assert.equal((await renew(stranger)).status, 401);
+    assert.equal(await verdict(KIOSK, ticket), "allow", "a refused renewal cost the kiosk its ticket");
+  });
+
   it("stops both doors the moment a person revokes the machine", async () => {
     const revoked = await request(http)
       .post(`/devices/${KIOSK}/revoke`)
@@ -132,6 +184,7 @@ describe("broker login and device tickets (e2e)", () => {
     const res = await request(http).get("/devices/me").set("Authorization", `Bearer ${ticket}`);
     assert.equal(res.status, 401, "a revoked ticket still passed the device guard");
     assert.equal(res.body.message, "DEVICE_TOKEN_REJECTED");
+    assert.equal((await renew(ticket)).status, 401, "a revoked machine renewed its ticket");
   });
 
   it("refuses to register a name that cannot be a broker username", async () => {
