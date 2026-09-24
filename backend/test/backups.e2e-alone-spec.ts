@@ -115,7 +115,7 @@ describe("backups (e2e)", () => {
       await ran(kind, 1);
     }
     assert.deepEqual(await sweep(), []);
-    assert.equal(sent.splice(0).length, 0, "a healthy sweep sent mail");
+    assert.equal(toOperator().length, 0, "a healthy sweep sent mail");
     for (const problem of PROBLEMS) {
       assert.equal(await redis.client.exists(ALARM.backup(problem)), 0, `${problem} is still marked as told`);
     }
@@ -127,7 +127,7 @@ describe("backups (e2e)", () => {
     assert.deepEqual(await sweep(), ["BASE_STALE"]);
     assert.equal(toOperator().length, 1);
     assert.deepEqual(await sweep(), ["BASE_STALE"]);
-    assert.equal(sent.splice(0).length, 0, "the same stale chain was mailed twice within a day");
+    assert.equal(toOperator().length, 0, "the same stale chain was mailed twice within a day");
   });
 
   it("mails again when a chain that recovered goes stale a second time", async () => {

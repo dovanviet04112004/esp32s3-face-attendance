@@ -15,7 +15,7 @@
     "prisma:seed": "prisma db seed",
     "prisma:demo": "tsx prisma/demo.ts",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node --test 'dist-test/test/**/*.e2e-spec.js' && node --test 'dist-test/test/**/*.e2e-alone-spec.js'",
+    "test:e2e": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node --test 'dist-test/test/**/*.e2e-spec.js' && node --test --test-concurrency=1 'dist-test/test/**/*.e2e-alone-spec.js'",
     "test": "npm run test:e2e"
   },
   "keywords": [],
