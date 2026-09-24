@@ -1,9 +1,10 @@
-import { Body, Controller, HttpStatus, Post, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpStatus, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { SkipThrottle, ThrottlerGuard } from "@nestjs/throttler";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 
-import { THROTTLE } from "../auth/auth.types.js";
+import { DeviceAuthGuard } from "../../common/guards/device-auth.guard.js";
+import { THROTTLE, type DeviceClaims } from "../auth/auth.types.js";
 import { DevicesService, type Registration } from "./devices.service.js";
 import { RegisterDeviceDto } from "./dto/device.dto.js";
 
@@ -27,5 +28,13 @@ export class DevicesRegisterController {
     const answer = await this.devices.register(body);
     res.status(answer.accepted ? HttpStatus.ACCEPTED : HttpStatus.OK);
     return answer;
+  }
+
+  @Get("me")
+  @UseGuards(DeviceAuthGuard)
+  @ApiOperation({ summary: "A kiosk asking whether its ticket still stands (KEHOACH 7.3)" })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Revoked, replaced or expired" })
+  mine(@Req() req: Request & { user: DeviceClaims }): { deviceId: string } {
+    return { deviceId: req.user.deviceId };
   }
 }

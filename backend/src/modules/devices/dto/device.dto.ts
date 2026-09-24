@@ -26,6 +26,8 @@ const DEVICE_ID_MAX = 32;
 const BOOTSTRAP_MIN = 16;
 const BOOTSTRAP_MAX = 256;
 const VERSION_MAX = 32;
+const BROKER_NAME_MAX = 64;
+const BROKER_SECRET_MAX = 2048;
 
 /** What a kiosk with an empty NVS can say about itself: the id burned into its
  *  eFuse, and the secret its firmware batch carries (KEHOACH 7.3).
@@ -54,4 +56,22 @@ export class ListDevicesDto extends PaginationDto {
   @IsOptional()
   @IsEnum(DEVICE_STATUS)
   status?: (typeof DEVICE_STATUS)[number];
+}
+
+/** The login EMQX's http authenticator forwards (KEHOACH 7.4). */
+export class BrokerLoginDto {
+  @ApiProperty({ maxLength: BROKER_NAME_MAX, example: "kiosk-2884859fd3c8" })
+  @IsString()
+  @MaxLength(BROKER_NAME_MAX)
+  username!: string;
+
+  @ApiProperty({ maxLength: BROKER_SECRET_MAX, description: "The device JWT" })
+  @IsString()
+  @MaxLength(BROKER_SECRET_MAX)
+  password!: string;
+
+  @ApiProperty({ maxLength: BROKER_NAME_MAX, example: "kiosk-2884859fd3c8" })
+  @IsString()
+  @MaxLength(BROKER_NAME_MAX)
+  clientid!: string;
 }

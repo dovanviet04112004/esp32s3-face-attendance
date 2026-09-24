@@ -1,15 +1,22 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
-import { Injectable, Logger, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Device, Prisma } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { heartbeatSchema } from "../../common/generated/heartbeat.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS, type AuditAction } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { AuthService } from "../auth/auth.service.js";
+import { AuthService, deviceFingerprint } from "../auth/auth.service.js";
 import type {
   ApproveDeviceDto,
   ListDevicesDto,
@@ -73,6 +80,9 @@ export class DevicesService {
     if (!sameSecret(body.bootstrapToken, this.config.get("DEVICE_BOOTSTRAP_TOKEN", { infer: true }))) {
       throw new UnauthorizedException("DEVICE_BOOTSTRAP_REJECTED");
     }
+    if (!heartbeatSchema.shape.deviceId.safeParse(body.deviceId).success) {
+      throw new BadRequestException("DEVICE_ID_MALFORMED");
+    }
     const held = await this.db.device.findUnique({ where: { id: body.deviceId } });
     const waiting: Registration = { accepted: true, deviceId: body.deviceId };
 
@@ -115,7 +125,7 @@ export class DevicesService {
     const token = this.auth.signDevice({ deviceId: device.id });
     await this.db.device.update({
       where: { id: device.id },
-      data: { tokenHash: fingerprint(token), ...(fwVersion ? { fwVersion } : {}) },
+      data: { tokenHash: deviceFingerprint(token), ...(fwVersion ? { fwVersion } : {}) },
     });
     await this.note(AUDIT_ACTIONS.DEVICE_TOKEN_ISSUE, device.id, {
       expiresInDays: this.config.get("DEVICE_TOKEN_TTL_DAYS", { infer: true }),
@@ -218,10 +228,6 @@ export class DevicesService {
       create: { id: deviceId, lastSeenAt: at, online: true },
     });
   }
-}
-
-function fingerprint(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
 }
 
 /** Compare in constant time: a plain === leaks the shared secret one byte at

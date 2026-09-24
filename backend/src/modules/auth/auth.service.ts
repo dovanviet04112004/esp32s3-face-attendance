@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID, createHash } from "node:crypto";
+import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 
 import { Inject, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -19,6 +19,11 @@ const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 8
 export function ttlToMs(ttl: string): number {
   const match = /^(\d+)([smhd])$/.exec(ttl);
   return match ? Number(match[1]) * UNIT_MS[match[2]] : Number(ttl) * 1000;
+}
+
+/** The sha256 a device row keeps of the ticket it holds (KEHOACH 7.3). */
+export function deviceFingerprint(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 export interface IssuedTokens {
@@ -180,6 +185,31 @@ export class AuthService {
       secret: this.config.get("JWT_DEVICE_SECRET", { infer: true }),
       expiresIn: `${days}d`,
     });
+  }
+
+  /** Whether a kiosk ticket still stands: live, this device's, approved, this exact token (KEHOACH 7.4). */
+  async admitDevice(deviceId: string, token: string): Promise<boolean> {
+    let claims: DeviceClaims;
+    try {
+      claims = this.jwt.verify<DeviceClaims>(token, {
+        secret: this.config.get("JWT_DEVICE_SECRET", { infer: true }),
+      });
+    } catch {
+      return false;
+    }
+    if (claims.deviceId !== deviceId) {
+      return false;
+    }
+    const held = await this.db.device.findUnique({
+      where: { id: deviceId },
+      select: { status: true, tokenHash: true },
+    });
+    if (held?.status !== "APPROVED" || held.tokenHash === null) {
+      return false;
+    }
+    const given = Buffer.from(deviceFingerprint(token), "hex");
+    const kept = Buffer.from(held.tokenHash, "hex");
+    return given.length === kept.length && timingSafeEqual(given, kept);
   }
 
   /** Drop what a login would otherwise pile up: spent rows, then the oldest
