@@ -3672,7 +3672,9 @@ Các trạng thái của khung, màu là thông tin chứ không phải trang tr
 **Máy chưa có vé thì nói ra, ở khoảng giữa thanh trên và khung ngắm.** Trong lúc xin vé (§7.3
 bước 3), màn quét mang một dòng hổ phách `Chờ duyệt · kiosk-a1b2c3d4e5f6`, đúng chuỗi mà admin
 đối chiếu trên dashboard. Máy chủ từ chối token lô thì dòng ấy đổi sang
-`Máy chủ không nhận firmware này`. Có vé là dòng biến mất. Nó không chen vào khung ngắm, không
+`Máy chủ không nhận firmware này`; bản dựng không mang token lô thì là
+`Firmware này chưa có mã lô`, vì một máy im lặng không nối được là máy không ai biết phải sửa gì.
+Có vé là dòng biến mất. Nó không chen vào khung ngắm, không
 chen dòng nhắc dưới khung, và không chặn chấm công: bản ghi vẫn xếp hàng như lúc mất mạng. Dòng
 này nói về **cái máy**, không nói về người đứng trước nó, nên nó đi riêng một đường vào
 `ui_kiosk` (`ui_kiosk_set_ticket()`), không đi qua kênh trạng thái của pipeline.
