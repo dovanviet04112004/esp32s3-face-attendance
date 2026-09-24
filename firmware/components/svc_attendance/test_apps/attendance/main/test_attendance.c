@@ -45,10 +45,12 @@ static svc_vision_result_t event_of(svc_vision_kind_t kind, uint32_t employee, f
     return result;
 }
 
-static void feed(svc_vision_kind_t kind, uint32_t employee, float live)
+static svc_attendance_said_t feed(svc_vision_kind_t kind, uint32_t employee, float live)
 {
     const svc_vision_result_t result = event_of(kind, employee, live);
-    TEST_ASSERT_EQUAL(ESP_OK, svc_attendance_on_vision(&result, s_now_ms));
+    svc_attendance_said_t said = SVC_ATTENDANCE_SAID_NOTHING;
+    TEST_ASSERT_EQUAL(ESP_OK, svc_attendance_on_vision(&result, s_now_ms, &said));
+    return said;
 }
 
 // Every case starts from Idle, and the only way there is through the table.
@@ -69,7 +71,7 @@ TEST_CASE("presence opens the machine and a match grants", "[svc_attendance]")
     TEST_ASSERT_EQUAL(ESP_OK, svc_attendance_on_presence(true));
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_DETECTING, svc_attendance_state());
     const uint32_t before = svc_attendance_records();
-    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_GRANTED, feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE));
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
     TEST_ASSERT_EQUAL(before + 1, svc_attendance_records());
     TEST_ASSERT_TRUE(svc_door_is_open(svc_door_fake()));
@@ -123,7 +125,7 @@ TEST_CASE("a spoof denies and never reaches the door", "[svc_attendance]")
     svc_attendance_on_presence(true);
     svc_door_close(svc_door_fake());
     const uint32_t before = svc_attendance_records();
-    feed(SVC_VISION_SPOOF, EMPLOYEE_A, 0.10f);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_REFUSED, feed(SVC_VISION_SPOOF, EMPLOYEE_A, 0.10f));
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_DENIED, svc_attendance_state());
     TEST_ASSERT_EQUAL(before, svc_attendance_records());
     TEST_ASSERT_FALSE(svc_door_is_open(svc_door_fake()));
@@ -137,7 +139,8 @@ TEST_CASE("a match with no liveness branch is refused unless the policy allows i
     svc_attendance_on_presence(true);
     svc_door_close(svc_door_fake());
     const uint32_t before = svc_attendance_records();
-    feed(SVC_VISION_MATCH, EMPLOYEE_B, NO_SPOOF_SCORE);
+    const svc_attendance_said_t said = feed(SVC_VISION_MATCH, EMPLOYEE_B, NO_SPOOF_SCORE);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_REFUSED, said);
     printf("no-spoof match landed in state %d\n", (int)svc_attendance_state());
     TEST_ASSERT_EQUAL(before, svc_attendance_records());
     TEST_ASSERT_FALSE(svc_door_is_open(svc_door_fake()));
@@ -173,10 +176,13 @@ TEST_CASE("a face that never leaves is granted once, and again after it does",
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_IDLE, svc_attendance_state());
 
     svc_door_close(svc_door_fake());
-    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_ALREADY, feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE));
     printf("the same face still there left state %d\n", (int)svc_attendance_state());
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_IDLE, svc_attendance_state());
     TEST_ASSERT_FALSE(svc_door_is_open(svc_door_fake()));
+    storage_attend_record_t standing = { 0 };
+    TEST_ASSERT_EQUAL(ESP_OK, svc_attendance_last_record(&standing));
+    TEST_ASSERT_EQUAL(EMPLOYEE_A, standing.employee_id);
 
     feed(SVC_VISION_NO_FACE, 0, LIVE_SCORE);
     feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
@@ -212,13 +218,11 @@ TEST_CASE("another person matched while the door is open is granted at once", "[
     feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
     const uint32_t records = svc_attendance_records();
-    const uint32_t grants = svc_attendance_grants();
 
-    feed(SVC_VISION_MATCH, EMPLOYEE_B, LIVE_SCORE);
-    printf("second person while granted: grants %" PRIu32 " to %" PRIu32 "\n", grants,
-           svc_attendance_grants());
+    const svc_attendance_said_t said = feed(SVC_VISION_MATCH, EMPLOYEE_B, LIVE_SCORE);
+    printf("second person while granted was told %d\n", (int)said);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_GRANTED, said);
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
-    TEST_ASSERT_EQUAL(grants + 1, svc_attendance_grants());
     TEST_ASSERT_EQUAL(records + 1, svc_attendance_records());
 }
 
@@ -229,9 +233,42 @@ TEST_CASE("the same person matched again while the door is open is not granted t
     back_to_idle();
     svc_attendance_on_presence(true);
     feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
-    const uint32_t grants = svc_attendance_grants();
+    svc_door_close(svc_door_fake());
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_ALREADY, feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE));
+    TEST_ASSERT_FALSE(svc_door_is_open(svc_door_fake()));
+}
+
+TEST_CASE("a stranger stepping in while the door is open is refused at once", "[svc_attendance]")
+{
+    machine_up(true);
+    back_to_idle();
+    svc_attendance_on_presence(true);
     feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
-    TEST_ASSERT_EQUAL(grants, svc_attendance_grants());
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_GRANTED, svc_attendance_state());
+    const uint32_t records = svc_attendance_records();
+    const svc_attendance_said_t said = feed(SVC_VISION_UNKNOWN, 0, LIVE_SCORE);
+    printf("stranger during the grant was told %d in state %d\n", (int)said,
+           (int)svc_attendance_state());
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_REFUSED, said);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_DENIED, svc_attendance_state());
+    TEST_ASSERT_EQUAL(records, svc_attendance_records());
+}
+
+TEST_CASE("a refusal that keeps coming is told each time and holds the refusal", "[svc_attendance]")
+{
+    machine_up(true);
+    back_to_idle();
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_REFUSED, feed(SVC_VISION_SPOOF, 0, 0.10f));
+    s_now_ms += DENY_HOLD_MS - 1;
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_REFUSED, feed(SVC_VISION_SPOOF, 0, 0.10f));
+    s_now_ms += DENY_HOLD_MS - 1;
+    svc_attendance_tick(s_now_ms);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_DENIED, svc_attendance_state());
+    s_now_ms += 2;
+    svc_attendance_tick(s_now_ms);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_COOLDOWN, svc_attendance_state());
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_REFUSED, feed(SVC_VISION_UNKNOWN, 0, LIVE_SCORE));
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_DENIED, svc_attendance_state());
 }
 
 TEST_CASE("a queue behind the first face keeps its turn", "[svc_attendance]")
@@ -319,11 +356,11 @@ TEST_CASE("an event with no row in this state is dropped", "[svc_attendance]")
     machine_up(true);
     back_to_idle();
     const uint32_t before = svc_attendance_records();
-    feed(SVC_VISION_NO_FACE, 0, LIVE_SCORE);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_NOTHING, feed(SVC_VISION_NO_FACE, 0, LIVE_SCORE));
     printf("no face while idle left state %d\n", (int)svc_attendance_state());
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_IDLE, svc_attendance_state());
     const svc_vision_result_t nothing = event_of(SVC_VISION_NONE, 0, LIVE_SCORE);
-    TEST_ASSERT_EQUAL(ESP_OK, svc_attendance_on_vision(&nothing, s_now_ms));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_attendance_on_vision(&nothing, s_now_ms, NULL));
     TEST_ASSERT_EQUAL(SVC_ATTENDANCE_IDLE, svc_attendance_state());
     TEST_ASSERT_EQUAL(before, svc_attendance_records());
 }
