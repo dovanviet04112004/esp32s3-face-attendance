@@ -9,8 +9,11 @@ own crc, so everything checkable is checked here instead.
 import argparse
 import hashlib
 import json
+import os
 import struct
 import time
+import urllib.parse
+import urllib.request
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,6 +137,25 @@ def build_image(models: list[Model], built_at: int) -> bytes:
     return bytes(header) + bytes(payload)
 
 
+def release_version(image: bytes) -> str:
+    """Name the image the way the kiosk's heartbeat names it: img- and the header crc32."""
+    (crc,) = struct.unpack_from("<I", image, CRC_OFFSET)
+    return f"img-{crc:08x}"
+
+
+def publish(image: bytes, version: str, api_url: str, token: str) -> dict:
+    """Put the image on the api's release register, the same door CI uses (KEHOACH 7.7)."""
+    query = urllib.parse.urlencode({"target": "MODELS", "version": version})
+    sent = urllib.request.Request(
+        f"{api_url.rstrip('/')}/releases?{query}",
+        data=image,
+        method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"},
+    )
+    with urllib.request.urlopen(sent, timeout=120) as answer:
+        return json.loads(answer.read())
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lock", type=Path, default=Path("contracts/models.lock.json"))
@@ -141,6 +163,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--partitions", type=Path, default=Path("firmware/partitions.dev.csv"))
     parser.add_argument("--partition", default="models_0", help="which slot the image is for")
     parser.add_argument("--out", type=Path, required=True, help="where models.bin goes")
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="also publish it as a MODELS release; reads API_URL and RELEASE_PUBLISH_TOKEN",
+    )
     args = parser.parse_args(argv)
 
     models = deployed(args.lock, args.models_dir)
@@ -161,6 +188,15 @@ def main(argv: list[str] | None = None) -> int:
         f"{args.partition}, {len(models)} of {ENTRY_SLOTS} branches, "
         f"runtime {payload_runtime(models[0].path)}"
     )
+    if args.publish:
+        api_url = os.environ.get("API_URL", "")
+        token = os.environ.get("RELEASE_PUBLISH_TOKEN", "")
+        if not api_url or not token:
+            raise SystemExit("--publish needs API_URL and RELEASE_PUBLISH_TOKEN in the environment")
+        answer = publish(image, release_version(image), api_url, token)
+        state = "already published" if answer["existing"] else "published"
+        held = answer["release"]
+        print(f"MODELS {held['version']} {state}, sha256 {held['sha256']}")
     return 0
 
 

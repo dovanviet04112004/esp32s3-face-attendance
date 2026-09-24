@@ -20,6 +20,8 @@ from facepipe.export.pack_models_partition import (
     build_image,
     deployed,
     payload_runtime,
+    publish,
+    release_version,
 )
 
 
@@ -87,6 +89,44 @@ def test_an_espdl_image_keeps_the_header_the_firmware_reads(tmp_path: Path) -> N
     assert name.rstrip(b"\0") == b"recog"
     assert (offset, size, in_h, in_w, arena) == (HEADER_BYTES, len(ESPDL_BLOB), 112, 112, 0)
     assert image[offset : offset + 4] == b"EDL2"
+
+
+def test_a_models_release_is_named_as_the_heartbeat_names_it(tmp_path: Path) -> None:
+    lock: dict = {}
+    write_model(tmp_path, "recognition", "mobilefacenet_s8.espdl", ESPDL_BLOB, lock)
+    (tmp_path / "models.lock.json").write_text(json.dumps(lock), encoding="utf-8")
+    image = build_image(deployed(tmp_path / "models.lock.json", tmp_path), built_at=0)
+    (crc,) = struct.unpack_from("<I", image, HEADER_BYTES - 4)
+    assert release_version(image) == f"img-{crc:08x}"
+
+
+def test_publishing_goes_through_the_release_door(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict = {}
+
+    class Answer:
+        def __enter__(self) -> Answer:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"existing": false, "release": {"version": "img-00000001", "sha256": "ab"}}'
+
+    def urlopen(sent, timeout):
+        seen.update(url=sent.full_url, body=sent.data, method=sent.method)
+        seen["auth"] = sent.get_header("Authorization")
+        return Answer()
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    answer = publish(b"image", "img-00000001", "https://api.example/", "t" * 32)
+    assert seen == {
+        "url": "https://api.example/releases?target=MODELS&version=img-00000001",
+        "body": b"image",
+        "auth": "Bearer " + "t" * 32,
+        "method": "POST",
+    }
+    assert answer["existing"] is False
 
 
 def test_registered_reads_the_module_creator(tmp_path: Path) -> None:
