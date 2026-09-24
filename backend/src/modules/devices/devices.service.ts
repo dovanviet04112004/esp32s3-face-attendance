@@ -18,6 +18,7 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS, type AuditAction } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { AuthService, deviceFingerprint } from "../auth/auth.service.js";
+import { MqttService } from "../mqtt/mqtt.service.js";
 import type {
   ApproveDeviceDto,
   ListDevicesDto,
@@ -76,6 +77,7 @@ export class DevicesService {
     private readonly auth: AuthService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
+    private readonly broker: MqttService,
   ) {}
 
   /**
@@ -300,14 +302,16 @@ export class DevicesService {
     });
   }
 
-  /** Take a machine back; its credentials stop working and it re-registers. */
+  /** Take a machine back: its ticket dies, its open session is closed, and it re-registers (KEHOACH 7.4). */
   async revoke(id: string): Promise<PublicDevice> {
     await this.get(id);
-    return this.db.device.update({
+    const revoked = await this.db.device.update({
       where: { id },
       data: { status: "REVOKED", tokenHash: null, prevTokenHash: null, online: false },
       select: SHOWN,
     });
+    await this.broker.closeSession(id);
+    return revoked;
   }
 
   /** Record what a heartbeat says about a kiosk, creating its row if needed. */

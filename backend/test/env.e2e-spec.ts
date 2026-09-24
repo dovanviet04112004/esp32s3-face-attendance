@@ -21,6 +21,11 @@ const BASE: NodeJS.ProcessEnv = {
   MQTT_PASSWORD: "api",
 };
 
+const BROKER_API: NodeJS.ProcessEnv = {
+  EMQX_API_URL: "http://emqx:18083/api/v5",
+  EMQX_API_PASSWORD: "dashboard",
+};
+
 describe("environment (e2e)", () => {
   it("boots without a mail host outside production", () => {
     const env = validateEnv(BASE);
@@ -28,12 +33,16 @@ describe("environment (e2e)", () => {
   });
 
   it("refuses to boot in production without a mail host", () => {
-    assert.throws(() => validateEnv({ ...BASE, NODE_ENV: "production" }), /MAIL_HOST/);
+    assert.throws(
+      () => validateEnv({ ...BASE, ...BROKER_API, NODE_ENV: "production" }),
+      /MAIL_HOST/,
+    );
   });
 
   it("boots in production once a mail host is set", () => {
     const env = validateEnv({
       ...BASE,
+      ...BROKER_API,
       NODE_ENV: "production",
       MAIL_HOST: "smtp.example.com",
     });
@@ -42,9 +51,21 @@ describe("environment (e2e)", () => {
 
   it("reads an empty mail host as unset", () => {
     assert.throws(
-      () => validateEnv({ ...BASE, NODE_ENV: "production", MAIL_HOST: "" }),
+      () => validateEnv({ ...BASE, ...BROKER_API, NODE_ENV: "production", MAIL_HOST: "" }),
       /MAIL_HOST/,
     );
+  });
+
+  it("refuses to boot in production without the broker api that closes revoked sessions", () => {
+    const shipped = { ...BASE, NODE_ENV: "production", MAIL_HOST: "smtp.example.com" };
+    assert.throws(() => validateEnv(shipped), /EMQX_API_URL[\s\S]*EMQX_API_PASSWORD/);
+    assert.throws(() => validateEnv({ ...shipped, EMQX_API_URL: BROKER_API.EMQX_API_URL }), /EMQX_API_PASSWORD/);
+  });
+
+  it("boots without the broker api outside production", () => {
+    const env = validateEnv(BASE);
+    assert.equal(env.EMQX_API_URL, undefined);
+    assert.equal(env.EMQX_API_USERNAME, "admin");
   });
 
   it("names every variable it cannot do without", () => {

@@ -4,6 +4,7 @@ import { after, before, describe, it } from "node:test";
 import type { INestApplication } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
+import mqtt from "mqtt";
 import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
@@ -15,6 +16,7 @@ import { AuthService, deviceFingerprint } from "../src/modules/auth/auth.service
 const KIOSK = "e2e-ba-door";
 const OTHER = "e2e-ba-side";
 const WAITING = "e2e-ba-wait";
+const KICK_WAIT_MS = 5000;
 
 describe("broker login and device tickets (e2e)", () => {
   let app: INestApplication;
@@ -172,6 +174,26 @@ describe("broker login and device tickets (e2e)", () => {
     const stranger = auth.signDevice({ deviceId: KIOSK });
     assert.equal((await renew(stranger)).status, 401);
     assert.equal(await verdict(KIOSK, ticket), "allow", "a refused renewal cost the kiosk its ticket");
+  });
+
+  it("closes a revoked kiosk's open session at the broker", { skip: !validateEnv().EMQX_API_URL }, async () => {
+    const session = await mqtt.connectAsync(validateEnv().MQTT_URL, {
+      clientId: OTHER,
+      reconnectPeriod: 0,
+    });
+    let timer: NodeJS.Timeout | undefined;
+    const closed = new Promise<boolean>((done) => {
+      session.once("close", () => done(true));
+      timer = setTimeout(() => done(false), KICK_WAIT_MS);
+    });
+    const revoked = await request(http)
+      .post(`/devices/${OTHER}/revoke`)
+      .set("Authorization", `Bearer ${admin}`);
+    assert.equal(revoked.status, 201);
+    const kicked = await closed;
+    clearTimeout(timer);
+    await session.endAsync(true);
+    assert.ok(kicked, "the session opened before the revoke outlived it");
   });
 
   it("stops both doors the moment a person revokes the machine", async () => {

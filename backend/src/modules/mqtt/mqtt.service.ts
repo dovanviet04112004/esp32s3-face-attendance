@@ -12,6 +12,7 @@ import { KIOSK_EVENT, type KioskMessage } from "./mqtt.events.js";
 
 const RECONNECT_MS = 5000;
 const CONNECT_TIMEOUT_MS = 10000;
+const BROKER_API_TIMEOUT_MS = 5000;
 
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
@@ -84,6 +85,57 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       qos: spec.qos,
       retain: spec.retained,
     });
+  }
+
+  /**
+   * Forget the logins the broker cached, then close this kiosk's session, so a
+   * revoked ticket stops now rather than at its next connect (KEHOACH 7.4).
+   * Best effort: false when the broker api is unset or refuses.
+   */
+  async closeSession(deviceId: string): Promise<boolean> {
+    const base = this.config.get("EMQX_API_URL", { infer: true });
+    const password = this.config.get("EMQX_API_PASSWORD", { infer: true });
+    if (!base || !password) {
+      this.log.warn(`no broker api, ${deviceId} keeps its session until it drops`);
+      return false;
+    }
+    try {
+      const login = await this.brokerApi(`${base}/login`, "POST", {
+        username: this.config.get("EMQX_API_USERNAME", { infer: true }),
+        password,
+      });
+      const { token } = (await login.json()) as { token: string };
+      await this.brokerApi(`${base}/authentication/node_cache/reset`, "POST", undefined, token);
+      // 404: no session is open, which is the state a revoke wants.
+      await this.brokerApi(`${base}/clients/${encodeURIComponent(deviceId)}`, "DELETE", undefined, token, [404]);
+      this.log.log(`${deviceId}: broker session closed`);
+      return true;
+    } catch (error) {
+      this.log.warn(`${deviceId} keeps its broker session: ${(error as Error).message}`);
+      return false;
+    }
+  }
+
+  private async brokerApi(
+    url: string,
+    method: "POST" | "DELETE",
+    body?: object,
+    token?: string,
+    alsoFine: readonly number[] = [],
+  ): Promise<Response> {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        ...(body ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(BROKER_API_TIMEOUT_MS),
+    });
+    if (!res.ok && !alsoFine.includes(res.status)) {
+      throw new Error(`${method} ${new URL(url).pathname} answered ${res.status}`);
+    }
+    return res;
   }
 
   private async subscribeUp(client: MqttClient): Promise<void> {

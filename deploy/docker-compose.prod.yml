@@ -48,6 +48,9 @@ services:
       MQTT_USERNAME: ${MQTT_USERNAME}
       MQTT_PASSWORD: ${EMQX_OPS_PASSWORD}
       MQTT_CA_CERT_PATH: /certs/ca.crt
+      # The dashboard login, for closing a revoked kiosk's session (KEHOACH 7.4).
+      EMQX_API_URL: http://emqx:18083/api/v5
+      EMQX_API_PASSWORD: ${EMQX_DASHBOARD_PASSWORD}
       MAIL_HOST: ${MAIL_HOST}
       MAIL_PORT: ${MAIL_PORT}
       MAIL_USER: ${MAIL_USER}

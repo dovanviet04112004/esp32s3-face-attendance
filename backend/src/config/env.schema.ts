@@ -93,6 +93,10 @@ export const envSchema = z
     MQTT_USERNAME: z.string().min(1),
     MQTT_PASSWORD: z.string().min(1),
     MQTT_CA_CERT_PATH: z.string().optional(),
+    // The broker's REST api, which closes a revoked kiosk's session (KEHOACH 7.4).
+    EMQX_API_URL: z.string().url().optional(),
+    EMQX_API_USERNAME: z.string().min(1).default("admin"),
+    EMQX_API_PASSWORD: z.string().min(1).optional(),
   })
   // Without a host the mailer logs and drops, and the bank-change warning that
   // makes a payout change safe stops leaving the machine (KEHOACH 9.11).
@@ -103,6 +107,11 @@ export const envSchema = z
         path: ["MAIL_HOST"],
         message: "MAIL_HOST is required when NODE_ENV is production",
       });
+    }
+    for (const key of ["EMQX_API_URL", "EMQX_API_PASSWORD"] as const) {
+      if (env.NODE_ENV === "production" && env[key] === undefined) {
+        ctx.addIssue({ code: "custom", path: [key], message: `${key} is required when NODE_ENV is production` });
+      }
     }
   });
 
