@@ -2,11 +2,8 @@
 
 #include "app_config.h"
 #include "bsp_board.h"
-#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-static const char *TAG = "tof_platform";
 
 #define PLATFORM_TIMEOUT_MS 100
 #define PLATFORM_LOCK_MS 200
