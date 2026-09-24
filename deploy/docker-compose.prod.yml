@@ -10,8 +10,6 @@ services:
       - "80:80"
       - "443:443"
       - "8883:8883"
-    environment:
-      ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
@@ -65,6 +63,9 @@ services:
       traefik.http.services.api.loadbalancer.server.port: "3000"
 
   postgres:
+    # archive_command runs in here and pushes through age (KEHOACH 4.8).
+    image: kiosk-backup:local
+    build: ./backup
     # The published port of the base file is dropped: on a public machine the
     # database answers only on the compose network.
     ports: !override []
@@ -86,6 +87,7 @@ services:
       AGE_RECIPIENT: ${AGE_RECIPIENT}
 
   backup:
+    image: kiosk-backup:local
     build: ./backup
     restart: unless-stopped
     depends_on:
