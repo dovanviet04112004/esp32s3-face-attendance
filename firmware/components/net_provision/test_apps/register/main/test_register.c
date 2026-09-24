@@ -1,6 +1,11 @@
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
+#include "lwip/netdb.h"
+
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "net_provision.h"
 #include "net_wifi.h"
 #include "sys_storage.h"
@@ -79,9 +84,32 @@ static void join(void)
     TEST_ASSERT_EQUAL(ESP_OK, net_wifi_wait_connected(JOIN_TIMEOUT_MS));
 }
 
-TEST_CASE("the api answers a registration with a verdict, not silence", "[provision][live]")
+// Only the host part: the url's scheme and path mean nothing to getaddrinfo.
+static int resolve(const char *url)
+{
+    char host[96] = { 0 };
+    const char *start = strstr(url, "://");
+    start = start != NULL ? start + 3 : url;
+    const size_t len = strcspn(start, ":/");
+    memcpy(host, start, len < sizeof(host) - 1 ? len : sizeof(host) - 1);
+    const struct addrinfo hints = { .ai_family = AF_INET, .ai_socktype = SOCK_STREAM };
+    struct addrinfo *found = NULL;
+    const int said = getaddrinfo(host, NULL, &hints, &found);
+    printf("resolve %s: %d\n", host, said);
+    freeaddrinfo(found);
+    return said;
+}
+
+TEST_CASE("the link's dns resolves the api and the broker", "[provision][live]")
 {
     join();
+    resolve("pool.ntp.org");
+    TEST_ASSERT_EQUAL(0, resolve(CONFIG_NET_PROVISION_API_URL));
+    TEST_ASSERT_EQUAL(0, resolve("mqtt.cckiosk.io.vn"));
+}
+
+TEST_CASE("the api answers a registration with a verdict, not silence", "[provision][live]")
+{
     const net_provision_answer_t said = net_provision_register();
     TEST_ASSERT_NOT_EQUAL(NET_PROVISION_UNREACHABLE, said);
     TEST_ASSERT_NOT_EQUAL(NET_PROVISION_DISABLED, said);
@@ -99,5 +127,12 @@ TEST_CASE("a kiosk holding no ticket is told it has none", "[provision][live]")
 
 void app_main(void)
 {
+    // Without the driver the 64-byte console FIFO drops whatever Unity prints faster than it drains.
+    usb_serial_jtag_driver_config_t console = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    if (usb_serial_jtag_driver_install(&console) == ESP_OK) {
+        usb_serial_jtag_vfs_use_driver();
+    }
+    UNITY_BEGIN();
     unity_run_all_tests();
+    UNITY_END();
 }

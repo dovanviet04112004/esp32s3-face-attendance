@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS test_register.c
-    REQUIRES common sys_storage net_wifi net_provision unity
+    REQUIRES common sys_storage net_wifi net_provision unity esp_driver_usb_serial_jtag
     WHOLE_ARCHIVE
 )

@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 
 set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../../")
-set(COMPONENTS main common sys_storage net_wifi net_provision esp_timer unity)
+set(COMPONENTS main common sys_storage net_wifi net_provision esp_timer unity
+               esp_driver_usb_serial_jtag)
 
 # The board is one board: test apps take its clock, cache and psram
 # settings from the same file the firmware does.
