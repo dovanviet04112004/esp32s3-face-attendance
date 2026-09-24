@@ -78,6 +78,8 @@ record dump "$(wc -c < "${prefix}.dump.age")"
 seal "${prefix}.biometric.dump.age" biometric_dump
 record biometric "$(wc -c < "${prefix}.biometric.dump.age")"
 
+# A base copies pages whole, dead tuples of erased templates included (KEHOACH 9.22.7).
+psql --quiet --command 'VACUUM (FULL) "FaceTemplate"'
 base_started=$(psql --tuples-only --no-align --command "SELECT now()")
 seal "${prefix}.base.tar.zst.age" base_tar
 record base "$(wc -c < "${prefix}.base.tar.zst.age")"
