@@ -169,7 +169,7 @@ export class EnrollmentService {
     const session = new Date(report.updatedAt);
     const sealed = sealTemplate(Buffer.from(report.embedding, "base64"), this.key());
     const verdict = await this.db.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
       const pair = await tx.deviceEnrollment.findUnique({
         where: { deviceId_employeeId: { deviceId, employeeId } },
       });
