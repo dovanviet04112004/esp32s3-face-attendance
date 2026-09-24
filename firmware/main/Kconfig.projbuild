@@ -10,4 +10,11 @@ menu "Kiosk application"
             compiles none of it, because a runtime flag would live in the very
             NVS the console can write and could re-enable itself.
 
+    config APP_SNTP_DEFAULT_HOST
+        string "SNTP host when NVS holds none"
+        default "pool.ntp.org"
+        help
+            Fallback for device/sntp_host (KEHOACH 6.2.1). Without one a prod
+            image, which has no console, never corrects its clock.
+
 endmenu

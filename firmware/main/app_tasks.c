@@ -16,10 +16,12 @@
 #include "esp_heap_caps.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "net_mqtt.h"
 #include "net_ota.h"
+#include "net_provision.h"
 #include "net_wifi.h"
 #include "storage_format.h"
 #include "svc_attendance.h"
@@ -128,6 +130,8 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define OTA_REBOOT_WAIT_MS 1500
 #define NVS_LAST_OTA "last_ota_result"
 #define OTA_MODELS_ON_TRIAL 1u
+#define TICKET_POLL_MS 1000
+#define TICKET_RECHECK_MS 60000
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
 #define JOIN_WAIT_MS 30000
@@ -242,6 +246,16 @@ static void note_fault(int type, esp_err_t err, const char *note)
     event.has_error = true;
     strlcpy(event.note, note, sizeof(event.note));
     note_event(&event);
+}
+
+// Same code for a dead ticket and a silent api, so ota_task asks api to tell them apart (KEHOACH 7.3).
+static void on_broker_refused(void *ctx)
+{
+    (void)ctx;
+    const app_wiring_t *wiring = app_wiring();
+    if (wiring != NULL) {
+        xEventGroupSetBits(wiring->flags, APP_EG_BROKER_REFUSED);
+    }
 }
 
 static void on_broker_state(bool up, void *ctx)
@@ -401,6 +415,7 @@ static void start_broker(void)
     const net_mqtt_config_t broker = {
         .on_state = on_broker_state,
         .on_message = on_broker_message,
+        .on_refused = on_broker_refused,
     };
     const esp_err_t link = net_mqtt_start(&broker);
     if (link != ESP_OK) {
@@ -427,27 +442,36 @@ static bool fw_at_least(const char *wanted)
     return true;
 }
 
+// A key present but empty is the same as absent, so the fallback wins (KEHOACH 6.2.1).
+static void sntp_host(char *out, size_t cap)
+{
+    if (sys_storage_get_str(STORAGE_NS_DEVICE, NVS_SNTP_HOST, out, cap) != ESP_OK ||
+        out[0] == '\0') {
+        strlcpy(out, CONFIG_APP_SNTP_DEFAULT_HOST, cap);
+    }
+}
+
 // One shot: the clock needs a netif, so the wait belongs off app_main and the
 // task leaves once the correction is under way.
 static void net_task(void *arg)
 {
     (void)arg;
-    if (net_wifi_wait_connected(JOIN_WAIT_MS) != ESP_OK) {
-        ESP_LOGW(TAG, "no link in %d ms, clock stays on the rtc", JOIN_WAIT_MS);
-        vTaskDelete(NULL);
-        return;
+    // A fresh kiosk gets its wifi from the installer on the screen, often long after boot (KEHOACH 7.3).
+    for (bool told = false; net_wifi_wait_connected(JOIN_WAIT_MS) != ESP_OK; told = true) {
+        if (!told) {
+            ESP_LOGW(TAG, "no link in %d ms, clock stays on the rtc until one comes", JOIN_WAIT_MS);
+        }
     }
-    xEventGroupSetBits(app_wiring()->flags, APP_EG_WIFI_OK);
-    // Ahead of the clock because a missing sntp host ends this task early.
-    start_broker();
+    const app_wiring_t *wiring = app_wiring();
+    xEventGroupSetBits(wiring->flags, APP_EG_WIFI_OK);
+    // No login means no broker yet: ota_task fetches the ticket first (KEHOACH 7.3).
+    if (net_mqtt_login() == NET_MQTT_LOGIN_NONE) {
+        xEventGroupSetBits(wiring->flags, APP_EG_NEED_TICKET);
+    } else {
+        start_broker();
+    }
     char host[SNTP_HOST_CAP] = { 0 };
-    const esp_err_t stored = sys_storage_get_str(STORAGE_NS_DEVICE, NVS_SNTP_HOST, host,
-                                                 sizeof(host));
-    if (stored != ESP_OK) {
-        ESP_LOGW(TAG, "no sntp host in nvs: %s", esp_err_to_name(stored));
-        vTaskDelete(NULL);
-        return;
-    }
+    sntp_host(host, sizeof(host));
     const esp_err_t sync = sys_time_sync_start(host, on_time_synced, NULL);
     ESP_LOGI(TAG, "sntp against %s: %s", host, esp_err_to_name(sync));
     vTaskDelete(NULL);
@@ -815,7 +839,7 @@ static const char *unsupported(device_command_action_t action)
     case DEVICE_COMMAND_ACTION_SET_CONFIG: return "SET_CONFIG has no config path yet";
     case DEVICE_COMMAND_ACTION_RELOAD_FACEDB: return "svc_facedb loads once at boot";
     case DEVICE_COMMAND_ACTION_CLEAR_LOGS: return "no log erase api yet";
-    case DEVICE_COMMAND_ACTION_ROTATE_TOKEN: return "waits on provisioning, E13-T4";
+    case DEVICE_COMMAND_ACTION_ROTATE_TOKEN: return "ticket rotation waits on E13-T5";
     case DEVICE_COMMAND_ACTION_SET_ACTIVE_SLOT: return "waits on model A/B, E13-T2";
     default: return NULL;
     }
@@ -840,10 +864,8 @@ static void run_command(const device_command_t *cmd, svc_door_t door)
     }
     case DEVICE_COMMAND_ACTION_SYNC_TIME: {
         char host[SNTP_HOST_CAP] = { 0 };
-        done = sys_storage_get_str(STORAGE_NS_DEVICE, NVS_SNTP_HOST, host, sizeof(host));
-        if (done == ESP_OK) {
-            done = sys_time_sync_start(host, on_time_synced, NULL);
-        }
+        sntp_host(host, sizeof(host));
+        done = sys_time_sync_start(host, on_time_synced, NULL);
         strlcpy(note, "sntp asked again", sizeof(note));
         break;
     }
@@ -1354,14 +1376,73 @@ static void ota_refused(const ota_manifest_t *offer, const char *why)
     ESP_LOGE(TAG, "ota %s refused: %s", offer->release_id, why);
 }
 
-// The broker link is dropped for the download: a second TLS session does not
-// fit beside it, and a firmware install ends in a reboot anyway (KEHOACH 5.3).
+static ui_kiosk_ticket_t ticket_shown(net_provision_answer_t answer)
+{
+    switch (answer) {
+    case NET_PROVISION_REFUSED: return UI_KIOSK_TICKET_REFUSED;
+    case NET_PROVISION_DISABLED: return UI_KIOSK_TICKET_NO_TOKEN;
+    default: return UI_KIOSK_TICKET_WAITING;
+    }
+}
+
+// Blocks until a person approves the kiosk; attendance queues offline meanwhile (KEHOACH 7.3).
+static void fetch_ticket(const app_wiring_t *wiring)
+{
+    char id[STORAGE_DEVICE_ID_CAP] = { 0 };
+    sys_storage_device_id(id, sizeof(id));
+    for (uint32_t attempt = 0;; ++attempt) {
+        const net_provision_answer_t answer = net_provision_register();
+        if (answer == NET_PROVISION_GRANTED) {
+            break;
+        }
+        ui_kiosk_set_ticket(ticket_shown(answer), id);
+        // Only a person or a new image fixes a refused batch, so those ask at the ceiling.
+        const bool hopeless = answer == NET_PROVISION_REFUSED || answer == NET_PROVISION_DISABLED;
+        vTaskDelay(pdMS_TO_TICKS(net_provision_wait_ms(hopeless ? UINT32_MAX : attempt,
+                                                       esp_random())));
+    }
+    ESP_LOGI(TAG, "ticket collected, dialling the broker");
+    ui_kiosk_set_ticket(UI_KIOSK_TICKET_HELD, NULL);
+    xEventGroupClearBits(wiring->flags, APP_EG_NEED_TICKET);
+    start_broker();
+}
+
+static void recheck_ticket(const app_wiring_t *wiring, int64_t *checked_ms)
+{
+    xEventGroupClearBits(wiring->flags, APP_EG_BROKER_REFUSED);
+    const int64_t now_ms = esp_timer_get_time() / 1000;
+    if (net_mqtt_login() != NET_MQTT_LOGIN_TICKET ||
+        (*checked_ms != 0 && now_ms - *checked_ms < TICKET_RECHECK_MS)) {
+        return;
+    }
+    *checked_ms = now_ms;
+    net_mqtt_stop();
+    if (net_provision_check() == NET_PROVISION_REFUSED) {
+        ESP_LOGW(TAG, "api says the ticket is dead, registering again");
+        net_provision_forget();
+        xEventGroupSetBits(wiring->flags, APP_EG_NEED_TICKET);
+        return;
+    }
+    start_broker();
+}
+
+// The broker link is dropped for every HTTPS exchange: a second TLS session does
+// not fit beside it, and a firmware install ends in a reboot anyway (KEHOACH 5.2).
 static void ota_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
+    int64_t checked_ms = 0;
     for (;;) {
+        const EventBits_t flags = xEventGroupGetBits(wiring->flags);
+        if (flags & APP_EG_NEED_TICKET) {
+            fetch_ticket(wiring);
+            continue;
+        }
+        if (flags & APP_EG_BROKER_REFUSED) {
+            recheck_ticket(wiring, &checked_ms);
+        }
         ota_manifest_t offer;
-        if (xQueueReceive(wiring->ota, &offer, portMAX_DELAY) != pdTRUE) {
+        if (xQueueReceive(wiring->ota, &offer, pdMS_TO_TICKS(TICKET_POLL_MS)) != pdTRUE) {
             continue;
         }
         const bool models = offer.target == OTA_MANIFEST_TARGET_MODELS;
