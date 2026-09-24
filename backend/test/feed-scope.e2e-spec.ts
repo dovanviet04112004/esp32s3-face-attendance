@@ -25,7 +25,9 @@ const UNDER_MAIL = "e2efs-under@kiosk.local";
 const STRANGER_MAIL = "e2efs-stranger@kiosk.local";
 const PASSWORD = "kiosk-e2e-password";
 const SETTLE_MS = 400;
-const EXPIRY_MS = 1500;
+// exp counts whole seconds, so a 2 s ticket lives between 1 and 2 s.
+const TICKET_S = 2;
+const EXPIRY_MS = 2500;
 const LEAVE_FROM = "2026-12-21";
 const LEAVE_TO = "2026-12-22";
 const HOLIDAY_DATE = "2039-07-15";
@@ -180,7 +182,7 @@ describe("who the feed talks to (e2e)", () => {
   it("drops a socket whose ticket has run out", async () => {
     const stale = app.get(JwtService).sign(
       { sub: "e2e-feed", role: "ADMIN", employeeId: null },
-      { secret: validateEnv().JWT_ACCESS_SECRET, expiresIn: 1 },
+      { secret: validateEnv().JWT_ACCESS_SECRET, expiresIn: TICKET_S },
     );
     const watcher = await watch(stale);
     assert.equal(watcher.socket.connected, true, "a ticket good for a second was refused early");
