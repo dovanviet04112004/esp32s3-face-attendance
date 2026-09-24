@@ -1,31 +1,68 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { io, type Socket } from "socket.io-client";
 import { create } from "zustand";
 
+import { reopenSession } from "./api";
 import { useSession } from "./auth";
 import { env } from "./env";
 
-export type FeedName = "attendance" | "event" | "device";
+/** The kiosk's own news, which pages list as it arrives. */
+export type ListedFeed = "attendance" | "event" | "device";
+
+export type FeedName = ListedFeed | "change" | "notice";
 
 export type FeedStatus = "live" | "reconnecting" | "dropped";
 
 export interface FeedItem {
   id: number;
-  feed: FeedName;
+  feed: ListedFeed;
   body: Record<string, unknown>;
 }
 
-const FEEDS: FeedName[] = ["attendance", "event", "device"];
+const LISTED: readonly FeedName[] = ["attendance", "event", "device"];
+
+const FEEDS: FeedName[] = [...LISTED, "change", "notice"];
 
 /** What each feed makes stale, so a card is not left showing an old number. */
 const REFRESH: Record<FeedName, string[]> = {
   attendance: ["attendance", "timesheet", "reports"],
   event: ["devices"],
   device: ["devices"],
+  change: [],
+  notice: ["notifications", "requests", "advances", "payslips", "payslip-disputes", "contracts"],
 };
+
+/** What a write under one route word makes stale beyond its own key (KEHOACH 9.4). */
+const SPILLS: Record<string, string[]> = {
+  requests: ["leave-balances", "timesheet", "attendance", "advances"],
+  "leave-types": ["leave-balances"],
+  shifts: ["me"],
+  documents: ["me"],
+  timesheet: ["attendance", "reports"],
+  "payroll-periods": ["payroll-runs", "payslips"],
+  "payroll-runs": ["payroll-periods", "payslips"],
+  "payslip-disputes": ["payslips"],
+  dependents: ["tax-year"],
+  "profile-changes": ["employees"],
+  employees: ["search"],
+  onboard: ["checklist", "checklists"],
+  offboard: ["checklist", "checklists", "assets", "contracts", "users"],
+  "checklist-tasks": ["checklist", "checklists"],
+  checklists: ["checklist"],
+  org: ["employees", "departments"],
+  "biometric-consents": ["enrollments"],
+  enrollments: ["devices"],
+  releases: ["devices"],
+};
+
+// A batch write lands as one message per row; one refetch answers them all.
+const GATHER_MS = 300;
+
+// Cut twice this close together is a refusal, not a ticket running out (KEHOACH 9.4).
+const RENEW_GAP_MS = 30_000;
 
 const KEEP = 50;
 
@@ -34,7 +71,7 @@ interface Feed {
   items: FeedItem[];
   counted: number;
   setStatus: (status: FeedStatus) => void;
-  push: (feed: FeedName, body: Record<string, unknown>) => void;
+  push: (feed: ListedFeed, body: Record<string, unknown>) => void;
 }
 
 const useStore = create<Feed>((set) => ({
@@ -48,6 +85,37 @@ const useStore = create<Feed>((set) => ({
       return { counted: id, items: [{ id, feed, body }, ...held.items].slice(0, KEEP) };
     }),
 }));
+
+function listed(feed: FeedName): feed is ListedFeed {
+  return LISTED.includes(feed);
+}
+
+function staleKeys(feed: FeedName, body: Record<string, unknown>): string[] {
+  if (feed !== "change" || !Array.isArray(body.resources)) {
+    return REFRESH[feed];
+  }
+  const words = body.resources.filter((word): word is string => typeof word === "string");
+  return words.flatMap((word) => [word, ...(SPILLS[word] ?? [])]);
+}
+
+function gatherer(cache: QueryClient): { add: (keys: string[]) => void; stop: () => void } {
+  const due = new Set<string>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    timer = undefined;
+    for (const key of due) {
+      void cache.invalidateQueries({ queryKey: [key] });
+    }
+    due.clear();
+  };
+  return {
+    add: (keys) => {
+      keys.forEach((key) => due.add(key));
+      timer ??= setTimeout(flush, GATHER_MS);
+    },
+    stop: () => clearTimeout(timer),
+  };
+}
 
 /** Hold the one socket a browser needs. The shell mounts it, so news drops the
  *  cache it contradicts wherever the reader happens to be standing.
@@ -65,22 +133,51 @@ export function useFeedConnection(): void {
       transports: ["websocket"],
       auth: (hand) => hand({ token: useSession.getState().accessToken }),
     });
+    const stale = gatherer(cache);
+    let joined = false;
+    let closed = false;
+    let renewedAt = 0;
 
     const { setStatus, push } = useStore.getState();
-    socket.on("connect", () => setStatus("live"));
-    socket.on("disconnect", () => setStatus("reconnecting"));
+    socket.on("connect", () => {
+      setStatus("live");
+      // News sent while the socket is down never arrives (KEHOACH 9.4).
+      if (joined) {
+        void cache.invalidateQueries();
+      }
+      joined = true;
+    });
+    socket.on("disconnect", (reason) => {
+      setStatus("reconnecting");
+      // socket.io leaves a socket the server cut down, and an expired ticket is cut.
+      if (reason !== "io server disconnect") {
+        return;
+      }
+      if (Date.now() - renewedAt < RENEW_GAP_MS) {
+        setStatus("dropped");
+        return;
+      }
+      renewedAt = Date.now();
+      void reopenSession().then((token) => {
+        if (token && !closed) {
+          socket.connect();
+        }
+      });
+    });
     socket.io.on("reconnect_failed", () => setStatus("dropped"));
 
     for (const feed of FEEDS) {
       socket.on(feed, (body: Record<string, unknown>) => {
-        push(feed, body);
-        for (const key of REFRESH[feed]) {
-          void cache.invalidateQueries({ queryKey: [key] });
+        if (listed(feed)) {
+          push(feed, body);
         }
+        stale.add(staleKeys(feed, body));
       });
     }
 
     return () => {
+      closed = true;
+      stale.stop();
       socket.close();
     };
   }, [cache, signedIn]);
