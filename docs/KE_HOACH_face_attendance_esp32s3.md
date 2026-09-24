@@ -5926,7 +5926,7 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 | Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware; username là `deviceId`, password là JWT riêng của máy; EMQX hỏi `api` qua HTTP để chấm auth, ACL file chỉ mở `kiosk/{chính nó}/#` (§7.4) |
 | Device token | JWT 90 ngày lưu **NVS encrypted**; kiosk tự đổi qua `POST /devices/me/token` khi còn 7 ngày, vé cũ sống tới khi vé mới được dùng (§7.3 bước 5) |
 | Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke |
-| Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu |
+| Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu. `api` gọi REST của nó trong mạng compose để đá phiên máy bị thu hồi (§7.4) |
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
 | OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
@@ -5984,11 +5984,13 @@ bị `Kconfig` loại khỏi bản `prod`.
    được thì giữ vé cũ, lùi bậc như bước 3 rồi thử lại; `api` trả **401** thì đi như bước 6. Một
    máy tắt quá 90 ngày thì vé chết thật và máy về bước 3: máy vắng mặt ba tháng phải có người
    nhận lại.
-6. **Thu hồi** — admin gỡ máy: `api` trả `deny` cho lần nối kế tiếp (§7.4), trễ tối đa bằng
-   cache 1 phút của EMQX. Broker từ chối thì kiosk **không tự xoá vé ngay**: nó hỏi
-   `GET /devices/me` bằng chính vé ấy, và chỉ khi câu trả lời là **401** mới xoá `device/jwt`
-   rồi **quay về bước 3**. Không hỏi được thì giữ vé và thử lại broker, hỏi lại tối đa mỗi
-   phút một lần.
+6. **Thu hồi** — admin gỡ máy: `api` xoá vé trên dòng, xoá cache xác thực của EMQX và **đá
+   phiên đang mở** của máy (§7.4), nên máy mất broker ngay chứ không chờ tới lần nối sau. Kể cả
+   khi lời gọi ấy hỏng, `api` bỏ mọi gói lên từ máy không `APPROVED`. Kiosk nối lại thì bị từ
+   chối, nhưng **không tự xoá vé ngay**: nó hỏi `GET /devices/me` bằng chính vé ấy, và chỉ khi
+   câu trả lời là **401** mới xoá `device/jwt` rồi **quay về bước 3** với mã nhận máy mới. Dòng
+   trên dashboard tự về "Chờ duyệt" lúc máy xin lại, không cần tải lại trang. Không hỏi được
+   thì giữ vé và thử lại broker, hỏi lại tối đa mỗi phút một lần.
 
 **Máy chờ duyệt hỏi đều theo nhịp server, còn lùi bậc chỉ dành cho lỗi.** Lời 202 nghĩa là
 server sống và đang chờ một người, mà người ấy thường đang đứng ở dashboard, vừa gõ xong mã. Lùi
@@ -6027,8 +6029,8 @@ thì không ai gõ được mã của nó. Đây là cách Hikvision (mã xác m
 - **Sai `DEVICE_CLAIM_ATTEMPTS` lần (mặc định 5) là khoá.** Lần hỏi kế tiếp của máy nhận **202
   kèm `claimRenew`**, máy bỏ mã cũ và hiện mã mới. Chỉ ADMIN duyệt được, nên đây không phải cửa
   cho kẻ đoán mò, mà để một mã gõ sai năm lần không nằm lì trên màn như thể vẫn còn đúng.
-- **Không có mã là không duyệt được.** Một dòng `pending` mà server chưa nhận mã nào — máy lạ
-  chỉ lên tiếng qua broker, hay firmware cũ — trả `DEVICE_CLAIM_MISSING`, không có đường tắt.
+- **Không có mã là không duyệt được.** Một dòng `pending` mà server chưa nhận mã nào — do
+  firmware cũ chưa gửi mã — trả `DEVICE_CLAIM_MISSING`, không có đường tắt.
 
 **Vì sao cấp token sau khi duyệt chứ không trước.** Cấp trước thì một máy chưa ai nhận vẫn nối
 được broker và đẩy dữ liệu vào, nên máy chủ phải chứa bản ghi của một thiết bị không ai chịu
@@ -6105,17 +6107,34 @@ nó rơi vào tay kẻ cướp. ACL chỉ chặn theo username nên không bắt
 - Vé sai, client ID lệch, và `api` không trả lời đều ra **cùng mã CONNACK 5** (`not authorized`).
   Vì thế kiosk phải hỏi `api` trước khi kết luận vé đã chết (§7.3 bước 6).
 - `api` không trả lời thì EMQX **từ chối**, không cho qua (`ignore_backend_failures = false`),
-  trừ một ngoại lệ: kết quả `allow` được cache **1 phút** (`authentication_settings.node_cache`).
-  Một vé vừa đúng vẫn nối lại được trong phút ấy. Đó cũng là độ trễ tối đa của một lần thu hồi.
-  Cả hai giá trị được ghi thẳng vào `emqx.conf`, để người đọc thấy mà không phải đi tìm mặc định.
+  trừ một ngoại lệ: kết quả `allow` được cache **1 phút** (`authentication_settings.node_cache`,
+  cũng là mặc định của image). Một vé vừa đúng vẫn nối lại được trong phút ấy, nên thu hồi phải
+  xoá cache trước khi đá phiên. Cả hai giá trị được ghi thẳng vào `emqx.conf`, để người đọc thấy
+  mà không phải đi tìm mặc định.
 
 **`/mqtt/auth` không ra internet.** EMQX gọi thẳng `api:3000` trong mạng compose. Router của
 Traefik cho `api` loại tiền tố `/mqtt`, nên từ ngoài vào đường ấy là 404. Để nó mở thì nó thành
 một cái máy trả lời "vé này còn sống không" cho bất kỳ ai.
 
-**Thu hồi có hiệu lực ở lần nối sau, không cắt phiên đang mở.** Muốn cắt ngay thì `api` phải
-gọi REST của EMQX để đá client, tức thêm một khoá API và một đường nữa vào cổng 18083. Cái giá
-là máy vừa bị gỡ vẫn đẩy được bản ghi cho tới lần mất kết nối kế tiếp.
+**Thu hồi cắt phiên đang mở, vì broker chỉ chấm vé lúc nối.** Đo 24/09 trên production: máy
+đã `REVOKED`, vé đã xoá, mà phiên MQTT mở trước đó vẫn sống. Trong 15 phút server nhận 16
+heartbeat, vẫn đánh dấu máy `online` và vẫn đồng bộ danh sách cho nó, còn kiosk đang chạy ổn thì
+không bao giờ tự nối lại để bị từ chối. Nên `revoke` làm ba việc theo thứ tự: ghi dòng (từ lúc
+ấy `/mqtt/auth` trả `deny`), gọi `POST /api/v5/authentication/node_cache/reset`, rồi
+`DELETE /api/v5/clients/{deviceId}`. Xoá cache đứng trước, vì esp-mqtt nối lại sau vài giây và
+một kết quả `allow` còn trong cache sẽ cho vé đã chết vào lại. Cả hai lời gọi đi trong mạng
+compose tới `emqx:18083`; cổng ấy vẫn không ra ngoài.
+- **`api` đăng nhập bằng chính tài khoản dashboard** (`EMQX_API_USERNAME`, `EMQX_API_PASSWORD`;
+  compose đổ `EMQX_DASHBOARD_PASSWORD` sẵn có trong `deploy/.env` vào đó), không đẻ thêm một
+  khoá API. Một khoá API có đúng quyền ấy cũng là một bí mật nữa phải sinh, giữ và xoay vòng.
+  Bản `production` thiếu hai biến này thì `api` chết lúc boot; môi trường khác thiếu thì
+  `revoke` chỉ ghi dòng và báo trong log.
+- **Đá hỏng thì dòng vẫn là phán quyết.** Lời gọi REST là best effort: EMQX không trả lời thì
+  `revoke` vẫn thành công, và lưới đỡ phía `api` là **chỉ nghe máy `APPROVED`**. Mỗi gói lên tra
+  trạng thái máy theo khoá chính trước khi đi tiếp, và gói của máy khác `APPROVED` bị bỏ kèm một
+  dòng log. Một phiên sót lại vì thế không ghi được chấm công, không bật được `online`, không
+  kéo được danh sách. Máy lạ vì thế không đẻ ra được dòng `pending` qua broker; broker vốn đã
+  không cho máy chưa duyệt vào.
 
 **ACL phải có hai vai, không phải một.** Luật `kiosk/${username}/#` nhốt mỗi máy trong nhánh
 của chính nó, và đó đúng là thứ cần cho thiết bị. Nhưng `api` phải đọc bản ghi của
