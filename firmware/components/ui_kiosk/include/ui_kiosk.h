@@ -134,6 +134,7 @@ typedef enum {
     UI_KIOSK_TICKET_WAITING,              // registered, nobody has approved it yet
     UI_KIOSK_TICKET_REFUSED,              // the server rejects this batch token
     UI_KIOSK_TICKET_NO_TOKEN,             // this build carries no batch token
+    UI_KIOSK_TICKET_OFFLINE,              // no ticket, and the server is out of reach
 } ui_kiosk_ticket_t;
 
 /** Show or clear the lines between the top bar and the guide (KEHOACH 4.5.5h.1).

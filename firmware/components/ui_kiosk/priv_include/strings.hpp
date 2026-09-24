@@ -27,6 +27,7 @@ enum class StrId : uint16_t {
     TicketClaimFmt,                       // takes the claim code, grouped 3 + 3
     TicketRefused,
     TicketNoToken,
+    TicketOffline,
 
     MenuTitle,
     MenuEnrol,

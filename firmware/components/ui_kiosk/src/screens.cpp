@@ -369,6 +369,7 @@ void ticket_line(Canvas &to)
         break;
     case UI_KIOSK_TICKET_REFUSED: strlcpy(line, text(StrId::TicketRefused), sizeof(line)); break;
     case UI_KIOSK_TICKET_NO_TOKEN: strlcpy(line, text(StrId::TicketNoToken), sizeof(line)); break;
+    case UI_KIOSK_TICKET_OFFLINE: strlcpy(line, text(StrId::TicketOffline), sizeof(line)); break;
     default: return;
     }
     const bool coded = s_ticket.state == UI_KIOSK_TICKET_WAITING && strlen(s_ticket.claim) == 6;
