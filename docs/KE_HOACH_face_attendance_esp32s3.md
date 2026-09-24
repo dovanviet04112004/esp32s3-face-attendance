@@ -4512,13 +4512,13 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt — một dòng mỗi thiết bị (§9.23 luật 5) |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7) |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
-| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, url, sha256, sizeBytes, minFwVersion, runId, rolloutState |
+| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, rolloutState. `url` để trống từ §7.7 và bỏ ở lần phát hành sau, theo luật nở rồi co (§9.22.3) |
 | `AuditLog` | actorId, action(từ `audit-actions.ts`), subjectType, subjectId, meta(json), ts — §9.24 |
 
 Mười hai bảng. `AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của
@@ -4877,7 +4877,7 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | Service | Image | Cổng | Ghi chú |
 |---|---|---|---|
 | `traefik` | traefik:v3 | 80, 443, 8883 | TLS tự động, reverse proxy, TCP passthrough cho MQTTS. Tài khoản ACME không kèm email: file cấu hình tĩnh không thay biến môi trường, và Let's Encrypt đã thôi gửi mail nhắc hết hạn từ 06/2025 |
-| `api` | `ghcr.io/dovanviet04112004/cckiosk-api:<sha>` — build trên GitHub Actions; máy dev build từ `backend/` | 3000 (nội bộ) | NestJS. Router Traefik của nó là `Host(api) && !PathPrefix(/mqtt)`: `/mqtt/auth` chỉ để EMQX gọi trong mạng compose (§7.4) |
+| `api` | `ghcr.io/dovanviet04112004/cckiosk-api:<sha>` — build trên GitHub Actions; máy dev build từ `backend/` | 3000 (nội bộ) | NestJS. Router Traefik của nó là `Host(api) && !PathPrefix(/mqtt)`: `/mqtt/auth` chỉ để EMQX gọi trong mạng compose (§7.4). Volume `releases` giữ file các bản phát hành (§7.7) |
 | `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này, dưới user `postgres`**, nên nó phải có `age` và `zstd`, và phải ghi được `backups/wal/`. Volume `backups` mount ra thuộc `root`, nên entrypoint là `pg-start.sh`: giao `wal/` cho `postgres` rồi mới gọi entrypoint gốc. Thiếu một trong ba thứ thì mọi segment đẩy hỏng, postgres giữ lại hết và đĩa đầy dần — đo 24/09: hỏng quyền 1.759 lần trong 9,5 giờ, `pg_wal` lên 1,1 GB. `pg_hba.conf` nằm trong repo và mở đúng một cửa thêm: kết nối sao chép có mật khẩu từ mạng compose, cho bản gốc của `backup` |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
 | `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth hai tầng: bảng nội bộ cho `svc-*`, rồi hỏi `api` qua HTTP cho kiosk; ACL là file theo username (§7.4); dashboard không ra ngoài |
@@ -6005,7 +6005,7 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 | OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
 | Rate limit | Ba lớp, đoạn *Chống spam* dưới bảng. Traefik chặn lũ theo IP trước Node; `api` có một hạn mức chung cho **mọi** route theo tài khoản, hạn mức chặt hơn cho việc nặng, và hạn mức riêng cho đăng nhập, quên mật khẩu, đăng ký kiosk; sai mật khẩu nhiều lần thì khoá chính tài khoản ấy bất kể IP |
-| Server tự tải URL | Lời mời OTA và endpoint web-push là URL người dùng đưa, nên đó là đường SSRF. Tải bản phát hành **không theo redirect**, và từ chối host phân giải ra dải nội bộ, loopback hay link-local. Endpoint web-push chỉ nhận host của các dịch vụ push đã biết (FCM, Mozilla, Apple, Windows), và một endpoint đã thuộc tài khoản khác thì không đổi chủ |
+| Server tự tải URL | Endpoint web-push là URL người dùng đưa, nên đó là đường SSRF. Bản phát hành **không** đến bằng URL: file đi bằng thân request từ bên có token (§7.7), nên đường ấy không còn. Endpoint web-push chỉ nhận host của các dịch vụ push đã biết (FCM, Mozilla, Apple, Windows), và một endpoint đã thuộc tài khoản khác thì không đổi chủ |
 | File xuất cho Excel | Ô bắt đầu bằng `=`, `+`, `-`, `@`, tab hay CR được thêm `'` đằng trước. Thiếu nó thì một số điện thoại nhân viên tự khai thành công thức chạy trên máy HR |
 | Bộ nhớ đệm trình duyệt | API trả `Cache-Control: no-store`. Service worker giữ lần đọc gần nhất **theo từng tài khoản** và xoá sạch khi đăng xuất (§4.7), nên máy dùng chung không đưa dữ liệu của người trước cho người sau |
 | DDoS lưu lượng | Không lớp nào trong app chặn được. DNS đi qua Cloudflare, `api` qua proxy của nó, nên IP thật của VPS không nằm trong bản ghi web. Giới hạn nói rõ ở đoạn *Cloudflare* dưới bảng |
@@ -6504,6 +6504,67 @@ khi phân công đổi. Nhờ vậy id **luôn do server cấp**.
 `UPSERT` với `DELETE_EMPLOYEE` từ `down/enroll`, khai `rosterVersion` trong heartbeat, và báo
 lên `up/enroll` sau mỗi lần đăng ký tại chỗ. `ASSIGN` cần một màn hình danh sách chờ (E10-T1),
 `DELETE` một template và `REPLACE_ALL` cần `svc_facedb` mọc thêm API — ba thứ ấy đi sau.
+
+### 7.7 Phát hành và cập nhật — máy đưa bản lên, người chỉ bấm
+
+**Người vận hành không gõ gì, chỉ bấm.** Không dán URL, không chọn loại, không gõ số phiên bản:
+mọi thông tin của một bản đã nằm sẵn ở nơi làm ra nó, nên nơi làm ra nó là nơi đưa nó lên. Kiosk
+đã tự tải, tự kiểm sha256 và tự lùi khi lỗi (E13-T1, E13-T2); phần này làm nốt nửa server.
+
+**Ai đưa bản nào lên, và phiên bản lấy từ đâu:**
+
+| Loại | Ai đưa lên | Khi nào | Phiên bản |
+|---|---|---|---|
+| `FIRMWARE` | CI, job `release` của `firmware.yml` | push vào `main` mang một `PROJECT_VER` server chưa có | `PROJECT_VER`; server đối lại với `esp_app_desc_t` trong ảnh — `version` ở offset `0x30`, `project_name` ở `0x50` phải là `face_attendance` |
+| `ASSETS` | CI, cùng job | ảnh `assets` dựng ra có nội dung chưa từng phát hành | `sha-` + 12 ký tự đầu sha256 của ảnh, vì SPIFFS không có header phiên bản |
+| `MODELS` | máy train, ngay sau khi khoá bộ model (§4.2) | mỗi lần `models.bin` đổi | `img-<crc32 header>` — đúng chuỗi kiosk gửi trong heartbeat |
+
+`MODELS` không đi qua CI vì trọng số không bao giờ vào git (CLAUDE.md §6): chỗ duy nhất có file là
+máy vừa đóng gói nó, và nó đi đúng cửa CI dùng. Tăng `PROJECT_VER` là cách **duy nhất** phát hành
+firmware: build lại cùng số không ra cùng byte, nên cùng số nghĩa là cùng bản, và lượt CI chạy lại
+chỉ nhận về "đã có".
+
+**Cửa đưa bản lên: `POST /releases`.** Thân là file thô, `target` và `version` đi trong query, và
+`Authorization` mang `RELEASE_PUBLISH_TOKEN` — token riêng của bên phát hành, không phải tài khoản
+người, vì người không bao giờ đi cửa này. Server băm sha256 và đếm byte **trong lúc** ghi xuống
+volume `releases`, ghi ra `.part` rồi mới đổi tên, và từ chối file quá `OTA_MAX_BYTES`. Nó chỉ đối
+chiếu những gì đọc được mà không phải chép layout của repo: header ảnh app là định dạng chuẩn của
+ESP-IDF nên firmware được đối số phiên bản và tên project; header `MDLS` chỉ khai ở
+`storage_format.h`, nên model và assets tin phiên bản của bên đưa lên, và kiosk kiểm lại magic,
+crc, sha256 sau khi tải. `(target, version)` đã có thì trả bản đang có, không ghi đè. Giữ file của
+năm bản mới nhất mỗi loại; bản cũ hơn giữ dòng làm lịch sử nhưng không mời được nữa.
+
+**Server không bao giờ tự tải URL.** Đường khai bản bằng URL bị bỏ, và cùng với nó là đường SSRF
+của §7.2. File đến bằng thân request từ bên có token, không đến bằng một địa chỉ ai đó dán vào.
+
+**Cửa kiosk tải về: `GET /releases/:id/image?device=…&exp=…&sig=…`.** Mỗi lời mời mang một link
+ký riêng cho đúng máy ấy, hết hạn sau `RELEASE_LINK_HOURS` (24), HMAC-SHA256 bằng khoá dẫn xuất từ
+`JWT_DEVICE_SECRET` cho riêng việc này. Không phục vụ công khai vì ảnh firmware mang token bootstrap
+của lô (§4.9). Ký vào URL chứ không đòi header, vì bản đang chạy ngoài hiện trường chỉ biết GET một
+URL — đòi header là máy cũ không bao giờ lên được bản mới. Máy phải còn `APPROVED` lúc tải. Trả
+thẳng file, không redirect: `net_ota` tự mở kết nối và không theo redirect, nên file không thể nằm
+trên GitHub Releases, nơi mọi link tải là một cú 302.
+
+**Người thấy bản mới mà không phải đi tìm.** Trang *Kiosk* so `fwVersion` và `modelVersion` của
+từng máy (heartbeat ghi) với bản mới nhất của loại ấy: máy cũ hơn mang huy hiệu "Có bản x.y.z", đầu
+trang có **Cập nhật tất cả (n)**. Firmware so theo `major.minor.patch`; model so theo chuỗi, khác là
+cũ. Trang một máy có nút **Cập nhật** và một dòng trạng thái suy ra từ ba nguồn đã có:
+
+| Trạng thái | Khi nào |
+|---|---|
+| Đang chờ máy | đã mời, heartbeat chưa báo bản mới |
+| Đã lên | heartbeat báo đúng bản đã mời |
+| Lỗi: *lý do máy gửi* | có sự kiện `OTA_FAILED` sau lúc mời |
+
+`ASSETS` không có trong heartbeat, nên chỉ có "đã mời lúc …" hoặc lỗi. Lời mời là đúng bản kê khai
+`ota_manifest.schema.json` qua `down/ota` với `forced: false`, nên máy cài lúc rảnh. Chỉ ADMIN mời
+được, máy chưa duyệt hay đã thu hồi thì không mời, và mỗi lời mời ghi audit. `Device` giữ lời mời
+gần nhất (`otaReleaseId`, `otaOfferedAt`), vì trạng thái chỉ hỏi về lời mời gần nhất.
+
+**CI cần hai secret và một biến, và thiếu thì bỏ qua chứ không đỏ:** `RELEASE_PUBLISH_TOKEN` (bằng
+giá trị trong `.env` của VPS), `DEVICE_BOOTSTRAP_TOKEN` (ghi vào `sdkconfig.secrets` lúc build,
+bằng giá trị `api` giữ), và biến `API_URL`. Ảnh firmware build theo profile mà fleet đang chạy, khai
+ở biến `FLEET_PROFILE` (hiện là `dev`); đổi fleet sang `prod` là đổi một biến, không đổi workflow.
 
 ---
 
