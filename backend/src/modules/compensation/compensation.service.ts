@@ -44,7 +44,7 @@ export class CompensationService {
   ) {}
 
   private async mayRead(viewer: Viewer, employeeId: number): Promise<void> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     if (visible !== null && !visible.includes(employeeId)) {
       // Not 403: a viewer who cannot see somebody should not learn they exist.
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
@@ -195,7 +195,7 @@ export class CompensationService {
    *  approval nobody can find is an approval that never happens.
    */
   async dependentQueue(viewer: Viewer, state: DependentState): Promise<Page<Dependent>> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const where = { state, ...(visible === null ? {} : { employeeId: { in: visible } }) };
     const [rows, found] = await Promise.all([
       this.db.dependent.findMany({

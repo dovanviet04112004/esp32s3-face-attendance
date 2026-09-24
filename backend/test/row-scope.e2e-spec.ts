@@ -241,6 +241,27 @@ describe("row scope (e2e)", () => {
     );
   });
 
+  it("shows a manager their report's work but not their papers or pay", async () => {
+    const report = idOf.get(MINE) as number;
+    await db.employee.update({
+      where: { id: report },
+      data: { nationalId: "079000000001", bankAccount: "0123456789", taxCode: "8000000001" },
+    });
+    const seen = await as("boss")(`/employees/${report}`);
+    assert.equal(seen.status, 200);
+    for (const column of ["nationalId", "bankAccount", "taxCode", "dateOfBirth", "socialInsuranceNo"]) {
+      assert.equal(seen.body[column], null, `a manager read their report's ${column}`);
+    }
+    assert.equal(seen.body.fullName, `Phạm vi ${MINE}`, "a manager lost the name of their report");
+    const listed = await as("boss")("/employees?take=100");
+    const row = (listed.body.rows as { id: number; nationalId: string | null }[]).find((one) => one.id === report);
+    assert.equal(row?.nationalId, null, "the list gave back what the record hid");
+    assert.equal((await as("mine")(`/employees/${report}`)).body.nationalId, "079000000001", "an employee lost their own papers");
+    for (const path of [`/payslips?employeeId=${report}`, `/employees/${report}/compensation`, `/tax-year/${report}?year=${PAY_YEAR}`]) {
+      assert.equal((await as("boss")(path)).status, 404, `${path} gave a manager their report's pay`);
+    }
+  });
+
   it("refuses a manager loop rather than letting the walk find one", async () => {
     const res = await request(http)
       .patch(`/employees/${idOf.get(BOSS) as number}`)

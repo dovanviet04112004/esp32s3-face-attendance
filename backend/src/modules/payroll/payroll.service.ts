@@ -900,7 +900,7 @@ export class PayrollService {
    * issued payslips, and only the annual band is applied here.
    */
   async taxYear(viewer: Viewer, employeeId: number, year: number): Promise<TaxYearStatement> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     if (visible !== null && !visible.includes(employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
@@ -969,7 +969,7 @@ export class PayrollService {
 
   async payslips(viewer: Viewer, query: ListPayslipsDto): Promise<Page<PayslipRow>> {
     const { periodId, runId, employeeId } = query;
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     if (employeeId !== undefined && visible !== null && !visible.includes(employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
@@ -1011,7 +1011,7 @@ export class PayrollService {
   /** What one person may read about themselves, with every component. */
   async payslip(viewer: Viewer, id: string): Promise<PayslipDetail> {
     const found = await this.db.payslip.findUnique({ where: { id }, include: { lines: { orderBy: { ordinal: "asc" } } } });
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     if (!found || (visible !== null && !visible.includes(found.employeeId))) {
       throw new NotFoundException("PAYSLIP_NOT_FOUND");
     }

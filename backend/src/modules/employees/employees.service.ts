@@ -96,6 +96,17 @@ const EMPLOYEE_VIEW = {
   manager: { select: { id: true, code: true, fullName: true } },
 } as const;
 
+// A manager reads the tree to run its work, not its papers or its pay (KEHOACH 9.4).
+const PAPERS = ["dateOfBirth", "nationalId", "taxCode", "socialInsuranceNo", "bankAccount", "bankName"] as const;
+
+/** A row as this viewer may read it; visible is null for the desk, which reads everything. */
+function asSeenBy<T extends Employee>(row: T, viewer: Viewer, visible: number[] | null): T {
+  if (visible === null || row.id === viewer.employeeId) {
+    return row;
+  }
+  return { ...row, ...Object.fromEntries(PAPERS.map((column) => [column, null])) };
+}
+
 @Injectable()
 export class EmployeesService {
   constructor(
@@ -340,7 +351,7 @@ export class EmployeesService {
       this.db.employee.count({ where, take: COUNT_CEILING + 1 }),
     ]);
     return {
-      rows,
+      rows: rows.map((row) => asSeenBy(row, viewer, visible)),
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.code),
     };
@@ -356,7 +367,7 @@ export class EmployeesService {
     if (!found) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
-    return found;
+    return asSeenBy(found, viewer, visible);
   }
 
   /**

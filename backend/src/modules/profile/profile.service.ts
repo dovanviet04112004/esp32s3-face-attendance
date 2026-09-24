@@ -97,7 +97,7 @@ export class ProfileService {
   }
 
   async list(viewer: Viewer, query: ListProfileChangesDto): Promise<Page<ProfileChange>> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const where: Prisma.ProfileChangeWhereInput = {
       ...ScopeService.narrow("employeeId", visible),
       ...(query.state ? { state: query.state } : {}),
@@ -228,7 +228,7 @@ export class ProfileService {
   }
 
   private async reachable(viewer: Viewer, employeeId: number): Promise<Person> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     if (visible !== null && !visible.includes(employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
