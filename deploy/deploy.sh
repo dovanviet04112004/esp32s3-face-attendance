@@ -99,6 +99,7 @@ rebuild_backup() {
 postgres_stale() {
     local file
     for file in postgresql.conf archive.conf pg_hba.conf; do
+        [[ -f "$HERE/postgres/$file" ]] || continue
         [[ "$(docker exec kiosk-postgres cat "/etc/postgresql/$file" 2>/dev/null | sha256sum)" \
             == "$(sha256sum < "$HERE/postgres/$file")" ]] || return 0
     done
@@ -121,6 +122,28 @@ prune() {
     docker image prune -f >/dev/null
 }
 
+# Called as a plain statement: bash ignores set -e for anything run inside a condition,
+# the subshell included. The outcome comes back in BROUGHT_UP so a failure can roll back.
+bring_up() {
+    local sha="$1" broker="$2" proxy="$3" status
+    set +e
+    (
+        set -e
+        rebuild_backup
+        start "$sha"
+        reload_broker "$broker"
+        reload_traefik "$proxy"
+        reload_postgres
+    )
+    status=$?
+    set -e
+    BROUGHT_UP=yes
+    if (( status != 0 )); then
+        BROUGHT_UP=no
+        log "bringing up $sha failed with status $status"
+    fi
+}
+
 main() {
     local sha actor previous broker proxy
     read -r sha actor _ <<< "${SSH_ORIGINAL_COMMAND:-${1:-} ${2:-}}"
@@ -135,12 +158,8 @@ main() {
     broker="$(broker_digest)"
     proxy="$(traefik_digest)"
     checkout "$sha"
-    rebuild_backup
-    start "$sha"
-    reload_broker "$broker"
-    reload_traefik "$proxy"
-    reload_postgres
-    if healthy; then
+    bring_up "$sha" "$broker" "$proxy"
+    if [[ "$BROUGHT_UP" == yes ]] && healthy; then
         echo "$sha" > "$HERE/.deployed"
         prune "$sha" "$previous"
         log "live at $sha"
@@ -155,12 +174,8 @@ main() {
     broker="$(broker_digest)"
     proxy="$(traefik_digest)"
     checkout "$previous"
-    rebuild_backup
-    start "$previous"
-    reload_broker "$broker"
-    reload_traefik "$proxy"
-    reload_postgres
-    healthy || log "the rollback is not healthy either"
+    bring_up "$previous" "$broker" "$proxy"
+    [[ "$BROUGHT_UP" == yes ]] && healthy || log "the rollback is not healthy either"
     exit 1
 }
 
