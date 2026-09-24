@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
 const DEVICE_STATUS = ["PENDING", "APPROVED", "REVOKED"] as const;
+const CLAIM_CODE = /^\d{6}$/;
 
 export class UpdateDeviceDto {
   @ApiPropertyOptional({ maxLength: 64 })
@@ -19,8 +20,12 @@ export class UpdateDeviceDto {
   location?: string;
 }
 
-/** Approving is where a person puts a readable name on a serial (KEHOACH 7.3). */
-export class ApproveDeviceDto extends UpdateDeviceDto {}
+/** A name for the serial, and the code off its screen that proves presence (KEHOACH 7.3). */
+export class ApproveDeviceDto extends UpdateDeviceDto {
+  @ApiProperty({ example: "482913", description: "The claim code on the kiosk's screen" })
+  @Matches(CLAIM_CODE)
+  claimCode!: string;
+}
 
 const DEVICE_ID_MAX = 32;
 const BOOTSTRAP_MIN = 16;
@@ -49,6 +54,10 @@ export class RegisterDeviceDto {
   @IsString()
   @MaxLength(VERSION_MAX)
   fwVersion?: string;
+
+  @ApiProperty({ example: "482913", description: "The code this kiosk shows while it waits" })
+  @Matches(CLAIM_CODE)
+  claimCode!: string;
 }
 
 export class ListDevicesDto extends PaginationDto {

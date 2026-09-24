@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -30,13 +31,15 @@ interface HeartbeatFacts {
 }
 
 /** `accepted` is the 202 of KEHOACH 7.3: keep asking. The token only ever
- *  rides on the 200, once a person has said yes.
+ *  rides on the 200, once a person has said yes; `claimRenew` tells a kiosk
+ *  its claim code is spent and it must show a new one.
  */
 export interface Registration {
   accepted: boolean;
   deviceId: string;
   token?: string;
   expiresInDays?: number;
+  claimRenew?: boolean;
 }
 
 /** Named rather than taken whole: the row carries tokenHash, the hash of the
@@ -58,7 +61,7 @@ const SHOWN = {
   updatedAt: true,
 } as const;
 
-export type PublicDevice = Omit<Device, "tokenHash">;
+export type PublicDevice = Omit<Device, "tokenHash" | "claimHash" | "claimFailures">;
 
 @Injectable()
 export class DevicesService {
@@ -83,12 +86,18 @@ export class DevicesService {
     if (!heartbeatSchema.shape.deviceId.safeParse(body.deviceId).success) {
       throw new BadRequestException("DEVICE_ID_MALFORMED");
     }
+    const claim = claimFingerprint(body.deviceId, body.claimCode);
     const held = await this.db.device.findUnique({ where: { id: body.deviceId } });
     const waiting: Registration = { accepted: true, deviceId: body.deviceId };
 
     if (!held) {
       await this.db.device.create({
-        data: { id: body.deviceId, status: "PENDING", fwVersion: body.fwVersion ?? null },
+        data: {
+          id: body.deviceId,
+          status: "PENDING",
+          fwVersion: body.fwVersion ?? null,
+          claimHash: claim,
+        },
       });
       await this.note(AUDIT_ACTIONS.DEVICE_REGISTER, body.deviceId, {
         fwVersion: body.fwVersion ?? null,
@@ -102,7 +111,14 @@ export class DevicesService {
     if (held.status === "APPROVED" && held.tokenHash !== null) {
       await this.db.device.update({
         where: { id: held.id },
-        data: { status: "PENDING", tokenHash: null, approvedAt: null, online: false },
+        data: {
+          status: "PENDING",
+          tokenHash: null,
+          approvedAt: null,
+          online: false,
+          claimHash: claim,
+          claimFailures: 0,
+        },
       });
       await this.note(AUDIT_ACTIONS.DEVICE_RESET, held.id, { from: "APPROVED" });
       this.log.warn(`${held.id} registered again while approved, sent back for approval`);
@@ -114,11 +130,35 @@ export class DevicesService {
     if (held.status === "REVOKED") {
       await this.db.device.update({
         where: { id: held.id },
-        data: { status: "PENDING", tokenHash: null, approvedAt: null },
+        data: {
+          status: "PENDING",
+          tokenHash: null,
+          approvedAt: null,
+          claimHash: claim,
+          claimFailures: 0,
+        },
       });
       await this.note(AUDIT_ACTIONS.DEVICE_REGISTER, held.id, { from: "REVOKED" });
+      return waiting;
     }
+    return this.hold(held, claim);
+  }
+
+  // A code typed wrong too often is dead, and the kiosk is told to show a new one (KEHOACH 7.3).
+  private async hold(device: Device, claim: string): Promise<Registration> {
+    const waiting: Registration = { accepted: true, deviceId: device.id };
+    if (device.claimHash === claim) {
+      return device.claimFailures >= this.attempts() ? { ...waiting, claimRenew: true } : waiting;
+    }
+    await this.db.device.update({
+      where: { id: device.id },
+      data: { claimHash: claim, claimFailures: 0 },
+    });
     return waiting;
+  }
+
+  private attempts(): number {
+    return this.config.get("DEVICE_CLAIM_ATTEMPTS", { infer: true });
   }
 
   private async issue(device: Device, fwVersion?: string): Promise<Registration> {
@@ -176,12 +216,35 @@ export class DevicesService {
     return this.db.device.update({ where: { id }, data: body, select: SHOWN });
   }
 
-  /** Accept a machine: a person has matched the id on its screen (KEHOACH 7.3). */
+  /** Accept a machine: a person typed the claim code off its screen (KEHOACH 7.3). */
   async approve(id: string, body: ApproveDeviceDto): Promise<PublicDevice> {
-    await this.get(id);
+    const held = await this.db.device.findUnique({
+      where: { id },
+      select: { claimHash: true, claimFailures: true },
+    });
+    if (!held) {
+      throw new NotFoundException("DEVICE_NOT_FOUND");
+    }
+    if (held.claimHash === null) {
+      throw new ConflictException("DEVICE_CLAIM_MISSING");
+    }
+    if (held.claimFailures >= this.attempts()) {
+      throw new ConflictException("DEVICE_CLAIM_LOCKED");
+    }
+    const { claimCode, ...named } = body;
+    if (!sameSecret(claimFingerprint(id, claimCode), held.claimHash)) {
+      await this.db.device.update({ where: { id }, data: { claimFailures: { increment: 1 } } });
+      throw new BadRequestException("DEVICE_CLAIM_MISMATCH");
+    }
     return this.db.device.update({
       where: { id },
-      data: { ...body, status: "APPROVED", approvedAt: new Date() },
+      data: {
+        ...named,
+        status: "APPROVED",
+        approvedAt: new Date(),
+        claimHash: null,
+        claimFailures: 0,
+      },
       select: SHOWN,
     });
   }
@@ -228,6 +291,10 @@ export class DevicesService {
       create: { id: deviceId, lastSeenAt: at, online: true },
     });
   }
+}
+
+function claimFingerprint(deviceId: string, code: string): string {
+  return createHash("sha256").update(`${deviceId}:${code}`).digest("hex");
 }
 
 /** Compare in constant time: a plain === leaks the shared secret one byte at
