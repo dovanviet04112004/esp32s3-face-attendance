@@ -375,10 +375,11 @@ public:
 
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
     {
-        // A verdict runs its clock, and past it holds only for its own face (KEHOACH 4.5.5h.1).
         const bool theirs = seen.face && seen.track == seen.verdict_track;
-        const bool up = seen.verdict > APP_UI_SCANNING;
-        const bool carded = up && seen.verdict == APP_UI_GRANTED;
+        const bool card = seen.verdict == APP_UI_GRANTED;
+        // A card holds through a move; a refusal gives way to a new face (KEHOACH 4.5.5h.1).
+        const bool up = seen.verdict > APP_UI_SCANNING && (card || theirs || !seen.face);
+        const bool carded = up && card;
         const char *refused = up ? refusal(seen.verdict) : (theirs ? refused_ : nullptr);
         const bool answered = theirs || up;
         // Saying work is happening is a claim, and one that outlives every
