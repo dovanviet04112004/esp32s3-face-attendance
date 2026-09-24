@@ -14,17 +14,22 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import type { AccessClaims } from "../auth/auth.types.js";
 
-/** What the dashboard can be told about, each carrying one kiosk's news. */
+/** What the dashboard can be told about; KEHOACH 9.4 names who hears each. */
 export const FEED = {
   attendance: "attendance",
   event: "event",
   device: "device",
+  change: "change",
+  notice: "notice",
 } as const;
 
 export type FeedName = (typeof FEED)[keyof typeof FEED];
 
+export type About = number | readonly number[] | null;
+
 // KEHOACH 9.15 puts the fleet behind one role, so its news goes no wider.
 const FLEET_ROLES: ReadonlySet<string> = new Set(["ADMIN"]);
+const FLEET_FEEDS: ReadonlySet<FeedName> = new Set([FEED.device, FEED.event]);
 const MS_PER_SECOND = 1000;
 
 /** Who is listening, and which employees they are allowed to hear about.
@@ -90,7 +95,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   /** Tell the dashboards allowed to hear it, one socket at a time: a namespace
    *  emit would carry one person's punch to everybody watching (KEHOACH 9.4).
    */
-  publish(feed: FeedName, body: unknown, about?: number | null): void {
+  publish(feed: FeedName, body: unknown, about?: About): void {
+    this.deliver(feed, body, (watcher) => this.mayHear(watcher, feed, about));
+  }
+
+  /** Tell every open socket; only for tables every login reads (KEHOACH 9.4). */
+  announce(feed: FeedName, body: unknown): void {
+    this.deliver(feed, body, () => true);
+  }
+
+  /** Tell the sockets one login holds open, on whichever of its devices. */
+  tell(userId: string, feed: FeedName, body: unknown): void {
+    this.deliver(feed, body, (watcher) => watcher.viewer.userId === userId);
+  }
+
+  private deliver(feed: FeedName, body: unknown, hears: (watcher: Watcher) => boolean): void {
     const now = Date.now();
     for (const [id, watcher] of this.watchers) {
       // A ticket REST would refuse buys no more here: leaving closes sessions
@@ -100,20 +119,25 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
         this.watchers.delete(id);
         continue;
       }
-      if (this.mayHear(watcher, feed, about)) {
+      if (hears(watcher)) {
         this.server?.to(id).emit(feed, body);
       }
     }
   }
 
-  private mayHear(watcher: Watcher, feed: FeedName, about?: number | null): boolean {
-    if (feed !== FEED.attendance) {
+  private mayHear(watcher: Watcher, feed: FeedName, about?: About): boolean {
+    if (FLEET_FEEDS.has(feed)) {
       return FLEET_ROLES.has(watcher.viewer.role);
     }
-    if (watcher.reach === null) {
+    const reach = watcher.reach;
+    if (reach === null) {
       return true;
     }
-    return about !== undefined && about !== null && watcher.reach.has(about);
+    if (about === undefined || about === null) {
+      return false;
+    }
+    const owners = typeof about === "number" ? [about] : about;
+    return owners.some((owner) => reach.has(owner));
   }
 
   get watching(): number {

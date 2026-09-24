@@ -8,9 +8,11 @@ import helmet from "helmet";
 
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor.js";
+import { ChangeInterceptor } from "./common/interceptors/change.interceptor.js";
 import type { Env } from "./config/env.schema.js";
 import { AuditService } from "./modules/audit/audit.service.js";
 import { IMPORT_MAX_BYTES, IMPORT_PATH } from "./modules/employees/import.js";
+import { RealtimeGateway } from "./modules/realtime/realtime.gateway.js";
 
 // Row ids are BigInt, which JSON.stringify refuses outright, so every reply
 // carrying one would be a 500 until it is told what to do with them.
@@ -45,6 +47,9 @@ export function configure(app: INestApplication): void {
   SwaggerModule.setup("docs", app, () => SwaggerModule.createDocument(app, swagger));
 
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new AuditInterceptor(app.get(AuditService), app.get(Reflector)));
+  app.useGlobalInterceptors(
+    new AuditInterceptor(app.get(AuditService), app.get(Reflector)),
+    new ChangeInterceptor(app.get(RealtimeGateway)),
+  );
   app.enableShutdownHooks();
 }

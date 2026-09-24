@@ -6,6 +6,7 @@ import webpush from "web-push";
 import type { Env } from "../../config/env.schema.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js";
 
 /** What a notice may carry: references and counts, never words or money. */
@@ -55,6 +56,7 @@ export class NotificationsService {
   constructor(
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
+    private readonly feed: RealtimeGateway,
   ) {
     const publicKey = this.config.get("VAPID_PUBLIC_KEY", { infer: true });
     const privateKey = this.config.get("VAPID_PRIVATE_KEY", { infer: true });
@@ -165,6 +167,7 @@ export class NotificationsService {
       if (wanted.IN_APP) {
         await this.db.notification.create({ data: { userId, kind, ...facts } });
       }
+      this.feed.tell(userId, FEED.notice, { kind, ...facts });
       if (wanted.PUSH) {
         await this.push(userId, kind, facts);
       }
@@ -199,6 +202,9 @@ export class NotificationsService {
             await this.db.notification.create({ data: row }).catch(() => undefined);
           }
         });
+      }
+      for (const id of userIds) {
+        this.feed.tell(id, FEED.notice, { kind, ...facts });
       }
       await Promise.all(
         userIds.filter((id) => wants(id, "PUSH")).map((id) => this.push(id, kind, facts)),
