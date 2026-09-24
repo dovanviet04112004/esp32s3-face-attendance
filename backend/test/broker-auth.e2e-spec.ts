@@ -10,12 +10,17 @@ import request from "supertest";
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
+import type { AttendanceRecord } from "../src/common/generated/attendance_record.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { AttendanceService } from "../src/modules/attendance/attendance.service.js";
 import { AuthService, deviceFingerprint } from "../src/modules/auth/auth.service.js";
 
 const KIOSK = "e2e-ba-door";
 const OTHER = "e2e-ba-side";
 const WAITING = "e2e-ba-wait";
+const OUTCAST = "e2e-ba-away";
+const PUNCHER = "E2E-BA-PUNCH";
+const READMIT_CODE = "314159";
 const KICK_WAIT_MS = 5000;
 
 describe("broker login and device tickets (e2e)", () => {
@@ -27,7 +32,9 @@ describe("broker login and device tickets (e2e)", () => {
   let ticket = "";
 
   async function sweep(): Promise<void> {
-    await db.device.deleteMany({ where: { id: { in: [KIOSK, OTHER, WAITING] } } });
+    await db.attendanceRecord.deleteMany({ where: { deviceId: OUTCAST } });
+    await db.device.deleteMany({ where: { id: { in: [KIOSK, OTHER, WAITING, OUTCAST] } } });
+    await db.employee.deleteMany({ where: { code: PUNCHER } });
   }
 
   /** Put a device on the books holding one issued ticket, the state a 200 from register leaves. */
@@ -194,6 +201,55 @@ describe("broker login and device tickets (e2e)", () => {
     clearTimeout(timer);
     await session.endAsync(true);
     assert.ok(kicked, "the session opened before the revoke outlived it");
+  });
+
+  it("keeps punches from either side of a revoke and drops those made while revoked", async () => {
+    await issued(OUTCAST, "APPROVED");
+    const person = await db.employee.create({ data: { code: PUNCHER, fullName: "Thử thu hồi" } });
+    const attendance = app.get(AttendanceService);
+    let serial = 0;
+    const punch = (at: Date): Promise<string> => {
+      serial += 1;
+      const body: AttendanceRecord = {
+        deviceId: OUTCAST,
+        localId: String(serial),
+        employeeId: person.id,
+        ts: at.getTime(),
+        direction: "IN",
+        matchScore: 0.9,
+        livenessScore: 0.9,
+        modelVersion: 1,
+      };
+      return attendance.record(body, new Date());
+    };
+
+    const revoked = await request(http)
+      .post(`/devices/${OUTCAST}/revoke`)
+      .set("Authorization", `Bearer ${admin}`);
+    assert.equal(revoked.status, 201);
+    const span = await db.device.findUniqueOrThrow({ where: { id: OUTCAST } });
+    assert.ok(span.revokedAt, "a revoke left no mark of when it happened");
+    // Timed off the server's own marks, so a host clock stepping back cannot reorder them.
+    const earlier = new Date(span.revokedAt.getTime() - 60_000);
+    const outside = new Date(span.revokedAt.getTime() + 1);
+
+    const asked = await request(http)
+      .post("/devices/register")
+      .send({ deviceId: OUTCAST, bootstrapToken: validateEnv().DEVICE_BOOTSTRAP_TOKEN, claimCode: READMIT_CODE });
+    assert.equal(asked.status, 202);
+    await new Promise((done) => setTimeout(done, 1500));
+    const approved = await request(http)
+      .post(`/devices/${OUTCAST}/approve`)
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ name: "Cửa thử", location: "Tầng 1", claimCode: READMIT_CODE });
+    assert.equal(approved.status, 201, JSON.stringify(approved.body));
+    const back = await db.device.findUniqueOrThrow({ where: { id: OUTCAST } });
+    assert.ok(back.readmittedAt && back.readmittedAt > span.revokedAt, "the readmission was not marked");
+
+    assert.equal(await punch(earlier), "stored", "a punch from before the revoke was lost");
+    assert.equal(await punch(outside), "while-revoked", "a punch made while revoked reached the timesheet");
+    const after = new Date(back.readmittedAt.getTime() + 1);
+    assert.equal(await punch(after), "stored", "a punch after the readmission was refused");
   });
 
   it("stops both doors the moment a person revokes the machine", async () => {
