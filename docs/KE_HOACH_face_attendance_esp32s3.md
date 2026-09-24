@@ -3581,14 +3581,14 @@ Scan ──ba gạch──> Menu ──"Thêm người"──> Enroll ──ch�
 đẩy xuống lệnh `ASSIGN` kèm `employeeId` cùng tên đủ dấu. Người vận hành vì thế **chọn một
 dòng** rồi đưa mặt vào khung — máy đã biết người ấy là ai, không ai phải đánh vần lại.
 
-Bàn phím còn đó làm **đường lui**, xếp cuối danh sách là dòng *Tự nhập tên*, và chỉ đường lui
-ấy mới gõ chữ không dấu: bộ gõ tiếng Việt là một hệ thống riêng, không phải việc của kiosk.
-Đường lui tồn tại vì hai ca thật — máy chưa từng nối server, và người cần thêm ngay trong lúc
-mạng chết. Người thêm theo đường ấy nhận mã số ở **dải riêng** của §7.5 nên không bao giờ đụng
-mã server cấp, và §7.5 đã có đường báo ngược lên bằng `up/enroll`.
+**Không có đường lui gõ tên.** Mọi người đăng ký trên máy đều là người server đã giao, vì máy
+không có chỗ nào đặt được một mã số mà server ghi nhận (§7.5). Mất mạng vẫn đăng ký được người
+đã nằm trong danh sách chờ từ trước, vì danh sách ấy ở trên máy và tin báo lên đi đường ít nhất
+một lần. Thứ duy nhất mất đi là thêm một người server **chưa từng biết**, và người đó vốn không
+có hồ sơ nào để chấm công vào.
 
 Danh sách chờ trống thì màn này **không được là trang trắng**: nó nói thẳng rằng chưa có ai
-được giao từ server và chỉ vào đúng dòng *Tự nhập tên*. `CaptureScreen`
+được giao từ server, và chỉ sang đúng chỗ giao người là trang nhân viên trên dashboard. `CaptureScreen`
 gọi `svc_vision_enrol_next()` rồi đứng chờ chính `MATCH` của người vừa thêm, nên "thêm thành
 công" là câu nói sau khi máy **đã nhận lại được**, không phải sau khi ghi xong file.
 
@@ -3615,8 +3615,7 @@ thế của **một** mẫu. Nên màn hỏng đưa ra **hai nút**, người v�
 | **Thử lại** | Lấy lại từ mẫu đầu, **giữ nguyên `employee_id` và tên**. `FaceDb::enroll` thay thế theo cặp `(employee_id, template_idx)` nên ba mẫu mới đè lên ba mẫu cũ, không đẻ bản ghi thừa. Màn không rời đi nên `main` vẫn giữ mã người ấy |
 | **Thoát** | Rời về `Menu`. `main` **xoá người dở dang** bằng `svc_facedb_remove` + `svc_facedb_persist`, đúng đường màn Danh sách đang dùng |
 
-`main` là chỗ duy nhất biết `employee_id` thật, vì màn chỉ gửi mã chỗ `kNewPerson`; nó xoá khi
-thấy màn đã rời mà chưa đủ ba mẫu.
+`main` xoá khi thấy màn đã rời mà chưa đủ ba mẫu.
 
 **Đăng ký không được đẻ ra một lần chấm công.** Ngay sau mẫu đầu, máy nhận ra người đang đứng đó và `svc_vision` bắn `MATCH` như mọi khi — `svc_attendance` mở cửa, ghi bản ghi, màn hiện "Đã chấm công" giữa lúc người ta đang quay mặt sang trái. Thấy trên board 13/09. Nên `ai_task` **không đẩy kết quả vào `q_result`** khi màn `Capture` đang mở: khung vẫn chạy đủ ba model để lấy mẫu, chỉ có đường nghiệp vụ là im. Câu xác nhận của việc thêm người do chính `CaptureScreen` nói, không mượn thẻ chấm công của màn `Scan`.
 
@@ -3985,14 +3984,11 @@ không một dòng giải thích, lối ra duy nhất là nút "Huỷ". Hai lu�
   thấy, còn hết giờ vì **liveness** thì **tuyệt đối không được lấy** — nhận đại một mẫu ở đây là
   tự tay ghi khuôn mặt giả vào bảng.
 
-**Người thêm tại kiosk lấy mã số ở đâu.** Kiosk không có server để cấp mã, nên `main` hỏi
-`svc_facedb_next_employee_id()` — **một hơn mã lớn nhất còn sống trong bảng** — đúng **một lần
-cho cả ba mẫu**, ở mẫu đầu tiên. Màn `Capture` gửi mã **0** nghĩa là "người chưa có mã"; mã thật
-do `main` điền, vì §4.5.4 luật 2 cấm `ui_kiosk` gọi thẳng `svc_facedb`. Gán cứng một mã cố định
-thì người thứ hai **ghi đè cả ba mẫu** của người thứ nhất, vì `enroll()` thay bản ghi trùng
-`(employee_id, template_idx)` — thấy trên board 13/09: thêm người thứ hai xong thì người thứ
-nhất biến mất khỏi danh sách. Bảng đọc không được thì hàm trả 0 và luồng thêm người **dừng lại
-có báo**, chứ không ghi vào mã của người khác.
+**Mã số là mã server giao, đi theo dòng người vận hành chọn.** `Enrol` chuyển sang `Capture`
+đúng `employee_id` của dòng ấy, và cả ba mẫu mang mã đó. Không còn mã **0** nghĩa là "người chưa
+có mã": `main` gặp một yêu cầu mang mã 0 thì **từ chối có báo**, không tự cấp. Cấp tại máy từng
+có ở đây và đã hỏng hai lần. Lần đầu, "một hơn mã lớn nhất trong bảng" cho hai máy cùng một mã
+(§7.5). Lần sau, mã ở dải riêng từ `0x80000000` trở lên không có chỗ ghi trên server.
 
 **Lấy xong không tự đi đâu cả: người vận hành xác nhận rồi mới rời màn.** Mẫu thứ ba đậu thì
 `Capture` hiện tên vừa thêm và một nút **"Xác nhận"**, đứng yên chờ. Chạm nút mới rời, và rời về
@@ -4010,12 +4006,6 @@ có báo**, chứ không ghi vào mã của người khác.
 Đường **thất bại** cũng dừng lại chờ chạm, nhưng bằng nút **"Đã hiểu"** và kèm lý do: nó mang
 thông tin người vận hành cần để quyết định làm gì tiếp, mà một câu chạy qua trong hai giây thì
 không mang được gì cả.
-
-**Hướng sắp tới của mã số, chưa làm.** Mã sẽ do server cấp: người quản trị tạo hồ sơ trên hệ
-thống trước, kiosk nhập mã ấy rồi mới lấy mẫu, nên `(employee_id, template_idx)` trên thiết bị
-khớp thẳng với hồ sơ trên server và không còn phụ thuộc vào bảng cục bộ. Tới lúc đó
-`svc_facedb_next_employee_id()` chỉ còn là đường lùi khi mất mạng. Hiện tại giữ nguyên cách cấp
-mã cục bộ ở trên.
 
 ##### h.3) Màn `People` — xoá người bằng hai lần chạm, không bằng hộp thoại
 
@@ -6124,9 +6114,8 @@ Kiosk treo trên tường trong phòng khác thì không ai làm được thao t
 mạng nhất: công ty đổi router, đổi mật khẩu, dọn sang phòng mới.
 
 Màn hình **Wi-Fi** làm đúng việc một chiếc điện thoại làm: quét, liệt kê theo cường độ sóng,
-chạm chọn, gõ mật khẩu, kết nối. Bàn phím ở đây **không dùng chung với bàn phím nhập tên** — tên
-người chỉ cần chữ cái, còn mật khẩu Wi-Fi cần cả hoa, thường, số và ký hiệu, nên nó có ba bộ ký
-tự đổi bằng một phím chuyển.
+chạm chọn, gõ mật khẩu, kết nối. Đây là bàn phím duy nhất của kiosk. Mật khẩu Wi-Fi cần cả
+hoa, thường, số và ký hiệu, nên nó có ba bộ ký tự đổi bằng một phím chuyển.
 
 **Nó vào từ Cài đặt, không từ menu gốc** (§4.5.5h.4): Wi-Fi là thuộc tính của máy, không phải
 một việc người vận hành mở máy ra để làm.
@@ -6158,10 +6147,18 @@ trước rồi mới thử là cách một lỗi gõ mật khẩu khoá kiosk kh
 
 ### 7.5 Vòng đời nhân viên — server giữ danh tính, máy giữ khuôn mặt
 
-**Hiện tại kiosk tự bịa `employee_id`.** `svc_facedb_next_employee_id()` lấy id lớn nhất trong
-bảng rồi cộng một. Với một máy thì chạy; với hai máy thì **cả hai cùng sinh ra id 1 cho hai
-người khác nhau**, và lúc gộp dữ liệu lên server không có cách nào tách ra. Đây là lỗi phải sửa
-trước khi có máy thứ hai, không phải tính năng còn thiếu.
+**Kiosk không bao giờ tự đặt `employee_id`.** Hai lần thử đều hỏng.
+- Lấy "một hơn mã lớn nhất trong bảng" thì hai máy **cùng sinh ra id 1 cho hai người khác
+  nhau**, và lúc gộp dữ liệu lên server không có cách nào tách ra.
+- Dời sang dải riêng từ `0x80000000` trở lên, có muối theo máy, thì tránh được đụng số giữa các
+  máy, nhưng `Employee.id` của server là `Int`. Một mã như vậy **không có chỗ nào để ghi**. Đo
+  24/09 trên production: 125 bản ghi chấm công của những người thêm tại máy (id 2.659.516.416)
+  đều bị Postgres từ chối. Kiosk vẫn thấy chúng đã được broker nhận, nên chúng mất mà không ai
+  hay.
+
+Nên máy chỉ đăng ký người server đã giao. Contract chốt `employeeId` trong đúng dải `Int` của
+server, 0…2.147.483.647: một payload vượt dải bị từ chối ngay ở cửa, trước khi chạm tới cơ sở
+dữ liệu.
 
 **Chia vai theo vòng đời, không theo nơi bấm nút.** Một nhân viên tồn tại trong công ty nhiều
 năm; một template khuôn mặt tồn tại trên **một máy cụ thể** và mất khi máy hỏng. Hai thứ vòng
@@ -6199,8 +6196,8 @@ tên lấy về để xác nhận trước khi chụp** — mấu chốt là con
 mặt bị gắn vào đó.
 
 **Tên hiển thị lấy từ server, không gõ lại ở máy.** Server đã có tên. Gõ lại là tạo hai cách
-viết cho một người, mà cái hiện trên màn hình sau khi khớp lại là cái gõ ở máy. Chỉ khi mất mạng
-mới cho gõ tay.
+viết cho một người, mà cái hiện trên màn hình sau khi khớp lại là cái gõ ở máy. Máy không có ô
+gõ tên nào.
 
 **Báo "đã thêm" phải đi đường ít nhất một lần.** Máy có thể đăng ký lúc rớt mạng. Nếu tin báo
 ấy là một `publish` bắn đi rồi quên thì trạng thái trên server **lặng lẽ lệch** với thực tế dưới
@@ -6230,7 +6227,7 @@ mã hoá lúc lưu và không bao giờ trả nó ra API đọc thường.
 
 **Đăng ký cần mạng, chấm công thì không.** Đăng ký là việc hành chính làm một lần, có người
 đứng cạnh; chấm công là việc hàng ngày phải chạy khi mất mạng. Bắt đăng ký phải có server là
-cách duy nhất giữ không gian id sạch — và nó xoá luôn chỗ `next_employee_id()` tự bịa ở trên.
+cách duy nhất giữ không gian id sạch.
 
 **Hai luật khó nhất đã nằm sẵn trong `enroll_payload.schema.json` từ trước**, và chúng đúng:
 `embeddingVersion` — *"A kiosk running a different model must refuse the template rather than
@@ -6254,8 +6251,7 @@ lành. Đây đúng hình dạng con trỏ `cursor.bin` của §6.2.5, chỉ ch�
 
 **`ASSIGN` là thứ bỏ được phép gõ UID.** Server đẩy xuống `employeeId` kèm `fullName` mà không
 kèm embedding; máy hiện thành danh sách chờ, người vận hành bấm chọn rồi chụp. `REVOKE` rút lại
-khi phân công đổi. Nhờ vậy id **luôn do server cấp**, và chỗ `svc_facedb_next_employee_id()` tự
-bịa biến mất.
+khi phân công đổi. Nhờ vậy id **luôn do server cấp**.
 
 **Thứ tự làm, vì không phải phần nào cũng đợi được backend.** Chuyển tải làm trước: máy áp được
 `UPSERT` với `DELETE_EMPLOYEE` từ `down/enroll`, khai `rosterVersion` trong heartbeat, và báo
