@@ -20,8 +20,15 @@ const { BackupWatchService, judgeBackups } = await import(
   "../src/modules/notifications/backup-watch.service.js"
 );
 
-const PROBLEMS: BackupProblem[] = ["WAL_FAILING", "DUMP_STALE", "BIOMETRIC_STALE", "BASE_STALE", "WAL_STALE"];
-const CHAINS = ["dump", "biometric", "base", "wal"];
+const PROBLEMS: BackupProblem[] = [
+  "WAL_FAILING",
+  "DUMP_STALE",
+  "BIOMETRIC_STALE",
+  "BASE_STALE",
+  "WAL_STALE",
+  "OFFSITE_STALE",
+];
+const CHAINS = ["dump", "biometric", "base", "wal", "offsite"];
 const OPERATOR = "e2e-backup-watch@kiosk.local";
 const CODE = "E2EBKP01";
 const kHourMs = 3_600_000;
@@ -103,10 +110,10 @@ describe("backups (e2e)", () => {
 
   it("counts a box that never ran a backup as every chain stale", async () => {
     await db.$executeRawUnsafe("DROP TABLE IF EXISTS ops.backup_run");
-    assert.deepEqual(await sweep(), ["BASE_STALE", "BIOMETRIC_STALE", "DUMP_STALE", "WAL_STALE"]);
+    assert.deepEqual(await sweep(), ["BASE_STALE", "BIOMETRIC_STALE", "DUMP_STALE", "OFFSITE_STALE", "WAL_STALE"]);
     const letters = toOperator().map((one) => one.subject);
-    assert.equal(letters.length, 4, "each problem reaches the ADMIN once");
-    assert.equal(new Set(letters).size, 4, letters.join(" | "));
+    assert.equal(letters.length, 5, "each problem reaches the ADMIN once");
+    assert.equal(new Set(letters).size, 5, letters.join(" | "));
   });
 
   it("stays quiet once every chain has a fresh run, and forgets what it said", async () => {
@@ -159,6 +166,18 @@ describe("backups (e2e)", () => {
     } finally {
       mailer.send = quiet;
     }
+  });
+
+  it("calls the offsite copy stale while every chain on the VPS is fresh", async () => {
+    await ran("base", 0);
+    await forget("offsite");
+    await ran("offsite", 27);
+    assert.deepEqual(await sweep(), ["OFFSITE_STALE"]);
+    const letters = toOperator();
+    assert.equal(letters.length, 1, "a copy missing off the VPS went unsaid");
+    assert.match(letters[0].subject, /bản ngoài máy/);
+    await ran("offsite", 0);
+    assert.deepEqual(await sweep(), []);
   });
 
   it("rewrites FaceTemplate when a face is erased, so no page keeps the old bytes", async () => {

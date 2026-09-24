@@ -23,12 +23,13 @@ export interface BackupFinding {
   detail: string | null;
 }
 
-// Each kind backup.sh writes to ops.backup_run, and what its absence is called.
+// Each kind backup.sh and offsite.sh write to ops.backup_run, and what its absence is called.
 const CHAINS: ReadonlyArray<readonly [string, BackupProblem]> = [
   ["dump", "DUMP_STALE"],
   ["biometric", "BIOMETRIC_STALE"],
   ["base", "BASE_STALE"],
   ["wal", "WAL_STALE"],
+  ["offsite", "OFFSITE_STALE"],
 ];
 const PROBLEMS: readonly BackupProblem[] = ["WAL_FAILING", ...CHAINS.map(([, problem]) => problem)];
 const kWatchCron = "*/15 * * * *";

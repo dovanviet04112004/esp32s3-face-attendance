@@ -184,7 +184,13 @@ export function profileNoticeMail(locale: string, facts: ProfileNoticeFacts): Ma
   return PROFILE[readsAs(locale)](facts);
 }
 
-export type BackupProblem = "WAL_FAILING" | "DUMP_STALE" | "BIOMETRIC_STALE" | "BASE_STALE" | "WAL_STALE";
+export type BackupProblem =
+  | "WAL_FAILING"
+  | "DUMP_STALE"
+  | "BIOMETRIC_STALE"
+  | "BASE_STALE"
+  | "WAL_STALE"
+  | "OFFSITE_STALE";
 
 export interface BackupAlarmFacts {
   problem: BackupProblem;
@@ -215,6 +221,10 @@ const BROKEN: Record<MailLocale, Record<BackupProblem, { title: string; what: st
       title: "đường WAL không tới kho",
       what: "Lượt thử đường WAL hằng đêm không thấy segment nào tới kho sao lưu.",
     },
+    OFFSITE_STALE: {
+      title: "bản ngoài máy không cập nhật",
+      what: "Không có bản sao lưu nào được chép sang kho ngoài VPS, nên nếu VPS mất thì mất luôn mọi bản sao.",
+    },
   },
   en: {
     WAL_FAILING: {
@@ -236,6 +246,10 @@ const BROKEN: Record<MailLocale, Record<BackupProblem, { title: string; what: st
     WAL_STALE: {
       title: "WAL is not reaching the archive",
       what: "The nightly test of the WAL path saw no segment reach the backup archive.",
+    },
+    OFFSITE_STALE: {
+      title: "the offsite copy is not keeping up",
+      what: "No backup has been copied off the VPS, so losing the VPS would lose every copy with it.",
     },
   },
 };
