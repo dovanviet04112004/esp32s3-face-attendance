@@ -128,7 +128,15 @@ void take_verdict(int64_t dt_ms)
     portEXIT_CRITICAL(&s_offer_lock);
     if (serial != s_taken_serial) {
         s_taken_serial = serial;
-        if (offer.verdict > APP_UI_SCANNING) {
+        if (offer.verdict == APP_UI_ALREADY) {
+            // Nothing new to say, only which face the quiet guide belongs to (KEHOACH 4.5.5f).
+            s_seen.verdict_track = offer.track;
+            if (s_seen.verdict != APP_UI_GRANTED) {
+                s_seen.verdict = APP_UI_ALREADY;
+                s_clear_in_ms = kShowMs;
+            }
+            s_dirty = true;
+        } else if (offer.verdict > APP_UI_SCANNING) {
             // The same verdict about the same face is the same news, so it is held
             // rather than blanked and flashed back (KEHOACH 4.5.5h.1).
             const bool holding =
