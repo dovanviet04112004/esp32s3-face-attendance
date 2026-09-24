@@ -4513,7 +4513,7 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
 | `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online |
-| `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`REVOKED`), templateIdx, updatedAt |
+| `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, photoUrl |
@@ -5375,7 +5375,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | Namespace | Key | Kiểu | Ghi chú |
 |---|---|---|---|
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
-| `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver` | str / u32 | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại |
+| `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver`, `pending`, `enroll_out` | str / u32 / blob | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại; `pending` (blob `storage_pending_t`) là danh sách người chờ chụp ở máy này, và `enroll_out` (blob `storage_enroll_out_t`) là các yêu cầu `RETAKE` / `DELETE_EMPLOYEE` chưa được broker ack (§7.5); layout của hai blob khai ở `storage_format.h` |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
@@ -5551,12 +5551,12 @@ Chọn LittleFS chứ không SPIFFS vì LittleFS có copy-on-write + `rename` ng
 |---|---|---|---|
 | 0 | 4 | `magic` = `'FACE'` | bắt lệch offset |
 | 4 | 4 | `employee_id` u32 | |
-| 8 | 2 | `template_idx` u16 | 1 người nhiều template (chính diện, đeo kính, thiếu sáng) |
-| 10 | 1 | `quality` u8 | 0–255, dùng để chọn template tốt hơn khi trùng |
-| 11 | 1 | `flags` | bit0 active, bit1 deleted (xoá mềm) |
+| 8 | 2 | `template_idx` u16 | 1 người nhiều template; một lần chụp dùng dải 0–2 hoặc 3–5, dải kia giữ mẫu cũ cho tới lúc chụp xong (§7.5) |
+| 10 | 1 | `quality` u8 | 0–255; mẫu chụp tại máy mang 255 |
+| 11 | 1 | `flags` | bit0 active, bit1 deleted (xoá mềm), bit2 unreported (chụp tại máy, broker chưa ack) |
 | 12 | 4 | `scale` f32 | hệ số dequant cho embedding int8 |
 | 16 | 512 | `embedding` int8[512] | |
-| 528 | 8 | `updated_at` i64 | epoch ms |
+| 528 | 8 | `updated_at` i64 | epoch ms; mẫu chụp tại máy mang giờ **bắt đầu phiên chụp**, chung cho cả phiên |
 | 536 | 32 | `name` char[32] | UTF-8, có `\0` cuối; rỗng thì màn hình hiện mã số |
 | 568 | 4 | `reserved` | chừa chỗ để thêm trường mà không phá format |
 | 572 | 4 | `crc32` | băm byte 0..571 |
@@ -5572,6 +5572,11 @@ trên kính không nói với ai điều gì. 32 byte UTF-8 đủ cho một tên
 Lưu **int8 + scale** chứ không float32: giảm 4 lần dung lượng và 4 lần RAM cache, mất < 0.3% accuracy khi so cosine. Bảng nạp nguyên vào PSRAM lúc boot; `faces.bin` chỉ là bản bền.
 
 Xoá nhân viên = đặt `flags.deleted`, **không dồn file**. Nén thật chỉ chạy khi tỉ lệ bản ghi chết > 30%, làm bằng ghi 2 pha.
+
+`flags.unreported` biến bảng thành hàng đợi của báo cáo đăng ký (§7.5). Thêm bit không đổi layout
+nên `format_ver` giữ 2: một firmware cũ đọc bảng mới chỉ bỏ qua bit ấy. Đồng bộ lại toàn phần
+(`REPLACE_ALL`) **giữ** mẫu còn mang bit này, vì đó là phiên chụp của chính máy mà server chưa
+thấy; chỉ lần xoá khi vé chết (§7.3 bước 6) mới bỏ cả chúng.
 
 #### 6.2.5 `log/attend.NNN` — header 32 B + bản ghi 48 B, chỉ ghi thêm
 
@@ -6289,8 +6294,11 @@ gõ tên nào.
 
 **Báo "đã thêm" phải đi đường ít nhất một lần.** Máy có thể đăng ký lúc rớt mạng. Nếu tin báo
 ấy là một `publish` bắn đi rồi quên thì trạng thái trên server **lặng lẽ lệch** với thực tế dưới
-máy, và không ai biết cho tới khi ai đó không chấm được. Dùng lại đúng bộ máy của `svc_sync`:
-ghi xuống flash, gửi, đẩy con trỏ **sau** ack.
+máy, và không ai biết cho tới khi ai đó không chấm được. Hàng đợi của nó là **chính bảng khuôn
+mặt**: mẫu chụp tại máy mang cờ `UNREPORTED` (§6.2.4), `sync_task` gửi từng mẫu mang cờ khi có
+broker, và chỉ gỡ cờ **sau** puback. Mẫu đã nằm sẵn trong bảng nên không phải chép embedding
+sang một file thứ hai. Mất điện giữa puback và lúc ghi bảng thì mẫu được gửi lại, và server
+nhận ra trùng theo `(employeeId, templateIdx, updatedAt)`.
 
 **Xoá là chiều nguy hiểm nhất, và nó phải *hội tụ* chứ không *áp delta*.** Một lệnh xoá gửi lúc
 máy đang mất mạng mà chỉ gửi một lần thì **không bao giờ tới**, và hậu quả là khuôn mặt người đã
@@ -6303,8 +6311,33 @@ thái.
 xoá mềm giữ được `employeeId` để đối chiếu, và `compact()` dọn khi quá 30% (§6.2.4).
 
 **Xoá ở màn hình máy là một *yêu cầu*, không phải sự thật.** Nếu máy tự xoá rồi coi như xong,
-lần hội tụ kế tiếp server sẽ đẩy người đó **quay lại**. Nên thao tác ấy gửi lên server, server
-quyết, rồi kết quả chảy xuống theo đúng đường hội tụ.
+lần hội tụ kế tiếp server sẽ đẩy người đó **quay lại**. Nên thao tác ấy gửi lên server một lệnh
+`DELETE_EMPLOYEE` trên `up/enroll`, server chuyển cặp máy–người sang `REVOKED`, rồi lệnh xoá
+chảy xuống theo đúng đường hội tụ. Máy xoá người ấy khỏi bảng ngay lúc bấm, vì người đứng trước
+máy vừa bảo nó làm vậy, và server luôn nhận yêu cầu xoá kèm một dòng audit: người vận hành có
+quyền vào menu của máy thì có quyền gỡ một người khỏi máy ấy. Mẫu trên server **không** bị xoá,
+vì cửa khác còn dùng; xoá sinh trắc học của một người trên mọi máy là việc khác, làm từ dashboard
+(§9.19). Yêu cầu nằm trong `device/enroll_out` (§6.2.1) cho tới khi broker ack, nên bấm lúc mất
+mạng vẫn tới nơi.
+
+**Lấy lại mẫu là một trạng thái riêng, `RETAKE`, không phải gán lại từ đầu.** Người đổi kiểu tóc,
+đeo kính mới, hay mẫu cũ chụp tối thì cần chụp lại, nhưng trong lúc chờ họ vẫn phải chấm công
+được. `ASSIGNED` nghĩa là "chưa có mặt", nên đặt lại về đó là tuyên bố sai. Luồng:
+1. **Hai nơi bấm, một trạng thái.** Dashboard, trang nhân viên, nút "Lấy lại mẫu" ở từng máy; hoặc
+   màn Danh sách của kiosk, chạm một người rồi chọn "Chụp lại". Kiosk gửi `RETAKE` trên
+   `up/enroll` qua cùng `device/enroll_out`, và đưa người ấy vào danh sách chờ của nó ngay, ghi
+   là chụp lại. Server chuyển cặp từ `ENROLLED` sang `RETAKE` rồi đẩy `ASSIGN` xuống.
+2. **Mẫu cũ dùng tiếp tới lúc chụp xong.** Mẫu mới ghi vào dải `template_idx` còn lại (0–2 hoặc
+   3–5, §6.2.4). Chụp đủ thì máy xoá dải cũ; bỏ dở thì máy xoá dải mới, còn dải cũ nguyên vẹn.
+3. **Server chỉ nhận mẫu từ cửa đang được giao chụp.** Một lần chụp là một phiên: mọi mẫu của nó
+   mang chung `updatedAt`. Cặp ở `ASSIGNED` hoặc `RETAKE` mà nhận một phiên khác phiên đang giữ
+   thì phiên ấy thắng: server xoá mọi mẫu cũ của người đó, ghi mẫu mới, chuyển cặp sang
+   `ENROLLED`, rồi đẩy `DELETE_EMPLOYEE` kèm mẫu mới sang mọi cửa khác. Cặp đã `ENROLLED` thì chỉ
+   nhận thêm mẫu **của đúng phiên đang giữ**, tức mẫu thứ hai, thứ ba hoặc một bản gửi trùng.
+   Không so điểm, vì mẫu chụp tại kiosk luôn mang điểm 255.
+4. **Từ chối thì máy về đúng thứ server giữ.** Cặp đã `REVOKED` thì server đẩy `DELETE_EMPLOYEE`
+   cho cửa vừa báo; cặp `ENROLLED` ở một phiên khác thì server đẩy `DELETE_EMPLOYEE` rồi các mẫu
+   nó đang giữ. Cả hai đều tăng `rosterVersion` như mọi lệnh khác.
 
 **Template có rời khỏi máy không — đây là quyết định về quyền riêng tư, không phải kỹ thuật.**
 Nếu có: máy thứ hai nhận được người mà không phải chụp lại, và máy cháy flash thì khôi phục
@@ -6313,9 +6346,14 @@ thân `enroll_payload.schema.json` đã có `embedding` cùng `updatedAt` — ng
 định template có đi. **Chốt: template đi lên**, và vì nó là **dữ liệu sinh trắc**, server phải
 mã hoá lúc lưu và không bao giờ trả nó ra API đọc thường.
 
-**Đăng ký cần mạng, chấm công thì không.** Đăng ký là việc hành chính làm một lần, có người
-đứng cạnh; chấm công là việc hàng ngày phải chạy khi mất mạng. Bắt đăng ký phải có server là
-cách duy nhất giữ không gian id sạch.
+**Chụp được lúc mất mạng, nhưng chỉ cho người server đã giao.** Không gian id sạch nhờ
+`employeeId` luôn đến từ `ASSIGN` của server, chứ không nhờ việc bắt máy phải có mạng lúc chụp.
+Nên người đã nằm trong danh sách chờ thì chụp được cả khi mất mạng: máy dùng mẫu mới ngay và báo
+lên khi có broker. Cái giá nói rõ: nếu trong lúc ấy người đó bị gỡ khỏi máy, server từ chối
+phiên chụp và máy xoá mẫu theo (bước 4 ở trên), nên người vừa chụp sẽ thấy máy không còn nhận
+ra mình. Danh sách chờ nằm ở `device/pending` (§6.2.1) để khởi động lại lúc mất mạng không làm
+nó rỗng. Một mẫu server đẩy xuống (`UPSERT`) gỡ người ấy khỏi danh sách chờ, vì cửa này đã có
+mặt họ (§9.23 luật 7).
 
 **Hai luật khó nhất đã nằm sẵn trong `enroll_payload.schema.json` từ trước**, và chúng đúng:
 `embeddingVersion` — *"A kiosk running a different model must refuse the template rather than
@@ -8122,10 +8160,12 @@ hỏi lại.
 
 Năm điều kèm theo, mỗi điều bịt một khe khác nhau:
 
-- **Chất lượng quyết định, không phải thứ tự tới.** Hai cửa cùng lấy được thì bản mờ có thể tới
-  sau, và một `upsert` trơ sẽ đè bản tốt. Điều kiện `quality` nằm trong `WHERE` của chính lệnh
-  ghi, nên **kết quả không phụ thuộc bản nào tới trước** — đo bốn lượt song song đều giữ bản
-  95 và bỏ bản 40.
+- **Phiên được nhận đầu tiên thắng, không so điểm.** Mẫu chụp tại kiosk luôn mang điểm 255, nên
+  một phép so `quality` không bao giờ chọn được bản nào. Hai cửa cùng được giao một người thì
+  phiên tới trước chuyển cặp sang `ENROLLED` và lan mẫu sang cửa kia; phiên của cửa kia tới sau
+  gặp cặp đã `ENROLLED` ở phiên khác nên bị từ chối, và cửa ấy nhận lại đúng mẫu đã chốt
+  (§7.5, lấy lại mẫu, bước 4). Kết quả phụ thuộc thứ tự tới, nhưng hai phiên đều hợp lệ như
+  nhau, và mọi cửa kết thúc với **cùng một** bộ mẫu.
 - **Báo cáo phải đến từ cửa đã được giao người ấy.** Máy chủ nhận dữ liệu sinh trắc thì không
   được chỉ dựa vào phép xác thực của broker: không có dòng `DeviceEnrollment` thì từ chối.
 - **Đường sửa chữa phải chạy được từ chính trạng thái cần sửa.** `resync` từng suy ra phiên
