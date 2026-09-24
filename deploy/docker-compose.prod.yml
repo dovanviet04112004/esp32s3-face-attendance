@@ -20,10 +20,18 @@ services:
         condition: service_started
 
   api:
+    # CD pins API_TAG in .env; a developer box builds from ../backend instead.
+    image: ghcr.io/dovanviet04112004/cckiosk-api:${API_TAG:-latest}
     build:
       context: ../backend
     container_name: kiosk-api
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     environment:
       NODE_ENV: production
       PORT: 3000

@@ -84,6 +84,8 @@ secrets/
 deploy/emqx/certs/
 # Cert CA là công khai và firmware nhúng nó lúc biên dịch (KẾ HOẠCH §7.4)
 !firmware/components/net_mqtt/certs/broker_ca.crt
+# Sha đang chạy trên VPS, deploy.sh ghi để còn đường lùi (KẾ HOẠCH §4.8)
+deploy/.deployed
 
 # ── Công cụ AI agent — chỉ dùng ở máy local, không lên remote ──
 .claude/
