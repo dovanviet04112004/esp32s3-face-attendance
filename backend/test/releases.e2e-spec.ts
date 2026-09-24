@@ -20,6 +20,7 @@ const { validateEnv } = await import("../src/config/env.schema.js");
 const { PrismaService } = await import("../src/database/prisma.service.js");
 const { ModelsService } = await import("../src/modules/models/models.service.js");
 const { MqttService } = await import("../src/modules/mqtt/mqtt.service.js");
+const { otaManifestSchema } = await import("../src/common/generated/ota_manifest.js");
 
 const VERSION = "98.0.1";
 const OLDER = "98.0.0";
@@ -44,7 +45,7 @@ describe("releases (e2e)", () => {
   let admin = "";
   let releaseId = "";
   const image = appImage(VERSION);
-  const offers: { deviceId: string; url: string }[] = [];
+  const offers: { deviceId: string; url: string; payload: unknown }[] = [];
 
   function publish(query: string, body: Buffer, token = PUBLISHER): request.Test {
     return request(http)
@@ -76,7 +77,7 @@ describe("releases (e2e)", () => {
     http = app.getHttpServer();
     db = app.get(PrismaService);
     app.get(MqttService).publishDown = async (_name: string, deviceId: string, payload: unknown) => {
-      offers.push({ deviceId, url: (payload as { url: string }).url });
+      offers.push({ deviceId, url: (payload as { url: string }).url, payload });
     };
     await sweep();
     await db.device.createMany({
@@ -142,6 +143,17 @@ describe("releases (e2e)", () => {
     assert.ok(row.path && existsSync(join(SHELF, row.path)), "the file is not where the row says");
   });
 
+  it("tells the publisher which versions are already out, so it can skip the build", async () => {
+    const ask = (version: string) =>
+      request(http)
+        .get(`/releases/published?target=FIRMWARE&version=${version}`)
+        .set("Authorization", `Bearer ${PUBLISHER}`);
+    assert.deepEqual((await ask(VERSION)).body, { published: true });
+    assert.deepEqual((await ask("98.9.9")).body, { published: false });
+    const stranger = await request(http).get(`/releases/published?target=FIRMWARE&version=${VERSION}`);
+    assert.equal(stranger.status, 401, "anybody could read the register");
+  });
+
   it("answers the same version again with the release it has", async () => {
     const again = await publish(`target=FIRMWARE&version=${VERSION}`, appImage(VERSION, 8192));
     assert.equal(again.status, 201);
@@ -178,6 +190,8 @@ describe("releases (e2e)", () => {
     const sent = offers.find((one) => one.deviceId === BEHIND);
     assert.ok(sent, "no manifest went down to the kiosk");
     assert.ok(sent.url.startsWith("https://"), sent.url);
+    const checked = otaManifestSchema.safeParse(sent.payload);
+    assert.ok(checked.success, `the manifest is outside its contract: ${checked.error?.message}`);
     const got = await request(http).get(pathOf(sent.url)).buffer(true).parse((res2, done) => {
       const parts: Buffer[] = [];
       res2.on("data", (chunk: Buffer) => parts.push(chunk));

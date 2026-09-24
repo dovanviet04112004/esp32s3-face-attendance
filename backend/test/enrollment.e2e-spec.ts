@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { after, before, describe, it, mock } from "node:test";
 
@@ -9,7 +8,6 @@ import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
-import { otaManifestSchema } from "../src/common/generated/ota_manifest.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { EnrollmentService } from "../src/modules/enrollment/enrollment.service.js";
@@ -21,7 +19,6 @@ const DEVICE_ID = "kiosk-e2e-enroll";
 const CODE = "NV9100";
 const RACERS = ["NV9111", "NV9112", "NV9113", "NV9114", "NV9115", "NV9116"];
 const EMBEDDING_BYTES = 512;
-const RELEASE_VERSION = "9.9.9";
 const SETTLE_MS = 15000;
 const SETTLE_POLL_MS = 50;
 
@@ -33,7 +30,7 @@ function embedding(): string {
   return raw.toString("base64");
 }
 
-describe("enrollment and releases (e2e)", () => {
+describe("enrollment (e2e)", () => {
   let app: INestApplication;
   let http: ReturnType<INestApplication["getHttpServer"]>;
   let db: PrismaService;
@@ -46,7 +43,6 @@ describe("enrollment and releases (e2e)", () => {
     await db.faceTemplate.deleteMany({ where: { employee: { code: CODE } } });
     await db.employee.deleteMany({ where: { code: { in: [CODE, ...RACERS] } } });
     await db.device.deleteMany({ where: { id: DEVICE_ID } });
-    await db.release.deleteMany({ where: { version: RELEASE_VERSION } });
   }
 
   before(async () => {
@@ -155,67 +151,6 @@ describe("enrollment and releases (e2e)", () => {
       .set("Authorization", `Bearer ${admin}`);
     assert.equal(res.status, 201);
     assert.ok(res.body.rosterVersion >= 1);
-  });
-
-  it("offers a registered release as a manifest the kiosk can read", async () => {
-    // The row is written straight in: what is under test here is the manifest,
-    // and registering one reads the image over the network.
-    const made = await db.release.create({
-      data: {
-        releaseId: randomUUID(),
-        target: "MODELS",
-        version: RELEASE_VERSION,
-        url: "https://example.com/models.bin",
-        sha256: "a".repeat(64),
-        sizeBytes: 1517600,
-        minFwVersion: "0.9.0",
-      },
-    });
-
-    const offered = await request(http)
-      .post(`/releases/${made.releaseId}/offer/${DEVICE_ID}`)
-      .set("Authorization", `Bearer ${admin}`);
-    assert.equal(offered.status, 201);
-    const checked = otaManifestSchema.safeParse(offered.body);
-    assert.ok(checked.success, `manifest is outside its contract: ${checked.error?.message}`);
-    assert.equal(offered.body.target, "MODELS");
-  });
-
-  it("refuses a release it cannot read, rather than recording a guess", async () => {
-    const res = await request(http)
-      .post("/releases")
-      .set("Authorization", `Bearer ${admin}`)
-      .send({
-        target: "FIRMWARE",
-        version: "9.9.8",
-        // .invalid never resolves (RFC 6761), so this fails without a network.
-        url: "https://kiosk.invalid/kiosk.bin",
-      });
-    assert.equal(res.status, 400);
-    assert.equal(res.body.message, "RELEASE_UNREACHABLE");
-  });
-
-  it("will not fetch a release from inside the private network", async () => {
-    for (const url of ["https://127.0.0.1:1/kiosk.bin", "https://169.254.169.254/latest", "https://[::1]/kiosk.bin"]) {
-      const res = await request(http)
-        .post("/releases")
-        .set("Authorization", `Bearer ${admin}`)
-        .send({ target: "FIRMWARE", version: "9.9.6", url });
-      assert.equal(res.status, 400, url);
-      assert.equal(res.body.message, "RELEASE_URL_INTERNAL", `${url} reached the fetch`);
-    }
-  });
-
-  it("refuses a release url that is not https", async () => {
-    const res = await request(http)
-      .post("/releases")
-      .set("Authorization", `Bearer ${admin}`)
-      .send({
-        target: "FIRMWARE",
-        version: "9.9.7",
-        url: "http://example.com/kiosk.bin",
-      });
-    assert.equal(res.status, 400);
   });
 
   it("resyncs a kiosk whose heartbeat reports an older roster", async () => {
