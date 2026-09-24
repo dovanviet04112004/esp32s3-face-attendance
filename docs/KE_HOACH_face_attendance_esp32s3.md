@@ -3674,7 +3674,9 @@ thấy trên dashboard, và dưới nó là `Mã nhận máy 482 913` ở cỡ c
 phải chép. Máy chủ từ chối token lô thì dòng ấy đổi sang
 `Máy chủ không nhận firmware này`; bản dựng không mang token lô thì là
 `Firmware này chưa có mã lô`, vì một máy im lặng không nối được là máy không ai biết phải sửa gì.
-Có vé là dòng biến mất. Nó không chen vào khung ngắm, không
+Lời xin không tới được máy chủ thì dòng ấy là `Chưa nối được máy chủ` và **mã nhận máy ẩn đi**:
+server chưa chắc đã nhận mã ấy, và một mã server chưa có là mã không ai duyệt được. Có vé là dòng
+biến mất, trong khoảng một nhịp hỏi sau lúc admin bấm duyệt (§7.3 bước 3). Nó không chen vào khung ngắm, không
 chen dòng nhắc dưới khung, và không chặn chấm công: bản ghi vẫn xếp hàng như lúc mất mạng. Dòng
 này nói về **cái máy**, không nói về người đứng trước nó, nên nó đi riêng một đường vào
 `ui_kiosk` (`ui_kiosk_set_ticket()`), không đi qua kênh trạng thái của pipeline.
@@ -4510,7 +4512,7 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt — một dòng mỗi thiết bị (§9.23 luật 5) |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, fwVersion, modelVersion, rosterVersion, lastSeenAt, online |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), fwVersion, modelVersion, rosterVersion, lastSeenAt, online |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`REVOKED`), templateIdx, updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
@@ -4627,9 +4629,9 @@ luôn có cùng câu trả lời.
 **Lệnh nào chạy được bây giờ là lệnh có sẵn API đã kiểm.** `OPEN_DOOR` (`svc_door_open`),
 `REBOOT` (`esp_restart`), `SYNC_TIME` (`sys_time_sync_start`) và `DIAGNOSTICS` — cái cuối phát
 ngay một `heartbeat` thay vì đẻ định dạng mới, vì heartbeat **đã là** ảnh chụp sức khoẻ của máy.
-Năm lệnh còn lại trả `COMMAND_REJECTED` kèm tên việc sẽ mở chúng: `SET_CONFIG` và
-`RELOAD_FACEDB` (chưa có API nạp lại), `CLEAR_LOGS`, `ROTATE_TOKEN` (E13-T4), `SET_ACTIVE_SLOT`
-(E13-T2). Từ chối có lý do đọc được hơn hẳn im lặng: server biết lệnh **tới nơi** và biết vì sao
+`ROTATE_TOKEN` giương bit `RENEW_TICKET` để `ota_task` đổi vé ngay, không chờ tới mốc 7 ngày
+(§7.3 bước 5). Bốn lệnh còn lại trả `COMMAND_REJECTED` kèm tên việc sẽ mở chúng: `SET_CONFIG` và
+`RELOAD_FACEDB` (chưa có API nạp lại), `CLEAR_LOGS`, `SET_ACTIVE_SLOT` (E13-T2). Từ chối có lý do đọc được hơn hẳn im lặng: server biết lệnh **tới nơi** và biết vì sao
 không chạy.
 
 **`device_event` phải mọc thêm chỗ để mang kết quả.** `mqtt_topics.yaml` mô tả `up/event` là
@@ -4658,7 +4660,7 @@ sớm thì hàng đợi không bao giờ đầy vì một sự thật duy nhất
 |---|---|---|---|
 | Access (web) | 15 phút | memory ở frontend | sub, role |
 | Refresh (web) | 7 ngày | cookie `httpOnly; Secure; SameSite=None` trên domain API | sub, jti (hash lưu DB để revoke) |
-| Device token (kiosk) | 90 ngày, xoay vòng | NVS mã hoá trên ESP32 | deviceId, serial |
+| Device token (kiosk) | 90 ngày, xoay vòng | NVS mã hoá trên ESP32 | deviceId, serial, jti (hai vé cấp trong cùng một giây vẫn khác băm, §7.3 bước 5) |
 
 ### 4.7 `frontend/` — Next.js trên Vercel
 
@@ -5118,7 +5120,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `ui_task` | `ui_kiosk` | 0 | 4 | 4 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. **Không cầm panel**: `cam_task` vẽ mọi màn, kể cả màn phủ kín (§4.5.5h) |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB **ở PSRAM** | esp-mqtt tự tạo | pub/sub, TLS |
-| `ota_task` | `net_ota`, `net_provision` | 0 | 3 | 8 KB | lệnh `down/ota`; bit `NEED_TICKET`; bit `BROKER_REFUSED` | **Giữ phiên HTTPS duy nhất của máy**: tải firmware / models, verify sha256, ghi partition; xin vé khi chưa có, và hỏi lại vé khi broker từ chối (§7.3). Cắt broker trước mỗi phiên |
+| `ota_task` | `net_ota`, `net_provision` | 0 | 3 | 8 KB | lệnh `down/ota`; bit `NEED_TICKET`; bit `BROKER_REFUSED`; bit `RENEW_TICKET`; mốc đổi vé | **Giữ phiên HTTPS duy nhất của máy**: tải firmware / models, verify sha256, ghi partition; xin vé khi chưa có, đổi vé khi sắp hết hạn, và hỏi lại vé khi broker từ chối (§7.3). Cắt broker trước mỗi phiên |
 | `sync_task` | `svc_sync` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, đẩy con trỏ; và **phát `up/heartbeat` mỗi `GEN_TOPIC_HEARTBEAT_INTERVAL_S`** |
 | `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ chỉ để biết là không có sóng. Chờ **tới khi có**, không bỏ cuộc sau 30 s: máy mới lắp nhận Wi-Fi từ người lắp gõ trên màn, thường sau lúc boot rất lâu, và bỏ cuộc thì nó không đăng ký cho tới lần khởi động sau. Có vé thì nối broker, chưa có thì giương `NEED_TICKET` cho `ota_task`; rồi mở SNTP. Xong thì tự xoá |
 | `wifi` / `lwip` | hệ thống IDF | 0 | 18–23 | — | — | Do IDF quản lý, không tự tạo |
@@ -5186,7 +5188,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
 | `s_bounce_free` | Counting semaphore, **2 suất** | — | callback `esp_lcd` | `drv_lcd` | Đệm bounce được trả lại thì mới nạp lượt sau. Có hai đệm nên phải đếm được hai suất: binary chỉ giữ được một, đệm rỗi thứ hai sẽ nằm không. Callback **trả** cờ yield cho `esp_lcd` tự nhường, không tự gọi `portYIELD_FROM_ISR` |
 | `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | Một lần đo xong là một lần đánh thức, không có suất để dồn |
-| `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task`, `ota_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT` `NEED_TICKET` `BROKER_REFUSED`. Thay cho 9 biến cờ rời rạc. `BROKER_REFUSED` do callback của esp-mqtt giương khi CONNACK từ chối, `ota_task` hạ khi đã hỏi `api` xong |
+| `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task`, `ota_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT` `NEED_TICKET` `BROKER_REFUSED` `RENEW_TICKET`. Thay cho 10 biến cờ rời rạc. `BROKER_REFUSED` do callback của esp-mqtt giương khi CONNACK từ chối, `ota_task` hạ khi đã hỏi `api` xong. `RENEW_TICKET` do lệnh `ROTATE_TOKEN` giương, `ota_task` hạ khi đã có vé mới |
 | `eg_wifi` | EventGroup, nội bộ `net_wifi` | 4 B | handler sự kiện Wi-Fi | `net_wifi_wait_connected()` | `net_wifi` ở L5 không được phụ thuộc lên `app_wiring` ở L7 (§4.5.4), nên trạng thái link phải có chỗ đứng ngay trong component. `net_task` là nơi duy nhất bắc bit này sang `WIFI_OK` của `eg_system` |
 
 **Đường của `EVT_PRESENCE_ON/OFF`.** `drv_tof` chỉ trả khoảng cách (§2.3D), nên `tof_task` là
@@ -5922,13 +5924,13 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 | Hạng mục | Cách làm |
 |---|---|
 | Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware; username là `deviceId`, password là JWT riêng của máy; EMQX hỏi `api` qua HTTP để chấm auth, ACL file chỉ mở `kiosk/{chính nó}/#` (§7.4) |
-| Device token | JWT 90 ngày lưu **NVS encrypted**, xoay vòng tự động khi còn 7 ngày |
+| Device token | JWT 90 ngày lưu **NVS encrypted**; kiosk tự đổi qua `POST /devices/me/token` khi còn 7 ngày, vé cũ sống tới khi vé mới được dùng (§7.3 bước 5) |
 | Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke |
 | Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu |
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
 | OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
-| Rate limit | `@nestjs/throttler` cho `/auth/login`, `/auth/forgot-password` và `/devices/register`, khoá theo **IP thật của client**. Sau Traefik mọi request đến từ cùng một IP, nên `api` phải tin đúng một chặng proxy (`TRUST_PROXY_HOPS`, §4.8); thiếu nó thì cả công ty chung một hạn mức đăng nhập, và cả đội kiosk chung một hạn mức đăng ký |
+| Rate limit | `@nestjs/throttler` cho `/auth/login`, `/auth/forgot-password` và `/devices/register`, khoá theo **IP thật của client**. Sau Traefik mọi request đến từ cùng một IP, nên `api` phải tin đúng một chặng proxy (`TRUST_PROXY_HOPS`, §4.8); thiếu nó thì cả công ty chung một hạn mức đăng nhập, và cả đội kiosk chung một hạn mức đăng ký. `/devices/register` cũng là chỗ máy chờ duyệt hỏi mỗi `DEVICE_POLL_INTERVAL_S`, nên hạn mức của nó (`DEVICE_REGISTER_ATTEMPTS_PER_MINUTE`, mặc định 60) chừa đủ cho vài máy cùng chờ sau một NAT |
 
 ### 7.3 Vòng đời thiết bị — từ dây chuyền tới lúc thu hồi
 
@@ -5946,7 +5948,7 @@ bị `Kconfig` loại khỏi bản `prod`.
 | Địa chỉ API | Không | **`Kconfig` của `net_provision`**: `https://api.cckiosk.io.vn`. Cert của nó là Let's Encrypt, nên máy tin bằng bộ CA công khai của IDF, không bằng CA của broker |
 | Token bootstrap | Không, theo **lô firmware** | Nhúng trong firmware, đổ vào lúc build từ `firmware/sdkconfig.secrets` — file **gitignore**, không bao giờ commit (§4.9) |
 | `wifi/ssid`, `wifi/pass` | Có, theo nơi lắp | Người lắp gõ **trên màn kiosk** |
-| `device/jwt`, `device/jwt_exp` | Có | Máy **tự xin** ở bước 3 dưới đây. Tên đăng nhập MQTT là `deviceId`, mật khẩu là chính JWT ấy (§7.4) |
+| `device/jwt`, `device/jwt_exp` | Có | Máy **tự xin** ở bước 3 và **tự đổi** ở bước 5 dưới đây. Tên đăng nhập MQTT là `deviceId`, mật khẩu là chính JWT ấy (§7.4) |
 | `device/claim` — mã nhận máy | Có, **mỗi lượt đăng ký một mã** | Máy tự sinh 6 chữ số, hiện trên màn, gửi kèm lời xin; server chỉ giữ băm (đoạn *Mã nhận máy* dưới đây) |
 
 **Sáu bước:**
@@ -5957,26 +5959,56 @@ bị `Kconfig` loại khỏi bản `prod`.
 3. **Đăng ký** — có mạng nhưng chưa có vé (không `device/jwt`, không `device/mqtt_pass`), kiosk
    **không nối broker** mà gọi `POST /devices/register` qua HTTPS, kèm token bootstrap,
    `deviceId`, số hiệu firmware và **mã nhận máy**. Máy chủ tạo bản ghi `pending`, giữ băm của
-   mã, và trả **202**, chưa cấp gì. Kiosk hiện dải **"Chờ duyệt"** kèm `deviceId` và mã nhận
-   máy của chính nó trên màn quét, rồi hỏi lại theo
-   lùi bậc: 10 s, nhân đôi mỗi lần tới trần 5 phút, lệch ngẫu nhiên ±20% để một lô máy cắm
-   điện cùng lúc không hỏi cùng nhịp. Máy vẫn chấm công như lúc mất mạng: bản ghi xếp hàng
-   trong LittleFS và lên sau khi có vé. Máy chủ trả **401** (token lô bị từ chối) thì dải đổi
-   sang "Máy chủ không nhận firmware này" và hỏi ở nhịp trần — chỉ một bản OTA hay một lần
-   nạp lại mới chữa được. Không tới được máy chủ, `429` hay `5xx` thì chỉ lùi bậc.
+   mã, và trả **202** kèm `pollIntervalS` (`DEVICE_POLL_INTERVAL_S`, mặc định 5), chưa cấp gì.
+   Kiosk hiện dải **"Chờ duyệt"** kèm `deviceId` và mã nhận máy của chính nó trên màn quét, rồi
+   **hỏi lại đúng nhịp server đặt**, lệch ngẫu nhiên ±20% để một lô máy cắm điện cùng lúc không
+   hỏi cùng nhịp. Máy giữ nhịp ấy trong khoảng [`NET_PROVISION_POLL_FLOOR_S`, trần lùi bậc], để
+   một server trả 0 không biến kiosk thành vòng lặp; lời 202 không mang nhịp thì máy lùi bậc như
+   dưới đây. Máy vẫn chấm công như lúc mất mạng: bản ghi xếp hàng trong LittleFS và lên sau khi
+   có vé. Máy chủ trả **401** (token lô bị từ chối) thì dải đổi sang "Máy chủ không nhận firmware
+   này" và hỏi ở nhịp trần — chỉ một bản OTA hay một lần nạp lại mới chữa được. Không tới được
+   máy chủ, `429` hay `5xx` thì dải đổi sang "Chưa nối được máy chủ", mã ẩn đi, và máy **lùi
+   bậc**: 10 s, nhân đôi mỗi lần tới trần 5 phút, ±20%. Riêng lúc mất hẳn Wi-Fi thì máy chờ link
+   về rồi hỏi ngay, không ngồi hết nhịp lùi.
 4. **Nhận máy** — admin thấy máy `pending` trong dashboard, bấm duyệt, **gõ mã nhận máy đang
    hiện trên màn kiosk**, rồi đặt tên người đọc được và vị trí. Sai mã thì không duyệt. Lần hỏi
-   kế tiếp trả **200** kèm JWT 90 ngày.
+   kế tiếp, trong vòng một nhịp `pollIntervalS`, trả **200** kèm JWT 90 ngày.
    Kiosk ghi `device/jwt`, lấy `device/jwt_exp` từ claim `exp` của **chính JWT** chứ không cộng
    vào đồng hồ của mình (đồng hồ máy có thể chưa đúng lúc ấy), tắt dải chờ, nối broker, và
    **không bao giờ dùng lại token bootstrap**.
-5. **Chạy** — MQTTS bằng `deviceId` cộng JWT, xoay vòng theo §7.2 (E13-T5). Chưa có xoay vòng
-   thì JWT hết hạn sau 90 ngày đi vào bước 6, và máy phải được duyệt lại.
+5. **Chạy và đổi vé** — MQTTS bằng `deviceId` cộng JWT. Khi `device/jwt_exp` chỉ còn
+   `NET_PROVISION_RENEW_BEFORE_DAYS` (mặc định 7) ngày, và đồng hồ máy đã từng được NTP đặt
+   (`sys_time_source()` là `RTC_NTP`, §6.2.5), `ota_task` cắt broker, gọi
+   `POST /devices/me/token` bằng chính vé đang giữ, ghi vé mới vào `device/jwt` và
+   `device/jwt_exp`, rồi nối lại. Lệnh `ROTATE_TOKEN` làm đúng việc ấy ngay lập tức. Không hỏi
+   được thì giữ vé cũ, lùi bậc như bước 3 rồi thử lại; `api` trả **401** thì đi như bước 6. Một
+   máy tắt quá 90 ngày thì vé chết thật và máy về bước 3: máy vắng mặt ba tháng phải có người
+   nhận lại.
 6. **Thu hồi** — admin gỡ máy: `api` trả `deny` cho lần nối kế tiếp (§7.4), trễ tối đa bằng
    cache 1 phút của EMQX. Broker từ chối thì kiosk **không tự xoá vé ngay**: nó hỏi
    `GET /devices/me` bằng chính vé ấy, và chỉ khi câu trả lời là **401** mới xoá `device/jwt`
    rồi **quay về bước 3**. Không hỏi được thì giữ vé và thử lại broker, hỏi lại tối đa mỗi
    phút một lần.
+
+**Máy chờ duyệt hỏi đều theo nhịp server, còn lùi bậc chỉ dành cho lỗi.** Lời 202 nghĩa là
+server sống và đang chờ một người, mà người ấy thường đang đứng ở dashboard, vừa gõ xong mã. Lùi
+bậc cho lời 202 thì sau mười phút chờ, máy đã ở nhịp 5 phút, và dải "Chờ duyệt" nằm lì trên màn
+thêm vài phút sau khi đã duyệt. Luồng đăng nhập trên TV làm đúng như mục này (RFC 8628, trường
+`interval`): server đặt nhịp và có thể nâng nó lên khi quá tải. Số máy cùng chờ duyệt ở một thời
+điểm chỉ đếm trên đầu ngón tay, nên nhịp 5 s không phải là tải.
+
+**Vé cũ sống tới khi vé mới được dùng.** Server giữ `prevTokenHash` bên cạnh `tokenHash`. Đổi vé
+chuyển băm hiện tại sang `prevTokenHash` và ghi băm của vé mới; cả hai cùng mở broker và
+`/devices/me`, cho tới lần đầu vé mới được xuất trình thì `prevTokenHash` bị xoá. Thiếu cột này
+thì một lần đứt mạng đúng lúc câu trả lời đang về là đủ: máy cầm vé đã bị thay, broker từ chối,
+`/devices/me` trả 401, và máy rơi về `pending` chỉ vì mất một gói tin. Máy hỏi lại bằng vé cũ
+(vì câu trả lời trước không tới) thì server cấp vé khác và **giữ nguyên** `prevTokenHash`, nên vé
+bị lạc trên đường chết luôn. Thu hồi và đăng ký lại xoá cả hai cột.
+
+**Máy tự đổi vé, không chờ server bảo.** Máy đọc hạn từ chính JWT của nó, nên server không phải
+nhớ vé nào hết hạn lúc nào, và không có bộ hẹn giờ nào phía server phải chạy đúng. Cái giá là
+máy cần một đồng hồ tin được. Đó không phải điều kiện mới: một máy chưa từng được NTP đặt giờ
+thì bản ghi chấm công của nó cũng chưa có dấu thời gian đúng (§6.2.5).
 
 **Vì sao không xoá vé ngay khi broker từ chối.** EMQX trả **cùng một mã 5** cho vé sai và cho
 lúc `api` không trả lời (đo 24/09 trên EMQX 6.3.1, §7.4). Xoá vé theo mã ấy là biến một lần
@@ -6052,7 +6084,7 @@ Hình dạng phía thiết bị chốt từ trước khi có `api`, và nó khô
 `POST /mqtt/auth` của `api`. Username không có trong bảng nội bộ thì tầng đầu bỏ qua và tầng sau
 trả lời. `api` trả `allow` khi và chỉ khi đủ bốn điều: chữ ký JWT đúng `JWT_DEVICE_SECRET` và
 chưa hết hạn; claim `deviceId` bằng username; máy đang `APPROVED`; sha256 của mật khẩu bằng
-`tokenHash`. Thiếu một điều là `deny`.
+`tokenHash`, hoặc bằng `prevTokenHash` trong lúc đổi vé (§7.3 bước 5). Thiếu một điều là `deny`.
 
 **Bảng nội bộ đứng trước là có chủ ý.** `api` tự nối broker bằng một tài khoản `svc-*`. Đặt
 `http` lên trước thì `api` phải trả lời được cho chính mình trước khi nối được, và một lần `api`
