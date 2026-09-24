@@ -5,7 +5,7 @@ import type { Queue } from "bullmq";
 import type { DeviceEvent } from "../../common/generated/device_event.js";
 import type { Heartbeat } from "../../common/generated/heartbeat.js";
 import { PrismaService } from "../../database/prisma.service.js";
-import { DevicesService } from "../devices/devices.service.js";
+import { DEVICE_CHANGED, type DeviceChange, DevicesService } from "../devices/devices.service.js";
 import { KIOSK_EVENT, type KioskMessage } from "../mqtt/mqtt.events.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { QUEUE } from "../../queue/queues.js";
@@ -52,6 +52,11 @@ export class RealtimeListener {
   @OnEvent(KIOSK_EVENT.heartbeat)
   onBeat(message: KioskMessage<Heartbeat>): void {
     this.feed.publish(FEED.device, message.payload);
+  }
+
+  @OnEvent(DEVICE_CHANGED)
+  onDeviceChanged(change: DeviceChange): void {
+    this.feed.publish(FEED.device, change);
   }
 
   @OnEvent(KIOSK_EVENT.status)

@@ -14,6 +14,7 @@ import { publishAsKiosk } from "./fixtures.js";
 
 const DEVICE_ID = "kiosk-e2e-feed";
 const STRANGER_ID = "kiosk-e2e-stranger";
+const ASKING_ID = "kiosk-e2e-asking";
 const SETTLE_MS = 1500;
 const RANGE = { from: "2020-01-01T00:00:00.000Z", to: "2020-01-02T00:00:00.000Z" };
 
@@ -26,7 +27,7 @@ describe("realtime and reports (e2e)", () => {
   const seen: Record<string, unknown[]> = { event: [], device: [], attendance: [] };
 
   async function sweep(): Promise<void> {
-    const ids = [DEVICE_ID, STRANGER_ID];
+    const ids = [DEVICE_ID, STRANGER_ID, ASKING_ID];
     await db.deviceEvent.deleteMany({ where: { deviceId: { in: ids } } });
     await db.device.deleteMany({ where: { id: { in: ids } } });
   }
@@ -107,6 +108,19 @@ describe("realtime and reports (e2e)", () => {
     await fault(DEVICE_ID);
     await new Promise((done) => setTimeout(done, SETTLE_MS));
     assert.equal(await db.deviceEvent.count({ where: { deviceId: DEVICE_ID } }), kept);
+  });
+
+  it("tells an open dashboard when a kiosk asks to be let in", async () => {
+    const asked = await request(app.getHttpServer())
+      .post("/devices/register")
+      .send({ deviceId: ASKING_ID, bootstrapToken: validateEnv().DEVICE_BOOTSTRAP_TOKEN, claimCode: "271828" });
+    assert.equal(asked.status, 202);
+    await new Promise((done) => setTimeout(done, SETTLE_MS));
+    const told = seen.device.some((body) => {
+      const change = body as { deviceId?: string; status?: string };
+      return change.deviceId === ASKING_ID && change.status === "PENDING";
+    });
+    assert.ok(told, "the devices page would need a reload to see the new kiosk");
   });
 
   it("answers a report twice and the second one costs no query", async () => {

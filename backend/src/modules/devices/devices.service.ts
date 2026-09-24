@@ -9,7 +9,8 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { Device, Prisma } from "@prisma/client";
+import { EventEmitter2 } from "@nestjs/event-emitter";
+import type { Device, DeviceStatus, Prisma } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { heartbeatSchema } from "../../common/generated/heartbeat.js";
@@ -63,6 +64,14 @@ const SHOWN = {
   updatedAt: true,
 } as const;
 
+/** Raised when a kiosk's standing moves without a person's write, so an open dashboard hears it. */
+export const DEVICE_CHANGED = "device.changed";
+
+export interface DeviceChange {
+  deviceId: string;
+  status: DeviceStatus;
+}
+
 export type PublicDevice = Omit<
   Device,
   "tokenHash" | "prevTokenHash" | "claimHash" | "claimFailures"
@@ -78,6 +87,7 @@ export class DevicesService {
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
     private readonly broker: MqttService,
+    private readonly bus: EventEmitter2,
   ) {}
 
   /**
@@ -109,6 +119,7 @@ export class DevicesService {
         fwVersion: body.fwVersion ?? null,
       });
       this.log.log(`${body.deviceId} asked to be let in, waiting for a person`);
+      this.changed(body.deviceId, "PENDING");
       return waiting;
     }
 
@@ -129,6 +140,7 @@ export class DevicesService {
       });
       await this.note(AUDIT_ACTIONS.DEVICE_RESET, held.id, { from: "APPROVED" });
       this.log.warn(`${held.id} registered again while approved, sent back for approval`);
+      this.changed(held.id, "PENDING");
       return waiting;
     }
     if (held.status === "APPROVED") {
@@ -147,6 +159,7 @@ export class DevicesService {
         },
       });
       await this.note(AUDIT_ACTIONS.DEVICE_REGISTER, held.id, { from: "REVOKED" });
+      this.changed(held.id, "PENDING");
       return waiting;
     }
     return this.hold(held, claim);
@@ -311,7 +324,12 @@ export class DevicesService {
       select: SHOWN,
     });
     await this.broker.closeSession(id);
+    this.changed(id, "REVOKED");
     return revoked;
+  }
+
+  private changed(deviceId: string, status: DeviceStatus): void {
+    this.bus.emit(DEVICE_CHANGED, { deviceId, status } satisfies DeviceChange);
   }
 
   /** Record what a heartbeat says about a kiosk, creating its row if needed. */
