@@ -51,9 +51,8 @@ void ui_kiosk_on_stage(ui_kiosk_stage_t stage);
 typedef struct {
     app_ui_verdict_t verdict;
     uint32_t track;                       // the svc_vision track it is about, 0 for none
-    uint32_t employee_id;                 // GRANTED and ALREADY only
-    int64_t stamped_ms;                   // ALREADY: wall clock of the stamp that stands
-    char name[STORAGE_NAME_CAP];          // GRANTED and ALREADY, empty when unnamed
+    uint32_t employee_id;                 // GRANTED only
+    char name[STORAGE_NAME_CAP];          // GRANTED only, empty when unnamed
 } ui_kiosk_verdict_t;
 
 /** Say what the kiosk decided about a face, or SCANNING when it takes up someone new.

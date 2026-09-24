@@ -22,7 +22,6 @@ constexpr Entry kRows[] = {
     { StrId::ScanUnknown, "Chưa có trong hệ thống", "Not enrolled yet" },
     { StrId::ScanDenied, "Chưa nhận được, thử lại", "Not recognised" },
     { StrId::ScanCheckedIn, "Đã chấm công", "Checked in" },
-    { StrId::ScanCheckedInAtFmt, "Đã chấm công lúc %s", "Checked in at %s" },
     { StrId::ScanCodeFmt, "Mã %u", "ID %u" },
 
     { StrId::MenuTitle, "Quản lý", "Manage" },

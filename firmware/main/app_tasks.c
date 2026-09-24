@@ -1675,15 +1675,13 @@ static void tell(const app_wiring_t *wiring, const svc_vision_result_t *result,
     ui_kiosk_verdict_t shown = { .track = result->track };
     if (said == SVC_ATTENDANCE_SAID_REFUSED) {
         shown.verdict = refusal_of(result->kind);
-    } else if (said == SVC_ATTENDANCE_SAID_GRANTED || said == SVC_ATTENDANCE_SAID_ALREADY) {
-        shown.verdict = said == SVC_ATTENDANCE_SAID_GRANTED ? APP_UI_GRANTED : APP_UI_ALREADY;
+    } else if (said == SVC_ATTENDANCE_SAID_GRANTED) {
+        shown.verdict = APP_UI_GRANTED;
         shown.employee_id = result->employee_id;
         memcpy(shown.name, result->name, sizeof(shown.name));
-        storage_attend_record_t standing;
-        const bool known = svc_attendance_last_record(&standing) == ESP_OK;
-        if (said == SVC_ATTENDANCE_SAID_ALREADY && known) {
-            shown.stamped_ms = standing.ts_ms;
-        }
+    } else if (said == SVC_ATTENDANCE_SAID_ALREADY) {
+        // Quiet on purpose, but the green guide has to follow the new track (KEHOACH 4.5.5f).
+        shown.verdict = APP_UI_ALREADY;
     } else {
         return;
     }

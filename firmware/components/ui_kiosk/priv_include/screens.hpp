@@ -34,7 +34,6 @@ struct Sight {
     uint32_t track;                       // which face the pipeline is on
     uint32_t verdict_track;               // which face the last verdict is about
     uint32_t employee_id;
-    int64_t stamped_ms;                   // ALREADY: wall clock of the standing stamp
     char name[STORAGE_NAME_CAP];
 };
 

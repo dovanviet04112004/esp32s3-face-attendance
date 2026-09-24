@@ -35,7 +35,7 @@ typedef struct {
 typedef enum {
     SVC_ATTENDANCE_SAID_NOTHING = 0,      // guidance, or no row in this state
     SVC_ATTENDANCE_SAID_GRANTED,          // the door opened for this face
-    SVC_ATTENDANCE_SAID_ALREADY,          // stamped this arrival; last_record is theirs
+    SVC_ATTENDANCE_SAID_ALREADY,          // this arrival is stamped already, door stays shut
     SVC_ATTENDANCE_SAID_REFUSED,          // spoof, stranger, or liveness policy refused
 } svc_attendance_said_t;
 

@@ -138,7 +138,6 @@ void take_verdict(int64_t dt_ms)
                 s_seen.verdict = offer.verdict;
                 s_seen.verdict_track = offer.track;
                 s_seen.employee_id = offer.employee_id;
-                s_seen.stamped_ms = offer.stamped_ms;
                 strlcpy(s_seen.name, offer.name, sizeof(s_seen.name));
                 s_dirty = true;
             }
