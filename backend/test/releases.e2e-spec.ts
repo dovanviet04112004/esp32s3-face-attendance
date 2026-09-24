@@ -245,6 +245,24 @@ describe("releases (e2e)", () => {
     assert.equal(installed.body.state, "INSTALLED", "a kiosk on the new release still reads as failed");
   });
 
+  it("reads a reboot on the old release as interrupted, and a day-old offer as expired", async () => {
+    await db.deviceEvent.deleteMany({ where: { deviceId: BEHIND, type: "OTA_FAILED" } });
+    await db.device.update({ where: { id: BEHIND }, data: { fwVersion: OLDER, bootedAt: new Date(Date.now() - 3_600_000) } });
+    assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201);
+    const status = async () => (await asAdmin("get", `/releases/status/${BEHIND}`)).body.state as string;
+    assert.equal(await status(), "WAITING", "a kiosk that booted before the offer reads as cut off");
+
+    const offered = (await db.device.findUniqueOrThrow({ where: { id: BEHIND } })).otaOfferedAt as Date;
+    await db.device.update({ where: { id: BEHIND }, data: { bootedAt: new Date(offered.getTime() + 20_000) } });
+    assert.equal(await status(), "INTERRUPTED", "a kiosk back on the old release still reads as waiting");
+
+    await db.device.update({
+      where: { id: BEHIND },
+      data: { bootedAt: new Date(offered.getTime() - 25 * 3_600_000), otaOfferedAt: new Date(Date.now() - 25 * 3_600_000) },
+    });
+    assert.equal(await status(), "EXPIRED", "an offer past its link still reads as waiting");
+  });
+
   it("offers everyone behind in one press, and nobody already on it or unapproved", async () => {
     await db.device.update({ where: { id: BEHIND }, data: { fwVersion: OLDER } });
     offers.length = 0;

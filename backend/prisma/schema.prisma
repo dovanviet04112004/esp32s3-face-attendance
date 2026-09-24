@@ -319,6 +319,8 @@ model Device {
   rosterVersion Int                @default(0)
   lastSeenAt    DateTime?
   online        Boolean            @default(false)
+  // Receipt time less uptime, so a boot after an update offer shows (KEHOACH 7.7).
+  bootedAt      DateTime?
   // The newest update offer only: its status is read against the heartbeat (KEHOACH 7.7).
   otaReleaseId  String?            @db.Uuid
   otaOfferedAt  DateTime?

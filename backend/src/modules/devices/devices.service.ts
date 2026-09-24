@@ -30,6 +30,7 @@ import type {
 interface HeartbeatFacts {
   fwVersion: string;
   modelVersion: string;
+  uptimeSeconds: number;
 }
 
 /** `accepted` is the 202 of KEHOACH 7.3: ask again in `pollIntervalS`. The
@@ -76,7 +77,7 @@ export interface DeviceChange {
 
 export type PublicDevice = Omit<
   Device,
-  "tokenHash" | "prevTokenHash" | "claimHash" | "claimFailures" | "otaReleaseId" | "otaOfferedAt"
+  "tokenHash" | "prevTokenHash" | "claimHash" | "claimFailures" | "otaReleaseId" | "otaOfferedAt" | "bootedAt"
 >;
 
 @Injectable()
@@ -355,6 +356,7 @@ export class DevicesService {
       data: {
         fwVersion: beat.fwVersion,
         modelVersion: beat.modelVersion,
+        bootedAt: new Date(at.getTime() - beat.uptimeSeconds * 1000),
         lastSeenAt: at,
         online: true,
       },

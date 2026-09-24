@@ -32,7 +32,7 @@ export type PublishedTarget = (typeof PUBLISHED_TARGETS)[number];
 /** A release as the dashboard sees it: no file path, and whether it can still be offered. */
 export type ReleaseView = Omit<Release, "path" | "url"> & { available: boolean };
 
-export type OfferState = "WAITING" | "INSTALLED" | "FAILED";
+export type OfferState = "WAITING" | "INSTALLED" | "FAILED" | "INTERRUPTED" | "EXPIRED";
 
 export interface OfferStatus {
   releaseId: string;
@@ -314,9 +314,18 @@ export class ModelsService implements OnModuleInit {
       orderBy: { ts: "desc" },
       select: { message: true },
     });
-    return failure
-      ? { ...base, state: "FAILED", reason: failure.message }
-      : { ...base, state: "WAITING", reason: null };
+    if (failure) {
+      return { ...base, state: "FAILED", reason: failure.message };
+    }
+    // A boot after the offer on the old release is a cut download or a rolled-back trial.
+    if (device.bootedAt && device.bootedAt > device.otaOfferedAt) {
+      return { ...base, state: "INTERRUPTED", reason: null };
+    }
+    const linkMs = this.config.get("RELEASE_LINK_HOURS", { infer: true }) * kHourMs;
+    if (Date.now() - device.otaOfferedAt.getTime() > linkMs) {
+      return { ...base, state: "EXPIRED", reason: null };
+    }
+    return { ...base, state: "WAITING", reason: null };
   }
 
   private async offerable(releaseId: string): Promise<Release> {
