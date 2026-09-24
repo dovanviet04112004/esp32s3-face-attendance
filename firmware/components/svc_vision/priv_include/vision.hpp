@@ -95,6 +95,7 @@ private:
     int unknown_tries_ = 0;               // verdicts withheld on this track
     bool tracking_ = false;               // tracked_ holds the last detect's box
     bool matched_ = false;
+    bool concluded_ = false;              // a verdict has gone out on this track
     Seen seen_ = Seen::Nothing;
     int8_t embedding_[SVC_FACEDB_EMBED_BYTES]{};
 };

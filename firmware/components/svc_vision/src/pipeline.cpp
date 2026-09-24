@@ -112,6 +112,7 @@ void VisionPipeline::reset() noexcept
     stable_ = 0;
     since_verdict_ = -1;
     matched_ = false;
+    concluded_ = false;
     seen_ = Seen::Nothing;
     enrol_spoofs_ = 0;
     unknown_tries_ = 0;
@@ -164,6 +165,7 @@ void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
         stable_ = 1;
         since_verdict_ = -1;
         matched_ = false;
+        concluded_ = false;
         ++track_;
         // A new track can be a different person, so the tries start over.
         enrol_spoofs_ = 0;
@@ -195,6 +197,7 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
         out.live_score = live;
         if (live < thresholds_.live_min_score) {
             out.kind = SVC_VISION_SPOOF;
+            concluded_ = true;
             matched_ = false;
             since_verdict_ = 0;
             ++enrol_spoofs_;
@@ -229,6 +232,7 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     since_verdict_ = 0;
     if (matched_) {
         unknown_tries_ = 0;
+        concluded_ = true;
         out.kind = SVC_VISION_MATCH;
         out.employee_id = employee_id;
         memcpy(out.name, name, sizeof(out.name));
@@ -239,6 +243,7 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     if (++unknown_tries_ < kUnknownTries) {
         return;
     }
+    concluded_ = true;
     out.kind = SVC_VISION_UNKNOWN;
 }
 
@@ -279,6 +284,7 @@ void VisionPipeline::tell(const svc_vision_result_t &out, size_t count,
 svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcept
 {
     svc_vision_result_t out = blank();
+    out.track = track_;
     const size_t count = detector_.detect(frame, thresholds_.detect_min_score, faces_, kMaxFaces);
     out.faces = static_cast<uint8_t>(count);
     for (size_t i = 0; i < count && i < SVC_VISION_REPORTED_FACES; ++i) {
@@ -303,14 +309,15 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     memcpy(out.primary.box, primary.box, sizeof(out.primary.box));
     out.primary.yaw = yaw_of(primary.landmarks);
     follow(primary);
+    out.track = track_;
     // Four arithmetic checks scored here so the glass learns the stage on the
     // fast path, not after the slow models return (KEHOACH 4.5.5h.1).
     const bool small = side_of(primary.box) < static_cast<float>(thresholds_.face_min_px);
     const bool inside = in_guide(primary.box);
     const bool fits = square_fits(primary.box, frame.width, frame.height);
-    // Saying FACE_OK is saying a model runs this step, and only this line knows
-    // whether one will (KEHOACH 4.5.5h.1).
-    const bool working = stable_ >= kStableDetects ? may_verify() : true;
+    // Saying FACE_OK is saying this track is still owed an answer, and only this
+    // line knows whether it is (KEHOACH 4.5.5h.1).
+    const bool working = stable_ >= kStableDetects ? !concluded_ || may_verify() : true;
     const svc_vision_kind_t settled = working ? SVC_VISION_FACE_OK : SVC_VISION_FACE_SETTLED;
     const svc_vision_kind_t stage =
         small ? SVC_VISION_FACE_SMALL

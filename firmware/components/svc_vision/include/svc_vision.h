@@ -48,6 +48,7 @@ typedef struct {
 /** One event from one step. Scores are -1 where the stage did not run. */
 typedef struct {
     svc_vision_kind_t kind;
+    uint32_t track;                       // the track the observer heard this step
     uint32_t employee_id;                 // valid for MATCH
     char name[STORAGE_NAME_CAP];          // valid for MATCH, empty when unnamed
     float match_score;
