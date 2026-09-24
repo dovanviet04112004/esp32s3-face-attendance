@@ -20,12 +20,14 @@ CATALOGUES = {
     "en": Path("frontend/messages/en.json"),
 }
 
-HTTP = r"(?:BadRequest|NotFound|Conflict|Forbidden|Unauthorized|Gone|UnprocessableEntity)"
+HTTP = r"(?:BadRequest|NotFound|Conflict|Forbidden|Unauthorized|Gone|UnprocessableEntity|Throttler)"
 # The argument list runs to the end of the line, which is where every one of
 # these calls ends; a ternary between two codes is still one call.
 CALL = re.compile(HTTP + r"Exception\(([^\n]*)")
 LITERAL = re.compile(r"\"([^\"]*)\"|`([^`]*)`")
 CODE = re.compile(r"^[A-Z0-9_]+$")
+# The throttler answers with the code its module options name, not a throw.
+OPTION = re.compile(r"errorMessage:\s*\"([A-Z0-9_]+)\"")
 
 # Raised by the frontend itself when no response arrives, so no backend file
 # mentions it.
@@ -51,6 +53,8 @@ def scan() -> tuple[dict[str, list[str]], list[str]]:
     sentences: list[str] = []
     for path in sorted(BACKEND.rglob("*.ts")):
         for at, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for code in OPTION.findall(line):
+                found.setdefault(code, []).append(str(path))
             for argument in CALL.findall(line):
                 codes, prose = codes_in(argument)
                 for code in codes:
