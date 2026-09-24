@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -29,6 +30,12 @@ net_provision_answer_t net_provision_register(void);
  *  @ret GRANTED it stands | REFUSED api says it is dead | UNREACHABLE api did not say
  */
 net_provision_answer_t net_provision_check(void);
+
+/** The six-digit claim code of this registration, made and kept on first ask.
+ *  @ctx task | blocking | writes NVS the first time | cap at least 7
+ *  @ret ESP_OK | ESP_ERR_INVALID_SIZE | an NVS error
+ */
+esp_err_t net_provision_claim(char *out, size_t cap);
 
 /** Drop the held ticket so the next ask registers from the start.
  *  @ctx task | blocking | writes NVS

@@ -1,5 +1,6 @@
 #include "net_provision.h"
 
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "mbedtls/base64.h"
 #include "sys_storage.h"
 
@@ -26,6 +28,10 @@ static const char *TAG = "net_provision";
 #define JITTER_PERCENT 20
 #define MS_PER_S 1000u
 #define HTTP_ACCEPTED 202                 // HttpStatus_Code stops short of it
+#define NVS_CLAIM "claim"
+#define CLAIM_DIGITS 6
+#define CLAIM_SPACE 1000000u
+#define CLAIM_FAIR_LIMIT 4294000000u      // largest multiple of CLAIM_SPACE in 32 bits
 
 typedef struct {
     int status;                           // 0 when nothing came back
@@ -89,10 +95,42 @@ static bool answer_open(answer_t *answer)
     return answer->body != NULL;
 }
 
+static bool claim_shape(const char *code)
+{
+    if (strlen(code) != CLAIM_DIGITS) {
+        return false;
+    }
+    for (size_t i = 0; i < CLAIM_DIGITS; ++i) {
+        if (code[i] < '0' || code[i] > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
+esp_err_t net_provision_claim(char *out, size_t cap)
+{
+    if (out == NULL || cap < CLAIM_DIGITS + 1) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (sys_storage_get_str(STORAGE_NS_DEVICE, NVS_CLAIM, out, cap) == ESP_OK && claim_shape(out)) {
+        return ESP_OK;
+    }
+    uint32_t draw = esp_random();
+    // Rejecting the top sliver keeps every code equally likely (KEHOACH 7.3).
+    while (draw >= CLAIM_FAIR_LIMIT) {
+        draw = esp_random();
+    }
+    snprintf(out, cap, "%06" PRIu32, draw % CLAIM_SPACE);
+    return sys_storage_set_str(STORAGE_NS_DEVICE, NVS_CLAIM, out);
+}
+
 static char *register_body(void)
 {
     char device_id[STORAGE_DEVICE_ID_CAP] = { 0 };
-    if (sys_storage_device_id(device_id, sizeof(device_id)) != ESP_OK) {
+    char claim[CLAIM_DIGITS + 1] = { 0 };
+    if (sys_storage_device_id(device_id, sizeof(device_id)) != ESP_OK ||
+        net_provision_claim(claim, sizeof(claim)) != ESP_OK) {
         return NULL;
     }
     cJSON *ask = cJSON_CreateObject();
@@ -102,6 +140,7 @@ static char *register_body(void)
     cJSON_AddStringToObject(ask, "deviceId", device_id);
     cJSON_AddStringToObject(ask, "bootstrapToken", CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN);
     cJSON_AddStringToObject(ask, "fwVersion", esp_app_get_description()->version);
+    cJSON_AddStringToObject(ask, "claimCode", claim);
     char *text = cJSON_PrintUnformatted(ask);
     cJSON_Delete(ask);
     return text;
@@ -127,6 +166,17 @@ static bool keep_ticket(const char *reply)
     return kept;
 }
 
+// A code typed wrong too often is dead; the next ask carries a fresh one (KEHOACH 7.3).
+static void renew_if_spent(const char *reply)
+{
+    cJSON *root = cJSON_Parse(reply);
+    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "claimRenew"))) {
+        ESP_LOGW(TAG, "claim code spent, showing a new one");
+        sys_storage_erase_key(STORAGE_NS_DEVICE, NVS_CLAIM);
+    }
+    cJSON_Delete(root);
+}
+
 net_provision_answer_t net_provision_register(void)
 {
     if (CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN[0] == '\0') {
@@ -146,8 +196,12 @@ net_provision_answer_t net_provision_register(void)
         ESP_LOGW(TAG, "register: %s", esp_err_to_name(sent));
     } else if (answer.status == HttpStatus_Ok) {
         said = keep_ticket(answer.body) ? NET_PROVISION_GRANTED : NET_PROVISION_UNREACHABLE;
+        if (said == NET_PROVISION_GRANTED) {
+            sys_storage_erase_key(STORAGE_NS_DEVICE, NVS_CLAIM);
+        }
     } else if (answer.status == HTTP_ACCEPTED) {
         said = NET_PROVISION_WAITING;
+        renew_if_spent(answer.body);
     } else if (answer.status == HttpStatus_Unauthorized) {
         said = NET_PROVISION_REFUSED;
     }
@@ -188,6 +242,7 @@ net_provision_answer_t net_provision_check(void)
 
 esp_err_t net_provision_forget(void)
 {
+    sys_storage_erase_key(STORAGE_NS_DEVICE, NVS_CLAIM);
     sys_storage_erase_key(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP);
     return sys_storage_erase_key(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET);
 }

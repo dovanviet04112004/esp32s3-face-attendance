@@ -77,10 +77,32 @@ TEST_CASE("a ticket with no exp or no body is refused", "[provision]")
     TEST_ASSERT_EQUAL_UINT32(7u, exp);
 }
 
+// Several cases need storage, and a second init answers INVALID_STATE.
+static void storage_up(void)
+{
+    const esp_err_t up = sys_storage_init();
+    TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
+}
+
+TEST_CASE("the claim code is six digits and the same on every ask", "[provision]")
+{
+    storage_up();
+    char first[8] = { 0 };
+    char again[8] = { 0 };
+    TEST_ASSERT_EQUAL(ESP_OK, net_provision_claim(first, sizeof(first)));
+    TEST_ASSERT_EQUAL(6, strlen(first));
+    for (size_t i = 0; i < 6; ++i) {
+        TEST_ASSERT_TRUE(first[i] >= '0' && first[i] <= '9');
+    }
+    TEST_ASSERT_EQUAL(ESP_OK, net_provision_claim(again, sizeof(again)));
+    TEST_ASSERT_EQUAL_STRING(first, again);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, net_provision_claim(again, 6));
+}
+
 // The live cases ask the api this build names, over the wifi already in NVS.
 static void join(void)
 {
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_init());
+    storage_up();
     TEST_ASSERT_EQUAL(ESP_OK, net_wifi_start());
     TEST_ASSERT_EQUAL(ESP_OK, net_wifi_wait_connected(JOIN_TIMEOUT_MS));
 }
