@@ -143,10 +143,9 @@ esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count)
     if (s_touch == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    uint16_t xs[CONFIG_ESP_LCD_TOUCH_MAX_POINTS];
-    uint16_t ys[CONFIG_ESP_LCD_TOUCH_MAX_POINTS];
+    esp_lcd_touch_point_data_t touched[CONFIG_ESP_LCD_TOUCH_MAX_POINTS];
     // esp_lcd_touch fills up to the count it is handed, so a caller asking for
-    // more than these arrays hold would write past them.
+    // more than this array holds would write past it.
     const uint8_t room = max < CONFIG_ESP_LCD_TOUCH_MAX_POINTS
                              ? max
                              : (uint8_t)CONFIG_ESP_LCD_TOUCH_MAX_POINTS;
@@ -157,10 +156,10 @@ esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count)
     bsp_i2c_unlock();
     APP_RETURN_ON_ERR(err, TAG, "read");
 
-    esp_lcd_touch_get_coordinates(s_touch, xs, ys, NULL, &got, room);
+    APP_RETURN_ON_ERR(esp_lcd_touch_get_data(s_touch, touched, &got, room), TAG, "points");
     for (uint8_t i = 0; i < got; ++i) {
-        points[i].x = xs[i];
-        points[i].y = ys[i];
+        points[i].x = touched[i].x;
+        points[i].y = touched[i].y;
     }
     *count = got;
     return ESP_OK;
