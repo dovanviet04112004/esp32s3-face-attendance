@@ -72,6 +72,30 @@ reload_traefik() {
     "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate traefik
 }
 
+backup_digest() {
+    cat "$HERE"/backup/* | sha256sum
+}
+
+# kiosk-backup:local is built on this box and never pulled, while start runs --no-build.
+rebuild_backup() {
+    REBUILT=no
+    [[ "$(backup_digest)" == "$1" ]] && return 0
+    log "backup image inputs changed, building kiosk-backup"
+    "${COMPOSE[@]}" build --quiet backup
+    REBUILT=yes
+}
+
+postgres_digest() {
+    cat "$HERE"/postgres/* | sha256sum
+}
+
+# A rebuilt image already made compose recreate postgres on the new files.
+reload_postgres() {
+    [[ "$(postgres_digest)" == "$1" || "$REBUILT" == yes ]] && return 0
+    log "postgres config changed, recreating postgres"
+    "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate postgres
+}
+
 # The running and the previous image stay for a rollback; each is ~1.1 GB.
 prune() {
     local keep_now="$1" keep_before="$2" tag
@@ -83,7 +107,7 @@ prune() {
 }
 
 main() {
-    local sha actor previous broker proxy
+    local sha actor previous broker proxy store database
     read -r sha actor _ <<< "${SSH_ORIGINAL_COMMAND:-${1:-} ${2:-}}"
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { log "expected a 40-character commit sha"; exit 2; }
     [[ "$actor" =~ ^[A-Za-z0-9-]+(\[bot\])?$ ]] || { log "expected the github actor after the sha"; exit 2; }
@@ -95,10 +119,14 @@ main() {
     log "moving to $sha${previous:+ from $previous}"
     broker="$(broker_digest)"
     proxy="$(traefik_digest)"
+    store="$(backup_digest)"
+    database="$(postgres_digest)"
     checkout "$sha"
+    rebuild_backup "$store"
     start "$sha"
     reload_broker "$broker"
     reload_traefik "$proxy"
+    reload_postgres "$database"
     if healthy; then
         echo "$sha" > "$HERE/.deployed"
         prune "$sha" "$previous"
@@ -113,10 +141,14 @@ main() {
     log "rolling back to $previous"
     broker="$(broker_digest)"
     proxy="$(traefik_digest)"
+    store="$(backup_digest)"
+    database="$(postgres_digest)"
     checkout "$previous"
+    rebuild_backup "$store"
     start "$previous"
     reload_broker "$broker"
     reload_traefik "$proxy"
+    reload_postgres "$database"
     healthy || log "the rollback is not healthy either"
     exit 1
 }
