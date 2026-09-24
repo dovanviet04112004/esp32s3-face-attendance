@@ -166,9 +166,10 @@ bool names_who(attend::Ev event)
 
 svc_attendance_said_t apply(attend::Ev event, const svc_vision_result_t *result, int64_t now_ms)
 {
-    // An empty frame is not the only way the last person leaves: a queue keeps a
-    // face in shot throughout, so anyone else being seen ends their turn too.
+    // Leaving the guide is leaving (KEHOACH 4.5.5f), and in a queue a face stays in
+    // shot throughout, so anyone else being seen ends the last person's turn too.
     if (event == attend::Ev::NoFace || event == attend::Ev::PresenceOff ||
+        result->kind == SVC_VISION_FACE_OFF_GUIDE ||
         (names_who(event) && result->employee_id != s_last_employee)) {
         s_left_since_grant = true;
     }

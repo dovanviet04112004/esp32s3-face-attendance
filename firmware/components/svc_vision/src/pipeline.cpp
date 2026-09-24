@@ -21,6 +21,8 @@ constexpr int kUnknownTries = 2;
 constexpr int kEnrolSpoofTries = 3;
 // The detector drops a frame here and there on a face that never moved.
 constexpr int kMissesLost = 2;
+// A face leaves the guide below this part of the share that let it in (KEHOACH 4.5.5d).
+constexpr float kLeaveShareRatio = 0.5f;
 
 float iou(const float *a, const float *b) noexcept
 {
@@ -113,6 +115,7 @@ void VisionPipeline::reset() noexcept
     since_verdict_ = -1;
     matched_ = false;
     concluded_ = false;
+    inside_ = false;
     seen_ = Seen::Nothing;
     enrol_spoofs_ = 0;
     unknown_tries_ = 0;
@@ -153,6 +156,12 @@ bool VisionPipeline::in_guide(const float *box) const noexcept
     return share_inside(box, thresholds_.guide) >= thresholds_.guide_min_share;
 }
 
+bool VisionPipeline::holds_guide(const float *box) const noexcept
+{
+    const float needed = thresholds_.guide_min_share * (inside_ ? kLeaveShareRatio : 1.0f);
+    return share_inside(box, thresholds_.guide) >= needed;
+}
+
 void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
 {
     // Overlap alone decides identity, so zeroing stable_ never ends a track.
@@ -166,6 +175,7 @@ void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
         since_verdict_ = -1;
         matched_ = false;
         concluded_ = false;
+        inside_ = false;
         ++track_;
         // A new track can be a different person, so the tries start over.
         enrol_spoofs_ = 0;
@@ -310,33 +320,38 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
     out.primary.yaw = yaw_of(primary.landmarks);
     follow(primary);
     out.track = track_;
+    const bool inside = holds_guide(primary.box);
+    // Leaving the guide ends the arrival, so the next time in is a new track (KEHOACH 4.5.5d).
+    if (inside_ && !inside) {
+        tracking_ = false;
+    }
+    inside_ = inside;
     // Four arithmetic checks scored here so the glass learns the stage on the
     // fast path, not after the slow models return (KEHOACH 4.5.5h.1).
     const bool small = side_of(primary.box) < static_cast<float>(thresholds_.face_min_px);
-    const bool inside = in_guide(primary.box);
     const bool fits = square_fits(primary.box, frame.width, frame.height);
     // Saying FACE_OK is saying this track is still owed an answer, and only this
     // line knows whether it is (KEHOACH 4.5.5h.1).
     const bool working = stable_ >= kStableDetects ? !concluded_ || may_verify() : true;
     const svc_vision_kind_t settled = working ? SVC_VISION_FACE_OK : SVC_VISION_FACE_SETTLED;
     const svc_vision_kind_t stage =
-        small ? SVC_VISION_FACE_SMALL
-              : (!inside ? SVC_VISION_FACE_OFF_GUIDE : (fits ? settled : SVC_VISION_FACE_OUT_OF_FRAME));
+        !inside ? SVC_VISION_FACE_OFF_GUIDE
+                : (small ? SVC_VISION_FACE_SMALL : (fits ? settled : SVC_VISION_FACE_OUT_OF_FRAME));
     // The slow models below hold this step for up to a second, and a box that
     // waits for them is a second old by the time it is drawn (KEHOACH 4.5.5d).
     tell(out, count, stage);
-    if (small) {
-        if (seen_ != Seen::Small) {
-            seen_ = Seen::Small;
-            out.kind = SVC_VISION_FACE_SMALL;
-        }
-        return out;
-    }
     if (!inside) {
         stable_ = 0;
         if (seen_ != Seen::OffGuide) {
             seen_ = Seen::OffGuide;
             out.kind = SVC_VISION_FACE_OFF_GUIDE;
+        }
+        return out;
+    }
+    if (small) {
+        if (seen_ != Seen::Small) {
+            seen_ = Seen::Small;
+            out.kind = SVC_VISION_FACE_SMALL;
         }
         return out;
     }

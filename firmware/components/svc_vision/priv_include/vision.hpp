@@ -68,6 +68,7 @@ private:
 
     const ai_engine_face_t &pick(size_t count) const noexcept;
     bool in_guide(const float *box) const noexcept;
+    bool holds_guide(const float *box) const noexcept;
     void follow(const ai_engine_face_t &primary) noexcept;
     bool may_verify() const noexcept;
     void verify(const ai_engine_frame_t &frame, const ai_engine_face_t &primary, svc_vision_result_t &out) noexcept;
@@ -96,6 +97,7 @@ private:
     bool tracking_ = false;               // tracked_ holds the last detect's box
     bool matched_ = false;
     bool concluded_ = false;              // a verdict has gone out on this track
+    bool inside_ = false;                 // the tracked face has entered the guide
     Seen seen_ = Seen::Nothing;
     int8_t embedding_[SVC_FACEDB_EMBED_BYTES]{};
 };
