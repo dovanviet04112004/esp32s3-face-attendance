@@ -194,6 +194,27 @@ describe("route scope (e2e)", () => {
     }
   });
 
+  it("keeps a push subscription only on a known push service, and never moves it to a stranger", async () => {
+    const say = (endpoint: string, p256dh = "k", auth = "a", role: Who = "EMPLOYEE") =>
+      request(http)
+        .post("/notifications/subscribe")
+        .set("Authorization", `Bearer ${tokens.get(role)}`)
+        .send({ endpoint, p256dh, auth });
+    for (const endpoint of ["https://127.0.0.1:6379/x", "http://fcm.googleapis.com/x", "https://evilfcm.googleapis.com.example/x"]) {
+      const refused = await say(endpoint);
+      assert.equal(refused.status, 400, endpoint);
+      assert.equal(refused.body.message, "PUSH_ENDPOINT_REFUSED");
+    }
+    const endpoint = "https://fcm.googleapis.com/fcm/send/e2e-route-scope";
+    await db.pushSubscription.deleteMany({ where: { endpoint } });
+    assert.equal((await say(endpoint)).status, 201);
+    const taken = await say(endpoint, "other-key", "other-auth", "MANAGER");
+    assert.equal(taken.status, 409, "someone else's device was moved onto a stranger's keys");
+    assert.equal(taken.body.message, "PUSH_ENDPOINT_TAKEN");
+    assert.equal((await say(endpoint, "k", "a", "MANAGER")).status, 201, "the same browser could not change hands");
+    await db.pushSubscription.deleteMany({ where: { endpoint } });
+  });
+
   it("drops only the caller's own push subscription", async () => {
     const endpoint = "https://push.example.com/e2e-route-scope";
     const mine = await db.employee.findFirstOrThrow({ where: { code: "NV9144R" } });

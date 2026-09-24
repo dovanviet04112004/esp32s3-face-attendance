@@ -93,6 +93,11 @@ export const envSchema = z
       .optional()
       .transform((held) => (held ? held : undefined)),
     VAPID_SUBJECT: z.string().default("mailto:no-reply@example.com"),
+    // Push services a subscription may point at; a leading dot allows the subdomains (KEHOACH 7.2).
+    PUSH_ENDPOINT_HOSTS: z
+      .string()
+      .default("fcm.googleapis.com,updates.push.services.mozilla.com,.push.apple.com,.notify.windows.com")
+      .transform((listed) => listed.split(",").map((one) => one.trim().toLowerCase()).filter(Boolean)),
 
     MQTT_URL: z.string().min(1),
     MQTT_USERNAME: z.string().min(1),

@@ -825,7 +825,9 @@
     "AUTH_LOCKED": "This account is locked for a while after too many wrong passwords. Try again in a few minutes, or reset the password.",
     "DEVICE_ID_RESERVED": "A device name starting with svc- is reserved for services",
     "RELEASE_URL_INTERNAL": "The download address points inside the private network, and the server will not fetch from it",
-    "RELEASE_REDIRECTED": "The download address redirects elsewhere; give the file's final address"
+    "RELEASE_REDIRECTED": "The download address redirects elsewhere; give the file's final address",
+    "PUSH_ENDPOINT_REFUSED": "This browser gave an unknown notification address, and the server will not use it",
+    "PUSH_ENDPOINT_TAKEN": "This device already receives notifications for another account"
   },
   "search": {
     "label": "Search",

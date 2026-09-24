@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { NoticeChannel, NoticeKind, Notification, Prisma } from "@prisma/client";
 import webpush from "web-push";
@@ -114,7 +114,17 @@ export class NotificationsService {
     });
   }
 
-  subscribe(userId: string, body: SubscribeDto): Promise<unknown> {
+  /** Keep a browser's push subscription: only on a known push service, and one that belongs to
+   *  another account moves only when it is that same subscription, keys and all (KEHOACH 7.2).
+   */
+  async subscribe(userId: string, body: SubscribeDto): Promise<unknown> {
+    if (!this.pushService(body.endpoint)) {
+      throw new BadRequestException("PUSH_ENDPOINT_REFUSED");
+    }
+    const held = await this.db.pushSubscription.findUnique({ where: { endpoint: body.endpoint } });
+    if (held && held.userId !== userId && (held.p256dh !== body.p256dh || held.auth !== body.auth)) {
+      throw new ConflictException("PUSH_ENDPOINT_TAKEN");
+    }
     return this.db.pushSubscription.upsert({
       where: { endpoint: body.endpoint },
       update: { userId, p256dh: body.p256dh, auth: body.auth, userAgent: body.userAgent ?? null },
@@ -126,6 +136,22 @@ export class NotificationsService {
         userAgent: body.userAgent ?? null,
       },
     });
+  }
+
+  private pushService(endpoint: string): boolean {
+    let url: URL;
+    try {
+      url = new URL(endpoint);
+    } catch {
+      return false;
+    }
+    const host = url.hostname.toLowerCase();
+    return (
+      url.protocol === "https:" &&
+      this.config.get("PUSH_ENDPOINT_HOSTS", { infer: true }).some((allowed) =>
+        allowed.startsWith(".") ? host.endsWith(allowed) : host === allowed,
+      )
+    );
   }
 
   /** Only the owner drops a device: the endpoint alone is a guessable name for

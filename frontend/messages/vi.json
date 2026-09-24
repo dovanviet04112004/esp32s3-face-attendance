@@ -825,7 +825,9 @@
     "AUTH_LOCKED": "Tài khoản tạm khoá vì nhập sai mật khẩu nhiều lần. Thử lại sau ít phút, hoặc đặt lại mật khẩu.",
     "DEVICE_ID_RESERVED": "Tên thiết bị bắt đầu bằng svc- là tên dành cho dịch vụ, máy không dùng được",
     "RELEASE_URL_INTERNAL": "Địa chỉ tải trỏ vào mạng nội bộ, máy chủ không tải từ đó",
-    "RELEASE_REDIRECTED": "Địa chỉ tải chuyển hướng sang chỗ khác; hãy đưa địa chỉ cuối cùng của file"
+    "RELEASE_REDIRECTED": "Địa chỉ tải chuyển hướng sang chỗ khác; hãy đưa địa chỉ cuối cùng của file",
+    "PUSH_ENDPOINT_REFUSED": "Trình duyệt này đưa một địa chỉ thông báo lạ, máy chủ không nhận",
+    "PUSH_ENDPOINT_TAKEN": "Thiết bị này đang nhận thông báo cho một tài khoản khác"
   },
   "search": {
     "label": "Tìm kiếm",
