@@ -34,6 +34,7 @@ constexpr int kGuideH = 296;
 constexpr int kGuideX = (APP_LCD_H_RES - kGuideW) / 2;
 constexpr int kGuideY = 96;
 constexpr int kPromptY = kGuideY + kGuideH + 18;
+constexpr int kTicketLineH = 22;          // the id line; the claim code takes the rest
 constexpr int kBandH = 96;
 constexpr int kBandY = APP_LCD_V_RES - kBandH - theme::kGutter;
 constexpr int kMenuBox = 44;
@@ -358,7 +359,7 @@ void field(Canvas &to, const char *text, const char *hint)
             empty ? DRV_LCD_DIM : DRV_LCD_INK);
 }
 
-// A line about the kiosk itself, not the face, in the gap above the guide (KEHOACH 4.5.5h.1).
+// Lines about the kiosk itself, not the face, in the gap above the guide (KEHOACH 4.5.5h.1).
 void ticket_line(Canvas &to)
 {
     char line[64] = { 0 };
@@ -370,8 +371,18 @@ void ticket_line(Canvas &to)
     case UI_KIOSK_TICKET_NO_TOKEN: strlcpy(line, text(StrId::TicketNoToken), sizeof(line)); break;
     default: return;
     }
+    const bool coded = s_ticket.state == UI_KIOSK_TICKET_WAITING && strlen(s_ticket.claim) == 6;
+    const int split = coded ? theme::kBarH + kTicketLineH : kGuideY;
     to.text_on_video(Font::Caption, kWideX,
-                     Canvas::centre_y(Font::Caption, theme::kBarH, kGuideY - theme::kBarH),
+                     Canvas::centre_y(Font::Caption, theme::kBarH, split - theme::kBarH), kWideW,
+                     line, DRV_LCD_WARN, Align::Centre);
+    if (!coded) {
+        return;
+    }
+    char grouped[8] = { 0 };
+    snprintf(grouped, sizeof(grouped), "%.3s %.3s", s_ticket.claim, s_ticket.claim + 3);
+    snprintf(line, sizeof(line), text(StrId::TicketClaimFmt), grouped);
+    to.text_on_video(Font::Strong, kWideX, Canvas::centre_y(Font::Strong, split, kGuideY - split),
                      kWideW, line, DRV_LCD_WARN, Align::Centre);
 }
 

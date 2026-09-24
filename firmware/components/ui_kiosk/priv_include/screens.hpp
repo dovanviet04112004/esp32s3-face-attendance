@@ -121,6 +121,7 @@ ui_kiosk_net_t &net() noexcept;
 struct Ticket {
     ui_kiosk_ticket_t state;
     char device_id[STORAGE_DEVICE_ID_CAP];
+    char claim[8];                        // six digits and a terminator
 };
 
 Ticket &ticket() noexcept;

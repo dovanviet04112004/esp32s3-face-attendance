@@ -136,10 +136,11 @@ typedef enum {
     UI_KIOSK_TICKET_NO_TOKEN,             // this build carries no batch token
 } ui_kiosk_ticket_t;
 
-/** Show or clear the line between the top bar and the guide (KEHOACH 4.5.5h.1).
- *  @ctx any | non-blocking | device_id copied; NULL keeps the one held
+/** Show or clear the lines between the top bar and the guide (KEHOACH 4.5.5h.1).
+ *  @ctx any | non-blocking | device_id and claim copied; NULL keeps the one held
+ *  @param claim the six digits an admin types to approve, shown while WAITING
  */
-void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id);
+void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id, const char *claim);
 
 /** Seed what the two settings sliders rest at, from main's copy of NVS.
  *  @ctx ui_task | non-blocking

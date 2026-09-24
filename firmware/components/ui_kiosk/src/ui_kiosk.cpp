@@ -439,7 +439,7 @@ void ui_kiosk_set_net(const ui_kiosk_net_t *net)
     }
 }
 
-void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id)
+void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id, const char *claim)
 {
     if (!s_ready) {
         return;
@@ -448,6 +448,9 @@ void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id)
     held.state = state;
     if (device_id != nullptr) {
         strlcpy(held.device_id, device_id, sizeof(held.device_id));
+    }
+    if (claim != nullptr) {
+        strlcpy(held.claim, claim, sizeof(held.claim));
     }
     s_dirty = true;
 }

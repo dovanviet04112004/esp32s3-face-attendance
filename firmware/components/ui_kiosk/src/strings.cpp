@@ -24,6 +24,7 @@ constexpr Entry kRows[] = {
     { StrId::ScanCheckedIn, "Đã chấm công", "Checked in" },
     { StrId::ScanCodeFmt, "Mã %u", "ID %u" },
     { StrId::TicketWaitingFmt, "Chờ duyệt · %s", "Pending · %s" },
+    { StrId::TicketClaimFmt, "Mã nhận máy %s", "Claim code %s" },
     { StrId::TicketRefused, "Máy chủ không nhận firmware này", "Server refused this firmware" },
     { StrId::TicketNoToken, "Firmware này chưa có mã lô", "Firmware has no batch token" },
 

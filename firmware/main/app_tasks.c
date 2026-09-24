@@ -1381,14 +1381,17 @@ static void fetch_ticket(const app_wiring_t *wiring)
         if (answer == NET_PROVISION_GRANTED) {
             break;
         }
-        ui_kiosk_set_ticket(ticket_shown(answer), id);
+        // Read after the ask: a spent code has just been replaced (KEHOACH 7.3).
+        char claim[8] = { 0 };
+        net_provision_claim(claim, sizeof(claim));
+        ui_kiosk_set_ticket(ticket_shown(answer), id, claim);
         // Only a person or a new image fixes a refused batch, so those ask at the ceiling.
         const bool hopeless = answer == NET_PROVISION_REFUSED || answer == NET_PROVISION_DISABLED;
         vTaskDelay(pdMS_TO_TICKS(net_provision_wait_ms(hopeless ? UINT32_MAX : attempt,
                                                        esp_random())));
     }
     ESP_LOGI(TAG, "ticket collected, dialling the broker");
-    ui_kiosk_set_ticket(UI_KIOSK_TICKET_HELD, NULL);
+    ui_kiosk_set_ticket(UI_KIOSK_TICKET_HELD, NULL, "");
     xEventGroupClearBits(wiring->flags, APP_EG_NEED_TICKET);
     start_broker();
 }
