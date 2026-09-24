@@ -60,6 +60,8 @@ export const AUDIT_ACTIONS = {
   BIOMETRIC_CONSENT_WITHDRAW: "biometric.consent.withdraw",
   BIOMETRIC_ERASE: "biometric.erase",
   BIOMETRIC_READ: "biometric.read",
+  ENROLLMENT_RETAKE: "enrollment.retake",
+  ENROLLMENT_REMOVE: "enrollment.remove",
 
   ORG_REORG: "org.reorg",
   ORG_HOLIDAY_CREATE: "org.holidayCreate",

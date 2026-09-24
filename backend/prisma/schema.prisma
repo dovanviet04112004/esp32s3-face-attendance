@@ -48,6 +48,8 @@ enum DeviceStatus {
 enum EnrollmentState {
   ASSIGNED
   ENROLLED
+  // Held and matching, with a new capture asked for (KEHOACH 7.5).
+  RETAKE
   REVOKED
 }
 

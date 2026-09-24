@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { Device, DeviceEnrollment } from "@prisma/client";
+import type { Device, DeviceEnrollment, FaceTemplate } from "@prisma/client";
 
 import type { EnrollPayload } from "../../common/generated/enroll_payload.js";
 import type { Env } from "../../config/env.schema.js";
@@ -13,11 +13,21 @@ import { openTemplate, sealTemplate } from "./template-crypto.js";
 
 const NO_EMPLOYEE = 0;
 const FIRST_TEMPLATE = 0;
+// First key of pg_advisory_xact_lock, so one person's captures are taken one at a time.
+const CAPTURE_LOCK = 75;
+
+type Named = { fullName: string; code: string; embeddingVersion: string | null };
+type Build = (version: number, deviceId: string) => Promise<EnrollPayload>;
 
 export interface AssignableDevice {
   id: string;
   name: string | null;
   location: string | null;
+}
+
+/** Where one person stands on one kiosk. */
+export interface KioskStanding extends AssignableDevice {
+  state: DeviceEnrollment["state"];
 }
 
 @Injectable()
@@ -32,7 +42,6 @@ export class EnrollmentService {
     private readonly config: ConfigService<Env, true>,
   ) {}
 
-  /** Tell a kiosk to expect this person, so nobody types a UID (KEHOACH 7.5). */
   /** The kiosks a person can be put on, by name (KEHOACH 7.5). */
   assignable(): Promise<AssignableDevice[]> {
     return this.db.device.findMany({
@@ -42,25 +51,39 @@ export class EnrollmentService {
     });
   }
 
+  /** Where a person stands on every kiosk still holding or awaiting them (KEHOACH 7.5). */
+  async standing(employeeId: number): Promise<KioskStanding[]> {
+    const rows = await this.db.deviceEnrollment.findMany({
+      where: { employeeId, state: { not: "REVOKED" } },
+      include: { device: { select: { name: true, location: true } } },
+      orderBy: { deviceId: "asc" },
+    });
+    return rows.map((row) => ({
+      id: row.deviceId,
+      name: row.device.name,
+      location: row.device.location,
+      state: row.state,
+    }));
+  }
+
+  /**
+   * Put a person up for capture on a kiosk, so nobody types a UID. A pair
+   * that already holds a face goes to RETAKE and keeps matching until the new
+   * capture lands (KEHOACH 7.5).
+   */
   async assign(deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
     await this.consent.require(employeeId);
     const [device, employee] = await Promise.all([this.device(deviceId), this.employee(employeeId)]);
+    const held = await this.db.deviceEnrollment.findUnique({
+      where: { deviceId_employeeId: { deviceId, employeeId } },
+    });
+    const state = held?.state === "ENROLLED" || held?.state === "RETAKE" ? "RETAKE" : "ASSIGNED";
     const row = await this.db.deviceEnrollment.upsert({
       where: { deviceId_employeeId: { deviceId, employeeId } },
-      update: { state: "ASSIGNED" },
-      create: { deviceId, employeeId, state: "ASSIGNED" },
+      update: { state },
+      create: { deviceId, employeeId, state },
     });
-    const version = await this.bump(device);
-    await this.send(deviceId, {
-      op: "ASSIGN",
-      employeeId,
-      templateIdx: FIRST_TEMPLATE,
-      updatedAt: Date.now(),
-      fullName: employee.fullName,
-      employeeCode: employee.code,
-      rosterVersion: version,
-      deviceId,
-    });
+    await this.send(deviceId, this.expect(employeeId, employee, await this.bump(device), deviceId));
     return row;
   }
 
@@ -118,51 +141,144 @@ export class EnrollmentService {
     return { devices: rows.length };
   }
 
-  /** Store what a kiosk says it captured, sealed, and mark the pair enrolled. */
+  /** What an operator did at a kiosk: one captured sample, or a request the server decides (KEHOACH 7.5). */
   async takeReport(deviceId: string, report: EnrollPayload): Promise<void> {
-    if (report.op !== "UPSERT" || !report.embedding || report.scale === undefined) {
-      this.log.warn(`${deviceId} reported ${report.op}, which carries no template`);
+    switch (report.op) {
+      case "UPSERT":
+        return this.takeSample(deviceId, report);
+      case "RETAKE":
+        return this.askedRetake(deviceId, report.employeeId);
+      case "DELETE_EMPLOYEE":
+        return this.askedRemove(deviceId, report.employeeId);
+      default:
+        this.log.warn(`${deviceId} sent ${report.op} up, which only the server sends`);
+    }
+  }
+
+  /**
+   * A door given the person opens a new session and it replaces every old
+   * sample; a door already enrolled adds only samples of the session held.
+   * Anything else is refused and the door is sent what the server holds.
+   */
+  private async takeSample(deviceId: string, report: EnrollPayload): Promise<void> {
+    if (!report.embedding || report.scale === undefined) {
+      this.log.warn(`${deviceId} reported a sample of ${report.employeeId} with no template`);
       return;
     }
-    const asked = await this.db.deviceEnrollment.findUnique({
-      where: { deviceId_employeeId: { deviceId, employeeId: report.employeeId } },
-    });
-    if (!asked) {
-      this.log.warn(`${deviceId} reported a face for ${report.employeeId}, which it was never given`);
-      return;
-    }
+    const employeeId = report.employeeId;
+    const session = new Date(report.updatedAt);
     const sealed = sealTemplate(Buffer.from(report.embedding, "base64"), this.key());
-    // Quality decides, not arrival order (KEHOACH 9.23 rule 7).
-    const kept = await this.db.$executeRaw`
-      INSERT INTO "FaceTemplate" (
-        "id", "employeeId", "templateIdx", "embedding", "scale", "quality",
-        "capturedAt", "updatedAt")
-      VALUES (gen_random_uuid(), ${report.employeeId}::int, ${report.templateIdx}::int,
-              ${sealed}, ${report.scale}::double precision, ${report.quality ?? null}::int,
-              ${new Date(report.updatedAt)}, now())
-      ON CONFLICT ("employeeId", "templateIdx") DO UPDATE SET
-        "embedding" = EXCLUDED."embedding",
-        "scale" = EXCLUDED."scale",
-        "quality" = EXCLUDED."quality",
-        "capturedAt" = EXCLUDED."capturedAt",
-        "updatedAt" = now()
-      WHERE coalesce("FaceTemplate"."quality", 0) <= coalesce(EXCLUDED."quality", 0)
-    `;
-    if (kept === 0) {
-      this.log.log(`${deviceId} reported a poorer capture for ${report.employeeId}, keeping the held one`);
+    const verdict = await this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
+      const pair = await tx.deviceEnrollment.findUnique({
+        where: { deviceId_employeeId: { deviceId, employeeId } },
+      });
+      if (!pair) {
+        return "stranger" as const;
+      }
+      const held = await tx.faceTemplate.findFirst({ where: { employeeId }, select: { capturedAt: true } });
+      const current = held?.capturedAt.getTime() === session.getTime();
+      const waiting = pair.state === "ASSIGNED" || pair.state === "RETAKE";
+      if (waiting && current) {
+        return "repeat" as const;
+      }
+      if (!(waiting || (pair.state === "ENROLLED" && current))) {
+        return "refused" as const;
+      }
+      if (waiting && held) {
+        await tx.faceTemplate.deleteMany({ where: { employeeId } });
+      }
+      const sample = {
+        embedding: sealed,
+        scale: report.scale ?? 0,
+        quality: report.quality ?? null,
+        capturedAt: session,
+      };
+      await tx.faceTemplate.upsert({
+        where: { employeeId_templateIdx: { employeeId, templateIdx: report.templateIdx } },
+        update: sample,
+        create: { employeeId, templateIdx: report.templateIdx, ...sample },
+      });
+      await tx.deviceEnrollment.update({
+        where: { deviceId_employeeId: { deviceId, employeeId } },
+        data: { state: "ENROLLED", templateIdx: report.templateIdx },
+      });
+      if (report.embeddingVersion) {
+        await tx.employee.update({ where: { id: employeeId }, data: { embeddingVersion: report.embeddingVersion } });
+      }
+      return waiting && held ? ("replaced" as const) : ("added" as const);
+    });
+    switch (verdict) {
+      case "stranger":
+        this.log.warn(`${deviceId} reported a face for ${employeeId}, which it was never given`);
+        return;
+      case "repeat":
+        return;
+      case "refused":
+        this.log.warn(`${deviceId} captured ${employeeId} outside its turn, sending it the held samples`);
+        return this.refuse(deviceId, employeeId);
+      default:
+        await this.spread(deviceId, employeeId, report.templateIdx, verdict === "replaced");
+        this.log.log(`${deviceId} enrolled employee ${employeeId} sample ${report.templateIdx}`);
     }
-    if (report.embeddingVersion) {
-      await this.db.employee.update({
-        where: { id: report.employeeId },
-        data: { embeddingVersion: report.embeddingVersion },
+  }
+
+  private async askedRetake(deviceId: string, employeeId: number): Promise<void> {
+    const pair = await this.db.deviceEnrollment.findUnique({
+      where: { deviceId_employeeId: { deviceId, employeeId } },
+    });
+    const device = await this.device(deviceId);
+    if (!pair || pair.state === "REVOKED" || !(await this.consent.live(employeeId))) {
+      this.log.warn(`${deviceId} asked to retake ${employeeId}, who is not its to capture`);
+      await this.send(deviceId, this.withdraw(employeeId, await this.bump(device), deviceId));
+      return;
+    }
+    if (pair.state === "ENROLLED") {
+      await this.db.deviceEnrollment.update({
+        where: { deviceId_employeeId: { deviceId, employeeId } },
+        data: { state: "RETAKE" },
       });
     }
-    await this.db.deviceEnrollment.updateMany({
-      where: { deviceId, employeeId: report.employeeId },
-      data: { state: "ENROLLED", templateIdx: report.templateIdx },
+    const employee = await this.employee(employeeId);
+    await this.send(deviceId, this.expect(employeeId, employee, await this.bump(device), deviceId));
+    await this.audit.record({
+      action: AUDIT_ACTIONS.ENROLLMENT_RETAKE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(employeeId),
+      meta: { deviceId, by: "kiosk" },
     });
-    await this.spread(deviceId, report.employeeId);
-    this.log.log(`${deviceId} enrolled employee ${report.employeeId}`);
+  }
+
+  private async askedRemove(deviceId: string, employeeId: number): Promise<void> {
+    const pair = await this.db.deviceEnrollment.findUnique({
+      where: { deviceId_employeeId: { deviceId, employeeId } },
+    });
+    if (!pair) {
+      return;
+    }
+    await this.revoke(deviceId, employeeId);
+    await this.audit.record({
+      action: AUDIT_ACTIONS.ENROLLMENT_REMOVE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(employeeId),
+      meta: { deviceId, by: "kiosk" },
+    });
+  }
+
+  /** Bring one door back to what the server holds for one person (KEHOACH 7.5). */
+  private async refuse(deviceId: string, employeeId: number): Promise<void> {
+    const device = await this.device(deviceId);
+    const pair = await this.db.deviceEnrollment.findUnique({
+      where: { deviceId_employeeId: { deviceId, employeeId } },
+      include: { employee: { select: { fullName: true, code: true, embeddingVersion: true } } },
+    });
+    await this.send(deviceId, this.dropAll(employeeId, await this.bump(device), deviceId));
+    if (!pair || pair.state === "REVOKED") {
+      return;
+    }
+    for (const build of await this.samplesFor(pair)) {
+      await this.send(deviceId, await build(await this.bump(device), deviceId));
+    }
   }
 
   /** Send a kiosk the whole roster it should hold. Convergence, not a delta:
@@ -172,19 +288,28 @@ export class EnrollmentService {
   async resync(deviceId: string): Promise<number> {
     const device = await this.device(deviceId);
     const rows = await this.db.deviceEnrollment.findMany({
-      where: { deviceId, state: { in: ["ASSIGNED", "ENROLLED"] } },
-      include: { employee: true },
+      where: { deviceId, state: { in: ["ASSIGNED", "ENROLLED", "RETAKE"] } },
+      include: { employee: { select: { fullName: true, code: true, embeddingVersion: true } } },
       orderBy: { employeeId: "asc" },
     });
+    const messages: Build[] = [];
+    for (const row of rows) {
+      const samples = await this.samplesFor(row);
+      messages.push(...samples);
+      // An upsert takes a person off the pending list, so the ask goes after it.
+      if (row.state !== "ENROLLED" || samples.length === 0) {
+        messages.push(async (version, to) => this.expect(row.employeeId, row.employee, version, to));
+      }
+    }
     // The repair path has to work from any state: a counter standing behind
     // its own roster would send a negative version and be refused.
-    const top = Math.max(device.rosterVersion, rows.length);
+    const top = Math.max(device.rosterVersion, messages.length);
     if (top !== device.rosterVersion) {
       await this.db.device.update({ where: { id: deviceId }, data: { rosterVersion: top } });
     }
     // Every message in the run carries the version the kiosk reaches by
     // applying it, so a dropped one leaves it short and the next beat retries.
-    let version = top - rows.length;
+    let version = top - messages.length;
     await this.send(deviceId, {
       op: "REPLACE_ALL",
       employeeId: NO_EMPLOYEE,
@@ -193,9 +318,9 @@ export class EnrollmentService {
       rosterVersion: version,
       deviceId,
     });
-    for (const row of rows) {
+    for (const build of messages) {
       version += 1;
-      await this.send(deviceId, await this.templateFor(row, version, deviceId));
+      await this.send(deviceId, await build(version, deviceId));
     }
     this.log.log(`${deviceId} resynced to roster ${version}, ${rows.length} entries`);
     return version;
@@ -211,33 +336,24 @@ export class EnrollmentService {
     await this.resync(deviceId);
   }
 
-  private async templateFor(
-    row: DeviceEnrollment & { employee: { fullName: string; code: string; embeddingVersion: string | null } },
+  /** One builder per sample the server holds for this person, each an audited read (KEHOACH 9.19). */
+  private async samplesFor(row: DeviceEnrollment & { employee: Named }): Promise<Build[]> {
+    if (!row.employee.embeddingVersion) {
+      return [];
+    }
+    const held = await this.db.faceTemplate.findMany({
+      where: { employeeId: row.employeeId },
+      orderBy: { templateIdx: "asc" },
+    });
+    return held.map((sample) => (version: number, to: string) => this.upsertOf(row, sample, version, to));
+  }
+
+  private async upsertOf(
+    row: DeviceEnrollment & { employee: Named },
+    held: FaceTemplate,
     version: number,
     deviceId: string,
   ): Promise<EnrollPayload> {
-    const held =
-      row.templateIdx === null
-        ? null
-        : await this.db.faceTemplate.findUnique({
-            where: {
-              employeeId_templateIdx: { employeeId: row.employeeId, templateIdx: row.templateIdx },
-            },
-          });
-    if (!held || !row.employee.embeddingVersion) {
-      return {
-        op: "ASSIGN",
-        employeeId: row.employeeId,
-        templateIdx: FIRST_TEMPLATE,
-        updatedAt: Date.now(),
-        fullName: row.employee.fullName,
-        employeeCode: row.employee.code,
-        rosterVersion: version,
-        deviceId,
-      };
-    }
-    // Handing a template to a kiosk is a read of sensitive data, and the log
-    // has to cover reads, not only writes (KEHOACH 9.19).
     await this.audit.record({
       action: AUDIT_ACTIONS.BIOMETRIC_READ,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
@@ -248,11 +364,39 @@ export class EnrollmentService {
       op: "UPSERT",
       employeeId: row.employeeId,
       templateIdx: held.templateIdx,
-      updatedAt: held.updatedAt.getTime(),
+      updatedAt: held.capturedAt.getTime(),
       embedding: openTemplate(held.embedding, this.key()).toString("base64"),
       scale: held.scale,
-      embeddingVersion: row.employee.embeddingVersion,
+      embeddingVersion: row.employee.embeddingVersion ?? undefined,
       fullName: row.employee.fullName,
+      rosterVersion: version,
+      deviceId,
+    };
+  }
+
+  private expect(employeeId: number, employee: Omit<Named, "embeddingVersion">, version: number, deviceId: string): EnrollPayload {
+    return {
+      op: "ASSIGN",
+      employeeId,
+      templateIdx: FIRST_TEMPLATE,
+      updatedAt: Date.now(),
+      fullName: employee.fullName,
+      employeeCode: employee.code,
+      rosterVersion: version,
+      deviceId,
+    };
+  }
+
+  private withdraw(employeeId: number, version: number, deviceId: string): EnrollPayload {
+    return { op: "REVOKE", employeeId, templateIdx: FIRST_TEMPLATE, updatedAt: Date.now(), rosterVersion: version, deviceId };
+  }
+
+  private dropAll(employeeId: number, version: number, deviceId: string): EnrollPayload {
+    return {
+      op: "DELETE_EMPLOYEE",
+      employeeId,
+      templateIdx: FIRST_TEMPLATE,
+      updatedAt: Date.now(),
       rosterVersion: version,
       deviceId,
     };
@@ -267,24 +411,33 @@ export class EnrollmentService {
   /** Each door would otherwise hold only what it captured itself, and no
    *  heartbeat reports that difference (KEHOACH 9.23 rule 7).
    */
-  private async spread(fromDeviceId: string, employeeId: number): Promise<void> {
+  private async spread(fromDeviceId: string, employeeId: number, templateIdx: number, replaced: boolean): Promise<void> {
     const others = await this.db.deviceEnrollment.findMany({
-      where: { employeeId, deviceId: { not: fromDeviceId } },
+      where: { employeeId, deviceId: { not: fromDeviceId }, state: { not: "REVOKED" } },
       include: {
         employee: { select: { fullName: true, code: true, embeddingVersion: true } },
       },
     });
+    const sample = await this.db.faceTemplate.findUnique({
+      where: { employeeId_templateIdx: { employeeId, templateIdx } },
+    });
+    if (!sample) {
+      return;
+    }
     for (const row of others) {
       const device = await this.db.device.findUnique({ where: { id: row.deviceId } });
       if (!device) {
         continue;
       }
-      const version = await this.bump(device);
-      await this.send(row.deviceId, await this.templateFor(row, version, row.deviceId));
+      // A new session replaces the old samples on every door, not only the capturing one.
+      if (replaced) {
+        await this.send(row.deviceId, this.dropAll(employeeId, await this.bump(device), row.deviceId));
+      }
+      await this.send(row.deviceId, await this.upsertOf(row, sample, await this.bump(device), row.deviceId));
       // Left ASSIGNED, this door would ask for a face it now holds.
       await this.db.deviceEnrollment.update({
         where: { deviceId_employeeId: { deviceId: row.deviceId, employeeId } },
-        data: { state: "ENROLLED", templateIdx: FIRST_TEMPLATE },
+        data: { state: "ENROLLED", templateIdx },
       });
     }
   }

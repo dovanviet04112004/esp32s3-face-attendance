@@ -6,7 +6,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { AssignDto } from "./dto/enrollment.dto.js";
-import { EnrollmentService, type AssignableDevice } from "./enrollment.service.js";
+import { EnrollmentService, type AssignableDevice, type KioskStanding } from "./enrollment.service.js";
 
 @ApiTags("enrollment")
 @ApiBearerAuth()
@@ -22,9 +22,16 @@ export class EnrollmentController {
     return this.enrollment.assignable();
   }
 
+  @Get("employees/:employeeId")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Where a person stands on each kiosk" })
+  standing(@Param("employeeId", ParseIntPipe) employeeId: number): Promise<KioskStanding[]> {
+    return this.enrollment.standing(employeeId);
+  }
+
   @Post()
   @Roles("ADMIN", "HR")
-  @ApiOperation({ summary: "Put a person on a kiosk's waiting list (KEHOACH 7.5)" })
+  @ApiOperation({ summary: "Put a person up for capture on a kiosk; a held face goes to RETAKE (KEHOACH 7.5)" })
   assign(@Body() body: AssignDto): Promise<DeviceEnrollment> {
     return this.enrollment.assign(body.deviceId, body.employeeId);
   }
