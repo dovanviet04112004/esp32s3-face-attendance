@@ -85,6 +85,11 @@ interface Device {
   location: string | null;
 }
 
+/** Where this person stands on one kiosk (KEHOACH 7.5). */
+interface Standing extends Device {
+  state: "ASSIGNED" | "ENROLLED" | "RETAKE";
+}
+
 interface Punch {
   id: string;
   ts: string;
@@ -169,6 +174,12 @@ export default function EmployeePage() {
     queryFn: async () => (await api.get<Device[]>("/enrollments/devices")).data,
   });
 
+  const standing = useQuery({
+    queryKey: ["enrollments", "employee", id],
+    enabled: tab === "info" && mayEnrol,
+    queryFn: async () => (await api.get<Standing[]>(`/enrollments/employees/${id}`)).data,
+  });
+
   const punches = useQuery({
     queryKey: ["attendance", id],
     enabled: tab === "attendance",
@@ -212,10 +223,13 @@ export default function EmployeePage() {
   });
 
   const assign = useMutation({
-    mutationFn: (deviceId: string) => api.post("/enrollments", { deviceId, employeeId: id }),
-    onSuccess: (_answer, deviceId) => {
+    mutationFn: async (deviceId: string) =>
+      (await api.post<{ state: Standing["state"] }>("/enrollments", { deviceId, employeeId: id })).data,
+    onSuccess: (answer, deviceId) => {
       const device = devices.data?.find((row) => row.id === deviceId);
-      setAssigned(device?.name ?? deviceId);
+      const shown = device?.name ?? deviceId;
+      setAssigned(answer.state === "RETAKE" ? t("retakeAsked", { device: shown }) : t("assigned", { device: shown }));
+      void cache.invalidateQueries({ queryKey: ["enrollments", "employee", id] });
     },
     onError: (fell: unknown) => setEnrolFault(faultOf(fell)),
   });
@@ -365,6 +379,32 @@ export default function EmployeePage() {
             <div className="mt-4 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
               <h2 className="text-sm font-medium">{t("assignTitle")}</h2>
               <p className="mt-1 text-sm text-(--color-muted)">{t("assignLead")}</p>
+              {standing.data && standing.data.length > 0 ? (
+                <ul className="mt-4 divide-y divide-(--color-line) rounded-lg border border-(--color-line)">
+                  {standing.data.map((kiosk) => (
+                    <li key={kiosk.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                      <span className="min-w-0">
+                        <span className="block truncate">{kiosk.name ?? kiosk.id}</span>
+                        <span className="text-xs text-(--color-muted)">{t(`standing${kiosk.state}`)}</span>
+                      </span>
+                      {kiosk.state === "ENROLLED" ? (
+                        <Button
+                          type="button"
+                          tone="quiet"
+                          disabled={assign.isPending}
+                          onClick={() => {
+                            setEnrolFault(null);
+                            assign.mutate(kiosk.id);
+                          }}
+                          className="shrink-0"
+                        >
+                          {t("retakeAction")}
+                        </Button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               {approved.length === 0 ? (
                 <p className="mt-4 text-sm text-(--color-muted)">{t("assignNone")}</p>
               ) : (
@@ -395,7 +435,7 @@ export default function EmployeePage() {
                 </div>
               )}
               {assigned ? (
-                <p className="mt-3 text-sm text-(--color-ok)">{t("assigned", { device: assigned })}</p>
+                <p className="mt-3 text-sm text-(--color-ok)">{assigned}</p>
               ) : null}
               {enrolFault ? (
                 <p role="alert" className="mt-3 text-sm text-(--color-danger)">
