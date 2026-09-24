@@ -87,8 +87,8 @@ services:
     # The published port of the base file is dropped: on a public machine the
     # database answers only on the compose network.
     ports: !override []
-    # Archiving needs the push script inside this container, because postgres
-    # runs archive_command itself rather than handing the segment to anybody.
+    # archive_command runs as postgres and the backups volume mounts owned by root (KEHOACH 4.8).
+    entrypoint: ["/usr/local/bin/pg-start.sh"]
     command:
       - postgres
       - -c
@@ -99,7 +99,7 @@ services:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
       - ./postgres/archive.conf:/etc/postgresql/archive.conf:ro
-      - ./backup/wal-push.sh:/usr/local/bin/wal-push.sh:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     environment:
       BACKUP_DIR: /backups
       AGE_RECIPIENT: ${AGE_RECIPIENT}
