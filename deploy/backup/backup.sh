@@ -13,6 +13,8 @@ keep_days="${BACKUP_KEEP_DAYS:-30}"
 biometric_keep_days="${BIOMETRIC_KEEP_DAYS:-7}"
 wal_wait_s=60
 row_keep_days=90
+scrub_lock_wait_s=5
+scrub_retry_s=10
 
 trap 'rm -f "${BACKUP_DIR}"/*.part' EXIT
 
@@ -79,7 +81,16 @@ seal "${prefix}.biometric.dump.age" biometric_dump
 record biometric "$(wc -c < "${prefix}.biometric.dump.age")"
 
 # A base copies pages whole, dead tuples of erased templates included (KEHOACH 9.22.7).
-psql --quiet --command 'VACUUM (FULL) "FaceTemplate"'
+# A lock wait is bounded, so a held lock never stalls the table or the night.
+scrubbed=no
+for attempt in 1 2 3; do
+    if PGOPTIONS="-c lock_timeout=${scrub_lock_wait_s}s" psql --quiet --command 'VACUUM (FULL) "FaceTemplate"'; then
+        scrubbed=yes
+        break
+    fi
+    [ "${attempt}" = 3 ] || sleep "${scrub_retry_s}"
+done
+[ "${scrubbed}" = yes ] || echo "FaceTemplate not rewritten; this base may carry erased templates" >&2
 base_started=$(psql --tuples-only --no-align --command "SELECT now()")
 seal "${prefix}.base.tar.zst.age" base_tar
 record base "$(wc -c < "${prefix}.base.tar.zst.age")"
