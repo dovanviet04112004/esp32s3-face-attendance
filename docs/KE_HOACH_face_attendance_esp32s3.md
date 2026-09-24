@@ -4512,7 +4512,7 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt — một dòng mỗi thiết bị (§9.23 luật 5) |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), fwVersion, modelVersion, rosterVersion, lastSeenAt, online |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`REVOKED`), templateIdx, updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
@@ -5988,9 +5988,28 @@ bị `Kconfig` loại khỏi bản `prod`.
    phiên đang mở** của máy (§7.4), nên máy mất broker ngay chứ không chờ tới lần nối sau. Kể cả
    khi lời gọi ấy hỏng, `api` bỏ mọi gói lên từ máy không `APPROVED`. Kiosk nối lại thì bị từ
    chối, nhưng **không tự xoá vé ngay**: nó hỏi `GET /devices/me` bằng chính vé ấy, và chỉ khi
-   câu trả lời là **401** mới xoá `device/jwt` rồi **quay về bước 3** với mã nhận máy mới. Dòng
-   trên dashboard tự về "Chờ duyệt" lúc máy xin lại, không cần tải lại trang. Không hỏi được
-   thì giữ vé và thử lại broker, hỏi lại tối đa mỗi phút một lần.
+   câu trả lời là **401** mới xoá `device/jwt` rồi **quay về bước 3** với mã nhận máy mới. Cùng
+   lúc ấy nó **xoá bảng khuôn mặt** và danh sách chờ đăng ký, đưa số phiên bản danh sách về 0,
+   nên từ đó nó không nhận ra ai và không mở cửa; bản ghi chấm công chưa gửi thì giữ. Dòng trên
+   dashboard tự về "Chờ duyệt" lúc máy xin lại, không cần tải lại trang. Duyệt lại thì heartbeat
+   đầu tiên khai phiên bản 0 và server gửi lại cả danh sách (§7.5). Không hỏi được thì giữ vé và
+   thử lại broker, hỏi lại tối đa mỗi phút một lần.
+
+**Vé chết thì bảng khuôn mặt đi theo.** Một máy bị thu hồi là máy đã ra khỏi đội: có thể nó bị
+mang đi, có thể nó sắp bị thanh lý. Giữ bảng thì nó vẫn nhận ra nhân viên và mở cửa cho họ ở bất
+cứ đâu nó được cắm điện, và embedding của cả danh sách vẫn nằm trong flash. Xoá thì không mất gì:
+server giữ mọi mẫu (`FaceTemplate`) nên lần duyệt lại nạp đủ trở lại. Luật áp cho mọi lời 401,
+kể cả vé hết hạn ở máy tắt quá 90 ngày, vì máy không phân biệt được hai trường hợp và cả hai đều
+có người đứng ra duyệt lại. Hai giới hạn nói rõ: máy mất mạng lúc bị thu hồi chỉ biết khi nó nối
+lại, và cho tới lúc ấy nó vẫn mở cửa; còn byte đã xoá khỏi bảng chỉ thật sự không đọc được khi
+Flash Encryption bật (E13-T3).
+
+**Bản ghi làm ra trong lúc máy nằm ngoài đội thì không vào bảng chấm công.** `revoke` ghi
+`revokedAt` và xoá `readmittedAt`; lần duyệt đầu tiên sau đó ghi `readmittedAt`. Bản ghi có giờ
+nằm trong `[revokedAt, readmittedAt)` bị bỏ, kèm một dòng log. Hai cột riêng chứ không dùng
+`approvedAt`, vì đăng ký lại sau khi mất NVS cũng xoá `approvedAt`, và làm thế thì các bản ghi
+hợp lệ từ lần duyệt trước tới lúc mất NVS sẽ rơi vào khoảng bị bỏ. Máy vừa hết hạn vé mà không
+bị thu hồi thì không có khoảng nào: bản ghi xếp hàng của nó lên đủ.
 
 **Máy chờ duyệt hỏi đều theo nhịp server, còn lùi bậc chỉ dành cho lỗi.** Lời 202 nghĩa là
 server sống và đang chờ một người, mà người ấy thường đang đứng ở dashboard, vừa gõ xong mã. Lùi
