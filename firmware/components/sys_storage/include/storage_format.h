@@ -25,6 +25,7 @@
 #define STORAGE_FACE_MAGIC 0x45434146u    // 'FACE'
 #define STORAGE_FACE_FLAG_ACTIVE 0x01u
 #define STORAGE_FACE_FLAG_DELETED 0x02u
+#define STORAGE_FACE_FLAG_UNREPORTED 0x04u  // captured here, not yet acked by the broker
 #define STORAGE_EMBED_DIM 512
 
 #define STORAGE_ATTEND_MAGIC 0x31474C41u  // 'ALG1'
@@ -110,6 +111,44 @@ typedef struct __attribute__((packed)) {
     uint32_t crc32;
 } storage_attend_record_t;
 
+#define STORAGE_PENDING_MAGIC 0x31444E50u    // 'PND1'
+#define STORAGE_PENDING_CAP 8
+#define STORAGE_ENROLL_OUT_MAGIC 0x3154554Fu // 'OUT1'
+#define STORAGE_ENROLL_OUT_CAP 8
+
+/** One person this kiosk is to capture, as the server named them (KEHOACH 7.5).
+ */
+typedef struct __attribute__((packed)) {
+    uint32_t employee_id;
+    char name[STORAGE_NAME_CAP];          // UTF-8, terminated
+} storage_pending_row_t;
+
+/** NVS device/pending: who waits for a capture here, kept across a reboot offline (KEHOACH 6.2.1).
+ */
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint8_t count;
+    uint8_t reserved[3];
+    storage_pending_row_t row[STORAGE_PENDING_CAP];
+} storage_pending_t;
+
+/** One operator request the broker has not acked (KEHOACH 7.5).
+ */
+typedef struct __attribute__((packed)) {
+    uint8_t op;                           // enroll_payload_op_t: RETAKE or DELETE_EMPLOYEE
+    uint8_t reserved[3];
+    uint32_t employee_id;
+} storage_enroll_ask_t;
+
+/** NVS device/enroll_out: requests to send at least once, oldest first (KEHOACH 6.2.1).
+ */
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint8_t count;
+    uint8_t reserved[3];
+    storage_enroll_ask_t ask[STORAGE_ENROLL_OUT_CAP];
+} storage_enroll_out_t;
+
 /** How far the uplink has got through the log. Only an acked record moves it,
  *  so a power cut costs a resend and never a record (KEHOACH 6.2.5).
  */
@@ -134,6 +173,11 @@ static_assert(offsetof(storage_file_header_t, crc32) == 28, "file header crc off
 static_assert(sizeof(storage_face_record_t) == 576, "face record must match KEHOACH 6.2.4");
 static_assert(offsetof(storage_face_record_t, embedding) == 16, "embedding offset drifted");
 static_assert(offsetof(storage_face_record_t, crc32) == 572, "face crc offset drifted");
+
+static_assert(sizeof(storage_pending_row_t) == 36, "pending row must match KEHOACH 6.2.1");
+static_assert(sizeof(storage_pending_t) == 296, "pending blob must match KEHOACH 6.2.1");
+static_assert(sizeof(storage_enroll_ask_t) == 8, "enrol request must match KEHOACH 6.2.1");
+static_assert(sizeof(storage_enroll_out_t) == 72, "enrol outbox must match KEHOACH 6.2.1");
 
 static_assert(sizeof(storage_attend_record_t) == 48, "attend record must match KEHOACH 6.2.5");
 static_assert(offsetof(storage_attend_record_t, ts_ms) == 16, "attend ts offset drifted");

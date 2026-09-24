@@ -5442,6 +5442,18 @@ vì vậy chỉ nâng khi con số trong `Kconfig` thật sự đổi, không n�
 
 **Không để dữ liệu sinh trắc trong NVS.** NVS là key-value nhỏ, ghi nhiều sẽ mòn; embedding nằm ở LittleFS.
 
+**Hai blob của `device` cho đăng ký tại máy (§7.5).** Cả hai mở đầu bằng `magic` rồi `count`, và
+chỉ được ghi khi danh sách đổi, tức vài lần mỗi ngày, không theo nhịp giây. Một blob có kích
+thước khác layout bị bỏ qua như vắng khoá.
+
+| Blob | Byte | Nội dung |
+|---|---|---|
+| `pending` = `storage_pending_t`, 296 B | 0–3 `magic` `'PND1'`, 4 `count`, 5–7 chừa, rồi 8 × 36 B | mỗi dòng: `employee_id` u32, `name` char[32] |
+| `enroll_out` = `storage_enroll_ask_t` × 8 trong `storage_enroll_out_t`, 72 B | 0–3 `magic` `'OUT1'`, 4 `count`, 5–7 chừa, rồi 8 × 8 B | mỗi yêu cầu: `op` u8 (`RETAKE` / `DELETE_EMPLOYEE`), 3 B chừa, `employee_id` u32 |
+
+`enroll_out` đầy (8 yêu cầu chưa ack) thì màn hình từ chối thêm yêu cầu cho tới khi có mạng,
+chứ không đè yêu cầu cũ nhất: một yêu cầu xoá bị đè là một người lẽ ra phải biến khỏi máy.
+
 #### 6.2.2 Partition `models_0` / `models_1` — định dạng ảnh model
 
 ```

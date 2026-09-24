@@ -327,6 +327,46 @@ esp_err_t sys_storage_set_u32(const char *ns, const char *key, uint32_t value)
     return err;
 }
 
+esp_err_t sys_storage_get_blob(const char *ns, const char *key, void *out, size_t len)
+{
+    if (!s_ready || ns == NULL || key == NULL || out == NULL || len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    nvs_handle_t handle;
+    esp_err_t err = namespace_handle(ns, &handle);
+    size_t stored = 0;
+    if (err == ESP_OK) {
+        err = nvs_get_blob(handle, key, NULL, &stored);
+    }
+    if (err == ESP_OK && stored != len) {
+        err = ESP_ERR_INVALID_SIZE;
+    }
+    if (err == ESP_OK) {
+        err = nvs_get_blob(handle, key, out, &stored);
+    }
+    give();
+    return err;
+}
+
+esp_err_t sys_storage_set_blob(const char *ns, const char *key, const void *data, size_t len)
+{
+    if (!s_ready || ns == NULL || key == NULL || data == NULL || len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    nvs_handle_t handle;
+    esp_err_t err = namespace_handle(ns, &handle);
+    if (err == ESP_OK) {
+        err = nvs_set_blob(handle, key, data, len);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
+    give();
+    return err;
+}
+
 static esp_err_t write_whole(const char *path, const void *data, size_t len)
 {
     FILE *file = fopen(path, "wb");

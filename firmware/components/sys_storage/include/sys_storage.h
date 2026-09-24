@@ -33,6 +33,8 @@ esp_err_t sys_storage_init(void);
 // The ticket keys of KEHOACH 7.3: net_provision writes them, net_mqtt reads.
 #define STORAGE_KEY_TICKET "jwt"
 #define STORAGE_KEY_TICKET_EXP "jwt_exp"  // u32, the ticket's own exp claim
+#define STORAGE_KEY_PENDING "pending"     // blob storage_pending_t
+#define STORAGE_KEY_ENROLL_OUT "enroll_out"  // blob storage_enroll_out_t
 
 /** Read one unsigned setting from a namespace of KEHOACH 6.2.1.
  *  @ctx task | blocking | takes m_littlefs (KEHOACH 5.3)
@@ -45,6 +47,17 @@ esp_err_t sys_storage_get_u32(const char *ns, const char *key, uint32_t *value);
  *  @ctx task | blocking | takes m_littlefs
  */
 esp_err_t sys_storage_set_u32(const char *ns, const char *key, uint32_t value);
+
+/** Read a blob whose exact size and layout storage_format.h declares.
+ *  @ctx task | blocking | takes m_littlefs
+ *  @ret ESP_OK | ESP_ERR_NVS_NOT_FOUND | ESP_ERR_INVALID_SIZE when the stored size differs
+ */
+esp_err_t sys_storage_get_blob(const char *ns, const char *key, void *out, size_t len);
+
+/** Write a blob of the size storage_format.h declares, and commit it.
+ *  @ctx task | blocking | takes m_littlefs | internal-RAM stack: it writes NVS
+ */
+esp_err_t sys_storage_set_blob(const char *ns, const char *key, const void *data, size_t len);
 
 /** Read one string setting, always leaving a terminator inside cap.
  *  @ctx task | blocking | takes m_littlefs
