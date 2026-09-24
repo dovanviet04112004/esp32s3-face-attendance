@@ -6516,7 +6516,7 @@ mọi thông tin của một bản đã nằm sẵn ở nơi làm ra nó, nên n
 | Loại | Ai đưa lên | Khi nào | Phiên bản |
 |---|---|---|---|
 | `FIRMWARE` | CI, job `release` của `firmware.yml` | push vào `main` mang một `PROJECT_VER` server chưa có | `PROJECT_VER`; server đối lại với `esp_app_desc_t` trong ảnh — `version` ở offset `0x30`, `project_name` ở `0x50` phải là `face_attendance` |
-| `ASSETS` | CI, cùng job | ảnh `assets` dựng ra có nội dung chưa từng phát hành | `sha-` + 12 ký tự đầu sha256 của ảnh, vì SPIFFS không có header phiên bản |
+| `ASSETS` | chưa ai | — | kiosk chưa có đường cài: `ota_task` từ chối với `ASSETS has no path yet`, nên một bản assets lên server chỉ là một nút bấm lần nào cũng hỏng. Thêm vào job này cùng lúc `net_ota` có đường ấy |
 | `MODELS` | máy train, ngay sau khi khoá bộ model (§4.2) | mỗi lần `models.bin` đổi | `img-<crc32 header>` — đúng chuỗi kiosk gửi trong heartbeat |
 
 `MODELS` không đi qua CI vì trọng số không bao giờ vào git (CLAUDE.md §6): chỗ duy nhất có file là
@@ -6556,9 +6556,10 @@ cũ. Trang một máy có nút **Cập nhật** và một dòng trạng thái su
 | Đã lên | heartbeat báo đúng bản đã mời |
 | Lỗi: *lý do máy gửi* | có sự kiện `OTA_FAILED` sau lúc mời |
 
-`ASSETS` không có trong heartbeat, nên chỉ có "đã mời lúc …" hoặc lỗi. Lời mời là đúng bản kê khai
-`ota_manifest.schema.json` qua `down/ota` với `forced: false`, nên máy cài lúc rảnh. Chỉ ADMIN mời
-được, máy chưa duyệt hay đã thu hồi thì không mời, và mỗi lời mời ghi audit. `Device` giữ lời mời
+Lời mời là đúng bản kê khai `ota_manifest.schema.json` qua `down/ota`. Máy **tải ngay** khi nhận,
+khởi động lại khi xong, và lượt chấm công trong lúc ấy vẫn ghi offline (§6.2.6) — nên nút ghi rõ
+"máy khởi động lại". Máy không tự so phiên bản, nên server không mời một bản máy đang chạy. Chỉ
+ADMIN mời được, máy chưa duyệt hay đã thu hồi thì không mời, và mỗi lời mời ghi audit. `Device` giữ lời mời
 gần nhất (`otaReleaseId`, `otaOfferedAt`), vì trạng thái chỉ hỏi về lời mời gần nhất.
 
 **CI cần hai secret và một biến, và thiếu thì bỏ qua chứ không đỏ:** `RELEASE_PUBLISH_TOKEN` (bằng
