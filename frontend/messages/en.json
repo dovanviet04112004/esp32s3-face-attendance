@@ -380,7 +380,9 @@
     "otaCurrent": "The kiosk runs the newest release.",
     "otaWaiting": "Offered {version} at {at}, waiting for the kiosk to fetch it.",
     "otaInstalled": "The kiosk now runs {version}.",
-    "otaFailed": "Updating to {version} failed: {reason}"
+    "otaFailed": "Updating to {version} failed: {reason}",
+    "otaInterrupted": "The kiosk restarted without reaching {version} (power lost mid-download, or the new release failed and rolled back). Press Update to try again.",
+    "otaExpired": "The offer of {version} expired before the kiosk fetched it. Press Update to offer it again."
   },
   "shifts": {
     "title": "Shifts",

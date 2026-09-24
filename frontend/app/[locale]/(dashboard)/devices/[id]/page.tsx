@@ -35,11 +35,19 @@ interface FleetUpdate {
 interface OfferStatus {
   version: string;
   offeredAt: string;
-  state: "WAITING" | "INSTALLED" | "FAILED";
+  state: "WAITING" | "INSTALLED" | "FAILED" | "INTERRUPTED" | "EXPIRED";
   reason: string | null;
 }
 
 const STATUS_POLL_MS = 10_000;
+
+const TOLD_TONE: Record<OfferStatus["state"], string> = {
+  WAITING: "text-(--color-muted)",
+  INSTALLED: "text-(--color-ok)",
+  FAILED: "text-(--color-danger)",
+  INTERRUPTED: "text-(--color-warn)",
+  EXPIRED: "text-(--color-warn)",
+};
 
 export default function DevicePage() {
   const t = useTranslations("devices");
@@ -194,19 +202,17 @@ export default function DevicePage() {
           {told ? (
             <p
               role="status"
-              className={
-                told.state === "FAILED"
-                  ? "mt-3 text-sm text-(--color-danger)"
-                  : told.state === "INSTALLED"
-                    ? "mt-3 text-sm text-(--color-ok)"
-                    : "mt-3 text-sm text-(--color-muted)"
-              }
+              className={`mt-3 text-sm ${TOLD_TONE[told.state]}`}
             >
               {told.state === "FAILED"
                 ? t("otaFailed", { version: told.version, reason: told.reason ?? common("empty") })
                 : told.state === "INSTALLED"
                   ? t("otaInstalled", { version: told.version })
-                  : t("otaWaiting", { version: told.version, at: format.dateTime(new Date(told.offeredAt), "medium") })}
+                  : told.state === "INTERRUPTED"
+                    ? t("otaInterrupted", { version: told.version })
+                    : told.state === "EXPIRED"
+                      ? t("otaExpired", { version: told.version })
+                      : t("otaWaiting", { version: told.version, at: format.dateTime(new Date(told.offeredAt), "medium") })}
             </p>
           ) : null}
           {offerFault ? (

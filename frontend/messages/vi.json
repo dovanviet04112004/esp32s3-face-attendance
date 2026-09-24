@@ -380,7 +380,9 @@
     "otaCurrent": "Máy đang chạy bản mới nhất.",
     "otaWaiting": "Đã mời bản {version} lúc {at}, đang chờ máy tải.",
     "otaInstalled": "Máy đã lên bản {version}.",
-    "otaFailed": "Cập nhật bản {version} lỗi: {reason}"
+    "otaFailed": "Cập nhật bản {version} lỗi: {reason}",
+    "otaInterrupted": "Máy khởi động lại mà chưa lên bản {version} (mất điện lúc tải, hoặc bản mới lỗi và đã tự quay về). Bấm Cập nhật để thử lại.",
+    "otaExpired": "Lời mời lên bản {version} đã hết hạn mà máy chưa tải. Bấm Cập nhật để mời lại."
   },
   "shifts": {
     "title": "Ca làm",
