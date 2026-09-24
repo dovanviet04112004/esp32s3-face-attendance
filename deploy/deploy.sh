@@ -72,27 +72,42 @@ reload_traefik() {
     "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate traefik
 }
 
+# The C locale fixes the glob order, so a hand build hashes the same as this script.
+# restore-drill.sh runs on the key holder's machine and never enters the image.
 backup_digest() {
-    cat "$HERE"/backup/* | sha256sum
+    (
+        export LC_ALL=C
+        for file in "$HERE"/backup/*; do
+            [[ "$file" == */restore-drill.sh ]] || cat "$file"
+        done
+    ) | sha256sum | cut -d ' ' -f 1
 }
 
 # kiosk-backup:local is built on this box and never pulled, while start runs --no-build.
+# Its label says what it was built from, so a failed build is retried on the rerun.
 rebuild_backup() {
-    REBUILT=no
-    [[ "$(backup_digest)" == "$1" ]] && return 0
-    log "backup image inputs changed, building kiosk-backup"
-    "${COMPOSE[@]}" build --quiet backup
-    REBUILT=yes
+    local want built
+    want="$(backup_digest)"
+    built="$(docker image inspect kiosk-backup:local \
+        --format '{{index .Config.Labels "cckiosk.inputs"}}' 2>/dev/null || true)"
+    [[ "$built" == "$want" ]] && return 0
+    log "kiosk-backup was built from ${built:-nothing}, building it from $want"
+    "${COMPOSE[@]}" build --quiet --build-arg INPUTS="$want" backup
 }
 
-postgres_digest() {
-    cat "$HERE"/postgres/* | sha256sum
+# What the running container reads, not what the checkout holds: its bind mounts keep old inodes.
+postgres_stale() {
+    local file
+    for file in postgresql.conf archive.conf pg_hba.conf; do
+        [[ "$(docker exec kiosk-postgres cat "/etc/postgresql/$file" 2>/dev/null | sha256sum)" \
+            == "$(sha256sum < "$HERE/postgres/$file")" ]] || return 0
+    done
+    return 1
 }
 
-# A rebuilt image already made compose recreate postgres on the new files.
 reload_postgres() {
-    [[ "$(postgres_digest)" == "$1" || "$REBUILT" == yes ]] && return 0
-    log "postgres config changed, recreating postgres"
+    postgres_stale || return 0
+    log "postgres reads an older config, recreating postgres"
     "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate postgres
 }
 
@@ -107,7 +122,7 @@ prune() {
 }
 
 main() {
-    local sha actor previous broker proxy store database
+    local sha actor previous broker proxy
     read -r sha actor _ <<< "${SSH_ORIGINAL_COMMAND:-${1:-} ${2:-}}"
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { log "expected a 40-character commit sha"; exit 2; }
     [[ "$actor" =~ ^[A-Za-z0-9-]+(\[bot\])?$ ]] || { log "expected the github actor after the sha"; exit 2; }
@@ -119,14 +134,12 @@ main() {
     log "moving to $sha${previous:+ from $previous}"
     broker="$(broker_digest)"
     proxy="$(traefik_digest)"
-    store="$(backup_digest)"
-    database="$(postgres_digest)"
     checkout "$sha"
-    rebuild_backup "$store"
+    rebuild_backup
     start "$sha"
     reload_broker "$broker"
     reload_traefik "$proxy"
-    reload_postgres "$database"
+    reload_postgres
     if healthy; then
         echo "$sha" > "$HERE/.deployed"
         prune "$sha" "$previous"
@@ -141,14 +154,12 @@ main() {
     log "rolling back to $previous"
     broker="$(broker_digest)"
     proxy="$(traefik_digest)"
-    store="$(backup_digest)"
-    database="$(postgres_digest)"
     checkout "$previous"
-    rebuild_backup "$store"
+    rebuild_backup
     start "$previous"
     reload_broker "$broker"
     reload_traefik "$proxy"
-    reload_postgres "$database"
+    reload_postgres
     healthy || log "the rollback is not healthy either"
     exit 1
 }

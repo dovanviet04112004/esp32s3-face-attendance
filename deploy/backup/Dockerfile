@@ -17,4 +17,8 @@ RUN printf '%s\n' \
     '0 4 1 * * /usr/local/bin/retention.sh >> /var/log/backup.log 2>&1' \
     > /etc/crontabs/root
 
+# deploy.sh compares this hash of deploy/backup with the checkout to know when to rebuild.
+ARG INPUTS=unset
+LABEL cckiosk.inputs=$INPUTS
+
 CMD ["crond", "-f", "-l", "8"]
