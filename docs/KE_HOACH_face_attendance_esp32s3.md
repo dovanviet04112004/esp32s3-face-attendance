@@ -4342,7 +4342,8 @@ backend/
 ├── package.json  ├── tsconfig.json  ├── tsconfig.build.json  ├── nest-cli.json
 ├── prisma.config.ts                  # ★ url của datasource + lệnh seed (Prisma 7)
 ├── prisma/{schema.prisma, migrations/, seed.ts, demo.ts}
-├── test/*.e2e-spec.ts                # e2e, chạy bằng runner sẵn có của Node
+├── test/*.e2e-spec.ts                # e2e, chạy bằng runner sẵn có của Node, song song
+├── test/*.e2e-alone-spec.ts          # ★ e2e ghi lên cả bảng, chạy riêng sau cùng
 ├── test/teardown.ts                  # ★ dọn thứ không cascade theo dữ liệu suite tạo ra
 ├── test/fixtures.ts                  # ★ dựng thứ suite cần mà seed tối thiểu không có: loại phép, publish thay kiosk
 └── src/
@@ -4421,6 +4422,17 @@ giây và ra đúng một kết quả, vì mỗi suite e2e đều gieo trên nó
 cỡ vài nghìn người để nhìn giao diện dưới dữ liệu thật — cây phòng ban, thang chức danh, hợp
 đồng, lịch sử chấm công và tiền lương nhiều tháng. Gộp hai thứ này là biến `prisma db seed`
 thành lượt sinh hàng triệu dòng, và bộ test trả giá cho một việc nó không cần.
+
+**Suite chạy song song trên một cơ sở dữ liệu, nên thao tác toàn bảng không chia được thì chạy
+riêng.** Runner của Node mở mỗi file một tiến trình, và mỗi suite giữ hàng riêng bằng mã nhân
+viên riêng — đủ cho mọi thao tác nhắm vào hàng của chính nó. Thao tác nhắm vào **mọi hàng thoả
+điều kiện** thì phải chia theo thứ suite tự giữ: dựng ngày công theo một ngày, chạy lương theo
+một kỳ, quét đơn trễ theo tuổi đơn, và mỗi suite chọn ngày, kỳ, tuổi của riêng nó. Mở đăng nhập
+hàng loạt (§9.4) không có gì để chia: nó mở cho mọi hồ sơ đang chờ, kể cả người mới mà suite
+nhận việc vừa dựng và đang đợi tự mở login cho. Đo được: một lượt đỏ trên bốn, `LOGIN_EXISTS`.
+Nên suite ấy mang đuôi `.e2e-alone-spec.ts` và chạy sau khi các suite kia đã xong. Né bằng cách
+đổi dữ liệu của suite bị giẫm thì chỉ che một triệu chứng: suite kế tiếp dựng một hồ sơ đang
+chờ sẽ bị giẫm y hệt.
 
 Hai ràng buộc của `demo.ts`, cả hai đều là lý do nó tồn tại thay vì một file SQL:
 
