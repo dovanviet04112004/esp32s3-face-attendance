@@ -4850,7 +4850,14 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | `minio` (tùy chọn) | minio/minio | 9000 | ảnh chấm công |
 | `backup` | postgres + cron | — | dump hằng đêm |
 
-Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, trỏ `NEXT_PUBLIC_API_URL=https://api.<domain>`.
+Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, và chạy dưới **`app.<domain>`**
+(hiện là `app.cckiosk.io.vn`) chứ không dưới `*.vercel.app`. Cookie refresh đặt trên
+`api.<domain>`. `io.vn` nằm trong Public Suffix List, nên `app.` và `api.` là **cùng một site** và
+cookie ấy là cookie bên thứ nhất. Dưới `*.vercel.app` nó thành cookie bên thứ ba: Safari chặn mặc
+định, và người dùng iPhone — thiết bị chính của cổng nhân viên (§9.21) — bị đăng xuất mỗi lần tải
+lại trang. Vercel giữ hai biến, `NEXT_PUBLIC_API_URL=https://api.<domain>` và
+`NEXT_PUBLIC_WS_URL=wss://api.<domain>`; phía `api`, `CORS_ORIGIN` và `APP_PUBLIC_URL` trỏ
+`https://app.<domain>`. DNS có thêm một bản ghi `CNAME app` về địa chỉ Vercel đưa.
 
 **Triển khai liên tục: push lên `main` là lên VPS, nhưng chỉ khi test qua.** `deploy.yml` chạy
 khi push lên `main` chạm `backend/`, `contracts/`, `deploy/` hoặc chính hai workflow, và chạy tay
