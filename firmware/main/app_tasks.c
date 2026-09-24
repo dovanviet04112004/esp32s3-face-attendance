@@ -113,10 +113,6 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define OPEN_DOOR_DEFAULT_MS 3000
 #define REBOOT_DRAIN_MS 400
 #define WIFI_JOIN_WAIT_MS 12000
-// A server issues the low half; anything a kiosk mints alone sits above it,
-// salted by device so two machines never land on the same number (KEHOACH 7.5).
-#define LOCAL_ID_MARK 0x80000000u
-#define LOCAL_ID_SALT_BITS 15
 #define ENROLL_REPORT_CAP 1024
 #define ENROL_SAMPLES 3
 #define ROSTER_OFFER_WAIT_MS 200
@@ -290,16 +286,6 @@ static void embedding_version(char *out, size_t cap)
         }
     }
     strlcpy(out, "none", cap);
-}
-
-static uint32_t local_employee_floor(void)
-{
-    char id[STORAGE_DEVICE_ID_CAP] = { 0 };
-    if (sys_storage_device_id(id, sizeof(id)) != ESP_OK) {
-        return LOCAL_ID_MARK;
-    }
-    const uint32_t salt = sys_storage_crc32(id, strlen(id)) & ((1u << LOCAL_ID_SALT_BITS) - 1u);
-    return LOCAL_ID_MARK | (salt << 16);
 }
 
 static uint32_t roster_version(void)
@@ -1575,18 +1561,12 @@ static void ui_task(void *arg)
             ESP_LOGE(TAG, "enrol refused for %s: no spoof branch and the policy forbids it", name);
             continue;
         }
-        // All three samples of one person share the id taken for the first
-        // (KEHOACH 4.5.5h.2).
+        // The id is the one the server assigned; a kiosk mints none (KEHOACH 7.5).
         if (employee_id == 0) {
-            new_employee = new_employee != 0 ? new_employee
-                                             : svc_facedb_next_employee_id(local_employee_floor());
-            employee_id = new_employee;
-        }
-        new_employee = employee_id;
-        if (employee_id == 0) {
-            ESP_LOGE(TAG, "no id for %s, face table did not answer", name);
+            ESP_LOGE(TAG, "enrol refused for %s: the server assigned no id", name);
             continue;
         }
+        new_employee = employee_id;
         strlcpy(new_name, name, sizeof(new_name));
         const esp_err_t asked =
             svc_vision_enrol_next(employee_id, template_idx, name, yaw_min, yaw_max);
