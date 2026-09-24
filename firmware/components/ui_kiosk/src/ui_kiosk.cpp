@@ -290,6 +290,7 @@ void ui_kiosk_tick(uint32_t dt_ms)
     ui::Canvas &canvas = *s_canvas[s_next];
     canvas.clear();
     ui::manager().current()->paint(canvas, s_seen);
+    ui::restart_card(canvas);
     publish(canvas);
 }
 
@@ -474,6 +475,20 @@ void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id, const c
     if (claim != nullptr) {
         strlcpy(held.claim, claim, sizeof(held.claim));
     }
+    s_dirty = true;
+}
+
+void ui_kiosk_set_update(ui_kiosk_update_t state, uint8_t percent)
+{
+    if (!s_ready) {
+        return;
+    }
+    ui::Update &held = ui::update();
+    if (held.state == state && held.percent == percent) {
+        return;
+    }
+    held.state = state;
+    held.percent = percent;
     s_dirty = true;
 }
 

@@ -138,6 +138,18 @@ struct Ticket {
 
 Ticket &ticket() noexcept;
 
+struct Update {
+    ui_kiosk_update_t state;
+    uint8_t percent;
+};
+
+Update &update() noexcept;
+
+/** The card over whatever screen is up, so a reboot for an update is not taken for a fault.
+ *  @ctx ui_task | non-blocking | draws nothing unless the update is RESTARTING
+ */
+void restart_card(Canvas &to) noexcept;
+
 /** The two levels the sliders sit at, and whether main has yet to hear about it. */
 struct Level {
     uint8_t percent;

@@ -1,5 +1,6 @@
 #include "net_ota.h"
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -14,6 +15,10 @@
 #include "mbedtls/md.h"
 
 static const char *TAG = "net_ota";
+
+// Written by ota_task as the image arrives, read by whoever shows the progress.
+static atomic_size_t s_taken;
+static atomic_size_t s_want;
 
 #define HTTPS_PREFIX "https://"
 #define SHA256_HEX_LEN 64
@@ -103,6 +108,8 @@ static esp_err_t pull(esp_http_client_handle_t http, sink_fn sink, void *ctx, ui
         return ESP_FAIL;
     }
     size_t taken = 0;
+    atomic_store(&s_taken, 0);
+    atomic_store(&s_want, want);
     while (taken < want) {
         const int read = esp_http_client_read(http, (char *)chunk, (int)CHUNK_BYTES);
         if (read < 0) {
@@ -121,6 +128,7 @@ static esp_err_t pull(esp_http_client_handle_t http, sink_fn sink, void *ctx, ui
             return written;
         }
         taken += (size_t)read;
+        atomic_store(&s_taken, taken);
     }
     uint8_t raw[SHA256_BYTES];
     mbedtls_md_finish(&sha, raw);
@@ -326,4 +334,14 @@ esp_err_t net_ota_mark_valid(void)
     const esp_err_t marked = esp_ota_mark_app_valid_cancel_rollback();
     ESP_LOGW(TAG, "this build is keeping the slot: %s", esp_err_to_name(marked));
     return marked;
+}
+
+uint8_t net_ota_percent(void)
+{
+    const size_t want = atomic_load(&s_want);
+    const size_t taken = atomic_load(&s_taken);
+    if (want == 0) {
+        return 0;
+    }
+    return (uint8_t)(taken >= want ? 100 : (uint64_t)taken * 100 / want);
 }

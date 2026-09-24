@@ -28,6 +28,8 @@ constexpr Entry kRows[] = {
     { StrId::TicketRefused, "Máy chủ không nhận firmware này", "Server refused this firmware" },
     { StrId::TicketNoToken, "Firmware này chưa có mã lô", "Firmware has no batch token" },
     { StrId::TicketOffline, "Chưa nối được máy chủ", "Cannot reach the server" },
+    { StrId::UpdateFetchingFmt, "Đang tải bản cập nhật %u%%", "Downloading an update %u%%" },
+    { StrId::UpdateRestarting, "Đang khởi động lại để cập nhật…", "Restarting to update…" },
 
     { StrId::MenuTitle, "Quản lý", "Manage" },
     { StrId::MenuEnrol, "Thêm người", "Add person" },

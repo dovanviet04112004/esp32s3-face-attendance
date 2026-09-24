@@ -143,6 +143,19 @@ typedef enum {
  */
 void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id, const char *claim);
 
+/** Where an update the server offered stands on this kiosk (KEHOACH 7.7). */
+typedef enum {
+    UI_KIOSK_UPDATE_NONE = 0,             // nothing is shown
+    UI_KIOSK_UPDATE_FETCHING,             // downloading; punches carry on
+    UI_KIOSK_UPDATE_RESTARTING,           // armed, about to reboot into it
+} ui_kiosk_update_t;
+
+/** Show how an update stands: a line while it downloads, a card as it reboots.
+ *  @ctx any | non-blocking
+ *  @param percent how much has arrived, read only while FETCHING
+ */
+void ui_kiosk_set_update(ui_kiosk_update_t state, uint8_t percent);
+
 /** Seed what the two settings sliders rest at, from main's copy of NVS.
  *  @ctx ui_task | non-blocking
  */

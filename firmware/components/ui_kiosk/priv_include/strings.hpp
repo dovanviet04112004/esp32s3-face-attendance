@@ -28,6 +28,8 @@ enum class StrId : uint16_t {
     TicketRefused,
     TicketNoToken,
     TicketOffline,
+    UpdateFetchingFmt,                    // takes the percentage
+    UpdateRestarting,
 
     MenuTitle,
     MenuEnrol,

@@ -51,6 +51,11 @@ esp_err_t net_ota_models(const net_ota_image_t *image, char *why, size_t cap);
  */
 esp_err_t net_ota_mark_valid(void);
 
+/** How much of the image being downloaded has arrived, as a percentage.
+ *  @ctx any | non-blocking | 0 until a download starts, 100 once one ends
+ */
+uint8_t net_ota_percent(void);
+
 /** Whether this boot is a fresh image the bootloader will undo unless marked.
  *  @ctx any | non-blocking
  */

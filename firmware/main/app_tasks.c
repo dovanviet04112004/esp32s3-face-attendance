@@ -1730,6 +1730,8 @@ static void ota_task(void *arg)
         }
         ESP_LOGW(TAG, "ota %s: %s, %lld bytes", offer.release_id, offer.version,
                  (long long)offer.size_bytes);
+        xEventGroupSetBits(wiring->flags, APP_EG_OTA_RUNNING);
+        ui_kiosk_set_update(UI_KIOSK_UPDATE_FETCHING, 0);
         net_mqtt_stop();
         const esp_err_t took = models ? net_ota_models(&image, why, sizeof(why))
                                       : net_ota_firmware(&image, why, sizeof(why));
@@ -1738,6 +1740,8 @@ static void ota_task(void *arg)
             sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_ON_TRIAL);
         }
         if (took != ESP_OK) {
+            xEventGroupClearBits(wiring->flags, APP_EG_OTA_RUNNING);
+            ui_kiosk_set_update(UI_KIOSK_UPDATE_NONE, 0);
             ESP_LOGE(TAG, "ota %s failed: %s (%s)", offer.release_id, why,
                      esp_err_to_name(took));
             // The link comes back so the failure can be reported at all.
@@ -1746,6 +1750,8 @@ static void ota_task(void *arg)
             continue;
         }
         ESP_LOGW(TAG, "ota %s armed, rebooting into it", offer.release_id);
+        // The dark seconds of the reboot look like a fault unless the panel says why first.
+        ui_kiosk_set_update(UI_KIOSK_UPDATE_RESTARTING, 100);
         vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_WAIT_MS));
         esp_restart();
     }
@@ -2105,6 +2111,9 @@ static void attend_task(void *arg)
                 settings_at_ms = sys_time_now_ms();
                 show_facts();
                 show_net();
+                if ((xEventGroupGetBits(wiring->flags) & APP_EG_OTA_RUNNING) != 0) {
+                    ui_kiosk_set_update(UI_KIOSK_UPDATE_FETCHING, net_ota_percent());
+                }
             }
         }
         const svc_attendance_state_t state = svc_attendance_state();

@@ -166,6 +166,7 @@ JoinRequest s_join;
 Facts s_facts;
 ui_kiosk_net_t s_net;
 Ticket s_ticket;
+Update s_update = { UI_KIOSK_UPDATE_NONE, 0 };
 Level s_brightness = { 70, false, false };
 Restart s_vision_reset = Restart::No;
 Level s_volume = { 60, false, false };
@@ -364,6 +365,13 @@ void field(Canvas &to, const char *text, const char *hint)
 void ticket_line(Canvas &to)
 {
     char line[64] = { 0 };
+    if (s_update.state == UI_KIOSK_UPDATE_FETCHING) {
+        snprintf(line, sizeof(line), text(StrId::UpdateFetchingFmt), (unsigned)s_update.percent);
+        to.text_on_video(Font::Caption, kWideX,
+                         Canvas::centre_y(Font::Caption, theme::kBarH, kGuideY - theme::kBarH), kWideW,
+                         line, DRV_LCD_ACCENT, Align::Centre);
+        return;
+    }
     switch (s_ticket.state) {
     case UI_KIOSK_TICKET_WAITING:
         snprintf(line, sizeof(line), text(StrId::TicketWaitingFmt), s_ticket.device_id);
@@ -1692,6 +1700,24 @@ ui_kiosk_net_t &net() noexcept
 Ticket &ticket() noexcept
 {
     return s_ticket;
+}
+
+Update &update() noexcept
+{
+    return s_update;
+}
+
+void restart_card(Canvas &to) noexcept
+{
+    if (s_update.state != UI_KIOSK_UPDATE_RESTARTING) {
+        return;
+    }
+    const int card_h = 2 * theme::kRowH;
+    const int card_y = (APP_LCD_V_RES - card_h) / 2;
+    to.card(theme::kGutter, card_y, theme::kContentW, card_h, theme::kRadius, DRV_LCD_SURFACE);
+    to.text(Font::Strong, theme::kGutter + theme::kGapM, Canvas::centre_y(Font::Strong, card_y, card_h),
+            theme::kContentW - 2 * theme::kGapM, text(StrId::UpdateRestarting), DRV_LCD_INK,
+            Align::Centre);
 }
 
 Restart &vision_reset() noexcept
