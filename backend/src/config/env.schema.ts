@@ -16,11 +16,12 @@ export const envSchema = z
     DEVICE_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90),
     DEVICE_BOOTSTRAP_TOKEN: z.string().min(16),
     DEVICE_CLAIM_ATTEMPTS: z.coerce.number().int().positive().max(20).default(5),
+    DEVICE_POLL_INTERVAL_S: z.coerce.number().int().min(1).max(300).default(5),
     JWT_DEVICE_SECRET: z.string().min(32),
 
     LOGIN_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(5),
     SESSIONS_PER_USER: z.coerce.number().int().positive().default(10),
-    DEVICE_REGISTER_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(12),
+    DEVICE_REGISTER_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
     FORGOT_ATTEMPTS_PER_HOUR: z.coerce.number().int().positive().default(5),
     // Proxies between the client and api; 0 trusts no X-Forwarded-For (KEHOACH 4.8).
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(4).default(0),

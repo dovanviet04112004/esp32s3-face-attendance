@@ -30,13 +30,14 @@ interface HeartbeatFacts {
   modelVersion: string;
 }
 
-/** `accepted` is the 202 of KEHOACH 7.3: keep asking. The token only ever
- *  rides on the 200, once a person has said yes; `claimRenew` tells a kiosk
- *  its claim code is spent and it must show a new one.
+/** `accepted` is the 202 of KEHOACH 7.3: ask again in `pollIntervalS`. The
+ *  token only ever rides on the 200, once a person has said yes; `claimRenew`
+ *  tells a kiosk its claim code is spent and it must show a new one.
  */
 export interface Registration {
   accepted: boolean;
   deviceId: string;
+  pollIntervalS?: number;
   token?: string;
   expiresInDays?: number;
   claimRenew?: boolean;
@@ -88,7 +89,7 @@ export class DevicesService {
     }
     const claim = claimFingerprint(body.deviceId, body.claimCode);
     const held = await this.db.device.findUnique({ where: { id: body.deviceId } });
-    const waiting: Registration = { accepted: true, deviceId: body.deviceId };
+    const waiting = this.waiting(body.deviceId);
 
     if (!held) {
       await this.db.device.create({
@@ -146,7 +147,7 @@ export class DevicesService {
 
   // A code typed wrong too often is dead, and the kiosk is told to show a new one (KEHOACH 7.3).
   private async hold(device: Device, claim: string): Promise<Registration> {
-    const waiting: Registration = { accepted: true, deviceId: device.id };
+    const waiting = this.waiting(device.id);
     if (device.claimHash === claim) {
       return device.claimFailures >= this.attempts() ? { ...waiting, claimRenew: true } : waiting;
     }
@@ -155,6 +156,14 @@ export class DevicesService {
       data: { claimHash: claim, claimFailures: 0 },
     });
     return waiting;
+  }
+
+  private waiting(deviceId: string): Registration {
+    return {
+      accepted: true,
+      deviceId,
+      pollIntervalS: this.config.get("DEVICE_POLL_INTERVAL_S", { infer: true }),
+    };
   }
 
   private attempts(): number {

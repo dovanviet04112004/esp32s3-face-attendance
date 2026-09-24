@@ -20,6 +20,7 @@ const WRONG_CODE = "000001";
 interface Answer {
   accepted: boolean;
   deviceId: string;
+  pollIntervalS?: number;
   token?: string;
   expiresInDays?: number;
   claimRenew?: boolean;
@@ -59,6 +60,16 @@ describe("device registration (e2e)", () => {
       .send({ name: "Cửa thử", location: "Tầng 1", claimCode });
   }
 
+  // Every wait names the pace, or the kiosk falls back to backing off (KEHOACH 7.3).
+  function paced(res: request.Response): void {
+    assert.equal(res.status, 202);
+    assert.equal(
+      (res.body as Answer).pollIntervalS,
+      validateEnv().DEVICE_POLL_INTERVAL_S,
+      "a waiting machine was not told how often to ask",
+    );
+  }
+
   async function held(id: string): Promise<{ status: string; tokenHash: string | null } | null> {
     return db.device.findUnique({ where: { id }, select: { status: true, tokenHash: true } });
   }
@@ -95,7 +106,7 @@ describe("device registration (e2e)", () => {
 
   it("puts an unknown machine in the queue without handing it anything", async () => {
     const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap, fwVersion: "0.9.1" });
-    assert.equal(res.status, 202);
+    paced(res);
     const answer = res.body as Answer;
     assert.equal(answer.deviceId, DEVICE);
     assert.equal(answer.token, undefined, "a machine nobody approved was given a token");
@@ -104,7 +115,7 @@ describe("device registration (e2e)", () => {
 
   it("keeps answering wait while it is still waiting", async () => {
     const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap });
-    assert.equal(res.status, 202);
+    paced(res);
     assert.equal((res.body as Answer).token, undefined);
   });
 
@@ -125,7 +136,7 @@ describe("device registration (e2e)", () => {
     assert.equal(locked.body.message, "DEVICE_CLAIM_LOCKED");
 
     const told = await register({ deviceId: DEVICE, bootstrapToken: bootstrap });
-    assert.equal(told.status, 202);
+    paced(told);
     assert.equal((told.body as Answer).claimRenew, true, "the kiosk was not told to renew");
 
     const renewed = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, SECOND_CODE);
@@ -160,6 +171,7 @@ describe("device registration (e2e)", () => {
   it("sends a machine that asks again while holding a token back for approval", async () => {
     const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap });
     assert.equal(res.status, 202, "a second ask handed out another token");
+    paced(res);
     assert.equal((res.body as Answer).token, undefined);
     assert.deepEqual(
       await held(DEVICE),
@@ -171,7 +183,7 @@ describe("device registration (e2e)", () => {
   it("takes a revoked machine back into the queue, not straight back in", async () => {
     await db.device.update({ where: { id: DEVICE }, data: { status: "REVOKED" } });
     const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap });
-    assert.equal(res.status, 202);
+    paced(res);
     assert.equal((res.body as Answer).token, undefined);
     assert.deepEqual(await held(DEVICE), { status: "PENDING", tokenHash: null });
   });
@@ -189,7 +201,12 @@ describe("device registration (e2e)", () => {
 
   // Declared last: it spends the register allowance for the minute.
   it("lets a fleet ask its own number of times, not the number meant for people", async () => {
-    const allowance = validateEnv().DEVICE_REGISTER_ATTEMPTS_PER_MINUTE;
+    const env = validateEnv();
+    const allowance = env.DEVICE_REGISTER_ATTEMPTS_PER_MINUTE;
+    assert.ok(
+      allowance >= 2 * Math.ceil(60 / env.DEVICE_POLL_INTERVAL_S),
+      "two kiosks waiting behind one address would outrun the allowance at the pace they are given",
+    );
     const spent = asked;
     let refused = false;
     for (let ask = 0; ask <= allowance + 1 && !refused; ask += 1) {
