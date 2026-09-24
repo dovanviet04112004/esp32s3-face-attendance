@@ -6515,7 +6515,7 @@ mọi thông tin của một bản đã nằm sẵn ở nơi làm ra nó, nên n
 
 | Loại | Ai đưa lên | Khi nào | Phiên bản |
 |---|---|---|---|
-| `FIRMWARE` | CI, job `release` của `firmware.yml` | push vào `main` mang một `PROJECT_VER` server chưa có | `PROJECT_VER`; server đối lại với `esp_app_desc_t` trong ảnh — `version` ở offset `0x30`, `project_name` ở `0x50` phải là `face_attendance` |
+| `FIRMWARE` | CI, job `release` của `firmware.yml` | push vào `main` mang một `PROJECT_VER` server chưa có | `PROJECT_VER`; server đối lại với `version` của `esp_app_desc_t` trong ảnh, ở offset `0x30` |
 | `ASSETS` | chưa ai | — | kiosk chưa có đường cài: `ota_task` từ chối với `ASSETS has no path yet`, nên một bản assets lên server chỉ là một nút bấm lần nào cũng hỏng. Thêm vào job này cùng lúc `net_ota` có đường ấy |
 | `MODELS` | máy train, ngay sau khi khoá bộ model (§4.2) | mỗi lần `models.bin` đổi | `img-<crc32 header>` — đúng chuỗi kiosk gửi trong heartbeat |
 
@@ -6529,7 +6529,7 @@ chỉ nhận về "đã có".
 người, vì người không bao giờ đi cửa này. Server băm sha256 và đếm byte **trong lúc** ghi xuống
 volume `releases`, ghi ra `.part` rồi mới đổi tên, và từ chối file quá `OTA_MAX_BYTES`. Nó chỉ đối
 chiếu những gì đọc được mà không phải chép layout của repo: header ảnh app là định dạng chuẩn của
-ESP-IDF nên firmware được đối số phiên bản và tên project; header `MDLS` chỉ khai ở
+ESP-IDF nên firmware được đối số phiên bản; header `MDLS` chỉ khai ở
 `storage_format.h`, nên model và assets tin phiên bản của bên đưa lên, và kiosk kiểm lại magic,
 crc, sha256 sau khi tải. `(target, version)` đã có thì trả bản đang có, không ghi đè. Giữ file của
 năm bản mới nhất mỗi loại; bản cũ hơn giữ dòng làm lịch sử nhưng không mời được nữa.
