@@ -238,6 +238,20 @@ TEST_CASE("the same person matched again while the door is open is not granted t
     TEST_ASSERT_FALSE(svc_door_is_open(svc_door_fake()));
 }
 
+TEST_CASE("a face that left the guide is a new arrival when it comes back", "[svc_attendance]")
+{
+    machine_up(true);
+    back_to_idle();
+    svc_attendance_on_presence(true);
+    feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
+    svc_door_close(svc_door_fake());
+    feed(SVC_VISION_FACE_OFF_GUIDE, 0, NO_SPOOF_SCORE);
+    const uint32_t records = svc_attendance_records();
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_GRANTED, feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE));
+    TEST_ASSERT_TRUE(svc_door_is_open(svc_door_fake()));
+    TEST_ASSERT_EQUAL(records, svc_attendance_records());
+}
+
 TEST_CASE("a stranger stepping in while the door is open is refused at once", "[svc_attendance]")
 {
     machine_up(true);

@@ -464,6 +464,48 @@ TEST_CASE("a larger face off the glass does not take the turn of one in the guid
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 170.0f, served.primary.box[0]);
 }
 
+// Against the kiosk guide a 150 px face at x 120 has 73% inside, at x 75 has 43% and at x 30 13%.
+TEST_CASE("a face at the edge of the guide stays in it and is not verified again", "[svc_vision]")
+{
+    Rig rig(kKioskGuide);
+    rig.detector.one(165.0f, 80.0f, kBigFace);
+    rig.step();
+    const svc_vision_result_t served = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, served.kind);
+    const float xs[] = { 120.0f, 75.0f, 120.0f, 75.0f };
+    for (float x : xs) {
+        rig.detector.one(x, 80.0f, kBigFace);
+        const svc_vision_result_t result = rig.pipeline.step(kFrame);
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, result.kind);
+        TEST_ASSERT_EQUAL(served.track, result.track);
+    }
+    TEST_ASSERT_EQUAL(1, rig.liveness.scores);
+}
+
+TEST_CASE("a face that leaves the guide is a new arrival when it comes back", "[svc_vision]")
+{
+    Rig rig(kKioskGuide);
+    rig.detector.one(165.0f, 80.0f, kBigFace);
+    rig.step();
+    const svc_vision_result_t served = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, served.kind);
+    rig.detector.one(120.0f, 80.0f, kBigFace);
+    rig.step();
+    rig.detector.one(75.0f, 80.0f, kBigFace);
+    rig.step();
+    rig.detector.one(30.0f, 80.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_FACE_OFF_GUIDE, rig.step());
+    rig.detector.one(75.0f, 80.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    TEST_ASSERT_EQUAL(SVC_VISION_FACE_OFF_GUIDE, rig.heard.stage);
+    rig.detector.one(120.0f, 80.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    const svc_vision_result_t back = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, back.kind);
+    TEST_ASSERT_NOT_EQUAL(served.track, back.track);
+    TEST_ASSERT_EQUAL(2, rig.liveness.scores);
+}
+
 extern "C" void app_main(void)
 {
     // The whole suite prints in a few ms, and the console drops whatever will
