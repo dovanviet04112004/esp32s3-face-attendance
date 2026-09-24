@@ -8,7 +8,6 @@ import { useMemo, useState } from "react";
 import { Failed } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
@@ -27,12 +26,20 @@ interface Device {
   online: boolean;
 }
 
-interface Release {
-  releaseId: string;
-  target: "FIRMWARE" | "MODELS" | "ASSETS";
-  version: string;
-  sizeBytes: number;
+interface FleetUpdate {
+  release: { releaseId: string; target: "FIRMWARE" | "MODELS"; version: string };
+  behind: string[];
 }
+
+/** Read from the heartbeat and the kiosk's own OTA_FAILED event (KEHOACH 7.7). */
+interface OfferStatus {
+  version: string;
+  offeredAt: string;
+  state: "WAITING" | "INSTALLED" | "FAILED";
+  reason: string | null;
+}
+
+const STATUS_POLL_MS = 10_000;
 
 export default function DevicePage() {
   const t = useTranslations("devices");
@@ -43,8 +50,7 @@ export default function DevicePage() {
   const role = useSession((s) => s.role);
   const cache = useQueryClient();
   const { items } = useFeed();
-  const [picked, setPicked] = useState("");
-  const [offered, setOffered] = useState<string | null>(null);
+  const [offerFault, setOfferFault] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
@@ -57,18 +63,27 @@ export default function DevicePage() {
     queryFn: async () => (await api.get<Device>(`/devices/${id}`)).data,
   });
 
-  const releases = useQuery({
-    queryKey: ["releases"],
+  const fleet = useQuery({
+    queryKey: ["releases", "fleet"],
     enabled: role === "ADMIN",
-    queryFn: async () => (await api.get<Release[]>("/releases")).data,
+    queryFn: async () => (await api.get<FleetUpdate[]>("/releases/fleet")).data,
+  });
+
+  const offerStatus = useQuery({
+    queryKey: ["releases", "status", id],
+    enabled: role === "ADMIN",
+    queryFn: async () => (await api.get<OfferStatus | null>(`/releases/status/${id}`)).data,
+    // Only a kiosk still fetching changes on its own; the others wait for the next press.
+    refetchInterval: (query) => (query.state.data?.state === "WAITING" ? STATUS_POLL_MS : false),
   });
 
   const offer = useMutation({
     mutationFn: (releaseId: string) => api.post(`/releases/${releaseId}/offer/${id}`, {}),
     onSuccess: () => {
-      setOffered(device.data?.name ?? id);
-      void cache.invalidateQueries({ queryKey: ["devices", id] });
+      setOfferFault(null);
+      void cache.invalidateQueries({ queryKey: ["releases"] });
     },
+    onError: (fell: unknown) => setOfferFault(faultOf(fell)),
   });
 
   const rename = useMutation({
@@ -113,9 +128,8 @@ export default function DevicePage() {
   }
 
   const it = device.data;
-  const choices = releases.data ?? [];
-  const chosen = choices.find((release) => release.releaseId === picked);
-  const sameAlready = chosen?.target === "FIRMWARE" && chosen.version === it.fwVersion;
+  const newer = (fleet.data ?? []).filter((update) => update.behind.includes(id));
+  const told = offerStatus.data;
 
   const facts: [string, string][] = [
     [t("location"), it.location ?? common("empty")],
@@ -156,37 +170,49 @@ export default function DevicePage() {
         <div className="mt-8 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
           <h2 className="text-sm font-medium">{t("otaTitle")}</h2>
           <p className="mt-1 text-sm text-(--color-muted)">{t("otaLead")}</p>
-          {choices.length === 0 ? (
-            <p className="mt-4 text-sm text-(--color-muted)">{t("otaNone")}</p>
+          {newer.length === 0 ? (
+            <p className="mt-4 text-sm text-(--color-muted)">
+              {(fleet.data ?? []).length === 0 ? t("otaNone") : t("otaCurrent")}
+            </p>
           ) : (
-            <div className="mt-4 flex gap-2">
-              <Select
-                aria-label={t("otaVersion")}
-                value={picked}
-                onChange={(e) => setPicked(e.target.value)}
-              >
-                <option value="">{common("empty")}</option>
-                {choices.map((release) => (
-                  <option key={release.releaseId} value={release.releaseId}>
-                    {release.target} {release.version}
-                  </option>
-                ))}
-              </Select>
-              <Button
-                type="button"
-                disabled={!picked || sameAlready || offer.isPending}
-                onClick={() => offer.mutate(picked)}
-                className="shrink-0"
-              >
-                {t("otaOffer")}
-              </Button>
-            </div>
+            newer.map((update) => (
+              <div key={update.release.releaseId} className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="text-sm">
+                  {t("otaNewer", { target: t(`target${update.release.target}`), version: update.release.version })}
+                </span>
+                <Button
+                  type="button"
+                  className="ms-auto"
+                  disabled={offer.isPending || it.status !== "APPROVED"}
+                  onClick={() => offer.mutate(update.release.releaseId)}
+                >
+                  {offer.isPending ? common("saving") : t("otaUpdate")}
+                </Button>
+              </div>
+            ))
           )}
-          {sameAlready ? (
-            <p className="mt-3 text-sm text-(--color-warn)">{t("otaSame")}</p>
+          {told ? (
+            <p
+              role="status"
+              className={
+                told.state === "FAILED"
+                  ? "mt-3 text-sm text-(--color-danger)"
+                  : told.state === "INSTALLED"
+                    ? "mt-3 text-sm text-(--color-ok)"
+                    : "mt-3 text-sm text-(--color-muted)"
+              }
+            >
+              {told.state === "FAILED"
+                ? t("otaFailed", { version: told.version, reason: told.reason ?? common("empty") })
+                : told.state === "INSTALLED"
+                  ? t("otaInstalled", { version: told.version })
+                  : t("otaWaiting", { version: told.version, at: format.dateTime(new Date(told.offeredAt), "medium") })}
+            </p>
           ) : null}
-          {offered ? (
-            <p className="mt-3 text-sm text-(--color-ok)">{t("otaSent", { device: offered })}</p>
+          {offerFault ? (
+            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
+              {offerFault}
+            </p>
           ) : null}
         </div>
       ) : null}

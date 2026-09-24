@@ -1,27 +1,31 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Sheet } from "@/components/ui/sheet";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 
-const TARGETS = ["FIRMWARE", "MODELS", "ASSETS"] as const;
-
-type Target = (typeof TARGETS)[number];
-
 interface Release {
   releaseId: string;
-  target: Target;
+  target: "FIRMWARE" | "MODELS";
   version: string;
   sizeBytes: number;
+  createdAt: string;
+  available: boolean;
+}
+
+/** The newest release of one kind and the approved kiosks behind it; the server owns the rule. */
+interface FleetUpdate {
+  release: Release;
+  behind: string[];
 }
 
 interface Device {
@@ -89,12 +93,12 @@ function Approve({ id }: { id: string }) {
 export default function DevicesPage() {
   const t = useTranslations("devices");
   const common = useTranslations("common");
+  const format = useFormatter();
   const role = useSession((s) => s.role);
   const cache = useQueryClient();
   const faultOf = useFault();
-  const [target, setTarget] = useState<Target>("FIRMWARE");
-  const [version, setVersion] = useState("");
-  const [url, setUrl] = useState("");
+  const [asking, setAsking] = useState<FleetUpdate | null>(null);
+  const [sent, setSent] = useState<{ offered: number; failed: number } | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const devices = useQuery({
     queryKey: ["devices"],
@@ -105,26 +109,28 @@ export default function DevicesPage() {
     enabled: role === "ADMIN",
     queryFn: async () => (await api.get<Release[]>("/releases")).data,
   });
-
-  const register = useMutation({
-    mutationFn: () =>
-      api.post("/releases", {
-        target,
-        version,
-        url,
-      }),
-    onSuccess: () => {
-      setUrl("");
-      void cache.invalidateQueries({ queryKey: ["releases"] });
-    },
-    onError: (fell: unknown) => setFault(faultOf(fell)),
+  const fleet = useQuery({
+    queryKey: ["releases", "fleet"],
+    enabled: role === "ADMIN",
+    queryFn: async () => (await api.get<FleetUpdate[]>("/releases/fleet")).data,
   });
 
-  function publish(event: FormEvent): void {
-    event.preventDefault();
-    setFault(null);
-    register.mutate();
-  }
+  const updateAll = useMutation({
+    mutationFn: async (releaseId: string) =>
+      (await api.post<{ offered: string[]; failed: string[] }>(`/releases/${releaseId}/offer`, {})).data,
+    onSuccess: (done) => {
+      setAsking(null);
+      setSent({ offered: done.offered.length, failed: done.failed.length });
+      void cache.invalidateQueries({ queryKey: ["releases"] });
+    },
+    onError: (fell: unknown) => {
+      setAsking(null);
+      setFault(faultOf(fell));
+    },
+  });
+
+  const updatesFor = (deviceId: string): FleetUpdate[] =>
+    (fleet.data ?? []).filter((update) => update.behind.includes(deviceId));
 
   const columns: Column<Device>[] = [
     {
@@ -155,7 +161,24 @@ export default function DevicesPage() {
       sortBy: (row) => row.location ?? "",
       cell: (row) => row.location ?? common("empty"),
     },
-    { id: "firmware", header: t("firmware"), cell: (row) => row.fwVersion ?? common("empty") },
+    {
+      id: "firmware",
+      header: t("firmware"),
+      cell: (row) => (
+        <div className="flex flex-wrap items-center gap-2">
+          <span>{row.fwVersion ?? common("empty")}</span>
+          {updatesFor(row.id).map((update) => (
+            <Link
+              key={update.release.releaseId}
+              href={`/devices/${row.id}`}
+              className="rounded-full border border-(--color-accent) px-2 py-0.5 text-xs text-(--color-accent) hover:underline"
+            >
+              {t("updateBadge", { target: t(`target${update.release.target}`), version: update.release.version })}
+            </Link>
+          ))}
+        </div>
+      ),
+    },
     {
       id: "roster",
       header: t("roster"),
@@ -195,82 +218,92 @@ export default function DevicesPage() {
           <p className="mt-1 text-sm text-(--color-muted)">{t("releasesLead")}</p>
 
           <ul className="mt-3 flex flex-col">
-            {(releases.data ?? []).map((one) => (
+            {(fleet.data ?? []).map((update) => (
               <li
-                key={one.releaseId}
+                key={update.release.releaseId}
                 className="flex flex-wrap items-center gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
               >
-                <span className="font-medium">{one.target}</span>
-                <span className="font-mono text-xs">{one.version}</span>
-                <span className="ms-auto text-xs text-(--color-muted)">
-                  {t("releaseSize", { kb: Math.round(one.sizeBytes / 1024) })}
+                <span className="font-medium">{t(`target${update.release.target}`)}</span>
+                <span className="font-mono text-xs">{update.release.version}</span>
+                <span className="text-xs text-(--color-muted)">
+                  {t("releaseBehind", { count: update.behind.length })}
                 </span>
+                <Button
+                  size="sm"
+                  className="ms-auto"
+                  disabled={update.behind.length === 0 || updateAll.isPending}
+                  onClick={() => {
+                    setFault(null);
+                    setSent(null);
+                    setAsking(update);
+                  }}
+                >
+                  {t("releaseUpdateAll", { count: update.behind.length })}
+                </Button>
               </li>
             ))}
-            {releases.isSuccess && (releases.data ?? []).length === 0 ? (
+            {fleet.isSuccess && (fleet.data ?? []).length === 0 ? (
               <li className="py-2 text-sm text-(--color-muted)">{t("releasesEmpty")}</li>
             ) : null}
           </ul>
 
-          <form onSubmit={publish} className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="block text-xs text-(--color-muted)" htmlFor="relTarget">
-                {t("releaseTarget")}
-              </label>
-              <Select
-                id="relTarget"
-                value={target}
-                onChange={(event) => setTarget(event.target.value as Target)}
-                className="mt-1"
-              >
-                {TARGETS.map((one) => (
-                  <option key={one} value={one}>
-                    {one}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label className="block text-xs text-(--color-muted)" htmlFor="relVersion">
-                {t("releaseVersion")}
-              </label>
-              <Input
-                id="relVersion"
-                required
-                placeholder="0.9.2"
-                value={version}
-                onChange={(event) => setVersion(event.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs text-(--color-muted)" htmlFor="relUrl">
-                {t("releaseUrl")}
-              </label>
-              <Input
-                id="relUrl"
-                required
-                type="url"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <p className="text-xs text-(--color-muted) sm:col-span-2">{t("releaseMeasured")}</p>
-            <div className="flex items-end">
-              <Button type="submit" disabled={register.isPending}>
-                {register.isPending ? common("saving") : t("releaseAdd")}
-              </Button>
-            </div>
-          </form>
-
+          {sent ? (
+            <p role="status" className="mt-3 text-sm text-(--color-ok)">
+              {t("releaseUpdateAllDone", sent)}
+            </p>
+          ) : null}
           {fault ? (
             <p role="alert" className="mt-3 text-sm text-(--color-danger)">
               {fault}
             </p>
           ) : null}
+
+          {(releases.data ?? []).length > 0 ? (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-xs text-(--color-muted)">{t("releasesHistory")}</summary>
+              <ul className="mt-2 flex flex-col">
+                {(releases.data ?? []).map((one) => (
+                  <li key={one.releaseId} className="flex flex-wrap items-center gap-3 py-1 text-xs">
+                    <span>{t(`target${one.target}`)}</span>
+                    <span className="font-mono">{one.version}</span>
+                    <span className="text-(--color-muted)">{format.dateTime(new Date(one.createdAt), "medium")}</span>
+                    <span className="ms-auto text-(--color-muted)">
+                      {one.available ? t("releaseSize", { kb: Math.round(one.sizeBytes / 1024) }) : t("releaseCleared")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
         </section>
       ) : null}
+
+      <Sheet
+        open={asking !== null}
+        onClose={() => setAsking(null)}
+        title={t("releaseUpdateAllTitle")}
+        closeLabel={common("close")}
+      >
+        {asking ? (
+          <>
+            <p className="text-sm text-(--color-muted)">
+              {t("releaseUpdateAllAsk", {
+                count: asking.behind.length,
+                target: t(`target${asking.release.target}`),
+                version: asking.release.version,
+              })}
+            </p>
+            <Button
+              type="button"
+              className="mt-4"
+              disabled={updateAll.isPending}
+              onClick={() => updateAll.mutate(asking.release.releaseId)}
+            >
+              {updateAll.isPending ? common("saving") : t("releaseUpdateAll", { count: asking.behind.length })}
+            </Button>
+          </>
+        ) : null}
+      </Sheet>
     </section>
   );
 }
