@@ -4931,7 +4931,8 @@ riêng tư cũng được.
 
 1. Đưa `~/cckiosk` (bản clone chỉ lấy `deploy/`) về đúng sha: cấu hình compose và traefik đi
    cùng code, không có lượt nào code mới chạy trên cấu hình cũ.
-2. `kiosk-backup:local` không mang nhãn băm của `deploy/backup/` hiện tại thì build lại ngay trên
+2. `kiosk-backup:local` không mang nhãn băm các file git theo dõi của `deploy/backup/` (trừ
+   `restore-drill.sh`, thứ không vào image) thì build lại ngay trên
    VPS, và gắn nhãn mới. Image ấy không có trên registry, và bước sau chạy `--no-build`, nên
    thiếu bước này thì một `wal-push.sh` hay một dòng cron mới **không bao giờ lên máy**. So với
    nhãn trên image chứ không so với sha cũ: một lượt build hỏng giữa chừng rồi chạy lại vẫn thấy

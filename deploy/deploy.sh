@@ -72,15 +72,10 @@ reload_traefik() {
     "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate traefik
 }
 
-# The C locale fixes the glob order, so a hand build hashes the same as this script.
-# restore-drill.sh runs on the key holder's machine and never enters the image.
+# Tracked blobs only: a stray file in the directory, a key among them, must not
+# read as a change. restore-drill.sh runs on the key holder's machine, not in the image.
 backup_digest() {
-    (
-        export LC_ALL=C
-        for file in "$HERE"/backup/*; do
-            [[ "$file" == */restore-drill.sh ]] || cat "$file"
-        done
-    ) | sha256sum | cut -d ' ' -f 1
+    git -C "$REPO" ls-tree HEAD deploy/backup/ | grep -v '/restore-drill\.sh$' | sha256sum | cut -d ' ' -f 1
 }
 
 # kiosk-backup:local is built on this box and never pulled, while start runs --no-build.
