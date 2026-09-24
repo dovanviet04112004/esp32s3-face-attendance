@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -77,12 +78,49 @@ esp_err_t svc_facedb_remove(uint32_t employee_id);
  */
 esp_err_t svc_facedb_remove_template(uint32_t employee_id, uint16_t template_idx);
 
-/** Soft-delete every template, for the clear half of a full resync.
+/** Soft-delete every template, for the clear half of a full resync or a dead ticket.
  *  @ctx task | blocking | takes m_facedb | the kiosk matches nobody until
  *       the upserts that follow arrive (KEHOACH 7.5)
+ *  @param keep_unreported spare this kiosk's captures the server has not seen
  *  @ret ESP_OK | ESP_ERR_TIMEOUT
  */
-esp_err_t svc_facedb_clear(void);
+esp_err_t svc_facedb_clear(bool keep_unreported);
+
+/** One captured sample the broker has not acked, with what a report carries. */
+typedef struct {
+    uint32_t employee_id;
+    uint16_t template_idx;
+    uint8_t quality;
+    float scale;
+    int64_t session_ms;                   // start of the capture session
+    int8_t embedding[STORAGE_EMBED_DIM];
+    char name[STORAGE_NAME_CAP];
+} svc_facedb_unreported_t;
+
+/** Stamp one capture session on its samples and queue them as reports (KEHOACH 7.5).
+ *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND when no sample in that range is held | ESP_ERR_TIMEOUT
+ */
+esp_err_t svc_facedb_seal_session(uint32_t employee_id, uint16_t first_idx, uint16_t count,
+                                  int64_t session_ms);
+
+/** Soft-delete every sample of one employee outside one session, the old bank of a retake.
+ *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
+ *  @ret ESP_OK | ESP_ERR_TIMEOUT
+ */
+esp_err_t svc_facedb_keep_session(uint32_t employee_id, int64_t session_ms);
+
+/** The oldest-placed sample still waiting to be reported.
+ *  @ctx task | blocking | takes m_facedb
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND when every sample is reported | ESP_ERR_TIMEOUT
+ */
+esp_err_t svc_facedb_next_unreported(svc_facedb_unreported_t *out);
+
+/** Clear the unreported bit once the broker acked, unless the sample moved on meanwhile.
+ *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND | ESP_ERR_TIMEOUT
+ */
+esp_err_t svc_facedb_mark_reported(uint32_t employee_id, uint16_t template_idx, int64_t session_ms);
 
 /** Write the table to flash in two phases, compacting once over 30 percent of it is dead.
  *  @ctx task | blocking, seconds for a full table | takes m_facedb, then m_littlefs inside

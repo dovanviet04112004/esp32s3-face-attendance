@@ -16,6 +16,14 @@ extern "C" {
 
 /** Every handle a task needs, filled once and never replaced.
  */
+/** Who put a roster op on the queue, which decides what applying it means (KEHOACH 7.5). */
+typedef enum {
+    APP_ROSTER_SERVER = 0,                // a down/enroll push, applied as it says
+    APP_ROSTER_ASKED,                     // an operator's RETAKE or DELETE_EMPLOYEE here
+    APP_ROSTER_CAPTURED,                  // a capture finished here, off the pending list
+    APP_ROSTER_PURGE,                     // a dead ticket: REPLACE_ALL sparing nothing
+} app_roster_source_t;
+
 // One roster op already decoded: the esp-mqtt task may not block, and base64
 // is cheap while writing the face table is not (KEHOACH 7.5).
 typedef struct {
@@ -27,7 +35,7 @@ typedef struct {
     int64_t updated_at;
     uint32_t roster_version;
     bool has_roster_version;
-    bool outbound;                        // report it, do not apply it
+    uint8_t source;                       // app_roster_source_t
     char name[STORAGE_NAME_CAP];
     int8_t embedding[STORAGE_EMBED_DIM];
 } app_roster_t;

@@ -55,9 +55,30 @@ esp_err_t svc_facedb_remove_template(uint32_t employee_id, uint16_t template_idx
     return s_db.remove_template(employee_id, template_idx);
 }
 
-esp_err_t svc_facedb_clear(void)
+esp_err_t svc_facedb_clear(bool keep_unreported)
 {
-    return s_db.clear();
+    return s_db.clear(keep_unreported);
+}
+
+esp_err_t svc_facedb_seal_session(uint32_t employee_id, uint16_t first_idx, uint16_t count,
+                                  int64_t session_ms)
+{
+    return s_db.seal_session(employee_id, first_idx, count, session_ms);
+}
+
+esp_err_t svc_facedb_keep_session(uint32_t employee_id, int64_t session_ms)
+{
+    return s_db.keep_session(employee_id, session_ms);
+}
+
+esp_err_t svc_facedb_next_unreported(svc_facedb_unreported_t *out)
+{
+    return s_db.next_unreported(out);
+}
+
+esp_err_t svc_facedb_mark_reported(uint32_t employee_id, uint16_t template_idx, int64_t session_ms)
+{
+    return s_db.mark_reported(employee_id, template_idx, session_ms);
 }
 
 esp_err_t svc_facedb_template(uint32_t employee_id, uint16_t template_idx, int8_t *emb, size_t cap,

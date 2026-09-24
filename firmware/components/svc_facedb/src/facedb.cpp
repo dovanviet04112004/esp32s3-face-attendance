@@ -28,6 +28,11 @@ bool live(const storage_face_record_t &rec) noexcept
     return (rec.flags & STORAGE_FACE_FLAG_ACTIVE) != 0 && (rec.flags & STORAGE_FACE_FLAG_DELETED) == 0;
 }
 
+bool unreported(const storage_face_record_t &rec) noexcept
+{
+    return (rec.flags & STORAGE_FACE_FLAG_UNREPORTED) != 0;
+}
+
 }  // namespace
 
 esp_err_t EmbeddingTable::reserve(size_t capacity) noexcept
@@ -250,7 +255,7 @@ esp_err_t FaceDb::remove_template(uint32_t employee_id, uint16_t template_idx) n
     return ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t FaceDb::clear() noexcept
+esp_err_t FaceDb::clear(bool keep_unreported) noexcept
 {
     app::LockGuard io(io_mutex_, kIoLockMs);
     if (!io.held()) {
@@ -262,13 +267,109 @@ esp_err_t FaceDb::clear() noexcept
     }
     for (size_t i = 0; i < table_.count(); ++i) {
         storage_face_record_t *rec = table_.record(i);
-        if (live(*rec)) {
+        if (!live(*rec) || (keep_unreported && unreported(*rec))) {
+            continue;
+        }
+        rec->flags = static_cast<uint8_t>((rec->flags | STORAGE_FACE_FLAG_DELETED) & ~STORAGE_FACE_FLAG_ACTIVE);
+        seal(i);
+        --active_;
+    }
+    return ESP_OK;
+}
+
+esp_err_t FaceDb::seal_session(uint32_t employee_id, uint16_t first_idx, uint16_t count,
+                               int64_t session_ms) noexcept
+{
+    app::LockGuard io(io_mutex_, kIoLockMs);
+    if (!io.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    app::LockGuard lock(mutex_, kLockMs);
+    if (!lock.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    size_t hits = 0;
+    for (size_t i = 0; i < table_.count(); ++i) {
+        storage_face_record_t *rec = table_.record(i);
+        if (!live(*rec) || rec->employee_id != employee_id || rec->template_idx < first_idx ||
+            rec->template_idx >= first_idx + count) {
+            continue;
+        }
+        rec->updated_at_ms = session_ms;
+        rec->flags = static_cast<uint8_t>(rec->flags | STORAGE_FACE_FLAG_UNREPORTED);
+        seal(i);
+        ++hits;
+    }
+    return hits > 0 ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t FaceDb::keep_session(uint32_t employee_id, int64_t session_ms) noexcept
+{
+    app::LockGuard io(io_mutex_, kIoLockMs);
+    if (!io.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    app::LockGuard lock(mutex_, kLockMs);
+    if (!lock.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    for (size_t i = 0; i < table_.count(); ++i) {
+        storage_face_record_t *rec = table_.record(i);
+        if (live(*rec) && rec->employee_id == employee_id && rec->updated_at_ms != session_ms) {
             rec->flags = static_cast<uint8_t>((rec->flags | STORAGE_FACE_FLAG_DELETED) & ~STORAGE_FACE_FLAG_ACTIVE);
             seal(i);
+            --active_;
         }
     }
-    active_ = 0;
     return ESP_OK;
+}
+
+esp_err_t FaceDb::next_unreported(svc_facedb_unreported_t *out) noexcept
+{
+    if (out == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    app::LockGuard lock(mutex_, kLockMs);
+    if (!lock.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    for (size_t i = 0; i < table_.count(); ++i) {
+        const storage_face_record_t *rec = table_.record(i);
+        if (!live(*rec) || !unreported(*rec)) {
+            continue;
+        }
+        out->employee_id = rec->employee_id;
+        out->template_idx = rec->template_idx;
+        out->quality = rec->quality;
+        out->scale = rec->scale;
+        out->session_ms = rec->updated_at_ms;
+        memcpy(out->embedding, rec->embedding, STORAGE_EMBED_DIM);
+        strlcpy(out->name, rec->name, sizeof(out->name));
+        return ESP_OK;
+    }
+    return ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t FaceDb::mark_reported(uint32_t employee_id, uint16_t template_idx, int64_t session_ms) noexcept
+{
+    app::LockGuard io(io_mutex_, kIoLockMs);
+    if (!io.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    app::LockGuard lock(mutex_, kLockMs);
+    if (!lock.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    for (size_t i = 0; i < table_.count(); ++i) {
+        storage_face_record_t *rec = table_.record(i);
+        if (live(*rec) && rec->employee_id == employee_id && rec->template_idx == template_idx &&
+            rec->updated_at_ms == session_ms) {
+            rec->flags = static_cast<uint8_t>(rec->flags & ~STORAGE_FACE_FLAG_UNREPORTED);
+            seal(i);
+            return ESP_OK;
+        }
+    }
+    return ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t FaceDb::templet(uint32_t employee_id, uint16_t template_idx, int8_t *emb, size_t cap,

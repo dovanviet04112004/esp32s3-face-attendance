@@ -96,7 +96,12 @@ public:
                      const int8_t *emb, float scale, const char *name) noexcept;
     esp_err_t remove(uint32_t employee_id) noexcept;
     esp_err_t remove_template(uint32_t employee_id, uint16_t template_idx) noexcept;
-    esp_err_t clear() noexcept;
+    esp_err_t clear(bool keep_unreported) noexcept;
+    esp_err_t seal_session(uint32_t employee_id, uint16_t first_idx, uint16_t count,
+                           int64_t session_ms) noexcept;
+    esp_err_t keep_session(uint32_t employee_id, int64_t session_ms) noexcept;
+    esp_err_t next_unreported(svc_facedb_unreported_t *out) noexcept;
+    esp_err_t mark_reported(uint32_t employee_id, uint16_t template_idx, int64_t session_ms) noexcept;
     esp_err_t templet(uint32_t employee_id, uint16_t template_idx, int8_t *emb,
                       size_t cap, float *scale, uint8_t *quality) noexcept;
     size_t people(svc_facedb_person_t *out, size_t cap) noexcept;
