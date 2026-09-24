@@ -3669,8 +3669,9 @@ Các trạng thái của khung, màu là thông tin chứ không phải trang tr
 | xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt ấy rời khung hoặc pipeline bắt sang người khác** |
 
 **Máy chưa có vé thì nói ra, ở khoảng giữa thanh trên và khung ngắm.** Trong lúc xin vé (§7.3
-bước 3), màn quét mang một dòng hổ phách `Chờ duyệt · kiosk-a1b2c3d4e5f6`, đúng chuỗi mà admin
-đối chiếu trên dashboard. Máy chủ từ chối token lô thì dòng ấy đổi sang
+bước 3), màn quét mang hai dòng hổ phách: `Chờ duyệt · kiosk-a1b2c3d4e5f6`, đúng chuỗi admin
+thấy trên dashboard, và dưới nó là `Mã nhận máy 482 913` ở cỡ chữ lớn hơn, vì đó là thứ người ta
+phải chép. Máy chủ từ chối token lô thì dòng ấy đổi sang
 `Máy chủ không nhận firmware này`; bản dựng không mang token lô thì là
 `Firmware này chưa có mã lô`, vì một máy im lặng không nối được là máy không ai biết phải sửa gì.
 Có vé là dòng biến mất. Nó không chen vào khung ngắm, không
@@ -5372,7 +5373,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | Namespace | Key | Kiểu | Ghi chú |
 |---|---|---|---|
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
-| `device` | `serial`, `jwt`, `jwt_exp`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver` | str / u32 | `jwt` là vé máy tự xin (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại |
+| `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver` | str / u32 | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
@@ -5946,6 +5947,7 @@ bị `Kconfig` loại khỏi bản `prod`.
 | Token bootstrap | Không, theo **lô firmware** | Nhúng trong firmware, đổ vào lúc build từ `firmware/sdkconfig.secrets` — file **gitignore**, không bao giờ commit (§4.9) |
 | `wifi/ssid`, `wifi/pass` | Có, theo nơi lắp | Người lắp gõ **trên màn kiosk** |
 | `device/jwt`, `device/jwt_exp` | Có | Máy **tự xin** ở bước 3 dưới đây. Tên đăng nhập MQTT là `deviceId`, mật khẩu là chính JWT ấy (§7.4) |
+| `device/claim` — mã nhận máy | Có, **mỗi lượt đăng ký một mã** | Máy tự sinh 6 chữ số, hiện trên màn, gửi kèm lời xin; server chỉ giữ băm (đoạn *Mã nhận máy* dưới đây) |
 
 **Sáu bước:**
 
@@ -5954,15 +5956,17 @@ bị `Kconfig` loại khỏi bản `prod`.
 2. **Lắp đặt** — cấp điện. Không có `wifi/ssid` thì kiosk mở thẳng màn hình chọn Wi-Fi.
 3. **Đăng ký** — có mạng nhưng chưa có vé (không `device/jwt`, không `device/mqtt_pass`), kiosk
    **không nối broker** mà gọi `POST /devices/register` qua HTTPS, kèm token bootstrap,
-   `deviceId` và số hiệu firmware. Máy chủ tạo bản ghi `pending` và trả **202**, chưa cấp gì.
-   Kiosk hiện dải **"Chờ duyệt"** kèm `deviceId` của chính nó trên màn quét, rồi hỏi lại theo
+   `deviceId`, số hiệu firmware và **mã nhận máy**. Máy chủ tạo bản ghi `pending`, giữ băm của
+   mã, và trả **202**, chưa cấp gì. Kiosk hiện dải **"Chờ duyệt"** kèm `deviceId` và mã nhận
+   máy của chính nó trên màn quét, rồi hỏi lại theo
    lùi bậc: 10 s, nhân đôi mỗi lần tới trần 5 phút, lệch ngẫu nhiên ±20% để một lô máy cắm
    điện cùng lúc không hỏi cùng nhịp. Máy vẫn chấm công như lúc mất mạng: bản ghi xếp hàng
    trong LittleFS và lên sau khi có vé. Máy chủ trả **401** (token lô bị từ chối) thì dải đổi
    sang "Máy chủ không nhận firmware này" và hỏi ở nhịp trần — chỉ một bản OTA hay một lần
    nạp lại mới chữa được. Không tới được máy chủ, `429` hay `5xx` thì chỉ lùi bậc.
-4. **Nhận máy** — admin thấy máy `pending` trong dashboard, đối chiếu `deviceId` in trên màn,
-   bấm duyệt rồi đặt tên người đọc được và vị trí. Lần hỏi kế tiếp trả **200** kèm JWT 90 ngày.
+4. **Nhận máy** — admin thấy máy `pending` trong dashboard, bấm duyệt, **gõ mã nhận máy đang
+   hiện trên màn kiosk**, rồi đặt tên người đọc được và vị trí. Sai mã thì không duyệt. Lần hỏi
+   kế tiếp trả **200** kèm JWT 90 ngày.
    Kiosk ghi `device/jwt`, lấy `device/jwt_exp` từ claim `exp` của **chính JWT** chứ không cộng
    vào đồng hồ của mình (đồng hồ máy có thể chưa đúng lúc ấy), tắt dải chờ, nối broker, và
    **không bao giờ dùng lại token bootstrap**.
@@ -5979,6 +5983,20 @@ lúc `api` không trả lời (đo 24/09 trên EMQX 6.3.1, §7.4). Xoá vé theo
 `api` khởi động lại thành **cả đội kiosk rơi về `pending`**, mỗi máy chờ một người bấm duyệt
 lại. Hỏi `api` trước thì hai trường hợp tách ra được: `api` sống và bảo vé chết thì vé chết
 thật; `api` không trả lời thì không ai biết gì, và không biết thì không xoá.
+
+**Mã nhận máy buộc lần duyệt vào cái máy đang đứng trước mặt.** So `deviceId` bằng mắt không
+chặn được gì: token lô rò ra là ai cũng đăng ký được một máy giả mang tên na ná, và một lần bấm
+vội là máy giả có vé. Mã thì chỉ đọc được trên màn hình thật, nên máy không ai đứng trước mặt
+thì không ai gõ được mã của nó. Đây là cách Hikvision (mã xác minh in trên tem) và Chromecast
+(mã hiện trên TV) làm, chỉ khác chỗ mã sinh theo **từng lượt đăng ký** chứ không in cố định.
+- **Máy sinh, server chỉ giữ băm.** Sáu chữ số ngẫu nhiên, lưu ở `device/claim` để khởi động
+  lại không đổi mã giữa lúc người ta đang đọc; server giữ `sha256(deviceId:mã)`. Có vé thì máy
+  xoá mã; vé chết thì mã mới đi cùng lượt đăng ký mới.
+- **Sai `DEVICE_CLAIM_ATTEMPTS` lần (mặc định 5) là khoá.** Lần hỏi kế tiếp của máy nhận **202
+  kèm `claimRenew`**, máy bỏ mã cũ và hiện mã mới. Chỉ ADMIN duyệt được, nên đây không phải cửa
+  cho kẻ đoán mò, mà để một mã gõ sai năm lần không nằm lì trên màn như thể vẫn còn đúng.
+- **Không có mã là không duyệt được.** Một dòng `pending` mà server chưa nhận mã nào — máy lạ
+  chỉ lên tiếng qua broker, hay firmware cũ — trả `DEVICE_CLAIM_MISSING`, không có đường tắt.
 
 **Vì sao cấp token sau khi duyệt chứ không trước.** Cấp trước thì một máy chưa ai nhận vẫn nối
 được broker và đẩy dữ liệu vào, nên máy chủ phải chứa bản ghi của một thiết bị không ai chịu
