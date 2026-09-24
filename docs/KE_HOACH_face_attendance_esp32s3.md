@@ -3302,8 +3302,20 @@ ngoài màn còn giành được lượt của người đứng giữa khung ng�
 (x 160–319, y 64–261). Một nửa là đủ rộng để người đứng chệch nửa đầu vẫn được chấm, và đủ chặt để
 mặt nằm ngoài màn không bao giờ được xét: khung ngắm nằm trọn trong dải preview, nên mặt qua cổng
 này luôn hiện trên kính ít nhất một nửa. Track mới chỉ lấy trong số mặt qua cổng ấy (lớn nhất
-trong số đó); không mặt nào qua thì mới lấy mặt lớn nhất cả khung để báo `FACE_OFF_GUIDE`. Mặt đang
-bám trôi ra ngoài thì trượt cổng nhưng **giữ track**, đúng luật đoạn trên.
+trong số đó); không mặt nào qua thì mới lấy mặt lớn nhất cả khung để báo `FACE_OFF_GUIDE`, và báo
+nó **trước** `FACE_SMALL`: mặt không nằm trong khung thì câu đầu tiên người ta cần là đưa mặt vào.
+
+**Ra khỏi khung ngắm là đi, không phải ra khỏi camera.** Người đứng trước máy chỉ thấy khung ngắm;
+camera thấy rộng gấp đôi. Đo trên board 24/09: hai lần bước ra khỏi khung (camera vẫn thấy mặt ở
+rìa ảnh) rồi quay vào, máy mở track mới, hiện `Đang nhận diện...`, rồi im vì luật "một lần đến" của
+§4.5.5f vẫn coi người ấy chưa đi — màn nói nửa chừng vì hai tầng hiểu "đi" khác nhau. Nên mặt đang
+bám **rời khung** là lượt đến kết thúc: track đóng, lần vào khung kế tiếp là track mới, xác thực
+lại từ đầu, và `svc_attendance` nhận `FACE_OFF_GUIDE` như một lần rời đi. Vào khung cần
+`guide_min` diện tích hộp mặt nằm trong khung, còn **rời** thì phải xuống dưới **một nửa**
+`guide_min`: người đứng lấp lửng ở mép không bị đóng mở track mỗi bước, tức không bị cấp lặp.
+Tỉ lệ một nửa là hằng số của `svc_vision`, cùng loại với `kSameFaceIou`, vì nó chỉ nói về độ trễ
+của chính cổng ấy chứ không phải một quyết định nghiệp vụ mới. Mặt trượt cổng ô vuông 1,0× hay
+cổng cỡ thì vẫn **giữ track**, đúng luật đoạn trên.
 
 `main` là tầng duy nhất thấy cả hai hệ toạ độ, nên nó dựng hình chữ nhật này: lấy khung ngắm của
 `ui_kiosk` (pixel panel), đổi sang pixel khung bằng đúng phép chiếu preview của `drv_lcd`, rồi đưa
@@ -3438,8 +3450,10 @@ rồi đi tới đâu:
 Cạnh trạng thái chỉ còn một việc: vào `Detecting` là máy bắt sang người mới, và màn hạ mọi lời cũ
 (§4.5.5h.1).
 
-Nên `Grant` bị chặn khi **cùng một `employee_id` còn trong cửa sổ `dedup_min`** *và* chưa có
-`NoFace` hoặc `PresenceOff` nào kể từ lần cấp trước. Chặn đặt ở **bước chuyển trạng thái**:
+Nên `Grant` bị chặn khi **cùng một `employee_id` còn trong cửa sổ `dedup_min`** *và* người ấy
+chưa **đi** kể từ lần cấp trước. "Đi" là một trong bốn thứ: `NoFace`, `PresenceOff`, mặt rời khung
+ngắm (`FACE_OFF_GUIDE`, §4.5.5d), hoặc thấy một phán quyết về người khác. Lùi xa quá cổng cỡ
+(`FACE_SMALL`) **không** phải đi: mặt vẫn nằm trong khung người ta đang nhìn. Chặn đặt ở **bước chuyển trạng thái**:
 không đổi trạng thái, không mở cửa, không ghi, không phát tiếng. Sự kiện trả `ALREADY`, và màn
 **giữ im**: lượt đến này đã được nói một lần, nên khung giữ xanh như lúc vừa chấm, không thẻ,
 không tiếng. `ALREADY` vẫn phải tới màn, vì nó gắn khung xanh vào track mới: người vừa chấm mà
@@ -3450,7 +3464,7 @@ trong log đều có track mới ngay lần detect kế tiếp và `ALREADY` ~0,
 giờ thì `Đang nhận diện...` hiện thoáng qua trong một lượt model, và câu ấy không bỏ được: trước
 khi recog xong thì không gì phân biệt người vừa chấm nhúc nhích với người kế tiếp bước vào đúng
 chỗ, mà giấu câu ấy khỏi người kế tiếp là cho họ thấy khung xanh rồi bỏ đi tưởng đã chấm. Người khác bước tới vẫn
-được cấp ngay, vì phép so là theo mã nhân viên. Ra khỏi khung rồi quay lại là một lần đến mới:
+được cấp ngay, vì phép so là theo mã nhân viên. Ra khỏi khung ngắm rồi quay lại là một lần đến mới:
 cửa mở, loa kêu, thẻ hiện như thường; bản ghi theo quyết định 1 bên dưới.
 
 **Bốn quyết định nghiệp vụ tầng này giữ, không đẩy xuống dưới:**
@@ -3646,8 +3660,8 @@ Các trạng thái của khung, màu là thông tin chứ không phải trang tr
 | Máy đang | Khung | Dòng nhắc dưới khung |
 |---|---|---|
 | chờ, không thấy ai | trắng mờ | `Đưa khuôn mặt vào khung` |
-| thấy mặt nhưng nhỏ hơn cổng | hổ phách | `Lại gần hơn` |
-| thấy mặt nhưng chưa tới một nửa nằm trong khung | hổ phách | `Đưa khuôn mặt vào khung` |
+| thấy mặt nhưng chưa vào khung (dưới `guide_min`), hoặc đã rời khung (dưới nửa `guide_min`) | hổ phách | `Đưa khuôn mặt vào khung` |
+| trong khung nhưng nhỏ hơn cổng | hổ phách | `Lại gần hơn` |
 | trong khung nhưng ô 1,0× tràn khung camera — gần như chỉ khi đứng quá gần | hổ phách | `Lùi lại một chút` |
 | mặt qua cổng, pipeline đang làm việc | xanh mint | `Đang nhận diện...` |
 | xong, đạt | xanh mint | thẻ dấu tích + tên + `Đã chấm công` ở dải dưới |
@@ -3655,7 +3669,7 @@ Các trạng thái của khung, màu là thông tin chứ không phải trang tr
 | xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt ấy rời khung hoặc pipeline bắt sang người khác** |
 
 **Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Các trạng thái trên là các cổng của
-pipeline (§4.5.5d): không có mặt, mặt dưới `face_min_px`, chưa tới nửa mặt trong khung ngắm, ô 1,0×
+pipeline (§4.5.5d): không có mặt, mặt chưa vào khung ngắm, mặt dưới `face_min_px`, ô 1,0×
 tràn khung, qua cổng. `main` dịch
 sang `ui_kiosk_stage_t`, `ui_kiosk` vẽ.
 
@@ -3670,7 +3684,7 @@ từ "Lại gần hơn" sang kết quả.
 
 Nên cổng thứ tư đi bằng **bộ quan sát** của §4.5.5d — thứ vốn đã bắn ngay sau detect và trước hai
 model chậm, chính là lý do nó tồn tại. `VisionPipeline` chấm bốn phép kiểm hình học (có mặt,
-`face_min_px`, nửa mặt trong khung ngắm, ô 1,0× lọt khung) **trước** khi gọi bộ quan sát, rồi gửi kết quả kèm danh sách hộp.
+mặt trong khung ngắm, `face_min_px`, ô 1,0× lọt khung) **trước** khi gọi bộ quan sát, rồi gửi kết quả kèm danh sách hộp.
 `main` dịch nó sang `ui_kiosk_stage_t`; `svc_vision_kind_t` giữ đúng vai trò phán quyết nghiệp vụ
 cho `svc_attendance`. Không tốn thêm một mili giây nào: ba phép kiểm ấy là số học thuần, và chúng
 vốn đã chạy ngay sau đó. Bản 13/09 từng để màn tự so hộp mặt với
