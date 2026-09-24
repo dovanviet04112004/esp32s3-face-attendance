@@ -4512,7 +4512,7 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt — một dòng mỗi thiết bị (§9.23 luật 5) |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7) |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7) |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
@@ -6550,17 +6550,38 @@ từng máy (heartbeat ghi) với bản mới nhất của loại ấy: máy cũ
 trang có **Cập nhật tất cả (n)**. Firmware so theo `major.minor.patch`; model so theo chuỗi, khác là
 cũ. Trang một máy có nút **Cập nhật** và một dòng trạng thái suy ra từ ba nguồn đã có:
 
-| Trạng thái | Khi nào |
+| Trạng thái | Khi nào — xét từ trên xuống, dòng đầu khớp là đáp án |
 |---|---|
-| Đang chờ máy | đã mời, heartbeat chưa báo bản mới |
 | Đã lên | heartbeat báo đúng bản đã mời |
 | Lỗi: *lý do máy gửi* | có sự kiện `OTA_FAILED` sau lúc mời |
+| Bị ngắt giữa chừng | máy khởi động lại **sau** lúc mời mà vẫn chạy bản cũ: mất điện lúc tải, hoặc bản mới hỏng trong lúc chạy thử và bootloader đã quay về bản cũ. Lúc khởi động đọc từ heartbeat: lúc nhận trừ `uptimeSeconds` |
+| Lời mời hết hạn | quá `RELEASE_LINK_HOURS` mà máy chưa lên — link tải đã chết, thường vì máy offline lúc được mời |
+| Đang chờ máy | còn lại |
+
+Thiếu hai dòng giữa thì một lần mất điện lúc tải để trang đứng mãi ở "đang chờ máy", vì máy khởi
+động lại bản cũ mà không kịp báo gì. Mọi trạng thái trừ "đã lên" đều để nút **Cập nhật** hiện,
+nên bấm lại lúc nào cũng được và mỗi lần bấm là một link mới.
+
+**Mất điện hay mất mạng giữa chừng không làm hỏng máy.** Ảnh ghi vào ngăn *không* chạy, và ngăn
+khởi động chỉ đổi khi sha256 khớp (E13-T1). Bản mới khởi động ở chế độ chạy thử: nó chỉ tự xác
+nhận sau `OTA_SETTLE_MS` (30 s) và khi nhận diện đã sẵn sàng; tắt ngang hay treo trước lúc ấy là
+bootloader quay về bản cũ. Model đi đúng hình ấy qua `models_0`/`models_1` và `model/active_slot`
+(E13-T2).
+
+**Kiosk nói cho người đứng trước nó.** Lúc tải, `ota_task` giương `OTA_RUNNING` và dòng về cái máy
+trên khung ngắm (đúng chỗ của dòng vé, §4.5.5h.1) đọc "Đang tải bản cập nhật x%", với phần trăm
+lấy từ số byte `net_ota` đã nhận. Dòng ấy không che khung ngắm và không chặn chấm công: bản ghi
+vẫn xếp hàng như lúc mất mạng. Ngay trước `esp_restart()` là một thẻ giữa màn "Đang khởi động lại
+để cập nhật…", vì mấy giây màn đen sau đó là thứ người đứng trước máy sẽ tưởng là hỏng. Một bản
+chỉ hiện được màn này từ lần cập nhật **sau** lần đưa nó lên máy: lần tải ấy vẫn chạy bằng code
+bản cũ.
 
 Lời mời là đúng bản kê khai `ota_manifest.schema.json` qua `down/ota`. Máy **tải ngay** khi nhận,
 khởi động lại khi xong, và lượt chấm công trong lúc ấy vẫn ghi offline (§6.2.6) — nên nút ghi rõ
 "máy khởi động lại". Máy không tự so phiên bản, nên server không mời một bản máy đang chạy. Chỉ
 ADMIN mời được, máy chưa duyệt hay đã thu hồi thì không mời, và mỗi lời mời ghi audit. `Device` giữ lời mời
-gần nhất (`otaReleaseId`, `otaOfferedAt`), vì trạng thái chỉ hỏi về lời mời gần nhất.
+gần nhất (`otaReleaseId`, `otaOfferedAt`) và lúc khởi động gần nhất (`bootedAt`), vì trạng
+thái chỉ hỏi về lời mời gần nhất.
 
 **CI cần hai secret và một biến, và thiếu thì bỏ qua chứ không đỏ:** `RELEASE_PUBLISH_TOKEN` (bằng
 giá trị trong `.env` của VPS), `DEVICE_BOOTSTRAP_TOKEN` (ghi vào `sdkconfig.secrets` lúc build,
