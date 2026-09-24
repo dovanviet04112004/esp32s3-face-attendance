@@ -4854,8 +4854,9 @@ Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, trỏ `NE
 
 **Triển khai liên tục: push lên `main` là lên VPS, nhưng chỉ khi test qua.** `deploy.yml` chạy
 khi push lên `main` chạm `backend/`, `contracts/`, `deploy/` hoặc chính hai workflow, và chạy tay
-được (`workflow_dispatch`, nhận một `sha` để lùi về bản cũ). Ba job nối nhau, job sau chỉ chạy khi
-job trước xanh:
+được trên một nhánh (`workflow_dispatch`). Lùi về một bản cũ là **chạy lại lượt deploy của commit
+ấy** trong tab Actions: test chạy lại trên đúng commit đó, image dựng lại từ cache, `deploy/` cũng
+về đúng bản của nó. Ba job nối nhau, job sau chỉ chạy khi job trước xanh:
 
 | Job | Chạy ở | Làm gì |
 |---|---|---|
