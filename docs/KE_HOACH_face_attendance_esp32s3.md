@@ -4645,6 +4645,7 @@ frontend/
 │   ├── providers.tsx                 # QueryClient dựng một lần mỗi phiên trình duyệt
 │   └── [locale]/                     # ★ vi | en — mọi route nằm dưới đây
 │       ├── layout.tsx                # layout gốc: <html lang={locale}> + provider
+│       ├── page.tsx                  # gốc: chuyển vào dashboard, guard của nó lo đăng nhập và vai
 │       ├── (auth)/{login, set-password, forgot-password, change-password}/page.tsx
 │       │                                 # ★ §9.4 — một liên kết dùng một lần phục vụ
 │       │                                 #   cả lần đặt đầu lẫn lần quên. Cả bốn cửa
