@@ -1,10 +1,12 @@
 .DEFAULT_GOAL := help
-.PHONY: help gen lint check test \
+.PHONY: help gen lint check test fw-fresh-secrets \
         train-det train-spoof train-recog quantize export golden pack \
         fw-dev fw-bench fw-prod flash monitor \
         be-dev fe-dev up down
 
 SDKCONFIG_BASE := sdkconfig.defaults;sdkconfig.defaults.esp32s3
+# The batch token rides in only when the builder holds it (KEHOACH 4.5.9).
+SECRETS := $(if $(wildcard firmware/sdkconfig.secrets),;sdkconfig.secrets)
 
 help:
 	@grep -E '^[a-z0-9-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -52,17 +54,26 @@ pack: ## Pack the three .tflite into models.bin and write the partition
 	cd ml && ./scripts/50_pack_and_flash.sh
 
 # firmware build profiles
-fw-dev: ## Build the dev profile
-	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.dev" build
+# Defaults only fill keys sdkconfig lacks, so a token added later needs a fresh one.
+fw-fresh-secrets:
+	@if [ -f firmware/sdkconfig.secrets ] && [ firmware/sdkconfig.secrets -nt firmware/sdkconfig ]; then \
+	  rm -f firmware/sdkconfig; fi
 
-fw-bench: ## Build the bench profile
-	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.bench" build
+fw-dev: fw-fresh-secrets ## Build the dev profile
+	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.dev$(SECRETS)" build
 
-fw-prod: ## Build the prod profile
-	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.prod" build
+fw-bench: fw-fresh-secrets ## Build the bench profile
+	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.bench$(SECRETS)" build
 
-flash: ## Flash and monitor the dev profile
-	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.dev" flash monitor
+fw-prod: ## Build the prod profile in build_prod, from its own sdkconfig
+	@test -f firmware/sdkconfig.secrets || { \
+	  echo "firmware/sdkconfig.secrets is missing: this kiosk could never register"; exit 1; }
+	rm -f firmware/build_prod/sdkconfig
+	cd firmware && idf.py -B build_prod -D SDKCONFIG=build_prod/sdkconfig \
+	  -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.prod;sdkconfig.secrets" build
+
+flash: fw-fresh-secrets ## Flash and monitor the dev profile
+	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.dev$(SECRETS)" flash monitor
 
 monitor: ## Open the serial monitor
 	cd firmware && idf.py monitor

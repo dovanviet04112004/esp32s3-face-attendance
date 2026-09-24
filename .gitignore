@@ -18,6 +18,8 @@ firmware/build/
 firmware/build_*/
 firmware/sdkconfig
 firmware/sdkconfig.old
+# The batch token a kiosk registers with (KEHOACH 4.5.9); never committed.
+firmware/sdkconfig.secrets
 firmware/managed_components/
 firmware/models/**/*.tflite
 firmware/models/**/*.espdl
