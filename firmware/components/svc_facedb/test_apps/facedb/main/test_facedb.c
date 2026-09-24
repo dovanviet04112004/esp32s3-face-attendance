@@ -27,6 +27,10 @@
 #define PERSIST_TASK_STACK_BYTES 4096
 #define PROBE_GAP_MS 50
 #define PROBES_DURING_SAVE 10
+#define RETAKER 777
+#define BANK 3
+#define OLD_SESSION_MS 1790000000000LL
+#define NEW_SESSION_MS 1790000060000LL
 
 static int8_t s_emb[STORAGE_EMBED_DIM];
 static int8_t s_damaged[STORAGE_EMBED_DIM];
@@ -217,6 +221,71 @@ TEST_CASE("a lookup keeps answering while the table is written to flash", "[svc_
     printf("%d lookups during the save, worst %lld us\n", probes, worst_us);
     TEST_ASSERT_EQUAL(ESP_OK, s_persist_err);
     TEST_ASSERT_GREATER_OR_EQUAL_INT(PROBES_DURING_SAVE, probes);
+}
+
+// A retake writes the other bank, seals it, then keeps only that session (KEHOACH 7.5).
+static void retake_into_new_bank(void)
+{
+    svc_facedb_remove(RETAKER);
+    for (uint16_t idx = 0; idx < BANK; ++idx) {
+        synth(seed_of(RETAKER, idx), s_emb);
+        TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll(RETAKER, idx, QUALITY, s_emb, SCALE, "Cũ"));
+    }
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_seal_session(RETAKER, 0, BANK, OLD_SESSION_MS));
+    for (uint16_t idx = 0; idx < BANK; ++idx) {
+        TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_mark_reported(RETAKER, idx, OLD_SESSION_MS));
+    }
+    for (uint16_t idx = BANK; idx < 2 * BANK; ++idx) {
+        synth(seed_of(RETAKER, idx), s_emb);
+        TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll(RETAKER, idx, QUALITY, s_emb, SCALE, "Mới"));
+    }
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_seal_session(RETAKER, BANK, BANK, NEW_SESSION_MS));
+}
+
+TEST_CASE("a retake keeps the old bank until its session is kept, then only the new one", "[svc_facedb]")
+{
+    retake_into_new_bank();
+    float scale = 0.0f;
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_template(RETAKER, 0, s_damaged, sizeof(s_damaged), &scale, NULL));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_keep_session(RETAKER, NEW_SESSION_MS));
+    for (uint16_t idx = 0; idx < BANK; ++idx) {
+        TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND,
+                          svc_facedb_template(RETAKER, idx, s_damaged, sizeof(s_damaged), &scale, NULL));
+    }
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_template(RETAKER, BANK, s_damaged, sizeof(s_damaged), &scale, NULL));
+}
+
+TEST_CASE("unreported samples come out in turn until each is acked", "[svc_facedb]")
+{
+    retake_into_new_bank();
+    svc_facedb_keep_session(RETAKER, NEW_SESSION_MS);
+    svc_facedb_unreported_t next;
+    for (int sent = 0; sent < BANK; ++sent) {
+        TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_next_unreported(&next));
+        TEST_ASSERT_EQUAL(RETAKER, next.employee_id);
+        TEST_ASSERT_TRUE(next.session_ms == NEW_SESSION_MS);
+        TEST_ASSERT_EQUAL_STRING("Mới", next.name);
+        // An ack for another session must not clear this sample.
+        TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND,
+                          svc_facedb_mark_reported(next.employee_id, next.template_idx, OLD_SESSION_MS));
+        TEST_ASSERT_EQUAL(ESP_OK,
+                          svc_facedb_mark_reported(next.employee_id, next.template_idx, next.session_ms));
+    }
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, svc_facedb_next_unreported(&next));
+}
+
+TEST_CASE("a resync spares the kiosk's unsent captures, a dead ticket does not", "[svc_facedb]")
+{
+    retake_into_new_bank();
+    svc_facedb_keep_session(RETAKER, NEW_SESSION_MS);
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_clear(true));
+    TEST_ASSERT_EQUAL(BANK, svc_facedb_count());
+    svc_facedb_unreported_t next;
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_next_unreported(&next));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_clear(false));
+    TEST_ASSERT_EQUAL(0, svc_facedb_count());
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, svc_facedb_next_unreported(&next));
+    enroll_everyone();
 }
 
 void app_main(void)
