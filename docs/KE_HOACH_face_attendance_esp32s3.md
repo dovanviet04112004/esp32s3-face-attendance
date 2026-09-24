@@ -3744,8 +3744,8 @@ cộng khoảng 2,5 giây người mới đứng nhìn lời từ chối của n
 gửi kèm danh sách hộp mặt cho người quan sát. Phán quyết mang cùng con số ấy
 (`svc_vision_result_t.track` → `ui_kiosk_verdict_t.track`), và màn so track đang thấy với **track
 phán quyết nói về**, không với track đang thấy lúc phán quyết tới nơi. So theo cái sau là người
-vừa bước vào **thừa kế** lời từ chối hay khung xanh của người cũ chừng nào họ còn đứng đó. Hết
-đồng hồ 1,5 s, màn `Scan` chỉ giữ dòng từ chối (hay khung xanh) chừng nào track đang thấy còn là
+vừa bước vào **thừa kế** lời từ chối hay khung xanh của người cũ chừng nào họ còn đứng đó. Màn
+`Scan` giữ dòng từ chối (hay khung xanh sau khi thẻ hết giờ) chừng nào track đang thấy còn là
 track của nó, và xoá ngay khi nó đổi. Giữ nguyên được cả hai điều đang đúng: cùng một khuôn mặt thì lời
 từ chối không nhấp nháy theo nhịp thử lại, còn người khác bước vào thì màn sạch ngay. Không đụng
 tới `kRetryDetects`, tức không nới một chút nào cho ảnh giả giơ lì. Đo
@@ -3754,12 +3754,19 @@ thì màn nhảy sang câu căn khung ngay khi thẻ hết giờ; giơ ảnh gi�
 thử lại` và `Đang nhận diện...` **đảo nhau mỗi ~2 giây** theo nhịp thử lại (18/09). Vì thế dòng từ
 chối **giữ trên kính khi khuôn mặt còn đó**, chỉ hạ khi mặt rời khung, khi có phán quyết mới, hay
 khi máy bắt sang người khác; thẻ đạt giữ đồng hồ riêng 1,5 s để một khuôn mặt đã chấm đứng yên
-không ghim thẻ mãi. **Trong 1,5 s ấy thẻ hay dòng chữ đứng yên bất kể ai trước máy**; chỉ
-`Detecting` hay phán quyết kế tiếp mới thay nó. Hạ thẻ ngay khi track đổi thì chính người vừa
-chấm mất thẻ: người ta cử động ngay sau khi được cấp, track mới mở ở lần detect kế tiếp, và đo
-trên board 24/09 thẻ chỉ đứng được ~0,1–0,3 s rồi nhường cho `Đang nhận diện...`. Cái giá là người
-sau bước vào trong 1,5 s ấy nhìn thẻ của người trước cho tới khi phán quyết của chính họ tới —
-không bao giờ lâu hơn, vì hết đồng hồ thì chỉ track của phán quyết còn được giữ.
+không ghim thẻ mãi.
+
+**Thẻ đạt và dòng từ chối nhường chỗ theo hai luật khác nhau**, vì track đổi sau mỗi loại có
+nghĩa ngược nhau:
+
+| Trên kính | Track đổi | Vì sao |
+|---|---|---|
+| thẻ đạt | **đứng đủ 1,5 s**; chỉ `Detecting` hay phán quyết kế tiếp thay nó | người vừa được cấp cử động ngay, track mới mở ở lần detect kế tiếp. Hạ thẻ theo track thì đo trên board 24/09 thẻ chỉ đứng ~0,1–0,3 s rồi nhường cho `Đang nhận diện...`, trong khi lần xác thực lại chỉ ra `ALREADY` |
+| dòng từ chối | **hạ ngay**, khuôn mặt mới có hướng dẫn của mình | track mới sau một ảnh giả thường là ảnh vừa rút ra và mặt thật đưa vào. Giữ dòng theo đồng hồ thì đo trên board 24/09, hai lần chuyển giả → thật, `Ảnh giả, mời thử lại` đè suốt 0,7–0,8 s máy kiểm mặt thật và `Đang nhận diện...` không hiện lần nào: mỗi lần thử lại trên ảnh giả gia hạn đồng hồ, nên nó luôn còn chạy lúc mặt thật tới |
+
+Không còn ai trước máy thì cả hai chạy hết đồng hồ của mình. Cái giá của luật thẻ là người sau
+bước vào trong 1,5 s ấy nhìn thẻ của người trước cho tới khi phán quyết của chính họ tới — không
+bao giờ lâu hơn, vì hết đồng hồ thì chỉ track của phán quyết còn được giữ.
 
 **Câu chữ phải đọc được.** `svc_vision` đổi ý mỗi bước, nhanh hơn mắt, nên một câu nhắc giữ tối
 thiểu **700 ms** trước khi câu khác thay; riêng "mất mặt" là tin ngay lập tức.
