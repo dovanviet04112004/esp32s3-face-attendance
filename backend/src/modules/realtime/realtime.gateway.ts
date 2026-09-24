@@ -1,6 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
+import { OnEvent } from "@nestjs/event-emitter";
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -12,7 +13,7 @@ import { Server, Socket } from "socket.io";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import type { AccessClaims } from "../auth/auth.types.js";
+import { SESSIONS_CUT, type AccessClaims, type SessionsCut } from "../auth/auth.types.js";
 
 /** What the dashboard can be told about; KEHOACH 9.4 names who hears each. */
 export const FEED = {
@@ -102,6 +103,17 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   /** Tell every open socket; only for tables every login reads (KEHOACH 9.4). */
   announce(feed: FeedName, body: unknown): void {
     this.deliver(feed, body, () => true);
+  }
+
+  /** Close the sockets these logins hold the moment their sessions close (KEHOACH 9.23). */
+  @OnEvent(SESSIONS_CUT)
+  drop(cut: SessionsCut): void {
+    for (const [id, watcher] of this.watchers) {
+      if (cut.userIds.includes(watcher.viewer.userId)) {
+        this.server?.to(id).disconnectSockets(true);
+        this.watchers.delete(id);
+      }
+    }
   }
 
   /** Tell the sockets one login holds open, on whichever of its devices. */

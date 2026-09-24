@@ -157,6 +157,27 @@ describe("sessions across devices (e2e)", () => {
     assert.equal(await live(), 0, "a password nobody else knows left a device signed in");
   });
 
+  it("ends an account's access tokens the moment its role changes", async () => {
+    const email = "e2e-sessions-demoted@kiosk.local";
+    await db.user.deleteMany({ where: { email } });
+    const made = await db.user.create({
+      data: { email, passwordHash: await hashPassword(FIRST_PASSWORD), role: "HR" },
+    });
+    const held = await auth.signIn(email, FIRST_PASSWORD, { userAgent: "e2e-demoted/1.0" });
+    const me = (token: string) => request(http).get("/auth/me").set("Authorization", `Bearer ${token}`);
+    assert.equal((await me(held.accessToken)).status, 200);
+
+    await users.update(userId, made.id, { role: "VIEWER" });
+    assert.equal((await me(held.accessToken)).status, 401, "a demoted account kept using its old token");
+    assert.equal(await db.session.count({ where: { userId: made.id, revokedAt: null } }), 0);
+
+    // A token has one-second iat, so the next one is minted past the cutoff's second.
+    await new Promise((done) => setTimeout(done, 2100));
+    const fresh = await auth.signIn(email, FIRST_PASSWORD, { userAgent: "e2e-demoted/1.0" });
+    assert.equal((await me(fresh.accessToken)).status, 200, "the account could not sign in again");
+    await db.user.deleteMany({ where: { email } });
+  });
+
   it("holds no more devices than it is allowed to", async () => {
     const cap = validateEnv().SESSIONS_PER_USER;
     for (let opened = 0; opened < cap + 2; opened += 1) {

@@ -9,6 +9,7 @@ import { toExcelCsv } from "../../common/csv.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { AuthService } from "../auth/auth.service.js";
 import { OnboardingService } from "../onboarding/onboarding.service.js";
 import { UsersService, type LoginOpened } from "../users/users.service.js";
 import type {
@@ -103,6 +104,7 @@ export class EmployeesService {
     private readonly audit: AuditService,
     private readonly onboarding: OnboardingService,
     private readonly users: UsersService,
+    private readonly auth: AuthService,
   ) {}
 
 
@@ -592,6 +594,8 @@ export class EmployeesService {
         data: { revokedAt: new Date() },
       });
     });
+    const logins = await this.db.user.findMany({ where: { employeeId: id }, select: { id: true } });
+    await this.auth.cutAccess(logins.map((one) => one.id));
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.EMPLOYEE_OFFBOARD,

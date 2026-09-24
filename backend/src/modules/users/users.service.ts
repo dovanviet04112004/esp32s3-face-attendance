@@ -21,6 +21,7 @@ import { PrismaService } from "../../database/prisma.service.js";
 
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { AuthService } from "../auth/auth.service.js";
 import { LINK_BYTES, UNUSABLE_PASSWORD } from "../auth/password.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
 import type { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
@@ -69,6 +70,7 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
+    private readonly auth: AuthService,
   ) {}
 
 
@@ -294,6 +296,7 @@ export class UsersService {
       select: VISIBLE,
     });
     if (body.role && body.role !== held.role) {
+      await this.auth.closeAll(id);
       await this.audit.record({
         actorId,
         action: AUDIT_ACTIONS.USER_ROLE,
@@ -318,6 +321,7 @@ export class UsersService {
       }
     }
     await this.db.user.delete({ where: { id } });
+    await this.auth.cutAccess([id]);
     await this.audit.record({
       actorId,
       action: AUDIT_ACTIONS.USER_DELETE,

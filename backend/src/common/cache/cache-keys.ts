@@ -20,6 +20,7 @@ export const CACHE = {
 export const GUARD = {
   loginMisses: (emailHash: string) => `auth:miss:${emailHash}`,
   loginLock: (emailHash: string) => `auth:lock:${emailHash}`,
+  accessCutoff: (userId: string) => `auth:cutoff:${userId}`,
 } as const;
 
 /** What a cached entry is allowed to be: anything Postgres can rebuild. */

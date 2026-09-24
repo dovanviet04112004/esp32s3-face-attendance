@@ -2,13 +2,16 @@ import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypt
 
 import { Inject, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JwtService } from "@nestjs/jwt";
 import { ThrottlerException } from "@nestjs/throttler";
 import type { User } from "@prisma/client";
 
+import { GUARD } from "../../common/cache/cache-keys.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
-import type { AccessClaims, DeviceClaims, RefreshClaims } from "./auth.types.js";
+import { RedisService } from "../../database/redis.service.js";
+import { SESSIONS_CUT, type AccessClaims, type DeviceClaims, type RefreshClaims, type SessionsCut } from "./auth.types.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
@@ -58,6 +61,8 @@ export class AuthService {
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
     private readonly lockout: LoginLockout,
+    private readonly redis: RedisService,
+    private readonly bus: EventEmitter2,
   ) {}
 
   async signIn(email: string, password: string, from: SignedInFrom): Promise<IssuedTokens> {
@@ -130,6 +135,7 @@ export class AuthService {
       }),
     ]);
     await this.lockout.clear(setup.user.email);
+    await this.cutAccess([setup.user.id]);
     this.log.log(`account ${setup.user.id} set its own password`);
   }
 
@@ -150,6 +156,7 @@ export class AuthService {
         data: { revokedAt: now },
       }),
     ]);
+    await this.cutAccess([userId]);
     this.log.log(`account ${userId} changed its own password`);
   }
 
@@ -189,12 +196,37 @@ export class AuthService {
     });
   }
 
-  /** Sign every device out at once: leaving, or a password nobody else knows. */
+  /** Sign every device out at once: leaving, a new role, or a password nobody else knows. */
   async closeAll(userId: string): Promise<void> {
     await this.db.session.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    await this.cutAccess([userId]);
+  }
+
+  /** End the access tokens and sockets these accounts hold now, not when the tokens run out (KEHOACH 9.23). */
+  async cutAccess(userIds: string[]): Promise<void> {
+    const at = Math.floor(Date.now() / 1000);
+    const keepS = Math.ceil(ttlToMs(this.config.get("JWT_ACCESS_TTL", { infer: true })) / 1000);
+    try {
+      for (const userId of userIds) {
+        await this.redis.client.set(GUARD.accessCutoff(userId), String(at), "EX", keepS);
+      }
+    } catch {
+      this.log.warn("access cutoff not written; tokens run to their own expiry");
+    }
+    this.bus.emit(SESSIONS_CUT, { userIds } satisfies SessionsCut);
+  }
+
+  /** Whether an access token issued at iat predates its account's cutoff. */
+  async accessCut(userId: string, iat: number): Promise<boolean> {
+    try {
+      const at = await this.redis.client.get(GUARD.accessCutoff(userId));
+      return at !== null && iat <= Number(at);
+    } catch {
+      return false;
+    }
   }
 
   /** Sign a kiosk token; a jti keeps two issued within one second apart (KEHOACH 7.3). */

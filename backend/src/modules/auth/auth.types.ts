@@ -22,6 +22,13 @@ export interface DeviceClaims {
 
 export const REFRESH_COOKIE = "kiosk_refresh";
 
+/** Raised when every session of these accounts closes, so open sockets close with them (KEHOACH 9.23). */
+export const SESSIONS_CUT = "auth.sessionsCut";
+
+export interface SessionsCut {
+  userIds: string[];
+}
+
 export const THROTTLE = {
   api: "api",
   heavy: "heavy",
