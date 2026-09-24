@@ -137,7 +137,11 @@ describe("broker login and device tickets (e2e)", () => {
   it("refuses to register a name that cannot be a broker username", async () => {
     const res = await request(http)
       .post("/devices/register")
-      .send({ deviceId: "no spaces/here", bootstrapToken: validateEnv().DEVICE_BOOTSTRAP_TOKEN });
+      .send({
+        deviceId: "no spaces/here",
+        bootstrapToken: validateEnv().DEVICE_BOOTSTRAP_TOKEN,
+        claimCode: "123456",
+      });
     assert.equal(res.status, 400);
     assert.equal(res.body.message, "DEVICE_ID_MALFORMED");
   });

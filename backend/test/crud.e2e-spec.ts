@@ -20,6 +20,7 @@ const ACCOUNTS = {
 };
 
 const WAITING = "kiosk-e2e-waiting";
+const CLAIM = "104729";
 
 describe("crud (e2e)", () => {
   let app: INestApplication;
@@ -46,7 +47,12 @@ describe("crud (e2e)", () => {
     http = app.getHttpServer();
     db = app.get(PrismaService);
     await sweep();
-    await db.device.create({ data: { id: WAITING } });
+    const asked = await request(http).post("/devices/register").send({
+      deviceId: WAITING,
+      bootstrapToken: validateEnv().DEVICE_BOOTSTRAP_TOKEN,
+      claimCode: CLAIM,
+    });
+    assert.equal(asked.status, 202, "the waiting kiosk could not register");
     for (const [role, email] of Object.entries(ACCOUNTS)) {
       const res = await request(http).post("/auth/login").send({ email, password });
       assert.equal(res.status, 200, `${role} could not sign in`);
@@ -129,7 +135,7 @@ describe("crud (e2e)", () => {
     const res = await request(http)
       .post(`/devices/${WAITING}/approve`)
       .set("Authorization", `Bearer ${token.admin}`)
-      .send({ name: "Cửa trước", location: "Tầng 1" });
+      .send({ name: "Cửa trước", location: "Tầng 1", claimCode: CLAIM });
     assert.equal(res.status, 201);
     assert.equal(res.body.status, "APPROVED");
     assert.equal(res.body.name, "Cửa trước");

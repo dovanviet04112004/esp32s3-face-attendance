@@ -12,12 +12,17 @@ import { PrismaService } from "../src/database/prisma.service.js";
 
 const DEVICE = "e2e-reg-door";
 const STRANGER = "e2e-reg-thief";
+const SILENT = "e2e-reg-mute";
+const FIRST_CODE = "482913";
+const SECOND_CODE = "730215";
+const WRONG_CODE = "000001";
 
 interface Answer {
   accepted: boolean;
   deviceId: string;
   token?: string;
   expiresInDays?: number;
+  claimRenew?: boolean;
 }
 
 function claimsOf(token: string): { deviceId?: string; exp?: number } {
@@ -33,16 +38,25 @@ describe("device registration (e2e)", () => {
   let bootstrap = "";
 
   async function sweep(): Promise<void> {
-    await db.device.deleteMany({ where: { id: { in: [DEVICE, STRANGER] } } });
+    await db.device.deleteMany({ where: { id: { in: [DEVICE, STRANGER, SILENT] } } });
   }
 
   // The allowance runs per minute across the whole suite, and the last case
   // needs to know how much of it the cases above already spent.
   let asked = 0;
 
-  async function register(body: object): Promise<request.Response> {
+  async function register(body: object, claimCode = FIRST_CODE): Promise<request.Response> {
     asked += 1;
-    return request(http).post("/devices/register").send(body);
+    return request(http)
+      .post("/devices/register")
+      .send({ claimCode, ...body });
+  }
+
+  function approve(id: string, claimCode: string): request.Test {
+    return request(http)
+      .post(`/devices/${id}/approve`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Cửa thử", location: "Tầng 1", claimCode });
   }
 
   async function held(id: string): Promise<{ status: string; tokenHash: string | null } | null> {
@@ -94,14 +108,44 @@ describe("device registration (e2e)", () => {
     assert.equal((res.body as Answer).token, undefined);
   });
 
-  it("hands over the token on the first ask after a person approves", async () => {
-    const approved = await request(http)
-      .post(`/devices/${DEVICE}/approve`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({ name: "Cửa thử", location: "Tầng 1" });
-    assert.equal(approved.status, 201);
+  it("will not approve on a code that is not the one on the screen", async () => {
+    const res = await approve(DEVICE, WRONG_CODE);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "DEVICE_CLAIM_MISMATCH");
+    assert.equal((await held(DEVICE))?.status, "PENDING");
+  });
 
-    const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap });
+  it("locks a code typed wrong too often and tells the kiosk to show a new one", async () => {
+    const attempts = validateEnv().DEVICE_CLAIM_ATTEMPTS;
+    for (let tried = 1; tried < attempts; tried += 1) {
+      assert.equal((await approve(DEVICE, WRONG_CODE)).status, 400);
+    }
+    const locked = await approve(DEVICE, FIRST_CODE);
+    assert.equal(locked.status, 409, "the right code still worked after the lock");
+    assert.equal(locked.body.message, "DEVICE_CLAIM_LOCKED");
+
+    const told = await register({ deviceId: DEVICE, bootstrapToken: bootstrap });
+    assert.equal(told.status, 202);
+    assert.equal((told.body as Answer).claimRenew, true, "the kiosk was not told to renew");
+
+    const renewed = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, SECOND_CODE);
+    assert.equal(renewed.status, 202);
+    assert.equal((renewed.body as Answer).claimRenew, undefined);
+  });
+
+  it("will not approve a machine that never showed a code", async () => {
+    await db.device.create({ data: { id: SILENT } });
+    const res = await approve(SILENT, FIRST_CODE);
+    assert.equal(res.status, 409);
+    assert.equal(res.body.message, "DEVICE_CLAIM_MISSING");
+  });
+
+  it("hands over the token on the first ask after a person approves", async () => {
+    const approved = await approve(DEVICE, SECOND_CODE);
+    assert.equal(approved.status, 201, JSON.stringify(approved.body));
+    assert.equal(approved.body.claimHash, undefined, "the approval answer leaked the code hash");
+
+    const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, SECOND_CODE);
     assert.equal(res.status, 200);
     const answer = res.body as Answer;
     assert.ok(answer.token, "an approved machine was not given its token");
