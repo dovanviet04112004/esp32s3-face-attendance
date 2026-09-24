@@ -116,6 +116,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define ENROLL_REPORT_CAP 1024
 #define ENROL_SAMPLES 3
 #define ROSTER_OFFER_WAIT_MS 200
+#define ROSTER_WIPE_WAIT_MS 2000
 #define EVENT_FAULT_GAP_MS 60000
 #define EVENT_PERSON_GAP_MS 2000
 #define NET_TASK_CORE 0
@@ -1429,6 +1430,23 @@ static void fetch_ticket(const app_wiring_t *wiring)
     start_broker();
 }
 
+// A dead ticket takes the face table with it: the server holds every template,
+// and the heartbeat after re-approval reports version 0 to be sent all of them (KEHOACH 7.3).
+static void ticket_died(const app_wiring_t *wiring)
+{
+    static const app_roster_t wipe = {
+        .op = ENROLL_PAYLOAD_OP_REPLACE_ALL,
+        .roster_version = 0,
+        .has_roster_version = true,
+    };
+    net_provision_forget();
+    if (xQueueSend(wiring->roster, &wipe, pdMS_TO_TICKS(ROSTER_WIPE_WAIT_MS)) != pdTRUE) {
+        note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, ESP_ERR_TIMEOUT, "face table wipe not queued");
+    }
+    xEventGroupClearBits(wiring->flags, APP_EG_RENEW_TICKET);
+    xEventGroupSetBits(wiring->flags, APP_EG_NEED_TICKET);
+}
+
 static void recheck_ticket(const app_wiring_t *wiring, int64_t *checked_ms)
 {
     xEventGroupClearBits(wiring->flags, APP_EG_BROKER_REFUSED);
@@ -1440,9 +1458,8 @@ static void recheck_ticket(const app_wiring_t *wiring, int64_t *checked_ms)
     *checked_ms = now_ms;
     net_mqtt_stop();
     if (net_provision_check() == NET_PROVISION_REFUSED) {
-        ESP_LOGW(TAG, "api says the ticket is dead, registering again");
-        net_provision_forget();
-        xEventGroupSetBits(wiring->flags, APP_EG_NEED_TICKET);
+        ESP_LOGW(TAG, "api says the ticket is dead, wiping faces and registering again");
+        ticket_died(wiring);
         return;
     }
     start_broker();
@@ -1477,10 +1494,8 @@ static void renew_ticket(const app_wiring_t *wiring, renewal_t *renewal, int64_t
     net_mqtt_stop();
     const net_provision_answer_t answer = net_provision_renew();
     if (answer == NET_PROVISION_REFUSED) {
-        ESP_LOGW(TAG, "api refused the renewal, registering again");
-        net_provision_forget();
-        xEventGroupClearBits(wiring->flags, APP_EG_RENEW_TICKET);
-        xEventGroupSetBits(wiring->flags, APP_EG_NEED_TICKET);
+        ESP_LOGW(TAG, "api refused the renewal, wiping faces and registering again");
+        ticket_died(wiring);
         return;
     }
     const bool renewed = answer == NET_PROVISION_GRANTED;
