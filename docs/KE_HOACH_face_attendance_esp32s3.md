@@ -4866,8 +4866,8 @@ deploy/
 ├── deploy.sh                              # ★ CD: lệnh duy nhất khoá SSH của GitHub chạy được
 ├── traefik/{traefik.yml, dynamic.yml}     # TLS tự động Let's Encrypt
 ├── emqx/{emqx.conf, acl.conf, gen_certs.sh, certs/}   # listener MQTTS, auth và ACL
-├── postgres/{init.sql, archive.conf}      # ★ archive.conf bật lưu trữ WAL liên tục
-└── backup/{Dockerfile, backup.sh, restore-drill.sh, wal-push.sh}   # ★ §9.22.2
+├── postgres/{init.sql, postgresql.conf, archive.conf, pg_hba.conf}   # ★ WAL liên tục, cửa sao chép cho bản gốc
+└── backup/{Dockerfile, backup.sh, restore-drill.sh, wal-push.sh, pg-start.sh}   # ★ §9.22.2
               · retention.sh                                     # ★ §9.22.7
               · table-growth.sh                                  # ★ §9.22.5
 ```
@@ -4878,11 +4878,11 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 |---|---|---|---|
 | `traefik` | traefik:v3 | 80, 443, 8883 | TLS tự động, reverse proxy, TCP passthrough cho MQTTS. Tài khoản ACME không kèm email: file cấu hình tĩnh không thay biến môi trường, và Let's Encrypt đã thôi gửi mail nhắc hết hạn từ 06/2025 |
 | `api` | `ghcr.io/dovanviet04112004/cckiosk-api:<sha>` — build trên GitHub Actions; máy dev build từ `backend/` | 3000 (nội bộ) | NestJS. Router Traefik của nó là `Host(api) && !PathPrefix(/mqtt)`: `/mqtt/auth` chỉ để EMQX gọi trong mạng compose (§7.4) |
-| `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này**, nên nó phải có `age`: thiếu thì mọi segment WAL đẩy hỏng, postgres giữ lại hết và đĩa đầy dần |
+| `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này, dưới user `postgres`**, nên nó phải có `age` và `zstd`, và phải ghi được `backups/wal/`. Volume `backups` mount ra thuộc `root`, nên entrypoint là `pg-start.sh`: giao `wal/` cho `postgres` rồi mới gọi entrypoint gốc. Thiếu một trong ba thứ thì mọi segment đẩy hỏng, postgres giữ lại hết và đĩa đầy dần — đo 24/09: hỏng quyền 1.759 lần trong 9,5 giờ, `pg_wal` lên 1,1 GB. `pg_hba.conf` nằm trong repo và mở đúng một cửa thêm: kết nối sao chép có mật khẩu từ mạng compose, cho bản gốc của `backup` |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
 | `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth hai tầng: bảng nội bộ cho `svc-*`, rồi hỏi `api` qua HTTP cho kiosk; ACL là file theo username (§7.4); dashboard không ra ngoài |
 | `minio` (tùy chọn) | minio/minio | 9000 | ảnh chấm công |
-| `backup` | postgres + cron | — | dump hằng đêm |
+| `backup` | `kiosk-backup:local`, chạy cron | — | mỗi đêm: hai bản logic, một bản gốc vật lý, dọn chuỗi quá hạn, ghi `ops.backup_run` (§9.22.2) |
 
 Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, và chạy dưới **`app.<domain>`**
 (hiện là `app.cckiosk.io.vn`) chứ không dưới `*.vercel.app`. Cookie refresh đặt trên
@@ -4927,21 +4927,33 @@ chạy là tin bất cứ máy nào đang trả lời địa chỉ ấy.
 `deploy.sh` đăng nhập GHCR, kéo image, đăng xuất; token hết hạn khi job xong. Nhờ vậy image để
 riêng tư cũng được.
 
-**`deploy.sh` làm sáu việc, theo thứ tự:**
+**`deploy.sh` làm bảy việc, theo thứ tự:**
 
 1. Đưa `~/cckiosk` (bản clone chỉ lấy `deploy/`) về đúng sha: cấu hình compose và traefik đi
    cùng code, không có lượt nào code mới chạy trên cấu hình cũ.
-2. Ghi `API_TAG=<sha>` vào `.env`, kéo image, `up -d --no-build`. Ghi vào `.env` để một lần
+2. `deploy/backup/` khác với sha cũ thì build lại `kiosk-backup:local` ngay trên VPS. Image ấy
+   không có trên registry, và bước sau chạy `--no-build`, nên thiếu bước này thì một
+   `wal-push.sh` hay một dòng cron mới **không bao giờ lên máy**. `postgres` và `backup` cùng
+   dùng image này, nên bước sau dựng lại cả hai.
+3. Ghi `API_TAG=<sha>` vào `.env`, kéo image, `up -d --no-build`. Ghi vào `.env` để một lần
    `compose up` bằng tay hay một lần khởi động lại máy vẫn chạy đúng bản đã deploy.
-3. `deploy/emqx/` khác với sha cũ thì dựng lại riêng `emqx` bằng `--force-recreate`. Compose
-   không nhìn nội dung file mount, và `git checkout` thay file bằng một inode mới, trong khi
-   bind mount một file lẻ vẫn cầm inode cũ. Không có bước này thì broker **chạy tiếp cấu hình
-   cũ**, và không có gì báo. Các lượt deploy không đụng broker thì không cắt kiosk nào.
-4. Chờ `GET /health` qua mạng compose trả 200, tối đa 120 s. Không đạt thì **lùi về sha ghi ở
-   `.deployed`** và thoát lỗi: job đỏ, bản cũ vẫn phục vụ.
-5. Đạt thì ghi sha mới vào `.deployed`.
-6. Xoá image `api` cũ, giữ đúng hai bản: đang chạy và bản trước để lùi. Mỗi image ~1,1 GB trên
+4. Dựng lại bằng `--force-recreate` đúng service nào có file cấu hình đổi so với sha cũ: `emqx`
+   theo `deploy/emqx/`, `traefik` theo `deploy/traefik/`, `postgres` theo `deploy/postgres/`.
+   Compose không nhìn nội dung file mount, và `git checkout` thay file bằng một inode mới, trong
+   khi bind mount một file lẻ vẫn cầm inode cũ. Không có bước này thì service **chạy tiếp cấu
+   hình cũ** và không có gì báo — với Traefik là router `api` trỏ vào một middleware chưa tồn
+   tại, API ngoài internet trả 404 trong khi `/health` trong mạng compose vẫn 200. Dựng lại
+   `postgres` làm cơ sở dữ liệu tắt vài giây; kiosk xếp hàng offline (§6.2.6). Lượt deploy không
+   đụng các thư mục ấy thì không cắt gì.
+5. Chờ `GET /health` qua mạng compose trả 200, tối đa 120 s. Không đạt thì **lùi về sha ghi ở
+   `.deployed`**, làm lại bước 2–4 theo sha ấy, và thoát lỗi: job đỏ, bản cũ vẫn phục vụ.
+6. Đạt thì ghi sha mới vào `.deployed`.
+7. Xoá image `api` cũ, giữ đúng hai bản: đang chạy và bản trước để lùi. Mỗi image ~1,1 GB trên
    ổ 17 GB.
+
+Lượt deploy nào cũng chạy bằng `deploy.sh` **của sha cũ**: file ấy đã nạp vào shell trước khi
+checkout thay nó. Một bước mới thêm vào `deploy.sh` vì vậy chỉ có hiệu lực từ lượt deploy
+**sau** lượt mang nó lên, và lượt mang nó lên phải làm tay đúng bước ấy.
 
 Container `api` chạy `prisma migrate deploy` trước khi nghe, nên lược đồ đi theo image. Lùi bản
 an toàn là nhờ luật "nở rồi co" của §9.22.3: bản cũ vẫn chạy được trên lược đồ mới.
@@ -4952,10 +4964,6 @@ Traefik, nên địa chỉ nguồn của socket luôn là container Traefik. `TR
 theo IP ấy. Dev không qua proxy nên để 0: tin một header mà không ai đứng giữa ghi thì ai cũng tự
 khai IP được. Traefik bỏ `X-Forwarded-For` của mọi nguồn không nằm trong `trustedIPs`, nên một
 người gọi thẳng không khai được IP giả qua hai chặng ấy.
-
-**`deploy.sh` dựng lại Traefik khi cấu hình của nó đổi**, cùng lý do và cùng cách với EMQX: file
-lẻ bind mount giữ inode cũ sau khi checkout thay file, nên `watch` của Traefik không bao giờ thấy
-`dynamic.yml` mới.
 
 **`GET /health` không cần đăng nhập**: `SELECT 1` lên Postgres và `PING` Redis, 200 khi cả hai
 trả lời, 503 khi không. Nó **không** hỏi broker: EMQX chết thì kiosk mất đường lên nhưng HTTP vẫn
@@ -4968,22 +4976,53 @@ khoản quản trị. Seed chạy từ tầng `build` của image, vì tầng ch
 
 Frontend không đi đường này: Vercel tự build mỗi lần push khi đã nối repo (E12-T7).
 
-**Sao lưu: bốn luật, và luật thứ tư là luật duy nhất chứng minh được ba luật kia.**
+**Sao lưu: năm luật. Luật thứ tư chứng minh ba luật đầu, luật thứ năm báo khi chúng hỏng.**
 
-1. **Bản đầy đủ hằng đêm cộng WAL liên tục.** Chỉ có bản đêm thì mất tối đa một ngày; WAL đẩy
-   liên tục kéo con số ấy xuống còn phút. `archive_mode = on` và `archive_command` đẩy từng
-   segment ngay khi nó đầy.
-2. **Mã hoá trước khi rời máy, bằng khoá công khai.** Máy chạy sao lưu chỉ giữ **khoá công
-   khai** của `age`; nó ghi được bản sao lưu nhưng **không đọc lại được bản cũ**. Ai chiếm được
-   máy chủ vẫn không mở được lịch sử. Khoá riêng cất ngoài hệ thống, và nơi cất nó là một quyết
-   định vận hành chứ không phải một dòng trong compose.
+1. **Hai loại bản sao, vì WAL chỉ phát lại được lên bản gốc vật lý.** `pg_dump` là bản xuất
+   logic: dựng từ nó ra một cụm mới với LSN khác, nên WAL của cụm cũ **không áp được** lên đó.
+   Có WAL mà thiếu bản gốc vật lý thì WAL chỉ là file chiếm đĩa. Mỗi đêm `backup.sh` viết ba
+   file, và `postgres` đẩy WAL liên tục:
+
+   | Chuỗi | File trong volume `backups` | Giữ | Dùng để |
+   |---|---|---|---|
+   | Logic chính | `<db>-<stamp>.dump.age`, mọi thứ trừ `FaceTemplate` | `BACKUP_KEEP_DAYS` (30) | dựng lại một đêm bất kỳ trong hạn; đọc lại một bảng |
+   | Logic sinh trắc | `<db>-<stamp>.biometric.dump.age`, chỉ `FaceTemplate` | `BIOMETRIC_KEEP_DAYS` (7) | trả mẫu mặt cho bản logic chính |
+   | Gốc vật lý | `<db>-<stamp>.base.tar.zst.age` — `pg_basebackup -Ft -X fetch`, tự đủ WAL để nhất quán | `BIOMETRIC_KEEP_DAYS` | điểm xuất phát để tua |
+   | WAL | `wal/<segment>.zst.age` cùng `wal/<segment>.sha256` | `BIOMETRIC_KEEP_DAYS` | tua từ bản gốc tới một phút bất kỳ |
+
+   `archive_timeout = 5min`, nên trong `BIOMETRIC_KEEP_DAYS` ngày gần nhất mất tối đa **5 phút**;
+   cũ hơn thì mất tối đa **một ngày** (bản logic đêm). Gốc vật lý và WAL giữ theo hạn sinh trắc
+   vì chúng chứa `FaceTemplate` (§9.22.7). Segment bị ép đóng được postgres ghi số 0 phần còn
+   trống, nên nhịp 5 phút không phình đĩa: đo 24/09, một segment 16 MB chỉ mang một lượt ghi
+   nén `zstd` còn **~730 byte**, kể cả segment tái dùng sau checkpoint.
+2. **Nén rồi mã hoá bằng khoá công khai, trước khi chạm đĩa.** Máy chạy sao lưu chỉ giữ **khoá
+   công khai** của `age`; nó ghi được bản sao lưu nhưng **không đọc lại được bản cũ**. Ai chiếm
+   được máy chủ vẫn không mở được lịch sử. Nén phải đi trước: bản đã mã hoá không nén được nữa.
+   Một file chỉ mang tên thật khi đã ghi xong — ghi ra `.part`, dừng cả dây nếu **bất kỳ** khâu
+   nào hỏng (`pipefail`), rồi mới đổi tên. Thiếu điều ấy thì `pg_dump` chết giữa chừng vẫn để
+   lại một file mã hoá hợp lệ bọc một bản dump cụt, và script vẫn báo đã ghi.
 3. **Không nằm cùng đĩa với bản đang chạy.** Sao lưu ở cùng volume là bản sao, không phải sao
    lưu — ổ chết là mất cả hai. Thư mục `backup/` trỏ ra một volume khác, và trên VPS thật là một
    nơi lưu trữ ngoài máy.
-4. **Kiểm phục hồi định kỳ, có số đo.** `restore-drill.sh` dựng bản sao lưu mới nhất vào một cơ
-   sở dữ liệu vứt đi, **đếm dòng từng bảng** và **bấm giờ**. Một bản sao lưu chưa từng phục hồi
-   thử không phải bản sao lưu — nó là một file người ta tin là bản sao lưu, và khác biệt chỉ lộ
-   ra đúng vào ngày tệ nhất.
+4. **Kiểm phục hồi định kỳ, có số đo, cho cả hai loại.** `restore-drill.sh` dựng bản gốc mới
+   nhất cộng mọi WAL sau nó vào một postgres vứt đi ở chế độ standby, chờ phát lại hết, báo
+   **giao dịch cuối được phát lại lúc nào**; rồi dựng bản logic chính, **đếm dòng từng bảng** và
+   **bấm giờ**. Một bản sao lưu chưa từng phục hồi thử không phải bản sao lưu — nó là một file
+   người ta tin là bản sao lưu, và khác biệt chỉ lộ ra đúng vào ngày tệ nhất.
+5. **Hỏng thì phải có người biết trong 15 phút, không phải vào ngày cần phục hồi.** WAL đẩy hỏng
+   là postgres giữ lại mọi segment tới khi đĩa đầy, và cả hệ dừng theo. `backup.sh` ghi một dòng
+   vào `ops.backup_run` sau mỗi file đã đổi tên xong; dòng `wal` chỉ được ghi khi segment mà
+   `pg_basebackup` ép đóng lúc kết thúc thật sự tới `wal/` trong 60 s — mỗi đêm một lần thử
+   đầu-cuối đường WAL. Cứ 15 phút `api` hỏi `pg_stat_archiver` và bảng ấy: lượt đẩy gần nhất
+   hỏng, hoặc một chuỗi quá `BACKUP_STALE_HOURS` (26) không có bản mới, thì gửi mail cho mọi
+   tài khoản ADMIN còn hoạt động, nhắc lại mỗi 24 giờ cho tới khi hết. `BACKUP_STALE_HOURS = 0`
+   tắt việc hỏi, cho máy dev không có container `backup`.
+
+**`wal-push.sh` giữ đúng hợp đồng của `archive_command`.** Trả 0 là nói với postgres "segment đã
+an toàn, xoá được", nên chỉ trả 0 khi bản mã hoá và dấu `sha256` của bản gốc đã `sync` xuống đĩa
+và đổi tên xong. Một segment đã đẩy mà postgres chết trước khi kịp ghi nhận thì sẽ quay lại: cùng
+dấu là thành công, khác dấu là hai cụm đang ghi chung một kho, và phải từ chối. Từ chối mọi lần
+đẩy lại thì một lần sập đúng lúc là đường WAL kẹt vĩnh viễn.
 
 **Con số phải trả lời được, không phải lời hứa** (§9.22.2): mất tối đa bao nhiêu phút dữ liệu,
 mất bao lâu để dựng lại, và lần kiểm phục hồi gần nhất là khi nào. Hai số đầu do thiết kế quyết,
@@ -5067,7 +5106,7 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | URL và credential trên kiosk | NVS `device/*` (§6.2.1), giá trị lùi khai ở `Kconfig` của component | đọc qua `sys_storage`, **không gõ vào `.c`** |
 | Token bootstrap của lô firmware | `firmware/sdkconfig.secrets` — **gitignore**, người build tự đặt, giá trị trùng `DEVICE_BOOTSTRAP_TOKEN` của `api` (§7.3) | Makefile nối file vào `SDKCONFIG_DEFAULTS`, ra `CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN`; `make fw-prod` **dừng** khi file vắng |
 | Số hiệu firmware | `PROJECT_VER` trong `firmware/CMakeLists.txt` | `esp_app_get_description()->version`, **không gõ lại ở đâu** |
-| Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
+| Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại, tuổi tối đa của bản sao lưu mới nhất | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
 | Phiên bản văn bản đồng ý sinh trắc đang phát | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — **máy chủ điền, client không gửi**: giá trị ghi vào `BiometricConsent` phải là bản mà chính máy chủ đang phát, nên để client gửi kèm là mở đường ghi một phiên bản không tồn tại |
 | Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
 | Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
@@ -7957,8 +7996,11 @@ người đã nghỉ vẫn là dữ liệu nhạy cảm đang được lưu tr�
 Một lịch sao lưu không nói lên điều gì. Ba con số mới nói:
 
 - **RPO — chấp nhận mất bao nhiêu?** Với lượt chấm công và phiếu lương, câu trả lời là **gần
-  bằng không**, nên chỉ sao lưu mỗi đêm là không đủ: cần **lưu trữ WAL liên tục** để phục hồi
-  tới một thời điểm bất kỳ.
+  bằng không**, nên chỉ sao lưu mỗi đêm là không đủ: cần **bản gốc vật lý cộng WAL liên tục** để
+  phục hồi tới một thời điểm bất kỳ. Con số thiết kế: **tối đa 5 phút** (`archive_timeout`) trong
+  `BIOMETRIC_KEEP_DAYS` ngày gần nhất, **tối đa một ngày** từ đó tới `BACKUP_KEEP_DAYS` (§4.8
+  luật 1). Kiosk giữ một lượt chấm công tới khi máy chủ xác nhận, nên thứ mất trong 5 phút ấy
+  là những lượt **đã** được xác nhận.
 - **RTO — chấp nhận dừng bao lâu?** Kiosk vẫn chấm công được khi server chết (hàng đợi offline
   của §6.2.6), nên áp lực thấp hơn vẻ ngoài. Nhưng ngày trả lương thì khác hẳn.
 - **Phục hồi mất bao lâu thật?** Con số duy nhất có giá trị là con số **đã bấm giờ trên một
@@ -7972,8 +8014,18 @@ bước này thì cả mục 9.22 chỉ là văn.
 **Khoá giải mã không nằm trên máy chủ.** VPS chỉ giữ khoá công khai (`AGE_RECIPIENT`) để mã hoá;
 khoá riêng nằm ở máy chủ repo. Chiếm được VPS vì thế không đọc được bản sao lưu nào, kể cả bản
 chứa sinh trắc. Cái giá là **kiểm phục hồi không còn chạy trên VPS**: `restore-drill.sh` chạy từ
-máy giữ khoá, kéo bản mới nhất qua ssh, dựng vào một Postgres tạm ở máy ấy, đếm dòng và ghi thời
-gian. Nhịp hằng tuần vì vậy là việc của người, ghi trong TASKS, không phải một dòng cron.
+máy giữ khoá và làm hai lượt, cả hai dựng vào một Postgres tạm ở máy ấy:
+
+1. **Tua**: kéo bản gốc vật lý mới nhất, đọc segment bắt đầu trong `backup_label`, kéo mọi WAL
+   từ segment ấy trở đi, dựng ở chế độ standby, chờ tới khi phát lại đứng yên. Báo **giao dịch
+   cuối được phát lại lúc nào** và **segment mới nhất trong kho lúc nào** — hiệu hai mốc ấy là
+   phần sẽ mất nếu máy chủ chết đúng lúc kéo về.
+2. **Logic**: kéo bản logic chính mới nhất, dựng, đếm dòng từng bảng, bấm giờ, và thoát 1 nếu
+   nó mang `FaceTemplate`.
+
+Nhịp hằng tuần vì vậy là việc của người, ghi trong TASKS, không phải một dòng cron. Việc máy làm
+được thì máy làm: mỗi đêm một lần thử đầu-cuối đường WAL, và mỗi 15 phút một lượt hỏi của `api`
+(§4.8 luật 5).
 
 **Sao lưu phải mã hoá và phải để ngoài máy chủ đang chạy.** Sao lưu nằm cùng ổ với dữ liệu gốc
 bảo vệ được đúng một tình huống: xoá nhầm. Nó không bảo vệ được hỏng ổ, không bảo vệ được mã
@@ -8174,10 +8226,17 @@ Nên **bản dump tách làm hai**, theo đúng bảng phân loại trên:
 |---|---|---|
 | `<db>-<stamp>.dump.age` | mọi thứ **trừ** `FaceTemplate` | dài, theo thời hiệu lao động |
 | `<db>-<stamp>.biometric.dump.age` | **chỉ** `FaceTemplate` | `BIOMETRIC_KEEP_DAYS`, mặc định 7 |
+| `<db>-<stamp>.base.tar.zst.age`, `wal/*` | **cả cụm**, gồm `FaceTemplate` — bản sao vật lý không tách bảng được | `BIOMETRIC_KEEP_DAYS` |
 
 Điều này biến một lời hứa mơ hồ thành **một con số viết được vào thông báo quyền riêng tư**:
 một mẫu bị xoá hôm nay biến mất khỏi **mọi** bản sao lưu trong vòng `BIOMETRIC_KEEP_DAYS` ngày.
-Không phải "sớm nhất có thể".
+Không phải "sớm nhất có thể". Chuỗi vật lý cho phép tua tới từng phút, nhưng chỉ trong đúng
+cửa sổ ấy — đó là cái giá trả cho lời hứa.
+
+**"Giữ N ngày" nghĩa là xoá trước khi file tròn N ngày tuổi.** `backup.sh` xoá một file khi nó
+cũ hơn N ngày trừ một giờ, lúc chạy đêm. `find -mtime +N` thì làm khác hẳn: nó bỏ phần lẻ của
+ngày, nên chỉ bắt file từ **N + 1** ngày tuổi, cộng một nhịp đêm thành gần N + 2 — một lời hứa 7
+ngày bị giữ thành 9.
 
 **Cái giá là có thật và là cái giá đúng.** Phục hồi từ một bản cũ hơn bảy ngày thì fleet không
 nhận ra ai cho tới khi mọi người ghi danh lại. Với dữ liệu sinh trắc thì đó là đánh đổi đúng
