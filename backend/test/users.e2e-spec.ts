@@ -73,6 +73,17 @@ describe("users and audit (e2e)", () => {
     madeId = res.body.id;
   });
 
+  it("lists the accounts of one role, and counts only those", async () => {
+    const res = await request(http).get("/users?role=HR&take=200").set("Authorization", `Bearer ${admin}`);
+    assert.equal(res.status, 200);
+    const rows = res.body.rows as { email: string; role: string }[];
+    assert.ok(rows.length > 0 && rows.every((row) => row.role === "HR"), "another role came back");
+    assert.ok(rows.some((row) => row.email === MADE_EMAIL), "the account just made is missing");
+    assert.equal(res.body.total, rows.length);
+    const wrong = await request(http).get("/users?role=OWNER").set("Authorization", `Bearer ${admin}`);
+    assert.equal(wrong.status, 400);
+  });
+
   it("opens the account closed, with a link waiting and no password that works", async () => {
     const held = await db.user.findUniqueOrThrow({
       where: { email: MADE_EMAIL },

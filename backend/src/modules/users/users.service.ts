@@ -16,7 +16,7 @@ import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { QUEUE, type PasswordSetupJob, type SetupReason } from "../../queue/queues.js";
 
 import type { Env } from "../../config/env.schema.js";
-import type { Page, PaginationDto } from "../../common/dto/pagination.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { PrismaService } from "../../database/prisma.service.js";
 
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -24,7 +24,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { AuthService } from "../auth/auth.service.js";
 import { LINK_BYTES, UNUSABLE_PASSWORD } from "../auth/password.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
-import type { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
+import type { CreateUserDto, ListUsersDto, UpdateUserDto } from "./dto/user.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
 const HOUR_MS = 3_600_000;
@@ -165,15 +165,17 @@ export class UsersService {
     };
   }
 
-  async list(query: PaginationDto): Promise<Page<PublicUser>> {
+  async list(query: ListUsersDto): Promise<Page<PublicUser>> {
+    const where = query.role ? { role: query.role } : {};
     const [rows, total] = await Promise.all([
       this.db.user.findMany({
+        where,
         select: VISIBLE,
         skip: query.skip,
         take: query.take,
         orderBy: { email: "asc" },
       }),
-      this.db.user.count(),
+      this.db.user.count({ where }),
     ]);
     return { rows, total };
   }

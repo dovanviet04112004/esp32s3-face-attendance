@@ -16,12 +16,11 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 
 import { Roles } from "../../common/decorators/roles.decorator.js";
-import type { Page, PaginationDto } from "../../common/dto/pagination.dto.js";
-import { PaginationDto as Pagination } from "../../common/dto/pagination.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import type { AccessClaims } from "../auth/auth.types.js";
-import { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
+import { CreateUserDto, ListUsersDto, UpdateUserDto } from "./dto/user.dto.js";
 import { UsersService, type Provisioning, type PublicUser } from "./users.service.js";
 
 function actorOf(req: Request): string {
@@ -38,8 +37,8 @@ export class UsersController {
 
   @Get()
   @ApiOperation({ summary: "List accounts; a password hash never leaves here" })
-  list(@Query() query: Pagination): Promise<Page<PublicUser>> {
-    return this.users.list(query as PaginationDto);
+  list(@Query() query: ListUsersDto): Promise<Page<PublicUser>> {
+    return this.users.list(query);
   }
 
   @Post("provision")
