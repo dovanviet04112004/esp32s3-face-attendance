@@ -4699,6 +4699,7 @@ quy ước của repo:
 | `notify.ts` | một hook báo kết quả thao tác bằng toast | buộc mã lỗi API vào `lib/fault.ts` |
 | `month-picker.tsx` | chọn một tháng bằng một control | Kumo có chọn ngày và chọn khoảng, không có chọn tháng |
 | `filter-bar.tsx` | bộ lọc: `Toolbar` trên máy tính, một nút mở `LayerDialog` trên điện thoại | §9.21.1 đòi bộ lọc thành tấm trượt ở màn hẹp |
+| `password-field.tsx` | ô mật khẩu có nút hiện chữ, dùng ở ba cửa đăng nhập | `SensitiveInput` của Kumo kèm nút sao chép, sai với một mật khẩu đang gõ |
 | `theme-toggle.tsx`, `bottom-bar.tsx`, `failed.tsx` | sáng tối theo `lib/theme.ts`; nút chính neo đáy điện thoại (§9.21.2); `Banner` lỗi có nút thử lại theo chữ của catalogue | nối vào `lib/` hoặc catalogue của repo |
 
 ```
@@ -4709,12 +4710,13 @@ frontend/
 │   └── [locale]/                     # ★ vi | en — mọi route nằm dưới đây
 │       ├── layout.tsx                # layout gốc: <html lang={locale}> + provider
 │       ├── page.tsx                  # gốc: chuyển vào dashboard, guard của nó lo đăng nhập và vai
-│       ├── (auth)/{login, set-password, forgot-password, change-password}/page.tsx
+│       ├── (auth)/{layout.tsx, {login, set-password, forgot-password, change-password}/page.tsx}
 │       │                                 # ★ §9.4 — một liên kết dùng một lần phục vụ
 │       │                                 #   cả lần đặt đầu lẫn lần quên. Cả bốn cửa
 │       │                                 #   đứng ngoài vỏ dashboard: mỗi cửa kết thúc
 │       │                                 #   bằng một phiên mới, và đổi mật khẩu đóng
-│       │                                 #   cả phiên đang mở chính nó (§9.23)
+│       │                                 #   cả phiên đang mở chính nó (§9.23). layout
+│       │                                 #   giữ một thẻ đặt giữa màn cho cả bốn
 │       └── (dashboard)/
 │           ├── layout.tsx            # sidebar + guard
 │           ├── overview/page.tsx     # thẻ số liệu + biểu đồ + luồng sự kiện realtime
@@ -4761,7 +4763,7 @@ frontend/
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
 │   ├── ui/{page.tsx, pill.tsx, notify.ts, month-picker.tsx, filter-bar.tsx,
-│   │       theme-toggle.tsx, bottom-bar.tsx, failed.tsx}
+│   │       password-field.tsx, theme-toggle.tsx, bottom-bar.tsx, failed.tsx}
 │   │                                 # ★ chỉ thứ Kumo không có (bảng ngay trên cây)
 │   │                                 #   ★ §9.12 luật 2 — pill giữ bốn tông trạng thái,
 │   │                                 #   khai một chỗ cho cả tám phân hệ. Tiền không có
