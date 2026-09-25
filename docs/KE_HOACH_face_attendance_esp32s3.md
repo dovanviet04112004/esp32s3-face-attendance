@@ -7262,6 +7262,20 @@ khung, khai một chỗ, cả hai cùng đọc.
 tả, hành động chính ở bên phải. Không trang nào đặt nút chính ở chỗ khác, vì người dùng tìm nó ở
 đúng một chỗ.
 
+**Trang danh sách và trang một bản ghi có cột phải**, như trang tài nguyên của dashboard
+Cloudflare: cột chính cho bảng hay nội dung, cột phải 380 px dính theo khi cuộn, chứa những gì
+người dùng phải đi tìm nếu nó không nằm đó — con số tóm tắt của chính danh sách ấy, việc đang treo
+dẫn thẳng tới chỗ xử lý, thao tác phụ, và link hướng dẫn. Cột phải không chứa thứ cột chính đã có.
+Dưới `lg` nó rơi xuống dưới cột chính; trên điện thoại vẫn là thanh tab đáy (§9.21.1).
+
+| Trang | Cột phải |
+|---|---|
+| Danh bạ | số đang làm, sắp hết thử việc, hợp đồng sắp hết — mỗi số lọc bảng; nhập Excel, tải mẫu |
+| Hồ sơ một người | phòng ban, quản lý, ngày vào, trạng thái, đồng ý sinh trắc, kiosk đang gán, thao tác nhanh |
+| Kỳ lương | các bước chạy → soát → chốt → trả → gửi phiếu, bước nào đang ở đâu và còn gì treo |
+| Kiosk | máy online, máy có bản mới, bản mới nhất từng loại |
+| Hộp chờ duyệt | ai cũng nghỉ trong những ngày của đơn đang chọn, số dư của người xin |
+
 **Đăng xuất là một thao tác tài khoản, nên nó ở *Cài đặt*.** Để nó thành một nút thường trực
 dưới thanh bên là đặt thao tác **không thể hoàn tác** cạnh những mục người ta bấm cả ngày. Tần
 suất dùng của nó là vài lần một ngày, còn hậu quả bấm nhầm là mất hết việc đang làm dở — đó là
