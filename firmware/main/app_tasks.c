@@ -1433,6 +1433,10 @@ static void cam_task(void *arg)
         if (updating) {
             const esp_err_t painted =
                 overlay != NULL && overlay->opaque ? show(overlay, NULL, &drawn_serial) : ESP_OK;
+            // A map the sleeping panel never took blocks the next publish, which is the Update screen.
+            if (overlay != NULL && !overlay->opaque) {
+                ui_kiosk_shown(overlay->serial);
+            }
             ui_kiosk_release();
             if (relight && painted == ESP_OK && drawn_serial != 0) {
                 relight = false;
