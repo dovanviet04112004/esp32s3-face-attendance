@@ -27,6 +27,8 @@ export interface Heartbeat {
   rosterVersion?: number;
   /** Recognition model this device compares with. A template pushed under any other value is refused, so this is the string a server has to match. */
   embeddingVersion?: string;
+  /** True while the running firmware has not confirmed itself after an update: any reboot now returns to the previous build. Absent from builds before it was added. */
+  onTrial?: boolean;
 }
 
 export const heartbeatSchema = z.strictObject({
@@ -44,4 +46,5 @@ export const heartbeatSchema = z.strictObject({
   bootCount: z.number().int().min(0).optional(),
   rosterVersion: z.number().int().min(0).optional(),
   embeddingVersion: z.string().max(32).optional(),
+  onTrial: z.boolean().optional(),
 });

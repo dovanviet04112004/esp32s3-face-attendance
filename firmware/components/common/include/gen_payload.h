@@ -794,6 +794,7 @@ typedef struct {
     int64_t boot_count;
     int64_t roster_version;
     char embedding_version[33];
+    bool on_trial;
     bool has_rssi_dbm;
     bool has_heap_free_bytes;
     bool has_heap_min_free_bytes;
@@ -803,6 +804,7 @@ typedef struct {
     bool has_boot_count;
     bool has_roster_version;
     bool has_embedding_version;
+    bool has_on_trial;
 } heartbeat_t;
 
 static inline bool heartbeat_from_json(const cJSON *root, heartbeat_t *out)
@@ -885,6 +887,11 @@ static inline bool heartbeat_from_json(const cJSON *root, heartbeat_t *out)
         strncpy(out->embedding_version, item->valuestring, sizeof(out->embedding_version) - 1);
         out->has_embedding_version = true;
     }
+    item = cJSON_GetObjectItemCaseSensitive(root, "onTrial");
+    if (cJSON_IsBool(item)) {
+        out->on_trial = cJSON_IsTrue(item);
+        out->has_on_trial = true;
+    }
     return true;
 }
 
@@ -924,6 +931,9 @@ static inline cJSON *heartbeat_to_json(const heartbeat_t *in)
     }
     if (in->has_embedding_version) {
         cJSON_AddStringToObject(root, "embeddingVersion", in->embedding_version);
+    }
+    if (in->has_on_trial) {
+        cJSON_AddBoolToObject(root, "onTrial", in->on_trial);
     }
     return root;
 }
