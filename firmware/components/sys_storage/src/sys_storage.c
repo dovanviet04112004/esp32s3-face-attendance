@@ -17,6 +17,7 @@
 #include "esp_partition.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -29,6 +30,7 @@ static const char *TAG = "sys_storage";
 #define PARTITION_MODELS_B "models_1"
 #define NVS_ACTIVE_SLOT "active_slot"
 #define STAGE_CHUNK_BYTES 4096
+#define MODELS_ERASE_STEP_BYTES 65536
 #define PARTITION_ASSETS "assets"
 #define ASSETS_POINT "/assets"
 #define NVS_LEGACY_NAMESPACE "kiosk"
@@ -856,7 +858,13 @@ esp_err_t sys_storage_models_stage_begin(size_t size_bytes)
     if (size_bytes == 0 || size_bytes > spare->size) {
         return ESP_ERR_INVALID_SIZE;
     }
-    APP_RETURN_ON_ERR(esp_partition_erase_range(spare, 0, spare->size), TAG, "erase spare");
+    // One block at a time with a tick between: a 2.25 MB erase in one call starves core 0's idle task.
+    for (size_t at = 0; at < spare->size; at += MODELS_ERASE_STEP_BYTES) {
+        const size_t left = spare->size - at;
+        const size_t step = left < MODELS_ERASE_STEP_BYTES ? left : MODELS_ERASE_STEP_BYTES;
+        APP_RETURN_ON_ERR(esp_partition_erase_range(spare, at, step), TAG, "erase spare");
+        vTaskDelay(1);
+    }
     s_stage = spare;
     s_stage_at = 0;
     s_stage_want = size_bytes;

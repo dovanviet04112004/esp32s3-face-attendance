@@ -11,6 +11,8 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sys_storage.h"
 #include "mbedtls/md.h"
 
@@ -24,6 +26,7 @@ static atomic_size_t s_want;
 #define SHA256_HEX_LEN 64
 #define SHA256_BYTES 32
 #define CHUNK_BYTES 2048
+#define YIELD_EVERY_BYTES 16384
 #define HTTP_TIMEOUT_MS 20000
 
 static bool hex_digest(const char *text)
@@ -129,7 +132,12 @@ static esp_err_t pull(esp_http_client_handle_t http, sink_fn sink, void *ctx, ui
         }
         taken += (size_t)read;
         atomic_store(&s_taken, taken);
+        // TLS and flash writes alone can hold core 0 past the task watchdog, which a fleet build panics on.
+        if (taken % YIELD_EVERY_BYTES < (size_t)read) {
+            vTaskDelay(1);
+        }
     }
+    atomic_store(&s_phase, (int)NET_OTA_PHASE_CHECKING);
     uint8_t raw[SHA256_BYTES];
     mbedtls_md_finish(&sha, raw);
     mbedtls_md_free(&sha);
@@ -276,7 +284,8 @@ esp_err_t net_ota_firmware(const net_ota_image_t *image, char *why, size_t cap)
     esp_ota_handle_t writing = 0;
     char digest[SHA256_HEX_LEN + 1] = { 0 };
     if (err == ESP_OK) {
-        err = esp_ota_begin(slot, image->size_bytes, &writing);
+        // Erasing sector by sector as bytes land spreads 2.7 MB of erase over the download.
+        err = esp_ota_begin(slot, OTA_WITH_SEQUENTIAL_WRITES, &writing);
         if (err != ESP_OK) {
             say(why, cap, "the slot would not open");
         }
