@@ -3,7 +3,7 @@
 import { LayerCard, Tabs, type TabsItem } from "@cloudflare/kumo";
 import { CaretLeftIcon } from "@phosphor-icons/react";
 import { useFormatter, useTranslations } from "next-intl";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useCrumb } from "@/components/nav/breadcrumb";
@@ -145,11 +145,33 @@ interface LayoutProps {
   extra?: ReactNode;
 }
 
+/** How far the main column's opening toolbar pushes its first card down, so the right column
+ *  can start level with that card rather than with a row of buttons (KEHOACH 9.12).
+ */
+function useToolbarLead(main: HTMLDivElement | null): number {
+  const [lead, setLead] = useState(0);
+  useEffect(() => {
+    const first = main?.firstElementChild;
+    if (!(first instanceof HTMLElement) || !first.hasAttribute("data-toolbar")) {
+      setLead(0);
+      return;
+    }
+    const measure = () => setLead(first.offsetHeight + parseFloat(getComputedStyle(first).marginBottom));
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(first);
+    return () => watch.disconnect();
+  }, [main]);
+  return lead;
+}
+
 /** Kumo's ResourceListPage body: the main column and Cloudflare's right column (KEHOACH 9.12).
  *  In a content box from 1024 px the right column is 380 px, sticky, and scrolls on its own;
  *  in a narrower one it follows the main column.
  */
 export function PageLayout({ children, aside, extra }: LayoutProps) {
+  const [main, setMain] = useState<HTMLDivElement | null>(null);
+  const lead = useToolbarLead(main);
   if (!aside && !extra) {
     return <div className="min-w-0">{children}</div>;
   }
@@ -157,8 +179,13 @@ export function PageLayout({ children, aside, extra }: LayoutProps) {
   return (
     <div className="@container/page">
       <div className="flex flex-col gap-6 @5xl/page:flex-row @5xl/page:gap-8">
-        <div className="min-w-0 grow">{children}</div>
-        <div className="flex h-fit w-full shrink-0 flex-col gap-4 @5xl/page:sticky @5xl/page:top-[calc(82px+env(safe-area-inset-top))] @5xl/page:-m-1 @5xl/page:max-h-[calc(100svh-106px-env(safe-area-inset-top))] @5xl/page:w-[388px] @5xl/page:overflow-y-auto @5xl/page:overscroll-contain @5xl/page:p-1">
+        <div ref={setMain} className="min-w-0 grow">
+          {children}
+        </div>
+        <div
+          style={{ "--aside-lead": `${lead}px` } as CSSProperties}
+          className="flex h-fit w-full shrink-0 flex-col gap-4 @5xl/page:sticky @5xl/page:top-[calc(82px+env(safe-area-inset-top))] @5xl/page:-m-1 @5xl/page:mt-[calc(var(--aside-lead)-0.25rem)] @5xl/page:max-h-[calc(100svh-106px-env(safe-area-inset-top))] @5xl/page:w-[388px] @5xl/page:overflow-y-auto @5xl/page:overscroll-contain @5xl/page:p-1"
+        >
           {aside}
           {extra}
         </div>

@@ -238,7 +238,7 @@ export function FilterBar({ search, filters = [], extra, range }: Props) {
   const filterLabel = active > 0 ? `${common("filters")} · ${active}` : common("filters");
 
   return (
-    <div ref={box} className="mb-4">
+    <div ref={box} data-toolbar="" className="mb-4">
       {wide && fit === "row" ? (
         <div className="flex flex-wrap items-center gap-2">
           {search || filters.length > 0 ? (

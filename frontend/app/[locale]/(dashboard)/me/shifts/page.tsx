@@ -173,7 +173,7 @@ export default function MyShiftsPage() {
           </AsideCard>
         }
       >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div data-toolbar="" className="mb-4 flex flex-wrap items-center gap-2">
           <MonthPicker value={showing} onChange={move} max={latest} />
         </div>
 
