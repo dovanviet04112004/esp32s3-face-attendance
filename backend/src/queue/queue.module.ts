@@ -33,6 +33,8 @@ const HOUR_S = 3600;
           [QUEUE.notify]: make(QUEUE.notify, { removeOnComplete: true, removeOnFail: { age: HOUR_S } }),
           [QUEUE.payroll]: make(QUEUE.payroll),
           [QUEUE.timesheet]: make(QUEUE.timesheet),
+          [QUEUE.people]: make(QUEUE.people),
+          [QUEUE.leave]: make(QUEUE.leave),
         };
       },
     },

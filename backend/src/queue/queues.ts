@@ -4,6 +4,8 @@ export const QUEUE = {
   notify: "notify",
   payroll: "payroll",
   timesheet: "timesheet",
+  people: "people",
+  leave: "leave",
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -20,6 +22,8 @@ export const JOB = {
   deliver: "deliver",
   run: "run",
   build: "build",
+  leavingsDue: "leavings-due",
+  leaveYear: "leave-year",
 } as const;
 
 export interface ReportJob {
@@ -92,3 +96,18 @@ export interface BuildJob {
 }
 
 export type TimesheetJob = BuildJob;
+
+/** Closes every record whose last day is behind today; the conditional write makes a rerun a no-op. */
+export interface LeavingsDueJob {
+  type: typeof JOB.leavingsDue;
+}
+
+export type PeopleJob = LeavingsDueJob;
+
+/** Opens a year's balances; with no year it is the year today falls in. A closed year never carries twice. */
+export interface LeaveYearJob {
+  type: typeof JOB.leaveYear;
+  year?: number;
+}
+
+export type LeaveJob = LeaveYearJob;
