@@ -905,7 +905,8 @@
     "unpaidNoBalance": "Nghỉ không lương không trừ vào số dư phép nào.",
     "balanceCarriedOut": "Đã chuyển sang năm sau",
     "leftInYear": "còn {days} của {year} sau khi duyệt",
-    "filedDone": "Đã gửi đơn"
+    "filedDone": "Đã gửi đơn",
+    "calendarDaysAll": "Tính mọi ngày lịch, kể cả thứ Bảy, Chủ nhật và ngày lễ."
   },
   "me": {
     "title": "Trang của tôi",
@@ -2187,7 +2188,12 @@
     "retireTitle": "Ngừng dùng {name}?",
     "retireHint": "Đơn đã gửi với loại này vẫn giữ nguyên; có thể dùng lại sau.",
     "daysPerYearShort": "Ngày/năm",
-    "carryOverShort": "Chuyển tối đa"
+    "carryOverShort": "Chuyển tối đa",
+    "calendarDays": "Tính mọi ngày lịch",
+    "calendarDaysHint": "Cho nghỉ thai sản và loại nào luật tính liên tục; bỏ trống thì chỉ trừ ngày làm việc.",
+    "countedBy": "Cách đếm",
+    "countWorking": "Ngày làm",
+    "countCalendar": "Ngày lịch"
   },
   "doors": {
     "invited": "Tài khoản do bộ phận nhân sự mở và gửi tới email của bạn qua thư mời. Chưa nhận được thư thì hỏi nhân sự.",

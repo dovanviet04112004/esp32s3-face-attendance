@@ -905,7 +905,8 @@
     "unpaidNoBalance": "Unpaid leave takes nothing from any balance.",
     "balanceCarriedOut": "Carried into the next year",
     "leftInYear": "{days} of {year} left once approved",
-    "filedDone": "Request filed"
+    "filedDone": "Request filed",
+    "calendarDaysAll": "Every calendar day counts, weekends and holidays included."
   },
   "me": {
     "title": "My page",
@@ -2187,7 +2188,12 @@
     "retireTitle": "Retire {name}?",
     "retireHint": "Requests already filed with it stay as they are; you can restore it later.",
     "daysPerYearShort": "Days/year",
-    "carryOverShort": "Carry max"
+    "carryOverShort": "Carry max",
+    "calendarDays": "Count every calendar day",
+    "calendarDaysHint": "For maternity leave and any type the law counts straight through; left off, only working days are charged.",
+    "countedBy": "Counts",
+    "countWorking": "Working days",
+    "countCalendar": "Calendar days"
   },
   "doors": {
     "invited": "HR opens your account and sends an invitation to your email. No invitation yet? Ask HR.",

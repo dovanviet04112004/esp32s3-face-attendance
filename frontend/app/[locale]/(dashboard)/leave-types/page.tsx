@@ -24,6 +24,7 @@ interface LeaveType {
   paid: boolean;
   daysPerYear: string;
   carryOverMax: string;
+  calendarDays: boolean;
   active: boolean;
 }
 
@@ -33,9 +34,10 @@ interface Draft {
   paid: boolean;
   daysPerYear: string;
   carryOverMax: string;
+  calendarDays: boolean;
 }
 
-const kBlank: Draft = { code: "", name: "", paid: true, daysPerYear: "", carryOverMax: "0" };
+const kBlank: Draft = { code: "", name: "", paid: true, daysPerYear: "", carryOverMax: "0", calendarDays: false };
 const kCodeMax = 32;
 const kNameMax = 120;
 
@@ -82,6 +84,7 @@ function LeaveTypes() {
         paid: draft.paid,
         daysPerYear: Number(draft.daysPerYear),
         carryOverMax: Number(draft.carryOverMax || "0"),
+        calendarDays: draft.calendarDays,
       };
       if (editing) {
         await api.patch(`/leave-types/${editing.id}`, body);
@@ -119,6 +122,7 @@ function LeaveTypes() {
             paid: one.paid,
             daysPerYear: String(Number(one.daysPerYear)),
             carryOverMax: String(Number(one.carryOverMax)),
+            calendarDays: one.calendarDays,
           }
         : kBlank,
     );
@@ -152,6 +156,12 @@ function LeaveTypes() {
       numeric: true,
       sortBy: (row) => Number(row.daysPerYear),
       cell: (row) => Number(row.daysPerYear),
+    },
+    {
+      id: "countedBy",
+      header: t("countedBy"),
+      priority: 3,
+      cell: (row) => (row.calendarDays ? t("countCalendar") : t("countWorking")),
     },
     {
       id: "carryOverMax",
@@ -277,6 +287,14 @@ function LeaveTypes() {
                 />
               </div>
               <Checkbox checked={draft.paid} onCheckedChange={(next) => setDraft({ ...draft, paid: next === true })} label={t("paid")} />
+              <div className="flex flex-col gap-1">
+                <Checkbox
+                  checked={draft.calendarDays}
+                  onCheckedChange={(next) => setDraft({ ...draft, calendarDays: next === true })}
+                  label={t("calendarDays")}
+                />
+                <p className="ps-6 text-sm text-kumo-subtle">{t("calendarDaysHint")}</p>
+              </div>
               {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
             </div>
           </LayerDialog.Body>

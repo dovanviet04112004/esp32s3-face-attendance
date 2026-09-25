@@ -41,6 +41,7 @@ interface Balance {
 interface LeaveDays {
   days: number;
   limited: boolean;
+  calendarDays: boolean;
   parts: { year: number; days: number; left: number | null }[];
 }
 
@@ -409,7 +410,7 @@ function Charged({ asked }: { asked: { data?: LeaveDays; isPending: boolean; isE
       ) : (
         <p>{t("charged", { days: days(shown.days, locale) })}</p>
       )}
-      <p className="text-sm text-kumo-subtle">{t("workingDaysOnly")}</p>
+      {shown ? <p className="text-sm text-kumo-subtle">{t(shown.calendarDays ? "calendarDaysAll" : "workingDaysOnly")}</p> : null}
     </div>
   );
 }
