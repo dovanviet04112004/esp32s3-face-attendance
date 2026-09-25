@@ -1,18 +1,13 @@
 "use client";
 
 import { Button, Input, LayerDialog, LinkButton, Select } from "@cloudflare/kumo";
-import {
-  DownloadSimpleIcon,
-  FileArrowDownIcon,
-  PlusIcon,
-  TrendUpIcon,
-  UploadSimpleIcon,
-} from "@phosphor-icons/react";
+import { PlusIcon, TrendUpIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
-import { Suspense, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { useDirectorySelection } from "@/components/employees/bulk";
+import { DirectoryFiles } from "@/components/employees/import";
 import { LeavingPill } from "@/components/employees/offboard";
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { DateField } from "@/components/ui/date-field";
@@ -23,7 +18,6 @@ import { CountPill, StatePill } from "@/components/ui/pill";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { useFault } from "@/lib/fault";
 import { dayOnly, money } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
@@ -45,22 +39,6 @@ interface EmployeePage {
   total: number;
   totalIsExact?: boolean;
   next: string | null;
-}
-
-interface ImportFault {
-  row: number;
-  column: string;
-  code: string;
-  value: string;
-}
-
-interface ImportReport {
-  applied: boolean;
-  rows: number;
-  toCreate: number;
-  toUpdate: number;
-  payKept: number;
-  faults: ImportFault[];
 }
 
 interface Named {
@@ -95,29 +73,10 @@ const ENDINGS = ["contract", "probation"] as const;
 const kEndingDays = 30;
 const kMsPerDay = 86_400_000;
 const kDueShown = 3;
-// Column names are identifiers the file must carry as they are; only what they mean is translated.
-const IMPORT_FORMATS = {
-  required: "code, fullName",
-  entity: "legalEntityCode",
-  department: "departmentCode, jobTitleCode",
-  manager: "managerCode",
-  dates: "dateOfBirth, hireDate",
-  gender: "gender",
-  money: "baseSalary, insuranceSalary",
-  kept: "personalEmail, bankAccount, bankName",
-} as const;
 
 function firstOfNextMonth(): string {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
-}
-
-function save(text: string, name: string): void {
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(link.href);
 }
 
 function queryOf(params: Record<string, string>): string {
@@ -159,7 +118,6 @@ function DueList({ title, rows, total, onAll }: { title: string; rows: Expiring[
 function Directory() {
   const t = useTranslations("employees");
   const common = useTranslations("common");
-  const faultName = useTranslations("importFaults");
   const due = useTranslations("overview");
   const format = useFormatter();
   const locale = useLocale();
@@ -167,9 +125,7 @@ function Directory() {
   const mayWrite = role === "ADMIN" || role === "HR";
   const desk = role !== null && DESK.includes(role);
   const cache = useQueryClient();
-  const faultOf = useFault();
   const notify = useNotify();
-  const picker = useRef<HTMLInputElement>(null);
 
   const [url, setUrl] = useUrlState({ q: "", departmentId: "", active: "true", ending: "", within: "" });
   const [typed, setTyped] = useState(url.q);
@@ -186,10 +142,6 @@ function Directory() {
     : { search: url.q, departmentId: url.departmentId, active: url.active };
   const narrowed = url.q !== "" || url.departmentId !== "" || ending !== "";
 
-  const [choosing, setChoosing] = useState(false);
-  const [csv, setCsv] = useState("");
-  const [report, setReport] = useState<ImportReport | null>(null);
-  const [importFault, setImportFault] = useState<string | null>(null);
   const [raising, setRaising] = useState(false);
   const [raiseDept, setRaiseDept] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState(firstOfNextMonth);
@@ -222,37 +174,6 @@ function Directory() {
     queryFn: async () => (await api.get<Attention>("/reports/attention")).data,
   });
 
-  const check = useMutation({
-    mutationFn: async (text: string) => (await api.post<ImportReport>("/employees/import", { csv: text })).data,
-    onSuccess: (seen) => setReport(seen),
-    onError: (fell: unknown) => setImportFault(faultOf(fell)),
-  });
-
-  const apply = useMutation({
-    mutationFn: async () => (await api.post<ImportReport>("/employees/import?apply=true", { csv })).data,
-    onSuccess: (done) => {
-      setReport(null);
-      notify.done(t("importDone", { created: done.toCreate, updated: done.toUpdate }));
-      void cache.invalidateQueries({ queryKey: ["employees"] });
-      void cache.invalidateQueries({ queryKey: ["users"] });
-      void cache.invalidateQueries({ queryKey: ["compensation"] });
-    },
-    onError: (fell: unknown) => setImportFault(faultOf(fell)),
-  });
-
-  const download = useMutation({
-    mutationFn: async () =>
-      save((await api.get<string>(`/employees/export${queryOf(filters)}`)).data, "employees.csv"),
-    onSuccess: () => notify.done(t("exported")),
-    onError: notify.failed,
-  });
-
-  const template = useMutation({
-    mutationFn: async () => save((await api.get<string>("/employees/import/template")).data, "employees-template.csv"),
-    onSuccess: () => notify.done(t("templateSaved")),
-    onError: notify.failed,
-  });
-
   const raise = useMutation({
     mutationFn: async (write: boolean) => {
       const body = {
@@ -279,21 +200,6 @@ function Directory() {
     onError: notify.failed,
   });
 
-  function takeFile(event: ChangeEvent<HTMLInputElement>): void {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) {
-      return;
-    }
-    setChoosing(false);
-    setImportFault(null);
-    setReport(null);
-    void file.text().then((text) => {
-      setCsv(text);
-      check.mutate(text);
-    });
-  }
-
   const loaded = employees.data?.pages.flatMap((one) => one.rows);
   const first = employees.data?.pages[0];
   const selection = useDirectorySelection<Employee>({
@@ -307,7 +213,6 @@ function Directory() {
     "": t("anyDepartment"),
     ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, one.name])),
   };
-  const faultText = (code: string) => (faultName.has(code as never) ? faultName(code as never) : code);
   const daysLeftOf = (day: string) => {
     const left = Math.round((dayOnly(day).getTime() - dayOnly(new Date().toISOString().slice(0, 10)).getTime()) / kMsPerDay);
     return left < 0 ? t("overdue") : due("daysLeft", { count: left });
@@ -436,50 +341,21 @@ function Directory() {
           desk ? (
             <AsideCard title={common("tools")}>
               <div className="flex flex-col gap-2">
-                <Button
-                  variant="secondary"
-                  icon={DownloadSimpleIcon}
-                  loading={download.isPending}
-                  onClick={() => download.mutate()}
-                  className="w-full justify-start"
-                >
-                  {narrowed || url.active !== "" ? t("exportFiltered") : t("export")}
-                </Button>
+                <DirectoryFiles query={queryOf(filters)} filtered={narrowed || url.active !== ""} mayWrite={mayWrite} />
                 {mayWrite ? (
-                  <>
-                    <Button
-                      variant="secondary"
-                      icon={UploadSimpleIcon}
-                      loading={check.isPending}
-                      onClick={() => setChoosing(true)}
-                      className="w-full justify-start"
-                    >
-                      {t("import")}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      icon={FileArrowDownIcon}
-                      loading={template.isPending}
-                      onClick={() => template.mutate()}
-                      className="w-full justify-start"
-                    >
-                      {t("importTemplate")}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      icon={TrendUpIcon}
-                      className="w-full justify-start"
-                      onClick={() => {
-                        raise.reset();
-                        setRaising(true);
-                      }}
-                    >
-                      {t("raiseAction")}
-                    </Button>
-                  </>
+                  <Button
+                    variant="secondary"
+                    icon={TrendUpIcon}
+                    className="w-full justify-start"
+                    onClick={() => {
+                      raise.reset();
+                      setRaising(true);
+                    }}
+                  >
+                    {t("raiseAction")}
+                  </Button>
                 ) : null}
               </div>
-              <input ref={picker} type="file" accept=".csv,text/csv" className="hidden" onChange={takeFile} />
             </AsideCard>
           ) : undefined
         }
@@ -559,71 +435,6 @@ function Directory() {
         />
       </PageLayout>
       {selection.dialog}
-
-      <LayerDialog.Root open={choosing} onOpenChange={setChoosing}>
-        <LayerDialog.Content size="lg" closeLabel={common("close")}>
-          <LayerDialog.Title>{t("import")}</LayerDialog.Title>
-          <LayerDialog.Description>{t("importLead")}</LayerDialog.Description>
-          <LayerDialog.Body>
-            <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-[auto_1fr]">
-              {(Object.keys(IMPORT_FORMATS) as (keyof typeof IMPORT_FORMATS)[]).map((one) => (
-                <div key={one} className="contents">
-                  <dt className="font-mono text-sm">{IMPORT_FORMATS[one]}</dt>
-                  <dd className="m-0 text-kumo-subtle">{t(`importFormat_${one}`)}</dd>
-                </div>
-              ))}
-            </dl>
-          </LayerDialog.Body>
-          <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary loading={check.isPending} onClick={() => picker.current?.click()}>
-              {t("importPick")}
-            </LayerDialog.Actions.Primary>
-          </LayerDialog.Actions>
-        </LayerDialog.Content>
-      </LayerDialog.Root>
-
-      <LayerDialog.Root
-        open={report !== null || importFault !== null}
-        onOpenChange={(next) => {
-          if (!next) {
-            setReport(null);
-            setImportFault(null);
-          }
-        }}
-        dismissDisabled={apply.isPending}
-      >
-        <LayerDialog.Content size="lg" closeLabel={common("close")}>
-          <LayerDialog.Title>{t("importCheckTitle")}</LayerDialog.Title>
-          <LayerDialog.Description>
-            {report ? t("importDry", { rows: report.rows, created: report.toCreate, updated: report.toUpdate }) : importFault}
-          </LayerDialog.Description>
-          <LayerDialog.Body>
-            {report && report.payKept > 0 ? <p className="mb-2 text-kumo-subtle">{t("importPayKept", { count: report.payKept })}</p> : null}
-            {report && report.faults.length > 0 ? (
-              <>
-                <p className="mb-2 text-kumo-danger">{t("importFaults", { n: report.faults.length })}</p>
-                <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto text-sm">
-                  {report.faults.slice(0, 100).map((one) => (
-                    <li key={`${one.row}-${one.column}-${one.code}`} className="flex flex-wrap gap-x-3">
-                      <span className="tabular-nums">{t("importLine", { n: one.row })}</span>
-                      <span className="min-w-32 font-mono">{one.column}</span>
-                      <span className="text-kumo-danger">{faultText(one.code)}</span>
-                      <span className="min-w-0 flex-1 truncate font-mono text-kumo-subtle">{one.value}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
-          </LayerDialog.Body>
-          {report && report.faults.length === 0 ? (
-            <LayerDialog.Actions dismissLabel={common("cancel")}>
-              <LayerDialog.Actions.Primary loading={apply.isPending} onClick={() => apply.mutate()}>
-                {t("importApplyN", { count: report.toCreate + report.toUpdate })}
-              </LayerDialog.Actions.Primary>
-            </LayerDialog.Actions>
-          ) : null}
-        </LayerDialog.Content>
-      </LayerDialog.Root>
 
       <LayerDialog.Root open={raising} onOpenChange={setRaising} dismissDisabled={raise.isPending}>
         <LayerDialog.Content size="lg" closeLabel={common("close")}>

@@ -26,7 +26,8 @@ interface HeaderProps {
 
 const PHONE = "(max-width: 47.99rem)";
 
-function usePhone(): boolean {
+/** Below the width where the page frame turns into the phone layout (KEHOACH 9.21). */
+export function usePhone(): boolean {
   const listen = useCallback((again: () => void) => {
     const query = window.matchMedia(PHONE);
     query.addEventListener("change", again);

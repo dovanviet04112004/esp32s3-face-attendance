@@ -63,6 +63,7 @@ const SPILLS: Record<string, string[]> = {
   advances: ["requests"],
   certificates: ["requests"],
   employees: ["search"],
+  import: ["users", "compensation", "shifts", "enrollments", "me"],
   placement: ["users", "requests", "departments", "job-titles", "legal-entities"],
   logins: ["users"],
   onboard: ["checklist", "checklists"],
