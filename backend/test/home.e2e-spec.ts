@@ -184,6 +184,48 @@ describe("home page numbers and the punch door (e2e)", () => {
     assert.ok(team.body.totals.onLeave >= 1);
   });
 
+  it("pages a whole bucket by code, the same people the preview counts", async () => {
+    const preview = await get("/reports/team-today", "hr");
+    assert.equal(preview.status, 200, JSON.stringify(preview.body));
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const after: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+      const page = await get(`/reports/team-today/onLeave?take=2${after}`, "hr");
+      assert.equal(page.status, 200, JSON.stringify(page.body));
+      assert.equal(page.body.total, preview.body.totals.onLeave);
+      seen.push(...codes(page.body.rows));
+      cursor = page.body.next;
+    } while (cursor);
+    assert.equal(seen.length, preview.body.totals.onLeave, "the pages did not add up to the preview's count");
+    assert.equal(new Set(seen).size, seen.length, "a person came back on a later page");
+    assert.ok(seen.includes(ON_LEAVE), "the person on leave is missing from the full list");
+    const odd = await get("/reports/team-today/everyone", "hr");
+    assert.equal(odd.status, 400);
+    assert.equal(odd.body.message, "VALIDATION_FAILED");
+    assert.equal((await get("/reports/team-today/absent", "employee")).status, 403);
+  });
+
+  it("lists today's exceptions in full, the pile the home page caps", async () => {
+    const pile = await get("/reports/attention", "hr");
+    assert.equal(pile.status, 200, JSON.stringify(pile.body));
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const after: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+      const page = await get(`/reports/attention/exceptions?take=50${after}`, "hr");
+      assert.equal(page.status, 200, JSON.stringify(page.body));
+      seen.push(...page.body.rows.map((row: { code: string }) => row.code));
+      cursor = page.body.next;
+    } while (cursor);
+    assert.equal(new Set(seen).size, seen.length, "a person came back on a later page");
+    if (pile.body.exceptionsToday.totalIsExact !== false) {
+      assert.equal(seen.length, pile.body.exceptionsToday.total, "the full list and the pile disagree");
+    }
+    assert.equal(seen.includes(ABSENT), !dayOff, "the absent person is missing from today's exceptions");
+    assert.equal((await get("/reports/attention/exceptions", "manager")).status, 403);
+  });
+
   it("measures lateness in the business time zone, not in UTC", async () => {
     const res = await request(http).get("/reports/attention").set("Authorization", `Bearer ${token.hr}`);
     assert.equal(res.status, 200);

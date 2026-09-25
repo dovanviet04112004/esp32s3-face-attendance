@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, HttpStatus, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, HttpStatus, Param, Post, Query, UseGuards } from "@nestjs/common";
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -14,16 +14,19 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import type { Page } from "../../common/dto/pagination.dto.js";
+import { PaginationDto, type Page } from "../../common/dto/pagination.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import {
   AttendanceTallyPage,
   D02QueryDto,
+  ExceptionPage,
   InsuranceRangeDto,
+  PersonRefPage,
   RangeDto,
   ReportQueued,
   TallyRangeDto,
   TallyTotalsView,
+  TeamBucketParams,
   TeamTodayView,
   TodayCountsView,
 } from "./dto/report.dto.js";
@@ -31,7 +34,9 @@ import {
   ReportsService,
   type AttendanceTally,
   type Attention,
+  type Exception,
   type InsuranceChanges,
+  type PersonRef,
   type TallyTotals,
   type TeamToday,
   type TodayCounts,
@@ -52,6 +57,14 @@ export class ReportsController {
     return this.reports.attention();
   }
 
+  @Get("attention/exceptions")
+  @Roles("ADMIN", "HR", "PAYROLL")
+  @ApiOperation({ summary: "Today's late, missing and still-in punches in full, a page at a time by code" })
+  @ApiOkResponse({ type: ExceptionPage })
+  exceptions(@Query() query: PaginationDto): Promise<Page<Exception>> {
+    return this.reports.exceptionsPage(query.cursor, query.take);
+  }
+
   @Get("today")
   @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
   @ApiOperation({ summary: "Today's expected, present, late, absent and on-leave counts in the viewer's reach" })
@@ -66,6 +79,18 @@ export class ReportsController {
   @ApiOkResponse({ type: TeamTodayView })
   teamToday(@CurrentViewer() viewer: Viewer): Promise<TeamToday> {
     return this.reports.teamToday(viewer);
+  }
+
+  @Get("team-today/:bucket")
+  @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
+  @ApiOperation({ summary: "One of today's buckets in full, a page at a time by code" })
+  @ApiOkResponse({ type: PersonRefPage })
+  teamBucket(
+    @CurrentViewer() viewer: Viewer,
+    @Param() params: TeamBucketParams,
+    @Query() query: PaginationDto,
+  ): Promise<Page<PersonRef>> {
+    return this.reports.teamBucket(viewer, params.bucket, query.cursor, query.take);
   }
 
   @Get("d02-lt")

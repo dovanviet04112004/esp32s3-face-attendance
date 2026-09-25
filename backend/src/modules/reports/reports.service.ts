@@ -275,7 +275,7 @@ export interface TeamToday {
   totals: { absent: number; onLeave: number; notPunched: number };
 }
 
-type TeamBucket = keyof TeamToday["totals"];
+export type TeamBucket = keyof TeamToday["totals"];
 
 const kTeamListCap = 20;
 const WEEKEND_DAYS: ReadonlySet<number> = new Set([0, 6]);
@@ -400,28 +400,54 @@ export class ReportsService {
    */
   private exceptionsOn(day: string, zone: string): Promise<Exception[]> {
     return this.db.$queryRaw<Exception[]>`
-      ${this.todayCtes(day, zone, null, null)}
-      SELECT p."id" AS "employeeId", p."code", p."fullName",
-             CASE
-               WHEN k."employeeId" IS NULL THEN 'NO_PUNCH'
-               WHEN k."marks" = 1 THEN 'STILL_IN'
-               ELSE 'LATE'
-             END AS "reason",
-             COALESCE(GREATEST(0, ${localMinutes(Prisma.sql`k."firstAt"`, zone)} - ${dueMinutes(Prisma.sql`x`)}), 0)::int
-               AS "minutes"
-        FROM expected x
-        JOIN people p ON p."id" = x."employeeId"
-        LEFT JOIN seen k ON k."employeeId" = x."employeeId"
-        LEFT JOIN away w ON w."employeeId" = x."employeeId"
-       WHERE w."employeeId" IS NULL
-         AND (
-           k."employeeId" IS NULL
-           OR k."marks" = 1
-           OR ${localMinutes(Prisma.sql`k."firstAt"`, zone)} > ${dueMinutes(Prisma.sql`x`)}
-         )
-       ORDER BY p."code"
+      ${this.exceptionsListed(day, zone)}
+      SELECT "employeeId", "code", "fullName", "reason", "minutes"
+        FROM listed
+       ORDER BY "code"
        LIMIT ${kAttentionCap + 1}
     `;
+  }
+
+  /** Today's exceptions in full, a page at a time by code: the pile the home page caps at 200. */
+  async exceptionsPage(after: string | undefined, take: number): Promise<Page<Exception>> {
+    const zone = this.zone;
+    const rows = await this.db.$queryRaw<(Exception & { total: number })[]>`
+      ${this.exceptionsListed(localDay(new Date(), zone), zone)}
+      SELECT "employeeId", "code", "fullName", "reason", "minutes", "total"
+        FROM listed
+       WHERE true ${after ? Prisma.sql`AND "code" > ${after}` : Prisma.empty}
+       ORDER BY "code"
+       LIMIT ${take + 1}
+    `;
+    const shown = rows.slice(0, take).map(({ total: _total, ...row }) => row);
+    return { rows: shown, total: rows[0]?.total ?? 0, next: rows.length > take ? (shown.at(-1)?.code ?? null) : null };
+  }
+
+  // One definition for the capped pile and the full list, so the count and the list agree.
+  private exceptionsListed(day: string, zone: string): Prisma.Sql {
+    return Prisma.sql`
+      ${this.todayCtes(day, zone, null, null)},
+      listed AS (
+        SELECT p."id" AS "employeeId", p."code", p."fullName",
+               CASE
+                 WHEN k."employeeId" IS NULL THEN 'NO_PUNCH'
+                 WHEN k."marks" = 1 THEN 'STILL_IN'
+                 ELSE 'LATE'
+               END AS "reason",
+               COALESCE(GREATEST(0, ${localMinutes(Prisma.sql`k."firstAt"`, zone)} - ${dueMinutes(Prisma.sql`x`)}), 0)::int
+                 AS "minutes",
+               (count(*) OVER ())::int AS "total"
+          FROM expected x
+          JOIN people p ON p."id" = x."employeeId"
+          LEFT JOIN seen k ON k."employeeId" = x."employeeId"
+          LEFT JOIN away w ON w."employeeId" = x."employeeId"
+         WHERE w."employeeId" IS NULL
+           AND (
+             k."employeeId" IS NULL
+             OR k."marks" = 1
+             OR ${localMinutes(Prisma.sql`k."firstAt"`, zone)} > ${dueMinutes(Prisma.sql`x`)}
+           )
+      )`;
   }
 
   /** The people a day concerns and what they did; a weekend or an entity holiday expects nobody. */
@@ -500,11 +526,47 @@ export class ReportsService {
    * once their shift's grace has run out, not punched until then.
    */
   async teamToday(viewer: Viewer): Promise<TeamToday> {
+    const rows = await this.db.$queryRaw<(PersonRef & { bucket: TeamBucket; total: number })[]>`
+      ${await this.teamRanked(viewer)}
+      SELECT "id", "code", "fullName", "bucket", "total"
+        FROM ranked
+       WHERE "at" <= ${kTeamListCap}
+       ORDER BY "bucket", "code"
+    `;
+    const team: TeamToday = {
+      absent: [],
+      onLeave: [],
+      notPunched: [],
+      totals: { absent: 0, onLeave: 0, notPunched: 0 },
+    };
+    for (const row of rows) {
+      team[row.bucket].push({ id: row.id, code: row.code, fullName: row.fullName });
+      team.totals[row.bucket] = row.total;
+    }
+    return team;
+  }
+
+  /** One of today's buckets in full, a page at a time by code, for the list the home page opens. */
+  async teamBucket(viewer: Viewer, bucket: TeamBucket, after: string | undefined, take: number): Promise<Page<PersonRef>> {
+    const rows = await this.db.$queryRaw<(PersonRef & { total: number })[]>`
+      ${await this.teamRanked(viewer)}
+      SELECT "id", "code", "fullName", "total"
+        FROM ranked
+       WHERE "bucket" = ${bucket} ${after ? Prisma.sql`AND "code" > ${after}` : Prisma.empty}
+       ORDER BY "code"
+       LIMIT ${take + 1}
+    `;
+    const shown = rows.slice(0, take).map((row) => ({ id: row.id, code: row.code, fullName: row.fullName }));
+    return { rows: shown, total: rows[0]?.total ?? 0, next: rows.length > take ? (shown.at(-1)?.code ?? null) : null };
+  }
+
+  // One definition of the buckets for the preview and the full list, so the two never disagree.
+  private async teamRanked(viewer: Viewer): Promise<Prisma.Sql> {
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
     const now = new Date();
     const day = localDay(now, zone);
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    const rows = await this.db.$queryRaw<(PersonRef & { bucket: TeamBucket; total: number })[]>`
+    return Prisma.sql`
       ${this.todayCtes(day, zone, visible, viewer.employeeId)},
       sorted AS (
         SELECT p."id", p."code", p."fullName",
@@ -525,23 +587,7 @@ export class ReportsService {
                (count(*) OVER (PARTITION BY s."bucket"))::int AS "total"
           FROM sorted s
          WHERE s."bucket" IS NOT NULL
-      )
-      SELECT "id", "code", "fullName", "bucket", "total"
-        FROM ranked
-       WHERE "at" <= ${kTeamListCap}
-       ORDER BY "bucket", "code"
-    `;
-    const team: TeamToday = {
-      absent: [],
-      onLeave: [],
-      notPunched: [],
-      totals: { absent: 0, onLeave: 0, notPunched: 0 },
-    };
-    for (const row of rows) {
-      team[row.bucket].push({ id: row.id, code: row.code, fullName: row.fullName });
-      team.totals[row.bucket] = row.total;
-    }
-    return team;
+      )`;
   }
 
   private get zone(): string {

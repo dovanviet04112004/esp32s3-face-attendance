@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
-import { IsBoolean, IsDateString, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
+import { IsBoolean, IsDateString, IsIn, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
@@ -32,6 +32,34 @@ export class TeamTodayView {
   @ApiProperty({ type: [PersonRefView], description: "No punch yet, grace not over; at most 20" })
   notPunched!: PersonRefView[];
   @ApiProperty({ type: TeamTotalsView }) totals!: TeamTotalsView;
+}
+
+export const TEAM_BUCKETS = ["absent", "onLeave", "notPunched"] as const;
+
+export class TeamBucketParams {
+  @ApiProperty({ enum: TEAM_BUCKETS })
+  @IsIn(TEAM_BUCKETS)
+  bucket!: (typeof TEAM_BUCKETS)[number];
+}
+
+export class PersonRefPage {
+  @ApiProperty({ type: [PersonRefView] }) rows!: PersonRefView[];
+  @ApiProperty() total!: number;
+  @ApiProperty({ type: String, nullable: true, description: "The last code shown; pass it as cursor" }) next!: string | null;
+}
+
+export class ExceptionView {
+  @ApiProperty() employeeId!: number;
+  @ApiProperty() code!: string;
+  @ApiProperty() fullName!: string;
+  @ApiProperty({ enum: ["NO_PUNCH", "LATE", "STILL_IN"] }) reason!: "NO_PUNCH" | "LATE" | "STILL_IN";
+  @ApiProperty({ description: "Minutes past the shift's start plus grace; 0 unless late" }) minutes!: number;
+}
+
+export class ExceptionPage {
+  @ApiProperty({ type: [ExceptionView] }) rows!: ExceptionView[];
+  @ApiProperty() total!: number;
+  @ApiProperty({ type: String, nullable: true, description: "The last code shown; pass it as cursor" }) next!: string | null;
 }
 
 export class AttendanceTallyView {
