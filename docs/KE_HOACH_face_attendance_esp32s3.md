@@ -4379,6 +4379,8 @@ backend/
     │   ├── cache/{cache.module.ts, cache.service.ts, cache-keys.ts}
     │   ├── decorators/  ├── filters/  ├── dto/
     │   ├── interceptors/{audit.interceptor.ts, change.interceptor.ts}   # ★ §9.24 · §9.4 — mỗi lần ghi: một dòng sổ, một tin feed
+    │   ├── scope/{scope.module.ts, scope.service.ts, viewer.ts,
+    │   │          department-subtree.ts}   # ★ §9.4 — ai thấy ai; một phòng ban kéo theo cả nhánh dưới nó
     │   └── csv.ts                    # ★ một bộ ghi CSV cho cả ba nơi xuất file
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
@@ -4723,7 +4725,7 @@ frontend/
 │       │                                 #   giữ một thẻ đặt giữa màn cho cả bốn
 │       └── (dashboard)/
 │           ├── layout.tsx            # sidebar + guard
-│           ├── overview/page.tsx     # thẻ số liệu + biểu đồ + luồng sự kiện realtime
+│           ├── overview/page.tsx     # §9.10 — việc chờ, việc của bàn, hôm nay
 │           ├── employees/{page.tsx, [id]/page.tsx, new/page.tsx}
 │           ├── attendance/{page.tsx, [id]/page.tsx}  # [id] là nhân viên: lịch sử của họ
 │           ├── devices/{page.tsx, [id]/page.tsx}      # online, OTA, log
@@ -4773,7 +4775,7 @@ frontend/
 ├── components/
 │   ├── ui/{page.tsx, pill.tsx, notify.ts, month-picker.tsx, filter-bar.tsx,
 │   │       password-field.tsx, person-picker.tsx, date-field.tsx, optional.tsx, theme-toggle.tsx,
-│   │       bottom-bar.tsx, failed.tsx}
+│   │       bottom-bar.tsx, failed.tsx, skeleton.tsx}
 │   │                                 # ★ chỉ thứ Kumo không có (bảng ngay trên cây)
 │   │                                 #   ★ §9.12 luật 2 — pill giữ bốn tông trạng thái,
 │   │                                 #   khai một chỗ cho cả tám phân hệ. Tiền không có
@@ -7268,11 +7270,30 @@ Chỉ mục đi kèm: `Employee(departmentId, active)`, `Employee(managerId)`,
 theo vai. Dựng riêng một cổng nhân viên nghĩa là nuôi hai bản đăng nhập, hai bộ gọi API và hai
 chỗ để quên vá.
 
-| Vai | Trang chủ | Từ trên xuống |
-|---|---|---|
-| `EMPLOYEE` | Trang của tôi | **Hôm nay**: ca, lượt chấm, đúng giờ hay muộn, ca ngày mai. **Việc cần làm** — tài liệu phải ký, đơn bị trả lại — chỉ hiện khi có. **Tháng này**: ngày làm, lần đi muộn, ngày thiếu lượt. **Phép còn lại** kèm nút xin nghỉ. **Đơn của tôi**: đang chờ và ba đơn vừa quyết, mỗi dòng mở đúng đơn ấy. **Phiếu lương gần nhất** |
-| `MANAGER` | Trang của tôi | như `EMPLOYEE`, và ở vị trí thứ hai: **Chờ tôi duyệt** — năm việc cũ nhất, quyết ngay tại chỗ, "xem tất cả N" — cùng **Nhóm hôm nay**: ai vắng, ai nghỉ phép, ai chưa chấm |
-| `HR` · `PAYROLL` · `ADMIN` | Tổng quan | **Hôm nay**: bốn con số bấm được — có mặt trên dự kiến, đi muộn, vắng không phép, nghỉ phép. **Chờ tôi duyệt** như trên. Rồi một thẻ theo vai: `HR` có tab hợp đồng sắp hết · thử việc sắp hết · ngày lệch giờ · nhận việc quá hạn, mỗi tab sáu dòng và đường tới danh sách đầy đủ; `PAYROLL` có kỳ đang mở kèm bước và việc chặn chốt, tạm ứng chờ chi, khiếu nại; `ADMIN` thêm dải kiosk — đang chạy trên tổng, máy có bản mới |
+| Vai | Trang chủ | Cột chính | Cột phụ |
+|---|---|---|---|
+| `EMPLOYEE` | Trang của tôi | **Hôm nay**: ca, các lượt chấm, đúng giờ hay muộn bao nhiêu phút. **Việc cần làm** — tài liệu phải ký, đơn bị trả lại — chỉ hiện khi có. **Bảy ngày tới**: ca của từng ngày kể từ hôm nay, ngày nghỉ, ngày lễ, ngày đã được duyệt nghỉ — ca ngày mai nằm ngay trong đó. **Đơn của tôi**: đang chờ và ba đơn vừa quyết, mỗi dòng mở đúng đơn ấy | **Phép còn lại** của năm. **Tháng này**: ngày làm, lần đi muộn, ngày thiếu lượt, mỗi số mở công của tháng ấy. **Phiếu lương gần nhất**: kỳ và số thực nhận, bấm là mở phiếu |
+| `MANAGER` | Trang của tôi | như `EMPLOYEE`, và ngay sau *Hôm nay*: **Chờ tôi duyệt** — năm việc cũ nhất, quyết ngay tại chỗ, "xem tất cả N" — rồi **Nhóm hôm nay**: ai vắng, ai nghỉ phép, ai chưa chấm, mỗi nhóm một tab kèm số, mỗi tên mở hồ sơ | như `EMPLOYEE` |
+| `HR` · `ADMIN` | Tổng quan | **Chờ tôi duyệt** như trên. **Việc của bàn nhân sự**: tab hợp đồng sắp hết · thử việc sắp hết · nhận việc quá hạn · ngày lệch giờ, mỗi tab sáu dòng và đường tới danh sách đầy đủ | **Hôm nay**: có mặt trên dự kiến kèm thước tỉ lệ, đi muộn, vắng không phép, nghỉ phép — mỗi số mở đúng danh sách của nó. `ADMIN` thêm **Kiosk**: đang chạy, mất kết nối, chờ duyệt, máy có bản mới |
+| `PAYROLL` | Tổng quan | **Chờ tôi duyệt** như trên. **Kỳ đang mở**: năm bước chạy → soát → chốt → trả → gửi phiếu, bước đang ở, việc chặn chốt kèm số, nút vào kỳ | **Hôm nay** như trên |
+
+**Hai trang chủ dùng hai cột của khung §9.12**: cột chính là việc, cột phụ 380 px là thứ để
+liếc qua. Khối nội dung hẹp hơn 1024 px thì cột phụ xuống **sau** cột chính và các thẻ của nó
+xếp hai thẻ một hàng, vì thứ người ta mở trang ra để làm luôn nằm trên cùng. Mọi thẻ cùng một dáng: dải đầu `LayerCard.Secondary` mang tên thẻ và đúng
+một đường "xem tất cả" ở mép phải, thân `LayerCard.Primary` là các dòng. Không thẻ số liệu to,
+không ô rỗng: một thẻ không còn gì thì nói một câu ngắn trong chính thân nó.
+
+**Mọi con số bấm được, và bấm là tới đúng danh sách có con số ấy.** Có mặt và đi muộn mở
+`Chấm công` lọc đúng hôm nay; nghỉ phép mở sổ `Đơn từ` lọc đơn nghỉ đã duyệt phủ hôm nay. Vắng
+không phép **mở danh sách tên ngay trên trang**, vì chưa trang tra cứu nào liệt kê người vắng
+của hôm nay: `Bảng công` chỉ có ngày đã gộp, mà hôm nay chưa gộp (§9.8). Danh sách ấy hiện tối
+đa 20 người theo mã và nói rõ còn bao nhiêu người chưa hiện, không cắt im lặng.
+
+**Hộp chờ duyệt thu nhỏ đọc cùng số đếm với thanh bên.** Đơn từ hiện năm dòng cũ nhất, quyết
+được tại chỗ; mỗi hàng đợi khác đang có việc hiện một dòng kèm số, mở thẳng tab của nó. Số trên
+đầu thẻ bằng tổng các dòng dưới nó — một thẻ ghi 6 mà thân báo không có gì là thẻ nói dối. Vì
+tạm ứng chờ chi và khiếu nại lương là hàng đợi của hộp, chúng hiện ở đây chứ không lặp lại
+trong thẻ của bàn lương.
 
 Người dùng được đưa **thẳng** về trang chủ của vai mình, không qua một trang trung gian rồi mới
 bị chuyển lần hai. Luồng sự kiện trực tiếp của kiosk ở trang `Kiosk`, nơi người ta đọc nó; trên
@@ -7283,7 +7304,8 @@ giây: *còn gì đang đợi tôi* — và vẫn trả lời được khi hộp
 
 - **Mỗi hàng đợi một tab kèm số** — đơn từ, khiếu nại lương, giấy xác nhận, đổi hồ sơ, người
   phụ thuộc, tạm ứng chờ duyệt, tạm ứng chờ chi — số lấy từ tổng của server, đúng con số trên
-  thanh bên. Tab đang mở nằm trên đường dẫn.
+  thanh bên. Tab đang mở nằm trên đường dẫn. Hàng đợi đang trống không hiện tab, trừ khi nó là
+  tab đang mở: bảy tab mà năm tab ghi "0" thì tab có việc bị đẩy khuất khỏi màn 1280 px.
 - **Mỗi tab tìm được theo mã và tên người xin, lọc theo loại, phòng ban (cả nhánh) và khoảng
   ngày**, mặc định cũ nhất lên trước vì việc chờ lâu nhất là việc trễ nhất.
 - **Mỗi dòng đủ ngữ cảnh để quyết**: ai, mã, phòng ban, loại, ngày, mấy ngày, số dư sau khi
@@ -7373,9 +7395,12 @@ thanh bên thì khối vẫn cân. Thanh trên không bị bó theo khối: vệ
 Luật "không trang nào tự bó" là lỗi 25/09 viết thành luật: 16 trang khi ấy bóp về 48 rem và căn
 giữa, mỗi trang hẹp một kiểu, và cả app trông lệch.
 
-**Cột phải chỉ có khi nó làm được một việc không chỗ nào khác làm.** Từ `xl` trở lên nó đứng
-bên phải, rộng 380 px, dính theo khi cuộn và tự cuộn khi dài hơn màn. Dưới `xl` nó xuống **sau**
-cột chính: thứ người ta vào trang để làm luôn nằm trên cùng. Nó chứa đúng bốn loại thứ:
+**Cột phải chỉ có khi nó làm được một việc không chỗ nào khác làm.** Khi chính khối nội dung rộng
+từ 1024 px trở lên, nó đứng bên phải, rộng 380 px, dính theo khi cuộn và tự cuộn khi dài hơn màn.
+Hẹp hơn thì nó xuống **sau** cột chính: thứ người ta vào trang để làm luôn nằm trên cùng. Mốc đo
+trên khối chứ không đo bề ngang màn, vì thanh bên mở hay thu gọn đổi bề rộng khối tới 200 px: màn
+1280 px với thanh bên mở chỉ còn khoảng 940 px, và đặt cột phải vào đó thì bảng còn 530 px. Nó chứa
+đúng bốn loại thứ:
 
 1. **Việc đang treo của chính danh sách ấy, dẫn thẳng tới chỗ xử lý** — người sắp hết thử việc,
    bước tiếp theo của một kỳ lương, người trong nhóm cũng nghỉ những ngày ấy.
@@ -7420,12 +7445,24 @@ dùng vẫn thấy phân bố mà chỉ nhìn một chỗ.
 | Cài đặt | mục lục các phần của trang |
 | Tài sản · Tài liệu · Ca làm · Ngày lễ · Loại phép · Báo cáo · Tài khoản · Nhật ký · Chức danh · Pháp nhân · Phụ cấp · Lượt của một người · Giấy xác nhận · Sửa thông tin | không có |
 
-**Hộp thoại là `LayerDialog`, và thao tác không hoàn tác được qua `LayerDialog.Alert`.** Mọi
-biểu mẫu tạo hay sửa mở trong `LayerDialog`: trên máy tính nó là hộp giữa màn, trên điện thoại
-nó tự thành tấm trượt từ đáy. Hộp xác nhận **gọi tên thứ bị tác động và nói hậu quả**, nút của
-nó là `destructive`, và trong lúc đang chạy thì không đóng được (`dismissDisabled`). Kiểu bấm
-hai lần vào cùng một nút cho "chắc chưa" không còn dùng: nó không nói hậu quả, và trên điện
-thoại lần chạm thứ hai rơi đúng chỗ lần thứ nhất.
+**Hộp thoại là `LayerDialog`, và thao tác không hoàn tác được qua `LayerDialog.Alert`.** Biểu
+mẫu tạo hay sửa mở trong `LayerDialog`: trên máy tính nó là hộp giữa màn, trên điện thoại nó tự
+thành tấm trượt từ đáy. Ngoại lệ duy nhất là biểu mẫu dài hơn sức chứa của một hộp thoại — nhận
+một người vào làm là khoảng hai mươi ô: nó có trang riêng, như *Create API token* hay *Invite
+members* của Cloudflare, dựng theo khuôn ở đoạn kế. Hộp xác nhận **gọi tên thứ bị tác động và
+nói hậu quả**, nút của nó là `destructive`, và trong lúc đang chạy thì không đóng được
+(`dismissDisabled`). Kiểu bấm hai lần vào cùng một nút cho "chắc chưa" không còn dùng: nó không
+nói hậu quả, và trên điện thoại lần chạm thứ hai rơi đúng chỗ lần thứ nhất.
+
+**Biểu mẫu dài là một chồng hàng phần theo kiểu trang cài đặt của Cloudflare, không phải một cột
+hẹp.** Mỗi phần là một `LayerCard` rộng hết khối nội dung: một phần ba bên trái mang tên phần và
+đúng một câu nói phần ấy để làm gì và thiếu nó thì việc gì hỏng; hai phần ba bên phải là các ô
+của phần ấy, lưới hai cột. Khi chính thẻ hẹp hơn 48 rem — trên điện thoại, hay ở cột chính cạnh
+cột phải — tên và câu lên trên, các ô xuống dưới. Mọi phần mở sẵn: không gập, không viên đếm
+"0/2", vì ô bị giấu là ô không ai điền. Nút nằm trên một thanh neo đáy cửa sổ, sát phải: *Huỷ*
+là nút phụ, rồi tới *Lưu* là nút chính; trên điện thoại thanh ấy là `ui/bottom-bar.tsx`. Cùng
+biểu mẫu ấy làm tab *Thông tin* của hồ sơ thì giữ nguyên khuôn, chỉ bớt những ô chỉ đổi được qua
+đơn.
 
 **Bảng là `Table` của Kumo trong một `LayerCard`, và trên máy tính không bao giờ bắt người dùng
 kéo ngang.** Hàng sọc; cả hàng mở bản ghi; cột số căn phải bằng chữ số đều bề ngang. Thao tác phụ
@@ -7435,8 +7472,10 @@ khung:
 
 - **Mỗi cột mang một mức ưu tiên từ 1 tới 3.** Cột mức 3 ẩn khi *chính khung bảng* hẹp hơn
   720 px, mức 2 ẩn dưới 560 px. Đo bằng container query trên khung bảng chứ không đo bề ngang
-  màn, vì bề rộng của bảng đổi theo thanh bên và cột phải. Thứ bị ẩn vẫn nằm trong bản ghi khi
-  bấm vào hàng.
+  màn, vì bề rộng của bảng đổi theo thanh bên và cột phải. Hai mốc ấy là sàn, không phải trần:
+  bảng nào vẫn rộng hơn khung thì bỏ tiếp theo số đo thật — mức 3 trước, rồi mức 2 — và khung
+  rộng lại đủ chỗ thì cột trở về, vì một bảng tám cột tràn cả ở khung 940 px. Thứ bị ẩn vẫn nằm
+  trong bản ghi khi bấm vào hàng.
 - **Tên và mã là một ô hai dòng**, không phải hai cột. Chữ dài cắt bằng dấu ba chấm và hiện đủ
   khi rê chuột.
 - Trên điện thoại bảng thành thẻ, và thẻ hiện các cột mức 1.
@@ -7459,17 +7498,26 @@ góc nhìn ấy.
 hỏi; không có nút *Lọc* trừ khi truy vấn nặng. Lựa chọn của bộ lọc mang số đếm khi server trả
 được số ấy rẻ. Trên điện thoại bộ lọc thu vào một nút mở tấm trượt (§9.21.1).
 
+`Toolbar` là một dải liền không xuống dòng, nên thanh lọc **không bao giờ tràn khỏi khung của nó**:
+tràn là nó chui xuống dưới cột phải hay đè lên nút bên cạnh, và bấm vào bộ lọc thành bấm vào thứ
+nằm trên. Thanh tự chọn dạng rộng nhất còn vừa: một dải chứa ô tìm và mọi bộ lọc; không vừa thì ô
+tìm một hàng, các bộ lọc một dải ở hàng dưới; vẫn không vừa thì ô tìm và nút *Bộ lọc* mở tấm trượt
+như trên điện thoại. Nút một bộ lọc rộng tối đa 240 px, giá trị dài cắt bằng dấu ba chấm.
+
 **Biểu mẫu nói rõ ô nào bắt buộc, và nói vì sao.** Theo quy ước của Kumo: ô bắt buộc không gắn
 dấu, ô không bắt buộc hiện "(không bắt buộc)" — qua `ui/optional.tsx`, vì `required={false}` của
 Kumo in cứng chữ tiếng Anh. Ô mà thiếu thì một việc phía
 sau hỏng mang một dòng mô tả nói đúng hậu quả ấy — email cá nhân thiếu thì không gửi được tài
-khoản và phiếu lương, nên nó nằm ở phần đầu không gập của biểu mẫu nhận người. Độ dài tối đa
-trên biểu mẫu bằng đúng giới hạn của DTO, để người dùng không chỉ biết mình gõ quá dài sau khi đã
-bấm lưu. Lỗi từ server nằm trong hộp thoại dưới dạng `Banner`, ngay trên nút chính; lỗi gắn được
-với một ô thì hiện dưới ô ấy. Nút chính không bao giờ bị khoá mà không nói vì sao. Ngày chọn bằng
-`ui/date-field.tsx`: lịch của Kumo trong một popover trên máy tính, bánh xe của hệ điều hành trên
-điện thoại. Danh sách chọn dài — phòng ban, chức danh, người — là `Combobox` tìm được, không phải
-`Select`.
+khoản và phiếu lương, và câu ấy nằm ngay dưới ô email, không trong một banner cuối biểu mẫu. Độ
+dài tối đa trên biểu mẫu bằng đúng giới hạn của DTO, để người dùng không chỉ biết mình gõ quá dài
+sau khi đã bấm lưu. Lỗi từ server là một `Banner` ngay trên nút chính — trong hộp thoại, hay trên
+thanh nút của biểu mẫu dài; lỗi gắn được với một ô thì hiện dưới ô ấy. Nút chính không bao giờ bị
+khoá mà không nói vì sao. Ngày chọn bằng `ui/date-field.tsx`: lịch của Kumo trong một popover
+trên máy tính, bánh xe của hệ điều hành trên điện thoại. Danh sách chọn dài — phòng ban, chức
+danh, người — là `Combobox` tìm được, không phải `Select`. **Ô chọn nào mở ra cũng có thứ để
+chọn:** ô chọn người mở ra là hai mươi người đang làm, người của phòng ban mà biểu mẫu đã biết
+đứng trước, gõ thì tìm theo mã hay tên; danh mục còn rỗng thì danh sách nói phải làm gì và ở đâu,
+không phải một hộp trống.
 
 **Đăng xuất nằm trong menu tài khoản ở góc phải thanh trên, và trong *Cài đặt*.** Cả hai chỗ
 đều cần hai lần bấm có chủ đích. Thứ bị cấm là một nút đăng xuất thường trực dưới thanh bên,
@@ -7479,7 +7527,9 @@ nhớ đệm dữ liệu trên máy, vì người dùng tiếp theo của cùng 
 dòng nào của người trước.
 
 **Thanh bên thu gọn thành dải icon, và rê chuột tới là nó mở ra đè lên nội dung** — chế độ
-`peekable` của `Sidebar` Kumo, không xô trang. Lựa chọn thu gọn được nhớ trong cookie để server vẽ
+`peekable` của `Sidebar` Kumo, không xô trang. Mở và đóng đi qua một nhịp chủ ý như Cloudflare: chuột
+phải dừng trên dải chừng 150 ms mới mở, rời ra chừng 300 ms mới đóng. Kumo mở và đóng ngay tức
+khắc, nên chỉ lướt chuột qua mép trái hay đi xuống nút thu gọn là thanh bên bật ra rồi sập lại. Lựa chọn thu gọn được nhớ trong cookie để server vẽ
 đúng ngay lần tải sau, không nháy. Dấu và tên ở đầu thanh bên là liên kết về trang chủ của vai,
 điều hướng phía client.
 
@@ -7732,8 +7782,10 @@ theo vai ấy, chứ không phải cả trang mở hoặc cả trang đóng.
 cùng con số từ cùng endpoint với ít cột hơn và không có đường bấm vào một người. Hai trang trả
 lời một câu hỏi thì trang yếu hơn không phải là lựa chọn thứ hai, nó là **chỗ người ta dừng lại
 trước khi thấy trang đúng**. §9.15 chia ba loại màn hình có lý do: đếm lượt quẹt của từng người
-là **tra cứu**, còn `Báo cáo` giữ thứ đúng nghĩa báo cáo — biến động bảo hiểm, D02-LT, lượt gộp
-theo tháng.
+là **tra cứu**, còn `Báo cáo` giữ thứ đúng nghĩa báo cáo — chuyên cần và chi phí lương qua sáu
+tháng gần nhất, biến động bảo hiểm, D02-LT, lượt gộp theo tháng. Một tháng chọn một lần ở đầu
+trang áp cho mọi phần; mỗi con số mang đơn vị và kỳ của nó (§9.12 luật 4), và mỗi dòng của một
+tháng hay một kỳ mở đúng trang tra cứu của tháng hay kỳ ấy.
 
 **`Chờ duyệt` là hộp thư, `Đơn từ` là sổ, và hai cái trả lời hai câu hỏi khác nhau.** Hộp hỏi
 *cái gì đang đợi tôi* — nó lọc theo **người duyệt là tôi** và chỉ chứa thứ còn treo. Sổ hỏi
