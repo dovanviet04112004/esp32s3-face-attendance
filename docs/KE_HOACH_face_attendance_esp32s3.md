@@ -4385,7 +4385,7 @@ backend/
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
     │   ├── users/    ├── devices/    ├── enrollment/
-    │   ├── employees/                # import.ts đọc CSV · workbook.ts đọc và ghi .xlsx (§9.20)
+    │   ├── employees/                # import.ts đọc dòng và lập việc của từng dòng · workbook.ts đọc và ghi .xlsx (§9.20)
     │   │                             #   bulk.service.ts: thao tác trên một nhóm người đã chọn
     │   ├── attendance/ ├── shifts/   ├── reports/   ├── models/
     │   ├── mqtt/     ├── realtime/
@@ -4792,8 +4792,11 @@ frontend/
 │   ├── tables/{data-table.tsx, card-list.tsx}        # ★ một định nghĩa cột, hai hình thức
 │   ├── forms/employee-form.tsx
 │   ├── employees/{contracts.tsx, pay.tsx, assets.tsx, checklist.tsx, files.tsx,
-│   │              offboard.tsx, shifts.tsx}
-│   │                                 # ★ một tab hay một thẻ của hồ sơ một người, đọc và ghi
+│   │              offboard.tsx, shifts.tsx, bulk.tsx, import.tsx}
+│   │                                 # ★ một tab hay một thẻ của hồ sơ một người, đọc và ghi;
+│   │                                 #   bulk.tsx là thanh chọn của danh bạ và bốn việc làm
+│   │                                 #   trên nhiều người một lúc (§9.20); import.tsx là xuất,
+│   │                                 #   tải mẫu và nhập danh bạ, chạy thử rồi mới ghi (§9.20)
 │   ├── requests/{request-card.tsx, request-form.tsx, inbox-preview.tsx}
 │   │                                 # ★ §9.10 — năm việc chờ cũ nhất, quyết ngay tại
 │   │                                 #   chỗ; trang chủ nào cũng dùng đúng một bản
@@ -6097,7 +6100,8 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
 | Rate limit | Ba lớp, đoạn *Chống spam* dưới bảng. Traefik chặn lũ theo IP trước Node; `api` có một hạn mức chung cho **mọi** route theo tài khoản, hạn mức chặt hơn cho việc nặng, và hạn mức riêng cho đăng nhập, quên mật khẩu, đăng ký kiosk; sai mật khẩu nhiều lần thì khoá chính tài khoản ấy bất kể IP |
 | Server tự tải URL | Endpoint web-push là URL người dùng đưa, nên đó là đường SSRF. Bản phát hành **không** đến bằng URL: file đi bằng thân request từ bên có token (§7.7), nên đường ấy không còn. Endpoint web-push chỉ nhận host của các dịch vụ push đã biết (FCM, Mozilla, Apple, Windows), và một endpoint đã thuộc tài khoản khác thì không đổi chủ |
-| File xuất cho Excel | Ô bắt đầu bằng `=`, `+`, `-`, `@`, tab hay CR được thêm `'` đằng trước. Thiếu nó thì một số điện thoại nhân viên tự khai thành công thức chạy trên máy HR |
+| File xuất cho Excel | Ô bắt đầu bằng `=`, `+`, `-`, `@`, tab hay CR là chữ, không phải công thức: `.csv` thêm `'` đằng trước, `.xlsx` ghi mọi ô thành ô chuỗi. Thiếu nó thì một số điện thoại nhân viên tự khai thành công thức chạy trên máy HR |
+| File nhập từ Excel | `.xlsx` là file nén: server giải nén thật từng phần dưới một trần cỡ và đếm dòng **trước** khi trao cho bộ đọc, vì cỡ ghi trong file là thứ người gửi tự khai (§9.20 luật 1). Thiếu nó thì một file 16 MB bung ra vài GB trong bộ nhớ `api` |
 | Bộ nhớ đệm trình duyệt | API trả `Cache-Control: no-store`. Service worker giữ lần đọc gần nhất **theo từng tài khoản** và xoá sạch khi đăng xuất (§4.7), nên máy dùng chung không đưa dữ liệu của người trước cho người sau |
 | DDoS lưu lượng | Không lớp nào trong app chặn được. DNS đi qua Cloudflare, `api` qua proxy của nó, nên IP thật của VPS không nằm trong bản ghi web. Giới hạn nói rõ ở đoạn *Cloudflare* dưới bảng |
 
@@ -6950,8 +6954,8 @@ có tin mà không ai phải thêm dòng nào.
   qua REST**, nên mọi luật thu hẹp ở trên vẫn đứng nguyên: tin không chở được thứ gì mà REST
   không cho chính người ấy đọc.
 - **Chủ dòng quyết định ai nghe.** Chủ là tham số `:employeeId`, hoặc `:id` ngay sau
-  `employees`, hoặc `employeeId` trên dòng trả về; lô trả về nhiều dòng thì mỗi dòng một chủ;
-  route `me/…` thuộc chính người gọi. Không tìm ra chủ thì chỉ ba vai không bị thu hẹp nghe —
+  `employees`, hoặc `employeeId` trên dòng trả về; lô trả về nhiều dòng — một mảng, hoặc mảng
+  `rows` đứng cạnh các con số về chúng — thì mỗi dòng một chủ; route `me/…` thuộc chính người gọi. Không tìm ra chủ thì chỉ ba vai không bị thu hẹp nghe —
   trừ **bảng mọi người cùng đọc** (ngày lễ, loại phép, phòng ban, chức danh, pháp nhân, cây tổ
   chức, tài liệu, ca), những bảng ấy tới mọi người. `auth` không phát gì; `notifications`
   chỉ tới các máy khác của chính tài khoản ấy.
@@ -8347,21 +8351,50 @@ Không thuộc phân hệ nào, nhưng thiếu thì phân hệ nào cũng khó d
 lỗi từng dòng, rồi nhập thật — và xuất ra định dạng mở được bằng Excel (kèm BOM, cùng lý do đã
 gặp ở bảng chấm công). Năm luật đi kèm:
 
-1. **Danh bạ đi bằng `.xlsx` thật, và vẫn nhận `.csv`.** Server đọc và ghi bằng `exceljs`. Một
-   file quá 16 MB hay quá số dòng nhập tối đa bị từ chối trước khi mở, vì `.xlsx` là một file nén.
-2. **File mẫu sinh lúc tải, từ danh mục của lúc ấy.** Pháp nhân, phòng ban, chức danh, ca và
-   kiosk đang dùng thành ô chọn, trỏ vào một trang tính *Danh mục* đi kèm. Quản trị viên vừa thêm
-   một phòng ban thì lần tải sau đã có nó; một mẫu tải từ tuần trước mà ghi một phòng ban đã ngừng
-   dùng thì bị lượt chạy thử bắt, không lọt vào lúc ghi. Ô chọn ghi `mã · tên`, và lúc nhập chỉ
-   đọc phần mã.
-3. **Một dòng làm được trọn việc của một người mới:** hồ sơ, ca từ một ngày, kiosk sẽ lấy mặt,
-   và mở đăng nhập kèm thư mời. Ba việc sau đi qua đúng luật của việc lẻ: kiosk cần đồng ý dữ
-   liệu khuôn mặt (§9.19), thư chỉ xếp hàng sau khi giao dịch commit.
-4. **Cột không ghi được thì nói ra, không lặng lẽ bỏ.** Email cá nhân và tài khoản ngân hàng của
-   người đã có hồ sơ chỉ đổi bằng đơn (§9.17 luật 1 và 3), nên lượt chạy thử liệt kê những dòng định đổi
-   chúng thay vì im lặng giữ giá trị cũ.
+1. **Danh bạ đi bằng `.xlsx` thật, và vẫn nhận `.csv`.** Server đọc và ghi bằng `exceljs`; hai
+   định dạng cho cùng một kết quả. Một file quá 16 MB hay quá 30.000 dòng (`IMPORT_MAX_ROWS`) bị
+   từ chối trước khi mở. `.xlsx` là một file nén, và cỡ ghi trong file nén là thứ người gửi tự
+   khai, nên server giải nén thật từng phần dưới trần 128 MB trước khi trao file cho bộ đọc: đo
+   ngày 25/09, ba mươi nghìn dòng điền đủ mọi cột nén còn 4 MB và bung ra 36 MB. File xuất là
+   file nhập: xuất ra rồi nhập lại **không đổi gì**. Lượt chạy thử đếm riêng những dòng không đổi,
+   và chỉ người có gì thật sự đổi mới được ghi và có dòng audit (§9.24).
+2. **File mẫu sinh lúc tải, từ danh mục của lúc ấy.** Trang tính `employees` mang đúng tên cột
+   lượt nhập đọc; pháp nhân, phòng ban, chức danh, ca và kiosk đang dùng thành ô chọn, trỏ vào
+   trang tính `catalogues` đi kèm. Quản trị viên vừa thêm một phòng ban thì lần tải sau đã có nó;
+   một mẫu tải từ tuần trước mà ghi một phòng ban đã ngừng dùng thì bị lượt chạy thử bắt, không
+   lọt vào lúc ghi — trừ khi người ấy vốn đang ở phòng ban đó, vì giữ nguyên không phải là chọn
+   lại. Ô chọn ghi `mã · tên`, và lúc nhập chỉ đọc phần mã. Mã phòng ban chỉ duy nhất trong một
+   pháp nhân, nên khi công ty có hơn một pháp nhân ô chọn phòng ban ghi `mã · tên · mã pháp nhân`,
+   và phần cuối ấy phải khớp pháp nhân của dòng.
+3. **Một dòng làm được trọn việc của một người mới:** hồ sơ, ca từ một ngày (`shiftName`,
+   `shiftFrom`, mặc định là ngày vào làm, không có thì hôm nay), đồng ý dữ liệu khuôn mặt bản giấy
+   (`consentPaper`), kiosk sẽ lấy mặt (`kioskId`), và mở đăng nhập kèm thư mời (`openLogin`). Bốn
+   việc sau đi qua đúng luật của việc lẻ và chỉ làm phần còn thiếu: ca chỉ thêm khi đúng lượt xếp
+   ấy chưa có; kiosk chỉ gán khi cặp máy–người chưa có, không bao giờ gán lại một cặp đang giữ mặt,
+   vì gán lại là đẩy nó sang `RETAKE`; đăng nhập chỉ mở cho người chưa có. `consentPaper` là `YES`
+   thì người chưa có đồng ý còn hiệu lực được ghi một đồng ý cách `PAPER`, đúng như nút trên hồ sơ
+   ghi: văn bản là bản máy chủ đang phát, người bấm nhập đứng tên, mỗi người một dòng audit
+   `biometric.consent.grant`. Nó ghi **trong** giao dịch của lượt nhập, nên `kioskId` của chính dòng
+   ấy gán được ngay trong cùng lượt; kiosk chỉ còn là cảnh báo khi người ấy vừa không có đồng ý vừa
+   không ghi `YES`. `NO` hay ô trống không bao giờ rút một đồng ý — rút là việc của hồ sơ, nơi hậu quả
+   xoá mẫu được viết ra cạnh nút (§9.19). File xuất ghi `YES` cho người đang có đồng ý, nên xuất rồi
+   nhập lại vẫn không đổi gì. Thư và tin xuống kiosk đi sau khi giao dịch commit; một lô gán kiosk
+   đẩy số hiệu danh sách lên một lần và gửi mỗi người một tin với số liền nhau (§7.5).
+4. **Ô trống là giữ nguyên, `-` là xoá, và lượt chạy thử nói đúng những gì nút nhập sẽ làm.** Với
+   người đã có hồ sơ, một ô để trống không đổi gì, và một ô chỉ có `-` xoá trường ấy: điện thoại,
+   ngày sinh, giới tính, ba số giấy tờ, ngày vào làm, phòng ban, chức danh và người quản lý. Mã và
+   họ tên không bao giờ xoá; pháp nhân, lương, ca, kiosk, đồng ý và đăng nhập cũng không, vì mỗi thứ
+   ấy có đường riêng để gỡ, nên một `-` ở đó là lỗi. Với người mới, `-` cũng chỉ là ô trống. Lượt
+   chạy thử liệt kê, cho từng người sẽ đổi, những trường được ghi giá trị mới và những trường bị xoá
+   (một trăm người đầu, số còn lại đếm), tách lỗi khỏi cảnh báo — lỗi chặn nút nhập, cảnh báo thì
+   không — và cả hai kèm dòng, cột. Email cá nhân và tài khoản ngân hàng của người đã có hồ sơ chỉ
+   đổi bằng đơn (§9.17 luật 1 và 3), nên dòng định đổi chúng là cảnh báo thay vì im lặng giữ giá
+   trị cũ. Kiosk cho người chưa đồng ý, mở đăng nhập cho người không có email hay có email đã thuộc
+   tài khoản khác, và việc thêm — kể cả ghi đồng ý — cho người đã nghỉ cũng là cảnh báo: phần hồ sơ
+   vẫn ghi, việc ấy thì bỏ qua.
 5. **Không ô nào thành công thức.** Ô bắt đầu bằng `=` `+` `-` `@`, tab hay CR được viết thành
-   chữ, ở mọi file xuất, kể cả file dựng ngay trong trình duyệt (§7.2).
+   chữ, ở mọi file xuất, kể cả file dựng ngay trong trình duyệt (§7.2): `.xlsx` ghi ô chuỗi, `.csv`
+   thêm `'` đằng trước.
 
 **Thao tác trên nhiều người.** Danh bạ chọn được nhiều dòng, hoặc chọn **cả N người khớp bộ lọc**
 khi bảng mới tải một phần; lúc ấy trình duyệt gửi bộ lọc, không gửi N mã, và server tự giải bộ
