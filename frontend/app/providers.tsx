@@ -8,6 +8,7 @@ import { forwardRef, useEffect, useState, type ReactNode } from "react";
 import { toasts, useNotify } from "@/components/ui/notify";
 import { Link } from "@/i18n/navigation";
 import { isProduction } from "@/lib/env";
+import { followSystem } from "@/lib/theme";
 
 const STALE_MS = 30_000;
 
@@ -40,12 +41,12 @@ function clientForSession(): QueryClient {
   return held;
 }
 
-// Kumo renders its own links; this keeps them on the locale-aware router.
+// Kumo renders its own links, some by `href` and some by `to`; both go through the locale router.
 const RouterLink = forwardRef<HTMLAnchorElement, LinkComponentProps>(function RouterLink(
-  { href, to: _to, ...rest },
+  { href, to, ...rest },
   ref,
 ) {
-  return <Link ref={ref} href={href ?? "/"} {...rest} />;
+  return <Link ref={ref} href={href ?? to ?? "/"} {...rest} />;
 });
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -55,6 +56,8 @@ export function Providers({ children }: { children: ReactNode }) {
   useEffect(() => {
     unhandled = failed;
   }, [failed]);
+
+  useEffect(() => followSystem(), []);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) {

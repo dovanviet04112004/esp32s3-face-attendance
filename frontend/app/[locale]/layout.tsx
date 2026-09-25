@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import "../globals.css";
 import { Providers } from "../providers";
 import { routing, type Locale } from "@/i18n/routing";
-import { asTheme, kThemeCookie, modeOf, schemeOf } from "@/lib/theme";
+import { asTheme, kModeScript, kThemeCookie } from "@/lib/theme";
 
 const sans = Inter({ subsets: ["latin", "vietnamese"], variable: "--font-inter", display: "swap" });
 
@@ -61,11 +61,12 @@ export default async function LocaleLayout({ children, params }: LocaleParams & 
     <html
       lang={locale}
       className={sans.variable}
-      data-theme={theme === "system" ? undefined : theme}
-      data-mode={modeOf(theme)}
-      style={{ colorScheme: schemeOf(theme) }}
+      data-mode={theme === "dark" ? "dark" : undefined}
       suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: kModeScript }} />
+      </head>
       <body className="min-h-screen font-sans text-base antialiased" suppressHydrationWarning>
         <NextIntlClientProvider>
           <Providers>{children}</Providers>
