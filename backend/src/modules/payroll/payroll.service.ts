@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type {
+  BonusItem,
   Payslip,
   PayslipLine,
   PayslipState,
@@ -129,7 +130,19 @@ export interface ChecklistItem {
 
 export type PayslipDetail = Payslip & { lines: PayslipLine[] };
 
-export type PayslipRow = Payslip & { period: { year: number; month: number; state: PeriodState } };
+export type PayslipRow = Payslip & {
+  period: { year: number; month: number; state: PeriodState };
+  employee: { id: number; code: string; fullName: string };
+};
+
+/** The amounts a bonus run holds, with the person each belongs to. */
+export type BonusRow = BonusItem & { employee: { id: number; code: string; fullName: string } };
+
+/** How far a period's payslips have gone out: issued ones counted, sent ones among them. */
+export interface Delivery {
+  issued: number;
+  sent: number;
+}
 
 export type ExportKind = "bank" | "ledger";
 
@@ -770,6 +783,22 @@ export class PayrollService {
     return { items: items.length };
   }
 
+  async bonus(viewer: Viewer, runId: string): Promise<BonusRow[]> {
+    this.mayWrite(viewer);
+    const run = await this.db.payrollRun.findUnique({ where: { id: runId }, select: { kind: true } });
+    if (!run) {
+      throw new NotFoundException("RUN_NOT_FOUND");
+    }
+    if (run.kind !== "BONUS") {
+      throw new BadRequestException("RUN_IS_NOT_A_BONUS");
+    }
+    return this.db.bonusItem.findMany({
+      where: { runId },
+      include: { employee: { select: { id: true, code: true, fullName: true } } },
+      orderBy: [{ code: "asc" }, { employeeId: "asc" }],
+    });
+  }
+
   /**
    * A bonus owes the difference between the tax on the period with it and the
    * tax without it, so it reads the regular payslip as its base (KEHOACH 9.18).
@@ -986,7 +1015,10 @@ export class PayrollService {
     const [rows, found] = await Promise.all([
       this.db.payslip.findMany({
         where,
-        include: { period: { select: { year: true, month: true, state: true } } },
+        include: {
+          period: { select: { year: true, month: true, state: true } },
+          employee: { select: { id: true, code: true, fullName: true } },
+        },
         // A bonus run gives one person two slips in a month, so id breaks the
         // tie that period and employee leave (KEHOACH 9.9 rule 3).
         orderBy: [
@@ -1058,6 +1090,16 @@ export class PayrollService {
       }
     }
     return deltas;
+  }
+
+  async delivery(periodId: string): Promise<Delivery> {
+    await this.requirePeriod(periodId);
+    const issued = { periodId, state: { not: "DRAFT" as const } };
+    const [all, sent] = await Promise.all([
+      this.db.payslip.count({ where: issued }),
+      this.db.payslip.count({ where: { ...issued, sentAt: { not: null } } }),
+    ]);
+    return { issued: all, sent };
   }
 
   /**

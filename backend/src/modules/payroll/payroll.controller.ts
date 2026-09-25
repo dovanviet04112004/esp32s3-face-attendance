@@ -32,6 +32,8 @@ import {
   type ChecklistItem,
   type PayslipDelta,
   type PayslipDetail,
+  type BonusRow,
+  type Delivery,
   type PayslipRow,
   type ExportKind,
   type SettlementSheet,
@@ -87,6 +89,13 @@ export class PayrollController {
     return this.payroll.markPaid(viewer, id);
   }
 
+  @Get("payroll-periods/:id/delivery")
+  @Roles("ADMIN", "HR", "PAYROLL")
+  @ApiOperation({ summary: "How many issued payslips have gone out to their owners" })
+  delivery(@Param("id") id: string): Promise<Delivery> {
+    return this.payroll.delivery(id);
+  }
+
   @Post("payroll-periods/:id/deliver")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
@@ -125,6 +134,13 @@ export class PayrollController {
   @ApiOperation({ summary: "Start a run: regular, bonus or final settlement" })
   createRun(@CurrentViewer() viewer: Viewer, @Body() body: CreateRunDto): Promise<PayrollRun> {
     return this.payroll.createRun(viewer, body);
+  }
+
+  @Get("payroll-runs/:id/bonus")
+  @Roles("ADMIN", "PAYROLL")
+  @ApiOperation({ summary: "The amounts a bonus run holds, as loaded" })
+  bonus(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<BonusRow[]> {
+    return this.payroll.bonus(viewer, id);
   }
 
   @Post("payroll-runs/:id/bonus")

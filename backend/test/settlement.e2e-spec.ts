@@ -284,4 +284,47 @@ describe("final settlement (e2e)", () => {
     const payout = dailyPay * BigInt(UNUSED_DAYS);
     assert.equal(slips[0].grossPay.toFixed(0), (payout + SEVERANCE).toString());
   });
+
+  it("lists a run's payslips with the person each belongs to", async () => {
+    const res = await request(http)
+      .get(`/payslips?runId=${regularRunId}`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    const rows = res.body.rows as { employeeId: number; employee: { id: number; code: string; fullName: string } }[];
+    const owners = rows.map((row) => row.employee.code);
+    assert.ok(owners.includes(LEAVER) && owners.includes(STAYER), "a payslip of this run lost its owner");
+    assert.ok(rows.every((row) => row.employee.id === row.employeeId && row.employee.fullName !== ""), "an owner came back without a name");
+  });
+
+  it("reads a bonus run back exactly as it was loaded", async () => {
+    const bonus = await db.payrollRun.create({ data: { periodId, kind: "BONUS", state: "DRAFT" } });
+    const loaded = await request(http)
+      .post(`/payroll-runs/${bonus.id}/bonus`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ items: [{ employeeId: stayerId, code: "TET", amount: 7_000_000 }] });
+    assert.equal(loaded.status, 201, JSON.stringify(loaded.body));
+    const res = await request(http)
+      .get(`/payroll-runs/${bonus.id}/bonus`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.length, 1);
+    assert.equal(res.body[0].employee.code, STAYER);
+    assert.equal(res.body[0].code, "TET");
+    assert.equal(Number(res.body[0].amount), 7_000_000);
+    const regular = await request(http)
+      .get(`/payroll-runs/${regularRunId}/bonus`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(regular.status, 400);
+    assert.equal(regular.body.message, "RUN_IS_NOT_A_BONUS");
+  });
+
+  it("counts the issued payslips of a period and the ones already sent", async () => {
+    const read = async () =>
+      (await request(http).get(`/payroll-periods/${periodId}/delivery`).set("Authorization", `Bearer ${token}`)).body;
+    assert.deepEqual(await read(), { issued: 0, sent: 0 }, "a draft counted as issued");
+    await db.payslip.updateMany({ where: { runId: regularRunId }, data: { state: "ISSUED" } });
+    await db.payslip.updateMany({ where: { runId: regularRunId, employeeId: stayerId }, data: { sentAt: new Date() } });
+    const slips = await db.payslip.count({ where: { runId: regularRunId } });
+    assert.deepEqual(await read(), { issued: slips, sent: 1 });
+  });
 });
