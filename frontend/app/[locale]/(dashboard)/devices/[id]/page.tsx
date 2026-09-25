@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Input, LayerCard, LayerDialog, Loader, SkeletonLine } from "@cloudflare/kumo";
+import { Banner, Button, Input, LayerCard, LayerDialog, Loader } from "@cloudflare/kumo";
 import {
   ArrowsClockwiseIcon,
   CheckCircleIcon,
@@ -18,8 +18,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -58,6 +60,32 @@ const kTickMs = 1_000;
 const kEventsShown = 12;
 
 const STATUS_TONE: Record<Device["status"], Tone> = { PENDING: "waiting", APPROVED: "good", REVOKED: "idle" };
+const kNameMax = 64;
+const EVENTS = [
+  "SPOOF_DETECTED",
+  "UNKNOWN_FACE",
+  "QUALITY_REJECTED",
+  "DOOR_OPENED_MANUALLY",
+  "DOOR_FAULT",
+  "CAMERA_FAULT",
+  "TOF_FAULT",
+  "LCD_FAULT",
+  "AUDIO_FAULT",
+  "STORAGE_FAULT",
+  "FACEDB_CORRUPT",
+  "MODEL_LOAD_FAILED",
+  "OTA_FAILED",
+  "OTA_ROLLED_BACK",
+  "TIME_UNSYNCED",
+  "BOOTED",
+  "COMMAND_DONE",
+  "COMMAND_REJECTED",
+  "ROSTER_REJECTED",
+] as const;
+
+function isEvent(raw: unknown): raw is (typeof EVENTS)[number] {
+  return typeof raw === "string" && (EVENTS as readonly string[]).includes(raw);
+}
 
 export default function DevicePage() {
   const t = useTranslations("devices");
@@ -69,6 +97,7 @@ export default function DevicePage() {
   const cache = useQueryClient();
   const notify = useNotify();
   const faultOf = useFault();
+  const optional = useOptional();
   const { items } = useFeed();
   const [editing, setEditing] = useState(false);
   const [revoking, setRevoking] = useState(false);
@@ -134,6 +163,7 @@ export default function DevicePage() {
       setRevoking(false);
       notify.done(t("revoked"));
       void cache.invalidateQueries({ queryKey: ["devices"] });
+      void cache.invalidateQueries({ queryKey: ["releases"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
@@ -338,7 +368,17 @@ export default function DevicePage() {
                       <span className="w-11 shrink-0 text-sm text-kumo-subtle tabular-nums">
                         {typeof item.body.ts === "number" ? format.dateTime(new Date(item.body.ts), "clock") : ""}
                       </span>
-                      <span className="min-w-0 truncate font-mono text-sm">{String(item.body.type ?? item.feed)}</span>
+                      <span className="min-w-0 truncate">
+                        {isEvent(item.body.type)
+                          ? t(`event_${item.body.type}`)
+                          : item.feed === "attendance"
+                            ? t("feedAttendance")
+                            : item.body.online === true
+                              ? t("online")
+                              : item.body.online === false
+                                ? t("offline")
+                                : t("feedBeat")}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -353,14 +393,14 @@ export default function DevicePage() {
           <LayerDialog.Title>{t("rename")}</LayerDialog.Title>
           <LayerDialog.Body>
             <div className="flex flex-col gap-4">
-              <Input label={t("deviceName")} maxLength={64} value={name} onChange={(event) => setName(event.target.value)} />
+              <Input label={optional(t("deviceName"))} maxLength={kNameMax} value={name} onChange={(event) => setName(event.target.value)} />
               <Input
-                label={t("location")}
-                maxLength={64}
+                label={optional(t("location"))}
+                maxLength={kNameMax}
                 value={location}
                 onChange={(event) => setLocation(event.target.value)}
               />
-              {fault ? <p className="text-kumo-danger">{fault}</p> : null}
+              {fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
@@ -376,8 +416,10 @@ export default function DevicePage() {
           <LayerDialog.Title>{t("revokeTitle", { name: title })}</LayerDialog.Title>
           <LayerDialog.Description>{t("revokeWarn")}</LayerDialog.Description>
           <LayerDialog.Body>
-            <p className="font-mono text-sm text-kumo-subtle">{[id, it?.location].filter(Boolean).join(" · ")}</p>
-            {fault ? <p className="mt-3 text-kumo-danger">{fault}</p> : null}
+            <div className="flex flex-col gap-3">
+              <p className="font-mono text-sm text-kumo-subtle">{[id, it?.location].filter(Boolean).join(" · ")}</p>
+              {fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
+            </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
             <LayerDialog.Actions.Primary variant="destructive" loading={revoke.isPending} onClick={() => revoke.mutate()}>

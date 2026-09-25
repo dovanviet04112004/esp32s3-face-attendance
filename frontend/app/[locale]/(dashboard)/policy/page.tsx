@@ -1,20 +1,24 @@
 "use client";
 
-import { Button, Collapsible, Empty, Input, LayerCard, LayerDialog, SkeletonLine } from "@cloudflare/kumo";
-import { CaretDownIcon, PlusIcon, ScalesIcon, XIcon } from "@phosphor-icons/react";
+import { Banner, Button, Collapsible, Empty, Input, LayerCard, LayerDialog, Select, Tabs } from "@cloudflare/kumo";
+import { CaretDownIcon, PlusIcon, ScalesIcon, WarningCircleIcon, XIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
-import { useState, type ReactNode } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 
+import { DateField } from "@/components/ui/date-field";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { AsideCard, Facts, PageHeader, PageLayout, StatList } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
 import { dayOnly, money, percent } from "@/lib/format";
+import { useUrlState } from "@/lib/url-state";
 
 interface Bracket {
   id: string;
@@ -25,6 +29,7 @@ interface Bracket {
 
 interface Policy {
   id: string;
+  legalEntityId: string | null;
   effectiveFrom: string;
   selfDeduction: string;
   dependentDeduction: string;
@@ -48,7 +53,13 @@ interface Policy {
   brackets: Bracket[];
 }
 
+interface LegalEntity {
+  id: string;
+  name: string;
+}
+
 interface Draft {
+  scope: string;
   effectiveFrom: string;
   note: string;
   selfDeduction: string;
@@ -72,10 +83,64 @@ interface Draft {
   brackets: { upToAmount: string; rate: string }[];
 }
 
-type NumberField = Exclude<keyof Draft, "effectiveFrom" | "note" | "brackets">;
+type NumberField = Exclude<keyof Draft, "scope" | "effectiveFrom" | "note" | "brackets">;
+
+type Section = "days" | "insurance" | "overtime" | "tax";
 
 const kBpPerPercent = 100;
 const kBpWhole = 10_000;
+const kNoteMax = 500;
+// Company-wide rows carry no entity; the picker names them with a value of their own.
+const COMPANY = "company";
+
+const SECTION_OF: Record<NumberField, Section> = {
+  selfDeduction: "days",
+  dependentDeduction: "days",
+  standardDaysPerMonth: "days",
+  noContributionUnpaidDays: "days",
+  socialRateBp: "insurance",
+  healthRateBp: "insurance",
+  unemploymentRateBp: "insurance",
+  employerSocialRateBp: "insurance",
+  employerHealthRateBp: "insurance",
+  employerUnemploymentRateBp: "insurance",
+  referenceWage: "insurance",
+  socialCapMultiple: "insurance",
+  regionalMinimumWage: "insurance",
+  unemploymentCapMultiple: "insurance",
+  overtimeWeekdayBp: "overtime",
+  overtimeWeekendBp: "overtime",
+  overtimeHolidayBp: "overtime",
+  nightPremiumBp: "overtime",
+};
+
+const SECTIONS: Section[] = ["days", "insurance", "overtime", "tax"];
+
+function scopeOf(policy: { legalEntityId: string | null }): string {
+  return policy.legalEntityId ?? COMPANY;
+}
+
+/** Bands must climb, and only the last may leave its ceiling empty, or the tax walk skips a slice. */
+function bandsProblem(brackets: Draft["brackets"]): boolean {
+  if (brackets.length === 0) {
+    return true;
+  }
+  return brackets.some((band, at) => {
+    const last = at === brackets.length - 1;
+    if (band.rate.trim() === "" || Number.isNaN(Number(band.rate))) {
+      return true;
+    }
+    if (band.upToAmount.trim() === "") {
+      return !last;
+    }
+    const below = at === 0 ? -1 : Number(brackets[at - 1].upToAmount || Number.POSITIVE_INFINITY);
+    return Number(band.upToAmount) <= below;
+  });
+}
+
+function smoothly(): ScrollBehavior {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
 
 function firstOfNextMonth(): string {
   const now = new Date();
@@ -93,8 +158,9 @@ function asPercent(bp: number): string {
   return String(bp / kBpPerPercent);
 }
 
-function copyOf(policy: Policy | undefined): Draft {
+function copyOf(policy: Policy | undefined, scope: string): Draft {
   return {
+    scope,
     effectiveFrom: firstOfNextMonth(),
     note: "",
     selfDeduction: policy?.selfDeduction ?? "",
@@ -122,8 +188,9 @@ function copyOf(policy: Policy | undefined): Draft {
 function bodyOf(draft: Draft): Record<string, unknown> {
   const bp = (value: string): number => Math.round(Number(value) * kBpPerPercent);
   return {
+    legalEntityId: draft.scope === COMPANY ? undefined : draft.scope,
     effectiveFrom: draft.effectiveFrom,
-    note: draft.note || undefined,
+    note: draft.note.trim() || undefined,
     selfDeduction: Number(draft.selfDeduction),
     dependentDeduction: Number(draft.dependentDeduction),
     standardDaysPerMonth: Number(draft.standardDaysPerMonth),
@@ -232,23 +299,45 @@ function PolicyDetail({ policy }: { policy: Policy }) {
   );
 }
 
-export default function PolicyPage() {
+function PolicyPageBody() {
   const t = useTranslations("policy");
   const common = useTranslations("common");
   const format = useFormatter();
   const cache = useQueryClient();
   const notify = useNotify();
   const faultOf = useFault();
+  const optional = useOptional();
   const role = useSession((s) => s.role);
   const mayWrite = role === "ADMIN" || role === "PAYROLL";
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [section, setSection] = useState<Section>("days");
+  const [tried, setTried] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
+  const [url, setUrl] = useUrlState({ entity: "" });
 
   const policies = useQuery({
     queryKey: ["payroll-policies"],
     queryFn: async () => (await api.get<Policy[]>("/payroll-policies")).data,
   });
+
+  // The catalogue may not answer yet; one entity, or none, needs no picker.
+  const entities = useQuery({
+    queryKey: ["legal-entities"],
+    retry: false,
+    queryFn: async () => (await api.get<LegalEntity[]>("/legal-entities")).data,
+  });
+  const entityList = entities.data ?? [];
+  const manyEntities = entityList.length > 1;
+  const allRows = policies.data ?? [];
+  const fallbackScope = allRows.some((one) => one.legalEntityId === null)
+    ? COMPANY
+    : (entityList.find((one) => allRows.some((row) => row.legalEntityId === one.id))?.id ?? entityList[0]?.id ?? COMPANY);
+  const scope = manyEntities ? url.entity || fallbackScope : "";
+  const scopeItems: Record<string, string> = {
+    [COMPANY]: t("wholeCompany"),
+    ...Object.fromEntries(entityList.map((one) => [one.id, one.name])),
+  };
 
   const add = useMutation({
     mutationFn: (one: Draft) => api.post("/payroll-policies", bodyOf(one)),
@@ -260,7 +349,9 @@ export default function PolicyPage() {
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
-  const sorted = [...(policies.data ?? [])].sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom));
+  const sorted = allRows
+    .filter((one) => scope === "" || scopeOf(one) === scope)
+    .sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom));
   const now = today();
   const inForce = sorted.find((one) => one.effectiveFrom.slice(0, 10) <= now);
   const others = sorted.filter((one) => one !== inForce);
@@ -273,7 +364,36 @@ export default function PolicyPage() {
 
   function startDraft(): void {
     setFault(null);
-    setDraft(copyOf(inForce ?? sorted[0]));
+    setTried(false);
+    setSection("days");
+    const base = inForce ?? sorted[0] ?? allRows[0];
+    setDraft(copyOf(base, scope || (base ? scopeOf(base) : COMPANY)));
+  }
+
+  const missing = (field: NumberField) => {
+    const value = draft?.[field] ?? "";
+    return value.trim() === "" || Number.isNaN(Number(value)) || Number(value) < 0;
+  };
+  const badFields = draft ? (Object.keys(SECTION_OF) as NumberField[]).filter(missing) : [];
+  const badBands = draft ? bandsProblem(draft.brackets) : false;
+  const badDate = draft ? draft.effectiveFrom === "" : false;
+  const problems = [
+    ...(badDate ? [t("problemDate")] : []),
+    ...(badFields.length > 0 ? [t("problemFields", { count: badFields.length })] : []),
+    ...(badBands ? [t("problemBands")] : []),
+  ];
+
+  function submit(): void {
+    setTried(true);
+    if (!draft) {
+      return;
+    }
+    if (problems.length > 0) {
+      setSection(badDate || badFields.length === 0 ? (badBands ? "tax" : "days") : SECTION_OF[badFields[0]]);
+      return;
+    }
+    setFault(null);
+    add.mutate(draft);
   }
 
   function fold(id: string, open: boolean): void {
@@ -290,15 +410,17 @@ export default function PolicyPage() {
     if (one !== inForce) {
       fold(one.id, true);
     }
-    document.getElementById(`policy-${one.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById(`policy-${one.id}`)?.scrollIntoView({ behavior: smoothly(), block: "start" });
   }
 
   const numberField = (field: NumberField, label: string, suffix?: string) => (
     <Input
       label={suffix ? `${label} (${suffix})` : label}
       type="number"
+      min={0}
       step={suffix === "%" ? "0.01" : "1"}
       value={draft?.[field] ?? ""}
+      error={tried && missing(field) ? t("fieldMissing") : undefined}
       onChange={(event) => set({ [field]: event.target.value })}
       className="w-full min-w-0"
     />
@@ -317,6 +439,19 @@ export default function PolicyPage() {
           ) : undefined
         }
       />
+
+      {manyEntities ? (
+        <div className="mb-4 max-w-sm">
+          <Select
+            label={t("scope")}
+            hideLabel={false}
+            value={scope}
+            onValueChange={(next) => setUrl({ entity: String(next ?? "") })}
+            items={scopeItems}
+            className="w-full"
+          />
+        </div>
+      ) : null}
 
       <PageLayout
         aside={
@@ -431,133 +566,175 @@ export default function PolicyPage() {
           <LayerDialog.Description>{inForce ? t("copyLead") : t("blankLead")}</LayerDialog.Description>
           <LayerDialog.Body>
             {draft ? (
-              <div className="flex flex-col gap-6">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    label={t("effectiveFrom")}
-                    type="date"
-                    required
-                    value={draft.effectiveFrom}
-                    onChange={(event) => set({ effectiveFrom: event.target.value })}
+              <div className="flex flex-col gap-5">
+                {(tried && problems.length > 0) || fault ? (
+                  <Banner
+                    variant="error"
+                    size="sm"
+                    icon={<WarningCircleIcon weight="fill" />}
+                    title={fault ?? t("problemTitle")}
+                    description={fault ? undefined : problems.join(" ")}
                   />
-                  <Input label={t("note")} value={draft.note} onChange={(event) => set({ note: event.target.value })} />
+                ) : null}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <DateField
+                    label={t("effectiveFrom")}
+                    value={draft.effectiveFrom}
+                    error={tried && badDate ? t("problemDate") : undefined}
+                    onChange={(next) => set({ effectiveFrom: next })}
+                  />
+                  {manyEntities ? (
+                    <Select
+                      label={t("scope")}
+                      hideLabel={false}
+                      value={draft.scope}
+                      onValueChange={(next) => set({ scope: String(next ?? COMPANY) })}
+                      items={scopeItems}
+                      className="w-full"
+                    />
+                  ) : null}
+                  <Input
+                    label={optional(t("note"))}
+                    maxLength={kNoteMax}
+                    value={draft.note}
+                    onChange={(event) => set({ note: event.target.value })}
+                    className={manyEntities ? "sm:col-span-2" : undefined}
+                  />
                 </div>
 
-                <Group title={t("deductionsDays")}>
-                  <div className="mt-2 grid gap-4 sm:grid-cols-2">
-                    {numberField("selfDeduction", t("selfDeduction"))}
-                    {numberField("dependentDeduction", t("dependentDeduction"))}
-                    {numberField("standardDaysPerMonth", t("standardDays"))}
-                    {numberField("noContributionUnpaidDays", t("unpaidDays"))}
-                  </div>
-                </Group>
+                <div className="overflow-x-auto">
+                  <Tabs
+                    variant="segmented"
+                    tabs={SECTIONS.map((one) => ({ value: one, label: t(`section_${one}`) }))}
+                    value={section}
+                    onValueChange={(next) => setSection(next as Section)}
+                  />
+                </div>
 
-                <Group title={t("rates")}>
-                  <div className="mt-2 grid gap-4 sm:grid-cols-3">
-                    {numberField("socialRateBp", t("social"), "%")}
-                    {numberField("healthRateBp", t("health"), "%")}
-                    {numberField("unemploymentRateBp", t("unemployment"), "%")}
-                  </div>
-                </Group>
+                {section === "days" ? (
+                  <Group title={t("deductionsDays")}>
+                    <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                      {numberField("selfDeduction", t("selfDeduction"))}
+                      {numberField("dependentDeduction", t("dependentDeduction"))}
+                      {numberField("standardDaysPerMonth", t("standardDays"))}
+                      {numberField("noContributionUnpaidDays", t("unpaidDays"))}
+                    </div>
+                  </Group>
+                ) : null}
 
-                <Group title={t("employerRates")}>
-                  <div className="mt-2 grid gap-4 sm:grid-cols-3">
-                    {numberField("employerSocialRateBp", t("social"), "%")}
-                    {numberField("employerHealthRateBp", t("health"), "%")}
-                    {numberField("employerUnemploymentRateBp", t("unemployment"), "%")}
+                {section === "insurance" ? (
+                  <div className="flex flex-col gap-5">
+                    <Group title={t("rates")}>
+                      <div className="mt-2 grid gap-4 sm:grid-cols-3">
+                        {numberField("socialRateBp", t("social"), "%")}
+                        {numberField("healthRateBp", t("health"), "%")}
+                        {numberField("unemploymentRateBp", t("unemployment"), "%")}
+                      </div>
+                    </Group>
+                    <Group title={t("employerRates")}>
+                      <div className="mt-2 grid gap-4 sm:grid-cols-3">
+                        {numberField("employerSocialRateBp", t("social"), "%")}
+                        {numberField("employerHealthRateBp", t("health"), "%")}
+                        {numberField("employerUnemploymentRateBp", t("unemployment"), "%")}
+                      </div>
+                    </Group>
+                    <Group title={t("caps")}>
+                      <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                        {numberField("referenceWage", t("referenceWage"))}
+                        {numberField("socialCapMultiple", t("socialCapMultiple"))}
+                        {numberField("regionalMinimumWage", t("regionalMinimumWage"))}
+                        {numberField("unemploymentCapMultiple", t("unemploymentCapMultiple"))}
+                      </div>
+                    </Group>
                   </div>
-                </Group>
+                ) : null}
 
-                <Group title={t("caps")}>
-                  <div className="mt-2 grid gap-4 sm:grid-cols-2">
-                    {numberField("referenceWage", t("referenceWage"))}
-                    {numberField("socialCapMultiple", t("socialCapMultiple"))}
-                    {numberField("regionalMinimumWage", t("regionalMinimumWage"))}
-                    {numberField("unemploymentCapMultiple", t("unemploymentCapMultiple"))}
-                  </div>
-                </Group>
+                {section === "overtime" ? (
+                  <Group title={t("overtimeRates")}>
+                    <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                      {numberField("overtimeWeekdayBp", t("weekday"), "%")}
+                      {numberField("overtimeWeekendBp", t("weekend"), "%")}
+                      {numberField("overtimeHolidayBp", t("holiday"), "%")}
+                      {numberField("nightPremiumBp", t("night"), "%")}
+                    </div>
+                  </Group>
+                ) : null}
 
-                <Group title={t("overtimeRates")}>
-                  <div className="mt-2 grid gap-4 sm:grid-cols-2">
-                    {numberField("overtimeWeekdayBp", t("weekday"), "%")}
-                    {numberField("overtimeWeekendBp", t("weekend"), "%")}
-                    {numberField("overtimeHolidayBp", t("holiday"), "%")}
-                    {numberField("nightPremiumBp", t("night"), "%")}
-                  </div>
-                </Group>
-
-                <Group title={t("brackets")}>
-                  <ul className="mt-2 flex flex-col gap-3">
-                    {draft.brackets.map((bracket, index) => (
-                      <li key={index} className="flex items-end gap-2">
-                        <div className="min-w-0 flex-1">
-                          <Input
-                            label={index === draft.brackets.length - 1 ? t("noCeiling") : t("upTo")}
-                            type="number"
-                            value={bracket.upToAmount}
-                            onChange={(event) =>
-                              set({
-                                brackets: draft.brackets.map((one, at) =>
-                                  at === index ? { ...one, upToAmount: event.target.value } : one,
-                                ),
-                              })
-                            }
+                {section === "tax" ? (
+                  <Group title={t("brackets")}>
+                    <p className="text-sm text-kumo-subtle">{t("bandsRule")}</p>
+                    <ul className="mt-2 flex flex-col gap-3">
+                      {draft.brackets.map((bracket, index) => (
+                        <li key={index} className="flex items-end gap-2">
+                          <div className="min-w-0 flex-1">
+                            <Input
+                              label={index === draft.brackets.length - 1 ? t("noCeiling") : t("upTo")}
+                              type="number"
+                              min={0}
+                              value={bracket.upToAmount}
+                              onChange={(event) =>
+                                set({
+                                  brackets: draft.brackets.map((one, at) =>
+                                    at === index ? { ...one, upToAmount: event.target.value } : one,
+                                  ),
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="w-28 shrink-0">
+                            <Input
+                              label={`${t("rate")} (%)`}
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={bracket.rate}
+                              onChange={(event) =>
+                                set({
+                                  brackets: draft.brackets.map((one, at) => (at === index ? { ...one, rate: event.target.value } : one)),
+                                })
+                              }
+                            />
+                          </div>
+                          <Button
+                            variant="ghost"
+                            shape="square"
+                            icon={XIcon}
+                            aria-label={t("dropBracket")}
+                            onClick={() => set({ brackets: draft.brackets.filter((_, at) => at !== index) })}
                           />
-                        </div>
-                        <div className="w-28 shrink-0">
-                          <Input
-                            label={`${t("rate")} (%)`}
-                            type="number"
-                            step="0.01"
-                            value={bracket.rate}
-                            onChange={(event) =>
-                              set({
-                                brackets: draft.brackets.map((one, at) => (at === index ? { ...one, rate: event.target.value } : one)),
-                              })
-                            }
-                          />
-                        </div>
-                        <Button
-                          variant="ghost"
-                          shape="square"
-                          icon={XIcon}
-                          aria-label={t("dropBracket")}
-                          onClick={() => set({ brackets: draft.brackets.filter((_, at) => at !== index) })}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={PlusIcon}
-                    className="mt-3 self-start"
-                    onClick={() => set({ brackets: [...draft.brackets, { upToAmount: "", rate: "" }] })}
-                  >
-                    {t("addBracket")}
-                  </Button>
-                </Group>
-
-                {fault ? <p className="text-kumo-danger">{fault}</p> : null}
+                        </li>
+                      ))}
+                    </ul>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={PlusIcon}
+                      className="mt-3 self-start"
+                      onClick={() => set({ brackets: [...draft.brackets, { upToAmount: "", rate: "" }] })}
+                    >
+                      {t("addBracket")}
+                    </Button>
+                    {tried && badBands ? <p className="mt-2 text-sm text-kumo-danger">{t("problemBands")}</p> : null}
+                  </Group>
+                ) : null}
               </div>
             ) : null}
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary
-              loading={add.isPending}
-              disabled={!draft?.effectiveFrom}
-              onClick={() => {
-                if (draft) {
-                  setFault(null);
-                  add.mutate(draft);
-                }
-              }}
-            >
+            <LayerDialog.Actions.Primary loading={add.isPending} onClick={submit}>
               {t("saveVersion")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
       </LayerDialog.Root>
     </>
+  );
+}
+
+export default function PolicyPage() {
+  return (
+    <Suspense>
+      <PolicyPageBody />
+    </Suspense>
   );
 }

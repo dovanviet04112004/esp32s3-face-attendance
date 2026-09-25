@@ -1,19 +1,23 @@
 "use client";
 
 import { Button } from "@cloudflare/kumo";
-import { DownloadSimpleIcon } from "@phosphor-icons/react";
+import { DownloadSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
-import { DataTable, type Column } from "@/components/tables/data-table";
+import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { MonthPicker, thisMonth, type Month } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { api } from "@/lib/api";
+import { dayOnly } from "@/lib/format";
+import { useUrlState } from "@/lib/url-state";
 
 const PAGE = 50;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH = /^(\d{4})-(\d{2})$/;
 
 interface TallyPage {
   rows: Tally[];
@@ -24,7 +28,7 @@ interface TallyPage {
 
 interface Tally {
   employeeId: number;
-  code?: string;
+  code: string;
   fullName: string;
   punches: number;
   firstAt: string | null;
@@ -32,15 +36,33 @@ interface Tally {
   unsyncedClock: number;
 }
 
+interface Department {
+  id: string;
+  name: string;
+}
+
+function monthOf(raw: string): Month {
+  const hit = raw.match(MONTH);
+  const month = hit ? Number(hit[2]) : 0;
+  return hit && month >= 1 && month <= 12 ? { year: Number(hit[1]), month } : thisMonth();
+}
+
 function monthKey(at: Month): string {
   return `${at.year}-${String(at.month).padStart(2, "0")}`;
 }
 
-// The roll-up counts up to `to` inclusive, and the monthly job warms exactly this span.
+// The roll-up counts up to `to` inclusive, and the monthly job warms exactly a month's span.
 function monthBounds(at: Month): { from: string; to: string } {
   const start = new Date(at.year, at.month - 1, 1);
   const end = new Date(new Date(at.year, at.month, 1).getTime() - 1);
   return { from: start.toISOString(), to: end.toISOString() };
+}
+
+function dayBounds(from: string, to: string): { from: string; to: string } {
+  const start = dayOnly(from);
+  const end = dayOnly(to);
+  end.setDate(end.getDate() + 1);
+  return { from: start.toISOString(), to: new Date(end.getTime() - 1).toISOString() };
 }
 
 function csvCell(value: string | number): string {
@@ -48,45 +70,71 @@ function csvCell(value: string | number): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-export default function AttendancePage() {
+function Attendance() {
   const t = useTranslations("attendance");
   const common = useTranslations("common");
   const format = useFormatter();
   const notify = useNotify();
-  const [month, setMonth] = useState<Month>(thisMonth);
-  const [typed, setTyped] = useState("");
-  const search = useSettled(typed.trim());
-  const span = monthBounds(month);
-  const monthName = format.dateTime(new Date(month.year, month.month - 1, 15), { month: "long", year: "numeric" });
 
-  // The name filter goes to the roll-up, which pages: filtering here would only search the rows on screen.
-  function query(cursor: string): string {
-    const params = new URLSearchParams({ from: span.from, to: span.to, take: String(PAGE) });
-    if (search) {
-      params.set("search", search);
+  const [url, setUrl] = useUrlState({ q: "", departmentId: "", month: "", from: "", to: "", show: "" });
+  const [typed, setTyped] = useState(url.q);
+  const settled = useSettled(typed.trim());
+  useEffect(() => {
+    if (settled !== url.q) {
+      setUrl({ q: settled });
     }
+  }, [settled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const month = monthOf(url.month);
+  // A link from the home page names days; picking a month goes back to whole months.
+  const ranged = DAY.test(url.from) && DAY.test(url.to);
+  const span = ranged ? dayBounds(url.from, url.to) : monthBounds(month);
+  const spanName = ranged
+    ? url.from === url.to
+      ? format.dateTime(dayOnly(url.from), "day")
+      : `${format.dateTime(dayOnly(url.from), "day")} – ${format.dateTime(dayOnly(url.to), "day")}`
+    : format.dateTime(new Date(month.year, month.month - 1, 15), { month: "long", year: "numeric" });
+
+  function filtered(): URLSearchParams {
+    const params = new URLSearchParams({ from: span.from, to: span.to });
+    if (url.q) {
+      params.set("search", url.q);
+    }
+    if (url.departmentId) {
+      params.set("departmentId", url.departmentId);
+    }
+    if (url.show === "late") {
+      params.set("late", "true");
+    }
+    return params;
+  }
+  const filter = filtered();
+
+  function page(cursor: string): string {
+    const params = new URLSearchParams(filter);
+    params.set("take", String(PAGE));
     if (cursor) {
       params.set("cursor", cursor);
     }
     return params.toString();
   }
 
+  const departments = useQuery({
+    queryKey: ["departments"],
+    queryFn: async () => (await api.get<Department[]>("/departments")).data,
+  });
+
   const rollup = useInfiniteQuery({
-    queryKey: ["attendance", "rollup", span.from, search],
+    queryKey: ["attendance", "rollup", filter.toString()],
     initialPageParam: "",
-    queryFn: async ({ pageParam }) => (await api.get<TallyPage>(`/reports/attendance?${query(pageParam)}`)).data,
+    queryFn: async ({ pageParam }) => (await api.get<TallyPage>(`/reports/attendance?${page(pageParam)}`)).data,
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
   const totals = useQuery({
-    queryKey: ["attendance", "rollup", "totals", span.from, search],
-    queryFn: async () => {
-      const params = new URLSearchParams({ from: span.from, to: span.to });
-      if (search) {
-        params.set("search", search);
-      }
-      return (await api.get<{ people: number; punches: number; unsyncedClock: number }>(`/reports/attendance/totals?${params.toString()}`)).data;
-    },
+    queryKey: ["attendance", "rollup", "totals", filter.toString()],
+    queryFn: async () =>
+      (await api.get<{ people: number; punches: number; unsyncedClock: number }>(`/reports/attendance/totals?${filter.toString()}`)).data,
   });
 
   const shown = rollup.data?.pages.flatMap((one) => one.rows);
@@ -98,25 +146,25 @@ export default function AttendancePage() {
     return iso ? <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(iso), "medium")}</span> : common("empty");
   }
 
-  // A file holds the whole month, not the pages a reader happened to open.
+  // A file holds the whole filter, not the pages a reader happened to open.
   const exportCsv = useMutation({
     mutationFn: async () => {
       const all: Tally[] = [];
       let cursor = "";
       for (;;) {
-        const page = (await api.get<TallyPage>(`/reports/attendance?${query(cursor)}`)).data;
-        all.push(...page.rows);
-        if (!page.next) {
+        const one = (await api.get<TallyPage>(`/reports/attendance?${page(cursor)}`)).data;
+        all.push(...one.rows);
+        if (!one.next) {
           break;
         }
-        cursor = page.next;
+        cursor = one.next;
       }
       return all;
     },
     onSuccess: (all) => {
       const head = [t("code"), t("employee"), t("punches"), t("firstAt"), t("lastAt"), t("clockOff")];
       const body = all.map((row) =>
-        [row.code ?? "", row.fullName, row.punches, row.firstAt ?? "", row.lastAt ?? "", row.unsyncedClock].map(csvCell).join(","),
+        [row.code, row.fullName, row.punches, row.firstAt ?? "", row.lastAt ?? "", row.unsyncedClock].map(csvCell).join(","),
       );
       // Excel reads a CSV as the system codepage unless it opens with a BOM, which garbles Vietnamese names.
       const blob = new Blob(["﻿", [head.map(csvCell).join(","), ...body].join("\r\n")], {
@@ -124,7 +172,7 @@ export default function AttendancePage() {
       });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `attendance-${monthKey(month)}.csv`;
+      link.download = `attendance-${ranged ? `${url.from}-${url.to}` : monthKey(month)}.csv`;
       link.click();
       URL.revokeObjectURL(link.href);
       notify.done(t("exported", { count: all.length }));
@@ -133,32 +181,27 @@ export default function AttendancePage() {
   });
 
   const columns: Column<Tally>[] = [
-    {
-      id: "employee",
-      header: t("employee"),
-      sticky: true,
-      sortBy: (row) => row.fullName,
-      cell: (row) => (
-        <span className="flex flex-col">
-          <span>{row.fullName}</span>
-          {row.code ? <span className="font-mono text-sm text-kumo-subtle">{row.code}</span> : null}
-        </span>
-      ),
-    },
-    { id: "punches", header: t("punches"), numeric: true, sortBy: (row) => row.punches, cell: (row) => row.punches },
+    { id: "employee", header: t("employee"), cell: (row) => <PersonCell name={row.fullName} code={row.code} /> },
+    { id: "punches", header: t("punches"), numeric: true, cell: (row) => row.punches },
     {
       id: "unsyncedClock",
       header: t("clockOff"),
       numeric: true,
-      sortBy: (row) => row.unsyncedClock,
+      priority: 2,
       cell: (row) =>
         row.unsyncedClock > 0 ? <span className="text-kumo-warning">{row.unsyncedClock}</span> : <span className="text-kumo-subtle">0</span>,
     },
-    { id: "firstAt", header: t("firstAt"), sortBy: (row) => row.firstAt ?? "", cell: (row) => clock(row.firstAt) },
-    { id: "lastAt", header: t("lastAt"), sortBy: (row) => row.lastAt ?? "", cell: (row) => clock(row.lastAt) },
+    { id: "firstAt", header: t("firstAt"), priority: 3, cell: (row) => clock(row.firstAt) },
+    { id: "lastAt", header: t("lastAt"), priority: 3, cell: (row) => clock(row.lastAt) },
   ];
 
   const ready = totals.data !== undefined;
+  const narrowed = url.q !== "" || url.departmentId !== "" || url.show !== "";
+  const departmentItems: Record<string, string> = {
+    "": t("allDepartments"),
+    ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, one.name])),
+  };
+  const rowMonth = ranged ? url.from.slice(0, 7) : monthKey(month);
 
   return (
     <>
@@ -166,17 +209,18 @@ export default function AttendancePage() {
 
       <PageLayout
         aside={
-          <AsideCard title={t("inMonth", { month: monthName })}>
+          <AsideCard title={t("inMonth", { month: spanName })}>
             <Facts
               rows={[
-                [
-                  t("people"),
-                  totals.data ? <span className="tabular-nums">{format.number(totals.data.people)}</span> : common("empty"),
-                ],
+                [t("people"), totals.data ? <span className="tabular-nums">{format.number(totals.data.people)}</span> : common("empty")],
                 [t("punchesTotal"), ready ? <span className="tabular-nums">{format.number(punches)}</span> : common("empty")],
                 [
                   t("clockOff"),
-                  ready ? <span className={unsynced > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{format.number(unsynced)}</span> : common("empty"),
+                  ready ? (
+                    <span className={unsynced > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{format.number(unsynced)}</span>
+                  ) : (
+                    common("empty")
+                  ),
                 ],
               ]}
             />
@@ -200,20 +244,46 @@ export default function AttendancePage() {
       >
         <FilterBar
           search={{ value: typed, onChange: setTyped, placeholder: t("searchHint") }}
-          extra={<MonthPicker value={month} onChange={setMonth} max={thisMonth()} />}
+          filters={[
+            {
+              key: "department",
+              label: t("department"),
+              value: url.departmentId,
+              searchable: true,
+              onChange: (value) => setUrl({ departmentId: value }),
+              items: departmentItems,
+            },
+            {
+              key: "show",
+              label: t("showLabel"),
+              value: url.show,
+              onChange: (value) => setUrl({ show: value }),
+              items: { "": t("showAll"), late: t("showLate") },
+            },
+          ]}
+          extra={
+            ranged ? (
+              <Button variant="secondary" icon={XIcon} onClick={() => setUrl({ from: "", to: "" })}>
+                {spanName}
+              </Button>
+            ) : (
+              <MonthPicker value={month} onChange={(next) => setUrl({ month: monthKey(next) === monthKey(thisMonth()) ? "" : monthKey(next) })} max={thisMonth()} />
+            )
+          }
         />
         <DataTable
           id="attendance-rollup"
           cardLead="employee"
+          cardTrailing="punches"
           columns={columns}
           rows={shown}
           keyOf={(row) => String(row.employeeId)}
           pending={rollup.isPending}
           failed={rollup.isError}
           onRetry={() => void rollup.refetch()}
-          rowHref={(row) => `/attendance/${row.employeeId}?month=${monthKey(month)}`}
-          empty={search ? t("noMatch") : t("monthEmpty")}
-          emptyHint={search ? t("noMatchHint") : undefined}
+          rowHref={(row) => `/attendance/${row.employeeId}?month=${rowMonth}`}
+          empty={narrowed ? t("noMatch") : t("monthEmpty")}
+          emptyHint={narrowed ? t("noMatchHint") : undefined}
           paging={
             first
               ? {
@@ -228,5 +298,13 @@ export default function AttendancePage() {
         />
       </PageLayout>
     </>
+  );
+}
+
+export default function AttendancePage() {
+  return (
+    <Suspense>
+      <Attendance />
+    </Suspense>
   );
 }

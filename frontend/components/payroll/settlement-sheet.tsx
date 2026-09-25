@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Input, SkeletonLine } from "@cloudflare/kumo";
+import { Button, Input } from "@cloudflare/kumo";
 import { FloppyDiskIcon, UserMinusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
@@ -8,7 +8,9 @@ import { useState } from "react";
 
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { StatePill } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { days, money } from "@/lib/format";
 
@@ -56,6 +58,7 @@ export function SettlementSheet({ runId, editable }: { runId: string; editable: 
   const locale = useLocale();
   const cache = useQueryClient();
   const notify = useNotify();
+  const optional = useOptional();
   const [typed, setTyped] = useState<Record<string, string>>({});
 
   const sheet = useQuery({
@@ -165,7 +168,7 @@ export function SettlementSheet({ runId, editable }: { runId: string; editable: 
               return (
                 <Input
                   key={kind}
-                  label={t(kind === "SEVERANCE" ? "severance" : "assetOffset")}
+                  label={optional(t(kind === "SEVERANCE" ? "severance" : "assetOffset"))}
                   inputMode="numeric"
                   disabled={!editable}
                   value={value}

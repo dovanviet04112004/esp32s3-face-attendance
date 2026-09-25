@@ -1,21 +1,23 @@
 "use client";
 
-import { Button, Input, LayerDialog, SkeletonLine } from "@cloudflare/kumo";
-import { ArrowSquareOutIcon, ArrowsClockwiseIcon, CheckCircleIcon } from "@phosphor-icons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFormatter, useTranslations } from "next-intl";
-import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Banner, Button, Input, LayerDialog } from "@cloudflare/kumo";
+import { ArrowSquareOutIcon, ArrowsClockwiseIcon, CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFormatter, useNow, useTranslations } from "next-intl";
+import { Suspense, useEffect, useState } from "react";
 
 import { DataTable, type Column, type RowAction } from "@/components/tables/data-table";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { AsideCard, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { useUrlState } from "@/lib/url-state";
+import { useFeed, type FeedItem, type FeedStatus } from "@/lib/ws";
 
 interface Release {
   releaseId: string;
@@ -40,64 +42,135 @@ interface Device {
   status: "PENDING" | "APPROVED" | "REVOKED";
   fwVersion: string | null;
   rosterVersion: number;
+  lastSeenAt: string | null;
   online: boolean;
+}
+
+interface DevicePage {
+  rows: Device[];
+  total: number;
+  totalIsExact?: boolean;
+}
+
+type Counts = Record<"PENDING" | "APPROVED" | "REVOKED" | "online" | "offline", number>;
+
+interface Person {
+  id: number;
+  code: string;
+  fullName: string;
 }
 
 const SHOWS = ["", "online", "offline", "PENDING", "APPROVED", "REVOKED"] as const;
 type Show = (typeof SHOWS)[number];
 
 const STATUS_TONE: Record<Device["status"], Tone> = { PENDING: "waiting", APPROVED: "good", REVOKED: "idle" };
+const LINK_TONE: Record<FeedStatus, Tone> = { live: "good", reconnecting: "waiting", dropped: "bad" };
+const FEED_KEY: Record<FeedItem["feed"], "feedAttendance" | "feedEvent" | "feedDevice"> = {
+  attendance: "feedAttendance",
+  event: "feedEvent",
+  device: "feedDevice",
+};
+const EVENTS = [
+  "SPOOF_DETECTED",
+  "UNKNOWN_FACE",
+  "QUALITY_REJECTED",
+  "DOOR_OPENED_MANUALLY",
+  "DOOR_FAULT",
+  "CAMERA_FAULT",
+  "TOF_FAULT",
+  "LCD_FAULT",
+  "AUDIO_FAULT",
+  "STORAGE_FAULT",
+  "FACEDB_CORRUPT",
+  "MODEL_LOAD_FAILED",
+  "OTA_FAILED",
+  "OTA_ROLLED_BACK",
+  "TIME_UNSYNCED",
+  "BOOTED",
+  "COMMAND_DONE",
+  "COMMAND_REJECTED",
+  "ROSTER_REJECTED",
+] as const;
+type EventType = (typeof EVENTS)[number];
 
 const FLEET_POLL_MS = 5_000;
-const kFleetTake = 200;
+const kPage = 50;
 const kHistoryShown = 6;
 const kClaimDigits = 6;
+const kFeedRows = 12;
+const kTickMs = 60_000;
 
-function showOf(raw: string | null): Show {
-  const held = raw ?? "";
-  return (SHOWS as readonly string[]).includes(held) ? (held as Show) : "";
+function showOf(raw: string): Show {
+  return (SHOWS as readonly string[]).includes(raw) ? (raw as Show) : "";
 }
 
-function fits(row: Device, show: Show): boolean {
-  if (show === "online") {
-    return row.status === "APPROVED" && row.online;
-  }
-  if (show === "offline") {
-    return row.status === "APPROVED" && !row.online;
-  }
-  return show === "" || row.status === show;
+function isEvent(raw: unknown): raw is EventType {
+  return typeof raw === "string" && (EVENTS as readonly string[]).includes(raw);
 }
 
-export default function DevicesPage() {
+function Devices() {
   const t = useTranslations("devices");
   const common = useTranslations("common");
   const format = useFormatter();
+  const now = useNow({ updateInterval: kTickMs });
   const cache = useQueryClient();
   const router = useRouter();
   const notify = useNotify();
   const faultOf = useFault();
-  const asked = useSearchParams().get("show");
   const isAdmin = useSession((s) => s.role) === "ADMIN";
+  const { status: link, items } = useFeed();
 
-  const [show, setShow] = useState<Show>(() => showOf(asked));
-  const [typed, setTyped] = useState("");
-  const search = useSettled(typed.trim().toLowerCase());
+  const [url, setUrl] = useUrlState({ q: "", show: "" });
+  const [typed, setTyped] = useState(url.q);
+  const settled = useSettled(typed.trim());
+  useEffect(() => {
+    if (settled !== url.q) {
+      setUrl({ q: settled });
+    }
+  }, [settled]); // eslint-disable-line react-hooks/exhaustive-deps
+  const show = showOf(url.show);
+
   const [asking, setAsking] = useState<FleetUpdate | null>(null);
   const [approving, setApproving] = useState<Device | null>(null);
   const [claim, setClaim] = useState("");
   const [fault, setFault] = useState<string | null>(null);
   const [wholeHistory, setWholeHistory] = useState(false);
 
+  const filter = new URLSearchParams();
+  if (url.q) {
+    filter.set("search", url.q);
+  }
+  if (show === "online" || show === "offline") {
+    filter.set("online", String(show === "online"));
+  } else if (show) {
+    filter.set("status", show);
+  }
+
   // While any kiosk installs, both lists follow it until it returns on the new version.
   const installing = (): number | false =>
     (cache.getQueryData<FleetUpdate[]>(["releases", "fleet"]) ?? []).some((one) => one.updating.length > 0)
       ? FLEET_POLL_MS
       : false;
-  const devices = useQuery({
-    queryKey: ["devices", { take: kFleetTake }],
+  const devices = useInfiniteQuery({
+    queryKey: ["devices", "list", filter.toString()],
     enabled: isAdmin,
-    queryFn: async () => (await api.get<{ rows: Device[]; total: number }>(`/devices?take=${kFleetTake}`)).data,
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const page = new URLSearchParams(filter);
+      page.set("take", String(kPage));
+      page.set("skip", String(pageParam));
+      return (await api.get<DevicePage>(`/devices?${page.toString()}`)).data;
+    },
+    getNextPageParam: (last, pages) => {
+      const shown = pages.reduce((sum, one) => sum + one.rows.length, 0);
+      return shown < last.total ? shown : undefined;
+    },
     refetchInterval: installing,
+  });
+  const counts = useQuery({
+    queryKey: ["devices", "counts"],
+    enabled: isAdmin,
+    queryFn: async () => (await api.get<Counts>("/devices/counts")).data,
   });
   const releases = useQuery({
     queryKey: ["releases"],
@@ -110,6 +183,35 @@ export default function DevicesPage() {
     queryFn: async () => (await api.get<FleetUpdate[]>("/releases/fleet")).data,
     refetchInterval: installing,
   });
+
+  const recent = items.slice(0, kFeedRows);
+  const punchers = [...new Set(recent.map((item) => item.body.employeeId).filter((id): id is number => typeof id === "number"))];
+  // A name reads where an id does not; each lookup is cached with the rest of the app's employee reads.
+  const people = useQueries({
+    queries: punchers.map((id) => ({
+      queryKey: ["employees", id],
+      enabled: isAdmin,
+      staleTime: Infinity,
+      retry: false,
+      queryFn: async () => (await api.get<Person>(`/employees/${id}`)).data,
+    })),
+  });
+  const personOf = (id: unknown): string | undefined => {
+    const hit = people.find((one) => one.data?.id === id)?.data;
+    return hit ? `${hit.fullName} · ${hit.code}` : undefined;
+  };
+
+  const all = devices.data?.pages.flatMap((page) => page.rows) ?? [];
+  const first = devices.data?.pages[0];
+  const kioskOf = (id: unknown): string => {
+    const hit = all.find((one) => one.id === id);
+    return hit?.name ?? String(id ?? "");
+  };
+
+  function refreshFleet(): void {
+    void cache.invalidateQueries({ queryKey: ["devices"] });
+    void cache.invalidateQueries({ queryKey: ["releases"] });
+  }
 
   const updateAll = useMutation({
     mutationFn: async (releaseId: string) =>
@@ -127,7 +229,7 @@ export default function DevicesPage() {
     onSuccess: (_, device) => {
       setApproving(null);
       notify.done(t("approvedDone", { name: device.name ?? device.id }));
-      void cache.invalidateQueries({ queryKey: ["devices"] });
+      refreshFleet();
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
@@ -138,16 +240,20 @@ export default function DevicesPage() {
     setApproving(device);
   }
 
-  const all = devices.data?.rows ?? [];
-  const nameOf = (id: string) => all.find((one) => one.id === id)?.name ?? id;
-  const approved = all.filter((one) => one.status === "APPROVED");
-  const online = approved.filter((one) => one.online).length;
-  const pending = all.filter((one) => one.status === "PENDING").length;
-  const shown = all.filter(
-    (row) =>
-      fits(row, show) &&
-      (search === "" || [row.name, row.id, row.location].some((field) => field?.toLowerCase().includes(search))),
-  );
+  function detail(item: FeedItem): string {
+    const body = item.body;
+    if (item.feed === "attendance") {
+      const way = body.direction === "OUT" ? t("dirOUT") : t("dirIN");
+      return [personOf(body.employeeId) ?? t("feedPerson", { id: String(body.employeeId ?? "") }), way, kioskOf(body.deviceId)].join(" · ");
+    }
+    if (item.feed === "event") {
+      const what = isEvent(body.type) ? t(`event_${body.type}`) : String(body.type ?? "");
+      return [what, kioskOf(body.deviceId)].filter(Boolean).join(" · ");
+    }
+    const state =
+      body.online === true ? t("online") : body.online === false ? t("offline") : typeof body.status === "string" ? t(`status${body.status as Device["status"]}`) : t("feedBeat");
+    return [state, kioskOf(body.deviceId)].join(" · ");
+  }
 
   const updatesFor = (deviceId: string): FleetUpdate[] =>
     (fleet.data ?? []).filter((update) => update.behind.includes(deviceId) || update.updating.includes(deviceId));
@@ -158,19 +264,16 @@ export default function DevicesPage() {
     {
       id: "device",
       header: t("device"),
-      sticky: true,
-      sortBy: (row) => row.name ?? row.id,
       cell: (row) => (
-        <span className="flex flex-col whitespace-nowrap">
-          <span className={row.name ? undefined : "text-kumo-subtle"}>{row.name ?? t("unnamed")}</span>
-          <span className="font-mono text-sm text-kumo-subtle">{row.id}</span>
+        <span className="flex min-w-0 flex-col">
+          <span className={row.name ? "truncate" : "truncate text-kumo-subtle"}>{row.name ?? t("unnamed")}</span>
+          <span className="truncate font-mono text-sm text-kumo-subtle">{row.id}</span>
         </span>
       ),
     },
     {
       id: "status",
       header: t("status"),
-      sortBy: (row) => (row.status === "APPROVED" ? (row.online ? "A" : "B") : row.status),
       cell: (row) =>
         row.status === "APPROVED" ? (
           <StatePill tone={row.online ? "good" : "idle"}>{row.online ? t("online") : t("offline")}</StatePill>
@@ -179,15 +282,20 @@ export default function DevicesPage() {
         ),
     },
     {
-      id: "location",
-      header: t("location"),
-      sortBy: (row) => row.location ?? "",
-      cell: (row) => row.location ?? common("empty"),
+      id: "lastSeen",
+      header: t("lastSeen"),
+      priority: 2,
+      cell: (row) => (
+        <span className="whitespace-nowrap tabular-nums">
+          {row.lastSeenAt ? format.relativeTime(new Date(row.lastSeenAt), now) : t("never")}
+        </span>
+      ),
     },
+    { id: "location", header: t("location"), priority: 3, truncate: true, cell: (row) => row.location ?? common("empty") },
     {
       id: "firmware",
       header: t("firmware"),
-      sortBy: (row) => row.fwVersion ?? "",
+      priority: 3,
       cell: (row) => (
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm">{row.fwVersion ?? common("empty")}</span>
@@ -205,13 +313,6 @@ export default function DevicesPage() {
         </span>
       ),
     },
-    {
-      id: "roster",
-      header: t("roster"),
-      numeric: true,
-      sortBy: (row) => row.rosterVersion,
-      cell: (row) => row.rosterVersion,
-    },
   ];
 
   const actionsOf = (row: Device): RowAction[] =>
@@ -223,6 +324,8 @@ export default function DevicesPage() {
       : [];
 
   const history = releases.data ?? [];
+  const tally = counts.data;
+  const faultBanner = fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null;
 
   return (
     <>
@@ -231,35 +334,6 @@ export default function DevicesPage() {
       <PageLayout
         aside={
           <>
-            <AsideCard title={common("summary")}>
-              <StatList
-                stats={[
-                  {
-                    key: "online",
-                    label: t("showOnline"),
-                    value: devices.data ? `${online} / ${approved.length}` : common("empty"),
-                    active: show === "online",
-                    onPick: () => setShow("online"),
-                    tone: devices.data && online < approved.length ? "warning" : undefined,
-                  },
-                  {
-                    key: "pending",
-                    label: statusName("PENDING"),
-                    value: devices.data ? pending : common("empty"),
-                    active: show === "PENDING",
-                    onPick: () => setShow("PENDING"),
-                    tone: pending > 0 ? "warning" : undefined,
-                  },
-                  {
-                    key: "all",
-                    label: common("all"),
-                    value: devices.data ? all.length : common("empty"),
-                    active: show === "",
-                    onPick: () => setShow(""),
-                  },
-                ]}
-              />
-            </AsideCard>
             <AsideCard title={t("releasesTitle")}>
               {fleet.isPending ? (
                 <SkeletonLine minWidth={25} maxWidth={43} />
@@ -306,6 +380,25 @@ export default function DevicesPage() {
                 </ul>
               )}
             </AsideCard>
+            <AsideCard title={t("feedTitle")} action={<StatePill tone={LINK_TONE[link]}>{t(`link_${link}`)}</StatePill>}>
+              {recent.length === 0 ? (
+                <p className="text-kumo-subtle">{t("feedEmpty")}</p>
+              ) : (
+                <ul className="-my-1 flex flex-col">
+                  {recent.map((item) => (
+                    <li key={item.id} className="flex items-baseline gap-3 border-b border-kumo-hairline py-2 last:border-0">
+                      <span className="w-11 shrink-0 text-sm text-kumo-subtle tabular-nums">
+                        {typeof item.body.ts === "number" ? format.dateTime(new Date(item.body.ts), "clock") : ""}
+                      </span>
+                      <span className="w-20 shrink-0 text-sm text-kumo-subtle">{t(FEED_KEY[item.feed])}</span>
+                      <span className="min-w-0 flex-1 truncate" title={detail(item)}>
+                        {detail(item)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </AsideCard>
           </>
         }
         extra={
@@ -343,7 +436,7 @@ export default function DevicesPage() {
               key: "show",
               label: t("status"),
               value: show,
-              onChange: (next) => setShow(showOf(next)),
+              onChange: (next) => setUrl({ show: showOf(next) }),
               items: {
                 "": common("all"),
                 online: t("showOnline"),
@@ -352,22 +445,44 @@ export default function DevicesPage() {
                 APPROVED: statusName("APPROVED"),
                 REVOKED: statusName("REVOKED"),
               },
+              counts: tally
+                ? {
+                    "": tally.PENDING + tally.APPROVED + tally.REVOKED,
+                    online: tally.online,
+                    offline: tally.offline,
+                    PENDING: tally.PENDING,
+                    APPROVED: tally.APPROVED,
+                    REVOKED: tally.REVOKED,
+                  }
+                : undefined,
             },
           ]}
         />
         <DataTable
           id="devices"
           cardLead="device"
+          cardTrailing="status"
           columns={columns}
-          rows={shown}
+          rows={devices.data ? all : undefined}
           keyOf={(row) => row.id}
           pending={devices.isPending}
           failed={devices.isError}
           onRetry={() => void devices.refetch()}
           onRowClick={(row) => (row.status === "PENDING" ? startApproving(row) : router.push(`/devices/${row.id}`))}
           rowActions={actionsOf}
-          empty={show || search ? t("noMatch") : t("empty")}
-          emptyHint={show || search ? t("noMatchHint") : t("emptyHint")}
+          empty={show || url.q ? t("noMatch") : t("empty")}
+          emptyHint={show || url.q ? t("noMatchHint") : t("emptyHint")}
+          paging={
+            first
+              ? {
+                  shown: all.length,
+                  total: first.total,
+                  exact: first.totalIsExact,
+                  onMore: devices.hasNextPage ? () => void devices.fetchNextPage() : undefined,
+                  loading: devices.isFetchingNextPage,
+                }
+              : undefined
+          }
         />
       </PageLayout>
 
@@ -384,15 +499,14 @@ export default function DevicesPage() {
                 placeholder={t("claimPlaceholder")}
                 value={claim}
                 maxLength={kClaimDigits}
+                description={claim.length !== kClaimDigits ? t("claimHint", { digits: kClaimDigits }) : undefined}
                 onChange={(event) => setClaim(event.target.value.replace(/\D/g, "").slice(0, kClaimDigits))}
                 className="font-mono tracking-widest tabular-nums"
               />
               {approving ? (
-                <p className="text-sm text-kumo-subtle">
-                  {[approving.id, approving.location].filter(Boolean).join(" · ")}
-                </p>
+                <p className="text-sm text-kumo-subtle">{[approving.id, approving.location].filter(Boolean).join(" · ")}</p>
               ) : null}
-              {fault ? <p className="text-kumo-danger">{fault}</p> : null}
+              {faultBanner}
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
@@ -410,9 +524,7 @@ export default function DevicesPage() {
       <LayerDialog.Alert open={asking !== null} onOpenChange={(next) => !next && setAsking(null)} dismissDisabled={updateAll.isPending}>
         <LayerDialog.Content closeLabel={common("close")}>
           <LayerDialog.Title>
-            {asking
-              ? t("releaseUpdateAllTitle", { target: t(`target${asking.release.target}`), version: asking.release.version })
-              : ""}
+            {asking ? t("releaseUpdateAllTitle", { target: t(`target${asking.release.target}`), version: asking.release.version }) : ""}
           </LayerDialog.Title>
           <LayerDialog.Description>
             {asking
@@ -429,13 +541,13 @@ export default function DevicesPage() {
                 <ul className="flex flex-col">
                   {asking.behind.map((id) => (
                     <li key={id} className="flex justify-between gap-3 border-b border-kumo-hairline py-1.5 last:border-0">
-                      <span>{nameOf(id)}</span>
+                      <span>{kioskOf(id)}</span>
                       <span className="font-mono text-sm text-kumo-subtle">{id}</span>
                     </li>
                   ))}
                 </ul>
               ) : null}
-              {fault ? <p className="text-kumo-danger">{fault}</p> : null}
+              {faultBanner}
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
@@ -450,5 +562,13 @@ export default function DevicesPage() {
         </LayerDialog.Content>
       </LayerDialog.Alert>
     </>
+  );
+}
+
+export default function DevicesPage() {
+  return (
+    <Suspense>
+      <Devices />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Empty, LayerCard, SkeletonLine } from "@cloudflare/kumo";
+import { Empty, LayerCard } from "@cloudflare/kumo";
 import { CalendarBlankIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
@@ -10,6 +10,7 @@ import { todayHere } from "@/components/requests/request-form";
 import { Failed } from "@/components/ui/failed";
 import { MonthPicker, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
 import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 

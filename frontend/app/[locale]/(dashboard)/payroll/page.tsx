@@ -1,17 +1,19 @@
 "use client";
 
-import { Button, Input, LayerDialog, SkeletonLine } from "@cloudflare/kumo";
-import { PlusIcon } from "@phosphor-icons/react";
+import { Banner, Button, LayerDialog, Select } from "@cloudflare/kumo";
+import { ArrowRightIcon, PlusIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
+import { DateField } from "@/components/ui/date-field";
 import { MonthPicker, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
-import { Link, useRouter } from "@/i18n/navigation";
+import { SkeletonLine } from "@/components/ui/skeleton";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -19,6 +21,7 @@ import { dayOnly } from "@/lib/format";
 
 interface Period {
   id: string;
+  legalEntityId: string | null;
   year: number;
   month: number;
   state: "OPEN" | "LOCKED" | "PAID";
@@ -32,6 +35,19 @@ interface Run {
   state: "DRAFT" | "RUNNING" | "DONE" | "FAILED" | "DISCARDED";
 }
 
+interface ChecklistItem {
+  code: string;
+  count: number;
+}
+
+interface LegalEntity {
+  id: string;
+  code: string;
+  name: string;
+}
+
+type StepKey = "run" | "check" | "lock" | "pay";
+
 const TONE: Record<Period["state"], Tone> = { OPEN: "waiting", LOCKED: "idle", PAID: "good" };
 
 const STATE_KEY: Record<Period["state"], "stateOPEN" | "stateLOCKED" | "statePAID"> = {
@@ -40,15 +56,15 @@ const STATE_KEY: Record<Period["state"], "stateOPEN" | "stateLOCKED" | "statePAI
   PAID: "statePAID",
 };
 
-const STEPS = ["run", "check", "lock", "pay", "deliver"] as const;
+const STEP_KEY: Record<StepKey, { name: "stepRun" | "stepCheck" | "stepLock" | "stepPay"; go: "goRun" | "goCheck" | "goLock" | "goPay" }> = {
+  run: { name: "stepRun", go: "goRun" },
+  check: { name: "stepCheck", go: "goCheck" },
+  lock: { name: "stepLock", go: "goLock" },
+  pay: { name: "stepPay", go: "goPay" },
+};
 
-const STEP_KEY = {
-  run: { name: "stepRun", hint: "stepRunHint" },
-  check: { name: "stepCheck", hint: "stepCheckHint" },
-  lock: { name: "stepLock", hint: "stepLockHint" },
-  pay: { name: "stepPay", hint: "stepPayHint" },
-  deliver: { name: "stepDeliver", hint: "stepDeliverHint" },
-} as const;
+// Company-wide is its own choice in the picker; the api reads a missing id as that.
+const kWholeCompany = "";
 
 function periodName(period: { year: number; month: number }): string {
   return `${String(period.month).padStart(2, "0")}/${period.year}`;
@@ -59,12 +75,13 @@ function order(at: { year: number; month: number }): number {
 }
 
 /** This month, or the month after the newest period when this one is already open. */
-function nextToOpen(periods: Period[]): Month {
+function nextToOpen(periods: Period[], entityId: string): Month {
+  const own = periods.filter((one) => (one.legalEntityId ?? kWholeCompany) === entityId);
   const now = thisMonth();
-  if (!periods.some((one) => one.year === now.year && one.month === now.month)) {
+  if (!own.some((one) => one.year === now.year && one.month === now.month)) {
     return now;
   }
-  const newest = periods.reduce((best, one) => (order(one) > order(best) ? one : best), periods[0]);
+  const newest = own.reduce((best, one) => (order(one) > order(best) ? one : best), own[0]);
   return shiftMonth({ year: newest.year, month: newest.month }, 1);
 }
 
@@ -81,6 +98,7 @@ export default function PayrollPage() {
 
   const [opening, setOpening] = useState(false);
   const [month, setMonth] = useState<Month>(thisMonth);
+  const [entityId, setEntityId] = useState(kWholeCompany);
   const [payDate, setPayDate] = useState("");
   const [fault, setFault] = useState<string | null>(null);
 
@@ -88,18 +106,43 @@ export default function PayrollPage() {
     queryKey: ["payroll-periods"],
     queryFn: async () => (await api.get<Period[]>("/payroll-periods")).data,
   });
-  const openPeriod = periods.data?.find((one) => one.state === "OPEN");
 
-  const openRuns = useQuery({
-    queryKey: ["payroll-periods", openPeriod?.id, "runs"],
-    enabled: openPeriod !== undefined,
-    queryFn: async () => (await api.get<Run[]>(`/payroll-periods/${openPeriod?.id}/runs`)).data,
+  // The catalogue may not answer yet; one entity, or none, needs no picker.
+  const entities = useQuery({
+    queryKey: ["legal-entities"],
+    retry: false,
+    queryFn: async () => (await api.get<LegalEntity[]>("/legal-entities")).data,
+  });
+  const entityList = entities.data ?? [];
+  const manyEntities = entityList.length > 1;
+  const entityName = (id: string | null) =>
+    id === null ? t("wholeCompany") : (entityList.find((one) => one.id === id)?.name ?? common("empty"));
+
+  const current =
+    periods.data?.find((one) => one.state === "OPEN") ?? periods.data?.find((one) => one.state === "LOCKED");
+  const currentOpen = current?.state === "OPEN";
+
+  const currentRuns = useQuery({
+    queryKey: ["payroll-periods", current?.id, "runs"],
+    enabled: currentOpen,
+    queryFn: async () => (await api.get<Run[]>(`/payroll-periods/${current?.id}/runs`)).data,
+  });
+  const currentChecklist = useQuery({
+    queryKey: ["payroll-periods", current?.id, "checklist"],
+    enabled: currentOpen,
+    queryFn: async () => (await api.get<ChecklistItem[]>(`/payroll-periods/${current?.id}/checklist`)).data,
   });
 
   const open = useMutation({
     mutationFn: async () =>
-      (await api.post<Period>("/payroll-periods", { year: month.year, month: month.month, payDate: payDate || undefined }))
-        .data,
+      (
+        await api.post<Period>("/payroll-periods", {
+          year: month.year,
+          month: month.month,
+          payDate: payDate || undefined,
+          legalEntityId: entityId === kWholeCompany ? undefined : entityId,
+        })
+      ).data,
     onSuccess: (made) => {
       setOpening(false);
       notify.done(t("periodOpened", { period: periodName(made) }));
@@ -110,41 +153,69 @@ export default function PayrollPage() {
   });
 
   function startOpening(): void {
+    const first = manyEntities ? entityList[0].id : kWholeCompany;
     setFault(null);
     setPayDate("");
-    setMonth(nextToOpen(periods.data ?? []));
+    setEntityId(first);
+    setMonth(nextToOpen(periods.data ?? [], first));
     setOpening(true);
   }
+
+  function stepOf(): StepKey | undefined {
+    if (!current) {
+      return undefined;
+    }
+    if (!currentOpen) {
+      return "pay";
+    }
+    if (!(currentRuns.data ?? []).some((run) => run.kind === "REGULAR" && run.state === "DONE")) {
+      return "run";
+    }
+    return (currentChecklist.data ?? []).some((item) => item.count > 0) ? "check" : "lock";
+  }
+  const step = stepOf();
+  const stepKnown = !currentOpen || (currentRuns.isSuccess && currentChecklist.isSuccess);
 
   const columns: Column<Period>[] = [
     {
       id: "period",
       header: t("period"),
-      sticky: true,
-      sortBy: (row) => order(row),
       cell: (row) => <span className="font-medium tabular-nums">{periodName(row)}</span>,
     },
+    ...(manyEntities
+      ? [
+          {
+            id: "entity",
+            header: t("entity"),
+            priority: 2 as const,
+            truncate: true,
+            cell: (row: Period) => entityName(row.legalEntityId),
+          },
+        ]
+      : []),
     {
       id: "state",
       header: t("state"),
-      sortBy: (row) => row.state,
       cell: (row) => <StatePill tone={TONE[row.state]}>{t(STATE_KEY[row.state])}</StatePill>,
     },
     {
       id: "lockedAt",
       header: t("lockedAt"),
+      priority: 3,
       cell: (row) => (row.lockedAt ? format.dateTime(new Date(row.lockedAt), "day") : common("empty")),
     },
     {
       id: "payDate",
       header: t("payDate"),
-      sortBy: (row) => row.payDate ?? "",
+      priority: 2,
       cell: (row) => (row.payDate ? format.dateTime(dayOnly(row.payDate), "day") : common("empty")),
     },
   ];
 
-  const hasRegular = (openRuns.data ?? []).some((run) => run.kind === "REGULAR" && run.state === "DONE");
-  const openStep = hasRegular ? "check" : "run";
+  const entityItems: Record<string, string> = {
+    [kWholeCompany]: t("wholeCompany"),
+    ...Object.fromEntries(entityList.map((one) => [one.id, one.name])),
+  };
 
   return (
     <>
@@ -162,50 +233,37 @@ export default function PayrollPage() {
 
       <PageLayout
         aside={
-          <AsideCard title={t("openNow")}>
+          <AsideCard title={currentOpen || !current ? t("openNow") : t("inProgress")}>
             {periods.isPending ? (
               <SkeletonLine minWidth={25} maxWidth={40} />
-            ) : openPeriod ? (
+            ) : current ? (
               <div className="flex flex-col gap-3">
                 <Facts
                   rows={[
-                    [t("period"), <span key="p" className="font-medium tabular-nums">{periodName(openPeriod)}</span>],
-                    [
-                      t("stepNow"),
-                      openRuns.isPending ? common("empty") : t(STEP_KEY[openStep].name),
-                    ],
+                    [t("period"), <span key="p" className="font-medium tabular-nums">{periodName(current)}</span>],
+                    ...(manyEntities ? ([[t("entity"), entityName(current.legalEntityId)]] as [string, string][]) : []),
+                    [t("stepNow"), stepKnown && step ? t(STEP_KEY[step].name) : common("empty")],
                   ]}
                 />
-                <Link href={`/payroll/${openPeriod.id}`} className="text-kumo-link hover:underline">
-                  {t("openThePeriod", { period: periodName(openPeriod) })}
-                </Link>
+                <Button
+                  variant="secondary"
+                  icon={ArrowRightIcon}
+                  className="self-start"
+                  onClick={() => router.push(`/payroll/${current.id}`)}
+                >
+                  {stepKnown && step ? t(STEP_KEY[step].go) : t("openThePeriod", { period: periodName(current) })}
+                </Button>
               </div>
             ) : (
               <p className="text-kumo-subtle">{t("openNone")}</p>
             )}
           </AsideCard>
         }
-        extra={
-          <AsideCard title={t("stepsTitle")}>
-            <ol className="flex flex-col gap-3">
-              {STEPS.map((step, at) => (
-                <li key={step} className="flex gap-3">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-kumo-tint text-sm font-medium tabular-nums">
-                    {at + 1}
-                  </span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="font-medium">{t(STEP_KEY[step].name)}</span>
-                    <span className="text-sm text-pretty text-kumo-subtle">{t(STEP_KEY[step].hint)}</span>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </AsideCard>
-        }
       >
         <DataTable
           id="payroll-periods"
           cardLead="period"
+          cardTrailing="state"
           columns={columns}
           rows={periods.data}
           keyOf={(row) => row.id}
@@ -231,18 +289,32 @@ export default function PayrollPage() {
           <LayerDialog.Description>{t("openPeriodLead")}</LayerDialog.Description>
           <LayerDialog.Body>
             <div className="flex flex-col gap-4">
+              {manyEntities ? (
+                <Select
+                  label={t("entity")}
+                  hideLabel={false}
+                  value={entityId}
+                  onValueChange={(next) => {
+                    const chosen = String(next ?? kWholeCompany);
+                    setEntityId(chosen);
+                    setMonth(nextToOpen(periods.data ?? [], chosen));
+                  }}
+                  items={entityItems}
+                  className="w-full"
+                />
+              ) : null}
               <div className="flex flex-col gap-1.5">
                 <span className="font-medium">{t("month")}</span>
                 <MonthPicker value={month} onChange={setMonth} />
               </div>
-              <Input
+              <DateField
                 label={t("payDate")}
-                type="date"
                 value={payDate}
                 description={t("payDateHint")}
-                onChange={(event) => setPayDate(event.target.value)}
+                required={false}
+                onChange={setPayDate}
               />
-              {fault ? <p className="text-kumo-danger">{fault}</p> : null}
+              {fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>

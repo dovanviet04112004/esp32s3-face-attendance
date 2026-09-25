@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Empty, LayerCard, LayerDialog, Select, SkeletonLine, Textarea } from "@cloudflare/kumo";
+import { Banner, Button, Empty, LayerCard, LayerDialog, Select, Textarea } from "@cloudflare/kumo";
 import { ChatCircleTextIcon, PrinterIcon, ReceiptIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
@@ -12,6 +12,7 @@ import { PayslipView, useLineName, type Payslip } from "@/components/payroll/pay
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
@@ -57,7 +58,6 @@ interface Delta {
 const kHere = "/me/payslips";
 const kDisputeForm = "dispute-form";
 const THIS_YEAR = new Date().getFullYear();
-const YEARS = [THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2];
 
 function periodName(row: PayslipRow, fallback: string): string {
   return row.period ? `${String(row.period.month).padStart(2, "0")}/${row.period.year}` : fallback;
@@ -85,7 +85,7 @@ function MyPayslips() {
   const faultOf = useFault();
   const notify = useNotify();
   const employeeId = useSession((one) => one.employeeId);
-  const [year, setYear] = useState(THIS_YEAR);
+  const [pickedYear, setYear] = useState<number | null>(null);
   const [raising, setRaising] = useState(false);
   const [claim, setClaim] = useState("");
   const [lineCode, setLineCode] = useState("");
@@ -104,6 +104,8 @@ function MyPayslips() {
   });
 
   const slips = mine.data?.pages.flatMap((one) => one.rows);
+  const years = [...new Set((slips ?? []).flatMap((one) => (one.period ? [one.period.year] : [])))].sort((left, right) => right - left);
+  const year = pickedYear ?? years[0] ?? THIS_YEAR;
   const asked = search.get("slip");
   const chosen = (asked && slips?.some((one) => one.id === asked) ? asked : null) ?? slips?.[0]?.id ?? null;
   const chosenRow = slips?.find((one) => one.id === chosen);
@@ -212,7 +214,7 @@ function MyPayslips() {
           hasSlips ? (
             <div className="hidden md:block">
               <AsideCard title={t("periods")}>
-                <div className="max-h-96 overflow-y-auto">
+                <div className="-mx-2 max-h-96 overflow-y-auto px-2">
                   <StatList
                     stats={(slips ?? []).map((row) => ({
                       key: row.id,
@@ -232,13 +234,17 @@ function MyPayslips() {
           <AsideCard
             title={t("taxYearTitle")}
             action={
-              <Select
-                aria-label={t("taxYear")}
-                size="sm"
-                value={String(year)}
-                onValueChange={(next) => setYear(Number(next ?? THIS_YEAR))}
-                items={Object.fromEntries(YEARS.map((one) => [String(one), String(one)]))}
-              />
+              years.length > 1 ? (
+                <Select
+                  aria-label={t("taxYear")}
+                  size="sm"
+                  value={String(year)}
+                  onValueChange={(next) => setYear(Number(next ?? year))}
+                  items={Object.fromEntries(years.map((one) => [String(one), String(one)]))}
+                />
+              ) : (
+                <span className="font-normal tabular-nums">{year}</span>
+              )
             }
           >
             {statement.isPending ? (

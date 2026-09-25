@@ -1,40 +1,44 @@
 "use client";
 
-import { Button, Checkbox, Empty, Input, LayerCard, LayerDialog, Radio, SkeletonLine } from "@cloudflare/kumo";
+import { Banner, Button, Checkbox, Empty, Input, LayerCard, LayerDialog, Radio } from "@cloudflare/kumo";
 import {
-  CaretLeftIcon,
+  CalculatorIcon,
   CheckCircleIcon,
   CheckIcon,
   DownloadSimpleIcon,
+  LockSimpleIcon,
   PaperPlaneTiltIcon,
   PlayIcon,
   PlusIcon,
   ReceiptIcon,
   WalletIcon,
-  LockSimpleIcon,
-  CalculatorIcon,
+  WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { BonusSheet } from "@/components/payroll/bonus-sheet";
 import { PayslipView, type Payslip } from "@/components/payroll/payslip-view";
 import { RunProgress, type PayrollRun, type RunKind } from "@/components/payroll/run-progress";
 import { SettlementSheet } from "@/components/payroll/settlement-sheet";
-import { DataTable, type Column } from "@/components/tables/data-table";
+import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
+import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, PageHeader, PageLayout } from "@/components/ui/page";
+import { useOptional } from "@/components/ui/optional";
+import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill, type Tone } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
-import { days, money } from "@/lib/format";
+import { money } from "@/lib/format";
 import { allows } from "@/lib/nav";
+import { useUrlState } from "@/lib/url-state";
 
 interface ChecklistItem {
   code: string;
@@ -49,15 +53,26 @@ interface Period {
   lockNote: string | null;
 }
 
+interface Totals {
+  payslips: number;
+  people: number;
+  gross: string;
+  net: string;
+  insuranceEmployer: string;
+  employerCost: string;
+}
+
 interface SlipRow {
   id: string;
   employeeId: number;
   state: Payslip["state"];
-  workedDays: string;
   grossPay: string;
+  insuranceEmployee: string;
+  personalIncomeTax: string;
+  advance: string;
   netPay: string;
-  sentAt: string | null;
-  employee?: { code: string; fullName: string };
+  employee: { code: string; fullName: string; department: { id: string; name: string } | null };
+  run: { kind: RunKind; state: PayrollRun["state"] };
 }
 
 interface SlipPage {
@@ -107,6 +122,7 @@ const KIND_HINT: Record<RunKind, "runREGULARHint" | "runBONUSHint" | "runFINAL_S
 
 const kRunPollMs = 2_000;
 const kSlipPage = 50;
+const kLabelMax = 120;
 
 type StepKey = "run" | "check" | "lock" | "pay" | "deliver";
 type StepState = "done" | "current" | "later";
@@ -131,11 +147,15 @@ function periodName(period: { year: number; month: number }): string {
 
 function save(text: string, name: string): void {
   const link = document.createElement("a");
-  // The api already opens the file with a BOM, so this must not add one.
+  // The api already opens the file with a BOM where Excel needs one, so this must not add one.
   link.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
   link.download = name;
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+function FaultBanner({ fault }: { fault: string | null }) {
+  return fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null;
 }
 
 /** The five steps of a period, which of them are done, and the action of the one that is next. */
@@ -172,7 +192,7 @@ function Stepper({ steps }: { steps: Step[] }) {
   );
 }
 
-export default function PayrollPeriodPage() {
+function PayrollPeriod() {
   const t = useTranslations("payroll");
   const common = useTranslations("common");
   const locale = useLocale();
@@ -184,6 +204,16 @@ export default function PayrollPeriodPage() {
   const cache = useQueryClient();
   const notify = useNotify();
   const faultOf = useFault();
+  const optional = useOptional();
+
+  const [url, setUrl] = useUrlState({ q: "", run: "" });
+  const [typed, setTyped] = useState(url.q);
+  const settled = useSettled(typed.trim());
+  useEffect(() => {
+    if (settled !== url.q) {
+      setUrl({ q: settled });
+    }
+  }, [settled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [creating, setCreating] = useState(false);
   const [kind, setKind] = useState<RunKind>("REGULAR");
@@ -193,8 +223,8 @@ export default function PayrollPeriodPage() {
   const [paying, setPaying] = useState(false);
   const [sending, setSending] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
-  const [slipsOf, setSlipsOf] = useState<PayrollRun | null>(null);
   const [slipOpen, setSlipOpen] = useState<SlipRow | null>(null);
+  const table = useRef<HTMLElement | null>(null);
 
   const periods = useQuery({
     queryKey: ["payroll-periods"],
@@ -202,6 +232,7 @@ export default function PayrollPeriodPage() {
   });
   const period = periods.data?.find((one) => one.id === periodId);
   const name = period ? periodName(period) : "";
+  const open = period?.state === "OPEN";
 
   const checklist = useQuery({
     queryKey: ["payroll-periods", periodId, "checklist"],
@@ -213,23 +244,58 @@ export default function PayrollPeriodPage() {
     refetchInterval: (query) => ((query.state.data ?? []).some((run) => run.state === "RUNNING") ? kRunPollMs : false),
     queryFn: async () => (await api.get<PayrollRun[]>(`/payroll-periods/${periodId}/runs`)).data,
   });
+  const runList = runs.data ?? [];
+
+  // A run leaving RUNNING changes the payslips and the steps, which the poll alone never re-reads.
+  const running = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const now = new Set(runList.filter((run) => run.state === "RUNNING").map((run) => run.id));
+    const ended = [...running.current].some((id) => !now.has(id));
+    running.current = now;
+    if (ended) {
+      void cache.invalidateQueries({ queryKey: ["payroll-periods"] });
+      void cache.invalidateQueries({ queryKey: ["payslips"] });
+    }
+  }, [runList, cache]);
 
   const delivery = useQuery({
     queryKey: ["payroll-periods", periodId, "delivery"],
-    enabled: period !== undefined && period.state !== "OPEN",
+    enabled: period !== undefined && !open,
     queryFn: async () => (await api.get<{ issued: number; sent: number }>(`/payroll-periods/${periodId}/delivery`)).data,
   });
 
+  const totals = useQuery({
+    queryKey: ["payroll-periods", periodId, "totals"],
+    queryFn: async () => (await api.get<Totals>(`/payroll-periods/${periodId}/totals`)).data,
+  });
+
+  // An open period reads one run's drafts, the newest finished regular one unless the reader picks another.
+  const newestRegular = runList.find((run) => run.kind === "REGULAR" && run.state === "DONE");
+  const shownRun = open ? (runList.find((run) => run.id === url.run) ?? newestRegular) : undefined;
+  const slipFilter = new URLSearchParams({ periodId });
+  if (open && shownRun) {
+    slipFilter.set("runId", shownRun.id);
+  }
+  if (!open) {
+    slipFilter.set("issued", "true");
+  }
+  if (url.q) {
+    slipFilter.set("search", url.q);
+  }
+  const slipsReady = period !== undefined && (!open || shownRun !== undefined);
+
   const slips = useInfiniteQuery({
-    queryKey: ["payslips", "run", slipsOf?.id],
-    enabled: slipsOf !== null,
+    queryKey: ["payslips", "period", slipFilter.toString()],
+    enabled: slipsReady,
     initialPageParam: "",
-    queryFn: async ({ pageParam }) =>
-      (
-        await api.get<SlipPage>(
-          `/payslips?runId=${slipsOf?.id}&take=${kSlipPage}${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
-        )
-      ).data,
+    queryFn: async ({ pageParam }) => {
+      const page = new URLSearchParams(slipFilter);
+      page.set("take", String(kSlipPage));
+      if (pageParam) {
+        page.set("cursor", pageParam);
+      }
+      return (await api.get<SlipPage>(`/payslips?${page.toString()}`)).data;
+    },
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
@@ -241,6 +307,7 @@ export default function PayrollPeriodPage() {
 
   function refresh(): void {
     void cache.invalidateQueries({ queryKey: ["payroll-periods"] });
+    void cache.invalidateQueries({ queryKey: ["payroll-runs"] });
     void cache.invalidateQueries({ queryKey: ["payslips"] });
   }
 
@@ -288,8 +355,18 @@ export default function PayrollPeriodPage() {
 
   const exportFile = useMutation({
     mutationFn: async (kindOf: "bank" | "ledger") =>
-      save((await api.get<string>(`/payroll-periods/${periodId}/export?kind=${kindOf}`)).data, `payroll-${kindOf}-${name.replace("/", "-")}.csv`),
+      save(
+        (await api.get<string>(`/payroll-periods/${periodId}/export?kind=${kindOf}`)).data,
+        `payroll-${kindOf}-${name.replace("/", "-")}.csv`,
+      ),
     onSuccess: (_, kindOf) => notify.done(t(kindOf === "bank" ? "exportBankDone" : "exportLedgerDone")),
+    onError: notify.failed,
+  });
+
+  const exportSlips = useMutation({
+    mutationFn: async () =>
+      save((await api.get<string>(`/payslips/export?${slipFilter.toString()}`)).data, `payslips-${name.replace("/", "-")}.csv`),
+    onSuccess: () => notify.done(t("slipsExported")),
     onError: notify.failed,
   });
 
@@ -322,10 +399,8 @@ export default function PayrollPeriodPage() {
     );
   }
 
-  const open = period?.state === "OPEN";
-  const runList = runs.data ?? [];
   const openItems = (checklist.data ?? []).filter((item) => item.count > 0);
-  const regularDone = runList.some((run) => run.kind === "REGULAR" && run.state === "DONE");
+  const regularDone = newestRegular !== undefined;
   const delivered =
     deliver.isSuccess || (delivery.data !== undefined && delivery.data.issued > 0 && delivery.data.sent === delivery.data.issued);
 
@@ -338,6 +413,11 @@ export default function PayrollPeriodPage() {
     setKind(regularDone ? "BONUS" : "REGULAR");
     setLabel("");
     begin(setCreating);
+  }
+
+  function showSlipsOf(run: PayrollRun): void {
+    setUrl({ run: run.id === newestRegular?.id ? "" : run.id });
+    table.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   const doneOf: Record<StepKey, boolean> = {
@@ -366,7 +446,14 @@ export default function PayrollPeriodPage() {
   const bodyOf: Record<StepKey, ReactNode> = {
     run:
       current === "run" ? (
-        <p className="text-sm text-kumo-subtle">{runList.some((run) => run.kind === "REGULAR") ? t("stepRunEach") : t("stepRunNone")}</p>
+        <>
+          <p className="text-sm text-kumo-subtle">{runList.some((run) => run.kind === "REGULAR") ? t("stepRunEach") : t("stepRunNone")}</p>
+          {mayWrite && !runList.some((run) => run.kind === "REGULAR") ? (
+            <Button variant="secondary" icon={PlusIcon} className="self-start" onClick={startCreating}>
+              {t("newRun")}
+            </Button>
+          ) : null}
+        </>
       ) : null,
     check:
       current === "check" ? (
@@ -423,50 +510,60 @@ export default function PayrollPeriodPage() {
 
   const slipRows = slips.data?.pages.flatMap((page) => page.rows);
   const firstPage = slips.data?.pages[0];
+  const amount = (value: string) => money(Number(value), locale);
   const slipColumns: Column<SlipRow>[] = [
     {
       id: "employee",
       header: t("slipEmployee"),
-      sticky: true,
-      sortBy: (row) => row.employee?.fullName ?? row.employeeId,
-      cell: (row) =>
-        row.employee ? (
-          <span className="flex items-baseline gap-2">
-            <span>{row.employee.fullName}</span>
-            <span className="font-mono text-sm text-kumo-subtle">{row.employee.code}</span>
-          </span>
-        ) : (
-          <span className="font-mono">#{row.employeeId}</span>
-        ),
+      cell: (row) => <PersonCell name={row.employee.fullName} code={row.employee.code} />,
     },
     {
-      id: "workedDays",
-      header: t("workedDays"),
-      numeric: true,
-      sortBy: (row) => Number(row.workedDays),
-      cell: (row) => days(Number(row.workedDays), locale),
+      id: "department",
+      header: t("department"),
+      priority: 3,
+      truncate: true,
+      maxWidthPx: 180,
+      cell: (row) => row.employee.department?.name ?? common("empty"),
     },
+    { id: "gross", header: t("gross"), numeric: true, priority: 2, cell: (row) => amount(row.grossPay) },
+    { id: "insurance", header: t("insurance"), numeric: true, priority: 3, cell: (row) => amount(row.insuranceEmployee) },
+    { id: "tax", header: t("tax"), numeric: true, priority: 3, cell: (row) => amount(row.personalIncomeTax) },
     {
-      id: "net",
-      header: t("net"),
+      id: "advance",
+      header: t("advanceShort"),
       numeric: true,
-      sortBy: (row) => Number(row.netPay),
-      cell: (row) => money(Number(row.netPay), locale),
+      priority: 3,
+      cell: (row) => (Number(row.advance) > 0 ? amount(row.advance) : common("empty")),
     },
+    { id: "net", header: t("net"), numeric: true, cell: (row) => <span className="font-medium">{amount(row.netPay)}</span> },
     {
       id: "state",
       header: t("state"),
-      sortBy: (row) => row.state,
-      cell: (row) => <StatePill tone={SLIP_TONE[row.state]}>{t(`state${row.state}`)}</StatePill>,
+      priority: 2,
+      cell: (row) => (
+        <span className="flex flex-wrap gap-1">
+          <StatePill tone={SLIP_TONE[row.state]}>{t(`state${row.state}`)}</StatePill>
+          {row.run.kind !== "REGULAR" ? <StatePill>{t(`run${row.run.kind}`)}</StatePill> : null}
+        </span>
+      ),
     },
   ];
+
+  const runItems: Record<string, string> = Object.fromEntries(
+    runList.filter((run) => run.doneCount > 0).map((run) => [run.id === newestRegular?.id ? "" : run.id, runName(run)]),
+  );
+  const sum = totals.data;
 
   return (
     <>
       <PageHeader
         title={period ? t("periodTitle", { period: name }) : t("period")}
         meta={period ? <StatePill tone={PERIOD_TONE[period.state]}>{t(PERIOD_KEY[period.state])}</StatePill> : undefined}
-        description={period ? t(open ? "periodLeadOpen" : period.state === "LOCKED" ? "periodLeadLocked" : delivered ? "periodLeadDone" : "periodLeadPaid") : undefined}
+        description={
+          period
+            ? t(open ? "periodLeadOpen" : period.state === "LOCKED" ? "periodLeadLocked" : delivered ? "periodLeadDone" : "periodLeadPaid")
+            : undefined
+        }
         actions={
           mayWrite && open ? (
             <Button variant="primary" icon={PlusIcon} onClick={startCreating}>
@@ -478,17 +575,36 @@ export default function PayrollPeriodPage() {
 
       <PageLayout
         aside={
-          <AsideCard title={t("stepsTitle")}>
-            {periods.isPending || runs.isPending ? (
-              <div className="flex flex-col gap-3">
-                {order.map((key) => (
-                  <SkeletonLine key={key} minWidth={25} maxWidth={37} />
-                ))}
-              </div>
-            ) : (
-              <Stepper steps={steps} />
-            )}
-          </AsideCard>
+          <>
+            <AsideCard title={t("stepsTitle")}>
+              {periods.isPending || runs.isPending ? (
+                <div className="flex flex-col gap-3">
+                  {order.map((key) => (
+                    <SkeletonLine key={key} minWidth={25} maxWidth={37} />
+                  ))}
+                </div>
+              ) : (
+                <Stepper steps={steps} />
+              )}
+            </AsideCard>
+            <AsideCard title={t("totalsTitle")}>
+              {totals.isError ? (
+                <Failed onRetry={() => void totals.refetch()} />
+              ) : (
+                <>
+                  <Facts
+                    rows={[
+                      [t("totalsSlips"), sum ? sum.payslips : common("empty")],
+                      [t("gross"), sum ? <span className="tabular-nums">{amount(sum.gross)}</span> : common("empty")],
+                      [t("net"), sum ? <span className="tabular-nums">{amount(sum.net)}</span> : common("empty")],
+                      [t("totalsEmployerCost"), sum ? <span className="tabular-nums">{amount(sum.employerCost)}</span> : common("empty")],
+                    ]}
+                  />
+                  <p className="mt-3 text-sm text-kumo-subtle">{t(open ? "totalsOpenHint" : "totalsIssuedHint")}</p>
+                </>
+              )}
+            </AsideCard>
+          </>
         }
       >
         <div className="flex flex-col gap-8">
@@ -529,16 +645,8 @@ export default function PayrollPeriodPage() {
                     run={run}
                     action={
                       <span className="flex flex-wrap gap-2">
-                        {run.doneCount > 0 ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            icon={ReceiptIcon}
-                            onClick={() => {
-                              setSlipOpen(null);
-                              setSlipsOf(run);
-                            }}
-                          >
+                        {open && run.doneCount > 0 ? (
+                          <Button variant="ghost" size="sm" icon={ReceiptIcon} onClick={() => showSlipsOf(run)}>
                             {t("payslips")}
                           </Button>
                         ) : null}
@@ -561,6 +669,79 @@ export default function PayrollPeriodPage() {
                   </RunProgress>
                 );
               })
+            )}
+          </section>
+
+          <section ref={table} className="flex scroll-mt-24 flex-col gap-3">
+            <h2 className="m-0 flex items-center gap-2 text-lg font-semibold">
+              {open && shownRun ? t("slipsOf", { name: runName(shownRun) }) : t("payslips")}
+              {firstPage ? <CountPill>{format.number(firstPage.total)}</CountPill> : null}
+            </h2>
+            {slipsReady ? (
+              <>
+                <FilterBar
+                  search={{ value: typed, onChange: setTyped, placeholder: t("slipSearchHint") }}
+                  filters={
+                    open && Object.keys(runItems).length > 1
+                      ? [
+                          {
+                            key: "run",
+                            label: t("slipRun"),
+                            value: shownRun?.id === newestRegular?.id ? "" : (shownRun?.id ?? ""),
+                            onChange: (value) => setUrl({ run: value }),
+                            items: runItems,
+                          },
+                        ]
+                      : []
+                  }
+                  extra={
+                    mayWrite || role === "HR" ? (
+                      <Button
+                        variant="secondary"
+                        icon={DownloadSimpleIcon}
+                        loading={exportSlips.isPending}
+                        disabled={!firstPage || firstPage.total === 0}
+                        onClick={() => exportSlips.mutate()}
+                      >
+                        {common("export")}
+                      </Button>
+                    ) : undefined
+                  }
+                />
+                <DataTable
+                  id="period-payslips"
+                  cardLead="employee"
+                  cardTrailing="net"
+                  columns={slipColumns}
+                  rows={slipRows}
+                  keyOf={(row) => row.id}
+                  pending={slips.isPending}
+                  failed={slips.isError}
+                  onRetry={() => void slips.refetch()}
+                  onRowClick={setSlipOpen}
+                  empty={url.q ? common("noMatch") : t("empty")}
+                  paging={
+                    firstPage
+                      ? {
+                          shown: slipRows?.length ?? 0,
+                          total: firstPage.total,
+                          exact: firstPage.totalIsExact,
+                          onMore: slips.hasNextPage ? () => void slips.fetchNextPage() : undefined,
+                          loading: slips.isFetchingNextPage,
+                        }
+                      : undefined
+                  }
+                />
+              </>
+            ) : (
+              <LayerCard className="p-0">
+                <Empty
+                  icon={<ReceiptIcon size={40} className="text-kumo-inactive" />}
+                  title={t("slipsNone")}
+                  description={t("slipsNoneHint")}
+                  className="py-10"
+                />
+              </LayerCard>
             )}
           </section>
 
@@ -628,24 +809,19 @@ export default function PayrollPeriodPage() {
           <LayerDialog.Description>{t("newRunLead", { period: name })}</LayerDialog.Description>
           <LayerDialog.Body>
             <div className="flex flex-col gap-4">
-              <Radio.Group
-                legend={t("runKind")}
-                appearance="card"
-                value={kind}
-                onValueChange={(next) => setKind(next as RunKind)}
-              >
+              <Radio.Group legend={t("runKind")} appearance="card" value={kind} onValueChange={(next) => setKind(next as RunKind)}>
                 {KINDS.map((one) => (
                   <Radio.Item key={one} value={one} label={t(`run${one}`)} description={t(KIND_HINT[one])} />
                 ))}
               </Radio.Group>
               <Input
-                label={t("runLabel")}
+                label={optional(t("runLabel"))}
                 description={t("runLabelHint")}
-                maxLength={120}
+                maxLength={kLabelMax}
                 value={label}
                 onChange={(event) => setLabel(event.target.value)}
               />
-              {fault ? <p className="text-kumo-danger">{fault}</p> : null}
+              <FaultBanner fault={fault} />
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
@@ -678,7 +854,7 @@ export default function PayrollPeriodPage() {
               ) : (
                 <p className="text-kumo-subtle">{t("checklistClearHint")}</p>
               )}
-              {fault ? <p className="text-kumo-danger">{fault}</p> : null}
+              <FaultBanner fault={fault} />
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
@@ -699,8 +875,10 @@ export default function PayrollPeriodPage() {
           <LayerDialog.Title>{t("payTitle", { period: name })}</LayerDialog.Title>
           <LayerDialog.Description>{t("payWarn", { period: name })}</LayerDialog.Description>
           <LayerDialog.Body>
-            <p className="text-kumo-subtle">{t("payNote")}</p>
-            {fault ? <p className="mt-3 text-kumo-danger">{fault}</p> : null}
+            <div className="flex flex-col gap-3">
+              <p className="text-kumo-subtle">{t("payNote")}</p>
+              <FaultBanner fault={fault} />
+            </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
             <LayerDialog.Actions.Primary variant="destructive" loading={pay.isPending} onClick={() => pay.mutate()}>
@@ -715,8 +893,10 @@ export default function PayrollPeriodPage() {
           <LayerDialog.Title>{t("deliverTitle", { period: name })}</LayerDialog.Title>
           <LayerDialog.Description>{t("deliverWarn")}</LayerDialog.Description>
           <LayerDialog.Body>
-            <p className="text-kumo-subtle">{t("deliverNote")}</p>
-            {fault ? <p className="mt-3 text-kumo-danger">{fault}</p> : null}
+            <div className="flex flex-col gap-3">
+              <p className="text-kumo-subtle">{t("deliverNote")}</p>
+              <FaultBanner fault={fault} />
+            </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
             <LayerDialog.Actions.Primary variant="destructive" loading={deliver.isPending} onClick={() => deliver.mutate()}>
@@ -726,69 +906,32 @@ export default function PayrollPeriodPage() {
         </LayerDialog.Content>
       </LayerDialog.Alert>
 
-      <LayerDialog.Root
-        open={slipsOf !== null}
-        onOpenChange={(next) => {
-          if (!next) {
-            setSlipsOf(null);
-            setSlipOpen(null);
-          }
-        }}
-      >
-        <LayerDialog.Content size="xl" closeLabel={common("close")}>
-          <LayerDialog.Title>
-            {slipOpen
-              ? t("slipOf", { name: slipOpen.employee?.fullName ?? `#${slipOpen.employeeId}` })
-              : t("slipsOf", { name: slipsOf ? runName(slipsOf) : "" })}
-          </LayerDialog.Title>
-          <LayerDialog.Description>
-            {firstPage ? t("slipsLead", { period: name, count: firstPage.total }) : t("periodTitle", { period: name })}
-          </LayerDialog.Description>
+      <LayerDialog.Root open={slipOpen !== null} onOpenChange={(next) => !next && setSlipOpen(null)}>
+        <LayerDialog.Content size="lg" closeLabel={common("close")}>
+          <LayerDialog.Title>{slipOpen ? t("slipOf", { name: slipOpen.employee.fullName }) : t("payslips")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("periodTitle", { period: name })}</LayerDialog.Description>
           <LayerDialog.Body>
-            {slipOpen ? (
-              <div className="flex flex-col gap-4">
-                <Button variant="ghost" size="sm" icon={CaretLeftIcon} className="self-start" onClick={() => setSlipOpen(null)}>
-                  {t("slipsBack")}
-                </Button>
-                {slip.isError ? (
-                  <Failed onRetry={() => void slip.refetch()} />
-                ) : slip.data ? (
-                  <PayslipView slip={slip.data} />
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    <SkeletonLine minWidth={27} maxWidth={53} />
-                    <SkeletonLine minWidth={33} maxWidth={80} />
-                  </div>
-                )}
-              </div>
+            {slip.isError ? (
+              <Failed onRetry={() => void slip.refetch()} />
+            ) : slip.data ? (
+              <PayslipView slip={slip.data} />
             ) : (
-              <DataTable
-                id="run-payslips"
-                cardLead="employee"
-                columns={slipColumns}
-                rows={slipRows}
-                keyOf={(row) => row.id}
-                pending={slips.isPending}
-                failed={slips.isError}
-                onRetry={() => void slips.refetch()}
-                onRowClick={setSlipOpen}
-                empty={t("empty")}
-                paging={
-                  firstPage
-                    ? {
-                        shown: slipRows?.length ?? 0,
-                        total: firstPage.total,
-                        exact: firstPage.totalIsExact,
-                        onMore: slips.hasNextPage ? () => void slips.fetchNextPage() : undefined,
-                        loading: slips.isFetchingNextPage,
-                      }
-                    : undefined
-                }
-              />
+              <div className="flex flex-col gap-3">
+                <SkeletonLine minWidth={27} maxWidth={53} />
+                <SkeletonLine minWidth={33} maxWidth={80} />
+              </div>
             )}
           </LayerDialog.Body>
         </LayerDialog.Content>
       </LayerDialog.Root>
     </>
+  );
+}
+
+export default function PayrollPeriodPage() {
+  return (
+    <Suspense>
+      <PayrollPeriod />
+    </Suspense>
   );
 }
