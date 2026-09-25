@@ -22,22 +22,48 @@ static const char *TAG = "net_mqtt";
 #define STATUS_OFFLINE "offline"
 #define LOCK_WAIT_MS 5000
 #define STOP_DRAIN_MS 500
+// A sender may sit in one esp-mqtt write for its 10 s network timeout.
+#define STOP_LOCK_WAIT_MS 15000
+#define STOP_WAKE_MS 50
 
 extern const char broker_ca_pem_start[] asm("_binary_broker_ca_crt_start");
 
 typedef struct {
     esp_mqtt_client_handle_t client;
     net_mqtt_config_t config;
-    SemaphoreHandle_t send_lock;
-    SemaphoreHandle_t acked;
     int awaited_msg;
     bool up;
+    bool stopping;
     uint32_t disconnects;
     char device_id[STORAGE_DEVICE_ID_CAP];
     char will_topic[GEN_TOPIC_MAX_LEN];
 } link_t;
 
+typedef struct {
+    gen_topic_id_t topic;
+    size_t len;
+} inbox_t;
+
 static link_t s_link;
+// Created once and never deleted: a sender may still hold them while a client is torn down.
+static SemaphoreHandle_t s_send_lock;
+static SemaphoreHandle_t s_acked;
+static char *s_inbox_buf;
+static inbox_t s_inbox;
+
+static esp_err_t make_process_objects(void)
+{
+    if (s_send_lock == NULL) {
+        s_send_lock = xSemaphoreCreateMutex();
+    }
+    if (s_acked == NULL) {
+        s_acked = xSemaphoreCreateBinary();
+    }
+    if (s_inbox_buf == NULL) {
+        s_inbox_buf = heap_caps_malloc(NET_MQTT_MESSAGE_CAP, MALLOC_CAP_SPIRAM);
+    }
+    return s_send_lock != NULL && s_acked != NULL && s_inbox_buf != NULL ? ESP_OK : ESP_ERR_NO_MEM;
+}
 
 // A key present but empty is the same as absent, so the fallback wins (KEHOACH 6.2.1).
 static esp_err_t setting(const char *key, char *out, size_t cap, const char *fallback)
@@ -79,6 +105,13 @@ static esp_err_t subscribe_down(void)
     return ESP_OK;
 }
 
+static void tell_state(bool up)
+{
+    if (s_link.config.on_state != NULL) {
+        s_link.config.on_state(up, s_link.config.ctx);
+    }
+}
+
 static void on_connected(void)
 {
     s_link.up = true;
@@ -88,8 +121,8 @@ static void on_connected(void)
         ESP_LOGE(TAG, "down topics unsubscribed, commands will not arrive");
     }
     ESP_LOGI(TAG, "broker up as %s", s_link.device_id);
-    if (s_link.config.on_state != NULL) {
-        s_link.config.on_state(true, s_link.config.ctx);
+    if (!s_link.stopping) {
+        tell_state(true);
     }
 }
 
@@ -101,34 +134,63 @@ static void on_disconnected(void)
     s_link.up = false;
     ++s_link.disconnects;
     ESP_LOGW(TAG, "broker down, %" PRIu32 " time(s)", s_link.disconnects);
-    if (s_link.config.on_state != NULL) {
-        s_link.config.on_state(false, s_link.config.ctx);
-    }
+    tell_state(false);
 }
 
 static void on_published(int msg_id)
 {
     if (s_link.awaited_msg != 0 && msg_id == s_link.awaited_msg) {
-        xSemaphoreGive(s_link.acked);
+        xSemaphoreGive(s_acked);
     }
 }
 
-static void on_data(const esp_mqtt_event_handle_t event)
+static gen_topic_id_t topic_of(const esp_mqtt_event_handle_t event)
 {
-    if (s_link.config.on_message == NULL) {
-        return;
-    }
     char topic[GEN_TOPIC_MAX_LEN] = { 0 };
     if (event->topic_len <= 0 || (size_t)event->topic_len >= sizeof(topic)) {
-        return;
+        return GEN_TOPIC_NONE;
     }
     memcpy(topic, event->topic, (size_t)event->topic_len);
     const gen_topic_id_t id = gen_topic_classify(topic, s_link.device_id);
     if (id == GEN_TOPIC_NONE) {
         ESP_LOGW(TAG, "message on an unknown topic %s", topic);
+    }
+    return id;
+}
+
+// A payload past the esp-mqtt buffer arrives in pieces, and only the first names its topic.
+static void on_data(const esp_mqtt_event_handle_t event)
+{
+    if (s_link.config.on_message == NULL || event->data_len < 0 || event->total_data_len < 0) {
         return;
     }
-    s_link.config.on_message(id, event->data, (size_t)event->data_len, s_link.config.ctx);
+    const size_t total = (size_t)event->total_data_len;
+    const size_t at = (size_t)event->current_data_offset;
+    const size_t len = (size_t)event->data_len;
+    if (at == 0) {
+        s_inbox.topic = topic_of(event);
+        s_inbox.len = 0;
+        if (s_inbox.topic != GEN_TOPIC_NONE && len == total) {
+            s_link.config.on_message(s_inbox.topic, event->data, len, s_link.config.ctx);
+            s_inbox.topic = GEN_TOPIC_NONE;
+            return;
+        }
+        if (s_inbox.topic != GEN_TOPIC_NONE && total > NET_MQTT_MESSAGE_CAP) {
+            ESP_LOGE(TAG, "message of %u B will not fit %d B, dropped", (unsigned)total,
+                     NET_MQTT_MESSAGE_CAP);
+            s_inbox.topic = GEN_TOPIC_NONE;
+        }
+    }
+    if (s_inbox.topic == GEN_TOPIC_NONE || event->data == NULL || at != s_inbox.len ||
+        at + len > NET_MQTT_MESSAGE_CAP) {
+        return;
+    }
+    memcpy(s_inbox_buf + at, event->data, len);
+    s_inbox.len = at + len;
+    if (s_inbox.len == total) {
+        s_link.config.on_message(s_inbox.topic, s_inbox_buf, total, s_link.config.ctx);
+        s_inbox.topic = GEN_TOPIC_NONE;
+    }
 }
 
 static void on_error(const esp_mqtt_event_handle_t event)
@@ -191,9 +253,7 @@ esp_err_t net_mqtt_start(const net_mqtt_config_t *config)
     const bool has_pass = password(pass, TOKEN_CAP) != NET_MQTT_LOGIN_NONE;
 
     s_link.config = config != NULL ? *config : (net_mqtt_config_t){ 0 };
-    s_link.send_lock = xSemaphoreCreateMutex();
-    s_link.acked = xSemaphoreCreateBinary();
-    if (s_link.send_lock == NULL || s_link.acked == NULL) {
+    if (make_process_objects() != ESP_OK) {
         heap_caps_free(pass);
         return ESP_ERR_NO_MEM;
     }
@@ -239,10 +299,31 @@ esp_err_t net_mqtt_start(const net_mqtt_config_t *config)
     return ESP_OK;
 }
 
+// A sender waiting on an ack holds the lock, so it is woken until it lets go.
+static bool take_lock_from_waiter(void)
+{
+    for (uint32_t waited_ms = 0; waited_ms < STOP_LOCK_WAIT_MS; waited_ms += STOP_WAKE_MS) {
+        xSemaphoreGive(s_acked);
+        if (xSemaphoreTake(s_send_lock, pdMS_TO_TICKS(STOP_WAKE_MS)) == pdTRUE) {
+            return true;
+        }
+    }
+    return false;
+}
+
 esp_err_t net_mqtt_stop(void)
 {
     if (s_link.client == NULL) {
         return ESP_ERR_INVALID_STATE;
+    }
+    s_link.stopping = true;
+    // A punch taken from here on is stamped offline (KEHOACH 6.2.5).
+    tell_state(false);
+    if (!take_lock_from_waiter()) {
+        s_link.stopping = false;
+        ESP_LOGE(TAG, "a sender kept the link for %d ms, not stopped", STOP_LOCK_WAIT_MS);
+        tell_state(s_link.up);
+        return ESP_ERR_TIMEOUT;
     }
     if (s_link.up) {
         esp_mqtt_client_publish(s_link.client, s_link.will_topic, STATUS_OFFLINE, 0,
@@ -251,9 +332,10 @@ esp_err_t net_mqtt_stop(void)
     }
     esp_mqtt_client_stop(s_link.client);
     esp_mqtt_client_destroy(s_link.client);
-    vSemaphoreDelete(s_link.send_lock);
-    vSemaphoreDelete(s_link.acked);
     memset(&s_link, 0, sizeof(s_link));
+    s_inbox.topic = GEN_TOPIC_NONE;
+    xSemaphoreTake(s_acked, 0);
+    xSemaphoreGive(s_send_lock);
     return ESP_OK;
 }
 
@@ -270,12 +352,45 @@ net_mqtt_login_t net_mqtt_login(void)
 
 bool net_mqtt_is_up(void)
 {
-    return s_link.up;
+    return s_link.up && !s_link.stopping;
 }
 
 uint32_t net_mqtt_disconnects(void)
 {
     return s_link.disconnects;
+}
+
+// The client is checked under s_send_lock, the lock net_mqtt_stop takes to tear it down.
+static esp_err_t send_locked(gen_topic_id_t topic, const char *payload, size_t len,
+                             uint32_t timeout_ms)
+{
+    if (s_link.client == NULL || !net_mqtt_is_up()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    char name[GEN_TOPIC_MAX_LEN];
+    if (!gen_topic_build(topic, s_link.device_id, name, sizeof(name))) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    const uint8_t qos = gen_topic_qos(topic);
+    xSemaphoreTake(s_acked, 0);
+    s_link.awaited_msg = 0;
+    const int msg_id = esp_mqtt_client_publish(s_link.client, name, payload, (int)len, qos,
+                                               gen_topic_retain(topic));
+    if (msg_id < 0) {
+        return ESP_FAIL;
+    }
+    // QoS 0 has no acknowledgement, so waiting on one would always time out.
+    if (qos == 0) {
+        return ESP_OK;
+    }
+    s_link.awaited_msg = msg_id;
+    const bool acked = xSemaphoreTake(s_acked, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+    s_link.awaited_msg = 0;
+    if (!acked) {
+        return ESP_ERR_TIMEOUT;
+    }
+    // net_mqtt_stop wakes a waiter too, and that wake is not an ack.
+    return s_link.stopping ? ESP_ERR_INVALID_STATE : ESP_OK;
 }
 
 esp_err_t net_mqtt_publish(gen_topic_id_t topic, const char *payload, size_t len,
@@ -284,33 +399,13 @@ esp_err_t net_mqtt_publish(gen_topic_id_t topic, const char *payload, size_t len
     if (payload == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (s_link.client == NULL || !s_link.up) {
+    if (s_send_lock == NULL || !net_mqtt_is_up()) {
         return ESP_ERR_INVALID_STATE;
     }
-    char name[GEN_TOPIC_MAX_LEN];
-    if (!gen_topic_build(topic, s_link.device_id, name, sizeof(name))) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    if (xSemaphoreTake(s_link.send_lock, pdMS_TO_TICKS(LOCK_WAIT_MS)) != pdTRUE) {
+    if (xSemaphoreTake(s_send_lock, pdMS_TO_TICKS(LOCK_WAIT_MS)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
-
-    const uint8_t qos = gen_topic_qos(topic);
-    xSemaphoreTake(s_link.acked, 0);
-    s_link.awaited_msg = 0;
-    const int msg_id = esp_mqtt_client_publish(s_link.client, name, payload, (int)len, qos,
-                                               gen_topic_retain(topic));
-    esp_err_t err = ESP_OK;
-    if (msg_id < 0) {
-        err = ESP_FAIL;
-    } else if (qos > 0) {
-        // QoS 0 has no acknowledgement, so waiting on one would always time out.
-        s_link.awaited_msg = msg_id;
-        if (xSemaphoreTake(s_link.acked, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
-            err = ESP_ERR_TIMEOUT;
-        }
-        s_link.awaited_msg = 0;
-    }
-    xSemaphoreGive(s_link.send_lock);
+    const esp_err_t err = send_locked(topic, payload, len, timeout_ms);
+    xSemaphoreGive(s_send_lock);
     return err;
 }

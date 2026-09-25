@@ -19,8 +19,11 @@ extern "C" {
  */
 typedef void (*net_mqtt_state_cb_t)(bool up, void *ctx);
 
-/** Called for one inbound message on a down topic, from the esp-mqtt task.
- *  @ctx task | non-blocking | payload is only valid for the call
+#define NET_MQTT_MESSAGE_CAP 4096         // past the largest down payload the contract allows
+
+/** Called for one whole inbound message on a down topic, from the esp-mqtt task.
+ *  @ctx task | holds the whole link while it runs: any wait short and bounded
+ *       | payload is only valid for the call, at most NET_MQTT_MESSAGE_CAP bytes
  */
 typedef void (*net_mqtt_message_cb_t)(gen_topic_id_t topic, const char *payload, size_t len,
                                       void *ctx);
@@ -56,8 +59,10 @@ typedef enum {
  */
 net_mqtt_login_t net_mqtt_login(void);
 
-/** Send the will's offline status, disconnect and release the client.
- *  @ctx task | blocking
+/** Report the link down, wait out any sender, send the offline status and release the client.
+ *  @ctx task | blocking, up to 15 s behind a stuck sender | not from the esp-mqtt task
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE with no client
+ *       | ESP_ERR_TIMEOUT when a sender kept the link, which then stays up
  */
 esp_err_t net_mqtt_stop(void);
 
