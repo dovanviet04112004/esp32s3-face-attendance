@@ -46,8 +46,8 @@ export interface NavItem {
   icon: IconType;
   roles?: Role[];
   badge?: "approvals";
-  /** Kept out of the phone's tab bar; the top bar carries it (KEHOACH 9.21.1). */
-  deskOnly?: boolean;
+  /** On a phone the top bar carries it, so the tab bar and its sheet leave it out (KEHOACH 9.21.1). */
+  topBar?: boolean;
   /** Reachable on a phone, but never one of the five tabs: the "More" sheet lists it (KEHOACH 9.21.5). */
   tabless?: boolean;
   /** Judged by the guard, skipped by the menu (KEHOACH 9.15). */
@@ -124,7 +124,7 @@ export const NAV: NavGroup[] = [
         icon: TrayIcon,
         roles: DECIDERS,
         badge: "approvals",
-        deskOnly: true,
+        topBar: true,
         section: "inbox",
       },
       { href: "/leave", key: "leave", icon: CalendarXIcon, roles: TEAM_TIME, section: "inbox" },
@@ -143,9 +143,9 @@ export const NAV: NavGroup[] = [
         section: "people",
       },
       { href: "/org", key: "orgChart", icon: TreeStructureIcon, roles: TEAM_TIME, section: "people" },
-      { href: "/onboarding", key: "onboarding", icon: ListChecksIcon, roles: TEAM_TIME, deskOnly: true },
-      { href: "/assets", key: "assets", icon: PackageIcon, roles: PEOPLE_DESK, deskOnly: true },
-      { href: "/documents", key: "documents", icon: FilesIcon, roles: PEOPLE_DESK, deskOnly: true },
+      { href: "/onboarding", key: "onboarding", icon: ListChecksIcon, roles: TEAM_TIME },
+      { href: "/assets", key: "assets", icon: PackageIcon, roles: PEOPLE_DESK },
+      { href: "/documents", key: "documents", icon: FilesIcon, roles: PEOPLE_DESK },
     ],
   },
   {
@@ -160,7 +160,6 @@ export const NAV: NavGroup[] = [
         key: "leaveTypes",
         icon: TagIcon,
         roles: PEOPLE_DESK,
-        deskOnly: true,
         section: "calendar",
       },
       { href: "/reports", key: "reports", icon: ChartBarIcon, roles: PAY_DESK },
@@ -185,7 +184,6 @@ export const NAV: NavGroup[] = [
         key: "jobTitles",
         icon: BriefcaseIcon,
         roles: PEOPLE_DESK,
-        deskOnly: true,
         section: "catalogues",
       },
       {
@@ -193,7 +191,6 @@ export const NAV: NavGroup[] = [
         key: "legalEntities",
         icon: BuildingsIcon,
         roles: OPERATORS,
-        deskOnly: true,
         section: "catalogues",
       },
       {
@@ -201,12 +198,11 @@ export const NAV: NavGroup[] = [
         key: "allowances",
         icon: CoinsIcon,
         roles: ALLOWANCE_DESK,
-        deskOnly: true,
         section: "catalogues",
       },
-      { href: "/users", key: "users", icon: UserGearIcon, roles: OPERATORS, deskOnly: true, section: "system" },
-      { href: "/audit", key: "audit", icon: ScrollIcon, roles: OPERATORS, deskOnly: true, section: "system" },
-      { href: "/settings", key: "settings", icon: GearIcon, roles: EVERYONE, deskOnly: true },
+      { href: "/users", key: "users", icon: UserGearIcon, roles: OPERATORS, section: "system" },
+      { href: "/audit", key: "audit", icon: ScrollIcon, roles: OPERATORS, section: "system" },
+      { href: "/settings", key: "settings", icon: GearIcon, roles: EVERYONE, topBar: true },
     ],
   },
 ];
@@ -234,7 +230,7 @@ export interface NavEntry {
   short: NavKey;
   icon: IconType;
   badge?: "approvals";
-  deskOnly?: boolean;
+  topBar?: boolean;
   tabless?: boolean;
   members: NavItem[];
 }
@@ -266,7 +262,7 @@ export function entriesFor(role: Role | null, hasRecord = true): EntryGroup[] {
         short: section?.short ?? section?.key ?? item.key,
         icon: section?.icon ?? item.icon,
         badge: item.badge,
-        deskOnly: item.deskOnly,
+        topBar: item.topBar,
         tabless: item.tabless,
         members: [item],
       });
@@ -368,6 +364,14 @@ const kTabSlots = 5;
 
 // The five of KEHOACH 9.21.1, in the order somebody opens the app to ask.
 const TAB_ORDER: NavKey[] = ["myPage", "myShifts", "myAttendance", "myRequests", "myPayslips"];
+// A desk account with no record of its own: today, people, time and shifts lead its tabs.
+const DESK_TAB_ORDER: NavKey[] = ["overview", "employees", "sectionTime", "sectionCalendar"];
+
+function ranked(order: NavKey[], flat: NavEntry[]): NavEntry[] {
+  return order
+    .map((key) => flat.find((entry) => entry.key === key))
+    .filter((entry): entry is NavEntry => entry !== undefined);
+}
 
 export interface TabLayout {
   items: NavEntry[];
@@ -381,14 +385,13 @@ export interface TabLayout {
 export function tabsFor(role: Role | null, hasRecord = true): TabLayout {
   const groups = entriesFor(role, hasRecord).map((group) => ({
     ...group,
-    entries: group.entries.filter((entry) => !entry.deskOnly),
+    entries: group.entries.filter((entry) => !entry.topBar),
   }));
   const flat = groups.flatMap((group) => group.entries).filter((entry) => !entry.tabless);
-  const ranked = TAB_ORDER.map((key) => flat.find((entry) => entry.key === key)).filter(
-    (entry): entry is NavEntry => entry !== undefined,
-  );
+  const own = ranked(TAB_ORDER, flat);
   // An account with no record of its own has none of the five.
-  const pool = ranked.length > 0 ? ranked : flat;
+  const desk = ranked(DESK_TAB_ORDER, flat);
+  const pool = own.length > 0 ? own : [...desk, ...flat.filter((entry) => !desk.includes(entry))];
   // The menu button is a slot like any other, so a role that needs one gets
   // four destinations and not five.
   const needsMenu = flat.length > kTabSlots;
