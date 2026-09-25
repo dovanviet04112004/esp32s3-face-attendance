@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "vn.io.cckiosk.nhanluc",
+      "sha256_cert_fingerprints": [
+        "0B:6C:4C:AA:72:C8:44:B1:5D:FA:EE:03:2A:43:37:3F:5F:5A:02:ED:C4:8B:5B:A9:33:07:FB:3F:46:14:2D:1C"
+      ]
+    }
+  }
+]

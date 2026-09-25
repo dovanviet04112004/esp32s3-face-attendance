@@ -1,16 +1,27 @@
 "use client";
 
-import { Banner, Button, Input, Link } from "@cloudflare/kumo";
-import { WarningCircleIcon } from "@phosphor-icons/react";
+import { Banner, Button, Input, Link, LinkButton } from "@cloudflare/kumo";
+import { AndroidLogoIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { PasswordField } from "@/components/ui/password-field";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { claimsOf, useSession } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { useFault } from "@/lib/fault";
 import { homeFor } from "@/lib/nav";
+
+// An Android browser, not the app itself: the shell opens this page standalone, or from its own referrer.
+function useAndroidBrowser(): boolean {
+  const [android, setAndroid] = useState(false);
+  useEffect(() => {
+    const inApp = matchMedia("(display-mode: standalone)").matches || document.referrer.startsWith("android-app://");
+    setAndroid(/Android/i.test(navigator.userAgent) && !inApp);
+  }, []);
+  return android;
+}
 
 export default function LoginPage() {
   const t = useTranslations("login");
@@ -22,6 +33,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [refused, setRefused] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const android = useAndroidBrowser();
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -77,6 +89,14 @@ export default function LoginPage() {
         {t("submit")}
       </Button>
       <p className="text-sm text-pretty text-kumo-subtle">{doors("invited")}</p>
+      {android ? (
+        <div className="flex flex-col gap-2 border-t border-kumo-hairline pt-5">
+          <LinkButton href={env.NEXT_PUBLIC_ANDROID_APK_URL} variant="secondary" icon={AndroidLogoIcon} className="w-full justify-center">
+            {t("androidApp")}
+          </LinkButton>
+          <p className="text-sm text-pretty text-kumo-subtle">{t("androidAppLead")}</p>
+        </div>
+      ) : null}
     </form>
   );
 }

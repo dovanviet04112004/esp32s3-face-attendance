@@ -20,6 +20,13 @@ const schema = z.object({
         return false;
       }
     }, "NEXT_PUBLIC_APP_TIMEZONE must be an IANA zone name"),
+  // The Android app's download (KEHOACH 9.21.7): the newest GitHub release carries the signed APK.
+  NEXT_PUBLIC_ANDROID_APK_URL: z
+    .string()
+    .optional()
+    .transform(
+      (held) => held || "https://github.com/dovanviet04112004/esp32s3-face-attendance/releases/latest/download/nhan-luc.apk",
+    ),
 });
 
 export type Env = z.infer<typeof schema>;
@@ -33,4 +40,5 @@ export const env: Env = schema.parse({
   NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
   NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
   NEXT_PUBLIC_APP_TIMEZONE: process.env.NEXT_PUBLIC_APP_TIMEZONE,
+  NEXT_PUBLIC_ANDROID_APK_URL: process.env.NEXT_PUBLIC_ANDROID_APK_URL,
 });

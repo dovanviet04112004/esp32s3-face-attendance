@@ -127,7 +127,9 @@
     "password": "Password",
     "submit": "Sign in",
     "forgot": "Forgot your password?",
-    "title": "Sign in"
+    "title": "Sign in",
+    "androidApp": "Get the Android app",
+    "androidAppLead": "Install it once and it opens like an app: no address bar, one colour from top to bottom, notifications included."
   },
   "overview": {
     "title": "Overview",

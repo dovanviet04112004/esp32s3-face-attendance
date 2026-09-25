@@ -127,7 +127,9 @@
     "password": "Mật khẩu",
     "submit": "Đăng nhập",
     "forgot": "Quên mật khẩu?",
-    "title": "Đăng nhập"
+    "title": "Đăng nhập",
+    "androidApp": "Tải app Android",
+    "androidAppLead": "Cài một lần rồi mở như ứng dụng: không thanh địa chỉ, cùng màu từ trên xuống dưới, vẫn nhận thông báo."
   },
   "overview": {
     "title": "Tổng quan",
