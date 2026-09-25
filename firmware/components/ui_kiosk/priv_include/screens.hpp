@@ -176,6 +176,9 @@ People &people() noexcept;
 struct Pending {
     bool wanted;
     int count;
+    int first;                            // where the rows held start in the whole list
+    int total;
+    int asked;                            // the first row the screen wants next
     ui_kiosk_pending_t row[UI_KIOSK_PENDING_ROWS];
 };
 

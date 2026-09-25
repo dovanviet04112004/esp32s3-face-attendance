@@ -547,17 +547,24 @@ bool ui_kiosk_take_level(ui_kiosk_level_t *which, uint8_t *percent, bool *settle
     return true;
 }
 
-void ui_kiosk_set_pending(const ui_kiosk_pending_t *rows, int count)
+void ui_kiosk_set_pending(const ui_kiosk_pending_t *rows, int count, int first, int total)
 {
     if (!s_ready) {
         return;
     }
     const int kept = count < UI_KIOSK_PENDING_ROWS ? count : UI_KIOSK_PENDING_ROWS;
     ui::pending().count = kept > 0 ? kept : 0;
+    ui::pending().first = first > 0 ? first : 0;
+    ui::pending().total = total > 0 ? total : 0;
     if (rows != NULL && kept > 0) {
         memcpy(ui::pending().row, rows, sizeof(ui_kiosk_pending_t) * (size_t)kept);
     }
     s_dirty = true;
+}
+
+int ui_kiosk_pending_first(void)
+{
+    return s_ready ? ui::pending().asked : 0;
 }
 
 bool ui_kiosk_take_pending_request(void)

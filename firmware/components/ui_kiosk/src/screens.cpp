@@ -834,6 +834,13 @@ public:
             manager().go(ScreenId::Menu);
             return true;
         }
+        if (fire == kPrev || fire == kNext) {
+            const int step = fire == kPrev ? -page_size() : page_size();
+            const int to = s_pending.first + step;
+            s_pending.asked = to < 0 ? 0 : to;
+            s_pending.wanted = true;
+            return true;
+        }
         if (fire < 0 || fire >= rows()) {
             return true;
         }
@@ -871,10 +878,49 @@ public:
                                         DRV_LCD_INK, -1, widgets::Icon::None };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
         }
+        if (!paged()) {
+            return;
+        }
+        char range[32];
+        snprintf(range, sizeof(range), text(StrId::EnrolPageFmt), s_pending.first + 1,
+                 s_pending.first + count, s_pending.total);
+        to.text(Font::Caption, theme::kGutter, caption_y(), theme::kContentW, range, DRV_LCD_DIM,
+                Align::Centre);
+        widgets::button(to, theme::kGutter, kFootY, half_w(), theme::kButtonH, text(StrId::EnrolPrev),
+                        DRV_LCD_SURFACE, can_go_back() ? DRV_LCD_INK : DRV_LCD_LINE, held_ == kPrev);
+        widgets::button(to, next_x(), kFootY, half_w(), theme::kButtonH, text(StrId::EnrolNext),
+                        DRV_LCD_SURFACE, can_go_on() ? DRV_LCD_INK : DRV_LCD_LINE, held_ == kNext);
     }
 
 private:
-    static int rows() noexcept { return list_fits(s_pending.count, kRowH, kListEnd); }
+    static constexpr int kPrev = -10;
+    static constexpr int kNext = -11;
+
+    // The whole list fits without a pager; past that the pager takes the foot of the panel.
+    static bool paged() noexcept { return s_pending.total > list_fits(s_pending.total, kRowH, kListEnd); }
+
+    static int caption_y() noexcept
+    {
+        return kFootY - theme::kGapS - theme::line_height(Font::Caption);
+    }
+
+    static int page_size() noexcept
+    {
+        const int bottom = paged() ? caption_y() - theme::kGapS : kListEnd;
+        const int fits = list_fits(UI_KIOSK_PENDING_ROWS, kRowH, bottom);
+        return fits > 0 ? fits : 1;
+    }
+
+    static int rows() noexcept
+    {
+        const int size = page_size();
+        return s_pending.count < size ? s_pending.count : size;
+    }
+
+    static int half_w() noexcept { return (theme::kContentW - theme::kGapM) / 2; }
+    static int next_x() noexcept { return theme::kGutter + half_w() + theme::kGapM; }
+    static bool can_go_back() noexcept { return s_pending.first > 0; }
+    static bool can_go_on() noexcept { return s_pending.first + rows() < s_pending.total; }
 
     static int list_y(int i) noexcept { return kContentY + i * kRowH; }
 
@@ -882,6 +928,12 @@ private:
     {
         if (widgets::on_back(x, y)) {
             return kBack;
+        }
+        if (paged() && inside(x, y, theme::kGutter, kFootY, half_w(), theme::kButtonH)) {
+            return can_go_back() ? kPrev : kNothing;
+        }
+        if (paged() && inside(x, y, next_x(), kFootY, half_w(), theme::kButtonH)) {
+            return can_go_on() ? kNext : kNothing;
         }
         for (int i = 0; i < rows(); ++i) {
             if (inside(x, y, theme::kGutter, list_y(i), theme::kContentW, kRowH)) {

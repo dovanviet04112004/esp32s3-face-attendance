@@ -76,6 +76,9 @@ enum class StrId : uint16_t {
     PersonConfirm,
     PersonNoRoom,
     EnrolRetake,
+    EnrolPrev,
+    EnrolNext,
+    EnrolPageFmt,                         // first, last, total
 
     WifiScanning,
     WifiNone,

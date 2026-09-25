@@ -632,7 +632,7 @@ static esp_err_t send_ask(const storage_enroll_ask_t *ask)
     return sent;
 }
 
-static_assert(UI_KIOSK_PENDING_ROWS <= STORAGE_PENDING_CAP, "the screen shows the head of the list");
+static_assert(UI_KIOSK_PENDING_ROWS <= STORAGE_PENDING_CAP, "a page never runs past the list");
 
 // The list and its NVS image at once, in PSRAM: 64 rows are 2.3 KB (KEHOACH 6.2.1).
 static storage_pending_t *s_pending;
@@ -656,14 +656,21 @@ static bool holds_face(uint32_t employee_id, uint16_t first_idx, uint16_t count)
 static void offer_pending(void)
 {
     ui_kiosk_pending_t shown[UI_KIOSK_PENDING_ROWS];
-    const int count =
-        s_pending->count < UI_KIOSK_PENDING_ROWS ? s_pending->count : UI_KIOSK_PENDING_ROWS;
+    const int total = (int)s_pending->count;
+    int first = ui_kiosk_pending_first();
+    // A list that shrank under the page lands the page on its last rows.
+    if (first >= total) {
+        first = total > UI_KIOSK_PENDING_ROWS ? total - UI_KIOSK_PENDING_ROWS : 0;
+    }
+    const int left = total - first;
+    const int count = left < UI_KIOSK_PENDING_ROWS ? left : UI_KIOSK_PENDING_ROWS;
     for (int i = 0; i < count; ++i) {
-        shown[i].employee_id = s_pending->row[i].employee_id;
-        strlcpy(shown[i].name, s_pending->row[i].name, sizeof(shown[i].name));
+        const int at = first + i;
+        shown[i].employee_id = s_pending->row[at].employee_id;
+        strlcpy(shown[i].name, s_pending->row[at].name, sizeof(shown[i].name));
         shown[i].retake = holds_face(shown[i].employee_id, 0, 2 * ENROL_SAMPLES);
     }
-    ui_kiosk_set_pending(shown, count);
+    ui_kiosk_set_pending(shown, count, first, total);
 }
 
 // Kept in NVS so a reboot while offline still knows whom to capture (KEHOACH 7.5).

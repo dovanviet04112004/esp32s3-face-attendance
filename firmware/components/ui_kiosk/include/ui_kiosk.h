@@ -194,10 +194,16 @@ typedef struct {
 
 #define UI_KIOSK_PENDING_ROWS 8
 
-/** Hand the enrol screen the people waiting for a face (KEHOACH 7.5).
+/** Hand the enrol screen one page of the people waiting for a face (KEHOACH 7.5).
  *  @ctx any | non-blocking | copied, at most UI_KIOSK_PENDING_ROWS
+ *  @param first where the page starts in the whole list; total is its length
  */
-void ui_kiosk_set_pending(const ui_kiosk_pending_t *rows, int count);
+void ui_kiosk_set_pending(const ui_kiosk_pending_t *rows, int count, int first, int total);
+
+/** The row the enrol screen's page starts at, which main fills from.
+ *  @ctx any | non-blocking
+ */
+int ui_kiosk_pending_first(void);
 
 /** True when the enrol screen has opened and wants that list refreshed.
  *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken

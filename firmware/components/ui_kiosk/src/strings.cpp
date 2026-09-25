@@ -76,6 +76,9 @@ constexpr Entry kRows[] = {
     { StrId::PersonConfirm, "Chạm lần nữa để xoá", "Tap again to remove" },
     { StrId::PersonNoRoom, "Cần có mạng để gửi thêm yêu cầu", "Needs a network to send more" },
     { StrId::EnrolRetake, "Chụp lại", "Retake" },
+    { StrId::EnrolPrev, "Trang trước", "Previous" },
+    { StrId::EnrolNext, "Trang sau", "Next" },
+    { StrId::EnrolPageFmt, "%d-%d / %d", "%d-%d / %d" },
 
     { StrId::WifiScanning, "Đang quét…", "Scanning…" },
     { StrId::WifiNone, "Không thấy mạng nào", "No networks found" },
