@@ -1,21 +1,28 @@
 "use client";
 
-import { Banner, Checkbox, Input, LayerDialog, Select, Textarea } from "@cloudflare/kumo";
+import { Banner, Checkbox, Input, LayerDialog, Radio, Select, Textarea } from "@cloudflare/kumo";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
+import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { days } from "@/lib/format";
+import { days, minutes as minutesOf } from "@/lib/format";
 import { keep } from "@/lib/outbox";
-import type { RequestKind } from "./request-card";
+import type { DayPart, RequestKind } from "./request-card";
 
 export const REQUEST_KINDS: RequestKind[] = ["LEAVE", "OVERTIME", "ATTENDANCE_FIX", "BUSINESS_TRIP", "REMOTE_WORK"];
 
 const kFormId = "request-form";
+const kReasonMax = 500;
+const kDayMs = 86_400_000;
+const kMinuteMs = 60_000;
+
+type Missed = "IN" | "OUT" | "BOTH";
 
 interface LeaveType {
   id: string;
@@ -28,11 +35,35 @@ interface Balance {
   remaining: number;
 }
 
+interface Punch {
+  ts: string;
+}
+
 /** The reader's calendar day, which is what a request's dates mean. */
 export function todayHere(): string {
-  const at = new Date();
+  return dayOf(new Date());
+}
+
+function dayOf(at: Date): string {
   const pad = (one: number) => String(one).padStart(2, "0");
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+function yesterday(): string {
+  return dayOf(new Date(Date.now() - kDayMs));
+}
+
+/** A local date and a wall-clock time as one instant, or null until both are there. */
+function instant(day: string, time: string): Date | null {
+  if (!day || !time) {
+    return null;
+  }
+  const at = new Date(`${day}T${time}`);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+function spanDays(from: string, to: string): number {
+  return Math.round((new Date(`${to}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / kDayMs) + 1;
 }
 
 export function isRequestKind(value: string | null): value is RequestKind {
@@ -51,31 +82,77 @@ interface Props {
 export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
   const t = useTranslations("requests");
   const common = useTranslations("common");
+  const format = useFormatter();
   const locale = useLocale();
   const faultOf = useFault();
   const notify = useNotify();
   const cache = useQueryClient();
+  const employeeId = useSession((s) => s.employeeId);
   const [kind, setKind] = useState<RequestKind>(preset ?? "LEAVE");
   const [leaveTypeId, setLeaveTypeId] = useState("");
-  const [fromDate, setFromDate] = useState(date ?? todayHere());
+  const [fromDate, setFromDate] = useState(date ?? (preset === "ATTENDANCE_FIX" ? yesterday() : todayHere()));
   const [toDate, setToDate] = useState(date ?? todayHere());
   const [halfDay, setHalfDay] = useState(false);
-  const [minutes, setMinutes] = useState("");
+  const [dayPart, setDayPart] = useState<DayPart>("MORNING");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [missed, setMissed] = useState<Missed>("OUT");
   const [reason, setReason] = useState("");
   const [typeMissing, setTypeMissing] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
-  const backwards = toDate < fromDate;
+
+  const oneDay = kind === "OVERTIME" || kind === "ATTENDANCE_FIX";
+  const lastDay = oneDay ? fromDate : toDate;
+  const backwards = !oneDay && toDate < fromDate;
+  const half = kind === "LEAVE" && halfDay && fromDate === toDate;
 
   const types = useQuery({
     queryKey: ["leave-types"],
+    enabled: open,
     queryFn: async () => (await api.get<LeaveType[]>("/leave-types")).data,
   });
 
   const balances = useQuery({
-    queryKey: ["leave-balances", todayHere()],
-    enabled: open && kind === "LEAVE",
-    queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${todayHere()}`)).data,
+    queryKey: ["leave-balances", "mine", fromDate.slice(0, 4), fromDate],
+    enabled: open && kind === "LEAVE" && fromDate !== "",
+    queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${fromDate}`)).data,
   });
+
+  // The other end of the day comes from what the kiosk saw, so one claimed punch is enough.
+  const punches = useQuery({
+    queryKey: ["attendance", "day", employeeId, fromDate],
+    enabled: open && kind === "ATTENDANCE_FIX" && employeeId !== null && fromDate !== "",
+    queryFn: async () => {
+      const start = new Date(`${fromDate}T00:00:00`);
+      const end = new Date(start.getTime() + kDayMs - 1);
+      const query = new URLSearchParams({ employeeId: String(employeeId), from: start.toISOString(), to: end.toISOString(), take: "50" });
+      return (await api.get<{ rows: Punch[] }>(`/attendance?${query.toString()}`)).data.rows;
+    },
+  });
+  const seen = (punches.data ?? []).map((one) => new Date(one.ts).getTime()).sort((left, right) => left - right);
+  const firstSeen = seen.length > 0 ? new Date(seen[0] as number) : null;
+  const lastSeen = seen.length > 0 ? new Date(seen[seen.length - 1] as number) : null;
+  const claimed: Missed = seen.length === 0 ? "BOTH" : missed;
+
+  const startAt = instant(fromDate, startTime);
+  const endAt = instant(fromDate, endTime);
+  const fixIn = kind === "ATTENDANCE_FIX" && claimed !== "OUT" ? startAt : null;
+  const fixOut = kind === "ATTENDANCE_FIX" && claimed !== "IN" ? endAt : null;
+  const worked =
+    kind === "OVERTIME"
+      ? startAt && endAt
+        ? (endAt.getTime() - startAt.getTime()) / kMinuteMs
+        : null
+      : kind === "ATTENDANCE_FIX"
+        ? (() => {
+            const from = fixIn ?? firstSeen;
+            const to = fixOut ?? lastSeen;
+            return from && to ? (to.getTime() - from.getTime()) / kMinuteMs : null;
+          })()
+        : null;
+  const timesBackwards = worked !== null && worked <= 0;
+  const count = half ? 0.5 : backwards ? 0 : spanDays(fromDate, lastDay);
+  const left = balances.data?.find((one) => one.leaveTypeId === leaveTypeId);
 
   const file = useMutation({
     mutationFn: async () => {
@@ -83,9 +160,12 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
         kind,
         leaveTypeId: kind === "LEAVE" ? leaveTypeId : undefined,
         fromDate,
-        toDate,
-        halfDay: kind === "LEAVE" ? halfDay : undefined,
-        minutes: minutes ? Number(minutes) : undefined,
+        toDate: lastDay,
+        halfDay: kind === "LEAVE" ? half : undefined,
+        dayPart: half ? dayPart : undefined,
+        fromAt: kind === "OVERTIME" ? startAt?.toISOString() : fixIn?.toISOString(),
+        toAt: kind === "OVERTIME" ? endAt?.toISOString() : fixOut?.toISOString(),
+        minutes: worked !== null && worked > 0 ? Math.round(worked) : undefined,
         reason,
       };
       const clientKey = crypto.randomUUID();
@@ -110,6 +190,9 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
+  const timesNeeded = (kind === "OVERTIME" || kind === "ATTENDANCE_FIX") && worked === null;
+  const blocked = backwards || timesBackwards;
+
   function submit(event: FormEvent) {
     event.preventDefault();
     setFault(null);
@@ -117,13 +200,22 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
       setTypeMissing(true);
       return;
     }
-    if (!backwards) {
+    if (!blocked && !timesNeeded) {
       file.mutate();
     }
   }
 
-  const left = balances.data?.find((one) => one.leaveTypeId === leaveTypeId);
-  const wantsMinutes = kind === "OVERTIME" || kind === "ATTENDANCE_FIX";
+  const clock = (at: Date) => format.dateTime(at, { hour: "2-digit", minute: "2-digit" });
+  const summary =
+    kind === "LEAVE" && !backwards
+      ? left
+        ? t("summaryLeave", { days: days(count, locale), left: days(left.remaining - count, locale) })
+        : t("summaryDays", { days: days(count, locale) })
+      : (kind === "BUSINESS_TRIP" || kind === "REMOTE_WORK") && !backwards
+        ? t("summaryDays", { days: days(count, locale) })
+        : worked !== null && worked > 0
+          ? t("summaryMinutes", { length: minutesOf(Math.round(worked), locale) })
+          : null;
 
   return (
     <LayerDialog.Root open={open} onOpenChange={onOpenChange} dismissDisabled={file.isPending}>
@@ -157,49 +249,90 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
                 description={left ? t("balanceLeftOf", { left: days(left.remaining, locale) }) : undefined}
               />
             ) : null}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                label={t("from")}
-                type="date"
-                required
+            {oneDay ? (
+              <DateField
+                label={t("day")}
                 value={fromDate}
-                onChange={(event) => setFromDate(event.target.value)}
+                max={kind === "ATTENDANCE_FIX" ? yesterday() : undefined}
+                description={kind === "ATTENDANCE_FIX" ? t("fixDayHint") : undefined}
+                onChange={setFromDate}
               />
-              <Input
-                label={t("to")}
-                type="date"
-                required
-                min={fromDate}
-                value={toDate}
-                variant={backwards ? "error" : "default"}
-                error={backwards ? t("backwards") : undefined}
-                onChange={(event) => setToDate(event.target.value)}
-              />
-            </div>
-            {kind === "LEAVE" ? <Checkbox label={t("halfDay")} checked={halfDay} onCheckedChange={setHalfDay} /> : null}
-            {wantsMinutes ? (
-              <Input
-                label={t("minutes")}
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={minutes}
-                onChange={(event) => setMinutes(event.target.value)}
-              />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <DateField label={t("from")} value={fromDate} onChange={setFromDate} />
+                <DateField
+                  label={t("to")}
+                  value={toDate}
+                  min={fromDate}
+                  error={backwards ? t("backwards") : undefined}
+                  onChange={setToDate}
+                />
+              </div>
+            )}
+            {kind === "LEAVE" && fromDate === toDate ? (
+              <Checkbox label={t("halfDay")} checked={halfDay} onCheckedChange={setHalfDay} />
+            ) : null}
+            {half ? (
+              <Radio.Group legend={t("dayPart")} value={dayPart} onValueChange={(next) => setDayPart(next as DayPart)}>
+                <Radio.Item value="MORNING" label={t("dayPartMORNING")} />
+                <Radio.Item value="AFTERNOON" label={t("dayPartAFTERNOON")} />
+              </Radio.Group>
+            ) : null}
+            {kind === "ATTENDANCE_FIX" ? (
+              <>
+                <p className="text-sm text-kumo-subtle">
+                  {firstSeen && lastSeen
+                    ? t("fixSeen", { first: clock(firstSeen), last: clock(lastSeen) })
+                    : punches.isPending
+                      ? t("fixLooking")
+                      : t("fixNone")}
+                </p>
+                {seen.length > 0 ? (
+                  <Radio.Group legend={t("fixMissed")} value={missed} onValueChange={(next) => setMissed(next as Missed)}>
+                    <Radio.Item value="OUT" label={t("fixMissedOUT")} />
+                    <Radio.Item value="IN" label={t("fixMissedIN")} />
+                    <Radio.Item value="BOTH" label={t("fixMissedBOTH")} />
+                  </Radio.Group>
+                ) : null}
+              </>
+            ) : null}
+            {kind === "OVERTIME" || kind === "ATTENDANCE_FIX" ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {kind === "OVERTIME" || claimed !== "OUT" ? (
+                  <Input
+                    label={kind === "OVERTIME" ? t("startTime") : t("fixInTime")}
+                    type="time"
+                    required
+                    value={startTime}
+                    onChange={(event) => setStartTime(event.target.value)}
+                  />
+                ) : null}
+                {kind === "OVERTIME" || claimed !== "IN" ? (
+                  <Input
+                    label={kind === "OVERTIME" ? t("endTime") : t("fixOutTime")}
+                    type="time"
+                    required
+                    value={endTime}
+                    error={timesBackwards ? t("timesBackwards") : undefined}
+                    onChange={(event) => setEndTime(event.target.value)}
+                  />
+                ) : null}
+              </div>
             ) : null}
             <Textarea
               label={t("reason")}
               required
               rows={3}
-              maxLength={500}
+              maxLength={kReasonMax}
               value={reason}
               onValueChange={setReason}
             />
+            {summary ? <p className="rounded-lg bg-kumo-tint px-3 py-2 tabular-nums">{summary}</p> : null}
             {fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
           </form>
         </LayerDialog.Body>
         <LayerDialog.Actions dismissLabel={common("cancel")}>
-          <LayerDialog.Actions.Primary type="submit" form={kFormId} loading={file.isPending} disabled={backwards}>
+          <LayerDialog.Actions.Primary type="submit" form={kFormId} loading={file.isPending} disabled={blocked}>
             {t("submit")}
           </LayerDialog.Actions.Primary>
         </LayerDialog.Actions>

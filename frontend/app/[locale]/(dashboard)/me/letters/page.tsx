@@ -4,19 +4,18 @@ import { Banner, Button, Input, LayerDialog, Loader, Select } from "@cloudflare/
 import { EyeIcon, FilePlusIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { useFormatter, useLocale, useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { Suspense, useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
+import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { days } from "@/lib/format";
 
 const KINDS = ["EMPLOYMENT", "INCOME"] as const;
 type Kind = (typeof KINDS)[number];
@@ -24,7 +23,6 @@ const MONTH_CHOICES = [1, 3, 6, 12];
 const DEFAULT_MONTHS = 3;
 const kHere = "/me/letters";
 const kAskForm = "letter-form";
-const kDayMs = 86_400_000;
 
 type LetterState = "REQUESTED" | "ISSUED" | "REJECTED";
 
@@ -46,19 +44,10 @@ interface Letter {
   note: string | null;
 }
 
-/** Days from asking to the letter, over this person's own issued letters. */
-function usualWait(rows: Letter[]): number | null {
-  const waits = rows
-    .filter((one) => one.state === "ISSUED" && one.issuedAt)
-    .map((one) => (new Date(one.issuedAt ?? one.createdAt).getTime() - new Date(one.createdAt).getTime()) / kDayMs);
-  return waits.length === 0 ? null : Math.max(0, Math.round(waits.reduce((sum, one) => sum + one, 0) / waits.length));
-}
-
 function MyLetters() {
   const t = useTranslations("certificates");
   const common = useTranslations("common");
   const format = useFormatter();
-  const locale = useLocale();
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
@@ -147,7 +136,6 @@ function MyLetters() {
     },
   ];
 
-  const wait = usualWait(letters.data ?? []);
   const dialogOpen = asking || linked;
 
   return (
@@ -162,19 +150,7 @@ function MyLetters() {
         }
       />
 
-      <PageLayout
-        aside={
-          <AsideCard title={t("howTitle")}>
-            <Facts
-              rows={[
-                [t("whoDecides"), t("hrDecides")],
-                [t("howLong"), wait === null ? t("noHistory") : t("usualWait", { days: days(wait, locale) })],
-                [t("afterIssue"), t("afterIssueHint")],
-              ]}
-            />
-          </AsideCard>
-        }
-      >
+      <PageLayout>
         <DataTable
           id="my-letters"
           cardLead="kind"

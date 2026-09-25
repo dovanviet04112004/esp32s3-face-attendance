@@ -1,115 +1,162 @@
 "use client";
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useFormatter, useLocale, useTranslations } from "next-intl";
-import { useState } from "react";
+import { Button } from "@cloudflare/kumo";
+import { DownloadSimpleIcon } from "@phosphor-icons/react";
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import { useFormatter, useTranslations } from "next-intl";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
-import { DataTable, type Column } from "@/components/tables/data-table";
 import {
   StatePill,
+  useRequestWords,
   type RequestKind,
   type RequestRow,
   type RequestState,
 } from "@/components/requests/request-card";
-import { FilterBar } from "@/components/ui/filter-bar";
-import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { REQUEST_KINDS } from "@/components/requests/request-form";
+import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
+import { FilterBar, useSettled } from "@/components/ui/filter-bar";
+import { useNotify } from "@/components/ui/notify";
+import { PageHeader, PageLayout } from "@/components/ui/page";
 import { api } from "@/lib/api";
-import { dayOnly, days, minutes } from "@/lib/format";
+import { useUrlState } from "@/lib/url-state";
 
 const STATES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
-const KINDS: RequestKind[] = ["LEAVE", "OVERTIME", "ATTENDANCE_FIX", "BUSINESS_TRIP", "REMOTE_WORK"];
 const kPage = 50;
+const DEFAULTS = { q: "", kind: "", state: "", dept: "", from: "", to: "", sort: "", dir: "" };
 
 interface RequestPage {
   rows: RequestRow[];
   total: number;
+  totalIsExact?: boolean;
+  next?: string | null;
+}
+
+interface Department {
+  id: string;
+  name: string;
 }
 
 function query(params: Record<string, string>): string {
-  const kept = Object.entries(params).filter(([, value]) => value !== "");
-  return kept.length ? `?${new URLSearchParams(kept).toString()}` : "";
+  return new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "")).toString();
 }
 
-export default function RequestRegisterPage() {
+function save(text: string, name: string): void {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function Register() {
   const t = useTranslations("requests");
   const common = useTranslations("common");
   const format = useFormatter();
-  const locale = useLocale();
+  const words = useRequestWords();
+  const notify = useNotify();
   // Every state by default: filtering to pending here would repeat the
   // approvals inbox under a second sidebar entry (KEHOACH 9.15).
-  const [state, setState] = useState<RequestState | "">("");
-  const [kind, setKind] = useState<RequestKind | "">("");
+  const [url, setUrl] = useUrlState(DEFAULTS);
+  const [typed, setTyped] = useState(url.q);
+  const settled = useSettled(typed.trim());
+
+  useEffect(() => {
+    if (settled !== url.q) {
+      setUrl({ q: settled });
+    }
+  }, [settled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filter = useMemo(
+    () => ({ search: url.q, kind: url.kind, departmentId: url.dept, from: url.from, to: url.to }),
+    [url.q, url.kind, url.dept, url.from, url.to],
+  );
+  const order = { sort: url.sort || "createdAt", order: url.dir || "desc" };
 
   const rows = useInfiniteQuery({
-    queryKey: ["requests", "desk", state, kind],
-    initialPageParam: 0,
+    queryKey: ["requests", "register", filter, url.state, order],
+    initialPageParam: "",
     queryFn: async ({ pageParam }) =>
-      (await api.get<RequestPage>(`/requests${query({ state, kind, skip: String(pageParam), take: String(kPage) })}`)).data,
-    getNextPageParam: (last, pages) => {
-      const seen = pages.reduce((total, one) => total + one.rows.length, 0);
-      return seen < last.total ? seen : undefined;
-    },
+      (await api.get<RequestPage>(`/requests?${query({ ...filter, state: url.state, ...order, take: String(kPage), cursor: pageParam })}`)).data,
+    getNextPageParam: (last) => last.next ?? undefined,
   });
 
-  // Totals only: one row asked per state, the count read off the page.
+  // One row asked per state, the total read off each page, so the options carry their counts.
   const counts = useQuery({
-    queryKey: ["requests", "desk", "counts", kind],
+    queryKey: ["requests", "register", "counts", filter],
     queryFn: async () => {
-      const count = async (one: string) =>
-        (await api.get<RequestPage>(`/requests${query({ state: one, kind, take: "1" })}`)).data.total;
+      const count = async (state: string) =>
+        (await api.get<RequestPage>(`/requests?${query({ ...filter, state, take: "1" })}`)).data.total;
       const [all, ...each] = await Promise.all([count(""), ...STATES.map(count)]);
-      return { all, each: Object.fromEntries(STATES.map((one, at) => [one, each[at] ?? 0])) as Record<string, number> };
+      return { "": all, ...Object.fromEntries(STATES.map((one, at) => [one, each[at] ?? 0])) } as Record<string, number>;
     },
   });
 
-  function span(row: RequestRow): string {
-    const to = format.dateTime(dayOnly(row.toDate), { day: "numeric", month: "numeric", year: "numeric" });
-    const sameYear = row.fromDate.slice(0, 4) === row.toDate.slice(0, 4);
-    const from = format.dateTime(dayOnly(row.fromDate), sameYear ? { day: "numeric", month: "numeric" } : { day: "numeric", month: "numeric", year: "numeric" });
-    return row.fromDate === row.toDate ? to : `${from} → ${to}`;
-  }
+  const departments = useQuery({
+    queryKey: ["departments"],
+    queryFn: async () => (await api.get<Department[]>("/departments")).data,
+  });
+
+  const download = useMutation({
+    mutationFn: async () =>
+      save((await api.get<string>(`/requests/export?${query({ ...filter, state: url.state, ...order })}`)).data, "requests.csv"),
+    onSuccess: () => notify.done(t("exported")),
+    onError: notify.failed,
+  });
 
   const shown = rows.data?.pages.flatMap((one) => one.rows);
-  const total = rows.data?.pages[0]?.total;
-  const filtered = state !== "" || kind !== "";
+  const first = rows.data?.pages[0];
+  const filtered = Object.values(filter).some((one) => one !== "") || url.state !== "";
 
   const columns: Column<RequestRow>[] = [
     {
       id: "who",
       header: t("who"),
-      sticky: true,
-      sortBy: (row) => row.employee?.fullName ?? "",
+      cell: (row) => <PersonCell name={row.employee?.fullName ?? common("empty")} code={row.employee?.code} />,
+    },
+    {
+      id: "department",
+      header: t("department"),
+      priority: 3,
+      truncate: true,
+      maxWidthPx: 180,
+      cell: (row) => row.employee?.department?.name ?? common("empty"),
+    },
+    {
+      id: "request",
+      header: t("request"),
+      sortKey: "fromDate",
       cell: (row) => (
-        <span className="whitespace-nowrap">
-          {row.employee ? row.employee.fullName : t(`kind${row.kind}`)}
-          {row.employee ? <span className="ms-2 font-mono text-sm text-kumo-subtle">{row.employee.code}</span> : null}
-        </span>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate">{words.kind(row)}</span>
+          <span className="text-sm whitespace-nowrap text-kumo-subtle tabular-nums">{words.span(row)}</span>
+        </div>
       ),
     },
-    { id: "state", header: t("state"), sortBy: (row) => row.state, cell: (row) => <StatePill state={row.state} /> },
+    { id: "extent", header: t("extent"), numeric: true, priority: 2, cell: (row) => words.extent(row) },
+    { id: "state", header: t("state"), cell: (row) => <StatePill state={row.state} /> },
     {
-      id: "kind",
-      header: t("kind"),
-      sortBy: (row) => row.kind,
-      cell: (row) => (
-        <span className="whitespace-nowrap">
-          {row.leaveType ? row.leaveType.name : t(`kind${row.kind}`)}
-          {row.minutes > 0 ? ` · ${minutes(row.minutes, locale)}` : ""}
-        </span>
-      ),
+      id: "filed",
+      header: t("filed"),
+      priority: 2,
+      sortKey: "createdAt",
+      cell: (row) => <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(row.createdAt), "day")}</span>,
     },
     {
-      id: "range",
-      header: t("range"),
-      sortBy: (row) => row.fromDate,
-      cell: (row) => <span className="whitespace-nowrap">{span(row)}</span>,
-    },
-    { id: "days", header: t("days"), numeric: true, sortBy: (row) => Number(row.days), cell: (row) => days(Number(row.days), locale) },
-    {
-      id: "reason",
-      header: t("reason"),
-      sortBy: (row) => row.reason,
-      cell: (row) => <span className="block max-w-48 truncate">{row.reason}</span>,
+      id: "decidedBy",
+      header: t("decidedBy"),
+      priority: 3,
+      cell: (row) =>
+        row.decidedBy ? (
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate">{row.decidedBy.fullName ?? row.decidedBy.email}</span>
+            {row.decidedAt ? (
+              <span className="text-sm text-kumo-subtle tabular-nums">{format.dateTime(new Date(row.decidedAt), "day")}</span>
+            ) : null}
+          </div>
+        ) : (
+          common("empty")
+        ),
     },
   ];
 
@@ -117,52 +164,45 @@ export default function RequestRegisterPage() {
     <>
       <PageHeader title={t("registerTitle")} description={t("deskLead")} />
 
-      <PageLayout
-        aside={
-          <AsideCard title={t("byState")}>
-            <StatList
-              stats={[
-                ...STATES.map((one) => ({
-                  key: one,
-                  label: t(`count${one}`),
-                  value: counts.data?.each[one] ?? common("empty"),
-                  active: state === one,
-                  tone: one === "PENDING" && (counts.data?.each[one] ?? 0) > 0 ? ("warning" as const) : undefined,
-                  onPick: () => setState(one),
-                })),
-                {
-                  key: "all",
-                  label: common("all"),
-                  value: counts.data?.all ?? common("empty"),
-                  active: state === "",
-                  onPick: () => setState(""),
-                },
-              ]}
-            />
-          </AsideCard>
-        }
-      >
+      <PageLayout>
         <FilterBar
+          search={{ value: typed, onChange: setTyped, placeholder: t("registerSearch") }}
           filters={[
             {
               key: "kind",
               label: t("kind"),
-              value: kind,
-              onChange: (next) => setKind(next as RequestKind | ""),
-              items: { "": t("anyKind"), ...Object.fromEntries(KINDS.map((one) => [one, t(`kind${one}`)])) },
+              value: url.kind,
+              onChange: (next) => setUrl({ kind: next }),
+              items: { "": t("anyKind"), ...Object.fromEntries(REQUEST_KINDS.map((one: RequestKind) => [one, t(`kind${one}`)])) },
             },
             {
               key: "state",
               label: t("state"),
-              value: state,
-              onChange: (next) => setState(next as RequestState | ""),
+              value: url.state,
+              onChange: (next) => setUrl({ state: next }),
               items: { "": t("anyState"), ...Object.fromEntries(STATES.map((one) => [one, t(`count${one}`)])) },
+              counts: counts.data,
+            },
+            {
+              key: "dept",
+              label: t("department"),
+              value: url.dept,
+              searchable: true,
+              onChange: (next) => setUrl({ dept: next }),
+              items: { "": t("anyDepartment"), ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, one.name])) },
             },
           ]}
+          range={{ from: url.from, to: url.to, onFrom: (next) => setUrl({ from: next }), onTo: (next) => setUrl({ to: next }) }}
+          extra={
+            <Button variant="secondary" icon={DownloadSimpleIcon} loading={download.isPending} onClick={() => download.mutate()}>
+              {common("export")}
+            </Button>
+          }
         />
         <DataTable
           id="requests"
           cardLead="who"
+          cardTrailing="state"
           columns={columns}
           rows={shown}
           keyOf={(row) => row.id}
@@ -170,13 +210,16 @@ export default function RequestRegisterPage() {
           failed={rows.isError}
           onRetry={() => void rows.refetch()}
           rowHref={(row) => `/leave/${row.id}`}
+          sort={{ key: order.sort, dir: order.order === "asc" ? "asc" : "desc" }}
+          onSortChange={(next) => setUrl({ sort: next.key === "createdAt" ? "" : next.key, dir: next.dir === "desc" ? "" : next.dir })}
           empty={filtered ? t("registerNoMatch") : t("registerEmpty")}
           emptyHint={filtered ? t("registerNoMatchHint") : undefined}
           paging={
-            total !== undefined
+            first
               ? {
                   shown: shown?.length ?? 0,
-                  total,
+                  total: first.total,
+                  exact: first.totalIsExact !== false,
                   onMore: rows.hasNextPage ? () => void rows.fetchNextPage() : undefined,
                   loading: rows.isFetchingNextPage,
                 }
@@ -185,5 +228,14 @@ export default function RequestRegisterPage() {
         />
       </PageLayout>
     </>
+  );
+}
+
+// The filters ride on the query string, which the prerender does not have.
+export default function RequestRegisterPage() {
+  return (
+    <Suspense>
+      <Register />
+    </Suspense>
   );
 }

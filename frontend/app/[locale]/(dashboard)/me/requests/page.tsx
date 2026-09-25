@@ -1,25 +1,31 @@
 "use client";
 
-import { Banner, Button, Empty, Input, LayerCard, LayerDialog, SkeletonLine } from "@cloudflare/kumo";
-import { FileTextIcon, PlusIcon, WarningCircleIcon, XCircleIcon } from "@phosphor-icons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "next/navigation";
+import { Banner, Button, Input, LayerDialog } from "@cloudflare/kumo";
+import { PlusIcon, WarningCircleIcon, XCircleIcon } from "@phosphor-icons/react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Suspense, useState, type FormEvent } from "react";
 
-import { RequestCard, type RequestKind, type RequestRow } from "@/components/requests/request-card";
+import {
+  RequestCard,
+  StatePill as RequestPill,
+  useRequestWords,
+  type RequestKind,
+  type RequestRow,
+} from "@/components/requests/request-card";
 import { isRequestKind, RequestForm, todayHere } from "@/components/requests/request-form";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill, type Tone } from "@/components/ui/pill";
-import { useRouter } from "@/i18n/navigation";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { dayOnly, days, money } from "@/lib/format";
 import { useOutbox } from "@/lib/outbox";
+import { useUrlState } from "@/lib/url-state";
 
 type AdvanceState = "PENDING" | "APPROVED" | "REJECTED" | "PAID" | "SETTLED" | "CANCELLED";
 
@@ -40,10 +46,16 @@ interface Balance {
   bookedAfter: number;
 }
 
-type Tab = "requests" | "advances";
-
-const kHere = "/me/requests";
 const kAdvanceForm = "advance-form";
+const kPage = 20;
+const DEFAULTS = { tab: "", open: "", new: "", date: "" };
+
+interface RequestPage {
+  rows: RequestRow[];
+  total: number;
+  totalIsExact?: boolean;
+  next?: string | null;
+}
 
 const ADVANCE_TONE: Record<AdvanceState, Tone> = {
   PENDING: "waiting",
@@ -66,16 +78,14 @@ function MyRequests() {
   const faultOf = useFault();
   const notify = useNotify();
   const cache = useQueryClient();
-  const router = useRouter();
-  const search = useSearchParams();
+  const words = useRequestWords();
   const employeeId = useSession((s) => s.employeeId);
   const waiting = useOutbox();
+  const [url, setUrl] = useUrlState(DEFAULTS);
 
-  const tab: Tab = search.get("tab") === "advances" ? "advances" : "requests";
-  const askedKind = search.get("new");
-  const askedDate = search.get("date");
-  const linked = isRequestKind(askedKind)
-    ? { kind: askedKind, date: askedDate && DAY.test(askedDate) ? askedDate : undefined }
+  const tab = url.tab === "advances" ? "advances" : "requests";
+  const linked = isRequestKind(url.new)
+    ? { kind: url.new, date: DAY.test(url.date) ? url.date : undefined }
     : null;
 
   const [seed, setSeed] = useState(0);
@@ -87,11 +97,20 @@ function MyRequests() {
   const [advanceFault, setAdvanceFault] = useState<string | null>(null);
   const [droppingAdvance, setDroppingAdvance] = useState<Advance | null>(null);
 
-  const mine = useQuery({
+  const mine = useInfiniteQuery({
     queryKey: ["requests", "mine", employeeId],
     enabled: employeeId !== null,
-    queryFn: async () =>
-      (await api.get<{ rows: RequestRow[]; total: number }>(`/requests?employeeId=${employeeId}`)).data,
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) =>
+      (await api.get<RequestPage>(`/requests?employeeId=${employeeId}&take=${kPage}${pageParam ? `&cursor=${pageParam}` : ""}`)).data,
+    getNextPageParam: (last) => last.next ?? undefined,
+  });
+
+  // A link from elsewhere names one request; it opens here whether or not it is on the first page.
+  const opened = useQuery({
+    queryKey: ["requests", "one", url.open],
+    enabled: url.open !== "",
+    queryFn: async () => (await api.get<RequestRow>(`/requests/${url.open}`)).data,
   });
 
   // A desk role reads everybody's advances here, so the query names the viewer.
@@ -112,6 +131,7 @@ function MyRequests() {
     onSuccess: () => {
       notify.done(t("withdrawn"));
       setDropping(null);
+      setUrl({ open: "" });
       void cache.invalidateQueries({ queryKey: ["requests"] });
       void cache.invalidateQueries({ queryKey: ["leave-balances"] });
     },
@@ -152,7 +172,7 @@ function MyRequests() {
   function closeForm(): void {
     setFiling(false);
     if (linked) {
-      router.replace(kHere, { scroll: false });
+      setUrl({ new: "", date: "" });
     }
   }
 
@@ -205,7 +225,29 @@ function MyRequests() {
   ];
 
   const formOpen = filing || linked !== null;
-  const rows = mine.data?.rows ?? [];
+  const rows = mine.data?.pages.flatMap((one) => one.rows);
+  const first = mine.data?.pages[0];
+
+  const requestColumns: Column<RequestRow>[] = [
+    {
+      id: "request",
+      header: t("request"),
+      cell: (row) => (
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate">{words.kind(row)}</span>
+          <span className="text-sm whitespace-nowrap text-kumo-subtle tabular-nums">{words.span(row)}</span>
+        </div>
+      ),
+    },
+    { id: "extent", header: t("extent"), numeric: true, cell: (row) => words.extent(row) },
+    {
+      id: "filed",
+      header: t("filed"),
+      priority: 2,
+      cell: (row) => <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(row.createdAt), "day")}</span>,
+    },
+    { id: "state", header: t("state"), cell: (row) => <RequestPill state={row.state} /> },
+  ];
 
   return (
     <>
@@ -228,7 +270,7 @@ function MyRequests() {
           { value: "advances", label: pay("advances") },
         ]}
         tab={tab}
-        onTab={(next) => router.replace(next === "advances" ? `${kHere}?tab=advances` : kHere, { scroll: false })}
+        onTab={(next) => setUrl({ tab: next === "advances" ? "advances" : "" })}
       />
 
       <PageLayout
@@ -279,41 +321,36 @@ function MyRequests() {
         }
       >
         {tab === "requests" ? (
-          mine.isError ? (
-            <Failed onRetry={() => void mine.refetch()} />
-          ) : mine.isPending ? (
-            <LayerCard className="flex flex-col gap-3 p-4">
-              {Array.from({ length: 3 }, (_, at) => (
-                <SkeletonLine key={at} minWidth={27} maxWidth={53} />
-              ))}
-            </LayerCard>
-          ) : rows.length === 0 ? (
-            <LayerCard className="p-0">
-              <Empty
-                icon={<FileTextIcon size={40} className="text-kumo-inactive" />}
-                title={t("mineEmpty")}
-                description={t("mineEmptyHint")}
-                contents={
-                  <Button variant="primary" icon={PlusIcon} onClick={openForm}>
-                    {t("new")}
-                  </Button>
-                }
-                className="py-12"
-              />
-            </LayerCard>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {rows.map((row) => (
-                <RequestCard
-                  key={row.id}
-                  row={row}
-                  titleBy="kind"
-                  busy={cancel.isPending && cancel.variables === row.id}
-                  onCancel={() => setDropping(row)}
-                />
-              ))}
-            </div>
-          )
+          <DataTable
+            id="my-requests"
+            columns={requestColumns}
+            rows={rows}
+            keyOf={(row) => row.id}
+            pending={mine.isPending}
+            failed={mine.isError}
+            onRetry={() => void mine.refetch()}
+            empty={t("mineEmpty")}
+            emptyHint={t("mineEmptyHint")}
+            emptyAction={
+              <Button variant="primary" icon={PlusIcon} onClick={openForm}>
+                {t("new")}
+              </Button>
+            }
+            cardLead="request"
+            cardTrailing="state"
+            onRowClick={(row) => setUrl({ open: row.id })}
+            paging={
+              first
+                ? {
+                    shown: rows?.length ?? 0,
+                    total: first.total,
+                    exact: first.totalIsExact !== false,
+                    onMore: mine.hasNextPage ? () => void mine.fetchNextPage() : undefined,
+                    loading: mine.isFetchingNextPage,
+                  }
+                : undefined
+            }
+          />
         ) : (
           <DataTable
             id="my-advances"
@@ -339,6 +376,30 @@ function MyRequests() {
           />
         )}
       </PageLayout>
+
+      <LayerDialog.Root open={url.open !== ""} onOpenChange={(next) => !next && setUrl({ open: "" })}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{opened.data ? words.kind(opened.data) : t("title")}</LayerDialog.Title>
+          <LayerDialog.Description>{opened.data ? words.span(opened.data) : ""}</LayerDialog.Description>
+          <LayerDialog.Body>
+            {opened.isPending ? (
+              <div className="flex flex-col gap-2">
+                <SkeletonLine minWidth={30} maxWidth={60} />
+                <SkeletonLine minWidth={30} maxWidth={50} />
+              </div>
+            ) : opened.isError ? (
+              <p className="text-kumo-subtle">{t("gone")}</p>
+            ) : opened.data ? (
+              <RequestCard
+                row={opened.data}
+                titleBy="kind"
+                busy={cancel.isPending}
+                onCancel={opened.data.employee?.id === employeeId ? () => opened.data && setDropping(opened.data) : undefined}
+              />
+            ) : null}
+          </LayerDialog.Body>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
 
       <RequestForm
         key={linked ? `link-${linked.kind}-${linked.date ?? ""}` : `form-${seed}`}

@@ -1,21 +1,26 @@
 "use client";
 
-import { Banner, Button, Input, LayerDialog, Select } from "@cloudflare/kumo";
-import { InfoIcon, PencilSimpleIcon, WarningCircleIcon, XCircleIcon } from "@phosphor-icons/react";
+import { Banner, Button, Empty, Input, Label, LayerCard, LayerDialog, Select } from "@cloudflare/kumo";
+import { InfoIcon, PencilSimpleIcon, PlusIcon, UsersThreeIcon, WarningCircleIcon, XCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { useFormatter, useLocale, useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { Suspense, useState, type FormEvent } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
+import { DateField } from "@/components/ui/date-field";
+import { Failed } from "@/components/ui/failed";
+import { MonthPicker, thisMonth, type Month } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
+import { useOptional } from "@/components/ui/optional";
+import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { days } from "@/lib/format";
+import { dayOnly } from "@/lib/format";
 
 const FIELDS = {
   PERSONAL_EMAIL: [{ column: "personalEmail", type: "email", max: 128 }],
@@ -36,7 +41,34 @@ type ChangeState = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 const FIELD_NAMES = Object.keys(FIELDS) as FieldName[];
 const kHere = "/me/profile";
 const kAskForm = "profile-form";
-const kDayMs = 86_400_000;
+const kDependentForm = "dependent-form";
+const kNameMax = 120;
+const kIdMax = 32;
+const RELATIONS = ["CHILD", "SPOUSE", "PARENT", "SIBLING", "OTHER"] as const;
+
+type Relation = (typeof RELATIONS)[number];
+type DependentState = "PENDING" | "ACTIVE" | "REJECTED" | "ENDED";
+
+interface Dependent {
+  id: string;
+  fullName: string;
+  relation: Relation;
+  fromMonth: string;
+  toMonth: string | null;
+  state: DependentState;
+  decisionNote: string | null;
+}
+
+const DEPENDENT_TONE: Record<DependentState, Tone> = {
+  PENDING: "waiting",
+  ACTIVE: "good",
+  REJECTED: "bad",
+  ENDED: "idle",
+};
+
+function monthStart(at: Month): string {
+  return `${at.year}-${String(at.month).padStart(2, "0")}-01`;
+}
 
 const CHANGE_TONE: Record<ChangeState, Tone> = {
   PENDING: "waiting",
@@ -70,19 +102,161 @@ function isField(value: string | null): value is FieldName {
   return value !== null && (FIELD_NAMES as string[]).includes(value);
 }
 
-/** Days from asking to a decision, over this person's own decided asks. */
-function usualWait(rows: Change[]): number | null {
-  const waits = rows
-    .filter((one) => one.decidedAt && (one.state === "APPROVED" || one.state === "REJECTED"))
-    .map((one) => (new Date(one.decidedAt ?? one.createdAt).getTime() - new Date(one.createdAt).getTime()) / kDayMs);
-  return waits.length === 0 ? null : Math.max(0, Math.round(waits.reduce((sum, one) => sum + one, 0) / waits.length));
+/** The people this person claims for tax relief, and the way to claim one more (KEHOACH 9.7). */
+function Dependents({ employeeId }: { employeeId: number }) {
+  const t = useTranslations("me");
+  const common = useTranslations("common");
+  const format = useFormatter();
+  const optional = useOptional();
+  const faultOf = useFault();
+  const notify = useNotify();
+  const cache = useQueryClient();
+  const [declaring, setDeclaring] = useState(false);
+  const [name, setName] = useState("");
+  const [relation, setRelation] = useState<Relation>("CHILD");
+  const [born, setBorn] = useState("");
+  const [taxCode, setTaxCode] = useState("");
+  const [fromMonth, setFromMonth] = useState<Month>(thisMonth());
+  const [fault, setFault] = useState<string | null>(null);
+
+  const dependents = useQuery({
+    queryKey: ["dependents", employeeId],
+    queryFn: async () => (await api.get<Dependent[]>(`/employees/${employeeId}/dependents`)).data,
+  });
+
+  const declare = useMutation({
+    mutationFn: () =>
+      api.post("/dependents", {
+        fullName: name.trim(),
+        relation,
+        fromMonth: monthStart(fromMonth),
+        ...(born ? { dateOfBirth: born } : {}),
+        ...(taxCode.trim() ? { taxCode: taxCode.trim() } : {}),
+      }),
+    onSuccess: () => {
+      notify.done(t("dependentAdded"));
+      setDeclaring(false);
+      void cache.invalidateQueries({ queryKey: ["dependents"] });
+      void cache.invalidateQueries({ queryKey: ["tax-year"] });
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  function open(): void {
+    setName("");
+    setRelation("CHILD");
+    setBorn("");
+    setTaxCode("");
+    setFromMonth(thisMonth());
+    setFault(null);
+    setDeclaring(true);
+  }
+
+  const rows = dependents.data ?? [];
+
+  return (
+    <>
+      <LayerCard className="mt-6">
+        <LayerCard.Secondary className="justify-between">
+          <span>{t("dependentsTitle")}</span>
+          {rows.length > 0 ? (
+            <Button variant="ghost" size="sm" icon={PlusIcon} onClick={open}>
+              {t("dependentAddShort")}
+            </Button>
+          ) : null}
+        </LayerCard.Secondary>
+        <LayerCard.Primary>
+          {dependents.isPending ? (
+            <div className="flex flex-col gap-2">
+              <SkeletonLine minWidth={25} maxWidth={45} />
+              <SkeletonLine minWidth={25} maxWidth={40} />
+            </div>
+          ) : dependents.isError ? (
+            <Failed onRetry={() => void dependents.refetch()} />
+          ) : rows.length === 0 ? (
+            <Empty
+              size="sm"
+              icon={<UsersThreeIcon size={32} className="text-kumo-inactive" />}
+              title={t("dependentsEmpty")}
+              description={t("dependentsEmptyHint")}
+              contents={
+                <Button variant="secondary" icon={PlusIcon} onClick={open}>
+                  {t("dependentAdd")}
+                </Button>
+              }
+            />
+          ) : (
+            <ul className="-my-1 flex flex-col">
+              {rows.map((one) => (
+                <li key={one.id} className="flex items-center justify-between gap-3 border-b border-kumo-hairline py-2 last:border-0">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate font-medium">{one.fullName}</span>
+                    <span className="text-kumo-subtle">
+                      {t(`relation${one.relation}`)} ·{" "}
+                      {t("dependentSince", { month: format.dateTime(dayOnly(one.fromMonth), { month: "2-digit", year: "numeric" }) })}
+                    </span>
+                    {one.state === "REJECTED" && one.decisionNote ? <span className="text-kumo-danger">{one.decisionNote}</span> : null}
+                  </span>
+                  <StatePill tone={DEPENDENT_TONE[one.state]}>{t(`dependentState${one.state}`)}</StatePill>
+                </li>
+              ))}
+            </ul>
+          )}
+        </LayerCard.Primary>
+      </LayerCard>
+
+      <LayerDialog.Root open={declaring} onOpenChange={setDeclaring} dismissDisabled={declare.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("dependentAdd")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("dependentsLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <form
+              id={kDependentForm}
+              className="flex flex-col gap-4"
+              onSubmit={(event: FormEvent) => {
+                event.preventDefault();
+                setFault(null);
+                declare.mutate();
+              }}
+            >
+              <Input label={t("dependentName")} required maxLength={kNameMax} value={name} onChange={(event) => setName(event.target.value)} />
+              <Select
+                label={t("dependentRelation")}
+                hideLabel={false}
+                className="w-full"
+                value={relation}
+                onValueChange={(next) => setRelation(String(next ?? "CHILD") as Relation)}
+                items={Object.fromEntries(RELATIONS.map((one) => [one, t(`relation${one}`)]))}
+              />
+              <DateField label={t("dependentBorn")} required={false} value={born} onChange={setBorn} />
+              <Input
+                label={optional(t("dependentTaxCode"))}
+                maxLength={kIdMax}
+                value={taxCode}
+                onChange={(event) => setTaxCode(event.target.value)}
+              />
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("dependentFrom")}</Label>
+                <MonthPicker value={fromMonth} onChange={setFromMonth} />
+              </div>
+              {fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
+            </form>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary type="submit" form={kDependentForm} loading={declare.isPending}>
+              {t("dependentSend")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+    </>
+  );
 }
 
 function MyProfile() {
   const t = useTranslations("profile");
   const common = useTranslations("common");
   const format = useFormatter();
-  const locale = useLocale();
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
@@ -199,8 +373,6 @@ function MyProfile() {
     },
   ];
 
-  const wait = usualWait(changes.data ?? []);
-
   return (
     <>
       <PageHeader
@@ -213,27 +385,7 @@ function MyProfile() {
         }
       />
 
-      <PageLayout
-        aside={
-          <AsideCard title={t("howTitle")}>
-            <Facts
-              rows={[
-                [t("whoDecides"), t("hrDecides")],
-                [t("howLong"), wait === null ? t("noHistory") : t("usualWait", { days: days(wait, locale) })],
-                [t("takesEffect"), t("takesEffectHint")],
-              ]}
-            />
-          </AsideCard>
-        }
-        extra={
-          <AsideCard title={common("goodToKnow")}>
-            <p className="flex gap-2">
-              <InfoIcon size={18} className="mt-0.5 shrink-0 text-kumo-info" aria-hidden />
-              <span>{t("bankWarning")}</span>
-            </p>
-          </AsideCard>
-        }
-      >
+      <PageLayout>
         <DataTable
           id="my-profile-changes"
           cardLead="field"
@@ -256,6 +408,7 @@ function MyProfile() {
               : []
           }
         />
+        {employeeId !== null ? <Dependents employeeId={employeeId} /> : null}
       </PageLayout>
 
       <LayerDialog.Root

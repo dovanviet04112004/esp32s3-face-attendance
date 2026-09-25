@@ -1,29 +1,31 @@
 "use client";
 
-import { Empty, LayerCard, LinkButton, SkeletonLine } from "@cloudflare/kumo";
-import { FileXIcon } from "@phosphor-icons/react";
+import { Button, Empty, LayerCard, LinkButton } from "@cloudflare/kumo";
+import { CheckIcon, FileXIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 
-import { RequestCard, StatePill, useLeaveBalances, type RequestRow } from "@/components/requests/request-card";
+import { COUNTS_KEY } from "@/components/nav/waiting-count";
+import {
+  DecisionFields,
+  RequestCard,
+  StatePill,
+  useDecision,
+  useRequestWords,
+  type RequestDetail,
+} from "@/components/requests/request-card";
+import { BottomBar } from "@/components/ui/bottom-bar";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
-import { cn } from "@/lib/cn";
-
-const DECIDERS = ["MANAGER", "ADMIN", "HR"];
-
-interface Employee {
-  id: number;
-  code: string;
-  fullName: string;
-  department: { id: string; name: string } | null;
-}
+import { useFault } from "@/lib/fault";
+import { days } from "@/lib/format";
 
 function Waiting() {
   return (
@@ -38,40 +40,45 @@ export default function LeaveDetailPage() {
   const t = useTranslations("requests");
   const common = useTranslations("common");
   const format = useFormatter();
+  const locale = useLocale();
+  const words = useRequestWords();
   const params = useParams<{ id: string }>();
-  const role = useSession((s) => s.role);
   const cache = useQueryClient();
   const notify = useNotify();
+  const faultOf = useFault();
+  const decision = useDecision();
+  const [fault, setFault] = useState<string | null>(null);
 
   const request = useQuery({
     queryKey: ["requests", "one", params.id],
-    queryFn: async () => (await api.get<RequestRow>(`/requests/${params.id}`)).data,
+    queryFn: async () => (await api.get<RequestDetail>(`/requests/${params.id}`)).data,
   });
   const row = request.data;
-  const whoId = row?.employee?.id;
-
-  const employee = useQuery({
-    queryKey: ["employees", whoId],
-    enabled: whoId !== undefined,
-    queryFn: async () => (await api.get<Employee>(`/employees/${whoId}`)).data,
-  });
-
-  const balances = useLeaveBalances(whoId, row?.fromDate ?? "", row !== undefined);
 
   const decide = useMutation({
     mutationFn: (body: { approve: boolean; note: string }) =>
       api.post(`/requests/${params.id}/decide`, { approve: body.approve, note: body.note || undefined }),
     onSuccess: (_, body) => {
-      const name = row?.employee?.fullName ?? "none";
+      const name = row?.employee?.fullName ?? t("title");
       notify.done(body.approve ? t("approvedOf", { name }) : t("rejectedOf", { name }));
+      setFault(null);
+      decision.back();
       void cache.invalidateQueries({ queryKey: ["requests"] });
       void cache.invalidateQueries({ queryKey: ["leave-balances"] });
+      void cache.invalidateQueries({ queryKey: COUNTS_KEY });
     },
-    onError: notify.failed,
+    onError: (fell: unknown) => {
+      setFault(faultOf(fell));
+      void cache.invalidateQueries({ queryKey: ["requests", "one", params.id] });
+    },
   });
 
-  const person = employee.data;
-  const year = row?.fromDate.slice(0, 4) ?? "";
+  function send(): void {
+    decision.send(
+      (note) => decide.mutate({ approve: true, note }),
+      (note) => decide.mutate({ approve: false, note }),
+    );
+  }
 
   const gone = isAxiosError(request.error) && request.error.response?.status === 404;
 
@@ -83,6 +90,8 @@ export default function LeaveDetailPage() {
       </>
     );
   }
+
+  const deciding = row?.state === "PENDING" && row.mayDecide;
 
   return (
     <>
@@ -104,44 +113,51 @@ export default function LeaveDetailPage() {
                   </Link>
                 }
               >
-                {person ? (
+                <Facts
+                  rows={[
+                    [t("code"), <span key="code" className="font-mono">{row.employee.code}</span>],
+                    [t("department"), row.employee.department?.name ?? common("empty")],
+                  ]}
+                />
+              </AsideCard>
+              {row.balance ? (
+                <AsideCard title={t("balancesOf", { year: row.balance.year })}>
                   <Facts
                     rows={[
-                      [t("code"), <span key="code" className="font-mono">{person.code}</span>],
-                      [t("department"), person.department?.name ?? common("empty")],
+                      [t("balanceEntitled"), days(row.balance.entitled + row.balance.carriedOver, locale)],
+                      [t("balanceTaken"), days(row.balance.taken, locale)],
+                      [t("balancePending"), days(row.balance.pending, locale)],
+                      [
+                        row.state === "PENDING" ? t("balanceAfter") : t("balanceLeft"),
+                        <span key="left" className="font-medium tabular-nums">
+                          {days(row.balance.remaining, locale)}
+                        </span>,
+                      ],
                     ]}
                   />
-                ) : employee.isError ? (
-                  <Facts rows={[[t("code"), <span key="code" className="font-mono">{row.employee.code}</span>]]} />
-                ) : (
-                  <Waiting />
-                )}
-              </AsideCard>
-              <AsideCard title={t("balancesOf", { year })}>
-                {balances.isPending ? (
-                  <Waiting />
-                ) : balances.isError ? (
-                  <Failed onRetry={() => void balances.refetch()} />
-                ) : balances.data.length === 0 ? (
-                  <p className="text-kumo-subtle">{t("balancesNone")}</p>
-                ) : (
-                  <Facts
-                    rows={balances.data.map((one) => [
-                      one.name,
-                      <span
-                        key={one.leaveTypeId}
-                        className={cn(
-                          "tabular-nums",
-                          one.leaveTypeId === row.leaveType?.id && "font-medium",
-                          one.remaining < 0 && "text-kumo-danger",
-                        )}
-                      >
-                        {t("balanceValue", { left: one.remaining, total: one.entitled + one.carriedOver })}
-                      </span>,
-                    ])}
-                  />
-                )}
-              </AsideCard>
+                </AsideCard>
+              ) : null}
+              {row.kind === "LEAVE" ? (
+                <AsideCard title={t("teamOffTitle")}>
+                  {row.overlapping.length === 0 ? (
+                    <p className="text-kumo-subtle">{t("teamOffNone")}</p>
+                  ) : (
+                    <ul className="-my-1 flex flex-col">
+                      {row.overlapping.map((one) => (
+                        <li key={one.id} className="flex items-center justify-between gap-3 border-b border-kumo-hairline py-2 last:border-0">
+                          <Link href={`/leave/${one.id}`} className="min-w-0 truncate hover:underline">
+                            {one.employee.fullName}
+                          </Link>
+                          <span className="flex shrink-0 items-center gap-2 text-sm text-kumo-subtle tabular-nums">
+                            {words.span(one)}
+                            <StatePill state={one.state} />
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </AsideCard>
+              ) : null}
             </>
           ) : undefined
         }
@@ -151,15 +167,23 @@ export default function LeaveDetailPage() {
             <Waiting />
           </LayerCard>
         ) : row ? (
-          <RequestCard
-            row={row}
-            busy={decide.isPending}
-            onDecide={
-              role !== null && DECIDERS.includes(role) && row.state === "PENDING"
-                ? (approve, note) => decide.mutate({ approve, note })
-                : undefined
-            }
-          />
+          <RequestCard row={row}>
+            {deciding ? (
+              <>
+                <DecisionFields decision={decision} fault={fault} noteOnApprove mayReject busy={decide.isPending} />
+                <BottomBar>
+                  <Button
+                    variant={decision.rejecting ? "destructive" : "primary"}
+                    icon={decision.rejecting ? undefined : CheckIcon}
+                    loading={decide.isPending}
+                    onClick={send}
+                  >
+                    {decision.rejecting ? t("rejectSend") : t("approve")}
+                  </Button>
+                </BottomBar>
+              </>
+            ) : null}
+          </RequestCard>
         ) : (
           <LayerCard className="p-0">
             <Empty
