@@ -10,6 +10,7 @@ import type {
   Holiday,
   JobTitle,
   LegalEntity,
+  Prisma,
 } from "@prisma/client";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -17,16 +18,45 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { UsersService } from "../users/users.service.js";
 import type {
   CreateContractDto,
   CreateDepartmentDto,
   CreateHolidayDto,
+  CreateJobTitleDto,
+  CreateLegalEntityDto,
   DecideContractDto,
+  ListDepartmentsDto,
   ReorgDto,
   UpdateDepartmentDto,
+  UpdateHolidayDto,
+  UpdateJobTitleDto,
+  UpdateLegalEntityDto,
 } from "./dto/org.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
+const NOT_FOUND = "P2025";
+
+type Scalar = string | number | boolean | null;
+
+function asScalar(value: unknown): Scalar {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return typeof value === "number" || typeof value === "boolean" ? value : String(value);
+}
+
+/** Each field a patch moved, as a from and to pair (KEHOACH 9.24 rule 4). */
+function trail(before: object, patch: object): Prisma.InputJsonObject {
+  const held = before as Record<string, unknown>;
+  const moved: Record<string, { from: Scalar; to: Scalar }> = {};
+  for (const [key, to] of Object.entries(patch)) {
+    if (to !== undefined && asScalar(held[key]) !== asScalar(to)) {
+      moved[key] = { from: asScalar(held[key]), to: asScalar(to) };
+    }
+  }
+  return moved;
+}
 
 function byManager(
   rows: ReorgRow[],
@@ -43,11 +73,23 @@ function byManager(
   return [...grouped].map(([managerCode, employees]) => ({ managerCode, employees }));
 }
 
-/** One person a reorganisation would move, and what it moves them out of. */
+export interface PersonRef {
+  id: number;
+  code: string;
+  fullName: string;
+}
+
 /** A department plus the people filed directly under it, not its subtree. */
 export interface DepartmentNode extends Department {
   headcount: number;
+  head: PersonRef | null;
 }
+
+/** A job title and how many people currently hold it. */
+export type JobTitleRow = JobTitle & { holders: number };
+
+/** An entity and how many people are filed under it now. */
+export type LegalEntityRow = LegalEntity & { employees: number };
 
 export interface ReorgRow {
   employeeId: number;
@@ -74,6 +116,7 @@ export class OrgService {
     private readonly db: PrismaService,
     private readonly audit: AuditService,
     private readonly scope: ScopeService,
+    private readonly users: UsersService,
   ) {}
 
   /**
@@ -82,9 +125,10 @@ export class OrgService {
    * the one that lands (KEHOACH 9.18 item 7).
    */
   async reorg(viewer: Viewer, body: ReorgDto, apply: boolean): Promise<ReorgPlan> {
+    const chosen = body.employeeCodes?.length ? body.employeeCodes : null;
     // A body with nothing to narrow by would move the whole company, which is
     // one typo away from a department id that came out empty.
-    if (!body.employeeCodes?.length && !body.fromDepartmentId) {
+    if (!chosen && !body.fromDepartmentId) {
       throw new BadRequestException("REORG_NEEDS_A_SELECTION");
     }
     if (!body.toDepartmentId && !body.toManagerCode) {
@@ -93,7 +137,7 @@ export class OrgService {
     const people = await this.db.employee.findMany({
       where: {
         active: true,
-        ...(body.employeeCodes ? { code: { in: body.employeeCodes } } : {}),
+        ...(chosen ? { code: { in: chosen } } : {}),
         ...(body.fromDepartmentId ? { departmentId: body.fromDepartmentId } : {}),
       },
       select: {
@@ -101,6 +145,7 @@ export class OrgService {
         code: true,
         fullName: true,
         department: { select: { code: true } },
+        managerId: true,
         manager: { select: { code: true } },
       },
       orderBy: { code: "asc" },
@@ -162,7 +207,7 @@ export class OrgService {
       return plan;
     }
 
-    await this.db.$transaction(async (tx) => {
+    const flips = await this.db.$transaction(async (tx) => {
       await tx.employee.updateMany({
         where: { id: { in: ids } },
         data: {
@@ -171,16 +216,19 @@ export class OrgService {
         },
       });
       await this.scope.assertNoManagerCycle(tx, ids);
+      if (!toManager) {
+        return [];
+      }
       // Left with its old approver, a request reaches somebody who lacks the
       // standing to see the person, so nobody can answer it.
-      if (toManager) {
-        await tx.request.updateMany({
-          where: { employeeId: { in: ids }, state: "PENDING" },
-          data: { approverId: toManager.id },
-        });
-      }
+      await tx.request.updateMany({
+        where: { employeeId: { in: ids }, state: "PENDING" },
+        data: { approverId: toManager.id },
+      });
+      return this.users.syncManagerRoles([toManager.id, ...people.map((one) => one.managerId)], tx);
     });
     await this.scope.forgetScopes();
+    await this.users.settleRoleFlips(viewer.userId, flips);
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.ORG_REORG,
@@ -192,10 +240,9 @@ export class OrgService {
   }
 
   holidays(year?: number): Promise<Holiday[]> {
-    const from = new Date(Date.UTC(year ?? new Date().getUTCFullYear(), 0, 1));
-    const to = new Date(Date.UTC((year ?? new Date().getUTCFullYear()) + 1, 0, 0));
+    const wanted = year ?? new Date().getUTCFullYear();
     return this.db.holiday.findMany({
-      where: { date: { gte: from, lte: to } },
+      where: { date: { gte: new Date(Date.UTC(wanted, 0, 1)), lte: new Date(Date.UTC(wanted + 1, 0, 0)) } },
       orderBy: { date: "asc" },
     });
   }
@@ -229,8 +276,28 @@ export class OrgService {
     }
   }
 
+  async updateHoliday(id: string, body: UpdateHolidayDto, actorId: string): Promise<Holiday> {
+    const held = await this.db.holiday.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("HOLIDAY_NOT_FOUND");
+    }
+    const saved = await this.db.holiday.update({ where: { id }, data: body }).catch((error: unknown) => {
+      throw isCode(error, NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
+    });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.ORG_HOLIDAY_UPDATE,
+      subject: AUDIT_SUBJECTS.ORG,
+      subjectId: id,
+      meta: trail(held, body),
+    });
+    return saved;
+  }
+
   async removeHoliday(id: string, actorId: string): Promise<{ done: true }> {
-    await this.db.holiday.delete({ where: { id } });
+    await this.db.holiday.delete({ where: { id } }).catch((error: unknown) => {
+      throw isCode(error, NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
+    });
     await this.audit.record({
       actorId,
       action: AUDIT_ACTIONS.ORG_HOLIDAY_DELETE,
@@ -312,23 +379,136 @@ export class OrgService {
     return moved;
   }
 
-  entities(): Promise<LegalEntity[]> {
-    return this.db.legalEntity.findMany({ where: { active: true }, orderBy: { code: "asc" } });
+  async entities(all = false): Promise<LegalEntityRow[]> {
+    const [rows, counts] = await Promise.all([
+      this.db.legalEntity.findMany({ where: all ? {} : { active: true }, orderBy: { code: "asc" } }),
+      this.db.employee.groupBy({
+        by: ["legalEntityId"],
+        where: { active: true, legalEntityId: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+    const held = new Map(counts.map((one) => [one.legalEntityId, one._count._all]));
+    return rows.map((row) => ({ ...row, employees: held.get(row.id) ?? 0 }));
   }
 
-  jobTitles(): Promise<JobTitle[]> {
-    return this.db.jobTitle.findMany({ where: { active: true }, orderBy: { code: "asc" } });
+  async createEntity(body: CreateLegalEntityDto, actorId: string): Promise<LegalEntity> {
+    const made = await this.db.legalEntity
+      .create({ data: { code: body.code, name: body.name, taxCode: body.taxCode ?? null, address: body.address ?? null } })
+      .catch((error: unknown) => {
+        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("ENTITY_CODE_TAKEN") : error;
+      });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.LEGAL_ENTITY_CREATE,
+      subject: AUDIT_SUBJECTS.LEGAL_ENTITY,
+      subjectId: made.id,
+      meta: { code: made.code },
+    });
+    return made;
   }
 
-  /** The whole tree flat, carrying parentId so a caller shapes it once. */
-  /** The head count comes back with the tree: an org chart without it answers
-   *  where somebody sits and never how many sit there (KEHOACH 9.18).
+  /** Retiring an entity that still files people, departments or a pay period
+   *  would orphan that work, so it is refused with a code (KEHOACH 9.3).
    */
-  async departments(legalEntityId?: string): Promise<DepartmentNode[]> {
-    const narrow = legalEntityId ? { legalEntityId } : {};
+  async updateEntity(id: string, body: UpdateLegalEntityDto, actorId: string): Promise<LegalEntity> {
+    const held = await this.db.legalEntity.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
+    }
+    if (body.active === false && held.active) {
+      const [people, units, periods] = await Promise.all([
+        this.db.employee.count({ where: { legalEntityId: id, active: true } }),
+        this.db.department.count({ where: { legalEntityId: id, active: true } }),
+        this.db.payrollPeriod.count({ where: { legalEntityId: id, state: { not: "PAID" } } }),
+      ]);
+      if (people + units + periods > 0) {
+        throw new ConflictException("ENTITY_IN_USE");
+      }
+    }
+    const saved = await this.db.legalEntity.update({ where: { id }, data: body }).catch((error: unknown) => {
+      if (isCode(error, UNIQUE_VIOLATION)) {
+        throw new ConflictException("ENTITY_CODE_TAKEN");
+      }
+      throw isCode(error, NOT_FOUND) ? new NotFoundException("LEGAL_ENTITY_NOT_FOUND") : error;
+    });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.LEGAL_ENTITY_UPDATE,
+      subject: AUDIT_SUBJECTS.LEGAL_ENTITY,
+      subjectId: id,
+      meta: trail(held, body),
+    });
+    return saved;
+  }
+
+  async jobTitles(all = false): Promise<JobTitleRow[]> {
+    const [rows, counts] = await Promise.all([
+      this.db.jobTitle.findMany({ where: all ? {} : { active: true }, orderBy: { code: "asc" } }),
+      this.db.employee.groupBy({
+        by: ["jobTitleId"],
+        where: { active: true, jobTitleId: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+    const held = new Map(counts.map((one) => [one.jobTitleId, one._count._all]));
+    return rows.map((row) => ({ ...row, holders: held.get(row.id) ?? 0 }));
+  }
+
+  async createJobTitle(body: CreateJobTitleDto, actorId: string): Promise<JobTitle> {
+    const made = await this.db.jobTitle
+      .create({
+        data: {
+          code: body.code,
+          name: body.name,
+          grade: body.grade ?? null,
+          laborCategory: body.laborCategory ?? null,
+        },
+      })
+      .catch((error: unknown) => {
+        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("JOB_TITLE_CODE_TAKEN") : error;
+      });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.JOB_TITLE_CREATE,
+      subject: AUDIT_SUBJECTS.JOB_TITLE,
+      subjectId: made.id,
+      meta: { code: made.code },
+    });
+    return made;
+  }
+
+  /** Retiring hides a title from pickers; the people holding it keep it. */
+  async updateJobTitle(id: string, body: UpdateJobTitleDto, actorId: string): Promise<JobTitle> {
+    const held = await this.db.jobTitle.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("JOB_TITLE_NOT_FOUND");
+    }
+    const saved = await this.db.jobTitle.update({ where: { id }, data: body }).catch((error: unknown) => {
+      if (isCode(error, UNIQUE_VIOLATION)) {
+        throw new ConflictException("JOB_TITLE_CODE_TAKEN");
+      }
+      throw isCode(error, NOT_FOUND) ? new NotFoundException("JOB_TITLE_NOT_FOUND") : error;
+    });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.JOB_TITLE_UPDATE,
+      subject: AUDIT_SUBJECTS.JOB_TITLE,
+      subjectId: id,
+      meta: trail(held, body),
+    });
+    return saved;
+  }
+
+  /** The whole tree flat, carrying parentId so a caller shapes it once. The
+   *  head count comes back with it: an org chart without it answers where
+   *  somebody sits and never how many sit there (KEHOACH 9.18).
+   */
+  async departments(query: ListDepartmentsDto): Promise<DepartmentNode[]> {
+    const narrow = query.legalEntityId ? { legalEntityId: query.legalEntityId } : {};
     const [rows, counts] = await Promise.all([
       this.db.department.findMany({
-        where: { active: true, ...narrow },
+        where: { ...(query.all ? {} : { active: true }), ...narrow },
         orderBy: [{ legalEntityId: "asc" }, { code: "asc" }],
       }),
       this.db.employee.groupBy({
@@ -337,37 +517,97 @@ export class OrgService {
         _count: { _all: true },
       }),
     ]);
+    const headIds = [...new Set(rows.flatMap((row) => (row.headId === null ? [] : [row.headId])))];
+    const heads = headIds.length
+      ? await this.db.employee.findMany({
+          where: { id: { in: headIds } },
+          select: { id: true, code: true, fullName: true },
+        })
+      : [];
+    const headOf = new Map(heads.map((one) => [one.id, one]));
     const held = new Map(counts.map((one) => [one.departmentId, one._count._all]));
-    return rows.map((row) => ({ ...row, headcount: held.get(row.id) ?? 0 }));
+    return rows.map((row) => ({
+      ...row,
+      headcount: held.get(row.id) ?? 0,
+      head: row.headId === null ? null : (headOf.get(row.headId) ?? null),
+    }));
   }
 
-  async createDepartment(body: CreateDepartmentDto): Promise<Department> {
-    await this.mustExist(body.parentId);
-    try {
-      return await this.db.department.create({ data: body });
-    } catch (error) {
+  async createDepartment(body: CreateDepartmentDto, actorId: string): Promise<Department> {
+    await this.mustBeParent(body.parentId, body.legalEntityId);
+    await this.mustBeHead(body.headId);
+    const made = await this.db.department.create({ data: body }).catch((error: unknown) => {
+      throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("DEPARTMENT_CODE_TAKEN") : error;
+    });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.DEPARTMENT_CREATE,
+      subject: AUDIT_SUBJECTS.DEPARTMENT,
+      subjectId: made.id,
+      meta: { code: made.code, parentId: made.parentId },
+    });
+    return made;
+  }
+
+  /** Rename, move, change head or cost centre, retire or restore. A retired
+   *  department still holding people or live children is refused (KEHOACH 9.3).
+   */
+  async updateDepartment(id: string, body: UpdateDepartmentDto, actorId: string): Promise<Department> {
+    const held = await this.db.department.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("DEPARTMENT_NOT_FOUND");
+    }
+    if (body.parentId !== undefined && body.parentId !== held.parentId) {
+      await this.mustBeParent(body.parentId, held.legalEntityId);
+      await this.mustNotLoop(id, body.parentId);
+    }
+    await this.mustBeHead(body.headId);
+    if (body.active === false && held.active) {
+      const [people, children] = await Promise.all([
+        this.db.employee.count({ where: { departmentId: id, active: true } }),
+        this.db.department.count({ where: { parentId: id, active: true } }),
+      ]);
+      if (people + children > 0) {
+        throw new ConflictException("DEPARTMENT_IN_USE");
+      }
+    }
+    const saved = await this.db.department.update({ where: { id }, data: body }).catch((error: unknown) => {
       if (isCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("DEPARTMENT_CODE_TAKEN");
       }
-      throw error;
-    }
+      throw isCode(error, NOT_FOUND) ? new NotFoundException("DEPARTMENT_NOT_FOUND") : error;
+    });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.DEPARTMENT_UPDATE,
+      subject: AUDIT_SUBJECTS.DEPARTMENT,
+      subjectId: id,
+      meta: trail(held, body),
+    });
+    return saved;
   }
 
-  async updateDepartment(id: string, body: UpdateDepartmentDto): Promise<Department> {
-    if (body.parentId !== undefined) {
-      await this.mustExist(body.parentId);
-      await this.mustNotLoop(id, body.parentId);
-    }
-    return this.db.department.update({ where: { id }, data: body });
-  }
-
-  private async mustExist(parentId?: string | null): Promise<void> {
+  // A tree that crosses entities files one branch's people under the wrong insurance return.
+  private async mustBeParent(parentId: string | null | undefined, legalEntityId: string): Promise<void> {
     if (!parentId) {
       return;
     }
     const held = await this.db.department.findUnique({ where: { id: parentId } });
     if (!held) {
       throw new NotFoundException("DEPARTMENT_NOT_FOUND");
+    }
+    if (held.legalEntityId !== legalEntityId) {
+      throw new ConflictException("DEPARTMENT_ENTITY_MISMATCH");
+    }
+  }
+
+  private async mustBeHead(headId: number | null | undefined): Promise<void> {
+    if (headId === null || headId === undefined) {
+      return;
+    }
+    const held = await this.db.employee.count({ where: { id: headId, active: true } });
+    if (held === 0) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
   }
 

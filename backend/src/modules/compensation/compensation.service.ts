@@ -1,28 +1,52 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type {
+  AllowanceType,
   CompensationAllowance,
   CompensationRecord,
   Dependent,
-  DependentState,
   Prisma,
 } from "@prisma/client";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
-import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import {
+  PERSON_VIEW,
+  QUEUE_DESKS,
+  filedBetween,
+  notOwnWaiting,
+  personWhere,
+  resumeAfter,
+  sortedBy,
+  whoseRows,
+} from "../leave/queue-filter.js";
 
-import type {
-  BulkRaiseDto,
-  CreateCompensationDto,
-  CreateDependentDto,
-  DecideDependentDto,
+import {
+  PAY_WRITERS,
+  type BulkRaiseDto,
+  type CreateAllowanceTypeDto,
+  type CreateCompensationDto,
+  type CreateDependentDto,
+  type DecideDependentDto,
+  type ListDependentsDto,
+  type UpdateAllowanceTypeDto,
 } from "./dto/compensation.dto.js";
 
 export type PayRecord = CompensationRecord & { allowances: CompensationAllowance[] };
+
+export type QueuedDependent = Prisma.DependentGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
 
 export interface RaisePreview {
   employeeId: number;
@@ -32,8 +56,34 @@ export interface RaisePreview {
   nextBase: string;
 }
 
-const WRITERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL"]);
-const kQueuePage = 200;
+const UNIQUE_VIOLATION = "P2002";
+const FOREIGN_KEY_VIOLATION = "P2003";
+const NOT_FOUND = "P2025";
+
+function isCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+type Scalar = string | number | boolean | null;
+
+function asScalar(value: unknown): Scalar {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return typeof value === "number" || typeof value === "boolean" ? value : String(value);
+}
+
+/** Each field a patch moved, as a from and to pair (KEHOACH 9.24 rule 4). */
+function trail(before: object, patch: object): Prisma.InputJsonObject {
+  const held = before as Record<string, unknown>;
+  const moved: Record<string, { from: Scalar; to: Scalar }> = {};
+  for (const [key, to] of Object.entries(patch)) {
+    if (to !== undefined && asScalar(held[key]) !== asScalar(to)) {
+      moved[key] = { from: asScalar(held[key]), to: asScalar(to) };
+    }
+  }
+  return moved;
+}
 
 @Injectable()
 export class CompensationService {
@@ -41,7 +91,91 @@ export class CompensationService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  allowanceTypes(all = false): Promise<AllowanceType[]> {
+    return this.db.allowanceType.findMany({ where: all ? {} : { active: true }, orderBy: { code: "asc" } });
+  }
+
+  async createAllowanceType(viewer: Viewer, body: CreateAllowanceTypeDto): Promise<AllowanceType> {
+    const made = await this.db.allowanceType
+      .create({
+        data: {
+          code: body.code,
+          name: body.name,
+          taxable: body.taxable ?? true,
+          insurable: body.insurable ?? false,
+          taxFreeCap: body.taxFreeCap ?? null,
+          d02Column: body.d02Column ?? null,
+        },
+      })
+      .catch((error: unknown) => {
+        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("ALLOWANCE_CODE_TAKEN") : error;
+      });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.ALLOWANCE_TYPE_CREATE,
+      subject: AUDIT_SUBJECTS.ALLOWANCE_TYPE,
+      subjectId: made.id,
+      meta: { code: made.code },
+    });
+    return made;
+  }
+
+  /** Pay records written earlier keep the copy they took, so an edit here reprices nothing past. */
+  async updateAllowanceType(viewer: Viewer, id: string, body: UpdateAllowanceTypeDto): Promise<AllowanceType> {
+    const held = await this.db.allowanceType.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("ALLOWANCE_TYPE_NOT_FOUND");
+    }
+    const saved = await this.db.allowanceType.update({ where: { id }, data: body }).catch((error: unknown) => {
+      if (isCode(error, UNIQUE_VIOLATION)) {
+        throw new ConflictException("ALLOWANCE_CODE_TAKEN");
+      }
+      throw isCode(error, NOT_FOUND) ? new NotFoundException("ALLOWANCE_TYPE_NOT_FOUND") : error;
+    });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.ALLOWANCE_TYPE_UPDATE,
+      subject: AUDIT_SUBJECTS.ALLOWANCE_TYPE,
+      subjectId: id,
+      meta: trail(held, body),
+    });
+    return saved;
+  }
+
+  /** The rows a pay record stores: each amount beside a copy of its type's rules. */
+  private async allowanceRows(
+    body: CreateCompensationDto,
+  ): Promise<Prisma.CompensationAllowanceCreateWithoutRecordInput[]> {
+    const wanted = body.allowances ?? [];
+    if (wanted.length === 0) {
+      return [];
+    }
+    const ids = wanted.map((one) => one.allowanceTypeId);
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException("ALLOWANCE_TYPE_REPEATED");
+    }
+    const types = await this.db.allowanceType.findMany({ where: { id: { in: ids }, active: true } });
+    const typeOf = new Map(types.map((one) => [one.id, one]));
+    return wanted.map((one) => {
+      const type = typeOf.get(one.allowanceTypeId);
+      if (!type) {
+        throw new NotFoundException("ALLOWANCE_TYPE_NOT_FOUND");
+      }
+      return {
+        type: { connect: { id: type.id } },
+        code: type.code,
+        label: type.name,
+        amount: one.amount,
+        taxable: type.taxable,
+        insurable: type.insurable,
+        taxFreeCap: type.taxFreeCap,
+        d02Column: type.d02Column,
+      };
+    });
+  }
 
   private async mayRead(viewer: Viewer, employeeId: number): Promise<void> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
@@ -52,7 +186,7 @@ export class CompensationService {
   }
 
   private mayWrite(viewer: Viewer): void {
-    if (!WRITERS.has(viewer.role)) {
+    if (!PAY_WRITERS.includes(viewer.role)) {
       throw new ForbiddenException("PAY_WRITE_DENIED");
     }
   }
@@ -77,28 +211,34 @@ export class CompensationService {
 
   async create(viewer: Viewer, body: CreateCompensationDto): Promise<PayRecord> {
     this.mayWrite(viewer);
+    // Setting one's own pay is the check the desk split exists for (KEHOACH 9.4).
+    if (body.employeeId === viewer.employeeId) {
+      throw new ForbiddenException("SELF_DECISION");
+    }
+    const allowances = await this.allowanceRows(body);
     const held = await this.atDate(body.employeeId, new Date(body.effectiveFrom));
-    const made = await this.db.compensationRecord.create({
-      data: {
-        employeeId: body.employeeId,
-        effectiveFrom: new Date(body.effectiveFrom),
-        baseSalary: body.baseSalary,
-        insuranceSalary: body.insuranceSalary,
-        reason: body.reason,
-        note: body.note ?? null,
-        createdById: viewer.userId,
-        allowances: {
-          create: (body.allowances ?? []).map((allowance) => ({
-            code: allowance.code,
-            label: allowance.label,
-            amount: allowance.amount,
-            taxable: allowance.taxable ?? true,
-            insurable: allowance.insurable ?? false,
-          })),
+    const made = await this.db.compensationRecord
+      .create({
+        data: {
+          employee: { connect: { id: body.employeeId } },
+          effectiveFrom: new Date(body.effectiveFrom),
+          baseSalary: body.baseSalary,
+          insuranceSalary: body.insuranceSalary,
+          reason: body.reason,
+          note: body.note ?? null,
+          createdById: viewer.userId,
+          allowances: { create: allowances },
         },
-      },
-      include: { allowances: true },
-    });
+        include: { allowances: true },
+      })
+      .catch((error: unknown) => {
+        if (isCode(error, UNIQUE_VIOLATION)) {
+          throw new ConflictException("PAY_DATE_TAKEN");
+        }
+        throw isCode(error, FOREIGN_KEY_VIOLATION) || isCode(error, NOT_FOUND)
+          ? new NotFoundException("EMPLOYEE_NOT_FOUND")
+          : error;
+      });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.PAY_CREATE,
@@ -109,16 +249,20 @@ export class CompensationService {
         from: held ? String(held.baseSalary) : null,
         to: String(body.baseSalary),
         reason: body.reason,
+        allowances: made.allowances.map((one) => ({ code: one.code, amount: String(one.amount) })),
       },
     });
     return made;
   }
 
-  /** What a bulk raise would write, while it is still only a proposal. */
+  /** What a bulk raise would write, while it is still only a proposal. The
+   *  writer's own record is left out, as it would be refused one at a time.
+   */
   async previewRaise(viewer: Viewer, body: BulkRaiseDto): Promise<RaisePreview[]> {
     this.mayWrite(viewer);
     const on = new Date(body.effectiveFrom);
     const chosen = body.employeeIds?.length ? body.employeeIds : null;
+    const self = viewer.employeeId ?? 0;
     // DISTINCT ON takes the latest record per person in one pass; asking per
     // employee is one query each, which stops working at a few thousand (KEHOACH 9.9).
     const rows = await this.db.$queryRaw<
@@ -129,6 +273,7 @@ export class CompensationService {
         FROM "Employee" e
         JOIN "CompensationRecord" c ON c."employeeId" = e."id"
        WHERE e."active" = true
+         AND e."id" <> ${self}
          AND c."effectiveFrom" <= ${on}
          AND (${body.departmentId ?? null}::text IS NULL OR e."departmentId" = ${body.departmentId ?? null})
          AND (${chosen}::int[] IS NULL OR e."id" = ANY(${chosen}::int[]))
@@ -163,7 +308,33 @@ export class CompensationService {
       note: body.note ?? null,
       createdById: viewer.userId,
     }));
-    const written = await this.db.compensationRecord.createMany({ data: rows, skipDuplicates: true });
+    const written = await this.db.$transaction(async (tx) => {
+      const taken = await tx.compensationRecord.findMany({
+        where: { employeeId: { in: preview.map((one) => one.employeeId) }, effectiveFrom: on },
+        select: { employeeId: true },
+      });
+      const already = new Set(taken.map((one) => one.employeeId));
+      const fresh = rows.filter((row) => !already.has(row.employeeId));
+      const made = await tx.compensationRecord.createMany({ data: fresh, skipDuplicates: true });
+      // A raise changes base pay only; without this the allowances drop out of the next payslip.
+      await tx.$executeRaw`
+        INSERT INTO "CompensationAllowance"
+               ("id", "recordId", "typeId", "code", "label", "amount", "taxable", "insurable", "taxFreeCap", "d02Column")
+        SELECT gen_random_uuid()::text, n."id", a."typeId", a."code", a."label", a."amount",
+               a."taxable", a."insurable", a."taxFreeCap", a."d02Column"
+          FROM "CompensationRecord" n
+          JOIN LATERAL (
+            SELECT p."id" FROM "CompensationRecord" p
+             WHERE p."employeeId" = n."employeeId" AND p."effectiveFrom" < n."effectiveFrom"
+             ORDER BY p."effectiveFrom" DESC LIMIT 1
+          ) prev ON true
+          JOIN "CompensationAllowance" a ON a."recordId" = prev."id"
+         WHERE n."effectiveFrom" = ${on}
+           AND n."employeeId" = ANY(${fresh.map((row) => row.employeeId)}::int[])
+        ON CONFLICT ("recordId", "code") DO NOTHING
+      `;
+      return made;
+    });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.PAY_BULK_RAISE,
@@ -194,19 +365,32 @@ export class CompensationService {
   /** What is waiting on a decision, narrowed to this viewer's people. An
    *  approval nobody can find is an approval that never happens.
    */
-  async dependentQueue(viewer: Viewer, state: DependentState): Promise<Page<Dependent>> {
-    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    const where = { state, ...(visible === null ? {} : { employeeId: { in: visible } }) };
+  async dependentQueue(viewer: Viewer, query: ListDependentsDto): Promise<Page<QueuedDependent>> {
+    const state = query.state ?? "PENDING";
+    const order = query.order ?? "asc";
+    const [visible, person] = await Promise.all([
+      this.scope.deskOrSelfEmployeeIds(viewer),
+      personWhere(this.db, query),
+    ]);
+    const where: Prisma.DependentWhereInput = {
+      AND: [
+        { state },
+        whoseRows(visible, query.employeeId),
+        notOwnWaiting(viewer, QUEUE_DESKS.dependents, state === "PENDING", query.employeeId),
+        person ? { employee: person } : {},
+        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
+      ],
+    };
     const [rows, found] = await Promise.all([
       this.db.dependent.findMany({
-        where,
-        include: { employee: { select: { id: true, code: true, fullName: true } } },
-        orderBy: { createdAt: "asc" },
-        take: kQueuePage,
+        where: { AND: [where, resumeAfter("createdAt", order, query.cursor)] },
+        include: { employee: PERSON_VIEW },
+        orderBy: sortedBy("createdAt", order),
+        take: query.take,
       }),
       this.db.dependent.count({ where, take: COUNT_CEILING + 1 }),
     ]);
-    return { rows, ...countedTo(found) };
+    return { rows, ...countedTo(found), next: nextCursor(rows, query.take, (row) => row.createdAt) };
   }
 
   async addDependent(viewer: Viewer, body: CreateDependentDto): Promise<Dependent> {
@@ -215,22 +399,31 @@ export class CompensationService {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     await this.mayRead(viewer, employeeId);
-    return this.db.dependent.create({
-      data: {
-        employeeId,
-        fullName: body.fullName,
-        relation: body.relation,
-        dateOfBirth: body.dateOfBirth ? new Date(body.dateOfBirth) : null,
-        taxCode: body.taxCode ?? null,
-        nationalId: body.nationalId ?? null,
-        fromMonth: new Date(body.fromMonth),
-        toMonth: body.toMonth ? new Date(body.toMonth) : null,
-      },
-    });
+    return this.db.dependent
+      .create({
+        data: {
+          employeeId,
+          fullName: body.fullName,
+          relation: body.relation,
+          dateOfBirth: body.dateOfBirth ? new Date(body.dateOfBirth) : null,
+          taxCode: body.taxCode ?? null,
+          nationalId: body.nationalId ?? null,
+          fromMonth: new Date(body.fromMonth),
+          toMonth: body.toMonth ? new Date(body.toMonth) : null,
+        },
+      })
+      .catch((error: unknown) => {
+        throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
+      });
   }
 
+  /** The state moves only out of PENDING, claimed by the update itself, so
+   *  two desks answering at once cannot both win.
+   */
   async decideDependent(viewer: Viewer, id: string, body: DecideDependentDto): Promise<Dependent> {
-    this.mayWrite(viewer);
+    if (!QUEUE_DESKS.dependents.includes(viewer.role)) {
+      throw new ForbiddenException("PAY_WRITE_DENIED");
+    }
     const held = await this.db.dependent.findUnique({ where: { id }, select: { employeeId: true } });
     if (!held) {
       throw new NotFoundException("DEPENDENT_NOT_FOUND");
@@ -239,8 +432,8 @@ export class CompensationService {
     if (held.employeeId === viewer.employeeId) {
       throw new ForbiddenException("SELF_DECISION");
     }
-    return this.db.dependent.update({
-      where: { id },
+    const claimed = await this.db.dependent.updateMany({
+      where: { id, state: "PENDING" },
       data: {
         state: body.approve ? "ACTIVE" : "REJECTED",
         decidedById: viewer.userId,
@@ -248,5 +441,16 @@ export class CompensationService {
         decisionNote: body.note ?? null,
       },
     });
+    if (claimed.count === 0) {
+      throw new ConflictException("REQUEST_ALREADY_DECIDED");
+    }
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: body.approve ? AUDIT_ACTIONS.DEPENDENT_APPROVE : AUDIT_ACTIONS.DEPENDENT_REJECT,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(held.employeeId),
+      meta: { dependentId: id },
+    });
+    return this.db.dependent.findUniqueOrThrow({ where: { id } });
   }
 }

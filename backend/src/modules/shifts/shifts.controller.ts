@@ -11,19 +11,42 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import type { Shift, ShiftAssignment } from "@prisma/client";
 
+import type { Page } from "../../common/dto/pagination.dto.js";
+import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
+import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
-import { AssignShiftDto, CreateShiftDto, UpdateShiftDto , RosterDto } from "./dto/shift.dto.js";
+import {
+  AssignedManyView,
+  AssignManyDto,
+  AssignShiftDto,
+  AssignmentView,
+  CreateShiftDto,
+  ListAssignmentsDto,
+  RosterDto,
+  RosterPageView,
+  ShiftView,
+  UpdateShiftDto,
+} from "./dto/shift.dto.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { ShiftsService, type PlannedDay } from "./shifts.service.js";
+import { ShiftsService, type PlannedDay, type RosteredAssignment } from "./shifts.service.js";
 
 @ApiTags("shifts")
-@ApiBearerAuth()
+@ApiBearerAuth(API_AUTH.user)
 @UseGuards(JwtAuthGuard, RolesGuard)
+@ApiErrors(HttpStatus.BAD_REQUEST, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
 @Controller("shifts")
 export class ShiftsController {
   constructor(private readonly shifts: ShiftsService) {}
@@ -31,6 +54,7 @@ export class ShiftsController {
   @Get()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Every shift, retired ones included" })
+  @ApiOkResponse({ type: [ShiftView] })
   list(): Promise<Shift[]> {
     return this.shifts.list();
   }
@@ -58,6 +82,9 @@ export class ShiftsController {
   @Patch(":id")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Change a shift's hours or its grace" })
+  @ApiOkResponse({ type: ShiftView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND" })
+  @ApiConflictResponse({ type: ErrorBody, description: "SHIFT_NAME_TAKEN" })
   update(@Param("id") id: string, @Body() body: UpdateShiftDto): Promise<Shift> {
     return this.shifts.update(id, body);
   }
@@ -71,16 +98,33 @@ export class ShiftsController {
 
   @Get(":id/assignments")
   @Roles("ADMIN", "HR")
-  @ApiOperation({ summary: "Who works this shift, and from when" })
-  assignments(@Param("id") id: string): Promise<ShiftAssignment[]> {
-    return this.shifts.assignments(id);
+  @ApiOperation({ summary: "Who works this shift, and from when, newest first" })
+  @ApiOkResponse({ type: RosterPageView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND" })
+  assignments(
+    @Param("id") id: string,
+    @Query() query: ListAssignmentsDto,
+  ): Promise<Page<RosteredAssignment>> {
+    return this.shifts.assignments(id, query);
   }
 
   @Post(":id/assignments")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Put somebody on this shift from a date" })
+  @ApiCreatedResponse({ type: AssignmentView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
+  @ApiConflictResponse({ type: ErrorBody, description: "SHIFT_ALREADY_ASSIGNED" })
   assign(@Param("id") id: string, @Body() body: AssignShiftDto): Promise<ShiftAssignment> {
     return this.shifts.assign(id, body);
+  }
+
+  @Post(":id/assignments/bulk")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Put many people on this shift from one date" })
+  @ApiCreatedResponse({ type: AssignedManyView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
+  assignMany(@Param("id") id: string, @Body() body: AssignManyDto): Promise<{ assigned: number; skipped: number }> {
+    return this.shifts.assignMany(id, body);
   }
 
   @Delete(":id/assignments/:assignmentId")

@@ -1,6 +1,9 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsInt,
@@ -11,6 +14,9 @@ import {
   MaxLength,
   Min,
 } from "class-validator";
+
+import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { DepartmentRef } from "../../leave/dto/queue.dto.js";
 
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -59,6 +65,78 @@ export class AssignShiftDto {
   @IsOptional()
   @IsDateString()
   validTo?: string;
+}
+
+const kMaxBulkAssign = 500;
+
+export class AssignManyDto {
+  @ApiProperty({ type: [Number], maxItems: kMaxBulkAssign, example: [1, 2, 3] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(kMaxBulkAssign)
+  @Type(() => Number)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  employeeIds!: number[];
+
+  @ApiProperty({ example: "2026-01-01T00:00:00.000Z" })
+  @IsDateString()
+  validFrom!: string;
+
+  @ApiPropertyOptional({ example: "2026-12-31T00:00:00.000Z" })
+  @IsOptional()
+  @IsDateString()
+  validTo?: string;
+}
+
+export class ListAssignmentsDto extends PaginationDto {
+  @ApiPropertyOptional({ maxLength: 64, description: "Employee code or full name, any case" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  search?: string;
+}
+
+export class AssignedManyView {
+  @ApiProperty({ description: "Rows written" }) assigned!: number;
+  @ApiProperty({ description: "People already on the shift from that date" }) skipped!: number;
+}
+
+export class RosteredPersonView {
+  @ApiProperty() id!: number;
+  @ApiProperty() code!: string;
+  @ApiProperty() fullName!: string;
+  @ApiProperty({ type: DepartmentRef, nullable: true }) department!: DepartmentRef | null;
+}
+
+export class AssignmentView {
+  @ApiProperty() id!: string;
+  @ApiProperty() shiftId!: string;
+  @ApiProperty() employeeId!: number;
+  @ApiProperty() validFrom!: string;
+  @ApiProperty({ nullable: true, type: String }) validTo!: string | null;
+}
+
+export class RosteredView extends AssignmentView {
+  @ApiProperty({ type: RosteredPersonView }) employee!: RosteredPersonView;
+}
+
+export class RosterPageView {
+  @ApiProperty({ type: [RosteredView] }) rows!: RosteredView[];
+  @ApiProperty() total!: number;
+  @ApiProperty() totalIsExact!: boolean;
+  @ApiProperty({ nullable: true, type: String }) next!: string | null;
+}
+
+export class ShiftView {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty({ example: "08:00" }) startTime!: string;
+  @ApiProperty({ example: "17:30" }) endTime!: string;
+  @ApiProperty() graceMinutes!: number;
+  @ApiProperty() active!: boolean;
+  @ApiProperty() createdAt!: string;
+  @ApiProperty() updatedAt!: string;
 }
 
 const FIRST_YEAR = 2020;

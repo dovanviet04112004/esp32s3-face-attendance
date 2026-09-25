@@ -1,14 +1,27 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Shift, ShiftAssignment } from "@prisma/client";
+import type { Prisma, Shift, ShiftAssignment } from "@prisma/client";
 
+import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
-import type { AssignShiftDto, CreateShiftDto, RosterDto, UpdateShiftDto } from "./dto/shift.dto.js";
+import type {
+  AssignManyDto,
+  AssignShiftDto,
+  CreateShiftDto,
+  ListAssignmentsDto,
+  RosterDto,
+  UpdateShiftDto,
+} from "./dto/shift.dto.js";
 
-type RosteredAssignment = ShiftAssignment & {
-  employee: { id: number; code: string; fullName: string };
-};
+const ROSTERED = {
+  employee: {
+    select: { id: true, code: true, fullName: true, department: { select: { id: true, name: true } } },
+  },
+} satisfies Prisma.ShiftAssignmentInclude;
+
+export type RosteredAssignment = Prisma.ShiftAssignmentGetPayload<{ include: typeof ROSTERED }>;
 
 const UNIQUE_VIOLATION = "P2002";
 const FOREIGN_KEY_VIOLATION = "P2003";
@@ -20,7 +33,7 @@ const SUNDAY = 0;
  */
 export interface PlannedDay {
   date: string;
-  shift: { id: string; name: string; startTime: string; endTime: string } | null;
+  shift: { id: string; name: string; startTime: string; endTime: string; graceMinutes: number } | null;
   holiday: string | null;
   weekend: boolean;
   away: string | null;
@@ -83,6 +96,7 @@ export class ShiftsService {
               name: current.shift.name,
               startTime: current.shift.startTime,
               endTime: current.shift.endTime,
+              graceMinutes: current.shift.graceMinutes,
             }
           : null,
         holiday: holidayOn.get(asDay(date)) ?? null,
@@ -133,7 +147,9 @@ export class ShiftsService {
 
   async update(id: string, body: UpdateShiftDto): Promise<Shift> {
     await this.get(id);
-    return this.db.shift.update({ where: { id }, data: body });
+    return this.db.shift.update({ where: { id }, data: body }).catch((error: unknown) => {
+      throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("SHIFT_NAME_TAKEN") : error;
+    });
   }
 
   async deactivate(id: string): Promise<Shift> {
@@ -141,13 +157,51 @@ export class ShiftsService {
     return this.db.shift.update({ where: { id }, data: { active: false } });
   }
 
-  async assignments(id: string): Promise<RosteredAssignment[]> {
+  /** Newest first, paged on (validFrom, id) so a busy shift still pages (KEHOACH 9.9 rule 3). */
+  async assignments(id: string, query: ListAssignmentsDto): Promise<Page<RosteredAssignment>> {
     await this.get(id);
-    return this.db.shiftAssignment.findMany({
-      where: { shiftId: id },
-      include: { employee: { select: { id: true, code: true, fullName: true } } },
-      orderBy: { validFrom: "desc" },
+    const needle = query.search?.trim() ? { contains: query.search.trim(), mode: "insensitive" as const } : null;
+    const where: Prisma.ShiftAssignmentWhereInput = {
+      shiftId: id,
+      ...(needle ? { employee: { OR: [{ code: needle }, { fullName: needle }] } } : {}),
+    };
+    const after = query.cursor ? decodeCursor(query.cursor) : null;
+    const resume: Prisma.ShiftAssignmentWhereInput = after
+      ? {
+          OR: [
+            { validFrom: { lt: new Date(after.sortValue) } },
+            { validFrom: new Date(after.sortValue), id: { lt: after.id } },
+          ],
+        }
+      : {};
+    const [rows, found] = await Promise.all([
+      this.db.shiftAssignment.findMany({
+        where: { AND: [where, resume] },
+        include: ROSTERED,
+        orderBy: [{ validFrom: "desc" }, { id: "desc" }],
+        take: query.take,
+        ...(after ? {} : { skip: query.skip }),
+      }),
+      this.db.shiftAssignment.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    return { rows, ...countedTo(found), next: nextCursor(rows, query.take, (row) => row.validFrom) };
+  }
+
+  /** Many people onto one shift from one date; anybody already there from that date is skipped. */
+  async assignMany(id: string, body: AssignManyDto): Promise<{ assigned: number; skipped: number }> {
+    await this.get(id);
+    const wanted = [...new Set(body.employeeIds)];
+    const found = await this.db.employee.count({ where: { id: { in: wanted } } });
+    if (found !== wanted.length) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+    const validFrom = new Date(body.validFrom);
+    const validTo = body.validTo ? new Date(body.validTo) : null;
+    const made = await this.db.shiftAssignment.createMany({
+      data: wanted.map((employeeId) => ({ shiftId: id, employeeId, validFrom, validTo })),
+      skipDuplicates: true,
     });
+    return { assigned: made.count, skipped: wanted.length - made.count };
   }
 
   async assign(id: string, body: AssignShiftDto): Promise<ShiftAssignment> {

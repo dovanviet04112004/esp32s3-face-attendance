@@ -1,26 +1,79 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Asset, AssetState, AssetTransfer } from "@prisma/client";
+import type { Asset, AssetState, AssetTransfer, Prisma } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
+import { toExcelCsv } from "../../common/csv.js";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import type { CreateAssetDto, HandOverDto, ListAssetsDto } from "./dto/asset.dto.js";
+import type {
+  AssetFilterDto,
+  CreateAssetDto,
+  HandOverDto,
+  ListAssetsDto,
+  UpdateAssetDto,
+} from "./dto/asset.dto.js";
 
-export type AssetWithHolder = Asset & {
-  holder: { id: number; code: string; fullName: string } | null;
-};
+const HOLDER = {
+  select: { id: true, code: true, fullName: true, department: { select: { id: true, name: true } } },
+} satisfies Prisma.EmployeeDefaultArgs;
+
+const REGISTER_ROW = {
+  holder: HOLDER,
+  transfers: { where: { issued: true }, orderBy: { at: "desc" }, take: 1, select: { at: true } },
+} satisfies Prisma.AssetInclude;
+
+type RegisterRow = Prisma.AssetGetPayload<{ include: typeof REGISTER_ROW }>;
+
+export type AssetWithHolder = Prisma.AssetGetPayload<{ include: { holder: typeof HOLDER } }>;
+
+/** A register row, with when its current holder took it. */
+export type AssetRow = AssetWithHolder & { issuedAt: Date | null };
 
 export interface AssetCounts {
   states: Record<AssetState, number>;
   kinds: string[];
 }
 
-const HOLDER = { select: { id: true, code: true, fullName: true } } as const;
+const UNIQUE_VIOLATION = "P2002";
+const FOREIGN_KEY_VIOLATION = "P2003";
+const NOT_FOUND = "P2025";
+// A register this long is a data problem, not a spreadsheet; the export says so by stopping.
+const kExportMax = 50_000;
+const EXPORT_HEADER = ["code", "name", "kind", "serialNo", "state", "holderCode", "holderName", "department", "issuedAt"];
+
+function isCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function asRow(row: RegisterRow): AssetRow {
+  const { transfers, ...asset } = row;
+  return { ...asset, issuedAt: asset.state === "ISSUED" ? (transfers[0]?.at ?? null) : null };
+}
+
+function filterOf(query: AssetFilterDto, withState = true): Prisma.AssetWhereInput {
+  const needle = query.search?.trim() ? { contains: query.search.trim(), mode: "insensitive" as const } : null;
+  return {
+    ...(withState && query.state ? { state: query.state } : {}),
+    ...(query.kind ? { kind: query.kind } : {}),
+    ...(query.holderId ? { holderId: query.holderId } : {}),
+    ...(needle
+      ? {
+          OR: [
+            { code: needle },
+            { name: needle },
+            { serialNo: needle },
+            { holder: { fullName: needle } },
+            { holder: { code: needle } },
+          ],
+        }
+      : {}),
+  };
+}
 
 @Injectable()
 export class AssetsService {
@@ -30,35 +83,51 @@ export class AssetsService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(query: ListAssetsDto): Promise<Page<AssetWithHolder>> {
-    const needle = query.search ? { contains: query.search, mode: "insensitive" as const } : null;
-    const where = {
-      ...(query.state ? { state: query.state } : {}),
-      ...(query.kind ? { kind: query.kind } : {}),
-      ...(query.holderId ? { holderId: query.holderId } : {}),
-      ...(needle
-        ? { OR: [{ code: needle }, { name: needle }, { serialNo: needle }, { holder: { fullName: needle } }] }
-        : {}),
-    };
+  async list(query: ListAssetsDto): Promise<Page<AssetRow>> {
+    const where = filterOf(query);
     // Code is unique, so the cursor resumes on it with no tiebreak (KEHOACH 9.9 rule 3).
     const [rows, found] = await Promise.all([
       this.db.asset.findMany({
-        where,
-        include: { holder: HOLDER },
+        where: { AND: [where, query.cursor ? { code: { gt: query.cursor } } : {}] },
+        include: REGISTER_ROW,
         orderBy: { code: "asc" },
         take: query.take,
-        ...(query.cursor ? { cursor: { code: query.cursor }, skip: 1 } : { skip: query.skip }),
+        ...(query.cursor ? {} : { skip: query.skip }),
       }),
       this.db.asset.count({ where, take: COUNT_CEILING + 1 }),
     ]);
     const last = rows[rows.length - 1];
-    return { ...countedTo(found), rows, next: rows.length === query.take && last ? last.code : null };
+    return { ...countedTo(found), rows: rows.map(asRow), next: rows.length === query.take && last ? last.code : null };
   }
 
-  /** How many assets stand in each state, and the kinds the register holds, for its filters. */
-  async counts(): Promise<AssetCounts> {
+  /** The register under the list's own filters, as a file Excel opens. */
+  async exportCsv(query: AssetFilterDto): Promise<string> {
+    const rows = await this.db.asset.findMany({
+      where: filterOf(query),
+      include: REGISTER_ROW,
+      orderBy: { code: "asc" },
+      take: kExportMax,
+    });
+    return toExcelCsv(
+      EXPORT_HEADER,
+      rows.map(asRow).map((one) => [
+        one.code,
+        one.name,
+        one.kind,
+        one.serialNo ?? "",
+        one.state,
+        one.holder?.code ?? "",
+        one.holder?.fullName ?? "",
+        one.holder?.department?.name ?? "",
+        one.issuedAt ? one.issuedAt.toISOString().slice(0, 10) : "",
+      ]),
+    );
+  }
+
+  /** How many assets stand in each state under the other filters, and the kinds on the register. */
+  async counts(query: AssetFilterDto): Promise<AssetCounts> {
     const [grouped, kinds] = await Promise.all([
-      this.db.asset.groupBy({ by: ["state"], _count: { _all: true } }),
+      this.db.asset.groupBy({ by: ["state"], where: filterOf(query, false), _count: { _all: true } }),
       this.db.asset.findMany({ distinct: ["kind"], select: { kind: true }, orderBy: { kind: "asc" } }),
     ]);
     const states: Record<AssetState, number> = { IN_STOCK: 0, ISSUED: 0, RETURNED: 0, RETIRED: 0, LOST: 0 };
@@ -68,10 +137,36 @@ export class AssetsService {
     return { states, kinds: kinds.map((row) => row.kind) };
   }
 
-  create(body: CreateAssetDto): Promise<Asset> {
-    return this.db.asset.create({
-      data: { code: body.code, name: body.name, kind: body.kind, serialNo: body.serialNo ?? null },
+  async create(viewer: Viewer, body: CreateAssetDto): Promise<Asset> {
+    const made = await this.db.asset
+      .create({ data: { code: body.code, name: body.name, kind: body.kind, serialNo: body.serialNo ?? null } })
+      .catch((error: unknown) => {
+        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("ASSET_CODE_TAKEN") : error;
+      });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.ASSET_CREATE,
+      subject: AUDIT_SUBJECTS.ASSET,
+      subjectId: made.code,
+      meta: { kind: made.kind },
     });
+    return made;
+  }
+
+  /** Correct the description of an asset; who holds it moves only through a hand-over. */
+  async update(viewer: Viewer, id: string, body: UpdateAssetDto): Promise<Asset> {
+    const held = await this.require(id);
+    const saved = await this.db.asset.update({ where: { id }, data: body }).catch((error: unknown) => {
+      throw isCode(error, NOT_FOUND) ? new NotFoundException("ASSET_NOT_FOUND") : error;
+    });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.ASSET_UPDATE,
+      subject: AUDIT_SUBJECTS.ASSET,
+      subjectId: held.code,
+      meta: { fields: Object.keys(body) },
+    });
+    return saved;
   }
 
   /** Every hand-over this asset has been through, newest first. */
@@ -141,6 +236,8 @@ export class AssetsService {
         },
       });
       return tx.asset.findUniqueOrThrow({ where: { id: assetId }, include: { holder: HOLDER } });
+    }).catch((error: unknown) => {
+      throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId: viewer.userId,

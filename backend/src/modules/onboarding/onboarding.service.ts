@@ -2,7 +2,6 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import type {
   ChecklistKind,
   ChecklistTask,
-  ChecklistTemplate,
   ChecklistTemplateItem,
   Prisma,
   TaskOwner,
@@ -13,13 +12,41 @@ import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
+import { AuditService } from "../audit/audit.service.js";
+import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import type {
   CreateTemplateDto,
   FinishTaskDto,
   ListOpenTasksDto,
+  ListTemplatesDto,
   OpenCountsDto,
   StartRunDto,
+  TemplateItemDto,
+  UpdateTemplateDto,
 } from "./dto/onboarding.dto.js";
+
+const UNIQUE_VIOLATION = "P2002";
+const FOREIGN_KEY_VIOLATION = "P2003";
+
+function isCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+const TEMPLATE_VIEW = {
+  items: { orderBy: { ordinal: "asc" } },
+  jobTitle: { select: { id: true, code: true, name: true } },
+  department: { select: { id: true, code: true, name: true } },
+} satisfies Prisma.ChecklistTemplateInclude;
+
+export type TemplateRow = Prisma.ChecklistTemplateGetPayload<{ include: typeof TEMPLATE_VIEW }>;
+
+/** A finished task with the person it belongs to, so their own screens hear of it. */
+export type FinishedTask = ChecklistTask & { employeeId: number };
+
+function itemsOf(items: TemplateItemDto[]): Prisma.ChecklistTemplateItemCreateWithoutTemplateInput[] {
+  return items.map((item, at) => ({ ordinal: at + 1, title: item.title, owner: item.owner, dueDays: item.dueDays }));
+}
 
 export type RunWithTasks = Prisma.ChecklistRunGetPayload<{
   include: { tasks: true; template: { select: { name: true } } };
@@ -60,34 +87,71 @@ export class OnboardingService {
   constructor(
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
+    private readonly audit: AuditService,
   ) {}
 
-  templates(kind?: ChecklistKind): Promise<ChecklistTemplate[]> {
+  templates(query: ListTemplatesDto): Promise<TemplateRow[]> {
     return this.db.checklistTemplate.findMany({
-      where: { active: true, ...(kind ? { kind } : {}) },
-      include: { items: { orderBy: { ordinal: "asc" } } },
-      orderBy: { name: "asc" },
+      where: { ...(query.all ? {} : { active: true }), ...(query.kind ? { kind: query.kind } : {}) },
+      include: TEMPLATE_VIEW,
+      orderBy: [{ active: "desc" }, { name: "asc" }],
     });
   }
 
-  createTemplate(body: CreateTemplateDto): Promise<ChecklistTemplate> {
-    return this.db.checklistTemplate.create({
-      data: {
-        kind: body.kind,
-        name: body.name,
-        jobTitleId: body.jobTitleId ?? null,
-        departmentId: body.departmentId ?? null,
-        items: {
-          create: body.items.map((item, at) => ({
-            ordinal: at + 1,
-            title: item.title,
-            owner: item.owner,
-            dueDays: item.dueDays,
-          })),
+  async createTemplate(viewer: Viewer, body: CreateTemplateDto): Promise<TemplateRow> {
+    const made = await this.db.checklistTemplate
+      .create({
+        data: {
+          kind: body.kind,
+          name: body.name,
+          jobTitleId: body.jobTitleId ?? null,
+          departmentId: body.departmentId ?? null,
+          items: { create: itemsOf(body.items) },
         },
-      },
-      include: { items: { orderBy: { ordinal: "asc" } } },
+        include: TEMPLATE_VIEW,
+      })
+      .catch((error: unknown) => {
+        throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("AUDIENCE_NOT_FOUND") : error;
+      });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.CHECKLIST_TEMPLATE_CREATE,
+      subject: AUDIT_SUBJECTS.CHECKLIST_TEMPLATE,
+      subjectId: made.id,
+      meta: { kind: made.kind, items: made.items.length },
     });
+    return made;
+  }
+
+  /** Items sent replace the whole list; runs already started keep the copy they took (KEHOACH 9.3). */
+  async updateTemplate(viewer: Viewer, id: string, body: UpdateTemplateDto): Promise<TemplateRow> {
+    const held = await this.db.checklistTemplate.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("TEMPLATE_NOT_FOUND");
+    }
+    const { items, ...fields } = body;
+    const saved = await this.db
+      .$transaction(async (tx) => {
+        if (items) {
+          await tx.checklistTemplateItem.deleteMany({ where: { templateId: id } });
+        }
+        return tx.checklistTemplate.update({
+          where: { id },
+          data: { ...fields, ...(items ? { items: { create: itemsOf(items) } } : {}) },
+          include: TEMPLATE_VIEW,
+        });
+      })
+      .catch((error: unknown) => {
+        throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("AUDIENCE_NOT_FOUND") : error;
+      });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.CHECKLIST_TEMPLATE_UPDATE,
+      subject: AUDIT_SUBJECTS.CHECKLIST_TEMPLATE,
+      subjectId: id,
+      meta: { fields: Object.keys(body), ...(fields.active === undefined ? {} : { active: fields.active }) },
+    });
+    return saved;
   }
 
   /**
@@ -108,9 +172,10 @@ export class OnboardingService {
       where: {
         kind,
         active: true,
+        // A person with no title fits only title-free templates; undefined here would match them all.
         AND: [
-          { OR: [{ jobTitleId: null }, { jobTitleId: jobTitleId ?? undefined }] },
-          { OR: [{ departmentId: null }, { departmentId: departmentId ?? undefined }] },
+          jobTitleId === null ? { jobTitleId: null } : { OR: [{ jobTitleId: null }, { jobTitleId }] },
+          departmentId === null ? { departmentId: null } : { OR: [{ departmentId: null }, { departmentId }] },
         ],
       },
       include: { items: { orderBy: { ordinal: "asc" } } },
@@ -173,16 +238,20 @@ export class OnboardingService {
     }
     const template = await this.pickTemplate(body.kind, person.jobTitleId, person.departmentId);
     const anchor = new Date(body.anchorDate);
-    return this.db.checklistRun.create({
-      data: {
-        employeeId: person.id,
-        templateId: template.id,
-        kind: body.kind,
-        anchorDate: anchor,
-        tasks: { create: tasksOf(template.items, person, anchor) },
-      },
-      include: { tasks: { orderBy: { ordinal: "asc" } }, template: { select: { name: true } } },
-    });
+    return this.db.checklistRun
+      .create({
+        data: {
+          employeeId: person.id,
+          templateId: template.id,
+          kind: body.kind,
+          anchorDate: anchor,
+          tasks: { create: tasksOf(template.items, person, anchor) },
+        },
+        include: { tasks: { orderBy: { ordinal: "asc" } }, template: { select: { name: true } } },
+      })
+      .catch((error: unknown) => {
+        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("CHECKLIST_ALREADY_STARTED") : error;
+      });
   }
 
   /** One person's run, or null while none has been started: an empty tab, not a fault. */
@@ -197,27 +266,36 @@ export class OnboardingService {
     });
   }
 
-  private async openWhere(viewer: Viewer, kind?: ChecklistKind): Promise<Prisma.ChecklistTaskWhereInput> {
+  private async openWhere(viewer: Viewer, query: OpenCountsDto): Promise<Prisma.ChecklistTaskWhereInput> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
+    const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
+    const needle = query.search?.trim() ? { contains: query.search.trim(), mode: "insensitive" as const } : null;
     return {
       doneAt: null,
-      run: { ...(visible === null ? {} : { employeeId: { in: visible } }), ...(kind ? { kind } : {}) },
+      run: {
+        ...(visible === null ? {} : { employeeId: { in: visible } }),
+        ...(query.kind ? { kind: query.kind } : {}),
+        ...(branch ? { employee: { departmentId: { in: branch } } } : {}),
+      },
+      ...(needle
+        ? {
+            OR: [
+              { title: needle },
+              { run: { employee: { fullName: needle } } },
+              { run: { employee: { code: needle } } },
+            ],
+          }
+        : {}),
     };
   }
 
   /** What is still open and who it waits on, oldest due date first. */
   async open(viewer: Viewer, query: ListOpenTasksDto): Promise<Page<OpenTask>> {
-    const needle = query.search ? { contains: query.search, mode: "insensitive" as const } : null;
     const where: Prisma.ChecklistTaskWhereInput = {
-      ...(await this.openWhere(viewer, query.kind)),
+      ...(await this.openWhere(viewer, query)),
       ...(query.owner ? { ownerRole: query.owner } : {}),
       ...(query.overdue ? { dueOn: { lt: todayDate() } } : {}),
     };
-    if (needle) {
-      where.AND = [
-        { OR: [{ title: needle }, { run: { employee: { fullName: needle } } }, { run: { employee: { code: needle } } }] },
-      ];
-    }
     const [rows, found] = await Promise.all([
       this.db.checklistTask.findMany({
         where,
@@ -234,7 +312,7 @@ export class OnboardingService {
   }
 
   async openCounts(viewer: Viewer, query: OpenCountsDto): Promise<OpenCounts> {
-    const where = await this.openWhere(viewer, query.kind);
+    const where = await this.openWhere(viewer, query);
     const [byOwner, overdue] = await Promise.all([
       this.db.checklistTask.groupBy({ by: ["ownerRole"], where, _count: { _all: true } }),
       this.db.checklistTask.count({ where: { ...where, dueOn: { lt: todayDate() } } }),
@@ -246,7 +324,7 @@ export class OnboardingService {
     return { open: owners.HR + owners.MANAGER + owners.SELF, overdue, owners };
   }
 
-  async finish(viewer: Viewer, taskId: string, body: FinishTaskDto): Promise<ChecklistTask> {
+  async finish(viewer: Viewer, taskId: string, body: FinishTaskDto): Promise<FinishedTask> {
     const task = await this.db.checklistTask.findUnique({
       where: { id: taskId },
       include: { run: { select: { employeeId: true } } },
@@ -265,10 +343,16 @@ export class OnboardingService {
     if (task.run.employeeId === viewer.employeeId && task.ownerRole !== "SELF") {
       throw new ForbiddenException("SELF_DECISION");
     }
-    return this.db.checklistTask.update({
-      where: { id: taskId },
+    // Claimed by the update itself, so two people ticking at once cannot both be recorded.
+    const claimed = await this.db.checklistTask.updateMany({
+      where: { id: taskId, doneAt: null },
       data: { doneAt: new Date(), doneById: viewer.userId, note: body.note ?? null },
     });
+    if (claimed.count === 0) {
+      throw new ConflictException("TASK_ALREADY_DONE");
+    }
+    const done = await this.db.checklistTask.findUniqueOrThrow({ where: { id: taskId } });
+    return { ...done, employeeId: task.run.employeeId };
   }
 }
 

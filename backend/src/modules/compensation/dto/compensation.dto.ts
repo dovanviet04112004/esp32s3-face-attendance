@@ -1,7 +1,8 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { DependentRelation, PayReason } from "@prisma/client";
-import { Type } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
+import { DependentRelation, DependentState, PayReason, Role } from "@prisma/client";
+import { Transform, Type } from "class-transformer";
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -10,36 +11,90 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
+  Max,
   MaxLength,
   Min,
+  MinLength,
+  ValidateIf,
   ValidateNested,
 } from "class-validator";
 
-export class AllowanceDto {
-  @ApiProperty({ example: "LUNCH" })
+import { PageMeta, PersonView, QueueQueryDto } from "../../leave/dto/queue.dto.js";
+
+const CODE = /^[A-Z0-9][A-Z0-9_.-]*$/;
+const FIRST_D02_ALLOWANCE = 13;
+const LAST_D02_ALLOWANCE = 17;
+const kMaxAllowances = 20;
+
+export class ListAllowanceTypesDto {
+  @ApiPropertyOptional({ default: false, description: "Include retired types" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  all?: boolean;
+}
+
+export class CreateAllowanceTypeDto {
+  @ApiProperty({ example: "LUNCH", maxLength: 32, description: "Upper case letters, digits, dot, dash" })
   @IsString()
+  @Matches(CODE)
   @MaxLength(32)
   code!: string;
 
-  @ApiProperty({ example: "Tien an ca" })
+  @ApiProperty({ example: "Tiền ăn ca", maxLength: 120 })
   @IsString()
+  @MinLength(1)
   @MaxLength(120)
-  label!: string;
-
-  @ApiProperty({ example: 730000 })
-  @IsInt()
-  @Min(0)
-  amount!: number;
+  name!: string;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()
   @IsBoolean()
   taxable?: boolean;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({ default: false, description: "Counted into the insurance salary" })
   @IsOptional()
   @IsBoolean()
   insurable?: boolean;
+
+  @ApiPropertyOptional({ example: 730000, nullable: true, description: "Dong per month exempt from tax" })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(0)
+  taxFreeCap?: number | null;
+
+  @ApiPropertyOptional({
+    minimum: FIRST_D02_ALLOWANCE,
+    maximum: LAST_D02_ALLOWANCE,
+    nullable: true,
+    description: "D02-LT column; null keeps it off the filing",
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(FIRST_D02_ALLOWANCE)
+  @Max(LAST_D02_ALLOWANCE)
+  d02Column?: number | null;
+}
+
+export class UpdateAllowanceTypeDto extends PartialType(CreateAllowanceTypeDto) {
+  @ApiPropertyOptional({ description: "False retires it; pay records already written keep their copy" })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class AllowanceDto {
+  @ApiProperty({ description: "The catalogue type; its code, label and rules are copied onto the record" })
+  @IsUUID()
+  allowanceTypeId!: string;
+
+  @ApiProperty({ example: 730000, description: "Dong per month" })
+  @IsInt()
+  @Min(0)
+  amount!: number;
 }
 
 export class CreateCompensationDto {
@@ -72,9 +127,10 @@ export class CreateCompensationDto {
   @MaxLength(500)
   note?: string;
 
-  @ApiPropertyOptional({ type: [AllowanceDto] })
+  @ApiPropertyOptional({ type: [AllowanceDto], description: "One row per type" })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(kMaxAllowances)
   @ValidateNested({ each: true })
   @Type(() => AllowanceDto)
   allowances?: AllowanceDto[];
@@ -179,3 +235,92 @@ export class DecideDependentDto {
   @MaxLength(500)
   note?: string;
 }
+
+export class ListDependentsDto extends QueueQueryDto {
+  @ApiPropertyOptional({ enum: DependentState, default: DependentState.PENDING })
+  @IsOptional()
+  @IsEnum(DependentState)
+  state?: DependentState;
+
+  @ApiPropertyOptional({ description: "Narrows to one person inside the viewer's scope" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  employeeId?: number;
+}
+
+export class AllowanceTypeView {
+  @ApiProperty() id!: string;
+  @ApiProperty() code!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() taxable!: boolean;
+  @ApiProperty() insurable!: boolean;
+  @ApiProperty({ nullable: true, type: String, description: "Decimal dong" }) taxFreeCap!: string | null;
+  @ApiProperty({ nullable: true, type: Number }) d02Column!: number | null;
+  @ApiProperty() active!: boolean;
+  @ApiProperty() createdAt!: string;
+  @ApiProperty() updatedAt!: string;
+}
+
+export class AllowanceView {
+  @ApiProperty() id!: string;
+  @ApiProperty() recordId!: string;
+  @ApiProperty({ nullable: true, type: String }) typeId!: string | null;
+  @ApiProperty() code!: string;
+  @ApiProperty() label!: string;
+  @ApiProperty({ description: "Decimal dong" }) amount!: string;
+  @ApiProperty() taxable!: boolean;
+  @ApiProperty() insurable!: boolean;
+  @ApiProperty({ nullable: true, type: String }) taxFreeCap!: string | null;
+  @ApiProperty({ nullable: true, type: Number }) d02Column!: number | null;
+}
+
+export class PayRecordView {
+  @ApiProperty() id!: string;
+  @ApiProperty() employeeId!: number;
+  @ApiProperty() effectiveFrom!: string;
+  @ApiProperty({ description: "Decimal dong" }) baseSalary!: string;
+  @ApiProperty({ description: "Decimal dong" }) insuranceSalary!: string;
+  @ApiProperty({ enum: PayReason }) reason!: PayReason;
+  @ApiProperty({ nullable: true, type: String }) note!: string | null;
+  @ApiProperty({ nullable: true, type: String }) createdById!: string | null;
+  @ApiProperty() createdAt!: string;
+  @ApiProperty({ type: [AllowanceView] }) allowances!: AllowanceView[];
+}
+
+export class RaisePreviewView {
+  @ApiProperty() employeeId!: number;
+  @ApiProperty() code!: string;
+  @ApiProperty() fullName!: string;
+  @ApiProperty() currentBase!: string;
+  @ApiProperty() nextBase!: string;
+}
+
+export class DependentView {
+  @ApiProperty() id!: string;
+  @ApiProperty() employeeId!: number;
+  @ApiProperty() fullName!: string;
+  @ApiProperty({ enum: DependentRelation }) relation!: DependentRelation;
+  @ApiProperty({ nullable: true, type: String }) dateOfBirth!: string | null;
+  @ApiProperty({ nullable: true, type: String }) taxCode!: string | null;
+  @ApiProperty({ nullable: true, type: String }) nationalId!: string | null;
+  @ApiProperty() fromMonth!: string;
+  @ApiProperty({ nullable: true, type: String }) toMonth!: string | null;
+  @ApiProperty({ enum: DependentState }) state!: DependentState;
+  @ApiProperty({ nullable: true, type: String }) decidedById!: string | null;
+  @ApiProperty({ nullable: true, type: String }) decidedAt!: string | null;
+  @ApiProperty({ nullable: true, type: String }) decisionNote!: string | null;
+  @ApiProperty() createdAt!: string;
+}
+
+export class QueuedDependentView extends DependentView {
+  @ApiProperty({ type: PersonView }) employee!: PersonView;
+}
+
+export class DependentPageView extends PageMeta {
+  @ApiProperty({ type: [QueuedDependentView] }) rows!: QueuedDependentView[];
+}
+
+/** Roles that write pay: payroll runs pay but does not set it (KEHOACH 9.4). */
+export const PAY_WRITERS: readonly Role[] = [Role.ADMIN, Role.HR];

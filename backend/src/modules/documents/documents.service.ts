@@ -14,6 +14,7 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import type {
   CreateDocumentDto,
   CreateFileTypeDto,
@@ -21,10 +22,28 @@ import type {
   ListReadersDto,
   PublishVersionDto,
   ReceiveFileDto,
+  UpdateDocumentDto,
+  UpdateFileTypeDto,
 } from "./dto/documents.dto.js";
 
 const UNIQUE_VIOLATION = "P2002";
-const kMonthsPerYear = 12;
+const FOREIGN_KEY_VIOLATION = "P2003";
+const NOT_FOUND = "P2025";
+
+/** The same day some months on, held to the last day of a shorter month:
+ *  31 January plus one month is 28 February, not 3 March.
+ */
+function monthsAfter(from: Date, months: number): Date {
+  const year = from.getUTCFullYear();
+  const month = from.getUTCMonth() + months;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month, Math.min(from.getUTCDate(), lastDay)));
+}
+
+function needleOf(search: string | undefined): string | null {
+  const held = search?.trim();
+  return held ? `%${held.replace(/[\\%_]/g, (hit) => `\\${hit}`)}%` : null;
+}
 
 export interface ToRead {
   documentId: string;
@@ -72,9 +91,9 @@ export class DocumentsService {
     private readonly audit: AuditService,
   ) {}
 
-  list(): Promise<Document[]> {
+  list(all = false): Promise<Document[]> {
     return this.db.document.findMany({
-      where: { active: true },
+      where: all ? {} : { active: true },
       orderBy: { code: "asc" },
       include: { versions: { orderBy: { version: "desc" }, take: 1 } },
     });
@@ -103,8 +122,35 @@ export class DocumentsService {
       if (isCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("DOCUMENT_CODE_TAKEN");
       }
+      if (isCode(error, FOREIGN_KEY_VIOLATION)) {
+        throw new NotFoundException("AUDIENCE_NOT_FOUND");
+      }
       throw error;
     }
+  }
+
+  /** Retitle, re-aim or retire a document. The wording is not here: new text
+   *  is the next version, so everybody signs again (KEHOACH 9.16 item 9).
+   */
+  async update(viewer: Viewer, id: string, body: UpdateDocumentDto): Promise<Document> {
+    const held = await this.db.document.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("DOCUMENT_NOT_FOUND");
+    }
+    const saved = await this.db.document.update({ where: { id }, data: body }).catch((error: unknown) => {
+      if (isCode(error, FOREIGN_KEY_VIOLATION)) {
+        throw new NotFoundException("AUDIENCE_NOT_FOUND");
+      }
+      throw isCode(error, NOT_FOUND) ? new NotFoundException("DOCUMENT_NOT_FOUND") : error;
+    });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.DOCUMENT_UPDATE,
+      subject: AUDIT_SUBJECTS.DOCUMENT,
+      subjectId: id,
+      meta: { code: held.code, fields: Object.keys(body) },
+    });
+    return saved;
   }
 
   /**
@@ -120,22 +166,27 @@ export class DocumentsService {
     if (!held) {
       throw new NotFoundException("DOCUMENT_NOT_FOUND");
     }
-    const made = await this.db.$transaction(async (tx) => {
-      const latest = await tx.documentVersion.findFirst({
-        where: { documentId },
-        orderBy: { version: "desc" },
-        select: { version: true },
+    // Two publishers reading the same latest number collide on the unique key; the slower one is told.
+    const made = await this.db
+      .$transaction(async (tx) => {
+        const latest = await tx.documentVersion.findFirst({
+          where: { documentId },
+          orderBy: { version: "desc" },
+          select: { version: true },
+        });
+        return tx.documentVersion.create({
+          data: {
+            documentId,
+            version: (latest?.version ?? 0) + 1,
+            body: body.body,
+            summary: body.summary ?? null,
+            publishedById: viewer.userId,
+          },
+        });
+      })
+      .catch((error: unknown) => {
+        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("DOCUMENT_VERSION_TAKEN") : error;
       });
-      return tx.documentVersion.create({
-        data: {
-          documentId,
-          version: (latest?.version ?? 0) + 1,
-          body: body.body,
-          summary: body.summary ?? null,
-          publishedById: viewer.userId,
-        },
-      });
-    });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.DOCUMENT_PUBLISH,
@@ -207,13 +258,9 @@ export class DocumentsService {
   /** Whoever has not signed comes first, because that is the list a desk acts
    *  on, and the cursor carries that flag beside the code (KEHOACH 9.9 rule 3).
    */
-  async readers(
-    documentId: string,
-    query: ListReadersDto,
-    version?: number,
-  ): Promise<ReaderPage> {
+  async readers(documentId: string, query: ListReadersDto): Promise<ReaderPage> {
     const wanted = await this.db.documentVersion.findFirst({
-      where: { documentId, ...(version === undefined ? {} : { version }) },
+      where: { documentId, ...(query.version === undefined ? {} : { version: query.version }) },
       orderBy: { version: "desc" },
       include: { document: true },
     });
@@ -222,17 +269,21 @@ export class DocumentsService {
     }
     const target = wanted.document;
     const after = query.cursor ? decodeCursor(query.cursor) : null;
+    const needle = needleOf(query.search);
     const reach = Prisma.sql`
        WHERE e."active" = true
          AND (${target.departmentId}::text IS NULL OR e."departmentId" = ${target.departmentId})
          AND (${target.jobTitleId}::text IS NULL OR e."jobTitleId" = ${target.jobTitleId})`;
+    const narrowed = Prisma.sql`${reach}
+         AND (${needle}::text IS NULL OR e."code" ILIKE ${needle} OR e."fullName" ILIKE ${needle})
+         ${query.unsigned ? Prisma.sql`AND a."ackAt" IS NULL` : Prisma.empty}`;
     const [rows, counted, unsigned] = await Promise.all([
       this.db.$queryRaw<ReaderRow[]>`
         SELECT e."id" AS "employeeId", e."code", e."fullName", a."ackAt"
           FROM "Employee" e
           LEFT JOIN "DocumentAck" a
                  ON a."employeeId" = e."id" AND a."versionId" = ${wanted.id}
-        ${reach}
+        ${narrowed}
           AND (
             ${after?.sortValue ?? null}::text IS NULL
             OR ((CASE WHEN a."ackAt" IS NULL THEN '0' ELSE '1' END) || e."code")
@@ -243,7 +294,11 @@ export class DocumentsService {
       `,
       this.db.$queryRaw<{ found: bigint }[]>`
         SELECT count(*) AS "found" FROM (
-          SELECT 1 FROM "Employee" e ${reach} LIMIT ${COUNT_CEILING + 1}
+          SELECT 1 FROM "Employee" e
+            LEFT JOIN "DocumentAck" a
+                   ON a."employeeId" = e."id" AND a."versionId" = ${wanted.id}
+          ${narrowed}
+          LIMIT ${COUNT_CEILING + 1}
         ) x
       `,
       this.db.$queryRaw<{ found: bigint }[]>`
@@ -271,11 +326,30 @@ export class DocumentsService {
     };
   }
 
-  fileTypes(): Promise<PersonnelFileType[]> {
+  fileTypes(all = false): Promise<PersonnelFileType[]> {
     return this.db.personnelFileType.findMany({
-      where: { active: true },
+      where: all ? {} : { active: true },
       orderBy: [{ ordinal: "asc" }, { code: "asc" }],
     });
+  }
+
+  /** A retired kind stops counting as missing; papers filed under it stay on record. */
+  async updateFileType(viewer: Viewer, id: string, body: UpdateFileTypeDto): Promise<PersonnelFileType> {
+    const held = await this.db.personnelFileType.findUnique({ where: { id } });
+    if (!held) {
+      throw new NotFoundException("FILE_TYPE_NOT_FOUND");
+    }
+    const saved = await this.db.personnelFileType.update({ where: { id }, data: body }).catch((error: unknown) => {
+      throw isCode(error, NOT_FOUND) ? new NotFoundException("FILE_TYPE_NOT_FOUND") : error;
+    });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.FILE_TYPE_UPDATE,
+      subject: AUDIT_SUBJECTS.DOCUMENT,
+      subjectId: id,
+      meta: { code: held.code, fields: Object.keys(body) },
+    });
+    return saved;
   }
 
   async createFileType(viewer: Viewer, body: CreateFileTypeDto): Promise<PersonnelFileType> {
@@ -314,28 +388,23 @@ export class DocumentsService {
       throw new NotFoundException("FILE_TYPE_NOT_FOUND");
     }
     const receivedAt = new Date(body.receivedAt);
-    const expiresAt =
-      kind.validMonths === null
-        ? null
-        : new Date(
-            Date.UTC(
-              receivedAt.getUTCFullYear() + Math.floor(kind.validMonths / kMonthsPerYear),
-              receivedAt.getUTCMonth() + (kind.validMonths % kMonthsPerYear),
-              receivedAt.getUTCDate(),
-            ),
-          );
-    const saved = await this.db.personnelFile.upsert({
-      where: { employeeId_typeId: { employeeId: body.employeeId, typeId: body.typeId } },
-      update: { receivedAt, expiresAt, note: body.note ?? null, receivedById: viewer.userId },
-      create: {
-        employeeId: body.employeeId,
-        typeId: body.typeId,
-        receivedAt,
-        expiresAt,
-        note: body.note ?? null,
-        receivedById: viewer.userId,
-      },
-    });
+    const expiresAt = kind.validMonths === null ? null : monthsAfter(receivedAt, kind.validMonths);
+    const saved = await this.db.personnelFile
+      .upsert({
+        where: { employeeId_typeId: { employeeId: body.employeeId, typeId: body.typeId } },
+        update: { receivedAt, expiresAt, note: body.note ?? null, receivedById: viewer.userId },
+        create: {
+          employeeId: body.employeeId,
+          typeId: body.typeId,
+          receivedAt,
+          expiresAt,
+          note: body.note ?? null,
+          receivedById: viewer.userId,
+        },
+      })
+      .catch((error: unknown) => {
+        throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
+      });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.FILE_RECEIVE,
@@ -359,6 +428,13 @@ export class DocumentsService {
       return { rows: [], total: 0, next: null };
     }
     const after = query.cursor ? decodeCursor(query.cursor).sortValue : null;
+    const needle = needleOf(query.search);
+    const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
+    const whom = (alias: Prisma.Sql): Prisma.Sql => Prisma.sql`
+      ${visible === null ? Prisma.empty : Prisma.sql`AND ${alias}."id" = ANY(${visible}::int[])`}
+      AND (${query.employeeId ?? null}::int IS NULL OR ${alias}."id" = ${query.employeeId ?? null}::int)
+      AND (${needle}::text IS NULL OR ${alias}."code" ILIKE ${needle} OR ${alias}."fullName" ILIKE ${needle})
+      ${branch === null ? Prisma.empty : Prisma.sql`AND ${alias}."departmentId" = ANY(${branch}::text[])`}`;
     const rows = await this.db.$queryRaw<
       {
         employeeId: number;
@@ -386,8 +462,7 @@ export class DocumentsService {
                 WHERE e2."active" = true AND t2."active" = true AND t2."required" = true
                   AND (f2."id" IS NULL
                        OR (f2."expiresAt" IS NOT NULL AND f2."expiresAt" < CURRENT_DATE))
-                  ${visible === null ? Prisma.empty : Prisma.sql`AND e2."id" = ANY(${visible}::int[])`}
-                  AND (${query.employeeId ?? null}::int IS NULL OR e2."id" = ${query.employeeId ?? null}::int)
+                  ${whom(Prisma.raw("e2"))}
                   AND (${after}::text IS NULL OR e2."code" > ${after}::text)
                 GROUP BY e2."id", e2."code"
                 ORDER BY e2."code"
@@ -424,8 +499,7 @@ export class DocumentsService {
           LEFT JOIN "PersonnelFile" f ON f."employeeId" = e."id" AND f."typeId" = t."id"
          WHERE e."active" = true AND t."active" = true AND t."required" = true
            AND (f."id" IS NULL OR (f."expiresAt" IS NOT NULL AND f."expiresAt" < CURRENT_DATE))
-           ${visible === null ? Prisma.empty : Prisma.sql`AND e."id" = ANY(${visible}::int[])`}
-           AND (${query.employeeId ?? null}::int IS NULL OR e."id" = ${query.employeeId ?? null}::int)
+           ${whom(Prisma.raw("e"))}
          GROUP BY e."id"
          LIMIT ${COUNT_CEILING + 1}
       ) x
