@@ -146,6 +146,8 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define TOUCH_POLL_MS 40
 #define TOUCH_IDLE_WAIT_MS 1000
 #define TOUCH_POINTS 1
+#define TOUCH_FAILS_TO_LOG 5              // failed reads in a row that the log reports
+#define TOF_QUIET_POLLS_TO_LOG 20         // two seconds with no ranging at all
 #define UI_TASK_CORE 0
 #define UI_TASK_PRIORITY 4
 #define UI_TASK_STACK_BYTES 4096
@@ -1528,6 +1530,7 @@ static void touch_task(void *arg)
 {
     (void)arg;
     bool held = false;
+    int failed = 0;
     for (;;) {
         // A held finger is read on a clock, so a lift the controller never flags still lands.
         if (held) {
@@ -1537,10 +1540,18 @@ static void touch_task(void *arg)
         }
         drv_touch_point_t points[TOUCH_POINTS];
         uint8_t count = 0;
+        const esp_err_t read = drv_touch_read(points, TOUCH_POINTS, &count);
         // A failed read says nothing about the finger: reporting a lift types a key twice.
-        if (drv_touch_read(points, TOUCH_POINTS, &count) != ESP_OK) {
+        if (read != ESP_OK) {
+            if (++failed == TOUCH_FAILS_TO_LOG) {
+                ESP_LOGE(TAG, "touch reads failing: %s", esp_err_to_name(read));
+            }
             continue;
         }
+        if (failed >= TOUCH_FAILS_TO_LOG) {
+            ESP_LOGW(TAG, "touch reads back after %d failures", failed);
+        }
+        failed = 0;
         held = count > 0;
         if (!held) {
             ui_kiosk_on_touch(false, 0, 0);
@@ -2111,6 +2122,7 @@ static void tof_task(void *arg)
     bool present = false;
     int settling = TOF_SETTLE_POLLS;
     int away = PRESENCE_AWAY_SAMPLES;
+    int quiet = 0;
 
     for (;;) {
         if (ready != NULL) {
@@ -2121,6 +2133,15 @@ static void tof_task(void *arg)
         uint16_t distance_mm = 0;
         bool status_ok = false;
         const esp_err_t ranged = drv_tof_read_mm(&distance_mm, &status_ok);
+        if (ranged == ESP_ERR_TIMEOUT && ++quiet == TOF_QUIET_POLLS_TO_LOG) {
+            ESP_LOGE(TAG, "tof has not ranged for %d ms", TOF_QUIET_POLLS_TO_LOG * TOF_POLL_MS);
+        }
+        if (ranged == ESP_OK) {
+            if (quiet >= TOF_QUIET_POLLS_TO_LOG) {
+                ESP_LOGW(TAG, "tof ranging again after %d quiet polls", quiet);
+            }
+            quiet = 0;
+        }
         if (ranged != ESP_OK) {
             // No sample yet is the normal gap between measurements; a broken
             // sensor is not, and it must not be what puts the kiosk to sleep.
