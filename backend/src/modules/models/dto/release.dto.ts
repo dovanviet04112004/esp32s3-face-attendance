@@ -74,6 +74,7 @@ export class FleetUpdateView {
   @ApiProperty({ type: ReleaseViewDto }) release!: ReleaseViewDto;
   @ApiProperty({ type: [String], description: "Approved kiosks running something older" }) behind!: string[];
   @ApiProperty({ type: [String], description: "Behind, but still installing an earlier offer" }) updating!: string[];
+  @ApiProperty({ type: [String], description: "Behind, but offline, so an offer to all leaves them out" }) offline!: string[];
   @ApiProperty({ description: "Installing it drops every template on the kiosks behind" }) changesRecognition!: boolean;
   @ApiProperty({ type: [String], description: "Kiosks it moves to another recognition model, offered only with the fleet" })
   recapture!: string[];
@@ -84,7 +85,7 @@ export class OfferStatusView {
   @ApiProperty() target!: string;
   @ApiProperty() version!: string;
   @ApiProperty() offeredAt!: string;
-  @ApiProperty({ enum: ["WAITING", "INSTALLED", "FAILED", "INTERRUPTED", "EXPIRED"] }) state!: string;
+  @ApiProperty({ enum: ["WAITING", "INSTALLED", "TRIAL", "ROLLED_BACK", "FAILED", "INTERRUPTED", "EXPIRED"] }) state!: string;
   @ApiProperty({ type: String, nullable: true }) reason!: string | null;
   @ApiProperty({ type: String, nullable: true }) busyUntil!: string | null;
 }
@@ -93,6 +94,7 @@ export class OfferAllView {
   @ApiProperty({ type: [String] }) offered!: string[];
   @ApiProperty({ type: [String] }) failed!: string[];
   @ApiProperty({ type: [String] }) busy!: string[];
+  @ApiProperty({ type: [String] }) offline!: string[];
 }
 
 export class OfferView {

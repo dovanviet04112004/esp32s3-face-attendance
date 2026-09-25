@@ -332,6 +332,8 @@ model Device {
   online        Boolean            @default(false)
   // Receipt time less uptime, so a boot after an update offer shows (KEHOACH 7.7).
   bootedAt      DateTime?
+  // The heartbeat's onTrial; null from a build that never sends it, which counts as confirmed (KEHOACH 7.7).
+  fwOnTrial     Boolean?
   // Heartbeat ts less receipt time, live beats only; a double because int4 ms overruns at 24 days.
   clockSkewMs   Float?
   // The newest update offer only: its status is read against the heartbeat (KEHOACH 7.7).

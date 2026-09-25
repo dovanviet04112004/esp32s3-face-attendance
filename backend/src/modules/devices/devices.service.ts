@@ -34,6 +34,7 @@ interface HeartbeatFacts {
   modelVersion: string;
   uptimeSeconds: number;
   embeddingVersion?: string;
+  onTrial?: boolean;
 }
 
 /** `accepted` is the 202 of KEHOACH 7.3: ask again in `pollIntervalS`. The
@@ -87,7 +88,7 @@ export type DeviceCounts = Record<DeviceStatus | "online" | "offline", number>;
 
 export type PublicDevice = Omit<
   Device,
-  "tokenHash" | "prevTokenHash" | "claimHash" | "claimFailures" | "otaReleaseId" | "otaOfferedAt" | "bootedAt"
+  "tokenHash" | "prevTokenHash" | "claimHash" | "claimFailures" | "otaReleaseId" | "otaOfferedAt" | "bootedAt" | "fwOnTrial"
 >;
 
 @Injectable()
@@ -408,6 +409,7 @@ export class DevicesService {
     const runs = {
       fwVersion: beat.fwVersion,
       modelVersion: beat.modelVersion,
+      fwOnTrial: beat.onTrial ?? null,
       ...(beat.embeddingVersion ? { embeddingVersion: beat.embeddingVersion } : {}),
     };
     if (!live) {

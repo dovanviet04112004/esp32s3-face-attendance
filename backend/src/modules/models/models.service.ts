@@ -16,7 +16,7 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { Device, Release } from "@prisma/client";
+import type { Device, DeviceEvent, Release } from "@prisma/client";
 
 import type { OtaManifest } from "../../common/generated/ota_manifest.js";
 import type { Env } from "../../config/env.schema.js";
@@ -33,7 +33,7 @@ export type PublishedTarget = (typeof PUBLISHED_TARGETS)[number];
 /** A release as the dashboard sees it: no file path, and whether it can still be offered. */
 export type ReleaseView = Omit<Release, "path" | "url"> & { available: boolean };
 
-export type OfferState = "WAITING" | "INSTALLED" | "FAILED" | "INTERRUPTED" | "EXPIRED";
+export type OfferState = "WAITING" | "INSTALLED" | "TRIAL" | "ROLLED_BACK" | "FAILED" | "INTERRUPTED" | "EXPIRED";
 
 export interface OfferStatus {
   releaseId: string;
@@ -52,6 +52,8 @@ export interface FleetUpdate {
   behind: string[];
   /** Behind too, but still installing an earlier offer, so left out of an offer to all. */
   updating: string[];
+  /** Behind too, but offline: an offer is not kept for it, so it is left out of an offer to all (KEHOACH 7.7). */
+  offline: string[];
   /** Installing it drops every template on the kiosks behind, so it goes to all of them, confirmed (KEHOACH 7.5). */
   changesRecognition: boolean;
   /** The kiosks, behind or updating, this release moves to another recognition model; none of them takes it alone. */
@@ -93,6 +95,8 @@ const HEAD_BYTES = Math.max(APP_HEAD_BYTES, MODELS_HEAD_BYTES);
 const KEEP_FILES = 5;
 const UNIQUE_VIOLATION = "P2002";
 const OTA_FAILED = "OTA_FAILED";
+const OTA_ROLLED_BACK = "OTA_ROLLED_BACK";
+const OTA_REPORTS = [OTA_ROLLED_BACK, OTA_FAILED];
 const LINK_PURPOSE = "release-link";
 const kHourMs = 3_600_000;
 const kMinuteMs = 60_000;
@@ -122,6 +126,16 @@ export function behind(device: Pick<Device, "fwVersion" | "modelVersion">, relea
 
 function runs(device: Pick<Device, "fwVersion" | "modelVersion">, release: Pick<Release, "target" | "version">): boolean {
   return (release.target === "MODELS" ? device.modelVersion : device.fwVersion) === release.version;
+}
+
+type OtaReport = Pick<DeviceEvent, "type" | "cmdId" | "message" | "receivedAt">;
+
+/** The kiosk's newest report of one kind on an offer: heard after it, naming it, or from a build that names none. */
+function reportOn(reports: OtaReport[], type: string, releaseId: string, offeredAt: Date): OtaReport | null {
+  const heard = reports
+    .filter((one) => one.type === type && one.receivedAt >= offeredAt && (one.cmdId === null || one.cmdId === releaseId))
+    .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
+  return heard.find((one) => one.cmdId === releaseId) ?? heard[0] ?? null;
 }
 
 /** Whether installing the release moves the kiosk to another recognition model; a side that cannot say counts as moving. */
@@ -195,7 +209,7 @@ export class ModelsService implements OnModuleInit {
   async fleet(): Promise<FleetUpdate[]> {
     const devices = await this.db.device.findMany({
       where: { status: "APPROVED" },
-      select: { id: true, fwVersion: true, modelVersion: true, embeddingVersion: true },
+      select: { id: true, fwVersion: true, modelVersion: true, embeddingVersion: true, online: true },
       orderBy: { id: "asc" },
     });
     const busy = await this.installing();
@@ -207,12 +221,14 @@ export class ModelsService implements OnModuleInit {
       });
       if (newest) {
         const older = devices.filter((one) => behind(one, newest));
-        const waiting = older.filter((one) => !busy.has(one.id));
+        const idle = older.filter((one) => !busy.has(one.id));
+        const reachable = idle.filter((one) => one.online);
         updates.push({
           release: view(newest),
-          behind: waiting.map((one) => one.id),
+          behind: reachable.map((one) => one.id),
           updating: older.filter((one) => busy.has(one.id)).map((one) => one.id),
-          changesRecognition: waiting.some((one) => changesRecognition(one, newest)),
+          offline: idle.filter((one) => !one.online).map((one) => one.id),
+          changesRecognition: reachable.some((one) => changesRecognition(one, newest)),
           recapture: older.filter((one) => changesRecognition(one, newest)).map((one) => one.id),
         });
       }
@@ -338,21 +354,25 @@ export class ModelsService implements OnModuleInit {
     if ((await this.status(deviceId))?.busyUntil) {
       throw new ConflictException("OTA_IN_PROGRESS");
     }
+    // The offer goes QoS 1, unretained, to a clean session: an offline kiosk never hears it (KEHOACH 7.7).
+    if (!device.online) {
+      throw new ConflictException("DEVICE_OFFLINE");
+    }
     const offeredAt = await this.send(release, device, actorId);
     if (!offeredAt) {
-      throw new ConflictException("OTA_IN_PROGRESS");
+      throw new ConflictException((await this.isOnline(deviceId)) ? "OTA_IN_PROGRESS" : "DEVICE_OFFLINE");
     }
     return { deviceId, offeredAt };
   }
 
-  /** Offer a release to every approved kiosk running something older and not installing already.
+  /** Offer a release to every approved, online kiosk running something older and not installing already.
    *  One that changes recognition needs `recapture`, the admin's word that everyone is captured again.
    */
   async offerAll(
     releaseId: string,
     actorId: string,
     recapture = false,
-  ): Promise<{ offered: string[]; failed: string[]; busy: string[] }> {
+  ): Promise<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }> {
     const release = await this.offerable(releaseId);
     const installing = await this.installing();
     const fleet = await this.db.device.findMany({
@@ -364,30 +384,40 @@ export class ModelsService implements OnModuleInit {
         embeddingVersion: true,
         otaReleaseId: true,
         otaOfferedAt: true,
+        online: true,
       },
       orderBy: { id: "asc" },
     });
     const older = fleet.filter((one) => behind(one, release));
-    if (!recapture && older.some((one) => !installing.has(one.id) && changesRecognition(one, release))) {
+    if (!recapture && older.some((one) => !installing.has(one.id) && one.online && changesRecognition(one, release))) {
       throw new ConflictException("RELEASE_CHANGES_RECOGNITION");
     }
     const offered: string[] = [];
     const failed: string[] = [];
     const busy: string[] = [];
+    const offline: string[] = [];
     for (const device of older) {
       if (installing.has(device.id)) {
         busy.push(device.id);
         continue;
       }
+      if (!device.online) {
+        offline.push(device.id);
+        continue;
+      }
       try {
         const sent = await this.send(release, device, actorId);
-        (sent ? offered : busy).push(device.id);
+        if (sent) {
+          offered.push(device.id);
+        } else {
+          ((await this.isOnline(device.id)) ? busy : offline).push(device.id);
+        }
       } catch (error) {
         this.log.error(`could not offer ${release.version} to ${device.id}: ${(error as Error).message}`);
         failed.push(device.id);
       }
     }
-    return { offered, failed, busy };
+    return { offered, failed, busy, offline };
   }
 
   /** How the newest offer to a kiosk went, read from its heartbeat and its events. */
@@ -403,20 +433,25 @@ export class ModelsService implements OnModuleInit {
     if (!release) {
       return null;
     }
-    const failure = runs(device, release)
-      ? null
-      : await this.db.deviceEvent.findFirst({
-          where: { deviceId, type: OTA_FAILED, receivedAt: { gte: device.otaOfferedAt } },
-          orderBy: { receivedAt: "desc" },
-          select: { message: true },
+    const reports = runs(device, release)
+      ? []
+      : await this.db.deviceEvent.findMany({
+          where: {
+            deviceId,
+            type: { in: OTA_REPORTS },
+            receivedAt: { gte: device.otaOfferedAt },
+            OR: [{ cmdId: null }, { cmdId: release.releaseId }],
+          },
+          select: { type: true, cmdId: true, message: true, receivedAt: true },
         });
-    return this.offerState({ ...device, otaOfferedAt: device.otaOfferedAt }, release, failure);
+    return this.offerState({ ...device, otaOfferedAt: device.otaOfferedAt }, release, reports);
   }
 
+  // The rows of the KEHOACH 7.7 status table, top down; the first that holds is the answer.
   private offerState(
-    device: Pick<Device, "fwVersion" | "modelVersion" | "bootedAt"> & { otaOfferedAt: Date },
+    device: Pick<Device, "fwVersion" | "modelVersion" | "fwOnTrial" | "bootedAt"> & { otaOfferedAt: Date },
     release: Release,
-    failure: { message: string | null } | null,
+    reports: OtaReport[],
   ): OfferStatus {
     const base = {
       releaseId: release.releaseId,
@@ -426,12 +461,19 @@ export class ModelsService implements OnModuleInit {
       busyUntil: null,
     };
     if (runs(device, release)) {
-      return { ...base, state: "INSTALLED", reason: null };
+      // onTrial describes the running firmware (heartbeat contract), so only a firmware offer is ever on trial.
+      const trial = release.target === "FIRMWARE" && device.fwOnTrial === true;
+      return { ...base, state: trial ? "TRIAL" : "INSTALLED", reason: null };
     }
+    const rolledBack = reportOn(reports, OTA_ROLLED_BACK, release.releaseId, device.otaOfferedAt);
+    if (rolledBack) {
+      return { ...base, state: "ROLLED_BACK", reason: rolledBack.message };
+    }
+    const failure = reportOn(reports, OTA_FAILED, release.releaseId, device.otaOfferedAt);
     if (failure) {
       return { ...base, state: "FAILED", reason: failure.message };
     }
-    // A boot after the offer on the old release is a cut download or a rolled-back trial.
+    // Back on the old release after the offer and nothing reported: a cut download.
     if (device.bootedAt && device.bootedAt > device.otaOfferedAt) {
       return { ...base, state: "INTERRUPTED", reason: null };
     }
@@ -448,19 +490,26 @@ export class ModelsService implements OnModuleInit {
     const since = new Date(Date.now() - this.busyMs);
     const recent = await this.db.device.findMany({
       where: { status: "APPROVED", otaOfferedAt: { gt: since }, otaReleaseId: { not: null } },
-      select: { id: true, fwVersion: true, modelVersion: true, bootedAt: true, otaReleaseId: true, otaOfferedAt: true },
+      select: {
+        id: true,
+        fwVersion: true,
+        modelVersion: true,
+        fwOnTrial: true,
+        bootedAt: true,
+        otaReleaseId: true,
+        otaOfferedAt: true,
+      },
     });
     if (recent.length === 0) {
       return new Set();
     }
-    const [releases, failures] = await Promise.all([
+    const [releases, reports] = await Promise.all([
       this.db.release.findMany({
         where: { releaseId: { in: [...new Set(recent.map((one) => one.otaReleaseId as string))] } },
       }),
       this.db.deviceEvent.findMany({
-        where: { deviceId: { in: recent.map((one) => one.id) }, type: OTA_FAILED, receivedAt: { gt: since } },
-        select: { deviceId: true, receivedAt: true, message: true },
-        orderBy: { receivedAt: "desc" },
+        where: { deviceId: { in: recent.map((one) => one.id) }, type: { in: OTA_REPORTS }, receivedAt: { gt: since } },
+        select: { deviceId: true, type: true, cmdId: true, receivedAt: true, message: true },
       }),
     ]);
     const releaseOf = new Map(releases.map((one) => [one.releaseId, one]));
@@ -471,12 +520,17 @@ export class ModelsService implements OnModuleInit {
       if (!release) {
         continue;
       }
-      const failure = failures.find((event) => event.deviceId === one.id && event.receivedAt >= offeredAt) ?? null;
-      if (this.offerState({ ...one, otaOfferedAt: offeredAt }, release, failure).busyUntil) {
+      const mine = reports.filter((event) => event.deviceId === one.id);
+      if (this.offerState({ ...one, otaOfferedAt: offeredAt }, release, mine).busyUntil) {
         busy.add(one.id);
       }
     }
     return busy;
+  }
+
+  private async isOnline(deviceId: string): Promise<boolean> {
+    const held = await this.db.device.findUnique({ where: { id: deviceId }, select: { online: true } });
+    return held?.online ?? false;
   }
 
   private async offerable(releaseId: string): Promise<Release> {
@@ -492,7 +546,8 @@ export class ModelsService implements OnModuleInit {
 
   /**
    * Take the kiosk's one offer slot, then publish. The write is conditioned on the offer read, so two
-   * presses at once cannot both send (KEHOACH 9.23 rule 3); null when the other one took it.
+   * presses at once cannot both send (KEHOACH 9.23 rule 3); null when the other one took it or the
+   * kiosk dropped offline. The slot is taken ahead of the publish so no report can beat otaOfferedAt.
    */
   private async send(
     release: Release,
@@ -502,7 +557,7 @@ export class ModelsService implements OnModuleInit {
     const deviceId = device.id;
     const offeredAt = new Date();
     const taken = await this.db.device.updateMany({
-      where: { id: deviceId, status: "APPROVED", otaOfferedAt: device.otaOfferedAt },
+      where: { id: deviceId, status: "APPROVED", online: true, otaOfferedAt: device.otaOfferedAt },
       data: { otaReleaseId: release.releaseId, otaOfferedAt: offeredAt },
     });
     if (taken.count === 0) {

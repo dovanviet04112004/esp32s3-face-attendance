@@ -83,14 +83,14 @@ export class ModelsController {
 
   @Post(":releaseId/offer")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Offer a release to every approved kiosk running something older and not installing already" })
+  @ApiOperation({ summary: "Offer a release to every approved, online kiosk running something older and not installing already" })
   @ApiCreatedResponse({ type: OfferAllView })
   @ApiErrors(HttpStatus.CONFLICT, HttpStatus.GONE)
   offerAll(
     @Param("releaseId") releaseId: string,
     @Body() body: OfferAllDto,
     @Req() req: Request,
-  ): Promise<{ offered: string[]; failed: string[]; busy: string[] }> {
+  ): Promise<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }> {
     return this.models.offerAll(releaseId, actorOf(req), body.recapture ?? false);
   }
 

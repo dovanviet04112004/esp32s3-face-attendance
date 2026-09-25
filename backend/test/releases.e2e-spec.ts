@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +18,8 @@ const { AppModule } = await import("../src/app.module.js");
 const { configure } = await import("../src/bootstrap.js");
 const { validateEnv } = await import("../src/config/env.schema.js");
 const { PrismaService } = await import("../src/database/prisma.service.js");
+const { DevicesService } = await import("../src/modules/devices/devices.service.js");
+const { RealtimeListener } = await import("../src/modules/realtime/realtime.listener.js");
 const { ModelsService } = await import("../src/modules/models/models.service.js");
 const { MqttService } = await import("../src/modules/mqtt/mqtt.service.js");
 const { otaManifestSchema } = await import("../src/common/generated/ota_manifest.js");
@@ -29,6 +31,7 @@ const CURRENT = "e2e-rel-current";
 const WAITING = "e2e-rel-pending";
 const MODELS_DOOR = "e2e-rel-models";
 const MODELS_PREFIX = "img-e2e0";
+const KIOSK_MODELS = `${MODELS_PREFIX}0001`;
 const OLD_RECOG = createHash("sha256").update("e2e recognition model, the one kiosks run").digest();
 const NEW_RECOG = createHash("sha256").update("e2e recognition model, the next one").digest();
 
@@ -87,6 +90,43 @@ describe("releases (e2e)", () => {
     return `${parsed.pathname}${parsed.search}`;
   }
 
+  async function status(deviceId = BEHIND): Promise<{ state: string; reason: string | null; busyUntil: string | null }> {
+    return (await asAdmin("get", `/releases/status/${deviceId}`)).body;
+  }
+
+  async function offeredAt(deviceId = BEHIND): Promise<Date> {
+    return (await db.device.findUniqueOrThrow({ where: { id: deviceId } })).otaOfferedAt as Date;
+  }
+
+  /** A live heartbeat as the kiosk sends it; a build that has no onTrial leaves it out. */
+  async function beat(runs: { fwVersion: string; onTrial?: boolean }): Promise<void> {
+    const facts = { ts: Date.now(), modelVersion: KIOSK_MODELS, uptimeSeconds: 40, ...runs };
+    await app.get(DevicesService).applyHeartbeat(BEHIND, facts, new Date(), true);
+  }
+
+  /** An OTA event from the kiosk, through the listener that stores every one the broker hands over. */
+  async function report(
+    type: "OTA_FAILED" | "OTA_ROLLED_BACK",
+    receivedAt: Date,
+    said: { cmdId?: string; message?: string; ts?: number },
+  ): Promise<void> {
+    await app.get(RealtimeListener).onEvent({
+      topic: "event",
+      deviceId: BEHIND,
+      receivedAt,
+      payload: { deviceId: BEHIND, ts: receivedAt.getTime(), type, severity: "WARN", ...said },
+    });
+  }
+
+  /** The kiosk back on the old release, online, with no offer and nothing reported. */
+  async function reset(): Promise<void> {
+    await db.deviceEvent.deleteMany({ where: { deviceId: BEHIND } });
+    await db.device.update({
+      where: { id: BEHIND },
+      data: { fwVersion: OLDER, fwOnTrial: null, online: true, bootedAt: null, otaReleaseId: null, otaOfferedAt: null },
+    });
+  }
+
   async function sweep(): Promise<void> {
     await db.release.deleteMany({ where: { version: { startsWith: "98." } } });
     await db.release.deleteMany({ where: { version: { startsWith: MODELS_PREFIX } } });
@@ -106,8 +146,8 @@ describe("releases (e2e)", () => {
     await sweep();
     await db.device.createMany({
       data: [
-        { id: BEHIND, status: "APPROVED", fwVersion: OLDER },
-        { id: CURRENT, status: "APPROVED", fwVersion: VERSION },
+        { id: BEHIND, status: "APPROVED", fwVersion: OLDER, online: true },
+        { id: CURRENT, status: "APPROVED", fwVersion: VERSION, online: true },
         { id: WAITING, status: "PENDING", fwVersion: OLDER },
       ],
     });
@@ -271,6 +311,23 @@ describe("releases (e2e)", () => {
     assert.equal(installed.body.state, "INSTALLED", "a kiosk on the new release still reads as failed");
   });
 
+  it("reads the new release as on trial until the kiosk confirms it, and a build that never says as confirmed", async () => {
+    await beat({ fwVersion: VERSION, onTrial: true });
+    const trial = await status();
+    assert.equal(trial.state, "TRIAL", "a release a reboot would still undo reads as installed");
+    assert.equal(trial.busyUntil, null);
+    assert.equal((await db.device.findUniqueOrThrow({ where: { id: BEHIND } })).fwOnTrial, true, "the heartbeat's onTrial was not kept");
+
+    await beat({ fwVersion: VERSION, onTrial: false });
+    assert.equal((await status()).state, "INSTALLED", "a confirmed release still reads as on trial");
+
+    await beat({ fwVersion: VERSION, onTrial: true });
+    await beat({ fwVersion: VERSION });
+    const row = await db.device.findUniqueOrThrow({ where: { id: BEHIND } });
+    assert.equal(row.fwOnTrial, null, "a build without onTrial kept the trial of the build before it");
+    assert.equal((await status()).state, "INSTALLED");
+  });
+
   it("reads a reboot on the old release as interrupted, and a day-old offer as expired", async () => {
     await db.deviceEvent.deleteMany({ where: { deviceId: BEHIND, type: "OTA_FAILED" } });
     // The earlier offer is aged past its busy window, so the kiosk takes a new one.
@@ -342,6 +399,75 @@ describe("releases (e2e)", () => {
     assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201, "a failed kiosk could not be offered again");
   });
 
+  it("reads a trial the bootloader undid as rolled back, by the offer it names and when the server heard it", async () => {
+    await reset();
+    assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201);
+    const offered = await offeredAt();
+    await beat({ fwVersion: VERSION, onTrial: true });
+    assert.equal((await status()).state, "TRIAL");
+
+    await db.device.update({
+      where: { id: BEHIND },
+      data: { fwVersion: OLDER, fwOnTrial: false, bootedAt: new Date(offered.getTime() + 20_000) },
+    });
+    const kioskTs = offered.getTime() + 60_000;
+    await report("OTA_ROLLED_BACK", new Date(offered.getTime() + 1000), { cmdId: randomUUID(), ts: kioskTs });
+    await report("OTA_ROLLED_BACK", new Date(offered.getTime() - 1000), { cmdId: releaseId, ts: kioskTs });
+    assert.equal((await status()).state, "INTERRUPTED", "a rollback naming another offer, or heard before this one, was taken as this one's");
+
+    await report("OTA_ROLLED_BACK", new Date(offered.getTime() + 2000), { cmdId: releaseId, message: `returned from ${VERSION}` });
+    await report("OTA_FAILED", new Date(offered.getTime() + 3000), { cmdId: releaseId, message: "later failure" });
+    const back = await status();
+    assert.equal(back.state, "ROLLED_BACK", "a rolled-back trial reads as a cut download or a plain failure");
+    assert.equal(back.busyUntil, null, "a rolled-back kiosk still reads as installing");
+    assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201, "a rolled-back kiosk could not be offered again");
+  });
+
+  it("shows a second failure within a minute as its own, not as a copy of the first", async () => {
+    await reset();
+    assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201);
+    const first = await offeredAt();
+    await report("OTA_FAILED", new Date(first.getTime() + 1), { cmdId: releaseId, message: "sha256 mismatch" });
+    assert.equal((await status()).reason, "sha256 mismatch");
+
+    assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201, "a failed kiosk could not be offered again");
+    const second = await offeredAt();
+    assert.ok(second.getTime() - first.getTime() < 60_000);
+    assert.equal((await status()).state, "WAITING", "the first failure was read as the second offer's");
+
+    await report("OTA_FAILED", new Date(second.getTime() + 1000), { cmdId: releaseId, message: "connection lost" });
+    const again = await status();
+    assert.equal(again.state, "FAILED");
+    assert.equal(again.reason, "connection lost", "the second failure did not show over the first");
+    assert.equal(await db.deviceEvent.count({ where: { deviceId: BEHIND, type: "OTA_FAILED" } }), 2, "a failure within a minute of the last was dropped");
+  });
+
+  it("will not offer an offline kiosk, which would never hear the offer", async () => {
+    await reset();
+    await db.device.update({ where: { id: BEHIND }, data: { online: false } });
+    offers.length = 0;
+    const res = await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`);
+    assert.equal(res.status, 409, JSON.stringify(res.body));
+    assert.equal(res.body.message, "DEVICE_OFFLINE");
+    assert.equal(await offeredAt(), null, "a refused offer still took the kiosk's offer slot");
+    assert.equal(offers.length, 0, "an offer went down to an offline kiosk");
+  });
+
+  it("leaves offline kiosks out of an offer to all and counts them apart", async () => {
+    const fleet = (await asAdmin("get", "/releases/fleet")).body as { release: { releaseId: string }; behind: string[]; offline: string[] }[];
+    const firmware = fleet.find((one) => one.release.releaseId === releaseId);
+    assert.ok(firmware?.offline.includes(BEHIND), "the offline kiosk is not shown apart");
+    assert.ok(!firmware?.behind.includes(BEHIND), "the offline kiosk still counts toward offer-all");
+
+    offers.length = 0;
+    const all = await asAdmin("post", `/releases/${releaseId}/offer`);
+    assert.equal(all.status, 201, JSON.stringify(all.body));
+    assert.ok(all.body.offline.includes(BEHIND), "offer-all did not report the offline kiosk");
+    assert.ok(!all.body.offered.includes(BEHIND), "offer-all offered an offline kiosk");
+    assert.equal(offers.filter((one) => one.deviceId === BEHIND).length, 0, "an offer went down to an offline kiosk");
+    await db.device.update({ where: { id: BEHIND }, data: { online: true } });
+  });
+
   let modelsId = "";
 
   it("reads the recognition model out of a models image, and turns away a file that is not one", async () => {
@@ -356,7 +482,13 @@ describe("releases (e2e)", () => {
 
   it("moves no single kiosk to another recognition model, and the fleet only on the admin's word", async () => {
     await db.device.create({
-      data: { id: MODELS_DOOR, status: "APPROVED", modelVersion: `${MODELS_PREFIX}0009`, embeddingVersion: recogName(OLD_RECOG) },
+      data: {
+        id: MODELS_DOOR,
+        status: "APPROVED",
+        online: true,
+        modelVersion: `${MODELS_PREFIX}0009`,
+        embeddingVersion: recogName(OLD_RECOG),
+      },
     });
     offers.length = 0;
     const one = await asAdmin("post", `/releases/${modelsId}/offer/${MODELS_DOOR}`);
