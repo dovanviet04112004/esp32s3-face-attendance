@@ -1,10 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   MaxLength,
@@ -12,10 +17,17 @@ import {
   MinLength,
 } from "class-validator";
 
-import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { DeciderView, PageMeta, PersonView, QueueQueryDto } from "./queue.dto.js";
 
 const KINDS = ["LEAVE", "OVERTIME", "ATTENDANCE_FIX", "BUSINESS_TRIP", "REMOTE_WORK"] as const;
 const STATES = ["DRAFT", "PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
+const DAY_PARTS = ["MORNING", "AFTERNOON"] as const;
+const SORTS = ["createdAt", "fromDate"] as const;
+const NOTE_MAX = 500;
+const ID_MAX = 64;
+export const DECIDE_MANY_MAX = 100;
+
+export type RequestSort = (typeof SORTS)[number];
 
 export class SubmitRequestDto {
   @ApiPropertyOptional({
@@ -44,17 +56,32 @@ export class SubmitRequestDto {
   @IsDateString()
   toDate!: string;
 
-  @ApiPropertyOptional({ description: "Half a day counts as 0.5" })
+  @ApiPropertyOptional({ description: "Half a day counts as 0.5 and covers one date" })
   @IsOptional()
   @IsBoolean()
   halfDay?: boolean;
 
-  @ApiPropertyOptional({ description: "Minutes, for overtime and corrections" })
+  @ApiPropertyOptional({ enum: DAY_PARTS, description: "Which half, when halfDay is set" })
+  @IsOptional()
+  @IsIn(DAY_PARTS)
+  dayPart?: (typeof DAY_PARTS)[number];
+
+  @ApiPropertyOptional({ description: "Minutes, for overtime and corrections; derived from fromAt and toAt when both are sent" })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   minutes?: number;
+
+  @ApiPropertyOptional({ example: "2026-10-05T17:30:00+07:00", description: "Overtime start, or the claimed punch in" })
+  @IsOptional()
+  @IsISO8601()
+  fromAt?: string;
+
+  @ApiPropertyOptional({ example: "2026-10-05T20:00:00+07:00", description: "Overtime end, or the claimed punch out" })
+  @IsOptional()
+  @IsISO8601()
+  toAt?: string;
 
   @ApiProperty({ maxLength: 500 })
   @IsString()
@@ -88,15 +115,35 @@ export class DecideRequestDto {
   @IsBoolean()
   approve!: boolean;
 
-  @ApiPropertyOptional({ maxLength: 500 })
+  @ApiPropertyOptional({ maxLength: NOTE_MAX })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLength(NOTE_MAX)
   note?: string;
 }
 
-export class ListRequestsDto extends PaginationDto {
-  @ApiPropertyOptional({ enum: STATES })
+export class DecideManyDto {
+  @ApiProperty({ type: [String], maxItems: DECIDE_MANY_MAX })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DECIDE_MANY_MAX)
+  @IsString({ each: true })
+  @MaxLength(ID_MAX, { each: true })
+  ids!: string[];
+
+  @ApiProperty({ description: "True approves them all, false turns them all down" })
+  @IsBoolean()
+  approve!: boolean;
+
+  @ApiPropertyOptional({ maxLength: NOTE_MAX, description: "One reason for every row; required to turn down" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTE_MAX)
+  note?: string;
+}
+
+export class ListRequestsDto extends QueueQueryDto {
+  @ApiPropertyOptional({ enum: STATES, description: "The inbox reads only PENDING and ignores this" })
   @IsOptional()
   @IsEnum(STATES)
   state?: (typeof STATES)[number];
@@ -106,9 +153,213 @@ export class ListRequestsDto extends PaginationDto {
   @IsEnum(KINDS)
   kind?: (typeof KINDS)[number];
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: "One person's requests, still inside what the viewer may see" })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   employeeId?: number;
+
+  @ApiPropertyOptional({ enum: SORTS, description: "Ledger only; the inbox sorts on filing time" })
+  @IsOptional()
+  @IsIn(SORTS)
+  sort?: RequestSort;
+}
+
+export class LeaveTypeRef {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class RequestView {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  employeeId!: number;
+
+  @ApiProperty({ enum: KINDS })
+  kind!: string;
+
+  @ApiProperty({ enum: STATES })
+  state!: string;
+
+  @ApiProperty({ nullable: true })
+  leaveTypeId!: string | null;
+
+  @ApiProperty({ example: "2026-10-05T00:00:00.000Z" })
+  fromDate!: Date;
+
+  @ApiProperty({ example: "2026-10-07T00:00:00.000Z" })
+  toDate!: Date;
+
+  @ApiProperty({ nullable: true })
+  fromAt!: Date | null;
+
+  @ApiProperty({ nullable: true })
+  toAt!: Date | null;
+
+  @ApiProperty()
+  halfDay!: boolean;
+
+  @ApiProperty({ enum: DAY_PARTS, nullable: true })
+  dayPart!: string | null;
+
+  @ApiProperty({ example: "3", description: "A decimal, sent as a string" })
+  days!: string;
+
+  @ApiProperty()
+  minutes!: number;
+
+  @ApiProperty()
+  reason!: string;
+
+  @ApiProperty({ nullable: true })
+  approverId!: number | null;
+
+  @ApiProperty({ nullable: true })
+  decidedAt!: Date | null;
+
+  @ApiProperty({ nullable: true })
+  decisionNote!: string | null;
+
+  @ApiProperty()
+  createdAt!: Date;
+
+  @ApiProperty({ type: PersonView })
+  employee!: PersonView;
+
+  @ApiProperty({ type: LeaveTypeRef, nullable: true })
+  leaveType!: LeaveTypeRef | null;
+
+  @ApiProperty({ type: DeciderView, nullable: true })
+  decidedBy!: DeciderView | null;
+}
+
+export class InboxRowView extends RequestView {
+  @ApiProperty({ description: "Whole days since it was filed" })
+  waitedDays!: number;
+
+  @ApiProperty({ nullable: true, description: "Leave only: days left of this kind once this is granted" })
+  balanceAfter!: number | null;
+
+  @ApiProperty({ nullable: true, description: "Leave only: teammates under the same manager off on these dates" })
+  overlapCount!: number | null;
+}
+
+export class RequestPageView extends PageMeta {
+  @ApiProperty({ type: [RequestView] })
+  rows!: RequestView[];
+}
+
+export class InboxPageView extends PageMeta {
+  @ApiProperty({ type: [InboxRowView] })
+  rows!: InboxRowView[];
+}
+
+export class InboxCountsView {
+  @ApiProperty()
+  requests!: number;
+
+  @ApiProperty()
+  disputes!: number;
+
+  @ApiProperty()
+  certificates!: number;
+
+  @ApiProperty()
+  profileChanges!: number;
+
+  @ApiProperty()
+  dependents!: number;
+
+  @ApiProperty()
+  advancesToDecide!: number;
+
+  @ApiProperty()
+  advancesToPay!: number;
+}
+
+export class SkippedView {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ example: "REQUEST_ALREADY_DECIDED" })
+  code!: string;
+}
+
+export class DecideManyView {
+  @ApiProperty({ type: [String] })
+  decided!: string[];
+
+  @ApiProperty({ type: [SkippedView] })
+  skipped!: SkippedView[];
+}
+
+export class BalanceView {
+  @ApiProperty()
+  leaveTypeId!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  paid!: boolean;
+
+  @ApiProperty()
+  year!: number;
+
+  @ApiProperty()
+  entitled!: number;
+
+  @ApiProperty()
+  carriedOver!: number;
+
+  @ApiProperty()
+  taken!: number;
+
+  @ApiProperty()
+  pending!: number;
+
+  @ApiProperty()
+  remaining!: number;
+
+  @ApiProperty({ description: "Days already booked after the chosen day, this year" })
+  bookedAfter!: number;
+}
+
+export class OverlapView {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  fromDate!: Date;
+
+  @ApiProperty()
+  toDate!: Date;
+
+  @ApiProperty({ enum: STATES })
+  state!: string;
+
+  @ApiProperty({ type: PersonView })
+  employee!: PersonView;
+}
+
+export class RequestDetailView extends RequestView {
+  @ApiProperty({ type: BalanceView, nullable: true, description: "The balance of this leave kind in its year" })
+  balance!: BalanceView | null;
+
+  @ApiProperty({ type: [OverlapView], description: "Teammates off on the same dates, twenty at most" })
+  overlapping!: OverlapView[];
+
+  @ApiProperty({ description: "Whether this viewer may approve or turn it down now" })
+  mayDecide!: boolean;
 }

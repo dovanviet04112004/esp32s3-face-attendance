@@ -13,12 +13,15 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { ProfileService } from "../src/modules/profile/profile.service.js";
+import { clearDeskNotices } from "./teardown.js";
 
 const CODE = "E2EPR01";
 const OTHER = "E2EPR02";
+const CLERK = "E2EPR03";
 const EMAIL = "e2epr@kiosk.local";
 const OTHER_EMAIL = "e2epr-other@kiosk.local";
 const HR_EMAIL = "e2epr-hr@kiosk.local";
+const CLERK_EMAIL = "e2epr-clerk@kiosk.local";
 const PERSONAL = "e2epr-personal@kiosk.local";
 const MOVED = "e2epr-moved@kiosk.local";
 const PASSWORD = "kiosk-e2e-password";
@@ -116,8 +119,9 @@ describe("changing a personal detail through an approval (e2e)", () => {
   let mailPort = 0;
 
   async function sweep(): Promise<void> {
-    await db.user.deleteMany({ where: { email: { in: [EMAIL, OTHER_EMAIL, HR_EMAIL] } } });
-    await db.employee.deleteMany({ where: { code: { in: [CODE, OTHER] } } });
+    await clearDeskNotices(db, [CODE, OTHER, CLERK]);
+    await db.user.deleteMany({ where: { email: { in: [EMAIL, OTHER_EMAIL, HR_EMAIL, CLERK_EMAIL] } } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, OTHER, CLERK] } } });
     await db.payrollPeriod.deleteMany({ where: { year: YEAR } });
   }
 
@@ -340,7 +344,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
       .post(`/profile-changes/${(asked.body as Change).id}/approve`)
       .set("Authorization", `Bearer ${hr}`);
     assert.equal(itself.status, 403);
-    assert.equal(itself.body.message, "PROFILE_SELF_DECIDE");
+    assert.equal(itself.body.message, "SELF_DECISION");
 
     const elsewhere = await request(http)
       .post(`/profile-changes/${(asked.body as Change).id}/approve`)
@@ -396,6 +400,61 @@ describe("changing a personal detail through an approval (e2e)", () => {
     } finally {
       await sink.close();
     }
+  });
+
+  it("keeps somebody else's changes out of reach even when their record is named", async () => {
+    const res = await request(http)
+      .get(`/profile-changes?employeeId=${employeeId}`)
+      .set("Authorization", `Bearer ${theirs}`);
+    assert.equal(res.status, 200);
+    assert.equal((res.body as { rows: Change[] }).rows.length, 0, "naming a person read their bank change");
+  });
+
+  it("tells the desk a change is waiting, and the person when it is decided", async () => {
+    const waiting = await db.notification.count({ where: { kind: "REQUEST_WAITING", profileChangeId: bankChange } });
+    assert.ok(waiting > 0, "nobody on the desk was told a change is waiting");
+    const decided = await db.notification.findMany({
+      where: { kind: "REQUEST_DECIDED", profileChangeId: bankChange },
+      select: { approved: true, user: { select: { employeeId: true } } },
+    });
+    assert.deepEqual(decided.map((one) => [one.user.employeeId, one.approved]), [[employeeId, true]]);
+  });
+
+  it("keeps a desk clerk from approving a change to their own record that somebody else asked for", async () => {
+    const clerkId = (
+      await db.employee.create({
+        data: {
+          code: CLERK,
+          fullName: `Nguoi ${CLERK}`,
+          active: true,
+          login: { create: { email: CLERK_EMAIL, passwordHash: await hashPassword(PASSWORD), role: "HR" } },
+        },
+      })
+    ).id;
+    const clerk = await signIn(CLERK_EMAIL);
+    const asked = await request(http)
+      .post("/profile-changes")
+      .set("Authorization", `Bearer ${desk}`)
+      .send({ field: "PHONE", phone: "0900000002", employeeId: clerkId });
+    assert.equal(asked.status, 201);
+    const queue = await request(http)
+      .get(`/profile-changes?state=PENDING&search=${CLERK}`)
+      .set("Authorization", `Bearer ${clerk}`);
+    assert.equal((queue.body as { rows: Change[] }).rows.length, 0, "the clerk's own change sits in their queue");
+    const self = await request(http)
+      .post(`/profile-changes/${(asked.body as Change).id}/approve`)
+      .set("Authorization", `Bearer ${clerk}`);
+    assert.equal(self.status, 403, "the person the change is about approved it");
+    assert.equal(self.body.message, "SELF_DECISION");
+  });
+
+  it("answers a second decision with the already-decided code", async () => {
+    const res = await request(http)
+      .post(`/profile-changes/${bankChange}/reject`)
+      .set("Authorization", `Bearer ${desk}`)
+      .send({ note: "e2e" });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "PROFILE_CHANGE_DECIDED");
   });
 
   it("files every step under the person it is about", async () => {

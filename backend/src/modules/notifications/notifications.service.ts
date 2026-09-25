@@ -1,6 +1,14 @@
 import { BadRequestException, ConflictException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { NoticeChannel, NoticeKind, Notification, Prisma } from "@prisma/client";
+import type {
+  NoticeChannel,
+  NoticeKind,
+  Notification,
+  NotificationPreference,
+  Prisma,
+  PushSubscription,
+  Role,
+} from "@prisma/client";
 import webpush from "web-push";
 
 import type { Env } from "../../config/env.schema.js";
@@ -16,10 +24,15 @@ export interface NoticeFacts {
   periodId?: string;
   payslipId?: string;
   contractId?: string;
+  certificateId?: string;
+  profileChangeId?: string;
+  dependentId?: string;
   daysLeft?: number;
   daysWaited?: number;
   approved?: boolean;
 }
+
+export type SubscriptionView = Omit<PushSubscription, "p256dh" | "auth">;
 
 export interface Unread {
   total: number;
@@ -104,7 +117,7 @@ export class NotificationsService {
     );
   }
 
-  setPreference(userId: string, body: SetPreferenceDto): Promise<unknown> {
+  setPreference(userId: string, body: SetPreferenceDto): Promise<NotificationPreference> {
     return this.db.notificationPreference.upsert({
       where: {
         userId_kind_channel: { userId, kind: body.kind, channel: body.channel },
@@ -114,20 +127,20 @@ export class NotificationsService {
     });
   }
 
-  /** Keep a browser's push subscription: only on a known push service, and one that belongs to
-   *  another account moves only when it is that same subscription, keys and all (KEHOACH 7.2).
+  /** Keep a browser's push subscription: only on a known push service, and an endpoint another
+   *  account holds never changes owner (KEHOACH 7.2).
    */
-  async subscribe(userId: string, body: SubscribeDto): Promise<unknown> {
+  async subscribe(userId: string, body: SubscribeDto): Promise<SubscriptionView> {
     if (!this.pushService(body.endpoint)) {
       throw new BadRequestException("PUSH_ENDPOINT_REFUSED");
     }
     const held = await this.db.pushSubscription.findUnique({ where: { endpoint: body.endpoint } });
-    if (held && held.userId !== userId && (held.p256dh !== body.p256dh || held.auth !== body.auth)) {
+    if (held && held.userId !== userId) {
       throw new ConflictException("PUSH_ENDPOINT_TAKEN");
     }
-    return this.db.pushSubscription.upsert({
+    const kept = await this.db.pushSubscription.upsert({
       where: { endpoint: body.endpoint },
-      update: { userId, p256dh: body.p256dh, auth: body.auth, userAgent: body.userAgent ?? null },
+      update: { p256dh: body.p256dh, auth: body.auth, userAgent: body.userAgent ?? null },
       create: {
         userId,
         endpoint: body.endpoint,
@@ -136,6 +149,8 @@ export class NotificationsService {
         userAgent: body.userAgent ?? null,
       },
     });
+    const { p256dh: _key, auth: _secret, ...shown } = kept;
+    return shown;
   }
 
   private pushService(endpoint: string): boolean {
@@ -157,22 +172,51 @@ export class NotificationsService {
   /** Only the owner drops a device: the endpoint alone is a guessable name for
    *  somebody else's phone (KEHOACH 9.4).
    */
-  async unsubscribe(viewer: Viewer, endpoint: string): Promise<void> {
+  async unsubscribe(viewer: Viewer, endpoint: string | undefined): Promise<void> {
+    // An empty endpoint must not read as "every device this account has".
+    if (!endpoint) {
+      throw new BadRequestException("PUSH_ENDPOINT_REQUIRED");
+    }
     await this.db.pushSubscription.deleteMany({
       where: { endpoint, userId: viewer.userId },
     });
   }
 
-  /** Tell the login this person signs in with, if they have one. Callers work
-   *  in employees; only the bell works in logins (KEHOACH 9.21.4).
+  /** Tell the login this person signs in with, if they have one that is open. Callers
+   *  work in employees; only the bell works in logins (KEHOACH 9.21.4).
    */
   async raiseFor(employeeId: number, kind: NoticeKind, facts: NoticeFacts): Promise<void> {
-    const login = await this.db.user.findUnique({ where: { employeeId }, select: { id: true } });
-    if (!login) {
-      this.log.warn(`notice ${kind} has no login to reach for employee ${employeeId}`);
+    const login = await this.db.user.findUnique({
+      where: { employeeId },
+      select: { id: true, active: true },
+    });
+    if (!login?.active) {
+      this.log.warn(`notice ${kind} has no open login to reach for employee ${employeeId}`);
       return;
     }
     await this.raise(login.id, kind, facts);
+  }
+
+  /** Tell every open login of a desk, minus the people the item is about or came from (KEHOACH 9.15). */
+  async raiseToDesk(
+    roles: Role[],
+    kind: NoticeKind,
+    facts: NoticeFacts,
+    except: { employeeIds?: number[]; userIds?: string[] } = {},
+  ): Promise<void> {
+    const desk = await this.db.user.findMany({
+      where: { active: true, role: { in: roles } },
+      select: { id: true, employeeId: true },
+    });
+    const skipped = new Set(except.employeeIds ?? []);
+    const skippedLogins = new Set(except.userIds ?? []);
+    await this.raiseMany(
+      desk
+        .filter((one) => !skippedLogins.has(one.id) && (one.employeeId === null || !skipped.has(one.employeeId)))
+        .map((one) => one.id),
+      kind,
+      facts,
+    );
   }
 
   async raiseManyFor(employeeIds: number[], kind: NoticeKind, facts: NoticeFacts): Promise<void> {

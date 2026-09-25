@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConfigService } from "@nestjs/config";
 import type { PayslipDispute, Prisma } from "@prisma/client";
 
-import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -10,10 +10,32 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import {
+  PERSON_VIEW,
+  QUEUE_DESKS,
+  filedBetween,
+  notOwnWaiting,
+  personWhere,
+  resumeAfter,
+  sortedBy,
+  waitedDays,
+  whoseRows,
+} from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import type { AnswerDisputeDto, ListDisputesDto, RaiseDisputeDto } from "./dto/dispute.dto.js";
 
-const ANSWERERS = ["ADMIN", "PAYROLL"];
+const ANSWERERS = QUEUE_DESKS.disputes;
+
+const DISPUTE_VIEW = {
+  employee: PERSON_VIEW,
+  payslip: { select: { period: { select: { year: true, month: true } } } },
+} satisfies Prisma.PayslipDisputeInclude;
+
+type Listed = Prisma.PayslipDisputeGetPayload<{ include: typeof DISPUTE_VIEW }>;
+
+export interface DisputeRow extends Listed {
+  waitedDays: number;
+}
 const HOURS_PER_DAY = 24;
 const MS_PER_HOUR = 3_600_000;
 const RETRO_CODE = "DISPUTE";
@@ -69,35 +91,49 @@ export class DisputesService {
       subjectId: slip.id,
       meta: { lineCode, dueAt: made.dueAt.toISOString() },
     });
+    await this.notices.raiseToDesk(ANSWERERS, "REQUEST_WAITING", { payslipId: slip.id }, {
+      employeeIds: [viewer.employeeId],
+    });
     return made;
   }
 
-  async list(viewer: Viewer, query: ListDisputesDto): Promise<Page<PayslipDispute>> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+  /** Pay disputes are pay-type data: the desk reads all, everyone else their own (KEHOACH 9.4). */
+  async list(viewer: Viewer, query: ListDisputesDto): Promise<Page<DisputeRow>> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const person = await personWhere(this.db, query);
+    const waiting = query.state === "OPEN" || query.overdue === true;
     // Spread would let a later key overwrite `state` and quietly answer a
     // different question than the one asked.
-    const where: Prisma.PayslipDisputeWhereInput = {
+    const where = {
       AND: [
-        ScopeService.narrow("employeeId", visible),
+        whoseRows(visible, query.employeeId),
+        notOwnWaiting(viewer, ANSWERERS, waiting, query.employeeId),
         query.state ? { state: query.state } : {},
-        query.employeeId ? { employeeId: query.employeeId } : {},
         query.overdue ? { state: "OPEN", dueAt: { lt: new Date() } } : {},
+        person ? { employee: person } : {},
+        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
       ],
-    };
+    } as Prisma.PayslipDisputeWhereInput;
+    const order = query.order ?? (waiting ? "asc" : "desc");
+    const resumed = query.cursor
+      ? { AND: [where, resumeAfter("createdAt", order, query.cursor) as Prisma.PayslipDisputeWhereInput] }
+      : where;
     const [rows, found] = await Promise.all([
       this.db.payslipDispute.findMany({
-        where,
-        skip: query.skip,
+        where: resumed,
+        skip: query.cursor ? 0 : query.skip,
         take: query.take,
-        orderBy: [{ state: "asc" }, { dueAt: "asc" }],
-        include: {
-          employee: { select: { code: true, fullName: true } },
-          payslip: { select: { period: { select: { year: true, month: true } } } },
-        },
+        orderBy: sortedBy("createdAt", order) as Prisma.PayslipDisputeOrderByWithRelationInput[],
+        include: DISPUTE_VIEW,
       }),
       this.db.payslipDispute.count({ where, take: COUNT_CEILING + 1 }),
     ]);
-    return { rows, ...countedTo(found) };
+    const now = new Date();
+    return {
+      rows: rows.map((row) => ({ ...row, waitedDays: waitedDays(row.createdAt, now) })),
+      ...countedTo(found),
+      next: nextCursor(rows, query.take, (row) => row.createdAt),
+    };
   }
 
   /**
@@ -118,6 +154,20 @@ export class DisputesService {
       select: { periodId: true },
     });
     const answered = await this.db.$transaction(async (tx) => {
+      // The state is claimed first, so a second answer racing this one mints no second adjustment.
+      const claimed = await tx.payslipDispute.updateMany({
+        where: { id: held.id, state: "OPEN" },
+        data: {
+          state: "ANSWERED",
+          outcome: body.outcome,
+          answer: body.answer,
+          answeredAt: new Date(),
+          answeredById: viewer.userId,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("DISPUTE_ALREADY_ANSWERED");
+      }
       const paid =
         body.outcome === "UPHELD" && body.amount !== undefined
           ? await tx.retroAdjustment.create({
@@ -132,17 +182,7 @@ export class DisputesService {
               },
             })
           : null;
-      return tx.payslipDispute.update({
-        where: { id: held.id },
-        data: {
-          state: "ANSWERED",
-          outcome: body.outcome,
-          answer: body.answer,
-          answeredAt: new Date(),
-          answeredById: viewer.userId,
-          retroId: paid?.id ?? null,
-        },
-      });
+      return tx.payslipDispute.update({ where: { id: held.id }, data: { retroId: paid?.id ?? null } });
     });
     await this.audit.record({
       actorId: viewer.userId,
@@ -162,10 +202,14 @@ export class DisputesService {
     if (held.employeeId !== viewer.employeeId) {
       throw new ForbiddenException("DISPUTE_NOT_YOURS");
     }
-    const dropped = await this.db.payslipDispute.update({
-      where: { id: held.id },
+    const claimed = await this.db.payslipDispute.updateMany({
+      where: { id: held.id, state: "OPEN" },
       data: { state: "WITHDRAWN" },
     });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("DISPUTE_ALREADY_ANSWERED");
+    }
+    const dropped = await this.db.payslipDispute.findUniqueOrThrow({ where: { id: held.id } });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.DISPUTE_WITHDRAW,

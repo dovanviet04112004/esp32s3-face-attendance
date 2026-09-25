@@ -7,18 +7,32 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Employee, Prisma, ProfileChange } from "@prisma/client";
 
-import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { QUEUE, type ProfileNoticeJob } from "../../queue/queues.js";
+import { JOB, QUEUE, type ProfileNoticeJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import {
+  PERSON_VIEW,
+  QUEUE_DESKS,
+  filedBetween,
+  notOwnWaiting,
+  personWhere,
+  resumeAfter,
+  sortedBy,
+  waitedDays,
+  whoseRows,
+} from "../leave/queue-filter.js";
 import { MailerService } from "../notifications/mailer.service.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
 import { profileNoticeMail } from "../payroll/mail-text.js";
 import {
   PROFILE_FIELDS,
@@ -33,9 +47,15 @@ import type {
   ListProfileChangesDto,
 } from "./dto/profile-change.dto.js";
 
-const DESK = ["ADMIN", "HR"];
+const DESK = QUEUE_DESKS.profileChanges;
 
 type Person = Employee & { login: { email: string } | null };
+
+type Listed = Prisma.ProfileChangeGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
+
+export interface ProfileChangeRow extends Listed {
+  waitedDays: number;
+}
 
 @Injectable()
 export class ProfileService {
@@ -46,6 +66,8 @@ export class ProfileService {
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
     private readonly mailer: MailerService,
+    private readonly notices: NotificationsService,
+    private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -93,27 +115,48 @@ export class ProfileService {
       subjectId: String(employeeId),
       meta: { field: body.field },
     });
+    await this.notices.raiseToDesk(DESK, "REQUEST_WAITING", { profileChangeId: made.id }, {
+      employeeIds: [employeeId],
+      userIds: [viewer.userId],
+    });
     return made;
   }
 
-  async list(viewer: Viewer, query: ListProfileChangesDto): Promise<Page<ProfileChange>> {
+  async list(viewer: Viewer, query: ListProfileChangesDto): Promise<Page<ProfileChangeRow>> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    const where: Prisma.ProfileChangeWhereInput = {
-      ...ScopeService.narrow("employeeId", visible),
-      ...(query.state ? { state: query.state } : {}),
-      ...(query.employeeId ? { employeeId: query.employeeId } : {}),
-    };
+    const person = await personWhere(this.db, query);
+    const waiting = query.state === "PENDING";
+    // Every clause names employeeId, so an AND keeps the narrowest rather than letting one replace another.
+    const where = {
+      AND: [
+        whoseRows(visible, query.employeeId),
+        notOwnWaiting(viewer, DESK, waiting, query.employeeId),
+        query.state ? { state: query.state } : {},
+        query.field ? { field: query.field } : {},
+        person ? { employee: person } : {},
+        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
+      ],
+    } as Prisma.ProfileChangeWhereInput;
+    const order = query.order ?? (waiting ? "asc" : "desc");
+    const resumed = query.cursor
+      ? { AND: [where, resumeAfter("createdAt", order, query.cursor) as Prisma.ProfileChangeWhereInput] }
+      : where;
     const [rows, found] = await Promise.all([
       this.db.profileChange.findMany({
-        where,
-        skip: query.skip,
+        where: resumed,
+        skip: query.cursor ? 0 : query.skip,
         take: query.take,
-        orderBy: { createdAt: "desc" },
-        include: { employee: { select: { code: true, fullName: true } } },
+        orderBy: sortedBy("createdAt", order) as Prisma.ProfileChangeOrderByWithRelationInput[],
+        include: { employee: PERSON_VIEW },
       }),
       this.db.profileChange.count({ where, take: COUNT_CEILING + 1 }),
     ]);
-    return { rows, ...countedTo(found) };
+    const now = new Date();
+    return {
+      rows: rows.map((row) => ({ ...row, waitedDays: waitedDays(row.createdAt, now) })),
+      ...countedTo(found),
+      next: nextCursor(rows, query.take, (row) => row.createdAt),
+    };
   }
 
   /** Write the change into the record. The period already locked keeps the
@@ -128,13 +171,11 @@ export class ProfileService {
     for (const column of PROFILE_FIELDS[held.field].columns) {
       write[column] = asked[column] ?? null;
     }
-    const [, given] = await this.db.$transaction([
-      this.db.employee.update({ where: { id: held.employeeId }, data: write }),
-      this.db.profileChange.update({
-        where: { id: held.id },
-        data: { state: "APPROVED", decidedAt: new Date(), decidedById: viewer.userId },
-      }),
-    ]);
+    const given = await this.db.$transaction(async (tx) => {
+      await this.claim(tx, held.id, { state: "APPROVED", decidedAt: new Date(), decidedById: viewer.userId });
+      await tx.employee.update({ where: { id: held.employeeId }, data: write });
+      return tx.profileChange.findUniqueOrThrow({ where: { id: held.id } });
+    });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.PROFILE_APPROVE,
@@ -143,25 +184,26 @@ export class ProfileService {
       meta: { field: held.field, noticeTo: held.noticeTo },
     });
     if (PROFILE_FIELDS[held.field].notice !== null && held.noticeTo !== null) {
-      await this.queues[QUEUE.notify].add("profile-notice", {
+      await this.queues[QUEUE.notify].add(JOB.profileNotice, {
         type: "profile-notice",
         changeId: held.id,
       } satisfies ProfileNoticeJob);
     }
     this.log.log(`profile ${held.field} changed for employee ${held.employeeId}`);
+    await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { profileChangeId: held.id, approved: true });
     return given;
   }
 
   async reject(viewer: Viewer, id: string, body: DecideProfileChangeDto): Promise<ProfileChange> {
     const held = await this.decidable(viewer, id);
-    const turned = await this.db.profileChange.update({
-      where: { id: held.id },
-      data: {
+    const turned = await this.db.$transaction(async (tx) => {
+      await this.claim(tx, held.id, {
         state: "REJECTED",
         note: body.note ?? null,
         decidedAt: new Date(),
         decidedById: viewer.userId,
-      },
+      });
+      return tx.profileChange.findUniqueOrThrow({ where: { id: held.id } });
     });
     await this.audit.record({
       actorId: viewer.userId,
@@ -170,6 +212,7 @@ export class ProfileService {
       subjectId: String(held.employeeId),
       meta: { field: held.field, note: body.note ?? null },
     });
+    await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { profileChangeId: held.id, approved: false });
     return turned;
   }
 
@@ -179,9 +222,9 @@ export class ProfileService {
     if (held.employeeId !== viewer.employeeId && held.askedById !== viewer.userId) {
       throw new ForbiddenException("PROFILE_NOT_YOURS");
     }
-    const dropped = await this.db.profileChange.update({
-      where: { id: held.id },
-      data: { state: "CANCELLED", decidedAt: new Date() },
+    const dropped = await this.db.$transaction(async (tx) => {
+      await this.claim(tx, held.id, { state: "CANCELLED", decidedAt: new Date() });
+      return tx.profileChange.findUniqueOrThrow({ where: { id: held.id } });
     });
     await this.audit.record({
       actorId: viewer.userId,
@@ -253,13 +296,26 @@ export class ProfileService {
     return held;
   }
 
+  // Moves a change out of PENDING only if nobody else has; a second decider or a withdrawal loses.
+  private async claim(
+    tx: Prisma.TransactionClient,
+    id: string,
+    data: Prisma.ProfileChangeUncheckedUpdateManyInput,
+  ): Promise<void> {
+    const claimed = await tx.profileChange.updateMany({ where: { id, state: "PENDING" }, data });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("PROFILE_CHANGE_DECIDED");
+    }
+  }
+
   private async decidable(viewer: Viewer, id: string): Promise<ProfileChange> {
     if (!DESK.includes(viewer.role)) {
       throw new ForbiddenException("HR_ONLY");
     }
     const held = await this.waiting(id);
-    if (held.askedById !== null && held.askedById === viewer.userId) {
-      throw new ForbiddenException("PROFILE_SELF_DECIDE");
+    // Neither the person whose record it is nor the one who asked decides it (KEHOACH 9.17 item 6 rule 2).
+    if (held.employeeId === viewer.employeeId || (held.askedById !== null && held.askedById === viewer.userId)) {
+      throw new ForbiddenException("SELF_DECISION");
     }
     return held;
   }

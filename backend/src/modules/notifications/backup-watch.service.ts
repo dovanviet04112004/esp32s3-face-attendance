@@ -6,7 +6,7 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { RedisService } from "../../database/redis.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { QUEUE } from "../../queue/queues.js";
+import { JOB, QUEUE } from "../../queue/queues.js";
 import { backupAlarmMail, DEFAULT_MAIL_LOCALE, type BackupProblem } from "../payroll/mail-text.js";
 import { MailerService } from "./mailer.service.js";
 
@@ -74,7 +74,7 @@ export class BackupWatchService implements OnModuleInit {
     await this.queues[QUEUE.notify].upsertJobScheduler(
       "backup-watch",
       { pattern: kWatchCron },
-      { name: "backup-watch", data: { type: "backup-watch" } },
+      { name: JOB.backupWatch, data: { type: JOB.backupWatch } },
     );
   }
 

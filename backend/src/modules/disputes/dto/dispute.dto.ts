@@ -11,7 +11,7 @@ import {
   MinLength,
 } from "class-validator";
 
-import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { PageMeta, PersonView, QueueQueryDto } from "../../leave/dto/queue.dto.js";
 
 const STATES = ["OPEN", "ANSWERED", "WITHDRAWN"] as const;
 const OUTCOMES = ["UPHELD", "REJECTED"] as const;
@@ -70,8 +70,8 @@ export class AnswerDisputeDto {
   label?: string;
 }
 
-export class ListDisputesDto extends PaginationDto {
-  @ApiPropertyOptional({ enum: STATES })
+export class ListDisputesDto extends QueueQueryDto {
+  @ApiPropertyOptional({ enum: STATES, description: "OPEN is the desk's queue, without its own rows" })
   @IsOptional()
   @IsEnum(STATES)
   state?: (typeof STATES)[number];
@@ -83,9 +83,76 @@ export class ListDisputesDto extends PaginationDto {
   @IsBoolean()
   overdue?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: "One person's disputes, still inside what the viewer may see" })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   employeeId?: number;
+}
+
+export class PeriodRef {
+  @ApiProperty()
+  year!: number;
+
+  @ApiProperty()
+  month!: number;
+}
+
+export class DisputedSlip {
+  @ApiProperty({ type: PeriodRef })
+  period!: PeriodRef;
+}
+
+export class DisputeView {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  payslipId!: string;
+
+  @ApiProperty()
+  employeeId!: number;
+
+  @ApiProperty({ nullable: true })
+  lineCode!: string | null;
+
+  @ApiProperty()
+  claim!: string;
+
+  @ApiProperty({ enum: STATES })
+  state!: string;
+
+  @ApiProperty()
+  dueAt!: Date;
+
+  @ApiProperty({ enum: OUTCOMES, nullable: true })
+  outcome!: string | null;
+
+  @ApiProperty({ nullable: true })
+  answer!: string | null;
+
+  @ApiProperty({ nullable: true })
+  answeredAt!: Date | null;
+
+  @ApiProperty({ nullable: true, description: "The adjustment an upheld answer paid through" })
+  retroId!: string | null;
+
+  @ApiProperty()
+  createdAt!: Date;
+}
+
+export class DisputeRowView extends DisputeView {
+  @ApiProperty({ type: PersonView })
+  employee!: PersonView;
+
+  @ApiProperty({ type: DisputedSlip })
+  payslip!: DisputedSlip;
+
+  @ApiProperty({ description: "Whole days since it was raised" })
+  waitedDays!: number;
+}
+
+export class DisputePageView extends PageMeta {
+  @ApiProperty({ type: [DisputeRowView] })
+  rows!: DisputeRowView[];
 }

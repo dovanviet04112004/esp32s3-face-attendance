@@ -1,22 +1,44 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import type { Certificate, Prisma } from "@prisma/client";
+import { ConfigService } from "@nestjs/config";
+import type { Certificate, PayslipState, Prisma } from "@prisma/client";
 
-import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import {
+  PERSON_VIEW,
+  QUEUE_DESKS,
+  filedBetween,
+  notOwnWaiting,
+  personWhere,
+  resumeAfter,
+  sortedBy,
+  waitedDays,
+  whoseRows,
+} from "../leave/queue-filter.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
 import { letterFor, type Earnings } from "./certificate-text.js";
 import type { AskCertificateDto, DecideCertificateDto, ListCertificatesDto } from "./dto/certificate.dto.js";
 
-const DESK = ["ADMIN", "HR", "PAYROLL"];
+const DESK = QUEUE_DESKS.certificates;
 const SERIAL_DIGITS = 5;
 const DEFAULT_MONTHS = 3;
+// Every state a slip reaches once it has gone out; opening it does not unsay the income.
+const ISSUED_SLIPS: PayslipState[] = ["ISSUED", "SENT", "VIEWED"];
 
 function asDay(value: Date | null): string | null {
   return value ? value.toISOString().slice(0, 10) : null;
+}
+
+type Listed = Prisma.CertificateGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
+
+export interface CertificateRow extends Listed {
+  waitedDays: number;
 }
 
 @Injectable()
@@ -27,6 +49,8 @@ export class CertificatesService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly notices: NotificationsService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   /** Somebody asks for a letter. Anyone with a record may ask for their own. */
@@ -49,31 +73,48 @@ export class CertificatesService {
       subjectId: String(viewer.employeeId),
       meta: { kind: body.kind, purpose: body.purpose },
     });
+    await this.notices.raiseToDesk(DESK, "REQUEST_WAITING", { certificateId: made.id }, {
+      employeeIds: [viewer.employeeId],
+    });
     return made;
   }
 
-  async list(viewer: Viewer, query: ListCertificatesDto): Promise<Page<Certificate>> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
-    // Both clauses write employeeId, so an AND keeps the narrower of the two
-    // rather than letting one silently replace the other.
-    const where: Prisma.CertificateWhereInput = {
+  /** Letters are pay-type data: the desk reads all, everyone else their own (KEHOACH 9.4). */
+  async list(viewer: Viewer, query: ListCertificatesDto): Promise<Page<CertificateRow>> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const person = await personWhere(this.db, query);
+    const waiting = query.state === "REQUESTED";
+    // Every clause names employeeId, so an AND keeps the narrowest rather than letting one replace another.
+    const where = {
       AND: [
-        ScopeService.narrow("employeeId", visible),
+        whoseRows(visible, query.employeeId),
+        notOwnWaiting(viewer, DESK, waiting, query.employeeId),
         query.state ? { state: query.state } : {},
-        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
+        query.kind ? { kind: query.kind } : {},
+        person ? { employee: person } : {},
+        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
       ],
-    };
+    } as Prisma.CertificateWhereInput;
+    const order = query.order ?? (waiting ? "asc" : "desc");
+    const resumed = query.cursor
+      ? { AND: [where, resumeAfter("createdAt", order, query.cursor) as Prisma.CertificateWhereInput] }
+      : where;
     const [rows, found] = await Promise.all([
       this.db.certificate.findMany({
-        where,
-        skip: query.skip,
+        where: resumed,
+        skip: query.cursor ? 0 : query.skip,
         take: query.take,
-        orderBy: { createdAt: "desc" },
-        include: { employee: { select: { code: true, fullName: true } } },
+        orderBy: sortedBy("createdAt", order) as Prisma.CertificateOrderByWithRelationInput[],
+        include: { employee: PERSON_VIEW },
       }),
       this.db.certificate.count({ where, take: COUNT_CEILING + 1 }),
     ]);
-    return { rows, ...countedTo(found) };
+    const now = new Date();
+    return {
+      rows: rows.map((row) => ({ ...row, waitedDays: waitedDays(row.createdAt, now) })),
+      ...countedTo(found),
+      next: nextCursor(rows, query.take, (row) => row.createdAt),
+    };
   }
 
   /**
@@ -82,17 +123,20 @@ export class CertificatesService {
    * (KEHOACH 9.23 rule 2).
    */
   async issue(viewer: Viewer, id: string): Promise<Certificate> {
-    this.deskOnly(viewer);
-    const held = await this.waiting(id);
+    const held = await this.decidable(viewer, id);
     const [next] = await this.db.$queryRaw<{ n: bigint }[]>`
       SELECT nextval('certificate_serial_seq') AS n
     `;
     const year = new Date().getUTCFullYear();
     const serial = `${year}/${String(next.n).padStart(SERIAL_DIGITS, "0")}`;
-    const given = await this.db.certificate.update({
-      where: { id: held.id },
+    // A second issue that read REQUESTED too loses here; its sequence value is left as a gap, never reused.
+    const claimed = await this.db.certificate.updateMany({
+      where: { id: held.id, state: "REQUESTED" },
       data: { state: "ISSUED", serial, issuedAt: new Date(), issuedById: viewer.userId },
     });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("CERTIFICATE_ALREADY_DECIDED");
+    }
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.CERTIFICATE_ISSUE,
@@ -101,16 +145,19 @@ export class CertificatesService {
       meta: { kind: held.kind, serial },
     });
     this.log.log(`certificate ${serial} issued to employee ${held.employeeId}`);
-    return given;
+    await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { certificateId: held.id, approved: true });
+    return this.db.certificate.findUniqueOrThrow({ where: { id: held.id } });
   }
 
   async reject(viewer: Viewer, id: string, body: DecideCertificateDto): Promise<Certificate> {
-    this.deskOnly(viewer);
-    const held = await this.waiting(id);
-    const turned = await this.db.certificate.update({
-      where: { id: held.id },
+    const held = await this.decidable(viewer, id);
+    const claimed = await this.db.certificate.updateMany({
+      where: { id: held.id, state: "REQUESTED" },
       data: { state: "REJECTED", note: body.note ?? null, issuedById: viewer.userId },
     });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("CERTIFICATE_ALREADY_DECIDED");
+    }
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.CERTIFICATE_REJECT,
@@ -118,7 +165,8 @@ export class CertificatesService {
       subjectId: String(held.employeeId),
       meta: { kind: held.kind, note: body.note ?? null },
     });
-    return turned;
+    await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { certificateId: held.id, approved: false });
+    return this.db.certificate.findUniqueOrThrow({ where: { id: held.id } });
   }
 
   /** The letter itself. Reading one is recorded: it carries somebody's pay. */
@@ -139,7 +187,8 @@ export class CertificatesService {
     if (!held) {
       throw new NotFoundException("CERTIFICATE_NOT_FOUND");
     }
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    // It carries pay, a national id and a birth date, so a manager's tree does not reach it (KEHOACH 9.4).
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     if (visible !== null && !visible.includes(held.employeeId)) {
       throw new NotFoundException("CERTIFICATE_NOT_FOUND");
     }
@@ -174,24 +223,31 @@ export class CertificatesService {
     };
   }
 
+  // Monthly pay only: a bonus or a leaver's settlement is not the income a bank asks about.
   private async earningsOf(employeeId: number, months: number | null): Promise<Earnings[]> {
+    const wanted = months ?? DEFAULT_MONTHS;
     const slips = await this.db.payslip.findMany({
-      where: { employeeId, state: { in: ["ISSUED", "SENT"] } },
+      where: { employeeId, state: { in: ISSUED_SLIPS }, run: { kind: "REGULAR" } },
       include: { period: { select: { year: true, month: true } } },
-      orderBy: [{ period: { year: "desc" } }, { period: { month: "desc" } }],
-      take: months ?? DEFAULT_MONTHS,
+      orderBy: [{ period: { year: "desc" } }, { period: { month: "desc" } }, { createdAt: "desc" }],
+      take: wanted * 2,
     });
-    return slips.map((one) => ({
-      year: one.period.year,
-      month: one.period.month,
-      net: one.netPay.toFixed(0),
-    }));
+    const seen = new Set<string>();
+    return slips
+      .filter((one) => !seen.has(one.periodId) && Boolean(seen.add(one.periodId)))
+      .slice(0, wanted)
+      .map((one) => ({ year: one.period.year, month: one.period.month, net: one.netPay.toFixed(0) }));
   }
 
-  private deskOnly(viewer: Viewer): void {
+  private async decidable(viewer: Viewer, id: string): Promise<Certificate> {
     if (!DESK.includes(viewer.role)) {
       throw new ForbiddenException("HR_ONLY");
     }
+    const held = await this.waiting(id);
+    if (held.employeeId === viewer.employeeId) {
+      throw new ForbiddenException("SELF_DECISION");
+    }
+    return held;
   }
 
   private async waiting(id: string): Promise<Certificate> {

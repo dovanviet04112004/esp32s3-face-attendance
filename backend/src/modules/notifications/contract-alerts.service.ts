@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { QUEUE } from "../../queue/queues.js";
+import { JOB, QUEUE } from "../../queue/queues.js";
 import { NotificationsService } from "./notifications.service.js";
 
 interface Ending {
@@ -30,7 +30,7 @@ export class ContractAlertsService implements OnModuleInit {
     await this.queues[QUEUE.notify].upsertJobScheduler(
       "contracts-ending-daily",
       { pattern: kDailyCron },
-      { name: "contracts-ending", data: { type: "contracts-ending" } },
+      { name: JOB.contractsEnding, data: { type: JOB.contractsEnding } },
     );
   }
 
@@ -50,12 +50,7 @@ export class ContractAlertsService implements OnModuleInit {
     let told = 0;
     for (const row of rows) {
       const already = await this.db.notification.findFirst({
-        where: {
-          employeeId: row.employeeId,
-          kind: "CONTRACT_ENDING",
-          contractId: row.contractId,
-          daysLeft: row.daysLeft,
-        },
+        where: { kind: "CONTRACT_ENDING", contractId: row.contractId, daysLeft: row.daysLeft },
         select: { id: true },
       });
       if (already) {

@@ -10,13 +10,18 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { DisputesService } from "../src/modules/disputes/disputes.service.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
+import { clearDeskNotices } from "./teardown.js";
 
 const ENTITY = "E2EDS";
 const CODE = "E2EDS01";
 const OTHER = "E2EDS02";
+const BOSS = "E2EDS03";
 const EMAIL = "e2eds@kiosk.local";
 const OTHER_EMAIL = "e2eds-other@kiosk.local";
+const BOSS_EMAIL = "e2eds-boss@kiosk.local";
+const RACE_LINE = "RACE";
 const PASSWORD = "kiosk-e2e-password";
 const YEAR = 2034;
 const FIRST_MONTH = 3;
@@ -45,6 +50,7 @@ describe("disputing a payslip (e2e)", () => {
   let desk = "";
   let mine = "";
   let theirs = "";
+  let boss = "";
   let answerDays = 0;
   let employeeId = 0;
   let entityId = "";
@@ -55,8 +61,9 @@ describe("disputing a payslip (e2e)", () => {
   let disputeId = "";
 
   async function sweep(): Promise<void> {
-    await db.user.deleteMany({ where: { email: { in: [EMAIL, OTHER_EMAIL] } } });
-    await db.employee.deleteMany({ where: { code: { in: [CODE, OTHER] } } });
+    await clearDeskNotices(db, [CODE, OTHER, BOSS]);
+    await db.user.deleteMany({ where: { email: { in: [EMAIL, OTHER_EMAIL, BOSS_EMAIL] } } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, OTHER, BOSS] } } });
     await db.payrollPeriod.deleteMany({ where: { year: YEAR } });
     await db.legalEntity.deleteMany({ where: { code: ENTITY } });
   }
@@ -150,8 +157,19 @@ describe("disputing a payslip (e2e)", () => {
     await copyPolicyTo(entityId);
     employeeId = await makePerson(CODE, EMAIL);
     await makePerson(OTHER, OTHER_EMAIL);
+    // Outside the entity, so no payroll run of this suite picks the manager up.
+    const bossRow = await db.employee.create({
+      data: {
+        code: BOSS,
+        fullName: "Quản lý khiếu nại",
+        active: true,
+        login: { create: { email: BOSS_EMAIL, passwordHash: await hashPassword(PASSWORD), role: "MANAGER" } },
+      },
+    });
+    await db.employee.update({ where: { id: employeeId }, data: { managerId: bossRow.id } });
     mine = await signIn(EMAIL);
     theirs = await signIn(OTHER_EMAIL);
+    boss = await signIn(BOSS_EMAIL);
 
     firstPeriodId = await makePeriod(FIRST_MONTH);
     const first = await db.payrollRun.create({
@@ -204,6 +222,34 @@ describe("disputing a payslip (e2e)", () => {
     const span = new Date(made.dueAt).getTime() - new Date(made.createdAt).getTime();
     assert.equal(Math.round(span / DAY_MS), answerDays, "the deadline is not the configured span");
     disputeId = made.id;
+  });
+
+  it("tells the pay desk a dispute is waiting", async () => {
+    const told = await db.user.findMany({
+      where: { notifications: { some: { kind: "REQUEST_WAITING", payslipId: issuedSlipId } } },
+      select: { role: true },
+    });
+    assert.ok(told.length > 0, "nobody was told a dispute is waiting");
+    assert.ok(told.every((one) => one.role === "ADMIN" || one.role === "PAYROLL"), "somebody off the pay desk was told");
+  });
+
+  it("keeps a manager's tree away from a subordinate's pay dispute", async () => {
+    const res = await request(http).get("/payslip-disputes").set("Authorization", `Bearer ${boss}`);
+    assert.equal(res.status, 200);
+    assert.ok(
+      !(res.body as { rows: Dispute[] }).rows.some((one) => one.id === disputeId),
+      "a manager reads what a subordinate disputes about their pay",
+    );
+  });
+
+  it("finds an open dispute on the desk by the person's code", async () => {
+    const res = await request(http)
+      .get(`/payslip-disputes?state=OPEN&search=${CODE}`)
+      .set("Authorization", `Bearer ${desk}`);
+    assert.equal(res.status, 200);
+    const rows = (res.body as { rows: (Dispute & { employee: { code: string } })[] }).rows;
+    assert.ok(rows.some((one) => one.id === disputeId));
+    assert.ok(rows.every((one) => one.employee.code === CODE));
   });
 
   it("keeps one open dispute per line", async () => {
@@ -302,6 +348,7 @@ describe("disputing a payslip (e2e)", () => {
       .send({ outcome: "REJECTED", answer: ANSWER });
     assert.equal(res.status, 400);
     assert.equal(res.body.message, "DISPUTE_ALREADY_ANSWERED");
+    assert.equal(await db.retroAdjustment.count({ where: { employeeId } }), 1, "a second answer minted money");
   });
 
   // The whole point of the record: the answer is a figure somebody receives,
@@ -367,5 +414,23 @@ describe("disputing a payslip (e2e)", () => {
     const kinds = new Set((res.body.rows as { action: string }[]).map((one) => one.action));
     assert.ok(kinds.has("dispute.raise"));
     assert.ok(kinds.has("dispute.answer"));
+  });
+
+  it("pays once when two answers land together", async () => {
+    const asked = await request(http)
+      .post("/payslip-disputes")
+      .set("Authorization", `Bearer ${mine}`)
+      .send({ payslipId: issuedSlipId, lineCode: RACE_LINE, claim: CLAIM });
+    assert.equal(asked.status, 201);
+    const admin = await db.user.findUniqueOrThrow({ where: { email: "admin@kiosk.local" } });
+    const viewer = { userId: admin.id, role: admin.role, employeeId: admin.employeeId };
+    const service = app.get(DisputesService);
+    const body = { outcome: "UPHELD" as const, answer: ANSWER, amount: OWED, code: RACE_LINE };
+    const settled = await Promise.allSettled([
+      service.answer(viewer, (asked.body as Dispute).id, body),
+      service.answer(viewer, (asked.body as Dispute).id, body),
+    ]);
+    assert.equal(settled.filter((one) => one.status === "fulfilled").length, 1, "both answers went through");
+    assert.equal(await db.retroAdjustment.count({ where: { employeeId, code: RACE_LINE } }), 1, "two answers paid twice");
   });
 });

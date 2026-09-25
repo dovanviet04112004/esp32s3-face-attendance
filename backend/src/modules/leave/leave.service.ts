@@ -1,4 +1,13 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type {
   LeaveBalance,
   LeaveType,
@@ -6,28 +15,108 @@ import type {
   Request as LeaveRequest,
   RequestKind,
   RequestState,
-  Role,
 } from "@prisma/client";
 
+import { toExcelCsv } from "../../common/csv.js";
+import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { dayAsDate } from "../timesheet/local-day.js";
 import { TimesheetService } from "../timesheet/timesheet.service.js";
 import type { CreateLeaveTypeDto, UpdateLeaveTypeDto } from "./dto/leave-type.dto.js";
-import type { DecideRequestDto, ListRequestsDto, SubmitRequestDto } from "./dto/request.dto.js";
+import type { Order } from "./dto/queue.dto.js";
+import type {
+  DecideManyDto,
+  DecideRequestDto,
+  ListRequestsDto,
+  RequestSort,
+  SubmitRequestDto,
+} from "./dto/request.dto.js";
+import {
+  PERSON_VIEW,
+  QUEUE_DESKS,
+  THE_DESK,
+  filedBetween,
+  personWhere,
+  resumeAfter,
+  sortedBy,
+  waitedDays,
+} from "./queue-filter.js";
+
+export { THE_DESK } from "./queue-filter.js";
 
 const EXCLUSION_VIOLATION = "23P01";
 const UNIQUE_VIOLATION = "P2002";
 const HALF = 0.5;
 const MS_PER_DAY = 86_400_000;
+const MS_PER_MINUTE = 60_000;
 const OFF_SITE: RequestKind[] = ["BUSINESS_TRIP", "REMOTE_WORK"];
-// Where an unclaimed request and every advance wait: 9.4 gives HR both leave
-// and a read on payroll (KEHOACH 9.15).
-export const THE_DESK: Role[] = ["ADMIN", "HR"];
+const TIMED: RequestKind[] = ["OVERTIME", "ATTENDANCE_FIX"];
+const OFF_WORK: RequestState[] = ["PENDING", "APPROVED"];
+const OVERLAP_SHOWN = 20;
+// Past this an export stops; a filter narrows it (KEHOACH 9.9 rule 6).
+const EXPORT_MAX = 50_000;
+const EXPORT_COLUMNS = [
+  "code", "fullName", "department", "kind", "leaveType", "fromDate", "toDate", "days",
+  "state", "reason", "createdAt", "decidedBy", "decidedAt", "decisionNote",
+];
+
+const REQUEST_VIEW = {
+  employee: PERSON_VIEW,
+  leaveType: { select: { id: true, code: true, name: true } },
+} satisfies Prisma.RequestInclude;
+
+type Filed = Prisma.RequestGetPayload<{ include: typeof REQUEST_VIEW }>;
+
+export interface Decider {
+  id: string;
+  email: string;
+  fullName: string | null;
+}
+
+export type RequestRow = Filed & { decidedBy: Decider | null };
+
+export interface InboxRow extends RequestRow {
+  waitedDays: number;
+  balanceAfter: number | null;
+  overlapCount: number | null;
+}
+
+export interface Overlap {
+  id: string;
+  fromDate: Date;
+  toDate: Date;
+  state: RequestState;
+  employee: Filed["employee"];
+}
+
+export interface RequestDetail extends RequestRow {
+  balance: BalanceAsOf | null;
+  overlapping: Overlap[];
+  mayDecide: boolean;
+}
+
+/** What waits on one viewer in every queue of the inbox; the badge sums these. */
+export interface InboxCounts {
+  requests: number;
+  disputes: number;
+  certificates: number;
+  profileChanges: number;
+  dependents: number;
+  advancesToDecide: number;
+  advancesToPay: number;
+}
+
+export interface DecideManyResult {
+  decided: string[];
+  skipped: { id: string; code: string }[];
+}
 
 /** One person's standing in one leave type, on a day they picked. */
 export interface BalanceAsOf {
@@ -66,7 +155,12 @@ export class LeaveService {
     private readonly notices: NotificationsService,
     private readonly timesheet: TimesheetService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  private get zone(): string {
+    return this.config.get("APP_TIMEZONE", { infer: true });
+  }
 
   types(): Promise<LeaveType[]> {
     return this.db.leaveType.findMany({ where: { active: true }, orderBy: { code: "asc" } });
@@ -125,11 +219,6 @@ export class LeaveService {
     return saved;
   }
 
-  /**
-   * What this person still has to book in the leave year a chosen day falls
-   * in. A day held by a request nobody has answered is a day already gone,
-   * so it leaves `remaining` the moment the request is filed.
-   */
   /** Somebody's balance, theirs by default. Asking about another person goes
    *  through the same scope as reading their record does.
    */
@@ -204,6 +293,18 @@ export class LeaveService {
     if (body.kind === "ATTENDANCE_FIX") {
       this.checkFixable(from, to);
     }
+    if (body.halfDay && from.getTime() !== to.getTime()) {
+      throw new BadRequestException("HALF_DAY_ONE_DAY_ONLY");
+    }
+    const fromAt = body.fromAt ? new Date(body.fromAt) : null;
+    const toAt = body.toAt ? new Date(body.toAt) : null;
+    if (fromAt && toAt && toAt <= fromAt) {
+      throw new BadRequestException("TIME_RANGE_BACKWARDS");
+    }
+    const minutes =
+      fromAt && toAt && TIMED.includes(body.kind)
+        ? Math.round((toAt.getTime() - fromAt.getTime()) / MS_PER_MINUTE)
+        : (body.minutes ?? 0);
     const days = body.halfDay ? HALF : Math.round((to.getTime() - from.getTime()) / MS_PER_DAY) + 1;
     const approverId = await this.approverFor(viewer.employeeId, from);
 
@@ -224,8 +325,11 @@ export class LeaveService {
             fromDate: from,
             toDate: to,
             halfDay: body.halfDay ?? false,
+            dayPart: body.halfDay ? (body.dayPart ?? null) : null,
             days,
-            minutes: body.minutes ?? 0,
+            minutes,
+            fromAt,
+            toAt,
             reason: body.reason,
             attachmentUrl: body.attachmentUrl ?? null,
             clientKey: body.clientKey ?? null,
@@ -283,20 +387,27 @@ export class LeaveService {
     }
   }
 
-  /** One request, if this viewer is allowed to know it exists. */
-  async one(viewer: Viewer, id: string): Promise<LeaveRequest> {
-    const held = await this.db.request.findUnique({
-      where: { id },
-      include: {
-        employee: { select: { id: true, code: true, fullName: true } },
-        leaveType: { select: { id: true, code: true, name: true } },
-      },
-    });
-    const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+  /** One request, if this viewer may know it exists: its tree, or waiting on them to decide. */
+  async one(viewer: Viewer, id: string): Promise<RequestDetail> {
+    const held = await this.db.request.findUnique({ where: { id }, include: REQUEST_VIEW });
+    if (!held) {
       throw new NotFoundException("REQUEST_NOT_FOUND");
     }
-    return held;
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const refusal = held.state === "PENDING" ? await this.refusal(viewer, held) : "NOT_PENDING";
+    if (visible !== null && !visible.includes(held.employeeId) && refusal !== null) {
+      throw new NotFoundException("REQUEST_NOT_FOUND");
+    }
+    const [[row], balance, overlapping] = await Promise.all([
+      this.withDeciders([held]),
+      held.kind === "LEAVE" && held.leaveTypeId
+        ? this.balancesAsOf(held.employeeId, held.fromDate).then(
+            (rows) => rows.find((one) => one.leaveTypeId === held.leaveTypeId) ?? null,
+          )
+        : Promise.resolve(null),
+      held.kind === "LEAVE" ? this.overlapping(held) : Promise.resolve([]),
+    ]);
+    return { ...row, balance, overlapping, mayDecide: refusal === null };
   }
 
   /** Approve or turn down, moving the balance only on the way through. */
@@ -308,10 +419,29 @@ export class LeaveService {
     if (held.state !== "PENDING") {
       throw new ConflictException("REQUEST_ALREADY_DECIDED");
     }
-    await this.mayDecide(viewer, held.employeeId);
+    const refusal = await this.refusal(viewer, held);
+    if (refusal === "SELF_DECISION") {
+      throw new ForbiddenException("SELF_DECISION");
+    }
+    if (refusal !== null) {
+      throw new ForbiddenException("NOT_YOUR_REQUEST");
+    }
     const next: RequestState = body.approve ? "APPROVED" : "REJECTED";
 
     const decided = await this.db.$transaction(async (tx) => {
+      // Two deciders can both read PENDING above; only the write that lands moves the balance.
+      const claimed = await tx.request.updateMany({
+        where: { id, state: "PENDING" },
+        data: {
+          state: next,
+          decidedById: viewer.userId,
+          decidedAt: new Date(),
+          decisionNote: body.note ?? null,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException("REQUEST_ALREADY_DECIDED");
+      }
       if (held.kind === "LEAVE" && held.leaveTypeId) {
         await this.settle(tx, held, body.approve);
       }
@@ -333,15 +463,7 @@ export class LeaveService {
           held.reason,
         );
       }
-      return tx.request.update({
-        where: { id },
-        data: {
-          state: next,
-          decidedById: viewer.userId,
-          decidedAt: new Date(),
-          decisionNote: body.note ?? null,
-        },
-      });
+      return tx.request.findUniqueOrThrow({ where: { id } });
     });
     await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", {
       requestId: id,
@@ -350,8 +472,271 @@ export class LeaveService {
     return decided;
   }
 
-  /** What is waiting on this viewer to answer. */
-  async inbox(viewer: Viewer, query: ListRequestsDto): Promise<Page<LeaveRequest>> {
+  /** Several at once, each through the rules of one decision; a refused row is reported, not fatal. */
+  async decideMany(viewer: Viewer, body: DecideManyDto): Promise<DecideManyResult> {
+    if (!body.approve && !body.note?.trim()) {
+      throw new BadRequestException("DECISION_NOTE_REQUIRED");
+    }
+    const result: DecideManyResult = { decided: [], skipped: [] };
+    // One at a time: two decisions on one balance row would only queue on its lock anyway.
+    for (const id of new Set(body.ids)) {
+      try {
+        await this.decide(viewer, id, { approve: body.approve, note: body.note });
+        result.decided.push(id);
+      } catch (fell) {
+        if (!(fell instanceof HttpException)) {
+          throw fell;
+        }
+        result.skipped.push({ id, code: fell.message });
+      }
+    }
+    return result;
+  }
+
+  /** What is waiting on this viewer to answer, oldest first unless asked otherwise. */
+  async inbox(viewer: Viewer, query: ListRequestsDto): Promise<Page<InboxRow>> {
+    const mine = await this.waitingOnViewer(viewer);
+    if (mine.length === 0) {
+      return { rows: [], total: 0, totalIsExact: true, next: null };
+    }
+    const where: Prisma.RequestWhereInput = {
+      AND: [{ state: "PENDING", OR: mine }, ...(await this.filters(query))],
+    };
+    const page = await this.page(where, "createdAt", query.order ?? "asc", query);
+    return { ...page, rows: await this.withContext(page.rows) };
+  }
+
+  /** The numbers on the inbox tabs and the sidebar badge, from the same rules as each list. */
+  async counts(viewer: Viewer): Promise<InboxCounts> {
+    const mine = await this.waitingOnViewer(viewer);
+    const own = viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } };
+    const decides = (queue: keyof typeof QUEUE_DESKS): boolean => QUEUE_DESKS[queue].includes(viewer.role);
+    const take = COUNT_CEILING;
+    const none = Promise.resolve(0);
+    const [requests, disputes, certificates, profileChanges, dependents, advancesToDecide, advancesToPay] =
+      await Promise.all([
+        mine.length === 0 ? none : this.db.request.count({ where: { state: "PENDING", OR: mine }, take }),
+        decides("disputes") ? this.db.payslipDispute.count({ where: { state: "OPEN", ...own }, take }) : none,
+        decides("certificates") ? this.db.certificate.count({ where: { state: "REQUESTED", ...own }, take }) : none,
+        decides("profileChanges") ? this.db.profileChange.count({ where: { state: "PENDING", ...own }, take }) : none,
+        decides("dependents") ? this.db.dependent.count({ where: { state: "PENDING", ...own }, take }) : none,
+        decides("advancesToDecide") ? this.db.salaryAdvance.count({ where: { state: "PENDING", ...own }, take }) : none,
+        decides("advancesToPay") ? this.db.salaryAdvance.count({ where: { state: "APPROVED", ...own }, take }) : none,
+      ]);
+    return { requests, disputes, certificates, profileChanges, dependents, advancesToDecide, advancesToPay };
+  }
+
+  /** The ledger: every state in the viewer's tree, newest first unless asked otherwise (KEHOACH 9.15). */
+  async list(viewer: Viewer, query: ListRequestsDto): Promise<Page<RequestRow>> {
+    const where = await this.ledgerWhere(viewer, query);
+    return this.page(where, query.sort ?? "createdAt", query.order ?? "desc", query);
+  }
+
+  /** The ledger under the same filter, as a file Excel opens. */
+  async exportCsv(viewer: Viewer, query: ListRequestsDto): Promise<string> {
+    const field = query.sort ?? "createdAt";
+    const rows = await this.withDeciders(
+      await this.db.request.findMany({
+        where: await this.ledgerWhere(viewer, query),
+        orderBy: sortedBy(field, query.order ?? "desc") as Prisma.RequestOrderByWithRelationInput[],
+        take: EXPORT_MAX,
+        include: REQUEST_VIEW,
+      }),
+    );
+    return toExcelCsv(
+      EXPORT_COLUMNS,
+      rows.map((row) => [
+        row.employee.code,
+        row.employee.fullName,
+        row.employee.department?.name ?? "",
+        row.kind,
+        row.leaveType?.code ?? "",
+        asDay(row.fromDate),
+        asDay(row.toDate),
+        row.days.toString(),
+        row.state,
+        row.reason,
+        row.createdAt.toISOString(),
+        row.decidedBy?.fullName ?? row.decidedBy?.email ?? "",
+        row.decidedAt?.toISOString() ?? "",
+        row.decisionNote ?? "",
+      ]),
+    );
+  }
+
+  /** Cancelling gives held days back; a decided request is past cancelling. */
+  async cancel(viewer: Viewer, id: string): Promise<LeaveRequest> {
+    const held = await this.db.request.findUnique({ where: { id } });
+    if (!held || held.employeeId !== viewer.employeeId) {
+      throw new NotFoundException("REQUEST_NOT_FOUND");
+    }
+    if (held.state !== "PENDING") {
+      throw new ConflictException("REQUEST_ALREADY_DECIDED");
+    }
+    return this.db.$transaction(async (tx) => {
+      const claimed = await tx.request.updateMany({
+        where: { id, state: "PENDING" },
+        data: { state: "CANCELLED" },
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException("REQUEST_ALREADY_DECIDED");
+      }
+      if (held.kind === "LEAVE" && held.leaveTypeId) {
+        await this.release(tx, held);
+      }
+      return tx.request.findUniqueOrThrow({ where: { id } });
+    });
+  }
+
+  private async ledgerWhere(viewer: Viewer, query: ListRequestsDto): Promise<Prisma.RequestWhereInput> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const asked = query.employeeId;
+    const whose =
+      asked === undefined
+        ? ScopeService.narrow("employeeId", visible)
+        : { employeeId: visible === null || visible.includes(asked) ? asked : { in: [] } };
+    return {
+      AND: [whose, query.state ? { state: query.state } : {}, ...(await this.filters(query))],
+    };
+  }
+
+  private async filters(query: ListRequestsDto): Promise<Prisma.RequestWhereInput[]> {
+    const person = await personWhere(this.db, query);
+    return [
+      query.kind ? { kind: query.kind } : {},
+      person ? { employee: person } : {},
+      // Any overlap with the range, not containment: a leave crossing the first day is still in it.
+      query.to ? { fromDate: { lte: new Date(query.to.slice(0, 10)) } } : {},
+      query.from ? { toDate: { gte: new Date(query.from.slice(0, 10)) } } : {},
+    ];
+  }
+
+  private async page(
+    where: Prisma.RequestWhereInput,
+    field: RequestSort,
+    order: Order,
+    query: ListRequestsDto,
+  ): Promise<Page<RequestRow>> {
+    const resumed = query.cursor
+      ? { AND: [where, resumeAfter(field, order, query.cursor) as Prisma.RequestWhereInput] }
+      : where;
+    const [rows, found] = await Promise.all([
+      this.db.request.findMany({
+        where: resumed,
+        orderBy: sortedBy(field, order) as Prisma.RequestOrderByWithRelationInput[],
+        skip: query.cursor ? 0 : query.skip,
+        take: query.take,
+        include: REQUEST_VIEW,
+      }),
+      this.db.request.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    return {
+      rows: await this.withDeciders(rows),
+      ...countedTo(found),
+      next: nextCursor(rows, query.take, (row) => row[field]),
+    };
+  }
+
+  /** Who decided each row, in one read for the page. */
+  private async withDeciders(rows: Filed[]): Promise<RequestRow[]> {
+    const ids = [...new Set(rows.map((row) => row.decidedById).filter((id): id is string => id !== null))];
+    const users =
+      ids.length === 0
+        ? []
+        : await this.db.user.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, email: true, employee: { select: { fullName: true } } },
+          });
+    const byId = new Map(
+      users.map((one) => [one.id, { id: one.id, email: one.email, fullName: one.employee?.fullName ?? null }]),
+    );
+    return rows.map((row) => ({ ...row, decidedBy: row.decidedById ? (byId.get(row.decidedById) ?? null) : null }));
+  }
+
+  /** How long each row waited, what leave is left once it is granted, and who else is off. */
+  private async withContext(rows: RequestRow[]): Promise<InboxRow[]> {
+    const leave = rows.filter((row) => row.kind === "LEAVE");
+    const [after, overlaps] = await Promise.all([this.balancesAfter(leave), this.overlapCounts(leave)]);
+    const now = new Date();
+    return rows.map((row) => ({
+      ...row,
+      waitedDays: waitedDays(row.createdAt, now),
+      balanceAfter: row.kind === "LEAVE" ? (after.get(row.id) ?? null) : null,
+      overlapCount: row.kind === "LEAVE" ? (overlaps.get(row.id) ?? 0) : null,
+    }));
+  }
+
+  // A waiting request already holds its days in `pending`, so what is free is what is left after it.
+  private async balancesAfter(rows: RequestRow[]): Promise<Map<string, number>> {
+    const keyed = rows.filter((row) => row.leaveTypeId !== null);
+    if (keyed.length === 0) {
+      return new Map();
+    }
+    const balances = await this.db.leaveBalance.findMany({
+      where: {
+        OR: keyed.map((row) => ({
+          employeeId: row.employeeId,
+          leaveTypeId: row.leaveTypeId as string,
+          year: row.fromDate.getUTCFullYear(),
+        })),
+      },
+    });
+    const free = new Map(
+      balances.map((one) => [`${one.employeeId}:${one.leaveTypeId}:${one.year}`, freeDays(one)]),
+    );
+    const out = new Map<string, number>();
+    for (const row of keyed) {
+      const left = free.get(`${row.employeeId}:${row.leaveTypeId}:${row.fromDate.getUTCFullYear()}`);
+      if (left !== undefined) {
+        out.set(row.id, left);
+      }
+    }
+    return out;
+  }
+
+  /** Teammates, meaning people under the same manager, off on overlapping dates: one query per page. */
+  private async overlapCounts(rows: RequestRow[]): Promise<Map<string, number>> {
+    if (rows.length === 0) {
+      return new Map();
+    }
+    const found = await this.db.$queryRaw<{ id: string; n: number }[]>`
+      SELECT r."id", COUNT(DISTINCT o."employeeId")::int AS "n"
+        FROM "Request" r
+        JOIN "Employee" e ON e."id" = r."employeeId"
+        JOIN "Employee" mate ON mate."managerId" = e."managerId" AND mate."id" <> e."id" AND mate."active"
+        JOIN "Request" o ON o."employeeId" = mate."id"
+         AND o."kind" = 'LEAVE' AND o."state" IN ('PENDING', 'APPROVED')
+         AND o."fromDate" <= r."toDate" AND o."toDate" >= r."fromDate"
+       WHERE r."id" = ANY(${rows.map((row) => row.id)}::text[])
+       GROUP BY r."id"
+    `;
+    return new Map(found.map((one) => [one.id, one.n]));
+  }
+
+  private async overlapping(held: LeaveRequest): Promise<Overlap[]> {
+    const person = await this.db.employee.findUnique({
+      where: { id: held.employeeId },
+      select: { managerId: true },
+    });
+    if (!person?.managerId) {
+      return [];
+    }
+    return this.db.request.findMany({
+      where: {
+        kind: "LEAVE",
+        state: { in: OFF_WORK },
+        employee: { managerId: person.managerId, id: { not: held.employeeId }, active: true },
+        fromDate: { lte: held.toDate },
+        toDate: { gte: held.fromDate },
+      },
+      select: { id: true, fromDate: true, toDate: true, state: true, employee: PERSON_VIEW },
+      orderBy: [{ fromDate: "asc" }, { id: "asc" }],
+      take: OVERLAP_SHOWN,
+    });
+  }
+
+  /** Who a pending request waits on for this viewer; the inbox and the decision read the same rule. */
+  private async waitingOnViewer(viewer: Viewer): Promise<Prisma.RequestWhereInput[]> {
     const mine: Prisma.RequestWhereInput[] = [];
     if (viewer.employeeId !== null) {
       const standIn = await this.standingInFor(viewer.employeeId);
@@ -365,80 +750,31 @@ export class LeaveService {
         ...(viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } }),
       });
     }
-    if (mine.length === 0) {
-      return { rows: [], total: 0 };
-    }
-    const where: Prisma.RequestWhereInput = {
-      state: "PENDING",
-      OR: mine,
-      ...(query.kind ? { kind: query.kind } : {}),
-    };
-    return this.page(where, query);
+    return mine;
   }
 
-  async list(viewer: Viewer, query: ListRequestsDto): Promise<Page<LeaveRequest>> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
-    const where: Prisma.RequestWhereInput = {
-      ...ScopeService.narrow("employeeId", visible),
-      ...(query.state ? { state: query.state } : {}),
-      ...(query.kind ? { kind: query.kind } : {}),
-    };
-    if (query.employeeId !== undefined) {
-      if (visible !== null && !visible.includes(query.employeeId)) {
-        return { rows: [], total: 0 };
-      }
-      where.employeeId = query.employeeId;
-    }
-    return this.page(where, query);
-  }
-
-  /** Cancelling gives held days back; a decided request is past cancelling. */
-  async cancel(viewer: Viewer, id: string): Promise<LeaveRequest> {
-    const held = await this.db.request.findUnique({ where: { id } });
-    if (!held || held.employeeId !== viewer.employeeId) {
-      throw new NotFoundException("REQUEST_NOT_FOUND");
-    }
-    if (held.state !== "PENDING") {
-      throw new ConflictException("REQUEST_ALREADY_DECIDED");
-    }
-    return this.db.$transaction(async (tx) => {
-      if (held.kind === "LEAVE" && held.leaveTypeId) {
-        await this.release(tx, held);
-      }
-      return tx.request.update({ where: { id }, data: { state: "CANCELLED" } });
-    });
-  }
-
-  private async page(where: Prisma.RequestWhereInput, query: ListRequestsDto): Promise<Page<LeaveRequest>> {
-    const [rows, total] = await this.db.$transaction([
-      this.db.request.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip: query.skip,
-        take: query.take,
-        include: {
-          employee: { select: { id: true, code: true, fullName: true } },
-          leaveType: { select: { id: true, code: true, name: true } },
-        },
-      }),
-      this.db.request.count({ where }),
-    ]);
-    return { rows, total };
-  }
-
-  private async mayDecide(viewer: Viewer, employeeId: number): Promise<void> {
+  /** Why this viewer may not decide a pending request, or null when they may. */
+  private async refusal(
+    viewer: Viewer,
+    held: Pick<LeaveRequest, "employeeId" | "approverId">,
+  ): Promise<"SELF_DECISION" | "NOT_YOUR_REQUEST" | null> {
     // No role decides its own request, the desk included (KEHOACH 9.4).
-    if (employeeId === viewer.employeeId) {
-      throw new ForbiddenException("SELF_DECISION");
+    if (held.employeeId === viewer.employeeId) {
+      return "SELF_DECISION";
     }
-    if (["ADMIN", "HR"].includes(viewer.role)) {
-      return;
+    if (THE_DESK.includes(viewer.role)) {
+      return null;
+    }
+    if (viewer.employeeId !== null && held.approverId !== null) {
+      if (held.approverId === viewer.employeeId) {
+        return null;
+      }
+      if ((await this.standingInFor(viewer.employeeId)).includes(held.approverId)) {
+        return null;
+      }
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (visible !== null && visible.includes(employeeId)) {
-      return;
-    }
-    throw new ForbiddenException("NOT_YOUR_REQUEST");
+    return visible !== null && visible.includes(held.employeeId) ? null : "NOT_YOUR_REQUEST";
   }
 
   /** The desk an unclaimed request waits on, minus whoever asked: rule 2 holds
@@ -469,7 +805,7 @@ export class LeaveService {
   }
 
   private async standingInFor(employeeId: number): Promise<number[]> {
-    const today = new Date();
+    const today = dayAsDate(this.timesheet.today());
     const rows = await this.db.approvalDelegation.findMany({
       where: { toId: employeeId, fromDate: { lte: today }, toDate: { gte: today } },
       select: { fromId: true },
@@ -477,18 +813,17 @@ export class LeaveService {
     return rows.map((row) => row.fromId);
   }
 
+  // Check and hold in one statement: two filings reading the same balance would both pass a separate check.
   private async hold(tx: Prisma.TransactionClient, employeeId: number, leaveTypeId: string, year: number, days: number): Promise<void> {
-    const balance = await tx.leaveBalance.findUnique({
-      where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } },
-    });
-    const left = balance ? freeDays(balance) : 0;
-    if (left < days) {
+    const held = await tx.$executeRaw`
+      UPDATE "LeaveBalance"
+         SET "pending" = "pending" + ${days}::numeric, "updatedAt" = now()
+       WHERE "employeeId" = ${employeeId} AND "leaveTypeId" = ${leaveTypeId} AND "year" = ${year}
+         AND "entitled" + "carriedOver" - "taken" - "pending" >= ${days}::numeric
+    `;
+    if (held !== 1) {
       throw new ConflictException("LEAVE_BALANCE_SHORT");
     }
-    await tx.leaveBalance.update({
-      where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } },
-      data: { pending: { increment: days } },
-    });
   }
 
   private async settle(tx: Prisma.TransactionClient, held: LeaveRequest, approved: boolean): Promise<void> {
@@ -532,4 +867,8 @@ function isCode(error: unknown, code: string): boolean {
   }
   const message = (error as { message?: string }).message ?? "";
   return message.includes(code);
+}
+
+function asDay(value: Date): string {
+  return value.toISOString().slice(0, 10);
 }

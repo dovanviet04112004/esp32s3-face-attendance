@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { QUEUE } from "../../queue/queues.js";
+import { JOB, QUEUE } from "../../queue/queues.js";
 import { LeaveService } from "../leave/leave.service.js";
 import { NotificationsService } from "./notifications.service.js";
 
@@ -33,7 +33,7 @@ export class StaleRequestsService implements OnModuleInit {
     await this.queues[QUEUE.notify].upsertJobScheduler(
       "requests-stale-daily",
       { pattern: kDailyCron },
-      { name: "requests-stale", data: { type: "requests-stale" } },
+      { name: JOB.requestsStale, data: { type: JOB.requestsStale } },
     );
   }
 

@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsEmail, IsEnum, IsInt, IsOptional, IsString, MaxLength } from "class-validator";
 
-import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { PageMeta, PersonView, QueueQueryDto } from "../../leave/dto/queue.dto.js";
 import { PROFILE_FIELD_NAMES, type ProfileFieldName } from "../profile-fields.js";
 
 const STATES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
@@ -81,15 +81,68 @@ export class DecideProfileChangeDto {
   note?: string;
 }
 
-export class ListProfileChangesDto extends PaginationDto {
-  @ApiPropertyOptional({ enum: STATES })
+export class ListProfileChangesDto extends QueueQueryDto {
+  @ApiPropertyOptional({ enum: STATES, description: "PENDING is the desk's queue, without its own rows" })
   @IsOptional()
   @IsEnum(STATES)
   state?: (typeof STATES)[number];
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: PROFILE_FIELD_NAMES, description: "Which part of the record" })
+  @IsOptional()
+  @IsEnum(PROFILE_FIELD_NAMES)
+  field?: ProfileFieldName;
+
+  @ApiPropertyOptional({ description: "One person's changes, still inside what the viewer may see" })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   employeeId?: number;
+}
+
+export class ProfileChangeView {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  employeeId!: number;
+
+  @ApiProperty({ enum: PROFILE_FIELD_NAMES })
+  field!: string;
+
+  @ApiProperty({ type: Object, nullable: true, description: "The columns as they stood when asked" })
+  oldValue!: Record<string, string | null> | null;
+
+  @ApiProperty({ type: Object, description: "The columns asked for" })
+  newValue!: Record<string, string | null>;
+
+  @ApiProperty({ enum: STATES })
+  state!: string;
+
+  @ApiProperty({ nullable: true })
+  reason!: string | null;
+
+  @ApiProperty({ nullable: true })
+  note!: string | null;
+
+  @ApiProperty({ nullable: true })
+  askedById!: string | null;
+
+  @ApiProperty({ nullable: true })
+  decidedAt!: Date | null;
+
+  @ApiProperty()
+  createdAt!: Date;
+}
+
+export class ProfileChangeRowView extends ProfileChangeView {
+  @ApiProperty({ type: PersonView })
+  employee!: PersonView;
+
+  @ApiProperty({ description: "Whole days since it was asked for" })
+  waitedDays!: number;
+}
+
+export class ProfileChangePageView extends PageMeta {
+  @ApiProperty({ type: [ProfileChangeRowView] })
+  rows!: ProfileChangeRowView[];
 }

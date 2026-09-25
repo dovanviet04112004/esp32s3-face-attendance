@@ -1,26 +1,39 @@
+import { Body, Controller, Delete, Get, HttpStatus, Param, Post, Query, UseGuards } from "@nestjs/common";
 import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import type { NoticeChannel, NoticeKind, Notification } from "@prisma/client";
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
+import type { NoticeChannel, NoticeKind, Notification, NotificationPreference } from "@prisma/client";
 
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { SetPreferenceDto, SubscribeDto } from "./dto/notifications.dto.js";
+import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
+import { ErrorBody } from "../../common/dto/error-body.dto.js";
+import {
+  DoneView,
+  ListNoticesDto,
+  NoticeView,
+  PreferenceView,
+  SetPreferenceDto,
+  SubscribeDto,
+  SubscriptionView,
+  SweepView,
+  UnreadView,
+  UnsubscribeQueryDto,
+} from "./dto/notifications.dto.js";
 import { ContractAlertsService } from "./contract-alerts.service.js";
-import { NotificationsService, type Unread } from "./notifications.service.js";
+import { NotificationsService, type SubscriptionView as KeptSubscription, type Unread } from "./notifications.service.js";
 
 @ApiTags("notifications")
-@ApiBearerAuth()
+@ApiBearerAuth(API_AUTH.user)
+@ApiErrors(HttpStatus.UNAUTHORIZED)
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("notifications")
 export class NotificationsController {
@@ -30,28 +43,29 @@ export class NotificationsController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: "This viewer's notices, newest first" })
-  list(
-    @CurrentViewer() viewer: Viewer,
-    @Query("unread") unread?: string,
-  ): Promise<Notification[]> {
-    return this.notices.list(viewer.userId, unread === "true");
+  @ApiOperation({ summary: "This viewer's notices, newest first, fifty at most" })
+  @ApiOkResponse({ type: [NoticeView] })
+  list(@CurrentViewer() viewer: Viewer, @Query() query: ListNoticesDto): Promise<Notification[]> {
+    return this.notices.list(viewer.userId, query.unread === true);
   }
 
   @Get("unread")
   @ApiOperation({ summary: "How many are waiting, for the bell" })
+  @ApiOkResponse({ type: UnreadView })
   unread(@CurrentViewer() viewer: Viewer): Promise<Unread> {
     return this.notices.unread(viewer.userId);
   }
 
   @Post("read")
   @ApiOperation({ summary: "Mark everything read" })
+  @ApiCreatedResponse({ type: UnreadView })
   readAll(@CurrentViewer() viewer: Viewer): Promise<Unread> {
     return this.notices.markRead(viewer.userId);
   }
 
   @Post(":id/read")
   @ApiOperation({ summary: "Mark one read" })
+  @ApiCreatedResponse({ type: UnreadView })
   readOne(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<Unread> {
     return this.notices.markRead(viewer.userId, id);
   }
@@ -59,12 +73,14 @@ export class NotificationsController {
   @Post("sweep-contracts")
   @Roles("ADMIN")
   @ApiOperation({ summary: "Run the daily contract sweep now; it also runs at 07:00" })
+  @ApiCreatedResponse({ type: SweepView })
   sweep(): Promise<{ told: number }> {
     return this.alerts.sweep();
   }
 
   @Get("preferences")
-  @ApiOperation({ summary: "Four kinds across three channels, with the defaults filled in" })
+  @ApiOperation({ summary: "Six kinds across the two channels somebody delivers, defaults filled in" })
+  @ApiOkResponse({ type: [PreferenceView] })
   preferences(
     @CurrentViewer() viewer: Viewer,
   ): Promise<{ kind: NoticeKind; channel: NoticeChannel; on: boolean }[]> {
@@ -73,26 +89,32 @@ export class NotificationsController {
 
   @Post("preferences")
   @ApiOperation({ summary: "Turn one kind on one channel on or off" })
+  @ApiCreatedResponse({ type: PreferenceView })
   setPreference(
     @CurrentViewer() viewer: Viewer,
     @Body() body: SetPreferenceDto,
-  ): Promise<unknown> {
+  ): Promise<NotificationPreference> {
     return this.notices.setPreference(viewer.userId, body);
   }
 
   @Post("subscribe")
-  @ApiOperation({ summary: "Register this device for push" })
-  subscribe(@CurrentViewer() viewer: Viewer, @Body() body: SubscribeDto): Promise<unknown> {
+  @ApiOperation({ summary: "Register this device for push; an endpoint another account holds stays with it" })
+  @ApiCreatedResponse({ type: SubscriptionView })
+  @ApiBadRequestResponse({ type: ErrorBody, description: "PUSH_ENDPOINT_REFUSED: not a known push service" })
+  @ApiConflictResponse({ type: ErrorBody, description: "PUSH_ENDPOINT_TAKEN" })
+  subscribe(@CurrentViewer() viewer: Viewer, @Body() body: SubscribeDto): Promise<KeptSubscription> {
     return this.notices.subscribe(viewer.userId, body);
   }
 
   @Delete("subscribe")
   @ApiOperation({ summary: "Drop this device, leaving the person's others alone" })
+  @ApiOkResponse({ type: DoneView })
+  @ApiBadRequestResponse({ type: ErrorBody, description: "PUSH_ENDPOINT_REQUIRED" })
   async unsubscribe(
     @CurrentViewer() viewer: Viewer,
-    @Query("endpoint") endpoint: string,
+    @Query() query: UnsubscribeQueryDto,
   ): Promise<{ done: true }> {
-    await this.notices.unsubscribe(viewer, endpoint);
+    await this.notices.unsubscribe(viewer, query.endpoint);
     return { done: true };
   }
 }
