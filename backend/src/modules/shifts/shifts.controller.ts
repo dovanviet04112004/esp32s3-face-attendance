@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -34,6 +35,7 @@ import {
   AssignShiftDto,
   AssignmentView,
   CreateShiftDto,
+  HeldShiftView,
   ListAssignmentsDto,
   RosterDto,
   RosterPageView,
@@ -41,7 +43,7 @@ import {
   UpdateShiftDto,
 } from "./dto/shift.dto.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { ShiftsService, type PlannedDay, type RosteredAssignment } from "./shifts.service.js";
+import { ShiftsService, type HeldShift, type PlannedDay, type RosteredAssignment } from "./shifts.service.js";
 
 @ApiTags("shifts")
 @ApiBearerAuth(API_AUTH.user)
@@ -63,6 +65,15 @@ export class ShiftsController {
   @ApiOperation({ summary: "One person's month ahead: shift, holiday, days away" })
   roster(@Query() query: RosterDto, @CurrentViewer() viewer: Viewer): Promise<PlannedDay[]> {
     return this.shifts.roster(viewer, query);
+  }
+
+  @Get("people/:employeeId")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "Every shift one person has been put on, the latest start first" })
+  @ApiOkResponse({ type: [HeldShiftView] })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
+  heldBy(@Param("employeeId", ParseIntPipe) employeeId: number): Promise<HeldShift[]> {
+    return this.shifts.heldBy(employeeId);
   }
 
   @Get(":id")

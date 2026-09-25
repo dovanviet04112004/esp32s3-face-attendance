@@ -139,6 +139,10 @@ export class ShiftView {
   @ApiProperty() updatedAt!: string;
 }
 
+export class HeldShiftView extends AssignmentView {
+  @ApiProperty({ type: ShiftView }) shift!: ShiftView;
+}
+
 const FIRST_YEAR = 2020;
 const LAST_YEAR = 2100;
 

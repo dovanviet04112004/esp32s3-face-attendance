@@ -23,6 +23,10 @@ const ROSTERED = {
 
 export type RosteredAssignment = Prisma.ShiftAssignmentGetPayload<{ include: typeof ROSTERED }>;
 
+export type HeldShift = Prisma.ShiftAssignmentGetPayload<{ include: { shift: true } }>;
+
+// One person rarely holds more than a handful; the rest stay on the shift's own roster.
+const HELD_SHOWN = 50;
 const UNIQUE_VIOLATION = "P2002";
 const FOREIGN_KEY_VIOLATION = "P2003";
 const SATURDAY = 6;
@@ -185,6 +189,19 @@ export class ShiftsService {
       this.db.shiftAssignment.count({ where, take: COUNT_CEILING + 1 }),
     ]);
     return { rows, ...countedTo(found), next: nextCursor(rows, query.take, (row) => row.validFrom) };
+  }
+
+  /** Every shift one person has been put on, the latest start first (KEHOACH 9.15). */
+  async heldBy(employeeId: number): Promise<HeldShift[]> {
+    if ((await this.db.employee.count({ where: { id: employeeId } })) === 0) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+    return this.db.shiftAssignment.findMany({
+      where: { employeeId },
+      include: { shift: true },
+      orderBy: [{ validFrom: "desc" }, { id: "desc" }],
+      take: HELD_SHOWN,
+    });
   }
 
   /** Many people onto one shift from one date; anybody already there from that date is skipped. */

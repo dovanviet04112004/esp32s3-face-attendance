@@ -186,6 +186,26 @@ describe("my shift roster (e2e)", () => {
     assert.equal(days[0].shift?.name, EARLY);
   });
 
+  it("lists one person's shifts for the desk, the latest start first", async () => {
+    const res = await request(http).get(`/shifts/people/${employeeId}`).set("Authorization", `Bearer ${admin}`);
+    assert.equal(res.status, 200);
+    const held = res.body as { validFrom: string; validTo: string | null; shift: { name: string; startTime: string } }[];
+    assert.deepEqual(
+      held.map((one) => one.shift.name),
+      [LATE, EARLY],
+    );
+    assert.equal(held[0].validFrom.slice(0, 10), `${YEAR}-${MONTH}-16`);
+    assert.equal(held[0].shift.startTime, "14:00");
+  });
+
+  it("keeps one person's shift list to the desk", async () => {
+    const asEmployee = await request(http).get(`/shifts/people/${employeeId}`).set("Authorization", `Bearer ${mine}`);
+    assert.equal(asEmployee.status, 403, "an employee read the desk's shift list");
+    const nobody = await request(http).get("/shifts/people/2147483600").set("Authorization", `Bearer ${admin}`);
+    assert.equal(nobody.status, 404);
+    assert.equal(nobody.body.message, "EMPLOYEE_NOT_FOUND");
+  });
+
   it("refuses a month that is not a month", async () => {
     const res = await request(http)
       .get(`/shifts/roster?year=${YEAR}&month=13`)
