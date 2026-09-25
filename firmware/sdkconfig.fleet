@@ -1,0 +1,5 @@
+# Release builds only, on top of the fleet's profile: the bootloader rolls a bad
+# image back only when it reboots, so a panic or a starved task must reboot (KEHOACH 7.7).
+CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
+# CONFIG_ESP_SYSTEM_PANIC_GDBSTUB is not set
+CONFIG_ESP_TASK_WDT_PANIC=y

@@ -105,7 +105,7 @@ jobs:
           path: firmware
           command: >-
             idf.py -B build_release -D SDKCONFIG=build_release/sdkconfig
-            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.${{ vars.FLEET_PROFILE || 'dev' }};sdkconfig.secrets"
+            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.${{ vars.FLEET_PROFILE || 'dev' }};sdkconfig.fleet;sdkconfig.secrets"
             build
 
       - name: Publish the image
