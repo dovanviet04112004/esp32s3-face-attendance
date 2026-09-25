@@ -136,6 +136,7 @@ interface DeviceCounts {
 interface FleetUpdate {
   behind: string[];
   updating: string[];
+  offline: string[];
 }
 
 interface PileRow {
@@ -850,7 +851,7 @@ function FleetCard() {
     return null;
   }
   const held = counts.data;
-  const behind = new Set((fleet.data ?? []).flatMap((one) => [...one.behind, ...one.updating])).size;
+  const behind = new Set((fleet.data ?? []).flatMap((one) => [...one.behind, ...one.updating, ...one.offline])).size;
   const rows = held
     ? [
         { key: "online", label: t("fleetOnline"), value: t("fleetOf", { count: held.online, total: held.APPROVED }), href: "/devices?show=online" },

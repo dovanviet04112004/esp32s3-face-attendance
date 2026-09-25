@@ -594,7 +594,7 @@
     "releaseUpdateAll": "Update all ({count, number})",
     "releaseUpdateAllTitle": "Update the fleet to {target} {version}?",
     "releaseUpdateAllAsk": "Offer {target} {version} to {count, number} kiosks? Each fetches it straight away and restarts; punches made meanwhile are still recorded.",
-    "releaseUpdateAllDone": "Offered to {offered} kiosks{failed, plural, =0 {} other {; # could not be offered}}{busy, plural, =0 {} other {; # skipped while still updating}}.",
+    "releaseUpdateAllDone": "Offered to {offered} kiosks{failed, plural, =0 {} other {; # could not be offered}}{busy, plural, =0 {} other {; # skipped while still updating}}{offline, plural, =0 {} other {; # skipped while offline}}.",
     "releasesHistory": "Published releases",
     "releaseCleared": "file cleared",
     "otaNewer": "{target} {version} available",
@@ -664,7 +664,12 @@
     "clockDrift": "clock off",
     "clockAhead": "{amount} ahead",
     "clockBehind": "{amount} behind",
-    "clockInSync": "Matches the server"
+    "clockInSync": "Matches the server",
+    "otaTrial": "The kiosk is on {version} and trying it out; it confirms the release itself once recognition is ready. Keep it powered: a restart before then returns it to the previous release.",
+    "otaRolledBack": "The kiosk rolled back: {version} failed while on trial. Offering it again will most likely fail the same way.",
+    "otaOffline": "Kiosk is offline",
+    "releaseOffline": "{count, plural, one {# kiosk offline, cannot be offered} other {# kiosks offline, cannot be offered}}",
+    "releaseUpdateAllOffline": "{count, plural, one {# offline kiosk is left out this time; offer it again once it is back online.} other {# offline kiosks are left out this time; offer them again once they are back online.}}"
   },
   "shifts": {
     "title": "Shifts",

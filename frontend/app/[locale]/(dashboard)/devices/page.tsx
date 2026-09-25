@@ -34,6 +34,7 @@ interface FleetUpdate {
   release: Release;
   behind: string[];
   updating: string[];
+  offline: string[];
   changesRecognition: boolean;
 }
 
@@ -220,14 +221,21 @@ function Devices() {
   const updateAll = useMutation({
     mutationFn: async (update: FleetUpdate) =>
       (
-        await api.post<{ offered: string[]; failed: string[]; busy: string[] }>(
+        await api.post<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }>(
           `/releases/${update.release.releaseId}/offer`,
           update.changesRecognition ? { recapture: true } : {},
         )
       ).data,
     onSuccess: (done) => {
       setAsking(null);
-      notify.done(t("releaseUpdateAllDone", { offered: done.offered.length, failed: done.failed.length, busy: done.busy.length }));
+      notify.done(
+        t("releaseUpdateAllDone", {
+          offered: done.offered.length,
+          failed: done.failed.length,
+          busy: done.busy.length,
+          offline: done.offline.length,
+        }),
+      );
       void cache.invalidateQueries({ queryKey: ["releases"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
@@ -278,7 +286,9 @@ function Devices() {
   }
 
   const updatesFor = (deviceId: string): FleetUpdate[] =>
-    (fleet.data ?? []).filter((update) => update.behind.includes(deviceId) || update.updating.includes(deviceId));
+    (fleet.data ?? []).filter(
+      (update) => update.behind.includes(deviceId) || update.updating.includes(deviceId) || update.offline.includes(deviceId),
+    );
 
   const statusName = (status: Device["status"]) => t(`status${status}`);
 
@@ -377,10 +387,11 @@ function Devices() {
                       </span>
                       <span className="text-sm text-kumo-subtle">
                         {[
-                          update.behind.length > 0 || update.updating.length === 0
+                          update.behind.length > 0 || update.updating.length + update.offline.length === 0
                             ? t("releaseBehind", { count: update.behind.length })
                             : null,
                           update.updating.length > 0 ? t("releaseUpdating", { count: update.updating.length }) : null,
+                          update.offline.length > 0 ? t("releaseOffline", { count: update.offline.length }) : null,
                         ]
                           .filter(Boolean)
                           .join(" · ")}
@@ -570,6 +581,11 @@ function Devices() {
                   description={t("releaseRecaptureWarning")}
                   className="text-pretty"
                 />
+              ) : null}
+              {asking && asking.offline.length > 0 ? (
+                <p className="text-sm text-pretty text-kumo-subtle">
+                  {t("releaseUpdateAllOffline", { count: asking.offline.length })}
+                </p>
               ) : null}
               {asking ? (
                 <ul className="flex flex-col">

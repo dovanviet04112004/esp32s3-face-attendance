@@ -45,21 +45,24 @@ interface FleetUpdate {
   release: { releaseId: string; target: "FIRMWARE" | "MODELS"; version: string };
   behind: string[];
   updating: string[];
+  offline: string[];
   /** Kiosks this release moves to another recognition model; the server takes it for them only fleet-wide. */
   recapture: string[];
 }
 
-/** Read from the heartbeat and the kiosk's own OTA_FAILED event (KEHOACH 7.7). */
+/** Read from the heartbeat and the kiosk's own OTA_ROLLED_BACK and OTA_FAILED events (KEHOACH 7.7). */
 interface OfferStatus {
   releaseId: string;
   version: string;
   offeredAt: string;
-  state: "WAITING" | "INSTALLED" | "FAILED" | "INTERRUPTED" | "EXPIRED";
+  state: "WAITING" | "INSTALLED" | "TRIAL" | "ROLLED_BACK" | "FAILED" | "INTERRUPTED" | "EXPIRED";
   reason: string | null;
   busyUntil: string | null;
 }
 
 const STATUS_POLL_MS = 5_000;
+// The states the kiosk still moves out of on its own; the page follows them until they end.
+const MOVING: ReadonlySet<OfferStatus["state"] | undefined> = new Set(["WAITING", "TRIAL"]);
 const kInSyncMs = 1_000;
 // Where a skew reads better in the next unit up, largest first.
 const SKEW_UNITS: [unit: "day" | "hour" | "minute" | "second", ms: number, from: number][] = [
@@ -123,7 +126,7 @@ export default function DevicePage() {
     queryFn: async () => (await api.get<Device>(`/devices/${id}`)).data,
     // A kiosk mid-update drops offline and returns on the new version; the page follows it.
     refetchInterval: () =>
-      cache.getQueryData<OfferStatus | null>(["releases", "status", id])?.state === "WAITING" ? STATUS_POLL_MS : false,
+      MOVING.has(cache.getQueryData<OfferStatus | null>(["releases", "status", id])?.state) ? STATUS_POLL_MS : false,
   });
 
   const fleet = useQuery({
@@ -136,14 +139,13 @@ export default function DevicePage() {
     queryKey: ["releases", "status", id],
     enabled: role === "ADMIN",
     queryFn: async () => (await api.get<OfferStatus | null>(`/releases/status/${id}`)).data,
-    // Only a kiosk still fetching changes on its own; the others wait for the next press.
-    refetchInterval: (query) => (query.state.data?.state === "WAITING" ? STATUS_POLL_MS : false),
+    refetchInterval: (query) => (MOVING.has(query.state.data?.state) ? STATUS_POLL_MS : false),
   });
 
   const toldState = offerStatus.data?.state;
   const lastState = useRef(toldState);
   useEffect(() => {
-    if (lastState.current === "WAITING" && toldState && toldState !== "WAITING") {
+    if (MOVING.has(lastState.current) && toldState && toldState !== lastState.current) {
       void cache.invalidateQueries({ queryKey: ["devices", id] });
       void cache.invalidateQueries({ queryKey: ["releases", "fleet"] });
     }
@@ -217,37 +219,46 @@ export default function DevicePage() {
 
   const it = device.data;
   const title = it ? (it.name ?? t("unnamed")) : t("detailTitle");
-  const newer = (fleet.data ?? []).filter((update) => update.behind.includes(id) || update.updating.includes(id));
+  const newer = (fleet.data ?? []).filter(
+    (update) => update.behind.includes(id) || update.updating.includes(id) || update.offline.includes(id),
+  );
   const told = offerStatus.data;
   const busy = told?.busyUntil ? Date.parse(told.busyUntil) > now : false;
 
-  const toldText = told
-    ? told.state === "FAILED"
-      ? t("otaFailed", { version: told.version, reason: told.reason ?? common("empty") })
-      : told.state === "INSTALLED"
-        ? t("otaInstalled", { version: told.version })
-        : told.state === "INTERRUPTED"
-          ? t("otaInterrupted", { version: told.version })
-          : told.state === "EXPIRED"
-            ? t("otaExpired", { version: told.version })
-            : busy
-              ? t("otaBusy", {
-                  version: told.version,
-                  seconds: Math.max(0, Math.round((now - Date.parse(told.offeredAt)) / 1000)),
-                })
-              : t("otaStalled", { version: told.version, at: format.dateTime(new Date(told.offeredAt), "medium") })
-    : null;
-  const toldVariant = told?.state === "FAILED" ? "error" : told?.state === "INSTALLED" || busy ? "default" : "alert";
-  const toldIcon =
-    told?.state === "FAILED" ? (
-      <WarningCircleIcon weight="fill" />
-    ) : told?.state === "INSTALLED" ? (
-      <CheckCircleIcon weight="fill" />
-    ) : busy ? (
-      <Loader size="sm" />
-    ) : (
-      <WarningIcon weight="fill" />
-    );
+  const broke = told?.state === "FAILED" || told?.state === "ROLLED_BACK";
+  const going = busy || told?.state === "TRIAL";
+  const sentenceOf = (offer: OfferStatus): string => {
+    const version = offer.version;
+    switch (offer.state) {
+      case "FAILED":
+        return t("otaFailed", { version, reason: offer.reason ?? common("empty") });
+      case "ROLLED_BACK":
+        return t("otaRolledBack", { version });
+      case "INSTALLED":
+        return t("otaInstalled", { version });
+      case "TRIAL":
+        return t("otaTrial", { version });
+      case "INTERRUPTED":
+        return t("otaInterrupted", { version });
+      case "EXPIRED":
+        return t("otaExpired", { version });
+      case "WAITING":
+        return busy
+          ? t("otaBusy", { version, seconds: Math.max(0, Math.round((now - Date.parse(offer.offeredAt)) / 1000)) })
+          : t("otaStalled", { version, at: format.dateTime(new Date(offer.offeredAt), "medium") });
+    }
+  };
+  const toldText = told ? sentenceOf(told) : null;
+  const toldVariant = broke ? "error" : told?.state === "INSTALLED" || going ? "default" : "alert";
+  const toldIcon = broke ? (
+    <WarningCircleIcon weight="fill" />
+  ) : told?.state === "INSTALLED" ? (
+    <CheckCircleIcon weight="fill" />
+  ) : going ? (
+    <Loader size="sm" />
+  ) : (
+    <WarningIcon weight="fill" />
+  );
 
   return (
     <>
@@ -377,15 +388,17 @@ export default function DevicePage() {
                             variant="secondary"
                             icon={ArrowsClockwiseIcon}
                             loading={offer.isPending && offer.variables?.release.releaseId === update.release.releaseId}
-                            disabled={offer.isPending || busy || fleetOnly || it?.status !== "APPROVED"}
+                            disabled={offer.isPending || busy || fleetOnly || it?.status !== "APPROVED" || !it?.online}
                             aria-describedby={fleetOnly ? hintId : undefined}
                             onClick={() => offer.mutate(update)}
                           >
                             {busy
                               ? t("otaUpdating")
-                              : told?.state === "WAITING" && told.releaseId === update.release.releaseId
-                                ? t("otaRetry")
-                                : t("otaUpdate")}
+                              : !it?.online
+                                ? t("otaOffline")
+                                : told?.state === "WAITING" && told.releaseId === update.release.releaseId
+                                  ? t("otaRetry")
+                                  : t("otaUpdate")}
                           </Button>
                         </li>
                       );

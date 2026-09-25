@@ -594,7 +594,7 @@
     "releaseUpdateAll": "Cập nhật cả đội ({count, number})",
     "releaseUpdateAllTitle": "Cập nhật cả đội lên {target} {version}?",
     "releaseUpdateAllAsk": "Mời {count, number} máy cập nhật lên {target} {version}? Mỗi máy tải ngay rồi tự khởi động lại; lượt chấm công trong lúc ấy vẫn được ghi.",
-    "releaseUpdateAllDone": "Đã mời {offered} máy{failed, plural, =0 {} other {, # máy không mời được}}{busy, plural, =0 {} other {, # máy đang cập nhật nên bỏ qua}}.",
+    "releaseUpdateAllDone": "Đã mời {offered} máy{failed, plural, =0 {} other {, # máy không mời được}}{busy, plural, =0 {} other {, # máy đang cập nhật nên bỏ qua}}{offline, plural, =0 {} other {, # máy offline nên bỏ qua}}.",
     "releasesHistory": "Các bản đã phát hành",
     "releaseCleared": "đã dọn file",
     "otaNewer": "Có bản {target} {version}",
@@ -664,7 +664,12 @@
     "clockDrift": "đồng hồ lệch",
     "clockAhead": "Nhanh {amount}",
     "clockBehind": "Chậm {amount}",
-    "clockInSync": "Khớp giờ máy chủ"
+    "clockInSync": "Khớp giờ máy chủ",
+    "otaTrial": "Máy đã lên bản {version} và đang chạy thử; máy tự xác nhận khi nhận diện đã sẵn sàng. Đừng tắt máy lúc này: khởi động lại trước khi xác nhận là máy quay về bản cũ.",
+    "otaRolledBack": "Máy bị quay về bản cũ: bản {version} hỏng trong lúc chạy thử. Mời lại bản này nhiều khả năng sẽ hỏng lần nữa.",
+    "otaOffline": "Máy đang offline",
+    "releaseOffline": "{count, plural, other {# máy offline, chưa mời được}}",
+    "releaseUpdateAllOffline": "{count, plural, other {# máy đang offline sẽ không được mời lần này; mời lại khi máy online.}}"
   },
   "shifts": {
     "title": "Ca làm",
