@@ -55,6 +55,7 @@
     /* A Kumo tab sits in a fixed-height track that clips it, so tabs keep their own height. */
     button:not([role="tab"]),
     [role="button"],
+    [data-kumo-component="LinkButton"],
     input:not([type="checkbox"], [type="radio"]),
     select {
       min-height: 2.75rem;
