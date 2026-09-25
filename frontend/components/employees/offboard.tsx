@@ -1,14 +1,15 @@
 "use client";
 
 import { Banner, Input, LayerDialog } from "@cloudflare/kumo";
-import { WarningCircleIcon, WarningIcon } from "@phosphor-icons/react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { CalendarXIcon, WarningCircleIcon, WarningIcon } from "@phosphor-icons/react";
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 
 import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
+import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 import { dayOnly } from "@/lib/format";
@@ -17,28 +18,80 @@ export interface Offboarding {
   employeeId: number;
   code: string;
   leaveDate: string;
+  closed: boolean;
   assetsOutstanding: { code: string; name: string }[];
   requestsPending: number;
   advancesOutstanding: number;
 }
 
+function dayOf(at: Date): string {
+  const pad = (one: number) => String(one).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+// The reader's calendar day; the server decides against APP_TIMEZONE and answers `closed` (KEHOACH 9.14).
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return dayOf(new Date());
+}
+
+function dayAfter(day: string): string {
+  const next = dayOnly(day);
+  next.setDate(next.getDate() + 1);
+  return dayOf(next);
 }
 
 export function isOutstanding(left: Offboarding): boolean {
   return left.assetsOutstanding.length > 0 || left.requestsPending > 0 || left.advancesOutstanding > 0;
 }
 
+/** A person still working whose last day is set: "Leaving 27/9", with the year only when it is not this one. */
+export function LeavingPill({ leaveDate }: { leaveDate: string }) {
+  const t = useTranslations("employees");
+  const format = useFormatter();
+  const day = dayOnly(leaveDate);
+  const sameYear = day.getFullYear() === new Date().getFullYear();
+  const shown = format.dateTime(day, { day: "numeric", month: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
+  return <StatePill tone="waiting">{t("statusLeaving", { day: shown })}</StatePill>;
+}
+
+/** What a scheduled leaving does and when, above whatever tab of the profile is open. */
+export function LeavingBanner({ leaveDate, actions }: { leaveDate: string; actions?: ReactNode }) {
+  const t = useTranslations("employees");
+  const format = useFormatter();
+  const dayText = (day: string) => format.dateTime(dayOnly(day), "day");
+  return (
+    <Banner
+      icon={<CalendarXIcon weight="fill" />}
+      title={t("leavingTitle", { day: dayText(leaveDate) })}
+      description={
+        <>
+          {t("leavingLead", { next: dayText(dayAfter(leaveDate)) })}
+          {actions ? <span className="mt-2 flex flex-wrap gap-2">{actions}</span> : null}
+        </>
+      }
+    />
+  );
+}
+
+function refreshAfterLeaving(cache: QueryClient, employeeId: number): void {
+  void cache.invalidateQueries({ queryKey: ["employees"] });
+  void cache.invalidateQueries({ queryKey: ["users"] });
+  void cache.invalidateQueries({ queryKey: ["assets"] });
+  void cache.invalidateQueries({ queryKey: ["enrollments", "employee", employeeId] });
+  void cache.invalidateQueries({ queryKey: ["biometric-consents", employeeId] });
+  void cache.invalidateQueries({ queryKey: ["reports", "attention"] });
+}
+
 /** What a leaver still holds or has pending, shown once the offboarding is written. */
 export function Outstanding({ left, action }: { left: Offboarding; action?: ReactNode }) {
   const t = useTranslations("employees");
   const format = useFormatter();
+  const day = format.dateTime(dayOnly(left.leaveDate), "day");
   return (
     <Banner
       variant="alert"
       icon={<WarningIcon weight="fill" />}
-      title={t("offboardLeftover", { day: format.dateTime(dayOnly(left.leaveDate), "day") })}
+      title={left.closed ? t("offboardLeftover", { day }) : t("offboardLeftoverAhead", { day })}
       description={
         <ul className="mt-1 flex list-disc flex-col gap-0.5 ps-5">
           {left.assetsOutstanding.length > 0 ? (
@@ -56,16 +109,36 @@ export function Outstanding({ left, action }: { left: Offboarding; action?: Reac
   );
 }
 
-/** The offboarding dialog: it locks the account and erases the face on every kiosk (KEHOACH 9.14). */
+/** Calls off a scheduled leaving; the record stays open and the person keeps working. */
+export function useCancelLeaving(employeeId: number, fullName: string) {
+  const t = useTranslations("employees");
+  const cache = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: () => api.delete(`/employees/${employeeId}/offboard`),
+    onSuccess: () => {
+      notify.done(t("offboardCancelled", { name: fullName }));
+      refreshAfterLeaving(cache, employeeId);
+    },
+    onError: notify.failed,
+  });
+}
+
+/**
+ * Records a last day, or moves the one scheduled, saying what the chosen day does: today or
+ * earlier closes the record now, a later day only schedules it (KEHOACH 9.14).
+ */
 export function Offboard({
   employeeId,
   fullName,
+  scheduled,
   open,
   onOpenChange,
   onDone,
 }: {
   employeeId: number;
   fullName: string;
+  scheduled: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDone: (left: Offboarding) => void;
@@ -77,34 +150,46 @@ export function Offboard({
   const faultOf = useFault();
   const notify = useNotify();
   const optional = useOptional();
+  const moving = scheduled !== null;
+  const startDay = () => (scheduled ? scheduled.slice(0, 10) : today());
 
   const [fault, setFault] = useState<string | null>(null);
-  const [leaveDate, setLeaveDate] = useState(today);
+  const [leaveDate, setLeaveDate] = useState(startDay);
   const [reason, setReason] = useState("");
+
+  const closesNow = leaveDate !== "" && leaveDate <= today();
+  const dayText = (day: string) => format.dateTime(dayOnly(day), "day");
 
   function close(): void {
     setFault(null);
-    setLeaveDate(today());
+    setLeaveDate(startDay());
     setReason("");
     onOpenChange(false);
   }
 
   const leave = useMutation({
     mutationFn: async () =>
-      (await api.post<Offboarding>(`/employees/${employeeId}/offboard`, { leaveDate, reason: reason || undefined })).data,
+      moving
+        ? (await api.patch<Offboarding>(`/employees/${employeeId}/offboard`, { leaveDate })).data
+        : (await api.post<Offboarding>(`/employees/${employeeId}/offboard`, { leaveDate, reason: reason || undefined })).data,
     onSuccess: (left) => {
       close();
-      notify.done(t("offboardDone", { day: format.dateTime(dayOnly(left.leaveDate), "day") }));
+      const day = dayText(left.leaveDate);
+      if (left.closed) {
+        notify.done(t("offboardDone", { day }));
+      } else {
+        notify.done(moving ? t("offboardMoved", { day }) : t("offboardScheduled", { name: fullName, day }));
+      }
       onDone(left);
-      void cache.invalidateQueries({ queryKey: ["employees"] });
-      void cache.invalidateQueries({ queryKey: ["users"] });
-      void cache.invalidateQueries({ queryKey: ["assets"] });
-      void cache.invalidateQueries({ queryKey: ["enrollments", "employee", employeeId] });
-      void cache.invalidateQueries({ queryKey: ["biometric-consents", employeeId] });
-      void cache.invalidateQueries({ queryKey: ["reports", "attention"] });
+      refreshAfterLeaving(cache, employeeId);
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
+
+  const lead = closesNow
+    ? t("offboardNowLead")
+    : t("offboardLaterLead", { name: fullName, day: dayText(leaveDate), next: dayText(dayAfter(leaveDate)) });
+  const act = closesNow ? t("offboardActionNow") : moving ? t("offboardMoveAction") : t("offboardActionLater");
 
   return (
     <LayerDialog.Alert
@@ -113,8 +198,10 @@ export function Offboard({
       dismissDisabled={leave.isPending}
     >
       <LayerDialog.Content closeLabel={common("close")}>
-        <LayerDialog.Title>{t("offboardTitleOf", { name: fullName })}</LayerDialog.Title>
-        <LayerDialog.Description>{t("offboardWarn")}</LayerDialog.Description>
+        <LayerDialog.Title>
+          {moving ? t("offboardMoveTitle", { name: fullName }) : t("offboardTitleOf", { name: fullName })}
+        </LayerDialog.Title>
+        <LayerDialog.Description>{leaveDate ? lead : t("offboardDay")}</LayerDialog.Description>
         <LayerDialog.Body>
           <form
             id="offboard"
@@ -126,18 +213,26 @@ export function Offboard({
             }}
           >
             <DateField label={t("offboardDay")} required value={leaveDate} onChange={setLeaveDate} />
-            <Input
-              label={optional(t("offboardReason"))}
-              maxLength={500}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-            />
+            {moving ? null : (
+              <Input
+                label={optional(t("offboardReason"))}
+                maxLength={500}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+              />
+            )}
           </form>
           {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null}
         </LayerDialog.Body>
         <LayerDialog.Actions dismissLabel={common("cancel")}>
-          <LayerDialog.Actions.Primary type="submit" form="offboard" variant="destructive" loading={leave.isPending}>
-            {t("offboardAction")}
+          <LayerDialog.Actions.Primary
+            type="submit"
+            form="offboard"
+            variant={closesNow ? "destructive" : "primary"}
+            disabled={leaveDate === ""}
+            loading={leave.isPending}
+          >
+            {act}
           </LayerDialog.Actions.Primary>
         </LayerDialog.Actions>
       </LayerDialog.Content>

@@ -260,7 +260,6 @@
     "offboardAction": "Offboard",
     "offboardDay": "Last working day",
     "offboardReason": "Reason",
-    "offboardWarn": "The login is locked at once. The face template is erased on every kiosk.",
     "offboardDone": "Recorded as leaving on {day}",
     "offboardAssets": "Still holding {count, number} assets",
     "offboardRequests": "{count, number} requests still undecided",
@@ -433,7 +432,22 @@
     "pickNoMatchHint": "Try the employee code, or fewer letters.",
     "pickNobody": "Nobody is working here yet",
     "pickNobodyHint": "Add people on the Directory page, then pick again.",
-    "pickMore": "Showing the first few of {total} people; type a code or a name to search."
+    "pickMore": "Showing the first few of {total} people; type a code or a name to search.",
+    "statusLeaving": "Leaving {day}",
+    "offboardNowLead": "That last day is today or already past, so the record closes now: the login stops at once and the face is erased from every kiosk.",
+    "offboardLaterLead": "{name} keeps working until the end of {day}; the login and the kiosks keep working. The record closes early on {next}: the login is then locked and the face erased from every kiosk. Until then you can still change or cancel it.",
+    "offboardActionNow": "Close the record now",
+    "offboardActionLater": "Schedule the leaving",
+    "offboardScheduled": "Scheduled: {name} works until the end of {day}",
+    "offboardMove": "Change the last day",
+    "offboardMoveTitle": "Change {name}'s last day",
+    "offboardMoveAction": "Save the new day",
+    "offboardMoved": "Last day moved to {day}",
+    "offboardCancel": "Cancel the leaving",
+    "offboardCancelled": "Leaving cancelled; {name} keeps working",
+    "offboardLeftoverAhead": "Leaving {day}, with loose ends to settle before then",
+    "leavingTitle": "Working until the end of {day}",
+    "leavingLead": "The record closes by itself early on {next}: the login is then locked and the face erased from every kiosk."
   },
   "attendance": {
     "title": "Attendance",
@@ -1416,7 +1430,10 @@
     "UNAUTHENTICATED": "You are signed out. Sign in again.",
     "FORBIDDEN_ROLE": "Your role does not allow this.",
     "BODY_INVALID": "What was sent could not be read. Reload the page and try again.",
-    "BODY_TOO_LARGE": "What was sent is too large. Split it up and send again."
+    "BODY_TOO_LARGE": "What was sent is too large. Split it up and send again.",
+    "LEAVING_SCHEDULED": "This person already has a leaving scheduled. Change or cancel it on their profile.",
+    "LEAVING_NOT_SCHEDULED": "This person has no scheduled leaving to change or cancel.",
+    "LEAVING_CLOSED": "The record has closed, so the leaving can no longer be changed or cancelled."
   },
   "search": {
     "placeholder": "Search people, departments, requests, pages…",
@@ -2183,7 +2200,7 @@
   "auditActions": {
     "employee_create": "Employee added",
     "employee_update": "Employee record edited",
-    "employee_deactivate": "Employee retired",
+    "employee_deactivate": "Record closed on leaving",
     "employee_onboard": "Onboarded",
     "employee_offboard": "Offboarded",
     "user_create": "Account opened",
@@ -2264,7 +2281,9 @@
     "payroll_bonus": "Bonus amounts loaded",
     "timesheet_correct": "Day corrected",
     "device_approve": "Kiosk approved",
-    "device_revoke": "Kiosk revoked"
+    "device_revoke": "Kiosk revoked",
+    "employee_leavingMove": "Last day changed",
+    "employee_leavingCancel": "Leaving cancelled"
   },
   "catalogues": {
     "code": "Code",

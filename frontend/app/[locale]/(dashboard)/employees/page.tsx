@@ -12,6 +12,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Suspense, useEffect, useRef, useState, type ChangeEvent } from "react";
 
+import { LeavingPill } from "@/components/employees/offboard";
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { DateField } from "@/components/ui/date-field";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
@@ -31,6 +32,7 @@ interface Employee {
   fullName: string;
   hireDate: string | null;
   active: boolean;
+  leaveDate: string | null;
   department: { id: string; name: string } | null;
   jobTitle: { id: string; name: string } | null;
   manager: { id: number; code: string; fullName: string } | null;
@@ -303,11 +305,23 @@ function Directory() {
     return left < 0 ? t("overdue") : due("daysLeft", { count: left });
   };
 
+  const statusShown = url.active === "" && !ending;
+  const leavesOn = (row: Employee) => (row.active ? row.leaveDate : null);
   const columns: Column<Employee>[] = [
     {
       id: "person",
       header: t("employee"),
-      cell: (row) => <PersonCell name={row.fullName} code={row.code} />,
+      cell: (row) => {
+        const leaving = statusShown ? null : leavesOn(row);
+        return leaving ? (
+          <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <PersonCell name={row.fullName} code={row.code} />
+            <LeavingPill leaveDate={leaving} />
+          </span>
+        ) : (
+          <PersonCell name={row.fullName} code={row.code} />
+        );
+      },
     },
     ...(ending
       ? [
@@ -354,14 +368,19 @@ function Directory() {
       cell: (row) =>
         row.hireDate ? <span className="tabular-nums">{format.dateTime(dayOnly(row.hireDate), "day")}</span> : common("empty"),
     },
-    ...(url.active === "" && !ending
+    ...(statusShown
       ? [
           {
             id: "status",
             header: t("status"),
-            cell: (row: Employee) => (
-              <StatePill tone={row.active ? "good" : "idle"}>{row.active ? t("statusWorking") : t("statusLeft")}</StatePill>
-            ),
+            cell: (row: Employee) => {
+              const leaving = leavesOn(row);
+              return leaving ? (
+                <LeavingPill leaveDate={leaving} />
+              ) : (
+                <StatePill tone={row.active ? "good" : "idle"}>{row.active ? t("statusWorking") : t("statusLeft")}</StatePill>
+              );
+            },
           },
         ]
       : []),

@@ -260,7 +260,6 @@
     "offboardAction": "Cho nghỉ việc",
     "offboardDay": "Ngày làm việc cuối",
     "offboardReason": "Lý do",
-    "offboardWarn": "Tài khoản đăng nhập bị khoá ngay. Mẫu khuôn mặt bị xoá trên mọi kiosk.",
     "offboardDone": "Đã ghi nhận nghỉ việc ngày {day}",
     "offboardAssets": "Còn giữ {count, number} tài sản",
     "offboardRequests": "Còn {count, number} đơn chưa quyết",
@@ -433,7 +432,22 @@
     "pickNoMatchHint": "Thử gõ mã nhân viên, hoặc bớt vài chữ.",
     "pickNobody": "Chưa có ai đang làm",
     "pickNobodyHint": "Thêm nhân viên ở trang Danh bạ rồi chọn lại.",
-    "pickMore": "Đang hiện vài người đầu trong {total} người; gõ mã hoặc tên để tìm."
+    "pickMore": "Đang hiện vài người đầu trong {total} người; gõ mã hoặc tên để tìm.",
+    "statusLeaving": "Nghỉ từ {day}",
+    "offboardNowLead": "Ngày cuối là hôm nay hoặc đã qua, nên hồ sơ đóng ngay: đăng nhập bị khoá từ bây giờ và mẫu khuôn mặt bị xoá trên mọi kiosk.",
+    "offboardLaterLead": "{name} vẫn làm việc đến hết ngày {day}, đăng nhập và kiosk vẫn chạy. Hồ sơ đóng đầu ngày {next}: khi ấy đăng nhập bị khoá và mẫu khuôn mặt bị xoá trên mọi kiosk. Trước lúc đó bạn vẫn đổi hoặc huỷ được.",
+    "offboardActionNow": "Cho nghỉ ngay",
+    "offboardActionLater": "Hẹn ngày nghỉ",
+    "offboardScheduled": "Đã hẹn: {name} làm đến hết ngày {day}",
+    "offboardMove": "Đổi ngày nghỉ",
+    "offboardMoveTitle": "Đổi ngày làm việc cuối của {name}",
+    "offboardMoveAction": "Lưu ngày mới",
+    "offboardMoved": "Đã đổi ngày làm việc cuối thành {day}",
+    "offboardCancel": "Huỷ nghỉ việc",
+    "offboardCancelled": "Đã huỷ nghỉ việc, {name} tiếp tục làm",
+    "offboardLeftoverAhead": "Nghỉ từ {day}, còn việc phải xong trước ngày ấy",
+    "leavingTitle": "Làm việc đến hết ngày {day}",
+    "leavingLead": "Hồ sơ tự đóng đầu ngày {next}: khi ấy đăng nhập bị khoá và mẫu khuôn mặt bị xoá trên mọi kiosk."
   },
   "attendance": {
     "title": "Chấm công",
@@ -1416,7 +1430,10 @@
     "UNAUTHENTICATED": "Phiên đăng nhập đã hết, đăng nhập lại.",
     "FORBIDDEN_ROLE": "Vai trò của bạn không được làm việc này.",
     "BODY_INVALID": "Dữ liệu gửi lên bị hỏng. Tải lại trang rồi thử lại.",
-    "BODY_TOO_LARGE": "Dữ liệu gửi lên quá lớn. Chia nhỏ rồi gửi lại."
+    "BODY_TOO_LARGE": "Dữ liệu gửi lên quá lớn. Chia nhỏ rồi gửi lại.",
+    "LEAVING_SCHEDULED": "Người này đã có lịch nghỉ việc. Đổi hoặc huỷ lịch ấy trên hồ sơ.",
+    "LEAVING_NOT_SCHEDULED": "Người này không có lịch nghỉ việc nào để đổi hay huỷ.",
+    "LEAVING_CLOSED": "Hồ sơ đã đóng vì nghỉ việc nên không đổi hay huỷ được nữa."
   },
   "search": {
     "placeholder": "Tìm người, phòng ban, đơn, trang…",
@@ -2183,7 +2200,7 @@
   "auditActions": {
     "employee_create": "Thêm nhân viên",
     "employee_update": "Sửa hồ sơ nhân viên",
-    "employee_deactivate": "Ngừng nhân viên",
+    "employee_deactivate": "Đóng hồ sơ nghỉ việc",
     "employee_onboard": "Nhận việc",
     "employee_offboard": "Nghỉ việc",
     "user_create": "Mở tài khoản",
@@ -2264,7 +2281,9 @@
     "payroll_bonus": "Nạp khoản thưởng",
     "timesheet_correct": "Sửa ngày công",
     "device_approve": "Duyệt kiosk",
-    "device_revoke": "Thu hồi kiosk"
+    "device_revoke": "Thu hồi kiosk",
+    "employee_leavingMove": "Đổi ngày nghỉ việc",
+    "employee_leavingCancel": "Huỷ nghỉ việc"
   },
   "catalogues": {
     "code": "Mã",

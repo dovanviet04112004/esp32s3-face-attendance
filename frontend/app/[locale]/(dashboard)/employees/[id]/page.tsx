@@ -3,6 +3,8 @@
 import { Banner, Button, Empty, LayerCard, LayerDialog, LinkButton, Select } from "@cloudflare/kumo";
 import {
   ArrowClockwiseIcon,
+  ArrowUUpLeftIcon,
+  CalendarBlankIcon,
   EnvelopeSimpleIcon,
   KeyIcon,
   PlusIcon,
@@ -21,7 +23,15 @@ import { Assets } from "@/components/employees/assets";
 import { Checklist } from "@/components/employees/checklist";
 import { Contracts } from "@/components/employees/contracts";
 import { Files } from "@/components/employees/files";
-import { Offboard, Outstanding, isOutstanding, type Offboarding } from "@/components/employees/offboard";
+import {
+  LeavingBanner,
+  LeavingPill,
+  Offboard,
+  Outstanding,
+  isOutstanding,
+  useCancelLeaving,
+  type Offboarding,
+} from "@/components/employees/offboard";
 import { Pay } from "@/components/employees/pay";
 import { EMPTY_DRAFT, EmployeeForm, type DepartmentChoice, type EmployeeDraft } from "@/components/forms/employee-form";
 import { ActionMenu, DataTable, type Column } from "@/components/tables/data-table";
@@ -72,6 +82,7 @@ interface Employee {
   department: Named | null;
   jobTitle: Named | null;
   active: boolean;
+  leaveDate: string | null;
   personalEmail: string | null;
   phone: string | null;
   hireDate: string | null;
@@ -328,6 +339,8 @@ export default function EmployeePage() {
     onError: notify.failed,
   });
 
+  const cancelLeaving = useCancelLeaving(id, employee.data?.fullName ?? "");
+
   const withdraw = useMutation({
     mutationFn: async () => (await api.post<{ devices: number }>(`/biometric-consents/${id}/withdraw`, {})).data,
     onSuccess: (done) => {
@@ -377,7 +390,22 @@ export default function EmployeePage() {
   const person = employee.data;
   const skipped = (search.get("skipped") ?? "").split(",").filter(Boolean);
   const working = person.active;
-  const statePill = <StatePill tone={working ? "good" : "idle"}>{working ? t("statusWorking") : t("statusLeft")}</StatePill>;
+  const leavesOn = working ? person.leaveDate : null;
+  const statePill = leavesOn ? (
+    <LeavingPill leaveDate={leavesOn} />
+  ) : (
+    <StatePill tone={working ? "good" : "idle"}>{working ? t("statusWorking") : t("statusLeft")}</StatePill>
+  );
+  const leavingActions = [
+    { key: "move", label: t("offboardMove"), icon: CalendarBlankIcon, onSelect: () => setLeaving(true) },
+    {
+      key: "cancel",
+      label: t("offboardCancel"),
+      icon: ArrowUUpLeftIcon,
+      disabled: cancelLeaving.isPending,
+      onSelect: () => cancelLeaving.mutate(undefined, { onSuccess: () => setLeft(null) }),
+    },
+  ];
   const lead = [person.code, person.department?.name, person.jobTitle?.name].filter(Boolean).join(" · ");
   const standingIds = new Set((standing.data ?? []).map((one) => one.id));
   const free = (devices.data ?? []).filter((one) => !standingIds.has(one.id));
@@ -679,7 +707,11 @@ export default function EmployeePage() {
           writesPeople && working ? (
             <ActionMenu
               label={common("actions")}
-              actions={[{ key: "offboard", label: t("offboardAction"), icon: UserMinusIcon, danger: true, onSelect: () => setLeaving(true) }]}
+              actions={
+                leavesOn
+                  ? leavingActions
+                  : [{ key: "offboard", label: t("offboardAction"), icon: UserMinusIcon, danger: true, onSelect: () => setLeaving(true) }]
+              }
             />
           ) : undefined
         }
@@ -715,6 +747,29 @@ export default function EmployeePage() {
               action={<Banner.Action onClick={() => pick(tab)}>{common("close")}</Banner.Action>}
             />
           ) : null}
+          {leavesOn ? (
+            <LeavingBanner
+              leaveDate={leavesOn}
+              actions={
+                writesPeople ? (
+                  <>
+                    <Button variant="secondary" size="sm" icon={CalendarBlankIcon} onClick={() => setLeaving(true)}>
+                      {t("offboardMove")}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={ArrowUUpLeftIcon}
+                      loading={cancelLeaving.isPending}
+                      onClick={() => cancelLeaving.mutate(undefined, { onSuccess: () => setLeft(null) })}
+                    >
+                      {t("offboardCancel")}
+                    </Button>
+                  </>
+                ) : undefined
+              }
+            />
+          ) : null}
           {left && isOutstanding(left) ? (
             <Outstanding
               left={left}
@@ -730,7 +785,15 @@ export default function EmployeePage() {
       </PageLayout>
 
       {writesPeople ? (
-        <Offboard employeeId={id} fullName={person.fullName} open={leaving} onOpenChange={setLeaving} onDone={setLeft} />
+        <Offboard
+          key={leavesOn ?? "open"}
+          employeeId={id}
+          fullName={person.fullName}
+          scheduled={leavesOn}
+          open={leaving}
+          onOpenChange={setLeaving}
+          onDone={setLeft}
+        />
       ) : null}
 
       <LayerDialog.Root open={assigning} onOpenChange={setAssigning} dismissDisabled={assign.isPending}>

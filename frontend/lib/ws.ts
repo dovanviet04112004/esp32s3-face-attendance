@@ -62,7 +62,7 @@ const SPILLS: Record<string, string[]> = {
   certificates: ["requests"],
   employees: ["search"],
   onboard: ["checklist", "checklists"],
-  offboard: ["checklist", "checklists", "assets", "contracts", "users"],
+  offboard: ["checklist", "checklists", "assets", "contracts", "users", "enrollments"],
   "checklist-tasks": ["checklist", "checklists"],
   checklists: ["checklist"],
   org: ["employees", "departments"],
