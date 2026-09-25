@@ -4683,10 +4683,23 @@ Cloudflare nuôi và repo chỉ import. Ba luật đi kèm:
   `#f6821f`, không font thương mại của cloudflare.com. Chữ là Inter (OFL), nạp qua `next/font`
   cùng bộ ký tự tiếng Việt.
 
-`components/ui/` vì thế **không viết lại primitive nào Kumo đã có**. Nó chỉ giữ thứ Kumo không có
-hoặc thứ phải buộc vào quy ước của repo: bốn tông trạng thái của §9.12 luật 2 ánh xạ lên `Badge`,
-đầu trang một khuôn, hành động neo đáy và bộ lọc thành tấm trượt ở màn hẹp (§9.21.2), nút chọn
-giao diện sáng tối, và một hook báo kết quả thao tác bằng toast.
+`components/ui/` vì thế **không viết lại primitive nào Kumo đã có**. Trang import thẳng `Button`,
+`Input`, `Select`, `Checkbox`, `Switch`, `DatePicker`, `Combobox`, `Table`, `Tabs`, `LayerCard`,
+`LayerDialog`, `Badge`, `Banner`, `Empty`, `Breadcrumbs`, `DropdownMenu`, `Toolbar` từ
+`@cloudflare/kumo`, không qua lớp bọc nào. Ô chọn là `Select` của Kumo với bảng lựa chọn nổi,
+không phải `<select>` của hệ điều hành; ô nhập mang nhãn, gợi ý và lỗi qua chính prop của nó.
+`LayerDialog` là hộp thoại duy nhất: nó tự thành tấm trượt từ đáy trên điện thoại, nên §9.21.2
+không cần component riêng. `components/ui/` chỉ giữ những thứ Kumo không có hoặc phải buộc vào
+quy ước của repo:
+
+| File | Giữ gì | Vì sao Kumo không đủ |
+|---|---|---|
+| `page.tsx` | đầu trang và bố cục hai cột có cột phải dính | là hai *block* `PageHeader` và `ResourceListPage` của Kumo: Kumo phát block để repo chép về và giữ, không phát trong gói |
+| `pill.tsx` | bốn tông trạng thái của §9.12 luật 2 ánh xạ lên `Badge` | tông là quy ước của repo, `Badge` có mười bảy màu |
+| `notify.ts` | một hook báo kết quả thao tác bằng toast | buộc mã lỗi API vào `lib/fault.ts` |
+| `month-picker.tsx` | chọn một tháng bằng một control | Kumo có chọn ngày và chọn khoảng, không có chọn tháng |
+| `filter-bar.tsx` | bộ lọc: `Toolbar` trên máy tính, một nút mở `LayerDialog` trên điện thoại | §9.21.1 đòi bộ lọc thành tấm trượt ở màn hẹp |
+| `theme-toggle.tsx`, `bottom-bar.tsx`, `failed.tsx` | sáng tối theo `lib/theme.ts`; nút chính neo đáy điện thoại (§9.21.2); `Banner` lỗi có nút thử lại theo chữ của catalogue | nối vào `lib/` hoặc catalogue của repo |
 
 ```
 frontend/
@@ -4747,16 +4760,17 @@ frontend/
 │   ├── icon-maskable.png             # ★ cùng dấu, chừa lề an toàn cho launcher cắt tròn
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
-│   ├── ui/                           # ★ chỉ thứ Kumo không có: pill, page-header, notify,
-│   │                                 #   theme-toggle, bottom-bar, filter-bar, sheet
-│   │                                 #   ★ §9.21.2 — màn hẹp thì hành động chính neo đáy,
-│   │                                 #   bộ lọc thành tấm trượt
+│   ├── ui/{page.tsx, pill.tsx, notify.ts, month-picker.tsx, filter-bar.tsx,
+│   │       theme-toggle.tsx, bottom-bar.tsx, failed.tsx}
+│   │                                 # ★ chỉ thứ Kumo không có (bảng ngay trên cây)
 │   │                                 #   ★ §9.12 luật 2 — pill giữ bốn tông trạng thái,
 │   │                                 #   khai một chỗ cho cả tám phân hệ. Tiền không có
 │   │                                 #   primitive: nó là hàm ở lib/format.ts
-│   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx, breadcrumb.tsx, waiting-count.ts}
-│   │                                 # ★ rộng thì thanh bên, hẹp thì tab đáy; số đơn
-│   │                                 #   đang chờ là một hook dùng chung cho cả ba
+│   ├── nav/{sidebar.tsx, tab-bar.tsx, top-bar.tsx, section-bar.tsx, breadcrumb.tsx,
+│   │        account-menu.tsx, waiting-count.ts}
+│   │                                 # ★ rộng thì thanh bên, hẹp thì tab đáy; thanh tab
+│   │                                 #   phụ nối các trang anh em của một mục (§9.15);
+│   │                                 #   số đơn đang chờ là một hook dùng chung
 │   ├── tables/{data-table.tsx, card-list.tsx}        # ★ một định nghĩa cột, hai hình thức
 │   ├── forms/employee-form.tsx
 │   ├── employees/{contracts.tsx, pay.tsx, assets.tsx, checklist.tsx, files.tsx,
@@ -4803,8 +4817,14 @@ người dùng đọc là **thiếu số liệu**, không phải thiếu một c
 
 **Thanh điều hướng cũng có hai hình thức, và chúng đọc chung `lib/nav.ts`.** Màn rộng dựng
 `nav/sidebar.tsx` trên `Sidebar` của Kumo; màn hẹp dựng `nav/tab-bar.tsx` với tối đa năm mục lấy
-từ chính danh sách ấy, vì thanh bên 260 px nuốt mất hai phần ba bề ngang điện thoại. Hai file, một nguồn: thêm một
-trang là sửa `lib/nav.ts`, không phải nhớ ra còn một chỗ thứ hai.
+từ chính danh sách ấy, vì thanh bên 260 px nuốt mất hai phần ba bề ngang điện thoại. Thanh tab
+phụ `nav/section-bar.tsx` và vệt điều hướng cũng đọc chính bảng ấy (§9.15). Nhiều file, một
+nguồn: thêm một trang là sửa `lib/nav.ts`, không phải nhớ ra còn một chỗ thứ hai.
+
+**Thanh bên dính theo khung nhìn, trang cuộn bằng cửa sổ.** Cuộn trong một hộp `overflow` riêng
+thì iOS mất thanh địa chỉ tự thu và cử chỉ kéo để tải lại, nên trang vẫn cuộn bằng cửa sổ, và
+thanh bên tự ghim `sticky top-0 h-svh`. Thiếu dòng ấy thì thanh bên trôi theo trang và để lại
+một khoảng trống dưới đáy.
 
 **Service worker viết tay, không dùng thư viện sinh sẵn.** Bộ sinh precache liệt kê từng file
 băm của bản build, nên mỗi lần build lại là một danh sách mới và một lớp công cụ nữa phải nuôi.
@@ -7243,45 +7263,94 @@ phải có mà không làm gì.
 Đây là phần mềm người ta mở tám tiếng một ngày, không phải trang giới thiệu. Nên nhịp của nó là
 **dày mà đọc được**, không phải thoáng mà rỗng.
 
-**Nội dung bám lề trái và trải theo bề ngang; không trang nào căn giữa.** Mọi trang dùng cùng
-một lề, 24 px, lên 32 px từ `md` và 40 px từ `lg` như dashboard Cloudflare, cùng một trần bề
-rộng tính **từ mép trái** của vùng nội dung. Căn giữa một cột hẹp trên màn rộng để lại hai khoảng
-trống hai bên, và mỗi trang hẹp một kiểu thì cả app trông lệch. Đó chính là cái chủ repo chỉ ra
-ngày 25/09, khi khung còn căn giữa và 16 trang còn bóp về 48 rem.
+**Khung trang là khung của dashboard Cloudflare, dựng từ chính code của Kumo.** Chủ repo lấy
+dashboard ấy làm mốc (25/09), và Kumo phát kèm hai *block* là chính trang tài nguyên của nó:
+`PageHeader` và `ResourceListPage`. `components/ui/page.tsx` là hai block ấy chép về theo đúng
+cách Kumo phát block, không phải một bố cục tự nghĩ. Từ trên xuống, mọi trang có năm tầng:
 
-| Token | Dùng cho | Vì sao |
+| Tầng | Chứa gì | Nguồn |
 |---|---|---|
-| `--width-shell` | trần bề rộng nội dung của mọi trang, 1400 px, **bám trái** | bảng và danh sách cần chỗ, nhưng dòng dài hơn thế thì mắt phải đưa quá xa |
-| `--width-read` | một **khối** chữ hay một biểu mẫu nằm trong trang, **bám trái** | dòng chữ dài quá thì mắt lạc hàng khi xuống dòng; không bao giờ bọc cả trang |
+| Thanh bên | nhóm, mục, số đếm việc chờ, nút thu gọn thành dải icon | `Sidebar` |
+| Thanh trên | vệt điều hướng sát lề trái; tìm kiếm, hộp chờ duyệt, chuông, menu tài khoản sát lề phải | mẫu *product header* trong tài liệu `Sidebar` |
+| Thanh tab phụ | các trang anh em của một mục (§9.15), `Tabs` kiểu segmented | như `Security rules · DDoS protection` của Cloudflare |
+| Đầu trang | tiêu đề 30 px, một câu mô tả, hành động chính bên phải; trang một bản ghi thêm viên trạng thái và tab nội dung | block `PageHeader` |
+| Thân | cột chính và cột phải | block `ResourceListPage` |
 
-**Thanh trên dùng chung khung ấy.** Ô tìm kiếm và chuông bắt đầu đúng ở lề trái của nội dung bên
-dưới, nếu không thì thanh trên và trang lệch nhau một khoảng nhìn thấy được ở mọi trang. Một
-khung, khai một chỗ, cả hai cùng đọc.
+**Nội dung là một khối rộng tối đa 1400 px, đặt giữa vùng còn lại.** Đúng số và đúng cách của
+`ResourceListPage`: lề 24 px, lên 32 px từ `md` và 40 px từ `lg`. Màn nhỏ hơn khoảng 1700 px thì
+khối lấp đầy và không có khoảng hở nào; màn rộng hơn thì hở **đều** hai bên, nên thu gọn hay mở
+thanh bên thì khối vẫn cân. Thanh trên không bị bó theo khối: vệt sát lề trái, nút sát lề phải.
 
-**Mọi trang mở bằng cùng một đầu trang** (`ui/page-header.tsx`): breadcrumb, tiêu đề, một câu mô
-tả, hành động chính ở bên phải. Không trang nào đặt nút chính ở chỗ khác, vì người dùng tìm nó ở
-đúng một chỗ.
+| Token | Dùng cho | Luật |
+|---|---|---|
+| `--width-shell` | trần bề rộng của khối nội dung, 1400 px | chỉ khung dùng; **không trang nào tự bó hẹp hơn** bằng `max-w-*` riêng |
+| `--width-read` | một biểu mẫu hay một khối chữ nằm trong trang | không bao giờ bọc cả trang |
 
-**Trang danh sách và trang một bản ghi có cột phải**, như trang tài nguyên của dashboard
-Cloudflare: cột chính cho bảng hay nội dung, cột phải 380 px dính theo khi cuộn, chứa những gì
-người dùng phải đi tìm nếu nó không nằm đó — con số tóm tắt của chính danh sách ấy, việc đang treo
-dẫn thẳng tới chỗ xử lý, thao tác phụ, và link hướng dẫn. Cột phải không chứa thứ cột chính đã có.
-Dưới `lg` nó rơi xuống dưới cột chính; trên điện thoại vẫn là thanh tab đáy (§9.21.1).
+Luật "không trang nào tự bó" là lỗi 25/09 viết thành luật: 16 trang khi ấy bóp về 48 rem và căn
+giữa, mỗi trang hẹp một kiểu, và cả app trông lệch.
+
+**Trang danh sách và trang một bản ghi có cột phải.** Từ `xl` trở lên nó đứng bên phải, rộng
+380 px, dính theo khi cuộn. Dưới `xl` phần tóm tắt lên trên cột chính và phần phụ xuống cuối
+trang, đúng thứ tự của block. Cột phải chứa **thứ người dùng phải đi tìm nếu nó không nằm đó**:
+con số tóm tắt của chính danh sách ấy, việc đang treo dẫn thẳng tới chỗ xử lý, thao tác phụ,
+điều cần biết. Nó **không chứa thứ cột chính đã có**. Mỗi con số trên nó bấm được: bấm là lọc
+bảng bên trái, hoặc mở đúng chỗ xử lý.
 
 | Trang | Cột phải |
 |---|---|
-| Danh bạ | số đang làm, sắp hết thử việc, hợp đồng sắp hết — mỗi số lọc bảng; nhập Excel, tải mẫu |
-| Hồ sơ một người | phòng ban, quản lý, ngày vào, trạng thái, đồng ý sinh trắc, kiosk đang gán, thao tác nhanh |
-| Kỳ lương | các bước chạy → soát → chốt → trả → gửi phiếu, bước nào đang ở đâu và còn gì treo |
-| Kiosk | máy online, máy có bản mới, bản mới nhất từng loại |
-| Hộp chờ duyệt | ai cũng nghỉ trong những ngày của đơn đang chọn, số dư của người xin |
+| Tổng quan | lối tắt theo vai: thêm nhân viên, bảng công tháng này, kỳ lương đang mở; với `ADMIN` thêm số kiosk đang chạy trên tổng, máy có bản mới, luồng sự kiện trực tiếp |
+| Danh bạ | số đang làm, đã nghỉ — bấm là lọc; người sắp hết thử việc và hợp đồng sắp hết trong 30 ngày, vài tên đầu kèm số ngày, bấm mở hồ sơ; công cụ: xuất Excel, nhập từ Excel, tải file mẫu, điều chỉnh lương hàng loạt |
+| Thêm nhân viên | lưu xong hệ làm gì: hồ sơ, hợp đồng, lương, checklist nhận việc, tài khoản; nhiều người thì sang nhập Excel |
+| Hồ sơ một người | mã, phòng ban, chức danh, quản lý, ngày vào, trạng thái; đồng ý sinh trắc và nút ghi hoặc rút; kiosk đang gán và nút gán; lối tắt: lượt chấm công, cho nghỉ việc |
+| Cây tổ chức | tổng phòng ban và tổng người; phòng ban đang chọn: mã, cấp trên, số người cả nhánh, trung tâm chi phí, đổi tên, xem nhân viên của phòng; công cụ: tái cơ cấu |
+| Nhận việc | số việc mở, quá hạn, theo người phụ trách — bấm là lọc; các mẫu checklist |
+| Tài sản | số theo từng trạng thái — bấm là lọc |
+| Tài liệu | số tài liệu, số người chưa ký bản mới nhất, số hồ sơ còn thiếu |
+| Bảng công | tổng của tháng: ngày công, ngày vắng, ngày phép, giờ tăng ca, ngày đã sửa; nút tổng hợp lại tháng |
+| Lượt chấm công | trong khoảng đang xem: số người, tổng lượt, lượt lệch đồng hồ; xuất CSV |
+| Lượt của một người | mã, phòng ban, link hồ sơ; tổng lượt, lượt ngoại tuyến, lượt lệch đồng hồ |
+| Chờ tôi duyệt | mục lục các hàng đợi kèm số, bấm là tới đúng hàng đợi; số dư phép của người xin ở đơn đang mở |
+| Sổ đơn từ | số theo trạng thái — bấm là lọc |
+| Một đơn | người xin: mã, phòng ban, link hồ sơ; số dư phép của họ |
+| Ca làm · Ngày lễ · Loại phép | số đang dùng và đã ngừng; ngày lễ sắp tới |
+| Báo cáo | các file xuất: D02-LT theo ngày, gộp chấm công theo tháng |
+| Kỳ lương | kỳ đang mở và bước nó đang ở; năm bước của một kỳ |
+| Một kỳ lương | năm bước **chạy → soát → chốt → trả → gửi phiếu**: bước nào xong, bước nào đang tới, và nút của đúng bước ấy |
+| Chính sách lương | phiên bản đang áp dụng; các phiên bản trước |
+| Kiosk | số đang chạy trên tổng, số chờ duyệt; bản mới nhất từng loại kèm nút cập nhật cả đội; lịch sử bản phát hành |
+| Một kiosk | vị trí, trạng thái, firmware, model, phiên bản danh sách, lần cuối thấy; đổi tên, đồng bộ lại, thu hồi |
+| Tài khoản · Nhật ký | số tài khoản theo vai; lọc nhanh nhật ký theo loại đối tượng |
+| Trang của tôi | lối tắt: xin nghỉ, xin giấy xác nhận, sửa thông tin; người phụ thuộc |
+| Công của tôi | sai giờ thì xin sửa công, mở thẳng biểu mẫu đúng loại |
+| Lịch ca | số ngày làm, ngày lễ, ngày nghỉ của tháng; chú giải |
+| Đơn từ của tôi | số dư phép; đơn đang chờ gửi vì mất mạng |
+| Phiếu lương | các kỳ để chọn; quyết toán thuế cả năm |
+| Giấy xác nhận · Sửa thông tin | ai duyệt, bao lâu; đổi tài khoản ngân hàng thì có thư báo về địa chỉ cũ |
+| Cài đặt | mục lục các phần của trang |
 
-**Đăng xuất là một thao tác tài khoản, nên nó ở *Cài đặt*.** Để nó thành một nút thường trực
-dưới thanh bên là đặt thao tác **không thể hoàn tác** cạnh những mục người ta bấm cả ngày. Tần
-suất dùng của nó là vài lần một ngày, còn hậu quả bấm nhầm là mất hết việc đang làm dở — đó là
-tỷ lệ sai để cho một nút ở tầm tay thường trực.
+**Hộp thoại là `LayerDialog`, và thao tác không hoàn tác được qua `LayerDialog.Alert`.** Mọi
+biểu mẫu tạo hay sửa mở trong `LayerDialog`: trên máy tính nó là hộp giữa màn, trên điện thoại
+nó tự thành tấm trượt từ đáy. Hộp xác nhận **gọi tên thứ bị tác động và nói hậu quả**, nút của
+nó là `destructive`, và trong lúc đang chạy thì không đóng được (`dismissDisabled`). Kiểu bấm
+hai lần vào cùng một nút cho "chắc chưa" không còn dùng: nó không nói hậu quả, và trên điện
+thoại lần chạm thứ hai rơi đúng chỗ lần thứ nhất.
 
-**Bốn luật hình thức**
+**Bảng là `Table` của Kumo trong một `LayerCard`.** Hàng sọc; cả hàng mở bản ghi; cột số căn
+phải bằng chữ số đều bề ngang. Thao tác phụ của một hàng nằm trong menu `⋯` cuối hàng, không
+phải một dãy nút. Không có cột *Sửa* và không có nút chọn cột hiện: bảng của hệ này có bốn tới
+tám cột, và chủ repo chỉ ra 25/09 rằng nút ấy không có trang tử tế nào dùng. Bấm tiêu đề cột để
+sắp. Danh sách dài dùng *Tải thêm* kèm tổng số, không cắt im lặng.
+
+**Bộ lọc là `Toolbar` của Kumo, áp ngay khi đổi.** Ô tìm chờ người gõ ngừng một nhịp rồi mới
+hỏi; không có nút *Lọc* trừ khi truy vấn nặng. Trên điện thoại bộ lọc thu vào một nút mở tấm
+trượt (§9.21.1).
+
+**Đăng xuất nằm trong menu tài khoản ở góc phải thanh trên, và trong *Cài đặt*.** Cả hai chỗ
+đều cần hai lần bấm có chủ đích. Thứ bị cấm là một nút đăng xuất thường trực dưới thanh bên,
+cạnh những mục người ta bấm cả ngày: tần suất dùng vài lần một ngày, còn hậu quả bấm nhầm là
+mất hết việc đang làm dở.
+
+**Năm luật hình thức**
 
 1. **Dẫn bằng việc, không dẫn bằng số.** Trang chủ của người duyệt mở ra danh sách việc đang
    đợi, không mở ra bốn thẻ số liệu to. Thẻ số liệu to chỉ đúng khi con số ấy là thứ người ta
@@ -7296,11 +7365,14 @@ tỷ lệ sai để cho một nút ở tầm tay thường trực.
 4. **Tiền và giờ không bao giờ hiện trần.** Một con số lương luôn đi kèm đơn vị và kỳ; một con
    số giờ luôn nói rõ là giờ làm hay giờ tăng ca.
 5. **Mọi thao tác nói kết quả.** Thành công hay lỗi đều ra toast; lỗi của một trường còn hiện
-   ngay dưới trường ấy; thao tác không hoàn tác được phải qua hộp xác nhận nói rõ hậu quả. Một
-   nút bấm xong mà trang không đổi gì thì người dùng bấm lại, và lần thứ hai ấy là lần gây hại.
+   ngay dưới trường ấy; thao tác không hoàn tác được phải qua `LayerDialog.Alert`. Một nút bấm
+   xong mà trang không đổi gì thì người dùng bấm lại, và lần thứ hai ấy là lần gây hại. Lưu
+   xong thì người dùng **ở lại chỗ vừa sửa**, không bị đưa về danh sách.
 
 **Bảng màu là token của Kumo** (§4.7): xám trung tính, xanh chính `#056DFF`, và bốn màu trạng
-thái. Vai trò của màu nhấn không đổi: nó dành cho hành động chính, không rải khắp nơi.
+thái. Khung — thanh bên, thanh trên, thanh tab phụ, nền trang — cùng một màu `kumo-canvas`; thẻ,
+bảng và hộp thoại là `kumo-base`. Như dashboard Cloudflare: khung lùi lại, nội dung nổi lên. Vai
+trò của màu nhấn không đổi: nó dành cho hành động chính, không rải khắp nơi.
 
 **Màn hình tối thiểu để chạy được**: danh bạ nhân viên, hồ sơ một người, cây tổ chức, đơn nghỉ
 phép, hộp chờ duyệt, bảng công tháng, phiếu lương của tôi, chạy kỳ lương, cấu hình chính sách.
@@ -7419,15 +7491,41 @@ trưởng phòng biết có việc mà **không phải mở trang** — và nó 
 ngày. Không có nó thì mọi thứ đều phải nhớ.
 
 ```
-Tôi            ▸ Trang của tôi · Công của tôi · Phép của tôi · Phiếu lương
-Chờ duyệt (3)  ▸ Nghỉ phép (2) · Tăng ca (1)
-Nhân sự        ▸ Danh bạ · Cây tổ chức · Hợp đồng · Onboarding
-Thời gian      ▸ Bảng công · Ca làm · Nghỉ phép · Ngày lễ
-Lương          ▸ Kỳ lương · Phiếu lương · Bảng lương ngân hàng
-Thiết bị       ▸ Kiosk · Bản phát hành
-Báo cáo        ▸ Chuyên cần · Biến động · Chi phí lương
-Thiết lập      ▸ Chính sách · Loại phép · Vai trò · Tài liệu
+Hôm nay        ▸ Tổng quan
+Tôi            ▸ Trang của tôi · Công của tôi · Lịch ca · Yêu cầu của tôi · Phiếu lương · Tài liệu của tôi
+Chờ duyệt (3)  ▸ Hộp chờ duyệt
+Nhân sự        ▸ Nhân viên · Nhận việc · Tài sản · Tài liệu
+Thời gian      ▸ Chấm công · Ca & lịch nghỉ · Báo cáo
+Lương          ▸ Lương
+Vận hành       ▸ Kiosk
+Thiết lập      ▸ Hệ thống · Cài đặt
 ```
+
+**Một mục thanh bên mở ra được nhiều trang anh em, và chúng nối nhau bằng thanh tab phụ** (§9.12).
+Hai trang cùng trả lời một loại câu hỏi về cùng một thứ thì là hai góc nhìn của một mục, không
+phải hai mục ngang hàng — đặt chúng thành hai dòng trên thanh bên là đúng cái bệnh hai mươi mục
+mà mục này chữa. Như Cloudflare để `Security rules` và `DDoS protection` thành hai tab dưới một
+mục `Security`:
+
+| Mục trên thanh bên | Tab phụ |
+|---|---|
+| Nhân viên | Danh bạ · Cây tổ chức |
+| Chấm công | Bảng công · Lượt chấm công |
+| Hộp chờ duyệt | Chờ tôi duyệt · Sổ đơn từ |
+| Ca & lịch nghỉ | Ca làm · Ngày lễ · Loại phép |
+| Lương | Kỳ lương · Chính sách lương |
+| Hệ thống | Tài khoản · Nhật ký |
+| Yêu cầu của tôi | Đơn từ · Giấy xác nhận · Sửa thông tin |
+
+Bốn luật đi kèm, đều đọc từ `lib/nav.ts`:
+
+1. **Tab lọc theo vai như mục.** Vai không mở được trang nào thì không thấy tab ấy; mục còn một
+   tab thì không vẽ thanh tab phụ.
+2. **Mục trỏ tới tab đầu tiên vai ấy mở được**, và sáng lên khi đứng ở bất kỳ tab nào của nó.
+3. **Một trang ở trên thanh bên hoặc trong thanh tab phụ, không ở cả hai.** Một đích tới hiện
+   hai chỗ làm menu trông dài mà không nói thêm gì.
+4. **Hộp và sổ vẫn là hai thứ** (luật ngay dưới): hai tab, hai mặc định. Chung một mục chỉ là
+   chung một chỗ để tìm.
 
 **Nhóm nào rỗng với vai của người đang xem thì không hiện.** Một nhân viên thường thấy đúng hai
 nhóm đầu. Làm mờ đi thay vì ẩn là cố ý khoe những gì họ không được đụng.
@@ -7539,14 +7637,17 @@ nghỉ phép, tăng ca, giải trình công, công tác và làm từ xa — g�
 dạy người dùng rằng bốn loại kia nằm ở đâu đó khác, rồi bắt họ đi tìm. Sổ **lọc theo loại**, và
 tên nó nói đúng thứ nó chứa.
 
-**Đường về của một trang con là vệt điều hướng, không phải một nút `←` tự chế.** Tám trang con
-hiện có ba kiểu khác nhau và ba trang **không có đường nào** — ai mở hồ sơ một người từ danh bạ
-rồi muốn quay lại thì chỉ còn nút back của trình duyệt. Vệt ấy **dựng từ chính bảng này**: nhóm,
-rồi trang cha, rồi tiêu đề trang đang mở. Vì nó đọc bảng nên nó không bao giờ chỉ tới chỗ vai
-đang xem không vào được, và vì nó nằm ở khung ngoài nên không trang nào phải nhớ tự vẽ.
+**Vệt điều hướng nằm ở thanh trên, như product header của Cloudflare.** Nó dựng từ chính bảng
+này: nhóm, rồi mục, rồi tab hay trang con, rồi tên bản ghi đang mở — tên ấy do chính trang báo
+lên, vì chỉ trang biết mình đang mở ai. Vì vệt đọc bảng nên nó không bao giờ chỉ tới chỗ vai
+đang xem không vào được, và vì nó nằm ở khung ngoài nên không trang nào phải nhớ tự vẽ. Trước khi
+có nó, tám trang con có ba kiểu nút `←` tự chế và ba trang không có đường về nào ngoài nút back
+của trình duyệt.
 
-**Trang cha không có vệt.** Ở đúng trang cha thì vệt sẽ lặp lại tiêu đề ngay bên dưới nó; vệt chỉ
-xuất hiện khi còn chỗ để quay về.
+**Vệt có ở mọi trang.** Ở trang cha nó chỉ còn nhóm và tên mục, và vẫn đáng giữ: nó là chỗ mắt
+tìm câu *tôi đang ở đâu* ở đúng một vị trí trên mọi màn, như tên zone trên thanh trên của
+Cloudflare. Trên điện thoại vệt nhường chỗ cho ô tìm kiếm, và trang con có nút quay về mục cha
+ngay trên tiêu đề.
 
 **Bảng này canh ở đường dẫn, không chỉ canh ở thanh bên.** Ẩn một mục khỏi menu mà vẫn phục vụ
 trang cho ai gõ đúng URL là làm được **một nửa** của luật 1: người ta không nhìn thấy lối vào,
