@@ -7678,7 +7678,10 @@ Luật "không trang nào tự bó" là lỗi 25/09 viết thành luật: 16 tra
 giữa, mỗi trang hẹp một kiểu, và cả app trông lệch.
 
 **Cột phải chỉ có khi nó làm được một việc không chỗ nào khác làm.** Khi chính khối nội dung rộng
-từ 1024 px trở lên, nó đứng bên phải, rộng 380 px, dính theo khi cuộn và tự cuộn khi dài hơn màn.
+từ 1024 px trở lên, nó đứng bên phải, rộng 380 px, và **không bao giờ là một hộp cuộn riêng**: hai
+thanh cuộn trên một trang là bắt người dùng đoán con lăn đang cuộn cột nào (hồ sơ một người, 26/09,
+năm thẻ cao hơn màn). Vừa màn thì nó dính ngay dưới thanh trên; dài hơn màn thì nó cuộn cùng trang
+tới khi đáy của nó chạm đáy màn rồi mới dính, nên thẻ cuối vẫn tới được bằng đúng thanh cuộn của trang.
 Hẹp hơn thì nó xuống **sau** cột chính: thứ người ta vào trang để làm luôn nằm trên cùng. Khi cột chính mở đầu bằng một hàng công cụ — thanh lọc, bộ chọn tháng — cột phải bắt đầu ngang
 thẻ đầu tiên dưới hàng ấy, không ngang hàng nút: đặt ngang hàng nút thì thẻ bên phải trông cao hơn
 nội dung nó đi kèm. Mốc đo
