@@ -4391,7 +4391,8 @@ backend/
     │   ├── audit/audit-actions.ts    # ★ §9.24 — tên hành động, khai một chỗ
     │   │                             # ── §9 quản trị nhân sự ──
     │   ├── org/                      # Department (cây), JobTitle, hợp đồng
-    │   ├── leave/                    # loại phép, số dư, đơn, luồng duyệt
+    │   ├── leave/                    # loại phép, số dư, đơn, luồng duyệt; leave-year.service.ts
+    │   │                             #   mở số dư năm mới và chuyển phép (§9.5)
     │   ├── payroll/                  # kỳ lương, lượt chạy, phiếu, dòng phiếu
     │   ├── compensation/             # lương theo thời hạn, người phụ thuộc
     │   ├── policy/                   # PayrollPolicy + TaxBracket theo ngày hiệu lực
@@ -4407,7 +4408,7 @@ backend/
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
     │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
-    │   └── processors/{image, report, notify, timesheet, payroll}.processor.ts
+    │   └── processors/{image, report, notify, timesheet, payroll, people, leave}.processor.ts
     └── database/{database.module.ts, prisma.service.ts, redis.service.ts}
 ```
 
@@ -4501,6 +4502,7 @@ không cache thứ gì mà mất đi là sai nghiệp vụ.
 | `image` | resize + upload ảnh chấm công lên MinIO | `mqtt/` khi nhận bản ghi | Ảnh vài trăm KB, không để kiosk chờ |
 | `report` | tổng hợp báo cáo tháng ra file | `reports/` khi người dùng bấm | Quét vài chục nghìn bản ghi |
 | `notify` | gửi mail/webhook khi có sự kiện lạ | `audit/`, `devices/` | Bên thứ ba có thể chậm hoặc chết |
+| `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối (§9.14) | lịch lặp 00:05 của `employees/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù |
 | `ota` | rollout theo lô, theo dõi từng thiết bị | `models/` | Chạy hàng giờ, phải resume được |
 
 Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `image` và `ota` bắt buộc
@@ -6799,7 +6801,8 @@ gửi phải đoán.
 
 **Đăng nhập** — `User` thêm `employeeId` (tuỳ chọn, duy nhất). Tài khoản quản trị thuần vẫn để
 trống ô ấy; tài khoản của người lao động trỏ về hồ sơ của họ. **Không gộp hai bảng**: một người
-nghỉ việc thì hồ sơ phải ở lại vĩnh viễn cho bảng lương năm cũ, còn tài khoản thì phải tắt ngay.
+nghỉ việc thì hồ sơ phải ở lại vĩnh viễn cho bảng lương năm cũ, còn tài khoản thì tắt đúng lúc
+hồ sơ đóng (§9.14).
 Hai vòng đời khác nhau là hai bảng.
 
 **Nghỉ phép** — `LeaveType`, `LeaveBalance`, `Request`, `ApprovalDelegation`. Nghỉ phép, tăng
@@ -7055,24 +7058,82 @@ Cả hai đường đều **đóng mọi phiên**, như §9.23 đòi ở cùng m
 ### 9.5 Nghỉ phép
 
 `LeaveType` khai từng loại: phép năm, nghỉ ốm, nghỉ không lương, nghỉ chế độ. Mỗi loại mang
-**có trả lương hay không**, số ngày tích luỹ một năm, và trần chuyển sang năm sau.
+**có trả lương hay không**, số ngày được hưởng một năm, và trần chuyển sang năm sau.
 
-`LeaveBalance` giữ **một dòng mỗi người mỗi loại mỗi năm**: số ngày được hưởng, đã dùng, chuyển
-từ năm trước. Không tính lại từ đầu mỗi lần hỏi — một phép cộng trên cả lịch sử là thứ chậm dần
-đều theo tuổi hệ thống.
+`LeaveBalance` giữ **một dòng mỗi người mỗi loại mỗi năm**: số ngày được hưởng (`entitled`),
+chuyển từ năm trước (`carriedOver`), đã nghỉ (`taken`), đang chờ (`pending`), và phần đã chuyển
+sang năm sau (`carriedOut`). Không tính lại từ đầu mỗi lần hỏi — một phép cộng trên cả lịch sử là
+thứ chậm dần đều theo tuổi hệ thống.
 
 `LeaveRequest` đi qua máy trạng thái `DRAFT → PENDING → APPROVED | REJECTED | CANCELLED`.
 
+**Một đơn nghỉ chỉ bị trừ ngày làm việc.** Ngày làm việc của một người là ngày mà lịch của bảng
+công (§9.8) gọi là `WORKDAY` với pháp nhân của người ấy: không phải thứ Bảy, không phải Chủ nhật,
+và không phải ngày lễ — lễ khai cho chính pháp nhân của họ hay lễ chung cả công ty; lễ của một
+pháp nhân khác không làm ngày ấy thành ngày nghỉ của họ. Định nghĩa này nằm đúng một chỗ, ở
+`TimesheetService`, và cả lượt dựng ngày công lẫn đơn nghỉ đều hỏi nó: một ngày bảng công gọi là
+ngày nghỉ mà đơn lại trừ phép là trừ phép cho một ngày không ai phải đi làm. Nghỉ thứ Sáu tới thứ
+Hai là **hai** ngày, không phải bốn. Khoảng không chứa ngày làm nào bị từ chối bằng
+`LEAVE_NO_WORKING_DAY`. Nửa ngày là 0,5 của một ngày làm, chỉ chọn được một ngày, và ngày ấy phải
+là ngày làm — nửa ngày Chủ nhật bị từ chối bằng `HALF_DAY_NOT_WORKING`. Đơn công tác và làm từ xa
+không trừ phép nên vẫn đếm ngày lịch.
+
+**Số tính lúc gửi là số được giữ, chốt và trả.** `Request.days` là tổng ngày làm bị trừ,
+`Request.nextYearDays` là phần của năm sau. Khai thêm một ngày lễ sau khi đơn đã gửi không tính
+lại đơn ấy: duyệt, từ chối hay huỷ không bao giờ đếm lại theo một lịch đã đổi sau lưng người gửi,
+vì con số giữ chỗ và con số trả lại phải là một.
+
+**Đơn vắt qua năm mới tách theo năm.** Mỗi ngày làm trừ vào số dư của **năm dương lịch chứa
+ngày ấy**: 30/12 tới 03/01 trừ những ngày tháng Mười Hai vào số dư năm cũ và những ngày tháng
+Giêng vào số dư năm mới. Giữ chỗ, chốt và trả đi qua cả hai dòng trong **một giao dịch**, nên
+không có lúc nào một năm đã trừ mà năm kia chưa, và năm nào thiếu thì cả đơn bị từ chối. Đơn chạm
+tới năm dương lịch thứ ba bị từ chối bằng `LEAVE_SPANS_YEARS`.
+
 **Số dư trừ lúc duyệt, không trừ lúc gửi đơn.** Gửi đơn mà trừ ngay thì một đơn bị từ chối phải
 hoàn lại, và mọi phép hoàn lại đều là chỗ để lệch. Nhưng **số dư phải được giữ chỗ** lúc gửi,
-nếu không một người gửi ba đơn chồng nhau sẽ được duyệt cả ba. Nên `LeaveBalance` mang hai ô:
-`taken` (đã duyệt) và `pending` (đang chờ), và phép kiểm là `entitled - taken - pending >= xin`.
+nếu không một người gửi ba đơn chồng nhau sẽ được duyệt cả ba. Nên `pending` giữ phần đang chờ,
+`taken` phần đã duyệt, và phép kiểm trên từng năm đơn chạm tới là
+`entitled + carriedOver - taken - pending - carriedOut >= xin`, kiểm và giữ trong cùng một câu
+lệnh.
+
+**Loại không lương không bị số dư chặn.** Loại `paid = false` vẫn ghi `pending` lúc gửi và
+`taken` lúc duyệt vào dòng của năm, để biết một năm ai đã nghỉ không lương bao nhiêu, nhưng không
+bao giờ trả `LEAVE_BALANCE_SHORT`: nghỉ không lương là thoả thuận với người duyệt (Điều 115 Bộ
+luật Lao động 2019), không phải một quỹ ngày tích luỹ. Nó không có "số còn lại", nên nó không hiện
+trong số dư phép, và chỗ số dư sau khi duyệt của nó ghi *không trừ số dư*.
+
+**Số dư của một năm ra đời theo hai đường, và cả hai đi qua cùng một câu lệnh.**
+
+1. **Job 00:05 ngày 01/01 theo `APP_TIMEZONE`** tạo dòng của năm mới cho mọi người còn làm việc
+   ngày ấy × mọi loại đang dùng, với `daysPerYear` của loại — chia theo phần còn lại của năm khi
+   đó là năm vào làm (§9.14) — rồi **đóng năm cũ**: phần chuyển là
+   `min(carryOverMax, số còn lại)`, số còn lại coi đơn đang chờ là đã tiêu; phần ấy ghi vào
+   `carriedOut` của dòng năm cũ, cộng vào `carriedOver` của dòng năm mới, và dòng năm cũ mang
+   `closedAt`. Dòng đã có thì bỏ qua, năm đã đóng không đóng lần hai, nên chạy lại không đổi gì —
+   đúng thứ một job giao ít nhất một lần cần (§9.9 luật 5).
+2. **Theo nhu cầu**: gửi đơn vào một (người, loại, năm) chưa có dòng — loại khai sau ngày vào làm,
+   năm sau khi tháng Mười Hai chưa hết, máy chủ tắt đúng đêm giao thừa — thì dòng ấy tạo ngay
+   trong giao dịch gửi đơn, cùng công thức. Năm ấy đã bắt đầu thì năm trước nó đóng luôn lúc đó;
+   năm ấy chưa tới thì dòng ra đời với `carriedOver = 0` và job ngày 01/01 cộng phần chuyển vào
+   chính dòng ấy. Mỗi năm cũ chỉ đóng một lần, nên phần chuyển không bao giờ bị cộng hai lần.
+
+Năm đã đóng vẫn nhận đơn cho ngày của chính nó — người quên xin cho 30/12 vẫn xin được trong
+tháng Giêng — nhưng `carriedOut` đứng trong phép kiểm, nên một ngày đã chuyển sang năm mới không
+tiêu được lần nữa ở năm cũ.
 
 **Đơn chồng ngày bị chặn ở tầng dữ liệu**, bằng ràng buộc loại trừ trên khoảng ngày, chứ không
 chỉ kiểm trong code — hai request song song thì phép kiểm trong code cho qua cả hai.
 
 Một ngày nghỉ đã duyệt **ghi vào `AttendanceDay`** của ngày đó với trạng thái tương ứng, nên
 bảng công và bảng lương không phải hỏi hai nguồn rồi tự hoà giải.
+
+**Người gửi thấy đúng con số server sẽ trừ.** Biểu mẫu hỏi `GET /leave-days` cho khoảng đang
+chọn và hiện số ngày làm bị trừ, tách theo năm khi đơn vắt năm, kèm số còn lại của từng năm sau
+đơn. Trình duyệt không tự đếm lịch: lịch ấy có ngày lễ của pháp nhân mà nó không biết, và hai
+chỗ đếm là hai con số sẽ lệch. Hộp duyệt và trang một đơn hiện số dư của cả hai năm cho đơn vắt
+năm. Khi chưa khai loại phép nào, chỗ ô chọn loại là một dải báo *chưa có loại phép, hỏi phòng
+nhân sự* chứ không phải một danh sách mở ra rỗng, và sổ đơn từ của `HR` · `ADMIN` mở đầu bằng
+một dải báo dẫn tới danh mục *Loại phép*: không có loại nào thì không ai xin nghỉ được.
 
 ### 9.6 Lương
 
@@ -7286,8 +7347,11 @@ không ô rỗng: một thẻ không còn gì thì nói một câu ngắn trong 
 **Mọi con số bấm được, và bấm là tới đúng danh sách có con số ấy.** Có mặt và đi muộn mở
 `Chấm công` lọc đúng hôm nay; nghỉ phép mở sổ `Đơn từ` lọc đơn nghỉ đã duyệt phủ hôm nay. Vắng
 không phép **mở danh sách tên ngay trên trang**, vì chưa trang tra cứu nào liệt kê người vắng
-của hôm nay: `Bảng công` chỉ có ngày đã gộp, mà hôm nay chưa gộp (§9.8). Danh sách ấy hiện tối
-đa 20 người theo mã và nói rõ còn bao nhiêu người chưa hiện, không cắt im lặng.
+của hôm nay: `Bảng công` chỉ có ngày đã gộp, mà hôm nay chưa gộp (§9.8). Danh sách ấy mở bằng 20
+người đầu theo mã, nói rõ còn bao nhiêu người, và *Tải thêm* đọc tiếp từng trang cho tới hết —
+`/reports/team-today/:bucket`, cùng một định nghĩa với bản xem trước nên tổng và danh sách không
+lệch. Tab *Lệch giờ* của bàn nhân sự làm y như vậy: thẻ giữ tối đa 200 dòng, *xem cả* mở toàn bộ
+lượt đi muộn, chưa quẹt và mới quẹt vào của hôm nay theo từng trang.
 
 **Hộp chờ duyệt thu nhỏ đọc cùng số đếm với thanh bên.** Đơn từ hiện năm dòng cũ nhất, quyết
 được tại chỗ; mỗi hàng đợi khác đang có việc hiện một dòng kèm số, mở thẳng tab của nó. Số trên
@@ -7309,7 +7373,7 @@ giây: *còn gì đang đợi tôi* — và vẫn trả lời được khi hộp
 - **Mỗi tab tìm được theo mã và tên người xin, lọc theo loại, phòng ban (cả nhánh) và khoảng
   ngày**, mặc định cũ nhất lên trước vì việc chờ lâu nhất là việc trễ nhất.
 - **Mỗi dòng đủ ngữ cảnh để quyết**: ai, mã, phòng ban, loại, ngày, mấy ngày, số dư sau khi
-  duyệt, đã chờ bao lâu, và ai khác trong nhóm cũng nghỉ những ngày ấy. Số dư và số người trùng
+  duyệt — của cả hai năm khi đơn vắt năm (§9.5) — đã chờ bao lâu, và ai khác trong nhóm cũng nghỉ những ngày ấy. Số dư và số người trùng
   lịch server tính một lần cho cả trang, không phải mỗi dòng một lần gọi.
 - **Duyệt được hàng loạt**: chọn nhiều dòng, duyệt một lần, hoặc từ chối một lần với một lý do
   chung. Mỗi dòng vẫn đi qua đúng các luật của một lần duyệt lẻ — không duyệt việc của chính mình,
@@ -7397,7 +7461,9 @@ giữa, mỗi trang hẹp một kiểu, và cả app trông lệch.
 
 **Cột phải chỉ có khi nó làm được một việc không chỗ nào khác làm.** Khi chính khối nội dung rộng
 từ 1024 px trở lên, nó đứng bên phải, rộng 380 px, dính theo khi cuộn và tự cuộn khi dài hơn màn.
-Hẹp hơn thì nó xuống **sau** cột chính: thứ người ta vào trang để làm luôn nằm trên cùng. Mốc đo
+Hẹp hơn thì nó xuống **sau** cột chính: thứ người ta vào trang để làm luôn nằm trên cùng. Khi cột chính mở đầu bằng một hàng công cụ — thanh lọc, bộ chọn tháng — cột phải bắt đầu ngang
+thẻ đầu tiên dưới hàng ấy, không ngang hàng nút: đặt ngang hàng nút thì thẻ bên phải trông cao hơn
+nội dung nó đi kèm. Mốc đo
 trên khối chứ không đo bề ngang màn, vì thanh bên mở hay thu gọn đổi bề rộng khối tới 200 px: màn
 1280 px với thanh bên mở chỉ còn khoảng 940 px, và đặt cột phải vào đó thì bảng còn 530 px. Nó chứa
 đúng bốn loại thứ:
@@ -7430,7 +7496,7 @@ dùng vẫn thấy phân bố mà chỉ nhìn một chỗ.
 | Cây tổ chức | phòng ban đang chọn: mã, cấp trên, trưởng phòng, số người cả nhánh, trung tâm chi phí; sửa, chuyển nhánh, ngừng dùng; xem nhân viên của phòng; công cụ: tái cơ cấu. Trên điện thoại chọn một phòng mở tấm trượt |
 | Nhận việc | các mẫu checklist: thêm, sửa, ngừng dùng |
 | Chờ tôi duyệt · Sổ đơn từ | không có; hàng đợi là tab kèm số (§9.10) |
-| Một đơn | người xin: mã, phòng ban, link hồ sơ; số dư phép; người trong nhóm cũng nghỉ những ngày ấy |
+| Một đơn | người xin: mã, phòng ban, link hồ sơ; số dư phép, của cả hai năm khi đơn vắt năm; người trong nhóm cũng nghỉ những ngày ấy |
 | Bảng công | tổng của tháng theo bộ lọc: ngày công, ngày vắng, ngày phép, giờ tăng ca, ngày đã sửa; nút tổng hợp lại tháng |
 | Lượt chấm công | trong tháng đang xem: số người, tổng lượt, lượt lệch đồng hồ; xuất CSV |
 | Công của tôi | tổng tháng: ngày làm, lần đi muộn, ngày thiếu lượt; nút xin sửa công |
@@ -7661,12 +7727,36 @@ hàng, và §9.4 đã có sẵn đường vá — phát lại liên kết.
 không được mọc thêm hợp đồng. Nhận việc là một việc làm **lên** một hồ sơ đã có, đúng như nghỉ
 việc.
 
-**Nghỉ việc** khoá tài khoản **ngay**, nhưng giữ hồ sơ vĩnh viễn, chạy lương chốt cuối, và mở
-danh sách thu hồi.
+**Nghỉ việc có hai mốc: ghi nhận và đóng hồ sơ.** `POST /employees/:id/offboard` ghi ngày làm
+việc cuối vào `leaveDate`; đó là một ngày nghiệp vụ theo `APP_TIMEZONE` (§9.8), và người ấy
+**làm trọn ngày đó**. Ngày cuối là hôm nay hoặc đã qua thì hồ sơ đóng ngay trong lượt bấm. Ngày
+cuối còn ở phía trước thì lượt bấm chỉ **hẹn**: hồ sơ vẫn `active`, đăng nhập vẫn dùng được,
+kiosk vẫn giữ mặt, người ấy vẫn nằm trong danh sách phải có mặt hằng ngày. Những gì đọc
+`leaveDate` thì mở ra ngay từ lúc hẹn: danh sách kiểm của kỳ lương, phiếu chốt cuối (§9.18 mục
+8), và báo cáo thứ còn treo — tài sản chưa thu, đơn chưa quyết, tạm ứng chưa trừ. Khoá tài khoản
+ngay lúc HR bấm là lấy đi của người ta những ngày họ còn đi làm: không vào được hệ thống, rơi
+khỏi danh sách phải có mặt, trong khi vẫn quẹt mặt ở cửa mỗi sáng.
 
-**Một người nghỉ việc không bao giờ bị xoá.** Bảng lương năm ngoái phải tra ra được họ. Cờ
-`active` tắt, tài khoản khoá, dữ liệu sinh trắc **xoá** (§7.5 — mẫu khuôn mặt là thứ duy nhất
-bị xoá thật), hồ sơ ở lại.
+**Đóng hồ sơ là đúng một hàm**, dùng chung cho lượt bấm và cho job `leavings-due` trên hàng đợi
+`people`, chạy 00:05 mỗi ngày theo `APP_TIMEZONE`. Job đóng mọi hồ sơ còn `active` có ngày cuối
+**trước hôm nay**, tức đầu ngày hôm sau ngày cuối; một lần chạy bị lỡ thì lần sau đóng bù. Hàm
+ấy tắt `active` của hồ sơ và của tài khoản, đóng mọi phiên và cắt vé đang cầm (§9.23), tính lại
+vai `MANAGER` của người quản lý (§9.4), quên phạm vi nhìn thấy đã lưu, xoá mẫu khuôn mặt ở
+server và mọi kiosk từng nhận nếu người ấy có (§9.19), và ghi một dòng `employee.deactivate` —
+người bấm đứng tên khi đóng ngay, dòng của job không có người đứng tên. Bước ghi đầu tiên là một
+câu có điều kiện `active = true AND leaveDate <= ngày ấy`, nên hai lượt chạy chồng nhau hay chạy
+lại chỉ đóng một lần, và một lịch vừa bị huỷ không bị đóng nhầm.
+
+**Lịch nghỉ đổi được và huỷ được cho tới lúc hồ sơ đóng.** `PATCH /employees/:id/offboard` đổi
+ngày cuối; ngày mới đã tới thì hồ sơ đóng ngay như ở lượt ghi nhận. `DELETE` cùng đường huỷ
+lịch: `leaveDate` về rỗng và người ấy làm tiếp như chưa từng có lịch. Hồ sơ đã đóng thì không đổi,
+không huỷ được (`LEAVING_CLOSED`): mặt đã xoá, phiên đã chết, và một nút huỷ lúc ấy hứa trả lại
+thứ không trả lại được. Ghi nhận lần hai khi đã có lịch bị từ chối (`LEAVING_SCHEDULED`) để
+không ai vô tình ghi đè ngày của người khác.
+
+**Một người nghỉ việc không bao giờ bị xoá.** Bảng lương năm ngoái phải tra ra được họ. Khi hồ
+sơ đóng, cờ `active` tắt, tài khoản khoá, dữ liệu sinh trắc **xoá** (§7.5 — mẫu khuôn mặt là thứ
+duy nhất bị xoá thật), hồ sơ ở lại.
 
 ### 9.15 Kiến trúc thông tin: ba loại màn hình, không phải một danh sách dài
 
@@ -8116,7 +8206,7 @@ họ và ai nhìn thấy dữ liệu của họ (§9.4).
 tạm ứng, đối trừ tài sản chưa trả. Đây là phép tính khác hẳn lương tháng và làm tay thì sai.
 
 **Trước khi nói tới chốt cuối, phải trả xong lương tháng cuối.** Một lượt chạy thường lọc
-`active = true`, mà `offboard` tắt cờ ấy ngay lúc bấm. Người nghỉ ngày 20 thì tới ngày chạy
+`active = true`, mà hồ sơ đóng tắt cờ ấy ngay sau ngày cuối (§9.14). Người nghỉ ngày 20 thì tới ngày chạy
 lương đã `active = false`, **rơi khỏi lượt chạy, và hai mươi ngày công của họ biến mất không để
 lại dấu vết nào** — không lỗi, không mục trong danh sách kiểm, chỉ là một cái tên vắng mặt giữa
 năm nghìn cái tên. Điều kiện đúng không phải "còn làm việc" mà **"chưa nghỉ trước khi kỳ này
@@ -8230,8 +8320,8 @@ hợp đồng:
 - **Đánh giá tác động xử lý dữ liệu** theo Điều 24, và khai bộ phận phụ trách với Bộ Công an.
 - **Nhật ký truy cập**: ai đã xem hoặc xuất dữ liệu sinh trắc, lúc nào. `AuditLog` đã có, phải
   phủ tới đây.
-- **Quyền xoá**. Một người nghỉ việc thì mẫu khuôn mặt **xoá thật** ở cả server lẫn mọi kiosk
-  từng nhận — hồ sơ nhân sự ở lại, sinh trắc thì không (§9.14). Đây là thứ duy nhất trong hệ bị
+- **Quyền xoá**. Hồ sơ của người nghỉ việc đóng thì mẫu khuôn mặt **xoá thật** ở cả server lẫn
+  mọi kiosk từng nhận — hồ sơ nhân sự ở lại, sinh trắc thì không (§9.14). Đây là thứ duy nhất trong hệ bị
   xoá thật, và §7.5 đã có đường `DELETE` xuống kiosk để làm việc đó.
 
 ### 9.20 Sáu thứ cắt ngang mọi phân hệ
@@ -8849,8 +8939,8 @@ trông khác** — cùng lý do §9.16 mục 11 bắt lịch sử tài sản là
 `Session` vì thế giữ một dòng mỗi thiết bị, và token gia hạn mang **hai** thứ: `sid` chỉ dòng,
 `jti` chỉ token mà dòng ấy còn nhận. Tách ra như vậy thì phát hiện dùng lại mới **khu trú được**
 — lượt gia hạn cầm `jti` đã tiêu chỉ đóng đúng dòng của nó, các thiết bị khác chưa chứng tỏ điều
-gì nên giữ nguyên phiên. Bốn việc đóng **tất cả**: nghỉ việc, đổi mật khẩu, tài khoản bị tắt, và
-đổi vai. Đóng phiên chỉ giết refresh token, nên cùng lúc ấy `api` ghi mốc "vé cấp trước giờ này
+gì nên giữ nguyên phiên. Bốn việc đóng **tất cả**: hồ sơ nghỉ việc đóng (§9.14), đổi mật khẩu,
+tài khoản bị tắt, và đổi vai. Đóng phiên chỉ giết refresh token, nên cùng lúc ấy `api` ghi mốc "vé cấp trước giờ này
 là chết" của tài khoản vào Redis; `JwtStrategy` từ chối access token có `iat` sớm hơn mốc. `iat`
 tính bằng giây, nên vé cấp **đúng giây của mốc** thì hỏi dòng phiên theo `sid`: phiên đã đóng là vé
 chết, phiên mở sau mốc là vé sống. Coi cả giây ấy là chết thì người vừa đặt mật khẩu mà đăng nhập
