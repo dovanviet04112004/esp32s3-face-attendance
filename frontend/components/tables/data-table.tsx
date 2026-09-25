@@ -225,7 +225,7 @@ export function PersonCell({ name, code, href }: { name: string; code?: string |
 
 /** A click on a control inside the row belongs to that control, not to the row. */
 export function onControl(event: MouseEvent): boolean {
-  return (event.target as HTMLElement).closest("a, button, input, select, textarea, label, [role=menuitem]") !== null;
+  return (event.target as HTMLElement).closest("a, button, input, select, textarea, label, [role=menuitem], [role=checkbox]") !== null;
 }
 
 export function ActionMenu({ actions, label }: { actions: RowAction[]; label: string }) {
@@ -418,7 +418,7 @@ export function DataTable<T>({
                       checked={allOn}
                       indeterminate={someOn && !allOn}
                       onCheckedChange={() => setChosen(allOn ? new Set() : new Set(ordered.map((row) => keyOf(row))))}
-                      aria-label={t("chooseAll")}
+                      label={t("chooseAll")}
                     />
                   ) : null}
                   {columns.map((column) => {
@@ -482,7 +482,7 @@ export function DataTable<T>({
                             <Table.CheckCell
                               checked={chosen.has(key)}
                               onCheckedChange={() => toggleRow(key)}
-                              aria-label={t("chooseRow")}
+                              label={t("chooseRow")}
                             />
                           ) : null}
                           {columns.map((column) => (
