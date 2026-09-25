@@ -591,7 +591,7 @@ function PolicyPageBody() {
                   />
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="contain-inline-size">
                   <Tabs
                     variant="segmented"
                     tabs={SECTIONS.map((one) => ({ value: one, label: t(`section_${one}`) }))}
@@ -668,6 +668,7 @@ function PolicyPageBody() {
                                   ),
                                 })
                               }
+                              className="w-full min-w-0"
                             />
                           </div>
                           <div className="w-28 shrink-0">
@@ -682,6 +683,7 @@ function PolicyPageBody() {
                                   brackets: draft.brackets.map((one, at) => (at === index ? { ...one, rate: event.target.value } : one)),
                                 })
                               }
+                              className="w-full min-w-0"
                             />
                           </div>
                           <Button
