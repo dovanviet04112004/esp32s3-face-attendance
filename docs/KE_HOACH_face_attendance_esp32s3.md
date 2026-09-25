@@ -4787,7 +4787,9 @@ frontend/
 │   ├── forms/employee-form.tsx
 │   ├── employees/{contracts.tsx, pay.tsx, assets.tsx, checklist.tsx, files.tsx,
 │   │              offboard.tsx}      # ★ một tab của hồ sơ một người, đọc và ghi
-│   ├── requests/{request-card.tsx, request-form.tsx}
+│   ├── requests/{request-card.tsx, request-form.tsx, inbox-preview.tsx}
+│   │                                 # ★ §9.10 — năm việc chờ cũ nhất, quyết ngay tại
+│   │                                 #   chỗ; trang chủ nào cũng dùng đúng một bản
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
 │   ├── notifications/{bell.tsx, notice-list.tsx, push-switch.tsx}   # ★ §9.21.4
 │   ├── documents/{document-reader.tsx, file-gaps.tsx}   # ★ §9.16 mục 9
