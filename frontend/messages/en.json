@@ -597,7 +597,6 @@
     "feedEvent": "Event",
     "feedDevice": "Device",
     "feedPerson": "Person #{id}",
-    "feedBeat": "Heartbeat",
     "dirIN": "In",
     "dirOUT": "Out",
     "link_live": "live",

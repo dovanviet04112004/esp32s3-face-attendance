@@ -251,7 +251,7 @@ function Devices() {
       return [what, kioskOf(body.deviceId)].filter(Boolean).join(" · ");
     }
     const state =
-      body.online === true ? t("online") : body.online === false ? t("offline") : typeof body.status === "string" ? t(`status${body.status as Device["status"]}`) : t("feedBeat");
+      typeof body.online === "boolean" ? (body.online ? t("online") : t("offline")) : t(`status${body.status as Device["status"]}`);
     return [state, kioskOf(body.deviceId)].join(" · ");
   }
 
@@ -388,7 +388,7 @@ function Devices() {
                   {recent.map((item) => (
                     <li key={item.id} className="flex items-baseline gap-3 border-b border-kumo-hairline py-2 last:border-0">
                       <span className="w-11 shrink-0 text-sm text-kumo-subtle tabular-nums">
-                        {typeof item.body.ts === "number" ? format.dateTime(new Date(item.body.ts), "clock") : ""}
+                        {format.dateTime(new Date(typeof item.body.ts === "number" ? item.body.ts : item.heardAt), "clock")}
                       </span>
                       <span className="w-20 shrink-0 text-sm text-kumo-subtle">{t(FEED_KEY[item.feed])}</span>
                       <span className="min-w-0 flex-1 truncate" title={detail(item)}>

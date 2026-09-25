@@ -20,6 +20,8 @@ export interface FeedItem {
   id: number;
   feed: ListedFeed;
   body: Record<string, unknown>;
+  /** Epoch ms the browser heard it, for news that carries no ts of its own. */
+  heardAt: number;
 }
 
 const LISTED: readonly FeedName[] = ["attendance", "event", "device"];
@@ -103,14 +105,15 @@ const useStore = create<Feed>((set) => ({
   push: (feed, body) =>
     set((held) => {
       const id = held.counted + 1;
-      return { counted: id, items: [{ id, feed, body }, ...held.items].slice(0, KEEP) };
+      return { counted: id, items: [{ id, feed, body, heardAt: Date.now() }, ...held.items].slice(0, KEEP) };
     }),
 }));
 
 whenSignedOut(() => useStore.setState(emptyFeed()));
 
-function listed(feed: FeedName): feed is ListedFeed {
-  return LISTED.includes(feed);
+// A heartbeat only refreshes the cache; listed, one kiosk beating every 30 s buries every punch.
+function listed(feed: FeedName, body: Record<string, unknown>): feed is ListedFeed {
+  return LISTED.includes(feed) && (feed !== "device" || "online" in body || "status" in body);
 }
 
 function staleKeys(feed: FeedName, body: Record<string, unknown>): string[] {
@@ -191,7 +194,7 @@ export function useFeedConnection(): void {
 
     for (const feed of FEEDS) {
       socket.on(feed, (body: Record<string, unknown>) => {
-        if (listed(feed)) {
+        if (listed(feed, body)) {
           push(feed, body);
         }
         stale.add(staleKeys(feed, body));

@@ -366,18 +366,18 @@ export default function DevicePage() {
                   {mine.map((item) => (
                     <li key={item.id} className="flex items-baseline gap-3 border-b border-kumo-hairline py-2 last:border-0">
                       <span className="w-11 shrink-0 text-sm text-kumo-subtle tabular-nums">
-                        {typeof item.body.ts === "number" ? format.dateTime(new Date(item.body.ts), "clock") : ""}
+                        {format.dateTime(new Date(typeof item.body.ts === "number" ? item.body.ts : item.heardAt), "clock")}
                       </span>
                       <span className="min-w-0 truncate">
                         {isEvent(item.body.type)
                           ? t(`event_${item.body.type}`)
                           : item.feed === "attendance"
                             ? t("feedAttendance")
-                            : item.body.online === true
-                              ? t("online")
-                              : item.body.online === false
-                                ? t("offline")
-                                : t("feedBeat")}
+                            : typeof item.body.online === "boolean"
+                              ? item.body.online
+                                ? t("online")
+                                : t("offline")
+                              : t(`status${item.body.status as Device["status"]}`)}
                       </span>
                     </li>
                   ))}
