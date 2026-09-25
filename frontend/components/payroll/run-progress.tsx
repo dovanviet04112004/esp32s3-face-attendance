@@ -1,5 +1,6 @@
 "use client";
 
+import { LayerCard, Meter } from "@cloudflare/kumo";
 import { useLocale, useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
@@ -40,48 +41,49 @@ const STATE_KEY: Record<
   DISCARDED: "stateDISCARDED",
 };
 
-export function RunProgress({ run, action }: { run: PayrollRun; action?: ReactNode }) {
+/** One run of a period: progress, totals, actions in the header strip; the
+ *  inputs a bonus or settlement run pays from go in as children.
+ */
+export function RunProgress({ run, action, children }: { run: PayrollRun; action?: ReactNode; children?: ReactNode }) {
   const t = useTranslations("payroll");
   const locale = useLocale();
+  const kindName = t(`run${run.kind}`);
   const share = run.employeeCount === 0 ? 0 : run.doneCount / run.employeeCount;
 
   return (
-    <article className="rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-medium">{run.label ?? t(`run${run.kind}`)}</p>
-          <p className="mt-0.5 text-xs text-(--color-muted) tabular-nums">
-            {run.doneCount} / {run.employeeCount} {t("employees")}
-          </p>
-        </div>
-        <StatePill tone={TONE[run.state]}>{t(STATE_KEY[run.state])}</StatePill>
-      </div>
-
-      <div
-        role="progressbar"
-        aria-valuenow={Math.round(share * 100)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        className="mt-3 h-1.5 overflow-hidden rounded-full bg-(--color-ground)"
-      >
-        <div
-          className="h-full rounded-full bg-(--color-accent) transition-[width]"
-          style={{ width: `${Math.round(share * 100)}%` }}
+    <LayerCard>
+      <LayerCard.Secondary className="flex-wrap justify-between gap-2">
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="truncate font-medium text-kumo-default">{run.label ?? kindName}</span>
+          {run.label ? <span>{kindName}</span> : null}
+          <StatePill tone={TONE[run.state]}>{t(STATE_KEY[run.state])}</StatePill>
+        </span>
+        {action}
+      </LayerCard.Secondary>
+      <LayerCard.Primary className="flex flex-col gap-4">
+        <Meter
+          label={t("runProgress")}
+          value={Math.round(share * 100)}
+          customValue={`${run.doneCount} / ${run.employeeCount} ${t("employees")}`}
         />
-      </div>
-
-      <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-        <div className="flex justify-between gap-3">
-          <dt className="text-xs text-(--color-muted)">{t("gross")}</dt>
-          <dd className="tabular-nums">{money(Number(run.grossTotal), locale)}</dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-xs text-(--color-muted)">{t("net")}</dt>
-          <dd className="tabular-nums">{money(Number(run.netTotal), locale)}</dd>
-        </div>
-      </dl>
-
-      {action ? <div className="mt-4">{action}</div> : null}
-    </article>
+        <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-3">
+          <div className="flex flex-col">
+            <dt className="text-sm text-kumo-subtle">{t("gross")}</dt>
+            <dd className="font-medium tabular-nums">{money(Number(run.grossTotal), locale)}</dd>
+          </div>
+          <div className="flex flex-col">
+            <dt className="text-sm text-kumo-subtle">{t("net")}</dt>
+            <dd className="font-medium tabular-nums">{money(Number(run.netTotal), locale)}</dd>
+          </div>
+          {run.failedCount > 0 ? (
+            <div className="flex flex-col">
+              <dt className="text-sm text-kumo-subtle">{t("runFailedCount")}</dt>
+              <dd className="font-medium text-kumo-danger tabular-nums">{run.failedCount}</dd>
+            </div>
+          ) : null}
+        </dl>
+        {children}
+      </LayerCard.Primary>
+    </LayerCard>
   );
 }

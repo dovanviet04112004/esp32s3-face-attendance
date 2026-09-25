@@ -1,292 +1,464 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Banner, Button, Empty, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import { CheckIcon, ListChecksIcon, PlusIcon, TrashIcon, UserIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Empty, Failed } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { SkeletonRows } from "@/components/ui/skeleton";
-import { Link } from "@/i18n/navigation";
-import { dayOnly } from "@/lib/format";
+import { DataTable, type Column } from "@/components/tables/data-table";
+import { FilterBar, useSettled } from "@/components/ui/filter-bar";
+import { Failed } from "@/components/ui/failed";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { CountPill, StatePill } from "@/components/ui/pill";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
-
-interface OpenTask {
-  id: string;
-  title: string;
-  ownerRole: "MANAGER" | "SELF" | "HR";
-  dueOn: string;
-  run: {
-    kind: "ONBOARDING" | "OFFBOARDING";
-    employee: { id: number; code: string; fullName: string };
-  };
-}
+import { dayOnly } from "@/lib/format";
 
 const FINISHERS = ["ADMIN", "HR", "MANAGER"];
 const MANAGERS_OF_TEMPLATES = ["ADMIN", "HR"];
 const KINDS = ["ONBOARDING", "OFFBOARDING"] as const;
 const OWNERS = ["HR", "MANAGER", "SELF"] as const;
+const kMaxItems = 100;
 
 type Kind = (typeof KINDS)[number];
+type Owner = (typeof OWNERS)[number];
+type Pick = "all" | "late" | Owner;
+
+interface TaskPage {
+  rows: OpenTask[];
+  total: number;
+  totalIsExact?: boolean;
+  next: string | null;
+}
+
+interface OpenCounts {
+  open: number;
+  overdue: number;
+  owners: Record<Owner, number>;
+}
+
+interface OpenTask {
+  id: string;
+  title: string;
+  ownerRole: Owner;
+  dueOn: string;
+  run: {
+    kind: Kind;
+    employee: { id: number; code: string; fullName: string };
+  };
+}
 
 interface Template {
   id: string;
   kind: Kind;
   name: string;
-  items: { title: string }[];
+  items: { title: string; owner: Owner; dueDays: number }[];
+}
+
+interface ItemDraft {
+  key: number;
+  title: string;
+  owner: Owner;
+  dueDays: string;
 }
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** One task a line: title | owner | days from the anchor. A line that does not
- *  read that way is dropped, so a typo cannot become a task nobody owns.
- */
-function parseItems(text: string): { title: string; owner: string; dueDays: number }[] {
-  return text
-    .split("\n")
-    .map((line) => line.split("|").map((part) => part.trim()))
-    .filter(
-      (parts) =>
-        parts.length === 3 &&
-        parts[0] !== "" &&
-        (OWNERS as readonly string[]).includes(parts[1].toUpperCase()) &&
-        Number.isInteger(Number(parts[2])),
-    )
-    .map((parts) => ({
-      title: parts[0],
-      owner: parts[1].toUpperCase(),
-      dueDays: Number(parts[2]),
-    }));
+function isLate(task: OpenTask): boolean {
+  return task.dueOn.slice(0, 10) < today();
 }
 
 export default function OnboardingPage() {
   const t = useTranslations("onboarding");
-  const format = useFormatter();
   const common = useTranslations("common");
+  const format = useFormatter();
+  const router = useRouter();
   const cache = useQueryClient();
   const role = useSession((s) => s.role);
   const faultOf = useFault();
+  const notify = useNotify();
   const mayFinish = role !== null && FINISHERS.includes(role);
   const mayManage = role !== null && MANAGERS_OF_TEMPLATES.includes(role);
-  const [fault, setFault] = useState<string | null>(null);
-  const [showTemplates, setShowTemplates] = useState(false);
+
+  const [pick, setPick] = useState<Pick>("all");
+  const [kind, setKind] = useState<Kind | "">("");
+  const [typed, setTyped] = useState("");
+  const search = useSettled(typed.trim());
+
+  const [viewing, setViewing] = useState<Template | null>(null);
+  const [creating, setCreating] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [templateKind, setTemplateKind] = useState<Kind>("ONBOARDING");
-  const [items, setItems] = useState("");
+  const [items, setItems] = useState<ItemDraft[]>([]);
+  const [nextKey, setNextKey] = useState(0);
+  const [fault, setFault] = useState<string | null>(null);
+
+  const tasks = useInfiniteQuery({
+    queryKey: ["checklists", "open", { pick, kind, search }],
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams();
+      if (pick === "late") {
+        params.set("overdue", "true");
+      } else if (pick !== "all") {
+        params.set("owner", pick);
+      }
+      if (kind) {
+        params.set("kind", kind);
+      }
+      if (search) {
+        params.set("search", search);
+      }
+      if (pageParam) {
+        params.set("cursor", pageParam);
+      }
+      return (await api.get<TaskPage>(`/checklists/open?${params.toString()}`)).data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
+  });
+
+  const counts = useQuery({
+    queryKey: ["checklists", "open", "counts", kind],
+    queryFn: async () => (await api.get<OpenCounts>(`/checklists/open/counts${kind ? `?kind=${kind}` : ""}`)).data,
+  });
 
   const templates = useQuery({
     queryKey: ["checklist-templates"],
-    enabled: mayManage && showTemplates,
+    enabled: mayManage,
     queryFn: async () => (await api.get<Template[]>("/checklist-templates")).data,
+  });
+
+  const finish = useMutation({
+    mutationFn: async (task: OpenTask) => {
+      await api.post(`/checklist-tasks/${task.id}/finish`, {});
+      return task;
+    },
+    onSuccess: (task) => {
+      notify.done(t("finished", { title: task.title }));
+      void cache.invalidateQueries({ queryKey: ["checklists", "open"] });
+      void cache.invalidateQueries({ queryKey: ["checklist", task.run.employee.id] });
+    },
+    onError: notify.failed,
   });
 
   const create = useMutation({
     mutationFn: () =>
       api.post("/checklist-templates", {
         kind: templateKind,
-        name: templateName,
-        items: parseItems(items),
+        name: templateName.trim(),
+        items: items.map((one) => ({ title: one.title.trim(), owner: one.owner, dueDays: Number(one.dueDays) })),
       }),
     onSuccess: () => {
-      setTemplateName("");
-      setItems("");
+      setCreating(false);
+      notify.done(t("templateAdded", { name: templateName.trim() }));
       void cache.invalidateQueries({ queryKey: ["checklist-templates"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
-  function addTemplate(event: FormEvent): void {
-    event.preventDefault();
+  function blankItem(key: number): ItemDraft {
+    return { key, title: "", owner: "HR", dueDays: "0" };
+  }
+
+  function openCreate(): void {
     setFault(null);
-    create.mutate();
+    setTemplateName("");
+    setTemplateKind("ONBOARDING");
+    setItems([blankItem(0), blankItem(1)]);
+    setNextKey(2);
+    setCreating(true);
   }
 
-  const tasks = useQuery({
-    queryKey: ["checklists", "open"],
-    queryFn: async () => (await api.get<OpenTask[]>("/checklists/open")).data,
-  });
+  function patchItem(key: number, patch: Partial<ItemDraft>): void {
+    setItems((held) => held.map((one) => (one.key === key ? { ...one, ...patch } : one)));
+  }
 
-  const finish = useMutation({
-    mutationFn: (taskId: string) => api.post(`/checklist-tasks/${taskId}/finish`, {}),
-    onSuccess: () => {
-      void cache.invalidateQueries({ queryKey: ["checklists", "open"] });
-      void cache.invalidateQueries({ queryKey: ["checklist"] });
+  const rows = tasks.data?.pages.flatMap((one) => one.rows);
+  const first = tasks.data?.pages[0];
+  const count = (pickOf: (held: OpenCounts) => number) => (counts.data ? pickOf(counts.data) : common("empty"));
+  const itemsReady =
+    items.length > 0 && items.every((one) => one.title.trim() !== "" && Number.isInteger(Number(one.dueDays)) && one.dueDays !== "");
+
+  const columns: Column<OpenTask>[] = [
+    { id: "title", header: t("task"), sortBy: (row) => row.title, cell: (row) => row.title },
+    {
+      id: "employee",
+      header: t("person"),
+      sortBy: (row) => row.run.employee.fullName,
+      cell: (row) => (
+        <span className="flex flex-col">
+          <span>{row.run.employee.fullName}</span>
+          <span className="font-mono text-sm text-kumo-subtle">{row.run.employee.code}</span>
+        </span>
+      ),
     },
-    onError: (fell: unknown) => setFault(faultOf(fell)),
-  });
+    {
+      id: "due",
+      header: t("due"),
+      sortBy: (row) => row.dueOn,
+      cell: (row) => (
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="tabular-nums">{format.dateTime(dayOnly(row.dueOn), "day")}</span>
+          {isLate(row) ? <StatePill tone="bad">{t("overdue")}</StatePill> : null}
+        </span>
+      ),
+    },
+    { id: "kind", header: t("kind"), sortBy: (row) => row.run.kind, cell: (row) => t(`kind${row.run.kind}`) },
+    { id: "owner", header: t("owner"), sortBy: (row) => row.ownerRole, cell: (row) => t(`owner${row.ownerRole}`) },
+  ];
 
-  if (tasks.isError) {
-    return <Failed onRetry={() => void tasks.refetch()} />;
-  }
-
-  const rows = tasks.data ?? [];
-  const late = rows.filter((one) => one.dueOn.slice(0, 10) < today()).length;
+  const filtered = pick !== "all" || kind !== "" || search !== "";
 
   return (
-    <section className="w-full">
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      <p className="mt-1 mb-4 text-sm text-(--color-muted)">{t("lead")}</p>
+    <>
+      <PageHeader title={t("title")} description={t("lead")} />
 
-      {late > 0 ? (
-        <p className="mb-3 text-sm text-(--color-warn)">{t("lateCount", { count: late })}</p>
-      ) : null}
-
-      {fault ? (
-        <p role="alert" className="mb-3 text-sm text-(--color-danger)">
-          {fault}
-        </p>
-      ) : null}
-
-      {mayManage ? (
-        <div className="mb-4 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            tone="quiet"
-            size="sm"
-            onClick={() => setShowTemplates(!showTemplates)}
-          >
-            {showTemplates ? t("hideTemplates") : t("showTemplates")}
-          </Button>
-        </div>
-      ) : null}
-
-      {mayManage && showTemplates ? (
-        <section className="mb-6 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-          <h2 className="text-sm font-medium">{t("templatesTitle")}</h2>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("templatesLead")}</p>
-
-          <ul className="mt-3 flex flex-col">
-            {(templates.data ?? []).map((one) => (
-              <li
-                key={one.id}
-                className="flex flex-wrap items-center gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
+      <PageLayout
+        aside={
+          <>
+            <AsideCard title={t("summaryTitle")}>
+              <StatList
+                stats={[
+                  { key: "all", label: t("openCount"), value: count((held) => held.open), active: pick === "all", onPick: () => setPick("all") },
+                  {
+                    key: "late",
+                    label: t("overdue"),
+                    value: count((held) => held.overdue),
+                    tone: (counts.data?.overdue ?? 0) > 0 ? "warning" : undefined,
+                    active: pick === "late",
+                    onPick: () => setPick("late"),
+                  },
+                  ...OWNERS.map((owner) => ({
+                    key: owner,
+                    label: t("ownedBy", { owner: t(`owner${owner}`) }),
+                    value: count((held) => held.owners[owner]),
+                    active: pick === owner,
+                    onPick: () => setPick(owner),
+                  })),
+                ]}
+              />
+            </AsideCard>
+            {mayManage ? (
+              <AsideCard
+                title={t("templatesTitle")}
+                action={
+                  <Button variant="ghost" size="sm" icon={PlusIcon} onClick={openCreate}>
+                    {t("templateAdd")}
+                  </Button>
+                }
               >
-                <span className="min-w-0 flex-1">{one.name}</span>
-                <span className="text-xs text-(--color-muted)">{t(`kind${one.kind}`)}</span>
-                <span className="text-xs text-(--color-muted)">
-                  {t("itemCount", { count: one.items.length })}
-                </span>
-              </li>
-            ))}
-            {templates.isSuccess && (templates.data ?? []).length === 0 ? (
-              <li className="py-2 text-sm text-(--color-muted)">{t("templatesEmpty")}</li>
+                {templates.isError ? (
+                  <Failed onRetry={() => void templates.refetch()} />
+                ) : templates.isSuccess && templates.data.length === 0 ? (
+                  <p className="text-kumo-subtle">{t("templatesEmpty")}</p>
+                ) : (
+                  <ul className="-mx-2 -my-1 flex flex-col">
+                    {(templates.data ?? []).map((one) => (
+                      <li key={one.id}>
+                        <button
+                          type="button"
+                          onClick={() => setViewing(one)}
+                          className="flex min-h-9 w-full items-center justify-between gap-3 rounded-md px-2 text-start hover:bg-kumo-tint"
+                        >
+                          <span className="flex min-w-0 flex-col py-1">
+                            <span className="truncate">{one.name}</span>
+                            <span className="text-sm text-kumo-subtle">{t(`kind${one.kind}`)}</span>
+                          </span>
+                          <CountPill>{t("itemCount", { count: one.items.length })}</CountPill>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </AsideCard>
             ) : null}
-          </ul>
+          </>
+        }
+      >
+        <FilterBar
+          search={{ value: typed, onChange: setTyped, placeholder: t("searchHint") }}
+          filters={[
+            {
+              key: "kind",
+              label: t("kind"),
+              value: kind,
+              onChange: (next) => setKind(next as Kind | ""),
+              items: { "": t("anyKind"), ONBOARDING: t("kindONBOARDING"), OFFBOARDING: t("kindOFFBOARDING") },
+            },
+          ]}
+        />
+        <DataTable
+          id="onboarding-open"
+          cardLead="title"
+          columns={columns}
+          rows={rows}
+          keyOf={(row) => row.id}
+          pending={tasks.isPending}
+          failed={tasks.isError}
+          onRetry={() => void tasks.refetch()}
+          empty={filtered ? t("noMatch") : t("allDone")}
+          emptyHint={filtered ? t("noMatchHint") : t("allDoneHint")}
+          rowHref={(row) => `/employees/${row.run.employee.id}?tab=checklist`}
+          rowActions={(row) => [
+            ...(mayFinish
+              ? [{ key: "finish", label: t("finish"), icon: CheckIcon, disabled: finish.isPending, onSelect: () => finish.mutate(row) }]
+              : []),
+            {
+              key: "open",
+              label: t("openProfile"),
+              icon: UserIcon,
+              onSelect: () => router.push(`/employees/${row.run.employee.id}?tab=checklist`),
+            },
+          ]}
+          paging={
+            first
+              ? {
+                  shown: rows?.length ?? 0,
+                  total: first.total,
+                  exact: first.totalIsExact,
+                  onMore: tasks.hasNextPage ? () => void tasks.fetchNextPage() : undefined,
+                  loading: tasks.isFetchingNextPage,
+                }
+              : undefined
+          }
+        />
+      </PageLayout>
 
-          <form onSubmit={addTemplate} className="mt-4">
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="min-w-48 flex-1">
-                <label className="block text-xs text-(--color-muted)" htmlFor="templateName">
-                  {t("templateName")}
-                </label>
+      <LayerDialog.Root
+        open={viewing !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setViewing(null);
+          }
+        }}
+      >
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{viewing?.name ?? t("templatesTitle")}</LayerDialog.Title>
+          {viewing ? <LayerDialog.Description>{t(`kind${viewing.kind}`)}</LayerDialog.Description> : null}
+          <LayerDialog.Body>
+            {viewing && viewing.items.length > 0 ? (
+              <ol className="flex flex-col">
+                {viewing.items.map((one, at) => (
+                  <li key={at} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-kumo-hairline py-2 last:border-0">
+                    <span className="min-w-0 flex-1">{one.title}</span>
+                    <StatePill>{t(`owner${one.owner}`)}</StatePill>
+                    <span className="w-28 shrink-0 text-end text-kumo-subtle tabular-nums">{t("dueDays", { offset: one.dueDays > 0 ? `+${one.dueDays}` : String(one.dueDays) })}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <Empty size="sm" icon={<ListChecksIcon size={32} className="text-kumo-inactive" />} title={t("templateNoItems")} />
+            )}
+            <p className="mt-4 text-sm text-kumo-subtle">{t("templatesLead")}</p>
+          </LayerDialog.Body>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Root open={creating} onOpenChange={setCreating} dismissDisabled={create.isPending}>
+        <LayerDialog.Content size="lg" closeLabel={common("close")}>
+          <LayerDialog.Title>{t("templateAdd")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("templatesLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <form
+              id="template-add"
+              className="flex flex-col gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setFault(null);
+                create.mutate();
+              }}
+            >
+              <div className="grid items-start gap-4 sm:grid-cols-[1fr_12rem]">
                 <Input
-                  id="templateName"
+                  label={t("templateName")}
                   required
                   maxLength={160}
                   value={templateName}
                   onChange={(event) => setTemplateName(event.target.value)}
-                  className="mt-1"
+                />
+                <Select
+                  label={t("kind")}
+                  hideLabel={false}
+                  value={templateKind}
+                  onValueChange={(next) => setTemplateKind(String(next ?? "ONBOARDING") as Kind)}
+                  items={{ ONBOARDING: t("kindONBOARDING"), OFFBOARDING: t("kindOFFBOARDING") }}
+                  className="w-full"
                 />
               </div>
-              <div className="w-40">
-                <label className="block text-xs text-(--color-muted)" htmlFor="templateKind">
-                  {t("kind")}
-                </label>
-                <Select
-                  id="templateKind"
-                  value={templateKind}
-                  onChange={(event) => setTemplateKind(event.target.value as Kind)}
-                  className="mt-1"
-                >
-                  {KINDS.map((one) => (
-                    <option key={one} value={one}>
-                      {t(`kind${one}`)}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-
-            <label className="mt-3 block text-xs text-(--color-muted)" htmlFor="templateItems">
-              {t("templateItems")}
-            </label>
-            <textarea
-              id="templateItems"
-              rows={5}
-              required
-              value={items}
-              onChange={(event) => setItems(event.target.value)}
-              placeholder={t("templateItemsHint")}
-              className="mt-1 w-full rounded-lg border border-(--color-field) bg-(--color-surface) px-3 py-2 font-mono text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
-            />
-            <p className="mt-1 text-xs text-(--color-muted)">{t("templateItemsRule")}</p>
-
-            <Button type="submit" disabled={create.isPending} className="mt-3">
-              {create.isPending ? common("saving") : t("templateAdd")}
-            </Button>
-          </form>
-        </section>
-      ) : null}
-
-      {tasks.isPending ? (
-        <SkeletonRows rows={4} columns={3} />
-      ) : rows.length === 0 ? (
-        <Empty title={t("allDone")} hint={t("allDoneHint")} />
-      ) : (
-        <ul className="divide-y divide-(--color-line) rounded-xl border border-(--color-line) bg-(--color-surface)">
-          {rows.map((one) => (
-            <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-              <div className="min-w-0 flex-1">
-                <p>{one.title}</p>
-                <p className="mt-0.5 text-xs text-(--color-muted)">
-                  <Link
-                    href={`/employees/${one.run.employee.id}?tab=checklist`}
-                    className="underline hover:no-underline"
-                  >
-                    {one.run.employee.fullName}
-                  </Link>
-                  {" · "}
-                  {t(`kind${one.run.kind}`)} · {t(`owner${one.ownerRole}`)}
-                </p>
-              </div>
-              <span
-                className={cn(
-                  "shrink-0 text-xs tabular-nums",
-                  one.dueOn.slice(0, 10) < today()
-                    ? "text-(--color-warn)"
-                    : "text-(--color-muted)",
-                )}
-              >
-                {one.dueOn.slice(0, 10) < today() ? `${t("overdue")} · ` : ""}
-                {format.dateTime(dayOnly(one.dueOn), "day")}
-              </span>
-              {mayFinish ? (
+              <fieldset className="flex flex-col gap-3">
+                <legend className="mb-1 font-medium">{t("templateItems")}</legend>
+                <p className="text-sm text-kumo-subtle">{t("templateItemsRule")}</p>
+                {items.map((one, at) => (
+                  <div key={one.key} className="grid items-end gap-2 sm:grid-cols-[1fr_9rem_6rem_auto] [&>*]:min-w-0">
+                    <Input
+                      label={t("itemTitle", { n: at + 1 })}
+                      required
+                      maxLength={200}
+                      value={one.title}
+                      onChange={(event) => patchItem(one.key, { title: event.target.value })}
+                    />
+                    <Select
+                      label={t("owner")}
+                      hideLabel={false}
+                      value={one.owner}
+                      onValueChange={(next) => patchItem(one.key, { owner: String(next ?? "HR") as Owner })}
+                      items={Object.fromEntries(OWNERS.map((owner) => [owner, t(`owner${owner}`)]))}
+                      className="w-full"
+                    />
+                    <Input
+                      label={t("itemDueDays")}
+                      type="number"
+                      step={1}
+                      required
+                      value={one.dueDays}
+                      onChange={(event) => patchItem(one.key, { dueDays: event.target.value })}
+                      className="tabular-nums"
+                    />
+                    <Button
+                      variant="ghost"
+                      shape="square"
+                      icon={TrashIcon}
+                      aria-label={t("itemRemove", { n: at + 1 })}
+                      disabled={items.length === 1}
+                      onClick={() => setItems((held) => held.filter((row) => row.key !== one.key))}
+                    />
+                  </div>
+                ))}
                 <Button
-                  type="button"
-                  tone="quiet"
+                  variant="secondary"
                   size="sm"
-                  disabled={finish.isPending && finish.variables === one.id}
+                  icon={PlusIcon}
+                  disabled={items.length >= kMaxItems}
                   onClick={() => {
-                    setFault(null);
-                    finish.mutate(one.id);
+                    setItems((held) => [...held, blankItem(nextKey)]);
+                    setNextKey(nextKey + 1);
                   }}
+                  className="self-start"
                 >
-                  {finish.isPending && finish.variables === one.id
-                    ? common("saving")
-                    : t("finish")}
+                  {t("itemAdd")}
                 </Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+              </fieldset>
+            </form>
+            {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              type="submit"
+              form="template-add"
+              loading={create.isPending}
+              disabled={templateName.trim() === "" || !itemsReady}
+            >
+              {t("templateAdd")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+    </>
   );
 }

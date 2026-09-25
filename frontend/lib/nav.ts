@@ -34,6 +34,8 @@ import type { Role } from "./auth";
 // A renamed message breaks the build here, not the sidebar (CLAUDE.md 3.1).
 type NavKey = keyof (typeof viMessages)["nav"];
 
+type SectionKey = "mine" | "inbox" | "people" | "time" | "calendar" | "pay" | "system";
+
 export interface NavItem {
   href: string;
   key: NavKey;
@@ -44,12 +46,30 @@ export interface NavItem {
   deskOnly?: boolean;
   /** Judged by the guard, skipped by the menu (KEHOACH 9.15). */
   unlisted?: boolean;
+  /** Sibling pages of one sidebar entry, joined by the section bar (KEHOACH 9.15). */
+  section?: SectionKey;
 }
 
 export interface NavGroup {
   key: NavKey;
   items: NavItem[];
 }
+
+interface Section {
+  key: NavKey;
+  icon: IconType;
+  short?: NavKey;
+}
+
+const SECTIONS: Record<SectionKey, Section> = {
+  mine: { key: "myRequests", icon: FileTextIcon, short: "myRequestsShort" },
+  inbox: { key: "approvals", icon: TrayIcon },
+  people: { key: "employees", icon: UsersIcon },
+  time: { key: "sectionTime", icon: CalendarBlankIcon },
+  calendar: { key: "sectionCalendar", icon: ClockIcon },
+  pay: { key: "payroll", icon: WalletIcon },
+  system: { key: "sectionSystem", icon: UserGearIcon },
+};
 
 const EVERYONE: Role[] = [];
 const DECIDERS: Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
@@ -73,7 +93,9 @@ export const NAV: NavGroup[] = [
       { href: "/me", key: "myPage", icon: UserIcon, roles: EVERYONE },
       { href: "/me/attendance", key: "myAttendance", icon: CalendarCheckIcon, roles: EVERYONE },
       { href: "/me/shifts", key: "myShifts", icon: CalendarIcon, roles: EVERYONE },
-      { href: "/me/requests", key: "myLeave", icon: FileTextIcon, roles: EVERYONE },
+      { href: "/me/requests", key: "myLeave", icon: FileTextIcon, roles: EVERYONE, section: "mine" },
+      { href: "/me/letters", key: "myLetters", icon: FileTextIcon, roles: EVERYONE, section: "mine" },
+      { href: "/me/profile", key: "myProfile", icon: FileTextIcon, roles: EVERYONE, section: "mine" },
       { href: "/me/payslips", key: "myPayslips", icon: ReceiptIcon, roles: EVERYONE },
       {
         href: "/me/documents",
@@ -89,26 +111,29 @@ export const NAV: NavGroup[] = [
     items: [
       {
         href: "/approvals",
-        key: "approvals",
+        key: "approvalsWaiting",
         icon: TrayIcon,
         roles: DECIDERS,
         badge: "approvals",
         deskOnly: true,
+        section: "inbox",
       },
+      { href: "/leave", key: "leave", icon: CalendarXIcon, roles: TEAM_TIME, section: "inbox" },
     ],
   },
   {
     key: "groupPeople",
     items: [
-      { href: "/employees", key: "directory", icon: UsersIcon, roles: TEAM },
+      { href: "/employees", key: "directory", icon: UsersIcon, roles: TEAM, section: "people" },
       {
         href: "/employees/new",
         key: "directory",
         icon: UsersIcon,
         roles: PEOPLE_DESK,
         unlisted: true,
+        section: "people",
       },
-      { href: "/org", key: "orgChart", icon: TreeStructureIcon, roles: TEAM_TIME },
+      { href: "/org", key: "orgChart", icon: TreeStructureIcon, roles: TEAM_TIME, section: "people" },
       { href: "/onboarding", key: "onboarding", icon: ListChecksIcon, roles: TEAM_TIME, deskOnly: true },
       { href: "/assets", key: "assets", icon: PackageIcon, roles: PEOPLE_DESK, deskOnly: true },
       { href: "/documents", key: "documents", icon: FilesIcon, roles: PEOPLE_DESK, deskOnly: true },
@@ -117,19 +142,26 @@ export const NAV: NavGroup[] = [
   {
     key: "groupTime",
     items: [
-      { href: "/timesheet", key: "timesheetHr", icon: CalendarBlankIcon, roles: TEAM },
-      { href: "/attendance", key: "attendance", icon: UserFocusIcon, roles: TEAM },
-      { href: "/leave", key: "leave", icon: CalendarXIcon, roles: TEAM_TIME },
-      { href: "/shifts", key: "shifts", icon: ClockIcon, roles: PEOPLE_DESK },
-      { href: "/holidays", key: "holidays", icon: FlagIcon, roles: PEOPLE_DESK },
+      { href: "/timesheet", key: "timesheetHr", icon: CalendarBlankIcon, roles: TEAM, section: "time" },
+      { href: "/attendance", key: "attendance", icon: UserFocusIcon, roles: TEAM, section: "time" },
+      { href: "/shifts", key: "shifts", icon: ClockIcon, roles: PEOPLE_DESK, section: "calendar" },
+      { href: "/holidays", key: "holidays", icon: FlagIcon, roles: PEOPLE_DESK, section: "calendar" },
+      {
+        href: "/leave-types",
+        key: "leaveTypes",
+        icon: TagIcon,
+        roles: PEOPLE_DESK,
+        deskOnly: true,
+        section: "calendar",
+      },
       { href: "/reports", key: "reports", icon: ChartBarIcon, roles: PAY_DESK },
     ],
   },
   {
     key: "groupPay",
     items: [
-      { href: "/payroll", key: "payroll", icon: WalletIcon, roles: PAY_DESK },
-      { href: "/policy", key: "policy", icon: ScalesIcon, roles: PAY_DESK },
+      { href: "/payroll", key: "payroll", icon: WalletIcon, roles: PAY_DESK, section: "pay" },
+      { href: "/policy", key: "policy", icon: ScalesIcon, roles: PAY_DESK, section: "pay" },
     ],
   },
   {
@@ -139,9 +171,8 @@ export const NAV: NavGroup[] = [
   {
     key: "groupSettings",
     items: [
-      { href: "/leave-types", key: "leaveTypes", icon: TagIcon, roles: PEOPLE_DESK, deskOnly: true },
-      { href: "/users", key: "users", icon: UserGearIcon, roles: OPERATORS, deskOnly: true },
-      { href: "/audit", key: "audit", icon: ScrollIcon, roles: OPERATORS, deskOnly: true },
+      { href: "/users", key: "users", icon: UserGearIcon, roles: OPERATORS, deskOnly: true, section: "system" },
+      { href: "/audit", key: "audit", icon: ScrollIcon, roles: OPERATORS, deskOnly: true, section: "system" },
       { href: "/settings", key: "settings", icon: GearIcon, roles: EVERYONE, deskOnly: true },
     ],
   },
@@ -164,7 +195,51 @@ export function navFor(role: Role | null, hasRecord = true): NavGroup[] {
   })).filter((group) => group.items.length > 0);
 }
 
-// Longest first: Departments sits under the org chart but is narrower.
+export interface NavEntry {
+  href: string;
+  key: NavKey;
+  short: NavKey;
+  icon: IconType;
+  badge?: "approvals";
+  deskOnly?: boolean;
+  members: NavItem[];
+}
+
+export interface EntryGroup {
+  key: NavKey;
+  entries: NavEntry[];
+}
+
+/** The sidebar's rows: a section collapses into its first page this role may
+ *  open, so no page sits both in the sidebar and in a section bar (KEHOACH 9.15).
+ */
+export function entriesFor(role: Role | null, hasRecord = true): EntryGroup[] {
+  return navFor(role, hasRecord).map((group) => {
+    const entries: NavEntry[] = [];
+    for (const item of group.items) {
+      const section = item.section ? SECTIONS[item.section] : undefined;
+      const held = item.section
+        ? entries.find((entry) => entry.members[0]?.section === item.section)
+        : undefined;
+      if (held) {
+        held.members.push(item);
+        held.badge ??= item.badge;
+        continue;
+      }
+      entries.push({
+        href: item.href,
+        key: section?.key ?? item.key,
+        short: section?.short ?? section?.key ?? item.key,
+        icon: section?.icon ?? item.icon,
+        badge: item.badge,
+        deskOnly: item.deskOnly,
+        members: [item],
+      });
+    }
+    return { key: group.key, entries };
+  });
+}
+
 const BY_DEPTH: NavItem[] = NAV.flatMap((group) => group.items).sort(
   (left, right) => right.href.length - left.href.length,
 );
@@ -172,6 +247,20 @@ const BY_DEPTH: NavItem[] = NAV.flatMap((group) => group.items).sort(
 /** The menu entry a path belongs to, which a detail page has and never is. */
 export function ownerOf(path: string): NavItem | undefined {
   return BY_DEPTH.find((item) => path === item.href || path.startsWith(`${item.href}/`));
+}
+
+export function entryOf(groups: EntryGroup[], path: string): NavEntry | undefined {
+  const owner = ownerOf(path);
+  if (!owner) {
+    return undefined;
+  }
+  return groups
+    .flatMap((group) => group.entries)
+    .find((entry) =>
+      entry.members.some(
+        (member) => member.href === owner.href || (owner.section && member.section === owner.section),
+      ),
+    );
 }
 
 /** Whether this account may open this path. No row means no opening it. */
@@ -194,38 +283,55 @@ export function homeFor(role: Role | null, hasRecord: boolean): string {
   return groups[0]?.items[0]?.href ?? "/settings";
 }
 
-export interface Crumb {
-  key: NavKey;
-  href: string | null;
-}
-
-/** The way back from a sub-page, read off the table so it never points at a
- *  page this role cannot open. A parent page gets none (KEHOACH 9.15).
+/** The sibling pages the section bar shows on this page, or none: a section
+ *  this role opens one page of, or a page inside a record, has no bar.
  */
-export function crumbsFor(role: Role | null, hasRecord: boolean, path: string): Crumb[] {
+export function siblingsOf(role: Role | null, hasRecord: boolean, path: string): NavItem[] {
   const owner = ownerOf(path);
-  if (!owner || owner.href === path) {
+  if (!owner?.section || owner.href !== path || owner.unlisted) {
     return [];
   }
-  for (const group of navFor(role, hasRecord)) {
-    if (group.items.some((item) => item.href === owner.href)) {
-      return [
-        { key: group.key, href: null },
-        { key: owner.key, href: owner.href },
-      ];
-    }
+  const members = navFor(role, hasRecord)
+    .flatMap((group) => group.items)
+    .filter((item) => item.section === owner.section);
+  return members.length > 1 ? members : [];
+}
+
+export interface Crumb {
+  key: NavKey;
+  href: string;
+}
+
+/** The entry, then the sibling page when the entry is a section, read off the
+ *  table so it never points at a page this role cannot open (KEHOACH 9.15).
+ */
+export function trailFor(role: Role | null, hasRecord: boolean, path: string): Crumb[] {
+  const owner = ownerOf(path);
+  const entry = entryOf(entriesFor(role, hasRecord), path);
+  if (!owner || !entry) {
+    return [];
   }
-  return [];
+  const trail: Crumb[] = [{ key: entry.key, href: entry.href }];
+  if (owner.section && !owner.unlisted) {
+    trail.push({ key: owner.key, href: owner.href });
+  }
+  return trail;
+}
+
+/** A record, or a page that is no menu destination, names itself in the trail. */
+export function namesItself(path: string): boolean {
+  const owner = ownerOf(path);
+  return owner !== undefined && (owner.href !== path || owner.unlisted === true);
 }
 
 const kTabSlots = 5;
 
 // The five of KEHOACH 9.21.1, in the order somebody opens the app to ask.
-const TAB_ORDER: NavKey[] = ["myPage", "myShifts", "myAttendance", "myLeave", "myPayslips"];
+const TAB_ORDER: NavKey[] = ["myPage", "myShifts", "myAttendance", "myRequests", "myPayslips"];
 
 export interface TabLayout {
-  items: NavItem[];
-  rest: NavGroup[];
+  items: NavEntry[];
+  rest: EntryGroup[];
 }
 
 /** Five targets fit across a phone, so a longer menu keeps its tail in a sheet.
@@ -233,13 +339,13 @@ export interface TabLayout {
  *  makes the menu look long while saying nothing new.
  */
 export function tabsFor(role: Role | null, hasRecord = true): TabLayout {
-  const groups = navFor(role, hasRecord).map((group) => ({
+  const groups = entriesFor(role, hasRecord).map((group) => ({
     ...group,
-    items: group.items.filter((item) => !item.deskOnly),
+    entries: group.entries.filter((entry) => !entry.deskOnly),
   }));
-  const flat = groups.flatMap((group) => group.items);
-  const ranked = TAB_ORDER.map((key) => flat.find((item) => item.key === key)).filter(
-    (item): item is NavItem => item !== undefined,
+  const flat = groups.flatMap((group) => group.entries);
+  const ranked = TAB_ORDER.map((key) => flat.find((entry) => entry.key === key)).filter(
+    (entry): entry is NavEntry => entry !== undefined,
   );
   // An account with no record of its own has none of the five.
   const pool = ranked.length > 0 ? ranked : flat;
@@ -247,11 +353,11 @@ export function tabsFor(role: Role | null, hasRecord = true): TabLayout {
   // four destinations and not five.
   const needsMenu = flat.length > kTabSlots;
   const items = pool.slice(0, needsMenu ? kTabSlots - 1 : kTabSlots);
-  const shown = new Set(items.map((item) => item.href));
+  const shown = new Set(items.map((entry) => entry.href));
   const rest = needsMenu
     ? groups
-        .map((group) => ({ ...group, items: group.items.filter((item) => !shown.has(item.href)) }))
-        .filter((group) => group.items.length > 0)
+        .map((group) => ({ ...group, entries: group.entries.filter((entry) => !shown.has(entry.href)) }))
+        .filter((group) => group.entries.length > 0)
     : [];
   return { items, rest };
 }

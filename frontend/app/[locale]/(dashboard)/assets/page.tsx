@@ -1,88 +1,145 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFormatter, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { Banner, Button, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import {
+  ArrowUDownLeftIcon,
+  ArrowUpRightIcon,
+  ClockCounterClockwiseIcon,
+  PlusIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
+import { useState } from "react";
 
+import { AssetHistory, CONDITIONS, type Asset, type Condition } from "@/components/employees/assets";
 import { DataTable, type Column } from "@/components/tables/data-table";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Sheet } from "@/components/ui/sheet";
+import { FilterBar, useSettled } from "@/components/ui/filter-bar";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { PersonPicker, type Person } from "@/components/ui/person-picker";
+import { StatePill, type Tone } from "@/components/ui/pill";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 
 const STATES = ["IN_STOCK", "ISSUED", "RETURNED", "RETIRED", "LOST"] as const;
-
+const TONE: Record<State, Tone> = { IN_STOCK: "good", ISSUED: "waiting", RETURNED: "idle", RETIRED: "idle", LOST: "bad" };
 type State = (typeof STATES)[number];
 
-interface Asset {
-  id: string;
-  code: string;
-  name: string;
-  kind: string;
-  serialNo: string | null;
-  state: State;
-  holderId: number | null;
-  holder: { id: number; code: string; fullName: string } | null;
+interface AssetPage {
+  rows: Asset[];
+  total: number;
+  totalIsExact?: boolean;
+  next: string | null;
 }
 
-interface Transfer {
-  id: string;
-  issued: boolean;
-  at: string;
-  condition: string | null;
-  note: string | null;
-  employeeId: number;
+interface Counts {
+  states: Record<State, number>;
+  kinds: string[];
+}
+
+function query(params: Record<string, string>): string {
+  const kept = Object.entries(params).filter(([, value]) => value !== "");
+  return kept.length ? `?${new URLSearchParams(kept).toString()}` : "";
 }
 
 export default function AssetsPage() {
   const t = useTranslations("assets");
-  const format = useFormatter();
   const common = useTranslations("common");
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
 
   const [state, setState] = useState<State | "">("");
+  const [kindFilter, setKindFilter] = useState("");
+  const [typed, setTyped] = useState("");
+  const search = useSettled(typed.trim());
+
   const [adding, setAdding] = useState(false);
   const [showing, setShowing] = useState<Asset | null>(null);
+  const [issuing, setIssuing] = useState<Asset | null>(null);
+  const [taking, setTaking] = useState<Asset | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [kind, setKind] = useState("");
   const [serialNo, setSerialNo] = useState("");
+  const [person, setPerson] = useState<Person | null>(null);
+  const [condition, setCondition] = useState<Condition>("GOOD");
+  const [note, setNote] = useState("");
 
-  const rows = useQuery({
-    queryKey: ["assets", "register", state],
-    queryFn: async () => (await api.get<Asset[]>(`/assets${state ? `?state=${state}` : ""}`)).data,
+  const register = useInfiniteQuery({
+    queryKey: ["assets", "register", { state, kindFilter, search }],
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) =>
+      (await api.get<AssetPage>(`/assets${query({ state, kind: kindFilter, search, cursor: pageParam })}`)).data,
+    getNextPageParam: (last) => last.next ?? undefined,
   });
 
-  const history = useQuery({
-    queryKey: ["assets", "history", showing?.id],
-    enabled: showing !== null,
-    queryFn: async () => (await api.get<Transfer[]>(`/assets/${showing?.id}/history`)).data,
+  const counts = useQuery({
+    queryKey: ["assets", "counts"],
+    queryFn: async () => (await api.get<Counts>("/assets/counts")).data,
   });
 
   const add = useMutation({
     mutationFn: () =>
-      api.post("/assets", { code, name, kind, serialNo: serialNo || undefined }),
+      api.post("/assets", { code: code.trim(), name: name.trim(), kind: kind.trim(), serialNo: serialNo.trim() || undefined }),
     onSuccess: () => {
       setAdding(false);
-      setCode("");
-      setName("");
-      setKind("");
-      setSerialNo("");
+      notify.done(t("added", { code: code.trim() }));
       void cache.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
-  function submit(event: FormEvent): void {
-    event.preventDefault();
+  const handOver = useMutation({
+    mutationFn: async (what: { asset: Asset; employeeId: number; issued: boolean }) => {
+      await api.post(`/assets/${what.asset.id}/hand-over`, {
+        employeeId: what.employeeId,
+        issued: what.issued,
+        condition,
+        note: note || undefined,
+      });
+      return what;
+    },
+    onSuccess: (what) => {
+      setIssuing(null);
+      setTaking(null);
+      notify.done(what.issued ? t("issuedToast", { name: what.asset.name }) : t("takenToast", { name: what.asset.name }));
+      void cache.invalidateQueries({ queryKey: ["assets"] });
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  function openAdd(): void {
     setFault(null);
-    add.mutate();
+    setCode("");
+    setName("");
+    setKind("");
+    setSerialNo("");
+    setAdding(true);
   }
+
+  function openHandOver(asset: Asset): void {
+    setFault(null);
+    setCondition("GOOD");
+    setNote("");
+    setPerson(null);
+    if (asset.state === "ISSUED") {
+      setTaking(asset);
+    } else {
+      setIssuing(asset);
+    }
+  }
+
+  const rows = register.data?.pages.flatMap((one) => one.rows);
+  const first = register.data?.pages[0];
+  const kinds = counts.data?.kinds ?? [];
+  const tally = (one: State) => counts.data?.states[one] ?? common("empty");
+  const total = counts.data ? STATES.reduce((sum, one) => sum + counts.data.states[one], 0) : null;
+  const lost = counts.data?.states.LOST ?? 0;
+  const filtered = state !== "" || kindFilter !== "" || search !== "";
 
   const columns: Column<Asset>[] = [
     {
@@ -91,26 +148,17 @@ export default function AssetsPage() {
       sticky: true,
       sortBy: (row) => row.code,
       cell: (row) => (
-        <button
-          type="button"
-          onClick={() => setShowing(row)}
-          className="text-start underline hover:no-underline"
-        >
-          <span className="block">{row.name}</span>
-          <span className="block font-mono text-xs text-(--color-muted)">{row.code}</span>
-        </button>
+        <span className="flex flex-col">
+          <span>{row.name}</span>
+          <span className="font-mono text-sm text-kumo-subtle">{row.code}</span>
+        </span>
       ),
     },
-    { id: "kind", header: t("kind"), sortBy: (row) => row.kind, cell: (row) => row.kind },
     {
-      id: "serial",
-      header: t("serial"),
-      cell: (row) =>
-        row.serialNo ? (
-          <span className="font-mono text-xs">{row.serialNo}</span>
-        ) : (
-          common("empty")
-        ),
+      id: "state",
+      header: t("state"),
+      sortBy: (row) => row.state,
+      cell: (row) => <StatePill tone={TONE[row.state]}>{t(`state${row.state}`)}</StatePill>,
     },
     {
       id: "holder",
@@ -118,175 +166,246 @@ export default function AssetsPage() {
       sortBy: (row) => row.holder?.fullName ?? "",
       cell: (row) =>
         row.holder ? (
-          <Link
-            href={`/employees/${row.holder.id}?tab=assets`}
-            className="underline hover:no-underline"
-          >
+          <Link href={`/employees/${row.holder.id}?tab=assets`} className="text-kumo-link hover:underline">
             {row.holder.fullName}
           </Link>
         ) : (
           common("empty")
         ),
     },
+    { id: "kind", header: t("kind"), sortBy: (row) => row.kind, cell: (row) => <span className="whitespace-nowrap">{row.kind}</span> },
     {
-      id: "state",
-      header: t("state"),
-      sortBy: (row) => row.state,
-      cell: (row) => (
-        <span className={row.state === "ISSUED" ? "text-(--color-warn)" : "text-(--color-muted)"}>
-          {t(`state${row.state}`)}
-        </span>
-      ),
+      id: "serial",
+      header: t("serial"),
+      cell: (row) => (row.serialNo ? <span className="font-mono">{row.serialNo}</span> : common("empty")),
     },
   ];
 
+  const faultBanner = fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null;
+  const conditionFields = (
+    <>
+      <Select
+        label={t("condition")}
+        hideLabel={false}
+        value={condition}
+        onValueChange={(next) => setCondition(String(next ?? "GOOD") as Condition)}
+        items={Object.fromEntries(CONDITIONS.map((one) => [one, t(`condition${one}`)]))}
+        className="w-full"
+      />
+      <Input label={t("note")} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
+    </>
+  );
+
   return (
-    <section>
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      <p className="mt-1 mb-4 text-sm text-(--color-muted)">{t("lead")}</p>
-
-      <div className="mb-3 flex flex-wrap items-end gap-3">
-        <div className="w-48">
-          <label className="block text-xs text-(--color-muted)" htmlFor="assetState">
-            {t("state")}
-          </label>
-          <Select
-            id="assetState"
-            value={state}
-            onChange={(event) => setState(event.target.value as State | "")}
-            className="mt-1"
-          >
-            <option value="">{t("anyState")}</option>
-            {STATES.map((one) => (
-              <option key={one} value={one}>
-                {t(`state${one}`)}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <Button
-          type="button"
-          onClick={() => {
-            setFault(null);
-            setAdding(true);
-          }}
-        >
-          {t("add")}
-        </Button>
-      </div>
-
-      <DataTable
-        id="assets"
-        columns={columns}
-        rows={rows.data}
-        keyOf={(row) => row.id}
-        pending={rows.isPending}
-        failed={rows.isError}
-        onRetry={() => rows.refetch()}
-        empty={t("registerEmpty")}
-        emptyHint={t("registerEmptyHint")}
+    <>
+      <PageHeader
+        title={t("title")}
+        description={t("lead")}
+        actions={
+          <Button variant="primary" icon={PlusIcon} onClick={openAdd}>
+            {t("add")}
+          </Button>
+        }
       />
 
-      <Sheet
-        open={adding}
-        onClose={() => setAdding(false)}
-        title={t("add")}
-        closeLabel={common("close")}
+      <PageLayout
+        aside={
+          <AsideCard title={t("summaryTitle")}>
+            <StatList
+              stats={[
+                ...STATES.map((one) => ({
+                  key: one,
+                  label: t(`state${one}`),
+                  value: tally(one),
+                  tone: one === "LOST" && lost > 0 ? ("danger" as const) : undefined,
+                  active: state === one,
+                  onPick: () => setState(one),
+                })),
+                {
+                  key: "all",
+                  label: common("all"),
+                  value: total ?? common("empty"),
+                  active: state === "",
+                  onPick: () => setState(""),
+                },
+              ]}
+            />
+          </AsideCard>
+        }
       >
-        <form onSubmit={submit}>
-          <label className="block text-sm font-medium" htmlFor="assetCode">
-            {t("code")}
-          </label>
-          <Input
-            id="assetCode"
-            required
-            maxLength={32}
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            className="mt-1"
-          />
+        <FilterBar
+          search={{ value: typed, onChange: setTyped, placeholder: t("searchHint") }}
+          filters={[
+            {
+              key: "state",
+              label: t("state"),
+              value: state,
+              onChange: (next) => setState(next as State | ""),
+              items: { "": t("anyState"), ...Object.fromEntries(STATES.map((one) => [one, t(`state${one}`)])) },
+            },
+            {
+              key: "kind",
+              label: t("kind"),
+              value: kindFilter,
+              onChange: setKindFilter,
+              items: { "": t("anyKind"), ...Object.fromEntries(kinds.map((one) => [one, one])) },
+            },
+          ]}
+        />
+        <DataTable
+          id="assets"
+          cardLead="asset"
+          columns={columns}
+          rows={rows}
+          keyOf={(row) => row.id}
+          pending={register.isPending}
+          failed={register.isError}
+          onRetry={() => void register.refetch()}
+          empty={filtered ? t("noMatch") : t("registerEmpty")}
+          emptyHint={filtered ? t("noMatchHint") : t("registerEmptyHint")}
+          emptyAction={
+            filtered ? undefined : (
+              <Button variant="secondary" icon={PlusIcon} onClick={openAdd}>
+                {t("add")}
+              </Button>
+            )
+          }
+          onRowClick={setShowing}
+          rowActions={(row) => [
+            { key: "history", label: t("history"), icon: ClockCounterClockwiseIcon, onSelect: () => setShowing(row) },
+            ...(row.state === "IN_STOCK" || row.state === "RETURNED"
+              ? [{ key: "issue", label: t("issueTo"), icon: ArrowUpRightIcon, onSelect: () => openHandOver(row) }]
+              : []),
+            ...(row.state === "ISSUED" ? [{ key: "take", label: t("take"), icon: ArrowUDownLeftIcon, onSelect: () => openHandOver(row) }] : []),
+          ]}
+          paging={
+            first
+              ? {
+                  shown: rows?.length ?? 0,
+                  total: first.total,
+                  exact: first.totalIsExact,
+                  onMore: register.hasNextPage ? () => void register.fetchNextPage() : undefined,
+                  loading: register.isFetchingNextPage,
+                }
+              : undefined
+          }
+        />
+      </PageLayout>
 
-          <label className="mt-4 block text-sm font-medium" htmlFor="assetName">
-            {t("name")}
-          </label>
-          <Input
-            id="assetName"
-            required
-            maxLength={160}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="mt-1"
-          />
+      <LayerDialog.Root open={adding} onOpenChange={setAdding} dismissDisabled={add.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("add")}</LayerDialog.Title>
+          <LayerDialog.Body>
+            <form
+              id="asset-add"
+              className="grid items-start gap-4 sm:grid-cols-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setFault(null);
+                add.mutate();
+              }}
+            >
+              <Input
+                label={t("code")}
+                required
+                maxLength={32}
+                value={code}
+                onChange={(event) => setCode(event.target.value.toUpperCase())}
+                className="font-mono"
+              />
+              <Input label={t("name")} required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} />
+              <Input
+                label={t("kind")}
+                description={kinds.length > 0 ? t("kindHint", { kinds: kinds.slice(0, 4).join(", ") }) : undefined}
+                required
+                maxLength={32}
+                value={kind}
+                onChange={(event) => setKind(event.target.value)}
+              />
+              <Input label={t("serial")} maxLength={64} value={serialNo} onChange={(event) => setSerialNo(event.target.value)} />
+            </form>
+            {faultBanner}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary type="submit" form="asset-add" loading={add.isPending}>
+              {t("add")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
 
-          <label className="mt-4 block text-sm font-medium" htmlFor="assetKind">
-            {t("kind")}
-          </label>
-          <Input
-            id="assetKind"
-            required
-            maxLength={32}
-            value={kind}
-            onChange={(event) => setKind(event.target.value)}
-            className="mt-1"
-          />
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="assetSerial">
-            {t("serial")}
-          </label>
-          <Input
-            id="assetSerial"
-            maxLength={64}
-            value={serialNo}
-            onChange={(event) => setSerialNo(event.target.value)}
-            className="mt-1"
-          />
-
-          {fault ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {fault}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={add.isPending} className="mt-4">
-            {add.isPending ? common("saving") : common("save")}
-          </Button>
-        </form>
-      </Sheet>
-
-      <Sheet
-        open={showing !== null}
-        onClose={() => setShowing(null)}
-        title={showing ? `${showing.code} · ${t("history")}` : t("history")}
-        closeLabel={common("close")}
+      <LayerDialog.Root
+        open={issuing !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setIssuing(null);
+          }
+        }}
+        dismissDisabled={handOver.isPending}
       >
-        {history.isPending ? (
-          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-        ) : history.data?.length ? (
-          <ul className="flex flex-col">
-            {history.data.map((one) => (
-              <li
-                key={one.id}
-                className="flex flex-wrap gap-x-3 gap-y-1 border-b border-(--color-line) py-2 text-sm last:border-0"
-              >
-                <span className="tabular-nums">{format.dateTime(new Date(one.at), "day")}</span>
-                <span className={one.issued ? "text-(--color-warn)" : "text-(--color-ok)"}>
-                  {one.issued ? t("wentOut") : t("cameBack")}
-                </span>
-                <Link
-                  href={`/employees/${one.employeeId}?tab=assets`}
-                  className="underline hover:no-underline"
-                >
-                  #{one.employeeId}
-                </Link>
-                {one.note ? <span className="text-xs text-(--color-muted)">{one.note}</span> : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-(--color-muted)">
-            {history.isPending ? common("loading") : t("historyEmpty")}
-          </p>
-        )}
-      </Sheet>
-    </section>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{issuing ? t("issueTitle", { name: issuing.name }) : t("issueTo")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("issueLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-4">
+              <PersonPicker label={t("issueWho")} value={person} onChange={setPerson} />
+              {conditionFields}
+            </div>
+            {faultBanner}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              loading={handOver.isPending}
+              disabled={person === null}
+              onClick={() => {
+                if (issuing && person) {
+                  setFault(null);
+                  handOver.mutate({ asset: issuing, employeeId: person.id, issued: true });
+                }
+              }}
+            >
+              {t("issueAction")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Root
+        open={taking !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setTaking(null);
+          }
+        }}
+        dismissDisabled={handOver.isPending}
+      >
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{taking ? t("takeTitle", { name: taking.name }) : t("take")}</LayerDialog.Title>
+          <LayerDialog.Description>
+            {taking?.holder ? t("takeFrom", { name: taking.holder.fullName }) : t("takeLead")}
+          </LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-4">{conditionFields}</div>
+            {faultBanner}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              loading={handOver.isPending}
+              disabled={!taking?.holder}
+              onClick={() => {
+                if (taking?.holder) {
+                  setFault(null);
+                  handOver.mutate({ asset: taking, employeeId: taking.holder.id, issued: false });
+                }
+              }}
+            >
+              {t("take")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <AssetHistory asset={showing} onClose={() => setShowing(null)} />
+    </>
   );
 }

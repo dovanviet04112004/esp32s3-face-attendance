@@ -1,9 +1,11 @@
 "use client";
 
+import { Checkbox, SkeletonLine } from "@cloudflare/kumo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
-import { Checkbox } from "@/components/ui/checkbox";
+import { Failed } from "@/components/ui/failed";
+import { useNotify } from "@/components/ui/notify";
 import { api } from "@/lib/api";
 import type { NoticeKind } from "./notice-list";
 
@@ -47,68 +49,89 @@ const KINDS: NoticeKind[] = [
   "DISPUTE_ANSWERED",
 ];
 const CHANNELS: Channel[] = ["IN_APP", "PUSH"];
+const PREFS_KEY = ["notifications", "preferences"];
+const kContractDays = 30;
+const kStalledDays = 7;
 
 export function NoticePreferences() {
   const t = useTranslations("notices");
   const cache = useQueryClient();
+  const notify = useNotify();
 
   const prefs = useQuery({
-    queryKey: ["notifications", "preferences"],
+    queryKey: PREFS_KEY,
     queryFn: async () => (await api.get<Preference[]>("/notifications/preferences")).data,
   });
 
+  // The box flips at once and flips back if the api refuses, so a tap never looks ignored.
   const set = useMutation({
     mutationFn: (body: Preference) => api.post("/notifications/preferences", body),
-    onSuccess: () => void cache.invalidateQueries({ queryKey: ["notifications", "preferences"] }),
+    onMutate: async (body) => {
+      await cache.cancelQueries({ queryKey: PREFS_KEY });
+      const was = cache.getQueryData<Preference[]>(PREFS_KEY);
+      cache.setQueryData<Preference[]>(PREFS_KEY, (held) => [
+        ...(held ?? []).filter((row) => row.kind !== body.kind || row.channel !== body.channel),
+        body,
+      ]);
+      return { was };
+    },
+    onSuccess: () => notify.done(t("prefsSaved")),
+    onError: (fell: unknown, _body, held) => {
+      cache.setQueryData(PREFS_KEY, held?.was);
+      notify.failed(fell);
+    },
+    onSettled: () => void cache.invalidateQueries({ queryKey: PREFS_KEY }),
   });
 
   function on(kind: NoticeKind, channel: Channel): boolean {
     return prefs.data?.find((row) => row.kind === kind && row.channel === channel)?.on ?? false;
   }
 
+  function name(kind: NoticeKind): string {
+    if (kind === "CONTRACT_ENDING") {
+      return t(KIND_KEY[kind], { count: kContractDays });
+    }
+    return kind === "REQUEST_STALLED" ? t(KIND_KEY[kind], { count: kStalledDays }) : t(KIND_KEY[kind]);
+  }
+
+  if (prefs.isError) {
+    return <Failed onRetry={() => void prefs.refetch()} />;
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-(--color-muted)">
-            <th className="py-2 font-medium" />
-            {CHANNELS.map((channel) => (
-              <th key={channel} className="px-3 py-2 font-medium">
-                {t(CHANNEL_KEY[channel])}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {KINDS.map((kind) => (
-            <tr key={kind} className="border-t border-(--color-line)">
-              <td className="py-2 pe-3">
-                {kind === "CONTRACT_ENDING" || kind === "REQUEST_STALLED"
-                  ? t(KIND_KEY[kind], { count: kind === "CONTRACT_ENDING" ? 30 : 7 })
-                  : t(KIND_KEY[kind])}
-              </td>
-              {CHANNELS.map((channel) => (
-                <td key={channel} className="px-3 py-2">
-                  <Checkbox
-                    className="min-h-0"
-                    aria-label={`${t(KIND_KEY[kind], { count: 0 })} · ${t(CHANNEL_KEY[channel])}`}
-                    checked={on(kind, channel)}
-                    disabled={
-                      set.isPending &&
-                      set.variables?.kind === kind &&
-                      set.variables?.channel === channel
-                    }
-                    onChange={(event) =>
-                      set.mutate({ kind, channel, on: event.target.checked })
-                    }
-                    label=""
-                  />
-                </td>
-              ))}
-            </tr>
+    <div role="table" aria-label={t("prefsTitle")} className="flex flex-col">
+      <div role="row" className="grid grid-cols-[1fr_4.5rem_4.5rem] items-end gap-2 pb-2 text-sm text-kumo-subtle">
+        <span role="columnheader" />
+        {CHANNELS.map((channel) => (
+          <span key={channel} role="columnheader" className="text-center">
+            {t(CHANNEL_KEY[channel])}
+          </span>
+        ))}
+      </div>
+      {KINDS.map((kind) => (
+        <div
+          key={kind}
+          role="row"
+          className="grid min-h-11 grid-cols-[1fr_4.5rem_4.5rem] items-center gap-2 border-t border-kumo-hairline py-1"
+        >
+          <span role="rowheader" className="min-w-0">
+            {name(kind)}
+          </span>
+          {CHANNELS.map((channel) => (
+            <span key={channel} role="cell" className="flex justify-center">
+              {prefs.isPending ? (
+                <SkeletonLine minWidth={16} maxWidth={16} />
+              ) : (
+                <Checkbox
+                  aria-label={`${name(kind)} · ${t(CHANNEL_KEY[channel])}`}
+                  checked={on(kind, channel)}
+                  onCheckedChange={(checked: boolean) => set.mutate({ kind, channel, on: checked })}
+                />
+              )}
+            </span>
           ))}
-        </tbody>
-      </table>
+        </div>
+      ))}
     </div>
   );
 }

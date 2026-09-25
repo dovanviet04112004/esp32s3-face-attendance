@@ -1,14 +1,16 @@
 "use client";
 
-import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import { Button } from "@cloudflare/kumo";
+import { DownloadSimpleIcon } from "@phosphor-icons/react";
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
-import { Button } from "@/components/ui/button";
-import { FilterBar } from "@/components/ui/filter-bar";
-import { Input } from "@/components/ui/input";
-import { Link } from "@/i18n/navigation";
+import { FilterBar, useSettled } from "@/components/ui/filter-bar";
+import { MonthPicker, thisMonth, type Month } from "@/components/ui/month-picker";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { api } from "@/lib/api";
 
 const PAGE = 50;
@@ -22,6 +24,7 @@ interface TallyPage {
 
 interface Tally {
   employeeId: number;
+  code?: string;
   fullName: string;
   punches: number;
   firstAt: string | null;
@@ -29,8 +32,15 @@ interface Tally {
   unsyncedClock: number;
 }
 
-function isoDay(at: Date): string {
-  return at.toISOString().slice(0, 10);
+function monthKey(at: Month): string {
+  return `${at.year}-${String(at.month).padStart(2, "0")}`;
+}
+
+// The roll-up counts up to `to` inclusive, and the monthly job warms exactly this span.
+function monthBounds(at: Month): { from: string; to: string } {
+  const start = new Date(at.year, at.month - 1, 1);
+  const end = new Date(new Date(at.year, at.month, 1).getTime() - 1);
+  return { from: start.toISOString(), to: end.toISOString() };
 }
 
 function csvCell(value: string | number): string {
@@ -42,44 +52,53 @@ export default function AttendancePage() {
   const t = useTranslations("attendance");
   const common = useTranslations("common");
   const format = useFormatter();
-  const year = new Date().getFullYear();
-  const [from, setFrom] = useState(isoDay(new Date(Date.UTC(year, 0, 1))));
-  const [to, setTo] = useState(isoDay(new Date(Date.UTC(year + 1, 0, 1))));
-  const [who, setWho] = useState("");
+  const notify = useNotify();
+  const [month, setMonth] = useState<Month>(thisMonth);
+  const [typed, setTyped] = useState("");
+  const search = useSettled(typed.trim());
+  const span = monthBounds(month);
+  const monthName = format.dateTime(new Date(month.year, month.month - 1, 15), { month: "long", year: "numeric" });
 
-  const [asked, setAsked] = useState({ from, to, who: "" });
-  const backwards = asked.from >= asked.to;
-
-  // The name filter goes to the roll-up, which pages: filtering here would
-  // only ever search the rows already on screen.
+  // The name filter goes to the roll-up, which pages: filtering here would only search the rows on screen.
   function query(cursor: string): string {
-    const span = `from=${new Date(asked.from).toISOString()}&to=${new Date(asked.to).toISOString()}`;
-    const needle = asked.who.trim() ? `&search=${encodeURIComponent(asked.who.trim())}` : "";
-    return `${span}&take=${PAGE}${needle}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const params = new URLSearchParams({ from: span.from, to: span.to, take: String(PAGE) });
+    if (search) {
+      params.set("search", search);
+    }
+    if (cursor) {
+      params.set("cursor", cursor);
+    }
+    return params.toString();
   }
 
   const rollup = useInfiniteQuery({
-    queryKey: ["attendance", asked],
-    enabled: !backwards,
+    queryKey: ["attendance", "rollup", span.from, search],
     initialPageParam: "",
-    queryFn: async ({ pageParam }) =>
-      (await api.get<TallyPage>(`/reports/attendance?${query(pageParam)}`)).data,
+    queryFn: async ({ pageParam }) => (await api.get<TallyPage>(`/reports/attendance?${query(pageParam)}`)).data,
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
-  const shown = rollup.data?.pages.flatMap((one) => one.rows) ?? [];
-  const counted = rollup.data?.pages[0];
+  const totals = useQuery({
+    queryKey: ["attendance", "rollup", "totals", span.from, search],
+    queryFn: async () => {
+      const params = new URLSearchParams({ from: span.from, to: span.to });
+      if (search) {
+        params.set("search", search);
+      }
+      return (await api.get<{ people: number; punches: number; unsyncedClock: number }>(`/reports/attendance/totals?${params.toString()}`)).data;
+    },
+  });
 
-  function apply(event: FormEvent): void {
-    event.preventDefault();
-    setAsked({ from, to, who });
-  }
+  const shown = rollup.data?.pages.flatMap((one) => one.rows);
+  const first = rollup.data?.pages[0];
+  const punches = totals.data?.punches ?? 0;
+  const unsynced = totals.data?.unsyncedClock ?? 0;
 
   function clock(iso: string | null) {
-    return iso ? format.dateTime(new Date(iso), "medium") : common("empty");
+    return iso ? <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(iso), "medium")}</span> : common("empty");
   }
 
-  // A file holds the whole range, not the pages a reader happened to open.
+  // A file holds the whole month, not the pages a reader happened to open.
   const exportCsv = useMutation({
     mutationFn: async () => {
       const all: Tally[] = [];
@@ -95,24 +114,22 @@ export default function AttendancePage() {
       return all;
     },
     onSuccess: (all) => {
-      const head = [t("employee"), t("punches"), t("firstAt"), t("lastAt"), t("unsyncedClock")];
+      const head = [t("code"), t("employee"), t("punches"), t("firstAt"), t("lastAt"), t("clockOff")];
       const body = all.map((row) =>
-        [row.fullName, row.punches, row.firstAt ?? "", row.lastAt ?? "", row.unsyncedClock]
-          .map(csvCell)
-          .join(","),
+        [row.code ?? "", row.fullName, row.punches, row.firstAt ?? "", row.lastAt ?? "", row.unsyncedClock].map(csvCell).join(","),
       );
-      // Excel reads a CSV as the system codepage unless the file opens with a BOM,
-      // which turns every Vietnamese name into mojibake.
-      const blob = new Blob(["\ufeff", [head.map(csvCell).join(","), ...body].join("\r\n")], {
+      // Excel reads a CSV as the system codepage unless it opens with a BOM, which garbles Vietnamese names.
+      const blob = new Blob(["﻿", [head.map(csvCell).join(","), ...body].join("\r\n")], {
         type: "text/csv;charset=utf-8",
       });
-      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = url;
-      link.download = `attendance-${asked.from}-${asked.to}.csv`;
+      link.href = URL.createObjectURL(blob);
+      link.download = `attendance-${monthKey(month)}.csv`;
       link.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(link.href);
+      notify.done(t("exported", { count: all.length }));
     },
+    onError: notify.failed,
   });
 
   const columns: Column<Tally>[] = [
@@ -122,131 +139,94 @@ export default function AttendancePage() {
       sticky: true,
       sortBy: (row) => row.fullName,
       cell: (row) => (
-        <Link
-          href={`/attendance/${row.employeeId}`}
-          className="underline hover:no-underline"
-        >
-          {row.fullName}
-        </Link>
+        <span className="flex flex-col">
+          <span>{row.fullName}</span>
+          {row.code ? <span className="font-mono text-sm text-kumo-subtle">{row.code}</span> : null}
+        </span>
       ),
     },
-    {
-      id: "punches",
-      header: t("punches"),
-      numeric: true,
-      sortBy: (row) => row.punches,
-      cell: (row) => row.punches,
-    },
+    { id: "punches", header: t("punches"), numeric: true, sortBy: (row) => row.punches, cell: (row) => row.punches },
     {
       id: "unsyncedClock",
-      header: t("unsyncedClock"),
+      header: t("clockOff"),
       numeric: true,
       sortBy: (row) => row.unsyncedClock,
       cell: (row) =>
-        row.unsyncedClock > 0 ? (
-          <span className="text-(--color-danger)">{row.unsyncedClock}</span>
-        ) : (
-          <span className="text-(--color-muted)">0</span>
-        ),
+        row.unsyncedClock > 0 ? <span className="text-kumo-warning">{row.unsyncedClock}</span> : <span className="text-kumo-subtle">0</span>,
     },
-    { id: "firstAt", header: t("firstAt"), cell: (row) => clock(row.firstAt) },
-    { id: "lastAt", header: t("lastAt"), cell: (row) => clock(row.lastAt) },
+    { id: "firstAt", header: t("firstAt"), sortBy: (row) => row.firstAt ?? "", cell: (row) => clock(row.firstAt) },
+    { id: "lastAt", header: t("lastAt"), sortBy: (row) => row.lastAt ?? "", cell: (row) => clock(row.lastAt) },
   ];
 
-  return (
-    <section>
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("lead")}</p>
+  const ready = totals.data !== undefined;
 
-      <div className="mt-6" />
-      <FilterBar
-        onApply={apply}
+  return (
+    <>
+      <PageHeader title={t("rollupTitle")} description={t("rollupLead")} />
+
+      <PageLayout
+        aside={
+          <AsideCard title={t("inMonth", { month: monthName })}>
+            <Facts
+              rows={[
+                [
+                  t("people"),
+                  totals.data ? <span className="tabular-nums">{totals.data.people}</span> : common("empty"),
+                ],
+                [t("punchesTotal"), ready ? <span className="tabular-nums">{punches}</span> : common("empty")],
+                [
+                  t("clockOff"),
+                  ready ? <span className={unsynced > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{unsynced}</span> : common("empty"),
+                ],
+              ]}
+            />
+            <p className="mt-3 text-sm text-kumo-subtle">{t("unsyncedHint")}</p>
+          </AsideCard>
+        }
         extra={
-          <Button
-            type="button"
-            tone="quiet"
-            disabled={shown.length === 0 || exportCsv.isPending}
-            onClick={() => exportCsv.mutate()}
-          >
-            {exportCsv.isPending ? common("loading") : common("export")}
-          </Button>
+          <AsideCard title={common("tools")}>
+            <Button
+              variant="secondary"
+              icon={DownloadSimpleIcon}
+              loading={exportCsv.isPending}
+              disabled={!shown || shown.length === 0}
+              onClick={() => exportCsv.mutate()}
+              className="w-full justify-start"
+            >
+              {t("exportMonth")}
+            </Button>
+          </AsideCard>
         }
       >
-        <div>
-          <label className="block text-xs text-(--color-muted)" htmlFor="from">
-            {t("from")}
-          </label>
-          <Input
-            id="from"
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="mt-1 w-40"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-(--color-muted)" htmlFor="to">
-            {t("to")}
-          </label>
-          <Input
-            id="to"
-            type="date"
-            min={from}
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="mt-1 w-40"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-(--color-muted)" htmlFor="who">
-            {t("employee")}
-          </label>
-          <Input
-            id="who"
-            value={who}
-            placeholder={common("search")}
-            onChange={(e) => setWho(e.target.value)}
-            className="mt-1 w-56"
-          />
-        </div>
-      </FilterBar>
-
-      {backwards ? (
-        <p role="alert" className="text-sm text-(--color-danger)">
-          {t("badRange")}
-        </p>
-      ) : (
+        <FilterBar
+          search={{ value: typed, onChange: setTyped, placeholder: t("searchHint") }}
+          extra={<MonthPicker value={month} onChange={setMonth} max={thisMonth()} />}
+        />
         <DataTable
           id="attendance-rollup"
+          cardLead="employee"
           columns={columns}
           rows={shown}
           keyOf={(row) => String(row.employeeId)}
           pending={rollup.isPending}
           failed={rollup.isError}
-          onRetry={() => rollup.refetch()}
-          empty={t("rangeEmpty")}
-          more={
-            rollup.hasNextPage ? (
-              <div className="mt-3 flex flex-col items-center gap-1">
-                <Button
-                  type="button"
-                  tone="quiet"
-                  disabled={rollup.isFetchingNextPage}
-                  onClick={() => void rollup.fetchNextPage()}
-                >
-                  {rollup.isFetchingNextPage ? common("loading") : common("loadMore")}
-                </Button>
-                <p className="text-xs text-(--color-muted) tabular-nums">
-                  {common(counted?.totalIsExact === false ? "showingOfAtLeast" : "showingOf", {
-                    shown: shown.length,
-                    total: counted?.total ?? 0,
-                  })}
-                </p>
-              </div>
-            ) : null
+          onRetry={() => void rollup.refetch()}
+          rowHref={(row) => `/attendance/${row.employeeId}?month=${monthKey(month)}`}
+          empty={search ? t("noMatch") : t("monthEmpty")}
+          emptyHint={search ? t("noMatchHint") : undefined}
+          paging={
+            first
+              ? {
+                  shown: shown?.length ?? 0,
+                  total: first.total,
+                  exact: first.totalIsExact,
+                  onMore: rollup.hasNextPage ? () => void rollup.fetchNextPage() : undefined,
+                  loading: rollup.isFetchingNextPage,
+                }
+              : undefined
           }
         />
-      )}
-    </section>
+      </PageLayout>
+    </>
   );
 }

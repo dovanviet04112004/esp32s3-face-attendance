@@ -1,21 +1,16 @@
 "use client";
 
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { Banner, Button, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import { PlusIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Sheet } from "@/components/ui/sheet";
+import { DataTable, type Column } from "@/components/tables/data-table";
+import { useNotify } from "@/components/ui/notify";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
-import { money } from "@/lib/format";
+import { dayOnly, money } from "@/lib/format";
 
 const REASONS = ["HIRE", "PROMOTION", "ANNUAL_REVIEW", "ADJUSTMENT", "TRANSFER", "OTHER"] as const;
 
@@ -24,6 +19,7 @@ type Reason = (typeof REASONS)[number];
 interface PayslipPage {
   rows: PayslipRow[];
   total: number;
+  totalIsExact?: boolean;
   next: string | null;
 }
 
@@ -37,27 +33,24 @@ interface PayRecord {
 
 interface PayslipRow {
   id: string;
+  grossPay: string;
   netPay: string;
   period?: { year: number; month: number };
 }
 
-function day(value: string): string {
-  return value.slice(0, 10);
-}
-
 function firstOfNextMonth(): string {
   const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
-    .toISOString()
-    .slice(0, 10);
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
 }
 
 export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: boolean }) {
   const t = useTranslations("employees");
   const common = useTranslations("common");
   const locale = useLocale();
+  const format = useFormatter();
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
 
   const [open, setOpen] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
@@ -83,6 +76,7 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
   });
 
   const slips = payslips.data?.pages.flatMap((one) => one.rows);
+  const firstSlips = payslips.data?.pages[0];
 
   const add = useMutation({
     mutationFn: () =>
@@ -96,17 +90,11 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
       }),
     onSuccess: () => {
       setOpen(false);
-      setNote("");
+      notify.done(t("payAdded"));
       void cache.invalidateQueries({ queryKey: ["compensation", employeeId] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
-
-  function submit(event: FormEvent): void {
-    event.preventDefault();
-    setFault(null);
-    add.mutate();
-  }
 
   // A raise adds a row with its own effective date (KEHOACH 4.9).
   function copyFrom(): void {
@@ -114,178 +102,155 @@ export function Pay({ employeeId, mayWrite }: { employeeId: number; mayWrite: bo
     setBaseSalary(latest ? String(Math.trunc(Number(latest.baseSalary))) : "");
     setInsuranceSalary(latest ? String(Math.trunc(Number(latest.insuranceSalary))) : "");
     setEffectiveFrom(firstOfNextMonth());
+    setReason(latest ? "ANNUAL_REVIEW" : "HIRE");
+    setNote("");
     setFault(null);
     setOpen(true);
   }
 
+  const amount = (value: string) => money(Number(value), locale);
+  const month = (at: { year: number; month: number }) =>
+    format.dateTime(new Date(Date.UTC(at.year, at.month - 1, 15)), { month: "long", year: "numeric" });
+
+  const history: Column<PayRecord>[] = [
+    {
+      id: "from",
+      header: t("payFrom"),
+      sortBy: (row) => row.effectiveFrom,
+      cell: (row) => <span className="tabular-nums">{format.dateTime(dayOnly(row.effectiveFrom), "day")}</span>,
+    },
+    { id: "reason", header: t("payReason"), cell: (row) => t(`payReason${row.reason}`) },
+    { id: "base", header: t("payBase"), numeric: true, sortBy: (row) => Number(row.baseSalary), cell: (row) => amount(row.baseSalary) },
+    {
+      id: "insurance",
+      header: t("payInsurance"),
+      numeric: true,
+      sortBy: (row) => Number(row.insuranceSalary),
+      cell: (row) => amount(row.insuranceSalary),
+    },
+  ];
+
+  const slipColumns: Column<PayslipRow>[] = [
+    { id: "period", header: t("payslipPeriod"), cell: (row) => (row.period ? month(row.period) : common("empty")) },
+    { id: "gross", header: t("payslipGross"), numeric: true, cell: (row) => amount(row.grossPay) },
+    { id: "net", header: t("payslipNet"), numeric: true, cell: (row) => amount(row.netPay) },
+  ];
+
   return (
-    <div className="mt-4 flex flex-col gap-6">
-      <section>
+    <div className="flex flex-col gap-8">
+      <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-medium">{t("payHistory")}</h2>
+          <h2 className="m-0 text-lg font-semibold">{t("payHistory")}</h2>
           {mayWrite ? (
-            <Button type="button" size="sm" onClick={copyFrom}>
+            <Button variant="secondary" icon={PlusIcon} onClick={copyFrom}>
               {t("payAdd")}
             </Button>
           ) : null}
         </div>
-        <div className="mt-2 rounded-xl border border-(--color-line) bg-(--color-surface)">
-          {rows.isPending ? (
-            <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-          ) : rows.data?.length ? (
-            <ul className="divide-y divide-(--color-line)">
-              {rows.data.map((one) => (
-                <li key={one.id} className="flex flex-wrap gap-3 px-4 py-2 text-sm">
-                  <span className="tabular-nums">{day(one.effectiveFrom)}</span>
-                  <span className="text-xs text-(--color-muted)">{t(`payReason${one.reason}`)}</span>
-                  <span className="ms-auto tabular-nums">
-                    {t("payBase")} {money(Number(one.baseSalary), locale)}
-                  </span>
-                  <span className="tabular-nums text-(--color-muted)">
-                    {t("payInsurance")} {money(Number(one.insuranceSalary), locale)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-4 py-6 text-sm text-(--color-muted)">
-              {rows.isPending ? common("loading") : t("payEmpty")}
-            </p>
-          )}
-        </div>
+        <DataTable
+          id="employee-pay"
+          cardLead="from"
+          columns={history}
+          rows={rows.data}
+          keyOf={(row) => row.id}
+          pending={rows.isPending}
+          failed={rows.isError}
+          onRetry={() => void rows.refetch()}
+          empty={t("payEmpty")}
+          emptyHint={mayWrite ? t("payEmptyHint") : undefined}
+        />
       </section>
 
-      <section>
-        <h2 className="text-sm font-medium">{t("payslipsHere")}</h2>
-        <div className="mt-2 rounded-xl border border-(--color-line) bg-(--color-surface)">
-          {payslips.isPending ? (
-            <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-          ) : slips?.length ? (
-            <ul className="divide-y divide-(--color-line)">
-              {slips.map((one) => (
-                <li key={one.id} className="flex gap-3 px-4 py-2 text-sm">
-                  <span className="tabular-nums">
-                    {one.period ? `${one.period.month}/${one.period.year}` : ""}
-                  </span>
-                  <span className="ms-auto tabular-nums">{money(Number(one.netPay), locale)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-4 py-6 text-sm text-(--color-muted)">{t("payslipsEmpty")}</p>
-          )}
-          {payslips.hasNextPage ? (
-            <div className="border-t border-(--color-line) p-2">
-              <Button
-                type="button"
-                tone="quiet"
-                size="sm"
+      <section className="flex flex-col gap-3">
+        <h2 className="m-0 text-lg font-semibold">{t("payslipsHere")}</h2>
+        <DataTable
+          id="employee-payslips"
+          cardLead="period"
+          columns={slipColumns}
+          rows={slips}
+          keyOf={(row) => row.id}
+          pending={payslips.isPending}
+          failed={payslips.isError}
+          onRetry={() => void payslips.refetch()}
+          empty={t("payslipsEmpty")}
+          paging={
+            firstSlips && firstSlips.total > 0
+              ? {
+                  shown: slips?.length ?? 0,
+                  total: firstSlips.total,
+                  exact: firstSlips.totalIsExact,
+                  onMore: payslips.hasNextPage ? () => void payslips.fetchNextPage() : undefined,
+                  loading: payslips.isFetchingNextPage,
+                }
+              : undefined
+          }
+        />
+      </section>
+
+      <LayerDialog.Root open={open} onOpenChange={setOpen} dismissDisabled={add.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("payAdd")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("payAddLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <form
+              id="pay-add"
+              className="grid items-start gap-4 sm:grid-cols-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setFault(null);
+                add.mutate();
+              }}
+            >
+              <Input
+                label={t("payFrom")}
+                type="date"
+                required
+                value={effectiveFrom}
+                onChange={(event) => setEffectiveFrom(event.target.value)}
+              />
+              <Select
+                label={t("payReason")}
+                hideLabel={false}
+                value={reason}
+                onValueChange={(next) => setReason(String(next ?? "OTHER") as Reason)}
+                items={Object.fromEntries(REASONS.map((one) => [one, t(`payReason${one}`)]))}
                 className="w-full"
-                disabled={payslips.isFetchingNextPage}
-                onClick={() => void payslips.fetchNextPage()}
-              >
-                {payslips.isFetchingNextPage ? common("loading") : common("loadMore")}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <Sheet
-        open={open}
-        onClose={() => setOpen(false)}
-        title={t("payAdd")}
-        closeLabel={common("close")}
-      >
-        <form onSubmit={submit}>
-          <label className="block text-sm font-medium" htmlFor="payFrom">
-            {t("payFrom")}
-          </label>
-          <Input
-            id="payFrom"
-            type="date"
-            required
-            value={effectiveFrom}
-            onChange={(event) => setEffectiveFrom(event.target.value)}
-            className="mt-1"
-          />
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="payBase">
-            {t("payBase")}
-          </label>
-          <Input
-            id="payBase"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            required
-            value={baseSalary}
-            onChange={(event) => setBaseSalary(event.target.value)}
-            className="mt-1"
-          />
-          {baseSalary !== "" && Number(baseSalary) > 0 ? (
-            <p className="mt-1 text-xs text-(--color-muted) tabular-nums">
-              {money(Number(baseSalary), locale)}
-            </p>
-          ) : null}
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="payInsurance">
-            {t("payInsurance")}
-          </label>
-          <Input
-            id="payInsurance"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            required
-            value={insuranceSalary}
-            onChange={(event) => setInsuranceSalary(event.target.value)}
-            className="mt-1"
-          />
-          {insuranceSalary !== "" && Number(insuranceSalary) > 0 ? (
-            <p className="mt-1 text-xs text-(--color-muted) tabular-nums">
-              {money(Number(insuranceSalary), locale)}
-            </p>
-          ) : null}
-          <p className="mt-1 text-xs text-(--color-muted)">{t("payInsuranceHint")}</p>
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="payReason">
-            {t("payReason")}
-          </label>
-          <Select
-            id="payReason"
-            value={reason}
-            onChange={(event) => setReason(event.target.value as Reason)}
-            className="mt-1"
-          >
-            {REASONS.map((one) => (
-              <option key={one} value={one}>
-                {t(`payReason${one}`)}
-              </option>
-            ))}
-          </Select>
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="payNote">
-            {t("contractNote")}
-          </label>
-          <Input
-            id="payNote"
-            maxLength={500}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            className="mt-1"
-          />
-
-          {fault ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {fault}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={add.isPending} className="mt-4">
-            {add.isPending ? common("saving") : common("save")}
-          </Button>
-        </form>
-      </Sheet>
+              />
+              <Input
+                label={t("payBase")}
+                description={Number(baseSalary) > 0 ? amount(baseSalary) : undefined}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                required
+                value={baseSalary}
+                onChange={(event) => setBaseSalary(event.target.value)}
+                className="tabular-nums"
+              />
+              <Input
+                label={t("payInsurance")}
+                description={Number(insuranceSalary) > 0 ? amount(insuranceSalary) : t("payInsuranceHint")}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                required
+                value={insuranceSalary}
+                onChange={(event) => setInsuranceSalary(event.target.value)}
+                className="tabular-nums"
+              />
+              <div className="sm:col-span-2">
+                <Input label={t("contractNote")} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
+              </div>
+            </form>
+            {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary type="submit" form="pay-add" loading={add.isPending}>
+              {t("payAdd")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
     </div>
   );
 }

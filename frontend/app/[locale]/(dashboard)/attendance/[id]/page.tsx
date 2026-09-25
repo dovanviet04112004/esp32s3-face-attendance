@@ -1,11 +1,17 @@
 "use client";
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { SkeletonLine } from "@cloudflare/kumo";
+import { useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
+import { useState } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
-import { Button } from "@/components/ui/button";
+import { FilterBar } from "@/components/ui/filter-bar";
+import { MonthPicker, thisMonth, type Month } from "@/components/ui/month-picker";
+import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
+import { StatePill } from "@/components/ui/pill";
+import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 
 interface PunchPage {
@@ -31,16 +37,31 @@ interface Employee {
   id: number;
   code: string;
   fullName: string;
+  department: { id: string; name: string } | null;
 }
 
-const PAGE = 50;
+const PAGE = 200;
+
+function monthFrom(raw: string | null): Month {
+  const hit = raw?.match(/^(\d{4})-(\d{2})$/);
+  if (!hit) {
+    return thisMonth();
+  }
+  const month = Number(hit[2]);
+  return month >= 1 && month <= 12 ? { year: Number(hit[1]), month } : thisMonth();
+}
 
 export default function PunchHistoryPage() {
   const t = useTranslations("attendance");
   const common = useTranslations("common");
   const format = useFormatter();
   const params = useParams<{ id: string }>();
+  const asked = useSearchParams().get("month");
   const id = Number(params.id);
+  const [month, setMonth] = useState<Month>(() => monthFrom(asked));
+  const monthName = format.dateTime(new Date(month.year, month.month - 1, 15), { month: "long", year: "numeric" });
+  const from = new Date(month.year, month.month - 1, 1).toISOString();
+  const to = new Date(month.year, month.month, 1).toISOString();
 
   const employee = useQuery({
     queryKey: ["employees", id],
@@ -48,17 +69,34 @@ export default function PunchHistoryPage() {
   });
 
   const punches = useInfiniteQuery({
-    queryKey: ["attendance", "punches", id],
+    queryKey: ["attendance", "punches", id, from],
     initialPageParam: "",
     queryFn: async ({ pageParam }) => {
-      const after = pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : "";
-      return (await api.get<PunchPage>(`/attendance?employeeId=${id}&take=${PAGE}${after}`)).data;
+      const query = new URLSearchParams({ employeeId: String(id), from, to, take: String(PAGE) });
+      if (pageParam) {
+        query.set("cursor", pageParam);
+      }
+      return (await api.get<PunchPage>(`/attendance?${query.toString()}`)).data;
     },
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
+  // The total of a one-row page filtered on a flag is that flag's count over the whole month.
+  const flagged = useQueries({
+    queries: (["capturedOffline", "clockUnsynced"] as const).map((flag) => ({
+      queryKey: ["attendance", "punches", id, from, flag],
+      queryFn: async () => {
+        const query = new URLSearchParams({ employeeId: String(id), from, to, take: "1", [flag]: "true" });
+        return (await api.get<PunchPage>(`/attendance?${query.toString()}`)).data.total;
+      },
+    })),
+  });
+
   const rows = punches.data?.pages.flatMap((one) => one.rows);
-  const counted = punches.data?.pages[0];
+  const first = punches.data?.pages[0];
+  const offline = flagged[0].data;
+  const unsynced = flagged[1].data;
+  const person = employee.data;
 
   const columns: Column<Punch>[] = [
     {
@@ -66,18 +104,10 @@ export default function PunchHistoryPage() {
       header: t("at"),
       sticky: true,
       sortBy: (row) => row.ts,
-      cell: (row) => format.dateTime(new Date(row.ts), "medium"),
+      cell: (row) => <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(row.ts), "medium")}</span>,
     },
-    {
-      id: "direction",
-      header: t("direction"),
-      cell: (row) => t(`direction${row.direction}`),
-    },
-    {
-      id: "deviceCol",
-      header: t("deviceCol"),
-      cell: (row) => <span className="font-mono text-xs">{row.deviceId}</span>,
-    },
+    { id: "direction", header: t("direction"), sortBy: (row) => row.direction, cell: (row) => t(`direction${row.direction}`) },
+    { id: "deviceCol", header: t("deviceCol"), sortBy: (row) => row.deviceId, cell: (row) => <span className="font-mono text-sm">{row.deviceId}</span> },
     {
       id: "score",
       header: t("score"),
@@ -88,67 +118,98 @@ export default function PunchHistoryPage() {
     {
       id: "flags",
       header: t("flags"),
-      cell: (row) => {
-        const marks: string[] = [];
-        if (row.doorOpened) {
-          marks.push(t("flagDoor"));
-        }
-        if (row.capturedOffline) {
-          marks.push(t("flagOffline"));
-        }
-        if (row.clockUnsynced) {
-          marks.push(t("flagClock"));
-        }
-        return marks.length === 0 ? (
-          <span className="text-(--color-muted)">{common("empty")}</span>
-        ) : (
-          <span className={row.clockUnsynced ? "text-(--color-warn)" : "text-(--color-muted)"}>
-            {marks.join(" · ")}
+      cell: (row) =>
+        row.doorOpened || row.capturedOffline || row.clockUnsynced ? (
+          <span className="flex flex-wrap gap-1">
+            {row.clockUnsynced ? <StatePill tone="waiting">{t("flagClock")}</StatePill> : null}
+            {row.capturedOffline ? <StatePill>{t("flagOffline")}</StatePill> : null}
+            {row.doorOpened ? <StatePill>{t("flagDoor")}</StatePill> : null}
           </span>
-        );
-      },
+        ) : (
+          <span className="text-kumo-subtle">{common("empty")}</span>
+        ),
     },
   ];
 
   return (
-    <section>
-      <h1 className="mt-2 text-lg font-semibold">
-        {employee.data?.fullName ?? t("historyTitle")}
-      </h1>
-      <p className="mt-1 mb-6 text-sm text-(--color-muted)">
-        {counted
-          ? t(counted.totalIsExact === false ? "ofPunchesAtLeast" : "ofPunches", {
-              count: counted.total,
-            })
-          : " "}
-      </p>
-      <DataTable
-        id="employee-attendance"
-        columns={columns}
-        rows={rows}
-        keyOf={(row) => row.id}
-        failed={punches.isError}
-        onRetry={() => punches.refetch()}
-        pending={punches.isPending}
-        empty={t("historyEmpty")}
-        more={
-          punches.hasNextPage ? (
-            <div className="mt-3 flex flex-col items-center gap-1">
-              <Button
-                type="button"
-                tone="quiet"
-                disabled={punches.isFetchingNextPage}
-                onClick={() => void punches.fetchNextPage()}
-              >
-                {punches.isFetchingNextPage ? common("loading") : common("loadMore")}
-              </Button>
-              <p className="text-xs text-(--color-muted) tabular-nums">
-                {common("showingOf", { shown: rows?.length ?? 0, total: counted?.total ?? 0 })}
-              </p>
-            </div>
-          ) : null
+    <>
+      <PageHeader title={person?.fullName ?? t("historyTitle")} description={t("personLead")} />
+
+      <PageLayout
+        aside={
+          <>
+            <AsideCard
+              title={t("person")}
+              action={
+                <Link href={`/employees/${id}`} className="text-sm font-normal text-kumo-link hover:underline">
+                  {t("openProfile")}
+                </Link>
+              }
+            >
+              {person ? (
+                <Facts
+                  rows={[
+                    [t("code"), <span className="font-mono">{person.code}</span>],
+                    [t("department"), person.department?.name ?? common("empty")],
+                  ]}
+                />
+              ) : (
+                <div className="flex flex-col gap-3 py-1">
+                  <SkeletonLine minWidth={120} maxWidth={200} />
+                  <SkeletonLine minWidth={120} maxWidth={240} />
+                </div>
+              )}
+            </AsideCard>
+            <AsideCard title={t("inMonth", { month: monthName })}>
+              <Facts
+                rows={[
+                  [
+                    t("punchesTotal"),
+                    first ? (
+                      <span className="tabular-nums">{first.totalIsExact === false ? t("atLeast", { count: first.total }) : first.total}</span>
+                    ) : (
+                      common("empty")
+                    ),
+                  ],
+                  [t("offlinePunches"), offline !== undefined ? <span className="tabular-nums">{offline}</span> : common("empty")],
+                  [
+                    t("clockOff"),
+                    unsynced !== undefined ? (
+                      <span className={unsynced > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{unsynced}</span>
+                    ) : (
+                      common("empty")
+                    ),
+                  ],
+                ]}
+              />
+            </AsideCard>
+          </>
         }
-      />
-    </section>
+      >
+        <FilterBar extra={<MonthPicker value={month} onChange={setMonth} max={thisMonth()} />} />
+        <DataTable
+          id="employee-attendance"
+          cardLead="at"
+          columns={columns}
+          rows={rows}
+          keyOf={(row) => row.id}
+          pending={punches.isPending}
+          failed={punches.isError}
+          onRetry={() => void punches.refetch()}
+          empty={t("personMonthEmpty")}
+          paging={
+            first
+              ? {
+                  shown: rows?.length ?? 0,
+                  total: first.total,
+                  exact: first.totalIsExact,
+                  onMore: punches.hasNextPage ? () => void punches.fetchNextPage() : undefined,
+                  loading: punches.isFetchingNextPage,
+                }
+              : undefined
+          }
+        />
+      </PageLayout>
+    </>
   );
 }

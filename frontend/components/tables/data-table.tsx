@@ -1,12 +1,12 @@
 "use client";
 
-import { ArrowDownIcon, ArrowUpIcon, ArrowsDownUpIcon } from "@phosphor-icons/react";
+import { Button, DropdownMenu, Empty, LayerCard, SkeletonLine, Table } from "@cloudflare/kumo";
+import type { Icon as IconType } from "@phosphor-icons/react";
+import { ArrowDownIcon, ArrowUpIcon, ArrowsDownUpIcon, DotsThreeIcon, TrayIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
-import { Checkbox } from "@/components/ui/checkbox";
-import { Empty, Failed } from "@/components/ui/empty";
-import { SkeletonRows } from "@/components/ui/skeleton";
+import { Failed } from "@/components/ui/failed";
 import { useRouter } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
 import { CardList } from "./card-list";
@@ -18,6 +18,23 @@ export interface Column<T> {
   numeric?: boolean;
   sticky?: boolean;
   sortBy?: (row: T) => string | number;
+}
+
+export interface RowAction {
+  key: string;
+  label: string;
+  icon?: IconType;
+  onSelect: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}
+
+export interface Paging {
+  shown: number;
+  total: number;
+  exact?: boolean;
+  onMore?: () => void;
+  loading?: boolean;
 }
 
 interface Props<T> {
@@ -33,34 +50,38 @@ interface Props<T> {
   emptyAction?: ReactNode;
   selectable?: boolean;
   bulk?: (chosen: T[]) => ReactNode;
-  /** Reaching the rows this page did not ask for yet. */
-  more?: ReactNode;
+  paging?: Paging;
+  /** Which column titles a phone card; a table's leftmost column is rarely it. */
   cardLead?: string;
-  cardActions?: string;
   /** Where the whole row leads; the row opens the record, not a trailing link (KEHOACH 9.15). */
   rowHref?: (row: T) => string;
+  /** Or what the whole row opens in place, when the record has no page of its own. */
+  onRowClick?: (row: T) => void;
+  /** The row's secondary actions, in one ⋯ menu at its end (KEHOACH 9.12). */
+  rowActions?: (row: T) => RowAction[];
 }
 
-interface Memory {
+interface Order {
   sortId: string | null;
   descending: boolean;
 }
 
-const kStore = "table:";
-const kFresh: Memory = { sortId: null, descending: false };
+const kStore = "table-order:";
+const kFresh: Order = { sortId: null, descending: false };
+const kSkeletonRows = 6;
 
-function recall(id: string): Memory {
+function recall(id: string): Order {
   try {
     const raw = window.localStorage.getItem(kStore + id);
-    return raw ? { ...kFresh, ...(JSON.parse(raw) as Partial<Memory>) } : kFresh;
+    return raw ? { ...kFresh, ...(JSON.parse(raw) as Partial<Order>) } : kFresh;
   } catch {
     return kFresh;
   }
 }
 
-function remember(id: string, memory: Memory): void {
+function remember(id: string, order: Order): void {
   try {
-    window.localStorage.setItem(kStore + id, JSON.stringify(memory));
+    window.localStorage.setItem(kStore + id, JSON.stringify(order));
   } catch {
     return;
   }
@@ -73,6 +94,55 @@ function compare(left: string | number, right: string | number): number {
   return String(left).localeCompare(String(right));
 }
 
+/** A click on a control inside the row belongs to that control, not to the row. */
+export function onControl(event: MouseEvent): boolean {
+  return (event.target as HTMLElement).closest("a, button, input, select, textarea, label, [role=menuitem]") !== null;
+}
+
+export function ActionMenu({ actions, label }: { actions: RowAction[]; label: string }) {
+  if (actions.length === 0) {
+    return null;
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenu.Trigger
+        render={<Button variant="ghost" size="sm" shape="square" icon={<DotsThreeIcon weight="bold" size={16} />} aria-label={label} />}
+      />
+      <DropdownMenu.Content align="end">
+        {actions.map((action, at) => (
+          <DropdownMenu.Item
+            key={action.key}
+            icon={action.icon}
+            variant={action.danger ? "danger" : "default"}
+            disabled={action.disabled}
+            onClick={action.onSelect}
+            className={cn(action.danger && at > 0 && "mt-1")}
+          >
+            {action.label}
+          </DropdownMenu.Item>
+        ))}
+      </DropdownMenu.Content>
+    </DropdownMenu>
+  );
+}
+
+export function PagingRow({ paging }: { paging: Paging }) {
+  const t = useTranslations("common");
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-kumo-hairline px-3 py-2.5 text-kumo-subtle">
+      <span className="tabular-nums">
+        {t(paging.exact === false ? "showingOfAtLeast" : "showingOf", { shown: paging.shown, total: paging.total })}
+      </span>
+      {paging.onMore ? (
+        <Button variant="secondary" size="sm" loading={paging.loading} onClick={paging.onMore}>
+          {t("loadMore")}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Kumo's Table in a LayerCard on a desk, the same columns as cards on a phone (KEHOACH 4.7). */
 export function DataTable<T>({
   id,
   columns,
@@ -86,53 +156,53 @@ export function DataTable<T>({
   emptyAction,
   selectable,
   bulk,
-  more,
+  paging,
   cardLead,
-  cardActions,
   rowHref,
+  onRowClick,
+  rowActions,
 }: Props<T>) {
   const t = useTranslations("common");
   const router = useRouter();
-  const [memory, setMemory] = useState<Memory>(kFresh);
+  const [order, setOrder] = useState<Order>(kFresh);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
 
   // Reading storage during render would disagree with the server-rendered pass.
-  useEffect(() => setMemory(recall(id)), [id]);
-
-  function keep(next: Memory): void {
-    setMemory(next);
-    remember(id, next);
-  }
-
-  const shown = columns;
+  useEffect(() => setOrder(recall(id)), [id]);
 
   const ordered = useMemo(() => {
     const source = rows ?? [];
-    const column = columns.find((one) => one.id === memory.sortId);
+    const column = columns.find((one) => one.id === order.sortId);
     if (!column?.sortBy) {
       return source;
     }
     const pick = column.sortBy;
     const sorted = [...source].sort((left, right) => compare(pick(left), pick(right)));
-    return memory.descending ? sorted.reverse() : sorted;
-  }, [rows, columns, memory.sortId, memory.descending]);
+    return order.descending ? sorted.reverse() : sorted;
+  }, [rows, columns, order.sortId, order.descending]);
 
   if (failed) {
     return <Failed onRetry={onRetry} />;
   }
-  if (pending) {
-    return <SkeletonRows columns={Math.min(shown.length || 4, 5)} />;
-  }
-  if (!ordered.length) {
-    return <Empty title={empty ?? t("noData")} hint={emptyHint} action={emptyAction} />;
+
+  const opens = rowHref !== undefined || onRowClick !== undefined;
+
+  function open(row: T): void {
+    if (rowHref) {
+      router.push(rowHref(row));
+      return;
+    }
+    onRowClick?.(row);
   }
 
   function sortOn(column: Column<T>): void {
     if (!column.sortBy) {
       return;
     }
-    const same = memory.sortId === column.id;
-    keep({ ...memory, sortId: column.id, descending: same ? !memory.descending : false });
+    const same = order.sortId === column.id;
+    const next = { sortId: column.id, descending: same ? !order.descending : false };
+    setOrder(next);
+    remember(id, next);
   }
 
   function toggleRow(key: string): void {
@@ -144,146 +214,162 @@ export function DataTable<T>({
   }
 
   const allOn = ordered.length > 0 && ordered.every((row) => chosen.has(keyOf(row)));
+  const someOn = ordered.some((row) => chosen.has(keyOf(row)));
   const picked = ordered.filter((row) => chosen.has(keyOf(row)));
 
-  // Without the stacking order the cells sliding sideways paint over the frozen
-  // one; the offset clears the selection box when the table has one.
-  const frozen = cn("sticky bg-inherit border-e border-kumo-hairline", selectable ? "start-10" : "start-0");
-
-  // A click on a control inside the row belongs to that control, not to the row.
-  function open(event: MouseEvent<HTMLTableRowElement>, row: T): void {
-    if (!rowHref || (event.target as HTMLElement).closest("a, button, input, select, textarea, label")) {
-      return;
-    }
-    router.push(rowHref(row));
+  if (!pending && ordered.length === 0) {
+    return (
+      <LayerCard className="p-0">
+        <Empty
+          icon={<TrayIcon size={40} className="text-kumo-inactive" />}
+          title={empty ?? t("noData")}
+          description={emptyHint}
+          contents={emptyAction}
+          className="py-12"
+        />
+      </LayerCard>
+    );
   }
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center gap-2 pb-2">
-        {selectable && picked.length > 0 ? (
-          <>
-            <span className="text-sm text-(--color-muted) tabular-nums">
-              {t("chosen", { count: picked.length })}
-            </span>
-            {bulk?.(picked)}
-          </>
-        ) : null}
-      </div>
+    <div className="flex flex-col gap-2">
+      {selectable && picked.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-kumo-tint px-3 py-2">
+          <span className="font-medium tabular-nums">{t("chosen", { count: picked.length })}</span>
+          {bulk?.(picked)}
+          <Button variant="ghost" size="sm" className="ms-auto" onClick={() => setChosen(new Set())}>
+            {t("reset")}
+          </Button>
+        </div>
+      ) : null}
 
-      <div className="hidden overflow-x-auto rounded-lg bg-kumo-base ring-1 ring-kumo-line md:block">
-        <table className="w-full text-base">
-          <thead>
-            <tr className="border-b border-kumo-fill bg-kumo-base text-left text-kumo-default">
+      <LayerCard className="hidden overflow-x-auto p-0 md:block">
+        <Table>
+          <Table.Header>
+            <Table.Row>
               {selectable ? (
-                <th className="sticky start-0 z-20 w-10 bg-inherit p-3">
-                  <Checkbox
-                    className="min-h-0"
-                    aria-label={t("chooseAll")}
-                    checked={allOn}
-                    onChange={() =>
-                      setChosen(allOn ? new Set() : new Set(ordered.map((row) => keyOf(row))))
-                    }
-                    label=""
-                  />
-                </th>
+                <Table.CheckHead
+                  checked={allOn}
+                  indeterminate={someOn && !allOn}
+                  onCheckedChange={() => setChosen(allOn ? new Set() : new Set(ordered.map((row) => keyOf(row))))}
+                  aria-label={t("chooseAll")}
+                />
               ) : null}
-              {shown.map((column) => (
-                <th
+              {columns.map((column) => (
+                <Table.Head
                   key={column.id}
-                  scope="col"
+                  sticky={column.sticky ? "left" : undefined}
                   aria-sort={
-                    memory.sortId === column.id
-                      ? memory.descending
-                        ? "descending"
-                        : "ascending"
-                      : undefined
+                    order.sortId === column.id ? (order.descending ? "descending" : "ascending") : undefined
                   }
-                  className={cn(
-                    "p-3 font-semibold",
-                    column.numeric && "text-end",
-                    column.sticky && frozen,
-                    column.sticky && "z-20",
-                  )}
+                  className={cn("whitespace-nowrap", column.numeric && "text-end")}
                 >
                   {column.sortBy ? (
                     <button
                       type="button"
                       onClick={() => sortOn(column)}
-                      className="inline-flex items-center gap-1 hover:text-kumo-strong"
+                      className={cn("inline-flex items-center gap-1 hover:text-kumo-strong", column.numeric && "flex-row-reverse")}
                     >
                       {column.header}
-                      {memory.sortId !== column.id ? (
-                        <ArrowsDownUpIcon className="size-3.5 opacity-50" aria-hidden />
-                      ) : memory.descending ? (
-                        <ArrowDownIcon className="size-3.5" aria-hidden />
+                      {order.sortId !== column.id ? (
+                        <ArrowsDownUpIcon size={14} className="text-kumo-inactive" aria-hidden />
+                      ) : order.descending ? (
+                        <ArrowDownIcon size={14} aria-hidden />
                       ) : (
-                        <ArrowUpIcon className="size-3.5" aria-hidden />
+                        <ArrowUpIcon size={14} aria-hidden />
                       )}
                     </button>
                   ) : (
                     column.header
                   )}
-                </th>
+                </Table.Head>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ordered.map((row) => {
-              const key = keyOf(row);
-              return (
-                <tr
-                  key={key}
-                  onClick={rowHref ? (event) => open(event, row) : undefined}
-                  className={cn(
-                    "bg-kumo-base even:bg-kumo-elevated",
-                    rowHref && "cursor-pointer hover:bg-kumo-tint",
-                  )}
-                >
-                  {selectable ? (
-                    <td className="sticky start-0 z-10 bg-inherit p-3">
-                      <Checkbox
-                        className="min-h-0"
-                        aria-label={t("chooseRow")}
-                        checked={chosen.has(key)}
-                        onChange={() => toggleRow(key)}
-                        label=""
-                      />
-                    </td>
-                  ) : null}
-                  {shown.map((column) => (
-                    <td
-                      key={column.id}
+              {rowActions ? (
+                <Table.Head sticky="right" className="w-12">
+                  <span className="sr-only">{t("actions")}</span>
+                </Table.Head>
+              ) : null}
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {pending
+              ? Array.from({ length: kSkeletonRows }, (_, at) => (
+                  <Table.Row key={`wait-${at}`}>
+                    {selectable ? <Table.Cell /> : null}
+                    {columns.map((column) => (
+                      <Table.Cell key={column.id}>
+                        <SkeletonLine minWidth={40} maxWidth={140} />
+                      </Table.Cell>
+                    ))}
+                    {rowActions ? <Table.Cell /> : null}
+                  </Table.Row>
+                ))
+              : ordered.map((row) => {
+                  const key = keyOf(row);
+                  const actions = rowActions?.(row) ?? [];
+                  return (
+                    <Table.Row
+                      key={key}
+                      variant={chosen.has(key) ? "selected" : "default"}
+                      onClick={opens ? (event) => !onControl(event) && open(row) : undefined}
                       className={cn(
-                        "p-3",
-                        column.numeric && "text-end tabular-nums",
-                        column.sticky && frozen,
-                        column.sticky && "z-10",
+                        opens && "cursor-pointer hover:bg-kumo-tint hover:[--kumo-table-row-bg:var(--color-kumo-tint)]",
                       )}
                     >
-                      {column.cell(row)}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      {selectable ? (
+                        <Table.CheckCell
+                          checked={chosen.has(key)}
+                          onCheckedChange={() => toggleRow(key)}
+                          aria-label={t("chooseRow")}
+                        />
+                      ) : null}
+                      {columns.map((column) => (
+                        <Table.Cell
+                          key={column.id}
+                          sticky={column.sticky ? "left" : undefined}
+                          className={cn(column.numeric && "text-end tabular-nums")}
+                        >
+                          {column.cell(row)}
+                        </Table.Cell>
+                      ))}
+                      {rowActions ? (
+                        <Table.Cell sticky="right" className="py-1.5 text-end">
+                          <ActionMenu actions={actions} label={t("actions")} />
+                        </Table.Cell>
+                      ) : null}
+                    </Table.Row>
+                  );
+                })}
+          </Table.Body>
+        </Table>
+        {paging && !pending ? <PagingRow paging={paging} /> : null}
+      </LayerCard>
+
+      <div className="md:hidden">
+        {pending ? (
+          <LayerCard className="flex flex-col gap-3 p-4">
+            {Array.from({ length: 3 }, (_, at) => (
+              <SkeletonLine key={at} minWidth={120} maxWidth={260} />
+            ))}
+          </LayerCard>
+        ) : (
+          <CardList
+            columns={columns}
+            rows={ordered}
+            keyOf={keyOf}
+            cardLead={cardLead}
+            chosen={selectable ? chosen : undefined}
+            onToggle={selectable ? toggleRow : undefined}
+            onOpen={opens ? open : undefined}
+            rowActions={rowActions}
+          />
+        )}
+        {paging && !pending ? (
+          <LayerCard className="mt-2 p-0">
+            <PagingRow paging={paging} />
+          </LayerCard>
+        ) : null}
       </div>
-
-      <CardList
-        columns={shown}
-        rows={ordered}
-        keyOf={keyOf}
-        cardLead={cardLead}
-        cardActions={cardActions}
-        chosen={selectable ? chosen : undefined}
-        onToggle={selectable ? toggleRow : undefined}
-        cardHref={rowHref}
-      />
-
-      {more}
-
     </div>
   );
 }

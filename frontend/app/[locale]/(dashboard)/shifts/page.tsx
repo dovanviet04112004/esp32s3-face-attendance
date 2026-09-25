@@ -1,17 +1,22 @@
 "use client";
 
+import { Button, Empty, Input, LayerDialog, SkeletonLine } from "@cloudflare/kumo";
+import { ArrowCounterClockwiseIcon, PlusIcon, ProhibitIcon, UserMinusIcon, UsersThreeIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 
-import { DataTable, type Column } from "@/components/tables/data-table";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Sheet } from "@/components/ui/sheet";
-import { dayOnly } from "@/lib/format";
+import { NextHoliday } from "@/components/holidays/next-holiday";
+import { DataTable, type Column, type RowAction } from "@/components/tables/data-table";
+import { Failed } from "@/components/ui/failed";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { PersonPicker, type Person } from "@/components/ui/person-picker";
+import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { dayOnly } from "@/lib/format";
 
 interface Shift {
   id: string;
@@ -30,40 +35,37 @@ interface Assignment {
   validTo: string | null;
 }
 
-interface Employee {
-  id: number;
-  code: string;
-  fullName: string;
-}
+type Standing = "active" | "retired" | "";
 
 const WRITERS = ["ADMIN", "HR"];
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+function localDay(at: Date): string {
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
 }
 
 export default function ShiftsPage() {
   const t = useTranslations("shifts");
-  const format = useFormatter();
   const common = useTranslations("common");
-  // Both of these take a shift away from somebody, so a second click asks.
-  const [retiring, setRetiring] = useState<string | null>(null);
-  const [dropping, setDropping] = useState<string | null>(null);
+  const format = useFormatter();
   const cache = useQueryClient();
   const role = useSession((s) => s.role);
   const faultOf = useFault();
+  const notify = useNotify();
   const mayWrite = role !== null && WRITERS.includes(role);
 
+  const [standing, setStanding] = useState<Standing>("active");
   const [editing, setEditing] = useState<Shift | null>(null);
   const [adding, setAdding] = useState(false);
   const [rostering, setRostering] = useState<Shift | null>(null);
+  const [retiring, setRetiring] = useState<Shift | null>(null);
+  const [dropping, setDropping] = useState<Assignment | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("17:30");
   const [graceMinutes, setGraceMinutes] = useState("0");
-  const [code, setCode] = useState("");
-  const [validFrom, setValidFrom] = useState(today);
+  const [picked, setPicked] = useState<Person | null>(null);
+  const [validFrom, setValidFrom] = useState(() => localDay(new Date()));
   const [validTo, setValidTo] = useState("");
 
   const shifts = useQuery({
@@ -74,16 +76,7 @@ export default function ShiftsPage() {
   const assignments = useQuery({
     queryKey: ["shifts", rostering?.id, "assignments"],
     enabled: rostering !== null,
-    queryFn: async () =>
-      (await api.get<Assignment[]>(`/shifts/${rostering?.id}/assignments`)).data,
-  });
-
-  const people = useQuery({
-    queryKey: ["employees", "for-shift", code],
-    enabled: rostering !== null && code.length >= 2,
-    queryFn: async () =>
-      (await api.get<{ rows: Employee[] }>(`/employees?search=${encodeURIComponent(code)}&take=10`))
-        .data.rows,
+    queryFn: async () => (await api.get<Assignment[]>(`/shifts/${rostering?.id}/assignments`)).data,
   });
 
   function refresh(): void {
@@ -92,10 +85,11 @@ export default function ShiftsPage() {
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { name, startTime, endTime, graceMinutes: Number(graceMinutes) };
+      const body = { name: name.trim(), startTime, endTime, graceMinutes: Number(graceMinutes) };
       return editing ? api.patch(`/shifts/${editing.id}`, body) : api.post("/shifts", body);
     },
     onSuccess: () => {
+      notify.done(editing ? t("saved", { name: name.trim() }) : t("added", { name: name.trim() }));
       setAdding(false);
       setEditing(null);
       refresh();
@@ -105,32 +99,49 @@ export default function ShiftsPage() {
 
   const retire = useMutation({
     mutationFn: (one: Shift) => api.delete(`/shifts/${one.id}`),
-    onSuccess: refresh,
-    onError: (fell: unknown) => setFault(faultOf(fell)),
+    onSuccess: (_, one) => {
+      notify.done(t("retiredDone", { name: one.name }));
+      setRetiring(null);
+      refresh();
+    },
+    onError: notify.failed,
+  });
+
+  const restore = useMutation({
+    mutationFn: (one: Shift) => api.patch(`/shifts/${one.id}`, { active: true }),
+    onSuccess: (_, one) => {
+      notify.done(t("restoredDone", { name: one.name }));
+      refresh();
+    },
+    onError: notify.failed,
   });
 
   const assign = useMutation({
-    mutationFn: (employeeId: number) =>
+    mutationFn: (who: Person) =>
       api.post(`/shifts/${rostering?.id}/assignments`, {
-        employeeId,
+        employeeId: who.id,
         validFrom: new Date(`${validFrom}T00:00:00.000Z`).toISOString(),
         ...(validTo ? { validTo: new Date(`${validTo}T00:00:00.000Z`).toISOString() } : {}),
       }),
-    onSuccess: () => {
-      setCode("");
-      void cache.invalidateQueries({ queryKey: ["shifts"] });
+    onSuccess: (_, who) => {
+      notify.done(t("assignedDone", { name: who.fullName, shift: rostering?.name ?? "" }));
+      setPicked(null);
+      refresh();
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   const unassign = useMutation({
-    mutationFn: (one: Assignment) =>
-      api.delete(`/shifts/${rostering?.id}/assignments/${one.id}`),
-    onSuccess: () => void cache.invalidateQueries({ queryKey: ["shifts"] }),
-    onError: (fell: unknown) => setFault(faultOf(fell)),
+    mutationFn: (one: Assignment) => api.delete(`/shifts/${rostering?.id}/assignments/${one.id}`),
+    onSuccess: (_, one) => {
+      notify.done(t("unassignedDone", { name: one.employee.fullName, shift: rostering?.name ?? "" }));
+      setDropping(null);
+      refresh();
+    },
+    onError: notify.failed,
   });
 
-  function open(one: Shift | null): void {
+  function openForm(one: Shift | null): void {
     setFault(null);
     setName(one?.name ?? "");
     setStartTime(one?.startTime ?? "08:00");
@@ -140,292 +151,270 @@ export default function ShiftsPage() {
     setAdding(one === null);
   }
 
-  function submit(event: FormEvent): void {
-    event.preventDefault();
+  function openRoster(one: Shift): void {
     setFault(null);
-    save.mutate();
+    setPicked(null);
+    setValidFrom(localDay(new Date()));
+    setValidTo("");
+    setRostering(one);
   }
 
+  const all = shifts.data ?? [];
+  const working = all.filter((one) => one.active).length;
+  const shown = shifts.data?.filter((one) => (standing === "" ? true : standing === "active" ? one.active : !one.active));
+  const hours = (one: Shift) => `${one.startTime} – ${one.endTime}`;
+
   const columns: Column<Shift>[] = [
-    { id: "name", header: t("name"), sticky: true, sortBy: (row) => row.name, cell: (row) => row.name },
-    {
-      id: "startTime",
-      header: t("startTime"),
-      numeric: true,
-      sortBy: (row) => row.startTime,
-      cell: (row) => row.startTime,
-    },
-    { id: "endTime", header: t("endTime"), numeric: true, cell: (row) => row.endTime },
-    {
-      id: "graceMinutes",
-      header: t("graceMinutes"),
-      numeric: true,
-      sortBy: (row) => row.graceMinutes,
-      cell: (row) => row.graceMinutes,
-    },
+    { id: "name", header: t("name"), sticky: true, sortBy: (row) => row.name, cell: (row) => <span className="font-medium">{row.name}</span> },
+    { id: "startTime", header: t("startTime"), numeric: true, sortBy: (row) => row.startTime, cell: (row) => row.startTime },
+    { id: "endTime", header: t("endTime"), numeric: true, sortBy: (row) => row.endTime, cell: (row) => row.endTime },
+    { id: "graceMinutes", header: t("graceMinutes"), numeric: true, sortBy: (row) => row.graceMinutes, cell: (row) => row.graceMinutes },
     {
       id: "status",
       header: t("status"),
       sortBy: (row) => (row.active ? 1 : 0),
-      cell: (row) => (
-        <span className={row.active ? "text-(--color-ok)" : "text-(--color-muted)"}>
-          {row.active ? t("active") : t("retired")}
-        </span>
-      ),
-    },
-    {
-      id: "act",
-      header: t("act"),
-      cell: (row) =>
-        mayWrite ? (
-          <span className="flex flex-wrap gap-1">
-            <Button
-              type="button"
-              tone="quiet"
-              size="sm"
-              onClick={() => {
-                setFault(null);
-                setRostering(row);
-              }}
-            >
-              {t("roster")}
-            </Button>
-            <Button type="button" tone="quiet" size="sm" onClick={() => open(row)}>
-              {t("edit")}
-            </Button>
-            {row.active ? (
-              <Button
-                type="button"
-                tone={retiring === row.id ? "danger" : "quiet"}
-                size="sm"
-                disabled={retire.isPending && retire.variables?.id === row.id}
-                onClick={() => (retiring === row.id ? retire.mutate(row) : setRetiring(row.id))}
-                onBlur={() => setRetiring(null)}
-              >
-                {retiring === row.id ? common("sure") : t("retire")}
-              </Button>
-            ) : null}
-          </span>
-        ) : (
-          common("empty")
-        ),
+      cell: (row) => <StatePill tone={row.active ? "good" : "idle"}>{row.active ? t("active") : t("retired")}</StatePill>,
     },
   ];
 
+  function actionsOf(row: Shift): RowAction[] {
+    return [
+      { key: "roster", label: t("roster"), icon: UsersThreeIcon, onSelect: () => openRoster(row) },
+      row.active
+        ? { key: "retire", label: t("retire"), icon: ProhibitIcon, danger: true, onSelect: () => setRetiring(row) }
+        : { key: "restore", label: t("restore"), icon: ArrowCounterClockwiseIcon, onSelect: () => restore.mutate(row) },
+    ];
+  }
+
   return (
-    <section>
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      <p className="mt-1 mb-4 text-sm text-(--color-muted)">{t("lead")}</p>
-
-      {mayWrite ? (
-        <Button type="button" className="mb-3" onClick={() => open(null)}>
-          {t("add")}
-        </Button>
-      ) : null}
-
-      {fault ? (
-        <p role="alert" className="mb-3 text-sm text-(--color-danger)">
-          {fault}
-        </p>
-      ) : null}
-
-      <DataTable
-        id="shifts"
-        cardActions="act"
-        columns={columns}
-        rows={shifts.data}
-        keyOf={(row) => row.id}
-        pending={shifts.isPending}
-        failed={shifts.isError}
-        onRetry={() => shifts.refetch()}
+    <>
+      <PageHeader
+        title={t("title")}
+        description={t("pageLead")}
+        actions={
+          mayWrite ? (
+            <Button variant="primary" icon={PlusIcon} onClick={() => openForm(null)}>
+              {t("add")}
+            </Button>
+          ) : undefined
+        }
       />
 
-      <Sheet
-        open={adding || editing !== null}
-        onClose={() => {
-          setAdding(false);
-          setEditing(null);
-        }}
-        title={editing ? t("edit") : t("add")}
-        closeLabel={common("close")}
-      >
-        <form onSubmit={submit}>
-          <label className="block text-sm font-medium" htmlFor="shiftName">
-            {t("name")}
-          </label>
-          <Input
-            id="shiftName"
-            required
-            maxLength={64}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="mt-1"
-          />
-
-          <div className="mt-4 flex gap-3">
-            <div className="flex-1">
-              <label className="block text-sm font-medium" htmlFor="shiftStart">
-                {t("startTime")}
-              </label>
-              <Input
-                id="shiftStart"
-                type="time"
-                required
-                value={startTime}
-                onChange={(event) => setStartTime(event.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium" htmlFor="shiftEnd">
-                {t("endTime")}
-              </label>
-              <Input
-                id="shiftEnd"
-                type="time"
-                required
-                value={endTime}
-                onChange={(event) => setEndTime(event.target.value)}
-                className="mt-1"
-              />
-            </div>
-          </div>
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="shiftGrace">
-            {t("graceMinutes")}
-          </label>
-          <Input
-            id="shiftGrace"
-            type="number"
-            min={0}
-            value={graceMinutes}
-            onChange={(event) => setGraceMinutes(event.target.value)}
-            className="mt-1"
-          />
-          <p className="mt-1 text-xs text-(--color-muted)">{t("graceHint")}</p>
-
-          {fault ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {fault}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={save.isPending} className="mt-4">
-            {save.isPending ? common("saving") : common("save")}
-          </Button>
-        </form>
-      </Sheet>
-
-      <Sheet
-        open={rostering !== null}
-        onClose={() => setRostering(null)}
-        title={rostering ? `${rostering.name} · ${t("roster")}` : t("roster")}
-        closeLabel={common("close")}
-        className="sm:max-w-xl"
-      >
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <label className="block text-xs text-(--color-muted)" htmlFor="shiftFrom">
-              {t("validFrom")}
-            </label>
-            <Input
-              id="shiftFrom"
-              type="date"
-              value={validFrom}
-              onChange={(event) => setValidFrom(event.target.value)}
-              className="mt-1"
+      <PageLayout
+        aside={
+          <AsideCard title={common("summary")}>
+            <StatList
+              stats={[
+                {
+                  key: "active",
+                  label: t("countActive"),
+                  value: shifts.data ? working : common("empty"),
+                  active: standing === "active",
+                  onPick: () => setStanding("active"),
+                },
+                {
+                  key: "retired",
+                  label: t("countRetired"),
+                  value: shifts.data ? all.length - working : common("empty"),
+                  active: standing === "retired",
+                  onPick: () => setStanding("retired"),
+                },
+                {
+                  key: "all",
+                  label: common("all"),
+                  value: shifts.data ? all.length : common("empty"),
+                  active: standing === "",
+                  onPick: () => setStanding(""),
+                },
+              ]}
             />
-          </div>
-          <div className="flex-1">
-            <label className="block text-xs text-(--color-muted)" htmlFor="shiftTo">
-              {t("validTo")}
-            </label>
-            <Input
-              id="shiftTo"
-              type="date"
-              value={validTo}
-              onChange={(event) => setValidTo(event.target.value)}
-              className="mt-1"
-            />
-          </div>
-        </div>
-
-        <label className="mt-4 block text-sm font-medium" htmlFor="shiftWho">
-          {t("who")}
-        </label>
-        <Input
-          id="shiftWho"
-          value={code}
-          placeholder={t("whoHint")}
-          onChange={(event) => setCode(event.target.value)}
-          className="mt-1"
+          </AsideCard>
+        }
+        extra={<NextHoliday />}
+      >
+        <DataTable
+          id="shifts"
+          cardLead="name"
+          columns={columns}
+          rows={shown}
+          keyOf={(row) => row.id}
+          pending={shifts.isPending}
+          failed={shifts.isError}
+          onRetry={() => void shifts.refetch()}
+          onRowClick={mayWrite ? openForm : undefined}
+          rowActions={mayWrite ? actionsOf : undefined}
+          empty={standing === "retired" ? t("noneRetired") : t("empty")}
+          emptyHint={standing === "retired" ? undefined : t("emptyHint")}
+          emptyAction={
+            mayWrite && standing !== "retired" ? (
+              <Button variant="secondary" icon={PlusIcon} onClick={() => openForm(null)}>
+                {t("add")}
+              </Button>
+            ) : undefined
+          }
         />
-        {(people.data ?? []).length > 0 ? (
-          <ul className="mt-2 flex flex-col">
-            {(people.data ?? []).map((one) => (
-              <li
-                key={one.id}
-                className="flex items-center gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
-              >
-                <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
-                <span className="font-mono text-xs text-(--color-muted)">{one.code}</span>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={assign.isPending}
-                  onClick={() => assign.mutate(one.id)}
-                >
-                  {t("assign")}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+      </PageLayout>
 
-        <h3 className="mt-6 text-sm font-medium">{t("assigned")}</h3>
-        {assignments.isPending ? (
-          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-        ) : assignments.data?.length ? (
-          <ul className="mt-2 flex flex-col">
-            {assignments.data.map((one) => (
-              <li
-                key={one.id}
-                className="flex items-center gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
-              >
-                <span className="tabular-nums">
-                  {format.dateTime(dayOnly(one.validFrom), "day")} →{" "}
-                  {one.validTo ? format.dateTime(dayOnly(one.validTo), "day") : common("empty")}
-                </span>
-                <span className="ms-auto flex min-w-0 items-baseline gap-2">
-                  <span className="truncate">{one.employee.fullName}</span>
-                  <span className="shrink-0 font-mono text-xs text-(--color-muted)">
-                    {one.employee.code}
-                  </span>
-                </span>
-                <Button
-                  type="button"
-                  tone={dropping === one.id ? "danger" : "quiet"}
-                  size="sm"
-                  disabled={unassign.isPending && unassign.variables?.id === one.id}
-                  onClick={() => (dropping === one.id ? unassign.mutate(one) : setDropping(one.id))}
-                  onBlur={() => setDropping(null)}
-                >
-                  {dropping === one.id ? common("sure") : t("unassign")}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-(--color-muted)">
-            {assignments.isPending ? common("loading") : t("noneAssigned")}
-          </p>
-        )}
+      <LayerDialog.Root
+        open={adding || editing !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setAdding(false);
+            setEditing(null);
+          }
+        }}
+        dismissDisabled={save.isPending}
+      >
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{editing ? t("editTitle", { name: editing.name }) : t("add")}</LayerDialog.Title>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-4">
+              <Input label={t("name")} required maxLength={64} value={name} onChange={(event) => setName(event.target.value)} />
+              <div className="grid grid-cols-2 gap-4">
+                <Input label={t("startTime")} type="time" required value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+                <Input label={t("endTime")} type="time" required value={endTime} onChange={(event) => setEndTime(event.target.value)} />
+              </div>
+              <Input
+                label={t("graceMinutes")}
+                type="number"
+                min={0}
+                value={graceMinutes}
+                description={t("graceHint")}
+                onChange={(event) => setGraceMinutes(event.target.value)}
+              />
+              {fault ? <p role="alert" className="text-kumo-danger">{fault}</p> : null}
+            </div>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              loading={save.isPending}
+              disabled={name.trim() === "" || startTime === "" || endTime === ""}
+              onClick={() => {
+                setFault(null);
+                save.mutate();
+              }}
+            >
+              {editing ? common("save") : t("add")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
 
-        {fault ? (
-          <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-            {fault}
-          </p>
-        ) : null}
-      </Sheet>
-    </section>
+      <LayerDialog.Root open={rostering !== null} onOpenChange={(next) => !next && setRostering(null)} dismissDisabled={assign.isPending}>
+        <LayerDialog.Content size="lg" closeLabel={common("close")}>
+          <LayerDialog.Title>{rostering ? t("rosterTitle", { name: rostering.name }) : t("roster")}</LayerDialog.Title>
+          <LayerDialog.Description>{rostering ? t("rosterLead", { hours: hours(rostering) }) : null}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-4">
+              <PersonPicker label={t("who")} value={picked} onChange={setPicked} />
+              <div className="grid grid-cols-2 items-start gap-4">
+                <Input label={t("validFrom")} type="date" value={validFrom} onChange={(event) => setValidFrom(event.target.value)} />
+                <Input
+                  label={t("validTo")}
+                  type="date"
+                  min={validFrom}
+                  value={validTo}
+                  description={t("validToHint")}
+                  onChange={(event) => setValidTo(event.target.value)}
+                />
+              </div>
+              {fault ? <p role="alert" className="text-kumo-danger">{fault}</p> : null}
+
+              <div>
+                <h3 className="mb-1 font-semibold">{t("assigned")}</h3>
+                {assignments.isError ? (
+                  <Failed onRetry={() => void assignments.refetch()} />
+                ) : assignments.isPending ? (
+                  <div className="flex flex-col gap-3 py-2">
+                    <SkeletonLine minWidth={160} maxWidth={360} />
+                    <SkeletonLine minWidth={160} maxWidth={360} />
+                  </div>
+                ) : assignments.data.length === 0 ? (
+                  <Empty size="sm" icon={<UsersThreeIcon size={32} className="text-kumo-inactive" />} title={t("noneAssigned")} />
+                ) : (
+                  <ul className="flex flex-col">
+                    {assignments.data.map((one) => (
+                      <li key={one.id} className="flex items-center gap-3 border-b border-kumo-hairline py-2 last:border-0">
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate">
+                            {one.employee.fullName}
+                            <span className="ms-2 font-mono text-sm text-kumo-subtle">{one.employee.code}</span>
+                          </span>
+                          <span className="text-sm text-kumo-subtle tabular-nums">
+                            {format.dateTime(dayOnly(one.validFrom), "day")} →{" "}
+                            {one.validTo ? format.dateTime(dayOnly(one.validTo), "day") : t("openEnded")}
+                          </span>
+                        </span>
+                        <Button
+                          variant="ghost"
+                          shape="square"
+                          icon={UserMinusIcon}
+                          aria-label={t("unassignOf", { name: one.employee.fullName })}
+                          onClick={() => setDropping(one)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            <LayerDialog.Alert open={dropping !== null} onOpenChange={(next) => !next && setDropping(null)} dismissDisabled={unassign.isPending}>
+              <LayerDialog.Content size="sm" closeLabel={common("close")}>
+                <LayerDialog.Title>{t("unassignTitle")}</LayerDialog.Title>
+                <LayerDialog.Description>
+                  {dropping && rostering ? t("unassignLead", { name: dropping.employee.fullName, shift: rostering.name }) : null}
+                </LayerDialog.Description>
+                <LayerDialog.Body>
+                  <p className="text-kumo-subtle">{t("unassignHint")}</p>
+                </LayerDialog.Body>
+                <LayerDialog.Actions dismissLabel={common("cancel")}>
+                  <LayerDialog.Actions.Primary
+                    variant="destructive"
+                    loading={unassign.isPending}
+                    onClick={() => dropping && unassign.mutate(dropping)}
+                  >
+                    {t("unassign")}
+                  </LayerDialog.Actions.Primary>
+                </LayerDialog.Actions>
+              </LayerDialog.Content>
+            </LayerDialog.Alert>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("close")}>
+            <LayerDialog.Actions.Primary
+              loading={assign.isPending}
+              disabled={picked === null || validFrom === ""}
+              onClick={() => {
+                if (picked) {
+                  setFault(null);
+                  assign.mutate(picked);
+                }
+              }}
+            >
+              {picked ? t("assignOf", { name: picked.fullName }) : t("assign")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Alert open={retiring !== null} onOpenChange={(next) => !next && setRetiring(null)} dismissDisabled={retire.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{retiring ? t("retireTitle", { name: retiring.name }) : t("retire")}</LayerDialog.Title>
+          <LayerDialog.Description>{retiring ? t("retireLead", { name: retiring.name }) : null}</LayerDialog.Description>
+          <LayerDialog.Body>
+            {retiring ? (
+              <p className="text-kumo-subtle tabular-nums">
+                {t("retireFacts", { hours: hours(retiring), grace: retiring.graceMinutes })}
+              </p>
+            ) : null}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary variant="destructive" loading={retire.isPending} onClick={() => retiring && retire.mutate(retiring)}>
+              {t("retire")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+    </>
   );
 }

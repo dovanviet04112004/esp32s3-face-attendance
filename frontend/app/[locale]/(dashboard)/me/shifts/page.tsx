@@ -1,13 +1,17 @@
 "use client";
 
+import { Empty, LayerCard, SkeletonLine } from "@cloudflare/kumo";
+import { CalendarBlankIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
-import { Empty, Failed } from "@/components/ui/empty";
-import { Skeleton } from "@/components/ui/skeleton";
+import { todayHere } from "@/components/requests/request-form";
+import { Failed } from "@/components/ui/failed";
+import { MonthPicker, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
+import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/cn";
 
 interface PlannedDay {
   date: string;
@@ -17,23 +21,37 @@ interface PlannedDay {
   away: string | null;
 }
 
+type Sort = "work" | "holiday" | "off" | "away" | "none";
+type Group = "work" | "holiday" | "off" | "none";
+
 const MONTHS_AHEAD = 3;
 const MONTHS_BACK = 1;
 const WEEK = 7;
 const MONDAY_OFFSET = 6;
 
-type Translate = ReturnType<typeof useTranslations<"myShifts">>;
+// Any Monday will do: the row only needs the seven weekday names in order.
+const WEEK_START = new Date(Date.UTC(2024, 0, 1));
 
-// next-intl types its keys, so the kind is mapped rather than interpolated.
-function awayLabel(t: Translate, kind: string): string {
-  if (kind === "BUSINESS_TRIP") {
-    return t("awayBUSINESS_TRIP");
+// The same order the timesheet judges a day in, so a planned day and a measured one agree.
+function sortOf(day: PlannedDay): Sort {
+  if (day.holiday) {
+    return "holiday";
   }
-  return kind === "REMOTE_WORK" ? t("awayREMOTE_WORK") : t("awayLEAVE");
+  if (day.weekend) {
+    return "off";
+  }
+  if (day.away === "LEAVE") {
+    return "off";
+  }
+  if (day.away) {
+    return "away";
+  }
+  return day.shift ? "work" : "none";
 }
 
-function monthKey(at: Date): { year: number; month: number } {
-  return { year: at.getUTCFullYear(), month: at.getUTCMonth() + 1 };
+// A trip or a day from home is a working day, drawn apart so it is not mistaken for the office.
+function groupOf(sort: Sort): Group {
+  return sort === "away" ? "work" : sort;
 }
 
 /** Monday-first, because a shift week is read the way a calendar is printed. */
@@ -41,144 +59,190 @@ function leadingBlanks(firstDay: string): number {
   return (new Date(`${firstDay}T00:00:00Z`).getUTCDay() + MONDAY_OFFSET) % WEEK;
 }
 
-/** Any Monday will do: the row only needs the seven weekday names in order. */
-const WEEK_START = new Date(Date.UTC(2024, 0, 1));
-
-function weekdays(): Date[] {
-  return Array.from(
-    { length: WEEK },
-    (unused, at) => new Date(WEEK_START.getTime() + at * 86_400_000),
-  );
+function order(at: Month): number {
+  return at.year * 12 + at.month;
 }
 
-/** The reader's own today, since a roster cell is a calendar day not an instant. */
-function todayHere(): string {
-  const at = new Date();
-  const pad = (one: number) => String(one).padStart(2, "0");
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+const CELL: Record<Sort, string> = {
+  work: "bg-kumo-base",
+  away: "bg-kumo-info-tint",
+  holiday: "bg-kumo-warning-tint",
+  off: "bg-kumo-tint text-kumo-subtle",
+  none: "bg-kumo-base text-kumo-subtle",
+};
+
+function Swatch({ sort, label }: { sort: Sort; label: string }) {
+  return (
+    <li className="flex items-center gap-2">
+      <span aria-hidden className={cn("size-4 shrink-0 rounded ring-1 ring-kumo-hairline", CELL[sort])} />
+      {label}
+    </li>
+  );
 }
 
 export default function MyShiftsPage() {
   const t = useTranslations("myShifts");
   const common = useTranslations("common");
   const format = useFormatter();
-  const [offset, setOffset] = useState(0);
-
-  const now = new Date();
-  const showing = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, 1));
-  const { year, month } = monthKey(showing);
+  const now = thisMonth();
+  const earliest = shiftMonth(now, -MONTHS_BACK);
+  const latest = shiftMonth(now, MONTHS_AHEAD);
+  const [showing, setShowing] = useState<Month>(now);
+  const [lit, setLit] = useState<Group | null>(null);
 
   const roster = useQuery({
-    queryKey: ["me", "roster", year, month],
+    queryKey: ["me", "roster", showing.year, showing.month],
     queryFn: async () =>
-      (await api.get<PlannedDay[]>(`/shifts/roster?year=${year}&month=${month}`)).data,
+      (await api.get<PlannedDay[]>(`/shifts/roster?year=${showing.year}&month=${showing.month}`)).data,
   });
 
   const days = roster.data ?? [];
   const today = todayHere();
-  const working = days.filter((one) => one.shift && !one.holiday && !one.away).length;
+  const count = (group: Group) => days.filter((one) => groupOf(sortOf(one)) === group).length;
 
-  if (roster.isError) {
-    return <Failed onRetry={() => void roster.refetch()} />;
+  function move(next: Month): void {
+    setShowing(order(next) < order(earliest) ? earliest : next);
+    setLit(null);
   }
 
+  function awayName(kind: string, short: boolean): string {
+    if (kind === "BUSINESS_TRIP") {
+      return short ? t("shortBUSINESS_TRIP") : t("awayBUSINESS_TRIP");
+    }
+    if (kind === "REMOTE_WORK") {
+      return short ? t("shortREMOTE_WORK") : t("awayREMOTE_WORK");
+    }
+    return short ? t("shortLEAVE") : t("awayLEAVE");
+  }
+
+  function labelOf(day: PlannedDay, sort: Sort): { long: string; short: string } | null {
+    if (day.holiday) {
+      return { long: day.holiday, short: t("shortHoliday") };
+    }
+    if (sort === "off" && day.weekend) {
+      return { long: t("weekend"), short: t("shortOff") };
+    }
+    if (day.away) {
+      return { long: awayName(day.away, false), short: awayName(day.away, true) };
+    }
+    return day.shift ? null : { long: t("none"), short: common("empty") };
+  }
+
+  function stat(group: Group, label: string) {
+    return { key: group, label, value: count(group), active: lit === group, onPick: () => setLit(lit === group ? null : group) };
+  }
+
+  const stats = roster.isSuccess
+    ? [
+        stat("work", t("countWork")),
+        stat("holiday", t("countHoliday")),
+        stat("off", t("countOff")),
+        ...(count("none") > 0 ? [stat("none", t("countNone"))] : []),
+      ]
+    : [];
+
   return (
-    <section className="w-full">
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("lead")}</p>
-
-      <div className="mt-4 flex items-center gap-2">
-        <button
-          type="button"
-          aria-label={t("earlier")}
-          disabled={offset <= -MONTHS_BACK}
-          onClick={() => setOffset(offset - 1)}
-          className="grid size-11 place-items-center rounded-lg border border-(--color-line) disabled:opacity-40"
-        >
-          <CaretLeftIcon className="size-4" aria-hidden />
-        </button>
-        <p className="min-w-40 text-center text-sm font-medium">
-          {format.dateTime(showing, { year: "numeric", month: "long" })}
-        </p>
-        <button
-          type="button"
-          aria-label={t("later")}
-          disabled={offset >= MONTHS_AHEAD}
-          onClick={() => setOffset(offset + 1)}
-          className="grid size-11 place-items-center rounded-lg border border-(--color-line) disabled:opacity-40"
-        >
-          <CaretRightIcon className="size-4" aria-hidden />
-        </button>
-        {roster.isSuccess ? (
-          <p className="ml-auto text-sm text-(--color-muted)">{t("working", { count: working })}</p>
-        ) : null}
-      </div>
-
-      {roster.isPending ? <Skeleton className="mt-4 h-72 w-full" /> : null}
-
-      {roster.isSuccess && days.length === 0 ? (
-        <div className="mt-4">
-          <Empty title={common("noData")} />
+    <>
+      <PageHeader title={t("title")} description={t("lead")} />
+      <PageLayout
+        aside={
+          <AsideCard title={t("countsTitle")}>
+            {roster.isPending ? (
+              <div className="flex flex-col gap-2">
+                <SkeletonLine minWidth={120} maxWidth={240} />
+                <SkeletonLine minWidth={120} maxWidth={240} />
+              </div>
+            ) : (
+              <StatList stats={stats} />
+            )}
+          </AsideCard>
+        }
+        extra={
+          <AsideCard title={t("legend")}>
+            <ul className="flex flex-col gap-2">
+              <Swatch sort="work" label={t("legendWork")} />
+              <Swatch sort="away" label={t("legendAway")} />
+              <Swatch sort="holiday" label={t("legendHoliday")} />
+              <Swatch sort="off" label={t("legendOff")} />
+              <li className="flex items-center gap-2">
+                <span aria-hidden className="size-4 shrink-0 rounded ring-2 ring-kumo-brand" />
+                {t("legendToday")}
+              </li>
+            </ul>
+          </AsideCard>
+        }
+      >
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <MonthPicker value={showing} onChange={move} max={latest} />
         </div>
-      ) : null}
 
-      {roster.isSuccess && days.length > 0 ? (
-        <>
-          <div
-            aria-hidden
-            className="mt-4 grid grid-cols-7 gap-1 text-center text-[11px] text-(--color-muted)"
-          >
-            {weekdays().map((one) => (
-              <span key={one.toISOString()}>
-                {format.dateTime(one, { weekday: "short" })}
-              </span>
+        {roster.isError ? (
+          <Failed onRetry={() => void roster.refetch()} />
+        ) : roster.isPending ? (
+          <LayerCard className="flex flex-col gap-3 p-4">
+            {Array.from({ length: 5 }, (_, at) => (
+              <SkeletonLine key={at} minWidth={200} maxWidth={600} />
             ))}
-          </div>
-          <ol className="mt-1 grid grid-cols-7 gap-1">
-            {Array.from({ length: leadingBlanks(days[0].date) }, (unused, at) => (
-              <li key={`blank-${at}`} aria-hidden />
-            ))}
-            {days.map((day) => {
-              const off = day.holiday !== null || day.away !== null;
-              const here = day.date.slice(0, 10) === today;
-              return (
-                <li
-                  key={day.date}
-                  aria-current={here ? "date" : undefined}
-                  className={[
-                    "min-h-20 rounded-lg border p-1 text-[11px] sm:p-1.5 sm:text-xs",
-                    here ? "ring-2 ring-(--color-accent)" : "",
-                    off
-                      ? "border-(--color-warn) bg-(--color-warn)/10"
-                      : day.weekend
-                        ? "border-(--color-line) bg-(--color-ground)"
-                        : "border-(--color-line) bg-(--color-surface)",
-                  ].join(" ")}
-                >
-                  <p className="font-medium tabular-nums">{Number(day.date.slice(-2))}</p>
-                  {day.holiday ? (
-                    <p className="mt-1 line-clamp-2 text-(--color-warn)">{day.holiday}</p>
-                  ) : day.away ? (
-                    <p className="mt-1 line-clamp-2 text-(--color-warn)">{awayLabel(t, day.away)}</p>
-                  ) : day.shift ? (
-                    <>
-                      <p className="mt-1 truncate max-sm:hidden">{day.shift.name}</p>
-                      <p className="text-(--color-muted) tabular-nums">
-                        <span className="max-sm:hidden">
-                          {day.shift.startTime}–{day.shift.endTime}
+          </LayerCard>
+        ) : days.length === 0 ? (
+          <LayerCard className="p-0">
+            <Empty
+              icon={<CalendarBlankIcon size={40} className="text-kumo-inactive" />}
+              title={t("empty")}
+              description={t("emptyHint")}
+              className="py-12"
+            />
+          </LayerCard>
+        ) : (
+          <LayerCard className="p-2 sm:p-3">
+            <div aria-hidden className="grid grid-cols-7 gap-1 pb-1 text-center text-sm text-kumo-subtle">
+              {Array.from({ length: WEEK }, (_, at) => (
+                <span key={at}>{format.dateTime(new Date(WEEK_START.getTime() + at * 86_400_000), { weekday: "short" })}</span>
+              ))}
+            </div>
+            <ol className="grid grid-cols-7 gap-1">
+              {Array.from({ length: leadingBlanks(days[0].date) }, (_, at) => (
+                <li key={`blank-${at}`} aria-hidden />
+              ))}
+              {days.map((day) => {
+                const sort = sortOf(day);
+                const label = labelOf(day, sort);
+                const here = day.date.slice(0, 10) === today;
+                return (
+                  <li
+                    key={day.date}
+                    aria-current={here ? "date" : undefined}
+                    className={cn(
+                      "flex min-h-16 min-w-0 flex-col gap-0.5 rounded-md p-1 text-sm ring-1 ring-kumo-hairline sm:min-h-20 sm:p-1.5",
+                      CELL[sort],
+                      here && "ring-2 ring-kumo-brand",
+                      lit !== null && lit !== groupOf(sort) && "opacity-40",
+                    )}
+                  >
+                    <span className="font-medium text-kumo-default tabular-nums">{Number(day.date.slice(8, 10))}</span>
+                    {label ? (
+                      <>
+                        <span className="line-clamp-2 max-sm:hidden">{label.long}</span>
+                        <span className="truncate sm:hidden">{label.short}</span>
+                      </>
+                    ) : day.shift ? (
+                      <>
+                        <span className="truncate max-sm:hidden">{day.shift.name}</span>
+                        <span className="text-kumo-subtle tabular-nums">
+                          <span className="max-sm:hidden">
+                            {day.shift.startTime}–{day.shift.endTime}
+                          </span>
+                          <span className="sm:hidden">{day.shift.startTime}</span>
                         </span>
-                        <span className="sm:hidden">{day.shift.startTime}</span>
-                      </p>
-                    </>
-                  ) : (
-                    <p className="mt-1 text-(--color-muted)">{t("none")}</p>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        </>
-      ) : null}
-    </section>
+                      </>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ol>
+          </LayerCard>
+        )}
+      </PageLayout>
+    </>
   );
 }

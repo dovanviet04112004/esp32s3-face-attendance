@@ -1,15 +1,17 @@
 "use client";
 
+import { Banner, Button, Empty, Input, LayerCard, LayerDialog, Select } from "@cloudflare/kumo";
+import { CheckCircleIcon, PlusIcon, TrayArrowDownIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { dayOnly } from "@/lib/format";
+import { DataTable, type Column } from "@/components/tables/data-table";
+import { useNotify } from "@/components/ui/notify";
+import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
+import { dayOnly } from "@/lib/format";
 
 interface FileType {
   id: string;
@@ -31,17 +33,23 @@ interface Gap {
   expired: (Named & { expiresAt: string })[];
 }
 
+interface Short extends Named {
+  expiresAt: string | null;
+}
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: boolean }) {
   const t = useTranslations("documents");
-  const format = useFormatter();
   const common = useTranslations("common");
+  const format = useFormatter();
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
 
+  const [open, setOpen] = useState(false);
   const [typeId, setTypeId] = useState("");
   const [receivedAt, setReceivedAt] = useState(today);
   const [note, setNote] = useState("");
@@ -49,134 +57,156 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
 
   const types = useQuery({
     queryKey: ["personnel-file-types"],
+    enabled: mayWrite,
     queryFn: async () => (await api.get<FileType[]>("/personnel-file-types")).data,
   });
 
-  // Asking for one person rather than reading the whole company and picking
-  // them out, which a paged answer cannot be searched for anyway.
+  // One person asked for, rather than the whole company read and picked through.
   const gaps = useQuery({
     queryKey: ["personnel-files", "gaps", employeeId],
-    queryFn: async () =>
-      (await api.get<{ rows: Gap[] }>(`/personnel-files/gaps?employeeId=${employeeId}`)).data.rows,
+    queryFn: async () => (await api.get<{ rows: Gap[] }>(`/personnel-files/gaps?employeeId=${employeeId}`)).data.rows,
   });
+
   const mine = gaps.data?.[0];
+  const short: Short[] | undefined = gaps.data
+    ? [
+        ...(mine?.missing ?? []).map((one) => ({ ...one, expiresAt: null })),
+        ...(mine?.expired ?? []).map((one) => ({ ...one, expiresAt: one.expiresAt })),
+      ]
+    : undefined;
 
   const receive = useMutation({
-    mutationFn: () =>
-      api.post("/personnel-files", {
-        employeeId,
-        typeId,
-        receivedAt,
-        note: note || undefined,
-      }),
-    onSuccess: () => {
-      setNote("");
+    mutationFn: async () => {
+      await api.post("/personnel-files", { employeeId, typeId, receivedAt, note: note || undefined });
+      return types.data?.find((one) => one.id === typeId)?.name ?? "";
+    },
+    onSuccess: (name) => {
+      setOpen(false);
+      notify.done(t("receivedToast", { name }));
       void cache.invalidateQueries({ queryKey: ["personnel-files"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
-  function submit(event: FormEvent): void {
-    event.preventDefault();
+  function openReceive(presetType: string): void {
     setFault(null);
-    receive.mutate();
+    setTypeId(presetType);
+    setReceivedAt(today());
+    setNote("");
+    setOpen(true);
   }
 
-  const missing = mine?.missing ?? [];
-  const expired = mine?.expired ?? [];
+  const columns: Column<Short>[] = [
+    {
+      id: "type",
+      header: t("fileType"),
+      sortBy: (row) => row.name,
+      cell: (row) => (
+        <span className="flex flex-col">
+          <span>{row.name}</span>
+          <span className="font-mono text-sm text-kumo-subtle">{row.code}</span>
+        </span>
+      ),
+    },
+    {
+      id: "state",
+      header: t("fileState"),
+      cell: (row) =>
+        row.expiresAt ? (
+          <StatePill tone="waiting">{t("expiredOnDay", { day: format.dateTime(dayOnly(row.expiresAt), "day") })}</StatePill>
+        ) : (
+          <StatePill tone="bad">{t("missing")}</StatePill>
+        ),
+    },
+  ];
+
+  const typeItems = Object.fromEntries(
+    (types.data ?? []).map((one) => [one.id, `${one.code} · ${one.name}${one.required ? ` · ${t("requiredMark")}` : ""}`]),
+  );
 
   return (
-    <div className="mt-4 flex flex-col gap-6">
-      <section>
-        <h2 className="text-sm font-medium">{t("gapsHere")}</h2>
-        {gaps.isPending ? (
-          <p className="mt-2 text-sm text-(--color-muted)">{common("loading")}</p>
-        ) : missing.length === 0 && expired.length === 0 ? (
-          <p className="mt-2 text-sm text-(--color-ok)">{t("gapsClear")}</p>
-        ) : (
-          <ul className="mt-2 flex flex-col gap-1 text-sm">
-            {missing.map((one) => (
-              <li key={one.typeId} className="flex flex-wrap gap-2">
-                <span className="font-mono text-xs text-(--color-muted)">{one.code}</span>
-                <span className="min-w-0 flex-1">{one.name}</span>
-                <span className="text-(--color-warn)">{t("stillMissing")}</span>
-              </li>
-            ))}
-            {expired.map((one) => (
-              <li key={one.typeId} className="flex flex-wrap gap-2">
-                <span className="font-mono text-xs text-(--color-muted)">{one.code}</span>
-                <span className="min-w-0 flex-1">{one.name}</span>
-                <span className="text-(--color-warn)">
-                  {t("expiredOn")} {format.dateTime(dayOnly(one.expiresAt), "day")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="m-0 text-lg font-semibold">{t("gapsHere")}</h2>
+        {mayWrite ? (
+          <Button variant="secondary" icon={PlusIcon} onClick={() => openReceive("")}>
+            {t("receiveTitle")}
+          </Button>
+        ) : null}
+      </div>
 
-      {mayWrite ? (
-        <section className="max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-          <h2 className="text-sm font-medium">{t("receiveTitle")}</h2>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("receiveLead")}</p>
-          <form onSubmit={submit} className="mt-4">
-            <label className="block text-sm font-medium" htmlFor="fileType">
-              {t("fileType")}
-            </label>
-            <Select
-              id="fileType"
-              required
-              value={typeId}
-              onChange={(event) => setTypeId(event.target.value)}
-              className="mt-1"
+      {short && short.length === 0 ? (
+        <LayerCard className="p-0">
+          <Empty
+            icon={<CheckCircleIcon size={40} className="text-kumo-success" />}
+            title={t("gapsClear")}
+            description={t("gapsClearHint")}
+            className="py-12"
+          />
+        </LayerCard>
+      ) : (
+        <DataTable
+          id="employee-files"
+          cardLead="type"
+          columns={columns}
+          rows={short}
+          keyOf={(row) => row.typeId}
+          pending={gaps.isPending}
+          failed={gaps.isError}
+          onRetry={() => void gaps.refetch()}
+          onRowClick={mayWrite ? (row) => openReceive(row.typeId) : undefined}
+          rowActions={
+            mayWrite
+              ? (row) => [{ key: "receive", label: t("receiveTitle"), icon: TrayArrowDownIcon, onSelect: () => openReceive(row.typeId) }]
+              : undefined
+          }
+        />
+      )}
+
+      <LayerDialog.Root open={open} onOpenChange={setOpen} dismissDisabled={receive.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("receiveTitle")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("receiveLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <form
+              id="file-receive"
+              className="flex flex-col gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setFault(null);
+                receive.mutate();
+              }}
             >
-              <option value="">{common("empty")}</option>
-              {(types.data ?? []).map((one) => (
-                <option key={one.id} value={one.id}>
-                  {one.code} · {one.name}
-                  {one.required ? ` · ${t("requiredMark")}` : ""}
-                </option>
-              ))}
-            </Select>
-
-            <label className="mt-4 block text-sm font-medium" htmlFor="receivedAt">
-              {t("receivedAt")}
-            </label>
-            <Input
-              id="receivedAt"
-              type="date"
-              required
-              value={receivedAt}
-              onChange={(event) => setReceivedAt(event.target.value)}
-              className="mt-1"
-            />
-            <p className="mt-1 text-xs text-(--color-muted)">{t("expiryHint")}</p>
-
-            <label className="mt-4 block text-sm font-medium" htmlFor="fileNote">
-              {t("fileNote")}
-            </label>
-            <Input
-              id="fileNote"
-              maxLength={240}
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              className="mt-1"
-            />
-
-            {fault ? (
-              <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-                {fault}
-              </p>
-            ) : null}
-            {receive.isSuccess && !fault ? (
-              <p className="mt-3 text-sm text-(--color-ok)">{t("received")}</p>
-            ) : null}
-            <Button type="submit" disabled={!typeId || receive.isPending} className="mt-4">
-              {receive.isPending ? common("saving") : common("save")}
-            </Button>
-          </form>
-        </section>
-      ) : null}
+              <Select
+                label={t("fileType")}
+                hideLabel={false}
+                placeholder={t("fileTypePick")}
+                loading={types.isPending}
+                value={typeId}
+                onValueChange={(next) => setTypeId(String(next ?? ""))}
+                items={typeItems}
+                className="w-full"
+              />
+              <Input
+                label={t("receivedAt")}
+                description={t("expiryHint")}
+                type="date"
+                required
+                max={today()}
+                value={receivedAt}
+                onChange={(event) => setReceivedAt(event.target.value)}
+              />
+              <Input label={t("fileNote")} maxLength={240} value={note} onChange={(event) => setNote(event.target.value)} />
+            </form>
+            {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary type="submit" form="file-receive" loading={receive.isPending} disabled={!typeId}>
+              {t("receiveAction")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
     </div>
   );
 }

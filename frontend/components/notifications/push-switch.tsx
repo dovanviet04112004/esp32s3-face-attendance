@@ -1,10 +1,12 @@
 "use client";
 
+import { Banner, Switch } from "@cloudflare/kumo";
+import { InfoIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { useNotify } from "@/components/ui/notify";
 import { api } from "@/lib/api";
 import { env } from "@/lib/env";
 
@@ -23,7 +25,7 @@ function toBytes(key: string): Uint8Array<ArrayBuffer> {
 
 export function PushSwitch() {
   const t = useTranslations("notices");
-  const common = useTranslations("common");
+  const notify = useNotify();
   const [standing, setStanding] = useState<Standing>("unsupported");
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export function PushSwitch() {
       const allowed = await Notification.requestPermission();
       if (allowed !== "granted") {
         setStanding("blocked");
-        return;
+        return false;
       }
       const worker = await navigator.serviceWorker.ready;
       const sub = await worker.pushManager.subscribe({
@@ -70,7 +72,10 @@ export function PushSwitch() {
         userAgent: navigator.userAgent.slice(0, 200),
       });
       setStanding("on");
+      return true;
     },
+    onSuccess: (on) => on && notify.done(t("pushTurnedOn")),
+    onError: notify.failed,
   });
 
   const turnOff = useMutation({
@@ -83,29 +88,25 @@ export function PushSwitch() {
       }
       setStanding("off");
     },
+    onSuccess: () => notify.done(t("pushTurnedOff")),
+    onError: notify.failed,
   });
 
   if (standing === "unsupported") {
-    return <p className="text-sm text-(--color-muted)">{t("pushUnsupported")}</p>;
+    return <Banner variant="secondary" size="sm" icon={<InfoIcon weight="fill" />} description={t("pushUnsupported")} />;
   }
   if (standing === "blocked") {
-    return <p className="text-sm text-(--color-warn)">{t("pushBlocked")}</p>;
+    return <Banner variant="alert" size="sm" icon={<WarningIcon weight="fill" />} description={t("pushBlocked")} />;
   }
 
+  const busy = turnOn.isPending || turnOff.isPending;
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <span className="text-sm text-(--color-muted)">
-        {standing === "on" ? t("pushOn") : t("pushOff")}
-      </span>
-      {standing === "on" ? (
-        <Button type="button" tone="quiet" disabled={turnOff.isPending} onClick={() => turnOff.mutate()}>
-          {turnOff.isPending ? common("saving") : t("pushDisable")}
-        </Button>
-      ) : (
-        <Button type="button" disabled={turnOn.isPending} onClick={() => turnOn.mutate()}>
-          {turnOn.isPending ? common("saving") : t("pushEnable")}
-        </Button>
-      )}
-    </div>
+    <Switch
+      label={standing === "on" ? t("pushOn") : t("pushOff")}
+      checked={standing === "on"}
+      disabled={busy}
+      transitioning={busy}
+      onCheckedChange={(on: boolean) => (on ? turnOn.mutate() : turnOff.mutate())}
+    />
   );
 }

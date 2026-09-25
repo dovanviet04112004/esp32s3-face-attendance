@@ -1,21 +1,18 @@
 "use client";
 
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { Banner, Button, Empty, LayerCard, LayerDialog, Select, SkeletonLine, Textarea } from "@cloudflare/kumo";
+import { ChatCircleTextIcon, PrinterIcon, ReceiptIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 
 import { DisputeCard, type Dispute } from "@/components/payroll/dispute-card";
 import { PayslipView, useLineName, type Payslip } from "@/components/payroll/payslip-view";
-import { Button } from "@/components/ui/button";
-import { Empty, Failed } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { SkeletonRows } from "@/components/ui/skeleton";
+import { Failed } from "@/components/ui/failed";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, Facts, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
@@ -30,8 +27,11 @@ interface PayslipRow {
   period?: { year: number; month: number };
 }
 
-const THIS_YEAR = new Date().getUTCFullYear();
-const YEARS = [THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2];
+interface PayslipPage {
+  rows: PayslipRow[];
+  total: number;
+  next: string | null;
+}
 
 interface TaxYear {
   year: number;
@@ -47,12 +47,6 @@ interface TaxYear {
   difference: string;
 }
 
-interface PayslipPage {
-  rows: PayslipRow[];
-  total: number;
-  next: string | null;
-}
-
 interface Delta {
   code: string;
   thisPeriod: string;
@@ -60,26 +54,43 @@ interface Delta {
   difference: string;
 }
 
-export default function MyPayslipsPage() {
+const kHere = "/me/payslips";
+const kDisputeForm = "dispute-form";
+const THIS_YEAR = new Date().getFullYear();
+const YEARS = [THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2];
+
+function periodName(row: PayslipRow, fallback: string): string {
+  return row.period ? `${String(row.period.month).padStart(2, "0")}/${row.period.year}` : fallback;
+}
+
+function Waiting({ lines = 3 }: { lines?: number }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {Array.from({ length: lines }, (_, at) => (
+        <SkeletonLine key={at} minWidth={120} maxWidth={280} />
+      ))}
+    </div>
+  );
+}
+
+function MyPayslips() {
   const t = useTranslations("payroll");
   const d = useTranslations("disputes");
   const common = useTranslations("common");
   const locale = useLocale();
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [claim, setClaim] = useState("");
-  const [lineCode, setLineCode] = useState("");
-  const [refused, setRefused] = useState<string | null>(null);
-  const [year, setYear] = useState(THIS_YEAR);
-  const employeeId = useSession((one) => one.employeeId);
-
-  const statement = useQuery({
-    queryKey: ["tax-year", employeeId, year],
-    enabled: employeeId !== null,
-    queryFn: async () => (await api.get<TaxYear>(`/tax-year/${employeeId}?year=${year}`)).data,
-  });
+  const router = useRouter();
+  const search = useSearchParams();
   const nameOf = useLineName();
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
+  const employeeId = useSession((one) => one.employeeId);
+  const [year, setYear] = useState(THIS_YEAR);
+  const [raising, setRaising] = useState(false);
+  const [claim, setClaim] = useState("");
+  const [lineCode, setLineCode] = useState("");
+  const [refused, setRefused] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState<Dispute | null>(null);
 
   const mine = useInfiniteQuery({
     queryKey: ["payslips", "mine", employeeId],
@@ -93,8 +104,9 @@ export default function MyPayslipsPage() {
   });
 
   const slips = mine.data?.pages.flatMap((one) => one.rows);
-
-  const chosen = openId ?? slips?.[0]?.id ?? null;
+  const asked = search.get("slip");
+  const chosen = (asked && slips?.some((one) => one.id === asked) ? asked : null) ?? slips?.[0]?.id ?? null;
+  const chosenRow = slips?.find((one) => one.id === chosen);
 
   const slip = useQuery({
     queryKey: ["payslips", chosen],
@@ -115,250 +127,337 @@ export default function MyPayslipsPage() {
       (await api.get<{ rows: Dispute[] }>(`/payslip-disputes?employeeId=${employeeId}`)).data.rows,
   });
 
+  const statement = useQuery({
+    queryKey: ["tax-year", employeeId, year],
+    enabled: employeeId !== null,
+    queryFn: async () => (await api.get<TaxYear>(`/tax-year/${employeeId}?year=${year}`)).data,
+  });
+
   const raise = useMutation({
     mutationFn: async () =>
-      api.post("/payslip-disputes", {
-        payslipId: chosen,
-        claim,
-        ...(lineCode === "" ? {} : { lineCode }),
-      }),
+      api.post("/payslip-disputes", { payslipId: chosen, claim, ...(lineCode === "" ? {} : { lineCode }) }),
     onSuccess: () => {
-      setClaim("");
-      setRefused(null);
+      notify.done(d("raised"));
+      setRaising(false);
       void cache.invalidateQueries({ queryKey: ["payslip-disputes"] });
     },
-    onError: (fell) => setRefused(faultOf(fell)),
+    onError: (fell: unknown) => setRefused(faultOf(fell)),
   });
 
   const withdraw = useMutation({
     mutationFn: async (id: string) => api.post(`/payslip-disputes/${id}/withdraw`, {}),
-    onSuccess: () => void cache.invalidateQueries({ queryKey: ["payslip-disputes"] }),
-    onError: (fell) => setRefused(faultOf(fell)),
+    onSuccess: () => {
+      notify.done(d("withdrawn"));
+      setWithdrawing(null);
+      void cache.invalidateQueries({ queryKey: ["payslip-disputes"] });
+    },
+    onError: (fell: unknown) => {
+      notify.failed(fell);
+      setWithdrawing(null);
+    },
   });
 
-  if (mine.isError) {
-    return <Failed onRetry={() => mine.refetch()} />;
+  function choose(id: string): void {
+    router.replace(`${kHere}?slip=${id}`, { scroll: false });
+  }
+
+  function openRaise(): void {
+    setClaim("");
+    setLineCode("");
+    setRefused(null);
+    setRaising(true);
   }
 
   const onThisSlip = (disputes.data ?? []).filter((one) => one.payslipId === chosen);
+  const disputable = slip.data !== undefined && slip.data.state !== "DRAFT";
+  const periodItems = Object.fromEntries((slips ?? []).map((row) => [row.id, periodName(row, t("period"))]));
+  const moreSlips = mine.hasNextPage ? (
+    <Button variant="ghost" size="sm" className="mt-2 w-full" loading={mine.isFetchingNextPage} onClick={() => void mine.fetchNextPage()}>
+      {common("loadMore")}
+    </Button>
+  ) : null;
+
+  const taxRows: [string, string][] = statement.data
+    ? [
+        [t("taxGross"), statement.data.grossTotal],
+        [t("taxInsurance"), statement.data.insuranceTotal],
+        [t("taxReliefSelf"), statement.data.reliefSelfTotal],
+        [t("taxReliefDependent"), statement.data.reliefDependentTotal],
+        [t("taxExemptOvertime"), statement.data.exemptOvertimeTotal],
+        [t("taxAssessable"), statement.data.assessableTotal],
+        [t("taxDue"), statement.data.taxDue],
+        [t("taxWithheld"), statement.data.taxWithheld],
+        [t("taxDifference"), statement.data.difference],
+      ]
+    : [];
+
+  const hasSlips = (slips?.length ?? 0) > 0;
 
   return (
-    <section>
-      <h1 className="text-lg font-semibold">{t("myTitle")}</h1>
-      <p className="mt-1 mb-6 text-sm text-(--color-muted)">{t("lead")}</p>
-
-      {mine.isPending ? (
-        <SkeletonRows rows={3} columns={3} />
-      ) : !slips?.length ? (
-        <Empty title={t("empty")} />
-      ) : (
-        <>
-          <ul
-            aria-label={t("myTitle")}
-            className="max-h-56 overflow-y-auto rounded-xl border border-(--color-line) bg-(--color-surface) sm:max-h-72"
-          >
-            {slips.map((row) => (
-              <li key={row.id}>
-                <button
-                  type="button"
-                  aria-current={row.id === chosen ? "true" : undefined}
-                  onClick={() => setOpenId(row.id)}
-                  className={cn(
-                    "flex min-h-11 w-full items-center justify-between gap-3 border-b border-(--color-line) px-4 text-sm last:border-0",
-                    row.id === chosen
-                      ? "bg-(--color-ground) font-medium"
-                      : "hover:bg-(--color-ground)",
-                  )}
-                >
-                  <span className="tabular-nums">
-                    {row.period
-                      ? `${String(row.period.month).padStart(2, "0")}/${row.period.year}`
-                      : t("period")}
-                  </span>
-                  <span className="tabular-nums">{money(Number(row.netPay), locale)}</span>
-                </button>
-              </li>
-            ))}
-            {mine.hasNextPage ? (
-              <li className="border-t border-(--color-line) p-2">
-                <Button
-                  type="button"
-                  tone="quiet"
-                  size="sm"
-                  className="w-full"
-                  disabled={mine.isFetchingNextPage}
-                  onClick={() => void mine.fetchNextPage()}
-                >
-                  {mine.isFetchingNextPage ? common("loading") : common("loadMore")}
-                </Button>
-              </li>
-            ) : null}
-          </ul>
-
-          <div className="mt-4" data-print>
-            {slip.isPending ? (
-              <SkeletonRows rows={6} columns={2} />
-            ) : slip.data ? (
-              <PayslipView slip={slip.data} />
-            ) : null}
-          </div>
-
-          {slip.data ? (
-            <Button
-              type="button"
-              tone="quiet"
-              size="sm"
-              className="mt-3"
-              onClick={() => window.print()}
-            >
+    <>
+      <PageHeader
+        title={t("myTitle")}
+        description={t("myLead")}
+        actions={
+          slip.data ? (
+            <Button variant="secondary" icon={PrinterIcon} onClick={() => window.print()}>
               {t("printSlip")}
             </Button>
-          ) : null}
+          ) : undefined
+        }
+      />
 
-          {delta.data && delta.data.length > 0 ? (
-            <section className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-              <h2 className="text-sm font-medium">{t("compare")}</h2>
-              <dl className="mt-2 flex flex-col">
-                {delta.data.map((row) => (
-                  <div
-                    key={row.code}
-                    className="flex justify-between gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
-                  >
-                    <dt>{nameOf(row.code)}</dt>
-                    <dd
-                      className={cn(
-                        "tabular-nums",
-                        Number(row.difference) < 0 ? "text-(--color-danger)" : "text-(--color-ok)",
-                      )}
-                    >
-                      {Number(row.difference) > 0 ? "+" : ""}
-                      {money(Number(row.difference), locale)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ) : null}
-
-          {chosen && slip.data && slip.data.state !== "DRAFT" ? (
-            <section className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-              <h2 className="text-sm font-medium">{d("title")}</h2>
-              <p className="mt-1 text-sm text-(--color-muted)">{d("lead")}</p>
-
-              <form
-                className="mt-3 flex flex-col gap-2"
-                onSubmit={(event: FormEvent) => {
-                  event.preventDefault();
-                  raise.mutate();
-                }}
-              >
-                <label className="text-sm font-medium" htmlFor="lineCode">
-                  {d("line")}
-                </label>
-                <Select
-                  id="lineCode"
-                  value={lineCode}
-                  onChange={(event) => setLineCode(event.target.value)}
-                >
-                  <option value="">{d("lineAny")}</option>
-                  {slip.data.lines.map((one) => (
-                    <option key={one.id} value={one.code}>
-                      {nameOf(one.code, one.label)}
-                    </option>
-                  ))}
-                </Select>
-                <label className="text-sm font-medium" htmlFor="claim">
-                  {d("claim")}
-                </label>
-                <Input
-                  id="claim"
-                  required
-                  value={claim}
-                  placeholder={d("claimHint")}
-                  onChange={(event) => setClaim(event.target.value)}
-                />
-                {refused ? (
-                  <p role="alert" className="text-sm text-(--color-danger)">
-                    {refused}
-                  </p>
-                ) : null}
-                <Button type="submit" size="sm" disabled={raise.isPending} className="self-start">
-                  {raise.isPending ? d("raising") : d("raise")}
-                </Button>
-              </form>
-
-              {onThisSlip.length === 0 ? (
-                <p className="mt-3 text-sm text-(--color-muted)">{d("empty")}</p>
-              ) : (
-                <ul className="mt-3 flex flex-col gap-2">
-                  {onThisSlip.map((one) => (
-                    <DisputeCard
-                      key={one.id}
-                      dispute={one}
-                      busy={withdraw.isPending}
-                      onWithdraw={(id) => withdraw.mutate(id)}
-                    />
-                  ))}
-                </ul>
-              )}
-            </section>
-          ) : null}
-
-          <section className="mt-10">
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-medium">{t("taxYearTitle")}</h2>
-                <p className="mt-1 text-sm text-(--color-muted)">{t("taxYearLead")}</p>
-              </div>
+      <PageLayout
+        aside={
+          hasSlips ? (
+            <div className="hidden md:block">
+              <AsideCard title={t("periods")}>
+                <div className="max-h-96 overflow-y-auto">
+                  <StatList
+                    stats={(slips ?? []).map((row) => ({
+                      key: row.id,
+                      label: periodName(row, t("period")),
+                      value: money(Number(row.netPay), locale),
+                      active: row.id === chosen,
+                      onPick: () => choose(row.id),
+                    }))}
+                  />
+                </div>
+                {moreSlips}
+              </AsideCard>
+            </div>
+          ) : undefined
+        }
+        extra={
+          <AsideCard
+            title={t("taxYearTitle")}
+            action={
               <Select
                 aria-label={t("taxYear")}
+                size="sm"
                 value={String(year)}
-                onChange={(event) => setYear(Number(event.target.value))}
-                className="w-32"
-              >
-                {YEARS.map((one) => (
-                  <option key={one} value={one}>
-                    {one}
-                  </option>
-                ))}
-              </Select>
+                onValueChange={(next) => setYear(Number(next ?? THIS_YEAR))}
+                items={Object.fromEntries(YEARS.map((one) => [String(one), String(one)]))}
+              />
+            }
+          >
+            {statement.isPending ? (
+              <Waiting lines={4} />
+            ) : statement.isError ? (
+              <Failed onRetry={() => void statement.refetch()} />
+            ) : !statement.data || statement.data.months.length === 0 ? (
+              <p className="text-kumo-subtle">{t("taxYearEmpty")}</p>
+            ) : (
+              <>
+                <p className="mb-2 text-kumo-subtle">{t("taxYearLead")}</p>
+                <Facts
+                  rows={taxRows.map(([label, value]) => [
+                    label,
+                    <span key={label} className="tabular-nums">
+                      {money(Number(value), locale)}
+                    </span>,
+                  ])}
+                />
+                <p className="mt-2 text-sm text-kumo-subtle">{t("taxYearMonths", { count: statement.data.months.length })}</p>
+              </>
+            )}
+          </AsideCard>
+        }
+      >
+        {mine.isError ? (
+          <Failed onRetry={() => void mine.refetch()} />
+        ) : mine.isPending ? (
+          <LayerCard className="p-4">
+            <Waiting lines={6} />
+          </LayerCard>
+        ) : !hasSlips ? (
+          <LayerCard className="p-0">
+            <Empty
+              icon={<ReceiptIcon size={40} className="text-kumo-inactive" />}
+              title={t("empty")}
+              description={t("myEmptyHint")}
+              className="py-12"
+            />
+          </LayerCard>
+        ) : (
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-2 md:hidden">
+              <Select
+                label={t("period")}
+                hideLabel={false}
+                className="w-full"
+                value={chosen ?? ""}
+                onValueChange={(next) => next && choose(String(next))}
+                items={periodItems}
+              />
+              {moreSlips}
             </div>
 
-            {statement.isPending ? (
-              <SkeletonRows rows={3} columns={2} />
-            ) : !statement.data || statement.data.months.length === 0 ? (
-              <p className="mt-3 text-sm text-(--color-muted)">{t("taxYearEmpty")}</p>
-            ) : (
-              <dl className="mt-3 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-                {(
-                  [
-                    ["taxGross", statement.data.grossTotal],
-                    ["taxInsurance", statement.data.insuranceTotal],
-                    ["taxReliefSelf", statement.data.reliefSelfTotal],
-                    ["taxReliefDependent", statement.data.reliefDependentTotal],
-                    ["taxExemptOvertime", statement.data.exemptOvertimeTotal],
-                    ["taxAssessable", statement.data.assessableTotal],
-                    ["taxDue", statement.data.taxDue],
-                    ["taxWithheld", statement.data.taxWithheld],
-                    ["taxDifference", statement.data.difference],
-                  ] as const
-                ).map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="flex justify-between gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
-                  >
-                    <dt className="text-(--color-muted)">{t(key)}</dt>
-                    <dd className="tabular-nums">{money(Number(value), locale)}</dd>
-                  </div>
-                ))}
-                <p className="mt-3 text-xs text-(--color-muted)">
-                  {t("taxYearMonths", { count: statement.data.months.length })}
-                </p>
-              </dl>
-            )}
-          </section>
-        </>
-      )}
-    </section>
+            <section className="flex flex-col gap-3" aria-label={chosenRow ? periodName(chosenRow, t("period")) : t("period")}>
+              <h2 className="m-0 hidden text-lg font-semibold md:block">
+                {t("periodOf", { period: chosenRow ? periodName(chosenRow, t("period")) : common("empty") })}
+              </h2>
+              <div data-print>
+                {slip.isError ? (
+                  <Failed onRetry={() => void slip.refetch()} />
+                ) : slip.data ? (
+                  <PayslipView slip={slip.data} />
+                ) : (
+                  <LayerCard className="p-4">
+                    <Waiting lines={6} />
+                  </LayerCard>
+                )}
+              </div>
+            </section>
+
+            {delta.data && delta.data.length > 0 ? (
+              <LayerCard>
+                <LayerCard.Secondary>{t("compare")}</LayerCard.Secondary>
+                <LayerCard.Primary>
+                  <Facts
+                    rows={delta.data.map((row) => [
+                      nameOf(row.code),
+                      <span
+                        key={row.code}
+                        className={cn("tabular-nums", Number(row.difference) < 0 ? "text-kumo-danger" : "text-kumo-success")}
+                      >
+                        {Number(row.difference) > 0 ? "+" : ""}
+                        {money(Number(row.difference), locale)}
+                      </span>,
+                    ])}
+                  />
+                </LayerCard.Primary>
+              </LayerCard>
+            ) : null}
+
+            {disputable ? (
+              <LayerCard>
+                <LayerCard.Secondary className="justify-between gap-3">
+                  <span>{d("title")}</span>
+                  {onThisSlip.length > 0 ? (
+                    <Button variant="secondary" size="sm" icon={ChatCircleTextIcon} onClick={openRaise}>
+                      {d("raise")}
+                    </Button>
+                  ) : null}
+                </LayerCard.Secondary>
+                <LayerCard.Primary>
+                  {disputes.isPending ? (
+                    <Waiting />
+                  ) : disputes.isError ? (
+                    <Failed onRetry={() => void disputes.refetch()} />
+                  ) : onThisSlip.length === 0 ? (
+                    <Empty
+                      size="sm"
+                      icon={<ChatCircleTextIcon size={32} className="text-kumo-inactive" />}
+                      title={d("empty")}
+                      description={d("lead")}
+                      contents={
+                        <Button variant="secondary" icon={ChatCircleTextIcon} onClick={openRaise}>
+                          {d("raise")}
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {onThisSlip.map((one) => (
+                        <DisputeCard
+                          key={one.id}
+                          dispute={one}
+                          busy={withdraw.isPending && withdraw.variables === one.id}
+                          onWithdraw={() => setWithdrawing(one)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </LayerCard.Primary>
+              </LayerCard>
+            ) : null}
+          </div>
+        )}
+      </PageLayout>
+
+      <LayerDialog.Root open={raising} onOpenChange={setRaising} dismissDisabled={raise.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{d("raise")}</LayerDialog.Title>
+          <LayerDialog.Description>
+            {chosenRow ? d("raiseLead", { period: periodName(chosenRow, t("period")) }) : d("lead")}
+          </LayerDialog.Description>
+          <LayerDialog.Body>
+            <form
+              id={kDisputeForm}
+              className="flex flex-col gap-4"
+              onSubmit={(event: FormEvent) => {
+                event.preventDefault();
+                setRefused(null);
+                raise.mutate();
+              }}
+            >
+              <Select
+                label={d("line")}
+                hideLabel={false}
+                className="w-full"
+                value={lineCode}
+                onValueChange={(next) => setLineCode(String(next ?? ""))}
+                items={{
+                  "": d("lineAny"),
+                  ...Object.fromEntries((slip.data?.lines ?? []).map((one) => [one.code, nameOf(one.code, one.label)])),
+                }}
+              />
+              <Textarea
+                label={d("claim")}
+                placeholder={d("claimHint")}
+                required
+                rows={3}
+                maxLength={2000}
+                value={claim}
+                onValueChange={setClaim}
+              />
+              {refused ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={refused} /> : null}
+            </form>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary type="submit" form={kDisputeForm} loading={raise.isPending}>
+              {d("raise")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Alert
+        open={withdrawing !== null}
+        onOpenChange={(next) => !next && setWithdrawing(null)}
+        dismissDisabled={withdraw.isPending}
+      >
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{d("withdrawTitle")}</LayerDialog.Title>
+          <LayerDialog.Description>
+            {withdrawing
+              ? d("withdrawLead", { line: withdrawing.lineCode ? nameOf(withdrawing.lineCode) : d("lineAny") })
+              : ""}
+          </LayerDialog.Description>
+          <LayerDialog.Body>
+            {withdrawing ? <p className="line-clamp-3 text-kumo-subtle">{withdrawing.claim}</p> : null}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("back")}>
+            <LayerDialog.Actions.Primary
+              variant="destructive"
+              loading={withdraw.isPending}
+              onClick={() => withdrawing && withdraw.mutate(withdrawing.id)}
+            >
+              {d("withdraw")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+    </>
+  );
+}
+
+// The chosen period rides on the query string, which the prerender does not have.
+export default function MyPayslipsPage() {
+  return (
+    <Suspense>
+      <MyPayslips />
+    </Suspense>
   );
 }

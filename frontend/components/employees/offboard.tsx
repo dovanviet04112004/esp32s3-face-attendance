@@ -1,17 +1,17 @@
 "use client";
 
+import { Banner, Input, LayerDialog } from "@cloudflare/kumo";
+import { WarningCircleIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Sheet } from "@/components/ui/sheet";
-import { dayOnly } from "@/lib/format";
+import { useNotify } from "@/components/ui/notify";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
+import { dayOnly } from "@/lib/format";
 
-interface Offboarding {
+export interface Offboarding {
   employeeId: number;
   code: string;
   leaveDate: string;
@@ -24,123 +24,120 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function Offboard({ employeeId }: { employeeId: number }) {
+export function isOutstanding(left: Offboarding): boolean {
+  return left.assetsOutstanding.length > 0 || left.requestsPending > 0 || left.advancesOutstanding > 0;
+}
+
+/** What a leaver still holds or has pending, shown once the offboarding is written. */
+export function Outstanding({ left, action }: { left: Offboarding; action?: ReactNode }) {
+  const t = useTranslations("employees");
+  const format = useFormatter();
+  return (
+    <Banner
+      variant="alert"
+      icon={<WarningIcon weight="fill" />}
+      title={t("offboardLeftover", { day: format.dateTime(dayOnly(left.leaveDate), "day") })}
+      description={
+        <ul className="mt-1 flex list-disc flex-col gap-0.5 ps-5">
+          {left.assetsOutstanding.length > 0 ? (
+            <li>
+              {t("offboardAssets", { count: left.assetsOutstanding.length })}:{" "}
+              <span className="font-mono">{left.assetsOutstanding.map((one) => one.code).join(", ")}</span>
+            </li>
+          ) : null}
+          {left.requestsPending > 0 ? <li>{t("offboardRequests", { count: left.requestsPending })}</li> : null}
+          {left.advancesOutstanding > 0 ? <li>{t("offboardAdvances", { count: left.advancesOutstanding })}</li> : null}
+        </ul>
+      }
+      action={action}
+    />
+  );
+}
+
+/** The offboarding dialog: it locks the account and erases the face on every kiosk (KEHOACH 9.14). */
+export function Offboard({
+  employeeId,
+  fullName,
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  employeeId: number;
+  fullName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDone: (left: Offboarding) => void;
+}) {
   const t = useTranslations("employees");
   const format = useFormatter();
   const common = useTranslations("common");
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
 
-  const [open, setOpen] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
   const [leaveDate, setLeaveDate] = useState(today);
   const [reason, setReason] = useState("");
 
+  function close(): void {
+    setFault(null);
+    setLeaveDate(today());
+    setReason("");
+    onOpenChange(false);
+  }
+
   const leave = useMutation({
     mutationFn: async () =>
-      (
-        await api.post<Offboarding>(`/employees/${employeeId}/offboard`, {
-          leaveDate,
-          reason: reason || undefined,
-        })
-      ).data,
-    onSuccess: () => {
+      (await api.post<Offboarding>(`/employees/${employeeId}/offboard`, { leaveDate, reason: reason || undefined })).data,
+    onSuccess: (left) => {
+      close();
+      notify.done(t("offboardDone", { day: format.dateTime(dayOnly(left.leaveDate), "day") }));
+      onDone(left);
       void cache.invalidateQueries({ queryKey: ["employees"] });
       void cache.invalidateQueries({ queryKey: ["assets"] });
+      void cache.invalidateQueries({ queryKey: ["enrollments", "employee", employeeId] });
+      void cache.invalidateQueries({ queryKey: ["biometric-consents", employeeId] });
+      void cache.invalidateQueries({ queryKey: ["reports", "attention"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
-  const left = leave.data;
-
   return (
-    <div className="mt-4 max-w-md rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-      <h2 className="text-sm font-medium">{t("offboardTitle")}</h2>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("offboardLead")}</p>
-      <Button
-        type="button"
-        tone="danger"
-        className="mt-4"
-        onClick={() => {
-          setFault(null);
-          setOpen(true);
-        }}
-      >
-        {t("offboardAction")}
-      </Button>
-
-      {left ? (
-        <div className="mt-4 rounded-lg border border-(--color-line) p-3 text-sm">
-          <p className="text-(--color-ok)">
-            {t("offboardDone", { day: format.dateTime(dayOnly(left.leaveDate), "day") })}
-          </p>
-          {left.assetsOutstanding.length > 0 ? (
-            <p className="mt-2 text-(--color-warn)">
-              {t("offboardAssets", { count: left.assetsOutstanding.length })}:{" "}
-              {left.assetsOutstanding.map((one) => one.code).join(", ")}
-            </p>
-          ) : null}
-          {left.requestsPending > 0 ? (
-            <p className="mt-1 text-(--color-warn)">
-              {t("offboardRequests", { count: left.requestsPending })}
-            </p>
-          ) : null}
-          {left.advancesOutstanding > 0 ? (
-            <p className="mt-1 text-(--color-warn)">
-              {t("offboardAdvances", { count: left.advancesOutstanding })}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      <Sheet
-        open={open}
-        onClose={() => setOpen(false)}
-        title={t("offboardAction")}
-        closeLabel={common("close")}
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setFault(null);
-            leave.mutate(undefined, { onSuccess: () => setOpen(false) });
-          }}
-        >
-          <p className="text-sm text-(--color-muted)">{t("offboardWarn")}</p>
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="leaveDate">
-            {t("offboardDay")}
-          </label>
-          <Input
-            id="leaveDate"
-            type="date"
-            required
-            value={leaveDate}
-            onChange={(event) => setLeaveDate(event.target.value)}
-            className="mt-1"
-          />
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="leaveReason">
-            {t("offboardReason")}
-          </label>
-          <Input
-            id="leaveReason"
-            maxLength={500}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            className="mt-1"
-          />
-
-          {fault ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {fault}
-            </p>
-          ) : null}
-          <Button type="submit" tone="danger" disabled={leave.isPending} className="mt-4">
-            {leave.isPending ? common("saving") : t("offboardAction")}
-          </Button>
-        </form>
-      </Sheet>
-    </div>
+    <LayerDialog.Alert
+      open={open}
+      onOpenChange={(next) => (next ? onOpenChange(true) : close())}
+      dismissDisabled={leave.isPending}
+    >
+      <LayerDialog.Content closeLabel={common("close")}>
+        <LayerDialog.Title>{t("offboardTitleOf", { name: fullName })}</LayerDialog.Title>
+        <LayerDialog.Description>{t("offboardWarn")}</LayerDialog.Description>
+        <LayerDialog.Body>
+          <form
+            id="offboard"
+            className="flex flex-col gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setFault(null);
+              leave.mutate();
+            }}
+          >
+            <Input
+              label={t("offboardDay")}
+              type="date"
+              required
+              value={leaveDate}
+              onChange={(event) => setLeaveDate(event.target.value)}
+            />
+            <Input label={t("offboardReason")} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} />
+          </form>
+          {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null}
+        </LayerDialog.Body>
+        <LayerDialog.Actions dismissLabel={common("cancel")}>
+          <LayerDialog.Actions.Primary type="submit" form="offboard" variant="destructive" loading={leave.isPending}>
+            {t("offboardAction")}
+          </LayerDialog.Actions.Primary>
+        </LayerDialog.Actions>
+      </LayerDialog.Content>
+    </LayerDialog.Alert>
   );
 }

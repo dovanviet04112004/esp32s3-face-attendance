@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 
 import { usePathname } from "@/i18n/navigation";
 import { useSession } from "@/lib/auth";
-import { navFor, ownerOf } from "@/lib/nav";
+import { entriesFor, entryOf } from "@/lib/nav";
 import { useWaitingCount } from "./waiting-count";
 
 export function Sidebar() {
@@ -14,19 +14,19 @@ export function Sidebar() {
   const roleName = useTranslations("roles");
   const here = usePathname();
   const { role, employeeId } = useSession();
-  const groups = navFor(role, employeeId !== null);
+  const groups = entriesFor(role, employeeId !== null);
   const waiting = useWaitingCount(role);
-  // A detail page belongs to the entry that owns it, so the trail stays lit.
-  const current = ownerOf(here)?.href;
+  // A detail page or a section tab belongs to the entry that owns it, so that entry stays lit.
+  const current = entryOf(groups, here)?.href;
 
   return (
-    // The rail pins itself while the window scrolls; below md Kumo renders a fixed sheet instead.
+    // The rail pins itself while the window scrolls; below md Kumo draws a sheet placed on its own.
     <KumoSidebar className="md:sticky md:top-0 md:h-svh md:self-start">
       <KumoSidebar.Header>
         <img src="/logo.svg" alt="" width={24} height={24} className="shrink-0" />
         <div className="min-w-0 ps-2 group-data-[state=collapsed]/sidebar:hidden">
-          <p className="truncate text-sm font-semibold">{app("name")}</p>
-          <p className="truncate text-xs text-kumo-subtle">{role ? roleName(role) : null}</p>
+          <p className="truncate text-base font-semibold">{app("name")}</p>
+          <p className="truncate text-sm text-kumo-subtle">{role ? roleName(role) : null}</p>
         </div>
       </KumoSidebar.Header>
 
@@ -35,16 +35,16 @@ export function Sidebar() {
           <KumoSidebar.Group key={group.key}>
             <KumoSidebar.GroupLabel>{t(group.key)}</KumoSidebar.GroupLabel>
             <KumoSidebar.Menu>
-              {group.items.map((item) => (
-                <KumoSidebar.MenuItem key={item.href}>
+              {group.entries.map((entry) => (
+                <KumoSidebar.MenuItem key={entry.href}>
                   <KumoSidebar.MenuButton
-                    icon={item.icon}
-                    href={item.href}
-                    active={current === item.href}
-                    tooltip={t(item.key)}
+                    icon={entry.icon}
+                    href={entry.href}
+                    active={current === entry.href}
+                    tooltip={t(entry.key)}
                   >
-                    <span className="flex-1 truncate">{t(item.key)}</span>
-                    {item.badge === "approvals" && waiting > 0 ? (
+                    <span className="flex-1 truncate">{t(entry.key)}</span>
+                    {entry.badge === "approvals" && waiting > 0 ? (
                       <KumoSidebar.MenuBadge className="tabular-nums">{waiting}</KumoSidebar.MenuBadge>
                     ) : null}
                   </KumoSidebar.MenuButton>

@@ -1,14 +1,17 @@
 "use client";
 
+import { Button, Checkbox, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import { PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Failed } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { NextHoliday } from "@/components/holidays/next-holiday";
+import { DataTable, type Column } from "@/components/tables/data-table";
+import { FilterBar } from "@/components/ui/filter-bar";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -21,39 +24,30 @@ interface Holiday {
   paid: boolean;
 }
 
-const kYearsBack = 1;
+type Paid = "paid" | "unpaid" | "";
+
+const kYearsBack = 3;
 const kYearsOn = 1;
-
-function thisYear(): number {
-  return new Date().getUTCFullYear();
-}
-
-function yearsOnOffer(): number[] {
-  const now = thisYear();
-  const span: number[] = [];
-  for (let at = now - kYearsBack; at <= now + kYearsOn; at += 1) {
-    span.push(at);
-  }
-  return span;
-}
 
 export default function HolidaysPage() {
   const t = useTranslations("holidays");
-  const format = useFormatter();
   const common = useTranslations("common");
+  const format = useFormatter();
   const role = useSession((s) => s.role);
   const mayWrite = role === "ADMIN" || role === "HR";
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
+  const thisYear = new Date().getFullYear();
 
   const [year, setYear] = useState(thisYear);
+  const [paidOnly, setPaidOnly] = useState<Paid>("");
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
   const [paid, setPaid] = useState(true);
   const [fault, setFault] = useState<string | null>(null);
-  // Taking a public holiday away rebuilds that day for everybody, so the
-  // second click is the confirmation.
-  const [dropping, setDropping] = useState<string | null>(null);
+  const [dropping, setDropping] = useState<Holiday | null>(null);
 
   const holidays = useQuery({
     queryKey: ["holidays", year],
@@ -61,124 +55,187 @@ export default function HolidaysPage() {
   });
 
   const add = useMutation({
-    mutationFn: () => api.post("/holidays", { date, name, paid }),
+    mutationFn: () => api.post("/holidays", { date, name: name.trim(), paid }),
     onSuccess: () => {
-      setName("");
-      setDate("");
+      notify.done(t("added", { name: name.trim() }));
+      setAdding(false);
+      setYear(Number(date.slice(0, 4)));
       void cache.invalidateQueries({ queryKey: ["holidays"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   const drop = useMutation({
-    mutationFn: (id: string) => api.delete(`/holidays/${id}`),
-    onSuccess: () => {
+    mutationFn: (one: Holiday) => api.delete(`/holidays/${one.id}`),
+    onSuccess: (_, one) => {
+      notify.done(t("removed", { name: one.name }));
       setDropping(null);
       void cache.invalidateQueries({ queryKey: ["holidays"] });
     },
-    onError: (fell: unknown) => setFault(faultOf(fell)),
+    onError: notify.failed,
   });
 
-  if (holidays.isError) {
-    return <Failed onRetry={() => void holidays.refetch()} />;
+  function openAdd(): void {
+    setFault(null);
+    setName("");
+    setDate("");
+    setPaid(true);
+    setAdding(true);
   }
 
   const rows = holidays.data ?? [];
   const paidDays = rows.filter((one) => one.paid).length;
+  const shown = holidays.data?.filter((one) => (paidOnly === "" ? true : paidOnly === "paid" ? one.paid : !one.paid));
+  const years = Object.fromEntries(
+    Array.from({ length: kYearsBack + kYearsOn + 1 }, (_, at) => String(thisYear - kYearsBack + at)).map((one) => [one, one]),
+  );
+  const long = (iso: string) => format.dateTime(dayOnly(iso), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+  const columns: Column<Holiday>[] = [
+    {
+      id: "date",
+      header: t("date"),
+      sticky: true,
+      sortBy: (row) => row.date,
+      cell: (row) => (
+        <span className="whitespace-nowrap tabular-nums">
+          {format.dateTime(dayOnly(row.date), { weekday: "short", day: "numeric", month: "numeric", year: "numeric" })}
+        </span>
+      ),
+    },
+    { id: "name", header: t("name"), sortBy: (row) => row.name, cell: (row) => row.name },
+    {
+      id: "paid",
+      header: t("pay"),
+      sortBy: (row) => (row.paid ? 1 : 0),
+      cell: (row) => <StatePill tone={row.paid ? "good" : "idle"}>{row.paid ? t("paid") : t("unpaid")}</StatePill>,
+    },
+  ];
 
   return (
-    <section className="w-full">
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("lead")}</p>
+    <>
+      <PageHeader
+        title={t("title")}
+        description={t("lead")}
+        actions={
+          mayWrite ? (
+            <Button variant="primary" icon={PlusIcon} onClick={openAdd}>
+              {t("add")}
+            </Button>
+          ) : undefined
+        }
+      />
 
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
-        <label className="block w-32 text-xs text-(--color-muted)">
-          {t("year")}
-          <Select value={String(year)} onChange={(event) => setYear(Number(event.target.value))} className="mt-1">
-            {yearsOnOffer().map((one) => (
-              <option key={one} value={one}>
-                {one}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <p className="text-sm text-(--color-muted)">
-          {t("tally", { days: rows.length, paid: paidDays })}
-        </p>
-      </div>
-
-      {mayWrite ? (
-        <form
-          className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-(--color-line) bg-(--color-surface) p-4"
-          onSubmit={(event: FormEvent) => {
-            event.preventDefault();
-            setFault(null);
-            add.mutate();
-          }}
-        >
-          <label className="block w-44 text-xs text-(--color-muted)">
-            {t("date")}
-            <Input
-              type="date"
-              required
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-              className="mt-1"
+      <PageLayout
+        aside={
+          <AsideCard title={t("yearTitle", { year })}>
+            <StatList
+              stats={[
+                {
+                  key: "paid",
+                  label: t("paid"),
+                  value: holidays.data ? paidDays : common("empty"),
+                  active: paidOnly === "paid",
+                  onPick: () => setPaidOnly("paid"),
+                },
+                {
+                  key: "unpaid",
+                  label: t("unpaid"),
+                  value: holidays.data ? rows.length - paidDays : common("empty"),
+                  active: paidOnly === "unpaid",
+                  onPick: () => setPaidOnly("unpaid"),
+                },
+                {
+                  key: "all",
+                  label: common("all"),
+                  value: holidays.data ? rows.length : common("empty"),
+                  active: paidOnly === "",
+                  onPick: () => setPaidOnly(""),
+                },
+              ]}
             />
-          </label>
-          <label className="block min-w-48 flex-1 text-xs text-(--color-muted)">
-            {t("name")}
-            <Input
-              required
-              maxLength={120}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="mt-1"
+          </AsideCard>
+        }
+        extra={<NextHoliday linked={false} />}
+      >
+        <FilterBar
+          extra={
+            <Select
+              aria-label={t("year")}
+              value={String(year)}
+              onValueChange={(next) => setYear(Number(next))}
+              items={years}
+              className="min-w-28"
             />
-          </label>
-          <Checkbox checked={paid} onChange={(event) => setPaid(event.target.checked)} label={t("paid")} />
-          <Button type="submit" disabled={add.isPending}>
-            {add.isPending ? common("saving") : t("add")}
-          </Button>
-        </form>
-      ) : null}
+          }
+        />
+        <DataTable
+          id="holidays"
+          cardLead="name"
+          columns={columns}
+          rows={shown}
+          keyOf={(row) => row.id}
+          pending={holidays.isPending}
+          failed={holidays.isError}
+          onRetry={() => void holidays.refetch()}
+          rowActions={
+            mayWrite
+              ? (row) => [{ key: "remove", label: t("remove"), icon: TrashIcon, danger: true, onSelect: () => setDropping(row) }]
+              : undefined
+          }
+          empty={paidOnly === "" ? t("empty") : t("noneOfKind")}
+          emptyHint={paidOnly === "" ? t("emptyHint") : undefined}
+          emptyAction={
+            mayWrite && paidOnly === "" ? (
+              <Button variant="secondary" icon={PlusIcon} onClick={openAdd}>
+                {t("add")}
+              </Button>
+            ) : undefined
+          }
+        />
+      </PageLayout>
 
-      {fault ? (
-        <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-          {fault}
-        </p>
-      ) : null}
-
-      <div className="mt-4 flex flex-col gap-2">
-        {holidays.isPending ? (
-          <p className="px-4 py-6 text-sm text-(--color-muted)">{common("loading")}</p>
-        ) : rows.length ? (
-          rows.map((row) => (
-            <article
-              key={row.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-(--color-line) bg-(--color-surface) p-3 text-sm"
+      <LayerDialog.Root open={adding} onOpenChange={setAdding} dismissDisabled={add.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("add")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("addLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-4">
+              <Input label={t("date")} type="date" required value={date} onChange={(event) => setDate(event.target.value)} />
+              <Input label={t("name")} required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} />
+              <Checkbox checked={paid} onCheckedChange={(next) => setPaid(next === true)} label={t("paid")} />
+              {fault ? <p role="alert" className="text-kumo-danger">{fault}</p> : null}
+            </div>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              loading={add.isPending}
+              disabled={date === "" || name.trim() === ""}
+              onClick={() => {
+                setFault(null);
+                add.mutate();
+              }}
             >
-              <span className="w-32 tabular-nums">{format.dateTime(dayOnly(row.date), "day")}</span>
-              <span className="min-w-0 flex-1 truncate">{row.name}</span>
-              <span className="text-xs text-(--color-muted)">{row.paid ? t("paid") : t("unpaid")}</span>
-              {mayWrite ? (
-                <Button
-                  type="button"
-                  tone={dropping === row.id ? "danger" : "quiet"}
-                  size="sm"
-                  disabled={drop.isPending}
-                  onClick={() => (dropping === row.id ? drop.mutate(row.id) : setDropping(row.id))}
-                  onBlur={() => setDropping(null)}
-                >
-                  {dropping === row.id ? common("sure") : t("remove")}
-                </Button>
-              ) : null}
-            </article>
-          ))
-        ) : (
-          <p className="text-sm text-(--color-muted)">{t("empty")}</p>
-        )}
-      </div>
-    </section>
+              {t("add")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Alert open={dropping !== null} onOpenChange={(next) => !next && setDropping(null)} dismissDisabled={drop.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{dropping ? t("removeTitle", { name: dropping.name }) : t("remove")}</LayerDialog.Title>
+          <LayerDialog.Description>{dropping ? t("removeLead", { date: long(dropping.date) }) : null}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <p className="text-kumo-subtle">{t("removeHint")}</p>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary variant="destructive" loading={drop.isPending} onClick={() => dropping && drop.mutate(dropping)}>
+              {t("removeConfirm")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+    </>
   );
 }

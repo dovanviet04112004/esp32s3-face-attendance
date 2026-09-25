@@ -1,12 +1,12 @@
 "use client";
 
-import { CheckCircleIcon } from "@phosphor-icons/react";
+import { Banner, Button, LayerCard, Link, LinkButton } from "@cloudflare/kumo";
+import { CheckCircleIcon, WarningCircleIcon, WarningIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { Button } from "@/components/ui/button";
-import { PasswordInput } from "@/components/ui/input";
-import { Link, useRouter } from "@/i18n/navigation";
+import { PasswordField } from "@/components/ui/password-field";
+import { useRouter } from "@/i18n/navigation";
 import { api, reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -15,14 +15,13 @@ const SHORTEST = 12;
 
 export default function ChangePasswordPage() {
   const t = useTranslations("changePassword");
-  const app = useTranslations("app");
-  const common = useTranslations("common");
   const router = useRouter();
   const accessToken = useSession((s) => s.accessToken);
   const signOut = useSession((s) => s.signOut);
   const faultOf = useFault();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
+  const [shown, setShown] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -61,78 +60,59 @@ export default function ChangePasswordPage() {
 
   if (done) {
     return (
-      <main className="grid min-h-screen place-items-center px-4">
-        <title>{app("name")}</title>
-        <div className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8 text-center">
-          <CheckCircleIcon className="mx-auto size-8 text-(--color-ok)" aria-hidden />
-          <h1 className="mt-3 text-xl font-semibold">{t("done")}</h1>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("doneHint")}</p>
-          <Link href="/login" className="mt-6 block">
-            <Button className="w-full">{t("toLogin")}</Button>
-          </Link>
-        </div>
-      </main>
+      <LayerCard>
+        <LayerCard.Primary className="p-6 sm:p-8">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <CheckCircleIcon size={40} weight="fill" className="text-kumo-success" aria-hidden />
+            <h1 className="m-0 text-2xl font-semibold">{t("done")}</h1>
+            <p className="text-kumo-subtle">{t("doneHint")}</p>
+            <LinkButton href="/login" variant="primary" className="mt-3 w-full justify-center">
+              {t("toLogin")}
+            </LinkButton>
+          </div>
+        </LayerCard.Primary>
+      </LayerCard>
     );
   }
 
   return (
-    <main className="grid min-h-screen place-items-center px-4">
-      <title>{app("name")}</title>
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8"
-      >
-        <h1 className="text-xl font-semibold">{app("name")}</h1>
-        <p className="mt-1 text-sm text-(--color-muted)">{t("lead")}</p>
-
-        <label className="mt-6 block text-sm font-medium" htmlFor="current">
-          {t("current")}
-        </label>
-        <PasswordInput
-          id="current"
-          autoComplete="current-password"
-          required
-          value={current}
-          onChange={(event) => setCurrent(event.target.value)}
-          showLabel={common("showPassword")}
-          hideLabel={common("hidePassword")}
-          className="mt-1"
-        />
-
-        <label className="mt-4 block text-sm font-medium" htmlFor="next">
-          {t("next")}
-        </label>
-        <PasswordInput
-          id="next"
-          autoComplete="new-password"
-          required
-          minLength={SHORTEST}
-          value={next}
-          onChange={(event) => setNext(event.target.value)}
-          showLabel={common("showPassword")}
-          hideLabel={common("hidePassword")}
-          className="mt-1"
-        />
-        <p className="mt-1 text-xs text-(--color-muted)">{t("hint", { count: SHORTEST })}</p>
-
-        <p className="mt-4 text-sm text-(--color-warn)">{t("warn")}</p>
-
-        {refused ? (
-          <p role="alert" className="mt-4 text-sm text-(--color-danger)">
-            {refused}
-          </p>
-        ) : null}
-
-        <Button type="submit" disabled={busy} className="mt-6 w-full">
-          {busy ? t("saving") : t("submit")}
-        </Button>
-
-        <p className="mt-4 text-center text-sm text-(--color-muted)">
-          <Link href="/settings" className="underline">
-            {t("back")}
-          </Link>
-        </p>
-      </form>
-    </main>
+    <>
+      <LayerCard>
+        <LayerCard.Primary className="p-6 sm:p-8">
+          <form onSubmit={submit} className="flex flex-col gap-5">
+            <div className="flex flex-col gap-1">
+              <h1 className="m-0 text-2xl font-semibold">{t("title")}</h1>
+              <p className="text-kumo-subtle">{t("lead")}</p>
+            </div>
+            <PasswordField
+              label={t("current")}
+              shown={shown}
+              onShownChange={setShown}
+              autoComplete="current-password"
+              required
+              value={current}
+              onChange={(event) => setCurrent(event.target.value)}
+            />
+            <PasswordField
+              label={t("next")}
+              description={t("hint", { count: SHORTEST })}
+              shown={shown}
+              toggle={false}
+              autoComplete="new-password"
+              required
+              minLength={SHORTEST}
+              value={next}
+              onChange={(event) => setNext(event.target.value)}
+            />
+            <Banner variant="alert" size="sm" icon={<WarningIcon weight="fill" />} description={t("warn")} />
+            {refused ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={refused} /> : null}
+            <Button type="submit" variant="primary" loading={busy} className="w-full justify-center">
+              {t("submit")}
+            </Button>
+          </form>
+        </LayerCard.Primary>
+      </LayerCard>
+      <p className="text-center"><Link href="/settings">{t("back")}</Link></p>
+    </>
   );
 }

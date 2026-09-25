@@ -1,8 +1,18 @@
 "use client";
 
+import { Banner, Button, LayerCard, LinkButton, SkeletonLine } from "@cloudflare/kumo";
+import type { Icon as IconType } from "@phosphor-icons/react";
+import {
+  ArrowClockwiseIcon,
+  IdentificationCardIcon,
+  KeyIcon,
+  ListChecksIcon,
+  ScrollIcon,
+  UploadSimpleIcon,
+  WalletIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
-import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -12,9 +22,9 @@ import {
   type DepartmentChoice,
   type EmployeeDraft,
 } from "@/components/forms/employee-form";
-import { SkeletonRows } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { Link, useRouter } from "@/i18n/navigation";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, PageHeader, PageLayout } from "@/components/ui/page";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 
@@ -23,15 +33,23 @@ interface Taken {
   draft: EmployeeDraft;
 }
 
+const OUTCOMES = [
+  { key: "record", icon: IdentificationCardIcon, title: "afterRecord", lead: "afterRecordLead" },
+  { key: "contract", icon: ScrollIcon, title: "afterContract", lead: "afterContractLead" },
+  { key: "pay", icon: WalletIcon, title: "afterPay", lead: "afterPayLead" },
+  { key: "checklist", icon: ListChecksIcon, title: "afterChecklist", lead: "afterChecklistLead" },
+  { key: "account", icon: KeyIcon, title: "afterAccount", lead: "afterAccountLead" },
+] as const satisfies readonly { key: string; icon: IconType; title: string; lead: string }[];
+
 export default function NewEmployeePage() {
   const t = useTranslations("employees");
   const common = useTranslations("common");
   const router = useRouter();
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
   const [fault, setFault] = useState<string | null>(null);
-  // Held so a hire that fell over at the second step is retried rather than
-  // typed again: the record exists by then (KEHOACH 9.14).
+  // Held so a hire that fell over at the second step is retried, not typed again (KEHOACH 9.14).
   const [opened, setOpened] = useState<Taken | null>(null);
 
   const departments = useQuery({
@@ -55,10 +73,10 @@ export default function NewEmployeePage() {
     queryFn: async () => (await api.get<{ code: string | null }>("/employees/next-code")).data,
   });
 
-  // Their own page is where hiring carries on: contract, pay, checklist and
-  // files are all tabs on it, and the roll is 5006 rows deep (KEHOACH 9.15).
-  function land(id: number): void {
-    router.replace(`/employees/${id}`);
+  // Their own page is where hiring carries on: contract, pay, checklist and files are tabs on it.
+  function land(taken: Taken, hired: boolean): void {
+    notify.done(hired ? t("hiredToast", { name: taken.draft.fullName }) : t("createdToast", { name: taken.draft.fullName }));
+    router.replace(`/employees/${taken.id}`);
   }
 
   const hire = useMutation({
@@ -77,7 +95,7 @@ export default function NewEmployeePage() {
             }
           : undefined,
       }),
-    onSuccess: (unused, taken) => land(taken.id),
+    onSuccess: (_unused, taken) => land(taken, true),
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
@@ -103,97 +121,121 @@ export default function NewEmployeePage() {
       }),
     onSuccess: (made, draft) => {
       void cache.invalidateQueries({ queryKey: ["employees"] });
-      setOpened({ id: made.data.id, draft });
+      const taken = { id: made.data.id, draft };
+      setOpened(taken);
       if (!draft.hireDate) {
-        land(made.data.id);
+        land(taken, false);
         return;
       }
-      hire.mutate({ id: made.data.id, draft });
+      hire.mutate(taken);
     },
-    onError: (fell: unknown) => {
-      // The api answers 409 when the code is taken, which is the one fault a
-      // person can fix from this form.
-      const clash = isAxiosError(fell) && fell.response?.status === 409;
-      setFault(clash ? t("codeTaken") : common("failed"));
-    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   if (opened && hire.isError) {
     return (
-      <section className="w-full max-w-(--width-read)">
-        <h1 className="text-lg font-semibold">{t("hireSkipped")}</h1>
-        <p className="mt-2 text-sm text-(--color-muted)">
-          <span className="font-mono">{opened.draft.code}</span> · {opened.draft.fullName}
-        </p>
-        {fault ? (
-          <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-            {fault}
-          </p>
-        ) : null}
-        <div className="mt-6 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            disabled={hire.isPending}
-            onClick={() => {
-              setFault(null);
-              hire.mutate(opened);
-            }}
-          >
-            {hire.isPending ? common("saving") : t("hireRetry")}
-          </Button>
-          <Button type="button" tone="quiet" onClick={() => land(opened.id)}>
-            {t("hireOpen")}
-          </Button>
-        </div>
-      </section>
+      <>
+        <PageHeader
+          title={t("hireSkipped")}
+          description={`${opened.draft.code} · ${opened.draft.fullName}`}
+          actions={
+            <>
+              <Button variant="secondary" onClick={() => land(opened, false)}>
+                {t("hireOpen")}
+              </Button>
+              <Button
+                variant="primary"
+                icon={ArrowClockwiseIcon}
+                loading={hire.isPending}
+                onClick={() => {
+                  setFault(null);
+                  hire.mutate(opened);
+                }}
+              >
+                {t("hireRetry")}
+              </Button>
+            </>
+          }
+        />
+        <PageLayout>
+          <div className="max-w-(--width-read)">
+            <Banner
+              variant="error"
+              icon={<WarningCircleIcon weight="fill" />}
+              title={fault ?? common("failed")}
+              description={t("hireSkippedLead")}
+            />
+          </div>
+        </PageLayout>
+      </>
     );
   }
 
   return (
-    <section className="w-full max-w-(--width-read)">
-      <Link
-        href="/employees"
-        className="inline-flex items-center gap-1 text-sm text-(--color-muted) hover:text-(--color-ink)"
+    <>
+      <PageHeader title={t("createTitle")} description={t("createLead")} />
+      <PageLayout
+        aside={
+          <AsideCard title={t("afterTitle")}>
+            <ul className="flex flex-col gap-3">
+              {OUTCOMES.map(({ key, icon: Icon, title, lead }) => (
+                <li key={key} className="flex gap-3">
+                  <Icon size={18} className="mt-0.5 shrink-0 text-kumo-subtle" aria-hidden />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="font-medium">{t(title)}</span>
+                    <span className="text-kumo-subtle">{t(lead)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </AsideCard>
+        }
+        extra={
+          <AsideCard title={t("manyTitle")}>
+            <p className="text-kumo-subtle">{t("manyLead")}</p>
+            <LinkButton href="/employees" variant="secondary" icon={UploadSimpleIcon} className="mt-1 w-full justify-start">
+              {t("manyAction")}
+            </LinkButton>
+          </AsideCard>
+        }
       >
-        <ArrowLeftIcon className="size-4" aria-hidden />
-        {t("title")}
-      </Link>
-      <h1 className="mt-2 text-lg font-semibold">{t("createTitle")}</h1>
-      {departments.isError ? (
-        <p role="alert" className="mt-4 text-sm text-(--color-danger)">
-          {t("departmentsFailed")}{" "}
-          <button
-            type="button"
-            className="underline"
-            onClick={() => void departments.refetch()}
-          >
-            {common("retry")}
-          </button>
-        </p>
-      ) : null}
-      <div className="mt-6">
-        {suggested.isPending ? (
-          <SkeletonRows rows={4} columns={2} />
-        ) : (
-        <EmployeeForm
-          start={{ ...EMPTY_DRAFT, code: suggested.data?.code ?? "" }}
-          departments={departments.data ?? []}
-          jobTitles={jobTitles.data ?? []}
-          entities={entities.data ?? []}
-          showActive={false}
-          showBank
-          showManager
-          showOnboard
-          busy={create.isPending || hire.isPending}
-          fault={fault}
-          onSubmit={(draft) => {
-            setFault(null);
-            create.mutate(draft);
-          }}
-          onCancel={() => router.replace("/employees")}
-        />
-        )}
-      </div>
-    </section>
+        <div className="flex max-w-(--width-read) flex-col gap-4">
+          {departments.isError ? (
+            <Banner
+              variant="error"
+              icon={<WarningCircleIcon weight="fill" />}
+              title={t("departmentsFailed")}
+              action={<Banner.Action onClick={() => void departments.refetch()}>{common("retry")}</Banner.Action>}
+            />
+          ) : null}
+          {suggested.isPending ? (
+            <LayerCard className="flex flex-col gap-4 p-4">
+              {Array.from({ length: 4 }, (_, at) => (
+                <SkeletonLine key={at} minWidth={160} maxWidth={420} />
+              ))}
+            </LayerCard>
+          ) : (
+            <EmployeeForm
+              start={{ ...EMPTY_DRAFT, code: suggested.data?.code ?? "" }}
+              departments={departments.data ?? []}
+              jobTitles={jobTitles.data ?? []}
+              entities={entities.data ?? []}
+              showActive={false}
+              showBank
+              showManager
+              showOnboard
+              fold
+              busy={create.isPending || hire.isPending}
+              fault={fault}
+              onSubmit={(draft) => {
+                setFault(null);
+                create.mutate(draft);
+              }}
+              onCancel={() => router.push("/employees")}
+            />
+          )}
+        </div>
+      </PageLayout>
+    </>
   );
 }

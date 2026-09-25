@@ -1,11 +1,12 @@
 "use client";
 
+import { Banner, Button, Input, LayerCard, Link } from "@cloudflare/kumo";
+import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input, PasswordInput } from "@/components/ui/input";
-import { Link, useRouter } from "@/i18n/navigation";
+import { PasswordField } from "@/components/ui/password-field";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { claimsOf, useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -13,8 +14,6 @@ import { homeFor } from "@/lib/nav";
 
 export default function LoginPage() {
   const t = useTranslations("login");
-  const app = useTranslations("app");
-  const common = useTranslations("common");
   const router = useRouter();
   const setSession = useSession((s) => s.setSession);
   const faultOf = useFault();
@@ -46,59 +45,40 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center px-4">
-      <title>{app("name")}</title>
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8"
-      >
-        <h1 className="text-xl font-semibold">{app("name")}</h1>
-        <p className="mt-1 text-sm text-(--color-muted)">{t("lead")}</p>
-
-        <label className="mt-6 block text-sm font-medium" htmlFor="email">
-          {t("email")}
-        </label>
-        <Input
-          id="email"
-          type="email"
-          autoComplete="username"
-          autoFocus
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="mt-1"
-        />
-
-        <label className="mt-4 block text-sm font-medium" htmlFor="password">
-          {t("password")}
-        </label>
-        <PasswordInput
-          id="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          showLabel={common("showPassword")}
-          hideLabel={common("hidePassword")}
-          className="mt-1"
-        />
-
-        {refused ? (
-          <p role="alert" className="mt-4 text-sm text-(--color-danger)">
-            {refused}
-          </p>
-        ) : null}
-
-        <Button type="submit" disabled={busy} className="mt-6 w-full">
-          {busy ? t("checking") : t("submit")}
-        </Button>
-
-        <p className="mt-4 text-center text-sm text-(--color-muted)">
-          <Link href="/forgot-password" className="underline">
-            {t("forgot")}
-          </Link>
-        </p>
-      </form>
-    </main>
+    <>
+    <LayerCard>
+      <LayerCard.Primary className="p-6 sm:p-8">
+        <form onSubmit={submit} className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1">
+            <h1 className="m-0 text-2xl font-semibold">{t("title")}</h1>
+            <p className="text-kumo-subtle">{t("lead")}</p>
+          </div>
+          <Input
+            label={t("email")}
+            type="email"
+            autoComplete="username"
+            autoFocus
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <PasswordField
+            label={t("password")}
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          {refused ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={refused} /> : null}
+          <Button type="submit" variant="primary" loading={busy} className="w-full justify-center">
+            {t("submit")}
+          </Button>
+        </form>
+      </LayerCard.Primary>
+    </LayerCard>
+    <p className="text-center">
+      <Link href="/forgot-password">{t("forgot")}</Link>
+    </p>
+    </>
   );
 }

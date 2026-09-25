@@ -1,16 +1,21 @@
 "use client";
 
+import { Button, Empty, Input, LayerCard, SkeletonLine } from "@cloudflare/kumo";
+import { ArrowsClockwiseIcon, BuildingsIcon, DownloadSimpleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Failed } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+
+import { Failed } from "@/components/ui/failed";
+import { FilterBar } from "@/components/ui/filter-bar";
+import { MonthPicker, monthSpan, thisMonth, type Month } from "@/components/ui/month-picker";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, PageHeader, PageLayout } from "@/components/ui/page";
+import { CountPill, StatePill } from "@/components/ui/pill";
+import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { useFault } from "@/lib/fault";
-import { dayOnly } from "@/lib/format";
+import { dayOnly, money } from "@/lib/format";
 
 interface Entity {
   id: string;
@@ -36,44 +41,45 @@ interface Changes {
 }
 
 const FILINGS = ["increases", "decreases", "adjustments"] as const;
+const kShown = 50;
 
-function firstOfMonth(): string {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+function localDay(at: Date): string {
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+// The same span the Punches page asks for, so the job warms exactly what that page reads.
+function monthBounds(at: Month): { from: string; to: string } {
+  const start = new Date(at.year, at.month - 1, 1);
+  const end = new Date(new Date(at.year, at.month, 1).getTime() - 1);
+  return { from: start.toISOString(), to: end.toISOString() };
 }
 
 export default function ReportsPage() {
   const t = useTranslations("reports");
   const format = useFormatter();
-  const common = useTranslations("common");
+  const locale = useLocale();
+  const notify = useNotify();
   const role = useSession((s) => s.role);
-  const faultOf = useFault();
   const mayRollUp = role === "ADMIN" || role === "HR";
   const [entityId, setEntityId] = useState("");
-  const [changeFrom, setChangeFrom] = useState(firstOfMonth);
-  const [changeTo, setChangeTo] = useState(today);
-  const [on, setOn] = useState(today);
-  const [fault, setFault] = useState<string | null>(null);
+  const [month, setMonth] = useState<Month>(thisMonth);
+  const [on, setOn] = useState(() => localDay(new Date()));
+  const [rollMonth, setRollMonth] = useState<Month>(thisMonth);
+  const span = monthSpan(month);
+  const nameOf = (at: Month) => format.dateTime(new Date(at.year, at.month - 1, 15), { month: "long", year: "numeric" });
 
   const entities = useQuery({
     queryKey: ["legal-entities"],
     queryFn: async () => (await api.get<Entity[]>("/legal-entities")).data,
   });
   const entity = entityId || entities.data?.[0]?.id || "";
+  const entityName = entities.data?.find((one) => one.id === entity)?.name ?? "";
 
   const changes = useQuery({
-    queryKey: ["insurance-changes", entity, changeFrom, changeTo],
+    queryKey: ["insurance-changes", entity, span.from],
     enabled: entity !== "",
     queryFn: async () =>
-      (
-        await api.get<Changes>(
-          `/reports/insurance-changes?legalEntityId=${entity}&from=${changeFrom}&to=${changeTo}`,
-        )
-      ).data,
+      (await api.get<Changes>(`/reports/insurance-changes?legalEntityId=${entity}&from=${span.from}&to=${span.to}`)).data,
   });
 
   const d02 = useMutation({
@@ -86,154 +92,139 @@ export default function ReportsPage() {
       link.click();
       URL.revokeObjectURL(link.href);
     },
-    onError: (fell: unknown) => setFault(faultOf(fell)),
+    onSuccess: () => notify.done(t("d02Done", { date: format.dateTime(dayOnly(on), "day") })),
+    onError: notify.failed,
   });
 
   const rollUp = useMutation({
-    mutationFn: async () =>
-      (
-        await api.post<{ jobId: string }>("/reports/attendance/monthly", {
-          from: changeFrom,
-          to: changeTo,
-        })
-      ).data,
-    onError: (fell: unknown) => setFault(faultOf(fell)),
+    mutationFn: async () => (await api.post<{ jobId: string }>("/reports/attendance/monthly", monthBounds(rollMonth))).data,
+    onSuccess: () => notify.done(t("rollUpQueued", { month: nameOf(rollMonth) }), t("rollUpQueuedHint")),
+    onError: notify.failed,
   });
 
-  if (changes.isError) {
-    return <Failed onRetry={() => void changes.refetch()} />;
+  function line(row: Change) {
+    const moved = row.fromSalary !== null && row.toSalary !== null;
+    return (
+      <li
+        key={`${row.employeeId}-${row.reason}-${row.effectiveFrom}`}
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-kumo-hairline py-2 last:border-0"
+      >
+        <span className="font-mono text-sm">{row.code}</span>
+        <Link href={`/employees/${row.employeeId}`} className="min-w-0 truncate text-kumo-link hover:underline">
+          {row.fullName}
+        </Link>
+        <StatePill>{t(`reason${row.reason}`)}</StatePill>
+        <span className="ms-auto text-sm text-kumo-subtle tabular-nums">
+          {moved ? `${money(Number(row.fromSalary), locale)} → ${money(Number(row.toSalary), locale)} · ` : ""}
+          {t("effective", { date: format.dateTime(dayOnly(row.effectiveFrom), "day") })}
+        </span>
+      </li>
+    );
   }
 
+  const entityItems = Object.fromEntries((entities.data ?? []).map((one) => [one.id, one.name]));
+
   return (
-    <section>
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      <p className="mt-1 mb-6 text-sm text-(--color-muted)">{t("lead")}</p>
+    <>
+      <PageHeader title={t("title")} description={t("lead")} />
 
-      <h2 className="text-sm font-medium">{t("insuranceTitle")}</h2>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("insuranceLead")}</p>
-
-      <div className="mt-3 flex flex-wrap items-end gap-2">
-        <label className="block w-56 text-xs text-(--color-muted)">
-          {t("entity")}
-          <Select
-            value={entity}
-            onChange={(event) => setEntityId(event.target.value)}
-            className="mt-1"
-          >
-            {(entities.data ?? []).map((one) => (
-              <option key={one.id} value={one.id}>
-                {one.name}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="block w-44 text-xs text-(--color-muted)">
-          {t("from")}
-          <Input
-            type="date"
-            value={changeFrom}
-            onChange={(event) => setChangeFrom(event.target.value)}
-            className="mt-1"
-          />
-        </label>
-        <label className="block w-44 text-xs text-(--color-muted)">
-          {t("to")}
-          <Input
-            type="date"
-            value={changeTo}
-            onChange={(event) => setChangeTo(event.target.value)}
-            className="mt-1"
-          />
-        </label>
-      </div>
-
-      <div className="mt-3 grid items-start gap-3 lg:grid-cols-3">
-        {FILINGS.map((filing) => {
-          const rows = changes.data?.[filing] ?? [];
-          return (
-            <article
-              key={filing}
-              className="rounded-xl border border-(--color-line) bg-(--color-surface) p-4"
-            >
-              <p className="text-sm font-medium">{t(filing)}</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{rows.length}</p>
-              {rows.length ? (
-                <ul className="mt-3 flex max-h-64 flex-col gap-1 overflow-y-auto text-xs">
-                  {rows.slice(0, 50).map((row) => (
-                    <li key={`${row.employeeId}-${row.reason}`} className="flex flex-wrap gap-x-2">
-                      <span className="font-mono">{row.code}</span>
-                      <span className="min-w-0 flex-1 truncate">{row.fullName}</span>
-                      <span className="text-(--color-muted)">{t(`reason${row.reason}`)}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-3 text-xs text-(--color-muted)">{common("noData")}</p>
-              )}
-              {rows.length > 50 ? (
-                <p className="mt-2 text-xs text-(--color-muted)">{t("andMore", { n: rows.length - 50 })}</p>
-              ) : null}
-            </article>
-          );
-        })}
-      </div>
-
-      {mayRollUp ? (
-        <>
-          <h2 className="mt-10 text-sm font-medium">{t("rollUpTitle")}</h2>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("rollUpLead")}</p>
-          <p className="mt-1 text-sm">
-            <span className="text-(--color-muted)">{t("rollUpRange")}: </span>
-            {format.dateTime(dayOnly(changeFrom), "day")} →{" "}
-            {format.dateTime(dayOnly(changeTo), "day")}
-          </p>
-          <Button
-            type="button"
-            tone="quiet"
-            className="mt-3"
-            disabled={rollUp.isPending}
-            onClick={() => {
-              setFault(null);
-              rollUp.mutate();
-            }}
-          >
-            {rollUp.isPending ? common("saving") : t("rollUpRun")}
-          </Button>
-          {rollUp.data ? (
-            <p className="mt-2 text-sm text-(--color-ok)">{t("rollUpQueued")}</p>
-          ) : null}
-        </>
-      ) : null}
-
-      <h2 className="mt-10 text-sm font-medium">{t("d02Title")}</h2>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("d02Lead")}</p>
-      <div className="mt-3 flex flex-wrap items-end gap-2">
-        <label className="block w-44 text-xs text-(--color-muted)">
-          {t("d02On")}
-          <Input
-            type="date"
-            value={on}
-            onChange={(event) => setOn(event.target.value)}
-            className="mt-1"
-          />
-        </label>
-        <Button
-          type="button"
-          disabled={entity === "" || d02.isPending}
-          onClick={() => {
-            setFault(null);
-            d02.mutate();
-          }}
-        >
-          {d02.isPending ? common("loading") : t("d02Download")}
-        </Button>
-      </div>
-
-      {fault ? (
-        <p role="alert" className="mt-4 text-sm text-(--color-danger)">
-          {fault}
-        </p>
-      ) : null}
-    </section>
+      <PageLayout
+        extra={
+          <AsideCard title={t("exportsTitle")}>
+            <div className="flex flex-col gap-3">
+              <div>
+                <p className="font-medium">{t("d02Title")}</p>
+                <p className="text-sm text-kumo-subtle">
+                  {t("d02Lead")} {entityName ? t("d02For", { name: entityName }) : null}
+                </p>
+              </div>
+              <Input label={t("d02On")} type="date" value={on} onChange={(event) => setOn(event.target.value)} />
+              <Button
+                variant="secondary"
+                icon={DownloadSimpleIcon}
+                loading={d02.isPending}
+                disabled={entity === "" || on === ""}
+                onClick={() => d02.mutate()}
+                className="w-full justify-start"
+              >
+                {t("d02Get")}
+              </Button>
+            </div>
+            {mayRollUp ? (
+              <div className="mt-4 flex flex-col gap-3 border-t border-kumo-hairline pt-4">
+                <div>
+                  <p className="font-medium">{t("rollUpTitle")}</p>
+                  <p className="text-sm text-kumo-subtle">{t("rollUpLead")}</p>
+                </div>
+                <MonthPicker value={rollMonth} onChange={setRollMonth} max={thisMonth()} />
+                <Button
+                  variant="secondary"
+                  icon={ArrowsClockwiseIcon}
+                  loading={rollUp.isPending}
+                  onClick={() => rollUp.mutate()}
+                  className="w-full justify-start"
+                >
+                  {t("rollUpRun")}
+                </Button>
+              </div>
+            ) : null}
+          </AsideCard>
+        }
+      >
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold">{t("insuranceTitle")}</h2>
+          <p className="text-kumo-subtle">{t("insuranceLead")}</p>
+        </div>
+        <FilterBar
+          filters={
+            (entities.data?.length ?? 0) > 1
+              ? [{ key: "entity", label: t("entity"), value: entity, onChange: setEntityId, items: entityItems }]
+              : []
+          }
+          extra={<MonthPicker value={month} onChange={setMonth} max={thisMonth()} />}
+        />
+        {changes.isError || entities.isError ? (
+          <Failed onRetry={() => void (entities.isError ? entities.refetch() : changes.refetch())} />
+        ) : entities.data?.length === 0 ? (
+          <LayerCard className="p-0">
+            <Empty icon={<BuildingsIcon size={40} className="text-kumo-inactive" />} title={t("noEntity")} className="py-12" />
+          </LayerCard>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {FILINGS.map((filing) => {
+              const rows = changes.data?.[filing] ?? [];
+              return (
+                <LayerCard key={filing}>
+                  <LayerCard.Secondary className="justify-between">
+                    <span>{t(filing)}</span>
+                    {changes.data ? <CountPill>{rows.length}</CountPill> : null}
+                  </LayerCard.Secondary>
+                  <LayerCard.Primary>
+                    {!changes.data ? (
+                      <div className="flex flex-col gap-3 py-1">
+                        <SkeletonLine minWidth={160} maxWidth={420} />
+                        <SkeletonLine minWidth={160} maxWidth={360} />
+                      </div>
+                    ) : rows.length === 0 ? (
+                      <p className="text-kumo-subtle">{t("noneInMonth")}</p>
+                    ) : (
+                      <>
+                        <ul className="-my-2 flex flex-col">{rows.slice(0, kShown).map(line)}</ul>
+                        {rows.length > kShown ? (
+                          <p className="mt-3 text-sm text-kumo-subtle">{t("andMore", { n: rows.length - kShown })}</p>
+                        ) : null}
+                      </>
+                    )}
+                  </LayerCard.Primary>
+                </LayerCard>
+              );
+            })}
+            {changes.data && entity ? (
+              <p className="text-sm text-kumo-subtle">{t("unpaidRule", { days: changes.data.unpaidDayThreshold })}</p>
+            ) : null}
+          </div>
+        )}
+      </PageLayout>
+    </>
   );
 }

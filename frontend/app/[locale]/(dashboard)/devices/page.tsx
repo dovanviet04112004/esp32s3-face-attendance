@@ -1,14 +1,18 @@
 "use client";
 
+import { Button, Input, LayerDialog, SkeletonLine } from "@cloudflare/kumo";
+import { ArrowSquareOutIcon, ArrowsClockwiseIcon, CheckCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import { useState } from "react";
 
-import { DataTable, type Column } from "@/components/tables/data-table";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Sheet } from "@/components/ui/sheet";
-import { Link } from "@/i18n/navigation";
+import { DataTable, type Column, type RowAction } from "@/components/tables/data-table";
+import { FilterBar, useSettled } from "@/components/ui/filter-bar";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { StatePill, type Tone } from "@/components/ui/pill";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -39,88 +43,70 @@ interface Device {
   online: boolean;
 }
 
+const SHOWS = ["", "online", "offline", "PENDING", "APPROVED", "REVOKED"] as const;
+type Show = (typeof SHOWS)[number];
+
+const STATUS_TONE: Record<Device["status"], Tone> = { PENDING: "waiting", APPROVED: "good", REVOKED: "idle" };
+
 const FLEET_POLL_MS = 5_000;
+const kFleetTake = 200;
+const kHistoryShown = 6;
+const kClaimDigits = 6;
 
-/** Approval needs the code on the kiosk's own screen, so only whoever stands at it can
- *  let it in (KEHOACH 7.3).
- */
-function Approve({ id }: { id: string }) {
-  const t = useTranslations("devices");
-  const cache = useQueryClient();
-  const faultOf = useFault();
-  const [code, setCode] = useState("");
-  const [fault, setFault] = useState<string | null>(null);
-  const approve = useMutation({
-    mutationFn: () => api.post(`/devices/${id}/approve`, { claimCode: code }),
-    onSuccess: () => void cache.invalidateQueries({ queryKey: ["devices"] }),
-    onError: (fell: unknown) => setFault(faultOf(fell)),
-  });
+function showOf(raw: string | null): Show {
+  const held = raw ?? "";
+  return (SHOWS as readonly string[]).includes(held) ? (held as Show) : "";
+}
 
-  function submit(event: FormEvent): void {
-    event.preventDefault();
-    setFault(null);
-    approve.mutate();
+function fits(row: Device, show: Show): boolean {
+  if (show === "online") {
+    return row.status === "APPROVED" && row.online;
   }
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <Input
-          aria-label={t("claimLabel")}
-          inputMode="numeric"
-          autoComplete="off"
-          required
-          placeholder={t("claimPlaceholder")}
-          value={code}
-          onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-          className="w-24 font-mono tabular-nums"
-        />
-        <Button
-          size="sm"
-          tone="quiet"
-          type="submit"
-          disabled={approve.isPending || code.length !== 6}
-        >
-          {approve.isPending ? t("approving") : t("approve")}
-        </Button>
-      </div>
-      {fault ? (
-        <p role="alert" className="text-xs text-(--color-danger)">
-          {fault}
-        </p>
-      ) : null}
-    </form>
-  );
+  if (show === "offline") {
+    return row.status === "APPROVED" && !row.online;
+  }
+  return show === "" || row.status === show;
 }
 
 export default function DevicesPage() {
   const t = useTranslations("devices");
   const common = useTranslations("common");
   const format = useFormatter();
-  const role = useSession((s) => s.role);
   const cache = useQueryClient();
+  const router = useRouter();
+  const notify = useNotify();
   const faultOf = useFault();
+  const asked = useSearchParams().get("show");
+  const isAdmin = useSession((s) => s.role) === "ADMIN";
+
+  const [show, setShow] = useState<Show>(() => showOf(asked));
+  const [typed, setTyped] = useState("");
+  const search = useSettled(typed.trim().toLowerCase());
   const [asking, setAsking] = useState<FleetUpdate | null>(null);
-  const [sent, setSent] = useState<{ offered: number; failed: number; busy: number } | null>(null);
+  const [approving, setApproving] = useState<Device | null>(null);
+  const [claim, setClaim] = useState("");
   const [fault, setFault] = useState<string | null>(null);
+  const [wholeHistory, setWholeHistory] = useState(false);
+
   // While any kiosk installs, both lists follow it until it returns on the new version.
   const installing = (): number | false =>
     (cache.getQueryData<FleetUpdate[]>(["releases", "fleet"]) ?? []).some((one) => one.updating.length > 0)
       ? FLEET_POLL_MS
       : false;
   const devices = useQuery({
-    queryKey: ["devices"],
-    queryFn: async () => (await api.get<{ rows: Device[]; total: number }>("/devices")).data,
+    queryKey: ["devices", { take: kFleetTake }],
+    enabled: isAdmin,
+    queryFn: async () => (await api.get<{ rows: Device[]; total: number }>(`/devices?take=${kFleetTake}`)).data,
     refetchInterval: installing,
   });
   const releases = useQuery({
     queryKey: ["releases"],
-    enabled: role === "ADMIN",
+    enabled: isAdmin,
     queryFn: async () => (await api.get<Release[]>("/releases")).data,
   });
   const fleet = useQuery({
     queryKey: ["releases", "fleet"],
-    enabled: role === "ADMIN",
+    enabled: isAdmin,
     queryFn: async () => (await api.get<FleetUpdate[]>("/releases/fleet")).data,
     refetchInterval: installing,
   });
@@ -130,17 +116,43 @@ export default function DevicesPage() {
       (await api.post<{ offered: string[]; failed: string[]; busy: string[] }>(`/releases/${releaseId}/offer`, {})).data,
     onSuccess: (done) => {
       setAsking(null);
-      setSent({ offered: done.offered.length, failed: done.failed.length, busy: done.busy.length });
+      notify.done(t("releaseUpdateAllDone", { offered: done.offered.length, failed: done.failed.length, busy: done.busy.length }));
       void cache.invalidateQueries({ queryKey: ["releases"] });
     },
-    onError: (fell: unknown) => {
-      setAsking(null);
-      setFault(faultOf(fell));
-    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
   });
+
+  const approve = useMutation({
+    mutationFn: (device: Device) => api.post(`/devices/${device.id}/approve`, { claimCode: claim }),
+    onSuccess: (_, device) => {
+      setApproving(null);
+      notify.done(t("approvedDone", { name: device.name ?? device.id }));
+      void cache.invalidateQueries({ queryKey: ["devices"] });
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  function startApproving(device: Device): void {
+    setFault(null);
+    setClaim("");
+    setApproving(device);
+  }
+
+  const all = devices.data?.rows ?? [];
+  const nameOf = (id: string) => all.find((one) => one.id === id)?.name ?? id;
+  const approved = all.filter((one) => one.status === "APPROVED");
+  const online = approved.filter((one) => one.online).length;
+  const pending = all.filter((one) => one.status === "PENDING").length;
+  const shown = all.filter(
+    (row) =>
+      fits(row, show) &&
+      (search === "" || [row.name, row.id, row.location].some((field) => field?.toLowerCase().includes(search))),
+  );
 
   const updatesFor = (deviceId: string): FleetUpdate[] =>
     (fleet.data ?? []).filter((update) => update.behind.includes(deviceId) || update.updating.includes(deviceId));
+
+  const statusName = (status: Device["status"]) => t(`status${status}`);
 
   const columns: Column<Device>[] = [
     {
@@ -149,20 +161,21 @@ export default function DevicesPage() {
       sticky: true,
       sortBy: (row) => row.name ?? row.id,
       cell: (row) => (
-        <Link href={`/devices/${row.id}`} className="block hover:underline">
-          <p>{row.name ?? t("unnamed")}</p>
-          <p className="font-mono text-xs text-(--color-muted)">{row.id}</p>
-        </Link>
+        <span className="flex flex-col whitespace-nowrap">
+          <span className={row.name ? undefined : "text-kumo-subtle"}>{row.name ?? t("unnamed")}</span>
+          <span className="font-mono text-sm text-kumo-subtle">{row.id}</span>
+        </span>
       ),
     },
     {
       id: "status",
       header: t("status"),
+      sortBy: (row) => (row.status === "APPROVED" ? (row.online ? "A" : "B") : row.status),
       cell: (row) =>
-        row.status === "PENDING" && role === "ADMIN" ? (
-          <Approve id={row.id} />
+        row.status === "APPROVED" ? (
+          <StatePill tone={row.online ? "good" : "idle"}>{row.online ? t("online") : t("offline")}</StatePill>
         ) : (
-          <span className="text-(--color-muted)">{t(`status${row.status}`)}</span>
+          <StatePill tone={STATUS_TONE[row.status]}>{statusName(row.status)}</StatePill>
         ),
     },
     {
@@ -174,33 +187,22 @@ export default function DevicesPage() {
     {
       id: "firmware",
       header: t("firmware"),
+      sortBy: (row) => row.fwVersion ?? "",
       cell: (row) => (
-        <div className="flex flex-wrap items-center gap-2">
-          <span>{row.fwVersion ?? common("empty")}</span>
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-sm">{row.fwVersion ?? common("empty")}</span>
           {updatesFor(row.id).map((update) =>
             update.updating.includes(row.id) ? (
-              <Link
-                key={update.release.releaseId}
-                href={`/devices/${row.id}`}
-                className="flex items-center gap-1.5 rounded-full bg-(--color-line) px-2 py-0.5 text-xs hover:underline"
-              >
-                <span
-                  aria-hidden
-                  className="size-1.5 animate-pulse rounded-full bg-(--color-accent) motion-reduce:animate-none"
-                />
+              <StatePill key={update.release.releaseId} tone="waiting">
                 {t("updatingBadge", { version: update.release.version })}
-              </Link>
+              </StatePill>
             ) : (
-              <Link
-                key={update.release.releaseId}
-                href={`/devices/${row.id}`}
-                className="rounded-full border border-(--color-accent) px-2 py-0.5 text-xs text-(--color-accent) hover:underline"
-              >
+              <StatePill key={update.release.releaseId}>
                 {t("updateBadge", { target: t(`target${update.release.target}`), version: update.release.version })}
-              </Link>
+              </StatePill>
             ),
           )}
-        </div>
+        </span>
       ),
     },
     {
@@ -210,131 +212,243 @@ export default function DevicesPage() {
       sortBy: (row) => row.rosterVersion,
       cell: (row) => row.rosterVersion,
     },
-    {
-      id: "link",
-      header: t("link"),
-      sortBy: (row) => (row.online ? 1 : 0),
-      cell: (row) => (
-        <span className={row.online ? "text-(--color-ok)" : "text-(--color-muted)"}>
-          {row.online ? t("online") : t("offline")}
-        </span>
-      ),
-    },
   ];
 
+  const actionsOf = (row: Device): RowAction[] =>
+    row.status === "PENDING"
+      ? [
+          { key: "approve", label: t("approve"), icon: CheckCircleIcon, onSelect: () => startApproving(row) },
+          { key: "open", label: t("openDetail"), icon: ArrowSquareOutIcon, onSelect: () => router.push(`/devices/${row.id}`) },
+        ]
+      : [];
+
+  const history = releases.data ?? [];
+
   return (
-    <section>
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      <p className="mt-1 mb-6 text-sm text-(--color-muted)">{t("lead")}</p>
-      <DataTable
-        id="devices"
-        columns={columns}
-        rows={devices.data?.rows}
-        keyOf={(row) => row.id}
-        pending={devices.isPending}
-        failed={devices.isError}
-        onRetry={() => devices.refetch()}
-      />
+    <>
+      <PageHeader title={t("title")} description={t("leadShort")} />
 
-      {role === "ADMIN" ? (
-        <section className="mt-8 max-w-2xl rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-          <h2 className="text-sm font-medium">{t("releasesTitle")}</h2>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("releasesLead")}</p>
-
-          <ul className="mt-3 flex flex-col">
-            {(fleet.data ?? []).map((update) => (
-              <li
-                key={update.release.releaseId}
-                className="flex flex-wrap items-center gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
-              >
-                <span className="font-medium">{t(`target${update.release.target}`)}</span>
-                <span className="font-mono text-xs">{update.release.version}</span>
-                <span className="text-xs text-(--color-muted)">
-                  {[
-                    update.behind.length > 0 || update.updating.length === 0
-                      ? t("releaseBehind", { count: update.behind.length })
-                      : null,
-                    update.updating.length > 0 ? t("releaseUpdating", { count: update.updating.length }) : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
-                <Button
-                  size="sm"
-                  className="ms-auto"
-                  disabled={update.behind.length === 0 || updateAll.isPending}
-                  onClick={() => {
-                    setFault(null);
-                    setSent(null);
-                    setAsking(update);
-                  }}
-                >
-                  {t("releaseUpdateAll", { count: update.behind.length })}
-                </Button>
-              </li>
-            ))}
-            {fleet.isSuccess && (fleet.data ?? []).length === 0 ? (
-              <li className="py-2 text-sm text-(--color-muted)">{t("releasesEmpty")}</li>
-            ) : null}
-          </ul>
-
-          {sent ? (
-            <p role="status" className="mt-3 text-sm text-(--color-ok)">
-              {t("releaseUpdateAllDone", sent)}
-            </p>
-          ) : null}
-          {fault ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {fault}
-            </p>
-          ) : null}
-
-          {(releases.data ?? []).length > 0 ? (
-            <details className="mt-4">
-              <summary className="cursor-pointer text-xs text-(--color-muted)">{t("releasesHistory")}</summary>
-              <ul className="mt-2 flex flex-col">
-                {(releases.data ?? []).map((one) => (
-                  <li key={one.releaseId} className="flex flex-wrap items-center gap-3 py-1 text-xs">
-                    <span>{t(`target${one.target}`)}</span>
-                    <span className="font-mono">{one.version}</span>
-                    <span className="text-(--color-muted)">{format.dateTime(new Date(one.createdAt), "medium")}</span>
-                    <span className="ms-auto text-(--color-muted)">
+      <PageLayout
+        aside={
+          <>
+            <AsideCard title={common("summary")}>
+              <StatList
+                stats={[
+                  {
+                    key: "online",
+                    label: t("showOnline"),
+                    value: devices.data ? `${online} / ${approved.length}` : common("empty"),
+                    active: show === "online",
+                    onPick: () => setShow("online"),
+                    tone: devices.data && online < approved.length ? "warning" : undefined,
+                  },
+                  {
+                    key: "pending",
+                    label: statusName("PENDING"),
+                    value: devices.data ? pending : common("empty"),
+                    active: show === "PENDING",
+                    onPick: () => setShow("PENDING"),
+                    tone: pending > 0 ? "warning" : undefined,
+                  },
+                  {
+                    key: "all",
+                    label: common("all"),
+                    value: devices.data ? all.length : common("empty"),
+                    active: show === "",
+                    onPick: () => setShow(""),
+                  },
+                ]}
+              />
+            </AsideCard>
+            <AsideCard title={t("releasesTitle")}>
+              {fleet.isPending ? (
+                <SkeletonLine minWidth={120} maxWidth={260} />
+              ) : (fleet.data ?? []).length === 0 ? (
+                <p className="text-pretty text-kumo-subtle">{t("releasesEmpty")}</p>
+              ) : (
+                <ul className="-my-1 flex flex-col">
+                  {(fleet.data ?? []).map((update) => (
+                    <li
+                      key={update.release.releaseId}
+                      className="flex flex-col gap-2 border-b border-kumo-hairline py-3 first:pt-1 last:border-0 last:pb-1"
+                    >
+                      <span className="flex items-baseline justify-between gap-3">
+                        <span className="font-medium">{t(`target${update.release.target}`)}</span>
+                        <span className="font-mono text-sm">{update.release.version}</span>
+                      </span>
+                      <span className="text-sm text-kumo-subtle">
+                        {[
+                          update.behind.length > 0 || update.updating.length === 0
+                            ? t("releaseBehind", { count: update.behind.length })
+                            : null,
+                          update.updating.length > 0 ? t("releaseUpdating", { count: update.updating.length }) : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                      {update.behind.length > 0 ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={ArrowsClockwiseIcon}
+                          className="self-start"
+                          disabled={updateAll.isPending}
+                          onClick={() => {
+                            setFault(null);
+                            setAsking(update);
+                          }}
+                        >
+                          {t("releaseUpdateAll", { count: update.behind.length })}
+                        </Button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </AsideCard>
+          </>
+        }
+        extra={
+          history.length > 0 ? (
+            <AsideCard title={t("releasesHistory")}>
+              <ul className="-my-1 flex flex-col">
+                {(wholeHistory ? history : history.slice(0, kHistoryShown)).map((one) => (
+                  <li
+                    key={one.releaseId}
+                    className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-kumo-hairline py-2 last:border-0"
+                  >
+                    <span className="w-20 shrink-0">{t(`target${one.target}`)}</span>
+                    <span className="font-mono text-sm">{one.version}</span>
+                    <span className="ms-auto text-sm text-kumo-subtle tabular-nums">
+                      {format.dateTime(new Date(one.createdAt), "day")} ·{" "}
                       {one.available ? t("releaseSize", { kb: Math.round(one.sizeBytes / 1024) }) : t("releaseCleared")}
                     </span>
                   </li>
                 ))}
               </ul>
-            </details>
-          ) : null}
-        </section>
-      ) : null}
-
-      <Sheet
-        open={asking !== null}
-        onClose={() => setAsking(null)}
-        title={t("releaseUpdateAllTitle")}
-        closeLabel={common("close")}
+              {history.length > kHistoryShown ? (
+                <Button variant="ghost" size="sm" className="mt-2" onClick={() => setWholeHistory(!wholeHistory)}>
+                  {wholeHistory ? common("less") : t("historyMore", { count: history.length - kHistoryShown })}
+                </Button>
+              ) : null}
+              <p className="mt-3 text-sm text-pretty text-kumo-subtle">{t("releasesLead")}</p>
+            </AsideCard>
+          ) : undefined
+        }
       >
-        {asking ? (
-          <>
-            <p className="text-sm text-(--color-muted)">
-              {t("releaseUpdateAllAsk", {
-                count: asking.behind.length,
-                target: t(`target${asking.release.target}`),
-                version: asking.release.version,
-              })}
-            </p>
-            <Button
-              type="button"
-              className="mt-4"
-              disabled={updateAll.isPending}
-              onClick={() => updateAll.mutate(asking.release.releaseId)}
+        <FilterBar
+          search={{ value: typed, onChange: setTyped, placeholder: t("searchHint") }}
+          filters={[
+            {
+              key: "show",
+              label: t("status"),
+              value: show,
+              onChange: (next) => setShow(showOf(next)),
+              items: {
+                "": common("all"),
+                online: t("showOnline"),
+                offline: t("showOffline"),
+                PENDING: statusName("PENDING"),
+                APPROVED: statusName("APPROVED"),
+                REVOKED: statusName("REVOKED"),
+              },
+            },
+          ]}
+        />
+        <DataTable
+          id="devices"
+          cardLead="device"
+          columns={columns}
+          rows={shown}
+          keyOf={(row) => row.id}
+          pending={devices.isPending}
+          failed={devices.isError}
+          onRetry={() => void devices.refetch()}
+          onRowClick={(row) => (row.status === "PENDING" ? startApproving(row) : router.push(`/devices/${row.id}`))}
+          rowActions={actionsOf}
+          empty={show || search ? t("noMatch") : t("empty")}
+          emptyHint={show || search ? t("noMatchHint") : t("emptyHint")}
+        />
+      </PageLayout>
+
+      <LayerDialog.Root open={approving !== null} onOpenChange={(next) => !next && setApproving(null)} dismissDisabled={approve.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("approveTitle", { name: approving?.name ?? approving?.id ?? "" })}</LayerDialog.Title>
+          <LayerDialog.Description>{t("approveLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-3">
+              <Input
+                label={t("claimLabel")}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder={t("claimPlaceholder")}
+                value={claim}
+                maxLength={kClaimDigits}
+                onChange={(event) => setClaim(event.target.value.replace(/\D/g, "").slice(0, kClaimDigits))}
+                className="font-mono tracking-widest tabular-nums"
+              />
+              {approving ? (
+                <p className="text-sm text-kumo-subtle">
+                  {[approving.id, approving.location].filter(Boolean).join(" · ")}
+                </p>
+              ) : null}
+              {fault ? <p className="text-kumo-danger">{fault}</p> : null}
+            </div>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              loading={approve.isPending}
+              disabled={claim.length !== kClaimDigits}
+              onClick={() => approving && approve.mutate(approving)}
             >
-              {updateAll.isPending ? common("saving") : t("releaseUpdateAll", { count: asking.behind.length })}
-            </Button>
-          </>
-        ) : null}
-      </Sheet>
-    </section>
+              {t("approve")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Alert open={asking !== null} onOpenChange={(next) => !next && setAsking(null)} dismissDisabled={updateAll.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>
+            {asking
+              ? t("releaseUpdateAllTitle", { target: t(`target${asking.release.target}`), version: asking.release.version })
+              : ""}
+          </LayerDialog.Title>
+          <LayerDialog.Description>
+            {asking
+              ? t("releaseUpdateAllAsk", {
+                  count: asking.behind.length,
+                  target: t(`target${asking.release.target}`),
+                  version: asking.release.version,
+                })
+              : ""}
+          </LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-3">
+              {asking ? (
+                <ul className="flex flex-col">
+                  {asking.behind.map((id) => (
+                    <li key={id} className="flex justify-between gap-3 border-b border-kumo-hairline py-1.5 last:border-0">
+                      <span>{nameOf(id)}</span>
+                      <span className="font-mono text-sm text-kumo-subtle">{id}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {fault ? <p className="text-kumo-danger">{fault}</p> : null}
+            </div>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              variant="destructive"
+              loading={updateAll.isPending}
+              onClick={() => asking && updateAll.mutate(asking.release.releaseId)}
+            >
+              {asking ? t("releaseUpdateAll", { count: asking.behind.length }) : ""}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+    </>
   );
 }

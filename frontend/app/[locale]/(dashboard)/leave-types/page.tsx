@@ -1,17 +1,18 @@
 "use client";
 
+import { Button, Checkbox, Input, LayerDialog } from "@cloudflare/kumo";
+import { ArrowCounterClockwiseIcon, PlusIcon, ProhibitIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Failed } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
-import { Sheet } from "@/components/ui/sheet";
+import { NextHoliday } from "@/components/holidays/next-holiday";
+import { DataTable, type Column, type RowAction } from "@/components/tables/data-table";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
 
 interface LeaveType {
@@ -32,6 +33,8 @@ interface Draft {
   carryOverMax: string;
 }
 
+type Standing = "active" | "retired" | "";
+
 const kBlank: Draft = { code: "", name: "", paid: true, daysPerYear: "", carryOverMax: "0" };
 
 export default function LeaveTypesPage() {
@@ -41,9 +44,12 @@ export default function LeaveTypesPage() {
   const mayWrite = role === "ADMIN" || role === "HR";
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
 
+  const [standing, setStanding] = useState<Standing>("active");
   const [editing, setEditing] = useState<LeaveType | null>(null);
   const [adding, setAdding] = useState(false);
+  const [retiring, setRetiring] = useState<LeaveType | null>(null);
   const [draft, setDraft] = useState<Draft>(kBlank);
   const [fault, setFault] = useState<string | null>(null);
 
@@ -52,227 +58,258 @@ export default function LeaveTypesPage() {
     queryFn: async () => (await api.get<LeaveType[]>("/leave-types/all")).data,
   });
 
-  function done(): void {
-    setAdding(false);
-    setEditing(null);
+  function refresh(): void {
     void cache.invalidateQueries({ queryKey: ["leave-types"] });
   }
 
-  const add = useMutation({
-    mutationFn: () =>
-      api.post("/leave-types", {
-        code: draft.code.trim().toUpperCase(),
-        name: draft.name.trim(),
-        paid: draft.paid,
-        daysPerYear: Number(draft.daysPerYear),
-        carryOverMax: Number(draft.carryOverMax || "0"),
-      }),
-    onSuccess: done,
-    onError: (fell: unknown) => setFault(faultOf(fell)),
-  });
-
   const save = useMutation({
-    mutationFn: (one: LeaveType) =>
-      api.patch(`/leave-types/${one.id}`, {
+    mutationFn: async () => {
+      const body = {
         name: draft.name.trim(),
         paid: draft.paid,
         daysPerYear: Number(draft.daysPerYear),
         carryOverMax: Number(draft.carryOverMax || "0"),
-      }),
-    onSuccess: done,
+      };
+      if (editing) {
+        await api.patch(`/leave-types/${editing.id}`, body);
+      } else {
+        await api.post("/leave-types", { ...body, code: draft.code.trim().toUpperCase() });
+      }
+    },
+    onSuccess: () => {
+      notify.done(editing ? t("saved", { name: draft.name.trim() }) : t("added", { name: draft.name.trim() }));
+      setAdding(false);
+      setEditing(null);
+      refresh();
+    },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   const flip = useMutation({
     mutationFn: (one: LeaveType) => api.patch(`/leave-types/${one.id}`, { active: !one.active }),
-    onSuccess: done,
-    onError: (fell: unknown) => setFault(faultOf(fell)),
+    onSuccess: (_, one) => {
+      notify.done(one.active ? t("retiredDone", { name: one.name }) : t("restoredDone", { name: one.name }));
+      setRetiring(null);
+      refresh();
+    },
+    onError: notify.failed,
   });
 
-  if (types.isError) {
-    return <Failed onRetry={() => void types.refetch()} />;
+  function openForm(one: LeaveType | null): void {
+    setFault(null);
+    setDraft(
+      one
+        ? {
+            code: one.code,
+            name: one.name,
+            paid: one.paid,
+            daysPerYear: String(Number(one.daysPerYear)),
+            carryOverMax: String(Number(one.carryOverMax)),
+          }
+        : kBlank,
+    );
+    setEditing(one);
+    setAdding(one === null);
   }
 
-  const rows = types.data ?? [];
+  const all = types.data ?? [];
+  const working = all.filter((one) => one.active).length;
+  const shown = types.data?.filter((one) => (standing === "" ? true : standing === "active" ? one.active : !one.active));
+
+  const columns: Column<LeaveType>[] = [
+    { id: "code", header: t("code"), sticky: true, sortBy: (row) => row.code, cell: (row) => <span className="font-mono">{row.code}</span> },
+    {
+      id: "name",
+      header: t("name"),
+      sortBy: (row) => row.name,
+      cell: (row) => (
+        <span className="flex items-center gap-2 whitespace-nowrap">
+          {row.name}
+          {row.active ? null : <StatePill>{t("retiredPill")}</StatePill>}
+        </span>
+      ),
+    },
+    {
+      id: "paid",
+      header: t("pay"),
+      sortBy: (row) => (row.paid ? 1 : 0),
+      cell: (row) => <StatePill tone={row.paid ? "good" : "idle"}>{row.paid ? t("paid") : t("unpaid")}</StatePill>,
+    },
+    {
+      id: "daysPerYear",
+      header: t("daysPerYearShort"),
+      numeric: true,
+      sortBy: (row) => Number(row.daysPerYear),
+      cell: (row) => Number(row.daysPerYear),
+    },
+    {
+      id: "carryOverMax",
+      header: t("carryOverShort"),
+      numeric: true,
+      sortBy: (row) => Number(row.carryOverMax),
+      cell: (row) => Number(row.carryOverMax),
+    },
+  ];
+
+  function actionsOf(row: LeaveType): RowAction[] {
+    return row.active
+      ? [{ key: "retire", label: t("retire"), icon: ProhibitIcon, danger: true, onSelect: () => setRetiring(row) }]
+      : [{ key: "restore", label: t("restore"), icon: ArrowCounterClockwiseIcon, onSelect: () => flip.mutate(row) }];
+  }
 
   return (
-    <section className="w-full">
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      <p className="mt-1 text-sm text-(--color-muted)">{t("lead")}</p>
+    <>
+      <PageHeader
+        title={t("title")}
+        description={t("lead")}
+        actions={
+          mayWrite ? (
+            <Button variant="primary" icon={PlusIcon} onClick={() => openForm(null)}>
+              {t("add")}
+            </Button>
+          ) : undefined
+        }
+      />
 
-      {mayWrite ? (
-        <Button
-          type="button"
-          className="mt-4"
-          onClick={() => {
-            setFault(null);
-            setDraft(kBlank);
-            setAdding(true);
-          }}
-        >
-          {t("add")}
-        </Button>
-      ) : null}
-
-      {fault ? (
-        <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-          {fault}
-        </p>
-      ) : null}
-
-      {types.isPending ? (
-        <p className="mt-6 text-sm text-(--color-muted)">{common("loading")}</p>
-      ) : rows.length === 0 ? (
-        <p className="mt-6 text-sm text-(--color-muted)">{t("empty")}</p>
-      ) : (
-        <div className="mt-4 flex flex-col gap-2">
-          {rows.map((one) => (
-            <article
-              key={one.id}
-              className={cn(
-                "rounded-xl border border-(--color-line) bg-(--color-surface) p-4",
-                !one.active && "opacity-60",
-              )}
-            >
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-mono text-xs text-(--color-muted)">{one.code}</span>
-                <span className="min-w-0 flex-1 text-sm font-medium">{one.name}</span>
-                <span className="text-xs text-(--color-muted)">
-                  {one.paid ? t("paid") : t("unpaid")}
-                </span>
-                {!one.active ? (
-                  <span className="text-xs text-(--color-warn)">{t("retired")}</span>
-                ) : null}
-              </div>
-              <dl className="mt-2 flex flex-wrap gap-x-6 text-sm">
-                <div className="flex gap-2">
-                  <dt className="text-(--color-muted)">{t("daysPerYear")}</dt>
-                  <dd className="tabular-nums">{Number(one.daysPerYear)}</dd>
-                </div>
-                <div className="flex gap-2">
-                  <dt className="text-(--color-muted)">{t("carryOverMax")}</dt>
-                  <dd className="tabular-nums">{Number(one.carryOverMax)}</dd>
-                </div>
-              </dl>
-              {mayWrite ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    tone="quiet"
-                    size="sm"
-                    onClick={() => {
-                      setFault(null);
-                      setDraft({
-                        code: one.code,
-                        name: one.name,
-                        paid: one.paid,
-                        daysPerYear: String(Number(one.daysPerYear)),
-                        carryOverMax: String(Number(one.carryOverMax)),
-                      });
-                      setEditing(one);
-                    }}
-                  >
-                    {t("edit")}
-                  </Button>
-                  <Button
-                    type="button"
-                    tone="quiet"
-                    size="sm"
-                    disabled={flip.isPending}
-                    onClick={() => {
-                      setFault(null);
-                      flip.mutate(one);
-                    }}
-                  >
-                    {one.active ? t("retire") : t("restore")}
-                  </Button>
-                </div>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      )}
-
-      <Sheet
-        open={adding || editing !== null}
-        onClose={() => {
-          setAdding(false);
-          setEditing(null);
-        }}
-        title={editing ? `${editing.code} · ${t("edit")}` : t("add")}
-        closeLabel={common("close")}
+      <PageLayout
+        aside={
+          <AsideCard title={common("summary")}>
+            <StatList
+              stats={[
+                {
+                  key: "active",
+                  label: t("inUseCount"),
+                  value: types.data ? working : common("empty"),
+                  active: standing === "active",
+                  onPick: () => setStanding("active"),
+                },
+                {
+                  key: "retired",
+                  label: t("retired"),
+                  value: types.data ? all.length - working : common("empty"),
+                  active: standing === "retired",
+                  onPick: () => setStanding("retired"),
+                },
+                {
+                  key: "all",
+                  label: common("all"),
+                  value: types.data ? all.length : common("empty"),
+                  active: standing === "",
+                  onPick: () => setStanding(""),
+                },
+              ]}
+            />
+          </AsideCard>
+        }
+        extra={<NextHoliday />}
       >
-        <form
-          onSubmit={(event: FormEvent) => {
-            event.preventDefault();
-            setFault(null);
-            if (editing) {
-              save.mutate(editing);
-            } else {
-              add.mutate();
-            }
-          }}
-        >
-          {editing === null ? (
-            <label className="block text-xs text-(--color-muted)">
-              {t("code")}
+        <DataTable
+          id="leave-types"
+          cardLead="name"
+          columns={columns}
+          rows={shown}
+          keyOf={(row) => row.id}
+          pending={types.isPending}
+          failed={types.isError}
+          onRetry={() => void types.refetch()}
+          onRowClick={mayWrite ? openForm : undefined}
+          rowActions={mayWrite ? actionsOf : undefined}
+          empty={standing === "retired" ? t("noneRetired") : t("empty")}
+          emptyAction={
+            mayWrite && standing !== "retired" ? (
+              <Button variant="secondary" icon={PlusIcon} onClick={() => openForm(null)}>
+                {t("add")}
+              </Button>
+            ) : undefined
+          }
+        />
+      </PageLayout>
+
+      <LayerDialog.Root
+        open={adding || editing !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setAdding(false);
+            setEditing(null);
+          }
+        }}
+        dismissDisabled={save.isPending}
+      >
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{editing ? t("editTitle", { code: editing.code }) : t("add")}</LayerDialog.Title>
+          <LayerDialog.Description>{editing ? t("editLead") : t("addLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-4">
+              {editing === null ? (
+                <Input
+                  label={t("code")}
+                  required
+                  maxLength={32}
+                  className="font-mono"
+                  value={draft.code}
+                  description={t("codeHint")}
+                  onChange={(event) => setDraft({ ...draft, code: event.target.value.toUpperCase() })}
+                />
+              ) : null}
               <Input
+                label={t("name")}
                 required
-                maxLength={32}
-                value={draft.code}
-                onChange={(event) => setDraft({ ...draft, code: event.target.value.toUpperCase() })}
-                className="mt-1 font-mono"
+                maxLength={120}
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
               />
-            </label>
-          ) : null}
-          <label className="mt-3 block text-xs text-(--color-muted)">
-            {t("name")}
-            <Input
-              required
-              maxLength={120}
-              value={draft.name}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              className="mt-1"
-            />
-          </label>
-          <div className="mt-3 flex flex-wrap gap-3">
-            <label className="block w-40 text-xs text-(--color-muted)">
-              {t("daysPerYear")}
-              <Input
-                required
-                type="number"
-                min={0}
-                step={0.5}
-                value={draft.daysPerYear}
-                onChange={(event) => setDraft({ ...draft, daysPerYear: event.target.value })}
-                className="mt-1"
-              />
-            </label>
-            <label className="block w-40 text-xs text-(--color-muted)">
-              {t("carryOverMax")}
-              <Input
-                type="number"
-                min={0}
-                step={0.5}
-                value={draft.carryOverMax}
-                onChange={(event) => setDraft({ ...draft, carryOverMax: event.target.value })}
-                className="mt-1"
-              />
-            </label>
-          </div>
-          <div className="mt-4">
-            <Checkbox
-              checked={draft.paid}
-              onChange={(event) => setDraft({ ...draft, paid: event.target.checked })}
-              label={t("paid")}
-            />
-          </div>
-          <p className="mt-4 text-xs text-(--color-muted)">{t("retireLead")}</p>
-          <Button type="submit" className="mt-4" disabled={add.isPending || save.isPending}>
-            {add.isPending || save.isPending ? common("saving") : t("save")}
-          </Button>
-        </form>
-      </Sheet>
-    </section>
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label={t("daysPerYear")}
+                  required
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={draft.daysPerYear}
+                  onChange={(event) => setDraft({ ...draft, daysPerYear: event.target.value })}
+                />
+                <Input
+                  label={t("carryOverMax")}
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={draft.carryOverMax}
+                  onChange={(event) => setDraft({ ...draft, carryOverMax: event.target.value })}
+                />
+              </div>
+              <Checkbox checked={draft.paid} onCheckedChange={(next) => setDraft({ ...draft, paid: next === true })} label={t("paid")} />
+              {fault ? <p role="alert" className="text-kumo-danger">{fault}</p> : null}
+            </div>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              loading={save.isPending}
+              disabled={draft.name.trim() === "" || draft.daysPerYear === "" || (editing === null && draft.code.trim() === "")}
+              onClick={() => {
+                setFault(null);
+                save.mutate();
+              }}
+            >
+              {editing ? t("save") : t("add")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Alert open={retiring !== null} onOpenChange={(next) => !next && setRetiring(null)} dismissDisabled={flip.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{retiring ? t("retireTitle", { name: retiring.name }) : t("retire")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("retireLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <p className="text-kumo-subtle">{t("retireHint")}</p>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary variant="destructive" loading={flip.isPending} onClick={() => retiring && flip.mutate(retiring)}>
+              {t("retire")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+    </>
   );
 }

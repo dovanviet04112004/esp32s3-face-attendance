@@ -1,21 +1,23 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { Button, CommandPalette } from "@cloudflare/kumo";
 import type { Icon as IconType } from "@phosphor-icons/react";
 import {
+  ArrowRightIcon,
   CalendarBlankIcon,
   MagnifyingGlassIcon,
   ReceiptIcon,
   TreeStructureIcon,
   UserIcon,
 } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { Input } from "@/components/ui/input";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/cn";
+import { useSession } from "@/lib/auth";
+import { entriesFor } from "@/lib/nav";
 
 type HitKind = "employee" | "department" | "request" | "payslip";
 
@@ -27,6 +29,20 @@ interface Hit {
   href: string;
 }
 
+interface Found {
+  id: string;
+  title: string;
+  detail: string | null;
+  href: string;
+  icon: IconType;
+}
+
+interface Pile {
+  id: string;
+  label: string;
+  items: Found[];
+}
+
 const FACE: Record<HitKind, IconType> = {
   employee: UserIcon,
   department: TreeStructureIcon,
@@ -34,13 +50,14 @@ const FACE: Record<HitKind, IconType> = {
   payslip: ReceiptIcon,
 };
 
-const KIND_KEY: Record<HitKind, "kindEmployee" | "kindDepartment" | "kindRequest" | "kindPayslip"> =
-  {
-    employee: "kindEmployee",
-    department: "kindDepartment",
-    request: "kindRequest",
-    payslip: "kindPayslip",
-  };
+const KIND_KEY = {
+  employee: "kindEmployee",
+  department: "kindDepartment",
+  request: "kindRequest",
+  payslip: "kindPayslip",
+} as const;
+
+const KINDS: HitKind[] = ["employee", "department", "request", "payslip"];
 
 // A slash belongs to whatever is being typed into, not to the search box.
 const TYPED_IN = new Set(["INPUT", "TEXTAREA", "SELECT"]);
@@ -48,34 +65,35 @@ const TYPED_IN = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 const kDebounceMs = 200;
 const kMinLength = 2;
 
+function folded(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
+/** Cloudflare's quick search: pages this role can open, then people,
+ *  departments, requests and payslips from the api (KEHOACH 9.20).
+ */
 export function GlobalSearch() {
   const t = useTranslations("search");
+  const nav = useTranslations("nav");
   const router = useRouter();
-  const box = useRef<HTMLInputElement>(null);
-  const listId = useId();
+  const { role, employeeId } = useSession();
+  const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [term, setTerm] = useState("");
-  const [open, setOpen] = useState(false);
-  const [at, setAt] = useState(0);
 
-  // One request per pause in typing, not one per keystroke.
   useEffect(() => {
-    const timer = setTimeout(() => setTerm(typed), kDebounceMs);
+    const timer = setTimeout(() => setTerm(typed.trim()), kDebounceMs);
     return () => clearTimeout(timer);
   }, [typed]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
       const held = document.activeElement as HTMLElement | null;
-      const typing =
-        held !== null &&
-        (TYPED_IN.has(held.tagName) || held.isContentEditable);
-      if (event.key === "/" && !typing) {
+      const typing = held !== null && (TYPED_IN.has(held.tagName) || held.isContentEditable);
+      const chord = event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey);
+      if (chord || (event.key === "/" && !typing)) {
         event.preventDefault();
-        box.current?.focus();
-      }
-      if (event.key === "Escape") {
-        setOpen(false);
+        setOpen(true);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -84,110 +102,118 @@ export function GlobalSearch() {
 
   const hits = useQuery({
     queryKey: ["search", term],
-    enabled: term.trim().length >= kMinLength,
-    queryFn: async () =>
-      (await api.get<Hit[]>(`/search?q=${encodeURIComponent(term)}`)).data,
+    enabled: open && term.length >= kMinLength,
+    queryFn: async () => (await api.get<Hit[]>(`/search?q=${encodeURIComponent(term)}`)).data,
   });
 
-  function go(hit: Hit): void {
+  const piles = useMemo<Pile[]>(() => {
+    const needle = folded(typed.trim());
+    const pages = entriesFor(role, employeeId !== null)
+      .flatMap((group) => group.entries.flatMap((entry) => entry.members))
+      .filter((item) => needle === "" || folded(nav(item.key)).includes(needle))
+      .map((item) => ({
+        id: `page:${item.href}`,
+        title: nav(item.key),
+        detail: null,
+        href: item.href,
+        icon: item.icon,
+      }));
+    const found = term.length >= kMinLength ? (hits.data ?? []) : [];
+    return [
+      { id: "pages", label: t("pages"), items: pages },
+      ...KINDS.map((kind) => ({
+        id: kind,
+        label: t(KIND_KEY[kind]),
+        items: found
+          .filter((hit) => hit.kind === kind)
+          .map((hit) => ({ id: `${kind}:${hit.id}`, title: hit.title, detail: hit.detail, href: hit.href, icon: FACE[kind] })),
+      })),
+    ].filter((pile) => pile.items.length > 0);
+  }, [typed, term, hits.data, role, employeeId, nav, t]);
+
+  function go(item: Found): void {
     setOpen(false);
     setTyped("");
-    router.push(hit.href);
-  }
-
-  const rows = hits.data ?? [];
-  const showing = open && term.trim().length >= kMinLength;
-  const active = rows[at];
-
-  function walk(event: React.KeyboardEvent<HTMLInputElement>): void {
-    if (!showing || rows.length === 0) {
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setAt((held) => (held + 1) % rows.length);
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setAt((held) => (held - 1 + rows.length) % rows.length);
-    }
-    if (event.key === "Enter" && active) {
-      event.preventDefault();
-      go(active);
-    }
+    router.push(item.href);
   }
 
   return (
-    <div className="relative min-w-0 flex-1">
-      <MagnifyingGlassIcon
-        className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-(--color-muted)"
-        aria-hidden
-      />
-      <Input
-        ref={box}
-        type="search"
-        aria-label={t("label")}
-        placeholder={t("placeholder")}
-        role="combobox"
-        aria-expanded={showing}
-        aria-controls={listId}
-        aria-activedescendant={showing && active ? `${listId}-${at}` : undefined}
-        aria-autocomplete="list"
-        value={typed}
-        onChange={(event) => {
-          setTyped(event.target.value);
-          setAt(0);
-          setOpen(true);
-        }}
-        onKeyDown={walk}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className="ps-9"
-      />
+    <>
+      <Button
+        variant="secondary"
+        icon={MagnifyingGlassIcon}
+        onClick={() => setOpen(true)}
+        className="w-full justify-start font-normal text-kumo-subtle"
+      >
+        <span className="min-w-0 flex-1 truncate text-start">{t("placeholder")}</span>
+        <kbd className="hidden rounded border border-kumo-hairline bg-kumo-base px-1.5 text-xs md:inline">/</kbd>
+      </Button>
 
-      {showing ? (
-        <div
-          id={listId}
-          role="listbox"
-          className="absolute inset-x-0 top-full z-40 mt-1 max-h-80 overflow-y-auto rounded-xl border border-(--color-line) bg-(--color-surface) p-1 shadow-lg"
-        >
-          {hits.isPending ? (
-            <p className="px-3 py-2 text-sm text-(--color-muted)">{t("looking")}</p>
-          ) : rows.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-(--color-muted)">{t("nothing")}</p>
+      <CommandPalette.Root
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) {
+            setTyped("");
+          }
+        }}
+        items={piles}
+        value={typed}
+        onValueChange={setTyped}
+        itemToStringValue={(pile) => pile.label}
+        filter={() => true}
+        getSelectableItems={(all) => all.flatMap((pile) => pile.items)}
+        onSelect={(item) => go(item)}
+      >
+        <CommandPalette.Input placeholder={t("placeholder")} autoComplete="off" spellCheck={false} />
+        <CommandPalette.List>
+          {term.length >= kMinLength && hits.isFetching && piles.length === 0 ? (
+            <CommandPalette.Loading />
           ) : (
-            rows.map((hit, index) => {
-              const Icon = FACE[hit.kind];
-              return (
-                <button
-                  key={`${hit.kind}:${hit.id}`}
-                  id={`${listId}-${index}`}
-                  role="option"
-                  aria-selected={index === at}
-                  type="button"
-                  onPointerDown={() => go(hit)}
-                  onMouseEnter={() => setAt(index)}
-                  className={cn(
-                    "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-start text-sm",
-                    index === at ? "bg-(--color-ground)" : "",
-                  )}
-                >
-                  <Icon className="size-4 shrink-0 text-(--color-muted)" aria-hidden />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{hit.title}</span>
-                    <span className="block truncate text-xs text-(--color-muted)">
-                      {hit.detail}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[11px] text-(--color-muted)">
-                    {t(KIND_KEY[hit.kind])}
-                  </span>
-                </button>
-              );
-            })
+            <>
+              <CommandPalette.Results>
+                {(pile: Pile) => (
+                  <CommandPalette.Group key={pile.id} items={pile.items}>
+                    <CommandPalette.GroupLabel>{pile.label}</CommandPalette.GroupLabel>
+                    <CommandPalette.Items>
+                      {(item: Found) => {
+                        const Icon = item.icon;
+                        return (
+                          <CommandPalette.Item key={item.id} value={item} onClick={() => go(item)}>
+                            <span className="flex min-w-0 items-center gap-3">
+                              <Icon size={16} className="shrink-0 text-kumo-subtle" aria-hidden />
+                              <span className="min-w-0">
+                                <span className="block truncate">{item.title}</span>
+                                {item.detail ? (
+                                  <span className="block truncate text-sm text-kumo-subtle">{item.detail}</span>
+                                ) : null}
+                              </span>
+                              {item.detail === null ? (
+                                <ArrowRightIcon size={14} className="ms-auto shrink-0 text-kumo-subtle" aria-hidden />
+                              ) : null}
+                            </span>
+                          </CommandPalette.Item>
+                        );
+                      }}
+                    </CommandPalette.Items>
+                  </CommandPalette.Group>
+                )}
+              </CommandPalette.Results>
+              <CommandPalette.Empty>{t("nothing")}</CommandPalette.Empty>
+            </>
           )}
-        </div>
-      ) : null}
-    </div>
+        </CommandPalette.List>
+        <CommandPalette.Footer>
+          <span className="flex items-center gap-2">
+            <kbd className="rounded border border-kumo-hairline bg-kumo-base px-1.5 py-0.5 text-xs">↑↓</kbd>
+            <span>{t("walk")}</span>
+          </span>
+          <span className="flex items-center gap-2">
+            <kbd className="rounded border border-kumo-hairline bg-kumo-base px-1.5 py-0.5 text-xs">↵</kbd>
+            <span>{t("open")}</span>
+          </span>
+        </CommandPalette.Footer>
+      </CommandPalette.Root>
+    </>
   );
 }

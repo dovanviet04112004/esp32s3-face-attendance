@@ -1,26 +1,39 @@
 "use client";
 
+import { Banner, Button, Empty, Input, LayerDialog, LinkButton, Select, SkeletonLine } from "@cloudflare/kumo";
+import {
+  ArrowUDownLeftIcon,
+  ClockCounterClockwiseIcon,
+  PackageIcon,
+  PlusIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Sheet } from "@/components/ui/sheet";
+import { DataTable, type Column } from "@/components/tables/data-table";
+import { Failed } from "@/components/ui/failed";
+import { useNotify } from "@/components/ui/notify";
+import { StatePill } from "@/components/ui/pill";
+import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 
-const CONDITIONS = ["NEW", "GOOD", "WORN", "DAMAGED"] as const;
+export const CONDITIONS = ["NEW", "GOOD", "WORN", "DAMAGED"] as const;
+// The largest page the register serves; a shelf that long is searched, not scrolled.
+const kShelf = 200;
 
-type Condition = (typeof CONDITIONS)[number];
+export type Condition = (typeof CONDITIONS)[number];
 
 export interface Asset {
   id: string;
   code: string;
   name: string;
   kind: string;
+  serialNo?: string | null;
   state: "IN_STOCK" | "ISSUED" | "RETURNED" | "RETIRED" | "LOST";
+  holder?: { id: number; code: string; fullName: string } | null;
 }
 
 interface Transfer {
@@ -30,14 +43,75 @@ interface Transfer {
   condition: Condition | null;
   note: string | null;
   employeeId: number;
+  employee?: { id: number; code: string; fullName: string } | null;
+}
+
+/** Every hand-over one asset has been through, newest first, in a dialog. */
+export function AssetHistory({ asset, onClose }: { asset: Asset | null; onClose: () => void }) {
+  const t = useTranslations("assets");
+  const common = useTranslations("common");
+  const format = useFormatter();
+
+  const history = useQuery({
+    queryKey: ["assets", "history", asset?.id],
+    enabled: asset !== null,
+    queryFn: async () => (await api.get<Transfer[]>(`/assets/${asset?.id}/history`)).data,
+  });
+
+  return (
+    <LayerDialog.Root
+      open={asset !== null}
+      onOpenChange={(next) => {
+        if (!next) {
+          onClose();
+        }
+      }}
+    >
+      <LayerDialog.Content closeLabel={common("close")}>
+        <LayerDialog.Title>{asset ? t("historyOf", { name: asset.name }) : t("history")}</LayerDialog.Title>
+        {asset ? (
+          <LayerDialog.Description>
+            <span className="font-mono">{asset.code}</span> · {asset.kind}
+          </LayerDialog.Description>
+        ) : null}
+        <LayerDialog.Body>
+          {history.isError ? (
+            <Failed onRetry={() => void history.refetch()} />
+          ) : history.isPending ? (
+            <div className="flex flex-col gap-3">
+              {Array.from({ length: 3 }, (_, at) => (
+                <SkeletonLine key={at} minWidth={160} maxWidth={360} />
+              ))}
+            </div>
+          ) : history.data.length === 0 ? (
+            <Empty size="sm" icon={<ClockCounterClockwiseIcon size={32} className="text-kumo-inactive" />} title={t("historyEmpty")} />
+          ) : (
+            <ul className="flex flex-col">
+              {history.data.map((one) => (
+                <li key={one.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-kumo-hairline py-2.5 last:border-0">
+                  <span className="w-28 shrink-0 tabular-nums text-kumo-subtle">{format.dateTime(new Date(one.at), "day")}</span>
+                  <StatePill tone={one.issued ? "waiting" : "good"}>{one.issued ? t("wentOut") : t("cameBack")}</StatePill>
+                  <Link href={`/employees/${one.employeeId}?tab=assets`} className="min-w-0 truncate text-kumo-link hover:underline">
+                    {one.employee?.fullName ?? `#${one.employeeId}`}
+                  </Link>
+                  {one.condition ? <span className="text-kumo-subtle">{t(`condition${one.condition}`)}</span> : null}
+                  {one.note ? <span className="basis-full text-kumo-subtle">{one.note}</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </LayerDialog.Body>
+      </LayerDialog.Content>
+    </LayerDialog.Root>
+  );
 }
 
 export function Assets({ employeeId, mayWrite }: { employeeId: number; mayWrite: boolean }) {
   const t = useTranslations("assets");
-  const format = useFormatter();
   const common = useTranslations("common");
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
 
   const [issuing, setIssuing] = useState(false);
   const [returning, setReturning] = useState<Asset | null>(null);
@@ -52,246 +126,207 @@ export function Assets({ employeeId, mayWrite }: { employeeId: number; mayWrite:
     queryFn: async () => (await api.get<Asset[]>(`/employees/${employeeId}/assets`)).data,
   });
 
+  // Only the hand-over dialog reads the shelf, and nothing on the tab filters by it.
   const stock = useQuery({
-    queryKey: ["assets", "stock"],
+    queryKey: ["assets", "shelf"],
     enabled: issuing,
-    queryFn: async () => (await api.get<Asset[]>("/assets?state=IN_STOCK")).data,
-  });
-
-  const history = useQuery({
-    queryKey: ["assets", "history", showing?.id],
-    enabled: showing !== null,
-    queryFn: async () => (await api.get<Transfer[]>(`/assets/${showing?.id}/history`)).data,
+    queryFn: async () => {
+      const [fresh, back] = await Promise.all([
+        api.get<{ rows: Asset[] }>(`/assets?state=IN_STOCK&take=${kShelf}`),
+        api.get<{ rows: Asset[] }>(`/assets?state=RETURNED&take=${kShelf}`),
+      ]);
+      return [...fresh.data.rows, ...back.data.rows].sort((left, right) => left.code.localeCompare(right.code));
+    },
   });
 
   const handOver = useMutation({
-    mutationFn: (what: { id: string; issued: boolean }) =>
-      api.post(`/assets/${what.id}/hand-over`, {
+    mutationFn: async (what: { asset: Asset; issued: boolean }) => {
+      await api.post(`/assets/${what.asset.id}/hand-over`, {
         employeeId,
         issued: what.issued,
         condition,
         note: note || undefined,
-      }),
-    onSuccess: () => {
+      });
+      return what;
+    },
+    onSuccess: (what) => {
       setIssuing(false);
       setReturning(null);
-      setNote("");
-      setPicked("");
+      notify.done(what.issued ? t("issuedToast", { name: what.asset.name }) : t("takenToast", { name: what.asset.name }));
       void cache.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
+  function reset(): void {
+    setFault(null);
+    setCondition("GOOD");
+    setNote("");
+  }
+
+  function openIssue(): void {
+    reset();
+    setPicked("");
+    setIssuing(true);
+  }
+
+  function openTake(one: Asset): void {
+    reset();
+    setReturning(one);
+  }
+
   const free = stock.data ?? [];
+  const chosen = free.find((one) => one.id === picked);
+
+  const columns: Column<Asset>[] = [
+    {
+      id: "asset",
+      header: t("asset"),
+      sortBy: (row) => row.name,
+      cell: (row) => (
+        <span className="flex flex-col">
+          <span>{row.name}</span>
+          <span className="font-mono text-sm text-kumo-subtle">{row.code}</span>
+        </span>
+      ),
+    },
+    { id: "kind", header: t("kind"), sortBy: (row) => row.kind, cell: (row) => row.kind },
+    {
+      id: "serial",
+      header: t("serial"),
+      cell: (row) => (row.serialNo ? <span className="font-mono">{row.serialNo}</span> : common("empty")),
+    },
+  ];
+
+  const conditionItems = Object.fromEntries(CONDITIONS.map((one) => [one, t(`condition${one}`)]));
+  const faultBanner = fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null;
+  const conditionFields = (
+    <>
+      <Select
+        label={t("condition")}
+        hideLabel={false}
+        value={condition}
+        onValueChange={(next) => setCondition(String(next ?? "GOOD") as Condition)}
+        items={conditionItems}
+        className="w-full"
+      />
+      <Input label={t("note")} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
+    </>
+  );
 
   return (
-    <div className="mt-4">
-      {mayWrite ? (
-        <Button
-          type="button"
-          className="mb-3"
-          onClick={() => {
-            setFault(null);
-            setIssuing(true);
-          }}
-        >
-          {t("issue")}
-        </Button>
-      ) : null}
-
-      <div className="rounded-xl border border-(--color-line) bg-(--color-surface)">
-        {held.data?.length ? (
-          <ul className="divide-y divide-(--color-line)">
-            {held.data.map((one) => (
-              <li key={one.id} className="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
-                <button
-                  type="button"
-                  onClick={() => setShowing(one)}
-                  className="text-start font-medium underline hover:no-underline"
-                >
-                  {one.name}
-                </button>
-                <span className="font-mono text-xs text-(--color-muted)">{one.code}</span>
-                <span className="text-xs text-(--color-muted)">{one.kind}</span>
-                {mayWrite ? (
-                  <Button
-                    type="button"
-                    tone="quiet"
-                    size="sm"
-                    className="ms-auto"
-                    onClick={() => {
-                      setFault(null);
-                      setReturning(one);
-                    }}
-                  >
-                    {t("take")}
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="px-4 py-6 text-sm text-(--color-muted)">
-            {held.isPending ? common("loading") : t("heldEmpty")}
-          </p>
-        )}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="m-0 text-lg font-semibold">{t("heldTitle")}</h2>
+        {mayWrite ? (
+          <Button variant="secondary" icon={PlusIcon} onClick={openIssue}>
+            {t("issue")}
+          </Button>
+        ) : null}
       </div>
 
-      <Sheet
-        open={issuing}
-        onClose={() => setIssuing(false)}
-        title={t("issue")}
-        closeLabel={common("close")}
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setFault(null);
-            handOver.mutate({ id: picked, issued: true });
-          }}
-        >
-          <label className="block text-sm font-medium" htmlFor="assetPick">
-            {t("pick")}
-          </label>
-          <Select
-            id="assetPick"
-            required
-            value={picked}
-            onChange={(event) => setPicked(event.target.value)}
-            className="mt-1"
-          >
-            <option value="">{common("empty")}</option>
-            {free.map((one) => (
-              <option key={one.id} value={one.id}>
-                {one.code} · {one.name}
-              </option>
-            ))}
-          </Select>
-          {stock.isSuccess && free.length === 0 ? (
-            <p className="mt-2 text-sm text-(--color-muted)">{t("stockEmpty")}</p>
-          ) : null}
+      <DataTable
+        id="employee-assets"
+        cardLead="asset"
+        columns={columns}
+        rows={held.data}
+        keyOf={(row) => row.id}
+        pending={held.isPending}
+        failed={held.isError}
+        onRetry={() => void held.refetch()}
+        empty={t("heldEmpty")}
+        emptyHint={mayWrite ? t("heldEmptyHint") : undefined}
+        onRowClick={setShowing}
+        rowActions={(row) => [
+          { key: "history", label: t("history"), icon: ClockCounterClockwiseIcon, onSelect: () => setShowing(row) },
+          ...(mayWrite ? [{ key: "take", label: t("take"), icon: ArrowUDownLeftIcon, onSelect: () => openTake(row) }] : []),
+        ]}
+      />
 
-          <label className="mt-4 block text-sm font-medium" htmlFor="assetCondition">
-            {t("condition")}
-          </label>
-          <Select
-            id="assetCondition"
-            value={condition}
-            onChange={(event) => setCondition(event.target.value as Condition)}
-            className="mt-1"
-          >
-            {CONDITIONS.map((one) => (
-              <option key={one} value={one}>
-                {t(`condition${one}`)}
-              </option>
-            ))}
-          </Select>
+      <LayerDialog.Root open={issuing} onOpenChange={setIssuing} dismissDisabled={handOver.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("issue")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("issueLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            {stock.isSuccess && free.length === 0 ? (
+              <Empty
+                size="sm"
+                icon={<PackageIcon size={32} className="text-kumo-inactive" />}
+                title={t("stockEmpty")}
+                description={t("stockEmptyHint")}
+                contents={
+                  <LinkButton href="/assets" variant="secondary">
+                    {t("openRegister")}
+                  </LinkButton>
+                }
+              />
+            ) : (
+              <div className="flex flex-col gap-4">
+                <Select
+                  label={t("pick")}
+                  hideLabel={false}
+                  placeholder={t("pickHint")}
+                  loading={stock.isPending}
+                  value={picked}
+                  onValueChange={(next) => setPicked(String(next ?? ""))}
+                  items={Object.fromEntries(free.map((one) => [one.id, `${one.code} · ${one.name}`]))}
+                  className="w-full"
+                />
+                {conditionFields}
+              </div>
+            )}
+            {faultBanner}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              loading={handOver.isPending}
+              disabled={!chosen}
+              onClick={() => {
+                if (chosen) {
+                  setFault(null);
+                  handOver.mutate({ asset: chosen, issued: true });
+                }
+              }}
+            >
+              {t("issueAction")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
 
-          <label className="mt-4 block text-sm font-medium" htmlFor="assetNote">
-            {t("note")}
-          </label>
-          <Input
-            id="assetNote"
-            maxLength={500}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            className="mt-1"
-          />
-
-          {fault ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {fault}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={!picked || handOver.isPending} className="mt-4">
-            {handOver.isPending ? common("saving") : t("issue")}
-          </Button>
-        </form>
-      </Sheet>
-
-      <Sheet
+      <LayerDialog.Root
         open={returning !== null}
-        onClose={() => setReturning(null)}
-        title={returning ? `${t("take")} · ${returning.name}` : t("take")}
-        closeLabel={common("close")}
+        onOpenChange={(next) => {
+          if (!next) {
+            setReturning(null);
+          }
+        }}
+        dismissDisabled={handOver.isPending}
       >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setFault(null);
-            if (returning) {
-              handOver.mutate({ id: returning.id, issued: false });
-            }
-          }}
-        >
-          <label className="block text-sm font-medium" htmlFor="takeCondition">
-            {t("condition")}
-          </label>
-          <Select
-            id="takeCondition"
-            value={condition}
-            onChange={(event) => setCondition(event.target.value as Condition)}
-            className="mt-1"
-          >
-            {CONDITIONS.map((one) => (
-              <option key={one} value={one}>
-                {t(`condition${one}`)}
-              </option>
-            ))}
-          </Select>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{returning ? t("takeTitle", { name: returning.name }) : t("take")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("takeLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-4">{conditionFields}</div>
+            {faultBanner}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              loading={handOver.isPending}
+              onClick={() => {
+                if (returning) {
+                  setFault(null);
+                  handOver.mutate({ asset: returning, issued: false });
+                }
+              }}
+            >
+              {t("take")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
 
-          <label className="mt-4 block text-sm font-medium" htmlFor="takeNote">
-            {t("note")}
-          </label>
-          <Input
-            id="takeNote"
-            maxLength={500}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            className="mt-1"
-          />
-
-          {fault ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {fault}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={handOver.isPending} className="mt-4">
-            {handOver.isPending ? common("saving") : t("take")}
-          </Button>
-        </form>
-      </Sheet>
-
-      <Sheet
-        open={showing !== null}
-        onClose={() => setShowing(null)}
-        title={showing ? `${showing.code} · ${t("history")}` : t("history")}
-        closeLabel={common("close")}
-      >
-        {history.data?.length ? (
-          <ul className="flex flex-col">
-            {history.data.map((one) => (
-              <li
-                key={one.id}
-                className="flex flex-wrap gap-x-3 gap-y-1 border-b border-(--color-line) py-2 text-sm last:border-0"
-              >
-                <span className="tabular-nums">{format.dateTime(new Date(one.at), "day")}</span>
-                <span className={one.issued ? "text-(--color-warn)" : "text-(--color-ok)"}>
-                  {one.issued ? t("wentOut") : t("cameBack")}
-                </span>
-                {one.condition ? (
-                  <span className="text-(--color-muted)">{t(`condition${one.condition}`)}</span>
-                ) : null}
-                {one.note ? <span className="text-xs text-(--color-muted)">{one.note}</span> : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-(--color-muted)">
-            {history.isPending ? common("loading") : t("historyEmpty")}
-          </p>
-        )}
-      </Sheet>
+      <AssetHistory asset={showing} onClose={() => setShowing(null)} />
     </div>
   );
 }

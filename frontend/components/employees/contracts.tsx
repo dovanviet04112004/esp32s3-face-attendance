@@ -1,18 +1,21 @@
 "use client";
 
+import { Banner, Button, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import { PlusIcon, WarningCircleIcon, XCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useFormatter, useTranslations } from "next-intl";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Sheet } from "@/components/ui/sheet";
+import { DataTable, type Column } from "@/components/tables/data-table";
+import { useNotify } from "@/components/ui/notify";
+import { StatePill, type Tone } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
+import { dayOnly } from "@/lib/format";
 
 const KINDS = ["PROBATION", "FIXED_TERM", "INDEFINITE", "SEASONAL", "INTERNSHIP"] as const;
 const ENDINGS = ["ENDED", "TERMINATED"] as const;
+const TONE: Record<Contract["state"], Tone> = { DRAFT: "waiting", ACTIVE: "good", ENDED: "idle", TERMINATED: "bad" };
 
 type Kind = (typeof KINDS)[number];
 type Ending = (typeof ENDINGS)[number];
@@ -27,10 +30,6 @@ export interface Contract {
   probationEnd: string | null;
 }
 
-function day(value: string | null): string {
-  return value ? value.slice(0, 10) : "";
-}
-
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -38,8 +37,10 @@ function today(): string {
 export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWrite: boolean }) {
   const t = useTranslations("employees");
   const common = useTranslations("common");
+  const format = useFormatter();
   const cache = useQueryClient();
   const faultOf = useFault();
+  const notify = useNotify();
 
   const [adding, setAdding] = useState(false);
   const [ending, setEnding] = useState<Contract | null>(null);
@@ -57,12 +58,12 @@ export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWri
     queryFn: async () => (await api.get<Contract[]>(`/employees/${employeeId}/contracts`)).data,
   });
 
-  function done(): void {
-    setAdding(false);
-    setEnding(null);
-    setNote("");
+  const day = (value: string) => format.dateTime(dayOnly(value), "day");
+
+  function refresh(): void {
     void cache.invalidateQueries({ queryKey: ["contracts", employeeId] });
     void cache.invalidateQueries({ queryKey: ["employees", employeeId] });
+    void cache.invalidateQueries({ queryKey: ["reports", "attention"] });
   }
 
   const add = useMutation({
@@ -75,206 +76,217 @@ export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWri
         endDate: endDate || undefined,
         probationEnd: probationEnd || undefined,
       }),
-    onSuccess: done,
+    onSuccess: () => {
+      setAdding(false);
+      notify.done(t("contractAdded"));
+      refresh();
+    },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
   const close = useMutation({
-    mutationFn: (one: Contract) =>
-      api.patch(`/contracts/${one.id}`, { state, note: note || undefined }),
-    onSuccess: done,
+    mutationFn: (one: Contract) => api.patch(`/contracts/${one.id}`, { state, note: note || undefined }),
+    onSuccess: () => {
+      setEnding(null);
+      notify.done(t("contractClosed"));
+      refresh();
+    },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
-  function submit(event: FormEvent): void {
-    event.preventDefault();
+  function openAdd(): void {
     setFault(null);
-    add.mutate();
+    setKind("PROBATION");
+    setNumber("");
+    setStartDate(today());
+    setEndDate("");
+    setProbationEnd("");
+    setAdding(true);
   }
 
+  function openEnd(one: Contract): void {
+    setFault(null);
+    setState("ENDED");
+    setNote("");
+    setEnding(one);
+  }
+
+  const columns: Column<Contract>[] = [
+    { id: "kind", header: t("contractKind"), sortBy: (row) => row.kind, cell: (row) => t(`contract${row.kind}`) },
+    {
+      id: "span",
+      header: t("contractSpan"),
+      sortBy: (row) => row.startDate,
+      cell: (row) => (
+        <span className="whitespace-nowrap tabular-nums">
+          {day(row.startDate)} → {row.endDate ? day(row.endDate) : t("contractOpen")}
+        </span>
+      ),
+    },
+    {
+      id: "state",
+      header: t("status"),
+      sortBy: (row) => row.state,
+      cell: (row) => <StatePill tone={TONE[row.state]}>{t(`contract${row.state}`)}</StatePill>,
+    },
+    {
+      id: "number",
+      header: t("contractNumber"),
+      cell: (row) => (row.number ? <span className="font-mono whitespace-nowrap">{row.number}</span> : common("empty")),
+    },
+    {
+      id: "probation",
+      header: t("probationEnds"),
+      cell: (row) => (row.probationEnd ? <span className="whitespace-nowrap tabular-nums">{day(row.probationEnd)}</span> : common("empty")),
+    },
+  ];
+
+  const faultBanner = fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null;
+
   return (
-    <div className="mt-4">
-      {mayWrite ? (
-        <Button type="button" className="mb-3" onClick={() => setAdding(true)}>
-          {t("contractAdd")}
-        </Button>
-      ) : null}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="m-0 text-lg font-semibold">{t("contractsTitle")}</h2>
+        {mayWrite ? (
+          <Button variant="secondary" icon={PlusIcon} onClick={openAdd}>
+            {t("contractAdd")}
+          </Button>
+        ) : null}
+      </div>
 
-      {rows.data?.length ? (
-        <ul className="flex flex-col gap-2">
-          {rows.data.map((one) => (
-            <li
-              key={one.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-(--color-line) bg-(--color-surface) p-3 text-sm"
+      <DataTable
+        id="employee-contracts"
+        cardLead="kind"
+        columns={columns}
+        rows={rows.data}
+        keyOf={(row) => row.id}
+        pending={rows.isPending}
+        failed={rows.isError}
+        onRetry={() => void rows.refetch()}
+        empty={t("contractsEmpty")}
+        emptyHint={mayWrite ? t("contractsEmptyHint") : undefined}
+        emptyAction={
+          mayWrite ? (
+            <Button variant="secondary" icon={PlusIcon} onClick={openAdd}>
+              {t("contractAdd")}
+            </Button>
+          ) : undefined
+        }
+        rowActions={
+          mayWrite
+            ? (row) =>
+                row.state === "ACTIVE" || row.state === "DRAFT"
+                  ? [{ key: "end", label: t("contractEndAction"), icon: XCircleIcon, danger: true, onSelect: () => openEnd(row) }]
+                  : []
+            : undefined
+        }
+      />
+
+      <LayerDialog.Root open={adding} onOpenChange={setAdding} dismissDisabled={add.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("contractAdd")}</LayerDialog.Title>
+          <LayerDialog.Body>
+            <form
+              id="contract-add"
+              className="grid items-start gap-4 sm:grid-cols-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setFault(null);
+                add.mutate();
+              }}
             >
-              <span className="font-medium">{t(`contract${one.kind}`)}</span>
-              <span className="text-(--color-muted)">{t(`contract${one.state}`)}</span>
-              {one.number ? <span className="font-mono text-xs">{one.number}</span> : null}
-              <span className="tabular-nums">
-                {day(one.startDate)} → {one.endDate ? day(one.endDate) : t("contractOpen")}
-              </span>
-              {one.probationEnd ? (
-                <span className="text-xs text-(--color-muted)">
-                  {t("probationEnds")} {day(one.probationEnd)}
-                </span>
-              ) : null}
-              {mayWrite && (one.state === "ACTIVE" || one.state === "DRAFT") ? (
-                <Button
-                  type="button"
-                  tone="quiet"
-                  size="sm"
-                  className="ms-auto"
-                  onClick={() => {
-                    setFault(null);
-                    setEnding(one);
-                  }}
-                >
-                  {t("contractEnd")}
-                </Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-(--color-muted)">
-          {rows.isPending ? common("loading") : t("contractsEmpty")}
-        </p>
-      )}
+              <Select
+                label={t("contractKind")}
+                hideLabel={false}
+                value={kind}
+                onValueChange={(next) => setKind(String(next ?? "PROBATION") as Kind)}
+                items={Object.fromEntries(KINDS.map((one) => [one, t(`contract${one}`)]))}
+                className="w-full"
+              />
+              <Input label={t("contractNumber")} maxLength={64} value={number} onChange={(event) => setNumber(event.target.value)} />
+              <Input
+                label={t("contractStart")}
+                type="date"
+                required
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+              />
+              <Input
+                label={t("contractEndDate")}
+                description={t("contractEndHint")}
+                type="date"
+                min={startDate}
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+              />
+              <Input
+                label={t("probationEnds")}
+                type="date"
+                min={startDate}
+                value={probationEnd}
+                onChange={(event) => setProbationEnd(event.target.value)}
+              />
+            </form>
+            {faultBanner}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary type="submit" form="contract-add" loading={add.isPending}>
+              {t("contractAdd")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
 
-      <Sheet
-        open={adding}
-        onClose={() => setAdding(false)}
-        title={t("contractAdd")}
-        closeLabel={common("close")}
-      >
-        <form onSubmit={submit}>
-          <label className="block text-sm font-medium" htmlFor="contractKind">
-            {t("contractKind")}
-          </label>
-          <Select
-            id="contractKind"
-            value={kind}
-            onChange={(event) => setKind(event.target.value as Kind)}
-            className="mt-1"
-          >
-            {KINDS.map((one) => (
-              <option key={one} value={one}>
-                {t(`contract${one}`)}
-              </option>
-            ))}
-          </Select>
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="contractNumber">
-            {t("contractNumber")}
-          </label>
-          <Input
-            id="contractNumber"
-            maxLength={64}
-            value={number}
-            onChange={(event) => setNumber(event.target.value)}
-            className="mt-1"
-          />
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="contractStart">
-            {t("contractStart")}
-          </label>
-          <Input
-            id="contractStart"
-            type="date"
-            required
-            value={startDate}
-            onChange={(event) => setStartDate(event.target.value)}
-            className="mt-1"
-          />
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="contractEnd">
-            {t("contractEndDate")}
-          </label>
-          <Input
-            id="contractEnd"
-            type="date"
-            min={startDate}
-            value={endDate}
-            onChange={(event) => setEndDate(event.target.value)}
-            className="mt-1"
-          />
-          <p className="mt-1 text-xs text-(--color-muted)">{t("contractEndHint")}</p>
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="contractProbation">
-            {t("probationEnds")}
-          </label>
-          <Input
-            id="contractProbation"
-            type="date"
-            min={startDate}
-            value={probationEnd}
-            onChange={(event) => setProbationEnd(event.target.value)}
-            className="mt-1"
-          />
-
-          {fault ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {fault}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={add.isPending} className="mt-4">
-            {add.isPending ? common("saving") : common("save")}
-          </Button>
-        </form>
-      </Sheet>
-
-      <Sheet
+      <LayerDialog.Alert
         open={ending !== null}
-        onClose={() => setEnding(null)}
-        title={t("contractEnd")}
-        closeLabel={common("close")}
+        onOpenChange={(next) => {
+          if (!next) {
+            setEnding(null);
+          }
+        }}
+        dismissDisabled={close.isPending}
       >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setFault(null);
-            if (ending) {
-              close.mutate(ending);
-            }
-          }}
-        >
-          <label className="block text-sm font-medium" htmlFor="contractState">
-            {t("contractHow")}
-          </label>
-          <Select
-            id="contractState"
-            value={state}
-            onChange={(event) => setState(event.target.value as Ending)}
-            className="mt-1"
-          >
-            {ENDINGS.map((one) => (
-              <option key={one} value={one}>
-                {t(`contract${one}`)}
-              </option>
-            ))}
-          </Select>
-
-          <label className="mt-4 block text-sm font-medium" htmlFor="contractNote">
-            {t("contractNote")}
-          </label>
-          <Input
-            id="contractNote"
-            maxLength={500}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            className="mt-1"
-          />
-
-          {fault ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {fault}
-            </p>
-          ) : null}
-          <Button type="submit" disabled={close.isPending} className="mt-4">
-            {close.isPending ? common("saving") : common("save")}
-          </Button>
-        </form>
-      </Sheet>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("contractEndAction")}</LayerDialog.Title>
+          <LayerDialog.Description>
+            {ending
+              ? t("contractEndLead", {
+                  kind: t(`contract${ending.kind}`),
+                  number: ending.number ?? common("empty"),
+                  from: day(ending.startDate),
+                })
+              : null}
+          </LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-4">
+              <Select
+                label={t("contractHow")}
+                hideLabel={false}
+                value={state}
+                onValueChange={(next) => setState(String(next ?? "ENDED") as Ending)}
+                items={Object.fromEntries(ENDINGS.map((one) => [one, t(`contract${one}`)]))}
+                className="w-full"
+              />
+              <Input label={t("contractNote")} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
+            </div>
+            {faultBanner}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              variant="destructive"
+              loading={close.isPending}
+              onClick={() => {
+                if (ending) {
+                  setFault(null);
+                  close.mutate(ending);
+                }
+              }}
+            >
+              {t("contractEndAction")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
     </div>
   );
 }

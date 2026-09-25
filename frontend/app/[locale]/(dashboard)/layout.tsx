@@ -1,10 +1,10 @@
 "use client";
 
-import { Sidebar as KumoSidebar } from "@cloudflare/kumo";
+import { Sidebar as KumoSidebar, SkeletonLine } from "@cloudflare/kumo";
 import { useTranslations } from "next-intl";
 import { useEffect, type ReactNode } from "react";
 
-import { Breadcrumb } from "@/components/nav/breadcrumb";
+import { SectionBar } from "@/components/nav/section-bar";
 import { Sidebar } from "@/components/nav/sidebar";
 import { TabBar } from "@/components/nav/tab-bar";
 import { TopBar } from "@/components/nav/top-bar";
@@ -15,13 +15,54 @@ import { allows, homeFor, ownerOf } from "@/lib/nav";
 import { startOutbox } from "@/lib/outbox";
 import { useFeedConnection } from "@/lib/ws";
 
+const kFrame = "bg-kumo-canvas [--sidebar-bg:var(--color-kumo-canvas)]";
+const kBlock = "mx-auto w-full max-w-(--width-shell) px-6 pt-6 pb-24 md:px-8 md:py-8 lg:px-10 lg:py-9";
+
+/** The frame as it will be, drawn in skeleton while the refresh cookie buys a session back. */
+function Opening() {
+  const t = useTranslations("nav");
+  const app = useTranslations("app");
+  return (
+    <KumoSidebar.Provider className={kFrame}>
+      <KumoSidebar className="md:sticky md:top-0 md:h-svh md:self-start">
+        <KumoSidebar.Header>
+          <img src="/logo.svg" alt="" width={24} height={24} className="shrink-0" />
+          <p className="min-w-0 truncate ps-2 text-base font-semibold group-data-[state=collapsed]/sidebar:hidden">{app("name")}</p>
+        </KumoSidebar.Header>
+        <KumoSidebar.Content>
+          <KumoSidebar.Loading label={t("opening")} />
+        </KumoSidebar.Content>
+      </KumoSidebar>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-[58px] items-center gap-3 border-b border-kumo-line bg-kumo-canvas px-4">
+          <img src="/logo.svg" alt="" width={22} height={22} className="shrink-0 md:hidden" />
+          <SkeletonLine minWidth={120} maxWidth={200} className="hidden md:block" />
+          <SkeletonLine minWidth={180} maxWidth={320} className="ms-auto" />
+        </header>
+        <main aria-busy className="flex-1">
+          <div className={kBlock}>
+            <div className="flex flex-col gap-3">
+              <SkeletonLine minWidth={160} maxWidth={260} blockHeight={28} />
+              <SkeletonLine minWidth={240} maxWidth={420} />
+            </div>
+            <div className="mt-8 flex flex-col gap-4 rounded-lg bg-kumo-base p-4 ring ring-kumo-line">
+              {Array.from({ length: 6 }, (_, at) => (
+                <SkeletonLine key={at} minWidth={200} maxWidth={900} />
+              ))}
+            </div>
+          </div>
+        </main>
+      </div>
+    </KumoSidebar.Provider>
+  );
+}
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("nav");
   const app = useTranslations("app");
   const router = useRouter();
   const here = usePathname();
-  const { accessToken, role, employeeId, clear } = useSession();
+  const { accessToken, role, employeeId } = useSession();
   const hasRecord = employeeId !== null;
   useFeedConnection();
 
@@ -57,24 +98,25 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }, [accessToken, role, hasRecord, here, router]);
 
   if (!accessToken) {
-    return <main className="grid min-h-screen place-items-center text-sm">{t("opening")}</main>;
+    return <Opening />;
   }
 
   return (
-    <KumoSidebar.Provider>
+    // Kumo's chrome is one colour with the page; cards and tables are the lifted surface (KEHOACH 9.12).
+    <KumoSidebar.Provider className={kFrame}>
       <title>{tab}</title>
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:start-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-(--color-accent) focus:px-4 focus:py-2 focus:text-sm focus:text-(--color-on-fill)"
+        className="sr-only focus:not-sr-only focus:fixed focus:start-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-kumo-brand focus:px-4 focus:py-2 focus:text-base focus:text-white"
       >
         {t("skip")}
       </a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
+        <SectionBar />
         <main id="main" className="flex-1">
-          <div className="mx-auto w-full max-w-(--width-shell) px-6 pt-6 pb-24 md:px-8 md:py-8 lg:px-10 lg:py-9">
-            <Breadcrumb />
+          <div className={kBlock}>
             {children}
           </div>
         </main>

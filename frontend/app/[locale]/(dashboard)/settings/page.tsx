@@ -1,24 +1,41 @@
 "use client";
 
+import { Button, LayerCard, LinkButton, TableOfContents, Tabs, useTableOfContentsActiveId } from "@cloudflare/kumo";
+import { EnvelopeSimpleIcon, KeyIcon, SignOutIcon } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useTransition } from "react";
+import { useTransition, type ReactNode } from "react";
 
+import { useSignOut } from "@/components/nav/account-menu";
 import { NoticePreferences } from "@/components/notifications/notice-prefs";
 import { PushSwitch } from "@/components/notifications/push-switch";
-import { Button } from "@/components/ui/button";
+import { useNotify } from "@/components/ui/notify";
+import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { Link, usePathname, useRouter } from "@/i18n/navigation";
+import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
 import { api } from "@/lib/api";
 import { useSession, type Role } from "@/lib/auth";
-import { cn } from "@/lib/cn";
-import { useFault } from "@/lib/fault";
 
 interface OpenedAccount {
   employeeCode: string;
   email: string;
   role: Role;
+}
+
+// The top bar is 58 px and sticks, so a section scrolled to lands just under it.
+const kTopBarPx = 72;
+
+function Section({ id, title, lead, children }: { id: string; title: string; lead?: string; children: ReactNode }) {
+  return (
+    <LayerCard id={id} className="scroll-mt-20">
+      <LayerCard.Secondary>{title}</LayerCard.Secondary>
+      <LayerCard.Primary className="flex flex-col items-start gap-3">
+        {lead ? <p className="text-kumo-subtle">{lead}</p> : null}
+        {children}
+      </LayerCard.Primary>
+    </LayerCard>
+  );
 }
 
 export default function SettingsPage() {
@@ -29,159 +46,137 @@ export default function SettingsPage() {
   const locale = useLocale();
   const here = usePathname();
   const router = useRouter();
+  const notify = useNotify();
   const role = useSession((s) => s.role);
-  const signOut = useSession((s) => s.signOut);
-  const faultOf = useFault();
+  const leaving = useSignOut();
   const [moving, startMoving] = useTransition();
-
-  // The cookie dies at the server, the store here, and the page goes to the
-  // form: a half-done sign-out leaves somebody looking signed in.
-  const leaving = useMutation({
-    mutationFn: async () => {
-      await api.post("/auth/logout").catch(() => undefined);
-    },
-    onSuccess: () => {
-      signOut();
-      router.replace("/login");
-    },
-  });
 
   const provision = useMutation({
     mutationFn: async () =>
       (await api.post<{ accounts: OpenedAccount[]; waiting: number }>("/users/provision")).data,
+    onSuccess: (done) => notify.done(t("provisionDone", { count: done.accounts.length })),
+    onError: notify.failed,
   });
 
-  function choose(next: Locale) {
-    if (next === locale) {
+  const sections = [
+    { id: "language", title: t("languageTitle") },
+    { id: "theme", title: t("themeTitle") },
+    { id: "push", title: notices("pushTitle") },
+    { id: "notices", title: notices("prefsTitle") },
+    ...(role === "ADMIN" ? [{ id: "provision", title: t("provisionTitle") }] : []),
+    { id: "account", title: t("accountTitle") },
+  ];
+  const { activeId, selectSection } = useTableOfContentsActiveId({ ids: sections.map((one) => one.id), offset: kTopBarPx });
+
+  function choose(next: string) {
+    if (next === locale || !routing.locales.includes(next as Locale)) {
       return;
     }
     // Same page, other language: the locale rides on the URL, so this is a move.
-    startMoving(() => router.replace(here, { locale: next }));
+    startMoving(() => router.replace(here, { locale: next as Locale }));
   }
 
   return (
-    <section className="w-full max-w-(--width-read)">
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
+    <>
+      <PageHeader title={t("title")} description={t("lead")} />
+      <PageLayout
+        aside={
+          <div className="hidden md:block">
+            <AsideCard title={t("onThisPage")}>
+              <TableOfContents>
+                <TableOfContents.List>
+                  {sections.map((one) => (
+                    <TableOfContents.Item
+                      key={one.id}
+                      href={`#${one.id}`}
+                      active={(activeId ?? sections[0].id) === one.id}
+                      onClick={() => selectSection(one.id)}
+                    >
+                      {one.title}
+                    </TableOfContents.Item>
+                  ))}
+                </TableOfContents.List>
+              </TableOfContents>
+            </AsideCard>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-6">
+          <Section id="language" title={t("languageTitle")} lead={t("languageLead")}>
+            <Tabs
+              variant="segmented"
+              value={locale}
+              onValueChange={choose}
+              tabs={routing.locales.map((code) => ({
+                value: code,
+                label: (
+                  <span lang={code} className={moving ? "opacity-60" : undefined}>
+                    {t(code)}
+                  </span>
+                ),
+              }))}
+            />
+          </Section>
 
-      <div className="mt-6 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-        <h2 className="text-sm font-medium">{t("languageTitle")}</h2>
-        <p className="mt-1 text-sm text-(--color-muted)">{t("languageLead")}</p>
-        <div className="mt-4 inline-flex rounded-lg border border-(--color-line) p-1" role="group">
-          {routing.locales.map((code) => (
-            <button
-              key={code}
-              type="button"
-              lang={code}
-              aria-current={code === locale}
-              disabled={moving}
-              onClick={() => choose(code)}
-              className={cn(
-                "rounded-md px-4 py-1.5 text-sm disabled:opacity-60 pointer-coarse:min-h-11",
-                code === locale
-                  ? "bg-(--color-accent) text-(--color-on-fill)"
-                  : "text-(--color-muted) hover:bg-(--color-ground)",
-              )}
-            >
-              {t(code)}
-            </button>
-          ))}
-        </div>
-      </div>
+          <Section id="theme" title={t("themeTitle")} lead={t("themeLead")}>
+            <ThemeToggle />
+          </Section>
 
-      <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-        <h2 className="text-sm font-medium">{t("themeTitle")}</h2>
-        <p className="mt-1 text-sm text-(--color-muted)">{t("themeLead")}</p>
-        <div className="mt-4">
-          <ThemeToggle />
-        </div>
-      </div>
+          <Section id="push" title={notices("pushTitle")} lead={notices("pushLead")}>
+            <PushSwitch />
+          </Section>
 
-      <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-        <h2 className="text-sm font-medium">{notices("pushTitle")}</h2>
-        <p className="mt-1 text-sm text-(--color-muted)">{notices("pushLead")}</p>
-        <div className="mt-4">
-          <PushSwitch />
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-        <h2 className="text-sm font-medium">{notices("prefsTitle")}</h2>
-        <p className="mt-1 text-sm text-(--color-muted)">{notices("prefsLead")}</p>
-        <div className="mt-4">
-          <NoticePreferences />
-        </div>
-      </div>
-
-      {role === "ADMIN" ? (
-        <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-          <h2 className="text-sm font-medium">{t("provisionTitle")}</h2>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("provisionLead")}</p>
-          <Button
-            type="button"
-            className="mt-4"
-            disabled={provision.isPending}
-            onClick={() => provision.mutate()}
-          >
-            {provision.isPending ? t("provisionRunning") : t("provisionRun")}
-          </Button>
-
-          {provision.isError ? (
-            <p role="alert" className="mt-3 text-sm text-(--color-danger)">
-              {faultOf(provision.error)}
-            </p>
-          ) : null}
-
-          {provision.data?.accounts.length === 0 ? (
-            <p className="mt-3 text-sm text-(--color-muted)">{t("provisionNone")}</p>
-          ) : null}
-
-          {provision.data?.accounts.length ? (
-            <div className="mt-3">
-              <p className="text-sm text-(--color-warn)">{t("provisionOnce")}</p>
-              {provision.data.waiting > 0 ? (
-                <p className="mt-1 text-sm text-(--color-muted)">
-                  {t("provisionWaiting", { count: provision.data.waiting })}
-                </p>
-              ) : null}
-              <ul className="mt-2 flex flex-col gap-1 font-mono text-xs">
-                {provision.data.accounts.map((one) => (
-                  <li key={one.email} className="flex flex-wrap gap-x-3">
-                    <span className="min-w-24">{one.employeeCode}</span>
-                    <span className="min-w-48 flex-1 truncate">{one.email}</span>
-                    <span className="text-(--color-muted)">{roleName(one.role)}</span>
-                  </li>
-                ))}
-              </ul>
+          <Section id="notices" title={notices("prefsTitle")} lead={notices("prefsLead")}>
+            <div className="w-full">
+              <NoticePreferences />
             </div>
+          </Section>
+
+          {role === "ADMIN" ? (
+            <Section id="provision" title={t("provisionTitle")} lead={t("provisionLead")}>
+              <Button variant="secondary" icon={EnvelopeSimpleIcon} loading={provision.isPending} onClick={() => provision.mutate()}>
+                {t("provisionRun")}
+              </Button>
+              {provision.data?.accounts.length === 0 ? <p className="text-kumo-subtle">{t("provisionNone")}</p> : null}
+              {provision.data?.accounts.length ? (
+                <div className="flex w-full flex-col gap-2">
+                  <p>{t("provisionOnce")}</p>
+                  {provision.data.waiting > 0 ? (
+                    <p className="text-kumo-warning">{t("provisionWaiting", { count: provision.data.waiting })}</p>
+                  ) : null}
+                  <ul className="flex flex-col font-mono text-sm">
+                    {provision.data.accounts.map((one) => (
+                      <li key={one.email} className="flex flex-wrap gap-x-3 border-b border-kumo-hairline py-1.5 last:border-0">
+                        <span className="min-w-20">{one.employeeCode}</span>
+                        <span className="min-w-0 flex-1 truncate">{one.email}</span>
+                        <span className="font-sans text-kumo-subtle">{roleName(one.role)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </Section>
           ) : null}
-        </div>
-      ) : null}
 
-      <div className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-        <h2 className="text-sm font-medium">{t("accountTitle")}</h2>
-        <p className="mt-2 text-sm text-(--color-muted)">
-          {t("role")}: <span className="text-(--color-ink)">{role ? roleName(role) : "—"}</span>
-        </p>
-        <div className="mt-4 border-t border-(--color-line) pt-4">
-          <h3 className="text-sm font-medium">{t("passwordTitle")}</h3>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("passwordLead")}</p>
-          <Link href="/change-password" className="mt-3 inline-block">
-            <Button type="button" tone="quiet">
-              {t("passwordGo")}
-            </Button>
-          </Link>
+          <Section id="account" title={t("accountTitle")}>
+            <div className="w-full">
+              <Facts rows={[[t("role"), role ? roleName(role) : nav("account")]]} />
+            </div>
+            <div className="flex w-full flex-col gap-3 border-t border-kumo-hairline pt-3">
+              <p className="font-medium">{t("passwordTitle")}</p>
+              <p className="text-kumo-subtle">{t("passwordLead")}</p>
+              <div className="flex flex-wrap gap-2">
+                <LinkButton href="/change-password" variant="secondary" icon={KeyIcon}>
+                  {t("passwordGo")}
+                </LinkButton>
+                <Button variant="secondary-destructive" icon={SignOutIcon} loading={leaving.isPending} onClick={() => leaving.mutate()}>
+                  {nav("signOut")}
+                </Button>
+              </div>
+            </div>
+          </Section>
         </div>
-
-        <Button
-          type="button"
-          tone="quiet"
-          className="mt-4"
-          disabled={leaving.isPending}
-          onClick={() => leaving.mutate()}
-        >
-          {leaving.isPending ? nav("signingOut") : nav("signOut")}
-        </Button>
-      </div>
-    </section>
+      </PageLayout>
+    </>
   );
 }

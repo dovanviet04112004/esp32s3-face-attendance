@@ -3,9 +3,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
-import { Button } from "@/components/ui/button";
-import { Empty, Failed } from "@/components/ui/empty";
-import { SkeletonRows } from "@/components/ui/skeleton";
+import { DataTable, type Column } from "@/components/tables/data-table";
 import { api } from "@/lib/api";
 
 interface Named {
@@ -17,6 +15,7 @@ interface Named {
 interface GapPage {
   rows: Gap[];
   total: number;
+  totalIsExact?: boolean;
   next: string | null;
 }
 
@@ -31,8 +30,8 @@ interface Gap {
 /** Who is short of a required paper. A subtraction, so it needs no upkeep. */
 export function FileGaps() {
   const t = useTranslations("documents");
-
   const common = useTranslations("common");
+
   const gaps = useInfiniteQuery({
     queryKey: ["personnel-files", "gaps"],
     initialPageParam: "",
@@ -43,55 +42,65 @@ export function FileGaps() {
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
-  const rows = gaps.data?.pages.flatMap((one) => one.rows) ?? [];
+  const rows = gaps.data?.pages.flatMap((one) => one.rows);
+  const first = gaps.data?.pages[0];
 
-  if (gaps.isError) {
-    return <Failed onRetry={() => gaps.refetch()} />;
-  }
-  if (gaps.isPending) {
-    return <SkeletonRows rows={3} columns={3} />;
-  }
-  if (rows.length === 0) {
-    return <Empty title={t("noGaps")} hint={t("noGapsHint")} />;
-  }
+  const columns: Column<Gap>[] = [
+    {
+      id: "person",
+      header: t("person"),
+      sticky: true,
+      sortBy: (row) => row.fullName,
+      cell: (row) => (
+        <span className="flex flex-col">
+          <span>{row.fullName}</span>
+          <span className="font-mono text-sm text-kumo-subtle">{row.code}</span>
+        </span>
+      ),
+    },
+    {
+      id: "missing",
+      header: t("missing"),
+      sortBy: (row) => row.missing.length,
+      cell: (row) => (row.missing.length > 0 ? row.missing.map((one) => one.name).join(", ") : common("empty")),
+    },
+    {
+      id: "expired",
+      header: t("expired"),
+      sortBy: (row) => row.expired.length,
+      cell: (row) =>
+        row.expired.length > 0 ? (
+          <span className="text-kumo-warning">{row.expired.map((one) => one.name).join(", ")}</span>
+        ) : (
+          common("empty")
+        ),
+    },
+  ];
 
   return (
-    <ul className="flex flex-col gap-2">
-      {rows.map((row) => (
-        <li
-          key={row.employeeId}
-          className="rounded-xl border border-(--color-line) bg-(--color-surface) p-3"
-        >
-          <p className="text-sm font-medium">
-            {row.fullName} <span className="text-(--color-muted)">· {row.code}</span>
-          </p>
-          {row.missing.length > 0 ? (
-            <p className="mt-1 text-sm">
-              <span className="text-(--color-muted)">{t("missing")}: </span>
-              {row.missing.map((one) => one.name).join(" · ")}
-            </p>
-          ) : null}
-          {row.expired.length > 0 ? (
-            <p className="mt-1 text-sm text-(--color-warn)">
-              {t("expired")}:{" "}
-              {row.expired.map((one) => `${one.name} (${one.expiresAt})`).join(" · ")}
-            </p>
-          ) : null}
-        </li>
-      ))}
-      {gaps.hasNextPage ? (
-        <li className="flex justify-center">
-          <Button
-            type="button"
-            tone="quiet"
-            size="sm"
-            disabled={gaps.isFetchingNextPage}
-            onClick={() => void gaps.fetchNextPage()}
-          >
-            {gaps.isFetchingNextPage ? common("loading") : common("loadMore")}
-          </Button>
-        </li>
-      ) : null}
-    </ul>
+    <DataTable
+      id="file-gaps"
+      cardLead="person"
+      columns={columns}
+      rows={rows}
+      keyOf={(row) => String(row.employeeId)}
+      pending={gaps.isPending}
+      failed={gaps.isError}
+      onRetry={() => void gaps.refetch()}
+      empty={t("noGaps")}
+      emptyHint={t("noGapsHint")}
+      rowHref={(row) => `/employees/${row.employeeId}?tab=files`}
+      paging={
+        first && first.total > 0
+          ? {
+              shown: rows?.length ?? 0,
+              total: first.total,
+              exact: first.totalIsExact,
+              onMore: gaps.hasNextPage ? () => void gaps.fetchNextPage() : undefined,
+              loading: gaps.isFetchingNextPage,
+            }
+          : undefined
+      }
+    />
   );
 }

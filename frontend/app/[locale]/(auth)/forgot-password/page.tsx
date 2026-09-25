@@ -1,17 +1,14 @@
 "use client";
 
+import { Button, Input, LayerCard, Link, LinkButton } from "@cloudflare/kumo";
 import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const t = useTranslations("forgot");
-  const app = useTranslations("app");
   const [email, setEmail] = useState("");
   const [asked, setAsked] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,56 +32,46 @@ export default function ForgotPasswordPage() {
 
   if (asked) {
     return (
-      <main className="grid min-h-screen place-items-center px-4">
-        <title>{app("name")}</title>
-        <div className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8 text-center">
-          <EnvelopeSimpleIcon className="mx-auto size-8 text-(--color-ok)" aria-hidden />
-          <h1 className="mt-3 text-xl font-semibold">{t("sentTitle")}</h1>
-          <p className="mt-1 text-sm text-(--color-muted)">{t("sentHint")}</p>
-          <Link href="/login" className="mt-6 block">
-            <Button tone="quiet" className="w-full">
+      <LayerCard>
+        <LayerCard.Primary className="p-6 sm:p-8">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <EnvelopeSimpleIcon size={40} weight="fill" className="text-kumo-success" aria-hidden />
+            <h1 className="m-0 text-2xl font-semibold">{t("sentTitle")}</h1>
+            <p className="text-kumo-subtle">{t("sentHint")}</p>
+            <LinkButton href="/login" variant="secondary" className="mt-3 w-full justify-center">
               {t("toLogin")}
-            </Button>
-          </Link>
-        </div>
-      </main>
+            </LinkButton>
+          </div>
+        </LayerCard.Primary>
+      </LayerCard>
     );
   }
 
   return (
-    <main className="grid min-h-screen place-items-center px-4">
-      <title>{app("name")}</title>
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8"
-      >
-        <h1 className="text-xl font-semibold">{app("name")}</h1>
-        <p className="mt-1 text-sm text-(--color-muted)">{t("lead")}</p>
-
-        <label className="mt-6 block text-sm font-medium" htmlFor="email">
-          {t("email")}
-        </label>
-        <Input
-          id="email"
-          type="email"
-          autoComplete="username"
-          autoFocus
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          className="mt-1"
-        />
-
-        <Button type="submit" disabled={busy} className="mt-6 w-full">
-          {busy ? t("asking") : t("submit")}
-        </Button>
-
-        <p className="mt-4 text-center text-sm text-(--color-muted)">
-          <Link href="/login" className="underline">
-            {t("toLogin")}
-          </Link>
-        </p>
-      </form>
-    </main>
+    <>
+      <LayerCard>
+        <LayerCard.Primary className="p-6 sm:p-8">
+          <form onSubmit={submit} className="flex flex-col gap-5">
+            <div className="flex flex-col gap-1">
+              <h1 className="m-0 text-2xl font-semibold">{t("title")}</h1>
+              <p className="text-kumo-subtle">{t("lead")}</p>
+            </div>
+            <Input
+              label={t("email")}
+              type="email"
+              autoComplete="username"
+              autoFocus
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+            <Button type="submit" variant="primary" loading={busy} className="w-full justify-center">
+              {t("submit")}
+            </Button>
+          </form>
+        </LayerCard.Primary>
+      </LayerCard>
+      <p className="text-center"><Link href="/login">{t("toLogin")}</Link></p>
+    </>
   );
 }

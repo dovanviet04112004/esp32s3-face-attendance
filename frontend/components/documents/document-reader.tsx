@@ -1,17 +1,16 @@
 "use client";
 
+import { LayerDialog } from "@cloudflare/kumo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
+import { DataTable, type Column } from "@/components/tables/data-table";
+import { useNotify } from "@/components/ui/notify";
 import { StatePill } from "@/components/ui/pill";
-import { Button } from "@/components/ui/button";
-import { Empty, Failed } from "@/components/ui/empty";
-import { SkeletonRows } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/cn";
 
-interface ToRead {
+export interface ToRead {
   documentId: string;
   code: string;
   title: string;
@@ -23,95 +22,109 @@ interface ToRead {
   ackAt: string | null;
 }
 
-/** What somebody has to read, with the signature that binds to this wording. */
-export function DocumentReader() {
+export type ReadFilter = "unread" | "signed" | "";
+
+export const MY_DOCUMENTS_KEY = ["me", "documents"] as const;
+
+/** What this person has to read; one cache entry feeds the reader and the page's counts. */
+export function useMyDocuments() {
+  return useQuery({
+    queryKey: MY_DOCUMENTS_KEY,
+    queryFn: async () => (await api.get<ToRead[]>("/me/documents")).data,
+  });
+}
+
+export function DocumentReader({ only = "" }: { only?: ReadFilter }) {
   const t = useTranslations("documents");
   const common = useTranslations("common");
   const format = useFormatter();
   const cache = useQueryClient();
-  const [open, setOpen] = useState<string | null>(null);
-
-  const mine = useQuery({
-    queryKey: ["me", "documents"],
-    queryFn: async () => (await api.get<ToRead[]>("/me/documents")).data,
-  });
+  const notify = useNotify();
+  const mine = useMyDocuments();
+  const [open, setOpen] = useState<ToRead | null>(null);
 
   const sign = useMutation({
     mutationFn: (versionId: string) => api.post(`/me/documents/${versionId}/ack`),
-    onSuccess: () => void cache.invalidateQueries({ queryKey: ["me", "documents"] }),
+    onSuccess: () => {
+      notify.done(t("signedDone", { title: open?.title ?? "" }));
+      setOpen(null);
+      void cache.invalidateQueries({ queryKey: MY_DOCUMENTS_KEY });
+    },
+    onError: notify.failed,
   });
 
-  if (mine.isError) {
-    return <Failed onRetry={() => mine.refetch()} />;
-  }
-  if (mine.isPending) {
-    return <SkeletonRows rows={3} columns={2} />;
-  }
-  if (mine.data.length === 0) {
-    return <Empty title={t("noneToRead")} hint={t("noneToReadHint")} />;
-  }
+  const rows = mine.data?.filter((row) => (only === "unread" ? row.ackAt === null : only === "signed" ? row.ackAt !== null : true));
+
+  const columns: Column<ToRead>[] = [
+    {
+      id: "title",
+      header: t("docTitle"),
+      sortBy: (row) => row.title,
+      cell: (row) => (
+        <span className="flex flex-col">
+          <span className="font-medium">{row.title}</span>
+          {row.summary ? <span className="line-clamp-2 text-kumo-subtle">{row.summary}</span> : null}
+        </span>
+      ),
+    },
+    {
+      id: "version",
+      header: t("version"),
+      sortBy: (row) => row.publishedAt,
+      cell: (row) => (
+        <span className="tabular-nums">
+          {t("versionLine", { version: row.version })} · {format.dateTime(new Date(row.publishedAt), "day")}
+        </span>
+      ),
+    },
+    {
+      id: "state",
+      header: t("state"),
+      sortBy: (row) => (row.ackAt === null ? 0 : 1),
+      cell: (row) => (
+        <StatePill tone={row.ackAt === null ? "waiting" : "good"}>{row.ackAt === null ? t("unread") : t("signed")}</StatePill>
+      ),
+    },
+  ];
 
   return (
-    <ul className="flex flex-col gap-2">
-      {mine.data.map((row) => {
-        const showing = open === row.versionId;
-        return (
-          <li
-            key={row.versionId}
-            className={cn(
-              "rounded-xl border bg-(--color-surface) p-4",
-              row.ackAt === null ? "border-(--color-warn)" : "border-(--color-line)",
-            )}
-          >
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-medium">{row.title}</p>
-              <StatePill tone={row.ackAt === null ? "waiting" : "good"}>
-                {row.ackAt === null ? t("unread") : t("signed")}
-              </StatePill>
-            </div>
-            <p className="mt-1 text-xs text-(--color-muted)">
-              {t("versionLine", { version: row.version })} ·{" "}
-              {format.dateTime(new Date(row.publishedAt), "day")}
-            </p>
-            {row.summary ? <p className="mt-2 text-sm">{row.summary}</p> : null}
+    <>
+      <DataTable
+        id="my-documents"
+        cardLead="title"
+        columns={columns}
+        rows={rows}
+        keyOf={(row) => row.versionId}
+        pending={mine.isPending}
+        failed={mine.isError}
+        onRetry={() => void mine.refetch()}
+        empty={only === "" ? t("noneToRead") : t("noneInFilter")}
+        emptyHint={only === "" ? t("noneToReadHint") : undefined}
+        onRowClick={setOpen}
+      />
 
-            <Button
-              type="button"
-              tone="quiet"
-              size="sm"
-              className="mt-3"
-              onClick={() => setOpen(showing ? null : row.versionId)}
-            >
-              {showing ? t("hide") : t("read")}
-            </Button>
-
-            {showing ? (
-              <div className="mt-3 max-h-96 overflow-y-auto rounded-lg bg-(--color-ground) p-3">
-                <p className="text-sm whitespace-pre-wrap">{row.body}</p>
-              </div>
-            ) : null}
-
-            {row.ackAt === null && showing ? (
-              <Button
-                type="button"
-                className="mt-3"
-                disabled={sign.isPending && sign.variables === row.versionId}
-                onClick={() => sign.mutate(row.versionId)}
-              >
-                {sign.isPending && sign.variables === row.versionId
-                  ? common("saving")
-                  : t("sign")}
-              </Button>
-            ) : null}
-
-            {row.ackAt ? (
-              <p className="mt-2 text-xs text-(--color-muted)">
-                {t("signedOn", { when: format.dateTime(new Date(row.ackAt), "day") })}
-              </p>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
+      <LayerDialog.Root open={open !== null} onOpenChange={(next) => !next && setOpen(null)} dismissDisabled={sign.isPending}>
+        <LayerDialog.Content size="lg" closeLabel={common("close")}>
+          <LayerDialog.Title>{open?.title ?? t("myTitle")}</LayerDialog.Title>
+          <LayerDialog.Description>
+            {open
+              ? open.ackAt
+                ? t("signedOn", { when: format.dateTime(new Date(open.ackAt), "day") })
+                : `${t("versionLine", { version: open.version })} · ${format.dateTime(new Date(open.publishedAt), "day")}`
+              : ""}
+          </LayerDialog.Description>
+          <LayerDialog.Body>
+            <p className="text-base leading-relaxed whitespace-pre-wrap">{open?.body}</p>
+          </LayerDialog.Body>
+          {open && open.ackAt === null ? (
+            <LayerDialog.Actions dismissLabel={t("later")}>
+              <LayerDialog.Actions.Primary loading={sign.isPending} onClick={() => sign.mutate(open.versionId)}>
+                {t("sign")}
+              </LayerDialog.Actions.Primary>
+            </LayerDialog.Actions>
+          ) : null}
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+    </>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
+import { LayerCard } from "@cloudflare/kumo";
 import { useLocale, useTranslations } from "next-intl";
 
+import { Facts } from "@/components/ui/page";
 import { cn } from "@/lib/cn";
 import { days, hours, money } from "@/lib/format";
 
@@ -46,10 +48,10 @@ const GROUP: Record<LineKind, "earnings" | "deductions" | "employerCost" | "info
 
 function Figure({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-(--color-line) bg-(--color-surface) p-4">
-      <p className="text-xs text-(--color-muted)">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
-    </div>
+    <LayerCard className="flex min-w-0 flex-col gap-1 p-4">
+      <span className="text-sm text-kumo-subtle">{label}</span>
+      <span className="text-lg font-semibold break-words tabular-nums">{value}</span>
+    </LayerCard>
   );
 }
 
@@ -68,32 +70,30 @@ export function PayslipView({ slip }: { slip: Payslip }) {
   const nameOf = useLineName();
 
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Figure label={t("net")} value={money(Number(slip.netPay), locale)} />
         <Figure label={t("gross")} value={money(Number(slip.grossPay), locale)} />
         <Figure label={t("insurance")} value={money(Number(slip.insuranceEmployee), locale)} />
         <Figure label={t("tax")} value={money(Number(slip.personalIncomeTax), locale)} />
-        <Figure label={t("net")} value={money(Number(slip.netPay), locale)} />
       </div>
 
-      <dl className="mt-4 grid gap-x-6 gap-y-2 rounded-xl border border-(--color-line) bg-(--color-surface) p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <div className="flex justify-between gap-3">
-          <dt className="text-(--color-muted)">{t("workedDays")}</dt>
-          <dd className="tabular-nums">{days(Number(slip.workedDays), locale)}</dd>
+      <LayerCard className="p-4">
+        <div className="grid gap-x-8 sm:grid-cols-2">
+          <Facts
+            rows={[
+              [t("workedDays"), <span key="w" className="tabular-nums">{days(Number(slip.workedDays), locale)}</span>],
+              [t("paidLeaveDays"), <span key="p" className="tabular-nums">{days(Number(slip.paidLeaveDays), locale)}</span>],
+            ]}
+          />
+          <Facts
+            rows={[
+              [t("unpaidDays"), <span key="u" className="tabular-nums">{days(Number(slip.unpaidDays), locale)}</span>],
+              [t("overtime"), <span key="o" className="tabular-nums">{hours(slip.overtimeMinutes, locale)}</span>],
+            ]}
+          />
         </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-(--color-muted)">{t("paidLeaveDays")}</dt>
-          <dd className="tabular-nums">{days(Number(slip.paidLeaveDays), locale)}</dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-(--color-muted)">{t("unpaidDays")}</dt>
-          <dd className="tabular-nums">{days(Number(slip.unpaidDays), locale)}</dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-(--color-muted)">{t("overtime")}</dt>
-          <dd className="tabular-nums">{hours(slip.overtimeMinutes, locale)}</dd>
-        </div>
-      </dl>
+      </LayerCard>
 
       {ORDER.map((kind) => {
         const rows = slip.lines.filter((line) => line.kind === kind);
@@ -102,37 +102,36 @@ export function PayslipView({ slip }: { slip: Payslip }) {
         }
         const total = rows.reduce((sum, line) => sum + Number(line.amount), 0);
         return (
-          <section
-            key={kind}
-            className="mt-4 rounded-xl border border-(--color-line) bg-(--color-surface) p-4"
-          >
-            <h2 className="text-sm font-medium">{t(GROUP[kind])}</h2>
-            <dl className="mt-2 flex flex-col">
-              {rows.map((line) => (
-                <div
-                  key={line.id}
-                  className="flex justify-between gap-3 border-b border-(--color-line) py-2 text-sm last:border-0"
-                >
-                  <dt className="min-w-0">{nameOf(line.code, line.label)}</dt>
-                  <dd
-                    className={cn(
-                      "shrink-0 tabular-nums",
-                      kind === "DEDUCTION" && "text-(--color-danger)",
-                      kind === "INFO" && "text-(--color-muted)",
-                    )}
+          <LayerCard key={kind}>
+            <LayerCard.Secondary className="justify-between">
+              <span>{t(GROUP[kind])}</span>
+              {kind !== "INFO" ? (
+                <span className="font-medium text-kumo-default tabular-nums">{money(total, locale)}</span>
+              ) : null}
+            </LayerCard.Secondary>
+            <LayerCard.Primary>
+              <dl className="-my-1 flex flex-col">
+                {rows.map((line) => (
+                  <div
+                    key={line.id}
+                    className="flex items-baseline justify-between gap-3 border-b border-kumo-hairline py-2 last:border-0"
                   >
-                    {kind === "DEDUCTION" ? "− " : ""}
-                    {money(Number(line.amount), locale)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {kind !== "INFO" ? (
-              <p className="mt-2 text-end text-sm font-medium tabular-nums">
-                {money(total, locale)}
-              </p>
-            ) : null}
-          </section>
+                    <dt className="min-w-0">{nameOf(line.code, line.label)}</dt>
+                    <dd
+                      className={cn(
+                        "shrink-0 tabular-nums",
+                        kind === "DEDUCTION" && "text-kumo-danger",
+                        kind === "INFO" && "text-kumo-subtle",
+                      )}
+                    >
+                      {kind === "DEDUCTION" ? "− " : ""}
+                      {money(Number(line.amount), locale)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </LayerCard.Primary>
+          </LayerCard>
         );
       })}
     </div>

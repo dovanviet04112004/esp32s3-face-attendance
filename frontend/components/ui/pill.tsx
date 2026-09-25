@@ -1,15 +1,9 @@
+import { Badge } from "@cloudflare/kumo";
 import type { ReactNode } from "react";
-
-import { cn } from "@/lib/cn";
 
 export type Tone = "waiting" | "good" | "bad" | "idle";
 
-const TONE: Record<Tone, string> = {
-  waiting: "border-(--color-warn) text-(--color-warn)",
-  good: "border-(--color-ok) text-(--color-ok)",
-  bad: "border-(--color-danger) text-(--color-danger)",
-  idle: "border-(--color-line) text-(--color-muted)",
-};
+const VARIANT = { waiting: "warning", good: "success", bad: "error", idle: "secondary" } as const;
 
 /** A state reads as a word first and a tone second (KEHOACH 9.12 rule 2). */
 export function StatePill({
@@ -22,17 +16,17 @@ export function StatePill({
   children: ReactNode;
 }) {
   return (
-    <span className={cn("rounded-full border px-2 py-0.5 text-xs", TONE[tone], className)}>
+    <Badge variant={VARIANT[tone]} className={className}>
       {children}
-    </span>
+    </Badge>
   );
 }
 
 /** A count beside a heading, which is a quantity and not a state. */
 export function CountPill({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-full bg-(--color-ground) px-2 py-0.5 text-xs text-(--color-muted) tabular-nums">
+    <Badge variant="secondary" className="tabular-nums">
       {children}
-    </span>
+    </Badge>
   );
 }

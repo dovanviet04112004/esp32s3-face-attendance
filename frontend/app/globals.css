@@ -6,20 +6,7 @@
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
-  /* The names every page already reads, resolved to Kumo's; light-dark() switches them. */
-  --color-ink: var(--text-color-kumo-default);
-  --color-muted: var(--text-color-kumo-subtle);
-  --color-line: var(--color-kumo-hairline);
-  --color-field: var(--color-kumo-line);
-  --color-surface: var(--color-kumo-base);
-  --color-ground: var(--color-kumo-canvas);
-  --color-on-fill: oklch(1 0 0);
-  --color-accent: var(--color-kumo-brand);
-  --color-danger: var(--text-color-kumo-danger);
-  --color-ok: var(--text-color-kumo-success);
-  --color-warn: var(--text-color-kumo-warning);
-
-  /* Content starts at the left edge under this ceiling (KEHOACH 9.12). */
+  /* The content block's ceiling, centred under the top bar (KEHOACH 9.12). */
   --width-shell: 87.5rem;
   --width-read: 48rem;
 }
@@ -27,8 +14,8 @@
 @layer base {
   html,
   body {
-    background: var(--color-ground);
-    color: var(--color-ink);
+    background: var(--color-kumo-canvas);
+    color: var(--text-color-kumo-default);
   }
 
   body {
@@ -37,7 +24,8 @@
 
   /* A finger needs 44 px, and iOS zooms into any field under 16 px (KEHOACH 9.21.2). */
   @media (pointer: coarse) {
-    button,
+    /* A Kumo tab sits in a fixed-height track that clips it, so tabs keep their own height. */
+    button:not([role="tab"]),
     [role="button"],
     input:not([type="checkbox"], [type="radio"]),
     select {
