@@ -73,7 +73,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main id="main" className="flex-1">
-          <div className="w-full max-w-(--width-shell) px-6 pt-6 pb-24 md:px-8 md:py-8 lg:px-10 lg:py-9">
+          <div className="mx-auto w-full max-w-(--width-shell) px-6 pt-6 pb-24 md:px-8 md:py-8 lg:px-10 lg:py-9">
             <Breadcrumb />
             {children}
           </div>

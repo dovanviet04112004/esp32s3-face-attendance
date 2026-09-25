@@ -22,8 +22,8 @@ export function TopBar() {
 
   return (
     // The same height as the sidebar header, so the two borders meet in one line.
-    <header className="sticky top-0 z-30 border-b border-kumo-line bg-kumo-base">
-      <div className="group/bar flex h-[58px] w-full max-w-(--width-shell) items-center gap-2 px-6 md:px-8 lg:px-10">
+    <header className="sticky top-0 z-30 h-[58px] border-b border-kumo-line bg-kumo-base">
+      <div className="group/bar flex h-full w-full items-center gap-2 px-6 md:px-8 lg:px-10">
         <img src="/logo.svg" alt={app("name")} width={22} height={22} className="md:hidden" />
         <div className="min-w-0 flex-1 md:max-w-lg">
           <GlobalSearch />

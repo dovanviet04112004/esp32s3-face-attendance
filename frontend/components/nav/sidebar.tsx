@@ -20,7 +20,8 @@ export function Sidebar() {
   const current = ownerOf(here)?.href;
 
   return (
-    <KumoSidebar>
+    // The page scrolls the window, so the rail pins itself to the viewport.
+    <KumoSidebar className="sticky top-0 h-svh self-start">
       <KumoSidebar.Header>
         <img src="/logo.svg" alt="" width={24} height={24} className="shrink-0" />
         <div className="min-w-0 ps-2 group-data-[state=collapsed]/sidebar:hidden">
