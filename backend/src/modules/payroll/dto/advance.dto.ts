@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { Type } from "class-transformer";
 import { IsBoolean, IsEnum, IsInt, IsString, MaxLength, Min, IsOptional } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
@@ -22,6 +23,12 @@ export class ListAdvancesDto extends PaginationDto {
   @IsOptional()
   @IsEnum(STATES)
   state?: (typeof STATES)[number];
+
+  @ApiPropertyOptional({ description: "One person's advances, still inside what the viewer may see" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  employeeId?: number;
 }
 
 export class DecideAdvanceDto {

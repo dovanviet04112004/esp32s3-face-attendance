@@ -145,6 +145,19 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
     assert.ok(rows.some((row) => row.id === filedId), "the asker lost sight of their own advance");
   });
 
+  it("narrows a list to one person, and never past what the viewer may see", async () => {
+    const read = (token: string, id: number) =>
+      request(app.getHttpServer()).get(`/advances?employeeId=${id}`).set("Authorization", `Bearer ${token}`);
+    const desk = await read(deskToken, askerId);
+    assert.equal(desk.status, 200);
+    const ids = (desk.body as { rows: { id: string; employeeId: number }[] }).rows;
+    assert.ok(ids.some((row) => row.id === filedId), "the desk cannot find the asker's advance by person");
+    assert.ok(ids.every((row) => row.employeeId === askerId), "another person's advance came back");
+    const manager = await read(bossToken, askerId);
+    assert.equal(manager.status, 200);
+    assert.equal((manager.body as { rows: unknown[] }).rows.length, 0, "naming a person let a manager read their advance");
+  });
+
   it("is decided by the desk, and the asker hears the outcome", async () => {
     const res = await request(app.getHttpServer())
       .post(`/advances/${filedId}/decide`)

@@ -26,10 +26,15 @@ export class AdvanceService {
 
   async list(viewer: Viewer, query: ListAdvancesDto): Promise<Page<SalaryAdvance>> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    const where = {
-      ...(visible === null ? {} : { employeeId: { in: visible } }),
-      ...(query.state ? { state: query.state } : {}),
-    };
+    const asked = query.employeeId;
+    // Naming a person narrows what the viewer may see; it never widens it.
+    const whose =
+      asked === undefined
+        ? visible === null
+          ? {}
+          : { employeeId: { in: visible } }
+        : { employeeId: visible === null || visible.includes(asked) ? asked : { in: [] } };
+    const where = { ...whose, ...(query.state ? { state: query.state } : {}) };
     const [rows, found] = await Promise.all([
       this.db.salaryAdvance.findMany({
         where,
