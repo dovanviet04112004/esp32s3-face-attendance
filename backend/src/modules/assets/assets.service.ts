@@ -1,5 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Asset, AssetTransfer } from "@prisma/client";
+import type { Asset, AssetState, AssetTransfer } from "@prisma/client";
+
+import type { Page } from "../../common/dto/pagination.dto.js";
+import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -12,8 +15,12 @@ export type AssetWithHolder = Asset & {
   holder: { id: number; code: string; fullName: string } | null;
 };
 
+export interface AssetCounts {
+  states: Record<AssetState, number>;
+  kinds: string[];
+}
+
 const HOLDER = { select: { id: true, code: true, fullName: true } } as const;
-const kPageSize = 200;
 
 @Injectable()
 export class AssetsService {
@@ -23,17 +30,42 @@ export class AssetsService {
     private readonly audit: AuditService,
   ) {}
 
-  list(query: ListAssetsDto): Promise<AssetWithHolder[]> {
-    return this.db.asset.findMany({
-      where: {
-        ...(query.state ? { state: query.state } : {}),
-        ...(query.kind ? { kind: query.kind } : {}),
-        ...(query.holderId ? { holderId: query.holderId } : {}),
-      },
-      include: { holder: HOLDER },
-      orderBy: { code: "asc" },
-      take: kPageSize,
-    });
+  async list(query: ListAssetsDto): Promise<Page<AssetWithHolder>> {
+    const needle = query.search ? { contains: query.search, mode: "insensitive" as const } : null;
+    const where = {
+      ...(query.state ? { state: query.state } : {}),
+      ...(query.kind ? { kind: query.kind } : {}),
+      ...(query.holderId ? { holderId: query.holderId } : {}),
+      ...(needle
+        ? { OR: [{ code: needle }, { name: needle }, { serialNo: needle }, { holder: { fullName: needle } }] }
+        : {}),
+    };
+    // Code is unique, so the cursor resumes on it with no tiebreak (KEHOACH 9.9 rule 3).
+    const [rows, found] = await Promise.all([
+      this.db.asset.findMany({
+        where,
+        include: { holder: HOLDER },
+        orderBy: { code: "asc" },
+        take: query.take,
+        ...(query.cursor ? { cursor: { code: query.cursor }, skip: 1 } : { skip: query.skip }),
+      }),
+      this.db.asset.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    const last = rows[rows.length - 1];
+    return { ...countedTo(found), rows, next: rows.length === query.take && last ? last.code : null };
+  }
+
+  /** How many assets stand in each state, and the kinds the register holds, for its filters. */
+  async counts(): Promise<AssetCounts> {
+    const [grouped, kinds] = await Promise.all([
+      this.db.asset.groupBy({ by: ["state"], _count: { _all: true } }),
+      this.db.asset.findMany({ distinct: ["kind"], select: { kind: true }, orderBy: { kind: "asc" } }),
+    ]);
+    const states: Record<AssetState, number> = { IN_STOCK: 0, ISSUED: 0, RETURNED: 0, RETIRED: 0, LOST: 0 };
+    for (const row of grouped) {
+      states[row.state] = row._count._all;
+    }
+    return { states, kinds: kinds.map((row) => row.kind) };
   }
 
   create(body: CreateAssetDto): Promise<Asset> {

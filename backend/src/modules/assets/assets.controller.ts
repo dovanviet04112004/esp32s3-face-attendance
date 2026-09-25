@@ -2,11 +2,13 @@ import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } fr
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Asset, AssetTransfer } from "@prisma/client";
 
+import type { Page } from "../../common/dto/pagination.dto.js";
+
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { AssetsService, type AssetWithHolder } from "./assets.service.js";
+import { AssetsService, type AssetCounts, type AssetWithHolder } from "./assets.service.js";
 import { CreateAssetDto, HandOverDto, ListAssetsDto } from "./dto/asset.dto.js";
 
 @ApiTags("assets")
@@ -19,8 +21,15 @@ export class AssetsController {
   @Get("assets")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "The asset register, narrowed by state or kind" })
-  list(@Query() query: ListAssetsDto): Promise<AssetWithHolder[]> {
+  list(@Query() query: ListAssetsDto): Promise<Page<AssetWithHolder>> {
     return this.assets.list(query);
+  }
+
+  @Get("assets/counts")
+  @Roles("ADMIN", "HR")
+  @ApiOperation({ summary: "How many assets stand in each state, and the kinds on the register" })
+  counts(): Promise<AssetCounts> {
+    return this.assets.counts();
   }
 
   @Post("assets")

@@ -3,6 +3,8 @@ import { AssetCondition, AssetState } from "@prisma/client";
 import { Type } from "class-transformer";
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
 
+import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+
 export class CreateAssetDto {
   @ApiProperty({ example: "TS0142" })
   @IsString()
@@ -49,7 +51,13 @@ export class HandOverDto {
   note?: string;
 }
 
-export class ListAssetsDto {
+export class ListAssetsDto extends PaginationDto {
+  @ApiPropertyOptional({ description: "Matches code, name, serial number or the holder's name" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  search?: string;
+
   @ApiPropertyOptional({ enum: AssetState })
   @IsOptional()
   @IsEnum(AssetState)

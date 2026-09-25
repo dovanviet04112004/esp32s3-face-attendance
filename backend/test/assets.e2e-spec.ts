@@ -50,10 +50,10 @@ describe("assets (e2e)", () => {
 
   async function read(): Promise<AssetRow> {
     const res = await request(http)
-      .get(`/assets?kind=LAPTOP`)
+      .get(`/assets?kind=LAPTOP&take=200`)
       .set("Authorization", `Bearer ${token}`);
     assert.equal(res.status, 200);
-    const row = (res.body as AssetRow[]).find((one) => one.code === ASSET);
+    const row = (res.body.rows as AssetRow[]).find((one) => one.code === ASSET);
     assert.ok(row, "the asset this suite made is missing from the list");
     return row;
   }
@@ -158,5 +158,30 @@ describe("assets (e2e)", () => {
       .get(`/assets/${assetId}/history`)
       .set("Authorization", `Bearer ${token}`)).body as Move[];
     assert.equal(after.length, before.length);
+  });
+
+  it("counts each state the same way the register filters it", async () => {
+    const counts = await request(http).get("/assets/counts").set("Authorization", `Bearer ${token}`);
+    assert.equal(counts.status, 200);
+    for (const state of ["IN_STOCK", "ISSUED", "RETURNED", "RETIRED", "LOST"]) {
+      const page = await request(http)
+        .get(`/assets?state=${state}&take=1`)
+        .set("Authorization", `Bearer ${token}`);
+      assert.equal(counts.body.states[state], page.body.total, `${state} counts differently from its filter`);
+    }
+    assert.ok(counts.body.kinds.includes("LAPTOP"), "a kind on the register is missing from the filter");
+  });
+
+  it("finds an asset by its serial number or by who holds it", async () => {
+    for (const needle of ["sn-e2e", `Giữ tài sản ${SECOND}`]) {
+      const res = await request(http)
+        .get(`/assets?search=${encodeURIComponent(needle)}`)
+        .set("Authorization", `Bearer ${token}`);
+      assert.equal(res.status, 200);
+      assert.ok(
+        (res.body.rows as AssetRow[]).some((row) => row.code === ASSET),
+        `searching "${needle}" did not find the asset`,
+      );
+    }
   });
 });
