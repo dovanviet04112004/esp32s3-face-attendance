@@ -4384,7 +4384,9 @@ backend/
     │   └── csv.ts                    # ★ một bộ ghi CSV cho cả ba nơi xuất file
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
-    │   ├── users/    ├── employees/  ├── devices/   ├── enrollment/
+    │   ├── users/    ├── devices/    ├── enrollment/
+    │   ├── employees/                # import.ts đọc CSV · workbook.ts đọc và ghi .xlsx (§9.20)
+    │   │                             #   bulk.service.ts: thao tác trên một nhóm người đã chọn
     │   ├── attendance/ ├── shifts/   ├── reports/   ├── models/
     │   ├── mqtt/     ├── realtime/
     │   ├── health/                   # ★ §4.8 — cổng kiểm của CD, không cần đăng nhập
@@ -7496,7 +7498,7 @@ dùng vẫn thấy phân bố mà chỉ nhìn một chỗ.
 | Trang | Cột phải |
 |---|---|
 | Tổng quan · Trang của tôi | không có; bố cục theo §9.10 |
-| Danh bạ | hợp đồng và thử việc sắp hết trong 30 ngày, vài tên đầu kèm số ngày, bấm mở hồ sơ, "xem tất cả" mở danh sách đầy đủ; công cụ: xuất Excel theo bộ lọc đang áp, nhập từ Excel, tải file mẫu, điều chỉnh lương hàng loạt |
+| Danh bạ | hợp đồng và thử việc sắp hết trong 30 ngày, vài tên đầu kèm số ngày, bấm mở hồ sơ, "xem tất cả" mở danh sách đầy đủ; công cụ: xuất Excel theo bộ lọc đang áp, nhập từ Excel, tải file mẫu, điều chỉnh lương hàng loạt. Việc làm trên những người đã chọn nằm trên thanh chọn của bảng, không ở cột phải (§9.20) |
 | Thêm nhân viên | không có; câu "lưu xong hệ làm gì" nằm dưới tiêu đề |
 | Hồ sơ một người | đồng ý sinh trắc và nút ghi hoặc rút; kiosk đang gán và nút gán; tài khoản đăng nhập: trạng thái, mở tài khoản hoặc gửi lại liên kết |
 | Cây tổ chức | phòng ban đang chọn: mã, cấp trên, trưởng phòng, số người cả nhánh, trung tâm chi phí; sửa, chuyển nhánh, ngừng dùng; xem nhân viên của phòng; công cụ: tái cơ cấu. Trên điện thoại chọn một phòng mở tấm trượt |
@@ -7729,8 +7731,10 @@ nó đã làm và những gì nó đã bỏ qua, kèm lý do**, y như nghỉ vi
 dịch là gửi thư cho một lượt có thể rollback. Cái giá là một khe hở giữa commit và lúc xếp
 hàng, và §9.4 đã có sẵn đường vá — phát lại liên kết.
 
-**`POST /employees` vẫn là đường ghi một dòng.** Nhập CSV và di trú dữ liệu đi qua nó, nên nó
-không được mọc thêm hợp đồng. Nhận việc là một việc làm **lên** một hồ sơ đã có, đúng như nghỉ
+**`POST /employees` vẫn là đường ghi một dòng, và nó không được mọc thêm hợp đồng.** Nhập file
+không gọi nó từng dòng: ba mươi nghìn request là ba mươi nghìn giao dịch, và một dòng hỏng ở giữa
+để lại nửa công ty. Nhập ghi theo khối trong **một** giao dịch, qua cùng các phép kiểm của đường
+một dòng, và ghi **một dòng audit cho mỗi người** được tạo hay được sửa (§9.24). Nhận việc là một việc làm **lên** một hồ sơ đã có, đúng như nghỉ
 việc.
 
 **Nghỉ việc có hai mốc: ghi nhận và đóng hồ sơ.** `POST /employees/:id/offboard` ghi ngày làm
@@ -8206,7 +8210,7 @@ bẩn. Nên nhập theo hai nhịp: **chạy thử ra báo cáo lỗi từng dò
 thẳng rồi sửa sau là cách chắc chắn nhất để có dữ liệu rác vĩnh viễn.
 
 **6. Điều chỉnh lương hàng loạt.** Tăng lương cả công ty hay cả một phòng là việc một lần một
-năm nhưng bắt buộc. Sinh ra **một loạt dòng `CompensationRecord` mới cùng ngày hiệu lực**
+năm nhưng bắt buộc. "Một phòng" là **cả nhánh** dưới nó, như mọi bộ lọc phòng ban (§9.4). Sinh ra **một loạt dòng `CompensationRecord` mới cùng ngày hiệu lực**
 (§9.6), xem trước được trước khi ghi.
 
 **7. Tái cơ cấu tổ chức.** Chuyển cả một phòng sang cấp trên khác, gộp hai phòng, đổi người quản
@@ -8341,7 +8345,37 @@ Không thuộc phân hệ nào, nhưng thiếu thì phân hệ nào cũng khó d
 
 **Nhập và xuất hàng loạt.** Mọi bảng lớn cần nhập từ Excel theo hai nhịp — chạy thử, xem báo cáo
 lỗi từng dòng, rồi nhập thật — và xuất ra định dạng mở được bằng Excel (kèm BOM, cùng lý do đã
-gặp ở bảng chấm công).
+gặp ở bảng chấm công). Năm luật đi kèm:
+
+1. **Danh bạ đi bằng `.xlsx` thật, và vẫn nhận `.csv`.** Server đọc và ghi bằng `exceljs`. Một
+   file quá 16 MB hay quá số dòng nhập tối đa bị từ chối trước khi mở, vì `.xlsx` là một file nén.
+2. **File mẫu sinh lúc tải, từ danh mục của lúc ấy.** Pháp nhân, phòng ban, chức danh, ca và
+   kiosk đang dùng thành ô chọn, trỏ vào một trang tính *Danh mục* đi kèm. Quản trị viên vừa thêm
+   một phòng ban thì lần tải sau đã có nó; một mẫu tải từ tuần trước mà ghi một phòng ban đã ngừng
+   dùng thì bị lượt chạy thử bắt, không lọt vào lúc ghi. Ô chọn ghi `mã · tên`, và lúc nhập chỉ
+   đọc phần mã.
+3. **Một dòng làm được trọn việc của một người mới:** hồ sơ, ca từ một ngày, kiosk sẽ lấy mặt,
+   và mở đăng nhập kèm thư mời. Ba việc sau đi qua đúng luật của việc lẻ: kiosk cần đồng ý dữ
+   liệu khuôn mặt (§9.19), thư chỉ xếp hàng sau khi giao dịch commit.
+4. **Cột không ghi được thì nói ra, không lặng lẽ bỏ.** Email cá nhân và tài khoản ngân hàng của
+   người đã có hồ sơ chỉ đổi bằng đơn (§9.17 luật 1 và 3), nên lượt chạy thử liệt kê những dòng định đổi
+   chúng thay vì im lặng giữ giá trị cũ.
+5. **Không ô nào thành công thức.** Ô bắt đầu bằng `=` `+` `-` `@`, tab hay CR được viết thành
+   chữ, ở mọi file xuất, kể cả file dựng ngay trong trình duyệt (§7.2).
+
+**Thao tác trên nhiều người.** Danh bạ chọn được nhiều dòng, hoặc chọn **cả N người khớp bộ lọc**
+khi bảng mới tải một phần; lúc ấy trình duyệt gửi bộ lọc, không gửi N mã, và server tự giải bộ
+lọc trong phạm vi người xem (§9.4). Thanh chọn làm được bốn việc: đổi chức danh, phòng ban, cấp
+quản lý hay pháp nhân; mở đăng nhập và gửi thư mời, hoặc gửi lại cho người chưa đặt mật khẩu; gán
+vào một kiosk; xếp vào một ca. Mọi việc hàng loạt theo cùng một khuôn:
+
+- **Xem trước rồi mới ghi**, như tái cơ cấu (§9.18 mục 7): ai đổi, đổi gì, ai bị bỏ qua.
+- **Mỗi dòng đi qua đúng luật của việc lẻ**, và người không làm được thì vào danh sách bỏ qua
+  kèm mã lý do: đã nghỉ, không có email, đã có đăng nhập, chưa đồng ý dữ liệu khuôn mặt, phòng
+  ban thuộc pháp nhân khác.
+- **Một giao dịch cho phần ghi, thư và tin xuống kiosk đi sau commit.** Một lô gán kiosk đẩy số
+  hiệu danh sách lên một lần cho cả lô và gửi mỗi người một tin với số liền nhau (§7.5).
+- **Một dòng audit cho mỗi người**, như khi sửa lẻ (§9.24). Một lô tối đa 5.000 người.
 
 **Trung tâm thông báo.** Một chỗ trong ứng dụng, cộng email cho thứ cần rời khỏi ứng dụng. Mỗi
 người tự chọn nhận gì. Không có nó thì hoặc gửi quá nhiều rồi bị bỏ qua, hoặc gửi quá ít rồi
