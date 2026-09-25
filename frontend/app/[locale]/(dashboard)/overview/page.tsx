@@ -1,8 +1,8 @@
 "use client";
 
-import { LayerCard, LayerDialog, Tabs } from "@cloudflare/kumo";
+import { Button, LayerCard, LayerDialog, Tabs } from "@cloudflare/kumo";
 import { CaretRightIcon, CheckCircleIcon, CheckIcon } from "@phosphor-icons/react";
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useNow, useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
@@ -42,6 +42,22 @@ interface TeamToday {
   onLeave: PersonRef[];
   notPunched: PersonRef[];
   totals: { absent: number; onLeave: number; notPunched: number };
+}
+
+type TeamBucket = keyof TeamToday["totals"];
+
+interface PersonPage {
+  rows: PersonRef[];
+  total: number;
+  next: string | null;
+}
+
+const kBucketPage = 50;
+
+interface ExceptionPage {
+  rows: Exception[];
+  total: number;
+  next: string | null;
 }
 
 interface Heap<T> {
@@ -138,6 +154,8 @@ interface Pile {
   rows: PileRow[];
   /** Where the whole pile is handled; a pile with no such page lists its rows only. */
   full?: string;
+  /** Or a sheet that lists the whole pile, when no page holds it. */
+  onAll?: () => void;
   /** What goes wrong when the pile is left alone, said once under it. */
   hint?: string;
 }
@@ -195,15 +213,27 @@ function Quiet({ children }: { children: ReactNode }) {
 }
 
 /** Card anatomy of both home pages: a title strip with one link at its right, rows in the body. */
-function Card({ title, link, children }: { title: ReactNode; link?: { href: string; label: string }; children: ReactNode }) {
+interface CardLink {
+  label: string;
+  href?: string;
+  /** Opens the full list in place when no page holds it. */
+  onPick?: () => void;
+}
+
+function Card({ title, link, children }: { title: ReactNode; link?: CardLink; children: ReactNode }) {
+  const face = "shrink-0 font-normal text-kumo-link hover:underline";
   return (
     <LayerCard>
       <LayerCard.Secondary className="justify-between gap-3">
         <span className="flex min-w-0 items-center gap-2">{title}</span>
-        {link ? (
-          <Link href={link.href} className="shrink-0 font-normal text-kumo-link hover:underline">
+        {link?.href ? (
+          <Link href={link.href} className={face}>
             {link.label}
           </Link>
+        ) : link?.onPick ? (
+          <button type="button" onClick={link.onPick} className={face}>
+            {link.label}
+          </button>
         ) : null}
       </LayerCard.Secondary>
       <LayerCard.Primary className="gap-0 p-0 pr-0">{children}</LayerCard.Primary>
@@ -293,12 +323,12 @@ function WhoSheet({ bucket, onClose, day }: { bucket: Bucket | null; onClose: ()
   const groups = !held
     ? []
     : bucket === "onLeave"
-      ? ([["sheetOnLeave", held.onLeave, held.totals.onLeave]] as const)
+      ? ([["sheetOnLeave", "onLeave", held.onLeave, held.totals.onLeave]] as const)
       : ([
-          ["absentPastDue", held.absent, held.totals.absent],
-          ["absentNotYet", held.notPunched, held.totals.notPunched],
+          ["absentPastDue", "absent", held.absent, held.totals.absent],
+          ["absentNotYet", "notPunched", held.notPunched, held.totals.notPunched],
         ] as const);
-  const shown = groups.filter(([, , total]) => total > 0);
+  const shown = groups.filter(([, , , total]) => total > 0);
 
   return (
     <LayerDialog.Root open={bucket !== null} onOpenChange={(next) => !next && onClose()}>
@@ -321,27 +351,12 @@ function WhoSheet({ bucket, onClose, day }: { bucket: Bucket | null; onClose: ()
             <p className="text-kumo-subtle">{bucket === "onLeave" ? t("leaveNone") : t("absentNone")}</p>
           ) : (
             <div className="flex flex-col gap-4">
-              {shown.map(([key, people, count]) => (
+              {shown.map(([key, bucket, people, count]) => (
                 <section key={key} className="flex flex-col gap-1">
                   <h3 className="m-0 text-sm font-medium text-kumo-subtle">
                     {t(key)} · <span className="tabular-nums">{format.number(count)}</span>
                   </h3>
-                  <ul className="-mx-2 flex flex-col">
-                    {people.map((one) => (
-                      <li key={one.id}>
-                        <Link
-                          href={`/employees/${one.id}`}
-                          className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-kumo-tint motion-press"
-                        >
-                          <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
-                          <span className="shrink-0 font-mono text-sm text-kumo-subtle">{one.code}</span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                  {count > people.length ? (
-                    <p className="text-sm text-kumo-subtle tabular-nums">{t("absentShownOf", { shown: people.length, total: count })}</p>
-                  ) : null}
+                  <BucketList bucket={bucket} people={people} total={count} />
                 </section>
               ))}
             </div>
@@ -349,6 +364,53 @@ function WhoSheet({ bucket, onClose, day }: { bucket: Bucket | null; onClose: ()
         </LayerDialog.Body>
       </LayerDialog.Content>
     </LayerDialog.Root>
+  );
+}
+
+/** One bucket of the sheet: the preview's first names, then the rest a page at a time by code. */
+function BucketList({ bucket, people, total }: { bucket: TeamBucket; people: readonly PersonRef[]; total: number }) {
+  const t = useTranslations("overview");
+  const common = useTranslations("common");
+  const [more, setMore] = useState(false);
+  const rest = useInfiniteQuery({
+    queryKey: ["reports", "team-today", bucket],
+    enabled: more,
+    initialPageParam: people.at(-1)?.code ?? "",
+    queryFn: async ({ pageParam }) =>
+      (await api.get<PersonPage>(`/reports/team-today/${bucket}?take=${kBucketPage}&cursor=${encodeURIComponent(pageParam)}`)).data,
+    getNextPageParam: (last) => last.next ?? undefined,
+  });
+  const listed = [...people, ...(rest.data?.pages.flatMap((page) => page.rows) ?? [])];
+
+  return (
+    <>
+      <ul className="-mx-2 flex flex-col">
+        {listed.map((one) => (
+          <li key={one.id}>
+            <Link
+              href={`/employees/${one.id}`}
+              className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-kumo-tint motion-press"
+            >
+              <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
+              <span className="shrink-0 font-mono text-sm text-kumo-subtle">{one.code}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {listed.length < total ? (
+        <div className="flex items-center justify-between gap-3 text-sm text-kumo-subtle">
+          <span className="tabular-nums">{t("absentShownOf", { shown: listed.length, total })}</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={rest.isFetching}
+            onClick={() => (more ? void rest.fetchNextPage() : setMore(true))}
+          >
+            {common("loadMore")}
+          </Button>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -434,11 +496,14 @@ function Piles<K extends string>({ title, piles, pending, failed, onRetry }: {
     return null;
   }
   const full = current?.[1].full;
+  const onAll = current?.[1].onAll;
   const countOf = (pile: Pile) => `${format.number(pile.total)}${pile.exact ? "" : "+"}`;
   return (
     <Card
       title={title}
-      link={full && current ? { href: full, label: t("fullListOf", { count: current[1].total }) } : undefined}
+      link={
+        current && (full || onAll) ? { href: full, onPick: onAll, label: t(current[1].exact ? "fullListOf" : "fullListAtLeast", { count: current[1].total }) } : undefined
+      }
     >
       {failed ? (
         <div className="p-4">
@@ -494,6 +559,7 @@ function Piles<K extends string>({ title, piles, pending, failed, onRetry }: {
 }
 
 function HrCard() {
+  const [allExceptions, setAllExceptions] = useState(false);
   const t = useTranslations("overview");
   const kinds = useTranslations("employees");
   const format = useFormatter();
@@ -559,6 +625,7 @@ function HrCard() {
             total: held.exceptionsToday.total,
             exact: held.exceptionsToday.totalIsExact,
             hint: t("exceptionsHint"),
+            onAll: () => setAllExceptions(true),
             rows: held.exceptionsToday.rows.map((row) => ({
               key: String(row.employeeId),
               href: `/attendance/${row.employeeId}`,
@@ -576,13 +643,79 @@ function HrCard() {
   ];
 
   return (
-    <Piles
-      title={t("hrTitle")}
-      piles={piles}
-      pending={attention.isPending}
-      failed={attention.isError}
-      onRetry={() => void attention.refetch()}
-    />
+    <>
+      <Piles
+        title={t("hrTitle")}
+        piles={piles}
+        pending={attention.isPending}
+        failed={attention.isError}
+        onRetry={() => void attention.refetch()}
+      />
+      <ExceptionsSheet open={allExceptions} onClose={() => setAllExceptions(false)} />
+    </>
+  );
+}
+
+/** Today's exceptions in full, a page at a time by code; the card caps them at 200. */
+function ExceptionsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useTranslations("overview");
+  const common = useTranslations("common");
+  const list = useInfiniteQuery({
+    queryKey: ["reports", "attention", "exceptions"],
+    enabled: open,
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) =>
+      (await api.get<ExceptionPage>(`/reports/attention/exceptions?take=${kBucketPage}&cursor=${encodeURIComponent(pageParam)}`)).data,
+    getNextPageParam: (last) => last.next ?? undefined,
+  });
+  const rows = list.data?.pages.flatMap((page) => page.rows) ?? [];
+  const total = list.data?.pages[0]?.total ?? 0;
+
+  return (
+    <LayerDialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
+      <LayerDialog.Content closeLabel={common("close")}>
+        <LayerDialog.Title>{t("tabExceptions")}</LayerDialog.Title>
+        <LayerDialog.Description>{t("exceptionsHint")}</LayerDialog.Description>
+        <LayerDialog.Body>
+          {list.isError ? (
+            <Failed onRetry={() => void list.refetch()} />
+          ) : list.isPending ? (
+            <div className="flex flex-col gap-3 py-1">
+              <SkeletonLine minWidth={50} maxWidth={50} />
+              <SkeletonLine minWidth={47} maxWidth={47} />
+              <SkeletonLine minWidth={52} maxWidth={52} />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <ul className="-mx-2 flex flex-col">
+                {rows.map((row) => (
+                  <li key={row.employeeId}>
+                    <Link
+                      href={`/attendance/${row.employeeId}`}
+                      className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-kumo-tint motion-press"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{row.fullName}</span>
+                      <span className="shrink-0 font-mono text-sm text-kumo-subtle">{row.code}</span>
+                      <StatePill tone={REASON_TONE[row.reason]}>
+                        {row.reason === "LATE" && row.minutes > 0 ? t("lateBy", { minutes: row.minutes }) : t(REASON_KEY[row.reason])}
+                      </StatePill>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {rows.length < total ? (
+                <div className="flex items-center justify-between gap-3 text-sm text-kumo-subtle">
+                  <span className="tabular-nums">{t("absentShownOf", { shown: rows.length, total })}</span>
+                  <Button size="sm" variant="secondary" loading={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>
+                    {common("loadMore")}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </LayerDialog.Body>
+      </LayerDialog.Content>
+    </LayerDialog.Root>
   );
 }
 

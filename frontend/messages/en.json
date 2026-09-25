@@ -174,7 +174,8 @@
     "fleetPending": "Waiting for approval",
     "fleetBehindRow": "Behind the latest release",
     "fleetOf": "{count, number} of {total, number}",
-    "machines": "{count, plural, one {# kiosk} other {# kiosks}}"
+    "machines": "{count, plural, one {# kiosk} other {# kiosks}}",
+    "fullListAtLeast": "See all {count, number}+"
   },
   "employees": {
     "title": "Employees",
@@ -1449,12 +1450,12 @@
     "FORBIDDEN_ROLE": "Your role does not allow this.",
     "BODY_INVALID": "What was sent could not be read. Reload the page and try again.",
     "BODY_TOO_LARGE": "What was sent is too large. Split it up and send again.",
-    "LEAVING_SCHEDULED": "This person already has a leaving scheduled. Change or cancel it on their profile.",
-    "LEAVING_NOT_SCHEDULED": "This person has no scheduled leaving to change or cancel.",
-    "LEAVING_CLOSED": "The record has closed, so the leaving can no longer be changed or cancelled.",
     "HALF_DAY_NOT_WORKING": "A half day has to fall on a working day; this date is a day off.",
     "LEAVE_NO_WORKING_DAY": "This range holds only days off and holidays, no working day to take off.",
-    "LEAVE_SPANS_YEARS": "A request can only reach into the following year; split it into two requests."
+    "LEAVE_SPANS_YEARS": "A request can only reach into the following year; split it into two requests.",
+    "LEAVING_SCHEDULED": "This person already has a leaving scheduled. Change or cancel it on their profile.",
+    "LEAVING_NOT_SCHEDULED": "This person has no scheduled leaving to change or cancel.",
+    "LEAVING_CLOSED": "The record has closed, so the leaving can no longer be changed or cancelled."
   },
   "search": {
     "placeholder": "Search people, departments, requests, pages…",

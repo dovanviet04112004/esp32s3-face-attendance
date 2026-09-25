@@ -174,7 +174,8 @@
     "fleetPending": "Chờ duyệt",
     "fleetBehindRow": "Có bản mới chưa cài",
     "fleetOf": "{count, number}/{total, number} máy",
-    "machines": "{count, number} máy"
+    "machines": "{count, number} máy",
+    "fullListAtLeast": "Xem cả {count, number}+"
   },
   "employees": {
     "title": "Nhân viên",
@@ -1449,12 +1450,12 @@
     "FORBIDDEN_ROLE": "Vai trò của bạn không được làm việc này.",
     "BODY_INVALID": "Dữ liệu gửi lên bị hỏng. Tải lại trang rồi thử lại.",
     "BODY_TOO_LARGE": "Dữ liệu gửi lên quá lớn. Chia nhỏ rồi gửi lại.",
-    "LEAVING_SCHEDULED": "Người này đã có lịch nghỉ việc. Đổi hoặc huỷ lịch ấy trên hồ sơ.",
-    "LEAVING_NOT_SCHEDULED": "Người này không có lịch nghỉ việc nào để đổi hay huỷ.",
-    "LEAVING_CLOSED": "Hồ sơ đã đóng vì nghỉ việc nên không đổi hay huỷ được nữa.",
     "HALF_DAY_NOT_WORKING": "Nửa ngày phải rơi vào một ngày làm việc; ngày này là ngày nghỉ.",
     "LEAVE_NO_WORKING_DAY": "Khoảng này chỉ có ngày nghỉ và ngày lễ, không có ngày làm việc nào để xin nghỉ.",
-    "LEAVE_SPANS_YEARS": "Một đơn chỉ vắt được sang năm liền sau; hãy tách thành hai đơn."
+    "LEAVE_SPANS_YEARS": "Một đơn chỉ vắt được sang năm liền sau; hãy tách thành hai đơn.",
+    "LEAVING_SCHEDULED": "Người này đã có lịch nghỉ việc. Đổi hoặc huỷ lịch ấy trên hồ sơ.",
+    "LEAVING_NOT_SCHEDULED": "Người này không có lịch nghỉ việc nào để đổi hay huỷ.",
+    "LEAVING_CLOSED": "Hồ sơ đã đóng vì nghỉ việc nên không đổi hay huỷ được nữa."
   },
   "search": {
     "placeholder": "Tìm người, phòng ban, đơn, trang…",
