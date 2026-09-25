@@ -73,6 +73,24 @@ static esp_err_t attach_ready_line(void)
     return gpio_isr_handler_add(APP_TOF_INT_GPIO, on_ready, NULL);
 }
 
+static esp_err_t set_up(uint16_t *id)
+{
+    APP_RETURN_ON_ERR(restart_chip(), TAG, "restart");
+    APP_RETURN_ON_ERR(wait_for_boot(), TAG, "boot");
+    if (VL53L1X_GetSensorId(TOF_DEV, id) != 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (VL53L1X_SensorInit(TOF_DEV) != 0 ||
+        VL53L1X_SetInterruptPolarity(TOF_DEV, INTERRUPT_ACTIVE_LOW) != 0 ||
+        VL53L1X_SetDistanceMode(TOF_DEV, DISTANCE_MODE_SHORT) != 0 ||
+        VL53L1X_SetTimingBudgetInMs(TOF_DEV, TIMING_BUDGET_MS) != 0 ||
+        VL53L1X_SetInterMeasurementInMs(TOF_DEV, INTER_MEASUREMENT_MS) != 0) {
+        ESP_LOGE(TAG, "sensor 0x%04X refused its ranging setup", *id);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    return ESP_OK;
+}
+
 esp_err_t drv_tof_init(void)
 {
     if (s_running) {
@@ -83,21 +101,8 @@ esp_err_t drv_tof_init(void)
         return ESP_ERR_NO_MEM;
     }
     APP_RETURN_ON_ERR(tof_platform_open(), TAG, "bus");
-    APP_RETURN_ON_ERR(restart_chip(), TAG, "restart");
-    APP_RETURN_ON_ERR(wait_for_boot(), TAG, "boot");
-
     uint16_t id = 0;
-    if (VL53L1X_GetSensorId(TOF_DEV, &id) != 0) {
-        return ESP_ERR_NOT_FOUND;
-    }
-    if (VL53L1X_SensorInit(TOF_DEV) != 0 ||
-        VL53L1X_SetInterruptPolarity(TOF_DEV, INTERRUPT_ACTIVE_LOW) != 0 ||
-        VL53L1X_SetDistanceMode(TOF_DEV, DISTANCE_MODE_SHORT) != 0 ||
-        VL53L1X_SetTimingBudgetInMs(TOF_DEV, TIMING_BUDGET_MS) != 0 ||
-        VL53L1X_SetInterMeasurementInMs(TOF_DEV, INTER_MEASUREMENT_MS) != 0) {
-        ESP_LOGE(TAG, "sensor 0x%04X refused its ranging setup", id);
-        return ESP_ERR_INVALID_RESPONSE;
-    }
+    APP_RETURN_ON_ERR(set_up(&id), TAG, "set up");
     APP_RETURN_ON_ERR(attach_ready_line(), TAG, "ready line");
     if (VL53L1X_StartRanging(TOF_DEV) != 0) {
         return ESP_ERR_INVALID_RESPONSE;
@@ -136,4 +141,14 @@ esp_err_t drv_tof_read_mm(uint16_t *distance_mm, bool *status_ok)
 SemaphoreHandle_t drv_tof_ready_signal(void)
 {
     return s_ready;
+}
+
+esp_err_t drv_tof_restart(void)
+{
+    if (!s_running) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint16_t id = 0;
+    APP_RETURN_ON_ERR(set_up(&id), TAG, "set up");
+    return VL53L1X_StartRanging(TOF_DEV) == 0 ? ESP_OK : ESP_ERR_INVALID_RESPONSE;
 }

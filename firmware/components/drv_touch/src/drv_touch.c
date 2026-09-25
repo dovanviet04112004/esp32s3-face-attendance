@@ -30,6 +30,7 @@ static const char *TAG = "drv_touch";
 static esp_lcd_touch_handle_t s_touch;
 static esp_lcd_panel_io_handle_t s_io;
 static SemaphoreHandle_t s_report;
+static gpio_int_type_t s_edge = GPIO_INTR_NEGEDGE;
 
 static void IRAM_ATTR on_report(void *arg)
 {
@@ -96,9 +97,8 @@ static esp_err_t arm_report_interrupt(void)
     if (s_report == NULL) {
         return ESP_ERR_NO_MEM;
     }
-    APP_RETURN_ON_ERR(gpio_set_intr_type(APP_TOUCH_INT_GPIO,
-                                         rising ? GPIO_INTR_POSEDGE : GPIO_INTR_NEGEDGE),
-                      TAG, "int edge");
+    s_edge = rising ? GPIO_INTR_POSEDGE : GPIO_INTR_NEGEDGE;
+    APP_RETURN_ON_ERR(gpio_set_intr_type(APP_TOUCH_INT_GPIO, s_edge), TAG, "int edge");
     APP_RETURN_ON_ERR(gpio_isr_handler_add(APP_TOUCH_INT_GPIO, on_report, NULL), TAG, "int isr");
     ESP_LOGI(TAG, "int on gpio %d, %s edge (0x804D = 0x%02X)", APP_TOUCH_INT_GPIO,
              rising ? "rising" : "falling", module_switch1);
@@ -177,4 +177,18 @@ bool drv_touch_wait(uint32_t timeout_ms)
 esp_lcd_touch_handle_t drv_touch_handle(void)
 {
     return s_touch;
+}
+
+esp_err_t drv_touch_restart(void)
+{
+    if (s_touch == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    // RST drives INT as an output for a moment, so the report line is armed again afterwards.
+    APP_RETURN_ON_ERR(select_address(), TAG, "address select");
+    APP_RETURN_ON_ERR(bsp_i2c_lock(TOUCH_LOCK_MS), TAG, "lock");
+    const esp_err_t found = check_product_id();
+    bsp_i2c_unlock();
+    APP_RETURN_ON_ERR(found, TAG, "product id");
+    return gpio_set_intr_type(APP_TOUCH_INT_GPIO, s_edge);
 }

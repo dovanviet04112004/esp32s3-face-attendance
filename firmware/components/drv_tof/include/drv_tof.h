@@ -33,6 +33,12 @@ esp_err_t drv_tof_read_mm(uint16_t *distance_mm, bool *status_ok);
  */
 SemaphoreHandle_t drv_tof_ready_signal(void);
 
+/** Reset the sensor through XSHUT and set it ranging again, for a sensor that went quiet.
+ *  @ctx tof task | blocking ~100 ms | takes m_i2c per transfer
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE without drv_tof_init | ESP_ERR_NOT_FOUND | ESP_ERR_INVALID_RESPONSE
+ */
+esp_err_t drv_tof_restart(void);
+
 #ifdef __cplusplus
 }
 #endif

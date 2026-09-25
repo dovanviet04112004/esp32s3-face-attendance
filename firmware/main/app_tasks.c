@@ -146,8 +146,8 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define TOUCH_POLL_MS 40
 #define TOUCH_IDLE_WAIT_MS 1000
 #define TOUCH_POINTS 1
-#define TOUCH_FAILS_TO_LOG 5              // failed reads in a row that the log reports
-#define TOF_QUIET_POLLS_TO_LOG 20         // two seconds with no ranging at all
+#define TOUCH_FAILS_TO_RESET 5            // failed reads in a row that reset the controller
+#define TOF_QUIET_POLLS_TO_RESET 20       // two seconds with no ranging at all
 #define UI_TASK_CORE 0
 #define UI_TASK_PRIORITY 4
 #define UI_TASK_STACK_BYTES 4096
@@ -1540,16 +1540,14 @@ static void touch_task(void *arg)
         }
         drv_touch_point_t points[TOUCH_POINTS];
         uint8_t count = 0;
-        const esp_err_t read = drv_touch_read(points, TOUCH_POINTS, &count);
         // A failed read says nothing about the finger: reporting a lift types a key twice.
-        if (read != ESP_OK) {
-            if (++failed == TOUCH_FAILS_TO_LOG) {
-                ESP_LOGE(TAG, "touch reads failing: %s", esp_err_to_name(read));
+        if (drv_touch_read(points, TOUCH_POINTS, &count) != ESP_OK) {
+            // A controller that stops answering stays that way until RST resets it.
+            if (++failed >= TOUCH_FAILS_TO_RESET) {
+                failed = 0;
+                ESP_LOGW(TAG, "touch controller reset: %s", esp_err_to_name(drv_touch_restart()));
             }
             continue;
-        }
-        if (failed >= TOUCH_FAILS_TO_LOG) {
-            ESP_LOGW(TAG, "touch reads back after %d failures", failed);
         }
         failed = 0;
         held = count > 0;
@@ -2133,13 +2131,15 @@ static void tof_task(void *arg)
         uint16_t distance_mm = 0;
         bool status_ok = false;
         const esp_err_t ranged = drv_tof_read_mm(&distance_mm, &status_ok);
-        if (ranged == ESP_ERR_TIMEOUT && ++quiet == TOF_QUIET_POLLS_TO_LOG) {
-            ESP_LOGE(TAG, "tof has not ranged for %d ms", TOF_QUIET_POLLS_TO_LOG * TOF_POLL_MS);
+        // A sensor that stopped ranging answers every poll with no sample until XSHUT resets it.
+        if (ranged == ESP_ERR_TIMEOUT && ++quiet >= TOF_QUIET_POLLS_TO_RESET) {
+            quiet = 0;
+            settling = TOF_SETTLE_POLLS;
+            const esp_err_t back = drv_tof_restart();
+            note_fault(DEVICE_EVENT_TYPE_TOF_FAULT, back == ESP_OK ? ESP_ERR_TIMEOUT : back,
+                       "sensor went quiet, reset");
         }
         if (ranged == ESP_OK) {
-            if (quiet >= TOF_QUIET_POLLS_TO_LOG) {
-                ESP_LOGW(TAG, "tof ranging again after %d quiet polls", quiet);
-            }
             quiet = 0;
         }
         if (ranged != ESP_OK) {
