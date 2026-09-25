@@ -229,6 +229,11 @@ typedef struct {
  */
 bool ui_kiosk_take_people_request(void);
 
+/** Ask for the people list again, for a table another task has just edited.
+ *  @ctx any | non-blocking | answered through ui_kiosk_take_people_request
+ */
+void ui_kiosk_refresh_people(void);
+
 /** Whether the wifi screen is asking for a fresh sweep of the channels.
  *  @ctx any | non-blocking | scanning blocks, so never answer it on ui_task
  */

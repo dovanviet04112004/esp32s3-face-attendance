@@ -31,6 +31,8 @@
 #define BANK 3
 #define OLD_SESSION_MS 1790000000000LL
 #define NEW_SESSION_MS 1790000060000LL
+#define MODEL_TAG_RUNNING 0xA1
+#define MODEL_TAG_OTHER 0xB2
 
 static int8_t s_emb[STORAGE_EMBED_DIM];
 static int8_t s_damaged[STORAGE_EMBED_DIM];
@@ -221,6 +223,57 @@ TEST_CASE("a lookup keeps answering while the table is written to flash", "[svc_
     printf("%d lookups during the save, worst %lld us\n", probes, worst_us);
     TEST_ASSERT_EQUAL(ESP_OK, s_persist_err);
     TEST_ASSERT_GREATER_OR_EQUAL_INT(PROBES_DURING_SAVE, probes);
+}
+
+TEST_CASE("a server push spares a capture the broker has not acked", "[svc_facedb]")
+{
+    int8_t held[STORAGE_EMBED_DIM];
+    float scale = 0.0f;
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_seal_session(PROBE_ID, 0, TEMPLATES_PER_PERSON, NEW_SESSION_MS));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_template(PROBE_ID, 0, held, sizeof(held), &scale, NULL));
+    synth(STRANGER_SEED, s_emb);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE,
+                      svc_facedb_enroll_pushed(PROBE_ID, 0, QUALITY, s_emb, SCALE, "Máy chủ"));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_template(PROBE_ID, 0, s_damaged, sizeof(s_damaged), &scale, NULL));
+    TEST_ASSERT_EQUAL_INT8_ARRAY(held, s_damaged, STORAGE_EMBED_DIM);
+    for (uint16_t idx = 0; idx < TEMPLATES_PER_PERSON; ++idx) {
+        TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_mark_reported(PROBE_ID, idx, NEW_SESSION_MS));
+    }
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll_pushed(PROBE_ID, 0, QUALITY, s_emb, SCALE, "Máy chủ"));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_template(PROBE_ID, 0, s_damaged, sizeof(s_damaged), &scale, NULL));
+    TEST_ASSERT_EQUAL_INT8_ARRAY(s_emb, s_damaged, STORAGE_EMBED_DIM);
+    synth(seed_of(PROBE_ID, 0), s_emb);
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_enroll(PROBE_ID, 0, QUALITY, s_emb, SCALE, "Nhân viên"));
+    TEST_ASSERT_EQUAL(ENROLLED, svc_facedb_count());
+}
+
+TEST_CASE("a table bound to another recognition model drops every template", "[svc_facedb]")
+{
+    uint8_t running[STORAGE_MODEL_TAG_LEN];
+    uint8_t other[STORAGE_MODEL_TAG_LEN];
+    uint8_t held[STORAGE_MODEL_TAG_LEN];
+    memset(running, MODEL_TAG_RUNNING, sizeof(running));
+    memset(other, MODEL_TAG_OTHER, sizeof(other));
+    svc_facedb_bind_t outcome = SVC_FACEDB_BIND_DROPPED;
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_bind_model(running, &outcome));
+    TEST_ASSERT_NOT_EQUAL(SVC_FACEDB_BIND_DROPPED, outcome);
+    TEST_ASSERT_EQUAL(ENROLLED, svc_facedb_count());
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_bind_model(running, &outcome));
+    TEST_ASSERT_EQUAL(SVC_FACEDB_BIND_KEPT, outcome);
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_model_tag(held));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(running, held, sizeof(held));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_seal_session(PROBE_ID, 0, TEMPLATES_PER_PERSON, NEW_SESSION_MS));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_bind_model(other, &outcome));
+    TEST_ASSERT_EQUAL(SVC_FACEDB_BIND_DROPPED, outcome);
+    TEST_ASSERT_EQUAL(0, svc_facedb_count());
+    svc_facedb_unreported_t next;
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, svc_facedb_next_unreported(&next));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_model_tag(held));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(other, held, sizeof(held));
+    TEST_ASSERT_EQUAL(ESP_OK, svc_facedb_bind_model(running, &outcome));
+    TEST_ASSERT_EQUAL(SVC_FACEDB_BIND_DROPPED, outcome);
+    enroll_everyone();
+    TEST_ASSERT_EQUAL(ENROLLED, svc_facedb_count());
 }
 
 // A retake writes the other bank, seals it, then keeps only that session (KEHOACH 7.5).

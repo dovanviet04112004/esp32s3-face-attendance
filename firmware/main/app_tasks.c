@@ -104,18 +104,18 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define MODEL_VERSION_CAP 33
 #define NVS_MODEL_VERSION "version"
 #define NVS_ACTIVE_SLOT "active_slot"
-#define NVS_ROSTER_VER "roster_ver"
 #define EMBEDDING_VERSION_CAP 33
-#define MODEL_ENTRY_RECOG "recog"
 #define EVENT_PAYLOAD_CAP 384
 #define CMD_SEEN_RING 8
 #define SYNC_TICK_MS 250
 #define OPEN_DOOR_DEFAULT_MS 3000
 #define REBOOT_DRAIN_MS 400
 #define WIFI_JOIN_WAIT_MS 12000
-#define ENROLL_REPORT_CAP 1024
+#define ENROLL_REPORT_CAP 1280            // a 31-byte name escaped to 186 still fits
+#define ASK_PAYLOAD_CAP 256
 #define ENROL_SAMPLES 3
 #define ROSTER_OFFER_WAIT_MS 200
+#define ROSTER_TAKE_WAIT_MS 3000          // past one table save, short of the ack wait
 #define ROSTER_WIPE_WAIT_MS 2000
 #define REPORTS_PER_DRAIN 6               // two sessions of ENROL_SAMPLES
 #define EVENT_FAULT_GAP_MS 60000
@@ -272,30 +272,46 @@ static void on_broker_state(bool up, void *ctx)
     }
 }
 
-// A template made by another recognition model must be refused rather than
-// compared across models, so both sides need the same name for this one.
+static_assert(ROSTER_TAKE_WAIT_MS < CONFIG_SYNC_ACK_TIMEOUT_MS, "a full roster queue outwaits an ack");
+
+// The table's model, which app_boot ties to the running one: a template of another
+// model is refused rather than compared across models (KEHOACH 7.5).
 static void embedding_version(char *out, size_t cap)
 {
-    const storage_models_header_t *header = NULL;
-    if (sys_storage_models_open(&header) == ESP_OK && header != NULL) {
-        for (uint32_t i = 0; i < header->count && i < STORAGE_MODEL_COUNT; ++i) {
-            if (strcmp(header->entry[i].name, MODEL_ENTRY_RECOG) != 0) {
-                continue;
-            }
-            const uint8_t *sha = header->entry[i].sha256;
-            snprintf(out, cap, "recog-%02x%02x%02x%02x%02x%02x%02x%02x", sha[0], sha[1], sha[2],
-                     sha[3], sha[4], sha[5], sha[6], sha[7]);
-            return;
-        }
+    uint8_t tag[STORAGE_MODEL_TAG_LEN];
+    if (svc_facedb_model_tag(tag) != ESP_OK) {
+        strlcpy(out, "none", cap);
+        return;
     }
-    strlcpy(out, "none", cap);
+    snprintf(out, cap, "recog-%02x%02x%02x%02x%02x%02x%02x%02x", tag[0], tag[1], tag[2], tag[3],
+             tag[4], tag[5], tag[6], tag[7]);
 }
 
 static uint32_t roster_version(void)
 {
     uint32_t version = 0;
-    sys_storage_get_u32(STORAGE_NS_DEVICE, NVS_ROSTER_VER, &version);
+    sys_storage_get_u32(STORAGE_NS_DEVICE, STORAGE_KEY_ROSTER_VER, &version);
     return version;
+}
+
+// Comparing across models is worse than refusing, and sync_task counts the refusal (KEHOACH 7.5).
+static app_roster_refusal_t decode_embedding(const enroll_payload_t *wire, app_roster_t *op)
+{
+    char mine[EMBEDDING_VERSION_CAP] = { 0 };
+    embedding_version(mine, sizeof(mine));
+    if (strcmp(mine, wire->embedding_version) != 0) {
+        return APP_ROSTER_OTHER_MODEL;
+    }
+    size_t got = 0;
+    if (mbedtls_base64_decode((unsigned char *)op->embedding, sizeof(op->embedding), &got,
+                              (const unsigned char *)wire->embedding,
+                              strlen(wire->embedding)) != 0 ||
+        got != sizeof(op->embedding)) {
+        ESP_LOGW(TAG, "roster embedding is %u bytes, want %u", (unsigned)got,
+                 (unsigned)sizeof(op->embedding));
+        return APP_ROSTER_BAD_EMBEDDING;
+    }
+    return APP_ROSTER_USABLE;
 }
 
 static void take_roster_push(const char *payload, size_t len)
@@ -321,32 +337,12 @@ static void take_roster_push(const char *payload, size_t len)
         strlcpy(op.name, wire.full_name, sizeof(op.name));
     }
     if (wire.op == ENROLL_PAYLOAD_OP_UPSERT) {
-        char mine[EMBEDDING_VERSION_CAP] = { 0 };
-        embedding_version(mine, sizeof(mine));
-        if (strcmp(mine, wire.embedding_version) != 0) {
-            // Comparing across models is worse than refusing (KEHOACH 7.5).
-            app_event_t refused = { 0 };
-            refused.type = DEVICE_EVENT_TYPE_ROSTER_REJECTED;
-            refused.severity = DEVICE_EVENT_SEVERITY_WARN;
-            refused.employee_id = wire.employee_id;
-            refused.has_employee = true;
-            snprintf(refused.note, sizeof(refused.note), "kiosk embeds %.*s",
-                     (int)sizeof(refused.note) - 16, mine);
-            note_event(&refused);
-            return;
-        }
-        size_t got = 0;
-        if (mbedtls_base64_decode((unsigned char *)op.embedding, sizeof(op.embedding), &got,
-                                  (const unsigned char *)wire.embedding,
-                                  strlen(wire.embedding)) != 0 ||
-            got != sizeof(op.embedding)) {
-            ESP_LOGW(TAG, "roster embedding is %u bytes, want %u", (unsigned)got,
-                     (unsigned)sizeof(op.embedding));
-            return;
-        }
+        op.refusal = (uint8_t)decode_embedding(&wire, &op);
     }
     const app_wiring_t *wiring = app_wiring();
-    if (wiring == NULL || xQueueSend(wiring->roster, &op, 0) != pdTRUE) {
+    // The queue holds a whole resync, so waiting out sync_task beats a gap (KEHOACH 9.23).
+    if (wiring == NULL ||
+        xQueueSend(wiring->roster, &op, pdMS_TO_TICKS(ROSTER_TAKE_WAIT_MS)) != pdTRUE) {
         ESP_LOGE(TAG, "roster op for %" PRIu32 " dropped, queue full", op.employee_id);
     }
 }
@@ -369,7 +365,7 @@ static void take_ota_offer(const char *payload, size_t len)
     }
 }
 
-// Runs on the esp-mqtt task, which must not block: parse here, act in sync_task.
+// Runs on the esp-mqtt task, which carries the whole link: parse here, act in sync_task.
 static void on_broker_message(gen_topic_id_t topic, const char *payload, size_t len, void *ctx)
 {
     (void)ctx;
@@ -624,7 +620,7 @@ static esp_err_t report_sample(const svc_facedb_unreported_t *sample)
 
 static esp_err_t send_ask(const storage_enroll_ask_t *ask)
 {
-    static char payload[ENROLL_REPORT_CAP];
+    static char payload[ASK_PAYLOAD_CAP];
     enroll_payload_t wire = { 0 };
     wire.op = (enroll_payload_op_t)ask->op;
     wire.employee_id = ask->employee_id;
@@ -645,11 +641,12 @@ static esp_err_t send_ask(const storage_enroll_ask_t *ask)
     return sent;
 }
 
-static_assert(UI_KIOSK_PENDING_ROWS == STORAGE_PENDING_CAP, "the pending blob holds the screen's rows");
+static_assert(UI_KIOSK_PENDING_ROWS <= STORAGE_PENDING_CAP, "the screen shows the head of the list");
 
-static ui_kiosk_pending_t s_pending[UI_KIOSK_PENDING_ROWS];
-static int s_pending_count;
+// The list and its NVS image at once, in PSRAM: 64 rows are 2.3 KB (KEHOACH 6.2.1).
+static storage_pending_t *s_pending;
 static storage_enroll_out_t s_asks;
+static bool s_roster_gapped;
 static _Atomic uint8_t s_brightness = 100;
 
 static bool holds_face(uint32_t employee_id, uint16_t first_idx, uint16_t count)
@@ -664,48 +661,43 @@ static bool holds_face(uint32_t employee_id, uint16_t first_idx, uint16_t count)
     return false;
 }
 
+// ui_task and sync_task both offer the list, so the rows are built on the caller's stack.
 static void offer_pending(void)
 {
-    for (int i = 0; i < s_pending_count; ++i) {
-        s_pending[i].retake = holds_face(s_pending[i].employee_id, 0, 2 * ENROL_SAMPLES);
+    ui_kiosk_pending_t shown[UI_KIOSK_PENDING_ROWS];
+    const int count =
+        s_pending->count < UI_KIOSK_PENDING_ROWS ? s_pending->count : UI_KIOSK_PENDING_ROWS;
+    for (int i = 0; i < count; ++i) {
+        shown[i].employee_id = s_pending->row[i].employee_id;
+        strlcpy(shown[i].name, s_pending->row[i].name, sizeof(shown[i].name));
+        shown[i].retake = holds_face(shown[i].employee_id, 0, 2 * ENROL_SAMPLES);
     }
-    ui_kiosk_set_pending(s_pending, s_pending_count);
+    ui_kiosk_set_pending(shown, count);
 }
 
 // Kept in NVS so a reboot while offline still knows whom to capture (KEHOACH 7.5).
 static void save_pending(void)
 {
-    static storage_pending_t blob;
-    memset(&blob, 0, sizeof(blob));
-    blob.magic = STORAGE_PENDING_MAGIC;
-    blob.count = (uint8_t)s_pending_count;
-    for (int i = 0; i < s_pending_count; ++i) {
-        blob.row[i].employee_id = s_pending[i].employee_id;
-        strlcpy(blob.row[i].name, s_pending[i].name, sizeof(blob.row[i].name));
-    }
-    const esp_err_t saved = sys_storage_set_blob(STORAGE_NS_DEVICE, STORAGE_KEY_PENDING, &blob,
-                                                 sizeof(blob));
+    s_pending->magic = STORAGE_PENDING_MAGIC;
+    const esp_err_t saved = sys_storage_set_blob(STORAGE_NS_DEVICE, STORAGE_KEY_PENDING, s_pending,
+                                                 sizeof(*s_pending));
     if (saved != ESP_OK) {
         ESP_LOGW(TAG, "pending list not saved: %s", esp_err_to_name(saved));
     }
 }
 
+// A blob of another layout reads as no list; the next resync refills it (KEHOACH 6.2.1).
 static void load_pending(void)
 {
-    static storage_pending_t blob;
-    if (sys_storage_get_blob(STORAGE_NS_DEVICE, STORAGE_KEY_PENDING, &blob, sizeof(blob)) != ESP_OK ||
-        blob.magic != STORAGE_PENDING_MAGIC || blob.count > STORAGE_PENDING_CAP) {
-        return;
-    }
-    s_pending_count = blob.count;
-    for (int i = 0; i < s_pending_count; ++i) {
-        s_pending[i].employee_id = blob.row[i].employee_id;
-        strlcpy(s_pending[i].name, blob.row[i].name, sizeof(s_pending[i].name));
+    if (sys_storage_get_blob(STORAGE_NS_DEVICE, STORAGE_KEY_PENDING, s_pending, sizeof(*s_pending)) !=
+            ESP_OK ||
+        s_pending->magic != STORAGE_PENDING_MAGIC || s_pending->count > STORAGE_PENDING_CAP) {
+        memset(s_pending, 0, sizeof(*s_pending));
     }
     offer_pending();
 }
 
-static void save_asks(void)
+static esp_err_t save_asks(void)
 {
     s_asks.magic = STORAGE_ENROLL_OUT_MAGIC;
     const esp_err_t saved = sys_storage_set_blob(STORAGE_NS_DEVICE, STORAGE_KEY_ENROLL_OUT, &s_asks,
@@ -714,6 +706,7 @@ static void save_asks(void)
         note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, saved, "enrol requests not saved");
     }
     ui_kiosk_set_asks_room(s_asks.count < STORAGE_ENROLL_OUT_CAP);
+    return saved;
 }
 
 static void load_asks(void)
@@ -734,8 +727,13 @@ static bool push_ask(int op, uint32_t employee_id)
     }
     s_asks.ask[s_asks.count] = (storage_enroll_ask_t){ .op = (uint8_t)op, .employee_id = employee_id };
     ++s_asks.count;
-    save_asks();
-    return true;
+    if (save_asks() == ESP_OK) {
+        return true;
+    }
+    // An ask flash does not hold cannot promise to arrive, so it is not made.
+    --s_asks.count;
+    ui_kiosk_set_asks_room(true);
+    return false;
 }
 
 // Requests lead reports: a retake has to reach the server ahead of its samples (KEHOACH 7.5).
@@ -751,6 +749,19 @@ static void drain_asks(void)
     }
 }
 
+static void report_unbuilt(const svc_facedb_unreported_t *sample, esp_err_t err)
+{
+    app_event_t event = { 0 };
+    event.type = DEVICE_EVENT_TYPE_ROSTER_REJECTED;
+    event.severity = DEVICE_EVENT_SEVERITY_ERROR;
+    event.employee_id = sample->employee_id;
+    event.has_employee = true;
+    event.error_code = (int32_t)err;
+    event.has_error = true;
+    strlcpy(event.note, "enrol report would not build", sizeof(event.note));
+    note_event(&event);
+}
+
 static void drain_reports(void)
 {
     static svc_facedb_unreported_t next;
@@ -760,8 +771,11 @@ static void drain_reports(void)
             break;
         }
         const esp_err_t said = report_sample(&next);
-        // A sample no payload can carry is dropped from the queue rather than wedging it.
-        if (said != ESP_OK && said != ESP_ERR_INVALID_SIZE) {
+        // The sample keeps its flag: only the broker's ack may clear it (KEHOACH 7.5).
+        if (said == ESP_ERR_INVALID_SIZE) {
+            report_unbuilt(&next, said);
+        }
+        if (said != ESP_OK) {
             break;
         }
         svc_facedb_mark_reported(next.employee_id, next.template_idx, next.session_ms);
@@ -778,19 +792,20 @@ static void drain_reports(void)
 
 static bool assign_pending(const app_roster_t *op)
 {
-    for (int i = 0; i < s_pending_count; ++i) {
-        if (s_pending[i].employee_id == op->employee_id) {
-            strlcpy(s_pending[i].name, op->name, sizeof(s_pending[i].name));
+    for (int i = 0; i < s_pending->count; ++i) {
+        if (s_pending->row[i].employee_id == op->employee_id) {
+            strlcpy(s_pending->row[i].name, op->name, sizeof(s_pending->row[i].name));
             offer_pending();
             return true;
         }
     }
-    if (s_pending_count >= UI_KIOSK_PENDING_ROWS) {
+    if (s_pending->count >= STORAGE_PENDING_CAP) {
         return false;
     }
-    s_pending[s_pending_count].employee_id = op->employee_id;
-    strlcpy(s_pending[s_pending_count].name, op->name, sizeof(s_pending[0].name));
-    ++s_pending_count;
+    storage_pending_row_t *row = &s_pending->row[s_pending->count];
+    row->employee_id = op->employee_id;
+    strlcpy(row->name, op->name, sizeof(row->name));
+    ++s_pending->count;
     save_pending();
     offer_pending();
     return true;
@@ -798,12 +813,14 @@ static bool assign_pending(const app_roster_t *op)
 
 static void revoke_pending(uint32_t employee_id)
 {
-    for (int i = 0; i < s_pending_count; ++i) {
-        if (s_pending[i].employee_id != employee_id) {
+    for (int i = 0; i < s_pending->count; ++i) {
+        if (s_pending->row[i].employee_id != employee_id) {
             continue;
         }
-        s_pending[i] = s_pending[s_pending_count - 1];
-        --s_pending_count;
+        const int last = s_pending->count - 1;
+        s_pending->row[i] = s_pending->row[last];
+        memset(&s_pending->row[last], 0, sizeof(s_pending->row[last]));
+        --s_pending->count;
         save_pending();
         offer_pending();
         return;
@@ -812,38 +829,87 @@ static void revoke_pending(uint32_t employee_id)
 
 static void revoke_all_pending(void)
 {
-    s_pending_count = 0;
+    memset(s_pending, 0, sizeof(*s_pending));
     save_pending();
     offer_pending();
 }
 
-// The cursor is written after the table, so a power cut costs one push again
-// rather than a device claiming a version it never applied (KEHOACH 7.5).
-static bool apply_roster(const app_roster_t *op)
+typedef enum {
+    ROSTER_APPLIED,                       // done, the version moves on
+    ROSTER_SPENT,                         // refused for good, the version still moves on
+    ROSTER_FAILED,                        // not done: the version holds and the kiosk stops
+} roster_outcome_t;
+
+static void roster_refused(const app_roster_t *op, int severity, esp_err_t err, const char *note)
 {
-    esp_err_t done = ESP_ERR_NOT_SUPPORTED;
-    const char *refusal = NULL;
+    app_event_t event = { 0 };
+    event.type = DEVICE_EVENT_TYPE_ROSTER_REJECTED;
+    event.severity = severity;
+    event.employee_id = op->employee_id;
+    event.has_employee = true;
+    event.error_code = (int32_t)err;
+    event.has_error = true;
+    strlcpy(event.note, note, sizeof(event.note));
+    note_event(&event);
+}
+
+static void refuse_upsert(const app_roster_t *op)
+{
+    char note[sizeof(((app_event_t *)0)->note)] = "embedding of the wrong size";
+    esp_err_t why = ESP_ERR_INVALID_SIZE;
+    if (op->refusal == APP_ROSTER_OTHER_MODEL) {
+        char mine[EMBEDDING_VERSION_CAP] = { 0 };
+        embedding_version(mine, sizeof(mine));
+        snprintf(note, sizeof(note), "kiosk embeds %s", mine);
+        why = ESP_ERR_INVALID_VERSION;
+    }
+    roster_refused(op, DEVICE_EVENT_SEVERITY_WARN, why, note);
+}
+
+static esp_err_t already_gone(esp_err_t err)
+{
+    return err == ESP_ERR_NOT_FOUND ? ESP_OK : err;
+}
+
+// A refusal no resend can cure still counts, or every heartbeat replays the whole
+// roster onto flash (KEHOACH 7.5).
+static roster_outcome_t apply_roster(const app_roster_t *op)
+{
+    esp_err_t done = ESP_OK;
     switch (op->op) {
     case ENROLL_PAYLOAD_OP_UPSERT:
-        done = svc_facedb_enroll(op->employee_id, op->template_idx, op->quality, op->embedding,
-                                 op->scale, op->name);
+        if (op->refusal != APP_ROSTER_USABLE) {
+            refuse_upsert(op);
+            return ROSTER_SPENT;
+        }
+        done = svc_facedb_enroll_pushed(op->employee_id, op->template_idx, op->quality,
+                                        op->embedding, op->scale, op->name);
+        if (done == ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "push for %" PRIu32 " sample %u spares a capture not yet reported",
+                     op->employee_id, (unsigned)op->template_idx);
+            return ROSTER_SPENT;
+        }
         // This door holds the face now, so it stops asking for one (KEHOACH 9.23 rule 7).
         if (done == ESP_OK) {
             revoke_pending(op->employee_id);
         }
         break;
     case ENROLL_PAYLOAD_OP_DELETE_EMPLOYEE:
-        done = svc_facedb_remove(op->employee_id);
+        done = already_gone(svc_facedb_remove(op->employee_id));
+        // A revoked person waits for a capture at no door (KEHOACH 9.19).
+        revoke_pending(op->employee_id);
         break;
     case ENROLL_PAYLOAD_OP_ASSIGN:
-        done = assign_pending(op) ? ESP_OK : ESP_ERR_NO_MEM;
+        if (!assign_pending(op)) {
+            roster_refused(op, DEVICE_EVENT_SEVERITY_WARN, ESP_ERR_NO_MEM, "pending list full");
+            return ROSTER_SPENT;
+        }
         break;
     case ENROLL_PAYLOAD_OP_REVOKE:
         revoke_pending(op->employee_id);
-        done = ESP_OK;
         break;
     case ENROLL_PAYLOAD_OP_DELETE:
-        done = svc_facedb_remove_template(op->employee_id, op->template_idx);
+        done = already_gone(svc_facedb_remove_template(op->employee_id, op->template_idx));
         break;
     case ENROLL_PAYLOAD_OP_REPLACE_ALL:
         // The upserts that refill the table follow this one, and the kiosk
@@ -855,63 +921,67 @@ static bool apply_roster(const app_roster_t *op)
             save_asks();
         }
         break;
-    default: refusal = "unknown roster op"; break;
+    default:
+        roster_refused(op, DEVICE_EVENT_SEVERITY_WARN, ESP_ERR_NOT_SUPPORTED, "unknown roster op");
+        return ROSTER_SPENT;
     }
-    if (refusal != NULL) {
-        app_event_t event = { 0 };
-        event.type = DEVICE_EVENT_TYPE_ROSTER_REJECTED;
-        event.severity = DEVICE_EVENT_SEVERITY_WARN;
-        event.employee_id = op->employee_id;
-        event.has_employee = true;
-        strlcpy(event.note, refusal, sizeof(event.note));
-        note_event(&event);
-        return false;
+    if (done == ESP_ERR_NO_MEM) {
+        roster_refused(op, DEVICE_EVENT_SEVERITY_ERROR, done, "face table full");
+        return ROSTER_SPENT;
     }
     if (done != ESP_OK) {
-        app_event_t event = { 0 };
-        event.type = DEVICE_EVENT_TYPE_ROSTER_REJECTED;
-        event.severity = DEVICE_EVENT_SEVERITY_ERROR;
-        event.employee_id = op->employee_id;
-        event.has_employee = true;
-        event.error_code = (int32_t)done;
-        event.has_error = true;
-        strlcpy(event.note, esp_err_to_name(done), sizeof(event.note));
-        note_event(&event);
-        return false;
+        roster_refused(op, DEVICE_EVENT_SEVERITY_ERROR, done, esp_err_to_name(done));
+        return ROSTER_FAILED;
     }
     ESP_LOGI(TAG, "roster %s employee %" PRIu32,
              enroll_payload_op_str((enroll_payload_op_t)op->op), op->employee_id);
-    return true;
+    return ROSTER_APPLIED;
 }
 
-// Delivery is at least once, so a push repeating or predating the version in
-// hand writes an older face over a newer one (KEHOACH 9.23 rule 7).
-static bool roster_op_is_fresh(const app_roster_t *op, uint32_t held)
+typedef enum {
+    ROSTER_TAKE,
+    ROSTER_STALE,                         // at or under the version held: a repeat
+    ROSTER_GAP,                           // one in between never arrived
+} roster_gate_t;
+
+// Only the next number applies, and after a gap nothing counted does until a
+// REPLACE_ALL restates the roster at whatever number it carries (KEHOACH 9.23).
+static roster_gate_t roster_gate(const app_roster_t *op, uint32_t held, bool gapped)
 {
-    // REPLACE_ALL restates the roster, so it sets the count (KEHOACH 9.23).
     if (!op->has_roster_version || op->op == ENROLL_PAYLOAD_OP_REPLACE_ALL) {
-        return true;
+        return ROSTER_TAKE;
     }
-    if (op->roster_version > held) {
-        return true;
+    if (op->roster_version <= held) {
+        return ROSTER_STALE;
     }
-    ESP_LOGW(TAG, "roster push at version %" PRIu32 " trails %" PRIu32 ", dropped",
-             op->roster_version, held);
-    return false;
+    return gapped || op->roster_version != held + 1 ? ROSTER_GAP : ROSTER_TAKE;
 }
 
-static void take_ask(const app_roster_t *op)
+static void note_gap(const app_roster_t *op, uint32_t held)
+{
+    char note[sizeof(((app_event_t *)0)->note)];
+    snprintf(note, sizeof(note), "gap: %" PRIu32 " after %" PRIu32, op->roster_version, held);
+    ESP_LOGW(TAG, "roster %s, holding until a REPLACE_ALL", note);
+    roster_refused(op, DEVICE_EVENT_SEVERITY_WARN, ESP_ERR_INVALID_STATE, note);
+}
+
+// The request is on flash first, so a power cut leaves it to send rather than a
+// removal the server never hears of (KEHOACH 7.5).
+static bool take_ask(const app_roster_t *op)
 {
     if (!push_ask(op->op, op->employee_id)) {
-        ESP_LOGW(TAG, "request for %" PRIu32 " refused, %d wait unsent", op->employee_id,
-                 STORAGE_ENROLL_OUT_CAP);
-        return;
+        ESP_LOGW(TAG, "request for %" PRIu32 " refused: outbox full or not saved", op->employee_id);
+        return false;
     }
     if (op->op == ENROLL_PAYLOAD_OP_RETAKE) {
         assign_pending(op);
-    } else {
-        revoke_pending(op->employee_id);
+        return false;
     }
+    const esp_err_t gone = svc_facedb_remove(op->employee_id);
+    revoke_pending(op->employee_id);
+    ui_kiosk_refresh_people();
+    ESP_LOGI(TAG, "removed %" PRIu32 " here: %s", op->employee_id, esp_err_to_name(gone));
+    return gone == ESP_OK;
 }
 
 // A kiosk joining a fleet takes the whole roster as a run of upserts, so the
@@ -924,31 +994,52 @@ static void take_roster(const app_wiring_t *wiring)
     bool changed = false;
     while (xQueueReceive(wiring->roster, &op, 0) == pdTRUE) {
         if (op.source == APP_ROSTER_ASKED) {
-            take_ask(&op);
+            changed = take_ask(&op) || changed;
             continue;
         }
         if (op.source == APP_ROSTER_CAPTURED) {
             revoke_pending(op.employee_id);
             continue;
         }
-        if (!roster_op_is_fresh(&op, held) || !apply_roster(&op)) {
+        const roster_gate_t gate = roster_gate(&op, held, s_roster_gapped);
+        if (gate == ROSTER_STALE) {
+            ESP_LOGW(TAG, "roster push at version %" PRIu32 " trails %" PRIu32 ", dropped",
+                     op.roster_version, held);
             continue;
         }
-        changed = changed || (op.op != ENROLL_PAYLOAD_OP_ASSIGN &&
+        if (gate == ROSTER_GAP) {
+            if (!s_roster_gapped) {
+                note_gap(&op, held);
+            }
+            s_roster_gapped = true;
+            continue;
+        }
+        const roster_outcome_t outcome = apply_roster(&op);
+        if (outcome == ROSTER_FAILED) {
+            s_roster_gapped = true;
+            continue;
+        }
+        changed = changed || (outcome == ROSTER_APPLIED && op.op != ENROLL_PAYLOAD_OP_ASSIGN &&
                               op.op != ENROLL_PAYLOAD_OP_REVOKE);
-        if (op.has_roster_version) {
-            held = op.roster_version;
+        if (!op.has_roster_version) {
+            continue;
+        }
+        held = op.roster_version;
+        if (op.op == ENROLL_PAYLOAD_OP_REPLACE_ALL) {
+            s_roster_gapped = false;
         }
     }
     if (changed) {
         const esp_err_t saved = svc_facedb_persist();
         if (saved != ESP_OK) {
             note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, saved, "face table would not save");
+            s_roster_gapped = true;
             return;
         }
     }
+    // The cursor follows the table: a power cut costs a push, never a claimed version (KEHOACH 7.5).
     if (held != started_at) {
-        sys_storage_set_u32(STORAGE_NS_DEVICE, NVS_ROSTER_VER, held);
+        sys_storage_set_u32(STORAGE_NS_DEVICE, STORAGE_KEY_ROSTER_VER, held);
         ESP_LOGI(TAG, "roster saved, now at version %" PRIu32, held);
     }
 }
@@ -1116,6 +1207,10 @@ static void settle_this_build(const app_wiring_t *wiring, int64_t up_ms)
         return;
     }
     signed_off = net_ota_mark_valid() == ESP_OK;
+    // Only a kept build writes the table in its own format (KEHOACH 6.2.4).
+    if (signed_off) {
+        ESP_LOGI(TAG, "build kept, face table saved: %s", esp_err_to_name(svc_facedb_persist()));
+    }
 }
 
 static void sync_task(void *arg)
@@ -1841,14 +1936,9 @@ static void ui_task(void *arg)
         if (ui_kiosk_take_pending_request()) {
             offer_pending();
         }
-        // Both act here at once and reach the server as requests (KEHOACH 7.5).
+        // Both reach the server as requests, and sync_task acts once each is saved (KEHOACH 7.5).
         uint32_t going = 0;
         if (ui_kiosk_take_remove(&going)) {
-            const esp_err_t gone = svc_facedb_remove(going);
-            const esp_err_t saved = gone == ESP_OK ? svc_facedb_persist() : gone;
-            ESP_LOGI(TAG, "remove %" PRIu32 ": %s, saved %s", going, esp_err_to_name(gone),
-                     esp_err_to_name(saved));
-            show_people();
             hand_roster(wiring, APP_ROSTER_ASKED, ENROLL_PAYLOAD_OP_DELETE_EMPLOYEE, going, NULL);
         }
         uint32_t again = 0;
@@ -2167,6 +2257,10 @@ esp_err_t app_tasks_start(void)
         return ESP_ERR_INVALID_STATE;
     }
     stay_awake("boot");
+    s_pending = heap_caps_calloc(1, sizeof(*s_pending), MALLOC_CAP_SPIRAM);
+    if (s_pending == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
     // Core 1 stays clear for ai_task, whose one Invoke holds a core for
     // 100-400 ms and would stall everything sharing it (KEHOACH 5.1).
     const EventBits_t up = xEventGroupGetBits(wiring->flags);

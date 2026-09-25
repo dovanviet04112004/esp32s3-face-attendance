@@ -45,6 +45,35 @@ esp_err_t svc_facedb_lookup(const int8_t *emb, float scale, svc_facedb_match_t *
 esp_err_t svc_facedb_enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
                             const int8_t *emb, float scale, const char *name);
 
+/** Add a template the server pushed, sparing a sample captured here it has not seen.
+ *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE when that slot holds an unreported sample
+ *       | ESP_ERR_NO_MEM when the table is full even after compaction | ESP_ERR_TIMEOUT
+ */
+esp_err_t svc_facedb_enroll_pushed(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
+                                   const int8_t *emb, float scale, const char *name);
+
+/** How the table met the recognition model this boot runs (KEHOACH 6.2.4). */
+typedef enum {
+    SVC_FACEDB_BIND_KEPT = 0,             // the table already carried this model
+    SVC_FACEDB_BIND_STAMPED,              // an untagged table took it, templates kept
+    SVC_FACEDB_BIND_DROPPED,              // another model's: every template dropped
+} svc_facedb_bind_t;
+
+/** Tie the table to the recognition model whose embeddings it holds.
+ *  @ctx task | blocking | takes m_facedb | once, ahead of any lookup; RAM until persist
+ *  @param tag STORAGE_MODEL_TAG_LEN bytes: the head of the recog entry's sha256
+ *  @ret ESP_OK | ESP_ERR_INVALID_ARG | ESP_ERR_INVALID_STATE with no table | ESP_ERR_TIMEOUT
+ */
+esp_err_t svc_facedb_bind_model(const uint8_t *tag, svc_facedb_bind_t *outcome);
+
+/** The recognition model the table's embeddings came from.
+ *  @ctx any | non-blocking | settled once svc_facedb_bind_model has returned
+ *  @param out STORAGE_MODEL_TAG_LEN bytes
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND while the table carries no tag
+ */
+esp_err_t svc_facedb_model_tag(uint8_t *out);
+
 /** Read one stored template back out, for reporting it to the server.
  *  @ctx task | blocking | takes m_facedb
  *  @param emb at least STORAGE_EMBED_DIM bytes; quality may be NULL

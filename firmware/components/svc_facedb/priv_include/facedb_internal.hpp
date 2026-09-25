@@ -93,7 +93,10 @@ public:
     esp_err_t init(size_t capacity) noexcept;
     esp_err_t lookup(const int8_t *emb, float scale, MatchResult *out) noexcept;
     esp_err_t enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
-                     const int8_t *emb, float scale, const char *name) noexcept;
+                     const int8_t *emb, float scale, const char *name,
+                     bool spare_unreported) noexcept;
+    esp_err_t bind_model(const uint8_t *tag, svc_facedb_bind_t *outcome) noexcept;
+    esp_err_t model_tag(uint8_t *out) const noexcept;
     esp_err_t remove(uint32_t employee_id) noexcept;
     esp_err_t remove_template(uint32_t employee_id, uint16_t template_idx) noexcept;
     esp_err_t clear(bool keep_unreported) noexcept;
@@ -121,6 +124,7 @@ private:
     // Lock order: m_facedb_io -> m_facedb (KEHOACH 5.3).
     SemaphoreHandle_t io_mutex_ = nullptr;
     size_t active_ = 0;
+    uint8_t model_tag_[STORAGE_MODEL_TAG_LEN] = {};  // all zero while untagged
 };
 
 }  // namespace facedb

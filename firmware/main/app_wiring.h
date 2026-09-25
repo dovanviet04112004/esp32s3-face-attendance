@@ -24,8 +24,15 @@ typedef enum {
     APP_ROSTER_PURGE,                     // a dead ticket: REPLACE_ALL sparing nothing
 } app_roster_source_t;
 
-// One roster op already decoded: the esp-mqtt task may not block, and base64
-// is cheap while writing the face table is not (KEHOACH 7.5).
+/** Why a pushed UPSERT cannot be stored, decided while decoding it. */
+typedef enum {
+    APP_ROSTER_USABLE = 0,
+    APP_ROSTER_OTHER_MODEL,               // embedded by another recognition model
+    APP_ROSTER_BAD_EMBEDDING,             // base64 that is not STORAGE_EMBED_DIM bytes
+} app_roster_refusal_t;
+
+// One roster op already decoded on the esp-mqtt task: base64 is cheap there,
+// and writing the face table is not (KEHOACH 7.5).
 typedef struct {
     int op;                               // enroll_payload_op_t
     uint32_t employee_id;
@@ -36,6 +43,7 @@ typedef struct {
     uint32_t roster_version;
     bool has_roster_version;
     uint8_t source;                       // app_roster_source_t
+    uint8_t refusal;                      // app_roster_refusal_t
     char name[STORAGE_NAME_CAP];
     int8_t embedding[STORAGE_EMBED_DIM];
 } app_roster_t;
@@ -48,7 +56,7 @@ typedef struct {
     QueueHandle_t uplink;                 // q_uplink
     QueueHandle_t commands;               // q_cmd
     QueueHandle_t events;                 // q_event
-    QueueHandle_t roster;                 // q_roster
+    QueueHandle_t roster;                 // q_roster, deep enough for a resync
     QueueHandle_t ota;                    // q_ota, depth 1
     EventGroupHandle_t flags;             // eg_system
 } app_wiring_t;

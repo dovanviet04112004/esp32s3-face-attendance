@@ -18,6 +18,7 @@
 #include "drv_touch.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "net_ota.h"
 #include "net_wifi.h"
 #include "svc_attendance.h"
 #include "svc_door.h"
@@ -53,6 +54,7 @@ static const char *TAG = "app_boot";
 #define NVS_LANGUAGE "lang"
 #define PERMILLE 1000.0f
 #define PERCENT 100.0f
+#define MODEL_ENTRY_RECOG "recog"
 
 #ifdef CONFIG_ATTEND_SEED_ALLOW_NO_SPOOF
 #define ATTEND_SEED_ALLOW_NO_SPOOF 1u
@@ -175,6 +177,47 @@ static svc_attendance_policy_t attend_policy(void)
     return policy;
 }
 
+static bool running_recog_tag(uint8_t *tag)
+{
+    const storage_models_header_t *header = NULL;
+    if (sys_storage_models_open(&header) != ESP_OK || header == NULL) {
+        return false;
+    }
+    for (uint32_t i = 0; i < header->count && i < STORAGE_MODEL_COUNT; ++i) {
+        if (strcmp(header->entry[i].name, MODEL_ENTRY_RECOG) == 0) {
+            memcpy(tag, header->entry[i].sha256, STORAGE_MODEL_TAG_LEN);
+            return true;
+        }
+    }
+    return false;
+}
+
+// Templates of another recognition model live in another space, so they go (KEHOACH 7.5).
+static void bind_face_table(void)
+{
+    uint8_t tag[STORAGE_MODEL_TAG_LEN];
+    if (!running_recog_tag(tag)) {
+        ESP_LOGW(TAG, "no recog model in the image, face table left untagged");
+        return;
+    }
+    svc_facedb_bind_t outcome = SVC_FACEDB_BIND_KEPT;
+    const esp_err_t bound = svc_facedb_bind_model(tag, &outcome);
+    if (bound != ESP_OK) {
+        ESP_LOGE(TAG, "face table not tied to the model: %s", esp_err_to_name(bound));
+        return;
+    }
+    if (outcome == SVC_FACEDB_BIND_DROPPED) {
+        // The cursor goes first, so a power cut mid-save still leaves the server a resync to send.
+        sys_storage_set_u32(STORAGE_NS_DEVICE, STORAGE_KEY_ROSTER_VER, 0);
+        ESP_LOGW(TAG, "face table held another recognition model, all dropped: %s",
+                 esp_err_to_name(svc_facedb_persist()));
+    } else if (outcome == SVC_FACEDB_BIND_STAMPED && !net_ota_on_trial()) {
+        // An image on trial saves at sign-off, so a rollback reads its own format (KEHOACH 6.2.4).
+        ESP_LOGI(TAG, "face table stamped with the running model: %s",
+                 esp_err_to_name(svc_facedb_persist()));
+    }
+}
+
 // The bits decide which tasks app_tasks_start brings up, so a branch that could
 // not open reads as a task that stays down (KEHOACH 5.3).
 static void start_vision(EventGroupHandle_t flags)
@@ -184,6 +227,7 @@ static void start_vision(EventGroupHandle_t flags)
         ESP_LOGE(TAG, "face table: %s", esp_err_to_name(db));
         return;
     }
+    bind_face_table();
     xEventGroupSetBits(flags, APP_EG_DB_LOADED);
     ESP_LOGI(TAG, "face table holds %u templates", (unsigned)svc_facedb_count());
 

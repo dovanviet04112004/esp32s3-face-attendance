@@ -33,6 +33,12 @@ bool unreported(const storage_face_record_t &rec) noexcept
     return (rec.flags & STORAGE_FACE_FLAG_UNREPORTED) != 0;
 }
 
+bool untagged(const uint8_t *tag) noexcept
+{
+    constexpr uint8_t kUntagged[STORAGE_MODEL_TAG_LEN] = {};
+    return memcmp(tag, kUntagged, sizeof(kUntagged)) == 0;
+}
+
 }  // namespace
 
 esp_err_t EmbeddingTable::reserve(size_t capacity) noexcept
@@ -121,10 +127,15 @@ esp_err_t FaceDb::load() noexcept
         return err;
     }
     const storage_file_header_t &head = table_.header();
-    if (head.format_ver != STORAGE_FACES_VER || head.record_size != sizeof(storage_face_record_t)) {
+    const bool tagged = head.format_ver == STORAGE_FACES_VER;
+    if ((!tagged && head.format_ver != STORAGE_FACES_VER_UNTAGGED) ||
+        head.record_size != sizeof(storage_face_record_t)) {
         ESP_LOGE(TAG, "format %u with %u byte records is not this firmware's", head.format_ver,
                  head.record_size);
         return ESP_ERR_INVALID_VERSION;
+    }
+    if (tagged) {
+        memcpy(model_tag_, head.model_tag, sizeof(model_tag_));
     }
     const size_t in_file = (len - sizeof(storage_file_header_t)) / sizeof(storage_face_record_t);
     const size_t count = head.record_count < in_file ? head.record_count : in_file;
@@ -161,7 +172,7 @@ esp_err_t FaceDb::lookup(const int8_t *emb, float scale, MatchResult *out) noexc
 }
 
 esp_err_t FaceDb::enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality, const int8_t *emb,
-                         float scale, const char *name) noexcept
+                         float scale, const char *name, bool spare_unreported) noexcept
 {
     if (emb == nullptr) {
         return ESP_ERR_INVALID_ARG;
@@ -181,6 +192,10 @@ esp_err_t FaceDb::enroll(uint32_t employee_id, uint16_t template_idx, uint8_t qu
             slot = i;
             break;
         }
+    }
+    // The server decides between two sessions only once it has seen both (KEHOACH 7.5).
+    if (spare_unreported && slot != table_.count() && unreported(*table_.record(slot))) {
+        return ESP_ERR_INVALID_STATE;
     }
     if (slot == table_.count()) {
         if (table_.count() == table_.capacity()) {
@@ -208,6 +223,49 @@ esp_err_t FaceDb::enroll(uint32_t employee_id, uint16_t template_idx, uint8_t qu
     table_.set_norm_sq(slot, norm_sq(emb));
     seal(slot);
     return ESP_OK;
+}
+
+esp_err_t FaceDb::bind_model(const uint8_t *tag, svc_facedb_bind_t *outcome) noexcept
+{
+    if (tag == nullptr || outcome == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (mutex_ == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    app::LockGuard io(io_mutex_, kIoLockMs);
+    if (!io.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    app::LockGuard lock(mutex_, kLockMs);
+    if (!lock.held()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    if (memcmp(model_tag_, tag, sizeof(model_tag_)) == 0) {
+        *outcome = SVC_FACEDB_BIND_KEPT;
+        return ESP_OK;
+    }
+    // Only the running model can have built an untagged table (KEHOACH 6.2.4).
+    if (untagged(model_tag_)) {
+        *outcome = SVC_FACEDB_BIND_STAMPED;
+    } else {
+        // Unreported samples go too: no model here can compare them now (KEHOACH 7.5).
+        table_.set_count(0);
+        active_ = 0;
+        *outcome = SVC_FACEDB_BIND_DROPPED;
+    }
+    memcpy(model_tag_, tag, sizeof(model_tag_));
+    seal_header();
+    return ESP_OK;
+}
+
+esp_err_t FaceDb::model_tag(uint8_t *out) const noexcept
+{
+    if (out == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memcpy(out, model_tag_, sizeof(model_tag_));
+    return untagged(model_tag_) ? ESP_ERR_NOT_FOUND : ESP_OK;
 }
 
 esp_err_t FaceDb::remove(uint32_t employee_id) noexcept
@@ -486,6 +544,7 @@ void FaceDb::seal_header() noexcept
     head.record_count = static_cast<uint32_t>(table_.count());
     // No wall clock reaches this component yet, and zero reads as unknown.
     head.updated_at_ms = 0;
+    memcpy(head.model_tag, model_tag_, sizeof(head.model_tag));
     head.crc32 = sys_storage_crc32(&head, kHeaderCrcBytes);
 }
 

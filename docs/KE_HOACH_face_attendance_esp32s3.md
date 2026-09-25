@@ -5529,7 +5529,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | Namespace | Key | Kiểu | Ghi chú |
 |---|---|---|---|
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
-| `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver`, `pending`, `enroll_out` | str / u32 / blob | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại; `pending` (blob `storage_pending_t`) là danh sách người chờ chụp ở máy này, và `enroll_out` (blob `storage_enroll_out_t`) là các yêu cầu `RETAKE` / `DELETE_EMPLOYEE` chưa được broker ack (§7.5); layout của hai blob khai ở `storage_format.h` |
+| `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver`, `pending`, `enroll_out` | str / u32 / blob | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại, và về 0 khi bảng mặt bị bỏ vì đổi model nhận diện (§6.2.4); `pending` (blob `storage_pending_t`) là danh sách người chờ chụp ở máy này, và `enroll_out` (blob `storage_enroll_out_t`) là các yêu cầu `RETAKE` / `DELETE_EMPLOYEE` chưa được broker ack (§7.5); layout của hai blob khai ở `storage_format.h` |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
@@ -5598,15 +5598,24 @@ vì vậy chỉ nâng khi con số trong `Kconfig` thật sự đổi, không n�
 
 **Hai blob của `device` cho đăng ký tại máy (§7.5).** Cả hai mở đầu bằng `magic` rồi `count`, và
 chỉ được ghi khi danh sách đổi, tức vài lần mỗi ngày, không theo nhịp giây. Một blob có kích
-thước khác layout bị bỏ qua như vắng khoá.
+thước hoặc `magic` khác layout bị bỏ qua như vắng khoá. Với `pending` thì đó là một danh sách
+rỗng, và lượt đồng bộ lại kế tiếp của máy chủ đổ lại đủ người: heartbeat khai số đang giữ, máy
+chủ thấy lệch thì phát lại cả danh sách (§9.23).
 
 | Blob | Byte | Nội dung |
 |---|---|---|
-| `pending` = `storage_pending_t`, 296 B | 0–3 `magic` `'PND1'`, 4 `count`, 5–7 chừa, rồi 8 × 36 B | mỗi dòng: `employee_id` u32, `name` char[32] |
+| `pending` = `storage_pending_t`, 2.312 B | 0–3 `magic` `'PND2'`, 4 `count`, 5–7 chừa, rồi 64 × 36 B | mỗi dòng: `employee_id` u32, `name` char[32] |
 | `enroll_out` = `storage_enroll_ask_t` × 8 trong `storage_enroll_out_t`, 72 B | 0–3 `magic` `'OUT1'`, 4 `count`, 5–7 chừa, rồi 8 × 8 B | mỗi yêu cầu: `op` u8 (`RETAKE` / `DELETE_EMPLOYEE`), 3 B chừa, `employee_id` u32 |
 
+`pending` chứa 64 người (§7.5). Đầy rồi thì `ASSIGN` kế tiếp không vào danh sách nhưng vẫn được
+đếm — `roster_ver` vẫn tiến — và máy báo `ROSTER_REJECTED`, qua đúng cái van một phút mỗi loại
+sự kiện mà mọi sự kiện lỗi khác đi qua. Trong RAM, danh sách chính là ảnh blob ấy, nằm ở PSRAM.
+
 `enroll_out` đầy (8 yêu cầu chưa ack) thì màn hình từ chối thêm yêu cầu cho tới khi có mạng,
-chứ không đè yêu cầu cũ nhất: một yêu cầu xoá bị đè là một người lẽ ra phải biến khỏi máy.
+chứ không đè yêu cầu cũ nhất: một yêu cầu xoá bị đè là một người lẽ ra phải biến khỏi máy. Một
+yêu cầu chỉ tồn tại khi NVS đã ghi xong nó: ghi hỏng thì máy không nhận yêu cầu ấy, và với lệnh
+xoá thì máy cũng không xoá người đó khỏi bảng mặt — xoá tại máy chỉ chạy **sau** khi yêu cầu đã
+nằm trong `enroll_out`.
 
 #### 6.2.2 Partition `models_0` / `models_1` — định dạng ảnh model
 
@@ -5683,7 +5692,7 @@ mang số hiệu có thứ tự.
 ```
 /lfs
 ├── db/
-│   ├── faces.bin          # bảng embedding, bản ghi cố định 552 B
+│   ├── faces.bin          # bảng embedding, bản ghi cố định 576 B
 │   ├── faces.tmp          # chỉ tồn tại giữa chừng khi ghi 2 pha
 │   └── faces.bak          # bản ngay trước, để cứu khi faces.bin hỏng
 ├── log/
@@ -5699,19 +5708,19 @@ Chọn LittleFS chứ không SPIFFS vì LittleFS có copy-on-write + `rename` ng
 
 #### 6.2.4 `db/faces.bin` — header 32 B + bản ghi 576 B
 
-**Header file (32 B, ở đầu file)** — có `format_ver` để sau này còn migrate được:
+**Header file (32 B, ở đầu file)** — `format_ver` = **3**:
 
 | Offset | Kích thước | Trường |
 |---|---|---|
 | 0 | 4 | `magic` = `'FDB1'` |
-| 4 | 2 | `format_ver` u16 |
+| 4 | 2 | `format_ver` u16 = 3 |
 | 6 | 2 | `record_size` u16 = 576 |
 | 8 | 4 | `record_count` u32 (kể cả bản ghi đã xoá mềm) |
 | 12 | 8 | `updated_at` i64 epoch ms |
-| 20 | 8 | `reserved` |
+| 20 | 8 | `model_tag` u8[8] — 8 byte đầu `sha256` của entry `recog` trong header ảnh model (§6.2.2): model nhận diện đã sinh ra mọi embedding trong file. Tám byte 0 là bảng chưa gắn model |
 | 28 | 4 | `crc32` của byte 0..27 |
 
-**Bản ghi (576 B mỗi cái, `format_ver` = 2)**
+**Bản ghi (576 B mỗi cái)**
 
 | Offset | Kích thước | Trường | Ghi chú |
 |---|---|---|---|
@@ -5727,7 +5736,10 @@ Chọn LittleFS chứ không SPIFFS vì LittleFS có copy-on-write + `rename` ng
 | 568 | 4 | `reserved` | chừa chỗ để thêm trường mà không phá format |
 | 572 | 4 | `crc32` | băm byte 0..571 |
 
-500 người × 2 template = 1.000 bản ghi = **576 KB**, thoải mái trong 4 MB.
+1.000 bản ghi (`CONFIG_FACEDB_MAX_RECORDS`) = **576 KB**, thoải mái trong 4 MB. Một lần chụp tại máy giữ 3 mẫu,
+và một lần lấy lại mẫu giữ thêm dải kia cho tới lúc chụp xong, nên bảng chứa khoảng **333 người** chụp ở
+chính cửa ấy; mẫu lan từ cửa khác cũng là 3. Cần hơn thì tăng `CONFIG_FACEDB_MAX_RECORDS`, và hàng đợi
+roster (§5.3) lớn theo nó.
 
 **Vì sao tên nằm trên thiết bị, không chỉ ở server.** Kiosk phải nói được "Chào anh Việt" ngay
 lúc mở cửa, kể cả khi mất mạng — mà mất mạng là trạng thái §6.2.6 coi là bình thường. Một mã số
@@ -5739,10 +5751,38 @@ Lưu **int8 + scale** chứ không float32: giảm 4 lần dung lượng và 4 l
 
 Xoá nhân viên = đặt `flags.deleted`, **không dồn file**. Nén thật chỉ chạy khi tỉ lệ bản ghi chết > 30%, làm bằng ghi 2 pha.
 
-`flags.unreported` biến bảng thành hàng đợi của báo cáo đăng ký (§7.5). Thêm bit không đổi layout
-nên `format_ver` giữ 2: một firmware cũ đọc bảng mới chỉ bỏ qua bit ấy. Đồng bộ lại toàn phần
+`flags.unreported` biến bảng thành hàng đợi của báo cáo đăng ký (§7.5). Đồng bộ lại toàn phần
 (`REPLACE_ALL`) **giữ** mẫu còn mang bit này, vì đó là phiên chụp của chính máy mà server chưa
-thấy; chỉ lần xoá khi vé chết (§7.3 bước 6) mới bỏ cả chúng.
+thấy; chỉ lần xoá khi vé chết (§7.3 bước 6) và lần đổi model nhận diện (dưới đây) mới bỏ cả
+chúng. Vì cùng lý do, một mẫu máy chủ đẩy xuống (`UPSERT`) **không ghi đè** mẫu còn mang bit này
+ở cùng `(employee_id, template_idx)`: máy giữ phiên của mình, báo nó lên, và máy chủ trả lời theo
+bước 4 của §7.5. Lệnh bị nhường ấy vẫn được đếm, vì gửi lại nó cũng chỉ gặp đúng mẫu ấy.
+
+**Header ghi model nhận diện đã sinh ra bảng, và bảng chỉ sống với đúng model ấy.** Hai model
+nhận diện khác nhau cho hai không gian embedding khác nhau, nên một bảng của model cũ không còn
+so được với khuôn mặt nào (§7.5). Lúc khởi động, ngay sau khi nạp bảng và trước khi task nào
+được so khớp, máy đối `model_tag` với entry `recog` của ảnh model đang chạy:
+
+| Bảng mang | Máy làm gì |
+|---|---|
+| đúng tag của model đang chạy | giữ nguyên |
+| tám byte 0 — bảng mới, hoặc file `format_ver` 2, cùng bản ghi nhưng header chưa có tag | đóng dấu tag của model đang chạy: chỉ model ấy có thể đã sinh ra bảng, nên mẫu được giữ |
+| một tag khác | bỏ **mọi** mẫu, kể cả mẫu chưa báo, rồi đóng dấu tag mới. Máy đặt `device/roster_ver` về 0 (§6.2.1) **trước**, rồi mới ghi bảng xuống: mất điện giữa hai bước thì lần khởi động sau lại thấy tag lệch và làm lại, không bao giờ để lại một bảng rỗng đi kèm số hiệu cũ. Heartbeat khai 0, máy chủ đồng bộ lại, và với tag khác thì gửi `ASSIGN` thay cho `UPSERT` |
+| ảnh model không có entry `recog` | không đụng bảng |
+
+`embeddingVersion` mà kiosk khai — trong heartbeat, lúc từ chối một `UPSERT` khác model, và trên
+từng mẫu nó báo lên — đều đọc từ `model_tag` của bảng, viết thành `recog-` cộng 16 chữ hex
+thường của tám byte ấy. Sau bước đối chiếu trên, tag của bảng chính là model đang chạy; còn một
+mẫu báo lên thì mang model đã chụp nó, không phải model đang chạy lúc gửi. Một `UPSERT` mang
+`embeddingVersion` khác tag ấy bị từ chối kèm `ROSTER_REJECTED` và vẫn được đếm, như mọi lời từ
+chối mà gửi lại không chữa được.
+
+**Một file `format_ver` 2 được đọc và đóng dấu, không bị bỏ; một firmware chỉ biết format 2 thì
+không đọc được file format 3.** Nên dấu đầu tiên chỉ được ghi xuống khi bản firmware đã được giữ:
+máy khởi động thường thì ghi ngay, còn bản đang chạy thử (§7.7) ghi lúc nó tự xác nhận. Một lần
+bootloader lùi về bản cũ vì thế không gặp file nó không đọc được — trừ khi chính 30 giây chạy
+thử ấy có một lượt ghi bảng khác, vd. lượt đồng bộ lại, rồi bản mới hỏng; ca ấy bản cũ khởi
+động với bảng không nạp được cho tới khi có người can thiệp.
 
 #### 6.2.5 `log/attend.NNN` — header 32 B + bản ghi 48 B, chỉ ghi thêm
 
@@ -5846,7 +5886,7 @@ File này là bản dịch 1:1 của §6.2.2, §6.2.4, §6.2.5 sang C — kèm �
 #include <stdint.h>
 
 #define STORAGE_FACES_MAGIC   0x31424446u   // 'FDB1'
-#define STORAGE_FACES_VER     1u
+#define STORAGE_FACES_VER     3u
 #define STORAGE_EMBED_DIM     512
 
 typedef struct __attribute__((packed)) {
@@ -5858,12 +5898,13 @@ typedef struct __attribute__((packed)) {
     float    scale;                       // dequant cho embedding int8
     int8_t   embedding[STORAGE_EMBED_DIM];
     int64_t  updated_at_ms;
-    uint8_t  reserved[12];
+    char     name[STORAGE_NAME_CAP];      // UTF-8, có \0 cuối
+    uint8_t  reserved[4];
     uint32_t crc32;
-} face_record_t;
+} storage_face_record_t;
 
-static_assert(sizeof(face_record_t) == 552, "face_record_t must match KEHOACH 6.2.4");
-static_assert(offsetof(face_record_t, embedding) == 16, "embedding offset drifted");
+static_assert(sizeof(storage_face_record_t) == 576, "face record must match KEHOACH 6.2.4");
+static_assert(offsetof(storage_face_record_t, embedding) == 16, "embedding offset drifted");
 ```
 
 Ba hệ quả bắt buộc:

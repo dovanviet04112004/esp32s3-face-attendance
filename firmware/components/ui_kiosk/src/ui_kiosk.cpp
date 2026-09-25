@@ -318,6 +318,13 @@ bool ui_kiosk_take_people_request(void)
     return true;
 }
 
+void ui_kiosk_refresh_people(void)
+{
+    if (s_ready) {
+        ui::people().wanted = true;
+    }
+}
+
 bool ui_kiosk_take_remove(uint32_t *employee_id)
 {
     if (!s_ready || employee_id == nullptr || !ui::remove_request().waiting) {

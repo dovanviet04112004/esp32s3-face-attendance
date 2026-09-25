@@ -37,7 +37,23 @@ esp_err_t svc_facedb_lookup(const int8_t *emb, float scale, svc_facedb_match_t *
 esp_err_t svc_facedb_enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality, const int8_t *emb,
                             float scale, const char *name)
 {
-    return s_db.enroll(employee_id, template_idx, quality, emb, scale, name);
+    return s_db.enroll(employee_id, template_idx, quality, emb, scale, name, false);
+}
+
+esp_err_t svc_facedb_enroll_pushed(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
+                                   const int8_t *emb, float scale, const char *name)
+{
+    return s_db.enroll(employee_id, template_idx, quality, emb, scale, name, true);
+}
+
+esp_err_t svc_facedb_bind_model(const uint8_t *tag, svc_facedb_bind_t *outcome)
+{
+    return s_db.bind_model(tag, outcome);
+}
+
+esp_err_t svc_facedb_model_tag(uint8_t *out)
+{
+    return s_db.model_tag(out);
 }
 
 size_t svc_facedb_people(svc_facedb_person_t *out, size_t cap)

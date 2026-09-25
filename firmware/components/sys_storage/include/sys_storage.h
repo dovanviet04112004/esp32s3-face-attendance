@@ -33,6 +33,7 @@ esp_err_t sys_storage_init(void);
 // The ticket keys of KEHOACH 7.3: net_provision writes them, net_mqtt reads.
 #define STORAGE_KEY_TICKET "jwt"
 #define STORAGE_KEY_TICKET_EXP "jwt_exp"  // u32, the ticket's own exp claim
+#define STORAGE_KEY_ROSTER_VER "roster_ver"  // u32, the roster cursor of KEHOACH 7.5
 #define STORAGE_KEY_PENDING "pending"     // blob storage_pending_t
 #define STORAGE_KEY_ENROLL_OUT "enroll_out"  // blob storage_enroll_out_t
 

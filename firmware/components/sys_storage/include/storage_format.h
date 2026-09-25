@@ -20,7 +20,9 @@
 #define STORAGE_ATTEND_FILES 1000u
 #define STORAGE_CURSOR_PATH "/lfs/log/cursor.bin"
 #define STORAGE_FACES_MAGIC 0x31424446u   // 'FDB1'
-#define STORAGE_FACES_VER 2u
+#define STORAGE_FACES_VER 3u
+#define STORAGE_FACES_VER_UNTAGGED 2u     // same records, no model tag in the header
+#define STORAGE_MODEL_TAG_LEN 8           // leading bytes of the recog entry's sha256
 #define STORAGE_NAME_CAP 32
 #define STORAGE_FACE_MAGIC 0x45434146u    // 'FACE'
 #define STORAGE_FACE_FLAG_ACTIVE 0x01u
@@ -73,7 +75,7 @@ typedef struct __attribute__((packed)) {
     uint16_t record_size;
     uint32_t record_count;
     int64_t updated_at_ms;
-    uint8_t reserved[8];
+    uint8_t model_tag[STORAGE_MODEL_TAG_LEN];  // faces.bin: whose embeddings; a log: 0
     uint32_t crc32;
 } storage_file_header_t;
 
@@ -111,8 +113,8 @@ typedef struct __attribute__((packed)) {
     uint32_t crc32;
 } storage_attend_record_t;
 
-#define STORAGE_PENDING_MAGIC 0x31444E50u    // 'PND1'
-#define STORAGE_PENDING_CAP 8
+#define STORAGE_PENDING_MAGIC 0x32444E50u    // 'PND2'
+#define STORAGE_PENDING_CAP 64
 #define STORAGE_ENROLL_OUT_MAGIC 0x3154554Fu // 'OUT1'
 #define STORAGE_ENROLL_OUT_CAP 8
 
@@ -168,6 +170,7 @@ static_assert(offsetof(storage_models_header_t, entry) == 0x10, "model entry off
 static_assert(offsetof(storage_models_header_t, crc32) == 0xFC, "models crc offset drifted");
 
 static_assert(sizeof(storage_file_header_t) == 32, "file header must match KEHOACH 6.2.4");
+static_assert(offsetof(storage_file_header_t, model_tag) == 20, "file header tag offset drifted");
 static_assert(offsetof(storage_file_header_t, crc32) == 28, "file header crc offset drifted");
 
 static_assert(sizeof(storage_face_record_t) == 576, "face record must match KEHOACH 6.2.4");
@@ -175,7 +178,7 @@ static_assert(offsetof(storage_face_record_t, embedding) == 16, "embedding offse
 static_assert(offsetof(storage_face_record_t, crc32) == 572, "face crc offset drifted");
 
 static_assert(sizeof(storage_pending_row_t) == 36, "pending row must match KEHOACH 6.2.1");
-static_assert(sizeof(storage_pending_t) == 296, "pending blob must match KEHOACH 6.2.1");
+static_assert(sizeof(storage_pending_t) == 2312, "pending blob must match KEHOACH 6.2.1");
 static_assert(sizeof(storage_enroll_ask_t) == 8, "enrol request must match KEHOACH 6.2.1");
 static_assert(sizeof(storage_enroll_out_t) == 72, "enrol outbox must match KEHOACH 6.2.1");
 
