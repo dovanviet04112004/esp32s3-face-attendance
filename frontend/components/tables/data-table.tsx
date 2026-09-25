@@ -1,13 +1,11 @@
 "use client";
 
-import { ArrowDownIcon, ArrowUpIcon, ArrowsDownUpIcon, ColumnsIcon } from "@phosphor-icons/react";
+import { ArrowDownIcon, ArrowUpIcon, ArrowsDownUpIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Empty, Failed } from "@/components/ui/empty";
-import { Sheet } from "@/components/ui/sheet";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { useRouter } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
@@ -44,13 +42,12 @@ interface Props<T> {
 }
 
 interface Memory {
-  hidden: string[];
   sortId: string | null;
   descending: boolean;
 }
 
 const kStore = "table:";
-const kFresh: Memory = { hidden: [], sortId: null, descending: false };
+const kFresh: Memory = { sortId: null, descending: false };
 
 function recall(id: string): Memory {
   try {
@@ -98,7 +95,6 @@ export function DataTable<T>({
   const router = useRouter();
   const [memory, setMemory] = useState<Memory>(kFresh);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
-  const [picking, setPicking] = useState(false);
 
   // Reading storage during render would disagree with the server-rendered pass.
   useEffect(() => setMemory(recall(id)), [id]);
@@ -108,7 +104,7 @@ export function DataTable<T>({
     remember(id, next);
   }
 
-  const shown = columns.filter((column) => !memory.hidden.includes(column.id));
+  const shown = columns;
 
   const ordered = useMemo(() => {
     const source = rows ?? [];
@@ -173,16 +169,6 @@ export function DataTable<T>({
             {bulk?.(picked)}
           </>
         ) : null}
-        <Button
-          type="button"
-          tone="quiet"
-          size="sm"
-          icon={ColumnsIcon}
-          className="ms-auto hidden md:inline-flex"
-          onClick={() => setPicking(true)}
-        >
-          {t("columns")}
-        </Button>
       </div>
 
       <div className="hidden overflow-x-auto rounded-lg bg-kumo-base ring-1 ring-kumo-line md:block">
@@ -298,34 +284,6 @@ export function DataTable<T>({
 
       {more}
 
-      <Sheet
-        open={picking}
-        onClose={() => setPicking(false)}
-        title={t("columns")}
-        closeLabel={t("close")}
-      >
-        <div className="flex flex-col">
-          {columns.map((column) => {
-            const on = !memory.hidden.includes(column.id);
-            return (
-              <Checkbox
-                key={column.id}
-                checked={on}
-                disabled={on && shown.length === 1}
-                onChange={() =>
-                  keep({
-                    ...memory,
-                    hidden: on
-                      ? [...memory.hidden, column.id]
-                      : memory.hidden.filter((one) => one !== column.id),
-                  })
-                }
-                label={column.header}
-              />
-            );
-          })}
-        </div>
-      </Sheet>
     </div>
   );
 }
