@@ -10,7 +10,9 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { UNUSABLE_PASSWORD } from "../src/modules/auth/password.js";
+import { parseCsv } from "../src/modules/employees/import.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
+import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
 
 const RAISE_BP = 100;
 const BASE_SALARY = "20000000";
@@ -470,5 +472,244 @@ describe("bulk actions on the directory (e2e)", () => {
     const reached = (res.body as { employeeId: number }[]).map((one) => one.employeeId);
     assert.ok(reached.includes(id(CHI)), "a department raise left out the department below it");
     assert.ok(reached.includes(id(BOSS_OLD)));
+  });
+});
+
+const FL = "E2EFL";
+const [NONE_MAIL, NONE_BARE, INVITED, IN_USE, LOCKED, PAST_PAIR, DEAD_PAIR, LEFT_FL] = [
+  "01", "02", "03", "04", "05", "06", "07", "08",
+].map((tail) => `${FL}${tail}`);
+const FILTERED = [NONE_MAIL, NONE_BARE, INVITED, IN_USE, LOCKED, PAST_PAIR, DEAD_PAIR, LEFT_FL];
+const FL_DOMAIN = "@filters-e2e.test";
+const LIVE_KIOSK = "kiosk-e2e-filters";
+const DEAD_KIOSK = "kiosk-e2e-filters-off";
+const FL_SHIFT = "E2E filters shift";
+const kDayMs = 86_400_000;
+
+describe("directory filters that match the bulk jobs (e2e)", () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication["getHttpServer"]>;
+  let db: PrismaService;
+  let token = "";
+  const idOf = new Map<string, number>();
+  const codeOf = new Map<number, string>();
+
+  const sorted = (codes: string[]): string[] => [...codes].sort();
+
+  function get(path: string): Promise<request.Response> {
+    return request(http).get(path).set("Authorization", `Bearer ${token}`);
+  }
+
+  function post(path: string, body: object): Promise<request.Response> {
+    return request(http).post(path).set("Authorization", `Bearer ${token}`).send(body);
+  }
+
+  async function listed(query: string): Promise<{ codes: string[]; total: number }> {
+    const res = await get(`/employees?search=${FL}&take=100&${query}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return { codes: sorted((res.body.rows as { code: string }[]).map((one) => one.code)), total: res.body.total as number };
+  }
+
+  async function sweep(): Promise<void> {
+    await db.user.deleteMany({ where: { OR: [{ email: { endsWith: FL_DOMAIN } }, { employee: { code: { in: FILTERED } } }] } });
+    await db.deviceEnrollment.deleteMany({ where: { deviceId: { in: [LIVE_KIOSK, DEAD_KIOSK] } } });
+    await db.device.deleteMany({ where: { id: { in: [LIVE_KIOSK, DEAD_KIOSK] } } });
+    await db.shift.deleteMany({ where: { name: FL_SHIFT } });
+    await db.employee.deleteMany({ where: { code: { in: FILTERED } } });
+  }
+
+  before(async () => {
+    const env = validateEnv();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    configure(app);
+    await app.init();
+    http = app.getHttpServer();
+    db = app.get(PrismaService);
+    await sweep();
+
+    const signedIn = await request(http)
+      .post("/auth/login")
+      .send({ email: "hr@kiosk.local", password: env.SEED_ADMIN_PASSWORD ?? "" });
+    assert.equal(signedIn.status, 200, "hr could not sign in");
+    token = signedIn.body.accessToken;
+
+    for (const code of FILTERED) {
+      const made = await db.employee.create({
+        data: {
+          code,
+          fullName: `Bộ lọc ${code}`,
+          personalEmail: code === NONE_BARE ? null : `${code.toLowerCase()}${FL_DOMAIN}`,
+          active: code !== LEFT_FL,
+          leaveDate: code === LEFT_FL ? new Date("2026-01-31") : null,
+        },
+      });
+      idOf.set(code, made.id);
+      codeOf.set(made.id, code);
+    }
+    const id = (code: string): number => idOf.get(code) as number;
+    const logins: [string, { passwordHash: string; active: boolean }][] = [
+      [INVITED, { passwordHash: UNUSABLE_PASSWORD, active: true }],
+      [IN_USE, { passwordHash: "scrypt$used$used", active: true }],
+      [LOCKED, { passwordHash: "scrypt$used$used", active: false }],
+    ];
+    for (const [code, login] of logins) {
+      await db.user.create({ data: { email: `login-${code.toLowerCase()}${FL_DOMAIN}`, role: "EMPLOYEE", employeeId: id(code), ...login } });
+    }
+    await db.biometricConsent.createMany({
+      data: [NONE_MAIL, INVITED, IN_USE, LOCKED, DEAD_PAIR].map((code) => ({ employeeId: id(code), noticeVersion: "e2e", method: "PAPER" })),
+    });
+    await db.biometricConsent.create({
+      data: { employeeId: id(PAST_PAIR), noticeVersion: "e2e", method: "PAPER", state: "WITHDRAWN", withdrawnAt: new Date() },
+    });
+    await db.device.createMany({
+      data: [
+        { id: LIVE_KIOSK, status: "APPROVED" },
+        { id: DEAD_KIOSK, status: "REVOKED" },
+      ],
+    });
+    await db.deviceEnrollment.createMany({
+      data: [
+        { deviceId: LIVE_KIOSK, employeeId: id(INVITED), state: "ASSIGNED" },
+        { deviceId: LIVE_KIOSK, employeeId: id(IN_USE), state: "ENROLLED" },
+        { deviceId: LIVE_KIOSK, employeeId: id(LOCKED), state: "RETAKE" },
+        { deviceId: LIVE_KIOSK, employeeId: id(PAST_PAIR), state: "REVOKED" },
+        { deviceId: DEAD_KIOSK, employeeId: id(DEAD_PAIR), state: "ENROLLED" },
+      ],
+    });
+    const today = dayAsDate(localDay(new Date(), env.APP_TIMEZONE)).getTime();
+    const day = (offset: number): Date => new Date(today + offset * kDayMs);
+    const shift = await db.shift.create({ data: { name: FL_SHIFT, startTime: "08:00", endTime: "17:00" } });
+    await db.shiftAssignment.createMany({
+      data: [
+        { employeeId: id(NONE_MAIL), validFrom: day(-10), validTo: null },
+        { employeeId: id(INVITED), validFrom: day(0), validTo: day(0) },
+        { employeeId: id(IN_USE), validFrom: day(-30), validTo: day(-1) },
+        { employeeId: id(LOCKED), validFrom: day(1), validTo: null },
+        { employeeId: id(PAST_PAIR), validFrom: day(-400), validTo: null },
+      ].map((one) => ({ ...one, shiftId: shift.id })),
+    });
+  });
+
+  after(async () => {
+    await sweep();
+    await app.close();
+  });
+
+  const EXPECTED: Record<string, Record<string, string[]>> = {
+    account: {
+      none: [NONE_MAIL, NONE_BARE, PAST_PAIR, DEAD_PAIR],
+      invited: [INVITED],
+      active: [IN_USE],
+      locked: [LOCKED],
+    },
+    face: {
+      unassigned: [NONE_MAIL, NONE_BARE, PAST_PAIR, DEAD_PAIR],
+      waiting: [INVITED, LOCKED],
+      enrolled: [IN_USE],
+      noConsent: [NONE_BARE, PAST_PAIR],
+      noEmail: [NONE_BARE],
+    },
+    shift: {
+      none: [NONE_BARE, IN_USE, LOCKED, DEAD_PAIR],
+      some: [NONE_MAIL, INVITED, PAST_PAIR],
+    },
+  };
+
+  it("lists exactly the people each option names, today being the company's", async () => {
+    for (const [filter, options] of Object.entries(EXPECTED)) {
+      for (const [option, codes] of Object.entries(options)) {
+        const found = await listed(`active=true&${filter}=${option}`);
+        assert.deepEqual(found.codes, sorted(codes), `${filter}=${option}`);
+      }
+    }
+    const gone = await listed("active=false&account=none");
+    assert.deepEqual(gone.codes, [LEFT_FL], "the account filter ignored the status filter");
+  });
+
+  it("counts every option under the other filters, and each count is what the list shows", async () => {
+    const res = await get(`/employees/counts/readiness?search=${FL}&active=true`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const everyone = FILTERED.length - 1;
+    for (const [filter, options] of Object.entries(EXPECTED)) {
+      const wanted = Object.fromEntries(Object.entries(options).map(([option, codes]) => [option, codes.length]));
+      assert.deepEqual(res.body[filter], { ...wanted, all: everyone }, filter);
+    }
+
+    const narrowed = await get(`/employees/counts/readiness?search=${FL}&active=true&account=none`);
+    assert.equal(narrowed.body.account.none, EXPECTED.account.none.length, "the account counts filtered on themselves");
+    assert.equal(narrowed.body.face.all, EXPECTED.account.none.length);
+    for (const filter of ["face", "shift"]) {
+      for (const option of Object.keys(EXPECTED[filter])) {
+        const found = await listed(`active=true&account=none&${filter}=${option}`);
+        assert.equal(narrowed.body[filter][option], found.total, `${filter}=${option} under account=none`);
+      }
+    }
+
+    const status = await get(`/employees/counts?search=${FL}&account=none`);
+    assert.deepEqual(status.body, { active: EXPECTED.account.none.length, left: 1 });
+  });
+
+  it("refuses an option it does not know, in the list and in a bulk filter", async () => {
+    const bad = await get(`/employees?search=${FL}&account=everyone`);
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.message, "VALIDATION_FAILED");
+    assert.ok((bad.body.fields as string[]).includes("account"));
+    const bulk = await post("/employees/bulk/logins", { filter: { search: FL, face: "someone" } });
+    assert.equal(bulk.status, 400);
+    assert.equal(bulk.body.message, "VALIDATION_FAILED");
+  });
+
+  it("exports exactly the people a filter lists", async () => {
+    const res = await get(`/employees/export?search=${FL}&active=true&face=waiting&format=csv`);
+    assert.equal(res.status, 200);
+    const codes = parseCsv(res.text)
+      .slice(1)
+      .filter((cells) => cells.length > 1)
+      .map((cells) => cells[0] ?? "");
+    assert.deepEqual(sorted(codes), sorted(EXPECTED.face.waiting));
+  });
+
+  it("puts everyone on no kiosk on one without passing anybody over as already there", async () => {
+    const res = await post("/employees/bulk/enrollments", { deviceId: LIVE_KIOSK, filter: { search: FL, active: true, face: "unassigned" } });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const plan = res.body as Plan;
+    assert.deepEqual(sorted(plan.rows.map((one) => codeOf.get(one.employeeId) ?? "")), sorted([NONE_MAIL, DEAD_PAIR]));
+    assert.deepEqual(
+      sorted(plan.skipped.map((one) => `${codeOf.get(one.employeeId)}:${one.reason}`)),
+      sorted([`${NONE_BARE}:CONSENT_MISSING`, `${PAST_PAIR}:CONSENT_MISSING`]),
+    );
+  });
+
+  it("invites everyone without an account and passes nobody over for already having one", async () => {
+    const filter = { search: FL, active: true, account: "none" };
+    const first = await post("/employees/bulk/logins", { filter });
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    const seen = first.body as Plan;
+    assert.deepEqual(
+      seen.skipped.map((one) => [codeOf.get(one.employeeId), one.reason]),
+      [[NONE_BARE, "NO_EMAIL"]],
+      "the account filter let somebody with a login into the run",
+    );
+
+    const missing = await listed("active=true&face=noEmail");
+    assert.deepEqual(missing.codes, [NONE_BARE]);
+    await db.employee.update({ where: { id: idOf.get(NONE_BARE) }, data: { personalEmail: `bare${FL_DOMAIN}` } });
+
+    const again = await post("/employees/bulk/logins", { filter });
+    const plan = again.body as Plan;
+    assert.deepEqual(plan.skipped, []);
+    assert.deepEqual(sorted(plan.rows.map((one) => codeOf.get(one.employeeId) ?? "")), sorted(EXPECTED.account.none));
+    const done = await post("/employees/bulk/logins?apply=true", { filter });
+    assert.equal(done.status, 201, JSON.stringify(done.body));
+    assert.equal((done.body as Plan).rows.length, EXPECTED.account.none.length);
+
+    const left = await listed("active=true&account=none");
+    assert.deepEqual(left.codes, []);
+    const resend = await post("/employees/bulk/logins", { filter: { search: FL, active: true, account: "invited" } });
+    const resent = resend.body as Plan;
+    assert.deepEqual(resent.skipped, []);
+    assert.ok(resent.rows.every((one) => one.resend === true), "an invited login was offered a second account");
+    assert.equal(resent.rows.length, EXPECTED.account.none.length + 1);
   });
 });

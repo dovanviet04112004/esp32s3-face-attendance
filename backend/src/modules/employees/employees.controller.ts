@@ -67,6 +67,7 @@ import {
   OffboardingView,
   OnboardDto,
   PlacementPlanView,
+  ReadinessCountsView,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
@@ -184,10 +185,22 @@ export class EmployeesController {
   }
 
   @Get("counts")
-  @ApiOperation({ summary: "Still working and left, under the search and department filters, for the status filter" })
+  @ApiOperation({ summary: "Still working and left, under every other filter sent, for the status filter" })
   @ApiOkResponse({ type: EmployeeCountsView })
+  @ApiErrors(HttpStatus.BAD_REQUEST)
   counts(@Query() query: EmployeeFilterDto, @CurrentViewer() viewer: Viewer): Promise<EmployeeCountsView> {
     return this.employees.counts(query, viewer);
+  }
+
+  @Get("counts/readiness")
+  @ApiOperation({
+    summary: "How many people each account, face and shift option finds, each under every other filter sent (KEHOACH 9.20)",
+    description: "The options the directory's filters show, for choosing a whole group before a bulk run; scoped like the list.",
+  })
+  @ApiOkResponse({ type: ReadinessCountsView })
+  @ApiErrors(HttpStatus.BAD_REQUEST)
+  readiness(@Query() query: EmployeeFilterDto, @CurrentViewer() viewer: Viewer): Promise<ReadinessCountsView> {
+    return this.employees.readiness(query, viewer);
   }
 
   @Post("import")

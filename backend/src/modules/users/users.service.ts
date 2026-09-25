@@ -85,7 +85,8 @@ function asAccount(row: AccountRow, lastSeenAt: Date | null): AccountView {
   };
 }
 
-function statusWhere(status: AccountStatus): Prisma.UserWhereInput {
+/** The accounts in one status, as the users page and the directory's account filter both read it. */
+export function statusWhere(status: AccountStatus): Prisma.UserWhereInput {
   if (status === "locked") {
     return { active: false };
   }

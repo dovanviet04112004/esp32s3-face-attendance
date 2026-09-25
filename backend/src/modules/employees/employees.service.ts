@@ -27,9 +27,15 @@ import { ConsentService } from "../enrollment/consent.service.js";
 import { EnrollmentService } from "../enrollment/enrollment.service.js";
 import { OnboardingService } from "../onboarding/onboarding.service.js";
 import { dayAsDate, localDay } from "../timesheet/local-day.js";
-import { UsersService, type LoginOpened, type RoleFlip } from "../users/users.service.js";
+import { statusWhere, UsersService, type LoginOpened, type RoleFlip } from "../users/users.service.js";
 import {
+  ACCOUNT_FILTERS,
   ENDING_WINDOW_DAYS,
+  FACE_FILTERS,
+  SHIFT_FILTERS,
+  type AccountFilter,
+  type FaceFilter,
+  type ShiftFilter,
   type CreateEmployeeDto,
   type EmployeeFilterDto,
   type MoveLeavingDto,
@@ -382,6 +388,49 @@ export function repointPending(tx: Prisma.TransactionClient, employeeIds: number
        AND e."id" = ANY(${employeeIds}::int[])
        AND r."approverId" IS DISTINCT FROM e."managerId"
   `;
+}
+
+const ACCOUNT_WHERE: Record<AccountFilter, Prisma.EmployeeWhereInput> = {
+  none: { login: { is: null } },
+  invited: { login: { is: statusWhere("pending") } },
+  active: { login: { is: statusWhere("active") } },
+  locked: { login: { is: statusWhere("locked") } },
+};
+
+// A pair on a revoked kiosk checks nobody in, so it counts as none, as the export reads it.
+const ON_LIVE_KIOSK = { device: { status: "APPROVED" } } as const;
+
+const FACE_WHERE: Record<FaceFilter, Prisma.EmployeeWhereInput> = {
+  unassigned: { enrollments: { none: { ...ON_LIVE_KIOSK, state: { not: "REVOKED" } } } },
+  waiting: { enrollments: { some: { ...ON_LIVE_KIOSK, state: { in: ["ASSIGNED", "RETAKE"] } } } },
+  enrolled: { enrollments: { some: { ...ON_LIVE_KIOSK, state: "ENROLLED" } } },
+  noConsent: { consents: { none: { state: "GRANTED" } } },
+  noEmail: { OR: [{ personalEmail: null }, { personalEmail: "" }] },
+};
+
+// `today` is the business day at midnight UTC, the way assignment days are stored (KEHOACH 9.8).
+function shiftWhere(option: ShiftFilter, today: Date): Prisma.EmployeeWhereInput {
+  const covering: Prisma.ShiftAssignmentWhereInput = {
+    validFrom: { lte: today },
+    OR: [{ validTo: null }, { validTo: { gte: today } }],
+  };
+  return option === "some" ? { shifts: { some: covering } } : { shifts: { none: covering } };
+}
+
+/** How many people each option of the account, face and shift filters finds; `all` ignores that filter. */
+export interface ReadinessCounts {
+  account: Record<AccountFilter | "all", number>;
+  face: Record<FaceFilter | "all", number>;
+  shift: Record<ShiftFilter | "all", number>;
+}
+
+async function countEach<K extends string>(options: readonly K[], count: (option: K) => Promise<number>): Promise<Record<K, number>> {
+  const counted = await Promise.all(options.map(count));
+  return Object.fromEntries(options.map((one, at) => [one, counted[at] ?? 0])) as Record<K, number>;
+}
+
+function total(counts: Record<string, number>): number {
+  return Object.values(counts).reduce((sum, one) => sum + one, 0);
 }
 
 /** A row as this viewer may read it; visible is null for the desk, which reads everything. */
@@ -823,6 +872,16 @@ export class EmployeesService implements OnModuleInit {
 
   private async filterWhere(query: EmployeeFilterDto, visible: number[] | null): Promise<Prisma.EmployeeWhereInput> {
     const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
+    return this.whereOf(query, visible, branch);
+  }
+
+  /** The directory's one where-builder: the list, the export, the counts and a bulk selection all read it. */
+  private whereOf(query: EmployeeFilterDto, visible: number[] | null, branch: string[] | null): Prisma.EmployeeWhereInput {
+    const readiness = [
+      query.account ? ACCOUNT_WHERE[query.account] : null,
+      query.face ? FACE_WHERE[query.face] : null,
+      query.shift ? shiftWhere(query.shift, dayAsDate(this.today())) : null,
+    ].filter((one): one is Prisma.EmployeeWhereInput => one !== null);
     return {
       ...ScopeService.narrow("id", visible),
       ...(branch ? { departmentId: { in: branch } } : {}),
@@ -836,6 +895,7 @@ export class EmployeesService implements OnModuleInit {
             ],
           }
         : {}),
+      ...(readiness.length > 0 ? { AND: readiness } : {}),
     };
   }
 
@@ -856,7 +916,7 @@ export class EmployeesService implements OnModuleInit {
     return rows.map((row) => row.id);
   }
 
-  /** How many people still work here and how many left, under the search and department filters. */
+  /** How many people still work here and how many left, under every other filter sent. */
   async counts(query: EmployeeFilterDto, viewer: Viewer): Promise<{ active: number; left: number }> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const where = await this.filterWhere({ ...query, active: undefined }, visible);
@@ -865,6 +925,29 @@ export class EmployeesService implements OnModuleInit {
       this.db.employee.count({ where: { AND: [where, { active: false }] } }),
     ]);
     return { active, left };
+  }
+
+  /** Each option of the account, face and shift filters, counted under every other filter sent (KEHOACH 9.12).
+   *  @ctx task | reads only | twelve counts whatever the size of the directory
+   */
+  async readiness(query: EmployeeFilterDto, viewer: Viewer): Promise<ReadinessCounts> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
+    const today = dayAsDate(this.today());
+    const countOf = (without: keyof EmployeeFilterDto, option: Prisma.EmployeeWhereInput) =>
+      this.db.employee.count({ where: { AND: [this.whereOf({ ...query, [without]: undefined }, visible, branch), option] } });
+    const [account, face, shift, faceAll] = await Promise.all([
+      countEach(ACCOUNT_FILTERS, (one) => countOf("account", ACCOUNT_WHERE[one])),
+      countEach(FACE_FILTERS, (one) => countOf("face", FACE_WHERE[one])),
+      countEach(SHIFT_FILTERS, (one) => countOf("shift", shiftWhere(one, today))),
+      countOf("face", {}),
+    ]);
+    // Account and shift options split everyone exactly; face options overlap, so only a count gives its all.
+    return {
+      account: { ...account, all: total(account) },
+      face: { ...face, all: faceAll },
+      shift: { ...shift, all: total(shift) },
+    };
   }
 
   // A lapsed contract still marked ACTIVE counts: it is the most urgent one (KEHOACH 9.18 item 1).

@@ -159,6 +159,14 @@ export type Ending = (typeof ENDINGS)[number];
 export const ENDING_WINDOW_DAYS = 30;
 const ENDING_WINDOW_MAX_DAYS = 366;
 
+/** The directory's filters for the work on its selection bar (KEHOACH 9.20). */
+export const ACCOUNT_FILTERS = ["none", "invited", "active", "locked"] as const;
+export type AccountFilter = (typeof ACCOUNT_FILTERS)[number];
+export const FACE_FILTERS = ["unassigned", "waiting", "enrolled", "noConsent", "noEmail"] as const;
+export type FaceFilter = (typeof FACE_FILTERS)[number];
+export const SHIFT_FILTERS = ["none", "some"] as const;
+export type ShiftFilter = (typeof SHIFT_FILTERS)[number];
+
 export class EmployeeFilterDto {
   @ApiPropertyOptional({ description: "Matches code or full name", maxLength: 64 })
   @IsOptional()
@@ -194,6 +202,29 @@ export class EmployeeFilterDto {
   @Min(1)
   @Max(ENDING_WINDOW_MAX_DAYS)
   within?: number;
+
+  @ApiPropertyOptional({
+    enum: ACCOUNT_FILTERS,
+    description: "none: no login; invited: a login whose password was never set; active: in use; locked: switched off",
+  })
+  @IsOptional()
+  @IsIn(ACCOUNT_FILTERS)
+  account?: AccountFilter;
+
+  @ApiPropertyOptional({
+    enum: FACE_FILTERS,
+    description:
+      "On approved kiosks: unassigned: on none; waiting: a pair ASSIGNED or RETAKE; enrolled: a pair ENROLLED. " +
+      "noConsent: no consent to face data in force; noEmail: no personal email",
+  })
+  @IsOptional()
+  @IsIn(FACE_FILTERS)
+  face?: FaceFilter;
+
+  @ApiPropertyOptional({ enum: SHIFT_FILTERS, description: "Whether a shift assignment covers today in APP_TIMEZONE" })
+  @IsOptional()
+  @IsIn(SHIFT_FILTERS)
+  shift?: ShiftFilter;
 }
 
 export class ListEmployeesDto extends IntersectionType(PaginationDto, EmployeeFilterDto) {}
@@ -299,6 +330,65 @@ export class EmployeeCountsView {
 
   @ApiProperty({ description: "Left, under the search and department filters" })
   left!: number;
+}
+
+class AccountCountsView {
+  @ApiProperty({ description: "Whatever their account" })
+  all!: number;
+
+  @ApiProperty()
+  none!: number;
+
+  @ApiProperty()
+  invited!: number;
+
+  @ApiProperty()
+  active!: number;
+
+  @ApiProperty()
+  locked!: number;
+}
+
+class FaceCountsView {
+  @ApiProperty({ description: "Whatever their face data; the options overlap, so they do not add up to it" })
+  all!: number;
+
+  @ApiProperty()
+  unassigned!: number;
+
+  @ApiProperty()
+  waiting!: number;
+
+  @ApiProperty()
+  enrolled!: number;
+
+  @ApiProperty()
+  noConsent!: number;
+
+  @ApiProperty()
+  noEmail!: number;
+}
+
+class ShiftCountsView {
+  @ApiProperty({ description: "Whatever their shift" })
+  all!: number;
+
+  @ApiProperty()
+  none!: number;
+
+  @ApiProperty()
+  some!: number;
+}
+
+export class ReadinessCountsView {
+  @ApiProperty({ type: AccountCountsView, description: "Under every filter sent but account" })
+  account!: AccountCountsView;
+
+  @ApiProperty({ type: FaceCountsView, description: "Under every filter sent but face" })
+  face!: FaceCountsView;
+
+  @ApiProperty({ type: ShiftCountsView, description: "Under every filter sent but shift" })
+  shift!: ShiftCountsView;
 }
 
 class CatalogueRefView {
