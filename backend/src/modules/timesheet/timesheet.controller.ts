@@ -8,7 +8,13 @@ import { RolesGuard } from "../../common/guards/roles.guard.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { BuildDaysDto, CorrectDayDto, ListDaysDto } from "./dto/timesheet.dto.js";
-import { TimesheetService, type BuildReport, type DaySummary } from "./timesheet.service.js";
+import {
+  TimesheetService,
+  type BuildReport,
+  type BuildState,
+  type DaySummary,
+  type DayTotals,
+} from "./timesheet.service.js";
 
 @ApiTags("timesheet")
 @ApiBearerAuth()
@@ -27,6 +33,19 @@ export class TimesheetController {
   @ApiOperation({ summary: "One row per person for a range, totals only" })
   summary(@CurrentViewer() viewer: Viewer, @Query() query: ListDaysDto): Promise<Page<DaySummary>> {
     return this.timesheet.summary(viewer, query);
+  }
+
+  @Get("totals")
+  @ApiOperation({ summary: "The summary's figures summed over everybody the filter reaches" })
+  totals(@CurrentViewer() viewer: Viewer, @Query() query: ListDaysDto): Promise<DayTotals> {
+    return this.timesheet.totals(viewer, query);
+  }
+
+  @Get("build/:jobId")
+  @Roles("ADMIN", "HR", "PAYROLL")
+  @ApiOperation({ summary: "Where a queued build stands, so a page stops waiting when it ends" })
+  buildState(@Param("jobId") jobId: string): Promise<{ state: BuildState }> {
+    return this.timesheet.buildState(jobId);
   }
 
   @Patch(":id")

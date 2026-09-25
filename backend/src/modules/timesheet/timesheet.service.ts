@@ -61,6 +61,14 @@ export interface DaySummary {
   adjustedDays: number;
 }
 
+/** The same figures summed over everybody the filter reaches, and how many people that is. */
+export interface DayTotals extends Omit<DaySummary, "employeeId" | "code" | "fullName"> {
+  people: number;
+}
+
+/** Where a queued build stands; "gone" is a job the queue has already let go of. */
+export type BuildState = "waiting" | "active" | "completed" | "failed" | "gone";
+
 interface ShiftClock {
   shiftId: string;
   startMinutes: number;
@@ -125,6 +133,27 @@ export class TimesheetService {
       rows,
       next: rows.length === query.take && last ? encodeCursor(last.code, last.employeeId) : null,
     };
+  }
+
+  async totals(viewer: Viewer, query: ListDaysDto): Promise<DayTotals> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const [summed] = await this.db.$queryRaw<DayTotals[]>`
+      SELECT count(DISTINCT d."employeeId")::int                  AS "people",
+             count(*) FILTER (WHERE d."state" = 'WORKED')::int  AS "workedDays",
+             count(*) FILTER (WHERE d."state" = 'LEAVE')::int   AS "leaveDays",
+             count(*) FILTER (WHERE d."state" = 'ABSENT')::int  AS "absentDays",
+             coalesce(sum(d."workedMinutes"), 0)::int           AS "workedMinutes",
+             coalesce(sum(d."lateMinutes"), 0)::int             AS "lateMinutes",
+             coalesce(sum(d."overtimeMinutes"), 0)::int         AS "overtimeMinutes",
+             count(*) FILTER (WHERE d."adjustedById" IS NOT NULL)::int AS "adjustedDays"
+        FROM "AttendanceDay" d
+        JOIN "Employee" e ON e."id" = d."employeeId"
+       WHERE d."date" BETWEEN ${dayAsDate(query.from)} AND ${dayAsDate(query.to)}
+         AND (${visible}::int[] IS NULL OR d."employeeId" = ANY(${visible}::int[]))
+         AND (${query.employeeId ?? null}::int IS NULL OR d."employeeId" = ${query.employeeId ?? null}::int)
+         AND (${query.departmentId ?? null}::text IS NULL OR e."departmentId" = ${query.departmentId ?? null})
+    `;
+    return summed;
   }
 
   private countedRows(
@@ -267,6 +296,19 @@ export class TimesheetService {
     const job: TimesheetJob = { type: "build", from, to };
     const queued = await this.queues[QUEUE.timesheet].add("build", job);
     return { jobId: String(queued.id) };
+  }
+
+  async buildState(jobId: string): Promise<{ state: BuildState }> {
+    const job = await this.queues[QUEUE.timesheet].getJob(jobId);
+    if (!job) {
+      return { state: "gone" };
+    }
+    const state = await job.getState();
+    if (state === "completed" || state === "failed" || state === "active") {
+      return { state };
+    }
+    // A delayed job is waiting out a retry backoff, which is still waiting.
+    return { state: state === "unknown" ? "gone" : "waiting" };
   }
 
   /** Build every finished day in a range, oldest first. */

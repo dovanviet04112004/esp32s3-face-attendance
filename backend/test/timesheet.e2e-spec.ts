@@ -271,4 +271,37 @@ describe("timesheet leave (e2e)", () => {
     assert.equal(row?.state, "WORKED");
     assert.equal(row?.workedMinutes, 480);
   });
+
+  it("sums the summary over everybody the filter reaches, not one page of it", async () => {
+    const read = async (path: string) =>
+      (await request(http).get(`/timesheet/${path}?from=${DAY}&to=${DAY}&take=200`).set("Authorization", `Bearer ${adminToken}`)).body;
+    const totals = await read("totals");
+    const page = await read("summary");
+    type Row = { workedDays: number; leaveDays: number; absentDays: number; adjustedDays: number };
+    const rows = page.rows as Row[];
+    assert.equal(totals.people, page.total);
+    if (page.next === null) {
+      for (const field of ["workedDays", "leaveDays", "absentDays", "adjustedDays"] as const) {
+        assert.equal(totals[field], rows.reduce((sum, one) => sum + one[field], 0), `${field} sums differently`);
+      }
+    }
+    assert.ok(totals.leaveDays >= 2, "the two leave days this suite built are missing");
+  });
+
+  it("says where a queued build stands, and that an unknown job is gone", async () => {
+    const queued = await request(http)
+      .post("/timesheet/build")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ from: DAY, to: DAY });
+    assert.equal(queued.status, 201);
+    const state = await request(http)
+      .get(`/timesheet/build/${queued.body.jobId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert.equal(state.status, 200);
+    assert.ok(["waiting", "active", "completed", "failed"].includes(state.body.state), state.body.state);
+    const missing = await request(http)
+      .get("/timesheet/build/no-such-job")
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert.deepEqual(missing.body, { state: "gone" });
+  });
 });
