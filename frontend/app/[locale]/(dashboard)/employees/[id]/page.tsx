@@ -714,7 +714,7 @@ export default function EmployeePage() {
               {working && !leavesOn ? (
                 <AsideCard title={t("leaveCardTitle")}>
                   <div className="flex flex-col gap-3">
-                    <p className="m-0 text-sm text-kumo-subtle">{t("leaveCardLead")}</p>
+                    <p className="m-0 text-kumo-subtle">{t("leaveCardLead")}</p>
                     <Button
                       variant="secondary-destructive"
                       size="sm"

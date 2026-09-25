@@ -166,17 +166,38 @@ function useToolbarLead(main: HTMLDivElement | null): number {
   return lead;
 }
 
+function useHeight(box: HTMLDivElement | null): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    if (!box) {
+      return;
+    }
+    const measure = () => setHeight(box.offsetHeight);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(box);
+    return () => watch.disconnect();
+  }, [box]);
+  return height;
+}
+
 /** Kumo's ResourceListPage body: the main column and Cloudflare's right column (KEHOACH 9.12).
- *  In a content box from 1024 px the right column is 380 px, sticky, and scrolls on its own;
- *  in a narrower one it follows the main column.
+ *  In a content box from 1024 px the right column is 380 px and sticky, never a scroll box of its own:
+ *  one that fits sticks under the top bar, a taller one sticks once its foot meets the screen's.
  */
 export function PageLayout({ children, aside, extra }: LayoutProps) {
   const [main, setMain] = useState<HTMLDivElement | null>(null);
+  const [column, setColumn] = useState<HTMLDivElement | null>(null);
   const lead = useToolbarLead(main);
+  const tall = useHeight(column);
   if (!aside && !extra) {
     return <div className="min-w-0">{children}</div>;
   }
-  // The inset keeps the cards' rings clear of the column's own scroll clip.
+  // top only acts while the column is sticky, which the container query decides.
+  const pinned = {
+    "--aside-lead": `${lead}px`,
+    top: `min(calc(82px + env(safe-area-inset-top)), calc(100svh - ${tall}px - 24px))`,
+  } as CSSProperties;
   return (
     <div className="@container/page">
       <div className="flex flex-col gap-6 @5xl/page:flex-row @5xl/page:gap-8">
@@ -184,8 +205,9 @@ export function PageLayout({ children, aside, extra }: LayoutProps) {
           {children}
         </div>
         <div
-          style={{ "--aside-lead": `${lead}px` } as CSSProperties}
-          className="flex h-fit w-full shrink-0 flex-col gap-4 *:shrink-0 @5xl/page:sticky @5xl/page:top-[calc(82px+env(safe-area-inset-top))] @5xl/page:-m-1 @5xl/page:mt-[calc(var(--aside-lead)-0.25rem)] @5xl/page:max-h-[calc(100svh-106px-env(safe-area-inset-top))] @5xl/page:w-[388px] @5xl/page:overflow-y-auto @5xl/page:overscroll-contain @5xl/page:p-1"
+          ref={setColumn}
+          style={pinned}
+          className="flex h-fit w-full shrink-0 flex-col gap-4 *:shrink-0 @5xl/page:sticky @5xl/page:mt-(--aside-lead) @5xl/page:w-[380px]"
         >
           {aside}
           {extra}
