@@ -41,7 +41,7 @@ export async function generateMetadata({ params }: LocaleParams): Promise<Metada
     description: t("description"),
     icons: { icon: "/favicon.ico", apple: "/apple-touch-icon.png" },
     manifest: "/manifest.webmanifest",
-    appleWebApp: { capable: true, title: t("name"), statusBarStyle: "black-translucent" },
+    appleWebApp: { capable: true, title: t("name"), statusBarStyle: "default" },
   };
 }
 
