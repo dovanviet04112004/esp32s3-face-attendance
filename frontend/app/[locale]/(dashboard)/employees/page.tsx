@@ -6,7 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Wrench } from "lucide-react";
+import { WrenchIcon } from "@phosphor-icons/react";
 import { useLocale, useTranslations } from "next-intl";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
@@ -279,7 +279,7 @@ export default function EmployeesPage() {
           <div className="flex flex-wrap items-center gap-2">
             <div className="hidden flex-wrap items-center gap-2 sm:flex">{tools}</div>
             <Button size="sm" tone="quiet" className="sm:hidden" onClick={() => setTooling(true)}>
-              <Wrench className="size-4" aria-hidden />
+              <WrenchIcon className="size-4" aria-hidden />
               {common("tools")}
             </Button>
             <input

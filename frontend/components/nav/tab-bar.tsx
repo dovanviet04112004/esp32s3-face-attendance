@@ -1,6 +1,6 @@
 "use client";
 
-import { Ellipsis } from "lucide-react";
+import { DotsThreeIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -63,7 +63,7 @@ export function TabBar() {
             aria-expanded={open}
             className={tabClass(false)}
           >
-            <Ellipsis className="size-5" aria-hidden />
+            <DotsThreeIcon className="size-5" aria-hidden />
             <span>{t("more")}</span>
           </button>
         ) : null}

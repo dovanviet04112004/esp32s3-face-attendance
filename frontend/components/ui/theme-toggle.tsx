@@ -1,6 +1,6 @@
 "use client";
 
-import { Monitor, Moon, Sun } from "lucide-react";
+import { MonitorIcon, MoonIcon, SunIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState, type ComponentType } from "react";
 
@@ -13,9 +13,9 @@ interface Face {
 }
 
 const FACE: Record<Theme, Face> = {
-  system: { icon: Monitor, key: "themeSystem" },
-  light: { icon: Sun, key: "themeLight" },
-  dark: { icon: Moon, key: "themeDark" },
+  system: { icon: MonitorIcon, key: "themeSystem" },
+  light: { icon: SunIcon, key: "themeLight" },
+  dark: { icon: MoonIcon, key: "themeDark" },
 };
 
 export function ThemeToggle() {

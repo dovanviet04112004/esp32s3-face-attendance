@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
@@ -60,7 +60,7 @@ export function Sheet({ open, onClose, title, closeLabel, children, className }:
           onClick={onClose}
           className="grid size-11 place-items-center rounded-lg text-(--color-muted) hover:bg-(--color-ground)"
         >
-          <X className="size-5" aria-hidden />
+          <XIcon className="size-5" aria-hidden />
         </button>
       </div>
       <div className="mt-3">{children}</div>

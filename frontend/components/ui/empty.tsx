@@ -1,6 +1,6 @@
 "use client";
 
-import { Inbox, TriangleAlert } from "lucide-react";
+import { TrayIcon, WarningIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
@@ -15,7 +15,7 @@ interface EmptyProps {
 export function Empty({ title, hint, action }: EmptyProps) {
   return (
     <div className="grid place-items-center rounded-xl border border-dashed border-(--color-line) bg-(--color-surface) px-6 py-12 text-center">
-      <Inbox className="size-8 text-(--color-muted)" aria-hidden />
+      <TrayIcon className="size-8 text-(--color-muted)" aria-hidden />
       <p className="mt-3 text-sm font-medium">{title}</p>
       {hint ? <p className="mt-1 max-w-sm text-sm text-(--color-muted)">{hint}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}
@@ -31,7 +31,7 @@ export function Failed({ onRetry }: { onRetry?: () => void }) {
       role="alert"
       className="grid place-items-center rounded-xl border border-(--color-danger) bg-(--color-surface) px-6 py-12 text-center"
     >
-      <TriangleAlert className="size-8 text-(--color-danger)" aria-hidden />
+      <WarningIcon className="size-8 text-(--color-danger)" aria-hidden />
       <p className="mt-3 text-sm font-medium">{t("failed")}</p>
       <p className="mt-1 max-w-sm text-sm text-(--color-muted)">{t("failedHint")}</p>
       {onRetry ? (

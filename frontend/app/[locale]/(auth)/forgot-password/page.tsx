@@ -1,6 +1,6 @@
 "use client";
 
-import { MailCheck } from "lucide-react";
+import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
@@ -38,7 +38,7 @@ export default function ForgotPasswordPage() {
       <main className="grid min-h-screen place-items-center px-4">
         <title>{app("name")}</title>
         <div className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8 text-center">
-          <MailCheck className="mx-auto size-8 text-(--color-ok)" aria-hidden />
+          <EnvelopeSimpleIcon className="mx-auto size-8 text-(--color-ok)" aria-hidden />
           <h1 className="mt-3 text-xl font-semibold">{t("sentTitle")}</h1>
           <p className="mt-1 text-sm text-(--color-muted)">{t("sentHint")}</p>
           <Link href="/login" className="mt-6 block">

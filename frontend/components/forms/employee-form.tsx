@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown } from "lucide-react";
+import { CaretDownIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
@@ -178,7 +178,7 @@ function Group({
           <CountPill>
             {filled}/{total}
           </CountPill>
-          <ChevronDown
+          <CaretDownIcon
             className="size-4 text-(--color-muted) transition-transform group-[[open]]:rotate-180"
             aria-hidden
           />

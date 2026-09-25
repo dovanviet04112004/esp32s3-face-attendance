@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { CaretDownIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -94,7 +94,7 @@ export function CardList<T>({
                 className="mt-1 flex min-h-11 w-full items-center justify-center gap-1 text-xs text-(--color-muted)"
               >
                 {shown ? t("less") : t("more")}
-                <ChevronDown className={cn("size-4 transition-transform", shown && "rotate-180")} aria-hidden />
+                <CaretDownIcon className={cn("size-4 transition-transform", shown && "rotate-180")} aria-hidden />
               </button>
             ) : null}
           </li>

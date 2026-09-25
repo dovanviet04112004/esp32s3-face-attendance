@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -95,7 +95,7 @@ export default function MyShiftsPage() {
           onClick={() => setOffset(offset - 1)}
           className="grid size-11 place-items-center rounded-lg border border-(--color-line) disabled:opacity-40"
         >
-          <ChevronLeft className="size-4" aria-hidden />
+          <CaretLeftIcon className="size-4" aria-hidden />
         </button>
         <p className="min-w-40 text-center text-sm font-medium">
           {format.dateTime(showing, { year: "numeric", month: "long" })}
@@ -107,7 +107,7 @@ export default function MyShiftsPage() {
           onClick={() => setOffset(offset + 1)}
           className="grid size-11 place-items-center rounded-lg border border-(--color-line) disabled:opacity-40"
         >
-          <ChevronRight className="size-4" aria-hidden />
+          <CaretRightIcon className="size-4" aria-hidden />
         </button>
         {roster.isSuccess ? (
           <p className="ml-auto text-sm text-(--color-muted)">{t("working", { count: working })}</p>

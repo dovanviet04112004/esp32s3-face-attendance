@@ -1,6 +1,6 @@
 "use client";
 
-import { Inbox, Settings } from "lucide-react";
+import { GearIcon, TrayIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 
 import { NoticeBell } from "@/components/notifications/bell";
@@ -35,7 +35,7 @@ export function TopBar() {
               aria-label={t("approvals")}
               className="relative grid size-11 place-items-center rounded-lg text-(--color-muted) hover:bg-(--color-ground)"
             >
-              <Inbox className="size-5" aria-hidden />
+              <TrayIcon className="size-5" aria-hidden />
               {waiting > 0 ? (
                 <span className="absolute top-1 right-1 min-w-4 rounded-full bg-(--color-warn) px-1 text-[10px] leading-4 text-(--color-on-fill) tabular-nums">
                   {waiting}
@@ -49,7 +49,7 @@ export function TopBar() {
             aria-label={t("settings")}
             className="grid size-11 place-items-center rounded-lg text-(--color-muted) hover:bg-(--color-ground) md:hidden"
           >
-            <Settings className="size-5" aria-hidden />
+            <GearIcon className="size-5" aria-hidden />
           </Link>
         </div>
       </div>

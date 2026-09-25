@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck } from "lucide-react";
+import { CheckCircleIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
@@ -50,7 +50,7 @@ function SetPasswordForm() {
       <main className="grid min-h-screen place-items-center px-4">
         <title>{app("name")}</title>
         <div className="w-full max-w-sm rounded-2xl border border-(--color-line) bg-(--color-surface) p-8 text-center">
-          <CircleCheck className="mx-auto size-8 text-(--color-ok)" aria-hidden />
+          <CheckCircleIcon className="mx-auto size-8 text-(--color-ok)" aria-hidden />
           <h1 className="mt-3 text-xl font-semibold">{t("done")}</h1>
           <p className="mt-1 text-sm text-(--color-muted)">{t("doneHint")}</p>
           <Link href="/login" className="mt-6 block">

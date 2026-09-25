@@ -1,7 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, Network, Receipt, Search, User, type LucideIcon } from "lucide-react";
+import type { Icon as IconType } from "@phosphor-icons/react";
+import {
+  CalendarBlankIcon,
+  MagnifyingGlassIcon,
+  ReceiptIcon,
+  TreeStructureIcon,
+  UserIcon,
+} from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -20,11 +27,11 @@ interface Hit {
   href: string;
 }
 
-const FACE: Record<HitKind, LucideIcon> = {
-  employee: User,
-  department: Network,
-  request: CalendarDays,
-  payslip: Receipt,
+const FACE: Record<HitKind, IconType> = {
+  employee: UserIcon,
+  department: TreeStructureIcon,
+  request: CalendarBlankIcon,
+  payslip: ReceiptIcon,
 };
 
 const KIND_KEY: Record<HitKind, "kindEmployee" | "kindDepartment" | "kindRequest" | "kindPayslip"> =
@@ -112,7 +119,7 @@ export function GlobalSearch() {
 
   return (
     <div className="relative min-w-0 flex-1">
-      <Search
+      <MagnifyingGlassIcon
         className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-(--color-muted)"
         aria-hidden
       />

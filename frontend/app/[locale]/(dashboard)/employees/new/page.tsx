@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -155,7 +155,7 @@ export default function NewEmployeePage() {
         href="/employees"
         className="inline-flex items-center gap-1 text-sm text-(--color-muted) hover:text-(--color-ink)"
       >
-        <ArrowLeft className="size-4" aria-hidden />
+        <ArrowLeftIcon className="size-4" aria-hidden />
         {t("title")}
       </Link>
       <h1 className="mt-2 text-lg font-semibold">{t("createTitle")}</h1>

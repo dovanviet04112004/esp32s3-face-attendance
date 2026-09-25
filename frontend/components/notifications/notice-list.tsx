@@ -1,15 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Icon as IconType } from "@phosphor-icons/react";
 import {
-  CalendarClock,
-  Inbox,
-  MessageSquareReply,
-  Receipt,
-  SquareCheck,
-  TimerOff,
-  type LucideIcon,
-} from "lucide-react";
+  CalendarDotsIcon,
+  ChatCircleTextIcon,
+  CheckSquareIcon,
+  ReceiptIcon,
+  TimerIcon,
+  TrayIcon,
+} from "@phosphor-icons/react";
 import { useFormatter, useNow, useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
@@ -40,13 +40,13 @@ export interface Notice {
   createdAt: string;
 }
 
-const FACE: Record<NoticeKind, LucideIcon> = {
-  REQUEST_DECIDED: SquareCheck,
-  REQUEST_WAITING: Inbox,
-  REQUEST_STALLED: TimerOff,
-  PAYSLIP_ISSUED: Receipt,
-  CONTRACT_ENDING: CalendarClock,
-  DISPUTE_ANSWERED: MessageSquareReply,
+const FACE: Record<NoticeKind, IconType> = {
+  REQUEST_DECIDED: CheckSquareIcon,
+  REQUEST_WAITING: TrayIcon,
+  REQUEST_STALLED: TimerIcon,
+  PAYSLIP_ISSUED: ReceiptIcon,
+  CONTRACT_ENDING: CalendarDotsIcon,
+  DISPUTE_ANSWERED: ChatCircleTextIcon,
 };
 
 // Relative times need an instant to count from, or the server and the browser

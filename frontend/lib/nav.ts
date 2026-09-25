@@ -1,31 +1,32 @@
+import type { Icon as IconType } from "@phosphor-icons/react";
 import {
-  CalendarCheck,
-  CalendarDays,
-  CalendarOff,
-  CalendarRange,
-  ChartColumn,
-  Clock,
-  Cpu,
-  BookOpenCheck,
-  FileText,
-  Flag,
-  FolderCheck,
-  Inbox,
-  LayoutDashboard,
-  ListChecks,
-  Network,
-  Package,
-  Receipt,
-  Scale,
-  ScanFace,
-  ScrollText,
-  Settings,
-  User,
-  UserCog,
-  Users,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react";
+  BookOpenTextIcon,
+  CalendarBlankIcon,
+  CalendarCheckIcon,
+  CalendarIcon,
+  CalendarXIcon,
+  ChartBarIcon,
+  ClockIcon,
+  CpuIcon,
+  FileTextIcon,
+  FilesIcon,
+  FlagIcon,
+  GearIcon,
+  ListChecksIcon,
+  PackageIcon,
+  ReceiptIcon,
+  ScalesIcon,
+  ScrollIcon,
+  SquaresFourIcon,
+  TagIcon,
+  TrayIcon,
+  TreeStructureIcon,
+  UserFocusIcon,
+  UserGearIcon,
+  UserIcon,
+  UsersIcon,
+  WalletIcon,
+} from "@phosphor-icons/react";
 
 import type viMessages from "../messages/vi.json";
 import type { Role } from "./auth";
@@ -36,7 +37,7 @@ type NavKey = keyof (typeof viMessages)["nav"];
 export interface NavItem {
   href: string;
   key: NavKey;
-  icon: LucideIcon;
+  icon: IconType;
   roles?: Role[];
   badge?: "approvals";
   /** Kept out of the phone's tab bar; the top bar carries it (KEHOACH 9.21.1). */
@@ -64,20 +65,20 @@ const DAY_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 export const NAV: NavGroup[] = [
   {
     key: "groupToday",
-    items: [{ href: "/overview", key: "overview", icon: LayoutDashboard, roles: DAY_DESK }],
+    items: [{ href: "/overview", key: "overview", icon: SquaresFourIcon, roles: DAY_DESK }],
   },
   {
     key: "me",
     items: [
-      { href: "/me", key: "myPage", icon: User, roles: EVERYONE },
-      { href: "/me/attendance", key: "myAttendance", icon: CalendarCheck, roles: EVERYONE },
-      { href: "/me/shifts", key: "myShifts", icon: CalendarRange, roles: EVERYONE },
-      { href: "/me/requests", key: "myLeave", icon: FileText, roles: EVERYONE },
-      { href: "/me/payslips", key: "myPayslips", icon: Receipt, roles: EVERYONE },
+      { href: "/me", key: "myPage", icon: UserIcon, roles: EVERYONE },
+      { href: "/me/attendance", key: "myAttendance", icon: CalendarCheckIcon, roles: EVERYONE },
+      { href: "/me/shifts", key: "myShifts", icon: CalendarIcon, roles: EVERYONE },
+      { href: "/me/requests", key: "myLeave", icon: FileTextIcon, roles: EVERYONE },
+      { href: "/me/payslips", key: "myPayslips", icon: ReceiptIcon, roles: EVERYONE },
       {
         href: "/me/documents",
         key: "myDocuments",
-        icon: BookOpenCheck,
+        icon: BookOpenTextIcon,
         roles: EVERYONE,
         deskOnly: true,
       },
@@ -89,7 +90,7 @@ export const NAV: NavGroup[] = [
       {
         href: "/approvals",
         key: "approvals",
-        icon: Inbox,
+        icon: TrayIcon,
         roles: DECIDERS,
         badge: "approvals",
         deskOnly: true,
@@ -99,49 +100,49 @@ export const NAV: NavGroup[] = [
   {
     key: "groupPeople",
     items: [
-      { href: "/employees", key: "directory", icon: Users, roles: TEAM },
+      { href: "/employees", key: "directory", icon: UsersIcon, roles: TEAM },
       {
         href: "/employees/new",
         key: "directory",
-        icon: Users,
+        icon: UsersIcon,
         roles: PEOPLE_DESK,
         unlisted: true,
       },
-      { href: "/org", key: "orgChart", icon: Network, roles: TEAM_TIME },
-      { href: "/onboarding", key: "onboarding", icon: ListChecks, roles: TEAM_TIME, deskOnly: true },
-      { href: "/assets", key: "assets", icon: Package, roles: PEOPLE_DESK, deskOnly: true },
-      { href: "/documents", key: "documents", icon: FolderCheck, roles: PEOPLE_DESK, deskOnly: true },
+      { href: "/org", key: "orgChart", icon: TreeStructureIcon, roles: TEAM_TIME },
+      { href: "/onboarding", key: "onboarding", icon: ListChecksIcon, roles: TEAM_TIME, deskOnly: true },
+      { href: "/assets", key: "assets", icon: PackageIcon, roles: PEOPLE_DESK, deskOnly: true },
+      { href: "/documents", key: "documents", icon: FilesIcon, roles: PEOPLE_DESK, deskOnly: true },
     ],
   },
   {
     key: "groupTime",
     items: [
-      { href: "/timesheet", key: "timesheetHr", icon: CalendarDays, roles: TEAM },
-      { href: "/attendance", key: "attendance", icon: ScanFace, roles: TEAM },
-      { href: "/leave", key: "leave", icon: CalendarOff, roles: TEAM_TIME },
-      { href: "/shifts", key: "shifts", icon: Clock, roles: PEOPLE_DESK },
-      { href: "/holidays", key: "holidays", icon: Flag, roles: PEOPLE_DESK },
-      { href: "/reports", key: "reports", icon: ChartColumn, roles: PAY_DESK },
+      { href: "/timesheet", key: "timesheetHr", icon: CalendarBlankIcon, roles: TEAM },
+      { href: "/attendance", key: "attendance", icon: UserFocusIcon, roles: TEAM },
+      { href: "/leave", key: "leave", icon: CalendarXIcon, roles: TEAM_TIME },
+      { href: "/shifts", key: "shifts", icon: ClockIcon, roles: PEOPLE_DESK },
+      { href: "/holidays", key: "holidays", icon: FlagIcon, roles: PEOPLE_DESK },
+      { href: "/reports", key: "reports", icon: ChartBarIcon, roles: PAY_DESK },
     ],
   },
   {
     key: "groupPay",
     items: [
-      { href: "/payroll", key: "payroll", icon: Wallet, roles: PAY_DESK },
-      { href: "/policy", key: "policy", icon: Scale, roles: PAY_DESK },
+      { href: "/payroll", key: "payroll", icon: WalletIcon, roles: PAY_DESK },
+      { href: "/policy", key: "policy", icon: ScalesIcon, roles: PAY_DESK },
     ],
   },
   {
     key: "groupOps",
-    items: [{ href: "/devices", key: "devices", icon: Cpu, roles: OPERATORS }],
+    items: [{ href: "/devices", key: "devices", icon: CpuIcon, roles: OPERATORS }],
   },
   {
     key: "groupSettings",
     items: [
-      { href: "/leave-types", key: "leaveTypes", icon: CalendarOff, roles: PEOPLE_DESK, deskOnly: true },
-      { href: "/users", key: "users", icon: UserCog, roles: OPERATORS, deskOnly: true },
-      { href: "/audit", key: "audit", icon: ScrollText, roles: OPERATORS, deskOnly: true },
-      { href: "/settings", key: "settings", icon: Settings, roles: EVERYONE, deskOnly: true },
+      { href: "/leave-types", key: "leaveTypes", icon: TagIcon, roles: PEOPLE_DESK, deskOnly: true },
+      { href: "/users", key: "users", icon: UserGearIcon, roles: OPERATORS, deskOnly: true },
+      { href: "/audit", key: "audit", icon: ScrollIcon, roles: OPERATORS, deskOnly: true },
+      { href: "/settings", key: "settings", icon: GearIcon, roles: EVERYONE, deskOnly: true },
     ],
   },
 ];

@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { EyeIcon, EyeSlashIcon } from "@phosphor-icons/react";
 import { useState, type ComponentPropsWithRef } from "react";
 
 import { cn } from "@/lib/cn";
@@ -25,7 +25,7 @@ interface SecretProps extends Omit<ComponentPropsWithRef<"input">, "type"> {
  */
 export function PasswordInput({ className, showLabel, hideLabel, ...rest }: SecretProps) {
   const [shown, setShown] = useState(false);
-  const Icon = shown ? EyeOff : Eye;
+  const Icon = shown ? EyeSlashIcon : EyeIcon;
   return (
     <div className={cn("relative", className)}>
       <input type={shown ? "text" : "password"} className={cn(field, "pe-11")} {...rest} />

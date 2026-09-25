@@ -1,6 +1,6 @@
 "use client";
 
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useCallback, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 
@@ -52,7 +52,7 @@ export function FilterBar({ children, onApply, extra }: Props) {
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Button type="button" tone="quiet" onClick={() => setOpen(true)}>
-          <SlidersHorizontal className="size-4" aria-hidden />
+          <SlidersHorizontalIcon className="size-4" aria-hidden />
           {common("filters")}
         </Button>
         {extra}

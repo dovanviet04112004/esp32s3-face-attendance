@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bell } from "lucide-react";
+import { BellIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -37,7 +37,7 @@ export function NoticeBell() {
         onClick={() => setOpen(true)}
         className="relative grid size-11 shrink-0 place-items-center rounded-lg text-(--color-muted) hover:bg-(--color-ground)"
       >
-        <Bell className="size-5" aria-hidden />
+        <BellIcon className="size-5" aria-hidden />
         {waiting > 0 ? (
           <span
             className={cn(

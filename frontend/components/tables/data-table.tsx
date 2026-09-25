@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Columns3 } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ArrowsDownUpIcon, ColumnsIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -170,7 +170,7 @@ export function DataTable<T>({
           className="ms-auto hidden md:inline-flex"
           onClick={() => setPicking(true)}
         >
-          <Columns3 className="size-4" aria-hidden />
+          <ColumnsIcon className="size-4" aria-hidden />
           {t("columns")}
         </Button>
       </div>
@@ -217,11 +217,11 @@ export function DataTable<T>({
                     >
                       {column.header}
                       {memory.sortId !== column.id ? (
-                        <ArrowUpDown className="size-3.5 opacity-50" aria-hidden />
+                        <ArrowsDownUpIcon className="size-3.5 opacity-50" aria-hidden />
                       ) : memory.descending ? (
-                        <ArrowDown className="size-3.5" aria-hidden />
+                        <ArrowDownIcon className="size-3.5" aria-hidden />
                       ) : (
-                        <ArrowUp className="size-3.5" aria-hidden />
+                        <ArrowUpIcon className="size-3.5" aria-hidden />
                       )}
                     </button>
                   ) : (

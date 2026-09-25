@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -102,7 +102,7 @@ function Branch({ rows, parentId, depth, onPick, open, onFlip }: BranchProps) {
                   onClick={() => onFlip(node.id)}
                   className="grid size-6 shrink-0 place-items-center rounded text-(--color-muted) hover:text-(--color-ink) pointer-coarse:size-11"
                 >
-                  <ChevronRight
+                  <CaretRightIcon
                     className={cn("size-4 transition-transform", shown && "rotate-90")}
                     aria-hidden
                   />
