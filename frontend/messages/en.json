@@ -110,7 +110,11 @@
     "from": "From",
     "to": "To",
     "clear": "Clear",
-    "showOptions": "Show options"
+    "showOptions": "Show options",
+    "today": "Today",
+    "pickDate": "Pick a date",
+    "noMatch": "No matches",
+    "optional": "(optional)"
   },
   "login": {
     "lead": "Sign in to reach the control panel",

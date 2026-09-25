@@ -110,7 +110,11 @@
     "from": "Từ",
     "to": "Đến",
     "clear": "Xoá",
-    "showOptions": "Mở danh sách"
+    "showOptions": "Mở danh sách",
+    "today": "Hôm nay",
+    "pickDate": "Chọn ngày",
+    "noMatch": "Không có kết quả phù hợp",
+    "optional": "(không bắt buộc)"
   },
   "login": {
     "lead": "Đăng nhập để vào bảng điều khiển",

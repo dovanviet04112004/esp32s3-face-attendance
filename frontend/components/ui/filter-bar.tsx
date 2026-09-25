@@ -1,9 +1,11 @@
 "use client";
 
-import { Button, InputGroup, LayerDialog, Select, Toolbar } from "@cloudflare/kumo";
+import { Badge, Button, Combobox, InputGroup, LayerDialog, Select, Toolbar } from "@cloudflare/kumo";
 import { FunnelSimpleIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
-import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useFormatter, useTranslations } from "next-intl";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+
+import { cn } from "@/lib/cn";
 
 const WIDE = "(min-width: 48rem)";
 const kSettleMs = 300;
@@ -39,6 +41,10 @@ export interface Filter {
   onChange: (value: string) => void;
   /** Value to label; the "" entry is the unfiltered choice. */
   items: Record<string, string>;
+  /** Rows per value, shown inside its option, never as a second list beside the table (KEHOACH 9.12). */
+  counts?: Record<string, number | undefined>;
+  /** A long list, such as departments: the options open with a search box. */
+  searchable?: boolean;
 }
 
 interface Props {
@@ -46,6 +52,83 @@ interface Props {
   filters?: Filter[];
   /** Actions on the list as a whole, at the right end of the row. */
   extra?: ReactNode;
+}
+
+interface Choice {
+  value: string;
+  label: string;
+}
+
+const kToolbarTrigger = "min-w-40 justify-between";
+
+function fold(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+}
+
+function Counted({ label, count }: { label: string; count: number | undefined }) {
+  const format = useFormatter();
+  return (
+    <span className="flex w-full min-w-0 flex-1 items-center justify-between gap-6">
+      <span className="truncate">{label}</span>
+      {count === undefined ? null : <span className="shrink-0 text-kumo-subtle tabular-nums">{format.number(count)}</span>}
+    </span>
+  );
+}
+
+function SearchableFilter({ filter, inSheet }: { filter: Filter; inSheet: boolean }) {
+  const common = useTranslations("common");
+  const choices = useMemo(
+    () => Object.entries(filter.items).map(([value, label]): Choice => ({ value, label })),
+    [filter.items],
+  );
+  const held = choices.find((one) => one.value === filter.value) ?? null;
+  return (
+    <Combobox
+      items={choices}
+      value={held}
+      onValueChange={(next) => filter.onChange((next as Choice | null)?.value ?? "")}
+      itemToStringLabel={(one: Choice) => one.label}
+      isItemEqualToValue={(one: Choice, other: Choice) => one.value === other.value}
+      filter={(one: Choice, typed: string) => fold(one.label).includes(fold(typed.trim()))}
+      label={inSheet ? filter.label : undefined}
+    >
+      <Combobox.TriggerValue
+        className={inSheet ? "w-full" : undefined}
+        render={inSheet ? undefined : <Toolbar.Button aria-label={filter.label} className={kToolbarTrigger} />}
+      />
+      <Combobox.Content>
+        <Combobox.Input placeholder={common("search")} aria-label={filter.label} />
+        <Combobox.Empty>{common("noMatch")}</Combobox.Empty>
+        <Combobox.List>
+          {(one: Choice) => (
+            <Combobox.Item key={one.value} value={one}>
+              <Counted label={one.label} count={filter.counts?.[one.value]} />
+            </Combobox.Item>
+          )}
+        </Combobox.List>
+      </Combobox.Content>
+    </Combobox>
+  );
+}
+
+function FilterControl({ filter, inSheet }: { filter: Filter; inSheet: boolean }) {
+  if (filter.searchable) {
+    return <SearchableFilter filter={filter} inSheet={inSheet} />;
+  }
+  const placement = inSheet
+    ? { label: filter.label, className: "w-full" }
+    : { "aria-label": filter.label, render: <Toolbar.Button className={kToolbarTrigger} /> };
+  return (
+    <Select {...placement} value={filter.value} onValueChange={(next) => filter.onChange(String(next ?? ""))} items={filter.items}>
+      {filter.counts
+        ? Object.entries(filter.items).map(([value, label]) => (
+            <Select.Option key={value} value={value} className="[&>:first-child]:flex-1">
+              <Counted label={label} count={filter.counts?.[value]} />
+            </Select.Option>
+          ))
+        : undefined}
+    </Select>
+  );
 }
 
 /** Kumo's Toolbar above a table on a desk; on a phone the search stays and the
@@ -83,14 +166,7 @@ export function FilterBar({ search, filters = [], extra }: Props) {
               </Toolbar.InputGroup>
             ) : null}
             {filters.map((one) => (
-              <Select
-                key={one.key}
-                aria-label={one.label}
-                value={one.value}
-                onValueChange={(next) => one.onChange(String(next ?? ""))}
-                items={one.items}
-                render={<Toolbar.Button className="min-w-40 justify-between" />}
-              />
+              <FilterControl key={one.key} filter={one} inSheet={false} />
             ))}
           </Toolbar>
         ) : null}
@@ -99,19 +175,30 @@ export function FilterBar({ search, filters = [], extra }: Props) {
     );
   }
 
+  const filterLabel = active > 0 ? `${common("filters")} · ${active}` : common("filters");
+
   return (
-    <div className="mb-4 flex flex-col gap-2">
-      {search ? <InputGroup className="w-full">{searchBox}</InputGroup> : null}
-      {filters.length > 0 || extra ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {filters.length > 0 ? (
-            <Button variant="secondary" icon={FunnelSimpleIcon} onClick={() => setOpen(true)}>
-              {active > 0 ? `${common("filters")} · ${active}` : common("filters")}
-            </Button>
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      {search ? <InputGroup className="min-w-0 flex-1 basis-48">{searchBox}</InputGroup> : null}
+      {filters.length > 0 ? (
+        <span className="relative shrink-0">
+          <Button
+            variant="secondary"
+            shape="square"
+            icon={FunnelSimpleIcon}
+            aria-label={filterLabel}
+            title={filterLabel}
+            className="pointer-coarse:size-11"
+            onClick={() => setOpen(true)}
+          />
+          {active > 0 ? (
+            <Badge variant="primary" className="pointer-events-none absolute -end-1.5 -top-1.5 px-1.5 tabular-nums">
+              {active}
+            </Badge>
           ) : null}
-          {extra}
-        </div>
+        </span>
       ) : null}
+      {extra ? <div className={cn("flex flex-wrap items-center gap-2", search && "basis-full")}>{extra}</div> : null}
 
       <LayerDialog.Root open={open} onOpenChange={setOpen}>
         <LayerDialog.Content closeLabel={common("close")}>
@@ -119,15 +206,7 @@ export function FilterBar({ search, filters = [], extra }: Props) {
           <LayerDialog.Body>
             <div className="flex flex-col gap-4">
               {filters.map((one) => (
-                <Select
-                  key={one.key}
-                  label={one.label}
-                  hideLabel={false}
-                  value={one.value}
-                  onValueChange={(next) => one.onChange(String(next ?? ""))}
-                  items={one.items}
-                  className="w-full"
-                />
+                <FilterControl key={one.key} filter={one} inSheet />
               ))}
             </div>
           </LayerDialog.Body>

@@ -7,9 +7,11 @@ import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 import { Failed } from "@/components/ui/failed";
-import { useRouter } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
-import { CardList } from "./card-list";
+import { CardList, CardListSkeleton } from "./card-list";
+
+export type Priority = 1 | 2 | 3;
 
 export interface Column<T> {
   id: string;
@@ -17,8 +19,23 @@ export interface Column<T> {
   cell: (row: T) => ReactNode;
   numeric?: boolean;
   sticky?: boolean;
+  /** 1 always shows and fills the phone row; 3 hides first as the table's own box narrows (KEHOACH 9.12). */
+  priority?: Priority;
+  /** One line with an ellipsis; a string cell shows in full on hover. */
+  truncate?: boolean;
+  maxWidthPx?: number;
+  /** Orders the rows already loaded, so it stays off while the list is partial. */
   sortBy?: (row: T) => string | number;
+  /** The api's sort key: the header then asks the server through the table's onSortChange. */
+  sortKey?: string;
 }
+
+export interface Sort {
+  key: string;
+  dir: "asc" | "desc";
+}
+
+type SortMode = "server" | "client" | null;
 
 export interface RowAction {
   key: string;
@@ -51,8 +68,15 @@ interface Props<T> {
   selectable?: boolean;
   bulk?: (chosen: T[]) => ReactNode;
   paging?: Paging;
-  /** Which column titles a phone card; a table's leftmost column is rarely it. */
+  /** The server's order, when the endpoint takes sort; the page keeps it in the URL. */
+  sort?: Sort;
+  onSortChange?: (next: Sort) => void;
+  /** Which column titles a phone row; a table's leftmost column is rarely it. */
   cardLead?: string;
+  /** The column held at the right end of a phone row: a state pill or an amount. */
+  cardTrailing?: string;
+  /** The name a phone row draws initials from; a PersonCell lead gives one by itself. */
+  cardAvatar?: (row: T) => string;
   /** Where the whole row leads; the row opens the record, not a trailing link (KEHOACH 9.15). */
   rowHref?: (row: T) => string;
   /** Or what the whole row opens in place, when the record has no page of its own. */
@@ -69,6 +93,12 @@ interface Order {
 const kStore = "table-order:";
 const kFresh: Order = { sortId: null, descending: false };
 const kSkeletonRows = 6;
+const kTruncatePx = 280;
+const HIDE_AT: Record<Priority, string> = {
+  1: "",
+  2: "@max-[560px]:hidden",
+  3: "@max-[720px]:hidden",
+};
 
 function recall(id: string): Order {
   try {
@@ -92,6 +122,66 @@ function compare(left: string | number, right: string | number): number {
     return left - right;
   }
   return String(left).localeCompare(String(right));
+}
+
+function useMoreToTheRight(box: HTMLElement | null): boolean {
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    if (!box) {
+      return;
+    }
+    const measure = () => setMore(box.scrollLeft + box.clientWidth < box.scrollWidth - 1);
+    measure();
+    const watcher = new ResizeObserver(measure);
+    watcher.observe(box);
+    if (box.firstElementChild) {
+      watcher.observe(box.firstElementChild);
+    }
+    box.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      watcher.disconnect();
+      box.removeEventListener("scroll", measure);
+    };
+  }, [box]);
+  return more;
+}
+
+function cellBody<T>(column: Column<T>, row: T): ReactNode {
+  const content = column.cell(row);
+  if (!column.truncate) {
+    return content;
+  }
+  const full = typeof content === "string" || typeof content === "number" ? String(content) : undefined;
+  return (
+    <div className="truncate" style={{ maxWidth: column.maxWidthPx ?? kTruncatePx }} title={full}>
+      {content}
+    </div>
+  );
+}
+
+function SortMark({ dir }: { dir: Sort["dir"] | null }) {
+  if (dir === null) {
+    return <ArrowsDownUpIcon size={14} className="text-kumo-inactive" aria-hidden />;
+  }
+  return dir === "desc" ? <ArrowDownIcon size={14} aria-hidden /> : <ArrowUpIcon size={14} aria-hidden />;
+}
+
+/** Name over code in one two-line cell, so a list spends one column on who (KEHOACH 9.12). */
+export function PersonCell({ name, code, href }: { name: string; code?: string | null; href?: string }) {
+  return (
+    <div className="flex max-w-64 min-w-0 flex-col">
+      {href ? (
+        <Link href={href} title={name} className="truncate text-kumo-link hover:underline">
+          {name}
+        </Link>
+      ) : (
+        <span title={name} className="truncate">
+          {name}
+        </span>
+      )}
+      {code ? <span className="truncate font-mono text-sm text-kumo-subtle">{code}</span> : null}
+    </div>
+  );
 }
 
 /** A click on a control inside the row belongs to that control, not to the row. */
@@ -142,7 +232,7 @@ export function PagingRow({ paging }: { paging: Paging }) {
   );
 }
 
-/** Kumo's Table in a LayerCard on a desk, the same columns as cards on a phone (KEHOACH 4.7). */
+/** Kumo's Table in a LayerCard on a desk, the same columns as a list of rows on a phone (KEHOACH 4.7). */
 export function DataTable<T>({
   id,
   columns,
@@ -157,7 +247,11 @@ export function DataTable<T>({
   selectable,
   bulk,
   paging,
+  sort,
+  onSortChange,
   cardLead,
+  cardTrailing,
+  cardAvatar,
   rowHref,
   onRowClick,
   rowActions,
@@ -166,6 +260,11 @@ export function DataTable<T>({
   const router = useRouter();
   const [order, setOrder] = useState<Order>(kFresh);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const moreToTheRight = useMoreToTheRight(scroller);
+  // Sorting 50 loaded rows of 5,000 would pass a partial order off as the whole (KEHOACH 9.12).
+  const partial = paging !== undefined && (paging.shown < paging.total || paging.onMore !== undefined);
+  const serverSorts = onSortChange !== undefined;
 
   // Reading storage during render would disagree with the server-rendered pass.
   useEffect(() => setOrder(recall(id)), [id]);
@@ -173,13 +272,13 @@ export function DataTable<T>({
   const ordered = useMemo(() => {
     const source = rows ?? [];
     const column = columns.find((one) => one.id === order.sortId);
-    if (!column?.sortBy) {
+    if (!column?.sortBy || partial || (serverSorts && column.sortKey !== undefined)) {
       return source;
     }
     const pick = column.sortBy;
     const sorted = [...source].sort((left, right) => compare(pick(left), pick(right)));
     return order.descending ? sorted.reverse() : sorted;
-  }, [rows, columns, order.sortId, order.descending]);
+  }, [rows, columns, order.sortId, order.descending, partial, serverSorts]);
 
   if (failed) {
     return <Failed onRetry={onRetry} />;
@@ -195,8 +294,27 @@ export function DataTable<T>({
     onRowClick?.(row);
   }
 
-  function sortOn(column: Column<T>): void {
-    if (!column.sortBy) {
+  function modeOf(column: Column<T>): SortMode {
+    if (serverSorts && column.sortKey !== undefined) {
+      return "server";
+    }
+    return column.sortBy && !partial ? "client" : null;
+  }
+
+  function directionOf(column: Column<T>, mode: SortMode): Sort["dir"] | null {
+    if (mode === "server") {
+      return sort && sort.key === column.sortKey ? sort.dir : null;
+    }
+    if (mode === "client" && order.sortId === column.id) {
+      return order.descending ? "desc" : "asc";
+    }
+    return null;
+  }
+
+  function sortOn(column: Column<T>, mode: SortMode): void {
+    if (mode === "server" && column.sortKey !== undefined) {
+      const flip = sort?.key === column.sortKey && sort.dir === "asc";
+      onSortChange?.({ key: column.sortKey, dir: flip ? "desc" : "asc" });
       return;
     }
     const same = order.sortId === column.id;
@@ -216,6 +334,8 @@ export function DataTable<T>({
   const allOn = ordered.length > 0 && ordered.every((row) => chosen.has(keyOf(row)));
   const someOn = ordered.some((row) => chosen.has(keyOf(row)));
   const picked = ordered.filter((row) => chosen.has(keyOf(row)));
+  // Kumo's sticky action column already fades its own inner edge.
+  const fadesEdge = rowActions === undefined;
 
   if (!pending && ordered.length === 0) {
     return (
@@ -243,132 +363,135 @@ export function DataTable<T>({
         </div>
       ) : null}
 
-      <LayerCard className="hidden overflow-x-auto p-0 md:block">
-        <Table>
-          <Table.Header>
-            <Table.Row>
-              {selectable ? (
-                <Table.CheckHead
-                  checked={allOn}
-                  indeterminate={someOn && !allOn}
-                  onCheckedChange={() => setChosen(allOn ? new Set() : new Set(ordered.map((row) => keyOf(row))))}
-                  aria-label={t("chooseAll")}
-                />
-              ) : null}
-              {columns.map((column) => (
-                <Table.Head
-                  key={column.id}
-                  sticky={column.sticky ? "left" : undefined}
-                  aria-sort={
-                    order.sortId === column.id ? (order.descending ? "descending" : "ascending") : undefined
-                  }
-                  className={cn("whitespace-nowrap", column.numeric && "text-end")}
-                >
-                  {column.sortBy ? (
-                    <button
-                      type="button"
-                      onClick={() => sortOn(column)}
-                      className={cn("inline-flex items-center gap-1 hover:text-kumo-strong", column.numeric && "flex-row-reverse")}
-                    >
-                      {column.header}
-                      {order.sortId !== column.id ? (
-                        <ArrowsDownUpIcon size={14} className="text-kumo-inactive" aria-hidden />
-                      ) : order.descending ? (
-                        <ArrowDownIcon size={14} aria-hidden />
-                      ) : (
-                        <ArrowUpIcon size={14} aria-hidden />
-                      )}
-                    </button>
-                  ) : (
-                    column.header
-                  )}
-                </Table.Head>
-              ))}
-              {rowActions ? (
-                <Table.Head sticky="right" className="w-12">
-                  <span className="sr-only">{t("actions")}</span>
-                </Table.Head>
-              ) : null}
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {pending
-              ? Array.from({ length: kSkeletonRows }, (_, at) => (
-                  <Table.Row key={`wait-${at}`}>
-                    {selectable ? <Table.Cell /> : null}
-                    {columns.map((column) => (
-                      <Table.Cell key={column.id}>
-                        <SkeletonLine minWidth={35} maxWidth={90} />
-                      </Table.Cell>
-                    ))}
-                    {rowActions ? <Table.Cell /> : null}
-                  </Table.Row>
-                ))
-              : ordered.map((row) => {
-                  const key = keyOf(row);
-                  const actions = rowActions?.(row) ?? [];
-                  return (
-                    <Table.Row
-                      key={key}
-                      variant={chosen.has(key) ? "selected" : "default"}
-                      onClick={opens ? (event) => !onControl(event) && open(row) : undefined}
-                      className={cn(
-                        opens && "cursor-pointer hover:bg-kumo-tint hover:[--kumo-table-row-bg:var(--color-kumo-tint)]",
-                      )}
-                    >
-                      {selectable ? (
-                        <Table.CheckCell
-                          checked={chosen.has(key)}
-                          onCheckedChange={() => toggleRow(key)}
-                          aria-label={t("chooseRow")}
-                        />
-                      ) : null}
-                      {columns.map((column) => (
-                        <Table.Cell
-                          key={column.id}
-                          sticky={column.sticky ? "left" : undefined}
-                          className={cn(column.numeric && "text-end tabular-nums")}
+      <LayerCard className="@container hidden p-0 md:block">
+        <div className="relative">
+          <div ref={setScroller} className="overflow-x-auto">
+            <Table>
+              <Table.Header>
+                <Table.Row>
+                  {selectable ? (
+                    <Table.CheckHead
+                      checked={allOn}
+                      indeterminate={someOn && !allOn}
+                      onCheckedChange={() => setChosen(allOn ? new Set() : new Set(ordered.map((row) => keyOf(row))))}
+                      aria-label={t("chooseAll")}
+                    />
+                  ) : null}
+                  {columns.map((column) => {
+                    const mode = modeOf(column);
+                    const dir = directionOf(column, mode);
+                    return (
+                      <Table.Head
+                        key={column.id}
+                        sticky={column.sticky ? "left" : undefined}
+                        aria-sort={dir === null ? undefined : dir === "desc" ? "descending" : "ascending"}
+                        className={cn("whitespace-nowrap", column.numeric && "text-end", HIDE_AT[column.priority ?? 1])}
+                      >
+                        {mode ? (
+                          <button
+                            type="button"
+                            onClick={() => sortOn(column, mode)}
+                            className={cn("inline-flex items-center gap-1 hover:text-kumo-strong", column.numeric && "flex-row-reverse")}
+                          >
+                            {column.header}
+                            <SortMark dir={dir} />
+                          </button>
+                        ) : (
+                          column.header
+                        )}
+                      </Table.Head>
+                    );
+                  })}
+                  {rowActions ? (
+                    <Table.Head sticky="right" className="w-12">
+                      <span className="sr-only">{t("actions")}</span>
+                    </Table.Head>
+                  ) : null}
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {pending
+                  ? Array.from({ length: kSkeletonRows }, (_, at) => (
+                      <Table.Row key={`wait-${at}`}>
+                        {selectable ? <Table.Cell /> : null}
+                        {columns.map((column) => (
+                          <Table.Cell key={column.id} className={HIDE_AT[column.priority ?? 1]}>
+                            <SkeletonLine minWidth={35} maxWidth={90} />
+                          </Table.Cell>
+                        ))}
+                        {rowActions ? <Table.Cell /> : null}
+                      </Table.Row>
+                    ))
+                  : ordered.map((row) => {
+                      const key = keyOf(row);
+                      const actions = rowActions?.(row) ?? [];
+                      return (
+                        <Table.Row
+                          key={key}
+                          variant={chosen.has(key) ? "selected" : "default"}
+                          onClick={opens ? (event) => !onControl(event) && open(row) : undefined}
+                          className={cn(
+                            opens && "cursor-pointer hover:bg-kumo-tint hover:[--kumo-table-row-bg:var(--color-kumo-tint)]",
+                          )}
                         >
-                          {column.cell(row)}
-                        </Table.Cell>
-                      ))}
-                      {rowActions ? (
-                        <Table.Cell sticky="right" className="py-1.5 text-end">
-                          <ActionMenu actions={actions} label={t("actions")} />
-                        </Table.Cell>
-                      ) : null}
-                    </Table.Row>
-                  );
-                })}
-          </Table.Body>
-        </Table>
+                          {selectable ? (
+                            <Table.CheckCell
+                              checked={chosen.has(key)}
+                              onCheckedChange={() => toggleRow(key)}
+                              aria-label={t("chooseRow")}
+                            />
+                          ) : null}
+                          {columns.map((column) => (
+                            <Table.Cell
+                              key={column.id}
+                              sticky={column.sticky ? "left" : undefined}
+                              className={cn(column.numeric && "text-end tabular-nums", HIDE_AT[column.priority ?? 1])}
+                            >
+                              {cellBody(column, row)}
+                            </Table.Cell>
+                          ))}
+                          {rowActions ? (
+                            <Table.Cell sticky="right" className="py-1.5 text-end">
+                              <ActionMenu actions={actions} label={t("actions")} />
+                            </Table.Cell>
+                          ) : null}
+                        </Table.Row>
+                      );
+                    })}
+              </Table.Body>
+            </Table>
+          </div>
+          {fadesEdge ? (
+            <div
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute inset-y-0 end-0 w-10 bg-linear-to-l from-kumo-base to-transparent transition-opacity duration-150 motion-reduce:transition-none",
+                moreToTheRight ? "opacity-100" : "opacity-0",
+              )}
+            />
+          ) : null}
+        </div>
         {paging && !pending ? <PagingRow paging={paging} /> : null}
       </LayerCard>
 
       <div className="md:hidden">
         {pending ? (
-          <LayerCard className="flex flex-col gap-3 p-4">
-            {Array.from({ length: 3 }, (_, at) => (
-              <SkeletonLine key={at} minWidth={25} maxWidth={43} />
-            ))}
-          </LayerCard>
+          <CardListSkeleton />
         ) : (
           <CardList
             columns={columns}
             rows={ordered}
             keyOf={keyOf}
             cardLead={cardLead}
+            cardTrailing={cardTrailing}
+            cardAvatar={cardAvatar}
             chosen={selectable ? chosen : undefined}
             onToggle={selectable ? toggleRow : undefined}
             onOpen={opens ? open : undefined}
             rowActions={rowActions}
+            footer={paging ? <PagingRow paging={paging} /> : undefined}
           />
         )}
-        {paging && !pending ? (
-          <LayerCard className="mt-2 p-0">
-            <PagingRow paging={paging} />
-          </LayerCard>
-        ) : null}
       </div>
     </div>
   );

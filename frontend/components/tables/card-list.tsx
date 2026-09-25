@@ -1,14 +1,15 @@
 "use client";
 
-import { Checkbox, LayerCard } from "@cloudflare/kumo";
-import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
+import { Checkbox, LayerCard, SkeletonLine } from "@cloudflare/kumo";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { isValidElement, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
-import { ActionMenu, onControl, type Column, type RowAction } from "./data-table";
+import { ActionMenu, onControl, PersonCell, type Column, type RowAction } from "./data-table";
 
-const kFrontColumns = 3;
+const kSkeletonRows = 5;
+const kRow = "flex min-h-14 items-center gap-3 px-4 py-2.5";
 
 interface Props<T> {
   columns: Column<T>[];
@@ -17,75 +18,138 @@ interface Props<T> {
   chosen?: ReadonlySet<string>;
   onToggle?: (key: string) => void;
   cardLead?: string;
+  cardTrailing?: string;
+  cardAvatar?: (row: T) => string;
   onOpen?: (row: T) => void;
   rowActions?: (row: T) => RowAction[];
+  /** Under the last row, inside the same card: the paging row. */
+  footer?: ReactNode;
 }
 
-/** The same columns a table draws as rows, drawn as cards (KEHOACH 9.21.1). */
-export function CardList<T>({ columns, rows, keyOf, chosen, onToggle, cardLead, onOpen, rowActions }: Props<T>) {
-  const t = useTranslations("common");
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const at = Math.max(0, columns.findIndex((column) => column.id === cardLead));
-  const lead = columns[at];
-  const rest = columns.filter((_, index) => index !== at);
-  const front = rest.slice(0, kFrontColumns - 1);
-  const back = rest.slice(kFrontColumns - 1);
+interface Who {
+  name: string;
+  code?: string | null;
+}
 
-  function flip(key: string): void {
-    const next = new Set(open);
-    if (!next.delete(key)) {
-      next.add(key);
-    }
-    setOpen(next);
-  }
+function personIn(node: ReactNode): Who | null {
+  return isValidElement<Who>(node) && node.type === PersonCell ? node.props : null;
+}
+
+function inline(node: ReactNode): ReactNode {
+  const person = personIn(node);
+  return person ? [person.name, person.code].filter(Boolean).join(" · ") : node;
+}
+
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const first = words.at(0)?.charAt(0) ?? "";
+  const last = words.length > 1 ? (words.at(-1)?.charAt(0) ?? "") : "";
+  return (first + last).toLocaleUpperCase();
+}
+
+function Avatar({ name }: { name: string }) {
+  return (
+    <span
+      aria-hidden
+      className="grid size-9 shrink-0 place-items-center rounded-full bg-kumo-tint text-sm font-medium text-kumo-subtle"
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+function shows(node: ReactNode, blank: string): boolean {
+  return node !== null && node !== undefined && node !== false && node !== "" && node !== blank;
+}
+
+/** The same rows, drawn while the list loads. */
+export function CardListSkeleton() {
+  return (
+    <LayerCard className="p-0">
+      <ul className="divide-y divide-kumo-hairline">
+        {Array.from({ length: kSkeletonRows }, (_, at) => (
+          <li key={at} className={cn(kRow, "flex-col items-stretch justify-center gap-1.5")}>
+            <SkeletonLine minWidth={35} maxWidth={60} />
+            <SkeletonLine minWidth={20} maxWidth={45} />
+          </li>
+        ))}
+      </ul>
+    </LayerCard>
+  );
+}
+
+/** The table's rows as one card of divided rows, the way a phone's own contacts read (KEHOACH 9.21.1).
+ *  Title is the lead column; the line under it joins the other priority-1 columns.
+ */
+export function CardList<T>({
+  columns,
+  rows,
+  keyOf,
+  chosen,
+  onToggle,
+  cardLead,
+  cardTrailing,
+  cardAvatar,
+  onOpen,
+  rowActions,
+  footer,
+}: Props<T>) {
+  const t = useTranslations("common");
+  const lead = columns.find((column) => column.id === cardLead) ?? columns[0];
+  const trailing = columns.find((column) => column.id === cardTrailing);
+  const rest = columns.filter((column) => column !== lead && column !== trailing);
+  // A row with no record behind it carries every value, since nothing opens to show the rest.
+  const under = onOpen
+    ? rest.filter((column) => (column.priority ?? 1) === 1)
+    : [...rest].sort((left, right) => (left.priority ?? 1) - (right.priority ?? 1));
 
   return (
-    <ul className="flex flex-col gap-2">
-      {rows.map((row) => {
-        const key = keyOf(row);
-        const shown = open.has(key);
-        const actions = rowActions?.(row) ?? [];
-        return (
-          <LayerCard
-            key={key}
-            render={<li />}
-            onClick={onOpen ? (event) => !onControl(event) && onOpen(row) : undefined}
-            className={cn("p-4", onOpen && "cursor-pointer active:bg-kumo-tint")}
-          >
-            <div className="flex items-start gap-2">
+    <LayerCard className="p-0">
+      <ul className="divide-y divide-kumo-hairline">
+        {rows.map((row) => {
+          const key = keyOf(row);
+          const actions = rowActions?.(row) ?? [];
+          const top = lead?.cell(row);
+          const person = personIn(top);
+          const avatar = cardAvatar?.(row) ?? person?.name;
+          const parts = [person?.code, ...under.map((column) => inline(column.cell(row)))].filter((part) =>
+            shows(part, t("empty")),
+          );
+          return (
+            <li
+              key={key}
+              onClick={onOpen ? (event) => !onControl(event) && onOpen(row) : undefined}
+              className={cn(kRow, onOpen && "cursor-pointer active:bg-kumo-tint")}
+            >
               {chosen && onToggle ? (
                 <Checkbox checked={chosen.has(key)} onCheckedChange={() => onToggle(key)} aria-label={t("chooseRow")} />
               ) : null}
-              <div className="min-w-0 flex-1 font-medium">{lead?.cell(row)}</div>
+              {avatar ? <Avatar name={avatar} /> : null}
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{person ? person.name : top}</div>
+                {parts.length > 0 ? (
+                  <div className={cn("text-sm text-kumo-subtle", onOpen ? "truncate" : "line-clamp-2")}>
+                    {parts.map((part, at) => (
+                      <span key={at}>
+                        {at > 0 ? " · " : null}
+                        {part}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              {trailing ? (
+                <div className={cn("shrink-0 text-end", trailing.numeric && "tabular-nums")}>{trailing.cell(row)}</div>
+              ) : null}
               <ActionMenu actions={actions} label={t("actions")} />
               {onOpen && actions.length === 0 ? (
-                <CaretRightIcon size={16} className="mt-0.5 shrink-0 text-kumo-subtle" aria-hidden />
+                <CaretRightIcon size={16} className="shrink-0 text-kumo-subtle" aria-hidden />
               ) : null}
-            </div>
-
-            <dl className="mt-2 flex flex-col gap-1">
-              {(shown ? [...front, ...back] : front).map((column) => (
-                <div key={column.id} className="flex justify-between gap-3">
-                  <dt className="text-kumo-subtle">{column.header}</dt>
-                  <dd className={cn("min-w-0 text-end", column.numeric && "tabular-nums")}>{column.cell(row)}</dd>
-                </div>
-              ))}
-            </dl>
-
-            {back.length > 0 ? (
-              <button
-                type="button"
-                aria-expanded={shown}
-                onClick={() => flip(key)}
-                className="mt-1 flex min-h-11 w-full items-center justify-center gap-1 text-kumo-subtle"
-              >
-                {shown ? t("less") : t("more")}
-                <CaretDownIcon size={16} className={cn("transition-transform", shown && "rotate-180")} aria-hidden />
-              </button>
-            ) : null}
-          </LayerCard>
-        );
-      })}
-    </ul>
+            </li>
+          );
+        })}
+      </ul>
+      {footer}
+    </LayerCard>
   );
 }

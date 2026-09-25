@@ -3,7 +3,8 @@
 import { LayerCard, Tabs, type TabsItem } from "@cloudflare/kumo";
 import { CaretLeftIcon } from "@phosphor-icons/react";
 import { useFormatter, useTranslations } from "next-intl";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { useCrumb } from "@/components/nav/breadcrumb";
 import { Link, usePathname } from "@/i18n/navigation";
@@ -23,10 +24,47 @@ interface HeaderProps {
   onTab?: (value: string) => void;
 }
 
-/** Kumo's PageHeader block, with the trail moved up into the top bar (KEHOACH 9.15). */
+const PHONE = "(max-width: 47.99rem)";
+
+function usePhone(): boolean {
+  const listen = useCallback((again: () => void) => {
+    const query = window.matchMedia(PHONE);
+    query.addEventListener("change", again);
+    return () => query.removeEventListener("change", again);
+  }, []);
+  return useSyncExternalStore(
+    listen,
+    () => window.matchMedia(PHONE).matches,
+    () => false,
+  );
+}
+
+function ThumbActions({ children }: { children: ReactNode }) {
+  const [main, setMain] = useState<HTMLElement | null>(null);
+  useEffect(() => setMain(document.getElementById("main")), []);
+  if (!main) {
+    return null;
+  }
+  return (
+    <>
+      {createPortal(
+        <div className="fixed end-4 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 flex flex-wrap justify-end gap-2 *:shadow-lg">
+          {children}
+        </div>,
+        document.body,
+      )}
+      {createPortal(<div aria-hidden className="h-14" />, main)}
+    </>
+  );
+}
+
+/** Kumo's PageHeader block, with the trail moved up into the top bar (KEHOACH 9.15).
+ *  On a phone the actions leave the header for the thumb, above the tab bar (KEHOACH 9.21.2).
+ */
 export function PageHeader({ title, description, meta, actions, tabs, tab, onTab }: HeaderProps) {
   const t = useTranslations("nav");
   const here = usePathname();
+  const phone = usePhone();
   const { role, employeeId } = useSession();
   useCrumb(namesItself(here) ? title : undefined);
   const trail = trailFor(role, employeeId !== null, here);
@@ -34,7 +72,7 @@ export function PageHeader({ title, description, meta, actions, tabs, tab, onTab
   const up = namesItself(here) ? trail.at(-1) : undefined;
 
   return (
-    <header className={cn("flex flex-col gap-2", tabs ? "mb-6" : "mb-6 xl:mb-8")}>
+    <header className={cn("flex flex-col gap-2", tabs ? "mb-4 sm:mb-6" : "mb-4 sm:mb-6 xl:mb-8")}>
       {up ? (
         <Link
           href={up.href}
@@ -51,10 +89,11 @@ export function PageHeader({ title, description, meta, actions, tabs, tab, onTab
             {meta}
           </div>
           {description ? (
-            <p className="max-w-prose text-lg leading-normal text-pretty text-kumo-subtle">{description}</p>
+            <p className="hidden max-w-prose text-lg leading-normal text-pretty text-kumo-subtle md:block">{description}</p>
           ) : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions && !phone ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions && phone ? <ThumbActions>{actions}</ThumbActions> : null}
       </div>
       {tabs ? (
         <div className="mt-2 overflow-x-auto border-b border-kumo-line">
@@ -67,29 +106,28 @@ export function PageHeader({ title, description, meta, actions, tabs, tab, onTab
 
 interface LayoutProps {
   children: ReactNode;
-  /** Summary the list is read with: above the main column below xl. */
+  /** What the list is read with: pending work, totals of the filtered set. */
   aside?: ReactNode;
-  /** Tools and things to know: at the end of the page below xl. */
+  /** Tools and things to know, under the aside. */
   extra?: ReactNode;
 }
 
-/** Kumo's ResourceListPage body: the main column and Cloudflare's right column (KEHOACH 9.12). */
+/** Kumo's ResourceListPage body: the main column and Cloudflare's right column (KEHOACH 9.12).
+ *  Below xl the right column follows the main one; from xl it is 380 px, sticky, and scrolls on its own.
+ */
 export function PageLayout({ children, aside, extra }: LayoutProps) {
   if (!aside && !extra) {
     return <div className="min-w-0">{children}</div>;
   }
-  // A phone reads the list first; from md the summary leads, as in Kumo's block.
+  // The inset keeps the cards' rings clear of the column's own scroll clip.
   return (
-    <>
-      <div className="flex flex-col gap-6 md:flex-col-reverse xl:flex-row xl:gap-8">
-        <div className="min-w-0 grow">{children}</div>
-        <div className="top-22 flex h-fit w-full shrink-0 flex-col gap-4 xl:sticky xl:w-[380px]">
-          {aside}
-          {extra ? <div className="hidden flex-col gap-4 xl:flex">{extra}</div> : null}
-        </div>
+    <div className="flex flex-col gap-6 xl:flex-row xl:gap-8">
+      <div className="min-w-0 grow">{children}</div>
+      <div className="flex h-fit w-full shrink-0 flex-col gap-4 xl:sticky xl:top-[82px] xl:-m-1 xl:max-h-[calc(100svh-82px-24px)] xl:w-[388px] xl:overflow-y-auto xl:overscroll-contain xl:p-1 xl:[scrollbar-width:thin]">
+        {aside}
+        {extra}
       </div>
-      {extra ? <div className="mt-6 flex flex-col gap-4 xl:hidden">{extra}</div> : null}
-    </>
+    </div>
   );
 }
 
@@ -125,7 +163,7 @@ export interface Stat {
   key: string;
   label: string;
   value: ReactNode;
-  /** Filters the list on this page. */
+  /** Acts on this page, such as opening the work it counts. */
   onPick?: () => void;
   /** Or opens where this is handled. */
   href?: string;
@@ -136,7 +174,9 @@ export interface Stat {
 const STAT_ROW = "flex min-h-9 w-full items-center justify-between gap-3 rounded-md px-2 text-start";
 const TONE_TEXT = { warning: "text-kumo-warning", danger: "text-kumo-danger" } as const;
 
-/** Counts that act: each filters the list beside it or leads to its queue (KEHOACH 9.12). */
+/** Counts that act: totals of the filtered set, or work that leads to its queue (KEHOACH 9.12).
+ *  A count per filter value belongs inside that filter's options, not here.
+ */
 export function StatList({ stats }: { stats: Stat[] }) {
   const format = useFormatter();
   return (
