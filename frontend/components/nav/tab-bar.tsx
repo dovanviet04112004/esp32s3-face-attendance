@@ -100,7 +100,7 @@ export function TabBar() {
         aria-label={t("primary")}
         data-typing={typing ? "" : undefined}
         className={cn(
-          "fixed inset-x-0 bottom-0 z-40 flex border-t border-kumo-line bg-kumo-base pb-[env(safe-area-inset-bottom)] [view-transition-name:tab-bar] md:hidden",
+          "fixed inset-x-0 bottom-0 z-40 flex border-t border-kumo-line bg-kumo-canvas pb-[env(safe-area-inset-bottom)] [view-transition-name:tab-bar] md:hidden",
           typing && "hidden",
         )}
       >
