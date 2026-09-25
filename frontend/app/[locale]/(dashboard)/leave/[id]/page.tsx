@@ -37,7 +37,7 @@ export default function LeaveDetailPage() {
   const row = rows.data;
 
   return (
-    <section className="mx-auto w-full max-w-(--width-read)">
+    <section className="w-full">
       <h1 className="text-lg font-semibold">
         {row ? `${row.employee?.fullName ?? t("title")} · ${t(`kind${row.kind}`)}` : t("title")}
       </h1>

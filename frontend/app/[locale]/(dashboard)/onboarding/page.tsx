@@ -130,7 +130,7 @@ export default function OnboardingPage() {
   const late = rows.filter((one) => one.dueOn.slice(0, 10) < today()).length;
 
   return (
-    <section className="mx-auto w-full max-w-(--width-read)">
+    <section className="w-full">
       <h1 className="text-lg font-semibold">{t("title")}</h1>
       <p className="mt-1 mb-4 text-sm text-(--color-muted)">{t("lead")}</p>
 

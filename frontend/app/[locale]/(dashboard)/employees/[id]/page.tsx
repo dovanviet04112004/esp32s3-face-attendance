@@ -263,7 +263,7 @@ export default function EmployeePage() {
   }
 
   return (
-    <section className="mx-auto w-full max-w-(--width-read)">
+    <section className="w-full">
       <h1 className="text-lg font-semibold">{employee.data.fullName}</h1>
       <p className="mt-1 text-sm text-(--color-muted)">
         {employee.data.code} · {employee.data.active ? t("working") : t("left")}

@@ -175,7 +175,7 @@ export default function DevicePage() {
   }
 
   return (
-    <section className="mx-auto w-full max-w-(--width-read)">
+    <section className="w-full">
       <h1 className="text-lg font-semibold">{it.name ?? t("unnamed")}</h1>
       <p className="mt-1 font-mono text-xs text-(--color-muted)">{it.id}</p>
       <p className="mt-2 text-sm">

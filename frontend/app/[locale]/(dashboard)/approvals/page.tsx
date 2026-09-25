@@ -232,7 +232,7 @@ export default function ApprovalsPage() {
   }
 
   return (
-    <section className="mx-auto w-full max-w-(--width-read)">
+    <section className="w-full">
       <h1 className="text-lg font-semibold">{t("inbox")}</h1>
       <p className="mt-1 text-sm text-(--color-muted)">
         {inbox.isPending ? common("loading") : t("waiting", { count: waiting })}

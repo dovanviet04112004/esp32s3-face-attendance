@@ -120,7 +120,7 @@ export default function NewEmployeePage() {
 
   if (opened && hire.isError) {
     return (
-      <section className="mx-auto w-full max-w-(--width-read)">
+      <section className="w-full max-w-(--width-read)">
         <h1 className="text-lg font-semibold">{t("hireSkipped")}</h1>
         <p className="mt-2 text-sm text-(--color-muted)">
           <span className="font-mono">{opened.draft.code}</span> · {opened.draft.fullName}
@@ -150,7 +150,7 @@ export default function NewEmployeePage() {
   }
 
   return (
-    <section className="mx-auto w-full max-w-(--width-read)">
+    <section className="w-full max-w-(--width-read)">
       <Link
         href="/employees"
         className="inline-flex items-center gap-1 text-sm text-(--color-muted) hover:text-(--color-ink)"

@@ -106,7 +106,7 @@ export default function MyPage() {
   }
 
   return (
-    <section className="mx-auto w-full max-w-(--width-read)">
+    <section className="w-full">
       <h1 className="text-lg font-semibold">
         {me.data ? t("greeting", { name: me.data.fullName }) : t("title")}
       </h1>
