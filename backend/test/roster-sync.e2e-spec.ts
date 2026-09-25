@@ -10,6 +10,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import type { EnrollPlan } from "../src/modules/employees/bulk.service.js";
 import { EnrollmentService } from "../src/modules/enrollment/enrollment.service.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 import type { EnrollPayload } from "../src/common/generated/enroll_payload.js";
@@ -19,9 +20,18 @@ const DOOR_B = "e2e-door-b";
 const DOOR_C = "e2e-door-c";
 const DOOR_OLD = "e2e-door-old-model";
 const DOOR_NEW = "e2e-door-new-model";
+const DOOR_HOME = "e2e-door-home";
+const DOOR_SAME = "e2e-door-same-model";
+const DOOR_OTHER = "e2e-door-other-model";
+const DOOR_BLIND = "e2e-door-no-model";
 const DOORS = [DOOR_A, DOOR_B];
 const CODE = "NV9200";
 const CROWD = ["NV9201", "NV9202", "NV9203", "NV9204"];
+const MOVER = "NV9205";
+const HELD = "NV9206";
+const FRESH = "NV9207";
+const FOREIGN = "NV9208";
+const NEWCOMERS = [MOVER, HELD, FRESH, FOREIGN];
 const EMBEDDING_BYTES = 512;
 const PUBLISH_MS = 25;
 const AHEAD_BY = 50;
@@ -61,8 +71,10 @@ describe("roster sync across doors (e2e)", () => {
   let employeeId = 0;
 
   async function sweep(): Promise<void> {
-    await db.employee.deleteMany({ where: { code: { in: [CODE, ...CROWD] } } });
-    await db.device.deleteMany({ where: { id: { in: [...DOORS, DOOR_C, DOOR_OLD, DOOR_NEW] } } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, ...CROWD, ...NEWCOMERS] } } });
+    await db.device.deleteMany({
+      where: { id: { in: [...DOORS, DOOR_C, DOOR_OLD, DOOR_NEW, DOOR_HOME, DOOR_SAME, DOOR_OTHER, DOOR_BLIND] } },
+    });
   }
 
   // Every roster message the run sends, in the order it left; each takes PUBLISH_MS on the wire.
@@ -363,5 +375,162 @@ describe("roster sync across doors (e2e)", () => {
     assert.equal(await stateOf(DOOR_OLD), "ASSIGNED", "the dashboard still shows a face the server cannot give that door");
     assert.deepEqual(sent.filter((one) => one.to === DOOR_NEW).map((one) => one.op), ["DELETE_EMPLOYEE", "UPSERT"]);
     assert.equal(await stateOf(DOOR_NEW), "ENROLLED");
+  });
+
+  describe("a door new to a person the server holds a face for", () => {
+    const ids = new Map<string, number>();
+    const id = (code: string): number => ids.get(code) as number;
+    const SESSION = FIRST + 600_000;
+
+    async function pairOf(deviceId: string, code: string): Promise<string> {
+      const row = await db.deviceEnrollment.findUnique({
+        where: { deviceId_employeeId: { deviceId, employeeId: id(code) } },
+      });
+      return row?.state ?? "MISSING";
+    }
+
+    async function put(deviceId: string, code: string): Promise<{ status: number; body: Record<string, unknown> }> {
+      const res = await request(http)
+        .post("/enrollments")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ deviceId, employeeId: id(code) });
+      return { status: res.status, body: res.body };
+    }
+
+    function bulk(query: string, body: object): Promise<{ status: number; body: EnrollPlan }> {
+      return request(http)
+        .post(`/employees/bulk/enrollments${query}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send(body)
+        .then((res) => ({ status: res.status, body: res.body as EnrollPlan }));
+    }
+
+    before(async () => {
+      await db.device.createMany({
+        data: [
+          { id: DOOR_HOME, name: DOOR_HOME, status: "APPROVED", embeddingVersion: "r1" },
+          { id: DOOR_SAME, name: DOOR_SAME, status: "APPROVED", embeddingVersion: "r1" },
+          { id: DOOR_OTHER, name: DOOR_OTHER, status: "APPROVED", embeddingVersion: "r2" },
+          { id: DOOR_BLIND, name: DOOR_BLIND, status: "APPROVED" },
+        ],
+      });
+      for (const code of NEWCOMERS) {
+        const one = await db.employee.create({ data: { code, fullName: `Người ${code}`, active: true } });
+        await db.biometricConsent.create({ data: { employeeId: one.id, noticeVersion: "e2e", method: "PAPER" } });
+        ids.set(code, one.id);
+      }
+      await enrollment.assign(DOOR_HOME, id(MOVER));
+      await enrollment.assign(DOOR_HOME, id(HELD));
+      await enrollment.assign(DOOR_OTHER, id(FOREIGN));
+      for (const idx of [0, 1]) {
+        await enrollment.takeReport(DOOR_HOME, report(DOOR_HOME, id(MOVER), 0x21, SESSION, idx));
+        await enrollment.takeReport(DOOR_HOME, report(DOOR_HOME, id(HELD), 0x22, SESSION + 1, idx));
+      }
+      await enrollment.takeReport(DOOR_OTHER, report(DOOR_OTHER, id(FOREIGN), 0x23, SESSION + 2, 0, "r2"));
+      assert.deepEqual(
+        [await pairOf(DOOR_HOME, MOVER), await pairOf(DOOR_HOME, HELD), await pairOf(DOOR_OTHER, FOREIGN)],
+        ["ENROLLED", "ENROLLED", "ENROLLED"],
+      );
+    });
+
+    it("sends the held face to a door on its model and asks it for no capture", async () => {
+      const wasAt = await versionOf(DOOR_SAME);
+      const reads = () => db.auditLog.count({ where: { action: "biometric.read", subjectId: String(id(MOVER)) } });
+      const readBefore = await reads();
+      let answer = { status: 0, body: {} as Record<string, unknown> };
+      const sent = await recorded(async () => {
+        answer = await put(DOOR_SAME, MOVER);
+      });
+      assert.equal(answer.status, 201, JSON.stringify(answer.body));
+      assert.equal(answer.body.state, "ENROLLED", "the door would ask for a face the server already holds");
+      assert.equal(answer.body.templateIdx, 1);
+      assert.deepEqual(
+        sent.map((one) => [one.to, one.op, one.employeeId, one.rosterVersion]),
+        [
+          [DOOR_SAME, "UPSERT", id(MOVER), wasAt + 1],
+          [DOOR_SAME, "UPSERT", id(MOVER), wasAt + 2],
+        ],
+      );
+      assert.equal(await versionOf(DOOR_SAME), wasAt + 2, "the counter did not count every sample sent");
+      assert.equal(await reads(), readBefore + 2, "a face left the server with no read on the trail");
+    });
+
+    it("asks a door on another model, or one that has not named its model, for a capture", async () => {
+      for (const door of [DOOR_OTHER, DOOR_BLIND]) {
+        const wasAt = await versionOf(door);
+        const sent = await recorded(() => put(door, MOVER));
+        assert.deepEqual(
+          sent.map((one) => [one.op, one.employeeId, one.rosterVersion]),
+          [["ASSIGN", id(MOVER), wasAt + 1]],
+          `${door} was sent a template it would refuse`,
+        );
+        assert.equal(await pairOf(door, MOVER), "ASSIGNED");
+      }
+    });
+
+    it("sends held faces in bulk, asks for the rest, and passes over the people already on the door", async () => {
+      await db.deviceEnrollment.create({ data: { deviceId: DOOR_SAME, employeeId: id(HELD), state: "REVOKED" } });
+      const body = { deviceId: DOOR_SAME, employeeIds: NEWCOMERS.map(id) };
+      const wasAt = await versionOf(DOOR_SAME);
+      const seen = await bulk("", body);
+      assert.equal(seen.status, 201, JSON.stringify(seen.body));
+      assert.deepEqual(
+        seen.body.rows.map((one) => [one.employeeId, one.heldFace]),
+        [
+          [id(HELD), true],
+          [id(FRESH), false],
+          [id(FOREIGN), false],
+        ],
+      );
+      assert.deepEqual(seen.body.skipped.map((one) => [one.employeeId, one.reason]), [[id(MOVER), "ALREADY_ON_KIOSK"]]);
+      assert.equal(await versionOf(DOOR_SAME), wasAt, "a preview moved the roster");
+
+      let done = seen;
+      const sent = await recorded(async () => {
+        done = await bulk("?apply=true", body);
+      });
+      assert.equal(done.status, 201, JSON.stringify(done.body));
+      assert.deepEqual(
+        sent.map((one) => [one.to, one.op, one.employeeId, one.rosterVersion]),
+        [
+          [DOOR_SAME, "UPSERT", id(HELD), wasAt + 1],
+          [DOOR_SAME, "UPSERT", id(HELD), wasAt + 2],
+          [DOOR_SAME, "ASSIGN", id(FRESH), wasAt + 3],
+          [DOOR_SAME, "ASSIGN", id(FOREIGN), wasAt + 4],
+        ],
+      );
+      assert.deepEqual(
+        done.body.rows.map((one) => [one.employeeId, one.rosterVersion, one.heldFace]),
+        [
+          [id(HELD), wasAt + 2, true],
+          [id(FRESH), wasAt + 3, false],
+          [id(FOREIGN), wasAt + 4, false],
+        ],
+      );
+      assert.equal(done.body.rosterVersion, wasAt + 4);
+      assert.equal(await versionOf(DOOR_SAME), wasAt + 4);
+      assert.deepEqual(
+        await Promise.all(NEWCOMERS.map((code) => pairOf(DOOR_SAME, code))),
+        ["ENROLLED", "ENROLLED", "ASSIGNED", "ASSIGNED"],
+      );
+      const revived = await db.deviceEnrollment.findUniqueOrThrow({
+        where: { deviceId_employeeId: { deviceId: DOOR_SAME, employeeId: id(HELD) } },
+      });
+      assert.equal(revived.templateIdx, 1, "a door handed two samples was recorded holding another");
+    });
+
+    it("puts a face sent from another door up for retake, as the profile's button does", async () => {
+      const wasAt = await versionOf(DOOR_SAME);
+      let answer = { status: 0, body: {} as Record<string, unknown> };
+      const sent = await recorded(async () => {
+        answer = await put(DOOR_SAME, MOVER);
+      });
+      assert.equal(answer.body.state, "RETAKE");
+      assert.deepEqual(
+        sent.map((one) => [one.op, one.employeeId, one.rosterVersion]),
+        [["ASSIGN", id(MOVER), wasAt + 1]],
+      );
+      assert.equal(await db.faceTemplate.count({ where: { employeeId: id(MOVER) } }), 2, "a retake threw the held face away");
+    });
   });
 });

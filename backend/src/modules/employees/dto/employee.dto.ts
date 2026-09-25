@@ -704,8 +704,13 @@ export class EnrollRowView {
   @ApiProperty()
   fullName!: string;
 
-  @ApiProperty({ type: Number, nullable: true, description: "What the ASSIGN carries; empty in a preview" })
+  @ApiProperty({ type: Number, nullable: true, description: "What the person's last message carries; empty in a preview" })
   rosterVersion!: number | null;
+
+  @ApiProperty({
+    description: "true: the kiosk is sent the face the server holds on its model; false: it asks for a capture (KEHOACH 7.5)",
+  })
+  heldFace!: boolean;
 }
 
 export class EnrollPlanView {

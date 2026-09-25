@@ -21,6 +21,7 @@ const CAPTURE_LOCK = 75;
 const SCRUB_LOCK_WAIT_MS = 5000;
 
 type Named = { fullName: string; code: string; embeddingVersion: string | null };
+type Holder = { employeeId: number; employee: Named };
 type Build = (version: number, deviceId: string) => EnrollPayload | Promise<EnrollPayload>;
 type Door = { id: string; rosterVersion: number };
 type Told<T> = { builds: Build[]; value: T };
@@ -32,6 +33,11 @@ type Run = { from: number; endedAt: number; heard?: number };
 // A kiosk refuses a template of another recognition model; a side that cannot say is taken to match (KEHOACH 7.5).
 function otherModel(kiosk: string | null, held: string | null): boolean {
   return kiosk !== null && held !== null && kiosk !== held;
+}
+
+// A door new to a person is handed their face only when both sides name one model (KEHOACH 7.5).
+function heldOn(model: string, employeeIds: readonly number[]): Prisma.FaceTemplateWhereInput {
+  return { employeeId: { in: [...employeeIds] }, employee: { embeddingVersion: model } };
 }
 
 export interface AssignableDevice {
@@ -49,7 +55,7 @@ export interface KioskStanding extends AssignableDevice {
 export class EnrollmentService {
   private readonly log = new Logger(EnrollmentService.name);
   // One sender per kiosk (KEHOACH 9.23). Held in this process: one api holds the broker session.
-  // Lock order: kiosks in id order, then a person's CAPTURE_LOCK.
+  // Lock order: kiosks in id order, then a person's CAPTURE_LOCK, then their Employee row.
   private readonly doors = new Map<string, Promise<void>>();
   private readonly resyncing = new Map<string, number>();
   private readonly runs = new Map<string, Run>();
@@ -88,59 +94,129 @@ export class EnrollmentService {
   }
 
   /**
-   * Put a person up for capture on a kiosk, so nobody types a UID. A pair
-   * that already holds a face goes to RETAKE and keeps matching until the new
-   * capture lands (KEHOACH 7.5).
+   * Put a person on a kiosk, so nobody types a UID. A door new to them is sent
+   * the face the server holds when it runs that face's model, and asked for a
+   * capture otherwise; a pair that already holds a face goes to RETAKE and
+   * keeps matching until the new capture lands (KEHOACH 7.5).
    */
   async assign(deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
     await this.consent.require(employeeId);
     const [, employee] = await Promise.all([this.device(deviceId), this.employee(employeeId)]);
+    const ask: Build = (version, to) => this.expect(employeeId, employee, version, to);
     return this.tell(deviceId, async (tx) => {
-      const held = await tx.deviceEnrollment.findUnique({
-        where: { deviceId_employeeId: { deviceId, employeeId } },
-      });
-      const state = held?.state === "ENROLLED" || held?.state === "RETAKE" ? "RETAKE" : "ASSIGNED";
-      const row = await tx.deviceEnrollment.upsert({
-        where: { deviceId_employeeId: { deviceId, employeeId } },
-        update: { state },
-        create: { deviceId, employeeId, state },
-      });
-      return { value: row, builds: [(version, to) => this.expect(employeeId, employee, version, to)] };
+      const where = { deviceId_employeeId: { deviceId, employeeId } };
+      const pair = await tx.deviceEnrollment.findUnique({ where });
+      if (pair?.state === "ENROLLED" || pair?.state === "RETAKE") {
+        return { value: await tx.deviceEnrollment.update({ where, data: { state: "RETAKE" } }), builds: [ask] };
+      }
+      const { model, faces } = await this.handOut(tx, deviceId, [employeeId]);
+      const held = faces.get(employeeId);
+      const data = held
+        ? { state: "ENROLLED" as const, templateIdx: held[held.length - 1].templateIdx }
+        : { state: "ASSIGNED" as const };
+      const row = await tx.deviceEnrollment.upsert({ where, update: data, create: { deviceId, employeeId, ...data } });
+      const holder = { employeeId, employee: { ...employee, embeddingVersion: model } };
+      return { value: row, builds: held ? this.buildsFor(holder, held) : [ask] };
     });
   }
 
-  /** Put many people up for capture on one kiosk. Only a pair that is absent or REVOKED turns ASSIGNED; the
-   *  counter moves once by the batch, and each ASSIGN carries the version applying it reaches (KEHOACH 7.5).
+  /** Put many people on one kiosk. Only a pair that is absent or REVOKED is written: ENROLLED and sent the
+   *  held face when the kiosk runs its model, else ASSIGNED and asked for; the counter moves once (KEHOACH 7.5).
    *  @ctx task | sends after the commit; a send that fails is left to the next heartbeat's resync
-   *  @ret the roster version each person's ASSIGN carries, and the counter after the run
+   *  @ret the version each person's last message carries, who got a held face, and the counter after the run
    */
   async assignMany(
     deviceId: string,
     people: readonly { id: number; code: string; fullName: string }[],
-  ): Promise<{ versions: Map<number, number>; rosterVersion: number }> {
+  ): Promise<{ versions: Map<number, number>; handed: Set<number>; rosterVersion: number }> {
     const ids = people.map((one) => one.id);
     return this.atDoors([deviceId], async () => {
       const written = await this.db.$transaction(async (tx) => {
+        const { model, faces } = await this.handOut(tx, deviceId, ids);
+        const last = (id: number) => faces.get(id)?.at(-1)?.templateIdx ?? null;
         const put = await tx.$queryRaw<{ employeeId: number }[]>`
-          INSERT INTO "DeviceEnrollment" ("deviceId", "employeeId", "state", "updatedAt")
-          SELECT ${deviceId}, v."id", 'ASSIGNED'::"EnrollmentState", now() FROM unnest(${ids}::int[]) AS v("id")
-          ON CONFLICT ("deviceId", "employeeId") DO UPDATE SET "state" = 'ASSIGNED'::"EnrollmentState", "updatedAt" = now()
+          INSERT INTO "DeviceEnrollment" ("deviceId", "employeeId", "state", "templateIdx", "updatedAt")
+          SELECT ${deviceId}, v."id", v."state"::"EnrollmentState", v."templateIdx", now()
+            FROM unnest(
+                   ${ids}::int[],
+                   ${ids.map((id) => (faces.has(id) ? "ENROLLED" : "ASSIGNED"))}::text[],
+                   ${ids.map(last)}::int[]
+                 ) AS v("id", "state", "templateIdx")
+          ON CONFLICT ("deviceId", "employeeId") DO UPDATE SET
+            "state" = EXCLUDED."state",
+            "templateIdx" = COALESCE(EXCLUDED."templateIdx", "DeviceEnrollment"."templateIdx"),
+            "updatedAt" = now()
            WHERE "DeviceEnrollment"."state" = 'REVOKED'::"EnrollmentState"
           RETURNING "employeeId"
         `;
         const kept = new Set(put.map((one) => one.employeeId));
         const order = people.filter((one) => kept.has(one.id));
-        return { order, top: await this.reserve(tx, deviceId, order.length) };
+        const runs = order.map((one) => {
+          const held = faces.get(one.id);
+          return held
+            ? this.buildsFor({ employeeId: one.id, employee: { ...one, embeddingVersion: model } }, held)
+            : [(version: number, to: string) => this.expect(one.id, one, version, to)];
+        });
+        const handed = new Set(order.filter((one) => faces.has(one.id)).map((one) => one.id));
+        const count = runs.reduce((sum, run) => sum + run.length, 0);
+        return { order, runs, handed, top: await this.reserve(tx, deviceId, count) };
       });
-      const { order, top } = written;
-      const first = top - order.length + 1;
-      await this.deliver(
-        deviceId,
-        order.map((one) => (version: number, to: string) => this.expect(one.id, one, version, to)),
-        top,
-      ).catch((error: Error) => this.log.warn(`${deviceId} did not hear its assignments yet: ${error.message}`));
-      return { versions: new Map(order.map((one, at) => [one.id, first + at])), rosterVersion: top };
+      const { order, runs, handed, top } = written;
+      const builds = runs.flat();
+      await this.deliver(deviceId, builds, top).catch((error: Error) =>
+        this.log.warn(`${deviceId} did not hear its assignments yet: ${error.message}`),
+      );
+      let reached = top - builds.length;
+      const versions = new Map(order.map((one, at) => [one.id, (reached += runs[at].length)]));
+      return { versions, handed, rosterVersion: top };
     });
+  }
+
+  /** Who among these people a kiosk would be sent a held face for, rather than asked to capture (KEHOACH 7.5).
+   *  @ctx task | reads only; a capture landing after it can make assign or assignMany answer otherwise
+   */
+  async handsOver(deviceId: string, employeeIds: readonly number[]): Promise<Set<number>> {
+    const door =
+      employeeIds.length === 0
+        ? null
+        : await this.db.device.findUnique({ where: { id: deviceId }, select: { embeddingVersion: true } });
+    if (!door?.embeddingVersion) {
+      return new Set();
+    }
+    const held = await this.db.faceTemplate.findMany({
+      where: heldOn(door.embeddingVersion, employeeIds),
+      select: { employeeId: true },
+      distinct: ["employeeId"],
+    });
+    return new Set(held.map((one) => one.employeeId));
+  }
+
+  // Rows held FOR SHARE, so no capture or erase (holdFace) lands between this read and the commit.
+  private async handOut(
+    tx: Prisma.TransactionClient,
+    deviceId: string,
+    employeeIds: readonly number[],
+  ): Promise<{ model: string | null; faces: Map<number, FaceTemplate[]> }> {
+    const door = await tx.device.findUniqueOrThrow({ where: { id: deviceId }, select: { embeddingVersion: true } });
+    await tx.$executeRaw`SELECT 1 FROM "Employee" WHERE "id" = ANY(${[...employeeIds]}::int[]) ORDER BY "id" FOR SHARE`;
+    const faces = new Map<number, FaceTemplate[]>();
+    if (!door.embeddingVersion) {
+      return { model: null, faces };
+    }
+    const held = await tx.faceTemplate.findMany({
+      where: heldOn(door.embeddingVersion, employeeIds),
+      orderBy: [{ employeeId: "asc" }, { templateIdx: "asc" }],
+    });
+    for (const sample of held) {
+      faces.set(sample.employeeId, [...(faces.get(sample.employeeId) ?? []), sample]);
+    }
+    return { model: door.embeddingVersion, faces };
+  }
+
+  // The row lock is what handOut waits on; a bulk run cannot take one advisory lock per person.
+  private async holdFace(tx: Prisma.TransactionClient, employeeId: number): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
+    await tx.$executeRaw`SELECT 1 FROM "Employee" WHERE "id" = ${employeeId} FOR NO KEY UPDATE`;
   }
 
   /** Withdraw a person from a kiosk; the kiosk drops any template it holds. */
@@ -214,7 +290,7 @@ export class EnrollmentService {
       const locked = doors;
       const ran = await this.atDoors(locked, async () => {
         const done = await this.db.$transaction(async (tx): Promise<Erased<T>> => {
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
+          await this.holdFace(tx, employeeId);
           const now = await this.doorsOf(tx, employeeId);
           if (now.some((id) => !locked.includes(id))) {
             return { widen: now };
@@ -307,7 +383,7 @@ export class EnrollmentService {
     const sealed = sealTemplate(Buffer.from(report.embedding, "base64"), this.key());
     let overwrote = false;
     const verdict = await this.db.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
+      await this.holdFace(tx, employeeId);
       const pair = await tx.deviceEnrollment.findUnique({
         where: { deviceId_employeeId: { deviceId, employeeId } },
       });
@@ -572,7 +648,7 @@ export class EnrollmentService {
   }
 
   /** One builder per sample the server holds for this person, each an audited read (KEHOACH 9.19). */
-  private async samplesFor(db: Prisma.TransactionClient, row: DeviceEnrollment & { employee: Named }): Promise<Build[]> {
+  private async samplesFor(db: Prisma.TransactionClient, row: Holder): Promise<Build[]> {
     if (!row.employee.embeddingVersion) {
       return [];
     }
@@ -583,7 +659,7 @@ export class EnrollmentService {
     return this.buildsFor(row, held);
   }
 
-  private buildsFor(row: DeviceEnrollment & { employee: Named }, held: FaceTemplate[]): Build[] {
+  private buildsFor(row: Holder, held: FaceTemplate[]): Build[] {
     if (!row.employee.embeddingVersion) {
       return [];
     }
@@ -591,7 +667,7 @@ export class EnrollmentService {
   }
 
   private async upsertOf(
-    row: DeviceEnrollment & { employee: Named },
+    row: Holder,
     held: FaceTemplate,
     version: number,
     deviceId: string,

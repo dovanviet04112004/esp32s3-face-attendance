@@ -35,7 +35,9 @@ export class EnrollmentController {
 
   @Post()
   @Roles("ADMIN", "HR")
-  @ApiOperation({ summary: "Put a person up for capture on a kiosk; a held face goes to RETAKE (KEHOACH 7.5)" })
+  @ApiOperation({
+    summary: "Put a person on a kiosk: sent the face held on its model, or asked for; a held pair goes to RETAKE (KEHOACH 7.5)",
+  })
   @ApiCreatedResponse({ type: EnrollmentView })
   assign(@Body() body: AssignDto): Promise<DeviceEnrollment> {
     return this.enrollment.assign(body.deviceId, body.employeeId);

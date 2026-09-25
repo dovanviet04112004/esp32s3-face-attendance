@@ -84,6 +84,7 @@ export interface EnrollRow {
   code: string;
   fullName: string;
   rosterVersion: number | null;
+  heldFace: boolean;
 }
 
 export interface EnrollPlan {
@@ -423,8 +424,8 @@ export class BulkService {
     return { applied: true, rows: done, skipped: [...skipped, ...lost.map((one) => skipOf(one.employeeId, one, "EMAIL_TAKEN"))] };
   }
 
-  /** Who would be put up for capture on one kiosk and who is passed over; apply=true moves the kiosk's
-   *  roster on once for the batch and sends each person's ASSIGN after the commit (KEHOACH 7.5).
+  /** Who would be put on one kiosk, sent the face the server holds or asked for a capture, and who is passed
+   *  over; apply=true moves the kiosk's roster on once for the batch and sends after the commit (KEHOACH 7.5).
    */
   async enrollments(viewer: Viewer, body: BulkEnrollDto, apply: boolean): Promise<EnrollPlan> {
     const device = await this.db.device.findFirst({
@@ -455,10 +456,12 @@ export class BulkService {
         skipped.push(skipOf(person.id, person, reason));
         continue;
       }
-      rows.push({ employeeId: person.id, code: person.code, fullName: person.fullName, rosterVersion: null });
+      rows.push({ employeeId: person.id, code: person.code, fullName: person.fullName, rosterVersion: null, heldFace: false });
     }
     if (!apply || rows.length === 0) {
-      return { applied: false, deviceId: device.id, rows, skipped, rosterVersion: device.rosterVersion };
+      const handed = await this.enrollment.handsOver(device.id, rows.map((one) => one.employeeId));
+      const seen = rows.map((one) => ({ ...one, heldFace: handed.has(one.employeeId) }));
+      return { applied: false, deviceId: device.id, rows: seen, skipped, rosterVersion: device.rosterVersion };
     }
 
     const sent = await this.enrollment.assignMany(
@@ -467,7 +470,7 @@ export class BulkService {
     );
     const done = rows.flatMap((one) => {
       const version = sent.versions.get(one.employeeId);
-      return version === undefined ? [] : [{ ...one, rosterVersion: version }];
+      return version === undefined ? [] : [{ ...one, rosterVersion: version, heldFace: sent.handed.has(one.employeeId) }];
     });
     const raced = rows
       .filter((one) => !sent.versions.has(one.employeeId))

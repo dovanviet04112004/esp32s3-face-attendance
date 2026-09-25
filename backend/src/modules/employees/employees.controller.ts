@@ -160,7 +160,9 @@ export class EmployeesController {
   @AuditedInService()
   @ApiOperation({
     summary: "Preview putting many people up for capture on one kiosk; apply=true does it (KEHOACH 7.5)",
-    description: "The roster version moves once for the batch; each ASSIGN carries the version applying it reaches.",
+    description:
+      "The roster version moves once for the batch; a row's version is what its person's last message carries, " +
+      "and heldFace says whether that is the face the server holds or a request for a capture.",
   })
   @ApiCreatedResponse({ type: EnrollPlanView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID, SELECTION_TOO_LARGE" })
