@@ -591,6 +591,7 @@ static esp_err_t report_sample(const svc_facedb_unreported_t *sample)
     wire.template_idx = sample->template_idx;
     wire.updated_at = sample->session_ms;
     wire.scale = sample->scale;
+    wire.has_scale = true;
     wire.quality = sample->quality;
     wire.has_quality = true;
     if (sys_storage_device_id(wire.device_id, sizeof(wire.device_id)) == ESP_OK) {
@@ -599,12 +600,14 @@ static esp_err_t report_sample(const svc_facedb_unreported_t *sample)
     strlcpy(wire.full_name, sample->name, sizeof(wire.full_name));
     wire.has_full_name = true;
     embedding_version(wire.embedding_version, sizeof(wire.embedding_version));
+    wire.has_embedding_version = true;
     size_t wrote = 0;
     if (mbedtls_base64_encode((unsigned char *)wire.embedding, sizeof(wire.embedding), &wrote,
                               (const unsigned char *)sample->embedding,
                               sizeof(sample->embedding)) != 0) {
         return ESP_ERR_INVALID_SIZE;
     }
+    wire.has_embedding = true;
     cJSON *root = enroll_payload_to_json(&wire);
     const bool printed = root != NULL && cJSON_PrintPreallocated(root, payload, sizeof(payload), 0);
     cJSON_Delete(root);
