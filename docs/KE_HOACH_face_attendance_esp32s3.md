@@ -8564,6 +8564,19 @@ vào một kiosk; xếp vào một ca. Mọi việc hàng loạt theo cùng mộ
   hiệu danh sách lên một lần cho cả lô và gửi mỗi người một tin với số liền nhau (§7.5).
 - **Một dòng audit cho mỗi người**, như khi sửa lẻ (§9.24). Một lô tối đa 5.000 người.
 
+**Lọc ra đúng nhóm cần làm, rồi mới chọn cả nhóm.** Danh sách bỏ qua là lưới an toàn, không phải
+cách làm việc: người dùng không phải chọn cả phòng rồi đọc xem ai bị bỏ qua. Danh bạ có ba bộ lọc
+khớp đúng bốn việc trên thanh chọn, mỗi lựa chọn mang số người khớp (§9.12):
+
+| Bộ lọc | Lựa chọn | Cho việc |
+|---|---|---|
+| Tài khoản | chưa có · đã mời, chưa đặt mật khẩu · đang dùng · bị khoá | mời đăng nhập, gửi lại liên kết |
+| Khuôn mặt | chưa gán kiosk nào · chờ lấy mặt · đã có mặt · chưa đồng ý dữ liệu khuôn mặt · thiếu email cá nhân | gán kiosk, ghi đồng ý, bổ sung email |
+| Ca làm | chưa xếp ca · đã có ca, tính theo hôm nay của công ty (§9.8) | xếp ca |
+
+Các bộ lọc ấy là điều kiện của chính truy vấn danh bạ, nên "chọn cả N người khớp bộ lọc" gửi đúng
+điều kiện ấy và server giải ra đúng tập người đang thấy.
+
 **Trung tâm thông báo.** Một chỗ trong ứng dụng, cộng email cho thứ cần rời khỏi ứng dụng. Mỗi
 người tự chọn nhận gì. Không có nó thì hoặc gửi quá nhiều rồi bị bỏ qua, hoặc gửi quá ít rồi
 đơn nằm chết.
