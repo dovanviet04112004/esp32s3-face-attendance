@@ -1,7 +1,7 @@
 "use client";
 
 import { Banner, Button, Input, LayerDialog } from "@cloudflare/kumo";
-import { ArrowSquareOutIcon, ArrowsClockwiseIcon, CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { ArrowSquareOutIcon, ArrowsClockwiseIcon, CheckCircleIcon, WarningCircleIcon, WarningIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useNow, useTranslations } from "next-intl";
 import { Suspense, useEffect, useState } from "react";
@@ -33,6 +33,7 @@ interface FleetUpdate {
   release: Release;
   behind: string[];
   updating: string[];
+  changesRecognition: boolean;
 }
 
 interface Device {
@@ -214,8 +215,13 @@ function Devices() {
   }
 
   const updateAll = useMutation({
-    mutationFn: async (releaseId: string) =>
-      (await api.post<{ offered: string[]; failed: string[]; busy: string[] }>(`/releases/${releaseId}/offer`, {})).data,
+    mutationFn: async (update: FleetUpdate) =>
+      (
+        await api.post<{ offered: string[]; failed: string[]; busy: string[] }>(
+          `/releases/${update.release.releaseId}/offer`,
+          update.changesRecognition ? { recapture: true } : {},
+        )
+      ).data,
     onSuccess: (done) => {
       setAsking(null);
       notify.done(t("releaseUpdateAllDone", { offered: done.offered.length, failed: done.failed.length, busy: done.busy.length }));
@@ -537,6 +543,14 @@ function Devices() {
           </LayerDialog.Description>
           <LayerDialog.Body>
             <div className="flex flex-col gap-3">
+              {asking?.changesRecognition ? (
+                <Banner
+                  variant="alert"
+                  icon={<WarningIcon weight="fill" />}
+                  description={t("releaseRecaptureWarning")}
+                  className="text-pretty"
+                />
+              ) : null}
               {asking ? (
                 <ul className="flex flex-col">
                   {asking.behind.map((id) => (
@@ -554,9 +568,11 @@ function Devices() {
             <LayerDialog.Actions.Primary
               variant="destructive"
               loading={updateAll.isPending}
-              onClick={() => asking && updateAll.mutate(asking.release.releaseId)}
+              onClick={() => asking && updateAll.mutate(asking)}
             >
-              {asking ? t("releaseUpdateAll", { count: asking.behind.length }) : ""}
+              {asking
+                ? t(asking.changesRecognition ? "releaseRecaptureConfirm" : "releaseUpdateAll", { count: asking.behind.length })
+                : ""}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>

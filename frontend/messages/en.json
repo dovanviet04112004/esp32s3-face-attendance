@@ -630,7 +630,10 @@
     "link_live": "live",
     "link_reconnecting": "reconnecting…",
     "link_dropped": "disconnected",
-    "claimHint": "Enter all {digits} digits the kiosk shows"
+    "claimHint": "Enter all {digits} digits the kiosk shows",
+    "releaseRecaptureWarning": "This release changes the recognition model. Once installed, each kiosk drops every face it holds, and everyone has to be captured again at each kiosk before it recognises them.",
+    "releaseRecaptureConfirm": "Update and recapture ({count, number})",
+    "otaRecaptureHint": "This release changes the recognition model, so it only goes to the whole fleet at once, with Update all on the Devices page."
   },
   "shifts": {
     "title": "Shifts",
@@ -1490,7 +1493,9 @@
     "SELECTION_CHANGED": "Someone changed while you were looking. Preview again, then apply.",
     "IMPORT_FILE_UNREADABLE": "The file could not be read. Save it as .xlsx or .csv (UTF-8) and pick it again.",
     "IMPORT_FILE_TOO_LARGE": "The file unpacks too large for one import. Split it into smaller files.",
-    "IMPORT_TOO_MANY_ROWS": "The file holds more lines than one import takes. Split it into smaller files."
+    "IMPORT_TOO_MANY_ROWS": "The file holds more lines than one import takes. Split it into smaller files.",
+    "RELEASE_CHANGES_RECOGNITION": "This release changes the recognition model, so it goes to the whole fleet at once, after confirming everyone is captured again. Use Update all on the Devices page.",
+    "RELEASE_NOT_MODELS_IMAGE": "The file is not a models image: it has no MDLS header or no recognition model."
   },
   "search": {
     "placeholder": "Search people, departments, requests, pages…",

@@ -43,6 +43,8 @@ interface FleetUpdate {
   release: { releaseId: string; target: "FIRMWARE" | "MODELS"; version: string };
   behind: string[];
   updating: string[];
+  /** Kiosks this release moves to another recognition model; the server takes it for them only fleet-wide. */
+  recapture: string[];
 }
 
 /** Read from the heartbeat and the kiosk's own OTA_FAILED event (KEHOACH 7.7). */
@@ -321,29 +323,41 @@ export default function DevicePage() {
                   </p>
                 ) : (
                   <ul className="-my-1 flex flex-col">
-                    {newer.map((update) => (
-                      <li
-                        key={update.release.releaseId}
-                        className="flex flex-wrap items-center justify-between gap-3 border-b border-kumo-hairline py-2 last:border-0"
-                      >
-                        <span>
-                          {t("otaNewer", { target: t(`target${update.release.target}`), version: update.release.version })}
-                        </span>
-                        <Button
-                          variant="secondary"
-                          icon={ArrowsClockwiseIcon}
-                          loading={offer.isPending && offer.variables?.release.releaseId === update.release.releaseId}
-                          disabled={offer.isPending || busy || it?.status !== "APPROVED"}
-                          onClick={() => offer.mutate(update)}
+                    {newer.map((update) => {
+                      const fleetOnly = update.recapture.includes(id);
+                      const hintId = `ota-hint-${update.release.releaseId}`;
+                      return (
+                        <li
+                          key={update.release.releaseId}
+                          className="flex flex-wrap items-center justify-between gap-3 border-b border-kumo-hairline py-2 last:border-0"
                         >
-                          {busy
-                            ? t("otaUpdating")
-                            : told?.state === "WAITING" && told.releaseId === update.release.releaseId
-                              ? t("otaRetry")
-                              : t("otaUpdate")}
-                        </Button>
-                      </li>
-                    ))}
+                          <span className="flex min-w-0 grow basis-60 flex-col gap-1">
+                            <span>
+                              {t("otaNewer", { target: t(`target${update.release.target}`), version: update.release.version })}
+                            </span>
+                            {fleetOnly ? (
+                              <span id={hintId} className="text-sm text-pretty text-kumo-subtle">
+                                {t("otaRecaptureHint")}
+                              </span>
+                            ) : null}
+                          </span>
+                          <Button
+                            variant="secondary"
+                            icon={ArrowsClockwiseIcon}
+                            loading={offer.isPending && offer.variables?.release.releaseId === update.release.releaseId}
+                            disabled={offer.isPending || busy || fleetOnly || it?.status !== "APPROVED"}
+                            aria-describedby={fleetOnly ? hintId : undefined}
+                            onClick={() => offer.mutate(update)}
+                          >
+                            {busy
+                              ? t("otaUpdating")
+                              : told?.state === "WAITING" && told.releaseId === update.release.releaseId
+                                ? t("otaRetry")
+                                : t("otaUpdate")}
+                          </Button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
                 {told && toldText ? (
