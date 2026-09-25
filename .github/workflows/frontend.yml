@@ -43,7 +43,7 @@ jobs:
 
       - name: Typecheck
         if: steps.guard.outputs.ready == 'true'
-        run: npx tsc --noEmit
+        run: npx next typegen && npx tsc --noEmit
 
       - name: Build
         if: steps.guard.outputs.ready == 'true'

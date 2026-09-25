@@ -108,5 +108,8 @@ Thumbs.db
 # TypeScript incremental build state
 *.tsbuildinfo
 
+# Next writes it on every dev start and build, with a different path each time; next typegen makes it
+frontend/next-env.d.ts
+
 # TypeScript output built only to run the e2e suite
 dist-test/
