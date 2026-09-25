@@ -22,6 +22,7 @@ import {
   whoseRows,
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { localDay } from "../timesheet/local-day.js";
 import { letterFor, type Earnings } from "./certificate-text.js";
 import type { AskCertificateDto, DecideCertificateDto, ListCertificatesDto } from "./dto/certificate.dto.js";
 
@@ -127,7 +128,7 @@ export class CertificatesService {
     const [next] = await this.db.$queryRaw<{ n: bigint }[]>`
       SELECT nextval('certificate_serial_seq') AS n
     `;
-    const year = new Date().getUTCFullYear();
+    const year = localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true })).slice(0, 4);
     const serial = `${year}/${String(next.n).padStart(SERIAL_DIGITS, "0")}`;
     // A second issue that read REQUESTED too loses here; its sequence value is left as a gap, never reused.
     const claimed = await this.db.certificate.updateMany({

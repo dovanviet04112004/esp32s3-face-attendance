@@ -52,8 +52,16 @@ export class ExceptionView {
   @ApiProperty() employeeId!: number;
   @ApiProperty() code!: string;
   @ApiProperty() fullName!: string;
-  @ApiProperty({ enum: ["NO_PUNCH", "LATE", "STILL_IN"] }) reason!: "NO_PUNCH" | "LATE" | "STILL_IN";
+  @ApiProperty({ enum: ["NO_PUNCH", "LATE", "STILL_IN", "QUESTIONABLE_TIME"] })
+  reason!: "NO_PUNCH" | "LATE" | "STILL_IN" | "QUESTIONABLE_TIME";
   @ApiProperty({ description: "Minutes past the shift's start plus grace; 0 unless late" }) minutes!: number;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: "date-time",
+    description: "QUESTIONABLE_TIME only: when the server first heard such a punch today, the hint for correcting it",
+  })
+  receivedAt!: string | null;
 }
 
 export class ExceptionPage {

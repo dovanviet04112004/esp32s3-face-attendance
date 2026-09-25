@@ -93,6 +93,13 @@ export class DeviceView {
   @ApiProperty() rosterVersion!: number;
   @ApiProperty({ type: String, nullable: true, format: "date-time" }) lastSeenAt!: string | null;
   @ApiProperty() online!: boolean;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    example: -1500,
+    description: "Kiosk clock less server clock at its last live heartbeat, in ms; null until a beat carries a set clock",
+  })
+  clockSkewMs!: number | null;
   @ApiProperty({ type: String, nullable: true }) approvedAt!: string | null;
 }
 

@@ -11,6 +11,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
 
 const OPEN = "E2ENT01";
 const CLOSED = "E2ENT02";
@@ -35,8 +36,8 @@ describe("notices and push devices (e2e)", () => {
   }
 
   function endingIn(days: number): Date {
-    const today = new Date();
-    return new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) + days * DAY_MS);
+    const today = dayAsDate(localDay(new Date(), validateEnv().APP_TIMEZONE));
+    return new Date(today.getTime() + days * DAY_MS);
   }
 
   before(async () => {

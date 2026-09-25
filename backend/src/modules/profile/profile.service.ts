@@ -34,6 +34,7 @@ import {
 import { MailerService } from "../notifications/mailer.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { profileNoticeMail } from "../payroll/mail-text.js";
+import { localDay } from "../timesheet/local-day.js";
 import {
   PROFILE_FIELDS,
   askedValues,
@@ -254,7 +255,7 @@ export class ProfileService {
       profileNoticeMail(change.employee.locale, {
         fullName: change.employee.fullName,
         change: notice,
-        decidedOn: (change.decidedAt ?? change.createdAt).toISOString().slice(0, 10),
+        decidedOn: localDay(change.decidedAt ?? change.createdAt, this.config.get("APP_TIMEZONE", { infer: true })),
       }),
     );
     if (sent) {

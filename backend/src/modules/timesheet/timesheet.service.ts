@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnModuleInit,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma, type AttendanceDay, type DayCalendar, type DayState } from "@prisma/client";
@@ -24,13 +25,17 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { JOB, QUEUE, type TimesheetJob } from "../../queue/queues.js";
+import { JOB, QUEUE, type RebuildJob, type TimesheetJob } from "../../queue/queues.js";
 import type { CorrectDayDto, ListDaysDto, SummaryQueryDto } from "./dto/timesheet.dto.js";
 import { clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
 
 const SATURDAY = 6;
 const SUNDAY = 0;
 const DAY_ID = /^\d{1,19}$/;
+const kMsPerDay = 86_400_000;
+// Half past midnight read in APP_TIMEZONE rather than the server's UTC (KEHOACH 9.8).
+const kNightlyCron = "30 0 * * *";
+const kNightlyScheduler = "timesheet-nightly";
 
 const SUMMED = Prisma.sql`
   count(*) FILTER (WHERE d."state" = 'WORKED')::int          AS "workedDays",
@@ -137,7 +142,7 @@ interface ShiftClock {
 }
 
 @Injectable()
-export class TimesheetService {
+export class TimesheetService implements OnModuleInit {
   private readonly log = new Logger(TimesheetService.name);
 
   constructor(
@@ -150,6 +155,15 @@ export class TimesheetService {
 
   private get zone(): string {
     return this.config.get("APP_TIMEZONE", { infer: true });
+  }
+
+  // Upserting by scheduler id: a restart re-states it, never adds a second.
+  async onModuleInit(): Promise<void> {
+    await this.queues[QUEUE.timesheet].upsertJobScheduler(
+      kNightlyScheduler,
+      { pattern: kNightlyCron, tz: this.zone },
+      { name: JOB.nightly, data: { type: JOB.nightly } },
+    );
   }
 
   /** Day rows inside a range, narrowed to what this viewer may read. */
@@ -418,6 +432,30 @@ export class TimesheetService {
     return { jobId: String(queued.id) };
   }
 
+  /** Build one person's finished day again, for a punch that arrived after the day ended.
+   *  @ctx any | enqueues only | a burst for one day folds into one waiting job and one follow-up
+   */
+  async scheduleRebuild(employeeId: number, day: string): Promise<void> {
+    const job: RebuildJob = { type: JOB.rebuild, employeeId, day };
+    await this.queues[QUEUE.timesheet].add(JOB.rebuild, job, {
+      deduplication: { id: `rebuild-${employeeId}-${day}`, keepLastIfActive: true },
+    });
+  }
+
+  /** What one queued job builds; the nightly job reads yesterday as it starts, never from its data.
+   *  @ctx queue | blocking | safe to run again
+   */
+  async runJob(body: TimesheetJob): Promise<BuildReport> {
+    if (body.type === JOB.nightly) {
+      return this.buildRange(this.yesterday(), this.yesterday());
+    }
+    if (body.type === JOB.rebuild) {
+      const rows = await this.build(body.day, body.employeeId);
+      return { days: rows > 0 ? 1 : 0, rows };
+    }
+    return this.buildRange(body.from, body.to);
+  }
+
   async buildState(jobId: string): Promise<{ state: BuildState }> {
     const job = await this.queues[QUEUE.timesheet].getJob(jobId);
     if (!job) {
@@ -451,6 +489,10 @@ export class TimesheetService {
     return localDay(new Date(), this.zone);
   }
 
+  yesterday(): string {
+    return new Date(dayAsDate(this.today()).getTime() - kMsPerDay).toISOString().slice(0, 10);
+  }
+
   /** The dates in a range this person is expected at work, in order, by `calendarOn`.
    *  @ctx request | reads Employee and Holiday
    */
@@ -472,10 +514,10 @@ export class TimesheetService {
     return working;
   }
 
-  /** Fold one local day's punches into one row per person.
+  /** Fold one local day's punches into one row per person, or for `only` alone.
    *  @ctx queue | blocking | safe to run again: it upserts on (employee, date)
    */
-  async build(day: string): Promise<number> {
+  async build(day: string, only?: number): Promise<number> {
     if (day >= this.today()) {
       // A day still in progress summarises to a wrong number (KEHOACH 9.8).
       this.log.warn(`refusing to build ${day}: it has not finished`);
@@ -483,15 +525,16 @@ export class TimesheetService {
     }
     const { from, to } = dayWindow(day, this.zone);
     const date = dayAsDate(day);
+    const person = only === undefined ? {} : { employeeId: only };
     const [punches, staff, holidays, approved] = await Promise.all([
       this.db.attendanceRecord.findMany({
-        where: { ts: { gte: from, lt: to } },
+        where: { ts: { gte: from, lt: to }, questionableTime: false, ...person },
         select: { employeeId: true, ts: true, clockUnsynced: true },
         orderBy: { ts: "asc" },
       }),
       this.db.employee.findMany({
         // A last day is built after its record closes (KEHOACH 9.14), so `active` alone drops it.
-        where: { OR: [{ active: true }, { leaveDate: { gte: date } }] },
+        where: { OR: [{ active: true }, { leaveDate: { gte: date } }], ...(only === undefined ? {} : { id: only }) },
         select: { id: true, legalEntityId: true },
       }),
       this.db.holiday.findMany({ where: { date }, select: { legalEntityId: true, paid: true } }),
@@ -503,11 +546,12 @@ export class TimesheetService {
           halfDay: false,
           fromDate: { lte: date },
           toDate: { gte: date },
+          ...person,
         },
         select: { employeeId: true, kind: true },
       }),
     ]);
-    const shifts = await this.shiftsOn(date);
+    const shifts = await this.shiftsOn(date, only);
 
     const seen = new Map<number, { first: Date; last: Date; count: number; unsynced: boolean }>();
     for (const punch of punches) {
@@ -596,6 +640,16 @@ export class TimesheetService {
         "measuredMinutes" = EXCLUDED."measuredMinutes",
         "updatedAt" = now()
       WHERE "AttendanceDay"."adjustedById" IS NULL
+        AND ("AttendanceDay"."state", "AttendanceDay"."calendar", "AttendanceDay"."shiftId",
+             "AttendanceDay"."firstIn", "AttendanceDay"."lastOut", "AttendanceDay"."workedMinutes",
+             "AttendanceDay"."lateMinutes", "AttendanceDay"."earlyLeaveMinutes",
+             "AttendanceDay"."overtimeMinutes", "AttendanceDay"."punchCount",
+             "AttendanceDay"."clockUnsynced", "AttendanceDay"."measuredMinutes")
+            IS DISTINCT FROM
+            (EXCLUDED."state", EXCLUDED."calendar", EXCLUDED."shiftId", EXCLUDED."firstIn",
+             EXCLUDED."lastOut", EXCLUDED."workedMinutes", EXCLUDED."lateMinutes",
+             EXCLUDED."earlyLeaveMinutes", EXCLUDED."overtimeMinutes", EXCLUDED."punchCount",
+             EXCLUDED."clockUnsynced", EXCLUDED."measuredMinutes")
     `;
   }
 
@@ -649,9 +703,13 @@ export class TimesheetService {
     };
   }
 
-  private async shiftsOn(date: Date): Promise<Map<number, ShiftClock>> {
+  private async shiftsOn(date: Date, only?: number): Promise<Map<number, ShiftClock>> {
     const rows = await this.db.shiftAssignment.findMany({
-      where: { validFrom: { lte: date }, OR: [{ validTo: null }, { validTo: { gte: date } }] },
+      where: {
+        validFrom: { lte: date },
+        OR: [{ validTo: null }, { validTo: { gte: date } }],
+        ...(only === undefined ? {} : { employeeId: only }),
+      },
       include: { shift: true },
       // Overlapping assignments resolve to the newest, since the loop keeps the last one seen.
       orderBy: [{ validFrom: "asc" }, { id: "asc" }],

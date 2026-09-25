@@ -233,6 +233,7 @@ function lateInRange(query: TallyRangeDto, zone: string): Prisma.Sql {
          LIMIT 1
       ) h ON true
      WHERE r."ts" >= ${new Date(query.from)} AND r."ts" <= ${new Date(query.to)}
+       AND NOT r."questionableTime"
        AND EXTRACT(ISODOW FROM ${local}) < 6
      GROUP BY r."employeeId", ${local}::date, h."startTime", h."graceMinutes"
     HAVING min(${localMinutes(Prisma.sql`r."ts"`, zone)}) > ${dueMinutes(Prisma.sql`h`)}`;
@@ -308,12 +309,14 @@ export interface Expiring {
   daysLeft: number;
 }
 
+/** QUESTIONABLE_TIME carries when the server heard the punch, the hint a desk corrects it by (KEHOACH 9.8). */
 export interface Exception {
   employeeId: number;
   code: string;
   fullName: string;
-  reason: "NO_PUNCH" | "LATE" | "STILL_IN";
+  reason: "NO_PUNCH" | "LATE" | "STILL_IN" | "QUESTIONABLE_TIME";
   minutes: number;
+  receivedAt: Date | null;
 }
 
 /** A pile of what needs attention, and whether the count is the whole of it. */
@@ -328,8 +331,6 @@ export interface Attention {
   probationEnding: Pile<Expiring>;
   exceptionsToday: Pile<Exception>;
 }
-
-const kMsPerDay = 86_400_000;
 
 /** A desk reads the first screenful, so the query asks for one row past the
  *  cap and that row becomes the word "more" rather than a silent cut.
@@ -358,15 +359,15 @@ export class ReportsService {
    * indefinite by law, so the horizon is a list rather than a search somebody
    * has to remember to run (KEHOACH 9.18).
    */
-  async attention(): Promise<Attention> {
+  async attention(now: Date = new Date()): Promise<Attention> {
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
-    const today = localDay(new Date(), zone);
-    const horizon = new Date(Date.now() + ENDING_WINDOW_DAYS * kMsPerDay);
+    const today = localDay(now, zone);
+    const horizon = Prisma.sql`(${today}::date + ${ENDING_WINDOW_DAYS}::int)`;
     const [contracts, probation, exceptions] = await Promise.all([
       this.db.$queryRaw<Expiring[]>`
         SELECT c."id" AS "contractId", e."id" AS "employeeId", e."code", e."fullName",
                c."kind"::text, c."endDate"::text AS "endsOn",
-               (c."endDate"::date - CURRENT_DATE)::int AS "daysLeft"
+               (c."endDate" - ${today}::date)::int AS "daysLeft"
           FROM "EmploymentContract" c
           JOIN "Employee" e ON e."id" = c."employeeId"
          WHERE c."state" = 'ACTIVE' AND e."active" = true
@@ -377,11 +378,11 @@ export class ReportsService {
       this.db.$queryRaw<Expiring[]>`
         SELECT c."id" AS "contractId", e."id" AS "employeeId", e."code", e."fullName",
                c."kind"::text, c."probationEnd"::text AS "endsOn",
-               (c."probationEnd"::date - CURRENT_DATE)::int AS "daysLeft"
+               (c."probationEnd" - ${today}::date)::int AS "daysLeft"
           FROM "EmploymentContract" c
           JOIN "Employee" e ON e."id" = c."employeeId"
          WHERE c."state" = 'ACTIVE' AND e."active" = true
-           AND c."probationEnd" >= CURRENT_DATE AND c."probationEnd" <= ${horizon}
+           AND c."probationEnd" >= ${today}::date AND c."probationEnd" <= ${horizon}
          ORDER BY c."probationEnd"
          LIMIT ${kAttentionCap + 1}
       `,
@@ -401,7 +402,7 @@ export class ReportsService {
   private exceptionsOn(day: string, zone: string): Promise<Exception[]> {
     return this.db.$queryRaw<Exception[]>`
       ${this.exceptionsListed(day, zone)}
-      SELECT "employeeId", "code", "fullName", "reason", "minutes"
+      SELECT "employeeId", "code", "fullName", "reason", "minutes", "receivedAt"
         FROM listed
        ORDER BY "code"
        LIMIT ${kAttentionCap + 1}
@@ -413,7 +414,7 @@ export class ReportsService {
     const zone = this.zone;
     const rows = await this.db.$queryRaw<(Exception & { total: number })[]>`
       ${this.exceptionsListed(localDay(new Date(), zone), zone)}
-      SELECT "employeeId", "code", "fullName", "reason", "minutes", "total"
+      SELECT "employeeId", "code", "fullName", "reason", "minutes", "receivedAt", "total"
         FROM listed
        WHERE true ${after ? Prisma.sql`AND "code" > ${after}` : Prisma.empty}
        ORDER BY "code"
@@ -424,10 +425,19 @@ export class ReportsService {
   }
 
   // One definition for the capped pile and the full list, so the count and the list agree.
+  // A questionable punch heard today outranks what its absence makes of the day: it is the likely cause.
   private exceptionsListed(day: string, zone: string): Prisma.Sql {
+    const { from, to } = dayWindow(day, zone);
     return Prisma.sql`
       ${this.todayCtes(day, zone, null, null)},
-      listed AS (
+      doubted AS (
+        SELECT r."employeeId", min(r."receivedAt") AS "receivedAt"
+          FROM "AttendanceRecord" r
+          JOIN people p ON p."id" = r."employeeId"
+         WHERE r."questionableTime" AND r."receivedAt" >= ${from} AND r."receivedAt" < ${to}
+         GROUP BY r."employeeId"
+      ),
+      missed AS (
         SELECT p."id" AS "employeeId", p."code", p."fullName",
                CASE
                  WHEN k."employeeId" IS NULL THEN 'NO_PUNCH'
@@ -435,18 +445,29 @@ export class ReportsService {
                  ELSE 'LATE'
                END AS "reason",
                COALESCE(GREATEST(0, ${localMinutes(Prisma.sql`k."firstAt"`, zone)} - ${dueMinutes(Prisma.sql`x`)}), 0)::int
-                 AS "minutes",
-               (count(*) OVER ())::int AS "total"
+                 AS "minutes"
           FROM expected x
           JOIN people p ON p."id" = x."employeeId"
           LEFT JOIN seen k ON k."employeeId" = x."employeeId"
           LEFT JOIN away w ON w."employeeId" = x."employeeId"
          WHERE w."employeeId" IS NULL
+           AND NOT EXISTS (SELECT 1 FROM doubted q WHERE q."employeeId" = x."employeeId")
            AND (
              k."employeeId" IS NULL
              OR k."marks" = 1
              OR ${localMinutes(Prisma.sql`k."firstAt"`, zone)} > ${dueMinutes(Prisma.sql`x`)}
            )
+      ),
+      listed AS (
+        SELECT u.*, (count(*) OVER ())::int AS "total"
+          FROM (
+            SELECT m."employeeId", m."code", m."fullName", m."reason", m."minutes", NULL::timestamp AS "receivedAt"
+              FROM missed m
+            UNION ALL
+            SELECT q."employeeId", p."code", p."fullName", 'QUESTIONABLE_TIME', 0, q."receivedAt"
+              FROM doubted q
+              JOIN people p ON p."id" = q."employeeId"
+          ) u
       )`;
   }
 
@@ -487,7 +508,7 @@ export class ReportsService {
         SELECT r."employeeId", count(*)::int AS "marks", min(r."ts") AS "firstAt"
           FROM "AttendanceRecord" r
           JOIN people p ON p."id" = r."employeeId"
-         WHERE r."ts" >= ${from} AND r."ts" < ${to}
+         WHERE r."ts" >= ${from} AND r."ts" < ${to} AND NOT r."questionableTime"
          GROUP BY r."employeeId"
       ),
       away AS (
@@ -656,7 +677,7 @@ export class ReportsService {
         SELECT 1
         FROM "AttendanceRecord" a
         JOIN "Employee" e ON e."id" = a."employeeId"
-        WHERE a."ts" >= ${from} AND a."ts" <= ${to}
+        WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND NOT a."questionableTime"
           ${tallyFilter(visible, query, this.zone)}
         GROUP BY a."employeeId", e."fullName"
         LIMIT ${COUNT_CEILING + 1}
@@ -673,7 +694,7 @@ export class ReportsService {
              (count(*) FILTER (WHERE a."clockUnsynced"))::int     AS "unsyncedClock"
       FROM "AttendanceRecord" a
       JOIN "Employee" e ON e."id" = a."employeeId"
-      WHERE a."ts" >= ${from} AND a."ts" <= ${to}
+      WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND NOT a."questionableTime"
         ${tallyFilter(visible, query, this.zone)}
     `;
     return summed;
@@ -725,7 +746,7 @@ export class ReportsService {
              count(*) FILTER (WHERE a."clockUnsynced")        AS "unsyncedClock"
       FROM "AttendanceRecord" a
       JOIN "Employee" e ON e."id" = a."employeeId"
-      WHERE a."ts" >= ${from} AND a."ts" <= ${to}
+      WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND NOT a."questionableTime"
         ${tallyFilter(visible, query, this.zone)}
         ${
           after

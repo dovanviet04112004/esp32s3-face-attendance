@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Asset, AssetState, AssetTransfer, Prisma } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
@@ -7,9 +8,11 @@ import { toExcelCsv } from "../../common/csv.js";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { localDay } from "../timesheet/local-day.js";
 import type {
   AssetFilterDto,
   CreateAssetDto,
@@ -81,6 +84,7 @@ export class AssetsService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   async list(query: ListAssetsDto): Promise<Page<AssetRow>> {
@@ -108,6 +112,7 @@ export class AssetsService {
       orderBy: { code: "asc" },
       take: kExportMax,
     });
+    const zone = this.config.get("APP_TIMEZONE", { infer: true });
     return toExcelCsv(
       EXPORT_HEADER,
       rows.map(asRow).map((one) => [
@@ -119,7 +124,7 @@ export class AssetsService {
         one.holder?.code ?? "",
         one.holder?.fullName ?? "",
         one.holder?.department?.name ?? "",
-        one.issuedAt ? one.issuedAt.toISOString().slice(0, 10) : "",
+        one.issuedAt ? localDay(one.issuedAt, zone) : "",
       ]),
     );
   }

@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
 import { paidLeaveType } from "./fixtures.js";
 
 const HIRE = "E2EON01";
@@ -234,7 +235,8 @@ describe("onboarding (e2e)", () => {
   // only the ones still ahead are a decision to make.
   it("lists a probation ending within the month and leaves out one already over", async () => {
     const dayMs = 86_400_000;
-    const day = (offset: number) => new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z").getTime() + offset * dayMs;
+    const today = dayAsDate(localDay(new Date(), validateEnv().APP_TIMEZONE)).getTime();
+    const day = (offset: number) => today + offset * dayMs;
     const [ahead, over] = await Promise.all(
       [10, -10].map((offset) =>
         db.employmentContract.create({

@@ -1,9 +1,13 @@
 import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { Prisma } from "@prisma/client";
 
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../queue/queues.js";
 import { LeaveService } from "../leave/leave.service.js";
+import { localDateSql, localDay } from "../timesheet/local-day.js";
 import { NotificationsService } from "./notifications.service.js";
 
 interface Waiting {
@@ -15,6 +19,7 @@ interface Waiting {
 
 // The marks section 9.17 item 12 asks for. Daily is what people switch off.
 const MARKS = [3, 7, 14];
+// Eight in the morning read in APP_TIMEZONE rather than the server's UTC (KEHOACH 9.8).
 const kDailyCron = "0 8 * * *";
 
 @Injectable()
@@ -25,14 +30,19 @@ export class StaleRequestsService implements OnModuleInit {
     private readonly db: PrismaService,
     private readonly notices: NotificationsService,
     private readonly leave: LeaveService,
+    private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
+
+  private get zone(): string {
+    return this.config.get("APP_TIMEZONE", { infer: true });
+  }
 
   // Upserting by scheduler id: a restart re-states it, never adds a second.
   async onModuleInit(): Promise<void> {
     await this.queues[QUEUE.notify].upsertJobScheduler(
       "requests-stale-daily",
-      { pattern: kDailyCron },
+      { pattern: kDailyCron, tz: this.zone },
       { name: JOB.requestsStale, data: { type: JOB.requestsStale } },
     );
   }
@@ -41,13 +51,15 @@ export class StaleRequestsService implements OnModuleInit {
    * Nudge both ends of a request nobody has decided. The notice already raised
    * for that mark is the record, so a mark is spoken once (KEHOACH 9.17.12).
    */
-  async sweep(): Promise<{ told: number }> {
+  async sweep(now: Date = new Date()): Promise<{ told: number }> {
+    const today = localDay(now, this.zone);
+    const filedOn = localDateSql(Prisma.sql`r."createdAt"`, this.zone);
     const rows = await this.db.$queryRaw<Waiting[]>`
       SELECT r."id" AS "requestId", r."employeeId", r."approverId",
-             (CURRENT_DATE - r."createdAt"::date)::int AS "daysWaited"
+             (${today}::date - ${filedOn})::int AS "daysWaited"
         FROM "Request" r
        WHERE r."state" = 'PENDING'
-         AND (CURRENT_DATE - r."createdAt"::date) = ANY(${MARKS}::int[])
+         AND (${today}::date - ${filedOn}) = ANY(${MARKS}::int[])
     `;
     let told = 0;
     for (const row of rows) {

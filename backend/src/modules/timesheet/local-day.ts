@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 /** Instant to local day and back; every timesheet boundary passes through here. */
 const MINUTES_PER_HOUR = 60;
 
@@ -30,6 +32,11 @@ export function clockToMinutes(clock: string): number {
 /** The UTC instants bounding one local calendar day. */
 export function dayWindow(day: string, zone: string): { from: Date; to: Date } {
   return { from: startOfLocalDay(day, zone), to: startOfLocalDay(nextDay(day), zone) };
+}
+
+/** A stored instant's calendar day in `zone`, in SQL; the column holds UTC without a zone. */
+export function localDateSql(column: Prisma.Sql, zone: string): Prisma.Sql {
+  return Prisma.sql`((${column} AT TIME ZONE 'UTC') AT TIME ZONE ${zone})::date`;
 }
 
 export function dayAsDate(day: string): Date {

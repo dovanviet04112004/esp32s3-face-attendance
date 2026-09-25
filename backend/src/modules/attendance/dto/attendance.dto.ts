@@ -40,6 +40,14 @@ export class ListAttendanceDto extends PaginationDto {
   @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   clockUnsynced?: boolean;
+
+  @ApiPropertyOptional({
+    description: "Only punches whose own time is past believing; from and to then bound when the server heard them",
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  questionableTime?: boolean;
 }
 
 export class PunchView {
@@ -54,6 +62,10 @@ export class PunchView {
   @ApiProperty() doorOpened!: boolean;
   @ApiProperty() capturedOffline!: boolean;
   @ApiProperty() clockUnsynced!: boolean;
+  @ApiProperty({ type: String, nullable: true, format: "date-time", description: "When the server heard it" })
+  receivedAt!: string | null;
+  @ApiProperty({ description: "Before 2020 or more than a day after receivedAt; counted in no day" })
+  questionableTime!: boolean;
 }
 
 export class PunchPageView {
@@ -67,4 +79,5 @@ export class PunchCountsView {
   @ApiProperty() all!: number;
   @ApiProperty() capturedOffline!: number;
   @ApiProperty() clockUnsynced!: number;
+  @ApiProperty({ description: "Questionable punches heard inside the range" }) questionableTime!: number;
 }

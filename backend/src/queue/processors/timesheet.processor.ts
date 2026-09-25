@@ -22,7 +22,7 @@ export class TimesheetProcessor implements OnModuleInit, OnModuleDestroy {
       QUEUE.timesheet,
       async (job) => {
         const body = job.data as TimesheetJob;
-        const built = await this.timesheet.buildRange(body.from, body.to);
+        const built = await this.timesheet.runJob(body);
         this.log.log(`built ${built.rows} row(s) across ${built.days} day(s)`);
         // No request carried this write, so the change interceptor never saw it.
         this.feed.publish(FEED.change, { resources: ["timesheet"] }, null);

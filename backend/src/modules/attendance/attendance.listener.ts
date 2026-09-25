@@ -4,7 +4,7 @@ import { OnEvent } from "@nestjs/event-emitter";
 import type { AttendanceRecord } from "../../common/generated/attendance_record.js";
 import { KIOSK_EVENT, type KioskMessage } from "../mqtt/mqtt.events.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
-import { AttendanceService } from "./attendance.service.js";
+import { AttendanceService, isQuestionable } from "./attendance.service.js";
 
 @Injectable()
 export class AttendanceListener {
@@ -32,6 +32,10 @@ export class AttendanceListener {
     }
     // Announced only once the row is written, since the dashboard answers by
     // asking for the list again.
-    this.feed.publish(FEED.attendance, punch, punch.employeeId);
+    this.feed.publish(
+      FEED.attendance,
+      { ...punch, questionableTime: isQuestionable(new Date(punch.ts), message.receivedAt) },
+      punch.employeeId,
+    );
   }
 }

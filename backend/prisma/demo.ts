@@ -1254,6 +1254,7 @@ async function buildHistory(org: Org, people: Person[], kiosks: Map<UnitKind, st
               deviceId: kiosk,
               employeeId: person.id,
               ts: at,
+              receivedAt: at,
               direction: way,
               score: between(720, 960) / 1000,
               livenessScore: between(640, 990) / 1000,

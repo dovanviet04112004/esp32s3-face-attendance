@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type {
   ChecklistKind,
   ChecklistTask,
@@ -11,10 +12,12 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
+import { dayAsDate, localDay } from "../timesheet/local-day.js";
 import type {
   CreateTemplateDto,
   FinishTaskDto,
@@ -65,11 +68,6 @@ export interface OpenCounts {
   owners: Record<TaskOwner, number>;
 }
 
-// Due dates are calendar days, so a task is late once its day is earlier than today.
-function todayDate(): Date {
-  return new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
-}
-
 const kMsPerDay = 86_400_000;
 
 /** What planting a run needs off the record: who they are and who owns the
@@ -88,7 +86,13 @@ export class OnboardingService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  // Due dates are calendar days, so a task is late once its day is earlier than the company's today.
+  private todayDate(): Date {
+    return dayAsDate(localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true })));
+  }
 
   templates(query: ListTemplatesDto): Promise<TemplateRow[]> {
     return this.db.checklistTemplate.findMany({
@@ -294,7 +298,7 @@ export class OnboardingService {
     const where: Prisma.ChecklistTaskWhereInput = {
       ...(await this.openWhere(viewer, query)),
       ...(query.owner ? { ownerRole: query.owner } : {}),
-      ...(query.overdue ? { dueOn: { lt: todayDate() } } : {}),
+      ...(query.overdue ? { dueOn: { lt: this.todayDate() } } : {}),
     };
     const [rows, found] = await Promise.all([
       this.db.checklistTask.findMany({
@@ -315,7 +319,7 @@ export class OnboardingService {
     const where = await this.openWhere(viewer, query);
     const [byOwner, overdue] = await Promise.all([
       this.db.checklistTask.groupBy({ by: ["ownerRole"], where, _count: { _all: true } }),
-      this.db.checklistTask.count({ where: { ...where, dueOn: { lt: todayDate() } } }),
+      this.db.checklistTask.count({ where: { ...where, dueOn: { lt: this.todayDate() } } }),
     ]);
     const owners: Record<TaskOwner, number> = { HR: 0, MANAGER: 0, SELF: 0 };
     for (const row of byOwner) {

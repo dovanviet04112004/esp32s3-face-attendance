@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type {
   Department,
   EmploymentContract,
@@ -15,9 +16,11 @@ import type {
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { localDay } from "../timesheet/local-day.js";
 import { UsersService } from "../users/users.service.js";
 import type {
   CreateContractDto,
@@ -117,6 +120,7 @@ export class OrgService {
     private readonly audit: AuditService,
     private readonly scope: ScopeService,
     private readonly users: UsersService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   /**
@@ -240,7 +244,7 @@ export class OrgService {
   }
 
   holidays(year?: number): Promise<Holiday[]> {
-    const wanted = year ?? new Date().getUTCFullYear();
+    const wanted = year ?? Number(localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true })).slice(0, 4));
     return this.db.holiday.findMany({
       where: { date: { gte: new Date(Date.UTC(wanted, 0, 1)), lte: new Date(Date.UTC(wanted + 1, 0, 0)) } },
       orderBy: { date: "asc" },

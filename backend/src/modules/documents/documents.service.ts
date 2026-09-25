@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Document, DocumentVersion, PersonnelFileType } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 
@@ -11,10 +12,12 @@ import {
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
+import { localDay } from "../timesheet/local-day.js";
 import type {
   CreateDocumentDto,
   CreateFileTypeDto,
@@ -89,6 +92,7 @@ export class DocumentsService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   list(all = false): Promise<Document[]> {
@@ -430,6 +434,7 @@ export class DocumentsService {
     const after = query.cursor ? decodeCursor(query.cursor).sortValue : null;
     const needle = needleOf(query.search);
     const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
+    const today = localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true }));
     const whom = (alias: Prisma.Sql): Prisma.Sql => Prisma.sql`
       ${visible === null ? Prisma.empty : Prisma.sql`AND ${alias}."id" = ANY(${visible}::int[])`}
       AND (${query.employeeId ?? null}::int IS NULL OR ${alias}."id" = ${query.employeeId ?? null}::int)
@@ -461,7 +466,7 @@ export class DocumentsService {
                         ON f2."employeeId" = e2."id" AND f2."typeId" = t2."id"
                 WHERE e2."active" = true AND t2."active" = true AND t2."required" = true
                   AND (f2."id" IS NULL
-                       OR (f2."expiresAt" IS NOT NULL AND f2."expiresAt" < CURRENT_DATE))
+                       OR (f2."expiresAt" IS NOT NULL AND f2."expiresAt" < ${today}::date))
                   ${whom(Prisma.raw("e2"))}
                   AND (${after}::text IS NULL OR e2."code" > ${after}::text)
                 GROUP BY e2."id", e2."code"
@@ -469,7 +474,7 @@ export class DocumentsService {
                 LIMIT ${query.take}
              )
          AND t."active" = true AND t."required" = true
-         AND (f."id" IS NULL OR (f."expiresAt" IS NOT NULL AND f."expiresAt" < CURRENT_DATE))
+         AND (f."id" IS NULL OR (f."expiresAt" IS NOT NULL AND f."expiresAt" < ${today}::date))
        ORDER BY e."code", t."ordinal", t."code"
     `;
     const byPerson = new Map<number, Gap>();
@@ -498,7 +503,7 @@ export class DocumentsService {
           CROSS JOIN "PersonnelFileType" t
           LEFT JOIN "PersonnelFile" f ON f."employeeId" = e."id" AND f."typeId" = t."id"
          WHERE e."active" = true AND t."active" = true AND t."required" = true
-           AND (f."id" IS NULL OR (f."expiresAt" IS NOT NULL AND f."expiresAt" < CURRENT_DATE))
+           AND (f."id" IS NULL OR (f."expiresAt" IS NOT NULL AND f."expiresAt" < ${today}::date))
            ${whom(Prisma.raw("e"))}
          GROUP BY e."id"
          LIMIT ${COUNT_CEILING + 1}

@@ -22,6 +22,8 @@ export const JOB = {
   deliver: "deliver",
   run: "run",
   build: "build",
+  nightly: "nightly",
+  rebuild: "rebuild",
   leavingsDue: "leavings-due",
   leaveYear: "leave-year",
 } as const;
@@ -95,7 +97,18 @@ export interface BuildJob {
   to: string;
 }
 
-export type TimesheetJob = BuildJob;
+/** Yesterday for everybody, yesterday read when the job runs (KEHOACH 9.8). */
+export interface NightlyJob {
+  type: typeof JOB.nightly;
+}
+
+export interface RebuildJob {
+  type: typeof JOB.rebuild;
+  employeeId: number;
+  day: string;
+}
+
+export type TimesheetJob = BuildJob | NightlyJob | RebuildJob;
 
 /** Closes every record whose last day is behind today; the conditional write makes a rerun a no-op. */
 export interface LeavingsDueJob {

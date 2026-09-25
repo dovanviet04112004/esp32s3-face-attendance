@@ -29,7 +29,7 @@ export class AttendanceController {
   }
 
   @Get("counts")
-  @ApiOperation({ summary: "How many punches the range holds, and how many were offline or clock-unsynced" })
+  @ApiOperation({ summary: "How many punches the range holds, and how many were offline, clock-unsynced or questionable" })
   @ApiOkResponse({ type: PunchCountsView })
   counts(@Query() query: ListAttendanceDto, @CurrentViewer() viewer: Viewer): Promise<PunchCounts> {
     return this.attendance.counts(query, viewer);

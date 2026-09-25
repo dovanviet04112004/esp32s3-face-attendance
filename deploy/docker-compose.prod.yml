@@ -66,6 +66,8 @@ services:
       RELEASE_DIR: /releases
       API_PUBLIC_URL: https://${API_DOMAIN}
       RELEASE_PUBLISH_TOKEN: ${RELEASE_PUBLISH_TOKEN:-}
+      # Every day boundary and repeat job reads it; the container's own clock stays UTC (KEHOACH 9.8).
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Ho_Chi_Minh}
     volumes:
       - ./emqx/certs/ca.crt:/certs/ca.crt:ro
       - releases:/releases

@@ -127,10 +127,6 @@ function earliestDay(days: (Date | null)[]): string {
   return known.sort()[0] ?? "";
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function dayBefore(day: string): string {
   return new Date(dayAsDate(day).getTime() - kMsPerDay).toISOString().slice(0, 10);
 }
@@ -685,7 +681,7 @@ export class EmployeesService implements OnModuleInit {
       INSERT INTO "CompensationRecord" (
         "id", "employeeId", "effectiveFrom", "baseSalary", "insuranceSalary",
         "reason", "createdById", "createdAt")
-      SELECT gen_random_uuid(), e."id", COALESCE(v."from"::date, e."hireDate", CURRENT_DATE),
+      SELECT gen_random_uuid(), e."id", COALESCE(v."from"::date, e."hireDate", ${this.today()}::date),
              v."base"::numeric, v."insurance"::numeric,
              'HIRE'::"PayReason", ${viewer.userId}, now()
         FROM unnest(${rows.map((row) => row.code as string)}::text[],
@@ -783,12 +779,12 @@ export class EmployeesService implements OnModuleInit {
     ]);
     const sample: Record<ImportColumn, string> = {
       ...TEMPLATE_SAMPLE,
-      hireDate: todayIso(),
+      hireDate: this.today(),
       legalEntityCode: entity?.code ?? "",
       departmentCode: department?.code ?? "",
       jobTitleCode: title?.code ?? "",
       shiftName: shift?.name ?? "",
-      shiftFrom: shift ? todayIso() : "",
+      shiftFrom: shift ? this.today() : "",
     };
     const text = toExcelCsv([...IMPORT_COLUMNS], [IMPORT_COLUMNS.map((column) => sample[column])]);
     return { body: Buffer.from(text, "utf8"), type: CSV_TYPE, name: "employees-template.csv" };

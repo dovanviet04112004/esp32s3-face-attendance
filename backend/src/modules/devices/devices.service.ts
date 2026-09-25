@@ -29,6 +29,7 @@ import type {
 } from "./dto/device.dto.js";
 
 interface HeartbeatFacts {
+  ts: number;
   fwVersion: string;
   modelVersion: string;
   uptimeSeconds: number;
@@ -63,12 +64,16 @@ const SHOWN = {
   rosterVersion: true,
   lastSeenAt: true,
   online: true,
+  clockSkewMs: true,
   approvedAt: true,
   revokedAt: true,
   readmittedAt: true,
   createdAt: true,
   updatedAt: true,
 } as const;
+
+/** A kiosk clock earlier than this never learned the time; punch and heartbeat alike (KEHOACH 9.8). */
+export const EARLIEST_BELIEVABLE_MS = Date.UTC(2020, 0, 1);
 
 /** Raised when a kiosk's standing moves without a person's write, so an open dashboard hears it. */
 export const DEVICE_CHANGED = "device.changed";
@@ -410,9 +415,11 @@ export class DevicesService {
       return;
     }
     await this.seen(deviceId, at);
+    // A clock still near 1970 is unset, not decades of skew, and leaves the last reading standing.
+    const skew = beat.ts >= EARLIEST_BELIEVABLE_MS ? { clockSkewMs: beat.ts - at.getTime() } : {};
     await this.db.device.update({
       where: { id: deviceId },
-      data: { ...runs, bootedAt: new Date(at.getTime() - beat.uptimeSeconds * 1000), lastSeenAt: at, online: true },
+      data: { ...runs, ...skew, bootedAt: new Date(at.getTime() - beat.uptimeSeconds * 1000), lastSeenAt: at, online: true },
     });
   }
 

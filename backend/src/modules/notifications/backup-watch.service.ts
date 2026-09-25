@@ -73,7 +73,7 @@ export class BackupWatchService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     await this.queues[QUEUE.notify].upsertJobScheduler(
       "backup-watch",
-      { pattern: kWatchCron },
+      { pattern: kWatchCron, tz: this.config.get("APP_TIMEZONE", { infer: true }) },
       { name: JOB.backupWatch, data: { type: JOB.backupWatch } },
     );
   }
