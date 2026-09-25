@@ -1,11 +1,13 @@
 "use client";
 
-import { Banner, Button, Empty, Input, LayerCard, LayerDialog, LinkButton, Select, SkeletonLine } from "@cloudflare/kumo";
+import { Banner, Button, Checkbox, Combobox, Empty, Input, LayerCard, LayerDialog, LinkButton, Select } from "@cloudflare/kumo";
 import {
+  ArrowCounterClockwiseIcon,
   ArrowsLeftRightIcon,
   CaretRightIcon,
   PencilSimpleIcon,
   PlusIcon,
+  ProhibitIcon,
   TreeStructureIcon,
   UsersIcon,
   WarningCircleIcon,
@@ -13,18 +15,23 @@ import {
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
 
 import { PagingRow } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
+import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, Facts, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { useOptional } from "@/components/ui/optional";
+import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { PersonPicker, type Person } from "@/components/ui/person-picker";
+import { StatePill } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
+import { useUrlState } from "@/lib/url-state";
 
 interface Department {
   id: string;
@@ -33,7 +40,25 @@ interface Department {
   name: string;
   parentId: string | null;
   costCentre: string | null;
+  headId: number | null;
+  head: Person | null;
+  active: boolean;
   headcount: number;
+}
+
+interface Draft {
+  held: Department | null;
+  name: string;
+  code: string;
+  parentId: string;
+  costCentre: string;
+  head: Person | null;
+  entityId: string;
+}
+
+interface Choice {
+  value: string;
+  label: string;
 }
 
 interface Entity {
@@ -80,6 +105,82 @@ const WRITERS = ["ADMIN", "HR"];
 const kIndentPx = 20;
 const kMembersTake = 50;
 const kPreviewRows = 50;
+const kNameMax = 128;
+const kCodeMax = 32;
+const kCostCentreMax = 32;
+const PHONE = "(max-width: 47.99rem)";
+
+function usePhone(): boolean {
+  const listen = useCallback((again: () => void) => {
+    const query = window.matchMedia(PHONE);
+    query.addEventListener("change", again);
+    return () => query.removeEventListener("change", again);
+  }, []);
+  return useSyncExternalStore(
+    listen,
+    () => window.matchMedia(PHONE).matches,
+    () => false,
+  );
+}
+
+function fold(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+}
+
+/** A searchable department field: a flat Select of a big tree hides the one wanted. */
+function DepartmentField({
+  label,
+  description,
+  rows,
+  value,
+  onChange,
+  none,
+  exclude,
+}: {
+  label: ReactNode;
+  description?: string;
+  rows: Department[];
+  value: string;
+  onChange: (next: string) => void;
+  none: string;
+  exclude?: ReadonlySet<string>;
+}) {
+  const common = useTranslations("common");
+  const choices = useMemo(
+    () => [
+      { value: "", label: none },
+      ...rows
+        .filter((row) => row.active && !exclude?.has(row.id))
+        .map((row): Choice => ({ value: row.id, label: `${row.code} · ${row.name}` })),
+    ],
+    [rows, none, exclude],
+  );
+  const held = choices.find((one) => one.value === value) ?? choices[0];
+  return (
+    <Combobox
+      items={choices}
+      value={held}
+      onValueChange={(next) => onChange((next as Choice | null)?.value ?? "")}
+      itemToStringLabel={(one: Choice) => one.label}
+      isItemEqualToValue={(one: Choice, other: Choice) => one.value === other.value}
+      filter={(one: Choice, typed: string) => fold(one.label).includes(fold(typed.trim()))}
+      label={label}
+      description={description}
+    >
+      <Combobox.TriggerInput placeholder={common("search")} clearLabel={common("clear")} showOptionsLabel={common("showOptions")} />
+      <Combobox.Content>
+        <Combobox.Empty>{common("noMatch")}</Combobox.Empty>
+        <Combobox.List>
+          {(one: Choice) => (
+            <Combobox.Item key={one.value} value={one}>
+              {one.label}
+            </Combobox.Item>
+          )}
+        </Combobox.List>
+      </Combobox.Content>
+    </Combobox>
+  );
+}
 
 /** The api returns the tree flat with parentId; a node whose parent is out of reach counts as a root. */
 function childrenOf(rows: Department[]): Map<string | null, Department[]> {
@@ -97,13 +198,54 @@ function wholeOf(byParent: Map<string | null, Department[]>, node: Department): 
   return (byParent.get(node.id) ?? []).reduce((sum, child) => sum + wholeOf(byParent, child), node.headcount);
 }
 
+/** The departments a search matches and every one above them, or null when nothing is searched. */
+function matching(rows: Department[], needle: string): ReadonlySet<string> | null {
+  if (needle === "") {
+    return null;
+  }
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const keep = new Set<string>();
+  for (const row of rows) {
+    if (!fold(`${row.code} ${row.name} ${row.head?.fullName ?? ""}`).includes(needle)) {
+      continue;
+    }
+    let at: Department | undefined = row;
+    while (at && !keep.has(at.id)) {
+      keep.add(at.id);
+      at = at.parentId ? byId.get(at.parentId) : undefined;
+    }
+  }
+  return keep;
+}
+
+/** A department and everything under it: none of them can become its parent. */
+function branchOf(byParent: Map<string | null, Department[]>, id: string): ReadonlySet<string> {
+  const out = new Set<string>([id]);
+  const walk = (parent: string) => {
+    for (const child of byParent.get(parent) ?? []) {
+      out.add(child.id);
+      walk(child.id);
+    }
+  };
+  walk(id);
+  return out;
+}
+
 // Roots start open and nothing else does: a first look is the blocks, not forty-five rows.
-function flatten(byParent: Map<string | null, Department[]>, flipped: ReadonlySet<string>): Node[] {
+// A search opens every branch that leads to a match and hides the rest.
+function flatten(
+  byParent: Map<string | null, Department[]>,
+  flipped: ReadonlySet<string>,
+  keep: ReadonlySet<string> | null,
+): Node[] {
   const out: Node[] = [];
   const walk = (parent: string | null, depth: number) => {
     for (const row of byParent.get(parent) ?? []) {
-      const kids = (byParent.get(row.id) ?? []).length;
-      const open = kids > 0 && (depth === 0) !== flipped.has(row.id);
+      if (keep && !keep.has(row.id)) {
+        continue;
+      }
+      const kids = (byParent.get(row.id) ?? []).filter((child) => !keep || keep.has(child.id)).length;
+      const open = kids > 0 && (keep !== null || (depth === 0) !== flipped.has(row.id));
       out.push({ ...row, depth, kids, whole: wholeOf(byParent, row), open });
       if (open) {
         walk(row.id, depth + 1);
@@ -115,6 +257,14 @@ function flatten(byParent: Map<string | null, Department[]>, flipped: ReadonlySe
 }
 
 export default function OrgPage() {
+  return (
+    <Suspense>
+      <Org />
+    </Suspense>
+  );
+}
+
+function Org() {
   const nav = useTranslations("nav");
   const t = useTranslations("org");
   const common = useTranslations("common");
@@ -122,24 +272,32 @@ export default function OrgPage() {
   const role = useSession((s) => s.role);
   const faultOf = useFault();
   const notify = useNotify();
+  const optional = useOptional();
   const mayWrite = role !== null && WRITERS.includes(role);
+  const phone = usePhone();
+
+  const [url, setUrl] = useUrlState({ q: "", retired: "", dept: "" });
+  const [typed, setTyped] = useState(url.q);
+  const settled = useSettled(typed.trim());
+  useEffect(() => {
+    if (settled !== url.q) {
+      setUrl({ q: settled });
+    }
+  }, [settled]); // eslint-disable-line react-hooks/exhaustive-deps
+  const showRetired = mayWrite && url.retired === "1";
 
   const [flipped, setFlipped] = useState<ReadonlySet<string>>(new Set());
-  const [chosenId, setChosenId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [sheet, setSheet] = useState(false);
   const keyed = useRef(false);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
 
-  const [adding, setAdding] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newCode, setNewCode] = useState("");
-  const [newParentId, setNewParentId] = useState("");
-  const [newCostCentre, setNewCostCentre] = useState("");
-  const [newEntityId, setNewEntityId] = useState("");
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState("");
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [tried, setTried] = useState(false);
+  const [moving, setMoving] = useState<string | null>(null);
+  const [retiring, setRetiring] = useState(false);
   const [listing, setListing] = useState(false);
-  const [moving, setMoving] = useState(false);
+  const [reorging, setReorging] = useState(false);
   const [fromId, setFromId] = useState("");
   const [toId, setToId] = useState("");
   const [boss, setBoss] = useState<Person | null>(null);
@@ -147,8 +305,8 @@ export default function OrgPage() {
   const [codeFault, setCodeFault] = useState<string | null>(null);
 
   const departments = useQuery({
-    queryKey: ["departments"],
-    queryFn: async () => (await api.get<Department[]>("/departments")).data,
+    queryKey: ["departments", "tree", showRetired],
+    queryFn: async () => (await api.get<Department[]>(`/departments${showRetired ? "?all=true" : ""}`)).data,
   });
 
   const entities = useQuery({
@@ -157,12 +315,14 @@ export default function OrgPage() {
     queryFn: async () => (await api.get<Entity[]>("/legal-entities")).data,
   });
 
-  const rows = departments.data ?? [];
-  const byParent = childrenOf(rows);
-  const visible = flatten(byParent, flipped);
-  const chosen = rows.find((row) => row.id === chosenId) ?? byParent.get(null)?.[0] ?? null;
+  const rows = useMemo(() => departments.data ?? [], [departments.data]);
+  const byParent = useMemo(() => childrenOf(rows), [rows]);
+  const keep = useMemo(() => matching(rows, fold(url.q)), [rows, url.q]);
+  const visible = flatten(byParent, flipped, keep);
+  const chosen = rows.find((row) => row.id === url.dept) ?? byParent.get(null)?.[0] ?? null;
   const chosenWhole = chosen ? wholeOf(byParent, chosen) : 0;
   const parentOfChosen = chosen?.parentId ? rows.find((row) => row.id === chosen.parentId) : undefined;
+  const cannotParent = useMemo(() => (chosen ? branchOf(byParent, chosen.id) : new Set<string>()), [byParent, chosen]);
   const shows = (id: string | null | undefined) => id != null && visible.some((row) => row.id === id);
   // A collapsed branch can hide the focused row; the tree must keep one tab stop.
   const focused = shows(focusId) ? focusId : shows(chosen?.id) ? chosen?.id : visible[0]?.id;
@@ -198,8 +358,11 @@ export default function OrgPage() {
   }
 
   function choose(id: string): void {
-    setChosenId(id);
+    setUrl({ dept: id });
     setFocusId(id);
+    if (phone) {
+      setSheet(true);
+    }
   }
 
   function moveTo(id: string | null | undefined): void {
@@ -242,29 +405,39 @@ export default function OrgPage() {
 
   function refresh(): void {
     void cache.invalidateQueries({ queryKey: ["departments"] });
+    void cache.invalidateQueries({ queryKey: ["employees"] });
   }
 
-  const add = useMutation({
-    mutationFn: async () => {
-      const parent = rows.find((row) => row.id === newParentId);
+  const save = useMutation({
+    mutationFn: async (held: Draft) => {
+      const body = {
+        name: held.name.trim(),
+        code: held.code.trim(),
+        costCentre: held.costCentre.trim() || null,
+        headId: held.head?.id ?? null,
+      };
+      if (held.held) {
+        return (await api.patch<Department>(`/departments/${held.held.id}`, body)).data;
+      }
+      const parent = rows.find((row) => row.id === held.parentId);
       return (
         await api.post<Department>("/departments", {
-          legalEntityId: parent?.legalEntityId ?? (newEntityId || entities.data?.[0]?.id),
-          code: newCode.trim(),
-          name: newName.trim(),
-          parentId: newParentId || undefined,
-          costCentre: newCostCentre.trim() || undefined,
+          ...body,
+          legalEntityId: parent?.legalEntityId ?? (held.entityId || entities.data?.[0]?.id),
+          parentId: held.parentId || null,
         })
       ).data;
     },
-    onSuccess: (made) => {
-      setAdding(false);
-      notify.done(t("added", { name: made.name }));
-      const parent = visible.find((row) => row.id === made.parentId);
-      if (parent && (parent.depth === 0) === flipped.has(parent.id)) {
-        flip(parent.id);
+    onSuccess: (saved, held) => {
+      setDraft(null);
+      notify.done(t(held.held ? "savedDepartment" : "added", { name: saved.name }));
+      if (!held.held) {
+        const parent = visible.find((row) => row.id === saved.parentId);
+        if (parent && !parent.open) {
+          flip(parent.id);
+        }
+        setUrl({ dept: saved.id });
       }
-      choose(made.id);
       refresh();
     },
     onError: (fell: unknown) => {
@@ -277,14 +450,26 @@ export default function OrgPage() {
     },
   });
 
-  const rename = useMutation({
-    mutationFn: (one: Department) => api.patch(`/departments/${one.id}`, { name: name.trim() }),
-    onSuccess: () => {
-      setRenaming(false);
-      notify.done(t("renamed"));
+  const move = useMutation({
+    mutationFn: async ({ one, parentId }: { one: Department; parentId: string }) =>
+      (await api.patch<Department>(`/departments/${one.id}`, { parentId: parentId || null })).data,
+    onSuccess: (saved) => {
+      setMoving(null);
+      notify.done(t("moved", { name: saved.name }));
       refresh();
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  const flipActive = useMutation({
+    mutationFn: async (one: Department) =>
+      (await api.patch<Department>(`/departments/${one.id}`, { active: !one.active })).data,
+    onSuccess: (saved) => {
+      setRetiring(false);
+      notify.done(t(saved.active ? "restoredDone" : "retiredDone", { name: saved.name }));
+      refresh();
+    },
+    onError: (fell: unknown, one) => (one.active ? setFault(faultOf(fell)) : notify.failed(fell)),
   });
 
   const reorg = useMutation({
@@ -298,32 +483,52 @@ export default function OrgPage() {
       ).data,
     onSuccess: (plan) => {
       if (plan.applied) {
-        setMoving(false);
+        setReorging(false);
         notify.done(t("reorgApplied", { count: plan.moving.length }));
         refresh();
-        void cache.invalidateQueries({ queryKey: ["employees"] });
       }
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
-  function openAdd(): void {
+  function openForm(one: Department | null): void {
+    setSheet(false);
     setFault(null);
     setCodeFault(null);
-    setNewName("");
-    setNewCode("");
-    setNewCostCentre("");
-    setNewParentId(chosen?.id ?? "");
-    setNewEntityId(entities.data?.[0]?.id ?? "");
-    setAdding(true);
+    setTried(false);
+    setDraft({
+      held: one,
+      name: one?.name ?? "",
+      code: one?.code ?? "",
+      parentId: one ? (one.parentId ?? "") : (chosen?.id ?? ""),
+      costCentre: one?.costCentre ?? "",
+      head: one?.head ?? null,
+      entityId: entities.data?.[0]?.id ?? "",
+    });
   }
 
-  function openRename(): void {
+  function submit(held: Draft): void {
+    setTried(true);
+    if (held.name.trim() === "" || held.code.trim() === "") {
+      return;
+    }
+    setFault(null);
+    setCodeFault(null);
+    save.mutate(held);
+  }
+
+  function openMove(): void {
+    setSheet(false);
     if (chosen) {
       setFault(null);
-      setName(chosen.name);
-      setRenaming(true);
+      setMoving(chosen.parentId ?? "");
     }
+  }
+
+  function openRetire(): void {
+    setSheet(false);
+    setFault(null);
+    setRetiring(true);
   }
 
   function openReorg(): void {
@@ -332,7 +537,7 @@ export default function OrgPage() {
     setFromId(chosen?.id ?? "");
     setToId("");
     setBoss(null);
-    setMoving(true);
+    setReorging(true);
   }
 
   function replan(apply: () => void): void {
@@ -341,20 +546,100 @@ export default function OrgPage() {
     apply();
   }
 
-  const departmentItems = (none: string) => ({
-    "": none,
-    ...Object.fromEntries(rows.map((row) => [row.id, `${row.code} · ${row.name}`])),
-  });
-  const people = rows.reduce((sum, row) => sum + row.headcount, 0);
   const plan = reorg.data;
   const loaded = members.data?.pages.flatMap((one) => one.rows);
   const firstMembers = members.data?.pages[0];
   const faultBanner = fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null;
   const addAction = mayWrite ? (
-    <Button variant="primary" icon={PlusIcon} onClick={openAdd}>
+    <Button variant="primary" icon={PlusIcon} onClick={() => openForm(null)}>
       {t("newDepartment")}
     </Button>
   ) : undefined;
+
+  function panel() {
+    if (!chosen) {
+      return null;
+    }
+    return (
+      <div className="flex flex-col gap-3">
+        {chosen.active ? null : (
+          <span>
+            <StatePill>{t("retiredPill")}</StatePill>
+          </span>
+        )}
+        <Facts
+          rows={[
+            [t("code"), <span key="code" className="font-mono">{chosen.code}</span>],
+            [
+              t("above"),
+              parentOfChosen ? (
+                <button
+                  key="parent"
+                  type="button"
+                  onClick={() => choose(parentOfChosen.id)}
+                  className="text-end text-kumo-link hover:underline"
+                >
+                  {parentOfChosen.name}
+                </button>
+              ) : (
+                t("noParent")
+              ),
+            ],
+            [
+              t("headPerson"),
+              chosen.head ? (
+                <Link key="head" href={`/employees/${chosen.head.id}`} className="text-end text-kumo-link hover:underline">
+                  {chosen.head.fullName}
+                </Link>
+              ) : (
+                t("noHead")
+              ),
+            ],
+            [t("wholeBranch"), t("head", { count: chosenWhole })],
+            [t("directly"), t("head", { count: chosen.headcount })],
+            [t("costCentre"), chosen.costCentre ?? common("empty")],
+          ]}
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={UsersIcon}
+            onClick={() => {
+              setSheet(false);
+              setListing(true);
+            }}
+          >
+            {t("seePeople")}
+          </Button>
+          {mayWrite && chosen.active ? (
+            <>
+              <Button variant="secondary" size="sm" icon={PencilSimpleIcon} onClick={() => openForm(chosen)}>
+                {t("editAction")}
+              </Button>
+              <Button variant="secondary" size="sm" icon={ArrowsLeftRightIcon} onClick={openMove}>
+                {t("moveAction")}
+              </Button>
+              <Button variant="secondary-destructive" size="sm" icon={ProhibitIcon} onClick={openRetire}>
+                {t("retireAction")}
+              </Button>
+            </>
+          ) : null}
+          {mayWrite && !chosen.active ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={ArrowCounterClockwiseIcon}
+              loading={flipActive.isPending}
+              onClick={() => flipActive.mutate(chosen)}
+            >
+              {t("restoreAction")}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   function tree() {
     if (departments.isError) {
@@ -378,7 +663,7 @@ export default function OrgPage() {
             description={mayWrite ? t("emptyHint") : undefined}
             contents={
               mayWrite ? (
-                <Button variant="secondary" icon={PlusIcon} onClick={openAdd}>
+                <Button variant="secondary" icon={PlusIcon} onClick={() => openForm(null)}>
                   {t("newDepartment")}
                 </Button>
               ) : undefined
@@ -388,11 +673,19 @@ export default function OrgPage() {
         </LayerCard>
       );
     }
+    if (visible.length === 0) {
+      return (
+        <LayerCard className="p-0">
+          <Empty size="sm" title={t("searchNone")} className="py-10" />
+        </LayerCard>
+      );
+    }
     return (
-      <LayerCard className="p-0">
+      <LayerCard className="p-0 @container">
         <div className="flex items-center gap-2 border-b border-kumo-hairline px-3 py-2 text-sm text-kumo-subtle">
           <span className="min-w-0 flex-1 ps-8">{t("name")}</span>
-          <span className="hidden w-24 shrink-0 sm:block">{t("code")}</span>
+          <span className="hidden w-44 shrink-0 @min-[640px]:block">{t("headPerson")}</span>
+          <span className="hidden w-24 shrink-0 @min-[480px]:block">{t("code")}</span>
           <span className="w-28 shrink-0 text-end">{t("headcountColumn")}</span>
         </div>
         <div role="tree" aria-label={nav("orgChart")} className="flex flex-col p-1">
@@ -437,13 +730,17 @@ export default function OrgPage() {
                 ) : (
                   <span className="size-7 shrink-0 pointer-coarse:size-11" aria-hidden />
                 )}
-                <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                <span className={cn("min-w-0 flex-1 truncate", !node.active && "text-kumo-subtle")}>{node.name}</span>
+                {node.active ? null : <StatePill>{t("retiredPill")}</StatePill>}
                 {node.kids > 0 && !node.open ? (
-                  <span className="hidden shrink-0 text-sm text-kumo-subtle tabular-nums sm:inline">
+                  <span className="hidden shrink-0 text-sm text-kumo-subtle tabular-nums @min-[480px]:inline">
                     {t("units", { count: node.kids })}
                   </span>
                 ) : null}
-                <span className="hidden w-24 shrink-0 truncate font-mono text-sm text-kumo-subtle sm:block">{node.code}</span>
+                <span className="hidden w-44 shrink-0 truncate text-sm @min-[640px]:block" title={node.head?.fullName}>
+                  {node.head?.fullName ?? <span className="text-kumo-subtle">{common("empty")}</span>}
+                </span>
+                <span className="hidden w-24 shrink-0 truncate font-mono text-sm text-kumo-subtle @min-[480px]:block">{node.code}</span>
                 <span className="w-28 shrink-0 text-end tabular-nums">{t("head", { count: node.whole })}</span>
               </div>
             );
@@ -459,55 +756,9 @@ export default function OrgPage() {
 
       <PageLayout
         aside={
-          <>
-            <AsideCard title={common("summary")}>
-              <StatList
-                stats={[
-                  { key: "departments", label: t("departmentCount"), value: departments.isSuccess ? rows.length : common("empty") },
-                  { key: "people", label: t("peopleCount"), value: departments.isSuccess ? people : common("empty"), href: "/employees" },
-                ]}
-              />
-            </AsideCard>
-            {chosen ? (
-              <AsideCard title={chosen.name}>
-                <div className="flex flex-col gap-3">
-                  <Facts
-                    rows={[
-                      [t("code"), <span key="code" className="font-mono">{chosen.code}</span>],
-                      [
-                        t("above"),
-                        parentOfChosen ? (
-                          <button
-                            key="parent"
-                            type="button"
-                            onClick={() => choose(parentOfChosen.id)}
-                            className="text-end text-kumo-link hover:underline"
-                          >
-                            {parentOfChosen.name}
-                          </button>
-                        ) : (
-                          t("noParent")
-                        ),
-                      ],
-                      [t("wholeBranch"), t("head", { count: chosenWhole })],
-                      [t("directly"), t("head", { count: chosen.headcount })],
-                      [t("costCentre"), chosen.costCentre ?? common("empty")],
-                    ]}
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="secondary" size="sm" icon={UsersIcon} onClick={() => setListing(true)}>
-                      {t("seePeople")}
-                    </Button>
-                    {mayWrite ? (
-                      <Button variant="secondary" size="sm" icon={PencilSimpleIcon} onClick={openRename}>
-                        {t("renameAction")}
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              </AsideCard>
-            ) : null}
-          </>
+          !phone && chosen ? (
+            <AsideCard title={chosen.name}>{panel()}</AsideCard>
+          ) : undefined
         }
         extra={
           mayWrite ? (
@@ -519,107 +770,160 @@ export default function OrgPage() {
           ) : undefined
         }
       >
+        <FilterBar
+          search={{ value: typed, onChange: setTyped, placeholder: t("searchHint") }}
+          extra={
+            mayWrite ? (
+              <Checkbox
+                label={t("showRetired")}
+                checked={url.retired === "1"}
+                onCheckedChange={(next) => setUrl({ retired: next === true ? "1" : "" })}
+              />
+            ) : undefined
+          }
+        />
         {tree()}
       </PageLayout>
 
-      <LayerDialog.Root open={adding} onOpenChange={setAdding} dismissDisabled={add.isPending}>
+      <LayerDialog.Root open={phone && sheet && chosen !== null} onOpenChange={setSheet}>
         <LayerDialog.Content closeLabel={common("close")}>
-          <LayerDialog.Title>{t("newDepartment")}</LayerDialog.Title>
+          <LayerDialog.Title>{chosen?.name ?? ""}</LayerDialog.Title>
+          <LayerDialog.Body>{panel()}</LayerDialog.Body>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Root open={draft !== null} onOpenChange={(next) => !next && setDraft(null)} dismissDisabled={save.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{draft?.held ? t("editTitle", { name: draft.held.name }) : t("newDepartment")}</LayerDialog.Title>
+          <LayerDialog.Description>{draft?.held ? t("editLead") : t("addLead")}</LayerDialog.Description>
           <LayerDialog.Body>
-            <form
-              id="department-add"
-              className="grid items-start gap-4 sm:grid-cols-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setFault(null);
-                setCodeFault(null);
-                add.mutate();
-              }}
-            >
-              <Input label={t("name")} required maxLength={128} value={newName} onChange={(event) => setNewName(event.target.value)} />
-              <Input
-                label={t("code")}
-                required
-                maxLength={32}
-                value={newCode}
-                error={codeFault ?? undefined}
-                onChange={(event) => {
-                  setCodeFault(null);
-                  setNewCode(event.target.value.toUpperCase());
-                }}
-                className="font-mono"
-              />
-              <Select
-                label={t("parent")}
-                hideLabel={false}
-                value={newParentId}
-                onValueChange={(next) => setNewParentId(String(next ?? ""))}
-                items={departmentItems(t("noParent"))}
-                className="w-full"
-              />
-              <Input
-                label={t("costCentre")}
-                maxLength={32}
-                value={newCostCentre}
-                onChange={(event) => setNewCostCentre(event.target.value)}
-              />
-              {!newParentId && (entities.data?.length ?? 0) > 1 ? (
-                <Select
-                  label={t("entity")}
-                  hideLabel={false}
-                  value={newEntityId}
-                  onValueChange={(next) => setNewEntityId(String(next ?? ""))}
-                  items={Object.fromEntries((entities.data ?? []).map((one) => [one.id, one.name]))}
-                  className="w-full"
+            {draft ? (
+              <div className="grid items-start gap-4 sm:grid-cols-2">
+                <Input
+                  label={t("name")}
+                  required
+                  maxLength={kNameMax}
+                  value={draft.name}
+                  error={tried && draft.name.trim() === "" ? common("required") : undefined}
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 />
-              ) : null}
-            </form>
-            {faultBanner}
+                <Input
+                  label={t("code")}
+                  required
+                  maxLength={kCodeMax}
+                  value={draft.code}
+                  error={codeFault ?? (tried && draft.code.trim() === "" ? common("required") : undefined)}
+                  onChange={(event) => {
+                    setCodeFault(null);
+                    setDraft({ ...draft, code: event.target.value.toUpperCase().replace(/\s/g, "") });
+                  }}
+                  className="font-mono"
+                />
+                {draft.held === null ? (
+                  <div className="sm:col-span-2">
+                    <DepartmentField
+                      label={optional(t("parent"))}
+                      description={t("parentHint")}
+                      rows={rows}
+                      value={draft.parentId}
+                      onChange={(next) => setDraft({ ...draft, parentId: next })}
+                      none={t("noParent")}
+                    />
+                  </div>
+                ) : null}
+                {draft.held === null && !draft.parentId && (entities.data?.length ?? 0) > 1 ? (
+                  <Select
+                    label={t("entity")}
+                    hideLabel={false}
+                    value={draft.entityId}
+                    onValueChange={(next) => setDraft({ ...draft, entityId: String(next ?? "") })}
+                    items={Object.fromEntries((entities.data ?? []).map((one) => [one.id, one.name]))}
+                    className="w-full"
+                  />
+                ) : null}
+                <div className="sm:col-span-2">
+                  <PersonPicker
+                    label={`${t("headPerson")} ${common("optional")}`}
+                    description={t("headHint")}
+                    value={draft.head}
+                    onChange={(next) => setDraft({ ...draft, head: next })}
+                  />
+                </div>
+                <Input
+                  label={optional(t("costCentre"))}
+                  maxLength={kCostCentreMax}
+                  value={draft.costCentre}
+                  onChange={(event) => setDraft({ ...draft, costCentre: event.target.value })}
+                />
+                <div className="sm:col-span-2">{faultBanner}</div>
+              </div>
+            ) : null}
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary
-              type="submit"
-              form="department-add"
-              loading={add.isPending}
-              disabled={newName.trim() === "" || newCode.trim() === ""}
-            >
-              {t("newDepartment")}
+            <LayerDialog.Actions.Primary loading={save.isPending} onClick={() => draft && submit(draft)}>
+              {draft?.held ? common("save") : t("newDepartment")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
       </LayerDialog.Root>
 
-      <LayerDialog.Root open={renaming} onOpenChange={setRenaming} dismissDisabled={rename.isPending}>
-        <LayerDialog.Content size="sm" closeLabel={common("close")}>
-          <LayerDialog.Title>{t("rename")}</LayerDialog.Title>
-          {chosen ? <LayerDialog.Description>{`${chosen.code} · ${chosen.name}`}</LayerDialog.Description> : null}
+      <LayerDialog.Root open={moving !== null} onOpenChange={(next) => !next && setMoving(null)} dismissDisabled={move.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{chosen ? t("moveTitle", { name: chosen.name }) : t("moveAction")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("moveLead")}</LayerDialog.Description>
           <LayerDialog.Body>
-            <form
-              id="department-rename"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (chosen) {
-                  setFault(null);
-                  rename.mutate(chosen);
-                }
-              }}
-            >
-              <Input label={t("name")} required maxLength={128} value={name} onChange={(event) => setName(event.target.value)} />
-            </form>
+            <DepartmentField
+              label={t("parent")}
+              rows={rows.filter((row) => row.legalEntityId === chosen?.legalEntityId)}
+              value={moving ?? ""}
+              onChange={(next) => setMoving(next)}
+              none={t("noParent")}
+              exclude={cannotParent}
+            />
             {faultBanner}
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
             <LayerDialog.Actions.Primary
-              type="submit"
-              form="department-rename"
-              loading={rename.isPending}
-              disabled={name.trim() === "" || name.trim() === chosen?.name}
+              loading={move.isPending}
+              onClick={() => {
+                if (!chosen || moving === null) {
+                  return;
+                }
+                if (moving === (chosen.parentId ?? "")) {
+                  setMoving(null);
+                  return;
+                }
+                setFault(null);
+                move.mutate({ one: chosen, parentId: moving });
+              }}
             >
-              {common("save")}
+              {t("moveAction")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
       </LayerDialog.Root>
+
+      <LayerDialog.Alert open={retiring} onOpenChange={setRetiring} dismissDisabled={flipActive.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{chosen ? t("retireTitle", { name: chosen.name }) : t("retireAction")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("retireLead")}</LayerDialog.Description>
+          <LayerDialog.Body>{faultBanner}</LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              variant="destructive"
+              loading={flipActive.isPending}
+              onClick={() => {
+                if (chosen) {
+                  setFault(null);
+                  flipActive.mutate(chosen);
+                }
+              }}
+            >
+              {t("retireAction")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
 
       <LayerDialog.Root open={listing} onOpenChange={setListing}>
         <LayerDialog.Content closeLabel={common("close")}>
@@ -673,27 +977,25 @@ export default function OrgPage() {
         </LayerDialog.Content>
       </LayerDialog.Root>
 
-      <LayerDialog.Root open={moving} onOpenChange={setMoving} dismissDisabled={reorg.isPending}>
+      <LayerDialog.Root open={reorging} onOpenChange={setReorging} dismissDisabled={reorg.isPending}>
         <LayerDialog.Content size="lg" closeLabel={common("close")}>
           <LayerDialog.Title>{t("reorgAction")}</LayerDialog.Title>
           <LayerDialog.Description>{t("reorgLead")}</LayerDialog.Description>
           <LayerDialog.Body>
             <div className="grid items-start gap-4 sm:grid-cols-2">
-              <Select
+              <DepartmentField
                 label={t("reorgFrom")}
-                hideLabel={false}
+                rows={rows}
                 value={fromId}
-                onValueChange={(next) => replan(() => setFromId(String(next ?? "")))}
-                items={departmentItems(common("empty"))}
-                className="w-full"
+                onChange={(next) => replan(() => setFromId(next))}
+                none={common("empty")}
               />
-              <Select
+              <DepartmentField
                 label={t("reorgTo")}
-                hideLabel={false}
+                rows={rows}
                 value={toId}
-                onValueChange={(next) => replan(() => setToId(String(next ?? "")))}
-                items={departmentItems(t("reorgKeep"))}
-                className="w-full"
+                onChange={(next) => replan(() => setToId(next))}
+                none={t("reorgKeep")}
               />
               <div className="sm:col-span-2">
                 <PersonPicker

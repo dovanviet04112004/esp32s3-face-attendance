@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Empty, Input, LayerCard, LayerDialog, Meter, SkeletonLine, Tabs } from "@cloudflare/kumo";
+import { Banner, Button, Empty, LayerCard, LayerDialog, Meter, Tabs } from "@cloudflare/kumo";
 import { CheckIcon, ListChecksIcon, PlayIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
@@ -8,8 +8,10 @@ import { useState } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
+import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
 import { StatePill } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 import { dayOnly } from "@/lib/format";
@@ -228,13 +230,12 @@ export function Checklist({
                 start.mutate();
               }}
             >
-              <Input
+              <DateField
                 label={t("anchor")}
                 description={kind === "ONBOARDING" ? t("anchorHintOn") : t("anchorHintOff")}
-                type="date"
                 required
                 value={anchorDate}
-                onChange={(event) => setAnchorDate(event.target.value)}
+                onChange={setAnchorDate}
               />
             </form>
             {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null}

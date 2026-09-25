@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Empty, Input, LayerDialog, LinkButton, Select, SkeletonLine } from "@cloudflare/kumo";
+import { Banner, Button, Combobox, Empty, Input, LayerDialog, LinkButton, Loader, Select } from "@cloudflare/kumo";
 import {
   ArrowUDownLeftIcon,
   ClockCounterClockwiseIcon,
@@ -15,7 +15,9 @@ import { useState } from "react";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { StatePill } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
@@ -25,6 +27,10 @@ export const CONDITIONS = ["NEW", "GOOD", "WORN", "DAMAGED"] as const;
 const kShelf = 200;
 
 export type Condition = (typeof CONDITIONS)[number];
+
+function fold(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+}
 
 export interface Asset {
   id: string;
@@ -112,6 +118,7 @@ export function Assets({ employeeId, mayWrite }: { employeeId: number; mayWrite:
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
+  const optional = useOptional();
 
   const [issuing, setIssuing] = useState(false);
   const [returning, setReturning] = useState<Asset | null>(null);
@@ -204,13 +211,12 @@ export function Assets({ employeeId, mayWrite }: { employeeId: number; mayWrite:
     <>
       <Select
         label={t("condition")}
-        hideLabel={false}
         value={condition}
         onValueChange={(next) => setCondition(String(next ?? "GOOD") as Condition)}
         items={conditionItems}
         className="w-full"
       />
-      <Input label={t("note")} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
+      <Input label={optional(t("note"))} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
     </>
   );
 
@@ -262,16 +268,46 @@ export function Assets({ employeeId, mayWrite }: { employeeId: number; mayWrite:
               />
             ) : (
               <div className="flex flex-col gap-4">
-                <Select
+                <Combobox
                   label={t("pick")}
-                  hideLabel={false}
-                  placeholder={t("pickHint")}
-                  loading={stock.isPending}
-                  value={picked}
-                  onValueChange={(next) => setPicked(String(next ?? ""))}
-                  items={Object.fromEntries(free.map((one) => [one.id, `${one.code} · ${one.name}`]))}
-                  className="w-full"
-                />
+                  items={free}
+                  value={chosen ?? null}
+                  onValueChange={(next) => setPicked((next as Asset | null)?.id ?? "")}
+                  itemToStringLabel={(one: Asset) => `${one.code} · ${one.name}`}
+                  isItemEqualToValue={(one: Asset, other: Asset) => one.id === other.id}
+                  filter={(one: Asset, typed: string) =>
+                    fold(`${one.code} ${one.name} ${one.kind} ${one.serialNo ?? ""}`).includes(fold(typed.trim()))
+                  }
+                >
+                  <Combobox.TriggerInput placeholder={t("pickHint")} clearLabel={common("clear")} showOptionsLabel={common("showOptions")} />
+                  <Combobox.Content>
+                    <Combobox.Empty>
+                      {stock.isPending ? (
+                        <span className="flex items-center gap-2">
+                          <Loader size={14} />
+                          {t("shelfLoading")}
+                        </span>
+                      ) : (
+                        common("noMatch")
+                      )}
+                    </Combobox.Empty>
+                    <Combobox.List>
+                      {(one: Asset) => (
+                        <Combobox.Item key={one.id} value={one}>
+                          <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate">{one.name}</span>
+                              <span className="truncate text-sm text-kumo-subtle">
+                                {one.serialNo ? `${one.kind} · ${one.serialNo}` : one.kind}
+                              </span>
+                            </span>
+                            <span className="shrink-0 font-mono text-kumo-subtle">{one.code}</span>
+                          </span>
+                        </Combobox.Item>
+                      )}
+                    </Combobox.List>
+                  </Combobox.Content>
+                </Combobox>
                 {conditionFields}
               </div>
             )}

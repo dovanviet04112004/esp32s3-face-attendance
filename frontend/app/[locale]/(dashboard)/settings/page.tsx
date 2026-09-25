@@ -2,7 +2,7 @@
 
 import { Button, LayerCard, LinkButton, TableOfContents, Tabs, useTableOfContentsActiveId } from "@cloudflare/kumo";
 import { EnvelopeSimpleIcon, KeyIcon, SignOutIcon } from "@phosphor-icons/react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useTransition, type ReactNode } from "react";
 
@@ -50,11 +50,16 @@ export default function SettingsPage() {
   const role = useSession((s) => s.role);
   const leaving = useSignOut();
   const [moving, startMoving] = useTransition();
+  const cache = useQueryClient();
 
   const provision = useMutation({
     mutationFn: async () =>
       (await api.post<{ accounts: OpenedAccount[]; waiting: number }>("/users/provision")).data,
-    onSuccess: (done) => notify.done(t("provisionDone", { count: done.accounts.length })),
+    onSuccess: (done) => {
+      notify.done(t("provisionDone", { count: done.accounts.length }));
+      void cache.invalidateQueries({ queryKey: ["users"] });
+      void cache.invalidateQueries({ queryKey: ["employees"] });
+    },
     onError: notify.failed,
   });
 

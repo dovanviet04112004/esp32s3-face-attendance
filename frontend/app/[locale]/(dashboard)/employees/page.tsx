@@ -9,27 +9,32 @@ import {
   UploadSimpleIcon,
 } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useRef, useState, type ChangeEvent } from "react";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
+import { Suspense, useEffect, useRef, useState, type ChangeEvent } from "react";
 
-import { DataTable, type Column } from "@/components/tables/data-table";
+import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
+import { DateField } from "@/components/ui/date-field";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { AsideCard, PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill } from "@/components/ui/pill";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { money } from "@/lib/format";
+import { dayOnly, money } from "@/lib/format";
+import { useUrlState } from "@/lib/url-state";
 
 interface Employee {
   id: number;
   code: string;
   fullName: string;
-  department: { id: string; name: string } | null;
+  hireDate: string | null;
   active: boolean;
+  department: { id: string; name: string } | null;
+  jobTitle: { id: string; name: string } | null;
+  manager: { id: number; code: string; fullName: string } | null;
+  endsOn?: string;
 }
 
 interface EmployeePage {
@@ -51,6 +56,7 @@ interface ImportReport {
   rows: number;
   toCreate: number;
   toUpdate: number;
+  payKept: number;
   faults: ImportFault[];
 }
 
@@ -80,10 +86,23 @@ interface Attention {
   probationEnding: { rows: Expiring[]; total: number };
 }
 
-type Standing = "true" | "false" | "";
-
-const ATTENTION_DESK = ["ADMIN", "HR", "PAYROLL"];
+const DESK = ["ADMIN", "HR", "PAYROLL"];
+const ENDINGS = ["contract", "probation"] as const;
+// The window the API assumes when a link names none (ENDING_WINDOW_DAYS in the backend).
+const kEndingDays = 30;
+const kMsPerDay = 86_400_000;
 const kDueShown = 3;
+// Column names are identifiers the file must carry as they are; only what they mean is translated.
+const IMPORT_FORMATS = {
+  required: "code, fullName",
+  entity: "legalEntityCode",
+  department: "departmentCode, jobTitleCode",
+  manager: "managerCode",
+  dates: "dateOfBirth, hireDate",
+  gender: "gender",
+  money: "baseSalary, insuranceSalary",
+  kept: "personalEmail, bankAccount, bankName",
+} as const;
 
 function firstOfNextMonth(): string {
   const now = new Date();
@@ -98,21 +117,27 @@ function save(text: string, name: string): void {
   URL.revokeObjectURL(link.href);
 }
 
-function query(params: Record<string, string>): string {
+function queryOf(params: Record<string, string>): string {
   const kept = Object.entries(params).filter(([, value]) => value !== "");
   return kept.length ? `?${new URLSearchParams(kept).toString()}` : "";
 }
 
-function DueList({ title, rows, total }: { title: string; rows: Expiring[]; total: number }) {
+function DueList({ title, rows, total, onAll }: { title: string; rows: Expiring[]; total: number; onAll: () => void }) {
   const t = useTranslations("overview");
+  const common = useTranslations("common");
   if (total === 0) {
     return null;
   }
   return (
     <div className="flex flex-col gap-1">
-      <p className="flex items-center justify-between font-medium">
-        {title}
-        <CountPill>{total}</CountPill>
+      <p className="flex items-center justify-between gap-2 font-medium">
+        <span className="flex items-center gap-2">
+          {title}
+          <CountPill>{total}</CountPill>
+        </span>
+        <Button variant="ghost" size="sm" onClick={onAll}>
+          {common("seeAll")}
+        </Button>
       </p>
       <ul className="flex flex-col">
         {rows.slice(0, kDueShown).map((row) => (
@@ -131,25 +156,34 @@ function DueList({ title, rows, total }: { title: string; rows: Expiring[]; tota
 function Directory() {
   const t = useTranslations("employees");
   const common = useTranslations("common");
+  const faultName = useTranslations("importFaults");
+  const due = useTranslations("overview");
+  const format = useFormatter();
   const locale = useLocale();
   const role = useSession((s) => s.role);
   const mayWrite = role === "ADMIN" || role === "HR";
-  const paysPeople = role === "ADMIN" || role === "PAYROLL";
+  const desk = role !== null && DESK.includes(role);
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
   const picker = useRef<HTMLInputElement>(null);
 
-  const [typed, setTyped] = useState("");
-  const search = useSettled(typed.trim());
-  const asked = useSearchParams();
-  // Other pages link here filtered: a department from the org chart, the people who left.
-  const [departmentId, setDepartmentId] = useState(() => asked.get("departmentId") ?? "");
-  const [active, setActive] = useState<Standing>(() => {
-    const held = asked.get("active");
-    return held === "false" || held === "" ? held : "true";
-  });
+  const [url, setUrl] = useUrlState({ q: "", departmentId: "", active: "true", ending: "", within: "" });
+  const [typed, setTyped] = useState(url.q);
+  const settled = useSettled(typed.trim());
+  useEffect(() => {
+    if (settled !== url.q) {
+      setUrl({ q: settled });
+    }
+  }, [settled]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ending = (ENDINGS as readonly string[]).includes(url.ending) ? url.ending : "";
+  const windowDays = Number(url.within) > 0 ? Number(url.within) : kEndingDays;
+  const filters: Record<string, string> = ending
+    ? { search: url.q, departmentId: url.departmentId, ending, within: url.within }
+    : { search: url.q, departmentId: url.departmentId, active: url.active };
+  const narrowed = url.q !== "" || url.departmentId !== "" || ending !== "";
 
+  const [choosing, setChoosing] = useState(false);
   const [csv, setCsv] = useState("");
   const [report, setReport] = useState<ImportReport | null>(null);
   const [importFault, setImportFault] = useState<string | null>(null);
@@ -165,27 +199,23 @@ function Directory() {
   });
 
   const employees = useInfiniteQuery({
-    queryKey: ["employees", { search, departmentId, active }],
+    queryKey: ["employees", "list", filters],
     initialPageParam: "",
     queryFn: async ({ pageParam }) =>
-      (await api.get<EmployeePage>(`/employees${query({ search, departmentId, active, cursor: pageParam })}`)).data,
+      (await api.get<EmployeePage>(`/employees${queryOf({ ...filters, cursor: pageParam })}`)).data,
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
-  // Totals only: one row asked, the count read off the page.
   const counts = useQuery({
-    queryKey: ["employees", "counts", departmentId],
-    queryFn: async () => {
-      const count = async (standing: Standing) =>
-        (await api.get<EmployeePage>(`/employees${query({ departmentId, active: standing, take: "1" })}`)).data;
-      const [working, left] = await Promise.all([count("true"), count("false")]);
-      return { working: working.total, left: left.total, exact: working.totalIsExact !== false };
-    },
+    queryKey: ["employees", "counts", url.q, url.departmentId],
+    queryFn: async () =>
+      (await api.get<{ active: number; left: number }>(`/employees/counts${queryOf({ search: url.q, departmentId: url.departmentId })}`))
+        .data,
   });
 
   const attention = useQuery({
     queryKey: ["reports", "attention"],
-    enabled: role !== null && ATTENTION_DESK.includes(role),
+    enabled: desk,
     queryFn: async () => (await api.get<Attention>("/reports/attention")).data,
   });
 
@@ -201,17 +231,22 @@ function Directory() {
       setReport(null);
       notify.done(t("importDone", { created: done.toCreate, updated: done.toUpdate }));
       void cache.invalidateQueries({ queryKey: ["employees"] });
+      void cache.invalidateQueries({ queryKey: ["users"] });
+      void cache.invalidateQueries({ queryKey: ["compensation"] });
     },
     onError: (fell: unknown) => setImportFault(faultOf(fell)),
   });
 
   const download = useMutation({
-    mutationFn: async () => save((await api.get<string>("/employees/export")).data, "employees.csv"),
+    mutationFn: async () =>
+      save((await api.get<string>(`/employees/export${queryOf(filters)}`)).data, "employees.csv"),
+    onSuccess: () => notify.done(t("exported")),
     onError: notify.failed,
   });
 
   const template = useMutation({
     mutationFn: async () => save((await api.get<string>("/employees/import/template")).data, "employees-template.csv"),
+    onSuccess: () => notify.done(t("templateSaved")),
     onError: notify.failed,
   });
 
@@ -233,6 +268,9 @@ function Directory() {
       if (done.written !== null) {
         setRaising(false);
         notify.done(t("raiseWritten", { count: done.written }));
+        void cache.invalidateQueries({ queryKey: ["compensation"] });
+        void cache.invalidateQueries({ queryKey: ["reports"] });
+        void cache.invalidateQueries({ queryKey: ["employees"] });
       }
     },
     onError: notify.failed,
@@ -244,6 +282,7 @@ function Directory() {
     if (!file) {
       return;
     }
+    setChoosing(false);
     setImportFault(null);
     setReport(null);
     void file.text().then((text) => {
@@ -258,32 +297,78 @@ function Directory() {
     "": t("anyDepartment"),
     ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, one.name])),
   };
+  const faultText = (code: string) => (faultName.has(code as never) ? faultName(code as never) : code);
+  const daysLeftOf = (day: string) => {
+    const left = Math.round((dayOnly(day).getTime() - dayOnly(new Date().toISOString().slice(0, 10)).getTime()) / kMsPerDay);
+    return left < 0 ? t("overdue") : due("daysLeft", { count: left });
+  };
 
   const columns: Column<Employee>[] = [
     {
-      id: "code",
-      header: t("code"),
-      sticky: true,
-      sortBy: (row) => row.code,
-      cell: (row) => <span className="font-mono">{row.code}</span>,
+      id: "person",
+      header: t("employee"),
+      cell: (row) => <PersonCell name={row.fullName} code={row.code} />,
     },
-    { id: "fullName", header: t("fullName"), sortBy: (row) => row.fullName, cell: (row) => row.fullName },
+    ...(ending
+      ? [
+          {
+            id: "endsOn",
+            header: ending === "contract" ? t("contractDue") : t("probationDue"),
+            cell: (row: Employee) =>
+              row.endsOn ? (
+                <span className="flex flex-col tabular-nums">
+                  <span>{format.dateTime(dayOnly(row.endsOn), "day")}</span>
+                  <span className="text-sm text-kumo-subtle">{daysLeftOf(row.endsOn)}</span>
+                </span>
+              ) : (
+                common("empty")
+              ),
+          },
+        ]
+      : []),
     {
       id: "department",
       header: t("department"),
-      sortBy: (row) => row.department?.name ?? "",
+      priority: 2,
+      truncate: true,
       cell: (row) => row.department?.name ?? common("empty"),
     },
     {
-      id: "status",
-      header: t("status"),
-      sortBy: (row) => (row.active ? 1 : 0),
-      cell: (row) => <StatePill tone={row.active ? "good" : "idle"}>{row.active ? t("statusWorking") : t("statusLeft")}</StatePill>,
+      id: "jobTitle",
+      header: t("jobTitle"),
+      priority: 2,
+      truncate: true,
+      cell: (row) => row.jobTitle?.name ?? common("empty"),
     },
+    {
+      id: "manager",
+      header: t("manager"),
+      priority: 3,
+      truncate: true,
+      cell: (row) => row.manager?.fullName ?? common("empty"),
+    },
+    {
+      id: "hireDate",
+      header: t("hireDate"),
+      priority: 3,
+      cell: (row) =>
+        row.hireDate ? <span className="tabular-nums">{format.dateTime(dayOnly(row.hireDate), "day")}</span> : common("empty"),
+    },
+    ...(url.active === "" && !ending
+      ? [
+          {
+            id: "status",
+            header: t("status"),
+            cell: (row: Employee) => (
+              <StatePill tone={row.active ? "good" : "idle"}>{row.active ? t("statusWorking") : t("statusLeft")}</StatePill>
+            ),
+          },
+        ]
+      : []),
   ];
 
-  const due = attention.data;
-  const tools = mayWrite || paysPeople;
+  const dueSoon = attention.data;
+  const hasDue = dueSoon !== undefined && (dueSoon.probationEnding.total > 0 || dueSoon.contractsEnding.total > 0);
 
   return (
     <>
@@ -301,80 +386,70 @@ function Directory() {
 
       <PageLayout
         aside={
-          <>
-            <AsideCard title={t("summaryTitle")}>
-              <StatList
-                stats={[
-                  {
-                    key: "working",
-                    label: t("statusWorking"),
-                    value: counts.data?.working ?? common("empty"),
-                    active: active === "true",
-                    onPick: () => setActive("true"),
-                  },
-                  {
-                    key: "left",
-                    label: t("statusLeft"),
-                    value: counts.data?.left ?? common("empty"),
-                    active: active === "false",
-                    onPick: () => setActive("false"),
-                  },
-                  {
-                    key: "all",
-                    label: common("all"),
-                    value: counts.data ? counts.data.working + counts.data.left : common("empty"),
-                    active: active === "",
-                    onPick: () => setActive(""),
-                  },
-                ]}
-              />
+          hasDue ? (
+            <AsideCard title={t("dueTitle")}>
+              <div className="flex flex-col gap-3">
+                <DueList
+                  title={t("probationDue")}
+                  rows={dueSoon.probationEnding.rows}
+                  total={dueSoon.probationEnding.total}
+                  onAll={() => setUrl({ ending: "probation", within: "" })}
+                />
+                <DueList
+                  title={t("contractDue")}
+                  rows={dueSoon.contractsEnding.rows}
+                  total={dueSoon.contractsEnding.total}
+                  onAll={() => setUrl({ ending: "contract", within: "" })}
+                />
+              </div>
             </AsideCard>
-            {due && (due.probationEnding.total > 0 || due.contractsEnding.total > 0) ? (
-              <AsideCard
-                title={t("dueTitle")}
-                action={
-                  <Link href="/overview" className="text-sm font-normal text-kumo-link hover:underline">
-                    {common("seeAll")}
-                  </Link>
-                }
-              >
-                <div className="flex flex-col gap-3">
-                  <DueList title={t("probationDue")} rows={due.probationEnding.rows} total={due.probationEnding.total} />
-                  <DueList title={t("contractDue")} rows={due.contractsEnding.rows} total={due.contractsEnding.total} />
-                </div>
-              </AsideCard>
-            ) : null}
-          </>
+          ) : undefined
         }
         extra={
-          tools ? (
+          desk ? (
             <AsideCard title={common("tools")}>
               <div className="flex flex-col gap-2">
-                <Button variant="secondary" icon={DownloadSimpleIcon} loading={download.isPending} onClick={() => download.mutate()} className="w-full justify-start">
-                  {t("export")}
+                <Button
+                  variant="secondary"
+                  icon={DownloadSimpleIcon}
+                  loading={download.isPending}
+                  onClick={() => download.mutate()}
+                  className="w-full justify-start"
+                >
+                  {narrowed || url.active !== "" ? t("exportFiltered") : t("export")}
                 </Button>
                 {mayWrite ? (
                   <>
-                    <Button variant="secondary" icon={UploadSimpleIcon} loading={check.isPending} onClick={() => picker.current?.click()} className="w-full justify-start">
+                    <Button
+                      variant="secondary"
+                      icon={UploadSimpleIcon}
+                      loading={check.isPending}
+                      onClick={() => setChoosing(true)}
+                      className="w-full justify-start"
+                    >
                       {t("import")}
                     </Button>
-                    <Button variant="secondary" icon={FileArrowDownIcon} loading={template.isPending} onClick={() => template.mutate()} className="w-full justify-start">
+                    <Button
+                      variant="secondary"
+                      icon={FileArrowDownIcon}
+                      loading={template.isPending}
+                      onClick={() => template.mutate()}
+                      className="w-full justify-start"
+                    >
                       {t("importTemplate")}
                     </Button>
+                    <Button
+                      variant="secondary"
+                      icon={TrendUpIcon}
+                      className="w-full justify-start"
+                      onClick={() => {
+                        raise.reset();
+                        setRaising(true);
+                      }}
+                    >
+                      {t("raiseAction")}
+                    </Button>
                   </>
-                ) : null}
-                {paysPeople ? (
-                  <Button
-                    variant="secondary"
-                    icon={TrendUpIcon}
-                    className="w-full justify-start"
-                    onClick={() => {
-                      raise.reset();
-                      setRaising(true);
-                    }}
-                  >
-                    {t("raiseAction")}
-                  </Button>
                 ) : null}
               </div>
               <input ref={picker} type="file" accept=".csv,text/csv" className="hidden" onChange={takeFile} />
@@ -385,19 +460,47 @@ function Directory() {
         <FilterBar
           search={{ value: typed, onChange: setTyped, placeholder: t("searchHint") }}
           filters={[
-            { key: "department", label: t("department"), value: departmentId, onChange: setDepartmentId, items: departmentItems },
             {
-              key: "status",
-              label: t("status"),
-              value: active,
-              onChange: (next) => setActive(next as Standing),
-              items: { true: t("statusWorking"), false: t("statusLeft"), "": common("all") },
+              key: "department",
+              label: t("department"),
+              value: url.departmentId,
+              searchable: true,
+              onChange: (next) => setUrl({ departmentId: next }),
+              items: departmentItems,
             },
+            {
+              key: "ending",
+              label: t("endingFilter"),
+              value: ending,
+              onChange: (next) => setUrl({ ending: next, within: "" }),
+              items: {
+                "": t("endingAny"),
+                contract: t("endingContract", { days: windowDays }),
+                probation: t("endingProbation", { days: windowDays }),
+              },
+            },
+            ...(ending
+              ? []
+              : [
+                  {
+                    key: "status",
+                    label: t("status"),
+                    value: url.active,
+                    onChange: (next: string) => setUrl({ active: next }),
+                    items: { true: t("statusWorking"), false: t("statusLeft"), "": common("all") },
+                    counts: {
+                      true: counts.data?.active,
+                      false: counts.data?.left,
+                      "": counts.data ? counts.data.active + counts.data.left : undefined,
+                    },
+                  },
+                ]),
           ]}
         />
         <DataTable
           id="employees"
-          cardLead="fullName"
+          cardLead="person"
+          cardTrailing={ending ? "endsOn" : url.active === "" ? "status" : undefined}
           columns={columns}
           rows={loaded}
           keyOf={(row) => String(row.id)}
@@ -405,10 +508,10 @@ function Directory() {
           failed={employees.isError}
           onRetry={() => void employees.refetch()}
           rowHref={(row) => `/employees/${row.id}`}
-          empty={search || departmentId ? t("noMatch") : undefined}
-          emptyHint={search || departmentId ? t("noMatchHint") : t("emptyHint")}
+          empty={narrowed ? t("noMatch") : undefined}
+          emptyHint={narrowed ? t("noMatchHint") : t("emptyHint")}
           emptyAction={
-            mayWrite && !search && !departmentId ? (
+            mayWrite && !narrowed ? (
               <LinkButton href="/employees/new" variant="primary" icon={PlusIcon}>
                 {t("new")}
               </LinkButton>
@@ -428,6 +531,28 @@ function Directory() {
         />
       </PageLayout>
 
+      <LayerDialog.Root open={choosing} onOpenChange={setChoosing}>
+        <LayerDialog.Content size="lg" closeLabel={common("close")}>
+          <LayerDialog.Title>{t("import")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("importLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-[auto_1fr]">
+              {(Object.keys(IMPORT_FORMATS) as (keyof typeof IMPORT_FORMATS)[]).map((one) => (
+                <div key={one} className="contents">
+                  <dt className="font-mono text-sm">{IMPORT_FORMATS[one]}</dt>
+                  <dd className="m-0 text-kumo-subtle">{t(`importFormat_${one}`)}</dd>
+                </div>
+              ))}
+            </dl>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary loading={check.isPending} onClick={() => picker.current?.click()}>
+              {t("importPick")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
       <LayerDialog.Root
         open={report !== null || importFault !== null}
         onOpenChange={(next) => {
@@ -444,16 +569,17 @@ function Directory() {
             {report ? t("importDry", { rows: report.rows, created: report.toCreate, updated: report.toUpdate }) : importFault}
           </LayerDialog.Description>
           <LayerDialog.Body>
+            {report && report.payKept > 0 ? <p className="mb-2 text-kumo-subtle">{t("importPayKept", { count: report.payKept })}</p> : null}
             {report && report.faults.length > 0 ? (
               <>
                 <p className="mb-2 text-kumo-danger">{t("importFaults", { n: report.faults.length })}</p>
-                <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto font-mono text-sm">
+                <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto text-sm">
                   {report.faults.slice(0, 100).map((one) => (
                     <li key={`${one.row}-${one.column}-${one.code}`} className="flex flex-wrap gap-x-3">
                       <span className="tabular-nums">{t("importLine", { n: one.row })}</span>
-                      <span className="min-w-32">{one.column}</span>
-                      <span className="text-kumo-danger">{one.code}</span>
-                      <span className="min-w-0 flex-1 truncate text-kumo-subtle">{one.value}</span>
+                      <span className="min-w-32 font-mono">{one.column}</span>
+                      <span className="text-kumo-danger">{faultText(one.code)}</span>
+                      <span className="min-w-0 flex-1 truncate font-mono text-kumo-subtle">{one.value}</span>
                     </li>
                   ))}
                 </ul>
@@ -483,7 +609,7 @@ function Directory() {
                 onValueChange={(next) => setRaiseDept(String(next ?? ""))}
                 items={{ "": t("raiseEveryone"), ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, `${one.code} · ${one.name}`])) }}
               />
-              <Input label={t("raiseFrom")} type="date" value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} />
+              <DateField label={t("raiseFrom")} value={effectiveFrom} onChange={setEffectiveFrom} />
               <Input
                 label={t("raisePercent")}
                 type="number"
@@ -548,7 +674,7 @@ function Directory() {
   );
 }
 
-// The filters arrive in the query string, which the prerender does not have.
+// The filters live in the query string, which the prerender does not have.
 export default function EmployeesPage() {
   return (
     <Suspense>

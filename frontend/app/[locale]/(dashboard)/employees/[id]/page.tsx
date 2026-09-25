@@ -1,13 +1,15 @@
 "use client";
 
-import { Banner, Button, Empty, LayerCard, LayerDialog, LinkButton, Select, SkeletonLine } from "@cloudflare/kumo";
+import { Banner, Button, Empty, LayerCard, LayerDialog, LinkButton, Select } from "@cloudflare/kumo";
 import {
   ArrowClockwiseIcon,
-  CalendarCheckIcon,
+  EnvelopeSimpleIcon,
+  KeyIcon,
   PlusIcon,
   UserMinusIcon,
   UserCircleDashedIcon,
   WarningCircleIcon,
+  WarningIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -22,14 +24,15 @@ import { Files } from "@/components/employees/files";
 import { Offboard, Outstanding, isOutstanding, type Offboarding } from "@/components/employees/offboard";
 import { Pay } from "@/components/employees/pay";
 import { EMPTY_DRAFT, EmployeeForm, type DepartmentChoice, type EmployeeDraft } from "@/components/forms/employee-form";
-import { DataTable, type Column } from "@/components/tables/data-table";
+import { ActionMenu, DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
-import { Link, useRouter } from "@/i18n/navigation";
+import { SkeletonLine } from "@/components/ui/skeleton";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { useSession, type Role } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { dayOnly, days } from "@/lib/format";
 
@@ -47,7 +50,6 @@ const TAB_KEY = {
   files: "tabFiles",
 } as const;
 const PAPER_DESK = ["ADMIN", "HR", "PAYROLL"];
-const PAY_DESK = ["ADMIN", "PAYROLL"];
 const PEOPLE_DESK = ["ADMIN", "HR"];
 const FINISHERS = ["ADMIN", "HR", "MANAGER"];
 const kPunches = 20;
@@ -113,6 +115,14 @@ interface Balance {
   remaining: number;
 }
 
+interface LoginState {
+  state: "none" | "pending" | "active" | "locked";
+  email: string | null;
+  role: Role | null;
+  lastSeenAt: string | null;
+  hasEmail: boolean;
+}
+
 interface Consent {
   id: string;
   state: "GRANTED" | "WITHDRAWN";
@@ -122,6 +132,7 @@ interface Consent {
 }
 
 const STANDING_TONE: Record<Standing["state"], Tone> = { ASSIGNED: "waiting", ENROLLED: "good", RETAKE: "waiting" };
+const LOGIN_TONE: Record<LoginState["state"], Tone> = { none: "idle", pending: "waiting", active: "good", locked: "bad" };
 
 function day(value: string | null): string {
   return value ? value.slice(0, 10) : "";
@@ -135,7 +146,6 @@ function draftOf(one: Employee): EmployeeDraft {
     legalEntityId: one.legalEntityId ?? "",
     departmentId: one.departmentId ?? "",
     jobTitleId: one.jobTitleId ?? "",
-    active: one.active,
     personalEmail: one.personalEmail ?? "",
     phone: one.phone ?? "",
     hireDate: day(one.hireDate),
@@ -148,9 +158,37 @@ function draftOf(one: Employee): EmployeeDraft {
   };
 }
 
+function blankIsNull(value: string): string | null {
+  return value.trim() === "" ? null : value.trim();
+}
+
+// Only what moved goes out, and an emptied field goes out as null so the record forgets it.
+const PATCHED: [keyof EmployeeDraft, (value: string) => unknown][] = [
+  ["code", (value) => value.trim()],
+  ["fullName", (value) => value.trim()],
+  ["legalEntityId", (value) => value || undefined],
+  ["departmentId", blankIsNull],
+  ["jobTitleId", blankIsNull],
+  ["managerId", (value) => (value ? Number(value) : null)],
+  ["phone", blankIsNull],
+  ["hireDate", blankIsNull],
+  ["dateOfBirth", blankIsNull],
+  ["gender", blankIsNull],
+  ["nationalId", blankIsNull],
+  ["taxCode", blankIsNull],
+  ["socialInsuranceNo", blankIsNull],
+];
+
+function changesOf(was: EmployeeDraft, now: EmployeeDraft): Record<string, unknown> {
+  return Object.fromEntries(
+    PATCHED.filter(([key]) => was[key] !== now[key]).map(([key, sent]) => [key, sent(String(now[key]))]),
+  );
+}
+
 export default function EmployeePage() {
   const t = useTranslations("employees");
   const a = useTranslations("attendance");
+  const roleName = useTranslations("roles");
   const common = useTranslations("common");
   const format = useFormatter();
   const locale = useLocale();
@@ -164,11 +202,10 @@ export default function EmployeePage() {
   const role = useSession((s) => s.role);
   const seesPapers = role !== null && PAPER_DESK.includes(role);
   const writesPeople = role !== null && PEOPLE_DESK.includes(role);
-  const writesPay = role !== null && PAY_DESK.includes(role);
   const finishes = role !== null && FINISHERS.includes(role);
 
   const shown = TABS.filter((one) => (one !== "contracts" && one !== "pay") || seesPapers).filter(
-    (one) => one !== "files" || writesPeople || role === "MANAGER",
+    (one) => one !== "files" || writesPeople,
   );
   const asked = search.get("tab") as Tab | null;
   const tab: Tab = asked && shown.includes(asked) ? asked : "info";
@@ -233,6 +270,22 @@ export default function EmployeePage() {
     queryFn: async () => (await api.get<{ rows: Punch[] }>(`/attendance?employeeId=${id}&take=${kPunches}`)).data.rows,
   });
 
+  const login = useQuery({
+    queryKey: ["employees", id, "login"],
+    enabled: writesPeople,
+    queryFn: async () => (await api.get<LoginState>(`/employees/${id}/login`)).data,
+  });
+
+  const openLogin = useMutation({
+    mutationFn: async () => (await api.post<{ state: "opened" | "resent" }>(`/employees/${id}/login`, {})).data,
+    onSuccess: (done) => {
+      notify.done(t(done.state === "opened" ? "loginOpened" : "loginResent"));
+      void cache.invalidateQueries({ queryKey: ["employees", id, "login"] });
+      void cache.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: notify.failed,
+  });
+
   const balances = useQuery({
     queryKey: ["leave-balances", id],
     enabled: tab === "leave",
@@ -241,26 +294,12 @@ export default function EmployeePage() {
 
   const save = useMutation({
     mutationFn: (draft: EmployeeDraft) =>
-      api.patch(`/employees/${id}`, {
-        code: draft.code,
-        fullName: draft.fullName,
-        legalEntityId: draft.legalEntityId || undefined,
-        departmentId: draft.departmentId || undefined,
-        jobTitleId: draft.jobTitleId || undefined,
-        phone: draft.phone || undefined,
-        hireDate: draft.hireDate || undefined,
-        dateOfBirth: draft.dateOfBirth || undefined,
-        gender: draft.gender || undefined,
-        nationalId: draft.nationalId || undefined,
-        taxCode: draft.taxCode || undefined,
-        socialInsuranceNo: draft.socialInsuranceNo || undefined,
-        managerId: draft.managerId ? Number(draft.managerId) : undefined,
-        active: draft.active,
-      }),
+      api.patch(`/employees/${id}`, changesOf(employee.data ? draftOf(employee.data) : EMPTY_DRAFT, draft)),
     onSuccess: () => {
       setFault(null);
       notify.done(common("saved"));
       void cache.invalidateQueries({ queryKey: ["employees"] });
+      void cache.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
@@ -336,6 +375,7 @@ export default function EmployeePage() {
   }
 
   const person = employee.data;
+  const skipped = (search.get("skipped") ?? "").split(",").filter(Boolean);
   const working = person.active;
   const statePill = <StatePill tone={working ? "good" : "idle"}>{working ? t("statusWorking") : t("statusLeft")}</StatePill>;
   const lead = [person.code, person.department?.name, person.jobTitle?.name].filter(Boolean).join(" · ");
@@ -405,14 +445,13 @@ export default function EmployeePage() {
       );
     }
     return (
-      <div className="max-w-(--width-read)">
+      <div>
         <EmployeeForm
           key={person.updatedAt}
           start={draftOf(person)}
           departments={departments.data ?? []}
           jobTitles={jobTitles.data ?? []}
           entities={entities.data ?? []}
-          showActive
           showBank={false}
           lockEmail
           showManager
@@ -474,7 +513,7 @@ export default function EmployeePage() {
           </div>
         );
       case "pay":
-        return <Pay employeeId={id} mayWrite={writesPay} />;
+        return <Pay employeeId={id} />;
       case "assets":
         return <Assets employeeId={id} mayWrite={writesPeople} />;
       case "checklist":
@@ -515,6 +554,59 @@ export default function EmployeePage() {
         <Button variant="secondary" size="sm" loading={grant.isPending} onClick={() => grant.mutate()}>
           {t("consentGrant")}
         </Button>
+      </div>
+    );
+  }
+
+  function loginCard() {
+    if (login.isPending) {
+      return <SkeletonLine minWidth={27} maxWidth={43} />;
+    }
+    if (login.isError) {
+      return <Failed onRetry={() => void login.refetch()} />;
+    }
+    const held = login.data;
+    const sends = held.state === "pending" || held.state === "active";
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <StatePill tone={LOGIN_TONE[held.state]}>{t(`login_${held.state}`)}</StatePill>
+        {held.email ? (
+          <p className="break-all">
+            {held.email}
+            {held.role ? ` · ${roleName(held.role)}` : ""}
+          </p>
+        ) : null}
+        {held.state === "active" ? (
+          <p className="text-kumo-subtle">
+            {held.lastSeenAt
+              ? t("loginLastSeen", { when: format.dateTime(new Date(held.lastSeenAt), "medium") })
+              : t("loginNeverSeen")}
+          </p>
+        ) : null}
+        {held.state === "none" && !working ? <p className="text-sm text-kumo-subtle">{t("loginLeftHint")}</p> : null}
+        {held.state === "none" && working && !held.hasEmail ? (
+          <p className="text-sm text-kumo-subtle">{t("loginNeedsEmail")}</p>
+        ) : null}
+        {held.state === "locked" ? (
+          <p className="text-sm text-kumo-subtle">{working ? t("loginLockedHint") : t("loginLeftHint")}</p>
+        ) : null}
+        {held.state === "none" && working ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={KeyIcon}
+            loading={openLogin.isPending}
+            disabled={!held.hasEmail}
+            onClick={() => openLogin.mutate()}
+          >
+            {t("loginOpen")}
+          </Button>
+        ) : null}
+        {sends ? (
+          <Button variant="secondary" size="sm" icon={EnvelopeSimpleIcon} loading={openLogin.isPending} onClick={() => openLogin.mutate()}>
+            {held.state === "pending" ? t("loginResend") : t("loginSendReset")}
+          </Button>
+        ) : null}
       </div>
     );
   }
@@ -585,9 +677,10 @@ export default function EmployeePage() {
         description={lead}
         actions={
           writesPeople && working ? (
-            <Button variant="secondary-destructive" icon={UserMinusIcon} onClick={() => setLeaving(true)}>
-              {t("offboardAction")}
-            </Button>
+            <ActionMenu
+              label={common("actions")}
+              actions={[{ key: "offboard", label: t("offboardAction"), icon: UserMinusIcon, danger: true, onSelect: () => setLeaving(true) }]}
+            />
           ) : undefined
         }
         tabs={shown.map((one) => ({ value: one, label: t(TAB_KEY[one]) }))}
@@ -597,41 +690,31 @@ export default function EmployeePage() {
 
       <PageLayout
         aside={
-          <>
-            <AsideCard title={t("summaryProfile")}>
-              <Facts
-                rows={[
-                  [t("code"), <span key="code" className="font-mono">{person.code}</span>],
-                  [t("department"), person.department?.name ?? common("empty")],
-                  [t("jobTitle"), person.jobTitle?.name ?? common("empty")],
-                  [
-                    t("manager"),
-                    person.manager ? (
-                      <Link key="manager" href={`/employees/${person.manager.id}`} className="text-kumo-link hover:underline">
-                        {person.manager.fullName}
-                      </Link>
-                    ) : (
-                      common("empty")
-                    ),
-                  ],
-                  [t("hireDate"), date(person.hireDate)],
-                  [t("status"), statePill],
-                ]}
-              />
-            </AsideCard>
-            {writesPeople ? <AsideCard title={t("consentTitle")}>{consentCard()}</AsideCard> : null}
-            {writesPeople ? <AsideCard title={t("kioskTitle")}>{kioskCard()}</AsideCard> : null}
-          </>
-        }
-        extra={
-          <AsideCard title={common("shortcuts")}>
-            <LinkButton href={`/attendance/${id}`} variant="secondary" icon={CalendarCheckIcon} className="w-full justify-start">
-              {t("punchesShortcut")}
-            </LinkButton>
-          </AsideCard>
+          writesPeople ? (
+            <>
+              <AsideCard title={t("consentTitle")}>{consentCard()}</AsideCard>
+              <AsideCard title={t("kioskTitle")}>{kioskCard()}</AsideCard>
+              <AsideCard title={t("loginTitle")}>{loginCard()}</AsideCard>
+            </>
+          ) : undefined
         }
       >
         <div className="flex flex-col gap-4">
+          {skipped.length > 0 ? (
+            <Banner
+              variant="alert"
+              icon={<WarningIcon weight="fill" />}
+              title={t("skippedTitle", { count: skipped.length })}
+              description={
+                <ul className="mt-1 flex list-disc flex-col gap-0.5 ps-5">
+                  {skipped.map((code) => (
+                    <li key={code}>{t.has(`skipped_${code}` as never) ? t(`skipped_${code}` as never) : code}</li>
+                  ))}
+                </ul>
+              }
+              action={<Banner.Action onClick={() => pick(tab)}>{common("close")}</Banner.Action>}
+            />
+          ) : null}
           {left && isOutstanding(left) ? (
             <Outstanding
               left={left}

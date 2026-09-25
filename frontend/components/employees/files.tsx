@@ -1,13 +1,15 @@
 "use client";
 
-import { Banner, Button, Empty, Input, LayerCard, LayerDialog, Select } from "@cloudflare/kumo";
-import { CheckCircleIcon, PlusIcon, TrayArrowDownIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { Banner, Button, Empty, Input, LayerCard, LayerDialog, LinkButton, Select } from "@cloudflare/kumo";
+import { CheckCircleIcon, FilesIcon, PlusIcon, TrayArrowDownIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
+import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
@@ -48,6 +50,8 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
+  const optional = useOptional();
+  const [typeMissing, setTypeMissing] = useState(false);
 
   const [open, setOpen] = useState(false);
   const [typeId, setTypeId] = useState("");
@@ -120,6 +124,13 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
     },
   ];
 
+  // No type declared means nothing can be missing and nothing can be received, which is not "all in".
+  const undeclared = types.isSuccess && types.data.length === 0;
+  const declare = (
+    <LinkButton href="/documents?tab=types" variant="secondary" icon={PlusIcon}>
+      {t("declareTypes")}
+    </LinkButton>
+  );
   const typeItems = Object.fromEntries(
     (types.data ?? []).map((one) => [one.id, `${one.code} · ${one.name}${one.required ? ` · ${t("requiredMark")}` : ""}`]),
   );
@@ -128,14 +139,24 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="m-0 text-lg font-semibold">{t("gapsHere")}</h2>
-        {mayWrite ? (
+        {mayWrite && !undeclared ? (
           <Button variant="secondary" icon={PlusIcon} onClick={() => openReceive("")}>
             {t("receiveTitle")}
           </Button>
         ) : null}
       </div>
 
-      {short && short.length === 0 ? (
+      {undeclared ? (
+        <LayerCard className="p-0">
+          <Empty
+            icon={<FilesIcon size={40} className="text-kumo-inactive" />}
+            title={t("typesEmptyTitle")}
+            description={t("typesEmptyHere")}
+            contents={declare}
+            className="py-12"
+          />
+        </LayerCard>
+      ) : short && short.length === 0 ? (
         <LayerCard className="p-0">
           <Empty
             icon={<CheckCircleIcon size={40} className="text-kumo-success" />}
@@ -168,43 +189,65 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
           <LayerDialog.Title>{t("receiveTitle")}</LayerDialog.Title>
           <LayerDialog.Description>{t("receiveLead")}</LayerDialog.Description>
           <LayerDialog.Body>
-            <form
-              id="file-receive"
-              className="flex flex-col gap-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setFault(null);
-                receive.mutate();
-              }}
-            >
-              <Select
-                label={t("fileType")}
-                hideLabel={false}
-                placeholder={t("fileTypePick")}
-                loading={types.isPending}
-                value={typeId}
-                onValueChange={(next) => setTypeId(String(next ?? ""))}
-                items={typeItems}
-                className="w-full"
+            {undeclared ? (
+              <Empty
+                size="sm"
+                icon={<FilesIcon size={32} className="text-kumo-inactive" />}
+                title={t("typesEmptyTitle")}
+                description={t("typesEmptyHere")}
+                contents={declare}
               />
-              <Input
-                label={t("receivedAt")}
-                description={t("expiryHint")}
-                type="date"
-                required
-                max={today()}
-                value={receivedAt}
-                onChange={(event) => setReceivedAt(event.target.value)}
-              />
-              <Input label={t("fileNote")} maxLength={240} value={note} onChange={(event) => setNote(event.target.value)} />
-            </form>
+            ) : (
+              <form
+                id="file-receive"
+                className="flex flex-col gap-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setFault(null);
+                  setTypeMissing(!typeId);
+                  if (typeId) {
+                    receive.mutate();
+                  }
+                }}
+              >
+                <Select
+                  label={t("fileType")}
+                  placeholder={t("fileTypePick")}
+                  loading={types.isPending}
+                  value={typeId}
+                  onValueChange={(next) => {
+                    setTypeId(String(next ?? ""));
+                    setTypeMissing(false);
+                  }}
+                  error={typeMissing ? t("fileTypePick") : undefined}
+                  items={typeItems}
+                  className="w-full"
+                />
+                <DateField
+                  label={t("receivedAt")}
+                  description={t("expiryHint")}
+                  required
+                  max={today()}
+                  value={receivedAt}
+                  onChange={setReceivedAt}
+                />
+                <Input
+                  label={optional(t("fileNote"))}
+                  maxLength={240}
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                />
+              </form>
+            )}
             {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null}
           </LayerDialog.Body>
-          <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary type="submit" form="file-receive" loading={receive.isPending} disabled={!typeId}>
-              {t("receiveAction")}
-            </LayerDialog.Actions.Primary>
-          </LayerDialog.Actions>
+          {undeclared ? null : (
+            <LayerDialog.Actions dismissLabel={common("cancel")}>
+              <LayerDialog.Actions.Primary type="submit" form="file-receive" loading={receive.isPending}>
+                {t("receiveAction")}
+              </LayerDialog.Actions.Primary>
+            </LayerDialog.Actions>
+          )}
         </LayerDialog.Content>
       </LayerDialog.Root>
     </div>

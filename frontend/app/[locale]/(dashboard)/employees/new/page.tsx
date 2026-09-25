@@ -1,17 +1,7 @@
 "use client";
 
-import { Banner, Button, LayerCard, LinkButton, SkeletonLine } from "@cloudflare/kumo";
-import type { Icon as IconType } from "@phosphor-icons/react";
-import {
-  ArrowClockwiseIcon,
-  IdentificationCardIcon,
-  KeyIcon,
-  ListChecksIcon,
-  ScrollIcon,
-  UploadSimpleIcon,
-  WalletIcon,
-  WarningCircleIcon,
-} from "@phosphor-icons/react";
+import { Banner, Button, LayerCard } from "@cloudflare/kumo";
+import { ArrowClockwiseIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
@@ -23,7 +13,8 @@ import {
   type EmployeeDraft,
 } from "@/components/forms/employee-form";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, PageHeader, PageLayout } from "@/components/ui/page";
+import { PageHeader, PageLayout } from "@/components/ui/page";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
@@ -33,13 +24,9 @@ interface Taken {
   draft: EmployeeDraft;
 }
 
-const OUTCOMES = [
-  { key: "record", icon: IdentificationCardIcon, title: "afterRecord", lead: "afterRecordLead" },
-  { key: "contract", icon: ScrollIcon, title: "afterContract", lead: "afterContractLead" },
-  { key: "pay", icon: WalletIcon, title: "afterPay", lead: "afterPayLead" },
-  { key: "checklist", icon: ListChecksIcon, title: "afterChecklist", lead: "afterChecklistLead" },
-  { key: "account", icon: KeyIcon, title: "afterAccount", lead: "afterAccountLead" },
-] as const satisfies readonly { key: string; icon: IconType; title: string; lead: string }[];
+interface Onboarding {
+  skipped: string[];
+}
 
 export default function NewEmployeePage() {
   const t = useTranslations("employees");
@@ -73,29 +60,35 @@ export default function NewEmployeePage() {
     queryFn: async () => (await api.get<{ code: string | null }>("/employees/next-code")).data,
   });
 
-  // Their own page is where hiring carries on: contract, pay, checklist and files are tabs on it.
-  function land(taken: Taken, hired: boolean): void {
-    notify.done(hired ? t("hiredToast", { name: taken.draft.fullName }) : t("createdToast", { name: taken.draft.fullName }));
-    router.replace(`/employees/${taken.id}`);
+  // Their own page is where hiring carries on, and it lists whatever joining left undone.
+  function land(taken: Taken, skipped: string[] | null): void {
+    notify.done(skipped ? t("hiredToast", { name: taken.draft.fullName }) : t("createdToast", { name: taken.draft.fullName }));
+    const left = skipped && skipped.length > 0 ? `?skipped=${encodeURIComponent(skipped.join(","))}` : "";
+    router.replace(`/employees/${taken.id}${left}`);
   }
 
   const hire = useMutation({
-    mutationFn: ({ id, draft }: Taken) =>
-      api.post(`/employees/${id}/onboard`, {
-        contract: {
-          kind: draft.contractKind,
-          startDate: draft.hireDate,
-          probationEnd: draft.probationEnd || undefined,
-          endDate: draft.contractEnd || undefined,
-        },
-        pay: draft.baseSalary
-          ? {
-              baseSalary: Number(draft.baseSalary),
-              insuranceSalary: Number(draft.insuranceSalary || draft.baseSalary),
-            }
-          : undefined,
-      }),
-    onSuccess: (_unused, taken) => land(taken, true),
+    mutationFn: async ({ id, draft }: Taken) =>
+      (
+        await api.post<Onboarding>(`/employees/${id}/onboard`, {
+          contract: {
+            kind: draft.contractKind,
+            startDate: draft.hireDate,
+            probationEnd: draft.probationEnd || undefined,
+            endDate: draft.contractEnd || undefined,
+          },
+          pay: draft.baseSalary
+            ? {
+                baseSalary: Number(draft.baseSalary),
+                insuranceSalary: Number(draft.insuranceSalary || draft.baseSalary),
+              }
+            : undefined,
+        })
+      ).data,
+    onSuccess: (done, taken) => {
+      void cache.invalidateQueries({ queryKey: ["users"] });
+      land(taken, done.skipped);
+    },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
@@ -108,7 +101,7 @@ export default function NewEmployeePage() {
         departmentId: draft.departmentId || undefined,
         jobTitleId: draft.jobTitleId || undefined,
         managerId: draft.managerId ? Number(draft.managerId) : undefined,
-        personalEmail: draft.personalEmail || undefined,
+        personalEmail: draft.personalEmail.trim() || undefined,
         phone: draft.phone || undefined,
         hireDate: draft.hireDate || undefined,
         dateOfBirth: draft.dateOfBirth || undefined,
@@ -121,10 +114,11 @@ export default function NewEmployeePage() {
       }),
     onSuccess: (made, draft) => {
       void cache.invalidateQueries({ queryKey: ["employees"] });
+      void cache.invalidateQueries({ queryKey: ["users"] });
       const taken = { id: made.data.id, draft };
       setOpened(taken);
       if (!draft.hireDate) {
-        land(taken, false);
+        land(taken, null);
         return;
       }
       hire.mutate(taken);
@@ -140,7 +134,7 @@ export default function NewEmployeePage() {
           description={`${opened.draft.code} · ${opened.draft.fullName}`}
           actions={
             <>
-              <Button variant="secondary" onClick={() => land(opened, false)}>
+              <Button variant="secondary" onClick={() => land(opened, null)}>
                 {t("hireOpen")}
               </Button>
               <Button
@@ -174,32 +168,8 @@ export default function NewEmployeePage() {
   return (
     <>
       <PageHeader title={t("createTitle")} description={t("createLead")} />
-      <PageLayout
-        aside={
-          <AsideCard title={t("afterTitle")}>
-            <ul className="flex flex-col gap-3">
-              {OUTCOMES.map(({ key, icon: Icon, title, lead }) => (
-                <li key={key} className="flex gap-3">
-                  <Icon size={18} className="mt-0.5 shrink-0 text-kumo-subtle" aria-hidden />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="font-medium">{t(title)}</span>
-                    <span className="text-kumo-subtle">{t(lead)}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </AsideCard>
-        }
-        extra={
-          <AsideCard title={t("manyTitle")}>
-            <p className="text-kumo-subtle">{t("manyLead")}</p>
-            <LinkButton href="/employees" variant="secondary" icon={UploadSimpleIcon} className="mt-1 w-full justify-start">
-              {t("manyAction")}
-            </LinkButton>
-          </AsideCard>
-        }
-      >
-        <div className="flex max-w-(--width-read) flex-col gap-4">
+      <PageLayout>
+        <div className="flex flex-col gap-4">
           {departments.isError ? (
             <Banner
               variant="error"
@@ -208,23 +178,29 @@ export default function NewEmployeePage() {
               action={<Banner.Action onClick={() => void departments.refetch()}>{common("retry")}</Banner.Action>}
             />
           ) : null}
-          {suggested.isPending ? (
-            <LayerCard className="flex flex-col gap-4 p-4">
-              {Array.from({ length: 4 }, (_, at) => (
-                <SkeletonLine key={at} minWidth={27} maxWidth={70} />
-              ))}
-            </LayerCard>
+          {suggested.isPending || entities.isPending ? (
+            Array.from({ length: 3 }, (_, at) => (
+              <LayerCard key={at} className="grid gap-x-8 gap-y-5 p-6 md:grid-cols-3">
+                <div className="flex flex-col gap-2">
+                  <SkeletonLine minWidth={30} maxWidth={50} />
+                  <SkeletonLine minWidth={60} maxWidth={90} />
+                </div>
+                <div className="grid gap-5 sm:grid-cols-2 md:col-span-2">
+                  {Array.from({ length: 4 }, (_, cell) => (
+                    <SkeletonLine key={cell} minWidth={60} maxWidth={100} blockHeight={36} />
+                  ))}
+                </div>
+              </LayerCard>
+            ))
           ) : (
             <EmployeeForm
               start={{ ...EMPTY_DRAFT, code: suggested.data?.code ?? "" }}
               departments={departments.data ?? []}
               jobTitles={jobTitles.data ?? []}
               entities={entities.data ?? []}
-              showActive={false}
               showBank
               showManager
               showOnboard
-              fold
               busy={create.isPending || hire.isPending}
               fault={fault}
               onSubmit={(draft) => {

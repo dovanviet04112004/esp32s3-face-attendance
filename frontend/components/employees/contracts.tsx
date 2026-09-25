@@ -7,7 +7,9 @@ import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
+import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
@@ -41,6 +43,7 @@ export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWri
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
+  const optional = useOptional();
 
   const [adding, setAdding] = useState(false);
   const [ending, setEnding] = useState<Contract | null>(null);
@@ -197,34 +200,32 @@ export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWri
             >
               <Select
                 label={t("contractKind")}
-                hideLabel={false}
                 value={kind}
                 onValueChange={(next) => setKind(String(next ?? "PROBATION") as Kind)}
                 items={Object.fromEntries(KINDS.map((one) => [one, t(`contract${one}`)]))}
                 className="w-full"
               />
-              <Input label={t("contractNumber")} maxLength={64} value={number} onChange={(event) => setNumber(event.target.value)} />
               <Input
-                label={t("contractStart")}
-                type="date"
-                required
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
+                label={optional(t("contractNumber"))}
+                maxLength={64}
+                value={number}
+                onChange={(event) => setNumber(event.target.value)}
               />
-              <Input
+              <DateField label={t("contractStart")} required value={startDate} onChange={setStartDate} />
+              <DateField
                 label={t("contractEndDate")}
                 description={t("contractEndHint")}
-                type="date"
+                required={false}
                 min={startDate}
                 value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
+                onChange={setEndDate}
               />
-              <Input
+              <DateField
                 label={t("probationEnds")}
-                type="date"
+                required={false}
                 min={startDate}
                 value={probationEnd}
-                onChange={(event) => setProbationEnd(event.target.value)}
+                onChange={setProbationEnd}
               />
             </form>
             {faultBanner}
@@ -261,13 +262,17 @@ export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWri
             <div className="flex flex-col gap-4">
               <Select
                 label={t("contractHow")}
-                hideLabel={false}
                 value={state}
                 onValueChange={(next) => setState(String(next ?? "ENDED") as Ending)}
                 items={Object.fromEntries(ENDINGS.map((one) => [one, t(`contract${one}`)]))}
                 className="w-full"
               />
-              <Input label={t("contractNote")} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
+              <Input
+                label={optional(t("contractNote"))}
+                maxLength={500}
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+              />
             </div>
             {faultBanner}
           </LayerDialog.Body>

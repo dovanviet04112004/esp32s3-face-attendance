@@ -6,7 +6,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 
+import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 import { dayOnly } from "@/lib/format";
@@ -74,6 +76,7 @@ export function Offboard({
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
+  const optional = useOptional();
 
   const [fault, setFault] = useState<string | null>(null);
   const [leaveDate, setLeaveDate] = useState(today);
@@ -94,6 +97,7 @@ export function Offboard({
       notify.done(t("offboardDone", { day: format.dateTime(dayOnly(left.leaveDate), "day") }));
       onDone(left);
       void cache.invalidateQueries({ queryKey: ["employees"] });
+      void cache.invalidateQueries({ queryKey: ["users"] });
       void cache.invalidateQueries({ queryKey: ["assets"] });
       void cache.invalidateQueries({ queryKey: ["enrollments", "employee", employeeId] });
       void cache.invalidateQueries({ queryKey: ["biometric-consents", employeeId] });
@@ -121,14 +125,13 @@ export function Offboard({
               leave.mutate();
             }}
           >
+            <DateField label={t("offboardDay")} required value={leaveDate} onChange={setLeaveDate} />
             <Input
-              label={t("offboardDay")}
-              type="date"
-              required
-              value={leaveDate}
-              onChange={(event) => setLeaveDate(event.target.value)}
+              label={optional(t("offboardReason"))}
+              maxLength={500}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
             />
-            <Input label={t("offboardReason")} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} />
           </form>
           {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} className="mt-4" /> : null}
         </LayerDialog.Body>
