@@ -137,7 +137,7 @@ export class CreateCompensationDto {
 }
 
 export class BulkRaiseDto {
-  @ApiPropertyOptional({ description: "Everybody in this department" })
+  @ApiPropertyOptional({ description: "Everybody in this department and every department under it (KEHOACH 9.18 item 6)" })
   @IsOptional()
   @IsUUID()
   departmentId?: string;

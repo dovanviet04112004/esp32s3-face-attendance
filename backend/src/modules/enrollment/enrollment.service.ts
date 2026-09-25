@@ -93,6 +93,42 @@ export class EnrollmentService {
     return row;
   }
 
+  /** Put many people up for capture on one kiosk. Only a pair that is absent or REVOKED turns ASSIGNED; the
+   *  counter moves once by the batch, and each ASSIGN carries the version applying it reaches (KEHOACH 7.5).
+   *  @ctx task | sends after the commit; a send that fails is left to the next heartbeat's resync
+   *  @ret the roster version each person's ASSIGN carries, and the counter after the run
+   */
+  async assignMany(
+    deviceId: string,
+    people: readonly { id: number; code: string; fullName: string }[],
+  ): Promise<{ versions: Map<number, number>; rosterVersion: number }> {
+    const ids = people.map((one) => one.id);
+    const written = await this.db.$transaction(async (tx) => {
+      const put = await tx.$queryRaw<{ employeeId: number }[]>`
+        INSERT INTO "DeviceEnrollment" ("deviceId", "employeeId", "state", "updatedAt")
+        SELECT ${deviceId}, v."id", 'ASSIGNED'::"EnrollmentState", now() FROM unnest(${ids}::int[]) AS v("id")
+        ON CONFLICT ("deviceId", "employeeId") DO UPDATE SET "state" = 'ASSIGNED'::"EnrollmentState", "updatedAt" = now()
+         WHERE "DeviceEnrollment"."state" = 'REVOKED'::"EnrollmentState"
+        RETURNING "employeeId"
+      `;
+      const [moved] = await tx.$queryRaw<{ rosterVersion: number }[]>`
+        UPDATE "Device" SET "rosterVersion" = "rosterVersion" + ${put.length}::int, "updatedAt" = now()
+         WHERE "id" = ${deviceId}
+        RETURNING "rosterVersion"
+      `;
+      return { put: new Set(put.map((one) => one.employeeId)), top: moved?.rosterVersion ?? 0 };
+    });
+    const order = people.filter((one) => written.put.has(one.id));
+    const first = written.top - order.length + 1;
+    const versions = new Map(order.map((one, at) => [one.id, first + at]));
+    for (const [at, one] of order.entries()) {
+      await this.send(deviceId, this.expect(one.id, one, first + at, deviceId)).catch((error: Error) =>
+        this.log.warn(`${deviceId} did not hear the assignment of ${one.id} yet: ${error.message}`),
+      );
+    }
+    return { versions, rosterVersion: written.top };
+  }
+
   /** Withdraw a person from a kiosk; the kiosk drops any template it holds. */
   async revoke(deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
     const device = await this.device(deviceId);

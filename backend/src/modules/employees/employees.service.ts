@@ -233,7 +233,7 @@ async function managersOf(tx: Prisma.TransactionClient, codes: string[]): Promis
 }
 
 /** Pending requests follow their person to the new manager, as a reorganisation moves them (KEHOACH 9.4). */
-function repointPending(tx: Prisma.TransactionClient, employeeIds: number[]): Promise<number> {
+export function repointPending(tx: Prisma.TransactionClient, employeeIds: number[]): Promise<number> {
   return tx.$executeRaw`
     UPDATE "Request" r
        SET "approverId" = e."managerId", "updatedAt" = now()
@@ -552,6 +552,23 @@ export class EmployeesService implements OnModuleInit {
           }
         : {}),
     };
+  }
+
+  /** Everyone the list shows under this filter, by code, for a bulk run (KEHOACH 9.20).
+   *  @ctx task | reads only | throws SELECTION_TOO_LARGE above `cap`, rather than acting on the first `cap`
+   */
+  async matchingIds(viewer: Viewer, query: EmployeeFilterDto, cap: number): Promise<number[]> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const rows = await this.db.employee.findMany({
+      where: await this.filterWhere(query, visible),
+      select: { id: true },
+      orderBy: [{ code: "asc" }, { id: "asc" }],
+      take: cap + 1,
+    });
+    if (rows.length > cap) {
+      throw new BadRequestException("SELECTION_TOO_LARGE");
+    }
+    return rows.map((row) => row.id);
   }
 
   /** How many people still work here and how many left, under the search and department filters. */

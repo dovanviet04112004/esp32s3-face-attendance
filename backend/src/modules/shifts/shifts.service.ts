@@ -6,6 +6,9 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
+import { AuditService } from "../audit/audit.service.js";
+import { skipOf, type BulkSkip, type Chosen } from "../employees/bulk.service.js";
 import type {
   AssignManyDto,
   AssignShiftDto,
@@ -24,6 +27,14 @@ const ROSTERED = {
 export type RosteredAssignment = Prisma.ShiftAssignmentGetPayload<{ include: typeof ROSTERED }>;
 
 export type HeldShift = Prisma.ShiftAssignmentGetPayload<{ include: { shift: true } }>;
+
+/** Who a bulk run puts on a shift, or would, and who it passes over (KEHOACH 9.20). */
+export interface ShiftBatch {
+  applied: boolean;
+  assigned: number;
+  rows: { employeeId: number; code: string; fullName: string }[];
+  skipped: BulkSkip[];
+}
 
 // One person rarely holds more than a handful; the rest stay on the shift's own roster.
 const HELD_SHOWN = 50;
@@ -48,6 +59,7 @@ export class ShiftsService {
   constructor(
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -205,20 +217,48 @@ export class ShiftsService {
   }
 
   /** Many people onto one shift from one date; anybody already there from that date is skipped. */
-  async assignMany(id: string, body: AssignManyDto): Promise<{ assigned: number; skipped: number }> {
+  /** Who would go on this shift from the date, passing over people who left and anyone already on it
+   *  from then; apply=true writes them in one statement, one audit line each (KEHOACH 9.20).
+   */
+  async assignMany(actorId: string, id: string, chosen: Chosen, body: AssignManyDto, apply: boolean): Promise<ShiftBatch> {
     await this.get(id);
-    const wanted = [...new Set(body.employeeIds)];
-    const found = await this.db.employee.count({ where: { id: { in: wanted } } });
-    if (found !== wanted.length) {
-      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
-    }
     const validFrom = new Date(body.validFrom);
     const validTo = body.validTo ? new Date(body.validTo) : null;
-    const made = await this.db.shiftAssignment.createMany({
-      data: wanted.map((employeeId) => ({ shiftId: id, employeeId, validFrom, validTo })),
-      skipDuplicates: true,
+    const people = await this.db.employee.findMany({
+      where: { id: { in: chosen.ids } },
+      select: { id: true, code: true, fullName: true, active: true, shifts: { where: { shiftId: id, validFrom }, select: { id: true } } },
+      orderBy: { code: "asc" },
     });
-    return { assigned: made.count, skipped: wanted.length - made.count };
+    const skipped = [...chosen.missing];
+    const rows: ShiftBatch["rows"] = [];
+    for (const one of people) {
+      if (!one.active || one.shifts.length > 0) {
+        skipped.push(skipOf(one.id, one, one.active ? "ALREADY_ON_SHIFT" : "EMPLOYEE_HAS_LEFT"));
+        continue;
+      }
+      rows.push({ employeeId: one.id, code: one.code, fullName: one.fullName });
+    }
+    if (!apply || rows.length === 0) {
+      return { applied: false, assigned: rows.length, rows, skipped };
+    }
+    const made = await this.db.shiftAssignment.createManyAndReturn({
+      data: rows.map((one) => ({ shiftId: id, employeeId: one.employeeId, validFrom, validTo })),
+      skipDuplicates: true,
+      select: { employeeId: true },
+    });
+    const landed = new Set(made.map((one) => one.employeeId));
+    const done = rows.filter((one) => landed.has(one.employeeId));
+    await this.audit.recordMany(
+      done.map((one) => ({
+        actorId,
+        action: AUDIT_ACTIONS.SHIFT_ASSIGN,
+        subject: AUDIT_SUBJECTS.EMPLOYEE,
+        subjectId: String(one.employeeId),
+        meta: { shiftId: id, validFrom: body.validFrom, validTo: body.validTo ?? null },
+      })),
+    );
+    const raced = rows.filter((one) => !landed.has(one.employeeId)).map((one) => skipOf(one.employeeId, one, "ALREADY_ON_SHIFT"));
+    return { applied: true, assigned: done.length, rows: done, skipped: [...skipped, ...raced] };
   }
 
   async assign(id: string, body: AssignShiftDto): Promise<ShiftAssignment> {

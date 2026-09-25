@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -25,6 +26,8 @@ import type { Shift, ShiftAssignment } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
+import { AuditedInService } from "../../common/decorators/audited.decorator.js";
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
@@ -43,7 +46,16 @@ import {
   UpdateShiftDto,
 } from "./dto/shift.dto.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { ShiftsService, type HeldShift, type PlannedDay, type RosteredAssignment } from "./shifts.service.js";
+import { THROTTLE } from "../auth/auth.types.js";
+import { BulkQueryDto } from "../employees/dto/employee.dto.js";
+import { BulkService } from "../employees/bulk.service.js";
+import {
+  ShiftsService,
+  type HeldShift,
+  type PlannedDay,
+  type RosteredAssignment,
+  type ShiftBatch,
+} from "./shifts.service.js";
 
 @ApiTags("shifts")
 @ApiBearerAuth(API_AUTH.user)
@@ -51,7 +63,10 @@ import { ShiftsService, type HeldShift, type PlannedDay, type RosteredAssignment
 @ApiErrors(HttpStatus.BAD_REQUEST, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
 @Controller("shifts")
 export class ShiftsController {
-  constructor(private readonly shifts: ShiftsService) {}
+  constructor(
+    private readonly shifts: ShiftsService,
+    private readonly bulk: BulkService,
+  ) {}
 
   @Get()
   @Roles("ADMIN", "HR")
@@ -130,12 +145,24 @@ export class ShiftsController {
   }
 
   @Post(":id/assignments/bulk")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
-  @ApiOperation({ summary: "Put many people on this shift from one date" })
+  @AuditedInService()
+  @ApiOperation({
+    summary: "Preview putting many people on this shift from one date; apply=true writes (KEHOACH 9.20)",
+    description: "Takes employeeIds or the directory's filter. People who left are skipped, as is anyone already on it from that date.",
+  })
   @ApiCreatedResponse({ type: AssignedManyView })
-  @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
-  assignMany(@Param("id") id: string, @Body() body: AssignManyDto): Promise<{ assigned: number; skipped: number }> {
-    return this.shifts.assignMany(id, body);
+  @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID, SELECTION_TOO_LARGE" })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND" })
+  async assignMany(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+    @Body() body: AssignManyDto,
+    @Query() query: BulkQueryDto,
+  ): Promise<ShiftBatch> {
+    const chosen = await this.bulk.resolve(viewer, body);
+    return this.shifts.assignMany(viewer.userId, id, chosen, body, query.apply === true);
   }
 
   @Delete(":id/assignments/:assignmentId")

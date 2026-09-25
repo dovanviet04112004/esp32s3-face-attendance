@@ -476,6 +476,55 @@ export class UsersService {
     return { state: "opened" };
   }
 
+  /** Open logins and mint fresh links for many people at once, the rules of openOrResend (KEHOACH 9.20).
+   *  @ctx inside the caller's transaction | hand the jobs to mailSetups once it commits
+   *  @ret the letters to send, and whose login landed; an address taken meanwhile opens none
+   */
+  async stageSetups(
+    tx: Prisma.TransactionClient,
+    opening: readonly { employeeId: number; email: string; locale: string; manages: boolean }[],
+    resending: readonly { userId: string; locale: string }[],
+  ): Promise<{ jobs: PasswordSetupJob[]; opened: Map<number, string> }> {
+    const fresh = opening.map((one) => ({ ...one, userId: randomUUID() }));
+    await tx.user.createMany({
+      data: fresh.map((one) => ({
+        id: one.userId,
+        email: one.email,
+        passwordHash: UNUSABLE_PASSWORD,
+        role: one.manages ? "MANAGER" : "EMPLOYEE",
+        employeeId: one.employeeId,
+      })),
+      skipDuplicates: true,
+    });
+    const born = await tx.user.findMany({ where: { id: { in: fresh.map((one) => one.userId) } }, select: { id: true } });
+    const landed = new Set(born.map((one) => one.id));
+    const opened = fresh.filter((one) => landed.has(one.userId));
+    const links = [...opened, ...resending].map((one) => ({
+      userId: one.userId,
+      locale: one.locale,
+      link: randomBytes(LINK_BYTES).toString("base64url"),
+    }));
+    const expiresAt = new Date(Date.now() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * HOUR_MS);
+    await tx.passwordSetup.createMany({
+      data: links.map((one) => ({ userId: one.userId, tokenHash: fingerprint(one.link), expiresAt })),
+    });
+    const root = this.config.get("APP_PUBLIC_URL", { infer: true });
+    return {
+      jobs: links.map((one) => ({
+        type: JOB.passwordSetup,
+        userId: one.userId,
+        link: `${root}/${one.locale}/set-password?token=${one.link}`,
+        reason: "opened",
+      })),
+      opened: new Map(opened.map((one) => [one.employeeId, one.userId])),
+    };
+  }
+
+  /** Queue the letters a committed stageSetups minted. */
+  async mailSetups(jobs: readonly PasswordSetupJob[]): Promise<void> {
+    await this.queues[QUEUE.notify].addBulk(jobs.map((data) => ({ name: JOB.passwordSetup, data })));
+  }
+
   /** Where the login of one employee stands, for the record page. */
   async loginOf(employeeId: number): Promise<LoginStateView> {
     const person = await this.db.employee.findUnique({

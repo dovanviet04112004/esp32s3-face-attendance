@@ -45,6 +45,20 @@ export class AuditService {
     }
   }
 
+  /** One line per entry in one statement, for a run over many people; it fails as softly as record(). */
+  async recordMany(entries: readonly AuditEntry[]): Promise<void> {
+    if (entries.length === 0) {
+      return;
+    }
+    try {
+      await this.db.auditLog.createMany({
+        data: entries.map(({ subject, ...rest }) => ({ ...rest, subjectType: subject })),
+      });
+    } catch {
+      this.log.error(`audit for ${entries.length} ${entries[0]?.action} line(s) went unwritten`);
+    }
+  }
+
   /** Read it the way somebody traces back: one thing, or one person's doing, over some days. */
   async list(query: AuditQueryDto): Promise<Page<AuditRow>> {
     const zone = this.config.get("APP_TIMEZONE", { infer: true });

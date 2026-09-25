@@ -37,6 +37,10 @@ import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { LoginOpenedView, LoginStateView } from "../users/dto/user.dto.js";
 import { UsersService } from "../users/users.service.js";
 import {
+  BulkEnrollDto,
+  BulkPlacementDto,
+  BulkQueryDto,
+  BulkSelectionDto,
   CreateEmployeeDto,
   EmployeeCountsView,
   EmployeeFilterDto,
@@ -45,14 +49,18 @@ import {
   ImportCsvDto,
   ImportQueryDto,
   ImportReportView,
+  EnrollPlanView,
   ListEmployeesDto,
+  LoginPlanView,
   MoveLeavingDto,
   OffboardDto,
   OffboardingView,
   OnboardDto,
+  PlacementPlanView,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
+import { BulkService, type EnrollPlan, type LoginPlan, type PlacementPlan } from "./bulk.service.js";
 import { EmployeesService, type Offboarding, type Onboarding } from "./employees.service.js";
 import type { ImportReport } from "./import.js";
 
@@ -65,7 +73,72 @@ export class EmployeesController {
   constructor(
     private readonly employees: EmployeesService,
     private readonly users: UsersService,
+    private readonly bulk: BulkService,
   ) {}
+
+  @Post("bulk/placement")
+  @RateBucket(THROTTLE.heavy)
+  @Roles("ADMIN", "HR")
+  @AuditedInService()
+  @ApiOperation({
+    summary: "Preview a job title, department, manager or legal entity for many people; apply=true writes (KEHOACH 9.20)",
+    description: "Each person goes through the rules of PATCH /employees/:id; whoever fails one is skipped with a reason.",
+  })
+  @ApiCreatedResponse({ type: PlacementPlanView })
+  @ApiBadRequestResponse({
+    type: ErrorBody,
+    description: "SELECTION_INVALID, SELECTION_TOO_LARGE, BULK_NOTHING_TO_CHANGE, DEPARTMENT_OTHER_ENTITY",
+  })
+  @ApiNotFoundResponse({
+    type: ErrorBody,
+    description: "LEGAL_ENTITY_NOT_FOUND, DEPARTMENT_NOT_FOUND, JOB_TITLE_NOT_FOUND, MANAGER_NOT_FOUND",
+  })
+  @ApiConflictResponse({ type: ErrorBody, description: "MANAGER_HAS_LEFT, MANAGER_CYCLE, SELECTION_CHANGED" })
+  placeMany(
+    @CurrentViewer() viewer: Viewer,
+    @Body() body: BulkPlacementDto,
+    @Query() query: BulkQueryDto,
+  ): Promise<PlacementPlan> {
+    return this.bulk.placement(viewer, body, query.apply === true);
+  }
+
+  @Post("bulk/logins")
+  @RateBucket(THROTTLE.heavy)
+  @Roles("ADMIN", "HR")
+  @AuditedInService()
+  @ApiOperation({
+    summary: "Preview opening logins, or mailing the link again to a login nobody used yet; apply=true does it",
+    description: "Letters go on the queue once the accounts are committed (KEHOACH 9.4).",
+  })
+  @ApiCreatedResponse({ type: LoginPlanView })
+  @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID, SELECTION_TOO_LARGE" })
+  @ApiConflictResponse({ type: ErrorBody, description: "SELECTION_CHANGED" })
+  loginMany(
+    @CurrentViewer() viewer: Viewer,
+    @Body() body: BulkSelectionDto,
+    @Query() query: BulkQueryDto,
+  ): Promise<LoginPlan> {
+    return this.bulk.logins(viewer, body, query.apply === true);
+  }
+
+  @Post("bulk/enrollments")
+  @RateBucket(THROTTLE.heavy)
+  @Roles("ADMIN", "HR")
+  @AuditedInService()
+  @ApiOperation({
+    summary: "Preview putting many people up for capture on one kiosk; apply=true does it (KEHOACH 7.5)",
+    description: "The roster version moves once for the batch; each ASSIGN carries the version applying it reaches.",
+  })
+  @ApiCreatedResponse({ type: EnrollPlanView })
+  @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID, SELECTION_TOO_LARGE" })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "DEVICE_NOT_FOUND" })
+  enrollMany(
+    @CurrentViewer() viewer: Viewer,
+    @Body() body: BulkEnrollDto,
+    @Query() query: BulkQueryDto,
+  ): Promise<EnrollPlan> {
+    return this.bulk.enrollments(viewer, body, query.apply === true);
+  }
 
   @Get()
   @ApiOperation({ summary: "List the employees the caller may see, by code; departmentId takes the whole branch" })

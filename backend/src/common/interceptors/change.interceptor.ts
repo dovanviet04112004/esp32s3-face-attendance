@@ -37,8 +37,17 @@ function ownersOfRow(row: Owned, root: string): unknown[] {
   return root === "employees" ? [row?.id, row?.managerId] : [];
 }
 
+// A batch answers its rows under `rows`, beside the counts about them.
+function rowsOf(result: unknown): unknown[] {
+  if (Array.isArray(result)) {
+    return result;
+  }
+  const held = (result as { rows?: unknown } | null | undefined)?.rows;
+  return Array.isArray(held) ? held : [result];
+}
+
 function ownersOf(result: unknown, root: string, named: number[]): About {
-  const rows: unknown[] = Array.isArray(result) ? result : [result];
+  const rows = rowsOf(result);
   const owners = new Set<number>(named);
   for (const row of rows) {
     for (const owner of ownersOfRow(row as Owned, root)) {

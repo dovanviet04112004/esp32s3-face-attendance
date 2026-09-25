@@ -1,9 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
-  ArrayMaxSize,
-  ArrayMinSize,
-  IsArray,
   IsBoolean,
   IsDateString,
   IsInt,
@@ -16,6 +13,7 @@ import {
 } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { BulkSelectionDto, BulkSkipView } from "../../employees/dto/employee.dto.js";
 import { DepartmentRef } from "../../leave/dto/queue.dto.js";
 
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -67,18 +65,7 @@ export class AssignShiftDto {
   validTo?: string;
 }
 
-const kMaxBulkAssign = 500;
-
-export class AssignManyDto {
-  @ApiProperty({ type: [Number], maxItems: kMaxBulkAssign, example: [1, 2, 3] })
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(kMaxBulkAssign)
-  @Type(() => Number)
-  @IsInt({ each: true })
-  @Min(1, { each: true })
-  employeeIds!: number[];
-
+export class AssignManyDto extends BulkSelectionDto {
   @ApiProperty({ example: "2026-01-01T00:00:00.000Z" })
   @IsDateString()
   validFrom!: string;
@@ -97,9 +84,18 @@ export class ListAssignmentsDto extends PaginationDto {
   search?: string;
 }
 
+class ShiftBatchRowView {
+  @ApiProperty() employeeId!: number;
+  @ApiProperty() code!: string;
+  @ApiProperty() fullName!: string;
+}
+
 export class AssignedManyView {
-  @ApiProperty({ description: "Rows written" }) assigned!: number;
-  @ApiProperty({ description: "People already on the shift from that date" }) skipped!: number;
+  @ApiProperty() applied!: boolean;
+  @ApiProperty({ description: "Rows written, or that the preview would write" }) assigned!: number;
+  @ApiProperty({ type: [ShiftBatchRowView] }) rows!: ShiftBatchRowView[];
+  @ApiProperty({ type: [BulkSkipView], description: "People who left, or already on the shift from that date" })
+  skipped!: BulkSkipView[];
 }
 
 export class RosteredPersonView {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -9,6 +9,8 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { UNUSABLE_PASSWORD } from "../src/modules/auth/password.js";
+import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 
 const RAISE_BP = 100;
 const BASE_SALARY = "20000000";
@@ -115,5 +117,358 @@ describe("bulk raise (e2e)", () => {
       CODES.length,
       "a second run of the same raise wrote a second set of rows",
     );
+  });
+});
+
+const PREFIX = "E2EBK";
+const [BOSS_OLD, BOSS_NEW, AN, BINH, CHI, GONE, LEAVING, ELSEWHERE, CLASH] = [
+  "01", "02", "03", "04", "05", "06", "07", "08", "09",
+].map((tail) => `${PREFIX}${tail}`);
+const PEOPLE = [BOSS_OLD, BOSS_NEW, AN, BINH, CHI, GONE, LEAVING, ELSEWHERE, CLASH];
+const DOMAIN = "@bulk-e2e.test";
+const DEVICE_ID = "kiosk-e2e-bulk";
+const ROSTER_START = 7;
+const SHIFT_NAME = "E2E bulk shift";
+const SHIFT_FROM = "2030-03-01T00:00:00.000Z";
+const RAISE_FROM = "2031-01-01";
+
+interface Skip {
+  employeeId: number;
+  reason: string;
+}
+
+interface Plan {
+  applied: boolean;
+  rows: { employeeId: number; changes?: { field: string }[]; resend?: boolean; rosterVersion?: number | null }[];
+  skipped: Skip[];
+  requestsMoved?: number;
+  rosterVersion?: number;
+}
+
+describe("bulk actions on the directory (e2e)", () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication["getHttpServer"]>;
+  let db: PrismaService;
+  let token = "";
+  const idOf = new Map<string, number>();
+  const dept = { parent: "", child: "", other: "" };
+  let entityB = "";
+  let titleId = "";
+  let shiftId = "";
+  let requestId = "";
+
+  const id = (code: string): number => idOf.get(code) as number;
+  const ids = (...codes: string[]): number[] => codes.map(id);
+  const reasons = (plan: Plan): [number, string][] =>
+    plan.skipped.map((one): [number, string] => [one.employeeId, one.reason]).sort((a, b) => a[0] - b[0]);
+  const rowIds = (plan: Plan): number[] => plan.rows.map((one) => one.employeeId).sort((a, b) => a - b);
+
+  function post(path: string, body: object): Promise<request.Response> {
+    return request(http).post(path).set("Authorization", `Bearer ${token}`).send(body);
+  }
+
+  // By subject alone: the people are new, and a bound on ts misses lines once the WSL clock steps back.
+  function auditLines(action: string, subjectIds: number[]): Promise<number> {
+    return db.auditLog.count({ where: { action, subjectId: { in: subjectIds.map(String) } } });
+  }
+
+  async function sweep(): Promise<void> {
+    await db.user.deleteMany({ where: { OR: [{ email: { endsWith: DOMAIN } }, { employee: { code: { in: PEOPLE } } }] } });
+    await db.request.deleteMany({ where: { employee: { code: { in: PEOPLE } } } });
+    await db.deviceEnrollment.deleteMany({ where: { deviceId: DEVICE_ID } });
+    await db.device.deleteMany({ where: { id: DEVICE_ID } });
+    await db.shift.deleteMany({ where: { name: SHIFT_NAME } });
+    await db.employee.updateMany({ where: { code: { in: PEOPLE } }, data: { managerId: null } });
+    await db.employee.deleteMany({ where: { code: { in: PEOPLE } } });
+    await db.department.deleteMany({ where: { code: `${PREFIX}-CHILD` } });
+    await db.department.deleteMany({ where: { code: { startsWith: `${PREFIX}-` } } });
+    await db.jobTitle.deleteMany({ where: { code: `${PREFIX}-JT` } });
+    await db.legalEntity.deleteMany({ where: { code: `${PREFIX}-LE` } });
+  }
+
+  before(async () => {
+    const env = validateEnv();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    configure(app);
+    await app.init();
+    http = app.getHttpServer();
+    db = app.get(PrismaService);
+    await sweep();
+
+    const signedIn = await request(http)
+      .post("/auth/login")
+      .send({ email: "hr@kiosk.local", password: env.SEED_ADMIN_PASSWORD ?? "" });
+    assert.equal(signedIn.status, 200, "hr could not sign in");
+    token = signedIn.body.accessToken;
+
+    const template = await db.employee.findFirstOrThrow({ where: { active: true, legalEntityId: { not: null } } });
+    const entityA = template.legalEntityId as string;
+    entityB = (await db.legalEntity.create({ data: { code: `${PREFIX}-LE`, name: "Pháp nhân thử" } })).id;
+    const parent = await db.department.create({ data: { code: `${PREFIX}-PARENT`, name: "Khối thử", legalEntityId: entityA } });
+    const child = await db.department.create({
+      data: { code: `${PREFIX}-CHILD`, name: "Tổ thử", legalEntityId: entityA, parentId: parent.id },
+    });
+    const other = await db.department.create({ data: { code: `${PREFIX}-OTHER`, name: "Phòng khác", legalEntityId: entityB } });
+    Object.assign(dept, { parent: parent.id, child: child.id, other: other.id });
+    titleId = (await db.jobTitle.create({ data: { code: `${PREFIX}-JT`, name: "Chức danh thử" } })).id;
+
+    const place: Record<string, { departmentId: string; legalEntityId: string }> = {
+      [BOSS_OLD]: { departmentId: parent.id, legalEntityId: entityA },
+      [BOSS_NEW]: { departmentId: parent.id, legalEntityId: entityA },
+      [AN]: { departmentId: parent.id, legalEntityId: entityA },
+      [ELSEWHERE]: { departmentId: other.id, legalEntityId: entityB },
+    };
+    for (const code of PEOPLE) {
+      const made = await db.employee.create({
+        data: {
+          code,
+          fullName: `Hàng loạt ${code}`,
+          departmentId: place[code]?.departmentId ?? child.id,
+          legalEntityId: place[code]?.legalEntityId ?? entityA,
+          personalEmail: code === CHI ? null : code === CLASH ? "admin@kiosk.local" : `${code.toLowerCase()}${DOMAIN}`,
+          active: code !== GONE,
+          leaveDate: code === GONE ? new Date("2026-01-31") : code === LEAVING ? new Date("2031-12-31") : null,
+        },
+      });
+      idOf.set(code, made.id);
+    }
+    await db.employee.updateMany({ where: { id: { in: ids(AN, BINH) } }, data: { managerId: id(BOSS_OLD) } });
+    await db.user.create({
+      data: { email: `boss-old${DOMAIN}`, passwordHash: UNUSABLE_PASSWORD, role: "MANAGER", employeeId: id(BOSS_OLD) },
+    });
+    await db.user.create({
+      data: { email: `boss-new${DOMAIN}`, passwordHash: UNUSABLE_PASSWORD, role: "EMPLOYEE", employeeId: id(BOSS_NEW) },
+    });
+    const filed = await db.request.create({
+      data: {
+        employeeId: id(AN),
+        kind: "REMOTE_WORK",
+        state: "PENDING",
+        fromDate: new Date("2030-12-01T00:00:00.000Z"),
+        toDate: new Date("2030-12-02T00:00:00.000Z"),
+        days: 2,
+        reason: "e2e",
+        approverId: id(BOSS_OLD),
+      },
+    });
+    requestId = filed.id;
+  });
+
+  after(async () => {
+    await sweep();
+    await app.close();
+  });
+
+  it("refuses a selection that names nobody, or both ways at once", async () => {
+    const neither = await post("/employees/bulk/logins", {});
+    assert.equal(neither.status, 400);
+    assert.equal(neither.body.message, "SELECTION_INVALID");
+    const both = await post("/employees/bulk/logins", { employeeIds: ids(AN), filter: { search: PREFIX } });
+    assert.equal(both.body.message, "SELECTION_INVALID");
+  });
+
+  it("reads a filter as the directory reads it, a department with its whole branch", async () => {
+    const listed = await request(http)
+      .get(`/employees?search=${PREFIX}&departmentId=${dept.parent}&active=true&take=100`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(listed.status, 200);
+    const shown = (listed.body.rows as { id: number }[]).map((one) => one.id).sort((a, b) => a - b);
+    assert.ok(shown.includes(id(BINH)), "the directory's department filter left out the branch below it");
+
+    const res = await post("/employees/bulk/logins", { filter: { search: PREFIX, departmentId: dept.parent, active: true } });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const plan = res.body as Plan;
+    const reached = [...rowIds(plan), ...plan.skipped.map((one) => one.employeeId)].sort((a, b) => a - b);
+    assert.deepEqual(reached, shown);
+  });
+
+  it("previews a title and department change without writing, skipping leavers and other entities", async () => {
+    const body = { employeeIds: ids(AN, BINH, GONE, ELSEWHERE), departmentId: dept.child, jobTitleId: titleId };
+    const res = await post("/employees/bulk/placement", body);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const plan = res.body as Plan;
+    assert.equal(plan.applied, false);
+    assert.deepEqual(rowIds(plan), ids(AN, BINH).sort((a, b) => a - b));
+    assert.deepEqual(
+      reasons(plan),
+      [
+        [id(GONE), "EMPLOYEE_HAS_LEFT"],
+        [id(ELSEWHERE), "DEPARTMENT_OTHER_ENTITY"],
+      ].sort((a, b) => (a[0] as number) - (b[0] as number)),
+    );
+    const an = await db.employee.findUniqueOrThrow({ where: { id: id(AN) } });
+    assert.deepEqual([an.departmentId, an.jobTitleId], [dept.parent, null], "a preview wrote something");
+  });
+
+  it("applies it to exactly those people, one audit line each", async () => {
+    const body = { employeeIds: ids(AN, BINH, GONE, ELSEWHERE), departmentId: dept.child, jobTitleId: titleId };
+    const res = await post("/employees/bulk/placement?apply=true", body);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal((res.body as Plan).applied, true);
+    const people = await db.employee.findMany({ where: { id: { in: ids(AN, BINH, ELSEWHERE) } }, orderBy: { code: "asc" } });
+    assert.deepEqual(
+      people.map((one) => [one.code, one.departmentId, one.jobTitleId]),
+      [
+        [AN, dept.child, titleId],
+        [BINH, dept.child, titleId],
+        [ELSEWHERE, dept.other, null],
+      ],
+    );
+    assert.equal(await auditLines("employee.update", ids(AN, BINH, ELSEWHERE)), 2);
+  });
+
+  it("moves the pending requests and the manager roles with a new manager", async () => {
+    const body = { employeeIds: ids(AN, BINH, BOSS_NEW), managerId: id(BOSS_NEW) };
+    const seen = await post("/employees/bulk/placement", body);
+    const plan = seen.body as Plan;
+    assert.deepEqual(reasons(plan), [[id(BOSS_NEW), "MANAGER_CYCLE"]]);
+    assert.equal(plan.requestsMoved, 1);
+
+    const res = await post("/employees/bulk/placement?apply=true", body);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const moved = await db.employee.findMany({ where: { id: { in: ids(AN, BINH) } }, select: { managerId: true } });
+    assert.deepEqual(moved.map((one) => one.managerId), [id(BOSS_NEW), id(BOSS_NEW)]);
+    const waiting = await db.request.findUniqueOrThrow({ where: { id: requestId } });
+    assert.equal(waiting.approverId, id(BOSS_NEW), "the waiting request stayed with a manager who lost sight of it");
+    const roles = await db.user.findMany({ where: { employeeId: { in: ids(BOSS_OLD, BOSS_NEW) } }, include: { employee: true } });
+    assert.deepEqual(
+      roles.map((one) => [one.employee?.code, one.role]).sort(),
+      [
+        [BOSS_OLD, "EMPLOYEE"],
+        [BOSS_NEW, "MANAGER"],
+      ],
+    );
+    const line = await db.auditLog.findFirstOrThrow({
+      where: { action: "employee.update", subjectId: String(id(AN)) },
+      orderBy: { id: "desc" },
+    });
+    assert.deepEqual((line.meta as { managerId: unknown }).managerId, { from: id(BOSS_OLD), to: id(BOSS_NEW) });
+  });
+
+  it("previews logins with a reason for everyone it passes over, then opens them", async () => {
+    const body = { employeeIds: ids(AN, BINH, CHI, GONE, LEAVING, CLASH) };
+    const seen = await post("/employees/bulk/logins", body);
+    assert.equal(seen.status, 201, JSON.stringify(seen.body));
+    const plan = seen.body as Plan;
+    assert.deepEqual(rowIds(plan), ids(AN, BINH).sort((a, b) => a - b));
+    assert.deepEqual(
+      reasons(plan),
+      [
+        [id(CHI), "NO_EMAIL"],
+        [id(GONE), "EMPLOYEE_HAS_LEFT"],
+        [id(LEAVING), "LEAVING_SCHEDULED"],
+        [id(CLASH), "EMAIL_TAKEN"],
+      ].sort((a, b) => (a[0] as number) - (b[0] as number)),
+    );
+    assert.equal(await db.user.count({ where: { employeeId: { in: ids(AN, BINH) } } }), 0, "a preview opened a login");
+
+    const res = await post("/employees/bulk/logins?apply=true", body);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const opened = await db.user.findMany({ where: { employeeId: { in: ids(AN, BINH) } } });
+    assert.equal(opened.length, 2);
+    assert.ok(opened.every((one) => one.passwordHash === UNUSABLE_PASSWORD && one.role === "EMPLOYEE"));
+    assert.equal(await db.passwordSetup.count({ where: { userId: { in: opened.map((one) => one.id) } } }), 2);
+    assert.equal(
+      await db.auditLog.count({ where: { action: "user.create", subjectId: { in: opened.map((one) => one.id) } } }),
+      2,
+    );
+  });
+
+  it("mails the link again to a login nobody used, and passes over one in use", async () => {
+    await db.user.update({ where: { employeeId: id(BINH) }, data: { passwordHash: "scrypt$used$used" } });
+    const res = await post("/employees/bulk/logins?apply=true", { employeeIds: ids(AN, BINH) });
+    const plan = res.body as Plan;
+    assert.deepEqual(plan.rows.map((one) => [one.employeeId, one.resend]), [[id(AN), true]]);
+    assert.deepEqual(reasons(plan), [[id(BINH), "LOGIN_IN_USE"]]);
+    const login = await db.user.findUniqueOrThrow({ where: { employeeId: id(AN) } });
+    assert.equal(await db.passwordSetup.count({ where: { userId: login.id } }), 2, "resending minted no new link");
+  });
+
+  it("puts people on a kiosk with the roster moved once and consecutive versions", async () => {
+    await db.device.create({ data: { id: DEVICE_ID, status: "APPROVED", rosterVersion: ROSTER_START } });
+    await db.biometricConsent.createMany({
+      data: ids(AN, BINH, CHI).map((employeeId) => ({ employeeId, noticeVersion: "e2e", method: "PAPER" })),
+    });
+    await db.deviceEnrollment.create({ data: { deviceId: DEVICE_ID, employeeId: id(CHI), state: "ENROLLED" } });
+    const body = { deviceId: DEVICE_ID, employeeIds: ids(AN, BINH, CHI, GONE, ELSEWHERE) };
+
+    const seen = await post("/employees/bulk/enrollments", body);
+    assert.equal(seen.status, 201, JSON.stringify(seen.body));
+    assert.deepEqual(rowIds(seen.body as Plan), ids(AN, BINH).sort((a, b) => a - b));
+    assert.deepEqual(
+      reasons(seen.body as Plan),
+      [
+        [id(CHI), "ALREADY_ON_KIOSK"],
+        [id(GONE), "EMPLOYEE_HAS_LEFT"],
+        [id(ELSEWHERE), "CONSENT_MISSING"],
+      ].sort((a, b) => (a[0] as number) - (b[0] as number)),
+    );
+    const still = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
+    assert.equal(still.rosterVersion, ROSTER_START, "a preview moved the roster");
+
+    const told: { op: string; employeeId: number; rosterVersion: number }[] = [];
+    const mqtt = app.get(MqttService);
+    const spy = mock.method(mqtt, "publishDown", async (_topic: string, _to: string, payload: never) => {
+      told.push(payload);
+    });
+    const res = await post("/employees/bulk/enrollments?apply=true", body);
+    spy.mock.restore();
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const done = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
+    assert.equal(done.rosterVersion, ROSTER_START + 2);
+    assert.equal((res.body as Plan).rosterVersion, ROSTER_START + 2);
+    assert.deepEqual(
+      told.map((one) => [one.op, one.employeeId, one.rosterVersion]),
+      [
+        ["ASSIGN", id(AN), ROSTER_START + 1],
+        ["ASSIGN", id(BINH), ROSTER_START + 2],
+      ],
+    );
+    const held = await db.deviceEnrollment.findUniqueOrThrow({
+      where: { deviceId_employeeId: { deviceId: DEVICE_ID, employeeId: id(CHI) } },
+    });
+    assert.equal(held.state, "ENROLLED", "a bulk run turned an enrolled face into a retake");
+    assert.equal(await auditLines("enrollment.assign", ids(AN, BINH)), 2);
+  });
+
+  it("puts a filtered group on a shift and passes over the people who left", async () => {
+    shiftId = (await db.shift.create({ data: { name: SHIFT_NAME, startTime: "07:00", endTime: "15:00" } })).id;
+    const body = { filter: { search: PREFIX, departmentId: dept.child }, validFrom: SHIFT_FROM };
+    const seen = await post(`/shifts/${shiftId}/assignments/bulk`, body);
+    assert.equal(seen.status, 201, JSON.stringify(seen.body));
+    assert.deepEqual(reasons(seen.body as Plan), [[id(GONE), "EMPLOYEE_HAS_LEFT"]]);
+    assert.equal(await db.shiftAssignment.count({ where: { shiftId } }), 0, "a preview put somebody on the shift");
+
+    const res = await post(`/shifts/${shiftId}/assignments/bulk?apply=true`, body);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const on = await db.shiftAssignment.findMany({ where: { shiftId }, select: { employeeId: true } });
+    assert.deepEqual(
+      on.map((one) => one.employeeId).sort((a, b) => a - b),
+      rowIds(res.body as Plan),
+    );
+    assert.ok(!on.some((one) => one.employeeId === id(GONE)), "somebody who left went on the shift");
+    assert.equal(await auditLines("shift.assign", on.map((one) => one.employeeId)), on.length);
+  });
+
+  it("raises pay for a department's whole branch", async () => {
+    await db.compensationRecord.createMany({
+      data: ids(BOSS_OLD, CHI).map((employeeId) => ({
+        employeeId,
+        effectiveFrom: new Date(HIRED_FROM),
+        baseSalary: BASE_SALARY,
+        insuranceSalary: BASE_SALARY,
+      })),
+    });
+    const res = await post("/compensation/bulk/preview", {
+      departmentId: dept.parent,
+      effectiveFrom: RAISE_FROM,
+      percentBp: RAISE_BP,
+      reason: REASON,
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const reached = (res.body as { employeeId: number }[]).map((one) => one.employeeId);
+    assert.ok(reached.includes(id(CHI)), "a department raise left out the department below it");
+    assert.ok(reached.includes(id(BOSS_OLD)));
   });
 });

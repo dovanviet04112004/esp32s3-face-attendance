@@ -14,6 +14,7 @@ import type {
   Prisma,
 } from "@prisma/client";
 
+import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
@@ -262,6 +263,7 @@ export class CompensationService {
     this.mayWrite(viewer);
     const on = new Date(body.effectiveFrom);
     const chosen = body.employeeIds?.length ? body.employeeIds : null;
+    const branch = body.departmentId ? await departmentSubtree(this.db, body.departmentId) : null;
     const self = viewer.employeeId ?? 0;
     // DISTINCT ON takes the latest record per person in one pass; asking per
     // employee is one query each, which stops working at a few thousand (KEHOACH 9.9).
@@ -275,7 +277,7 @@ export class CompensationService {
        WHERE e."active" = true
          AND e."id" <> ${self}
          AND c."effectiveFrom" <= ${on}
-         AND (${body.departmentId ?? null}::text IS NULL OR e."departmentId" = ${body.departmentId ?? null})
+         AND (${branch}::text[] IS NULL OR e."departmentId" = ANY(${branch}::text[]))
          AND (${chosen}::int[] IS NULL OR e."id" = ANY(${chosen}::int[]))
        ORDER BY e."id", c."effectiveFrom" DESC
     `;

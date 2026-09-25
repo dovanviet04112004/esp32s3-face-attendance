@@ -251,13 +251,21 @@ describe("catalogue edits and the lists around them (e2e)", () => {
     assert.equal(shift.status, 201, JSON.stringify(shift.body));
     shiftId = shift.body.id;
     const body = { employeeIds: MADE_CODES.map((code) => idOf.get(code)), validFrom: "2026-10-01T00:00:00.000Z" };
-    const first = await by("hr").post(`/shifts/${shiftId}/assignments/bulk`, body);
+    const first = await by("hr").post(`/shifts/${shiftId}/assignments/bulk?apply=true`, body);
     assert.equal(first.status, 201, JSON.stringify(first.body));
-    assert.deepEqual(first.body, { assigned: 2, skipped: 0 });
-    const again = await by("hr").post(`/shifts/${shiftId}/assignments/bulk`, body);
-    assert.deepEqual(again.body, { assigned: 0, skipped: 2 });
-    const ghost = await by("hr").post(`/shifts/${shiftId}/assignments/bulk`, { ...body, employeeIds: [999_999] });
-    assert.equal(ghost.status, 404);
+    assert.deepEqual([first.body.assigned, first.body.skipped], [2, []]);
+    const again = await by("hr").post(`/shifts/${shiftId}/assignments/bulk?apply=true`, body);
+    assert.equal(again.body.assigned, 0);
+    assert.deepEqual(
+      (again.body.skipped as { reason: string }[]).map((one) => one.reason),
+      ["ALREADY_ON_SHIFT", "ALREADY_ON_SHIFT"],
+    );
+    const ghost = await by("hr").post(`/shifts/${shiftId}/assignments/bulk?apply=true`, { ...body, employeeIds: [999_999] });
+    assert.equal(ghost.status, 201);
+    assert.deepEqual(
+      (ghost.body.skipped as { employeeId: number; reason: string }[]).map((one) => [one.employeeId, one.reason]),
+      [[999_999, "EMPLOYEE_NOT_FOUND"]],
+    );
   });
 
   it("pages the roster and finds one person on it", async () => {

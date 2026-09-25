@@ -4,6 +4,9 @@ import { ContractKind, Gender } from "@prisma/client";
 import { EMPLOYEE_FIELD_MAX, IMPORT_MAX_BYTES } from "../import.js";
 import { Transform, Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -12,6 +15,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -20,6 +24,7 @@ import {
 } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { DEVICE_ID } from "../../enrollment/dto/enrollment.dto.js";
 
 export class CreateEmployeeDto {
   @ApiProperty({ example: "NV0002", maxLength: EMPLOYEE_FIELD_MAX.code })
@@ -471,4 +476,205 @@ export class OffboardingView {
 
   @ApiProperty()
   advancesOutstanding!: number;
+}
+
+/** The most people one bulk run takes, named or found by a filter (KEHOACH 9.20). */
+export const BULK_MAX = 5_000;
+
+export const SKIP_REASONS = [
+  "EMPLOYEE_NOT_FOUND",
+  "EMPLOYEE_HAS_LEFT",
+  "LEAVING_SCHEDULED",
+  "UNCHANGED",
+  "DEPARTMENT_OTHER_ENTITY",
+  "MANAGER_CYCLE",
+  "NO_EMAIL",
+  "EMAIL_TAKEN",
+  "LOGIN_IN_USE",
+  "ACCOUNT_LOCKED",
+  "CONSENT_MISSING",
+  "ALREADY_ON_KIOSK",
+  "ALREADY_ON_SHIFT",
+] as const;
+export type SkipReason = (typeof SKIP_REASONS)[number];
+
+export const PLACEMENT_FIELDS = ["jobTitle", "department", "manager", "legalEntity"] as const;
+export type PlacementField = (typeof PLACEMENT_FIELDS)[number];
+
+/** Who a bulk run acts on: these ids, or everyone the directory lists under this filter. */
+export class BulkSelectionDto {
+  @ApiPropertyOptional({ type: [Number], minItems: 1, maxItems: BULK_MAX, description: "Send this or filter, not both" })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(BULK_MAX)
+  @Type(() => Number)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  employeeIds?: number[];
+
+  @ApiPropertyOptional({
+    type: EmployeeFilterDto,
+    description: "The directory's own filter, read in the caller's scope; more than BULK_MAX people is refused",
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EmployeeFilterDto)
+  filter?: EmployeeFilterDto;
+}
+
+export class BulkQueryDto {
+  @ApiPropertyOptional({ default: false, description: "False previews, true writes" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  apply?: boolean;
+}
+
+export class BulkPlacementDto extends BulkSelectionDto {
+  @ApiPropertyOptional({ maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  jobTitleId?: string;
+
+  @ApiPropertyOptional({ maxLength: 64, description: "Belongs to each person's legal entity after the change, or they are skipped" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  departmentId?: string;
+
+  @ApiPropertyOptional({ description: "Approves their requests from now on; the pending ones follow (KEHOACH 9.4)" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  managerId?: number;
+
+  @ApiPropertyOptional({ maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  legalEntityId?: string;
+}
+
+export class BulkEnrollDto extends BulkSelectionDto {
+  @ApiProperty({ example: "kiosk-2884859fd3c8" })
+  @Matches(DEVICE_ID)
+  deviceId!: string;
+}
+
+export class BulkSkipView {
+  @ApiProperty()
+  employeeId!: number;
+
+  @ApiProperty({ type: String, nullable: true, description: "Empty for an id nobody here answers to" })
+  code!: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  fullName!: string | null;
+
+  @ApiProperty({ enum: SKIP_REASONS })
+  reason!: SkipReason;
+}
+
+class PlacementChangeView {
+  @ApiProperty({ enum: PLACEMENT_FIELDS })
+  field!: PlacementField;
+
+  @ApiProperty({ type: String, nullable: true, description: "The name held now" })
+  from!: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  to!: string | null;
+}
+
+export class PlacementRowView {
+  @ApiProperty()
+  employeeId!: number;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  fullName!: string;
+
+  @ApiProperty({ type: [PlacementChangeView] })
+  changes!: PlacementChangeView[];
+
+  @ApiProperty({ description: "Pending requests that move to the new manager" })
+  pendingRequests!: number;
+}
+
+export class PlacementPlanView {
+  @ApiProperty()
+  applied!: boolean;
+
+  @ApiProperty({ type: [PlacementRowView] })
+  rows!: PlacementRowView[];
+
+  @ApiProperty({ type: [BulkSkipView] })
+  skipped!: BulkSkipView[];
+
+  @ApiProperty()
+  requestsMoved!: number;
+}
+
+export class LoginRowView {
+  @ApiProperty()
+  employeeId!: number;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  fullName!: string;
+
+  @ApiProperty({ description: "Where the setup link goes" })
+  email!: string;
+
+  @ApiProperty({ description: "true mails the link of a login nobody has used yet; false opens the login" })
+  resend!: boolean;
+}
+
+export class LoginPlanView {
+  @ApiProperty()
+  applied!: boolean;
+
+  @ApiProperty({ type: [LoginRowView] })
+  rows!: LoginRowView[];
+
+  @ApiProperty({ type: [BulkSkipView] })
+  skipped!: BulkSkipView[];
+}
+
+export class EnrollRowView {
+  @ApiProperty()
+  employeeId!: number;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  fullName!: string;
+
+  @ApiProperty({ type: Number, nullable: true, description: "What the ASSIGN carries; empty in a preview" })
+  rosterVersion!: number | null;
+}
+
+export class EnrollPlanView {
+  @ApiProperty()
+  applied!: boolean;
+
+  @ApiProperty()
+  deviceId!: string;
+
+  @ApiProperty({ type: [EnrollRowView] })
+  rows!: EnrollRowView[];
+
+  @ApiProperty({ type: [BulkSkipView] })
+  skipped!: BulkSkipView[];
+
+  @ApiProperty({ description: "The kiosk's roster counter after the run" })
+  rosterVersion!: number;
 }
