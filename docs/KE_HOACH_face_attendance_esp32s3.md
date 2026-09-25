@@ -4534,7 +4534,7 @@ không cache thứ gì mà mất đi là sai nghiệp vụ.
 | `image` | resize + upload ảnh chấm công lên MinIO | `mqtt/` khi nhận bản ghi | Ảnh vài trăm KB, không để kiosk chờ |
 | `report` | tổng hợp báo cáo tháng ra file | `reports/` khi người dùng bấm | Quét vài chục nghìn bản ghi |
 | `notify` | gửi mail/webhook khi có sự kiện lạ | `audit/`, `devices/` | Bên thứ ba có thể chậm hoặc chết |
-| `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối (§9.14) | lịch lặp 00:05 của `employees/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù |
+| `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối; `leavings-now`: đóng các hồ sơ một lô cho nghỉ đã tới ngày cuối (§9.14) | lịch lặp 00:05 của `employees/`; lô cho nghỉ của `employees/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù. Một lô tới năm nghìn hồ sơ, mỗi cái cắt phiên và xoá mặt trên mọi kiosk, không vừa trong một request |
 | `timesheet` | `build` (một khoảng, theo yêu cầu) · `nightly` (00:30 `APP_TIMEZONE`, ngày hôm qua) · `rebuild` (một ngày của một người sau lượt quẹt trễ, gộp theo người–ngày) | `timesheet/`, `attendance/` | Dựng cả công ty một ngày là quét vài chục nghìn lượt quẹt (§9.8) |
 | `ota` | rollout theo lô, theo dõi từng thiết bị | `models/` | Chạy hàng giờ, phải resume được |
 
@@ -7671,7 +7671,7 @@ dùng vẫn thấy phân bố mà chỉ nhìn một chỗ.
 | Tổng quan · Trang của tôi | không có; bố cục theo §9.10 |
 | Danh bạ | hợp đồng và thử việc sắp hết trong 30 ngày, vài tên đầu kèm số ngày, bấm mở hồ sơ, "xem tất cả" mở danh sách đầy đủ; công cụ: xuất Excel theo bộ lọc đang áp, nhập từ Excel, tải file mẫu, điều chỉnh lương hàng loạt. Việc làm trên những người đã chọn nằm trên thanh chọn của bảng, không ở cột phải (§9.20) |
 | Thêm nhân viên | không có; câu "lưu xong hệ làm gì" nằm dưới tiêu đề |
-| Hồ sơ một người | đồng ý sinh trắc và nút ghi hoặc rút; kiosk đang gán và nút gán; tài khoản đăng nhập: trạng thái, mở tài khoản hoặc gửi lại liên kết |
+| Hồ sơ một người | ca làm và nút xếp ca; đồng ý sinh trắc và nút ghi hoặc rút; kiosk đang gán và nút gán; tài khoản đăng nhập: trạng thái, mở tài khoản hoặc gửi lại liên kết; **nghỉ việc**, thẻ cuối cùng: một câu nói ngày cuối làm gì và nút cho nghỉ việc — trên điện thoại cột phải xuống sau cột chính, nên nó nằm cuối trang như mọi thao tác không đảo ngược được của một ứng dụng. Đã hẹn ngày thì thẻ ấy nhường cho băng trên đầu hồ sơ, có đổi ngày và huỷ. Đầu hồ sơ không có menu thao tác: một menu chỉ giấu đúng một việc là thêm một lần bấm, và trên điện thoại nó thành nút nổi đè lên ô nhập |
 | Cây tổ chức | phòng ban đang chọn: mã, cấp trên, trưởng phòng, số người cả nhánh, trung tâm chi phí; sửa, chuyển nhánh, ngừng dùng; xem nhân viên của phòng; công cụ: tái cơ cấu. Trên điện thoại chọn một phòng mở tấm trượt |
 | Nhận việc | các mẫu checklist: thêm, sửa, ngừng dùng |
 | Chờ tôi duyệt · Sổ đơn từ | không có; hàng đợi là tab kèm số (§9.10) |
@@ -7927,6 +7927,14 @@ server và mọi kiosk từng nhận nếu người ấy có (§9.19), và ghi m
 người bấm đứng tên khi đóng ngay, dòng của job không có người đứng tên. Bước ghi đầu tiên là một
 câu có điều kiện `active = true AND leaveDate <= ngày ấy`, nên hai lượt chạy chồng nhau hay chạy
 lại chỉ đóng một lần, và một lịch vừa bị huỷ không bị đóng nhầm.
+
+**Cho nghỉ nhiều người một lúc là đúng lượt lẻ ấy, làm cho cả lô** (§9.20). Cả lô chung một ngày
+làm việc cuối và một lý do. Người đã nghỉ, người đã có lịch nghỉ, và **chính người bấm** vào danh
+sách bỏ qua kèm mã: chọn cả phòng Nhân sự mà khoá luôn tài khoản đang bấm là mất người cầm việc
+giữa chừng. Ngày cuối ghi cho cả lô trong một giao dịch, có điều kiện như lượt lẻ, mỗi người một
+dòng `employee.offboard`. Ngày ấy đã tới thì các hồ sơ đóng qua job `leavings-now` trên hàng đợi
+`people`, từng người bằng đúng hàm đóng hồ sơ ở trên và người bấm đứng tên; vì câu ghi có điều
+kiện, job giao lại hay chạy chồng với `leavings-due` cũng chỉ đóng mỗi hồ sơ một lần.
 
 **Lịch nghỉ đổi được và huỷ được cho tới lúc hồ sơ đóng.** `PATCH /employees/:id/offboard` đổi
 ngày cuối; ngày mới đã tới thì hồ sơ đóng ngay như ở lượt ghi nhận. `DELETE` cùng đường huỷ
@@ -8565,21 +8573,26 @@ gặp ở bảng chấm công). Năm luật đi kèm:
 
 **Thao tác trên nhiều người.** Danh bạ chọn được nhiều dòng, hoặc chọn **cả N người khớp bộ lọc**
 khi bảng mới tải một phần; lúc ấy trình duyệt gửi bộ lọc, không gửi N mã, và server tự giải bộ
-lọc trong phạm vi người xem (§9.4). Thanh chọn làm được bốn việc: đổi chức danh, phòng ban, cấp
+lọc trong phạm vi người xem (§9.4). Thanh chọn làm được năm việc: đổi chức danh, phòng ban, cấp
 quản lý hay pháp nhân; mở đăng nhập và gửi thư mời, hoặc gửi lại cho người chưa đặt mật khẩu; gán
-vào một kiosk; xếp vào một ca. Mọi việc hàng loạt theo cùng một khuôn:
+vào một kiosk; xếp vào một ca; cho nghỉ việc với một ngày làm việc cuối chung (§9.14). Mọi việc
+hàng loạt theo cùng một khuôn:
 
 - **Xem trước rồi mới ghi**, như tái cơ cấu (§9.18 mục 7): ai đổi, đổi gì, ai bị bỏ qua.
 - **Mỗi dòng đi qua đúng luật của việc lẻ**, và người không làm được thì vào danh sách bỏ qua
-  kèm mã lý do: đã nghỉ, không có email, đã có đăng nhập, chưa đồng ý dữ liệu khuôn mặt, phòng
-  ban thuộc pháp nhân khác.
+  kèm mã lý do: đã nghỉ, đã có lịch nghỉ, không có email, đã có đăng nhập, chưa đồng ý dữ liệu
+  khuôn mặt, phòng ban thuộc pháp nhân khác, là chính người bấm.
+- **Việc không đảo ngược được thì hỏi lại bằng đúng số người và hậu quả.** Cho nghỉ việc nói "N
+  người, đăng nhập khoá và mặt bị xoá trên mọi kiosk từ ngày …", nút đỏ, và nút chỉ bấm được sau
+  khi đã xem trước.
 - **Một giao dịch cho phần ghi, thư và tin xuống kiosk đi sau commit.** Một lô gán kiosk đẩy số
   hiệu danh sách lên một lần cho cả lô và gửi mỗi người một tin với số liền nhau (§7.5).
 - **Một dòng audit cho mỗi người**, như khi sửa lẻ (§9.24). Một lô tối đa 5.000 người.
 
 **Lọc ra đúng nhóm cần làm, rồi mới chọn cả nhóm.** Danh sách bỏ qua là lưới an toàn, không phải
 cách làm việc: người dùng không phải chọn cả phòng rồi đọc xem ai bị bỏ qua. Danh bạ có ba bộ lọc
-khớp đúng bốn việc trên thanh chọn, mỗi lựa chọn mang số người khớp (§9.12):
+khớp bốn việc đầu trên thanh chọn, mỗi lựa chọn mang số người khớp (§9.12); cho nghỉ việc lọc bằng
+phòng ban và trạng thái *đang làm* sẵn có:
 
 | Bộ lọc | Lựa chọn | Cho việc |
 |---|---|---|
