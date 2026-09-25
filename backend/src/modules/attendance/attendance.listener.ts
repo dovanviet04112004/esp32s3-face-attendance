@@ -18,11 +18,16 @@ export class AttendanceListener {
   @OnEvent(KIOSK_EVENT.attendance)
   async onPunch(message: KioskMessage<AttendanceRecord>): Promise<void> {
     const punch = message.payload;
+    // The topic names the kiosk the broker authenticated; the body is only what that kiosk claims.
+    if (punch.deviceId !== message.deviceId) {
+      this.log.warn(`${message.deviceId} sent a punch claiming to be ${punch.deviceId}, dropped`);
+      return;
+    }
     const outcome = await this.attendance.record(punch, message.receivedAt);
     this.log.log(
       `${outcome}: ${punch.deviceId} localId ${punch.localId} employee ${punch.employeeId}`,
     );
-    if (outcome === "while-revoked") {
+    if (outcome !== "stored") {
       return;
     }
     // Announced only once the row is written, since the dashboard answers by

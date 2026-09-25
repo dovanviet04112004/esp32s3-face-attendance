@@ -49,6 +49,7 @@ export interface CalcAllowance {
   amount: Dong;
   taxable: boolean;
   insurable: boolean;
+  taxFreeCap?: Dong | null; // taxed only above this; null taxes it all
 }
 
 export interface CalcExtra {
@@ -169,7 +170,7 @@ export function calculate(input: CalcInput): CalcResult {
       amount: allowance.amount,
     });
     if (allowance.taxable) {
-      taxableEarnings += allowance.amount;
+      taxableEarnings += atLeastZero(allowance.amount - (allowance.taxFreeCap ?? 0n));
     }
     if (allowance.insurable) {
       insurableExtra += allowance.amount;

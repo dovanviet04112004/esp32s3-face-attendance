@@ -189,6 +189,23 @@ describe("payroll calculation", () => {
     assert.equal(result.taxableIncome, 20_500_000n);
   });
 
+  it("taxes a capped allowance only above its cap, and pays all of it", () => {
+    const plain = calculate(input());
+    const capped = calculate(
+      input({
+        allowances: [
+          { code: "LUNCH", label: "Tien an", amount: 1_000_000n, taxable: true, insurable: false, taxFreeCap: 730_000n },
+          { code: "PHONE", label: "Dien thoai", amount: 500_000n, taxable: true, insurable: true, taxFreeCap: 800_000n },
+        ],
+      }),
+    );
+    assert.equal(capped.grossPay, plain.grossPay + 1_500_000n);
+    // 270,000 above the lunch cap is taxed; the phone allowance sits under its cap.
+    assert.equal(capped.taxableIncome, plain.taxableIncome + 270_000n);
+    // A cap on tax leaves the insurance base alone: the phone allowance is still insured.
+    assert.equal(amountOf(capped, "BHXH"), amountOf(plain, "BHXH") + 40_000n);
+  });
+
   it("subtracts an advance after tax, not before it", () => {
     const plain = calculate(input());
     const owing = calculate(input({ deductions: [{ code: "ADVANCE", amount: 3_000_000n }] }));

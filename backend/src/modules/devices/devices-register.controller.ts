@@ -9,10 +9,12 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
-import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import { ExtractJwt } from "passport-jwt";
 
+import { API_AUTH } from "../../common/decorators/api-docs.decorator.js";
+import { AuditedInService, NotAudited } from "../../common/decorators/audited.decorator.js";
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { DeviceAuthGuard } from "../../common/guards/device-auth.guard.js";
 import { THROTTLE, type DeviceClaims } from "../auth/auth.types.js";
@@ -30,6 +32,7 @@ export class DevicesRegisterController {
 
   @Post("register")
   @RateBucket(THROTTLE.deviceRegister)
+  @NotAudited()
   @ApiOperation({ summary: "A kiosk with an empty NVS asking to be let in" })
   @ApiResponse({ status: HttpStatus.ACCEPTED, description: "Waiting for a person to approve it" })
   @ApiResponse({ status: HttpStatus.OK, description: "Approved; carries the device token" })
@@ -44,6 +47,7 @@ export class DevicesRegisterController {
 
   @Get("me")
   @UseGuards(DeviceAuthGuard)
+  @ApiBearerAuth(API_AUTH.device)
   @ApiOperation({ summary: "A kiosk asking whether its ticket still stands (KEHOACH 7.3)" })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Revoked, replaced or expired" })
   mine(@Req() req: Request & { user: DeviceClaims }): { deviceId: string } {
@@ -53,6 +57,8 @@ export class DevicesRegisterController {
   @Post("me/token")
   @UseGuards(DeviceAuthGuard)
   @HttpCode(HttpStatus.OK)
+  @AuditedInService()
+  @ApiBearerAuth(API_AUTH.device)
   @ApiOperation({ summary: "A kiosk trading the ticket it holds for a fresh one (KEHOACH 7.3)" })
   @ApiResponse({ status: HttpStatus.OK, description: "Carries the new device token" })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Revoked, replaced or expired" })

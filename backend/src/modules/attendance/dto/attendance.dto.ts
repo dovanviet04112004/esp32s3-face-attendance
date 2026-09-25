@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
 import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
 
@@ -40,4 +40,31 @@ export class ListAttendanceDto extends PaginationDto {
   @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   clockUnsynced?: boolean;
+}
+
+export class PunchView {
+  @ApiProperty({ type: String, description: "Decimal string" }) id!: string;
+  @ApiProperty() localId!: string;
+  @ApiProperty() deviceId!: string;
+  @ApiProperty() employeeId!: number;
+  @ApiProperty() ts!: string;
+  @ApiProperty() direction!: string;
+  @ApiProperty({ type: Number, nullable: true }) score!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) livenessScore!: number | null;
+  @ApiProperty() doorOpened!: boolean;
+  @ApiProperty() capturedOffline!: boolean;
+  @ApiProperty() clockUnsynced!: boolean;
+}
+
+export class PunchPageView {
+  @ApiProperty({ type: [PunchView] }) rows!: PunchView[];
+  @ApiProperty() total!: number;
+  @ApiProperty() totalIsExact!: boolean;
+  @ApiProperty({ type: String, nullable: true }) next!: string | null;
+}
+
+export class PunchCountsView {
+  @ApiProperty() all!: number;
+  @ApiProperty() capturedOffline!: number;
+  @ApiProperty() clockUnsynced!: number;
 }

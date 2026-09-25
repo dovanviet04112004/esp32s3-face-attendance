@@ -1,12 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { RunKind, SettlementKind } from "@prisma/client";
-import { Type } from "class-transformer";
+import { PayslipState, PeriodState, RunKind, RunState, SettlementKind } from "@prisma/client";
+import { Transform, Type } from "class-transformer";
 import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -185,4 +186,134 @@ export class ListPayslipsDto extends PaginationDto {
   @Type(() => Number)
   @IsInt()
   employeeId?: number;
+
+  @ApiPropertyOptional({ description: "Employee code or full name, any case" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  search?: string;
+
+  @ApiPropertyOptional({ description: "Only payslips a lock has issued" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  issued?: boolean;
+}
+
+export class ExportQueryDto {
+  @ApiPropertyOptional({ enum: ["bank", "ledger"], default: "bank" })
+  @IsOptional()
+  @IsIn(["bank", "ledger"])
+  kind?: "bank" | "ledger";
+}
+
+export class PeriodsQueryDto {
+  @ApiPropertyOptional({ description: "Only this entity's periods" })
+  @IsOptional()
+  @IsUUID()
+  legalEntityId?: string;
+}
+
+export class TaxYearQueryDto {
+  @ApiProperty({ example: 2026 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  year!: number;
+}
+
+export class PeriodView {
+  @ApiProperty() id!: string;
+  @ApiProperty({ type: String, nullable: true }) legalEntityId!: string | null;
+  @ApiProperty() year!: number;
+  @ApiProperty() month!: number;
+  @ApiProperty({ enum: PeriodState }) state!: PeriodState;
+  @ApiProperty({ example: "2026-09-01" }) startDate!: string;
+  @ApiProperty({ example: "2026-09-30" }) endDate!: string;
+  @ApiProperty({ type: String, nullable: true }) payDate!: string | null;
+  @ApiProperty({ type: String, nullable: true }) lockedAt!: string | null;
+  @ApiProperty({ type: String, nullable: true }) paidAt!: string | null;
+}
+
+export class RunView {
+  @ApiProperty() id!: string;
+  @ApiProperty() periodId!: string;
+  @ApiProperty({ enum: RunKind }) kind!: RunKind;
+  @ApiProperty({ enum: RunState }) state!: RunState;
+  @ApiProperty({ type: String, nullable: true }) label!: string | null;
+  @ApiProperty({ type: String, nullable: true }) departmentId!: string | null;
+  @ApiProperty() employeeCount!: number;
+  @ApiProperty() doneCount!: number;
+  @ApiProperty() failedCount!: number;
+  @ApiProperty({ description: "Whole dong as a decimal string" }) grossTotal!: string;
+  @ApiProperty({ description: "Whole dong as a decimal string" }) netTotal!: string;
+  @ApiProperty({ type: String, nullable: true }) startedAt!: string | null;
+  @ApiProperty({ type: String, nullable: true }) finishedAt!: string | null;
+}
+
+export class PeriodTotalsView {
+  @ApiProperty() payslips!: number;
+  @ApiProperty() people!: number;
+  @ApiProperty({ description: "Whole dong" }) gross!: string;
+  @ApiProperty({ description: "Whole dong" }) insuranceEmployee!: string;
+  @ApiProperty({ description: "Whole dong" }) insuranceEmployer!: string;
+  @ApiProperty({ description: "Whole dong" }) tax!: string;
+  @ApiProperty({ description: "Whole dong" }) net!: string;
+  @ApiProperty({ description: "Gross plus the employer's insurance, whole dong" }) employerCost!: string;
+}
+
+export class ChecklistItemView {
+  @ApiProperty({ example: "REQUESTS_PENDING" }) code!: string;
+  @ApiProperty() count!: number;
+}
+
+export class DeliveryView {
+  @ApiProperty() issued!: number;
+  @ApiProperty() sent!: number;
+}
+
+export class QueuedCount {
+  @ApiProperty() queued!: number;
+}
+
+export class ItemCount {
+  @ApiProperty() items!: number;
+}
+
+class PayslipOwner {
+  @ApiProperty() id!: number;
+  @ApiProperty() code!: string;
+  @ApiProperty() fullName!: string;
+  @ApiProperty({ type: Object, nullable: true, description: "{ id, name }" }) department!: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+class PayslipRunRef {
+  @ApiProperty({ enum: RunKind }) kind!: RunKind;
+  @ApiProperty({ enum: RunState }) state!: RunState;
+}
+
+export class PayslipRowView {
+  @ApiProperty() id!: string;
+  @ApiProperty() runId!: string;
+  @ApiProperty() periodId!: string;
+  @ApiProperty() employeeId!: number;
+  @ApiProperty({ enum: PayslipState }) state!: PayslipState;
+  @ApiProperty() grossPay!: string;
+  @ApiProperty() insuranceEmployee!: string;
+  @ApiProperty() personalIncomeTax!: string;
+  @ApiProperty({ description: "Advances recovered on this payslip, whole dong" }) advance!: string;
+  @ApiProperty() netPay!: string;
+  @ApiProperty({ type: PayslipOwner }) employee!: PayslipOwner;
+  @ApiProperty({ type: PayslipRunRef }) run!: PayslipRunRef;
+}
+
+export class PayslipPageView {
+  @ApiProperty({ type: [PayslipRowView] }) rows!: PayslipRowView[];
+  @ApiProperty() total!: number;
+  @ApiProperty() totalIsExact!: boolean;
+  @ApiProperty({ type: String, nullable: true }) next!: string | null;
 }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PayrollPolicy, TaxBracket } from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service.js";
@@ -9,6 +9,20 @@ import { toDong, toHundredths } from "../payroll/money.js";
 import type { CreatePolicyDto } from "./dto/policy.dto.js";
 
 export type PolicyWithBrackets = PayrollPolicy & { brackets: TaxBracket[] };
+
+const UNIQUE_VIOLATION = "P2002";
+
+/** Bands climb strictly and only the last one is open-ended, or the tax walk skips or repeats a slice. */
+function bandsInOrder(brackets: CreatePolicyDto["brackets"]): boolean {
+  return brackets.every((band, at) => {
+    const last = at === brackets.length - 1;
+    if (band.upToAmount === undefined || band.upToAmount === null) {
+      return last;
+    }
+    const below = at === 0 ? -1 : (brackets[at - 1].upToAmount ?? Number.POSITIVE_INFINITY);
+    return band.upToAmount > below;
+  });
+}
 
 @Injectable()
 export class PolicyService {
@@ -36,7 +50,8 @@ export class PolicyService {
         OR: [{ legalEntityId }, { legalEntityId: null }],
       },
       include: { brackets: { orderBy: { ordinal: "asc" } } },
-      orderBy: [{ legalEntityId: "desc" }, { effectiveFrom: "desc" }],
+      // An entity's own row outranks the company-wide one, which Postgres sorts first when descending.
+      orderBy: [{ legalEntityId: { sort: "desc", nulls: "last" } }, { effectiveFrom: "desc" }],
     });
     if (!found) {
       throw new NotFoundException("POLICY_MISSING");
@@ -45,6 +60,9 @@ export class PolicyService {
   }
 
   async create(body: CreatePolicyDto, createdById: string): Promise<PolicyWithBrackets> {
+    if (!bandsInOrder(body.brackets)) {
+      throw new BadRequestException("BRACKETS_OUT_OF_ORDER");
+    }
     const made = await this.db.payrollPolicy.create({
       data: {
         legalEntityId: body.legalEntityId ?? null,
@@ -77,6 +95,11 @@ export class PolicyService {
         },
       },
       include: { brackets: { orderBy: { ordinal: "asc" } } },
+    }).catch((error: unknown) => {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === UNIQUE_VIOLATION) {
+        throw new ConflictException("POLICY_DATE_TAKEN");
+      }
+      throw error;
     });
     await this.audit.record({
       actorId: createdById,

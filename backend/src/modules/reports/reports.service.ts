@@ -17,13 +17,15 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
 import { CacheService } from "../../common/cache/cache.service.js";
 import type { Env } from "../../config/env.schema.js";
-import { Prisma } from "@prisma/client";
+import { Prisma, type LaborCategory } from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service.js";
+import { ENDING_WINDOW_DAYS } from "../employees/dto/employee.dto.js";
 import { PolicyService } from "../policy/policy.service.js";
 import { TallyRangeDto } from "./dto/report.dto.js";
-import { dayWindow, localDay } from "../timesheet/local-day.js";
-import { QUEUE, type ReportJob } from "../../queue/queues.js";
+import { dayAsDate, dayWindow, localDay, minutesIntoDay } from "../timesheet/local-day.js";
+import { branchOf, likeOf } from "../timesheet/timesheet.service.js";
+import { JOB, QUEUE, type ReportJob } from "../../queue/queues.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 
 /**
@@ -60,10 +62,10 @@ const D02_COLUMNS: { at: number; head: string }[] = [
   { at: 27, head: "(27) Ghi chú" },
 ];
 
-// Columns 8 to 11 and 18 to 19 describe labour categories and hazardous work
-// that nothing in this system records, so they go out empty.
-const D02_UNHELD = new Set([8, 9, 10, 11, 18, 19]);
-const kAllowanceColumns = 5;
+// Columns 18 and 19 date hazardous work, which nothing in this system records.
+const D02_UNHELD = new Set([18, 19]);
+const D02_LABOR_COLUMN: Record<LaborCategory, number> = { MANAGER: 8, HIGH_SKILLED: 9, MID_SKILLED: 10, OTHER: 11 };
+const D02_MARK = "x";
 const kMonthPad = 2;
 
 const GENDER_WORD: Record<string, string> = { MALE: "Nam", FEMALE: "Nữ" };
@@ -202,8 +204,81 @@ function asMonth(value: Date | null | undefined): string {
  */
 function slotOf(from: Date, to: Date, query: TallyRangeDto): string {
   const span = `${from.toISOString()}_${to.toISOString()}`;
-  return `${span}_${query.take}_${query.search ?? ""}_${query.cursor ?? ""}`;
+  return `${span}_${query.take}_${query.search ?? ""}_${query.departmentId ?? ""}_${query.late ? "late" : ""}_${query.cursor ?? ""}`;
 }
+
+/** The roll-up's own filters, the same for its rows, its count and its totals. */
+function tallyFilter(visible: number[] | null, query: TallyRangeDto, zone: string): Prisma.Sql {
+  const term = query.search?.trim();
+  return Prisma.sql`${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
+    ${term ? Prisma.sql`AND (e."fullName" ILIKE ${likeOf(term)} OR e."code" ILIKE ${likeOf(term)})` : Prisma.empty}
+    ${query.departmentId ? Prisma.sql`AND e."departmentId" IN (${branchOf(query.departmentId)})` : Prisma.empty}
+    ${query.late ? Prisma.sql`AND a."employeeId" IN (${lateInRange(query, zone)})` : Prisma.empty}`;
+}
+
+/** Who came in after their shift's grace on at least one working day of the range. */
+function lateInRange(query: TallyRangeDto, zone: string): Prisma.Sql {
+  const local = Prisma.sql`((r."ts" AT TIME ZONE 'UTC') AT TIME ZONE ${zone})`;
+  return Prisma.sql`
+    SELECT r."employeeId"
+      FROM "AttendanceRecord" r
+      JOIN LATERAL (
+        SELECT s."startTime", s."graceMinutes"
+          FROM "ShiftAssignment" x
+          JOIN "Shift" s ON s."id" = x."shiftId"
+         WHERE x."employeeId" = r."employeeId" AND s."active" = true
+           AND x."validFrom" <= ${local}::date
+           AND (x."validTo" IS NULL OR x."validTo" >= ${local}::date)
+         ORDER BY x."validFrom" DESC, x."id" DESC
+         LIMIT 1
+      ) h ON true
+     WHERE r."ts" >= ${new Date(query.from)} AND r."ts" <= ${new Date(query.to)}
+       AND EXTRACT(ISODOW FROM ${local}) < 6
+     GROUP BY r."employeeId", ${local}::date, h."startTime", h."graceMinutes"
+    HAVING min(${localMinutes(Prisma.sql`r."ts"`, zone)}) > ${dueMinutes(Prisma.sql`h`)}`;
+}
+
+/** Minutes past local midnight of a stored instant; the column holds UTC without a zone. */
+function localMinutes(column: Prisma.Sql, zone: string): Prisma.Sql {
+  const local = Prisma.sql`((${column} AT TIME ZONE 'UTC') AT TIME ZONE ${zone})`;
+  return Prisma.sql`(EXTRACT(HOUR FROM ${local}) * 60 + EXTRACT(MINUTE FROM ${local}))::int`;
+}
+
+/** Where a shift stops counting as on time, in minutes past local midnight. */
+function dueMinutes(alias: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`(split_part(${alias}."startTime", ':', 1)::int * 60
+    + split_part(${alias}."startTime", ':', 2)::int + ${alias}."graceMinutes")`;
+}
+
+/** One person as a home page names them. */
+export interface PersonRef {
+  id: number;
+  code: string;
+  fullName: string;
+}
+
+/** Today's four numbers, scoped to whoever asks (KEHOACH 9.10). */
+export interface TodayCounts {
+  date: string;
+  expected: number;
+  present: number;
+  late: number;
+  absentUnexcused: number;
+  onLeave: number;
+}
+
+/** Who in a team is not where their shift says, in three short lists (KEHOACH 9.10). */
+export interface TeamToday {
+  absent: PersonRef[];
+  onLeave: PersonRef[];
+  notPunched: PersonRef[];
+  totals: { absent: number; onLeave: number; notPunched: number };
+}
+
+type TeamBucket = keyof TeamToday["totals"];
+
+const kTeamListCap = 20;
+const WEEKEND_DAYS: ReadonlySet<number> = new Set([0, 6]);
 
 /** One employee's punches inside a range. */
 export interface AttendanceTally {
@@ -254,7 +329,6 @@ export interface Attention {
   exceptionsToday: Pile<Exception>;
 }
 
-const kHorizonDays = 30;
 const kMsPerDay = 86_400_000;
 
 /** A desk reads the first screenful, so the query asks for one row past the
@@ -287,7 +361,7 @@ export class ReportsService {
   async attention(): Promise<Attention> {
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
     const today = localDay(new Date(), zone);
-    const horizon = new Date(Date.now() + kHorizonDays * kMsPerDay);
+    const horizon = new Date(Date.now() + ENDING_WINDOW_DAYS * kMsPerDay);
     const [contracts, probation, exceptions] = await Promise.all([
       this.db.$queryRaw<Expiring[]>`
         SELECT c."id" AS "contractId", e."id" AS "employeeId", e."code", e."fullName",
@@ -325,59 +399,156 @@ export class ReportsService {
    * wrong number (KEHOACH 9.8), so this reads the punches directly.
    */
   private exceptionsOn(day: string, zone: string): Promise<Exception[]> {
-    const { from, to } = dayWindow(day, zone);
     return this.db.$queryRaw<Exception[]>`
-      WITH shifted AS (
-        SELECT a."employeeId", s."startTime", s."graceMinutes"
-          FROM "ShiftAssignment" a
-          JOIN "Shift" s ON s."id" = a."shiftId"
-         WHERE s."active" = true AND a."validFrom" <= ${from}
-           AND (a."validTo" IS NULL OR a."validTo" >= ${from})
-      ),
-      seen AS (
-        SELECT "employeeId", count(*)::int AS marks, min("ts") AS "firstAt"
-          FROM "AttendanceRecord"
-         WHERE "ts" >= ${from} AND "ts" < ${to}
-         GROUP BY "employeeId"
-      ),
-      off AS (
-        SELECT DISTINCT "employeeId" FROM "Request"
-         WHERE "state" = 'APPROVED' AND "kind" IN ('LEAVE', 'BUSINESS_TRIP', 'REMOTE_WORK')
-           AND ${from}::date BETWEEN "fromDate" AND "toDate"
-      )
-      SELECT e."id" AS "employeeId", e."code", e."fullName",
+      ${this.todayCtes(day, zone, null, null)}
+      SELECT p."id" AS "employeeId", p."code", p."fullName",
              CASE
                WHEN k."employeeId" IS NULL THEN 'NO_PUNCH'
-               WHEN k.marks = 1 THEN 'STILL_IN'
+               WHEN k."marks" = 1 THEN 'STILL_IN'
                ELSE 'LATE'
              END AS "reason",
-             COALESCE(
-               GREATEST(
-                 0,
-                 (EXTRACT(EPOCH FROM (k."firstAt" AT TIME ZONE ${zone}))::int % 86400) / 60
-                   - (split_part(h."startTime", ':', 1)::int * 60
-                      + split_part(h."startTime", ':', 2)::int + h."graceMinutes")
-               ),
-               0
-             )::int AS "minutes"
-        FROM "Employee" e
-        JOIN shifted h ON h."employeeId" = e."id"
-        LEFT JOIN seen k ON k."employeeId" = e."id"
-        LEFT JOIN off o ON o."employeeId" = e."id"
-       WHERE e."active" = true AND o."employeeId" IS NULL
+             COALESCE(GREATEST(0, ${localMinutes(Prisma.sql`k."firstAt"`, zone)} - ${dueMinutes(Prisma.sql`x`)}), 0)::int
+               AS "minutes"
+        FROM expected x
+        JOIN people p ON p."id" = x."employeeId"
+        LEFT JOIN seen k ON k."employeeId" = x."employeeId"
+        LEFT JOIN away w ON w."employeeId" = x."employeeId"
+       WHERE w."employeeId" IS NULL
          AND (
            k."employeeId" IS NULL
-           OR k.marks = 1
-           OR (EXTRACT(EPOCH FROM (k."firstAt" AT TIME ZONE ${zone}))::int % 86400) / 60
-              > split_part(h."startTime", ':', 1)::int * 60
-                + split_part(h."startTime", ':', 2)::int + h."graceMinutes"
+           OR k."marks" = 1
+           OR ${localMinutes(Prisma.sql`k."firstAt"`, zone)} > ${dueMinutes(Prisma.sql`x`)}
          )
-       ORDER BY e."code"
+       ORDER BY p."code"
        LIMIT ${kAttentionCap + 1}
     `;
   }
 
-  /** Punches per employee between two instants, cached for a quarter hour. */
+  /** The people a day concerns and what they did; a weekend or an entity holiday expects nobody. */
+  private todayCtes(day: string, zone: string, visible: number[] | null, leaveOut: number | null): Prisma.Sql {
+    const { from, to } = dayWindow(day, zone);
+    const date = dayAsDate(day);
+    const weekend = WEEKEND_DAYS.has(date.getUTCDay());
+    return Prisma.sql`
+      WITH people AS (
+        SELECT e."id", e."code", e."fullName", e."legalEntityId"
+          FROM "Employee" e
+         WHERE e."active" = true
+           ${visible === null ? Prisma.empty : Prisma.sql`AND e."id" = ANY(${visible}::int[])`}
+           ${leaveOut === null ? Prisma.empty : Prisma.sql`AND e."id" <> ${leaveOut}::int`}
+      ),
+      shifted AS (
+        SELECT DISTINCT ON (a."employeeId") a."employeeId", s."startTime", s."graceMinutes"
+          FROM "ShiftAssignment" a
+          JOIN "Shift" s ON s."id" = a."shiftId"
+          JOIN people p ON p."id" = a."employeeId"
+         WHERE s."active" = true AND a."validFrom" <= ${date}
+           AND (a."validTo" IS NULL OR a."validTo" >= ${date})
+         ORDER BY a."employeeId", a."validFrom" DESC, a."id" DESC
+      ),
+      expected AS (
+        SELECT h.*
+          FROM shifted h
+          JOIN people p ON p."id" = h."employeeId"
+         WHERE ${weekend}::boolean = false
+           AND NOT EXISTS (
+             SELECT 1 FROM "Holiday" o
+              WHERE o."date" = ${day}::date
+                AND (o."legalEntityId" IS NULL OR o."legalEntityId" = p."legalEntityId")
+           )
+      ),
+      seen AS (
+        SELECT r."employeeId", count(*)::int AS "marks", min(r."ts") AS "firstAt"
+          FROM "AttendanceRecord" r
+          JOIN people p ON p."id" = r."employeeId"
+         WHERE r."ts" >= ${from} AND r."ts" < ${to}
+         GROUP BY r."employeeId"
+      ),
+      away AS (
+        SELECT q."employeeId", bool_or(q."kind" = 'LEAVE') AS "leave"
+          FROM "Request" q
+          JOIN people p ON p."id" = q."employeeId"
+         WHERE q."state" = 'APPROVED' AND q."kind" IN ('LEAVE', 'BUSINESS_TRIP', 'REMOTE_WORK')
+           AND ${day}::date BETWEEN q."fromDate" AND q."toDate"
+         GROUP BY q."employeeId"
+      )`;
+  }
+
+  /** Today's four numbers for the people this viewer may see; one statement. */
+  async today(viewer: Viewer): Promise<TodayCounts> {
+    const zone = this.config.get("APP_TIMEZONE", { infer: true });
+    const day = localDay(new Date(), zone);
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const [counts] = await this.db.$queryRaw<Omit<TodayCounts, "date">[]>`
+      ${this.todayCtes(day, zone, visible, null)}
+      SELECT (SELECT count(*) FROM expected)::int AS "expected",
+             (SELECT count(*) FROM seen)::int AS "present",
+             (SELECT count(*)
+                FROM expected x JOIN seen k ON k."employeeId" = x."employeeId"
+               WHERE ${localMinutes(Prisma.sql`k."firstAt"`, zone)} > ${dueMinutes(Prisma.sql`x`)})::int AS "late",
+             (SELECT count(*)
+                FROM expected x
+               WHERE NOT EXISTS (SELECT 1 FROM seen k WHERE k."employeeId" = x."employeeId")
+                 AND NOT EXISTS (SELECT 1 FROM away w WHERE w."employeeId" = x."employeeId"))::int AS "absentUnexcused",
+             (SELECT count(*) FROM away WHERE "leave")::int AS "onLeave"
+    `;
+    return { date: day, ...counts };
+  }
+
+  /**
+   * Who in the viewer's reach is off today, and who has not punched: absent
+   * once their shift's grace has run out, not punched until then.
+   */
+  async teamToday(viewer: Viewer): Promise<TeamToday> {
+    const zone = this.config.get("APP_TIMEZONE", { infer: true });
+    const now = new Date();
+    const day = localDay(now, zone);
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const rows = await this.db.$queryRaw<(PersonRef & { bucket: TeamBucket; total: number })[]>`
+      ${this.todayCtes(day, zone, visible, viewer.employeeId)},
+      sorted AS (
+        SELECT p."id", p."code", p."fullName",
+               CASE
+                 WHEN w."leave" THEN 'onLeave'
+                 WHEN w."employeeId" IS NOT NULL OR k."employeeId" IS NOT NULL THEN NULL
+                 WHEN ${minutesIntoDay(now, zone)}::int > ${dueMinutes(Prisma.sql`x`)} THEN 'absent'
+                 ELSE 'notPunched'
+               END AS "bucket"
+          FROM people p
+          LEFT JOIN expected x ON x."employeeId" = p."id"
+          LEFT JOIN seen k ON k."employeeId" = p."id"
+          LEFT JOIN away w ON w."employeeId" = p."id"
+         WHERE x."employeeId" IS NOT NULL OR w."leave"
+      ),
+      ranked AS (
+        SELECT s.*, row_number() OVER (PARTITION BY s."bucket" ORDER BY s."code") AS "at",
+               (count(*) OVER (PARTITION BY s."bucket"))::int AS "total"
+          FROM sorted s
+         WHERE s."bucket" IS NOT NULL
+      )
+      SELECT "id", "code", "fullName", "bucket", "total"
+        FROM ranked
+       WHERE "at" <= ${kTeamListCap}
+       ORDER BY "bucket", "code"
+    `;
+    const team: TeamToday = {
+      absent: [],
+      onLeave: [],
+      notPunched: [],
+      totals: { absent: 0, onLeave: 0, notPunched: 0 },
+    };
+    for (const row of rows) {
+      team[row.bucket].push({ id: row.id, code: row.code, fullName: row.fullName });
+      team.totals[row.bucket] = row.total;
+    }
+    return team;
+  }
+
+  private get zone(): string {
+    return this.config.get("APP_TIMEZONE", { infer: true });
+  }
+
+  /** Punches per employee between two instants; only a range already over is cached. */
   async summary(
     viewer: Viewer,
     from: Date,
@@ -388,6 +559,10 @@ export class ReportsService {
     if (visible !== null && visible.length === 0) {
       return { rows: [], total: 0, next: null };
     }
+    const zone = this.config.get("APP_TIMEZONE", { infer: true });
+    if (to >= dayWindow(localDay(new Date(), zone), zone).from) {
+      return this.page(from, to, visible, query);
+    }
     const scope =
       visible === null
         ? "all"
@@ -397,14 +572,12 @@ export class ReportsService {
     );
   }
 
-  /** The company-wide first page, built by the queue rather than by a request.
-   *  No viewer means no narrowing, which is why only a job may call it.
-   */
-  warm(from: Date, to: Date): Promise<Page<AttendanceTally>> {
+  /** The company-wide first page, rebuilt by the queue; no viewer means no narrowing, so only a job calls it. */
+  async warm(from: Date, to: Date): Promise<Page<AttendanceTally>> {
     const query = new TallyRangeDto();
-    return this.cache.through(CACHE.report("summary", slotOf(from, to, query)), () =>
-      this.page(from, to, null, query),
-    );
+    const entry = CACHE.report("summary", slotOf(from, to, query));
+    await this.cache.drop(entry.key);
+    return this.cache.through(entry, () => this.page(from, to, null, query));
   }
 
   /** Counting is the expensive half of a page once the cursor is in place, so
@@ -423,14 +596,14 @@ export class ReportsService {
     if (query.cursor) {
       return { rows, total: rows.length, next };
     }
-    return { ...countedTo(await this.countTallies(from, to, visible, query.search)), rows, next };
+    return { ...countedTo(await this.countTallies(from, to, visible, query)), rows, next };
   }
 
   private async countTallies(
     from: Date,
     to: Date,
     visible: number[] | null,
-    search: string | undefined,
+    query: TallyRangeDto,
   ): Promise<number> {
     const [seen] = await this.db.$queryRaw<{ found: bigint }[]>`
       SELECT count(*) AS "found" FROM (
@@ -438,8 +611,7 @@ export class ReportsService {
         FROM "AttendanceRecord" a
         JOIN "Employee" e ON e."id" = a."employeeId"
         WHERE a."ts" >= ${from} AND a."ts" <= ${to}
-          ${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
-          ${search ? Prisma.sql`AND e."fullName" ILIKE ${`%${search}%`}` : Prisma.empty}
+          ${tallyFilter(visible, query, this.zone)}
         GROUP BY a."employeeId", e."fullName"
         LIMIT ${COUNT_CEILING + 1}
       ) x
@@ -447,7 +619,7 @@ export class ReportsService {
     return Number(seen?.found ?? 0);
   }
 
-  async tallyTotals(viewer: Viewer, from: Date, to: Date, search: string | undefined): Promise<TallyTotals> {
+  async tallyTotals(viewer: Viewer, from: Date, to: Date, query: TallyRangeDto): Promise<TallyTotals> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const [summed] = await this.db.$queryRaw<{ people: number; punches: number; unsyncedClock: number }[]>`
       SELECT count(DISTINCT a."employeeId")::int                  AS "people",
@@ -456,8 +628,7 @@ export class ReportsService {
       FROM "AttendanceRecord" a
       JOIN "Employee" e ON e."id" = a."employeeId"
       WHERE a."ts" >= ${from} AND a."ts" <= ${to}
-        ${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
-        ${search ? Prisma.sql`AND e."fullName" ILIKE ${`%${search}%`}` : Prisma.empty}
+        ${tallyFilter(visible, query, this.zone)}
     `;
     return summed;
   }
@@ -468,7 +639,12 @@ export class ReportsService {
     // The range decides the id, so asking twice enqueues one run. It is hashed
     // because BullMQ refuses a colon, and an ISO instant is mostly colons.
     const id = createHash("sha256").update(`${job.type}|${job.from}|${job.to}`).digest("hex");
-    const queued = await queue.add(QUEUE.report, job, { jobId: id });
+    // BullMQ keeps a finished job and answers a repeat id with it, so a re-ask would run nothing.
+    const held = await queue.getJob(id);
+    if (held && ((await held.isCompleted()) || (await held.isFailed()))) {
+      await held.remove();
+    }
+    const queued = await queue.add(JOB.monthly, job, { jobId: id });
     return queued.id ?? "";
   }
 
@@ -504,8 +680,7 @@ export class ReportsService {
       FROM "AttendanceRecord" a
       JOIN "Employee" e ON e."id" = a."employeeId"
       WHERE a."ts" >= ${from} AND a."ts" <= ${to}
-        ${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
-        ${query.search ? Prisma.sql`AND e."fullName" ILIKE ${`%${query.search}%`}` : Prisma.empty}
+        ${tallyFilter(visible, query, this.zone)}
         ${
           after
             ? Prisma.sql`AND e."fullName" >= ${after.sortValue}
@@ -551,7 +726,7 @@ export class ReportsService {
         nationalId: true,
         hireDate: true,
         leaveDate: true,
-        jobTitle: { select: { name: true } },
+        jobTitle: { select: { name: true, laborCategory: true } },
         contracts: {
           // In force on the closing day, not in force today: a filing for June
           // asks what June looked like, and by now that term may have ended.
@@ -571,9 +746,8 @@ export class ReportsService {
           select: {
             insuranceSalary: true,
             allowances: {
-              where: { insurable: true },
-              orderBy: { code: "asc" },
-              select: { amount: true },
+              where: { d02Column: { not: null } },
+              select: { amount: true, d02Column: true },
             },
           },
         },
@@ -590,10 +764,17 @@ export class ReportsService {
       cells.set(5, one.gender ? (GENDER_WORD[one.gender] ?? "") : "");
       cells.set(6, one.nationalId ?? "");
       cells.set(7, one.jobTitle?.name ?? "");
+      if (one.jobTitle?.laborCategory) {
+        cells.set(D02_LABOR_COLUMN[one.jobTitle.laborCategory], D02_MARK);
+      }
       cells.set(12, one.compensation[0]?.insuranceSalary.toFixed(0) ?? "");
-      const extras = one.compensation[0]?.allowances ?? [];
-      for (let slot = 0; slot < kAllowanceColumns; slot += 1) {
-        cells.set(13 + slot, extras[slot]?.amount.toFixed(0) ?? "");
+      const byColumn = new Map<number, bigint>();
+      for (const extra of one.compensation[0]?.allowances ?? []) {
+        const at = extra.d02Column as number;
+        byColumn.set(at, (byColumn.get(at) ?? 0n) + BigInt(extra.amount.toFixed(0)));
+      }
+      for (const [at, amount] of byColumn) {
+        cells.set(at, amount.toString());
       }
       const contract = one.contracts[0];
       if (contract?.kind === "INDEFINITE") {

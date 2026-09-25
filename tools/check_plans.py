@@ -64,7 +64,7 @@ QUERIES: dict[str, str] = {
            AND (CURRENT_DATE - r."createdAt"::date) = ANY(ARRAY[3, 7, 14]::int[])
     """,
     "unread-notifications": """
-        SELECT count(*) FROM "Notification" WHERE "employeeId" = 1 AND "readAt" IS NULL
+        SELECT count(*) FROM "Notification" WHERE "userId" = '00000000-0000-0000-0000-000000000000' AND "readAt" IS NULL
     """,
     "leavers-of-period": """
         SELECT e."id" FROM "Employee" e

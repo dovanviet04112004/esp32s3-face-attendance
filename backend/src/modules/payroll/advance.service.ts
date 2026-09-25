@@ -1,18 +1,41 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { SalaryAdvance } from "@prisma/client";
+import { ConfigService } from "@nestjs/config";
+import type { Prisma, SalaryAdvance } from "@prisma/client";
 
-import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { LeaveService, THE_DESK } from "../leave/leave.service.js";
+import { LeaveService } from "../leave/leave.service.js";
+import {
+  PERSON_VIEW,
+  QUEUE_DESKS,
+  filedBetween,
+  notOwnWaiting,
+  personWhere,
+  resumeAfter,
+  sortedBy,
+  waitedDays,
+  whoseRows,
+} from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import type { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
 
-const PAYERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL"]);
+const SORT_FIELD = "requestedAt";
+// Money handed out and not yet taken back by a payslip.
+const OWED: SalaryAdvance["state"][] = ["APPROVED", "PAID"];
+
+type Listed = Prisma.SalaryAdvanceGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
+
+export interface AdvanceRow extends Listed {
+  waitedDays: number;
+  baseSalary: string | null;
+  outstanding: string | null;
+}
 
 @Injectable()
 export class AdvanceService {
@@ -22,37 +45,77 @@ export class AdvanceService {
     private readonly leave: LeaveService,
     private readonly audit: AuditService,
     private readonly notices: NotificationsService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
-  async list(viewer: Viewer, query: ListAdvancesDto): Promise<Page<SalaryAdvance>> {
+  async list(viewer: Viewer, query: ListAdvancesDto): Promise<Page<AdvanceRow>> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    const asked = query.employeeId;
-    // Naming a person narrows what the viewer may see; it never widens it.
-    const whose =
-      asked === undefined
-        ? visible === null
-          ? {}
-          : { employeeId: { in: visible } }
-        : { employeeId: visible === null || visible.includes(asked) ? asked : { in: [] } };
-    const where = { ...whose, ...(query.state ? { state: query.state } : {}) };
+    const person = await personWhere(this.db, query);
+    const own =
+      query.state === "PENDING"
+        ? notOwnWaiting(viewer, QUEUE_DESKS.advancesToDecide, true, query.employeeId)
+        : notOwnWaiting(viewer, QUEUE_DESKS.advancesToPay, query.state === "APPROVED", query.employeeId);
+    const where = {
+      AND: [
+        whoseRows(visible, query.employeeId),
+        own,
+        query.state ? { state: query.state } : {},
+        person ? { employee: person } : {},
+        filedBetween(SORT_FIELD, query, this.config.get("APP_TIMEZONE", { infer: true })),
+      ],
+    } as Prisma.SalaryAdvanceWhereInput;
+    const order = query.order ?? (query.state === "PENDING" || query.state === "APPROVED" ? "asc" : "desc");
+    const resumed = query.cursor
+      ? { AND: [where, resumeAfter(SORT_FIELD, order, query.cursor) as Prisma.SalaryAdvanceWhereInput] }
+      : where;
     const [rows, found] = await Promise.all([
       this.db.salaryAdvance.findMany({
-        where,
-        include: { employee: { select: { id: true, code: true, fullName: true } } },
-        // requestedAt repeats when a queue files several at once, so id
-        // settles the order the cursor resumes from (KEHOACH 9.9 rule 3).
-        orderBy: [{ requestedAt: "desc" }, { id: "asc" }],
+        where: resumed,
+        include: { employee: PERSON_VIEW },
+        orderBy: sortedBy(SORT_FIELD, order) as Prisma.SalaryAdvanceOrderByWithRelationInput[],
+        skip: query.cursor ? 0 : query.skip,
         take: query.take,
-        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
       }),
       this.db.salaryAdvance.count({ where, take: COUNT_CEILING + 1 }),
     ]);
-    const last = rows[rows.length - 1];
     return {
       ...countedTo(found),
-      rows,
-      next: rows.length === query.take && last ? last.id : null,
+      rows: await this.withContext(rows, visible === null),
+      next: nextCursor(rows, query.take, (row) => row.requestedAt),
     };
+  }
+
+  // What the desk weighs an advance against (KEHOACH 9.15); never computed for anyone else.
+  private async withContext(rows: Listed[], desk: boolean): Promise<AdvanceRow[]> {
+    const now = new Date();
+    const people = [...new Set(rows.map((row) => row.employeeId))];
+    const [pay, owed] =
+      desk && people.length > 0
+        ? await Promise.all([
+            this.db.compensationRecord.findMany({
+              where: { employeeId: { in: people }, effectiveFrom: { lte: now } },
+              orderBy: [{ employeeId: "asc" }, { effectiveFrom: "desc" }],
+              distinct: ["employeeId"],
+              select: { employeeId: true, baseSalary: true },
+            }),
+            this.db.salaryAdvance.findMany({
+              where: { employeeId: { in: people }, state: { in: OWED } },
+              select: { id: true, employeeId: true, amount: true },
+            }),
+          ])
+        : [[], []];
+    const salaryOf = new Map(pay.map((one) => [one.employeeId, one.baseSalary.toFixed(0)]));
+    return rows.map((row) => ({
+      ...row,
+      waitedDays: waitedDays(row.requestedAt, now),
+      baseSalary: desk ? (salaryOf.get(row.employeeId) ?? null) : null,
+      outstanding: desk
+        ? owed
+            .filter((one) => one.employeeId === row.employeeId && one.id !== row.id)
+            .reduce((sum, one) => sum + Number(one.amount), 0)
+            .toFixed(0)
+        : null,
+    }));
   }
 
   async submit(viewer: Viewer, body: RequestAdvanceDto): Promise<SalaryAdvance> {
@@ -75,18 +138,16 @@ export class AdvanceService {
   }
 
   async decide(viewer: Viewer, id: string, body: DecideAdvanceDto): Promise<SalaryAdvance> {
-    if (!THE_DESK.includes(viewer.role)) {
+    if (!QUEUE_DESKS.advancesToDecide.includes(viewer.role)) {
       throw new ForbiddenException("ADVANCE_DECIDE_DENIED");
     }
     const found = await this.require(id);
     if (found.employeeId === viewer.employeeId) {
-      throw new ForbiddenException("SELF_DECIDE");
+      throw new ForbiddenException("SELF_DECISION");
     }
-    if (found.state !== "PENDING") {
-      throw new BadRequestException("ADVANCE_ALREADY_DECIDED");
-    }
-    const decided = await this.db.salaryAdvance.update({
-      where: { id },
+    // Guarded on the state, so a withdrawal or a second desk landing first leaves this one refused.
+    const claimed = await this.db.salaryAdvance.updateMany({
+      where: { id, state: "PENDING" },
       data: {
         state: body.approve ? "APPROVED" : "REJECTED",
         decidedById: viewer.userId,
@@ -94,6 +155,10 @@ export class AdvanceService {
         decisionNote: body.note ?? null,
       },
     });
+    if (claimed.count !== 1) {
+      throw new BadRequestException("ADVANCE_ALREADY_DECIDED");
+    }
+    const decided = await this.require(id);
     await this.audit.record({
       actorId: viewer.userId,
       action: body.approve ? AUDIT_ACTIONS.ADVANCE_APPROVE : AUDIT_ACTIONS.ADVANCE_REJECT,
@@ -112,19 +177,24 @@ export class AdvanceService {
    * it up, so an approval nobody paid never turns into a deduction.
    */
   async markPaid(viewer: Viewer, id: string): Promise<SalaryAdvance> {
-    if (!PAYERS.has(viewer.role)) {
+    if (!QUEUE_DESKS.advancesToPay.includes(viewer.role)) {
       throw new ForbiddenException("ADVANCE_PAY_DENIED");
     }
     const found = await this.require(id);
-    if (found.state !== "APPROVED") {
+    // Paying oneself is deciding one's own money a second time (KEHOACH 9.4).
+    if (found.employeeId === viewer.employeeId) {
+      throw new ForbiddenException("SELF_DECISION");
+    }
+    const claimed = await this.db.salaryAdvance.updateMany({
+      where: { id, state: "APPROVED" },
+      data: { state: "PAID", paidAt: new Date() },
+    });
+    if (claimed.count !== 1) {
       throw new BadRequestException("ADVANCE_NOT_APPROVED");
     }
     await this.audit.record({ actorId: viewer.userId, action: AUDIT_ACTIONS.ADVANCE_PAY,
       subject: AUDIT_SUBJECTS.ADVANCE, subjectId: id });
-    return this.db.salaryAdvance.update({
-      where: { id },
-      data: { state: "PAID", paidAt: new Date() },
-    });
+    return this.require(id);
   }
 
   async cancel(viewer: Viewer, id: string): Promise<SalaryAdvance> {
@@ -132,10 +202,14 @@ export class AdvanceService {
     if (found.employeeId !== viewer.employeeId) {
       throw new NotFoundException("ADVANCE_NOT_FOUND");
     }
-    if (found.state !== "PENDING") {
+    const claimed = await this.db.salaryAdvance.updateMany({
+      where: { id, state: "PENDING" },
+      data: { state: "CANCELLED" },
+    });
+    if (claimed.count !== 1) {
       throw new BadRequestException("ADVANCE_ALREADY_DECIDED");
     }
-    return this.db.salaryAdvance.update({ where: { id }, data: { state: "CANCELLED" } });
+    return this.require(id);
   }
 
   private async require(id: string): Promise<SalaryAdvance> {

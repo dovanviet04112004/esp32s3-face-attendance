@@ -46,3 +46,52 @@ export class ImageLinkDto {
   @MaxLength(64)
   sig!: string;
 }
+
+export class ReleaseViewDto {
+  @ApiProperty() releaseId!: string;
+  @ApiProperty({ enum: ["FIRMWARE", "MODELS", "ASSETS"] }) target!: string;
+  @ApiProperty() version!: string;
+  @ApiProperty() sha256!: string;
+  @ApiProperty() sizeBytes!: number;
+  @ApiProperty({ type: String, nullable: true }) minFwVersion!: string | null;
+  @ApiProperty({ type: String, nullable: true }) runId!: string | null;
+  @ApiProperty({ enum: ["DRAFT", "ROLLING", "PAUSED", "COMPLETED"] }) rolloutState!: string;
+  @ApiProperty({ description: "The file is still on the volume, so it can be offered" }) available!: boolean;
+  @ApiProperty() createdAt!: string;
+}
+
+export class FleetUpdateView {
+  @ApiProperty({ type: ReleaseViewDto }) release!: ReleaseViewDto;
+  @ApiProperty({ type: [String], description: "Approved kiosks running something older" }) behind!: string[];
+  @ApiProperty({ type: [String], description: "Behind, but still installing an earlier offer" }) updating!: string[];
+}
+
+export class OfferStatusView {
+  @ApiProperty() releaseId!: string;
+  @ApiProperty() target!: string;
+  @ApiProperty() version!: string;
+  @ApiProperty() offeredAt!: string;
+  @ApiProperty({ enum: ["WAITING", "INSTALLED", "FAILED", "INTERRUPTED", "EXPIRED"] }) state!: string;
+  @ApiProperty({ type: String, nullable: true }) reason!: string | null;
+  @ApiProperty({ type: String, nullable: true }) busyUntil!: string | null;
+}
+
+export class OfferAllView {
+  @ApiProperty({ type: [String] }) offered!: string[];
+  @ApiProperty({ type: [String] }) failed!: string[];
+  @ApiProperty({ type: [String] }) busy!: string[];
+}
+
+export class OfferView {
+  @ApiProperty() deviceId!: string;
+  @ApiProperty() offeredAt!: Date;
+}
+
+export class PublishedView {
+  @ApiProperty() published!: boolean;
+}
+
+export class PublishResultView {
+  @ApiProperty({ type: ReleaseViewDto }) release!: ReleaseViewDto;
+  @ApiProperty({ description: "The target and version were already on the register" }) existing!: boolean;
+}

@@ -12,6 +12,7 @@ import { ConfigService } from "@nestjs/config";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import type { Device, DeviceStatus, Prisma } from "@prisma/client";
 
+import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { heartbeatSchema } from "../../common/generated/heartbeat.js";
 import type { Env } from "../../config/env.schema.js";
@@ -74,6 +75,8 @@ export interface DeviceChange {
   deviceId: string;
   status: DeviceStatus;
 }
+
+export type DeviceCounts = Record<DeviceStatus | "online" | "offline", number>;
 
 export type PublicDevice = Omit<
   Device,
@@ -261,8 +264,23 @@ export class DevicesService {
   }
 
   async list(query: ListDevicesDto): Promise<Page<PublicDevice>> {
-    const where: Prisma.DeviceWhereInput = query.status ? { status: query.status } : {};
-    const [rows, total] = await Promise.all([
+    const term = query.search?.trim();
+    const where: Prisma.DeviceWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      // Online and offline only mean something for a kiosk in the fleet.
+      ...(query.online === undefined ? {} : { status: "APPROVED", online: query.online }),
+      ...(term
+        ? {
+            OR: [
+              { id: { contains: term, mode: "insensitive" } },
+              { name: { contains: term, mode: "insensitive" } },
+              { location: { contains: term, mode: "insensitive" } },
+              { serial: { contains: term, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+    const [rows, found] = await Promise.all([
       this.db.device.findMany({
         where,
         select: SHOWN,
@@ -270,9 +288,22 @@ export class DevicesService {
         take: query.take,
         orderBy: [{ status: "asc" }, { id: "asc" }],
       }),
-      this.db.device.count({ where }),
+      this.db.device.count({ where, take: COUNT_CEILING + 1 }),
     ]);
-    return { rows, total };
+    return { rows, ...countedTo(found) };
+  }
+
+  /** How many kiosks stand in each status, and how many approved ones are online, for the filter's choices. */
+  async counts(): Promise<DeviceCounts> {
+    const grouped = await this.db.device.groupBy({ by: ["status", "online"], _count: { _all: true } });
+    const counts: DeviceCounts = { PENDING: 0, APPROVED: 0, REVOKED: 0, online: 0, offline: 0 };
+    for (const row of grouped) {
+      counts[row.status] += row._count._all;
+      if (row.status === "APPROVED") {
+        counts[row.online ? "online" : "offline"] += row._count._all;
+      }
+    }
+    return counts;
   }
 
   async get(id: string): Promise<PublicDevice> {
@@ -289,7 +320,7 @@ export class DevicesService {
   }
 
   /** Accept a machine: a person typed the claim code off its screen (KEHOACH 7.3). */
-  async approve(id: string, body: ApproveDeviceDto): Promise<PublicDevice> {
+  async approve(id: string, body: ApproveDeviceDto, actorId: string): Promise<PublicDevice> {
     const held = await this.db.device.findUnique({
       where: { id },
       select: { claimHash: true, claimFailures: true, revokedAt: true, readmittedAt: true },
@@ -310,7 +341,7 @@ export class DevicesService {
     }
     const now = new Date();
     const closesSpan = held.revokedAt !== null && held.readmittedAt === null;
-    return this.db.device.update({
+    const approved = await this.db.device.update({
       where: { id },
       data: {
         ...named,
@@ -322,10 +353,18 @@ export class DevicesService {
       },
       select: SHOWN,
     });
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.DEVICE_APPROVE,
+      subject: AUDIT_SUBJECTS.DEVICE,
+      subjectId: id,
+      meta: { readmitted: closesSpan },
+    });
+    return approved;
   }
 
   /** Take a machine back: its ticket dies, its open session is closed, and it re-registers (KEHOACH 7.4). */
-  async revoke(id: string): Promise<PublicDevice> {
+  async revoke(id: string, actorId: string): Promise<PublicDevice> {
     await this.get(id);
     const revoked = await this.db.device.update({
       where: { id },
@@ -339,7 +378,14 @@ export class DevicesService {
       },
       select: SHOWN,
     });
-    await this.broker.closeSession(id);
+    const closed = await this.broker.closeSession(id);
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.DEVICE_REVOKE,
+      subject: AUDIT_SUBJECTS.DEVICE,
+      subjectId: id,
+      meta: { sessionClosed: closed },
+    });
     this.changed(id, "REVOKED");
     return revoked;
   }

@@ -58,13 +58,12 @@ export class ConsentService {
     if (employeeId === null || employeeId === undefined) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
-    if (employeeId !== viewer.employeeId && !RECORDERS.has(viewer.role)) {
-      throw new ForbiddenException("CONSENT_NOT_YOURS");
-    }
+    this.mayRecordFor(viewer, employeeId);
     if ((await this.live(employeeId)) !== null) {
       throw new BadRequestException("CONSENT_ALREADY_GRANTED");
     }
-    const noticeVersion = body.noticeVersion ?? this.noticeVersion();
+    // The server names the text on offer; a client-sent version could name a notice nobody saw.
+    const noticeVersion = this.noticeVersion();
     const made = await this.db.biometricConsent.create({
       data: {
         employeeId,
@@ -84,25 +83,10 @@ export class ConsentService {
     return made;
   }
 
-  /** Withdrawing is a right, so it is one call and it takes effect at once. */
-  async withdraw(viewer: Viewer, employeeId: number): Promise<BiometricConsent> {
+  /** A person records for themselves; only the desk records for someone else. */
+  mayRecordFor(viewer: Viewer, employeeId: number): void {
     if (employeeId !== viewer.employeeId && !RECORDERS.has(viewer.role)) {
       throw new ForbiddenException("CONSENT_NOT_YOURS");
     }
-    const held = await this.live(employeeId);
-    if (!held) {
-      throw new BadRequestException("CONSENT_NOT_GRANTED");
-    }
-    const dropped = await this.db.biometricConsent.update({
-      where: { id: held.id },
-      data: { state: "WITHDRAWN", withdrawnAt: new Date() },
-    });
-    await this.audit.record({
-      actorId: viewer.userId,
-      action: AUDIT_ACTIONS.BIOMETRIC_CONSENT_WITHDRAW,
-      subject: AUDIT_SUBJECTS.EMPLOYEE,
-      subjectId: String(employeeId),
-    });
-    return dropped;
   }
 }

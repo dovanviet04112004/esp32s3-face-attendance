@@ -69,7 +69,7 @@ describe("enrollment (e2e)", () => {
     await request(http)
       .post("/biometric-consents")
       .set("Authorization", `Bearer ${admin}`)
-      .send({ employeeId, noticeVersion: "test-v1", method: "PAPER" });
+      .send({ employeeId, method: "PAPER" });
   });
 
   after(async () => {
@@ -212,7 +212,7 @@ describe("enrollment (e2e)", () => {
         request(http)
           .post("/biometric-consents")
           .set("Authorization", `Bearer ${admin}`)
-          .send({ employeeId: one.id, noticeVersion: "2026-01-v1", method: "PAPER" }),
+          .send({ employeeId: one.id, method: "PAPER" }),
       ),
     );
 
@@ -234,5 +234,68 @@ describe("enrollment (e2e)", () => {
     // counter read in this process and written back loses the ones between.
     const after = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
     assert.equal(after.rosterVersion - before.rosterVersion, made.length);
+  });
+
+  it("stamps the notice the server serves and refuses one a client names", async () => {
+    const racer = await db.employee.findUniqueOrThrow({ where: { code: RACERS[0] } });
+    const named = await request(http)
+      .post("/biometric-consents")
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ employeeId: racer.id, noticeVersion: "made-up", method: "PAPER" });
+    assert.equal(named.status, 400);
+    const held = await db.biometricConsent.findFirstOrThrow({
+      where: { employeeId: racer.id, state: "GRANTED" },
+    });
+    assert.equal(held.noticeVersion, validateEnv().BIOMETRIC_NOTICE_VERSION);
+  });
+
+  it("erases on withdrawal even while no kiosk can be reached, and erases again when asked again", async () => {
+    const racer = await db.employee.findUniqueOrThrow({ where: { code: RACERS[1] } });
+    await db.faceTemplate.create({
+      data: { employeeId: racer.id, templateIdx: 0, embedding: Buffer.alloc(8), scale: 0.01, capturedAt: new Date() },
+    });
+    const mqtt = app.get(MqttService);
+    const down = mock.method(mqtt, "publishDown", async () => {
+      throw new Error("no broker");
+    });
+    const first = await request(http)
+      .post(`/biometric-consents/${racer.id}/withdraw`)
+      .set("Authorization", `Bearer ${admin}`);
+    down.mock.restore();
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    assert.equal(first.body.consent.state, "WITHDRAWN");
+    assert.equal(await db.faceTemplate.count({ where: { employeeId: racer.id } }), 0);
+    const pair = await db.deviceEnrollment.findUniqueOrThrow({
+      where: { deviceId_employeeId: { deviceId: DEVICE_ID, employeeId: racer.id } },
+    });
+    assert.equal(pair.state, "REVOKED");
+
+    const again = await request(http)
+      .post(`/biometric-consents/${racer.id}/withdraw`)
+      .set("Authorization", `Bearer ${admin}`);
+    assert.equal(again.status, 201, "a retry must finish the erase, not refuse it");
+    assert.ok(again.body.devices >= 1);
+  });
+
+  it("keeps no face a kiosk captures once consent is gone", async () => {
+    const racer = await db.employee.findUniqueOrThrow({ where: { code: RACERS[1] } });
+    const mqtt = app.get(MqttService);
+    const sent: { op: string }[] = [];
+    const down = mock.method(mqtt, "publishDown", async (...args: unknown[]) => {
+      sent.push(args[2] as { op: string });
+    });
+    await app.get(EnrollmentService).takeReport(DEVICE_ID, {
+      op: "UPSERT",
+      employeeId: racer.id,
+      templateIdx: 0,
+      updatedAt: Date.now(),
+      embedding: sample,
+      scale: 0.0125,
+      rosterVersion: 1,
+      deviceId: DEVICE_ID,
+    });
+    down.mock.restore();
+    assert.equal(await db.faceTemplate.count({ where: { employeeId: racer.id } }), 0);
+    assert.ok(sent.some((one) => one.op === "DELETE_EMPLOYEE"), "the kiosk was not told to drop the face");
   });
 });

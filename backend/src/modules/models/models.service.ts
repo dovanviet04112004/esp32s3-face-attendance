@@ -24,6 +24,7 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
+import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 
 /** What a publisher may put on the register; ASSETS waits for the kiosk to install it (KEHOACH 7.7). */
 export const PUBLISHED_TARGETS = ["FIRMWARE", "MODELS"] as const;
@@ -127,6 +128,7 @@ export class ModelsService implements OnModuleInit {
     private readonly mqtt: MqttService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
+    private readonly feed: RealtimeGateway,
   ) {
     this.dir = resolve(this.config.get("RELEASE_DIR", { infer: true }));
     this.linkKey = createHmac("sha256", this.config.get("JWT_DEVICE_SECRET", { infer: true }))
@@ -198,12 +200,14 @@ export class ModelsService implements OnModuleInit {
     const releaseId = randomUUID();
     const file = `${releaseId}.bin`;
     const { sha256, sizeBytes, head } = await this.store(body, `${this.dir}/${file}.part`);
+    let release: Release;
+    // Only a failure ahead of the row removes the file; once the row names it, the file stays.
     try {
       if (facts.target === "FIRMWARE") {
         this.checkAppImage(head, facts.version);
       }
       await rename(`${this.dir}/${file}.part`, `${this.dir}/${file}`);
-      const release = await this.db.release.create({
+      release = await this.db.release.create({
         data: {
           releaseId,
           target: facts.target,
@@ -215,15 +219,6 @@ export class ModelsService implements OnModuleInit {
           runId: facts.runId ?? null,
         },
       });
-      await this.audit.record({
-        action: AUDIT_ACTIONS.RELEASE_PUBLISH,
-        subject: AUDIT_SUBJECTS.RELEASE,
-        subjectId: releaseId,
-        meta: { target: facts.target, version: facts.version, sha256, sizeBytes },
-      });
-      this.log.log(`published ${facts.target} ${facts.version}, ${sizeBytes} bytes, ${sha256}`);
-      await this.prune(facts.target);
-      return { release: view(release), existing: false };
     } catch (error) {
       await rm(`${this.dir}/${file}.part`, { force: true });
       await rm(`${this.dir}/${file}`, { force: true });
@@ -235,6 +230,19 @@ export class ModelsService implements OnModuleInit {
       }
       throw error;
     }
+    await this.audit.record({
+      action: AUDIT_ACTIONS.RELEASE_PUBLISH,
+      subject: AUDIT_SUBJECTS.RELEASE,
+      subjectId: releaseId,
+      meta: { target: facts.target, version: facts.version, sha256, sizeBytes },
+    });
+    this.log.log(`published ${facts.target} ${facts.version}, ${sizeBytes} bytes, ${sha256}`);
+    await this.prune(facts.target).catch((error: Error) =>
+      this.log.error(`older ${facts.target} files not pruned: ${error.message}`),
+    );
+    // The publisher is a token, not a person, so the change interceptor never announces it.
+    this.feed.publish(FEED.change, { resources: ["releases"] }, null);
+    return { release: view(release), existing: false };
   }
 
   /** The file a signed link names, for a kiosk still in the fleet (KEHOACH 7.7). */
@@ -320,6 +328,21 @@ export class ModelsService implements OnModuleInit {
     if (!release) {
       return null;
     }
+    const failure = runs(device, release)
+      ? null
+      : await this.db.deviceEvent.findFirst({
+          where: { deviceId, type: OTA_FAILED, ts: { gte: device.otaOfferedAt } },
+          orderBy: { ts: "desc" },
+          select: { message: true },
+        });
+    return this.offerState({ ...device, otaOfferedAt: device.otaOfferedAt }, release, failure);
+  }
+
+  private offerState(
+    device: Pick<Device, "fwVersion" | "modelVersion" | "bootedAt"> & { otaOfferedAt: Date },
+    release: Release,
+    failure: { message: string | null } | null,
+  ): OfferStatus {
     const base = {
       releaseId: release.releaseId,
       target: release.target,
@@ -330,11 +353,6 @@ export class ModelsService implements OnModuleInit {
     if (runs(device, release)) {
       return { ...base, state: "INSTALLED", reason: null };
     }
-    const failure = await this.db.deviceEvent.findFirst({
-      where: { deviceId, type: OTA_FAILED, ts: { gte: device.otaOfferedAt } },
-      orderBy: { ts: "desc" },
-      select: { message: true },
-    });
     if (failure) {
       return { ...base, state: "FAILED", reason: failure.message };
     }
@@ -350,15 +368,36 @@ export class ModelsService implements OnModuleInit {
     return { ...base, state: "WAITING", reason: null, busyUntil: busyEnds > Date.now() ? new Date(busyEnds) : null };
   }
 
-  // The approved kiosks inside the busy window of an offer they have not answered yet.
+  // The approved kiosks inside the busy window of an offer they have not answered yet, in three reads.
   private async installing(): Promise<Set<string>> {
+    const since = new Date(Date.now() - this.busyMs);
     const recent = await this.db.device.findMany({
-      where: { status: "APPROVED", otaOfferedAt: { gt: new Date(Date.now() - this.busyMs) } },
-      select: { id: true },
+      where: { status: "APPROVED", otaOfferedAt: { gt: since }, otaReleaseId: { not: null } },
+      select: { id: true, fwVersion: true, modelVersion: true, bootedAt: true, otaReleaseId: true, otaOfferedAt: true },
     });
+    if (recent.length === 0) {
+      return new Set();
+    }
+    const [releases, failures] = await Promise.all([
+      this.db.release.findMany({
+        where: { releaseId: { in: [...new Set(recent.map((one) => one.otaReleaseId as string))] } },
+      }),
+      this.db.deviceEvent.findMany({
+        where: { deviceId: { in: recent.map((one) => one.id) }, type: OTA_FAILED, ts: { gt: since } },
+        select: { deviceId: true, ts: true, message: true },
+        orderBy: { ts: "desc" },
+      }),
+    ]);
+    const releaseOf = new Map(releases.map((one) => [one.releaseId, one]));
     const busy = new Set<string>();
     for (const one of recent) {
-      if ((await this.status(one.id))?.busyUntil) {
+      const release = releaseOf.get(one.otaReleaseId as string);
+      const offeredAt = one.otaOfferedAt as Date;
+      if (!release) {
+        continue;
+      }
+      const failure = failures.find((event) => event.deviceId === one.id && event.ts >= offeredAt) ?? null;
+      if (this.offerState({ ...one, otaOfferedAt: offeredAt }, release, failure).busyUntil) {
         busy.add(one.id);
       }
     }

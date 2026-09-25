@@ -1,14 +1,16 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { AttendanceDay, DayState, Prisma } from "@prisma/client";
+import { Prisma, type AttendanceDay, type DayCalendar, type DayState } from "@prisma/client";
 
 import type { Env } from "../../config/env.schema.js";
+import { toExcelCsv } from "../../common/csv.js";
 import {
   COUNT_CEILING,
   countedTo,
@@ -20,17 +22,49 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { QUEUE, type TimesheetJob } from "../../queue/queues.js";
-import type { CorrectDayDto, ListDaysDto } from "./dto/timesheet.dto.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
+import { AuditService } from "../audit/audit.service.js";
+import { JOB, QUEUE, type TimesheetJob } from "../../queue/queues.js";
+import type { CorrectDayDto, ListDaysDto, SummaryQueryDto } from "./dto/timesheet.dto.js";
 import { clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
 
 const SATURDAY = 6;
 const SUNDAY = 0;
+const DAY_ID = /^\d{1,19}$/;
+
+const SUMMED = Prisma.sql`
+  count(*) FILTER (WHERE d."state" = 'WORKED')::int          AS "workedDays",
+  count(*) FILTER (WHERE d."state" = 'LEAVE')::int           AS "leaveDays",
+  count(*) FILTER (WHERE d."state" = 'ABSENT')::int          AS "absentDays",
+  coalesce(sum(d."workedMinutes"), 0)::int                   AS "workedMinutes",
+  coalesce(sum(d."lateMinutes"), 0)::int                     AS "lateMinutes",
+  coalesce(sum(d."overtimeMinutes"), 0)::int                 AS "overtimeMinutes",
+  count(*) FILTER (WHERE d."adjustedById" IS NOT NULL)::int  AS "adjustedDays"`;
+
+// What a desk has to look at: nobody came, somebody came late, or the day holds a hand correction.
+const EXCEPTION_DAY = Prisma.sql`(d."state" = 'ABSENT' OR d."lateMinutes" > 0 OR d."adjustedById" IS NOT NULL)`;
+
+/** A department and every department under it, as a subquery for `IN (...)`. */
+export function branchOf(departmentId: string): Prisma.Sql {
+  return Prisma.sql`
+    WITH RECURSIVE branch AS (
+      SELECT "id" FROM "Department" WHERE "id" = ${departmentId}
+      UNION
+      SELECT c."id" FROM "Department" c JOIN branch b ON c."parentId" = b."id"
+    )
+    SELECT "id" FROM branch`;
+}
+
+/** A search term as an ILIKE pattern, with the wildcards a person typed taken literally. */
+export function likeOf(term: string): string {
+  return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+}
 
 interface DayRow {
   employeeId: number;
   date: Date;
   state: DayState;
+  calendar: DayCalendar;
   shiftId: string | null;
   firstIn?: Date;
   lastOut?: Date;
@@ -66,6 +100,16 @@ export interface DayTotals extends Omit<DaySummary, "employeeId" | "code" | "ful
   people: number;
 }
 
+/** One person's month in the counts their home page shows (KEHOACH 9.10). */
+export interface MonthTally {
+  month: string;
+  workedDays: number;
+  lateCount: number;
+  missingPunchDays: number;
+  leaveDays: number;
+  absentDays: number;
+}
+
 /** Where a queued build stands; "gone" is a job the queue has already let go of. */
 export type BuildState = "waiting" | "active" | "completed" | "failed" | "gone";
 
@@ -84,6 +128,7 @@ export class TimesheetService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly config: ConfigService<Env, true>,
+    private readonly audit: AuditService,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -111,21 +156,26 @@ export class TimesheetService {
     });
   }
 
-  /**
-   * One row per person for a month. Reading every day row into the browser is
-   * thirty thousand times thirty rows for one screen (KEHOACH 9.9).
-   */
   /** A month of a company is one row per person, so it pages by the employee
    *  code, which is unique and therefore a total order (KEHOACH 9.9 rule 3).
    */
-  async summary(viewer: Viewer, query: ListDaysDto): Promise<Page<DaySummary>> {
+  async summary(viewer: Viewer, query: SummaryQueryDto): Promise<Page<DaySummary>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    const from = dayAsDate(query.from);
-    const to = dayAsDate(query.to);
     const after = query.cursor ? decodeCursor(query.cursor).sortValue : null;
+    const filter = this.dayFilter(query, visible);
     const [rows, found] = await Promise.all([
-      this.countedRows(query, visible, from, to, after),
-      this.countPeople(query, visible, from, to),
+      this.db.$queryRaw<DaySummary[]>`
+        SELECT e."id" AS "employeeId", e."code", e."fullName", ${SUMMED}
+          FROM "AttendanceDay" d
+          JOIN "Employee" e ON e."id" = d."employeeId"
+         WHERE ${filter}
+           AND (${after}::text IS NULL OR e."code" > ${after}::text)
+         GROUP BY e."id", e."code", e."fullName"
+         ${this.exceptionsOnly(query)}
+         ORDER BY e."code"
+         LIMIT ${query.take}
+      `,
+      this.countPeople(filter, query),
     ]);
     const last = rows[rows.length - 1];
     return {
@@ -135,72 +185,110 @@ export class TimesheetService {
     };
   }
 
-  async totals(viewer: Viewer, query: ListDaysDto): Promise<DayTotals> {
+  async totals(viewer: Viewer, query: SummaryQueryDto): Promise<DayTotals> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
+    const filter = this.dayFilter(query, visible);
     const [summed] = await this.db.$queryRaw<DayTotals[]>`
-      SELECT count(DISTINCT d."employeeId")::int                  AS "people",
-             count(*) FILTER (WHERE d."state" = 'WORKED')::int  AS "workedDays",
-             count(*) FILTER (WHERE d."state" = 'LEAVE')::int   AS "leaveDays",
-             count(*) FILTER (WHERE d."state" = 'ABSENT')::int  AS "absentDays",
-             coalesce(sum(d."workedMinutes"), 0)::int           AS "workedMinutes",
-             coalesce(sum(d."lateMinutes"), 0)::int             AS "lateMinutes",
-             coalesce(sum(d."overtimeMinutes"), 0)::int         AS "overtimeMinutes",
-             count(*) FILTER (WHERE d."adjustedById" IS NOT NULL)::int AS "adjustedDays"
+      SELECT count(DISTINCT d."employeeId")::int AS "people", ${SUMMED}
         FROM "AttendanceDay" d
         JOIN "Employee" e ON e."id" = d."employeeId"
-       WHERE d."date" BETWEEN ${dayAsDate(query.from)} AND ${dayAsDate(query.to)}
-         AND (${visible}::int[] IS NULL OR d."employeeId" = ANY(${visible}::int[]))
-         AND (${query.employeeId ?? null}::int IS NULL OR d."employeeId" = ${query.employeeId ?? null}::int)
-         AND (${query.departmentId ?? null}::text IS NULL OR e."departmentId" = ${query.departmentId ?? null})
+       WHERE ${filter}
+         ${query.exceptions ? Prisma.sql`AND d."employeeId" IN (${this.exceptionPeople(filter)})` : Prisma.empty}
     `;
     return summed;
   }
 
-  private countedRows(
-    query: ListDaysDto,
-    visible: number[] | null,
-    from: Date,
-    to: Date,
-    after: string | null,
-  ): Promise<DaySummary[]> {
-    return this.db.$queryRaw<DaySummary[]>`
-      SELECT e."id" AS "employeeId", e."code", e."fullName",
-             count(*) FILTER (WHERE d."state" = 'WORKED')::int  AS "workedDays",
-             count(*) FILTER (WHERE d."state" = 'LEAVE')::int   AS "leaveDays",
-             count(*) FILTER (WHERE d."state" = 'ABSENT')::int  AS "absentDays",
-             coalesce(sum(d."workedMinutes"), 0)::int           AS "workedMinutes",
-             coalesce(sum(d."lateMinutes"), 0)::int             AS "lateMinutes",
-             coalesce(sum(d."overtimeMinutes"), 0)::int         AS "overtimeMinutes",
-             count(*) FILTER (WHERE d."adjustedById" IS NOT NULL)::int AS "adjustedDays"
+  /** Every row the filter reaches as a file, not only the page on screen. */
+  async summaryCsv(viewer: Viewer, query: SummaryQueryDto): Promise<string> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const rows = await this.db.$queryRaw<(DaySummary & { department: string | null })[]>`
+      SELECT e."id" AS "employeeId", e."code", e."fullName", p."name" AS "department", ${SUMMED}
         FROM "AttendanceDay" d
         JOIN "Employee" e ON e."id" = d."employeeId"
-       WHERE d."date" BETWEEN ${from} AND ${to}
-         AND (${visible}::int[] IS NULL OR d."employeeId" = ANY(${visible}::int[]))
-         AND (${query.employeeId ?? null}::int IS NULL OR d."employeeId" = ${query.employeeId ?? null}::int)
-         AND (${query.departmentId ?? null}::text IS NULL OR e."departmentId" = ${query.departmentId ?? null})
-         AND (${after}::text IS NULL OR e."code" > ${after}::text)
-       GROUP BY e."id", e."code", e."fullName"
+        LEFT JOIN "Department" p ON p."id" = e."departmentId"
+       WHERE ${this.dayFilter(query, visible)}
+       GROUP BY e."id", e."code", e."fullName", p."name"
+       ${this.exceptionsOnly(query)}
        ORDER BY e."code"
-       LIMIT ${query.take}
     `;
+    return toExcelCsv(
+      [
+        "code",
+        "fullName",
+        "department",
+        "workedDays",
+        "leaveDays",
+        "absentDays",
+        "workedMinutes",
+        "lateMinutes",
+        "overtimeMinutes",
+        "adjustedDays",
+      ],
+      rows.map((row) => [
+        row.code,
+        row.fullName,
+        row.department ?? "",
+        String(row.workedDays),
+        String(row.leaveDays),
+        String(row.absentDays),
+        String(row.workedMinutes),
+        String(row.lateMinutes),
+        String(row.overtimeMinutes),
+        String(row.adjustedDays),
+      ]),
+    );
   }
 
-  private async countPeople(
-    query: ListDaysDto,
-    visible: number[] | null,
-    from: Date,
-    to: Date,
-  ): Promise<number> {
+  /** What a person's own month adds up to so far; today is not built yet (KEHOACH 9.8). */
+  async mine(viewer: Viewer, month: string): Promise<MonthTally> {
+    if (viewer.employeeId === null) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+    const [year, index] = month.split("-").map(Number);
+    const [tally] = await this.db.$queryRaw<Omit<MonthTally, "month">[]>`
+      SELECT count(*) FILTER (WHERE "state" = 'WORKED')::int AS "workedDays",
+             count(*) FILTER (WHERE "lateMinutes" > 0)::int  AS "lateCount",
+             count(*) FILTER (WHERE "punchCount" = 1)::int   AS "missingPunchDays",
+             count(*) FILTER (WHERE "state" = 'LEAVE')::int  AS "leaveDays",
+             count(*) FILTER (WHERE "state" = 'ABSENT')::int AS "absentDays"
+        FROM "AttendanceDay"
+       WHERE "employeeId" = ${viewer.employeeId}
+         AND "date" >= ${new Date(Date.UTC(year, index - 1, 1))}
+         AND "date" < ${new Date(Date.UTC(year, index, 1))}
+    `;
+    return { month, ...tally };
+  }
+
+  private dayFilter(query: SummaryQueryDto, visible: number[] | null): Prisma.Sql {
+    const term = query.search?.trim();
+    return Prisma.sql`d."date" BETWEEN ${dayAsDate(query.from)} AND ${dayAsDate(query.to)}
+      ${visible === null ? Prisma.empty : Prisma.sql`AND d."employeeId" = ANY(${visible}::int[])`}
+      ${query.employeeId === undefined ? Prisma.empty : Prisma.sql`AND d."employeeId" = ${query.employeeId}::int`}
+      ${query.departmentId ? Prisma.sql`AND e."departmentId" IN (${branchOf(query.departmentId)})` : Prisma.empty}
+      ${term ? Prisma.sql`AND (e."code" ILIKE ${likeOf(term)} OR e."fullName" ILIKE ${likeOf(term)})` : Prisma.empty}`;
+  }
+
+  private exceptionsOnly(query: SummaryQueryDto): Prisma.Sql {
+    return query.exceptions ? Prisma.sql`HAVING count(*) FILTER (WHERE ${EXCEPTION_DAY}) > 0` : Prisma.empty;
+  }
+
+  private exceptionPeople(filter: Prisma.Sql): Prisma.Sql {
+    return Prisma.sql`
+      SELECT d."employeeId"
+        FROM "AttendanceDay" d
+        JOIN "Employee" e ON e."id" = d."employeeId"
+       WHERE ${filter} AND ${EXCEPTION_DAY}`;
+  }
+
+  private async countPeople(filter: Prisma.Sql, query: SummaryQueryDto): Promise<number> {
     const [seen] = await this.db.$queryRaw<{ found: bigint }[]>`
       SELECT count(*) AS "found" FROM (
         SELECT 1
           FROM "AttendanceDay" d
           JOIN "Employee" e ON e."id" = d."employeeId"
-         WHERE d."date" BETWEEN ${from} AND ${to}
-           AND (${visible}::int[] IS NULL OR d."employeeId" = ANY(${visible}::int[]))
-           AND (${query.employeeId ?? null}::int IS NULL OR d."employeeId" = ${query.employeeId ?? null}::int)
-           AND (${query.departmentId ?? null}::text IS NULL OR e."departmentId" = ${query.departmentId ?? null})
+         WHERE ${filter}
          GROUP BY e."id"
+         ${this.exceptionsOnly(query)}
          LIMIT ${COUNT_CEILING + 1}
       ) x
     `;
@@ -214,14 +302,18 @@ export class TimesheetService {
   async correct(viewer: Viewer, id: string, body: CorrectDayDto): Promise<AttendanceDay> {
     // The key is (id, date) since the table is partitioned, and a caller
     // holding only an id still finds the row through the key's first column.
-    const held = await this.db.attendanceDay.findFirst({ where: { id: BigInt(id) } });
+    const held = DAY_ID.test(id) ? await this.db.attendanceDay.findFirst({ where: { id: BigInt(id) } }) : null;
     if (!held) {
       throw new NotFoundException("DAY_NOT_FOUND");
+    }
+    // Nobody signs off their own timesheet (KEHOACH 9.4).
+    if (held.employeeId === viewer.employeeId) {
+      throw new ForbiddenException("SELF_DECISION");
     }
     if (body.workedMinutes === undefined && body.state === undefined) {
       throw new BadRequestException("NOTHING_TO_CORRECT");
     }
-    return this.db.attendanceDay.update({
+    const corrected = await this.db.attendanceDay.update({
       where: { id_date: { id: held.id, date: held.date } },
       data: {
         state: body.state ?? held.state,
@@ -232,6 +324,18 @@ export class TimesheetService {
         adjustedAt: new Date(),
       },
     });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.TIMESHEET_CORRECT,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(held.employeeId),
+      meta: {
+        date: held.date.toISOString().slice(0, 10),
+        from: { state: held.state, workedMinutes: held.workedMinutes },
+        to: { state: corrected.state, workedMinutes: corrected.workedMinutes },
+      },
+    });
+    return corrected;
   }
 
   /**
@@ -294,7 +398,7 @@ export class TimesheetService {
    */
   async scheduleBuild(from: string, to: string): Promise<{ jobId: string }> {
     const job: TimesheetJob = { type: "build", from, to };
-    const queued = await this.queues[QUEUE.timesheet].add("build", job);
+    const queued = await this.queues[QUEUE.timesheet].add(JOB.build, job);
     return { jobId: String(queued.id) };
   }
 
@@ -342,14 +446,18 @@ export class TimesheetService {
     }
     const { from, to } = dayWindow(day, this.zone);
     const date = dayAsDate(day);
-    const [punches, staff, holiday, approved] = await Promise.all([
+    const [punches, staff, holidays, approved] = await Promise.all([
       this.db.attendanceRecord.findMany({
         where: { ts: { gte: from, lt: to } },
         select: { employeeId: true, ts: true, clockUnsynced: true },
         orderBy: { ts: "asc" },
       }),
-      this.db.employee.findMany({ where: { active: true }, select: { id: true } }),
-      this.db.holiday.findFirst({ where: { date } }),
+      this.db.employee.findMany({
+        // Offboarding in advance clears `active` ahead of the last day, which still gets built.
+        where: { OR: [{ active: true }, { leaveDate: { gte: date } }] },
+        select: { id: true, legalEntityId: true },
+      }),
+      this.db.holiday.findMany({ where: { date }, select: { legalEntityId: true, paid: true } }),
       this.db.request.findMany({
         // A half day cannot be one day state, so only whole days come through.
         where: {
@@ -388,10 +496,19 @@ export class TimesheetService {
     const offSite = new Set(
       approved.filter((row) => row.kind !== "LEAVE").map((row) => row.employeeId),
     );
+    const calendarOf = (legalEntityId: string | null): DayCalendar => {
+      // An entity's own holiday outranks a company-wide one on the same date.
+      const holiday =
+        holidays.find((one) => one.legalEntityId !== null && one.legalEntityId === legalEntityId) ??
+        holidays.find((one) => one.legalEntityId === null);
+      if (holiday) {
+        return holiday.paid ? "HOLIDAY" : "UNPAID_HOLIDAY";
+      }
+      return weekend ? "WEEKEND" : "WORKDAY";
+    };
     const rows = staff.map((person) =>
       this.dayOf(person.id, date, seen.get(person.id), shifts.get(person.id), {
-        holiday: holiday !== null,
-        weekend,
+        calendar: calendarOf(person.legalEntityId),
         leave: onLeave.has(person.id),
         offSite: offSite.has(person.id),
       }),
@@ -410,16 +527,17 @@ export class TimesheetService {
     }
     await this.db.$executeRaw`
       INSERT INTO "AttendanceDay" (
-        "employeeId", "date", "state", "shiftId", "firstIn", "lastOut",
+        "employeeId", "date", "state", "calendar", "shiftId", "firstIn", "lastOut",
         "workedMinutes", "lateMinutes", "earlyLeaveMinutes", "overtimeMinutes",
         "punchCount", "clockUnsynced", "measuredMinutes", "builtAt", "updatedAt")
-      SELECT v."employeeId", ${date}::date, v."state"::"DayState", v."shiftId",
+      SELECT v."employeeId", ${date}::date, v."state"::"DayState", v."calendar"::"DayCalendar", v."shiftId",
              v."firstIn", v."lastOut", v."workedMinutes", v."lateMinutes",
              v."earlyLeaveMinutes", v."overtimeMinutes", v."punchCount",
              v."clockUnsynced", v."measuredMinutes", now(), now()
         FROM unnest(
                ${rows.map((row) => row.employeeId)}::int[],
                ${rows.map((row) => row.state)}::text[],
+               ${rows.map((row) => row.calendar)}::text[],
                ${rows.map((row) => row.shiftId ?? null)}::text[],
                ${rows.map((row) => row.firstIn ?? null)}::timestamptz[],
                ${rows.map((row) => row.lastOut ?? null)}::timestamptz[],
@@ -430,7 +548,7 @@ export class TimesheetService {
                ${rows.map((row) => row.punchCount)}::int[],
                ${rows.map((row) => row.clockUnsynced ?? false)}::bool[],
                ${rows.map((row) => row.measuredMinutes ?? null)}::int[]
-             ) AS v("employeeId", "state", "shiftId", "firstIn", "lastOut",
+             ) AS v("employeeId", "state", "calendar", "shiftId", "firstIn", "lastOut",
                     "workedMinutes", "lateMinutes", "earlyLeaveMinutes",
                     "overtimeMinutes", "punchCount", "clockUnsynced", "measuredMinutes")
         -- A person deleted since the read must not fail the whole day's write,
@@ -439,6 +557,7 @@ export class TimesheetService {
       FOR SHARE OF e
       ON CONFLICT ("employeeId", "date") DO UPDATE SET
         "state" = EXCLUDED."state",
+        "calendar" = EXCLUDED."calendar",
         "shiftId" = EXCLUDED."shiftId",
         "firstIn" = EXCLUDED."firstIn",
         "lastOut" = EXCLUDED."lastOut",
@@ -459,31 +578,36 @@ export class TimesheetService {
     date: Date,
     marks: { first: Date; last: Date; count: number; unsynced: boolean } | undefined,
     shift: ShiftClock | undefined,
-    calendar: { holiday: boolean; weekend: boolean; leave: boolean; offSite: boolean },
+    day: { calendar: DayCalendar; leave: boolean; offSite: boolean },
   ): DayRow {
+    const { calendar } = day;
     if (!marks) {
       // A holiday belongs to everyone, so it does not spend anyone's leave.
-      const state: DayState = calendar.holiday
-        ? "HOLIDAY"
-        : calendar.weekend
-          ? "WEEKEND"
-          : calendar.leave
-            ? "LEAVE"
-            : calendar.offSite
-              ? "WORKED"
-              : "ABSENT";
-      return { employeeId, date, state, shiftId: shift?.shiftId ?? null, punchCount: 0 };
+      const state: DayState =
+        calendar === "HOLIDAY" || calendar === "UNPAID_HOLIDAY"
+          ? "HOLIDAY"
+          : calendar === "WEEKEND"
+            ? "WEEKEND"
+            : day.leave
+              ? "LEAVE"
+              : day.offSite
+                ? "WORKED"
+                : "ABSENT";
+      return { employeeId, date, state, calendar, shiftId: shift?.shiftId ?? null, punchCount: 0 };
     }
     const inAt = minutesIntoDay(marks.first, this.zone);
     const outAt = minutesIntoDay(marks.last, this.zone);
     const worked = Math.max(0, outAt - inAt);
-    const late = shift ? Math.max(0, inAt - (shift.startMinutes + shift.graceMinutes)) : 0;
-    const early = shift ? Math.max(0, shift.endMinutes - outAt) : 0;
-    const over = shift ? Math.max(0, outAt - shift.endMinutes) : 0;
+    // No shift is owed on a day off, so every minute worked on one is overtime.
+    const owed = calendar === "WORKDAY" ? shift : undefined;
+    const late = owed ? Math.max(0, inAt - (owed.startMinutes + owed.graceMinutes)) : 0;
+    const early = owed ? Math.max(0, owed.endMinutes - outAt) : 0;
+    const over = owed ? Math.max(0, outAt - owed.endMinutes) : calendar === "WORKDAY" ? 0 : worked;
     return {
       employeeId,
       date,
       state: "WORKED" as DayState,
+      calendar,
       shiftId: shift?.shiftId ?? null,
       firstIn: marks.first,
       lastOut: marks.last,
@@ -503,6 +627,8 @@ export class TimesheetService {
     const rows = await this.db.shiftAssignment.findMany({
       where: { validFrom: { lte: date }, OR: [{ validTo: null }, { validTo: { gte: date } }] },
       include: { shift: true },
+      // Overlapping assignments resolve to the newest, since the loop keeps the last one seen.
+      orderBy: [{ validFrom: "asc" }, { id: "asc" }],
     });
     const byEmployee = new Map<number, ShiftClock>();
     for (const row of rows) {

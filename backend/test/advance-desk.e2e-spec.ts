@@ -17,6 +17,10 @@ const BOSS = "E2EAD01";
 const BOSS_MAIL = "e2ead-boss@kiosk.local";
 const ASKER = "E2EAD02";
 const ASKER_MAIL = "e2ead-asker@kiosk.local";
+const CLERK = "E2EAD03";
+const CLERK_MAIL = "e2ead-clerk@kiosk.local";
+const PAYER = "E2EAD04";
+const PAYER_MAIL = "e2ead-payer@kiosk.local";
 const PASSWORD = "kiosk-e2e-password";
 const AMOUNT = 1_234_000;
 
@@ -27,15 +31,17 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
   let bossToken = "";
   let askerToken = "";
   let payrollToken = "";
+  let clerkToken = "";
+  let payerToken = "";
   let askerId = 0;
   let bossId = 0;
   let filedId = "";
 
   async function sweep(): Promise<void> {
-    await clearDeskNotices(db, [BOSS, ASKER]);
-    await db.user.deleteMany({ where: { email: { in: [BOSS_MAIL, ASKER_MAIL] } } });
-    await db.salaryAdvance.deleteMany({ where: { employee: { code: { in: [BOSS, ASKER] } } } });
-    await db.employee.deleteMany({ where: { code: { in: [ASKER, BOSS] } } });
+    await clearDeskNotices(db, [BOSS, ASKER, CLERK, PAYER]);
+    await db.user.deleteMany({ where: { email: { in: [BOSS_MAIL, ASKER_MAIL, CLERK_MAIL, PAYER_MAIL] } } });
+    await db.salaryAdvance.deleteMany({ where: { employee: { code: { in: [BOSS, ASKER, CLERK, PAYER] } } } });
+    await db.employee.deleteMany({ where: { code: { in: [ASKER, BOSS, CLERK, PAYER] } } });
   }
 
   async function login(email: string, password: string): Promise<string> {
@@ -65,10 +71,17 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
     await db.user.create({
       data: { email: ASKER_MAIL, passwordHash: hash, role: "EMPLOYEE", employeeId: askerId },
     });
+    for (const [code, email, role] of [[CLERK, CLERK_MAIL, "HR"], [PAYER, PAYER_MAIL, "PAYROLL"]] as const) {
+      await db.employee.create({
+        data: { code, fullName: `Bàn ${code}`, active: true, login: { create: { email, passwordHash: hash, role } } },
+      });
+    }
 
     const seeded = validateEnv().SEED_ADMIN_PASSWORD ?? "";
     bossToken = await login(BOSS_MAIL, PASSWORD);
     askerToken = await login(ASKER_MAIL, PASSWORD);
+    clerkToken = await login(CLERK_MAIL, PASSWORD);
+    payerToken = await login(PAYER_MAIL, PASSWORD);
     deskToken = await login("admin@kiosk.local", seeded);
     payrollToken = await login("payroll@kiosk.local", seeded);
   });
@@ -173,5 +186,98 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
     assert.equal(told.length, 1);
     assert.equal(told[0]?.user.employeeId, askerId);
     assert.equal(told[0]?.approved, true);
+  });
+
+  it("answers a second decision with the already-decided code", async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/advances/${filedId}/decide`)
+      .set("Authorization", `Bearer ${deskToken}`)
+      .send({ approve: false });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "ADVANCE_ALREADY_DECIDED");
+  });
+
+  it("keeps a desk clerk's own advance out of the queue they decide, and out of their hands", async () => {
+    const own = await request(app.getHttpServer())
+      .post("/advances")
+      .set("Authorization", `Bearer ${clerkToken}`)
+      .send({ amount: AMOUNT, reason: "e2e" });
+    assert.equal(own.status, 201);
+    const clerkId = (await db.employee.findUniqueOrThrow({ where: { code: CLERK } })).id;
+    const queue = await request(app.getHttpServer())
+      .get(`/advances?state=PENDING&search=${CLERK}`)
+      .set("Authorization", `Bearer ${clerkToken}`);
+    assert.equal(queue.status, 200);
+    assert.equal((queue.body as { rows: unknown[] }).rows.length, 0, "the clerk's own advance waits in their queue");
+    const mine = await request(app.getHttpServer())
+      .get(`/advances?state=PENDING&employeeId=${clerkId}`)
+      .set("Authorization", `Bearer ${clerkToken}`);
+    assert.ok((mine.body as { rows: { id: string }[] }).rows.some((row) => row.id === own.body.id));
+    const self = await request(app.getHttpServer())
+      .post(`/advances/${own.body.id as string}/decide`)
+      .set("Authorization", `Bearer ${clerkToken}`)
+      .send({ approve: true });
+    assert.equal(self.status, 403);
+    assert.equal(self.body.message, "SELF_DECISION");
+  });
+
+  it("keeps the payroll clerk from paying their own advance", async () => {
+    const own = await request(app.getHttpServer())
+      .post("/advances")
+      .set("Authorization", `Bearer ${payerToken}`)
+      .send({ amount: AMOUNT, reason: "e2e" });
+    assert.equal(own.status, 201);
+    const approved = await request(app.getHttpServer())
+      .post(`/advances/${own.body.id as string}/decide`)
+      .set("Authorization", `Bearer ${deskToken}`)
+      .send({ approve: true });
+    assert.equal(approved.status, 201);
+    const toPay = await request(app.getHttpServer())
+      .get(`/advances?state=APPROVED&search=${PAYER}`)
+      .set("Authorization", `Bearer ${payerToken}`);
+    assert.equal((toPay.body as { rows: unknown[] }).rows.length, 0, "the payer's own advance waits to be paid by them");
+    const self = await request(app.getHttpServer())
+      .post(`/advances/${own.body.id as string}/paid`)
+      .set("Authorization", `Bearer ${payerToken}`);
+    assert.equal(self.status, 403);
+    assert.equal(self.body.message, "SELF_DECISION");
+  });
+
+  it("shows the pay desk what the asker already owes, and pays once", async () => {
+    const second = await request(app.getHttpServer())
+      .post("/advances")
+      .set("Authorization", `Bearer ${askerToken}`)
+      .send({ amount: AMOUNT, reason: "e2e" });
+    assert.equal(second.status, 201);
+    const queue = await request(app.getHttpServer())
+      .get(`/advances?state=PENDING&search=${ASKER}`)
+      .set("Authorization", `Bearer ${deskToken}`);
+    const row = (queue.body as { rows: { id: string; outstanding: string | null }[] }).rows.find(
+      (one) => one.id === second.body.id,
+    );
+    assert.equal(row?.outstanding, String(AMOUNT), "the approved advance is missing from what is owed");
+    const paid = await request(app.getHttpServer())
+      .post(`/advances/${filedId}/paid`)
+      .set("Authorization", `Bearer ${payrollToken}`);
+    assert.equal(paid.status, 201);
+    const twice = await request(app.getHttpServer())
+      .post(`/advances/${filedId}/paid`)
+      .set("Authorization", `Bearer ${payrollToken}`);
+    assert.equal(twice.status, 400);
+    assert.equal(twice.body.message, "ADVANCE_NOT_APPROVED");
+  });
+
+  it("pages one person's advances by cursor without repeating a row", async () => {
+    const first = await request(app.getHttpServer())
+      .get(`/advances?employeeId=${askerId}&take=1`)
+      .set("Authorization", `Bearer ${deskToken}`);
+    assert.equal(first.status, 200);
+    assert.equal(first.body.total, 2);
+    assert.ok(first.body.next, "a full page gave no cursor");
+    const second = await request(app.getHttpServer())
+      .get(`/advances?employeeId=${askerId}&take=1&cursor=${first.body.next as string}`)
+      .set("Authorization", `Bearer ${deskToken}`);
+    assert.equal(second.status, 200);
+    assert.notEqual(second.body.rows[0]?.id, first.body.rows[0]?.id, "the cursor repeated the row");
   });
 });

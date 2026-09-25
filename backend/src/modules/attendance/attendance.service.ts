@@ -15,6 +15,13 @@ const FOREIGN_KEY_VIOLATION = "P2003";
 /** What became of one punch. */
 export type PunchOutcome = "stored" | "duplicate" | "unknown-employee" | "while-revoked";
 
+/** How many punches a person's range holds, and how many of them carry each flag. */
+export interface PunchCounts {
+  all: number;
+  capturedOffline: number;
+  clockUnsynced: number;
+}
+
 @Injectable()
 export class AttendanceService {
   private readonly log = new Logger(AttendanceService.name);
@@ -82,6 +89,33 @@ export class AttendanceService {
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.ts),
     };
+  }
+
+  /** The counts a person's punch filter shows beside each choice, over the same range and scope. */
+  async counts(query: ListAttendanceDto, viewer: Viewer): Promise<PunchCounts> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (query.employeeId !== undefined && visible !== null && !visible.includes(query.employeeId)) {
+      return { all: 0, capturedOffline: 0, clockUnsynced: 0 };
+    }
+    const where: Prisma.AttendanceRecordWhereInput = {
+      ...ScopeService.narrow("employeeId", visible),
+      ...(query.employeeId !== undefined ? { employeeId: query.employeeId } : {}),
+      ...(query.deviceId !== undefined ? { deviceId: query.deviceId } : {}),
+      ...(query.from !== undefined || query.to !== undefined
+        ? {
+            ts: {
+              ...(query.from !== undefined ? { gte: new Date(query.from) } : {}),
+              ...(query.to !== undefined ? { lt: new Date(query.to) } : {}),
+            },
+          }
+        : {}),
+    };
+    const [all, capturedOffline, clockUnsynced] = await this.db.$transaction([
+      this.db.attendanceRecord.count({ where }),
+      this.db.attendanceRecord.count({ where: { ...where, capturedOffline: true } }),
+      this.db.attendanceRecord.count({ where: { ...where, clockUnsynced: true } }),
+    ]);
+    return { all, capturedOffline, clockUnsynced };
   }
 
   /** Store one punch, or recognise it as one already held. */

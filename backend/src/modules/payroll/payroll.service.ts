@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -13,18 +14,20 @@ import type {
   PayrollPeriod,
   PayrollRun,
   PeriodState,
+  RunKind,
+  RunState,
   SettlementKind,
 } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 
-import { toCsv } from "../../common/csv.js";
+import { toCsv, toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { QUEUE, type PayrollJob } from "../../queue/queues.js";
+import { JOB, QUEUE, type PayrollJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
@@ -56,6 +59,9 @@ import { atLeastZero, mulDiv, toDong, type Dong } from "./money.js";
 const WRITERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL"]);
 const kChunk = 500;
 const kHundred = 100n;
+const kChunkTxMs = 60_000;
+const UNIQUE_VIOLATION = "P2002";
+const LINE_ADVANCE = "ADVANCE";
 
 interface Leaver {
   id: number;
@@ -130,10 +136,31 @@ export interface ChecklistItem {
 
 export type PayslipDetail = Payslip & { lines: PayslipLine[] };
 
+/** A payslip as a list shows it: the owner, the run's kind and the advance it recovered. */
 export type PayslipRow = Payslip & {
   period: { year: number; month: number; state: PeriodState };
-  employee: { id: number; code: string; fullName: string };
+  employee: { id: number; code: string; fullName: string; department: { id: string; name: string } | null };
+  run: { kind: RunKind; state: RunState };
+  advance: string;
 };
+
+/** What a period costs, over the payslips it issues or will issue on lock. */
+export interface PeriodTotals {
+  payslips: number;
+  people: number;
+  gross: string;
+  insuranceEmployee: string;
+  insuranceEmployer: string;
+  tax: string;
+  net: string;
+  employerCost: string;
+}
+
+/** The tax base a bonus or a settlement is charged on top of, per person. */
+interface TaxBase {
+  taxable: Dong;
+  insurance: Dong;
+}
 
 /** The amounts a bonus run holds, with the person each belongs to. */
 export type BonusRow = BonusItem & { employee: { id: number; code: string; fullName: string } };
@@ -197,6 +224,26 @@ function sumOf(lines: { code: string; amount: Prisma.Decimal }[], code: string):
     .reduce((total, line) => total + toDong(line.amount), 0n);
 }
 
+const PAYSLIP_ROW = {
+  period: { select: { year: true, month: true, state: true } },
+  employee: {
+    select: { id: true, code: true, fullName: true, department: { select: { id: true, name: true } } },
+  },
+  run: { select: { kind: true, state: true } },
+  lines: { where: { code: LINE_ADVANCE }, select: { code: true, amount: true } },
+} satisfies Prisma.PayslipInclude;
+
+type PayslipWithRow = Prisma.PayslipGetPayload<{ include: typeof PAYSLIP_ROW }>;
+
+function asPayslipRow(row: PayslipWithRow): PayslipRow {
+  const { lines, ...rest } = row;
+  return { ...rest, advance: sumOf(lines, LINE_ADVANCE).toString() };
+}
+
+function isPrismaCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
 @Injectable()
 export class PayrollService {
   constructor(
@@ -225,16 +272,23 @@ export class PayrollService {
     this.mayWrite(viewer);
     const start = new Date(Date.UTC(body.year, body.month - 1, 1));
     const end = new Date(Date.UTC(body.year, body.month, 0));
-    return this.db.payrollPeriod.create({
-      data: {
-        legalEntityId: body.legalEntityId ?? null,
-        year: body.year,
-        month: body.month,
-        startDate: start,
-        endDate: end,
-        payDate: body.payDate ? new Date(body.payDate) : null,
-      },
-    });
+    try {
+      return await this.db.payrollPeriod.create({
+        data: {
+          legalEntityId: body.legalEntityId ?? null,
+          year: body.year,
+          month: body.month,
+          startDate: start,
+          endDate: end,
+          payDate: body.payDate ? new Date(body.payDate) : null,
+        },
+      });
+    } catch (error) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
+        throw new ConflictException("PERIOD_TAKEN");
+      }
+      throw error;
+    }
   }
 
   /**
@@ -243,6 +297,7 @@ export class PayrollService {
    */
   async checklist(periodId: string): Promise<ChecklistItem[]> {
     const period = await this.requirePeriod(periodId);
+    const ofEntity = period.legalEntityId ? { employee: { legalEntityId: period.legalEntityId } } : {};
     const [
       pendingRequests,
       missingPay,
@@ -253,7 +308,12 @@ export class PayrollService {
       lateDisputes,
     ] = await Promise.all([
       this.db.request.count({
-        where: { state: "PENDING", fromDate: { lte: period.endDate }, toDate: { gte: period.startDate } },
+        where: {
+          state: "PENDING",
+          fromDate: { lte: period.endDate },
+          toDate: { gte: period.startDate },
+          ...ofEntity,
+        },
       }),
       this.db.employee.count({
         where: {
@@ -275,6 +335,7 @@ export class PayrollService {
           state: "PENDING",
           fromDate: { lte: period.endDate },
           toDate: { gte: period.startDate },
+          ...ofEntity,
         },
       }),
       // A person with no legal entity is invisible to every entity-scoped run,
@@ -326,48 +387,71 @@ export class PayrollService {
     }
     // Issuing and spending are one act: a half-applied lock leaves a period
     // closed with its back payments still owed.
-    const locked = await this.db.$transaction(async (tx) => {
-      const shut = await tx.payrollPeriod.update({
-        where: { id: periodId },
-        data: {
-          state: "LOCKED",
-          lockedAt: new Date(),
-          lockedById: viewer.userId,
-          lockNote: body.note ?? null,
-        },
-      });
-      await tx.payslip.updateMany({
-        where: { periodId, state: "DRAFT" },
-        data: { state: "ISSUED", issuedAt: new Date() },
-      });
-      // Where the money lands is an input too, and locking freezes inputs
-      // (KEHOACH 9.6).
-      await tx.$executeRaw`
-        UPDATE "Payslip" p
-           SET "bankName" = e."bankName", "bankAccount" = e."bankAccount"
-          FROM "Employee" e
-         WHERE p."periodId" = ${periodId}
-           AND p."employeeId" = e."id"
-      `;
-      await tx.$executeRaw`
-        UPDATE "RetroAdjustment" a
-           SET "state" = 'APPLIED', "appliedPeriodId" = ${periodId}
-          FROM "Payslip" p
-         WHERE p."periodId" = ${periodId}
-           AND p."employeeId" = a."employeeId"
-           AND a."state" = 'PENDING'
-      `;
-      await tx.$executeRaw`
-        UPDATE "SalaryAdvance" a
-           SET "state" = 'SETTLED', "settledAt" = now(), "payslipId" = p."id"
-          FROM "Payslip" p
-         WHERE p."periodId" = ${periodId}
-           AND p."employeeId" = a."employeeId"
-           AND a."state" = 'PAID'
-           AND a."payslipId" IS NULL
-      `;
-      return shut;
-    });
+    const locked = await this.db.$transaction(
+      async (tx) => {
+        // Taken ahead of execute's share lock, so a run cannot start between the check and the lock.
+        await tx.$queryRaw`SELECT "id" FROM "PayrollPeriod" WHERE "id" = ${periodId} FOR UPDATE`;
+        const shut = await tx.payrollPeriod.updateMany({
+          where: { id: periodId, state: "OPEN" },
+          data: {
+            state: "LOCKED",
+            lockedAt: new Date(),
+            lockedById: viewer.userId,
+            lockNote: body.note ?? null,
+          },
+        });
+        if (shut.count === 0) {
+          throw new BadRequestException("PERIOD_NOT_OPEN");
+        }
+        if ((await tx.payrollRun.count({ where: { periodId, state: "RUNNING" } })) > 0) {
+          throw new ConflictException("PERIOD_RUN_IN_PROGRESS");
+        }
+        await tx.$executeRaw`
+          WITH chosen AS (${this.chosenSlips(periodId)})
+          UPDATE "Payslip" p
+             SET "state" = 'ISSUED', "issuedAt" = now(), "updatedAt" = now()
+            FROM chosen c
+           WHERE p."id" = c."id" AND p."state" = 'DRAFT'
+        `;
+        // Where the money lands is an input too, and locking freezes inputs (KEHOACH 9.6).
+        await tx.$executeRaw`
+          UPDATE "Payslip" p
+             SET "bankName" = e."bankName", "bankAccount" = e."bankAccount"
+            FROM "Employee" e
+           WHERE p."periodId" = ${periodId}
+             AND p."state" <> 'DRAFT'
+             AND p."employeeId" = e."id"
+        `;
+        // Only what an issued payslip carried is spent; the rest waits for the next period.
+        await tx.$executeRaw`
+          UPDATE "RetroAdjustment" a
+             SET "state" = 'APPLIED'
+            FROM "Payslip" p
+            JOIN "PayrollRun" r ON r."id" = p."runId"
+           WHERE p."periodId" = ${periodId}
+             AND p."state" <> 'DRAFT'
+             AND r."kind" = 'REGULAR'
+             AND p."employeeId" = a."employeeId"
+             AND a."state" = 'PENDING'
+             AND a."appliedPeriodId" = ${periodId}
+             AND EXISTS (
+               SELECT 1 FROM "PayslipLine" l
+                WHERE l."payslipId" = p."id" AND l."code" = 'RETRO_' || a."code"
+             )
+        `;
+        await tx.$executeRaw`
+          UPDATE "SalaryAdvance" a
+             SET "state" = 'SETTLED', "settledAt" = now()
+            FROM "Payslip" p
+           WHERE p."periodId" = ${periodId}
+             AND p."state" <> 'DRAFT'
+             AND a."payslipId" = p."id"
+             AND a."state" = 'PAID'
+        `;
+        return tx.payrollPeriod.findUniqueOrThrow({ where: { id: periodId } });
+      },
+      { timeout: kChunkTxMs },
+    );
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.PAYROLL_LOCK,
@@ -440,19 +524,38 @@ export class PayrollService {
     if (run.kind === "FINAL_SETTLEMENT") {
       await this.requireSettlementReady(run.period);
     }
-    // BullMQ keeps completed jobs, so a job id derived from the run would let
-    // only the first start do anything; RUNNING is what stops a double start.
-    await this.queues[QUEUE.payroll].add("run", { type: "run", runId } satisfies PayrollJob);
+    // RUNNING is claimed in one statement ahead of the queue, so a second press finds it taken.
+    const claimed = await this.db.$transaction(async (tx) => {
+      const [period] = await tx.$queryRaw<{ state: PeriodState }[]>`
+        SELECT "state" FROM "PayrollPeriod" WHERE "id" = ${run.periodId} FOR SHARE
+      `;
+      if (period?.state !== "OPEN") {
+        throw new BadRequestException("PERIOD_NOT_OPEN");
+      }
+      const moved = await tx.payrollRun.updateMany({
+        where: { id: run.id, state: { not: "RUNNING" } },
+        data: { state: "RUNNING", startedAt: new Date(), finishedAt: null, doneCount: 0, failedCount: 0 },
+      });
+      return moved.count === 1;
+    });
+    if (!claimed) {
+      throw new BadRequestException("RUN_ALREADY_RUNNING");
+    }
+    try {
+      // BullMQ keeps completed jobs, so a job id derived from the run would let
+      // only the first start do anything; RUNNING is what stops a double start.
+      await this.queues[QUEUE.payroll].add(JOB.run, { type: JOB.run, runId } satisfies PayrollJob);
+    } catch (error) {
+      await this.db.payrollRun.update({ where: { id: run.id }, data: { state: "FAILED", finishedAt: new Date() } });
+      throw error;
+    }
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.PAYROLL_QUEUE,
       subject: AUDIT_SUBJECTS.PAYROLL,
       subjectId: runId,
     });
-    return this.db.payrollRun.update({
-      where: { id: run.id },
-      data: { state: "RUNNING", startedAt: new Date(), doneCount: 0, failedCount: 0 },
-    });
+    return this.db.payrollRun.findUniqueOrThrow({ where: { id: run.id } });
   }
 
   private async requireRunnable(runId: string): Promise<PayrollRun & { period: PayrollPeriod }> {
@@ -482,6 +585,13 @@ export class PayrollService {
     });
     if (!run) {
       throw new NotFoundException("RUN_NOT_FOUND");
+    }
+    // A lock that landed while the job sat in the queue wins: a locked period takes no new drafts.
+    if (run.period.state !== "OPEN") {
+      return this.db.payrollRun.update({
+        where: { id: runId },
+        data: { state: "FAILED", finishedAt: new Date() },
+      });
     }
 
     const period = run.period;
@@ -518,6 +628,8 @@ export class PayrollService {
     let grossTotal = 0n;
     let netTotal = 0n;
     let done = 0;
+    const retroIds: string[] = [];
+    const advanceIds: string[] = [];
 
     for (let at = 0; at < ids.length; at += kChunk) {
       const slice = ids.slice(at, at + kChunk);
@@ -525,6 +637,8 @@ export class PayrollService {
       grossTotal += result.gross;
       netTotal += result.net;
       done += result.done;
+      retroIds.push(...result.retroIds);
+      advanceIds.push(...result.advanceIds);
       await this.db.payrollRun.update({ where: { id: runId }, data: { doneCount: done } });
     }
 
@@ -535,16 +649,20 @@ export class PayrollService {
       subjectId: runId,
       meta: { employees: ids.length, payslips: done },
     });
-    return this.db.payrollRun.update({
-      where: { id: runId },
-      data: {
-        state: "DONE",
-        finishedAt: new Date(),
-        doneCount: done,
-        failedCount: ids.length - done,
-        grossTotal: grossTotal.toString(),
-        netTotal: netTotal.toString(),
-      },
+    // Linked as the run finishes, so a run that never finishes claims nothing the lock settles.
+    return this.db.$transaction(async (tx) => {
+      await this.markCarried(tx, runId, period.id, retroIds, advanceIds);
+      return tx.payrollRun.update({
+        where: { id: runId },
+        data: {
+          state: "DONE",
+          finishedAt: new Date(),
+          doneCount: done,
+          failedCount: ids.length - done,
+          grossTotal: grossTotal.toString(),
+          netTotal: netTotal.toString(),
+        },
+      });
     });
   }
 
@@ -554,7 +672,7 @@ export class PayrollService {
     policyId: string,
     calcPolicy: ReturnType<typeof asCalcPolicy>,
     ids: number[],
-  ): Promise<{ gross: Dong; net: Dong; done: number }> {
+  ): Promise<{ gross: Dong; net: Dong; done: number; retroIds: string[]; advanceIds: string[] }> {
     const [pay, allowances, days, leave, dependents, retros, advances] = await Promise.all([
       this.db.$queryRaw<PayRow[]>`
         SELECT DISTINCT ON (c."employeeId")
@@ -565,16 +683,25 @@ export class PayrollService {
          ORDER BY c."employeeId", c."effectiveFrom" DESC
       `,
       this.db.$queryRaw<
-        { recordId: string; code: string; label: string; amount: string; taxable: boolean; insurable: boolean }[]
+        {
+          recordId: string;
+          code: string;
+          label: string;
+          amount: string;
+          taxable: boolean;
+          insurable: boolean;
+          taxFreeCap: string | null;
+        }[]
       >`
-        SELECT a."recordId", a."code", a."label", a."amount"::text, a."taxable", a."insurable"
+        SELECT a."recordId", a."code", a."label", a."amount"::text, a."taxable", a."insurable",
+               a."taxFreeCap"::text
           FROM "CompensationAllowance" a
           JOIN "CompensationRecord" c ON c."id" = a."recordId"
          WHERE c."employeeId" = ANY(${ids}::int[]) AND c."effectiveFrom" <= ${period.endDate}
       `,
       this.db.$queryRaw<DayTally[]>`
         WITH paid AS (
-          SELECT d."employeeId", d."state", d."workedMinutes",
+          SELECT d."employeeId", d."state", d."calendar", d."workedMinutes",
                  LEAST(d."overtimeMinutes", floor(coalesce(a."allowed", 0))::int) AS "overtimePaid"
             FROM "AttendanceDay" d
             LEFT JOIN LATERAL (
@@ -587,14 +714,16 @@ export class PayrollService {
            WHERE d."employeeId" = ANY(${ids}::int[])
              AND d."date" BETWEEN ${period.startDate} AND ${period.endDate}
         )
+        -- A day off worked is paid as overtime alone; a paid holiday is paid whether worked or not.
         SELECT "employeeId",
-               count(*) FILTER (WHERE "state" = 'WORKED')::int  AS "workedDays",
-               count(*) FILTER (WHERE "state" = 'HOLIDAY')::int AS "holidayDays",
-               count(*) FILTER (WHERE "state" = 'ABSENT')::int  AS "absentDays",
-               coalesce(sum("workedMinutes"), 0)::int           AS "workedMinutes",
-               coalesce(sum("overtimePaid") FILTER (WHERE "state" = 'WORKED'), 0)::int  AS "weekdayOt",
-               coalesce(sum("overtimePaid") FILTER (WHERE "state" = 'WEEKEND'), 0)::int AS "weekendOt",
-               coalesce(sum("overtimePaid") FILTER (WHERE "state" = 'HOLIDAY'), 0)::int AS "holidayOt"
+               count(*) FILTER (WHERE "state" = 'WORKED' AND "calendar" = 'WORKDAY')::int AS "workedDays",
+               count(*) FILTER (WHERE "calendar" = 'HOLIDAY')::int                        AS "holidayDays",
+               count(*) FILTER (WHERE "state" = 'ABSENT')::int                            AS "absentDays",
+               coalesce(sum("workedMinutes"), 0)::int                                     AS "workedMinutes",
+               coalesce(sum("overtimePaid") FILTER (WHERE "calendar" = 'WORKDAY'), 0)::int AS "weekdayOt",
+               coalesce(sum("overtimePaid") FILTER (WHERE "calendar" IN ('WEEKEND', 'UNPAID_HOLIDAY')), 0)::int
+                 AS "weekendOt",
+               coalesce(sum("overtimePaid") FILTER (WHERE "calendar" = 'HOLIDAY'), 0)::int AS "holidayOt"
           FROM paid
          GROUP BY "employeeId"
       `,
@@ -621,8 +750,9 @@ export class PayrollService {
       this.db.retroAdjustment.findMany({
         where: { employeeId: { in: ids }, state: "PENDING" },
       }),
+      // PAID is outstanding whatever draft last pointed at it; the lock settles only what it issues.
       this.db.salaryAdvance.findMany({
-        where: { employeeId: { in: ids }, state: "PAID", payslipId: null },
+        where: { employeeId: { in: ids }, state: "PAID" },
       }),
     ]);
 
@@ -636,6 +766,7 @@ export class PayrollService {
         amount: BigInt(row.amount.split(".")[0]),
         taxable: row.taxable,
         insurable: row.insurable,
+        taxFreeCap: row.taxFreeCap === null ? null : BigInt(row.taxFreeCap.split(".")[0]),
       });
       allowanceOf.set(row.recordId, list);
     }
@@ -651,7 +782,7 @@ export class PayrollService {
     const advanceOf = new Map<number, CalcDeduction[]>();
     for (const row of advances) {
       const list = advanceOf.get(row.employeeId) ?? [];
-      list.push({ code: "ADVANCE", amount: toDong(row.amount) });
+      list.push({ code: LINE_ADVANCE, amount: toDong(row.amount) });
       advanceOf.set(row.employeeId, list);
     }
 
@@ -711,33 +842,74 @@ export class PayrollService {
     }
 
     if (slips.length === 0) {
-      return { gross, net, done: 0 };
+      return { gross, net, done: 0, retroIds: [], advanceIds: [] };
     }
 
-    await this.db.payslip.createMany({ data: slips });
-    const written = await this.db.payslip.findMany({
-      where: { runId, employeeId: { in: ids } },
-      select: { id: true, employeeId: true },
-    });
-    const lineRows: Prisma.PayslipLineCreateManyInput[] = [];
-    for (const slip of written) {
-      const own = linesOf.get(slip.employeeId) ?? [];
-      for (const [index, line] of own.entries()) {
-        lineRows.push({
-          payslipId: slip.id,
-          ordinal: index + 1,
-          kind: line.kind,
-          code: line.code,
-          label: line.label ?? null,
-          amount: line.amount.toString(),
-          quantity: line.quantity ?? null,
-          rateBp: line.rateBp ?? null,
+    // A chunk lands whole or not at all: a payslip without its lines is a figure nobody can explain.
+    const written = await this.db.$transaction(
+      async (tx) => {
+        await tx.payslip.createMany({ data: slips });
+        const made = await tx.payslip.findMany({
+          where: { runId, employeeId: { in: ids } },
+          select: { id: true, employeeId: true },
         });
-      }
-    }
-    await this.db.payslipLine.createMany({ data: lineRows });
+        const lineRows: Prisma.PayslipLineCreateManyInput[] = [];
+        for (const slip of made) {
+          const own = linesOf.get(slip.employeeId) ?? [];
+          for (const [index, line] of own.entries()) {
+            lineRows.push({
+              payslipId: slip.id,
+              ordinal: index + 1,
+              kind: line.kind,
+              code: line.code,
+              label: line.label ?? null,
+              amount: line.amount.toString(),
+              quantity: line.quantity ?? null,
+              rateBp: line.rateBp ?? null,
+            });
+          }
+        }
+        await tx.payslipLine.createMany({ data: lineRows });
+        return made;
+      },
+      { timeout: kChunkTxMs },
+    );
 
-    return { gross, net, done: written.length };
+    return {
+      gross,
+      net,
+      done: written.length,
+      retroIds: retros.map((row) => row.id),
+      advanceIds: advances.map((row) => row.id),
+    };
+  }
+
+  /** Point what a draft deducted or paid back at it, so the lock settles exactly that and no more. */
+  private async markCarried(
+    tx: Prisma.TransactionClient,
+    runId: string,
+    periodId: string,
+    retroIds: string[],
+    advanceIds: string[],
+  ): Promise<void> {
+    await tx.$executeRaw`
+      UPDATE "RetroAdjustment" a
+         SET "appliedPeriodId" = ${periodId}
+        FROM "Payslip" p
+       WHERE p."runId" = ${runId}
+         AND p."employeeId" = a."employeeId"
+         AND a."id" = ANY(${retroIds}::text[])
+         AND a."state" = 'PENDING'
+    `;
+    await tx.$executeRaw`
+      UPDATE "SalaryAdvance" a
+         SET "payslipId" = p."id"
+        FROM "Payslip" p
+       WHERE p."runId" = ${runId}
+         AND p."employeeId" = a."employeeId"
+         AND a."id" = ANY(${advanceIds}::text[])
+         AND a."state" = 'PAID'
+    `;
   }
 
   private async requireBonusReady(runId: string, periodId: string): Promise<void> {
@@ -750,7 +922,7 @@ export class PayrollService {
     }
     const ids = [...new Set(items.map((item) => item.employeeId))];
     const bases = await this.db.payslip.findMany({
-      where: { periodId, employeeId: { in: ids }, run: { kind: "REGULAR" } },
+      where: { periodId, employeeId: { in: ids }, run: { kind: "REGULAR", state: "DONE" } },
       select: { employeeId: true },
       distinct: ["employeeId"],
     });
@@ -762,6 +934,10 @@ export class PayrollService {
   /** Load the amounts a bonus run will pay. Rerunning replaces them. */
   async setBonus(viewer: Viewer, runId: string, items: BonusItemDto[]): Promise<{ items: number }> {
     this.mayWrite(viewer);
+    // Nobody sets their own pay (KEHOACH 9.4).
+    if (viewer.employeeId !== null && items.some((item) => item.employeeId === viewer.employeeId)) {
+      throw new ForbiddenException("SELF_DECISION");
+    }
     const run = await this.db.payrollRun.findUnique({ where: { id: runId } });
     if (!run) {
       throw new NotFoundException("RUN_NOT_FOUND");
@@ -769,16 +945,25 @@ export class PayrollService {
     if (run.kind !== "BONUS") {
       throw new BadRequestException("RUN_IS_NOT_A_BONUS");
     }
-    await this.db.bonusItem.deleteMany({ where: { runId } });
-    await this.db.bonusItem.createMany({
-      data: items.map((item) => ({
-        runId,
-        employeeId: item.employeeId,
-        code: item.code,
-        label: item.label ?? null,
-        amount: item.amount,
-        taxable: item.taxable ?? true,
-      })),
+    await this.db.$transaction([
+      this.db.bonusItem.deleteMany({ where: { runId } }),
+      this.db.bonusItem.createMany({
+        data: items.map((item) => ({
+          runId,
+          employeeId: item.employeeId,
+          code: item.code,
+          label: item.label ?? null,
+          amount: item.amount,
+          taxable: item.taxable ?? true,
+        })),
+      }),
+    ]);
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.PAYROLL_BONUS,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: runId,
+      meta: { items: items.length, total: items.reduce((sum, item) => sum + item.amount, 0) },
     });
     return { items: items.length };
   }
@@ -811,17 +996,8 @@ export class PayrollService {
   ): Promise<PayrollRun> {
     const items = await this.db.bonusItem.findMany({ where: { runId }, orderBy: { code: "asc" } });
     const ids = [...new Set(items.map((item) => item.employeeId))];
-    const [bases, dependents] = await Promise.all([
-      this.db.payslip.findMany({
-        where: { periodId: period.id, employeeId: { in: ids }, run: { kind: "REGULAR" } },
-        select: {
-          employeeId: true,
-          taxableIncome: true,
-          insuranceEmployee: true,
-          createdAt: true,
-        },
-        orderBy: { createdAt: "desc" },
-      }),
+    const [baseOf, dependents] = await Promise.all([
+      this.taxBases(period.id, ids, runId),
       this.db.$queryRaw<{ employeeId: number; count: number }[]>`
         SELECT "employeeId", count(*)::int AS "count"
           FROM "Dependent"
@@ -831,12 +1007,6 @@ export class PayrollService {
          GROUP BY "employeeId"
       `,
     ]);
-    const baseOf = new Map<number, (typeof bases)[number]>();
-    for (const row of bases) {
-      if (!baseOf.has(row.employeeId)) {
-        baseOf.set(row.employeeId, row);
-      }
-    }
     const missing = ids.filter((id) => !baseOf.has(id));
     if (missing.length > 0) {
       throw new BadRequestException("BONUS_NEEDS_A_REGULAR_PAYSLIP");
@@ -862,9 +1032,7 @@ export class PayrollService {
       const relief =
         calcPolicy.selfDeduction +
         calcPolicy.dependentDeduction * BigInt(dependentOf.get(employeeId) ?? 0);
-      const without = atLeastZero(
-        toDong(base.taxableIncome) - toDong(base.insuranceEmployee) - relief,
-      );
+      const without = atLeastZero(base.taxable - base.insurance - relief);
       const withBonus = atLeastZero(without + taxablePart);
       const tax = taxOn(withBonus, calcPolicy.brackets) - taxOn(without, calcPolicy.brackets);
 
@@ -900,15 +1068,7 @@ export class PayrollService {
       });
     }
 
-    await this.db.payslip.createMany({ data: slips });
-    const written = await this.db.payslip.findMany({
-      where: { runId },
-      select: { id: true, employeeId: true },
-    });
-    const lineRows = written.flatMap((slip) =>
-      (linesOf.get(slip.employeeId) ?? []).map((line) => ({ ...line, payslipId: slip.id })),
-    );
-    await this.db.payslipLine.createMany({ data: lineRows });
+    const written = await this.writeSlips(runId, slips, linesOf);
 
     return this.db.payrollRun.update({
       where: { id: runId },
@@ -916,12 +1076,82 @@ export class PayrollService {
         state: "DONE",
         finishedAt: new Date(),
         employeeCount: ids.length,
-        doneCount: written.length,
-        failedCount: ids.length - written.length,
+        doneCount: written,
+        failedCount: ids.length - written,
         grossTotal: gross.toString(),
         netTotal: net.toString(),
       },
     });
+  }
+
+  /** A run's payslips and their lines in one transaction; returns how many landed. */
+  private writeSlips(
+    runId: string,
+    slips: Prisma.PayslipCreateManyInput[],
+    linesOf: Map<number, Prisma.PayslipLineCreateManyInput[]>,
+  ): Promise<number> {
+    return this.db.$transaction(
+      async (tx) => {
+        await tx.payslip.createMany({ data: slips });
+        const made = await tx.payslip.findMany({ where: { runId }, select: { id: true, employeeId: true } });
+        const lineRows = made.flatMap((slip) =>
+          (linesOf.get(slip.employeeId) ?? []).map((line) => ({ ...line, payslipId: slip.id })),
+        );
+        await tx.payslipLine.createMany({ data: lineRows });
+        return made.length;
+      },
+      { timeout: kChunkTxMs },
+    );
+  }
+
+  /**
+   * What each person's period already holds as taxable income: the regular
+   * payslip the lock would issue, plus every other finished bonus, so a second
+   * bonus is taxed from where the first one stopped (KEHOACH 9.18 item 9).
+   */
+  private async taxBases(periodId: string, ids: number[], runId: string): Promise<Map<number, TaxBase>> {
+    const rows = await this.db.$queryRaw<{ employeeId: number; taxable: string; insurance: string }[]>`
+      WITH regular AS (
+        SELECT DISTINCT ON (s."employeeId") s."employeeId", s."taxableIncome", s."insuranceEmployee"
+          FROM "Payslip" s
+          JOIN "PayrollRun" r ON r."id" = s."runId"
+         WHERE s."periodId" = ${periodId} AND r."kind" = 'REGULAR' AND r."state" = 'DONE'
+           AND s."employeeId" = ANY(${ids}::int[])
+         ORDER BY s."employeeId", r."finishedAt" DESC NULLS LAST, r."createdAt" DESC, r."id" DESC
+      ),
+      bonus AS (
+        SELECT s."employeeId", sum(s."taxableIncome") AS "taxable"
+          FROM "Payslip" s
+          JOIN "PayrollRun" r ON r."id" = s."runId"
+         WHERE s."periodId" = ${periodId} AND r."kind" = 'BONUS' AND r."state" = 'DONE'
+           AND r."id" <> ${runId} AND s."employeeId" = ANY(${ids}::int[])
+         GROUP BY s."employeeId"
+      )
+      SELECT g."employeeId",
+             (g."taxableIncome" + coalesce(b."taxable", 0))::text AS "taxable",
+             g."insuranceEmployee"::text AS "insurance"
+        FROM regular g
+        LEFT JOIN bonus b ON b."employeeId" = g."employeeId"
+    `;
+    return new Map(
+      rows.map((row) => [row.employeeId, { taxable: toDong(row.taxable), insurance: toDong(row.insurance) }]),
+    );
+  }
+
+  /** The payslips a lock issues: the newest finished regular and settlement run per person, every finished bonus. */
+  private chosenSlips(periodId: string): Prisma.Sql {
+    return Prisma.sql`
+      (SELECT DISTINCT ON (s."employeeId", r."kind") s."id"
+         FROM "Payslip" s
+         JOIN "PayrollRun" r ON r."id" = s."runId"
+        WHERE s."periodId" = ${periodId} AND r."state" = 'DONE'
+          AND r."kind" IN ('REGULAR', 'FINAL_SETTLEMENT')
+        ORDER BY s."employeeId", r."kind", r."finishedAt" DESC NULLS LAST, r."createdAt" DESC, r."id" DESC)
+      UNION ALL
+      (SELECT s."id"
+         FROM "Payslip" s
+         JOIN "PayrollRun" r ON r."id" = s."runId"
+        WHERE s."periodId" = ${periodId} AND r."state" = 'DONE' AND r."kind" = 'BONUS')`;
   }
 
   /**
@@ -997,28 +1227,15 @@ export class PayrollService {
   }
 
   async payslips(viewer: Viewer, query: ListPayslipsDto): Promise<Page<PayslipRow>> {
-    const { periodId, runId, employeeId } = query;
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (employeeId !== undefined && visible !== null && !visible.includes(employeeId)) {
+    if (query.employeeId !== undefined && visible !== null && !visible.includes(query.employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
-    // Both clauses write the same key, so a spread would let the scope
-    // overwrite the asked-for employee and answer with everybody.
-    const where = {
-      AND: [
-        periodId ? { periodId } : {},
-        runId ? { runId } : {},
-        employeeId === undefined ? {} : { employeeId },
-        visible === null ? {} : { employeeId: { in: visible } },
-      ],
-    };
+    const where = this.payslipWhere(query, visible);
     const [rows, found] = await Promise.all([
       this.db.payslip.findMany({
         where,
-        include: {
-          period: { select: { year: true, month: true, state: true } },
-          employee: { select: { id: true, code: true, fullName: true } },
-        },
+        include: PAYSLIP_ROW,
         // A bonus run gives one person two slips in a month, so id breaks the
         // tie that period and employee leave (KEHOACH 9.9 rule 3).
         orderBy: [
@@ -1035,16 +1252,87 @@ export class PayrollService {
     const last = rows[rows.length - 1];
     return {
       ...countedTo(found),
-      rows,
+      rows: rows.map(asPayslipRow),
       next: rows.length === query.take && last ? last.id : null,
     };
+  }
+
+  /** Every payslip the list filter reaches, as a file Excel opens. */
+  async payslipsCsv(viewer: Viewer, query: ListPayslipsDto): Promise<string> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const rows = await this.db.payslip.findMany({
+      where: this.payslipWhere(query, visible),
+      include: PAYSLIP_ROW,
+      orderBy: [{ employee: { code: "asc" } }, { id: "asc" }],
+    });
+    return toExcelCsv(
+      ["code", "fullName", "department", "run", "state", "gross", "insuranceEmployee", "tax", "advance", "net"],
+      rows.map(asPayslipRow).map((row) => [
+        row.employee.code,
+        row.employee.fullName,
+        row.employee.department?.name ?? "",
+        row.run.kind,
+        row.state,
+        row.grossPay.toFixed(0),
+        row.insuranceEmployee.toFixed(0),
+        row.personalIncomeTax.toFixed(0),
+        row.advance,
+        row.netPay.toFixed(0),
+      ]),
+    );
+  }
+
+  // Both clauses write the same key, so a spread would let the scope overwrite the asked-for employee.
+  private payslipWhere(query: ListPayslipsDto, visible: number[] | null): Prisma.PayslipWhereInput {
+    const term = query.search?.trim();
+    return {
+      AND: [
+        query.periodId ? { periodId: query.periodId } : {},
+        query.runId ? { runId: query.runId } : {},
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
+        // A draft is a number nobody has stood behind yet, so only the desk reads one.
+        visible === null ? {} : { employeeId: { in: visible }, state: { not: "DRAFT" } },
+        query.issued ? { state: { not: "DRAFT" } } : {},
+        term
+          ? {
+              employee: {
+                OR: [
+                  { code: { contains: term, mode: "insensitive" } },
+                  { fullName: { contains: term, mode: "insensitive" } },
+                ],
+              },
+            }
+          : {},
+      ],
+    };
+  }
+
+  /** What a period costs over the payslips it issues, or the ones a lock would issue while it is open. */
+  async periodTotals(periodId: string): Promise<PeriodTotals> {
+    const period = await this.requirePeriod(periodId);
+    const counted =
+      period.state === "OPEN"
+        ? this.chosenSlips(periodId)
+        : Prisma.sql`SELECT "id" FROM "Payslip" WHERE "periodId" = ${periodId} AND "state" <> 'DRAFT'`;
+    const [row] = await this.db.$queryRaw<Omit<PeriodTotals, "employerCost">[]>`
+      SELECT count(*)::int                                   AS "payslips",
+             count(DISTINCT p."employeeId")::int             AS "people",
+             coalesce(sum(p."grossPay"), 0)::text            AS "gross",
+             coalesce(sum(p."insuranceEmployee"), 0)::text   AS "insuranceEmployee",
+             coalesce(sum(p."insuranceEmployer"), 0)::text   AS "insuranceEmployer",
+             coalesce(sum(p."personalIncomeTax"), 0)::text   AS "tax",
+             coalesce(sum(p."netPay"), 0)::text              AS "net"
+        FROM "Payslip" p
+       WHERE p."id" IN (${counted})
+    `;
+    return { ...row, employerCost: (toDong(row.gross) + toDong(row.insuranceEmployer)).toString() };
   }
 
   /** What one person may read about themselves, with every component. */
   async payslip(viewer: Viewer, id: string): Promise<PayslipDetail> {
     const found = await this.db.payslip.findUnique({ where: { id }, include: { lines: { orderBy: { ordinal: "asc" } } } });
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (!found || (visible !== null && !visible.includes(found.employeeId))) {
+    if (!found || (visible !== null && (!visible.includes(found.employeeId) || found.state === "DRAFT"))) {
       throw new NotFoundException("PAYSLIP_NOT_FOUND");
     }
     if (found.employeeId === viewer.employeeId && found.viewedAt === null && found.state !== "DRAFT") {
@@ -1059,11 +1347,16 @@ export class PayrollService {
    */
   async compare(viewer: Viewer, id: string): Promise<PayslipDelta[]> {
     const slip = await this.payslip(viewer, id);
-    const period = await this.requirePeriod(slip.periodId);
+    const [period, run] = await Promise.all([
+      this.requirePeriod(slip.periodId),
+      this.db.payrollRun.findUniqueOrThrow({ where: { id: slip.runId }, select: { kind: true } }),
+    ]);
+    // A regular month compares with the previous regular month, never with a bonus paid in between.
     const before = await this.db.payslip.findFirst({
       where: {
         employeeId: slip.employeeId,
         state: { not: "DRAFT" },
+        run: { kind: run.kind },
         period: {
           OR: [
             { year: period.year, month: { lt: period.month } },
@@ -1072,7 +1365,7 @@ export class PayrollService {
         },
       },
       include: { lines: true, period: true },
-      orderBy: [{ period: { year: "desc" } }, { period: { month: "desc" } }],
+      orderBy: [{ period: { year: "desc" } }, { period: { month: "desc" } }, { issuedAt: "desc" }, { id: "desc" }],
     });
     const past = new Map((before?.lines ?? []).map((line) => [line.code, toDong(line.amount)]));
     const codes = new Set([...slip.lines.map((line) => line.code), ...past.keys()]);
@@ -1119,7 +1412,7 @@ export class PayrollService {
     const queue = this.queues[QUEUE.payroll];
     await queue.addBulk(
       waiting.map((slip) => ({
-        name: "deliver",
+        name: JOB.deliver,
         data: { type: "deliver", payslipId: slip.id } satisfies PayrollJob,
         opts: { jobId: `payslip-${slip.id}` },
       })),
@@ -1171,7 +1464,7 @@ export class PayrollService {
         ]),
       );
     }
-    return toCsv(
+    return toExcelCsv(
       [
         "code",
         "fullName",
@@ -1348,7 +1641,7 @@ export class PayrollService {
       where: {
         periodId: period.id,
         employeeId: { in: leavers.map((one) => one.id) },
-        run: { kind: "REGULAR" },
+        run: { kind: "REGULAR", state: "DONE" },
       },
       select: { employeeId: true },
       distinct: ["employeeId"],
@@ -1371,16 +1664,12 @@ export class PayrollService {
   ): Promise<PayrollRun> {
     const leavers = await this.leaversOf(period);
     const ids = leavers.map((one) => one.id);
-    const [items, balances, bases, dependents] = await Promise.all([
+    const [items, balances, baseOf, dependents] = await Promise.all([
       this.db.settlementItem.findMany({ where: { runId }, orderBy: { kind: "asc" } }),
       this.db.leaveBalance.findMany({
         where: { employeeId: { in: ids }, year: period.year, leaveType: { paid: true } },
       }),
-      this.db.payslip.findMany({
-        where: { periodId: period.id, employeeId: { in: ids }, run: { kind: "REGULAR" } },
-        select: { employeeId: true, taxableIncome: true, insuranceEmployee: true, createdAt: true },
-        orderBy: { createdAt: "desc" },
-      }),
+      this.taxBases(period.id, ids, runId),
       this.db.$queryRaw<{ employeeId: number; count: number }[]>`
         SELECT "employeeId", count(*)::int AS "count"
           FROM "Dependent"
@@ -1390,12 +1679,6 @@ export class PayrollService {
          GROUP BY "employeeId"
       `,
     ]);
-    const baseOf = new Map<number, (typeof bases)[number]>();
-    for (const row of bases) {
-      if (!baseOf.has(row.employeeId)) {
-        baseOf.set(row.employeeId, row);
-      }
-    }
     const dependentOf = new Map(dependents.map((row) => [row.employeeId, row.count]));
 
     await this.db.payslip.deleteMany({ where: { runId } });
@@ -1452,9 +1735,7 @@ export class PayrollService {
       const relief =
         calcPolicy.selfDeduction +
         calcPolicy.dependentDeduction * BigInt(dependentOf.get(one.id) ?? 0);
-      const without = atLeastZero(
-        toDong(base.taxableIncome) - toDong(base.insuranceEmployee) - relief,
-      );
+      const without = atLeastZero(base.taxable - base.insurance - relief);
       const tax = taxOn(without + taxablePart, calcPolicy.brackets) - taxOn(without, calcPolicy.brackets);
       if (tax > 0n) {
         rows.push({
@@ -1486,21 +1767,13 @@ export class PayrollService {
       });
     }
 
-    await this.db.payslip.createMany({ data: slips });
-    const written = await this.db.payslip.findMany({
-      where: { runId },
-      select: { id: true, employeeId: true },
-    });
-    const lineRows = written.flatMap((slip) =>
-      (linesOf.get(slip.employeeId) ?? []).map((line) => ({ ...line, payslipId: slip.id })),
-    );
-    await this.db.payslipLine.createMany({ data: lineRows });
+    const written = await this.writeSlips(runId, slips, linesOf);
 
     await this.audit.record({
       action: AUDIT_ACTIONS.PAYROLL_RUN,
       subject: AUDIT_SUBJECTS.PAYROLL,
       subjectId: runId,
-      meta: { leavers: ids.length, payslips: written.length },
+      meta: { leavers: ids.length, payslips: written },
     });
     return this.db.payrollRun.update({
       where: { id: runId },
@@ -1508,8 +1781,8 @@ export class PayrollService {
         state: "DONE",
         finishedAt: new Date(),
         employeeCount: ids.length,
-        doneCount: written.length,
-        failedCount: ids.length - written.length,
+        doneCount: written,
+        failedCount: ids.length - written,
         grossTotal: gross.toString(),
         netTotal: net.toString(),
       },

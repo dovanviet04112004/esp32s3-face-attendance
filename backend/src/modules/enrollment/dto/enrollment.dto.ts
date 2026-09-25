@@ -15,3 +15,24 @@ export class AssignDto {
   @Min(1)
   employeeId!: number;
 }
+
+export class AssignableDeviceView {
+  @ApiProperty() id!: string;
+  @ApiProperty({ type: String, nullable: true }) name!: string | null;
+  @ApiProperty({ type: String, nullable: true }) location!: string | null;
+}
+
+export class KioskStandingView extends AssignableDeviceView {
+  @ApiProperty({ enum: ["ASSIGNED", "ENROLLED", "RETAKE", "REVOKED"] }) state!: string;
+}
+
+export class EnrollmentView {
+  @ApiProperty() deviceId!: string;
+  @ApiProperty() employeeId!: number;
+  @ApiProperty({ enum: ["ASSIGNED", "ENROLLED", "RETAKE", "REVOKED"] }) state!: string;
+  @ApiProperty({ type: Number, nullable: true }) templateIdx!: number | null;
+}
+
+export class RosterView {
+  @ApiProperty({ description: "The roster version the kiosk reaches after the resync" }) rosterVersion!: number;
+}

@@ -139,3 +139,50 @@ export class CreatePolicyDto {
   @Type(() => TaxBracketDto)
   brackets!: TaxBracketDto[];
 }
+
+export class PolicyListQueryDto {
+  @ApiPropertyOptional({ description: "Only this entity's rows" })
+  @IsOptional()
+  @IsUUID()
+  legalEntityId?: string;
+}
+
+export class EffectivePolicyQueryDto extends PolicyListQueryDto {
+  @ApiPropertyOptional({ example: "2026-09-30", description: "Left out, today" })
+  @IsOptional()
+  @IsDateString()
+  on?: string;
+}
+
+export class TaxBracketView {
+  @ApiProperty() ordinal!: number;
+  @ApiProperty({ type: String, nullable: true, description: "Whole dong; null on the top band" })
+  upToAmount!: string | null;
+  @ApiProperty() rateBp!: number;
+}
+
+export class PolicyView {
+  @ApiProperty() id!: string;
+  @ApiProperty({ type: String, nullable: true }) legalEntityId!: string | null;
+  @ApiProperty({ example: "2026-01-01" }) effectiveFrom!: string;
+  @ApiProperty() selfDeduction!: string;
+  @ApiProperty() dependentDeduction!: string;
+  @ApiProperty() socialRateBp!: number;
+  @ApiProperty() healthRateBp!: number;
+  @ApiProperty() unemploymentRateBp!: number;
+  @ApiProperty() employerSocialRateBp!: number;
+  @ApiProperty() employerHealthRateBp!: number;
+  @ApiProperty() employerUnemploymentRateBp!: number;
+  @ApiProperty() referenceWage!: string;
+  @ApiProperty() socialCapMultiple!: number;
+  @ApiProperty() regionalMinimumWage!: string;
+  @ApiProperty() unemploymentCapMultiple!: number;
+  @ApiProperty() standardDaysPerMonth!: string;
+  @ApiProperty() noContributionUnpaidDays!: number;
+  @ApiProperty() overtimeWeekdayBp!: number;
+  @ApiProperty() overtimeWeekendBp!: number;
+  @ApiProperty() overtimeHolidayBp!: number;
+  @ApiProperty() nightPremiumBp!: number;
+  @ApiProperty({ type: String, nullable: true }) note!: string | null;
+  @ApiProperty({ type: [TaxBracketView] }) brackets!: TaxBracketView[];
+}

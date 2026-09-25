@@ -1,7 +1,65 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsDateString, IsOptional, IsString, MaxLength } from "class-validator";
+import { Transform } from "class-transformer";
+import { IsBoolean, IsDateString, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+
+export class PersonRefView {
+  @ApiProperty() id!: number;
+  @ApiProperty() code!: string;
+  @ApiProperty() fullName!: string;
+}
+
+export class TodayCountsView {
+  @ApiProperty({ example: "2026-09-25", description: "The calendar day in the business time zone" }) date!: string;
+  @ApiProperty({ description: "Active, with a shift in force, on a working day" }) expected!: number;
+  @ApiProperty({ description: "At least one punch today" }) present!: number;
+  @ApiProperty({ description: "Expected, and the first punch came after start plus grace" }) late!: number;
+  @ApiProperty({ description: "Expected, no punch, no approved leave, trip or remote work" }) absentUnexcused!: number;
+  @ApiProperty({ description: "An approved leave covers today" }) onLeave!: number;
+}
+
+export class TeamTotalsView {
+  @ApiProperty() absent!: number;
+  @ApiProperty() onLeave!: number;
+  @ApiProperty() notPunched!: number;
+}
+
+export class TeamTodayView {
+  @ApiProperty({ type: [PersonRefView], description: "No punch after the shift's grace; at most 20" })
+  absent!: PersonRefView[];
+  @ApiProperty({ type: [PersonRefView], description: "At most 20" }) onLeave!: PersonRefView[];
+  @ApiProperty({ type: [PersonRefView], description: "No punch yet, grace not over; at most 20" })
+  notPunched!: PersonRefView[];
+  @ApiProperty({ type: TeamTotalsView }) totals!: TeamTotalsView;
+}
+
+export class AttendanceTallyView {
+  @ApiProperty() employeeId!: number;
+  @ApiProperty() code!: string;
+  @ApiProperty() fullName!: string;
+  @ApiProperty() punches!: number;
+  @ApiProperty({ type: String, nullable: true }) firstAt!: string | null;
+  @ApiProperty({ type: String, nullable: true }) lastAt!: string | null;
+  @ApiProperty() unsyncedClock!: number;
+}
+
+export class AttendanceTallyPage {
+  @ApiProperty({ type: [AttendanceTallyView] }) rows!: AttendanceTallyView[];
+  @ApiProperty() total!: number;
+  @ApiPropertyOptional() totalIsExact?: boolean;
+  @ApiProperty({ type: String, nullable: true }) next!: string | null;
+}
+
+export class TallyTotalsView {
+  @ApiProperty() people!: number;
+  @ApiProperty() punches!: number;
+  @ApiProperty() unsyncedClock!: number;
+}
+
+export class ReportQueued {
+  @ApiProperty() jobId!: string;
+}
 
 export class RangeDto {
   @ApiProperty({ example: "2026-09-01T00:00:00.000Z" })
@@ -23,11 +81,22 @@ export class TallyRangeDto extends PaginationDto {
   @IsDateString()
   to!: string;
 
-  @ApiPropertyOptional({ description: "Matches the full name" })
+  @ApiPropertyOptional({ description: "Employee code or full name, any case" })
   @IsOptional()
   @IsString()
   @MaxLength(64)
   search?: string;
+
+  @ApiPropertyOptional({ description: "The department and every department under it" })
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @ApiPropertyOptional({ description: "Only people who came in after their shift's grace on a working day of the range" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  late?: boolean;
 }
 
 export class D02QueryDto {

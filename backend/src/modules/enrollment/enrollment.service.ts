@@ -1,14 +1,16 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { Device, DeviceEnrollment, FaceTemplate } from "@prisma/client";
+import type { BiometricConsent, Device, DeviceEnrollment, FaceTemplate, Prisma } from "@prisma/client";
 import pg from "pg";
 
 import type { EnrollPayload } from "../../common/generated/enroll_payload.js";
+import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
+import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import { ConsentService } from "./consent.service.js";
 import { openTemplate, sealTemplate } from "./template-crypto.js";
 
@@ -20,6 +22,7 @@ const SCRUB_LOCK_WAIT_MS = 5000;
 
 type Named = { fullName: string; code: string; embeddingVersion: string | null };
 type Build = (version: number, deviceId: string) => Promise<EnrollPayload>;
+type Door = { id: string; rosterVersion: number };
 
 export interface AssignableDevice {
   id: string;
@@ -42,6 +45,7 @@ export class EnrollmentService {
     private readonly consent: ConsentService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
+    private readonly feed: RealtimeGateway,
   ) {}
 
   /** The kiosks a person can be put on, by name (KEHOACH 7.5). */
@@ -113,49 +117,107 @@ export class EnrollmentService {
    * stays; the biometric does not (Nghi dinh 13/2023, KEHOACH 9.19).
    */
   async erase(employeeId: number, actorId: string, why: string): Promise<{ devices: number }> {
-    const rows = await this.db.deviceEnrollment.findMany({ where: { employeeId } });
-    await this.db.faceTemplate.deleteMany({ where: { employeeId } });
-    await this.scrubTemplates();
-    await this.db.employee.update({ where: { id: employeeId }, data: { embeddingVersion: null } });
-    for (const row of rows) {
-      const device = await this.db.device.findUnique({ where: { id: row.deviceId } });
-      if (!device) {
-        continue;
+    const doors = await this.db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
+      return this.eraseIn(tx, employeeId);
+    });
+    await this.tellErased(employeeId, doors, actorId, why);
+    return { devices: doors.length };
+  }
+
+  /**
+   * Withdraw consent and erase the face in one transaction, so neither half
+   * stands without the other. Asking again after a withdrawal erases again,
+   * which is how a delete that never reached a kiosk gets another go.
+   */
+  async withdrawConsent(viewer: Viewer, employeeId: number): Promise<{ consent: BiometricConsent; devices: number }> {
+    this.consent.mayRecordFor(viewer, employeeId);
+    const { consent, doors, fresh } = await this.db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
+      const live = await tx.biometricConsent.findFirst({
+        where: { employeeId, state: "GRANTED" },
+        orderBy: { grantedAt: "desc" },
+      });
+      const held =
+        live ??
+        (await tx.biometricConsent.findFirst({ where: { employeeId }, orderBy: { grantedAt: "desc" } }));
+      if (!held) {
+        throw new BadRequestException("CONSENT_NOT_GRANTED");
       }
-      const version = await this.bump(device);
-      await this.send(row.deviceId, {
-        op: "DELETE_EMPLOYEE",
-        employeeId,
-        templateIdx: FIRST_TEMPLATE,
-        updatedAt: Date.now(),
-        rosterVersion: version,
-        deviceId: row.deviceId,
+      if (live) {
+        await tx.biometricConsent.updateMany({
+          where: { employeeId, state: "GRANTED" },
+          data: { state: "WITHDRAWN", withdrawnAt: new Date() },
+        });
+      }
+      const erased = await this.eraseIn(tx, employeeId);
+      const after = await tx.biometricConsent.findUniqueOrThrow({ where: { id: held.id } });
+      return { consent: after, doors: erased, fresh: live !== null };
+    });
+    if (fresh) {
+      await this.audit.record({
+        actorId: viewer.userId,
+        action: AUDIT_ACTIONS.BIOMETRIC_CONSENT_WITHDRAW,
+        subject: AUDIT_SUBJECTS.EMPLOYEE,
+        subjectId: String(employeeId),
       });
     }
-    await this.db.deviceEnrollment.updateMany({ where: { employeeId }, data: { state: "REVOKED" } });
+    await this.tellErased(employeeId, doors, viewer.userId, "consent withdrawn");
+    return { consent, devices: doors.length };
+  }
+
+  /** The database half of an erase; the counter of every door moves with it. */
+  private async eraseIn(tx: Prisma.TransactionClient, employeeId: number): Promise<Door[]> {
+    const rows = await tx.deviceEnrollment.findMany({ where: { employeeId }, select: { deviceId: true } });
+    await tx.faceTemplate.deleteMany({ where: { employeeId } });
+    await tx.employee.update({ where: { id: employeeId }, data: { embeddingVersion: null } });
+    await tx.deviceEnrollment.updateMany({ where: { employeeId }, data: { state: "REVOKED" } });
+    if (rows.length === 0) {
+      return [];
+    }
+    return tx.$queryRaw<Door[]>`
+      UPDATE "Device" SET "rosterVersion" = "rosterVersion" + 1, "updatedAt" = now()
+       WHERE "id" = ANY(${rows.map((row) => row.deviceId)}::text[])
+      RETURNING "id", "rosterVersion"
+    `;
+  }
+
+  // A door that misses the delete still reports the old counter, and its next heartbeat resyncs it.
+  private async tellErased(employeeId: number, doors: Door[], actorId: string, why: string): Promise<void> {
+    await this.scrubTemplates();
+    for (const door of doors) {
+      await this.send(door.id, this.dropAll(employeeId, door.rosterVersion, door.id)).catch((error: Error) =>
+        this.log.warn(`${door.id} did not hear the erase of ${employeeId} yet: ${error.message}`),
+      );
+    }
     await this.audit.record({
       actorId,
       action: AUDIT_ACTIONS.BIOMETRIC_ERASE,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(employeeId),
-      meta: { devices: rows.length, why },
+      meta: { devices: doors.length, why },
     });
-    this.log.warn(`erased biometrics for ${employeeId} on ${rows.length} kiosk(s): ${why}`);
-    return { devices: rows.length };
+    this.log.warn(`erased biometrics for ${employeeId} on ${doors.length} kiosk(s): ${why}`);
   }
 
   /** What an operator did at a kiosk: one captured sample, or a request the server decides (KEHOACH 7.5). */
   async takeReport(deviceId: string, report: EnrollPayload): Promise<void> {
     switch (report.op) {
       case "UPSERT":
-        return this.takeSample(deviceId, report);
+        await this.takeSample(deviceId, report);
+        break;
       case "RETAKE":
-        return this.askedRetake(deviceId, report.employeeId);
+        await this.askedRetake(deviceId, report.employeeId);
+        break;
       case "DELETE_EMPLOYEE":
-        return this.askedRemove(deviceId, report.employeeId);
+        await this.askedRemove(deviceId, report.employeeId);
+        break;
       default:
         this.log.warn(`${deviceId} sent ${report.op} up, which only the server sends`);
+        return;
     }
+    // No request carried the kiosk's report, so the change interceptor never announced it.
+    this.feed.publish(FEED.change, { resources: ["enrollments"] }, report.employeeId);
   }
 
   /**
@@ -179,6 +241,10 @@ export class EnrollmentService {
       });
       if (!pair) {
         return "stranger" as const;
+      }
+      // Consent can go while a kiosk is mid-capture; a face taken after that is not kept (KEHOACH 9.19).
+      if ((await tx.biometricConsent.count({ where: { employeeId, state: "GRANTED" } })) === 0) {
+        return "unconsented" as const;
       }
       const held = await tx.faceTemplate.findFirst({ where: { employeeId }, select: { capturedAt: true } });
       const current = held?.capturedAt.getTime() === session.getTime();
@@ -222,6 +288,9 @@ export class EnrollmentService {
       case "stranger":
         this.log.warn(`${deviceId} reported a face for ${employeeId}, which it was never given`);
         return;
+      case "unconsented":
+        this.log.warn(`${deviceId} captured ${employeeId}, who has no consent in force; told to drop it`);
+        return this.send(deviceId, this.dropAll(employeeId, await this.bump(deviceId), deviceId));
       case "repeat":
         return;
       case "refused":
@@ -338,9 +407,13 @@ export class EnrollmentService {
       include: { employee: { select: { fullName: true, code: true, embeddingVersion: true } } },
       orderBy: { employeeId: "asc" },
     });
+    const held = await this.db.faceTemplate.findMany({
+      where: { employeeId: { in: rows.filter((row) => row.employee.embeddingVersion).map((row) => row.employeeId) } },
+      orderBy: [{ employeeId: "asc" }, { templateIdx: "asc" }],
+    });
     const messages: Build[] = [];
     for (const row of rows) {
-      const samples = await this.samplesFor(row);
+      const samples = this.buildsFor(row, held.filter((sample) => sample.employeeId === row.employeeId));
       messages.push(...samples);
       // An upsert takes a person off the pending list, so the ask goes after it.
       if (row.state !== "ENROLLED" || samples.length === 0) {
@@ -391,6 +464,13 @@ export class EnrollmentService {
       where: { employeeId: row.employeeId },
       orderBy: { templateIdx: "asc" },
     });
+    return this.buildsFor(row, held);
+  }
+
+  private buildsFor(row: DeviceEnrollment & { employee: Named }, held: FaceTemplate[]): Build[] {
+    if (!row.employee.embeddingVersion) {
+      return [];
+    }
     return held.map((sample) => (version: number, to: string) => this.upsertOf(row, sample, version, to));
   }
 
@@ -471,15 +551,11 @@ export class EnrollmentService {
       return;
     }
     for (const row of others) {
-      const device = await this.db.device.findUnique({ where: { id: row.deviceId } });
-      if (!device) {
-        continue;
-      }
       // A new session replaces the old samples on every door, not only the capturing one.
       if (replaced) {
-        await this.send(row.deviceId, this.dropAll(employeeId, await this.bump(device), row.deviceId));
+        await this.send(row.deviceId, this.dropAll(employeeId, await this.bump(row.deviceId), row.deviceId));
       }
-      await this.send(row.deviceId, await this.upsertOf(row, sample, await this.bump(device), row.deviceId));
+      await this.send(row.deviceId, await this.upsertOf(row, sample, await this.bump(row.deviceId), row.deviceId));
       // Left ASSIGNED, this door would ask for a face it now holds.
       await this.db.deviceEnrollment.update({
         where: { deviceId_employeeId: { deviceId: row.deviceId, employeeId } },
@@ -488,9 +564,9 @@ export class EnrollmentService {
     }
   }
 
-  private async bump(device: Device): Promise<number> {
+  private async bump(device: Pick<Device, "id"> | string): Promise<number> {
     const moved = await this.db.device.update({
-      where: { id: device.id },
+      where: { id: typeof device === "string" ? device : device.id },
       data: { rosterVersion: { increment: 1 } },
       select: { rosterVersion: true },
     });

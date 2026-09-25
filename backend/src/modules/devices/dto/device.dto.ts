@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import { Transform } from "class-transformer";
+import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
@@ -65,6 +66,46 @@ export class ListDevicesDto extends PaginationDto {
   @IsOptional()
   @IsEnum(DEVICE_STATUS)
   status?: (typeof DEVICE_STATUS)[number];
+
+  @ApiPropertyOptional({ description: "Id, name, place or serial, any case", maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  search?: string;
+
+  @ApiPropertyOptional({ description: "Approved kiosks that are online (true) or offline (false)" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  online?: boolean;
+}
+
+export class DeviceView {
+  @ApiProperty() id!: string;
+  @ApiProperty({ type: String, nullable: true }) serial!: string | null;
+  @ApiProperty({ type: String, nullable: true }) name!: string | null;
+  @ApiProperty({ type: String, nullable: true }) location!: string | null;
+  @ApiProperty({ enum: DEVICE_STATUS }) status!: string;
+  @ApiProperty({ type: String, nullable: true }) fwVersion!: string | null;
+  @ApiProperty({ type: String, nullable: true }) modelVersion!: string | null;
+  @ApiProperty() rosterVersion!: number;
+  @ApiProperty({ type: String, nullable: true, format: "date-time" }) lastSeenAt!: string | null;
+  @ApiProperty() online!: boolean;
+  @ApiProperty({ type: String, nullable: true }) approvedAt!: string | null;
+}
+
+export class DevicePageView {
+  @ApiProperty({ type: [DeviceView] }) rows!: DeviceView[];
+  @ApiProperty() total!: number;
+  @ApiProperty() totalIsExact!: boolean;
+}
+
+export class DeviceCountsView {
+  @ApiProperty() PENDING!: number;
+  @ApiProperty() APPROVED!: number;
+  @ApiProperty() REVOKED!: number;
+  @ApiProperty({ description: "Approved and online" }) online!: number;
+  @ApiProperty({ description: "Approved and offline" }) offline!: number;
 }
 
 /** The login EMQX's http authenticator forwards (KEHOACH 7.4). */
