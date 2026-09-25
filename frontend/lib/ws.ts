@@ -52,7 +52,7 @@ const REFRESH: Record<FeedName, string[]> = {
 const SPILLS: Record<string, string[]> = {
   requests: ["leave-balances", "timesheet", "attendance", "advances"],
   "leave-types": ["leave-balances"],
-  shifts: ["me"],
+  shifts: ["me", "employees"],
   documents: ["me"],
   timesheet: ["attendance", "reports"],
   "payroll-periods": ["payroll-runs", "payslips"],
@@ -66,6 +66,7 @@ const SPILLS: Record<string, string[]> = {
   import: ["users", "compensation", "shifts", "enrollments", "me"],
   placement: ["users", "requests", "departments", "job-titles", "legal-entities"],
   logins: ["users"],
+  users: ["employees"],
   onboard: ["checklist", "checklists"],
   offboard: ["checklist", "checklists", "assets", "contracts", "users", "enrollments"],
   "checklist-tasks": ["checklist", "checklists"],
@@ -76,8 +77,8 @@ const SPILLS: Record<string, string[]> = {
   "legal-entities": ["departments"],
   "personnel-file-types": ["personnel-files"],
   contracts: ["reports"],
-  "biometric-consents": ["enrollments"],
-  enrollments: ["devices"],
+  "biometric-consents": ["enrollments", "employees"],
+  enrollments: ["devices", "employees"],
   releases: ["devices"],
   devices: ["releases"],
 };

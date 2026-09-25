@@ -68,6 +68,10 @@ interface InviteRow extends Row {
   resend: boolean;
 }
 
+interface KioskRow extends Row {
+  heldFace: boolean;
+}
+
 interface Kiosk {
   id: string;
   name: string | null;
@@ -454,28 +458,39 @@ function KioskDialog({ open, asked, onClose, onDone }: DialogProps) {
   const choices: DepartmentChoice[] = (devices.data ?? []).map((one) => ({ id: one.id, code: one.id, name: one.name ?? one.id }));
   const kioskName = choices.find((one) => one.id === deviceId)?.name ?? deviceId;
 
+  const splitOf = (rows: KioskRow[]): string => {
+    const held = rows.filter((one) => one.heldFace).length;
+    const capture = rows.length - held;
+    return [held > 0 ? t("kioskHeld", { count: held }) : "", capture > 0 ? t("kioskCapture", { count: capture }) : ""]
+      .filter(Boolean)
+      .join(" · ");
+  };
+
   const body = { ...asked.selection, deviceId };
   const preview = useQuery({
     queryKey: ["bulk-preview", "kiosk", body],
     enabled: open && deviceId !== "",
-    queryFn: async () => (await api.post<Plan<Row>>("/employees/bulk/enrollments", body)).data,
+    queryFn: async () => (await api.post<Plan<KioskRow>>("/employees/bulk/enrollments", body)).data,
     ...FRESH_PREVIEW,
   });
   const apply = useMutation({
-    mutationFn: async () => (await api.post<Plan<Row>>("/employees/bulk/enrollments?apply=true", body)).data,
+    mutationFn: async () => (await api.post<Plan<KioskRow>>("/employees/bulk/enrollments?apply=true", body)).data,
     onSuccess: (done) => {
+      const skipped = done.skipped.length > 0 ? t("doneSkipped", { count: done.skipped.length }) : "";
       notify.done(
         t("doneKiosk", { count: done.rows.length, kiosk: kioskName }),
-        done.skipped.length > 0 ? t("doneSkipped", { count: done.skipped.length }) : undefined,
+        [splitOf(done.rows), skipped].filter(Boolean).join(" · ") || undefined,
       );
-      void cache.invalidateQueries({ queryKey: ["enrollments"] });
-      void cache.invalidateQueries({ queryKey: ["devices"] });
+      for (const key of ["enrollments", "devices", "employees"]) {
+        void cache.invalidateQueries({ queryKey: [key] });
+      }
       onDone();
     },
     onError: notify.failed,
   });
 
-  const writes = preview.data?.rows.length ?? 0;
+  const plan = preview.data;
+  const writes = plan?.rows.length ?? 0;
   return (
     <LayerDialog.Root open={open} onOpenChange={(next) => !next && onClose()} dismissDisabled={apply.isPending}>
       <LayerDialog.Content size="lg" closeLabel={common("close")}>
@@ -485,11 +500,13 @@ function KioskDialog({ open, asked, onClose, onDone }: DialogProps) {
           <div className="flex flex-col gap-5">
             <ChoiceField label={t("kioskPick")} items={choices} value={deviceId} empty={t("kioskNone")} onChange={setDeviceId} />
             <Preview
-              plan={preview.data}
+              plan={plan}
               pending={preview.isFetching}
               fault={preview.isError ? faultOf(preview.error) : null}
               waiting={deviceId ? null : t("kioskPickFirst")}
               headline={t("willKiosk", { count: writes, kiosk: kioskName })}
+              detail={(row) => (row.heldFace ? t("kioskHeldRow") : t("kioskCaptureRow"))}
+              extra={plan && writes > 0 ? <p className="m-0 text-kumo-subtle">{splitOf(plan.rows)}</p> : null}
             />
           </div>
         </LayerDialog.Body>
@@ -550,8 +567,9 @@ function ShiftDialog({ open, asked, onClose, onDone }: DialogProps) {
         t("doneShift", { count: done.rows.length, shift: shiftName }),
         done.skipped.length > 0 ? t("doneSkipped", { count: done.skipped.length }) : undefined,
       );
-      void cache.invalidateQueries({ queryKey: ["shifts"] });
-      void cache.invalidateQueries({ queryKey: ["me"] });
+      for (const key of ["shifts", "me", "employees"]) {
+        void cache.invalidateQueries({ queryKey: [key] });
+      }
       onDone();
     },
     onError: notify.failed,

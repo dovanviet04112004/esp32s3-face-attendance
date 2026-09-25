@@ -69,6 +69,24 @@ interface Attention {
 
 const DESK = ["ADMIN", "HR", "PAYROLL"];
 const ENDINGS = ["contract", "probation"] as const;
+const ACCOUNTS = ["none", "invited", "active", "locked"] as const;
+const FACES = ["unassigned", "waiting", "enrolled", "noConsent", "noEmail"] as const;
+const SHIFTS = ["none", "some"] as const;
+
+/** People per option of the three filters that match the bulk jobs, each under the other filters (KEHOACH 9.20). */
+interface Readiness {
+  account: Record<(typeof ACCOUNTS)[number] | "all", number>;
+  face: Record<(typeof FACES)[number] | "all", number>;
+  shift: Record<(typeof SHIFTS)[number] | "all", number>;
+}
+
+function oneOf(options: readonly string[], value: string): string {
+  return options.includes(value) ? value : "";
+}
+
+function optionCounts(counts: Record<string, number> | undefined): Record<string, number | undefined> {
+  return { ...counts, "": counts?.all };
+}
 // The window the API assumes when a link names none (ENDING_WINDOW_DAYS in the backend).
 const kEndingDays = 30;
 const kMsPerDay = 86_400_000;
@@ -122,7 +140,16 @@ function Directory() {
   const cache = useQueryClient();
   const notify = useNotify();
 
-  const [url, setUrl] = useUrlState({ q: "", departmentId: "", active: "true", ending: "", within: "" });
+  const [url, setUrl] = useUrlState({
+    q: "",
+    departmentId: "",
+    active: "true",
+    ending: "",
+    within: "",
+    account: "",
+    face: "",
+    shift: "",
+  });
   const [typed, setTyped] = useState(url.q);
   const settled = useSettled(typed.trim());
   useEffect(() => {
@@ -132,10 +159,13 @@ function Directory() {
   }, [settled]); // eslint-disable-line react-hooks/exhaustive-deps
   const ending = (ENDINGS as readonly string[]).includes(url.ending) ? url.ending : "";
   const windowDays = Number(url.within) > 0 ? Number(url.within) : kEndingDays;
+  const readiness = mayWrite
+    ? { account: oneOf(ACCOUNTS, url.account), face: oneOf(FACES, url.face), shift: oneOf(SHIFTS, url.shift) }
+    : { account: "", face: "", shift: "" };
   const filters: Record<string, string> = ending
-    ? { search: url.q, departmentId: url.departmentId, ending, within: url.within }
-    : { search: url.q, departmentId: url.departmentId, active: url.active };
-  const narrowed = url.q !== "" || url.departmentId !== "" || ending !== "";
+    ? { search: url.q, departmentId: url.departmentId, ending, within: url.within, ...readiness }
+    : { search: url.q, departmentId: url.departmentId, active: url.active, ...readiness };
+  const narrowed = url.q !== "" || url.departmentId !== "" || ending !== "" || Object.values(readiness).some(Boolean);
 
   const [raising, setRaising] = useState(false);
   const [raiseDept, setRaiseDept] = useState("");
@@ -156,11 +186,16 @@ function Directory() {
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
+  const countedUnder = { search: url.q, departmentId: url.departmentId, ...readiness };
   const counts = useQuery({
-    queryKey: ["employees", "counts", url.q, url.departmentId],
-    queryFn: async () =>
-      (await api.get<{ active: number; left: number }>(`/employees/counts${queryOf({ search: url.q, departmentId: url.departmentId })}`))
-        .data,
+    queryKey: ["employees", "counts", countedUnder],
+    queryFn: async () => (await api.get<{ active: number; left: number }>(`/employees/counts${queryOf(countedUnder)}`)).data,
+  });
+
+  const ready = useQuery({
+    queryKey: ["employees", "readiness", filters],
+    enabled: mayWrite,
+    queryFn: async () => (await api.get<Readiness>(`/employees/counts/readiness${queryOf(filters)}`)).data,
   });
 
   const attention = useQuery({
@@ -393,6 +428,47 @@ function Directory() {
                     },
                   },
                 ]),
+            ...(mayWrite
+              ? [
+                  {
+                    key: "account",
+                    label: t("accountFilter"),
+                    value: readiness.account,
+                    onChange: (next: string) => setUrl({ account: next }),
+                    items: {
+                      "": t("accountAny"),
+                      none: t("accountNone"),
+                      invited: t("accountInvited"),
+                      active: t("accountActive"),
+                      locked: t("accountLocked"),
+                    },
+                    counts: optionCounts(ready.data?.account),
+                  },
+                  {
+                    key: "face",
+                    label: t("faceFilter"),
+                    value: readiness.face,
+                    onChange: (next: string) => setUrl({ face: next }),
+                    items: {
+                      "": t("faceAny"),
+                      unassigned: t("faceUnassigned"),
+                      waiting: t("faceWaiting"),
+                      enrolled: t("faceEnrolled"),
+                      noConsent: t("faceNoConsent"),
+                      noEmail: t("faceNoEmail"),
+                    },
+                    counts: optionCounts(ready.data?.face),
+                  },
+                  {
+                    key: "shift",
+                    label: t("shiftFilter"),
+                    value: readiness.shift,
+                    onChange: (next: string) => setUrl({ shift: next }),
+                    items: { "": t("shiftAny"), none: t("shiftNoneToday"), some: t("shiftSomeToday") },
+                    counts: optionCounts(ready.data?.shift),
+                  },
+                ]
+              : []),
           ]}
         />
         <DataTable
