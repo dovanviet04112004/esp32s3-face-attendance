@@ -4664,12 +4664,29 @@ sớm thì hàng đợi không bao giờ đầy vì một sự thật duy nhất
 
 ### 4.7 `frontend/` — Next.js trên Vercel
 
-**Stack**: Next.js 16 (App Router) · React 19 · TypeScript · TailwindCSS 4 · next-intl · TanStack Query · Zustand · Recharts · socket.io-client
+**Stack**: Next.js 16 (App Router) · React 19 · TypeScript · TailwindCSS 4 · Kumo (`@cloudflare/kumo`, trên Base UI) · Phosphor icons · Inter · next-intl · TanStack Query · Zustand · Recharts · socket.io-client
 
-Primitive giao diện (`button`, `input`, `select`, …) **viết tay trong `components/ui/`**, không
-lấy shadcn/ui. shadcn phát code vào repo rồi mình phải nuôi tiếp, nên nó chỉ lời khi dùng nhiều
-component; ở đây trang nào cũng là bảng với biểu mẫu, và một `<Button>` 30 dòng đọc hết trong
-một phút thì rẻ hơn một cây Radix mang theo mười gói phụ thuộc.
+**Giao diện dựng bằng Kumo, thư viện component của chính dashboard Cloudflare** (MIT). Mốc chủ
+repo đặt ra là trông **giống dashboard Cloudflare**, và mốc ấy chỉ đạt trọn bằng chính code của
+họ: viết tay theo token thì giống bề ngoài nhưng lệch ở những chỗ nhỏ nhất, như cách toast xếp
+chồng, bẫy focus trong hộp thoại, hay nhịp hàng sọc của bảng. Lý do cũ để không lấy shadcn là nó
+phát code vào repo rồi mình phải nuôi; lý do ấy không áp vào Kumo, vì Kumo là một gói npm do
+Cloudflare nuôi và repo chỉ import. Ba luật đi kèm:
+
+- **Ghim đúng một bản** (`"@cloudflare/kumo": "2.14.0"`, `@phosphor-icons/react` cũng vậy). Kumo
+  mới ra từ 10/2025 và lên bản liên tục; nâng bản là một commit có chủ đích, đọc CHANGELOG rồi
+  build lại, không để `^` tự kéo.
+- **Chỉ token ngữ nghĩa của Kumo** (`bg-kumo-base`, `text-kumo-subtle`, …): không màu Tailwind
+  thô, không biến thể `dark:`, vì sáng tối do `light-dark()` của Kumo lo. Icon chỉ Phosphor, một
+  bộ cho cả app.
+- **Không mang nhãn hiệu Cloudflare**: không `CloudflareLogo`, không màu cam thương hiệu
+  `#f6821f`, không font thương mại của cloudflare.com. Chữ là Inter (OFL), nạp qua `next/font`
+  cùng bộ ký tự tiếng Việt.
+
+`components/ui/` vì thế **không viết lại primitive nào Kumo đã có**. Nó chỉ giữ thứ Kumo không có
+hoặc thứ phải buộc vào quy ước của repo: bốn tông trạng thái của §9.12 luật 2 ánh xạ lên `Badge`,
+đầu trang một khuôn, hành động neo đáy và bộ lọc thành tấm trượt ở màn hẹp (§9.21.2), nút chọn
+giao diện sáng tối, và một hook báo kết quả thao tác bằng toast.
 
 ```
 frontend/
@@ -4730,10 +4747,10 @@ frontend/
 │   ├── icon-maskable.png             # ★ cùng dấu, chừa lề an toàn cho launcher cắt tròn
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
-│   ├── ui/                           # primitive: button, input, select, checkbox, sheet,
-│   │                                 #   skeleton, empty, pill, theme-toggle,
-│   │                                 #   bottom-bar, filter-bar  ★ §9.21.2 — màn hẹp thì
-│   │                                 #   hành động chính neo đáy, bộ lọc thành tấm trượt
+│   ├── ui/                           # ★ chỉ thứ Kumo không có: pill, page-header, notify,
+│   │                                 #   theme-toggle, bottom-bar, filter-bar, sheet
+│   │                                 #   ★ §9.21.2 — màn hẹp thì hành động chính neo đáy,
+│   │                                 #   bộ lọc thành tấm trượt
 │   │                                 #   ★ §9.12 luật 2 — pill giữ bốn tông trạng thái,
 │   │                                 #   khai một chỗ cho cả tám phân hệ. Tiền không có
 │   │                                 #   primitive: nó là hàm ở lib/format.ts
@@ -4785,8 +4802,8 @@ cách chắc chắn để tháng sau cột *Đi muộn* có trên máy tính mà
 người dùng đọc là **thiếu số liệu**, không phải thiếu một cột.
 
 **Thanh điều hướng cũng có hai hình thức, và chúng đọc chung `lib/nav.ts`.** Màn rộng dựng
-`nav/sidebar.tsx`; màn hẹp dựng `nav/tab-bar.tsx` với tối đa năm mục lấy từ chính danh sách ấy,
-vì thanh bên 240 px nuốt mất một phần ba bề ngang điện thoại. Hai file, một nguồn: thêm một
+`nav/sidebar.tsx` trên `Sidebar` của Kumo; màn hẹp dựng `nav/tab-bar.tsx` với tối đa năm mục lấy
+từ chính danh sách ấy, vì thanh bên 260 px nuốt mất hai phần ba bề ngang điện thoại. Hai file, một nguồn: thêm một
 trang là sửa `lib/nav.ts`, không phải nhớ ra còn một chỗ thứ hai.
 
 **Service worker viết tay, không dùng thư viện sinh sẵn.** Bộ sinh precache liệt kê từng file
@@ -4808,11 +4825,11 @@ của catalogue. Trước khi có nó, biểu mẫu đơn từ phải **dò chu�
 đoán chuyện gì xảy ra — đổi một chữ trong câu lỗi là hỏng một nhánh xử lý mà không ai biết, và
 nửa số lỗi rơi vào câu chung chung "Không xong được".
 
-**Cỡ chạm là biến thể riêng, không phải phép chỉnh cỡ đang dùng.** `size="md"` cao 40 px là
-đúng cho chuột — con trỏ chính xác tới từng điểm ảnh. Ngón tay thì không, nên §9.21.2 đòi
-44 × 44 px, và cách đáp ứng là thêm `size="touch"` rồi cho `ui/` tự chọn theo `pointer: coarse`,
-chứ không nâng `md` lên 44 px cho tất cả. Nâng tất cả thì mọi bảng dày thêm 10% chiều cao trên
-màn hình mà người dùng đang dùng chuột, đổi lấy một lợi ích họ không nhận được.
+**Cỡ chạm chỉ đổi dưới ngón tay, không đổi cỡ đang dùng.** Control cỡ thường của Kumo cao 36 px,
+đúng cho chuột, vì con trỏ chính xác tới từng điểm ảnh. Ngón tay thì không, nên §9.21.2 đòi
+44 × 44 px. Kumo không có cỡ ấy, nên `globals.css` nâng chiều cao tối thiểu của nút và ô nhập
+dưới `pointer: coarse`, chứ không nâng cho tất cả. Nâng tất cả thì mọi bảng dày thêm gần một phần
+năm trên màn hình người dùng đang dùng chuột, đổi lấy một lợi ích họ không nhận được.
 
 **Bản ghi chấm công có đường đọc riêng, không chỉ có bản tổng hợp.** `GET /reports/attendance`
 trả số lượt theo người — đủ cho biểu đồ và bảng công, **không đủ để tra một lượt**. Nên
@@ -7226,19 +7243,24 @@ phải có mà không làm gì.
 Đây là phần mềm người ta mở tám tiếng một ngày, không phải trang giới thiệu. Nên nhịp của nó là
 **dày mà đọc được**, không phải thoáng mà rỗng.
 
-**Bề rộng khai đúng hai con số, và không trang nào tự đặt thêm.** Trên một màn 1900 px, một
-trang khai `max-w-3xl` rồi để nguyên sẽ **dính vào mép trái** với một khoảng trống bằng nửa màn
-bên phải; một trang không khai gì thì kéo bảng ra hết bề ngang và dòng nào cũng phải đưa mắt đi
-một quãng. Hai lỗi ngược nhau, cùng một nguyên nhân: không ai nói bề rộng là bao nhiêu.
+**Nội dung bám lề trái và trải theo bề ngang; không trang nào căn giữa.** Mọi trang dùng cùng
+một lề, 24 px, lên 32 px từ `md` và 40 px từ `lg` như dashboard Cloudflare, cùng một trần bề
+rộng tính **từ mép trái** của vùng nội dung. Căn giữa một cột hẹp trên màn rộng để lại hai khoảng
+trống hai bên, và mỗi trang hẹp một kiểu thì cả app trông lệch. Đó chính là cái chủ repo chỉ ra
+ngày 25/09, khi khung còn căn giữa và 16 trang còn bóp về 48 rem.
 
 | Token | Dùng cho | Vì sao |
 |---|---|---|
-| `--width-shell` | khung ngoài của mọi trang, **căn giữa** | bảng và danh sách cần chỗ, nhưng không cần cả màn |
-| `--width-read` | trang chỉ để đọc hoặc một biểu mẫu, **căn giữa trong khung** | dòng chữ dài quá thì mắt lạc hàng khi xuống dòng |
+| `--width-shell` | trần bề rộng nội dung của mọi trang, 1400 px, **bám trái** | bảng và danh sách cần chỗ, nhưng dòng dài hơn thế thì mắt phải đưa quá xa |
+| `--width-read` | một **khối** chữ hay một biểu mẫu nằm trong trang, **bám trái** | dòng chữ dài quá thì mắt lạc hàng khi xuống dòng; không bao giờ bọc cả trang |
 
-**Thanh trên dùng chung khung ấy.** Ô tìm kiếm và chuông nằm thẳng hàng với nội dung bên dưới,
-nếu không thì thanh trên căng hết màn còn nội dung thụt vào, và cái lệch ấy nhìn thấy được ở mọi
-trang. Một khung, khai một chỗ, cả hai cùng đọc.
+**Thanh trên dùng chung khung ấy.** Ô tìm kiếm và chuông bắt đầu đúng ở lề trái của nội dung bên
+dưới, nếu không thì thanh trên và trang lệch nhau một khoảng nhìn thấy được ở mọi trang. Một
+khung, khai một chỗ, cả hai cùng đọc.
+
+**Mọi trang mở bằng cùng một đầu trang** (`ui/page-header.tsx`): breadcrumb, tiêu đề, một câu mô
+tả, hành động chính ở bên phải. Không trang nào đặt nút chính ở chỗ khác, vì người dùng tìm nó ở
+đúng một chỗ.
 
 **Đăng xuất là một thao tác tài khoản, nên nó ở *Cài đặt*.** Để nó thành một nút thường trực
 dưới thanh bên là đặt thao tác **không thể hoàn tác** cạnh những mục người ta bấm cả ngày. Tần
@@ -7259,9 +7281,12 @@ tỷ lệ sai để cho một nút ở tầm tay thường trực.
    giữ nguyên chiều cao; cột quan trọng đứng yên khi cuộn ngang.
 4. **Tiền và giờ không bao giờ hiện trần.** Một con số lương luôn đi kèm đơn vị và kỳ; một con
    số giờ luôn nói rõ là giờ làm hay giờ tăng ca.
+5. **Mọi thao tác nói kết quả.** Thành công hay lỗi đều ra toast; lỗi của một trường còn hiện
+   ngay dưới trường ấy; thao tác không hoàn tác được phải qua hộp xác nhận nói rõ hậu quả. Một
+   nút bấm xong mà trang không đổi gì thì người dùng bấm lại, và lần thứ hai ấy là lần gây hại.
 
-**Bảng màu** giữ nguyên bộ đã có ở `globals.css` và thêm đúng những gì trạng thái đòi. Vai trò
-của màu nhấn không đổi: nó dành cho hành động chính, không rải khắp nơi.
+**Bảng màu là token của Kumo** (§4.7): xám trung tính, xanh chính `#056DFF`, và bốn màu trạng
+thái. Vai trò của màu nhấn không đổi: nó dành cho hành động chính, không rải khắp nơi.
 
 **Màn hình tối thiểu để chạy được**: danh bạ nhân viên, hồ sơ một người, cây tổ chức, đơn nghỉ
 phép, hộp chờ duyệt, bảng công tháng, phiếu lương của tôi, chạy kỳ lương, cấu hình chính sách.
