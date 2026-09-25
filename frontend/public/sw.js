@@ -157,7 +157,7 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(table.title, {
       body: wording(body),
       icon: "/icon-192.png",
-      badge: "/icon-192.png",
+      badge: "/badge.png",
       tag: body.kind,
       data: { path: WHERE[body.kind] || "/me", locale: body.locale || "vi" },
     }),

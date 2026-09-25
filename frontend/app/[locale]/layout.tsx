@@ -42,7 +42,7 @@ export async function generateMetadata({ params }: LocaleParams): Promise<Metada
   // so the name a tab shows is rendered where the page is known.
   return {
     description: t("description"),
-    icons: { icon: "/favicon.ico", apple: "/icon-192.png" },
+    icons: { icon: "/favicon.ico", apple: "/apple-touch-icon.png" },
     manifest: "/manifest.webmanifest",
     appleWebApp: { capable: true, title: t("name"), statusBarStyle: "default" },
   };
