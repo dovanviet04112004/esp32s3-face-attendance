@@ -26,6 +26,7 @@ interface Release {
 interface FleetUpdate {
   release: Release;
   behind: string[];
+  updating: string[];
 }
 
 interface Device {
@@ -37,6 +38,8 @@ interface Device {
   rosterVersion: number;
   online: boolean;
 }
+
+const FLEET_POLL_MS = 5_000;
 
 /** Approval needs the code on the kiosk's own screen, so only whoever stands at it can
  *  let it in (KEHOACH 7.3).
@@ -98,11 +101,17 @@ export default function DevicesPage() {
   const cache = useQueryClient();
   const faultOf = useFault();
   const [asking, setAsking] = useState<FleetUpdate | null>(null);
-  const [sent, setSent] = useState<{ offered: number; failed: number } | null>(null);
+  const [sent, setSent] = useState<{ offered: number; failed: number; busy: number } | null>(null);
   const [fault, setFault] = useState<string | null>(null);
+  // While any kiosk installs, both lists follow it until it returns on the new version.
+  const installing = (): number | false =>
+    (cache.getQueryData<FleetUpdate[]>(["releases", "fleet"]) ?? []).some((one) => one.updating.length > 0)
+      ? FLEET_POLL_MS
+      : false;
   const devices = useQuery({
     queryKey: ["devices"],
     queryFn: async () => (await api.get<{ rows: Device[]; total: number }>("/devices")).data,
+    refetchInterval: installing,
   });
   const releases = useQuery({
     queryKey: ["releases"],
@@ -113,14 +122,15 @@ export default function DevicesPage() {
     queryKey: ["releases", "fleet"],
     enabled: role === "ADMIN",
     queryFn: async () => (await api.get<FleetUpdate[]>("/releases/fleet")).data,
+    refetchInterval: installing,
   });
 
   const updateAll = useMutation({
     mutationFn: async (releaseId: string) =>
-      (await api.post<{ offered: string[]; failed: string[] }>(`/releases/${releaseId}/offer`, {})).data,
+      (await api.post<{ offered: string[]; failed: string[]; busy: string[] }>(`/releases/${releaseId}/offer`, {})).data,
     onSuccess: (done) => {
       setAsking(null);
-      setSent({ offered: done.offered.length, failed: done.failed.length });
+      setSent({ offered: done.offered.length, failed: done.failed.length, busy: done.busy.length });
       void cache.invalidateQueries({ queryKey: ["releases"] });
     },
     onError: (fell: unknown) => {
@@ -130,7 +140,7 @@ export default function DevicesPage() {
   });
 
   const updatesFor = (deviceId: string): FleetUpdate[] =>
-    (fleet.data ?? []).filter((update) => update.behind.includes(deviceId));
+    (fleet.data ?? []).filter((update) => update.behind.includes(deviceId) || update.updating.includes(deviceId));
 
   const columns: Column<Device>[] = [
     {
@@ -167,15 +177,29 @@ export default function DevicesPage() {
       cell: (row) => (
         <div className="flex flex-wrap items-center gap-2">
           <span>{row.fwVersion ?? common("empty")}</span>
-          {updatesFor(row.id).map((update) => (
-            <Link
-              key={update.release.releaseId}
-              href={`/devices/${row.id}`}
-              className="rounded-full border border-(--color-accent) px-2 py-0.5 text-xs text-(--color-accent) hover:underline"
-            >
-              {t("updateBadge", { target: t(`target${update.release.target}`), version: update.release.version })}
-            </Link>
-          ))}
+          {updatesFor(row.id).map((update) =>
+            update.updating.includes(row.id) ? (
+              <Link
+                key={update.release.releaseId}
+                href={`/devices/${row.id}`}
+                className="flex items-center gap-1.5 rounded-full bg-(--color-line) px-2 py-0.5 text-xs hover:underline"
+              >
+                <span
+                  aria-hidden
+                  className="size-1.5 animate-pulse rounded-full bg-(--color-accent) motion-reduce:animate-none"
+                />
+                {t("updatingBadge", { version: update.release.version })}
+              </Link>
+            ) : (
+              <Link
+                key={update.release.releaseId}
+                href={`/devices/${row.id}`}
+                className="rounded-full border border-(--color-accent) px-2 py-0.5 text-xs text-(--color-accent) hover:underline"
+              >
+                {t("updateBadge", { target: t(`target${update.release.target}`), version: update.release.version })}
+              </Link>
+            ),
+          )}
         </div>
       ),
     },
@@ -226,7 +250,14 @@ export default function DevicesPage() {
                 <span className="font-medium">{t(`target${update.release.target}`)}</span>
                 <span className="font-mono text-xs">{update.release.version}</span>
                 <span className="text-xs text-(--color-muted)">
-                  {t("releaseBehind", { count: update.behind.length })}
+                  {[
+                    update.behind.length > 0 || update.updating.length === 0
+                      ? t("releaseBehind", { count: update.behind.length })
+                      : null,
+                    update.updating.length > 0 ? t("releaseUpdating", { count: update.updating.length }) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
                 <Button
                   size="sm"

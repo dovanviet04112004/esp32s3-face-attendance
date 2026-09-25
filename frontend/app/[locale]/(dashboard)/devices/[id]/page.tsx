@@ -1,9 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useNow, useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Failed } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
@@ -29,20 +29,24 @@ interface Device {
 interface FleetUpdate {
   release: { releaseId: string; target: "FIRMWARE" | "MODELS"; version: string };
   behind: string[];
+  updating: string[];
 }
 
 /** Read from the heartbeat and the kiosk's own OTA_FAILED event (KEHOACH 7.7). */
 interface OfferStatus {
+  releaseId: string;
   version: string;
   offeredAt: string;
   state: "WAITING" | "INSTALLED" | "FAILED" | "INTERRUPTED" | "EXPIRED";
   reason: string | null;
+  busyUntil: string | null;
 }
 
-const STATUS_POLL_MS = 10_000;
+const STATUS_POLL_MS = 5_000;
+const kTickMs = 1_000;
 
 const TOLD_TONE: Record<OfferStatus["state"], string> = {
-  WAITING: "text-(--color-muted)",
+  WAITING: "text-(--color-warn)",
   INSTALLED: "text-(--color-ok)",
   FAILED: "text-(--color-danger)",
   INTERRUPTED: "text-(--color-warn)",
@@ -69,6 +73,9 @@ export default function DevicePage() {
   const device = useQuery({
     queryKey: ["devices", id],
     queryFn: async () => (await api.get<Device>(`/devices/${id}`)).data,
+    // A kiosk mid-update drops offline and returns on the new version; the page follows it.
+    refetchInterval: () =>
+      cache.getQueryData<OfferStatus | null>(["releases", "status", id])?.state === "WAITING" ? STATUS_POLL_MS : false,
   });
 
   const fleet = useQuery({
@@ -84,6 +91,17 @@ export default function DevicePage() {
     // Only a kiosk still fetching changes on its own; the others wait for the next press.
     refetchInterval: (query) => (query.state.data?.state === "WAITING" ? STATUS_POLL_MS : false),
   });
+
+  const toldState = offerStatus.data?.state;
+  const lastState = useRef(toldState);
+  useEffect(() => {
+    if (lastState.current === "WAITING" && toldState && toldState !== "WAITING") {
+      void cache.invalidateQueries({ queryKey: ["devices", id] });
+      void cache.invalidateQueries({ queryKey: ["releases", "fleet"] });
+    }
+    lastState.current = toldState;
+  }, [toldState, cache, id]);
+  const now = useNow({ updateInterval: toldState === "WAITING" ? kTickMs : undefined }).getTime();
 
   const offer = useMutation({
     mutationFn: (releaseId: string) => api.post(`/releases/${releaseId}/offer/${id}`, {}),
@@ -136,8 +154,9 @@ export default function DevicePage() {
   }
 
   const it = device.data;
-  const newer = (fleet.data ?? []).filter((update) => update.behind.includes(id));
+  const newer = (fleet.data ?? []).filter((update) => update.behind.includes(id) || update.updating.includes(id));
   const told = offerStatus.data;
+  const busy = told?.busyUntil ? Date.parse(told.busyUntil) > now : false;
 
   const facts: [string, string][] = [
     [t("location"), it.location ?? common("empty")],
@@ -191,10 +210,16 @@ export default function DevicePage() {
                 <Button
                   type="button"
                   className="ms-auto"
-                  disabled={offer.isPending || it.status !== "APPROVED"}
+                  disabled={offer.isPending || busy || it.status !== "APPROVED"}
                   onClick={() => offer.mutate(update.release.releaseId)}
                 >
-                  {offer.isPending ? common("saving") : t("otaUpdate")}
+                  {offer.isPending
+                    ? common("saving")
+                    : busy
+                      ? t("otaUpdating")
+                      : told?.state === "WAITING" && told.releaseId === update.release.releaseId
+                        ? t("otaRetry")
+                        : t("otaUpdate")}
                 </Button>
               </div>
             ))
@@ -202,8 +227,14 @@ export default function DevicePage() {
           {told ? (
             <p
               role="status"
-              className={`mt-3 text-sm ${TOLD_TONE[told.state]}`}
+              className={`mt-3 flex items-baseline gap-2 text-sm ${busy ? "text-(--color-accent)" : TOLD_TONE[told.state]}`}
             >
+              {busy ? (
+                <span
+                  aria-hidden
+                  className="size-2 shrink-0 animate-pulse rounded-full bg-current motion-reduce:animate-none"
+                />
+              ) : null}
               {told.state === "FAILED"
                 ? t("otaFailed", { version: told.version, reason: told.reason ?? common("empty") })
                 : told.state === "INSTALLED"
@@ -212,7 +243,12 @@ export default function DevicePage() {
                     ? t("otaInterrupted", { version: told.version })
                     : told.state === "EXPIRED"
                       ? t("otaExpired", { version: told.version })
-                      : t("otaWaiting", { version: told.version, at: format.dateTime(new Date(told.offeredAt), "medium") })}
+                      : busy
+                        ? t("otaBusy", {
+                            version: told.version,
+                            seconds: Math.max(0, Math.round((now - Date.parse(told.offeredAt)) / 1000)),
+                          })
+                        : t("otaStalled", { version: told.version, at: format.dateTime(new Date(told.offeredAt), "medium") })}
             </p>
           ) : null}
           {offerFault ? (
