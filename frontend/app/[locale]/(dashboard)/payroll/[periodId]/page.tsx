@@ -555,8 +555,8 @@ export default function PayrollPeriodPage() {
                       </span>
                     }
                   >
-                    {run.kind === "BONUS" ? <BonusSheet runId={run.id} editable={editable} /> : null}
-                    {run.kind === "FINAL_SETTLEMENT" ? <SettlementSheet runId={run.id} editable={editable} /> : null}
+                    {mayWrite && run.kind === "BONUS" ? <BonusSheet runId={run.id} editable={editable} /> : null}
+                    {mayWrite && run.kind === "FINAL_SETTLEMENT" ? <SettlementSheet runId={run.id} editable={editable} /> : null}
                   </RunProgress>
                 );
               })
