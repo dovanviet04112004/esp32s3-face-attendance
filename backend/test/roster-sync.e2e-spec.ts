@@ -99,7 +99,7 @@ describe("roster sync across doors (e2e)", () => {
     const agreed = await request(http)
       .post("/biometric-consents")
       .set("Authorization", `Bearer ${token}`)
-      .send({ employeeId, noticeVersion: "2026-01-v1", method: "PAPER" });
+      .send({ employeeId, method: "PAPER" });
     assert.equal(agreed.status, 201);
     for (const id of DOORS) {
       const put = await request(http)

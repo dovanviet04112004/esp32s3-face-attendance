@@ -1,3 +1,5 @@
+import { isEmail } from "class-validator";
+
 import { FORMULA_LEAD } from "../../common/csv.js";
 
 /** Column names are identifiers, so they stay English (CLAUDE.md 3.1). */
@@ -11,13 +13,29 @@ export const IMPORT_COLUMNS = [
   "nationalId",
   "taxCode",
   "socialInsuranceNo",
+  "legalEntityCode",
   "departmentCode",
   "jobTitleCode",
   "managerCode",
   "hireDate",
   "baseSalary",
   "insuranceSalary",
+  "bankAccount",
+  "bankName",
 ] as const;
+
+/** The longest value each text field takes; the dto and the import both read this (CLAUDE.md 4.9). */
+export const EMPLOYEE_FIELD_MAX = {
+  code: 32,
+  fullName: 64,
+  personalEmail: 128,
+  phone: 20,
+  nationalId: 20,
+  taxCode: 20,
+  socialInsuranceNo: 20,
+  bankAccount: 32,
+  bankName: 64,
+} as const;
 
 /** Thirty thousand rows of fifteen columns sit inside this with room over,
  *  and the same figure bounds the body parser and the dto (CLAUDE.md 4.9).
@@ -42,6 +60,7 @@ export interface ImportReport {
   rows: number;
   toCreate: number;
   toUpdate: number;
+  payKept: number;
   faults: RowFault[];
 }
 
@@ -107,12 +126,14 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-/** Header first, then one object per line, keyed by the column names. */
-export function readRows(text: string): { faults: RowFault[]; rows: ImportRow[] } {
+/** Header first, then one object per line, keyed by the column names. The header says which
+ *  columns an update may write: a column the file leaves out keeps what the record holds.
+ */
+export function readRows(text: string): { faults: RowFault[]; rows: ImportRow[]; header: ImportColumn[] } {
   const grid = parseCsv(text).filter((line) => line.some((cell) => cell.trim() !== ""));
   const faults: RowFault[] = [];
   if (grid.length === 0) {
-    return { faults: [{ row: kHeaderRow, column: "", code: "FILE_EMPTY", value: "" }], rows: [] };
+    return { faults: [{ row: kHeaderRow, column: "", code: "FILE_EMPTY", value: "" }], rows: [], header: [] };
   }
   const header = (grid[0] as string[]).map((one) => one.trim());
   const known = new Set<string>(IMPORT_COLUMNS);
@@ -127,7 +148,7 @@ export function readRows(text: string): { faults: RowFault[]; rows: ImportRow[] 
     }
   }
   if (faults.length > 0) {
-    return { faults, rows: [] };
+    return { faults, rows: [], header: [] };
   }
   const rows = grid.slice(1).map((line) => {
     const row: ImportRow = {};
@@ -141,7 +162,7 @@ export function readRows(text: string): { faults: RowFault[]; rows: ImportRow[] 
     });
     return row;
   });
-  return { faults, rows };
+  return { faults, rows, header: header as ImportColumn[] };
 }
 
 /**
@@ -170,6 +191,15 @@ export function checkShape(row: ImportRow, at: number): RowFault[] {
   }
   if (row.gender && !GENDERS.has(row.gender)) {
     faults.push({ row: line, column: "gender", code: "GENDER_INVALID", value: row.gender });
+  }
+  if (row.personalEmail && !isEmail(row.personalEmail)) {
+    faults.push({ row: line, column: "personalEmail", code: "EMAIL_INVALID", value: row.personalEmail });
+  }
+  for (const [column, most] of Object.entries(EMPLOYEE_FIELD_MAX) as [ImportColumn, number][]) {
+    const value = row[column];
+    if (value && value.length > most) {
+      faults.push({ row: line, column, code: "VALUE_TOO_LONG", value: value.slice(0, most) });
+    }
   }
   // Insurance is charged on its own figure, and half a pay record cannot be
   // written: either both sides arrive or neither does.

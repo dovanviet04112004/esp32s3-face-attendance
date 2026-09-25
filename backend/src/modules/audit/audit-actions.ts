@@ -9,6 +9,11 @@ export const AUDIT_SUBJECTS = {
   ORG: "org",
   POLICY: "policy",
   LEAVE_TYPE: "leaveType",
+  JOB_TITLE: "jobTitle",
+  LEGAL_ENTITY: "legalEntity",
+  DEPARTMENT: "department",
+  ALLOWANCE_TYPE: "allowanceType",
+  CHECKLIST_TEMPLATE: "checklistTemplate",
   DOCUMENT: "document",
   DEVICE: "device",
   RELEASE: "release",
@@ -31,12 +36,18 @@ export const AUDIT_ACTIONS = {
   USER_INVITE: "user.invite",
   USER_DELETE: "user.delete",
   USER_LOCKED: "user.locked",
+  USER_LOCK: "user.lock",
+  USER_UNLOCK: "user.unlock",
+  USER_EMAIL: "user.email",
+  USER_EMPLOYEE: "user.employee",
 
   CONTRACT_CREATE: "contract.create",
   CONTRACT_DECIDE: "contract.decide",
 
   PAY_CREATE: "pay.create",
   PAY_BULK_RAISE: "pay.bulkRaise",
+  DEPENDENT_APPROVE: "dependent.approve",
+  DEPENDENT_REJECT: "dependent.reject",
 
   PAYROLL_RUN: "payroll.run",
   PAYROLL_LOCK: "payroll.lock",
@@ -44,6 +55,9 @@ export const AUDIT_ACTIONS = {
   PAYROLL_QUEUE: "payroll.queue",
   PAYROLL_DELIVER: "payroll.deliver",
   PAYROLL_SETTLEMENT: "payroll.settlement",
+  PAYROLL_BONUS: "payroll.bonus",
+
+  TIMESHEET_CORRECT: "timesheet.correct",
 
   ADVANCE_APPROVE: "advance.approve",
   ADVANCE_REJECT: "advance.reject",
@@ -52,9 +66,13 @@ export const AUDIT_ACTIONS = {
   DOCUMENT_CREATE: "document.create",
   DOCUMENT_PUBLISH: "document.publish",
   DOCUMENT_ACK: "document.ack",
+  DOCUMENT_UPDATE: "document.update",
   FILE_TYPE_CREATE: "fileType.create",
+  FILE_TYPE_UPDATE: "fileType.update",
   FILE_RECEIVE: "file.receive",
 
+  ASSET_CREATE: "asset.create",
+  ASSET_UPDATE: "asset.update",
   ASSET_ISSUE: "asset.issue",
   ASSET_RETURN: "asset.return",
 
@@ -67,7 +85,19 @@ export const AUDIT_ACTIONS = {
 
   ORG_REORG: "org.reorg",
   ORG_HOLIDAY_CREATE: "org.holidayCreate",
+  ORG_HOLIDAY_UPDATE: "org.holidayUpdate",
   ORG_HOLIDAY_DELETE: "org.holidayDelete",
+
+  JOB_TITLE_CREATE: "jobTitle.create",
+  JOB_TITLE_UPDATE: "jobTitle.update",
+  LEGAL_ENTITY_CREATE: "legalEntity.create",
+  LEGAL_ENTITY_UPDATE: "legalEntity.update",
+  DEPARTMENT_CREATE: "department.create",
+  DEPARTMENT_UPDATE: "department.update",
+  ALLOWANCE_TYPE_CREATE: "allowanceType.create",
+  ALLOWANCE_TYPE_UPDATE: "allowanceType.update",
+  CHECKLIST_TEMPLATE_CREATE: "checklistTemplate.create",
+  CHECKLIST_TEMPLATE_UPDATE: "checklistTemplate.update",
 
   LEAVE_TYPE_CREATE: "leaveType.create",
   LEAVE_TYPE_UPDATE: "leaveType.update",
@@ -91,6 +121,8 @@ export const AUDIT_ACTIONS = {
   DEVICE_REGISTER: "device.register",
   DEVICE_TOKEN_ISSUE: "device.tokenIssue",
   DEVICE_RESET: "device.reset",
+  DEVICE_APPROVE: "device.approve",
+  DEVICE_REVOKE: "device.revoke",
 
   RELEASE_PUBLISH: "release.publish",
   RELEASE_OFFER: "release.offer",

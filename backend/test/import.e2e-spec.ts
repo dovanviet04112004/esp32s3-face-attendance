@@ -16,7 +16,8 @@ const PREFIX = "E2EIMP";
 function quoted(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
-const HEAD = "code,fullName,managerCode,dateOfBirth,gender,baseSalary,insuranceSalary";
+const ENTITY = "DEFAULT";
+const HEAD = "code,fullName,legalEntityCode,managerCode,dateOfBirth,gender,baseSalary,insuranceSalary";
 
 interface Fault {
   row: number;
@@ -29,8 +30,13 @@ interface Report {
   rows: number;
   toCreate: number;
   toUpdate: number;
+  payKept: number;
   faults: Fault[];
 }
+
+const OTHER_ENTITY = `${PREFIX}-LE`;
+const OTHER_DEPARTMENT = `${PREFIX}-D`;
+const RETIRED_DEPARTMENT = `${PREFIX}-OLD`;
 
 describe("employee import (e2e)", () => {
   let app: INestApplication;
@@ -40,6 +46,8 @@ describe("employee import (e2e)", () => {
 
   async function sweep(): Promise<void> {
     await db.employee.deleteMany({ where: { code: { startsWith: PREFIX } } });
+    await db.department.deleteMany({ where: { code: { in: [OTHER_DEPARTMENT, RETIRED_DEPARTMENT] } } });
+    await db.legalEntity.deleteMany({ where: { code: OTHER_ENTITY } });
   }
 
   async function send(csv: string, apply: boolean): Promise<Report> {
@@ -86,12 +94,12 @@ describe("employee import (e2e)", () => {
     const report = await send(
       [
         HEAD,
-        `${PREFIX}01,Người một,,1990-01-01,MALE,1000,900`,
-        `,Không có mã,,,,,`,
-        `${PREFIX}03,Ngày sai,,01-01-1990,,,`,
-        `${PREFIX}04,Giới tính sai,,,OTHER,,`,
-        `${PREFIX}05,Nửa vế lương,,,,1000,`,
-        `${PREFIX}01,Trùng mã,,,,,`,
+        `${PREFIX}01,Người một,${ENTITY},,1990-01-01,MALE,1000,900`,
+        `,Không có mã,${ENTITY},,,,,`,
+        `${PREFIX}03,Ngày sai,${ENTITY},,01-01-1990,,,`,
+        `${PREFIX}04,Giới tính sai,${ENTITY},,,OTHER,,`,
+        `${PREFIX}05,Nửa vế lương,${ENTITY},,,,1000,`,
+        `${PREFIX}01,Trùng mã,${ENTITY},,,,,`,
       ].join("\r\n"),
       false,
     );
@@ -111,7 +119,7 @@ describe("employee import (e2e)", () => {
 
   it("writes nothing at all while the file still has a fault", async () => {
     const report = await send(
-      [HEAD, `${PREFIX}10,Người mười,,,,,`, `${PREFIX}11,Ngày sai,,31-31-2026,,,`].join("\r\n"),
+      [HEAD, `${PREFIX}10,Người mười,${ENTITY},,,,,`, `${PREFIX}11,Ngày sai,${ENTITY},,31-31-2026,,,`].join("\r\n"),
       true,
     );
     assert.equal(report.applied, false);
@@ -122,8 +130,8 @@ describe("employee import (e2e)", () => {
     const report = await send(
       [
         HEAD,
-        `${PREFIX}20,Nhân viên,${PREFIX}21,1992-02-02,FEMALE,12000000,10000000`,
-        `${PREFIX}21,Quản lý,,1980-03-03,MALE,20000000,18000000`,
+        `${PREFIX}20,Nhân viên,${ENTITY},${PREFIX}21,1992-02-02,FEMALE,12000000,10000000`,
+        `${PREFIX}21,Quản lý,${ENTITY},,1980-03-03,MALE,20000000,18000000`,
       ].join("\r\n"),
       true,
     );
@@ -138,20 +146,87 @@ describe("employee import (e2e)", () => {
     assert.equal(staff?.compensation[0]?.insuranceSalary.toFixed(0), "10000000");
   });
 
-  it("updates on a second pass and makes no second row", async () => {
+  it("updates on a second pass and leaves the pay history alone", async () => {
     const report = await send(
-      [HEAD, `${PREFIX}20,Tên đã đổi,${PREFIX}21,1992-02-02,FEMALE,13000000,11000000`].join("\r\n"),
+      [HEAD, `${PREFIX}20,Tên đã đổi,${ENTITY},${PREFIX}21,1992-02-02,FEMALE,13000000,11000000`].join("\r\n"),
       true,
     );
     assert.equal(report.toUpdate, 1);
     assert.equal(report.toCreate, 0);
+    assert.equal(report.payKept, 1, "the report hides that the pay columns were not written");
     const staff = await db.employee.findUnique({
       where: { code: `${PREFIX}20` },
       include: { compensation: true },
     });
     assert.equal(staff?.fullName, "Tên đã đổi");
-    assert.equal(staff?.compensation.length, 1, "one effective date holds one record");
-    assert.equal(staff?.compensation[0]?.insuranceSalary.toFixed(0), "11000000");
+    assert.equal(staff?.compensation.length, 1, "a re-import wrote a pay record");
+    assert.equal(staff?.compensation[0]?.insuranceSalary.toFixed(0), "10000000", "a re-import rewrote pay history");
+  });
+
+  it("writes only the columns the file names, and never the address or bank of somebody already here", async () => {
+    const code = `${PREFIX}30`;
+    const first = await send(
+      [
+        "code,fullName,legalEntityCode,personalEmail,phone,nationalId,bankAccount,bankName",
+        `${code},Người ba mươi,${ENTITY},first@example.com,0901000001,079000000030,111,Ngân hàng A`,
+      ].join("\r\n"),
+      true,
+    );
+    assert.equal(first.applied, true, JSON.stringify(first.faults));
+    const second = await send(
+      [
+        "code,fullName,personalEmail,bankAccount,bankName",
+        `${code},Người ba mươi mốt,second@example.com,222,Ngân hàng B`,
+      ].join("\r\n"),
+      true,
+    );
+    assert.equal(second.applied, true, JSON.stringify(second.faults));
+    const held = await db.employee.findUniqueOrThrow({ where: { code } });
+    assert.equal(held.fullName, "Người ba mươi mốt");
+    assert.equal(held.phone, "0901000001", "a column the file left out was wiped");
+    assert.equal(held.nationalId, "079000000030", "a column the file left out was wiped");
+    assert.equal(held.personalEmail, "first@example.com", "an import moved the address a change is reported to");
+    assert.equal(held.bankAccount, "111", "an import moved where the pay goes");
+  });
+
+  it("checks the address format and the length of every text field", async () => {
+    const report = await send(
+      [
+        "code,fullName,legalEntityCode,personalEmail",
+        `${PREFIX}40,Người bốn mươi,${ENTITY},not-an-address`,
+        `${PREFIX}41,${"x".repeat(65)},${ENTITY},`,
+      ].join("\r\n"),
+      false,
+    );
+    assert.equal(faultAt(report, "EMAIL_INVALID")?.row, 2);
+    assert.equal(faultAt(report, "VALUE_TOO_LONG")?.column, "fullName");
+  });
+
+  it("reads a department inside the line's legal entity, and only an active one", async () => {
+    const entity = await db.legalEntity.create({ data: { code: OTHER_ENTITY, name: "Pháp nhân thử nhập" } });
+    await db.department.createMany({
+      data: [
+        { legalEntityId: entity.id, code: OTHER_DEPARTMENT, name: "Phòng thử" },
+        { legalEntityId: entity.id, code: RETIRED_DEPARTMENT, name: "Phòng đã đóng", active: false },
+      ],
+    });
+    const report = await send(
+      [
+        "code,fullName,legalEntityCode,departmentCode",
+        `${PREFIX}50,Sai pháp nhân,${ENTITY},${OTHER_DEPARTMENT}`,
+        `${PREFIX}51,Đúng pháp nhân,${OTHER_ENTITY},${OTHER_DEPARTMENT}`,
+        `${PREFIX}52,Phòng đã đóng,${OTHER_ENTITY},${RETIRED_DEPARTMENT}`,
+        `${PREFIX}53,Pháp nhân lạ,NO-SUCH-ENTITY,`,
+        `${PREFIX}54,Không nói pháp nhân,,`,
+      ].join("\r\n"),
+      false,
+    );
+    const at = (row: number) => report.faults.filter((one) => one.row === row).map((one) => one.code);
+    assert.deepEqual(at(2), ["DEPARTMENT_UNKNOWN"], "a department of another entity was accepted");
+    assert.deepEqual(at(3), [], "the line's own entity did not find its department");
+    assert.deepEqual(at(4), ["DEPARTMENT_UNKNOWN"], "a retired department took a new person");
+    assert.deepEqual(at(5), ["LEGAL_ENTITY_UNKNOWN"]);
+    assert.deepEqual(at(6), ["LEGAL_ENTITY_REQUIRED"], "two entities and none named still guessed one");
   });
 
   it("exports a formula as text Excel will not run, and imports it back unchanged", async () => {

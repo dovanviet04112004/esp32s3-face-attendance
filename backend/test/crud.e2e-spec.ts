@@ -110,17 +110,28 @@ describe("crud (e2e)", () => {
     assert.equal(res.status, 400);
   });
 
-  it("retires an employee rather than erasing the row", async () => {
-    const res = await request(http)
+  it("lets somebody leave only through offboarding, and keeps the row", async () => {
+    const erased = await request(http)
       .delete(`/employees/${madeEmployeeId}`)
       .set("Authorization", `Bearer ${token.hr}`);
-    assert.equal(res.status, 200);
-    assert.equal(res.body.active, false);
+    assert.equal(erased.status, 404, "a second way to leave skips closing the login");
+    const flagged = await request(http)
+      .patch(`/employees/${madeEmployeeId}`)
+      .set("Authorization", `Bearer ${token.hr}`)
+      .send({ active: false });
+    assert.equal(flagged.status, 400, "a checkbox let somebody leave without offboarding");
+
+    const res = await request(http)
+      .post(`/employees/${madeEmployeeId}/offboard`)
+      .set("Authorization", `Bearer ${token.hr}`)
+      .send({ leaveDate: new Date().toISOString().slice(0, 10) });
+    assert.equal(res.status, 201);
 
     const still = await request(http)
       .get(`/employees/${madeEmployeeId}`)
       .set("Authorization", `Bearer ${token.hr}`);
     assert.equal(still.status, 200);
+    assert.equal(still.body.active, false);
   });
 
   it("filters the directory by whether people still work here", async () => {

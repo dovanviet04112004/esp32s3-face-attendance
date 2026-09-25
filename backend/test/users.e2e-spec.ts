@@ -67,9 +67,10 @@ describe("users and audit (e2e)", () => {
     assert.equal(res.body.role, "HR");
     assert.deepEqual(
       Object.keys(res.body).sort(),
-      ["createdAt", "email", "id", "role", "updatedAt"],
+      ["active", "createdAt", "email", "employee", "id", "lastSeenAt", "pending", "role"],
       "the account answer carries a field nobody chose to publish",
     );
+    assert.equal(res.body.pending, true, "an account nobody set a password for reads as in use");
     madeId = res.body.id;
   });
 
@@ -139,13 +140,13 @@ describe("users and audit (e2e)", () => {
     assert.equal(after, before + 1, "resending the invitation minted no new link");
   });
 
-  it("refuses to delete the last administrator", async () => {
-    const admins = await db.user.findMany({ where: { role: "ADMIN" } });
-    assert.equal(admins.length, 1, "the seed is expected to leave one administrator");
+  it("refuses to delete an account somebody has signed in to", async () => {
     const res = await request(http)
-      .delete(`/users/${admins[0].id}`)
+      .delete(`/users/${madeId}`)
       .set("Authorization", `Bearer ${admin}`);
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 409);
+    assert.equal(res.body.message, "ACCOUNT_HAS_HISTORY");
+    assert.ok(await db.user.findUnique({ where: { id: madeId } }), "an account with a history was erased");
   });
 
   it("wrote down the changes an administrator made", async () => {
@@ -165,10 +166,16 @@ describe("users and audit (e2e)", () => {
     assert.equal(typeof res.body.ts, "string");
   });
 
-  it("deletes the account it made", async () => {
+  it("locks the account it made instead, and keeps the row", async () => {
     const res = await request(http)
-      .delete(`/users/${madeId}`)
-      .set("Authorization", `Bearer ${admin}`);
-    assert.equal(res.status, 204);
+      .patch(`/users/${madeId}`)
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ active: false });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.active, false);
+    const inside = await request(http)
+      .post("/auth/login")
+      .send({ email: MADE_EMAIL, password: MADE_PASSWORD });
+    assert.equal(inside.status, 401, "a locked account still signed in");
   });
 });

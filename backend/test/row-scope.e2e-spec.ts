@@ -23,7 +23,7 @@ const MADE_EMAILS = [BOSS_EMAIL, MINE_EMAIL];
 
 const MONTH = { from: "2026-09-01", to: "2026-09-19" };
 // A pay period no other suite touches, so its sweep removes only this suite's payslip.
-const PAY_YEAR = 1999;
+const PAY_YEAR = 2043;
 
 describe("row scope (e2e)", () => {
   let app: INestApplication;
@@ -87,7 +87,7 @@ describe("row scope (e2e)", () => {
 
     const policy = await db.payrollPolicy.findFirstOrThrow();
     const period = await db.payrollPeriod.create({
-      data: { year: PAY_YEAR, month: 1, startDate: new Date("1999-01-01"), endDate: new Date("1999-01-31") },
+      data: { year: PAY_YEAR, month: 1, startDate: new Date(`${PAY_YEAR}-01-01`), endDate: new Date(`${PAY_YEAR}-01-31`) },
     });
     const run = await db.payrollRun.create({ data: { periodId: period.id } });
     await db.payslip.create({
