@@ -40,6 +40,12 @@ export class AttendanceService {
     if (query.deviceId !== undefined) {
       where.deviceId = query.deviceId;
     }
+    if (query.capturedOffline) {
+      where.capturedOffline = true;
+    }
+    if (query.clockUnsynced) {
+      where.clockUnsynced = true;
+    }
     if (query.from !== undefined || query.to !== undefined) {
       where.ts = {
         ...(query.from !== undefined ? { gte: new Date(query.from) } : {}),

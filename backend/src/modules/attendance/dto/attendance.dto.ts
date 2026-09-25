@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { Type } from "class-transformer";
-import { IsDateString, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import { Transform, Type } from "class-transformer";
+import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
@@ -27,4 +27,17 @@ export class ListAttendanceDto extends PaginationDto {
   @IsOptional()
   @IsDateString()
   to?: string;
+
+  // Boolean("false") is true, so a query string has to be compared, not cast.
+  @ApiPropertyOptional({ description: "Only punches the kiosk took while it was offline" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  capturedOffline?: boolean;
+
+  @ApiPropertyOptional({ description: "Only punches stamped by a clock that had not synced" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  clockUnsynced?: boolean;
 }

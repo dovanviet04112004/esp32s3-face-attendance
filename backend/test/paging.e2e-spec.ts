@@ -279,4 +279,15 @@ describe("paging (e2e)", () => {
     assert.equal(totals.punches, rows.reduce((sum, row) => sum + row.punches, 0));
     assert.equal(totals.unsyncedClock, rows.reduce((sum, row) => sum + row.unsyncedClock, 0));
   });
+
+  it("narrows punches to the offline ones or the unsynced ones", async () => {
+    for (const flag of ["capturedOffline", "clockUnsynced"] as const) {
+      const res = await request(http)
+        .get(`/attendance?employeeId=${employeeId}&${flag}=true&take=1`)
+        .set("Authorization", `Bearer ${token}`);
+      assert.equal(res.status, 200);
+      const expected = await db.attendanceRecord.count({ where: { employeeId, [flag]: true } });
+      assert.equal(res.body.total, expected, `${flag} counts differently from the table`);
+    }
+  });
 });
