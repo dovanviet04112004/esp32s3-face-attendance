@@ -4701,6 +4701,7 @@ quy ước của repo:
 | `filter-bar.tsx` | bộ lọc: `Toolbar` trên máy tính, một nút mở `LayerDialog` trên điện thoại | §9.21.1 đòi bộ lọc thành tấm trượt ở màn hẹp |
 | `password-field.tsx` | ô mật khẩu có nút hiện chữ, dùng ở ba cửa đăng nhập | `SensitiveInput` của Kumo kèm nút sao chép, sai với một mật khẩu đang gõ |
 | `person-picker.tsx` | một ô tìm người đang làm theo mã hoặc tên, dùng ở mọi chỗ phải chọn một người | `Combobox` của Kumo không biết hỏi `/employees`; năm màn chọn người phải ra cùng một ô, cùng cách tìm |
+| `date-field.tsx` | một ô chọn ngày: lịch của Kumo trong popover trên máy tính, ô ngày của hệ điều hành trên điện thoại | `DatePicker` của Kumo chỉ là tấm lịch, không kèm ô nhập, nút mở hay popover |
 | `theme-toggle.tsx`, `bottom-bar.tsx`, `failed.tsx` | sáng tối theo `lib/theme.ts`; nút chính neo đáy điện thoại (§9.21.2); `Banner` lỗi có nút thử lại theo chữ của catalogue | nối vào `lib/` hoặc catalogue của repo |
 
 ```
@@ -4710,7 +4711,8 @@ frontend/
 │   ├── providers.tsx                 # QueryClient dựng một lần mỗi phiên trình duyệt
 │   └── [locale]/                     # ★ vi | en — mọi route nằm dưới đây
 │       ├── layout.tsx                # layout gốc: <html lang={locale}> + provider
-│       ├── page.tsx                  # gốc: chuyển vào dashboard, guard của nó lo đăng nhập và vai
+│       ├── page.tsx                  # gốc: đưa thẳng mỗi vai về trang chủ của nó
+│       ├── error.tsx                 # ★ §9.21.6 — trang lỗi của hệ, có thử lại và về trang chủ
 │       ├── (auth)/{layout.tsx, {login, set-password, forgot-password, change-password}/page.tsx}
 │       │                                 # ★ §9.4 — một liên kết dùng một lần phục vụ
 │       │                                 #   cả lần đặt đầu lẫn lần quên. Cả bốn cửa
@@ -4741,6 +4743,9 @@ frontend/
 │           │                                          #   departmentId, chỉ legalEntityId)
 │           ├── payroll/{page.tsx, [periodId]/page.tsx}
 │           ├── policy/page.tsx                        # giảm trừ, tỷ lệ, biểu thuế
+│           ├── {job-titles, legal-entities, allowances}/page.tsx
+│           │                                          # ★ §9.3 — danh mục người dùng tự nuôi:
+│           │                                          #   chức danh, pháp nhân, loại phụ cấp
 │           ├── leave-types/page.tsx                   # ★ §9.15 — loại phép: số ngày một
 │           │                                          #   năm và số ngày chuyển tiếp. Sửa
 │           │                                          #   được trên màn hình, vì gieo lại
@@ -4761,10 +4766,13 @@ frontend/
 │   ├── manifest.webmanifest          # ★ cài được từ trình duyệt, chạy toàn màn hình
 │   ├── icon-{192,512}.png            # ★ biểu tượng màn hình chính
 │   ├── icon-maskable.png             # ★ cùng dấu, chừa lề an toàn cho launcher cắt tròn
+│   ├── apple-touch-icon.png          # ★ 180 px, nền kín: iOS tự bo góc
+│   ├── badge.png                     # ★ bản một màu cho thanh thông báo
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
 │   ├── ui/{page.tsx, pill.tsx, notify.ts, month-picker.tsx, filter-bar.tsx,
-│   │       password-field.tsx, person-picker.tsx, theme-toggle.tsx, bottom-bar.tsx, failed.tsx}
+│   │       password-field.tsx, person-picker.tsx, date-field.tsx, theme-toggle.tsx, bottom-bar.tsx,
+│   │       failed.tsx}
 │   │                                 # ★ chỉ thứ Kumo không có (bảng ngay trên cây)
 │   │                                 #   ★ §9.12 luật 2 — pill giữ bốn tông trạng thái,
 │   │                                 #   khai một chỗ cho cả tám phân hệ. Tiền không có
@@ -4782,7 +4790,6 @@ frontend/
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
 │   ├── notifications/{bell.tsx, notice-list.tsx, push-switch.tsx}   # ★ §9.21.4
 │   ├── documents/{document-reader.tsx, file-gaps.tsx}   # ★ §9.16 mục 9
-│   ├── holidays/next-holiday.tsx     # ★ ngày lễ gần nhất, cột phải của ca, lễ và loại phép
 │   └── payroll/{payslip-view.tsx, run-progress.tsx, dispute-card.tsx, settlement-sheet.tsx,
 │                bonus-sheet.tsx}     # ★ số tiền của lượt thưởng, nhập trước khi chạy
 │                                     # ★ §9.17 mục 11 — một thẻ khiếu nại, hai phía đọc
@@ -4795,6 +4802,7 @@ frontend/
 │   ├── cn.ts                         # gộp class Tailwind, lớp sau thắng lớp trước
 │   ├── fault.ts                      # ★ mã lỗi API → câu; NƠI DUY NHẤT làm việc đó
 │   ├── nav.ts                        # ★ điều hướng theo vai; khoá ràng kiểu vào vi.json
+│   ├── url-state.ts                  # ★ tìm, lọc, sắp của một danh sách nằm trên query string
 │   ├── theme.ts                      # ★ sáng/tối: mặc định theo hệ điều hành, nhớ lựa chọn
 │   └── format.ts                     # ★ tiền, giờ công, ngày — số nào cũng kèm đơn vị
 ├── types/
@@ -6751,9 +6759,29 @@ Nhóm theo việc, không theo bảng. Mọi bảng dưới đây nằm ở `bac
 
 | Bảng | Giữ gì | Ghi chú thiết kế |
 |---|---|---|
-| `Department` | mã, tên, `parentId`, trung tâm chi phí, trưởng đơn vị | cây tự tham chiếu; truy vấn con cháu bằng CTE đệ quy |
-| `JobTitle` | mã, tên, bậc | tách khỏi phòng ban: một chức danh tồn tại ở nhiều phòng |
+| `LegalEntity` | mã, tên, mã số thuế, địa chỉ, đang dùng | đơn vị nộp BHXH và chạy lương; một nhóm công ty có nhiều pháp nhân |
+| `Department` | mã, tên, `parentId`, trung tâm chi phí, trưởng đơn vị, đang dùng | cây tự tham chiếu; truy vấn con cháu bằng CTE đệ quy; mã duy nhất trong một pháp nhân |
+| `JobTitle` | mã, tên, bậc, nhóm lao động của D02-LT, đang dùng | tách khỏi phòng ban: một chức danh tồn tại ở nhiều phòng |
 | `EmploymentContract` | loại, ngày bắt đầu, ngày kết thúc, trạng thái | **nhiều bản một người**, vì tái ký là hợp đồng mới chứ không phải sửa hợp đồng cũ |
+
+**Danh mục là dữ liệu người dùng tự nuôi, không phải thứ đổ vào bằng seed.** Pháp nhân, phòng
+ban, chức danh, loại phép, ca, ngày lễ, loại hồ sơ giấy, mẫu nhận việc, văn bản phải ký và loại
+phụ cấp — mỗi thứ có đường **thêm, sửa, ngừng dùng và dùng lại** trong API và một màn hình trên
+dashboard. Seed chỉ gieo đúng những gì hệ cần để khởi động; một danh mục mà chỉ seed ghi được thì
+công ty thứ hai dùng hệ sẽ có ô chọn rỗng ngay ở biểu mẫu nhận người. Ba luật đi kèm:
+
+- **Ngừng dùng, không xoá.** Dòng đã có người tham chiếu — nhân viên thuộc phòng, phiếu lương
+  của pháp nhân — thì xoá là làm gãy lịch sử. Ngừng dùng giấu nó khỏi ô chọn và giữ nguyên chỗ
+  cũ đã dùng nó. Danh sách quản trị có nút *Hiện cả mục đã ngừng* để dùng lại được.
+- **Ngừng một mục đang gánh việc thì từ chối kèm mã.** Phòng ban còn người đang làm hoặc còn
+  phòng con đang dùng trả `DEPARTMENT_IN_USE`; pháp nhân còn nhân viên, phòng ban hay kỳ lương
+  đang mở trả `ENTITY_IN_USE`. Người dùng được biết phải dọn gì trước, không phải đoán vì sao
+  nút không ăn.
+- **Mọi lần thêm, sửa, ngừng đi vào nhật ký** (§9.24), cùng bộ từ vựng với mọi thao tác khác.
+
+Enum cố định chỉ còn cho thứ luật hoặc máy trạng thái chốt: vai, giới tính trên tờ khai BHXH,
+loại hợp đồng theo cột D02-LT, loại đơn, quan hệ người phụ thuộc theo luật thuế, và mọi trạng
+thái. Danh sách nghiệp vụ mà công ty này khác công ty kia là bảng.
 
 **Nhân sự** — `Employee` mở rộng: `departmentId`, `jobTitleId`, `managerId` (tự tham chiếu),
 `hireDate`, `dateOfBirth`, `personalEmail`, `phone`, `taxCode`, `bankAccount`, `photoUrl`,
@@ -6774,14 +6802,15 @@ ca, sửa công, công tác và làm từ xa dùng **chung một bảng `Request
 thái, cùng hộp chờ duyệt và cùng đường tới người duyệt, nên tách thành năm bảng là chép năm lần
 cùng một logic. Xem §9.5.
 
-**Lương** — `CompensationRecord`, `CompensationAllowance`, `PayrollPeriod`, `PayrollRun`,
-`Payslip`, `PayslipLine`, `Dependent`, `RetroAdjustment`, `SalaryAdvance`, `BonusItem`,
-`SettlementItem`.
+**Lương** — `AllowanceType`, `CompensationRecord`, `CompensationAllowance`, `PayrollPeriod`,
+`PayrollRun`, `Payslip`, `PayslipLine`, `Dependent`, `RetroAdjustment`, `SalaryAdvance`,
+`BonusItem`, `SettlementItem`.
 
-Ba bảng trong số đó tồn tại vì một câu hỏi mà bảng khác không trả lời được:
+Những bảng sau tồn tại vì một câu hỏi mà bảng khác không trả lời được:
 
 | Bảng | Câu hỏi nó trả lời | Vì sao không gộp |
 |---|---|---|
+| `AllowanceType` | "khoản ăn trưa có chịu thuế không, đóng BHXH không, miễn tới bao nhiêu, vào cột nào của D02-LT" | để mỗi dòng lương tự gõ mã và cờ thì cùng một khoản ăn trưa chịu thuế ở người này, miễn ở người kia |
 | `CompensationAllowance` | "quý này công ty trả bao nhiêu tiền ăn trưa" | một ô `allowances` tổng thì câu hỏi ấy phải mở từng bản ghi ra đọc |
 | `RetroAdjustment` | "khoản này thuộc kỳ nào, trả ở kỳ nào" | kỳ đã chốt không được mở lại (§9.6), nên khoản tới muộn phải có chỗ đứng riêng |
 | `SalaryAdvance` | "ai đang nợ tạm ứng, khấu trừ vào phiếu nào" | việc này vẫn xảy ra; không có bảng thì nó xảy ra trong tin nhắn |
@@ -6944,6 +6973,30 @@ thứ rơi ra từ giá trị mặc định.
 không nên là cùng một tài khoản: ai đổi được lương cơ bản rồi tự chạy kỳ lương thì không còn
 ai đối chiếu. Tách ra là bước rẻ nhất để có được điều đó.
 
+**Vai được giao trên màn `Tài khoản`, trừ `MANAGER` — vai ấy tự tính.** `ADMIN` giao được cả sáu
+vai. `EMPLOYEE`, `MANAGER` và `PAYROLL` phải gắn một hồ sơ nhân viên, vì cả ba đọc hoặc duyệt
+theo một người cụ thể trong công ty; `ADMIN`, `HR` và `VIEWER` gắn hoặc không. Tách `PAYROLL`
+mà không có đường giao `PAYROLL` thì cái tách ấy chỉ nằm trên giấy: chỉ còn `ADMIN` chạy được
+kỳ lương.
+
+`MANAGER` thì **không ai phải nhớ mà giao**: một tài khoản `EMPLOYEE` có cấp dưới trực tiếp đang
+làm là `MANAGER`, hết cấp dưới thì về `EMPLOYEE`. Hệ tính lại mỗi khi `managerId` của ai đó đổi —
+sửa hồ sơ, nhập Excel, tái cơ cấu, nghỉ việc — cho cả quản lý cũ lẫn quản lý mới, trong cùng giao
+dịch, và **chỉ đổi qua lại giữa hai vai ấy**: tài khoản đang là `HR`, `PAYROLL`, `ADMIN` hay
+`VIEWER` không bị động tới. Tính một lần lúc mở tài khoản là để người lên làm quản lý sau đó mãi
+là `EMPLOYEE`: không thấy cấp dưới, không thấy hộp chờ duyệt, trong khi đơn của cấp dưới vẫn
+được gửi tới họ và nằm yên ở đó. Cùng lý do, đổi quản lý thì **đơn đang chờ đi theo**: người
+duyệt của mọi đơn `PENDING` chuyển sang quản lý mới trong cùng giao dịch, như tái cơ cấu vẫn làm.
+
+**Khoá tài khoản là một trạng thái, không phải xoá.** `User.active = false` chặn đăng nhập,
+đóng mọi phiên ngay (§9.23) và cắt cả ổ cắm realtime đang mở — ổ cắm kiểm cùng mốc đóng phiên
+mà REST kiểm. Mở khoá trả lại đúng vai cũ; tài khoản của người đã nghỉ việc không mở khoá qua
+đường này. Hai chốt giữ cho quản trị không tự khoá mình ra ngoài: **không ai hạ vai hay khoá
+chính mình**, và không thao tác nào được để hệ còn không một `ADMIN` đang dùng — đếm quản trị là
+đếm tài khoản `active`, không đếm tài khoản đã khoá. Danh sách tài khoản hiện trạng thái của
+từng cái — đang dùng, chờ đặt mật khẩu, đã khoá — cùng người và phòng ban nó gắn với, tìm được
+theo email, mã và tên, lọc được theo vai, phòng ban và trạng thái.
+
 **Phạm vi dòng thi hành ở tầng service, không ở tầng controller.** Guard chỉ trả lời "vai này
 được gọi đường này không"; câu hỏi "được thấy dòng nào" phải đi vào chính mệnh đề `where`. Đặt
 nó ở controller là sớm muộn có một endpoint quên lọc và trả cả bảng lương công ty cho một người.
@@ -7025,6 +7078,13 @@ tháng Ba phải tính bằng mức của tháng Ba kể cả khi tháng Tư đ�
 
 Mỗi dòng giữ: lương cơ bản, **lương đóng bảo hiểm** (khác lương cơ bản ở rất nhiều nơi), phụ
 cấp cố định, và lý do thay đổi.
+
+**Phụ cấp chọn từ danh mục, và dòng lương chép lại luật của nó.** Bàn lương nuôi `AllowanceType`
+trên màn `Phụ cấp` (§9.15). Ghi một mốc lương thì mỗi khoản phụ cấp chọn một loại, và
+`CompensationAllowance` **chép mã, nhãn, cờ chịu thuế, cờ đóng BHXH và mức miễn thuế** của loại
+ấy vào chính nó — cùng lý do `Payslip` chép tài khoản ngân hàng: sửa luật của một loại về sau
+không được lặng lẽ đổi lương của những tháng đã tính. D02-LT xếp phụ cấp vào cột theo đúng cột
+khai trên loại, không theo thứ tự mã.
 
 **Kỳ lương và lượt chạy tách nhau.** `PayrollPeriod` là tháng lương, có trạng thái
 `OPEN → LOCKED → PAID`. `PayrollRun` là **một lần tính**, và một kỳ có thể có nhiều lượt: chạy
@@ -7205,17 +7265,34 @@ Chỉ mục đi kèm: `Employee(departmentId, active)`, `Employee(managerId)`,
 theo vai. Dựng riêng một cổng nhân viên nghĩa là nuôi hai bản đăng nhập, hai bộ gọi API và hai
 chỗ để quên vá.
 
-| Vai | Trang chủ mở ra cái gì |
-|---|---|
-| `EMPLOYEE` | chấm công tháng này của mình, số phép còn lại, phiếu lương gần nhất, nút xin nghỉ |
-| `MANAGER` | **hộp chờ duyệt**, ai vắng hôm nay, lịch nghỉ của nhóm |
-| `HR` / `PAYROLL` | nhân sự biến động, chấm công bất thường, tình trạng kỳ lương |
-| `ADMIN` | như trên, cộng sức khoẻ thiết bị |
+| Vai | Trang chủ | Từ trên xuống |
+|---|---|---|
+| `EMPLOYEE` | Trang của tôi | **Hôm nay**: ca, lượt chấm, đúng giờ hay muộn, ca ngày mai. **Việc cần làm** — tài liệu phải ký, đơn bị trả lại — chỉ hiện khi có. **Tháng này**: ngày làm, lần đi muộn, ngày thiếu lượt. **Phép còn lại** kèm nút xin nghỉ. **Đơn của tôi**: đang chờ và ba đơn vừa quyết, mỗi dòng mở đúng đơn ấy. **Phiếu lương gần nhất** |
+| `MANAGER` | Trang của tôi | như `EMPLOYEE`, và ở vị trí thứ hai: **Chờ tôi duyệt** — năm việc cũ nhất, quyết ngay tại chỗ, "xem tất cả N" — cùng **Nhóm hôm nay**: ai vắng, ai nghỉ phép, ai chưa chấm |
+| `HR` · `PAYROLL` · `ADMIN` | Tổng quan | **Hôm nay**: bốn con số bấm được — có mặt trên dự kiến, đi muộn, vắng không phép, nghỉ phép. **Chờ tôi duyệt** như trên. Rồi một thẻ theo vai: `HR` có tab hợp đồng sắp hết · thử việc sắp hết · ngày lệch giờ · nhận việc quá hạn, mỗi tab sáu dòng và đường tới danh sách đầy đủ; `PAYROLL` có kỳ đang mở kèm bước và việc chặn chốt, tạm ứng chờ chi, khiếu nại; `ADMIN` thêm dải kiosk — đang chạy trên tổng, máy có bản mới |
+
+Người dùng được đưa **thẳng** về trang chủ của vai mình, không qua một trang trung gian rồi mới
+bị chuyển lần hai. Luồng sự kiện trực tiếp của kiosk ở trang `Kiosk`, nơi người ta đọc nó; trên
+`Tổng quan` nó là một cột mã máy không ai hiểu.
 
 **Hộp chờ duyệt là màn hình quan trọng nhất của `MANAGER`.** Nó phải trả lời một câu trong hai
-giây: *còn gì đang đợi tôi*. Không phải một bảng để lọc, mà một danh sách việc, mỗi dòng có đủ
-ngữ cảnh để quyết ngay tại chỗ — ai, loại phép gì, mấy ngày, còn bao nhiêu dư, ai khác trong
-nhóm cũng nghỉ hôm đó.
+giây: *còn gì đang đợi tôi* — và vẫn trả lời được khi hộp có năm nghìn việc. Nên:
+
+- **Mỗi hàng đợi một tab kèm số** — đơn từ, khiếu nại lương, giấy xác nhận, đổi hồ sơ, người
+  phụ thuộc, tạm ứng chờ duyệt, tạm ứng chờ chi — số lấy từ tổng của server, đúng con số trên
+  thanh bên. Tab đang mở nằm trên đường dẫn.
+- **Mỗi tab tìm được theo mã và tên người xin, lọc theo loại, phòng ban (cả nhánh) và khoảng
+  ngày**, mặc định cũ nhất lên trước vì việc chờ lâu nhất là việc trễ nhất.
+- **Mỗi dòng đủ ngữ cảnh để quyết**: ai, mã, phòng ban, loại, ngày, mấy ngày, số dư sau khi
+  duyệt, đã chờ bao lâu, và ai khác trong nhóm cũng nghỉ những ngày ấy. Số dư và số người trùng
+  lịch server tính một lần cho cả trang, không phải mỗi dòng một lần gọi.
+- **Duyệt được hàng loạt**: chọn nhiều dòng, duyệt một lần, hoặc từ chối một lần với một lý do
+  chung. Mỗi dòng vẫn đi qua đúng các luật của một lần duyệt lẻ — không duyệt việc của chính mình,
+  đơn đã được người khác quyết thì báo lại chứ không ghi đè.
+- Bấm một dòng mở chi tiết với ô ghi chú; trên điện thoại hai nút quyết nằm ở đáy, ô lý do chỉ
+  hiện khi từ chối.
+- Hàng đợi của bàn nhân sự **không chứa việc của chính người đang xem**: việc ấy họ không quyết
+  được, và để nó nằm đó là để số đếm không bao giờ về không.
 
 ### 9.11 Phiếu lương gửi đi bằng đường nào
 
@@ -7293,44 +7370,52 @@ thanh bên thì khối vẫn cân. Thanh trên không bị bó theo khối: vệ
 Luật "không trang nào tự bó" là lỗi 25/09 viết thành luật: 16 trang khi ấy bóp về 48 rem và căn
 giữa, mỗi trang hẹp một kiểu, và cả app trông lệch.
 
-**Trang danh sách và trang một bản ghi có cột phải.** Từ `xl` trở lên nó đứng bên phải, rộng
-380 px, dính theo khi cuộn. Dưới `xl` phần tóm tắt lên trên cột chính và phần phụ xuống cuối
-trang, đúng thứ tự của block. Cột phải chứa **thứ người dùng phải đi tìm nếu nó không nằm đó**:
-con số tóm tắt của chính danh sách ấy, việc đang treo dẫn thẳng tới chỗ xử lý, thao tác phụ,
-điều cần biết. Nó **không chứa thứ cột chính đã có**. Mỗi con số trên nó bấm được: bấm là lọc
-bảng bên trái, hoặc mở đúng chỗ xử lý.
+**Cột phải chỉ có khi nó làm được một việc không chỗ nào khác làm.** Từ `xl` trở lên nó đứng
+bên phải, rộng 380 px, dính theo khi cuộn và tự cuộn khi dài hơn màn. Dưới `xl` nó xuống **sau**
+cột chính: thứ người ta vào trang để làm luôn nằm trên cùng. Nó chứa đúng bốn loại thứ:
+
+1. **Việc đang treo của chính danh sách ấy, dẫn thẳng tới chỗ xử lý** — người sắp hết thử việc,
+   bước tiếp theo của một kỳ lương, người trong nhóm cũng nghỉ những ngày ấy.
+2. **Tổng của cả tập đang lọc**, khi bảng chỉ hiện từng dòng — ngày công cả tháng, số lượt quẹt
+   trong khoảng đang xem.
+3. **Công cụ phụ của cả danh sách** — xuất theo bộ lọc đang áp, nhập, tải file mẫu, thao tác
+   hàng loạt, danh mục con của trang như các mẫu checklist.
+4. **Điều cần biết mà không biết thì làm sai** — một câu, gắn với đúng trang ấy.
+
+Nó **không** chứa: bộ lọc, con số lặp lại thứ cột chính hay thanh công cụ đã hiện, lối tắt tới
+trang mà thanh bên đã có, chữ đã nằm trong hộp thoại, và khối chữ chỉ để lấp chỗ. Trang không có
+gì thuộc bốn loại trên thì **không có cột phải**, và bảng chiếm trọn bề ngang. Đó là trường hợp
+thường, không phải ngoại lệ.
+
+**Một bộ lọc có đúng một chỗ, và chỗ ấy là thanh công cụ trên bảng.** Lỗi 25/09 viết thành luật:
+trang Tài sản có bộ lọc trạng thái trên thanh công cụ và cùng bộ lọc ấy dưới dạng danh sách số
+đếm ở cột phải — hai điều khiển cho một việc, và cột phải chiếm 380 px để bảng bên trái phải cuộn
+ngang. Số đếm theo từng giá trị đi vào **chính lựa chọn của bộ lọc** — "Đã cấp · 195" — nên người
+dùng vẫn thấy phân bố mà chỉ nhìn một chỗ.
 
 | Trang | Cột phải |
 |---|---|
-| Tổng quan | lối tắt theo vai: thêm nhân viên, bảng công tháng này, kỳ lương đang mở; với `ADMIN` thêm số kiosk đang chạy trên tổng, máy có bản mới, luồng sự kiện trực tiếp |
-| Danh bạ | số đang làm, đã nghỉ — bấm là lọc; người sắp hết thử việc và hợp đồng sắp hết trong 30 ngày, vài tên đầu kèm số ngày, bấm mở hồ sơ; công cụ: xuất Excel, nhập từ Excel, tải file mẫu, điều chỉnh lương hàng loạt |
-| Thêm nhân viên | lưu xong hệ làm gì: hồ sơ, hợp đồng, lương, checklist nhận việc, tài khoản; nhiều người thì sang nhập Excel |
-| Hồ sơ một người | mã, phòng ban, chức danh, quản lý, ngày vào, trạng thái; đồng ý sinh trắc và nút ghi hoặc rút; kiosk đang gán và nút gán; lối tắt: lượt chấm công, cho nghỉ việc |
-| Cây tổ chức | tổng phòng ban và tổng người; phòng ban đang chọn: mã, cấp trên, số người cả nhánh, trung tâm chi phí, đổi tên, xem nhân viên của phòng; công cụ: tái cơ cấu |
-| Nhận việc | số việc mở, quá hạn, theo người phụ trách — bấm là lọc; các mẫu checklist |
-| Tài sản | số theo từng trạng thái — bấm là lọc |
-| Tài liệu | số tài liệu, số người chưa ký bản mới nhất, số hồ sơ còn thiếu |
-| Bảng công | tổng của tháng: ngày công, ngày vắng, ngày phép, giờ tăng ca, ngày đã sửa; nút tổng hợp lại tháng |
-| Lượt chấm công | trong khoảng đang xem: số người, tổng lượt, lượt lệch đồng hồ; xuất CSV |
-| Lượt của một người | mã, phòng ban, link hồ sơ; tổng lượt, lượt ngoại tuyến, lượt lệch đồng hồ |
-| Chờ tôi duyệt | mục lục các hàng đợi kèm số, bấm là tới đúng hàng đợi; số dư phép của người xin ở đơn đang mở |
-| Sổ đơn từ | số theo trạng thái — bấm là lọc |
-| Một đơn | người xin: mã, phòng ban, link hồ sơ; số dư phép của họ |
-| Ca làm · Ngày lễ · Loại phép | số đang dùng và đã ngừng; ngày lễ sắp tới |
-| Báo cáo | các file xuất: D02-LT theo ngày, gộp chấm công theo tháng |
-| Kỳ lương | kỳ đang mở và bước nó đang ở; năm bước của một kỳ |
-| Một kỳ lương | năm bước **chạy → soát → chốt → trả → gửi phiếu**: bước nào xong, bước nào đang tới, và nút của đúng bước ấy |
-| Chính sách lương | phiên bản đang áp dụng; các phiên bản trước |
-| Kiosk | số đang chạy trên tổng, số chờ duyệt; bản mới nhất từng loại kèm nút cập nhật cả đội; lịch sử bản phát hành |
-| Một kiosk | vị trí, trạng thái, firmware, model, phiên bản danh sách, lần cuối thấy; đổi tên, đồng bộ lại, thu hồi |
-| Tài khoản · Nhật ký | số tài khoản theo vai; lọc nhanh nhật ký theo loại đối tượng |
-| Trang của tôi | lối tắt: xin nghỉ, xin giấy xác nhận, sửa thông tin; người phụ thuộc |
-| Công của tôi | sai giờ thì xin sửa công, mở thẳng biểu mẫu đúng loại |
+| Tổng quan · Trang của tôi | không có; bố cục theo §9.10 |
+| Danh bạ | hợp đồng và thử việc sắp hết trong 30 ngày, vài tên đầu kèm số ngày, bấm mở hồ sơ, "xem tất cả" mở danh sách đầy đủ; công cụ: xuất Excel theo bộ lọc đang áp, nhập từ Excel, tải file mẫu, điều chỉnh lương hàng loạt |
+| Thêm nhân viên | không có; câu "lưu xong hệ làm gì" nằm dưới tiêu đề |
+| Hồ sơ một người | đồng ý sinh trắc và nút ghi hoặc rút; kiosk đang gán và nút gán; tài khoản đăng nhập: trạng thái, mở tài khoản hoặc gửi lại liên kết |
+| Cây tổ chức | phòng ban đang chọn: mã, cấp trên, trưởng phòng, số người cả nhánh, trung tâm chi phí; sửa, chuyển nhánh, ngừng dùng; xem nhân viên của phòng; công cụ: tái cơ cấu. Trên điện thoại chọn một phòng mở tấm trượt |
+| Nhận việc | các mẫu checklist: thêm, sửa, ngừng dùng |
+| Chờ tôi duyệt · Sổ đơn từ | không có; hàng đợi là tab kèm số (§9.10) |
+| Một đơn | người xin: mã, phòng ban, link hồ sơ; số dư phép; người trong nhóm cũng nghỉ những ngày ấy |
+| Bảng công | tổng của tháng theo bộ lọc: ngày công, ngày vắng, ngày phép, giờ tăng ca, ngày đã sửa; nút tổng hợp lại tháng |
+| Lượt chấm công | trong tháng đang xem: số người, tổng lượt, lượt lệch đồng hồ; xuất CSV |
+| Công của tôi | tổng tháng: ngày làm, lần đi muộn, ngày thiếu lượt; nút xin sửa công |
+| Kỳ lương | kỳ đang mở, bước nó đang ở và nút vào đúng bước ấy |
+| Một kỳ lương | năm bước **chạy → soát → chốt → trả → gửi phiếu**: bước nào xong, bước nào đang tới, nút của đúng bước ấy; tổng kỳ: số phiếu, tổng thu nhập, thực nhận, chi phí của người sử dụng lao động |
+| Chính sách lương | các phiên bản trước, bấm để xem |
+| Kiosk | bản mới nhất từng loại kèm nút cập nhật cả đội; lịch sử bản phát hành; luồng sự kiện trực tiếp |
+| Một kiosk | firmware, model, phiên bản danh sách, lần cuối thấy; đổi tên, đồng bộ lại, thu hồi |
 | Lịch ca | số ngày làm, ngày lễ, ngày nghỉ của tháng; chú giải |
 | Đơn từ của tôi | số dư phép; đơn đang chờ gửi vì mất mạng |
 | Phiếu lương | các kỳ để chọn; quyết toán thuế cả năm |
-| Giấy xác nhận · Sửa thông tin | ai duyệt, bao lâu; đổi tài khoản ngân hàng thì có thư báo về địa chỉ cũ |
 | Cài đặt | mục lục các phần của trang |
+| Tài sản · Tài liệu · Ca làm · Ngày lễ · Loại phép · Báo cáo · Tài khoản · Nhật ký · Chức danh · Pháp nhân · Phụ cấp · Lượt của một người · Giấy xác nhận · Sửa thông tin | không có |
 
 **Hộp thoại là `LayerDialog`, và thao tác không hoàn tác được qua `LayerDialog.Alert`.** Mọi
 biểu mẫu tạo hay sửa mở trong `LayerDialog`: trên máy tính nó là hộp giữa màn, trên điện thoại
@@ -7339,20 +7424,67 @@ nó là `destructive`, và trong lúc đang chạy thì không đóng được (
 hai lần vào cùng một nút cho "chắc chưa" không còn dùng: nó không nói hậu quả, và trên điện
 thoại lần chạm thứ hai rơi đúng chỗ lần thứ nhất.
 
-**Bảng là `Table` của Kumo trong một `LayerCard`.** Hàng sọc; cả hàng mở bản ghi; cột số căn
-phải bằng chữ số đều bề ngang. Thao tác phụ của một hàng nằm trong menu `⋯` cuối hàng, không
-phải một dãy nút. Không có cột *Sửa* và không có nút chọn cột hiện: bảng của hệ này có bốn tới
-tám cột, và chủ repo chỉ ra 25/09 rằng nút ấy không có trang tử tế nào dùng. Bấm tiêu đề cột để
-sắp. Danh sách dài dùng *Tải thêm* kèm tổng số, không cắt im lặng.
+**Bảng là `Table` của Kumo trong một `LayerCard`, và trên máy tính không bao giờ bắt người dùng
+kéo ngang.** Hàng sọc; cả hàng mở bản ghi; cột số căn phải bằng chữ số đều bề ngang. Thao tác phụ
+của một hàng nằm trong menu `⋯` cuối hàng, không phải một dãy nút. Không có cột *Sửa* và không có
+nút chọn cột hiện: chủ repo chỉ ra 25/09 rằng nút ấy không có trang tử tế nào dùng. Để bảng vừa
+khung:
+
+- **Mỗi cột mang một mức ưu tiên từ 1 tới 3.** Cột mức 3 ẩn khi *chính khung bảng* hẹp hơn
+  720 px, mức 2 ẩn dưới 560 px. Đo bằng container query trên khung bảng chứ không đo bề ngang
+  màn, vì bề rộng của bảng đổi theo thanh bên và cột phải. Thứ bị ẩn vẫn nằm trong bản ghi khi
+  bấm vào hàng.
+- **Tên và mã là một ô hai dòng**, không phải hai cột. Chữ dài cắt bằng dấu ba chấm và hiện đủ
+  khi rê chuột.
+- Trên điện thoại bảng thành thẻ, và thẻ hiện các cột mức 1.
+- Bảng vẫn rộng hơn khung thì mép phải mờ dần, báo rằng còn nữa.
+
+**Mọi danh sách phải qua phép thử năm nghìn dòng: giữa 5.000 dòng, người dùng tìm ra một dòng
+trong hai thao tác.** Nghĩa là mỗi danh sách có ô tìm theo mã và tên của người liên quan, và bộ
+lọc theo đúng những chiều người ta hỏi — trạng thái, loại, phòng ban, khoảng ngày. Danh sách không
+qua phép thử là danh sách chưa xong, kể cả khi hôm nay nó mới có mười dòng. Danh sách dài dùng
+*Tải thêm* kèm tổng số, không cắt im lặng, và mọi hàng đợi đều phân trang — không có danh sách
+nào dừng ở 50 dòng mà không nói.
+
+**Tìm, lọc và sắp chạy ở server, và nằm trên đường dẫn.** Bấm tiêu đề cột để sắp chỉ có khi
+endpoint nhận `sort`; sắp trên những dòng đã tải là nói dối khi trang mới hiện 50 trên 5.000.
+Trạng thái tìm, lọc và sắp ghi vào query string qua `lib/url-state.ts`, nên nút Back từ một bản
+ghi trả người dùng về đúng danh sách họ đang lọc, và một đường dẫn gửi cho đồng nghiệp mở ra đúng
+góc nhìn ấy.
 
 **Bộ lọc là `Toolbar` của Kumo, áp ngay khi đổi.** Ô tìm chờ người gõ ngừng một nhịp rồi mới
-hỏi; không có nút *Lọc* trừ khi truy vấn nặng. Trên điện thoại bộ lọc thu vào một nút mở tấm
-trượt (§9.21.1).
+hỏi; không có nút *Lọc* trừ khi truy vấn nặng. Lựa chọn của bộ lọc mang số đếm khi server trả
+được số ấy rẻ. Trên điện thoại bộ lọc thu vào một nút mở tấm trượt (§9.21.1).
+
+**Biểu mẫu nói rõ ô nào bắt buộc, và nói vì sao.** Theo quy ước của Kumo: ô bắt buộc không gắn
+dấu, ô không bắt buộc hiện "(không bắt buộc)" qua `required={false}`. Ô mà thiếu thì một việc phía
+sau hỏng mang một dòng mô tả nói đúng hậu quả ấy — email cá nhân thiếu thì không gửi được tài
+khoản và phiếu lương, nên nó nằm ở phần đầu không gập của biểu mẫu nhận người. Độ dài tối đa
+trên biểu mẫu bằng đúng giới hạn của DTO, để người dùng không chỉ biết mình gõ quá dài sau khi đã
+bấm lưu. Lỗi từ server nằm trong hộp thoại dưới dạng `Banner`, ngay trên nút chính; lỗi gắn được
+với một ô thì hiện dưới ô ấy. Nút chính không bao giờ bị khoá mà không nói vì sao. Ngày chọn bằng
+`ui/date-field.tsx`: lịch của Kumo trong một popover trên máy tính, bánh xe của hệ điều hành trên
+điện thoại. Danh sách chọn dài — phòng ban, chức danh, người — là `Combobox` tìm được, không phải
+`Select`.
 
 **Đăng xuất nằm trong menu tài khoản ở góc phải thanh trên, và trong *Cài đặt*.** Cả hai chỗ
 đều cần hai lần bấm có chủ đích. Thứ bị cấm là một nút đăng xuất thường trực dưới thanh bên,
 cạnh những mục người ta bấm cả ngày: tần suất dùng vài lần một ngày, còn hậu quả bấm nhầm là
-mất hết việc đang làm dở.
+mất hết việc đang làm dở. Menu tài khoản hiện email đang đăng nhập và vai. Đăng xuất xoá sạch bộ
+nhớ đệm dữ liệu trên máy, vì người dùng tiếp theo của cùng một trình duyệt không được thấy một
+dòng nào của người trước.
+
+**Thanh bên thu gọn thành dải icon, và rê chuột tới là nó mở ra đè lên nội dung** — chế độ
+`peekable` của `Sidebar` Kumo, không xô trang. Lựa chọn thu gọn được nhớ trong cookie để server vẽ
+đúng ngay lần tải sau, không nháy. Dấu và tên ở đầu thanh bên là liên kết về trang chủ của vai,
+điều hướng phía client.
+
+**Bốn cửa đăng nhập là một cột yên tĩnh, không phải một thẻ giữa màn** — tinh thần của màn đăng
+nhập Claude, dựng bằng token và component của Kumo. Ba tầng: dấu và tên ở trên; ở giữa một cột
+400 px đặt cao hơn tâm màn một chút; chân trang có đổi ngôn ngữ và sáng tối. Cột mang một tiêu đề
+30 px, một câu, các ô cỡ lớn không bọc viền thẻ, "Quên mật khẩu?" ngay trên hàng nhãn của ô mật
+khẩu, một nút chính rộng hết cột, và một dòng nhắc rằng tài khoản do bộ phận nhân sự mở qua thư
+mời. Không ảnh minh hoạ, không nhãn hiệu nào ngoài dấu của hệ.
 
 **Năm luật hình thức**
 
@@ -7365,7 +7497,7 @@ mất hết việc đang làm dở.
    `components/ui/pill.tsx`. Mỗi phân hệ tự vẽ lấy viên nhãn của mình thì một trạng thái giống
    nhau trông khác nhau tuỳ trang, và khi ấy màu không còn nói được gì.
 3. **Bảng là công cụ, không phải bản in.** Cột số căn phải và dùng chữ số đều bề ngang; hàng
-   giữ nguyên chiều cao; cột quan trọng đứng yên khi cuộn ngang.
+   giữ nguyên chiều cao; bảng co bằng cách bớt cột ít quan trọng, không bằng cách bắt cuộn ngang.
 4. **Tiền và giờ không bao giờ hiện trần.** Một con số lương luôn đi kèm đơn vị và kỳ; một con
    số giờ luôn nói rõ là giờ làm hay giờ tăng ca.
 5. **Mọi thao tác nói kết quả.** Thành công hay lỗi đều ra toast; lỗi của một trường còn hiện
@@ -7377,6 +7509,14 @@ mất hết việc đang làm dở.
 thái. Khung — thanh bên, thanh trên, thanh tab phụ, nền trang — cùng một màu `kumo-canvas`; thẻ,
 bảng và hộp thoại là `kumo-base`. Như dashboard Cloudflare: khung lùi lại, nội dung nổi lên. Vai
 trò của màu nhấn không đổi: nó dành cho hành động chính, không rải khắp nơi.
+
+**Dấu của hệ nói đúng việc hệ làm: một gương mặt trong khung quét.** Bốn góc khung quét, hai mắt
+và một nụ cười, nét trắng trên nền mực gần đen; nụ cười màu xanh lá của "đã chấm công". Nó là
+biểu tượng ứng dụng trên màn hình chính, favicon, dấu ở đầu thanh bên và ở các cửa đăng nhập.
+Nền mực đứng được trên cả màn hình chính sáng lẫn tối, điều mà một ô xanh dương bão hoà hay một ô
+trắng không làm được, và nó tách dấu của hệ khỏi màu xanh của nút bấm. Bản `maskable` giữ hình
+trong vùng an toàn 80 % để launcher cắt tròn không mất góc; biểu tượng nhỏ trên thanh thông báo
+là bản một màu.
 
 **Màn hình tối thiểu để chạy được**: danh bạ nhân viên, hồ sơ một người, cây tổ chức, đơn nghỉ
 phép, hộp chờ duyệt, bảng công tháng, phiếu lương của tôi, chạy kỳ lương, cấu hình chính sách.
@@ -7502,7 +7642,7 @@ Nhân sự        ▸ Nhân viên · Nhận việc · Tài sản · Tài liệu
 Thời gian      ▸ Chấm công · Ca & lịch nghỉ · Báo cáo
 Lương          ▸ Lương
 Vận hành       ▸ Kiosk
-Thiết lập      ▸ Hệ thống · Cài đặt
+Thiết lập      ▸ Danh mục · Hệ thống · Cài đặt
 ```
 
 **Một mục thanh bên mở ra được nhiều trang anh em, và chúng nối nhau bằng thanh tab phụ** (§9.12).
@@ -7519,6 +7659,7 @@ mục `Security`:
 | Ca & lịch nghỉ | Ca làm · Ngày lễ · Loại phép |
 | Lương | Kỳ lương · Chính sách lương |
 | Hệ thống | Tài khoản · Nhật ký |
+| Danh mục | Chức danh · Pháp nhân · Phụ cấp |
 | Yêu cầu của tôi | Đơn từ · Giấy xác nhận · Sửa thông tin |
 
 Bốn luật đi kèm, đều đọc từ `lib/nav.ts`:
@@ -7558,7 +7699,10 @@ nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
 | `Chờ duyệt` | ✓ | ✓ | ✓ | ✓ | – | – |
 | `Danh bạ` | ✓ | ✓ | ✓ | ✓ | – | – |
 | `Cây tổ chức` | ✓ | ✓ | – | ✓ | – | – |
-| `Phòng ban` | ✓ | ✓ | – | – | – | – |
+| `Phòng ban` (sửa ngay trên `Cây tổ chức`) | ✓ | ✓ | – | – | – | – |
+| `Chức danh` | ✓ | ✓ | – | – | – | – |
+| `Pháp nhân` | ✓ | – | – | – | – | – |
+| `Phụ cấp` | ✓ | ✓ đọc | ✓ | – | – | – |
 | `Bảng công` · `Chấm công` | ✓ | ✓ | ✓ | ✓ | – | – |
 | `Đơn từ` (sổ toàn bộ, mọi loại) | ✓ | ✓ | – | ✓ | – | – |
 | `Tài sản` (sổ cấp phát và thu hồi) | ✓ | ✓ | – | – | – | – |
@@ -8267,6 +8411,40 @@ dễ tiếp cận hơn, chỉ làm chúng **nguy hiểm hơn**.
 | HR thao tác nặng: chốt lương, nhập hàng loạt, tái cơ cấu, sửa bảng công | **chỉ màn rộng** — và nói rõ điều đó thay vì để nó vỡ âm thầm |
 
 Luật rút ra: **màn nào hỏng được dữ liệu ở quy mô lớn thì không nằm cách một ngón tay cái.**
+
+`Tài liệu của tôi` thuộc nhóm đầu: người lao động phải tới được nó từ điện thoại — từ tấm *Thêm*
+của thanh tab và từ mục *Việc cần làm* trên trang của tôi — vì ký nhận là việc của chính họ.
+
+#### 9.21.6 Cài lên màn hình chính thì phải trông như một ứng dụng
+
+Người lao động mở hệ từ biểu tượng trên màn hình chính nhiều hơn từ trình duyệt. Mở ra mà thấy
+thanh trạng thái trắng giữa giao diện tối, nút bấm nằm đè lên vạch home, và trang nhảy cục mỗi
+lần chuyển là thứ khiến người ta coi nó là một trang web tạm bợ. Những gì phải có:
+
+| Chỗ | Luật |
+|---|---|
+| Manifest | có `id`; `start_url` là `/`, và `/` đưa thẳng mỗi vai về trang chủ của nó; `theme_color` và `background_color` là màu nền `kumo-canvas`, không phải xanh; `shortcuts` tới xin nghỉ, phiếu lương, lịch ca; không khoá chiều xoay, để máy tính bảng xoay được |
+| Thanh trạng thái | `black-translucent`; thanh trên tự đệm `env(safe-area-inset-top)` |
+| Vùng an toàn | thanh tab, thanh nút đáy **và tấm trượt** đều đệm `env(safe-area-inset-bottom)`, nút cuối không bao giờ nằm trên vạch home |
+| Bàn phím | viewport khai `interactive-widget=resizes-content`; ô đang gõ cuộn vào giữa phần còn nhìn thấy; thanh tab ẩn trong lúc gõ |
+| Chiều cao | `100svh` / `100dvh`, không `100vh` — thanh địa chỉ co giãn không được làm trang nhảy |
+| Chạm | tắt vệt sáng khi chạm, tắt cuộn nảy của khung, chữ không tự phóng khi xoay |
+| Quay lại app | app ẩn quá 60 s thì lúc hiện lại hỏi lại mọi query đang mở — ổ cắm không phải lúc nào cũng kịp nối |
+| Cài đặt trên iPhone | chưa cài thì màn thông báo nói cách *Thêm vào màn hình chính*, vì iOS chỉ cho thông báo đẩy khi app đã cài |
+| Thông báo đẩy | tiêu đề là tên hệ; biểu tượng nhỏ là bản một màu `badge.png`; chạm vào thì mở lại cửa sổ đang có, không mở thêm cửa sổ mới |
+| Trang lỗi | một trang lỗi của chính hệ, bằng tiếng của người dùng, có nút thử lại và nút về trang chủ — không phải trang lỗi trắng tiếng Anh của Next |
+
+**Chuyển động là một hệ, không phải hiệu ứng rải rác.** Mọi chuyển động dùng đường cong của Kumo
+`cubic-bezier(.32,.72,0,1)`, và ba nhịp:
+
+| Nhịp | Dùng cho |
+|---|---|
+| 120 ms | nhấn và rê: nút co nhẹ khi chạm, hàng sáng lên khi rê |
+| 200 ms | đổi tab, thêm hoặc bớt một dòng — dòng vừa duyệt mờ đi rồi khép lại để danh sách không nhảy; skeleton mờ dần thành nội dung |
+| 250 ms | chuyển trang bằng View Transitions, chỉ vùng nội dung động, khung đứng yên: máy tính mờ chéo; điện thoại đi sâu thì trượt 24 px kèm mờ, quay lại thì trượt ngược; đổi tab đáy chỉ mờ chéo |
+
+Tấm trượt giữ nhịp 450 ms và cử chỉ vuốt đóng của chính Kumo. Người dùng bật *giảm chuyển động*
+thì mọi thứ trên đây tắt, kể cả cuộn mượt.
 
 ### 9.22 Dữ liệu: cái gì mất được, cái gì không
 
