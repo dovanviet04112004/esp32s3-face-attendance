@@ -1,7 +1,7 @@
 "use client";
 
 import { LayerCard, Meter } from "@cloudflare/kumo";
-import { useLocale, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
 import { StatePill, type Tone } from "@/components/ui/pill";
@@ -46,6 +46,7 @@ const STATE_KEY: Record<
  */
 export function RunProgress({ run, action, children }: { run: PayrollRun; action?: ReactNode; children?: ReactNode }) {
   const t = useTranslations("payroll");
+  const format = useFormatter();
   const locale = useLocale();
   const kindName = t(`run${run.kind}`);
   const share = run.employeeCount === 0 ? 0 : run.doneCount / run.employeeCount;
@@ -78,7 +79,7 @@ export function RunProgress({ run, action, children }: { run: PayrollRun; action
           {run.failedCount > 0 ? (
             <div className="flex flex-col">
               <dt className="text-sm text-kumo-subtle">{t("runFailedCount")}</dt>
-              <dd className="font-medium text-kumo-danger tabular-nums">{run.failedCount}</dd>
+              <dd className="font-medium text-kumo-danger tabular-nums">{format.number(run.failedCount)}</dd>
             </div>
           ) : null}
         </dl>

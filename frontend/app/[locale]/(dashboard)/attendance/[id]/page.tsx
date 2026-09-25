@@ -166,16 +166,16 @@ export default function PunchHistoryPage() {
                   [
                     t("punchesTotal"),
                     first ? (
-                      <span className="tabular-nums">{first.totalIsExact === false ? t("atLeast", { count: first.total }) : first.total}</span>
+                      <span className="tabular-nums">{first.totalIsExact === false ? t("atLeast", { count: first.total }) : format.number(first.total)}</span>
                     ) : (
                       common("empty")
                     ),
                   ],
-                  [t("offlinePunches"), offline !== undefined ? <span className="tabular-nums">{offline}</span> : common("empty")],
+                  [t("offlinePunches"), offline !== undefined ? <span className="tabular-nums">{format.number(offline)}</span> : common("empty")],
                   [
                     t("clockOff"),
                     unsynced !== undefined ? (
-                      <span className={unsynced > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{unsynced}</span>
+                      <span className={unsynced > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{format.number(unsynced)}</span>
                     ) : (
                       common("empty")
                     ),

@@ -324,7 +324,7 @@ export default function OverviewPage() {
               {waitingOnMe > 0 ? (
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p>
-                    <span className="text-lg font-semibold tabular-nums">{waitingOnMe}</span>{" "}
+                    <span className="text-lg font-semibold tabular-nums">{format.number(waitingOnMe)}</span>{" "}
                     {t("waitingCount", { count: waitingOnMe })}
                   </p>
                   <LinkButton href="/approvals" variant="secondary" icon={TrayIcon}>

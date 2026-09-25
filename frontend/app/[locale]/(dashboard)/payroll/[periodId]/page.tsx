@@ -15,7 +15,7 @@ import {
   CalculatorIcon,
 } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
@@ -176,6 +176,7 @@ export default function PayrollPeriodPage() {
   const t = useTranslations("payroll");
   const common = useTranslations("common");
   const locale = useLocale();
+  const format = useFormatter();
   const params = useParams<{ periodId: string }>();
   const periodId = params.periodId;
   const { role, employeeId } = useSession();
@@ -595,7 +596,7 @@ export default function PayrollPeriodPage() {
                           const body = (
                             <>
                               <span className="min-w-0 truncate">{t(item.code as ItemKey)}</span>
-                              <span className="shrink-0 font-medium text-kumo-warning tabular-nums">{item.count}</span>
+                              <span className="shrink-0 font-medium text-kumo-warning tabular-nums">{format.number(item.count)}</span>
                             </>
                           );
                           const row = "flex min-h-9 items-center justify-between gap-3 rounded-md px-2";
@@ -668,7 +669,7 @@ export default function PayrollPeriodPage() {
                     {openItems.map((item) => (
                       <li key={item.code} className="flex justify-between gap-3 border-b border-kumo-hairline py-1.5 last:border-0">
                         <span>{t(item.code as ItemKey)}</span>
-                        <span className="tabular-nums">{item.count}</span>
+                        <span className="tabular-nums">{format.number(item.count)}</span>
                       </li>
                     ))}
                   </ul>

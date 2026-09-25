@@ -281,14 +281,14 @@ export default function TimesheetPage() {
           <AsideCard title={t("monthTotals", { month: monthName })}>
             <Facts
               rows={[
-                [t("workedDays"), ready ? <span className="tabular-nums">{sum?.workedDays}</span> : common("empty")],
+                [t("workedDays"), ready ? <span className="tabular-nums">{format.number(sum?.workedDays ?? 0)}</span> : common("empty")],
                 [
                   t("absentDays"),
-                  ready ? <span className={(sum?.absentDays ?? 0) > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{sum?.absentDays}</span> : common("empty"),
+                  ready ? <span className={(sum?.absentDays ?? 0) > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{format.number(sum?.absentDays ?? 0)}</span> : common("empty"),
                 ],
-                [t("leaveDays"), ready ? <span className="tabular-nums">{sum?.leaveDays}</span> : common("empty")],
+                [t("leaveDays"), ready ? <span className="tabular-nums">{format.number(sum?.leaveDays ?? 0)}</span> : common("empty")],
                 [t("overtimeHours"), ready ? <span className="tabular-nums">{hours(sum?.overtimeMinutes ?? 0, locale)}</span> : common("empty")],
-                [t("adjusted"), ready ? <span className="tabular-nums">{sum?.adjustedDays}</span> : common("empty")],
+                [t("adjusted"), ready ? <span className="tabular-nums">{format.number(sum?.adjustedDays ?? 0)}</span> : common("empty")],
               ]}
             />
             {sum && sum.people > 0 ? (

@@ -388,14 +388,14 @@ export default function DocumentsPage() {
                 {
                   key: "unsigned",
                   label: t("unsignedCount"),
-                  value: docs.isSuccess && signings.every((one) => one.isSuccess) ? `${unsignedTotal}${unsignedFloor ? "+" : ""}` : common("empty"),
+                  value: docs.isSuccess && signings.every((one) => one.isSuccess) ? `${format.number(unsignedTotal)}${unsignedFloor ? "+" : ""}` : common("empty"),
                   tone: unsignedTotal > 0 ? "warning" : undefined,
                   onPick: () => pick("publish"),
                 },
                 {
                   key: "gaps",
                   label: t("gapCount"),
-                  value: gapCount.isSuccess ? `${gapCount.data.total}${gapCount.data.totalIsExact === false ? "+" : ""}` : common("empty"),
+                  value: gapCount.isSuccess ? `${format.number(gapCount.data.total)}${gapCount.data.totalIsExact === false ? "+" : ""}` : common("empty"),
                   tone: gapCount.isSuccess && gapCount.data.total > 0 ? "warning" : undefined,
                   active: tab === "gaps",
                   onPick: () => pick("gaps"),

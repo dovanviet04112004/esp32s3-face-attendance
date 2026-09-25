@@ -2,7 +2,7 @@
 
 import { LayerCard, Tabs, type TabsItem } from "@cloudflare/kumo";
 import { CaretLeftIcon } from "@phosphor-icons/react";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
 import { useCrumb } from "@/components/nav/breadcrumb";
@@ -106,14 +106,15 @@ export function AsideCard({ title, action, children }: { title: string; action?:
   );
 }
 
-/** Label and value rows, the value right-aligned. */
+/** Label and value rows, the value right-aligned; a plain number is grouped for the locale. */
 export function Facts({ rows }: { rows: [string, ReactNode][] }) {
+  const format = useFormatter();
   return (
     <dl className="-my-1 flex flex-col">
       {rows.map(([label, value]) => (
         <div key={label} className="flex items-baseline justify-between gap-4 border-b border-kumo-hairline py-2 last:border-0">
           <dt className="shrink-0 text-kumo-subtle">{label}</dt>
-          <dd className="min-w-0 text-end break-words">{value}</dd>
+          <dd className="min-w-0 text-end break-words">{typeof value === "number" ? format.number(value) : value}</dd>
         </div>
       ))}
     </dl>
@@ -137,6 +138,7 @@ const TONE_TEXT = { warning: "text-kumo-warning", danger: "text-kumo-danger" } a
 
 /** Counts that act: each filters the list beside it or leads to its queue (KEHOACH 9.12). */
 export function StatList({ stats }: { stats: Stat[] }) {
+  const format = useFormatter();
   return (
     <ul className="-mx-2 -my-1 flex flex-col">
       {stats.map((stat) => {
@@ -144,7 +146,7 @@ export function StatList({ stats }: { stats: Stat[] }) {
           <>
             <span className="min-w-0 truncate">{stat.label}</span>
             <span className={cn("shrink-0 font-medium tabular-nums", stat.tone && TONE_TEXT[stat.tone])}>
-              {stat.value}
+              {typeof stat.value === "number" ? format.number(stat.value) : stat.value}
             </span>
           </>
         );

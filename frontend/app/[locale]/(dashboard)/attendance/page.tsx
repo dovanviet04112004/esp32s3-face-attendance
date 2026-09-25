@@ -171,12 +171,12 @@ export default function AttendancePage() {
               rows={[
                 [
                   t("people"),
-                  totals.data ? <span className="tabular-nums">{totals.data.people}</span> : common("empty"),
+                  totals.data ? <span className="tabular-nums">{format.number(totals.data.people)}</span> : common("empty"),
                 ],
-                [t("punchesTotal"), ready ? <span className="tabular-nums">{punches}</span> : common("empty")],
+                [t("punchesTotal"), ready ? <span className="tabular-nums">{format.number(punches)}</span> : common("empty")],
                 [
                   t("clockOff"),
-                  ready ? <span className={unsynced > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{unsynced}</span> : common("empty"),
+                  ready ? <span className={unsynced > 0 ? "text-kumo-warning tabular-nums" : "tabular-nums"}>{format.number(unsynced)}</span> : common("empty"),
                 ],
               ]}
             />
