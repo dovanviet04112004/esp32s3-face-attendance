@@ -8802,7 +8802,7 @@ lần chuyển là thứ khiến người ta coi nó là một trang web tạm b
 | Chỗ | Luật |
 |---|---|
 | Manifest | có `id`; `start_url` là `/`, và `/` đưa thẳng mỗi vai về trang chủ của nó; `theme_color` và `background_color` là màu nền `kumo-canvas`, không phải xanh; `shortcuts` tới xin nghỉ, phiếu lương, lịch ca; không khoá chiều xoay, để máy tính bảng xoay được |
-| Thanh trạng thái | `black-translucent`; thanh trên tự đệm `env(safe-area-inset-top)` |
+| Thanh trạng thái | iPhone: `default` — iOS tô thanh ấy trắng khi sáng, đen khi tối, chữ luôn đọc được; `black-translucent` cho trang vẽ tràn lên nhưng chữ trạng thái **luôn trắng**, nên trên nền sáng giờ và pin biến mất. Thanh trên vẫn đệm `env(safe-area-inset-top)` cho máy nào vẽ tràn |
 | Vùng an toàn | thanh tab, thanh nút đáy **và tấm trượt** đều đệm `env(safe-area-inset-bottom)`, nút cuối không bao giờ nằm trên vạch home |
 | Bàn phím | viewport khai `interactive-widget=resizes-content`; ô đang gõ cuộn vào giữa phần còn nhìn thấy; thanh tab ẩn trong lúc gõ |
 | Chiều cao | `100svh` / `100dvh`, không `100vh` — thanh địa chỉ co giãn không được làm trang nhảy |
