@@ -3019,7 +3019,7 @@ firmware/
 │   ├── drv_audio/         [C]    L3
 │   ├── drv_servo/         [C]    L2  # chỉ đẩy xung LEDC 50 Hz
 │   ├── sys_storage/       [C]    L2  # NVS + LittleFS + mmap model; sở hữu storage_format.h (§6.2.7)
-│   ├── sys_time/          [C]    L2  # DS3231 là nguồn chính, SNTP hiệu chỉnh; báo nguồn giờ ra, không tự lưu (§6.2.5)
+│   ├── sys_time/          [C]    L2  # ba nguồn giờ: NTP, Date của api, DS3231; báo nguồn giờ ra, không tự lưu (§6.2.5)
 │   ├── ai_engine/         [C++]  L3  # TFLM | ESP-DL chọn bằng AI_RUNTIME — src/ tách 3 thư mục theo model (§4.5.6)
 │   ├── svc_facedb/        [C++]  L3  # bảng embedding + cosine search + CRUD
 │   ├── net_wifi/          [C]    L3
@@ -3104,11 +3104,11 @@ Quy tắc header:
 | L2 | `sys_time` | C | `common`, `lwip`, `bsp_board` |
 | L3 | `ai_engine` | C++ | `common`, `sys_storage`, `esp-tflite-micro`, `esp-dl` |
 | L3 | `svc_facedb` | C++ | `common`, `sys_storage` |
-| L3 | `net_wifi` / `net_mqtt` / `net_ota` / `net_provision` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_https_ota` / `esp_http_client` |
+| L3 | `net_wifi` / `net_mqtt` / `net_ota` / `net_provision` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_https_ota` / `esp_http_client`; `net_provision` thêm `sys_time` để đặt giờ từ header `Date` |
 | L4 | `svc_door` | C++ | `common`, `bsp_board`, `drv_servo`, `esp_timer` |
 | L4 | `svc_vision` | C++ | `common`, `ai_engine`, `svc_facedb`, `drv_camera` |
 | L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_facedb`, `sys_storage`, `sys_time`, `svc_door`, `drv_audio` |
-| L5 | `svc_sync` | C++ | `common`, `sys_storage`, `net_mqtt` |
+| L5 | `svc_sync` | C++ | `common`, `sys_storage`, `net_mqtt`, `sys_time` (mốc boot để đặt lại bản ghi chưa có giờ) |
 | L6 | `ui_kiosk` | C++ | `common`, `bsp_board`, `drv_lcd`, `drv_touch`, `sys_storage` |
 | L7 | `main` | C | tất cả |
 
@@ -3383,8 +3383,11 @@ nhưng rỗng cũng là vắng, như `sntp_host`.
 trả lời hay không, và một lần đồng bộ đã về thì nguồn lên NTP kể cả khi ghi lại RTC lỗi — lần
 ghi ấy thử lại sau, không kéo nguồn xuống. Mạng chặn UDP 123 thì kiosk lấy giờ từ header `Date`
 của chính các lượt gọi `api` qua TLS (sai dưới một giây, đủ cho chấm công và cho hạn vé), và
-nguồn ghi là `API`. Kiosk có mạng mười phút mà chưa có nguồn nào thì phát `TIME_UNSYNCED`; lệnh
-`SYNC_TIME` chạy lại SNTP ngay.
+nguồn ghi là `API`. Header ấy chỉ được dùng khi chưa có NTP — trong lần boot này hay trong một RTC
+do NTP đặt — và không bao giờ hạ nguồn xuống. Chưa có NTP thì `ota_task` hỏi `GET /devices/me` một
+lượt sáu mươi giây sau khi có mạng, rồi mỗi ngày một lần, chỉ để lấy giờ và hạn vé. Kiosk đã nối
+broker cộng dồn mười phút trong một lần boot mà chưa có nguồn nào thì phát `TIME_UNSYNCED` một lần;
+lệnh `SYNC_TIME` chạy lại SNTP ngay.
 
 **Khoảng thời gian đo bằng đồng hồ đơn điệu, không bằng giờ tường.** Máy trạng thái chấm công,
 cửa sổ chống chấm trùng, nhịp làm mới màn hình và mọi hẹn giờ khác lấy `esp_timer`: giờ tường
@@ -3394,9 +3397,11 @@ nhảy khi SNTP chỉnh và đứng ở 0 khi chưa có nguồn, còn đồng h�
 **Lượt quẹt lúc chưa có giờ được sửa trước khi gửi, nếu sửa được.** Chưa có nguồn nào thì giờ
 tường là thời gian kể từ lúc boot, tức gần 1970, và bản ghi mang cờ không có NTP (§6.2.5). Lúc gửi
 lên, một bản ghi như thế **thuộc chính lần boot này** (nửa trên của `local_id`) mà máy đã có giờ
-thì được cộng mốc boot — giờ tường hiện tại trừ thời gian đã chạy — trước khi gửi; cờ vẫn giữ để
-server biết giờ ấy là suy ra. Bản ghi của một lần boot trước không còn mốc để cộng: gửi nguyên,
-và server xếp nó vào diện giờ nghi vấn (§9.8).
+thì được cộng mốc boot — giờ tường hiện tại trừ thời gian đã chạy, chỉ có khi giờ đã tin được (NTP
+hay `API`) — trước khi gửi; cờ vẫn giữ để server biết giờ ấy là suy ra. Con trỏ gửi **dừng lại** ở
+một bản ghi như thế cho tới khi có giờ, vì broker thường lên trước NTP và gửi ngay là gửi đi năm
+1970; chờ quá mười phút có broker mà vẫn không có nguồn thì gửi nguyên. Bản ghi của một lần boot
+trước không còn mốc để cộng: gửi nguyên, và server xếp nó vào diện giờ nghi vấn (§9.8).
 
 `ServoDoor::open(hold_ms)` quay tới `APP_DOOR_OPEN_DEG` và đặt một `esp_timer` one-shot; hết `hold_ms` thì `close()` quay về `APP_DOOR_CLOSED_DEG`, rồi sau khi tay đã tới (SG90: 0,1 s/60°) gọi `drv_servo_release()` để motor không giữ dòng. `open()` trong lúc đang mở chỉ gia hạn giờ đóng. Trạng thái được một mutex có timeout bảo vệ vì `attend_task` và task của `esp_timer` cùng đụng vào.
 
@@ -4530,6 +4535,7 @@ không cache thứ gì mà mất đi là sai nghiệp vụ.
 | `report` | tổng hợp báo cáo tháng ra file | `reports/` khi người dùng bấm | Quét vài chục nghìn bản ghi |
 | `notify` | gửi mail/webhook khi có sự kiện lạ | `audit/`, `devices/` | Bên thứ ba có thể chậm hoặc chết |
 | `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối (§9.14) | lịch lặp 00:05 của `employees/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù |
+| `timesheet` | `build` (một khoảng, theo yêu cầu) · `nightly` (00:30 `APP_TIMEZONE`, ngày hôm qua) · `rebuild` (một ngày của một người sau lượt quẹt trễ, gộp theo người–ngày) | `timesheet/`, `attendance/` | Dựng cả công ty một ngày là quét vài chục nghìn lượt quẹt (§9.8) |
 | `ota` | rollout theo lô, theo dõi từng thiết bị | `models/` | Chạy hàng giờ, phải resume được |
 
 Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `image` và `ota` bắt buộc
@@ -4543,11 +4549,11 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt — một dòng mỗi thiết bị (§9.23 luật 5) |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7) |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8) |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
-| `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, photoUrl |
+| `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, receivedAt (giờ server nhận), direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, questionableTime (§9.8), photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
 | `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, rolloutState. `url` để trống từ §7.7 và bỏ ở lần phát hành sau, theo luật nở rồi co (§9.22.3) |
 | `AuditLog` | actorId, action(từ `audit-actions.ts`), subjectType, subjectId, meta(json), ts — §9.24 |
@@ -5836,8 +5842,9 @@ Header file **giống hệt khuôn của `faces.bin`** (magic `'ALG1'`, `record_
 đọc nó lúc boot và đặt giờ hệ thống ngay, trước khi có Wi-Fi. Đó là lý do nhánh này không còn
 là tuỳ chọn — cửa sổ hỏng là mất điện xong có điện lại mà mạng chưa lên, đúng lúc người ta
 tới chấm công, và không có RTC thì `ts` của những bản ghi đó vô nghĩa. SNTP là nguồn **hiệu
-chỉnh**: mỗi lần đồng bộ được thì ghi giờ trở lại DS3231 và đặt `sys.rtc_ntp_set` = 1
-(§6.2.1).
+chỉnh**: mỗi lần đồng bộ được thì ghi giờ trở lại DS3231, và `sys.rtc_ntp_set` ghi đúng thứ RTC
+đang giữ — 1 sau một lần NTP ghi được RTC, 0 sau khi header `Date` của `api` ghi đè nó, giữ nguyên
+khi lần ghi RTC hỏng (§6.2.1). Một RTC đọc ra năm trước 2020 tính là không có giờ.
 
 `flags` bit2 = **`ts` không đến từ một đồng hồ đã từng được NTP đặt**, tức một trong hai
 trường hợp: DS3231 báo mất dao động (cờ `OSF`, pin cạn hoặc chưa bao giờ được đặt), hoặc
@@ -7406,12 +7413,16 @@ lượt mang `ts` trước năm 2020 hay đi trước giờ nhận quá một ng
 vấn** và không xếp vào ngày nào: bảng công bỏ qua nó và danh sách ngoại lệ hôm nay đưa nó cho HR
 sửa tay, kèm `receivedAt` làm gợi ý. Độ lệch đồng hồ của kiosk là một con số server biết: mỗi
 heartbeat sống cho `ts − receivedAt`, `Device.clockSkewMs` giữ nó, và trang Thiết bị báo khi lệch
-quá hai phút.
+quá hai phút. Lượt giờ nghi vấn vào ngoại lệ hôm nay theo **lúc nó tới**, mỗi người một dòng, và
+đứng trước "chưa quẹt" hay "quẹt muộn" vì đồng hồ hỏng thường là chính nguyên nhân; bộ lọc của nó
+trên danh sách lượt quẹt đọc khoảng ngày theo lúc tới; bảng tổng tháng và số đếm hôm nay không tính
+nó.
 
 **Bảng công dựng hằng đêm, và dựng lại khi có lượt quẹt trễ.** Job dựng lúc 00:30 theo
-`APP_TIMEZONE` cho ngày hôm qua; một lượt quẹt về sau khi ngày của nó đã dựng — kiosk offline vài
-hôm, hay một lượt vừa được HR sửa giờ — xếp ngày ấy của người ấy vào hàng dựng lại. Cả hai đi qua
-hàng đợi, chạy hai lần không đổi gì, như mọi job (§9.10).
+`APP_TIMEZONE` cho ngày hôm qua; một lượt quẹt cho một ngày đã qua, ngày ấy đã dựng hay chưa — kiosk
+offline vài hôm, hay lượt về giữa lúc job đêm đang chạy — xếp ngày ấy của người ấy vào hàng dựng
+lại, nhiều lượt cho cùng người cùng ngày gộp thành một việc. Ngày HR đã sửa tay thì không bị dựng đè.
+Cả hai đi qua hàng đợi, và dựng lại một ngày không đổi gì thì không ghi dòng nào, như mọi job (§9.10).
 
 ### 9.9 Truy vấn khi số nhân viên lên hàng chục nghìn
 
@@ -8357,7 +8368,7 @@ nhìn. Cần nhắc theo mốc 30 / 15 / 7 ngày, và danh sách phải mở đ�
 chính thức.
 
 **3. Bảng ngoại lệ của hôm nay.** Không phải "ai đi làm" — mà **ai lệch**: chưa quẹt, quẹt muộn,
-quẹt một lần rồi biến mất, nghỉ không đơn. Danh sách ngắn mà hành động được, mở mỗi sáng.
+quẹt một lần rồi biến mất, nghỉ không đơn, và lượt quẹt mang giờ nghi vấn (§9.8). Danh sách ngắn mà hành động được, mở mỗi sáng.
 
 **4. Danh sách kiểm trước khi chốt lương.** Trước khi `LOCKED` (§9.6), hệ phải tự liệt kê cái
 gì còn treo: đơn nghỉ chưa duyệt, giải trình chưa xử, ngày công thiếu, người chưa có mức lương
