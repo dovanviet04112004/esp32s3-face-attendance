@@ -7078,6 +7078,11 @@ Hai là **hai** ngày, không phải bốn. Khoảng không chứa ngày làm n�
 là ngày làm — nửa ngày Chủ nhật bị từ chối bằng `HALF_DAY_NOT_WORKING`. Đơn công tác và làm từ xa
 không trừ phép nên vẫn đếm ngày lịch.
 
+**Loại phép mang cờ `calendarDays` đếm mọi ngày lịch, kể cả thứ Bảy, Chủ nhật và ngày lễ.** Nghỉ
+thai sản là loại như vậy: luật bảo hiểm xã hội tính 180 ngày liên tục, nên đếm theo ngày làm sẽ kéo
+nó thành gần chín tháng. Cờ do HR bật cho từng loại trong danh mục; mọi thứ khác — tách theo năm,
+giữ chỗ, chốt, trả — giữ nguyên, và nửa ngày của loại ấy chọn được vào bất cứ ngày nào.
+
 **Số tính lúc gửi là số được giữ, chốt và trả.** `Request.days` là tổng ngày làm bị trừ,
 `Request.nextYearDays` là phần của năm sau. Khai thêm một ngày lễ sau khi đơn đã gửi không tính
 lại đơn ấy: duyệt, từ chối hay huỷ không bao giờ đếm lại theo một lịch đã đổi sau lưng người gửi,
