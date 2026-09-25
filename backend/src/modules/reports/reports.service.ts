@@ -208,10 +208,18 @@ function slotOf(from: Date, to: Date, query: TallyRangeDto): string {
 /** One employee's punches inside a range. */
 export interface AttendanceTally {
   employeeId: number;
+  code: string;
   fullName: string;
   punches: number;
   firstAt: string | null;
   lastAt: string | null;
+  unsyncedClock: number;
+}
+
+/** The roll-up's figures summed over every person the range and the search reach. */
+export interface TallyTotals {
+  people: number;
+  punches: number;
   unsyncedClock: number;
 }
 
@@ -439,6 +447,21 @@ export class ReportsService {
     return Number(seen?.found ?? 0);
   }
 
+  async tallyTotals(viewer: Viewer, from: Date, to: Date, search: string | undefined): Promise<TallyTotals> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const [summed] = await this.db.$queryRaw<{ people: number; punches: number; unsyncedClock: number }[]>`
+      SELECT count(DISTINCT a."employeeId")::int                  AS "people",
+             count(*)::int                                        AS "punches",
+             (count(*) FILTER (WHERE a."clockUnsynced"))::int     AS "unsyncedClock"
+      FROM "AttendanceRecord" a
+      JOIN "Employee" e ON e."id" = a."employeeId"
+      WHERE a."ts" >= ${from} AND a."ts" <= ${to}
+        ${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
+        ${search ? Prisma.sql`AND e."fullName" ILIKE ${`%${search}%`}` : Prisma.empty}
+    `;
+    return summed;
+  }
+
   /** Hand a long roll-up to the queue; it outlives the request that asked. */
   async schedule(job: ReportJob): Promise<string> {
     const queue: Queue = this.queues[QUEUE.report];
@@ -463,6 +486,7 @@ export class ReportsService {
     const rows = await this.db.$queryRaw<
       {
         employeeId: number;
+        code: string;
         fullName: string;
         punches: bigint;
         firstAt: Date | null;
@@ -471,6 +495,7 @@ export class ReportsService {
       }[]
     >`
       SELECT a."employeeId",
+             e."code",
              e."fullName",
              count(*)                                        AS "punches",
              min(a."ts")                                     AS "firstAt",
@@ -487,12 +512,13 @@ export class ReportsService {
           AND (e."fullName", e."id") > (${after.sortValue}, ${Number(after.id)})`
             : Prisma.empty
         }
-      GROUP BY a."employeeId", e."fullName"
+      GROUP BY a."employeeId", e."code", e."fullName"
       ORDER BY e."fullName", a."employeeId"
       LIMIT ${query.take}
     `;
     return rows.map((row) => ({
       employeeId: row.employeeId,
+      code: row.code,
       fullName: row.fullName,
       punches: Number(row.punches),
       firstAt: row.firstAt?.toISOString() ?? null,

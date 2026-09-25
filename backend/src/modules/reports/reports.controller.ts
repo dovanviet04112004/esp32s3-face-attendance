@@ -19,6 +19,7 @@ import {
   type AttendanceTally,
   type Attention,
   type InsuranceChanges,
+  type TallyTotals,
 } from "./reports.service.js";
 
 @ApiTags("reports")
@@ -62,6 +63,13 @@ export class ReportsController {
     @Query() range: TallyRangeDto,
   ): Promise<Page<AttendanceTally>> {
     return this.reports.summary(viewer, new Date(range.from), new Date(range.to), range);
+  }
+
+  @Get("attendance/totals")
+  @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
+  @ApiOperation({ summary: "The roll-up summed over everybody the range and the search reach" })
+  tallyTotals(@CurrentViewer() viewer: Viewer, @Query() range: TallyRangeDto): Promise<TallyTotals> {
+    return this.reports.tallyTotals(viewer, new Date(range.from), new Date(range.to), range.search);
   }
 
   @Post("attendance/monthly")

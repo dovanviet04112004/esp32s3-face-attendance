@@ -266,4 +266,17 @@ describe("paging (e2e)", () => {
       "the filter let somebody else through",
     );
   });
+
+  it("sums the roll-up over everybody the search reaches and names each by code", async () => {
+    const span = `from=2020-01-01T00:00:00.000Z&to=2099-01-01T00:00:00.000Z&search=${encodeURIComponent(PERSON)}`;
+    const read = async (path: string) =>
+      (await request(http).get(`/reports/${path}?${span}&take=200`).set("Authorization", `Bearer ${token}`)).body;
+    const page = await read("attendance");
+    const totals = await read("attendance/totals");
+    const rows = page.rows as { code: string; punches: number; unsyncedClock: number }[];
+    assert.ok(rows.every((row) => typeof row.code === "string" && row.code !== ""), "a roll-up row has no code");
+    assert.equal(totals.people, page.total);
+    assert.equal(totals.punches, rows.reduce((sum, row) => sum + row.punches, 0));
+    assert.equal(totals.unsyncedClock, rows.reduce((sum, row) => sum + row.unsyncedClock, 0));
+  });
 });
