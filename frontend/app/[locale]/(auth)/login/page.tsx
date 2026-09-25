@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Input, LayerCard, Link } from "@cloudflare/kumo";
+import { Banner, Button, Input, Link } from "@cloudflare/kumo";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
@@ -14,6 +14,7 @@ import { homeFor } from "@/lib/nav";
 
 export default function LoginPage() {
   const t = useTranslations("login");
+  const doors = useTranslations("doors");
   const router = useRouter();
   const setSession = useSession((s) => s.setSession);
   const faultOf = useFault();
@@ -30,10 +31,10 @@ export default function LoginPage() {
     setBusy(true);
     setRefused(null);
     try {
-      const res = await api.post<{ accessToken: string }>("/auth/login", { email, password });
+      const res = await api.post<{ accessToken: string; email?: string }>("/auth/login", { email, password });
       const token = res.data.accessToken;
       const claims = claimsOf(token);
-      setSession(token, claims);
+      setSession(token, claims, res.data.email ?? email.trim());
       router.replace(homeFor(claims.role, claims.employeeId !== null));
     } catch (fell: unknown) {
       // The api answers CREDENTIALS_REJECTED for a wrong address and a wrong
@@ -45,40 +46,37 @@ export default function LoginPage() {
   }
 
   return (
-    <>
-    <LayerCard>
-      <LayerCard.Primary className="p-6 sm:p-8">
-        <form onSubmit={submit} className="flex flex-col gap-5">
-          <div className="flex flex-col gap-1">
-            <h1 className="m-0 text-2xl font-semibold">{t("title")}</h1>
-            <p className="text-kumo-subtle">{t("lead")}</p>
-          </div>
-          <Input
-            label={t("email")}
-            type="email"
-            autoComplete="username"
-            autoFocus
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-          <PasswordField
-            label={t("password")}
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-          {refused ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={refused} /> : null}
-          <Button type="submit" variant="primary" loading={busy} className="w-full justify-center">
-            {t("submit")}
-          </Button>
-        </form>
-      </LayerCard.Primary>
-    </LayerCard>
-    <p className="text-center">
-      <Link href="/forgot-password">{t("forgot")}</Link>
-    </p>
-    </>
+    <form onSubmit={submit} className="flex flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="m-0 text-3xl font-semibold text-kumo-default">{t("title")}</h1>
+        <p className="text-lg text-pretty text-kumo-subtle">{t("lead")}</p>
+      </div>
+      <div className="flex flex-col gap-5">
+        <Input
+          size="lg"
+          label={t("email")}
+          type="email"
+          autoComplete="username"
+          autoFocus
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <PasswordField
+          size="lg"
+          label={t("password")}
+          labelAside={<Link href="/forgot-password">{t("forgot")}</Link>}
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+      </div>
+      {refused ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={refused} /> : null}
+      <Button type="submit" variant="primary" size="lg" loading={busy} className="w-full justify-center">
+        {t("submit")}
+      </Button>
+      <p className="text-sm text-pretty text-kumo-subtle">{doors("invited")}</p>
+    </form>
   );
 }

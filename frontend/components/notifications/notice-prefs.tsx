@@ -1,11 +1,12 @@
 "use client";
 
-import { Checkbox, SkeletonLine } from "@cloudflare/kumo";
+import { Checkbox } from "@cloudflare/kumo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import type { NoticeKind } from "./notice-list";
 

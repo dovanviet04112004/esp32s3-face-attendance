@@ -14,6 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 
+import type { RequestKind } from "@/components/requests/request-card";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
@@ -27,6 +28,7 @@ interface Hit {
   title: string;
   detail: string;
   href: string;
+  requestKind?: RequestKind;
 }
 
 interface Found {
@@ -64,6 +66,8 @@ const TYPED_IN = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
 const kDebounceMs = 200;
 const kMinLength = 2;
+// The api refuses a longer term (SearchQueryDto).
+const kMaxLength = 64;
 
 function folded(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
@@ -75,6 +79,7 @@ function folded(text: string): string {
 export function GlobalSearch() {
   const t = useTranslations("search");
   const nav = useTranslations("nav");
+  const requests = useTranslations("requests");
   const router = useRouter();
   const { role, employeeId } = useSession();
   const [open, setOpen] = useState(false);
@@ -82,7 +87,7 @@ export function GlobalSearch() {
   const [term, setTerm] = useState("");
 
   useEffect(() => {
-    const timer = setTimeout(() => setTerm(typed.trim()), kDebounceMs);
+    const timer = setTimeout(() => setTerm(typed.trim().slice(0, kMaxLength)), kDebounceMs);
     return () => clearTimeout(timer);
   }, [typed]);
 
@@ -126,10 +131,16 @@ export function GlobalSearch() {
         label: t(KIND_KEY[kind]),
         items: found
           .filter((hit) => hit.kind === kind)
-          .map((hit) => ({ id: `${kind}:${hit.id}`, title: hit.title, detail: hit.detail, href: hit.href, icon: FACE[kind] })),
+          .map((hit) => ({
+            id: `${kind}:${hit.id}`,
+            title: hit.title,
+            detail: hit.requestKind ? `${requests(`kind${hit.requestKind}`)} · ${hit.detail}` : hit.detail,
+            href: hit.href,
+            icon: FACE[kind],
+          })),
       })),
     ].filter((pile) => pile.items.length > 0);
-  }, [typed, term, hits.data, role, employeeId, nav, t]);
+  }, [typed, term, hits.data, role, employeeId, nav, t, requests]);
 
   function go(item: Found): void {
     setOpen(false);

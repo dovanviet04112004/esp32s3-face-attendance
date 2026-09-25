@@ -3,7 +3,7 @@
 import { Badge, LayerDialog } from "@cloudflare/kumo";
 import { DotsThreeIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Link, usePathname } from "@/i18n/navigation";
 import { useSession } from "@/lib/auth";
@@ -11,9 +11,51 @@ import { cn } from "@/lib/cn";
 import { entriesFor, entryOf, tabsFor, type NavEntry } from "@/lib/nav";
 import { useWaitingCount } from "./waiting-count";
 
+const kPhone = "(max-width: 47.99rem)";
+const kTyped = "input:not([type=checkbox],[type=radio],[type=button],[type=submit]),textarea,[contenteditable=true]";
+// The keyboard slides up and resizes the viewport over about this long on iOS and Android.
+const kKeyboardMs = 320;
+
+function isTyping(node: EventTarget | null): node is HTMLElement {
+  return node instanceof HTMLElement && node.matches(kTyped);
+}
+
+/** While a phone types, the bar steps off the keyboard and the field comes to the middle
+ *  of what the keyboard leaves (KEHOACH 9.21.6).
+ */
+function useTyping(): boolean {
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    const phone = window.matchMedia(kPhone);
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const focused = (event: FocusEvent) => {
+      if (!phone.matches || !isTyping(event.target)) {
+        return;
+      }
+      const field = event.target;
+      setTyping(true);
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => field.scrollIntoView({ block: "center", behavior: calm.matches ? "auto" : "smooth" }),
+        kKeyboardMs,
+      );
+    };
+    const left = (event: FocusEvent) => setTyping(isTyping(event.relatedTarget) && phone.matches);
+    document.addEventListener("focusin", focused);
+    document.addEventListener("focusout", left);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("focusin", focused);
+      document.removeEventListener("focusout", left);
+    };
+  }, []);
+  return typing;
+}
+
 function tabClass(active: boolean): string {
   return cn(
-    "flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-xs",
+    "flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-xs motion-press",
     active ? "text-kumo-link" : "text-kumo-subtle",
   );
 }
@@ -49,13 +91,18 @@ export function TabBar() {
   const { items, rest } = tabsFor(role, hasRecord);
   const waiting = useWaitingCount(role);
   const [open, setOpen] = useState(false);
+  const typing = useTyping();
   const current = entryOf(entriesFor(role, hasRecord), here)?.href;
 
   return (
     <>
       <nav
         aria-label={t("primary")}
-        className="fixed inset-x-0 bottom-0 z-40 flex border-t border-kumo-line bg-kumo-base pb-[env(safe-area-inset-bottom)] md:hidden"
+        data-typing={typing ? "" : undefined}
+        className={cn(
+          "fixed inset-x-0 bottom-0 z-40 flex border-t border-kumo-line bg-kumo-base pb-[env(safe-area-inset-bottom)] [view-transition-name:tab-bar] md:hidden",
+          typing && "hidden",
+        )}
       >
         {items.map((entry) => (
           <Tab key={entry.href} entry={entry} active={current === entry.href} waiting={waiting} />

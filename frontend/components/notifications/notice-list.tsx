@@ -35,6 +35,9 @@ export interface Notice {
   periodId: string | null;
   contractId: string | null;
   payslipId: string | null;
+  certificateId?: string | null;
+  profileChangeId?: string | null;
+  dependentId?: string | null;
   daysLeft: number | null;
   daysWaited: number | null;
   approved: boolean | null;
@@ -63,6 +66,37 @@ const WHERE: Record<NoticeKind, string> = {
   CONTRACT_ENDING: "/me",
   DISPUTE_ANSWERED: "/me/payslips",
 };
+
+/** The page a notice opens: its reference names the queue or the record, the kind only says which side (KEHOACH 9.21.4). */
+function whereOf(notice: Notice): string {
+  if (notice.kind === "REQUEST_WAITING") {
+    const tab = notice.certificateId
+      ? "certificates"
+      : notice.profileChangeId
+        ? "profileChanges"
+        : notice.dependentId
+          ? "dependents"
+          : notice.advanceId
+            ? "advancesToDecide"
+            : notice.payslipId
+              ? "disputes"
+              : "requests";
+    return `/approvals?tab=${tab}`;
+  }
+  if (notice.kind === "REQUEST_DECIDED" || notice.kind === "REQUEST_STALLED") {
+    if (notice.certificateId) {
+      return "/me/letters";
+    }
+    if (notice.profileChangeId || notice.dependentId) {
+      return "/me/profile";
+    }
+    if (notice.advanceId) {
+      return "/me/requests?tab=advances";
+    }
+    return notice.requestId ? `/me/requests?open=${notice.requestId}` : WHERE[notice.kind];
+  }
+  return WHERE[notice.kind];
+}
 
 export function NoticeList({ onGo }: { onGo: () => void }) {
   const t = useTranslations("notices");
@@ -118,7 +152,7 @@ export function NoticeList({ onGo }: { onGo: () => void }) {
             return (
               <li key={notice.id}>
                 <Link
-                  href={WHERE[notice.kind]}
+                  href={whereOf(notice)}
                   onClick={() => {
                     read.mutate(notice.id);
                     onGo();

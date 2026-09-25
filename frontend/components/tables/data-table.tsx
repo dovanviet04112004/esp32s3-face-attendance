@@ -1,12 +1,13 @@
 "use client";
 
-import { Button, DropdownMenu, Empty, LayerCard, SkeletonLine, Table } from "@cloudflare/kumo";
+import { Button, DropdownMenu, Empty, LayerCard, Table } from "@cloudflare/kumo";
 import type { Icon as IconType } from "@phosphor-icons/react";
 import { ArrowDownIcon, ArrowUpIcon, ArrowsDownUpIcon, DotsThreeIcon, TrayIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import { Failed } from "@/components/ui/failed";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link, useRouter } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
 import { CardList, CardListSkeleton } from "./card-list";
@@ -17,6 +18,8 @@ export interface Column<T> {
   id: string;
   header: string;
   cell: (row: T) => ReactNode;
+  /** One plain line for a phone row, when the desk cell is laid out on two lines. */
+  card?: (row: T) => string;
   numeric?: boolean;
   sticky?: boolean;
   /** 1 always shows and fills the phone row; 3 hides first as the table's own box narrows (KEHOACH 9.12). */
@@ -146,6 +149,42 @@ function useMoreToTheRight(box: HTMLElement | null): boolean {
   return more;
 }
 
+/** How many priority levels the table drops to fit its box; each comes back once the box has the
+ *  width that level overflowed at (KEHOACH 9.12).
+ */
+function useDropped(box: HTMLElement | null): number {
+  const [dropped, setDropped] = useState(0);
+  const need = useRef([0, 0]);
+
+  // Read after every render: rows arriving widen the table without a resize.
+  useLayoutEffect(() => {
+    if (box && dropped < 2 && box.scrollWidth > box.clientWidth + 1) {
+      need.current[dropped] = box.scrollWidth;
+      setDropped(dropped + 1);
+    }
+  });
+
+  useEffect(() => {
+    if (!box) {
+      return;
+    }
+    const watcher = new ResizeObserver(() => {
+      const room = box.clientWidth;
+      setDropped((now) => {
+        let next = now;
+        while (next > 0 && room >= need.current[next - 1]) {
+          next -= 1;
+        }
+        return next;
+      });
+    });
+    watcher.observe(box);
+    return () => watcher.disconnect();
+  }, [box]);
+
+  return dropped;
+}
+
 function cellBody<T>(column: Column<T>, row: T): ReactNode {
   const content = column.cell(row);
   if (!column.truncate) {
@@ -262,6 +301,11 @@ export function DataTable<T>({
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const moreToTheRight = useMoreToTheRight(scroller);
+  const dropped = useDropped(scroller);
+  const hide = (column: Column<T>) => {
+    const level = column.priority ?? 1;
+    return cn(HIDE_AT[level], ((dropped >= 1 && level === 3) || (dropped >= 2 && level === 2)) && "hidden");
+  };
   // Sorting 50 loaded rows of 5,000 would pass a partial order off as the whole (KEHOACH 9.12).
   const partial = paging !== undefined && (paging.shown < paging.total || paging.onMore !== undefined);
   const serverSorts = onSortChange !== undefined;
@@ -385,7 +429,7 @@ export function DataTable<T>({
                         key={column.id}
                         sticky={column.sticky ? "left" : undefined}
                         aria-sort={dir === null ? undefined : dir === "desc" ? "descending" : "ascending"}
-                        className={cn("whitespace-nowrap", column.numeric && "text-end", HIDE_AT[column.priority ?? 1])}
+                        className={cn("whitespace-nowrap", column.numeric && "text-end", hide(column))}
                       >
                         {mode ? (
                           <button
@@ -415,7 +459,7 @@ export function DataTable<T>({
                       <Table.Row key={`wait-${at}`}>
                         {selectable ? <Table.Cell /> : null}
                         {columns.map((column) => (
-                          <Table.Cell key={column.id} className={HIDE_AT[column.priority ?? 1]}>
+                          <Table.Cell key={column.id} className={hide(column)}>
                             <SkeletonLine minWidth={35} maxWidth={90} />
                           </Table.Cell>
                         ))}
@@ -445,7 +489,7 @@ export function DataTable<T>({
                             <Table.Cell
                               key={column.id}
                               sticky={column.sticky ? "left" : undefined}
-                              className={cn(column.numeric && "text-end tabular-nums", HIDE_AT[column.priority ?? 1])}
+                              className={cn(column.numeric && "text-end tabular-nums", hide(column))}
                             >
                               {cellBody(column, row)}
                             </Table.Cell>

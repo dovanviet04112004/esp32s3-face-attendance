@@ -1,7 +1,7 @@
 "use client";
 
 import { Banner, Switch } from "@cloudflare/kumo";
-import { InfoIcon, WarningIcon } from "@phosphor-icons/react";
+import { DeviceMobileIcon, InfoIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
@@ -10,7 +10,15 @@ import { useNotify } from "@/components/ui/notify";
 import { api } from "@/lib/api";
 import { env } from "@/lib/env";
 
-type Standing = "unsupported" | "blocked" | "off" | "on";
+type Standing = "unsupported" | "install" | "blocked" | "off" | "on";
+
+/** iOS pushes only to an app added to the home screen, and Safari there has no PushManager (KEHOACH 9.21.6). */
+function iosOutsideTheApp(): boolean {
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const installed =
+    window.matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
+  return ios && !installed;
+}
 
 /** A VAPID key arrives base64url and the browser wants raw bytes. */
 function toBytes(key: string): Uint8Array<ArrayBuffer> {
@@ -29,6 +37,10 @@ export function PushSwitch() {
   const [standing, setStanding] = useState<Standing>("unsupported");
 
   useEffect(() => {
+    if (iosOutsideTheApp()) {
+      setStanding("install");
+      return;
+    }
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
       return;
     }
@@ -92,6 +104,17 @@ export function PushSwitch() {
     onError: notify.failed,
   });
 
+  if (standing === "install") {
+    return (
+      <Banner
+        variant="secondary"
+        size="sm"
+        icon={<DeviceMobileIcon weight="fill" />}
+        title={t("pushInstallTitle")}
+        description={t("pushInstallSteps")}
+      />
+    );
+  }
   if (standing === "unsupported") {
     return <Banner variant="secondary" size="sm" icon={<InfoIcon weight="fill" />} description={t("pushUnsupported")} />;
   }

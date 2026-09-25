@@ -6,7 +6,7 @@ import { io, type Socket } from "socket.io-client";
 import { create } from "zustand";
 
 import { reopenSession } from "./api";
-import { useSession } from "./auth";
+import { useSession, whenSignedOut } from "./auth";
 import { env } from "./env";
 
 /** The kiosk's own news, which pages list as it arrives. */
@@ -28,11 +28,22 @@ const FEEDS: FeedName[] = [...LISTED, "change", "notice"];
 
 /** What each feed makes stale, so a card is not left showing an old number. */
 const REFRESH: Record<FeedName, string[]> = {
-  attendance: ["attendance", "timesheet", "reports"],
-  event: ["devices"],
-  device: ["devices"],
+  attendance: ["attendance", "reports"],
+  event: ["devices", "releases"],
+  device: ["devices", "releases"],
   change: [],
-  notice: ["notifications", "requests", "advances", "payslips", "payslip-disputes", "contracts"],
+  notice: [
+    "notifications",
+    "requests",
+    "advances",
+    "payslips",
+    "payslip-disputes",
+    "contracts",
+    "tax-year",
+    "certificates",
+    "profile-changes",
+    "dependents",
+  ],
 };
 
 /** What a write under one route word makes stale beyond its own key (KEHOACH 9.4). */
@@ -44,18 +55,26 @@ const SPILLS: Record<string, string[]> = {
   timesheet: ["attendance", "reports"],
   "payroll-periods": ["payroll-runs", "payslips"],
   "payroll-runs": ["payroll-periods", "payslips"],
-  "payslip-disputes": ["payslips"],
-  dependents: ["tax-year"],
-  "profile-changes": ["employees"],
+  "payslip-disputes": ["payslips", "requests"],
+  dependents: ["tax-year", "requests"],
+  "profile-changes": ["employees", "requests"],
+  advances: ["requests"],
+  certificates: ["requests"],
   employees: ["search"],
   onboard: ["checklist", "checklists"],
   offboard: ["checklist", "checklists", "assets", "contracts", "users"],
   "checklist-tasks": ["checklist", "checklists"],
   checklists: ["checklist"],
   org: ["employees", "departments"],
+  departments: ["employees"],
+  "job-titles": ["employees"],
+  "legal-entities": ["departments"],
+  "personnel-file-types": ["personnel-files"],
+  contracts: ["reports"],
   "biometric-consents": ["enrollments"],
   enrollments: ["devices"],
   releases: ["devices"],
+  devices: ["releases"],
 };
 
 // A batch write lands as one message per row; one refetch answers them all.
@@ -74,10 +93,12 @@ interface Feed {
   push: (feed: ListedFeed, body: Record<string, unknown>) => void;
 }
 
+function emptyFeed(): Pick<Feed, "status" | "items" | "counted"> {
+  return { status: "reconnecting", items: [], counted: 0 };
+}
+
 const useStore = create<Feed>((set) => ({
-  status: "reconnecting",
-  items: [],
-  counted: 0,
+  ...emptyFeed(),
   setStatus: (status) => set({ status }),
   push: (feed, body) =>
     set((held) => {
@@ -85,6 +106,8 @@ const useStore = create<Feed>((set) => ({
       return { counted: id, items: [{ id, feed, body }, ...held.items].slice(0, KEEP) };
     }),
 }));
+
+whenSignedOut(() => useStore.setState(emptyFeed()));
 
 function listed(feed: FeedName): feed is ListedFeed {
   return LISTED.includes(feed);

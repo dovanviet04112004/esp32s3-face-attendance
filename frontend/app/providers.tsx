@@ -3,14 +3,24 @@
 import { KumoLocaleProvider, LinkProvider, Toasty, type LinkComponentProps } from "@cloudflare/kumo";
 import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { forwardRef, useEffect, useState, type ReactNode } from "react";
+import { createContext, forwardRef, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 
 import { toasts, useNotify } from "@/components/ui/notify";
 import { Link } from "@/i18n/navigation";
+import { whenSignedOut } from "@/lib/auth";
 import { isProduction } from "@/lib/env";
 import { followSystem } from "@/lib/theme";
 
 const STALE_MS = 30_000;
+// A socket asleep this long may have missed news it cannot replay (KEHOACH 9.21.6).
+const AWAY_MS = 60_000;
+
+const SidebarSeed = createContext(true);
+
+/** The rail as the server read it from the cookie, so the first frame draws it where the reader left it. */
+export function useSidebarSeed(): boolean {
+  return useContext(SidebarSeed);
+}
 
 let unhandled: (fell: unknown) => void = () => undefined;
 
@@ -49,7 +59,7 @@ const RouterLink = forwardRef<HTMLAnchorElement, LinkComponentProps>(function Ro
   return <Link ref={ref} href={href ?? to ?? "/"} {...rest} />;
 });
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ children, sidebarOpen }: { children: ReactNode; sidebarOpen: boolean }) {
   const [client] = useState(clientForSession);
   const common = useTranslations("common");
   const { failed } = useNotify();
@@ -57,7 +67,25 @@ export function Providers({ children }: { children: ReactNode }) {
     unhandled = failed;
   }, [failed]);
 
-  useEffect(() => followSystem(), []);
+  useLayoutEffect(() => followSystem(), []);
+
+  useEffect(() => whenSignedOut(() => client.clear()), [client]);
+
+  useEffect(() => {
+    let hiddenAt = 0;
+    const flip = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (hiddenAt > 0 && Date.now() - hiddenAt > AWAY_MS) {
+        void client.invalidateQueries();
+      }
+      hiddenAt = 0;
+    };
+    document.addEventListener("visibilitychange", flip);
+    return () => document.removeEventListener("visibilitychange", flip);
+  }, [client]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) {
@@ -85,7 +113,9 @@ export function Providers({ children }: { children: ReactNode }) {
     <QueryClientProvider client={client}>
       <KumoLocaleProvider translations={{ layerDialog: { close: common("close"), cancel: common("cancel") } }}>
         <LinkProvider component={RouterLink}>
-          <Toasty toastManager={toasts}>{children}</Toasty>
+          <SidebarSeed.Provider value={sidebarOpen}>
+            <Toasty toastManager={toasts}>{children}</Toasty>
+          </SidebarSeed.Provider>
         </LinkProvider>
       </KumoLocaleProvider>
     </QueryClientProvider>

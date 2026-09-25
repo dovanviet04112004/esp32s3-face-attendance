@@ -22,21 +22,18 @@ import { applyTheme, asTheme, readTheme, type Theme } from "@/lib/theme";
 const THEME_ICON = { system: MonitorIcon, light: SunIcon, dark: MoonIcon } as const;
 const THEME_KEY = { system: "themeSystem", light: "themeLight", dark: "themeDark" } as const;
 
-/** The cookie dies at the server, the store here, and the page goes to the
- *  form: a half-done sign-out leaves somebody looking signed in.
+/** The cookie dies at the server, the store and every cache here, and the page goes to the
+ *  form: a half-done sign-out leaves somebody looking signed in (KEHOACH 9.12).
  */
 export function useSignOut() {
   const router = useRouter();
   const signOut = useSession((s) => s.signOut);
-  return useMutation({
-    mutationFn: async () => {
-      await api.post("/auth/logout").catch(() => undefined);
-    },
-    onSuccess: () => {
-      signOut();
-      router.replace("/login");
-    },
-  });
+  const leave = () => {
+    signOut();
+    router.replace("/login");
+  };
+  // An unreachable server still signs this browser out; its session ends on its own clock.
+  return useMutation({ mutationFn: () => api.post("/auth/logout"), onSuccess: leave, onError: leave });
 }
 
 /** Account actions sit two deliberate clicks away, never beside the daily ones (KEHOACH 9.12). */
@@ -45,6 +42,7 @@ export function AccountMenu() {
   const s = useTranslations("settings");
   const roleName = useTranslations("roles");
   const role = useSession((one) => one.role);
+  const email = useSession((one) => one.email);
   const leaving = useSignOut();
   const [theme, setTheme] = useState<Theme>("system");
 
@@ -56,9 +54,12 @@ export function AccountMenu() {
       <DropdownMenu.Trigger
         render={<Button variant="ghost" shape="square" icon={UserCircleIcon} aria-label={t("account")} />}
       />
-      <DropdownMenu.Content align="end" className="min-w-56">
+      <DropdownMenu.Content align="end" className="w-64 max-w-[calc(100vw-2rem)]">
         <DropdownMenu.Group>
-          <DropdownMenu.Label>{role ? roleName(role) : t("account")}</DropdownMenu.Label>
+          <DropdownMenu.Label className="flex min-w-0 flex-col gap-0.5">
+            {email ? <span className="truncate font-medium text-kumo-default">{email}</span> : null}
+            <span className="truncate text-kumo-subtle">{role ? roleName(role) : t("account")}</span>
+          </DropdownMenu.Label>
           <DropdownMenu.Separator />
           <DropdownMenu.LinkItem icon={GearIcon} render={<Link href="/settings" />}>
             {t("settings")}

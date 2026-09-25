@@ -3,7 +3,7 @@
 import { LayerCard, Tabs, type TabsItem } from "@cloudflare/kumo";
 import { CaretLeftIcon } from "@phosphor-icons/react";
 import { useFormatter, useTranslations } from "next-intl";
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useCrumb } from "@/components/nav/breadcrumb";
@@ -48,7 +48,10 @@ function ThumbActions({ children }: { children: ReactNode }) {
   return (
     <>
       {createPortal(
-        <div className="fixed end-4 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 flex flex-wrap justify-end gap-2 *:shadow-lg">
+        <div
+          data-thumb-actions=""
+          className="fixed end-4 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 flex flex-wrap justify-end gap-2 *:shadow-lg"
+        >
           {children}
         </div>,
         document.body,
@@ -95,12 +98,42 @@ export function PageHeader({ title, description, meta, actions, tabs, tab, onTab
         {actions && !phone ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
         {actions && phone ? <ThumbActions>{actions}</ThumbActions> : null}
       </div>
-      {tabs ? (
-        <div className="mt-2 overflow-x-auto border-b border-kumo-line">
-          <Tabs variant="underline" tabs={tabs} value={tab} onValueChange={onTab} />
-        </div>
-      ) : null}
+      {tabs ? <TabStrip tabs={tabs} tab={tab} onTab={onTab} /> : null}
     </header>
+  );
+}
+
+/** Underline tabs that scroll sideways when they outgrow the page, fading the edge that hides more. */
+function TabStrip({ tabs, tab, onTab }: { tabs: TabsItem[]; tab?: string; onTab?: (value: string) => void }) {
+  const strip = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+
+  useEffect(() => {
+    const held = strip.current;
+    if (!held) {
+      return;
+    }
+    const check = () => setMore(held.scrollLeft + held.clientWidth < held.scrollWidth - 1);
+    check();
+    const watch = new ResizeObserver(check);
+    watch.observe(held);
+    held.addEventListener("scroll", check, { passive: true });
+    return () => {
+      watch.disconnect();
+      held.removeEventListener("scroll", check);
+    };
+  }, [tabs]);
+
+  return (
+    <div
+      ref={strip}
+      className={cn(
+        "mt-2 overflow-x-auto border-b border-kumo-line [scrollbar-width:none]",
+        more && "[mask-image:linear-gradient(to_right,black_calc(100%-48px),transparent)]",
+      )}
+    >
+      <Tabs variant="underline" tabs={tabs} value={tab} onValueChange={onTab} />
+    </div>
   );
 }
 
@@ -113,7 +146,8 @@ interface LayoutProps {
 }
 
 /** Kumo's ResourceListPage body: the main column and Cloudflare's right column (KEHOACH 9.12).
- *  Below xl the right column follows the main one; from xl it is 380 px, sticky, and scrolls on its own.
+ *  In a content box from 1024 px the right column is 380 px, sticky, and scrolls on its own;
+ *  in a narrower one it follows the main column.
  */
 export function PageLayout({ children, aside, extra }: LayoutProps) {
   if (!aside && !extra) {
@@ -121,11 +155,13 @@ export function PageLayout({ children, aside, extra }: LayoutProps) {
   }
   // The inset keeps the cards' rings clear of the column's own scroll clip.
   return (
-    <div className="flex flex-col gap-6 xl:flex-row xl:gap-8">
-      <div className="min-w-0 grow">{children}</div>
-      <div className="flex h-fit w-full shrink-0 flex-col gap-4 xl:sticky xl:top-[82px] xl:-m-1 xl:max-h-[calc(100svh-82px-24px)] xl:w-[388px] xl:overflow-y-auto xl:overscroll-contain xl:p-1 xl:[scrollbar-width:thin]">
-        {aside}
-        {extra}
+    <div className="@container/page">
+      <div className="flex flex-col gap-6 @5xl/page:flex-row @5xl/page:gap-8">
+        <div className="min-w-0 grow">{children}</div>
+        <div className="flex h-fit w-full shrink-0 flex-col gap-4 @5xl/page:sticky @5xl/page:top-[calc(82px+env(safe-area-inset-top))] @5xl/page:-m-1 @5xl/page:max-h-[calc(100svh-106px-env(safe-area-inset-top))] @5xl/page:w-[388px] @5xl/page:overflow-y-auto @5xl/page:overscroll-contain @5xl/page:p-1">
+          {aside}
+          {extra}
+        </div>
       </div>
     </div>
   );

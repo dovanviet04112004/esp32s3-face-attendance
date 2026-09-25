@@ -22,13 +22,13 @@ let renewing: Promise<string | null> | null = null;
 
 async function renew(): Promise<string | null> {
   try {
-    const res = await axios.post<{ accessToken: string }>(
+    const res = await axios.post<{ accessToken: string; email?: string }>(
       `${env.NEXT_PUBLIC_API_URL}/auth/refresh`,
       {},
       { withCredentials: true },
     );
     const token = res.data.accessToken;
-    useSession.getState().setSession(token, claimsOf(token));
+    useSession.getState().setSession(token, claimsOf(token), res.data.email);
     return token;
   } catch {
     useSession.getState().clear();

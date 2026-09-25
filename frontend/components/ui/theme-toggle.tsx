@@ -13,7 +13,8 @@ const FACE = {
   dark: { icon: MoonIcon, key: "themeDark" },
 } as const;
 
-export function ThemeToggle() {
+/** Light, dark or the system's; `compact` shows the icons alone, named for screen readers. */
+export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const t = useTranslations("settings");
   const [theme, setTheme] = useState<Theme>("system");
 
@@ -23,6 +24,7 @@ export function ThemeToggle() {
   return (
     <Tabs
       variant="segmented"
+      size={compact ? "sm" : "base"}
       value={theme}
       onValueChange={(next) => {
         const picked = asTheme(next);
@@ -34,9 +36,9 @@ export function ThemeToggle() {
         return {
           value: one,
           label: (
-            <span className="flex items-center gap-2">
-              <Icon size={16} aria-hidden />
-              {t(FACE[one].key)}
+            <span className="flex items-center gap-2" title={compact ? t(FACE[one].key) : undefined}>
+              <Icon size={compact ? 14 : 16} aria-hidden />
+              <span className={compact ? "sr-only" : undefined}>{t(FACE[one].key)}</span>
             </span>
           ),
         };

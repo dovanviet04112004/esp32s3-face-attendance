@@ -97,6 +97,9 @@ self.addEventListener("message", (event) => {
   event.waitUntil(caches.keys().then((names) => Promise.all(names.filter(drawer).map((n) => caches.delete(n)))));
 });
 
+// The manifest's short_name: the system's name reads the same in both languages (KEHOACH 9.21.6).
+const APP_NAME = "Nhân Lực";
+
 // The payload carries a kind and references, so the wording is built here and
 // a salary figure never reaches a lock screen (KEHOACH 9.21.4).
 const SAYS = {
@@ -108,7 +111,7 @@ const SAYS = {
     PAYSLIP_ISSUED: "Phiếu lương kỳ này đã có",
     CONTRACT_ENDING: "Hợp đồng của bạn sắp hết hạn",
     DISPUTE_ANSWERED: "Khiếu nại phiếu lương của bạn đã có trả lời",
-    title: "Chấm công",
+    other: "Có tin mới cho bạn",
   },
   en: {
     REQUEST_DECIDED_true: "Your request was approved",
@@ -118,7 +121,7 @@ const SAYS = {
     PAYSLIP_ISSUED: "This period's payslip is ready",
     CONTRACT_ENDING: "Your contract ends soon",
     DISPUTE_ANSWERED: "Your payslip dispute has an answer",
-    title: "Attendance",
+    other: "There is news for you",
   },
 };
 
@@ -131,6 +134,39 @@ const WHERE = {
   DISPUTE_ANSWERED: "/me/payslips",
 };
 
+// The same routing as the bell's notice list: the reference names the queue or the record.
+function pathOf(body) {
+  if (body.kind === "REQUEST_WAITING") {
+    const tab = body.certificateId
+      ? "certificates"
+      : body.profileChangeId
+        ? "profileChanges"
+        : body.dependentId
+          ? "dependents"
+          : body.advanceId
+            ? "advancesToDecide"
+            : body.payslipId
+              ? "disputes"
+              : "requests";
+    return `/approvals?tab=${tab}`;
+  }
+  if (body.kind === "REQUEST_DECIDED" || body.kind === "REQUEST_STALLED") {
+    if (body.certificateId) {
+      return "/me/letters";
+    }
+    if (body.profileChangeId || body.dependentId) {
+      return "/me/profile";
+    }
+    if (body.advanceId) {
+      return "/me/requests?tab=advances";
+    }
+    if (body.requestId) {
+      return `/me/requests?open=${body.requestId}`;
+    }
+  }
+  return WHERE[body.kind] || "/me";
+}
+
 // The worker's scope is "/", so it cannot read a locale off the url; the
 // payload carries it, the same way the payslip mail does.
 function tableFor(body) {
@@ -142,7 +178,7 @@ function wording(body) {
   if (body.kind === "REQUEST_DECIDED") {
     return table[`REQUEST_DECIDED_${body.approved === true}`];
   }
-  return table[body.kind] || table.title;
+  return table[body.kind] || table.other;
 }
 
 self.addEventListener("push", (event) => {
@@ -152,31 +188,32 @@ self.addEventListener("push", (event) => {
   } catch (fell) {
     body = {};
   }
-  const table = tableFor(body);
   event.waitUntil(
-    self.registration.showNotification(table.title, {
+    self.registration.showNotification(APP_NAME, {
       body: wording(body),
       icon: "/icon-192.png",
       badge: "/badge.png",
       tag: body.kind,
-      data: { path: WHERE[body.kind] || "/me", locale: body.locale || "vi" },
+      data: { path: pathOf(body), locale: body.locale || "vi" },
     }),
   );
 });
 
+// A window already open is brought forward and moved, so a tap never stacks a second copy of the app.
+async function reopen(target) {
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const held = windows.find((one) => one.url === target) || windows[0];
+  if (!held) {
+    return self.clients.openWindow(target);
+  }
+  const shown = await held.focus();
+  // navigate() refuses a window this worker does not control; that one is still in front.
+  return shown.url === target ? shown : shown.navigate(target).catch(() => shown);
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const held = event.notification.data || {};
-  const path = held.path || "/me";
-  const locale = held.locale || "vi";
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
-      for (const one of windows) {
-        if (one.url.includes(path)) {
-          return one.focus();
-        }
-      }
-      return self.clients.openWindow(`/${locale}${path}`);
-    }),
-  );
+  const target = new URL(`/${held.locale || "vi"}${held.path || "/me"}`, self.location.origin).href;
+  event.waitUntil(reopen(target));
 });

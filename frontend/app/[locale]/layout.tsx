@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import "../globals.css";
 import { Providers } from "../providers";
 import { routing, type Locale } from "@/i18n/routing";
-import { asTheme, kModeScript, kThemeCookie } from "@/lib/theme";
+import { isSidebarOpen, kModeScript, kSidebarCookie } from "@/lib/theme";
 
 const sans = Inter({ subsets: ["latin", "vietnamese"], variable: "--font-inter", display: "swap" });
 
@@ -25,6 +25,7 @@ function known(locale: string): Locale {
 // env(safe-area-inset-*) stays zero unless the page claims the rounded corners.
 export const viewport: Viewport = {
   viewportFit: "cover",
+  interactiveWidget: "resizes-content",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#fbfbfb" },
     { media: "(prefers-color-scheme: dark)", color: "#030303" },
@@ -44,7 +45,7 @@ export async function generateMetadata({ params }: LocaleParams): Promise<Metada
     description: t("description"),
     icons: { icon: "/favicon.ico", apple: "/apple-touch-icon.png" },
     manifest: "/manifest.webmanifest",
-    appleWebApp: { capable: true, title: t("name"), statusBarStyle: "default" },
+    appleWebApp: { capable: true, title: t("name"), statusBarStyle: "black-translucent" },
   };
 }
 
@@ -54,22 +55,16 @@ export default async function LocaleLayout({ children, params }: LocaleParams & 
     notFound();
   }
   setRequestLocale(locale);
-  const theme = asTheme((await cookies()).get(kThemeCookie)?.value);
-  // Extensions reach html and body first, so a class React never wrote is not
-  // a mismatch worth reporting (KEHOACH 9.12).
+  const sidebarOpen = isSidebarOpen((await cookies()).get(kSidebarCookie)?.value);
+  // data-mode belongs to lib/theme.ts alone, and extensions reach html and body first (KEHOACH 9.12).
   return (
-    <html
-      lang={locale}
-      className={sans.variable}
-      data-mode={theme === "dark" ? "dark" : undefined}
-      suppressHydrationWarning
-    >
+    <html lang={locale} className={sans.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: kModeScript }} />
       </head>
-      <body className="min-h-screen font-sans text-base antialiased" suppressHydrationWarning>
+      <body className="min-h-svh font-sans text-base antialiased" suppressHydrationWarning>
         <NextIntlClientProvider>
-          <Providers>{children}</Providers>
+          <Providers sidebarOpen={sidebarOpen}>{children}</Providers>
         </NextIntlClientProvider>
       </body>
     </html>

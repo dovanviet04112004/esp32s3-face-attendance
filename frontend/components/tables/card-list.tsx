@@ -1,10 +1,11 @@
 "use client";
 
-import { Checkbox, LayerCard, SkeletonLine } from "@cloudflare/kumo";
+import { Checkbox, LayerCard } from "@cloudflare/kumo";
 import { CaretRightIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { isValidElement, type ReactNode } from "react";
 
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { ActionMenu, onControl, PersonCell, type Column, type RowAction } from "./data-table";
 
@@ -112,7 +113,7 @@ export function CardList<T>({
           const top = lead?.cell(row);
           const person = personIn(top);
           const avatar = cardAvatar?.(row) ?? person?.name;
-          const parts = [person?.code, ...under.map((column) => inline(column.cell(row)))].filter((part) =>
+          const parts = [person?.code, ...under.map((column) => (column.card ? column.card(row) : inline(column.cell(row))))].filter((part) =>
             shows(part, t("empty")),
           );
           return (
@@ -128,7 +129,7 @@ export function CardList<T>({
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{person ? person.name : top}</div>
                 {parts.length > 0 ? (
-                  <div className={cn("text-sm text-kumo-subtle", onOpen ? "truncate" : "line-clamp-2")}>
+                  <div className="line-clamp-2 text-sm text-kumo-subtle">
                     {parts.map((part, at) => (
                       <span key={at}>
                         {at > 0 ? " · " : null}

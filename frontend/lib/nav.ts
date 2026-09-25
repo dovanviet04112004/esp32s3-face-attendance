@@ -1,12 +1,16 @@
 import type { Icon as IconType } from "@phosphor-icons/react";
 import {
+  BooksIcon,
   BookOpenTextIcon,
+  BriefcaseIcon,
+  BuildingsIcon,
   CalendarBlankIcon,
   CalendarCheckIcon,
   CalendarIcon,
   CalendarXIcon,
   ChartBarIcon,
   ClockIcon,
+  CoinsIcon,
   CpuIcon,
   FileTextIcon,
   FilesIcon,
@@ -34,7 +38,7 @@ import type { Role } from "./auth";
 // A renamed message breaks the build here, not the sidebar (CLAUDE.md 3.1).
 type NavKey = keyof (typeof viMessages)["nav"];
 
-type SectionKey = "mine" | "inbox" | "people" | "time" | "calendar" | "pay" | "system";
+type SectionKey = "mine" | "inbox" | "people" | "time" | "calendar" | "pay" | "catalogues" | "system";
 
 export interface NavItem {
   href: string;
@@ -44,6 +48,8 @@ export interface NavItem {
   badge?: "approvals";
   /** Kept out of the phone's tab bar; the top bar carries it (KEHOACH 9.21.1). */
   deskOnly?: boolean;
+  /** Reachable on a phone, but never one of the five tabs: the "More" sheet lists it (KEHOACH 9.21.5). */
+  tabless?: boolean;
   /** Judged by the guard, skipped by the menu (KEHOACH 9.15). */
   unlisted?: boolean;
   /** Sibling pages of one sidebar entry, joined by the section bar (KEHOACH 9.15). */
@@ -68,6 +74,7 @@ const SECTIONS: Record<SectionKey, Section> = {
   time: { key: "sectionTime", icon: CalendarBlankIcon },
   calendar: { key: "sectionCalendar", icon: ClockIcon },
   pay: { key: "sectionPay", icon: WalletIcon },
+  catalogues: { key: "sectionCatalogues", icon: BooksIcon },
   system: { key: "sectionSystem", icon: UserGearIcon },
 };
 
@@ -80,6 +87,8 @@ const PEOPLE_DESK: Role[] = ["ADMIN", "HR"];
 const PAY_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 const OPERATORS: Role[] = ["ADMIN"];
 const DAY_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
+// Payroll keeps the allowance catalogue; HR reads it to write pay (KEHOACH 9.15).
+const ALLOWANCE_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 
 /** Screens grouped by what somebody is doing, not by module (KEHOACH 9.15). */
 export const NAV: NavGroup[] = [
@@ -102,7 +111,7 @@ export const NAV: NavGroup[] = [
         key: "myDocuments",
         icon: BookOpenTextIcon,
         roles: EVERYONE,
-        deskOnly: true,
+        tabless: true,
       },
     ],
   },
@@ -171,6 +180,30 @@ export const NAV: NavGroup[] = [
   {
     key: "groupSettings",
     items: [
+      {
+        href: "/job-titles",
+        key: "jobTitles",
+        icon: BriefcaseIcon,
+        roles: PEOPLE_DESK,
+        deskOnly: true,
+        section: "catalogues",
+      },
+      {
+        href: "/legal-entities",
+        key: "legalEntities",
+        icon: BuildingsIcon,
+        roles: OPERATORS,
+        deskOnly: true,
+        section: "catalogues",
+      },
+      {
+        href: "/allowances",
+        key: "allowances",
+        icon: CoinsIcon,
+        roles: ALLOWANCE_DESK,
+        deskOnly: true,
+        section: "catalogues",
+      },
       { href: "/users", key: "users", icon: UserGearIcon, roles: OPERATORS, deskOnly: true, section: "system" },
       { href: "/audit", key: "audit", icon: ScrollIcon, roles: OPERATORS, deskOnly: true, section: "system" },
       { href: "/settings", key: "settings", icon: GearIcon, roles: EVERYONE, deskOnly: true },
@@ -202,6 +235,7 @@ export interface NavEntry {
   icon: IconType;
   badge?: "approvals";
   deskOnly?: boolean;
+  tabless?: boolean;
   members: NavItem[];
 }
 
@@ -233,6 +267,7 @@ export function entriesFor(role: Role | null, hasRecord = true): EntryGroup[] {
         icon: section?.icon ?? item.icon,
         badge: item.badge,
         deskOnly: item.deskOnly,
+        tabless: item.tabless,
         members: [item],
       });
     }
@@ -343,7 +378,7 @@ export function tabsFor(role: Role | null, hasRecord = true): TabLayout {
     ...group,
     entries: group.entries.filter((entry) => !entry.deskOnly),
   }));
-  const flat = groups.flatMap((group) => group.entries);
+  const flat = groups.flatMap((group) => group.entries).filter((entry) => !entry.tabless);
   const ranked = TAB_ORDER.map((key) => flat.find((entry) => entry.key === key)).filter(
     (entry): entry is NavEntry => entry !== undefined,
   );

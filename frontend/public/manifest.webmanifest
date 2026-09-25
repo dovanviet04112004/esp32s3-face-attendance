@@ -1,12 +1,30 @@
 {
+  "id": "/",
   "name": "Nhân Lực — nhân sự, chấm công và tiền lương",
   "short_name": "Nhân Lực",
-  "start_url": "/vi/me",
+  "lang": "vi",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#f7f8fa",
-  "theme_color": "#1c6fd2",
+  "background_color": "#fbfbfb",
+  "theme_color": "#fbfbfb",
+  "shortcuts": [
+    {
+      "name": "Xin nghỉ",
+      "url": "/vi/me/requests?new=LEAVE",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Phiếu lương",
+      "url": "/vi/me/payslips",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Lịch ca",
+      "url": "/vi/me/shifts",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "icons": [
     {
       "src": "/icon-192.png",

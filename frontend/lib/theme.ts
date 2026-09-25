@@ -2,8 +2,9 @@ export type Theme = "system" | "light" | "dark";
 
 export const THEMES: Theme[] = ["system", "light", "dark"];
 
-// The server renders the choice onto html, and only a cookie reaches it.
 export const kThemeCookie = "theme";
+
+export const kSidebarCookie = "sidebar";
 
 const kYearSeconds = 31_536_000;
 const kDarkQuery = "(prefers-color-scheme: dark)";
@@ -17,7 +18,7 @@ function isDark(theme: Theme): boolean {
   return theme === "dark" || (theme === "system" && window.matchMedia(kDarkQuery).matches);
 }
 
-/** Runs in head, ahead of the first paint: a dark screen never flashes the light page. */
+/** Runs in head ahead of the first paint, which only a cookie reaches: dark never flashes light. */
 export const kModeScript = `try{var m=document.cookie.match(/(?:^|; )${kThemeCookie}=(\\w+)/),t=m?m[1]:"system";if(t==="dark"||(t!=="light"&&matchMedia("${kDarkQuery}").matches))document.documentElement.dataset.mode="dark"}catch(e){}`;
 
 export function readTheme(): Theme {
@@ -60,10 +61,21 @@ export function applyTheme(theme: Theme): void {
   document.cookie = `${kThemeCookie}=${theme}; path=/; max-age=${age}; samesite=lax`;
 }
 
-/** Keeps "system" on the OS as it turns dark at dusk; returns the unsubscribe. */
+/** Paint the stored choice onto html, then keep "system" on the OS; returns the unsubscribe.
+ *  React re-creates <html> bare when the locale segment changes, so each mount calls this ahead of paint. */
 export function followSystem(): () => void {
   const query = window.matchMedia(kDarkQuery);
   const again = () => paintMode(readTheme());
+  paintMode(readTheme());
+  paintChrome(readTheme());
   query.addEventListener("change", again);
   return () => query.removeEventListener("change", again);
+}
+
+export function isSidebarOpen(raw: string | undefined): boolean {
+  return raw !== "collapsed";
+}
+
+export function rememberSidebar(open: boolean): void {
+  document.cookie = `${kSidebarCookie}=${open ? "open" : "collapsed"}; path=/; max-age=${kYearSeconds}; samesite=lax`;
 }

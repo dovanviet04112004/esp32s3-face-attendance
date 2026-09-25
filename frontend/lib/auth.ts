@@ -11,22 +11,36 @@ interface Session {
   accessToken: string | null;
   role: Role | null;
   employeeId: number | null;
-  setSession: (accessToken: string, claims: Claims) => void;
+  /** The signed-in address, as sign-in and every refresh return it. */
+  email: string | null;
+  setSession: (accessToken: string, claims: Claims, email?: string) => void;
   clear: () => void;
   signOut: () => void;
 }
 
+const forgetters = new Set<() => void>();
+
+/** Runs on every sign-out and failed refresh; returns the unsubscribe (KEHOACH 9.12). */
+export function whenSignedOut(forget: () => void): () => void {
+  forgetters.add(forget);
+  return () => forgetters.delete(forget);
+}
+
+const kSignedOut = { accessToken: null, role: null, employeeId: null, email: null };
+
 /** The access token lives in memory only (KEHOACH 4.6). */
 export const useSession = create<Session>((set) => ({
-  accessToken: null,
-  role: null,
-  employeeId: null,
-  setSession: (accessToken, claims) =>
-    set({ accessToken, role: claims.role, employeeId: claims.employeeId }),
-  clear: () => set({ accessToken: null, role: null, employeeId: null }),
-  // A failed refresh only clears: it may be the network, and the worker's reads are the offline copy.
+  ...kSignedOut,
+  setSession: (accessToken, claims, email) =>
+    set((held) => ({ accessToken, role: claims.role, employeeId: claims.employeeId, email: email ?? held.email })),
+  clear: () => {
+    set(kSignedOut);
+    forgetters.forEach((forget) => forget());
+  },
+  // A failed refresh keeps the worker's reads: it may be the network, and they are the offline copy.
   signOut: () => {
-    set({ accessToken: null, role: null, employeeId: null });
+    set(kSignedOut);
+    forgetters.forEach((forget) => forget());
     navigator.serviceWorker?.controller?.postMessage({ type: "forget" });
   },
 }));

@@ -1,10 +1,35 @@
-import { hasLocale } from "next-intl";
+"use client";
 
-import { redirect } from "@/i18n/navigation";
-import { routing } from "@/i18n/routing";
+import { useTranslations } from "next-intl";
+import { useEffect } from "react";
 
-/** The address people type first; the dashboard guard picks login or home (KEHOACH 4.7). */
-export default async function LocaleRoot({ params }: { params: Promise<{ locale: string }> }) {
-  const { locale } = await params;
-  redirect({ href: "/overview", locale: hasLocale(routing.locales, locale) ? locale : routing.defaultLocale });
+import { useRouter } from "@/i18n/navigation";
+import { reopenSession } from "@/lib/api";
+import { useSession } from "@/lib/auth";
+import { homeFor } from "@/lib/nav";
+
+/** The address people type first and the installed app opens: only the token knows the role,
+ *  so the move to that role's home waits for it rather than bouncing through another page (KEHOACH 9.21.6).
+ */
+export default function LocaleRoot() {
+  const app = useTranslations("app");
+  const router = useRouter();
+
+  useEffect(() => {
+    const held = useSession.getState().accessToken;
+    void (held ? Promise.resolve(held) : reopenSession()).then((token) => {
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+      const { role, employeeId } = useSession.getState();
+      router.replace(homeFor(role, employeeId !== null));
+    });
+  }, [router]);
+
+  return (
+    <main aria-busy className="min-h-svh bg-kumo-canvas">
+      <title>{app("name")}</title>
+    </main>
+  );
 }
