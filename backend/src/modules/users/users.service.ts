@@ -128,7 +128,6 @@ interface Linkable {
   id: number;
   locale: string;
   active: boolean;
-  leaveDate: Date | null;
   login: { id: string } | null;
   _count: { reports: number };
 }
@@ -137,13 +136,13 @@ const LINKABLE = {
   id: true,
   locale: true,
   active: true,
-  leaveDate: true,
   login: { select: { id: true } },
   _count: { select: { reports: { where: { active: true } } } },
 } as const satisfies Prisma.EmployeeSelect;
 
-function hasLeft(person: { active: boolean; leaveDate: Date | null }): boolean {
-  return !person.active || person.leaveDate !== null;
+// A scheduled last day still works; only a closed record has left (KEHOACH 9.14).
+function hasLeft(person: { active: boolean }): boolean {
+  return !person.active;
 }
 
 /** Who got an invitation. No secret here: the link goes to them, not here. */
@@ -433,7 +432,6 @@ export class UsersService {
       where: { id: employeeId },
       select: {
         active: true,
-        leaveDate: true,
         locale: true,
         login: { select: { id: true, active: true, passwordHash: true } },
       },

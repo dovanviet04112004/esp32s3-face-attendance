@@ -143,7 +143,7 @@ describe("hiring and the employee record (e2e)", () => {
     assert.equal(taken.body.message, "EMAIL_TAKEN");
 
     const leaver = await hire("13", { personalEmail: `hire13${DOMAIN}` });
-    const off = await as("hr", "post", `/employees/${leaver}/offboard`).send({ leaveDate: "2026-12-31" });
+    const off = await as("hr", "post", `/employees/${leaver}/offboard`).send({ leaveDate: "2026-01-31" });
     assert.equal(off.status, 201);
     const late = await as("hr", "post", `/employees/${leaver}/login`);
     assert.equal(late.status, 409);

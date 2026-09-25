@@ -7,6 +7,7 @@ import "dotenv/config";
 import { validateEnv } from "../src/config/env.schema.js";
 import { calculate, type CalcAllowance } from "../src/modules/payroll/calculate.js";
 import { asCalcPolicy } from "../src/modules/policy/policy.service.js";
+import { localDay } from "../src/modules/timesheet/local-day.js";
 
 const HEADCOUNT = 5000;
 // One company per seed: a screenshot in the report has to match the machine.
@@ -419,6 +420,12 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: env.DATABASE_URL }),
 });
 const OFFSET_MINUTES = zoneOffsetMinutes(env.APP_TIMEZONE, dateOf(YEAR, 7, 1));
+// The wall clock, not the demo calendar: a last day still ahead leaves the record open (KEHOACH 9.14).
+const TODAY = localDay(new Date(), env.APP_TIMEZONE);
+
+function stillWorks(person: { leaveDate: Date | null }): boolean {
+  return person.leaveDate === null || isoDay(person.leaveDate) >= TODAY;
+}
 
 function punchAt(day: Date, hour: number, minute: number): Date {
   const wall = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, minute);
@@ -820,7 +827,7 @@ async function buildPeople(org: Org): Promise<Person[]> {
     socialInsuranceNo: `79${between(10_000_000, 99_999_999)}`,
     bankAccount: String(between(1_000_000_000, 9_999_999_999)),
     bankName: pick(BANKS),
-    active: person.leaveDate === null,
+    active: stillWorks(person),
   }));
   await inChunks(rows, WRITE_CHUNK, (slice) => prisma.employee.createMany({ data: slice }));
 
@@ -911,7 +918,7 @@ async function buildContracts(people: Person[]): Promise<void> {
     }
     const firstEnd = new Date(person.hireDate);
     firstEnd.setUTCFullYear(firstEnd.getUTCFullYear() + 1);
-    const ended = person.leaveDate !== null;
+    const ended = !stillWorks(person);
     rows.push({
       employeeId: person.id,
       kind: "FIXED_TERM",
@@ -1041,7 +1048,7 @@ async function buildSideRecords(org: Org, people: Person[]): Promise<void> {
         });
       }
     }
-    if (person.leaveDate === null) {
+    if (stillWorks(person)) {
       consents.push({
         employeeId: person.id,
         noticeVersion: env.BIOMETRIC_NOTICE_VERSION,

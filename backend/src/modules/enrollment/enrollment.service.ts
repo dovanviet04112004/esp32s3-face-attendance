@@ -116,7 +116,7 @@ export class EnrollmentService {
    * Erase a person's face on every kiosk holding it. The personnel record
    * stays; the biometric does not (Nghi dinh 13/2023, KEHOACH 9.19).
    */
-  async erase(employeeId: number, actorId: string, why: string): Promise<{ devices: number }> {
+  async erase(employeeId: number, actorId: string | undefined, why: string): Promise<{ devices: number }> {
     const doors = await this.db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CAPTURE_LOCK}::int, ${employeeId}::int)`;
       return this.eraseIn(tx, employeeId);
@@ -183,7 +183,7 @@ export class EnrollmentService {
   }
 
   // A door that misses the delete still reports the old counter, and its next heartbeat resyncs it.
-  private async tellErased(employeeId: number, doors: Door[], actorId: string, why: string): Promise<void> {
+  private async tellErased(employeeId: number, doors: Door[], actorId: string | undefined, why: string): Promise<void> {
     await this.scrubTemplates();
     for (const door of doors) {
       await this.send(door.id, this.dropAll(employeeId, door.rosterVersion, door.id)).catch((error: Error) =>

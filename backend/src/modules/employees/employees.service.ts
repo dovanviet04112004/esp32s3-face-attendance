@@ -1,4 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  type OnModuleInit,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma, type Employee } from "@prisma/client";
 
@@ -9,10 +16,13 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
+import { JOB, QUEUE } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { AuthService } from "../auth/auth.service.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
+import { EnrollmentService } from "../enrollment/enrollment.service.js";
 import { OnboardingService } from "../onboarding/onboarding.service.js";
 import { dayAsDate, localDay } from "../timesheet/local-day.js";
 import { UsersService, type LoginOpened, type RoleFlip } from "../users/users.service.js";
@@ -20,6 +30,7 @@ import {
   ENDING_WINDOW_DAYS,
   type CreateEmployeeDto,
   type EmployeeFilterDto,
+  type MoveLeavingDto,
   type OffboardDto,
   type ListEmployeesDto,
   type OnboardDto,
@@ -82,12 +93,15 @@ export interface Offboarding {
   employeeId: number;
   code: string;
   leaveDate: string;
+  closed: boolean;
   assetsOutstanding: { code: string; name: string }[];
   requestsPending: number;
   advancesOutstanding: number;
 }
 const kWriteChunk = 2_000;
 const kTransactionMs = 600_000;
+// Read in APP_TIMEZONE: the first minutes of the day after a last day (KEHOACH 9.14).
+const kLeavingsCron = "5 0 * * *";
 function asDay(value: Date | null): string {
   return value ? value.toISOString().slice(0, 10) : "";
 }
@@ -99,6 +113,10 @@ function earliestDay(days: (Date | null)[]): string {
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function dayBefore(day: string): string {
+  return new Date(dayAsDate(day).getTime() - kMsPerDay).toISOString().slice(0, 10);
 }
 
 // One join rather than a lookup per row: the table shows a department by name.
@@ -236,7 +254,7 @@ function asSeenBy<T extends Employee>(row: T, viewer: Viewer, visible: number[] 
 }
 
 @Injectable()
-export class EmployeesService {
+export class EmployeesService implements OnModuleInit {
   constructor(
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
@@ -244,8 +262,19 @@ export class EmployeesService {
     private readonly onboarding: OnboardingService,
     private readonly users: UsersService,
     private readonly auth: AuthService,
+    private readonly enrollment: EnrollmentService,
     private readonly config: ConfigService<Env, true>,
+    @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
+
+  // Upserting by scheduler id: a restart re-states it, never adds a second.
+  async onModuleInit(): Promise<void> {
+    await this.queues[QUEUE.people].upsertJobScheduler(
+      "leavings-due-daily",
+      { pattern: kLeavingsCron, tz: this.config.get("APP_TIMEZONE", { infer: true }) },
+      { name: JOB.leavingsDue, data: { type: JOB.leavingsDue } },
+    );
+  }
 
 
   /**
@@ -906,35 +935,155 @@ export class EmployeesService {
     return fresh.map((one) => ({ code: one.code, year, entitled: one.entitled }));
   }
 
+  /** Today on the business calendar, which is what a last day is compared with (KEHOACH 9.8). */
+  today(): string {
+    return localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true }));
+  }
+
   /**
-   * Leaving is one move, not seven places to click: the record closes, the
-   * login dies at once, and what they still hold comes back as a list
-   * somebody has to work through (KEHOACH 9.14).
+   * Record the last day and list what they still hold. A day already here closes the
+   * record in this call; a later one only schedules it (KEHOACH 9.14).
    */
   async offboard(viewer: Viewer, id: number, body: OffboardDto): Promise<Offboarding> {
     const person = await this.get(id, viewer);
-    const leaveDate = new Date(body.leaveDate);
-    const flips = await this.db.$transaction(async (tx) => {
-      await tx.employee.update({ where: { id }, data: { leaveDate, active: false } });
-      await tx.user.updateMany({ where: { employeeId: id }, data: { active: false } });
-      await tx.session.updateMany({
-        where: { user: { employeeId: id }, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      return this.users.syncManagerRoles([person.managerId], tx);
+    const lastDay = body.leaveDate.slice(0, 10);
+    const written = await this.db.employee.updateMany({
+      where: { id, active: true, leaveDate: null },
+      data: { leaveDate: dayAsDate(lastDay) },
     });
-    const logins = await this.db.user.findMany({ where: { employeeId: id }, select: { id: true } });
-    await this.auth.cutAccess(logins.map((one) => one.id));
-    await this.scope.forgetScopes();
-    await this.users.settleRoleFlips(viewer.userId, flips);
+    if (written.count === 0) {
+      await this.refuseLeaving(id, true);
+    }
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.EMPLOYEE_OFFBOARD,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(id),
-      meta: { code: person.code, leaveDate: body.leaveDate, reason: body.reason },
+      meta: { code: person.code, leaveDate: lastDay, reason: body.reason },
     });
+    return this.settleLeaving(id, person.code, lastDay, viewer.userId);
+  }
 
+  /** Move a scheduled last day; a day already here closes the record as recording it would. */
+  async moveLeaving(viewer: Viewer, id: number, body: MoveLeavingDto): Promise<Offboarding> {
+    const person = await this.get(id, viewer);
+    const lastDay = body.leaveDate.slice(0, 10);
+    const moved = await this.db.employee.updateMany({
+      where: { id, active: true, leaveDate: { not: null } },
+      data: { leaveDate: dayAsDate(lastDay) },
+    });
+    if (moved.count === 0) {
+      await this.refuseLeaving(id, false);
+    }
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EMPLOYEE_LEAVING_MOVE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(id),
+      meta: { code: person.code, from: asDay(person.leaveDate), to: lastDay },
+    });
+    return this.settleLeaving(id, person.code, lastDay, viewer.userId);
+  }
+
+  /** Call off a leaving that has not happened yet; the person carries on working. */
+  async cancelLeaving(viewer: Viewer, id: number): Promise<Employee> {
+    const person = await this.get(id, viewer);
+    const cancelled = await this.db.employee.updateMany({
+      where: { id, active: true, leaveDate: { not: null } },
+      data: { leaveDate: null },
+    });
+    if (cancelled.count === 0) {
+      await this.refuseLeaving(id, false);
+    }
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EMPLOYEE_LEAVING_CANCEL,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(id),
+      meta: { code: person.code, leaveDate: asDay(person.leaveDate) },
+    });
+    return this.get(id, viewer);
+  }
+
+  /** Close every open record whose last day is behind `today`, and answer the ones this pass closed. */
+  async closeDue(today: string): Promise<number[]> {
+    const through = dayBefore(today);
+    const due = await this.db.employee.findMany({
+      where: { active: true, leaveDate: { lte: dayAsDate(through) } },
+      select: { id: true },
+      orderBy: { id: "asc" },
+    });
+    const closed: number[] = [];
+    for (const one of due) {
+      if (await this.close(one.id, through)) {
+        closed.push(one.id);
+      }
+    }
+    return closed;
+  }
+
+  // Read after a guarded write missed, so the code names what actually stood in the way.
+  private async refuseLeaving(id: number, recording: boolean): Promise<never> {
+    const held = await this.db.employee.findUnique({ where: { id }, select: { active: true, leaveDate: true } });
+    if (!held?.active) {
+      throw new ConflictException(recording ? "EMPLOYEE_HAS_LEFT" : "LEAVING_CLOSED");
+    }
+    throw new ConflictException(held.leaveDate === null ? "LEAVING_NOT_SCHEDULED" : "LEAVING_SCHEDULED");
+  }
+
+  /**
+   * The one way a record closes, for the desk's click and the nightly job alike (KEHOACH 9.14).
+   * Only an open record whose last day is `through` or earlier closes; false when none did.
+   */
+  private async close(id: number, through: string, actorId?: string): Promise<boolean> {
+    const shut = await this.db.$transaction(async (tx) => {
+      const flipped = await tx.employee.updateMany({
+        where: { id, active: true, leaveDate: { lte: dayAsDate(through) } },
+        data: { active: false },
+      });
+      if (flipped.count === 0) {
+        return null;
+      }
+      const person = await tx.employee.findUniqueOrThrow({
+        where: { id },
+        select: {
+          code: true,
+          managerId: true,
+          leaveDate: true,
+          _count: { select: { templates: true, enrollments: { where: { state: { not: "REVOKED" } } } } },
+        },
+      });
+      await tx.user.updateMany({ where: { employeeId: id }, data: { active: false } });
+      await tx.session.updateMany({
+        where: { user: { employeeId: id }, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      return { person, flips: await this.users.syncManagerRoles([person.managerId], tx) };
+    });
+    if (!shut) {
+      return false;
+    }
+    const logins = await this.db.user.findMany({ where: { employeeId: id }, select: { id: true } });
+    await this.auth.cutAccess(logins.map((one) => one.id));
+    await this.scope.forgetScopes();
+    await this.users.settleRoleFlips(actorId, shut.flips);
+    const held = shut.person._count;
+    if (held.templates > 0 || held.enrollments > 0) {
+      await this.enrollment.erase(id, actorId, "left");
+    }
+    await this.audit.record({
+      actorId,
+      action: AUDIT_ACTIONS.EMPLOYEE_DEACTIVATE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(id),
+      meta: { code: shut.person.code, leaveDate: asDay(shut.person.leaveDate) },
+    });
+    return true;
+  }
+
+  private async settleLeaving(id: number, code: string, lastDay: string, actorId: string): Promise<Offboarding> {
+    const today = this.today();
+    const closed = lastDay <= today && (await this.close(id, today, actorId));
     const [assets, requests, advances] = await Promise.all([
       this.db.asset.findMany({
         where: { holderId: id, state: "ISSUED" },
@@ -946,8 +1095,9 @@ export class EmployeesService {
     ]);
     return {
       employeeId: id,
-      code: person.code,
-      leaveDate: body.leaveDate,
+      code,
+      leaveDate: lastDay,
+      closed,
       assetsOutstanding: assets,
       requestsPending: requests,
       advancesOutstanding: advances,

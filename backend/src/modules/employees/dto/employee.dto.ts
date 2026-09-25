@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, IntersectionType, OmitType, PartialType } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional, IntersectionType, OmitType, PartialType, PickType } from "@nestjs/swagger";
 import { ContractKind, Gender } from "@prisma/client";
 
 import { EMPLOYEE_FIELD_MAX, IMPORT_MAX_BYTES } from "../import.js";
@@ -426,7 +426,10 @@ export class OnboardDto {
 }
 
 export class OffboardDto {
-  @ApiProperty({ example: "2026-10-31", description: "Their last day" })
+  @ApiProperty({
+    example: "2026-10-31",
+    description: "Their last working day in APP_TIMEZONE; today or earlier closes the record now, a later day only schedules it",
+  })
   @IsDateString()
   leaveDate!: string;
 
@@ -435,4 +438,37 @@ export class OffboardDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+}
+
+export class MoveLeavingDto extends PickType(OffboardDto, ["leaveDate"] as const) {}
+
+class HeldAssetView {
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class OffboardingView {
+  @ApiProperty()
+  employeeId!: number;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty({ type: String, format: "date" })
+  leaveDate!: string;
+
+  @ApiProperty({ description: "true when the record closed in this call; false when it closes the morning after leaveDate" })
+  closed!: boolean;
+
+  @ApiProperty({ type: [HeldAssetView] })
+  assetsOutstanding!: HeldAssetView[];
+
+  @ApiProperty()
+  requestsPending!: number;
+
+  @ApiProperty()
+  advancesOutstanding!: number;
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpStatus,
   Param,
@@ -45,7 +46,9 @@ import {
   ImportQueryDto,
   ImportReportView,
   ListEmployeesDto,
+  MoveLeavingDto,
   OffboardDto,
+  OffboardingView,
   OnboardDto,
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
@@ -113,13 +116,47 @@ export class EmployeesController {
   @Post(":id/offboard")
   @Roles("ADMIN", "HR")
   @AuditedInService()
-  @ApiOperation({ summary: "Close the record and the login, and list what is still out" })
+  @ApiOperation({
+    summary: "Record the last day and list what is still out (KEHOACH 9.14)",
+    description:
+      "A last day of today or earlier in APP_TIMEZONE closes the record and the login now; a later one only schedules it, " +
+      "and the record closes the morning after that day.",
+  })
+  @ApiCreatedResponse({ type: OffboardingView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
+  @ApiConflictResponse({ type: ErrorBody, description: "EMPLOYEE_HAS_LEFT, LEAVING_SCHEDULED" })
   offboard(
     @CurrentViewer() viewer: Viewer,
     @Param("id", ParseIntPipe) id: number,
     @Body() body: OffboardDto,
   ): Promise<Offboarding> {
     return this.employees.offboard(viewer, id, body);
+  }
+
+  @Patch(":id/offboard")
+  @Roles("ADMIN", "HR")
+  @AuditedInService()
+  @ApiOperation({ summary: "Move a scheduled last day; one of today or earlier closes the record now" })
+  @ApiOkResponse({ type: OffboardingView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
+  @ApiConflictResponse({ type: ErrorBody, description: "LEAVING_CLOSED, LEAVING_NOT_SCHEDULED" })
+  moveLeaving(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id", ParseIntPipe) id: number,
+    @Body() body: MoveLeavingDto,
+  ): Promise<Offboarding> {
+    return this.employees.moveLeaving(viewer, id, body);
+  }
+
+  @Delete(":id/offboard")
+  @Roles("ADMIN", "HR")
+  @AuditedInService()
+  @ApiOperation({ summary: "Call off a scheduled leaving before the record closes" })
+  @ApiOkResponse({ type: EmployeeView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
+  @ApiConflictResponse({ type: ErrorBody, description: "LEAVING_CLOSED, LEAVING_NOT_SCHEDULED" })
+  cancelLeaving(@CurrentViewer() viewer: Viewer, @Param("id", ParseIntPipe) id: number): Promise<Employee> {
+    return this.employees.cancelLeaving(viewer, id);
   }
 
   @Get("export")

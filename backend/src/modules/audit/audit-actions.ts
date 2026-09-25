@@ -30,6 +30,8 @@ export const AUDIT_ACTIONS = {
   EMPLOYEE_DEACTIVATE: "employee.deactivate",
   EMPLOYEE_ONBOARD: "employee.onboard",
   EMPLOYEE_OFFBOARD: "employee.offboard",
+  EMPLOYEE_LEAVING_MOVE: "employee.leavingMove",
+  EMPLOYEE_LEAVING_CANCEL: "employee.leavingCancel",
 
   USER_CREATE: "user.create",
   USER_ROLE: "user.role",

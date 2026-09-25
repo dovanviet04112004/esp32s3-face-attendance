@@ -343,7 +343,7 @@ describe("accounts and roles (e2e)", () => {
     const under = await asAdmin("patch", `/employees/${person.STAFF}`).send({ managerId: person.BOSS });
     assert.equal(under.status, 200);
     assert.equal(await roleOf(account.BOSS), "MANAGER");
-    const left = await asAdmin("post", `/employees/${person.STAFF}/offboard`).send({ leaveDate: "2026-12-31" });
+    const left = await asAdmin("post", `/employees/${person.STAFF}/offboard`).send({ leaveDate: "2026-01-31" });
     assert.equal(left.status, 201, JSON.stringify(left.body));
     assert.equal(await roleOf(account.BOSS), "EMPLOYEE", "a manager of nobody still working stayed MANAGER");
   });
