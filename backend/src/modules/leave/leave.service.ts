@@ -148,6 +148,7 @@ export interface YearPart {
 export interface LeaveDays {
   days: number;
   limited: boolean;
+  calendarDays: boolean;
   parts: (YearPart & { left: number | null })[];
 }
 
@@ -217,6 +218,7 @@ export class LeaveService {
           paid: body.paid ?? true,
           daysPerYear: body.daysPerYear,
           carryOverMax: body.carryOverMax ?? 0,
+          calendarDays: body.calendarDays ?? false,
         },
       });
       await this.audit.record({
@@ -346,7 +348,7 @@ export class LeaveService {
         : (body.minutes ?? 0);
     const type = body.kind === "LEAVE" ? await this.fileableType(body.leaveTypeId) : null;
     const { days, nextYearDays } = type
-      ? await this.charge(viewer.employeeId, from, to, body.halfDay ?? false)
+      ? await this.charge(viewer.employeeId, from, to, body.halfDay ?? false, type.calendarDays)
       : { days: body.halfDay ? HALF : Math.round((to.getTime() - from.getTime()) / MS_PER_DAY) + 1, nextYearDays: 0 };
     const approverId = await this.approverFor(viewer.employeeId, from);
 
@@ -441,7 +443,7 @@ export class LeaveService {
       throw new BadRequestException("HALF_DAY_ONE_DAY_ONLY");
     }
     const type = query.leaveTypeId ? await this.fileableType(query.leaveTypeId) : null;
-    const charge = await this.charge(viewer.employeeId, from, to, query.halfDay ?? false);
+    const charge = await this.charge(viewer.employeeId, from, to, query.halfDay ?? false, type?.calendarDays ?? false);
     const parts = partsOf({ fromDate: from, ...charge });
     const whose = viewer.employeeId;
     const lefts = await Promise.all(
@@ -459,15 +461,16 @@ export class LeaveService {
     return {
       days: charge.days,
       limited: type?.paid ?? true,
+      calendarDays: type?.calendarDays ?? false,
       parts: parts.map((part, at) => ({ ...part, left: lefts[at] ?? null })),
     };
   }
 
-  private async fileableType(id: string | undefined): Promise<Pick<LeaveType, "id" | "paid">> {
+  private async fileableType(id: string | undefined): Promise<Pick<LeaveType, "id" | "paid" | "calendarDays">> {
     if (!id) {
       throw new BadRequestException("LEAVE_TYPE_REQUIRED");
     }
-    const type = await this.db.leaveType.findUnique({ where: { id }, select: { id: true, paid: true, active: true } });
+    const type = await this.db.leaveType.findUnique({ where: { id }, select: { id: true, paid: true, calendarDays: true, active: true } });
     // A retired type stays on the requests that named it and is offered to no new one.
     if (!type?.active) {
       throw new NotFoundException("LEAVE_TYPE_NOT_FOUND");
@@ -475,13 +478,13 @@ export class LeaveService {
     return type;
   }
 
-  /** Working days only, each charged to the calendar year it falls in (KEHOACH 9.5). */
-  private async charge(employeeId: number, from: Date, to: Date, halfDay: boolean): Promise<Charge> {
+  /** Working days only, or every day for a calendar-day type, each charged to its year (KEHOACH 9.5). */
+  private async charge(employeeId: number, from: Date, to: Date, halfDay: boolean, calendarDays: boolean): Promise<Charge> {
     const startYear = from.getUTCFullYear();
     if (to.getUTCFullYear() > startYear + 1) {
       throw new BadRequestException("LEAVE_SPANS_YEARS");
     }
-    const working = await this.timesheet.workdays(employeeId, from, to);
+    const working = calendarDays ? everyDay(from, to) : await this.timesheet.workdays(employeeId, from, to);
     if (halfDay) {
       if (working.length === 0) {
         throw new BadRequestException("HALF_DAY_NOT_WORKING");
@@ -992,6 +995,14 @@ function isCode(error: unknown, code: string): boolean {
   }
   const message = (error as { message?: string }).message ?? "";
   return message.includes(code);
+}
+
+function everyDay(from: Date, to: Date): Date[] {
+  const days: Date[] = [];
+  for (let at = from.getTime(); at <= to.getTime(); at += MS_PER_DAY) {
+    days.push(new Date(at));
+  }
+  return days;
 }
 
 function asDay(value: Date): string {

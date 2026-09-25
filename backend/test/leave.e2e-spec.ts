@@ -247,6 +247,31 @@ describe("leave balance (e2e)", () => {
     assert.equal((asked.body as Charge).days, 4, "Monday to Friday less the own holiday is four");
   });
 
+  it("counts every calendar day for a type flagged so, as maternity leave is", async () => {
+    const made = await asAdmin("/leave-types", {
+      code: "E2E_CALENDAR",
+      name: "Thai sản (e2e)",
+      daysPerYear: 180,
+      calendarDays: true,
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    try {
+      const ask = (from: string, to: string, extra: Record<string, string> = {}) =>
+        request(http)
+          .get(`/leave-days?${new URLSearchParams({ fromDate: from, toDate: to, leaveTypeId: made.body.id, ...extra }).toString()}`)
+          .set("Authorization", `Bearer ${token}`);
+      const span = await ask(FRIDAY, MONDAY);
+      assert.equal(span.status, 200, JSON.stringify(span.body));
+      assert.equal((span.body as Charge).days, 4, "a calendar-day type skipped the weekend");
+      assert.equal(span.body.calendarDays, true);
+      const half = await ask(SUNDAY, SUNDAY, { halfDay: "true" });
+      assert.equal(half.status, 200, JSON.stringify(half.body));
+      assert.equal((half.body as Charge).days, 0.5, "half a Sunday is a half day for a calendar-day type");
+    } finally {
+      await db.leaveType.delete({ where: { id: made.body.id as string } });
+    }
+  });
+
   it("refuses half a day on a Sunday", async () => {
     const res = await fileLeave(SUNDAY, SUNDAY, { halfDay: true, dayPart: "MORNING" });
     assert.equal(res.status, 400);

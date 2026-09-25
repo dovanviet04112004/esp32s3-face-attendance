@@ -413,11 +413,14 @@ export class LeaveDaysPartView {
 }
 
 export class LeaveDaysView {
-  @ApiProperty({ description: "Working days charged in all" })
+  @ApiProperty({ description: "Days charged in all: working days, or every day for a calendar-day type" })
   days!: number;
 
   @ApiProperty({ description: "False for an unpaid type, which no balance limits" })
   limited!: boolean;
+
+  @ApiProperty({ description: "The type counts every calendar day" })
+  calendarDays!: boolean;
 
   @ApiProperty({ type: [LeaveDaysPartView] })
   parts!: LeaveDaysPartView[];

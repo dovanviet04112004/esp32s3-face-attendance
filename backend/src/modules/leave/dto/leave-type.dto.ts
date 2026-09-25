@@ -31,6 +31,11 @@ export class CreateLeaveTypeDto {
   @Min(0)
   @Max(DAYS_MAX)
   carryOverMax?: number;
+
+  @ApiPropertyOptional({ default: false, description: "Count every calendar day, as maternity leave does" })
+  @IsOptional()
+  @IsBoolean()
+  calendarDays?: boolean;
 }
 
 export class UpdateLeaveTypeDto {
@@ -57,6 +62,11 @@ export class UpdateLeaveTypeDto {
   @Min(0)
   @Max(DAYS_MAX)
   carryOverMax?: number;
+
+  @ApiPropertyOptional({ description: "Count every calendar day, as maternity leave does" })
+  @IsOptional()
+  @IsBoolean()
+  calendarDays?: boolean;
 
   @ApiPropertyOptional({ description: "Retiring one leaves every balance already granted alone" })
   @IsOptional()

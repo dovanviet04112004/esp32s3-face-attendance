@@ -616,6 +616,8 @@ model LeaveType {
   paid         Boolean        @default(true)
   daysPerYear  Decimal        @default(0) @db.Decimal(5, 1)
   carryOverMax Decimal        @default(0) @db.Decimal(5, 1)
+  // Counts every calendar day, as maternity leave does under social insurance (KEHOACH 9.5).
+  calendarDays Boolean        @default(false)
   active       Boolean        @default(true)
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt

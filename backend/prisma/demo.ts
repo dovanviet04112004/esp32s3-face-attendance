@@ -265,6 +265,7 @@ interface LeavePlan {
   paid: boolean;
   daysPerYear: number;
   carryOverMax: number;
+  calendarDays?: boolean;
   weight: number;
 }
 
@@ -274,7 +275,7 @@ const LEAVE_TYPES: LeavePlan[] = [
   { code: "UNPAID", name: "Nghỉ không lương", paid: false, daysPerYear: 0, carryOverMax: 0, weight: 10 },
   { code: "MARRIAGE", name: "Nghỉ kết hôn", paid: true, daysPerYear: 3, carryOverMax: 0, weight: 3 },
   { code: "BEREAVEMENT", name: "Nghỉ tang", paid: true, daysPerYear: 3, carryOverMax: 0, weight: 3 },
-  { code: "MATERNITY", name: "Nghỉ thai sản", paid: true, daysPerYear: 180, carryOverMax: 0, weight: 2 },
+  { code: "MATERNITY", name: "Nghỉ thai sản", paid: true, daysPerYear: 180, carryOverMax: 0, calendarDays: true, weight: 2 },
 ];
 
 // Statute sets the four solar dates; the two lunar ones are what 2026
@@ -544,6 +545,7 @@ async function buildOrg(): Promise<Org> {
         paid: plan.paid,
         daysPerYear: plan.daysPerYear,
         carryOverMax: plan.carryOverMax,
+        calendarDays: plan.calendarDays ?? false,
       },
     });
     leaveTypes.set(plan.code, { id: row.id, plan });
