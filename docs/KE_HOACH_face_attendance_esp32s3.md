@@ -4790,7 +4790,8 @@ frontend/
 │   ├── tables/{data-table.tsx, card-list.tsx}        # ★ một định nghĩa cột, hai hình thức
 │   ├── forms/employee-form.tsx
 │   ├── employees/{contracts.tsx, pay.tsx, assets.tsx, checklist.tsx, files.tsx,
-│   │              offboard.tsx}      # ★ một tab của hồ sơ một người, đọc và ghi
+│   │              offboard.tsx, shifts.tsx}
+│   │                                 # ★ một tab hay một thẻ của hồ sơ một người, đọc và ghi
 │   ├── requests/{request-card.tsx, request-form.tsx, inbox-preview.tsx}
 │   │                                 # ★ §9.10 — năm việc chờ cũ nhất, quyết ngay tại
 │   │                                 #   chỗ; trang chủ nào cũng dùng đúng một bản
@@ -7833,6 +7834,11 @@ tab lương chỉ liệt kê mốc lương, một tab tài sản chỉ liệt k�
 theo đúng luật 1, và cả ba đều có đường ghi ở backend từ lâu: `POST /contracts`,
 `POST /compensation`, `POST /assets/:id/hand-over`. Chỗ ghi đứng cạnh chỗ đọc thì người dùng
 không phải nhớ trang thứ hai, và người viết code không quên rằng hai nửa ấy là một việc.
+
+**Ca làm của một người đứng ở cột phải hồ sơ, cùng chỗ với kiosk và tài khoản.** HR thấy người ấy
+đang áp dụng ca nào, ca nào sắp tới, xếp ca từ một ngày và bỏ một phân công ngay tại đó, qua
+`GET /shifts/people/:employeeId` và hai đường ghi sẵn có của `Ca làm`. Trang `Ca làm` vẫn là chỗ
+xếp nhiều người vào một ca.
 
 **Sổ toàn công ty vẫn cần trang riêng, và nó không thay tab.** `Tài sản` trả lời *cái máy này
 đang ở đâu*, tab tài sản trả lời *người này đang cầm gì* — cùng một bảng, hai câu hỏi ngược
