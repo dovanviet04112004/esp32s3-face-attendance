@@ -3056,7 +3056,7 @@ firmware/
 └── scripts/                           # rỗng, xem dưới; script ngang khối ở /tools
 ```
 
-**`scripts/` rỗng là có chủ ý.** Nạp `models_0` đã có `ml/scripts/50_pack_and_flash.sh` (§6.3):
+**`scripts/` rỗng là có chủ ý.** Nạp hai ngăn model đã có `ml/scripts/50_pack_and_flash.sh` (§6.3):
 bước gộp ảnh cần `contracts/models.lock.json`, sha256 từng nhánh và venv của `ml/`, nên một bản
 bên firmware chỉ có thể gọi vòng sang `ml/` hoặc là bản sao thứ hai của cùng logic.
 
@@ -4272,7 +4272,7 @@ Ba trục phân chia này **khớp nhau** ở cả ba nơi — mở cùng một 
 
 | Loại | Là gì | Vào flash bằng |
 |---|---|---|
-| `.tflite` (TFLM) · `.espdl` (ESP-DL) | **Artifact của `ml/`**, không phải source. Một ảnh chỉ mang file của **một** runtime, đúng runtime firmware đang biên dịch | `ml/scripts/50_pack_and_flash.sh` → verify sha256 theo `contracts/models.lock.json` (hoặc `--lock` thí nghiệm) → đọc `firmware/models/<nhánh>/meta.json` → gộp `models.bin` → `parttool.py write_partition --partition-name models_0` |
+| `.tflite` (TFLM) · `.espdl` (ESP-DL) | **Artifact của `ml/`**, không phải source. Một ảnh chỉ mang file của **một** runtime, đúng runtime firmware đang biên dịch | `ml/scripts/50_pack_and_flash.sh` → verify sha256 theo `contracts/models.lock.json` (hoặc `--lock` thí nghiệm) → đọc `firmware/models/<nhánh>/meta.json` → gộp `models.bin` → `parttool.py write_partition` xuống `models_0` và `models_1` |
 | Font, icon, WAV | **Source**, commit trong `firmware/assets/` | `assets/build_assets.py` → `assets.bin` → `esptool` ghi partition `assets` |
 
 **Firmware build không nhúng model.** Nhúng thành mảng C thì đổi model phải build lại toàn bộ firmware và mất khả năng OTA riêng model — mà model là thứ đổi nhiều nhất trong dự án này.
@@ -5443,7 +5443,8 @@ thời gian camera khoá lại PLL. Nghỉ quá sớm là trả giá đánh th�
 1. ToF đọc được khoảng cách trong `vision.present_mm` — **mỗi lượt poll**, không chỉ lúc qua cạnh
 2. Chạm màn GT911
 3. Màn lấy mẫu đăng ký đang mở (`ui_kiosk_enrolling()`)
-4. Một màn phủ kín đang mở
+4. Một màn phủ kín đang mở, kể cả màn **Cập nhật** (§7.7) — màn này đọc từ trạng thái cập nhật chứ
+   không từ lần vẽ, vì panel đang nghỉ không vẽ
 5. `drv_tof_read_mm` trả lỗi **thật** — khác `ESP_ERR_TIMEOUT`, vốn chỉ là "chưa tới lượt đo" và
    xảy ra mỗi 100 ms. Lưới an toàn: cảm biến hỏng thì máy phải thức, không phải ngủ vĩnh viễn
 
@@ -5563,7 +5564,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
 | `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver`, `pending`, `enroll_out` | str / u32 / blob | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại, và về 0 khi bảng mặt bị bỏ vì đổi model nhận diện (§6.2.4); `pending` (blob `storage_pending_t`) là danh sách người chờ chụp ở máy này, và `enroll_out` (blob `storage_enroll_out_t`) là các yêu cầu `RETAKE` / `DELETE_EMPLOYEE` chưa được broker ack (§7.5); layout của hai blob khai ở `storage_format.h` |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
-| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32) | | `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
+| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32), `ota_to` (str ≤ 32) | | `ota_to` là phiên bản firmware máy vừa khởi động lại để lên, ghi ngay trước `esp_restart()` của OTA và xoá ở lần khởi động kế tiếp: đúng phiên bản ấy thì màn quét nói "Đã cập nhật lên x.y.z", khác thì máy báo `OTA_ROLLED_BACK` với phiên bản bị bỏ (§7.7). `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
 | `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `guide_min` (u32, %), `present_mm` (u32, mm) | | năm ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
@@ -5684,7 +5685,9 @@ của graph; `arena_hint` của entry `.espdl` là **0**, vì ESP-DL tự lập 
 
 `arena_hint` là **số byte của arena mà model đó chạy trong**, không phải phần riêng của nó. Hai nhánh dùng chung một `MicroAllocator` thì cả hai entry ghi **cùng một** con — tổng của nhóm — và `ai_engine` cấp `max` trên từng nhóm; §3.8 nói vì sao `max` đúng và vì sao không thêm field `arena_group`. Nhóm nào chung arena là hằng số kiến trúc khai ở `ai_engine` (§4.5.5c), không nằm trong ảnh.
 
-Ảnh do `ml/src/facepipe/export/pack_models_partition.py` gộp: nó đọc `contracts/models.lock.json` để biết nhánh nào đang deploy, đối chiếu sha256 và `meta.json` của từng nhánh, từ chối lock trộn hai runtime, rồi ghi header + ba khối. `ml/scripts/50_pack_and_flash.sh` gọi nó và ghi kết quả xuống `models_0` bằng `parttool.py`.
+Ảnh do `ml/src/facepipe/export/pack_models_partition.py` gộp: nó đọc `contracts/models.lock.json` để biết nhánh nào đang deploy, đối chiếu sha256 và `meta.json` của từng nhánh, từ chối lock trộn hai runtime, rồi ghi header + ba khối. `ml/scripts/50_pack_and_flash.sh` gọi nó và ghi kết quả xuống **cả `models_0` lẫn `models_1`**
+bằng `parttool.py`: sau một lần OTA model, máy đọc ngăn mà `model/active_slot` chỉ, nên nạp riêng
+`models_0` là nạp vào ngăn máy có thể không đọc, và phép đo trên bàn âm thầm chạy bộ model cũ.
 
 **So hai phiên bản model không được sửa contract.** Cả hai script nhận `--lock <file>`; mặc định là `contracts/models.lock.json`, tức bản đang deploy. Lock thí nghiệm nằm ở `ml/artifacts/<nhánh>/`, hoặc `ml/artifacts/device/locks/<bộ>/` khi nó gom cả ba nhánh — chỗ đã gitignore — chứ không ở `contracts/`, vì nó không phải hợp đồng mà là một lần đo; `50_pack_and_flash.sh --lock --models-dir` đóng ảnh từ đó, và ghi `models_0` bằng chính bước `--port` của nó chứ không `esptool` tay. `contracts/models.lock.json` giữ bộ `.espdl` deploy, **cùng runtime** với `AI_RUNTIME` mặc định của firmware, và hai thứ đổi trong hai commit liền nhau: lock và firmware mặc định mà lệch runtime thì ảnh đóng ra bị `ai_engine` từ chối. Bộ `.tflite` đối chứng là lock thí nghiệm `ml/artifacts/device/locks/tflm/`; nội dung đầy đủ của nó còn trong lịch sử git của `contracts/`. Nhờ vậy đo bản B là trỏ `--lock` sang file khác rồi flash lại `models_0`, không đụng `contracts/` và không build lại firmware: `ai_engine` đọc kích thước đầu vào từ chính graph và arena từ `arena_hint`, nên hai bản khác kích thước dùng cùng một binary. Giữ **cả hai** bản trên flash cùng lúc thì cần chọn slot lúc boot bằng `nvs:model/active_slot`, và đó là việc của E13-T2.
 
@@ -6792,14 +6795,24 @@ cũ. Trang một máy có nút **Cập nhật** và một dòng trạng thái su
 
 | Trạng thái | Khi nào — xét từ trên xuống, dòng đầu khớp là đáp án |
 |---|---|
-| Đã lên | heartbeat báo đúng bản đã mời |
+| Đã lên | heartbeat báo đúng bản đã mời và `onTrial` tắt: bản ấy đã tự xác nhận |
+| Đang chạy thử | heartbeat báo đúng bản đã mời mà `onTrial` còn bật: một lần khởi động lại bất kỳ lúc này vẫn quay về bản cũ |
+| Bị quay về bản cũ | có sự kiện `OTA_ROLLED_BACK` sau lúc mời: bản mới hỏng trong lúc chạy thử và bootloader đã quay về |
 | Lỗi: *lý do máy gửi* | có sự kiện `OTA_FAILED` sau lúc mời |
-| Bị ngắt giữa chừng | máy khởi động lại **sau** lúc mời mà vẫn chạy bản cũ: mất điện lúc tải, hoặc bản mới hỏng trong lúc chạy thử và bootloader đã quay về bản cũ. Lúc khởi động đọc từ heartbeat: lúc nhận trừ `uptimeSeconds` |
-| Lời mời hết hạn | quá `RELEASE_LINK_HOURS` mà máy chưa lên — link tải đã chết, thường vì máy offline lúc được mời |
+| Bị ngắt giữa chừng | máy khởi động lại **sau** lúc mời mà vẫn chạy bản cũ và không báo gì: mất điện lúc tải. Lúc khởi động đọc từ heartbeat: lúc nhận trừ `uptimeSeconds` |
+| Lời mời hết hạn | quá `RELEASE_LINK_HOURS` mà máy chưa lên — link tải đã chết |
 | Đang chờ máy | còn lại |
 
-Thiếu hai dòng giữa thì một lần mất điện lúc tải để trang đứng mãi ở "đang chờ máy", vì máy khởi
-động lại bản cũ mà không kịp báo gì.
+Thiếu các dòng giữa thì một lần mất điện lúc tải để trang đứng mãi ở "đang chờ máy", và một bản hỏng
+lúc chạy thử trông y như mất điện nên bị mời lại. Hai sự kiện `OTA_FAILED` và `OTA_ROLLED_BACK`
+**không đi qua bộ lọc 60 s** của lỗi thiết bị: bấm lại rồi hỏng lại trong một phút là lần hỏng thứ
+hai, không phải bản sao của lần đầu. Chúng mang mã bản trong `cmdId`, và server so theo lúc nó nhận
+chứ không theo đồng hồ của máy; `otaOfferedAt` ghi **trước** khi gửi lời mời.
+
+**Không mời máy đang offline.** Lời mời đi QoS 1 không giữ lại, và kiosk nối broker bằng phiên
+sạch, nên máy offline lúc ấy không bao giờ nhận được nó. Server trả **409** `DEVICE_OFFLINE`, *Cập
+nhật tất cả* bỏ qua và đếm riêng máy offline, và nút trên trang một máy khoá kèm chữ "Máy đang
+offline".
 
 **Một lời mời đang chạy thì không mời chồng lên.** Máy chỉ có một `ota_task` và bỏ qua lời mời tới
 trong lúc đang tải, còn `Device` chỉ giữ lời mời gần nhất, nên mời chồng chỉ làm mất dấu lần đang
@@ -6818,15 +6831,36 @@ ngay. Mỗi lần bấm là một link mới.
 khởi động chỉ đổi khi sha256 khớp (E13-T1). Bản mới khởi động ở chế độ chạy thử: nó chỉ tự xác
 nhận sau `OTA_SETTLE_MS` (30 s) và khi nhận diện đã sẵn sàng; tắt ngang hay treo trước lúc ấy là
 bootloader quay về bản cũ. Model đi đúng hình ấy qua `models_0`/`models_1` và `model/active_slot`
-(E13-T2).
+(E13-T2), nhưng **dựng được đồ thị chưa đủ để giữ**: một bộ model chỉ được giữ khi `svc_vision`
+đã lên với đủ ba nhánh và một lượt suy luận thử trên khung tĩnh ra đúng kích thước đầu ra của từng
+nhánh; thiếu nhánh hay ra sai là quay về ngăn cũ. Bản firmware còn đang chạy thử thì từ chối lời mời
+`MODELS` (`FIRMWARE_ON_TRIAL`): khởi động lại để thử model cũng là khởi động lại một firmware chưa xác
+nhận, và bootloader sẽ quay firmware về mà không ai hay.
 
-**Kiosk nói cho người đứng trước nó.** Lúc tải, `ota_task` giương `OTA_RUNNING` và dòng về cái máy
-trên khung ngắm (đúng chỗ của dòng vé, §4.5.5h.1) đọc "Đang tải bản cập nhật x%", với phần trăm
-lấy từ số byte `net_ota` đã nhận. Dòng ấy không che khung ngắm và không chặn chấm công: bản ghi
-vẫn xếp hàng như lúc mất mạng. Ngay trước `esp_restart()` là một thẻ giữa màn "Đang khởi động lại
-để cập nhật…", vì mấy giây màn đen sau đó là thứ người đứng trước máy sẽ tưởng là hỏng. Một bản
-chỉ hiện được màn này từ lần cập nhật **sau** lần đưa nó lên máy: lần tải ấy vẫn chạy bằng code
-bản cũ.
+**Kiosk nói cho người đứng trước nó, bằng cả màn hình.** Nhận lời mời là `ota_task` giương
+`OTA_RUNNING`, và màn **Cập nhật** phủ kín LCD: phiên bản đang lên, một thanh tiến trình và một dòng
+pha — *Đang kết nối*, *Đang tải x%*, *Đang kiểm tra*, *Đang khởi động lại*. Phần trăm lấy từ số byte
+`net_ota` đã nhận và đếm lại từ 0 ở mỗi lần tải; pha lấy từ `net_ota`, vì xoá flash và kiểm sha256
+mất vài giây mà không nhận byte nào. Màn đổi trên `ui_task`, còn các task khác chỉ ghi trạng thái.
+
+- **Màn sáng lên.** Nó là màn phủ kín nên là nguồn đánh thức số 4 của §5.4, và `rest_level()` đọc
+  thẳng trạng thái cập nhật: panel đang nghỉ không vẽ được lần nào, nên chờ một lần vẽ để biết màn
+  đã bị phủ là chờ mãi.
+- **Chấm công tạm dừng.** `ai_task` bỏ `svc_vision_step` như lúc nghỉ; không mở cửa, không phát
+  tiếng. Người đứng trước máy thấy máy đang bận thay vì một khung ngắm không ai trả lời. Một lượt
+  lấy mẫu đăng ký đang dở bị huỷ, và màn ghi rõ là huỷ vì cập nhật.
+- **Lỗi thì nói lỗi.** Tải hỏng thì màn chuyển sang *Cập nhật không thành công* kèm lý do theo mã —
+  mất mạng giữa chừng, sai sha256, server từ chối link, ảnh lớn hơn ngăn — đứng 10 s rồi trả máy về
+  chấm công.
+- **Không ai vẽ đè.** Thành công thì màn đứng ở *Đang khởi động lại* tới `esp_restart()`; lượt làm
+  mới của `attend_task` chỉ cập nhật phần trăm khi pha còn là *Đang tải*.
+- **Lên xong thì nói đã lên.** Trước `esp_restart()` `ota_task` ghi phiên bản đang lên vào
+  `sys/ota_to`; bản mới khởi động xong mà đúng phiên bản ấy thì hiện "Đã cập nhật lên x.y.z" 10 s
+  trên màn quét rồi xoá dấu, còn khởi động lên bản khác là bootloader đã quay về và dấu ấy thành
+  báo cáo `OTA_ROLLED_BACK`.
+
+Một bản chỉ hiện được màn này từ lần cập nhật **sau** lần đưa nó lên máy: lần tải ấy vẫn chạy bằng
+code bản cũ.
 
 Lời mời là đúng bản kê khai `ota_manifest.schema.json` qua `down/ota`. Máy **tải ngay** khi nhận,
 khởi động lại khi xong, và lượt chấm công trong lúc ấy vẫn ghi offline (§6.2.6) — nên nút ghi rõ
