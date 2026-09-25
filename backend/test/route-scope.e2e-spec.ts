@@ -211,7 +211,10 @@ describe("route scope (e2e)", () => {
     const taken = await say(endpoint, "other-key", "other-auth", "MANAGER");
     assert.equal(taken.status, 409, "someone else's device was moved onto a stranger's keys");
     assert.equal(taken.body.message, "PUSH_ENDPOINT_TAKEN");
-    assert.equal((await say(endpoint, "k", "a", "MANAGER")).status, 201, "the same browser could not change hands");
+    const sameKeys = await say(endpoint, "k", "a", "MANAGER");
+    assert.equal(sameKeys.status, 409, "an endpoint changed owner by repeating its keys");
+    assert.equal(sameKeys.body.message, "PUSH_ENDPOINT_TAKEN");
+    assert.equal((await say(endpoint, "k2", "a2")).status, 201, "the owner could not renew its own keys");
     await db.pushSubscription.deleteMany({ where: { endpoint } });
   });
 

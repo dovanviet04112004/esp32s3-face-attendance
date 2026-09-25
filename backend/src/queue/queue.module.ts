@@ -8,6 +8,8 @@ export const QUEUE_TOKEN = "BULLMQ_QUEUES";
 
 export type Queues = Record<QueueName, Queue>;
 
+const HOUR_S = 3600;
+
 @Global()
 @Module({
   providers: [
@@ -23,11 +25,12 @@ export type Queues = Record<QueueName, Queue>;
           removeOnComplete: 100,
           removeOnFail: 500,
         };
-        const make = (name: QueueName): Queue =>
-          new Queue(name, { connection: redis.client, defaultJobOptions: defaults });
+        const make = (name: QueueName, kept = {}): Queue =>
+          new Queue(name, { connection: redis.client, defaultJobOptions: { ...defaults, ...kept } });
         return {
           [QUEUE.report]: make(QUEUE.report),
-          [QUEUE.notify]: make(QUEUE.notify),
+          // Setup mail carries a live password link, and only its hash may outlast the letter (KEHOACH 9.4).
+          [QUEUE.notify]: make(QUEUE.notify, { removeOnComplete: true, removeOnFail: { age: HOUR_S } }),
           [QUEUE.payroll]: make(QUEUE.payroll),
           [QUEUE.timesheet]: make(QUEUE.timesheet),
         };

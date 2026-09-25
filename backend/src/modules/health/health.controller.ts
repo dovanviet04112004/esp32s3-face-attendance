@@ -1,7 +1,8 @@
-import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Controller, Get, HttpStatus, ServiceUnavailableException } from "@nestjs/common";
+import { ApiOkResponse, ApiOperation, ApiProperty, ApiTags } from "@nestjs/swagger";
 import { SkipThrottle } from "@nestjs/throttler";
 
+import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { RedisService } from "../../database/redis.service.js";
 import { THROTTLE } from "../auth/auth.types.js";
@@ -24,6 +25,11 @@ async function answers(probe: PromiseLike<unknown>): Promise<boolean> {
   return answered;
 }
 
+export class HealthView {
+  @ApiProperty({ enum: ["ok"] })
+  status!: "ok";
+}
+
 /** The deploy script and the compose healthcheck wait on this (KEHOACH 4.8). */
 @ApiTags("health")
 @Controller("health")
@@ -36,7 +42,9 @@ export class HealthController {
   @Get()
   @SkipThrottle({ [THROTTLE.api]: true })
   @ApiOperation({ summary: "Whether Postgres and Redis answer; the broker is not asked" })
-  async check(): Promise<{ status: "ok" }> {
+  @ApiOkResponse({ type: HealthView })
+  @ApiErrors(HttpStatus.SERVICE_UNAVAILABLE)
+  async check(): Promise<HealthView> {
     const [database, cache] = await Promise.all([
       answers(this.db.$queryRaw`SELECT 1`),
       answers(this.redis.client.ping()),

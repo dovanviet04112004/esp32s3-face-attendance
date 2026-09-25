@@ -130,6 +130,35 @@ describe("rate limits and account lockout (e2e)", () => {
     assert.equal((await login(email, "not-the-password")).body.message, "AUTH_LOCKED");
   });
 
+  it("counts misses typed in any case against the one address", async () => {
+    const email = await account("shouted");
+    const spellings = [email.toUpperCase(), email, `${email[0].toUpperCase()}${email.slice(1)}`];
+    for (const typed of spellings.slice(0, LOCK_AFTER)) {
+      assert.equal((await login(typed, "not-the-password")).status, 401);
+    }
+    const locked = await login(email);
+    assert.equal(locked.status, 429, "changing the case of the address bought more guesses");
+    assert.equal(locked.body.message, "AUTH_LOCKED");
+  });
+
+  it("locks the account against a held session guessing the password it would change", async () => {
+    const email = await account("hijacked");
+    const bearer = await token(email);
+    const change = (current: string): request.Test =>
+      request(http)
+        .post("/auth/change-password")
+        .set("Authorization", `Bearer ${bearer}`)
+        .set("X-Forwarded-For", fresh())
+        .send({ current, next: "a-new-long-password" });
+    for (let miss = 0; miss < LOCK_AFTER; miss += 1) {
+      assert.equal((await change("not-the-password")).status, 401);
+    }
+    const locked = await change(PASSWORD);
+    assert.equal(locked.status, 429, "a session kept guessing past the lock");
+    assert.equal(locked.body.message, "AUTH_LOCKED");
+    assert.equal((await login(email)).body.message, "AUTH_LOCKED", "the login door did not share the lock");
+  });
+
   it("forgets the misses once the owner signs in", async () => {
     const email = await account("forgetful");
     for (let miss = 0; miss < LOCK_AFTER - 1; miss += 1) {

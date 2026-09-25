@@ -3,12 +3,11 @@ import { OnEvent } from "@nestjs/event-emitter";
 import type { Queue } from "bullmq";
 
 import type { DeviceEvent } from "../../common/generated/device_event.js";
-import type { Heartbeat } from "../../common/generated/heartbeat.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { DEVICE_CHANGED, type DeviceChange, DevicesService } from "../devices/devices.service.js";
 import { KIOSK_EVENT, type KioskMessage } from "../mqtt/mqtt.events.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { QUEUE } from "../../queue/queues.js";
+import { JOB, QUEUE } from "../../queue/queues.js";
 import { FEED, RealtimeGateway } from "./realtime.gateway.js";
 
 @Injectable()
@@ -45,13 +44,8 @@ export class RealtimeListener {
       // Telling someone is somebody else's job and may be slow, so it leaves
       // through the queue rather than holding up the broker callback.
       const queue: Queue = this.queues[QUEUE.notify];
-      await queue.add(QUEUE.notify, { deviceId: message.deviceId, reason: body.type });
+      await queue.add(JOB.webhook, { deviceId: message.deviceId, reason: body.type });
     }
-  }
-
-  @OnEvent(KIOSK_EVENT.heartbeat)
-  onBeat(message: KioskMessage<Heartbeat>): void {
-    this.feed.publish(FEED.device, message.payload);
   }
 
   @OnEvent(DEVICE_CHANGED)

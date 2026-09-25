@@ -11,9 +11,14 @@ import { AuditService } from "../audit/audit.service.js";
 
 const SECONDS_PER_MINUTE = 60;
 
+/** The one spelling of an address that sign-in looks up and the lock counts (KEHOACH 7.2). */
+export function normalEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 // Keyed by the address typed, known or not, so a lock tells nobody which accounts exist (KEHOACH 7.2).
 function hashOf(email: string): string {
-  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
+  return createHash("sha256").update(normalEmail(email)).digest("hex");
 }
 
 /** Misses on one email in a row, whatever address they come from (KEHOACH 7.2). */

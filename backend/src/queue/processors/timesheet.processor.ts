@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import { Worker } from "bullmq";
 
 import { RedisService } from "../../database/redis.service.js";
+import { FEED, RealtimeGateway } from "../../modules/realtime/realtime.gateway.js";
 import { TimesheetService } from "../../modules/timesheet/timesheet.service.js";
 import { QUEUE, type TimesheetJob } from "../queues.js";
 
@@ -13,6 +14,7 @@ export class TimesheetProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly redis: RedisService,
     private readonly timesheet: TimesheetService,
+    private readonly feed: RealtimeGateway,
   ) {}
 
   onModuleInit(): void {
@@ -22,6 +24,8 @@ export class TimesheetProcessor implements OnModuleInit, OnModuleDestroy {
         const body = job.data as TimesheetJob;
         const built = await this.timesheet.buildRange(body.from, body.to);
         this.log.log(`built ${built.rows} row(s) across ${built.days} day(s)`);
+        // No request carried this write, so the change interceptor never saw it.
+        this.feed.publish(FEED.change, { resources: ["timesheet"] }, null);
       },
       { connection: this.redis.client },
     );

@@ -68,6 +68,30 @@ describe("environment (e2e)", () => {
     assert.equal(env.EMQX_API_USERNAME, "admin");
   });
 
+  it("refuses to boot when two kinds of token share one secret", () => {
+    assert.throws(
+      () => validateEnv({ ...BASE, JWT_REFRESH_SECRET: BASE.JWT_ACCESS_SECRET }),
+      /JWT_REFRESH_SECRET must differ/,
+    );
+    assert.throws(
+      () => validateEnv({ ...BASE, JWT_DEVICE_SECRET: BASE.JWT_REFRESH_SECRET }),
+      /JWT_DEVICE_SECRET must differ/,
+    );
+  });
+
+  it("serves the api document outside production unless told otherwise", () => {
+    assert.equal(validateEnv(BASE).API_DOCS_ENABLED, true);
+    assert.equal(validateEnv({ ...BASE, API_DOCS_ENABLED: "" }).API_DOCS_ENABLED, true);
+    assert.equal(validateEnv({ ...BASE, API_DOCS_ENABLED: "false" }).API_DOCS_ENABLED, false);
+  });
+
+  it("keeps the api document private in production unless it is turned on", () => {
+    const shipped = { ...BASE, ...BROKER_API, NODE_ENV: "production", MAIL_HOST: "smtp.example.com" };
+    assert.equal(validateEnv(shipped).API_DOCS_ENABLED, false);
+    assert.equal(validateEnv({ ...shipped, API_DOCS_ENABLED: "true" }).API_DOCS_ENABLED, true);
+    assert.throws(() => validateEnv({ ...shipped, API_DOCS_ENABLED: "yes" }), /API_DOCS_ENABLED/);
+  });
+
   it("names every variable it cannot do without", () => {
     const naked = validateEnv;
     assert.throws(() => naked({ NODE_ENV: "test" }), /DATABASE_URL[\s\S]*MQTT_PASSWORD/);

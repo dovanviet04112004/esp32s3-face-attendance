@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const JWT_SECRETS = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET", "JWT_DEVICE_SECRET"] as const;
+
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -75,6 +77,10 @@ export const envSchema = z
       .transform((held) => (held ? held : undefined)),
 
     CORS_ORIGIN: z.string().min(1),
+    API_DOCS_ENABLED: z
+      .enum(["true", "false", ""])
+      .optional()
+      .transform((held) => (held ? held === "true" : undefined)),
 
     // No host is how a deployment turns payslip mail off (KEHOACH 9.11).
     MAIL_HOST: z
@@ -136,7 +142,14 @@ export const envSchema = z
         ctx.addIssue({ code: "custom", path: [key], message: `${key} is required when NODE_ENV is production` });
       }
     }
-  });
+    // One secret under two kinds of token lets either pass where the other is asked for (KEHOACH 7.2).
+    for (const [at, key] of JWT_SECRETS.entries()) {
+      if (JWT_SECRETS.slice(0, at).some((other) => env[other] === env[key])) {
+        ctx.addIssue({ code: "custom", path: [key], message: `${key} must differ from the other JWT secrets` });
+      }
+    }
+  })
+  .transform((env) => ({ ...env, API_DOCS_ENABLED: env.API_DOCS_ENABLED ?? env.NODE_ENV !== "production" }));
 
 export type Env = z.infer<typeof envSchema>;
 

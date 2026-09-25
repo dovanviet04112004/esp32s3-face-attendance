@@ -302,4 +302,27 @@ describe("who the feed talks to (e2e)", () => {
     assert.ok(changed(stranger.heard, "holidays"), "an employee was not told the holidays moved");
     stranger.socket.close();
   });
+
+  it("tells a manager about a new report filed under them, though the socket predates the row", async () => {
+    const newcomer = "E2EFS04";
+    const boss = await watch(bossToken);
+    const stranger = await watch(strangerToken);
+    const above = await db.employee.findUniqueOrThrow({ where: { code: BOSS } });
+    await db.employee.deleteMany({ where: { code: newcomer } });
+    try {
+      const made = await request(app.getHttpServer())
+        .post("/employees")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ code: newcomer, fullName: "Người mới feed", managerId: above.id });
+      assert.equal(made.status, 201, JSON.stringify(made.body));
+      await settle();
+
+      assert.ok(changed(boss.heard, "employees"), "the manager's open team list missed the new report");
+      assert.deepEqual(stranger.heard, [], "a new employee reached somebody outside the tree");
+    } finally {
+      boss.socket.close();
+      stranger.socket.close();
+      await db.employee.deleteMany({ where: { code: newcomer } });
+    }
+  });
 });

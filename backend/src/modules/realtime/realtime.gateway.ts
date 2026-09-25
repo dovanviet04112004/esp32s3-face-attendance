@@ -1,18 +1,20 @@
-import { Logger } from "@nestjs/common";
+import { Logger, type INestApplicationContext } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { OnEvent } from "@nestjs/event-emitter";
+import { IoAdapter } from "@nestjs/platform-socket.io";
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
   WebSocketGateway,
   WebSocketServer,
 } from "@nestjs/websockets";
-import { Server, Socket } from "socket.io";
+import { Server, Socket, type ServerOptions } from "socket.io";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
+import { AuthService } from "../auth/auth.service.js";
 import { SESSIONS_CUT, type AccessClaims, type SessionsCut } from "../auth/auth.types.js";
 
 /** What the dashboard can be told about; KEHOACH 9.4 names who hears each. */
@@ -42,7 +44,28 @@ interface Watcher {
   goodUntilMs: number;
 }
 
-@WebSocketGateway({ namespace: "/feed", cors: { credentials: true } })
+interface Ticket {
+  claims: AccessClaims & { iat?: number };
+  viewer: Viewer;
+  goodUntilMs: number;
+}
+
+/** Socket.io takes its CORS list when the server is made, so the one REST answers reaches it here. */
+export class FeedAdapter extends IoAdapter {
+  constructor(
+    app: INestApplicationContext,
+    private readonly origins: string[],
+  ) {
+    super(app);
+  }
+
+  override createIOServer(port: number, options?: ServerOptions): Server {
+    const cors = { origin: this.origins, credentials: true };
+    return super.createIOServer(port, { ...options, cors } as ServerOptions);
+  }
+}
+
+@WebSocketGateway({ namespace: "/feed" })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly log = new Logger(RealtimeGateway.name);
   private readonly watchers = new Map<string, Watcher>();
@@ -54,15 +77,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly config: ConfigService<Env, true>,
     private readonly jwt: JwtService,
     private readonly scope: ScopeService,
+    private readonly auth: AuthService,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
     const ticket = this.readTicket(client);
-    if (!ticket) {
+    // The same cutoff REST checks, so a locked or demoted login opens no socket (KEHOACH 9.23).
+    if (!ticket || (await this.auth.accessCut(ticket.claims, ticket.claims.iat ?? 0))) {
       client.disconnect(true);
       return;
     }
     const visible = await this.scope.visibleEmployeeIds(ticket.viewer);
+    // A socket gone during the awaits already ran handleDisconnect, so nothing would delete it.
+    if (!client.connected) {
+      return;
+    }
     this.watchers.set(client.id, {
       viewer: ticket.viewer,
       reach: visible === null ? null : new Set(visible),
@@ -75,16 +104,17 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.watchers.delete(client.id);
   }
 
-  private readTicket(client: Socket): { viewer: Viewer; goodUntilMs: number } | null {
+  private readTicket(client: Socket): Ticket | null {
     const token = client.handshake.auth?.token;
     if (typeof token !== "string" || token === "") {
       return null;
     }
     try {
-      const claims = this.jwt.verify<AccessClaims & { exp?: number }>(token, {
+      const claims = this.jwt.verify<AccessClaims & { iat?: number; exp?: number }>(token, {
         secret: this.config.get("JWT_ACCESS_SECRET", { infer: true }),
       });
       return {
+        claims,
         viewer: { userId: claims.sub, role: claims.role, employeeId: claims.employeeId ?? null },
         goodUntilMs: (claims.exp ?? 0) * MS_PER_SECOND,
       };

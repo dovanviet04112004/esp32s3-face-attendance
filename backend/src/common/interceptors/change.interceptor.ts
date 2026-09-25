@@ -27,13 +27,24 @@ export interface Change {
   resources: string[];
 }
 
-function ownersOf(result: unknown): About {
+type Owned = { id?: unknown; managerId?: unknown; employeeId?: unknown } | null | undefined;
+
+// An employee row owns itself; its manager's socket scope predates a new or moved row (KEHOACH 9.4).
+function ownersOfRow(row: Owned, root: string): unknown[] {
+  if (row?.employeeId !== undefined) {
+    return [row.employeeId];
+  }
+  return root === "employees" ? [row?.id, row?.managerId] : [];
+}
+
+function ownersOf(result: unknown, root: string, named: number[]): About {
   const rows: unknown[] = Array.isArray(result) ? result : [result];
-  const owners = new Set<number>();
+  const owners = new Set<number>(named);
   for (const row of rows) {
-    const owner = (row as { employeeId?: unknown } | null | undefined)?.employeeId;
-    if (typeof owner === "number") {
-      owners.add(owner);
+    for (const owner of ownersOfRow(row as Owned, root)) {
+      if (typeof owner === "number") {
+        owners.add(owner);
+      }
     }
   }
   return owners.size === 0 ? null : [...owners];
@@ -77,11 +88,7 @@ export class ChangeInterceptor implements NestInterceptor {
     if (root === "me") {
       return req.user?.employeeId ?? null;
     }
-    const named = req.params.employeeId ?? (root === "employees" ? req.params.id : undefined);
-    if (named !== undefined) {
-      const owner = Number(named);
-      return Number.isInteger(owner) ? owner : null;
-    }
-    return ownersOf(result);
+    const named = Number(req.params.employeeId ?? (root === "employees" ? req.params.id : undefined));
+    return ownersOf(result, root, Number.isInteger(named) ? [named] : []);
   }
 }

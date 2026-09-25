@@ -22,13 +22,20 @@ export async function hashPassword(plain: string): Promise<string> {
   return `${SCHEME}$${salt.toString("base64")}$${key.toString("base64")}`;
 }
 
-/** Whether a password matches a stored hash, compared in constant time. */
-export async function verifyPassword(plain: string, stored: string): Promise<boolean> {
-  const [scheme, salt, key] = stored.split("$");
+const DECOY = { salt: randomBytes(SALT_BYTES), key: randomBytes(KEY_BYTES) };
+
+function parse(stored: string | undefined): { salt: Buffer; key: Buffer } | null {
+  const [scheme, salt, key] = (stored ?? "").split("$");
   if (scheme !== SCHEME || !salt || !key) {
-    return false;
+    return null;
   }
-  const expected = Buffer.from(key, "base64");
-  const actual = await derive(plain, Buffer.from(salt, "base64"), expected.length);
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
+  return { salt: Buffer.from(salt, "base64"), key: Buffer.from(key, "base64") };
+}
+
+/** Whether a password matches a stored hash; no hash still costs one scrypt, so time names no account. */
+export async function verifyPassword(plain: string, stored: string | undefined): Promise<boolean> {
+  const held = parse(stored);
+  const against = held ?? DECOY;
+  const actual = await derive(plain, against.salt, against.key.length);
+  return held !== null && timingSafeEqual(against.key, actual);
 }

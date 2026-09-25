@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 
@@ -9,7 +10,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
-import { hashPassword } from "../src/modules/auth/password.js";
+import { hashPassword, verifyPassword } from "../src/modules/auth/password.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
 
 // The last case spends the login allowance for the minute, so this suite needs
@@ -74,6 +75,7 @@ describe("auth (e2e)", () => {
     const res = await signIn(SIGNER_EMAIL, password);
     assert.equal(res.status, 200);
     assert.equal(typeof res.body.accessToken, "string");
+    assert.equal(res.body.email, SIGNER_EMAIL, "the account menu has no address to show");
     const jar = (res.headers["set-cookie"] ?? []) as unknown as string[];
     const line = jar.find((entry) => entry.startsWith(`${REFRESH_COOKIE}=`));
     assert.ok(line?.includes("HttpOnly"));
@@ -92,6 +94,31 @@ describe("auth (e2e)", () => {
   it("refuses a guarded route with no token", async () => {
     const res = await request(http).get("/auth/me");
     assert.equal(res.status, 401);
+    assert.equal(res.body.message, "UNAUTHENTICATED", "passport's own word reached the client");
+  });
+
+  it("refuses a route the caller's role may not use with a code", async () => {
+    const login = await signIn(SIGNER_EMAIL, password);
+    const res = await request(http)
+      .get("/releases")
+      .set("Authorization", `Bearer ${login.body.accessToken}`);
+    assert.equal(res.status, 403);
+    assert.equal(res.body.message, "FORBIDDEN_ROLE", "Nest's own word reached the client");
+  });
+
+  it("refuses a body that is not JSON with a code, before any route reads it", async () => {
+    const res = await request(http)
+      .post("/employees")
+      .set("Content-Type", "application/json")
+      .send('{"code": "E2E", ');
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "BODY_INVALID", "the parser's sentence reached the client");
+  });
+
+  it("refuses a body past the limit with 413 and a code, not a 500", async () => {
+    const res = await request(http).post("/employees").send({ fullName: "x".repeat(200_000) });
+    assert.equal(res.status, 413);
+    assert.equal(res.body.message, "BODY_TOO_LARGE");
   });
 
   it("trades the refresh cookie for a new pair", async () => {
@@ -99,6 +126,77 @@ describe("auth (e2e)", () => {
     const res = await request(http).post("/auth/refresh").set("Cookie", cookieFrom(login.headers));
     assert.equal(res.status, 200);
     assert.equal(typeof res.body.accessToken, "string");
+    assert.equal(res.body.email, SIGNER_EMAIL, "a reload loses the address the menu shows");
+  });
+
+  it("lets one of two renewals racing on one cookie win, and refuses the other", async () => {
+    const login = await signIn(SIGNER_EMAIL, password);
+    const held = cookieFrom(login.headers);
+    const raced = await Promise.all([
+      request(http).post("/auth/refresh").set("Cookie", held),
+      request(http).post("/auth/refresh").set("Cookie", held),
+    ]);
+    assert.deepEqual(
+      raced.map((res) => res.status).sort(),
+      [200, 401],
+      "both renewals of one refresh token came back with a pair",
+    );
+    assert.equal(raced.find((res) => res.status === 401)?.body.message, "REFRESH_REPLAYED");
+  });
+
+  it("finds the account whatever case the address is typed in", async () => {
+    const res = await signIn(SIGNER_EMAIL.toUpperCase(), password);
+    assert.equal(res.status, 200, "a phone keyboard's capital letter locked the owner out");
+    assert.equal(res.body.email, SIGNER_EMAIL);
+  });
+
+  it("checks a password against no hash at all without ever matching", async () => {
+    assert.equal(await verifyPassword(password, undefined), false);
+    assert.equal(await verifyPassword(password, "none$"), false);
+  });
+
+  it("refuses a body it cannot accept with a code and the names of the fields", async () => {
+    spent += 1;
+    const res = await request(http)
+      .post("/auth/login")
+      .send({ email: "not-an-address", password, remember: true });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "VALIDATION_FAILED", "a validator sentence reached the client");
+    assert.deepEqual([...(res.body.fields as string[])].sort(), ["email", "remember"]);
+  });
+
+  it("answers an id that is not a number with a code", async () => {
+    const login = await signIn(SIGNER_EMAIL, password);
+    const res = await request(http)
+      .get("/employees/not-a-number")
+      .set("Authorization", `Bearer ${login.body.accessToken}`);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "ID_INVALID");
+    assert.equal(res.body.fields, undefined);
+  });
+
+  it("reads a large import body only for a caller holding a token this api signed", async () => {
+    const big = { csv: "x".repeat(200_000) };
+    const anonymous = await request(http).post("/employees/import").send(big);
+    assert.equal(anonymous.status, 413, "an anonymous body was read before anyone asked who sent it");
+    assert.equal(anonymous.body.message, "BODY_TOO_LARGE");
+
+    const lapsed = new JwtService().sign(
+      { sub: "e2e-lapsed", role: "HR", sid: "e2e-lapsed", exp: Math.floor(Date.now() / 1000) - 60 },
+      { secret: validateEnv().JWT_ACCESS_SECRET },
+    );
+    const renewing = await request(http)
+      .post("/employees/import")
+      .set("Authorization", `Bearer ${lapsed}`)
+      .send(big);
+    assert.equal(renewing.status, 401, "an expired ticket lost the 401 that sends the browser to renew");
+  });
+
+  it("answers a route that does not exist with a code", async () => {
+    const res = await request(http).get("/no-such-route");
+    assert.equal(res.status, 404);
+    assert.equal(res.body.message, "ROUTE_NOT_FOUND");
+    assert.equal(res.body.path, "/no-such-route");
   });
 
   it("treats a refresh cookie used twice as a replay and drops the session", async () => {

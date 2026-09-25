@@ -8,6 +8,7 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { RedisService } from "../../database/redis.service.js";
 import { payslipMail } from "../../modules/payroll/mail-text.js";
 import { PayrollService } from "../../modules/payroll/payroll.service.js";
+import { FEED, RealtimeGateway } from "../../modules/realtime/realtime.gateway.js";
 import { QUEUE, type DeliverJob, type PayrollJob } from "../queues.js";
 
 @Injectable()
@@ -21,6 +22,7 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly redis: RedisService,
     private readonly payroll: PayrollService,
     private readonly config: ConfigService<Env, true>,
+    private readonly feed: RealtimeGateway,
   ) {}
 
   onModuleInit(): void {
@@ -31,6 +33,7 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
         const body = job.data as PayrollJob;
         if (body.type === "run") {
           await this.payroll.runNow(body.runId);
+          this.announceRun();
           return;
         }
         await this.deliver(body);
@@ -44,9 +47,15 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
       if (body?.type === "run" && job !== undefined && job.attemptsMade >= (job.opts.attempts ?? 1)) {
         void this.db.payrollRun
           .update({ where: { id: body.runId }, data: { state: "FAILED", finishedAt: new Date() } })
+          .then(() => this.announceRun())
           .catch(() => undefined);
       }
     });
+  }
+
+  // No request carried a worker's write, so the change interceptor never saw it.
+  private announceRun(): void {
+    this.feed.publish(FEED.change, { resources: ["payroll-runs"] }, null);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -114,5 +123,6 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
       where: { id: slip.id },
       data: { state: "SENT", sentAt: new Date() },
     });
+    this.feed.publish(FEED.change, { resources: ["payslips"] }, slip.employeeId);
   }
 }

@@ -10,18 +10,27 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiCookieAuth,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import type { CookieOptions, Request, Response } from "express";
 
+import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { NotAudited } from "../../common/decorators/audited.decorator.js";
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
+import { actedAs } from "../../common/interceptors/audit.interceptor.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { JwtRefreshGuard } from "../../common/guards/jwt-refresh.guard.js";
 import type { Env } from "../../config/env.schema.js";
 import { AuthService, ttlToMs, type IssuedTokens } from "./auth.service.js";
 import { REFRESH_COOKIE, THROTTLE, type AccessClaims, type RefreshClaims } from "./auth.types.js";
-import { LoginDto } from "./dto/login.dto.js";
+import { ClaimsView, LoginDto, SessionView } from "./dto/login.dto.js";
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -31,6 +40,7 @@ import {
 const REFRESH_PATH = "/auth";
 
 @ApiTags("auth")
+@ApiErrors(HttpStatus.BAD_REQUEST, HttpStatus.UNAUTHORIZED, HttpStatus.TOO_MANY_REQUESTS)
 @Controller("auth")
 export class AuthController {
   constructor(
@@ -42,15 +52,17 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @RateBucket(THROTTLE.login)
   @ApiOperation({ summary: "Exchange an email and password for an access token" })
+  @ApiOkResponse({ type: SessionView, description: "Also sets the httpOnly refresh cookie" })
   async login(
     @Body() body: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<{ accessToken: string }> {
+  ): Promise<SessionView> {
     const tokens = await this.auth.signIn(body.email, body.password, {
       userAgent: req.get("user-agent"),
       ip: req.ip,
     });
+    actedAs(req, tokens.userId);
     return this.handOver(tokens, res);
   }
 
@@ -58,6 +70,7 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @RateBucket(THROTTLE.login)
   @ApiOperation({ summary: "Spend a one-time link to set a first password" })
+  @ApiNoContentResponse()
   async setPassword(@Body() body: SetPasswordDto): Promise<void> {
     await this.auth.setPassword(body.token, body.password);
   }
@@ -68,6 +81,7 @@ export class AuthController {
   // The answer is the same for an address with an account and one without, so
   // this door cannot be read as a list of who works here (KEHOACH 9.4).
   @ApiOperation({ summary: "Ask for a setup link by mail; answers alike either way" })
+  @ApiNoContentResponse()
   async forgot(@Body() body: ForgotPasswordDto): Promise<void> {
     await this.auth.forgot(body.email);
   }
@@ -75,7 +89,10 @@ export class AuthController {
   @Post("change-password")
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(JwtAuthGuard)
+  @RateBucket(THROTTLE.login)
+  @ApiBearerAuth(API_AUTH.user)
   @ApiOperation({ summary: "Change the password in hand, which closes every device" })
+  @ApiNoContentResponse()
   async changePassword(
     @Body() body: ChangePasswordDto,
     @CurrentViewer() viewer: Viewer,
@@ -87,11 +104,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtRefreshGuard)
   @NotAudited()
+  @ApiCookieAuth(API_AUTH.refresh)
   @ApiOperation({ summary: "Trade the refresh cookie for a fresh access token" })
+  @ApiOkResponse({ type: SessionView, description: "Also replaces the refresh cookie" })
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<{ accessToken: string }> {
+  ): Promise<SessionView> {
     const tokens = await this.auth.rotate(req.user as RefreshClaims);
     return this.handOver(tokens, res);
   }
@@ -100,7 +119,8 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "End the session this request presents" })
-  @ApiBearerAuth()
+  @ApiBearerAuth(API_AUTH.user)
+  @ApiNoContentResponse()
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
     await this.auth.close((req.user as AccessClaims).sid);
     res.clearCookie(REFRESH_COOKIE, this.cookieOptions());
@@ -109,17 +129,18 @@ export class AuthController {
   @Get("me")
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "The claims on the caller's own token" })
-  @ApiBearerAuth()
+  @ApiBearerAuth(API_AUTH.user)
+  @ApiOkResponse({ type: ClaimsView })
   me(@Req() req: Request): AccessClaims {
     return req.user as AccessClaims;
   }
 
-  private handOver(tokens: IssuedTokens, res: Response): { accessToken: string } {
+  private handOver(tokens: IssuedTokens, res: Response): SessionView {
     res.cookie(REFRESH_COOKIE, tokens.refreshToken, {
       ...this.cookieOptions(),
       maxAge: ttlToMs(this.config.get("JWT_REFRESH_TTL", { infer: true })),
     });
-    return { accessToken: tokens.accessToken };
+    return { accessToken: tokens.accessToken, email: tokens.email };
   }
 
   private cookieOptions(): CookieOptions {

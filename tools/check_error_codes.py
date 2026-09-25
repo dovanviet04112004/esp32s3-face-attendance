@@ -20,7 +20,7 @@ CATALOGUES = {
     "en": Path("frontend/messages/en.json"),
 }
 
-HTTP = r"(?:BadRequest|NotFound|Conflict|Forbidden|Unauthorized|Gone|UnprocessableEntity|Throttler)"
+HTTP = r"(?:BadRequest|NotFound|Conflict|Forbidden|Unauthorized|Gone|UnprocessableEntity|PayloadTooLarge|Throttler)"
 # The argument list runs to the end of the line, which is where every one of
 # these calls ends; a ternary between two codes is still one call.
 CALL = re.compile(HTTP + r"Exception\(([^\n]*)")

@@ -8,36 +8,50 @@ export const QUEUE = {
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
 
+/** Every job name; a job's `type` carries the same word, and that is what a processor reads. */
+export const JOB = {
+  monthly: "monthly",
+  webhook: "webhook",
+  contractsEnding: "contracts-ending",
+  requestsStale: "requests-stale",
+  backupWatch: "backup-watch",
+  passwordSetup: "password-setup",
+  profileNotice: "profile-notice",
+  deliver: "deliver",
+  run: "run",
+  build: "build",
+} as const;
+
 export interface ReportJob {
-  type: "monthly";
+  type: typeof JOB.monthly;
   from: string;
   to: string;
 }
 
 export interface WebhookJob {
-  type?: "webhook";
+  type?: typeof JOB.webhook;
   deviceId: string;
   reason: string;
 }
 
 export interface ContractsEndingJob {
-  type: "contracts-ending";
+  type: typeof JOB.contractsEnding;
 }
 
 export interface RequestsStaleJob {
-  type: "requests-stale";
+  type: typeof JOB.requestsStale;
 }
 
 export interface BackupWatchJob {
-  type: "backup-watch";
+  type: typeof JOB.backupWatch;
 }
 
-/** The link rides here: the server keeps only its hash (KEHOACH 9.4). */
 /** What the letter around the link says: a welcome, or a recovery (KEHOACH 9.4). */
 export type SetupReason = "opened" | "forgot";
 
+/** The plain link rides here, so the notify queue keeps no finished job (queue.module.ts). */
 export interface PasswordSetupJob {
-  type: "password-setup";
+  type: typeof JOB.passwordSetup;
   userId: string;
   link: string;
   reason: SetupReason;
@@ -45,7 +59,7 @@ export interface PasswordSetupJob {
 
 /** Only the row id rides here; the address is on the row (KEHOACH 9.17.6). */
 export interface ProfileNoticeJob {
-  type: "profile-notice";
+  type: typeof JOB.profileNotice;
   changeId: string;
 }
 
@@ -58,12 +72,12 @@ export type NotifyJob =
   | ProfileNoticeJob;
 
 export interface DeliverJob {
-  type: "deliver";
+  type: typeof JOB.deliver;
   payslipId: string;
 }
 
 export interface RunJob {
-  type: "run";
+  type: typeof JOB.run;
   runId: string;
 }
 
@@ -72,7 +86,7 @@ export type PayrollJob = DeliverJob | RunJob;
 
 /** A day build is an upsert on (employee, date): arriving twice is a no-op. */
 export interface BuildJob {
-  type: "build";
+  type: typeof JOB.build;
   from: string;
   to: string;
 }

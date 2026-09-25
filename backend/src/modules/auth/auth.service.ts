@@ -13,9 +13,9 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { RedisService } from "../../database/redis.service.js";
 import { SESSIONS_CUT, type AccessClaims, type DeviceClaims, type RefreshClaims, type SessionsCut } from "./auth.types.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
+import { JOB, QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
-import { LoginLockout } from "./login-lockout.service.js";
+import { LoginLockout, normalEmail } from "./login-lockout.service.js";
 import { hashPassword, LINK_BYTES, verifyPassword } from "./password.js";
 
 const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -40,9 +40,12 @@ function sameFingerprint(given: string, kept: string | null): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** A fresh pair, and the account it belongs to. */
 export interface IssuedTokens {
   accessToken: string;
   refreshToken: string;
+  userId: string;
+  email: string;
 }
 
 /** What the session row records about the device it belongs to. */
@@ -70,10 +73,11 @@ export class AuthService {
     if ((await this.lockout.lockedFor(email)) > 0) {
       throw new ThrottlerException("AUTH_LOCKED");
     }
-    const user = await this.db.user.findUnique({ where: { email } });
+    const id = await this.accountIdOf(email);
+    const user = id === null ? null : await this.db.user.findUnique({ where: { id } });
     // The same answer whether the address is unknown or the password is wrong,
     // so a caller cannot learn which addresses exist.
-    const ok = user ? await verifyPassword(password, user.passwordHash) : false;
+    const ok = await verifyPassword(password, user?.passwordHash);
     // A closed account answers like a wrong password on purpose: the caller
     // has proved nothing yet, so it must not learn the address exists.
     if (!user || !ok || !user.active) {
@@ -82,7 +86,7 @@ export class AuthService {
     }
     await this.lockout.clear(email);
     await this.makeRoom(user.id);
-    return this.issue(user, null, from);
+    return this.issue(user, from);
   }
 
   /** Trade a refresh token for a new pair. A jti that misses the hash its own
@@ -112,7 +116,17 @@ export class AuthService {
       await this.closeAll(session.userId);
       throw new UnauthorizedException("ACCOUNT_CLOSED");
     }
-    return this.issue(session.user, session.id, {});
+    const jti = randomUUID();
+    const renewed = await this.db.session.updateMany({
+      where: { id: session.id, tokenHash: session.tokenHash, revokedAt: null },
+      data: { tokenHash: fingerprint(jti), expiresAt: this.refreshExpiry(), lastSeenAt: now },
+    });
+    // A renewal racing this one on the same jti won, so the jti here is spent (KEHOACH 9.23 rule 3).
+    if (renewed.count === 0) {
+      await this.close(session.id);
+      throw new UnauthorizedException("REFRESH_REPLAYED");
+    }
+    return this.sign(session.user, session.id, jti);
   }
 
   /** Redeem a one-time link; spending it closes it (KEHOACH 9.4). */
@@ -144,9 +158,18 @@ export class AuthService {
    */
   async changePassword(userId: string, current: string, next: string): Promise<void> {
     const user = await this.db.user.findUnique({ where: { id: userId } });
-    if (!user || !user.active || !(await verifyPassword(current, user.passwordHash))) {
+    if (!user || !user.active) {
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
     }
+    // A held session guessing the password counts against the lock the login door keeps (KEHOACH 7.2).
+    if ((await this.lockout.lockedFor(user.email)) > 0) {
+      throw new ThrottlerException("AUTH_LOCKED");
+    }
+    if (!(await verifyPassword(current, user.passwordHash))) {
+      await this.lockout.missed(user.email, user.id);
+      throw new UnauthorizedException("CREDENTIALS_REJECTED");
+    }
+    await this.lockout.clear(user.email);
     const passwordHash = await hashPassword(next);
     const now = new Date();
     await this.db.$transaction([
@@ -164,10 +187,14 @@ export class AuthService {
    *  door cannot be read as a list of who works here (KEHOACH 9.4).
    */
   async forgot(email: string): Promise<void> {
-    const user = await this.db.user.findUnique({
-      where: { email },
-      select: { id: true, active: true, employee: { select: { locale: true } } },
-    });
+    const id = await this.accountIdOf(email);
+    const user =
+      id === null
+        ? null
+        : await this.db.user.findUnique({
+            where: { id },
+            select: { id: true, active: true, employee: { select: { locale: true } } },
+          });
     if (!user || !user.active) {
       this.log.log("a setup link was asked for by an address with no account");
       return;
@@ -180,8 +207,8 @@ export class AuthService {
       data: { userId: user.id, tokenHash: fingerprint(link), expiresAt },
     });
     const root = this.config.get("APP_PUBLIC_URL", { infer: true });
-    await this.queues[QUEUE.notify].add("password-setup", {
-      type: "password-setup",
+    await this.queues[QUEUE.notify].add(JOB.passwordSetup, {
+      type: JOB.passwordSetup,
       userId: user.id,
       link: `${root}/${user.employee?.locale ?? DEFAULT_MAIL_LOCALE}/set-password?token=${link}`,
       reason: "forgot",
@@ -307,40 +334,45 @@ export class AuthService {
     }
   }
 
-  private async issue(
-    user: User,
-    sessionId: string | null,
-    from: SignedInFrom,
-  ): Promise<IssuedTokens> {
+  // Any case finds the account; the exact spelling wins where two differ only in case.
+  private async accountIdOf(email: string): Promise<string | null> {
+    const typed = email.trim();
+    const exact = await this.db.user.findUnique({ where: { email: typed }, select: { id: true } });
+    if (exact) {
+      return exact.id;
+    }
+    const alike = await this.db.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "User" WHERE lower("email") = ${normalEmail(typed)} LIMIT 2`;
+    return alike.length === 1 ? alike[0].id : null;
+  }
+
+  private refreshExpiry(): Date {
+    return new Date(Date.now() + ttlToMs(this.config.get("JWT_REFRESH_TTL", { infer: true })));
+  }
+
+  private async issue(user: User, from: SignedInFrom): Promise<IssuedTokens> {
     const jti = randomUUID();
-    const tokenHash = fingerprint(jti);
-    const expiresAt = new Date(
-      Date.now() + ttlToMs(this.config.get("JWT_REFRESH_TTL", { infer: true })),
-    );
-    const session =
-      sessionId === null
-        ? await this.db.session.create({
-            data: {
-              userId: user.id,
-              tokenHash,
-              expiresAt,
-              userAgent: from.userAgent ?? null,
-              ip: from.ip ?? null,
-            },
-            select: { id: true },
-          })
-        : await this.db.session.update({
-            where: { id: sessionId },
-            data: { tokenHash, expiresAt, lastSeenAt: new Date() },
-            select: { id: true },
-          });
+    const session = await this.db.session.create({
+      data: {
+        userId: user.id,
+        tokenHash: fingerprint(jti),
+        expiresAt: this.refreshExpiry(),
+        userAgent: from.userAgent ?? null,
+        ip: from.ip ?? null,
+      },
+      select: { id: true },
+    });
+    return this.sign(user, session.id, jti);
+  }
+
+  private sign(user: User, sessionId: string, jti: string): IssuedTokens {
     const access: AccessClaims = {
       sub: user.id,
       role: user.role,
-      sid: session.id,
+      sid: sessionId,
       ...(user.employeeId !== null ? { employeeId: user.employeeId } : {}),
     };
-    const refresh: RefreshClaims = { sub: user.id, sid: session.id, jti };
+    const refresh: RefreshClaims = { sub: user.id, sid: sessionId, jti };
     const accessToken = this.jwt.sign(access, {
       secret: this.config.get("JWT_ACCESS_SECRET", { infer: true }),
       expiresIn: this.config.get("JWT_ACCESS_TTL", { infer: true }),
@@ -349,7 +381,7 @@ export class AuthService {
       secret: this.config.get("JWT_REFRESH_SECRET", { infer: true }),
       expiresIn: this.config.get("JWT_REFRESH_TTL", { infer: true }),
     });
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, userId: user.id, email: user.email };
   }
 }
 
