@@ -2295,6 +2295,10 @@ esp32s3-face-attendance/
 │   └── vendor/                      # ❌ gitignore — sơ đồ module hãng, giữ UPSTREAM.md
 ├── backend/       NestJS
 ├── frontend/      Next.js → Vercel
+├── android/       Vỏ app Android (Trusted Web Activity) mở đúng frontend — §9.21.7
+│   ├── twa-manifest.json            # ✅ nguồn thật: package, tên, icon, màu thanh hệ thống, domain
+│   └── build.sh                     # dựng lại project Gradle bằng Bubblewrap rồi ký APK; project,
+│                                    #   APK, keystore và mật khẩu ký đều gitignore
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
 ├── tools/         Script ngang khối: gen_contracts · check_comments · check_layers
 │                   · check_migrations · check_error_codes · check_plans
@@ -8805,6 +8809,7 @@ lần chuyển là thứ khiến người ta coi nó là một trang web tạm b
 | Chạm | tắt vệt sáng khi chạm, tắt cuộn nảy của khung, chữ không tự phóng khi xoay |
 | Quay lại app | app ẩn quá 60 s thì lúc hiện lại hỏi lại mọi query đang mở — ổ cắm không phải lúc nào cũng kịp nối |
 | Cài đặt trên iPhone | chưa cài thì màn thông báo nói cách *Thêm vào màn hình chính*, vì iOS chỉ cho thông báo đẩy khi app đã cài |
+| Cài đặt trên Android | cài **app Android** (§9.21.7), không cài PWA: trang đăng nhập mở bằng trình duyệt Android có nút *Tải app Android*, và không nhắc *Thêm vào màn hình chính* |
 | Thông báo đẩy | tiêu đề là tên hệ; biểu tượng nhỏ là bản một màu `badge.png`; chạm vào thì mở lại cửa sổ đang có, không mở thêm cửa sổ mới |
 | Trang lỗi | một trang lỗi của chính hệ, bằng tiếng của người dùng, có nút thử lại và nút về trang chủ — không phải trang lỗi trắng tiếng Anh của Next |
 
@@ -8819,6 +8824,29 @@ lần chuyển là thứ khiến người ta coi nó là một trang web tạm b
 
 Tấm trượt giữ nhịp 450 ms và cử chỉ vuốt đóng của chính Kumo. Người dùng bật *giảm chuyển động*
 thì mọi thứ trên đây tắt, kể cả cuộn mượt.
+
+#### 9.21.7 Trên Android, hệ là một app thật bọc đúng trang web
+
+Chrome không cho một PWA đã cài vẽ ra sau thanh trạng thái và thanh điều hướng: hai dải ấy Chrome
+tự tô bằng màu ghi lúc cài, lóe khác màu mỗi lần mở hay chuyển app, và trên nhiều máy thanh dưới
+vẫn đen dù manifest khai đúng (đo 25/09 trên điện thoại thật của chủ repo). Việc sửa nằm phía
+Chromium và chưa phát hành, nên trên Android hệ đi bằng một **app Android thật** kiểu Trusted Web
+Activity: một vỏ mở `app.<domain>` trong Chrome, tự đặt màu thanh trạng thái, thanh điều hướng,
+vạch ngăn và màn khởi động bằng đúng `kumo-canvas` (sáng `#fbfbfb`, tối `#030303`).
+
+- **Web vẫn là một.** Vỏ không mang code nghiệp vụ nào; mọi thay đổi của web tới app như tới trình
+  duyệt. Chỉ đổi tên, icon, màu hay domain mới phải dựng lại APK.
+- **Một nguồn thật:** `android/twa-manifest.json` (package `vn.io.cckiosk.nhanluc`). Project Gradle
+  là thứ Bubblewrap sinh ra từ nó mỗi lần dựng, nên không nằm trong git.
+- **Domain chứng nhận app.** `frontend/public/.well-known/assetlinks.json` mang dấu SHA-256 của khoá
+  ký; thiếu nó thì Chrome hiện thanh địa chỉ trong app và app thành một tab trình duyệt.
+- **Khoá ký là bí mật như `age.key`.** Keystore và mật khẩu nằm ngoài git, ở máy người dựng, kèm một
+  bản sao lưu do chủ repo giữ: mất khoá là không phát được bản cập nhật cho app đã cài.
+- **Phát hành qua GitHub Releases của repo.** Trang đăng nhập link tới `NEXT_PUBLIC_ANDROID_APK_URL`,
+  mặc định là tệp của bản phát hành mới nhất; một đường link cố định nên nút không phải sửa theo từng
+  bản.
+- **iPhone vẫn là PWA** (§9.21.6), vì iOS không cài APK; manifest và service worker vì thế vẫn giữ,
+  và chính app Android cũng dùng chúng cho thông báo đẩy và lúc mất mạng.
 
 ### 9.22 Dữ liệu: cái gì mất được, cái gì không
 
