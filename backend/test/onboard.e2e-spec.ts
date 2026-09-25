@@ -229,6 +229,33 @@ describe("onboarding (e2e)", () => {
       .send({ contract: { kind: "INDEFINITE", startDate: LATE_START } });
     assert.equal(res.status, 409);
   });
+
+  // A probation that ran out undecided is already a hire (KEHOACH 9.18), so
+  // only the ones still ahead are a decision to make.
+  it("lists a probation ending within the month and leaves out one already over", async () => {
+    const dayMs = 86_400_000;
+    const day = (offset: number) => new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z").getTime() + offset * dayMs;
+    const [ahead, over] = await Promise.all(
+      [10, -10].map((offset) =>
+        db.employmentContract.create({
+          data: {
+            employeeId: bossId,
+            kind: "PROBATION",
+            state: "ACTIVE",
+            startDate: new Date(day(offset - 60)),
+            probationEnd: new Date(day(offset)),
+          },
+        }),
+      ),
+    );
+    const res = await request(http).get("/reports/attention").set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    const listed = res.body.probationEnding.rows.map((row: { contractId: string }) => row.contractId);
+    assert.ok(listed.includes(ahead.id), "a probation ending in ten days is missing");
+    assert.ok(!listed.includes(over.id), "a probation over ten days ago is still listed");
+    const mine = res.body.probationEnding.rows.find((row: { contractId: string }) => row.contractId === ahead.id);
+    assert.equal(mine.daysLeft, 10);
+  });
 });
 
 async function counts(db: PrismaService, employeeId: number): Promise<number[]> {

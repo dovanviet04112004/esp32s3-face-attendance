@@ -299,7 +299,7 @@ export class ReportsService {
           FROM "EmploymentContract" c
           JOIN "Employee" e ON e."id" = c."employeeId"
          WHERE c."state" = 'ACTIVE' AND e."active" = true
-           AND c."probationEnd" IS NOT NULL AND c."probationEnd" <= ${horizon}
+           AND c."probationEnd" >= CURRENT_DATE AND c."probationEnd" <= ${horizon}
          ORDER BY c."probationEnd"
          LIMIT ${kAttentionCap + 1}
       `,
