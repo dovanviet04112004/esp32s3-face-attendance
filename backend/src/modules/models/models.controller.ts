@@ -45,8 +45,11 @@ export class ModelsController {
 
   @Post(":releaseId/offer")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Offer a release to every approved kiosk running something older" })
-  offerAll(@Param("releaseId") releaseId: string, @Req() req: Request): Promise<{ offered: string[]; failed: string[] }> {
+  @ApiOperation({ summary: "Offer a release to every approved kiosk running something older and not installing already" })
+  offerAll(
+    @Param("releaseId") releaseId: string,
+    @Req() req: Request,
+  ): Promise<{ offered: string[]; failed: string[]; busy: string[] }> {
     return this.models.offerAll(releaseId, actorOf(req));
   }
 

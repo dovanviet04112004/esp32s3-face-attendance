@@ -38,6 +38,7 @@ export const envSchema = z
     OTA_MAX_BYTES: z.coerce.number().int().positive().default(2_883_584),
     RELEASE_DIR: z.string().min(1).default("./releases"),
     RELEASE_LINK_HOURS: z.coerce.number().int().positive().max(168).default(24),
+    OTA_BUSY_MINUTES: z.coerce.number().int().positive().max(1440).default(10),
     API_PUBLIC_URL: z
       .string()
       .url()

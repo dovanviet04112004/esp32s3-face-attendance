@@ -226,6 +226,7 @@ describe("releases (e2e)", () => {
     assert.equal(waiting.status, 200);
     assert.equal(waiting.body.state, "WAITING");
     assert.equal(waiting.body.version, VERSION);
+    assert.ok(new Date(waiting.body.busyUntil).getTime() > Date.now(), "a fresh offer carries no busy window");
 
     await db.deviceEvent.create({
       data: {
@@ -247,7 +248,11 @@ describe("releases (e2e)", () => {
 
   it("reads a reboot on the old release as interrupted, and a day-old offer as expired", async () => {
     await db.deviceEvent.deleteMany({ where: { deviceId: BEHIND, type: "OTA_FAILED" } });
-    await db.device.update({ where: { id: BEHIND }, data: { fwVersion: OLDER, bootedAt: new Date(Date.now() - 3_600_000) } });
+    // The earlier offer is aged past its busy window, so the kiosk takes a new one.
+    await db.device.update({
+      where: { id: BEHIND },
+      data: { fwVersion: OLDER, bootedAt: new Date(Date.now() - 2 * 3_600_000), otaOfferedAt: new Date(Date.now() - 3_600_000) },
+    });
     assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201);
     const status = async () => (await asAdmin("get", `/releases/status/${BEHIND}`)).body.state as string;
     assert.equal(await status(), "WAITING", "a kiosk that booted before the offer reads as cut off");
@@ -273,5 +278,35 @@ describe("releases (e2e)", () => {
     assert.ok(!offered.includes(CURRENT), "a kiosk already on the release was offered it again");
     assert.ok(!offered.includes(WAITING), "an unapproved kiosk was offered a release");
     assert.deepEqual(res.body.failed, []);
+  });
+
+  it("refuses another offer while a kiosk is still installing one, until that ends", async () => {
+    offers.length = 0;
+    const again = await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`);
+    assert.equal(again.status, 409, JSON.stringify(again.body));
+    assert.equal(again.body.message, "OTA_IN_PROGRESS");
+    const all = await asAdmin("post", `/releases/${releaseId}/offer`);
+    assert.ok(all.body.busy.includes(BEHIND), "offer-all did not count the installing kiosk apart");
+    assert.ok(!all.body.offered.includes(BEHIND), "offer-all offered over a running install");
+    assert.equal(offers.filter((one) => one.deviceId === BEHIND).length, 0, "a refused offer still reached the kiosk");
+    const fleet = (await asAdmin("get", "/releases/fleet")).body as { release: { releaseId: string }; behind: string[]; updating: string[] }[];
+    const firmware = fleet.find((one) => one.release.releaseId === releaseId);
+    assert.ok(firmware?.updating.includes(BEHIND), "the installing kiosk is not shown as updating");
+    assert.ok(!firmware?.behind.includes(BEHIND), "the installing kiosk still counts toward offer-all");
+
+    const busyMs = validateEnv().OTA_BUSY_MINUTES * 60_000;
+    await db.device.update({ where: { id: BEHIND }, data: { otaOfferedAt: new Date(Date.now() - busyMs - 60_000) } });
+    const missed = await asAdmin("get", `/releases/status/${BEHIND}`);
+    assert.equal(missed.body.state, "WAITING");
+    assert.equal(missed.body.busyUntil, null, "an offer past its busy window still locks the kiosk");
+    assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201, "a missed offer could not be sent again");
+
+    await db.deviceEvent.create({
+      data: { deviceId: BEHIND, type: "OTA_FAILED", severity: "ERROR", message: "sha256 mismatch", ts: new Date(Date.now() + 1000) },
+    });
+    const failed = await asAdmin("get", `/releases/status/${BEHIND}`);
+    assert.equal(failed.body.state, "FAILED");
+    assert.equal(failed.body.busyUntil, null, "a kiosk that reported a failure still reads as installing");
+    assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201, "a failed kiosk could not be offered again");
   });
 });

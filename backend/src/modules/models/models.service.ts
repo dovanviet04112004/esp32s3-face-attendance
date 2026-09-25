@@ -41,12 +41,16 @@ export interface OfferStatus {
   offeredAt: Date;
   state: OfferState;
   reason: string | null;
+  /** Until when the kiosk counts as installing this offer; another offer to it is refused until then. */
+  busyUntil: Date | null;
 }
 
 /** The newest release of one kind that can still be offered, and the approved kiosks behind it. */
 export interface FleetUpdate {
   release: ReleaseView;
   behind: string[];
+  /** Behind too, but still installing an earlier offer, so left out of an offer to all. */
+  updating: string[];
 }
 
 export interface PublishFacts {
@@ -73,6 +77,7 @@ const UNIQUE_VIOLATION = "P2002";
 const OTA_FAILED = "OTA_FAILED";
 const LINK_PURPOSE = "release-link";
 const kHourMs = 3_600_000;
+const kMinuteMs = 60_000;
 
 function semver(version: string | null): [number, number, number] | null {
   const parts = version?.match(/^(\d+)\.(\d+)\.(\d+)$/);
@@ -115,6 +120,7 @@ export class ModelsService implements OnModuleInit {
   private readonly log = new Logger(ModelsService.name);
   private readonly dir: string;
   private readonly linkKey: Buffer;
+  private readonly busyMs: number;
 
   constructor(
     private readonly db: PrismaService,
@@ -126,6 +132,7 @@ export class ModelsService implements OnModuleInit {
     this.linkKey = createHmac("sha256", this.config.get("JWT_DEVICE_SECRET", { infer: true }))
       .update(LINK_PURPOSE)
       .digest();
+    this.busyMs = this.config.get("OTA_BUSY_MINUTES", { infer: true }) * kMinuteMs;
   }
 
   // A volume that cannot be written only stops publishing, so it is logged rather than fatal.
@@ -147,6 +154,7 @@ export class ModelsService implements OnModuleInit {
       select: { id: true, fwVersion: true, modelVersion: true },
       orderBy: { id: "asc" },
     });
+    const busy = await this.installing();
     const updates: FleetUpdate[] = [];
     for (const target of PUBLISHED_TARGETS) {
       const newest = await this.db.release.findFirst({
@@ -154,9 +162,11 @@ export class ModelsService implements OnModuleInit {
         orderBy: { createdAt: "desc" },
       });
       if (newest) {
+        const older = devices.filter((one) => behind(one, newest)).map((one) => one.id);
         updates.push({
           release: view(newest),
-          behind: devices.filter((one) => behind(one, newest)).map((one) => one.id),
+          behind: older.filter((id) => !busy.has(id)),
+          updating: older.filter((id) => busy.has(id)),
         });
       }
     }
@@ -262,12 +272,17 @@ export class ModelsService implements OnModuleInit {
     if (runs(device, release)) {
       throw new ConflictException("RELEASE_ALREADY_RUNNING");
     }
+    // One ota_task per kiosk, and Device keeps only the newest offer (KEHOACH 7.7).
+    if ((await this.status(deviceId))?.busyUntil) {
+      throw new ConflictException("OTA_IN_PROGRESS");
+    }
     return this.send(release, deviceId, actorId);
   }
 
-  /** Offer a release to every approved kiosk running something older. */
-  async offerAll(releaseId: string, actorId: string): Promise<{ offered: string[]; failed: string[] }> {
+  /** Offer a release to every approved kiosk running something older and not installing already. */
+  async offerAll(releaseId: string, actorId: string): Promise<{ offered: string[]; failed: string[]; busy: string[] }> {
     const release = await this.offerable(releaseId);
+    const installing = await this.installing();
     const fleet = await this.db.device.findMany({
       where: { status: "APPROVED" },
       select: { id: true, fwVersion: true, modelVersion: true },
@@ -275,7 +290,12 @@ export class ModelsService implements OnModuleInit {
     });
     const offered: string[] = [];
     const failed: string[] = [];
+    const busy: string[] = [];
     for (const device of fleet.filter((one) => behind(one, release))) {
+      if (installing.has(device.id)) {
+        busy.push(device.id);
+        continue;
+      }
       try {
         await this.send(release, device.id, actorId);
         offered.push(device.id);
@@ -284,7 +304,7 @@ export class ModelsService implements OnModuleInit {
         failed.push(device.id);
       }
     }
-    return { offered, failed };
+    return { offered, failed, busy };
   }
 
   /** How the newest offer to a kiosk went, read from its heartbeat and its events. */
@@ -305,6 +325,7 @@ export class ModelsService implements OnModuleInit {
       target: release.target,
       version: release.version,
       offeredAt: device.otaOfferedAt,
+      busyUntil: null,
     };
     if (runs(device, release)) {
       return { ...base, state: "INSTALLED", reason: null };
@@ -325,7 +346,23 @@ export class ModelsService implements OnModuleInit {
     if (Date.now() - device.otaOfferedAt.getTime() > linkMs) {
       return { ...base, state: "EXPIRED", reason: null };
     }
-    return { ...base, state: "WAITING", reason: null };
+    const busyEnds = device.otaOfferedAt.getTime() + this.busyMs;
+    return { ...base, state: "WAITING", reason: null, busyUntil: busyEnds > Date.now() ? new Date(busyEnds) : null };
+  }
+
+  // The approved kiosks inside the busy window of an offer they have not answered yet.
+  private async installing(): Promise<Set<string>> {
+    const recent = await this.db.device.findMany({
+      where: { status: "APPROVED", otaOfferedAt: { gt: new Date(Date.now() - this.busyMs) } },
+      select: { id: true },
+    });
+    const busy = new Set<string>();
+    for (const one of recent) {
+      if ((await this.status(one.id))?.busyUntil) {
+        busy.add(one.id);
+      }
+    }
+    return busy;
   }
 
   private async offerable(releaseId: string): Promise<Release> {
