@@ -4955,7 +4955,8 @@ cookie ấy là cookie bên thứ nhất. Dưới `*.vercel.app` nó thành cook
 định, và người dùng iPhone — thiết bị chính của cổng nhân viên (§9.21) — bị đăng xuất mỗi lần tải
 lại trang. Vercel giữ ba biến: `NEXT_PUBLIC_API_URL=https://api.<domain>`,
 `NEXT_PUBLIC_WS_URL=wss://api.<domain>`, và `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — nửa công khai của
-cặp khoá thông báo đẩy (§9.21.4). Phía `api`, `CORS_ORIGIN` và `APP_PUBLIC_URL` trỏ
+cặp khoá thông báo đẩy (§9.21.4). `NEXT_PUBLIC_APP_TIMEZONE` chỉ cần đặt khi công ty không ở
+`Asia/Ho_Chi_Minh`, và khi ấy bằng đúng `APP_TIMEZONE` của `api` (§9.8). Phía `api`, `CORS_ORIGIN` và `APP_PUBLIC_URL` trỏ
 `https://app.<domain>`, còn `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` đi từ `.env`
 của VPS vào container như mọi secret khác; nửa riêng không bao giờ rời VPS. Thiếu khoá thì `api`
 vẫn chạy và chỉ tắt thông báo đẩy, nên lỗi quên chuyển biến này không tự lộ ra lúc khởi động. DNS có thêm một bản ghi `CNAME app` về địa chỉ Vercel đưa.
@@ -7258,6 +7259,14 @@ nay còn đang diễn ra và một dòng tổng kết giữa chừng là một d
 
 Sửa tay được, nhưng **phải để lại vết**: `AttendanceDay` mang `adjustedBy` và `adjustReason`.
 Một bảng công mà HR sửa được không dấu vết thì không dùng để trả lương được.
+
+**Một múi giờ cho cả hệ, và dashboard vẽ theo đúng múi ấy.** Server, cơ sở dữ liệu và đồng hồ
+kiosk đều giữ UTC; `APP_TIMEZONE` (mặc định `Asia/Ho_Chi_Minh`) quyết định mọi ranh giới ngày ở
+backend. Dashboard vẽ mọi giờ và mọi ngày theo **cùng múi ấy**, không theo máy chủ render và không
+theo trình duyệt: Vercel chạy UTC, nên một trang để thư viện tự đoán múi giờ hiện mỗi lượt quẹt
+lệch bảy tiếng so với chính màn hình kiosk (gặp 25/09 trên production). Frontend đọc
+`NEXT_PUBLIC_APP_TIMEZONE`, giá trị phải bằng `APP_TIMEZONE` của backend; thiếu thì cả hai cùng
+rơi về `Asia/Ho_Chi_Minh`.
 
 ### 9.9 Truy vấn khi số nhân viên lên hàng chục nghìn
 
