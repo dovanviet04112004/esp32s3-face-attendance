@@ -148,7 +148,8 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define TOUCH_IDLE_WAIT_MS 1000
 #define TOUCH_POINTS 1
 #define TOUCH_FAILS_TO_RESET 5            // failed reads in a row that reset the controller
-#define TOF_QUIET_POLLS_TO_RESET 20       // two seconds with no ranging at all
+#define TOUCH_RESET_GAP_MS 2000
+#define TOF_QUIET_RESET_MS 2000           // no sample for this long resets the sensor
 #define UI_TASK_CORE 0
 #define UI_TASK_PRIORITY 4
 #define UI_TASK_STACK_BYTES 4096
@@ -1597,6 +1598,7 @@ static void touch_task(void *arg)
     (void)arg;
     bool held = false;
     int failed = 0;
+    int64_t reset_ms = 0;
     for (;;) {
         // A held finger is read on a clock, so a lift the controller never flags still lands.
         if (held) {
@@ -1609,8 +1611,10 @@ static void touch_task(void *arg)
         // A failed read says nothing about the finger: reporting a lift types a key twice.
         if (drv_touch_read(points, TOUCH_POINTS, &count) != ESP_OK) {
             // A controller that stops answering stays that way until RST resets it.
-            if (++failed >= TOUCH_FAILS_TO_RESET) {
+            const int64_t now_ms = esp_timer_get_time() / 1000;
+            if (++failed >= TOUCH_FAILS_TO_RESET && now_ms - reset_ms > TOUCH_RESET_GAP_MS) {
                 failed = 0;
+                reset_ms = now_ms;
                 ESP_LOGW(TAG, "touch controller reset: %s", esp_err_to_name(drv_touch_restart()));
             }
             continue;
@@ -2216,7 +2220,7 @@ static void tof_task(void *arg)
     bool present = false;
     int settling = TOF_SETTLE_POLLS;
     int away = PRESENCE_AWAY_SAMPLES;
-    int quiet = 0;
+    int64_t heard_ms = esp_timer_get_time() / 1000;
 
     for (;;) {
         if (ready != NULL) {
@@ -2227,16 +2231,17 @@ static void tof_task(void *arg)
         uint16_t distance_mm = 0;
         bool status_ok = false;
         const esp_err_t ranged = drv_tof_read_mm(&distance_mm, &status_ok);
-        // A sensor that stopped ranging answers every poll with no sample until XSHUT resets it.
-        if (ranged == ESP_ERR_TIMEOUT && ++quiet >= TOF_QUIET_POLLS_TO_RESET) {
-            quiet = 0;
+        const int64_t now_ms = esp_timer_get_time() / 1000;
+        // Timed, not counted: a noisy ready line wakes this loop far more often than it ranges.
+        if (ranged == ESP_ERR_TIMEOUT && now_ms - heard_ms > TOF_QUIET_RESET_MS) {
+            heard_ms = now_ms;
             settling = TOF_SETTLE_POLLS;
             const esp_err_t back = drv_tof_restart();
             note_fault(DEVICE_EVENT_TYPE_TOF_FAULT, back == ESP_OK ? ESP_ERR_TIMEOUT : back,
                        "sensor went quiet, reset");
         }
         if (ranged == ESP_OK) {
-            quiet = 0;
+            heard_ms = now_ms;
         }
         if (ranged != ESP_OK) {
             // No sample yet is the normal gap between measurements; a broken

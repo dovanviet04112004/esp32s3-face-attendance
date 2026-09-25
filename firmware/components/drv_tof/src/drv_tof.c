@@ -20,6 +20,7 @@ static const char *TAG = "drv_tof";
 #define INTER_MEASUREMENT_MS 100
 // XSHUT needs 100 us low, then the chip walks its own boot sequence.
 #define XSHUT_LOW_MS 10
+#define XSHUT_RELEASE_TRIES 3
 #define BOOT_POLL_MS 2
 #define BOOT_POLL_TRIES 30
 #define RANGE_STATUS_OK 0
@@ -41,7 +42,12 @@ static esp_err_t restart_chip(void)
 {
     APP_RETURN_ON_ERR(drv_ioexp_set(APP_IOEXP_P_TOF_XSHUT, false), TAG, "xshut low");
     vTaskDelay(pdMS_TO_TICKS(XSHUT_LOW_MS));
-    APP_RETURN_ON_ERR(drv_ioexp_set(APP_IOEXP_P_TOF_XSHUT, true), TAG, "xshut high");
+    // A line left low holds the sensor off past this reset, so the release is tried again.
+    esp_err_t released = ESP_FAIL;
+    for (int tries = 0; tries < XSHUT_RELEASE_TRIES && released != ESP_OK; ++tries) {
+        released = drv_ioexp_set(APP_IOEXP_P_TOF_XSHUT, true);
+    }
+    APP_RETURN_ON_ERR(released, TAG, "xshut high");
     vTaskDelay(pdMS_TO_TICKS(XSHUT_LOW_MS));
     return ESP_OK;
 }
