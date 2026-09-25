@@ -61,6 +61,29 @@ uint8_t net_ota_percent(void);
  */
 bool net_ota_on_trial(void);
 
+/** Where a download stands, for whoever shows it (KEHOACH 7.7). */
+typedef enum {
+    NET_OTA_PHASE_IDLE = 0,
+    NET_OTA_PHASE_CONNECTING,             // dialling and erasing, no byte yet
+    NET_OTA_PHASE_FETCHING,
+    NET_OTA_PHASE_CHECKING,               // all in; digest, image checks, arming
+} net_ota_phase_t;
+
+/** Why the last download stopped, in the kinds a screen can put into words. */
+typedef enum {
+    NET_OTA_FAULT_OTHER = 0,
+    NET_OTA_FAULT_NETWORK,
+    NET_OTA_FAULT_DIGEST,
+    NET_OTA_FAULT_REFUSED,
+    NET_OTA_FAULT_TOO_BIG,
+} net_ota_fault_t;
+
+/** @ctx any | non-blocking */
+net_ota_phase_t net_ota_phase(void);
+
+/** @ctx any | non-blocking | meaningful once a download or check has failed */
+net_ota_fault_t net_ota_fault(void);
+
 #ifdef __cplusplus
 }
 #endif

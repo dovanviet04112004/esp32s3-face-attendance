@@ -1,5 +1,6 @@
 #include "app_boot.h"
 
+#include <math.h>
 #include <string.h>
 
 #include <inttypes.h>
@@ -16,6 +17,7 @@
 #include "drv_servo.h"
 #include "drv_tof.h"
 #include "drv_touch.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "net_ota.h"
@@ -88,11 +90,8 @@ static void load_models(void)
     const esp_err_t loaded = ai_engine_init();
     uint32_t trial = 0;
     sys_storage_get_u32(STORAGE_NS_SYS, NVS_LAST_OTA, &trial);
+    // A slot on trial that loads is judged once vision is up (settle_models).
     if (loaded == ESP_OK) {
-        if (trial == OTA_MODELS_ON_TRIAL) {
-            sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_KEPT);
-            ESP_LOGW(TAG, "models slot %u keeps the seat", (unsigned)sys_storage_models_slot());
-        }
         return;
     }
     ESP_LOGE(TAG, "models would not load: %s", esp_err_to_name(loaded));
@@ -102,6 +101,50 @@ static void load_models(void)
         ESP_ERROR_CHECK(loaded);
         return;
     }
+    sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_UNDONE);
+    sys_storage_models_revert();
+    esp_restart();
+}
+
+// Every branch answers one inference on a blank input, in the shape the kiosk reads back.
+static bool models_answer(void)
+{
+    const size_t detect = ai_engine_detect_input_bytes();
+    const size_t spoof = ai_engine_spoof_input_bytes();
+    const size_t recog = ai_engine_recog_input_bytes();
+    if (detect == 0 || spoof == 0 || recog == 0 || ai_engine_recog_output_bytes() != STORAGE_EMBED_DIM) {
+        return false;
+    }
+    size_t most = detect > spoof ? detect : spoof;
+    most = most > recog ? most : recog;
+    int8_t *blank = heap_caps_calloc(1, most, MALLOC_CAP_SPIRAM);
+    if (blank == NULL) {
+        return false;
+    }
+    float live = -1.0f;
+    float scale = 0.0f;
+    int8_t embedding[STORAGE_EMBED_DIM];
+    const bool answered = ai_engine_detect(blank) == ESP_OK && ai_engine_spoof(blank, &live) == ESP_OK &&
+                          ai_engine_recognize(blank, embedding, sizeof(embedding), &scale) == ESP_OK;
+    heap_caps_free(blank);
+    return answered && live >= 0.0f && live <= 1.0f && isfinite(scale) && scale > 0.0f;
+}
+
+// Building the graphs proves too little: a pack is kept once vision is up and every branch answers (KEHOACH 7.7).
+static void settle_models(EventGroupHandle_t flags)
+{
+    uint32_t trial = 0;
+    if (sys_storage_get_u32(STORAGE_NS_SYS, NVS_LAST_OTA, &trial) != ESP_OK || trial != OTA_MODELS_ON_TRIAL) {
+        return;
+    }
+    const bool up = (xEventGroupGetBits(flags) & APP_EG_AI_READY) != 0;
+    if (up && models_answer()) {
+        sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_KEPT);
+        ESP_LOGW(TAG, "models slot %u keeps the seat", (unsigned)sys_storage_models_slot());
+        return;
+    }
+    ESP_LOGE(TAG, "models slot %u %s, going back", (unsigned)sys_storage_models_slot(),
+             up ? "gave a wrong answer" : "brought no vision up");
     sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_UNDONE);
     sys_storage_models_revert();
     esp_restart();
@@ -299,6 +342,7 @@ esp_err_t app_boot(void)
     }
     ESP_ERROR_CHECK(drv_camera_init());
     start_vision(app_wiring()->flags);
+    settle_models(app_wiring()->flags);
 
     // A door that will not take a pulse is a miswired kiosk, not a degraded
     // one: granting access with nothing to open is worse than not booting.

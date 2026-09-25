@@ -146,15 +146,40 @@ void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id, const c
 /** Where an update the server offered stands on this kiosk (KEHOACH 7.7). */
 typedef enum {
     UI_KIOSK_UPDATE_NONE = 0,             // nothing is shown
-    UI_KIOSK_UPDATE_FETCHING,             // downloading; punches carry on
+    UI_KIOSK_UPDATE_CONNECTING,           // offer taken, no byte yet
+    UI_KIOSK_UPDATE_FETCHING,             // bytes arriving
+    UI_KIOSK_UPDATE_CHECKING,             // all in, digest and image checks
     UI_KIOSK_UPDATE_RESTARTING,           // armed, about to reboot into it
+    UI_KIOSK_UPDATE_FAILED,               // shown for a while, then punching resumes
+    UI_KIOSK_UPDATE_DONE,                 // the new build is up; the scan screen says so
 } ui_kiosk_update_t;
 
-/** Show how an update stands: a line while it downloads, a card as it reboots.
- *  @ctx any | non-blocking
- *  @param percent how much has arrived, read only while FETCHING
+/** Why an update did not go through, as the failure screen words it. */
+typedef enum {
+    UI_KIOSK_UPDATE_WHY_OTHER = 0,
+    UI_KIOSK_UPDATE_WHY_NETWORK,          // the link dropped mid-image
+    UI_KIOSK_UPDATE_WHY_DIGEST,           // the bytes are not the image offered
+    UI_KIOSK_UPDATE_WHY_REFUSED,          // the server would not hand the image out
+    UI_KIOSK_UPDATE_WHY_TOO_BIG,          // larger than the slot
+} ui_kiosk_update_why_t;
+
+/** Show how an update stands; every state but NONE and DONE covers the panel (KEHOACH 7.7).
+ *  @ctx any | non-blocking | version copied, NULL keeps the one held
+ *  @param percent how much has arrived, read while FETCHING
  */
-void ui_kiosk_set_update(ui_kiosk_update_t state, uint8_t percent);
+void ui_kiosk_set_update(ui_kiosk_update_t state, uint8_t percent, const char *version,
+                         ui_kiosk_update_why_t why);
+
+/** Move a download on; ignored once the update has failed or is restarting (KEHOACH 7.7).
+ *  @ctx any | non-blocking
+ *  @param phase CONNECTING, FETCHING or CHECKING
+ */
+void ui_kiosk_update_progress(ui_kiosk_update_t phase, uint8_t percent);
+
+/** Whether the Update screen holds the panel: it wakes it, and punching waits (KEHOACH 5.4).
+ *  @ctx any | non-blocking
+ */
+bool ui_kiosk_update_covers(void);
 
 /** Seed what the two settings sliders rest at, from main's copy of NVS.
  *  @ctx ui_task | non-blocking

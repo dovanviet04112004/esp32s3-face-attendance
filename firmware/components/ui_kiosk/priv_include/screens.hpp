@@ -1,4 +1,4 @@
-/** The eight screens and the manager that owns them (KEHOACH 4.5.5h).
+/** The ten screens and the manager that owns them (KEHOACH 4.5.5h).
  *  @ctx ui_task | non-blocking | screens are built once and never destroyed
  */
 #pragma once
@@ -23,6 +23,7 @@ enum class ScreenId {
     Wifi,
     Device,
     Person,
+    Update,
     Count,
 };
 
@@ -141,14 +142,13 @@ Ticket &ticket() noexcept;
 struct Update {
     ui_kiosk_update_t state;
     uint8_t percent;
+    ui_kiosk_update_why_t why;
+    bool capture_dropped;                 // the update took the panel from a capture
+    uint8_t resume_s;                     // what the failure screen counts down
+    char version[16];
 };
 
 Update &update() noexcept;
-
-/** The card over whatever screen is up, so a reboot for an update is not taken for a fault.
- *  @ctx ui_task | non-blocking | draws nothing unless the update is RESTARTING
- */
-void restart_card(Canvas &to) noexcept;
 
 /** The two levels the sliders sit at, and whether main has yet to hear about it. */
 struct Level {
@@ -218,5 +218,6 @@ Screen *settings_screen() noexcept;
 Screen *wifi_screen() noexcept;
 Screen *device_screen() noexcept;
 Screen *person_screen() noexcept;
+Screen *update_screen() noexcept;
 
 }  // namespace ui

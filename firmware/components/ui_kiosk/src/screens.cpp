@@ -166,7 +166,7 @@ JoinRequest s_join;
 Facts s_facts;
 ui_kiosk_net_t s_net;
 Ticket s_ticket;
-Update s_update = { UI_KIOSK_UPDATE_NONE, 0 };
+Update s_update = { UI_KIOSK_UPDATE_NONE, 0, UI_KIOSK_UPDATE_WHY_OTHER, false, 0, {} };
 Level s_brightness = { 70, false, false };
 Restart s_vision_reset = Restart::No;
 Level s_volume = { 60, false, false };
@@ -365,11 +365,11 @@ void field(Canvas &to, const char *text, const char *hint)
 void ticket_line(Canvas &to)
 {
     char line[64] = { 0 };
-    if (s_update.state == UI_KIOSK_UPDATE_FETCHING) {
-        snprintf(line, sizeof(line), text(StrId::UpdateFetchingFmt), (unsigned)s_update.percent);
+    if (s_update.state == UI_KIOSK_UPDATE_DONE) {
+        snprintf(line, sizeof(line), text(StrId::UpdateDoneFmt), s_update.version);
         to.text_on_video(Font::Caption, kWideX,
                          Canvas::centre_y(Font::Caption, theme::kBarH, kGuideY - theme::kBarH), kWideW,
-                         line, DRV_LCD_ACCENT, Align::Centre);
+                         line, DRV_LCD_OK, Align::Centre);
         return;
     }
     switch (s_ticket.state) {
@@ -1687,6 +1687,86 @@ private:
     char typed_[UI_KIOSK_WIFI_PASS_CAP] = {};
 };
 
+// The whole panel while an update runs, so nobody stands at a viewfinder nothing answers (KEHOACH 7.7).
+class UpdateScreen final : public Screen {
+public:
+    bool opaque() const noexcept override { return true; }
+
+    void paint(Canvas &to, const Sight &seen) noexcept override
+    {
+        (void)seen;
+        const bool failed = s_update.state == UI_KIOSK_UPDATE_FAILED;
+        page(to, text(failed ? StrId::UpdateFailed : StrId::UpdateTitle), false);
+        Stack stack(kContentY);
+        char line[64] = { 0 };
+        if (s_update.version[0] != '\0') {
+            snprintf(line, sizeof(line), text(StrId::UpdateVersionFmt), s_update.version);
+            to.text(Font::Body, theme::kGutter, stack.take(theme::line_height(Font::Body)),
+                    theme::kContentW, line, DRV_LCD_DIM, Align::Centre);
+        }
+        if (failed) {
+            to.text(Font::Strong, theme::kGutter, stack.take(theme::line_height(Font::Strong)),
+                    theme::kContentW, why(), DRV_LCD_DANGER, Align::Centre);
+            snprintf(line, sizeof(line), text(StrId::UpdateResumeFmt), (unsigned)s_update.resume_s);
+            to.text(Font::Body, theme::kGutter, stack.take(theme::line_height(Font::Body)),
+                    theme::kContentW, line, DRV_LCD_DIM, Align::Centre);
+            return;
+        }
+        stack.skip(theme::kGapL);
+        const int bar_y = stack.take(kTrackH, theme::kGapL);
+        to.card(theme::kGutter, bar_y, theme::kContentW, kTrackH, kTrackH / 2, DRV_LCD_LINE);
+        const int filled = theme::kContentW * shown_percent() / 100;
+        if (filled > 0) {
+            to.card(theme::kGutter, bar_y, filled > kTrackH ? filled : kTrackH, kTrackH, kTrackH / 2,
+                    DRV_LCD_ACCENT);
+        }
+        to.text(Font::Strong, theme::kGutter, stack.take(theme::line_height(Font::Strong)),
+                theme::kContentW, phase(line, sizeof(line)), DRV_LCD_INK, Align::Centre);
+        to.text(Font::Caption, theme::kGutter, stack.take(theme::line_height(Font::Caption)),
+                theme::kContentW, text(StrId::UpdatePaused), DRV_LCD_DIM, Align::Centre);
+        if (s_update.capture_dropped) {
+            to.text(Font::Caption, theme::kGutter, stack.take(theme::line_height(Font::Caption)),
+                    theme::kContentW, text(StrId::UpdateCaptureDropped), DRV_LCD_WARN, Align::Centre);
+        }
+    }
+
+private:
+    static constexpr int kTrackH = 12;
+
+    static int shown_percent() noexcept
+    {
+        switch (s_update.state) {
+        case UI_KIOSK_UPDATE_FETCHING: return s_update.percent;
+        case UI_KIOSK_UPDATE_CHECKING:
+        case UI_KIOSK_UPDATE_RESTARTING: return 100;
+        default: return 0;
+        }
+    }
+
+    static const char *phase(char *line, size_t cap) noexcept
+    {
+        switch (s_update.state) {
+        case UI_KIOSK_UPDATE_FETCHING:
+            snprintf(line, cap, text(StrId::UpdateFetchingFmt), (unsigned)s_update.percent);
+            return line;
+        case UI_KIOSK_UPDATE_CHECKING: return text(StrId::UpdateChecking);
+        case UI_KIOSK_UPDATE_RESTARTING: return text(StrId::UpdateRestarting);
+        default: return text(StrId::UpdateConnecting);
+        }
+    }
+
+    static const char *why() noexcept
+    {
+        switch (s_update.why) {
+        case UI_KIOSK_UPDATE_WHY_NETWORK: return text(StrId::UpdateWhyNetwork);
+        case UI_KIOSK_UPDATE_WHY_DIGEST: return text(StrId::UpdateWhyDigest);
+        case UI_KIOSK_UPDATE_WHY_REFUSED: return text(StrId::UpdateWhyRefused);
+        case UI_KIOSK_UPDATE_WHY_TOO_BIG: return text(StrId::UpdateWhyTooBig);
+        default: return text(StrId::UpdateWhyOther);
+        }
+    }
+};
+
 ScanScreen s_scan;
 MenuScreen s_menu;
 EnrolScreen s_enrol;
@@ -1696,6 +1776,7 @@ PersonScreen s_person;
 SettingsScreen s_settings;
 WifiScreen s_wifi;
 DeviceScreen s_device;
+UpdateScreen s_update_screen;
 
 }  // namespace
 
@@ -1757,19 +1838,6 @@ Ticket &ticket() noexcept
 Update &update() noexcept
 {
     return s_update;
-}
-
-void restart_card(Canvas &to) noexcept
-{
-    if (s_update.state != UI_KIOSK_UPDATE_RESTARTING) {
-        return;
-    }
-    const int card_h = 2 * theme::kRowH;
-    const int card_y = (APP_LCD_V_RES - card_h) / 2;
-    to.card(theme::kGutter, card_y, theme::kContentW, card_h, theme::kRadius, DRV_LCD_SURFACE);
-    to.text(Font::Strong, theme::kGutter + theme::kGapM, Canvas::centre_y(Font::Strong, card_y, card_h),
-            theme::kContentW - 2 * theme::kGapM, text(StrId::UpdateRestarting), DRV_LCD_INK,
-            Align::Centre);
 }
 
 Restart &vision_reset() noexcept
@@ -1869,6 +1937,11 @@ Screen *person_screen() noexcept
 Screen *device_screen() noexcept
 {
     return &s_device;
+}
+
+Screen *update_screen() noexcept
+{
+    return &s_update_screen;
 }
 
 }  // namespace ui

@@ -28,6 +28,8 @@ constexpr int64_t kShowMs = 1500;
 // changes its mind per step, which is faster than an eye (KEHOACH 4.5.5h.1).
 constexpr int64_t kStageDwellMs = 700;
 constexpr int64_t kClockPollMs = 1000;
+// A failure and the note after a new build both stand this long (KEHOACH 7.7).
+constexpr int64_t kUpdateHoldMs = 10000;
 
 // One map per slot: cam_task reads the published one for a whole frame while
 // ui_task paints the other (KEHOACH 4.5.5h).
@@ -56,6 +58,18 @@ int64_t s_clear_in_ms;
 std::atomic<int32_t> s_touch{ -1 };
 int64_t s_clock_poll_ms;
 int64_t s_minute_shown = -1;
+// ota_task and attend_task write the update, ui_task alone turns it into a screen.
+portMUX_TYPE s_update_lock = portMUX_INITIALIZER_UNLOCKED;
+ui::Update s_update_offer;
+uint32_t s_update_serial;
+uint32_t s_update_taken;
+std::atomic<uint8_t> s_update_state{ UI_KIOSK_UPDATE_NONE };
+int64_t s_update_left_ms;
+
+bool covering(ui_kiosk_update_t state)
+{
+    return state != UI_KIOSK_UPDATE_NONE && state != UI_KIOSK_UPDATE_DONE;
+}
 
 // The whole panel is one map, but only the rectangle a screen touched is worth
 // sending: the rest is zero and would cost a scan of 153 KB every frame.
@@ -165,6 +179,47 @@ void take_verdict(int64_t dt_ms)
     }
 }
 
+// The Update screen takes the panel from whatever is up and gives it back to the scan screen.
+void take_update(int64_t dt_ms)
+{
+    portENTER_CRITICAL(&s_update_lock);
+    const uint32_t serial = s_update_serial;
+    const ui::Update offer = s_update_offer;
+    portEXIT_CRITICAL(&s_update_lock);
+    ui::Update &held = ui::update();
+    if (serial != s_update_taken) {
+        s_update_taken = serial;
+        const bool held_open = held.capture_dropped && covering(held.state);
+        held = offer;
+        held.capture_dropped = held_open;
+        s_update_left_ms = kUpdateHoldMs;
+        s_dirty = true;
+    }
+    if (held.state == UI_KIOSK_UPDATE_FAILED || held.state == UI_KIOSK_UPDATE_DONE) {
+        s_update_left_ms -= dt_ms;
+        const uint8_t left_s = (uint8_t)((s_update_left_ms + 999) / 1000);
+        if (s_update_left_ms <= 0) {
+            held.state = UI_KIOSK_UPDATE_NONE;
+            s_dirty = true;
+        } else if (left_s != held.resume_s) {
+            held.resume_s = left_s;
+            s_dirty = true;
+        }
+    }
+    s_update_state.store((uint8_t)held.state, std::memory_order_release);
+    const bool covers = covering(held.state);
+    const ui::ScreenId at = ui::manager().at();
+    if (covers && at != ui::ScreenId::Update) {
+        held.capture_dropped = at == ui::ScreenId::Capture;
+        ui::manager().go(ui::ScreenId::Update);
+        s_dirty = true;
+    } else if (!covers && at == ui::ScreenId::Update) {
+        held.capture_dropped = false;
+        ui::manager().go(ui::ScreenId::Scan);
+        s_dirty = true;
+    }
+}
+
 }  // namespace
 
 esp_err_t ui_kiosk_init(void)
@@ -194,6 +249,7 @@ esp_err_t ui_kiosk_init(void)
     ui::manager().attach(ui::ScreenId::Wifi, ui::wifi_screen());
     ui::manager().attach(ui::ScreenId::Device, ui::device_screen());
     ui::manager().attach(ui::ScreenId::Person, ui::person_screen());
+    ui::manager().attach(ui::ScreenId::Update, ui::update_screen());
     memset(s_slot, 0, sizeof(s_slot));
     memset(&s_seen, 0, sizeof(s_seen));
     s_ready = true;
@@ -262,6 +318,7 @@ void ui_kiosk_tick(uint32_t dt_ms)
     mind_the_clock(dt_ms);
     settle_stage(dt_ms);
     take_verdict(dt_ms);
+    take_update(dt_ms);
     s_dirty = ui::manager().current()->tick(dt_ms, s_seen) || s_dirty;
     if (!s_dirty) {
         return;
@@ -290,7 +347,6 @@ void ui_kiosk_tick(uint32_t dt_ms)
     ui::Canvas &canvas = *s_canvas[s_next];
     canvas.clear();
     ui::manager().current()->paint(canvas, s_seen);
-    ui::restart_card(canvas);
     publish(canvas);
 }
 
@@ -485,18 +541,51 @@ void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id, const c
     s_dirty = true;
 }
 
-void ui_kiosk_set_update(ui_kiosk_update_t state, uint8_t percent)
+void ui_kiosk_set_update(ui_kiosk_update_t state, uint8_t percent, const char *version,
+                         ui_kiosk_update_why_t why)
 {
     if (!s_ready) {
         return;
     }
-    ui::Update &held = ui::update();
-    if (held.state == state && held.percent == percent) {
+    portENTER_CRITICAL(&s_update_lock);
+    const bool same = s_update_offer.state == state && s_update_offer.percent == percent &&
+                      s_update_offer.why == why &&
+                      (version == nullptr || strcmp(s_update_offer.version, version) == 0);
+    if (!same) {
+        s_update_offer.state = state;
+        s_update_offer.percent = percent;
+        s_update_offer.why = why;
+        if (version != nullptr) {
+            strlcpy(s_update_offer.version, version, sizeof(s_update_offer.version));
+        }
+        ++s_update_serial;
+    }
+    portEXIT_CRITICAL(&s_update_lock);
+    if (covering(state)) {
+        s_update_state.store((uint8_t)state, std::memory_order_release);
+    }
+}
+
+void ui_kiosk_update_progress(ui_kiosk_update_t phase, uint8_t percent)
+{
+    if (!s_ready) {
         return;
     }
-    held.state = state;
-    held.percent = percent;
-    s_dirty = true;
+    portENTER_CRITICAL(&s_update_lock);
+    const ui_kiosk_update_t held = s_update_offer.state;
+    const bool moving = held == UI_KIOSK_UPDATE_CONNECTING || held == UI_KIOSK_UPDATE_FETCHING ||
+                        held == UI_KIOSK_UPDATE_CHECKING;
+    if (moving && (held != phase || s_update_offer.percent != percent)) {
+        s_update_offer.state = phase;
+        s_update_offer.percent = percent;
+        ++s_update_serial;
+    }
+    portEXIT_CRITICAL(&s_update_lock);
+}
+
+bool ui_kiosk_update_covers(void)
+{
+    return covering((ui_kiosk_update_t)s_update_state.load(std::memory_order_acquire));
 }
 
 void ui_kiosk_set_levels(uint8_t brightness, uint8_t volume)

@@ -21,6 +21,8 @@ static const char *TAG = "net_ota";
 // Written by ota_task as the image arrives, read by whoever shows the progress.
 static atomic_size_t s_taken;
 static atomic_size_t s_want;
+static atomic_int s_phase;
+static atomic_int s_fault;
 
 #define HTTPS_PREFIX "https://"
 #define SHA256_HEX_LEN 64
@@ -62,6 +64,27 @@ static void say(char *why, size_t cap, const char *text)
     }
 }
 
+// The words go to the server as they are; the kind is what a screen can put into a sentence.
+static void stop(char *why, size_t cap, net_ota_fault_t kind, const char *text)
+{
+    atomic_store(&s_fault, (int)kind);
+    say(why, cap, text);
+}
+
+static void start_download(void)
+{
+    atomic_store(&s_taken, 0);
+    atomic_store(&s_want, 0);
+    atomic_store(&s_fault, (int)NET_OTA_FAULT_OTHER);
+    atomic_store(&s_phase, (int)NET_OTA_PHASE_CONNECTING);
+}
+
+static esp_err_t end_download(esp_err_t result)
+{
+    atomic_store(&s_phase, (int)(result == ESP_OK ? NET_OTA_PHASE_CHECKING : NET_OTA_PHASE_IDLE));
+    return result;
+}
+
 // A manifest the kiosk cannot satisfy is cheaper to turn away at the door than
 // to discover halfway through a partition.
 static esp_err_t vet(const net_ota_image_t *image, const esp_partition_t *slot, bool unsized,
@@ -80,7 +103,7 @@ static esp_err_t vet(const net_ota_image_t *image, const esp_partition_t *slot, 
         return ESP_ERR_INVALID_ARG;
     }
     if (image->size_bytes == 0 || (!unsized && image->size_bytes > slot->size)) {
-        say(why, cap, "image does not fit the slot");
+        stop(why, cap, NET_OTA_FAULT_TOO_BIG, "image does not fit the slot");
         return ESP_ERR_INVALID_SIZE;
     }
     return ESP_OK;
@@ -113,10 +136,11 @@ static esp_err_t pull(esp_http_client_handle_t http, sink_fn sink, void *ctx, ui
     size_t taken = 0;
     atomic_store(&s_taken, 0);
     atomic_store(&s_want, want);
+    atomic_store(&s_phase, (int)NET_OTA_PHASE_FETCHING);
     while (taken < want) {
         const int read = esp_http_client_read(http, (char *)chunk, (int)CHUNK_BYTES);
         if (read < 0) {
-            say(why, cap, "connection dropped mid-image");
+            stop(why, cap, NET_OTA_FAULT_NETWORK, "connection dropped mid-image");
             mbedtls_md_free(&sha);
             return ESP_FAIL;
         }
@@ -143,7 +167,7 @@ static esp_err_t pull(esp_http_client_handle_t http, sink_fn sink, void *ctx, ui
     mbedtls_md_free(&sha);
     to_hex(raw, digest);
     if (taken != want) {
-        say(why, cap, "body shorter than the manifest says");
+        stop(why, cap, NET_OTA_FAULT_NETWORK, "body shorter than the manifest says");
         return ESP_ERR_INVALID_SIZE;
     }
     return ESP_OK;
@@ -163,15 +187,17 @@ static esp_http_client_handle_t dial(const net_ota_image_t *image, char *why, si
         return NULL;
     }
     const char *stopped = NULL;
+    net_ota_fault_t kind = NET_OTA_FAULT_NETWORK;
     if (esp_http_client_open(http, 0) != ESP_OK) {
         stopped = "the server did not answer";
     } else if (esp_http_client_fetch_headers(http) < 0) {
         stopped = "no headers from the server";
     } else if (esp_http_client_get_status_code(http) != HttpStatus_Ok) {
         stopped = "the server refused the url";
+        kind = NET_OTA_FAULT_REFUSED;
     }
     if (stopped != NULL) {
-        say(why, cap, stopped);
+        stop(why, cap, kind, stopped);
         esp_http_client_cleanup(http);
         return NULL;
     }
@@ -180,15 +206,16 @@ static esp_http_client_handle_t dial(const net_ota_image_t *image, char *why, si
 
 esp_err_t net_ota_models(const net_ota_image_t *image, char *why, size_t cap)
 {
+    start_download();
     const esp_err_t vetted = vet(image, NULL, true, why, cap);
     if (vetted != ESP_OK) {
-        return vetted;
+        return end_download(vetted);
     }
     // The connection is opened first: erasing three megabytes for a url that
     // turns out to be dead costs seconds and the spare image with it.
     esp_http_client_handle_t http = dial(image, why, cap);
     if (http == NULL) {
-        return ESP_FAIL;
+        return end_download(ESP_FAIL);
     }
     uint8_t *chunk = heap_caps_malloc(CHUNK_BYTES, MALLOC_CAP_SPIRAM);
     esp_err_t err = chunk != NULL ? ESP_OK : ESP_ERR_NO_MEM;
@@ -210,28 +237,29 @@ esp_err_t net_ota_models(const net_ota_image_t *image, char *why, size_t cap)
     if (err == ESP_OK) {
         err = sys_storage_models_stage_end();
         if (err != ESP_OK) {
-            say(why, cap, "the staged image has no usable header");
+            stop(why, cap, NET_OTA_FAULT_DIGEST, "the staged image has no usable header");
         }
     }
     if (err == ESP_OK && strcmp(digest, image->sha256) != 0) {
         ESP_LOGE(TAG, "digest %s, manifest %s", digest, image->sha256);
-        say(why, cap, "sha256 does not match");
+        stop(why, cap, NET_OTA_FAULT_DIGEST, "sha256 does not match");
         err = ESP_ERR_INVALID_CRC;
     }
     if (err != ESP_OK) {
         sys_storage_models_stage_abort();
-        return err;
+        return end_download(err);
     }
     // Only now: the slot the kiosk is running keeps serving until it reboots.
     err = sys_storage_models_activate();
     if (err != ESP_OK) {
         say(why, cap, "the slot would not arm");
     }
-    return err;
+    return end_download(err);
 }
 
 esp_err_t net_ota_check(const net_ota_image_t *image, bool models, char *why, size_t cap)
 {
+    atomic_store(&s_fault, (int)NET_OTA_FAULT_OTHER);
     if (!models) {
         return vet(image, esp_ota_get_next_update_partition(NULL), false, why, cap);
     }
@@ -241,7 +269,7 @@ esp_err_t net_ota_check(const net_ota_image_t *image, bool models, char *why, si
     }
     const size_t room = sys_storage_models_slot_bytes();
     if (room == 0 || image->size_bytes > room) {
-        say(why, cap, "image does not fit the slot");
+        stop(why, cap, NET_OTA_FAULT_TOO_BIG, "image does not fit the slot");
         return ESP_ERR_INVALID_SIZE;
     }
     return ESP_OK;
@@ -250,14 +278,15 @@ esp_err_t net_ota_check(const net_ota_image_t *image, bool models, char *why, si
 esp_err_t net_ota_firmware(const net_ota_image_t *image, char *why, size_t cap)
 {
     const esp_partition_t *slot = esp_ota_get_next_update_partition(NULL);
+    start_download();
     const esp_err_t vetted = vet(image, slot, false, why, cap);
     if (vetted != ESP_OK) {
-        return vetted;
+        return end_download(vetted);
     }
     uint8_t *chunk = heap_caps_malloc(CHUNK_BYTES, MALLOC_CAP_SPIRAM);
     if (chunk == NULL) {
         say(why, cap, "no room for a download buffer");
-        return ESP_ERR_NO_MEM;
+        return end_download(ESP_ERR_NO_MEM);
     }
     const esp_http_client_config_t cfg = {
         .url = image->url,
@@ -269,17 +298,17 @@ esp_err_t net_ota_firmware(const net_ota_image_t *image, char *why, size_t cap)
     if (http == NULL) {
         heap_caps_free(chunk);
         say(why, cap, "no room for a tls session");
-        return ESP_ERR_NO_MEM;
+        return end_download(ESP_ERR_NO_MEM);
     }
     esp_err_t err = esp_http_client_open(http, 0);
     if (err != ESP_OK) {
-        say(why, cap, "the server did not answer");
+        stop(why, cap, NET_OTA_FAULT_NETWORK, "the server did not answer");
     } else if (esp_http_client_fetch_headers(http) < 0) {
         err = ESP_FAIL;
-        say(why, cap, "no headers from the server");
+        stop(why, cap, NET_OTA_FAULT_NETWORK, "no headers from the server");
     } else if (esp_http_client_get_status_code(http) != HttpStatus_Ok) {
         err = ESP_FAIL;
-        say(why, cap, "the server refused the url");
+        stop(why, cap, NET_OTA_FAULT_REFUSED, "the server refused the url");
     }
     esp_ota_handle_t writing = 0;
     char digest[SHA256_HEX_LEN + 1] = { 0 };
@@ -300,29 +329,29 @@ esp_err_t net_ota_firmware(const net_ota_image_t *image, char *why, size_t cap)
         if (writing != 0) {
             esp_ota_abort(writing);
         }
-        return err;
+        return end_download(err);
     }
     // The digest is checked while the slot is still inert: esp_ota_end is what
     // makes it bootable, so a mismatch never reaches the bootloader.
     if (strcmp(digest, image->sha256) != 0) {
         ESP_LOGE(TAG, "digest %s, manifest %s", digest, image->sha256);
         esp_ota_abort(writing);
-        say(why, cap, "sha256 does not match");
-        return ESP_ERR_INVALID_CRC;
+        stop(why, cap, NET_OTA_FAULT_DIGEST, "sha256 does not match");
+        return end_download(ESP_ERR_INVALID_CRC);
     }
     err = esp_ota_end(writing);
     if (err != ESP_OK) {
-        say(why, cap, "the image failed its own checks");
-        return err;
+        stop(why, cap, NET_OTA_FAULT_DIGEST, "the image failed its own checks");
+        return end_download(err);
     }
     err = esp_ota_set_boot_partition(slot);
     if (err != ESP_OK) {
         say(why, cap, "the slot would not arm");
-        return err;
+        return end_download(err);
     }
     ESP_LOGW(TAG, "%s armed with %u bytes, reboot to run it", slot->label,
              (unsigned)image->size_bytes);
-    return ESP_OK;
+    return end_download(ESP_OK);
 }
 
 bool net_ota_on_trial(void)
@@ -353,4 +382,14 @@ uint8_t net_ota_percent(void)
         return 0;
     }
     return (uint8_t)(taken >= want ? 100 : (uint64_t)taken * 100 / want);
+}
+
+net_ota_phase_t net_ota_phase(void)
+{
+    return (net_ota_phase_t)atomic_load(&s_phase);
+}
+
+net_ota_fault_t net_ota_fault(void)
+{
+    return (net_ota_fault_t)atomic_load(&s_fault);
 }

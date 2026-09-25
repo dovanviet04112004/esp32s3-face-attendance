@@ -30,6 +30,20 @@ enum class StrId : uint16_t {
     TicketOffline,
     UpdateFetchingFmt,                    // takes the percentage
     UpdateRestarting,
+    UpdateTitle,
+    UpdateVersionFmt,                     // takes the version
+    UpdateConnecting,
+    UpdateChecking,
+    UpdatePaused,
+    UpdateCaptureDropped,
+    UpdateFailed,
+    UpdateWhyOther,
+    UpdateWhyNetwork,
+    UpdateWhyDigest,
+    UpdateWhyRefused,
+    UpdateWhyTooBig,
+    UpdateResumeFmt,                      // takes the seconds left
+    UpdateDoneFmt,                        // takes the version
 
     MenuTitle,
     MenuEnrol,

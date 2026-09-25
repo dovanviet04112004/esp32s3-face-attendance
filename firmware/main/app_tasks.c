@@ -129,6 +129,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define OTA_REBOOT_WAIT_MS 1500
 #define NVS_LAST_OTA "last_ota_result"
 #define OTA_MODELS_ON_TRIAL 1u
+#define OTA_MODELS_UNDONE 3u
 #define TICKET_POLL_MS 1000
 #define TICKET_RECHECK_MS 60000
 #define RENEW_LOOK_MS 60000
@@ -159,12 +160,16 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define AUDIO_CLIP_PATH "/assets/snd/ok.wav"
 #define AUDIO_CLIP_CAP_BYTES (128 * 1024)
 #define WAV_HEADER_MIN 44
+#define NVS_OTA_TO "ota_to"
+
+// ota_task sets it, then queues the report; sync_task reads it as it sends one.
+static char s_ota_release[sizeof(((ota_manifest_t *)0)->release_id)];
 
 // A screen that covers the panel and the enrolment screen both hold the kiosk
 // open, and neither of them is a wake source (KEHOACH 5.4).
 static rest_t rest_level(void)
 {
-    if (ui_kiosk_screen_covers() || ui_kiosk_enrolling()) {
+    if (ui_kiosk_screen_covers() || ui_kiosk_enrolling() || ui_kiosk_update_covers()) {
         return REST_NONE;
     }
     return asleep_for_ms() > REST_ALL_MS ? REST_ALL : REST_NONE;
@@ -183,6 +188,10 @@ static void report_rate(int frames, int64_t elapsed_us)
 // to show it is stuck, while two spoof tries five seconds apart are two tries.
 static int64_t event_gap_ms(int type)
 {
+    // Pressing Update again and failing again is a second failure, not a copy of the first (KEHOACH 7.7).
+    if (type == DEVICE_EVENT_TYPE_OTA_FAILED || type == DEVICE_EVENT_TYPE_OTA_ROLLED_BACK) {
+        return 0;
+    }
     return type == DEVICE_EVENT_TYPE_SPOOF_DETECTED || type == DEVICE_EVENT_TYPE_UNKNOWN_FACE
                ? EVENT_PERSON_GAP_MS
                : EVENT_FAULT_GAP_MS;
@@ -502,6 +511,8 @@ static void publish_heartbeat(void)
     beat.has_roster_version = true;
     embedding_version(beat.embedding_version, sizeof(beat.embedding_version));
     beat.has_embedding_version = true;
+    beat.on_trial = net_ota_on_trial();
+    beat.has_on_trial = true;
 
     cJSON *root = heartbeat_to_json(&beat);
     if (root == NULL) {
@@ -1081,7 +1092,7 @@ static void take_events(const app_wiring_t *wiring)
     }
     app_event_t event;
     while (xQueueReceive(wiring->events, &event, 0) == pdTRUE) {
-        send_event(&event, NULL);
+        send_event(&event, event.type == DEVICE_EVENT_TYPE_OTA_FAILED ? s_ota_release : NULL);
     }
 }
 
@@ -1236,7 +1247,37 @@ static void settle_this_build(const app_wiring_t *wiring, int64_t up_ms)
     signed_off = net_ota_mark_valid() == ESP_OK;
     // Only a kept build writes the table in its own format (KEHOACH 6.2.4).
     if (signed_off) {
+        sys_storage_erase_key(STORAGE_NS_SYS, NVS_OTA_TO);
         ESP_LOGI(TAG, "build kept, face table saved: %s", esp_err_to_name(svc_facedb_persist()));
+    }
+}
+
+// Booting under the version asked for is a finished update; any other means the bootloader went back.
+static void report_update_outcome(void)
+{
+    char wanted[sizeof(((ota_manifest_t *)0)->version)] = { 0 };
+    if (sys_storage_get_str(STORAGE_NS_SYS, NVS_OTA_TO, wanted, sizeof(wanted)) == ESP_OK &&
+        wanted[0] != '\0') {
+        const esp_app_desc_t *app = esp_app_get_description();
+        if (app != NULL && strcmp(app->version, wanted) == 0) {
+            ui_kiosk_set_update(UI_KIOSK_UPDATE_DONE, 100, wanted, UI_KIOSK_UPDATE_WHY_OTHER);
+        } else {
+            sys_storage_erase_key(STORAGE_NS_SYS, NVS_OTA_TO);
+            app_event_t back = { 0 };
+            back.type = DEVICE_EVENT_TYPE_OTA_ROLLED_BACK;
+            back.severity = DEVICE_EVENT_SEVERITY_ERROR;
+            snprintf(back.note, sizeof(back.note), "%.32s rolled back", wanted);
+            note_event(&back);
+        }
+    }
+    uint32_t models = 0;
+    if (sys_storage_get_u32(STORAGE_NS_SYS, NVS_LAST_OTA, &models) == ESP_OK && models == OTA_MODELS_UNDONE) {
+        sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, 0);
+        app_event_t back = { 0 };
+        back.type = DEVICE_EVENT_TYPE_OTA_ROLLED_BACK;
+        back.severity = DEVICE_EVENT_SEVERITY_ERROR;
+        strlcpy(back.note, "the models pack went back to the slot before it", sizeof(back.note));
+        note_event(&back);
     }
 }
 
@@ -1257,6 +1298,7 @@ static void sync_task(void *arg)
     booted.severity = DEVICE_EVENT_SEVERITY_INFO;
     snprintf(booted.note, sizeof(booted.note), "boot %" PRIu32, sys_storage_boot_count());
     note_event(&booted);
+    report_update_outcome();
     esp_err_t said = ESP_FAIL;
     uint32_t batches = 0;
     int64_t beat_ms = 0;
@@ -1352,6 +1394,7 @@ static void cam_task(void *arg)
     esp_err_t last_blit = ESP_OK;
     bool resting = false;
     bool relight = false;
+    bool updating = false;
 
     for (;;) {
         const drv_lcd_overlay_t *overlay = ui_kiosk_hold();
@@ -1379,6 +1422,22 @@ static void cam_task(void *arg)
         if (resting) {
             ui_kiosk_release();
             vTaskDelay(pdMS_TO_TICKS(REST_POLL_MS));
+            continue;
+        }
+        // The download needs core 0 more than the preview does, and nobody punches meanwhile (KEHOACH 7.7).
+        if (ui_kiosk_update_covers() != updating) {
+            updating = !updating;
+            drv_camera_rest(updating);
+        }
+        if (updating) {
+            const esp_err_t painted =
+                overlay != NULL && overlay->opaque ? show(overlay, NULL, &drawn_serial) : ESP_OK;
+            ui_kiosk_release();
+            if (relight && painted == ESP_OK && drawn_serial != 0) {
+                relight = false;
+                drv_lcd_backlight(atomic_load(&s_brightness));
+            }
+            ui_kiosk_wait_publish(COVER_WAIT_MS);
             continue;
         }
         // A covering screen has no video to wait for, so it is drawn on publish (KEHOACH 4.5.5h).
@@ -1463,7 +1522,7 @@ static void ai_task(void *arg)
     bool working = true;
 
     for (;;) {
-        if (rest_level() == REST_ALL) {
+        if (rest_level() == REST_ALL || ui_kiosk_update_covers()) {
             esp_task_wdt_reset();
             camera_fb_t *stale = NULL;
             // Holding one of four buffers for a minute starves the sensor.
@@ -1668,14 +1727,36 @@ static void hand_roster(const app_wiring_t *wiring, app_roster_source_t source, 
 
 // An image that fails silently is one nobody can account for, so the reason
 // leaves the kiosk while the kiosk is still the one running.
-static void ota_refused(const ota_manifest_t *offer, const char *why)
+static void ota_refused(const ota_manifest_t *offer, const char *why, ui_kiosk_update_why_t shown)
 {
+    ui_kiosk_set_update(UI_KIOSK_UPDATE_FAILED, 0, offer->version, shown);
+    strlcpy(s_ota_release, offer->release_id, sizeof(s_ota_release));
     app_event_t event = { 0 };
     event.type = DEVICE_EVENT_TYPE_OTA_FAILED;
     event.severity = DEVICE_EVENT_SEVERITY_ERROR;
     strlcpy(event.note, why, sizeof(event.note));
     note_event(&event);
     ESP_LOGE(TAG, "ota %s refused: %s", offer->release_id, why);
+}
+
+static ui_kiosk_update_why_t why_shown(net_ota_fault_t fault)
+{
+    switch (fault) {
+    case NET_OTA_FAULT_NETWORK: return UI_KIOSK_UPDATE_WHY_NETWORK;
+    case NET_OTA_FAULT_DIGEST: return UI_KIOSK_UPDATE_WHY_DIGEST;
+    case NET_OTA_FAULT_REFUSED: return UI_KIOSK_UPDATE_WHY_REFUSED;
+    case NET_OTA_FAULT_TOO_BIG: return UI_KIOSK_UPDATE_WHY_TOO_BIG;
+    default: return UI_KIOSK_UPDATE_WHY_OTHER;
+    }
+}
+
+static ui_kiosk_update_t update_phase(void)
+{
+    switch (net_ota_phase()) {
+    case NET_OTA_PHASE_FETCHING: return UI_KIOSK_UPDATE_FETCHING;
+    case NET_OTA_PHASE_CHECKING: return UI_KIOSK_UPDATE_CHECKING;
+    default: return UI_KIOSK_UPDATE_CONNECTING;
+    }
 }
 
 static ui_kiosk_ticket_t ticket_shown(net_provision_answer_t answer)
@@ -1881,11 +1962,16 @@ static void ota_task(void *arg)
         }
         const bool models = offer.target == OTA_MANIFEST_TARGET_MODELS;
         if (!models && offer.target != OTA_MANIFEST_TARGET_FIRMWARE) {
-            ota_refused(&offer, "ASSETS has no path yet");
+            ota_refused(&offer, "ASSETS has no path yet", UI_KIOSK_UPDATE_WHY_OTHER);
             continue;
         }
         if (offer.has_min_fw_version && !fw_at_least(offer.min_fw_version)) {
-            ota_refused(&offer, "this build is older than the image asks for");
+            ota_refused(&offer, "this build is older than the image asks for", UI_KIOSK_UPDATE_WHY_OTHER);
+            continue;
+        }
+        // Rebooting to try models would also reboot a firmware nobody confirmed yet (KEHOACH 7.7).
+        if (models && net_ota_on_trial()) {
+            ota_refused(&offer, "FIRMWARE_ON_TRIAL", UI_KIOSK_UPDATE_WHY_OTHER);
             continue;
         }
         const net_ota_image_t image = {
@@ -1897,13 +1983,13 @@ static void ota_task(void *arg)
         // Vetted while the link is still up: a manifest refused on arithmetic
         // does not get to cost the broker connection.
         if (net_ota_check(&image, models, why, sizeof(why)) != ESP_OK) {
-            ota_refused(&offer, why);
+            ota_refused(&offer, why, why_shown(net_ota_fault()));
             continue;
         }
         ESP_LOGW(TAG, "ota %s: %s, %lld bytes", offer.release_id, offer.version,
                  (long long)offer.size_bytes);
+        ui_kiosk_set_update(UI_KIOSK_UPDATE_CONNECTING, 0, offer.version, UI_KIOSK_UPDATE_WHY_OTHER);
         xEventGroupSetBits(wiring->flags, APP_EG_OTA_RUNNING);
-        ui_kiosk_set_update(UI_KIOSK_UPDATE_FETCHING, 0);
         net_mqtt_stop();
         const esp_err_t took = models ? net_ota_models(&image, why, sizeof(why))
                                       : net_ota_firmware(&image, why, sizeof(why));
@@ -1911,19 +1997,22 @@ static void ota_task(void *arg)
             // The slot only counts once a boot has read it (KEHOACH 6.2.1).
             sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_ON_TRIAL);
         }
+        xEventGroupClearBits(wiring->flags, APP_EG_OTA_RUNNING);
         if (took != ESP_OK) {
-            xEventGroupClearBits(wiring->flags, APP_EG_OTA_RUNNING);
-            ui_kiosk_set_update(UI_KIOSK_UPDATE_NONE, 0);
             ESP_LOGE(TAG, "ota %s failed: %s (%s)", offer.release_id, why,
                      esp_err_to_name(took));
             // The link comes back so the failure can be reported at all.
             start_broker();
-            ota_refused(&offer, why);
+            ota_refused(&offer, why, why_shown(net_ota_fault()));
             continue;
+        }
+        if (!models) {
+            // The next boot reads it back: this version means done, any other a rollback (KEHOACH 7.7).
+            sys_storage_set_str(STORAGE_NS_SYS, NVS_OTA_TO, offer.version);
         }
         ESP_LOGW(TAG, "ota %s armed, rebooting into it", offer.release_id);
         // The dark seconds of the reboot look like a fault unless the panel says why first.
-        ui_kiosk_set_update(UI_KIOSK_UPDATE_RESTARTING, 100);
+        ui_kiosk_set_update(UI_KIOSK_UPDATE_RESTARTING, 100, NULL, UI_KIOSK_UPDATE_WHY_OTHER);
         vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_WAIT_MS));
         esp_restart();
     }
@@ -2292,10 +2381,10 @@ static void attend_task(void *arg)
                 settings_at_ms = now_ms;
                 show_facts();
                 show_net();
-                if ((xEventGroupGetBits(wiring->flags) & APP_EG_OTA_RUNNING) != 0) {
-                    ui_kiosk_set_update(UI_KIOSK_UPDATE_FETCHING, net_ota_percent());
-                }
             }
+        }
+        if ((xEventGroupGetBits(wiring->flags) & APP_EG_OTA_RUNNING) != 0) {
+            ui_kiosk_update_progress(update_phase(), net_ota_percent());
         }
         const svc_attendance_state_t state = svc_attendance_state();
         if (state != last_state) {
