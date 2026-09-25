@@ -774,10 +774,15 @@ sửa code và trông như ngẫu nhiên. **Reset chip không tái hiện đư�
 lần đầu. Bảng này chỉ có hai thiết bị: mốc của GT911 không dùng được vì phép đo cũ chạy lúc
 đầu cắm cảm ứng còn lỏng (§2.3C), và nó cũng không cần — GT911 không nằm trong danh sách chờ.
 
-Chốt: `bsp_board_init()` thăm dò **những thiết bị có địa chỉ cố định lúc cấp nguồn** —
-`0x20` và `0x29` — tới khi cả hai ACK, trần **500 ms** (≈29× mốc 17 ms, chỗ chậm nhất trong
-hai con được chờ), quá trần thì trả lỗi kèm địa chỉ nào im. GT911 **không** nằm trong danh sách chờ vì địa chỉ của nó
-do trình tự reset ở §2.3C quyết định, nên `drv_touch_init()` tự lo con của mình.
+Chốt: `bsp_board_init()` thăm dò **PCF8574 `0x20`** tới khi nó ACK, trần **500 ms** (≈100× mốc
+5 ms), quá trần thì trả lỗi kèm địa chỉ im. PCF8574 là con duy nhất trên bus mà máy không chạy
+được thiếu nó, và là con không phụ thuộc chân của ai. **VL53L1X không nằm trong danh sách chờ**:
+XSHUT của nó là một chân của PCF8574, và PCF8574 giữ mức chân qua lần reset của ESP32, nên một
+lần reset đúng lúc XSHUT đang thấp để VL53L1X im tới khi `drv_ioexp_init()` trả chân lên — chờ nó
+trước bước ấy là máy khởi động lặp mãi (26/09, sau một lượt reset cảm biến đứt giữa chừng).
+`drv_tof_init()` tự kéo XSHUT rồi đọc `BootState` tới khi chip lên, và thiếu ToF chỉ làm máy
+thành một khung ngắm, không làm máy chết. GT911 cũng không nằm trong danh sách chờ vì địa chỉ
+của nó do trình tự reset ở §2.3C quyết định, nên `drv_touch_init()` tự lo con của mình.
 
 #### C. Cảm ứng GT911
 
