@@ -6591,8 +6591,9 @@ thẳng file, không redirect: `net_ota` tự mở kết nối và không theo r
 trên GitHub Releases, nơi mọi link tải là một cú 302.
 
 **Người thấy bản mới mà không phải đi tìm.** Trang *Kiosk* so `fwVersion` và `modelVersion` của
-từng máy (heartbeat ghi) với bản mới nhất của loại ấy: máy cũ hơn mang huy hiệu "Có bản x.y.z", đầu
-trang có **Cập nhật tất cả (n)**. Firmware so theo `major.minor.patch`; model so theo chuỗi, khác là
+từng máy (heartbeat ghi) với bản mới nhất của loại ấy: máy cũ hơn mang huy hiệu "Có bản x.y.z", máy
+đang cập nhật mang "Đang cập nhật…", đầu trang có **Cập nhật tất cả (n)** với n chỉ đếm máy chưa
+đang cập nhật. Firmware so theo `major.minor.patch`; model so theo chuỗi, khác là
 cũ. Trang một máy có nút **Cập nhật** và một dòng trạng thái suy ra từ ba nguồn đã có:
 
 | Trạng thái | Khi nào — xét từ trên xuống, dòng đầu khớp là đáp án |
@@ -6604,8 +6605,20 @@ cũ. Trang một máy có nút **Cập nhật** và một dòng trạng thái su
 | Đang chờ máy | còn lại |
 
 Thiếu hai dòng giữa thì một lần mất điện lúc tải để trang đứng mãi ở "đang chờ máy", vì máy khởi
-động lại bản cũ mà không kịp báo gì. Mọi trạng thái trừ "đã lên" đều để nút **Cập nhật** hiện,
-nên bấm lại lúc nào cũng được và mỗi lần bấm là một link mới.
+động lại bản cũ mà không kịp báo gì.
+
+**Một lời mời đang chạy thì không mời chồng lên.** Máy chỉ có một `ota_task` và bỏ qua lời mời tới
+trong lúc đang tải, còn `Device` chỉ giữ lời mời gần nhất, nên mời chồng chỉ làm mất dấu lần đang
+chạy. Trong `OTA_BUSY_MINUTES` (10) phút đầu của một lời mời còn "đang chờ máy", server trả **409**
+`OTA_IN_PROGRESS` cho mọi lời mời mới tới máy ấy, bất kể bản nào, và *Cập nhật tất cả* bỏ qua máy
+ấy rồi đếm riêng. Khoá ở server chứ không chỉ ở nút, vì hai tab hay hai ADMIN cùng bấm được.
+Trạng thái trả kèm `busyUntil`, nên trang không chép lại con số: nút thành "Đang cập nhật…" và
+khoá; dòng trạng thái nói máy đang tải rồi tự khởi động lại, kèm số giây đã chờ, và nói **tạm
+offline là bình thường**, vì `ota_task` đóng MQTT suốt lúc tải. Trang hỏi lại mỗi 5 s; rời "đang
+chờ máy" thì nó đọc lại bản máy đang chạy và huy hiệu, không cần tải lại trang. Đo 25/09: trọn vòng
+69 s, nên 10 phút là gần chín lần. Quá hạn ấy mà vẫn "đang chờ máy" thì máy gần như chắc đã lỡ lời
+mời, thường vì offline lúc được mời, và nút thành **Mời lại**. Lỗi, bị ngắt và hết hạn để nút hiện
+ngay. Mỗi lần bấm là một link mới.
 
 **Mất điện hay mất mạng giữa chừng không làm hỏng máy.** Ảnh ghi vào ngăn *không* chạy, và ngăn
 khởi động chỉ đổi khi sha256 khớp (E13-T1). Bản mới khởi động ở chế độ chạy thử: nó chỉ tự xác
