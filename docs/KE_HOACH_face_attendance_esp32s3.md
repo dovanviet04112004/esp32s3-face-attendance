@@ -4848,14 +4848,14 @@ frontend/
 │   ├── fault.ts                      # ★ mã lỗi API → câu; NƠI DUY NHẤT làm việc đó
 │   ├── nav.ts                        # ★ điều hướng theo vai; khoá ràng kiểu vào vi.json
 │   ├── url-state.ts                  # ★ tìm, lọc, sắp của một danh sách nằm trên query string
-│   ├── theme.ts                      # ★ sáng/tối: mặc định theo hệ điều hành, nhớ lựa chọn
+│   ├── theme.ts                      # ★ cookie để server vẽ đúng lần đầu: sáng tối, thanh bên, trang chủ
 │   └── format.ts                     # ★ tiền, giờ công, ngày — số nào cũng kèm đơn vị
 ├── types/
 │   ├── generated/                    # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
 │   └── messages.d.ts                 # ★ khai Messages = typeof vi.json, chốt en.json đủ khoá
 ├── .env.example                      # ✅ commit — mọi biến, giá trị giả
 ├── .env.local                        # ❌ gitignore — giá trị thật
-├── proxy.ts                          # `/` → `/vi`, và chặn route không có locale
+├── proxy.ts                          # `/` → trang chủ lần trước hoặc `/vi`; chặn route không có locale
 └── next.config.ts
 ```
 
@@ -4920,7 +4920,8 @@ liệu vẫn nằm nguyên trong bảng. Hai chỉ mục `@@index([employeeId, t
 và mọi `<Link>` phải đi qua `i18n/navigation.ts`; đổi lại, một link gửi cho người khác mở ra
 đúng thứ tiếng người gửi đang thấy, và trang render sẵn ở phía server đã đúng ngôn ngữ ngay
 lần vẽ đầu — cookie thì server không biết trước, nên hoặc chớp một nhịp tiếng sai hoặc phải bỏ
-render sẵn. `proxy.ts` đẩy `/` về `/vi` để địa chỉ trần vẫn mở được — tên file là quy ước
+render sẵn. `proxy.ts` đẩy `/` về `/vi` để địa chỉ trần vẫn mở được, và thẳng tới trang chủ máy
+ấy mở lần trước khi có cookie `home` (§9.21.6) — tên file là quy ước
 Next 16 đặt cho thứ vẫn gọi là middleware, chạy trong chính tiến trình Next; lớp proxy thật
 của hệ là Traefik ở §11, hai thứ không dính nhau.
 
@@ -8827,6 +8828,7 @@ lần chuyển là thứ khiến người ta coi nó là một trang web tạm b
 | Chỗ | Luật |
 |---|---|
 | Manifest | có `id`; `start_url` là `/`, và `/` đưa thẳng mỗi vai về trang chủ của nó; `theme_color` và `background_color` là màu nền `kumo-canvas`, không phải xanh; `shortcuts` tới xin nghỉ, phiếu lương, lịch ca; không khoá chiều xoay, để máy tính bảng xoay được |
+| Mở app | **không có khung hình trắng nào**: logo của hệ (màn khởi động Android), rồi khung app vẽ skeleton, rồi nội dung — như một app cài từ cửa hàng. `/` chuyển tới trang chủ **ngay ở server**, không đợi JS và phiên: cookie `home` chỉ giữ đường dẫn trang chủ máy ấy mở lần trước, ghi mỗi lần có phiên, xoá khi đăng xuất; nó là gợi ý để vẽ, quyền vẫn do token, và vai đổi thì trang tự đưa về trang chủ đúng. Khung chờ chọn kiểu điện thoại hay máy tính bằng CSS, vì server không biết màn rộng hẹp: từ khung hình đầu đã đúng thanh trên, thanh tab đáy hay thanh bên, cùng kích thước bản thật, nên lúc phiên mở xong chỉ phần nội dung đổi. Chưa có cookie thì `/` vẽ logo giữa màn trong lúc mở lại phiên |
 | Thanh trạng thái | iPhone: `default` — iOS tô thanh ấy trắng khi sáng, đen khi tối, chữ luôn đọc được; `black-translucent` cho trang vẽ tràn lên nhưng chữ trạng thái **luôn trắng**, nên trên nền sáng giờ và pin biến mất. Thanh trên vẫn đệm `env(safe-area-inset-top)` cho máy nào vẽ tràn |
 | Vùng an toàn | thanh tab, thanh nút đáy **và tấm trượt** đều đệm `env(safe-area-inset-bottom)`, nút cuối không bao giờ nằm trên vạch home |
 | Bàn phím | viewport khai `interactive-widget=resizes-content`; ô đang gõ cuộn vào giữa phần còn nhìn thấy; thanh tab ẩn trong lúc gõ |
