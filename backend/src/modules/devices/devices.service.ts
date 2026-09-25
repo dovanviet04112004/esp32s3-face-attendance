@@ -32,6 +32,7 @@ interface HeartbeatFacts {
   fwVersion: string;
   modelVersion: string;
   uptimeSeconds: number;
+  embeddingVersion?: string;
 }
 
 /** `accepted` is the 202 of KEHOACH 7.3: ask again in `pollIntervalS`. The
@@ -58,6 +59,7 @@ const SHOWN = {
   status: true,
   fwVersion: true,
   modelVersion: true,
+  embeddingVersion: true,
   rosterVersion: true,
   lastSeenAt: true,
   online: true,
@@ -394,25 +396,32 @@ export class DevicesService {
     this.bus.emit(DEVICE_CHANGED, { deviceId, status } satisfies DeviceChange);
   }
 
-  /** Record what a heartbeat says about a kiosk, creating its row if needed. */
-  async applyHeartbeat(deviceId: string, beat: HeartbeatFacts, at: Date): Promise<void> {
+  /** Record what a heartbeat says about a kiosk. A beat that is not live, the broker's retained copy,
+   *  says only what the kiosk last ran, never that it is up now (KEHOACH 7.5).
+   */
+  async applyHeartbeat(deviceId: string, beat: HeartbeatFacts, at: Date, live: boolean): Promise<void> {
+    const runs = {
+      fwVersion: beat.fwVersion,
+      modelVersion: beat.modelVersion,
+      ...(beat.embeddingVersion ? { embeddingVersion: beat.embeddingVersion } : {}),
+    };
+    if (!live) {
+      await this.db.device.update({ where: { id: deviceId }, data: runs });
+      return;
+    }
     await this.seen(deviceId, at);
     await this.db.device.update({
       where: { id: deviceId },
-      data: {
-        fwVersion: beat.fwVersion,
-        modelVersion: beat.modelVersion,
-        bootedAt: new Date(at.getTime() - beat.uptimeSeconds * 1000),
-        lastSeenAt: at,
-        online: true,
-      },
+      data: { ...runs, bootedAt: new Date(at.getTime() - beat.uptimeSeconds * 1000), lastSeenAt: at, online: true },
     });
   }
 
-  /** Follow the retained status topic, which the broker writes on a last will. */
-  async setOnline(deviceId: string, online: boolean, at: Date): Promise<void> {
-    await this.seen(deviceId, at);
-    await this.db.device.update({ where: { id: deviceId }, data: { online, lastSeenAt: at } });
+  /** Follow the retained status topic, which the broker writes on a last will; a replayed copy is not a sighting. */
+  async setOnline(deviceId: string, online: boolean, at: Date, live: boolean): Promise<void> {
+    if (live) {
+      await this.seen(deviceId, at);
+    }
+    await this.db.device.update({ where: { id: deviceId }, data: { online, ...(live ? { lastSeenAt: at } : {}) } });
   }
 
   /** Whether a punch timed at ts falls in the span this kiosk stood outside the fleet (KEHOACH 7.3). */

@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength } from "class-validator";
 
 import { PUBLISHED_TARGETS, type PublishedTarget } from "../models.service.js";
 
@@ -29,6 +29,14 @@ export class PublishQueryDto {
   runId?: string;
 }
 
+/** An offer to the whole fleet; `recapture` is the admin's word that everyone is captured again (KEHOACH 7.5). */
+export class OfferAllDto {
+  @ApiPropertyOptional({ description: "Required when the release changes recognition" })
+  @IsOptional()
+  @IsBoolean()
+  recapture?: boolean;
+}
+
 /** The signed part of a download link, which is the whole of its authority. */
 export class ImageLinkDto {
   @ApiProperty({ example: "kiosk-2884859fd3c8" })
@@ -55,6 +63,8 @@ export class ReleaseViewDto {
   @ApiProperty() sizeBytes!: number;
   @ApiProperty({ type: String, nullable: true }) minFwVersion!: string | null;
   @ApiProperty({ type: String, nullable: true }) runId!: string | null;
+  @ApiProperty({ type: String, nullable: true, example: "recog-f77969e342ab10b4", description: "MODELS only" })
+  embeddingVersion!: string | null;
   @ApiProperty({ enum: ["DRAFT", "ROLLING", "PAUSED", "COMPLETED"] }) rolloutState!: string;
   @ApiProperty({ description: "The file is still on the volume, so it can be offered" }) available!: boolean;
   @ApiProperty() createdAt!: string;
@@ -64,6 +74,9 @@ export class FleetUpdateView {
   @ApiProperty({ type: ReleaseViewDto }) release!: ReleaseViewDto;
   @ApiProperty({ type: [String], description: "Approved kiosks running something older" }) behind!: string[];
   @ApiProperty({ type: [String], description: "Behind, but still installing an earlier offer" }) updating!: string[];
+  @ApiProperty({ description: "Installing it drops every template on the kiosks behind" }) changesRecognition!: boolean;
+  @ApiProperty({ type: [String], description: "Kiosks it moves to another recognition model, offered only with the fleet" })
+  recapture!: string[];
 }
 
 export class OfferStatusView {

@@ -27,6 +27,29 @@ const OLDER = "98.0.0";
 const BEHIND = "e2e-rel-behind";
 const CURRENT = "e2e-rel-current";
 const WAITING = "e2e-rel-pending";
+const MODELS_DOOR = "e2e-rel-models";
+const MODELS_PREFIX = "img-e2e0";
+const OLD_RECOG = createHash("sha256").update("e2e recognition model, the one kiosks run").digest();
+const NEW_RECOG = createHash("sha256").update("e2e recognition model, the next one").digest();
+
+function recogName(sha: Buffer): string {
+  return `recog-${sha.subarray(0, 8).toString("hex")}`;
+}
+
+/** A models image as storage_format.h lays it out: MDLS header, three entries, the recognition one named recog. */
+function modelsImage(recogSha: Buffer): Buffer {
+  const image = Buffer.alloc(1024, 0x11);
+  image.fill(0, 0, 256);
+  image.writeUInt32LE(0x534c444d, 0);
+  image.writeUInt32LE(1, 4);
+  image.writeUInt32LE(3, 8);
+  ["detect", "spoof", "recog"].forEach((name, at) => {
+    const entry = 0x10 + at * 64;
+    image.write(name, entry, "utf8");
+    (name === "recog" ? recogSha : Buffer.alloc(32, at + 1)).copy(image, entry + 24);
+  });
+  return image;
+}
 
 /** Just enough of an ESP-IDF app image to be read as one: header magic and the app descriptor. */
 function appImage(version: string, bytes = 4096): Buffer {
@@ -66,7 +89,8 @@ describe("releases (e2e)", () => {
 
   async function sweep(): Promise<void> {
     await db.release.deleteMany({ where: { version: { startsWith: "98." } } });
-    await db.device.deleteMany({ where: { id: { in: [BEHIND, CURRENT, WAITING] } } });
+    await db.release.deleteMany({ where: { version: { startsWith: MODELS_PREFIX } } });
+    await db.device.deleteMany({ where: { id: { in: [BEHIND, CURRENT, WAITING, MODELS_DOOR] } } });
   }
 
   before(async () => {
@@ -235,6 +259,7 @@ describe("releases (e2e)", () => {
         severity: "ERROR",
         message: "image does not fit the slot",
         ts: new Date(Date.now() + 1000),
+        receivedAt: new Date(Date.now() + 1000),
       },
     });
     const failed = await asAdmin("get", `/releases/status/${BEHIND}`);
@@ -302,11 +327,66 @@ describe("releases (e2e)", () => {
     assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201, "a missed offer could not be sent again");
 
     await db.deviceEvent.create({
-      data: { deviceId: BEHIND, type: "OTA_FAILED", severity: "ERROR", message: "sha256 mismatch", ts: new Date(Date.now() + 1000) },
+      data: {
+        deviceId: BEHIND,
+        type: "OTA_FAILED",
+        severity: "ERROR",
+        message: "sha256 mismatch",
+        ts: new Date(Date.now() + 1000),
+        receivedAt: new Date(Date.now() + 1000),
+      },
     });
     const failed = await asAdmin("get", `/releases/status/${BEHIND}`);
     assert.equal(failed.body.state, "FAILED");
     assert.equal(failed.body.busyUntil, null, "a kiosk that reported a failure still reads as installing");
     assert.equal((await asAdmin("post", `/releases/${releaseId}/offer/${BEHIND}`)).status, 201, "a failed kiosk could not be offered again");
+  });
+
+  let modelsId = "";
+
+  it("reads the recognition model out of a models image, and turns away a file that is not one", async () => {
+    const noise = await publish(`target=MODELS&version=${MODELS_PREFIX}000a`, Buffer.alloc(4096, 1));
+    assert.equal(noise.status, 400);
+    assert.equal(noise.body.message, "RELEASE_NOT_MODELS_IMAGE");
+    const res = await publish(`target=MODELS&version=${MODELS_PREFIX}000b`, modelsImage(NEW_RECOG));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    modelsId = res.body.release.releaseId as string;
+    assert.equal(res.body.release.embeddingVersion, recogName(NEW_RECOG));
+  });
+
+  it("moves no single kiosk to another recognition model, and the fleet only on the admin's word", async () => {
+    await db.device.create({
+      data: { id: MODELS_DOOR, status: "APPROVED", modelVersion: `${MODELS_PREFIX}0009`, embeddingVersion: recogName(OLD_RECOG) },
+    });
+    offers.length = 0;
+    const one = await asAdmin("post", `/releases/${modelsId}/offer/${MODELS_DOOR}`);
+    assert.equal(one.status, 409, JSON.stringify(one.body));
+    assert.equal(one.body.message, "RELEASE_CHANGES_RECOGNITION");
+    const fleet = (await asAdmin("get", "/releases/fleet")).body as {
+      release: { releaseId: string };
+      changesRecognition: boolean;
+      recapture: string[];
+    }[];
+    const row = fleet.find((one) => one.release.releaseId === modelsId);
+    assert.equal(row?.changesRecognition, true, "the dashboard is not told to ask");
+    assert.ok(row?.recapture.includes(MODELS_DOOR), "the kiosk page is not told to hold its own update button");
+    const unasked = await asAdmin("post", `/releases/${modelsId}/offer`);
+    assert.equal(unasked.status, 409);
+    assert.equal(unasked.body.message, "RELEASE_CHANGES_RECOGNITION");
+    assert.equal(offers.length, 0, "a recognition change reached a kiosk without the admin's word");
+    const told = await asAdmin("post", `/releases/${modelsId}/offer`).send({ recapture: true });
+    assert.equal(told.status, 201, JSON.stringify(told.body));
+    assert.ok((told.body.offered as string[]).includes(MODELS_DOOR));
+  });
+
+  it("offers one kiosk a models release that keeps its recognition model", async () => {
+    await db.device.update({
+      where: { id: MODELS_DOOR },
+      data: { modelVersion: `${MODELS_PREFIX}000b`, embeddingVersion: recogName(NEW_RECOG), otaOfferedAt: null, otaReleaseId: null },
+    });
+    const next = await publish(`target=MODELS&version=${MODELS_PREFIX}000c`, modelsImage(NEW_RECOG));
+    assert.equal(next.status, 201, JSON.stringify(next.body));
+    const one = await asAdmin("post", `/releases/${next.body.release.releaseId as string}/offer/${MODELS_DOOR}`);
+    assert.equal(one.status, 201, JSON.stringify(one.body));
   });
 });

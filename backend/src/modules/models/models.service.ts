@@ -52,6 +52,10 @@ export interface FleetUpdate {
   behind: string[];
   /** Behind too, but still installing an earlier offer, so left out of an offer to all. */
   updating: string[];
+  /** Installing it drops every template on the kiosks behind, so it goes to all of them, confirmed (KEHOACH 7.5). */
+  changesRecognition: boolean;
+  /** The kiosks, behind or updating, this release moves to another recognition model; none of them takes it alone. */
+  recapture: string[];
 }
 
 export interface PublishFacts {
@@ -73,6 +77,19 @@ const APP_DESC_MAGIC = 0xabcd5432;
 const APP_VERSION_OFFSET = 0x30;
 const APP_VERSION_BYTES = 32;
 const APP_HEAD_BYTES = APP_VERSION_OFFSET + APP_VERSION_BYTES;
+// storage_models_header_t and storage_model_entry_t of sys_storage/include/storage_format.h (KEHOACH 6.2.2).
+const MODELS_MAGIC = 0x534c444d;
+const MODELS_COUNT_OFFSET = 8;
+const MODELS_ENTRY_OFFSET = 0x10;
+const MODELS_ENTRY_BYTES = 64;
+const MODELS_ENTRY_CAP = 3;
+const MODELS_NAME_BYTES = 16;
+const MODELS_SHA_OFFSET = 24;
+const MODELS_HEAD_BYTES = 256;
+const RECOGNITION_ENTRY = "recog";
+// embedding_version() in firmware/main/app_tasks.c names a model by these many sha256 bytes.
+const EMBEDDING_SHA_BYTES = 8;
+const HEAD_BYTES = Math.max(APP_HEAD_BYTES, MODELS_HEAD_BYTES);
 const KEEP_FILES = 5;
 const UNIQUE_VIOLATION = "P2002";
 const OTA_FAILED = "OTA_FAILED";
@@ -105,6 +122,31 @@ export function behind(device: Pick<Device, "fwVersion" | "modelVersion">, relea
 
 function runs(device: Pick<Device, "fwVersion" | "modelVersion">, release: Pick<Release, "target" | "version">): boolean {
   return (release.target === "MODELS" ? device.modelVersion : device.fwVersion) === release.version;
+}
+
+/** Whether installing the release moves the kiosk to another recognition model; a side that cannot say counts as moving. */
+export function changesRecognition(
+  device: Pick<Device, "embeddingVersion">,
+  release: Pick<Release, "target" | "embeddingVersion">,
+): boolean {
+  return release.target === "MODELS" && (release.embeddingVersion === null || release.embeddingVersion !== device.embeddingVersion);
+}
+
+/** The recognition model a models image carries, named the way the kiosk's heartbeat names it. */
+function embeddingOf(head: Buffer): string | null {
+  if (head.length < MODELS_HEAD_BYTES || head.readUInt32LE(0) !== MODELS_MAGIC) {
+    return null;
+  }
+  const count = Math.min(head.readUInt32LE(MODELS_COUNT_OFFSET), MODELS_ENTRY_CAP);
+  for (let at = 0; at < count; at += 1) {
+    const entry = head.subarray(MODELS_ENTRY_OFFSET + at * MODELS_ENTRY_BYTES, MODELS_ENTRY_OFFSET + (at + 1) * MODELS_ENTRY_BYTES);
+    const raw = entry.subarray(0, MODELS_NAME_BYTES);
+    const name = raw.subarray(0, raw.indexOf(0) === -1 ? MODELS_NAME_BYTES : raw.indexOf(0)).toString("utf8");
+    if (name === RECOGNITION_ENTRY) {
+      return `recog-${entry.subarray(MODELS_SHA_OFFSET, MODELS_SHA_OFFSET + EMBEDDING_SHA_BYTES).toString("hex")}`;
+    }
+  }
+  return null;
 }
 
 function view(release: Release): ReleaseView {
@@ -153,7 +195,7 @@ export class ModelsService implements OnModuleInit {
   async fleet(): Promise<FleetUpdate[]> {
     const devices = await this.db.device.findMany({
       where: { status: "APPROVED" },
-      select: { id: true, fwVersion: true, modelVersion: true },
+      select: { id: true, fwVersion: true, modelVersion: true, embeddingVersion: true },
       orderBy: { id: "asc" },
     });
     const busy = await this.installing();
@@ -164,11 +206,14 @@ export class ModelsService implements OnModuleInit {
         orderBy: { createdAt: "desc" },
       });
       if (newest) {
-        const older = devices.filter((one) => behind(one, newest)).map((one) => one.id);
+        const older = devices.filter((one) => behind(one, newest));
+        const waiting = older.filter((one) => !busy.has(one.id));
         updates.push({
           release: view(newest),
-          behind: older.filter((id) => !busy.has(id)),
-          updating: older.filter((id) => busy.has(id)),
+          behind: waiting.map((one) => one.id),
+          updating: older.filter((one) => busy.has(one.id)).map((one) => one.id),
+          changesRecognition: waiting.some((one) => changesRecognition(one, newest)),
+          recapture: older.filter((one) => changesRecognition(one, newest)).map((one) => one.id),
         });
       }
     }
@@ -201,10 +246,14 @@ export class ModelsService implements OnModuleInit {
     const file = `${releaseId}.bin`;
     const { sha256, sizeBytes, head } = await this.store(body, `${this.dir}/${file}.part`);
     let release: Release;
+    const embeddingVersion = facts.target === "MODELS" ? embeddingOf(head) : null;
     // Only a failure ahead of the row removes the file; once the row names it, the file stays.
     try {
       if (facts.target === "FIRMWARE") {
         this.checkAppImage(head, facts.version);
+      }
+      if (facts.target === "MODELS" && embeddingVersion === null) {
+        throw new BadRequestException("RELEASE_NOT_MODELS_IMAGE");
       }
       await rename(`${this.dir}/${file}.part`, `${this.dir}/${file}`);
       release = await this.db.release.create({
@@ -217,6 +266,7 @@ export class ModelsService implements OnModuleInit {
           sizeBytes,
           minFwVersion: facts.minFwVersion ?? null,
           runId: facts.runId ?? null,
+          embeddingVersion,
         },
       });
     } catch (error) {
@@ -234,7 +284,7 @@ export class ModelsService implements OnModuleInit {
       action: AUDIT_ACTIONS.RELEASE_PUBLISH,
       subject: AUDIT_SUBJECTS.RELEASE,
       subjectId: releaseId,
-      meta: { target: facts.target, version: facts.version, sha256, sizeBytes },
+      meta: { target: facts.target, version: facts.version, sha256, sizeBytes, embeddingVersion },
     });
     this.log.log(`published ${facts.target} ${facts.version}, ${sizeBytes} bytes, ${sha256}`);
     await this.prune(facts.target).catch((error: Error) =>
@@ -280,33 +330,58 @@ export class ModelsService implements OnModuleInit {
     if (runs(device, release)) {
       throw new ConflictException("RELEASE_ALREADY_RUNNING");
     }
+    // One door on another model would refuse every face captured at the rest (KEHOACH 7.5).
+    if (changesRecognition(device, release)) {
+      throw new ConflictException("RELEASE_CHANGES_RECOGNITION");
+    }
     // One ota_task per kiosk, and Device keeps only the newest offer (KEHOACH 7.7).
     if ((await this.status(deviceId))?.busyUntil) {
       throw new ConflictException("OTA_IN_PROGRESS");
     }
-    return this.send(release, deviceId, actorId);
+    const offeredAt = await this.send(release, device, actorId);
+    if (!offeredAt) {
+      throw new ConflictException("OTA_IN_PROGRESS");
+    }
+    return { deviceId, offeredAt };
   }
 
-  /** Offer a release to every approved kiosk running something older and not installing already. */
-  async offerAll(releaseId: string, actorId: string): Promise<{ offered: string[]; failed: string[]; busy: string[] }> {
+  /** Offer a release to every approved kiosk running something older and not installing already.
+   *  One that changes recognition needs `recapture`, the admin's word that everyone is captured again.
+   */
+  async offerAll(
+    releaseId: string,
+    actorId: string,
+    recapture = false,
+  ): Promise<{ offered: string[]; failed: string[]; busy: string[] }> {
     const release = await this.offerable(releaseId);
     const installing = await this.installing();
     const fleet = await this.db.device.findMany({
       where: { status: "APPROVED" },
-      select: { id: true, fwVersion: true, modelVersion: true },
+      select: {
+        id: true,
+        fwVersion: true,
+        modelVersion: true,
+        embeddingVersion: true,
+        otaReleaseId: true,
+        otaOfferedAt: true,
+      },
       orderBy: { id: "asc" },
     });
+    const older = fleet.filter((one) => behind(one, release));
+    if (!recapture && older.some((one) => !installing.has(one.id) && changesRecognition(one, release))) {
+      throw new ConflictException("RELEASE_CHANGES_RECOGNITION");
+    }
     const offered: string[] = [];
     const failed: string[] = [];
     const busy: string[] = [];
-    for (const device of fleet.filter((one) => behind(one, release))) {
+    for (const device of older) {
       if (installing.has(device.id)) {
         busy.push(device.id);
         continue;
       }
       try {
-        await this.send(release, device.id, actorId);
-        offered.push(device.id);
+        const sent = await this.send(release, device, actorId);
+        (sent ? offered : busy).push(device.id);
       } catch (error) {
         this.log.error(`could not offer ${release.version} to ${device.id}: ${(error as Error).message}`);
         failed.push(device.id);
@@ -331,8 +406,8 @@ export class ModelsService implements OnModuleInit {
     const failure = runs(device, release)
       ? null
       : await this.db.deviceEvent.findFirst({
-          where: { deviceId, type: OTA_FAILED, ts: { gte: device.otaOfferedAt } },
-          orderBy: { ts: "desc" },
+          where: { deviceId, type: OTA_FAILED, receivedAt: { gte: device.otaOfferedAt } },
+          orderBy: { receivedAt: "desc" },
           select: { message: true },
         });
     return this.offerState({ ...device, otaOfferedAt: device.otaOfferedAt }, release, failure);
@@ -383,9 +458,9 @@ export class ModelsService implements OnModuleInit {
         where: { releaseId: { in: [...new Set(recent.map((one) => one.otaReleaseId as string))] } },
       }),
       this.db.deviceEvent.findMany({
-        where: { deviceId: { in: recent.map((one) => one.id) }, type: OTA_FAILED, ts: { gt: since } },
-        select: { deviceId: true, ts: true, message: true },
-        orderBy: { ts: "desc" },
+        where: { deviceId: { in: recent.map((one) => one.id) }, type: OTA_FAILED, receivedAt: { gt: since } },
+        select: { deviceId: true, receivedAt: true, message: true },
+        orderBy: { receivedAt: "desc" },
       }),
     ]);
     const releaseOf = new Map(releases.map((one) => [one.releaseId, one]));
@@ -396,7 +471,7 @@ export class ModelsService implements OnModuleInit {
       if (!release) {
         continue;
       }
-      const failure = failures.find((event) => event.deviceId === one.id && event.ts >= offeredAt) ?? null;
+      const failure = failures.find((event) => event.deviceId === one.id && event.receivedAt >= offeredAt) ?? null;
       if (this.offerState({ ...one, otaOfferedAt: offeredAt }, release, failure).busyUntil) {
         busy.add(one.id);
       }
@@ -415,7 +490,24 @@ export class ModelsService implements OnModuleInit {
     return release;
   }
 
-  private async send(release: Release, deviceId: string, actorId: string): Promise<{ deviceId: string; offeredAt: Date }> {
+  /**
+   * Take the kiosk's one offer slot, then publish. The write is conditioned on the offer read, so two
+   * presses at once cannot both send (KEHOACH 9.23 rule 3); null when the other one took it.
+   */
+  private async send(
+    release: Release,
+    device: Pick<Device, "id" | "otaReleaseId" | "otaOfferedAt">,
+    actorId: string,
+  ): Promise<Date | null> {
+    const deviceId = device.id;
+    const offeredAt = new Date();
+    const taken = await this.db.device.updateMany({
+      where: { id: deviceId, status: "APPROVED", otaOfferedAt: device.otaOfferedAt },
+      data: { otaReleaseId: release.releaseId, otaOfferedAt: offeredAt },
+    });
+    if (taken.count === 0) {
+      return null;
+    }
     const manifest: OtaManifest = {
       releaseId: release.releaseId,
       target: release.target as OtaManifest["target"],
@@ -426,12 +518,16 @@ export class ModelsService implements OnModuleInit {
       ...(release.minFwVersion ? { minFwVersion: release.minFwVersion } : {}),
       ...(release.runId ? { runId: release.runId } : {}),
     };
-    await this.mqtt.publishDown("ota", deviceId, manifest);
-    const offeredAt = new Date();
-    await this.db.device.update({
-      where: { id: deviceId },
-      data: { otaReleaseId: release.releaseId, otaOfferedAt: offeredAt },
-    });
+    try {
+      await this.mqtt.publishDown("ota", deviceId, manifest);
+    } catch (error) {
+      // An offer that never left must not hold the slot for OTA_BUSY_MINUTES.
+      await this.db.device.updateMany({
+        where: { id: deviceId, otaOfferedAt: offeredAt },
+        data: { otaReleaseId: device.otaReleaseId, otaOfferedAt: device.otaOfferedAt },
+      });
+      throw error;
+    }
     await this.db.release.update({ where: { releaseId: release.releaseId }, data: { rolloutState: "ROLLING" } });
     await this.audit.record({
       actorId,
@@ -441,7 +537,7 @@ export class ModelsService implements OnModuleInit {
       meta: { releaseId: release.releaseId, target: release.target, version: release.version },
     });
     this.log.log(`offered ${release.target} ${release.version} to ${deviceId}`);
-    return { deviceId, offeredAt };
+    return offeredAt;
   }
 
   private link(releaseId: string, deviceId: string): string {
@@ -474,7 +570,7 @@ export class ModelsService implements OnModuleInit {
         if (sizeBytes > ceiling) {
           continue;
         }
-        if (sizeBytes - chunk.byteLength < APP_HEAD_BYTES) {
+        if (sizeBytes - chunk.byteLength < HEAD_BYTES) {
           head.push(chunk);
         }
         digest.update(chunk);
@@ -497,7 +593,7 @@ export class ModelsService implements OnModuleInit {
       await rm(part, { force: true });
       throw new BadRequestException("RELEASE_EMPTY");
     }
-    return { sha256: digest.digest("hex"), sizeBytes, head: Buffer.concat(head).subarray(0, APP_HEAD_BYTES) };
+    return { sha256: digest.digest("hex"), sizeBytes, head: Buffer.concat(head).subarray(0, HEAD_BYTES) };
   }
 
   private checkAppImage(head: Buffer, version: string): void {

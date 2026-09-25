@@ -15,7 +15,7 @@ export class AttendanceListener {
     private readonly feed: RealtimeGateway,
   ) {}
 
-  @OnEvent(KIOSK_EVENT.attendance)
+  @OnEvent(KIOSK_EVENT.attendance, { suppressErrors: false })
   async onPunch(message: KioskMessage<AttendanceRecord>): Promise<void> {
     const punch = message.payload;
     // The topic names the kiosk the broker authenticated; the body is only what that kiosk claims.

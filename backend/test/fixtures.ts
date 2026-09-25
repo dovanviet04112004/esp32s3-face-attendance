@@ -29,8 +29,13 @@ function dashboardPassword(): string {
   return /^EMQX_DASHBOARD_PASSWORD=(.*)$/m.exec(readFileSync(file, "utf8"))?.[1]?.trim() ?? FACTORY_PASSWORD;
 }
 
-/** Publish as a kiosk through the broker's admin api: the acl denies services every up topic. */
-export async function publishAsKiosk(topic: string, payload: unknown): Promise<void> {
+/** Publish as a kiosk through the broker's admin api, as the acl denies services every up topic.
+ *  A null payload with `retain` clears the broker's copy. */
+export async function publishAsKiosk(
+  topic: string,
+  payload: unknown,
+  options: { qos?: 0 | 1; retain?: boolean } = {},
+): Promise<void> {
   const auth = await fetch(`${DASHBOARD}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -40,7 +45,12 @@ export async function publishAsKiosk(topic: string, payload: unknown): Promise<v
   const sent = await fetch(`${DASHBOARD}/publish`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ topic, qos: 1, payload: JSON.stringify(payload) }),
+    body: JSON.stringify({
+      topic,
+      qos: options.qos ?? 1,
+      retain: options.retain ?? false,
+      payload: payload === null ? "" : JSON.stringify(payload),
+    }),
   });
   assert.ok(sent.ok, `broker refused the test publish: ${sent.status}`);
 }

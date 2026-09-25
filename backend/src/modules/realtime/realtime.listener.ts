@@ -22,7 +22,7 @@ export class RealtimeListener {
   ) {}
 
   /** Keep what a kiosk reports, then show it. A fault nobody saw still counts. */
-  @OnEvent(KIOSK_EVENT.event)
+  @OnEvent(KIOSK_EVENT.event, { suppressErrors: false })
   async onEvent(message: KioskMessage<DeviceEvent>): Promise<void> {
     const body = message.payload;
     await this.devices.seen(message.deviceId, message.receivedAt);
@@ -37,6 +37,7 @@ export class RealtimeListener {
         errorCode: body.errorCode,
         message: body.message,
         ts: new Date(body.ts),
+        receivedAt: message.receivedAt,
       },
     });
     this.feed.publish(FEED.event, body);
@@ -53,10 +54,10 @@ export class RealtimeListener {
     this.feed.publish(FEED.device, change);
   }
 
-  @OnEvent(KIOSK_EVENT.status)
+  @OnEvent(KIOSK_EVENT.status, { suppressErrors: false })
   async onStatus(message: KioskMessage<string>): Promise<void> {
     const online = message.payload === "online";
-    await this.devices.setOnline(message.deviceId, online, message.receivedAt);
+    await this.devices.setOnline(message.deviceId, online, message.receivedAt, !message.retained);
     this.feed.publish(FEED.device, { deviceId: message.deviceId, online });
   }
 }

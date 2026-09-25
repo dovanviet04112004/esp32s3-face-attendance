@@ -88,6 +88,8 @@ export class DeviceView {
   @ApiProperty({ enum: DEVICE_STATUS }) status!: string;
   @ApiProperty({ type: String, nullable: true }) fwVersion!: string | null;
   @ApiProperty({ type: String, nullable: true }) modelVersion!: string | null;
+  @ApiProperty({ type: String, nullable: true, example: "recog-f77969e342ab10b4", description: "Recognition model its templates belong to" })
+  embeddingVersion!: string | null;
   @ApiProperty() rosterVersion!: number;
   @ApiProperty({ type: String, nullable: true, format: "date-time" }) lastSeenAt!: string | null;
   @ApiProperty() online!: boolean;

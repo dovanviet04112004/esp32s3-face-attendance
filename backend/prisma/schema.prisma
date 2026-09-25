@@ -323,6 +323,8 @@ model Device {
   readmittedAt  DateTime?
   fwVersion     String?
   modelVersion  String?
+  // The recognition model the kiosk's heartbeat names; a template of another is refused (KEHOACH 7.5).
+  embeddingVersion String?
   // The server half of the convergence cursor: compared against the number
   // every heartbeat carries (KEHOACH 7.5).
   rosterVersion Int                @default(0)
@@ -456,6 +458,8 @@ model Release {
   sizeBytes    Int
   minFwVersion String?
   runId        String?
+  // MODELS only: recog- and the recognition entry's sha256 prefix, read from the image header (KEHOACH 7.5).
+  embeddingVersion String?
   rolloutState RolloutState @default(DRAFT)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt

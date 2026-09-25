@@ -92,6 +92,14 @@ describe("environment (e2e)", () => {
     assert.throws(() => validateEnv({ ...shipped, API_DOCS_ENABLED: "yes" }), /API_DOCS_ENABLED/);
   });
 
+  it("keeps the broker session under svc-api, gives each test run its own, and refuses a name a kiosk logs in with", () => {
+    assert.equal(validateEnv({ ...BASE, NODE_ENV: "development" }).MQTT_CLIENT_ID, "svc-api");
+    assert.equal(validateEnv({ ...BASE, NODE_ENV: "development", MQTT_CLIENT_ID: "" }).MQTT_CLIENT_ID, "svc-api");
+    assert.equal(validateEnv(BASE).MQTT_CLIENT_ID, undefined);
+    assert.equal(validateEnv({ ...BASE, MQTT_CLIENT_ID: "svc-api-2" }).MQTT_CLIENT_ID, "svc-api-2");
+    assert.throws(() => validateEnv({ ...BASE, MQTT_CLIENT_ID: "kiosk-2884859fd3c8" }), /MQTT_CLIENT_ID/);
+  });
+
   it("names every variable it cannot do without", () => {
     const naked = validateEnv;
     assert.throws(() => naked({ NODE_ENV: "test" }), /DATABASE_URL[\s\S]*MQTT_PASSWORD/);

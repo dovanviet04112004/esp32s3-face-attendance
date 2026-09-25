@@ -16,16 +16,20 @@ export class EnrollmentListener {
     private readonly feed: RealtimeGateway,
   ) {}
 
-  @OnEvent(KIOSK_EVENT.enroll_report)
+  @OnEvent(KIOSK_EVENT.enroll_report, { suppressErrors: false })
   onReport(message: KioskMessage<EnrollPayload>): Promise<void> {
     return this.enrollment.takeReport(message.deviceId, message.payload);
   }
 
-  @OnEvent(KIOSK_EVENT.heartbeat)
+  @OnEvent(KIOSK_EVENT.heartbeat, { suppressErrors: false })
   async onHeartbeat(message: KioskMessage<Heartbeat>): Promise<void> {
-    await this.devices.applyHeartbeat(message.deviceId, message.payload, message.receivedAt);
+    await this.devices.applyHeartbeat(message.deviceId, message.payload, message.receivedAt, !message.retained);
+    // A retained copy is the broker's replay, not the kiosk speaking (KEHOACH 7.5).
+    if (message.retained) {
+      return;
+    }
     // Told only once the row holds it, since the dashboard answers by reading the row.
     this.feed.publish(FEED.device, message.payload);
-    await this.enrollment.converge(message.deviceId, message.payload.rosterVersion);
+    await this.enrollment.converge(message.deviceId, message.payload.rosterVersion, message.receivedAt);
   }
 }

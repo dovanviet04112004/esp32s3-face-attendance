@@ -162,13 +162,15 @@ describe("enrollment (e2e)", () => {
     });
 
     const device = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
-    await enrollment.converge(DEVICE_ID, device.rosterVersion - 1);
+    await enrollment.converge(DEVICE_ID, 0);
     spy.mock.restore();
 
     assert.ok(sent.length >= 1, "a kiosk left behind was not resynced");
     assert.equal(sent[0].op, "REPLACE_ALL", "convergence has to clear before it fills");
+    assert.equal(sent[0].rosterVersion, device.rosterVersion + 1, "the run reused numbers already sent");
     const last = sent[sent.length - 1];
-    assert.equal(last.rosterVersion, device.rosterVersion, "the run must land on the target");
+    const after = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
+    assert.equal(last.rosterVersion, after.rosterVersion, "the run must land on the target");
   });
 
   it("leaves a kiosk alone when its heartbeat is already level", async () => {

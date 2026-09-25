@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
+import { after, before, describe, it, mock } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -10,20 +11,29 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { EnrollmentService } from "../src/modules/enrollment/enrollment.service.js";
+import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 import type { EnrollPayload } from "../src/common/generated/enroll_payload.js";
 
 const DOOR_A = "e2e-door-a";
 const DOOR_B = "e2e-door-b";
+const DOOR_C = "e2e-door-c";
+const DOOR_OLD = "e2e-door-old-model";
+const DOOR_NEW = "e2e-door-new-model";
 const DOORS = [DOOR_A, DOOR_B];
 const CODE = "NV9200";
+const CROWD = ["NV9201", "NV9202", "NV9203", "NV9204"];
 const EMBEDDING_BYTES = 512;
+const PUBLISH_MS = 25;
+const AHEAD_BY = 50;
+
+type Told = { to: string; op: string; employeeId: number; rosterVersion: number };
 
 function capture(fill: number): string {
   return Buffer.alloc(EMBEDDING_BYTES, fill).toString("base64");
 }
 
 // Every sample of one capture session carries the session's start (KEHOACH 7.5).
-function report(deviceId: string, employeeId: number, fill: number, session: number, templateIdx = 0): EnrollPayload {
+function report(deviceId: string, employeeId: number, fill: number, session: number, templateIdx = 0, model = "r1"): EnrollPayload {
   return {
     op: "UPSERT",
     employeeId,
@@ -32,7 +42,7 @@ function report(deviceId: string, employeeId: number, fill: number, session: num
     embedding: capture(fill),
     scale: 0.0078125,
     quality: 255,
-    embeddingVersion: "r1",
+    embeddingVersion: model,
     deviceId,
     rosterVersion: 1,
   } as EnrollPayload;
@@ -51,8 +61,28 @@ describe("roster sync across doors (e2e)", () => {
   let employeeId = 0;
 
   async function sweep(): Promise<void> {
-    await db.employee.deleteMany({ where: { code: CODE } });
-    await db.device.deleteMany({ where: { id: { in: DOORS } } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, ...CROWD] } } });
+    await db.device.deleteMany({ where: { id: { in: [...DOORS, DOOR_C, DOOR_OLD, DOOR_NEW] } } });
+  }
+
+  // Every roster message the run sends, in the order it left; each takes PUBLISH_MS on the wire.
+  async function recorded(run: () => Promise<unknown>, onSend?: () => void): Promise<Told[]> {
+    const sent: Told[] = [];
+    const spy = mock.method(app.get(MqttService), "publishDown", async (_name: string, to: string, payload: EnrollPayload) => {
+      onSend?.();
+      await sleep(PUBLISH_MS);
+      sent.push({ to, op: payload.op, employeeId: payload.employeeId, rosterVersion: payload.rosterVersion ?? -1 });
+    });
+    try {
+      await run();
+    } finally {
+      spy.mock.restore();
+    }
+    return sent;
+  }
+
+  function consecutive(numbers: number[]): boolean {
+    return numbers.every((one, at) => one === numbers[0] + at);
   }
 
   async function stateOf(deviceId: string): Promise<string> {
@@ -226,11 +256,13 @@ describe("roster sync across doors (e2e)", () => {
   });
 
   // Door A still holds the person; the remove case above leaves door B empty.
-  it("sends the whole roster again when a door reports an older version", async () => {
-    const ahead = await versionOf(DOOR_A);
-    const reached = await enrollment.converge(DOOR_A, ahead - 1);
-    void reached;
-    assert.equal(await versionOf(DOOR_A), ahead, "a resync does not move the counter on");
+  it("sends the whole roster again, on numbers of its own, when a door reports an older version", async () => {
+    const held = await versionOf(DOOR_A);
+    const sent = await recorded(() => enrollment.converge(DOOR_A, held - 1));
+    assert.equal(sent[0]?.op, "REPLACE_ALL");
+    assert.equal(sent[0].rosterVersion, held + 1, "the run reused numbers already sent");
+    assert.ok(consecutive(sent.map((one) => one.rosterVersion)));
+    assert.equal(await versionOf(DOOR_A), sent[sent.length - 1].rosterVersion);
   });
 
   it("repairs a door whose counter stands behind its own roster", async () => {
@@ -239,5 +271,97 @@ describe("roster sync across doors (e2e)", () => {
     const reached = await enrollment.resync(DOOR_A);
     assert.ok(reached >= 1, "a counter behind its roster sent a negative version and was refused");
     assert.equal(await versionOf(DOOR_A), reached);
+  });
+
+  it("gives one kiosk consecutive numbers while assignments land in the middle of a resync", async () => {
+    await db.device.create({ data: { id: DOOR_C, name: DOOR_C, status: "APPROVED" } });
+    const crowd: number[] = [];
+    for (const code of CROWD) {
+      const one = await db.employee.create({ data: { code, fullName: `Người ${code}`, active: true } });
+      await db.biometricConsent.create({ data: { employeeId: one.id, noticeVersion: "e2e", method: "PAPER" } });
+      crowd.push(one.id);
+    }
+    const [first, second, ...late] = crowd;
+    await enrollment.assign(DOOR_C, first);
+    await enrollment.assign(DOOR_C, second);
+    let started = (): void => undefined;
+    const running = new Promise<void>((done) => {
+      started = done;
+    });
+    const sent = await recorded(async () => {
+      const run = enrollment.resync(DOOR_C);
+      await running;
+      await Promise.all([run, ...late.map((id) => enrollment.assign(DOOR_C, id))]);
+    }, () => started());
+    const numbers = sent.filter((one) => one.to === DOOR_C).map((one) => one.rosterVersion);
+    assert.ok(consecutive(numbers), `one kiosk heard ${numbers.join(", ")}`);
+    assert.equal(numbers[numbers.length - 1], await versionOf(DOOR_C));
+    const lateAt = sent.findIndex((one) => late.includes(one.employeeId));
+    const runEnd = sent.findLastIndex((one) => one.op === "REPLACE_ALL" || one.employeeId === first || one.employeeId === second);
+    assert.ok(lateAt > runEnd, "an assignment went out in the middle of the run");
+  });
+
+  it("pulls a kiosk that stands ahead of the server back into step", async () => {
+    const held = await versionOf(DOOR_C);
+    const sent = await recorded(() => enrollment.converge(DOOR_C, held + AHEAD_BY));
+    assert.equal(sent[0]?.op, "REPLACE_ALL", "a kiosk ahead of the server was left there");
+    assert.ok(sent[0].rosterVersion > held + AHEAD_BY, "the kiosk would drop every counted message after the run");
+    assert.ok(consecutive(sent.map((one) => one.rosterVersion)));
+    assert.equal(await versionOf(DOOR_C), sent[sent.length - 1].rosterVersion);
+  });
+
+  it("starts one resync per kiosk, leaves it to climb, and sends it again once it stalls", async () => {
+    let heardDuring = new Date(0);
+    const run = await recorded(
+      () => enrollment.resync(DOOR_C),
+      () => {
+        heardDuring = new Date();
+        void enrollment.converge(DOOR_C, 0);
+      },
+    );
+    assert.equal(run.filter((one) => one.op === "REPLACE_ALL").length, 1, "a heartbeat during the run started a second one");
+    assert.ok(run.length > 2, "the run is too short to stall inside");
+    const from = run[0].rosterVersion;
+    assert.deepEqual(await recorded(() => enrollment.converge(DOOR_C, 0, heardDuring)), [], "a beat heard mid-run set off a resync");
+    assert.deepEqual(await recorded(() => enrollment.converge(DOOR_C, from + 1)), [], "a kiosk still applying the run was sent it again");
+    const stalled = await recorded(() => enrollment.converge(DOOR_C, from + 1));
+    assert.equal(stalled[0]?.op, "REPLACE_ALL", "a kiosk stuck inside the run was never sent it again");
+  });
+
+  it("asks a kiosk on another recognition model for the face again instead of sending one it would refuse", async () => {
+    await db.device.update({ where: { id: DOOR_A }, data: { embeddingVersion: "r1" } });
+    const same = await recorded(() => enrollment.resync(DOOR_A));
+    assert.deepEqual(same.filter((one) => one.employeeId === employeeId).map((one) => one.op), ["UPSERT"]);
+
+    await db.device.update({ where: { id: DOOR_A }, data: { embeddingVersion: "r2" } });
+    const other = await recorded(() => enrollment.resync(DOOR_A));
+    assert.deepEqual(
+      other.filter((one) => one.employeeId === employeeId).map((one) => one.op),
+      ["ASSIGN"],
+      "a template of another model was sent, or nobody asked for the face",
+    );
+    assert.equal(await stateOf(DOOR_A), "ASSIGNED", "the dashboard still shows a face the kiosk has dropped");
+  });
+
+  it("sends a new face to the doors on its model only, and stops showing the others a face it cannot send", async () => {
+    await db.device.createMany({
+      data: [
+        { id: DOOR_OLD, name: DOOR_OLD, status: "APPROVED", embeddingVersion: "r1" },
+        { id: DOOR_NEW, name: DOOR_NEW, status: "APPROVED", embeddingVersion: "r2" },
+      ],
+    });
+    await db.deviceEnrollment.createMany({
+      data: [
+        { deviceId: DOOR_OLD, employeeId, state: "ENROLLED" },
+        { deviceId: DOOR_NEW, employeeId, state: "ASSIGNED" },
+      ],
+    });
+    const oldAt = await versionOf(DOOR_OLD);
+    const sent = await recorded(() => enrollment.takeReport(DOOR_A, report(DOOR_A, employeeId, 0x88, RETAKEN + 120_000, 0, "r2")));
+    assert.deepEqual(sent.filter((one) => one.to === DOOR_OLD), [], "a door on the old model was sent a template it must refuse");
+    assert.equal(await versionOf(DOOR_OLD), oldAt);
+    assert.equal(await stateOf(DOOR_OLD), "ASSIGNED", "the dashboard still shows a face the server cannot give that door");
+    assert.deepEqual(sent.filter((one) => one.to === DOOR_NEW).map((one) => one.op), ["DELETE_EMPLOYEE", "UPSERT"]);
+    assert.equal(await stateOf(DOOR_NEW), "ENROLLED");
   });
 });

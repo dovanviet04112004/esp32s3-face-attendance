@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const JWT_SECRETS = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET", "JWT_DEVICE_SECRET"] as const;
+const DEFAULT_MQTT_CLIENT_ID = "svc-api";
 
 export const envSchema = z
   .object({
@@ -122,6 +123,12 @@ export const envSchema = z
     MQTT_USERNAME: z.string().min(1),
     MQTT_PASSWORD: z.string().min(1),
     MQTT_CA_CERT_PATH: z.string().optional(),
+    // The id the broker keeps the api's session under; no kiosk may log in as svc- (KEHOACH 7.4).
+    MQTT_CLIENT_ID: z
+      .string()
+      .optional()
+      .transform((held) => (held ? held : undefined))
+      .pipe(z.string().regex(/^svc-[A-Za-z0-9_-]{1,60}$/).optional()),
     // The broker's REST api, which closes a revoked kiosk's session (KEHOACH 7.4).
     EMQX_API_URL: z.string().url().optional(),
     EMQX_API_USERNAME: z.string().min(1).default("admin"),
@@ -149,7 +156,12 @@ export const envSchema = z
       }
     }
   })
-  .transform((env) => ({ ...env, API_DOCS_ENABLED: env.API_DOCS_ENABLED ?? env.NODE_ENV !== "production" }));
+  .transform((env) => ({
+    ...env,
+    API_DOCS_ENABLED: env.API_DOCS_ENABLED ?? env.NODE_ENV !== "production",
+    // Parallel e2e suites share one broker, and one shared id would pass the session between them.
+    MQTT_CLIENT_ID: env.MQTT_CLIENT_ID ?? (env.NODE_ENV === "test" ? undefined : DEFAULT_MQTT_CLIENT_ID),
+  }));
 
 export type Env = z.infer<typeof envSchema>;
 

@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   HttpStatus,
@@ -31,6 +32,7 @@ import type { AccessClaims } from "../auth/auth.types.js";
 import {
   FleetUpdateView,
   ImageLinkDto,
+  OfferAllDto,
   OfferAllView,
   OfferView,
   OfferStatusView,
@@ -83,12 +85,13 @@ export class ModelsController {
   @Roles("ADMIN")
   @ApiOperation({ summary: "Offer a release to every approved kiosk running something older and not installing already" })
   @ApiCreatedResponse({ type: OfferAllView })
-  @ApiErrors(HttpStatus.GONE)
+  @ApiErrors(HttpStatus.CONFLICT, HttpStatus.GONE)
   offerAll(
     @Param("releaseId") releaseId: string,
+    @Body() body: OfferAllDto,
     @Req() req: Request,
   ): Promise<{ offered: string[]; failed: string[]; busy: string[] }> {
-    return this.models.offerAll(releaseId, actorOf(req));
+    return this.models.offerAll(releaseId, actorOf(req), body.recapture ?? false);
   }
 
   @Post(":releaseId/offer/:deviceId")
