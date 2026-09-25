@@ -36,18 +36,18 @@ function Opening() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-[58px] items-center gap-3 border-b border-kumo-line bg-kumo-canvas px-4">
           <img src="/logo.svg" alt="" width={22} height={22} className="shrink-0 md:hidden" />
-          <SkeletonLine minWidth={120} maxWidth={200} className="hidden md:block" />
-          <SkeletonLine minWidth={180} maxWidth={320} className="ms-auto" />
+          <SkeletonLine minWidth={12} maxWidth={20} className="hidden md:block" />
+          <SkeletonLine minWidth={18} maxWidth={26} className="ms-auto" />
         </header>
         <main aria-busy className="flex-1">
           <div className={kBlock}>
             <div className="flex flex-col gap-3">
-              <SkeletonLine minWidth={160} maxWidth={260} blockHeight={28} />
-              <SkeletonLine minWidth={240} maxWidth={420} />
+              <SkeletonLine minWidth={25} maxWidth={40} blockHeight={28} />
+              <SkeletonLine minWidth={40} maxWidth={60} />
             </div>
             <div className="mt-8 flex flex-col gap-4 rounded-lg bg-kumo-base p-4 ring ring-kumo-line">
               {Array.from({ length: 6 }, (_, at) => (
-                <SkeletonLine key={at} minWidth={200} maxWidth={900} />
+                <SkeletonLine key={at} minWidth={50} maxWidth={100} />
               ))}
             </div>
           </div>

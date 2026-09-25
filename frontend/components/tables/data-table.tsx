@@ -298,7 +298,7 @@ export function DataTable<T>({
                     {selectable ? <Table.Cell /> : null}
                     {columns.map((column) => (
                       <Table.Cell key={column.id}>
-                        <SkeletonLine minWidth={40} maxWidth={140} />
+                        <SkeletonLine minWidth={35} maxWidth={90} />
                       </Table.Cell>
                     ))}
                     {rowActions ? <Table.Cell /> : null}
@@ -349,7 +349,7 @@ export function DataTable<T>({
         {pending ? (
           <LayerCard className="flex flex-col gap-3 p-4">
             {Array.from({ length: 3 }, (_, at) => (
-              <SkeletonLine key={at} minWidth={120} maxWidth={260} />
+              <SkeletonLine key={at} minWidth={25} maxWidth={43} />
             ))}
           </LayerCard>
         ) : (

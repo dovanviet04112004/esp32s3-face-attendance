@@ -90,8 +90,8 @@ export function SettlementSheet({ runId, editable }: { runId: string; editable: 
   if (sheet.isPending) {
     return (
       <div className="flex flex-col gap-3 border-t border-kumo-hairline pt-4">
-        <SkeletonLine minWidth={120} maxWidth={260} />
-        <SkeletonLine minWidth={120} maxWidth={320} />
+        <SkeletonLine minWidth={25} maxWidth={43} />
+        <SkeletonLine minWidth={25} maxWidth={53} />
       </div>
     );
   }

@@ -521,7 +521,7 @@ export default function DocumentsPage() {
             ) : readers.isPending ? (
               <div className="flex flex-col gap-3">
                 {Array.from({ length: 4 }, (_, at) => (
-                  <SkeletonLine key={at} minWidth={160} maxWidth={360} />
+                  <SkeletonLine key={at} minWidth={27} maxWidth={60} />
                 ))}
               </div>
             ) : readerRows && readerRows.length > 0 ? (

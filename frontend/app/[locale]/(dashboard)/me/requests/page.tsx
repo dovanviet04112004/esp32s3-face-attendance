@@ -256,8 +256,8 @@ function MyRequests() {
               <AsideCard title={me("leaveLeft")}>
                 {balances.isPending ? (
                   <div className="flex flex-col gap-2">
-                    <SkeletonLine minWidth={120} maxWidth={240} />
-                    <SkeletonLine minWidth={120} maxWidth={240} />
+                    <SkeletonLine minWidth={25} maxWidth={40} />
+                    <SkeletonLine minWidth={25} maxWidth={40} />
                   </div>
                 ) : balances.isError ? (
                   <Failed onRetry={() => void balances.refetch()} />
@@ -284,7 +284,7 @@ function MyRequests() {
           ) : mine.isPending ? (
             <LayerCard className="flex flex-col gap-3 p-4">
               {Array.from({ length: 3 }, (_, at) => (
-                <SkeletonLine key={at} minWidth={160} maxWidth={320} />
+                <SkeletonLine key={at} minWidth={27} maxWidth={53} />
               ))}
             </LayerCard>
           ) : rows.length === 0 ? (

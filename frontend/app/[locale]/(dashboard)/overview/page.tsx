@@ -344,7 +344,7 @@ export default function OverviewPage() {
             ) : attention.isPending ? (
               <LayerCard className="flex flex-col gap-3 p-4">
                 {Array.from({ length: 4 }, (_, at) => (
-                  <SkeletonLine key={at} minWidth={120} maxWidth={320} />
+                  <SkeletonLine key={at} minWidth={25} maxWidth={53} />
                 ))}
               </LayerCard>
             ) : piles.length === 0 ? (

@@ -114,8 +114,8 @@ function CardHead({ title, action }: { title: string; action?: ReactNode }) {
 function Waiting() {
   return (
     <div className="flex flex-col gap-2">
-      <SkeletonLine minWidth={120} maxWidth={260} />
-      <SkeletonLine minWidth={120} maxWidth={200} />
+      <SkeletonLine minWidth={25} maxWidth={43} />
+      <SkeletonLine minWidth={25} maxWidth={35} />
     </div>
   );
 }

@@ -482,7 +482,7 @@ export default function PayrollPeriodPage() {
             {periods.isPending || runs.isPending ? (
               <div className="flex flex-col gap-3">
                 {order.map((key) => (
-                  <SkeletonLine key={key} minWidth={120} maxWidth={220} />
+                  <SkeletonLine key={key} minWidth={25} maxWidth={37} />
                 ))}
               </div>
             ) : (
@@ -501,8 +501,8 @@ export default function PayrollPeriodPage() {
               <Failed onRetry={() => void runs.refetch()} />
             ) : runs.isPending ? (
               <LayerCard className="flex flex-col gap-3 p-4">
-                <SkeletonLine minWidth={120} maxWidth={260} />
-                <SkeletonLine minWidth={200} maxWidth={420} />
+                <SkeletonLine minWidth={25} maxWidth={43} />
+                <SkeletonLine minWidth={33} maxWidth={70} />
               </LayerCard>
             ) : runList.length === 0 ? (
               <LayerCard className="p-0">
@@ -583,7 +583,7 @@ export default function PayrollPeriodPage() {
                   </LayerCard.Secondary>
                   <LayerCard.Primary>
                     {checklist.isPending ? (
-                      <SkeletonLine minWidth={120} maxWidth={260} />
+                      <SkeletonLine minWidth={25} maxWidth={43} />
                     ) : openItems.length === 0 ? (
                       <p className="flex items-center gap-2 text-kumo-subtle">
                         <CheckCircleIcon size={18} className="text-kumo-success" aria-hidden />
@@ -756,8 +756,8 @@ export default function PayrollPeriodPage() {
                   <PayslipView slip={slip.data} />
                 ) : (
                   <div className="flex flex-col gap-3">
-                    <SkeletonLine minWidth={160} maxWidth={320} />
-                    <SkeletonLine minWidth={200} maxWidth={480} />
+                    <SkeletonLine minWidth={27} maxWidth={53} />
+                    <SkeletonLine minWidth={33} maxWidth={80} />
                   </div>
                 )}
               </div>

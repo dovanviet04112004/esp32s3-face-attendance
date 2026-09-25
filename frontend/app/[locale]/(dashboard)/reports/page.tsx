@@ -202,8 +202,8 @@ export default function ReportsPage() {
                   <LayerCard.Primary>
                     {!changes.data ? (
                       <div className="flex flex-col gap-3 py-1">
-                        <SkeletonLine minWidth={160} maxWidth={420} />
-                        <SkeletonLine minWidth={160} maxWidth={360} />
+                        <SkeletonLine minWidth={27} maxWidth={70} />
+                        <SkeletonLine minWidth={27} maxWidth={60} />
                       </div>
                     ) : rows.length === 0 ? (
                       <p className="text-kumo-subtle">{t("noneInMonth")}</p>

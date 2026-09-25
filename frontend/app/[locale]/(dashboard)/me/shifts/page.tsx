@@ -149,8 +149,8 @@ export default function MyShiftsPage() {
           <AsideCard title={t("countsTitle")}>
             {roster.isPending ? (
               <div className="flex flex-col gap-2">
-                <SkeletonLine minWidth={120} maxWidth={240} />
-                <SkeletonLine minWidth={120} maxWidth={240} />
+                <SkeletonLine minWidth={25} maxWidth={40} />
+                <SkeletonLine minWidth={25} maxWidth={40} />
               </div>
             ) : (
               <StatList stats={stats} />
@@ -181,7 +181,7 @@ export default function MyShiftsPage() {
         ) : roster.isPending ? (
           <LayerCard className="flex flex-col gap-3 p-4">
             {Array.from({ length: 5 }, (_, at) => (
-              <SkeletonLine key={at} minWidth={200} maxWidth={600} />
+              <SkeletonLine key={at} minWidth={33} maxWidth={100} />
             ))}
           </LayerCard>
         ) : days.length === 0 ? (

@@ -211,7 +211,7 @@ export default function NewEmployeePage() {
           {suggested.isPending ? (
             <LayerCard className="flex flex-col gap-4 p-4">
               {Array.from({ length: 4 }, (_, at) => (
-                <SkeletonLine key={at} minWidth={160} maxWidth={420} />
+                <SkeletonLine key={at} minWidth={27} maxWidth={70} />
               ))}
             </LayerCard>
           ) : (

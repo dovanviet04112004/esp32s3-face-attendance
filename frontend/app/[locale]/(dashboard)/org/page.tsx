@@ -364,7 +364,7 @@ export default function OrgPage() {
       return (
         <LayerCard className="flex flex-col gap-4 p-4">
           {Array.from({ length: 6 }, (_, at) => (
-            <SkeletonLine key={at} minWidth={140} maxWidth={420} />
+            <SkeletonLine key={at} minWidth={25} maxWidth={70} />
           ))}
         </LayerCard>
       );
@@ -631,7 +631,7 @@ export default function OrgPage() {
             ) : members.isPending ? (
               <div className="flex flex-col gap-3">
                 {Array.from({ length: 4 }, (_, at) => (
-                  <SkeletonLine key={at} minWidth={160} maxWidth={320} />
+                  <SkeletonLine key={at} minWidth={27} maxWidth={53} />
                 ))}
               </div>
             ) : loaded && loaded.length > 0 ? (

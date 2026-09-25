@@ -226,7 +226,7 @@ export default function DevicePage() {
             ) : (
               <div className="flex flex-col gap-3">
                 {Array.from({ length: 6 }, (_, at) => (
-                  <SkeletonLine key={at} minWidth={120} maxWidth={300} />
+                  <SkeletonLine key={at} minWidth={25} maxWidth={50} />
                 ))}
               </div>
             )}
@@ -283,7 +283,7 @@ export default function DevicePage() {
               <LayerCard.Primary className="flex flex-col gap-4">
                 <p className="text-pretty text-kumo-subtle">{t("otaLead")}</p>
                 {fleet.isPending ? (
-                  <SkeletonLine minWidth={160} maxWidth={320} />
+                  <SkeletonLine minWidth={27} maxWidth={53} />
                 ) : newer.length === 0 ? (
                   <p className="flex items-center gap-2">
                     <InfoIcon size={16} className="text-kumo-subtle" aria-hidden />

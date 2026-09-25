@@ -67,7 +67,7 @@ function Waiting({ lines = 3 }: { lines?: number }) {
   return (
     <div className="flex flex-col gap-2">
       {Array.from({ length: lines }, (_, at) => (
-        <SkeletonLine key={at} minWidth={120} maxWidth={280} />
+        <SkeletonLine key={at} minWidth={25} maxWidth={47} />
       ))}
     </div>
   );

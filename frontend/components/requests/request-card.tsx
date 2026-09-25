@@ -160,7 +160,7 @@ export function RequestCard({ row, onDecide, onCancel, busy, balance, titleBy = 
         {showsBalance && row.leaveType ? (
           <Fact label={t("balanceOf", { name: row.leaveType.name })}>
             {balances.isPending ? (
-              <SkeletonLine minWidth={80} maxWidth={120} />
+              <SkeletonLine minWidth={50} maxWidth={80} />
             ) : held ? (
               <span className={cn("tabular-nums", held.remaining < 0 && "text-kumo-danger")}>
                 {t("balanceValue", { left: held.remaining, total: held.entitled + held.carriedOver })}

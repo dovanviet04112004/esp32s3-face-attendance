@@ -155,8 +155,8 @@ export default function PunchHistoryPage() {
                 />
               ) : (
                 <div className="flex flex-col gap-3 py-1">
-                  <SkeletonLine minWidth={120} maxWidth={200} />
-                  <SkeletonLine minWidth={120} maxWidth={240} />
+                  <SkeletonLine minWidth={25} maxWidth={35} />
+                  <SkeletonLine minWidth={25} maxWidth={40} />
                 </div>
               )}
             </AsideCard>

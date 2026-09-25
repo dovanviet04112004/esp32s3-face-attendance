@@ -120,7 +120,7 @@ export function NoticePreferences() {
           {CHANNELS.map((channel) => (
             <span key={channel} role="cell" className="flex justify-center">
               {prefs.isPending ? (
-                <SkeletonLine minWidth={16} maxWidth={16} />
+                <SkeletonLine minWidth={22} maxWidth={22} />
               ) : (
                 <Checkbox
                   aria-label={`${name(kind)} · ${t(CHANNEL_KEY[channel])}`}

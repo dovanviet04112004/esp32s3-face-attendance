@@ -164,7 +164,7 @@ export default function PayrollPage() {
         aside={
           <AsideCard title={t("openNow")}>
             {periods.isPending ? (
-              <SkeletonLine minWidth={120} maxWidth={240} />
+              <SkeletonLine minWidth={25} maxWidth={40} />
             ) : openPeriod ? (
               <div className="flex flex-col gap-3">
                 <Facts

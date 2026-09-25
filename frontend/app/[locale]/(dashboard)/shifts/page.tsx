@@ -326,8 +326,8 @@ export default function ShiftsPage() {
                   <Failed onRetry={() => void assignments.refetch()} />
                 ) : assignments.isPending ? (
                   <div className="flex flex-col gap-3 py-2">
-                    <SkeletonLine minWidth={160} maxWidth={360} />
-                    <SkeletonLine minWidth={160} maxWidth={360} />
+                    <SkeletonLine minWidth={27} maxWidth={60} />
+                    <SkeletonLine minWidth={27} maxWidth={60} />
                   </div>
                 ) : assignments.data.length === 0 ? (
                   <Empty size="sm" icon={<UsersThreeIcon size={32} className="text-kumo-inactive" />} title={t("noneAssigned")} />

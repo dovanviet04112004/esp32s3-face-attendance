@@ -28,8 +28,8 @@ interface Employee {
 function Waiting() {
   return (
     <div className="flex flex-col gap-3 py-1">
-      <SkeletonLine minWidth={120} maxWidth={220} />
-      <SkeletonLine minWidth={120} maxWidth={260} />
+      <SkeletonLine minWidth={25} maxWidth={37} />
+      <SkeletonLine minWidth={25} maxWidth={43} />
     </div>
   );
 }

@@ -352,7 +352,7 @@ export default function PolicyPage() {
         ) : policies.isPending ? (
           <LayerCard className="flex flex-col gap-3 p-4">
             {Array.from({ length: 5 }, (_, at) => (
-              <SkeletonLine key={at} minWidth={160} maxWidth={420} />
+              <SkeletonLine key={at} minWidth={27} maxWidth={70} />
             ))}
           </LayerCard>
         ) : sorted.length === 0 ? (

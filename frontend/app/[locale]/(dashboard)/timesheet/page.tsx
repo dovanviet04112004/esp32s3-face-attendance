@@ -363,7 +363,7 @@ export default function TimesheetPage() {
             ) : days.isPending ? (
               <div className="flex flex-col gap-3 py-2">
                 {Array.from({ length: 5 }, (_, at) => (
-                  <SkeletonLine key={at} minWidth={160} maxWidth={420} />
+                  <SkeletonLine key={at} minWidth={27} maxWidth={70} />
                 ))}
               </div>
             ) : days.data.length === 0 ? (

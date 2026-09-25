@@ -262,7 +262,7 @@ export default function DevicesPage() {
             </AsideCard>
             <AsideCard title={t("releasesTitle")}>
               {fleet.isPending ? (
-                <SkeletonLine minWidth={120} maxWidth={260} />
+                <SkeletonLine minWidth={25} maxWidth={43} />
               ) : (fleet.data ?? []).length === 0 ? (
                 <p className="text-pretty text-kumo-subtle">{t("releasesEmpty")}</p>
               ) : (

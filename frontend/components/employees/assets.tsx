@@ -80,7 +80,7 @@ export function AssetHistory({ asset, onClose }: { asset: Asset | null; onClose:
           ) : history.isPending ? (
             <div className="flex flex-col gap-3">
               {Array.from({ length: 3 }, (_, at) => (
-                <SkeletonLine key={at} minWidth={160} maxWidth={360} />
+                <SkeletonLine key={at} minWidth={27} maxWidth={60} />
               ))}
             </div>
           ) : history.data.length === 0 ? (

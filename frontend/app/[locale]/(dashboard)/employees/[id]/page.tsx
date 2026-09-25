@@ -324,11 +324,11 @@ export default function EmployeePage() {
   if (employee.isPending) {
     return (
       <div className="flex flex-col gap-4">
-        <SkeletonLine minWidth={220} maxWidth={320} />
-        <SkeletonLine minWidth={160} maxWidth={260} />
+        <SkeletonLine minWidth={37} maxWidth={53} />
+        <SkeletonLine minWidth={27} maxWidth={43} />
         <LayerCard className="mt-4 flex flex-col gap-3 p-4">
           {Array.from({ length: 5 }, (_, at) => (
-            <SkeletonLine key={at} minWidth={160} maxWidth={480} />
+            <SkeletonLine key={at} minWidth={27} maxWidth={80} />
           ))}
         </LayerCard>
       </div>
@@ -488,7 +488,7 @@ export default function EmployeePage() {
 
   function consentCard() {
     if (consents.isPending) {
-      return <SkeletonLine minWidth={160} maxWidth={260} />;
+      return <SkeletonLine minWidth={27} maxWidth={43} />;
     }
     if (consents.isError) {
       return <Failed onRetry={() => void consents.refetch()} />;
@@ -526,7 +526,7 @@ export default function EmployeePage() {
     return (
       <div className="flex flex-col gap-3">
         {standing.isPending ? (
-          <SkeletonLine minWidth={160} maxWidth={260} />
+          <SkeletonLine minWidth={27} maxWidth={43} />
         ) : standing.data.length === 0 ? (
           <p className="text-kumo-subtle">{t("kioskNone")}</p>
         ) : (
