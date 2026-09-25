@@ -4700,6 +4700,7 @@ quy ước của repo:
 | `month-picker.tsx` | chọn một tháng bằng một control | Kumo có chọn ngày và chọn khoảng, không có chọn tháng |
 | `filter-bar.tsx` | bộ lọc: `Toolbar` trên máy tính, một nút mở `LayerDialog` trên điện thoại | §9.21.1 đòi bộ lọc thành tấm trượt ở màn hẹp |
 | `password-field.tsx` | ô mật khẩu có nút hiện chữ, dùng ở ba cửa đăng nhập | `SensitiveInput` của Kumo kèm nút sao chép, sai với một mật khẩu đang gõ |
+| `person-picker.tsx` | một ô tìm người đang làm theo mã hoặc tên, dùng ở mọi chỗ phải chọn một người | `Combobox` của Kumo không biết hỏi `/employees`; năm màn chọn người phải ra cùng một ô, cùng cách tìm |
 | `theme-toggle.tsx`, `bottom-bar.tsx`, `failed.tsx` | sáng tối theo `lib/theme.ts`; nút chính neo đáy điện thoại (§9.21.2); `Banner` lỗi có nút thử lại theo chữ của catalogue | nối vào `lib/` hoặc catalogue của repo |
 
 ```
@@ -4763,7 +4764,7 @@ frontend/
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
 │   ├── ui/{page.tsx, pill.tsx, notify.ts, month-picker.tsx, filter-bar.tsx,
-│   │       password-field.tsx, theme-toggle.tsx, bottom-bar.tsx, failed.tsx}
+│   │       password-field.tsx, person-picker.tsx, theme-toggle.tsx, bottom-bar.tsx, failed.tsx}
 │   │                                 # ★ chỉ thứ Kumo không có (bảng ngay trên cây)
 │   │                                 #   ★ §9.12 luật 2 — pill giữ bốn tông trạng thái,
 │   │                                 #   khai một chỗ cho cả tám phân hệ. Tiền không có
@@ -4781,6 +4782,7 @@ frontend/
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
 │   ├── notifications/{bell.tsx, notice-list.tsx, push-switch.tsx}   # ★ §9.21.4
 │   ├── documents/{document-reader.tsx, file-gaps.tsx}   # ★ §9.16 mục 9
+│   ├── holidays/next-holiday.tsx     # ★ ngày lễ gần nhất, cột phải của ca, lễ và loại phép
 │   └── payroll/{payslip-view.tsx, run-progress.tsx, dispute-card.tsx, settlement-sheet.tsx,
 │                bonus-sheet.tsx}     # ★ số tiền của lượt thưởng, nhập trước khi chạy
 │                                     # ★ §9.17 mục 11 — một thẻ khiếu nại, hai phía đọc
