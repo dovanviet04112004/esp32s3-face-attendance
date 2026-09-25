@@ -497,7 +497,9 @@
     "shiftFilter": "Shift",
     "shiftAny": "Any shift",
     "shiftNoneToday": "No shift",
-    "shiftSomeToday": "On a shift"
+    "shiftSomeToday": "On a shift",
+    "leaveCardTitle": "Leaving",
+    "leaveCardLead": "Pick the last working day. From the next morning the login is locked and the face is erased on every kiosk; the record is kept."
   },
   "attendance": {
     "title": "Attendance",
@@ -2516,7 +2518,8 @@
     "ACCOUNT_LOCKED": "The login is locked",
     "CONSENT_MISSING": "Has not agreed to face data",
     "ALREADY_ON_KIOSK": "Already on this kiosk, or waiting on it",
-    "ALREADY_ON_SHIFT": "Already on this shift from that day"
+    "ALREADY_ON_SHIFT": "Already on this shift from that day",
+    "SELF": "Your own record"
   },
   "bulk": {
     "place": "Reassign",
@@ -2564,7 +2567,18 @@
     "kioskHeld": "Gets the face on file: {count, number}",
     "kioskCapture": "Waits for capture: {count, number}",
     "kioskHeldRow": "Gets the face on file",
-    "kioskCaptureRow": "Waits for capture"
+    "kioskCaptureRow": "Waits for capture",
+    "offboard": "Offboard",
+    "offboardTitle": "Offboard {count, number} people?",
+    "offboardLeadNow": "The last day is today or behind, so the records close right after this: logins are locked and faces erased on every kiosk. This cannot be undone.",
+    "offboardLeadLater": "Everyone works through {day}. The records close on the morning of {next}: logins are locked and faces erased on every kiosk. Until then each date can be moved or called off on the person's profile.",
+    "willOffboardNow": "{count, number} people leave now",
+    "willOffboardLater": "{count, number} people work through {day}",
+    "offboardHeld": "{count, number} still hold something, noted on each row",
+    "applyOffboardNow": "Offboard {count, number} now",
+    "applyOffboardLater": "Schedule {count, number} leavings",
+    "doneOffboardNow": "{count, number} people offboarded; their records are closing",
+    "doneOffboardLater": "{count, number} people scheduled to work through {day}"
   },
   "importWarnings": {
     "CHANGE_BY_REQUEST": "For someone already here this changes only through a profile change request; the import keeps what is held.",

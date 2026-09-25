@@ -1,7 +1,14 @@
 "use client";
 
-import { Banner, Button, LayerDialog } from "@cloudflare/kumo";
-import { ArrowsLeftRightIcon, CalendarPlusIcon, EnvelopeSimpleIcon, ScanSmileyIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { Banner, Button, Input, LayerDialog } from "@cloudflare/kumo";
+import {
+  ArrowsLeftRightIcon,
+  CalendarPlusIcon,
+  EnvelopeSimpleIcon,
+  ScanSmileyIcon,
+  UserMinusIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -9,14 +16,15 @@ import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode 
 import { ChoiceField, type DepartmentChoice } from "@/components/forms/employee-form";
 import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { PersonPicker, type Person } from "@/components/ui/person-picker";
 import { CountPill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
-import { clockOf, dayOnly, todayIso } from "@/lib/format";
+import { addDays, clockOf, dayOnly, todayIso } from "@/lib/format";
 
-export type BulkJob = "place" | "invite" | "kiosk" | "shift";
+export type BulkJob = "place" | "invite" | "kiosk" | "shift" | "offboard";
 
 type SkipReason =
   | "EMPLOYEE_NOT_FOUND"
@@ -31,7 +39,8 @@ type SkipReason =
   | "ACCOUNT_LOCKED"
   | "CONSENT_MISSING"
   | "ALREADY_ON_KIOSK"
-  | "ALREADY_ON_SHIFT";
+  | "ALREADY_ON_SHIFT"
+  | "SELF";
 
 interface Skip {
   employeeId: number;
@@ -70,6 +79,17 @@ interface InviteRow extends Row {
 
 interface KioskRow extends Row {
   heldFace: boolean;
+}
+
+interface LeavingRow extends Row {
+  assets: number;
+  requests: number;
+  advances: number;
+}
+
+interface LeavingPlan extends Plan<LeavingRow> {
+  leaveDate: string;
+  closesNow: boolean;
 }
 
 interface Kiosk {
@@ -627,11 +647,115 @@ function ShiftDialog({ open, asked, onClose, onDone }: DialogProps) {
   );
 }
 
+/** One last day for the batch, previewed with what each person still holds; the write is red and says the outcome (KEHOACH 9.14). */
+function OffboardDialog({ open, asked, onClose, onDone }: DialogProps) {
+  const t = useTranslations("bulk");
+  const e = useTranslations("employees");
+  const common = useTranslations("common");
+  const format = useFormatter();
+  const optional = useOptional();
+  const cache = useQueryClient();
+  const notify = useNotify();
+  const faultOf = useFault();
+  const [leaveDate, setLeaveDate] = useState(todayIso);
+  const [reason, setReason] = useState("");
+  const dayText = (day: string) => format.dateTime(dayOnly(day), "day");
+
+  const body = { ...asked.selection, leaveDate, ...(reason ? { reason } : {}) };
+  const preview = useQuery({
+    queryKey: ["bulk-preview", "offboard", asked.selection, leaveDate],
+    enabled: open && leaveDate !== "",
+    queryFn: async () => (await api.post<LeavingPlan>("/employees/bulk/offboard", body)).data,
+    ...FRESH_PREVIEW,
+  });
+  const apply = useMutation({
+    mutationFn: async () => (await api.post<LeavingPlan>("/employees/bulk/offboard?apply=true", body)).data,
+    onSuccess: (done) => {
+      notify.done(
+        done.closesNow
+          ? t("doneOffboardNow", { count: done.rows.length })
+          : t("doneOffboardLater", { count: done.rows.length, day: dayText(done.leaveDate) }),
+        done.skipped.length > 0 ? t("doneSkipped", { count: done.skipped.length }) : undefined,
+      );
+      for (const key of ["employees", "users", "enrollments", "assets", "reports"]) {
+        void cache.invalidateQueries({ queryKey: [key] });
+      }
+      onDone();
+    },
+    onError: notify.failed,
+  });
+
+  const plan = preview.data;
+  const writes = plan?.rows.length ?? 0;
+  const closesNow = leaveDate !== "" && leaveDate <= todayIso();
+  const held = (row: LeavingRow): string =>
+    [
+      row.assets > 0 ? e("offboardAssets", { count: row.assets }) : "",
+      row.requests > 0 ? e("offboardRequests", { count: row.requests }) : "",
+      row.advances > 0 ? e("offboardAdvances", { count: row.advances }) : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const holding = plan?.rows.filter((row) => held(row) !== "").length ?? 0;
+  return (
+    <LayerDialog.Root open={open} onOpenChange={(next) => !next && onClose()} dismissDisabled={apply.isPending}>
+      <LayerDialog.Content size="lg" closeLabel={common("close")}>
+        <LayerDialog.Title>{t("offboardTitle", { count: asked.count })}</LayerDialog.Title>
+        <LayerDialog.Description>
+          {closesNow
+            ? t("offboardLeadNow")
+            : t("offboardLeadLater", { day: dayText(leaveDate), next: dayText(addDays(leaveDate, 1)) })}
+        </LayerDialog.Description>
+        <LayerDialog.Body>
+          <div className="flex flex-col gap-5">
+            <div className="grid items-start gap-4 sm:grid-cols-2">
+              <DateField
+                label={e("offboardDay")}
+                value={leaveDate}
+                error={leaveDate === "" ? common("required") : undefined}
+                onChange={setLeaveDate}
+              />
+              <Input
+                label={optional(e("offboardReason"))}
+                maxLength={500}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+              />
+            </div>
+            <Preview
+              plan={plan}
+              pending={preview.isFetching}
+              fault={preview.isError ? faultOf(preview.error) : null}
+              waiting={leaveDate ? null : e("offboardDay")}
+              headline={
+                closesNow ? t("willOffboardNow", { count: writes }) : t("willOffboardLater", { count: writes, day: dayText(leaveDate) })
+              }
+              detail={(row) => held(row) || null}
+              extra={holding > 0 ? <p className="m-0 text-kumo-subtle">{t("offboardHeld", { count: holding })}</p> : null}
+            />
+          </div>
+        </LayerDialog.Body>
+        <LayerDialog.Actions dismissLabel={common("cancel")}>
+          <LayerDialog.Actions.Primary
+            variant="destructive"
+            loading={apply.isPending}
+            disabled={writes === 0 || preview.isFetching}
+            onClick={() => apply.mutate()}
+          >
+            {writes === 0 ? t("offboard") : closesNow ? t("applyOffboardNow", { count: writes }) : t("applyOffboardLater", { count: writes })}
+          </LayerDialog.Actions.Primary>
+        </LayerDialog.Actions>
+      </LayerDialog.Content>
+    </LayerDialog.Root>
+  );
+}
+
 const DIALOGS: Record<BulkJob, (props: DialogProps) => ReactNode> = {
   place: PlaceDialog,
   invite: InviteDialog,
   kiosk: KioskDialog,
   shift: ShiftDialog,
+  offboard: OffboardDialog,
 };
 
 /** The props DataTable takes to tick rows and act on them. */
@@ -643,7 +767,7 @@ export interface TableSelection<T> {
   bulk?: (picked: T[]) => ReactNode;
 }
 
-/** The directory's selection and the four things it does to it (KEHOACH 9.20): rows ticked one
+/** The directory's selection and the five things it does to it (KEHOACH 9.20): rows ticked one
  *  by one, or, once every loaded row is ticked, everyone the filter finds, resolved by the server.
  */
 export function useDirectorySelection<T extends { id: number }>({
@@ -714,6 +838,15 @@ export function useDirectorySelection<T extends { id: number }>({
               </Button>
               <Button variant="secondary" size="sm" className="max-md:w-full" icon={CalendarPlusIcon} onClick={() => start("shift", picked)}>
                 {t("shift")}
+              </Button>
+              <Button
+                variant="secondary-destructive"
+                size="sm"
+                className="max-md:col-span-2 max-md:w-full"
+                icon={UserMinusIcon}
+                onClick={() => start("offboard", picked)}
+              >
+                {t("offboard")}
               </Button>
             </div>
             {everyLoaded && !wholeOn && exact !== false && total !== undefined && total > picked.length ? (

@@ -497,7 +497,9 @@
     "shiftFilter": "Ca làm",
     "shiftAny": "Mọi ca làm",
     "shiftNoneToday": "Chưa xếp ca",
-    "shiftSomeToday": "Đã có ca"
+    "shiftSomeToday": "Đã có ca",
+    "leaveCardTitle": "Nghỉ việc",
+    "leaveCardLead": "Chọn ngày làm việc cuối. Từ sáng hôm sau đăng nhập bị khoá và mẫu khuôn mặt bị xoá trên mọi kiosk; hồ sơ vẫn được giữ."
   },
   "attendance": {
     "title": "Chấm công",
@@ -2516,7 +2518,8 @@
     "ACCOUNT_LOCKED": "Tài khoản đang bị khoá",
     "CONSENT_MISSING": "Chưa đồng ý dữ liệu khuôn mặt",
     "ALREADY_ON_KIOSK": "Đã có hoặc đang chờ chụp trên kiosk này",
-    "ALREADY_ON_SHIFT": "Đã ở ca này từ ngày ấy"
+    "ALREADY_ON_SHIFT": "Đã ở ca này từ ngày ấy",
+    "SELF": "Là chính bạn"
   },
   "bulk": {
     "place": "Điều chuyển",
@@ -2564,7 +2567,18 @@
     "kioskHeld": "Nhận mặt có sẵn: {count, number} người",
     "kioskCapture": "Chờ chụp: {count, number} người",
     "kioskHeldRow": "Nhận mặt có sẵn",
-    "kioskCaptureRow": "Chờ chụp"
+    "kioskCaptureRow": "Chờ chụp",
+    "offboard": "Cho nghỉ việc",
+    "offboardTitle": "Cho {count, number} người nghỉ việc?",
+    "offboardLeadNow": "Ngày cuối là hôm nay hoặc đã qua, nên hồ sơ đóng ngay sau khi ghi: đăng nhập bị khoá và mẫu khuôn mặt bị xoá trên mọi kiosk. Việc này không hoàn tác được.",
+    "offboardLeadLater": "Mọi người vẫn làm đến hết ngày {day}. Hồ sơ đóng đầu ngày {next}: khi ấy đăng nhập bị khoá và mẫu khuôn mặt bị xoá trên mọi kiosk. Trước lúc đó vẫn đổi ngày hoặc huỷ được ở hồ sơ từng người.",
+    "willOffboardNow": "{count, number} người nghỉ ngay",
+    "willOffboardLater": "{count, number} người làm đến hết ngày {day}",
+    "offboardHeld": "{count, number} người còn việc treo, ghi ở từng dòng",
+    "applyOffboardNow": "Cho {count, number} người nghỉ ngay",
+    "applyOffboardLater": "Hẹn nghỉ cho {count, number} người",
+    "doneOffboardNow": "Đã cho {count, number} người nghỉ việc, hồ sơ đang đóng",
+    "doneOffboardLater": "Đã hẹn {count, number} người làm đến hết ngày {day}"
   },
   "importWarnings": {
     "CHANGE_BY_REQUEST": "Người đã có hồ sơ chỉ đổi ô này bằng đơn đổi thông tin; lượt nhập giữ giá trị đang có.",

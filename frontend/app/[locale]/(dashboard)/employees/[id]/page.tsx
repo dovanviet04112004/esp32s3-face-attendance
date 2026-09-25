@@ -35,7 +35,7 @@ import {
 import { Pay } from "@/components/employees/pay";
 import { ShiftCard } from "@/components/employees/shifts";
 import { EMPTY_DRAFT, EmployeeForm, type DepartmentChoice, type EmployeeDraft } from "@/components/forms/employee-form";
-import { ActionMenu, DataTable, type Column } from "@/components/tables/data-table";
+import { DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
@@ -398,16 +398,6 @@ export default function EmployeePage() {
   ) : (
     <StatePill tone={working ? "good" : "idle"}>{working ? t("statusWorking") : t("statusLeft")}</StatePill>
   );
-  const leavingActions = [
-    { key: "move", label: t("offboardMove"), icon: CalendarBlankIcon, onSelect: () => setLeaving(true) },
-    {
-      key: "cancel",
-      label: t("offboardCancel"),
-      icon: ArrowUUpLeftIcon,
-      disabled: cancelLeaving.isPending,
-      onSelect: () => cancelLeaving.mutate(undefined, { onSuccess: () => setLeft(null) }),
-    },
-  ];
   const lead = [person.code, person.department?.name, person.jobTitle?.name].filter(Boolean).join(" · ");
   const standingIds = new Set((standing.data ?? []).map((one) => one.id));
   const free = (devices.data ?? []).filter((one) => !standingIds.has(one.id));
@@ -706,18 +696,6 @@ export default function EmployeePage() {
         title={person.fullName}
         meta={statePill}
         description={lead}
-        actions={
-          writesPeople && working ? (
-            <ActionMenu
-              label={common("actions")}
-              actions={
-                leavesOn
-                  ? leavingActions
-                  : [{ key: "offboard", label: t("offboardAction"), icon: UserMinusIcon, danger: true, onSelect: () => setLeaving(true) }]
-              }
-            />
-          ) : undefined
-        }
         tabs={shown.map((one) => ({ value: one, label: t(TAB_KEY[one]) }))}
         tab={tab}
         onTab={pick}
@@ -733,6 +711,22 @@ export default function EmployeePage() {
               <AsideCard title={t("consentTitle")}>{consentCard()}</AsideCard>
               <AsideCard title={t("kioskTitle")}>{kioskCard()}</AsideCard>
               <AsideCard title={t("loginTitle")}>{loginCard()}</AsideCard>
+              {working && !leavesOn ? (
+                <AsideCard title={t("leaveCardTitle")}>
+                  <div className="flex flex-col gap-3">
+                    <p className="m-0 text-sm text-kumo-subtle">{t("leaveCardLead")}</p>
+                    <Button
+                      variant="secondary-destructive"
+                      size="sm"
+                      icon={UserMinusIcon}
+                      onClick={() => setLeaving(true)}
+                      className="self-start"
+                    >
+                      {t("offboardAction")}
+                    </Button>
+                  </div>
+                </AsideCard>
+              ) : null}
             </>
           ) : undefined
         }
