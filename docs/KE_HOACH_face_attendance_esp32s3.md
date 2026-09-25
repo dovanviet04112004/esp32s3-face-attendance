@@ -4702,6 +4702,7 @@ quy ước của repo:
 | `password-field.tsx` | ô mật khẩu có nút hiện chữ, dùng ở ba cửa đăng nhập | `SensitiveInput` của Kumo kèm nút sao chép, sai với một mật khẩu đang gõ |
 | `person-picker.tsx` | một ô tìm người đang làm theo mã hoặc tên, dùng ở mọi chỗ phải chọn một người | `Combobox` của Kumo không biết hỏi `/employees`; năm màn chọn người phải ra cùng một ô, cùng cách tìm |
 | `date-field.tsx` | một ô chọn ngày: lịch của Kumo trong popover trên máy tính, ô ngày của hệ điều hành trên điện thoại | `DatePicker` của Kumo chỉ là tấm lịch, không kèm ô nhập, nút mở hay popover |
+| `optional.tsx` | nhãn của ô không bắt buộc, kèm "(không bắt buộc)" theo tiếng của người dùng | Kumo 2.14 in cứng chữ tiếng Anh "(optional)" cho `required={false}` và không có khoá dịch cho nó |
 | `theme-toggle.tsx`, `bottom-bar.tsx`, `failed.tsx` | sáng tối theo `lib/theme.ts`; nút chính neo đáy điện thoại (§9.21.2); `Banner` lỗi có nút thử lại theo chữ của catalogue | nối vào `lib/` hoặc catalogue của repo |
 
 ```
@@ -4771,8 +4772,8 @@ frontend/
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
 │   ├── ui/{page.tsx, pill.tsx, notify.ts, month-picker.tsx, filter-bar.tsx,
-│   │       password-field.tsx, person-picker.tsx, date-field.tsx, theme-toggle.tsx, bottom-bar.tsx,
-│   │       failed.tsx}
+│   │       password-field.tsx, person-picker.tsx, date-field.tsx, optional.tsx, theme-toggle.tsx,
+│   │       bottom-bar.tsx, failed.tsx}
 │   │                                 # ★ chỉ thứ Kumo không có (bảng ngay trên cây)
 │   │                                 #   ★ §9.12 luật 2 — pill giữ bốn tông trạng thái,
 │   │                                 #   khai một chỗ cho cả tám phân hệ. Tiền không có
@@ -7457,7 +7458,8 @@ hỏi; không có nút *Lọc* trừ khi truy vấn nặng. Lựa chọn của b
 được số ấy rẻ. Trên điện thoại bộ lọc thu vào một nút mở tấm trượt (§9.21.1).
 
 **Biểu mẫu nói rõ ô nào bắt buộc, và nói vì sao.** Theo quy ước của Kumo: ô bắt buộc không gắn
-dấu, ô không bắt buộc hiện "(không bắt buộc)" qua `required={false}`. Ô mà thiếu thì một việc phía
+dấu, ô không bắt buộc hiện "(không bắt buộc)" — qua `ui/optional.tsx`, vì `required={false}` của
+Kumo in cứng chữ tiếng Anh. Ô mà thiếu thì một việc phía
 sau hỏng mang một dòng mô tả nói đúng hậu quả ấy — email cá nhân thiếu thì không gửi được tài
 khoản và phiếu lương, nên nó nằm ở phần đầu không gập của biểu mẫu nhận người. Độ dài tối đa
 trên biểu mẫu bằng đúng giới hạn của DTO, để người dùng không chỉ biết mình gõ quá dài sau khi đã
