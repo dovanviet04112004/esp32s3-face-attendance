@@ -2983,6 +2983,7 @@ firmware/
 ├── sdkconfig.defaults.esp32s3        # riêng target (PSRAM octal 80M, cache 32/64KB)
 ├── sdkconfig.ci                      # build CI: tắt secure boot, bật assert
 ├── sdkconfig.prod                    # Flash Encryption + Secure Boot v2, chỉ nhận mqtts://
+├── sdkconfig.fleet                   # chỉ build phát hành ghép thêm: panic và watchdog khởi động lại (§7.7)
 ├── sdkconfig.secrets                 # ❌ gitignore — token bootstrap của lô, người build tự đặt (§4.5.9)
 ├── partitions.dev.csv                # coredump lớn, không secure boot
 ├── partitions.prod.csv               # §6.1
@@ -6583,7 +6584,42 @@ lên khi có broker. Cái giá nói rõ: nếu trong lúc ấy người đó b�
 phiên chụp và máy xoá mẫu theo (bước 4 ở trên), nên người vừa chụp sẽ thấy máy không còn nhận
 ra mình. Danh sách chờ nằm ở `device/pending` (§6.2.1) để khởi động lại lúc mất mạng không làm
 nó rỗng. Một mẫu server đẩy xuống (`UPSERT`) gỡ người ấy khỏi danh sách chờ, vì cửa này đã có
-mặt họ (§9.23 luật 7).
+mặt họ (§9.23 luật 7). Danh sách chứa **64 người**: một đợt tuyển vài chục người gán cùng lúc vào
+một cửa là việc thường, và một danh sách tám chỗ đã làm người thứ chín trở đi rơi mất. Đầy rồi
+thì lệnh `ASSIGN` vẫn được **đếm** — số đang giữ vẫn tiến — và máy báo `ROSTER_REJECTED`; không
+đếm thì heartbeat tụt lại, server phát lại cả danh sách mỗi ba mươi giây, và mỗi lượt ghi lại cả
+bảng mặt xuống flash.
+
+**Xoá người máy không giữ là xoá xong.** `DELETE_EMPLOYEE` cho người chưa từng có mặt ở cửa này
+— gỡ một người còn đang chờ chụp — là trạng thái đích đã đạt, không phải lỗi; coi nó là lỗi thì
+số đang giữ không tiến và một lượt thu hồi kéo theo một lượt đồng bộ lại toàn phần. Lệnh ấy cũng
+**gỡ người đó khỏi danh sách chờ**: người bị thu hồi hay đã rút đồng ý không được còn đứng trong
+danh sách chụp của bất kỳ cửa nào (§9.19). Xoá ở màn hình máy thì yêu cầu vào `device/enroll_out`
+**trước**, rồi máy mới xoá người ấy khỏi bảng: mất điện giữa hai bước để lại một yêu cầu còn phải
+gửi, không để lại một người đã xoá ở máy mà máy chủ không hề biết.
+
+**Máy chủ nghe kiosk bằng một phiên bền, và chỉ ack khi đã ghi xong.** Kiosk bỏ một bản ghi khỏi
+hàng đợi của nó ngay khi broker ack, nên đường nghe phía `api` không được là chỗ tin rơi mất. Nó
+nối với `clientId` cố định (`MQTT_CLIENT_ID`), phiên không sạch và có hạn sống, nên tin đến lúc
+`api` đang khởi động lại — mỗi lần deploy — nằm chờ ở broker thay vì bị vứt; và nó chỉ trả ack
+cho broker **sau khi** trình xử lý của tin ấy chạy xong, nên một lần chết giữa chừng làm tin được
+giao lại. Mọi trình xử lý vì thế phải chịu được giao hai lần — chấm công đã khử trùng theo
+`(deviceId, localId)`, mẫu chụp theo phiên (bước 3 ở trên).
+
+**Heartbeat giữ lại không phải dấu hiệu sống.** Heartbeat là tin retained để bảng fleet có trạng
+thái mới nhất ngay lúc mở, nên broker phát lại bản cũ mỗi lần `api` nối lại. Một bản tin mang cờ
+retained không cập nhật `lastSeenAt`, `online`, `bootedAt`, và không kích hội tụ; không thì sau mỗi
+lần deploy một kiosk đã tắt hiện là đang chạy, và một lượt đồng bộ lại thừa được bắn xuống.
+
+**Đổi model nhận diện là đổi không gian embedding, nên mẫu cũ phải đi.** `faces.bin` ghi model
+nhận diện đã sinh ra các mẫu của nó (§6.2.4). Lúc khởi động, model đang chạy khác model của bảng
+thì máy bỏ mọi mẫu — kể cả mẫu chưa báo — và đặt `roster_ver` về 0; máy chủ thấy số lùi thì đồng
+bộ lại, và với cửa có `embeddingVersion` khác bản mẫu nó giữ thì gửi `ASSIGN` thay vì `UPSERT`:
+mọi người vào danh sách chờ để chụp lại. Máy chủ biết một bản model có đổi nhận diện hay không,
+vì `Release` mang `embeddingVersion` đọc từ header của chính file model. Bản đổi nhận diện chỉ
+phát được cho **cả đội** cùng lúc, và dashboard bắt người bấm xác nhận rằng mọi người phải lấy
+mặt lại; phát cho một cửa là để hai cửa giữ hai không gian, và mẫu chụp ở cửa này bị cửa kia từ
+chối.
 
 **Hai luật khó nhất đã nằm sẵn trong `enroll_payload.schema.json` từ trước**, và chúng đúng:
 `embeddingVersion` — *"A kiosk running a different model must refuse the template rather than
@@ -6709,6 +6745,10 @@ thái chỉ hỏi về lời mời gần nhất.
 giá trị trong `.env` của VPS), `DEVICE_BOOTSTRAP_TOKEN` (ghi vào `sdkconfig.secrets` lúc build,
 bằng giá trị `api` giữ), và biến `API_URL`. Ảnh firmware build theo profile mà fleet đang chạy, khai
 ở biến `FLEET_PROFILE` (hiện là `dev`); đổi fleet sang `prod` là đổi một biến, không đổi workflow.
+**Bản phát cho đội, profile nào cũng vậy, khởi động lại khi panic** và coi task watchdog là panic:
+cách lùi về bản cũ của bootloader chỉ chạy khi máy khởi động lại, còn `dev` dừng trong gdbstub
+để ai đó cắm cáp, nên một bản phát hỏng sẽ đứng im tới khi có người rút điện. Lớp ấy nằm ở
+`sdkconfig.fleet`, chỉ lượt build phát hành ghép thêm; bàn thử vẫn giữ gdbstub.
 
 ---
 
@@ -9062,12 +9102,21 @@ Năm điều kèm theo, mỗi điều bịt một khe khác nhau:
   bản bắt đầu bằng phép trừ, nên một máy giữ nhiều người hơn số đếm của nó sẽ sinh phiên bản
   âm, bị hợp đồng từ chối, và **đúng cái cửa cần đẩy lại cả danh sách là cái cửa không bao giờ
   nhận được**. Nâng số đếm lên bằng số dòng trước khi phát lại.
-- **Kiosk chỉ lùi phiên bản khi máy chủ bảo nó lùi.** Giao ít nhất một lần nghĩa là hai lần
-  đẩy có thể tới lệch thứ tự, và một bản tin cũ tới sau vừa ghi đè mặt mới vừa kéo số đếm
-  xuống. Luật ở firmware có hai nửa. Bản tin **đếm tăng** — `ASSIGN`, `UPSERT`, `DELETE`,
-  `DELETE_EMPLOYEE`, `REVOKE` — mang số phiên bản **không lớn hơn** số đang giữ thì bỏ hẳn:
-  không áp dụng, không ghi số. `REPLACE_ALL` thì ngược lại, **luôn áp dụng và đặt số đang giữ
-  bằng số nó mang**, kể cả khi số ấy nhỏ hơn.
+- **Kiosk chỉ lùi phiên bản khi máy chủ bảo nó lùi, và chỉ tiến từng bước một.** Giao ít nhất
+  một lần nghĩa là hai lần đẩy có thể tới lệch thứ tự, và một bản tin cũ tới sau vừa ghi đè mặt
+  mới vừa kéo số đếm xuống. Luật ở firmware có ba nửa. Bản tin **đếm tăng** — `ASSIGN`,
+  `UPSERT`, `DELETE`, `DELETE_EMPLOYEE`, `REVOKE` — chỉ được áp khi mang **đúng số kế tiếp** của
+  số đang giữ. Không lớn hơn số đang giữ thì là tin cũ: bỏ hẳn, không ghi số. Lớn hơn số kế tiếp
+  thì là **khe hở** — một tin ở giữa đã rơi — và máy dừng áp mọi tin đếm tăng cho tới lượt
+  `REPLACE_ALL` sau, vì áp tiếp là nhảy qua đúng tin đã mất rồi báo số khớp. `REPLACE_ALL` thì
+  ngược lại, **luôn áp dụng và đặt số đang giữ bằng số nó mang**, kể cả khi số ấy nhỏ hơn.
+- **Một cửa, một người gửi.** Máy chủ giữ số kế tiếp và phát tin của một cửa theo đúng thứ tự
+  số: lấy số và gửi tin nằm trong cùng một khoá của cửa ấy, và một lượt đồng bộ lại lấy trọn dải
+  số của nó trong một câu lệnh. Không thì một lượt gán chen giữa một lượt đồng bộ lại sinh ra
+  khe hở ngay trên đường sửa chữa. Mỗi cửa chỉ có một lượt đồng bộ lại chạy một lúc, và hội tụ
+  chạy khi số của cửa **khác** số máy chủ giữ, cả khi cửa đi trước — cơ sở dữ liệu vừa khôi phục
+  từ bản sao lưu cũ hơn cửa (§9.22) — chứ không chỉ khi cửa tụt lại. Hàng đợi roster trên máy đủ
+  sâu cho một lượt đồng bộ lại, và đầy thì bên nhận tin **chờ** chứ không vứt.
 - **Vì sao `REPLACE_ALL` được miễn.** Nó không phải một bước đếm mà là một lời tuyên bố lại:
   `resync` phát cả danh sách từ mốc `top − số dòng`, và một cửa sống lâu có số phiên bản lớn
   hơn số người nó giữ rất nhiều — mỗi lượt gán, thu hồi, hay lan mẫu đều đẩy số lên trong khi
