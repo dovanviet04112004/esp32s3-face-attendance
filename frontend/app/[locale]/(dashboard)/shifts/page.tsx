@@ -1,22 +1,34 @@
 "use client";
 
-import { Button, Empty, Input, LayerDialog, SkeletonLine } from "@cloudflare/kumo";
-import { ArrowCounterClockwiseIcon, PlusIcon, ProhibitIcon, UserMinusIcon, UsersThreeIcon } from "@phosphor-icons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Banner, Button, Checkbox, Empty, Input, InputGroup, LayerCard, LayerDialog } from "@cloudflare/kumo";
+import {
+  ArrowCounterClockwiseIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  ProhibitIcon,
+  UserMinusIcon,
+  UsersThreeIcon,
+  WarningCircleIcon,
+  XIcon,
+} from "@phosphor-icons/react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
-import { NextHoliday } from "@/components/holidays/next-holiday";
-import { DataTable, type Column, type RowAction } from "@/components/tables/data-table";
+import { DataTable, PagingRow, type Column, type RowAction } from "@/components/tables/data-table";
+import { DateField } from "@/components/ui/date-field";
 import { Failed } from "@/components/ui/failed";
+import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { PageHeader, PageLayout } from "@/components/ui/page";
 import { PersonPicker, type Person } from "@/components/ui/person-picker";
 import { StatePill } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { dayOnly } from "@/lib/format";
+import { useUrlState } from "@/lib/url-state";
 
 interface Shift {
   id: string;
@@ -30,21 +42,38 @@ interface Shift {
 interface Assignment {
   id: string;
   employeeId: number;
-  employee: { id: number; code: string; fullName: string };
+  employee: { id: number; code: string; fullName: string; department: { id: string; name: string } | null };
   validFrom: string;
   validTo: string | null;
 }
 
-type Standing = "active" | "retired" | "";
+interface AssignmentPage {
+  rows: Assignment[];
+  total: number;
+  totalIsExact?: boolean;
+  next: string | null;
+}
 
 const WRITERS = ["ADMIN", "HR"];
+const kRosterPage = 50;
+const kNameMax = 64;
+const kBulkMax = 500;
 
 function localDay(at: Date): string {
   return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
 }
 
 export default function ShiftsPage() {
+  return (
+    <Suspense>
+      <Shifts />
+    </Suspense>
+  );
+}
+
+function Shifts() {
   const t = useTranslations("shifts");
+  const shared = useTranslations("catalogues");
   const common = useTranslations("common");
   const format = useFormatter();
   const cache = useQueryClient();
@@ -53,9 +82,10 @@ export default function ShiftsPage() {
   const notify = useNotify();
   const mayWrite = role !== null && WRITERS.includes(role);
 
-  const [standing, setStanding] = useState<Standing>("active");
+  const [url, setUrl] = useUrlState({ retired: "" });
   const [editing, setEditing] = useState<Shift | null>(null);
   const [adding, setAdding] = useState(false);
+  const [tried, setTried] = useState(false);
   const [rostering, setRostering] = useState<Shift | null>(null);
   const [retiring, setRetiring] = useState<Shift | null>(null);
   const [dropping, setDropping] = useState<Assignment | null>(null);
@@ -64,19 +94,32 @@ export default function ShiftsPage() {
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("17:30");
   const [graceMinutes, setGraceMinutes] = useState("0");
-  const [picked, setPicked] = useState<Person | null>(null);
+  const [chosen, setChosen] = useState<Person[]>([]);
   const [validFrom, setValidFrom] = useState(() => localDay(new Date()));
   const [validTo, setValidTo] = useState("");
+  const [rosterTyped, setRosterTyped] = useState("");
+  const rosterSearch = useSettled(rosterTyped.trim());
 
   const shifts = useQuery({
     queryKey: ["shifts"],
     queryFn: async () => (await api.get<Shift[]>("/shifts")).data,
   });
 
-  const assignments = useQuery({
-    queryKey: ["shifts", rostering?.id, "assignments"],
+  const assignments = useInfiniteQuery({
+    queryKey: ["shifts", rostering?.id, "assignments", rosterSearch],
     enabled: rostering !== null,
-    queryFn: async () => (await api.get<Assignment[]>(`/shifts/${rostering?.id}/assignments`)).data,
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams({ take: String(kRosterPage) });
+      if (rosterSearch) {
+        params.set("search", rosterSearch);
+      }
+      if (pageParam) {
+        params.set("cursor", pageParam);
+      }
+      return (await api.get<AssignmentPage>(`/shifts/${rostering?.id}/assignments?${params.toString()}`)).data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
   });
 
   function refresh(): void {
@@ -85,7 +128,7 @@ export default function ShiftsPage() {
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: name.trim(), startTime, endTime, graceMinutes: Number(graceMinutes) };
+      const body = { name: name.trim(), startTime, endTime, graceMinutes: Number(graceMinutes || "0") };
       return editing ? api.patch(`/shifts/${editing.id}`, body) : api.post("/shifts", body);
     },
     onSuccess: () => {
@@ -117,15 +160,21 @@ export default function ShiftsPage() {
   });
 
   const assign = useMutation({
-    mutationFn: (who: Person) =>
-      api.post(`/shifts/${rostering?.id}/assignments`, {
-        employeeId: who.id,
-        validFrom: new Date(`${validFrom}T00:00:00.000Z`).toISOString(),
-        ...(validTo ? { validTo: new Date(`${validTo}T00:00:00.000Z`).toISOString() } : {}),
-      }),
-    onSuccess: (_, who) => {
-      notify.done(t("assignedDone", { name: who.fullName, shift: rostering?.name ?? "" }));
-      setPicked(null);
+    mutationFn: async (people: Person[]) =>
+      (
+        await api.post<{ assigned: number; skipped: number }>(`/shifts/${rostering?.id}/assignments/bulk`, {
+          employeeIds: people.map((one) => one.id),
+          validFrom: new Date(`${validFrom}T00:00:00.000Z`).toISOString(),
+          ...(validTo ? { validTo: new Date(`${validTo}T00:00:00.000Z`).toISOString() } : {}),
+        })
+      ).data,
+    onSuccess: (done) => {
+      notify.done(
+        t("assignedMany", { count: done.assigned, shift: rostering?.name ?? "" }),
+        done.skipped > 0 ? t("assignedSkipped", { count: done.skipped }) : undefined,
+      );
+      setChosen([]);
+      setTried(false);
       refresh();
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
@@ -143,6 +192,7 @@ export default function ShiftsPage() {
 
   function openForm(one: Shift | null): void {
     setFault(null);
+    setTried(false);
     setName(one?.name ?? "");
     setStartTime(one?.startTime ?? "08:00");
     setEndTime(one?.endTime ?? "17:30");
@@ -153,26 +203,52 @@ export default function ShiftsPage() {
 
   function openRoster(one: Shift): void {
     setFault(null);
-    setPicked(null);
+    setTried(false);
+    setChosen([]);
+    setRosterTyped("");
     setValidFrom(localDay(new Date()));
     setValidTo("");
     setRostering(one);
   }
 
-  const all = shifts.data ?? [];
-  const working = all.filter((one) => one.active).length;
-  const shown = shifts.data?.filter((one) => (standing === "" ? true : standing === "active" ? one.active : !one.active));
+  function pickPerson(next: Person | null): void {
+    if (next && !chosen.some((one) => one.id === next.id) && chosen.length < kBulkMax) {
+      setChosen([...chosen, next]);
+    }
+  }
+
+  function submitShift(): void {
+    setTried(true);
+    if (name.trim() === "" || startTime === "" || endTime === "") {
+      return;
+    }
+    setFault(null);
+    save.mutate();
+  }
+
+  function submitRoster(): void {
+    setTried(true);
+    if (chosen.length === 0 || validFrom === "") {
+      return;
+    }
+    setFault(null);
+    assign.mutate(chosen);
+  }
+
+  const shown = shifts.data?.filter((one) => url.retired === "1" || one.active);
   const hours = (one: Shift) => `${one.startTime} – ${one.endTime}`;
+  const faultBanner = fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null;
+  const rosterRows = assignments.data?.pages.flatMap((one) => one.rows);
+  const firstRoster = assignments.data?.pages[0];
 
   const columns: Column<Shift>[] = [
-    { id: "name", header: t("name"), sticky: true, sortBy: (row) => row.name, cell: (row) => <span className="font-medium">{row.name}</span> },
-    { id: "startTime", header: t("startTime"), numeric: true, sortBy: (row) => row.startTime, cell: (row) => row.startTime },
-    { id: "endTime", header: t("endTime"), numeric: true, sortBy: (row) => row.endTime, cell: (row) => row.endTime },
-    { id: "graceMinutes", header: t("graceMinutes"), numeric: true, sortBy: (row) => row.graceMinutes, cell: (row) => row.graceMinutes },
+    { id: "name", header: t("name"), cell: (row) => <span className="font-medium">{row.name}</span> },
+    { id: "startTime", header: t("startTime"), numeric: true, cell: (row) => row.startTime },
+    { id: "endTime", header: t("endTime"), numeric: true, cell: (row) => row.endTime },
+    { id: "graceMinutes", header: t("graceMinutes"), numeric: true, priority: 2, cell: (row) => row.graceMinutes },
     {
       id: "status",
       header: t("status"),
-      sortBy: (row) => (row.active ? 1 : 0),
       cell: (row) => <StatePill tone={row.active ? "good" : "idle"}>{row.active ? t("active") : t("retired")}</StatePill>,
     },
   ];
@@ -200,41 +276,20 @@ export default function ShiftsPage() {
         }
       />
 
-      <PageLayout
-        aside={
-          <AsideCard title={common("summary")}>
-            <StatList
-              stats={[
-                {
-                  key: "active",
-                  label: t("countActive"),
-                  value: shifts.data ? working : common("empty"),
-                  active: standing === "active",
-                  onPick: () => setStanding("active"),
-                },
-                {
-                  key: "retired",
-                  label: t("countRetired"),
-                  value: shifts.data ? all.length - working : common("empty"),
-                  active: standing === "retired",
-                  onPick: () => setStanding("retired"),
-                },
-                {
-                  key: "all",
-                  label: common("all"),
-                  value: shifts.data ? all.length : common("empty"),
-                  active: standing === "",
-                  onPick: () => setStanding(""),
-                },
-              ]}
+      <PageLayout>
+        <FilterBar
+          extra={
+            <Checkbox
+              label={shared("showRetired")}
+              checked={url.retired === "1"}
+              onCheckedChange={(next) => setUrl({ retired: next === true ? "1" : "" })}
             />
-          </AsideCard>
-        }
-        extra={<NextHoliday />}
-      >
+          }
+        />
         <DataTable
           id="shifts"
           cardLead="name"
+          cardTrailing="status"
           columns={columns}
           rows={shown}
           keyOf={(row) => row.id}
@@ -243,10 +298,10 @@ export default function ShiftsPage() {
           onRetry={() => void shifts.refetch()}
           onRowClick={mayWrite ? openForm : undefined}
           rowActions={mayWrite ? actionsOf : undefined}
-          empty={standing === "retired" ? t("noneRetired") : t("empty")}
-          emptyHint={standing === "retired" ? undefined : t("emptyHint")}
+          empty={t("empty")}
+          emptyHint={t("emptyHint")}
           emptyAction={
-            mayWrite && standing !== "retired" ? (
+            mayWrite ? (
               <Button variant="secondary" icon={PlusIcon} onClick={() => openForm(null)}>
                 {t("add")}
               </Button>
@@ -269,10 +324,31 @@ export default function ShiftsPage() {
           <LayerDialog.Title>{editing ? t("editTitle", { name: editing.name }) : t("add")}</LayerDialog.Title>
           <LayerDialog.Body>
             <div className="flex flex-col gap-4">
-              <Input label={t("name")} required maxLength={64} value={name} onChange={(event) => setName(event.target.value)} />
+              <Input
+                label={t("name")}
+                required
+                maxLength={kNameMax}
+                value={name}
+                error={tried && name.trim() === "" ? common("required") : undefined}
+                onChange={(event) => setName(event.target.value)}
+              />
               <div className="grid grid-cols-2 gap-4">
-                <Input label={t("startTime")} type="time" required value={startTime} onChange={(event) => setStartTime(event.target.value)} />
-                <Input label={t("endTime")} type="time" required value={endTime} onChange={(event) => setEndTime(event.target.value)} />
+                <Input
+                  label={t("startTime")}
+                  type="time"
+                  required
+                  value={startTime}
+                  error={tried && startTime === "" ? common("required") : undefined}
+                  onChange={(event) => setStartTime(event.target.value)}
+                />
+                <Input
+                  label={t("endTime")}
+                  type="time"
+                  required
+                  value={endTime}
+                  error={tried && endTime === "" ? common("required") : undefined}
+                  onChange={(event) => setEndTime(event.target.value)}
+                />
               </div>
               <Input
                 label={t("graceMinutes")}
@@ -282,18 +358,11 @@ export default function ShiftsPage() {
                 description={t("graceHint")}
                 onChange={(event) => setGraceMinutes(event.target.value)}
               />
-              {fault ? <p role="alert" className="text-kumo-danger">{fault}</p> : null}
+              {faultBanner}
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary
-              loading={save.isPending}
-              disabled={name.trim() === "" || startTime === "" || endTime === ""}
-              onClick={() => {
-                setFault(null);
-                save.mutate();
-              }}
-            >
+            <LayerDialog.Actions.Primary loading={save.isPending} onClick={submitShift}>
               {editing ? common("save") : t("add")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
@@ -306,22 +375,68 @@ export default function ShiftsPage() {
           <LayerDialog.Description>{rostering ? t("rosterLead", { hours: hours(rostering) }) : null}</LayerDialog.Description>
           <LayerDialog.Body>
             <div className="flex flex-col gap-4">
-              <PersonPicker label={t("who")} value={picked} onChange={setPicked} />
-              <div className="grid grid-cols-2 items-start gap-4">
-                <Input label={t("validFrom")} type="date" value={validFrom} onChange={(event) => setValidFrom(event.target.value)} />
-                <Input
+              <PersonPicker
+                label={t("who")}
+                description={t("whoManyHint")}
+                error={tried && chosen.length === 0 ? t("whoMissing") : undefined}
+                value={null}
+                onChange={pickPerson}
+              />
+              {chosen.length > 0 ? (
+                <ul className="flex flex-wrap gap-2" aria-label={t("chosenPeople")}>
+                  {chosen.map((one) => (
+                    <li key={one.id} className="flex items-center gap-1 rounded-full border border-kumo-line py-0.5 ps-3 pe-1 text-sm">
+                      <span className="max-w-48 truncate">{one.fullName}</span>
+                      <span className="font-mono text-kumo-subtle">{one.code}</span>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        shape="square"
+                        icon={XIcon}
+                        aria-label={t("unchoose", { name: one.fullName })}
+                        onClick={() => setChosen(chosen.filter((held) => held.id !== one.id))}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className="grid items-start gap-4 sm:grid-cols-2">
+                <DateField
+                  label={t("validFrom")}
+                  value={validFrom}
+                  error={tried && validFrom === "" ? common("required") : undefined}
+                  onChange={setValidFrom}
+                />
+                <DateField
                   label={t("validTo")}
-                  type="date"
-                  min={validFrom}
+                  required={false}
+                  min={validFrom || undefined}
                   value={validTo}
                   description={t("validToHint")}
-                  onChange={(event) => setValidTo(event.target.value)}
+                  onChange={setValidTo}
                 />
               </div>
-              {fault ? <p role="alert" className="text-kumo-danger">{fault}</p> : null}
+              {faultBanner}
 
               <div>
-                <h3 className="mb-1 font-semibold">{t("assigned")}</h3>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold">
+                    {t("assigned")}
+                    {firstRoster ? <span className="ms-2 font-normal text-kumo-subtle tabular-nums">{format.number(firstRoster.total)}</span> : null}
+                  </h3>
+                  <InputGroup className="min-w-0 basis-56">
+                    <InputGroup.Addon>
+                      <MagnifyingGlassIcon />
+                    </InputGroup.Addon>
+                    <InputGroup.Input
+                      type="search"
+                      value={rosterTyped}
+                      placeholder={t("rosterSearchHint")}
+                      aria-label={t("rosterSearchHint")}
+                      onChange={(event) => setRosterTyped(event.target.value)}
+                    />
+                  </InputGroup>
+                </div>
                 {assignments.isError ? (
                   <Failed onRetry={() => void assignments.refetch()} />
                 ) : assignments.isPending ? (
@@ -329,32 +444,50 @@ export default function ShiftsPage() {
                     <SkeletonLine minWidth={27} maxWidth={60} />
                     <SkeletonLine minWidth={27} maxWidth={60} />
                   </div>
-                ) : assignments.data.length === 0 ? (
-                  <Empty size="sm" icon={<UsersThreeIcon size={32} className="text-kumo-inactive" />} title={t("noneAssigned")} />
+                ) : !rosterRows || rosterRows.length === 0 ? (
+                  <Empty
+                    size="sm"
+                    icon={<UsersThreeIcon size={32} className="text-kumo-inactive" />}
+                    title={rosterSearch ? t("noneAssignedMatch") : t("noneAssigned")}
+                  />
                 ) : (
-                  <ul className="flex flex-col">
-                    {assignments.data.map((one) => (
-                      <li key={one.id} className="flex items-center gap-3 border-b border-kumo-hairline py-2 last:border-0">
-                        <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate">
-                            {one.employee.fullName}
-                            <span className="ms-2 font-mono text-sm text-kumo-subtle">{one.employee.code}</span>
+                  <LayerCard className="p-0">
+                    <ul className="flex flex-col">
+                      {rosterRows.map((one) => (
+                        <li key={one.id} className="flex items-center gap-3 border-b border-kumo-hairline px-3 py-2 last:border-0">
+                          <span className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate">
+                              {one.employee.fullName}
+                              <span className="ms-2 font-mono text-sm text-kumo-subtle">{one.employee.code}</span>
+                            </span>
+                            <span className="truncate text-sm text-kumo-subtle tabular-nums">
+                              {one.employee.department ? `${one.employee.department.name} · ` : ""}
+                              {format.dateTime(dayOnly(one.validFrom), "day")} →{" "}
+                              {one.validTo ? format.dateTime(dayOnly(one.validTo), "day") : t("openEnded")}
+                            </span>
                           </span>
-                          <span className="text-sm text-kumo-subtle tabular-nums">
-                            {format.dateTime(dayOnly(one.validFrom), "day")} →{" "}
-                            {one.validTo ? format.dateTime(dayOnly(one.validTo), "day") : t("openEnded")}
-                          </span>
-                        </span>
-                        <Button
-                          variant="ghost"
-                          shape="square"
-                          icon={UserMinusIcon}
-                          aria-label={t("unassignOf", { name: one.employee.fullName })}
-                          onClick={() => setDropping(one)}
-                        />
-                      </li>
-                    ))}
-                  </ul>
+                          <Button
+                            variant="ghost"
+                            shape="square"
+                            icon={UserMinusIcon}
+                            aria-label={t("unassignOf", { name: one.employee.fullName })}
+                            onClick={() => setDropping(one)}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                    {firstRoster ? (
+                      <PagingRow
+                        paging={{
+                          shown: rosterRows.length,
+                          total: firstRoster.total,
+                          exact: firstRoster.totalIsExact,
+                          onMore: assignments.hasNextPage ? () => void assignments.fetchNextPage() : undefined,
+                          loading: assignments.isFetchingNextPage,
+                        }}
+                      />
+                    ) : null}
+                  </LayerCard>
                 )}
               </div>
             </div>
@@ -381,17 +514,8 @@ export default function ShiftsPage() {
             </LayerDialog.Alert>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("close")}>
-            <LayerDialog.Actions.Primary
-              loading={assign.isPending}
-              disabled={picked === null || validFrom === ""}
-              onClick={() => {
-                if (picked) {
-                  setFault(null);
-                  assign.mutate(picked);
-                }
-              }}
-            >
-              {picked ? t("assignOf", { name: picked.fullName }) : t("assign")}
+            <LayerDialog.Actions.Primary loading={assign.isPending} onClick={submitRoster}>
+              {chosen.length > 0 ? t("assignMany", { count: chosen.length }) : t("assign")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>

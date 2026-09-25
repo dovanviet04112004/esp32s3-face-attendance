@@ -1,19 +1,21 @@
 "use client";
 
-import { Button, Checkbox, Input, LayerDialog } from "@cloudflare/kumo";
-import { ArrowCounterClockwiseIcon, PlusIcon, ProhibitIcon } from "@phosphor-icons/react";
+import { Banner, Button, Checkbox, Input, LayerDialog } from "@cloudflare/kumo";
+import { ArrowCounterClockwiseIcon, PlusIcon, ProhibitIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
-import { NextHoliday } from "@/components/holidays/next-holiday";
-import { DataTable, type Column, type RowAction } from "@/components/tables/data-table";
+import { DataTable, PersonCell, type Column, type RowAction } from "@/components/tables/data-table";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { useOptional } from "@/components/ui/optional";
+import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { useUrlState } from "@/lib/url-state";
 
 interface LeaveType {
   id: string;
@@ -33,20 +35,31 @@ interface Draft {
   carryOverMax: string;
 }
 
-type Standing = "active" | "retired" | "";
-
 const kBlank: Draft = { code: "", name: "", paid: true, daysPerYear: "", carryOverMax: "0" };
+const kCodeMax = 32;
+const kNameMax = 120;
 
 export default function LeaveTypesPage() {
+  return (
+    <Suspense>
+      <LeaveTypes />
+    </Suspense>
+  );
+}
+
+function LeaveTypes() {
   const t = useTranslations("leaveTypes");
+  const shared = useTranslations("catalogues");
   const common = useTranslations("common");
+  const optional = useOptional();
   const role = useSession((s) => s.role);
   const mayWrite = role === "ADMIN" || role === "HR";
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
 
-  const [standing, setStanding] = useState<Standing>("active");
+  const [url, setUrl] = useUrlState({ retired: "" });
+  const [tried, setTried] = useState(false);
   const [editing, setEditing] = useState<LeaveType | null>(null);
   const [adding, setAdding] = useState(false);
   const [retiring, setRetiring] = useState<LeaveType | null>(null);
@@ -97,6 +110,7 @@ export default function LeaveTypesPage() {
 
   function openForm(one: LeaveType | null): void {
     setFault(null);
+    setTried(false);
     setDraft(
       one
         ? {
@@ -112,26 +126,23 @@ export default function LeaveTypesPage() {
     setAdding(one === null);
   }
 
-  const all = types.data ?? [];
-  const working = all.filter((one) => one.active).length;
-  const shown = types.data?.filter((one) => (standing === "" ? true : standing === "active" ? one.active : !one.active));
+  function submit(): void {
+    setTried(true);
+    if (draft.name.trim() === "" || draft.daysPerYear === "" || (editing === null && draft.code.trim() === "")) {
+      return;
+    }
+    setFault(null);
+    save.mutate();
+  }
+
+  const shown = types.data?.filter((one) => url.retired === "1" || one.active);
 
   const columns: Column<LeaveType>[] = [
-    { id: "code", header: t("code"), sticky: true, sortBy: (row) => row.code, cell: (row) => <span className="font-mono">{row.code}</span> },
-    {
-      id: "name",
-      header: t("name"),
-      sortBy: (row) => row.name,
-      cell: (row) => (
-        <span className="flex items-center gap-2 whitespace-nowrap">
-          {row.name}
-          {row.active ? null : <StatePill>{t("retiredPill")}</StatePill>}
-        </span>
-      ),
-    },
+    { id: "name", header: t("name"), sortBy: (row) => row.name, cell: (row) => <PersonCell name={row.name} code={row.code} /> },
     {
       id: "paid",
       header: t("pay"),
+      priority: 2,
       sortBy: (row) => (row.paid ? 1 : 0),
       cell: (row) => <StatePill tone={row.paid ? "good" : "idle"}>{row.paid ? t("paid") : t("unpaid")}</StatePill>,
     },
@@ -146,8 +157,14 @@ export default function LeaveTypesPage() {
       id: "carryOverMax",
       header: t("carryOverShort"),
       numeric: true,
+      priority: 3,
       sortBy: (row) => Number(row.carryOverMax),
       cell: (row) => Number(row.carryOverMax),
+    },
+    {
+      id: "status",
+      header: shared("status"),
+      cell: (row) => <StatePill tone={row.active ? "good" : "idle"}>{row.active ? shared("active") : shared("retired")}</StatePill>,
     },
   ];
 
@@ -171,41 +188,20 @@ export default function LeaveTypesPage() {
         }
       />
 
-      <PageLayout
-        aside={
-          <AsideCard title={common("summary")}>
-            <StatList
-              stats={[
-                {
-                  key: "active",
-                  label: t("inUseCount"),
-                  value: types.data ? working : common("empty"),
-                  active: standing === "active",
-                  onPick: () => setStanding("active"),
-                },
-                {
-                  key: "retired",
-                  label: t("retired"),
-                  value: types.data ? all.length - working : common("empty"),
-                  active: standing === "retired",
-                  onPick: () => setStanding("retired"),
-                },
-                {
-                  key: "all",
-                  label: common("all"),
-                  value: types.data ? all.length : common("empty"),
-                  active: standing === "",
-                  onPick: () => setStanding(""),
-                },
-              ]}
+      <PageLayout>
+        <FilterBar
+          extra={
+            <Checkbox
+              label={shared("showRetired")}
+              checked={url.retired === "1"}
+              onCheckedChange={(next) => setUrl({ retired: next === true ? "1" : "" })}
             />
-          </AsideCard>
-        }
-        extra={<NextHoliday />}
-      >
+          }
+        />
         <DataTable
           id="leave-types"
           cardLead="name"
+          cardTrailing="status"
           columns={columns}
           rows={shown}
           keyOf={(row) => row.id}
@@ -214,9 +210,9 @@ export default function LeaveTypesPage() {
           onRetry={() => void types.refetch()}
           onRowClick={mayWrite ? openForm : undefined}
           rowActions={mayWrite ? actionsOf : undefined}
-          empty={standing === "retired" ? t("noneRetired") : t("empty")}
+          empty={t("empty")}
           emptyAction={
-            mayWrite && standing !== "retired" ? (
+            mayWrite ? (
               <Button variant="secondary" icon={PlusIcon} onClick={() => openForm(null)}>
                 {t("add")}
               </Button>
@@ -244,18 +240,20 @@ export default function LeaveTypesPage() {
                 <Input
                   label={t("code")}
                   required
-                  maxLength={32}
+                  maxLength={kCodeMax}
                   className="font-mono"
                   value={draft.code}
                   description={t("codeHint")}
+                  error={tried && draft.code.trim() === "" ? common("required") : undefined}
                   onChange={(event) => setDraft({ ...draft, code: event.target.value.toUpperCase() })}
                 />
               ) : null}
               <Input
                 label={t("name")}
                 required
-                maxLength={120}
+                maxLength={kNameMax}
                 value={draft.name}
+                error={tried && draft.name.trim() === "" ? common("required") : undefined}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
               />
               <div className="grid grid-cols-2 gap-4">
@@ -266,10 +264,11 @@ export default function LeaveTypesPage() {
                   min={0}
                   step={0.5}
                   value={draft.daysPerYear}
+                  error={tried && draft.daysPerYear === "" ? common("required") : undefined}
                   onChange={(event) => setDraft({ ...draft, daysPerYear: event.target.value })}
                 />
                 <Input
-                  label={t("carryOverMax")}
+                  label={optional(t("carryOverMax"))}
                   type="number"
                   min={0}
                   step={0.5}
@@ -278,18 +277,11 @@ export default function LeaveTypesPage() {
                 />
               </div>
               <Checkbox checked={draft.paid} onCheckedChange={(next) => setDraft({ ...draft, paid: next === true })} label={t("paid")} />
-              {fault ? <p role="alert" className="text-kumo-danger">{fault}</p> : null}
+              {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary
-              loading={save.isPending}
-              disabled={draft.name.trim() === "" || draft.daysPerYear === "" || (editing === null && draft.code.trim() === "")}
-              onClick={() => {
-                setFault(null);
-                save.mutate();
-              }}
-            >
+            <LayerDialog.Actions.Primary loading={save.isPending} onClick={submit}>
               {editing ? t("save") : t("add")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>

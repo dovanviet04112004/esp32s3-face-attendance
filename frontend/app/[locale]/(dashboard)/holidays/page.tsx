@@ -1,21 +1,22 @@
 "use client";
 
-import { Button, Checkbox, Input, LayerDialog, Select } from "@cloudflare/kumo";
-import { PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import { Banner, Button, Checkbox, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import { PencilSimpleIcon, PlusIcon, TrashIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
-import { NextHoliday } from "@/components/holidays/next-holiday";
 import { DataTable, type Column } from "@/components/tables/data-table";
+import { DateField } from "@/components/ui/date-field";
 import { FilterBar } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
-import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
+import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { dayOnly } from "@/lib/format";
+import { useUrlState } from "@/lib/url-state";
 
 interface Holiday {
   id: string;
@@ -24,12 +25,19 @@ interface Holiday {
   paid: boolean;
 }
 
-type Paid = "paid" | "unpaid" | "";
-
 const kYearsBack = 3;
 const kYearsOn = 1;
+const kNameMax = 120;
 
 export default function HolidaysPage() {
+  return (
+    <Suspense>
+      <Holidays />
+    </Suspense>
+  );
+}
+
+function Holidays() {
   const t = useTranslations("holidays");
   const common = useTranslations("common");
   const format = useFormatter();
@@ -40,9 +48,11 @@ export default function HolidaysPage() {
   const notify = useNotify();
   const thisYear = new Date().getFullYear();
 
-  const [year, setYear] = useState(thisYear);
-  const [paidOnly, setPaidOnly] = useState<Paid>("");
+  const [url, setUrl] = useUrlState({ year: String(thisYear), pay: "" });
+  const year = Number(url.year) || thisYear;
+  const [editing, setEditing] = useState<Holiday | null>(null);
   const [adding, setAdding] = useState(false);
+  const [tried, setTried] = useState(false);
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
   const [paid, setPaid] = useState(true);
@@ -55,11 +65,20 @@ export default function HolidaysPage() {
   });
 
   const add = useMutation({
-    mutationFn: () => api.post("/holidays", { date, name: name.trim(), paid }),
+    mutationFn: async (): Promise<void> => {
+      if (editing) {
+        await api.patch(`/holidays/${editing.id}`, { name: name.trim(), paid });
+      } else {
+        await api.post("/holidays", { date, name: name.trim(), paid });
+      }
+    },
     onSuccess: () => {
-      notify.done(t("added", { name: name.trim() }));
+      notify.done(t(editing ? "saved" : "added", { name: name.trim() }));
+      if (!editing) {
+        setUrl({ year: date.slice(0, 4) });
+      }
       setAdding(false);
-      setYear(Number(date.slice(0, 4)));
+      setEditing(null);
       void cache.invalidateQueries({ queryKey: ["holidays"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
@@ -75,17 +94,28 @@ export default function HolidaysPage() {
     onError: notify.failed,
   });
 
-  function openAdd(): void {
+  function openForm(one: Holiday | null): void {
     setFault(null);
-    setName("");
-    setDate("");
-    setPaid(true);
-    setAdding(true);
+    setTried(false);
+    setName(one?.name ?? "");
+    setDate(one ? one.date.slice(0, 10) : "");
+    setPaid(one?.paid ?? true);
+    setEditing(one);
+    setAdding(one === null);
+  }
+
+  function submit(): void {
+    setTried(true);
+    if (name.trim() === "" || (!editing && date === "")) {
+      return;
+    }
+    setFault(null);
+    add.mutate();
   }
 
   const rows = holidays.data ?? [];
   const paidDays = rows.filter((one) => one.paid).length;
-  const shown = holidays.data?.filter((one) => (paidOnly === "" ? true : paidOnly === "paid" ? one.paid : !one.paid));
+  const shown = holidays.data?.filter((one) => (url.pay === "" ? true : url.pay === "paid" ? one.paid : !one.paid));
   const years = Object.fromEntries(
     Array.from({ length: kYearsBack + kYearsOn + 1 }, (_, at) => String(thisYear - kYearsBack + at)).map((one) => [one, one]),
   );
@@ -119,51 +149,30 @@ export default function HolidaysPage() {
         description={t("lead")}
         actions={
           mayWrite ? (
-            <Button variant="primary" icon={PlusIcon} onClick={openAdd}>
+            <Button variant="primary" icon={PlusIcon} onClick={() => openForm(null)}>
               {t("add")}
             </Button>
           ) : undefined
         }
       />
 
-      <PageLayout
-        aside={
-          <AsideCard title={t("yearTitle", { year })}>
-            <StatList
-              stats={[
-                {
-                  key: "paid",
-                  label: t("paid"),
-                  value: holidays.data ? paidDays : common("empty"),
-                  active: paidOnly === "paid",
-                  onPick: () => setPaidOnly("paid"),
-                },
-                {
-                  key: "unpaid",
-                  label: t("unpaid"),
-                  value: holidays.data ? rows.length - paidDays : common("empty"),
-                  active: paidOnly === "unpaid",
-                  onPick: () => setPaidOnly("unpaid"),
-                },
-                {
-                  key: "all",
-                  label: common("all"),
-                  value: holidays.data ? rows.length : common("empty"),
-                  active: paidOnly === "",
-                  onPick: () => setPaidOnly(""),
-                },
-              ]}
-            />
-          </AsideCard>
-        }
-        extra={<NextHoliday linked={false} />}
-      >
+      <PageLayout>
         <FilterBar
+          filters={[
+            {
+              key: "pay",
+              label: t("pay"),
+              value: url.pay,
+              onChange: (next) => setUrl({ pay: next }),
+              items: { "": t("anyPay"), paid: t("paid"), unpaid: t("unpaid") },
+              counts: holidays.data ? { "": rows.length, paid: paidDays, unpaid: rows.length - paidDays } : undefined,
+            },
+          ]}
           extra={
             <Select
               aria-label={t("year")}
               value={String(year)}
-              onValueChange={(next) => setYear(Number(next))}
+              onValueChange={(next) => setUrl({ year: String(next ?? thisYear) })}
               items={years}
               className="min-w-28"
             />
@@ -172,22 +181,27 @@ export default function HolidaysPage() {
         <DataTable
           id="holidays"
           cardLead="name"
+          cardTrailing="paid"
           columns={columns}
           rows={shown}
           keyOf={(row) => row.id}
           pending={holidays.isPending}
           failed={holidays.isError}
           onRetry={() => void holidays.refetch()}
+          onRowClick={mayWrite ? openForm : undefined}
           rowActions={
             mayWrite
-              ? (row) => [{ key: "remove", label: t("remove"), icon: TrashIcon, danger: true, onSelect: () => setDropping(row) }]
+              ? (row) => [
+                  { key: "edit", label: t("edit"), icon: PencilSimpleIcon, onSelect: () => openForm(row) },
+                  { key: "remove", label: t("remove"), icon: TrashIcon, danger: true, onSelect: () => setDropping(row) },
+                ]
               : undefined
           }
-          empty={paidOnly === "" ? t("empty") : t("noneOfKind")}
-          emptyHint={paidOnly === "" ? t("emptyHint") : undefined}
+          empty={url.pay === "" ? t("empty") : t("noneOfKind")}
+          emptyHint={url.pay === "" ? t("emptyHint") : undefined}
           emptyAction={
-            mayWrite && paidOnly === "" ? (
-              <Button variant="secondary" icon={PlusIcon} onClick={openAdd}>
+            mayWrite && url.pay === "" ? (
+              <Button variant="secondary" icon={PlusIcon} onClick={() => openForm(null)}>
                 {t("add")}
               </Button>
             ) : undefined
@@ -195,28 +209,44 @@ export default function HolidaysPage() {
         />
       </PageLayout>
 
-      <LayerDialog.Root open={adding} onOpenChange={setAdding} dismissDisabled={add.isPending}>
+      <LayerDialog.Root
+        open={adding || editing !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setAdding(false);
+            setEditing(null);
+          }
+        }}
+        dismissDisabled={add.isPending}
+      >
         <LayerDialog.Content closeLabel={common("close")}>
-          <LayerDialog.Title>{t("add")}</LayerDialog.Title>
-          <LayerDialog.Description>{t("addLead")}</LayerDialog.Description>
+          <LayerDialog.Title>{editing ? t("editTitle", { name: editing.name }) : t("add")}</LayerDialog.Title>
+          <LayerDialog.Description>{editing ? t("editLead", { date: long(editing.date) }) : t("addLead")}</LayerDialog.Description>
           <LayerDialog.Body>
             <div className="flex flex-col gap-4">
-              <Input label={t("date")} type="date" required value={date} onChange={(event) => setDate(event.target.value)} />
-              <Input label={t("name")} required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} />
+              {editing ? null : (
+                <DateField
+                  label={t("date")}
+                  value={date}
+                  error={tried && date === "" ? common("required") : undefined}
+                  onChange={setDate}
+                />
+              )}
+              <Input
+                label={t("name")}
+                required
+                maxLength={kNameMax}
+                value={name}
+                error={tried && name.trim() === "" ? common("required") : undefined}
+                onChange={(event) => setName(event.target.value)}
+              />
               <Checkbox checked={paid} onCheckedChange={(next) => setPaid(next === true)} label={t("paid")} />
-              {fault ? <p role="alert" className="text-kumo-danger">{fault}</p> : null}
+              {fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary
-              loading={add.isPending}
-              disabled={date === "" || name.trim() === ""}
-              onClick={() => {
-                setFault(null);
-                add.mutate();
-              }}
-            >
-              {t("add")}
+            <LayerDialog.Actions.Primary loading={add.isPending} onClick={submit}>
+              {editing ? common("save") : t("add")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
