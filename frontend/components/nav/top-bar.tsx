@@ -1,17 +1,46 @@
 "use client";
 
-import { Badge, LinkButton } from "@cloudflare/kumo";
-import { TrayIcon } from "@phosphor-icons/react";
+import { Badge, Button, LinkButton } from "@cloudflare/kumo";
+import { BellIcon, TrayIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 
 import { NoticeBell } from "@/components/notifications/bell";
-import { GlobalSearch } from "@/components/search/global-search";
+import { GlobalSearch, SearchTrigger } from "@/components/search/global-search";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { useSession } from "@/lib/auth";
-import { homeFor, navFor } from "@/lib/nav";
+import { carriesTray, homeFor } from "@/lib/nav";
 import { AccountMenu } from "./account-menu";
 import { Breadcrumb } from "./breadcrumb";
 import { useWaitingCount } from "./waiting-count";
+
+// 58 px with its border plus the status bar an installed app draws under, as Sidebar.Header, so the lines meet.
+const kBar =
+  "sticky top-0 z-30 flex h-[calc(58px+env(safe-area-inset-top))] [view-transition-name:top-bar] items-center gap-2 border-b border-kumo-line bg-kumo-canvas px-4 pt-[env(safe-area-inset-top)]";
+const kSearch = "min-w-0 flex-1 md:w-72 md:flex-none lg:w-80";
+const kTools = "flex shrink-0 items-center gap-1";
+
+/** The bar as it will stand, inert while the session reopens: same boxes, so nothing moves when it swaps. */
+export function TopBarLoading({ tray }: { tray: boolean }) {
+  const t = useTranslations("nav");
+  const notices = useTranslations("notices");
+  return (
+    <header inert className={kBar}>
+      <img src="/logo.svg" alt="" width={22} height={22} fetchPriority="high" className="block shrink-0 md:hidden" />
+      <div className="hidden min-w-0 flex-1 md:flex">
+        <SkeletonLine minWidth={12} maxWidth={20} />
+      </div>
+      <div className={kSearch}>
+        <SearchTrigger />
+      </div>
+      <div className={kTools}>
+        {tray ? <Button variant="ghost" shape="square" icon={TrayIcon} aria-label={t("approvals")} /> : null}
+        <Button variant="ghost" shape="square" icon={BellIcon} aria-label={notices("title")} />
+        <Button variant="ghost" shape="square" icon={UserCircleIcon} aria-label={t("account")} />
+      </div>
+    </header>
+  );
+}
 
 /** Kumo's product header: the trail at the left edge, the tools at the right. */
 export function TopBar() {
@@ -19,14 +48,10 @@ export function TopBar() {
   const app = useTranslations("app");
   const { role, employeeId } = useSession();
   const waiting = useWaitingCount(role);
-  // Read off the table, so this icon cannot disagree with the sidebar entry.
-  const decides = navFor(role, employeeId !== null).some((group) =>
-    group.items.some((item) => item.badge === "approvals"),
-  );
+  const decides = carriesTray(role, employeeId !== null);
 
   return (
-    // 58 px with its border plus the status bar an installed app draws under, as Sidebar.Header, so the lines meet.
-    <header className="sticky top-0 z-30 flex h-[calc(58px+env(safe-area-inset-top))] [view-transition-name:top-bar] items-center gap-2 border-b border-kumo-line bg-kumo-canvas px-4 pt-[env(safe-area-inset-top)]">
+    <header className={kBar}>
       <Link
         href={homeFor(role, employeeId !== null)}
         aria-label={app("name")}
@@ -37,10 +62,10 @@ export function TopBar() {
       <div className="hidden min-w-0 flex-1 md:flex">
         <Breadcrumb />
       </div>
-      <div className="min-w-0 flex-1 md:w-72 md:flex-none lg:w-80">
+      <div className={kSearch}>
         <GlobalSearch />
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className={kTools}>
         {decides ? (
           <span className="relative">
             <LinkButton

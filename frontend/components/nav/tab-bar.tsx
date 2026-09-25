@@ -5,6 +5,7 @@ import { DotsThreeIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link, usePathname } from "@/i18n/navigation";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
@@ -53,6 +54,9 @@ function useTyping(): boolean {
   return typing;
 }
 
+const kBar =
+  "fixed inset-x-0 bottom-0 z-40 flex border-t border-kumo-line bg-kumo-canvas pb-[env(safe-area-inset-bottom)] [view-transition-name:tab-bar] md:hidden";
+
 function tabClass(active: boolean): string {
   return cn(
     "flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-xs motion-press",
@@ -82,6 +86,25 @@ function Tab({ entry, active, waiting }: { entry: NavEntry; active: boolean; wai
   );
 }
 
+/** The bar's slots in skeleton, each icon and label on the line the real one takes. */
+export function TabBarLoading({ slots }: { slots: number }) {
+  if (slots === 0) {
+    return null;
+  }
+  return (
+    <nav inert className={kBar}>
+      {Array.from({ length: slots }, (_, at) => (
+        <span key={at} className={tabClass(false)}>
+          <SkeletonLine className="size-5 rounded-md" />
+          <span className="flex h-4 items-center">
+            <SkeletonLine className="h-2 w-10 rounded-full" />
+          </span>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
 /** The phone's navigation, five slots at the thumb (KEHOACH 9.21.1). */
 export function TabBar() {
   const t = useTranslations("nav");
@@ -99,10 +122,7 @@ export function TabBar() {
       <nav
         aria-label={t("primary")}
         data-typing={typing ? "" : undefined}
-        className={cn(
-          "fixed inset-x-0 bottom-0 z-40 flex border-t border-kumo-line bg-kumo-canvas pb-[env(safe-area-inset-bottom)] [view-transition-name:tab-bar] md:hidden",
-          typing && "hidden",
-        )}
+        className={cn(kBar, typing && "hidden")}
       >
         {items.map((entry) => (
           <Tab key={entry.href} entry={entry} active={current === entry.href} waiting={waiting} />

@@ -1,6 +1,10 @@
 import { create } from "zustand";
 
-export type Role = "ADMIN" | "HR" | "PAYROLL" | "MANAGER" | "EMPLOYEE" | "VIEWER";
+import { forgetHome } from "./theme";
+
+export const ROLES = ["ADMIN", "HR", "PAYROLL", "MANAGER", "EMPLOYEE", "VIEWER"] as const;
+
+export type Role = (typeof ROLES)[number];
 
 export interface Claims {
   role: Role | null;
@@ -41,6 +45,7 @@ export const useSession = create<Session>((set) => ({
   signOut: () => {
     set(kSignedOut);
     forgetters.forEach((forget) => forget());
+    forgetHome();
     navigator.serviceWorker?.controller?.postMessage({ type: "forget" });
   },
 }));

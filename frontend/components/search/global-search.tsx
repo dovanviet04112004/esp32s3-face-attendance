@@ -76,6 +76,22 @@ function folded(text: string): string {
 /** Cloudflare's quick search: pages this role can open, then people,
  *  departments, requests and payslips from the api (KEHOACH 9.20).
  */
+/** The field-shaped button the top bar shows; with no `onOpen` it is the inert copy of the opening frame. */
+export function SearchTrigger({ onOpen }: { onOpen?: () => void }) {
+  const t = useTranslations("search");
+  return (
+    <Button
+      variant="secondary"
+      icon={MagnifyingGlassIcon}
+      onClick={onOpen}
+      className="w-full justify-start font-normal text-kumo-subtle"
+    >
+      <span className="min-w-0 flex-1 truncate text-start">{t("placeholder")}</span>
+      <kbd className="hidden rounded border border-kumo-hairline bg-kumo-base px-1.5 text-xs md:inline">/</kbd>
+    </Button>
+  );
+}
+
 export function GlobalSearch() {
   const t = useTranslations("search");
   const nav = useTranslations("nav");
@@ -150,15 +166,7 @@ export function GlobalSearch() {
 
   return (
     <>
-      <Button
-        variant="secondary"
-        icon={MagnifyingGlassIcon}
-        onClick={() => setOpen(true)}
-        className="w-full justify-start font-normal text-kumo-subtle"
-      >
-        <span className="min-w-0 flex-1 truncate text-start">{t("placeholder")}</span>
-        <kbd className="hidden rounded border border-kumo-hairline bg-kumo-base px-1.5 text-xs md:inline">/</kbd>
-      </Button>
+      <SearchTrigger onOpen={() => setOpen(true)} />
 
       <CommandPalette.Root
         open={open}

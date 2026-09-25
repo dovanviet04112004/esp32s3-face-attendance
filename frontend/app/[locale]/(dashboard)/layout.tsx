@@ -14,17 +14,17 @@ import {
 } from "react";
 
 import { useSidebarSeed } from "@/app/providers";
-import { SectionBar } from "@/components/nav/section-bar";
+import { SectionBar, SectionBarLoading } from "@/components/nav/section-bar";
 import { Sidebar } from "@/components/nav/sidebar";
-import { TabBar } from "@/components/nav/tab-bar";
-import { TopBar } from "@/components/nav/top-bar";
+import { TabBar, TabBarLoading } from "@/components/nav/tab-bar";
+import { TopBar, TopBarLoading } from "@/components/nav/top-bar";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { allows, homeFor, namesItself, ownerOf } from "@/lib/nav";
+import { allows, frameAt, homeFor, namesItself, ownerOf } from "@/lib/nav";
 import { startOutbox } from "@/lib/outbox";
-import { rememberSidebar } from "@/lib/theme";
+import { rememberHome, rememberSidebar } from "@/lib/theme";
 import { useFeedConnection } from "@/lib/ws";
 
 const kFrame = "bg-kumo-canvas [--sidebar-bg:var(--color-kumo-canvas)]";
@@ -110,15 +110,18 @@ function RailLoading({ label }: { label: string }) {
   );
 }
 
-/** The frame as it will be, drawn in skeleton while the refresh cookie buys a session back. */
-function Opening({ rail }: { rail: Rail }) {
+/** The frame as it will be, drawn in skeleton while the refresh cookie buys a session back.
+ *  CSS picks phone or desk: the server paints it without knowing the width (KEHOACH 9.21.6).
+ */
+function Opening({ rail, here }: { rail: Rail; here: string }) {
   const t = useTranslations("nav");
   const app = useTranslations("app");
+  const frame = frameAt(here);
   return (
     <KumoSidebar.Provider className={kFrame} peekable {...rail}>
-      <KumoSidebar className="md:sticky md:top-0 md:z-40 md:h-svh md:self-start">
+      <KumoSidebar className="max-md:hidden md:sticky md:top-0 md:z-40 md:h-svh md:self-start">
         <KumoSidebar.Header className="h-[calc(58px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
-          <img src="/logo.svg" alt="" width={24} height={24} className="shrink-0" />
+          <img src="/logo.svg" alt="" width={24} height={24} fetchPriority="high" className="shrink-0" />
           <p className="min-w-0 truncate ps-2 text-base font-semibold group-data-[state=collapsed]/sidebar:hidden">{app("name")}</p>
         </KumoSidebar.Header>
         <KumoSidebar.Content>
@@ -126,12 +129,9 @@ function Opening({ rail }: { rail: Rail }) {
         </KumoSidebar.Content>
       </KumoSidebar>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[calc(58px+env(safe-area-inset-top))] items-center gap-3 border-b border-kumo-line bg-kumo-canvas px-4 pt-[env(safe-area-inset-top)]">
-          <img src="/logo.svg" alt="" width={22} height={22} className="shrink-0 md:hidden" />
-          <SkeletonLine minWidth={12} maxWidth={20} className="hidden md:block" />
-          <SkeletonLine minWidth={18} maxWidth={26} className="ms-auto" />
-        </header>
-        <main aria-busy className="flex-1">
+        <TopBarLoading tray={frame.tray} />
+        {frame.section ? <SectionBarLoading /> : null}
+        <main aria-busy aria-label={t("opening")} className="flex-1">
           <div className={kBlock}>
             <div className="flex flex-col gap-3">
               <SkeletonLine minWidth={25} maxWidth={40} blockHeight={28} />
@@ -145,6 +145,7 @@ function Opening({ rail }: { rail: Rail }) {
           </div>
         </main>
       </div>
+      <TabBarLoading slots={frame.slots} />
     </KumoSidebar.Provider>
   );
 }
@@ -191,8 +192,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     router.replace(homeFor(role, hasRecord));
   }, [accessToken, role, hasRecord, here, router]);
 
+  const signedIn = accessToken !== null;
+  useEffect(() => {
+    if (signedIn) {
+      rememberHome(homeFor(role, hasRecord));
+    }
+  }, [signedIn, role, hasRecord]);
+
   if (!accessToken) {
-    return <Opening rail={rail} />;
+    return <Opening rail={rail} here={here} />;
   }
 
   return (

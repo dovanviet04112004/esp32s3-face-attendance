@@ -6,7 +6,11 @@ export const kThemeCookie = "theme";
 
 export const kSidebarCookie = "sidebar";
 
+export const kHomeCookie = "home";
+
 const kYearSeconds = 31_536_000;
+// A path inside the app: "//host" or a scheme would turn "/" into an open redirect.
+const kAppPath = /^\/[a-z0-9-]+(?:\/[a-z0-9-]+)*$/;
 const kDarkQuery = "(prefers-color-scheme: dark)";
 
 export function asTheme(raw: string | undefined): Theme {
@@ -80,4 +84,19 @@ export function isSidebarOpen(raw: string | undefined): boolean {
 
 export function rememberSidebar(open: boolean): void {
   document.cookie = `${kSidebarCookie}=${open ? "open" : "collapsed"}; path=/; max-age=${kYearSeconds}; samesite=lax`;
+}
+
+/** The home this device opened last, which "/" moves to on the server; a hint to draw, not a grant (KEHOACH 9.21.6). */
+export function homeOf(raw: string | undefined): string | null {
+  return raw !== undefined && kAppPath.test(raw) ? raw : null;
+}
+
+export function rememberHome(path: string): void {
+  if (homeOf(path) !== null) {
+    document.cookie = `${kHomeCookie}=${path}; path=/; max-age=${kYearSeconds}; samesite=lax`;
+  }
+}
+
+export function forgetHome(): void {
+  document.cookie = `${kHomeCookie}=; path=/; max-age=0; samesite=lax`;
 }

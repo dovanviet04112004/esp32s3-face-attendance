@@ -8,6 +8,8 @@ import { reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { homeFor } from "@/lib/nav";
 
+const kAndroidSplashPx = 300;
+
 /** The address people type first and the installed app opens: only the token knows the role,
  *  so the move to that role's home waits for it rather than bouncing through another page (KEHOACH 9.21.6).
  */
@@ -28,8 +30,9 @@ export default function LocaleRoot() {
   }, [router]);
 
   return (
-    <main aria-busy className="min-h-svh bg-kumo-canvas">
+    <main aria-busy aria-label={app("name")} className="grid min-h-svh place-items-center bg-kumo-canvas">
       <title>{app("name")}</title>
+      <img src="/icon-512.png" alt="" width={kAndroidSplashPx} height={kAndroidSplashPx} fetchPriority="high" />
     </main>
   );
 }

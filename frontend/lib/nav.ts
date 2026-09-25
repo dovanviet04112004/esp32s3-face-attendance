@@ -33,7 +33,7 @@ import {
 } from "@phosphor-icons/react";
 
 import type viMessages from "../messages/vi.json";
-import type { Role } from "./auth";
+import { ROLES, type Role } from "./auth";
 
 // A renamed message breaks the build here, not the sidebar (CLAUDE.md 3.1).
 type NavKey = keyof (typeof viMessages)["nav"];
@@ -318,6 +318,11 @@ export function homeFor(role: Role | null, hasRecord: boolean): string {
   return groups[0]?.items[0]?.href ?? "/settings";
 }
 
+/** Whether this account's top bar carries the approvals tray, read off the entry the sidebar lights up. */
+export function carriesTray(role: Role | null, hasRecord: boolean): boolean {
+  return navFor(role, hasRecord).some((group) => group.items.some((item) => item.badge === "approvals"));
+}
+
 /** The sibling pages the section bar shows on this page, or none: a section
  *  this role opens one page of, or a page inside a record, has no bar.
  */
@@ -395,4 +400,32 @@ export function tabsFor(role: Role | null, hasRecord = true): TabLayout {
         .filter((group) => group.entries.length > 0)
     : [];
   return { items, rest };
+}
+
+/** Slots the tab bar fills: its destinations, and the menu when a tail is left over. */
+export function slotsOf({ items, rest }: TabLayout): number {
+  return items.length + (rest.length > 0 ? 1 : 0);
+}
+
+export interface Frame {
+  tray: boolean;
+  section: boolean;
+  slots: number;
+}
+
+/** What every account able to open this path shares of the frame: the frame drawn while the
+ *  session is still reopening holds still once it names the account (KEHOACH 9.21.6).
+ */
+export function frameAt(path: string): Frame {
+  const seats = ROLES.flatMap((role) => [true, false].map((hasRecord) => ({ role, hasRecord }))).filter(
+    ({ role, hasRecord }) => allows(role, hasRecord, path),
+  );
+  const shared = (test: (role: Role, hasRecord: boolean) => boolean) =>
+    seats.length > 0 && seats.every(({ role, hasRecord }) => test(role, hasRecord));
+  const slots = new Set(seats.map(({ role, hasRecord }) => slotsOf(tabsFor(role, hasRecord))));
+  return {
+    tray: shared(carriesTray),
+    section: shared((role, hasRecord) => siblingsOf(role, hasRecord, path).length > 0),
+    slots: slots.size === 1 ? [...slots][0] : kTabSlots,
+  };
 }
