@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 #include "cJSON.h"
 #include "esp_app_desc.h"
@@ -12,8 +13,10 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "mbedtls/base64.h"
 #include "sys_storage.h"
+#include "sys_time.h"
 
 static const char *TAG = "net_provision";
 
@@ -34,6 +37,7 @@ static const char *TAG = "net_provision";
 #define CLAIM_DIGITS 6
 #define CLAIM_SPACE 1000000u
 #define CLAIM_FAIR_LIMIT 4294000000u      // largest multiple of CLAIM_SPACE in 32 bits
+#define DATE_CAP 40                       // IMF-fixdate is 29 characters
 
 typedef struct {
     int status;                           // 0 when nothing came back
@@ -41,6 +45,35 @@ typedef struct {
     size_t cap;
     size_t len;
 } answer_t;
+
+typedef struct {
+    char value[DATE_CAP];
+    int64_t heard_at_us;
+} heard_date_t;
+
+static esp_err_t on_http_event(esp_http_client_event_t *event)
+{
+    heard_date_t *date = event->user_data;
+    if (event->event_id == HTTP_EVENT_ON_HEADER && date != NULL && event->header_key != NULL &&
+        event->header_value != NULL && strcasecmp(event->header_key, "Date") == 0) {
+        strlcpy(date->value, event->header_value, sizeof(date->value));
+        date->heard_at_us = esp_timer_get_time();
+    }
+    return ESP_OK;
+}
+
+// Any answer over this TLS session carries the api's clock, which is the clock a
+// kiosk behind a firewall that drops NTP has (KEHOACH 4.5).
+static void take_date(const heard_date_t *date)
+{
+    if (date->value[0] == '\0') {
+        return;
+    }
+    const esp_err_t took = sys_time_take_http_date(date->value, date->heard_at_us);
+    if (took == ESP_ERR_INVALID_ARG) {
+        ESP_LOGW(TAG, "api date \"%s\" is not one this clock takes", date->value);
+    }
+}
 
 static esp_err_t exchange(esp_http_client_method_t method, const char *path, const char *auth,
                           const char *body, answer_t *out)
@@ -50,12 +83,15 @@ static esp_err_t exchange(esp_http_client_method_t method, const char *path, con
         (int)sizeof(url)) {
         return ESP_ERR_INVALID_SIZE;
     }
+    heard_date_t date = { 0 };
     const esp_http_client_config_t cfg = {
         .url = url,
         .method = method,
         .timeout_ms = HTTP_TIMEOUT_MS,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .keep_alive_enable = false,
+        .event_handler = on_http_event,
+        .user_data = &date,
     };
     esp_http_client_handle_t http = esp_http_client_init(&cfg);
     if (http == NULL) {
@@ -87,6 +123,7 @@ static esp_err_t exchange(esp_http_client_method_t method, const char *path, con
     }
     esp_http_client_close(http);
     esp_http_client_cleanup(http);
+    take_date(&date);
     return err;
 }
 

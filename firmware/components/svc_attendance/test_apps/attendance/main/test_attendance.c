@@ -7,6 +7,7 @@
 #include "svc_attendance.h"
 #include "svc_door.h"
 #include "sys_storage.h"
+#include "sys_time.h"
 #include "unity.h"
 
 #define DEDUP_MIN 5
@@ -92,6 +93,9 @@ TEST_CASE("the record carries the fields of section 6.2.5", "[svc_attendance]")
     TEST_ASSERT_NOT_EQUAL(0, record.crc32);
     // bit1 is set while nothing has taken the record off the device yet.
     TEST_ASSERT_EQUAL(0x02, record.flags & 0x02);
+    // This app starts no clock, so the stamp counts from boot and says so.
+    TEST_ASSERT_EQUAL(STORAGE_ATTEND_FLAG_NO_NTP, record.flags & STORAGE_ATTEND_FLAG_NO_NTP);
+    TEST_ASSERT_TRUE(record.ts_ms > 0 && record.ts_ms < SYS_TIME_FLOOR_MS);
 }
 
 TEST_CASE("the same person inside the window opens the door without a record", "[svc_attendance]")

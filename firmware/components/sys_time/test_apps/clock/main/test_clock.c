@@ -31,7 +31,7 @@ static void clock_up(void)
 {
     const esp_err_t bus = bsp_board_init();
     TEST_ASSERT_TRUE(bus == ESP_OK || bus == ESP_ERR_INVALID_STATE);
-    const esp_err_t clock = sys_time_init(true);
+    const esp_err_t clock = sys_time_init(true, NULL, NULL);
     TEST_ASSERT_TRUE(clock == ESP_OK || clock == ESP_ERR_INVALID_STATE);
 }
 
@@ -56,7 +56,7 @@ TEST_CASE("init is refused twice and the source survives it", "[sys_time]")
 {
     clock_up();
     const sys_time_source_t before_second = sys_time_source();
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, sys_time_init(true));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, sys_time_init(true, NULL, NULL));
     TEST_ASSERT_EQUAL(before_second, sys_time_source());
 }
 
@@ -98,11 +98,35 @@ TEST_CASE("sntp needs a netif, and refusing it leaves the clock alone", "[sys_ti
 {
     clock_up();
     const int64_t before_call = sys_time_now_ms();
-    const esp_err_t err = sys_time_sync_start(SNTP_HOST, NULL, NULL);
+    const esp_err_t err = sys_time_sync_start(SNTP_HOST);
     printf("sync_start without wifi: %s\n", esp_err_to_name(err));
     TEST_ASSERT_TRUE(err == ESP_OK || err == ESP_ERR_INVALID_STATE);
     TEST_ASSERT_TRUE(sys_time_now_ms() >= before_call);
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, sys_time_sync_start(NULL, NULL, NULL));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, sys_time_sync_start(NULL));
+}
+
+TEST_CASE("an api date header reads as the epoch it names", "[sys_time]")
+{
+    int64_t ms = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, sys_time_parse_http_date("Sat, 26 Sep 2026 07:15:42 GMT", &ms));
+    TEST_ASSERT_TRUE(ms == 1790406942000LL);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_time_parse_http_date("thu, 29 feb 2024 23:59:60 gmt", &ms));
+    TEST_ASSERT_TRUE(ms == 1709251200000LL);
+}
+
+static esp_err_t parse(const char *value)
+{
+    int64_t ms = 0;
+    return sys_time_parse_http_date(value, &ms);
+}
+
+TEST_CASE("a date header this clock should not trust is refused", "[sys_time]")
+{
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, parse("Sunday, 06-Nov-94 08:49:37 GMT"));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, parse("Fri, 26 Sep 2026 07:15:42 GMT"));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, parse("Sat, 26 Sep 2026 07:15:42 +0700"));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, parse("Tue, 31 Dec 2019 23:59:59 GMT"));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, parse(""));
 }
 
 void app_main(void)

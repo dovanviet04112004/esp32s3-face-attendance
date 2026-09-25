@@ -120,6 +120,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define REPORTS_PER_DRAIN 6               // two sessions of ENROL_SAMPLES
 #define EVENT_FAULT_GAP_MS 60000
 #define EVENT_PERSON_GAP_MS 2000
+#define CLOCK_WAIT_ONLINE_MS 600000       // ten minutes of broker link, KEHOACH 4.5
 #define NET_TASK_CORE 0
 #define OTA_TASK_CORE 0
 #define OTA_TASK_PRIORITY 3
@@ -131,12 +132,13 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define TICKET_POLL_MS 1000
 #define TICKET_RECHECK_MS 60000
 #define RENEW_LOOK_MS 60000
+#define CLOCK_PROBE_GRACE_MS 60000        // sntp answers well inside it where it can
+#define CLOCK_PROBE_EVERY_MS 86400000     // the api's clock, read again daily
 #define NET_TASK_PRIORITY 3
 #define NET_TASK_STACK_BYTES 4096
 #define JOIN_WAIT_MS 30000
 #define SNTP_HOST_CAP 64
 #define NVS_SNTP_HOST "sntp_host"
-#define NVS_RTC_NTP_SET "rtc_ntp_set"
 #define NVS_PRESENT_MM "present_mm"
 #define TOUCH_TASK_CORE 0
 #define TOUCH_TASK_PRIORITY 5
@@ -173,19 +175,6 @@ static void report_rate(int frames, int64_t elapsed_us)
     drv_camera_exposure_state(&level, &exposure, &gain16);
     ESP_LOGI(TAG, "preview %d.%03d fps, blit %" PRIu32 " us, level %d, exposure %d lines, gain %d/16",
              mfps / 1000, mfps % 1000, drv_lcd_blit_us(), level, exposure, gain16);
-}
-
-// The marker is what tells a later boot that this clock has been verified, and
-// only sys_storage may write it (KEHOACH 6.2.5).
-static void on_time_synced(void *arg)
-{
-    (void)arg;
-    const esp_err_t err = sys_storage_set_u32(STORAGE_NS_SYS, NVS_RTC_NTP_SET, 1);
-    ESP_LOGI(TAG, "time verified, marker %s", esp_err_to_name(err));
-    const app_wiring_t *wiring = app_wiring();
-    if (wiring != NULL) {
-        xEventGroupSetBits(wiring->flags, APP_EG_TIME_OK);
-    }
 }
 
 // A broken sensor repeats, a person does not: one fault every minute is enough
@@ -457,7 +446,7 @@ static void net_task(void *arg)
     }
     char host[SNTP_HOST_CAP] = { 0 };
     sntp_host(host, sizeof(host));
-    const esp_err_t sync = sys_time_sync_start(host, on_time_synced, NULL);
+    const esp_err_t sync = sys_time_sync_start(host);
     ESP_LOGI(TAG, "sntp against %s: %s", host, esp_err_to_name(sync));
     vTaskDelete(NULL);
 }
@@ -1120,7 +1109,7 @@ static void run_command(const device_command_t *cmd, svc_door_t door)
     case DEVICE_COMMAND_ACTION_SYNC_TIME: {
         char host[SNTP_HOST_CAP] = { 0 };
         sntp_host(host, sizeof(host));
-        done = sys_time_sync_start(host, on_time_synced, NULL);
+        done = sys_time_sync_start(host);
         strlcpy(note, "sntp asked again", sizeof(note));
         break;
     }
@@ -1195,6 +1184,35 @@ static void take_commands(const app_wiring_t *wiring, svc_door_t door)
     }
 }
 
+// Ten minutes on the broker with no clock at all is told once, and this boot's
+// unclocked stamps then leave as they are rather than wait on (KEHOACH 4.5).
+static bool clock_may_come(int64_t now_ms)
+{
+    static int64_t online_ms;
+    static int64_t seen_ms;
+    static bool given_up;
+    const int64_t step_ms = seen_ms != 0 ? now_ms - seen_ms : 0;
+    seen_ms = now_ms;
+    if (given_up || sys_time_source() != SYS_TIME_SOURCE_NONE) {
+        return !given_up;
+    }
+    if (net_mqtt_is_up()) {
+        online_ms += step_ms;
+    }
+    if (online_ms < CLOCK_WAIT_ONLINE_MS) {
+        return true;
+    }
+    given_up = true;
+    app_event_t event = { 0 };
+    event.type = DEVICE_EVENT_TYPE_TIME_UNSYNCED;
+    event.severity = DEVICE_EVENT_SEVERITY_WARN;
+    strlcpy(event.note, "ten minutes online with no clock", sizeof(event.note));
+    note_event(&event);
+    ESP_LOGW(TAG, "no clock after %d ms online, unclocked stamps leave as they are",
+             CLOCK_WAIT_ONLINE_MS);
+    return false;
+}
+
 // A fresh image is on trial until it signs for the slot, and "it booted" is too
 // weak a claim: a broken model image boots fine and then recognises nobody.
 static void settle_this_build(const app_wiring_t *wiring, int64_t up_ms)
@@ -1249,6 +1267,7 @@ static void sync_task(void *arg)
         take_roster(wiring);
         take_events(wiring);
         const int64_t now_ms = esp_timer_get_time() / 1000;
+        const bool wait_for_clock = clock_may_come(now_ms);
         if (net_mqtt_is_up() && now_ms - beat_ms >= GEN_TOPIC_HEARTBEAT_INTERVAL_S * 1000) {
             beat_ms = now_ms;
             publish_heartbeat();
@@ -1259,7 +1278,7 @@ static void sync_task(void *arg)
         drain_ms = now_ms;
         drain_asks();
         drain_reports();
-        const esp_err_t drained = svc_sync_drain();
+        const esp_err_t drained = svc_sync_drain(wait_for_clock);
         more = drained == ESP_ERR_NOT_FINISHED;
         if (drained != ESP_OK && !more && drained != ESP_ERR_INVALID_STATE &&
             drained != ESP_ERR_TIMEOUT) {
@@ -1740,12 +1759,46 @@ typedef struct {
     uint32_t failures;
 } renewal_t;
 
-// The exp is the ticket's own, so only a clock NTP has set may be held against it (KEHOACH 7.3).
+// With no NTP the check call's Date is the clock the ticket is read by, so a
+// kiosk behind a firewall still renews ahead of day 90 (KEHOACH 7.3).
+static bool clock_probe_due(EventBits_t flags, renewal_t *probe, int64_t now_ms)
+{
+    if ((flags & APP_EG_WIFI_OK) == 0 || sys_time_source() == SYS_TIME_SOURCE_RTC_NTP ||
+        net_mqtt_login() != NET_MQTT_LOGIN_TICKET) {
+        return false;
+    }
+    if (probe->next_ms == 0) {
+        probe->next_ms = now_ms + CLOCK_PROBE_GRACE_MS;
+    }
+    return now_ms >= probe->next_ms;
+}
+
+static void probe_clock(const app_wiring_t *wiring, renewal_t *probe, int64_t now_ms)
+{
+    net_mqtt_stop();
+    const net_provision_answer_t answer = net_provision_check();
+    if (answer == NET_PROVISION_REFUSED) {
+        ESP_LOGW(TAG, "api says the ticket is dead, wiping faces and registering again");
+        ticket_died(wiring);
+        return;
+    }
+    // An api that answered with no usable Date will not grow one in a few minutes.
+    const bool retry = !sys_time_trusted() && answer == NET_PROVISION_UNREACHABLE;
+    const uint32_t attempt = probe->failures;
+    probe->failures = retry ? probe->failures + 1 : 0;
+    probe->next_ms =
+        now_ms + (retry ? net_provision_wait_ms(attempt, esp_random()) : CLOCK_PROBE_EVERY_MS);
+    ESP_LOGI(TAG, "clock asked of the api: source %d, next in %lld s", (int)sys_time_source(),
+             (long long)(probe->next_ms - now_ms) / 1000);
+    start_broker();
+}
+
+// The exp is the ticket's own, so only a clock NTP or the api vouches for may judge it (KEHOACH 7.3).
 static bool renewal_due(const app_wiring_t *wiring, EventBits_t flags, renewal_t *renewal,
                         int64_t now_ms)
 {
     const bool asked = (flags & APP_EG_RENEW_TICKET) != 0;
-    if (now_ms < renewal->next_ms || (!asked && sys_time_source() != SYS_TIME_SOURCE_RTC_NTP)) {
+    if (now_ms < renewal->next_ms || (!asked && !sys_time_trusted())) {
         return false;
     }
     uint32_t exp = 0;
@@ -1787,6 +1840,7 @@ static void ota_task(void *arg)
     const app_wiring_t *wiring = arg;
     int64_t checked_ms = 0;
     renewal_t renewal = { 0 };
+    renewal_t probe = { 0 };
     for (;;) {
         const EventBits_t flags = xEventGroupGetBits(wiring->flags);
         if (flags & APP_EG_NEED_TICKET) {
@@ -1797,6 +1851,10 @@ static void ota_task(void *arg)
             recheck_ticket(wiring, &checked_ms);
         }
         const int64_t now_ms = esp_timer_get_time() / 1000;
+        if (clock_probe_due(flags, &probe, now_ms)) {
+            probe_clock(wiring, &probe, now_ms);
+            continue;
+        }
         if (renewal_due(wiring, flags, &renewal, now_ms)) {
             renew_ticket(wiring, &renewal, now_ms);
             continue;
@@ -2189,19 +2247,21 @@ static void attend_task(void *arg)
             svc_attendance_on_presence(edge == APP_PRESENCE_ON);
         }
         svc_vision_result_t result;
+        // Intervals run on esp_timer: the wall clock steps when a source lands (KEHOACH 4.5).
         if (xQueueReceive(wiring->results, &result, pdMS_TO_TICKS(ATTEND_TICK_MS)) == pdTRUE) {
             svc_attendance_said_t said = SVC_ATTENDANCE_SAID_NOTHING;
-            svc_attendance_on_vision(&result, sys_time_now_ms(), &said);
+            svc_attendance_on_vision(&result, esp_timer_get_time() / 1000, &said);
             tell(wiring, &result, said);
         }
-        svc_attendance_tick(sys_time_now_ms());
+        const int64_t now_ms = esp_timer_get_time() / 1000;
+        svc_attendance_tick(now_ms);
 
         {
             static int64_t settings_at_ms;
             // Nobody can read a sleeping panel, and the page walks the heap.
             const bool readable = rest_level() != REST_ALL;
-            if (readable && sys_time_now_ms() - settings_at_ms > SETTINGS_REFRESH_MS) {
-                settings_at_ms = sys_time_now_ms();
+            if (readable && now_ms - settings_at_ms > SETTINGS_REFRESH_MS) {
+                settings_at_ms = now_ms;
                 show_facts();
                 show_net();
                 if ((xEventGroupGetBits(wiring->flags) & APP_EG_OTA_RUNNING) != 0) {

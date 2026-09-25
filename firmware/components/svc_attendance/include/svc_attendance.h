@@ -53,7 +53,7 @@ esp_err_t svc_attendance_set_policy(const svc_attendance_policy_t *policy);
 
 /** Feed one vision event, which may open the door and write a record.
  *  @ctx task | blocking on the door and on LittleFS | takes m_door, m_littlefs
- *  @param now_ms the wall clock of KEHOACH 6.2.5, stamped into the record
+ *  @param now_ms esp_timer ms, timing states and the dedup window; sys_time stamps (KEHOACH 4.5)
  *  @param said what the event came to, or NULL when nobody asks
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE without init
  */
@@ -72,6 +72,7 @@ void svc_attendance_set_link(bool up);
 
 /** Advance the timers that carry Granted, Denied and Cooldown along.
  *  @ctx task | non-blocking | call on a tick of at most a few hundred ms
+ *  @param now_ms the esp_timer ms that on_vision is fed, never the wall clock
  */
 esp_err_t svc_attendance_tick(int64_t now_ms);
 

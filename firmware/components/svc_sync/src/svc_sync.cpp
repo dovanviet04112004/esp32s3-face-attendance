@@ -2,6 +2,7 @@
 
 #include "app_err.h"
 #include "esp_log.h"
+#include "sys_time.h"
 #include "uplink.hpp"
 
 namespace {
@@ -27,11 +28,16 @@ esp_err_t svc_sync_init(void)
     return ESP_OK;
 }
 
-esp_err_t svc_sync_drain(void)
+esp_err_t svc_sync_drain(bool wait_for_clock)
 {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    uplink::BootClock clock;
+    clock.boot = sys_storage_boot_count();
+    clock.placed = sys_time_boot_at_ms(&clock.boot_at_ms) == ESP_OK;
+    clock.wait = wait_for_clock;
+    s_queue.set_clock(clock);
     return s_queue.drain(CONFIG_SYNC_BATCH_RECORDS, CONFIG_SYNC_ACK_TIMEOUT_MS);
 }
 

@@ -113,6 +113,21 @@ static bool rtc_ntp_marker(void)
     return sys_storage_get_u32(STORAGE_NS_SYS, NVS_RTC_NTP_SET, &marker) == ESP_OK && marker != 0;
 }
 
+// The marker tells a later boot what the RTC holds, and only sys_storage may write it (KEHOACH 6.2.5).
+static void on_time_synced(bool rtc_ntp_set, void *arg)
+{
+    (void)arg;
+    const esp_err_t err =
+        sys_storage_set_u32(STORAGE_NS_SYS, NVS_RTC_NTP_SET, rtc_ntp_set ? 1u : 0u);
+    ESP_LOGI(TAG, "time verified by %s, marker %d: %s",
+             sys_time_source() == SYS_TIME_SOURCE_API ? "the api" : "ntp", (int)rtc_ntp_set,
+             esp_err_to_name(err));
+    const app_wiring_t *wiring = app_wiring();
+    if (wiring != NULL) {
+        xEventGroupSetBits(wiring->flags, APP_EG_TIME_OK);
+    }
+}
+
 // KEHOACH 6.2.1: NVS owns a threshold once it is seeded, and only a seed
 // version the device has not reached yet may write over that.
 static void seed_settings(void)
@@ -268,9 +283,9 @@ esp_err_t app_boot(void)
     ui_kiosk_set_language(lang);
     ESP_ERROR_CHECK(drv_ioexp_init());
     // A silent clock costs the trust of a timestamp, not the kiosk (KEHOACH 6.2.5).
-    const esp_err_t clock = sys_time_init(rtc_ntp_marker());
+    const esp_err_t clock = sys_time_init(rtc_ntp_marker(), on_time_synced, NULL);
     if (clock != ESP_OK) {
-        ESP_LOGW(TAG, "rtc absent: %s", esp_err_to_name(clock));
+        ESP_LOGW(TAG, "no clock from the rtc: %s", esp_err_to_name(clock));
     }
     // A dead panel costs the settings screen, not the kiosk (KEHOACH 6.2.2).
     const esp_err_t touch = drv_touch_init();
@@ -289,7 +304,9 @@ esp_err_t app_boot(void)
     // one: granting access with nothing to open is worse than not booting.
     ESP_ERROR_CHECK(drv_servo_init());
     char zone[TZ_CAP] = { 0 };
-    if (sys_storage_get_str(STORAGE_NS_DEVICE, NVS_TZ, zone, sizeof(zone)) != ESP_OK) {
+    // A key present but empty is the same as absent, as sntp_host is (KEHOACH 4.5).
+    if (sys_storage_get_str(STORAGE_NS_DEVICE, NVS_TZ, zone, sizeof(zone)) != ESP_OK ||
+        zone[0] == '\0') {
         strlcpy(zone, CONFIG_SYS_TIME_TZ, sizeof(zone));
     }
     ESP_ERROR_CHECK(sys_time_set_zone(zone));

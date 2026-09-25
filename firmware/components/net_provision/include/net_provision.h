@@ -46,7 +46,7 @@ net_provision_answer_t net_provision_renew(void);
 esp_err_t net_provision_held_exp(uint32_t *exp);
 
 /** Whether a ticket expiring at exp is inside the renewal window (KEHOACH 7.3).
- *  @ctx any | non-blocking | now_ms from a clock NTP has set, 0 when there is none
+ *  @ctx any | non-blocking | now_ms from a clock NTP or the api vouches for, else 0
  */
 bool net_provision_renew_due(uint32_t exp, int64_t now_ms);
 

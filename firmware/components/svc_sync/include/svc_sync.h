@@ -26,12 +26,13 @@ typedef struct {
  */
 esp_err_t svc_sync_init(void);
 
-/** Send what the cursor has not reached yet, up to one batch.
+/** Send what the cursor has not reached yet, up to one batch, placing unclocked stamps.
  *  @ctx task | blocking up to batch x ack timeout | takes m_littlefs
- *  @ret ESP_OK drained or nothing to do | ESP_ERR_INVALID_STATE broker down
+ *  @param wait_for_clock stop at this boot's unclocked stamp until a clock can place it
+ *  @ret ESP_OK drained or nothing to do | ESP_ERR_INVALID_STATE broker down or waiting
  *       | ESP_ERR_TIMEOUT unacknowledged | ESP_ERR_NOT_FINISHED batch full
  */
-esp_err_t svc_sync_drain(void);
+esp_err_t svc_sync_drain(bool wait_for_clock);
 
 /** Whether the log still holds a record the broker has not taken.
  *  @ctx any | non-blocking | the answer is from the last drain

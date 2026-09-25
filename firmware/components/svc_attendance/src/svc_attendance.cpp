@@ -85,17 +85,19 @@ bool same_arrival(const svc_vision_result_t *result, int64_t now_ms)
 
 esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool door_opened)
 {
+    // Source first: a clock landing in between leaves bit2 on a true time, never off a boot count.
+    const bool ntp = sys_time_source() == SYS_TIME_SOURCE_RTC_NTP;
     storage_attend_record_t record = {};
     record.magic = STORAGE_ATTEND_REC_MAGIC;
     record.local_id = ((uint64_t)sys_storage_boot_count() << 32) | ++s_seq;
     record.employee_id = result->employee_id;
-    record.ts_ms = now_ms;
+    record.ts_ms = sys_time_now_ms();
     record.direction = STORAGE_ATTEND_DIR_IN;
     record.match_score = to_q88(result->match_score);
     record.liveness_score = to_q88(result->live_score);
     record.flags = (uint8_t)((door_opened ? STORAGE_ATTEND_FLAG_DOOR : 0) |
                              (s_link_up.load() ? 0 : STORAGE_ATTEND_FLAG_OFFLINE) |
-                             (sys_time_source() == SYS_TIME_SOURCE_RTC_NTP ? 0 : STORAGE_ATTEND_FLAG_NO_NTP));
+                             (ntp ? 0 : STORAGE_ATTEND_FLAG_NO_NTP));
     record.model_version = 1;
     record.crc32 = esp_crc32_le(0, (const uint8_t *)&record, offsetof(storage_attend_record_t, crc32));
 

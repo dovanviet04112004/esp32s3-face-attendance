@@ -108,7 +108,80 @@ struct Rig {
     Rig() { TEST_ASSERT_EQUAL(ESP_OK, queue.init(kDeviceId)); }
 };
 
+constexpr uint32_t kThisBoot = 7;
+constexpr int64_t kSinceBootMs = 65000;
+constexpr int64_t kBootAtMs = 1790406000000;
+
+void push_unclocked(FakePersist &store, uint32_t boot)
+{
+    store.push(((uint64_t)boot << 32) | 1u, 42, STORAGE_ATTEND_FLAG_NO_NTP);
+    store.records[store.count - 1].ts_ms = kSinceBootMs;
+}
+
+uplink::BootClock boot_clock(bool placed, bool wait)
+{
+    uplink::BootClock clock;
+    clock.boot = kThisBoot;
+    clock.placed = placed;
+    clock.boot_at_ms = placed ? kBootAtMs : 0;
+    clock.wait = wait;
+    return clock;
+}
+
+attendance_record_t sent(const FakeLink &link)
+{
+    cJSON *root = cJSON_Parse(link.last);
+    attendance_record_t wire = {};
+    const bool parsed = root != nullptr && attendance_record_from_json(root, &wire);
+    cJSON_Delete(root);
+    TEST_ASSERT_TRUE(parsed);
+    return wire;
+}
+
 }  // namespace
+
+TEST_CASE("a stamp this boot took with no clock leaves placed and still flagged", "[svc_sync]")
+{
+    Rig rig;
+    push_unclocked(rig.store, kThisBoot);
+    rig.queue.set_clock(boot_clock(true, true));
+    TEST_ASSERT_EQUAL(ESP_OK, rig.queue.drain(16, kAckTimeoutMs));
+    const attendance_record_t wire = sent(rig.link);
+    TEST_ASSERT_TRUE(wire.ts == kBootAtMs + kSinceBootMs);
+    TEST_ASSERT_TRUE(wire.clock_unsynced);
+}
+
+TEST_CASE("an earlier boot's unclocked stamp, or one with no clock to wait for, goes as it is",
+          "[svc_sync]")
+{
+    Rig rig;
+    push_unclocked(rig.store, kThisBoot - 1);
+    rig.queue.set_clock(boot_clock(true, true));
+    TEST_ASSERT_EQUAL(ESP_OK, rig.queue.drain(16, kAckTimeoutMs));
+    TEST_ASSERT_TRUE(sent(rig.link).ts == kSinceBootMs);
+
+    push_unclocked(rig.store, kThisBoot);
+    rig.queue.set_clock(boot_clock(false, false));
+    TEST_ASSERT_EQUAL(ESP_OK, rig.queue.drain(16, kAckTimeoutMs));
+    TEST_ASSERT_TRUE(sent(rig.link).ts == kSinceBootMs);
+}
+
+TEST_CASE("an unclocked stamp waits at the cursor until a clock can place it", "[svc_sync]")
+{
+    Rig rig;
+    push_unclocked(rig.store, kThisBoot);
+    rig.store.push(((uint64_t)kThisBoot << 32) | 2u, 43, STORAGE_ATTEND_FLAG_NO_NTP);
+    rig.queue.set_clock(boot_clock(false, true));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, rig.queue.drain(16, kAckTimeoutMs));
+    TEST_ASSERT_EQUAL(0, rig.link.sends);
+    TEST_ASSERT_EQUAL(0, rig.store.at());
+    TEST_ASSERT_TRUE(rig.queue.pending());
+
+    rig.queue.set_clock(boot_clock(true, true));
+    TEST_ASSERT_EQUAL(ESP_OK, rig.queue.drain(16, kAckTimeoutMs));
+    TEST_ASSERT_EQUAL(2, rig.link.sends);
+    TEST_ASSERT_EQUAL(2, rig.store.at());
+}
 
 TEST_CASE("an empty log drains to nothing and sends nothing", "[svc_sync]")
 {

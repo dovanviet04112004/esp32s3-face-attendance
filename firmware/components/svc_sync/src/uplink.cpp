@@ -4,6 +4,7 @@
 #include "cJSON.h"
 #include "esp_log.h"
 #include "gen_payload.h"
+#include "sys_time.h"
 #include "uplink.hpp"
 
 namespace uplink {
@@ -18,6 +19,21 @@ float from_q88(uint16_t raw) noexcept
 }
 
 }  // namespace
+
+Stamp place(const storage_attend_record_t &rec, const BootClock &clock, int64_t *ts_ms) noexcept
+{
+    *ts_ms = rec.ts_ms;
+    const bool unclocked =
+        (rec.flags & STORAGE_ATTEND_FLAG_NO_NTP) != 0 && rec.ts_ms < SYS_TIME_FLOOR_MS;
+    if (!unclocked || (uint32_t)(rec.local_id >> 32) != clock.boot) {
+        return Stamp::AsIs;
+    }
+    if (clock.placed) {
+        *ts_ms = rec.ts_ms + clock.boot_at_ms;
+        return Stamp::Placed;
+    }
+    return clock.wait ? Stamp::Held : Stamp::AsIs;
+}
 
 esp_err_t UplinkQueue::init(const char *device_id) noexcept
 {
@@ -39,13 +55,14 @@ esp_err_t UplinkQueue::init(const char *device_id) noexcept
     return ESP_OK;
 }
 
-bool UplinkQueue::encode(const storage_attend_record_t &rec, char *out, size_t cap) const noexcept
+bool UplinkQueue::encode(const storage_attend_record_t &rec, int64_t ts_ms, char *out,
+                         size_t cap) const noexcept
 {
     attendance_record_t wire = {};
     strlcpy(wire.device_id, device_id_, sizeof(wire.device_id));
     snprintf(wire.local_id, sizeof(wire.local_id), "%llu", (unsigned long long)rec.local_id);
     wire.employee_id = rec.employee_id;
-    wire.ts = rec.ts_ms;
+    wire.ts = ts_ms;
     wire.direction = rec.direction == STORAGE_ATTEND_DIR_OUT ? ATTENDANCE_RECORD_DIRECTION_OUT
                                                              : ATTENDANCE_RECORD_DIRECTION_IN;
     wire.match_score = from_q88(rec.match_score);
@@ -95,7 +112,23 @@ esp_err_t UplinkQueue::drain(size_t batch, uint32_t ack_timeout_ms) noexcept
             ++stats_.stalled;
             return held;
         }
-        if (!encode(rec, payload, sizeof(payload))) {
+        int64_t ts_ms = 0;
+        const Stamp stamp = place(rec, clock_, &ts_ms);
+        if (stamp == Stamp::Held) {
+            if (!holding_) {
+                ESP_LOGI(TAG, "record %llu stamped before any clock, held for one",
+                         (unsigned long long)rec.local_id);
+            }
+            holding_ = true;
+            stats_.backlog = true;
+            return ESP_ERR_INVALID_STATE;
+        }
+        holding_ = false;
+        if (stamp == Stamp::Placed) {
+            ESP_LOGI(TAG, "record %llu placed at %lld ms from %lld after boot",
+                     (unsigned long long)rec.local_id, (long long)ts_ms, (long long)rec.ts_ms);
+        }
+        if (!encode(rec, ts_ms, payload, sizeof(payload))) {
             // A record that cannot be written as json never will be, so moving
             // past it is the only way the ones behind it ever leave.
             ESP_LOGE(TAG, "record %llu will not encode, skipped",

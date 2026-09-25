@@ -3,5 +3,5 @@ idf_component_register(
     INCLUDE_DIRS include
     PRIV_INCLUDE_DIRS priv_include
     REQUIRES common sys_storage net_mqtt
-    PRIV_REQUIRES log espressif__cjson
+    PRIV_REQUIRES sys_time log espressif__cjson
 )
