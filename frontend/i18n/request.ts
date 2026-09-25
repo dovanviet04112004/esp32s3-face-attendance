@@ -3,6 +3,7 @@ import { getRequestConfig } from "next-intl/server";
 
 import type enMessages from "../messages/en.json";
 import type viMessages from "../messages/vi.json";
+import { env } from "../lib/env";
 import { routing } from "./routing";
 
 type Catalogue = Record<string, Record<string, string>>;
@@ -25,6 +26,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
   return {
     locale,
     messages: (await import(`../messages/${locale}.json`)).default,
+    timeZone: env.NEXT_PUBLIC_APP_TIMEZONE,
     // next-intl ships no named formats, so asking for one it does not hold
     // throws and the cell renders nothing.
     formats: {

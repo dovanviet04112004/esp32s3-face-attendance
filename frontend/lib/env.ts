@@ -7,6 +7,19 @@ const schema = z.object({
     .string()
     .optional()
     .transform((held) => (held ? held : undefined)),
+  // Must equal the backend's APP_TIMEZONE: every time and day on screen is drawn in it (KEHOACH 9.8).
+  NEXT_PUBLIC_APP_TIMEZONE: z
+    .string()
+    .optional()
+    .transform((held) => held || "Asia/Ho_Chi_Minh")
+    .refine((zone) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: zone });
+        return true;
+      } catch {
+        return false;
+      }
+    }, "NEXT_PUBLIC_APP_TIMEZONE must be an IANA zone name"),
 });
 
 export type Env = z.infer<typeof schema>;
@@ -19,4 +32,5 @@ export const env: Env = schema.parse({
   NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
   NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+  NEXT_PUBLIC_APP_TIMEZONE: process.env.NEXT_PUBLIC_APP_TIMEZONE,
 });
