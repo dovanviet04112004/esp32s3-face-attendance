@@ -1,10 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { ChecklistKind, TaskOwner } from "@prisma/client";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -14,6 +15,8 @@ import {
   Min,
   ValidateNested,
 } from "class-validator";
+
+import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
 const kMaxItems = 100;
 const kDayWindow = 365;
@@ -88,4 +91,36 @@ export class FinishTaskDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+}
+
+export class OpenCountsDto {
+  @ApiPropertyOptional({ enum: ChecklistKind })
+  @IsOptional()
+  @IsEnum(ChecklistKind)
+  kind?: ChecklistKind;
+}
+
+export class ListOpenTasksDto extends PaginationDto {
+  @ApiPropertyOptional({ enum: ChecklistKind })
+  @IsOptional()
+  @IsEnum(ChecklistKind)
+  kind?: ChecklistKind;
+
+  @ApiPropertyOptional({ description: "Matches the task title or the person's name or code" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  search?: string;
+
+  @ApiPropertyOptional({ enum: TaskOwner })
+  @IsOptional()
+  @IsEnum(TaskOwner)
+  owner?: TaskOwner;
+
+  // Boolean("false") is true, so a query string has to be compared, not cast.
+  @ApiPropertyOptional({ description: "Only the tasks past their due date" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  overdue?: boolean;
 }

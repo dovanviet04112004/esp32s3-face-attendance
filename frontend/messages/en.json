@@ -744,7 +744,6 @@
     "CERTIFICATE_NOT_ISSUED": "The letter has not been issued yet.",
     "CHECKLIST_ALREADY_STARTED": "This person already has a checklist of that kind.",
     "CHECKLIST_NOT_CLEAR": "Items are still open; tick the box to lock anyway.",
-    "CHECKLIST_NOT_FOUND": "No checklist has been started for this person.",
     "CLIENT_KEY_NOT_YOURS": "That resend key belongs to somebody else's request.",
     "CONSENT_ALREADY_GRANTED": "A live agreement already exists.",
     "CONSENT_NOT_GRANTED": "There is no agreement to withdraw.",

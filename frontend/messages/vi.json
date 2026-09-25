@@ -744,7 +744,6 @@
     "CERTIFICATE_NOT_ISSUED": "Giấy chưa được cấp nên chưa có văn bản.",
     "CHECKLIST_ALREADY_STARTED": "Người này đã có danh sách việc loại này rồi.",
     "CHECKLIST_NOT_CLEAR": "Còn việc treo; tích ô xác nhận nếu vẫn muốn chốt.",
-    "CHECKLIST_NOT_FOUND": "Chưa mở danh sách việc cho người này.",
     "CLIENT_KEY_NOT_YOURS": "Khoá gửi lại này thuộc về đơn của người khác.",
     "CONSENT_ALREADY_GRANTED": "Đã có một đồng ý còn hiệu lực.",
     "CONSENT_NOT_GRANTED": "Chưa có đồng ý nào để rút.",

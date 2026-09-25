@@ -147,10 +147,10 @@ describe("onboarding checklist (e2e)", () => {
 
   it("shows the open work and takes one off the list when it is finished", async () => {
     const before = await request(http)
-      .get("/checklists/open")
+      .get("/checklists/open?take=200")
       .set("Authorization", `Bearer ${token}`);
     assert.equal(before.status, 200);
-    const mine = (before.body as Task[]).filter((one) => one.title === "Đọc nội quy");
+    const mine = (before.body.rows as Task[]).filter((one) => one.title === "Đọc nội quy");
     assert.equal(mine.length, 1);
 
     const done = await post(`/checklist-tasks/${mine[0]?.id as string}/finish`, { note: "e2e" });
@@ -170,5 +170,36 @@ describe("onboarding checklist (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
     assert.equal(res.status, 200);
     assert.equal((res.body as Run).tasks.length, 3, "work already given out does not vanish");
+  });
+
+  it("answers an empty checklist for somebody with none started, not a fault", async () => {
+    const res = await request(http)
+      .get(`/employees/${idOf.get(BOSS) as number}/checklist?kind=ONBOARDING`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    assert.ok(res.text === "" || res.body === null, "a person with no run came back with one");
+  });
+
+  it("counts open and late work the same way the list filters it", async () => {
+    const read = async (query: string) =>
+      (await request(http).get(`/checklists/open${query}`).set("Authorization", `Bearer ${token}`)).body;
+    const counts = await read("/counts");
+    assert.equal(counts.open, (await read("?take=1")).total);
+    assert.equal(counts.overdue, (await read("?take=1&overdue=true")).total);
+    for (const owner of ["HR", "MANAGER", "SELF"]) {
+      assert.equal(counts.owners[owner], (await read(`?take=1&owner=${owner}`)).total, `${owner} counts apart from its filter`);
+    }
+    const leaving = await read("/counts?kind=OFFBOARDING");
+    assert.equal(leaving.open, (await read("?take=1&kind=OFFBOARDING")).total);
+  });
+
+  it("finds open work by the person's code or the task's title", async () => {
+    const read = async (search: string) =>
+      (await request(http)
+        .get(`/checklists/open?take=200&search=${encodeURIComponent(search)}`)
+        .set("Authorization", `Bearer ${token}`)).body.rows as { run: { employee: { code: string } } }[];
+    const byCode = await read(STARTER);
+    assert.ok(byCode.length > 0 && byCode.every((row) => row.run.employee.code === STARTER), "searching a code found someone else");
+    assert.ok((await read("Cấp máy")).length > 0, "a task title did not match");
   });
 });

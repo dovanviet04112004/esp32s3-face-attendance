@@ -6,8 +6,15 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { CreateTemplateDto, FinishTaskDto, StartRunDto } from "./dto/onboarding.dto.js";
-import { OnboardingService, type RunWithTasks } from "./onboarding.service.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
+import {
+  CreateTemplateDto,
+  FinishTaskDto,
+  ListOpenTasksDto,
+  OpenCountsDto,
+  StartRunDto,
+} from "./dto/onboarding.dto.js";
+import { OnboardingService, type OpenCounts, type OpenTask, type RunWithTasks } from "./onboarding.service.js";
 
 @ApiTags("onboarding")
 @ApiBearerAuth()
@@ -39,8 +46,14 @@ export class OnboardingController {
 
   @Get("checklists/open")
   @ApiOperation({ summary: "Tasks nobody has finished yet, soonest due first" })
-  open(@CurrentViewer() viewer: Viewer): Promise<ChecklistTask[]> {
-    return this.onboarding.open(viewer);
+  open(@CurrentViewer() viewer: Viewer, @Query() query: ListOpenTasksDto): Promise<Page<OpenTask>> {
+    return this.onboarding.open(viewer, query);
+  }
+
+  @Get("checklists/open/counts")
+  @ApiOperation({ summary: "Open tasks, the late ones, and who each waits on" })
+  openCounts(@CurrentViewer() viewer: Viewer, @Query() query: OpenCountsDto): Promise<OpenCounts> {
+    return this.onboarding.openCounts(viewer, query);
   }
 
   @Get("employees/:id/checklist")
@@ -49,7 +62,7 @@ export class OnboardingController {
     @CurrentViewer() viewer: Viewer,
     @Param("id", ParseIntPipe) id: number,
     @Query("kind") kind?: ChecklistKind,
-  ): Promise<RunWithTasks> {
+  ): Promise<RunWithTasks | null> {
     return this.onboarding.run(viewer, id, kind ?? ChecklistKind.ONBOARDING);
   }
 
