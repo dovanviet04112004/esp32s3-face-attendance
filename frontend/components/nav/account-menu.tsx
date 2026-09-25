@@ -57,16 +57,17 @@ export function AccountMenu() {
         render={<Button variant="ghost" shape="square" icon={UserCircleIcon} aria-label={t("account")} />}
       />
       <DropdownMenu.Content align="end" className="min-w-56">
-        <DropdownMenu.Label>{role ? roleName(role) : t("account")}</DropdownMenu.Label>
+        <DropdownMenu.Group>
+          <DropdownMenu.Label>{role ? roleName(role) : t("account")}</DropdownMenu.Label>
+          <DropdownMenu.Separator />
+          <DropdownMenu.LinkItem icon={GearIcon} render={<Link href="/settings" />}>
+            {t("settings")}
+          </DropdownMenu.LinkItem>
+          <DropdownMenu.LinkItem icon={KeyIcon} render={<Link href="/change-password" />}>
+            {t("changePassword")}
+          </DropdownMenu.LinkItem>
+        </DropdownMenu.Group>
         <DropdownMenu.Separator />
-        <DropdownMenu.LinkItem icon={GearIcon} render={<Link href="/settings" />}>
-          {t("settings")}
-        </DropdownMenu.LinkItem>
-        <DropdownMenu.LinkItem icon={KeyIcon} render={<Link href="/change-password" />}>
-          {t("changePassword")}
-        </DropdownMenu.LinkItem>
-        <DropdownMenu.Separator />
-        <DropdownMenu.Label className="text-sm font-medium text-kumo-subtle">{s("themeTitle")}</DropdownMenu.Label>
         <DropdownMenu.RadioGroup
           value={theme}
           onValueChange={(next: string) => {
@@ -75,6 +76,7 @@ export function AccountMenu() {
             applyTheme(picked);
           }}
         >
+          <DropdownMenu.Label className="text-sm font-medium text-kumo-subtle">{s("themeTitle")}</DropdownMenu.Label>
           {(["system", "light", "dark"] as const).map((one) => (
             <DropdownMenu.RadioItem key={one} value={one} icon={THEME_ICON[one]}>
               {s(THEME_KEY[one])}
