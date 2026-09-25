@@ -136,7 +136,8 @@ describe("the requests inbox and ledger (e2e)", () => {
     aliceLeave = await file(ALICE, {
       kind: "LEAVE",
       leaveTypeId: leaveType.id,
-      fromDate: `${YEAR}-03-10`,
+      // Friday to Tuesday over a weekend: three working days, the figure the inbox checks below.
+      fromDate: `${YEAR}-03-08`,
       toDate: `${YEAR}-03-12`,
     });
     bobLeave = await file(BOB, {

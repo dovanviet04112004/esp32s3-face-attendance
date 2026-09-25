@@ -34,10 +34,12 @@ import type { Order } from "./dto/queue.dto.js";
 import type {
   DecideManyDto,
   DecideRequestDto,
+  LeaveDaysQueryDto,
   ListRequestsDto,
   RequestSort,
   SubmitRequestDto,
 } from "./dto/request.dto.js";
+import { LeaveYearService } from "./leave-year.service.js";
 import {
   PERSON_VIEW,
   QUEUE_DESKS,
@@ -69,7 +71,7 @@ const EXPORT_COLUMNS = [
 
 const REQUEST_VIEW = {
   employee: PERSON_VIEW,
-  leaveType: { select: { id: true, code: true, name: true } },
+  leaveType: { select: { id: true, code: true, name: true, paid: true } },
 } satisfies Prisma.RequestInclude;
 
 type Filed = Prisma.RequestGetPayload<{ include: typeof REQUEST_VIEW }>;
@@ -85,6 +87,7 @@ export type RequestRow = Filed & { decidedBy: Decider | null };
 export interface InboxRow extends RequestRow {
   waitedDays: number;
   balanceAfter: number | null;
+  nextBalanceAfter: number | null;
   overlapCount: number | null;
 }
 
@@ -98,6 +101,7 @@ export interface Overlap {
 
 export interface RequestDetail extends RequestRow {
   balance: BalanceAsOf | null;
+  nextBalance: BalanceAsOf | null;
   overlapping: Overlap[];
   mayDecide: boolean;
 }
@@ -129,11 +133,30 @@ export interface BalanceAsOf {
   carriedOver: number;
   taken: number;
   pending: number;
+  carriedOut: number;
   remaining: number;
   bookedAfter: number;
 }
 
-type Countable = Pick<LeaveBalance, "entitled" | "carriedOver" | "taken" | "pending">;
+/** The working days a range charges to one calendar year. */
+export interface YearPart {
+  year: number;
+  days: number;
+}
+
+/** What a proposed leave would charge, and what each year it touches keeps afterwards. */
+export interface LeaveDays {
+  days: number;
+  limited: boolean;
+  parts: (YearPart & { left: number | null })[];
+}
+
+interface Charge {
+  days: number;
+  nextYearDays: number;
+}
+
+type Countable = Pick<LeaveBalance, "entitled" | "carriedOver" | "taken" | "pending" | "carriedOut">;
 
 /** Days still free to book. The one place this subtraction happens. */
 export function freeDays(balance: Countable): number {
@@ -141,8 +164,19 @@ export function freeDays(balance: Countable): number {
     Number(balance.entitled) +
     Number(balance.carriedOver) -
     Number(balance.taken) -
-    Number(balance.pending)
+    Number(balance.pending) -
+    Number(balance.carriedOut)
   );
+}
+
+/** The days a request charges to each year it touches, as stored at filing (KEHOACH 9.5). */
+export function partsOf(held: { fromDate: Date; days: Prisma.Decimal | number; nextYearDays: Prisma.Decimal | number }): YearPart[] {
+  const year = held.fromDate.getUTCFullYear();
+  const next = Number(held.nextYearDays);
+  return [
+    { year, days: Number(held.days) - next },
+    { year: year + 1, days: next },
+  ].filter((part) => part.days > 0);
 }
 
 @Injectable()
@@ -156,6 +190,7 @@ export class LeaveService {
     private readonly timesheet: TimesheetService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
+    private readonly years: LeaveYearService,
   ) {}
 
   private get zone(): string {
@@ -234,12 +269,13 @@ export class LeaveService {
     return this.balancesAsOf(whose, asOf);
   }
 
+  /** An unpaid type has no balance to show: nothing limits it (KEHOACH 9.5). */
   async balancesAsOf(employeeId: number, asOf: Date): Promise<BalanceAsOf[]> {
     const year = asOf.getUTCFullYear();
     const yearEnd = new Date(Date.UTC(year, 11, 31));
     const [rows, later] = await Promise.all([
       this.db.leaveBalance.findMany({
-        where: { employeeId, year },
+        where: { employeeId, year, leaveType: { paid: true } },
         include: { leaveType: { select: { id: true, code: true, name: true, paid: true } } },
         orderBy: { leaveType: { code: "asc" } },
       }),
@@ -251,10 +287,12 @@ export class LeaveService {
           state: { in: ["PENDING", "APPROVED"] },
           fromDate: { gt: asOf, lte: yearEnd },
         },
-        _sum: { days: true },
+        _sum: { days: true, nextYearDays: true },
       }),
     ]);
-    const afterwards = new Map(later.map((one) => [one.leaveTypeId, Number(one._sum.days ?? 0)]));
+    const afterwards = new Map(
+      later.map((one) => [one.leaveTypeId, Number(one._sum.days ?? 0) - Number(one._sum.nextYearDays ?? 0)]),
+    );
     return rows.map((row) => ({
       leaveTypeId: row.leaveTypeId,
       code: row.leaveType.code,
@@ -265,6 +303,7 @@ export class LeaveService {
       carriedOver: Number(row.carriedOver),
       taken: Number(row.taken),
       pending: Number(row.pending),
+      carriedOut: Number(row.carriedOut),
       remaining: freeDays(row),
       bookedAfter: afterwards.get(row.leaveTypeId) ?? 0,
     }));
@@ -305,15 +344,15 @@ export class LeaveService {
       fromAt && toAt && TIMED.includes(body.kind)
         ? Math.round((toAt.getTime() - fromAt.getTime()) / MS_PER_MINUTE)
         : (body.minutes ?? 0);
-    const days = body.halfDay ? HALF : Math.round((to.getTime() - from.getTime()) / MS_PER_DAY) + 1;
+    const type = body.kind === "LEAVE" ? await this.fileableType(body.leaveTypeId) : null;
+    const { days, nextYearDays } = type
+      ? await this.charge(viewer.employeeId, from, to, body.halfDay ?? false)
+      : { days: body.halfDay ? HALF : Math.round((to.getTime() - from.getTime()) / MS_PER_DAY) + 1, nextYearDays: 0 };
     const approverId = await this.approverFor(viewer.employeeId, from);
 
     const file = (): Promise<LeaveRequest> => this.db.$transaction(async (tx) => {
-      if (body.kind === "LEAVE") {
-        if (!body.leaveTypeId) {
-          throw new BadRequestException("LEAVE_TYPE_REQUIRED");
-        }
-        await this.hold(tx, viewer.employeeId as number, body.leaveTypeId, from.getUTCFullYear(), days);
+      if (type) {
+        await this.hold(tx, viewer.employeeId as number, type, partsOf({ fromDate: from, days, nextYearDays }));
       }
       try {
         return await tx.request.create({
@@ -327,6 +366,7 @@ export class LeaveService {
             halfDay: body.halfDay ?? false,
             dayPart: body.halfDay ? (body.dayPart ?? null) : null,
             days,
+            nextYearDays,
             minutes,
             fromAt,
             toAt,
@@ -387,6 +427,76 @@ export class LeaveService {
     }
   }
 
+  /** What a proposed leave would charge per year, by the same count filing uses, so a browser never counts a calendar. */
+  async leaveDays(viewer: Viewer, query: LeaveDaysQueryDto): Promise<LeaveDays> {
+    if (viewer.employeeId === null) {
+      throw new ForbiddenException("NOT_AN_EMPLOYEE");
+    }
+    const from = new Date(query.fromDate);
+    const to = new Date(query.toDate);
+    if (to < from) {
+      throw new BadRequestException("DATE_RANGE_BACKWARDS");
+    }
+    if (query.halfDay && from.getTime() !== to.getTime()) {
+      throw new BadRequestException("HALF_DAY_ONE_DAY_ONLY");
+    }
+    const type = query.leaveTypeId ? await this.fileableType(query.leaveTypeId) : null;
+    const charge = await this.charge(viewer.employeeId, from, to, query.halfDay ?? false);
+    const parts = partsOf({ fromDate: from, ...charge });
+    const whose = viewer.employeeId;
+    const lefts = await Promise.all(
+      parts.map(async (part) => {
+        if (!type?.paid) {
+          return null;
+        }
+        const key = { employeeId: whose, leaveTypeId: type.id };
+        const row = await this.db.leaveBalance.findUnique({
+          where: { employeeId_leaveTypeId_year: { ...key, year: part.year } },
+        });
+        return (row ? freeDays(row) : await this.years.projected(key, part.year)) - part.days;
+      }),
+    );
+    return {
+      days: charge.days,
+      limited: type?.paid ?? true,
+      parts: parts.map((part, at) => ({ ...part, left: lefts[at] ?? null })),
+    };
+  }
+
+  private async fileableType(id: string | undefined): Promise<Pick<LeaveType, "id" | "paid">> {
+    if (!id) {
+      throw new BadRequestException("LEAVE_TYPE_REQUIRED");
+    }
+    const type = await this.db.leaveType.findUnique({ where: { id }, select: { id: true, paid: true, active: true } });
+    // A retired type stays on the requests that named it and is offered to no new one.
+    if (!type?.active) {
+      throw new NotFoundException("LEAVE_TYPE_NOT_FOUND");
+    }
+    return type;
+  }
+
+  /** Working days only, each charged to the calendar year it falls in (KEHOACH 9.5). */
+  private async charge(employeeId: number, from: Date, to: Date, halfDay: boolean): Promise<Charge> {
+    const startYear = from.getUTCFullYear();
+    if (to.getUTCFullYear() > startYear + 1) {
+      throw new BadRequestException("LEAVE_SPANS_YEARS");
+    }
+    const working = await this.timesheet.workdays(employeeId, from, to);
+    if (halfDay) {
+      if (working.length === 0) {
+        throw new BadRequestException("HALF_DAY_NOT_WORKING");
+      }
+      return { days: HALF, nextYearDays: 0 };
+    }
+    if (working.length === 0) {
+      throw new BadRequestException("LEAVE_NO_WORKING_DAY");
+    }
+    return {
+      days: working.length,
+      nextYearDays: working.filter((day) => day.getUTCFullYear() > startYear).length,
+    };
+  }
+
   /** One request, if this viewer may know it exists: its tree, or waiting on them to decide. */
   async one(viewer: Viewer, id: string): Promise<RequestDetail> {
     const held = await this.db.request.findUnique({ where: { id }, include: REQUEST_VIEW });
@@ -398,16 +508,20 @@ export class LeaveService {
     if (visible !== null && !visible.includes(held.employeeId) && refusal !== null) {
       throw new NotFoundException("REQUEST_NOT_FOUND");
     }
-    const [[row], balance, overlapping] = await Promise.all([
-      this.withDeciders([held]),
+    const balanceOn = (asOf: Date): Promise<BalanceAsOf | null> =>
       held.kind === "LEAVE" && held.leaveTypeId
-        ? this.balancesAsOf(held.employeeId, held.fromDate).then(
+        ? this.balancesAsOf(held.employeeId, asOf).then(
             (rows) => rows.find((one) => one.leaveTypeId === held.leaveTypeId) ?? null,
           )
-        : Promise.resolve(null),
+        : Promise.resolve(null);
+    const split = Number(held.nextYearDays) > 0;
+    const [[row], balance, nextBalance, overlapping] = await Promise.all([
+      this.withDeciders([held]),
+      balanceOn(held.fromDate),
+      split ? balanceOn(new Date(Date.UTC(held.fromDate.getUTCFullYear() + 1, 0, 1))) : Promise.resolve(null),
       held.kind === "LEAVE" ? this.overlapping(held) : Promise.resolve([]),
     ]);
-    return { ...row, balance, overlapping, mayDecide: refusal === null };
+    return { ...row, balance, nextBalance, overlapping, mayDecide: refusal === null };
   }
 
   /** Approve or turn down, moving the balance only on the way through. */
@@ -658,40 +772,44 @@ export class LeaveService {
     const leave = rows.filter((row) => row.kind === "LEAVE");
     const [after, overlaps] = await Promise.all([this.balancesAfter(leave), this.overlapCounts(leave)]);
     const now = new Date();
-    return rows.map((row) => ({
-      ...row,
-      waitedDays: waitedDays(row.createdAt, now),
-      balanceAfter: row.kind === "LEAVE" ? (after.get(row.id) ?? null) : null,
-      overlapCount: row.kind === "LEAVE" ? (overlaps.get(row.id) ?? 0) : null,
-    }));
+    return rows.map((row) => {
+      const [first, second] = after.get(row.id) ?? [];
+      return {
+        ...row,
+        waitedDays: waitedDays(row.createdAt, now),
+        balanceAfter: first ?? null,
+        nextBalanceAfter: second ?? null,
+        overlapCount: row.kind === "LEAVE" ? (overlaps.get(row.id) ?? 0) : null,
+      };
+    });
   }
 
   // A waiting request already holds its days in `pending`, so what is free is what is left after it.
-  private async balancesAfter(rows: RequestRow[]): Promise<Map<string, number>> {
-    const keyed = rows.filter((row) => row.leaveTypeId !== null);
+  private async balancesAfter(rows: RequestRow[]): Promise<Map<string, [number | undefined, number | undefined]>> {
+    const keyed = rows.filter((row) => row.leaveTypeId !== null && row.leaveType?.paid !== false);
     if (keyed.length === 0) {
       return new Map();
     }
+    const yearsOf = (row: RequestRow): number[] => {
+      const year = row.fromDate.getUTCFullYear();
+      return Number(row.nextYearDays) > 0 ? [year, year + 1] : [year];
+    };
     const balances = await this.db.leaveBalance.findMany({
       where: {
-        OR: keyed.map((row) => ({
-          employeeId: row.employeeId,
-          leaveTypeId: row.leaveTypeId as string,
-          year: row.fromDate.getUTCFullYear(),
-        })),
+        OR: keyed.flatMap((row) =>
+          yearsOf(row).map((year) => ({ employeeId: row.employeeId, leaveTypeId: row.leaveTypeId as string, year })),
+        ),
       },
     });
     const free = new Map(
       balances.map((one) => [`${one.employeeId}:${one.leaveTypeId}:${one.year}`, freeDays(one)]),
     );
-    const out = new Map<string, number>();
-    for (const row of keyed) {
-      const left = free.get(`${row.employeeId}:${row.leaveTypeId}:${row.fromDate.getUTCFullYear()}`);
-      if (left !== undefined) {
-        out.set(row.id, left);
-      }
-    }
-    return out;
+    return new Map(
+      keyed.map((row) => {
+        const [first, second] = yearsOf(row).map((year) => free.get(`${row.employeeId}:${row.leaveTypeId}:${year}`));
+        return [row.id, [first, second]];
+      }),
+    );
   }
 
   /** Teammates, meaning people under the same manager, off on overlapping dates: one query per page. */
@@ -813,45 +931,52 @@ export class LeaveService {
     return rows.map((row) => row.fromId);
   }
 
-  // Check and hold in one statement: two filings reading the same balance would both pass a separate check.
-  private async hold(tx: Prisma.TransactionClient, employeeId: number, leaveTypeId: string, year: number, days: number): Promise<void> {
-    const held = await tx.$executeRaw`
-      UPDATE "LeaveBalance"
-         SET "pending" = "pending" + ${days}::numeric, "updatedAt" = now()
-       WHERE "employeeId" = ${employeeId} AND "leaveTypeId" = ${leaveTypeId} AND "year" = ${year}
-         AND "entitled" + "carriedOver" - "taken" - "pending" >= ${days}::numeric
-    `;
-    if (held !== 1) {
-      throw new ConflictException("LEAVE_BALANCE_SHORT");
+  /** Every year the request touches, or none: the caller's transaction rolls back a short second year. */
+  private async hold(
+    tx: Prisma.TransactionClient,
+    employeeId: number,
+    type: Pick<LeaveType, "id" | "paid">,
+    parts: YearPart[],
+  ): Promise<void> {
+    for (const part of parts) {
+      await this.years.ensure(tx, { employeeId, leaveTypeId: type.id }, part.year);
+      // Check and hold in one statement: two filings reading the same balance would both pass a separate check.
+      const held = await tx.$executeRaw`
+        UPDATE "LeaveBalance"
+           SET "pending" = "pending" + ${part.days}::numeric, "updatedAt" = now()
+         WHERE "employeeId" = ${employeeId} AND "leaveTypeId" = ${type.id} AND "year" = ${part.year}
+           AND (${!type.paid}::boolean
+                OR "entitled" + "carriedOver" - "taken" - "pending" - "carriedOut" >= ${part.days}::numeric)
+      `;
+      if (held !== 1) {
+        throw new ConflictException("LEAVE_BALANCE_SHORT");
+      }
     }
   }
 
   private async settle(tx: Prisma.TransactionClient, held: LeaveRequest, approved: boolean): Promise<void> {
-    const key = {
-      employeeId: held.employeeId,
-      leaveTypeId: held.leaveTypeId as string,
-      year: held.fromDate.getUTCFullYear(),
-    };
-    await tx.leaveBalance.update({
-      where: { employeeId_leaveTypeId_year: key },
-      data: {
-        pending: { decrement: held.days },
-        ...(approved ? { taken: { increment: held.days } } : {}),
-      },
-    });
+    for (const part of partsOf(held)) {
+      await tx.leaveBalance.update({
+        where: { employeeId_leaveTypeId_year: this.keyOf(held, part.year) },
+        data: {
+          pending: { decrement: part.days },
+          ...(approved ? { taken: { increment: part.days } } : {}),
+        },
+      });
+    }
   }
 
   private async release(tx: Prisma.TransactionClient, held: LeaveRequest): Promise<void> {
-    await tx.leaveBalance.update({
-      where: {
-        employeeId_leaveTypeId_year: {
-          employeeId: held.employeeId,
-          leaveTypeId: held.leaveTypeId as string,
-          year: held.fromDate.getUTCFullYear(),
-        },
-      },
-      data: { pending: { decrement: held.days } },
-    });
+    for (const part of partsOf(held)) {
+      await tx.leaveBalance.update({
+        where: { employeeId_leaveTypeId_year: this.keyOf(held, part.year) },
+        data: { pending: { decrement: part.days } },
+      });
+    }
+  }
+
+  private keyOf(held: LeaveRequest, year: number): { employeeId: number; leaveTypeId: string; year: number } {
+    return { employeeId: held.employeeId, leaveTypeId: held.leaveTypeId as string, year };
   }
 }
 

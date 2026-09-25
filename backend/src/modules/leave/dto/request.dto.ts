@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -110,6 +110,28 @@ export class BalanceQueryDto {
   employeeId?: number;
 }
 
+export class LeaveDaysQueryDto {
+  @ApiProperty({ example: "2026-12-30" })
+  @IsDateString()
+  fromDate!: string;
+
+  @ApiProperty({ example: "2027-01-03" })
+  @IsDateString()
+  toDate!: string;
+
+  @ApiPropertyOptional({ description: "Half a day, on one working date" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  halfDay?: boolean;
+
+  @ApiPropertyOptional({ description: "With it, each year also says what is left after this leave" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ID_MAX)
+  leaveTypeId?: string;
+}
+
 export class DecideRequestDto {
   @ApiProperty({ description: "True approves it, false turns it down" })
   @IsBoolean()
@@ -174,6 +196,9 @@ export class LeaveTypeRef {
 
   @ApiProperty()
   name!: string;
+
+  @ApiProperty({ description: "False: no balance limits it (KEHOACH 9.5)" })
+  paid!: boolean;
 }
 
 export class RequestView {
@@ -210,8 +235,11 @@ export class RequestView {
   @ApiProperty({ enum: DAY_PARTS, nullable: true })
   dayPart!: string | null;
 
-  @ApiProperty({ example: "3", description: "A decimal, sent as a string" })
+  @ApiProperty({ example: "3", description: "Working days for leave, a decimal sent as a string" })
   days!: string;
+
+  @ApiProperty({ example: "0", description: "The part of days charged to the year after fromDate's" })
+  nextYearDays!: string;
 
   @ApiProperty()
   minutes!: number;
@@ -245,8 +273,11 @@ export class InboxRowView extends RequestView {
   @ApiProperty({ description: "Whole days since it was filed" })
   waitedDays!: number;
 
-  @ApiProperty({ nullable: true, description: "Leave only: days left of this kind once this is granted" })
+  @ApiProperty({ nullable: true, description: "Leave only: days left of this kind in fromDate's year once this is granted" })
   balanceAfter!: number | null;
+
+  @ApiProperty({ nullable: true, description: "A request crossing into the next year: that year's balance once granted" })
+  nextBalanceAfter!: number | null;
 
   @ApiProperty({ nullable: true, description: "Leave only: teammates under the same manager off on these dates" })
   overlapCount!: number | null;
@@ -329,6 +360,9 @@ export class BalanceView {
   @ApiProperty()
   pending!: number;
 
+  @ApiProperty({ description: "Carried into the next year when this one closed" })
+  carriedOut!: number;
+
   @ApiProperty()
   remaining!: number;
 
@@ -354,12 +388,37 @@ export class OverlapView {
 }
 
 export class RequestDetailView extends RequestView {
-  @ApiProperty({ type: BalanceView, nullable: true, description: "The balance of this leave kind in its year" })
+  @ApiProperty({ type: BalanceView, nullable: true, description: "The balance of this leave kind in fromDate's year" })
   balance!: BalanceView | null;
+
+  @ApiProperty({ type: BalanceView, nullable: true, description: "The next year's, when the request crosses into it" })
+  nextBalance!: BalanceView | null;
 
   @ApiProperty({ type: [OverlapView], description: "Teammates off on the same dates, twenty at most" })
   overlapping!: OverlapView[];
 
   @ApiProperty({ description: "Whether this viewer may approve or turn it down now" })
   mayDecide!: boolean;
+}
+
+export class LeaveDaysPartView {
+  @ApiProperty()
+  year!: number;
+
+  @ApiProperty({ description: "Working days charged to this year" })
+  days!: number;
+
+  @ApiProperty({ nullable: true, description: "What this year keeps afterwards; null without a type, or for an unpaid one" })
+  left!: number | null;
+}
+
+export class LeaveDaysView {
+  @ApiProperty({ description: "Working days charged in all" })
+  days!: number;
+
+  @ApiProperty({ description: "False for an unpaid type, which no balance limits" })
+  limited!: boolean;
+
+  @ApiProperty({ type: [LeaveDaysPartView] })
+  parts!: LeaveDaysPartView[];
 }

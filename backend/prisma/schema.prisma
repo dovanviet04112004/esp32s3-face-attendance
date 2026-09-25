@@ -638,6 +638,9 @@ model LeaveBalance {
   // Held by requests still waiting: without it three overlapping requests all
   // pass the check and all get approved (KEHOACH 9.5).
   pending     Decimal   @default(0) @db.Decimal(5, 1)
+  carriedOut  Decimal   @default(0) @db.Decimal(5, 1)
+  // Set once the carry-over left this year; a second close would carry it twice (KEHOACH 9.5).
+  closedAt    DateTime?
   updatedAt   DateTime  @updatedAt
   employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
@@ -750,6 +753,8 @@ model Request {
   halfDay       Boolean      @default(false)
   dayPart       DayPart?
   days          Decimal      @default(0) @db.Decimal(5, 1)
+  // The part of `days` charged to the year after fromDate's, stored at filing (KEHOACH 9.5).
+  nextYearDays  Decimal      @default(0) @db.Decimal(5, 1)
   minutes       Int          @default(0)
   reason        String
   attachmentUrl String?

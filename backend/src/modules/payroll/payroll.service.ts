@@ -30,6 +30,7 @@ import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type PayrollJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { freeDays } from "../leave/leave.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
 import {
@@ -99,12 +100,6 @@ export interface SettlementSheet {
 }
 
 /** Entitlement plus what carried over, less what is taken or held. */
-function remainingDays(row: { entitled: Prisma.Decimal; carriedOver: Prisma.Decimal; taken: Prisma.Decimal; pending: Prisma.Decimal }): number {
-  return (
-    Number(row.entitled) + Number(row.carriedOver) - Number(row.taken) - Number(row.pending)
-  );
-}
-
 interface DayTally {
   employeeId: number;
   workedDays: number;
@@ -606,8 +601,8 @@ export class PayrollService {
 
     const people = await this.db.employee.findMany({
       where: {
-        // Offboarding clears `active` on the day it is pressed, so filtering on
-        // it drops a mid-month leaver and the days they worked (KEHOACH 9.18.8).
+        // A closed record has `active` off, so filtering on it alone drops a
+        // mid-month leaver and the days they worked (KEHOACH 9.18.8).
         OR: [{ active: true }, { leaveDate: { gte: period.startDate } }],
         ...(period.legalEntityId ? { legalEntityId: period.legalEntityId } : {}),
         ...(run.departmentId ? { departmentId: run.departmentId } : {}),
@@ -1532,7 +1527,7 @@ export class PayrollService {
         const daily = mulDiv(toDong(one.baseSalary), kHundred, standardDays);
         const unused = balances
           .filter((row) => row.employeeId === one.id)
-          .reduce((sum, row) => sum + remainingDays(row), 0);
+          .reduce((sum, row) => sum + freeDays(row), 0);
         return {
           employeeId: one.id,
           code: one.code,
@@ -1695,7 +1690,7 @@ export class PayrollService {
       const daily = mulDiv(toDong(one.baseSalary), kHundred, calcPolicy.standardDayHundredths);
       const unusedHundredths = balances
         .filter((row) => row.employeeId === one.id)
-        .reduce((sum, row) => sum + BigInt(Math.round(remainingDays(row) * 100)), 0n);
+        .reduce((sum, row) => sum + BigInt(Math.round(freeDays(row) * 100)), 0n);
       const payout = unusedHundredths > 0n ? mulDiv(daily, unusedHundredths, kHundred) : 0n;
       const own = items.filter((item) => item.employeeId === one.id);
 

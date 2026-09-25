@@ -32,6 +32,8 @@ import {
   DecideRequestDto,
   InboxCountsView,
   InboxPageView,
+  LeaveDaysQueryDto,
+  LeaveDaysView,
   ListRequestsDto,
   RequestDetailView,
   RequestPageView,
@@ -44,6 +46,7 @@ import {
   type DecideManyResult,
   type InboxCounts,
   type InboxRow,
+  type LeaveDays,
   type RequestDetail,
   type RequestRow,
 } from "./leave.service.js";
@@ -104,11 +107,25 @@ export class LeaveController {
     return this.leave.balancesFor(viewer, query.employeeId, new Date(query.asOf ?? Date.now()));
   }
 
+  @Get("leave-days")
+  @ApiOperation({ summary: "The working days a leave range would charge the caller, per calendar year (KEHOACH 9.5)" })
+  @ApiOkResponse({ type: LeaveDaysView })
+  @ApiBadRequestResponse({
+    type: ErrorBody,
+    description: "LEAVE_NO_WORKING_DAY, HALF_DAY_NOT_WORKING, LEAVE_SPANS_YEARS, DATE_RANGE_BACKWARDS",
+  })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "NOT_AN_EMPLOYEE" })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "LEAVE_TYPE_NOT_FOUND: unknown or retired" })
+  leaveDays(@CurrentViewer() viewer: Viewer, @Query() query: LeaveDaysQueryDto): Promise<LeaveDays> {
+    return this.leave.leaveDays(viewer, query);
+  }
+
   @Post("requests")
   @ApiOperation({ summary: "File leave, overtime, a correction or a trip (KEHOACH 9.5)" })
   @ApiCreatedResponse({ type: RequestView, description: "A repeated clientKey answers with the request already filed" })
   @ApiConflictResponse({ type: ErrorBody, description: "LEAVE_BALANCE_SHORT, LEAVE_OVERLAP" })
   @ApiForbiddenResponse({ type: ErrorBody, description: "NOT_AN_EMPLOYEE, CLIENT_KEY_NOT_YOURS" })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "LEAVE_TYPE_NOT_FOUND: unknown or retired" })
   submit(@CurrentViewer() viewer: Viewer, @Body() body: SubmitRequestDto): Promise<LeaveRequest> {
     return this.leave.submit(viewer, body);
   }

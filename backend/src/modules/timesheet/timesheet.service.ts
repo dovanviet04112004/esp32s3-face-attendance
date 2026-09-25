@@ -55,6 +55,22 @@ export function branchOf(departmentId: string): Prisma.Sql {
     SELECT "id" FROM branch`;
 }
 
+type DatedHoliday = { legalEntityId: string | null; paid: boolean };
+
+/** What one date is to somebody of a legal entity, given the holidays declared on that date.
+ *  The one definition of a working day: the day build writes it, leave is charged by it (KEHOACH 9.5).
+ */
+export function calendarOn(date: Date, holidays: DatedHoliday[], legalEntityId: string | null): DayCalendar {
+  // An entity's own holiday outranks a company-wide one on the same date.
+  const holiday =
+    holidays.find((one) => one.legalEntityId !== null && one.legalEntityId === legalEntityId) ??
+    holidays.find((one) => one.legalEntityId === null);
+  if (holiday) {
+    return holiday.paid ? "HOLIDAY" : "UNPAID_HOLIDAY";
+  }
+  return [SATURDAY, SUNDAY].includes(date.getUTCDay()) ? "WEEKEND" : "WORKDAY";
+}
+
 /** A search term as an ILIKE pattern, with the wildcards a person typed taken literally. */
 export function likeOf(term: string): string {
   return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
@@ -435,6 +451,27 @@ export class TimesheetService {
     return localDay(new Date(), this.zone);
   }
 
+  /** The dates in a range this person is expected at work, in order, by `calendarOn`.
+   *  @ctx request | reads Employee and Holiday
+   */
+  async workdays(employeeId: number, from: Date, to: Date): Promise<Date[]> {
+    const [person, holidays] = await Promise.all([
+      this.db.employee.findUnique({ where: { id: employeeId }, select: { legalEntityId: true } }),
+      this.db.holiday.findMany({
+        where: { date: { gte: from, lte: to } },
+        select: { date: true, legalEntityId: true, paid: true },
+      }),
+    ]);
+    const working: Date[] = [];
+    for (let at = new Date(from); at <= to; at.setUTCDate(at.getUTCDate() + 1)) {
+      const on = holidays.filter((one) => one.date.getTime() === at.getTime());
+      if (calendarOn(at, on, person?.legalEntityId ?? null) === "WORKDAY") {
+        working.push(new Date(at));
+      }
+    }
+    return working;
+  }
+
   /** Fold one local day's punches into one row per person.
    *  @ctx queue | blocking | safe to run again: it upserts on (employee, date)
    */
@@ -453,7 +490,7 @@ export class TimesheetService {
         orderBy: { ts: "asc" },
       }),
       this.db.employee.findMany({
-        // Offboarding in advance clears `active` ahead of the last day, which still gets built.
+        // A last day is built after its record closes (KEHOACH 9.14), so `active` alone drops it.
         where: { OR: [{ active: true }, { leaveDate: { gte: date } }] },
         select: { id: true, legalEntityId: true },
       }),
@@ -489,26 +526,15 @@ export class TimesheetService {
       }
     }
 
-    const weekend = [SATURDAY, SUNDAY].includes(date.getUTCDay());
     const onLeave = new Set(
       approved.filter((row) => row.kind === "LEAVE").map((row) => row.employeeId),
     );
     const offSite = new Set(
       approved.filter((row) => row.kind !== "LEAVE").map((row) => row.employeeId),
     );
-    const calendarOf = (legalEntityId: string | null): DayCalendar => {
-      // An entity's own holiday outranks a company-wide one on the same date.
-      const holiday =
-        holidays.find((one) => one.legalEntityId !== null && one.legalEntityId === legalEntityId) ??
-        holidays.find((one) => one.legalEntityId === null);
-      if (holiday) {
-        return holiday.paid ? "HOLIDAY" : "UNPAID_HOLIDAY";
-      }
-      return weekend ? "WEEKEND" : "WORKDAY";
-    };
     const rows = staff.map((person) =>
       this.dayOf(person.id, date, seen.get(person.id), shifts.get(person.id), {
-        calendar: calendarOf(person.legalEntityId),
+        calendar: calendarOn(date, holidays, person.legalEntityId),
         leave: onLeave.has(person.id),
         offSite: offSite.has(person.id),
       }),
