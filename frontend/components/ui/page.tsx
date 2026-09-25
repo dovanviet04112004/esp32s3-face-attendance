@@ -184,7 +184,7 @@ export function PageLayout({ children, aside, extra }: LayoutProps) {
         </div>
         <div
           style={{ "--aside-lead": `${lead}px` } as CSSProperties}
-          className="flex h-fit w-full shrink-0 flex-col gap-4 @5xl/page:sticky @5xl/page:top-[calc(82px+env(safe-area-inset-top))] @5xl/page:-m-1 @5xl/page:mt-[calc(var(--aside-lead)-0.25rem)] @5xl/page:max-h-[calc(100svh-106px-env(safe-area-inset-top))] @5xl/page:w-[388px] @5xl/page:overflow-y-auto @5xl/page:overscroll-contain @5xl/page:p-1"
+          className="flex h-fit w-full shrink-0 flex-col gap-4 *:shrink-0 @5xl/page:sticky @5xl/page:top-[calc(82px+env(safe-area-inset-top))] @5xl/page:-m-1 @5xl/page:mt-[calc(var(--aside-lead)-0.25rem)] @5xl/page:max-h-[calc(100svh-106px-env(safe-area-inset-top))] @5xl/page:w-[388px] @5xl/page:overflow-y-auto @5xl/page:overscroll-contain @5xl/page:p-1"
         >
           {aside}
           {extra}
