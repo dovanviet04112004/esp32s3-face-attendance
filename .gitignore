@@ -113,3 +113,9 @@ frontend/next-env.d.ts
 
 # TypeScript output built only to run the e2e suite
 dist-test/
+
+# Android shell (KEHOACH 9.21.7): only its manifest and build script are sources; the keystore and
+# signing.env are secrets like age.key, the Gradle project and APK are rebuilt
+/android/*
+!/android/twa-manifest.json
+!/android/build.sh

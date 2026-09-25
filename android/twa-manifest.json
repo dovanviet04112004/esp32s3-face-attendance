@@ -1,0 +1,61 @@
+{
+  "packageId": "vn.io.cckiosk.nhanluc",
+  "host": "app.cckiosk.io.vn",
+  "name": "Nhân Lực",
+  "launcherName": "Nhân Lực",
+  "display": "standalone",
+  "orientation": "default",
+  "themeColor": "#FBFBFB",
+  "themeColorDark": "#030303",
+  "navigationColor": "#FBFBFB",
+  "navigationColorDark": "#030303",
+  "navigationDividerColor": "#FBFBFB",
+  "navigationDividerColorDark": "#030303",
+  "backgroundColor": "#FBFBFB",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "fullScopeUrl": "https://app.cckiosk.io.vn/",
+  "webManifestUrl": "https://app.cckiosk.io.vn/manifest.webmanifest",
+  "iconUrl": "https://app.cckiosk.io.vn/icon-512.png",
+  "maskableIconUrl": "https://app.cckiosk.io.vn/icon-maskable.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./nhanluc.keystore",
+    "alias": "nhanluc"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Xin nghỉ",
+      "shortName": "Xin nghỉ",
+      "url": "/vi/me/requests?new=LEAVE",
+      "chosenIconUrl": "https://app.cckiosk.io.vn/icon-192.png"
+    },
+    {
+      "name": "Phiếu lương",
+      "shortName": "Phiếu lương",
+      "url": "/vi/me/payslips",
+      "chosenIconUrl": "https://app.cckiosk.io.vn/icon-192.png"
+    },
+    {
+      "name": "Lịch ca",
+      "shortName": "Lịch ca",
+      "url": "/vi/me/shifts",
+      "chosenIconUrl": "https://app.cckiosk.io.vn/icon-192.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "minSdkVersion": 21,
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": []
+}
