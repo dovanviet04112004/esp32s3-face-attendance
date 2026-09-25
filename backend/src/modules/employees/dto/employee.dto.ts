@@ -631,6 +631,7 @@ export const SKIP_REASONS = [
   "CONSENT_MISSING",
   "ALREADY_ON_KIOSK",
   "ALREADY_ON_SHIFT",
+  "SELF",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
@@ -699,6 +700,8 @@ export class BulkEnrollDto extends BulkSelectionDto {
   @Matches(DEVICE_ID)
   deviceId!: string;
 }
+
+export class BulkOffboardDto extends IntersectionType(BulkSelectionDto, OffboardDto) {}
 
 export class BulkSkipView {
   @ApiProperty()
@@ -818,4 +821,43 @@ export class EnrollPlanView {
 
   @ApiProperty({ description: "The kiosk's roster counter after the run" })
   rosterVersion!: number;
+}
+
+export class LeavingRowView {
+  @ApiProperty()
+  employeeId!: number;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  fullName!: string;
+
+  @ApiProperty({ description: "Issued assets they still hold" })
+  assets!: number;
+
+  @ApiProperty({ description: "Their requests nobody has decided" })
+  requests!: number;
+
+  @ApiProperty({ description: "Paid advances not yet taken back" })
+  advances!: number;
+}
+
+export class LeavingPlanView {
+  @ApiProperty()
+  applied!: boolean;
+
+  @ApiProperty({ type: String, format: "date" })
+  leaveDate!: string;
+
+  @ApiProperty({
+    description: "true: the last day is today or behind, so the records close on the people queue right after the write",
+  })
+  closesNow!: boolean;
+
+  @ApiProperty({ type: [LeavingRowView] })
+  rows!: LeavingRowView[];
+
+  @ApiProperty({ type: [BulkSkipView] })
+  skipped!: BulkSkipView[];
 }

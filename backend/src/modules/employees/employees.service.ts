@@ -18,7 +18,7 @@ import { toExcelCsv } from "../../common/csv.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { JOB, QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
+import { JOB, QUEUE, type LeavingsNowJob, type PasswordSetupJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { AuthService } from "../auth/auth.service.js";
@@ -1405,6 +1405,25 @@ export class EmployeesService implements OnModuleInit {
       }
     }
     return closed;
+  }
+
+  /** Close these records through `through`, one by one in the actor's name, and answer the ones this pass closed. */
+  async closeMany(employeeIds: number[], through: string, actorId: string): Promise<number[]> {
+    const closed: number[] = [];
+    for (const id of employeeIds) {
+      if (await this.close(id, through, actorId)) {
+        closed.push(id);
+      }
+    }
+    return closed;
+  }
+
+  /** Queue the closing of records whose last day is today or behind (KEHOACH 9.14).
+   *  @ctx task | enqueues one leavings-now job
+   */
+  async closeSoon(employeeIds: number[], actorId: string): Promise<void> {
+    const job: LeavingsNowJob = { type: JOB.leavingsNow, employeeIds, through: this.today(), actorId };
+    await this.queues[QUEUE.people].add(JOB.leavingsNow, job);
   }
 
   // Read after a guarded write missed, so the code names what actually stood in the way.

@@ -8,10 +8,12 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import { UNUSABLE_PASSWORD } from "../auth/password.js";
 import { EnrollmentService } from "../enrollment/enrollment.service.js";
+import { dayAsDate } from "../timesheet/local-day.js";
 import { UsersService } from "../users/users.service.js";
 import {
   BULK_MAX,
   type BulkEnrollDto,
+  type BulkOffboardDto,
   type BulkPlacementDto,
   type BulkSelectionDto,
   type PlacementField,
@@ -93,6 +95,23 @@ export interface EnrollPlan {
   rows: EnrollRow[];
   skipped: BulkSkip[];
   rosterVersion: number;
+}
+
+export interface LeavingRow {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  assets: number;
+  requests: number;
+  advances: number;
+}
+
+export interface LeavingPlan {
+  applied: boolean;
+  leaveDate: string;
+  closesNow: boolean;
+  rows: LeavingRow[];
+  skipped: BulkSkip[];
 }
 
 export function skipOf(employeeId: number, person: { code: string; fullName: string } | null, reason: SkipReason): BulkSkip {
@@ -218,8 +237,19 @@ function kioskSkip(person: { active: boolean; consents: unknown[]; enrollments: 
   return person.enrollments.some((pair) => ON_KIOSK.has(pair.state)) ? "ALREADY_ON_KIOSK" : null;
 }
 
+/** Why POST /employees/:id/offboard would refuse this person, or why a batch must leave its own clicker alone. */
+function leavingSkip(person: { id: number; active: boolean; leaveDate: Date | null }, self: number | null): SkipReason | null {
+  if (!person.active) {
+    return "EMPLOYEE_HAS_LEFT";
+  }
+  if (person.leaveDate !== null) {
+    return "LEAVING_SCHEDULED";
+  }
+  return person.id === self ? "SELF" : null;
+}
+
 /**
- * The four things the directory does to many people at once (KEHOACH 9.20). Each previews by default,
+ * The five things the directory does to many people at once (KEHOACH 9.20). Each previews by default,
  * holds every person to the rules of the single action, and writes in one transaction when asked.
  */
 @Injectable()
@@ -485,6 +515,94 @@ export class BulkService {
       })),
     );
     return { applied: true, deviceId: device.id, rows: done, skipped: [...skipped, ...raced], rosterVersion: sent.rosterVersion };
+  }
+
+  /** Who one last day would reach and what each still holds, as POST /employees/:id/offboard decides.
+   *  apply=true writes the day in one transaction; a day already here queues the closing (KEHOACH 9.14).
+   */
+  async offboard(viewer: Viewer, body: BulkOffboardDto, apply: boolean): Promise<LeavingPlan> {
+    const lastDay = body.leaveDate.slice(0, 10);
+    const closesNow = lastDay <= this.employees.today();
+    const chosen = await this.resolve(viewer, body);
+    const people = await this.db.employee.findMany({
+      where: { id: { in: chosen.ids } },
+      select: { id: true, code: true, fullName: true, active: true, leaveDate: true },
+      orderBy: { code: "asc" },
+    });
+    const skipped = [...chosen.missing];
+    const going = people.filter((person) => {
+      const reason = leavingSkip(person, viewer.employeeId);
+      if (reason) {
+        skipped.push(skipOf(person.id, person, reason));
+      }
+      return reason === null;
+    });
+    const held = await this.heldBy(going.map((one) => one.id));
+    const rows = going.map((person): LeavingRow => ({
+      employeeId: person.id,
+      code: person.code,
+      fullName: person.fullName,
+      assets: held.assets.get(person.id) ?? 0,
+      requests: held.requests.get(person.id) ?? 0,
+      advances: held.advances.get(person.id) ?? 0,
+    }));
+    const plan: LeavingPlan = { applied: false, leaveDate: lastDay, closesNow, rows, skipped };
+    if (!apply || rows.length === 0) {
+      return plan;
+    }
+
+    const ids = rows.map((one) => one.employeeId);
+    await this.db.$transaction(
+      async (tx) => {
+        const written = await tx.employee.updateMany({
+          where: { id: { in: ids }, active: true, leaveDate: null },
+          data: { leaveDate: dayAsDate(lastDay) },
+        });
+        if (written.count !== ids.length) {
+          throw new ConflictException("SELECTION_CHANGED");
+        }
+      },
+      { timeout: kTransactionMs, maxWait: kTransactionMs },
+    );
+    await this.audit.recordMany(
+      rows.map((one): AuditEntry => ({
+        actorId: viewer.userId,
+        action: AUDIT_ACTIONS.EMPLOYEE_OFFBOARD,
+        subject: AUDIT_SUBJECTS.EMPLOYEE,
+        subjectId: String(one.employeeId),
+        meta: { code: one.code, leaveDate: lastDay, reason: body.reason, bulk: true },
+      })),
+    );
+    if (closesNow) {
+      await this.employees.closeSoon(ids, viewer.userId);
+    }
+    return { ...plan, applied: true };
+  }
+
+  /** Issued assets, undecided requests and unrecovered advances per person, as a single offboarding lists them. */
+  private async heldBy(employeeIds: number[]): Promise<Record<"assets" | "requests" | "advances", Map<number, number>>> {
+    const [assets, requests, advances] = await Promise.all([
+      this.db.asset.groupBy({
+        by: ["holderId"],
+        where: { holderId: { in: employeeIds }, state: "ISSUED" },
+        _count: { _all: true },
+      }),
+      this.db.request.groupBy({
+        by: ["employeeId"],
+        where: { employeeId: { in: employeeIds }, state: "PENDING" },
+        _count: { _all: true },
+      }),
+      this.db.salaryAdvance.groupBy({
+        by: ["employeeId"],
+        where: { employeeId: { in: employeeIds }, state: "PAID" },
+        _count: { _all: true },
+      }),
+    ]);
+    return {
+      assets: new Map(assets.flatMap((one) => (one.holderId === null ? [] : [[one.holderId, one._count._all] as const]))),
+      requests: new Map(requests.map((one) => [one.employeeId, one._count._all])),
+      advances: new Map(advances.map((one) => [one.employeeId, one._count._all])),
+    };
   }
 
   /** The catalogue rows a placement names, each checked the way PATCH /employees/:id checks it. */

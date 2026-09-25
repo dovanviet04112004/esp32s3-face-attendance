@@ -46,6 +46,7 @@ import { LoginOpenedView, LoginStateView } from "../users/dto/user.dto.js";
 import { UsersService } from "../users/users.service.js";
 import {
   BulkEnrollDto,
+  BulkOffboardDto,
   BulkPlacementDto,
   BulkQueryDto,
   BulkSelectionDto,
@@ -60,6 +61,7 @@ import {
   ImportQueryDto,
   ImportReportView,
   EnrollPlanView,
+  LeavingPlanView,
   ListEmployeesDto,
   LoginPlanView,
   MoveLeavingDto,
@@ -71,7 +73,7 @@ import {
   UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
-import { BulkService, type EnrollPlan, type LoginPlan, type PlacementPlan } from "./bulk.service.js";
+import { BulkService, type EnrollPlan, type LeavingPlan, type LoginPlan, type PlacementPlan } from "./bulk.service.js";
 import { EmployeesService, type FileOut, type Offboarding, type Onboarding } from "./employees.service.js";
 import type { ImportReport, ImportUpload } from "./import.js";
 import { XLSX_MIME } from "./workbook.js";
@@ -174,6 +176,27 @@ export class EmployeesController {
     @Query() query: BulkQueryDto,
   ): Promise<EnrollPlan> {
     return this.bulk.enrollments(viewer, body, query.apply === true);
+  }
+
+  @Post("bulk/offboard")
+  @RateBucket(THROTTLE.heavy)
+  @Roles("ADMIN", "HR")
+  @AuditedInService()
+  @ApiOperation({
+    summary: "Preview one last day for many people; apply=true records it (KEHOACH 9.14)",
+    description:
+      "Each person goes through the rules of POST /employees/:id/offboard, and the caller's own record is skipped. " +
+      "A last day of today or earlier closes the records on the people queue right after the write.",
+  })
+  @ApiCreatedResponse({ type: LeavingPlanView })
+  @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID, SELECTION_TOO_LARGE" })
+  @ApiConflictResponse({ type: ErrorBody, description: "SELECTION_CHANGED" })
+  offboardMany(
+    @CurrentViewer() viewer: Viewer,
+    @Body() body: BulkOffboardDto,
+    @Query() query: BulkQueryDto,
+  ): Promise<LeavingPlan> {
+    return this.bulk.offboard(viewer, body, query.apply === true);
   }
 
   @Get()

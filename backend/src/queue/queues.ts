@@ -25,6 +25,7 @@ export const JOB = {
   nightly: "nightly",
   rebuild: "rebuild",
   leavingsDue: "leavings-due",
+  leavingsNow: "leavings-now",
   leaveYear: "leave-year",
 } as const;
 
@@ -115,7 +116,15 @@ export interface LeavingsDueJob {
   type: typeof JOB.leavingsDue;
 }
 
-export type PeopleJob = LeavingsDueJob;
+/** Closes the due records of one bulk offboarding in the clicker's name; the same conditional write guards a rerun. */
+export interface LeavingsNowJob {
+  type: typeof JOB.leavingsNow;
+  employeeIds: number[];
+  through: string;
+  actorId: string;
+}
+
+export type PeopleJob = LeavingsDueJob | LeavingsNowJob;
 
 /** Opens a year's balances; with no year it is the year today falls in. A closed year never carries twice. */
 export interface LeaveYearJob {

@@ -4,7 +4,7 @@ import { Worker } from "bullmq";
 import { RedisService } from "../../database/redis.service.js";
 import { EmployeesService } from "../../modules/employees/employees.service.js";
 import { FEED, RealtimeGateway } from "../../modules/realtime/realtime.gateway.js";
-import { QUEUE, type PeopleJob } from "../queues.js";
+import { JOB, QUEUE, type PeopleJob } from "../queues.js";
 
 @Injectable()
 export class PeopleProcessor implements OnModuleInit, OnModuleDestroy {
@@ -22,7 +22,10 @@ export class PeopleProcessor implements OnModuleInit, OnModuleDestroy {
       QUEUE.people,
       async (job) => {
         const body = job.data as PeopleJob;
-        const closed = await this.employees.closeDue(this.employees.today());
+        const closed =
+          body.type === JOB.leavingsNow
+            ? await this.employees.closeMany(body.employeeIds, body.through, body.actorId)
+            : await this.employees.closeDue(this.employees.today());
         this.log.log(`${body.type}: closed ${closed.length} record(s)`);
         // No request carried this write, so the change interceptor never saw it.
         if (closed.length > 0) {

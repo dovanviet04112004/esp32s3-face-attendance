@@ -10,6 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { UNUSABLE_PASSWORD } from "../src/modules/auth/password.js";
+import { EmployeesService } from "../src/modules/employees/employees.service.js";
 import { parseCsv } from "../src/modules/employees/import.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
@@ -711,5 +712,177 @@ describe("directory filters that match the bulk jobs (e2e)", () => {
     assert.deepEqual(resent.skipped, []);
     assert.ok(resent.rows.every((one) => one.resend === true), "an invited login was offered a second account");
     assert.equal(resent.rows.length, EXPECTED.account.none.length + 1);
+  });
+});
+
+const OF = "E2EOF";
+const [TODAY_A, TODAY_B, AHEAD, OF_GONE, OF_SCHEDULED] = ["01", "02", "03", "04", "05"].map((tail) => `${OF}${tail}`);
+const LEAVERS = [TODAY_A, TODAY_B, AHEAD, OF_GONE, OF_SCHEDULED];
+const OF_DOMAIN = "@offboard-bulk-e2e.test";
+const kCloseWaitMs = 15_000;
+const kPollMs = 250;
+const kAheadDays = 30;
+
+interface LeavingPlan {
+  applied: boolean;
+  leaveDate: string;
+  closesNow: boolean;
+  rows: { employeeId: number; requests: number }[];
+  skipped: Skip[];
+}
+
+describe("bulk offboarding (e2e)", () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication["getHttpServer"]>;
+  let db: PrismaService;
+  let employees: EmployeesService;
+  let token = "";
+  let hrUserId = "";
+  let hrEmployeeId = 0;
+  let today = "";
+  const idOf = new Map<string, number>();
+  const id = (code: string): number => idOf.get(code) as number;
+  const ids = (...codes: string[]): number[] => codes.map(id);
+  const byId = (a: number, b: number): number => a - b;
+
+  function offboard(body: object, apply = false): Promise<request.Response> {
+    return request(http)
+      .post(`/employees/bulk/offboard${apply ? "?apply=true" : ""}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send(body);
+  }
+
+  async function closedWithin(employeeIds: number[], waitMs: number): Promise<boolean> {
+    const deadline = Date.now() + waitMs;
+    while (Date.now() < deadline) {
+      const open = await db.employee.count({ where: { id: { in: employeeIds }, active: true } });
+      if (open === 0) {
+        return true;
+      }
+      await new Promise((done) => setTimeout(done, kPollMs));
+    }
+    return false;
+  }
+
+  async function sweep(): Promise<void> {
+    await db.user.deleteMany({ where: { email: { endsWith: OF_DOMAIN } } });
+    await db.request.deleteMany({ where: { employee: { code: { in: LEAVERS } } } });
+    await db.employee.deleteMany({ where: { code: { in: LEAVERS } } });
+  }
+
+  before(async () => {
+    const env = validateEnv();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    configure(app);
+    await app.init();
+    http = app.getHttpServer();
+    db = app.get(PrismaService);
+    employees = app.get(EmployeesService);
+    today = employees.today();
+    await sweep();
+
+    const signedIn = await request(http)
+      .post("/auth/login")
+      .send({ email: "hr@kiosk.local", password: env.SEED_ADMIN_PASSWORD ?? "" });
+    assert.equal(signedIn.status, 200, "hr could not sign in");
+    token = signedIn.body.accessToken;
+    const hr = await db.user.findUniqueOrThrow({ where: { email: "hr@kiosk.local" } });
+    hrUserId = hr.id;
+    hrEmployeeId = hr.employeeId as number;
+
+    const template = await db.employee.findFirstOrThrow({ where: { active: true, legalEntityId: { not: null } } });
+    for (const code of LEAVERS) {
+      const made = await db.employee.create({
+        data: {
+          code,
+          fullName: `Nghỉ loạt ${code}`,
+          legalEntityId: template.legalEntityId,
+          active: code !== OF_GONE,
+          leaveDate: code === OF_GONE ? new Date("2026-01-31") : code === OF_SCHEDULED ? new Date("2031-12-31") : null,
+        },
+      });
+      idOf.set(code, made.id);
+    }
+    await db.user.create({
+      data: { email: `today-a${OF_DOMAIN}`, passwordHash: UNUSABLE_PASSWORD, role: "EMPLOYEE", employeeId: id(TODAY_A) },
+    });
+    await db.request.create({
+      data: {
+        employeeId: id(TODAY_B),
+        kind: "REMOTE_WORK",
+        state: "PENDING",
+        fromDate: new Date("2030-12-01T00:00:00.000Z"),
+        toDate: new Date("2030-12-02T00:00:00.000Z"),
+        days: 2,
+        reason: "e2e",
+      },
+    });
+  });
+
+  after(async () => {
+    await sweep();
+    await app.close();
+  });
+
+  it("previews one last day without writing, passing over leavers, the scheduled and the clicker", async () => {
+    const res = await offboard({ employeeIds: [...ids(TODAY_A, TODAY_B, OF_GONE, OF_SCHEDULED), hrEmployeeId], leaveDate: today });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const plan = res.body as LeavingPlan;
+    assert.deepEqual([plan.applied, plan.closesNow, plan.leaveDate], [false, true, today]);
+    assert.deepEqual(plan.rows.map((one) => one.employeeId).sort(byId), ids(TODAY_A, TODAY_B).sort(byId));
+    assert.equal(plan.rows.find((one) => one.employeeId === id(TODAY_B))?.requests, 1);
+    assert.deepEqual(
+      plan.skipped.map((one): [number, string] => [one.employeeId, one.reason]).sort((a, b) => a[0] - b[0]),
+      (
+        [
+          [id(OF_GONE), "EMPLOYEE_HAS_LEFT"],
+          [id(OF_SCHEDULED), "LEAVING_SCHEDULED"],
+          [hrEmployeeId, "SELF"],
+        ] as [number, string][]
+      ).sort((a, b) => a[0] - b[0]),
+    );
+    const untouched = await db.employee.findUniqueOrThrow({ where: { id: id(TODAY_A) } });
+    assert.equal(untouched.leaveDate, null, "a preview wrote a last day");
+  });
+
+  it("records the day for exactly those people, and the queue closes them in the clicker's name", async () => {
+    const res = await offboard(
+      { employeeIds: [...ids(TODAY_A, TODAY_B, OF_GONE, OF_SCHEDULED), hrEmployeeId], leaveDate: today, reason: "e2e" },
+      true,
+    );
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal((res.body as LeavingPlan).applied, true);
+    const offboarded = await db.auditLog.count({
+      where: { action: "employee.offboard", subjectId: { in: ids(TODAY_A, TODAY_B).map(String) } },
+    });
+    assert.equal(offboarded, 2);
+    assert.ok(await closedWithin(ids(TODAY_A, TODAY_B), kCloseWaitMs), "the people queue never closed the records");
+    const login = await db.user.findUniqueOrThrow({ where: { email: `today-a${OF_DOMAIN}` } });
+    assert.equal(login.active, false, "the login of a closed record stayed open");
+    const closedBy = await db.auditLog.findMany({
+      where: { action: "employee.deactivate", subjectId: { in: ids(TODAY_A, TODAY_B).map(String) } },
+      select: { actorId: true },
+    });
+    assert.deepEqual(closedBy.map((one) => one.actorId), [hrUserId, hrUserId]);
+    const self = await db.employee.findUniqueOrThrow({ where: { id: hrEmployeeId } });
+    assert.deepEqual([self.active, self.leaveDate], [true, null], "the clicker's own record was offboarded");
+  });
+
+  it("closes nothing twice when the job runs again", async () => {
+    assert.deepEqual(await employees.closeMany(ids(TODAY_A, TODAY_B), today, hrUserId), []);
+    const lines = await db.auditLog.count({
+      where: { action: "employee.deactivate", subjectId: { in: ids(TODAY_A, TODAY_B).map(String) } },
+    });
+    assert.equal(lines, 2);
+  });
+
+  it("only schedules a day still ahead", async () => {
+    const ahead = new Date(dayAsDate(today).getTime() + kAheadDays * 86_400_000).toISOString().slice(0, 10);
+    const res = await offboard({ employeeIds: ids(AHEAD), leaveDate: ahead }, true);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal((res.body as LeavingPlan).closesNow, false);
+    const person = await db.employee.findUniqueOrThrow({ where: { id: id(AHEAD) } });
+    assert.deepEqual([person.active, person.leaveDate?.toISOString().slice(0, 10)], [true, ahead]);
   });
 });
