@@ -1,5 +1,6 @@
 "use client";
 
+import { Sidebar as KumoSidebar } from "@cloudflare/kumo";
 import { useTranslations } from "next-intl";
 import { useEffect, type ReactNode } from "react";
 
@@ -60,7 +61,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <KumoSidebar.Provider>
       <title>{tab}</title>
       <a
         href="#main"
@@ -72,13 +73,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main id="main" className="flex-1">
-          <div className="mx-auto w-full max-w-(--width-shell) p-4 pb-24 md:p-8 md:pb-8">
+          <div className="w-full max-w-(--width-shell) px-6 pt-6 pb-24 md:px-8 md:py-8 lg:px-10 lg:py-9">
             <Breadcrumb />
             {children}
           </div>
         </main>
       </div>
       <TabBar />
-    </div>
+    </KumoSidebar.Provider>
   );
 }

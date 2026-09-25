@@ -1,10 +1,10 @@
 "use client";
 
+import { Sidebar as KumoSidebar } from "@cloudflare/kumo";
 import { useTranslations } from "next-intl";
 
-import { Link, usePathname } from "@/i18n/navigation";
+import { usePathname } from "@/i18n/navigation";
 import { useSession } from "@/lib/auth";
-import { cn } from "@/lib/cn";
 import { navFor, ownerOf } from "@/lib/nav";
 import { useWaitingCount } from "./waiting-count";
 
@@ -20,57 +20,43 @@ export function Sidebar() {
   const current = ownerOf(here)?.href;
 
   return (
-    // The nav below scrolls on its own only while this box stays viewport-tall.
-    <aside className="hidden w-60 shrink-0 flex-col border-r border-(--color-line) bg-(--color-surface) p-3 md:sticky md:top-0 md:flex md:h-screen">
-      <div className="flex items-center gap-2 px-2 pt-1">
-        <img src="/logo.svg" alt="" width={20} height={20} />
-        <p className="text-sm font-semibold">{app("name")}</p>
-      </div>
-      <p className="px-2 pb-4 text-xs text-(--color-muted)">{role ? roleName(role) : null}</p>
+    <KumoSidebar>
+      <KumoSidebar.Header>
+        <img src="/logo.svg" alt="" width={24} height={24} className="shrink-0" />
+        <div className="min-w-0 ps-2 group-data-[state=collapsed]/sidebar:hidden">
+          <p className="truncate text-sm font-semibold">{app("name")}</p>
+          <p className="truncate text-xs text-kumo-subtle">{role ? roleName(role) : null}</p>
+        </div>
+      </KumoSidebar.Header>
 
-      <nav className="flex flex-1 flex-col gap-4 overflow-y-auto">
+      <KumoSidebar.Content>
         {groups.map((group) => (
-          <div key={group.key}>
-            <p className="px-2 pb-1 text-[11px] font-medium tracking-wide text-(--color-muted) uppercase">
-              {t(group.key)}
-            </p>
-            <div className="flex flex-col gap-0.5">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const active = current === item.href;
-                return (
-                  <Link
-                    key={item.href}
+          <KumoSidebar.Group key={group.key}>
+            <KumoSidebar.GroupLabel>{t(group.key)}</KumoSidebar.GroupLabel>
+            <KumoSidebar.Menu>
+              {group.items.map((item) => (
+                <KumoSidebar.MenuItem key={item.href}>
+                  <KumoSidebar.MenuButton
+                    icon={item.icon}
                     href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "flex items-center gap-2 rounded-lg px-2 py-2 text-sm pointer-coarse:min-h-11",
-                      active ? "bg-(--color-accent) text-(--color-on-fill)" : "hover:bg-(--color-ground)",
-                    )}
+                    active={current === item.href}
+                    tooltip={t(item.key)}
                   >
-                    <Icon
-                      className={cn("size-4", active ? "text-(--color-on-fill)" : "text-(--color-muted)")}
-                      aria-hidden
-                    />
-                    <span className="flex-1">{t(item.key)}</span>
+                    <span className="flex-1 truncate">{t(item.key)}</span>
                     {item.badge === "approvals" && waiting > 0 ? (
-                      <span
-                        className={cn(
-                          "rounded-full px-1.5 py-0.5 text-[11px] tabular-nums",
-                          active ? "bg-(--color-on-fill)/20" : "bg-(--color-warn) text-(--color-on-fill)",
-                        )}
-                      >
-                        {waiting}
-                      </span>
+                      <KumoSidebar.MenuBadge className="tabular-nums">{waiting}</KumoSidebar.MenuBadge>
                     ) : null}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
+                  </KumoSidebar.MenuButton>
+                </KumoSidebar.MenuItem>
+              ))}
+            </KumoSidebar.Menu>
+          </KumoSidebar.Group>
         ))}
-      </nav>
+      </KumoSidebar.Content>
 
-    </aside>
+      <KumoSidebar.Footer>
+        <KumoSidebar.Trigger />
+      </KumoSidebar.Footer>
+    </KumoSidebar>
   );
 }
