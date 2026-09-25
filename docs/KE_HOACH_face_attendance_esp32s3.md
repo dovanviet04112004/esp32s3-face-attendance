@@ -3372,7 +3372,27 @@ Ba lớp nằm trong `priv_include/door.hpp`. Header công khai `svc_door.h` the
 một bản ghi chấm công mang đúng một mốc thời gian dù kiosk đứng ở đâu. Chuỗi POSIX nằm ở NVS
 `device/tz` (§6.2.1), `main` đọc rồi gọi `sys_time_set_zone()` — `sys_time` không tự đọc NVS
 được vì `sys_storage` cùng tầng L2 và §4.5.4 cấm phụ thuộc ngang tầng. Thiếu khoá thì rơi về
-`CONFIG_SYS_TIME_TZ`: một kiosk hiện sai giờ 7 tiếng còn tệ hơn một kiosk không boot.
+`CONFIG_SYS_TIME_TZ`: một kiosk hiện sai giờ 7 tiếng còn tệ hơn một kiosk không boot. Khoá có
+nhưng rỗng cũng là vắng, như `sntp_host`.
+
+**Ba nguồn giờ, theo thứ tự tin cậy: NTP, header `Date` của `api`, RTC.** SNTP chạy dù RTC có
+trả lời hay không, và một lần đồng bộ đã về thì nguồn lên NTP kể cả khi ghi lại RTC lỗi — lần
+ghi ấy thử lại sau, không kéo nguồn xuống. Mạng chặn UDP 123 thì kiosk lấy giờ từ header `Date`
+của chính các lượt gọi `api` qua TLS (sai dưới một giây, đủ cho chấm công và cho hạn vé), và
+nguồn ghi là `API`. Kiosk có mạng mười phút mà chưa có nguồn nào thì phát `TIME_UNSYNCED`; lệnh
+`SYNC_TIME` chạy lại SNTP ngay.
+
+**Khoảng thời gian đo bằng đồng hồ đơn điệu, không bằng giờ tường.** Máy trạng thái chấm công,
+cửa sổ chống chấm trùng, nhịp làm mới màn hình và mọi hẹn giờ khác lấy `esp_timer`: giờ tường
+nhảy khi SNTP chỉnh và đứng ở 0 khi chưa có nguồn, còn đồng hồ đơn điệu thì không. Giờ tường chỉ
+để đóng dấu bản ghi và để hiện lên màn hình.
+
+**Lượt quẹt lúc chưa có giờ được sửa trước khi gửi, nếu sửa được.** Chưa có nguồn nào thì giờ
+tường là thời gian kể từ lúc boot, tức gần 1970, và bản ghi mang cờ không có NTP (§6.2.5). Lúc gửi
+lên, một bản ghi như thế **thuộc chính lần boot này** (nửa trên của `local_id`) mà máy đã có giờ
+thì được cộng mốc boot — giờ tường hiện tại trừ thời gian đã chạy — trước khi gửi; cờ vẫn giữ để
+server biết giờ ấy là suy ra. Bản ghi của một lần boot trước không còn mốc để cộng: gửi nguyên,
+và server xếp nó vào diện giờ nghi vấn (§9.8).
 
 `ServoDoor::open(hold_ms)` quay tới `APP_DOOR_OPEN_DEG` và đặt một `esp_timer` one-shot; hết `hold_ms` thì `close()` quay về `APP_DOOR_CLOSED_DEG`, rồi sau khi tay đã tới (SG90: 0,1 s/60°) gọi `drv_servo_release()` để motor không giữ dòng. `open()` trong lúc đang mở chỉ gia hạn giờ đóng. Trạng thái được một mutex có timeout bảo vệ vì `attend_task` và task của `esp_timer` cùng đụng vào.
 
@@ -6252,8 +6272,8 @@ bị `Kconfig` loại khỏi bản `prod`.
    vào đồng hồ của mình (đồng hồ máy có thể chưa đúng lúc ấy), tắt dải chờ, nối broker, và
    **không bao giờ dùng lại token bootstrap**.
 5. **Chạy và đổi vé** — MQTTS bằng `deviceId` cộng JWT. Khi `device/jwt_exp` chỉ còn
-   `NET_PROVISION_RENEW_BEFORE_DAYS` (mặc định 7) ngày, và đồng hồ máy đã từng được NTP đặt
-   (`sys_time_source()` là `RTC_NTP`, §6.2.5), `ota_task` cắt broker, gọi
+   `NET_PROVISION_RENEW_BEFORE_DAYS` (mặc định 7) ngày theo **giờ tin được** — NTP, hoặc header
+   `Date` của `api` khi máy chưa từng có NTP (§4.5, ba nguồn giờ) —, `ota_task` cắt broker, gọi
    `POST /devices/me/token` bằng chính vé đang giữ, ghi vé mới vào `device/jwt` và
    `device/jwt_exp`, rồi nối lại. Lệnh `ROTATE_TOKEN` làm đúng việc ấy ngay lập tức. Không hỏi
    được thì giữ vé cũ, lùi bậc như bước 3 rồi thử lại; `api` trả **401** thì đi như bước 6. Một
@@ -6303,8 +6323,9 @@ bị lạc trên đường chết luôn. Thu hồi và đăng ký lại xoá c�
 
 **Máy tự đổi vé, không chờ server bảo.** Máy đọc hạn từ chính JWT của nó, nên server không phải
 nhớ vé nào hết hạn lúc nào, và không có bộ hẹn giờ nào phía server phải chạy đúng. Cái giá là
-máy cần một đồng hồ tin được. Đó không phải điều kiện mới: một máy chưa từng được NTP đặt giờ
-thì bản ghi chấm công của nó cũng chưa có dấu thời gian đúng (§6.2.5).
+máy cần một đồng hồ tin được, và máy chỉ có RTC mà mạng chặn NTP thì không có. Nên máy như thế
+so hạn vé với header `Date` của chính `api`: không so thì nó không bao giờ đổi vé, và ngày thứ
+chín mươi vé chết, máy xoá sạch khuôn mặt rồi về `pending` dù chưa tắt ngày nào.
 
 **Vì sao không xoá vé ngay khi broker từ chối.** EMQX trả **cùng một mã 5** cho vé sai và cho
 lúc `api` không trả lời (đo 24/09 trên EMQX 6.3.1, §7.4). Xoá vé theo mã ấy là biến một lần
@@ -7366,7 +7387,27 @@ backend. Dashboard vẽ mọi giờ và mọi ngày theo **cùng múi ấy**, kh
 theo trình duyệt: Vercel chạy UTC, nên một trang để thư viện tự đoán múi giờ hiện mỗi lượt quẹt
 lệch bảy tiếng so với chính màn hình kiosk (gặp 25/09 trên production). Frontend đọc
 `NEXT_PUBLIC_APP_TIMEZONE`, giá trị phải bằng `APP_TIMEZONE` của backend; thiếu thì cả hai cùng
-rơi về `Asia/Ho_Chi_Minh`.
+rơi về `Asia/Ho_Chi_Minh`. Compose chuyển `APP_TIMEZONE` vào `api`, không chỉ vào container sao lưu.
+
+**"Hôm nay" và "tháng này" là của công ty ở mọi tầng.** Backend lấy ngày bằng `localDay` /
+`dayWindow` theo `APP_TIMEZONE`; SQL không dùng `CURRENT_DATE` hay `::date` trên cột thời điểm mà
+nhận ngày đã tính từ tầng trên, hoặc đổi cột qua `AT TIME ZONE 'UTC' AT TIME ZONE <zone>`. Mọi lịch
+lặp của BullMQ mang `tz: APP_TIMEZONE`, nên lời nhắc "buổi sáng" tới lúc sáng. Dashboard có đúng một
+bộ hàm ngày — hôm nay, đầu tháng, khoảng của một ngày — tính theo múi của công ty; một giá trị chỉ
+có ngày (ngày sinh, ngày vào làm) dựng thành trưa UTC để không trình duyệt nào đẩy nó lùi một hôm,
+và file dựng ngay trong trình duyệt ghi giờ theo múi công ty chứ không ghi chuỗi ISO UTC.
+
+**Server không tin một mốc giờ vô lý.** Mọi lượt quẹt lưu thêm `receivedAt`, giờ server nhận. Một
+lượt mang `ts` trước năm 2020 hay đi trước giờ nhận quá một ngày thì được lưu với cờ **giờ nghi
+vấn** và không xếp vào ngày nào: bảng công bỏ qua nó và danh sách ngoại lệ hôm nay đưa nó cho HR
+sửa tay, kèm `receivedAt` làm gợi ý. Độ lệch đồng hồ của kiosk là một con số server biết: mỗi
+heartbeat sống cho `ts − receivedAt`, `Device.clockSkewMs` giữ nó, và trang Thiết bị báo khi lệch
+quá hai phút.
+
+**Bảng công dựng hằng đêm, và dựng lại khi có lượt quẹt trễ.** Job dựng lúc 00:30 theo
+`APP_TIMEZONE` cho ngày hôm qua; một lượt quẹt về sau khi ngày của nó đã dựng — kiosk offline vài
+hôm, hay một lượt vừa được HR sửa giờ — xếp ngày ấy của người ấy vào hàng dựng lại. Cả hai đi qua
+hàng đợi, chạy hai lần không đổi gì, như mọi job (§9.10).
 
 ### 9.9 Truy vấn khi số nhân viên lên hàng chục nghìn
 
