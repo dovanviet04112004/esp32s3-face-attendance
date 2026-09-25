@@ -10,7 +10,7 @@ import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import {
   DocumentsService,
   type Gap,
-  type ReaderRow,
+  type ReaderPage,
   type ToRead,
   type UnreadCount,
 } from "./documents.service.js";
@@ -62,7 +62,7 @@ export class DocumentsController {
     @Param("id") id: string,
     @Query() query: ListReadersDto,
     @Query("version") version?: string,
-  ): Promise<Page<ReaderRow>> {
+  ): Promise<ReaderPage> {
     return this.documents.readers(id, query, version === undefined ? undefined : Number(version));
   }
 

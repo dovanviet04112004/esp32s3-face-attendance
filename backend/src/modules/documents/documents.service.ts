@@ -57,6 +57,9 @@ export interface ReaderRow {
   ackAt: Date | null;
 }
 
+/** The readers of one version, and how many of all of them have not signed it yet. */
+export type ReaderPage = Page<ReaderRow> & { unread: number; unreadIsExact: boolean };
+
 function isCode(error: unknown, code: string): boolean {
   return (error as { code?: string }).code === code;
 }
@@ -208,7 +211,7 @@ export class DocumentsService {
     documentId: string,
     query: ListReadersDto,
     version?: number,
-  ): Promise<Page<ReaderRow>> {
+  ): Promise<ReaderPage> {
     const wanted = await this.db.documentVersion.findFirst({
       where: { documentId, ...(version === undefined ? {} : { version }) },
       orderBy: { version: "desc" },
@@ -223,7 +226,7 @@ export class DocumentsService {
        WHERE e."active" = true
          AND (${target.departmentId}::text IS NULL OR e."departmentId" = ${target.departmentId})
          AND (${target.jobTitleId}::text IS NULL OR e."jobTitleId" = ${target.jobTitleId})`;
-    const [rows, counted] = await Promise.all([
+    const [rows, counted, unsigned] = await Promise.all([
       this.db.$queryRaw<ReaderRow[]>`
         SELECT e."id" AS "employeeId", e."code", e."fullName", a."ackAt"
           FROM "Employee" e
@@ -243,10 +246,23 @@ export class DocumentsService {
           SELECT 1 FROM "Employee" e ${reach} LIMIT ${COUNT_CEILING + 1}
         ) x
       `,
+      this.db.$queryRaw<{ found: bigint }[]>`
+        SELECT count(*) AS "found" FROM (
+          SELECT 1 FROM "Employee" e
+          ${reach}
+            AND NOT EXISTS (
+              SELECT 1 FROM "DocumentAck" a WHERE a."employeeId" = e."id" AND a."versionId" = ${wanted.id}
+            )
+          LIMIT ${COUNT_CEILING + 1}
+        ) x
+      `,
     ]);
     const last = rows[rows.length - 1];
+    const unread = countedTo(Number(unsigned[0]?.found ?? 0));
     return {
       ...countedTo(Number(counted[0]?.found ?? 0)),
+      unread: unread.total,
+      unreadIsExact: unread.totalIsExact,
       rows,
       next:
         rows.length === query.take && last

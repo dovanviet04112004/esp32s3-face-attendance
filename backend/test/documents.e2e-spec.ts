@@ -217,6 +217,7 @@ describe("documents (e2e)", () => {
     );
     assert.deepEqual(ids, [readerId], "the targeted document reached somebody else too");
     assert.ok(!ids.includes(outsiderId), "somebody else's department was reached");
+    assert.equal(reach.body.unread, 1, "the one reader who has not signed is not counted");
   });
 
   it("offers only the newest wording", async () => {
