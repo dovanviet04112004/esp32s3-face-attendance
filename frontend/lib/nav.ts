@@ -67,7 +67,7 @@ const SECTIONS: Record<SectionKey, Section> = {
   people: { key: "employees", icon: UsersIcon },
   time: { key: "sectionTime", icon: CalendarBlankIcon },
   calendar: { key: "sectionCalendar", icon: ClockIcon },
-  pay: { key: "payroll", icon: WalletIcon },
+  pay: { key: "sectionPay", icon: WalletIcon },
   system: { key: "sectionSystem", icon: UserGearIcon },
 };
 

@@ -58,7 +58,8 @@
     "account": "Tài khoản",
     "changePassword": "Đổi mật khẩu",
     "sections": "Các trang trong mục",
-    "backTo": "Về {page}"
+    "backTo": "Về {page}",
+    "sectionPay": "Lương"
   },
   "roles": {
     "ADMIN": "Quản trị hệ thống",

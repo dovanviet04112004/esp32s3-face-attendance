@@ -58,7 +58,8 @@
     "account": "Account",
     "changePassword": "Change password",
     "sections": "Pages in this section",
-    "backTo": "Back to {page}"
+    "backTo": "Back to {page}",
+    "sectionPay": "Pay"
   },
   "roles": {
     "ADMIN": "Administrator",
