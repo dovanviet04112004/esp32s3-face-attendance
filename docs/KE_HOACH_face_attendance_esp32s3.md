@@ -5203,7 +5203,7 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | Loại hằng số | Nguồn duy nhất | Cách phần còn lại lấy về |
 |---|---|---|
 | Chân GPIO | `firmware/components/bsp_board/include/app_config.h` + §2 | `#include "app_config.h"` |
-| Kích thước, offset bản ghi trên flash | `sys_storage/include/storage_format.h` + §6.2 | include, có `static_assert` |
+| Kích thước, offset bản ghi trên flash | `sys_storage/include/storage_format.h` + §6.2 | include, có `static_assert`; riêng offset nhánh `recog` của header `MDLS` có bản thứ hai ở `models.service.ts` (§7.7) |
 | Trường payload MQTT | `contracts/schema/*.json` | sinh code, §4.2 |
 | Tên topic, QoS, retained | `contracts/mqtt_topics.yaml` | đọc file, không gõ chuỗi topic |
 | File model đang deploy, sha256 | `contracts/models.lock.json` | đọc file |
@@ -5329,14 +5329,15 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `s_verdict` | **`portMUX_TYPE` + một `ui_kiosk_verdict_t`** trong `ui_kiosk`, không phải queue | 44 B | `attend_task` | `ui_task` | Phán quyết cũng là **mức**: màn chỉ cần câu mới nhất, và mỗi nhịp 20 ms so số thứ tự để biết có câu mới. Nhưng nó dài hơn một từ máy (loại, track, mã, tên), nên một atomic không chở hết, còn chép rời thì tên của người này đi với mã của người kia. Chép dưới spinlock: vài chục byte, không gọi gì bên trong |
 | `q_audio` | Queue, depth 4, `sound_id_t` | 4 × 4 B | `attend_task`, `ui_task` | `audio_task` | Phát âm không được chặn nghiệp vụ |
 | `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
-| `q_cmd` | Queue, depth 4, `device_command_t` | 4 × ~160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
+| `q_cmd` | Queue, depth 4, `device_command_t` | 4 × ~160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn lâu ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
+| `q_roster` | Queue, **depth 1072**, lệnh roster 576 B, bộ đệm ở PSRAM | 1072 × 576 B = 603 KB PSRAM | task của esp-mqtt | `sync_task` | Sâu bằng một lượt đồng bộ lại trọn vẹn: 1.000 mẫu (`CONFIG_FACEDB_MAX_RECORDS`) cộng 64 `ASSIGN` cộng 8 chỗ dư. Rơi một lệnh ở đây là một khe hở (§9.23), nên đầy thì bên gửi **chờ, có hạn 3 s** — dài hơn một lần ghi bảng mặt (1,8–2,3 s), ngắn hơn 5 s chờ PUBACK của `sync_task`, vì lúc chờ task của esp-mqtt không xử lý được PUBACK nào |
 | `q_event` | Queue, depth 8, `app_event_t` | 8 × 72 B | `ai_task`, `tof_task`, `attend_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 72 B chứ không phải `device_event_t` 304 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
 | `q_ota` | Queue, depth 1, `ota_manifest_t` | 1 × ~1,8 KB | task của esp-mqtt | `ota_task` | Cùng lý do `q_cmd`: callback chỉ phân tích rồi bỏ vào đây, vì tải một ảnh firmware mất hàng chục giây và chặn ở đó là chặn cả đường MQTT. **Sâu đúng 1**: hai bản kê khai cùng lúc thì bản thứ hai là thừa — máy chỉ cài được một ảnh, và bản mới hơn sẽ được phát lại. Đầy thì rơi và ghi log |
 | `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
 | **`m_spi_lcd`** | Mutex | — | `ui_task`, `ota_task` (màn hình tiến trình) | — | 1 bus SPI, tránh xé khung hình |
 | **`m_facedb`** | Mutex | — | `ai_task` (đọc), `mqtt_task` (ghi khi enroll) | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
-| **`m_facedb_io`** | Mutex | — | `mqtt_task` / `ui_task` (mọi đường ghi bảng) | — | Ghi 552 KB xuống LittleFS mất 1,8–2,3 s, mà `m_facedb` chỉ chờ 200 ms: giữ `m_facedb` suốt phép ghi thì `lookup` hết giờ và người thật bị từ chối. Khoá này xếp hàng **người ghi với người ghi**, để phép ghi dài chạy ngoài `m_facedb` mà ảnh bảng vẫn không bị sửa giữa chừng |
+| **`m_facedb_io`** | Mutex | — | `mqtt_task` / `ui_task` (mọi đường ghi bảng) | — | Ghi 576 KB xuống LittleFS mất 1,8–2,3 s, mà `m_facedb` chỉ chờ 200 ms: giữ `m_facedb` suốt phép ghi thì `lookup` hết giờ và người thật bị từ chối. Khoá này xếp hàng **người ghi với người ghi**, để phép ghi dài chạy ngoài `m_facedb` mà ảnh bảng vẫn không bị sửa giữa chừng |
 | **`m_littlefs`** | Mutex | — | `attend_task`, `sync_task`, `ota_task`, `audio_task` | — | LittleFS không thread-safe mặc định |
 | `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
 | `s_bounce_free` | Counting semaphore, **2 suất** | — | callback `esp_lcd` | `drv_lcd` | Đệm bounce được trả lại thì mới nạp lượt sau. Có hai đệm nên phải đếm được hai suất: binary chỉ giữ được một, đệm rỗi thứ hai sẽ nằm không. Callback **trả** cờ yield cho `esp_lcd` tự nhường, không tự gọi `portYIELD_FROM_ISR` |
@@ -6022,6 +6023,11 @@ heap lúc boot, và không có đường nào đẩy sang PSRAM**; còn heap n�
 heap chính 244 KB đã đầy (mảnh lớn nhất 4 KB, đáy 1.708 B), toàn bộ 31 KB liền mạch nằm ở một
 vùng riêng chưa ai từng xin. Nên "còn 40 KB" không có nghĩa là xin được một khối 40 KB.
 
+**Đồng bộ lại không rơi lệnh có giá bằng PSRAM, không bằng RAM nội** (E10-T23): hàng đợi roster
+603 KB, bộ ghép tin MQTT bị chia mảnh 4 KB và danh sách chờ 2,3 KB đều nằm ở PSRAM, tức khoảng
+610 KB lấy từ đáy 5.070 KB; RAM nội lại nhẹ đi khoảng 3,7 KB vì hàng đợi bốn chỗ cũ nằm ở heap
+nội. 🔬 Đáy PSRAM sau đổi chưa đo trên board.
+
 **Khoản duy nhất của bảng trên còn chưa trả là bắt tay TLS**, và đó là chỗ chật: mặc định
 mbedTLS của IDF là đệm vào 16 KB cộng đệm ra 4 KB **mỗi phiên**, trong đó đệm vào phải là một
 dải liền 16 KB lấy từ đúng mảnh 31 KB; cộng ngăn xếp `mqtt_task` 6 KB và `sync_task` 5 KB của
@@ -6604,22 +6610,32 @@ nối với `clientId` cố định (`MQTT_CLIENT_ID`), phiên không sạch và
 `api` đang khởi động lại — mỗi lần deploy — nằm chờ ở broker thay vì bị vứt; và nó chỉ trả ack
 cho broker **sau khi** trình xử lý của tin ấy chạy xong, nên một lần chết giữa chừng làm tin được
 giao lại. Mọi trình xử lý vì thế phải chịu được giao hai lần — chấm công đã khử trùng theo
-`(deviceId, localId)`, mẫu chụp theo phiên (bước 3 ở trên).
+`(deviceId, localId)`, mẫu chụp theo phiên (bước 3 ở trên). Tin của một cửa xử lý đúng thứ tự tới,
+các cửa không chờ nhau. Một tin cứ hỏng thì thử lại, giãn từ 1 s tới 30 s; lần thử chỉ tính khi
+cơ sở dữ liệu còn trả lời, nên Postgres sập không làm rơi lượt quẹt nào, và sau năm lần tính thì
+ghi log rồi ack để một tin độc không chặn cả hàng. Broker giữ tối đa 10.000 tin mỗi phiên và
+**không** xếp tin QoS 0 vào đó, để heartbeat không đẩy lượt quẹt ra khỏi hàng; nó không lưu phiên
+xuống đĩa, nên chính broker khởi động lại vẫn mất những gì đang chờ. Trong e2e mỗi tiến trình có
+`clientId` ngẫu nhiên và phiên sạch, vì các bộ test chạy song song sẽ giật phiên của nhau.
 
 **Heartbeat giữ lại không phải dấu hiệu sống.** Heartbeat là tin retained để bảng fleet có trạng
 thái mới nhất ngay lúc mở, nên broker phát lại bản cũ mỗi lần `api` nối lại. Một bản tin mang cờ
 retained không cập nhật `lastSeenAt`, `online`, `bootedAt`, và không kích hội tụ; không thì sau mỗi
-lần deploy một kiosk đã tắt hiện là đang chạy, và một lượt đồng bộ lại thừa được bắn xuống.
+lần deploy một kiosk đã tắt hiện là đang chạy, và một lượt đồng bộ lại thừa được bắn xuống. Nó vẫn
+ghi các số phiên bản firmware, model, embedding, vì đó là trạng thái chứ không phải lần gặp. Bản
+`status` giữ lại vẫn đặt `online`, vì di chúc của broker là sự thật, nhưng cũng không tính là một
+lần gặp.
 
 **Đổi model nhận diện là đổi không gian embedding, nên mẫu cũ phải đi.** `faces.bin` ghi model
 nhận diện đã sinh ra các mẫu của nó (§6.2.4). Lúc khởi động, model đang chạy khác model của bảng
 thì máy bỏ mọi mẫu — kể cả mẫu chưa báo — và đặt `roster_ver` về 0; máy chủ thấy số lùi thì đồng
 bộ lại, và với cửa có `embeddingVersion` khác bản mẫu nó giữ thì gửi `ASSIGN` thay vì `UPSERT`:
-mọi người vào danh sách chờ để chụp lại. Máy chủ biết một bản model có đổi nhận diện hay không,
+mọi người vào danh sách chờ để chụp lại, và cặp máy–người đã `ENROLLED` về `ASSIGNED`. Lan mẫu
+(§9.23 luật 7) không đẩy mẫu sang cửa đang chạy model khác. Máy chủ biết một bản model có đổi nhận diện hay không,
 vì `Release` mang `embeddingVersion` đọc từ header của chính file model. Bản đổi nhận diện chỉ
 phát được cho **cả đội** cùng lúc, và dashboard bắt người bấm xác nhận rằng mọi người phải lấy
 mặt lại; phát cho một cửa là để hai cửa giữ hai không gian, và mẫu chụp ở cửa này bị cửa kia từ
-chối.
+chối. Một bên chưa biết `embeddingVersion` thì tính là đổi.
 
 **Hai luật khó nhất đã nằm sẵn trong `enroll_payload.schema.json` từ trước**, và chúng đúng:
 `embeddingVersion` — *"A kiosk running a different model must refuse the template rather than
@@ -6674,9 +6690,12 @@ chỉ nhận về "đã có".
 người, vì người không bao giờ đi cửa này. Server băm sha256 và đếm byte **trong lúc** ghi xuống
 volume `releases`, ghi ra `.part` rồi mới đổi tên, và từ chối file quá `OTA_MAX_BYTES`. Nó chỉ đối
 chiếu những gì đọc được mà không phải chép layout của repo: header ảnh app là định dạng chuẩn của
-ESP-IDF nên firmware được đối số phiên bản; header `MDLS` chỉ khai ở
-`storage_format.h`, nên model và assets tin phiên bản của bên đưa lên, và kiosk kiểm lại magic,
-crc, sha256 sau khi tải. `(target, version)` đã có thì trả bản đang có, không ghi đè. Giữ file của
+ESP-IDF nên firmware được đối số phiên bản. Với model, server đọc đúng một thứ trong header
+`MDLS`: sha256 của nhánh `recog`, để biết bản ấy có đổi không gian embedding không (§7.5), và từ
+chối file model thiếu nhánh ấy (`RELEASE_NOT_MODELS_IMAGE`). Vị trí các trường ấy vì thế có hai
+bản — `storage_format.h` và `models.service.ts` — và e2e phát hành dựng header theo đúng bố cục
+của firmware để hai bản không lệch; còn lại model và assets tin phiên bản của bên đưa lên, và
+kiosk kiểm lại magic, crc, sha256 sau khi tải. `(target, version)` đã có thì trả bản đang có, không ghi đè. Giữ file của
 năm bản mới nhất mỗi loại; bản cũ hơn giữ dòng làm lịch sử nhưng không mời được nữa.
 
 **Server không bao giờ tự tải URL.** Đường khai bản bằng URL bị bỏ, và cùng với nó là đường SSRF
@@ -8956,6 +8975,11 @@ Mỗi tiến trình Node giữ một bể kết nối, mà Postgres tính mỗi 
 lên vài bản chạy là chạm trần trước khi chạm giới hạn CPU. Nên khi vượt một bản chạy, **đặt
 PgBouncer ở giữa** ở chế độ transaction.
 
+**Bản chạy thứ hai phải đổi ba thứ ở đường nghe kiosk.** `api` nghe broker bằng một phiên bền với
+`clientId` cố định và khoá "một cửa, một người gửi" nằm trong tiến trình (§7.5, §9.23). Hai bản
+chạy cùng `clientId` sẽ giật phiên của nhau; nên mỗi bản cần `clientId` riêng, đăng ký qua một
+nhóm `$share`, và khoá theo cửa phải chuyển sang khoá xuyên tiến trình (advisory lock của Postgres).
+
 **Báo cáo nặng đọc từ bản sao, không đọc từ bản chính.** Một lượt gộp toàn công ty không được
 phép làm chậm lượt ghi của kiosk đang chấm công. Kèm theo một luật: bản sao có **độ trễ**, nên
 thứ vừa ghi xong mà đọc ngay thì đọc ở bản chính — phiếu lương vừa phát là ví dụ.
@@ -9101,7 +9125,9 @@ Năm điều kèm theo, mỗi điều bịt một khe khác nhau:
 - **Đường sửa chữa phải chạy được từ chính trạng thái cần sửa.** `resync` từng suy ra phiên
   bản bắt đầu bằng phép trừ, nên một máy giữ nhiều người hơn số đếm của nó sẽ sinh phiên bản
   âm, bị hợp đồng từ chối, và **đúng cái cửa cần đẩy lại cả danh sách là cái cửa không bao giờ
-  nhận được**. Nâng số đếm lên bằng số dòng trước khi phát lại.
+  nhận được**. Một lượt đồng bộ lại lấy **N + 1 số mới** — `REPLACE_ALL` cộng N lệnh — ở trên cả số
+  máy chủ giữ lẫn số cửa báo, trong một câu lệnh, nên nó chạy được từ mọi trạng thái kể cả khi
+  cửa đi trước.
 - **Kiosk chỉ lùi phiên bản khi máy chủ bảo nó lùi, và chỉ tiến từng bước một.** Giao ít nhất
   một lần nghĩa là hai lần đẩy có thể tới lệch thứ tự, và một bản tin cũ tới sau vừa ghi đè mặt
   mới vừa kéo số đếm xuống. Luật ở firmware có ba nửa. Bản tin **đếm tăng** — `ASSIGN`,
@@ -9115,8 +9141,11 @@ Năm điều kèm theo, mỗi điều bịt một khe khác nhau:
   số của nó trong một câu lệnh. Không thì một lượt gán chen giữa một lượt đồng bộ lại sinh ra
   khe hở ngay trên đường sửa chữa. Mỗi cửa chỉ có một lượt đồng bộ lại chạy một lúc, và hội tụ
   chạy khi số của cửa **khác** số máy chủ giữ, cả khi cửa đi trước — cơ sở dữ liệu vừa khôi phục
-  từ bản sao lưu cũ hơn cửa (§9.22) — chứ không chỉ khi cửa tụt lại. Hàng đợi roster trên máy đủ
-  sâu cho một lượt đồng bộ lại, và đầy thì bên nhận tin **chờ** chứ không vứt.
+  từ bản sao lưu cũ hơn cửa (§9.22) — chứ không chỉ khi cửa tụt lại. Heartbeat tới lúc một lượt
+  đang chạy, hay được nhận trước khi lượt trước xong, không mở lượt mới; cửa báo một số nằm giữa
+  mốc mở màn của lượt trước và số máy chủ giữ mà vẫn đang tiến thì được để yên một nhịp, còn báo
+  cùng số đó hai nhịp liền thì phát lại. Hàng đợi roster trên máy đủ sâu cho một lượt đồng bộ lại
+  (§5.3 `q_roster`), và đầy thì bên nhận tin **chờ** chứ không vứt.
 - **Vì sao `REPLACE_ALL` được miễn.** Nó không phải một bước đếm mà là một lời tuyên bố lại:
   `resync` phát cả danh sách từ mốc `top − số dòng`, và một cửa sống lâu có số phiên bản lớn
   hơn số người nó giữ rất nhiều — mỗi lượt gán, thu hồi, hay lan mẫu đều đẩy số lên trong khi
