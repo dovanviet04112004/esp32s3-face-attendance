@@ -1678,7 +1678,7 @@
   "myShifts": {
     "title": "My shifts",
     "lead": "This month and the ones ahead, so you can plan around them.",
-    "none": "No shift",
+    "none": "No shift set",
     "awayLEAVE": "Leave",
     "awayBUSINESS_TRIP": "Business trip",
     "awayREMOTE_WORK": "Remote",

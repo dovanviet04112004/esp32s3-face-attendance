@@ -1678,7 +1678,7 @@
   "myShifts": {
     "title": "Lịch ca của tôi",
     "lead": "Ca của tháng này và các tháng tới, để sắp xếp việc nhà trước.",
-    "none": "Không ca",
+    "none": "Chưa xếp ca",
     "awayLEAVE": "Nghỉ phép",
     "awayBUSINESS_TRIP": "Công tác",
     "awayREMOTE_WORK": "Làm từ xa",
