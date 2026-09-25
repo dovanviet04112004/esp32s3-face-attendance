@@ -9,7 +9,7 @@ import { useState, type ReactNode } from "react";
 
 import { StatePill as RequestPill, useRequestWords, type RequestRow } from "@/components/requests/request-card";
 import { InboxPreview, useShortSpan } from "@/components/requests/inbox-preview";
-import { RequestForm, todayHere } from "@/components/requests/request-form";
+import { RequestForm } from "@/components/requests/request-form";
 import { Failed } from "@/components/ui/failed";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
@@ -18,7 +18,7 @@ import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { clockOf, dayOnly, days, money } from "@/lib/format";
+import { addDays, atClock, clockOf, dayOnly, dayWindow, days, money, todayIso } from "@/lib/format";
 
 interface Balance {
   leaveTypeId: string;
@@ -115,18 +115,9 @@ async function unlessMissing<T>(path: string): Promise<T | null> {
   }
 }
 
-function dayAfter(day: string, by = 1): string {
-  const at = dayOnly(day);
-  at.setDate(at.getDate() + by);
-  const pad = (one: number) => String(one).padStart(2, "0");
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
-}
-
 /** Minutes past the shift's start plus its grace; zero or less is on time. */
 function lateBy(day: string, shift: NonNullable<PlannedDay["shift"]>, firstPunch: string): number {
-  const [hour, minute] = shift.startTime.split(":").map(Number);
-  const start = dayOnly(day);
-  start.setHours(hour, minute, 0, 0);
+  const start = atClock(day, shift.startTime);
   return Math.floor((new Date(firstPunch).getTime() - start.getTime()) / kMinuteMs) - (shift.graceMinutes ?? 0);
 }
 
@@ -200,7 +191,7 @@ function useRoster(year: number, month: number, enabled: boolean) {
 
 /** The roster of the next seven days, across a month's end when the week crosses one. */
 function useWeek(today: string) {
-  const last = dayAfter(today, kWeekDays - 1);
+  const last = addDays(today, kWeekDays - 1);
   const [year, month] = today.split("-").map(Number);
   const [lastYear, lastMonth] = last.split("-").map(Number);
   const first = useRoster(year, month, true);
@@ -210,7 +201,7 @@ function useWeek(today: string) {
   const all = [...(first.data ?? []), ...(lastMonth !== month ? (second.data ?? []) : [])];
   const byDay = new Map(all.map((one) => [one.date.slice(0, 10), one]));
   const week = Array.from({ length: kWeekDays }, (_, at) => {
-    const day = dayAfter(today, at);
+    const day = addDays(today, at);
     return { day, plan: byDay.get(day) };
   });
   return { week, pending, failed, retry: () => void Promise.all([first.refetch(), second.refetch()]) };
@@ -248,14 +239,14 @@ function TodayCard({ employeeId, week }: { employeeId: number; week: ReturnType<
   const a = useTranslations("attendance");
   const shifts = useTranslations("myShifts");
   const format = useFormatter();
-  const today = todayHere();
-  const tomorrow = dayAfter(today);
+  const today = todayIso();
 
   const punches = useQuery({
     queryKey: ["attendance", "mine", employeeId, "day", today],
     queryFn: async () => {
-      const from = dayOnly(today).toISOString();
-      const to = dayOnly(tomorrow).toISOString();
+      const bounds = dayWindow(today);
+      const from = bounds.from.toISOString();
+      const to = bounds.to.toISOString();
       const query = new URLSearchParams({ employeeId: String(employeeId), from, to, take: String(kPunchesShown) });
       const rows = (await api.get<{ rows: Punch[] }>(`/attendance?${query.toString()}`)).data.rows;
       return [...rows].sort((left, right) => left.ts.localeCompare(right.ts));
@@ -358,7 +349,7 @@ function WeekCard({ week }: { week: ReturnType<typeof useWeek> }) {
   const nav = useTranslations("nav");
   const format = useFormatter();
   const short = usePlanShort();
-  const today = todayHere();
+  const today = todayIso();
   return (
     <Card title={t("weekTitle")} link={{ href: "/me/shifts", label: nav("myShifts") }}>
       {week.failed ? (
@@ -415,7 +406,7 @@ function TeamCard() {
   if (held === null) {
     return null;
   }
-  const day = todayHere();
+  const day = todayIso();
   const bucket = picked ?? TEAM_BUCKETS.find(({ key }) => (held?.totals[key] ?? 0) > 0)?.key ?? "absent";
   const people = held?.[bucket] ?? [];
   const total = held?.totals[bucket] ?? 0;
@@ -531,7 +522,7 @@ export default function MyPage() {
   const words = useRequestWords();
   const shortSpan = useShortSpan();
   const { employeeId, role } = useSession();
-  const today = todayHere();
+  const today = todayIso();
   const week = useWeek(today);
   const [seed, setSeed] = useState(0);
   const [filing, setFiling] = useState(false);

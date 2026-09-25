@@ -13,7 +13,7 @@ import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { days, minutes as minutesOf } from "@/lib/format";
+import { addDays, atClock, dayOnly, dayWindow, days, minutes as minutesOf, todayIso } from "@/lib/format";
 import { keep } from "@/lib/outbox";
 import type { DayPart, RequestKind } from "./request-card";
 
@@ -49,31 +49,17 @@ interface Punch {
   ts: string;
 }
 
-/** The reader's calendar day, which is what a request's dates mean. */
-export function todayHere(): string {
-  return dayOf(new Date());
-}
-
-function dayOf(at: Date): string {
-  const pad = (one: number) => String(one).padStart(2, "0");
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
-}
-
-function yesterday(): string {
-  return dayOf(new Date(Date.now() - kDayMs));
-}
-
-/** A local date and a wall-clock time as one instant, or null until both are there. */
+/** A company date and a company wall-clock time as one instant, or null until both are there. */
 function instant(day: string, time: string): Date | null {
   if (!day || !time) {
     return null;
   }
-  const at = new Date(`${day}T${time}`);
+  const at = atClock(day, time);
   return Number.isNaN(at.getTime()) ? null : at;
 }
 
 function spanDays(from: string, to: string): number {
-  return Math.round((new Date(`${to}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / kDayMs) + 1;
+  return Math.round((dayOnly(to).getTime() - dayOnly(from).getTime()) / kDayMs) + 1;
 }
 
 export function isRequestKind(value: string | null): value is RequestKind {
@@ -100,8 +86,8 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
   const employeeId = useSession((s) => s.employeeId);
   const [kind, setKind] = useState<RequestKind>(preset ?? "LEAVE");
   const [leaveTypeId, setLeaveTypeId] = useState("");
-  const [fromDate, setFromDate] = useState(date ?? (preset === "ATTENDANCE_FIX" ? yesterday() : todayHere()));
-  const [toDate, setToDate] = useState(date ?? todayHere());
+  const [fromDate, setFromDate] = useState(date ?? (preset === "ATTENDANCE_FIX" ? addDays(todayIso(), -1) : todayIso()));
+  const [toDate, setToDate] = useState(date ?? todayIso());
   const [halfDay, setHalfDay] = useState(false);
   const [dayPart, setDayPart] = useState<DayPart>("MORNING");
   const [startTime, setStartTime] = useState("");
@@ -150,9 +136,8 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
     queryKey: ["attendance", "day", employeeId, fromDate],
     enabled: open && kind === "ATTENDANCE_FIX" && employeeId !== null && fromDate !== "",
     queryFn: async () => {
-      const start = new Date(`${fromDate}T00:00:00`);
-      const end = new Date(start.getTime() + kDayMs - 1);
-      const query = new URLSearchParams({ employeeId: String(employeeId), from: start.toISOString(), to: end.toISOString(), take: "50" });
+      const { from, to } = dayWindow(fromDate);
+      const query = new URLSearchParams({ employeeId: String(employeeId), from: from.toISOString(), to: to.toISOString(), take: "50" });
       return (await api.get<{ rows: Punch[] }>(`/attendance?${query.toString()}`)).data.rows;
     },
   });
@@ -286,7 +271,7 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
               <DateField
                 label={t("day")}
                 value={fromDate}
-                max={kind === "ATTENDANCE_FIX" ? yesterday() : undefined}
+                max={kind === "ATTENDANCE_FIX" ? addDays(todayIso(), -1) : undefined}
                 description={kind === "ATTENDANCE_FIX" ? t("fixDayHint") : undefined}
                 onChange={setFromDate}
               />

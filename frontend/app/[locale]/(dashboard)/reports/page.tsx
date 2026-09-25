@@ -18,7 +18,7 @@ import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { dayOnly, hours, money } from "@/lib/format";
+import { atClock, dayOnly, hours, money, monthStart, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 interface Entity {
@@ -95,10 +95,6 @@ const kTrend = 6;
 const kPage = 15;
 const MONTH = /^(\d{4})-(\d{2})$/;
 
-function localDay(at: Date): string {
-  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
-}
-
 function monthOf(raw: string): Month {
   const hit = raw.match(MONTH);
   const month = hit ? Number(hit[2]) : 0;
@@ -115,14 +111,14 @@ function order(at: Month): number {
 
 // The same span the Punches page asks for, so the job warms exactly what that page reads.
 function monthBounds(at: Month): { from: string; to: string } {
-  const start = new Date(at.year, at.month - 1, 1);
-  const end = new Date(new Date(at.year, at.month, 1).getTime() - 1);
-  return { from: start.toISOString(), to: end.toISOString() };
+  const first = `${monthKey(at)}-01`;
+  const end = atClock(monthStart(1, first));
+  return { from: atClock(first).toISOString(), to: new Date(end.getTime() - 1).toISOString() };
 }
 
 /** The day a roster report defaults to: the month's last day, or today while the month runs. */
 function rosterDay(at: Month): string {
-  const today = localDay(new Date());
+  const today = todayIso();
   const last = monthSpan(at).to;
   return last < today ? last : today;
 }

@@ -13,7 +13,7 @@ import {
   type RequestKind,
   type RequestRow,
 } from "@/components/requests/request-card";
-import { isRequestKind, RequestForm, todayHere } from "@/components/requests/request-form";
+import { isRequestKind, RequestForm } from "@/components/requests/request-form";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
@@ -23,7 +23,7 @@ import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { dayOnly, days, money } from "@/lib/format";
+import { dayOnly, days, money, todayIso } from "@/lib/format";
 import { useOutbox } from "@/lib/outbox";
 import { useUrlState } from "@/lib/url-state";
 
@@ -121,9 +121,9 @@ function MyRequests() {
   });
 
   const balances = useQuery({
-    queryKey: ["leave-balances", todayHere()],
+    queryKey: ["leave-balances", todayIso()],
     enabled: employeeId !== null,
-    queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${todayHere()}`)).data,
+    queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${todayIso()}`)).data,
   });
 
   const cancel = useMutation({

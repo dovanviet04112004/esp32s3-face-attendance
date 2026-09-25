@@ -166,7 +166,7 @@
     "tabProbation": "Probation ending",
     "tabOnboarding": "Onboarding late",
     "tabExceptions": "Off pattern",
-    "exceptionsHint": "A shift today and no punch, a late one, or only one. Open a row for that person's punches.",
+    "exceptionsHint": "A shift today and no punch, a late one, or only one; or a punch whose time cannot be right, to correct by hand from when the server heard it. Open a row for that person's punches.",
     "lateBy": "{minutes, number} min late",
     "periodTitle": "Pay period {name}",
     "blockersTitle": "Holding up the lock",
@@ -176,7 +176,9 @@
     "fleetBehindRow": "Behind the latest release",
     "fleetOf": "{count, number} of {total, number}",
     "machines": "{count, plural, one {# kiosk} other {# kiosks}}",
-    "fullListAtLeast": "See all {count, number}+"
+    "fullListAtLeast": "See all {count, number}+",
+    "reasonQUESTIONABLE_TIME": "Questionable time",
+    "heardAt": "heard at {time}"
   },
   "employees": {
     "title": "Employees",
@@ -521,7 +523,10 @@
     "showAll": "Everyone",
     "showLate": "Only people who came in late",
     "personFacts": "Code {code} · {department}.",
-    "flagAll": "Every punch"
+    "flagAll": "Every punch",
+    "flagQuestionable": "questionable time",
+    "questionablePunches": "Questionable-time punches",
+    "heardAt": "Server heard it {at}"
   },
   "devices": {
     "title": "Devices",
@@ -633,7 +638,12 @@
     "claimHint": "Enter all {digits} digits the kiosk shows",
     "releaseRecaptureWarning": "This release changes the recognition model. Once installed, each kiosk drops every face it holds, and everyone has to be captured again at each kiosk before it recognises them.",
     "releaseRecaptureConfirm": "Update and recapture ({count, number})",
-    "otaRecaptureHint": "This release changes the recognition model, so it only goes to the whole fleet at once, with Update all on the Devices page."
+    "otaRecaptureHint": "This release changes the recognition model, so it only goes to the whole fleet at once, with Update all on the Devices page.",
+    "clockSkew": "Kiosk clock",
+    "clockDrift": "clock off",
+    "clockAhead": "{amount} ahead",
+    "clockBehind": "{amount} behind",
+    "clockInSync": "Matches the server"
   },
   "shifts": {
     "title": "Shifts",

@@ -5,14 +5,16 @@ import { CalendarBlankIcon, CaretLeftIcon, CaretRightIcon } from "@phosphor-icon
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
+import { todayIso } from "@/lib/format";
+
 export interface Month {
   year: number;
   month: number;
 }
 
 export function thisMonth(): Month {
-  const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  const [year, month] = todayIso().split("-").map(Number);
+  return { year, month };
 }
 
 export function shiftMonth(at: Month, by: number): Month {

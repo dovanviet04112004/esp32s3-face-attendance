@@ -13,6 +13,7 @@ import { StatePill } from "@/components/ui/pill";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { atClock, monthStart } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 interface PunchPage {
@@ -32,6 +33,8 @@ interface Punch {
   doorOpened: boolean;
   capturedOffline: boolean;
   clockUnsynced: boolean;
+  questionableTime?: boolean;
+  receivedAt?: string | null;
 }
 
 interface Employee {
@@ -45,6 +48,7 @@ interface Counts {
   all: number;
   capturedOffline: number;
   clockUnsynced: number;
+  questionableTime?: number;
 }
 
 interface Kiosk {
@@ -52,7 +56,8 @@ interface Kiosk {
   name: string | null;
 }
 
-type Flag = "" | "capturedOffline" | "clockUnsynced";
+type Flag = "" | "capturedOffline" | "clockUnsynced" | "questionableTime";
+const FLAGS: Flag[] = ["capturedOffline", "clockUnsynced", "questionableTime"];
 
 const PAGE = 200;
 const MONTH = /^(\d{4})-(\d{2})$/;
@@ -79,9 +84,10 @@ function PunchHistory() {
 
   const [url, setUrl] = useUrlState({ month: "", flag: "" });
   const month = monthOf(url.month);
-  const flag = (["capturedOffline", "clockUnsynced"].includes(url.flag) ? url.flag : "") as Flag;
-  const from = new Date(month.year, month.month - 1, 1).toISOString();
-  const to = new Date(month.year, month.month, 1).toISOString();
+  const flag = (FLAGS as string[]).includes(url.flag) ? (url.flag as Flag) : "";
+  const first = `${monthKey(month)}-01`;
+  const from = atClock(first).toISOString();
+  const to = atClock(monthStart(1, first)).toISOString();
   const range = new URLSearchParams({ employeeId: String(id), from, to });
 
   const employee = useQuery({
@@ -119,14 +125,23 @@ function PunchHistory() {
   });
 
   const rows = punches.data?.pages.flatMap((one) => one.rows);
-  const first = punches.data?.pages[0];
+  const firstPage = punches.data?.pages[0];
   const person = employee.data;
 
   const columns: Column<Punch>[] = [
     {
       id: "at",
       header: t("at"),
-      cell: (row) => <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(row.ts), "medium")}</span>,
+      cell: (row) => (
+        <span className="flex flex-col">
+          <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(row.ts), "medium")}</span>
+          {row.questionableTime && row.receivedAt ? (
+            <span className="text-sm whitespace-nowrap text-kumo-subtle tabular-nums">
+              {t("heardAt", { at: format.dateTime(new Date(row.receivedAt), "medium") })}
+            </span>
+          ) : null}
+        </span>
+      ),
     },
     { id: "direction", header: t("direction"), cell: (row) => t(`direction${row.direction}`) },
     { id: "deviceCol", header: t("deviceCol"), priority: 2, truncate: true, cell: (row) => kioskName(row.deviceId) },
@@ -142,8 +157,9 @@ function PunchHistory() {
       header: t("flags"),
       priority: 2,
       cell: (row) =>
-        row.doorOpened || row.capturedOffline || row.clockUnsynced ? (
+        row.doorOpened || row.capturedOffline || row.clockUnsynced || row.questionableTime ? (
           <span className="flex flex-wrap gap-1">
+            {row.questionableTime ? <StatePill tone="bad">{t("flagQuestionable")}</StatePill> : null}
             {row.clockUnsynced ? <StatePill tone="waiting">{t("flagClock")}</StatePill> : null}
             {row.capturedOffline ? <StatePill>{t("flagOffline")}</StatePill> : null}
             {row.doorOpened ? <StatePill>{t("flagDoor")}</StatePill> : null}
@@ -180,11 +196,17 @@ function PunchHistory() {
               label: t("flags"),
               value: flag,
               onChange: (value) => setUrl({ flag: value }),
-              items: { "": t("flagAll"), capturedOffline: t("offlinePunches"), clockUnsynced: t("clockOff") },
+              items: {
+                "": t("flagAll"),
+                capturedOffline: t("offlinePunches"),
+                clockUnsynced: t("clockOff"),
+                questionableTime: t("questionablePunches"),
+              },
               counts: {
                 "": counts.data?.all,
                 capturedOffline: counts.data?.capturedOffline,
                 clockUnsynced: counts.data?.clockUnsynced,
+                questionableTime: counts.data?.questionableTime,
               },
             },
           ]}
@@ -208,11 +230,11 @@ function PunchHistory() {
           onRetry={() => void punches.refetch()}
           empty={flag ? common("noMatch") : t("personMonthEmpty")}
           paging={
-            first
+            firstPage
               ? {
                   shown: rows?.length ?? 0,
-                  total: first.total,
-                  exact: first.totalIsExact,
+                  total: firstPage.total,
+                  exact: firstPage.totalIsExact,
                   onMore: punches.hasNextPage ? () => void punches.fetchNextPage() : undefined,
                   loading: punches.isFetchingNextPage,
                 }

@@ -14,7 +14,7 @@ import { StatePill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
-import { dayOnly } from "@/lib/format";
+import { dayOnly, todayIso } from "@/lib/format";
 
 const KINDS = ["ONBOARDING", "OFFBOARDING"] as const;
 
@@ -38,12 +38,8 @@ interface Run {
   template: { name: string };
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function late(task: Task): boolean {
-  return task.doneAt === null && task.dueOn.slice(0, 10) < today();
+  return task.doneAt === null && task.dueOn.slice(0, 10) < todayIso();
 }
 
 export function Checklist({
@@ -65,7 +61,7 @@ export function Checklist({
 
   const [kind, setKind] = useState<Kind>("ONBOARDING");
   const [starting, setStarting] = useState(false);
-  const [anchorDate, setAnchorDate] = useState(today);
+  const [anchorDate, setAnchorDate] = useState(todayIso);
   const [fault, setFault] = useState<string | null>(null);
 
   // No run yet answers empty rather than 404, so an unstarted tab is not a failed read.
@@ -153,7 +149,7 @@ export function Checklist({
                   icon={PlayIcon}
                   onClick={() => {
                     setFault(null);
-                    setAnchorDate(today());
+                    setAnchorDate(todayIso());
                     setStarting(true);
                   }}
                 >

@@ -12,7 +12,7 @@ import { MonthPicker, thisMonth, type Month } from "@/components/ui/month-picker
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { api } from "@/lib/api";
-import { dayOnly } from "@/lib/format";
+import { atClock, clockAt, dayOf, dayOnly, dayWindow, monthStart } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const PAGE = 50;
@@ -53,16 +53,18 @@ function monthKey(at: Month): string {
 
 // The roll-up counts up to `to` inclusive, and the monthly job warms exactly a month's span.
 function monthBounds(at: Month): { from: string; to: string } {
-  const start = new Date(at.year, at.month - 1, 1);
-  const end = new Date(new Date(at.year, at.month, 1).getTime() - 1);
-  return { from: start.toISOString(), to: end.toISOString() };
+  const first = `${monthKey(at)}-01`;
+  const end = atClock(monthStart(1, first));
+  return { from: atClock(first).toISOString(), to: new Date(end.getTime() - 1).toISOString() };
 }
 
 function dayBounds(from: string, to: string): { from: string; to: string } {
-  const start = dayOnly(from);
-  const end = dayOnly(to);
-  end.setDate(end.getDate() + 1);
-  return { from: start.toISOString(), to: new Date(end.getTime() - 1).toISOString() };
+  return { from: dayWindow(from).from.toISOString(), to: new Date(dayWindow(to).to.getTime() - 1).toISOString() };
+}
+
+// A file is read in Excel, so an instant goes in as the company's own date and clock.
+function wallTime(iso: string | null): string {
+  return iso ? `${dayOf(iso)} ${clockAt(iso)}` : "";
 }
 
 // Excel runs a cell opening with = + - @ tab or CR as a formula, a plain number aside (KEHOACH 7.2).
@@ -169,7 +171,7 @@ function Attendance() {
     onSuccess: (all) => {
       const head = [t("code"), t("employee"), t("punches"), t("firstAt"), t("lastAt"), t("clockOff")];
       const body = all.map((row) =>
-        [row.code, row.fullName, row.punches, row.firstAt ?? "", row.lastAt ?? "", row.unsyncedClock].map(csvCell).join(","),
+        [row.code, row.fullName, row.punches, wallTime(row.firstAt), wallTime(row.lastAt), row.unsyncedClock].map(csvCell).join(","),
       );
       // Excel reads a CSV as the system codepage unless it opens with a BOM, which garbles Vietnamese names.
       const blob = new Blob(["﻿", [head.map(csvCell).join(","), ...body].join("\r\n")], {

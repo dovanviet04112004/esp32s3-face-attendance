@@ -115,6 +115,7 @@ interface Punch {
   doorOpened: boolean;
   capturedOffline: boolean;
   clockUnsynced: boolean;
+  questionableTime?: boolean;
 }
 
 interface Balance {
@@ -425,8 +426,9 @@ export default function EmployeePage() {
       id: "flags",
       header: a("flags"),
       cell: (row) =>
-        row.doorOpened || row.capturedOffline || row.clockUnsynced ? (
+        row.doorOpened || row.capturedOffline || row.clockUnsynced || row.questionableTime ? (
           <span className="flex flex-wrap gap-1">
+            {row.questionableTime ? <StatePill tone="bad">{a("flagQuestionable")}</StatePill> : null}
             {row.doorOpened ? <StatePill>{a("flagDoor")}</StatePill> : null}
             {row.capturedOffline ? <StatePill>{a("flagOffline")}</StatePill> : null}
             {row.clockUnsynced ? <StatePill tone="waiting">{a("flagClock")}</StatePill> : null}

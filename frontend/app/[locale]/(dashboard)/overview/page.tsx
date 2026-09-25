@@ -10,7 +10,6 @@ import { useState, type ReactNode } from "react";
 import { REQUEST_DECIDERS } from "@/components/nav/waiting-count";
 import { type Person } from "@/components/requests/request-card";
 import { InboxPreview } from "@/components/requests/inbox-preview";
-import { todayHere } from "@/components/requests/request-form";
 import { Failed } from "@/components/ui/failed";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
@@ -19,7 +18,7 @@ import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession, type Role } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { dayOnly, percent } from "@/lib/format";
+import { dayOnly, percent, todayIso } from "@/lib/format";
 import { allows } from "@/lib/nav";
 
 interface Today {
@@ -66,7 +65,7 @@ interface Heap<T> {
   totalIsExact: boolean;
 }
 
-type ExceptionReason = "NO_PUNCH" | "LATE" | "STILL_IN";
+type ExceptionReason = "NO_PUNCH" | "LATE" | "STILL_IN" | "QUESTIONABLE_TIME";
 type ContractKind = "PROBATION" | "FIXED_TERM" | "INDEFINITE" | "SEASONAL" | "INTERNSHIP";
 
 interface Expiring {
@@ -85,6 +84,7 @@ interface Exception {
   fullName: string;
   reason: ExceptionReason;
   minutes: number;
+  receivedAt?: string | null;
 }
 
 interface Attention {
@@ -165,8 +165,18 @@ type Step = "stepRun" | "stepCheck" | "stepLock" | "stepPay" | "stepDeliver";
 
 const PEOPLE_DESK: Role[] = ["ADMIN", "HR"];
 const STEPS: Step[] = ["stepRun", "stepCheck", "stepLock", "stepPay", "stepDeliver"];
-const REASON_KEY = { NO_PUNCH: "reasonNO_PUNCH", LATE: "reasonLATE", STILL_IN: "reasonSTILL_IN" } as const;
-const REASON_TONE: Record<ExceptionReason, Tone> = { NO_PUNCH: "bad", LATE: "waiting", STILL_IN: "waiting" };
+const REASON_KEY = {
+  NO_PUNCH: "reasonNO_PUNCH",
+  LATE: "reasonLATE",
+  STILL_IN: "reasonSTILL_IN",
+  QUESTIONABLE_TIME: "reasonQUESTIONABLE_TIME",
+} as const;
+const REASON_TONE: Record<ExceptionReason, Tone> = { NO_PUNCH: "bad", LATE: "waiting", STILL_IN: "waiting", QUESTIONABLE_TIME: "bad" };
+
+// A questionable punch is found by its arrival, so its link opens that filter of the person's month.
+function exceptionHref(row: Exception): string {
+  return row.reason === "QUESTIONABLE_TIME" ? `/attendance/${row.employeeId}?flag=questionableTime` : `/attendance/${row.employeeId}`;
+}
 const kPileRows = 6;
 const kClockMs = 60_000;
 const kAttentionMs = 300_000;
@@ -423,7 +433,7 @@ function TodayCard({ asked }: { asked: UseQueryResult<Today | null> }) {
     return null;
   }
   const today = asked.data;
-  const day = today?.date ?? todayHere();
+  const day = today?.date ?? todayIso();
   const range = `from=${day}&to=${day}`;
   // Payroll staff cannot open the leave ledger, so their leave count lists the names in place.
   const leaveHref = allows(role, employeeId !== null, "/leave") ? `/leave?kind=LEAVE&state=APPROVED&${range}` : undefined;
@@ -628,9 +638,10 @@ function HrCard() {
             onAll: () => setAllExceptions(true),
             rows: held.exceptionsToday.rows.map((row) => ({
               key: String(row.employeeId),
-              href: `/attendance/${row.employeeId}`,
+              href: exceptionHref(row),
               name: row.fullName,
               code: row.code,
+              detail: row.receivedAt ? t("heardAt", { time: format.dateTime(new Date(row.receivedAt), "clock") }) : undefined,
               aside: (
                 <StatePill tone={REASON_TONE[row.reason]}>
                   {row.reason === "LATE" && row.minutes > 0 ? t("lateBy", { minutes: row.minutes }) : t(REASON_KEY[row.reason])}
@@ -660,6 +671,7 @@ function HrCard() {
 function ExceptionsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useTranslations("overview");
   const common = useTranslations("common");
+  const format = useFormatter();
   const list = useInfiniteQuery({
     queryKey: ["reports", "attention", "exceptions"],
     enabled: open,
@@ -691,11 +703,16 @@ function ExceptionsSheet({ open, onClose }: { open: boolean; onClose: () => void
                 {rows.map((row) => (
                   <li key={row.employeeId}>
                     <Link
-                      href={`/attendance/${row.employeeId}`}
+                      href={exceptionHref(row)}
                       className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-kumo-tint motion-press"
                     >
                       <span className="min-w-0 flex-1 truncate">{row.fullName}</span>
                       <span className="shrink-0 font-mono text-sm text-kumo-subtle">{row.code}</span>
+                      {row.receivedAt ? (
+                        <span className="shrink-0 text-sm text-kumo-subtle tabular-nums">
+                          {t("heardAt", { time: format.dateTime(new Date(row.receivedAt), "clock") })}
+                        </span>
+                      ) : null}
                       <StatePill tone={REASON_TONE[row.reason]}>
                         {row.reason === "LATE" && row.minutes > 0 ? t("lateBy", { minutes: row.minutes }) : t(REASON_KEY[row.reason])}
                       </StatePill>

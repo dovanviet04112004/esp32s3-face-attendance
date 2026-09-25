@@ -18,7 +18,7 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
-import { money } from "@/lib/format";
+import { money, todayIso } from "@/lib/format";
 
 interface PayslipRow {
   id: string;
@@ -57,7 +57,7 @@ interface Delta {
 
 const kHere = "/me/payslips";
 const kDisputeForm = "dispute-form";
-const THIS_YEAR = new Date().getFullYear();
+const THIS_YEAR = Number(todayIso().slice(0, 4));
 
 function periodName(row: PayslipRow, fallback: string): string {
   return row.period ? `${String(row.period.month).padStart(2, "0")}/${row.period.year}` : fallback;

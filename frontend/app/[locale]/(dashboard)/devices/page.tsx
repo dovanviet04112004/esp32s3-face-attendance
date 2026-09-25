@@ -16,6 +16,7 @@ import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { clockDrifts, stampOptions } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 import { useFeed, type FeedItem, type FeedStatus } from "@/lib/ws";
 
@@ -45,6 +46,7 @@ interface Device {
   rosterVersion: number;
   lastSeenAt: string | null;
   online: boolean;
+  clockSkewMs?: number | null;
 }
 
 interface DevicePage {
@@ -111,6 +113,7 @@ function isEvent(raw: unknown): raw is EventType {
 
 function Devices() {
   const t = useTranslations("devices");
+  const a = useTranslations("attendance");
   const common = useTranslations("common");
   const format = useFormatter();
   const now = useNow({ updateInterval: kTickMs });
@@ -246,6 +249,19 @@ function Devices() {
     setApproving(device);
   }
 
+  // A punch or an event carries the kiosk's own clock; a status change only the moment of hearing it.
+  const feedAt = (item: FeedItem) => new Date(typeof item.body.ts === "number" ? item.body.ts : item.heardAt);
+
+  function punchFlag(item: FeedItem) {
+    if (item.feed !== "attendance") {
+      return null;
+    }
+    if (item.body.questionableTime === true) {
+      return <StatePill tone="bad">{a("flagQuestionable")}</StatePill>;
+    }
+    return item.body.clockUnsynced === true ? <StatePill tone="waiting">{a("flagClock")}</StatePill> : null;
+  }
+
   function detail(item: FeedItem): string {
     const body = item.body;
     if (item.feed === "attendance") {
@@ -282,7 +298,10 @@ function Devices() {
       header: t("status"),
       cell: (row) =>
         row.status === "APPROVED" ? (
-          <StatePill tone={row.online ? "good" : "idle"}>{row.online ? t("online") : t("offline")}</StatePill>
+          <span className="flex flex-wrap items-center gap-1.5">
+            <StatePill tone={row.online ? "good" : "idle"}>{row.online ? t("online") : t("offline")}</StatePill>
+            {clockDrifts(row.clockSkewMs) ? <StatePill tone="waiting">{t("clockDrift")}</StatePill> : null}
+          </span>
         ) : (
           <StatePill tone={STATUS_TONE[row.status]}>{statusName(row.status)}</StatePill>
         ),
@@ -393,13 +412,14 @@ function Devices() {
                 <ul className="-my-1 flex flex-col">
                   {recent.map((item) => (
                     <li key={item.id} className="flex items-baseline gap-3 border-b border-kumo-hairline py-2 last:border-0">
-                      <span className="w-11 shrink-0 text-sm text-kumo-subtle tabular-nums">
-                        {format.dateTime(new Date(typeof item.body.ts === "number" ? item.body.ts : item.heardAt), "clock")}
+                      <span className="min-w-11 shrink-0 text-sm whitespace-nowrap text-kumo-subtle tabular-nums">
+                        {format.dateTime(feedAt(item), stampOptions(feedAt(item)))}
                       </span>
                       <span className="w-20 shrink-0 text-sm text-kumo-subtle">{t(FEED_KEY[item.feed])}</span>
                       <span className="min-w-0 flex-1 truncate" title={detail(item)}>
                         {detail(item)}
                       </span>
+                      {punchFlag(item)}
                     </li>
                   ))}
                 </ul>

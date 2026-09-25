@@ -15,7 +15,7 @@ import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { dayOnly } from "@/lib/format";
+import { dayOnly, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 interface Holiday {
@@ -46,7 +46,7 @@ function Holidays() {
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
-  const thisYear = new Date().getFullYear();
+  const thisYear = Number(todayIso().slice(0, 4));
 
   const [url, setUrl] = useUrlState({ year: String(thisYear), pay: "" });
   const year = Number(url.year) || thisYear;

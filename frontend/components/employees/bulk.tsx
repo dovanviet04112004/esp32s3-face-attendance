@@ -14,7 +14,7 @@ import { CountPill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
-import { clockOf, dayOnly } from "@/lib/format";
+import { clockOf, dayOnly, todayIso } from "@/lib/format";
 
 export type BulkJob = "place" | "invite" | "kiosk" | "shift";
 
@@ -126,10 +126,6 @@ function usePhone(): boolean {
     () => window.matchMedia(PHONE).matches,
     () => false,
   );
-}
-
-function localDay(at: Date): string {
-  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
 }
 
 // The directory keeps its filter as query-string text; the api reads booleans and numbers.
@@ -522,7 +518,7 @@ function ShiftDialog({ open, asked, onClose, onDone }: DialogProps) {
   const notify = useNotify();
   const faultOf = useFault();
   const [shiftId, setShiftId] = useState("");
-  const [validFrom, setValidFrom] = useState(() => localDay(new Date()));
+  const [validFrom, setValidFrom] = useState(todayIso);
   const [validTo, setValidTo] = useState("");
 
   const shifts = useQuery({

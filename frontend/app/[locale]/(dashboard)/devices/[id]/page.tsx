@@ -25,7 +25,8 @@ import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { useFeed } from "@/lib/ws";
+import { clockDrifts, stampOptions } from "@/lib/format";
+import { useFeed, type FeedItem } from "@/lib/ws";
 
 interface Device {
   id: string;
@@ -37,6 +38,7 @@ interface Device {
   rosterVersion: number;
   lastSeenAt: string | null;
   online: boolean;
+  clockSkewMs?: number | null;
 }
 
 interface FleetUpdate {
@@ -58,6 +60,14 @@ interface OfferStatus {
 }
 
 const STATUS_POLL_MS = 5_000;
+const kInSyncMs = 1_000;
+// Where a skew reads better in the next unit up, largest first.
+const SKEW_UNITS: [unit: "day" | "hour" | "minute" | "second", ms: number, from: number][] = [
+  ["day", 86_400_000, 172_800_000],
+  ["hour", 3_600_000, 5_400_000],
+  ["minute", 60_000, 90_000],
+  ["second", 1_000, 0],
+];
 const kTickMs = 1_000;
 const kEventsShown = 12;
 
@@ -91,6 +101,7 @@ function isEvent(raw: unknown): raw is (typeof EVENTS)[number] {
 
 export default function DevicePage() {
   const t = useTranslations("devices");
+  const a = useTranslations("attendance");
   const common = useTranslations("common");
   const format = useFormatter();
   const params = useParams<{ id: string }>();
@@ -180,6 +191,20 @@ export default function DevicePage() {
   });
 
   const mine = useMemo(() => items.filter((item) => item.body.deviceId === id).slice(0, kEventsShown), [items, id]);
+  const feedAt = (item: FeedItem) => new Date(typeof item.body.ts === "number" ? item.body.ts : item.heardAt);
+
+  function skewText(skewMs: number | null | undefined): string {
+    if (typeof skewMs !== "number") {
+      return common("empty");
+    }
+    const size = Math.abs(skewMs);
+    if (size < kInSyncMs) {
+      return t("clockInSync");
+    }
+    const [unit, unitMs] = SKEW_UNITS.find(([, , from]) => size >= from) ?? ["second", kInSyncMs];
+    const amount = format.number(size / unitMs, { style: "unit", unit, unitDisplay: "long", maximumFractionDigits: 1 });
+    return skewMs > 0 ? t("clockAhead", { amount }) : t("clockBehind", { amount });
+  }
 
   if (device.isError) {
     return (
@@ -253,11 +278,18 @@ export default function DevicePage() {
                   [t("models"), <span key="m" className="font-mono text-sm">{it.modelVersion ?? common("empty")}</span>],
                   [t("roster"), <span key="r" className="tabular-nums">{it.rosterVersion}</span>],
                   [t("lastSeen"), it.lastSeenAt ? format.dateTime(new Date(it.lastSeenAt), "medium") : t("never")],
+                  [
+                    t("clockSkew"),
+                    <span key="k" className="flex flex-wrap items-center justify-end gap-1.5">
+                      <span>{skewText(it.clockSkewMs)}</span>
+                      {clockDrifts(it.clockSkewMs) ? <StatePill tone="waiting">{t("clockDrift")}</StatePill> : null}
+                    </span>,
+                  ],
                 ]}
               />
             ) : (
               <div className="flex flex-col gap-3">
-                {Array.from({ length: 6 }, (_, at) => (
+                {Array.from({ length: 7 }, (_, at) => (
                   <SkeletonLine key={at} minWidth={25} maxWidth={50} />
                 ))}
               </div>
@@ -379,10 +411,10 @@ export default function DevicePage() {
                 <ul className="-my-1 flex flex-col">
                   {mine.map((item) => (
                     <li key={item.id} className="flex items-baseline gap-3 border-b border-kumo-hairline py-2 last:border-0">
-                      <span className="w-11 shrink-0 text-sm text-kumo-subtle tabular-nums">
-                        {format.dateTime(new Date(typeof item.body.ts === "number" ? item.body.ts : item.heardAt), "clock")}
+                      <span className="min-w-11 shrink-0 text-sm whitespace-nowrap text-kumo-subtle tabular-nums">
+                        {format.dateTime(feedAt(item), stampOptions(feedAt(item)))}
                       </span>
-                      <span className="min-w-0 truncate">
+                      <span className="min-w-0 flex-1 truncate">
                         {isEvent(item.body.type)
                           ? t(`event_${item.body.type}`)
                           : item.feed === "attendance"
@@ -393,6 +425,11 @@ export default function DevicePage() {
                                 : t("offline")
                               : t(`status${item.body.status as Device["status"]}`)}
                       </span>
+                      {item.feed === "attendance" && item.body.questionableTime === true ? (
+                        <StatePill tone="bad">{a("flagQuestionable")}</StatePill>
+                      ) : item.feed === "attendance" && item.body.clockUnsynced === true ? (
+                        <StatePill tone="waiting">{a("flagClock")}</StatePill>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

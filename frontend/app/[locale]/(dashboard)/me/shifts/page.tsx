@@ -6,14 +6,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 
-import { todayHere } from "@/components/requests/request-form";
 import { Failed } from "@/components/ui/failed";
 import { MonthPicker, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
 import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { clockOf } from "@/lib/format";
+import { clockOf, todayIso } from "@/lib/format";
 
 interface PlannedDay {
   date: string;
@@ -100,7 +99,7 @@ export default function MyShiftsPage() {
   });
 
   const days = roster.data ?? [];
-  const today = todayHere();
+  const today = todayIso();
   const count = (group: Group) => days.filter((one) => groupOf(sortOf(one)) === group).length;
 
   function move(next: Month): void {

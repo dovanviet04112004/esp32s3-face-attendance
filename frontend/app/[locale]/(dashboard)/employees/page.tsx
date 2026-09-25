@@ -18,7 +18,7 @@ import { CountPill, StatePill } from "@/components/ui/pill";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { dayOnly, money } from "@/lib/format";
+import { dayOnly, money, monthStart, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 interface Employee {
@@ -73,11 +73,6 @@ const ENDINGS = ["contract", "probation"] as const;
 const kEndingDays = 30;
 const kMsPerDay = 86_400_000;
 const kDueShown = 3;
-
-function firstOfNextMonth(): string {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
-}
 
 function queryOf(params: Record<string, string>): string {
   const kept = Object.entries(params).filter(([, value]) => value !== "");
@@ -144,7 +139,7 @@ function Directory() {
 
   const [raising, setRaising] = useState(false);
   const [raiseDept, setRaiseDept] = useState("");
-  const [effectiveFrom, setEffectiveFrom] = useState(firstOfNextMonth);
+  const [effectiveFrom, setEffectiveFrom] = useState(() => monthStart(1));
   const [percent, setPercent] = useState("");
   const [flat, setFlat] = useState("");
 
@@ -214,7 +209,7 @@ function Directory() {
     ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, one.name])),
   };
   const daysLeftOf = (day: string) => {
-    const left = Math.round((dayOnly(day).getTime() - dayOnly(new Date().toISOString().slice(0, 10)).getTime()) / kMsPerDay);
+    const left = Math.round((dayOnly(day).getTime() - dayOnly(todayIso()).getTime()) / kMsPerDay);
     return left < 0 ? t("overdue") : due("daysLeft", { count: left });
   };
 

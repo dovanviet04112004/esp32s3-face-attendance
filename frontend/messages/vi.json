@@ -166,7 +166,7 @@
     "tabProbation": "Hết thử việc",
     "tabOnboarding": "Nhận việc trễ",
     "tabExceptions": "Lệch giờ",
-    "exceptionsHint": "Có ca hôm nay mà chưa quẹt, đi muộn, hoặc mới quẹt một lần. Bấm một dòng để xem các lượt của người ấy.",
+    "exceptionsHint": "Có ca hôm nay mà chưa quẹt, đi muộn, hoặc mới quẹt một lần; hay có lượt quẹt mang giờ không thể đúng, chờ sửa tay theo giờ máy chủ nhận. Bấm một dòng để xem các lượt của người ấy.",
     "lateBy": "Muộn {minutes, number} phút",
     "periodTitle": "Kỳ lương {name}",
     "blockersTitle": "Việc chặn chốt kỳ",
@@ -176,7 +176,9 @@
     "fleetBehindRow": "Có bản mới chưa cài",
     "fleetOf": "{count, number}/{total, number} máy",
     "machines": "{count, number} máy",
-    "fullListAtLeast": "Xem cả {count, number}+"
+    "fullListAtLeast": "Xem cả {count, number}+",
+    "reasonQUESTIONABLE_TIME": "Giờ nghi vấn",
+    "heardAt": "nhận lúc {time}"
   },
   "employees": {
     "title": "Nhân viên",
@@ -521,7 +523,10 @@
     "showAll": "Mọi người",
     "showLate": "Chỉ người đi muộn",
     "personFacts": "Mã {code} · {department}.",
-    "flagAll": "Mọi lượt"
+    "flagAll": "Mọi lượt",
+    "flagQuestionable": "giờ nghi vấn",
+    "questionablePunches": "Lượt giờ nghi vấn",
+    "heardAt": "Máy chủ nhận lúc {at}"
   },
   "devices": {
     "title": "Thiết bị",
@@ -633,7 +638,12 @@
     "claimHint": "Nhập đủ {digits} chữ số đang hiện trên màn kiosk",
     "releaseRecaptureWarning": "Bản này đổi model nhận diện. Cài xong, mỗi máy xoá mọi khuôn mặt đang giữ, và mọi người phải lấy mặt lại ở từng máy thì máy mới nhận ra họ.",
     "releaseRecaptureConfirm": "Cập nhật và lấy mặt lại ({count, number})",
-    "otaRecaptureHint": "Bản này đổi model nhận diện nên chỉ cập nhật được cho cả đội cùng lúc, bằng nút Cập nhật cả đội ở trang Thiết bị."
+    "otaRecaptureHint": "Bản này đổi model nhận diện nên chỉ cập nhật được cho cả đội cùng lúc, bằng nút Cập nhật cả đội ở trang Thiết bị.",
+    "clockSkew": "Đồng hồ máy",
+    "clockDrift": "đồng hồ lệch",
+    "clockAhead": "Nhanh {amount}",
+    "clockBehind": "Chậm {amount}",
+    "clockInSync": "Khớp giờ máy chủ"
   },
   "shifts": {
     "title": "Ca làm",

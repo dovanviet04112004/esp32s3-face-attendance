@@ -27,7 +27,7 @@ import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { clockOf, dayOnly } from "@/lib/format";
+import { clockOf, dayOnly, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 interface Shift {
@@ -58,10 +58,6 @@ const WRITERS = ["ADMIN", "HR"];
 const kRosterPage = 50;
 const kNameMax = 64;
 const kBulkMax = 500;
-
-function localDay(at: Date): string {
-  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
-}
 
 export default function ShiftsPage() {
   return (
@@ -96,7 +92,7 @@ function Shifts() {
   const [endTime, setEndTime] = useState("17:30");
   const [graceMinutes, setGraceMinutes] = useState("0");
   const [chosen, setChosen] = useState<Person[]>([]);
-  const [validFrom, setValidFrom] = useState(() => localDay(new Date()));
+  const [validFrom, setValidFrom] = useState(todayIso);
   const [validTo, setValidTo] = useState("");
   const [rosterTyped, setRosterTyped] = useState("");
   const rosterSearch = useSettled(rosterTyped.trim());
@@ -207,7 +203,7 @@ function Shifts() {
     setTried(false);
     setChosen([]);
     setRosterTyped("");
-    setValidFrom(localDay(new Date()));
+    setValidFrom(todayIso());
     setValidTo("");
     setRostering(one);
   }

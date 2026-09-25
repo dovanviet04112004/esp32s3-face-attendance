@@ -14,7 +14,7 @@ import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
-import { clockOf, dayOnly } from "@/lib/format";
+import { clockOf, dayOnly, todayIso } from "@/lib/format";
 
 interface Shift {
   id: string;
@@ -41,10 +41,6 @@ const STANDING_KEY = {
   ended: "shiftEnded",
 } as const;
 const kPastShown = 2;
-
-function localDay(at: Date): string {
-  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
-}
 
 // The list comes latest start first, so the first one covering today is the one in force (KEHOACH 9.8).
 function standingOf(held: Held[], today: string): Map<string, Standing> {
@@ -132,7 +128,7 @@ export function ShiftCard({ employeeId, fullName }: { employeeId: number; fullNa
     setFault(null);
     setTried(false);
     setShiftId(offered[0]?.id ?? "");
-    setValidFrom(localDay(new Date()));
+    setValidFrom(todayIso());
     setValidTo("");
     setOpen(true);
   }
@@ -150,7 +146,7 @@ export function ShiftCard({ employeeId, fullName }: { employeeId: number; fullNa
     return <Failed onRetry={() => void held.refetch()} />;
   }
 
-  const standing = standingOf(held.data ?? [], localDay(new Date()));
+  const standing = standingOf(held.data ?? [], todayIso());
   const bygone = (one: Held) => ["replaced", "ended"].includes(standing.get(one.id) ?? "ended");
   const past = (held.data ?? []).filter(bygone).slice(0, kPastShown);
   const shown = (held.data ?? []).filter((one) => !bygone(one) || past.includes(one));

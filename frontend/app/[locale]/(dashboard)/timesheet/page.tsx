@@ -24,7 +24,7 @@ import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { dayOnly, hours, minutes as asMinutes } from "@/lib/format";
+import { clockAt, dayOnly, hours, minutes as asMinutes } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 type DayState = "WORKED" | "LEAVE" | "HOLIDAY" | "WEEKEND" | "ABSENT";
@@ -107,11 +107,7 @@ function monthText(at: Month): string {
 }
 
 function clockOf(iso: string | null): string {
-  if (!iso) {
-    return "";
-  }
-  const at = new Date(iso);
-  return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+  return iso ? clockAt(iso) : "";
 }
 
 function minutesOf(clock: string): number | null {

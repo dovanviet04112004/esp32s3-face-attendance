@@ -28,7 +28,7 @@ import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { dayOnly, days } from "@/lib/format";
+import { dayOnly, days, todayIso } from "@/lib/format";
 import { allows } from "@/lib/nav";
 import { leftByYear, useRequestWords, type InboxRow } from "./request-card";
 
@@ -76,11 +76,9 @@ interface Decision {
 /** A request's dates without the year when it is this year's, so a row stays on one line. */
 export function useShortSpan(): (row: Pick<InboxRow, "fromDate" | "toDate">) => string {
   const format = useFormatter();
-  const year = new Date().getFullYear();
-  const one = (iso: string) => {
-    const at = dayOnly(iso);
-    return format.dateTime(at, at.getFullYear() === year ? { day: "numeric", month: "numeric" } : { dateStyle: "short" });
-  };
+  const year = todayIso().slice(0, 4);
+  const one = (iso: string) =>
+    format.dateTime(dayOnly(iso), iso.slice(0, 4) === year ? { day: "numeric", month: "numeric" } : { dateStyle: "short" });
   return (row) =>
     row.fromDate.slice(0, 10) === row.toDate.slice(0, 10) ? one(row.fromDate) : `${one(row.fromDate)} – ${one(row.toDate)}`;
 }

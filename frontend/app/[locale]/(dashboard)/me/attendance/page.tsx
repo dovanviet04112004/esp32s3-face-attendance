@@ -7,7 +7,6 @@ import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Suspense, useMemo, useState } from "react";
 
-import { todayHere } from "@/components/requests/request-form";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { MonthPicker, monthSpan, thisMonth, type Month } from "@/components/ui/month-picker";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
@@ -15,7 +14,7 @@ import { StatePill } from "@/components/ui/pill";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { clockOf, dayOnly } from "@/lib/format";
+import { atClock, clockOf, dayOf, dayOnly, dayWindow, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const kPunchPage = 200;
@@ -31,6 +30,7 @@ interface Punch {
   direction: "IN" | "OUT";
   capturedOffline: boolean;
   clockUnsynced: boolean;
+  questionableTime?: boolean;
 }
 
 interface PlannedDay {
@@ -58,11 +58,6 @@ interface Day {
   mark: Mark;
 }
 
-function dayHere(at: Date): string {
-  const pad = (one: number) => String(one).padStart(2, "0");
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
-}
-
 function monthOf(raw: string): Month {
   const found = MONTH.exec(raw);
   return found ? { year: Number(found[1]), month: Number(found[2]) } : thisMonth();
@@ -74,9 +69,7 @@ function monthKey(at: Month): string {
 
 /** Minutes past the shift's start plus its grace; zero or less is on time. */
 function lateBy(day: string, shift: NonNullable<PlannedDay["shift"]>, first: Punch): number {
-  const [hour, minute] = shift.startTime.split(":").map(Number);
-  const start = dayOnly(day);
-  start.setHours(hour, minute, 0, 0);
+  const start = atClock(day, shift.startTime);
   return Math.floor((new Date(first.ts).getTime() - start.getTime()) / kMinuteMs) - (shift.graceMinutes ?? 0);
 }
 
@@ -108,7 +101,7 @@ function MyAttendance() {
   const [open, setOpen] = useState<Day | null>(null);
   const month = monthOf(url.month);
   const span = monthSpan(month);
-  const today = todayHere();
+  const today = todayIso();
 
   const roster = useQuery({
     queryKey: ["me", "roster", month.year, month.month],
@@ -120,9 +113,8 @@ function MyAttendance() {
     queryKey: ["attendance", "mine", employeeId, "month", monthKey(month)],
     enabled: employeeId !== null,
     queryFn: async () => {
-      const from = dayOnly(span.from);
-      const to = dayOnly(span.to);
-      to.setHours(23, 59, 59, 999);
+      const from = dayWindow(span.from).from;
+      const to = dayWindow(span.to).to;
       const all: Punch[] = [];
       let cursor = "";
       for (let page = 0; page < kMaxPages; page += 1) {
@@ -172,7 +164,7 @@ function MyAttendance() {
   const days = useMemo<Day[]>(() => {
     const byDay = new Map<string, Punch[]>();
     for (const one of punches.data ?? []) {
-      const key = dayHere(new Date(one.ts));
+      const key = dayOf(one.ts);
       byDay.set(key, [...(byDay.get(key) ?? []), one]);
     }
     const plans = new Map((roster.data ?? []).map((one) => [one.date.slice(0, 10), one]));
@@ -333,6 +325,7 @@ function MyAttendance() {
                       ) : null}
                     </span>
                     <span className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                      {one.questionableTime ? <StatePill tone="bad">{a("flagQuestionable")}</StatePill> : null}
                       {one.clockUnsynced ? <StatePill tone="waiting">{a("flagClock")}</StatePill> : null}
                       {one.capturedOffline ? <StatePill>{a("flagOffline")}</StatePill> : null}
                     </span>

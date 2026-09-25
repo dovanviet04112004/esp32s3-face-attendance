@@ -13,7 +13,7 @@ import { useOptional } from "@/components/ui/optional";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
-import { dayOnly } from "@/lib/format";
+import { dayOnly, todayIso } from "@/lib/format";
 
 interface FileType {
   id: string;
@@ -39,10 +39,6 @@ interface Short extends Named {
   expiresAt: string | null;
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: boolean }) {
   const t = useTranslations("documents");
   const common = useTranslations("common");
@@ -55,7 +51,7 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
 
   const [open, setOpen] = useState(false);
   const [typeId, setTypeId] = useState("");
-  const [receivedAt, setReceivedAt] = useState(today);
+  const [receivedAt, setReceivedAt] = useState(todayIso);
   const [note, setNote] = useState("");
   const [fault, setFault] = useState<string | null>(null);
 
@@ -95,7 +91,7 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
   function openReceive(presetType: string): void {
     setFault(null);
     setTypeId(presetType);
-    setReceivedAt(today());
+    setReceivedAt(todayIso());
     setNote("");
     setOpen(true);
   }
@@ -227,7 +223,7 @@ export function Files({ employeeId, mayWrite }: { employeeId: number; mayWrite: 
                   label={t("receivedAt")}
                   description={t("expiryHint")}
                   required
-                  max={today()}
+                  max={todayIso()}
                   value={receivedAt}
                   onChange={setReceivedAt}
                 />

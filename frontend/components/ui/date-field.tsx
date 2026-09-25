@@ -7,7 +7,7 @@ import { useCallback, useId, useState, useSyncExternalStore, type ReactNode } fr
 
 import { useOptional } from "@/components/ui/optional";
 import { cn } from "@/lib/cn";
-import { dayOnly } from "@/lib/format";
+import { dayOnly, todayIso } from "@/lib/format";
 
 const DESK = "(pointer: fine) and (min-width: 48rem)";
 
@@ -24,6 +24,7 @@ function useDesk(): boolean {
   );
 }
 
+// The calendar hands back the browser's local midnight of the day clicked, so it is read locally.
 function isoOf(day: Date): string {
   const pad = (one: number) => String(one).padStart(2, "0");
   return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
@@ -51,7 +52,7 @@ function DeskDateField({ label, description, error, value, onChange, min, max, r
   const picked = value ? dayOnly(value) : undefined;
   const floor = min ? dayOnly(min) : undefined;
   const ceiling = max ? dayOnly(max) : undefined;
-  const today = isoOf(new Date());
+  const today = todayIso();
   const todayFits = (!min || today >= min) && (!max || today <= max);
   const opensOn = picked ?? (min && today < min ? floor : max && today > max ? ceiling : undefined);
 
@@ -94,8 +95,8 @@ function DeskDateField({ label, description, error, value, onChange, min, max, r
             disabled={[...(floor ? [{ before: floor }] : []), ...(ceiling ? [{ after: ceiling }] : [])]}
             weekStartsOn={1}
             formatters={{
-              formatCaption: (month) => format.dateTime(month, { month: "long", year: "numeric" }),
-              formatWeekdayName: (day) => format.dateTime(day, { weekday: "narrow" }),
+              formatCaption: (month) => format.dateTime(dayOnly(isoOf(month)), { month: "long", year: "numeric" }),
+              formatWeekdayName: (day) => format.dateTime(dayOnly(isoOf(day)), { weekday: "narrow" }),
             }}
             labels={{ labelPrevious: () => t("earlier"), labelNext: () => t("later") }}
             onChange={(next) => (next ? choose(isoOf(next)) : undefined)}

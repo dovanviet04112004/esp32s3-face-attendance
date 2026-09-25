@@ -24,7 +24,6 @@ import { PersonPicker, type Person } from "@/components/ui/person-picker";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
-import { dayOnly } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const STATES = ["IN_STOCK", "ISSUED", "RETURNED", "RETIRED", "LOST"] as const;
@@ -247,7 +246,7 @@ function Assets() {
       header: t("issuedAt"),
       priority: 2,
       cell: (row) =>
-        row.issuedAt ? <span className="tabular-nums">{format.dateTime(dayOnly(row.issuedAt), "day")}</span> : common("empty"),
+        row.issuedAt ? <span className="tabular-nums">{format.dateTime(new Date(row.issuedAt), "day")}</span> : common("empty"),
     },
     { id: "kind", header: t("kind"), priority: 3, truncate: true, cell: (row) => row.kind },
     {

@@ -13,7 +13,7 @@ import { useOptional } from "@/components/ui/optional";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
-import { dayOnly } from "@/lib/format";
+import { dayOnly, todayIso } from "@/lib/format";
 
 const KINDS = ["PROBATION", "FIXED_TERM", "INDEFINITE", "SEASONAL", "INTERNSHIP"] as const;
 const ENDINGS = ["ENDED", "TERMINATED"] as const;
@@ -32,10 +32,6 @@ export interface Contract {
   probationEnd: string | null;
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWrite: boolean }) {
   const t = useTranslations("employees");
   const common = useTranslations("common");
@@ -50,7 +46,7 @@ export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWri
   const [fault, setFault] = useState<string | null>(null);
   const [kind, setKind] = useState<Kind>("PROBATION");
   const [number, setNumber] = useState("");
-  const [startDate, setStartDate] = useState(today);
+  const [startDate, setStartDate] = useState(todayIso);
   const [endDate, setEndDate] = useState("");
   const [probationEnd, setProbationEnd] = useState("");
   const [state, setState] = useState<Ending>("ENDED");
@@ -101,7 +97,7 @@ export function Contracts({ employeeId, mayWrite }: { employeeId: number; mayWri
     setFault(null);
     setKind("PROBATION");
     setNumber("");
-    setStartDate(today());
+    setStartDate(todayIso());
     setEndDate("");
     setProbationEnd("");
     setAdding(true);

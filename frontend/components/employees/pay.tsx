@@ -13,7 +13,7 @@ import { useOptional } from "@/components/ui/optional";
 import { api } from "@/lib/api";
 import { useSession, type Role } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { dayOnly, money } from "@/lib/format";
+import { dayOnly, money, monthStart } from "@/lib/format";
 
 const REASONS = ["HIRE", "PROMOTION", "ANNUAL_REVIEW", "ADJUSTMENT", "TRANSFER", "OTHER"] as const;
 // Payroll runs pay but does not set it (KEHOACH 9.4).
@@ -66,11 +66,6 @@ interface PayslipRow {
   grossPay: string;
   netPay: string;
   period?: { year: number; month: number };
-}
-
-function firstOfNextMonth(): string {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
 }
 
 function wholeDong(value: string): boolean {
@@ -169,7 +164,7 @@ export function Pay({ employeeId }: { employeeId: number; mayWrite?: boolean }) 
   const [open, setOpen] = useState(false);
   const [tried, setTried] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
-  const [effectiveFrom, setEffectiveFrom] = useState(firstOfNextMonth);
+  const [effectiveFrom, setEffectiveFrom] = useState(() => monthStart(1));
   const [baseSalary, setBaseSalary] = useState("");
   const [insuranceSalary, setInsuranceSalary] = useState("");
   const [reason, setReason] = useState<Reason>("ANNUAL_REVIEW");
@@ -229,7 +224,7 @@ export function Pay({ employeeId }: { employeeId: number; mayWrite?: boolean }) 
       .map((one, at) => ({ key: at, typeId: one.typeId, amount: String(Math.trunc(Number(one.amount))) }));
     setBaseSalary(latest ? String(Math.trunc(Number(latest.baseSalary))) : "");
     setInsuranceSalary(latest ? String(Math.trunc(Number(latest.insuranceSalary))) : "");
-    setEffectiveFrom(firstOfNextMonth());
+    setEffectiveFrom(monthStart(1));
     setReason(latest ? "ANNUAL_REVIEW" : "HIRE");
     setNote("");
     setLines(carried);

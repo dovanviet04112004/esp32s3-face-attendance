@@ -17,7 +17,7 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
-import { dayOnly, money, percent } from "@/lib/format";
+import { dayOnly, money, monthStart, percent, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 interface Bracket {
@@ -142,17 +142,6 @@ function smoothly(): ScrollBehavior {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
-function firstOfNextMonth(): string {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
-}
-
-function today(): string {
-  const now = new Date();
-  const pad = (one: number) => String(one).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
 // A rate is stored in basis points and typed in percent: 8, not 800.
 function asPercent(bp: number): string {
   return String(bp / kBpPerPercent);
@@ -161,7 +150,7 @@ function asPercent(bp: number): string {
 function copyOf(policy: Policy | undefined, scope: string): Draft {
   return {
     scope,
-    effectiveFrom: firstOfNextMonth(),
+    effectiveFrom: monthStart(1),
     note: "",
     selfDeduction: policy?.selfDeduction ?? "",
     dependentDeduction: policy?.dependentDeduction ?? "",
@@ -352,7 +341,7 @@ function PolicyPageBody() {
   const sorted = allRows
     .filter((one) => scope === "" || scopeOf(one) === scope)
     .sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom));
-  const now = today();
+  const now = todayIso();
   const inForce = sorted.find((one) => one.effectiveFrom.slice(0, 10) <= now);
   const others = sorted.filter((one) => one !== inForce);
   const since = (one: Policy) => t("effectiveOn", { date: format.dateTime(dayOnly(one.effectiveFrom), "day") });

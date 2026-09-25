@@ -25,7 +25,7 @@ import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { dayOnly } from "@/lib/format";
+import { dayOnly, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const FINISHERS = ["ADMIN", "HR", "MANAGER"];
@@ -103,12 +103,8 @@ interface TemplateDraft {
   items: ItemDraft[];
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function isLate(task: OpenTask): boolean {
-  return task.dueOn.slice(0, 10) < today();
+  return task.dueOn.slice(0, 10) < todayIso();
 }
 
 function fold(text: string): string {

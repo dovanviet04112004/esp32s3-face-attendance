@@ -12,7 +12,7 @@ import { useOptional } from "@/components/ui/optional";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
-import { dayOnly } from "@/lib/format";
+import { addDays, dayOnly, todayIso } from "@/lib/format";
 
 export interface Offboarding {
   employeeId: number;
@@ -24,22 +24,6 @@ export interface Offboarding {
   advancesOutstanding: number;
 }
 
-function dayOf(at: Date): string {
-  const pad = (one: number) => String(one).padStart(2, "0");
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
-}
-
-// The reader's calendar day; the server decides against APP_TIMEZONE and answers `closed` (KEHOACH 9.14).
-function today(): string {
-  return dayOf(new Date());
-}
-
-function dayAfter(day: string): string {
-  const next = dayOnly(day);
-  next.setDate(next.getDate() + 1);
-  return dayOf(next);
-}
-
 export function isOutstanding(left: Offboarding): boolean {
   return left.assetsOutstanding.length > 0 || left.requestsPending > 0 || left.advancesOutstanding > 0;
 }
@@ -49,7 +33,7 @@ export function LeavingPill({ leaveDate }: { leaveDate: string }) {
   const t = useTranslations("employees");
   const format = useFormatter();
   const day = dayOnly(leaveDate);
-  const sameYear = day.getFullYear() === new Date().getFullYear();
+  const sameYear = leaveDate.slice(0, 4) === todayIso().slice(0, 4);
   const shown = format.dateTime(day, { day: "numeric", month: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
   return <StatePill tone="waiting">{t("statusLeaving", { day: shown })}</StatePill>;
 }
@@ -65,7 +49,7 @@ export function LeavingBanner({ leaveDate, actions }: { leaveDate: string; actio
       title={t("leavingTitle", { day: dayText(leaveDate) })}
       description={
         <>
-          {t("leavingLead", { next: dayText(dayAfter(leaveDate)) })}
+          {t("leavingLead", { next: dayText(addDays(leaveDate, 1)) })}
           {actions ? <span className="mt-2 flex flex-wrap gap-2">{actions}</span> : null}
         </>
       }
@@ -151,13 +135,13 @@ export function Offboard({
   const notify = useNotify();
   const optional = useOptional();
   const moving = scheduled !== null;
-  const startDay = () => (scheduled ? scheduled.slice(0, 10) : today());
+  const startDay = () => (scheduled ? scheduled.slice(0, 10) : todayIso());
 
   const [fault, setFault] = useState<string | null>(null);
   const [leaveDate, setLeaveDate] = useState(startDay);
   const [reason, setReason] = useState("");
 
-  const closesNow = leaveDate !== "" && leaveDate <= today();
+  const closesNow = leaveDate !== "" && leaveDate <= todayIso();
   const dayText = (day: string) => format.dateTime(dayOnly(day), "day");
 
   function close(): void {
@@ -188,7 +172,7 @@ export function Offboard({
 
   const lead = closesNow
     ? t("offboardNowLead")
-    : t("offboardLaterLead", { name: fullName, day: dayText(leaveDate), next: dayText(dayAfter(leaveDate)) });
+    : t("offboardLaterLead", { name: fullName, day: dayText(leaveDate), next: dayText(addDays(leaveDate, 1)) });
   const act = closesNow ? t("offboardActionNow") : moving ? t("offboardMoveAction") : t("offboardActionLater");
 
   return (
