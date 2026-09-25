@@ -42,3 +42,11 @@ export function percent(fraction: number, locale: string): string {
     fraction,
   );
 }
+
+/** A shift's wall-clock "HH:mm" read in the locale's own clock, as punch times already are. */
+export function clockOf(time: string, locale: string): string {
+  const [hour, minute] = time.split(":").map(Number);
+  return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone: "UTC" }).format(
+    new Date(Date.UTC(1970, 0, 1, hour ?? 0, minute ?? 0)),
+  );
+}

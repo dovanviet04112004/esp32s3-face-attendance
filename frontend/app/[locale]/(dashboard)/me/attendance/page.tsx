@@ -4,7 +4,7 @@ import { Empty, LayerCard, LayerDialog, LinkButton } from "@cloudflare/kumo";
 import { ClockCounterClockwiseIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Suspense, useMemo, useState } from "react";
 
 import { todayHere } from "@/components/requests/request-form";
@@ -15,7 +15,7 @@ import { StatePill } from "@/components/ui/pill";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { dayOnly } from "@/lib/format";
+import { clockOf, dayOnly } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const kPunchPage = 200;
@@ -95,6 +95,7 @@ function markOf(date: string, plan: PlannedDay | undefined, punches: Punch[], la
 }
 
 function MyAttendance() {
+  const locale = useLocale();
   const t = useTranslations("me");
   const a = useTranslations("attendance");
   const shifts = useTranslations("myShifts");
@@ -204,7 +205,7 @@ function MyAttendance() {
     if (plan?.weekend) {
       return shifts("weekend");
     }
-    return plan?.shift ? `${plan.shift.startTime}–${plan.shift.endTime}` : shifts("none");
+    return plan?.shift ? `${clockOf(plan.shift.startTime, locale)}–${clockOf(plan.shift.endTime, locale)}` : shifts("none");
   };
   const fix = (date: string) => router.push(`/me/requests?new=ATTENDANCE_FIX&date=${date}`);
   const fixable = (day: Day) => day.date < today;

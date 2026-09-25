@@ -12,7 +12,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Suspense, useState } from "react";
 
 import { DataTable, PagingRow, type Column, type RowAction } from "@/components/tables/data-table";
@@ -27,7 +27,7 @@ import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { dayOnly } from "@/lib/format";
+import { clockOf, dayOnly } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 interface Shift {
@@ -72,6 +72,7 @@ export default function ShiftsPage() {
 }
 
 function Shifts() {
+  const locale = useLocale();
   const t = useTranslations("shifts");
   const shared = useTranslations("catalogues");
   const common = useTranslations("common");
@@ -236,15 +237,15 @@ function Shifts() {
   }
 
   const shown = shifts.data?.filter((one) => url.retired === "1" || one.active);
-  const hours = (one: Shift) => `${one.startTime} – ${one.endTime}`;
+  const hours = (one: Shift) => `${clockOf(one.startTime, locale)} – ${clockOf(one.endTime, locale)}`;
   const faultBanner = fault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null;
   const rosterRows = assignments.data?.pages.flatMap((one) => one.rows);
   const firstRoster = assignments.data?.pages[0];
 
   const columns: Column<Shift>[] = [
     { id: "name", header: t("name"), cell: (row) => <span className="font-medium">{row.name}</span> },
-    { id: "startTime", header: t("startTime"), numeric: true, cell: (row) => row.startTime },
-    { id: "endTime", header: t("endTime"), numeric: true, cell: (row) => row.endTime },
+    { id: "startTime", header: t("startTime"), numeric: true, cell: (row) => clockOf(row.startTime, locale) },
+    { id: "endTime", header: t("endTime"), numeric: true, cell: (row) => clockOf(row.endTime, locale) },
     { id: "graceMinutes", header: t("graceMinutes"), numeric: true, priority: 2, cell: (row) => row.graceMinutes },
     {
       id: "status",

@@ -3,7 +3,7 @@
 import { Empty, LayerCard } from "@cloudflare/kumo";
 import { CalendarBlankIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { todayHere } from "@/components/requests/request-form";
@@ -13,6 +13,7 @@ import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/pag
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { clockOf } from "@/lib/format";
 
 interface PlannedDay {
   date: string;
@@ -82,6 +83,7 @@ function Swatch({ sort, label }: { sort: Sort; label: string }) {
 }
 
 export default function MyShiftsPage() {
+  const locale = useLocale();
   const t = useTranslations("myShifts");
   const common = useTranslations("common");
   const format = useFormatter();
@@ -231,9 +233,9 @@ export default function MyShiftsPage() {
                         <span className="truncate max-sm:hidden">{day.shift.name}</span>
                         <span className="text-kumo-subtle tabular-nums">
                           <span className="max-sm:hidden">
-                            {day.shift.startTime}–{day.shift.endTime}
+                            {clockOf(day.shift.startTime, locale)}–{clockOf(day.shift.endTime, locale)}
                           </span>
-                          <span className="sm:hidden">{day.shift.startTime}</span>
+                          <span className="sm:hidden">{clockOf(day.shift.startTime, locale)}</span>
                         </span>
                       </>
                     ) : null}

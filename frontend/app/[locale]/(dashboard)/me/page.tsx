@@ -18,7 +18,7 @@ import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { dayOnly, days, money } from "@/lib/format";
+import { clockOf, dayOnly, days, money } from "@/lib/format";
 
 interface Balance {
   leaveTypeId: string;
@@ -243,6 +243,7 @@ function usePlanShort(): (day: PlannedDay | undefined) => string | null {
 }
 
 function TodayCard({ employeeId, week }: { employeeId: number; week: ReturnType<typeof useWeek> }) {
+  const locale = useLocale();
   const t = useTranslations("me");
   const a = useTranslations("attendance");
   const shifts = useTranslations("myShifts");
@@ -312,7 +313,7 @@ function TodayCard({ employeeId, week }: { employeeId: number; week: ReturnType<
               ) : worksOn(planned) ? (
                 <>
                   <span className="text-xl font-semibold tabular-nums">
-                    {planned.shift.startTime}–{planned.shift.endTime}
+                    {clockOf(planned.shift.startTime, locale)}–{clockOf(planned.shift.endTime, locale)}
                   </span>
                   <span className="text-kumo-subtle">{planned.shift.name}</span>
                 </>
@@ -352,6 +353,7 @@ function TodayCard({ employeeId, week }: { employeeId: number; week: ReturnType<
 }
 
 function WeekCard({ week }: { week: ReturnType<typeof useWeek> }) {
+  const locale = useLocale();
   const t = useTranslations("me");
   const nav = useTranslations("nav");
   const format = useFormatter();
@@ -386,8 +388,8 @@ function WeekCard({ week }: { week: ReturnType<typeof useWeek> }) {
                   </span>
                 ) : works && plan?.shift ? (
                   <span className="mt-1 flex flex-col text-sm leading-tight font-medium tabular-nums">
-                    <span>{plan.shift.startTime}</span>
-                    <span className="text-kumo-subtle">{plan.shift.endTime}</span>
+                    <span>{clockOf(plan.shift.startTime, locale)}</span>
+                    <span className="text-kumo-subtle">{clockOf(plan.shift.endTime, locale)}</span>
                   </span>
                 ) : (
                   <span className="mt-1 text-sm leading-tight text-kumo-subtle">{word}</span>
