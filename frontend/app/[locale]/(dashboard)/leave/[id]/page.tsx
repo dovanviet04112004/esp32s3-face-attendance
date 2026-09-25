@@ -15,6 +15,8 @@ import {
   StatePill,
   useDecision,
   useRequestWords,
+  yearParts,
+  type LeaveBalance,
   type RequestDetail,
 } from "@/components/requests/request-card";
 import { BottomBar } from "@/components/ui/bottom-bar";
@@ -26,6 +28,32 @@ import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 import { days } from "@/lib/format";
+
+/** One year's standing in the request's leave type; "after" while the request still waits on it. */
+function BalanceCard({ balance, waiting }: { balance: LeaveBalance; waiting: boolean }) {
+  const t = useTranslations("requests");
+  const locale = useLocale();
+  return (
+    <AsideCard title={t("balancesOf", { year: balance.year })}>
+      <Facts
+        rows={[
+          [t("balanceEntitled"), days(balance.entitled + balance.carriedOver, locale)],
+          [t("balanceTaken"), days(balance.taken, locale)],
+          [t("balancePending"), days(balance.pending, locale)],
+          ...(balance.carriedOut > 0
+            ? [[t("balanceCarriedOut"), days(balance.carriedOut, locale)] as [string, string]]
+            : []),
+          [
+            waiting ? t("balanceAfter") : t("balanceLeft"),
+            <span key="left" className="font-medium tabular-nums">
+              {days(balance.remaining, locale)}
+            </span>,
+          ],
+        ]}
+      />
+    </AsideCard>
+  );
+}
 
 function Waiting() {
   return (
@@ -40,7 +68,6 @@ export default function LeaveDetailPage() {
   const t = useTranslations("requests");
   const common = useTranslations("common");
   const format = useFormatter();
-  const locale = useLocale();
   const words = useRequestWords();
   const params = useParams<{ id: string }>();
   const cache = useQueryClient();
@@ -92,6 +119,7 @@ export default function LeaveDetailPage() {
   }
 
   const deciding = row?.state === "PENDING" && row.mayDecide;
+  const charged = row ? yearParts(row).map((part) => part.year) : [];
 
   return (
     <>
@@ -120,21 +148,13 @@ export default function LeaveDetailPage() {
                   ]}
                 />
               </AsideCard>
-              {row.balance ? (
-                <AsideCard title={t("balancesOf", { year: row.balance.year })}>
-                  <Facts
-                    rows={[
-                      [t("balanceEntitled"), days(row.balance.entitled + row.balance.carriedOver, locale)],
-                      [t("balanceTaken"), days(row.balance.taken, locale)],
-                      [t("balancePending"), days(row.balance.pending, locale)],
-                      [
-                        row.state === "PENDING" ? t("balanceAfter") : t("balanceLeft"),
-                        <span key="left" className="font-medium tabular-nums">
-                          {days(row.balance.remaining, locale)}
-                        </span>,
-                      ],
-                    ]}
-                  />
+              {row.balance && (row.nextBalance === null || charged.includes(row.balance.year)) ? (
+                <BalanceCard balance={row.balance} waiting={row.state === "PENDING"} />
+              ) : null}
+              {row.nextBalance ? <BalanceCard balance={row.nextBalance} waiting={row.state === "PENDING"} /> : null}
+              {row.kind === "LEAVE" && row.leaveType?.paid === false ? (
+                <AsideCard title={t("balancesOf", { year: row.fromDate.slice(0, 4) })}>
+                  <p className="text-kumo-subtle">{t("unpaidNoBalance")}</p>
                 </AsideCard>
               ) : null}
               {row.kind === "LEAVE" ? (

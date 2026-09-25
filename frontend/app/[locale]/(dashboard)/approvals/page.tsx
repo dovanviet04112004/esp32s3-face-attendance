@@ -12,6 +12,7 @@ import {
   DecisionFields,
   RequestFacts,
   useDecision,
+  leftByYear,
   useRequestWords,
   type InboxRow,
   type RequestDetail,
@@ -175,6 +176,45 @@ function Waited({ count }: { count: number }) {
   return <span className="whitespace-nowrap tabular-nums">{t("waitedDays", { count })}</span>;
 }
 
+/** What each year keeps once a leave is granted; an unpaid type spends no balance (KEHOACH 9.5). */
+function useBalanceFacts(): (row: InboxRow) => [string, ReactNode][] {
+  const t = useTranslations("requests");
+  const locale = useLocale();
+  return (row) => {
+    if (row.kind !== "LEAVE") {
+      return [];
+    }
+    if (row.leaveType?.paid === false) {
+      return [[t("balanceAfter"), t("noBalance")]];
+    }
+    const split = leftByYear(row);
+    if (split) {
+      return split.map((one) => [t("balanceAfterIn", { year: one.year }), days(one.left, locale)]);
+    }
+    return row.balanceAfter === null ? [] : [[t("balanceAfter"), days(row.balanceAfter, locale)]];
+  };
+}
+
+function BalanceAfter({ row }: { row: InboxRow }) {
+  const common = useTranslations("common");
+  const t = useTranslations("requests");
+  const locale = useLocale();
+  if (row.leaveType?.paid === false) {
+    return <span className="text-kumo-subtle">{t("noBalance")}</span>;
+  }
+  const split = leftByYear(row);
+  if (split) {
+    return (
+      <span className="flex flex-col whitespace-nowrap">
+        {split.map((one) => (
+          <span key={one.year}>{t("yearDays", { year: one.year, days: days(one.left, locale) })}</span>
+        ))}
+      </span>
+    );
+  }
+  return <>{row.balanceAfter === null ? common("empty") : days(row.balanceAfter, locale)}</>;
+}
+
 function personColumns<T extends { employee: Who | null }>(who: string, department: string, empty: string): Column<T>[] {
   return [
     { id: "person", header: who, cell: (row) => <PersonCell name={row.employee?.fullName ?? empty} code={row.employee?.code} /> },
@@ -262,7 +302,6 @@ function RequestsQueue({ params, filtered }: { params: Record<string, string>; f
   const t = useTranslations("requests");
   const common = useTranslations("common");
   const errors = useTranslations("errors");
-  const locale = useLocale();
   const words = useRequestWords();
   const notify = useNotify();
   const faultOf = useFault();
@@ -273,6 +312,7 @@ function RequestsQueue({ params, filtered }: { params: Record<string, string>; f
   const [bulk, setBulk] = useState<{ approve: boolean; ids: string[] } | null>(null);
   const [reason, setReason] = useState("");
   const [bulkFault, setBulkFault] = useState<string | null>(null);
+  const balanceFacts = useBalanceFacts();
 
   const detail = useQuery({
     queryKey: ["requests", "one", open?.id],
@@ -329,7 +369,7 @@ function RequestsQueue({ params, filtered }: { params: Record<string, string>; f
       header: t("balanceAfter"),
       numeric: true,
       priority: 2,
-      cell: (row) => (row.balanceAfter === null ? common("empty") : days(row.balanceAfter, locale)),
+      cell: (row) => <BalanceAfter row={row} />,
     },
     {
       id: "overlap",
@@ -400,10 +440,7 @@ function RequestsQueue({ params, filtered }: { params: Record<string, string>; f
           <div className="flex flex-col gap-4">
             <RequestFacts
               row={shown}
-              extra={[
-                ...(open.balanceAfter === null ? [] : [[t("balanceAfter"), days(open.balanceAfter, locale)] as [string, ReactNode]]),
-                [t("waitedHeader"), <Waited key="waited" count={open.waitedDays} />],
-              ]}
+              extra={[...balanceFacts(open), [t("waitedHeader"), <Waited key="waited" count={open.waitedDays} />]]}
             />
             <p className="break-words">{shown.reason}</p>
             {open.kind === "LEAVE" ? (

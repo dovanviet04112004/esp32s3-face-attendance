@@ -30,7 +30,7 @@ import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { dayOnly, days } from "@/lib/format";
 import { allows } from "@/lib/nav";
-import { useRequestWords, type InboxRow } from "./request-card";
+import { leftByYear, useRequestWords, type InboxRow } from "./request-card";
 
 const kPreviewRows = 5;
 const kReasonMax = 500;
@@ -206,7 +206,8 @@ export function InboxPreview() {
               const who = row.employee;
               const what = [row.leaveType?.name, shortSpan(row), words.extent(row)].filter(Boolean);
               const context = [
-                row.balanceAfter === null ? null : t("balanceAfter", { days: days(row.balanceAfter, locale) }),
+                ...(leftByYear(row)?.map((one) => r("leftInYear", { days: days(one.left, locale), year: one.year })) ??
+                  [row.balanceAfter === null ? null : t("balanceAfter", { days: days(row.balanceAfter, locale) })]),
                 row.overlapCount === null ? null : t("overlap", { count: row.overlapCount }),
               ].filter(Boolean);
               const busy = decide.isPending && decide.variables?.row.id === row.id;

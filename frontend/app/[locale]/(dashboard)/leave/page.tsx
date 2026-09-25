@@ -1,7 +1,7 @@
 "use client";
 
-import { Button } from "@cloudflare/kumo";
-import { DownloadSimpleIcon } from "@phosphor-icons/react";
+import { Banner, Button } from "@cloudflare/kumo";
+import { DownloadSimpleIcon, InfoIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -18,7 +18,9 @@ import { DataTable, PersonCell, type Column } from "@/components/tables/data-tab
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
 import { PageHeader, PageLayout } from "@/components/ui/page";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/auth";
 import { useUrlState } from "@/lib/url-state";
 
 const STATES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
@@ -97,6 +99,16 @@ function Register() {
     queryFn: async () => (await api.get<Department[]>("/departments")).data,
   });
 
+  // Nobody can file leave until the desk declares a type (KEHOACH 9.5).
+  const role = useSession((held) => held.role);
+  const router = useRouter();
+  const declares = role === "HR" || role === "ADMIN";
+  const types = useQuery({
+    queryKey: ["leave-types"],
+    enabled: declares,
+    queryFn: async () => (await api.get<{ id: string }[]>("/leave-types")).data,
+  });
+
   const download = useMutation({
     mutationFn: async () =>
       save((await api.get<string>(`/requests/export?${query({ ...filter, state: url.state, ...order })}`)).data, "requests.csv"),
@@ -165,6 +177,20 @@ function Register() {
       <PageHeader title={t("registerTitle")} description={t("deskLead")} />
 
       <PageLayout>
+        {declares && types.data?.length === 0 ? (
+          <Banner
+            variant="alert"
+            className="mb-4"
+            icon={<InfoIcon weight="fill" />}
+            title={t("noLeaveTypesDeskTitle")}
+            description={t("noLeaveTypesDeskLead")}
+            action={
+              <Banner.Action variant="secondary" onClick={() => router.push("/leave-types")}>
+                {t("noLeaveTypesDeskGo")}
+              </Banner.Action>
+            }
+          />
+        ) : null}
         <FilterBar
           search={{ value: typed, onChange: setTyped, placeholder: t("registerSearch") }}
           filters={[

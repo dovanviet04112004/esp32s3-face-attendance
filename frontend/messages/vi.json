@@ -886,7 +886,25 @@
     "endTime": "Kết thúc",
     "fixInTime": "Giờ vào thật",
     "fixOutTime": "Giờ ra thật",
-    "timesBackwards": "Giờ kết thúc phải sau giờ bắt đầu."
+    "timesBackwards": "Giờ kết thúc phải sau giờ bắt đầu.",
+    "charged": "Trừ {days}",
+    "chargedYear": "{year}: {days} · còn {left}",
+    "yearDays": "{year}: {days}",
+    "splitByYear": "Đơn vắt sang năm mới, nên mỗi năm trừ phần ngày của năm ấy:",
+    "summaryUnpaid": "{days} · không trừ vào số dư phép",
+    "workingDaysOnly": "Chỉ tính ngày làm việc: không tính thứ Bảy, Chủ nhật và ngày lễ.",
+    "noLeaveTypesTitle": "Chưa có loại phép nào",
+    "noLeaveTypesLead": "Phòng nhân sự chưa khai loại phép nên chưa xin nghỉ được. Hãy báo phòng nhân sự.",
+    "noLeaveTypesDeskTitle": "Chưa khai loại phép nào",
+    "noLeaveTypesDeskLead": "Nhân viên chưa xin nghỉ được cho tới khi có ít nhất một loại phép.",
+    "noLeaveTypesDeskGo": "Khai loại phép",
+    "balanceAfterIn": "Còn {year} sau khi duyệt",
+    "byYear": "Theo năm",
+    "noBalance": "Không trừ số dư",
+    "unpaidNoBalance": "Nghỉ không lương không trừ vào số dư phép nào.",
+    "balanceCarriedOut": "Đã chuyển sang năm sau",
+    "leftInYear": "còn {days} của {year} sau khi duyệt",
+    "filedDone": "Đã gửi đơn"
   },
   "me": {
     "title": "Trang của tôi",
@@ -1433,7 +1451,10 @@
     "BODY_TOO_LARGE": "Dữ liệu gửi lên quá lớn. Chia nhỏ rồi gửi lại.",
     "LEAVING_SCHEDULED": "Người này đã có lịch nghỉ việc. Đổi hoặc huỷ lịch ấy trên hồ sơ.",
     "LEAVING_NOT_SCHEDULED": "Người này không có lịch nghỉ việc nào để đổi hay huỷ.",
-    "LEAVING_CLOSED": "Hồ sơ đã đóng vì nghỉ việc nên không đổi hay huỷ được nữa."
+    "LEAVING_CLOSED": "Hồ sơ đã đóng vì nghỉ việc nên không đổi hay huỷ được nữa.",
+    "HALF_DAY_NOT_WORKING": "Nửa ngày phải rơi vào một ngày làm việc; ngày này là ngày nghỉ.",
+    "LEAVE_NO_WORKING_DAY": "Khoảng này chỉ có ngày nghỉ và ngày lễ, không có ngày làm việc nào để xin nghỉ.",
+    "LEAVE_SPANS_YEARS": "Một đơn chỉ vắt được sang năm liền sau; hãy tách thành hai đơn."
   },
   "search": {
     "placeholder": "Tìm người, phòng ban, đơn, trang…",

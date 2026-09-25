@@ -886,7 +886,25 @@
     "endTime": "End",
     "fixInTime": "Actual time in",
     "fixOutTime": "Actual time out",
-    "timesBackwards": "The end has to come after the start."
+    "timesBackwards": "The end has to come after the start.",
+    "charged": "Takes {days}",
+    "chargedYear": "{year}: {days} · {left} left",
+    "yearDays": "{year}: {days}",
+    "splitByYear": "It crosses into the new year, so each year pays for its own days:",
+    "summaryUnpaid": "{days} · no leave balance is spent",
+    "workingDaysOnly": "Working days only: Saturdays, Sundays and holidays are not counted.",
+    "noLeaveTypesTitle": "No leave type yet",
+    "noLeaveTypesLead": "HR has not declared any leave type, so leave cannot be requested yet. Let HR know.",
+    "noLeaveTypesDeskTitle": "No leave type declared",
+    "noLeaveTypesDeskLead": "Nobody can request leave until at least one leave type exists.",
+    "noLeaveTypesDeskGo": "Declare leave types",
+    "balanceAfterIn": "Left in {year} once approved",
+    "byYear": "By year",
+    "noBalance": "No balance spent",
+    "unpaidNoBalance": "Unpaid leave takes nothing from any balance.",
+    "balanceCarriedOut": "Carried into the next year",
+    "leftInYear": "{days} of {year} left once approved",
+    "filedDone": "Request filed"
   },
   "me": {
     "title": "My page",
@@ -1433,7 +1451,10 @@
     "BODY_TOO_LARGE": "What was sent is too large. Split it up and send again.",
     "LEAVING_SCHEDULED": "This person already has a leaving scheduled. Change or cancel it on their profile.",
     "LEAVING_NOT_SCHEDULED": "This person has no scheduled leaving to change or cancel.",
-    "LEAVING_CLOSED": "The record has closed, so the leaving can no longer be changed or cancelled."
+    "LEAVING_CLOSED": "The record has closed, so the leaving can no longer be changed or cancelled.",
+    "HALF_DAY_NOT_WORKING": "A half day has to fall on a working day; this date is a day off.",
+    "LEAVE_NO_WORKING_DAY": "This range holds only days off and holidays, no working day to take off.",
+    "LEAVE_SPANS_YEARS": "A request can only reach into the following year; split it into two requests."
   },
   "search": {
     "placeholder": "Search people, departments, requests, pages…",

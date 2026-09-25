@@ -1,13 +1,15 @@
 "use client";
 
 import { Banner, Checkbox, Input, LayerDialog, Radio, Select, Textarea } from "@cloudflare/kumo";
-import { WarningCircleIcon } from "@phosphor-icons/react";
+import { InfoIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -33,6 +35,13 @@ interface LeaveType {
 interface Balance {
   leaveTypeId: string;
   remaining: number;
+}
+
+/** What the server would charge for the range, per calendar year (KEHOACH 9.5). */
+interface LeaveDays {
+  days: number;
+  limited: boolean;
+  parts: { year: number; days: number; left: number | null }[];
 }
 
 interface Punch {
@@ -118,6 +127,23 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
     queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${fromDate}`)).data,
   });
 
+  // Under the balances key, so a filing or a new year refreshes it with them.
+  const charge = useQuery({
+    queryKey: ["leave-balances", "days", fromDate, toDate, half, leaveTypeId],
+    enabled: open && kind === "LEAVE" && fromDate !== "" && toDate !== "" && toDate >= fromDate,
+    retry: false,
+    queryFn: async () => {
+      const query = new URLSearchParams({ fromDate, toDate, halfDay: String(half) });
+      if (leaveTypeId !== "") {
+        query.set("leaveTypeId", leaveTypeId);
+      }
+      return (await api.get<LeaveDays>(`/leave-days?${query.toString()}`)).data;
+    },
+  });
+  // Only an answer refuses the range; no answer at all is offline, where the filing still queues.
+  const refused = kind === "LEAVE" && isAxiosError(charge.error) && charge.error.response !== undefined;
+  const noTypes = types.isSuccess && types.data.length === 0;
+
   // The other end of the day comes from what the kiosk saw, so one claimed punch is enough.
   const punches = useQuery({
     queryKey: ["attendance", "day", employeeId, fromDate],
@@ -182,7 +208,7 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
       }
     },
     onSuccess: ({ queued }) => {
-      notify.done(queued ? t("queued") : t("filed"));
+      notify.done(queued ? t("queued") : t("filedDone"));
       void cache.invalidateQueries({ queryKey: ["requests"] });
       void cache.invalidateQueries({ queryKey: ["leave-balances"] });
       onOpenChange(false);
@@ -191,7 +217,7 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
   });
 
   const timesNeeded = (kind === "OVERTIME" || kind === "ATTENDANCE_FIX") && worked === null;
-  const blocked = backwards || timesBackwards;
+  const blocked = backwards || timesBackwards || (kind === "LEAVE" && (refused || noTypes));
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -207,10 +233,8 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
 
   const clock = (at: Date) => format.dateTime(at, { hour: "2-digit", minute: "2-digit" });
   const summary =
-    kind === "LEAVE" && !backwards
-      ? left
-        ? t("summaryLeave", { days: days(count, locale), left: days(left.remaining - count, locale) })
-        : t("summaryDays", { days: days(count, locale) })
+    kind === "LEAVE"
+      ? null
       : (kind === "BUSINESS_TRIP" || kind === "REMOTE_WORK") && !backwards
         ? t("summaryDays", { days: days(count, locale) })
         : worked !== null && worked > 0
@@ -232,7 +256,15 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
               onValueChange={(next) => setKind(String(next ?? "LEAVE") as RequestKind)}
               items={Object.fromEntries(REQUEST_KINDS.map((one) => [one, t(`kind${one}`)]))}
             />
-            {kind === "LEAVE" ? (
+            {kind === "LEAVE" && noTypes ? (
+              <Banner
+                variant="alert"
+                size="sm"
+                icon={<InfoIcon weight="fill" />}
+                title={t("noLeaveTypesTitle")}
+                description={t("noLeaveTypesLead")}
+              />
+            ) : kind === "LEAVE" ? (
               <Select
                 label={t("leaveType")}
                 hideLabel={false}
@@ -258,13 +290,13 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
                 onChange={setFromDate}
               />
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid items-start gap-4 sm:grid-cols-2">
                 <DateField label={t("from")} value={fromDate} onChange={setFromDate} />
                 <DateField
                   label={t("to")}
                   value={toDate}
                   min={fromDate}
-                  error={backwards ? t("backwards") : undefined}
+                  error={backwards ? t("backwards") : refused ? faultOf(charge.error) : undefined}
                   onChange={setToDate}
                 />
               </div>
@@ -327,6 +359,7 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
               value={reason}
               onValueChange={setReason}
             />
+            {kind === "LEAVE" && !noTypes && !backwards && !refused ? <Charged asked={charge} /> : null}
             {summary ? <p className="rounded-lg bg-kumo-tint px-3 py-2 tabular-nums">{summary}</p> : null}
             {fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
           </form>
@@ -338,5 +371,45 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
         </LayerDialog.Actions>
       </LayerDialog.Content>
     </LayerDialog.Root>
+  );
+}
+
+/** The working days the server would take, split by year when the range crosses one. */
+function Charged({ asked }: { asked: { data?: LeaveDays; isPending: boolean; isError: boolean } }) {
+  const t = useTranslations("requests");
+  const locale = useLocale();
+  if (asked.isError) {
+    return null;
+  }
+  const shown = asked.data;
+  const split = shown !== undefined && shown.parts.length > 1;
+  const only = shown?.parts[0];
+  return (
+    <div className="flex flex-col gap-1 rounded-lg bg-kumo-tint px-3 py-2 tabular-nums">
+      {shown === undefined ? (
+        <SkeletonLine minWidth={40} maxWidth={60} />
+      ) : !shown.limited ? (
+        <p>{t("summaryUnpaid", { days: days(shown.days, locale) })}</p>
+      ) : split ? (
+        <>
+          <p className="font-medium">{t("charged", { days: days(shown.days, locale) })}</p>
+          <p className="text-sm text-kumo-subtle">{t("splitByYear")}</p>
+          <ul className="flex flex-col">
+            {shown.parts.map((part) => (
+              <li key={part.year}>
+                {part.left === null
+                  ? t("yearDays", { year: part.year, days: days(part.days, locale) })
+                  : t("chargedYear", { year: part.year, days: days(part.days, locale), left: days(part.left, locale) })}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : only && only.left !== null ? (
+        <p>{t("summaryLeave", { days: days(shown.days, locale), left: days(only.left, locale) })}</p>
+      ) : (
+        <p>{t("charged", { days: days(shown.days, locale) })}</p>
+      )}
+      <p className="text-sm text-kumo-subtle">{t("workingDaysOnly")}</p>
+    </div>
   );
 }

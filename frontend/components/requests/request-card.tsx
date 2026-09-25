@@ -41,19 +41,22 @@ export interface RequestRow {
   halfDay?: boolean;
   dayPart?: DayPart | null;
   days: string;
+  /** The part of `days` charged to the year after fromDate's; "0" for a request inside one year. */
+  nextYearDays?: string;
   minutes: number;
   reason: string;
   createdAt: string;
   decidedAt?: string | null;
   decisionNote: string | null;
   employee: Person | null;
-  leaveType: { id: string; code: string; name: string } | null;
+  leaveType: { id: string; code: string; name: string; paid?: boolean } | null;
   decidedBy?: { id: string; email: string; fullName: string | null } | null;
 }
 
 export interface InboxRow extends RequestRow {
   waitedDays: number;
   balanceAfter: number | null;
+  nextBalanceAfter: number | null;
   overlapCount: number | null;
 }
 
@@ -66,6 +69,7 @@ export interface LeaveBalance {
   carriedOver: number;
   taken: number;
   pending: number;
+  carriedOut: number;
   remaining: number;
 }
 
@@ -79,6 +83,7 @@ export interface Overlap {
 
 export interface RequestDetail extends RequestRow {
   balance: LeaveBalance | null;
+  nextBalance: LeaveBalance | null;
   overlapping: Overlap[];
   mayDecide: boolean;
 }
@@ -107,6 +112,28 @@ export function useLeaveBalances(employeeId: number | undefined, asOf: string, e
     enabled: enabled && employeeId !== undefined,
     queryFn: async () =>
       (await api.get<LeaveBalance[]>(`/leave-balances?employeeId=${employeeId}&asOf=${asOf.slice(0, 10)}`)).data,
+  });
+}
+
+/** The days a leave request charges to each year, as the server stored them at filing. */
+export function yearParts(row: Pick<RequestRow, "fromDate" | "days" | "nextYearDays">): { year: number; days: number }[] {
+  const year = Number(row.fromDate.slice(0, 4));
+  const next = Number(row.nextYearDays ?? 0);
+  return [
+    { year, days: Number(row.days) - next },
+    { year: year + 1, days: next },
+  ].filter((part) => part.days > 0);
+}
+
+/** What each charged year keeps once an inbox row is granted, or null for a request inside one year. */
+export function leftByYear(row: InboxRow): { year: number; left: number }[] | null {
+  if (row.nextBalanceAfter === null) {
+    return null;
+  }
+  const first = Number(row.fromDate.slice(0, 4));
+  return yearParts(row).flatMap((part) => {
+    const left = part.year === first ? row.balanceAfter : row.nextBalanceAfter;
+    return left === null ? [] : [{ year: part.year, left }];
   });
 }
 
@@ -260,6 +287,8 @@ export function RequestFacts({ row, extra }: { row: RequestRow; extra?: [string,
   const t = useTranslations("requests");
   const words = useRequestWords();
   const format = useFormatter();
+  const locale = useLocale();
+  const parts = row.kind === "LEAVE" ? yearParts(row) : [];
   return (
     <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-3">
       <Fact label={t("range")} wide>
@@ -269,6 +298,17 @@ export function RequestFacts({ row, extra }: { row: RequestRow; extra?: [string,
         <span className="tabular-nums">{words.extent(row)}</span>
       </Fact>
       <Fact label={t("filed")}>{format.dateTime(new Date(row.createdAt), "day")}</Fact>
+      {parts.length > 1 ? (
+        <Fact label={t("byYear")}>
+          <span className="flex flex-col tabular-nums">
+            {parts.map((part) => (
+              <span key={part.year} className="whitespace-nowrap">
+                {t("yearDays", { year: part.year, days: days(part.days, locale) })}
+              </span>
+            ))}
+          </span>
+        </Fact>
+      ) : null}
       {(extra ?? []).map(([label, value]) => (
         <Fact key={label} label={label}>
           {value}
