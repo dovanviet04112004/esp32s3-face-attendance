@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from "@nestjs
 import { ContractKind, Gender } from "@prisma/client";
 
 import { IMPORT_MAX_BYTES } from "../import.js";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsBoolean,
   IsDateString,
@@ -141,6 +141,13 @@ export class ListEmployeesDto extends PaginationDto {
   @IsString()
   @MaxLength(64)
   departmentId?: string;
+
+  // Boolean("false") is true, so a query string has to be compared, not cast.
+  @ApiPropertyOptional({ description: "true for people still working, false for those who left" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  active?: boolean;
 }
 
 export class ImportCsvDto {

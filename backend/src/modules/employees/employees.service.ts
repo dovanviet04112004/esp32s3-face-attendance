@@ -325,6 +325,7 @@ export class EmployeesService {
     const where: Prisma.EmployeeWhereInput = {
       ...ScopeService.narrow("id", visible),
       ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+      ...(query.active === undefined ? {} : { active: query.active }),
       ...(query.search
         ? {
             OR: [

@@ -123,6 +123,22 @@ describe("crud (e2e)", () => {
     assert.equal(still.status, 200);
   });
 
+  it("filters the directory by whether people still work here", async () => {
+    const read = (active: string) =>
+      request(http)
+        .get(`/employees?search=NV9002&active=${active}`)
+        .set("Authorization", `Bearer ${token.hr}`);
+    const left = await read("false");
+    assert.equal(left.status, 200);
+    assert.deepEqual(
+      left.body.rows.map((row: { code: string }) => row.code),
+      ["NV9002"],
+    );
+    const working = await read("true");
+    assert.equal(working.status, 200);
+    assert.equal(working.body.rows.length, 0, "a retired employee is still listed as working");
+  });
+
   it("refuses hr on a device, which only an admin may accept", async () => {
     const res = await request(http)
       .post(`/devices/${WAITING}/approve`)
