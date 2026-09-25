@@ -2,13 +2,14 @@
 
 import { ArrowDownIcon, ArrowUpIcon, ArrowsDownUpIcon, ColumnsIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Empty, Failed } from "@/components/ui/empty";
 import { Sheet } from "@/components/ui/sheet";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { useRouter } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
 import { CardList } from "./card-list";
 
@@ -38,6 +39,8 @@ interface Props<T> {
   more?: ReactNode;
   cardLead?: string;
   cardActions?: string;
+  /** Where the whole row leads; the row opens the record, not a trailing link (KEHOACH 9.15). */
+  rowHref?: (row: T) => string;
 }
 
 interface Memory {
@@ -89,8 +92,10 @@ export function DataTable<T>({
   more,
   cardLead,
   cardActions,
+  rowHref,
 }: Props<T>) {
   const t = useTranslations("common");
+  const router = useRouter();
   const [memory, setMemory] = useState<Memory>(kFresh);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const [picking, setPicking] = useState(false);
@@ -147,10 +152,15 @@ export function DataTable<T>({
 
   // Without the stacking order the cells sliding sideways paint over the frozen
   // one; the offset clears the selection box when the table has one.
-  const frozen = cn(
-    "sticky bg-(--color-surface) border-e border-(--color-line)",
-    selectable ? "start-10" : "start-0",
-  );
+  const frozen = cn("sticky bg-inherit border-e border-kumo-hairline", selectable ? "start-10" : "start-0");
+
+  // A click on a control inside the row belongs to that control, not to the row.
+  function open(event: MouseEvent<HTMLTableRowElement>, row: T): void {
+    if (!rowHref || (event.target as HTMLElement).closest("a, button, input, select, textarea, label")) {
+      return;
+    }
+    router.push(rowHref(row));
+  }
 
   return (
     <div>
@@ -167,20 +177,20 @@ export function DataTable<T>({
           type="button"
           tone="quiet"
           size="sm"
+          icon={ColumnsIcon}
           className="ms-auto hidden md:inline-flex"
           onClick={() => setPicking(true)}
         >
-          <ColumnsIcon className="size-4" aria-hidden />
           {t("columns")}
         </Button>
       </div>
 
-      <div className="hidden overflow-x-auto rounded-xl border border-(--color-line) bg-(--color-surface) md:block">
-        <table className="w-full text-sm">
+      <div className="hidden overflow-x-auto rounded-lg bg-kumo-base ring-1 ring-kumo-line md:block">
+        <table className="w-full text-base">
           <thead>
-            <tr className="border-b border-(--color-line) text-left text-(--color-muted)">
+            <tr className="border-b border-kumo-fill bg-kumo-base text-left text-kumo-default">
               {selectable ? (
-                <th className="sticky start-0 z-20 w-10 bg-(--color-surface) px-4 py-3">
+                <th className="sticky start-0 z-20 w-10 bg-inherit p-3">
                   <Checkbox
                     className="min-h-0"
                     aria-label={t("chooseAll")}
@@ -204,7 +214,8 @@ export function DataTable<T>({
                       : undefined
                   }
                   className={cn(
-                    "px-4 py-3 font-medium",
+                    "p-3 font-semibold",
+                    column.numeric && "text-end",
                     column.sticky && frozen,
                     column.sticky && "z-20",
                   )}
@@ -213,7 +224,7 @@ export function DataTable<T>({
                     <button
                       type="button"
                       onClick={() => sortOn(column)}
-                      className="inline-flex items-center gap-1 hover:text-(--color-ink)"
+                      className="inline-flex items-center gap-1 hover:text-kumo-strong"
                     >
                       {column.header}
                       {memory.sortId !== column.id ? (
@@ -235,9 +246,16 @@ export function DataTable<T>({
             {ordered.map((row) => {
               const key = keyOf(row);
               return (
-                <tr key={key} className="border-b border-(--color-line) last:border-0">
+                <tr
+                  key={key}
+                  onClick={rowHref ? (event) => open(event, row) : undefined}
+                  className={cn(
+                    "bg-kumo-base even:bg-kumo-elevated",
+                    rowHref && "cursor-pointer hover:bg-kumo-tint",
+                  )}
+                >
                   {selectable ? (
-                    <td className="sticky start-0 z-10 bg-(--color-surface) px-4 py-3">
+                    <td className="sticky start-0 z-10 bg-inherit p-3">
                       <Checkbox
                         className="min-h-0"
                         aria-label={t("chooseRow")}
@@ -251,8 +269,8 @@ export function DataTable<T>({
                     <td
                       key={column.id}
                       className={cn(
-                        "px-4 py-3",
-                        column.numeric && "tabular-nums",
+                        "p-3",
+                        column.numeric && "text-end tabular-nums",
                         column.sticky && frozen,
                         column.sticky && "z-10",
                       )}
@@ -275,6 +293,7 @@ export function DataTable<T>({
         cardActions={cardActions}
         chosen={selectable ? chosen : undefined}
         onToggle={selectable ? toggleRow : undefined}
+        cardHref={rowHref}
       />
 
       {more}

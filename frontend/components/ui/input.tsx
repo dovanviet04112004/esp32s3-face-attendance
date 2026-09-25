@@ -1,15 +1,12 @@
 "use client";
 
 import { EyeIcon, EyeSlashIcon } from "@phosphor-icons/react";
+import { inputVariants } from "@cloudflare/kumo";
 import { useState, type ComponentPropsWithRef } from "react";
 
 import { cn } from "@/lib/cn";
 
-const field = cn(
-  "h-10 w-full rounded-lg border border-(--color-field) bg-(--color-surface) px-3 text-sm",
-  "pointer-coarse:h-11 placeholder:text-(--color-muted)",
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)",
-);
+export const field = cn(inputVariants(), "w-full");
 
 export function Input({ className, ...rest }: ComponentPropsWithRef<"input">) {
   return <input className={cn(field, className)} {...rest} />;
@@ -34,7 +31,7 @@ export function PasswordInput({ className, showLabel, hideLabel, ...rest }: Secr
         aria-label={shown ? hideLabel : showLabel}
         aria-pressed={shown}
         onClick={() => setShown(!shown)}
-        className="absolute inset-y-0 end-0 grid w-11 place-items-center rounded-e-lg text-(--color-muted) hover:text-(--color-ink) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+        className="absolute inset-y-0 end-0 grid w-10 place-items-center rounded-e-lg text-kumo-subtle hover:text-kumo-default focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kumo-brand"
       >
         <Icon className="size-4" aria-hidden />
       </button>
