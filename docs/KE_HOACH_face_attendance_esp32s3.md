@@ -4806,6 +4806,7 @@ frontend/
 │   ├── icon-maskable.png             # ★ cùng dấu, chừa lề an toàn cho launcher cắt tròn
 │   ├── apple-touch-icon.png          # ★ 180 px, nền kín: iOS tự bo góc
 │   ├── badge.png                     # ★ bản một màu cho thanh thông báo
+│   ├── .well-known/assetlinks.json   # ★ dấu khoá ký của app Android, để Chrome tin nó là của domain (§9.21.7)
 │   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
 ├── components/
 │   ├── ui/{page.tsx, pill.tsx, notify.ts, month-picker.tsx, filter-bar.tsx,
