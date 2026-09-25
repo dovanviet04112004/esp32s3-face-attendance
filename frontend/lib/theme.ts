@@ -18,8 +18,13 @@ function isDark(theme: Theme): boolean {
   return theme === "dark" || (theme === "system" && window.matchMedia(kDarkQuery).matches);
 }
 
-/** Runs in head ahead of the first paint, which only a cookie reaches: dark never flashes light. */
-export const kModeScript = `try{var m=document.cookie.match(/(?:^|; )${kThemeCookie}=(\\w+)/),t=m?m[1]:"system";if(t==="dark"||(t!=="light"&&matchMedia("${kDarkQuery}").matches))document.documentElement.dataset.mode="dark"}catch(e){}`;
+/** Kumo's canvas as hex, which is what Android paints the status and navigation bars with. */
+export const GROUND = { light: "#fbfbfb", dark: "#030303" } as const;
+
+const kChrome = "data-app-chrome";
+
+/** Runs in head ahead of the first paint, which only a cookie reaches: neither page nor phone bars flash. */
+export const kModeScript = `try{var m=document.cookie.match(/(?:^|; )${kThemeCookie}=(\\w+)/),t=m?m[1]:"system",d=t==="dark"||(t!=="light"&&matchMedia("${kDarkQuery}").matches);if(d)document.documentElement.dataset.mode="dark";var c=document.createElement("meta");c.name="theme-color";c.content=d?"${GROUND.dark}":"${GROUND.light}";c.setAttribute("${kChrome}","");document.head.prepend(c)}catch(e){}`;
 
 export function readTheme(): Theme {
   const hit = document.cookie
@@ -28,21 +33,15 @@ export function readTheme(): Theme {
   return asTheme(hit?.slice(kThemeCookie.length + 1));
 }
 
-const kPicked = "theme-color-picked";
-
-// A media query cannot see a choice made in the app, so this tag carries it.
+// The first theme-color in head wins, and a media query cannot see a choice made in the app.
 function paintChrome(theme: Theme): void {
-  const held = document.head.querySelector(`meta[data-${kPicked}]`);
-  if (theme === "system") {
-    held?.remove();
-    return;
-  }
-  const ground = getComputedStyle(document.body).backgroundColor;
-  const tag = held ?? document.createElement("meta");
+  const tag = document.head.querySelector(`meta[${kChrome}]`) ?? document.createElement("meta");
   tag.setAttribute("name", "theme-color");
-  tag.setAttribute("content", ground);
-  tag.setAttribute(`data-${kPicked}`, "");
-  document.head.append(tag);
+  tag.setAttribute("content", isDark(theme) ? GROUND.dark : GROUND.light);
+  tag.setAttribute(kChrome, "");
+  if (document.head.firstElementChild !== tag) {
+    document.head.prepend(tag);
+  }
 }
 
 function paintMode(theme: Theme): void {
@@ -65,7 +64,10 @@ export function applyTheme(theme: Theme): void {
  *  React re-creates <html> bare when the locale segment changes, so each mount calls this ahead of paint. */
 export function followSystem(): () => void {
   const query = window.matchMedia(kDarkQuery);
-  const again = () => paintMode(readTheme());
+  const again = () => {
+    paintMode(readTheme());
+    paintChrome(readTheme());
+  };
   paintMode(readTheme());
   paintChrome(readTheme());
   query.addEventListener("change", again);
