@@ -174,17 +174,26 @@ model Department {
   @@index([parentId])
 }
 
+/** The job position group of D02-LT, columns 8 to 11 in this order. */
+enum LaborCategory {
+  MANAGER
+  HIGH_SKILLED
+  MID_SKILLED
+  OTHER
+}
+
 model JobTitle {
-  id        String     @id @default(uuid())
-  code      String     @unique
-  name      String
-  grade     Int?
-  active    Boolean    @default(true)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  employees Employee[]
-  checklists   ChecklistTemplate[]
-  documents    Document[]
+  id            String              @id @default(uuid())
+  code          String              @unique
+  name          String
+  grade         Int?
+  laborCategory LaborCategory?
+  active        Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  employees     Employee[]
+  checklists    ChecklistTemplate[]
+  documents     Document[]
 }
 
 model EmploymentContract {
@@ -481,15 +490,24 @@ enum DayState {
   ABSENT
 }
 
+/** What the calendar says a day is, whatever the person did on it; overtime is priced by this. */
+enum DayCalendar {
+  WORKDAY
+  WEEKEND
+  HOLIDAY
+  UNPAID_HOLIDAY
+}
+
 /**
  * One row per person per day: what payroll reads, and what keeps a report
  * from loading every punch of a month into memory (KEHOACH 9.8).
  */
 model AttendanceDay {
-  id                BigInt    @default(autoincrement())
+  id                BigInt      @default(autoincrement())
   employeeId        Int
-  date              DateTime  @db.Date
-  state             DayState  @default(ABSENT)
+  date              DateTime    @db.Date
+  state             DayState    @default(ABSENT)
+  calendar          DayCalendar @default(WORKDAY)
   shiftId           String?
   firstIn           DateTime?
   lastOut           DateTime?
@@ -584,6 +602,11 @@ enum RequestState {
   APPROVED
   REJECTED
   CANCELLED
+}
+
+enum DayPart {
+  MORNING
+  AFTERNOON
 }
 
 model LeaveType {
@@ -725,6 +748,7 @@ model Request {
   fromAt        DateTime?
   toAt          DateTime?
   halfDay       Boolean      @default(false)
+  dayPart       DayPart?
   days          Decimal      @default(0) @db.Decimal(5, 1)
   minutes       Int          @default(0)
   reason        String
@@ -792,21 +816,46 @@ model CompensationRecord {
 }
 
 /**
+ * What an allowance is and how the law treats it, kept by the pay desk so the
+ * same lunch money is not taxed for one person and exempt for another (KEHOACH 9.6).
+ */
+model AllowanceType {
+  id         String                  @id @default(uuid())
+  code       String                  @unique
+  name       String
+  taxable    Boolean                 @default(true)
+  insurable  Boolean                 @default(false)
+  taxFreeCap Decimal?                @db.Decimal(14, 0)
+  // D02-LT column 13 to 17; null keeps it off the filing.
+  d02Column  Int?
+  active     Boolean                 @default(true)
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+  allowances CompensationAllowance[]
+}
+
+/**
  * One row per fixed allowance so a quarter's lunch cost is a sum, not a scan
- * through JSON (KEHOACH 9.6).
+ * through JSON. The rules are copied from the type, so editing the type later
+ * never reprices a month already paid (KEHOACH 9.6).
  */
 model CompensationAllowance {
-  id        String             @id @default(uuid())
-  recordId  String
-  code      String
-  label     String
-  amount    Decimal            @db.Decimal(14, 0)
-  taxable   Boolean            @default(true)
-  insurable Boolean            @default(false)
-  record    CompensationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  id         String             @id @default(uuid())
+  recordId   String
+  typeId     String?
+  code       String
+  label      String
+  amount     Decimal            @db.Decimal(14, 0)
+  taxable    Boolean            @default(true)
+  insurable  Boolean            @default(false)
+  taxFreeCap Decimal?           @db.Decimal(14, 0)
+  d02Column  Int?
+  record     CompensationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  type       AllowanceType?     @relation(fields: [typeId], references: [id], onDelete: SetNull)
 
   @@unique([recordId, code])
   @@index([code])
+  @@index([typeId])
 }
 
 enum DependentRelation {
@@ -884,6 +933,7 @@ model PayrollPolicy {
   brackets                   TaxBracket[]
   payslips                   Payslip[]
 
+  // NULLS NOT DISTINCT in the migration, like PayrollPeriod.
   @@unique([legalEntityId, effectiveFrom])
   @@index([effectiveFrom])
 }
@@ -933,6 +983,7 @@ model PayrollPeriod {
   retroSource   RetroAdjustment[] @relation("RetroSource")
   retroApplied  RetroAdjustment[] @relation("RetroApplied")
 
+  // NULLS NOT DISTINCT in the migration: two company-wide periods for one month are one period.
   @@unique([legalEntityId, year, month])
   @@index([state, year, month])
 }
@@ -1332,6 +1383,9 @@ model Notification {
   periodId   String?
   payslipId  String?
   contractId String?
+  certificateId   String?
+  profileChangeId String?
+  dependentId     String?
   daysLeft   Int?
   daysWaited Int?
   approved   Boolean?
@@ -1341,6 +1395,7 @@ model Notification {
 
   @@index([userId, readAt])
   @@index([userId, createdAt])
+  @@index([kind, contractId])
 }
 
 model NotificationPreference {
