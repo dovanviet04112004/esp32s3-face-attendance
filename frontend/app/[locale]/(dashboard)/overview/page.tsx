@@ -1,27 +1,64 @@
 "use client";
 
-import { Empty, LayerCard, LinkButton, SkeletonLine } from "@cloudflare/kumo";
-import { CaretRightIcon, CheckCircleIcon, TrayIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
-import { useFormatter, useNow, useTranslations } from "next-intl";
-import type { ReactNode } from "react";
+import { LayerCard, LayerDialog, Tabs } from "@cloudflare/kumo";
+import { CaretRightIcon, CheckCircleIcon, CheckIcon } from "@phosphor-icons/react";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
+import { useFormatter, useLocale, useNow, useTranslations } from "next-intl";
+import { useState, type ReactNode } from "react";
 
-import { useWaitingCount } from "@/components/nav/waiting-count";
+import { REQUEST_DECIDERS } from "@/components/nav/waiting-count";
+import { type Person } from "@/components/requests/request-card";
+import { InboxPreview } from "@/components/requests/inbox-preview";
+import { todayHere } from "@/components/requests/request-form";
 import { Failed } from "@/components/ui/failed";
-import { AsideCard, PageHeader, PageLayout, StatList, type Stat } from "@/components/ui/page";
-import { CountPill, StatePill, type Tone } from "@/components/ui/pill";
+import { PageHeader, PageLayout } from "@/components/ui/page";
+import { StatePill, type Tone } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession, type Role } from "@/lib/auth";
-import { useFeed, type FeedItem, type FeedStatus } from "@/lib/ws";
+import { cn } from "@/lib/cn";
+import { dayOnly, percent } from "@/lib/format";
+import { allows } from "@/lib/nav";
+
+interface Today {
+  date: string;
+  expected: number;
+  present: number;
+  late: number;
+  absentUnexcused: number;
+  onLeave: number;
+}
+
+interface PersonRef {
+  id: number;
+  code: string;
+  fullName: string;
+}
+
+interface TeamToday {
+  absent: PersonRef[];
+  onLeave: PersonRef[];
+  notPunched: PersonRef[];
+  totals: { absent: number; onLeave: number; notPunched: number };
+}
+
+interface Heap<T> {
+  rows: T[];
+  total: number;
+  totalIsExact: boolean;
+}
 
 type ExceptionReason = "NO_PUNCH" | "LATE" | "STILL_IN";
+type ContractKind = "PROBATION" | "FIXED_TERM" | "INDEFINITE" | "SEASONAL" | "INTERNSHIP";
 
 interface Expiring {
   contractId: string;
   employeeId: number;
   code: string;
   fullName: string;
+  kind: ContractKind;
   endsOn: string;
   daysLeft: number;
 }
@@ -34,16 +71,17 @@ interface Exception {
   minutes: number;
 }
 
-interface Heap<T> {
-  rows: T[];
-  total: number;
-  totalIsExact: boolean;
-}
-
 interface Attention {
   contractsEnding: Heap<Expiring>;
   probationEnding: Heap<Expiring>;
   exceptionsToday: Heap<Exception>;
+}
+
+interface OverdueTask {
+  id: string;
+  title: string;
+  dueOn: string;
+  run: { employee: Person };
 }
 
 interface Period {
@@ -53,10 +91,30 @@ interface Period {
   state: "OPEN" | "LOCKED" | "PAID";
 }
 
-interface Device {
-  id: string;
-  status: "PENDING" | "APPROVED" | "REVOKED";
-  online: boolean;
+interface Run {
+  kind: string;
+  state: string;
+}
+
+type BlockerCode =
+  | "REQUESTS_PENDING"
+  | "CORRECTIONS_OPEN"
+  | "NO_COMPENSATION"
+  | "NO_ATTENDANCE_DAYS"
+  | "LEAVERS_HOLDING_ASSETS"
+  | "DISPUTES_OVERDUE"
+  | "NO_LEGAL_ENTITY";
+
+interface Blocker {
+  code: BlockerCode;
+  count: number;
+}
+
+interface DeviceCounts {
+  PENDING: number;
+  APPROVED: number;
+  online: number;
+  offline: number;
 }
 
 interface FleetUpdate {
@@ -64,302 +122,644 @@ interface FleetUpdate {
   updating: string[];
 }
 
-const REASON_KEY: Record<ExceptionReason, "reasonNO_PUNCH" | "reasonLATE" | "reasonSTILL_IN"> = {
-  NO_PUNCH: "reasonNO_PUNCH",
-  LATE: "reasonLATE",
-  STILL_IN: "reasonSTILL_IN",
-};
+interface PileRow {
+  key: string;
+  href: string;
+  name: string;
+  code: string;
+  detail?: string;
+  aside: ReactNode;
+}
 
+interface Pile {
+  label: string;
+  total: number;
+  exact: boolean;
+  rows: PileRow[];
+  /** Where the whole pile is handled; a pile with no such page lists its rows only. */
+  full?: string;
+  /** What goes wrong when the pile is left alone, said once under it. */
+  hint?: string;
+}
+
+type HrTab = "contracts" | "probation" | "onboarding" | "exceptions";
+type Step = "stepRun" | "stepCheck" | "stepLock" | "stepPay" | "stepDeliver";
+
+const PEOPLE_DESK: Role[] = ["ADMIN", "HR"];
+const STEPS: Step[] = ["stepRun", "stepCheck", "stepLock", "stepPay", "stepDeliver"];
+const REASON_KEY = { NO_PUNCH: "reasonNO_PUNCH", LATE: "reasonLATE", STILL_IN: "reasonSTILL_IN" } as const;
 const REASON_TONE: Record<ExceptionReason, Tone> = { NO_PUNCH: "bad", LATE: "waiting", STILL_IN: "waiting" };
-
-const FEED_KEY: Record<FeedItem["feed"], "feedAttendance" | "feedEvent" | "feedDevice"> = {
-  attendance: "feedAttendance",
-  event: "feedEvent",
-  device: "feedDevice",
-};
-
-const LINK_TONE: Record<FeedStatus, Tone> = { live: "good", reconnecting: "waiting", dropped: "bad" };
-
-const HIRERS: Role[] = ["ADMIN", "HR"];
 const kPileRows = 6;
-const kFeedRows = 12;
-const kFleetTake = 200;
 const kClockMs = 60_000;
 const kAttentionMs = 300_000;
+const kSoonDays = 7;
+
+/** A section whose endpoint this deployment lacks answers null and hides, rather than failing. */
+async function unlessMissing<T>(path: string): Promise<T | null> {
+  try {
+    return (await api.get<T>(path)).data;
+  } catch (fell: unknown) {
+    if (isAxiosError(fell) && fell.response?.status === 404) {
+      return null;
+    }
+    throw fell;
+  }
+}
+
+// Kumo draws each line at a random width and pace, which the server render cannot match.
 
 function periodName(period: { year: number; month: number }): string {
   return `${String(period.month).padStart(2, "0")}/${period.year}`;
 }
 
-interface PileProps<T> {
-  title: string;
-  hint?: string;
-  heap: Heap<T>;
-  keyOf: (row: T) => string;
-  href: (row: T) => string;
-  name: (row: T) => string;
-  code: (row: T) => string;
-  aside: (row: T) => ReactNode;
+function SkeletonRows({ rows = 4 }: { rows?: number }) {
+  return (
+    <ul aria-hidden className="flex flex-col">
+      {Array.from({ length: rows }, (_, at) => (
+        <li key={at} className="flex min-h-11 items-center justify-between gap-4 border-b border-kumo-hairline px-4 last:border-0">
+          <SkeletonLine minWidth={45} maxWidth={45} />
+          <SkeletonLine minWidth={15} maxWidth={15} />
+        </li>
+      ))}
+    </ul>
+  );
 }
 
-/** One kind of work due today; every row opens where it is handled. */
-function Pile<T>({ title, hint, heap, keyOf, href, name, code, aside }: PileProps<T>) {
-  const common = useTranslations("common");
-  const shown = heap.rows.slice(0, kPileRows);
+function Quiet({ children }: { children: ReactNode }) {
+  return (
+    <p className="flex items-center gap-2.5 px-4 py-3.5 text-kumo-subtle">
+      <CheckCircleIcon size={18} weight="fill" className="shrink-0 text-kumo-success" aria-hidden />
+      {children}
+    </p>
+  );
+}
+
+/** Card anatomy of both home pages: a title strip with one link at its right, rows in the body. */
+function Card({ title, link, children }: { title: ReactNode; link?: { href: string; label: string }; children: ReactNode }) {
   return (
     <LayerCard>
-      <LayerCard.Secondary className="justify-between">
-        <span>{title}</span>
-        <CountPill>{heap.total}</CountPill>
-      </LayerCard.Secondary>
-      <LayerCard.Primary>
-        <ul className="-mx-2 -my-1 flex flex-col">
-          {shown.map((row) => (
-            <li key={keyOf(row)}>
-              <Link
-                href={href(row)}
-                className="flex min-h-9 items-center justify-between gap-3 rounded-md px-2 hover:bg-kumo-tint"
-              >
-                <span className="flex min-w-0 items-baseline gap-2">
-                  <span className="truncate">{name(row)}</span>
-                  <span className="shrink-0 font-mono text-sm text-kumo-subtle">{code(row)}</span>
-                </span>
-                <span className="shrink-0 tabular-nums">{aside(row)}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-        {heap.total > shown.length ? (
-          <p className="mt-2 text-sm text-kumo-subtle tabular-nums">
-            {common(heap.totalIsExact ? "showingOf" : "showingOfAtLeast", { shown: shown.length, total: heap.total })}
-          </p>
+      <LayerCard.Secondary className="justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2">{title}</span>
+        {link ? (
+          <Link href={link.href} className="shrink-0 font-normal text-kumo-link hover:underline">
+            {link.label}
+          </Link>
         ) : null}
-        {hint ? <p className="mt-2 text-sm text-pretty text-kumo-subtle">{hint}</p> : null}
-      </LayerCard.Primary>
+      </LayerCard.Secondary>
+      <LayerCard.Primary className="gap-0 p-0 pr-0">{children}</LayerCard.Primary>
     </LayerCard>
   );
 }
 
-function detail(item: FeedItem, t: (key: "dirIN" | "dirOUT") => string): string {
-  const body = item.body;
-  if (item.feed === "attendance") {
-    const way = body.direction === "OUT" ? t("dirOUT") : t("dirIN");
-    return [way, body.deviceId].filter(Boolean).join(" · ");
-  }
-  const parts = [body.type ?? (body.online === undefined ? undefined : body.online), body.deviceId];
-  return parts.filter((part) => part !== undefined && part !== null).join(" · ");
+interface Figure {
+  key: string;
+  label: string;
+  value: number | undefined;
+  href?: string;
+  onPick?: () => void;
+  share?: number;
 }
 
-export default function OverviewPage() {
+/** Today's four numbers: rows in a narrow card, one line of four in a wide one. */
+function Figures({ figures }: { figures: Figure[] }) {
   const t = useTranslations("overview");
-  const common = useTranslations("common");
+  const locale = useLocale();
+  const face =
+    "flex w-full min-h-11 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 text-start hover:bg-kumo-tint motion-press @xl:flex-col @xl:flex-nowrap @xl:items-start @xl:gap-1 @xl:py-3.5";
+  return (
+    <div className="@container">
+      <ul className="grid @xl:grid-cols-4">
+        {figures.map((one) => {
+          const body = (
+            <>
+              <span className="min-w-0 flex-1 @xl:flex-none @xl:text-sm @xl:text-kumo-subtle">{one.label}</span>
+              {one.value === undefined ? (
+                <span className="w-16 @xl:w-24">
+                  <SkeletonLine minWidth={100} maxWidth={100} />
+                </span>
+              ) : (
+                <span className="shrink-0 font-medium tabular-nums @xl:text-xl @xl:font-semibold">
+                  {one.share === undefined ? t("people", { count: one.value }) : t("presentOf", { present: one.value, expected: one.share })}
+                </span>
+              )}
+              <CaretRightIcon size={14} className="shrink-0 text-kumo-subtle @xl:hidden" aria-hidden />
+              {one.share !== undefined && one.value !== undefined ? (
+                <span className="flex basis-full items-center gap-2 @xl:w-full @xl:basis-auto">
+                  <Bar value={one.value} max={one.share} />
+                  <span className="shrink-0 text-sm text-kumo-subtle tabular-nums">{percent(one.share ? one.value / one.share : 0, locale)}</span>
+                </span>
+              ) : null}
+            </>
+          );
+          return (
+            <li key={one.key} className="flex border-b border-kumo-hairline last:border-b-0 @xl:border-e @xl:border-b-0 @xl:last:border-e-0">
+              {one.href ? (
+                <Link href={one.href} className={face}>
+                  {body}
+                </Link>
+              ) : (
+                <button type="button" onClick={one.onPick} className={face}>
+                  {body}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function Bar({ value, max }: { value: number; max: number }) {
+  const width = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <span aria-hidden className="relative h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-kumo-fill">
+      <span className="absolute inset-y-0 start-0 rounded-full bg-kumo-success" style={{ width: `${width}%` }} />
+    </span>
+  );
+}
+
+type Bucket = "absent" | "onLeave";
+
+function WhoSheet({ bucket, onClose, day }: { bucket: Bucket | null; onClose: () => void; day: string }) {
+  const t = useTranslations("overview");
   const format = useFormatter();
-  const now = useNow({ updateInterval: kClockMs });
-  const { status, items } = useFeed();
-  const role = useSession((s) => s.role);
-  const runsTheFleet = role === "ADMIN";
-  const waitingOnMe = useWaitingCount(role);
-
-  const attention = useQuery({
-    queryKey: ["reports", "attention"],
-    refetchInterval: kAttentionMs,
-    queryFn: async () => (await api.get<Attention>("/reports/attention")).data,
+  const team = useQuery({
+    queryKey: ["reports", "team-today"],
+    enabled: bucket !== null,
+    queryFn: async () => (await api.get<TeamToday>("/reports/team-today")).data,
   });
+  const held = team.data;
+  const groups = !held
+    ? []
+    : bucket === "onLeave"
+      ? ([["sheetOnLeave", held.onLeave, held.totals.onLeave]] as const)
+      : ([
+          ["absentPastDue", held.absent, held.totals.absent],
+          ["absentNotYet", held.notPunched, held.totals.notPunched],
+        ] as const);
+  const shown = groups.filter(([, , total]) => total > 0);
 
-  const periods = useQuery({
-    queryKey: ["payroll-periods"],
-    enabled: role !== null,
-    queryFn: async () => (await api.get<Period[]>("/payroll-periods")).data,
-  });
+  return (
+    <LayerDialog.Root open={bucket !== null} onOpenChange={(next) => !next && onClose()}>
+      <LayerDialog.Content>
+        <LayerDialog.Title>{bucket === "onLeave" ? t("leaveTitle") : t("absentTitle")}</LayerDialog.Title>
+        <LayerDialog.Description>
+          {format.dateTime(dayOnly(day), { weekday: "long", day: "numeric", month: "long" })}.{" "}
+          {bucket === "onLeave" ? t("leaveLead") : t("absentLead")}
+        </LayerDialog.Description>
+        <LayerDialog.Body>
+          {team.isError ? (
+            <Failed onRetry={() => void team.refetch()} />
+          ) : !held ? (
+            <div className="flex flex-col gap-3 py-1">
+              <SkeletonLine minWidth={50} maxWidth={50} />
+              <SkeletonLine minWidth={47} maxWidth={47} />
+              <SkeletonLine minWidth={52} maxWidth={52} />
+            </div>
+          ) : shown.length === 0 ? (
+            <p className="text-kumo-subtle">{bucket === "onLeave" ? t("leaveNone") : t("absentNone")}</p>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {shown.map(([key, people, count]) => (
+                <section key={key} className="flex flex-col gap-1">
+                  <h3 className="m-0 text-sm font-medium text-kumo-subtle">
+                    {t(key)} · <span className="tabular-nums">{format.number(count)}</span>
+                  </h3>
+                  <ul className="-mx-2 flex flex-col">
+                    {people.map((one) => (
+                      <li key={one.id}>
+                        <Link
+                          href={`/employees/${one.id}`}
+                          className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-kumo-tint motion-press"
+                        >
+                          <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
+                          <span className="shrink-0 font-mono text-sm text-kumo-subtle">{one.code}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                  {count > people.length ? (
+                    <p className="text-sm text-kumo-subtle tabular-nums">{t("absentShownOf", { shown: people.length, total: count })}</p>
+                  ) : null}
+                </section>
+              ))}
+            </div>
+          )}
+        </LayerDialog.Body>
+      </LayerDialog.Content>
+    </LayerDialog.Root>
+  );
+}
 
-  const devices = useQuery({
-    queryKey: ["devices", { take: kFleetTake }],
-    enabled: runsTheFleet,
-    queryFn: async () => (await api.get<{ rows: Device[]; total: number }>(`/devices?take=${kFleetTake}`)).data,
-  });
+function TodayCard({ asked }: { asked: UseQueryResult<Today | null> }) {
+  const t = useTranslations("overview");
+  const { role, employeeId } = useSession();
+  const [listing, setListing] = useState<Bucket | null>(null);
 
-  const fleet = useQuery({
-    queryKey: ["releases", "fleet"],
-    enabled: runsTheFleet,
-    queryFn: async () => (await api.get<FleetUpdate[]>("/releases/fleet")).data,
-  });
-
-  const waiting = attention.data;
-  const piles = waiting
-    ? [
-        waiting.contractsEnding.total > 0 ? (
-          <Pile
-            key="contracts"
-            title={t("contractsEnding")}
-            hint={t("contractsHint")}
-            heap={waiting.contractsEnding}
-            keyOf={(row) => row.contractId}
-            href={(row) => `/employees/${row.employeeId}?tab=contracts`}
-            name={(row) => row.fullName}
-            code={(row) => row.code}
-            aside={(row) => t("daysLeft", { count: row.daysLeft })}
-          />
-        ) : null,
-        waiting.probationEnding.total > 0 ? (
-          <Pile
-            key="probation"
-            title={t("probationEnding")}
-            hint={t("probationHint")}
-            heap={waiting.probationEnding}
-            keyOf={(row) => row.contractId}
-            href={(row) => `/employees/${row.employeeId}?tab=contracts`}
-            name={(row) => row.fullName}
-            code={(row) => row.code}
-            aside={(row) => t("daysLeft", { count: row.daysLeft })}
-          />
-        ) : null,
-        waiting.exceptionsToday.total > 0 ? (
-          <Pile
-            key="exceptions"
-            title={t("exceptionsToday")}
-            heap={waiting.exceptionsToday}
-            keyOf={(row) => String(row.employeeId)}
-            href={(row) => `/attendance/${row.employeeId}`}
-            name={(row) => row.fullName}
-            code={(row) => row.code}
-            aside={(row) => <StatePill tone={REASON_TONE[row.reason]}>{t(REASON_KEY[row.reason])}</StatePill>}
-          />
-        ) : null,
-      ].filter((one) => one !== null)
-    : [];
-
-  const openPeriod = periods.data?.find((one) => one.state === "OPEN");
-  const shortcuts: Stat[] = [
-    ...(role !== null && HIRERS.includes(role)
-      ? [{ key: "hire", label: t("shortcutHire"), value: <CaretRightIcon size={14} className="text-kumo-subtle" aria-hidden />, href: "/employees/new" }]
-      : []),
-    {
-      key: "timesheet",
-      label: t("shortcutTimesheet"),
-      value: format.dateTime(now, { month: "long" }),
-      href: "/timesheet",
-    },
-    {
-      key: "payroll",
-      label: t("shortcutPeriod"),
-      value: openPeriod ? periodName(openPeriod) : t("shortcutPeriodNone"),
-      href: openPeriod ? `/payroll/${openPeriod.id}` : "/payroll",
-    },
-  ];
-
-  const kiosks = devices.data?.rows ?? [];
-  const approved = kiosks.filter((one) => one.status === "APPROVED");
-  const online = approved.filter((one) => one.online).length;
-  const pending = kiosks.filter((one) => one.status === "PENDING").length;
-  const behind = new Set((fleet.data ?? []).flatMap((one) => [...one.behind, ...one.updating])).size;
-  const fleetStats: Stat[] = [
-    {
-      key: "online",
-      label: t("kiosksOnline"),
-      value: devices.data ? `${online} / ${approved.length}` : common("empty"),
-      href: "/devices?show=online",
-      tone: devices.data && online < approved.length ? "warning" : undefined,
-    },
-    {
-      key: "pending",
-      label: t("kiosksPending"),
-      value: devices.data ? pending : common("empty"),
-      href: "/devices?show=PENDING",
-      tone: pending > 0 ? "warning" : undefined,
-    },
-    {
-      key: "behind",
-      label: t("kiosksBehind"),
-      value: fleet.data ? behind : common("empty"),
-      href: "/devices",
-    },
+  if (asked.data === null) {
+    return null;
+  }
+  const today = asked.data;
+  const day = today?.date ?? todayHere();
+  const range = `from=${day}&to=${day}`;
+  // Payroll staff cannot open the leave ledger, so their leave count lists the names in place.
+  const leaveHref = allows(role, employeeId !== null, "/leave") ? `/leave?kind=LEAVE&state=APPROVED&${range}` : undefined;
+  const figures: Figure[] = [
+    { key: "present", label: t("present"), value: today?.present, share: today?.expected ?? 0, href: `/attendance?${range}` },
+    { key: "late", label: t("late"), value: today?.late, href: `/attendance?${range}&show=late` },
+    { key: "absent", label: t("absent"), value: today?.absentUnexcused, onPick: () => setListing("absent") },
+    { key: "leave", label: t("onLeave"), value: today?.onLeave, href: leaveHref, onPick: () => setListing("onLeave") },
   ];
 
   return (
-    <>
-      <PageHeader title={t("title")} description={format.dateTime(now, "day")} />
+    <Card title={t("todayTitle")}>
+      {asked.isError ? (
+        <div className="p-4">
+          <Failed onRetry={() => void asked.refetch()} />
+        </div>
+      ) : (
+        <Figures figures={figures} />
+      )}
+      <WhoSheet bucket={listing} onClose={() => setListing(null)} day={day} />
+    </Card>
+  );
+}
 
-      <PageLayout
-        aside={
-          <>
-            <AsideCard title={common("shortcuts")}>
-              <StatList stats={shortcuts} />
-            </AsideCard>
-            {runsTheFleet ? (
-              <AsideCard title={t("fleetTitle")}>
-                <StatList stats={fleetStats} />
-              </AsideCard>
-            ) : null}
-          </>
-        }
-        extra={
-          runsTheFleet ? (
-            <AsideCard title={t("feedTitle")} action={<StatePill tone={LINK_TONE[status]}>{t(status)}</StatePill>}>
-              {items.length === 0 ? (
-                <p className="text-kumo-subtle">{t("feedEmpty")}</p>
-              ) : (
-                <ul className="-my-1 flex flex-col">
-                  {items.slice(0, kFeedRows).map((item) => (
-                    <li
-                      key={item.id}
-                      className="flex items-baseline gap-3 border-b border-kumo-hairline py-2 last:border-0"
-                    >
-                      <span className="w-11 shrink-0 text-sm text-kumo-subtle tabular-nums">
-                        {typeof item.body.ts === "number" ? format.dateTime(new Date(item.body.ts), "clock") : ""}
-                      </span>
-                      <span className="w-20 shrink-0 text-sm text-kumo-subtle">{t(FEED_KEY[item.feed])}</span>
-                      <span className="min-w-0 flex-1 truncate">{detail(item, t)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </AsideCard>
-          ) : undefined
-        }
-      >
-        <div className="flex flex-col gap-6">
-          <LayerCard>
-            <LayerCard.Secondary>{t("waitingTitle")}</LayerCard.Secondary>
-            <LayerCard.Primary>
-              {waitingOnMe > 0 ? (
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p>
-                    <span className="text-lg font-semibold tabular-nums">{format.number(waitingOnMe)}</span>{" "}
-                    {t("waitingCount", { count: waitingOnMe })}
-                  </p>
-                  <LinkButton href="/approvals" variant="secondary" icon={TrayIcon}>
-                    {t("waitingGo")}
-                  </LinkButton>
-                </div>
-              ) : (
-                <p className="text-kumo-subtle">{t("waitingNone")}</p>
-              )}
-            </LayerCard.Primary>
-          </LayerCard>
+function PileList({ pile }: { pile: Pile }) {
+  const t = useTranslations("overview");
+  if (pile.rows.length === 0) {
+    return <Quiet>{t("attentionClear")}</Quiet>;
+  }
+  return (
+    <div className="flex flex-col motion-enter">
+      <ul className="flex flex-col">
+        {pile.rows.slice(0, kPileRows).map((row) => (
+          <li key={row.key} className="border-b border-kumo-hairline last:border-0">
+            <Link href={row.href} className="flex min-h-12 items-center gap-3 px-4 py-2 hover:bg-kumo-tint motion-press">
+              <span className="flex min-w-0 flex-1 flex-col md:flex-row md:items-baseline md:gap-2">
+                <span className="truncate">{row.name}</span>
+                <span className="flex min-w-0 items-baseline text-sm text-kumo-subtle">
+                  <span className="shrink-0 font-mono">{row.code}</span>
+                  {row.detail ? <span className="truncate whitespace-pre"> · {row.detail}</span> : null}
+                </span>
+              </span>
+              <span className="shrink-0 text-end tabular-nums">{row.aside}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {pile.hint ? (
+        <p className="border-t border-kumo-hairline px-4 py-2.5 text-sm text-pretty text-kumo-subtle">{pile.hint}</p>
+      ) : null}
+    </div>
+  );
+}
 
-          <section className="flex flex-col gap-3">
-            <h2 className="m-0 text-lg font-semibold">{t("attention")}</h2>
-            {attention.isError ? (
-              <Failed onRetry={() => void attention.refetch()} />
-            ) : attention.isPending ? (
-              <LayerCard className="flex flex-col gap-3 p-4">
-                {Array.from({ length: 4 }, (_, at) => (
-                  <SkeletonLine key={at} minWidth={25} maxWidth={53} />
-                ))}
-              </LayerCard>
-            ) : piles.length === 0 ? (
-              <LayerCard className="p-0">
-                <Empty
-                  icon={<CheckCircleIcon size={40} className="text-kumo-inactive" />}
-                  title={t("attentionClear")}
-                  description={t("attentionClearHint")}
-                  className="py-10"
-                />
-              </LayerCard>
-            ) : (
-              piles
+/** One card, one tab per pile of work: the tab that is open is all the card shows. */
+function Piles<K extends string>({ title, piles, pending, failed, onRetry }: {
+  title: string;
+  piles: [K, Pile | null][];
+  pending: boolean;
+  failed: boolean;
+  onRetry: () => void;
+}) {
+  const t = useTranslations("overview");
+  const format = useFormatter();
+  const shown = piles.filter((entry): entry is [K, Pile] => entry[1] !== null);
+  const [tab, setTab] = useState<K | null>(null);
+  const current = shown.find(([key]) => key === tab) ?? shown[0];
+
+  if (!pending && !failed && shown.length === 0) {
+    return null;
+  }
+  const full = current?.[1].full;
+  const countOf = (pile: Pile) => `${format.number(pile.total)}${pile.exact ? "" : "+"}`;
+  return (
+    <Card
+      title={title}
+      link={full && current ? { href: full, label: t("fullListOf", { count: current[1].total }) } : undefined}
+    >
+      {failed ? (
+        <div className="p-4">
+          <Failed onRetry={onRetry} />
+        </div>
+      ) : pending || !current ? (
+        <SkeletonRows rows={kPileRows} />
+      ) : (
+        <>
+          <div className="@container border-b border-kumo-hairline px-3 py-2.5">
+            <div className="hidden @xl:block">
+              <Tabs
+                variant="segmented"
+                value={current[0]}
+                onValueChange={(next) => setTab(next as K)}
+                tabs={shown.map(([key, pile]) => ({
+                  value: key,
+                  label: (
+                    <span className="flex items-center gap-1.5 whitespace-nowrap">
+                      {pile.label}
+                      <span className="text-kumo-subtle tabular-nums">{countOf(pile)}</span>
+                    </span>
+                  ),
+                }))}
+              />
+            </div>
+            <div role="tablist" className="grid grid-cols-2 gap-1 rounded-lg bg-kumo-recessed p-1 @xl:hidden">
+              {shown.map(([key, pile]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={key === current[0]}
+                  onClick={() => setTab(key)}
+                  className={cn(
+                    "flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-md px-3 text-start",
+                    key === current[0]
+                      ? "bg-kumo-base font-medium text-kumo-default shadow-sm ring ring-kumo-line"
+                      : "text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default",
+                  )}
+                >
+                  <span className="truncate">{pile.label}</span>
+                  <span className="shrink-0 tabular-nums">{countOf(pile)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <PileList key={current[0]} pile={current[1]} />
+        </>
+      )}
+    </Card>
+  );
+}
+
+function HrCard() {
+  const t = useTranslations("overview");
+  const kinds = useTranslations("employees");
+  const format = useFormatter();
+  const attention = useQuery({
+    queryKey: ["reports", "attention"],
+    refetchInterval: kAttentionMs,
+    queryFn: () => unlessMissing<Attention>("/reports/attention"),
+  });
+  const overdue = useQuery({
+    queryKey: ["checklists", "open", "overdue", kPileRows],
+    queryFn: () => unlessMissing<Heap<OverdueTask>>(`/checklists/open?overdue=true&take=${kPileRows}`),
+  });
+  const short = (iso: string) => format.dateTime(dayOnly(iso), { day: "numeric", month: "numeric" });
+
+  const ending = (label: string, heap: Heap<Expiring>, which: string, hint: string): Pile => ({
+    label,
+    hint,
+    total: heap.total,
+    exact: heap.totalIsExact,
+    full: `/employees?ending=${which}`,
+    rows: heap.rows.map((row) => ({
+      key: row.contractId,
+      href: `/employees/${row.employeeId}?tab=contracts`,
+      name: row.fullName,
+      code: row.code,
+      detail: kinds(`kind${row.kind}`),
+      aside: (
+        <span className="flex items-baseline gap-2">
+          <span className="text-sm text-kumo-subtle">{short(row.endsOn)}</span>
+          <span className={cn("min-w-20", row.daysLeft <= kSoonDays && "font-medium")}>{t("daysLeft", { count: row.daysLeft })}</span>
+        </span>
+      ),
+    })),
+  });
+  const held = attention.data;
+  const piles: [HrTab, Pile | null][] = [
+    ["contracts", held ? ending(t("tabContracts"), held.contractsEnding, "contract", t("contractsHint")) : null],
+    ["probation", held ? ending(t("tabProbation"), held.probationEnding, "probation", t("probationHint")) : null],
+    [
+      "onboarding",
+      overdue.data
+        ? {
+            label: t("tabOnboarding"),
+            total: overdue.data.total,
+            exact: overdue.data.totalIsExact,
+            full: "/onboarding?pick=late",
+            rows: overdue.data.rows.map((task) => ({
+              key: task.id,
+              href: `/employees/${task.run.employee.id}?tab=checklist`,
+              name: task.run.employee.fullName,
+              code: task.run.employee.code,
+              detail: task.title,
+              aside: <span className="text-kumo-danger">{t("dueOn", { date: short(task.dueOn) })}</span>,
+            })),
+          }
+        : null,
+    ],
+    [
+      "exceptions",
+      held
+        ? {
+            label: t("tabExceptions"),
+            total: held.exceptionsToday.total,
+            exact: held.exceptionsToday.totalIsExact,
+            hint: t("exceptionsHint"),
+            rows: held.exceptionsToday.rows.map((row) => ({
+              key: String(row.employeeId),
+              href: `/attendance/${row.employeeId}`,
+              name: row.fullName,
+              code: row.code,
+              aside: (
+                <StatePill tone={REASON_TONE[row.reason]}>
+                  {row.reason === "LATE" && row.minutes > 0 ? t("lateBy", { minutes: row.minutes }) : t(REASON_KEY[row.reason])}
+                </StatePill>
+              ),
+            })),
+          }
+        : null,
+    ],
+  ];
+
+  return (
+    <Piles
+      title={t("hrTitle")}
+      piles={piles}
+      pending={attention.isPending}
+      failed={attention.isError}
+      onRetry={() => void attention.refetch()}
+    />
+  );
+}
+
+function stepOf(period: Period, runs: Run[] | undefined, blockers: Blocker[] | undefined): Step {
+  if (period.state === "PAID") {
+    return "stepDeliver";
+  }
+  if (period.state === "LOCKED") {
+    return "stepPay";
+  }
+  if (!runs?.some((run) => run.kind === "REGULAR" && run.state === "DONE")) {
+    return "stepRun";
+  }
+  return blockers?.some((item) => item.count > 0) ? "stepCheck" : "stepLock";
+}
+
+function Stepper({ now }: { now: Step }) {
+  const pay = useTranslations("payroll");
+  const at = STEPS.indexOf(now);
+  return (
+    <ol className="grid grid-cols-5 gap-1 px-4 pt-3.5 pb-3">
+      {STEPS.map((step, index) => (
+        <li key={step} className="flex min-w-0 flex-col gap-1.5" aria-current={index === at ? "step" : undefined}>
+          <span className={cn("h-1 rounded-full", index < at ? "bg-kumo-success" : index === at ? "bg-kumo-warning" : "bg-kumo-fill")} />
+          <span
+            className={cn(
+              "flex min-w-0 items-center gap-1 truncate text-sm",
+              index === at ? "font-medium text-kumo-default" : "text-kumo-subtle",
             )}
-          </section>
+          >
+            {index < at ? <CheckIcon size={12} className="shrink-0 text-kumo-success" aria-hidden /> : null}
+            {pay(step)}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function PeriodCard() {
+  const t = useTranslations("overview");
+  const nav = useTranslations("nav");
+  const pay = useTranslations("payroll");
+  const format = useFormatter();
+  const periods = useQuery({
+    queryKey: ["payroll-periods"],
+    queryFn: () => unlessMissing<Period[]>("/payroll-periods"),
+  });
+  const open = periods.data?.find((one) => one.state === "OPEN");
+  const runs = useQuery({
+    queryKey: ["payroll-periods", open?.id, "runs"],
+    enabled: open !== undefined,
+    queryFn: async () => (await api.get<Run[]>(`/payroll-periods/${open?.id}/runs`)).data,
+  });
+  const checklist = useQuery({
+    queryKey: ["payroll-periods", open?.id, "checklist"],
+    enabled: open !== undefined,
+    queryFn: async () => (await api.get<Blocker[]>(`/payroll-periods/${open?.id}/checklist`)).data,
+  });
+
+  if (periods.data === null) {
+    return null;
+  }
+  const blockers = (checklist.data ?? []).filter((item) => item.count > 0);
+  return (
+    <Card
+      title={open ? t("periodTitle", { name: periodName(open) }) : t("tabPeriod")}
+      link={open ? { href: `/payroll/${open.id}`, label: t("periodGo", { name: periodName(open) }) } : { href: "/payroll", label: nav("payroll") }}
+    >
+      {periods.isError ? (
+        <div className="p-4">
+          <Failed onRetry={() => void periods.refetch()} />
+        </div>
+      ) : periods.isPending || (open && (runs.isPending || checklist.isPending)) ? (
+        <SkeletonRows rows={3} />
+      ) : !open ? (
+        <p className="px-4 py-3.5 text-kumo-subtle">{t("periodNone")}</p>
+      ) : (
+        <div className="flex flex-col motion-enter">
+          <Stepper now={stepOf(open, runs.data, checklist.data)} />
+          <p className="border-t border-kumo-hairline px-4 pt-3 pb-1 text-sm font-medium text-kumo-subtle">{t("blockersTitle")}</p>
+          {blockers.length === 0 ? (
+            <Quiet>{pay("checklistClear")}</Quiet>
+          ) : (
+            <ul className="flex flex-col">
+              {blockers.map((item) => (
+                <li key={item.code} className="border-b border-kumo-hairline last:border-0">
+                  <Link href={`/payroll/${open.id}`} className="flex min-h-11 items-center gap-3 px-4 hover:bg-kumo-tint motion-press">
+                    <span className="min-w-0 flex-1 truncate">{pay(item.code)}</span>
+                    <span className="shrink-0 font-medium tabular-nums">{format.number(item.count)}</span>
+                    <CaretRightIcon size={14} className="shrink-0 text-kumo-subtle" aria-hidden />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function FleetCard() {
+  const t = useTranslations("overview");
+  const common = useTranslations("common");
+  const counts = useQuery({
+    queryKey: ["devices", "counts"],
+    queryFn: () => unlessMissing<DeviceCounts>("/devices/counts"),
+  });
+  const fleet = useQuery({
+    queryKey: ["releases", "fleet"],
+    queryFn: () => unlessMissing<FleetUpdate[]>("/releases/fleet"),
+  });
+  if (counts.data === null) {
+    return null;
+  }
+  const held = counts.data;
+  const behind = new Set((fleet.data ?? []).flatMap((one) => [...one.behind, ...one.updating])).size;
+  const rows = held
+    ? [
+        { key: "online", label: t("fleetOnline"), value: t("fleetOf", { count: held.online, total: held.APPROVED }), href: "/devices?show=online" },
+        { key: "offline", label: t("fleetOffline"), value: t("machines", { count: held.offline }), href: "/devices?show=offline", warn: held.offline > 0 },
+        { key: "pending", label: t("fleetPending"), value: t("machines", { count: held.PENDING }), href: "/devices?show=PENDING", warn: held.PENDING > 0 },
+        { key: "behind", label: t("fleetBehindRow"), value: t("machines", { count: behind }), href: "/devices" },
+      ]
+    : [];
+  return (
+    <Card title={t("fleetTitle")} link={{ href: "/devices", label: common("seeAll") }}>
+      {counts.isError ? (
+        <div className="p-4">
+          <Failed onRetry={() => void counts.refetch()} />
+        </div>
+      ) : !held ? (
+        <SkeletonRows rows={4} />
+      ) : (
+        <ul className="flex flex-col">
+          {rows.map((row) => (
+            <li key={row.key} className="border-b border-kumo-hairline last:border-0">
+              <Link href={row.href} className="flex min-h-11 items-center gap-3 px-4 hover:bg-kumo-tint motion-press">
+                <span className="min-w-0 flex-1 truncate">{row.label}</span>
+                <span className={cn("shrink-0 font-medium tabular-nums", row.warn && "text-kumo-warning")}>{row.value}</span>
+                <CaretRightIcon size={14} className="shrink-0 text-kumo-subtle" aria-hidden />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** The desk roles' home: work in the main column, today and the fleet beside it (KEHOACH 9.10). */
+export default function OverviewPage() {
+  const t = useTranslations("overview");
+  const format = useFormatter();
+  const now = useNow({ updateInterval: kClockMs });
+  const role = useSession((s) => s.role);
+  const today = useQuery({
+    queryKey: ["reports", "today"],
+    refetchInterval: kAttentionMs,
+    queryFn: () => unlessMissing<Today>("/reports/today"),
+  });
+  const side = [<TodayCard key="today" asked={today} />, ...(role === "ADMIN" ? [<FleetCard key="fleet" />] : [])];
+
+  return (
+    <>
+      <PageHeader
+        title={t("title")}
+        description={format.dateTime(now, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+      />
+      <PageLayout
+        aside={<div className={cn("grid items-start gap-4", side.length > 1 && "@2xl/page:grid-cols-2 @5xl/page:grid-cols-1")}>{side}</div>}
+      >
+        <div className="flex flex-col gap-4">
+          {role !== null && REQUEST_DECIDERS.includes(role) ? <InboxPreview /> : null}
+          {role !== null && PEOPLE_DESK.includes(role) ? <HrCard /> : null}
+          {role === "PAYROLL" ? <PeriodCard /> : null}
         </div>
       </PageLayout>
     </>
