@@ -33,6 +33,7 @@ import {
   type Offboarding,
 } from "@/components/employees/offboard";
 import { Pay } from "@/components/employees/pay";
+import { ShiftCard } from "@/components/employees/shifts";
 import { EMPTY_DRAFT, EmployeeForm, type DepartmentChoice, type EmployeeDraft } from "@/components/forms/employee-form";
 import { ActionMenu, DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
@@ -724,6 +725,9 @@ export default function EmployeePage() {
         aside={
           writesPeople ? (
             <>
+              <AsideCard title={t("shiftTitle")}>
+                <ShiftCard employeeId={id} fullName={person.fullName} />
+              </AsideCard>
               <AsideCard title={t("consentTitle")}>{consentCard()}</AsideCard>
               <AsideCard title={t("kioskTitle")}>{kioskCard()}</AsideCard>
               <AsideCard title={t("loginTitle")}>{loginCard()}</AsideCard>
