@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  PayloadTooLargeException,
   type OnModuleInit,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -17,11 +18,12 @@ import { toExcelCsv } from "../../common/csv.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { JOB, QUEUE } from "../../queue/queues.js";
+import { JOB, QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { AuthService } from "../auth/auth.service.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
+import { ConsentService } from "../enrollment/consent.service.js";
 import { EnrollmentService } from "../enrollment/enrollment.service.js";
 import { OnboardingService } from "../onboarding/onboarding.service.js";
 import { dayAsDate, localDay } from "../timesheet/local-day.js";
@@ -37,15 +39,29 @@ import {
   type UpdateEmployeeDto,
 } from "./dto/employee.dto.js";
 import {
+  CHANGES_LISTED,
+  CLEAR,
   checkRepeats,
   checkShape,
+  csvLines,
+  ENTRY_SEPARATOR,
+  FLAGS,
+  GENDERS,
   IMPORT_COLUMNS,
-  readRows,
+  IMPORT_MAX_ROWS,
+  planRows,
+  readLines,
+  type Catalogue,
+  type Held,
+  type HeldColumn,
   type ImportColumn,
   type ImportReport,
   type ImportRow,
+  type ImportUpload,
   type RowFault,
+  type RowPlan,
 } from "./import.js";
+import { readWorkbook, writeWorkbook, XLSX_MIME } from "./workbook.js";
 
 const UNIQUE_VIOLATION = "P2002";
 
@@ -129,22 +145,46 @@ const EMPLOYEE_VIEW = {
 // A manager reads the tree to run its work, not its papers or its pay (KEHOACH 9.4).
 const PAPERS = ["dateOfBirth", "nationalId", "taxCode", "socialInsuranceNo", "bankAccount", "bankName"] as const;
 
-// personalEmail and the bank columns land on new rows only; later they move through an approval (KEHOACH 9.17 item 6).
-const OVERWRITABLE: readonly (readonly [ImportColumn, string])[] = [
-  ["phone", "phone"],
-  ["dateOfBirth", "dateOfBirth"],
-  ["gender", "gender"],
-  ["nationalId", "nationalId"],
-  ["taxCode", "taxCode"],
-  ["socialInsuranceNo", "socialInsuranceNo"],
-  ["hireDate", "hireDate"],
-  ["legalEntityCode", "legalEntityId"],
-  ["departmentCode", "departmentId"],
-  ["jobTitleCode", "jobTitleId"],
+// Column in the file, in the table, and its cast; email and bank move only by request (KEHOACH 9.17 item 6).
+const RECORD_COLUMNS: readonly (readonly [ImportColumn, string, string])[] = [
+  ["fullName", "fullName", ""],
+  ["phone", "phone", ""],
+  ["dateOfBirth", "dateOfBirth", "::date"],
+  ["gender", "gender", '::"Gender"'],
+  ["nationalId", "nationalId", ""],
+  ["taxCode", "taxCode", ""],
+  ["socialInsuranceNo", "socialInsuranceNo", ""],
+  ["hireDate", "hireDate", "::date"],
+  ["legalEntityCode", "legalEntityId", ""],
+  ["departmentCode", "departmentId", ""],
+  ["jobTitleCode", "jobTitleId", ""],
 ];
 
+/** One cell of an update: null keeps the column, "" empties it, anything else is written (KEHOACH 9.20 rule 4). */
+function slotOf(plan: RowPlan, column: ImportColumn): string | null {
+  if (plan.cleared.includes(column)) {
+    return "";
+  }
+  if (!plan.fields.includes(column)) {
+    return null;
+  }
+  switch (column) {
+    case "legalEntityCode":
+      return plan.place.legalEntityId;
+    case "departmentCode":
+      return plan.place.departmentId;
+    case "jobTitleCode":
+      return plan.place.jobTitleId;
+    default:
+      return plan.row[column] ?? null;
+  }
+}
+
 // A made-up person: the line only has to show the format of each column.
-const TEMPLATE_SAMPLE: Omit<Record<ImportColumn, string>, "hireDate" | "legalEntityCode" | "departmentCode" | "jobTitleCode"> = {
+const TEMPLATE_SAMPLE: Omit<
+  Record<ImportColumn, string>,
+  "hireDate" | "legalEntityCode" | "departmentCode" | "jobTitleCode" | "shiftName" | "shiftFrom"
+> = {
   code: "NV9999",
   fullName: "Nguyễn Văn Mẫu",
   personalEmail: "nguyen.van.mau@example.com",
@@ -159,77 +199,180 @@ const TEMPLATE_SAMPLE: Omit<Record<ImportColumn, string>, "hireDate" | "legalEnt
   insuranceSalary: "15000000",
   bankAccount: "0000000000",
   bankName: "Ngân hàng A",
+  consentPaper: "NO",
+  kioskId: "",
+  openLogin: "NO",
 };
-
-interface Catalogue {
-  entityBy: Map<string, string>;
-  onlyEntity: string | null;
-  departmentBy: Map<string, string>;
-  entityOfDepartment: Map<string, string>;
-  titleBy: Map<string, string>;
-}
-
-interface Placement {
-  legalEntityId: string | null;
-  departmentId: string | null;
-  jobTitleId: string | null;
-  faults: RowFault[];
-}
 
 interface HeldPlace {
   legalEntityId: string | null;
   departmentId: string | null;
 }
 
-/** Where one line puts its person; a department code is read inside the line's legal entity (KEHOACH 9.3). */
-function placeRow(
-  row: ImportRow,
-  held: HeldPlace | undefined,
-  given: ReadonlySet<ImportColumn>,
-  catalogue: Catalogue,
-): Placement {
-  const faults: RowFault[] = [];
-  const fault = (column: ImportColumn, code: string, value = ""): void => {
-    faults.push({ row: 0, column, code, value });
-  };
-  let legalEntityId = held?.legalEntityId ?? catalogue.onlyEntity;
-  if (row.legalEntityCode) {
-    legalEntityId = catalogue.entityBy.get(row.legalEntityCode) ?? null;
-    if (!legalEntityId) {
-      fault("legalEntityCode", "LEGAL_ENTITY_UNKNOWN", row.legalEntityCode);
-    }
-  } else if (!legalEntityId && (!held || row.departmentCode)) {
-    fault("legalEntityCode", "LEGAL_ENTITY_REQUIRED");
-  }
-  let departmentId: string | null = null;
-  if (row.departmentCode && legalEntityId) {
-    departmentId = catalogue.departmentBy.get(`${legalEntityId}/${row.departmentCode}`) ?? null;
-    if (!departmentId) {
-      fault("departmentCode", "DEPARTMENT_UNKNOWN", row.departmentCode);
-    }
-  } else if (
-    held?.departmentId &&
-    legalEntityId &&
-    !given.has("departmentCode") &&
-    catalogue.entityOfDepartment.get(held.departmentId) !== legalEntityId
-  ) {
-    fault("legalEntityCode", "DEPARTMENT_OTHER_ENTITY", row.legalEntityCode ?? "");
-  }
-  let jobTitleId: string | null = null;
-  if (row.jobTitleCode) {
-    jobTitleId = catalogue.titleBy.get(row.jobTitleCode) ?? null;
-    if (!jobTitleId) {
-      fault("jobTitleCode", "JOB_TITLE_UNKNOWN", row.jobTitleCode);
-    }
-  }
-  return { legalEntityId, departmentId, jobTitleId, faults };
+export type FileFormat = "xlsx" | "csv";
+
+/** A file to hand back, typed and named for the download. */
+export interface FileOut {
+  body: Buffer;
+  type: string;
+  name: string;
 }
+
+const CSV_TYPE = "text/csv; charset=utf-8";
+
+// Everything the dry run compares a line with, in one read per slice of the file.
+const HELD = {
+  id: true,
+  code: true,
+  active: true,
+  locale: true,
+  fullName: true,
+  phone: true,
+  dateOfBirth: true,
+  gender: true,
+  nationalId: true,
+  taxCode: true,
+  socialInsuranceNo: true,
+  hireDate: true,
+  personalEmail: true,
+  bankAccount: true,
+  bankName: true,
+  legalEntityId: true,
+  departmentId: true,
+  jobTitleId: true,
+  manager: { select: { code: true } },
+  login: { select: { id: true } },
+  shifts: { select: { shiftId: true, validFrom: true } },
+  enrollments: { select: { deviceId: true, state: true } },
+  _count: { select: { compensation: true, consents: { where: { state: "GRANTED" } } } },
+} satisfies Prisma.EmployeeSelect;
+
+/** The profile columns as the export writes them, which is what a re-import is compared with. */
+function profileOf(one: Pick<Employee, HeldColumn>): Record<HeldColumn, string> {
+  return {
+    fullName: one.fullName,
+    phone: one.phone ?? "",
+    dateOfBirth: asDay(one.dateOfBirth),
+    gender: one.gender ?? "",
+    nationalId: one.nationalId ?? "",
+    taxCode: one.taxCode ?? "",
+    socialInsuranceNo: one.socialInsuranceNo ?? "",
+    hireDate: asDay(one.hireDate),
+    personalEmail: one.personalEmail ?? "",
+    bankAccount: one.bankAccount ?? "",
+    bankName: one.bankName ?? "",
+  };
+}
+
+function heldOf(one: Prisma.EmployeeGetPayload<{ select: typeof HELD }>): Held {
+  return {
+    id: one.id,
+    active: one.active,
+    locale: one.locale,
+    values: profileOf(one),
+    legalEntityId: one.legalEntityId,
+    departmentId: one.departmentId,
+    jobTitleId: one.jobTitleId,
+    managerCode: one.manager?.code ?? "",
+    hasPay: one._count.compensation > 0,
+    hasLogin: one.login !== null,
+    consented: one._count.consents > 0,
+    shifts: new Set(one.shifts.map((held) => `${held.shiftId}/${asDay(held.validFrom)}`)),
+    kiosks: new Map(one.enrollments.map((pair) => [pair.deviceId, pair.state])),
+  };
+}
+
+function chunks<T>(items: readonly T[]): T[][] {
+  const cut: T[][] = [];
+  for (let at = 0; at < items.length; at += kWriteChunk) {
+    cut.push(items.slice(at, at + kWriteChunk));
+  }
+  return cut;
+}
+
+// A held face first, then a pair still waiting for one.
+const STANDING_ORDER: Readonly<Record<string, number>> = { ENROLLED: 0, RETAKE: 1, ASSIGNED: 2 };
 
 async function managersOf(tx: Prisma.TransactionClient, codes: string[]): Promise<Map<number, number | null>> {
   const rows = await tx.$queryRaw<{ id: number; managerId: number | null }[]>`
     SELECT "id", "managerId" FROM "Employee" WHERE "code" = ANY(${codes}::text[])
   `;
   return new Map(rows.map((one) => [one.id, one.managerId]));
+}
+
+/** New people, one statement per slice: a round trip per row turns thirty thousand into a minute of waiting. */
+function insertNew(tx: Prisma.TransactionClient, plans: RowPlan[]): Promise<number> {
+  const rows = plans.map((one) => one.row);
+  const placed = plans.map((one) => one.place);
+  return tx.$executeRaw`
+    INSERT INTO "Employee" (
+      "code", "fullName", "personalEmail", "phone", "dateOfBirth", "gender",
+      "nationalId", "taxCode", "socialInsuranceNo", "legalEntityId", "departmentId", "jobTitleId",
+      "hireDate", "bankAccount", "bankName", "active", "locale", "createdAt", "updatedAt")
+    SELECT v."code", v."fullName", v."personalEmail", v."phone",
+           v."dateOfBirth"::date, v."gender"::"Gender",
+           v."nationalId", v."taxCode", v."socialInsuranceNo",
+           v."legalEntityId", v."departmentId", v."jobTitleId", v."hireDate"::date,
+           v."bankAccount", v."bankName", true, 'vi', now(), now()
+      FROM unnest(
+             ${rows.map((row) => row.code as string)}::text[],
+             ${rows.map((row) => row.fullName as string)}::text[],
+             ${rows.map((row) => row.personalEmail ?? null)}::text[],
+             ${rows.map((row) => row.phone ?? null)}::text[],
+             ${rows.map((row) => row.dateOfBirth ?? null)}::text[],
+             ${rows.map((row) => row.gender ?? null)}::text[],
+             ${rows.map((row) => row.nationalId ?? null)}::text[],
+             ${rows.map((row) => row.taxCode ?? null)}::text[],
+             ${rows.map((row) => row.socialInsuranceNo ?? null)}::text[],
+             ${placed.map((spot) => spot.legalEntityId)}::text[],
+             ${placed.map((spot) => spot.departmentId)}::text[],
+             ${placed.map((spot) => spot.jobTitleId)}::text[],
+             ${rows.map((row) => row.hireDate ?? null)}::text[],
+             ${rows.map((row) => row.bankAccount ?? null)}::text[],
+             ${rows.map((row) => row.bankName ?? null)}::text[]
+           ) AS v("code", "fullName", "personalEmail", "phone", "dateOfBirth",
+                  "gender", "nationalId", "taxCode", "socialInsuranceNo",
+                  "legalEntityId", "departmentId", "jobTitleId", "hireDate",
+                  "bankAccount", "bankName")
+    ON CONFLICT ("code") DO NOTHING
+  `;
+}
+
+/** People already here: each cell keeps, empties or writes its column, as slotOf read it. */
+function updateHeld(tx: Prisma.TransactionClient, plans: RowPlan[]): Promise<number> {
+  const slots = RECORD_COLUMNS.map(([column]) => Prisma.sql`${plans.map((one) => slotOf(one, column))}::text[]`);
+  const names = Prisma.raw(RECORD_COLUMNS.map(([, target]) => `"${target}"`).join(", "));
+  const writes = Prisma.raw(
+    RECORD_COLUMNS.map(
+      ([, target, cast]) =>
+        `"${target}" = CASE WHEN v."${target}" IS NULL THEN e."${target}" ELSE NULLIF(v."${target}", '')${cast} END`,
+    ).join(", "),
+  );
+  return tx.$executeRaw`
+    UPDATE "Employee" e SET ${writes}, "updatedAt" = now()
+      FROM unnest(${plans.map((one) => one.row.code as string)}::text[], ${Prisma.join(slots)}) AS v("code", ${names})
+     WHERE e."code" = v."code"
+  `;
+}
+
+async function idsOf(tx: Prisma.TransactionClient, codes: string[]): Promise<Map<string, number>> {
+  const rows = await tx.$queryRaw<{ id: number; code: string }[]>`
+    SELECT "id", "code" FROM "Employee" WHERE "code" = ANY(${codes}::text[])
+  `;
+  return new Map(rows.map((one) => [one.code, one.id]));
+}
+
+// Only a shift, person and start that is not there yet: the same file twice adds nothing (KEHOACH 9.20 rule 3).
+async function writeShifts(tx: Prisma.TransactionClient, plans: RowPlan[], ids: ReadonlyMap<string, number>): Promise<void> {
+  const data = plans.flatMap((one) => {
+    const employeeId = ids.get(one.row.code as string);
+    return one.shift && employeeId !== undefined
+      ? [{ shiftId: one.shift.shiftId, employeeId, validFrom: dayAsDate(one.shift.validFrom) }]
+      : [];
+  });
+  for (const slice of chunks(data)) {
+    await tx.shiftAssignment.createMany({ data: slice, skipDuplicates: true });
+  }
 }
 
 /** Pending requests follow their person to the new manager, as a reorganisation moves them (KEHOACH 9.4). */
@@ -263,6 +406,7 @@ export class EmployeesService implements OnModuleInit {
     private readonly users: UsersService,
     private readonly auth: AuthService,
     private readonly enrollment: EnrollmentService,
+    private readonly consent: ConsentService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -277,98 +421,230 @@ export class EmployeesService implements OnModuleInit {
   }
 
 
-  /**
-   * Two passes over one file, and the same code decides both: a dry run that
-   * cannot reach the writes is a dry run that lies about them.
-   */
-  async importCsv(viewer: Viewer, text: string, apply: boolean): Promise<ImportReport> {
-    const read = readRows(text);
+  /** Dry run by default; `apply` writes only a file with no fault left (KEHOACH 9.20). */
+  async importFile(viewer: Viewer, upload: ImportUpload, apply: boolean): Promise<ImportReport> {
+    const read = readLines(upload.kind === "xlsx" ? await readWorkbook(upload.bytes) : csvLines(upload.text));
+    if (read.rows.length > IMPORT_MAX_ROWS) {
+      throw new PayloadTooLargeException("IMPORT_TOO_MANY_ROWS");
+    }
     const faults: RowFault[] = [...read.faults];
-    read.rows.forEach((row, at) => faults.push(...checkShape(row, at)));
-    faults.push(...checkRepeats(read.rows));
+    read.rows.forEach((row, at) => faults.push(...checkShape(row, read.lines[at] ?? 0)));
+    faults.push(...checkRepeats(read.rows, read.lines));
 
-    const codes = read.rows.map((row) => row.code).filter(Boolean) as string[];
-    const [entities, departments, titles, people, paid] = await Promise.all([
-      this.db.legalEntity.findMany({ where: { active: true }, select: { id: true, code: true } }),
-      this.db.department.findMany({ select: { id: true, code: true, legalEntityId: true, active: true } }),
-      this.db.jobTitle.findMany({ where: { active: true }, select: { id: true, code: true } }),
-      this.db.employee.findMany({ select: { id: true, code: true, legalEntityId: true, departmentId: true } }),
-      this.db.$queryRaw<{ code: string }[]>`
-        SELECT DISTINCT e."code" FROM "CompensationRecord" c
-          JOIN "Employee" e ON e."id" = c."employeeId"
-         WHERE e."code" = ANY(${codes}::text[])
-      `,
+    const codes = [...new Set(read.rows.flatMap((row) => (row.code ? [row.code] : [])))];
+    const bosses = [
+      ...new Set(read.rows.flatMap((row) => (row.managerCode && row.managerCode !== CLEAR ? [row.managerCode] : []))),
+    ];
+    const [catalogue, heldBy, managers] = await Promise.all([
+      this.catalogueNow(),
+      this.heldFor(codes),
+      this.codesAmong(bosses),
     ]);
-    const catalogue: Catalogue = {
-      entityBy: new Map(entities.map((one) => [one.code, one.id])),
-      onlyEntity: entities.length === 1 ? (entities[0]?.id ?? null) : null,
-      departmentBy: new Map(
-        departments.filter((one) => one.active).map((one) => [`${one.legalEntityId}/${one.code}`, one.id]),
-      ),
-      entityOfDepartment: new Map(departments.map((one) => [one.id, one.legalEntityId])),
-      titleBy: new Map(titles.map((one) => [one.code, one.id])),
-    };
-    const personBy = new Map(people.map((one) => [one.code, one]));
-    // A manager named in the file counts as known, so a whole department can
-    // arrive in one upload without ordering the lines by seniority.
-    const arriving = new Set(codes);
-    const given = new Set(read.header);
-
-    const placed = read.rows.map((row, at) => {
-      const line = at + 2;
-      const spot = placeRow(row, personBy.get(row.code ?? ""), given, catalogue);
-      faults.push(...spot.faults.map((one) => ({ ...one, row: line })));
-      if (row.managerCode && !personBy.has(row.managerCode) && !arriving.has(row.managerCode)) {
-        faults.push({ row: line, column: "managerCode", code: "MANAGER_UNKNOWN", value: row.managerCode });
-      }
-      return spot;
+    const asking = read.rows
+      .filter((row) => row.openLogin === "YES")
+      .flatMap((row) => heldBy.get(row.code ?? "")?.values.personalEmail || row.personalEmail || []);
+    const planned = planRows({
+      read,
+      catalogue,
+      heldBy,
+      managers,
+      takenEmails: await this.loginEmailsAmong(asking),
+      today: this.today(),
     });
-
-    const toUpdate = read.rows.filter((row) => row.code && personBy.has(row.code)).length;
-    const keptPay = new Set(paid.map((one) => one.code));
+    faults.push(...planned.faults);
+    const { plans } = planned;
+    const changing = plans.filter((one) => one.held && one.fields.length + one.cleared.length > 0);
+    const created = plans.filter((one) => !one.held).length;
     const report: ImportReport = {
       applied: false,
-      rows: read.rows.length,
-      toCreate: read.rows.length - toUpdate,
-      toUpdate,
-      payKept: read.rows.filter((row) => row.baseSalary && keptPay.has(row.code ?? "")).length,
+      rows: plans.length,
+      toCreate: created,
+      toUpdate: changing.length,
+      unchanged: plans.length - created - changing.length,
+      payKept: planned.payKept,
+      shiftsToAssign: plans.filter((one) => one.shift).length,
+      consentsToRecord: plans.filter((one) => one.consent).length,
+      kiosksToAssign: plans.filter((one) => one.kiosk).length,
+      loginsToOpen: plans.filter((one) => one.login).length,
+      changes: changing
+        .slice(0, CHANGES_LISTED)
+        .map((one) => ({ row: one.line, code: one.row.code as string, fields: one.fields, cleared: one.cleared })),
       faults: faults.sort((a, b) => a.row - b.row),
+      warnings: planned.warnings.sort((a, b) => a.row - b.row),
     };
     if (!apply || faults.length > 0) {
       return report;
     }
-    const flips = await this.writeAll(viewer, given, read.rows, placed);
-    await this.users.settleRoleFlips(viewer.userId, flips);
+    await this.writeAll(viewer, plans);
     return { ...report, applied: true };
   }
 
-  private async writeAll(
-    viewer: Viewer,
-    given: ReadonlySet<ImportColumn>,
-    rows: ImportRow[],
-    placed: Placement[],
-  ): Promise<RoleFlip[]> {
+  /** One transaction for every write; the letters, the kiosk messages and the trail follow its commit (KEHOACH 9.20). */
+  private async writeAll(viewer: Viewer, plans: RowPlan[]): Promise<void> {
+    const rows = plans.map((one) => one.row);
     const codes = rows.map((row) => row.code as string);
-    const flips = await this.db.$transaction(
+    // An empty manager cell keeps the manager; only a named one or a "-" moves it.
+    const bossed = plans
+      .filter((one) => one.row.managerCode !== undefined || one.cleared.includes("managerCode"))
+      .map((one) => ({ code: one.row.code, managerCode: one.cleared.includes("managerCode") ? undefined : one.row.managerCode }));
+    const written = await this.db.$transaction(
       async (tx) => {
         const before = await managersOf(tx, codes);
-        for (let at = 0; at < rows.length; at += kWriteChunk) {
-          await this.writeChunk(tx, given, rows.slice(at, at + kWriteChunk), placed.slice(at, at + kWriteChunk));
+        const arriving = plans.filter((one) => !one.held);
+        let inserted = 0;
+        for (const slice of chunks(arriving)) {
+          inserted += await insertNew(tx, slice);
         }
-        let moved: RoleFlip[] = [];
-        if (given.has("managerCode")) {
-          moved = await this.linkManagers(tx, rows, codes, before);
+        if (inserted !== arriving.length) {
+          throw new ConflictException("EMPLOYEE_CODE_TAKEN");
         }
-        const payable = rows.filter((row) => row.baseSalary && row.insuranceSalary);
-        for (let at = 0; at < payable.length; at += kWriteChunk) {
-          await this.seedPay(tx, viewer, payable.slice(at, at + kWriteChunk));
+        for (const slice of chunks(plans.filter((one) => one.held && one.writesRecord))) {
+          await updateHeld(tx, slice);
         }
-        return moved;
+        const flips = bossed.length > 0 ? await this.linkManagers(tx, bossed, bossed.map((one) => one.code as string), before) : [];
+        for (const slice of chunks(rows.filter((row) => row.baseSalary && row.insuranceSalary))) {
+          await this.seedPay(tx, viewer, slice);
+        }
+        const ids = await idsOf(tx, codes);
+        await writeShifts(tx, plans, ids);
+        const consented = await this.consent.stageGrants(
+          tx,
+          viewer.userId,
+          plans.flatMap((one) => (one.consent ? [ids.get(one.row.code as string) ?? 0] : [])),
+          "PAPER",
+        );
+        return { flips, ids, consented: new Set(consented), ...(await this.stageLogins(tx, plans, ids)) };
       },
       { timeout: kTransactionMs, maxWait: kTransactionMs },
     );
     await this.scope.forgetScopes();
-    return flips;
+    await this.users.settleRoleFlips(viewer.userId, written.flips);
+    await this.users.mailSetups(written.jobs);
+    const seated = await this.seatOnKiosks(plans, written.ids);
+    const landed = (id: number, field: ImportColumn) =>
+      (field !== "kioskId" || seated.has(id)) &&
+      (field !== "openLogin" || written.opened.has(id)) &&
+      (field !== "consentPaper" || written.consented.has(id));
+    const trail = plans.flatMap((one) => {
+      const code = one.row.code as string;
+      const id = written.ids.get(code);
+      const fields = one.fields.filter((field) => landed(id ?? 0, field));
+      if (id === undefined || (one.held && fields.length + one.cleared.length === 0)) {
+        return [];
+      }
+      return [
+        {
+          actorId: viewer.userId,
+          action: one.held ? AUDIT_ACTIONS.EMPLOYEE_UPDATE : AUDIT_ACTIONS.EMPLOYEE_CREATE,
+          subject: AUDIT_SUBJECTS.EMPLOYEE,
+          subjectId: String(id),
+          meta: { code, fields, cleared: one.cleared, source: "import" },
+        },
+      ];
+    });
+    for (const slice of chunks([...trail, ...this.consent.grantTrail(viewer.userId, [...written.consented], "PAPER")])) {
+      await this.audit.recordMany(slice);
+    }
+  }
+
+  // Inside the import's transaction, so a pass that rolls back leaves no login behind.
+  private async stageLogins(
+    tx: Prisma.TransactionClient,
+    plans: RowPlan[],
+    ids: ReadonlyMap<string, number>,
+  ): Promise<{ jobs: PasswordSetupJob[]; opened: Set<number> }> {
+    const jobs: PasswordSetupJob[] = [];
+    const opened = new Set<number>();
+    const wanted = plans.flatMap((one) => (one.login ? [ids.get(one.row.code as string) ?? 0] : []));
+    for (const slice of chunks(wanted)) {
+      const people = await tx.employee.findMany({
+        where: { id: { in: slice }, login: null, personalEmail: { not: null } },
+        select: { id: true, personalEmail: true, locale: true, _count: { select: { reports: { where: { active: true } } } } },
+      });
+      const staged = await this.users.stageSetups(
+        tx,
+        people.map((one) => ({
+          employeeId: one.id,
+          email: one.personalEmail as string,
+          locale: one.locale,
+          manages: one._count.reports > 0,
+        })),
+        [],
+      );
+      jobs.push(...staged.jobs);
+      staged.opened.forEach((_, employeeId) => opened.add(employeeId));
+    }
+    return { jobs, opened };
+  }
+
+  /** One roster bump per kiosk for the whole file (KEHOACH 7.5); answers who landed on one. */
+  private async seatOnKiosks(plans: RowPlan[], ids: ReadonlyMap<string, number>): Promise<Set<number>> {
+    const byKiosk = new Map<string, { id: number; code: string; fullName: string }[]>();
+    for (const one of plans) {
+      const id = ids.get(one.row.code as string);
+      if (one.kiosk && id !== undefined) {
+        const seats = byKiosk.get(one.kiosk) ?? [];
+        seats.push({ id, code: one.row.code as string, fullName: one.row.fullName as string });
+        byKiosk.set(one.kiosk, seats);
+      }
+    }
+    const seated = new Set<number>();
+    for (const [deviceId, people] of byKiosk) {
+      const put = await this.enrollment.assignMany(deviceId, people);
+      put.versions.forEach((_, employeeId) => seated.add(employeeId));
+    }
+    return seated;
+  }
+
+  /** Every catalogue entry by the key a file names it with, retired ones included (KEHOACH 9.20 rule 2). */
+  private async catalogueNow(): Promise<Catalogue> {
+    const [entities, departments, titles, shifts, kiosks] = await Promise.all([
+      this.db.legalEntity.findMany({ select: { id: true, code: true, active: true } }),
+      this.db.department.findMany({ select: { id: true, code: true, legalEntityId: true, active: true } }),
+      this.db.jobTitle.findMany({ select: { id: true, code: true, active: true } }),
+      this.db.shift.findMany({ select: { id: true, name: true, active: true } }),
+      this.enrollment.assignable(),
+    ]);
+    const live = entities.filter((one) => one.active);
+    return {
+      entities: new Map(entities.map((one) => [one.code, { id: one.id, active: one.active }])),
+      onlyEntity: live.length === 1 ? (live[0]?.id ?? null) : null,
+      departments: new Map(
+        departments.map((one) => [`${one.legalEntityId}/${one.code}`, { id: one.id, active: one.active }]),
+      ),
+      departmentCodes: new Set(departments.map((one) => one.code)),
+      entityOfDepartment: new Map(departments.map((one) => [one.id, one.legalEntityId])),
+      titles: new Map(titles.map((one) => [one.code, { id: one.id, active: one.active }])),
+      shifts: new Map(shifts.map((one) => [one.name, { id: one.id, active: one.active }])),
+      approvedKiosks: new Set(kiosks.map((one) => one.id)),
+    };
+  }
+
+  private async heldFor(codes: string[]): Promise<Map<string, Held>> {
+    const held = new Map<string, Held>();
+    for (const slice of chunks(codes)) {
+      const people = await this.db.employee.findMany({ where: { code: { in: slice } }, select: HELD });
+      people.forEach((one) => held.set(one.code, heldOf(one)));
+    }
+    return held;
+  }
+
+  private async codesAmong(codes: string[]): Promise<Set<string>> {
+    const found = new Set<string>();
+    for (const slice of chunks(codes)) {
+      const rows = await this.db.employee.findMany({ where: { code: { in: slice } }, select: { code: true } });
+      rows.forEach((one) => found.add(one.code));
+    }
+    return found;
+  }
+
+  private async loginEmailsAmong(emails: string[]): Promise<Set<string>> {
+    const found = new Set<string>();
+    for (const slice of chunks(emails)) {
+      const rows = await this.db.user.findMany({ where: { email: { in: slice } }, select: { email: true } });
+      rows.forEach((one) => found.add(one.email));
+    }
+    return found;
   }
 
   /** Managers are linked once every person in the file exists, so a line may name a manager
@@ -423,57 +699,13 @@ export class EmployeesService implements OnModuleInit {
     `;
   }
 
-  /** One statement for a slice of the file: a round trip per row is what turns
-   *  thirty thousand people into a minute of waiting.
-   */
-  private writeChunk(
-    tx: Prisma.TransactionClient,
-    given: ReadonlySet<ImportColumn>,
-    rows: ImportRow[],
-    placed: Placement[],
-  ): Promise<number> {
-    const kept = OVERWRITABLE.filter(([column]) => given.has(column)).map(([, target]) => target);
-    const overwrite = Prisma.raw(["fullName", ...kept].map((one) => `"${one}" = EXCLUDED."${one}"`).join(", "));
-    return tx.$executeRaw`
-      INSERT INTO "Employee" (
-        "code", "fullName", "personalEmail", "phone", "dateOfBirth", "gender",
-        "nationalId", "taxCode", "socialInsuranceNo", "legalEntityId", "departmentId", "jobTitleId",
-        "hireDate", "bankAccount", "bankName", "active", "locale", "createdAt", "updatedAt")
-      SELECT v."code", v."fullName", v."personalEmail", v."phone",
-             v."dateOfBirth"::date, v."gender"::"Gender",
-             v."nationalId", v."taxCode", v."socialInsuranceNo",
-             v."legalEntityId", v."departmentId", v."jobTitleId", v."hireDate"::date,
-             v."bankAccount", v."bankName", true, 'vi', now(), now()
-        FROM unnest(
-               ${rows.map((row) => row.code as string)}::text[],
-               ${rows.map((row) => row.fullName as string)}::text[],
-               ${rows.map((row) => row.personalEmail ?? null)}::text[],
-               ${rows.map((row) => row.phone ?? null)}::text[],
-               ${rows.map((row) => row.dateOfBirth ?? null)}::text[],
-               ${rows.map((row) => row.gender ?? null)}::text[],
-               ${rows.map((row) => row.nationalId ?? null)}::text[],
-               ${rows.map((row) => row.taxCode ?? null)}::text[],
-               ${rows.map((row) => row.socialInsuranceNo ?? null)}::text[],
-               ${placed.map((spot) => spot.legalEntityId)}::text[],
-               ${placed.map((spot) => spot.departmentId)}::text[],
-               ${placed.map((spot) => spot.jobTitleId)}::text[],
-               ${rows.map((row) => row.hireDate ?? null)}::text[],
-               ${rows.map((row) => row.bankAccount ?? null)}::text[],
-               ${rows.map((row) => row.bankName ?? null)}::text[]
-             ) AS v("code", "fullName", "personalEmail", "phone", "dateOfBirth",
-                    "gender", "nationalId", "taxCode", "socialInsuranceNo",
-                    "legalEntityId", "departmentId", "jobTitleId", "hireDate",
-                    "bankAccount", "bankName")
-      ON CONFLICT ("code") DO UPDATE SET ${overwrite}, "updatedAt" = now()
-    `;
-  }
-
   /**
    * The same columns the import reads, filled in, for the people the list filters show.
    * Exporting into a shape the importer will not take back is how a round trip turns into retyping.
    */
-  async exportCsv(viewer: Viewer, query: EmployeeFilterDto): Promise<string> {
+  async exportFile(viewer: Viewer, query: EmployeeFilterDto, format: FileFormat): Promise<FileOut> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
+    const today = dayAsDate(this.today());
     const rows = await this.db.employee.findMany({
       where: await this.filterWhere(query, visible),
       include: {
@@ -482,41 +714,63 @@ export class EmployeesService implements OnModuleInit {
         jobTitle: { select: { code: true } },
         manager: { select: { code: true } },
         compensation: { orderBy: { effectiveFrom: "desc" }, take: 1 },
+        login: { select: { id: true } },
+        _count: { select: { consents: { where: { state: "GRANTED" } } } },
+        // Later starts win, the way the roster reads them (KEHOACH 9.17 item 8).
+        shifts: {
+          where: { validFrom: { lte: today }, OR: [{ validTo: null }, { validTo: { gte: today } }] },
+          orderBy: [{ validFrom: "desc" }, { id: "desc" }],
+          take: 1,
+          include: { shift: { select: { name: true } } },
+        },
+        enrollments: {
+          where: { state: { not: "REVOKED" }, device: { status: "APPROVED" } },
+          select: { deviceId: true, state: true },
+        },
       },
       orderBy: { code: "asc" },
     });
-    const body = rows.map((one) => [
-      one.code,
-      one.fullName,
-      one.personalEmail ?? "",
-      one.phone ?? "",
-      asDay(one.dateOfBirth),
-      one.gender ?? "",
-      one.nationalId ?? "",
-      one.taxCode ?? "",
-      one.socialInsuranceNo ?? "",
-      one.legalEntity?.code ?? "",
-      one.department?.code ?? "",
-      one.jobTitle?.code ?? "",
-      one.manager?.code ?? "",
-      asDay(one.hireDate),
-      one.compensation[0]?.baseSalary.toFixed(0) ?? "",
-      one.compensation[0]?.insuranceSalary.toFixed(0) ?? "",
-      one.bankAccount ?? "",
-      one.bankName ?? "",
-    ]);
-    return toExcelCsv([...IMPORT_COLUMNS], body);
+    const body = rows.map((one) => {
+      const [kiosk] = [...one.enrollments].sort(
+        (a, b) => (STANDING_ORDER[a.state] ?? 9) - (STANDING_ORDER[b.state] ?? 9) || a.deviceId.localeCompare(b.deviceId),
+      );
+      const cells: Record<ImportColumn, string> = {
+        ...profileOf(one),
+        code: one.code,
+        legalEntityCode: one.legalEntity?.code ?? "",
+        departmentCode: one.department?.code ?? "",
+        jobTitleCode: one.jobTitle?.code ?? "",
+        managerCode: one.manager?.code ?? "",
+        baseSalary: one.compensation[0]?.baseSalary.toFixed(0) ?? "",
+        insuranceSalary: one.compensation[0]?.insuranceSalary.toFixed(0) ?? "",
+        shiftName: one.shifts[0]?.shift.name ?? "",
+        shiftFrom: asDay(one.shifts[0]?.validFrom ?? null),
+        kioskId: kiosk?.deviceId ?? "",
+        consentPaper: one._count.consents > 0 ? "YES" : "NO",
+        openLogin: one.login ? "YES" : "NO",
+      };
+      return IMPORT_COLUMNS.map((column) => cells[column]);
+    });
+    if (format === "csv") {
+      return { body: Buffer.from(toExcelCsv([...IMPORT_COLUMNS], body), "utf8"), type: CSV_TYPE, name: "employees.csv" };
+    }
+    const workbook = await writeWorkbook({ header: IMPORT_COLUMNS, rows: body, lists: await this.dropDowns() });
+    return { body: workbook, type: XLSX_MIME, name: "employees.xlsx" };
   }
 
-  /** The header and one line that passes the import as it stands, built from this company's own catalogues. */
-  async template(): Promise<string> {
+  /** Built at download time from the catalogues in use, so an entry added a moment ago is already in it (KEHOACH 9.20 rule 2). */
+  async template(format: FileFormat): Promise<FileOut> {
+    if (format === "xlsx") {
+      const workbook = await writeWorkbook({ header: IMPORT_COLUMNS, rows: [], lists: await this.dropDowns() });
+      return { body: workbook, type: XLSX_MIME, name: "employees-template.xlsx" };
+    }
     const [entity] = await this.db.legalEntity.findMany({
       where: { active: true },
       orderBy: { code: "asc" },
       take: 1,
       select: { id: true, code: true },
     });
-    const [department, title] = await Promise.all([
+    const [department, title, shift] = await Promise.all([
       entity
         ? this.db.department.findFirst({
             where: { legalEntityId: entity.id, active: true },
@@ -525,6 +779,7 @@ export class EmployeesService implements OnModuleInit {
           })
         : null,
       this.db.jobTitle.findFirst({ where: { active: true }, orderBy: { code: "asc" }, select: { code: true } }),
+      this.db.shift.findFirst({ where: { active: true }, orderBy: { name: "asc" }, select: { name: true } }),
     ]);
     const sample: Record<ImportColumn, string> = {
       ...TEMPLATE_SAMPLE,
@@ -532,8 +787,42 @@ export class EmployeesService implements OnModuleInit {
       legalEntityCode: entity?.code ?? "",
       departmentCode: department?.code ?? "",
       jobTitleCode: title?.code ?? "",
+      shiftName: shift?.name ?? "",
+      shiftFrom: shift ? todayIso() : "",
     };
-    return toExcelCsv([...IMPORT_COLUMNS], [IMPORT_COLUMNS.map((column) => sample[column])]);
+    const text = toExcelCsv([...IMPORT_COLUMNS], [IMPORT_COLUMNS.map((column) => sample[column])]);
+    return { body: Buffer.from(text, "utf8"), type: CSV_TYPE, name: "employees-template.csv" };
+  }
+
+  /** Each catalogue column's drop-down, `code · name`; a department names its entity too when there are several. */
+  private async dropDowns(): Promise<Map<ImportColumn, string[]>> {
+    const [entities, departments, titles, shifts, kiosks] = await Promise.all([
+      this.db.legalEntity.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { code: "asc" } }),
+      this.db.department.findMany({
+        where: { active: true, legalEntity: { active: true } },
+        select: { code: true, name: true, legalEntity: { select: { code: true } } },
+        orderBy: [{ legalEntity: { code: "asc" } }, { code: "asc" }],
+      }),
+      this.db.jobTitle.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { code: "asc" } }),
+      this.db.shift.findMany({
+        where: { active: true },
+        select: { name: true, startTime: true, endTime: true },
+        orderBy: [{ startTime: "asc" }, { name: "asc" }],
+      }),
+      this.enrollment.assignable(),
+    ]);
+    const entry = (...parts: (string | null)[]) => parts.filter(Boolean).join(ENTRY_SEPARATOR);
+    const several = entities.length > 1;
+    return new Map<ImportColumn, string[]>([
+      ["legalEntityCode", entities.map((one) => entry(one.code, one.name))],
+      ["departmentCode", departments.map((one) => entry(one.code, one.name, several ? one.legalEntity.code : null))],
+      ["jobTitleCode", titles.map((one) => entry(one.code, one.name))],
+      ["shiftName", shifts.map((one) => entry(one.name, `${one.startTime}–${one.endTime}`))],
+      ["kioskId", kiosks.map((one) => entry(one.id, one.name ?? one.location))],
+      ["gender", [...GENDERS]],
+      ["consentPaper", [...FLAGS]],
+      ["openLogin", [...FLAGS]],
+    ]);
   }
 
   private async filterWhere(query: EmployeeFilterDto, visible: number[] | null): Promise<Prisma.EmployeeWhereInput> {

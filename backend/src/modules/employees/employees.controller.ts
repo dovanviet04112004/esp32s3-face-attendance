@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  createParamDecorator,
   Delete,
   Get,
   HttpStatus,
@@ -10,20 +12,26 @@ import {
   Header,
   Post,
   Query,
+  StreamableFile,
   UseGuards,
+  type ExecutionContext,
 } from "@nestjs/common";
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiPayloadTooLargeResponse,
   ApiProduces,
   ApiTags,
 } from "@nestjs/swagger";
 import type { Employee } from "@prisma/client";
+import type { Request } from "express";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
@@ -46,6 +54,8 @@ import {
   EmployeeFilterDto,
   EmployeePage,
   EmployeeView,
+  ExportQueryDto,
+  FileFormatDto,
   ImportCsvDto,
   ImportQueryDto,
   ImportReportView,
@@ -61,8 +71,31 @@ import {
 } from "./dto/employee.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import { BulkService, type EnrollPlan, type LoginPlan, type PlacementPlan } from "./bulk.service.js";
-import { EmployeesService, type Offboarding, type Onboarding } from "./employees.service.js";
-import type { ImportReport } from "./import.js";
+import { EmployeesService, type FileOut, type Offboarding, type Onboarding } from "./employees.service.js";
+import type { ImportReport, ImportUpload } from "./import.js";
+import { XLSX_MIME } from "./workbook.js";
+
+/** The file as it came: xlsx or csv bytes as the raw body, or csv text inside json. */
+const Upload = createParamDecorator((_: unknown, context: ExecutionContext): ImportUpload => {
+  const req = context.switchToHttp().getRequest<Request>();
+  const body: unknown = req.body;
+  if (Buffer.isBuffer(body)) {
+    return req.is(XLSX_MIME) ? { kind: "xlsx", bytes: body } : { kind: "csv", text: body.toString("utf8") };
+  }
+  const held = body as { csv?: unknown } | undefined;
+  if (typeof held?.csv === "string" && Object.keys(held).length === 1) {
+    return { kind: "csv", text: held.csv };
+  }
+  throw new BadRequestException("IMPORT_FILE_UNREADABLE");
+});
+
+function download(file: FileOut): StreamableFile {
+  return new StreamableFile(file.body, {
+    type: file.type,
+    disposition: `attachment; filename="${file.name}"`,
+    length: file.body.length,
+  });
+}
 
 @ApiTags("employees")
 @ApiBearerAuth()
@@ -158,20 +191,28 @@ export class EmployeesController {
   @Post("import")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
+  @AuditedInService()
   @ApiOperation({
-    summary: "Dry run by default; apply=true writes when nothing is wrong",
+    summary: "Dry run by default; apply=true writes when no fault is left, warnings or not (KEHOACH 9.20)",
     description:
-      "Updates write only the columns the header names. personalEmail and the bank columns land on new people only; " +
-      "pay columns seed the first pay record and are kept otherwise (payKept).",
+      "The body is the xlsx or csv file itself, or {csv} as json. For someone already here an empty cell keeps the " +
+      "field and a lone - empties it; only people something changes for are written, one audit line each, and " +
+      "`changes` lists the fields of the first 100. personalEmail and the bank columns land on new people only (a " +
+      "warning otherwise); pay columns seed the first pay record and are kept otherwise (payKept). consentPaper=YES " +
+      "records a PAPER consent in the same transaction, so kioskId on that line assigns in the same run.",
   })
+  @ApiConsumes(XLSX_MIME, "text/csv", "application/json")
+  @ApiBody({ type: ImportCsvDto })
   @ApiCreatedResponse({ type: ImportReportView })
+  @ApiBadRequestResponse({ type: ErrorBody, description: "IMPORT_FILE_UNREADABLE" })
   @ApiConflictResponse({ type: ErrorBody, description: "MANAGER_CYCLE" })
-  importCsv(
+  @ApiPayloadTooLargeResponse({ type: ErrorBody, description: "BODY_TOO_LARGE, IMPORT_FILE_TOO_LARGE, IMPORT_TOO_MANY_ROWS" })
+  importFile(
     @CurrentViewer() viewer: Viewer,
-    @Body() body: ImportCsvDto,
+    @Upload() upload: ImportUpload,
     @Query() query: ImportQueryDto,
   ): Promise<ImportReport> {
-    return this.employees.importCsv(viewer, body.csv, query.apply === true);
+    return this.employees.importFile(viewer, upload, query.apply === true);
   }
 
   @Post(":id/onboard")
@@ -235,22 +276,27 @@ export class EmployeesController {
   @Get("export")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR", "PAYROLL")
-  @Header("Content-Type", "text/csv; charset=utf-8")
-  @ApiProduces("text/csv")
-  @ApiOperation({ summary: "The people the list filters show, in the import's own columns" })
-  @ApiOkResponse({ type: String, description: "CSV with a byte order mark" })
-  exportCsv(@CurrentViewer() viewer: Viewer, @Query() query: EmployeeFilterDto): Promise<string> {
-    return this.employees.exportCsv(viewer, query);
+  @ApiProduces(XLSX_MIME, "text/csv")
+  @ApiOperation({
+    summary: "The people the list filters show, in the import's own columns; importing it back changes nothing",
+    description: "xlsx by default, every cell a string; format=csv gives a csv with a byte order mark.",
+  })
+  @ApiOkResponse({ schema: { type: "string", format: "binary" } })
+  async exportFile(@CurrentViewer() viewer: Viewer, @Query() query: ExportQueryDto): Promise<StreamableFile> {
+    return download(await this.employees.exportFile(viewer, query, query.format ?? "xlsx"));
   }
 
   @Get("import/template")
   @Roles("ADMIN", "HR")
-  @Header("Content-Type", "text/csv; charset=utf-8")
-  @ApiProduces("text/csv")
-  @ApiOperation({ summary: "The columns this import reads, and one example line built from this company's catalogues" })
-  @ApiOkResponse({ type: String, description: "CSV with a byte order mark" })
-  template(): Promise<string> {
-    return this.employees.template();
+  @ApiProduces(XLSX_MIME, "text/csv")
+  @ApiOperation({
+    summary: "The columns this import reads, built from the catalogues in use at the moment of download",
+    description:
+      "xlsx by default: drop-downs of `code · name` point into a catalogues sheet. format=csv gives the header and one example line.",
+  })
+  @ApiOkResponse({ schema: { type: "string", format: "binary" } })
+  async template(@Query() query: FileFormatDto): Promise<StreamableFile> {
+    return download(await this.employees.template(query.format ?? "xlsx"));
   }
 
   @Get(":id/login")

@@ -26,6 +26,7 @@ import type { Env } from "./config/env.schema.js";
 import { AuditService } from "./modules/audit/audit.service.js";
 import { REFRESH_COOKIE } from "./modules/auth/auth.types.js";
 import { IMPORT_MAX_BYTES, IMPORT_PATH } from "./modules/employees/import.js";
+import { XLSX_MIME } from "./modules/employees/workbook.js";
 import { FeedAdapter, RealtimeGateway } from "./modules/realtime/realtime.gateway.js";
 
 const BEARER = "Bearer ";
@@ -129,12 +130,16 @@ export function configure(app: INestApplication): void {
   app.useWebSocketAdapter(new FeedAdapter(app, origins));
   // Nest drops its own parser if the stack holds one named jsonParser.
   const readLargeBody = express.json({ limit: IMPORT_MAX_BYTES });
+  const readLargeFile = express.raw({ type: [XLSX_MIME, "text/csv"], limit: IMPORT_MAX_BYTES });
   const jwt = new JwtService();
   const accessSecret = config.get("JWT_ACCESS_SECRET", { infer: true });
   // Parsing precedes every guard: only a token this api signed, even an expired one, earns the large limit.
-  app.use(IMPORT_PATH, (req: Request, res: Response, next: NextFunction) =>
-    signedIn(req, jwt, accessSecret) ? readLargeBody(req, res, next) : next(),
-  );
+  app.use(IMPORT_PATH, (req: Request, res: Response, next: NextFunction) => {
+    if (!signedIn(req, jwt, accessSecret)) {
+      return next();
+    }
+    readLargeBody(req, res, (error?: unknown) => (error ? next(error) : readLargeFile(req, res, next)));
+  });
   // Named jsonParser and urlencodedParser, so Nest adds none of its own behind bodyFault.
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));

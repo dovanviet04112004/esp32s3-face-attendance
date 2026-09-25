@@ -199,7 +199,7 @@ export class EmployeeFilterDto {
 export class ListEmployeesDto extends IntersectionType(PaginationDto, EmployeeFilterDto) {}
 
 export class ImportCsvDto {
-  @ApiProperty({ description: "The whole file, as text" })
+  @ApiProperty({ description: "The whole file, as text; an xlsx or csv file may come as the raw body instead" })
   @IsString()
   @MaxLength(IMPORT_MAX_BYTES)
   csv!: string;
@@ -213,8 +213,19 @@ export class ImportQueryDto {
   apply?: boolean;
 }
 
+export const FILE_FORMATS = ["xlsx", "csv"] as const;
+
+export class FileFormatDto {
+  @ApiPropertyOptional({ enum: FILE_FORMATS, default: "xlsx" })
+  @IsOptional()
+  @IsIn(FILE_FORMATS)
+  format?: (typeof FILE_FORMATS)[number];
+}
+
+export class ExportQueryDto extends IntersectionType(EmployeeFilterDto, FileFormatDto) {}
+
 export class ImportFaultView {
-  @ApiProperty({ description: "Line in the file, header counted as 1" })
+  @ApiProperty({ description: "The line number Excel shows beside it, header included" })
   row!: number;
 
   @ApiProperty()
@@ -227,6 +238,20 @@ export class ImportFaultView {
   value!: string;
 }
 
+export class ImportChangeView {
+  @ApiProperty({ description: "The line number Excel shows beside it" })
+  row!: number;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty({ type: [String], description: "Columns given a new value, by name" })
+  fields!: string[];
+
+  @ApiProperty({ type: [String], description: "Columns a - emptied, by name" })
+  cleared!: string[];
+}
+
 export class ImportReportView {
   @ApiProperty()
   applied!: boolean;
@@ -237,14 +262,35 @@ export class ImportReportView {
   @ApiProperty()
   toCreate!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: "People already here whom the file changes" })
   toUpdate!: number;
+
+  @ApiProperty({ description: "People already here whom the file leaves exactly as they are" })
+  unchanged!: number;
 
   @ApiProperty({ description: "Rows whose pay columns were left alone: the person already has a pay record" })
   payKept!: number;
 
-  @ApiProperty({ type: [ImportFaultView] })
+  @ApiProperty()
+  shiftsToAssign!: number;
+
+  @ApiProperty({ description: "Paper consents to face data recorded, method PAPER, one audit line each" })
+  consentsToRecord!: number;
+
+  @ApiProperty({ type: () => [ImportChangeView], description: "The first 100 people who change; toUpdate counts them all" })
+  changes!: ImportChangeView[];
+
+  @ApiProperty({ description: "Pairs put up for capture; one roster bump per kiosk" })
+  kiosksToAssign!: number;
+
+  @ApiProperty({ description: "Logins opened, each with a set-password letter after the commit" })
+  loginsToOpen!: number;
+
+  @ApiProperty({ type: [ImportFaultView], description: "Block the write" })
   faults!: ImportFaultView[];
+
+  @ApiProperty({ type: [ImportFaultView], description: "Do not block the write; the part they name is skipped" })
+  warnings!: ImportFaultView[];
 }
 
 export class EmployeeCountsView {

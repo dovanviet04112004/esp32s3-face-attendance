@@ -1,13 +1,13 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { BiometricConsent } from "@prisma/client";
+import type { BiometricConsent, Prisma } from "@prisma/client";
 
 import type { Env } from "../../config/env.schema.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
-import { AuditService } from "../audit/audit.service.js";
+import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import type { GrantConsentDto } from "./dto/consent.dto.js";
 
 const RECORDERS: ReadonlySet<string> = new Set(["ADMIN", "HR"]);
@@ -73,14 +73,47 @@ export class ConsentService {
         note: body.note ?? null,
       },
     });
-    await this.audit.record({
-      actorId: viewer.userId,
+    await this.audit.record(this.grantLine(viewer.userId, employeeId, body.method));
+    return made;
+  }
+
+  /** Record a consent for each of these people who holds none in force, as the profile's button does.
+   *  @ctx inside the caller's transaction | audit the answer with grantTrail once it commits (KEHOACH 9.20 rule 3)
+   *  @ret the people it wrote a consent for
+   */
+  async stageGrants(
+    tx: Prisma.TransactionClient,
+    recordedById: string,
+    employeeIds: readonly number[],
+    method: GrantConsentDto["method"],
+  ): Promise<number[]> {
+    if (employeeIds.length === 0) {
+      return [];
+    }
+    const made = await tx.$queryRaw<{ employeeId: number }[]>`
+      INSERT INTO "BiometricConsent" ("id", "employeeId", "noticeVersion", "method", "recordedById")
+      SELECT gen_random_uuid()::text, v."id", ${this.noticeVersion()}, ${method}, ${recordedById}
+        FROM unnest(${[...employeeIds]}::int[]) AS v("id")
+       WHERE NOT EXISTS (
+         SELECT 1 FROM "BiometricConsent" c WHERE c."employeeId" = v."id" AND c."state" = 'GRANTED')
+      RETURNING "employeeId"
+    `;
+    return made.map((one) => one.employeeId);
+  }
+
+  /** The trail line the profile's button leaves, one per person stageGrants wrote for. */
+  grantTrail(actorId: string, employeeIds: readonly number[], method: GrantConsentDto["method"]): AuditEntry[] {
+    return employeeIds.map((employeeId) => this.grantLine(actorId, employeeId, method));
+  }
+
+  private grantLine(actorId: string, employeeId: number, method: GrantConsentDto["method"]): AuditEntry {
+    return {
+      actorId,
       action: AUDIT_ACTIONS.BIOMETRIC_CONSENT_GRANT,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(employeeId),
-      meta: { noticeVersion, method: body.method },
-    });
-    return made;
+      meta: { noticeVersion: this.noticeVersion(), method },
+    };
   }
 
   /** A person records for themselves; only the desk records for someone else. */

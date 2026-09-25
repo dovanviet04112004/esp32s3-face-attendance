@@ -159,7 +159,7 @@ describe("hiring and the employee record (e2e)", () => {
   });
 
   it("exports what the list filters show, and payroll may export", async () => {
-    const res = await as("payroll", "get", `/employees/export?search=${PREFIX}&active=true`);
+    const res = await as("payroll", "get", `/employees/export?search=${PREFIX}&active=true&format=csv`);
     assert.equal(res.status, 200, "payroll could not export the directory");
     const lines = parseCsv(res.text).slice(1).filter((cells) => cells.length > 1);
     assert.ok(lines.length > 0);
@@ -205,7 +205,7 @@ describe("hiring and the employee record (e2e)", () => {
   });
 
   it("hands out a template whose example line the import accepts", async () => {
-    const res = await as("hr", "get", "/employees/import/template");
+    const res = await as("hr", "get", "/employees/import/template?format=csv");
     assert.equal(res.status, 200);
     const grid = parseCsv(res.text).filter((cells) => cells.some((cell) => cell !== ""));
     assert.equal(grid.length, 2, "the template carries no example line");
