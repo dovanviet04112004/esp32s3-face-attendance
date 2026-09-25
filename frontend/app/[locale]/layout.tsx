@@ -1,6 +1,7 @@
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
@@ -8,7 +9,9 @@ import type { ReactNode } from "react";
 import "../globals.css";
 import { Providers } from "../providers";
 import { routing, type Locale } from "@/i18n/routing";
-import { asTheme, kThemeCookie, schemeOf } from "@/lib/theme";
+import { asTheme, kThemeCookie, modeOf, schemeOf } from "@/lib/theme";
+
+const sans = Inter({ subsets: ["latin", "vietnamese"], variable: "--font-inter", display: "swap" });
 
 interface LocaleParams {
   params: Promise<{ locale: string }>;
@@ -23,8 +26,8 @@ function known(locale: string): Locale {
 export const viewport: Viewport = {
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f7f8fa" },
-    { media: "(prefers-color-scheme: dark)", color: "#141821" },
+    { media: "(prefers-color-scheme: light)", color: "#fbfbfb" },
+    { media: "(prefers-color-scheme: dark)", color: "#030303" },
   ],
 };
 
@@ -57,11 +60,13 @@ export default async function LocaleLayout({ children, params }: LocaleParams & 
   return (
     <html
       lang={locale}
+      className={sans.variable}
       data-theme={theme === "system" ? undefined : theme}
+      data-mode={modeOf(theme)}
       style={{ colorScheme: schemeOf(theme) }}
       suppressHydrationWarning
     >
-      <body className="min-h-screen antialiased" suppressHydrationWarning>
+      <body className="min-h-screen font-sans text-base antialiased" suppressHydrationWarning>
         <NextIntlClientProvider>
           <Providers>{children}</Providers>
         </NextIntlClientProvider>

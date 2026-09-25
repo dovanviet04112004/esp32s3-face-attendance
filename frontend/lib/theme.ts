@@ -16,6 +16,11 @@ export function schemeOf(theme: Theme): string {
   return theme === "system" ? "light dark" : theme;
 }
 
+/** Kumo's marker for the few rules light-dark() cannot express; system leaves it to color-scheme. */
+export function modeOf(theme: Theme): "dark" | undefined {
+  return theme === "dark" ? "dark" : undefined;
+}
+
 export function readTheme(): Theme {
   const hit = document.cookie
     .split("; ")
@@ -32,9 +37,8 @@ function paintChrome(theme: Theme): void {
     held?.remove();
     return;
   }
-  const ground = getComputedStyle(document.documentElement)
-    .getPropertyValue("--color-ground")
-    .trim();
+  // The token holds an unresolved light-dark(); the painted body holds the colour.
+  const ground = getComputedStyle(document.body).backgroundColor;
   const tag = held ?? document.createElement("meta");
   tag.setAttribute("name", "theme-color");
   tag.setAttribute("content", ground);
@@ -48,6 +52,12 @@ export function applyTheme(theme: Theme): void {
     delete root.dataset.theme;
   } else {
     root.dataset.theme = theme;
+  }
+  const mode = modeOf(theme);
+  if (mode) {
+    root.dataset.mode = mode;
+  } else {
+    delete root.dataset.mode;
   }
   root.style.colorScheme = schemeOf(theme);
   paintChrome(theme);

@@ -1,69 +1,54 @@
+/* Kumo registers its tokens first, so Tailwind builds on them (KEHOACH 4.7). */
+@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@import "@cloudflare/kumo/styles";
 @import "tailwindcss";
 
 @theme {
-  --color-ink: oklch(0.21 0.02 260);
-  --color-muted: oklch(0.55 0.02 260);
-  --color-line: oklch(0.92 0.01 260);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
-  /* A divider may whisper, but the edge of a control is what says it is one. */
-  --color-field: oklch(0.65 0.01 260);
-  --color-surface: oklch(1 0 0);
-  --color-ground: oklch(0.98 0.005 260);
-
-  /* Reading order flips with the theme: dark ink sits on a light fill. */
+  /* The names every page already reads, resolved to Kumo's; light-dark() switches them. */
+  --color-ink: var(--text-color-kumo-default);
+  --color-muted: var(--text-color-kumo-subtle);
+  --color-line: var(--color-kumo-hairline);
+  --color-field: var(--color-kumo-line);
+  --color-surface: var(--color-kumo-base);
+  --color-ground: var(--color-kumo-canvas);
   --color-on-fill: oklch(1 0 0);
-  --color-accent: oklch(0.55 0.17 256);
-  --color-danger: oklch(0.57 0.2 25);
-  --color-ok: oklch(0.53 0.16 150);
-  --color-warn: oklch(0.55 0.15 75);
+  --color-accent: var(--color-kumo-brand);
+  --color-danger: var(--text-color-kumo-danger);
+  --color-ok: var(--text-color-kumo-success);
+  --color-warn: var(--text-color-kumo-warning);
 
-  /* The shell every page sits in, and the narrower column reading text keeps. */
-  --width-shell: 88rem;
+  /* Content starts at the left edge under this ceiling (KEHOACH 9.12). */
+  --width-shell: 87.5rem;
   --width-read: 48rem;
 }
 
 @layer base {
-  :root {
-    color-scheme: light;
-  }
-
-  /* An explicit light choice outranks a dark operating system. */
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      color-scheme: dark;
-      --color-ink: oklch(0.95 0.01 260);
-      --color-muted: oklch(0.68 0.02 260);
-      --color-line: oklch(0.32 0.015 260);
-      --color-field: oklch(0.53 0.015 260);
-      --color-surface: oklch(0.24 0.02 260);
-      --color-ground: oklch(0.19 0.02 260);
-      --color-on-fill: oklch(0.16 0.02 260);
-      --color-accent: oklch(0.72 0.14 256);
-      --color-danger: oklch(0.68 0.18 25);
-      --color-ok: oklch(0.72 0.15 150);
-      --color-warn: oklch(0.8 0.14 75);
-    }
-  }
-
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --color-ink: oklch(0.95 0.01 260);
-    --color-muted: oklch(0.68 0.02 260);
-    --color-line: oklch(0.32 0.015 260);
-    --color-field: oklch(0.53 0.015 260);
-    --color-surface: oklch(0.24 0.02 260);
-    --color-ground: oklch(0.19 0.02 260);
-    --color-on-fill: oklch(0.16 0.02 260);
-    --color-accent: oklch(0.72 0.14 256);
-    --color-danger: oklch(0.68 0.18 25);
-    --color-ok: oklch(0.72 0.15 150);
-    --color-warn: oklch(0.8 0.14 75);
-  }
-
   html,
   body {
     background: var(--color-ground);
     color: var(--color-ink);
+  }
+
+  body {
+    font-feature-settings: "cv02", "cv03", "cv04", "calt";
+  }
+
+  /* A finger needs 44 px, and iOS zooms into any field under 16 px (KEHOACH 9.21.2). */
+  @media (pointer: coarse) {
+    button,
+    [role="button"],
+    input:not([type="checkbox"], [type="radio"]),
+    select {
+      min-height: 2.75rem;
+    }
+
+    input,
+    select,
+    textarea {
+      font-size: 1rem;
+    }
   }
 }
 
