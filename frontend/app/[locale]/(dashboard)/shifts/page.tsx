@@ -163,7 +163,7 @@ function Shifts() {
   const assign = useMutation({
     mutationFn: async (people: Person[]) =>
       (
-        await api.post<{ assigned: number; skipped: number }>(`/shifts/${rostering?.id}/assignments/bulk`, {
+        await api.post<{ assigned: number; skipped: unknown[] }>(`/shifts/${rostering?.id}/assignments/bulk?apply=true`, {
           employeeIds: people.map((one) => one.id),
           validFrom: new Date(`${validFrom}T00:00:00.000Z`).toISOString(),
           ...(validTo ? { validTo: new Date(`${validTo}T00:00:00.000Z`).toISOString() } : {}),
@@ -172,7 +172,7 @@ function Shifts() {
     onSuccess: (done) => {
       notify.done(
         t("assignedMany", { count: done.assigned, shift: rostering?.name ?? "" }),
-        done.skipped > 0 ? t("assignedSkipped", { count: done.skipped }) : undefined,
+        done.skipped.length > 0 ? t("assignedSkipped", { count: done.skipped.length }) : undefined,
       );
       setChosen([]);
       setTried(false);

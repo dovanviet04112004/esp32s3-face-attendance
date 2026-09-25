@@ -70,6 +70,11 @@ interface Props<T> {
   emptyAction?: ReactNode;
   selectable?: boolean;
   bulk?: (chosen: T[]) => ReactNode;
+  /** The chosen keys, when the page keeps them: a bulk write clears them, a filter change resets them. */
+  chosen?: ReadonlySet<string>;
+  onChosenChange?: (next: ReadonlySet<string>) => void;
+  /** Stands in for "N chosen" in the bar, as when the whole filtered set is chosen. */
+  chosenLabel?: string;
   paging?: Paging;
   /** The server's order, when the endpoint takes sort; the page keeps it in the URL. */
   sort?: Sort;
@@ -285,6 +290,9 @@ export function DataTable<T>({
   emptyAction,
   selectable,
   bulk,
+  chosen: heldChosen,
+  onChosenChange,
+  chosenLabel,
   paging,
   sort,
   onSortChange,
@@ -298,7 +306,9 @@ export function DataTable<T>({
   const t = useTranslations("common");
   const router = useRouter();
   const [order, setOrder] = useState<Order>(kFresh);
-  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
+  const [ownChosen, setOwnChosen] = useState<ReadonlySet<string>>(new Set());
+  const chosen = heldChosen ?? ownChosen;
+  const setChosen = onChosenChange ?? setOwnChosen;
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const moreToTheRight = useMoreToTheRight(scroller);
   const dropped = useDropped(scroller);
@@ -399,11 +409,16 @@ export function DataTable<T>({
     <div className="flex flex-col gap-2">
       {selectable && picked.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-lg bg-kumo-tint px-3 py-2">
-          <span className="font-medium tabular-nums">{t("chosen", { count: picked.length })}</span>
-          {bulk?.(picked)}
-          <Button variant="ghost" size="sm" className="ms-auto" onClick={() => setChosen(new Set())}>
-            {t("reset")}
+          <span className="font-medium tabular-nums">{chosenLabel ?? t("chosen", { count: picked.length })}</span>
+          {allOn ? null : (
+            <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setChosen(new Set(ordered.map((row) => keyOf(row))))}>
+              {t("chooseAll")}
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => setChosen(new Set())}>
+            {t("unchoose")}
           </Button>
+          {bulk?.(picked)}
         </div>
       ) : null}
 

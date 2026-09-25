@@ -120,7 +120,7 @@ function fold(text: string): string {
 }
 
 /** A catalogue long enough to need a search box: departments, job titles (KEHOACH 9.12). */
-function ChoiceField({
+export function ChoiceField({
   label,
   description,
   items,

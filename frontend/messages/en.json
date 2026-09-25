@@ -118,7 +118,8 @@
     "today": "Today",
     "pickDate": "Pick a date",
     "noMatch": "No matches",
-    "optional": "(optional)"
+    "optional": "(optional)",
+    "unchoose": "Clear selection"
   },
   "login": {
     "lead": "Your attendance, requests and payslips in one place.",
@@ -663,7 +664,7 @@
     "unchoose": "Remove {name}",
     "assignMany": "Put {count, number} people on the shift",
     "assignedMany": "Put {count, number} people on {shift}",
-    "assignedSkipped": "{count, number} people were already on it from that date and were skipped.",
+    "assignedSkipped": "{count, number} skipped: they left, or were already on it from that day.",
     "rosterSearchHint": "Find someone on the shift by code or name",
     "noneAssignedMatch": "Nobody on the shift matches"
   },
@@ -1467,7 +1468,11 @@
     "LEAVE_SPANS_YEARS": "A request can only reach into the following year; split it into two requests.",
     "LEAVING_SCHEDULED": "This person already has a leaving scheduled. Change or cancel it on their profile.",
     "LEAVING_NOT_SCHEDULED": "This person has no scheduled leaving to change or cancel.",
-    "LEAVING_CLOSED": "The record has closed, so the leaving can no longer be changed or cancelled."
+    "LEAVING_CLOSED": "The record has closed, so the leaving can no longer be changed or cancelled.",
+    "SELECTION_INVALID": "Choose people one by one, or the whole filtered group, not both.",
+    "SELECTION_TOO_LARGE": "The filter matches more than 5,000 people, too many for one run. Narrow it and try again.",
+    "BULK_NOTHING_TO_CHANGE": "Pick at least one thing to change.",
+    "SELECTION_CHANGED": "Someone changed while you were looking. Preview again, then apply."
   },
   "search": {
     "placeholder": "Search people, departments, requests, pages…",
@@ -2322,7 +2327,9 @@
     "device_approve": "Kiosk approved",
     "device_revoke": "Kiosk revoked",
     "employee_leavingMove": "Last day changed",
-    "employee_leavingCancel": "Leaving cancelled"
+    "employee_leavingCancel": "Leaving cancelled",
+    "enrollment_assign": "Put on a kiosk",
+    "shift_assign": "Put on a shift"
   },
   "catalogues": {
     "code": "Code",
@@ -2434,5 +2441,64 @@
     "balanceAfter": "{days} left after approval",
     "overlap": "{count, plural, =0 {nobody else in the team is off} one {# teammate is off too} other {# teammates are off too}}",
     "moreRequests": "More requests waiting"
+  },
+  "bulkSkips": {
+    "EMPLOYEE_NOT_FOUND": "No such record",
+    "EMPLOYEE_HAS_LEFT": "Has left",
+    "LEAVING_SCHEDULED": "Leaving on a set day",
+    "UNCHANGED": "Already so",
+    "DEPARTMENT_OTHER_ENTITY": "The department belongs to another legal entity",
+    "MANAGER_CYCLE": "Is the new manager, or above them",
+    "NO_EMAIL": "No personal email",
+    "EMAIL_TAKEN": "Another login holds this email",
+    "LOGIN_IN_USE": "Already signs in",
+    "ACCOUNT_LOCKED": "The login is locked",
+    "CONSENT_MISSING": "Has not agreed to face data",
+    "ALREADY_ON_KIOSK": "Already on this kiosk, or waiting on it",
+    "ALREADY_ON_SHIFT": "Already on this shift from that day"
+  },
+  "bulk": {
+    "place": "Reassign",
+    "invite": "Invite to sign in",
+    "kiosk": "Put on a kiosk",
+    "shift": "Put on a shift",
+    "chooseWhole": "Choose all {count, number} people matching the filter",
+    "wholeChosen": "All {count, number} people matching the filter are chosen",
+    "placeTitle": "Reassign {count, number} people",
+    "placeLead": "Pick what changes; a field left empty stays as it is. A new manager takes over the requests still waiting.",
+    "placeDeskOnly": "Reassigning many people also changes who approves their requests and who sees their records, so it is done on a wide screen only. Open the directory on a computer to do it.",
+    "placePickFirst": "Pick at least one thing to change to see who it reaches.",
+    "inviteTitle": "Invite {count, number} people to sign in",
+    "inviteLead": "People with no login get one and a letter to set a password; a login nobody has used yet gets its link again.",
+    "kioskTitle": "Put {count, number} people on a kiosk",
+    "kioskLead": "The kiosk lists them as waiting for a face capture. People who have not agreed to face data are skipped.",
+    "kioskPick": "Kiosk",
+    "kioskNone": "No kiosk has been approved yet. Approve one on the Kiosks page.",
+    "kioskPickFirst": "Pick a kiosk to see who goes on its waiting list.",
+    "shiftTitle": "Put {count, number} people on a shift",
+    "shiftLead": "The shift applies from the chosen day. People who left, and anyone already on this shift from that day, are skipped.",
+    "shiftNone": "No shift is in use yet. Add one on the Shifts page.",
+    "shiftPickFirst": "Pick a shift and a first day to see who goes on it.",
+    "willChange": "{count, number} people will change",
+    "willOpen": "{count, number} logins to open",
+    "willResend": "{count, number} links to send again",
+    "willKiosk": "{count, number} people will wait for capture on {kiosk}",
+    "willShift": "{count, number} people go on {shift} from {day}",
+    "nobody": "Nobody changes: everyone chosen is skipped.",
+    "showingFirst": "Showing the first {shown, number}",
+    "andMore": "and {count, number} more",
+    "skippedTitle": "{count, number} skipped",
+    "requestsMove": "{count, number} waiting requests move to the new approver",
+    "opens": "New login",
+    "resends": "Link again",
+    "applyPlace": "Reassign {count, number} people",
+    "applyInvite": "Send {count, number} invitations",
+    "applyKiosk": "Put {count, number} people on it",
+    "applyShift": "Put {count, number} people on it",
+    "donePlace": "{count, number} people reassigned",
+    "doneInvite": "{count, number} invitations on their way",
+    "doneKiosk": "{count, number} people put on {kiosk}",
+    "doneShift": "{count, number} people put on {shift}",
+    "doneSkipped": "{count, number} skipped"
   }
 }

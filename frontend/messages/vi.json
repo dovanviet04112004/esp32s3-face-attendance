@@ -118,7 +118,8 @@
     "today": "Hôm nay",
     "pickDate": "Chọn ngày",
     "noMatch": "Không có kết quả phù hợp",
-    "optional": "(không bắt buộc)"
+    "optional": "(không bắt buộc)",
+    "unchoose": "Bỏ chọn"
   },
   "login": {
     "lead": "Xem công, gửi đơn và nhận phiếu lương ở cùng một chỗ.",
@@ -663,7 +664,7 @@
     "unchoose": "Bỏ {name}",
     "assignMany": "Xếp {count, number} người vào ca",
     "assignedMany": "Đã xếp {count, number} người vào ca {shift}",
-    "assignedSkipped": "{count, number} người đã có trong ca từ ngày ấy nên được bỏ qua.",
+    "assignedSkipped": "Bỏ qua {count, number} người: đã nghỉ việc hoặc đã ở ca này từ ngày ấy.",
     "rosterSearchHint": "Tìm người trong ca theo mã hoặc tên",
     "noneAssignedMatch": "Không ai trong ca khớp"
   },
@@ -1467,7 +1468,11 @@
     "LEAVE_SPANS_YEARS": "Một đơn chỉ vắt được sang năm liền sau; hãy tách thành hai đơn.",
     "LEAVING_SCHEDULED": "Người này đã có lịch nghỉ việc. Đổi hoặc huỷ lịch ấy trên hồ sơ.",
     "LEAVING_NOT_SCHEDULED": "Người này không có lịch nghỉ việc nào để đổi hay huỷ.",
-    "LEAVING_CLOSED": "Hồ sơ đã đóng vì nghỉ việc nên không đổi hay huỷ được nữa."
+    "LEAVING_CLOSED": "Hồ sơ đã đóng vì nghỉ việc nên không đổi hay huỷ được nữa.",
+    "SELECTION_INVALID": "Chọn từng người, hoặc chọn cả nhóm theo bộ lọc — không cả hai.",
+    "SELECTION_TOO_LARGE": "Bộ lọc khớp hơn 5.000 người, quá cỡ một lượt. Thu hẹp bộ lọc rồi thử lại.",
+    "BULK_NOTHING_TO_CHANGE": "Chọn ít nhất một thứ cần đổi.",
+    "SELECTION_CHANGED": "Có người vừa đổi trạng thái trong lúc bạn xem trước. Xem trước lại rồi áp dụng."
   },
   "search": {
     "placeholder": "Tìm người, phòng ban, đơn, trang…",
@@ -2322,7 +2327,9 @@
     "device_approve": "Duyệt kiosk",
     "device_revoke": "Thu hồi kiosk",
     "employee_leavingMove": "Đổi ngày nghỉ việc",
-    "employee_leavingCancel": "Huỷ nghỉ việc"
+    "employee_leavingCancel": "Huỷ nghỉ việc",
+    "enrollment_assign": "Gán vào kiosk",
+    "shift_assign": "Xếp ca"
   },
   "catalogues": {
     "code": "Mã",
@@ -2434,5 +2441,64 @@
     "balanceAfter": "còn {days} sau khi duyệt",
     "overlap": "{count, plural, =0 {không ai trong nhóm nghỉ trùng} other {# người trong nhóm cũng nghỉ}}",
     "moreRequests": "Đơn từ khác đang chờ"
+  },
+  "bulkSkips": {
+    "EMPLOYEE_NOT_FOUND": "Không tìm thấy hồ sơ",
+    "EMPLOYEE_HAS_LEFT": "Đã nghỉ việc",
+    "LEAVING_SCHEDULED": "Đã hẹn ngày nghỉ việc",
+    "UNCHANGED": "Đã đúng như vậy rồi",
+    "DEPARTMENT_OTHER_ENTITY": "Phòng ban thuộc pháp nhân khác",
+    "MANAGER_CYCLE": "Là quản lý mới, hoặc là cấp trên của quản lý mới",
+    "NO_EMAIL": "Chưa có email cá nhân",
+    "EMAIL_TAKEN": "Email đã có tài khoản khác dùng",
+    "LOGIN_IN_USE": "Đã có tài khoản đang dùng",
+    "ACCOUNT_LOCKED": "Tài khoản đang bị khoá",
+    "CONSENT_MISSING": "Chưa đồng ý dữ liệu khuôn mặt",
+    "ALREADY_ON_KIOSK": "Đã có hoặc đang chờ chụp trên kiosk này",
+    "ALREADY_ON_SHIFT": "Đã ở ca này từ ngày ấy"
+  },
+  "bulk": {
+    "place": "Điều chuyển",
+    "invite": "Mời đăng nhập",
+    "kiosk": "Gán kiosk",
+    "shift": "Xếp ca",
+    "chooseWhole": "Chọn cả {count, number} người khớp bộ lọc",
+    "wholeChosen": "Đã chọn cả {count, number} người khớp bộ lọc",
+    "placeTitle": "Điều chuyển {count, number} người",
+    "placeLead": "Chọn thứ cần đổi, ô để trống thì giữ nguyên. Đổi quản lý thì đơn đang chờ chuyển sang người duyệt mới.",
+    "placeDeskOnly": "Điều chuyển nhiều người đổi luôn ai duyệt đơn và ai nhìn thấy hồ sơ của họ, nên chỉ làm trên màn hình rộng. Mở danh bạ trên máy tính để làm việc này.",
+    "placePickFirst": "Chọn ít nhất một thứ cần đổi để xem ai bị ảnh hưởng.",
+    "inviteTitle": "Mời {count, number} người đăng nhập",
+    "inviteLead": "Người chưa có tài khoản được mở tài khoản và nhận thư đặt mật khẩu; người đã có mà chưa đặt mật khẩu được gửi lại liên kết.",
+    "kioskTitle": "Gán {count, number} người vào kiosk",
+    "kioskLead": "Kiosk hiện họ trong danh sách chờ chụp mặt. Người chưa đồng ý dữ liệu khuôn mặt được bỏ qua.",
+    "kioskPick": "Kiosk",
+    "kioskNone": "Chưa có kiosk nào được duyệt. Duyệt kiosk ở trang Kiosk.",
+    "kioskPickFirst": "Chọn một kiosk để xem ai sẽ vào danh sách chờ.",
+    "shiftTitle": "Xếp {count, number} người vào ca",
+    "shiftLead": "Ca áp dụng từ ngày chọn. Người đã nghỉ việc và người đã ở ca này từ ngày ấy được bỏ qua.",
+    "shiftNone": "Chưa có ca nào đang dùng. Thêm ca ở trang Ca làm việc.",
+    "shiftPickFirst": "Chọn ca và ngày bắt đầu để xem ai sẽ vào ca.",
+    "willChange": "{count, number} người sẽ đổi",
+    "willOpen": "{count, number} người được mở đăng nhập",
+    "willResend": "{count, number} người được gửi lại liên kết",
+    "willKiosk": "{count, number} người sẽ vào danh sách chờ của {kiosk}",
+    "willShift": "{count, number} người sẽ vào ca {shift} từ {day}",
+    "nobody": "Không ai đổi: mọi người đã chọn đều bị bỏ qua.",
+    "showingFirst": "Hiện {shown, number} người đầu",
+    "andMore": "và {count, number} người nữa",
+    "skippedTitle": "Bỏ qua {count, number} người",
+    "requestsMove": "{count, number} đơn đang chờ chuyển sang người duyệt mới",
+    "opens": "Mở mới",
+    "resends": "Gửi lại",
+    "applyPlace": "Điều chuyển {count, number} người",
+    "applyInvite": "Gửi {count, number} thư mời",
+    "applyKiosk": "Gán {count, number} người",
+    "applyShift": "Xếp {count, number} người",
+    "donePlace": "Đã điều chuyển {count, number} người",
+    "doneInvite": "Đã gửi {count, number} thư mời",
+    "doneKiosk": "Đã gán {count, number} người vào {kiosk}",
+    "doneShift": "Đã xếp {count, number} người vào ca {shift}",
+    "doneSkipped": "Bỏ qua {count, number} người"
   }
 }

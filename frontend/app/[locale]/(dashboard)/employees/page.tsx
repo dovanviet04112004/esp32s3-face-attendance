@@ -12,6 +12,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Suspense, useEffect, useRef, useState, type ChangeEvent } from "react";
 
+import { useDirectorySelection } from "@/components/employees/bulk";
 import { LeavingPill } from "@/components/employees/offboard";
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { DateField } from "@/components/ui/date-field";
@@ -295,6 +296,13 @@ function Directory() {
 
   const loaded = employees.data?.pages.flatMap((one) => one.rows);
   const first = employees.data?.pages[0];
+  const selection = useDirectorySelection<Employee>({
+    filter: filters,
+    total: first?.total,
+    exact: first?.totalIsExact,
+    loaded: loaded?.length ?? 0,
+    enabled: mayWrite,
+  });
   const departmentItems: Record<string, string> = {
     "": t("anyDepartment"),
     ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, one.name])),
@@ -523,6 +531,7 @@ function Directory() {
           columns={columns}
           rows={loaded}
           keyOf={(row) => String(row.id)}
+          {...selection.table}
           pending={employees.isPending}
           failed={employees.isError}
           onRetry={() => void employees.refetch()}
@@ -549,6 +558,7 @@ function Directory() {
           }
         />
       </PageLayout>
+      {selection.dialog}
 
       <LayerDialog.Root open={choosing} onOpenChange={setChoosing}>
         <LayerDialog.Content size="lg" closeLabel={common("close")}>
