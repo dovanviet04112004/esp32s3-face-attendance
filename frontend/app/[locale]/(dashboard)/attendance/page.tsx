@@ -65,9 +65,14 @@ function dayBounds(from: string, to: string): { from: string; to: string } {
   return { from: start.toISOString(), to: new Date(end.getTime() - 1).toISOString() };
 }
 
+// Excel runs a cell opening with = + - @ tab or CR as a formula, a plain number aside (KEHOACH 7.2).
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
+
 function csvCell(value: string | number): string {
-  const text = String(value);
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  const held = String(value);
+  const text = FORMULA_LEAD.test(held) && !PLAIN_NUMBER.test(held) ? `'${held}` : held;
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function Attendance() {
