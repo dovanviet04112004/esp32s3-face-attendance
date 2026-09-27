@@ -565,7 +565,7 @@ function PolicyPageBody() {
                     description={fault ? undefined : problems.join(" ")}
                   />
                 ) : null}
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid items-start gap-4 sm:grid-cols-2">
                   <DateField
                     label={t("effectiveFrom")}
                     value={draft.effectiveFrom}
@@ -602,7 +602,7 @@ function PolicyPageBody() {
 
                 {section === "days" ? (
                   <Group title={t("deductionsDays")}>
-                    <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                    <div className="mt-2 grid items-start gap-4 sm:grid-cols-2">
                       {numberField("selfDeduction", t("selfDeduction"))}
                       {numberField("dependentDeduction", t("dependentDeduction"))}
                       {numberField("standardDaysPerMonth", t("standardDays"))}
@@ -614,21 +614,21 @@ function PolicyPageBody() {
                 {section === "insurance" ? (
                   <div className="flex flex-col gap-5">
                     <Group title={t("rates")}>
-                      <div className="mt-2 grid gap-4 sm:grid-cols-3">
+                      <div className="mt-2 grid items-start gap-4 sm:grid-cols-3">
                         {numberField("socialRateBp", t("social"), "%")}
                         {numberField("healthRateBp", t("health"), "%")}
                         {numberField("unemploymentRateBp", t("unemployment"), "%")}
                       </div>
                     </Group>
                     <Group title={t("employerRates")}>
-                      <div className="mt-2 grid gap-4 sm:grid-cols-3">
+                      <div className="mt-2 grid items-start gap-4 sm:grid-cols-3">
                         {numberField("employerSocialRateBp", t("social"), "%")}
                         {numberField("employerHealthRateBp", t("health"), "%")}
                         {numberField("employerUnemploymentRateBp", t("unemployment"), "%")}
                       </div>
                     </Group>
                     <Group title={t("caps")}>
-                      <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                      <div className="mt-2 grid items-start gap-4 sm:grid-cols-2">
                         {numberField("referenceWage", t("referenceWage"))}
                         {numberField("socialCapMultiple", t("socialCapMultiple"))}
                         {numberField("regionalMinimumWage", t("regionalMinimumWage"))}
@@ -640,7 +640,7 @@ function PolicyPageBody() {
 
                 {section === "overtime" ? (
                   <Group title={t("overtimeRates")}>
-                    <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                    <div className="mt-2 grid items-start gap-4 sm:grid-cols-2">
                       {numberField("overtimeWeekdayBp", t("weekday"), "%")}
                       {numberField("overtimeWeekendBp", t("weekend"), "%")}
                       {numberField("overtimeHolidayBp", t("holiday"), "%")}

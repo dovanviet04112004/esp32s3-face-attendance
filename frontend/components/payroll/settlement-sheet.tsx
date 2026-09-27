@@ -161,7 +161,7 @@ export function SettlementSheet({ runId, editable }: { runId: string; editable: 
             </p>
           ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid items-start gap-3 sm:grid-cols-2">
             {KINDS.map((kind) => {
               const key = `${row.employeeId}:${kind}`;
               const value = valueOf(row, kind);

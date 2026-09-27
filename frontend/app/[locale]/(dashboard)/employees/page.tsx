@@ -512,7 +512,7 @@ function Directory() {
           <LayerDialog.Title>{t("raiseAction")}</LayerDialog.Title>
           <LayerDialog.Description>{t("raiseLead")}</LayerDialog.Description>
           <LayerDialog.Body>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid items-start gap-4 sm:grid-cols-2">
               <Select
                 label={t("raiseDept")}
                 hideLabel={false}

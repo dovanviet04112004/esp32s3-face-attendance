@@ -560,7 +560,7 @@ function Timesheet() {
                       className="w-full"
                     />
                     {needsClock ? (
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 items-start gap-3">
                         <Input label={t("correctIn")} type="time" value={clockIn} onChange={(event) => setClockIn(event.target.value)} />
                         <Input
                           label={t("correctOut")}

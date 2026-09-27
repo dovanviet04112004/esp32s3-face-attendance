@@ -315,7 +315,7 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
               </>
             ) : null}
             {kind === "OVERTIME" || kind === "ATTENDANCE_FIX" ? (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid items-start gap-4 sm:grid-cols-2">
                 {kind === "OVERTIME" || claimed !== "OUT" ? (
                   <Input
                     label={kind === "OVERTIME" ? t("startTime") : t("fixInTime")}
