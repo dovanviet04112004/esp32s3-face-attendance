@@ -14,7 +14,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { PaginationDto, type Page } from "../../common/dto/pagination.dto.js";
+import { CursorPageDto, type Page } from "../../common/dto/pagination.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import {
   AttendanceTallyPage,
@@ -64,7 +64,7 @@ export class ReportsController {
   @Roles("ADMIN", "HR", "PAYROLL")
   @ApiOperation({ summary: "Today's late, missing and still-in punches in full, a page at a time by code" })
   @ApiOkResponse({ type: ExceptionPage })
-  exceptions(@Query() query: PaginationDto): Promise<Page<Exception>> {
+  exceptions(@Query() query: CursorPageDto): Promise<Page<Exception>> {
     return this.reports.exceptionsPage(query.cursor, query.take);
   }
 
@@ -91,7 +91,7 @@ export class ReportsController {
   teamBucket(
     @CurrentViewer() viewer: Viewer,
     @Param() params: TeamBucketParams,
-    @Query() query: PaginationDto,
+    @Query() query: CursorPageDto,
   ): Promise<Page<PersonRef>> {
     return this.reports.teamBucket(viewer, params.bucket, query.cursor, query.take);
   }

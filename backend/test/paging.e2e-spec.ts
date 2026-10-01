@@ -280,6 +280,33 @@ describe("paging (e2e)", () => {
     assert.equal(totals.unsyncedClock, rows.reduce((sum, row) => sum + row.unsyncedClock, 0));
   });
 
+  it("declares on each route only the paging it reads, and refuses the rest", async () => {
+    const doc = (await request(http).get("/docs/json")).body as {
+      paths: Record<string, { get: { parameters?: { name: string; in: string }[] } }>;
+    };
+    const paging = (path: string): string[] =>
+      (doc.paths[path]?.get.parameters ?? [])
+        .filter((one) => one.in === "query" && ["skip", "cursor", "take"].includes(one.name))
+        .map((one) => one.name)
+        .sort();
+    const nobody = "00000000-0000-4000-8000-000000000000";
+    const routes: [string, string, string[], string, number][] = [
+      ["/reports/attention/exceptions", "/reports/attention/exceptions", ["cursor", "take"], "skip", 200],
+      ["/reports/team-today/{bucket}", "/reports/team-today/absent", ["cursor", "take"], "skip", 200],
+      ["/documents/{id}/readers", `/documents/${nobody}/readers`, ["cursor", "take"], "skip", 404],
+      ["/personnel-files/gaps", "/personnel-files/gaps", ["cursor", "take"], "skip", 200],
+      ["/devices", "/devices", ["skip", "take"], "cursor", 200],
+    ];
+    for (const [documented, path, declared, unread, answered] of routes) {
+      assert.deepEqual(paging(documented), declared, `${documented} documents paging it does not read`);
+      const read = await request(http).get(`${path}?take=1`).set("Authorization", `Bearer ${token}`);
+      assert.equal(read.status, answered, `${path}: ${JSON.stringify(read.body)}`);
+      const refused = await request(http).get(`${path}?take=1&${unread}=1`).set("Authorization", `Bearer ${token}`);
+      assert.equal(refused.status, 400, `${path} took ${unread} and ignored it`);
+      assert.deepEqual([refused.body.message, refused.body.fields], ["VALIDATION_FAILED", [unread]]);
+    }
+  });
+
   it("narrows punches to the offline ones or the unsynced ones", async () => {
     for (const flag of ["capturedOffline", "clockUnsynced"] as const) {
       const res = await request(http)

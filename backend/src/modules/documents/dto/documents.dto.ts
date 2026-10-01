@@ -15,7 +15,7 @@ import {
   ValidateIf,
 } from "class-validator";
 
-import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { CursorPageDto } from "../../../common/dto/pagination.dto.js";
 
 export class CreateDocumentDto {
   @ApiProperty({ description: "Short handle, unique across documents", example: "NOI-QUY-LAO-DONG", maxLength: 64 })
@@ -209,7 +209,7 @@ export class ListAllDto {
 }
 
 /** One row per person a document reaches, so it pages (KEHOACH 9.9 rule 3). */
-export class ListReadersDto extends PaginationDto {
+export class ListReadersDto extends CursorPageDto {
   @ApiPropertyOptional({ minimum: 1, description: "A published version number; the newest when left out" })
   @IsOptional()
   @Type(() => Number)
@@ -230,7 +230,7 @@ export class ListReadersDto extends PaginationDto {
   unsigned?: boolean;
 }
 
-export class ListGapsDto extends PaginationDto {
+export class ListGapsDto extends CursorPageDto {
   @ApiPropertyOptional({ description: "Narrow to one person's own record" })
   @IsOptional()
   @Type(() => Number)

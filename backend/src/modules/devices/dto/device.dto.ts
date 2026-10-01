@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 
-import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { OffsetPageDto } from "../../../common/dto/pagination.dto.js";
 
 const DEVICE_STATUS = ["PENDING", "APPROVED", "REVOKED"] as const;
 const CLAIM_CODE = /^\d{6}$/;
@@ -74,7 +74,7 @@ export class RegisterDeviceDto {
   claimCode!: string;
 }
 
-export class ListDevicesDto extends PaginationDto {
+export class ListDevicesDto extends OffsetPageDto {
   @ApiPropertyOptional({ enum: DEVICE_STATUS, enumName: "DeviceStatus", description: "Only kiosks in this status" })
   @IsOptional()
   @IsEnum(DEVICE_STATUS)
