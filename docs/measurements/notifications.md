@@ -58,3 +58,36 @@ chờ), đã áp tới `20261001090200_advance_paid_notice`, rồi chạy các f
 | dòng nối vào một việc | — | 3 |
 
 Bước đổ dữ liệu quét `Request` một lần cho mỗi hàng đợi; ở 59.718 đơn nó mất nửa giây.
+
+## 2. Đổ dữ liệu lần hai (E27-T4)
+
+Hai bản phát hành giữa lượt đổ đầu và E27-T4 vẫn ghi dòng hình dạng cũ: không chủ thể, không khoá, không
+nối vào việc. `20261001200000_notice_backfill_since` chuyển chúng như lượt đầu, nhưng chỉ mục duy nhất
+`(userId, dedupKey)` đã đứng, nên dòng lặp phải gộp **trước** khi gán khoá: dòng cũ mà khoá đã có dòng
+giữ thì cộng vào `remindCount` của dòng ấy rồi xoá; các dòng cũ cùng khoá thì giữ dòng mới nhất.
+
+### 2.1 Trên bản phục hồi production — 01/10/2026
+
+Cùng bản `kiosk-20260930T191000Z.dump.age` và cách chạy như §1.1; áp các migration tới
+`20261001170300_notice_dedup_key` để đứng đúng chỗ production sau E27-T3, rồi chèn 9 dòng hình dạng
+cũ có chủ đích đụng khoá:
+
+- một đơn mới `PENDING` mà bản cũ đã báo cho 2 tài khoản bàn nhân sự, mỗi tài khoản 1 dòng báo và 2 dòng
+  nhắc ở mốc 3 và 7 — 6 dòng cùng khoá theo từng người;
+- 3 bản chép của dòng đã có khoá — khoá của chúng đã có dòng giữ.
+
+| Migration | Thời gian |
+|---|---|
+| `20261001190000_certificate_cancelled` | 202 ms |
+| `20261001200000_notice_backfill_since` | 256 ms |
+
+| Đếm | Sau E27-T3 | Thêm dòng cũ | Sau migration |
+|---|---|---|---|
+| dòng `Notification` | 12 | 21 | 14 |
+| dòng chưa có `dedupKey` | 0 | 9 | 0 |
+| dòng nối vào một việc | 8 | 8 | 10 |
+| `NoticeItem` | 4 | 4 | 5 — thêm `REQUESTS`/`OPEN` 1 |
+| khoá trùng theo người | 0 | — | 0 |
+
+Đơn thử còn 2 dòng, mỗi tài khoản một, chưa đọc, `remindCount` cộng lại là 4. Chạy lại migration lần
+hai: mọi con số giữ nguyên.
