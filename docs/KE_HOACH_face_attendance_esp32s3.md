@@ -9066,7 +9066,8 @@ Năm chữ trong đoạn trên có đúng một nghĩa, vì hộp và chuông đ
   `HR`, `PAYROLL`, `MANAGER` ở bảng trang §9.15). Luật ấy áp cho cả người duyệt lẫn người đứng thay:
   người đứng thay vai `EMPLOYEE` không mở được hộp, không mở được `/leave`, nên không được tính —
   không thấy, không được báo, không quyết. Đường tạo uỷ quyền, khi có, từ chối một người như vậy thay
-  vì ghi một uỷ quyền không ai dùng được.
+  vì ghi một uỷ quyền không ai dùng được. Một tài khoản `HR` hay `PAYROLL` chưa gắn hồ sơ của chính mình
+  cũng không được tính, vì §9.4 từ chối mọi quyết định của nó (`DESK_NEEDS_EMPLOYEE`).
 - **Người gửi** gồm cả người xin hộ: một đổi thông tin bàn nhân sự xin thay cho người khác thì người
   xin không thấy nó trong hộp, không được báo và không quyết (§9.17 mục 6).
 - **Mốc 7 ngày** đếm theo ngày của công ty từ ngày gửi: từ đầu ngày thứ bảy, đơn còn chờ một quản lý
@@ -9158,8 +9159,8 @@ hai lấy chữ từ catalogue — không có cột nào để lỡ tay nhét m�
 
 **Tin nhắm vào tài khoản đăng nhập, không nhắm vào hồ sơ nhân viên.** Thứ mở chuông ra đọc là một
 phiên đăng nhập, và không phải đăng nhập nào cũng là một nhân viên: §9.4 mở được tài khoản chỉ bằng
-email và vai, nên một quản trị viên hay một bàn nhân sự có thể không có dòng nào trong `Employee` — mà
-chúng chính là nơi §9.15 gửi đơn không có ai ở trên tới. Nên `Notification` và
+email và vai, nên một quản trị viên có thể không có dòng nào trong `Employee` — mà quản trị viên chính
+là một nơi §9.15 gửi đơn không có ai ở trên tới. Nên `Notification` và
 `NotificationPreference` khoá theo `userId`. Người nghỉ việc vẫn tra lại được, vì §9.14 giữ cả hồ sơ
 lẫn tài khoản — tài khoản chỉ bị khoá, không bị xoá. Cái giá là một người đổi tài khoản không mang
 theo tin cũ; đổi lại, **không có đường nào để một tin gửi vào chỗ không ai đọc**.
