@@ -17,6 +17,9 @@
   - 6.3 Buffer nằm ở RAM nội / PSRAM / flash · 6.4 Ngân sách SRAM
 - [7. Backend, Frontend, Deploy](#7-backend-frontend-deploy)
 - [8. Thứ tự thực hiện](#8-thứ-tự-thực-hiện)
+- [9. Quản trị nhân sự — từ bảng chấm công thành hệ HR](#9-quản-trị-nhân-sự--từ-bảng-chấm-công-thành-hệ-hr)
+  - 9.4 vai trò và phạm vi · 9.15 kiến trúc thông tin · 9.17–9.18 việc của người lao động và của HR
+  - 9.21 điện thoại · 9.21.4 **tin, việc, và ai đã xử lý** · 9.22 dữ liệu · 9.23 đồng thời · 9.24 nhật ký kiểm toán
 
 ---
 
@@ -2308,6 +2311,7 @@ esp32s3-face-attendance/
 ├── tools/         Script ngang khối: gen_contracts · check_comments · check_layers
 │                   · check_migrations · check_error_codes · check_plans
 │                   · check_routes · backfill · check_schematic · check_pcb
+│                   · check_notice_kinds · gen_sw_words          ★ §9.21.4
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
     ├── TASKS.md                                 # backlog
@@ -2316,6 +2320,8 @@ esp32s3-face-attendance/
     ├── DPIA.md                                  # ★ đánh giá tác động Điều 24 — hồ sơ nộp được
     ├── adr/{0001-yunet-thay-ulfg.md, 0002-bo-knowledge-distillation.md, 0003-distill-chong-gia-tu-trong-so-nhap.md, 0004-v1se-thay-student-chong-gia.md, 0005-espdl-thay-tflm.md}
     ├── measurements/{arena.md, latency.md, power.md, parity.md, ram.md}  # số 🔬 đo được trên board
+    │                 ├ notifications.md                          # số dòng trước và sau đổi lược đồ, thời gian
+    │                 │                                           #   chốt kỳ, đối soát — §9.21.4
     │                 └ {antispoof,detection,recognition}/        # số theo nhánh model
     └── thesis/                                  # bản báo cáo ĐATN
 ```
@@ -4399,6 +4405,9 @@ backend/
 ├── prisma/{schema.prisma, migrations/, seed.ts, demo.ts}
 ├── test/*.e2e-spec.ts                # e2e, chạy bằng runner sẵn có của Node, song song
 ├── test/*.e2e-alone-spec.ts          # ★ e2e ghi lên cả bảng, chạy sau cùng, từng file một
+├── test/notice-*.e2e-spec.ts         # ★ §9.21.4 — phép thử bắt buộc của tin và việc, mỗi nhóm một file:
+│                                     #   items, race, audience, sweeps, push, attendance; lượt đổ dữ
+│                                     #   liệu sang hình dạng mới là notice-backfill.e2e-alone-spec.ts
 ├── test/teardown.ts                  # ★ dọn thứ không cascade theo dữ liệu suite tạo ra
 ├── test/fixtures.ts                  # ★ dựng thứ suite cần mà seed tối thiểu không có: loại phép, publish thay kiosk
 └── src/
@@ -4435,7 +4444,17 @@ backend/
     │   ├── policy/                   # PayrollPolicy + TaxBracket theo ngày hiệu lực
     │   ├── timesheet/                # AttendanceDay: từ lượt quẹt thành ngày công
     │   ├── search/                   # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
-    │   ├── notifications/            # ★ §9.21.4 — sáu loại, ba kênh, mỗi loại tắt riêng
+    │   ├── notifications/            # ★ §9.21.4 — tin của từng người, việc của cả nhóm, ai đã xử lý
+    │   │   ├── notifications.controller.ts · notifications.service.ts · mailer.service.ts · dto/
+    │   │   ├── notice-kinds.ts       # ★ bảng tra mỗi loại: nhóm, mức, người nhận, mốc nhắc, khi nào
+    │   │   │                         #   đóng, mặc định từng kênh — Record phủ kín NoticeKind
+    │   │   ├── audience.service.ts   # ★ audienceOf: ai nhận một việc, cùng vị từ với hộp chờ duyệt
+    │   │   ├── notice-items.service.ts   # ★ mở, đóng một lần, nổi lại ở mốc, nhận, đóng tay
+    │   │   ├── subjects.service.ts   # ★ dựng người và ngày của chủ thể lúc đọc, qua phạm vi người xem
+    │   │   └── sweeps/{contracts, probation, tasks, documents, disputes, stalled, kiosk, backup,
+    │   │                attendance, reconcile, cleanup}.sweep.ts
+    │   │                             # ★ mỗi lượt quét một file; reconcile đóng việc mà bảng nghiệp
+    │   │                             #   vụ đã xong, cleanup dọn tin quá NOTICE_KEEP_DAYS
     │   ├── assets/                   # ★ §9.16 mục 11 — cấp và thu là dòng, không phải ô
     │   ├── certificates/             # ★ §9.17 mục 5 — giấy xác nhận, số hiệu do CSDL cấp
     │   ├── profile/                  # ★ §9.17 mục 6 — đổi thông tin cá nhân qua duyệt
@@ -4538,7 +4557,7 @@ không cache thứ gì mà mất đi là sai nghiệp vụ.
 |---|---|---|---|
 | `image` | resize + upload ảnh chấm công lên MinIO | `mqtt/` khi nhận bản ghi | Ảnh vài trăm KB, không để kiosk chờ |
 | `report` | tổng hợp báo cáo tháng ra file | `reports/` khi người dùng bấm | Quét vài chục nghìn bản ghi |
-| `notify` | gửi mail/webhook khi có sự kiện lạ | `audit/`, `devices/` | Bên thứ ba có thể chậm hoặc chết |
+| `notify` | gửi mail/webhook khi có sự kiện lạ; `notice-fanout`: rải tin và đẩy theo lô 1.000 người, idempotent theo `dedupKey`; `notice-sweep`: mỗi lượt quét của §9.21.4 theo lịch của nó; `notice-reconcile` mỗi giờ; `notice-cleanup` mỗi đêm | `audit/`, `devices/`, `notifications/` | Bên thứ ba có thể chậm hoặc chết, và chốt một kỳ ba mươi nghìn phiếu không được đợi ba mươi nghìn lần gọi nhà cung cấp đẩy (§9.9 luật 5) |
 | `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối; `leavings-now`: đóng các hồ sơ một lô cho nghỉ đã tới ngày cuối (§9.14) | lịch lặp 00:05 của `employees/`; lô cho nghỉ của `employees/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù. Một lô tới năm nghìn hồ sơ, mỗi cái cắt phiên và xoá mặt trên mọi kiosk, không vừa trong một request |
 | `timesheet` | `build` (một khoảng, theo yêu cầu) · `nightly` (00:30 `APP_TIMEZONE`, ngày hôm qua) · `rebuild` (một ngày của một người sau lượt quẹt trễ, gộp theo người–ngày) | `timesheet/`, `attendance/` | Dựng cả công ty một ngày là quét vài chục nghìn lượt quẹt (§9.8) |
 | `ota` | rollout theo lô, theo dõi từng thiết bị | `models/` | Chạy hàng giờ, phải resume được |
@@ -4798,7 +4817,12 @@ frontend/
 │           ├── audit/page.tsx                         # ★ §9.24 — nhật ký kiểm toán
 │           ├── users/page.tsx                         # ★ §9.4 — tài khoản và vai
 │           ├── documents/page.tsx                     # ★ §9.16 mục 9 — phát hành và hồ sơ thiếu
-│           └── me/documents/page.tsx                  # ★ bản phải đọc, và ký nhận đúng bản
+│           ├── me/documents/page.tsx                  # ★ bản phải đọc, và ký nhận đúng bản
+│           └── notifications/{page.tsx, open/[id]/page.tsx}
+│                                                      # ★ §9.21.4 — mọi tin và việc của tôi, tìm,
+│                                                      #   lọc, đánh dấu nhiều dòng; open/[id] là cửa
+│                                                      #   tin đẩy và thư trỏ tới: đánh dấu đã đọc
+│                                                      #   rồi chuyển tới đúng bản ghi
 ├── messages/{vi.json, en.json}       # ★ catalogue — vi.json là nguồn kiểu (§3.1 CLAUDE.md)
 ├── i18n/
 │   ├── routing.ts                    # danh sách locale + locale mặc định
@@ -4812,7 +4836,9 @@ frontend/
 │   ├── apple-touch-icon.png          # ★ 180 px, nền kín: iOS tự bo góc
 │   ├── badge.png                     # ★ bản một màu cho thanh thông báo
 │   ├── .well-known/assetlinks.json   # ★ dấu khoá ký của app Android, để Chrome tin nó là của domain (§9.21.7)
-│   └── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
+│   ├── sw.js                         # ★ service worker — vỏ ứng dụng và lần đọc gần nhất
+│   └── sw-words.js                   # ★ SINH RA bởi tools/gen_sw_words.py từ messages/ — chữ màn khoá
+│                                     #   của từng loại tin, KHÔNG sửa tay (§9.21.4)
 ├── components/
 │   ├── ui/{page.tsx, pill.tsx, notify.ts, month-picker.tsx, filter-bar.tsx,
 │   │       password-field.tsx, person-picker.tsx, date-field.tsx, optional.tsx, theme-toggle.tsx,
@@ -4838,7 +4864,12 @@ frontend/
 │   │                                 # ★ §9.10 — năm việc chờ cũ nhất, quyết ngay tại
 │   │                                 #   chỗ; trang chủ nào cũng dùng đúng một bản
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
-│   ├── notifications/{bell.tsx, notice-list.tsx, push-switch.tsx}   # ★ §9.21.4
+│   ├── notifications/{bell.tsx, notice-list.tsx, notice-row.tsx, notice-prefs.tsx,
+│   │                  push-switch.tsx, push-devices.tsx, kinds.ts}
+│   │                                 # ★ §9.21.4 — kinds.ts là bảng tra mỗi loại: biểu tượng, câu,
+│   │                                 #   đường mở, Record phủ kín NoticeKind; notice-row là một dòng
+│   │                                 #   dùng chung cho chuông và trang; push-devices là các máy đang
+│   │                                 #   nhận đẩy, gỡ từng máy
 │   ├── documents/{document-reader.tsx, file-gaps.tsx}   # ★ §9.16 mục 9
 │   └── payroll/{payslip-view.tsx, run-progress.tsx, dispute-card.tsx, settlement-sheet.tsx,
 │                bonus-sheet.tsx}     # ★ số tiền của lượt thưởng, nhập trước khi chạy
@@ -5252,6 +5283,8 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | Token bootstrap của lô firmware | `firmware/sdkconfig.secrets` — **gitignore**, người build tự đặt, giá trị trùng `DEVICE_BOOTSTRAP_TOKEN` của `api` (§7.3) | Makefile nối file vào `SDKCONFIG_DEFAULTS`, ra `CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN`; `make fw-prod` **dừng** khi file vắng |
 | Số hiệu firmware | `PROJECT_VER` trong `firmware/CMakeLists.txt` | `esp_app_get_description()->version`, **không gõ lại ở đâu** |
 | Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại, tuổi tối đa của bản sao lưu mới nhất | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
+| Nhịp và ngưỡng của thông báo: giữ tin bao lâu, gom đẩy cho bàn bao lâu, giữ chỗ *tôi nhận việc này* bao lâu, kiosk mất kết nối bao lâu thì báo, bao nhiêu lượt giả mạo hay mặt lạ trong bao lâu thì thành một loạt | biến môi trường `NOTICE_KEEP_DAYS` (180 ngày), `NOTICE_PUSH_GATHER_SECONDS` (120), `NOTICE_CLAIM_HOURS` (24), `KIOSK_OFFLINE_ALERT_MINUTES` (60), `KIOSK_SPOOF_BURST` (5), `KIOSK_UNKNOWN_BURST` (20), `KIOSK_BURST_WINDOW_MINUTES` (10), khai ở `.env.example` | `config/env.schema.ts` — thoả thuận vận hành của từng công ty, cùng loại với hạn trả lời khiếu nại (§9.21.4) |
+| Mốc nhắc, giờ gửi gom và khoảng yên của từng loại thông báo | `backend/src/modules/notifications/notice-kinds.ts` | import — cùng bảng tra nói ai nhận và khi nào việc đóng (§9.21.4), nên phía vẽ không giữ bản thứ hai của mốc nào |
 | Phiên bản văn bản đồng ý sinh trắc đang phát | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — **máy chủ điền, client không gửi**: giá trị ghi vào `BiometricConsent` phải là bản mà chính máy chủ đang phát, nên để client gửi kèm là mở đường ghi một phiên bản không tồn tại |
 | Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
 | Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
@@ -7007,7 +7040,9 @@ Những bảng sau tồn tại vì một câu hỏi mà bảng khác không tr�
 | `BonusItem` | "khoản thưởng này thuộc lượt nào, của ai, bao nhiêu" | lượt thưởng cần đầu vào riêng; nhét vào `CompensationRecord` là biến một khoản một lần thành mức lương thường xuyên |
 | `SettlementItem` | "trợ cấp và đối trừ của người nghỉ này là bao nhiêu, ai ký" | `BonusItem` bị ràng `amount >= 0` nên không mang nổi một khoản trừ, và một khoản trợ cấp miễn thuế không phải là một khoản thưởng |
 
-**Thông báo** — `Notification`, `NotificationPreference`, `PushSubscription`. Xem §9.21.4.
+**Thông báo** — `Notification`, `NoticeItem`, `NotificationPreference`, `PushSubscription`. Xem
+§9.21.4: một dòng `Notification` cho mỗi người nhận, một dòng `NoticeItem` cho mỗi việc mà cả nhóm
+cùng nhìn.
 
 **Chính sách** — `PayrollPolicy`, `TaxBracket`. Xem §9.7. Mọi tỷ lệ lưu bằng **điểm cơ bản
 kiểu nguyên** (`800` là 8%), không lưu số thực: một phép nhân dấu phẩy động trong bảng lương là
@@ -7112,7 +7147,7 @@ mọi người cho bất kỳ ai nối được tới cổng**. Nên:
 | `device`, `event` | tin của kiosk | chỉ `ADMIN` — §9.15 xếp `Kiosk` vào riêng vai đó |
 | `attendance` | một lượt chấm công | người thấy được **chính dòng ấy**: `HR`, `PAYROLL`, `ADMIN` thấy tất, quản lý thấy cây dưới quyền mình, còn lại thấy mình |
 | `change` | tên tài nguyên vừa bị ghi, không id, không giá trị | như `attendance`, tính theo nhân viên sở hữu dòng vừa ghi |
-| `notice` | `kind` và tham chiếu, đúng thân tin đẩy (§9.21.4) | đúng một tài khoản đăng nhập |
+| `notice` | chỉ tham chiếu, ba dạng: `new` (id dòng, `kind`, nhóm), `item` (khoá việc, trạng thái, kết quả, người làm, lúc), `read` (id hoặc tất cả) — không tên, không câu, không tiền (§9.21.4) | `new`, `read`: đúng một tài khoản đăng nhập, trên mọi máy của nó; `item`: mọi tài khoản đang giữ một dòng của việc ấy |
 
 Phạm vi chốt lúc bắt tay chứ không tra lại mỗi khung — một lượt quẹt không đáng một CTE đệ quy.
 Cái giá là một lần chuyển bộ phận chỉ ăn vào lần nối lại sau; §9.23 vốn đã đóng mọi phiên ở
@@ -8108,6 +8143,7 @@ nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
 | `Tài liệu của tôi` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `Tài liệu` (phát hành, hồ sơ còn thiếu) | ✓ | ✓ | – | – | – | – |
 | `Cài đặt` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `Thông báo` (§9.21.4 — mở từ chuông trên thanh trên, không có dòng trên thanh bên) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **`Cần xử lý hôm nay` là việc của bàn nhân sự, không phải của người trông máy.** Nó liệt kê hợp
 đồng sắp hết hạn, người sắp hết thử việc và ngày lệch giờ hôm nay — ba thứ §9.18 mục 1 và 2 giao
@@ -8132,18 +8168,21 @@ cả đơn đã quyết từ năm ngoái. Đặt mặc định của sổ ở *�
 cùng một danh sách hiện ở hai mục thanh bên, và người trực phải đoán mục nào mới là mục thật.
 Sổ mặc định **mọi trạng thái**.
 
-**Đơn không có ai ở trên thì rơi về bàn nhân sự, không rơi ra ngoài.** Người chưa được gắn quản
-lý vẫn xin nghỉ được, mà cây tổ chức thì luôn có lúc thủng — người mới, người vừa chuyển bộ
-phận, trưởng nhóm vừa nghỉ. Nếu hộp chỉ lọc *người duyệt là tôi* thì một đơn không có người
-duyệt nằm trong hộp của **không ai**: nó vẫn là `PENDING` trước mắt người xin, không ai được
-báo, và cả phép nhắc đơn treo cũng bỏ qua nó vì nó nhắc theo người duyệt. Đó là hỏng **mở** —
-hệ nhận một việc nó không có đường xử lý, rồi nói với người xin là đang chờ.
+**Đơn không có ai trả lời được thì rơi về bàn nhân sự, không rơi ra ngoài.** Người chưa được gắn
+quản lý vẫn xin nghỉ được, mà cây tổ chức thì luôn có lúc thủng — người mới, người vừa chuyển bộ
+phận, trưởng nhóm vừa nghỉ. Chỗ thủng còn có dạng khó thấy hơn: người ấy **có** quản lý, nhưng quản
+lý không có đăng nhập, hay đăng nhập ấy đã khoá. Nếu hộp chỉ lọc *người duyệt là tôi* thì cả hai loại
+đơn nằm trong hộp của **không ai**: chúng vẫn là `PENDING` trước mắt người xin, không ai được báo, và
+lời nhắc đơn treo cũng không tới được ai. Đó là hỏng **mở** — hệ nhận một việc nó không có đường xử
+lý, rồi nói với người xin là đang chờ.
 
-Nên hộp của `ADMIN` và `HR` chứa thêm **đơn chưa có người duyệt**, và lúc xin, tin báo đi tới
-bàn ấy thay vì không tới đâu. §9.4 vốn đã giao `HR` quyền trên nghỉ phép, nên đây là đưa đơn về
-đúng người đã có thẩm quyền chứ không phải mở thêm quyền cho ai. **Luật 2 vẫn nguyên**: người
-xin không phải người duyệt, và một người nhân sự tự xin thì đơn ấy vẫn cần một người nhân sự
-khác quyết.
+Nên hộp của `ADMIN` và `HR` chứa thêm ba loại đơn: đơn chưa có người duyệt; đơn có người duyệt mà
+người ấy **không có đăng nhập đang dùng** — xét lúc đọc, nên một đăng nhập bị khoá sau khi đơn đã gửi
+cũng đưa đơn về bàn; và đơn đã chờ một quản lý tới 7 ngày (§9.17 mục 12). Tin báo đi tới đúng những
+người thấy đơn trong hộp (§9.21.4), và ai quyết trước thì đơn đóng cho mọi người. §9.4 vốn đã giao
+`HR` quyền trên nghỉ phép, nên đây là đưa đơn về đúng người đã có thẩm quyền chứ không phải mở thêm
+quyền cho ai. **Luật 2 vẫn nguyên**: người xin không phải người duyệt, và một người nhân sự tự xin
+thì đơn ấy vẫn cần một người nhân sự khác quyết.
 
 **Đơn đi theo cây hay đi thẳng về bàn là do thông tin cần để quyết, không do chức danh.** Hai
 loại đơn hỏi hai câu khác hẳn nhau, và người trả lời được câu này thường mù câu kia:
@@ -8220,17 +8259,20 @@ chỉ để đọc với một vai — như `Kỳ lương` với `HR` — thì *
 không hiện ra để trả `403`.
 
 **Luật 2 — một thứ chờ quyết định thì nằm ở `Chờ duyệt`, không nằm trên trang tự phục vụ.** Đơn
-nghỉ, **tạm ứng lương**, người phụ thuộc, khiếu nại phiếu lương, giấy xác nhận, đổi thông tin cá
-nhân — cả sáu về một hộp. Để hộp duyệt ở ngay trang người lao động gửi đơn thì **cùng một việc
-có hai địa chỉ**, và người trực hộp phải nhớ hôm nay còn phải mở thêm trang nào nữa. Trang tự
-phục vụ chỉ gửi và theo dõi; nó không quyết.
+từ, khiếu nại phiếu lương, giấy xác nhận, đổi thông tin cá nhân, người phụ thuộc, **tạm ứng chờ
+duyệt** và **tạm ứng chờ chi** — cả bảy hàng đợi về một hộp. Để hộp duyệt ở ngay trang người lao
+động gửi đơn thì **cùng một việc có hai địa chỉ**, và người trực hộp phải nhớ hôm nay còn phải mở
+thêm trang nào nữa. Trang tự phục vụ chỉ gửi và theo dõi; nó không quyết.
 
-**Danh sách sáu này là danh sách đóng, và nó được kiểm.** Một đường `decide` ở backend mà không
-có hàng đợi tương ứng trong hộp là một đơn **treo vĩnh viễn**: người gửi thấy *đang chờ*, người
-duyệt không thấy gì, và không có màn hình nào nói rằng có việc bỏ sót — đơn tạm ứng đứng mãi ở
-`PENDING` thì phép trừ tạm ứng của kỳ lương cũng không bao giờ chạy. Thêm một đường quyết định
-thì thêm một hàng đợi **và** một tin báo trong cùng commit; hàng đợi cho người trực mở ra thấy,
-tin báo cho người không mở trang ấy hôm nay.
+**Danh sách bảy này là danh sách đóng, và mỗi hàng đợi có tin ở cả hai đầu.** Một đường `decide` ở
+backend mà không có hàng đợi tương ứng trong hộp là một đơn **treo vĩnh viễn**: người gửi thấy
+*đang chờ*, người duyệt không thấy gì, và không có màn hình nào nói rằng có việc bỏ sót — đơn tạm
+ứng đứng mãi ở `PENDING` thì phép trừ tạm ứng của kỳ lương cũng không bao giờ chạy. Một hàng đợi có
+mà không có tin thì hỏng nhẹ hơn nhưng cùng kiểu: người phụ thuộc chờ duyệt, tạm ứng đã duyệt chờ
+chi, nằm đó tới khi có ai tình cờ mở đúng tab. Nên thêm một đường quyết định là thêm, trong cùng
+commit, **một hàng đợi, một việc cho bàn nhận nó, và một tin cho người gửi khi có kết quả**
+(§9.21.4). Tạm ứng có hai bước thì có hai việc — duyệt rồi chi — và người xin được báo ở cả hai.
+Hàng đợi cho người trực mở ra thấy; việc và tin cho người không mở trang ấy hôm nay.
 
 ### 9.16 Các phân hệ mở rộng: quyết định đáng ghi trước
 
@@ -8401,24 +8443,40 @@ kỳ đã chốt, nên khoản chênh đi vào kỳ sau như mọi khoản truy 
 **Phiếu đã phát không bao giờ đổi số vì một khiếu nại.** Kể cả khi khiếu nại đúng. Con số cũ là
 thứ đã gửi cho người ta, và một bản ghi tự sửa sau lưng thì không chứng minh được gì (§9.6).
 
-**12. Biết đơn của mình đang ở đâu.** Thông báo khi đơn được duyệt, bị từ chối, hay **nằm quá
-lâu không ai động tới** — cái thứ ba là cái người ta bức xúc nhất và phần mềm hay quên nhất.
+**12. Biết việc của mình đang ở đâu.** Thông báo khi việc mình gửi lên được duyệt, bị từ chối, hay
+**nằm quá lâu không ai động tới** — cái thứ ba là cái người ta bức xúc nhất và phần mềm hay quên
+nhất. "Việc" ở đây là mọi thứ gửi vào một hàng đợi của hộp chờ duyệt: đơn từ, tạm ứng, giấy xác
+nhận, đổi thông tin, người phụ thuộc, khiếu nại phiếu lương.
 
-**"Quá lâu" phải là một con số, không phải một cảm giác.** Đơn còn `PENDING` được đếm từ lúc
-gửi, và ở **mốc 3, 7, 14 ngày** thì một lượt quét hằng ngày nhắc lại. Mốc chứ không phải nhắc
-mỗi ngày: nhắc mỗi ngày là thứ người ta tắt sau tuần đầu, và một thông báo bị tắt thì im lặng
-y như không có. Cùng lý do ấy, mỗi mốc chỉ nói **đúng một lần** — dấu vết là chính dòng
-`Notification` đã sinh ra, không phải một cột "đã nhắc" trên `Request`, vì một cột như thế trả
-lời được "đã nhắc chưa" nhưng không trả lời được "nhắc mấy lần rồi".
+**"Quá lâu" phải là một con số cho từng hàng đợi, không phải một cảm giác.** Việc còn chờ được đếm từ
+lúc gửi, và một lượt quét hằng ngày nhắc ở **mốc**: đơn từ ở 3, 7 và 14 ngày; tạm ứng, giấy xác nhận,
+đổi thông tin và người phụ thuộc ở 3 và 7; khiếu nại theo hạn trả lời của chính nó — một ngày trước
+hạn, và khi đã quá hạn. Bảng đủ nằm ở §9.21.4, và trong code ở `notice-kinds.ts` (§4.9). Mốc chứ không
+phải nhắc mỗi ngày: nhắc mỗi ngày là thứ người ta tắt sau tuần đầu, và một thông báo bị tắt thì im
+lặng y như không có. Đơn đã chờ một quản lý tới mốc 7 thì bàn nhân sự vào nhóm của việc ấy (§9.15):
+một tuần không ai trả lời là lúc người có thẩm quyền thứ hai phải biết, và ai quyết trước thì việc
+đóng cho cả hai.
 
-**Một lần quá hạn nói với hai người, và nói hai câu khác nhau.** Người duyệt nhận
-`REQUEST_WAITING` lần nữa, vì việc vẫn nằm ở họ. Người gửi nhận `REQUEST_STALLED` — đây mới là
-vế "biết đơn của mình đang ở đâu", và nó tồn tại để câu trả lời không còn phải là một tin nhắn
-hỏi thăm. Gộp hai người vào một loại là bắt một trong hai đọc một câu viết cho người kia.
+**Mốc là *đã qua*, không phải *đúng hôm nay*, và mỗi mốc nói đúng một lần.** Lượt quét lấy mốc cao
+nhất mà việc đã vượt qua, và chỉ nói khi mốc ấy lớn hơn mốc đã nói lần trước — `NoticeItem.lastMark`,
+giành bằng một câu `UPDATE` có điều kiện (§9.23 luật 3). Hai hệ quả, đều cần: một ngày máy chủ tắt
+không làm mất mốc, hôm sau vẫn nói đúng một lần; và hai lượt quét chạy song song chỉ một lượt thắng.
+Còn câu "nhắc mấy lần rồi" thì dòng thông báo tự trả lời bằng `remindCount`.
+
+**Một việc một dòng, nổi lại ở mỗi mốc.** Tới mốc thì dòng của việc ấy trong chuông từng người nhận
+thành chưa đọc lần nữa, ra khỏi chỗ cất, và đẩy lại với cùng thẻ, nên màn khoá thay tin cũ chứ không
+chồng thêm. Ba mốc mà ba dòng là ba lần cùng một câu trong chuông, và người ta đọc dòng thứ ba như
+lỗi của hệ.
+
+**Một lần quá hạn nói với hai phía, và nói hai câu khác nhau.** Người duyệt thấy việc nổi lại, vì
+việc vẫn nằm ở họ. Người gửi nhận `REQUEST_STALLED` — cũng một dòng cho mỗi việc, nổi lại ở mỗi mốc
+và nói đã chờ bao nhiêu ngày. Đây mới là vế "biết việc của mình đang ở đâu", và nó tồn tại để câu trả
+lời không phải là một tin nhắn hỏi thăm. Gộp hai phía vào một loại là bắt một bên đọc câu viết cho
+bên kia.
 
 **Quá hạn cũng phải nhìn thấy được ở chỗ người ta quyết, không chỉ ở chuông.** Thẻ trong hộp
 chờ duyệt mang số ngày đã chờ, và mang nó **từ ngày đầu chứ không từ mốc đầu**: một cái ngưỡng
-ở phía vẽ là bản sao thứ hai của ba con số trên kia, mà §4.9 cấm đúng chuyện đó — bản sao sẽ
+ở phía vẽ là bản sao thứ hai của các mốc trên kia, mà §4.9 cấm đúng chuyện đó — bản sao sẽ
 lệch, và lệch ở đây nghĩa là cái thẻ nói một đằng còn cái chuông nói một nẻo. Con số tự nó đủ
 to dần; không cần ai gác cửa cho nó. Nhãn có chữ chứ không chỉ có màu, đúng §9.12 luật 2.
 
@@ -8428,8 +8486,20 @@ to dần; không cần ai gác cửa cho nó. Nhãn có chữ chứ không chỉ
 xác định thời hạn** theo luật — một hậu quả pháp lý vĩnh viễn sinh ra từ một ô lịch không ai
 nhìn. Cần nhắc theo mốc 30 / 15 / 7 ngày, và danh sách phải mở được từ trang chủ.
 
+**Người được nhắc là bàn nhân sự, vì bàn ấy mới ký được hợp đồng mới.** Còn 30 ngày thì một việc
+`CONTRACT_DUE` mở cho `ADMIN` và `HR`, nổi lại ở 15 và 7 ngày, và ở mốc 7 thì thành cảnh báo
+(§9.21.4). Nó tự đóng khi sự thật đổi: người ấy có một hợp đồng mới đang hiệu lực, hợp đồng này
+thôi hiệu lực, hay đã có ngày nghỉ việc được ghi. Quyết định để hết hạn mà không ký tiếp cũng là
+một quyết định, nên HR đóng tay được kèm ghi chú, và lần đóng ấy có dòng audit. Người ký cũng có tin
+riêng, nhưng tin ấy tắt mặc định cho tới khi trang của họ có chỗ nói về hợp đồng: báo một điều mà
+bấm vào không thấy gì là một ngõ cụt (§9.15 luật 1).
+
 **2. Thử việc sắp kết thúc.** Cùng loại rủi ro: hết thử việc mà không quyết là mặc nhiên nhận
-chính thức.
+chính thức. Còn 7 ngày thì một việc `PROBATION_DUE` mở cho bàn nhân sự **và quản lý trực tiếp** —
+người biết người mới có qua được thử việc hay không là quản lý, còn người ký hợp đồng chính thức là
+bàn nhân sự — rồi nổi lại ở 3 và 1 ngày. Bản của quản lý mở hồ sơ, không mở hợp đồng, vì quản lý
+không đọc hợp đồng của cấp dưới (§9.4). Việc đóng khi hợp đồng chính thức bắt đầu, khi người ấy
+nghỉ, hay khi bàn nhân sự đóng tay kèm ghi chú.
 
 **3. Bảng ngoại lệ của hôm nay.** Không phải "ai đi làm" — mà **ai lệch**: chưa quẹt, quẹt muộn,
 quẹt một lần rồi biến mất, nghỉ không đơn, và lượt quẹt mang giờ nghi vấn (§9.8). Danh sách ngắn mà hành động được, mở mỗi sáng.
@@ -8665,9 +8735,11 @@ phòng ban và trạng thái *đang làm* sẵn có:
 Các bộ lọc ấy là điều kiện của chính truy vấn danh bạ, nên "chọn cả N người khớp bộ lọc" gửi đúng
 điều kiện ấy và server giải ra đúng tập người đang thấy.
 
-**Trung tâm thông báo.** Một chỗ trong ứng dụng, cộng email cho thứ cần rời khỏi ứng dụng. Mỗi
-người tự chọn nhận gì. Không có nó thì hoặc gửi quá nhiều rồi bị bỏ qua, hoặc gửi quá ít rồi
-đơn nằm chết.
+**Trung tâm thông báo.** Chuông trên thanh trên cho việc của hôm nay, trang `Thông báo` cho mọi thứ
+còn lại — tìm theo tên hay mã người, lọc theo nhóm và ngày, đánh dấu nhiều dòng một lúc — và thư cho
+thứ phải rời khỏi ứng dụng. Mỗi người tự chọn nhận gì, trong đúng những loại vai ấy nhận. Không có nó
+thì hoặc gửi quá nhiều rồi bị bỏ qua, hoặc gửi quá ít rồi đơn nằm chết. Toàn bộ luật ở §9.21.4: tin
+khác việc ở đâu, ai nhận, ai đã xử lý thì mọi người nhận thấy thế nào, giữ bao lâu.
 
 **Uỷ quyền duyệt.** Cấp trên nghỉ phép thì đơn của cấp dưới không được đứng lại. Uỷ quyền có
 thời hạn, và **việc đã duyệt ghi tên người duyệt thật**, không ghi tên người uỷ quyền.
@@ -8814,87 +8886,340 @@ Nhà xưởng, tầng hầm, ngoài công trường. Ba luật:
 3. **Tải trang đầu phải nhẹ.** Máy Android tầm thấp trên 3G là cấu hình thật của người dùng
    này, không phải trường hợp biên.
 
-#### 9.21.4 Thông báo đẩy là thứ khiến cổng nhân viên được dùng
+#### 9.21.4 Tin, việc, và ai đã xử lý
 
-Không có thông báo thì một cổng tự phục vụ chỉ được mở khi người ta nhớ ra nó. Sáu loại đáng
-đẩy, và **chỉ sáu**. Mỗi loại tắt riêng được.
+Không có thông báo thì một cổng tự phục vụ chỉ được mở khi người ta nhớ ra nó. Nhưng một cái chuông
+chỉ biết *đã đọc* và *chưa đọc* hỏng đúng ở chỗ đông người nhất: ba người bàn nhân sự cùng được báo
+một đơn, một người duyệt xong, hai người kia vẫn giữ một dòng "có đơn chờ bạn duyệt" chưa đọc, mở ra
+thì gặp một câu từ chối. Mục này tách hai thứ mà một bảng thông báo đơn lẻ trộn làm một, nói ai nhận
+cái gì, và nói khi việc đã xong thì mọi người nhận biết điều đó bằng cách nào.
 
-| `kind` | Nói gì | Tới ai |
+**Tin và việc là hai thứ, và chỉ việc có trạng thái chung.**
+
+| | Tin | Việc |
 |---|---|---|
-| `REQUEST_DECIDED` | đơn của tôi đã được quyết | người gửi |
-| `REQUEST_WAITING` | có đơn chờ tôi duyệt | người duyệt |
-| `REQUEST_STALLED` | đơn của tôi chưa ai động tới (§9.17 mục 12) | người gửi |
-| `PAYSLIP_ISSUED` | phiếu lương kỳ này đã phát | người nhận lương |
-| `CONTRACT_ENDING` | hợp đồng của tôi sắp hết hạn | người ký |
-| `DISPUTE_ANSWERED` | khiếu nại phiếu lương của tôi đã có trả lời | người khiếu nại |
+| Nói gì | một chuyện đã xảy ra với tôi: đơn của tôi đã được duyệt, phiếu lương đã phát | một việc đang chờ một nhóm: đơn chờ bàn nhân sự, hợp đồng sắp hết hạn, kiosk mất kết nối |
+| Lưu ở | một dòng `Notification` mỗi người nhận | **một** dòng `NoticeItem` cho cả nhóm, cộng một dòng `Notification` mỗi người nhận trỏ vào nó |
+| Trạng thái | của riêng người đọc: chưa đọc · đã đọc · đã cất | của chính việc: `OPEN` → `DONE` · `WITHDRAWN` · `MOVED` · `EXPIRED` · `CLEARED`, kèm kết quả, người làm, lúc xong |
 
-**Thêm một giá trị vào enum là thêm việc ở cả hai đầu, không phải một.** Phía ghi chỉ cần một
-dòng; phía đọc cần một biểu tượng, một đường dẫn, một câu trong cả hai catalogue, và một ô
-trong bảng bật tắt. Thiếu bất kỳ cái nào thì loại ấy **không hiện ra được** — bảng tra ở
-frontend là `Record` phủ kín enum nên một khoá vắng mặt trả `undefined`, và cái chuông vỡ cho
-đúng những người nhận được nó. Vì vậy enum này và bảng trên đây là **một hợp đồng**, không phải
-một danh sách gợi ý.
+**Đã đọc là *tôi đã thấy*; đã xử lý là *có người đã làm*, và mọi người nhận đều thấy điều đó.** Câu
+ấy đứng nguyên văn trên trang thông báo, vì hai trạng thái cùng hiện bằng một dấu chấm mà nghĩa khác
+hẳn: đọc là việc của từng người, xử lý là việc của cả nhóm.
 
-**Nên một loại đơn mới mượn `REQUEST_*` chứ không xin một giá trị riêng.** Ba dòng `REQUEST_*`
-nói *có việc chờ tôi* / *việc của tôi đã xong* — chúng không nói việc ấy là nghỉ phép hay tạm
-ứng. Cái phân biệt là **tham chiếu đi kèm**: `requestId` thì mở sổ đơn từ, `advanceId` thì mở
-hàng đợi tạm ứng. Thêm một tham chiếu là thêm một khoá không bắt buộc ở phía ghi và một nhánh
-ở phía đọc; thêm một giá trị enum là thêm sáu thứ ở đoạn trên và một lần chuyển đổi cơ sở dữ
-liệu. Enum đứng yên ở sáu, và nó đứng yên **vì** tin không mang tên loại việc.
+**Việc đóng đúng một lần, và mọi người nhận thấy cùng một kết quả.** Khi một người trong nhóm xử lý
+việc qua đường nghiệp vụ của nó — duyệt, từ chối, cấp, chi, trả lời:
 
-**Không đẩy nội dung nhạy cảm vào màn khoá.** "Phiếu lương tháng 9 đã có" là đủ; con số thì
-nằm sau lần đăng nhập, cùng lý do §9.11 không đính kèm phiếu vào email.
+1. Việc đóng bằng `UPDATE … WHERE state = 'OPEN'` rồi đếm số dòng đã đổi (§9.23 luật 3). Hai người
+   bấm cùng lúc thì đúng một người đóng; người kia nhận `409` từ chính đường nghiệp vụ, và tin cho
+   người gửi chỉ sinh một lần.
+2. Dòng của mọi người nhận đọc *Đã được X duyệt lúc T*, rời tab *Cần xử lý*, và **tính là đã đọc** —
+   họ không còn gì phải làm với nó, và một dòng chưa đọc cho việc đã xong là thứ đầu tiên người ta
+   học cách lờ đi. Chính người làm thấy *Bạn đã duyệt lúc T*.
+3. Một tin realtime tới mọi máy đang mở của mọi người nhận: danh sách trên màn người thứ hai đổi
+   ngay, và bảng quyết định họ đang mở thành khối chỉ đọc *Đã được X duyệt lúc T · ghi chú* — không
+   để họ bấm vào một đơn không còn chờ rồi đọc một câu từ chối.
 
-**Luật này phải do kiểu dữ liệu giữ, không do người viết nhớ.** `Notification` **không có cột
-nào chứa câu chữ**: nó giữ `kind` là enum sáu giá trị, cộng vài tham chiếu (`requestId`,
-`advanceId`, `periodId`, số ngày còn lại, số ngày đã chờ). Câu hiển thị dựng ở phía đọc — frontend cho chuông trong ứng
-dụng, service worker cho màn khoá — và cả hai lấy chữ từ catalogue. Không có chỗ nào để lỡ tay
-nhét số tiền vào, vì không có cột nào nhận được một số tiền.
+**Bảng nghiệp vụ là sự thật; việc chỉ là bóng của nó.** `Request.state`, `SalaryAdvance.state` và các
+bảng cùng loại quyết định một việc còn mở hay không; `NoticeItem` chỉ giữ ai được báo, ai đã đọc, ai
+đã xử lý. Việc đóng **ngay sau** khi giao dịch nghiệp vụ commit, và lỗi ở bước ấy bị nuốt như mọi lỗi
+thông báo (cuối mục). Bù lại có **một lượt đối soát mỗi giờ**: đóng mọi việc mà dòng nghiệp vụ của nó
+đã xong, và ghi số việc vừa đóng theo từng hàng đợi. Con số ấy **phải bằng 0**. Khác 0 nghĩa là có một
+đường ghi quên đóng việc: lượt đối soát che lỗi ấy khỏi người dùng, nhưng nó là lưới đỡ, không phải
+cơ chế để đường ghi nào dựa vào.
 
-**Tin nhắm vào tài khoản đăng nhập, không nhắm vào hồ sơ nhân viên.** Thứ mở chuông ra đọc là
-một phiên đăng nhập, và **không phải đăng nhập nào cũng là một nhân viên**: §9.4 mở đường tạo
-tài khoản bằng email và vai, nên một quản trị viên hay một bàn nhân sự có thể không có dòng nào
-trong `Employee`. Khoá tin theo hồ sơ nhân viên thì những tài khoản ấy **không nhận được gì**,
-và đó không phải chuyện nhỏ: chúng chính là nơi §9.15 gửi đơn không có ai ở trên tới.
+**Ai nhận việc: đúng những người thấy nó trong hộp chờ duyệt, tính bằng cùng một hàm.** Hộp chờ duyệt
+(§9.10, §9.15) đã có bốn vị từ: bàn nào quyết hàng đợi nào (`QUEUE_DESKS`), đơn nào đang chờ người xem
+kể cả khi họ đứng thay hôm nay, bàn không thấy việc của chính mình trong hàng đợi mình quyết, và không
+ai quyết việc của chính mình (§9.4). `audienceOf` là **một** hàm dựng từ chính bốn vị từ ấy, và hộp lẫn
+chuông cùng gọi nó: hai phép tính thì sớm muộn có người được báo mà mở hộp không thấy gì, hoặc thấy
+việc mà không ai báo. Ba điều suy ra mà không cần luật riêng: quản lý không bao giờ nhận việc về lương
+của cấp dưới; người gửi không bao giờ nằm trong nhóm của việc mình gửi; đơn của người không có quản lý,
+hay có quản lý mà quản lý ấy không có đăng nhập đang dùng, về bàn nhân sự (§9.15).
 
-Nên `Notification` và `NotificationPreference` khoá theo `userId`, còn `PushSubscription` giữ
-`endpoint` làm khoá và đổi **chủ sở hữu** sang `userId`. Người nghỉ việc vẫn tra lại được, vì
-§9.14 giữ cả hồ sơ lẫn tài khoản — tài khoản chỉ bị khoá, không bị xoá. Cái giá là một người
-đổi tài khoản sẽ không mang theo tin cũ; đổi lại, **không có đường nào để một tin gửi vào chỗ
-không ai đọc**.
+**Chi tiết về người trong việc dựng lúc đọc, qua phạm vi của người đọc lúc ấy.** Dòng chỉ giữ tham
+chiếu. Tên, mã, phòng ban, ngày tháng dựng lúc đọc, qua `visibleEmployeeIds` với dữ liệu nhân sự và
+`deskOrSelfEmployeeIds` với lương và giấy tờ (§9.4). Ngoài phạm vi thì dòng vẫn còn nhưng chủ thể
+thành `hidden`: không tên, không đường mở. Một người nhân sự bị hạ vai vẫn thấy lịch sử chuông của
+mình, nhưng không đọc lại được tên những người họ đã hết quyền thấy — chép tên vào dòng lúc ghi là giữ
+lại đúng cái quyền vừa bị thu.
 
-**Hai kênh, bật tắt theo từng loại.**
+**Việc.** Mỗi việc khoá bằng `key` dạng `<hàng đợi>:<id chủ thể>[:<phần phụ>]`, nên một chủ thể không
+bao giờ có hai việc mở trong cùng một hàng đợi.
 
-| Kênh | Mặc định | Ghi chú |
+| `kind` · hàng đợi | Mở khi | Tới ai | Nhắc | Đóng khi | Mở trang |
+|---|---|---|---|---|---|
+| `REQUEST_WAITING` · `REQUESTS` (năm loại đơn) | gửi đơn | người duyệt và người đứng thay hôm nay; không có quản lý, hay quản lý không có đăng nhập đang dùng → bàn nhân sự | 3 · 7 · 14 ngày; ở mốc 7, đơn đang chờ một quản lý thì bàn nhân sự vào nhóm | quyết → `DONE`; người gửi rút → `WITHDRAWN`; đổi người duyệt → `MOVED` với người cũ, dòng mới cho người mới | `/leave/<id>` |
+| `REQUEST_WAITING` · `ADVANCES_TO_DECIDE` | gửi đơn tạm ứng | `ADMIN`, `HR`; không bao giờ quản lý | 3 · 7 | quyết; rút | `/approvals?tab=advancesToDecide&open=<id>` |
+| `REQUEST_WAITING` · `ADVANCES_TO_PAY` | tạm ứng được duyệt | `ADMIN`, `PAYROLL` | 3 · 7 | đã chi | `/approvals?tab=advancesToPay&open=<id>` |
+| `REQUEST_WAITING` · `CERTIFICATES` | xin giấy xác nhận | `ADMIN`, `HR`, `PAYROLL` | 3 · 7 | cấp; từ chối; rút | `/approvals?tab=certificates&open=<id>` |
+| `REQUEST_WAITING` · `PROFILE_CHANGES` | xin đổi thông tin | `ADMIN`, `HR` | 3 · 7 | duyệt; từ chối; rút | `/approvals?tab=profileChanges&open=<id>` |
+| `REQUEST_WAITING` · `DISPUTES` | khiếu nại phiếu lương — khoá theo id khiếu nại, không theo phiếu | `ADMIN`, `PAYROLL` | một ngày trước hạn trả lời; quá hạn thì `WARNING` | trả lời; rút | `/approvals?tab=disputes&open=<id>` |
+| `REQUEST_WAITING` · `DEPENDENTS` | đăng ký người phụ thuộc | `ADMIN`, `PAYROLL` | 3 · 7 | quyết | `/approvals?tab=dependents&open=<id>` |
+| `CONTRACT_DUE` · `CONTRACTS_DUE` | hợp đồng có hạn còn ≤ 30 ngày | `ADMIN`, `HR` | 15 · 7, `WARNING` ở 7 | có hợp đồng mới `ACTIVE`; hợp đồng thôi `ACTIVE`; đã ghi ngày nghỉ việc; HR đóng tay kèm ghi chú | `/employees/<id>?tab=contracts` |
+| `PROBATION_DUE` · `PROBATION_DUE` | thử việc còn ≤ 7 ngày | bàn nhân sự và quản lý trực tiếp | 3 · 1 | hợp đồng chính thức bắt đầu; người ấy nghỉ; đóng tay | hồ sơ người ấy; bản của quản lý không mở hợp đồng |
+| `TASK_ASSIGNED` · `TASKS` | lượt nhận việc hay nghỉ việc mở | việc `SELF` → chính người ấy; `MANAGER` → người phụ trách; `HR` → `ADMIN`, `HR` | đúng hạn và một ngày sau, quá hạn thì `WARNING` | việc xong | tab nhận việc của hồ sơ; việc `SELF` mở `/me` |
+| `DOCUMENT_TO_SIGN` · `DOCUMENTS` | phát hành một phiên bản | mỗi người có đăng nhập trong đối tượng của tài liệu, rải qua hàng đợi | 3 · 7 | ký nhận → `DONE`; có phiên bản mới hơn → `EXPIRED` | `/me/documents?open=<id>` |
+| `KIOSK_ALERT` · `KIOSK` | `CRITICAL`: mất kết nối quá `KIOSK_OFFLINE_ALERT_MINUTES`, lỗi `*_FAULT`, `FACEDB_CORRUPT`, `MODEL_LOAD_FAILED`; `ACTION`: máy mới chờ duyệt; `WARNING`: `OTA_FAILED`, `OTA_ROLLED_BACK`, loạt giả mạo, loạt mặt lạ | `ADMIN` | — | nối lại → `CLEARED`; duyệt hay thu hồi → `DONE`; loạt đã yên → `CLEARED`; `ADMIN` đóng tay | `/devices/<id>` |
+| `BACKUP_ALERT` · `BACKUP` | lượt canh sao lưu thấy hỏng (§9.22.2), `CRITICAL` | `ADMIN`; thư vẫn đi | — | lượt canh sau lành → `CLEARED` | chi tiết ngay trên trang thông báo |
+| `ATTENDANCE_EXCEPTION` · `ATTENDANCE` | lượt dựng ngày (§9.8) thấy một ngày lệch | chính người ấy | — | ngày được sửa; một đơn đã duyệt phủ ngày ấy; người ấy bấm *Không cần giải trình*; kỳ lương của ngày ấy chốt → `EXPIRED` | `/me/attendance?day=<ngày>` |
+| `TEAM_ATTENDANCE` · `TEAM_ATTENDANCE` | đầu ngày, sau giờ vào ca sớm nhất trong phạm vi cộng 30 phút | mỗi quản lý cho cây của mình; bàn nhân sự cho cả công ty | — | hết ngày → `EXPIRED` | ngoại lệ của ngày ấy, trong phạm vi người xem |
+
+Ba thứ trong bảng cần nói thêm:
+
+- **Loạt giả mạo, loạt mặt lạ** là một kiosk ghi từ `KIOSK_SPOOF_BURST` lượt `SPOOF_DETECTED`, hay từ
+  `KIOSK_UNKNOWN_BURST` lượt `UNKNOWN_FACE`, trong `KIOSK_BURST_WINDOW_MINUTES` phút. Mỗi kiosk mỗi
+  loạt một việc mở, khoá `kiosk:<id máy>:<loạt>`; nó đóng khi kiosk yên một khoảng khai ở bảng tra,
+  mặc định 60 phút.
+- **Lệch công là một việc mỗi người mỗi ngày** (`attendance:<id nhân viên>:<ngày>`), mở khi ngày có ít
+  nhất một trong năm điều: đi muộn quá ân hạn của ca, về sớm, thiếu lượt vào hay lượt ra, vắng mà
+  không có đơn đã duyệt, ở lại quá giờ ca từ ngưỡng của bảng tra mà không có đơn tăng ca đã duyệt
+  (§9.17 mục 2). `facts` mang ngày và các mã lệch kèm số phút, và dòng gọi tên chúng: *Đi muộn 17 phút
+  · thiếu lượt ra*. Nút *Giải trình* mở đơn `ATTENDANCE_FIX` điền sẵn ngày ấy; *Không cần giải trình*
+  đóng việc, người làm là chính người ấy. Lượt dựng lại xoá hết chỗ lệch thì việc đóng; dựng hai lần
+  không mở thêm gì.
+- **Tổng hợp nhóm** đếm đi muộn, chưa chấm, vắng không đơn và nghỉ phép của phạm vi người nhận (§9.4),
+  mỗi người nhận một việc mỗi ngày (`team-attendance:<id đăng nhập>:<ngày>`).
+
+**Tin.** Tin không có trạng thái chung, nên không có việc đi kèm.
+
+| `kind` | Nói gì | Tới ai | Mở trang | Mặc định |
+|---|---|---|---|---|
+| `REQUEST_DECIDED` | việc tôi gửi đã có kết quả — đơn, tạm ứng, giấy xác nhận, đổi thông tin, người phụ thuộc | người gửi | đúng bản ghi | bật cả hai kênh |
+| `REQUEST_STALLED` | việc tôi gửi đã chờ N ngày (§9.17 mục 12) — một dòng mỗi việc, nổi lại ở mỗi mốc | người gửi | đúng bản ghi | bật cả hai kênh |
+| `DISPUTE_ANSWERED` | khiếu nại của tôi đã có trả lời | người khiếu nại | `/me/payslips?slip=<id>` | bật cả hai kênh |
+| `PAYSLIP_ISSUED` | phiếu lương của tôi đã phát | người nhận | `/me/payslips?slip=<id>` | bật cả hai kênh |
+| `ADVANCE_PAID` | khoản tạm ứng của tôi đã chi | người xin | `/me/requests?tab=advances` | bật cả hai kênh |
+| `PAYROLL_RUN_DONE` | lượt chạy lương tôi bấm đã xong, hay hỏng (`WARNING`) | người bấm chạy | kỳ lương ấy | bật cả hai kênh |
+| `CONTRACT_ENDING` | hợp đồng của tôi sắp hết hạn | người ký | — | **tắt** cả hai kênh, tới khi `/me` có thẻ hợp đồng: một tin mở ra trang không nói gì về hợp đồng là một ngõ cụt (§9.15 luật 1), còn bàn nhân sự đã có việc `CONTRACT_DUE` |
+| `PUNCH_RECORDED` | một lượt chấm của tôi vừa được nhận: giờ của chính lượt ấy, kiosk nào, có tới muộn vì đồng bộ trễ không | chính người ấy | — | **không ghi dòng nào**: bảng chấm công đã là bản ghi, và ba mươi nghìn người hai lượt một ngày thì chép đôi nó. Ứng dụng đang mở hiện một toast qua feed; đẩy phải tự bật |
+| `DAY_CORRECTED` | ngày công của tôi được người khác sửa: ai, lúc nào | chính người ấy | `/me/attendance?day=<ngày>` | bật cả hai kênh |
+| `SHIFT_CHANGED` | ca của tôi từ ngày X đổi — chỉ ngày từ hôm nay trở đi, gom theo người trong `NOTICE_PUSH_GATHER_SECONDS` | chính người ấy | `/me/shifts` | bật cả hai kênh |
+| `TIMESHEET_MONTH_CLOSED` | bảng công tháng của tôi đã chốt, vì kỳ lương giữ nó đã khoá | mọi người trong kỳ | `/me/attendance?month=<tháng>` | trong ứng dụng bật, đẩy tắt |
+
+Mọi việc đẩy mặc định **bật**, với một ngoại lệ có lý do: lệch công chỉ đẩy khi ngày thiếu lượt chấm
+hay vắng không đơn — hai thứ đổi tiền lương — còn đi muộn, về sớm, ở lại không đăng ký thì nằm trong
+chuông mà không rung máy. Mỗi người tối đa một lần đẩy lệch công mỗi ngày, gom lại gửi 8:30 sáng hôm sau
+theo `APP_TIMEZONE`. Tổng hợp nhóm đẩy một lần mỗi ngày. Đơn `ATTENDANCE_FIX` là đơn từ, nên nó đi đúng
+đường `REQUEST_WAITING` và `REQUEST_DECIDED` như bốn loại kia, không có loại riêng. `DAY_CORRECTED` tới
+khi **người khác** sửa ngày; một đơn của chính người ấy được duyệt rồi ghi vào ngày thì họ đã nghe qua
+`REQUEST_DECIDED`.
+
+**Thêm một loại là một giá trị enum, hai dòng bảng tra, hai câu.** `NoticeKind` thêm một giá trị;
+`notifications/notice-kinds.ts` ở backend thêm một dòng — nhóm, mức, người nhận, mốc nhắc, điều kiện
+đóng, mặc định từng kênh, khoá `facts` được phép; `components/notifications/kinds.ts` ở frontend thêm
+một dòng — biểu tượng, câu, đường mở; mỗi catalogue thêm một câu. Chữ màn khoá sinh từ chính hai câu
+ấy. Cả hai bảng tra là `Record` phủ kín enum nên thiếu một dòng là lỗi biên dịch, và
+`tools/check_notice_kinds.py` soát enum, hai bảng tra, hai catalogue và chữ màn khoá cùng khớp nhau.
+Số loại không có trần: thứ giữ chuông khỏi ồn là nhóm người nhận hẹp và mặc định tắt của từng loại,
+không phải một con số đếm loại.
+
+**Câu dựng ở phía đọc, và dòng không có chỗ cho câu hay tiền.** `Notification` và `NoticeItem` không có
+cột chữ tự do: `kind`, chủ thể, và `facts` — một `jsonb` nhỏ mà bảng tra khai khoá và kiểu cho từng
+loại (mã, số, ngày), bộ ghi kiểm theo khai báo ấy trước khi ghi. Lý do HR ghi khi sửa công nằm ở ngày
+công, không chép vào tin. Câu hiển thị dựng ở frontend cho chuông và ở service worker cho màn khoá, cả
+hai lấy chữ từ catalogue — không có cột nào để lỡ tay nhét một số tiền vào.
+
+**Tin nhắm vào tài khoản đăng nhập, không nhắm vào hồ sơ nhân viên.** Thứ mở chuông ra đọc là một
+phiên đăng nhập, và không phải đăng nhập nào cũng là một nhân viên: §9.4 mở được tài khoản chỉ bằng
+email và vai, nên một quản trị viên hay một bàn nhân sự có thể không có dòng nào trong `Employee` — mà
+chúng chính là nơi §9.15 gửi đơn không có ai ở trên tới. Nên `Notification` và
+`NotificationPreference` khoá theo `userId`. Người nghỉ việc vẫn tra lại được, vì §9.14 giữ cả hồ sơ
+lẫn tài khoản — tài khoản chỉ bị khoá, không bị xoá. Cái giá là một người đổi tài khoản không mang
+theo tin cũ; đổi lại, **không có đường nào để một tin gửi vào chỗ không ai đọc**.
+
+**Đánh dấu: người đọc làm gì, hệ tự làm gì.**
+
+| Ai | Thao tác | Kết quả |
 |---|---|---|
-| Trong ứng dụng | **bật** cả sáu loại | Rẻ, không làm phiền, và là nơi xem lại |
-| Đẩy tới máy | **bật** cả sáu loại | Đây là thứ khiến cổng được mở |
+| người đọc | đọc · chưa đọc · đọc hết theo đúng bộ lọc đang xem | chỉ dòng của chính họ |
+| người đọc | cất · bỏ cất | dòng rời chuông; việc còn mở **vẫn nằm trong hộp chờ duyệt và vẫn được nhắc** — cất là dọn mắt, không phải giao việc đi |
+| người trong nhóm | *Tôi nhận việc này* · bỏ nhận | cả nhóm thấy ai đang làm; tự hết sau `NOTICE_CLAIM_HOURS`. Chỉ có ở khiếu nại, giấy xác nhận, hợp đồng, thử việc — những việc mất hơn một lần bấm; đơn từ và tạm ứng quyết trong một lần bấm nên không có gì để giành |
+| người trong nhóm | đóng tay, kèm kết quả và ghi chú | chỉ ở loại không có đường quyết nghiệp vụ: kiosk, hợp đồng, thử việc; có dòng audit (§9.24) |
+| hệ | người đọc mở một bản ghi | mọi tin của họ về bản ghi ấy thành đã đọc |
+| hệ | việc đóng | dòng của mọi người nhận thành đã đọc |
+| hệ | việc tới mốc nhắc | dòng thành chưa đọc, ra khỏi chỗ cất, đẩy lại cùng thẻ |
+| hệ | người nhận ra khỏi nhóm: đổi người duyệt, đổi vai | dòng ghi `leftAt`, hiện *Đã chuyển cho người khác*, thôi tính vào mọi số đếm |
 
-**Email nằm trong `NoticeChannel` nhưng không phải một ô để bật.** Thư đã có đường riêng và đi
-theo việc chứ không theo thông báo: phiếu lương ở §9.11, liên kết mật khẩu ở §9.4. Dựng thêm
-một kênh thư ở đây là **gửi hai lần cùng một tin**, và vì nó chở đúng những `kind` kia nên bản
-thứ hai không nói thêm được gì. Giá trị vẫn ở lại trong enum để các dòng đã ghi còn đọc được,
-nhưng **bảng bật tắt chỉ chào hai kênh có người giao**.
+**Ba con số, ba câu hỏi, không con số nào đứng thay con số khác.**
 
-**Một ô bật tắt không giao được thứ gì thì tệ hơn là không có ô ấy.** Người bật nó lên không
-nhận được gì và cũng không được báo là sẽ không nhận gì — đúng loại sai âm thầm mà §9.4 gọi tên
-ở chỗ vai mặc định. Nên số kênh bảng ấy chào phải bằng đúng số kênh có đường giao thật.
+| Con số | Ở đâu | Đếm gì |
+|---|---|---|
+| chuông | thanh trên | dòng chưa đọc, chưa cất, chưa rời nhóm |
+| *Cần xử lý* | tab đầu của chuông và của trang thông báo | việc đang mở mà người xem nằm trong nhóm |
+| hộp chờ duyệt | thanh trên, cạnh chuông | tổng thật của các hàng đợi (§9.10), đọc từ bảng nghiệp vụ chứ không từ bảng thông báo |
 
-**Chuông đổi ngay lúc tin được ghi, không đợi lượt hỏi.** Mỗi lần `raise` phát tin `notice` qua
-feed (§9.4) tới đúng tài khoản nhận, thân tin là `kind` cộng tham chiếu như tin đẩy. Trang đang
-mở xoá khoá của chuông và của sổ đơn, tạm ứng, phiếu lương, khiếu nại, hợp đồng, nên người gửi
-đơn thấy "Từ chối" ngay trên trang mình đang đứng. Tin ấy **không phải kênh thứ ba** và không có
-ô bật tắt: nó không hiện chữ nào, chỉ báo cho trang rằng dữ liệu của nó đã cũ. Tắt `IN_APP` thì
-chuông không có dòng mới, nhưng sổ đơn vẫn phải đúng. Tin đi sau khi dòng `Notification` đã
-ghi, để lần hỏi lại thấy được nó.
+`ADMIN` thêm một chấm đỏ trên chuông khi còn một việc `CRITICAL` đang mở: một kiosk chết hay một bản sao
+lưu hỏng không được chìm giữa hai mươi đơn nghỉ.
 
-**Một thông báo hỏng không được làm hỏng việc nó mô tả.** Duyệt một đơn xong mà không gửi được
-thông báo thì đơn **vẫn đã duyệt** — cùng luật với `AuditService`: mất lời nhắn còn hơn huỷ việc
-đã làm.
+**Dữ liệu.**
 
-**`PushSubscription` khoá theo `endpoint`, không khoá theo người.** Một người có điện thoại và
-máy tính là hai đăng ký; đăng xuất thì xoá đúng đăng ký của máy ấy. Nhà cung cấp trả `404` hoặc
-`410` nghĩa là đăng ký đã chết — xoá ngay, đừng thử lại, vì nó sẽ không bao giờ sống lại.
+```
+NoticeItem    id · key (duy nhất) · queue · subjectType · subjectId · employeeId · level
+              · state · outcome · actorId · claimedById · claimedAt · dueAt · lastMark
+              · facts · openedAt · closedAt
+Notification  id · userId · kind · itemId · subjectType · subjectId · subjectEmployeeId
+              · dedupKey · facts · remindCount · remindedAt · readAt · archivedAt · leftAt · createdAt
+```
+
+- `queue` là tên các hàng đợi của hộp chờ duyệt cộng những hàng đợi không qua hộp: `CONTRACTS_DUE`,
+  `PROBATION_DUE`, `TASKS`, `DOCUMENTS`, `KIOSK`, `BACKUP`, `ATTENDANCE`, `TEAM_ATTENDANCE`.
+  `employeeId` là người mà việc nói về, để phạm vi lúc đọc có chỗ bám.
+- `subjectId` mang đúng một trong bốn dạng — uuid, số nguyên, ngày, hay `<id nhân viên>:<ngày>` cho một
+  người–ngày — và một `CHECK` giữ bốn dạng ấy, để chủ thể không bao giờ là một câu.
+- `level` là `INFO` · `ACTION` · `WARNING` · `CRITICAL`. `outcome` là động từ của kết quả — `APPROVED`,
+  `REJECTED`, `ISSUED`, `UPHELD`, `PAID`, `RENEWED`, `SIGNED`, `RESOLVED` … — đủ để dựng *Đã được X
+  ‹duyệt› lúc T*. Nhóm của một tin (đơn từ, lương, nhân sự, chấm công, hệ thống) suy từ loại qua bảng
+  tra, không lưu.
+- Chỉ mục: `NoticeItem(state, queue)`, `NoticeItem(subjectType, subjectId)`, `Notification(itemId)`,
+  `unique(userId, dedupKey)`, và một chỉ mục từng phần viết tay `(userId) WHERE readAt IS NULL AND
+  archivedAt IS NULL AND leftAt IS NULL` cho số trên chuông — câu hỏi chạy nhiều nhất của cả phần này.
+
+**Chống trùng nằm ở cơ sở dữ liệu, không ở phép đọc trước khi ghi** (§9.23 luật 1 và 3).
+`unique(userId, dedupKey)` cộng `createMany({ skipDuplicates })`: một tin giao hai lần, hay hai lượt
+quét chạy song song, vẫn ra một dòng mỗi người. Mốc nhắc do câu lệnh giành lấy —
+`UPDATE "NoticeItem" SET "lastMark" = $mốc WHERE "id" = $id AND ("lastMark" IS NULL OR "lastMark" < $mốc)`
+— rồi đếm dòng đổi, và chỉ lượt thắng mới đẩy. Lượt quét so **mốc cao nhất đã qua**, không so *đúng
+hôm nay*: một ngày máy chủ tắt không làm mất mốc, hôm sau nói đúng một lần.
+
+**Tắt kênh trong ứng dụng vẫn ghi dòng, chỉ là dòng ấy đã cất.** Dòng ấy là thứ chống trùng và là câu
+trả lời cho *ai đã được báo*; không ghi thì lần giao lại sinh một tin mới, và câu hỏi ấy hết chỗ trả
+lời. Người tắt không thấy nó trong chuông và không nhận đẩy. Với việc thì kênh trong ứng dụng **khoá
+bật** (`NOTICE_CHANNEL_LOCKED`): tắt được tiếng của một việc mình đang giữ, không tắt được chính việc.
+
+**API.** Mọi đường nằm dưới `/notifications`, và người gọi chỉ đọc, ghi dòng của chính mình.
+
+| Đường | Làm gì |
+|---|---|
+| `GET /notifications` | `status` (`unread` · `action` · `all` · `archived`), `category`, `from`, `to`, `search` theo tên hay mã người, `cursor`, `take` → `{ rows, total, totalIsExact, next }`, qua phép thử 5.000 dòng (§9.12). Mỗi dòng mang `item` — trạng thái, kết quả, tên người xử lý, lúc xong, ai đang nhận, hạn — và `subject` — người, mã, phòng ban, ngày — dựng lúc đọc |
+| `GET /notifications/counts` | `{ unread, action, critical }` |
+| `POST /notifications/read` · `/unread` · `/archive` · `/unarchive` | nhận `ids`, hoặc `all` kèm bộ lọc đang xem, hoặc `subject`; trang bản ghi gọi dạng cuối lúc mở |
+| `GET /notifications/:id` | một dòng, cho trang mà tin đẩy và thư trỏ tới |
+| `GET /notifications/items/:key` | trạng thái việc, cộng *ai được báo, ai đã đọc* chỉ cho nhóm và `ADMIN` — người gửi không thấy phần ấy; người ngoài nhận `404` |
+| `POST`, `DELETE /notifications/items/:key/claim` · `POST /notifications/items/:key/resolve` | nhận, bỏ nhận, đóng tay |
+| `GET`, `POST /notifications/preferences` | chỉ những loại vai ấy nhận, mỗi ô kèm `mutable` |
+| `GET /notifications/subscriptions` · `DELETE /notifications/subscriptions/:id` | các máy đang nhận đẩy của chính mình, gỡ từng máy |
+| `POST /notifications/sweeps/:name` | `ADMIN` chạy ngay một lượt quét |
+
+Mỗi hàng đợi có đường đọc một bản ghi — `GET /certificates/:id`, `/profile-changes/:id`,
+`/payslip-disputes/:id`, `/advances/:id`, `/dependents/:id` theo phạm vi `deskOrSelfEmployeeIds` như
+chính danh sách của chúng, cạnh `GET /requests/:id` theo cây — để `?open=` mở đúng bảng quyết định
+kể cả khi việc không nằm trên trang đầu của hàng đợi, và nói được *ai đã xử lý*. Mã mới:
+`NOTICE_NOT_FOUND`, `NOTICE_ITEM_CLOSED`, `NOTICE_ITEM_NOT_RESOLVABLE`, `NOTICE_CHANNEL_LOCKED`. Mọi
+đường quyết trả lời *đã có người xử lý* bằng **`409`** — đơn từ, tạm ứng, giấy xác nhận, đổi thông
+tin, khiếu nại, người phụ thuộc: một ý một mã trạng thái, để giao diện có đúng một nhánh đổi nó thành
+khối *Đã được X duyệt*.
+
+**Realtime: tin chỉ mang tham chiếu, và chỉ tới người đang giữ dòng.** Tin `notice` của feed (§9.4)
+có ba dạng:
+
+| `op` | Mang gì | Tới ai |
+|---|---|---|
+| `new` | `id`, `kind`, `category` | đúng một tài khoản, mọi máy của nó |
+| `item` | `key`, `state`, `outcome`, `actorId`, `at` | mọi tài khoản đang giữ một dòng của việc ấy, mọi máy |
+| `read` | `ids` hoặc `all` | các máy khác của chính tài khoản vừa đọc |
+
+Thứ tự là commit nghiệp vụ → đóng việc → tin `notice` → tin `change` mà bộ chặn phát như mọi lần ghi
+(§9.4); đảo hai bước giữa thì máy thứ hai hỏi lại và đọc đúng bản cũ. Gateway giữ một chỉ mục tài khoản
+→ ổ cắm để mỗi lần báo không phải duyệt mọi ổ đang mở. Trình duyệt chỉ xoá khoá của nhóm mà tin nói tới;
+một lần rải tới năm trăm người thì mỗi trình duyệt chờ ngẫu nhiên 0–3 giây rồi mới hỏi lại, để API không
+nhận năm trăm lượt hỏi trong cùng một giây.
+
+**Đẩy đi qua hàng đợi, không đi trong request.** Rải tin và gửi đẩy là job `notice-fanout` trên hàng
+đợi `notify`: lô 1.000 người, `attempts` cộng `backoff`, idempotent theo `dedupKey`. Chốt một kỳ ba mươi
+nghìn phiếu vì thế trả lời khi kỳ đã chốt, không đợi ba mươi nghìn lần gọi nhà cung cấp (§9.9 luật 5).
+
+- **Thân tin đẩy là tham chiếu**: `{ v: 2, id, kind, category, count, locale }`. Không tên, không số
+  tiền — màn khoá là chỗ người cầm máy hộ cũng đọc được; con số nằm sau lần đăng nhập, cùng lý do
+  §9.11 không đính phiếu vào thư.
+- **Một thẻ cho một việc**: tin sau của cùng việc thay tin trước trên màn khoá, lần nhắc dùng
+  `renotify` để máy vẫn rung. Việc đóng thì **không đẩy thêm** — một tin "đã xong" lúc nửa đêm chỉ
+  đánh thức người không còn việc gì — còn ứng dụng đang mở thì tự đóng các tin cùng thẻ trên máy.
+- **Bàn nhận đẩy đã gom**: tin cho `ADMIN`, `HR`, `PAYROLL` gom trong `NOTICE_PUSH_GATHER_SECONDS` thành
+  một tin *4 việc mới đang chờ bạn*. Mức `CRITICAL` không bao giờ bị gom hay giữ lại.
+- **Chạm là mở `/[locale]/notifications/open/<id>`**: trang ấy đánh dấu đã đọc rồi chuyển tới đúng bản
+  ghi bằng **một** bảng đường mở ở frontend — không có bảng thứ hai trong service worker để lệch.
+- **Chữ màn khoá sinh lúc build** từ `messages/{vi,en}.json` ra `public/sw-words.js`, mang ba dòng đầu
+  của file sinh (CLAUDE.md §2.9); không ai gõ câu vào service worker.
+- **Không có giờ yên lặng mặc định, không có bản tin gộp buổi sáng.** Ai thấy ồn thì tắt đẩy của đúng
+  loại ấy, và mức `CRITICAL` không bị giữ.
+
+**Thư không phải một kênh để bật: nó đi theo việc, không theo thông báo.** Phiếu lương ở §9.11, liên
+kết mật khẩu ở §9.4, cảnh báo sao lưu ở §9.22.2, và thêm đúng một thư: kiosk mất kết nối quá
+`KIOSK_OFFLINE_ALERT_MINUTES` thì báo `ADMIN`, vì lúc ấy có thể không ai mở dashboard. Dựng thêm một
+kênh thư cho các loại trên là gửi hai lần cùng một tin. `EMAIL` ở lại trong `NoticeChannel` để các dòng
+đã ghi còn đọc được, nhưng bảng bật tắt chỉ chào hai kênh có người giao: một ô bật lên mà không giao
+được gì thì tệ hơn là không có ô ấy, đúng loại sai âm thầm §9.4 gọi tên ở chỗ vai mặc định.
+
+| Kênh | Mặc định | Tắt được không |
+|---|---|---|
+| Trong ứng dụng | bật, trừ những loại ghi *tắt* ở bảng tin | tin thì được — dòng vẫn ghi, ở dạng đã cất; việc thì **không** |
+| Đẩy tới máy | như cột *Mặc định* của bảng tin, và bật cho mọi việc trừ ngoại lệ lệch công | được, từng loại; `ADMIN` vẫn nhận việc của mọi bàn và tắt được đẩy theo nhóm |
+
+Trang Cài đặt chỉ liệt kê những loại vai ấy nhận, chia theo nhóm, cộng danh sách máy đang nhận đẩy kèm
+nút gỡ từng máy.
+
+**Chuông và trang `Thông báo`.** Trên máy tính, chuông mở một bảng 400 px có ba tab — *Cần xử lý*,
+*Chưa đọc*, *Tất cả*. Mỗi dòng mang biểu tượng nhóm, một câu gọi tên người và việc (*Nguyễn Văn A ·
+Nghỉ phép 03–04/10 · 2 ngày*), một nhãn trạng thái có chữ (*Chờ xử lý · 3 ngày*, *Đã được Trần B duyệt ·
+08:12*, *Người gửi đã rút*, *Đã chuyển*), chấm chưa đọc và menu `⋯`; chân bảng có *Đánh dấu đã đọc hết*
+và *Xem tất cả*. Trên điện thoại, chuông là đường tới trang. Trang `Thông báo` có tab kèm số, tìm theo
+tên hay mã người, lọc theo nhóm và ngày, chọn nhiều dòng để đánh dấu đọc, chưa đọc hay cất, thẻ thay
+bảng trên điện thoại, và *Tải thêm* kèm tổng. Hộp chờ duyệt đọc `open` trên đường dẫn và mở đúng bảng
+quyết định của việc ấy; việc không còn chờ thì bảng ấy là khối chỉ đọc *Đã được X duyệt lúc T · ghi
+chú*, và một `409` cũng rơi về đúng khối ấy.
+
+**Một máy là một đăng ký, và đăng ký đi theo phiên.** `PushSubscription` khoá theo `endpoint`: điện
+thoại và máy tính của một người là hai đăng ký. Đăng xuất gỡ đúng đăng ký của máy ấy, ở máy chủ và ở
+chính trình duyệt, để một máy dùng chung không đưa tin của người trước lên màn khoá cho người sau.
+Khoá tài khoản hay nghỉ việc gỡ mọi đăng ký của tài khoản ấy, cùng lúc với việc đóng phiên (§9.23).
+Nhà cung cấp trả `404` hay `410` là đăng ký đã chết: xoá ngay, không thử lại, vì nó sẽ không bao giờ
+sống lại.
+
+**Một thông báo hỏng không được làm hỏng việc nó mô tả.** Duyệt một đơn xong mà không gửi được tin thì
+đơn **vẫn đã duyệt**, và việc vẫn đóng ở lượt đối soát — cùng luật với `AuditService`: mất một lời nhắn
+còn hơn huỷ việc đã làm.
+
+**Giữ bao lâu.** Dòng `Notification` sống `NOTICE_KEEP_DAYS` ngày, mặc định 180, tính từ lúc đọc hay
+từ lúc việc của nó đóng. Việc đang mở và các dòng của nó **không bao giờ bị xoá**. Lượt dọn chạy mỗi
+đêm theo lô (§9.22.7). Chuông là chỗ xem lại, không phải sổ: sổ là bảng nghiệp vụ và nhật ký kiểm toán.
+
+**Đổi lược đồ theo luật nở rồi co (§9.22.3c).** Nở: enum mới ở migration riêng bằng
+`ALTER TYPE … ADD VALUE`, bảng `NoticeItem`, cột mới, chỉ mục. Đổ dữ liệu: chủ thể suy từ tám cột tham
+chiếu sẵn có; `payslipId` của một tin khiếu nại thành khiếu nại mới nhất trên phiếu ấy; mỗi chủ thể có
+`REQUEST_WAITING` thành một việc, trạng thái và người xử lý suy từ bảng nghiệp vụ; việc đã đóng thì dòng
+của nó đã đọc từ lúc đóng; các dòng nhắc trùng gộp làm một, giữ dòng mới nhất kèm `remindCount`;
+`dedupKey` có mặt trên mọi dòng trước khi ràng buộc duy nhất ra đời; bảng bật tắt giữ nguyên. Đổi đường
+đọc và ghi. Co, ở lần phát hành sau: bỏ tám cột tham chiếu và `GET /notifications/unread`. Số dòng trước
+và sau mỗi bước ghi vào `docs/measurements/notifications.md`.
+
+**Phép thử bắt buộc.** E2e chạy như CI (§4.6), trong `test/notice-*.e2e-spec.ts`:
+
+- Hai tài khoản `HR` với một đơn không có quản lý: cả hai được báo, *Cần xử lý* mỗi người tăng 1. A
+  duyệt thì dòng của B thành *Đã được A duyệt*, đã đọc, *Cần xử lý* về 0, và ổ cắm của B nhận
+  `op: "item"`; B duyệt sau nhận `409`; người gửi nhận đúng một `REQUEST_DECIDED`.
+- A và B quyết cùng lúc: một `2xx`, một `409`, việc đóng một lần, không có tin quyết trùng.
+- Người gửi rút thì việc `WITHDRAWN`. Tái cơ cấu thì người duyệt cũ `MOVED`, người mới được báo, và lần
+  nhắc sau tới người mới. HR quyết thay quản lý thì dòng của quản lý đóng theo.
+- Mỗi hàng đợi chạy trọn đầu–cuối: tạm ứng hai bước, giấy xác nhận, đổi thông tin, khiếu nại khoá theo
+  chính id của nó, người phụ thuộc.
+- Phạm vi: mọi người nhận mở được bản ghi đích (`200`); quản lý không bao giờ nhận loại về lương; người
+  ngoài nhận `404` ở `/notifications/items/:key`; HR bị hạ vai thấy dòng cũ ở dạng `hidden`; tập người
+  nhận bằng đúng tập người thấy việc ấy trong hộp, cho mọi hàng đợi và mọi vai trong seed.
+- Đã đọc độc lập theo người, và mọi số đếm khớp danh sách của đúng bộ lọc ấy.
+- Lượt quét chạy hai lần, chạy song song, chạy sau một ngày lỡ: mỗi mốc nói đúng một lần; điều kiện mất
+  đi thì việc đóng.
+- Tắt kênh trong ứng dụng vẫn ghi một dòng đã cất và không đẩy.
+- Chốt một kỳ 5.000 phiếu không chờ đẩy — thời gian trước và sau ghi lại.
+- Thân tin đẩy đi qua một schema không có chỗ cho tên hay tiền.
+- Đăng xuất gỡ đăng ký của máy ấy; khoá tài khoản hay nghỉ việc gỡ mọi đăng ký.
+- Lượt dọn giữ mọi việc đang mở. Đổ dữ liệu chạy được trên một bộ dữ liệu hình dạng cũ.
+- Chấm công: lượt dựng đêm mở đúng một việc mỗi người–ngày lệch và không mở gì cho ngày sạch; sửa ngày
+  hay một đơn giải trình được duyệt đóng nó; dựng lại hai lần không mở thêm; đẩy lệch công gom về tối đa
+  một tin mỗi người mỗi ngày và theo đúng mặc định của từng mã; tổng hợp của quản lý chỉ đếm cây của
+  họ, của bàn nhân sự đếm cả công ty; `DAY_CORRECTED` tới người ấy khi HR sửa và không tới khi chính đơn
+  đã duyệt của họ đổi ngày; `SHIFT_CHANGED` chỉ cho ngày từ hôm nay trở đi và có gom; `PUNCH_RECORDED`
+  không bao giờ ghi dòng `Notification` và chỉ đẩy khi đã bật; loạt giả mạo mở một lần và tự đóng sau
+  khoảng yên.
 
 #### 9.21.5 Màn nào lên điện thoại, màn nào không — nói thẳng
 
@@ -9236,6 +9561,7 @@ Giữ mãi mọi thứ vừa tốn vừa là rủi ro. Nhưng dữ liệu lao đ
 | Bảng ngày công | dựng lại được, nhưng giữ vì nó là đầu vào bảng lương đã chốt | |
 | Mẫu khuôn mặt của người đã nghỉ | **xoá ngay** | §9.19 — giữ mới là lỗi |
 | Nhật ký truy cập dữ liệu nhạy cảm | giữ lâu hơn dữ liệu nó mô tả | nó là bằng chứng cho chính việc xoá |
+| Thông báo | `NOTICE_KEEP_DAYS` ngày, mặc định 180, kể từ lúc đọc hay lúc việc của nó đóng; việc đang mở và các dòng của nó giữ tới khi đóng | chuông là chỗ xem lại, không phải sổ: sổ là bảng nghiệp vụ và nhật ký kiểm toán (§9.21.4). Dọn mỗi đêm theo lô |
 
 **Xoá ở bảng chính mà quên bản sao lưu là chưa xoá.** Một lệnh xoá chạy hôm nay không chạm được
 vào cái file `pg_dump` viết tháng trước, nên **bản sao lưu là chỗ trú cuối cùng của dữ liệu lẽ
