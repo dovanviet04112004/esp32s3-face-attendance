@@ -67,7 +67,7 @@ describe("users and audit (e2e)", () => {
     assert.equal(res.body.role, "VIEWER");
     assert.deepEqual(
       Object.keys(res.body).sort(),
-      ["active", "createdAt", "email", "employee", "id", "lastSeenAt", "pending", "role"],
+      ["active", "createdAt", "email", "employee", "id", "lastSeenAt", "mfaEnabledAt", "pending", "role"],
       "the account answer carries a field nobody chose to publish",
     );
     assert.equal(res.body.pending, true, "an account nobody set a password for reads as in use");

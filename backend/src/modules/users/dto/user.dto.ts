@@ -140,6 +140,15 @@ export class AccountView {
   createdAt!: Date;
 
   @ApiProperty({
+    type: String,
+    format: "date-time",
+    nullable: true,
+    description: "When an authenticator app was linked for two-step sign-in; null while none is (KEHOACH 9.4)",
+    example: "2026-10-02T02:30:00.000Z",
+  })
+  mfaEnabledAt!: Date | null;
+
+  @ApiProperty({
     type: AccountEmployeeView,
     nullable: true,
     description: "The employee record it acts as; null for an account linked to nobody",

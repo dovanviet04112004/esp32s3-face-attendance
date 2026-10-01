@@ -25,6 +25,7 @@ import { namedFilter, PrismaService, type IdFilter } from "../../database/prisma
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { AuthService } from "../auth/auth.service.js";
+import { MfaService } from "../auth/mfa.service.js";
 import { LINK_BYTES, UNUSABLE_PASSWORD } from "../auth/password.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
@@ -69,6 +70,7 @@ const ACCOUNT = {
   createdAt: true,
   employeeId: true,
   employee: { select: PERSON },
+  mfa: { select: { enabledAt: true } },
 } as const satisfies Prisma.UserSelect;
 
 type AccountRow = Prisma.UserGetPayload<{ select: typeof ACCOUNT }>;
@@ -82,6 +84,7 @@ function asAccount(row: AccountRow, lastSeenAt: Date | null): AccountView {
     pending: row.passwordHash === UNUSABLE_PASSWORD,
     lastSeenAt,
     createdAt: row.createdAt,
+    mfaEnabledAt: row.mfa?.enabledAt ?? null,
     employee: row.employee,
   };
 }
@@ -176,6 +179,7 @@ export class UsersService {
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
     private readonly auth: AuthService,
+    private readonly mfa: MfaService,
   ) {}
 
 
@@ -681,6 +685,20 @@ export class UsersService {
         meta: { from: held.employeeId, to: saved.employeeId },
       });
     }
+  }
+
+  /** Drop another account's authenticator and sign it out; its next sign-in enrols again (KEHOACH 9.4 rule 7). */
+  async resetMfa(actorId: string, id: string): Promise<void> {
+    if (id === actorId) {
+      throw new ForbiddenException("SELF_ACCOUNT");
+    }
+    if ((await this.db.user.count({ where: { id } })) === 0) {
+      throw new NotFoundException("USER_NOT_FOUND");
+    }
+    if (!(await this.mfa.reset(actorId, id))) {
+      throw new ConflictException("MFA_NOT_ON");
+    }
+    await this.auth.closeAll(id);
   }
 
   /** Delete an account nobody ever signed in to; one with a history is locked instead (KEHOACH 9.4). */

@@ -1534,7 +1534,7 @@
     "TEMPLATE_NOT_FOUND": "This checklist template does not exist.",
     "ROLE_NEEDS_EMPLOYEE": "This role needs a linked employee record.",
     "DESK_NEEDS_EMPLOYEE": "An HR or payroll account must be linked to its holder's own employee record. Ask an administrator to link it on the Accounts page.",
-    "SELF_ACCOUNT": "You cannot demote, lock or delete your own account.",
+    "SELF_ACCOUNT": "You cannot demote, lock, delete or reset two-step sign-in on your own account.",
     "EMPLOYEE_HAS_ACCOUNT": "This employee already has a login.",
     "ACCOUNT_LOCKED": "This account is locked. Unlock it on the Accounts page first.",
     "ACCOUNT_HAS_HISTORY": "This account has signed in before, so it cannot be deleted. Lock it instead.",

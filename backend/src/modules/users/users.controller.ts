@@ -166,4 +166,21 @@ export class UsersController {
   remove(@Param("id") id: string, @Req() req: Request): Promise<void> {
     return this.users.remove(id, actorOf(req));
   }
+
+  @Delete(":id/mfa")
+  @Roles("ADMIN")
+  @AuditedInService()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "Reset another account's two-step sign-in",
+    description:
+      "Drops its authenticator and backup codes and signs it out everywhere; its next sign-in links an app again. Nobody resets their own (KEHOACH 9.4).",
+  })
+  @ApiParam(ACCOUNT_ID)
+  @ApiNoContentResponse()
+  @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND" })
+  @ApiConflictResponse({ type: ErrorBody, description: "MFA_NOT_ON: the account has no authenticator to reset" })
+  resetMfa(@Param("id") id: string, @Req() req: Request): Promise<void> {
+    return this.users.resetMfa(actorOf(req), id);
+  }
 }

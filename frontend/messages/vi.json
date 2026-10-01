@@ -1534,7 +1534,7 @@
     "TEMPLATE_NOT_FOUND": "Không tìm thấy mẫu danh sách việc này.",
     "ROLE_NEEDS_EMPLOYEE": "Vai này phải gắn với một hồ sơ nhân viên.",
     "DESK_NEEDS_EMPLOYEE": "Tài khoản nhân sự và tài khoản lương phải gắn với hồ sơ nhân viên của chính người dùng nó. Nhờ quản trị viên gắn hồ sơ ở trang Tài khoản.",
-    "SELF_ACCOUNT": "Không thể hạ vai, khoá hay xoá tài khoản của chính mình.",
+    "SELF_ACCOUNT": "Không thể hạ vai, khoá, xoá hay đặt lại xác minh hai bước của chính tài khoản mình.",
     "EMPLOYEE_HAS_ACCOUNT": "Nhân viên này đã có tài khoản đăng nhập.",
     "ACCOUNT_LOCKED": "Tài khoản đang bị khoá. Mở khoá ở trang Tài khoản trước.",
     "ACCOUNT_HAS_HISTORY": "Tài khoản này đã từng đăng nhập nên không xoá được. Hãy khoá nó.",
