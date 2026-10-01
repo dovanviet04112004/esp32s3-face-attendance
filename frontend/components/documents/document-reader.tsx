@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
+import { useReadSubject } from "@/components/notifications/notice-row";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { useNotify } from "@/components/ui/notify";
 import { StatePill } from "@/components/ui/pill";
@@ -44,6 +45,7 @@ export function DocumentReader({ only = "", linked = "", onUnlink }: { only?: Re
   const mine = useMyDocuments();
   const [picked, setPicked] = useState<ToRead | null>(null);
   const open = picked ?? mine.data?.find((row) => row.documentId === linked || row.versionId === linked) ?? null;
+  useReadSubject("DOCUMENT", open?.versionId);
 
   function setOpen(next: ToRead | null): void {
     setPicked(next);

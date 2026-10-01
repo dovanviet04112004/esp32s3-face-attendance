@@ -16,6 +16,7 @@ import { useFormatter, useNow, useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useReadSubject } from "@/components/notifications/notice-row";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
@@ -109,6 +110,7 @@ export default function DevicePage() {
   const format = useFormatter();
   const params = useParams<{ id: string }>();
   const id = params.id;
+  useReadSubject("DEVICE", id);
   const role = useSession((s) => s.role);
   const cache = useQueryClient();
   const notify = useNotify();

@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Suspense, useState, type FormEvent } from "react";
 
+import { useReadSubject } from "@/components/notifications/notice-row";
 import { DisputeCard, type Dispute } from "@/components/payroll/dispute-card";
 import { PayslipView, useLineName, type Payslip } from "@/components/payroll/payslip-view";
 import { Failed } from "@/components/ui/failed";
@@ -109,6 +110,7 @@ function MyPayslips() {
   const asked = search.get("slip");
   const chosen = (asked && slips?.some((one) => one.id === asked) ? asked : null) ?? slips?.[0]?.id ?? null;
   const chosenRow = slips?.find((one) => one.id === chosen);
+  useReadSubject("PAYSLIP", chosen);
 
   const slip = useQuery({
     queryKey: ["payslips", chosen],

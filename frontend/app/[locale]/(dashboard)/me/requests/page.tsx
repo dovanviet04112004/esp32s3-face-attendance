@@ -6,6 +6,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Suspense, useState, type FormEvent } from "react";
 
+import { useReadSubject } from "@/components/notifications/notice-row";
 import {
   RequestCard,
   StatePill as RequestPill,
@@ -106,6 +107,7 @@ function MyRequests() {
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
+  useReadSubject("REQUEST", url.open);
   // A link from elsewhere names one request; it opens here whether or not it is on the first page.
   const opened = useQuery({
     queryKey: ["requests", "one", url.open],

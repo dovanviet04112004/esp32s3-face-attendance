@@ -3,6 +3,7 @@
 import { ArchiveIcon, ArrowCounterClockwiseIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useNow, useTranslations } from "next-intl";
+import { useEffect } from "react";
 
 import { useShortSpan } from "@/components/requests/inbox-preview";
 import { useRequestWords } from "@/components/requests/request-card";
@@ -130,6 +131,20 @@ export function useNoticeMarks() {
     },
     onError: (fell: unknown) => notify.failed(fell),
   });
+}
+
+/** Every notice about one record reads as read once its page opens, quietly (KEHOACH 9.21.4). */
+export function useReadSubject(type: string, id: string | null | undefined): void {
+  const cache = useQueryClient();
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+    api.post<{ changed: number }>("/notifications/read", { subject: { type, id } }).then(
+      (marked) => marked.data.changed > 0 && void cache.invalidateQueries({ queryKey: NOTICES_KEY }),
+      () => undefined,
+    );
+  }, [type, id]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** The row menu: read or unread, archive or bring back. */

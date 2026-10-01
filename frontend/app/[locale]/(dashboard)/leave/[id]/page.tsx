@@ -9,6 +9,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 
 import { COUNTS_KEY } from "@/components/nav/waiting-count";
+import { useReadSubject } from "@/components/notifications/notice-row";
 import {
   DecisionFields,
   RequestCard,
@@ -70,6 +71,7 @@ export default function LeaveDetailPage() {
   const format = useFormatter();
   const words = useRequestWords();
   const params = useParams<{ id: string }>();
+  useReadSubject("REQUEST", params.id);
   const cache = useQueryClient();
   const notify = useNotify();
   const faultOf = useFault();

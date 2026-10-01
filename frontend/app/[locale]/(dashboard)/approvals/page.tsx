@@ -8,6 +8,7 @@ import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { COUNTS_KEY, QUEUE_ROLES, WAITING_POLL_MS, useInboxCounts, type Queue } from "@/components/nav/waiting-count";
+import { useReadSubject } from "@/components/notifications/notice-row";
 import { useLineName } from "@/components/payroll/payslip-view";
 import {
   DecisionFields,
@@ -439,6 +440,7 @@ function RequestsQueue({ params, filtered, openId, onOpened }: QueueProps) {
   const asked = useQueue<InboxRow>(["requests", "inbox"], "/requests/inbox", params);
   const { rows, paging } = usePaging(asked);
   const [open, setOpen] = useState<InboxRow | null>(null);
+  useReadSubject("REQUEST", open?.id);
   const [bulk, setBulk] = useState<{ approve: boolean; ids: string[] } | null>(null);
   const [reason, setReason] = useState("");
   const [bulkFault, setBulkFault] = useState<string | null>(null);
@@ -676,6 +678,7 @@ function LettersQueue({ params, filtered, ...link }: QueueProps) {
     setOpen(row);
   };
   useLinkedRow(link, asked, show, "/certificates");
+  useReadSubject("CERTIFICATE", open?.id);
   const said = (row: Letter): Said | null =>
     !row.state || row.state === "REQUESTED"
       ? null
@@ -760,6 +763,7 @@ function ChangesQueue({ params, filtered, ...link }: QueueProps) {
     setOpen(row);
   };
   useLinkedRow(link, asked, show, "/profile-changes");
+  useReadSubject("PROFILE_CHANGE", open?.id);
   const said = (row: Change): Said | null =>
     !row.state || row.state === "PENDING"
       ? null
@@ -859,6 +863,7 @@ function DisputesQueue({ params, filtered, ...link }: QueueProps) {
   };
   // A dispute notice names the payslip it is about, so a link may carry either id.
   useLinkedRow(link, asked, show, "/payslip-disputes", (row, id) => row.id === id || row.payslipId === id);
+  useReadSubject("DISPUTE", open?.id);
   const said = (row: Claim): Said | null =>
     !row.state || row.state === "OPEN"
       ? null
@@ -1015,6 +1020,7 @@ function AdvancesQueue({ params, filtered, paying, ...link }: QueueProps & { pay
     setOpen(row);
   };
   useLinkedRow(link, asked, show, "/advances");
+  useReadSubject("ADVANCE", open?.id);
   const said = (row: Advance): Said | null => {
     if (!row.state || row.state === (paying ? "APPROVED" : "PENDING")) {
       return null;
@@ -1151,6 +1157,7 @@ function DependentsQueue({ params, filtered, ...link }: QueueProps) {
     setOpen(row);
   };
   useLinkedRow(link, asked, show, "/dependents");
+  useReadSubject("DEPENDENT", open?.id);
   const said = (row: Dependent): Said | null =>
     !row.state || row.state === "PENDING"
       ? null
