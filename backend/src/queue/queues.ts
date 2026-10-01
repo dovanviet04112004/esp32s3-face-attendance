@@ -17,6 +17,7 @@ export const JOB = {
   contractsEnding: "contracts-ending",
   requestsStale: "requests-stale",
   backupWatch: "backup-watch",
+  noticeReconcile: "notice-reconcile",
   passwordSetup: "password-setup",
   passwordChanged: "password-changed",
   profileNotice: "profile-notice",
@@ -54,6 +55,11 @@ export interface BackupWatchJob {
   type: typeof JOB.backupWatch;
 }
 
+/** Closes and regroups items from the business tables; running it twice changes nothing more. */
+export interface NoticeReconcileJob {
+  type: typeof JOB.noticeReconcile;
+}
+
 /** What the letter around the link says: a welcome, or a recovery (KEHOACH 9.4). */
 export type SetupReason = "opened" | "forgot";
 
@@ -81,6 +87,7 @@ export type NotifyJob =
   | ContractsEndingJob
   | RequestsStaleJob
   | BackupWatchJob
+  | NoticeReconcileJob
   | PasswordSetupJob
   | PasswordChangedJob
   | ProfileNoticeJob;

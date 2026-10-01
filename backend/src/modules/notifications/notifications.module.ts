@@ -10,6 +10,7 @@ import { NoticeItemsService } from "./notice-items.service.js";
 import { NotificationsController } from "./notifications.controller.js";
 import { NotificationsService } from "./notifications.service.js";
 import { StaleRequestsService } from "./stale-requests.service.js";
+import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
 
 @Global()
 @Module({
@@ -22,6 +23,7 @@ import { StaleRequestsService } from "./stale-requests.service.js";
     ContractAlertsService,
     StaleRequestsService,
     BackupWatchService,
+    ReconcileSweep,
     MailerService,
   ],
   exports: [
@@ -31,6 +33,7 @@ import { StaleRequestsService } from "./stale-requests.service.js";
     ContractAlertsService,
     StaleRequestsService,
     BackupWatchService,
+    ReconcileSweep,
     MailerService,
   ],
 })

@@ -10,6 +10,7 @@ import { MailerService } from "../../modules/notifications/mailer.service.js";
 import { passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
 import { StaleRequestsService } from "../../modules/notifications/stale-requests.service.js";
+import { ReconcileSweep } from "../../modules/notifications/sweeps/reconcile.sweep.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { DEFAULT_MAIL_LOCALE } from "../../modules/payroll/mail-text.js";
 import { QUEUE, type NotifyJob, type PasswordChangedJob, type PasswordSetupJob } from "../queues.js";
@@ -28,6 +29,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly profile: ProfileService,
     private readonly stale: StaleRequestsService,
     private readonly backups: BackupWatchService,
+    private readonly reconcile: ReconcileSweep,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
   ) {}
@@ -47,6 +49,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === "backup-watch") {
           await this.backups.sweep();
+          return;
+        }
+        if (body.type === "notice-reconcile") {
+          await this.reconcile.sweep();
           return;
         }
         if (body.type === "password-setup") {

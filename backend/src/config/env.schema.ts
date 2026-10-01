@@ -122,6 +122,8 @@ export const envSchema = z
       .string()
       .default("fcm.googleapis.com,updates.push.services.mozilla.com,.push.apple.com,.notify.windows.com")
       .transform((listed) => listed.split(",").map((one) => one.trim().toLowerCase()).filter(Boolean)),
+    // A cron pattern in APP_TIMEZONE; empty turns the reconcile off (KEHOACH 9.21.4).
+    NOTICE_RECONCILE_CRON: z.string().optional(),
 
     MQTT_URL: z.string().min(1),
     MQTT_USERNAME: z.string().min(1),
@@ -165,6 +167,8 @@ export const envSchema = z
     API_DOCS: env.API_DOCS ?? (env.NODE_ENV === "production" ? "admin" : "open"),
     // Parallel e2e suites share one broker, and one shared id would pass the session between them.
     MQTT_CLIENT_ID: env.MQTT_CLIENT_ID ?? (env.NODE_ENV === "test" ? undefined : DEFAULT_MQTT_CLIENT_ID),
+    // An e2e suite runs the reconcile itself; an hourly one landing mid-suite would rewrite its fixtures.
+    NOTICE_RECONCILE_CRON: env.NOTICE_RECONCILE_CRON ?? (env.NODE_ENV === "test" ? "" : "0 * * * *"),
   }));
 
 export type Env = z.infer<typeof envSchema>;
