@@ -16,7 +16,7 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { namedFilter, PrismaService, type IdFilter } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type LeavingsNowJob, type PasswordSetupJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -871,13 +871,27 @@ export class EmployeesService implements OnModuleInit {
   }
 
   private async filterWhere(query: EmployeeFilterDto, visible: number[] | null): Promise<Prisma.EmployeeWhereInput> {
-    const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
-    return this.whereOf(query, visible, branch);
+    const [branch, named] = await this.narrowings(query);
+    return this.whereOf(query, visible, branch, named);
+  }
+
+  private narrowings(query: EmployeeFilterDto): Promise<[string[] | null, IdFilter | null]> {
+    const term = query.search?.trim();
+    return Promise.all([
+      query.departmentId ? departmentSubtree(this.db, query.departmentId) : null,
+      term ? namedFilter(this.db, term) : null,
+    ]);
   }
 
   /** The directory's one where-builder: the list, the export, the counts and a bulk selection all read it. */
-  private whereOf(query: EmployeeFilterDto, visible: number[] | null, branch: string[] | null): Prisma.EmployeeWhereInput {
-    const readiness = [
+  private whereOf(
+    query: EmployeeFilterDto,
+    visible: number[] | null,
+    branch: string[] | null,
+    named: IdFilter | null,
+  ): Prisma.EmployeeWhereInput {
+    const narrowed = [
+      named === null ? null : { id: named },
       query.account ? ACCOUNT_WHERE[query.account] : null,
       query.face ? FACE_WHERE[query.face] : null,
       query.shift ? shiftWhere(query.shift, dayAsDate(this.today())) : null,
@@ -887,15 +901,7 @@ export class EmployeesService implements OnModuleInit {
       ...(branch ? { departmentId: { in: branch } } : {}),
       ...(query.active === undefined ? {} : { active: query.active }),
       ...(query.ending ? { active: true, contracts: { some: this.endingWindow(query) } } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { code: { contains: query.search, mode: "insensitive" } },
-              { fullName: { contains: query.search, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-      ...(readiness.length > 0 ? { AND: readiness } : {}),
+      ...(narrowed.length > 0 ? { AND: narrowed } : {}),
     };
   }
 
@@ -932,10 +938,12 @@ export class EmployeesService implements OnModuleInit {
    */
   async readiness(query: EmployeeFilterDto, viewer: Viewer): Promise<ReadinessCounts> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
+    const [branch, named] = await this.narrowings(query);
     const today = dayAsDate(this.today());
     const countOf = (without: keyof EmployeeFilterDto, option: Prisma.EmployeeWhereInput) =>
-      this.db.employee.count({ where: { AND: [this.whereOf({ ...query, [without]: undefined }, visible, branch), option] } });
+      this.db.employee.count({
+        where: { AND: [this.whereOf({ ...query, [without]: undefined }, visible, branch, named), option] },
+      });
     const [account, face, shift, faceAll] = await Promise.all([
       countEach(ACCOUNT_FILTERS, (one) => countOf("account", ACCOUNT_WHERE[one])),
       countEach(FACE_FILTERS, (one) => countOf("face", FACE_WHERE[one])),

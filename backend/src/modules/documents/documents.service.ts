@@ -13,7 +13,7 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { codeHas, foldedHas, PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
@@ -43,9 +43,11 @@ function monthsAfter(from: Date, months: number): Date {
   return new Date(Date.UTC(year, month, Math.min(from.getUTCDate(), lastDay)));
 }
 
-function needleOf(search: string | undefined): string | null {
-  const held = search?.trim();
-  return held ? `%${held.replace(/[\\%_]/g, (hit) => `\\${hit}`)}%` : null;
+function personMatch(alias: Prisma.Sql, search: string | undefined): Prisma.Sql {
+  const term = search?.trim();
+  return term
+    ? Prisma.sql`AND (${codeHas(Prisma.sql`${alias}."code"`, term)} OR ${foldedHas(Prisma.sql`${alias}."fullName"`, term)})`
+    : Prisma.empty;
 }
 
 export interface ToRead {
@@ -273,13 +275,12 @@ export class DocumentsService {
     }
     const target = wanted.document;
     const after = query.cursor ? decodeCursor(query.cursor) : null;
-    const needle = needleOf(query.search);
     const reach = Prisma.sql`
        WHERE e."active" = true
          AND (${target.departmentId}::text IS NULL OR e."departmentId" = ${target.departmentId})
          AND (${target.jobTitleId}::text IS NULL OR e."jobTitleId" = ${target.jobTitleId})`;
     const narrowed = Prisma.sql`${reach}
-         AND (${needle}::text IS NULL OR e."code" ILIKE ${needle} OR e."fullName" ILIKE ${needle})
+         ${personMatch(Prisma.raw("e"), query.search)}
          ${query.unsigned ? Prisma.sql`AND a."ackAt" IS NULL` : Prisma.empty}`;
     const [rows, counted, unsigned] = await Promise.all([
       this.db.$queryRaw<ReaderRow[]>`
@@ -432,13 +433,12 @@ export class DocumentsService {
       return { rows: [], total: 0, next: null };
     }
     const after = query.cursor ? decodeCursor(query.cursor).sortValue : null;
-    const needle = needleOf(query.search);
     const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
     const today = localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true }));
     const whom = (alias: Prisma.Sql): Prisma.Sql => Prisma.sql`
       ${visible === null ? Prisma.empty : Prisma.sql`AND ${alias}."id" = ANY(${visible}::int[])`}
       AND (${query.employeeId ?? null}::int IS NULL OR ${alias}."id" = ${query.employeeId ?? null}::int)
-      AND (${needle}::text IS NULL OR ${alias}."code" ILIKE ${needle} OR ${alias}."fullName" ILIKE ${needle})
+      ${personMatch(alias, query.search)}
       ${branch === null ? Prisma.empty : Prisma.sql`AND ${alias}."departmentId" = ANY(${branch}::text[])`}`;
     const rows = await this.db.$queryRaw<
       {

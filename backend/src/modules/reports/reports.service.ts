@@ -19,12 +19,12 @@ import { CacheService } from "../../common/cache/cache.service.js";
 import type { Env } from "../../config/env.schema.js";
 import { Prisma, type LaborCategory } from "@prisma/client";
 
-import { PrismaService } from "../../database/prisma.service.js";
+import { codeHas, foldedHas, PrismaService } from "../../database/prisma.service.js";
 import { ENDING_WINDOW_DAYS } from "../employees/dto/employee.dto.js";
 import { PolicyService } from "../policy/policy.service.js";
 import { TallyRangeDto } from "./dto/report.dto.js";
 import { dayAsDate, dayWindow, localDay, minutesIntoDay } from "../timesheet/local-day.js";
-import { branchOf, likeOf } from "../timesheet/timesheet.service.js";
+import { branchOf } from "../timesheet/timesheet.service.js";
 import { JOB, QUEUE, type ReportJob } from "../../queue/queues.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 
@@ -211,7 +211,7 @@ function slotOf(from: Date, to: Date, query: TallyRangeDto): string {
 function tallyFilter(visible: number[] | null, query: TallyRangeDto, zone: string): Prisma.Sql {
   const term = query.search?.trim();
   return Prisma.sql`${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
-    ${term ? Prisma.sql`AND (e."fullName" ILIKE ${likeOf(term)} OR e."code" ILIKE ${likeOf(term)})` : Prisma.empty}
+    ${term ? Prisma.sql`AND (${foldedHas(Prisma.sql`e."fullName"`, term)} OR ${codeHas(Prisma.sql`e."code"`, term)})` : Prisma.empty}
     ${query.departmentId ? Prisma.sql`AND e."departmentId" IN (${branchOf(query.departmentId)})` : Prisma.empty}
     ${query.late ? Prisma.sql`AND a."employeeId" IN (${lateInRange(query, zone)})` : Prisma.empty}`;
 }

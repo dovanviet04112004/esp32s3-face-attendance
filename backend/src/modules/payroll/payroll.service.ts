@@ -25,7 +25,7 @@ import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { namedFilter, PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type PayrollJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -1226,7 +1226,7 @@ export class PayrollService {
     if (query.employeeId !== undefined && visible !== null && !visible.includes(query.employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
-    const where = this.payslipWhere(query, visible);
+    const where = await this.payslipWhere(query, visible);
     const [rows, found] = await Promise.all([
       this.db.payslip.findMany({
         where,
@@ -1256,7 +1256,7 @@ export class PayrollService {
   async payslipsCsv(viewer: Viewer, query: ListPayslipsDto): Promise<string> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const rows = await this.db.payslip.findMany({
-      where: this.payslipWhere(query, visible),
+      where: await this.payslipWhere(query, visible),
       include: PAYSLIP_ROW,
       orderBy: [{ employee: { code: "asc" } }, { id: "asc" }],
     });
@@ -1278,7 +1278,7 @@ export class PayrollService {
   }
 
   // Both clauses write the same key, so a spread would let the scope overwrite the asked-for employee.
-  private payslipWhere(query: ListPayslipsDto, visible: number[] | null): Prisma.PayslipWhereInput {
+  private async payslipWhere(query: ListPayslipsDto, visible: number[] | null): Promise<Prisma.PayslipWhereInput> {
     const term = query.search?.trim();
     return {
       AND: [
@@ -1288,16 +1288,7 @@ export class PayrollService {
         // A draft is a number nobody has stood behind yet, so only the desk reads one.
         visible === null ? {} : { employeeId: { in: visible }, state: { not: "DRAFT" } },
         query.issued ? { state: { not: "DRAFT" } } : {},
-        term
-          ? {
-              employee: {
-                OR: [
-                  { code: { contains: term, mode: "insensitive" } },
-                  { fullName: { contains: term, mode: "insensitive" } },
-                ],
-              },
-            }
-          : {},
+        term ? { employeeId: await namedFilter(this.db, term) } : {},
       ],
     };
   }

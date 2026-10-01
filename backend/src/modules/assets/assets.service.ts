@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { Asset, AssetState, AssetTransfer, Prisma } from "@prisma/client";
+import { Prisma, type Asset, type AssetState, type AssetTransfer } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
@@ -9,7 +9,7 @@ import { toExcelCsv } from "../../common/csv.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { codeHas, employeesNamed, foldedHas, PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { localDay } from "../timesheet/local-day.js";
@@ -58,23 +58,12 @@ function asRow(row: RegisterRow): AssetRow {
   return { ...asset, issuedAt: asset.state === "ISSUED" ? (transfers[0]?.at ?? null) : null };
 }
 
-function filterOf(query: AssetFilterDto, withState = true): Prisma.AssetWhereInput {
-  const needle = query.search?.trim() ? { contains: query.search.trim(), mode: "insensitive" as const } : null;
+function filterOf(query: AssetFilterDto, matched: string[] | null, withState = true): Prisma.AssetWhereInput {
   return {
     ...(withState && query.state ? { state: query.state } : {}),
     ...(query.kind ? { kind: query.kind } : {}),
     ...(query.holderId ? { holderId: query.holderId } : {}),
-    ...(needle
-      ? {
-          OR: [
-            { code: needle },
-            { name: needle },
-            { serialNo: needle },
-            { holder: { fullName: needle } },
-            { holder: { code: needle } },
-          ],
-        }
-      : {}),
+    ...(matched === null ? {} : { id: { in: matched } }),
   };
 }
 
@@ -88,7 +77,7 @@ export class AssetsService {
   ) {}
 
   async list(query: ListAssetsDto): Promise<Page<AssetRow>> {
-    const where = filterOf(query);
+    const where = filterOf(query, await this.matching(query));
     // Code is unique, so the cursor resumes on it with no tiebreak (KEHOACH 9.9 rule 3).
     const [rows, found] = await Promise.all([
       this.db.asset.findMany({
@@ -107,7 +96,7 @@ export class AssetsService {
   /** The register under the list's own filters, as a file Excel opens. */
   async exportCsv(query: AssetFilterDto): Promise<string> {
     const rows = await this.db.asset.findMany({
-      where: filterOf(query),
+      where: filterOf(query, await this.matching(query)),
       include: REGISTER_ROW,
       orderBy: { code: "asc" },
       take: kExportMax,
@@ -131,8 +120,9 @@ export class AssetsService {
 
   /** How many assets stand in each state under the other filters, and the kinds on the register. */
   async counts(query: AssetFilterDto): Promise<AssetCounts> {
+    const matched = await this.matching(query);
     const [grouped, kinds] = await Promise.all([
-      this.db.asset.groupBy({ by: ["state"], where: filterOf(query, false), _count: { _all: true } }),
+      this.db.asset.groupBy({ by: ["state"], where: filterOf(query, matched, false), _count: { _all: true } }),
       this.db.asset.findMany({ distinct: ["kind"], select: { kind: true }, orderBy: { kind: "asc" } }),
     ]);
     const states: Record<AssetState, number> = { IN_STOCK: 0, ISSUED: 0, RETURNED: 0, RETIRED: 0, LOST: 0 };
@@ -140,6 +130,20 @@ export class AssetsService {
       states[row.state] = row._count._all;
     }
     return { states, kinds: kinds.map((row) => row.kind) };
+  }
+
+  /** The assets a typed code, serial, name or holder reaches; null for an empty search. */
+  private async matching(query: AssetFilterDto): Promise<string[] | null> {
+    const term = query.search?.trim();
+    if (!term) {
+      return null;
+    }
+    const held = await employeesNamed(this.db, term);
+    const rows = await this.db.$queryRaw<{ id: string }[]>`
+      SELECT a."id" FROM "Asset" a
+       WHERE ${codeHas(Prisma.sql`a."code"`, term)} OR ${codeHas(Prisma.sql`a."serialNo"`, term)}
+          OR ${foldedHas(Prisma.sql`a."name"`, term)} OR a."holderId" = ANY(${held}::int[])`;
+    return rows.map((row) => row.id);
   }
 
   async create(viewer: Viewer, body: CreateAssetDto): Promise<Asset> {

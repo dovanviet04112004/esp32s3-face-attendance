@@ -5,7 +5,7 @@ import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { namedFilter, PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { skipOf, type BulkSkip, type Chosen } from "../employees/bulk.service.js";
@@ -176,10 +176,10 @@ export class ShiftsService {
   /** Newest first, paged on (validFrom, id) so a busy shift still pages (KEHOACH 9.9 rule 3). */
   async assignments(id: string, query: ListAssignmentsDto): Promise<Page<RosteredAssignment>> {
     await this.get(id);
-    const needle = query.search?.trim() ? { contains: query.search.trim(), mode: "insensitive" as const } : null;
+    const term = query.search?.trim();
     const where: Prisma.ShiftAssignmentWhereInput = {
       shiftId: id,
-      ...(needle ? { employee: { OR: [{ code: needle }, { fullName: needle }] } } : {}),
+      ...(term ? { employeeId: await namedFilter(this.db, term) } : {}),
     };
     const after = query.cursor ? decodeCursor(query.cursor) : null;
     const resume: Prisma.ShiftAssignmentWhereInput = after

@@ -228,6 +228,33 @@ describe("paging (e2e)", () => {
     );
   });
 
+  it("finds a person in the directory however the name is typed", async () => {
+    const found = async (typed: string): Promise<string[]> => {
+      const res = await request(http)
+        .get(`/employees?search=${encodeURIComponent(typed)}`)
+        .set("Authorization", `Bearer ${token}`);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      return (res.body.rows as { code: string }[]).map((row) => row.code);
+    };
+    for (const typed of ["nguoi bi phan", "NGUOI BI PHAN", "Nguoi Bi Phan", PERSON.normalize("NFD"), CODE.toLowerCase()]) {
+      assert.ok((await found(typed)).includes(CODE), `"${typed}" missed ${PERSON}`);
+    }
+    for (const typed of ["nguoi%bi", "nguoi_bi"]) {
+      assert.ok(!(await found(typed)).includes(CODE), `"${typed}" read a typed wildcard as a pattern`);
+    }
+  });
+
+  it("narrows the roll-up by a name typed without its accents", async () => {
+    const span = "from=2020-01-01T00:00:00.000Z&to=2099-01-01T00:00:00.000Z";
+    const res = await request(http)
+      .get(`/reports/attendance?${span}&search=${encodeURIComponent("nguoi bi phan trang")}`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const rows = res.body.rows as { code: string; fullName: string }[];
+    assert.ok(rows.some((row) => row.code === CODE), "an unaccented name missed its accented row");
+    assert.ok(rows.every((row) => row.fullName === PERSON), "the folded filter let somebody else through");
+  });
+
   it("pages the attendance roll-up by name and carries on where it stopped", async () => {
     const span = "from=2020-01-01T00:00:00.000Z&to=2099-01-01T00:00:00.000Z";
     const res = await request(http)

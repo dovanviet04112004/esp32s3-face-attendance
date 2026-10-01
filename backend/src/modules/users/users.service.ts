@@ -19,7 +19,7 @@ import { JOB, QUEUE, type PasswordSetupJob, type SetupReason } from "../../queue
 import type { Env } from "../../config/env.schema.js";
 import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { namedFilter, PrismaService, type IdFilter } from "../../database/prisma.service.js";
 
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -99,6 +99,7 @@ export function statusWhere(status: AccountStatus): Prisma.UserWhereInput {
 function accountWhere(
   query: UserFilterDto,
   branch: string[] | null,
+  named: IdFilter | null,
   facet?: "role" | "status",
 ): Prisma.UserWhereInput {
   const parts: Prisma.UserWhereInput[] = [];
@@ -112,8 +113,9 @@ function accountWhere(
     parts.push({ employee: { departmentId: { in: branch } } });
   }
   if (query.search) {
-    const term = { contains: query.search, mode: "insensitive" as const };
-    parts.push({ OR: [{ email: term }, { employee: { code: term } }, { employee: { fullName: term } }] });
+    parts.push({
+      OR: [{ email: { contains: query.search, mode: "insensitive" } }, { employeeId: named ?? { in: [] } }],
+    });
   }
   return { AND: parts };
 }
@@ -268,8 +270,8 @@ export class UsersService {
   }
 
   async list(query: ListUsersDto): Promise<Page<AccountView>> {
-    const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
-    const where = accountWhere(query, branch);
+    const [branch, named] = await this.narrowings(query);
+    const where = accountWhere(query, branch, named);
     const from = query.cursor ? decodeCursor(query.cursor) : null;
     const resumed: Prisma.UserWhereInput = from
       ? {
@@ -299,9 +301,9 @@ export class UsersService {
 
   /** How many accounts each role and each status holds under the other filters. */
   async counts(query: UserFilterDto): Promise<AccountCounts> {
-    const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
-    const forRoles = accountWhere(query, branch, "role");
-    const forStatus = accountWhere(query, branch, "status");
+    const [branch, named] = await this.narrowings(query);
+    const forRoles = accountWhere(query, branch, named, "role");
+    const forStatus = accountWhere(query, branch, named, "status");
     const [roles, active, locked, pending] = await Promise.all([
       this.db.user.groupBy({ by: ["role"], where: forRoles, _count: { _all: true } }),
       this.db.user.count({ where: { AND: [forStatus, statusWhere("active")] } }),
@@ -313,6 +315,14 @@ export class UsersService {
       byRole[one.role] = one._count._all;
     }
     return { byRole, byStatus: { active, locked, pending } };
+  }
+
+  private narrowings(query: UserFilterDto): Promise<[string[] | null, IdFilter | null]> {
+    const term = query.search?.trim();
+    return Promise.all([
+      query.departmentId ? departmentSubtree(this.db, query.departmentId) : null,
+      term ? namedFilter(this.db, term) : null,
+    ]);
   }
 
   /** The signed-in account as its own menu shows it. */
