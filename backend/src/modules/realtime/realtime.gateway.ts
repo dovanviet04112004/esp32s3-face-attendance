@@ -40,6 +40,7 @@ const MS_PER_SECOND = 1000;
  */
 interface Watcher {
   viewer: Viewer;
+  sessionId: string;
   reach: Set<number> | null;
   goodUntilMs: number;
 }
@@ -94,6 +95,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
     this.watchers.set(client.id, {
       viewer: ticket.viewer,
+      sessionId: ticket.claims.sid,
       reach: visible === null ? null : new Set(visible),
       goodUntilMs: ticket.goodUntilMs,
     });
@@ -140,7 +142,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   @OnEvent(SESSIONS_CUT)
   drop(cut: SessionsCut): void {
     for (const [id, watcher] of this.watchers) {
-      if (cut.userIds.includes(watcher.viewer.userId)) {
+      if (cut.userIds.includes(watcher.viewer.userId) || cut.sessionIds?.includes(watcher.sessionId)) {
         this.server?.to(id).disconnectSockets(true);
         this.watchers.delete(id);
       }

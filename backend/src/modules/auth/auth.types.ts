@@ -25,11 +25,12 @@ export const REFRESH_COOKIE = "kiosk_refresh";
 export const DOCS_PATH = "/docs";
 export const DOCS_COOKIE = "kiosk_docs";
 
-/** Raised when every session of these accounts closes, so open sockets close with them (KEHOACH 9.23). */
+/** Raised when sessions close, all of an account's or only the named ones, so their sockets close too (KEHOACH 9.23). */
 export const SESSIONS_CUT = "auth.sessionsCut";
 
 export interface SessionsCut {
   userIds: string[];
+  sessionIds?: string[];
 }
 
 export const JWT_ALGORITHM = "HS256";

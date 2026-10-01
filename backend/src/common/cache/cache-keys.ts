@@ -22,6 +22,7 @@ export const GUARD = {
   loginLock: (emailHash: string) => `auth:lock:${emailHash}`,
   addressMisses: (address: string) => `auth:ipmiss:${address}`,
   accessCutoff: (userId: string) => `auth:cutoff:${userId}`,
+  sessionCut: (sessionId: string) => `auth:cutsid:${sessionId}`,
 } as const;
 
 /** Rate counters, one per bucket and caller across every route that names the bucket (KEHOACH 7.2). */

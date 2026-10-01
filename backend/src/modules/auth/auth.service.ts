@@ -245,6 +245,11 @@ export class AuthService {
     if (pushEndpoint) {
       await this.db.pushSubscription.deleteMany({ where: { userId, endpoint: pushEndpoint } });
     }
+    const keepS = Math.ceil(ttlToMs(this.config.get("JWT_ACCESS_TTL", { infer: true })) / 1000);
+    if ((await this.redis.quick((client) => client.set(GUARD.sessionCut(sessionId), "1", "EX", keepS))) === null) {
+      this.log.warn("session cut not written; its access token runs to its own expiry");
+    }
+    this.bus.emit(SESSIONS_CUT, { userIds: [], sessionIds: [sessionId] } satisfies SessionsCut);
   }
 
   /** Sign every device out at once: leaving, a new role, or a password nobody else knows. */
@@ -274,8 +279,12 @@ export class AuthService {
 
   /** Whether an access token predates its account's cutoff (KEHOACH 9.23 rule 5). */
   async accessCut(claims: Pick<AccessClaims, "sub" | "sid">, iat: number): Promise<boolean> {
-    const at = await this.redis.quick((client) => client.get(GUARD.accessCutoff(claims.sub)));
-    if (at === null || iat > Number(at)) {
+    const keys = [GUARD.accessCutoff(claims.sub), GUARD.sessionCut(claims.sid)];
+    const [at, sessionCut] = (await this.redis.quick((client) => client.mget(...keys))) ?? [];
+    if (sessionCut) {
+      return true;
+    }
+    if (!at || iat > Number(at)) {
       return false;
     }
     if (iat < Number(at)) {
