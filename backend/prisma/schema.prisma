@@ -1516,14 +1516,6 @@ model Notification {
   // employee row (KEHOACH 9.21.4).
   userId     String
   kind       NoticeKind
-  requestId  String?
-  advanceId  String?
-  periodId   String?
-  payslipId  String?
-  contractId String?
-  certificateId   String?
-  profileChangeId String?
-  dependentId     String?
   daysLeft   Int?
   daysWaited Int?
   approved   Boolean?
@@ -1548,7 +1540,6 @@ model Notification {
   @@unique([userId, dedupKey])
   @@index([userId, readAt])
   @@index([userId, createdAt])
-  @@index([kind, contractId])
   @@index([itemId])
 }
 

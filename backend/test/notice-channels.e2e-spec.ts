@@ -120,7 +120,7 @@ describe("notice channels answer for themselves (e2e)", () => {
     assert.equal(set.status, 201, "an administrator could not switch their own channel");
 
     const seen = await request(app.getHttpServer())
-      .get("/notifications/unread")
+      .get("/notifications/counts")
       .set("Authorization", `Bearer ${admin}`);
     assert.equal(seen.status, 200, "an administrator could not read their own bell");
   });

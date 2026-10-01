@@ -115,37 +115,11 @@ export interface ItemSummary {
 
 type RawSubject = "subjectType" | "subjectId" | "subjectEmployeeId" | "dedupKey";
 
-// The eight reference columns the expand left behind; nothing writes or reads them, and the contract drops them (KEHOACH 9.21.4).
-type OldReference =
-  | "requestId"
-  | "advanceId"
-  | "periodId"
-  | "payslipId"
-  | "contractId"
-  | "certificateId"
-  | "profileChangeId"
-  | "dependentId";
-
-export type NoticeRow = Omit<Notification, RawSubject | OldReference> & {
+export type NoticeRow = Omit<Notification, RawSubject> & {
   category: NoticeCategory;
   item: ItemSummary | null;
   subject: SubjectView | null;
 };
-
-function withoutOldReferences<T extends Pick<Notification, OldReference>>(row: T): Omit<T, OldReference> {
-  const {
-    requestId: _request,
-    advanceId: _advance,
-    periodId: _period,
-    payslipId: _payslip,
-    contractId: _contract,
-    certificateId: _certificate,
-    profileChangeId: _change,
-    dependentId: _dependent,
-    ...kept
-  } = row;
-  return kept;
-}
 
 export type NoticeStatus = "unread" | "action" | "all" | "archived";
 
@@ -171,10 +145,6 @@ export interface MarkSelection extends NoticeFilter {
   ids?: string[];
   all?: boolean;
   subject?: { type: NoticeSubject; id: string };
-}
-
-export interface Unread {
-  total: number;
 }
 
 export const NAMED = { select: { email: true, employee: { select: { fullName: true } } } } satisfies Prisma.UserDefaultArgs;
@@ -316,10 +286,6 @@ export class NotificationsService {
     return { unread, action, critical };
   }
 
-  async unread(userId: string): Promise<Unread> {
-    return { total: (await this.counts(userId)).unread };
-  }
-
   /** Read, unread, put away or bring back the viewer's own rows, named exactly one way.
    *  @ctx any | one UPDATE; rows of other accounts are never touched
    */
@@ -371,7 +337,7 @@ export class NotificationsService {
     const subjects = await this.subjects.describe(viewer, rows);
     const lapsed = Date.now() - this.config.get("NOTICE_CLAIM_HOURS", { infer: true }) * kHourMs;
     return rows.map(({ item, subjectType: _type, subjectId: _id, subjectEmployeeId: _person, dedupKey: _key, ...row }, at) => ({
-      ...withoutOldReferences(row),
+      ...row,
       category: NOTICE_KINDS[row.kind].category,
       item: item && {
         key: item.key,

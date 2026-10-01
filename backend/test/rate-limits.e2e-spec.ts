@@ -133,7 +133,7 @@ describe("rate limits and account lockout (e2e)", () => {
   it("counts one allowance over every route, not one per route", async () => {
     const bearer = await token(await account("wandering"));
     for (let call = 0; call < API_LIMIT; call += 1) {
-      const path = call % 2 === 0 ? "/auth/me" : "/notifications/unread";
+      const path = call % 2 === 0 ? "/auth/me" : "/notifications/counts";
       assert.equal((await asAccount(bearer, path)).status, 200, `call ${call + 1} was refused`);
     }
     assert.equal((await asAccount(bearer, "/auth/me")).status, 429, "a second route bought more calls");

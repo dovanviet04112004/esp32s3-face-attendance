@@ -37,7 +37,6 @@ import {
   SubscriptionView,
   SweepParamDto,
   SweepRunView,
-  UnreadView,
   UnsubscribeQueryDto,
 } from "./dto/notifications.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
@@ -48,7 +47,6 @@ import {
   type NoticeRow,
   type PreferenceRow,
   type SubscriptionView as KeptSubscription,
-  type Unread,
 } from "./notifications.service.js";
 import { AttendanceSweep } from "./sweeps/attendance.sweep.js";
 import { BackupSweep } from "./sweeps/backup.sweep.js";
@@ -102,13 +100,6 @@ export class NotificationsController {
   @ApiOkResponse({ type: NoticeCountsView })
   counts(@CurrentViewer() viewer: Viewer): Promise<NoticeCounts> {
     return this.notices.counts(viewer.userId);
-  }
-
-  @Get("unread")
-  @ApiOperation({ summary: "The bell's number alone; counts.unread is the same and this goes in the release after" })
-  @ApiOkResponse({ type: UnreadView })
-  unread(@CurrentViewer() viewer: Viewer): Promise<Unread> {
-    return this.notices.unread(viewer.userId);
   }
 
   @Post("read")

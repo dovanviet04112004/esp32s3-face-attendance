@@ -527,11 +527,6 @@ export class SweepRunView {
   result!: Record<string, unknown>;
 }
 
-export class UnreadView {
-  @ApiProperty({ example: 3, description: "Notices not read yet" })
-  total!: number;
-}
-
 export class PreferenceView {
   @ApiProperty({
     enum: NoticeKind,
