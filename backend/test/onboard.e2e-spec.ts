@@ -67,6 +67,7 @@ describe("onboarding (e2e)", () => {
     await db.user.deleteMany({ where: { email: { in: [EMAIL, SECOND_EMAIL, CLERK_EMAIL] } } });
     await db.employee.deleteMany({ where: { code: { in: [HIRE, FROM_NEW_YEAR, GONE, BOSS, CLERK, PAID] } } });
     await db.jobTitle.deleteMany({ where: { code: TITLE } });
+    await db.payrollPeriod.deleteMany({ where: { legalEntityId: null, year: YEAR, month: 10 } });
   }
 
   before(async () => {
@@ -337,6 +338,19 @@ describe("onboarding (e2e)", () => {
       [String(FIRST_PAY)],
       "an onboarding raised the pay of somebody already paid",
     );
+  });
+
+  it("puts pay that takes effect in a period on that period's checklist", async () => {
+    const period = await db.payrollPeriod.create({
+      data: { year: YEAR, month: 10, startDate: new Date(LATE_START), endDate: new Date(`${YEAR}-10-31`) },
+    });
+    const res = await request(http)
+      .get(`/payroll-periods/${period.id}/checklist`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200);
+    const item = (res.body as { code: string; count: number }[]).find((one) => one.code === "PAY_CHANGES");
+    assert.ok(item, "the checklist has no line for pay that changes in the period");
+    assert.ok(item.count >= 1, "the hire's first pay from the first of October is not counted");
   });
 
   it("refuses the first pay a file would give the person importing it", async () => {

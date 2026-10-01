@@ -296,6 +296,7 @@ export class PayrollService {
     const [
       pendingRequests,
       missingPay,
+      payChanges,
       unbuiltDays,
       openCorrections,
       strays,
@@ -316,6 +317,9 @@ export class PayrollService {
           ...(period.legalEntityId ? { legalEntityId: period.legalEntityId } : {}),
           compensation: { none: { effectiveFrom: { lte: period.endDate } } },
         },
+      }),
+      this.db.compensationRecord.count({
+        where: { effectiveFrom: { gte: period.startDate, lte: period.endDate }, ...ofEntity },
       }),
       this.db.employee.count({
         where: {
@@ -363,6 +367,7 @@ export class PayrollService {
       { code: "REQUESTS_PENDING", count: pendingRequests },
       { code: "CORRECTIONS_OPEN", count: openCorrections },
       { code: "NO_COMPENSATION", count: missingPay },
+      { code: "PAY_CHANGES", count: payChanges },
       { code: "NO_ATTENDANCE_DAYS", count: unbuiltDays },
       { code: "NO_LEGAL_ENTITY", count: strays },
       { code: "LEAVERS_HOLDING_ASSETS", count: stillHolding },

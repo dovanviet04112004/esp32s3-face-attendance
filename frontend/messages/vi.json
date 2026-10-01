@@ -1118,6 +1118,7 @@
     "REQUESTS_PENDING": "Đơn chưa duyệt",
     "CORRECTIONS_OPEN": "Giải trình chưa xử",
     "NO_COMPENSATION": "Chưa có mức lương",
+    "PAY_CHANGES": "Mức lương bắt đầu trong kỳ",
     "NO_ATTENDANCE_DAYS": "Chưa có ngày công",
     "lock": "Chốt kỳ",
     "acceptOpen": "Vẫn chốt dù còn việc treo",

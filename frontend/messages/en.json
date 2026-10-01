@@ -1118,6 +1118,7 @@
     "REQUESTS_PENDING": "Requests awaiting a decision",
     "CORRECTIONS_OPEN": "Corrections unresolved",
     "NO_COMPENSATION": "No pay record",
+    "PAY_CHANGES": "Pay starting in this period",
     "NO_ATTENDANCE_DAYS": "No day rows built",
     "lock": "Lock period",
     "acceptOpen": "Lock anyway, on record",
