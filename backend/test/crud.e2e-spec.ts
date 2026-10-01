@@ -205,6 +205,22 @@ describe("crud (e2e)", () => {
     assert.equal(ghost.status, 404);
   });
 
+  it("writes a contract and refuses one for an employee who does not exist", async () => {
+    const contract = (employeeId: number) =>
+      request(http)
+        .post("/contracts")
+        .set("Authorization", `Bearer ${token.hr}`)
+        .send({ employeeId, kind: "FIXED_TERM", startDate: "2026-02-01", endDate: "2027-01-31" });
+    const signed = await contract(madeEmployeeId);
+    assert.equal(signed.status, 201, JSON.stringify(signed.body));
+    assert.equal(signed.body.state, "DRAFT");
+
+    const ghost = await contract(999999);
+    assert.equal(ghost.status, 404, "a contract for nobody reached the database and failed there");
+    assert.equal(ghost.body.message, "EMPLOYEE_NOT_FOUND");
+    assert.equal(ghost.body.path, "/contracts");
+  });
+
   it("caps a page size so one request cannot ask for the whole table", async () => {
     const res = await request(http)
       .get("/employees?take=5000")

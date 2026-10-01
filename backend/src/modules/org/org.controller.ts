@@ -133,6 +133,7 @@ export class OrgController {
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Re-signing is a new contract, never an edit" })
   @ApiCreatedResponse({ type: ContractView, description: "Starts as DRAFT" })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   addContract(
     @CurrentViewer() viewer: Viewer,
     @Body() body: CreateContractDto,

@@ -326,6 +326,10 @@ export class OrgService {
     body: CreateContractDto,
     actorId: string,
   ): Promise<EmploymentContract> {
+    const signer = await this.db.employee.count({ where: { id: body.employeeId } });
+    if (signer === 0) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
     const made = await this.db.employmentContract.create({
       data: {
         employeeId: body.employeeId,
