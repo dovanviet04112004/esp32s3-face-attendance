@@ -3,7 +3,7 @@
 import { Banner, Button, Combobox, Input, LayerCard, Select } from "@cloudflare/kumo";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useLocale, useTranslations } from "next-intl";
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { BottomBar } from "@/components/ui/bottom-bar";
 import { DateField } from "@/components/ui/date-field";
@@ -200,6 +200,7 @@ export function EmployeeForm({
   const optional = useOptional();
   const locale = useLocale();
   const entityField = useRef<HTMLDivElement>(null);
+  const formId = useId();
   const [draft, setDraft] = useState(start);
   const [boss, setBoss] = useState<Person | null>(manager);
   const [tried, setTried] = useState(false);
@@ -247,7 +248,7 @@ export function EmployeeForm({
   const pinned = !editing || dirty;
 
   return (
-    <form onSubmit={submit} className="@container flex flex-col gap-4">
+    <form id={formId} onSubmit={submit} className="@container flex flex-col gap-4">
       <Section title={t("sectionWho")} lead={t("sectionWhoLead")}>
         <Input
           label={t("code")}
@@ -448,12 +449,10 @@ export function EmployeeForm({
       </Section>
 
       <BottomBar
+        pinned={pinned}
         className={cn(
-          "justify-end md:mt-2 md:flex",
-          pinned
-            ? "md:sticky md:bottom-0 md:z-20 md:border-t md:border-kumo-line md:bg-kumo-canvas md:py-3"
-            : "static mx-0 border-t-0 bg-transparent px-0 py-0",
-          pinned && !editing && "md:-mx-8 md:px-8 lg:-mx-10 lg:px-10",
+          "justify-end",
+          !pinned && "static mx-0 border-t-0 bg-transparent px-0 py-0 md:mt-2 md:flex",
           // The record's own menu floats at the phone's bottom-right corner (ui/page.tsx ThumbActions).
           pinned && editing && "max-md:pe-[4.5rem]",
         )}
@@ -465,7 +464,7 @@ export function EmployeeForm({
         <Button type="button" variant="secondary" disabled={busy || (editing && !dirty)} onClick={cancel}>
           {common("cancel")}
         </Button>
-        <Button type="submit" variant="primary" loading={busy} disabled={editing && !dirty}>
+        <Button type="submit" form={formId} variant="primary" loading={busy} disabled={editing && !dirty}>
           {common("save")}
         </Button>
       </BottomBar>

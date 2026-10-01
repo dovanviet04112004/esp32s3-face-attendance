@@ -18,6 +18,7 @@ import { SectionBar, SectionBarLoading } from "@/components/nav/section-bar";
 import { Sidebar } from "@/components/nav/sidebar";
 import { TabBar, TabBarLoading } from "@/components/nav/tab-bar";
 import { TopBar, TopBarLoading } from "@/components/nav/top-bar";
+import { PageFoot } from "@/components/ui/bottom-bar";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { reopenSession } from "@/lib/api";
@@ -217,11 +218,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <SectionBar />
-        <main id="main" className="flex-1">
-          <ViewTransition default={move ? `page-${move}` : "none"}>
-            <div className={kBlock}>{children}</div>
-          </ViewTransition>
-        </main>
+        <PageFoot>
+          <main id="main" className="flex-1">
+            <ViewTransition default={move ? `page-${move}` : "none"}>
+              <div className={kBlock}>{children}</div>
+            </ViewTransition>
+          </main>
+        </PageFoot>
       </div>
       <TabBar />
     </KumoSidebar.Provider>
