@@ -27,9 +27,9 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor.js";
 import { ChangeInterceptor } from "./common/interceptors/change.interceptor.js";
 import type { Env } from "./config/env.schema.js";
 import { AuditService } from "./modules/audit/audit.service.js";
-import { AuthService } from "./modules/auth/auth.service.js";
-import { DOCS_COOKIE, DOCS_PATH, REFRESH_COOKIE } from "./modules/auth/auth.types.js";
-import { IMPORT_MAX_BYTES, IMPORT_PATH } from "./modules/employees/import.js";
+import { AuthService, ttlToMs } from "./modules/auth/auth.service.js";
+import { DOCS_COOKIE, DOCS_PATH, JWT_ALGORITHM, REFRESH_COOKIE, type AccessClaims } from "./modules/auth/auth.types.js";
+import { IMPORT_MAX_BYTES, IMPORT_PATH, IMPORT_ROLES } from "./modules/employees/import.js";
 import { XLSX_MIME } from "./modules/employees/workbook.js";
 import { FeedAdapter, RealtimeGateway } from "./modules/realtime/realtime.gateway.js";
 
@@ -65,11 +65,18 @@ function bodyFault(error: unknown, _req: Request, _res: Response, next: NextFunc
   next(new BadRequestException("BODY_INVALID"));
 }
 
-function signedIn(req: Request, jwt: JwtService, secret: string): boolean {
+function mayImport(req: Request, jwt: JwtService, secret: string, lifetimeMs: number): boolean {
   const header = req.headers.authorization ?? "";
+  if (req.method !== "POST" || !header.startsWith(BEARER)) {
+    return false;
+  }
   try {
-    const token = header.slice(BEARER.length);
-    return header.startsWith(BEARER) && Boolean(jwt.verify(token, { secret, ignoreExpiration: true }));
+    const claims = jwt.verify<AccessClaims & { exp: number }>(header.slice(BEARER.length), {
+      secret,
+      algorithms: [JWT_ALGORITHM],
+      ignoreExpiration: true,
+    });
+    return (IMPORT_ROLES as readonly string[]).includes(claims.role) && claims.exp * 1000 > Date.now() - lifetimeMs;
   } catch {
     return false;
   }
@@ -233,9 +240,10 @@ export function configure(app: INestApplication): void {
   const readLargeFile = express.raw({ type: [XLSX_MIME, "text/csv"], limit: IMPORT_MAX_BYTES });
   const jwt = new JwtService();
   const accessSecret = config.get("JWT_ACCESS_SECRET", { infer: true });
-  // Parsing precedes every guard: only a token this api signed, even an expired one, earns the large limit.
+  const lifetimeMs = ttlToMs(config.get("JWT_ACCESS_TTL", { infer: true }));
+  // Parsing precedes every guard, so only a recent token of a role that imports earns the large limit (KEHOACH 9.20).
   app.use(IMPORT_PATH, (req: Request, res: Response, next: NextFunction) => {
-    if (!signedIn(req, jwt, accessSecret)) {
+    if (!mayImport(req, jwt, accessSecret, lifetimeMs)) {
       return next();
     }
     readLargeBody(req, res, (error?: unknown) => (error ? next(error) : readLargeFile(req, res, next)));

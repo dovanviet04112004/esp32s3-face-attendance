@@ -79,7 +79,7 @@ import {
 import { THROTTLE } from "../auth/auth.types.js";
 import { BulkService, type EnrollPlan, type LeavingPlan, type LoginPlan, type PlacementPlan } from "./bulk.service.js";
 import { EmployeesService, type FileOut, type Offboarding, type Onboarding } from "./employees.service.js";
-import type { ImportReport, ImportUpload } from "./import.js";
+import { IMPORT_ROLES, type ImportReport, type ImportUpload } from "./import.js";
 import { XLSX_MIME } from "./workbook.js";
 
 /** The file as it came: xlsx or csv bytes as the raw body, or csv text inside json. */
@@ -234,7 +234,7 @@ export class EmployeesController {
 
   @Post("import")
   @RateBucket(THROTTLE.heavy)
-  @Roles("ADMIN", "HR")
+  @Roles(...IMPORT_ROLES)
   @AuditedInService()
   @ApiOperation({
     summary: "Dry run by default; apply=true writes when no fault is left, warnings or not (KEHOACH 9.20)",

@@ -1,4 +1,4 @@
-import { Gender, type EnrollmentState } from "@prisma/client";
+import { Gender, type EnrollmentState, type Role } from "@prisma/client";
 import { isEmail } from "class-validator";
 
 import { FORMULA_LEAD } from "../../common/csv.js";
@@ -52,6 +52,9 @@ export const IMPORT_MAX_BYTES = 16_000_000;
 export const IMPORT_MAX_ROWS = 30_000;
 
 export const IMPORT_PATH = "/employees/import";
+
+/** Who may import, read by the route guard and by the body limit that runs ahead of it (KEHOACH 9.20 rule 1). */
+export const IMPORT_ROLES = ["ADMIN", "HR"] as const satisfies readonly Role[];
 
 /** Between the code and the name of a drop-down entry; the import keeps the part ahead of it (KEHOACH 9.20 rule 2). */
 export const ENTRY_SEPARATOR = " · ";
