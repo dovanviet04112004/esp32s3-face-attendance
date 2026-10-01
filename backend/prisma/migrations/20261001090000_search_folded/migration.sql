@@ -9,4 +9,5 @@ CREATE OR REPLACE FUNCTION f_unaccent(text) RETURNS text
 CREATE INDEX IF NOT EXISTS "Employee_fullName_folded_trgm_idx"
     ON "Employee" USING gin (f_unaccent(lower("fullName")) gin_trgm_ops);
 
+-- replaced by Employee_fullName_folded_trgm_idx
 DROP INDEX IF EXISTS "Employee_fullName_trgm_idx";

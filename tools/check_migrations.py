@@ -2,8 +2,8 @@
 """Enforce expand-then-contract on Prisma migrations (KEHOACH 9.22.3c).
 
 A destructive statement passes only when the comment above it says which
-migration moved the data first. Run with no arguments to scan every migration,
-or pass paths to scan a subset. Exit code is 1 when any rule is violated.
+migration moved the data first, or what replaced the index it drops. Run with
+no arguments to scan every migration, or pass paths to scan a subset.
 """
 
 from __future__ import annotations
@@ -38,8 +38,16 @@ RULES: list[tuple[str, re.Pattern[str], re.Pattern[str] | None]] = [
         re.compile(r"\bDROP\s+CONSTRAINT\b", re.I),
         re.compile(r"replaced by\s+\S+", re.I),
     ),
+    (
+        "DROP INDEX",
+        re.compile(r"^\s*DROP\s+INDEX\b", re.I),
+        re.compile(r"replaced by\s+\S+", re.I),
+    ),
     ("TRUNCATE", re.compile(r"^\s*TRUNCATE\b", re.I), None),
 ]
+
+# prisma migrate dev writes DROP INDEX for every index it cannot express (KEHOACH 9.22.3c).
+INDEX_DROPS_CHECKED_FROM = "20261001000000"
 
 COMMENT = re.compile(r"^\s*--\s?(.*)$")
 
@@ -72,6 +80,8 @@ def scan(path: Path) -> list[str]:
             continue
         for name, statement, excuse in RULES:
             if not statement.search(line):
+                continue
+            if name == "DROP INDEX" and path.parent.name < INDEX_DROPS_CHECKED_FROM:
                 continue
             if excuse is None:
                 problems.append(f"{path}:{at + 1}: {name} is never allowed")
