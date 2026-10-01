@@ -82,7 +82,7 @@ export class NotificationsController {
   }
 
   @Get("preferences")
-  @ApiOperation({ summary: "Six kinds across the two channels somebody delivers, defaults filled in" })
+  @ApiOperation({ summary: "Every kind across the two channels somebody delivers, defaults filled in" })
   @ApiOkResponse({ type: [PreferenceView] })
   preferences(
     @CurrentViewer() viewer: Viewer,

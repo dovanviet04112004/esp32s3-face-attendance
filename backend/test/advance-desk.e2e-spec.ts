@@ -188,6 +188,20 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
     assert.equal(told[0]?.approved, true);
   });
 
+  it("hands the approved advance to the desk that pays it, and never to the asker", async () => {
+    // One statement: a desk login another suite deletes mid-read is wholly in or out.
+    const told = await db.user.findMany({
+      where: { notifications: { some: { kind: "REQUEST_WAITING", advanceId: filedId, approved: true } } },
+      select: { role: true, employeeId: true },
+    });
+    assert.ok(told.length > 0, "nobody was told an approved advance waits to be paid");
+    assert.ok(
+      told.every((one) => one.role === "ADMIN" || one.role === "PAYROLL"),
+      "somebody who cannot pay an advance was told to pay it",
+    );
+    assert.ok(!told.some((one) => one.employeeId === askerId), "the asker was told to pay themselves");
+  });
+
   it("answers a second decision with the already-decided code", async () => {
     const res = await request(app.getHttpServer())
       .post(`/advances/${filedId}/decide`)
@@ -265,6 +279,15 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
       .set("Authorization", `Bearer ${payrollToken}`);
     assert.equal(twice.status, 400);
     assert.equal(twice.body.message, "ADVANCE_NOT_APPROVED");
+  });
+
+  it("tells the asker once that the money went out", async () => {
+    const told = await db.notification.findMany({
+      where: { kind: "ADVANCE_PAID", advanceId: filedId },
+      select: { user: { select: { employeeId: true } } },
+    });
+    assert.equal(told.length, 1, "paying an advance told nobody, or told somebody twice");
+    assert.equal(told[0]?.user.employeeId, askerId);
   });
 
   it("pages one person's advances by cursor without repeating a row", async () => {

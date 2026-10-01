@@ -1379,6 +1379,7 @@ enum NoticeKind {
   PAYSLIP_ISSUED
   CONTRACT_ENDING
   DISPUTE_ANSWERED
+  ADVANCE_PAID
 }
 
 enum NoticeChannel {

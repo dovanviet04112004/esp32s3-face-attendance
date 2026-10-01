@@ -169,6 +169,11 @@ export class AdvanceService {
       advanceId: id,
       approved: body.approve,
     });
+    if (body.approve) {
+      await this.notices.raiseToDesk(QUEUE_DESKS.advancesToPay, "REQUEST_WAITING", { advanceId: id, approved: true }, {
+        employeeIds: [found.employeeId],
+      });
+    }
     return decided;
   }
 
@@ -194,6 +199,7 @@ export class AdvanceService {
     }
     await this.audit.record({ actorId: viewer.userId, action: AUDIT_ACTIONS.ADVANCE_PAY,
       subject: AUDIT_SUBJECTS.ADVANCE, subjectId: id });
+    await this.notices.raiseFor(found.employeeId, "ADVANCE_PAID", { advanceId: id });
     return this.require(id);
   }
 

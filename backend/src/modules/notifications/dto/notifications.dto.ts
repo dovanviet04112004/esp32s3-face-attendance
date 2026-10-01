@@ -152,7 +152,8 @@ export class NoticeView {
     type: Boolean,
     nullable: true,
     example: true,
-    description: "REQUEST_DECIDED only: whether it was approved",
+    description:
+      "REQUEST_DECIDED: whether it was approved; REQUEST_WAITING about an advance: true once approved, so it waits to be paid",
   })
   approved!: boolean | null;
 

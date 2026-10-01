@@ -45,6 +45,7 @@ const KINDS: NoticeKind[] = [
   "PAYSLIP_ISSUED",
   "CONTRACT_ENDING",
   "DISPUTE_ANSWERED",
+  "ADVANCE_PAID",
 ];
 
 // Email stays in the enum for rows already written, but it is not a switch:
