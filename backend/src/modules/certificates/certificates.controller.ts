@@ -97,4 +97,14 @@ export class CertificatesController {
   ): Promise<Certificate> {
     return this.certificates.reject(viewer, id, body);
   }
+
+  @Post(":id/cancel")
+  @AuditedInService()
+  @ApiOperation({ summary: "Withdraw one's own request while the desk has not answered it" })
+  @ApiParam(CERTIFICATE_ID)
+  @ApiCreatedResponse({ type: CertificateView })
+  @ApiConflictResponse({ type: ErrorBody, description: "CERTIFICATE_ALREADY_DECIDED" })
+  cancel(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<Certificate> {
+    return this.certificates.cancel(viewer, id);
+  }
 }

@@ -171,6 +171,29 @@ export class CertificatesService {
     return this.db.certificate.findUniqueOrThrow({ where: { id: held.id } });
   }
 
+  /** Take back a letter the desk has not answered; only its asker may. */
+  async cancel(viewer: Viewer, id: string): Promise<Certificate> {
+    const held = await this.db.certificate.findUnique({ where: { id } });
+    if (!held || held.employeeId !== viewer.employeeId) {
+      throw new NotFoundException("CERTIFICATE_NOT_FOUND");
+    }
+    const claimed = await this.db.certificate.updateMany({
+      where: { id: held.id, state: "REQUESTED" },
+      data: { state: "CANCELLED" },
+    });
+    if (claimed.count !== 1) {
+      throw new ConflictException("CERTIFICATE_ALREADY_DECIDED");
+    }
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.CERTIFICATE_CANCEL,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(held.employeeId),
+      meta: { kind: held.kind },
+    });
+    return this.db.certificate.findUniqueOrThrow({ where: { id: held.id } });
+  }
+
   /** The letter itself. Reading one is recorded: it carries somebody's pay. */
   async letter(viewer: Viewer, id: string): Promise<{ serial: string; text: string }> {
     const held = await this.db.certificate.findUnique({

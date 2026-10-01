@@ -346,6 +346,33 @@ describe("letters of employment and income (e2e)", () => {
     assert.ok(!text.includes("99999999"), "a bonus run was counted as monthly income");
   });
 
+  it("lets the asker withdraw a letter the desk has not answered, and nobody else", async () => {
+    const asking = await request(http)
+      .post("/certificates")
+      .set("Authorization", `Bearer ${mine}`)
+      .send({ kind: "INCOME", purpose: PURPOSE, months: 3 });
+    assert.equal(asking.status, 201);
+    const id = (asking.body as Letter).id;
+    const stranger = await request(http).post(`/certificates/${id}/cancel`).set("Authorization", `Bearer ${theirs}`);
+    assert.equal(stranger.status, 404, "somebody else withdrew a letter that is not theirs");
+    const desks = await request(http).post(`/certificates/${id}/cancel`).set("Authorization", `Bearer ${desk}`);
+    assert.equal(desks.status, 404, "the desk withdrew a letter in the asker's name");
+    const res = await request(http).post(`/certificates/${id}/cancel`).set("Authorization", `Bearer ${mine}`);
+    assert.equal(res.status, 201);
+    assert.equal((res.body as Letter).state, "CANCELLED");
+    const late = await request(http).post(`/certificates/${id}/issue`).set("Authorization", `Bearer ${desk}`);
+    assert.equal(late.status, 409, "the desk issued a letter its asker had taken back");
+    const twice = await request(http).post(`/certificates/${id}/cancel`).set("Authorization", `Bearer ${mine}`);
+    assert.equal(twice.status, 409);
+    assert.equal(twice.body.message, "CERTIFICATE_ALREADY_DECIDED");
+  });
+
+  it("refuses to withdraw a letter already issued", async () => {
+    const res = await request(http).post(`/certificates/${asked}/cancel`).set("Authorization", `Bearer ${mine}`);
+    assert.equal(res.status, 409);
+    assert.equal(res.body.message, "CERTIFICATE_ALREADY_DECIDED");
+  });
+
   it("files every step under the person it is about", async () => {
     const employee = await db.employee.findUniqueOrThrow({ where: { code: CODE } });
     const res = await request(http)
@@ -355,6 +382,7 @@ describe("letters of employment and income (e2e)", () => {
     const kinds = new Set((res.body.rows as { action: string }[]).map((one) => one.action));
     assert.ok(kinds.has("certificate.ask"));
     assert.ok(kinds.has("certificate.issue"));
+    assert.ok(kinds.has("certificate.cancel"));
     assert.ok(kinds.has("certificate.read"), "reading somebody's pay left no trace");
   });
 });

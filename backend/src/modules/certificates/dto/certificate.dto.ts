@@ -5,7 +5,7 @@ import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-
 import { PageMeta, PersonView, QueueQueryDto } from "../../leave/dto/queue.dto.js";
 
 const KINDS = ["EMPLOYMENT", "INCOME"] as const;
-const STATES = ["REQUESTED", "ISSUED", "REJECTED"] as const;
+const STATES = ["REQUESTED", "ISSUED", "REJECTED", "CANCELLED"] as const;
 const PURPOSE_MAX = 200;
 const NOTE_MAX = 500;
 const MONTHS_MIN = 1;
@@ -84,7 +84,7 @@ export class CertificateView {
   @ApiProperty({ enum: KINDS, enumName: "CertificateKind", description: "Letter of employment or of income" })
   kind!: string;
 
-  @ApiProperty({ enum: STATES, enumName: "CertificateState", description: "Waiting for the desk, handed out, or turned down" })
+  @ApiProperty({ enum: STATES, enumName: "CertificateState", description: "Waiting for the desk, handed out, turned down, or taken back by its asker" })
   state!: string;
 
   @ApiProperty({ description: "What the asker needs it for, as printed on the letter", example: "Vay ngân hàng" })
