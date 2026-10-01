@@ -222,6 +222,12 @@ describe("auth (e2e)", () => {
     assert.equal(res.body.path, "/no-such-route");
   });
 
+  it("sets the refresh cookie HttpOnly and SameSite=Strict, so a page on another site never sends it", async () => {
+    const cookie = cookieFrom((await signIn(SIGNER_EMAIL, password)).headers);
+    assert.match(cookie, /HttpOnly/);
+    assert.match(cookie, /SameSite=Strict/);
+  });
+
   it("treats a refresh cookie used twice as a replay and drops the session", async () => {
     const login = await signIn(SIGNER_EMAIL, password);
     const used = cookieFrom(login.headers);

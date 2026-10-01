@@ -170,14 +170,12 @@ export class AuthController {
     return { accessToken: tokens.accessToken, email: tokens.email };
   }
 
+  // app and api share one site, cckiosk.io.vn, since io.vn is on the Public Suffix List (KEHOACH 7.2).
   private cookieOptions(): CookieOptions {
-    // SameSite=None needs Secure, which a browser refuses over plain http, so
-    // a developer on localhost gets the pair that works there instead.
-    const crossSite = this.config.get("NODE_ENV", { infer: true }) === "production";
     return {
       httpOnly: true,
-      secure: crossSite,
-      sameSite: crossSite ? "none" : "lax",
+      secure: this.config.get("NODE_ENV", { infer: true }) === "production",
+      sameSite: "strict",
       path: REFRESH_PATH,
     };
   }
