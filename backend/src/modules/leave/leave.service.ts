@@ -61,6 +61,8 @@ const MS_PER_MINUTE = 60_000;
 const OFF_SITE: RequestKind[] = ["BUSINESS_TRIP", "REMOTE_WORK"];
 const TIMED: RequestKind[] = ["OVERTIME", "ATTENDANCE_FIX"];
 const OFF_WORK: RequestState[] = ["PENDING", "APPROVED"];
+// Judged at read time: a login locked after filing still sends the request to the desk (KEHOACH 9.15).
+const UNREACHABLE = { NOT: { login: { is: { active: true } } } } satisfies Prisma.EmployeeWhereInput;
 const OVERLAP_SHOWN = 20;
 // Past this an export stops; a filter narrows it (KEHOACH 9.9 rule 6).
 const EXPORT_MAX = 50_000;
@@ -404,15 +406,11 @@ export class LeaveService {
       }
       return raced;
     }
-    if (approverId !== null) {
-      await this.notices.raiseFor(approverId, "REQUEST_WAITING", { requestId: filed.id });
-    } else {
-      await this.notices.raiseMany(
-        await this.deskIds(viewer.employeeId as number),
-        "REQUEST_WAITING",
-        { requestId: filed.id },
-      );
-    }
+    await this.notices.raiseMany(
+      await this.waitersFor(viewer.employeeId, approverId),
+      "REQUEST_WAITING",
+      { requestId: filed.id },
+    );
     return filed;
   }
 
@@ -863,13 +861,11 @@ export class LeaveService {
       const standIn = await this.standingInFor(viewer.employeeId);
       mine.push({ approverId: { in: [viewer.employeeId, ...standIn] } });
     }
-    // Nobody above the person who asked, so it waits on the desk that holds
+    // Nobody above who can sign in to answer, so it waits on the desk that holds
     // leave anyway rather than on nobody (KEHOACH 9.15).
     if (THE_DESK.includes(viewer.role)) {
-      mine.push({
-        approverId: null,
-        ...(viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } }),
-      });
+      const notOwn = viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } };
+      mine.push({ approverId: null, ...notOwn }, { approver: { is: UNREACHABLE }, ...notOwn });
     }
     return mine;
   }
@@ -896,6 +892,15 @@ export class LeaveService {
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
     return visible !== null && visible.includes(held.employeeId) ? null : "NOT_YOUR_REQUEST";
+  }
+
+  /** The logins a pending request waits on: its approver's, or the desk's when no approver can sign in (KEHOACH 9.15). */
+  async waitersFor(asker: number, approverId: number | null): Promise<string[]> {
+    const login =
+      approverId === null
+        ? null
+        : await this.db.user.findFirst({ where: { employeeId: approverId, active: true }, select: { id: true } });
+    return login ? [login.id] : this.deskIds(asker);
   }
 
   /** The desk an unclaimed request waits on, minus whoever asked: rule 2 holds
