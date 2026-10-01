@@ -22,6 +22,7 @@ import {
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import type { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
 
 const SORT_FIELD = "requestedAt";
@@ -44,6 +45,7 @@ export class AdvanceService {
     private readonly audit: AuditService,
     private readonly notices: NotificationsService,
     private readonly audience: AudienceService,
+    private readonly items: NoticeItemsService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -128,9 +130,7 @@ export class AdvanceService {
         reason: body.reason,
       },
     });
-    await this.notices.raiseMany(await this.audience.audienceOf("ADVANCES_TO_DECIDE", filed.id), "REQUEST_WAITING", {
-      advanceId: filed.id,
-    });
+    await this.items.open("ADVANCES_TO_DECIDE", filed);
     return filed;
   }
 
@@ -160,15 +160,17 @@ export class AdvanceService {
       subject: AUDIT_SUBJECTS.ADVANCE,
       subjectId: id,
     });
+    await this.items.close("ADVANCES_TO_DECIDE", id, {
+      state: "DONE",
+      outcome: body.approve ? "APPROVED" : "REJECTED",
+      actorId: viewer.userId,
+    });
     await this.notices.raiseFor(found.employeeId, "REQUEST_DECIDED", {
       advanceId: id,
       approved: body.approve,
     });
     if (body.approve) {
-      await this.notices.raiseMany(await this.audience.audienceOf("ADVANCES_TO_PAY", id), "REQUEST_WAITING", {
-        advanceId: id,
-        approved: true,
-      });
+      await this.items.open("ADVANCES_TO_PAY", decided);
     }
     return decided;
   }
@@ -193,6 +195,7 @@ export class AdvanceService {
     }
     await this.audit.record({ actorId: viewer.userId, action: AUDIT_ACTIONS.ADVANCE_PAY,
       subject: AUDIT_SUBJECTS.ADVANCE, subjectId: id });
+    await this.items.close("ADVANCES_TO_PAY", id, { state: "DONE", outcome: "PAID", actorId: viewer.userId });
     await this.notices.raiseFor(found.employeeId, "ADVANCE_PAID", { advanceId: id });
     return this.require(id);
   }
@@ -209,6 +212,7 @@ export class AdvanceService {
     if (claimed.count !== 1) {
       throw new ConflictException("ADVANCE_ALREADY_DECIDED");
     }
+    await this.items.close("ADVANCES_TO_DECIDE", id, { state: "WITHDRAWN", actorId: viewer.userId });
     return this.require(id);
   }
 

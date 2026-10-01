@@ -8,6 +8,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import { UNUSABLE_PASSWORD } from "../auth/password.js";
 import { EnrollmentService } from "../enrollment/enrollment.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { dayAsDate } from "../timesheet/local-day.js";
 import { UsersService } from "../users/users.service.js";
 import {
@@ -267,6 +268,7 @@ export class BulkService {
     private readonly employees: EmployeesService,
     private readonly users: UsersService,
     private readonly enrollment: EnrollmentService,
+    private readonly items: NoticeItemsService,
   ) {}
 
   /** Who a selection names inside this viewer's reach; a filter is read by the directory's own query.
@@ -362,6 +364,7 @@ export class BulkService {
       await this.scope.forgetScopes();
     }
     await this.users.settleRoleFlips(viewer.userId, flips);
+    await this.items.regroupPeople("REQUESTS", moved);
     await this.audit.recordMany(
       rows.map((one): AuditEntry => {
         const boss = bossOf.get(one.employeeId);

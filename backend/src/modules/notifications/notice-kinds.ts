@@ -7,6 +7,15 @@ export type FactType = "number" | "boolean" | "string" | "day";
 
 export type OfferedChannel = "IN_APP" | "PUSH";
 
+/** Kinds that are work a group shares; every other kind is news for one person (KEHOACH 9.21.4). */
+export type ItemKind = "REQUEST_WAITING";
+
+export type NewsKind = Exclude<NoticeKind, ItemKind>;
+
+export function kebab(name: string): string {
+  return name.toLowerCase().replaceAll("_", "-");
+}
+
 /** Roles whose login opens the approvals inbox (KEHOACH 9.15). */
 export const INBOX_ROLES: readonly Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
 

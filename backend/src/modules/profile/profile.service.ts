@@ -33,6 +33,7 @@ import {
 import { MailerService } from "../notifications/mailer.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { profileNoticeMail } from "../payroll/mail-text.js";
 import { localDay } from "../timesheet/local-day.js";
 import {
@@ -69,6 +70,7 @@ export class ProfileService {
     private readonly mailer: MailerService,
     private readonly notices: NotificationsService,
     private readonly audience: AudienceService,
+    private readonly items: NoticeItemsService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -117,9 +119,7 @@ export class ProfileService {
       subjectId: String(employeeId),
       meta: { field: body.field },
     });
-    await this.notices.raiseMany(await this.audience.audienceOf("PROFILE_CHANGES", made.id), "REQUEST_WAITING", {
-      profileChangeId: made.id,
-    });
+    await this.items.open("PROFILE_CHANGES", made);
     return made;
   }
 
@@ -191,6 +191,7 @@ export class ProfileService {
       } satisfies ProfileNoticeJob);
     }
     this.log.log(`profile ${held.field} changed for employee ${held.employeeId}`);
+    await this.items.close("PROFILE_CHANGES", held.id, { state: "DONE", outcome: "APPROVED", actorId: viewer.userId });
     await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { profileChangeId: held.id, approved: true });
     return given;
   }
@@ -213,6 +214,7 @@ export class ProfileService {
       subjectId: String(held.employeeId),
       meta: { field: held.field, note: body.note ?? null },
     });
+    await this.items.close("PROFILE_CHANGES", held.id, { state: "DONE", outcome: "REJECTED", actorId: viewer.userId });
     await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { profileChangeId: held.id, approved: false });
     return turned;
   }
@@ -234,6 +236,7 @@ export class ProfileService {
       subjectId: String(held.employeeId),
       meta: { field: held.field },
     });
+    await this.items.close("PROFILE_CHANGES", held.id, { state: "WITHDRAWN", actorId: viewer.userId });
     return dropped;
   }
 

@@ -7,6 +7,7 @@ import { Test } from "@nestjs/testing";
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
 import { StaleRequestsService } from "../src/modules/notifications/stale-requests.service.js";
 
 const FILER = "NV9801";
@@ -22,11 +23,16 @@ describe("stale requests (e2e)", () => {
   let app: INestApplication;
   let db: PrismaService;
   let stale: StaleRequestsService;
+  let items: NoticeItemsService;
   let filerId = 0;
   let approverId = 0;
   let filerLogin = "";
   let approverLogin = "";
   const filed: string[] = [];
+
+  async function age(id: string, waited: number): Promise<void> {
+    await db.$executeRaw`UPDATE "Request" SET "createdAt" = ${daysAgo(waited)} WHERE "id" = ${id}`;
+  }
 
   async function fileAt(waited: number): Promise<string> {
     const row = await db.request.create({
@@ -40,9 +46,8 @@ describe("stale requests (e2e)", () => {
         reason: "e2e",
       },
     });
-    await db.$executeRaw`
-      UPDATE "Request" SET "createdAt" = ${daysAgo(waited)} WHERE "id" = ${row.id}
-    `;
+    await age(row.id, waited);
+    await items.open("REQUESTS", { id: row.id, employeeId: filerId });
     filed.push(row.id);
     return row.id;
   }
@@ -58,6 +63,7 @@ describe("stale requests (e2e)", () => {
     await app.init();
     db = app.get(PrismaService);
     stale = app.get(StaleRequestsService);
+    items = app.get(NoticeItemsService);
     await db.user.deleteMany({ where: { email: { in: [`${FILER}@kiosk.local`, `${APPROVER}@kiosk.local`] } } });
     await db.employee.deleteMany({ where: { code: { in: [FILER, APPROVER] } } });
     const boss = await db.employee.create({ data: { code: APPROVER, fullName: "E2E approver" } });
@@ -112,15 +118,46 @@ describe("stale requests (e2e)", () => {
   });
 
   it("stays quiet between marks", async () => {
-    const id = await fileAt(5);
+    const id = await fileAt(3);
     await stale.sweep();
-    assert.equal((await noticesFor(id)).length, 0);
+    await age(id, 5);
+    await stale.sweep();
+    const stalled = (await noticesFor(id)).filter((row) => row.kind === "REQUEST_STALLED");
+    assert.equal(stalled.length, 1);
+    assert.equal(stalled[0].remindCount, 0, "a day between marks spoke");
+  });
+
+  it("says a missed mark once, a day late", async () => {
+    const id = await fileAt(4);
+    await stale.sweep();
+    await stale.sweep();
+    const stalled = (await noticesFor(id)).filter((row) => row.kind === "REQUEST_STALLED");
+    assert.equal(stalled.length, 1, "a mark the sweep missed was never said");
+    assert.equal(stalled[0].remindCount, 0, "a mark caught up was said twice");
+    assert.equal(stalled[0].daysWaited, 4);
+  });
+
+  it("speaks again on one row at the next mark", async () => {
+    const id = await fileAt(3);
+    await stale.sweep();
+    await db.notification.updateMany({ where: { requestId: id }, data: { readAt: new Date() } });
+    await age(id, 7);
+    await stale.sweep();
+    const rows = await noticesFor(id);
+    const stalled = rows.filter((row) => row.kind === "REQUEST_STALLED");
+    assert.equal(stalled.length, 1, "the next mark wrote a second row");
+    assert.equal(stalled[0].remindCount, 1);
+    assert.equal(stalled[0].readAt, null, "the next mark left the asker's row read");
+    const approver = rows.find((row) => row.kind === "REQUEST_WAITING" && row.userId === approverLogin);
+    assert.equal(approver?.readAt, null, "the approver was not reminded");
   });
 
   it("stays quiet once somebody has decided", async () => {
     const id = await fileAt(14);
     await db.request.update({ where: { id }, data: { state: "APPROVED" } });
     await stale.sweep();
-    assert.equal((await noticesFor(id)).length, 0);
+    const rows = await noticesFor(id);
+    assert.equal(rows.filter((row) => row.kind === "REQUEST_STALLED").length, 0);
+    assert.ok(rows.every((row) => row.remindCount === 0), "a decided request was nudged");
   });
 });

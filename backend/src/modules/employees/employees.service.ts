@@ -28,6 +28,7 @@ import { CompensationService, type FirstPay } from "../compensation/compensation
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ConsentService } from "../enrollment/consent.service.js";
 import { EnrollmentService } from "../enrollment/enrollment.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { OnboardingService } from "../onboarding/onboarding.service.js";
 import { dayAsDate, localDay } from "../timesheet/local-day.js";
 import { statusWhere, UsersService, type LoginOpened, type RoleFlip } from "../users/users.service.js";
@@ -462,6 +463,7 @@ export class EmployeesService implements OnModuleInit {
     private readonly enrollment: EnrollmentService,
     private readonly consent: ConsentService,
     private readonly compensation: CompensationService,
+    private readonly items: NoticeItemsService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -576,6 +578,10 @@ export class EmployeesService implements OnModuleInit {
     );
     await this.scope.forgetScopes();
     await this.users.settleRoleFlips(viewer.userId, written.flips);
+    await this.items.regroupPeople(
+      "REQUESTS",
+      bossed.flatMap((one) => written.ids.get(one.code as string) ?? []),
+    );
     await this.users.mailSetups(written.jobs);
     const seated = await this.seatOnKiosks(plans, written.ids);
     const landed = (id: number, field: ImportColumn) =>
@@ -1575,6 +1581,9 @@ export class EmployeesService implements OnModuleInit {
       await this.scope.forgetScopes();
     }
     await this.users.settleRoleFlips(viewer.userId, written.flips);
+    if (written.saved.managerId !== held.managerId) {
+      await this.items.regroupPeople("REQUESTS", [id]);
+    }
     // Field names only: a second copy of personal data is a second place the
     // right to erasure has to reach (KEHOACH 9.24 rule 4).
     await this.audit.record({

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { NoticeChannel, NoticeKind } from "@prisma/client";
+import { NoticeChannel, NoticeItemState, NoticeKind, NoticeOutcome } from "@prisma/client";
 import { Transform } from "class-transformer";
 import { IsBoolean, IsEnum, IsIn, IsOptional, IsString, MaxLength } from "class-validator";
 
@@ -51,6 +51,45 @@ export class ListNoticesDto {
   @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   unread?: boolean;
+}
+
+export class NoticeItemView {
+  @ApiProperty({ example: "requests:e3bf5f75-3ad5-4aca-9258-33e4a3357956", description: "The work's key: its queue and subject" })
+  key!: string;
+
+  @ApiProperty({
+    enum: NoticeItemState,
+    enumName: "NoticeItemState",
+    example: NoticeItemState.DONE,
+    description: "OPEN while it waits; any other state closed it for the whole group",
+  })
+  state!: NoticeItemState;
+
+  @ApiProperty({
+    enum: NoticeOutcome,
+    enumName: "NoticeOutcome",
+    nullable: true,
+    example: NoticeOutcome.APPROVED,
+    description: "The verb of the result, so the row can say approved by whom",
+  })
+  outcome!: NoticeOutcome | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "Trần Thị B",
+    description: "Who closed it: their name, or their email when the login has no employee record",
+  })
+  actorName!: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    nullable: true,
+    example: "2026-10-01T02:12:00.000Z",
+    description: "When it closed; null while open",
+  })
+  closedAt!: Date | null;
 }
 
 export class NoticeView {
@@ -173,6 +212,9 @@ export class NoticeView {
     description: "When it was raised",
   })
   createdAt!: Date;
+
+  @ApiProperty({ type: NoticeItemView, nullable: true, description: "The shared work this notice belongs to; null for news" })
+  item!: NoticeItemView | null;
 }
 
 export class UnreadView {

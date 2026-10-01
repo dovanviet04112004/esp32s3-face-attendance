@@ -28,6 +28,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { dayAsDate } from "../timesheet/local-day.js";
 import { TimesheetService } from "../timesheet/timesheet.service.js";
 import type { CreateLeaveTypeDto, UpdateLeaveTypeDto } from "./dto/leave-type.dto.js";
@@ -190,6 +191,7 @@ export class LeaveService {
     private readonly scope: ScopeService,
     private readonly notices: NotificationsService,
     private readonly audience: AudienceService,
+    private readonly items: NoticeItemsService,
     private readonly timesheet: TimesheetService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
@@ -406,9 +408,7 @@ export class LeaveService {
       }
       return raced;
     }
-    await this.notices.raiseMany(await this.audience.audienceOf("REQUESTS", filed.id), "REQUEST_WAITING", {
-      requestId: filed.id,
-    });
+    await this.items.open("REQUESTS", filed);
     return filed;
   }
 
@@ -581,6 +581,11 @@ export class LeaveService {
       }
       return tx.request.findUniqueOrThrow({ where: { id } });
     });
+    await this.items.close("REQUESTS", id, {
+      state: "DONE",
+      outcome: body.approve ? "APPROVED" : "REJECTED",
+      actorId: viewer.userId,
+    });
     await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", {
       requestId: id,
       approved: body.approve,
@@ -696,7 +701,7 @@ export class LeaveService {
     if (held.state !== "PENDING") {
       throw new ConflictException("REQUEST_ALREADY_DECIDED");
     }
-    return this.db.$transaction(async (tx) => {
+    const dropped = await this.db.$transaction(async (tx) => {
       const claimed = await tx.request.updateMany({
         where: { id, state: "PENDING" },
         data: { state: "CANCELLED" },
@@ -709,6 +714,8 @@ export class LeaveService {
       }
       return tx.request.findUniqueOrThrow({ where: { id } });
     });
+    await this.items.close("REQUESTS", id, { state: "WITHDRAWN", actorId: viewer.userId });
+    return dropped;
   }
 
   private async ledgerWhere(viewer: Viewer, query: ListRequestsDto): Promise<Prisma.RequestWhereInput> {

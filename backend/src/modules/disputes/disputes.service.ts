@@ -22,6 +22,7 @@ import {
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import type { AnswerDisputeDto, ListDisputesDto, RaiseDisputeDto } from "./dto/dispute.dto.js";
 
 const ANSWERERS = QUEUE_DESKS.disputes;
@@ -50,6 +51,7 @@ export class DisputesService {
     private readonly audit: AuditService,
     private readonly notices: NotificationsService,
     private readonly audience: AudienceService,
+    private readonly items: NoticeItemsService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -92,9 +94,7 @@ export class DisputesService {
       subjectId: slip.id,
       meta: { lineCode, dueAt: made.dueAt.toISOString() },
     });
-    await this.notices.raiseMany(await this.audience.audienceOf("DISPUTES", made.id), "REQUEST_WAITING", {
-      payslipId: slip.id,
-    });
+    await this.items.open("DISPUTES", made);
     return made;
   }
 
@@ -190,7 +190,12 @@ export class DisputesService {
       subjectId: held.payslipId,
       meta: { outcome: body.outcome, retroId: answered.retroId, amount: body.amount ?? null },
     });
-    await this.notices.raiseFor(held.employeeId, "DISPUTE_ANSWERED", { payslipId: held.payslipId });
+    await this.items.close("DISPUTES", held.id, { state: "DONE", outcome: body.outcome, actorId: viewer.userId });
+    await this.notices.raiseFor(held.employeeId, "DISPUTE_ANSWERED", {
+      disputeId: held.id,
+      payslipId: held.payslipId,
+      outcome: body.outcome,
+    });
     this.log.log(`dispute ${held.id} answered ${body.outcome}`);
     return answered;
   }
@@ -216,6 +221,7 @@ export class DisputesService {
       subjectId: held.payslipId,
       meta: { lineCode: held.lineCode },
     });
+    await this.items.close("DISPUTES", held.id, { state: "WITHDRAWN", actorId: viewer.userId });
     return dropped;
   }
 

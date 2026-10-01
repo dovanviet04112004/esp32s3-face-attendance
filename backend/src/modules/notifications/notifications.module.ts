@@ -6,6 +6,7 @@ import { AudienceService } from "./audience.service.js";
 import { BackupWatchService } from "./backup-watch.service.js";
 import { ContractAlertsService } from "./contract-alerts.service.js";
 import { MailerService } from "./mailer.service.js";
+import { NoticeItemsService } from "./notice-items.service.js";
 import { NotificationsController } from "./notifications.controller.js";
 import { NotificationsService } from "./notifications.service.js";
 import { StaleRequestsService } from "./stale-requests.service.js";
@@ -17,6 +18,7 @@ import { StaleRequestsService } from "./stale-requests.service.js";
   providers: [
     AudienceService,
     NotificationsService,
+    NoticeItemsService,
     ContractAlertsService,
     StaleRequestsService,
     BackupWatchService,
@@ -25,6 +27,7 @@ import { StaleRequestsService } from "./stale-requests.service.js";
   exports: [
     AudienceService,
     NotificationsService,
+    NoticeItemsService,
     ContractAlertsService,
     StaleRequestsService,
     BackupWatchService,

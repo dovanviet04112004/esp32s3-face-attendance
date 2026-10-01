@@ -20,6 +20,7 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { localDay } from "../timesheet/local-day.js";
 import { UsersService } from "../users/users.service.js";
 import type {
@@ -120,6 +121,7 @@ export class OrgService {
     private readonly audit: AuditService,
     private readonly scope: ScopeService,
     private readonly users: UsersService,
+    private readonly items: NoticeItemsService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -233,6 +235,9 @@ export class OrgService {
     });
     await this.scope.forgetScopes();
     await this.users.settleRoleFlips(viewer.userId, flips);
+    if (toManager) {
+      await this.items.regroupPeople("REQUESTS", ids);
+    }
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.ORG_REORG,

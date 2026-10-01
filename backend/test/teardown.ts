@@ -12,6 +12,7 @@ export async function clearDeskNotices(db: PrismaService, codes: string[]): Prom
     db.dependent.findMany({ where, select: { id: true } }),
   ]);
   const ids = (rows: { id: string }[]) => rows.map((one) => one.id);
+  await db.noticeItem.deleteMany({ where });
   await db.notification.deleteMany({
     where: {
       OR: [

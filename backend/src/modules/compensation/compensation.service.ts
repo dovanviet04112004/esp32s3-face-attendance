@@ -25,6 +25,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import {
   PERSON_VIEW,
   QUEUE_DESKS,
@@ -117,6 +118,7 @@ export class CompensationService {
     private readonly config: ConfigService<Env, true>,
     private readonly notices: NotificationsService,
     private readonly audience: AudienceService,
+    private readonly items: NoticeItemsService,
   ) {}
 
   allowanceTypes(all = false): Promise<AllowanceType[]> {
@@ -506,9 +508,7 @@ export class CompensationService {
       .catch((error: unknown) => {
         throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
       });
-    await this.notices.raiseMany(await this.audience.audienceOf("DEPENDENTS", made.id), "REQUEST_WAITING", {
-      dependentId: made.id,
-    });
+    await this.items.open("DEPENDENTS", made);
     return made;
   }
 
@@ -543,6 +543,11 @@ export class CompensationService {
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(held.employeeId),
       meta: { dependentId: id },
+    });
+    await this.items.close("DEPENDENTS", id, {
+      state: "DONE",
+      outcome: body.approve ? "APPROVED" : "REJECTED",
+      actorId: viewer.userId,
     });
     await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { dependentId: id, approved: body.approve });
     return this.db.dependent.findUniqueOrThrow({ where: { id } });

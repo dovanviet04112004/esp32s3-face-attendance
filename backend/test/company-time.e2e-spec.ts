@@ -16,6 +16,7 @@ import { AttendanceService } from "../src/modules/attendance/attendance.service.
 import { EnrollmentListener } from "../src/modules/enrollment/enrollment.listener.js";
 import type { KioskMessage } from "../src/modules/mqtt/mqtt.events.js";
 import { ContractAlertsService } from "../src/modules/notifications/contract-alerts.service.js";
+import { NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
 import { StaleRequestsService } from "../src/modules/notifications/stale-requests.service.js";
 import { ReportsService } from "../src/modules/reports/reports.service.js";
 import { dayWindow, localDateSql, localDay } from "../src/modules/timesheet/local-day.js";
@@ -248,19 +249,19 @@ describe("company time (e2e)", () => {
         },
       });
       await db.$executeRaw`UPDATE "Request" SET "createdAt" = ${createdAt} WHERE "id" = ${row.id}`;
+      await app.get(NoticeItemsService).open("REQUESTS", row);
       filed.push(row.id);
       return row.id;
     };
-    // 23:50 on the 9th in Vietnam, the 9th in UTC too: four days by the company, three by UTC.
-    const four = await fileAt(new Date("2031-03-09T16:50:00.000Z"), "2031-05-05");
+    const stalledOf = (id: string) => db.notification.findFirst({ where: { requestId: id, kind: "REQUEST_STALLED" } });
+    // 23:50 on the 9th in Vietnam, the 9th in UTC too: five days by the company, four by UTC.
+    const five = await fileAt(new Date("2031-03-09T16:50:00.000Z"), "2031-05-05");
     // 08:00 on the 11th in Vietnam, 01:00 UTC: three days by the company, two by UTC.
     const three = await fileAt(new Date("2031-03-11T01:00:00.000Z"), "2031-05-06");
     await stale.sweep(HALF_PAST_MIDNIGHT);
 
-    assert.equal(await db.notification.count({ where: { requestId: four } }), 0, "a four-day wait was told as three");
-    const told = await db.notification.findMany({ where: { requestId: three } });
-    assert.ok(told.length > 0, "a three-day wait was not told");
-    assert.ok(told.every((one) => one.daysWaited === 3));
+    assert.equal((await stalledOf(five))?.daysWaited, 5, "a five-day wait was counted from UTC midnight");
+    assert.equal((await stalledOf(three))?.daysWaited, 3, "a three-day wait was not told, or counted from UTC midnight");
   });
 
   it("counts a contract's days left from the company's midnight", async () => {

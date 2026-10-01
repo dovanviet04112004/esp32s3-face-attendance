@@ -126,7 +126,7 @@ describe("notice channels answer for themselves (e2e)", () => {
   });
 
   it("writes an in-app notice for a whole payroll period at once", async () => {
-    await notices.raiseMany([...loginOf.values()], KIND, {});
+    await notices.raiseEachFor(KIND, [...idOf.values()].map((employeeId) => ({ employeeId, facts: {} })));
     assert.equal(await heldFor(BOTH_ON), 1, "somebody with both channels on was told nothing");
   });
 

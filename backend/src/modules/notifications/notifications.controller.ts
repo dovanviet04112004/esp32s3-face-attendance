@@ -9,7 +9,7 @@ import {
   ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
-import type { Notification, NotificationPreference } from "@prisma/client";
+import type { NotificationPreference } from "@prisma/client";
 
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
@@ -35,6 +35,7 @@ import { THROTTLE } from "../auth/auth.types.js";
 import { ContractAlertsService } from "./contract-alerts.service.js";
 import {
   NotificationsService,
+  type NoticeRow,
   type PreferenceRow,
   type SubscriptionView as KeptSubscription,
   type Unread,
@@ -54,7 +55,7 @@ export class NotificationsController {
   @Get()
   @ApiOperation({ summary: "This viewer's notices, newest first, fifty at most" })
   @ApiOkResponse({ type: [NoticeView] })
-  list(@CurrentViewer() viewer: Viewer, @Query() query: ListNoticesDto): Promise<Notification[]> {
+  list(@CurrentViewer() viewer: Viewer, @Query() query: ListNoticesDto): Promise<NoticeRow[]> {
     return this.notices.list(viewer.userId, query.unread === true);
   }
 

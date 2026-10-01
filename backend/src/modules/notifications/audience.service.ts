@@ -22,6 +22,17 @@ export interface QueueWhere {
 
 export type InboxQueue = keyof QueueWhere;
 
+/** The state a queue's business row holds while it waits; any other state closes its item (KEHOACH 9.21.4). */
+export const WAITING_STATE = {
+  REQUESTS: "PENDING",
+  ADVANCES_TO_DECIDE: "PENDING",
+  ADVANCES_TO_PAY: "APPROVED",
+  CERTIFICATES: "REQUESTED",
+  PROFILE_CHANGES: "PENDING",
+  DISPUTES: "OPEN",
+  DEPENDENTS: "PENDING",
+} as const satisfies Record<InboxQueue, string>;
+
 const DESK_OF: Record<Exclude<InboxQueue, "REQUESTS">, keyof typeof QUEUE_DESKS> = {
   ADVANCES_TO_DECIDE: "advancesToDecide",
   ADVANCES_TO_PAY: "advancesToPay",
@@ -67,13 +78,17 @@ export class AudienceService {
       return null;
     }
     const waiting: Record<Exclude<InboxQueue, "REQUESTS">, object> = {
-      ADVANCES_TO_DECIDE: { state: "PENDING", ...notOwn },
-      ADVANCES_TO_PAY: { state: "APPROVED", ...notOwn },
-      CERTIFICATES: { state: "REQUESTED", ...notOwn },
+      ADVANCES_TO_DECIDE: { state: WAITING_STATE.ADVANCES_TO_DECIDE, ...notOwn },
+      ADVANCES_TO_PAY: { state: WAITING_STATE.ADVANCES_TO_PAY, ...notOwn },
+      CERTIFICATES: { state: WAITING_STATE.CERTIFICATES, ...notOwn },
       // Whoever asked on someone's behalf neither sees nor decides it (KEHOACH 9.17 item 6 rule 2).
-      PROFILE_CHANGES: { state: "PENDING", ...notOwn, OR: [{ askedById: null }, { askedById: { not: viewer.userId } }] },
-      DISPUTES: { state: "OPEN", ...notOwn },
-      DEPENDENTS: { state: "PENDING", ...notOwn },
+      PROFILE_CHANGES: {
+        state: WAITING_STATE.PROFILE_CHANGES,
+        ...notOwn,
+        OR: [{ askedById: null }, { askedById: { not: viewer.userId } }],
+      },
+      DISPUTES: { state: WAITING_STATE.DISPUTES, ...notOwn },
+      DEPENDENTS: { state: WAITING_STATE.DEPENDENTS, ...notOwn },
     };
     return waiting[queue as Exclude<InboxQueue, "REQUESTS">] as QueueWhere[Q];
   }
@@ -129,7 +144,7 @@ export class AudienceService {
         { createdAt: { lt: this.escalatedBefore() }, ...notOwn },
       );
     }
-    return mine.length === 0 ? null : { state: "PENDING", OR: mine };
+    return mine.length === 0 ? null : { state: WAITING_STATE.REQUESTS, OR: mine };
   }
 
   private async standingInFor(employeeId: number): Promise<number[]> {

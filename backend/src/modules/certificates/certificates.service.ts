@@ -22,6 +22,7 @@ import {
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { localDay } from "../timesheet/local-day.js";
 import { letterFor, type Earnings } from "./certificate-text.js";
 import type { AskCertificateDto, DecideCertificateDto, ListCertificatesDto } from "./dto/certificate.dto.js";
@@ -52,6 +53,7 @@ export class CertificatesService {
     private readonly audit: AuditService,
     private readonly notices: NotificationsService,
     private readonly audience: AudienceService,
+    private readonly items: NoticeItemsService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -75,9 +77,7 @@ export class CertificatesService {
       subjectId: String(viewer.employeeId),
       meta: { kind: body.kind, purpose: body.purpose },
     });
-    await this.notices.raiseMany(await this.audience.audienceOf("CERTIFICATES", made.id), "REQUEST_WAITING", {
-      certificateId: made.id,
-    });
+    await this.items.open("CERTIFICATES", made);
     return made;
   }
 
@@ -147,6 +147,7 @@ export class CertificatesService {
       meta: { kind: held.kind, serial },
     });
     this.log.log(`certificate ${serial} issued to employee ${held.employeeId}`);
+    await this.items.close("CERTIFICATES", held.id, { state: "DONE", outcome: "ISSUED", actorId: viewer.userId });
     await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { certificateId: held.id, approved: true });
     return this.db.certificate.findUniqueOrThrow({ where: { id: held.id } });
   }
@@ -167,6 +168,7 @@ export class CertificatesService {
       subjectId: String(held.employeeId),
       meta: { kind: held.kind, note: body.note ?? null },
     });
+    await this.items.close("CERTIFICATES", held.id, { state: "DONE", outcome: "REJECTED", actorId: viewer.userId });
     await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { certificateId: held.id, approved: false });
     return this.db.certificate.findUniqueOrThrow({ where: { id: held.id } });
   }
@@ -191,6 +193,7 @@ export class CertificatesService {
       subjectId: String(held.employeeId),
       meta: { kind: held.kind },
     });
+    await this.items.close("CERTIFICATES", held.id, { state: "WITHDRAWN", actorId: viewer.userId });
     return this.db.certificate.findUniqueOrThrow({ where: { id: held.id } });
   }
 
