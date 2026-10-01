@@ -1,14 +1,17 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { api } from "./api";
+import { useSession } from "./auth";
 
 export interface Filed {
   clientKey: string;
   path: string;
   body: Record<string, unknown>;
   filedAt: number;
+  /** The account that filed it, the only one whose ticket may send it (KEHOACH 9.21.3 rule 2). */
+  owner: string;
 }
 
 const kDatabase = "kiosk-outbox";
@@ -51,17 +54,31 @@ function run<T>(mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRe
 }
 
 async function reload(): Promise<void> {
-  held = ((await run<Filed[]>("readonly", (store) => store.getAll())) ?? []).sort(
-    (a, b) => a.filedAt - b.filedAt,
-  );
+  const all = (await run<Filed[]>("readonly", (store) => store.getAll())) ?? [];
+  for (const nobodys of all.filter((one) => typeof one.owner !== "string")) {
+    await run("readwrite", (store) => store.delete(nobodys.clientKey));
+  }
+  held = all.filter((one) => typeof one.owner === "string").sort((a, b) => a.filedAt - b.filedAt);
   announce();
 }
 
 /** Keep a request nobody could send. It carries its own key, so sending it
  *  twice lands on one row (KEHOACH 9.21.3 rule 2).
  */
-export async function keep(entry: Filed): Promise<void> {
-  await run("readwrite", (store) => store.put(entry));
+export async function keep(entry: Omit<Filed, "owner">): Promise<void> {
+  const owner = useSession.getState().userId;
+  if (owner === null) {
+    throw new Error("nobody is signed in to file this");
+  }
+  await run("readwrite", (store) => store.put({ ...entry, owner }));
+  await reload();
+}
+
+/** Drop what one account left waiting on this device, once it has agreed to. */
+export async function dropOwned(owner: string): Promise<void> {
+  for (const entry of held.filter((one) => one.owner === owner)) {
+    await run("readwrite", (store) => store.delete(entry.clientKey));
+  }
   await reload();
 }
 
@@ -81,7 +98,8 @@ export async function flush(): Promise<void> {
   sending = true;
   try {
     await reload();
-    for (const entry of [...held]) {
+    const me = useSession.getState().userId;
+    for (const entry of held.filter((one) => one.owner === me)) {
       try {
         await api.post(entry.path, { ...entry.body, clientKey: entry.clientKey });
         await drop(entry.clientKey);
@@ -126,7 +144,9 @@ function snapshot(): Filed[] {
 
 const EMPTY: Filed[] = [];
 
-/** What is still waiting to leave this device. */
+/** What the signed-in account still has waiting to leave this device. */
 export function useOutbox(): Filed[] {
-  return useSyncExternalStore(subscribe, snapshot, () => EMPTY);
+  const all = useSyncExternalStore(subscribe, snapshot, () => EMPTY);
+  const me = useSession((s) => s.userId);
+  return useMemo(() => all.filter((one) => one.owner === me), [all, me]);
 }

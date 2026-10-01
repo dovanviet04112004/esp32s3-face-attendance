@@ -246,10 +246,11 @@ export default function SettingsPage() {
                 <LinkButton href="/change-password" variant="secondary" icon={KeyIcon}>
                   {t("passwordGo")}
                 </LinkButton>
-                <Button variant="secondary-destructive" icon={SignOutIcon} loading={leaving.isPending} onClick={() => leaving.mutate()}>
+                <Button variant="secondary-destructive" icon={SignOutIcon} loading={leaving.isPending} onClick={leaving.start}>
                   {nav("signOut")}
                 </Button>
               </div>
+              {leaving.confirm}
             </div>
           </Section>
         </div>

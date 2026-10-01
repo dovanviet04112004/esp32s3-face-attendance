@@ -63,7 +63,11 @@
     "sectionCatalogues": "Catalogues",
     "jobTitles": "Job titles",
     "legalEntities": "Legal entities",
-    "allowances": "Allowances"
+    "allowances": "Allowances",
+    "unsentTitle": "Requests not sent yet",
+    "unsentLead": "{count, plural, one {# request} other {# requests}} on this device could not be sent while offline. Signing out now drops them.",
+    "unsentStay": "Stay signed in",
+    "unsentDrop": "Sign out and drop them"
   },
   "roles": {
     "ADMIN": "Administrator",

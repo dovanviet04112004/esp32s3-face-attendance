@@ -7,6 +7,7 @@ export const ROLES = ["ADMIN", "HR", "PAYROLL", "MANAGER", "EMPLOYEE", "VIEWER"]
 export type Role = (typeof ROLES)[number];
 
 export interface Claims {
+  userId: string | null;
   role: Role | null;
   employeeId: number | null;
 }
@@ -15,6 +16,7 @@ interface Session {
   accessToken: string | null;
   /** When to renew, on this device's clock; null when the token carries no lifetime. */
   renewAt: number | null;
+  userId: string | null;
   role: Role | null;
   employeeId: number | null;
   /** The signed-in address, as sign-in and every refresh return it. */
@@ -32,7 +34,7 @@ export function whenSignedOut(forget: () => void): () => void {
   return () => forgetters.delete(forget);
 }
 
-const kSignedOut = { accessToken: null, renewAt: null, role: null, employeeId: null, email: null };
+const kSignedOut = { accessToken: null, renewAt: null, userId: null, role: null, employeeId: null, email: null };
 
 const kRenewEarlyMs = 60_000;
 
@@ -64,6 +66,7 @@ export const useSession = create<Session>((set) => ({
     set((held) => ({
       accessToken,
       renewAt: renewAtOf(accessToken),
+      userId: claims.userId,
       role: claims.role,
       employeeId: claims.employeeId,
       email: email ?? held.email,
@@ -85,6 +88,7 @@ export const useSession = create<Session>((set) => ({
 export function claimsOf(accessToken: string): Claims {
   const claims = payloadOf(accessToken);
   return {
+    userId: typeof claims?.sub === "string" ? claims.sub : null,
     role: (claims?.role as Role | undefined) ?? null,
     employeeId: typeof claims?.employeeId === "number" ? claims.employeeId : null,
   };

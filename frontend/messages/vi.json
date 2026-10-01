@@ -63,7 +63,11 @@
     "sectionCatalogues": "Danh mục",
     "jobTitles": "Chức danh",
     "legalEntities": "Pháp nhân",
-    "allowances": "Phụ cấp"
+    "allowances": "Phụ cấp",
+    "unsentTitle": "Còn đơn chưa gửi",
+    "unsentLead": "Máy này còn {count} đơn chưa gửi được vì mất mạng. Đăng xuất bây giờ sẽ bỏ các đơn ấy.",
+    "unsentStay": "Ở lại",
+    "unsentDrop": "Đăng xuất và bỏ đơn"
   },
   "roles": {
     "ADMIN": "Quản trị hệ thống",
