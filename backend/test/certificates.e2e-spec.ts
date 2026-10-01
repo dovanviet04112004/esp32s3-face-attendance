@@ -161,7 +161,7 @@ describe("letters of employment and income (e2e)", () => {
     const res = await request(http)
       .post(`/certificates/${asked}/issue`)
       .set("Authorization", `Bearer ${desk}`);
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 409);
     assert.equal(res.body.message, "CERTIFICATE_ALREADY_DECIDED");
   });
 

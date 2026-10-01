@@ -67,7 +67,7 @@ export class ProfileController {
   @ApiParam(CHANGE_ID)
   @ApiCreatedResponse({ type: ProfileChangeView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
   approve(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<ProfileChange> {
     return this.profile.approve(viewer, id);
   }
@@ -78,7 +78,7 @@ export class ProfileController {
   @ApiParam(CHANGE_ID)
   @ApiCreatedResponse({ type: ProfileChangeView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
   reject(
     @Param("id") id: string,
     @Body() body: DecideProfileChangeDto,
@@ -93,7 +93,7 @@ export class ProfileController {
   @ApiParam(CHANGE_ID)
   @ApiCreatedResponse({ type: ProfileChangeView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PROFILE_NOT_YOURS" })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
   cancel(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<ProfileChange> {
     return this.profile.cancel(viewer, id);
   }

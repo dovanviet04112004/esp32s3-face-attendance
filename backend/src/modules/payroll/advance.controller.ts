@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpStatus, Param, Post, Query, UseGuards } from
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -60,7 +61,7 @@ export class AdvanceController {
   @ApiOperation({ summary: "Approve or turn down; paying is a separate step" })
   @ApiCreatedResponse({ type: AdvanceView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "ADVANCE_DECIDE_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "ADVANCE_ALREADY_DECIDED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "ADVANCE_ALREADY_DECIDED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ADVANCE_NOT_FOUND" })
   @ApiParam({ name: "id", description: "Advance id (UUID)", example: "ee5e4c9f-9f5c-4ebd-8759-9b7ac5ed3696" })
   decide(
@@ -76,7 +77,7 @@ export class AdvanceController {
   @ApiOperation({ summary: "Record that the money went out; payroll deducts it next" })
   @ApiCreatedResponse({ type: AdvanceView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "ADVANCE_PAY_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "ADVANCE_NOT_APPROVED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "ADVANCE_NOT_APPROVED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ADVANCE_NOT_FOUND" })
   @ApiParam({ name: "id", description: "Advance id (UUID)", example: "ee5e4c9f-9f5c-4ebd-8759-9b7ac5ed3696" })
   markPaid(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<SalaryAdvance> {
@@ -86,7 +87,7 @@ export class AdvanceController {
   @Post(":id/cancel")
   @ApiOperation({ summary: "Withdraw one's own request while it still waits" })
   @ApiCreatedResponse({ type: AdvanceView })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "ADVANCE_ALREADY_DECIDED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "ADVANCE_ALREADY_DECIDED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ADVANCE_NOT_FOUND" })
   @ApiParam({ name: "id", description: "Advance id (UUID)", example: "ee5e4c9f-9f5c-4ebd-8759-9b7ac5ed3696" })
   cancel(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<SalaryAdvance> {

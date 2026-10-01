@@ -292,7 +292,7 @@ export class ProfileService {
       throw new NotFoundException("PROFILE_CHANGE_NOT_FOUND");
     }
     if (held.state !== "PENDING") {
-      throw new BadRequestException("PROFILE_CHANGE_DECIDED");
+      throw new ConflictException("PROFILE_CHANGE_DECIDED");
     }
     return held;
   }
@@ -305,7 +305,7 @@ export class ProfileService {
   ): Promise<void> {
     const claimed = await tx.profileChange.updateMany({ where: { id, state: "PENDING" }, data });
     if (claimed.count !== 1) {
-      throw new BadRequestException("PROFILE_CHANGE_DECIDED");
+      throw new ConflictException("PROFILE_CHANGE_DECIDED");
     }
   }
 

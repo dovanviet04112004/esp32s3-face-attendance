@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpStatus, Param, Post, Query, UseGuards } from
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -77,7 +78,7 @@ export class CertificatesController {
   @ApiParam(CERTIFICATE_ID)
   @ApiCreatedResponse({ type: CertificateView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "CERTIFICATE_ALREADY_DECIDED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "CERTIFICATE_ALREADY_DECIDED" })
   issue(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<Certificate> {
     return this.certificates.issue(viewer, id);
   }
@@ -88,7 +89,7 @@ export class CertificatesController {
   @ApiParam(CERTIFICATE_ID)
   @ApiCreatedResponse({ type: CertificateView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "CERTIFICATE_ALREADY_DECIDED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "CERTIFICATE_ALREADY_DECIDED" })
   reject(
     @Param("id") id: string,
     @Body() body: DecideCertificateDto,

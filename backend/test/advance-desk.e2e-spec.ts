@@ -207,7 +207,7 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
       .post(`/advances/${filedId}/decide`)
       .set("Authorization", `Bearer ${deskToken}`)
       .send({ approve: false });
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 409);
     assert.equal(res.body.message, "ADVANCE_ALREADY_DECIDED");
   });
 
@@ -277,7 +277,7 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
     const twice = await request(app.getHttpServer())
       .post(`/advances/${filedId}/paid`)
       .set("Authorization", `Bearer ${payrollToken}`);
-    assert.equal(twice.status, 400);
+    assert.equal(twice.status, 409);
     assert.equal(twice.body.message, "ADVANCE_NOT_APPROVED");
   });
 

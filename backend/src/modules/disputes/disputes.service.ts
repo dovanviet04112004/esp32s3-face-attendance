@@ -165,7 +165,7 @@ export class DisputesService {
         },
       });
       if (claimed.count !== 1) {
-        throw new BadRequestException("DISPUTE_ALREADY_ANSWERED");
+        throw new ConflictException("DISPUTE_ALREADY_ANSWERED");
       }
       const paid =
         body.outcome === "UPHELD" && body.amount !== undefined
@@ -206,7 +206,7 @@ export class DisputesService {
       data: { state: "WITHDRAWN" },
     });
     if (claimed.count !== 1) {
-      throw new BadRequestException("DISPUTE_ALREADY_ANSWERED");
+      throw new ConflictException("DISPUTE_ALREADY_ANSWERED");
     }
     const dropped = await this.db.payslipDispute.findUniqueOrThrow({ where: { id: held.id } });
     await this.audit.record({
@@ -225,7 +225,7 @@ export class DisputesService {
       throw new NotFoundException("DISPUTE_NOT_FOUND");
     }
     if (held.state !== "OPEN") {
-      throw new BadRequestException("DISPUTE_ALREADY_ANSWERED");
+      throw new ConflictException("DISPUTE_ALREADY_ANSWERED");
     }
     return held;
   }

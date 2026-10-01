@@ -1370,7 +1370,7 @@
     "ACCOUNT_CLOSED": "This account has been closed.",
     "ADVANCE_ALREADY_DECIDED": "This advance has already been answered.",
     "ADVANCE_DECIDE_DENIED": "You may not decide advances.",
-    "ADVANCE_NOT_APPROVED": "This advance has not been approved.",
+    "ADVANCE_NOT_APPROVED": "This advance is not waiting to be paid.",
     "ADVANCE_NOT_FOUND": "No such advance request.",
     "ADVANCE_PAY_DENIED": "You may not pay advances out.",
     "ASSET_ALREADY_ISSUED": "Somebody is already holding this asset.",

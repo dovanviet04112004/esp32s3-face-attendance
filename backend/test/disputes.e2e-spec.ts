@@ -346,7 +346,7 @@ describe("disputing a payslip (e2e)", () => {
       .post(`/payslip-disputes/${disputeId}/answer`)
       .set("Authorization", `Bearer ${desk}`)
       .send({ outcome: "REJECTED", answer: ANSWER });
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 409);
     assert.equal(res.body.message, "DISPUTE_ALREADY_ANSWERED");
     assert.equal(await db.retroAdjustment.count({ where: { employeeId } }), 1, "a second answer minted money");
   });

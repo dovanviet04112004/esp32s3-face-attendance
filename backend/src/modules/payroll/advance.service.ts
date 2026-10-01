@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Prisma, SalaryAdvance } from "@prisma/client";
 
@@ -151,7 +151,7 @@ export class AdvanceService {
       },
     });
     if (claimed.count !== 1) {
-      throw new BadRequestException("ADVANCE_ALREADY_DECIDED");
+      throw new ConflictException("ADVANCE_ALREADY_DECIDED");
     }
     const decided = await this.require(id);
     await this.audit.record({
@@ -189,7 +189,7 @@ export class AdvanceService {
       data: { state: "PAID", paidAt: new Date() },
     });
     if (claimed.count !== 1) {
-      throw new BadRequestException("ADVANCE_NOT_APPROVED");
+      throw new ConflictException("ADVANCE_NOT_APPROVED");
     }
     await this.audit.record({ actorId: viewer.userId, action: AUDIT_ACTIONS.ADVANCE_PAY,
       subject: AUDIT_SUBJECTS.ADVANCE, subjectId: id });
@@ -207,7 +207,7 @@ export class AdvanceService {
       data: { state: "CANCELLED" },
     });
     if (claimed.count !== 1) {
-      throw new BadRequestException("ADVANCE_ALREADY_DECIDED");
+      throw new ConflictException("ADVANCE_ALREADY_DECIDED");
     }
     return this.require(id);
   }

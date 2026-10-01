@@ -466,7 +466,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
       .post(`/profile-changes/${bankChange}/reject`)
       .set("Authorization", `Bearer ${desk}`)
       .send({ note: "e2e" });
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 409);
     assert.equal(res.body.message, "PROFILE_CHANGE_DECIDED");
   });
 

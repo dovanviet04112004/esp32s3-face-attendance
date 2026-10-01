@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Certificate, PayslipState, Prisma } from "@prisma/client";
 
@@ -137,7 +137,7 @@ export class CertificatesService {
       data: { state: "ISSUED", serial, issuedAt: new Date(), issuedById: viewer.userId },
     });
     if (claimed.count !== 1) {
-      throw new BadRequestException("CERTIFICATE_ALREADY_DECIDED");
+      throw new ConflictException("CERTIFICATE_ALREADY_DECIDED");
     }
     await this.audit.record({
       actorId: viewer.userId,
@@ -158,7 +158,7 @@ export class CertificatesService {
       data: { state: "REJECTED", note: body.note ?? null, issuedById: viewer.userId },
     });
     if (claimed.count !== 1) {
-      throw new BadRequestException("CERTIFICATE_ALREADY_DECIDED");
+      throw new ConflictException("CERTIFICATE_ALREADY_DECIDED");
     }
     await this.audit.record({
       actorId: viewer.userId,
@@ -256,7 +256,7 @@ export class CertificatesService {
       throw new NotFoundException("CERTIFICATE_NOT_FOUND");
     }
     if (held.state !== "REQUESTED") {
-      throw new BadRequestException("CERTIFICATE_ALREADY_DECIDED");
+      throw new ConflictException("CERTIFICATE_ALREADY_DECIDED");
     }
     return held;
   }
