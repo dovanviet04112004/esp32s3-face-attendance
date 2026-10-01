@@ -128,7 +128,13 @@ export function PersonPicker({
       description={description}
       error={error}
     >
-      <Combobox.TriggerInput placeholder={t("searchHint")} clearLabel={common("clear")} showOptionsLabel={common("showOptions")} />
+      <Combobox.TriggerInput
+        placeholder={t("searchHint")}
+        clearLabel={common("clear")}
+        showOptionsLabel={common("showOptions")}
+        // Base UI reports text only at compositionend, and a Vietnamese IME composes a word until space.
+        onChange={(event) => setTyped(event.currentTarget.value)}
+      />
       <Combobox.Content>
         <Combobox.Empty>
           {pending ? (

@@ -69,8 +69,9 @@ const kMinLength = 2;
 // The api refuses a longer term (SearchQueryDto).
 const kMaxLength = 64;
 
+// NFD leaves đ whole, since Unicode files it as a letter of its own rather than d with a mark.
 function folded(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/đ/g, "d");
 }
 
 /** Cloudflare's quick search: pages this role can open, then people,
@@ -120,6 +121,8 @@ export function GlobalSearch() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  const wanted = typed.trim().slice(0, kMaxLength);
 
   const hits = useQuery({
     queryKey: ["search", term],
@@ -184,9 +187,15 @@ export function GlobalSearch() {
         getSelectableItems={(all) => all.flatMap((pile) => pile.items)}
         onSelect={(item) => go(item)}
       >
-        <CommandPalette.Input placeholder={t("placeholder")} autoComplete="off" spellCheck={false} />
+        <CommandPalette.Input
+          placeholder={t("placeholder")}
+          autoComplete="off"
+          spellCheck={false}
+          // Base UI reports text only at compositionend, and a Vietnamese IME composes a word until space.
+          onChange={(event) => setTyped(event.currentTarget.value)}
+        />
         <CommandPalette.List>
-          {term.length >= kMinLength && hits.isFetching && piles.length === 0 ? (
+          {wanted.length >= kMinLength && (wanted !== term || hits.isFetching) && piles.length === 0 ? (
             <CommandPalette.Loading />
           ) : (
             <>
