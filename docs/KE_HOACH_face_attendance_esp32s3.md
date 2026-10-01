@@ -4431,6 +4431,8 @@ backend/
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
     │   │                             #   throttler.storage.ts: bộ đếm hạn mức nằm ở Redis (§7.2)
+    │   │                             #   mfa.service.ts · totp.ts: bước mã sáu số, mã dự phòng,
+    │   │                             #   khoá sai mã — xác minh hai bước (§9.4)
     │   ├── users/    ├── devices/    ├── enrollment/
     │   ├── employees/                # import.ts đọc dòng và lập việc của từng dòng · workbook.ts đọc và ghi .xlsx (§9.20)
     │   │                             #   bulk.service.ts: thao tác trên một nhóm người đã chọn
@@ -4580,7 +4582,8 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | Bảng | Cột đáng chú ý |
 |---|---|
 | `User` | id, email, passwordHash, role(`ADMIN`/`HR`/`VIEWER`), employeeId, active |
-| `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt — một dòng mỗi thiết bị (§9.23 luật 5) |
+| `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt, mfaAt (lúc phiên qua bước mã, §9.4) — một dòng mỗi thiết bị (§9.23 luật 5) |
+| `UserMfa` | userId (khoá chính), secret và pendingSecret (`Bytes`, AES-256-GCM dưới `MFA_KEY`), pendingAt, enabledAt, lastStep (bước 30 s của mã đúng gần nhất), backupCodes (HMAC của mã dự phòng chưa dùng), misses, lockedUntil — §9.4. Tách khỏi `User` để không lượt đọc tài khoản nào kéo theo khoá bí mật |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
 | `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8) |
@@ -4592,7 +4595,7 @@ Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `im
 | `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, rolloutState. `url` để trống từ §7.7 và bỏ ở lần phát hành sau, theo luật nở rồi co (§9.22.3) |
 | `AuditLog` | actorId, action(từ `audit-actions.ts`), subjectType, subjectId, meta(json), ts — §9.24 |
 
-Mười hai bảng. `AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của
+Mười ba bảng. `AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của
 kiosk — unique index `(deviceId, localId)`.
 
 **`Device.status` tồn tại vì §7.3 trả hai mã khác nhau cho cùng một lời gọi.**
@@ -4725,11 +4728,12 @@ lần thử cách nhau 5 giây là hai sự kiện thật. Van đặt ở ngư�
 sớm thì hàng đợi không bao giờ đầy vì một sự thật duy nhất.
 
 
-**JWT — 2 loại token**
+**JWT — bốn loại vé**
 
 | Loại | Thời hạn | Nơi lưu | Payload |
 |---|---|---|---|
-| Access (web) | 15 phút | memory ở frontend | sub, role |
+| Access (web) | 15 phút | memory ở frontend | sub, role, sid, employeeId, mfa (đã qua bước mã, §9.4) |
+| Vé chờ bước mã (web) | `MFA_CHALLENGE_MINUTES` (10 phút) | memory của trang đăng nhập | sub; ký bằng khoá con của `MFA_KEY`, nên không cửa nào nhận nó làm vé access (§9.4) |
 | Refresh (web) | 7 ngày | cookie `httpOnly; Secure; SameSite=None` trên domain API | sub, jti (hash lưu DB để revoke) |
 | Device token (kiosk) | 90 ngày, xoay vòng | NVS mã hoá trên ESP32 | deviceId, serial, jti (hai vé cấp trong cùng một giây vẫn khác băm, §7.3 bước 5) |
 
@@ -4791,7 +4795,9 @@ frontend/
 │       │                                 #   đứng ngoài vỏ dashboard: mỗi cửa kết thúc
 │       │                                 #   bằng một phiên mới, và đổi mật khẩu đóng
 │       │                                 #   cả phiên đang mở chính nó (§9.23). layout
-│       │                                 #   giữ một thẻ đặt giữa màn cho cả bốn
+│       │                                 #   giữ một thẻ đặt giữa màn cho cả bốn. login
+│       │                                 #   đi tiếp bước mã hoặc lần ghi danh khi vai
+│       │                                 #   thuộc MFA_ROLES (§9.4), vẫn trong một trang
 │       └── (dashboard)/
 │           ├── layout.tsx            # sidebar + guard
 │           ├── overview/page.tsx     # §9.10 — việc chờ, việc của bàn, hôm nay
@@ -4881,6 +4887,10 @@ frontend/
 │   │                                 #   dùng chung cho chuông và trang; push-devices là các máy đang
 │   │                                 #   nhận đẩy, gỡ từng máy
 │   ├── documents/{document-reader.tsx, file-gaps.tsx}   # ★ §9.16 mục 9
+│   ├── auth/{code-field.tsx, authenticator-setup.tsx, backup-codes.tsx, two-step.tsx}
+│   │                                 # ★ §9.4 — xác minh hai bước: ô mã sáu số hoặc mã dự phòng,
+│   │                                 #   mã QR vẽ ngay trên trình duyệt bằng `uqr` (khoá không rời
+│   │                                 #   trang), mười mã dự phòng hiện một lần, và thẻ ở Cài đặt
 │   └── payroll/{payslip-view.tsx, run-progress.tsx, dispute-card.tsx, settlement-sheet.tsx,
 │                bonus-sheet.tsx}     # ★ số tiền của lượt thưởng, nhập trước khi chạy
 │                                     # ★ §9.17 mục 11 — một thẻ khiếu nại, hai phía đọc
@@ -5009,6 +5019,7 @@ deploy/
 │         · cloudflare-only.sh                           # ★ tường lửa 80/443 khi có Cloudflare (§7.2)
 ├── emqx/{emqx.conf, acl.conf, gen_certs.sh, certs/}   # listener MQTTS, auth và ACL
 ├── postgres/{init.sql, postgresql.conf, archive.conf, pg_hba.conf}   # ★ WAL liên tục, cửa sao chép cho bản gốc
+├── mfa-reset.sh                           # ★ cửa thoát hiểm của bước mã: đặt lại một tài khoản, có audit (§9.4 luật 8)
 └── backup/{Dockerfile, backup.sh, restore-drill.sh, wal-push.sh, pg-start.sh}   # ★ §9.22.2
               · offsite.sh                                       # ★ bản sao ngoài máy, luật 3
               · retention.sh                                     # ★ §9.22.7
@@ -6228,6 +6239,7 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 | Device token | JWT 90 ngày lưu **NVS encrypted**; kiosk tự đổi qua `POST /devices/me/token` khi còn 7 ngày, vé cũ sống tới khi vé mới được dùng (§7.3 bước 5) |
 | Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke. Đăng xuất một máy cắt luôn vé access và ổ cắm realtime của đúng phiên ấy, không chờ vé hết hạn (§9.23). Mọi vé ký bằng HS256 và mọi chỗ kiểm vé chỉ nhận HS256, ghim ở `JWT_ALGORITHM` |
 | Mật khẩu | scrypt N=2^14, r=8, p=5: 16 MiB mỗi lần băm, mức OWASP xếp ngang N=2^17, p=1 mà không đòi 128 MiB RAM cho mỗi lượt đăng nhập đang chạy. Tham số ghi ngay trong chuỗi băm, nên băm cũ vẫn kiểm được và được băm lại ở lần đăng nhập đúng kế tiếp. Đặt hay đổi mật khẩu gửi thư báo cho chủ tài khoản (§9.4) |
+| Xác minh hai bước | Vai thuộc `MFA_ROLES` (mặc định `ADMIN`, `HR`, `PAYROLL`) đưa thêm mã TOTP sáu số sau mật khẩu, và chưa qua bước ấy thì không có vé nào. Khoá bí mật mã hoá AES-256-GCM dưới `MFA_KEY`; một mã không dùng lại được; mười mã dự phòng, mỗi mã một lần; sai năm lần thì bước mã khoá 15 phút và chủ tài khoản nhận thư; `ADMIN` đặt lại cho người khác, có audit (§9.4). `MFA_ROLES` khác rỗng mà thiếu `MFA_KEY` thì `api` không khởi động |
 | Tài liệu API (Swagger) | `API_DOCS` chọn ai đọc `/docs` và JSON của nó ở `/docs/json`: `open` cho mọi người, mặc định ngoài production; `admin`, mặc định ở production; `off` tắt hẳn. Ở `admin`, ai không có phiên tài liệu nhận **404 `ROUTE_NOT_FOUND`** như một đường không tồn tại, cho cả trang lẫn JSON: tài liệu công khai là bản đồ dâng sẵn cho kẻ dò (OWASP API9). ADMIN bấm *Mở tài liệu API* ở trang Cài đặt: `POST /auth/docs-pass` (ghi audit) cấp một vé ngẫu nhiên dùng **một lần**, sống 60 giây; tab mới mở `/docs?pass=…`, vé đổi lấy cookie `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/docs`, sống 15 phút, rồi chuyển về `/docs` cho vé rời khỏi thanh địa chỉ. Mỗi request kiểm lại tài khoản còn mở, vẫn là ADMIN và chưa bị cắt phiên. Production tắt *Try it out* (`supportedSubmitMethods: []`): tài liệu ở đó chỉ để đọc, gọi thử thì làm ở máy dev. Mỗi thao tác mở đầu bằng vai được gọi, đọc từ chính metadata `RolesGuard` dùng |
 | Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu. `api` gọi REST của nó trong mạng compose để đá phiên máy bị thu hồi (§7.4) |
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
@@ -6263,6 +6275,7 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
    | `HEAVY_REQUESTS_PER_MINUTE` | 20 | tài khoản | việc lớn lên theo cỡ công ty: xuất và nhập file; thao tác trên một nhóm người (xếp phòng, mở đăng nhập, đăng ký mặt, cho nghỉ, xếp ca, tăng lương, cả lúc xem trước); duyệt nhiều đơn một lượt; dựng bảng công; tạo, chạy, chốt kỳ lương và gửi phiếu; cấp và mời tài khoản; sắp lại tổ chức; đồng bộ lại danh sách xuống một kiosk; quét theo lệnh. Báo cáo đọc thường không nằm trong đó, vì chúng đi qua cache (§4.9) |
    | `SEARCH_REQUESTS_PER_MINUTE` | 120 | tài khoản | `GET /search`: mỗi lần gõ đọc tới mười bảng (§9.20) |
    | `LOGIN_ATTEMPTS_PER_MINUTE` | 30 | IP | đăng nhập, đặt và đổi mật khẩu: chặn lũ và giá scrypt; rộng đủ cho cả văn phòng sau một NAT, vì lượt sai có bộ đếm riêng ở lớp 3 |
+   | `MFA_ATTEMPTS_PER_MINUTE` | 20 | IP | ba cửa nhận mã sáu số: bước mã lúc đăng nhập, lần ghi danh, tạo mã dự phòng mới. Chặn một IP rải mã qua nhiều tài khoản; dò một tài khoản thì khoá theo tài khoản của §9.4 chặn trước |
    | `FORGOT_ATTEMPTS_PER_HOUR` | 5 | IP | quên mật khẩu |
    | `DEVICE_REGISTER_ATTEMPTS_PER_MINUTE` | 60 | IP | đăng ký kiosk |
 
@@ -7331,6 +7344,65 @@ vẫn mở. Tài khoản chưa từng đặt mật khẩu không đi cửa này 
 nên đường duy nhất của nó vẫn là liên kết.
 
 Cả hai đường đều **đóng mọi phiên**, như §9.23 đòi ở cùng một câu với nghỉ việc và tắt tài khoản.
+
+**Ba vai giữ tiền và quyền thì đăng nhập bằng hai yếu tố.** Mật khẩu của một `ADMIN`, `HR` hay
+`PAYROLL` lộ ra là lộ bảng lương, số CCCD và quyền giao vai của cả công ty, mà mật khẩu lộ qua
+những đường hệ này không chặn được: dùng lại ở trang khác, gõ vào trang giả, máy nhiễm mã độc. Nên
+các vai khai ở `MFA_ROLES` (mặc định đúng ba vai ấy) phải đưa thêm một mã sáu số từ ứng dụng xác
+thực — TOTP theo RFC 6238: HMAC-SHA1, 6 số, bước 30 giây, loại mà Google Authenticator, Microsoft
+Authenticator hay 1Password đều đọc. Vai khác không bị hỏi: nhân viên chấm công trên điện thoại
+không giữ gì của người khác, và một bước thêm ở đó là một lý do để bỏ ứng dụng. Chính sách đi theo
+vai **hiện tại** của tài khoản; đổi vai vốn đã đóng mọi phiên (§9.23), nên lần đăng nhập sau áp
+đúng luật mới. `MFA_ROLES=none` tắt hẳn bước mã, và đó là mặc định khi `NODE_ENV=test`: các bộ
+e2e đăng nhập bằng tài khoản mồi hàng trăm lần mỗi phút, còn bộ của bước mã tự bật nó. Tám luật:
+
+1. **Thiếu mã thì không có vé.** Mật khẩu đúng của một tài khoản thuộc `MFA_ROLES` chỉ đổi được
+   một **vé chờ** sống `MFA_CHALLENGE_MINUTES` (10, đủ cho lần ghi danh đầu, khi người dùng còn
+   phải cài ứng dụng xác thực): không access token, không cookie refresh, không dòng `Session`.
+   Vé chờ là JWT ký bằng một khoá dẫn từ `MFA_KEY` (HKDF, mỗi mục đích một khoá con), nên không
+   chỗ kiểm vé access nào nhận nó. Qua bước mã thì vé access mang cờ `mfa`
+   và dòng `Session` ghi `mfaAt`. `JwtStrategy` và ổ cắm realtime từ chối vé của một vai thuộc
+   `MFA_ROLES` mà thiếu cờ ấy, lượt gia hạn từ chối phiên chưa qua bước mã, cả hai bằng
+   `401 MFA_REQUIRED`. Phiên mở trước ngày bật, hay mở khi vai chưa bị hỏi, vì thế không sống qua
+   lần gia hạn kế tiếp.
+2. **Lần đầu ghi danh ngay trong lượt đăng nhập.** Tài khoản chưa có ứng dụng xác thực thì vé
+   chờ dẫn sang bước ghi danh: máy chủ sinh khoá bí mật 160 bit, trình duyệt tự vẽ mã QR
+   `otpauth://` từ nó (không gửi khoá cho dịch vụ nào), người dùng quét rồi gõ mã đầu tiên. Mã
+   đúng thì khoá thành khoá thật, mười mã dự phòng hiện ra **đúng một lần**, rồi phiên mới mở.
+   Không có đường nào để một vai bàn giấy dùng hệ thống khi chưa ghi danh. Cái giá là kẻ cầm mật
+   khẩu của một tài khoản **chưa ghi danh** ghi danh được điện thoại của chính hắn, nên lần ghi
+   danh nào cũng gửi thư cho chủ tài khoản, như đổi mật khẩu.
+3. **Khoá bí mật mã hoá lúc lưu.** AES-256-GCM dưới khoá con của `MFA_KEY`, kèm `userId` làm dữ
+   liệu xác thực đi kèm, nên chép khoá của người này sang dòng của người khác thì giải mã hỏng
+   chứ không mở được gì. Rò cơ sở dữ liệu một mình không sinh ra mã nào. `MFA_KEY` chỉ nằm ở
+   `.env` của VPS. Mất nó thì không mất dữ liệu nghiệp vụ nào: mọi người được đặt lại rồi ghi
+   danh lại.
+4. **Một mã không dùng lại được, kể cả trong cửa sổ của nó.** Máy chủ nhận mã của bước hiện tại
+   và một bước mỗi phía, đủ cho đồng hồ điện thoại lệch 30 giây, và giữ `lastStep`: bước của mã
+   đúng gần nhất. Mã chỉ được nhận khi bước của nó **lớn hơn** `lastStep`, và phép so ấy nằm
+   trong chính câu `UPDATE` ghi bước mới, nên hai lượt đua cùng một mã thì đúng một lượt thắng
+   (RFC 6238 §5.2). Một mã bị nhìn trộm qua vai không mở được phiên thứ hai.
+5. **Mười mã dự phòng, mỗi mã một lần.** Mất điện thoại không được là mất tài khoản. Mỗi mã 10
+   ký tự từ bảng chữ không lẫn được với nhau, dạng `xxxxx-xxxxx` (≈ 49 bit), lưu bằng HMAC-SHA256
+   dưới một khoá con khác của `MFA_KEY`, nên rò cơ sở dữ liệu không dò ngược được mã nào. Dùng
+   một mã là gạch nó trong chính câu lệnh kiểm nó, ghi audit, và thư báo cho chủ biết còn bao
+   nhiêu mã. Sắp hết thì tạo bộ mới ở Cài đặt sau khi đưa một mã đang dùng được; bộ mới xoá bộ cũ.
+6. **Sai mã có khoá riêng, giữ ở Postgres.** Sai `MFA_LOCK_AFTER` (5) lần liên tiếp thì bước mã
+   của tài khoản ấy khoá `MFA_LOCK_MINUTES` (15) phút: trả `429 MFA_LOCKED` mà không kiểm mã,
+   ghi audit, và gửi thư cho chủ — tới được bước mã nghĩa là **mật khẩu đã lộ**, và người cần biết
+   điều ấy trước tiên là chủ của nó. Khác khoá mật khẩu ở §7.2 lớp 3, đếm này nằm trên chính
+   dòng `UserMfa` chứ không ở Redis: bước mã là cửa cuối cùng, nên Redis vắng thì nó không được
+   tạm mở. Cửa nào nhận mã cũng đếm thêm hạn mức `mfa` theo IP (§7.2 lớp 2).
+7. **`ADMIN` đặt lại cho người khác, không cho chính mình.** Đặt lại xoá khoá, mã dự phòng và
+   đếm sai, đóng mọi phiên của người ấy, ghi audit kèm người bấm, và gửi thư cho chủ; lần đăng
+   nhập sau là lần ghi danh. Tự đặt lại cho mình là đường để một phiên bị chiếm gỡ yếu tố thứ
+   hai rồi ghi danh điện thoại của kẻ chiếm, nên trả `SELF_ACCOUNT` như khoá hay hạ vai chính
+   mình. Đổi điện thoại thì chuyển tài khoản ngay trong ứng dụng xác thực, hoặc nhờ một `ADMIN`
+   khác đặt lại.
+8. **Cửa thoát hiểm nằm trên VPS.** `ADMIN` duy nhất mất cả điện thoại lẫn mã dự phòng thì không
+   còn ai bấm đặt lại. `deploy/mfa-reset.sh <email>` chạy trên VPS — nơi vốn đọc được cả cơ sở
+   dữ liệu — và làm đúng việc của nút đặt lại trong một giao dịch, kể cả dòng audit, với người
+   làm để trống và `meta` ghi `console`.
 
 ### 9.5 Nghỉ phép
 
