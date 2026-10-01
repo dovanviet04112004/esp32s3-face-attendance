@@ -4745,7 +4745,7 @@ quy ước của repo:
 | `person-picker.tsx` | một ô tìm người đang làm theo mã hoặc tên, dùng ở mọi chỗ phải chọn một người | `Combobox` của Kumo không biết hỏi `/employees`; năm màn chọn người phải ra cùng một ô, cùng cách tìm |
 | `date-field.tsx` | một ô chọn ngày: lịch của Kumo trong popover trên máy tính, ô ngày của hệ điều hành trên điện thoại | `DatePicker` của Kumo chỉ là tấm lịch, không kèm ô nhập, nút mở hay popover |
 | `optional.tsx` | nhãn của ô không bắt buộc, kèm "(không bắt buộc)" theo tiếng của người dùng | Kumo 2.14 in cứng chữ tiếng Anh "(optional)" cho `required={false}` và không có khoá dịch cho nó |
-| `theme-toggle.tsx`, `bottom-bar.tsx`, `failed.tsx` | sáng tối theo `lib/theme.ts`; nút chính neo đáy điện thoại (§9.21.2); `Banner` lỗi có nút thử lại theo chữ của catalogue | nối vào `lib/` hoặc catalogue của repo |
+| `theme-toggle.tsx`, `bottom-bar.tsx`, `failed.tsx` | sáng tối theo `lib/theme.ts`; nút chính neo đáy cửa sổ ở chân cột nội dung (§9.12, §9.21.2); `Banner` lỗi có nút thử lại theo chữ của catalogue | nối vào `lib/` hoặc catalogue của repo |
 
 ```
 frontend/
@@ -7746,8 +7746,10 @@ hẹp.** Mỗi phần là một `LayerCard` rộng hết khối nội dung: mộ
 đúng một câu nói phần ấy để làm gì và thiếu nó thì việc gì hỏng; hai phần ba bên phải là các ô
 của phần ấy, lưới hai cột. Khi chính thẻ hẹp hơn 48 rem — trên điện thoại, hay ở cột chính cạnh
 cột phải — tên và câu lên trên, các ô xuống dưới. Mọi phần mở sẵn: không gập, không viên đếm
-"0/2", vì ô bị giấu là ô không ai điền. Nút nằm trên một thanh neo đáy cửa sổ, sát phải: *Huỷ*
-là nút phụ, rồi tới *Lưu* là nút chính; trên điện thoại thanh ấy là `ui/bottom-bar.tsx`. Cùng
+"0/2", vì ô bị giấu là ô không ai điền. Nút nằm trên một thanh neo đáy cửa sổ suốt tới cuối
+trang, sát phải: *Huỷ* là nút phụ, rồi tới *Lưu* là nút chính. Thanh ấy là `ui/bottom-bar.tsx`,
+đặt ở chân cột nội dung chứ không trong biểu mẫu, nên rộng hết cột; trên máy tính nó cao đúng
+bằng chân thanh bên (48 px) và cùng nền, để hai viền trên nối thành một đường. Cùng
 biểu mẫu ấy làm tab *Thông tin* của hồ sơ thì giữ nguyên khuôn, chỉ bớt những ô chỉ đổi được qua
 đơn.
 
