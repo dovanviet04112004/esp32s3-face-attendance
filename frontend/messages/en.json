@@ -2323,6 +2323,8 @@
     "CODE_REPEATED_IN_FILE": "This code already appears on an earlier line.",
     "EMAIL_INVALID": "Not a valid email address.",
     "VALUE_TOO_LONG": "Longer than allowed.",
+    "BANK_ACCOUNT_INVALID": "An account number is letters and digits only, 4 to 34 of them, with no spaces or dashes.",
+    "TEXT_NOT_PLAIN": "Must not start with = + - @ or break onto a new line within the cell.",
     "LEGAL_ENTITY_UNKNOWN": "No legal entity has this code.",
     "LEGAL_ENTITY_REQUIRED": "There are several legal entities: give the code in legalEntityCode.",
     "DEPARTMENT_UNKNOWN": "This legal entity has no department with this code.",

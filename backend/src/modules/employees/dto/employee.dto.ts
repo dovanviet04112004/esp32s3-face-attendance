@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, IntersectionType, OmitType, PartialType, PickType } from "@nestjs/swagger";
 import { ContractKind, Gender } from "@prisma/client";
 
-import { EMPLOYEE_FIELD_MAX, IMPORT_MAX_BYTES } from "../import.js";
+import { BANK_ACCOUNT, EMPLOYEE_FIELD_MAX, IMPORT_MAX_BYTES, PLAIN_TEXT } from "../import.js";
 import { Transform, Type } from "class-transformer";
 import {
   ArrayMaxSize,
@@ -33,10 +33,15 @@ export class CreateEmployeeDto {
   @MaxLength(EMPLOYEE_FIELD_MAX.code)
   code!: string;
 
-  @ApiProperty({ description: "Name as on their papers", example: "Trần Thị B", maxLength: EMPLOYEE_FIELD_MAX.fullName })
+  @ApiProperty({
+    description: "Name as on their papers; no leading = + - @ and no line break",
+    example: "Trần Thị B",
+    maxLength: EMPLOYEE_FIELD_MAX.fullName,
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(EMPLOYEE_FIELD_MAX.fullName)
+  @Matches(PLAIN_TEXT)
   fullName!: string;
 
   @ApiPropertyOptional({
@@ -127,16 +132,26 @@ export class CreateEmployeeDto {
   @MaxLength(EMPLOYEE_FIELD_MAX.socialInsuranceNo)
   socialInsuranceNo?: string;
 
-  @ApiPropertyOptional({ maxLength: EMPLOYEE_FIELD_MAX.bankAccount, description: "Salary account number", example: "0071000123456" })
+  @ApiPropertyOptional({
+    maxLength: EMPLOYEE_FIELD_MAX.bankAccount,
+    description: "Salary account number: letters and digits only, 4 or more",
+    example: "0071000123456",
+  })
   @IsOptional()
   @IsString()
   @MaxLength(EMPLOYEE_FIELD_MAX.bankAccount)
+  @Matches(BANK_ACCOUNT)
   bankAccount?: string;
 
-  @ApiPropertyOptional({ maxLength: EMPLOYEE_FIELD_MAX.bankName, description: "Bank holding the salary account", example: "Vietcombank" })
+  @ApiPropertyOptional({
+    maxLength: EMPLOYEE_FIELD_MAX.bankName,
+    description: "Bank holding the salary account; no leading = + - @ and no line break",
+    example: "Vietcombank",
+  })
   @IsOptional()
   @IsString()
   @MaxLength(EMPLOYEE_FIELD_MAX.bankName)
+  @Matches(PLAIN_TEXT)
   bankName?: string;
 
   @ApiPropertyOptional({ description: "Job title id, from the catalogue", example: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d", maxLength: 64 })

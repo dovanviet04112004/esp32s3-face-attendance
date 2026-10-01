@@ -291,13 +291,13 @@ describe("employee import (e2e)", () => {
     const first = await send(
       [
         "code,fullName,legalEntityCode,personalEmail,phone,nationalId,bankAccount,bankName",
-        `${code},Người ba mươi,${ENTITY},first${MAIL_DOMAIN},0901000001,079000000030,111,Ngân hàng A`,
+        `${code},Người ba mươi,${ENTITY},first${MAIL_DOMAIN},0901000001,079000000030,1111,Ngân hàng A`,
       ].join("\r\n"),
       true,
     );
     assert.equal(first.applied, true, JSON.stringify(first.faults));
     const second = await send(
-      ["code,fullName,personalEmail,bankAccount,bankName", `${code},Người ba mươi mốt,second${MAIL_DOMAIN},222,Ngân hàng A`].join(
+      ["code,fullName,personalEmail,bankAccount,bankName", `${code},Người ba mươi mốt,second${MAIL_DOMAIN},2222,Ngân hàng A`].join(
         "\r\n",
       ),
       true,
@@ -316,7 +316,7 @@ describe("employee import (e2e)", () => {
     assert.equal(held.phone, "0901000001", "a column the file left out was wiped");
     assert.equal(held.nationalId, "079000000030", "a column the file left out was wiped");
     assert.equal(held.personalEmail, `first${MAIL_DOMAIN}`, "an import moved the address a change is reported to");
-    assert.equal(held.bankAccount, "111", "an import moved where the pay goes");
+    assert.equal(held.bankAccount, "1111", "an import moved where the pay goes");
   });
 
   it("checks the address format and the length of every text field", async () => {
@@ -330,6 +330,31 @@ describe("employee import (e2e)", () => {
     );
     assert.equal(faultAt(report, "EMAIL_INVALID")?.row, 2);
     assert.equal(faultAt(report, "VALUE_TOO_LONG")?.column, "fullName");
+  });
+
+  it("refuses a bank or a name a spreadsheet would run, on the lines it would write", async () => {
+    const report = await send(
+      csvOf(
+        ["code", "fullName", "legalEntityCode", "bankAccount", "bankName"],
+        [
+          [`${PREFIX}42`, "=1+1", ENTITY, "", ""],
+          [`${PREFIX}43`, "Bốn mươi ba", ENTITY, "0071-000-123", "@SUM(1)"],
+          [`${PREFIX}44`, "Bốn\nmươi bốn", ENTITY, "12", "Ngân hàng A"],
+          [`${PREFIX}45`, "Bốn mươi lăm", ENTITY, "VN0071000123456", "Ngân hàng A"],
+        ],
+      ),
+      false,
+    );
+    assert.deepEqual(
+      report.faults.map((one) => [one.row, one.column, one.code]),
+      [
+        [2, "fullName", "TEXT_NOT_PLAIN"],
+        [3, "bankAccount", "BANK_ACCOUNT_INVALID"],
+        [3, "bankName", "TEXT_NOT_PLAIN"],
+        [4, "fullName", "TEXT_NOT_PLAIN"],
+        [4, "bankAccount", "BANK_ACCOUNT_INVALID"],
+      ],
+    );
   });
 
   it("reads a department inside the line's legal entity, and says when one is retired", async () => {

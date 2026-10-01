@@ -2323,6 +2323,8 @@
     "CODE_REPEATED_IN_FILE": "Mã này đã có ở một dòng phía trên trong tệp.",
     "EMAIL_INVALID": "Email không đúng định dạng.",
     "VALUE_TOO_LONG": "Dài quá mức cho phép.",
+    "BANK_ACCOUNT_INVALID": "Số tài khoản chỉ gồm chữ và số, từ 4 tới 34 ký tự, không dấu cách hay gạch nối.",
+    "TEXT_NOT_PLAIN": "Không được mở đầu bằng = + - @ và không được xuống dòng trong ô.",
     "LEGAL_ENTITY_UNKNOWN": "Không có pháp nhân nào mang mã này.",
     "LEGAL_ENTITY_REQUIRED": "Công ty có nhiều pháp nhân: ghi mã pháp nhân ở cột legalEntityCode.",
     "DEPARTMENT_UNKNOWN": "Pháp nhân này không có phòng ban nào mang mã này.",

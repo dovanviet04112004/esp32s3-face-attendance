@@ -110,6 +110,32 @@ describe("crud (e2e)", () => {
     assert.equal(res.status, 400);
   });
 
+  it("refuses a bank or a name that a spreadsheet would run, at every door that takes one", async () => {
+    const hire = (fields: object) =>
+      request(http).post("/employees").set("Authorization", `Bearer ${token.hr}`).send({ code: "NV9003", fullName: "Lê Văn D", ...fields });
+    const refused: [object, string][] = [
+      [{ fullName: '=HYPERLINK("http://attacker.example","x")' }, "fullName"],
+      [{ fullName: "Lê Văn\r\nD" }, "fullName"],
+      [{ bankName: "+cmd|' /C calc'!A0" }, "bankName"],
+      [{ bankName: "@SUM(1+1)" }, "bankName"],
+      [{ bankAccount: "0071-000-123" }, "bankAccount"],
+      [{ bankAccount: "123" }, "bankAccount"],
+    ];
+    for (const [fields, field] of refused) {
+      const res = await hire(fields);
+      assert.equal(res.status, 400, `${JSON.stringify(fields)} was taken`);
+      assert.deepEqual([res.body.message, res.body.fields], ["VALIDATION_FAILED", [field]]);
+    }
+    const asked = await request(http)
+      .post("/profile-changes")
+      .set("Authorization", `Bearer ${token.hr}`)
+      .send({ field: "BANK", employeeId: madeEmployeeId, bankName: "-2+3", bankAccount: "0071000123456" });
+    assert.equal(asked.status, 400, "a change request carried a formula into the bank file");
+    assert.deepEqual(asked.body.fields, ["bankName"]);
+    const fine = await hire({ bankName: "Vietcombank", bankAccount: "VN0071000123456789" });
+    assert.equal(fine.status, 201, JSON.stringify(fine.body));
+  });
+
   it("lets somebody leave only through offboarding, and keeps the row", async () => {
     const erased = await request(http)
       .delete(`/employees/${madeEmployeeId}`)

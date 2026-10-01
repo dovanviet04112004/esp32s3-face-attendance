@@ -39,9 +39,17 @@ export const EMPLOYEE_FIELD_MAX = {
   nationalId: 20,
   taxCode: 20,
   socialInsuranceNo: 20,
-  bankAccount: 32,
+  bankAccount: 34,
   bankName: 64,
 } as const;
+
+const BANK_ACCOUNT_MIN = 4;
+
+/** What the bank file may carry, at every door (KEHOACH 9.20 rule 5): an account of letters and
+ *  digits, and a name with no formula lead and no line break.
+ */
+export const BANK_ACCOUNT = new RegExp(`^[A-Za-z0-9]{${BANK_ACCOUNT_MIN},${EMPLOYEE_FIELD_MAX.bankAccount}}$`);
+export const PLAIN_TEXT = /^(?![=+\-@\t])[^\r\n]*$/;
 
 /** Thirty thousand rows of fifteen columns sit inside this with room over,
  *  and the same figure bounds the body parser and the dto (CLAUDE.md 4.9).
@@ -155,6 +163,12 @@ const EXTRAS: ReadonlySet<ImportColumn> = new Set([
   "kioskId",
   "openLogin",
 ] as ImportColumn[]);
+// Judged only where the line would write them, so a record held from earlier still round-trips.
+const BANK_FILE_CELLS: readonly [ImportColumn, RegExp, string][] = [
+  ["fullName", PLAIN_TEXT, "TEXT_NOT_PLAIN"],
+  ["bankAccount", BANK_ACCOUNT, "BANK_ACCOUNT_INVALID"],
+  ["bankName", PLAIN_TEXT, "TEXT_NOT_PLAIN"],
+];
 const kIsoDate = /^\d{4}-\d{2}-\d{2}$/;
 const kDigits = /^\d+$/;
 const kByteOrderMark = 0xfeff;
@@ -671,6 +685,12 @@ export function planRows(input: PlanInput): Planned {
     const profile = held
       ? changesOf(row, place, held)
       : IMPORT_COLUMNS.filter((column) => column !== "code" && !EXTRAS.has(column) && row[column] !== undefined);
+    for (const [column, shape, code] of BANK_FILE_CELLS) {
+      const value = row[column];
+      if (value !== undefined && profile.includes(column) && !shape.test(value)) {
+        fault(column, code, value);
+      }
+    }
     const shift = planShift(row, held, input, fault, warn);
     const consent = planConsent(row, held, warn);
     const kiosk = planKiosk(row, held, consent, input, fault, warn);

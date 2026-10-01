@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsEmail, IsEnum, IsInt, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsEmail, IsEnum, IsInt, IsOptional, IsString, Matches, MaxLength } from "class-validator";
 
+import { BANK_ACCOUNT, EMPLOYEE_FIELD_MAX, PLAIN_TEXT } from "../../employees/import.js";
 import { PageMeta, PersonView, QueueQueryDto } from "../../leave/dto/queue.dto.js";
 import { PROFILE_FIELD_NAMES, type ProfileFieldName } from "../profile-fields.js";
 
@@ -9,7 +10,6 @@ const STATES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
 const EMAIL_MAX = 128;
 const PHONE_MAX = 20;
 const BANK_NAME_MAX = 64;
-const BANK_ACCOUNT_MAX = 32;
 const ID_MAX = 20;
 const REASON_MAX = 500;
 
@@ -47,22 +47,24 @@ export class AskProfileChangeDto {
 
   @ApiPropertyOptional({
     maxLength: BANK_NAME_MAX,
-    description: "Bank of the new salary account; read only when field is BANK",
+    description: "Bank of the new salary account, no leading = + - @ and no line break; read only when field is BANK",
     example: "Vietcombank",
   })
   @IsOptional()
   @IsString()
   @MaxLength(BANK_NAME_MAX)
+  @Matches(PLAIN_TEXT)
   bankName?: string;
 
   @ApiPropertyOptional({
-    maxLength: BANK_ACCOUNT_MAX,
-    description: "New salary account number; read only when field is BANK",
+    maxLength: EMPLOYEE_FIELD_MAX.bankAccount,
+    description: "New salary account number, letters and digits only; read only when field is BANK",
     example: "0071000123456",
   })
   @IsOptional()
   @IsString()
-  @MaxLength(BANK_ACCOUNT_MAX)
+  @MaxLength(EMPLOYEE_FIELD_MAX.bankAccount)
+  @Matches(BANK_ACCOUNT)
   bankAccount?: string;
 
   @ApiPropertyOptional({
