@@ -26,6 +26,7 @@ import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { JOB, QUEUE, type RebuildJob, type TimesheetJob } from "../../queue/queues.js";
+import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { MAX_DAY_ROWS, type CorrectDayDto, type ListDaysDto, type SummaryQueryDto } from "./dto/timesheet.dto.js";
 import { clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
 
@@ -145,6 +146,7 @@ export class TimesheetService implements OnModuleInit {
     private readonly scope: ScopeService,
     private readonly config: ConfigService<Env, true>,
     private readonly audit: AuditService,
+    private readonly attendance: AttendanceSweep,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -370,6 +372,7 @@ export class TimesheetService implements OnModuleInit {
         to: { state: corrected.state, workedMinutes: corrected.workedMinutes },
       },
     });
+    await this.attendance.closeVanished(held.employeeId);
     return corrected;
   }
 
@@ -589,6 +592,7 @@ export class TimesheetService implements OnModuleInit {
       }),
     );
     await this.write(date, rows);
+    await this.attendance.afterBuild(day, only ?? null);
     this.log.log(`built ${rows.length} day(s) for ${day} from ${punches.length} punch(es)`);
     return rows.length;
   }

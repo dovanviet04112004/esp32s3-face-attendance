@@ -7,7 +7,7 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { PERSON_VIEW } from "../leave/queue-filter.js";
 
 // HR data reads by the tree; pay and papers only by the desk or their owner (KEHOACH 9.4).
-const BY_TREE: ReadonlySet<NoticeSubject> = new Set<NoticeSubject>(["REQUEST", "CONTRACT"]);
+const BY_TREE: ReadonlySet<NoticeSubject> = new Set<NoticeSubject>(["REQUEST", "CONTRACT", "PERSON_DAY"]);
 
 export interface SubjectPerson {
   id: number;

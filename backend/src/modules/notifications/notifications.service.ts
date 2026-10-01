@@ -550,15 +550,16 @@ export class NotificationsService {
 
   /** Tell each login's open screens of a row it just got, then queue its push where the person allows it.
    *  @ctx any | pushes leave through the notify queue, never inside the request (KEHOACH 9.21.4)
+   *  @param pushing false for rows that open without a sound and are pushed later, together
    */
-  async announce(kind: NoticeKind, rows: Announced[]): Promise<void> {
+  async announce(kind: NoticeKind, rows: Announced[], pushing = true): Promise<void> {
     if (rows.length === 0) {
       return;
     }
     for (const one of rows) {
       this.feed.tell(one.userId, FEED.notice, { op: "new", id: one.id, kind, category: NOTICE_KINDS[kind].category });
     }
-    if (!this.pushable) {
+    if (!this.pushable || !pushing) {
       return;
     }
     const wants = await this.channelsFor(kind, rows.map((one) => one.userId));
@@ -662,6 +663,40 @@ export class NotificationsService {
         renotify: true,
       }),
     );
+  }
+
+  /** One push per login for the rows of one kind it holds, newest first: that notice alone, or "N new items".
+   *  @ctx job | notify queue; a login with push off for the kind gets nothing (KEHOACH 9.21.4)
+   */
+  async pushTogether(kind: NoticeKind, held: Map<string, { id: string; dedupKey: string | null }[]>): Promise<number> {
+    const people = [...held.keys()];
+    if (!this.pushable || people.length === 0) {
+      return 0;
+    }
+    const [wants, devices, localeOf] = await Promise.all([this.channelsFor(kind, people), this.devicesOf(people), this.localesOf(people)]);
+    const pushed = people.filter((userId) => (held.get(userId)?.length ?? 0) > 0 && wants(userId, "PUSH"));
+    for (let at = 0; at < pushed.length; at += kPushAtOnce) {
+      await Promise.all(
+        pushed.slice(at, at + kPushAtOnce).map((userId) => {
+          const rows = held.get(userId) ?? [];
+          const newest = rows[0];
+          return this.sendTo(
+            devices.get(userId) ?? [],
+            pushBody.parse({
+              v: 2,
+              id: newest.id,
+              kind,
+              category: NOTICE_KINDS[kind].category,
+              count: rows.length,
+              locale: localeOf.get(userId) ?? DEFAULT_LOCALE,
+              tag: rows.length > 1 ? GATHERED_TAG : (newest.dedupKey ?? newest.id),
+              renotify: true,
+            }),
+          );
+        }),
+      );
+    }
+    return pushed.length;
   }
 
   /** Whether a login takes a kind on a channel. Each channel answers for itself: one switch never speaks for the other. */

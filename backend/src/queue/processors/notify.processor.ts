@@ -8,6 +8,7 @@ import { MailerService } from "../../modules/notifications/mailer.service.js";
 import { NotificationsService } from "../../modules/notifications/notifications.service.js";
 import { passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
+import { AttendanceSweep } from "../../modules/notifications/sweeps/attendance.sweep.js";
 import { BackupSweep } from "../../modules/notifications/sweeps/backup.sweep.js";
 import { CleanupSweep } from "../../modules/notifications/sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "../../modules/notifications/sweeps/contracts.sweep.js";
@@ -41,6 +42,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly kiosk: KioskSweep,
     private readonly tasks: TasksSweep,
     private readonly documents: DocumentsSweep,
+    private readonly attendance: AttendanceSweep,
     private readonly notices: NotificationsService,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
@@ -89,6 +91,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === "notice-documents") {
           await this.documents.fanOut(body.versionId);
+          return;
+        }
+        if (body.type === "attendance-due") {
+          await this.attendance.sweep();
           return;
         }
         if (body.type === "notice-fanout") {

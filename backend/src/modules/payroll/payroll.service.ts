@@ -32,6 +32,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { freeDays } from "../leave/leave.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
 import {
   calculate,
@@ -247,6 +248,7 @@ export class PayrollService {
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
     private readonly notices: NotificationsService,
+    private readonly attendance: AttendanceSweep,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -470,6 +472,7 @@ export class PayrollService {
       "PAYSLIP_ISSUED",
       told.map((row) => ({ employeeId: row.employeeId, facts: { periodId, payslipId: row.id } })),
     );
+    await this.attendance.closeVanished();
     return locked;
   }
 

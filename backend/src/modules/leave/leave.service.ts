@@ -29,6 +29,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
+import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { dayAsDate } from "../timesheet/local-day.js";
 import { TimesheetService } from "../timesheet/timesheet.service.js";
 import type { CreateLeaveTypeDto, UpdateLeaveTypeDto } from "./dto/leave-type.dto.js";
@@ -196,6 +197,7 @@ export class LeaveService {
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
     private readonly years: LeaveYearService,
+    private readonly attendance: AttendanceSweep,
   ) {}
 
   private get zone(): string {
@@ -586,6 +588,9 @@ export class LeaveService {
       outcome: body.approve ? "APPROVED" : "REJECTED",
       actorId: viewer.userId,
     });
+    if (body.approve) {
+      await this.attendance.closeVanished(held.employeeId);
+    }
     await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", {
       requestId: id,
       approved: body.approve,

@@ -50,6 +50,7 @@ import {
   type SubscriptionView as KeptSubscription,
   type Unread,
 } from "./notifications.service.js";
+import { AttendanceSweep } from "./sweeps/attendance.sweep.js";
 import { BackupSweep } from "./sweeps/backup.sweep.js";
 import { CleanupSweep } from "./sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "./sweeps/contracts.sweep.js";
@@ -85,6 +86,7 @@ export class NotificationsController {
     private readonly kiosk: KioskSweep,
     private readonly tasks: TasksSweep,
     private readonly documents: DocumentsSweep,
+    private readonly attendance: AttendanceSweep,
   ) {}
 
   @Get()
@@ -173,6 +175,7 @@ export class NotificationsController {
       kiosk: () => this.kiosk.sweep(),
       tasks: () => this.tasks.sweep(),
       documents: () => this.documents.sweep(),
+      attendance: () => this.attendance.sweep(),
     } satisfies Record<SweepParamDto["name"], () => Promise<object>>;
     return { name: params.name, result: { ...(await run[params.name]()) } };
   }

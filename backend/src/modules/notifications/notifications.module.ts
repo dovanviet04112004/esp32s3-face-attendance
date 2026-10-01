@@ -8,6 +8,7 @@ import { NoticeItemsService } from "./notice-items.service.js";
 import { NotificationsController } from "./notifications.controller.js";
 import { NotificationsService } from "./notifications.service.js";
 import { SubjectsService } from "./subjects.service.js";
+import { AttendanceSweep } from "./sweeps/attendance.sweep.js";
 import { BackupSweep } from "./sweeps/backup.sweep.js";
 import { CleanupSweep } from "./sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "./sweeps/contracts.sweep.js";
@@ -36,6 +37,7 @@ import { TasksSweep } from "./sweeps/tasks.sweep.js";
     KioskSweep,
     TasksSweep,
     DocumentsSweep,
+    AttendanceSweep,
     MailerService,
   ],
   exports: [
@@ -52,6 +54,7 @@ import { TasksSweep } from "./sweeps/tasks.sweep.js";
     KioskSweep,
     TasksSweep,
     DocumentsSweep,
+    AttendanceSweep,
     MailerService,
   ],
 })

@@ -124,7 +124,7 @@ export class AudienceService {
 
   /** Every open login a subject waits on, found by asking waitingOn of each login that could hold it.
    *  @ctx any | one count per candidate login
-   *  @param employeeId the reader that work of one person is about, as a document to sign
+   *  @param employeeId the person that work of one person is about, as a document to sign or a day to explain
    */
   async audienceOf(queue: NoticeQueue, subjectId: string, employeeId: number | null = null): Promise<string[]> {
     if (queue === "CONTRACTS_DUE" || queue === "PROBATION_DUE") {
@@ -136,7 +136,7 @@ export class AudienceService {
     if (queue === "TASKS") {
       return this.taskAudience(subjectId);
     }
-    if (queue === "DOCUMENTS") {
+    if (queue === "DOCUMENTS" || queue === "ATTENDANCE") {
       return this.ownLogins(employeeId);
     }
     const candidates = await this.candidates(queue, subjectId);

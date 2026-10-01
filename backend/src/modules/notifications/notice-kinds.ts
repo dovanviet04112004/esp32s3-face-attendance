@@ -15,7 +15,8 @@ export type ItemKind =
   | "BACKUP_ALERT"
   | "KIOSK_ALERT"
   | "TASK_ASSIGNED"
-  | "DOCUMENT_TO_SIGN";
+  | "DOCUMENT_TO_SIGN"
+  | "ATTENDANCE_EXCEPTION";
 
 export type NewsKind = Exclude<NoticeKind, ItemKind>;
 
@@ -47,6 +48,15 @@ export const DUE_WARNING: Partial<Record<NoticeQueue, number>> = {
   CONTRACTS_DUE: 7,
   TASKS: -1,
 };
+
+/** Minutes past a shift's end, with no overtime approved, that make a day an exception (KEHOACH 9.17 item 2). */
+export const ATTENDANCE_OVERTIME_MINUTES = 30;
+
+/** The exception facts that push: a missing punch and an absence change pay, the rest stays in the bell (KEHOACH 9.21.4). */
+export const ATTENDANCE_PUSHED: readonly string[] = ["missing", "absent"];
+
+/** When the exceptions found overnight go out, one push per person, in APP_TIMEZONE (KEHOACH 9.21.4). */
+export const ATTENDANCE_PUSH_CRON = "30 8 * * *";
 
 /** Roles whose login opens the approvals inbox (KEHOACH 9.15). */
 export const INBOX_ROLES: readonly Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
@@ -170,6 +180,22 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: true,
     defaults: { IN_APP: true, PUSH: true },
     facts: { daysWaited: "number" },
+  },
+  // The person explains the day or lets it go; it closes itself once the day settles (KEHOACH 9.21.4).
+  ATTENDANCE_EXCEPTION: {
+    category: "ATTENDANCE",
+    level: "ACTION",
+    receivers: "self",
+    item: true,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: {
+      day: "day",
+      lateMinutes: "number",
+      earlyMinutes: "number",
+      overtimeMinutes: "number",
+      missing: "string",
+      absent: "boolean",
+    },
   },
   // Off until /me carries a contract card: a notice that opens nothing about it is a dead end (KEHOACH 9.15 rule 1).
   CONTRACT_ENDING: {

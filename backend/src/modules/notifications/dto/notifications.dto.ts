@@ -517,6 +517,9 @@ export class NoticeItemDetailView {
   @ApiProperty({ type: String, format: "date-time", nullable: true, example: null, description: "When they said so" })
   claimedAt!: Date | null;
 
+  @ApiProperty({ example: { day: "2026-10-01", lateMinutes: 17, missing: "OUT" }, description: "Codes, numbers and days the kind table declares" })
+  facts!: Record<string, unknown>;
+
   @ApiProperty({ type: NoticeSubjectView, nullable: true, description: "What it is about, through the reader's scope" })
   subject!: NoticeSubjectView | null;
 
@@ -539,7 +542,7 @@ export class ResolveItemDto {
   note!: string;
 }
 
-const SWEEPS = ["reconcile", "stalled", "contracts", "probation", "backup", "cleanup", "kiosk", "tasks", "documents"] as const;
+const SWEEPS = ["reconcile", "stalled", "contracts", "probation", "backup", "cleanup", "kiosk", "tasks", "documents", "attendance"] as const;
 
 export type SweepName = (typeof SWEEPS)[number];
 

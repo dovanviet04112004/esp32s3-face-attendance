@@ -1392,6 +1392,7 @@ enum NoticeKind {
   KIOSK_ALERT
   TASK_ASSIGNED
   DOCUMENT_TO_SIGN
+  ATTENDANCE_EXCEPTION
 }
 
 enum NoticeChannel {
@@ -1415,6 +1416,7 @@ enum NoticeQueue {
   KIOSK
   TASKS
   DOCUMENTS
+  ATTENDANCE
 }
 
 enum NoticeSubject {
@@ -1431,6 +1433,7 @@ enum NoticeSubject {
   DEVICE
   TASK
   DOCUMENT
+  PERSON_DAY
 }
 
 enum NoticeOutcome {

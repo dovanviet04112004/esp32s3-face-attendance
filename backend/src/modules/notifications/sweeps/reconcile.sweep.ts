@@ -9,6 +9,7 @@ import { JOB, QUEUE } from "../../../queue/queues.js";
 import { INBOX_QUEUES, QUEUE_LEDGER, WAITING_STATE, type InboxQueue } from "../audience.service.js";
 import { NoticeItemsService } from "../notice-items.service.js";
 import { kebab } from "../notice-kinds.js";
+import { AttendanceSweep } from "./attendance.sweep.js";
 import { ContractsSweep } from "./contracts.sweep.js";
 import { DocumentsSweep } from "./documents.sweep.js";
 import { KioskSweep } from "./kiosk.sweep.js";
@@ -94,6 +95,7 @@ export class ReconcileSweep implements OnModuleInit {
     private readonly kiosk: KioskSweep,
     private readonly tasks: TasksSweep,
     private readonly documents: DocumentsSweep,
+    private readonly attendance: AttendanceSweep,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -134,11 +136,12 @@ export class ReconcileSweep implements OnModuleInit {
     tally.TASKS.closed = await this.tasks.closeVanished();
     tally.TASKS.opened = await this.tasks.openMissing();
     tally.DOCUMENTS.closed = await this.documents.closeVanished();
+    tally.ATTENDANCE.closed = await this.attendance.closeVanished();
     let after: string | undefined;
     for (;;) {
       const page = await this.db.noticeItem.findMany({
-        // A reader's own document work is seated in bulk by its own sweep, never one item at a time.
-        where: { state: "OPEN", queue: { not: "DOCUMENTS" }, ...(after ? { id: { gt: after } } : {}) },
+        // A person's own documents and days are seated in bulk by their own sweeps, never one item at a time.
+        where: { state: "OPEN", queue: { notIn: ["DOCUMENTS", "ATTENDANCE"] }, ...(after ? { id: { gt: after } } : {}) },
         orderBy: { id: "asc" },
         take: kPage,
       });

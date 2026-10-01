@@ -36,6 +36,7 @@ export const QUEUE_SUBJECT: Record<NoticeQueue, NoticeSubject> = {
   KIOSK: "DEVICE",
   TASKS: "TASK",
   DOCUMENTS: "DOCUMENT",
+  ATTENDANCE: "PERSON_DAY",
 };
 
 /** The kind a queue's work is told as. */
@@ -53,6 +54,7 @@ export const QUEUE_KIND: Record<NoticeQueue, ItemKind> = {
   KIOSK: "KIOSK_ALERT",
   TASKS: "TASK_ASSIGNED",
   DOCUMENTS: "DOCUMENT_TO_SIGN",
+  ATTENDANCE: "ATTENDANCE_EXCEPTION",
 };
 
 // Only work no business path decides closes by hand: by the desk that signs, or for a kiosk an ADMIN (KEHOACH 9.21.4).
@@ -61,6 +63,15 @@ const RESOLVERS: Partial<Record<NoticeQueue, readonly Role[]>> = {
   PROBATION_DUE: ["ADMIN", "HR"],
   KIOSK: ["ADMIN"],
 };
+
+// The one queue its own person closes by hand: a day they need not explain (KEHOACH 9.21.4).
+const SELF_RESOLVED: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["ATTENDANCE"]);
+
+function mayResolve(viewer: Viewer, item: { queue: NoticeQueue; employeeId: number | null }): boolean {
+  return SELF_RESOLVED.has(item.queue)
+    ? viewer.employeeId !== null && item.employeeId === viewer.employeeId
+    : (RESOLVERS[item.queue]?.includes(viewer.role) ?? false);
+}
 
 export interface Closing {
   state: Exclude<NoticeItemState, "OPEN">;
@@ -123,6 +134,7 @@ export interface ItemDetail {
   resolvable: boolean;
   claimedByName: string | null;
   claimedAt: Date | null;
+  facts: Prisma.JsonValue;
   subject: SubjectView | null;
   holders: { name: string | null; readAt: Date | null; leftAt: Date | null }[] | null;
 }
@@ -179,9 +191,10 @@ export class NoticeItemsService {
       closedAt: item.closedAt,
       dueAt: item.dueAt,
       claimable: CLAIMABLE.has(item.queue),
-      resolvable: RESOLVERS[item.queue]?.includes(viewer.role) ?? false,
+      resolvable: mayResolve(viewer, item),
       claimedByName: claimLive ? nameOf(item.claimedBy) : null,
       claimedAt: claimLive ? item.claimedAt : null,
+      facts: item.facts,
       subject,
       holders:
         member || viewer.role === "ADMIN"
@@ -225,7 +238,7 @@ export class NoticeItemsService {
     return this.detail(viewer, key);
   }
 
-  /** Close work by hand with a note, for kinds no business decision closes; audited (KEHOACH 9.21.4, 9.24).
+  /** Close by hand with a note: work no business decision closes, or a day its own person lets go; audited (KEHOACH 9.21.4, 9.24).
    *  @ctx any | NOTICE_NOT_FOUND outside the group, NOTICE_ITEM_NOT_RESOLVABLE for work its own queue decides
    */
   async resolve(viewer: Viewer, key: string, note: string): Promise<ItemDetail> {
@@ -233,7 +246,7 @@ export class NoticeItemsService {
     if (!member) {
       throw new NotFoundException("NOTICE_NOT_FOUND");
     }
-    if (!(RESOLVERS[item.queue]?.includes(viewer.role) ?? false)) {
+    if (!mayResolve(viewer, item)) {
       throw new ConflictException("NOTICE_ITEM_NOT_RESOLVABLE");
     }
     if (!(await this.shut(item.key, { state: "DONE", outcome: "RESOLVED", actorId: viewer.userId }))) {
