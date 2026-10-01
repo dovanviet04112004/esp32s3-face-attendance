@@ -2210,7 +2210,8 @@
     "subjectlegalEntity": "Legal entity",
     "subjectdepartment": "Department",
     "subjectallowanceType": "Allowance type",
-    "subjectchecklistTemplate": "Checklist template"
+    "subjectchecklistTemplate": "Checklist template",
+    "subjectexport": "Export"
   },
   "users": {
     "title": "Accounts",
@@ -2431,7 +2432,15 @@
     "employee_leavingMove": "Last day changed",
     "employee_leavingCancel": "Leaving cancelled",
     "enrollment_assign": "Put on a kiosk",
-    "shift_assign": "Put on a shift"
+    "shift_assign": "Put on a shift",
+    "export_employees": "Directory exported",
+    "export_payslips": "Payslip list exported",
+    "export_bank": "Bank file downloaded",
+    "export_ledger": "Ledger downloaded",
+    "export_d02": "D02-LT exported",
+    "export_requests": "Request ledger exported",
+    "export_timesheet": "Timesheet summary exported",
+    "export_assets": "Asset register exported"
   },
   "catalogues": {
     "code": "Code",

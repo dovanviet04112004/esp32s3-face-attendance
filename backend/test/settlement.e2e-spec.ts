@@ -277,6 +277,19 @@ describe("final settlement (e2e)", () => {
     );
   });
 
+  it("writes what a loaded settlement adds up to on the trail, each kind apart", async () => {
+    const line = await db.auditLog.findFirst({
+      where: { subjectType: "payroll", subjectId: settlementRunId, action: "payroll.settlement" },
+      orderBy: { id: "desc" },
+    });
+    assert.ok(line, "loading a settlement left no line");
+    assert.deepEqual(
+      (line.meta as { total?: unknown }).total,
+      { SEVERANCE: SEVERANCE.toString(), ASSET_OFFSET: ASSET_OFFSET.toString() },
+      "the trail says how many figures were loaded but not how much money",
+    );
+  });
+
   it("runs twice for the same figures rather than doubling them", async () => {
     await payroll.runNow(settlementRunId);
     const slips = await db.payslip.findMany({ where: { runId: settlementRunId } });

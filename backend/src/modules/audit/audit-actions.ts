@@ -17,6 +17,7 @@ export const AUDIT_SUBJECTS = {
   DOCUMENT: "document",
   DEVICE: "device",
   RELEASE: "release",
+  EXPORT: "export",
   ROUTE: "route",
 } as const;
 
@@ -131,6 +132,15 @@ export const AUDIT_ACTIONS = {
   RELEASE_OFFER: "release.offer",
 
   SHIFT_ASSIGN: "shift.assign",
+
+  EXPORT_EMPLOYEES: "export.employees",
+  EXPORT_PAYSLIPS: "export.payslips",
+  EXPORT_BANK: "export.bank",
+  EXPORT_LEDGER: "export.ledger",
+  EXPORT_D02: "export.d02",
+  EXPORT_REQUESTS: "export.requests",
+  EXPORT_TIMESHEET: "export.timesheet",
+  EXPORT_ASSETS: "export.assets",
 
   ROUTE_WRITE: "route.write",
 } as const;

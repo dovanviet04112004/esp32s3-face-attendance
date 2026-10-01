@@ -246,6 +246,13 @@ export class TimesheetService implements OnModuleInit {
        ${this.exceptionsOnly(query)}
        ORDER BY e."code"
     `;
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_TIMESHEET,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "timesheet",
+      meta: { filters: { ...query }, rows: rows.length },
+    });
     return toExcelCsv(
       [
         "code",

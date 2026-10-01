@@ -103,8 +103,8 @@ export class ReportsController {
   @ApiProduces("text/csv")
   @ApiOkResponse({ description: "CSV with a byte order mark, columns in form order", schema: { type: "string" } })
   @ApiOperation({ summary: "The roster that fills D02-LT for one legal entity" })
-  d02(@Query() query: D02QueryDto): Promise<string> {
-    return this.reports.d02(query.legalEntityId, new Date(query.on));
+  d02(@CurrentViewer() viewer: Viewer, @Query() query: D02QueryDto): Promise<string> {
+    return this.reports.d02(viewer, query);
   }
 
   @Get("insurance-changes")

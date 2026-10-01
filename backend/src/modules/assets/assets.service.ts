@@ -94,12 +94,19 @@ export class AssetsService {
   }
 
   /** The register under the list's own filters, as a file Excel opens. */
-  async exportCsv(query: AssetFilterDto): Promise<string> {
+  async exportCsv(viewer: Viewer, query: AssetFilterDto): Promise<string> {
     const rows = await this.db.asset.findMany({
       where: filterOf(query, await this.matching(query)),
       include: REGISTER_ROW,
       orderBy: { code: "asc" },
       take: kExportMax,
+    });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_ASSETS,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "assets",
+      meta: { filters: { ...query }, rows: rows.length },
     });
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
     return toExcelCsv(

@@ -92,6 +92,7 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
   let firstRunId = "";
   let secondRunId = "";
   let zone = "";
+  const startedAt = new Date();
 
   async function sweep(): Promise<void> {
     await db.auditLog.deleteMany({ where: { subjectType: "device", subjectId: DEVICE } });
@@ -378,6 +379,51 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     assert.equal(file.status, 200);
     assert.match(String(file.headers["content-type"]), /text\/csv/);
     assert.ok(file.text.includes(OVERTIME));
+  });
+
+  it("writes who took each export, what they asked for and how many rows it held", async () => {
+    const by = async (email: string) => (await db.user.findUniqueOrThrow({ where: { email } })).id;
+    const [adminId, hrId, payrollId] = await Promise.all(
+      ["admin@kiosk.local", "hr@kiosk.local", "payroll@kiosk.local"].map(by),
+    );
+    const span = `from=2026-02-01&to=2026-02-28&departmentId=${departmentId}`;
+    const files = [
+      as("payroll").get(`/payroll-periods/${periodId}/export?kind=bank`),
+      as("payroll").get(`/payroll-periods/${periodId}/export?kind=ledger`),
+      as("admin").get(`/employees/export?departmentId=${departmentId}&format=csv`),
+      as("admin").get(`/reports/d02-lt?legalEntityId=${entityId}&on=2026-02-28`),
+      as("admin").get(`/requests/export?departmentId=${departmentId}`),
+      as("admin").get(`/timesheet/summary/export?${span}`),
+      as("admin").get(`/assets/export?search=${ENTITY_CODE}`),
+    ];
+    for (const file of await Promise.all(files)) {
+      assert.equal(file.status, 200, JSON.stringify(file.body));
+    }
+    const lines = await db.auditLog.findMany({ where: { action: { startsWith: "export." }, ts: { gte: startedAt } } });
+    const found = (action: string, subjectId: string, filter?: [string, unknown]) =>
+      lines.find((one) => {
+        const meta = one.meta as { filters?: Record<string, unknown> };
+        return one.action === action && one.subjectId === subjectId && (!filter || meta.filters?.[filter[0]] === filter[1]);
+      });
+    const expected: [string, string, string, string, [string, unknown] | undefined, number][] = [
+      ["export.payslips", "export", "payslips", hrId, ["periodId", periodId], CODES.length],
+      ["export.bank", "payroll", periodId, payrollId, undefined, CODES.length],
+      ["export.ledger", "payroll", periodId, payrollId, undefined, CODES.length],
+      ["export.employees", "export", "employees", adminId, ["departmentId", departmentId], CODES.length],
+      ["export.d02", "legalEntity", entityId, adminId, ["on", "2026-02-28"], CODES.length],
+      ["export.requests", "export", "requests", adminId, ["departmentId", departmentId], 2],
+      ["export.timesheet", "export", "timesheet", adminId, ["departmentId", departmentId], CODES.length],
+      ["export.assets", "export", "assets", adminId, ["search", ENTITY_CODE], 0],
+    ];
+    for (const [action, subjectType, subjectId, actorId, filter, rows] of expected) {
+      const line = found(action, subjectId, filter);
+      assert.ok(line, `${action} left no line on the trail`);
+      assert.deepEqual(
+        [line.subjectType, line.actorId, (line.meta as { rows?: number }).rows],
+        [subjectType, actorId, rows],
+        `${action} is filed wrong`,
+      );
+    }
   });
 
   it("refuses a lock while a run is going, and claims a run once when execute is pressed twice", async () => {

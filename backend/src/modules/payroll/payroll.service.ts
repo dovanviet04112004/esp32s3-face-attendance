@@ -1264,6 +1264,13 @@ export class PayrollService {
       include: PAYSLIP_ROW,
       orderBy: [{ employee: { code: "asc" } }, { id: "asc" }],
     });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_PAYSLIPS,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "payslips",
+      meta: { filters: { ...query }, rows: rows.length },
+    });
     return toExcelCsv(
       ["code", "fullName", "department", "run", "state", "gross", "insuranceEmployee", "tax", "advance", "net"],
       rows.map(asPayslipRow).map((row) => [
@@ -1441,6 +1448,13 @@ export class PayrollService {
       },
       orderBy: { employee: { code: "asc" } },
     });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: kind === "bank" ? AUDIT_ACTIONS.EXPORT_BANK : AUDIT_ACTIONS.EXPORT_LEDGER,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: periodId,
+      meta: { filters: { kind }, rows: rows.length },
+    });
     const reference = `LUONG ${String(period.month).padStart(2, "0")}${period.year}`;
     if (kind === "bank") {
       return toExcelCsv(
@@ -1590,12 +1604,14 @@ export class PayrollService {
         })),
       }),
     ]);
+    const totalOf = (kind: SettlementKind) =>
+      items.filter((item) => item.kind === kind).reduce((sum, item) => sum + BigInt(item.amount), 0n).toString();
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.PAYROLL_SETTLEMENT,
       subject: AUDIT_SUBJECTS.PAYROLL,
       subjectId: runId,
-      meta: { items: items.length },
+      meta: { items: items.length, total: { SEVERANCE: totalOf("SEVERANCE"), ASSET_OFFSET: totalOf("ASSET_OFFSET") } },
     });
     return { items: items.length };
   }

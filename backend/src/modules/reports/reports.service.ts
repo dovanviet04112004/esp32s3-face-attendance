@@ -22,7 +22,9 @@ import { Prisma, type LaborCategory } from "@prisma/client";
 import { codeHas, foldedHas, PrismaService } from "../../database/prisma.service.js";
 import { ENDING_WINDOW_DAYS } from "../employees/dto/employee.dto.js";
 import { PolicyService } from "../policy/policy.service.js";
-import { TallyRangeDto } from "./dto/report.dto.js";
+import { TallyRangeDto, type D02QueryDto } from "./dto/report.dto.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
+import { AuditService } from "../audit/audit.service.js";
 import { dayAsDate, dayWindow, localDay, minutesIntoDay } from "../timesheet/local-day.js";
 import { branchOf } from "../timesheet/timesheet.service.js";
 import { JOB, QUEUE, type ReportJob } from "../../queue/queues.js";
@@ -351,6 +353,7 @@ export class ReportsService {
     private readonly scope: ScopeService,
     private readonly config: ConfigService<Env, true>,
     private readonly policy: PolicyService,
+    private readonly audit: AuditService,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -773,7 +776,9 @@ export class ReportsService {
    * The roster that fills D02-LT, one row per person still on the books on the
    * closing day, as a csv the official template takes by position.
    */
-  async d02(legalEntityId: string, on: Date): Promise<string> {
+  async d02(viewer: Viewer, query: D02QueryDto): Promise<string> {
+    const { legalEntityId } = query;
+    const on = new Date(query.on);
     const staff = await this.db.employee.findMany({
       where: {
         legalEntityId,
@@ -861,6 +866,13 @@ export class ReportsService {
       );
     });
 
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_D02,
+      subject: AUDIT_SUBJECTS.LEGAL_ENTITY,
+      subjectId: legalEntityId,
+      meta: { filters: { ...query }, rows: rows.length },
+    });
     return toExcelCsv(
       D02_COLUMNS.map((column) => column.head),
       rows,

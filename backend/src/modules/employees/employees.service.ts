@@ -789,6 +789,13 @@ export class EmployeesService implements OnModuleInit {
       };
       return IMPORT_COLUMNS.map((column) => cells[column]);
     });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_EMPLOYEES,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "employees",
+      meta: { filters: { ...query, format }, rows: body.length },
+    });
     if (format === "csv") {
       return { body: Buffer.from(toExcelCsv([...IMPORT_COLUMNS], body), "utf8"), type: CSV_TYPE, name: "employees.csv" };
     }

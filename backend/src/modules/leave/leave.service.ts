@@ -661,6 +661,13 @@ export class LeaveService {
         include: REQUEST_VIEW,
       }),
     );
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_REQUESTS,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "requests",
+      meta: { filters: { ...query }, rows: rows.length },
+    });
     return toExcelCsv(
       EXPORT_COLUMNS,
       rows.map((row) => [

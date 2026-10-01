@@ -2210,7 +2210,8 @@
     "subjectlegalEntity": "Pháp nhân",
     "subjectdepartment": "Phòng ban",
     "subjectallowanceType": "Loại phụ cấp",
-    "subjectchecklistTemplate": "Mẫu checklist"
+    "subjectchecklistTemplate": "Mẫu checklist",
+    "subjectexport": "File xuất"
   },
   "users": {
     "title": "Tài khoản",
@@ -2431,7 +2432,15 @@
     "employee_leavingMove": "Đổi ngày nghỉ việc",
     "employee_leavingCancel": "Huỷ nghỉ việc",
     "enrollment_assign": "Gán vào kiosk",
-    "shift_assign": "Xếp ca"
+    "shift_assign": "Xếp ca",
+    "export_employees": "Xuất danh bạ nhân viên",
+    "export_payslips": "Xuất danh sách phiếu lương",
+    "export_bank": "Tải file trả ngân hàng",
+    "export_ledger": "Tải sổ lương cho kế toán",
+    "export_d02": "Xuất D02-LT",
+    "export_requests": "Xuất sổ đơn",
+    "export_timesheet": "Xuất bảng công tổng hợp",
+    "export_assets": "Xuất sổ tài sản"
   },
   "catalogues": {
     "code": "Mã",

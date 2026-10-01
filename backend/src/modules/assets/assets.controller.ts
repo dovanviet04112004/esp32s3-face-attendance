@@ -82,8 +82,8 @@ export class AssetsController {
   @ApiProduces("text/csv")
   @ApiOperation({ summary: "The register under the list's filters, as a file Excel opens" })
   @ApiOkResponse({ description: "CSV with a byte order mark", schema: { type: "string" } })
-  exportCsv(@Query() query: AssetFilterDto): Promise<string> {
-    return this.assets.exportCsv(query);
+  exportCsv(@CurrentViewer() viewer: Viewer, @Query() query: AssetFilterDto): Promise<string> {
+    return this.assets.exportCsv(viewer, query);
   }
 
   @Post("assets")
