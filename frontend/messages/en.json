@@ -1634,6 +1634,7 @@
   "notices": {
     "title": "Notifications",
     "empty": "Nothing yet",
+    "openGone": "This notice is gone, or it is not yours.",
     "markAll": "Mark all read",
     "kindREQUEST_DECIDED_true": "Your request was approved",
     "kindREQUEST_DECIDED_false": "Your request was turned down",
@@ -1659,6 +1660,17 @@
     "prefsSaved": "Notification choice saved",
     "pushInstallTitle": "Install the app to get notifications",
     "pushInstallSteps": "On an iPhone, notifications reach an installed app only: open this page in Safari, tap Share, choose “Add to Home Screen”, then open the app from its icon and turn them on here."
+  },
+  "push": {
+    "REQUEST_DECIDED": "One of your requests has an answer",
+    "REQUEST_WAITING": "Something is waiting on you",
+    "REQUEST_STALLED": "One of your requests still has no decision",
+    "PAYSLIP_ISSUED": "This period's payslip is ready",
+    "CONTRACT_ENDING": "Your contract ends soon",
+    "DISPUTE_ANSWERED": "Your payslip dispute has an answer",
+    "ADVANCE_PAID": "Your salary advance has been paid out",
+    "gathered": "{count} new items are waiting on you",
+    "other": "There is news for you"
   },
   "org": {
     "treeLead": "The headcount covers the whole branch, not the department on its own.",

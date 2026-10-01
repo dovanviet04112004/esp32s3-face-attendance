@@ -1634,6 +1634,7 @@
   "notices": {
     "title": "Thông báo",
     "empty": "Chưa có thông báo nào",
+    "openGone": "Thông báo này không còn, hoặc không phải của bạn.",
     "markAll": "Đánh dấu đã đọc hết",
     "kindREQUEST_DECIDED_true": "Đơn của bạn đã được duyệt",
     "kindREQUEST_DECIDED_false": "Đơn của bạn bị từ chối",
@@ -1659,6 +1660,17 @@
     "prefsSaved": "Đã lưu lựa chọn thông báo",
     "pushInstallTitle": "Cài ứng dụng để nhận thông báo",
     "pushInstallSteps": "Trên iPhone, thông báo đẩy chỉ tới ứng dụng đã cài: mở trang này bằng Safari, bấm nút Chia sẻ, chọn “Thêm vào MH chính”, rồi mở ứng dụng từ biểu tượng và bật ở đây."
+  },
+  "push": {
+    "REQUEST_DECIDED": "Một yêu cầu của bạn đã có kết quả",
+    "REQUEST_WAITING": "Có một việc đang chờ bạn",
+    "REQUEST_STALLED": "Một yêu cầu của bạn vẫn chưa ai quyết",
+    "PAYSLIP_ISSUED": "Phiếu lương kỳ này đã có",
+    "CONTRACT_ENDING": "Hợp đồng của bạn sắp hết hạn",
+    "DISPUTE_ANSWERED": "Khiếu nại phiếu lương của bạn đã có trả lời",
+    "ADVANCE_PAID": "Khoản tạm ứng của bạn đã được chi",
+    "gathered": "{count} việc mới đang chờ bạn",
+    "other": "Có tin mới cho bạn"
   },
   "org": {
     "treeLead": "Số người đếm cả nhánh bên dưới, không riêng phòng ban đó.",

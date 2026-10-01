@@ -96,3 +96,6 @@ jobs:
 
       - name: Every route says who may call it
         run: python3 tools/check_routes.py
+
+      - name: The lock-screen words match both catalogues
+        run: python3 tools/gen_sw_words.py --check
