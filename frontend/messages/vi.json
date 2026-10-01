@@ -1530,6 +1530,7 @@
     "LEAVING_CLOSED": "Hồ sơ đã đóng vì nghỉ việc nên không đổi hay huỷ được nữa.",
     "SELECTION_INVALID": "Chọn từng người, hoặc chọn cả nhóm theo bộ lọc — không cả hai.",
     "SELECTION_TOO_LARGE": "Bộ lọc khớp hơn 5.000 người, quá cỡ một lượt. Thu hẹp bộ lọc rồi thử lại.",
+    "RANGE_TOO_LARGE": "Khoảng này có quá nhiều ngày công để xem một lần. Thu hẹp theo người, phòng ban hoặc chọn khoảng ngày ngắn hơn.",
     "BULK_NOTHING_TO_CHANGE": "Chọn ít nhất một thứ cần đổi.",
     "SELECTION_CHANGED": "Có người vừa đổi trạng thái trong lúc bạn xem trước. Xem trước lại rồi áp dụng.",
     "IMPORT_FILE_UNREADABLE": "Không đọc được file. Lưu lại thành .xlsx hoặc .csv (UTF-8) rồi chọn lại.",

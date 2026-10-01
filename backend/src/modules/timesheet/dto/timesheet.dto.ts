@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional, IntersectionType } from "@nestjs/swagger";
 import { DayCalendar, DayState } from "@prisma/client";
 import { Transform, Type } from "class-transformer";
 import {
@@ -18,6 +18,9 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
+/** The most day rows GET /timesheet answers with; a range holding more is refused (KEHOACH 9.12). */
+export const MAX_DAY_ROWS = 5_000;
+
 export class BuildDaysDto {
   @ApiProperty({ example: "2026-08-01", description: "First business day to build, YYYY-MM-DD in APP_TIMEZONE" })
   @IsDateString()
@@ -31,7 +34,7 @@ export class BuildDaysDto {
   to!: string;
 }
 
-export class ListDaysDto extends PaginationDto {
+export class ListDaysDto {
   @ApiProperty({ example: "2026-08-01", description: "First business day, YYYY-MM-DD in APP_TIMEZONE, included" })
   @IsDateString()
   from!: string;
@@ -59,7 +62,7 @@ export class ListDaysDto extends PaginationDto {
   departmentId?: string;
 }
 
-export class SummaryQueryDto extends ListDaysDto {
+export class SummaryQueryDto extends IntersectionType(ListDaysDto, PaginationDto) {
   @ApiPropertyOptional({ example: "NV0042", description: "Employee code or full name, any case" })
   @IsOptional()
   @IsString()

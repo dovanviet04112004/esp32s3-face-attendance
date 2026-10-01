@@ -1530,6 +1530,7 @@
     "LEAVING_CLOSED": "The record has closed, so the leaving can no longer be changed or cancelled.",
     "SELECTION_INVALID": "Choose people one by one, or the whole filtered group, not both.",
     "SELECTION_TOO_LARGE": "The filter matches more than 5,000 people, too many for one run. Narrow it and try again.",
+    "RANGE_TOO_LARGE": "This range holds too many timesheet days to show at once. Narrow it to one person, a department or fewer days.",
     "BULK_NOTHING_TO_CHANGE": "Pick at least one thing to change.",
     "SELECTION_CHANGED": "Someone changed while you were looking. Preview again, then apply.",
     "IMPORT_FILE_UNREADABLE": "The file could not be read. Save it as .xlsx or .csv (UTF-8) and pick it again.",

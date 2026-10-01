@@ -26,7 +26,7 @@ import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { JOB, QUEUE, type RebuildJob, type TimesheetJob } from "../../queue/queues.js";
-import type { CorrectDayDto, ListDaysDto, SummaryQueryDto } from "./dto/timesheet.dto.js";
+import { MAX_DAY_ROWS, type CorrectDayDto, type ListDaysDto, type SummaryQueryDto } from "./dto/timesheet.dto.js";
 import { clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
 
 const SATURDAY = 6;
@@ -166,7 +166,7 @@ export class TimesheetService implements OnModuleInit {
     );
   }
 
-  /** Day rows inside a range, narrowed to what this viewer may read. */
+  /** Day rows inside a range, narrowed to what this viewer may read; too many is refused, never cut (KEHOACH 9.12). */
   async list(viewer: Viewer, query: ListDaysDto): Promise<AttendanceDay[]> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const wanted =
@@ -175,15 +175,19 @@ export class TimesheetService implements OnModuleInit {
           ? [query.employeeId]
           : []
         : visible;
-    return this.db.attendanceDay.findMany({
+    const rows = await this.db.attendanceDay.findMany({
       where: {
         date: { gte: dayAsDate(query.from), lte: dayAsDate(query.to) },
         ...(wanted === null ? {} : { employeeId: { in: wanted } }),
         ...(query.departmentId ? { employee: { departmentId: query.departmentId } } : {}),
       },
       orderBy: [{ date: "asc" }, { employeeId: "asc" }],
-      take: 5000,
+      take: MAX_DAY_ROWS + 1,
     });
+    if (rows.length > MAX_DAY_ROWS) {
+      throw new BadRequestException("RANGE_TOO_LARGE");
+    }
+    return rows;
   }
 
   /** A month of a company is one row per person, so it pages by the employee

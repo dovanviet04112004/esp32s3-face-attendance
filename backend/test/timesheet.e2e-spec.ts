@@ -10,6 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { MAX_DAY_ROWS } from "../src/modules/timesheet/dto/timesheet.dto.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
 import { paidLeaveType } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
@@ -303,5 +304,95 @@ describe("timesheet leave (e2e)", () => {
       .get("/timesheet/build/no-such-job")
       .set("Authorization", `Bearer ${adminToken}`);
     assert.deepEqual(missing.body, { state: "gone" });
+  });
+});
+
+const RANGE_DEPARTMENT = "E2ETR-D";
+const RANGE_PEOPLE = Array.from({ length: 20 }, (unused, at) => `E2ETR${String(at + 1).padStart(2, "0")}`);
+// Exactly the cap across the department, so one more day for one person tips it over.
+const RANGE_DAYS = MAX_DAY_ROWS / RANGE_PEOPLE.length;
+
+function rangeDay(offset: number): string {
+  return new Date(Date.UTC(2027, 0, 1 + offset)).toISOString().slice(0, 10);
+}
+
+describe("timesheet day list (e2e)", () => {
+  let app: INestApplication;
+  let http: ReturnType<INestApplication["getHttpServer"]>;
+  let db: PrismaService;
+  let token = "";
+  let departmentId = "";
+  const ids: number[] = [];
+
+  async function sweep(): Promise<void> {
+    await db.employee.deleteMany({ where: { code: { in: RANGE_PEOPLE } } });
+    await db.department.deleteMany({ where: { code: RANGE_DEPARTMENT } });
+  }
+
+  function days(query: string): Promise<request.Response> {
+    return request(http).get(`/timesheet?${query}`).set("Authorization", `Bearer ${token}`);
+  }
+
+  before(async () => {
+    const env = validateEnv();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    configure(app);
+    await app.init();
+    http = app.getHttpServer();
+    db = app.get(PrismaService);
+    await sweep();
+
+    const signedIn = await request(http)
+      .post("/auth/login")
+      .send({ email: "admin@kiosk.local", password: env.SEED_ADMIN_PASSWORD ?? "" });
+    assert.equal(signedIn.status, 200, "admin could not sign in");
+    token = signedIn.body.accessToken;
+
+    const template = await db.employee.findFirstOrThrow({ where: { active: true, legalEntityId: { not: null } } });
+    const department = await db.department.create({
+      data: { code: RANGE_DEPARTMENT, name: "Phòng thử khoảng ngày", legalEntityId: template.legalEntityId as string },
+    });
+    departmentId = department.id;
+    for (const code of RANGE_PEOPLE) {
+      // Closed records, so no build from another suite adds a day to what this one counts.
+      const made = await db.employee.create({
+        data: { code, fullName: `Thử khoảng ${code}`, departmentId, active: false, leaveDate: new Date("2026-01-31") },
+      });
+      ids.push(made.id);
+      await db.attendanceDay.createMany({
+        data: Array.from({ length: RANGE_DAYS }, (unused, at) => ({ employeeId: made.id, date: new Date(rangeDay(at)) })),
+      });
+    }
+    await db.attendanceDay.create({ data: { employeeId: ids[0] as number, date: new Date(rangeDay(RANGE_DAYS)) } });
+  });
+
+  after(async () => {
+    await sweep();
+    await app.close();
+  });
+
+  it("answers a range holding exactly the cap in full", async () => {
+    const res = await days(`from=${rangeDay(0)}&to=${rangeDay(RANGE_DAYS - 1)}&departmentId=${departmentId}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body).slice(0, 200));
+    assert.equal((res.body as unknown[]).length, MAX_DAY_ROWS);
+  });
+
+  it("refuses a range past the cap with a code rather than cutting it short", async () => {
+    const res = await days(`from=${rangeDay(0)}&to=${rangeDay(RANGE_DAYS)}&departmentId=${departmentId}`);
+    assert.equal(res.status, 400, "a range past the cap came back cut short");
+    assert.equal(res.body.message, "RANGE_TOO_LARGE");
+
+    const narrowed = await days(`from=${rangeDay(0)}&to=${rangeDay(RANGE_DAYS)}&employeeId=${ids[0] as number}`);
+    assert.equal(narrowed.status, 200);
+    assert.equal((narrowed.body as unknown[]).length, RANGE_DAYS + 1, "narrowing to one person lost some of their days");
+  });
+
+  it("refuses the paging it never applied", async () => {
+    for (const paging of ["take=10", "skip=10", "cursor=abc"]) {
+      const res = await days(`from=${rangeDay(0)}&to=${rangeDay(0)}&employeeId=${ids[0] as number}&${paging}`);
+      assert.equal(res.status, 400, `${paging} was taken and ignored`);
+      assert.equal(res.body.message, "VALIDATION_FAILED");
+    }
   });
 });

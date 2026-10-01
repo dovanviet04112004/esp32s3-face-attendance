@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Header, HttpStatus, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
@@ -14,6 +15,7 @@ import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
+import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
@@ -28,6 +30,7 @@ import {
   DayTotalsView,
   DayView,
   ListDaysDto,
+  MAX_DAY_ROWS,
   MonthQueryDto,
   MonthTallyView,
   SummaryQueryDto,
@@ -52,7 +55,11 @@ export class TimesheetController {
   @ApiOperation({ summary: "Day rows this viewer may read (KEHOACH 9.8)" })
   @ApiOkResponse({
     type: [DayView],
-    description: "By date, then employee, in one capped answer; skip, take and cursor are not applied",
+    description: `Every row in the range, by date then employee, in one answer of at most ${MAX_DAY_ROWS}`,
+  })
+  @ApiBadRequestResponse({
+    type: ErrorBody,
+    description: `VALIDATION_FAILED | RANGE_TOO_LARGE: over ${MAX_DAY_ROWS} rows; narrow by employee, department or dates`,
   })
   list(@CurrentViewer() viewer: Viewer, @Query() query: ListDaysDto): Promise<AttendanceDay[]> {
     return this.timesheet.list(viewer, query);
