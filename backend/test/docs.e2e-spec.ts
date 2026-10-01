@@ -165,6 +165,18 @@ describe("api reference behind an admin pass (e2e)", () => {
     assert.deepEqual(silent, [], "schema fields without a description");
   });
 
+  it("keeps one class per schema name, so a department head and today's lists point at their own", async () => {
+    const cookie = await open(await pass(token.admin));
+    const doc = (await request(http).get("/docs/json").set("Cookie", cookie)).body as {
+      components: { schemas: Record<string, { properties?: Record<string, unknown> }> };
+    };
+    const target = (schema: string, property: string): string =>
+      JSON.stringify(doc.components.schemas[schema]?.properties?.[property] ?? null);
+    assert.match(target("DepartmentView", "head"), /"#\/components\/schemas\/EmployeeRefView"/);
+    assert.match(target("OpenTaskRunView", "employee"), /"#\/components\/schemas\/EmployeeRefView"/);
+    assert.match(target("TeamTodayView", "absent"), /"#\/components\/schemas\/PersonRefView"/);
+  });
+
   it("ends a session once its holder is no longer an admin", async () => {
     const cookie = await open((await auth.issueDocsPass(spareId)).pass);
     assert.equal((await request(http).get("/docs/json").set("Cookie", cookie)).status, 200);

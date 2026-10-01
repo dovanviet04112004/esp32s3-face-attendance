@@ -20,7 +20,7 @@ import {
 } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
-import { PersonRefView } from "../../org/dto/org.dto.js";
+import { EmployeeRefView } from "../../org/dto/org.dto.js";
 
 const kMaxItems = 100;
 const kDayWindow = 365;
@@ -319,7 +319,7 @@ export class ChecklistRunView {
 
 export class OpenTaskRunView {
   @ApiProperty({ enum: ChecklistKind, enumName: "ChecklistKind", description: "Joining or leaving" }) kind!: ChecklistKind;
-  @ApiProperty({ type: PersonRefView, description: "Employee the checklist is for" }) employee!: PersonRefView;
+  @ApiProperty({ type: EmployeeRefView, description: "Employee the checklist is for" }) employee!: EmployeeRefView;
 }
 
 export class OpenTaskView extends TaskView {

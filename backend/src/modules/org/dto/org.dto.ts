@@ -350,7 +350,7 @@ export class ReorgDto {
   toManagerCode?: string;
 }
 
-export class PersonRefView {
+export class EmployeeRefView {
   @ApiProperty({ example: 42, description: "Employee id" }) id!: number;
   @ApiProperty({ example: "NV0042", description: "Employee code" }) code!: string;
   @ApiProperty({ example: "Nguyễn Văn An", description: "Name as on the employee record" }) fullName!: string;
@@ -479,8 +479,8 @@ export class DepartmentView {
   @ApiProperty({ nullable: true, type: Number, description: "Employee id of the person heading it", example: 7 }) headId!: number | null;
   @ApiProperty({ description: "False once retired" }) active!: boolean;
   @ApiPropertyOptional({ description: "People filed directly under it; lists only" }) headcount?: number;
-  @ApiPropertyOptional({ type: PersonRefView, nullable: true, description: "The person heading it; lists only" })
-  head?: PersonRefView | null;
+  @ApiPropertyOptional({ type: EmployeeRefView, nullable: true, description: "The person heading it; lists only" })
+  head?: EmployeeRefView | null;
   @ApiProperty({ type: String, format: "date-time", description: "When it was opened", example: "2025-11-03T02:00:00.000Z" })
   createdAt!: string;
   @ApiProperty({ type: String, format: "date-time", description: "Last change to the row", example: "2026-05-20T04:30:00.000Z" })
