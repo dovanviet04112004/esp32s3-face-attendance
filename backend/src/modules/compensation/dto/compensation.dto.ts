@@ -187,7 +187,9 @@ export class BulkRaiseDto {
   @ApiPropertyOptional({
     default: false,
     example: true,
-    description: "True sets the insurance salary to the new base; false or absent sets it to the current base",
+    description:
+      "True raises each person's own insurance salary by the same rate or amount as the base; " +
+      "false or absent keeps it as it stands (KEHOACH 9.18 item 6)",
   })
   @IsOptional()
   @IsBoolean()
@@ -411,6 +413,16 @@ export class RaisePreviewView {
   currentBase!: string;
   @ApiProperty({ example: "22000000", description: "Base pay the raise would write, whole dong as a string" })
   nextBase!: string;
+  @ApiProperty({
+    example: "12000000",
+    description: "Insurance salary in force on effectiveFrom, whole dong as a string",
+  })
+  currentInsurance!: string;
+  @ApiProperty({
+    example: "13200000",
+    description: "Insurance salary the raise would write: the current one unless raiseInsuranceSalary is set",
+  })
+  nextInsurance!: string;
 }
 
 export class RaiseWrittenView {

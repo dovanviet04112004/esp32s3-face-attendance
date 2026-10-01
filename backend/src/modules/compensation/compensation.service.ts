@@ -55,6 +55,8 @@ export interface RaisePreview {
   fullName: string;
   currentBase: string;
   nextBase: string;
+  currentInsurance: string;
+  nextInsurance: string;
 }
 
 const UNIQUE_VIOLATION = "P2002";
@@ -268,10 +270,11 @@ export class CompensationService {
     // DISTINCT ON takes the latest record per person in one pass; asking per
     // employee is one query each, which stops working at a few thousand (KEHOACH 9.9).
     const rows = await this.db.$queryRaw<
-      { employeeId: number; code: string; fullName: string; baseSalary: string }[]
+      { employeeId: number; code: string; fullName: string; baseSalary: string; insuranceSalary: string }[]
     >`
       SELECT DISTINCT ON (e."id")
-             e."id" AS "employeeId", e."code", e."fullName", c."baseSalary"::text
+             e."id" AS "employeeId", e."code", e."fullName",
+             c."baseSalary"::text, c."insuranceSalary"::text
         FROM "Employee" e
         JOIN "CompensationRecord" c ON c."employeeId" = e."id"
        WHERE e."active" = true
@@ -282,17 +285,20 @@ export class CompensationService {
        ORDER BY e."id", c."effectiveFrom" DESC
     `;
     const step = body.percentBp;
+    const raised = (from: bigint): bigint =>
+      step === undefined ? from + BigInt(body.amount ?? 0) : from + (from * BigInt(step)) / 10_000n;
     return rows
       .map((row) => {
         const base = BigInt(row.baseSalary.split(".")[0]);
-        const next =
-          step === undefined ? base + BigInt(body.amount ?? 0) : base + (base * BigInt(step)) / 10_000n;
+        const insurance = BigInt(row.insuranceSalary.split(".")[0]);
         return {
           employeeId: row.employeeId,
           code: row.code,
           fullName: row.fullName,
           currentBase: base.toString(),
-          nextBase: next.toString(),
+          nextBase: raised(base).toString(),
+          currentInsurance: insurance.toString(),
+          nextInsurance: (body.raiseInsuranceSalary ? raised(insurance) : insurance).toString(),
         };
       })
       .sort((left, right) => left.code.localeCompare(right.code));
@@ -305,7 +311,7 @@ export class CompensationService {
       employeeId: one.employeeId,
       effectiveFrom: on,
       baseSalary: one.nextBase,
-      insuranceSalary: body.raiseInsuranceSalary ? one.nextBase : one.currentBase,
+      insuranceSalary: one.nextInsurance,
       reason: body.reason,
       note: body.note ?? null,
       createdById: viewer.userId,

@@ -16,13 +16,26 @@ import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
 
 const RAISE_BP = 100;
+const RAISE_AMOUNT = 500_000;
 const BASE_SALARY = "20000000";
+// Set apart from the base, as many employers do, so a raise that copies the base shows.
+const INSURANCE_SALARY = "12000000";
 const EFFECTIVE_FROM = "2029-01-01";
+const RATE_FROM = "2029-07-01";
+const AMOUNT_FROM = "2030-01-01";
 const HIRED_FROM = "2028-01-01";
 const REASON = "ANNUAL_REVIEW" as const;
 // Its own people rather than the whole company: the company-wide figure is a
 // measurement, and running one here starves the suites that watch a clock.
 const CODES = ["NV9131B", "NV9132B", "NV9133B"];
+
+interface RaiseRow {
+  employeeId: number;
+  currentBase: string;
+  nextBase: string;
+  currentInsurance: string;
+  nextInsurance: string;
+}
 
 describe("bulk raise (e2e)", () => {
   let app: INestApplication;
@@ -31,15 +44,31 @@ describe("bulk raise (e2e)", () => {
   let token = "";
   let employeeIds: number[] = [];
 
+  const byRate = (from: bigint): bigint => (from * BigInt(10_000 + RAISE_BP)) / 10_000n;
+
   async function sweep(): Promise<void> {
     await db.employee.deleteMany({ where: { code: { in: CODES } } });
   }
 
-  function raise(): Promise<request.Response> {
+  function bulk(path: string, change: object): Promise<request.Response> {
     return request(http)
-      .post("/compensation/bulk")
+      .post(path)
       .set("Authorization", `Bearer ${token}`)
-      .send({ effectiveFrom: EFFECTIVE_FROM, percentBp: RAISE_BP, reason: REASON, employeeIds });
+      .send({ effectiveFrom: EFFECTIVE_FROM, percentBp: RAISE_BP, reason: REASON, employeeIds, ...change });
+  }
+
+  function raise(change: object = {}): Promise<request.Response> {
+    return bulk("/compensation/bulk", change);
+  }
+
+  async function preview(change: object): Promise<RaiseRow[]> {
+    const res = await bulk("/compensation/bulk/preview", change);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    return res.body as RaiseRow[];
+  }
+
+  function recordsOn(day: string) {
+    return db.compensationRecord.findMany({ where: { employeeId: { in: employeeIds }, effectiveFrom: new Date(day) } });
   }
 
   function written(): Promise<number> {
@@ -81,7 +110,7 @@ describe("bulk raise (e2e)", () => {
           employeeId: made.id,
           effectiveFrom: new Date(HIRED_FROM),
           baseSalary: BASE_SALARY,
-          insuranceSalary: BASE_SALARY,
+          insuranceSalary: INSURANCE_SALARY,
         },
       });
     }
@@ -113,6 +142,14 @@ describe("bulk raise (e2e)", () => {
     assert.equal(older, CODES.length, "the raise overwrote what it should have appended to");
   });
 
+  it("keeps each person's insurance salary when the raise leaves it alone", async () => {
+    const rows = await recordsOn(EFFECTIVE_FROM);
+    assert.equal(rows.length, CODES.length);
+    for (const row of rows) {
+      assert.equal(row.insuranceSalary.toFixed(0), INSURANCE_SALARY, "the raise rewrote the insurance salary from the base");
+    }
+  });
+
   it("writes nothing extra when the same raise runs again", async () => {
     assert.equal((await raise()).status, 201);
     assert.equal(
@@ -120,6 +157,48 @@ describe("bulk raise (e2e)", () => {
       CODES.length,
       "a second run of the same raise wrote a second set of rows",
     );
+  });
+
+  it("previews the insurance salary as it stands, or stepped by the same rate when asked", async () => {
+    const base = byRate(BigInt(BASE_SALARY));
+    const held = BigInt(INSURANCE_SALARY);
+    const figures = (row: RaiseRow): string[] => [row.currentBase, row.nextBase, row.currentInsurance, row.nextInsurance];
+
+    const kept = await preview({ effectiveFrom: RATE_FROM });
+    assert.equal(kept.length, CODES.length);
+    for (const row of kept) {
+      assert.deepEqual(figures(row), [base, byRate(base), held, held].map(String));
+    }
+    const stepped = await preview({ effectiveFrom: RATE_FROM, raiseInsuranceSalary: true });
+    for (const row of stepped) {
+      assert.deepEqual(figures(row), [base, byRate(base), held, byRate(held)].map(String));
+    }
+
+    assert.equal((await raise({ effectiveFrom: RATE_FROM, raiseInsuranceSalary: true })).status, 201);
+    const rows = await recordsOn(RATE_FROM);
+    assert.equal(rows.length, CODES.length);
+    for (const row of rows) {
+      assert.deepEqual(
+        [row.baseSalary.toFixed(0), row.insuranceSalary.toFixed(0)],
+        [byRate(base), byRate(held)].map(String),
+        "the raise wrote something other than what the preview showed",
+      );
+    }
+  });
+
+  it("adds the same amount to the insurance salary as to the base when asked", async () => {
+    const base = byRate(byRate(BigInt(BASE_SALARY)));
+    const held = byRate(BigInt(INSURANCE_SALARY));
+    const change = { effectiveFrom: AMOUNT_FROM, percentBp: undefined, amount: RAISE_AMOUNT, raiseInsuranceSalary: true };
+    assert.equal((await raise(change)).status, 201);
+    const rows = await recordsOn(AMOUNT_FROM);
+    assert.equal(rows.length, CODES.length);
+    for (const row of rows) {
+      assert.deepEqual(
+        [row.baseSalary.toFixed(0), row.insuranceSalary.toFixed(0)],
+        [base + BigInt(RAISE_AMOUNT), held + BigInt(RAISE_AMOUNT)].map(String),
+      );
+    }
   });
 });
 
