@@ -1397,6 +1397,7 @@ enum NoticeKind {
   DAY_CORRECTED
   SHIFT_CHANGED
   TIMESHEET_MONTH_CLOSED
+  PUNCH_RECORDED
 }
 
 enum NoticeChannel {

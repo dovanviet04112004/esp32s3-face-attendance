@@ -80,6 +80,8 @@ export interface KindRule {
   item: boolean;
   defaults: Record<OfferedChannel, boolean>;
   facts: Readonly<Record<string, FactType>>;
+  /** Told to open screens and phones but never written: the record it speaks of is the row. */
+  rowless?: true;
 }
 
 /** One row per kind; a kind missing here does not compile (KEHOACH 9.21.4, 4.9). */
@@ -239,6 +241,16 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: false,
     defaults: { IN_APP: true, PUSH: false },
     facts: { month: "month" },
+  },
+  // The timesheet already keeps every punch; a row here would copy it twice a day for everyone (KEHOACH 9.21.4).
+  PUNCH_RECORDED: {
+    category: "ATTENDANCE",
+    level: "INFO",
+    receivers: "self",
+    item: false,
+    defaults: { IN_APP: true, PUSH: false },
+    facts: {},
+    rowless: true,
   },
   // Off until /me carries a contract card: a notice that opens nothing about it is a dead end (KEHOACH 9.15 rule 1).
   CONTRACT_ENDING: {

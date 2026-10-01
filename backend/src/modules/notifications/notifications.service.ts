@@ -520,6 +520,9 @@ export class NotificationsService {
       if (NOTICE_KINDS[kind].item) {
         throw new Error(`${kind} is work a group shares; NoticeItemsService opens it`);
       }
+      if (NOTICE_KINDS[kind].rowless) {
+        throw new Error(`${kind} writes no row`);
+      }
       const wants = await this.channelsFor(kind, sends.map((one) => one.userId));
       const landed: Announced[] = [];
       // Twenty parameters a row: a thousand rows stay far under the 65,535 one statement takes.
@@ -552,6 +555,37 @@ export class NotificationsService {
       await this.announce(kind, landed.filter((one) => wants(one.userId, "IN_APP")));
     } catch (fell) {
       this.log.error(`notices ${kind} were not raised: ${String(fell)}`);
+    }
+  }
+
+  /** Tell a person's own screens that a punch of theirs arrived, and their phones where they turned that on; never a row.
+   *  @ctx any | after the punch is stored; logs its own failures (KEHOACH 9.21.4)
+   */
+  async punched(employeeId: number, punch: { ts: Date; deviceId: string; delayed: boolean }): Promise<void> {
+    try {
+      const logins = await this.db.user.findMany({ where: { employeeId, active: true }, select: { id: true } });
+      if (logins.length === 0) {
+        return;
+      }
+      const wants = await this.channelsFor("PUNCH_RECORDED", logins.map((one) => one.id));
+      const pushed: NoticeFanoutJob["rows"] = [];
+      for (const login of logins) {
+        if (wants(login.id, "IN_APP")) {
+          this.feed.tell(login.id, FEED.notice, { op: "punch", ts: punch.ts.toISOString(), deviceId: punch.deviceId, delayed: punch.delayed });
+        }
+        if (this.pushable && wants(login.id, "PUSH")) {
+          pushed.push({ id: "", userId: login.id, tag: kebab("PUNCH_RECORDED"), renotify: true });
+        }
+      }
+      if (pushed.length > 0) {
+        await this.queues[QUEUE.notify].add(JOB.noticeFanout, {
+          type: JOB.noticeFanout,
+          kind: "PUNCH_RECORDED",
+          rows: pushed,
+        } satisfies NoticeFanoutJob);
+      }
+    } catch (fell) {
+      this.log.error(`the punch of ${employeeId} was not told: ${String(fell)}`);
     }
   }
 
