@@ -195,6 +195,7 @@ export interface PreferenceRow {
 const OFFERED: readonly OfferedChannel[] = ["IN_APP", "PUSH"];
 
 const kDeadSubscription = [404, 410];
+const kBatch = 1000;
 
 @Injectable()
 export class NotificationsService {
@@ -484,21 +485,27 @@ export class NotificationsService {
         throw new Error(`${kind} is work a group shares; NoticeItemsService opens it`);
       }
       const wants = await this.channelsFor(kind, sends.map((one) => one.userId));
-      const rows = sends.map((one) => this.newsRow(kind, one, !wants(one.userId, "IN_APP")));
-      const landed = await this.db.$queryRaw<{ id: string; userId: string }[]>`
-        INSERT INTO "Notification" ("id", "userId", "kind", "subjectType", "subjectId", "subjectEmployeeId",
-                                    "dedupKey", "facts", "archivedAt", "requestId", "advanceId", "periodId",
-                                    "payslipId", "contractId", "certificateId", "profileChangeId", "dependentId",
-                                    "daysLeft", "daysWaited", "approved")
-        VALUES ${Prisma.join(rows)}
-        ON CONFLICT ("userId", "dedupKey") DO UPDATE
-           SET "facts" = EXCLUDED."facts", "daysLeft" = EXCLUDED."daysLeft", "daysWaited" = EXCLUDED."daysWaited",
-               "readAt" = NULL, "remindCount" = "Notification"."remindCount" + 1, "remindedAt" = now(),
-               "archivedAt" = CASE WHEN EXCLUDED."archivedAt" IS NULL THEN NULL
-                                   ELSE COALESCE("Notification"."archivedAt", EXCLUDED."archivedAt") END
-         WHERE "Notification"."facts" IS DISTINCT FROM EXCLUDED."facts"
-        RETURNING "id", "userId"
-      `;
+      const landed: { id: string; userId: string }[] = [];
+      // Twenty parameters a row: a thousand rows stay far under the 65,535 one statement takes.
+      for (let at = 0; at < sends.length; at += kBatch) {
+        const rows = sends.slice(at, at + kBatch).map((one) => this.newsRow(kind, one, !wants(one.userId, "IN_APP")));
+        landed.push(
+          ...(await this.db.$queryRaw<{ id: string; userId: string }[]>`
+            INSERT INTO "Notification" ("id", "userId", "kind", "subjectType", "subjectId", "subjectEmployeeId",
+                                        "dedupKey", "facts", "archivedAt", "requestId", "advanceId", "periodId",
+                                        "payslipId", "contractId", "certificateId", "profileChangeId", "dependentId",
+                                        "daysLeft", "daysWaited", "approved")
+            VALUES ${Prisma.join(rows)}
+            ON CONFLICT ("userId", "dedupKey") DO UPDATE
+               SET "facts" = EXCLUDED."facts", "daysLeft" = EXCLUDED."daysLeft", "daysWaited" = EXCLUDED."daysWaited",
+                   "readAt" = NULL, "remindCount" = "Notification"."remindCount" + 1, "remindedAt" = now(),
+                   "archivedAt" = CASE WHEN EXCLUDED."archivedAt" IS NULL THEN NULL
+                                       ELSE COALESCE("Notification"."archivedAt", EXCLUDED."archivedAt") END
+             WHERE "Notification"."facts" IS DISTINCT FROM EXCLUDED."facts"
+            RETURNING "id", "userId"
+          `),
+        );
+      }
       const factsOf = new Map(sends.map((one) => [one.userId, one.facts]));
       await this.announce(
         kind,
