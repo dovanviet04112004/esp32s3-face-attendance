@@ -1,14 +1,17 @@
 "use client";
 
-import { Empty, LayerCard, LayerDialog, LinkButton } from "@cloudflare/kumo";
-import { ClockCounterClockwiseIcon, UserCircleIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { Button, Empty, LayerCard, LayerDialog, LinkButton } from "@cloudflare/kumo";
+import { CheckIcon, ClockCounterClockwiseIcon, UserCircleIcon } from "@phosphor-icons/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Suspense, useMemo, useState } from "react";
 
+import type { Notice } from "@/components/notifications/kinds";
+import { NOTICES_KEY, useNoticeWords, useReadSubject } from "@/components/notifications/notice-row";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { MonthPicker, monthSpan, thisMonth, type Month } from "@/components/ui/month-picker";
+import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
 import { useRouter } from "@/i18n/navigation";
@@ -22,6 +25,7 @@ const kMaxPages = 10;
 const kMinuteMs = 60_000;
 const kDeviceTake = 200;
 const MONTH = /^(\d{4})-(\d{2})$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 interface Punch {
   id: string;
@@ -46,6 +50,22 @@ interface MonthTally {
   lateCount: number;
   missingPunchDays: number;
   absentDays?: number;
+}
+
+/** A day as the timesheet holds it, with whoever corrected it by hand (KEHOACH 9.8). */
+interface Built {
+  workedMinutes: number;
+  adjustedByName: string | null;
+  adjustReason: string | null;
+  adjustedAt: string | null;
+}
+
+/** The work a deviating day holds for its own person (KEHOACH 9.21.4). */
+interface DayWork {
+  key: string;
+  state: "OPEN" | "DONE" | "WITHDRAWN" | "EXPIRED" | "CLEARED";
+  facts: Notice["facts"];
+  resolvable: boolean;
 }
 
 type Mark = "late" | "missing" | "none" | "ok" | "off" | "ahead";
@@ -96,10 +116,15 @@ function MyAttendance() {
   const common = useTranslations("common");
   const format = useFormatter();
   const router = useRouter();
+  const cache = useQueryClient();
+  const notify = useNotify();
+  const say = useNoticeWords();
   const { employeeId, role } = useSession();
-  const [url, setUrl] = useUrlState({ month: "" });
-  const [open, setOpen] = useState<Day | null>(null);
-  const month = monthOf(url.month);
+  const [url, setUrl] = useUrlState({ month: "", day: "" });
+  const [picked, setPicked] = useState<Day | null>(null);
+  // A notice names a day, and the month around it is the one to show.
+  const linkedDay = DAY.test(url.day) ? url.day : "";
+  const month = monthOf(url.month || linkedDay.slice(0, 7));
   const span = monthSpan(month);
   const today = todayIso();
 
@@ -177,6 +202,50 @@ function MyAttendance() {
       return { date, plan, punches: seen, lateMinutes: late, mark: markOf(date, plan, seen, late, today) };
     }).reverse();
   }, [punches.data, roster.data, span.from, span.to, today]);
+
+  const open = picked ?? (linkedDay ? (days.find((one) => one.date === linkedDay) ?? null) : null);
+  const openPast = open !== null && open.date < today;
+  const workKey = open && employeeId !== null ? `attendance:${employeeId}:${open.date}` : "";
+  useReadSubject("PERSON_DAY", open && employeeId !== null ? `${employeeId}:${open.date}` : null);
+
+  function setOpen(next: Day | null): void {
+    setPicked(next);
+    if (next === null && url.day) {
+      setUrl({ day: "" });
+    }
+  }
+
+  const built = useQuery({
+    queryKey: ["timesheet", "mine", "day", open?.date],
+    enabled: openPast && employeeId !== null,
+    queryFn: async () =>
+      (await api.get<Built[]>(`/timesheet?from=${open?.date}&to=${open?.date}&employeeId=${employeeId}`)).data[0] ?? null,
+  });
+
+  const work = useQuery({
+    queryKey: [...NOTICES_KEY, "items", workKey],
+    enabled: openPast && workKey !== "",
+    retry: false,
+    queryFn: async () => {
+      try {
+        return (await api.get<DayWork>(`/notifications/items/${encodeURIComponent(workKey)}`)).data;
+      } catch (fell: unknown) {
+        if (isAxiosError(fell) && fell.response?.status === 404) {
+          return null;
+        }
+        throw fell;
+      }
+    },
+  });
+
+  const letGo = useMutation({
+    mutationFn: (key: string) => api.post(`/notifications/items/${encodeURIComponent(key)}/resolve`, { note: "" }),
+    onSuccess: () => {
+      notify.done(t("attLetGone"));
+      void cache.invalidateQueries({ queryKey: NOTICES_KEY });
+    },
+    onError: notify.failed,
+  });
 
   const counted = {
     workedDays: days.filter((one) => one.punches.length > 0).length,
@@ -310,6 +379,40 @@ function MyAttendance() {
           <LayerDialog.Title>{open ? format.dateTime(dayOnly(open.date), { weekday: "long", day: "numeric", month: "long" }) : ""}</LayerDialog.Title>
           <LayerDialog.Description>{open ? planWords(open.plan) : ""}</LayerDialog.Description>
           <LayerDialog.Body>
+            {built.data?.adjustedAt ? (
+              <div className="mb-4 flex flex-col gap-2 border-b border-kumo-hairline pb-4">
+                <p className="font-medium">
+                  {t("attCorrected", {
+                    who: built.data.adjustedByName ?? common("empty"),
+                    time: format.dateTime(new Date(built.data.adjustedAt), "medium"),
+                  })}
+                </p>
+                <p className="text-kumo-subtle">{t("attCorrectedMinutes", { minutes: built.data.workedMinutes })}</p>
+                {built.data.adjustReason ? <p className="rounded-lg bg-kumo-tint p-3 break-words">{built.data.adjustReason}</p> : null}
+              </div>
+            ) : null}
+            {work.data?.state === "OPEN" ? (
+              <div className="mb-4 flex flex-col gap-2 border-b border-kumo-hairline pb-4">
+                <p className="font-medium">{t("attOff")}</p>
+                <ul className="flex flex-col gap-1">
+                  {say.deviations(work.data.facts).map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                {work.data.resolvable ? (
+                  <Button
+                    variant="secondary"
+                    icon={CheckIcon}
+                    className="self-start"
+                    loading={letGo.isPending}
+                    onClick={() => work.data && letGo.mutate(work.data.key)}
+                  >
+                    {t("attLetGo")}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {work.data?.state === "DONE" ? <p className="mb-4 text-kumo-subtle">{t("attLetGone")}</p> : null}
             {open && open.punches.length === 0 ? (
               <p className="text-kumo-subtle">{t("attNoPunches")}</p>
             ) : (
