@@ -69,7 +69,10 @@ export class AuthService {
   ) {}
 
   async signIn(email: string, password: string, from: SignedInFrom): Promise<IssuedTokens> {
-    // A locked email costs no scrypt, known or not (KEHOACH 7.2).
+    // A spent address or a locked email costs no scrypt, known or not (KEHOACH 7.2).
+    if (await this.lockout.addressSpent(from.ip)) {
+      throw new ThrottlerException("RATE_LIMITED");
+    }
     if ((await this.lockout.lockedFor(email)) > 0) {
       throw new ThrottlerException("AUTH_LOCKED");
     }
@@ -81,7 +84,7 @@ export class AuthService {
     // A closed account answers like a wrong password on purpose: the caller
     // has proved nothing yet, so it must not learn the address exists.
     if (!user || !ok || !user.active) {
-      await this.lockout.missed(email, user?.id ?? null);
+      await this.lockout.missed(email, user?.id ?? null, from.ip);
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
     }
     await this.lockout.clear(email);
@@ -156,17 +159,20 @@ export class AuthService {
   /** Asks for the password in hand: a session somebody else is holding must
    *  not be able to shut the owner out of their own account (KEHOACH 9.4).
    */
-  async changePassword(userId: string, current: string, next: string): Promise<void> {
+  async changePassword(userId: string, current: string, next: string, address?: string): Promise<void> {
     const user = await this.db.user.findUnique({ where: { id: userId } });
     if (!user || !user.active) {
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
+    }
+    if (await this.lockout.addressSpent(address)) {
+      throw new ThrottlerException("RATE_LIMITED");
     }
     // A held session guessing the password counts against the lock the login door keeps (KEHOACH 7.2).
     if ((await this.lockout.lockedFor(user.email)) > 0) {
       throw new ThrottlerException("AUTH_LOCKED");
     }
     if (!(await verifyPassword(current, user.passwordHash))) {
-      await this.lockout.missed(user.email, user.id);
+      await this.lockout.missed(user.email, user.id, address);
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
     }
     await this.lockout.clear(user.email);
@@ -244,11 +250,13 @@ export class AuthService {
   async cutAccess(userIds: string[]): Promise<void> {
     const at = Math.floor(Date.now() / 1000);
     const keepS = Math.ceil(ttlToMs(this.config.get("JWT_ACCESS_TTL", { infer: true })) / 1000);
-    try {
+    const written = await this.redis.quick(async (client) => {
       for (const userId of userIds) {
-        await this.redis.client.set(GUARD.accessCutoff(userId), String(at), "EX", keepS);
+        await client.set(GUARD.accessCutoff(userId), String(at), "EX", keepS);
       }
-    } catch {
+      return true;
+    });
+    if (written === null) {
       this.log.warn("access cutoff not written; tokens run to their own expiry");
     }
     this.bus.emit(SESSIONS_CUT, { userIds } satisfies SessionsCut);
@@ -256,12 +264,7 @@ export class AuthService {
 
   /** Whether an access token predates its account's cutoff (KEHOACH 9.23 rule 5). */
   async accessCut(claims: Pick<AccessClaims, "sub" | "sid">, iat: number): Promise<boolean> {
-    let at: string | null;
-    try {
-      at = await this.redis.client.get(GUARD.accessCutoff(claims.sub));
-    } catch {
-      return false;
-    }
+    const at = await this.redis.quick((client) => client.get(GUARD.accessCutoff(claims.sub)));
     if (at === null || iat > Number(at)) {
       return false;
     }

@@ -23,14 +23,16 @@ export const envSchema = z
     ENROLL_SESSION_MINUTES: z.coerce.number().int().positive().max(120).default(10),
     JWT_DEVICE_SECRET: z.string().min(32),
 
-    LOGIN_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(5),
+    LOGIN_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(30),
     SESSIONS_PER_USER: z.coerce.number().int().positive().default(10),
     DEVICE_REGISTER_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
     FORGOT_ATTEMPTS_PER_HOUR: z.coerce.number().int().positive().default(5),
     API_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(600),
     HEAVY_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(20),
+    SEARCH_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(120),
     LOGIN_LOCK_AFTER: z.coerce.number().int().min(3).max(100).default(10),
     LOGIN_LOCK_MINUTES: z.coerce.number().int().positive().max(1440).default(15),
+    LOGIN_IP_MISSES: z.coerce.number().int().min(3).default(50),
     // Proxies between the client and api; 0 trusts no X-Forwarded-For (KEHOACH 4.8).
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(4).default(0),
     PROVISION_BATCH: z.coerce.number().int().positive().max(10000).default(2000),

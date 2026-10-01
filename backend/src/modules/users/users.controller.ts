@@ -29,13 +29,14 @@ import type { Request } from "express";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import type { AccessClaims } from "../auth/auth.types.js";
+import { THROTTLE, type AccessClaims } from "../auth/auth.types.js";
 import {
   AccountCounts,
   AccountPage,
@@ -90,6 +91,7 @@ export class UsersController {
   }
 
   @Post("provision")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN")
   @ApiOperation({ summary: "Open a login for employees who have none (KEHOACH 9.4)" })
   @ApiCreatedResponse({ type: ProvisioningView })
@@ -110,6 +112,7 @@ export class UsersController {
   }
 
   @Post(":id/invite")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN")
   @AuditedInService()
   @HttpCode(HttpStatus.NO_CONTENT)

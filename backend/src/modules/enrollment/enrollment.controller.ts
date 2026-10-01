@@ -3,9 +3,11 @@ import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiPara
 import type { DeviceEnrollment } from "@prisma/client";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import { AssignableDeviceView, AssignDto, EnrollmentView, KioskStandingView, RosterView } from "./dto/enrollment.dto.js";
 import { EnrollmentService, type AssignableDevice, type KioskStanding } from "./enrollment.service.js";
 
@@ -58,6 +60,7 @@ export class EnrollmentController {
   }
 
   @Post(":deviceId/resync")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN")
   @ApiOperation({ summary: "Send the kiosk the whole roster it should hold" })
   @ApiCreatedResponse({ type: RosterView })

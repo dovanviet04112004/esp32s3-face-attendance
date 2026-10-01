@@ -105,6 +105,7 @@ export class PayrollController {
   }
 
   @Post("payroll-periods/:id/lock")
+  @RateBucket(THROTTLE.heavy)
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({

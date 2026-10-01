@@ -361,6 +361,7 @@ export class EmployeesController {
   }
 
   @Post(":id/login")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
   @AuditedInService()
   @ApiOperation({ summary: "Open this person's login, or mail the setup link again when it is open" })

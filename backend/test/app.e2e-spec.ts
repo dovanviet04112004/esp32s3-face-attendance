@@ -13,8 +13,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword, verifyPassword } from "../src/modules/auth/password.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
 
-// The last case spends the login allowance for the minute, so this suite needs
-// an identity no parallel suite signs in as.
+// Sessions here are replayed and dropped on purpose, on an identity no parallel suite signs in as.
 const SIGNER_EMAIL = "e2eauth@kiosk.local";
 const SIGNER_PASSWORD = "kiosk-e2e-password";
 
@@ -30,12 +29,7 @@ describe("auth (e2e)", () => {
   let password: string;
   let http: ReturnType<INestApplication["getHttpServer"]>;
   let db: PrismaService;
-  // The allowance runs per minute over the whole suite, so the last case has
-  // to know how much of it the cases above already used.
-  let spent = 0;
-
   async function signIn(email: string, secret: string): Promise<request.Response> {
-    spent += 1;
     return request(http).post("/auth/login").send({ email, password: secret });
   }
 
@@ -156,7 +150,6 @@ describe("auth (e2e)", () => {
   });
 
   it("refuses a body it cannot accept with a code and the names of the fields", async () => {
-    spent += 1;
     const res = await request(http)
       .post("/auth/login")
       .send({ email: "not-an-address", password, remember: true });
@@ -213,18 +206,5 @@ describe("auth (e2e)", () => {
       .post("/auth/refresh")
       .set("Cookie", cookieFrom(first.headers));
     assert.equal(after.status, 401);
-  });
-
-  // Declared last on purpose: it spends the login allowance for the minute.
-  it("answers login exactly its own allowance of times, then stops", async () => {
-    const allowance = validateEnv().LOGIN_ATTEMPTS_PER_MINUTE;
-    let refused = false;
-    for (let attempt = 0; attempt <= allowance + 2 && !refused; attempt += 1) {
-      refused = (await signIn(SIGNER_EMAIL, "not-the-password")).status === 429;
-    }
-    assert.ok(refused, "the throttler never refused a login");
-    // Counting refusals alone passes at any limit, including one raised by a
-    // second bucket added somewhere else entirely.
-    assert.equal(spent - 1, allowance, "login is answering to somebody else's allowance");
   });
 });

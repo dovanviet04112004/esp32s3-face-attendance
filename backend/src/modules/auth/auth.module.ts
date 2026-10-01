@@ -3,10 +3,11 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtModule, JwtService } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
-import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { normalizeIp, ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 
 import { RATE_BUCKETS } from "../../common/decorators/rate-bucket.decorator.js";
 import type { Env } from "../../config/env.schema.js";
+import { RedisService } from "../../database/redis.service.js";
 import { AuthController } from "./auth.controller.js";
 import { THROTTLE, type AccessClaims } from "./auth.types.js";
 import { AuthService } from "./auth.service.js";
@@ -14,6 +15,7 @@ import { LoginLockout } from "./login-lockout.service.js";
 import { DeviceStrategy } from "./strategies/device.strategy.js";
 import { JwtRefreshStrategy } from "./strategies/jwt-refresh.strategy.js";
 import { JwtStrategy } from "./strategies/jwt.strategy.js";
+import { RedisThrottlerStorage } from "./throttler.storage.js";
 
 const MINUTE_MS = 60_000;
 const BEARER = "Bearer ";
@@ -26,6 +28,10 @@ function unless(bucket: string): (context: ExecutionContext) => boolean {
   };
 }
 
+function byAddress(req: Record<string, any>): string {
+  return `ip:${normalizeIp(String(req.ip))}`;
+}
+
 // A subject is trusted only once its signature checks, or a forged one per request evades the count (KEHOACH 7.2).
 function byAccount(secret: string): (req: Record<string, any>) => string {
   const jwt = new JwtService();
@@ -33,9 +39,9 @@ function byAccount(secret: string): (req: Record<string, any>) => string {
     const header: unknown = req.headers?.authorization;
     const token = typeof header === "string" && header.startsWith(BEARER) ? header.slice(BEARER.length) : "";
     try {
-      return token ? `user:${jwt.verify<AccessClaims>(token, { secret }).sub}` : `ip:${req.ip}`;
+      return token ? `user:${jwt.verify<AccessClaims>(token, { secret }).sub}` : byAddress(req);
     } catch {
-      return `ip:${req.ip}`;
+      return byAddress(req);
     }
   };
 }
@@ -46,11 +52,15 @@ function byAccount(secret: string): (req: Record<string, any>) => string {
     JwtModule.register({}),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService<Env, true>) => {
+      inject: [ConfigService, RedisService],
+      useFactory: (config: ConfigService<Env, true>, redis: RedisService) => {
         const account = byAccount(config.get("JWT_ACCESS_SECRET", { infer: true }));
         return {
           errorMessage: "RATE_LIMITED",
+          storage: new RedisThrottlerStorage(redis),
+          // One count per bucket and caller, whichever route spends it (KEHOACH 7.2).
+          generateKey: (_context: ExecutionContext, caller: string) => caller,
+          getTracker: byAddress,
           throttlers: [
             {
               name: THROTTLE.api,
@@ -64,6 +74,13 @@ function byAccount(secret: string): (req: Record<string, any>) => string {
               ttl: MINUTE_MS,
               getTracker: account,
               skipIf: unless(THROTTLE.heavy),
+            },
+            {
+              name: THROTTLE.search,
+              limit: config.get("SEARCH_REQUESTS_PER_MINUTE", { infer: true }),
+              ttl: MINUTE_MS,
+              getTracker: account,
+              skipIf: unless(THROTTLE.search),
             },
             {
               name: THROTTLE.login,

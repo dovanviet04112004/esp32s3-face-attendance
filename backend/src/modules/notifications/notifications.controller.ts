@@ -11,6 +11,7 @@ import {
 } from "@nestjs/swagger";
 import type { NoticeChannel, NoticeKind, Notification, NotificationPreference } from "@prisma/client";
 
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
@@ -30,6 +31,7 @@ import {
   UnreadView,
   UnsubscribeQueryDto,
 } from "./dto/notifications.dto.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import { ContractAlertsService } from "./contract-alerts.service.js";
 import { NotificationsService, type SubscriptionView as KeptSubscription, type Unread } from "./notifications.service.js";
 
@@ -74,6 +76,7 @@ export class NotificationsController {
   }
 
   @Post("sweep-contracts")
+  @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN")
   @ApiOperation({ summary: "Run the daily contract sweep now; it also runs at 07:00" })
   @ApiCreatedResponse({ type: SweepView })

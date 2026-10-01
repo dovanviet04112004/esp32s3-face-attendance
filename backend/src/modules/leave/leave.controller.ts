@@ -172,6 +172,7 @@ export class LeaveController {
   }
 
   @Post("requests/decide-many")
+  @RateBucket(THROTTLE.heavy)
   @ApiOperation({ summary: "Decide up to 100 at once; each row goes through the single-decision rules" })
   @ApiCreatedResponse({ type: DecideManyView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "DECISION_NOTE_REQUIRED when turning down" })

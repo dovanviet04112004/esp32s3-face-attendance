@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { normalizeIp } from "@nestjs/throttler";
+import type { Redis } from "ioredis";
 
 import { GUARD } from "../../common/cache/cache-keys.js";
 import type { Env } from "../../config/env.schema.js";
@@ -21,7 +23,17 @@ function hashOf(email: string): string {
   return createHash("sha256").update(normalEmail(email)).digest("hex");
 }
 
-/** Misses on one email in a row, whatever address they come from (KEHOACH 7.2). */
+function addressKey(address: string | undefined): string {
+  return GUARD.addressMisses(normalizeIp(address ?? "unknown"));
+}
+
+// The window starts at the first miss and does not stretch with later ones.
+async function count(client: Redis, key: string, windowSeconds: number): Promise<number> {
+  const replies = await client.multi().incr(key).expire(key, windowSeconds, "NX").exec();
+  return Number(replies?.[0]?.[1] ?? 0);
+}
+
+/** Misses on one email whatever address they come from, and misses from one address over every email (KEHOACH 7.2). */
 @Injectable()
 export class LoginLockout {
   private readonly log = new Logger(LoginLockout.name);
@@ -34,34 +46,34 @@ export class LoginLockout {
 
   /** Seconds left on this email's lock, 0 when it may try. */
   async lockedFor(email: string): Promise<number> {
-    try {
-      const left = await this.redis.client.ttl(GUARD.loginLock(hashOf(email)));
-      return left > 0 ? left : 0;
-    } catch {
-      this.log.warn("lock check failed, letting the attempt through");
-      return 0;
-    }
+    const left = await this.redis.quick((client) => client.ttl(GUARD.loginLock(hashOf(email))));
+    return left !== null && left > 0 ? left : 0;
+  }
+
+  /** Whether this address has missed too often, over every email, to try again in this window. */
+  async addressSpent(address: string | undefined): Promise<boolean> {
+    const misses = await this.redis.quick((client) => client.get(addressKey(address)));
+    return misses !== null && Number(misses) >= this.config.get("LOGIN_IP_MISSES", { infer: true });
   }
 
   /** Count one miss; the miss that reaches the limit closes the email for a while. */
-  async missed(email: string, userId: string | null): Promise<void> {
+  async missed(email: string, userId: string | null, address: string | undefined): Promise<void> {
     const key = hashOf(email);
     const window = this.config.get("LOGIN_LOCK_MINUTES", { infer: true }) * SECONDS_PER_MINUTE;
-    try {
-      const misses = await this.redis.client.incr(GUARD.loginMisses(key));
-      if (misses === 1) {
-        await this.redis.client.expire(GUARD.loginMisses(key), window);
+    const lockAfter = this.config.get("LOGIN_LOCK_AFTER", { infer: true });
+    const locked = await this.redis.quick(async (client) => {
+      await count(client, addressKey(address), window);
+      if ((await count(client, GUARD.loginMisses(key), window)) < lockAfter) {
+        return false;
       }
-      if (misses < this.config.get("LOGIN_LOCK_AFTER", { infer: true })) {
-        return;
-      }
-      await this.redis.client.set(GUARD.loginLock(key), "1", "EX", window);
-      await this.redis.client.del(GUARD.loginMisses(key));
-    } catch {
+      await client.multi().set(GUARD.loginLock(key), "1", "EX", window).del(GUARD.loginMisses(key)).exec();
+      return true;
+    });
+    if (locked === null) {
       this.log.warn("a missed login went uncounted");
       return;
     }
-    if (userId !== null) {
+    if (locked && userId !== null) {
       await this.audit.record({
         action: AUDIT_ACTIONS.USER_LOCKED,
         subject: AUDIT_SUBJECTS.USER,
@@ -71,12 +83,11 @@ export class LoginLockout {
     }
   }
 
-  /** Forget the misses and any lock, once the owner has proved who they are. */
+  /** Forget the misses and any lock on this email, once the owner has proved who they are. */
   async clear(email: string): Promise<void> {
     const key = hashOf(email);
-    try {
-      await this.redis.client.del(GUARD.loginMisses(key), GUARD.loginLock(key));
-    } catch {
+    const cleared = await this.redis.quick((client) => client.del(GUARD.loginMisses(key), GUARD.loginLock(key)));
+    if (cleared === null) {
       this.log.warn("login misses not cleared");
     }
   }

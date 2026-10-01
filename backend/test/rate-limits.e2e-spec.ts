@@ -6,10 +6,17 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 
+import { RATE } from "../src/common/cache/cache-keys.js";
 import type { PrismaService } from "../src/database/prisma.service.js";
+import type { RedisService } from "../src/database/redis.service.js";
+import { THROTTLE } from "../src/modules/auth/auth.types.js";
 
 const API_LIMIT = 8;
 const HEAVY_LIMIT = 2;
+const SEARCH_LIMIT = 3;
+const LOGIN_LIMIT = 6;
+const ADDRESS_MISSES = 4;
+const REGISTER_LIMIT = 3;
 const LOCK_AFTER = 3;
 const PASSWORD = "e2e-limits-password";
 const RUN = randomUUID().slice(0, 8);
@@ -18,15 +25,24 @@ const RUN = randomUUID().slice(0, 8);
 Object.assign(process.env, {
   API_REQUESTS_PER_MINUTE: String(API_LIMIT),
   HEAVY_REQUESTS_PER_MINUTE: String(HEAVY_LIMIT),
+  SEARCH_REQUESTS_PER_MINUTE: String(SEARCH_LIMIT),
+  LOGIN_ATTEMPTS_PER_MINUTE: String(LOGIN_LIMIT),
+  LOGIN_IP_MISSES: String(ADDRESS_MISSES),
+  DEVICE_REGISTER_ATTEMPTS_PER_MINUTE: String(REGISTER_LIMIT),
   LOGIN_LOCK_AFTER: String(LOCK_AFTER),
-  LOGIN_ATTEMPTS_PER_MINUTE: "1000",
   TRUST_PROXY_HOPS: "1",
 });
+
+// A /64 of its own per case and per run: the counters live in Redis and outlast the process.
+function network(caseNo: number, host = 1): string {
+  return `2001:db8:${RUN.slice(0, 4)}:${caseNo}::${host}`;
+}
 
 describe("rate limits and account lockout (e2e)", () => {
   let app: INestApplication;
   let http: ReturnType<INestApplication["getHttpServer"]>;
   let db: PrismaService;
+  let redis: RedisService;
   let address = 0;
   const emails: string[] = [];
 
@@ -44,8 +60,8 @@ describe("rate limits and account lockout (e2e)", () => {
     return email;
   }
 
-  function login(email: string, password = PASSWORD): request.Test {
-    return request(http).post("/auth/login").set("X-Forwarded-For", fresh()).send({ email, password });
+  function login(email: string, password = PASSWORD, from = fresh()): request.Test {
+    return request(http).post("/auth/login").set("X-Forwarded-For", from).send({ email, password });
   }
 
   async function token(email: string): Promise<string> {
@@ -62,12 +78,14 @@ describe("rate limits and account lockout (e2e)", () => {
     const { AppModule } = await import("../src/app.module.js");
     const { configure } = await import("../src/bootstrap.js");
     const { PrismaService } = await import("../src/database/prisma.service.js");
+    const { RedisService } = await import("../src/database/redis.service.js");
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     configure(app);
     await app.init();
     http = app.getHttpServer();
     db = app.get(PrismaService);
+    redis = app.get(RedisService);
   });
 
   after(async () => {
@@ -110,6 +128,92 @@ describe("rate limits and account lockout (e2e)", () => {
     const over = await asAccount(bearer, "/employees/export");
     assert.equal(over.status, 429, "an export ran past the heavy allowance");
     assert.equal((await asAccount(bearer, "/auth/me")).status, 200, "the heavy bucket spent the general one");
+  });
+
+  it("counts one allowance over every route, not one per route", async () => {
+    const bearer = await token(await account("wandering"));
+    for (let call = 0; call < API_LIMIT; call += 1) {
+      const path = call % 2 === 0 ? "/auth/me" : "/notifications/unread";
+      assert.equal((await asAccount(bearer, path)).status, 200, `call ${call + 1} was refused`);
+    }
+    assert.equal((await asAccount(bearer, "/auth/me")).status, 429, "a second route bought more calls");
+  });
+
+  it("counts every heavy route against the one heavy allowance", async () => {
+    const bearer = await token(await account("collector", "ADMIN"));
+    assert.equal((await asAccount(bearer, "/employees/export")).status, 200);
+    assert.equal((await asAccount(bearer, "/assets/export")).status, 200);
+    const over = await asAccount(bearer, "/employees/export");
+    assert.equal(over.status, 429, "a second heavy route bought more exports");
+  });
+
+  it("holds search to its own allowance and leaves the general one standing", async () => {
+    const bearer = await token(await account("searcher", "ADMIN"));
+    for (let call = 0; call < SEARCH_LIMIT; call += 1) {
+      assert.equal((await asAccount(bearer, "/search?q=nguyen")).status, 200, `search ${call + 1} was refused`);
+    }
+    assert.equal((await asAccount(bearer, "/search?q=nguyen")).status, 429);
+    assert.equal((await asAccount(bearer, "/auth/me")).status, 200, "search spent the general allowance");
+  });
+
+  it("answers the password doors their allowance per address, then stops, for good passwords too", async () => {
+    const email = await account("office");
+    for (let attempt = 0; attempt < LOGIN_LIMIT; attempt += 1) {
+      assert.equal((await login(email, PASSWORD, network(1))).status, 200, `sign-in ${attempt + 1} was refused`);
+    }
+    const over = await login(email, PASSWORD, network(1));
+    assert.equal(over.status, 429);
+    assert.equal(over.body.message, "RATE_LIMITED");
+    assert.equal((await login(email, PASSWORD, network(2))).status, 200, "one address spent another's allowance");
+  });
+
+  it("counts one IPv6 /64 as one caller, so walking its addresses buys nothing", async () => {
+    const email = await account("rotating");
+    for (let attempt = 0; attempt < LOGIN_LIMIT; attempt += 1) {
+      await login(email, PASSWORD, network(3, attempt + 1));
+    }
+    assert.equal((await login(email, PASSWORD, network(3, 99))).status, 429);
+  });
+
+  it("closes an address that misses over many emails, and only that address", async () => {
+    const email = await account("sprayed");
+    for (let miss = 0; miss < ADDRESS_MISSES; miss += 1) {
+      const other = `e2e-limits-spray-${miss}-${RUN}@kiosk.local`;
+      assert.equal((await login(other, "not-the-password", network(4))).status, 401);
+    }
+    const closed = await login(email, PASSWORD, network(4));
+    assert.equal(closed.status, 429, "an address kept guessing across accounts");
+    assert.equal(closed.body.message, "RATE_LIMITED", "the account itself was reported as locked");
+    assert.equal((await login(email, PASSWORD, network(5))).status, 200, "the account paid for another address");
+  });
+
+  it("does not let good sign-ins from an address wash out its misses", async () => {
+    const email = await account("washed");
+    for (let miss = 0; miss < ADDRESS_MISSES - 1; miss += 1) {
+      await login(`e2e-limits-wash-${miss}-${RUN}@kiosk.local`, "not-the-password", network(6));
+    }
+    assert.equal((await login(email, PASSWORD, network(6))).status, 200, "misses short of the limit closed it");
+    await login(`e2e-limits-wash-last-${RUN}@kiosk.local`, "not-the-password", network(6));
+    assert.equal((await login(email, PASSWORD, network(6))).status, 429, "a good sign-in reset the address");
+  });
+
+  it("answers the kiosk register door its allowance per address", async () => {
+    const ask = () =>
+      request(http).post("/devices/register").set("X-Forwarded-For", network(7)).send({ deviceId: "nobody" });
+    for (let call = 0; call < REGISTER_LIMIT; call += 1) {
+      assert.notEqual((await ask()).status, 429, `ask ${call + 1} was refused`);
+    }
+    assert.equal((await ask()).status, 429, "a machine could ask without limit");
+  });
+
+  it("keeps the count in Redis, where a restart or a second api reads the same number", async () => {
+    const email = await account("counted");
+    const bearer = await token(email);
+    const user = await db.user.findUniqueOrThrow({ where: { email } });
+    for (let call = 0; call < 3; call += 1) {
+      await asAccount(bearer, "/auth/me");
+    }
+    assert.equal(Number(await redis.client.get(RATE.hits(THROTTLE.api, `user:${user.id}`))), 3);
   });
 
   it("locks an email after its misses in a row, whatever address they come from", async () => {
@@ -169,5 +273,22 @@ describe("rate limits and account lockout (e2e)", () => {
       await login(email, "not-the-password");
     }
     assert.equal((await login(email)).status, 200, "misses from before a good sign-in still counted");
+  });
+
+  // Last: it takes Redis away from this process and brings it back.
+  it("keeps answering at once while Redis is away, with the limits open", async () => {
+    const email = await account("unwatched");
+    const bearer = await token(email);
+    redis.client.disconnect();
+    try {
+      const started = Date.now();
+      for (let call = 0; call <= API_LIMIT; call += 1) {
+        assert.equal((await asAccount(bearer, "/auth/me")).status, 200, `call ${call + 1} failed without Redis`);
+      }
+      assert.equal((await login(email)).status, 200, "sign-in needed Redis");
+      assert.ok(Date.now() - started < 3000, "requests waited for Redis to come back");
+    } finally {
+      await redis.client.connect();
+    }
   });
 });

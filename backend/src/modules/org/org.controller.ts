@@ -25,11 +25,13 @@ import type { Department, EmploymentContract, Holiday, JobTitle, LegalEntity } f
 
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import { DoneView } from "../notifications/dto/notifications.dto.js";
 import {
   ContractView,
@@ -225,6 +227,7 @@ export class OrgController {
   }
 
   @Post("org/reorg")
+  @RateBucket(THROTTLE.heavy)
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Preview a move by default; apply=true carries it out" })

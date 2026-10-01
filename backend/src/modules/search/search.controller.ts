@@ -7,11 +7,13 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import { SearchQueryDto, SearchReplyView } from "./dto/search.dto.js";
 import { SearchService, type Found } from "./search.service.js";
 
@@ -24,6 +26,7 @@ export class SearchController {
   constructor(private readonly search: SearchService) {}
 
   @Get()
+  @RateBucket(THROTTLE.search)
   @ApiOperation({
     summary: "Everything the viewer may open that the term names: people, requests, pay, kiosks, assets, documents",
   })

@@ -27,6 +27,17 @@ const BROKER_API: NodeJS.ProcessEnv = {
 };
 
 describe("environment (e2e)", () => {
+  it("gives the register door room for two kiosks polling behind one address at the pace they are given", () => {
+    const env = validateEnv(BASE);
+    assert.ok(env.DEVICE_REGISTER_ATTEMPTS_PER_MINUTE >= 2 * Math.ceil(60 / env.DEVICE_POLL_INTERVAL_S));
+  });
+
+  it("keeps the login door wide enough for an office behind one address, and misses counted apart", () => {
+    const env = validateEnv(BASE);
+    assert.ok(env.LOGIN_ATTEMPTS_PER_MINUTE >= 30, "a morning of sign-ins behind one NAT would meet a 429");
+    assert.ok(env.LOGIN_IP_MISSES > env.LOGIN_LOCK_AFTER, "one mistyped account would close a whole office");
+  });
+
   it("boots without a mail host outside production", () => {
     const env = validateEnv(BASE);
     assert.equal(env.MAIL_HOST, undefined);

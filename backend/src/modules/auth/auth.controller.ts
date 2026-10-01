@@ -100,8 +100,9 @@ export class AuthController {
   async changePassword(
     @Body() body: ChangePasswordDto,
     @CurrentViewer() viewer: Viewer,
+    @Req() req: Request,
   ): Promise<void> {
-    await this.auth.changePassword(viewer.userId, body.current, body.next);
+    await this.auth.changePassword(viewer.userId, body.current, body.next, req.ip);
   }
 
   @Post("refresh")

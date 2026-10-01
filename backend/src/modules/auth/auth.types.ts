@@ -35,6 +35,7 @@ export interface SessionsCut {
 export const THROTTLE = {
   api: "api",
   heavy: "heavy",
+  search: "search",
   login: "login",
   deviceRegister: "deviceRegister",
   forgot: "forgot",

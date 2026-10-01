@@ -42,12 +42,7 @@ describe("device registration (e2e)", () => {
     await db.device.deleteMany({ where: { id: { in: [DEVICE, STRANGER, SILENT] } } });
   }
 
-  // The allowance runs per minute across the whole suite, and the last case
-  // needs to know how much of it the cases above already spent.
-  let asked = 0;
-
   async function register(body: object, claimCode = FIRST_CODE): Promise<request.Response> {
-    asked += 1;
     return request(http)
       .post("/devices/register")
       .send({ claimCode, ...body });
@@ -197,27 +192,5 @@ describe("device registration (e2e)", () => {
     assert.ok(kinds.includes("device.register"), "the first ask left no trace");
     assert.ok(kinds.includes("device.tokenIssue"), "handing out a credential left no trace");
     assert.ok(kinds.includes("device.reset"), "losing a machine's standing left no trace");
-  });
-
-  // Declared last: it spends the register allowance for the minute.
-  it("lets a fleet ask its own number of times, not the number meant for people", async () => {
-    const env = validateEnv();
-    const allowance = env.DEVICE_REGISTER_ATTEMPTS_PER_MINUTE;
-    assert.ok(
-      allowance >= 2 * Math.ceil(60 / env.DEVICE_POLL_INTERVAL_S),
-      "two kiosks waiting behind one address would outrun the allowance at the pace they are given",
-    );
-    const spent = asked;
-    let refused = false;
-    for (let ask = 0; ask <= allowance + 1 && !refused; ask += 1) {
-      refused = (await register({ deviceId: DEVICE, bootstrapToken: bootstrap })).status === 429;
-    }
-    assert.ok(refused, "a machine could ask without limit");
-    assert.equal(
-      asked - 1,
-      allowance,
-      `the register door answered ${asked - 1} times, not its own allowance of ${allowance}` +
-        ` (${spent} were spent before this case)`,
-    );
   });
 });

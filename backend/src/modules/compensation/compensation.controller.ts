@@ -27,11 +27,13 @@ import type { AllowanceType, Dependent } from "@prisma/client";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { AuditedInService, NotAudited } from "../../common/decorators/audited.decorator.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import {
   CompensationService,
   type PayRecord,
@@ -126,6 +128,7 @@ export class CompensationController {
   }
 
   @Post("compensation/bulk/preview")
+  @RateBucket(THROTTLE.heavy)
   @NotAudited()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "What a bulk raise would write; the writer's own record is left out" })
@@ -135,6 +138,7 @@ export class CompensationController {
   }
 
   @Post("compensation/bulk")
+  @RateBucket(THROTTLE.heavy)
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Write the raise the preview showed; allowances carry forward" })
