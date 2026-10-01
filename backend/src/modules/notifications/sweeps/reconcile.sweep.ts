@@ -137,6 +137,7 @@ export class ReconcileSweep implements OnModuleInit {
     tally.TASKS.opened = await this.tasks.openMissing();
     tally.DOCUMENTS.closed = await this.documents.closeVanished();
     tally.ATTENDANCE.closed = await this.attendance.closeVanished();
+    tally.TEAM_ATTENDANCE.closed = await this.attendance.closeSummaries();
     let after: string | undefined;
     for (;;) {
       const page = await this.db.noticeItem.findMany({

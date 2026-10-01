@@ -2,6 +2,7 @@ import { Global, Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module.js";
 import { RealtimeModule } from "../realtime/realtime.module.js";
+import { ReportsModule } from "../reports/reports.module.js";
 import { AudienceService } from "./audience.service.js";
 import { MailerService } from "./mailer.service.js";
 import { NoticeItemsService } from "./notice-items.service.js";
@@ -21,7 +22,7 @@ import { TasksSweep } from "./sweeps/tasks.sweep.js";
 
 @Global()
 @Module({
-  imports: [AuthModule, RealtimeModule],
+  imports: [AuthModule, RealtimeModule, ReportsModule],
   controllers: [NotificationsController],
   providers: [
     AudienceService,

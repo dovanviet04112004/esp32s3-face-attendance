@@ -1393,6 +1393,7 @@ enum NoticeKind {
   TASK_ASSIGNED
   DOCUMENT_TO_SIGN
   ATTENDANCE_EXCEPTION
+  TEAM_ATTENDANCE
 }
 
 enum NoticeChannel {
@@ -1417,6 +1418,7 @@ enum NoticeQueue {
   TASKS
   DOCUMENTS
   ATTENDANCE
+  TEAM_ATTENDANCE
 }
 
 enum NoticeSubject {
@@ -1434,6 +1436,7 @@ enum NoticeSubject {
   TASK
   DOCUMENT
   PERSON_DAY
+  LOGIN
 }
 
 enum NoticeOutcome {

@@ -6,9 +6,17 @@ import type { Env } from "../../../config/env.schema.js";
 import { PrismaService } from "../../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../../queue/queues.js";
-import { localMinutesSql } from "../../timesheet/local-day.js";
-import { NoticeItemsService } from "../notice-items.service.js";
-import { ATTENDANCE_OVERTIME_MINUTES, ATTENDANCE_PUSH_CRON, ATTENDANCE_PUSHED } from "../notice-kinds.js";
+import { ReportsService } from "../../reports/reports.service.js";
+import { localDay, localMinutesSql, minutesIntoDay } from "../../timesheet/local-day.js";
+import { itemKey, NoticeItemsService } from "../notice-items.service.js";
+import {
+  ATTENDANCE_OVERTIME_MINUTES,
+  ATTENDANCE_PUSH_CRON,
+  ATTENDANCE_PUSHED,
+  TEAM_READERS,
+  TEAM_SUMMARY_AFTER_MINUTES,
+  TEAM_SUMMARY_CRON,
+} from "../notice-kinds.js";
 import { NotificationsService, type Announced } from "../notifications.service.js";
 
 const kBatch = 1000;
@@ -19,7 +27,9 @@ interface Found {
   facts: Record<string, unknown>;
 }
 
-/** A built day off its shift is work for its own person until the day settles; 08:30 pushes what costs pay (KEHOACH 9.21.4). */
+/** A built day off its shift is work for its own person until it settles,
+ *  and each team's morning is summed up for its readers (KEHOACH 9.21.4).
+ */
 @Injectable()
 export class AttendanceSweep implements OnModuleInit {
   private readonly log = new Logger(AttendanceSweep.name);
@@ -28,16 +38,23 @@ export class AttendanceSweep implements OnModuleInit {
     private readonly db: PrismaService,
     private readonly items: NoticeItemsService,
     private readonly notices: NotificationsService,
+    private readonly reports: ReportsService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
   // Upserting by scheduler id: a restart re-states it, never adds a second.
   async onModuleInit(): Promise<void> {
-    await this.queues[QUEUE.notify].upsertJobScheduler(
+    const queue = this.queues[QUEUE.notify];
+    await queue.upsertJobScheduler(
       "attendance-due",
       { pattern: ATTENDANCE_PUSH_CRON, tz: this.zone },
       { name: JOB.attendanceDue, data: { type: JOB.attendanceDue } },
+    );
+    await queue.upsertJobScheduler(
+      "team-attendance",
+      { pattern: TEAM_SUMMARY_CRON, tz: this.zone },
+      { name: JOB.teamAttendance, data: { type: JOB.teamAttendance } },
     );
   }
 
@@ -198,6 +215,49 @@ export class AttendanceSweep implements OnModuleInit {
         ) x
        WHERE i."id" = x."id" AND i."state" = 'OPEN'
       RETURNING i."id"
+    `;
+    await this.items.settle(shut.map((one) => one.id));
+    return shut.length;
+  }
+
+  /** Expire the summaries of days gone, then open today's for each reader half an hour into their earliest shift.
+   *  @ctx job | every fifteen minutes through the morning; one summary a reader a day, told once
+   */
+  async summarise(now: Date = new Date()): Promise<{ opened: number; expired: number }> {
+    const day = localDay(now, this.zone);
+    const minute = minutesIntoDay(now, this.zone);
+    const expired = await this.closeSummaries(now);
+    const readers = await this.db.user.findMany({
+      where: { active: true, role: { in: [...TEAM_READERS] } },
+      select: { id: true, role: true, employeeId: true },
+    });
+    let opened = 0;
+    for (const reader of readers) {
+      const ref = { id: reader.id, part: day };
+      if (await this.db.noticeItem.findUnique({ where: { key: itemKey("TEAM_ATTENDANCE", ref) }, select: { id: true } })) {
+        continue;
+      }
+      const tally = await this.reports.teamTally({ userId: reader.id, role: reader.role, employeeId: reader.employeeId }, now);
+      if (tally === null || minute < tally.firstStartMinutes + TEAM_SUMMARY_AFTER_MINUTES) {
+        continue;
+      }
+      const { firstStartMinutes: _first, ...counts } = tally;
+      if (await this.items.open("TEAM_ATTENDANCE", { ...ref, employeeId: null }, { facts: { day, ...counts } })) {
+        opened += 1;
+      }
+    }
+    this.log.log(`team summaries: ${opened} opened, ${expired} expired`);
+    return { opened, expired };
+  }
+
+  /** Expire every summary of a day gone; a summary speaks of one morning.
+   *  @ctx any | the morning sweep and the hourly reconcile; one UPDATE
+   */
+  async closeSummaries(now: Date = new Date()): Promise<number> {
+    const shut = await this.db.$queryRaw<{ id: string }[]>`
+      UPDATE "NoticeItem" SET "state" = 'EXPIRED', "closedAt" = now()::timestamp(3)
+       WHERE "queue" = 'TEAM_ATTENDANCE' AND "state" = 'OPEN' AND "key" NOT LIKE ${`%:${localDay(now, this.zone)}`}
+      RETURNING "id"
     `;
     await this.items.settle(shut.map((one) => one.id));
     return shut.length;

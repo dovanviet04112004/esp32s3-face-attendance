@@ -274,6 +274,15 @@ export interface TeamToday {
 
 export type TeamBucket = keyof TeamToday["totals"];
 
+/** A team's morning in the counts its home page draws, and when its earliest shift starts (KEHOACH 9.21.4). */
+export interface TeamTally {
+  firstStartMinutes: number;
+  late: number;
+  notPunched: number;
+  absent: number;
+  onLeave: number;
+}
+
 const kTeamListCap = 20;
 const WEEKEND_DAYS: ReadonlySet<number> = new Set([0, 6]);
 
@@ -576,6 +585,34 @@ export class ReportsService {
     `;
     const shown = rows.slice(0, take).map((row) => ({ id: row.id, code: row.code, fullName: row.fullName }));
     return { rows: shown, total: rows[0]?.total ?? 0, next: rows.length > take ? (shown.at(-1)?.code ?? null) : null };
+  }
+
+  /** The viewer's team this morning, leaving the viewer out; null when nobody in reach is expected today.
+   *  @ctx any | one statement; the buckets are teamToday's and the late count today's
+   */
+  async teamTally(viewer: Viewer, now: Date = new Date()): Promise<TeamTally | null> {
+    const zone = this.zone;
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const due = dueMinutes(Prisma.sql`x`);
+    const unseen = Prisma.sql`NOT EXISTS (SELECT 1 FROM seen k WHERE k."employeeId" = x."employeeId")
+      AND NOT EXISTS (SELECT 1 FROM away w WHERE w."employeeId" = x."employeeId")`;
+    const [tally] = await this.db.$queryRaw<(TeamTally & { expected: number })[]>`
+      ${this.todayCtes(localDay(now, zone), zone, visible, viewer.employeeId)}
+      SELECT (SELECT count(*) FROM expected)::int AS "expected",
+             (SELECT min(split_part(x."startTime", ':', 1)::int * 60 + split_part(x."startTime", ':', 2)::int)
+                FROM expected x)::int AS "firstStartMinutes",
+             (SELECT count(*)
+                FROM expected x JOIN seen k ON k."employeeId" = x."employeeId"
+               WHERE ${localMinutesSql(Prisma.sql`k."firstAt"`, zone)} > ${due})::int AS "late",
+             (SELECT count(*) FROM expected x WHERE ${unseen} AND ${minutesIntoDay(now, zone)}::int <= ${due})::int AS "notPunched",
+             (SELECT count(*) FROM expected x WHERE ${unseen} AND ${minutesIntoDay(now, zone)}::int > ${due})::int AS "absent",
+             (SELECT count(*) FROM away WHERE "leave")::int AS "onLeave"
+    `;
+    if (!tally || tally.expected === 0) {
+      return null;
+    }
+    const { expected: _expected, ...counts } = tally;
+    return counts;
   }
 
   // One definition of the buckets for the preview and the full list, so the two never disagree.

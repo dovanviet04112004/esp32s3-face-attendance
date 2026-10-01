@@ -97,6 +97,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
           await this.attendance.sweep();
           return;
         }
+        if (body.type === "team-attendance") {
+          await this.attendance.summarise();
+          return;
+        }
         if (body.type === "notice-fanout") {
           await this.notices.fanOut(body);
           return;

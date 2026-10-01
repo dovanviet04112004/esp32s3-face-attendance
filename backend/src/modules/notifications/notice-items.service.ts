@@ -37,6 +37,7 @@ export const QUEUE_SUBJECT: Record<NoticeQueue, NoticeSubject> = {
   TASKS: "TASK",
   DOCUMENTS: "DOCUMENT",
   ATTENDANCE: "PERSON_DAY",
+  TEAM_ATTENDANCE: "LOGIN",
 };
 
 /** The kind a queue's work is told as. */
@@ -55,6 +56,7 @@ export const QUEUE_KIND: Record<NoticeQueue, ItemKind> = {
   TASKS: "TASK_ASSIGNED",
   DOCUMENTS: "DOCUMENT_TO_SIGN",
   ATTENDANCE: "ATTENDANCE_EXCEPTION",
+  TEAM_ATTENDANCE: "TEAM_ATTENDANCE",
 };
 
 // Only work no business path decides closes by hand: by the desk that signs, or for a kiosk an ADMIN (KEHOACH 9.21.4).

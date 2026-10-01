@@ -176,6 +176,7 @@ export class NotificationsController {
       tasks: () => this.tasks.sweep(),
       documents: () => this.documents.sweep(),
       attendance: () => this.attendance.sweep(),
+      "team-attendance": () => this.attendance.summarise(),
     } satisfies Record<SweepParamDto["name"], () => Promise<object>>;
     return { name: params.name, result: { ...(await run[params.name]()) } };
   }

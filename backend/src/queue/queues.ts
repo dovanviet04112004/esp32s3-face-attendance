@@ -27,6 +27,7 @@ export const JOB = {
   documentsDue: "documents-due",
   noticeDocuments: "notice-documents",
   attendanceDue: "attendance-due",
+  teamAttendance: "team-attendance",
   passwordSetup: "password-setup",
   passwordChanged: "password-changed",
   profileNotice: "profile-notice",
@@ -106,6 +107,10 @@ export interface AttendanceDueJob {
   type: typeof JOB.attendanceDue;
 }
 
+export interface TeamAttendanceJob {
+  type: typeof JOB.teamAttendance;
+}
+
 export interface NoticeGatherJob {
   type: typeof JOB.noticeGather;
   userId: string;
@@ -149,6 +154,7 @@ export type NotifyJob =
   | DocumentsDueJob
   | NoticeDocumentsJob
   | AttendanceDueJob
+  | TeamAttendanceJob
   | PasswordSetupJob
   | PasswordChangedJob
   | ProfileNoticeJob;

@@ -7,7 +7,7 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_DESKS, THE_DESK } from "../leave/queue-filter.js";
 import { dayAsDate, dayWindow, localDay } from "../timesheet/local-day.js";
-import { INBOX_ROLES } from "./notice-kinds.js";
+import { INBOX_ROLES, TEAM_READERS } from "./notice-kinds.js";
 
 /** The where clause each queue's table takes. */
 export interface QueueWhere {
@@ -139,6 +139,9 @@ export class AudienceService {
     if (queue === "DOCUMENTS" || queue === "ATTENDANCE") {
       return this.ownLogins(employeeId);
     }
+    if (queue === "TEAM_ATTENDANCE") {
+      return this.summaryReader(subjectId);
+    }
     const candidates = await this.candidates(queue, subjectId);
     const held: string[] = [];
     for (const one of candidates) {
@@ -197,6 +200,12 @@ export class AudienceService {
       select: { id: true, role: true, employeeId: true },
     });
     return desk.filter((one) => !isUnlinkedDesk({ userId: one.id, role: one.role, employeeId: one.employeeId })).map((one) => one.id);
+  }
+
+  // The login a morning summary is for, while it is open and still reads a team.
+  private async summaryReader(userId: string): Promise<string[]> {
+    const held = await this.db.user.findFirst({ where: { id: userId, active: true, role: { in: [...TEAM_READERS] } }, select: { id: true } });
+    return held ? [held.id] : [];
   }
 
   private async ownLogins(employeeId: number | null): Promise<string[]> {
