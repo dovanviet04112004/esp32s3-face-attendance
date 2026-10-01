@@ -9032,9 +9032,10 @@ thông báo (cuối mục). Bù lại có **một lượt đối soát mỗi gi�
 từng hàng đợi.
 
 1. Đóng mọi việc mà dòng nghiệp vụ của nó đã xong, với trạng thái, kết quả, người làm và lúc xong đọc
-   từ chính dòng ấy; dòng nghiệp vụ không còn thì việc thành `EXPIRED`. Số việc vừa đóng **phải bằng
-   0**. Khác 0 nghĩa là có một đường ghi quên đóng việc: lượt đối soát che lỗi ấy khỏi người dùng,
-   nhưng nó là lưới đỡ, không phải cơ chế để đường ghi nào dựa vào.
+   từ chính dòng ấy; dòng nghiệp vụ không còn thì việc thành `EXPIRED`. Mở việc cho mọi dòng nghiệp vụ
+   đang chờ mà chưa có việc, vì bước mở sau commit nuốt lỗi y như bước đóng. Số việc vừa đóng và vừa
+   mở **phải bằng 0**. Khác 0 nghĩa là có một đường ghi quên mở hay quên đóng việc: lượt đối soát che
+   lỗi ấy khỏi người dùng, nhưng nó là lưới đỡ, không phải cơ chế để đường ghi nào dựa vào.
 2. Tính lại nhóm của mọi việc còn mở bằng `audienceOf`, vì nhóm đổi cả khi không đường ghi nào chạm
    vào việc: uỷ quyền bắt đầu hay hết hạn, đăng nhập bị khoá, vai đổi, đơn qua mốc 7 ngày. Người mới
    vào nhóm có một dòng **đã đọc** và không bị đẩy — việc nằm sẵn trong *Cần xử lý* của họ, còn
