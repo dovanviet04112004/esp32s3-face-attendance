@@ -1,7 +1,7 @@
 "use client";
 
 import { Banner, Button, Input, LayerDialog, Loader, Select } from "@cloudflare/kumo";
-import { EyeIcon, FilePlusIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { EyeIcon, FilePlusIcon, WarningCircleIcon, XCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useFormatter, useTranslations } from "next-intl";
@@ -24,12 +24,13 @@ const DEFAULT_MONTHS = 3;
 const kHere = "/me/letters";
 const kAskForm = "letter-form";
 
-type LetterState = "REQUESTED" | "ISSUED" | "REJECTED";
+type LetterState = "REQUESTED" | "ISSUED" | "REJECTED" | "CANCELLED";
 
 const LETTER_TONE: Record<LetterState, Tone> = {
   REQUESTED: "waiting",
   ISSUED: "good",
   REJECTED: "bad",
+  CANCELLED: "idle",
 };
 
 interface Letter {
@@ -61,6 +62,7 @@ function MyLetters() {
   const [months, setMonths] = useState(DEFAULT_MONTHS);
   const [refused, setRefused] = useState<string | null>(null);
   const [picked, setPicked] = useState<Letter | null>(null);
+  const [cancelling, setCancelling] = useState<Letter | null>(null);
   const linked = search.get("new") !== null;
   const named = search.get("open");
 
@@ -94,6 +96,19 @@ function MyLetters() {
       void cache.invalidateQueries({ queryKey: ["certificates"] });
     },
     onError: (fell: unknown) => setRefused(faultOf(fell)),
+  });
+
+  const cancel = useMutation({
+    mutationFn: async (id: string) => api.post(`/certificates/${id}/cancel`, {}),
+    onSuccess: () => {
+      notify.done(t("cancelled"));
+      setCancelling(null);
+      void cache.invalidateQueries({ queryKey: ["certificates"] });
+    },
+    onError: (fell: unknown) => {
+      notify.failed(fell);
+      setCancelling(null);
+    },
   });
 
   function openAsk(): void {
@@ -180,7 +195,11 @@ function MyLetters() {
           }
           onRowClick={setOpened}
           rowActions={(row) =>
-            row.state === "ISSUED" ? [{ key: "view", label: t("view"), icon: EyeIcon, onSelect: () => setOpened(row) }] : []
+            row.state === "ISSUED"
+              ? [{ key: "view", label: t("view"), icon: EyeIcon, onSelect: () => setOpened(row) }]
+              : row.state === "REQUESTED"
+                ? [{ key: "cancel", label: t("cancel"), icon: XCircleIcon, danger: true, onSelect: () => setCancelling(row) }]
+                : []
           }
         />
       </PageLayout>
@@ -247,6 +266,8 @@ function MyLetters() {
               <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={t("rejectedTitle")} description={opened.note ?? t("noNote")} />
             ) : opened?.state === "REQUESTED" ? (
               <p className="text-kumo-subtle">{t("stillWaiting")}</p>
+            ) : opened?.state === "CANCELLED" ? (
+              <p className="text-kumo-subtle">{t("withdrawn")}</p>
             ) : text.isError ? (
               <Failed onRetry={() => void text.refetch()} />
             ) : text.data ? (
@@ -268,6 +289,25 @@ function MyLetters() {
           ) : null}
         </LayerDialog.Content>
       </LayerDialog.Root>
+
+      <LayerDialog.Alert open={cancelling !== null} onOpenChange={(next) => !next && setCancelling(null)} dismissDisabled={cancel.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("cancelTitle")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("cancelLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            {cancelling ? <p className="text-kumo-subtle">{`${t(cancelling.kind)} · ${cancelling.purpose}`}</p> : null}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("back")}>
+            <LayerDialog.Actions.Primary
+              variant="destructive"
+              loading={cancel.isPending}
+              onClick={() => cancelling && cancel.mutate(cancelling.id)}
+            >
+              {t("cancel")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
     </>
   );
 }

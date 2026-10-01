@@ -1824,6 +1824,7 @@
     "REQUESTED": "Chờ duyệt",
     "ISSUED": "Đã cấp",
     "REJECTED": "Bị từ chối",
+    "CANCELLED": "Đã rút",
     "serial": "Số hiệu",
     "askedOn": "Ngày xin",
     "view": "Xem giấy",
@@ -1839,7 +1840,12 @@
     "emptyHint": "Cần giấy xác nhận công tác hay thu nhập để vay ngân hàng, làm visa thì xin ở đây.",
     "rejectedTitle": "Nhân sự đã từ chối yêu cầu này",
     "noNote": "Không kèm lý do.",
-    "stillWaiting": "Nhân sự chưa duyệt yêu cầu này. Giấy được cấp thì mở ra in được ở đây."
+    "stillWaiting": "Nhân sự chưa duyệt yêu cầu này. Giấy được cấp thì mở ra in được ở đây.",
+    "withdrawn": "Bạn đã rút yêu cầu này.",
+    "cancel": "Rút yêu cầu",
+    "cancelled": "Đã rút yêu cầu",
+    "cancelTitle": "Rút yêu cầu này?",
+    "cancelLead": "Yêu cầu này đóng lại và nhân sự sẽ không cấp giấy. Cần giấy thì xin lại."
   },
   "profile": {
     "title": "Đổi thông tin cá nhân",
@@ -2412,6 +2418,7 @@
     "certificate_ask": "Xin giấy xác nhận",
     "certificate_issue": "Cấp giấy xác nhận",
     "certificate_reject": "Từ chối giấy xác nhận",
+    "certificate_cancel": "Rút yêu cầu giấy xác nhận",
     "certificate_read": "Xem giấy xác nhận",
     "profile_ask": "Xin sửa thông tin",
     "profile_approve": "Duyệt sửa thông tin",

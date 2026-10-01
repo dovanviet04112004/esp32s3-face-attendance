@@ -1824,6 +1824,7 @@
     "REQUESTED": "Waiting",
     "ISSUED": "Issued",
     "REJECTED": "Turned down",
+    "CANCELLED": "Withdrawn",
     "serial": "Number",
     "askedOn": "Asked on",
     "view": "View",
@@ -1839,7 +1840,12 @@
     "emptyHint": "Need a letter of employment or income for a bank or a visa? Ask for it here.",
     "rejectedTitle": "HR turned this request down",
     "noNote": "No reason given.",
-    "stillWaiting": "HR has not decided this request yet. Once issued, the letter opens here ready to print."
+    "stillWaiting": "HR has not decided this request yet. Once issued, the letter opens here ready to print.",
+    "withdrawn": "You withdrew this request.",
+    "cancel": "Withdraw request",
+    "cancelled": "Request withdrawn",
+    "cancelTitle": "Withdraw this request?",
+    "cancelLead": "The request closes and HR will not issue the letter. Ask again if you still need it."
   },
   "profile": {
     "title": "Change a personal detail",
@@ -2412,6 +2418,7 @@
     "certificate_ask": "Certificate asked for",
     "certificate_issue": "Certificate issued",
     "certificate_reject": "Certificate rejected",
+    "certificate_cancel": "Certificate request withdrawn",
     "certificate_read": "Certificate read",
     "profile_ask": "Profile change asked",
     "profile_approve": "Profile change approved",
