@@ -806,7 +806,12 @@
     "passwordGo": "Đổi mật khẩu",
     "lead": "Ngôn ngữ, giao diện, thông báo và tài khoản của bạn.",
     "onThisPage": "Trên trang này",
-    "provisionDone": "{count, plural, =0 {Không có ai cần mở đăng nhập} other {Đã gửi thư mời cho # người}}"
+    "provisionDone": "{count, plural, =0 {Không có ai cần mở đăng nhập} other {Đã gửi thư mời cho # người}}",
+    "docsTitle": "Tài liệu API",
+    "docsLead": "Mọi đường API kèm vai được gọi, dữ liệu gửi và nhận, mã lỗi. Mở ở tab mới và chỉ để đọc; lối vào hết hạn sau 15 phút.",
+    "docsOpen": "Mở tài liệu API",
+    "docsOpened": "Đã mở tài liệu API ở tab mới",
+    "docsBlocked": "Trình duyệt chặn tab mới. Cho phép cửa sổ bật lên ở trang này rồi bấm lại."
   },
   "requests": {
     "title": "Đơn từ",

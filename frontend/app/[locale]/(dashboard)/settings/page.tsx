@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, LayerCard, LinkButton, TableOfContents, Tabs, useTableOfContentsActiveId } from "@cloudflare/kumo";
-import { EnvelopeSimpleIcon, KeyIcon, SignOutIcon } from "@phosphor-icons/react";
+import { BookOpenTextIcon, EnvelopeSimpleIcon, KeyIcon, SignOutIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
@@ -15,6 +15,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
 import { api } from "@/lib/api";
+import { env } from "@/lib/env";
 import { useSession, type Role } from "@/lib/auth";
 
 interface OpenedAccount {
@@ -105,12 +106,35 @@ export default function SettingsPage() {
     onError: notify.failed,
   });
 
+  const reference = useMutation({
+    mutationFn: async (tab: Window) => {
+      const { pass } = (await api.post<{ pass: string }>("/auth/docs-pass")).data;
+      tab.location.href = `${env.NEXT_PUBLIC_API_URL}/docs?pass=${encodeURIComponent(pass)}`;
+    },
+    onSuccess: () => notify.done(t("docsOpened")),
+    onError: (fell, tab) => {
+      tab.close();
+      notify.failed(fell);
+    },
+  });
+
+  // The tab opens inside the click, where the browser allows it; the pass arrives after.
+  function openReference(): void {
+    const tab = window.open("", "_blank");
+    if (!tab) {
+      notify.failed(t("docsBlocked"));
+      return;
+    }
+    tab.opener = null;
+    reference.mutate(tab);
+  }
+
   const sections = [
     { id: "language", title: t("languageTitle") },
     { id: "theme", title: t("themeTitle") },
     { id: "push", title: notices("pushTitle") },
     { id: "notices", title: notices("prefsTitle") },
-    ...(role === "ADMIN" ? [{ id: "provision", title: t("provisionTitle") }] : []),
+    ...(role === "ADMIN" ? [{ id: "provision", title: t("provisionTitle") }, { id: "docs", title: t("docsTitle") }] : []),
     { id: "account", title: t("accountTitle") },
   ];
   const { activeId, selectSection } = useSectionSpy(sections.map((one) => one.id));
@@ -202,6 +226,14 @@ export default function SettingsPage() {
                   </ul>
                 </div>
               ) : null}
+            </Section>
+          ) : null}
+
+          {role === "ADMIN" ? (
+            <Section id="docs" title={t("docsTitle")} lead={t("docsLead")}>
+              <Button variant="secondary" icon={BookOpenTextIcon} loading={reference.isPending} onClick={openReference}>
+                {t("docsOpen")}
+              </Button>
             </Section>
           ) : null}
 

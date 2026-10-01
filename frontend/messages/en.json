@@ -806,7 +806,12 @@
     "passwordGo": "Change password",
     "lead": "Your language, appearance, notifications and account.",
     "onThisPage": "On this page",
-    "provisionDone": "{count, plural, =0 {Nobody was waiting for a login} one {Invitation sent to # person} other {Invitations sent to # people}}"
+    "provisionDone": "{count, plural, =0 {Nobody was waiting for a login} one {Invitation sent to # person} other {Invitations sent to # people}}",
+    "docsTitle": "API reference",
+    "docsLead": "Every API route with who may call it, what it takes and returns, and its error codes. Opens in a new tab, read-only; the way in closes after 15 minutes.",
+    "docsOpen": "Open the API reference",
+    "docsOpened": "The API reference opened in a new tab",
+    "docsBlocked": "The browser blocked the new tab. Allow pop-ups for this site, then try again."
   },
   "requests": {
     "title": "Requests",
