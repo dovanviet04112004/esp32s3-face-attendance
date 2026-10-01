@@ -9,29 +9,29 @@ export class CacheService {
 
   constructor(private readonly redis: RedisService) {}
 
-  /** Read through: losing Redis costs a trip to Postgres and nothing else. */
+  /** Read through: losing Redis costs a trip to Postgres and nothing else (KEHOACH 4.6). */
   async through<T>(entry: CacheEntry, build: () => Promise<T>): Promise<T> {
-    try {
-      const held = await this.redis.client.get(entry.key);
-      if (held !== null) {
-        return JSON.parse(held) as T;
-      }
-    } catch {
-      this.log.warn(`cache read for ${entry.key} failed, going to the database`);
+    const held = await this.redis.quick((client) => client.get(entry.key));
+    if (held !== null) {
+      return JSON.parse(held) as T;
     }
     const fresh = await build();
-    try {
-      await this.redis.client.set(entry.key, JSON.stringify(fresh), "EX", entry.ttlSeconds);
-    } catch {
+    const written = await this.redis.quick((client) =>
+      client.set(entry.key, JSON.stringify(fresh), "EX", entry.ttlSeconds),
+    );
+    if (written === null) {
       this.log.warn(`cache write for ${entry.key} failed`);
     }
     return fresh;
   }
 
   async drop(prefix: string): Promise<void> {
-    const keys = await this.redis.client.keys(`${prefix}*`);
-    if (keys.length > 0) {
-      await this.redis.client.del(...keys);
+    const dropped = await this.redis.quick(async (client) => {
+      const keys = await client.keys(`${prefix}*`);
+      return keys.length > 0 ? client.del(...keys) : 0;
+    });
+    if (dropped === null) {
+      this.log.warn(`cache entries under ${prefix} kept; they expire on their own`);
     }
   }
 }
