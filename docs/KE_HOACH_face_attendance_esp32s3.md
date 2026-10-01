@@ -7623,8 +7623,11 @@ So khớp vì vậy chạy trên chữ đã gập, `f_unaccent(lower(x))`: `f_un
 gập. `ILIKE '%nguyen%'` không dùng được B-tree, nên tên có chỉ mục GIN `gin_trgm_ops` trên
 **chính biểu thức đã gập**, và truy vấn phải viết đúng biểu thức ấy thì chỉ mục mới được dùng. Mã
 chỉ có chữ ASCII, nên chỉ mục ba chữ của nó nằm trên cột thô và so bằng `ILIKE`; thiếu nó thì vế
-`OR` giữa tên và mã quét cả bảng. Dấu `%`, `_` trong từ khoá được thoát, để người gõ không vô tình
-viết mẫu. Luật này áp cho ô tìm chung, danh bạ và ô chọn người. Prisma không biểu diễn được chỉ
+`OR` giữa tên và mã quét cả bảng. Ô tìm chung còn khớp lý do của đơn, nên lý do cũng có chỉ mục
+ba chữ trên biểu thức đã gập. Dấu `%`, `_` trong từ khoá được thoát, để người gõ không vô tình
+viết mẫu. Luật này áp cho **mọi** ô tìm theo chữ: ô tìm chung, danh bạ, ô chọn người, bảng công,
+việc nhận và nghỉ việc, danh sách kiosk — một ô còn so có dấu là một chỗ người ta gõ "nguyen"
+rồi tưởng không có ai. Prisma không biểu diễn được chỉ
 mục trên biểu thức, nên lần sinh migration kế tiếp sẽ đòi xoá nó; §9.22.3c chặn lệnh ấy.
 
 **5. Việc sống lâu hơn một request thì vào hàng đợi.** Chạy lương cho ba mươi nghìn người không
