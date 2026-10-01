@@ -17,11 +17,12 @@ import {
   type InboxRow,
   type RequestDetail,
   type RequestKind,
+  type RequestRow,
 } from "@/components/requests/request-card";
 import { REQUEST_KINDS } from "@/components/requests/request-form";
 import { DataTable, PersonCell, type Column, type Paging } from "@/components/tables/data-table";
 import { FilterBar, useSettled, type Filter } from "@/components/ui/filter-bar";
-import { useNotify } from "@/components/ui/notify";
+import { toasts, useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
 import { Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill } from "@/components/ui/pill";
@@ -32,6 +33,8 @@ import { dayOnly, days, money } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const kPage = 50;
+// Pages a notice's link reads into a queue for its item; past them the item counts as gone.
+const kLinkedPages = 10;
 const kDayMs = 86_400_000;
 const LETTER_KINDS = ["EMPLOYMENT", "INCOME"] as const;
 const PROFILE_FIELDS = ["PERSONAL_EMAIL", "PHONE", "BANK", "NATIONAL_ID", "TAX_CODE", "SOCIAL_INSURANCE_NO"] as const;
@@ -44,7 +47,7 @@ const QUEUE_ORDER: Queue[] = [
   "advancesToDecide",
   "advancesToPay",
 ];
-const DEFAULTS = { tab: "", q: "", kind: "", dept: "", from: "", to: "", order: "" };
+const DEFAULTS = { tab: "", q: "", kind: "", dept: "", from: "", to: "", order: "", open: "" };
 
 type UrlState = typeof DEFAULTS;
 
@@ -85,6 +88,7 @@ interface Change {
 
 interface Claim {
   id: string;
+  payslipId: string;
   lineCode: string | null;
   claim: string;
   dueAt: string;
@@ -171,6 +175,67 @@ function usePaging<T>(asked: ReturnType<typeof useQueue<T>>): { rows: T[] | unde
   };
 }
 
+interface Linked {
+  /** The item a notice opened this page for, from `?open=`; empty when none. */
+  openId: string;
+  /** Takes `open` off the address once the item is shown, so a reload does not reopen it. */
+  onOpened: () => void;
+}
+
+/** Opens the row a notice points at once a page holding it arrives; says so when the queue lacks it. */
+function useLinkedRow<T extends { id: string }>(
+  { openId, onOpened }: Linked,
+  asked: ReturnType<typeof useQueue<T>>,
+  show: (row: T) => void,
+  matches: (row: T, id: string) => boolean = (row, id) => row.id === id,
+): void {
+  const t = useTranslations("requests");
+  const rows = asked.data?.pages.flatMap((one) => one.rows);
+  useEffect(() => {
+    if (openId === "" || rows === undefined || asked.isFetchingNextPage) {
+      return;
+    }
+    const found = rows.find((row) => matches(row, openId));
+    if (!found && asked.hasNextPage && (asked.data?.pages.length ?? 0) < kLinkedPages) {
+      void asked.fetchNextPage();
+      return;
+    }
+    if (found) {
+      show(found);
+    } else {
+      toasts.add({ title: t("openMissing"), variant: "info" });
+    }
+    onOpened();
+  }, [openId, rows?.length, asked.hasNextPage, asked.isFetchingNextPage]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** An inbox row for a request opened by its id, when the inbox page in view does not hold it. */
+function asInboxRow(detail: RequestDetail): InboxRow {
+  return {
+    ...detail,
+    waitedDays: waitedSince(detail),
+    balanceAfter: detail.balance?.remaining ?? null,
+    nextBalanceAfter: detail.nextBalance?.remaining ?? null,
+    overlapCount: detail.kind === "LEAVE" ? detail.overlapping.length : null,
+  };
+}
+
+/** What a decided or withdrawn request came to, shown in place of the decision (KEHOACH 9.21.4). */
+function Handled({ row }: { row: RequestRow }) {
+  const t = useTranslations("requests");
+  const format = useFormatter();
+  const who = row.decidedBy?.fullName ?? row.decidedBy?.email ?? "";
+  const time = row.decidedAt ? format.dateTime(new Date(row.decidedAt), "medium") : "";
+  const said =
+    row.state === "APPROVED" || row.state === "REJECTED" ? t(`handled${row.state}`, { who, time }) : t("handledCANCELLED");
+  return (
+    <div className="mt-4 flex flex-col gap-2 border-t border-kumo-hairline pt-4">
+      <p className="font-medium">{said}</p>
+      {row.decisionNote ? <p className="rounded-lg bg-kumo-tint p-3 break-words">{row.decisionNote}</p> : null}
+    </div>
+  );
+}
+
 function Waited({ count }: { count: number }) {
   const t = useTranslations("requests");
   return <span className="whitespace-nowrap tabular-nums">{t("waitedDays", { count })}</span>;
@@ -241,10 +306,12 @@ interface SheetProps {
   onApprove: (note: string) => void;
   onReject?: (reason: string) => void;
   noteOnApprove?: boolean;
+  /** Read-only outcome shown in place of the decision once somebody has handled the item. */
+  handled?: ReactNode;
 }
 
 /** The context to decide one item, and the decision at the bottom of the sheet (KEHOACH 9.10). */
-function DecisionSheet({ open, onOpenChange, person, title, children, approveLabel, busy, fault, onApprove, onReject, noteOnApprove }: SheetProps) {
+function DecisionSheet({ open, onOpenChange, person, title, children, approveLabel, busy, fault, onApprove, onReject, noteOnApprove, handled }: SheetProps) {
   const t = useTranslations("requests");
   const common = useTranslations("common");
   const decision = useDecision();
@@ -257,17 +324,21 @@ function DecisionSheet({ open, onOpenChange, person, title, children, approveLab
         </LayerDialog.Description>
         <LayerDialog.Body>
           {children}
-          <DecisionFields decision={decision} fault={fault} noteOnApprove={noteOnApprove} mayReject={onReject !== undefined} busy={busy} />
+          {handled ?? (
+            <DecisionFields decision={decision} fault={fault} noteOnApprove={noteOnApprove} mayReject={onReject !== undefined} busy={busy} />
+          )}
         </LayerDialog.Body>
-        <LayerDialog.Actions dismissLabel={common("close")}>
-          <LayerDialog.Actions.Primary
-            variant={decision.rejecting ? "destructive" : "primary"}
-            loading={busy}
-            onClick={() => decision.send(onApprove, onReject)}
-          >
-            {decision.rejecting ? t("rejectSend") : approveLabel}
-          </LayerDialog.Actions.Primary>
-        </LayerDialog.Actions>
+        {handled ? null : (
+          <LayerDialog.Actions dismissLabel={common("close")}>
+            <LayerDialog.Actions.Primary
+              variant={decision.rejecting ? "destructive" : "primary"}
+              loading={busy}
+              onClick={() => decision.send(onApprove, onReject)}
+            >
+              {decision.rejecting ? t("rejectSend") : approveLabel}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        )}
       </LayerDialog.Content>
     </LayerDialog.Root>
   );
@@ -298,7 +369,12 @@ function useSheetMutation<V>(stale: string, done: (value: V) => string, send: (v
   return { mutation, fault, clear: () => setFault(null) };
 }
 
-function RequestsQueue({ params, filtered }: { params: Record<string, string>; filtered: boolean }) {
+interface QueueProps extends Linked {
+  params: Record<string, string>;
+  filtered: boolean;
+}
+
+function RequestsQueue({ params, filtered, openId, onOpened }: QueueProps) {
   const t = useTranslations("requests");
   const common = useTranslations("common");
   const errors = useTranslations("errors");
@@ -319,6 +395,26 @@ function RequestsQueue({ params, filtered }: { params: Record<string, string>; f
     enabled: open !== null,
     queryFn: async () => (await api.get<RequestDetail>(`/requests/${open?.id ?? ""}`)).data,
   });
+
+  // A request opened by its id may sit past the inbox page in view, or have left the inbox already.
+  const linked = useQuery({
+    queryKey: ["requests", "one", openId],
+    enabled: openId !== "",
+    queryFn: async () => (await api.get<RequestDetail>(`/requests/${openId}`)).data,
+  });
+  useEffect(() => {
+    if (openId === "" || linked.isPending) {
+      return;
+    }
+    if (linked.data) {
+      setOpen(rows?.find((row) => row.id === openId) ?? asInboxRow(linked.data));
+    } else {
+      notify.failed(linked.error);
+    }
+    onOpened();
+  }, [openId, linked.isPending]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handled = detail.data && detail.data.state !== "PENDING" ? detail.data : null;
 
   const decide = useSheetMutation<Verdict>(
     "requests",
@@ -432,6 +528,7 @@ function RequestsQueue({ params, filtered }: { params: Record<string, string>; f
         approveLabel={t("approve")}
         busy={decide.mutation.isPending}
         fault={decide.fault ?? (detail.data && !detail.data.mayDecide ? errors("NOT_YOUR_REQUEST") : null)}
+        handled={handled ? <Handled row={handled} /> : undefined}
         noteOnApprove
         onApprove={(note) => open && decide.mutation.mutate({ id: open.id, approve: true, note, name: open.employee?.fullName ?? "none" })}
         onReject={(note) => open && decide.mutation.mutate({ id: open.id, approve: false, note, name: open.employee?.fullName ?? "none" })}
@@ -440,7 +537,7 @@ function RequestsQueue({ params, filtered }: { params: Record<string, string>; f
           <div className="flex flex-col gap-4">
             <RequestFacts
               row={shown}
-              extra={[...balanceFacts(open), [t("waitedHeader"), <Waited key="waited" count={open.waitedDays} />]]}
+              extra={handled ? [] : [...balanceFacts(open), [t("waitedHeader"), <Waited key="waited" count={open.waitedDays} />]]}
             />
             <p className="break-words">{shown.reason}</p>
             {open.kind === "LEAVE" ? (
@@ -501,7 +598,7 @@ function RequestsQueue({ params, filtered }: { params: Record<string, string>; f
   );
 }
 
-function LettersQueue({ params, filtered }: { params: Record<string, string>; filtered: boolean }) {
+function LettersQueue({ params, filtered, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const c = useTranslations("certificates");
   const common = useTranslations("common");
@@ -517,6 +614,11 @@ function LettersQueue({ params, filtered }: { params: Record<string, string>; fi
       api.post(`/certificates/${value.id}/${value.approve ? "issue" : "reject"}`, value.approve ? {} : { note: value.note }),
     () => setOpen(null),
   );
+  const show = (row: Letter) => {
+    decide.clear();
+    setOpen(row);
+  };
+  useLinkedRow(link, asked, show);
   const kindOf = (row: Letter) => (row.kind === "INCOME" && row.months ? `${c(row.kind)} · ${c("monthsN", { count: row.months })}` : c(row.kind));
   const columns: Column<Letter>[] = [
     ...personColumns<Letter>(t("who"), t("department"), common("empty")),
@@ -538,10 +640,7 @@ function LettersQueue({ params, filtered }: { params: Record<string, string>; fi
         cardLead="person"
         cardTrailing="waited"
         paging={paging}
-        onRowClick={(row) => {
-          decide.clear();
-          setOpen(row);
-        }}
+        onRowClick={show}
       />
       <DecisionSheet
         key={open?.id ?? "none"}
@@ -574,7 +673,7 @@ function reads(values: Record<string, string | null> | null, blank: string): str
   return shown.length > 0 ? shown.join(" · ") : blank;
 }
 
-function ChangesQueue({ params, filtered }: { params: Record<string, string>; filtered: boolean }) {
+function ChangesQueue({ params, filtered, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const p = useTranslations("profile");
   const common = useTranslations("common");
@@ -589,6 +688,11 @@ function ChangesQueue({ params, filtered }: { params: Record<string, string>; fi
       api.post(`/profile-changes/${value.id}/${value.approve ? "approve" : "reject"}`, value.approve ? {} : { note: value.note }),
     () => setOpen(null),
   );
+  const show = (row: Change) => {
+    decide.clear();
+    setOpen(row);
+  };
+  useLinkedRow(link, asked, show);
   const columns: Column<Change>[] = [
     ...personColumns<Change>(t("who"), t("department"), common("empty")),
     { id: "field", header: p("field"), cell: (row) => p(`field${row.field}`) },
@@ -615,10 +719,7 @@ function ChangesQueue({ params, filtered }: { params: Record<string, string>; fi
         cardLead="person"
         cardTrailing="waited"
         paging={paging}
-        onRowClick={(row) => {
-          decide.clear();
-          setOpen(row);
-        }}
+        onRowClick={show}
       />
       <DecisionSheet
         key={open?.id ?? "none"}
@@ -646,7 +747,7 @@ function ChangesQueue({ params, filtered }: { params: Record<string, string>; fi
   );
 }
 
-function DisputesQueue({ params, filtered }: { params: Record<string, string>; filtered: boolean }) {
+function DisputesQueue({ params, filtered, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const d = useTranslations("disputes");
   const common = useTranslations("common");
@@ -672,6 +773,15 @@ function DisputesQueue({ params, filtered }: { params: Record<string, string>; f
   );
   const period = (row: Claim) => `${String(row.payslip.period.month).padStart(2, "0")}/${row.payslip.period.year}`;
   const late = (row: Claim) => new Date(row.dueAt).getTime() < Date.now();
+  const show = (row: Claim) => {
+    decide.clear();
+    setAnswer("");
+    setAmount("");
+    setMissing(false);
+    setOpen(row);
+  };
+  // A dispute notice names the payslip it is about, so a link may carry either id.
+  useLinkedRow(link, asked, show, (row, id) => row.id === id || row.payslipId === id);
   const columns: Column<Claim>[] = [
     ...personColumns<Claim>(t("who"), t("department"), common("empty")),
     {
@@ -719,13 +829,7 @@ function DisputesQueue({ params, filtered }: { params: Record<string, string>; f
         cardLead="person"
         cardTrailing="waited"
         paging={paging}
-        onRowClick={(row) => {
-          decide.clear();
-          setAnswer("");
-          setAmount("");
-          setMissing(false);
-          setOpen(row);
-        }}
+        onRowClick={show}
       />
       <LayerDialog.Root open={open !== null} onOpenChange={(next) => !next && setOpen(null)} dismissDisabled={decide.mutation.isPending}>
         <LayerDialog.Content closeLabel={common("close")}>
@@ -789,7 +893,7 @@ function DisputesQueue({ params, filtered }: { params: Record<string, string>; f
   );
 }
 
-function AdvancesQueue({ params, filtered, paying }: { params: Record<string, string>; filtered: boolean; paying: boolean }) {
+function AdvancesQueue({ params, filtered, paying, ...link }: QueueProps & { paying: boolean }) {
   const t = useTranslations("requests");
   const pay = useTranslations("payroll");
   const common = useTranslations("common");
@@ -812,6 +916,11 @@ function AdvancesQueue({ params, filtered, paying }: { params: Record<string, st
     () => setOpen(null),
   );
   const cash = (value: string | null) => (value === null ? common("empty") : money(Number(value), locale));
+  const show = (row: Advance) => {
+    decide.clear();
+    setOpen(row);
+  };
+  useLinkedRow(link, asked, show);
   const columns: Column<Advance>[] = [
     ...personColumns<Advance>(t("who"), t("department"), common("empty")),
     { id: "amount", header: pay("advanceAmount"), numeric: true, cell: (row) => cash(row.amount) },
@@ -850,10 +959,7 @@ function AdvancesQueue({ params, filtered, paying }: { params: Record<string, st
         cardLead="person"
         cardTrailing="amount"
         paging={paging}
-        onRowClick={(row) => {
-          decide.clear();
-          setOpen(row);
-        }}
+        onRowClick={show}
       />
       {paying ? (
         <LayerDialog.Alert open={open !== null} onOpenChange={(next) => !next && setOpen(null)} dismissDisabled={decide.mutation.isPending}>
@@ -909,7 +1015,7 @@ function AdvancesQueue({ params, filtered, paying }: { params: Record<string, st
   );
 }
 
-function DependentsQueue({ params, filtered }: { params: Record<string, string>; filtered: boolean }) {
+function DependentsQueue({ params, filtered, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const me = useTranslations("me");
   const common = useTranslations("common");
@@ -926,6 +1032,11 @@ function DependentsQueue({ params, filtered }: { params: Record<string, string>;
     () => setOpen(null),
   );
   const month = (row: Dependent) => format.dateTime(dayOnly(row.fromMonth), { month: "2-digit", year: "numeric" });
+  const show = (row: Dependent) => {
+    decide.clear();
+    setOpen(row);
+  };
+  useLinkedRow(link, asked, show);
   const columns: Column<Dependent>[] = [
     ...personColumns<Dependent>(t("who"), t("department"), common("empty")),
     {
@@ -955,10 +1066,7 @@ function DependentsQueue({ params, filtered }: { params: Record<string, string>;
         cardLead="person"
         cardTrailing="waited"
         paging={paging}
-        onRowClick={(row) => {
-          decide.clear();
-          setOpen(row);
-        }}
+        onRowClick={show}
       />
       <DecisionSheet
         key={open?.id ?? "none"}
@@ -1038,6 +1146,7 @@ function Inbox() {
     [url.q, url.dept, url.from, url.to, url.order, url.kind, tab],
   );
   const filtered = url.q !== "" || url.dept !== "" || url.from !== "" || url.to !== "" || url.kind !== "";
+  const link: Linked = { openId: url.open, onOpened: () => setUrl({ open: "" }) };
 
   const kinds: Record<string, string> | null =
     tab === "requests"
@@ -1092,13 +1201,13 @@ function Inbox() {
           filters={filters}
           range={{ from: url.from, to: url.to, onFrom: (next) => setUrl({ from: next }), onTo: (next) => setUrl({ to: next }) }}
         />
-        {tab === "requests" ? <RequestsQueue params={params} filtered={filtered} /> : null}
-        {tab === "certificates" ? <LettersQueue params={params} filtered={filtered} /> : null}
-        {tab === "profileChanges" ? <ChangesQueue params={params} filtered={filtered} /> : null}
-        {tab === "disputes" ? <DisputesQueue params={params} filtered={filtered} /> : null}
-        {tab === "advancesToDecide" ? <AdvancesQueue params={params} filtered={filtered} paying={false} /> : null}
-        {tab === "advancesToPay" ? <AdvancesQueue params={params} filtered={filtered} paying /> : null}
-        {tab === "dependents" ? <DependentsQueue params={params} filtered={filtered} /> : null}
+        {tab === "requests" ? <RequestsQueue params={params} filtered={filtered} {...link} /> : null}
+        {tab === "certificates" ? <LettersQueue params={params} filtered={filtered} {...link} /> : null}
+        {tab === "profileChanges" ? <ChangesQueue params={params} filtered={filtered} {...link} /> : null}
+        {tab === "disputes" ? <DisputesQueue params={params} filtered={filtered} {...link} /> : null}
+        {tab === "advancesToDecide" ? <AdvancesQueue params={params} filtered={filtered} paying={false} {...link} /> : null}
+        {tab === "advancesToPay" ? <AdvancesQueue params={params} filtered={filtered} paying {...link} /> : null}
+        {tab === "dependents" ? <DependentsQueue params={params} filtered={filtered} {...link} /> : null}
       </PageLayout>
     </>
   );
