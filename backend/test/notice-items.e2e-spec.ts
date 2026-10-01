@@ -35,7 +35,7 @@ const nameOf = (who: Who) => `Việc ${who} ${RUN}`;
 
 interface Bell {
   id: string;
-  item: { key: string; state: string; outcome: string | null; actorName: string | null } | null;
+  item: { key: string; state: string; outcome: string | null; actorId: string | null; actorName: string | null; openedAt: string } | null;
 }
 
 describe("work a group shares, closed once for all (e2e)", () => {
@@ -142,6 +142,8 @@ describe("work a group shares, closed once for all (e2e)", () => {
     const row = (bell.body.rows as Bell[]).find((one) => one.item?.key === item.key);
     assert.equal(row?.item?.state, "DONE", "the bell does not show the work as done");
     assert.equal(row?.item?.actorName, nameOf("boss"), "the bell does not say who decided");
+    assert.equal(row?.item?.actorId, loginOf.get("boss"), "the bell cannot tell its reader they decided it");
+    assert.equal(row?.item?.openedAt, item.openedAt.toISOString(), "the bell cannot count how long the work waited");
 
     const late = await post("deskA", `/requests/${id}/decide`, { approve: false, note: "e2e" });
     assert.equal(late.status, 409, "a second decision was not answered as already handled");

@@ -98,7 +98,9 @@ export interface ItemSummary {
   level: NoticeLevel;
   state: NoticeItemState;
   outcome: NoticeOutcome | null;
+  actorId: string | null;
   actorName: string | null;
+  openedAt: Date;
   closedAt: Date | null;
   claimedByName: string | null;
   dueAt: Date | null;
@@ -165,6 +167,8 @@ const ITEM_SUMMARY = {
   level: true,
   state: true,
   outcome: true,
+  actorId: true,
+  openedAt: true,
   closedAt: true,
   claimedAt: true,
   dueAt: true,
@@ -354,6 +358,8 @@ export class NotificationsService {
         level: item.level,
         state: item.state,
         outcome: item.outcome,
+        actorId: item.actorId,
+        openedAt: item.openedAt,
         closedAt: item.closedAt,
         dueAt: item.dueAt,
         actorName: nameOf(item.actor),

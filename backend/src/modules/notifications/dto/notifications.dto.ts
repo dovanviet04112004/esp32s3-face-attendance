@@ -179,6 +179,9 @@ export class NoticeItemView {
   })
   outcome!: NoticeOutcome | null;
 
+  @ApiProperty({ type: String, nullable: true, example: "0a113bd1-4a7b-4a3f-972b-bd493d497c2e", description: "The login that closed it, so a row can say you did" })
+  actorId!: string | null;
+
   @ApiProperty({
     type: String,
     nullable: true,
@@ -186,6 +189,9 @@ export class NoticeItemView {
     description: "Who closed it: their name, or their email when the login has no employee record",
   })
   actorName!: string | null;
+
+  @ApiProperty({ type: String, format: "date-time", example: "2026-09-28T01:30:00.000Z", description: "When it opened, which its wait counts from" })
+  openedAt!: Date;
 
   @ApiProperty({
     type: String,
