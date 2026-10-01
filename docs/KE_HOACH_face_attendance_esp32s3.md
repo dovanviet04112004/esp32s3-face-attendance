@@ -9863,9 +9863,12 @@ nghỉ việc vô hình với chính truy vấn dựng ra để tìm nó.
 
 **Luật 4 — thứ đổi được thành tiền hoặc thành quyền thì ghi cả trước lẫn sau.** Biết lương
 thành 20 triệu mà không biết nó vốn là bao nhiêu là nửa câu trả lời, và nửa thiếu đúng là nửa
-người ta cần khi có tranh chấp. Lương và vai trò vì thế ghi `{ from, to }`. **Hồ sơ cá nhân thì
-ngược lại: chỉ ghi tên trường đã đổi, không ghi giá trị** — nhật ký không được trở thành bản sao
-thứ hai của dữ liệu cá nhân, vì quyền xoá ở §9.22.1 sẽ phải đuổi theo cả hai chỗ.
+người ta cần khi có tranh chấp. Lương và vai trò vì thế ghi `{ from, to }`. Khoản tiền nhập tay
+cho cả một lượt chạy thì ghi số tiền, không chỉ số dòng: lượt nạp thưởng ghi tổng, lượt nạp chốt
+cuối ghi tổng của từng loại — trợ cấp và đối trừ tài sản tách riêng, để một khoản đối trừ không
+che được một khoản trợ cấp lớn. **Hồ sơ cá nhân thì ngược lại: chỉ ghi tên trường đã đổi, không
+ghi giá trị** — nhật ký không được trở thành bản sao thứ hai của dữ liệu cá nhân, vì quyền xoá ở
+§9.22.1 sẽ phải đuổi theo cả hai chỗ.
 
 **Luật 5 — bộ chặn toàn cục ở lại, nhưng là lưới đỡ.** Một route mới mà không ai nhớ ghi nhật
 ký vẫn để lại dấu, dưới `subjectType` là `route`. Lưới đỡ nói được **ai, lúc nào, đụng vào đâu**;
@@ -9875,3 +9878,13 @@ là việc chưa làm xong, không phải đã phủ.
 **Luật 6 — ghi nhật ký hỏng thì không được làm hỏng việc.** `record()` nuốt lỗi và chỉ log:
 mất một dòng ghi chú còn hơn huỷ chính thao tác mà nó mô tả. Đổi lại, nó **không nằm trong giao
 dịch** của thao tác ấy, và đó là đánh đổi có chủ ý chứ không phải sơ suất.
+
+**Luật 7 — một file xuất là một lần đọc cả bảng, và nó để lại dấu.** Bộ chặn toàn cục bỏ qua mọi
+`GET`, nên thiếu luật này thì không ai biết ai đã tải danh bạ kèm số CCCD, tài khoản ngân hàng và
+lương, hay file trả ngân hàng của tháng chín — trong khi §9.22.7 bắt nhật ký truy cập dữ liệu nhạy
+cảm sống lâu hơn chính dữ liệu ấy. Mỗi file xuất ghi một dòng `export.*` do chính service ghi:
+người tải, bộ lọc như đã gửi, và số dòng trong file — không bao giờ ghi nội dung (luật 4). Chủ thể
+là thứ file ấy nói về khi nó nói về một thứ: kỳ lương cho file ngân hàng và sổ lương, pháp nhân
+cho D02-LT. File xuất một danh sách thì chủ thể là `export` kèm tên danh sách — `employees`,
+`payslips`, `requests`, `timesheet`, `assets` —, một loại định danh cho một loại chủ thể như luật
+3 đòi.
