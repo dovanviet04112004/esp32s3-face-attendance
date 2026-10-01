@@ -172,7 +172,7 @@ export class PayrollController {
   @Header("Content-Type", "text/csv; charset=utf-8")
   @ApiProduces("text/csv")
   @ApiOperation({ summary: "The payment file for a bank, or the ledger for accounting" })
-  @ApiOkResponse({ description: "CSV; the ledger carries a byte order mark for Excel", schema: { type: "string" } })
+  @ApiOkResponse({ description: "CSV with a byte order mark; a cell Excel would run as a formula is written as text", schema: { type: "string" } })
   @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   exportRows(
     @CurrentViewer() viewer: Viewer,

@@ -20,7 +20,7 @@ import type {
 } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 
-import { toCsv, toExcelCsv } from "../../common/csv.js";
+import { toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -1443,7 +1443,7 @@ export class PayrollService {
     });
     const reference = `LUONG ${String(period.month).padStart(2, "0")}${period.year}`;
     if (kind === "bank") {
-      return toCsv(
+      return toExcelCsv(
         ["code", "fullName", "bankName", "bankAccount", "amount", "reference"],
         rows.map((row) => [
           row.employee.code,

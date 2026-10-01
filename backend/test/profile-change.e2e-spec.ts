@@ -294,6 +294,19 @@ describe("changing a personal detail through an approval (e2e)", () => {
     );
   });
 
+  it("writes the bank file so that Excel shows a formula as text", async () => {
+    const payload = '=HYPERLINK("http://attacker.example","x")';
+    const slip = await db.payslip.findFirstOrThrow({ where: { periodId } });
+    await db.payslip.update({ where: { id: slip.id }, data: { bankName: payload } });
+    const res = await request(http)
+      .get(`/payroll-periods/${periodId}/export?kind=bank`)
+      .set("Authorization", `Bearer ${desk}`);
+    await db.payslip.update({ where: { id: slip.id }, data: { bankName: slip.bankName } });
+    assert.equal(res.status, 200);
+    assert.ok(res.text.startsWith("﻿"), "the bank file carries no byte order mark for Excel");
+    assert.ok(res.text.includes(`"'${payload.replace(/"/g, '""')}"`), "the bank file handed Excel a live formula");
+  });
+
   it("will not let the desk move the warning address outside a request", async () => {
     const quiet = await request(http)
       .patch(`/employees/${employeeId}`)
