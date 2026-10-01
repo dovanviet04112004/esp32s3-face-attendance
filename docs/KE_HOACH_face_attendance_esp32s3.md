@@ -7257,10 +7257,12 @@ duyệt của mọi đơn `PENDING` chuyển sang quản lý mới trong cùng g
 đóng mọi phiên ngay (§9.23) và cắt cả ổ cắm realtime đang mở — ổ cắm kiểm cùng mốc đóng phiên
 mà REST kiểm. Mở khoá trả lại đúng vai cũ; tài khoản của người đã nghỉ việc không mở khoá qua
 đường này. Hai chốt giữ cho quản trị không tự khoá mình ra ngoài: **không ai hạ vai hay khoá
-chính mình**, và không thao tác nào được để hệ còn không một `ADMIN` đang dùng — đếm quản trị là
-đếm tài khoản `active`, không đếm tài khoản đã khoá. Danh sách tài khoản hiện trạng thái của
-từng cái — đang dùng, chờ đặt mật khẩu, đã khoá — cùng người và phòng ban nó gắn với, tìm được
-theo email, mã và tên, lọc được theo vai, phòng ban và trạng thái.
+chính mình**, và không thao tác nào được để hệ còn không một `ADMIN` đang dùng — kể cả đóng hồ
+sơ nhân viên mà một tài khoản `ADMIN` gắn vào (§9.14). Đếm quản trị là đếm tài khoản `active`,
+không đếm tài khoản đã khoá, và đếm ngay trong giao dịch của lần ghi, khoá các dòng `ADMIN` đang
+dùng (`FOR UPDATE`) để hai lượt song song không cùng thấy còn người kia. Danh sách tài khoản
+hiện trạng thái của từng cái — đang dùng, chờ đặt mật khẩu, đã khoá — cùng người và phòng ban nó
+gắn với, tìm được theo email, mã và tên, lọc được theo vai, phòng ban và trạng thái.
 
 **Phạm vi dòng thi hành ở tầng service, không ở tầng controller.** Guard chỉ trả lời "vai này
 được gọi đường này không"; câu hỏi "được thấy dòng nào" phải đi vào chính mệnh đề `where`. Đặt
@@ -8082,13 +8084,22 @@ người bấm đứng tên khi đóng ngay, dòng của job không có người
 câu có điều kiện `active = true AND leaveDate <= ngày ấy`, nên hai lượt chạy chồng nhau hay chạy
 lại chỉ đóng một lần, và một lịch vừa bị huỷ không bị đóng nhầm.
 
+**Hồ sơ mà một tài khoản `ADMIN` gắn vào là việc của `ADMIN`.** Ghi nhận, đổi hay huỷ lịch nghỉ
+của hồ sơ ấy chỉ `ADMIN` làm được (`LEAVING_ADMIN_ONLY`): đóng hồ sơ là khoá tài khoản, và bàn
+nhân sự không được khoá người quản trị hệ thống. Hàm đóng hồ sơ đếm quản trị như §9.4, trong chính
+giao dịch của nó, và từ chối (`LAST_ADMIN`) khi đóng là hết `ADMIN` đang dùng. Lượt bấm có ngày
+cuối đã tới thì được hỏi luật ấy trước khi ghi ngày nào, nên bị từ chối là không để lại lịch; job
+đêm gặp hồ sơ ấy thì bỏ qua, ghi log, và đêm sau thử lại — nó không bao giờ khoá quản trị viên
+cuối cùng.
+
 **Cho nghỉ nhiều người một lúc là đúng lượt lẻ ấy, làm cho cả lô** (§9.20). Cả lô chung một ngày
-làm việc cuối và một lý do. Người đã nghỉ, người đã có lịch nghỉ, và **chính người bấm** vào danh
-sách bỏ qua kèm mã: chọn cả phòng Nhân sự mà khoá luôn tài khoản đang bấm là mất người cầm việc
-giữa chừng. Ngày cuối ghi cho cả lô trong một giao dịch, có điều kiện như lượt lẻ, mỗi người một
-dòng `employee.offboard`. Ngày ấy đã tới thì các hồ sơ đóng qua job `leavings-now` trên hàng đợi
-`people`, từng người bằng đúng hàm đóng hồ sơ ở trên và người bấm đứng tên; vì câu ghi có điều
-kiện, job giao lại hay chạy chồng với `leavings-due` cũng chỉ đóng mỗi hồ sơ một lần.
+làm việc cuối và một lý do. Người đã nghỉ, người đã có lịch nghỉ, **chính người bấm**, và người cầm
+tài khoản `ADMIN` vào danh sách bỏ qua kèm mã: chọn cả phòng Nhân sự mà khoá luôn tài khoản đang
+bấm là mất người cầm việc giữa chừng, và một quản trị viên chỉ nghỉ qua lượt lẻ, nơi hai luật ở
+đoạn trên trả lời ngay. Ngày cuối ghi cho cả lô trong một giao dịch, có điều kiện như lượt lẻ, mỗi
+người một dòng `employee.offboard`. Ngày ấy đã tới thì các hồ sơ đóng qua job `leavings-now` trên
+hàng đợi `people`, từng người bằng đúng hàm đóng hồ sơ ở trên và người bấm đứng tên; vì câu ghi có
+điều kiện, job giao lại hay chạy chồng với `leavings-due` cũng chỉ đóng mỗi hồ sơ một lần.
 
 **Lịch nghỉ đổi được và huỷ được cho tới lúc hồ sơ đóng.** `PATCH /employees/:id/offboard` đổi
 ngày cuối; ngày mới đã tới thì hồ sơ đóng ngay như ở lượt ghi nhận. `DELETE` cùng đường huỷ
