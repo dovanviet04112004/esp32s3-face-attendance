@@ -139,7 +139,7 @@ function waitingAt(notice: Notice): string {
         ? ["dependents", notice.dependentId]
         : notice.advanceId
           ? [notice.approved ? "advancesToPay" : "advancesToDecide", notice.advanceId]
-          : ["disputes", notice.payslipId ?? ""];
+          : ["disputes", notice.subject?.type === "DISPUTE" && notice.subject.id ? notice.subject.id : (notice.payslipId ?? "")];
   return `/approvals?tab=${tab}&open=${id}`;
 }
 
