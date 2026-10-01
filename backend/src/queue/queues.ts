@@ -18,6 +18,8 @@ export const JOB = {
   requestsStale: "requests-stale",
   backupWatch: "backup-watch",
   noticeReconcile: "notice-reconcile",
+  noticeFanout: "notice-fanout",
+  noticeGather: "notice-gather",
   passwordSetup: "password-setup",
   passwordChanged: "password-changed",
   profileNotice: "profile-notice",
@@ -60,6 +62,19 @@ export interface NoticeReconcileJob {
   type: typeof JOB.noticeReconcile;
 }
 
+/** Up to a thousand rows to push; a retry resends under the same tag, which a device shows once. */
+export interface NoticeFanoutJob {
+  type: typeof JOB.noticeFanout;
+  kind: string;
+  rows: { id: string; userId: string; tag: string; renotify: boolean }[];
+}
+
+export interface NoticeGatherJob {
+  type: typeof JOB.noticeGather;
+  userId: string;
+  since: string;
+}
+
 /** What the letter around the link says: a welcome, or a recovery (KEHOACH 9.4). */
 export type SetupReason = "opened" | "forgot";
 
@@ -88,6 +103,8 @@ export type NotifyJob =
   | RequestsStaleJob
   | BackupWatchJob
   | NoticeReconcileJob
+  | NoticeFanoutJob
+  | NoticeGatherJob
   | PasswordSetupJob
   | PasswordChangedJob
   | ProfileNoticeJob;

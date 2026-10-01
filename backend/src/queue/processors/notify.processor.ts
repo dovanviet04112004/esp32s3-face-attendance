@@ -7,6 +7,7 @@ import { RedisService } from "../../database/redis.service.js";
 import { BackupWatchService } from "../../modules/notifications/backup-watch.service.js";
 import { ContractAlertsService } from "../../modules/notifications/contract-alerts.service.js";
 import { MailerService } from "../../modules/notifications/mailer.service.js";
+import { NotificationsService } from "../../modules/notifications/notifications.service.js";
 import { passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
 import { StaleRequestsService } from "../../modules/notifications/stale-requests.service.js";
@@ -30,6 +31,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly stale: StaleRequestsService,
     private readonly backups: BackupWatchService,
     private readonly reconcile: ReconcileSweep,
+    private readonly notices: NotificationsService,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
   ) {}
@@ -53,6 +55,14 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === "notice-reconcile") {
           await this.reconcile.sweep();
+          return;
+        }
+        if (body.type === "notice-fanout") {
+          await this.notices.fanOut(body);
+          return;
+        }
+        if (body.type === "notice-gather") {
+          await this.notices.gather(body.userId, new Date(body.since));
           return;
         }
         if (body.type === "password-setup") {

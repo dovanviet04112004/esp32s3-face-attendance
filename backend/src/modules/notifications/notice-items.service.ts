@@ -16,7 +16,7 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import { AudienceService, type InboxQueue } from "./audience.service.js";
 import { kebab, type ItemKind } from "./notice-kinds.js";
-import { NAMED, nameOf, NotificationsService, type NoticeFacts } from "./notifications.service.js";
+import { NAMED, nameOf, NotificationsService } from "./notifications.service.js";
 import { SubjectsService, type SubjectView } from "./subjects.service.js";
 
 export const QUEUE_SUBJECT: Record<InboxQueue, NoticeSubject> = {
@@ -48,14 +48,8 @@ export interface Regrouped {
 interface Seated {
   id: string;
   userId: string;
-  requestId: string | null;
-  advanceId: string | null;
-  certificateId: string | null;
-  profileChangeId: string | null;
-  dependentId: string | null;
-  payslipId: string | null;
-  approved: boolean | null;
-  daysWaited: number | null;
+  dedupKey: string;
+  at: Date;
 }
 
 // Work that takes more than one click to finish, where the group needs to see who is on it (KEHOACH 9.21.4).
@@ -92,22 +86,6 @@ const kHourMs = 3_600_000;
 /** The key of the one item a subject has in a queue (KEHOACH 9.21.4). */
 export function itemKey(queue: InboxQueue, subjectId: string): string {
   return `${kebab(queue)}:${subjectId}`;
-}
-
-function pushFacts(row: Seated): NoticeFacts {
-  const facts: NoticeFacts = {};
-  for (const key of ["requestId", "advanceId", "certificateId", "profileChangeId", "dependentId", "payslipId"] as const) {
-    if (row[key] !== null) {
-      facts[key] = row[key];
-    }
-  }
-  if (row.approved !== null) {
-    facts.approved = row.approved;
-  }
-  if (row.daysWaited !== null) {
-    facts.daysWaited = row.daysWaited;
-  }
-  return facts;
 }
 
 /** The shared side of a piece of work: one item, a row per holder, closed once for all (KEHOACH 9.21.4). */
@@ -340,12 +318,11 @@ export class NoticeItemsService {
                "readAt" = NULL, "archivedAt" = NULL, "remindedAt" = now(),
                "remindCount" = "remindCount" + CASE WHEN "userId" = ANY(${fresh}::text[]) THEN 0 ELSE 1 END
          WHERE "itemId" = ${item.id} AND "leftAt" IS NULL
-        RETURNING "id", "userId", "requestId", "advanceId", "certificateId", "profileChangeId", "dependentId",
-                  "payslipId", "approved", "daysWaited"
+        RETURNING "id", "userId", "dedupKey", "remindedAt" AS "at"
       `;
       await this.notices.announce(
         ITEM_KIND,
-        surfaced.filter((one) => !fresh.includes(one.userId)).map((one) => ({ ...one, facts: pushFacts(one) })),
+        surfaced.filter((one) => !fresh.includes(one.userId)).map((one) => ({ ...one, renotify: true })),
       );
     } catch (fell) {
       this.log.error(`item ${queue} ${subjectId} was not reminded: ${String(fell)}`);
@@ -383,8 +360,7 @@ export class NoticeItemsService {
                SET "leftAt" = NULL,
                    "readAt" = CASE WHEN ${quiet}::boolean THEN COALESCE("Notification"."readAt", now()) END
              WHERE "Notification"."leftAt" IS NOT NULL
-            RETURNING "id", "userId", "requestId", "advanceId", "certificateId", "profileChangeId", "dependentId",
-                      "payslipId", "approved", "daysWaited"
+            RETURNING "id", "userId", "dedupKey", now()::timestamp(3) AS "at"
           `;
     for (const one of left) {
       this.feed.tell(one.userId, FEED.notice, { op: "item", key: item.key, state: item.state });
@@ -394,7 +370,7 @@ export class NoticeItemsService {
         this.feed.tell(one.userId, FEED.notice, { op: "item", key: item.key, state: item.state });
       }
     } else {
-      await this.notices.announce(ITEM_KIND, seated.map((one) => ({ ...one, facts: pushFacts(one) })));
+      await this.notices.announce(ITEM_KIND, seated.map((one) => ({ ...one, renotify: false })));
     }
     return { seated, left: left.map((one) => one.userId) };
   }

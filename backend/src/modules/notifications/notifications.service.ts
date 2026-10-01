@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   Prisma,
@@ -13,6 +13,7 @@ import {
   type Notification,
   type NotificationPreference,
   type PushSubscription,
+  type Role,
 } from "@prisma/client";
 import webpush from "web-push";
 
@@ -21,9 +22,12 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import type { Env } from "../../config/env.schema.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
+import { JOB, QUEUE, type NoticeFanoutJob, type NoticeGatherJob } from "../../queue/queues.js";
 import { filedBetween, personWhere, resumeAfter, sortedBy } from "../leave/queue-filter.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js";
+import { pushBody, type PushBody } from "./dto/push-body.js";
 import {
   factsFit,
   kebab,
@@ -196,6 +200,22 @@ const OFFERED: readonly OfferedChannel[] = ["IN_APP", "PUSH"];
 
 const kDeadSubscription = [404, 410];
 const kBatch = 1000;
+// A push service answers in tens to hundreds of ms; fifty at once keeps a 5,000 fan-out to seconds.
+const kPushAtOnce = 50;
+const kSecondMs = 1000;
+const DEFAULT_LOCALE = "vi";
+// Desk pushes gather into one; a CRITICAL notice never waits (KEHOACH 9.21.4).
+const GATHERED: readonly Role[] = ["ADMIN", "HR", "PAYROLL"];
+const GATHERED_TAG = "gathered";
+
+/** A row just written or surfaced, with the key its push is tagged by and the database's time of it. */
+export interface Announced {
+  id: string;
+  userId: string;
+  dedupKey: string;
+  renotify: boolean;
+  at: Date;
+}
 
 @Injectable()
 export class NotificationsService {
@@ -207,6 +227,7 @@ export class NotificationsService {
     private readonly config: ConfigService<Env, true>,
     private readonly feed: RealtimeGateway,
     private readonly subjects: SubjectsService,
+    @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {
     const publicKey = this.config.get("VAPID_PUBLIC_KEY", { infer: true });
     const privateKey = this.config.get("VAPID_PRIVATE_KEY", { infer: true });
@@ -485,12 +506,12 @@ export class NotificationsService {
         throw new Error(`${kind} is work a group shares; NoticeItemsService opens it`);
       }
       const wants = await this.channelsFor(kind, sends.map((one) => one.userId));
-      const landed: { id: string; userId: string }[] = [];
+      const landed: Announced[] = [];
       // Twenty parameters a row: a thousand rows stay far under the 65,535 one statement takes.
       for (let at = 0; at < sends.length; at += kBatch) {
         const rows = sends.slice(at, at + kBatch).map((one) => this.newsRow(kind, one, !wants(one.userId, "IN_APP")));
         landed.push(
-          ...(await this.db.$queryRaw<{ id: string; userId: string }[]>`
+          ...(await this.db.$queryRaw<Announced[]>`
             INSERT INTO "Notification" ("id", "userId", "kind", "subjectType", "subjectId", "subjectEmployeeId",
                                         "dedupKey", "facts", "archivedAt", "requestId", "advanceId", "periodId",
                                         "payslipId", "contractId", "certificateId", "profileChangeId", "dependentId",
@@ -502,33 +523,129 @@ export class NotificationsService {
                    "archivedAt" = CASE WHEN EXCLUDED."archivedAt" IS NULL THEN NULL
                                        ELSE COALESCE("Notification"."archivedAt", EXCLUDED."archivedAt") END
              WHERE "Notification"."facts" IS DISTINCT FROM EXCLUDED."facts"
-            RETURNING "id", "userId"
+            RETURNING "id", "userId", "dedupKey", ("remindCount" > 0) AS "renotify", COALESCE("remindedAt", "createdAt") AS "at"
           `),
         );
       }
-      const factsOf = new Map(sends.map((one) => [one.userId, one.facts]));
-      await this.announce(
-        kind,
-        landed
-          .filter((one) => wants(one.userId, "IN_APP"))
-          .map((one) => ({ ...one, facts: factsOf.get(one.userId) ?? {} })),
-      );
+      await this.announce(kind, landed.filter((one) => wants(one.userId, "IN_APP")));
     } catch (fell) {
       this.log.error(`notices ${kind} were not raised: ${String(fell)}`);
     }
   }
 
-  /** Tell each login's open screens of a row it just got, and push it where the person allows. */
-  async announce(kind: NoticeKind, rows: { id: string; userId: string; facts: NoticeFacts }[]): Promise<void> {
+  /** Tell each login's open screens of a row it just got, then queue its push where the person allows it.
+   *  @ctx any | pushes leave through the notify queue, never inside the request (KEHOACH 9.21.4)
+   */
+  async announce(kind: NoticeKind, rows: Announced[]): Promise<void> {
     if (rows.length === 0) {
       return;
     }
-    const wants = await this.channelsFor(kind, rows.map((one) => one.userId));
     for (const one of rows) {
       this.feed.tell(one.userId, FEED.notice, { op: "new", id: one.id, kind, category: NOTICE_KINDS[kind].category });
     }
-    await Promise.all(
-      rows.filter((one) => wants(one.userId, "PUSH")).map((one) => this.push(one.userId, kind, one.facts)),
+    if (!this.pushable) {
+      return;
+    }
+    const wants = await this.channelsFor(kind, rows.map((one) => one.userId));
+    const pushed = rows.filter((one) => wants(one.userId, "PUSH"));
+    const window = this.config.get("NOTICE_PUSH_GATHER_SECONDS", { infer: true });
+    const desks =
+      window > 0 && NOTICE_KINDS[kind].level !== "CRITICAL"
+        ? new Set(
+            (
+              await this.db.user.findMany({
+                where: { id: { in: pushed.map((one) => one.userId) }, role: { in: [...GATHERED] } },
+                select: { id: true },
+              })
+            ).map((one) => one.id),
+          )
+        : new Set<string>();
+    const now = pushed.filter((one) => !desks.has(one.userId));
+    for (let at = 0; at < now.length; at += kBatch) {
+      await this.queues[QUEUE.notify].add(JOB.noticeFanout, {
+        type: JOB.noticeFanout,
+        kind,
+        rows: now.slice(at, at + kBatch).map((one) => ({ id: one.id, userId: one.userId, tag: one.dedupKey, renotify: one.renotify })),
+      } satisfies NoticeFanoutJob);
+    }
+    // The window starts at the database's own time of the first row, the clock the rows are counted by.
+    const since = new Map<string, Date>();
+    for (const one of pushed.filter((row) => desks.has(row.userId))) {
+      const held = since.get(one.userId);
+      since.set(one.userId, held && held < one.at ? held : one.at);
+    }
+    for (const [userId, at] of since) {
+      await this.queues[QUEUE.notify].add(
+        JOB.noticeGather,
+        { type: JOB.noticeGather, userId, since: at.toISOString() } satisfies NoticeGatherJob,
+        { jobId: `gather-${userId}`, delay: window * kSecondMs },
+      );
+    }
+  }
+
+  /** Send a fan-out job's pushes, one per row to every device of its login.
+   *  @ctx job | notify queue; a dead device is dropped, a slow one only logged
+   */
+  async fanOut(job: NoticeFanoutJob): Promise<void> {
+    const people = [...new Set(job.rows.map((one) => one.userId))];
+    const [devices, localeOf] = await Promise.all([this.devicesOf(people), this.localesOf(people)]);
+    const kind = job.kind as NoticeKind;
+    for (let at = 0; at < job.rows.length; at += kPushAtOnce) {
+      await Promise.all(
+        job.rows.slice(at, at + kPushAtOnce).map((row) =>
+          this.sendTo(
+            devices.get(row.userId) ?? [],
+            pushBody.parse({
+              v: 2,
+              id: row.id,
+              kind,
+              category: NOTICE_KINDS[kind].category,
+              count: 1,
+              locale: localeOf.get(row.userId) ?? DEFAULT_LOCALE,
+              tag: row.tag,
+              renotify: row.renotify,
+            }),
+          ),
+        ),
+      );
+    }
+  }
+
+  /** One push for what a desk login got since its window opened, as "N new items" when more than one.
+   *  @ctx job | notify queue; nothing goes out when the login has read it all meanwhile
+   */
+  async gather(userId: string, since: Date): Promise<void> {
+    const fresh = await this.db.notification.findMany({
+      where: { userId, readAt: null, archivedAt: null, leftAt: null, OR: [{ createdAt: { gte: since } }, { remindedAt: { gte: since } }] },
+      orderBy: { createdAt: "desc" },
+      take: kBatch,
+      select: { id: true, kind: true, dedupKey: true },
+    });
+    const kinds = [...new Set(fresh.map((one) => one.kind))];
+    const wanted = new Set<NoticeKind>();
+    for (const kind of kinds) {
+      if ((await this.channelsFor(kind, [userId]))(userId, "PUSH")) {
+        wanted.add(kind);
+      }
+    }
+    const pushed = fresh.filter((one) => wanted.has(one.kind));
+    if (!this.pushable || pushed.length === 0) {
+      return;
+    }
+    const [devices, localeOf] = await Promise.all([this.devicesOf([userId]), this.localesOf([userId])]);
+    const newest = pushed[0];
+    await this.sendTo(
+      devices.get(userId) ?? [],
+      pushBody.parse({
+        v: 2,
+        id: newest.id,
+        kind: newest.kind,
+        category: NOTICE_KINDS[newest.kind].category,
+        count: pushed.length,
+        locale: localeOf.get(userId) ?? DEFAULT_LOCALE,
+        tag: pushed.length > 1 ? GATHERED_TAG : (newest.dedupKey ?? newest.id),
+        renotify: true,
+      }),
     );
   }
 
@@ -571,34 +688,36 @@ export class NotificationsService {
     )`;
   }
 
-  private async push(userId: string, kind: NoticeKind, facts: NoticeFacts): Promise<void> {
-    if (!this.pushable) {
-      return;
+  private async devicesOf(userIds: string[]): Promise<Map<string, PushSubscription[]>> {
+    const held = await this.db.pushSubscription.findMany({ where: { userId: { in: userIds } } });
+    const devices = new Map<string, PushSubscription[]>();
+    for (const one of held) {
+      devices.set(one.userId, [...(devices.get(one.userId) ?? []), one]);
     }
-    const [subs, who] = await Promise.all([
-      this.db.pushSubscription.findMany({ where: { userId } }),
-      this.db.user.findUnique({ where: { id: userId }, select: { employee: { select: { locale: true } } } }),
-    ]);
-    // A kind, some references and a language tag: the device builds the words,
-    // so no amount can reach a lock screen.
-    const body = JSON.stringify({ kind, locale: who?.employee?.locale ?? "vi", ...facts });
-    for (const sub of subs) {
+    return devices;
+  }
+
+  private async localesOf(userIds: string[]): Promise<Map<string, "vi" | "en">> {
+    const people = await this.db.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, employee: { select: { locale: true } } },
+    });
+    return new Map(people.map((one) => [one.id, one.employee?.locale === "en" ? "en" : DEFAULT_LOCALE]));
+  }
+
+  private async sendTo(devices: PushSubscription[], body: PushBody): Promise<void> {
+    const sealed = JSON.stringify(body);
+    for (const sub of devices) {
       try {
-        await webpush.sendNotification(
-          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          body,
-        );
-        await this.db.pushSubscription.update({
-          where: { id: sub.id },
-          data: { lastSentAt: new Date() },
-        });
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, sealed);
+        await this.db.pushSubscription.update({ where: { id: sub.id }, data: { lastSentAt: new Date() } });
       } catch (fell) {
         const code = (fell as { statusCode?: number }).statusCode;
         if (code !== undefined && kDeadSubscription.includes(code)) {
-          await this.db.pushSubscription.delete({ where: { id: sub.id } });
-          this.log.log(`dropped a dead subscription for ${userId}`);
+          await this.db.pushSubscription.deleteMany({ where: { id: sub.id } });
+          this.log.log(`dropped a dead subscription for ${sub.userId}`);
         } else {
-          this.log.warn(`push to ${userId} failed: ${String(fell)}`);
+          this.log.warn(`push to ${sub.userId} failed: ${String(fell)}`);
         }
       }
     }

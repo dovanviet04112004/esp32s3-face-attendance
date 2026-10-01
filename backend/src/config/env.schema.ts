@@ -125,6 +125,7 @@ export const envSchema = z
     // A cron pattern in APP_TIMEZONE; empty turns the reconcile off (KEHOACH 9.21.4).
     NOTICE_RECONCILE_CRON: z.string().optional(),
     NOTICE_CLAIM_HOURS: z.coerce.number().int().positive().max(168).default(24),
+    NOTICE_PUSH_GATHER_SECONDS: z.coerce.number().int().min(0).max(3600).default(120),
 
     MQTT_URL: z.string().min(1),
     MQTT_USERNAME: z.string().min(1),
