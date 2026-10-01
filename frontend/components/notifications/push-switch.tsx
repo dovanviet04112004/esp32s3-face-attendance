@@ -2,15 +2,19 @@
 
 import { Banner, Switch } from "@cloudflare/kumo";
 import { DeviceMobileIcon, InfoIcon, WarningIcon } from "@phosphor-icons/react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 import { useNotify } from "@/components/ui/notify";
 import { api } from "@/lib/api";
 import { env } from "@/lib/env";
+import { NOTICES_KEY } from "./notice-row";
 
 type Standing = "unsupported" | "install" | "blocked" | "off" | "on";
+
+/** The account's push devices and this browser's endpoint among them; the switch refreshes both. */
+export const PUSH_DEVICES_KEY = [...NOTICES_KEY, "subscriptions"] as const;
 
 /** This browser's push subscription, if it holds one; never waits on a worker that is not registered. */
 export async function pushHere(): Promise<PushSubscription | null> {
@@ -43,6 +47,7 @@ function toBytes(key: string): Uint8Array<ArrayBuffer> {
 export function PushSwitch() {
   const t = useTranslations("notices");
   const notify = useNotify();
+  const cache = useQueryClient();
   const [standing, setStanding] = useState<Standing>("unsupported");
 
   useEffect(() => {
@@ -95,7 +100,12 @@ export function PushSwitch() {
       setStanding("on");
       return true;
     },
-    onSuccess: (on) => on && notify.done(t("pushTurnedOn")),
+    onSuccess: (on) => {
+      if (on) {
+        notify.done(t("pushTurnedOn"));
+        void cache.invalidateQueries({ queryKey: PUSH_DEVICES_KEY });
+      }
+    },
     onError: notify.failed,
   });
 
@@ -109,7 +119,10 @@ export function PushSwitch() {
       }
       setStanding("off");
     },
-    onSuccess: () => notify.done(t("pushTurnedOff")),
+    onSuccess: () => {
+      notify.done(t("pushTurnedOff"));
+      void cache.invalidateQueries({ queryKey: PUSH_DEVICES_KEY });
+    },
     onError: notify.failed,
   });
 

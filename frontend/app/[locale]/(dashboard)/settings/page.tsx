@@ -8,6 +8,7 @@ import { useEffect, useState, useSyncExternalStore, useTransition, type ReactNod
 
 import { useSignOut } from "@/components/nav/account-menu";
 import { NoticePreferences } from "@/components/notifications/notice-prefs";
+import { PushDevices } from "@/components/notifications/push-devices";
 import { PushSwitch } from "@/components/notifications/push-switch";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
@@ -131,6 +132,7 @@ export default function SettingsPage() {
     { id: "language", title: t("languageTitle") },
     { id: "theme", title: t("themeTitle") },
     { id: "push", title: notices("pushTitle") },
+    { id: "devices", title: notices("devicesTitle") },
     { id: "notices", title: notices("prefsTitle") },
     ...(role === "ADMIN" ? [{ id: "provision", title: t("provisionTitle") }, { id: "docs", title: t("docsTitle") }] : []),
     { id: "account", title: t("accountTitle") },
@@ -193,6 +195,10 @@ export default function SettingsPage() {
 
           <Section id="push" title={notices("pushTitle")} lead={notices("pushLead")}>
             <PushSwitch />
+          </Section>
+
+          <Section id="devices" title={notices("devicesTitle")} lead={notices("devicesLead")}>
+            <PushDevices />
           </Section>
 
           <Section id="notices" title={notices("prefsTitle")} lead={notices("prefsLead")}>
