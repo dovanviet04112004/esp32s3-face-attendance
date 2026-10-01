@@ -9135,10 +9135,14 @@ Sáu thứ trong bảng cần nói thêm:
   không có đơn đã duyệt, ở lại quá giờ ca từ ngưỡng của bảng tra mà không có đơn tăng ca đã duyệt
   (§9.17 mục 2). `facts` mang ngày và các mã lệch kèm số phút, và dòng gọi tên chúng: *Đi muộn 17 phút
   · thiếu lượt ra*. Nút *Giải trình* mở đơn `ATTENDANCE_FIX` điền sẵn ngày ấy; *Không cần giải trình*
-  đóng việc, người làm là chính người ấy. Lượt dựng lại xoá hết chỗ lệch thì việc đóng; dựng hai lần
-  không mở thêm gì.
+  đóng việc bằng đường đóng tay, người làm là chính người ấy — hàng đợi duy nhất mà người đóng tay là
+  người được nói tới. Lượt dựng đêm mở việc lặng lẽ; lượt đẩy 8:30 đẩy mỗi người một lần cho các ngày
+  thiếu lượt chấm hay vắng. Sửa ngày, một đơn đã duyệt phủ ngày ấy, hay lượt dựng lại xoá hết chỗ lệch
+  thì việc `CLEARED`; kỳ lương của ngày ấy khoá thì `EXPIRED`; dựng hai lần không mở thêm gì.
 - **Tổng hợp nhóm** đếm đi muộn, chưa chấm, vắng không đơn và nghỉ phép của phạm vi người nhận (§9.4),
-  mỗi người nhận một việc mỗi ngày (`team-attendance:<id đăng nhập>:<ngày>`).
+  mỗi người nhận một việc mỗi ngày (`team-attendance:<id đăng nhập>:<ngày>`, chủ thể là chính đăng nhập
+  ấy). Lượt quét chạy mỗi mười lăm phút trong buổi sáng mở việc khi giờ vào ca sớm nhất trong phạm vi cộng
+  30 phút đã qua, đẩy một lần, và việc của ngày trước `EXPIRED` khi ngày mới tới.
 
 **Tin.** Tin không có trạng thái chung, nên không có việc đi kèm.
 
@@ -9309,9 +9313,12 @@ nghìn phiếu vì thế trả lời khi kỳ đã chốt, không đợi ba mư�
   `renotify` để máy vẫn rung. Việc đóng thì **không đẩy thêm** — một tin "đã xong" lúc nửa đêm chỉ
   đánh thức người không còn việc gì — còn ứng dụng đang mở thì tự đóng các tin cùng thẻ trên máy.
 - **Bàn nhận đẩy đã gom**: tin cho `ADMIN`, `HR`, `PAYROLL` gom trong `NOTICE_PUSH_GATHER_SECONDS` thành
-  một tin *4 việc mới đang chờ bạn*. Mức `CRITICAL` không bao giờ bị gom hay giữ lại.
+  một tin *4 việc mới đang chờ bạn*. `SHIFT_CHANGED` gom theo người ở mọi vai, vì một lần xếp ca hàng loạt
+  sinh nhiều dòng cho cùng một người. Mức `CRITICAL` không bao giờ bị gom hay giữ lại.
 - **Chạm là mở `/[locale]/notifications/open/<id>`**: trang ấy đánh dấu đã đọc rồi chuyển tới đúng bản
-  ghi bằng **một** bảng đường mở ở frontend — không có bảng thứ hai trong service worker để lệch.
+  ghi bằng **một** bảng đường mở ở frontend — không có bảng thứ hai trong service worker để lệch. Loại
+  không có dòng — chỉ `PUNCH_RECORDED` — đẩy với `id` rỗng, và chạm mở
+  `/[locale]/notifications/open/none?kind=<loại>`: trang ấy chuyển theo chính bảng ấy, không đánh dấu gì.
 - **Chữ màn khoá sinh lúc build** từ `messages/{vi,en}.json` ra `public/sw-words.js`, mang ba dòng đầu
   của file sinh (CLAUDE.md §2.9); không ai gõ câu vào service worker.
 - **Không có giờ yên lặng mặc định, không có bản tin gộp buổi sáng.** Ai thấy ồn thì tắt đẩy của đúng
