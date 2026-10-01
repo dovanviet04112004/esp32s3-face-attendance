@@ -22,11 +22,6 @@ function rowless(kind: string | null): Notice | null {
   return {
     id: "",
     kind: kind as NoticeKind,
-    requestId: null,
-    advanceId: null,
-    periodId: null,
-    contractId: null,
-    payslipId: null,
     daysLeft: null,
     daysWaited: null,
     approved: null,

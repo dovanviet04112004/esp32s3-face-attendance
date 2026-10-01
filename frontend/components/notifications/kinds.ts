@@ -74,19 +74,13 @@ export interface NoticeSubject {
   hidden: boolean;
   person: { id: number; code?: string; fullName?: string; department?: { id: string; name: string } | null } | null;
   request?: { kind: RequestKind; fromDate: string; toDate: string; days: string; leaveType: { code: string; name: string } | null } | null;
+  /** The record the notice opens when the subject sits inside it: a dispute's payslip, a payroll run's period. */
+  parent?: { type: string; id: string } | null;
 }
 
 export interface Notice {
   id: string;
   kind: NoticeKind;
-  requestId: string | null;
-  advanceId: string | null;
-  periodId: string | null;
-  contractId: string | null;
-  payslipId: string | null;
-  certificateId?: string | null;
-  profileChangeId?: string | null;
-  dependentId?: string | null;
   daysLeft: number | null;
   daysWaited: number | null;
   approved: boolean | null;
@@ -160,41 +154,49 @@ interface KindLook {
   path: (notice: Notice) => string | null;
 }
 
-/** The queue and the item a waiting notice opens, read off the one reference it carries. */
+// The inbox tab each kind of waiting record answers in; a request opens its own page.
+const WAITING_TABS: Readonly<Record<string, string>> = {
+  CERTIFICATE: "certificates",
+  PROFILE_CHANGE: "profileChanges",
+  DEPENDENT: "dependents",
+  DISPUTE: "disputes",
+};
+
+/** The queue and the item a waiting notice opens, read off its subject; a hidden one opens the inbox. */
 function waitingAt(notice: Notice): string {
-  if (notice.requestId) {
-    return `/leave/${notice.requestId}`;
+  const subject = notice.subject;
+  if (!subject?.id) {
+    return "/approvals";
   }
-  const [tab, id] = notice.certificateId
-    ? ["certificates", notice.certificateId]
-    : notice.profileChangeId
-      ? ["profileChanges", notice.profileChangeId]
-      : notice.dependentId
-        ? ["dependents", notice.dependentId]
-        : notice.advanceId
-          ? [notice.approved ? "advancesToPay" : "advancesToDecide", notice.advanceId]
-          : ["disputes", notice.subject?.type === "DISPUTE" && notice.subject.id ? notice.subject.id : (notice.payslipId ?? "")];
-  return `/approvals?tab=${tab}&open=${id}`;
+  if (subject.type === "REQUEST") {
+    return `/leave/${subject.id}`;
+  }
+  const tab = subject.type === "ADVANCE" ? (notice.approved ? "advancesToPay" : "advancesToDecide") : WAITING_TABS[subject.type];
+  return tab ? `/approvals?tab=${tab}&open=${subject.id}` : "/approvals";
 }
 
 function decidedAt(notice: Notice): string {
-  if (notice.certificateId) {
+  const subject = notice.subject;
+  if (subject?.type === "CERTIFICATE") {
     return "/me/letters";
   }
-  if (notice.profileChangeId || notice.dependentId) {
+  if (subject?.type === "PROFILE_CHANGE" || subject?.type === "DEPENDENT") {
     return "/me/profile";
   }
-  if (notice.advanceId) {
+  if (subject?.type === "ADVANCE") {
     return "/me/requests?tab=advances";
   }
-  if (notice.payslipId) {
+  if (subject?.type === "PAYSLIP" || subject?.type === "DISPUTE") {
     return payslipAt(notice);
   }
-  return notice.requestId ? `/me/requests?open=${notice.requestId}` : "/me/requests";
+  return subject?.type === "REQUEST" && subject.id ? `/me/requests?open=${subject.id}` : "/me/requests";
 }
 
+/** A payslip notice opens its slip, and a dispute's the slip it disputes. */
 function payslipAt(notice: Notice): string {
-  return notice.payslipId ? `/me/payslips?slip=${notice.payslipId}` : "/me/payslips";
+  const subject = notice.subject;
+  const slip = subject?.type === "PAYSLIP" ? subject.id : subject?.parent?.type === "PAYSLIP" ? subject.parent.id : null;
+  return slip ? `/me/payslips?slip=${slip}` : "/me/payslips";
 }
 
 // Every other code a kiosk's work carries is a hardware fault (KEHOACH 9.21.4).
@@ -257,7 +259,7 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     category: "REQUESTS",
     label: { key: "kindREQUEST_WAITING" },
     sentence: (notice) => ({
-      key: notice.advanceId && notice.approved ? "kindREQUEST_WAITING_pay" : "kindREQUEST_WAITING",
+      key: notice.subject?.type === "ADVANCE" && notice.approved ? "kindREQUEST_WAITING_pay" : "kindREQUEST_WAITING",
     }),
     path: waitingAt,
   },
@@ -299,7 +301,7 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
         : typeof notice.facts?.payslips === "number"
           ? { key: "kindPAYROLL_RUN_DONE_count", count: notice.facts.payslips }
           : { key: "kindPAYROLL_RUN_DONE" },
-    path: (notice) => (notice.periodId ? `/payroll/${notice.periodId}` : "/payroll"),
+    path: (notice) => (notice.subject?.parent?.type === "PAYROLL_PERIOD" ? `/payroll/${notice.subject.parent.id}` : "/payroll"),
   },
   CONTRACT_DUE: {
     icon: FileTextIcon,
