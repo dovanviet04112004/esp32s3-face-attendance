@@ -34,19 +34,29 @@ const REFRESH: Record<FeedName, string[]> = {
   event: ["devices", "releases"],
   device: ["devices", "releases"],
   change: [],
-  notice: [
-    "notifications",
-    "requests",
-    "advances",
-    "payslips",
-    "payslip-disputes",
-    "contracts",
-    "tax-year",
-    "certificates",
-    "profile-changes",
-    "dependents",
-  ],
+  notice: ["notifications"],
 };
+
+// The list a queue's work shows in; an item's key starts with its queue (KEHOACH 9.21.4).
+const QUEUE_LISTS: Record<string, string[]> = {
+  requests: ["requests"],
+  "advances-to-decide": ["advances"],
+  "advances-to-pay": ["advances"],
+  certificates: ["certificates"],
+  "profile-changes": ["profile-changes"],
+  disputes: ["payslip-disputes"],
+  dependents: ["dependents"],
+};
+
+// What a group's news makes stale beyond the bell itself.
+const CATEGORY_LISTS: Record<string, string[]> = {
+  REQUESTS: ["requests", "advances", "certificates", "profile-changes", "dependents", "payslip-disputes"],
+  PAY: ["payslips", "payslip-disputes", "advances", "tax-year"],
+  PEOPLE: ["contracts"],
+};
+
+// One notice can reach five hundred browsers at once; each asks again after a random wait.
+const NOTICE_SPREAD_MS = 3000;
 
 /** What a write under one route word makes stale beyond its own key (KEHOACH 9.4). */
 const SPILLS: Record<string, string[]> = {
@@ -128,6 +138,16 @@ function staleKeys(feed: FeedName, body: Record<string, unknown>): string[] {
   return words.flatMap((word) => [word, ...(SPILLS[word] ?? [])]);
 }
 
+function noticeKeys(body: Record<string, unknown>): string[] {
+  if (body.op === "item" && typeof body.key === "string") {
+    return [...REFRESH.notice, ...(QUEUE_LISTS[body.key.split(":")[0]] ?? [])];
+  }
+  if (body.op === "new" && typeof body.category === "string") {
+    return [...REFRESH.notice, ...(CATEGORY_LISTS[body.category] ?? [])];
+  }
+  return REFRESH.notice;
+}
+
 function gatherer(cache: QueryClient): { add: (keys: string[]) => void; stop: () => void } {
   const due = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -164,6 +184,7 @@ export function useFeedConnection(): void {
       auth: (hand) => hand({ token: useSession.getState().accessToken }),
     });
     const stale = gatherer(cache);
+    const spreading = new Set<ReturnType<typeof setTimeout>>();
     let joined = false;
     let closed = false;
     let renewedAt = 0;
@@ -201,13 +222,22 @@ export function useFeedConnection(): void {
         if (listed(feed, body)) {
           push(feed, body);
         }
-        stale.add(staleKeys(feed, body));
+        if (feed !== "notice") {
+          stale.add(staleKeys(feed, body));
+          return;
+        }
+        const timer = setTimeout(() => {
+          spreading.delete(timer);
+          stale.add(noticeKeys(body));
+        }, Math.random() * NOTICE_SPREAD_MS);
+        spreading.add(timer);
       });
     }
 
     return () => {
       closed = true;
       stale.stop();
+      spreading.forEach(clearTimeout);
       socket.close();
     };
   }, [cache, signedIn]);
