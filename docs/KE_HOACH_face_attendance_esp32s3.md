@@ -6360,14 +6360,16 @@ bị `Kconfig` loại khỏi bản `prod`.
    nhận lại.
 6. **Thu hồi** — admin gỡ máy: `api` xoá vé trên dòng, xoá cache xác thực của EMQX và **đá
    phiên đang mở** của máy (§7.4), nên máy mất broker ngay chứ không chờ tới lần nối sau. Kể cả
-   khi lời gọi ấy hỏng, `api` bỏ mọi gói lên từ máy không `APPROVED`. Kiosk nối lại thì bị từ
-   chối, nhưng **không tự xoá vé ngay**: nó hỏi `GET /devices/me` bằng chính vé ấy, và chỉ khi
-   câu trả lời là **401** mới xoá `device/jwt` rồi **quay về bước 3** với mã nhận máy mới. Cùng
-   lúc ấy nó **xoá bảng khuôn mặt** và danh sách chờ đăng ký, đưa số phiên bản danh sách về 0,
-   nên từ đó nó không nhận ra ai và không mở cửa; bản ghi chấm công chưa gửi thì giữ. Dòng trên
-   dashboard tự về "Chờ duyệt" lúc máy xin lại, không cần tải lại trang. Duyệt lại thì heartbeat
-   đầu tiên khai phiên bản 0 và server gửi lại cả danh sách (§7.5). Không hỏi được thì giữ vé và
-   thử lại broker, hỏi lại tối đa mỗi phút một lần.
+   khi lời gọi ấy hỏng, `api` bỏ mọi gói lên từ máy không `APPROVED`, và không gửi xuống nó danh
+   sách nào: gán người hay đồng bộ lại vào một máy chưa duyệt hay đã thu hồi bị từ chối
+   (`DEVICE_NOT_APPROVED`), nên một phiên sống sót không nhận được mẫu khuôn mặt nào. Kiosk nối
+   lại thì bị từ chối, nhưng **không tự xoá vé ngay**: nó hỏi `GET /devices/me` bằng chính vé ấy,
+   và chỉ khi câu trả lời là **401** mới xoá `device/jwt` rồi **quay về bước 3** với mã nhận máy
+   mới. Cùng lúc ấy nó **xoá bảng khuôn mặt** và danh sách chờ đăng ký, đưa số phiên bản danh sách
+   về 0, nên từ đó nó không nhận ra ai và không mở cửa; bản ghi chấm công chưa gửi thì giữ. Dòng
+   trên dashboard tự về "Chờ duyệt" lúc máy xin lại, không cần tải lại trang. Duyệt lại thì
+   heartbeat đầu tiên khai phiên bản 0 và server gửi lại cả danh sách (§7.5). Không hỏi được thì
+   giữ vé và thử lại broker, hỏi lại tối đa mỗi phút một lần.
 
 **Vé chết thì bảng khuôn mặt đi theo.** Một máy bị thu hồi là máy đã ra khỏi đội: có thể nó bị
 mang đi, có thể nó sắp bị thanh lý. Giữ bảng thì nó vẫn nhận ra nhân viên và mở cửa cho họ ở bất
