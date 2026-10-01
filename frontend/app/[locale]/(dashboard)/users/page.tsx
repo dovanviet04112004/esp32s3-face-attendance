@@ -27,7 +27,7 @@ import { useUrlState } from "@/lib/url-state";
 
 const ROLES: Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER", "EMPLOYEE", "VIEWER"];
 // The roles that read or decide as one person in the company (KEHOACH 9.4).
-const NEEDS_PERSON: ReadonlySet<Role> = new Set<Role>(["EMPLOYEE", "MANAGER", "PAYROLL"]);
+const NEEDS_PERSON: ReadonlySet<Role> = new Set<Role>(["EMPLOYEE", "MANAGER", "HR", "PAYROLL"]);
 const STATUSES = ["active", "pending", "locked"] as const;
 const kPage = 50;
 const kEmailMax = 128;
