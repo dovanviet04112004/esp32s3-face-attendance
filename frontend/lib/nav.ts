@@ -1,5 +1,6 @@
 import type { Icon as IconType } from "@phosphor-icons/react";
 import {
+  BellSimpleIcon,
   BooksIcon,
   BookOpenTextIcon,
   BriefcaseIcon,
@@ -203,6 +204,8 @@ export const NAV: NavGroup[] = [
       { href: "/users", key: "users", icon: UserGearIcon, roles: OPERATORS, section: "system" },
       { href: "/audit", key: "audit", icon: ScrollIcon, roles: OPERATORS, section: "system" },
       { href: "/settings", key: "settings", icon: GearIcon, roles: EVERYONE, topBar: true },
+      // A push lands here for any account; the page sends it on to the record (KEHOACH 9.21.4).
+      { href: "/notifications/open", key: "notifications", icon: BellSimpleIcon, roles: [...ROLES], unlisted: true },
     ],
   },
 ];
