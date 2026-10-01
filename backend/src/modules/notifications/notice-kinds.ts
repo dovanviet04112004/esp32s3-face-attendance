@@ -103,6 +103,14 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     defaults: { IN_APP: true, PUSH: true },
     facts: {},
   },
+  PAYROLL_RUN_DONE: {
+    category: "PAY",
+    level: "INFO",
+    receivers: ["ADMIN", "PAYROLL"],
+    item: false,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { failed: "boolean", payslips: "number", finishedAt: "number" },
+  },
   CONTRACT_DUE: {
     category: "PEOPLE",
     level: "ACTION",

@@ -580,6 +580,32 @@ export class PayrollService {
    *  recomputes the same run rather than doubling it.
    */
   async runNow(runId: string): Promise<PayrollRun> {
+    const ended = await this.computeRun(runId);
+    await this.tellEnded(ended);
+    return ended;
+  }
+
+  /** Close a run the worker gave up on as failed, and tell whoever pressed it. */
+  async failRun(runId: string): Promise<PayrollRun> {
+    const failed = await this.db.payrollRun.update({ where: { id: runId }, data: { state: "FAILED", finishedAt: new Date() } });
+    await this.tellEnded(failed);
+    return failed;
+  }
+
+  private async tellEnded(run: PayrollRun): Promise<void> {
+    if (run.createdById === null) {
+      return;
+    }
+    await this.notices.raise(run.createdById, "PAYROLL_RUN_DONE", {
+      runId: run.id,
+      periodId: run.periodId,
+      failed: run.state !== "DONE",
+      payslips: run.doneCount,
+      finishedAt: (run.finishedAt ?? new Date()).getTime(),
+    });
+  }
+
+  private async computeRun(runId: string): Promise<PayrollRun> {
     const run = await this.db.payrollRun.findUnique({
       where: { id: runId },
       include: { period: true },

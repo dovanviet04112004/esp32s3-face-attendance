@@ -45,8 +45,8 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
       const body = job?.data as PayrollJob | undefined;
       // Out of attempts, so the run says so rather than sitting on RUNNING.
       if (body?.type === "run" && job !== undefined && job.attemptsMade >= (job.opts.attempts ?? 1)) {
-        void this.db.payrollRun
-          .update({ where: { id: body.runId }, data: { state: "FAILED", finishedAt: new Date() } })
+        void this.payroll
+          .failRun(body.runId)
           .then(() => this.announceRun())
           .catch(() => undefined);
       }

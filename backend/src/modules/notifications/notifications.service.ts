@@ -51,10 +51,14 @@ export interface NoticeFacts {
   profileChangeId?: string;
   dependentId?: string;
   disputeId?: string;
+  runId?: string;
   daysLeft?: number;
   daysWaited?: number;
   approved?: boolean;
   outcome?: NoticeOutcome;
+  failed?: boolean;
+  payslips?: number;
+  finishedAt?: number;
 }
 
 // The first reference present names the subject; an answered dispute carries its slip as well.
@@ -67,6 +71,7 @@ const SUBJECT_REFS: readonly (readonly [keyof NoticeFacts, NoticeSubject])[] = [
   ["disputeId", "DISPUTE"],
   ["payslipId", "PAYSLIP"],
   ["contractId", "CONTRACT"],
+  ["runId", "PAYROLL_RUN"],
 ];
 
 /** The facts a kind declares, read off the references a caller passed (KEHOACH 9.21.4). */
@@ -76,14 +81,11 @@ function storedFacts(kind: NoticeKind, facts: NoticeFacts): Record<string, unkno
     facts.outcome ??
     (facts.approved === undefined ? undefined : !facts.approved ? "REJECTED" : facts.certificateId ? "ISSUED" : "APPROVED");
   const held: Record<string, unknown> = {};
-  if ("outcome" in declared && decided !== undefined) {
-    held.outcome = decided;
-  }
-  if ("daysWaited" in declared && facts.daysWaited !== undefined) {
-    held.daysWaited = facts.daysWaited;
-  }
-  if ("daysLeft" in declared && facts.daysLeft !== undefined) {
-    held.daysLeft = facts.daysLeft;
+  for (const key of Object.keys(declared)) {
+    const value = key === "outcome" ? decided : facts[key as keyof NoticeFacts];
+    if (value !== undefined) {
+      held[key] = value;
+    }
   }
   return held;
 }

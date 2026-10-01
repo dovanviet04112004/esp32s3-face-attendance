@@ -1387,6 +1387,7 @@ enum NoticeKind {
   ADVANCE_PAID
   CONTRACT_DUE
   PROBATION_DUE
+  PAYROLL_RUN_DONE
 }
 
 enum NoticeChannel {
@@ -1417,6 +1418,7 @@ enum NoticeSubject {
   DISPUTE
   PAYSLIP
   CONTRACT
+  PAYROLL_RUN
 }
 
 enum NoticeOutcome {
