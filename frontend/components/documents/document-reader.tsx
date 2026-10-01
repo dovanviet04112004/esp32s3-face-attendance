@@ -43,7 +43,7 @@ export function DocumentReader({ only = "", linked = "", onUnlink }: { only?: Re
   const notify = useNotify();
   const mine = useMyDocuments();
   const [picked, setPicked] = useState<ToRead | null>(null);
-  const open = picked ?? mine.data?.find((row) => row.documentId === linked) ?? null;
+  const open = picked ?? mine.data?.find((row) => row.documentId === linked || row.versionId === linked) ?? null;
 
   function setOpen(next: ToRead | null): void {
     setPicked(next);

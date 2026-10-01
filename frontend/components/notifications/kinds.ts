@@ -1,12 +1,17 @@
 import type { Icon as IconType } from "@phosphor-icons/react";
 import {
+  CalculatorIcon,
   CalendarDotsIcon,
   ChatCircleTextIcon,
   CheckSquareIcon,
   CoinsIcon,
+  DatabaseIcon,
+  DeviceMobileIcon,
   FileTextIcon,
   HourglassMediumIcon,
+  ListChecksIcon,
   ReceiptIcon,
+  SignatureIcon,
   TimerIcon,
   TrayIcon,
 } from "@phosphor-icons/react";
@@ -20,7 +25,12 @@ export type NoticeKind =
   | "DISPUTE_ANSWERED"
   | "ADVANCE_PAID"
   | "CONTRACT_DUE"
-  | "PROBATION_DUE";
+  | "PROBATION_DUE"
+  | "PAYROLL_RUN_DONE"
+  | "BACKUP_ALERT"
+  | "KIOSK_ALERT"
+  | "TASK_ASSIGNED"
+  | "DOCUMENT_TO_SIGN";
 
 export type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
 
@@ -41,8 +51,9 @@ export interface Notice {
   readAt: string | null;
   leftAt: string | null;
   createdAt: string;
+  facts?: Readonly<Record<string, unknown>>;
   /** Who the notice is about, as the reader may see them now; null or hidden leaves no way in. */
-  subject?: { hidden: boolean; person: { id: number } | null } | null;
+  subject?: { hidden: boolean; id?: string | null; person: { id: number } | null } | null;
 }
 
 /** The catalogue keys under "notices" that name a notice. */
@@ -57,7 +68,21 @@ export type NoticeSentence =
   | "kindDISPUTE_ANSWERED"
   | "kindADVANCE_PAID"
   | "kindCONTRACT_DUE"
-  | "kindPROBATION_DUE";
+  | "kindPROBATION_DUE"
+  | "kindPAYROLL_RUN_DONE"
+  | "kindPAYROLL_RUN_DONE_count"
+  | "kindPAYROLL_RUN_DONE_failed"
+  | "kindBACKUP_ALERT"
+  | "kindKIOSK_ALERT"
+  | "kindKIOSK_ALERT_offline"
+  | "kindKIOSK_ALERT_pending"
+  | "kindKIOSK_ALERT_fault"
+  | "kindKIOSK_ALERT_update"
+  | "kindTASK_ASSIGNED"
+  | "kindTASK_ASSIGNED_due"
+  | "kindTASK_ASSIGNED_late"
+  | "kindDOCUMENT_TO_SIGN"
+  | "kindDOCUMENT_TO_SIGN_waiting";
 
 interface KindLook {
   icon: IconType;
@@ -104,6 +129,19 @@ function decidedAt(notice: Notice): string {
 
 function payslipAt(notice: Notice): string {
   return notice.payslipId ? `/me/payslips?slip=${notice.payslipId}` : "/me/payslips";
+}
+
+// Every other code a kiosk's work carries is a hardware fault (KEHOACH 9.21.4).
+const KIOSK_SENTENCE: Readonly<Record<string, NoticeSentence>> = {
+  OFFLINE: "kindKIOSK_ALERT_offline",
+  PENDING: "kindKIOSK_ALERT_pending",
+  OTA_FAILED: "kindKIOSK_ALERT_update",
+  OTA_ROLLED_BACK: "kindKIOSK_ALERT_update",
+};
+
+function kioskSentence(notice: Notice): NoticeSentence {
+  const code = notice.facts?.code;
+  return typeof code === "string" ? (KIOSK_SENTENCE[code] ?? "kindKIOSK_ALERT_fault") : "kindKIOSK_ALERT";
 }
 
 function personAt(notice: Notice, tab = ""): string | null {
@@ -161,6 +199,18 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     sentence: () => ({ key: "kindADVANCE_PAID" }),
     path: () => "/me/requests?tab=advances",
   },
+  PAYROLL_RUN_DONE: {
+    icon: CalculatorIcon,
+    category: "PAY",
+    label: { key: "kindPAYROLL_RUN_DONE" },
+    sentence: (notice) =>
+      notice.facts?.failed === true
+        ? { key: "kindPAYROLL_RUN_DONE_failed" }
+        : typeof notice.facts?.payslips === "number"
+          ? { key: "kindPAYROLL_RUN_DONE_count", count: notice.facts.payslips }
+          : { key: "kindPAYROLL_RUN_DONE" },
+    path: (notice) => (notice.periodId ? `/payroll/${notice.periodId}` : "/payroll"),
+  },
   CONTRACT_DUE: {
     icon: FileTextIcon,
     category: "PEOPLE",
@@ -174,6 +224,37 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     label: { key: "kindPROBATION_DUE", count: kProbationDays },
     sentence: (notice) => ({ key: "kindPROBATION_DUE", count: notice.daysLeft ?? kProbationDays }),
     path: (notice) => personAt(notice),
+  },
+  BACKUP_ALERT: {
+    icon: DatabaseIcon,
+    category: "SYSTEM",
+    label: { key: "kindBACKUP_ALERT" },
+    sentence: () => ({ key: "kindBACKUP_ALERT" }),
+    path: () => null,
+  },
+  KIOSK_ALERT: {
+    icon: DeviceMobileIcon,
+    category: "SYSTEM",
+    label: { key: "kindKIOSK_ALERT" },
+    sentence: (notice) => ({ key: kioskSentence(notice) }),
+    path: (notice) => (notice.subject?.id && !notice.subject.hidden ? `/devices/${notice.subject.id}` : "/devices"),
+  },
+  TASK_ASSIGNED: {
+    icon: ListChecksIcon,
+    category: "PEOPLE",
+    label: { key: "kindTASK_ASSIGNED" },
+    sentence: (notice) => ({
+      key: notice.daysLeft === null ? "kindTASK_ASSIGNED" : notice.daysLeft < 0 ? "kindTASK_ASSIGNED_late" : "kindTASK_ASSIGNED_due",
+    }),
+    path: (notice) => (notice.facts?.owner === "SELF" ? "/me" : personAt(notice, "?tab=checklist")),
+  },
+  DOCUMENT_TO_SIGN: {
+    icon: SignatureIcon,
+    category: "PEOPLE",
+    label: { key: "kindDOCUMENT_TO_SIGN" },
+    sentence: (notice) =>
+      notice.daysWaited === null ? { key: "kindDOCUMENT_TO_SIGN" } : { key: "kindDOCUMENT_TO_SIGN_waiting", count: notice.daysWaited },
+    path: (notice) => (notice.subject?.id ? `/me/documents?doc=${notice.subject.id}` : "/me/documents"),
   },
   CONTRACT_ENDING: {
     icon: CalendarDotsIcon,

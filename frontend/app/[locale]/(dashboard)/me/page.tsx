@@ -1,8 +1,8 @@
 "use client";
 
 import { Button, Empty, LayerCard, Tabs } from "@cloudflare/kumo";
-import { CalendarPlusIcon, CaretRightIcon, CheckCircleIcon, FileTextIcon, UserCircleIcon, XCircleIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { CalendarPlusIcon, CaretRightIcon, CheckCircleIcon, FileTextIcon, ListChecksIcon, UserCircleIcon, XCircleIcon } from "@phosphor-icons/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useNow, useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
@@ -11,6 +11,7 @@ import { StatePill as RequestPill, useRequestWords, type RequestRow } from "@/co
 import { InboxPreview, useShortSpan } from "@/components/requests/inbox-preview";
 import { RequestForm } from "@/components/requests/request-form";
 import { Failed } from "@/components/ui/failed";
+import { useNotify } from "@/components/ui/notify";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
@@ -72,6 +73,14 @@ interface ToRead {
   ackAt: string | null;
 }
 
+interface OwnTask {
+  id: string;
+  title: string;
+  ownerRole: "SELF" | "MANAGER" | "HR";
+  dueOn: string;
+  doneAt: string | null;
+}
+
 interface Person {
   id: number;
   code: string;
@@ -100,6 +109,7 @@ const kRecentTake = 20;
 const kDecidedShown = 3;
 const kTeamShown = 6;
 const kWeekDays = 7;
+const CHECKLIST_KINDS = ["ONBOARDING", "OFFBOARDING"] as const;
 // A turn-down stays on the to-do list this long; the request list keeps it after that.
 const kFreshDays = 7;
 
@@ -562,6 +572,28 @@ export default function MyPage() {
     enabled: has,
     queryFn: () => unlessMissing<ToRead[]>("/me/documents"),
   });
+  const checklists = useQuery({
+    queryKey: ["checklist", "mine", employeeId],
+    enabled: has,
+    queryFn: async () =>
+      (
+        await Promise.all(
+          CHECKLIST_KINDS.map(
+            async (kind) => (await api.get<{ tasks: OwnTask[] } | "">(`/employees/${employeeId}/checklist?kind=${kind}`)).data,
+          ),
+        )
+      ).flatMap((run) => (run ? run.tasks : [])),
+  });
+  const cache = useQueryClient();
+  const notify = useNotify();
+  const finish = useMutation({
+    mutationFn: async (taskId: string) => (await api.post(`/checklist-tasks/${taskId}/finish`, {})).data,
+    onSuccess: () => {
+      notify.done(t("todoTaskFinished"));
+      void cache.invalidateQueries({ queryKey: ["checklist"] });
+    },
+    onError: (fell: unknown) => notify.failed(fell),
+  });
   const latest = useQuery({
     queryKey: ["payslips", "mine", employeeId, "latest"],
     enabled: has,
@@ -591,6 +623,7 @@ export default function MyPage() {
     .sort((left, right) => decidedAt(right) - decidedAt(left));
   const turnedDown = decided.filter((row) => row.state === "REJECTED" && now.getTime() - decidedAt(row) < kFreshDays * kDayMs);
   const unsigned = (documents.data ?? []).filter((one) => one.ackAt === null);
+  const ownTasks = (checklists.data ?? []).filter((task) => task.ownerRole === "SELF" && task.doneAt === null);
   const mine = pending.data?.rows ?? [];
   const lines = [...mine, ...decided.slice(0, kDecidedShown)];
   const year = today.slice(0, 4);
@@ -612,9 +645,32 @@ export default function MyPage() {
         </>
       ) : null}
 
-      {unsigned.length + turnedDown.length > 0 ? (
+      {unsigned.length + turnedDown.length + ownTasks.length > 0 ? (
         <Card title={t("todoTitle")}>
           <ul className="flex flex-col">
+            {ownTasks.map((task) => {
+              const due = task.dueOn.slice(0, 10);
+              return (
+                <li key={task.id} className="flex min-h-12 items-center gap-3 border-b border-kumo-hairline px-4 py-2.5 last:border-0">
+                  <ListChecksIcon size={18} className="shrink-0 text-kumo-subtle" aria-hidden />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate">{task.title}</span>
+                    <span className={cn("text-sm tabular-nums", due < today ? "text-kumo-warning" : "text-kumo-subtle")}>
+                      {t("todoTaskDue", { date: format.dateTime(dayOnly(due), { day: "numeric", month: "numeric" }) })}
+                    </span>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={finish.isPending && finish.variables === task.id}
+                    disabled={finish.isPending}
+                    onClick={() => finish.mutate(task.id)}
+                  >
+                    {t("todoTaskDone")}
+                  </Button>
+                </li>
+              );
+            })}
             {unsigned.map((one) => (
               <RowLink key={one.versionId} href="/me/documents">
                 <FileTextIcon size={18} className="shrink-0 text-kumo-subtle" aria-hidden />
