@@ -25,6 +25,8 @@ interface OpenedAccount {
 
 // The top bar is 58 px and sticks, so a section scrolled to lands just under it.
 const kTopBarPx = 72;
+// Tall enough to scroll the last card under the top bar: 100svh less scroll-mt-20 and the page's bottom padding.
+const kLastCardRoom = "md:min-h-[calc(100svh-7rem)]";
 const kUserScroll = ["wheel", "touchmove", "keydown"] as const;
 
 function onScroll(changed: () => void): () => void {
@@ -203,23 +205,25 @@ export default function SettingsPage() {
             </Section>
           ) : null}
 
-          <Section id="account" title={t("accountTitle")}>
-            <div className="w-full">
-              <Facts rows={[[t("role"), role ? roleName(role) : nav("account")]]} />
-            </div>
-            <div className="flex w-full flex-col gap-3 border-t border-kumo-hairline pt-3">
-              <p className="font-medium">{t("passwordTitle")}</p>
-              <p className="text-kumo-subtle">{t("passwordLead")}</p>
-              <div className="flex flex-wrap gap-2">
-                <LinkButton href="/change-password" variant="secondary" icon={KeyIcon}>
-                  {t("passwordGo")}
-                </LinkButton>
-                <Button variant="secondary-destructive" icon={SignOutIcon} loading={leaving.isPending} onClick={() => leaving.mutate()}>
-                  {nav("signOut")}
-                </Button>
+          <div className={kLastCardRoom}>
+            <Section id="account" title={t("accountTitle")}>
+              <div className="w-full">
+                <Facts rows={[[t("role"), role ? roleName(role) : nav("account")]]} />
               </div>
-            </div>
-          </Section>
+              <div className="flex w-full flex-col gap-3 border-t border-kumo-hairline pt-3">
+                <p className="font-medium">{t("passwordTitle")}</p>
+                <p className="text-kumo-subtle">{t("passwordLead")}</p>
+                <div className="flex flex-wrap gap-2">
+                  <LinkButton href="/change-password" variant="secondary" icon={KeyIcon}>
+                    {t("passwordGo")}
+                  </LinkButton>
+                  <Button variant="secondary-destructive" icon={SignOutIcon} loading={leaving.isPending} onClick={() => leaving.mutate()}>
+                    {nav("signOut")}
+                  </Button>
+                </div>
+              </div>
+            </Section>
+          </div>
         </div>
       </PageLayout>
     </>
