@@ -7515,8 +7515,15 @@ bị lọc chỉ còn bằng **số dòng trùng `ts`**, không còn theo độ 
 trang 1, 100, 500, 1.000; `OFFSET` **1,08 → 2,24 → 4,98 → 7,26 ms**. Con trỏ đắt hơn ở trang
 đầu và phẳng từ đó trở đi — đúng thứ cần: trang thứ 1.000 rẻ ngang trang đầu.
 
-**4. Tìm tên có dấu đi bằng chỉ mục ba chữ.** `ILIKE '%nguyen%'` không dùng được chỉ mục B-tree.
-Cần `pg_trgm` với chỉ mục GIN trên tên và mã.
+**4. Tìm theo chữ không phân biệt dấu, và đi bằng chỉ mục ba chữ.** Người ta gõ "nguyen" để tìm
+"Nguyễn": bàn phím điện thoại thường không bật bộ gõ, và bộ gõ có bật cũng hay bị tắt cho nhanh.
+So khớp vì vậy chạy trên chữ đã gập, `f_unaccent(lower(x))`: `f_unaccent` là vỏ `IMMUTABLE` bọc
+`unaccent` của Postgres, vì bản gốc chỉ `STABLE` nên không vào được chỉ mục; bảng gập của nó đưa cả
+`đ` về `d`. Từ khoá được chuẩn hoá NFC rồi mới gập, vì chữ gõ ở dạng tổ hợp (NFD) không khớp bảng
+gập. `ILIKE '%nguyen%'` không dùng được B-tree, nên tên và mã có chỉ mục GIN `gin_trgm_ops` trên
+**chính biểu thức đã gập**, và truy vấn phải viết đúng biểu thức ấy thì chỉ mục mới được dùng. Dấu
+`%`, `_` trong từ khoá được thoát, để người gõ không vô tình viết mẫu. Luật này áp cho ô tìm chung,
+danh bạ và ô chọn người.
 
 **5. Việc sống lâu hơn một request thì vào hàng đợi.** Chạy lương cho ba mươi nghìn người không
 phải là một lượt HTTP. `PayrollRun` chia lô theo phòng ban, mỗi lô một job BullMQ, có `attempts`
@@ -8663,8 +8670,28 @@ lương gắn vào nó — thêm vào sau là sửa mọi truy vấn.
 máy để mở cổng nhân viên. Bốn màn của §9.10 dành cho `EMPLOYEE` phải dùng được trên màn hình
 hẹp; phần quản trị thì không cần.
 
-**Tìm kiếm toàn cục.** Một ô tìm ra người, phòng ban, đơn, phiếu lương. Ở ba mươi nghìn hồ sơ,
-điều hướng bằng menu là quá chậm cho việc HR làm nhiều nhất trong ngày: tìm một người.
+**Tìm kiếm toàn cục.** Ở ba mươi nghìn hồ sơ, điều hướng bằng menu là quá chậm cho việc HR làm
+nhiều nhất trong ngày: tìm một người. Một ô (`/` hoặc Ctrl K) tìm ra mọi thứ người dùng mở được, gập
+dấu theo §9.9 luật 4, gợi ý ngay từ chữ đang gõ kể cả khi bộ gõ chưa chốt từ:
+
+| Loại | Khớp theo | Ai thấy (§9.4) |
+|---|---|---|
+| Trang | tên trang theo ngôn ngữ đang dùng | trang vai ấy mở được |
+| Người | tên, mã | phạm vi nhân viên của vai |
+| Phòng ban | tên, mã | ai mở được danh bạ |
+| Đơn: nghỉ, tăng ca, giải trình, công tác, làm từ xa | người gửi, lý do, tên loại ("nghỉ phép"), ngày ("23/09", "23/09/2026") | bàn nhân sự; quản lý theo cây; người khác chỉ đơn của mình |
+| Giấy xác nhận, sửa thông tin, khiếu nại phiếu lương, người phụ thuộc, tạm ứng | người gửi, tên loại | bàn nhân sự hoặc bàn lương theo loại; người khác chỉ của mình |
+| Phiếu lương | người, tháng ("08/2026") | bàn lương hoặc chính mình; không có bản nháp |
+| Kỳ lương | tháng ("08/2026", "2026-08") | bàn lương |
+| Kiosk | mã, tên, vị trí | ADMIN |
+| Tài sản | mã, serial, tên | bàn nhân sự |
+| Tài liệu | tiêu đề | ai đọc được tài liệu ấy |
+
+Mỗi dòng mở tới trang mà vai ấy mở được (`lib/nav.ts`), đúng bản ghi ấy chứ không phải danh sách
+chung; không có trang nào cho vai ấy thì không trả dòng đó, vì một dòng đá người dùng về trang chủ là
+một đường cụt. Mỗi loại tối đa 5 dòng, khớp đầu chữ xếp trước khớp giữa chữ, rồi mới nhất trước; loại
+nào còn hơn 5 thì có dòng *Xem tất cả* mở trang danh sách của loại ấy với sẵn từ khoá, vì §9.12 cấm
+cắt im lặng.
 
 ### 9.21 Điện thoại: thiết bị chính của phần lớn người dùng
 
