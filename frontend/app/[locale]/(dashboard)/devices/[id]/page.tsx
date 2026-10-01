@@ -138,7 +138,7 @@ export default function DevicePage() {
   const offerStatus = useQuery({
     queryKey: ["releases", "status", id],
     enabled: role === "ADMIN",
-    queryFn: async () => (await api.get<OfferStatus | null>(`/releases/status/${id}`)).data,
+    queryFn: async () => (await api.get<OfferStatus | "">(`/releases/status/${id}`)).data || null,
     refetchInterval: (query) => (MOVING.has(query.state.data?.state) ? STATUS_POLL_MS : false),
   });
 
