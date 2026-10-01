@@ -4,7 +4,7 @@ import { Button, LayerCard, LinkButton, TableOfContents, Tabs, useTableOfContent
 import { EnvelopeSimpleIcon, KeyIcon, SignOutIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useTransition, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 
 import { useSignOut } from "@/components/nav/account-menu";
 import { NoticePreferences } from "@/components/notifications/notice-prefs";
@@ -25,6 +25,46 @@ interface OpenedAccount {
 
 // The top bar is 58 px and sticks, so a section scrolled to lands just under it.
 const kTopBarPx = 72;
+const kUserScroll = ["wheel", "touchmove", "keydown"] as const;
+
+function onScroll(changed: () => void): () => void {
+  window.addEventListener("scroll", changed, { passive: true });
+  window.addEventListener("resize", changed);
+  return () => {
+    window.removeEventListener("scroll", changed);
+    window.removeEventListener("resize", changed);
+  };
+}
+
+function scrolledToEnd(): boolean {
+  const end = document.documentElement.scrollHeight - window.innerHeight;
+  return end > 2 && window.scrollY >= end - 2;
+}
+
+// Kumo lights the topmost section in view, so the short sections at the foot of the page never win by scrolling.
+function useSectionSpy(ids: string[]) {
+  const spy = useTableOfContentsActiveId({ ids, offset: kTopBarPx });
+  const [picked, setPicked] = useState<string | null>(null);
+  const atEnd = useSyncExternalStore(onScroll, scrolledToEnd, () => false);
+  useEffect(() => {
+    const release = () => setPicked(null);
+    for (const type of kUserScroll) {
+      window.addEventListener(type, release, { passive: true });
+    }
+    return () => {
+      for (const type of kUserScroll) {
+        window.removeEventListener(type, release);
+      }
+    };
+  }, []);
+  return {
+    activeId: picked ?? (atEnd ? (ids.at(-1) ?? null) : spy.activeId),
+    selectSection: (id: string) => {
+      setPicked(id);
+      spy.selectSection(id);
+    },
+  };
+}
 
 function Section({ id, title, lead, children }: { id: string; title: string; lead?: string; children: ReactNode }) {
   return (
@@ -71,7 +111,7 @@ export default function SettingsPage() {
     ...(role === "ADMIN" ? [{ id: "provision", title: t("provisionTitle") }] : []),
     { id: "account", title: t("accountTitle") },
   ];
-  const { activeId, selectSection } = useTableOfContentsActiveId({ ids: sections.map((one) => one.id), offset: kTopBarPx });
+  const { activeId, selectSection } = useSectionSpy(sections.map((one) => one.id));
 
   function choose(next: string) {
     if (next === locale || !routing.locales.includes(next as Locale)) {
