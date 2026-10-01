@@ -405,7 +405,6 @@ function Accounts() {
               <div className="flex flex-col gap-4">
                 <Select
                   label={t("role")}
-                  hideLabel={false}
                   value={draft.role}
                   onValueChange={(next) => setDraft({ ...draft, role: (String(next ?? "VIEWER") as Role) })}
                   items={Object.fromEntries(ROLES.map((one) => [one, roleName(one)]))}

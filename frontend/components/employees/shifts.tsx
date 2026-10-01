@@ -210,7 +210,6 @@ export function ShiftCard({ employeeId, fullName }: { employeeId: number; fullNa
             <div className="flex flex-col gap-4">
               <Select
                 label={t("shiftPick")}
-                hideLabel={false}
                 value={shiftId}
                 onValueChange={(next) => setShiftId(String(next ?? ""))}
                 items={Object.fromEntries(offered.map((one) => [one.id, `${one.name} · ${hours(one)}`]))}

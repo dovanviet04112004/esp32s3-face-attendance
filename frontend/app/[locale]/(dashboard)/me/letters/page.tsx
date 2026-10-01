@@ -190,7 +190,6 @@ function MyLetters() {
             >
               <Select
                 label={t("kind")}
-                hideLabel={false}
                 className="w-full"
                 value={kind}
                 onValueChange={(next) => setKind(String(next ?? "EMPLOYMENT") as Kind)}
@@ -199,7 +198,6 @@ function MyLetters() {
               {kind === "INCOME" ? (
                 <Select
                   label={t("months")}
-                  hideLabel={false}
                   className="w-full"
                   value={String(months)}
                   onValueChange={(next) => setMonths(Number(next ?? DEFAULT_MONTHS))}

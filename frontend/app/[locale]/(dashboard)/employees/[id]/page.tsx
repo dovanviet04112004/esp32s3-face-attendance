@@ -803,7 +803,6 @@ export default function EmployeePage() {
           <LayerDialog.Body>
             <Select
               label={t("kioskPick")}
-              hideLabel={false}
               value={picked}
               onValueChange={(next) => setPicked(String(next ?? ""))}
               items={Object.fromEntries(free.map((one) => [one.id, one.location ? `${one.name ?? one.id} · ${one.location}` : (one.name ?? one.id)]))}

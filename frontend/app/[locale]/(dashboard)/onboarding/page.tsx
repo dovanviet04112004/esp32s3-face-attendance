@@ -515,7 +515,6 @@ function Onboarding() {
                   {draft.held === null ? (
                     <Select
                       label={t("kind")}
-                      hideLabel={false}
                       value={draft.kind}
                       onValueChange={(next) => setDraft({ ...draft, kind: String(next ?? "ONBOARDING") as Kind })}
                       items={{ ONBOARDING: t("kindONBOARDING"), OFFBOARDING: t("kindOFFBOARDING") }}
@@ -557,7 +556,6 @@ function Onboarding() {
                       />
                       <Select
                         label={t("owner")}
-                        hideLabel={false}
                         value={one.owner}
                         onValueChange={(next) => patchItem(one.key, { owner: String(next ?? "HR") as Owner })}
                         items={Object.fromEntries(OWNERS.map((owner) => [owner, t(`owner${owner}`)]))}

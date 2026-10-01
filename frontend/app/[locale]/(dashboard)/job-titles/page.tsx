@@ -271,7 +271,6 @@ function JobTitles() {
                 />
                 <Select
                   label={optional(t("category"))}
-                  hideLabel={false}
                   className="w-full"
                   value={draft.category}
                   onValueChange={(next) => setDraft({ ...draft, category: (String(next ?? "") as Category | "") })}

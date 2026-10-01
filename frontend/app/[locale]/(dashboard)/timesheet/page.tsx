@@ -553,7 +553,6 @@ function Timesheet() {
                   <div className="flex flex-col gap-4">
                     <Select
                       label={t("correctState")}
-                      hideLabel={false}
                       value={state}
                       onValueChange={(next) => setState(next as DayState)}
                       items={stateItems}

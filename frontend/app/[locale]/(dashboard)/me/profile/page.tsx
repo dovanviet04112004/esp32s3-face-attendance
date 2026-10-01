@@ -222,7 +222,6 @@ function Dependents({ employeeId }: { employeeId: number }) {
               <Input label={t("dependentName")} required maxLength={kNameMax} value={name} onChange={(event) => setName(event.target.value)} />
               <Select
                 label={t("dependentRelation")}
-                hideLabel={false}
                 className="w-full"
                 value={relation}
                 onValueChange={(next) => setRelation(String(next ?? "CHILD") as Relation)}
@@ -431,7 +430,6 @@ function MyProfile() {
             >
               <Select
                 label={t("field")}
-                hideLabel={false}
                 className="w-full"
                 value={field}
                 description={held === null ? undefined : `${t("held")}: ${held}`}

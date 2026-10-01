@@ -834,7 +834,6 @@ function Org() {
                 {draft.held === null && !draft.parentId && (entities.data?.length ?? 0) > 1 ? (
                   <Select
                     label={t("entity")}
-                    hideLabel={false}
                     value={draft.entityId}
                     onValueChange={(next) => setDraft({ ...draft, entityId: String(next ?? "") })}
                     items={Object.fromEntries((entities.data ?? []).map((one) => [one.id, one.name]))}

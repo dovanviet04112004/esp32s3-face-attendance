@@ -236,7 +236,6 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
           <form id={kFormId} onSubmit={submit} className="flex flex-col gap-4">
             <Select
               label={t("kind")}
-              hideLabel={false}
               className="w-full"
               value={kind}
               onValueChange={(next) => setKind(String(next ?? "LEAVE") as RequestKind)}
@@ -253,7 +252,6 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
             ) : kind === "LEAVE" ? (
               <Select
                 label={t("leaveType")}
-                hideLabel={false}
                 className="w-full"
                 placeholder={t("leaveTypePick")}
                 loading={types.isPending}

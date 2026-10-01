@@ -515,7 +515,6 @@ function Directory() {
             <div className="grid items-start gap-4 sm:grid-cols-2">
               <Select
                 label={t("raiseDept")}
-                hideLabel={false}
                 value={raiseDept}
                 onValueChange={(next) => setRaiseDept(String(next ?? ""))}
                 items={{ "": t("raiseEveryone"), ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, `${one.code} · ${one.name}`])) }}

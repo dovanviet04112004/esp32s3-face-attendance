@@ -290,7 +290,6 @@ function MyPayslips() {
             <div className="flex flex-col gap-2 md:hidden">
               <Select
                 label={t("period")}
-                hideLabel={false}
                 className="w-full"
                 value={chosen ?? ""}
                 onValueChange={(next) => next && choose(String(next))}
@@ -400,7 +399,6 @@ function MyPayslips() {
             >
               <Select
                 label={d("line")}
-                hideLabel={false}
                 className="w-full"
                 value={lineCode}
                 onValueChange={(next) => setLineCode(String(next ?? ""))}

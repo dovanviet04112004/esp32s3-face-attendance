@@ -306,7 +306,6 @@ function Allowances() {
                 />
                 <Select
                   label={optional(t("d02Column"))}
-                  hideLabel={false}
                   className="w-full"
                   value={draft.d02Column}
                   onValueChange={(next) => setDraft({ ...draft, d02Column: String(next ?? "") })}

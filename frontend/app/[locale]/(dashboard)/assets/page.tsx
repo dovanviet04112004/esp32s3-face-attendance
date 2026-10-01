@@ -263,7 +263,6 @@ function Assets() {
     <>
       <Select
         label={t("condition")}
-        hideLabel={false}
         value={condition}
         onValueChange={(next) => setCondition(String(next ?? "GOOD") as Condition)}
         items={Object.fromEntries(CONDITIONS.map((one) => [one, t(`condition${one}`)]))}

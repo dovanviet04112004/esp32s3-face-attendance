@@ -292,7 +292,6 @@ export default function PayrollPage() {
               {manyEntities ? (
                 <Select
                   label={t("entity")}
-                  hideLabel={false}
                   value={entityId}
                   onValueChange={(next) => {
                     const chosen = String(next ?? kWholeCompany);

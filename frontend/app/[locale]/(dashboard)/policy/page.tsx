@@ -433,7 +433,6 @@ function PolicyPageBody() {
         <div className="mb-4 max-w-sm">
           <Select
             label={t("scope")}
-            hideLabel={false}
             value={scope}
             onValueChange={(next) => setUrl({ entity: String(next ?? "") })}
             items={scopeItems}
@@ -575,7 +574,6 @@ function PolicyPageBody() {
                   {manyEntities ? (
                     <Select
                       label={t("scope")}
-                      hideLabel={false}
                       value={draft.scope}
                       onValueChange={(next) => set({ scope: String(next ?? COMPANY) })}
                       items={scopeItems}
