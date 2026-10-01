@@ -223,7 +223,8 @@ describe("auth (e2e)", () => {
   });
 
   it("sets the refresh cookie HttpOnly and SameSite=Strict, so a page on another site never sends it", async () => {
-    const cookie = cookieFrom((await signIn(SIGNER_EMAIL, password)).headers);
+    const jar = ((await signIn(SIGNER_EMAIL, password)).headers["set-cookie"] ?? []) as unknown as string[];
+    const cookie = jar.find((line) => line.startsWith(`${REFRESH_COOKIE}=`)) ?? "";
     assert.match(cookie, /HttpOnly/);
     assert.match(cookie, /SameSite=Strict/);
   });
