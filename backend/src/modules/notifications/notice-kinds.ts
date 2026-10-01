@@ -65,6 +65,8 @@ export const TEAM_SUMMARY_AFTER_FIRST_SHIFT_MINUTES = 30;
 
 export const TEAM_SUMMARY_CRON = "*/15 5-11 * * *";
 
+export const KIOSK_BURST_QUIET_MINUTES = 60;
+
 /** Kinds whose pushes gather per person in every role, as a desk's always do: one bulk change writes many rows (KEHOACH 9.21.4). */
 export const GATHERED_KINDS: ReadonlySet<NoticeKind> = new Set<NoticeKind>(["SHIFT_CHANGED"]);
 

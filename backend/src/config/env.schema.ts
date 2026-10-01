@@ -128,6 +128,9 @@ export const envSchema = z
     NOTICE_PUSH_GATHER_SECONDS: z.coerce.number().int().min(0).max(3600).default(120),
     NOTICE_KEEP_DAYS: z.coerce.number().int().min(30).max(3650).default(180),
     KIOSK_OFFLINE_ALERT_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
+    KIOSK_SPOOF_BURST: z.coerce.number().int().min(2).max(1000).default(5),
+    KIOSK_UNKNOWN_BURST: z.coerce.number().int().min(2).max(1000).default(20),
+    KIOSK_BURST_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(10),
 
     MQTT_URL: z.string().min(1),
     MQTT_USERNAME: z.string().min(1),

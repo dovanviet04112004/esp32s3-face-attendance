@@ -11,7 +11,7 @@ import { KIOSK_EVENT, type KioskMessage } from "../../mqtt/mqtt.events.js";
 import { DEFAULT_MAIL_LOCALE, kioskSilentMail } from "../../payroll/mail-text.js";
 import { MailerService } from "../mailer.service.js";
 import { itemKey, NoticeItemsService } from "../notice-items.service.js";
-import { kebab } from "../notice-kinds.js";
+import { kebab, KIOSK_BURST_QUIET_MINUTES } from "../notice-kinds.js";
 
 type Reported = DeviceEvent["type"];
 
@@ -26,6 +26,10 @@ const FAULTS: ReadonlySet<Reported> = new Set<Reported>([
   "MODEL_LOAD_FAILED",
 ]);
 const UPDATE_FAILED: ReadonlySet<Reported> = new Set<Reported>(["OTA_FAILED", "OTA_ROLLED_BACK"]);
+const BURSTS: Partial<Record<Reported, { part: string; code: string; limit: "KIOSK_SPOOF_BURST" | "KIOSK_UNKNOWN_BURST" }>> = {
+  SPOOF_DETECTED: { part: "spoof", code: "SPOOF_BURST", limit: "KIOSK_SPOOF_BURST" },
+  UNKNOWN_FACE: { part: "unknown", code: "UNKNOWN_BURST", limit: "KIOSK_UNKNOWN_BURST" },
+};
 const kWatchCron = "*/5 * * * *";
 const kMinuteMs = 60_000;
 
@@ -36,7 +40,7 @@ interface Silent {
   lastSeenAt: Date | null;
 }
 
-/** A kiosk's own work for the ADMINs: waiting to join, silent past the limit, a fault, a failed update. */
+/** A kiosk's own work for the ADMINs: waiting to join, silent past the limit, a fault, a failed update, a burst. */
 @Injectable()
 export class KioskSweep implements OnModuleInit {
   private readonly log = new Logger(KioskSweep.name);
@@ -62,7 +66,7 @@ export class KioskSweep implements OnModuleInit {
    *  @ctx job | every five minutes; one silence is said once, the ADMINs mailed with it
    */
   async sweep(now: Date = new Date()): Promise<{ opened: number; closed: number }> {
-    const closed = await this.closeVanished();
+    const closed = await this.closeVanished(null, now);
     const minutes = this.config.get("KIOSK_OFFLINE_ALERT_MINUTES", { infer: true });
     const silent = await this.db.device.findMany({
       where: { status: "APPROVED", online: false, lastSeenAt: { lt: new Date(now.getTime() - minutes * kMinuteMs) } },
@@ -111,12 +115,17 @@ export class KioskSweep implements OnModuleInit {
   @OnEvent(KIOSK_EVENT.event)
   async onReport(message: KioskMessage<DeviceEvent>): Promise<void> {
     const reported = message.payload.type;
-    const part = FAULTS.has(reported) ? kebab(reported) : UPDATE_FAILED.has(reported) ? "update" : null;
+    const burst = BURSTS[reported];
+    const part = FAULTS.has(reported) ? kebab(reported) : UPDATE_FAILED.has(reported) ? "update" : (burst?.part ?? null);
     if (part === null) {
       return;
     }
     const device = await this.db.device.findUnique({ where: { id: message.deviceId }, select: { status: true } });
     if (device?.status !== "APPROVED") {
+      return;
+    }
+    if (burst) {
+      await this.countBurst(message, burst);
       return;
     }
     const errorCode = message.payload.errorCode;
@@ -127,6 +136,23 @@ export class KioskSweep implements OnModuleInit {
     );
   }
 
+  // Counted on the kiosk's own clock, the earlier ones only, so this event counts once whether or not its row has landed.
+  private async countBurst(message: KioskMessage<DeviceEvent>, burst: NonNullable<(typeof BURSTS)[Reported]>): Promise<void> {
+    const ref = { id: message.deviceId, part: burst.part };
+    const held = await this.db.noticeItem.findUnique({ where: { key: itemKey("KIOSK", ref) }, select: { state: true } });
+    if (held?.state === "OPEN") {
+      return;
+    }
+    const at = new Date(message.payload.ts);
+    const window = this.config.get("KIOSK_BURST_WINDOW_MINUTES", { infer: true }) * kMinuteMs;
+    const earlier = await this.db.deviceEvent.count({
+      where: { deviceId: message.deviceId, type: message.payload.type, ts: { gte: new Date(at.getTime() - window), lt: at } },
+    });
+    if (earlier + 1 >= this.config.get(burst.limit, { infer: true })) {
+      await this.items.open("KIOSK", { ...ref, employeeId: null }, { level: "WARNING", facts: { code: burst.code } });
+    }
+  }
+
   // A replayed copy is the broker's memory, not the kiosk speaking now (KEHOACH 7.5).
   @OnEvent(KIOSK_EVENT.status)
   async onStatus(message: KioskMessage<string>): Promise<void> {
@@ -135,10 +161,12 @@ export class KioskSweep implements OnModuleInit {
     }
   }
 
-  /** Close kiosk work whose reason is gone: a decided request to join, a kiosk heard again, a kiosk out of the fleet.
+  /** Close kiosk work whose reason is gone: a decided request to join, a kiosk heard again, a kiosk out of the fleet,
+   *  a burst followed by a quiet hour.
    *  @ctx any | the sweep, the hourly reconcile and a revoke call it; one UPDATE, then the rows read
    */
-  async closeVanished(deviceId: string | null = null): Promise<number> {
+  async closeVanished(deviceId: string | null = null, now: Date = new Date()): Promise<number> {
+    const quietSince = new Date(now.getTime() - KIOSK_BURST_QUIET_MINUTES * kMinuteMs);
     const shut = await this.db.$queryRaw<{ id: string }[]>`
       UPDATE "NoticeItem" i
          SET "state" = x."state"::"NoticeItemState", "outcome" = x."outcome"::"NoticeOutcome", "closedAt" = now()::timestamp(3)
@@ -150,11 +178,17 @@ export class KioskSweep implements OnModuleInit {
             FROM "NoticeItem" n
             LEFT JOIN "Device" d ON d."id" = n."subjectId"
            CROSS JOIN LATERAL (SELECT 'kiosk:' || n."subjectId" || ':pending' AS "key", 'kiosk:' || n."subjectId" || ':offline' AS "silent") p
+           CROSS JOIN LATERAL (
+             SELECT CASE n."key" WHEN 'kiosk:' || n."subjectId" || ':spoof' THEN 'SPOOF_DETECTED'
+                                 WHEN 'kiosk:' || n."subjectId" || ':unknown' THEN 'UNKNOWN_FACE' END AS "type"
+           ) b
            WHERE n."queue" = 'KIOSK' AND n."state" = 'OPEN'
              AND (${deviceId}::text IS NULL OR n."subjectId" = ${deviceId}::text)
              AND (d."id" IS NULL
                   OR (n."key" = p."key" AND d."status" <> 'PENDING')
-                  OR (n."key" <> p."key" AND (d."status" <> 'APPROVED' OR (n."key" = p."silent" AND d."online"))))
+                  OR (n."key" <> p."key" AND (d."status" <> 'APPROVED' OR (n."key" = p."silent" AND d."online")))
+                  OR (b."type" IS NOT NULL AND NOT EXISTS (
+                        SELECT 1 FROM "DeviceEvent" v WHERE v."deviceId" = n."subjectId" AND v."type" = b."type" AND v."ts" >= ${quietSince})))
         ) x
        WHERE i."id" = x."id" AND i."state" = 'OPEN'
       RETURNING i."id"
