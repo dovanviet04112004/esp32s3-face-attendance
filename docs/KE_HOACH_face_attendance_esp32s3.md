@@ -7133,11 +7133,24 @@ bị chép ra ngoài bàn nhân sự. Hai cách thu hẹp, theo loại dữ li�
   chính họ thì các cột `dateOfBirth`, `nationalId`, `taxCode`, `socialInsuranceNo`,
   `bankAccount`, `bankName` trả về rỗng. Xuất Excel chỉ dành cho `ADMIN`, `HR`, `PAYROLL`.
 
-**Không ai duyệt việc của chính mình.** Luật 2 của §9.18 áp cho **mọi** thứ duyệt được, không
-riêng đơn đổi hồ sơ: đơn phép và đơn sửa công, khiếu nại lương, người phụ thuộc, việc trong
-checklist mà một vai khác phụ trách. Người duyệt là người xin thì trả `SELF_DECISION`, kể cả
-khi người ấy là `ADMIN`. Hộp chờ duyệt vốn đã giấu đơn của chính mình; luật này chặn cả đường
-gọi thẳng API.
+**Không ai duyệt việc của chính mình.** Luật 2 của §9.17 mục 6 áp cho **mọi** thứ duyệt được,
+không riêng đơn đổi hồ sơ: đơn phép và đơn sửa công, sửa ngày công, khiếu nại lương, người phụ
+thuộc, tạm ứng, giấy xác nhận, việc trong checklist mà một vai khác phụ trách, mức lương, khoản
+thưởng và khoản chốt cuối, hợp đồng — tạo mới hay chuyển trạng thái —, và lịch nghỉ việc — đổi
+ngày hay huỷ. Người duyệt là người xin, hay là người mà việc ấy nói về, thì trả `SELF_DECISION`,
+kể cả khi người ấy là `ADMIN`. Hộp chờ duyệt vốn đã giấu đơn của chính mình; luật này chặn cả
+đường gọi thẳng API.
+
+**Luật ấy chỉ đứng được khi biết ai đứng sau tài khoản.** Phép so mã nhân viên của việc với mã
+nhân viên của người bấm không thấy gì khi tài khoản không gắn hồ sơ: rỗng thì khác mọi mã, nên
+một tài khoản bàn nhân sự không gắn hồ sơ **lọt qua mọi luật tự duyệt** — tự đặt lương mình, tự
+chốt khoản nghỉ việc của mình — mà không cần gian lận gì. Vì vậy `HR` và `PAYROLL` phải gắn đúng
+hồ sơ của người cầm tài khoản (đoạn giao vai dưới đây). Một tài khoản bàn nhân sự có từ trước mà
+chưa gắn thì vẫn đăng nhập và vẫn đọc được, nhưng mọi đường quyết định có luật tự duyệt từ chối
+nó bằng `DESK_NEEDS_EMPLOYEE` cho tới khi một `ADMIN` gắn hồ sơ. Khi việc tự nó cho biết người
+bấm chính là người xin — đơn đổi hồ sơ do chính tài khoản ấy gửi — thì câu trả lời vẫn là
+`SELF_DECISION`. `ADMIN` được để trống: người quản trị hệ thống không nhất thiết là nhân viên, và
+một `ADMIN` có hồ sơ thì luật tự duyệt vẫn chặn như mọi vai.
 
 **Luật này có một công cụ giữ, vì nó là loại luật sẽ mục.** `tools/check_routes.py` đọc mọi
 controller và fail khi một route **vừa không mang `@Roles` vừa không nhận `@CurrentViewer`** —
@@ -7223,10 +7236,13 @@ không nên là cùng một tài khoản: ai đổi được lương cơ bản r
 ai đối chiếu. Tách ra là bước rẻ nhất để có được điều đó.
 
 **Vai được giao trên màn `Tài khoản`, trừ `MANAGER` — vai ấy tự tính.** `ADMIN` giao được cả sáu
-vai. `EMPLOYEE`, `MANAGER` và `PAYROLL` phải gắn một hồ sơ nhân viên, vì cả ba đọc hoặc duyệt
-theo một người cụ thể trong công ty; `ADMIN`, `HR` và `VIEWER` gắn hoặc không. Tách `PAYROLL`
-mà không có đường giao `PAYROLL` thì cái tách ấy chỉ nằm trên giấy: chỉ còn `ADMIN` chạy được
-kỳ lương.
+vai. `EMPLOYEE` và `MANAGER` phải gắn một hồ sơ nhân viên, vì cả hai đọc theo một người cụ thể
+trong công ty (`ROLE_NEEDS_EMPLOYEE`). `HR` và `PAYROLL` phải gắn hồ sơ của chính người cầm tài
+khoản, vì luật tự duyệt ở trên chỉ thấy được người có hồ sơ (`DESK_NEEDS_EMPLOYEE`). `ADMIN` và
+`VIEWER` gắn hoặc không. Luật kiểm ở mọi lần mở tài khoản, mọi lần đổi vai và mọi lần đổi hay gỡ
+hồ sơ gắn kèm; khoá, mở khoá hay đổi email một tài khoản cũ chưa gắn thì không bị chặn, để quản
+trị viên luôn khoá được nó. Tách `PAYROLL` mà không có đường giao `PAYROLL` thì cái tách ấy chỉ
+nằm trên giấy: chỉ còn `ADMIN` chạy được kỳ lương.
 
 `MANAGER` thì **không ai phải nhớ mà giao**: một tài khoản `EMPLOYEE` có cấp dưới trực tiếp đang
 làm là `MANAGER`, hết cấp dưới thì về `EMPLOYEE`. Hệ tính lại mỗi khi `managerId` của ai đó đổi —
@@ -8067,7 +8083,9 @@ ngày cuối; ngày mới đã tới thì hồ sơ đóng ngay như ở lượt 
 lịch: `leaveDate` về rỗng và người ấy làm tiếp như chưa từng có lịch. Hồ sơ đã đóng thì không đổi,
 không huỷ được (`LEAVING_CLOSED`): mặt đã xoá, phiên đã chết, và một nút huỷ lúc ấy hứa trả lại
 thứ không trả lại được. Ghi nhận lần hai khi đã có lịch bị từ chối (`LEAVING_SCHEDULED`) để
-không ai vô tình ghi đè ngày của người khác.
+không ai vô tình ghi đè ngày của người khác. Không ai đổi hay huỷ lịch nghỉ của chính mình
+(`SELF_DECISION`, §9.4): người nhân sự bị cho nghỉ mà tự lùi ngày cuối của mình là tự giữ mình
+lại trên bảng lương.
 
 **Một người nghỉ việc không bao giờ bị xoá.** Bảng lương năm ngoái phải tra ra được họ. Khi hồ
 sơ đóng, cờ `active` tắt, tài khoản khoá, dữ liệu sinh trắc **xoá** (§7.5 — mẫu khuôn mặt là thứ
