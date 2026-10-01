@@ -1,14 +1,18 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Prisma, Shift, ShiftAssignment } from "@prisma/client";
 
 import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { namedFilter, PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { skipOf, type BulkSkip, type Chosen } from "../employees/bulk.service.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
+import { localDay } from "../timesheet/local-day.js";
 import type {
   AssignManyDto,
   AssignShiftDto,
@@ -60,6 +64,8 @@ export class ShiftsService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
+    private readonly notices: NotificationsService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   /**
@@ -162,10 +168,19 @@ export class ShiftsService {
   }
 
   async update(id: string, body: UpdateShiftDto): Promise<Shift> {
-    await this.get(id);
-    return this.db.shift.update({ where: { id }, data: body }).catch((error: unknown) => {
+    const held = await this.get(id);
+    const updated = await this.db.shift.update({ where: { id }, data: body }).catch((error: unknown) => {
       throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("SHIFT_NAME_TAKEN") : error;
     });
+    if (updated.startTime !== held.startTime || updated.endTime !== held.endTime || updated.graceMinutes !== held.graceMinutes) {
+      await this.tellChanged(
+        await this.db.shiftAssignment.findMany({
+          where: { shiftId: id, OR: [{ validTo: null }, { validTo: { gte: new Date(`${this.today()}T00:00:00.000Z`) } }] },
+          select: { employeeId: true, validFrom: true, validTo: true },
+        }),
+      );
+    }
+    return updated;
   }
 
   async deactivate(id: string): Promise<Shift> {
@@ -248,6 +263,7 @@ export class ShiftsService {
     });
     const landed = new Set(made.map((one) => one.employeeId));
     const done = rows.filter((one) => landed.has(one.employeeId));
+    await this.tellChanged(done.map((one) => ({ employeeId: one.employeeId, validFrom, validTo })));
     await this.audit.recordMany(
       done.map((one) => ({
         actorId,
@@ -263,8 +279,9 @@ export class ShiftsService {
 
   async assign(id: string, body: AssignShiftDto): Promise<ShiftAssignment> {
     await this.get(id);
+    let made: ShiftAssignment;
     try {
-      return await this.db.shiftAssignment.create({
+      made = await this.db.shiftAssignment.create({
         data: {
           shiftId: id,
           employeeId: body.employeeId,
@@ -281,6 +298,8 @@ export class ShiftsService {
       }
       throw error;
     }
+    await this.tellChanged([made]);
+    return made;
   }
 
   async unassign(id: string, assignmentId: string): Promise<void> {
@@ -291,6 +310,21 @@ export class ShiftsService {
       throw new NotFoundException("ASSIGNMENT_NOT_FOUND");
     }
     await this.db.shiftAssignment.delete({ where: { id: assignmentId } });
+    await this.tellChanged([found]);
+  }
+
+  private today(): string {
+    return localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true }));
+  }
+
+  // A change only to days gone tells nobody; the rest hear from the first day still ahead (KEHOACH 9.21.4).
+  private async tellChanged(spans: { employeeId: number; validFrom: Date; validTo: Date | null }[]): Promise<void> {
+    const today = this.today();
+    const ahead = spans.filter((one) => one.validTo === null || asDay(one.validTo) >= today);
+    await this.notices.raiseEachFor(
+      "SHIFT_CHANGED",
+      ahead.map((one) => ({ employeeId: one.employeeId, facts: { day: asDay(one.validFrom) > today ? asDay(one.validFrom) : today } })),
+    );
   }
 }
 

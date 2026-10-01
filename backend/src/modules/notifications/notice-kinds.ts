@@ -56,17 +56,17 @@ export const ATTENDANCE_OVERTIME_MINUTES = 30;
 /** The exception facts that push: a missing punch and an absence change pay, the rest stays in the bell (KEHOACH 9.21.4). */
 export const ATTENDANCE_PUSHED: readonly string[] = ["missing", "absent"];
 
-/** When the exceptions found overnight go out, one push per person, in APP_TIMEZONE (KEHOACH 9.21.4). */
 export const ATTENDANCE_PUSH_CRON = "30 8 * * *";
 
 /** Who reads a morning summary: a manager of their tree, the HR desk of the company (KEHOACH 9.21.4). */
 export const TEAM_READERS: readonly Role[] = ["ADMIN", "HR", "MANAGER"];
 
-/** Minutes after the earliest shift in a reader's scope starts that their summary opens (KEHOACH 9.21.4). */
-export const TEAM_SUMMARY_AFTER_MINUTES = 30;
+export const TEAM_SUMMARY_AFTER_FIRST_SHIFT_MINUTES = 30;
 
-/** When the morning summaries are looked for, every fifteen minutes through the morning, in APP_TIMEZONE. */
 export const TEAM_SUMMARY_CRON = "*/15 5-11 * * *";
+
+/** Kinds whose pushes gather per person in every role, as a desk's always do: one bulk change writes many rows (KEHOACH 9.21.4). */
+export const GATHERED_KINDS: ReadonlySet<NoticeKind> = new Set<NoticeKind>(["SHIFT_CHANGED"]);
 
 /** Roles whose login opens the approvals inbox (KEHOACH 9.15). */
 export const INBOX_ROLES: readonly Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
@@ -191,7 +191,6 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     defaults: { IN_APP: true, PUSH: true },
     facts: { daysWaited: "number" },
   },
-  // The person explains the day or lets it go; it closes itself once the day settles (KEHOACH 9.21.4).
   ATTENDANCE_EXCEPTION: {
     category: "ATTENDANCE",
     level: "ACTION",
@@ -224,6 +223,14 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: false,
     defaults: { IN_APP: true, PUSH: true },
     facts: { day: "day", correctedAt: "number" },
+  },
+  SHIFT_CHANGED: {
+    category: "ATTENDANCE",
+    level: "INFO",
+    receivers: "self",
+    item: false,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { day: "day" },
   },
   // Off until /me carries a contract card: a notice that opens nothing about it is a dead end (KEHOACH 9.15 rule 1).
   CONTRACT_ENDING: {

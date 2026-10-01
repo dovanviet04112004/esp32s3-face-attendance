@@ -14,7 +14,7 @@ import {
   ATTENDANCE_PUSH_CRON,
   ATTENDANCE_PUSHED,
   TEAM_READERS,
-  TEAM_SUMMARY_AFTER_MINUTES,
+  TEAM_SUMMARY_AFTER_FIRST_SHIFT_MINUTES,
   TEAM_SUMMARY_CRON,
 } from "../notice-kinds.js";
 import { NotificationsService, type Announced } from "../notifications.service.js";
@@ -238,7 +238,7 @@ export class AttendanceSweep implements OnModuleInit {
         continue;
       }
       const tally = await this.reports.teamTally({ userId: reader.id, role: reader.role, employeeId: reader.employeeId }, now);
-      if (tally === null || minute < tally.firstStartMinutes + TEAM_SUMMARY_AFTER_MINUTES) {
+      if (tally === null || minute < tally.firstStartMinutes + TEAM_SUMMARY_AFTER_FIRST_SHIFT_MINUTES) {
         continue;
       }
       const { firstStartMinutes: _first, ...counts } = tally;

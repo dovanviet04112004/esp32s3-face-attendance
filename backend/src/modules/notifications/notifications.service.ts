@@ -30,6 +30,7 @@ import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js"
 import { pushBody, type PushBody } from "./dto/push-body.js";
 import {
   factsFit,
+  GATHERED_KINDS,
   kebab,
   mutable,
   NOTICE_KINDS,
@@ -569,18 +570,8 @@ export class NotificationsService {
     const wants = await this.channelsFor(kind, rows.map((one) => one.userId));
     const pushed = rows.filter((one) => wants(one.userId, "PUSH"));
     const window = this.config.get("NOTICE_PUSH_GATHER_SECONDS", { infer: true });
-    const desks =
-      window > 0 && NOTICE_KINDS[kind].level !== "CRITICAL"
-        ? new Set(
-            (
-              await this.db.user.findMany({
-                where: { id: { in: pushed.map((one) => one.userId) }, role: { in: [...GATHERED] } },
-                select: { id: true },
-              })
-            ).map((one) => one.id),
-          )
-        : new Set<string>();
-    const now = pushed.filter((one) => !desks.has(one.userId));
+    const gathering = window > 0 ? await this.gathering(kind, pushed) : new Set<string>();
+    const now = pushed.filter((one) => !gathering.has(one.userId));
     for (let at = 0; at < now.length; at += kBatch) {
       await this.queues[QUEUE.notify].add(JOB.noticeFanout, {
         type: JOB.noticeFanout,
@@ -590,7 +581,7 @@ export class NotificationsService {
     }
     // The window starts at the database's own time of the first row, the clock the rows are counted by.
     const since = new Map<string, Date>();
-    for (const one of pushed.filter((row) => desks.has(row.userId))) {
+    for (const one of pushed.filter((row) => gathering.has(row.userId))) {
       const held = since.get(one.userId);
       since.set(one.userId, held && held < one.at ? held : one.at);
     }
@@ -601,6 +592,21 @@ export class NotificationsService {
         { jobId: `gather-${userId}`, delay: window * kSecondMs },
       );
     }
+  }
+
+  // Desk logins gather every kind short of CRITICAL; a gathered kind gathers for everybody (KEHOACH 9.21.4).
+  private async gathering(kind: NoticeKind, pushed: Announced[]): Promise<Set<string>> {
+    if (GATHERED_KINDS.has(kind)) {
+      return new Set(pushed.map((one) => one.userId));
+    }
+    if (NOTICE_KINDS[kind].level === "CRITICAL") {
+      return new Set();
+    }
+    const desks = await this.db.user.findMany({
+      where: { id: { in: pushed.map((one) => one.userId) }, role: { in: [...GATHERED] } },
+      select: { id: true },
+    });
+    return new Set(desks.map((one) => one.id));
   }
 
   /** Send a fan-out job's pushes, one per row to every device of its login.
