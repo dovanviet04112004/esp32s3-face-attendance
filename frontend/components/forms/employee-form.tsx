@@ -58,7 +58,7 @@ const MAX = {
   nationalId: 20,
   taxCode: 20,
   socialInsuranceNo: 20,
-  bankAccount: 32,
+  bankAccount: 34,
   bankName: 64,
 } as const;
 

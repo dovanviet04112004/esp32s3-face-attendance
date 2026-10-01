@@ -27,7 +27,7 @@ const FIELDS = {
   PHONE: [{ column: "phone", type: "tel", max: 20 }],
   BANK: [
     { column: "bankName", type: "text", max: 64 },
-    { column: "bankAccount", type: "text", max: 32 },
+    { column: "bankAccount", type: "text", max: 34 },
   ],
   NATIONAL_ID: [{ column: "nationalId", type: "text", max: 20 }],
   TAX_CODE: [{ column: "taxCode", type: "text", max: 20 }],
