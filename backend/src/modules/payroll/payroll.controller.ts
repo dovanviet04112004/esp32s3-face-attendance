@@ -294,7 +294,7 @@ export class PayrollController {
   @ApiOperation({ summary: "One payslip with every line that makes it up" })
   @ApiOkResponse({
     type: PayslipDetailView,
-    description: "Opening one's own issued payslip marks it VIEWED; the answer still shows the state before",
+    description: "Opening one's own issued payslip marks it VIEWED, and the answer carries that state and viewedAt",
   })
   @ApiParam({ name: "id", description: "Payslip id (UUID)", example: "8f14e45f-ceea-467a-9575-7e4f3c2a1b90" })
   payslip(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayslipDetail> {

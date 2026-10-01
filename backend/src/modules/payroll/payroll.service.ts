@@ -1331,7 +1331,8 @@ export class PayrollService {
       throw new NotFoundException("PAYSLIP_NOT_FOUND");
     }
     if (found.employeeId === viewer.employeeId && found.viewedAt === null && found.state !== "DRAFT") {
-      await this.db.payslip.update({ where: { id }, data: { state: "VIEWED", viewedAt: new Date() } });
+      const viewed = await this.db.payslip.update({ where: { id }, data: { state: "VIEWED", viewedAt: new Date() } });
+      return { ...viewed, lines: found.lines };
     }
     return found;
   }

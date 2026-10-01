@@ -337,6 +337,24 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     assert.equal(peek.status, 404);
   });
 
+  it("answers its owner with the VIEWED state the opening wrote", async () => {
+    const issued = await db.payslip.findFirstOrThrow({
+      where: { periodId, employeeId: idOf.get(STEADY), state: { not: "DRAFT" } },
+    });
+    assert.equal(issued.viewedAt, null, "the payslip was read before its owner opened it");
+    const opened = await as("steady").get(`/payslips/${issued.id}`);
+    assert.equal(opened.status, 200);
+    const stored = await db.payslip.findUniqueOrThrow({ where: { id: issued.id } });
+    assert.equal(stored.state, "VIEWED");
+    assert.deepEqual(
+      [opened.body.state, opened.body.viewedAt],
+      [stored.state, stored.viewedAt?.toISOString()],
+      "the answer carried the state from before the opening",
+    );
+    const again = await as("steady").get(`/payslips/${issued.id}`);
+    assert.equal(again.body.viewedAt, opened.body.viewedAt, "a second opening moved when it was first read");
+  });
+
   it("sums the period over what it issued, and finds one payslip with its advance", async () => {
     const totals = await as("hr").get(`/payroll-periods/${periodId}/totals`);
     assert.equal(totals.status, 200);
