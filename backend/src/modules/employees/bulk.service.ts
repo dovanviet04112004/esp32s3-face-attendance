@@ -237,15 +237,21 @@ function kioskSkip(person: { active: boolean; consents: unknown[]; enrollments: 
   return person.enrollments.some((pair) => ON_KIOSK.has(pair.state)) ? "ALREADY_ON_KIOSK" : null;
 }
 
-/** Why POST /employees/:id/offboard would refuse this person, or why a batch must leave its own clicker alone. */
-function leavingSkip(person: { id: number; active: boolean; leaveDate: Date | null }, self: number | null): SkipReason | null {
+/** Why POST /employees/:id/offboard would refuse this person, or why a batch leaves them to it (KEHOACH 9.14). */
+function leavingSkip(
+  person: { id: number; active: boolean; leaveDate: Date | null; login: { role: string } | null },
+  self: number | null,
+): SkipReason | null {
   if (!person.active) {
     return "EMPLOYEE_HAS_LEFT";
   }
   if (person.leaveDate !== null) {
     return "LEAVING_SCHEDULED";
   }
-  return person.id === self ? "SELF" : null;
+  if (person.id === self) {
+    return "SELF";
+  }
+  return person.login?.role === "ADMIN" ? "ADMIN_ACCOUNT" : null;
 }
 
 /**
@@ -527,7 +533,7 @@ export class BulkService {
     const chosen = await this.resolve(viewer, body);
     const people = await this.db.employee.findMany({
       where: { id: { in: chosen.ids } },
-      select: { id: true, code: true, fullName: true, active: true, leaveDate: true },
+      select: { id: true, code: true, fullName: true, active: true, leaveDate: true, login: { select: { role: true } } },
       orderBy: { code: "asc" },
     });
     const skipped = [...chosen.missing];

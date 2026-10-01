@@ -1538,6 +1538,7 @@
     "LEAVING_SCHEDULED": "This person already has a leaving scheduled. Change or cancel it on their profile.",
     "LEAVING_NOT_SCHEDULED": "This person has no scheduled leaving to change or cancel.",
     "LEAVING_CLOSED": "The record has closed, so the leaving can no longer be changed or cancelled.",
+    "LEAVING_ADMIN_ONLY": "This record carries an administrator's account. Only an administrator can record, move or cancel its leaving.",
     "SELECTION_INVALID": "Choose people one by one, or the whole filtered group, not both.",
     "SELECTION_TOO_LARGE": "The filter matches more than 5,000 people, too many for one run. Narrow it and try again.",
     "RANGE_TOO_LARGE": "This range holds too many timesheet days to show at once. Narrow it to one person, a department or fewer days.",
@@ -2555,7 +2556,8 @@
     "CONSENT_MISSING": "Has not agreed to face data",
     "ALREADY_ON_KIOSK": "Already on this kiosk, or waiting on it",
     "ALREADY_ON_SHIFT": "Already on this shift from that day",
-    "SELF": "Your own record"
+    "SELF": "Your own record",
+    "ADMIN_ACCOUNT": "Holds an administrator account; offboard them on their own"
   },
   "bulk": {
     "place": "Reassign",

@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   PayloadTooLargeException,
   type OnModuleInit,
@@ -448,6 +450,8 @@ function asSeenBy<T extends Employee>(row: T, viewer: Viewer, visible: number[] 
 
 @Injectable()
 export class EmployeesService implements OnModuleInit {
+  private readonly log = new Logger(EmployeesService.name);
+
   constructor(
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
@@ -1320,6 +1324,7 @@ export class EmployeesService implements OnModuleInit {
   async offboard(viewer: Viewer, id: number, body: OffboardDto): Promise<Offboarding> {
     const person = await this.get(id, viewer);
     const lastDay = body.leaveDate.slice(0, 10);
+    await this.guardAdminRecord(viewer, id, lastDay <= this.today());
     const written = await this.db.employee.updateMany({
       where: { id, active: true, leaveDate: null },
       data: { leaveDate: dayAsDate(lastDay) },
@@ -1342,6 +1347,7 @@ export class EmployeesService implements OnModuleInit {
     const person = await this.get(id, viewer);
     refuseOwn(viewer, id);
     const lastDay = body.leaveDate.slice(0, 10);
+    await this.guardAdminRecord(viewer, id, lastDay <= this.today());
     const moved = await this.db.employee.updateMany({
       where: { id, active: true, leaveDate: { not: null } },
       data: { leaveDate: dayAsDate(lastDay) },
@@ -1363,6 +1369,7 @@ export class EmployeesService implements OnModuleInit {
   async cancelLeaving(viewer: Viewer, id: number): Promise<Employee> {
     const person = await this.get(id, viewer);
     refuseOwn(viewer, id);
+    await this.guardAdminRecord(viewer, id, false);
     const cancelled = await this.db.employee.updateMany({
       where: { id, active: true, leaveDate: { not: null } },
       data: { leaveDate: null },
@@ -1390,7 +1397,7 @@ export class EmployeesService implements OnModuleInit {
     });
     const closed: number[] = [];
     for (const one of due) {
-      if (await this.close(one.id, through)) {
+      if (await this.closeUnlessLastAdmin(one.id, through)) {
         closed.push(one.id);
       }
     }
@@ -1401,11 +1408,40 @@ export class EmployeesService implements OnModuleInit {
   async closeMany(employeeIds: number[], through: string, actorId: string): Promise<number[]> {
     const closed: number[] = [];
     for (const id of employeeIds) {
-      if (await this.close(id, through, actorId)) {
+      if (await this.closeUnlessLastAdmin(id, through, actorId)) {
         closed.push(id);
       }
     }
     return closed;
+  }
+
+  // A job has nobody to answer, so the last administrator's record waits for the next run (KEHOACH 9.14).
+  private async closeUnlessLastAdmin(id: number, through: string, actorId?: string): Promise<boolean> {
+    try {
+      return await this.close(id, through, actorId);
+    } catch (error) {
+      if (error instanceof ConflictException && error.message === "LAST_ADMIN") {
+        this.log.warn(`employee ${id} stays open: their account is the last active administrator`);
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  /** Only an ADMIN records, moves or calls off the leaving of a record an ADMIN account sits on,
+   *  and a day already here must leave another active ADMIN (KEHOACH 9.14).
+   */
+  private async guardAdminRecord(viewer: Viewer, id: number, closesNow: boolean): Promise<void> {
+    const login = await this.db.user.findFirst({ where: { employeeId: id, role: "ADMIN" }, select: { id: true, active: true } });
+    if (!login) {
+      return;
+    }
+    if (viewer.role !== "ADMIN") {
+      throw new ForbiddenException("LEAVING_ADMIN_ONLY");
+    }
+    if (closesNow && login.active) {
+      await this.users.keepAnAdmin(this.db, [login.id]);
+    }
   }
 
   /** Queue the closing of records whose last day is today or behind (KEHOACH 9.14).
@@ -1428,6 +1464,7 @@ export class EmployeesService implements OnModuleInit {
   /**
    * The one way a record closes, for the desk's click and the nightly job alike (KEHOACH 9.14).
    * Only an open record whose last day is `through` or earlier closes; false when none did.
+   * LAST_ADMIN when the record's account is the last active ADMIN, and nothing is written.
    */
   private async close(id: number, through: string, actorId?: string): Promise<boolean> {
     const shut = await this.db.$transaction(async (tx) => {
@@ -1437,6 +1474,10 @@ export class EmployeesService implements OnModuleInit {
       });
       if (flipped.count === 0) {
         return null;
+      }
+      const admins = await tx.user.findMany({ where: { employeeId: id, role: "ADMIN", active: true }, select: { id: true } });
+      if (admins.length > 0) {
+        await this.users.keepAnAdmin(tx, admins.map((one) => one.id));
       }
       const person = await tx.employee.findUniqueOrThrow({
         where: { id },

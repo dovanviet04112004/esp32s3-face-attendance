@@ -1538,6 +1538,7 @@
     "LEAVING_SCHEDULED": "Người này đã có lịch nghỉ việc. Đổi hoặc huỷ lịch ấy trên hồ sơ.",
     "LEAVING_NOT_SCHEDULED": "Người này không có lịch nghỉ việc nào để đổi hay huỷ.",
     "LEAVING_CLOSED": "Hồ sơ đã đóng vì nghỉ việc nên không đổi hay huỷ được nữa.",
+    "LEAVING_ADMIN_ONLY": "Hồ sơ này gắn với một tài khoản quản trị. Chỉ quản trị viên mới ghi, đổi hay huỷ lịch nghỉ của nó.",
     "SELECTION_INVALID": "Chọn từng người, hoặc chọn cả nhóm theo bộ lọc — không cả hai.",
     "SELECTION_TOO_LARGE": "Bộ lọc khớp hơn 5.000 người, quá cỡ một lượt. Thu hẹp bộ lọc rồi thử lại.",
     "RANGE_TOO_LARGE": "Khoảng này có quá nhiều ngày công để xem một lần. Thu hẹp theo người, phòng ban hoặc chọn khoảng ngày ngắn hơn.",
@@ -2555,7 +2556,8 @@
     "CONSENT_MISSING": "Chưa đồng ý dữ liệu khuôn mặt",
     "ALREADY_ON_KIOSK": "Đã có hoặc đang chờ chụp trên kiosk này",
     "ALREADY_ON_SHIFT": "Đã ở ca này từ ngày ấy",
-    "SELF": "Là chính bạn"
+    "SELF": "Là chính bạn",
+    "ADMIN_ACCOUNT": "Giữ tài khoản quản trị, cho nghỉ riêng từng người"
   },
   "bulk": {
     "place": "Điều chuyển",

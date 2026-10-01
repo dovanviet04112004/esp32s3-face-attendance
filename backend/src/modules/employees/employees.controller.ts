@@ -192,7 +192,8 @@ export class EmployeesController {
   @ApiOperation({
     summary: "Preview one last day for many people; apply=true records it (KEHOACH 9.14)",
     description:
-      "Each person goes through the rules of POST /employees/:id/offboard, and the caller's own record is skipped. " +
+      "Each person goes through the rules of POST /employees/:id/offboard; the caller's own record and any record " +
+      "carrying an ADMIN account are skipped. " +
       "A last day of today or earlier closes the records on the people queue right after the write.",
   })
   @ApiCreatedResponse({ type: LeavingPlanView })
@@ -289,8 +290,9 @@ export class EmployeesController {
   })
   @ApiParam(EMPLOYEE_ID)
   @ApiCreatedResponse({ type: OffboardingView })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "LEAVING_ADMIN_ONLY: the record carries an ADMIN account" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
-  @ApiConflictResponse({ type: ErrorBody, description: "EMPLOYEE_HAS_LEFT, LEAVING_SCHEDULED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "EMPLOYEE_HAS_LEFT, LEAVING_SCHEDULED, LAST_ADMIN" })
   offboard(
     @CurrentViewer() viewer: Viewer,
     @Param("id", ParseIntPipe) id: number,
@@ -305,9 +307,9 @@ export class EmployeesController {
   @ApiOperation({ summary: "Move a scheduled last day; one of today or earlier closes the record now" })
   @ApiParam(EMPLOYEE_ID)
   @ApiOkResponse({ type: OffboardingView })
-  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE, LEAVING_ADMIN_ONLY" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
-  @ApiConflictResponse({ type: ErrorBody, description: "LEAVING_CLOSED, LEAVING_NOT_SCHEDULED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "LEAVING_CLOSED, LEAVING_NOT_SCHEDULED, LAST_ADMIN" })
   moveLeaving(
     @CurrentViewer() viewer: Viewer,
     @Param("id", ParseIntPipe) id: number,
@@ -322,7 +324,7 @@ export class EmployeesController {
   @ApiOperation({ summary: "Call off a scheduled leaving before the record closes" })
   @ApiParam(EMPLOYEE_ID)
   @ApiOkResponse({ type: EmployeeView })
-  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE, LEAVING_ADMIN_ONLY" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "LEAVING_CLOSED, LEAVING_NOT_SCHEDULED" })
   cancelLeaving(@CurrentViewer() viewer: Viewer, @Param("id", ParseIntPipe) id: number): Promise<Employee> {

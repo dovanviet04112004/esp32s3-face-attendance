@@ -626,13 +626,7 @@ export class UsersService {
     try {
       saved = await this.db.$transaction(async (tx) => {
         if (losesAdmin) {
-          // Locked rows make two admins demoting each other queue, not both pass (KEHOACH 9.23 rule 3).
-          const admins = await tx.$queryRaw<{ id: string }[]>`
-            SELECT "id" FROM "User" WHERE "role" = 'ADMIN' AND "active" FOR UPDATE
-          `;
-          if (!admins.some((one) => one.id !== id)) {
-            throw new ConflictException("LAST_ADMIN");
-          }
+          await this.keepAnAdmin(tx, [id]);
         }
         if (locking) {
           await tx.pushSubscription.deleteMany({ where: { userId: id } });
@@ -654,6 +648,19 @@ export class UsersService {
     await this.recordUpdate(actorId, held, saved);
     const seen = await this.lastSeen([id]);
     return asAccount(saved, seen.get(id) ?? null);
+  }
+
+  /** Refuse a write that leaves no active ADMIN once these accounts stop being one (KEHOACH 9.4).
+   *  @ctx inside the writer's transaction, or alone as a look ahead of one | throws LAST_ADMIN
+   */
+  async keepAnAdmin(tx: Prisma.TransactionClient, leaving: readonly string[]): Promise<void> {
+    // Locked rows make two admins demoting each other queue, not both pass (KEHOACH 9.23 rule 3).
+    const admins = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "User" WHERE "role" = 'ADMIN' AND "active" FOR UPDATE
+    `;
+    if (!admins.some((one) => !leaving.includes(one.id))) {
+      throw new ConflictException("LAST_ADMIN");
+    }
   }
 
   private async recordUpdate(actorId: string, held: AccountRow, saved: AccountRow): Promise<void> {

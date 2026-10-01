@@ -870,6 +870,7 @@ export const SKIP_REASONS = [
   "ALREADY_ON_KIOSK",
   "ALREADY_ON_SHIFT",
   "SELF",
+  "ADMIN_ACCOUNT",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
