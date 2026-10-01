@@ -12,8 +12,8 @@ import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
-import { HitView, SearchQueryDto } from "./dto/search.dto.js";
-import { SearchService, type Hit } from "./search.service.js";
+import { SearchQueryDto, SearchReplyView } from "./dto/search.dto.js";
+import { SearchService, type Found } from "./search.service.js";
 
 @ApiTags("search")
 @ApiBearerAuth(API_AUTH.user)
@@ -24,10 +24,12 @@ export class SearchController {
   constructor(private readonly search: SearchService) {}
 
   @Get()
-  @ApiOperation({ summary: "People, departments, requests and payslips in one answer, each in the viewer's scope" })
-  @ApiOkResponse({ type: [HitView] })
+  @ApiOperation({
+    summary: "Everything the viewer may open that the term names: people, requests, pay, kiosks, assets, documents",
+  })
+  @ApiOkResponse({ type: SearchReplyView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "A term longer than 64 characters" })
-  find(@CurrentViewer() viewer: Viewer, @Query() query: SearchQueryDto): Promise<Hit[]> {
+  find(@CurrentViewer() viewer: Viewer, @Query() query: SearchQueryDto): Promise<Found> {
     return this.search.find(viewer, query.q ?? "");
   }
 }
