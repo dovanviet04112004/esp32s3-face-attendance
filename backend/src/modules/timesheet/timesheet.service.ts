@@ -95,6 +95,9 @@ interface DayRow {
   measuredMinutes?: number;
 }
 
+/** A day row with the name of whoever corrected it by hand, which the person it is about may read (KEHOACH 9.21.4). */
+export type NamedDay = AttendanceDay & { adjustedByName: string | null };
+
 export interface BuildReport {
   days: number;
   rows: number;
@@ -166,7 +169,7 @@ export class TimesheetService implements OnModuleInit {
   }
 
   /** Day rows inside a range, narrowed to what this viewer may read; too many is refused, never cut (KEHOACH 9.12). */
-  async list(viewer: Viewer, query: ListDaysDto): Promise<AttendanceDay[]> {
+  async list(viewer: Viewer, query: ListDaysDto): Promise<NamedDay[]> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const wanted =
       query.employeeId !== undefined
@@ -187,7 +190,13 @@ export class TimesheetService implements OnModuleInit {
     if (rows.length > MAX_DAY_ROWS) {
       throw new BadRequestException("RANGE_TOO_LARGE");
     }
-    return rows;
+    const correctors = [...new Set(rows.flatMap((row) => (row.adjustedById ? [row.adjustedById] : [])))];
+    const named = await this.db.user.findMany({
+      where: { id: { in: correctors } },
+      select: { id: true, email: true, employee: { select: { fullName: true } } },
+    });
+    const nameOf = new Map(named.map((one) => [one.id, one.employee?.fullName ?? one.email]));
+    return rows.map((row) => ({ ...row, adjustedByName: row.adjustedById ? (nameOf.get(row.adjustedById) ?? null) : null }));
   }
 
   /** A month of a company is one row per person, so it pages by the employee

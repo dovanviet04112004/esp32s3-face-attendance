@@ -215,6 +215,13 @@ export class DayView {
   @ApiProperty({
     type: String,
     nullable: true,
+    example: "Trần Thị B",
+    description: "Who corrected the day: their name, or their email when the account has no record",
+  })
+  adjustedByName!: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
     example: "Quên quét khi ra về, có xác nhận của quản lý",
     description: "Why the day was corrected by hand; null if it never was",
   })

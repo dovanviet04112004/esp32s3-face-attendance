@@ -42,6 +42,7 @@ import {
   type DaySummary,
   type DayTotals,
   type MonthTally,
+  type NamedDay,
 } from "./timesheet.service.js";
 
 @ApiTags("timesheet")
@@ -62,7 +63,7 @@ export class TimesheetController {
     type: ErrorBody,
     description: `VALIDATION_FAILED | RANGE_TOO_LARGE: over ${MAX_DAY_ROWS} rows; narrow by employee, department or dates`,
   })
-  list(@CurrentViewer() viewer: Viewer, @Query() query: ListDaysDto): Promise<AttendanceDay[]> {
+  list(@CurrentViewer() viewer: Viewer, @Query() query: ListDaysDto): Promise<NamedDay[]> {
     return this.timesheet.list(viewer, query);
   }
 
