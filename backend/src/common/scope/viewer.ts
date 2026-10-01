@@ -26,6 +26,11 @@ export function refuseOwn(viewer: Viewer, ...employeeIds: number[]): void {
   }
 }
 
+export const CurrentSession = createParamDecorator(
+  (_data: unknown, context: ExecutionContext): string | undefined =>
+    context.switchToHttp().getRequest<{ user?: AccessClaims }>().user?.sid,
+);
+
 /** The viewer a guarded handler serves; JwtAuthGuard has put the claims on the request. */
 export const CurrentViewer = createParamDecorator((_data: unknown, context: ExecutionContext): Viewer => {
   const claims = context.switchToHttp().getRequest<{ user?: AccessClaims }>().user;

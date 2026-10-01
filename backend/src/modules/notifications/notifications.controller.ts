@@ -17,7 +17,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
-import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
+import { CurrentSession, CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import {
@@ -46,7 +46,6 @@ import { ContractAlertsService } from "./contract-alerts.service.js";
 import { NoticeItemsService, type ItemDetail } from "./notice-items.service.js";
 import {
   NotificationsService,
-  type MarkAction,
   type NoticeCounts,
   type NoticeRow,
   type PreferenceRow,
@@ -104,32 +103,48 @@ export class NotificationsController {
   @ApiOperation({ summary: "Mark rows read: by ids, every row of a filter, or every row about one record" })
   @ApiCreatedResponse({ type: MarkedView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID unless exactly one of ids, all and subject" })
-  read(@CurrentViewer() viewer: Viewer, @Body() body: MarkNoticesDto): Promise<NoticeCounts & { changed: number }> {
-    return this.mark(viewer, "read", body);
+  read(
+    @CurrentViewer() viewer: Viewer,
+    @CurrentSession() session: string | undefined,
+    @Body() body: MarkNoticesDto,
+  ): Promise<NoticeCounts & { changed: number }> {
+    return this.notices.mark(viewer, "read", body, session);
   }
 
   @Post("unread")
   @ApiOperation({ summary: "Mark rows unread again, named the same three ways" })
   @ApiCreatedResponse({ type: MarkedView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID unless exactly one of ids, all and subject" })
-  unreadAgain(@CurrentViewer() viewer: Viewer, @Body() body: MarkNoticesDto): Promise<NoticeCounts & { changed: number }> {
-    return this.mark(viewer, "unread", body);
+  unreadAgain(
+    @CurrentViewer() viewer: Viewer,
+    @CurrentSession() session: string | undefined,
+    @Body() body: MarkNoticesDto,
+  ): Promise<NoticeCounts & { changed: number }> {
+    return this.notices.mark(viewer, "unread", body, session);
   }
 
   @Post("archive")
   @ApiOperation({ summary: "Put rows away: they leave the bell, while open work stays in the inbox and is still reminded" })
   @ApiCreatedResponse({ type: MarkedView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID unless exactly one of ids, all and subject" })
-  archive(@CurrentViewer() viewer: Viewer, @Body() body: MarkNoticesDto): Promise<NoticeCounts & { changed: number }> {
-    return this.mark(viewer, "archive", body);
+  archive(
+    @CurrentViewer() viewer: Viewer,
+    @CurrentSession() session: string | undefined,
+    @Body() body: MarkNoticesDto,
+  ): Promise<NoticeCounts & { changed: number }> {
+    return this.notices.mark(viewer, "archive", body, session);
   }
 
   @Post("unarchive")
   @ApiOperation({ summary: "Bring rows put away back into the bell" })
   @ApiCreatedResponse({ type: MarkedView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID unless exactly one of ids, all and subject" })
-  unarchive(@CurrentViewer() viewer: Viewer, @Body() body: MarkNoticesDto): Promise<NoticeCounts & { changed: number }> {
-    return this.mark(viewer, "unarchive", body);
+  unarchive(
+    @CurrentViewer() viewer: Viewer,
+    @CurrentSession() session: string | undefined,
+    @Body() body: MarkNoticesDto,
+  ): Promise<NoticeCounts & { changed: number }> {
+    return this.notices.mark(viewer, "unarchive", body, session);
   }
 
   @Post("sweeps/:name")
@@ -248,9 +263,5 @@ export class NotificationsController {
   @ApiNotFoundResponse({ type: ErrorBody, description: "NOTICE_NOT_FOUND, also for another account's notice" })
   one(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<NoticeRow> {
     return this.notices.one(viewer, id);
-  }
-
-  private mark(viewer: Viewer, action: MarkAction, body: MarkNoticesDto): Promise<NoticeCounts & { changed: number }> {
-    return this.notices.mark(viewer, action, body);
   }
 }

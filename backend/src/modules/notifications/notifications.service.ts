@@ -274,7 +274,12 @@ export class NotificationsService {
   /** Read, unread, put away or bring back the viewer's own rows, named exactly one way.
    *  @ctx any | one UPDATE; rows of other accounts are never touched
    */
-  async mark(viewer: Viewer, action: MarkAction, chosen: MarkSelection): Promise<NoticeCounts & { changed: number }> {
+  async mark(
+    viewer: Viewer,
+    action: MarkAction,
+    chosen: MarkSelection,
+    session?: string,
+  ): Promise<NoticeCounts & { changed: number }> {
     const forms = [chosen.ids !== undefined, chosen.all === true, chosen.subject !== undefined].filter(Boolean).length;
     if (forms !== 1) {
       throw new BadRequestException("SELECTION_INVALID");
@@ -289,7 +294,7 @@ export class NotificationsService {
       data: MARKS[action].data(new Date()),
     });
     if (changed.count > 0) {
-      this.feed.tell(viewer.userId, FEED.notice, { op: "read", ...(chosen.ids ? { ids: chosen.ids } : { all: true }) });
+      this.feed.tell(viewer.userId, FEED.notice, { op: "read", ...(chosen.ids ? { ids: chosen.ids } : { all: true }) }, session);
     }
     return { changed: changed.count, ...(await this.counts(viewer.userId)) };
   }

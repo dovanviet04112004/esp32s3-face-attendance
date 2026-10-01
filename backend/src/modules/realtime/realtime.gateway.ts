@@ -70,6 +70,8 @@ export class FeedAdapter extends IoAdapter {
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly log = new Logger(RealtimeGateway.name);
   private readonly watchers = new Map<string, Watcher>();
+  // A notice goes to one login; this keeps it from walking every open socket (KEHOACH 9.21.4).
+  private readonly socketsOf = new Map<string, Set<string>>();
 
   @WebSocketServer()
   private server!: Server;
@@ -99,11 +101,23 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       reach: visible === null ? null : new Set(visible),
       goodUntilMs: ticket.goodUntilMs,
     });
+    const held = this.socketsOf.get(ticket.viewer.userId) ?? new Set<string>();
+    this.socketsOf.set(ticket.viewer.userId, held.add(client.id));
     this.log.log(`${ticket.viewer.role} opened the feed, ${this.watchers.size} watching`);
   }
 
   handleDisconnect(client: Socket): void {
-    this.watchers.delete(client.id);
+    this.forget(client.id);
+  }
+
+  private forget(socketId: string): void {
+    const watcher = this.watchers.get(socketId);
+    this.watchers.delete(socketId);
+    const held = watcher ? this.socketsOf.get(watcher.viewer.userId) : undefined;
+    held?.delete(socketId);
+    if (watcher && held?.size === 0) {
+      this.socketsOf.delete(watcher.viewer.userId);
+    }
   }
 
   private readTicket(client: Socket): Ticket | null {
@@ -144,30 +158,41 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     for (const [id, watcher] of this.watchers) {
       if (cut.userIds.includes(watcher.viewer.userId) || cut.sessionIds?.includes(watcher.sessionId)) {
         this.server?.to(id).disconnectSockets(true);
-        this.watchers.delete(id);
+        this.forget(id);
       }
     }
   }
 
-  /** Tell the sockets one login holds open, on whichever of its devices. */
-  tell(userId: string, feed: FeedName, body: unknown): void {
-    this.deliver(feed, body, (watcher) => watcher.viewer.userId === userId);
+  /** Tell the sockets one login holds open, on whichever of its devices, but the session that did it.
+   *  @ctx any | walks only that login's sockets
+   */
+  tell(userId: string, feed: FeedName, body: unknown, exceptSession?: string): void {
+    const now = Date.now();
+    for (const id of [...(this.socketsOf.get(userId) ?? [])]) {
+      const watcher = this.watchers.get(id);
+      if (watcher && this.alive(id, watcher, now) && watcher.sessionId !== exceptSession) {
+        this.server?.to(id).emit(feed, body);
+      }
+    }
   }
 
   private deliver(feed: FeedName, body: unknown, hears: (watcher: Watcher) => boolean): void {
     const now = Date.now();
     for (const [id, watcher] of this.watchers) {
-      // A ticket REST would refuse buys no more here: leaving closes sessions
-      // (KEHOACH 9.23) and an open socket must not outlive that.
-      if (watcher.goodUntilMs <= now) {
-        this.server?.to(id).disconnectSockets(true);
-        this.watchers.delete(id);
-        continue;
-      }
-      if (hears(watcher)) {
+      if (this.alive(id, watcher, now) && hears(watcher)) {
         this.server?.to(id).emit(feed, body);
       }
     }
+  }
+
+  // A ticket REST would refuse buys no more here: leaving closes sessions (KEHOACH 9.23).
+  private alive(id: string, watcher: Watcher, now: number): boolean {
+    if (watcher.goodUntilMs > now) {
+      return true;
+    }
+    this.server?.to(id).disconnectSockets(true);
+    this.forget(id);
+    return false;
   }
 
   private mayHear(watcher: Watcher, feed: FeedName, about?: About): boolean {
