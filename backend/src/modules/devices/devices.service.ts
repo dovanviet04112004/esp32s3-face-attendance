@@ -10,13 +10,13 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EventEmitter2 } from "@nestjs/event-emitter";
-import type { Device, DeviceStatus, Prisma } from "@prisma/client";
+import { Prisma, type Device, type DeviceStatus } from "@prisma/client";
 
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { heartbeatSchema } from "../../common/generated/heartbeat.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { codeHas, foldedHas, PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS, type AuditAction } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { AuthService, deviceFingerprint } from "../auth/auth.service.js";
@@ -273,20 +273,17 @@ export class DevicesService {
 
   async list(query: ListDevicesDto): Promise<Page<PublicDevice>> {
     const term = query.search?.trim();
+    const named = term
+      ? await this.db.$queryRaw<{ id: string }[]>`
+          SELECT "id" FROM "Device"
+           WHERE ${codeHas(Prisma.sql`"id"`, term)} OR ${codeHas(Prisma.sql`coalesce("serial", '')`, term)}
+              OR ${foldedHas(Prisma.sql`coalesce("name", '')`, term)} OR ${foldedHas(Prisma.sql`coalesce("location", '')`, term)}`
+      : null;
     const where: Prisma.DeviceWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       // Online and offline only mean something for a kiosk in the fleet.
       ...(query.online === undefined ? {} : { status: "APPROVED", online: query.online }),
-      ...(term
-        ? {
-            OR: [
-              { id: { contains: term, mode: "insensitive" } },
-              { name: { contains: term, mode: "insensitive" } },
-              { location: { contains: term, mode: "insensitive" } },
-              { serial: { contains: term, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+      ...(named ? { id: { in: named.map((one) => one.id) } } : {}),
     };
     const [rows, found] = await Promise.all([
       this.db.device.findMany({

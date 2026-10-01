@@ -201,5 +201,8 @@ describe("onboarding checklist (e2e)", () => {
     const byCode = await read(STARTER);
     assert.ok(byCode.length > 0 && byCode.every((row) => row.run.employee.code === STARTER), "searching a code found someone else");
     assert.ok((await read("Cấp máy")).length > 0, "a task title did not match");
+    assert.ok((await read("cap may")).length > 0, "a title typed without accents did not match");
+    const byName = await read("nguoi moi");
+    assert.ok(byName.some((row) => row.run.employee.code === STARTER), "a name typed without accents did not match");
   });
 });

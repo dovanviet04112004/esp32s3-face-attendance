@@ -574,6 +574,14 @@ describe("the global search box (e2e)", () => {
     assert.deepEqual(of(await find("manager", PEOPLE.worker.code), "payslip"), [], "a manager found a report's payslip");
   });
 
+  it("finds a kiosk in the fleet list by its place typed without accents", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/devices?search=sanh%20bac&take=50")
+      .set("Authorization", `Bearer ${token.admin}`);
+    assert.equal(res.status, 200);
+    assert.ok((res.body.rows as { id: string }[]).some((one) => one.id === DEVICE), "the folded place did not find the kiosk");
+  });
+
   it("refuses a term longer than the box takes", async () => {
     const res = await request(app.getHttpServer())
       .get(`/search?q=${"a".repeat(65)}`)

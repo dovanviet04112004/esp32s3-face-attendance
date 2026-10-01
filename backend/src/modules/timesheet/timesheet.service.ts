@@ -21,7 +21,7 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { codeHas, foldedHas, PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -74,11 +74,6 @@ export function calendarOn(date: Date, holidays: DatedHoliday[], legalEntityId: 
     return holiday.paid ? "HOLIDAY" : "UNPAID_HOLIDAY";
   }
   return [SATURDAY, SUNDAY].includes(date.getUTCDay()) ? "WEEKEND" : "WORKDAY";
-}
-
-/** A search term as an ILIKE pattern, with the wildcards a person typed taken literally. */
-export function likeOf(term: string): string {
-  return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
 }
 
 interface DayRow {
@@ -307,7 +302,7 @@ export class TimesheetService implements OnModuleInit {
       ${visible === null ? Prisma.empty : Prisma.sql`AND d."employeeId" = ANY(${visible}::int[])`}
       ${query.employeeId === undefined ? Prisma.empty : Prisma.sql`AND d."employeeId" = ${query.employeeId}::int`}
       ${query.departmentId ? Prisma.sql`AND e."departmentId" IN (${branchOf(query.departmentId)})` : Prisma.empty}
-      ${term ? Prisma.sql`AND (e."code" ILIKE ${likeOf(term)} OR e."fullName" ILIKE ${likeOf(term)})` : Prisma.empty}`;
+      ${term ? Prisma.sql`AND (${codeHas(Prisma.sql`e."code"`, term)} OR ${foldedHas(Prisma.sql`e."fullName"`, term)})` : Prisma.empty}`;
   }
 
   private exceptionsOnly(query: SummaryQueryDto): Prisma.Sql {

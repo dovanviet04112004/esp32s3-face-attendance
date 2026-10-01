@@ -1,11 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type {
-  ChecklistKind,
-  ChecklistTask,
-  ChecklistTemplateItem,
+import {
   Prisma,
-  TaskOwner,
+  type ChecklistKind,
+  type ChecklistTask,
+  type ChecklistTemplateItem,
+  type TaskOwner,
 } from "@prisma/client";
 
 import type { Page } from "../../common/dto/pagination.dto.js";
@@ -13,7 +13,7 @@ import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { foldedHas, namedFilter, PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
@@ -273,7 +273,11 @@ export class OnboardingService {
   private async openWhere(viewer: Viewer, query: OpenCountsDto): Promise<Prisma.ChecklistTaskWhereInput> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
-    const needle = query.search?.trim() ? { contains: query.search.trim(), mode: "insensitive" as const } : null;
+    const term = query.search?.trim();
+    const titled = term
+      ? await this.db.$queryRaw<{ id: string }[]>`
+          SELECT "id" FROM "ChecklistTask" WHERE "doneAt" IS NULL AND ${foldedHas(Prisma.sql`"title"`, term)}`
+      : [];
     return {
       doneAt: null,
       run: {
@@ -281,14 +285,8 @@ export class OnboardingService {
         ...(query.kind ? { kind: query.kind } : {}),
         ...(branch ? { employee: { departmentId: { in: branch } } } : {}),
       },
-      ...(needle
-        ? {
-            OR: [
-              { title: needle },
-              { run: { employee: { fullName: needle } } },
-              { run: { employee: { code: needle } } },
-            ],
-          }
+      ...(term
+        ? { OR: [{ id: { in: titled.map((one) => one.id) } }, { run: { employeeId: await namedFilter(this.db, term) } }] }
         : {}),
     };
   }

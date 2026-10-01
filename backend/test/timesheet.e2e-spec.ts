@@ -176,6 +176,15 @@ describe("timesheet leave (e2e)", () => {
     assert.equal(row.absentDays, 0);
   });
 
+  it("finds a person in the summary by a name typed without accents", async () => {
+    const res = await request(http)
+      .get(`/timesheet/summary?from=${DAY}&to=${DAY}&search=${encodeURIComponent(`thu nghi phep ${AHEAD}`)}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert.equal(res.status, 200);
+    const ids = (res.body.rows as { employeeId: number }[]).map((one) => one.employeeId);
+    assert.deepEqual(ids, [idOf.get(AHEAD)], "the folded name did not find exactly that person");
+  });
+
   it("turns a day already built absent into leave when the approval lands later", async () => {
     assert.equal(await stateOf(BEHIND), "ABSENT");
     assert.equal(await approveLeave(BEHIND, false), 201);
