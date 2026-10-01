@@ -144,7 +144,7 @@ export function useRequestWords() {
   const locale = useLocale();
   const clock = (iso: string) => format.dateTime(new Date(iso), { hour: "2-digit", minute: "2-digit" });
   return {
-    kind: (row: Pick<RequestRow, "kind" | "leaveType">) =>
+    kind: (row: Pick<RequestRow, "kind"> & { leaveType: { name: string } | null }) =>
       row.leaveType ? `${t(`kind${row.kind}`)} · ${row.leaveType.name}` : t(`kind${row.kind}`),
     span: (row: Pick<RequestRow, "fromDate" | "toDate">) => {
       const from = format.dateTime(dayOnly(row.fromDate), "day");

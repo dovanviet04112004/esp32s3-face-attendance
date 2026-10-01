@@ -16,6 +16,8 @@ import {
   TrayIcon,
 } from "@phosphor-icons/react";
 
+import type { RequestKind } from "@/components/requests/request-card";
+
 export type NoticeKind =
   | "REQUEST_DECIDED"
   | "REQUEST_WAITING"
@@ -34,6 +36,33 @@ export type NoticeKind =
 
 export type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
 
+export const NOTICE_CATEGORIES: readonly NoticeCategory[] = ["REQUESTS", "PAY", "PEOPLE", "ATTENDANCE", "SYSTEM"];
+
+export type NoticeOutcome = "APPROVED" | "REJECTED" | "ISSUED" | "UPHELD" | "PAID" | "RENEWED" | "RESOLVED" | "COMPLETED" | "SIGNED";
+
+/** The shared state of a row of work, the same for every holder (KEHOACH 9.21.4). */
+export interface NoticeItem {
+  key: string;
+  level: "INFO" | "ACTION" | "WARNING" | "CRITICAL";
+  state: "OPEN" | "DONE" | "WITHDRAWN" | "EXPIRED" | "CLEARED";
+  outcome: NoticeOutcome | null;
+  actorId: string | null;
+  actorName: string | null;
+  openedAt: string;
+  closedAt: string | null;
+  claimedByName: string | null;
+  dueAt: string | null;
+}
+
+/** Who and what a notice is about, built through the reader's scope when it is read; hidden names nothing. */
+export interface NoticeSubject {
+  type: string;
+  id?: string | null;
+  hidden: boolean;
+  person: { id: number; code?: string; fullName?: string; department?: { id: string; name: string } | null } | null;
+  request?: { kind: RequestKind; fromDate: string; toDate: string; days: string; leaveType: { code: string; name: string } | null } | null;
+}
+
 export interface Notice {
   id: string;
   kind: NoticeKind;
@@ -50,10 +79,13 @@ export interface Notice {
   approved: boolean | null;
   readAt: string | null;
   leftAt: string | null;
+  archivedAt?: string | null;
   createdAt: string;
+  remindedAt?: string | null;
   facts?: Readonly<Record<string, unknown>>;
-  /** Who the notice is about, as the reader may see them now; null or hidden leaves no way in. */
-  subject?: { hidden: boolean; id?: string | null; person: { id: number } | null } | null;
+  category?: NoticeCategory;
+  item?: NoticeItem | null;
+  subject?: NoticeSubject | null;
 }
 
 /** The catalogue keys under "notices" that name a notice. */
