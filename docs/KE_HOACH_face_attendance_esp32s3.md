@@ -7520,10 +7520,12 @@ trang 1, 100, 500, 1.000; `OFFSET` **1,08 → 2,24 → 4,98 → 7,26 ms**. Con t
 So khớp vì vậy chạy trên chữ đã gập, `f_unaccent(lower(x))`: `f_unaccent` là vỏ `IMMUTABLE` bọc
 `unaccent` của Postgres, vì bản gốc chỉ `STABLE` nên không vào được chỉ mục; bảng gập của nó đưa cả
 `đ` về `d`. Từ khoá được chuẩn hoá NFC rồi mới gập, vì chữ gõ ở dạng tổ hợp (NFD) không khớp bảng
-gập. `ILIKE '%nguyen%'` không dùng được B-tree, nên tên và mã có chỉ mục GIN `gin_trgm_ops` trên
-**chính biểu thức đã gập**, và truy vấn phải viết đúng biểu thức ấy thì chỉ mục mới được dùng. Dấu
-`%`, `_` trong từ khoá được thoát, để người gõ không vô tình viết mẫu. Luật này áp cho ô tìm chung,
-danh bạ và ô chọn người.
+gập. `ILIKE '%nguyen%'` không dùng được B-tree, nên tên có chỉ mục GIN `gin_trgm_ops` trên
+**chính biểu thức đã gập**, và truy vấn phải viết đúng biểu thức ấy thì chỉ mục mới được dùng. Mã
+chỉ có chữ ASCII, nên chỉ mục ba chữ của nó nằm trên cột thô và so bằng `ILIKE`; thiếu nó thì vế
+`OR` giữa tên và mã quét cả bảng. Dấu `%`, `_` trong từ khoá được thoát, để người gõ không vô tình
+viết mẫu. Luật này áp cho ô tìm chung, danh bạ và ô chọn người. Prisma không biểu diễn được chỉ
+mục trên biểu thức, nên lần sinh migration kế tiếp sẽ đòi xoá nó; §9.22.3c chặn lệnh ấy.
 
 **5. Việc sống lâu hơn một request thì vào hàng đợi.** Chạy lương cho ba mươi nghìn người không
 phải là một lượt HTTP. `PayrollRun` chia lô theo phòng ban, mỗi lô một job BullMQ, có `attempts`
@@ -9145,11 +9147,19 @@ huỷ đứng một mình**:
 | `ALTER COLUMN ... TYPE` | chú thích `-- widening`, và kiểu mới phải rộng hơn kiểu cũ |
 | `ALTER COLUMN ... SET NOT NULL` | chú thích `-- backfilled by <tên migration>` |
 | `DROP CONSTRAINT` | chú thích `-- replaced by <tên>` |
+| `DROP INDEX` | chú thích `-- replaced by <tên>`; xét từ các migration ngày 01/10/2026 trở đi |
 | `TRUNCATE` | không bao giờ; không có chú thích nào cho qua |
 
 Một `DROP` có chú thích vẫn là một `DROP` — công cụ không ngăn được người cố tình. Nó ngăn được
 thứ hay xảy ra hơn nhiều: **bỏ quên**, tức viết `DROP COLUMN` trong cùng lần phát hành với lệnh
 thêm cột, vì lúc ấy nó trông hoàn toàn hợp lý.
+
+`DROP INDEX` vào bảng vì một lý do khác: Prisma không biểu diễn được chỉ mục trên biểu thức hay
+chỉ mục một phần, nên `prisma migrate dev` so lược đồ với cơ sở dữ liệu rồi **tự sinh lệnh xoá**
+mọi chỉ mục như thế. Đã xảy ra: `20260920040000_requests` xoá cả hai chỉ mục ba chữ của tên và mã
+một ngày sau khi `20260920030000_employee_search` dựng chúng, và từ đó ô tìm quét cả bảng. Bản tự
+sinh không bao giờ có chú thích, nên luật này bắt được nó. Các migration trước 01/10/2026 đã chạy
+ở mọi nơi, sửa chúng là đổi checksum Prisma giữ, nên chúng không bị xét lại.
 
 #### 9.22.4 Ràng buộc đặt ở cơ sở dữ liệu, không chỉ ở tầng ứng dụng
 
