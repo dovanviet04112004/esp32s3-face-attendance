@@ -241,6 +241,14 @@ export class SubjectRequestView {
   leaveType!: { code: string; name: string } | null;
 }
 
+export class SubjectParentView {
+  @ApiProperty({ enum: NoticeSubject, enumName: "NoticeSubject", example: NoticeSubject.PAYSLIP, description: "What kind of record" })
+  type!: NoticeSubject;
+
+  @ApiProperty({ example: "8f14e45f-ceea-467a-9575-7e4f3c2a1b90", description: "The record" })
+  id!: string;
+}
+
 /** Who and what a notice is about, built when it is read, through the reader's scope (KEHOACH 9.21.4). */
 export class NoticeSubjectView {
   @ApiProperty({ enum: NoticeSubject, enumName: "NoticeSubject", example: NoticeSubject.REQUEST, description: "What kind of record" })
@@ -262,6 +270,13 @@ export class NoticeSubjectView {
 
   @ApiProperty({ type: SubjectRequestView, nullable: true, description: "The request's kind and days, for a request" })
   request!: SubjectRequestView | null;
+
+  @ApiProperty({
+    type: SubjectParentView,
+    nullable: true,
+    description: "The record the notice opens when the subject sits inside it: a dispute's payslip, a run's period",
+  })
+  parent!: SubjectParentView | null;
 }
 
 export class NoticeView {
