@@ -27,6 +27,7 @@ const KIND_KEY: Record<
   | "kindCONTRACT_ENDING"
   | "kindDISPUTE_ANSWERED"
   | "kindREQUEST_DECIDED_true"
+  | "kindADVANCE_PAID"
 > = {
   REQUEST_DECIDED: "kindREQUEST_DECIDED_true",
   REQUEST_WAITING: "kindREQUEST_WAITING",
@@ -34,6 +35,7 @@ const KIND_KEY: Record<
   PAYSLIP_ISSUED: "kindPAYSLIP_ISSUED",
   CONTRACT_ENDING: "kindCONTRACT_ENDING",
   DISPUTE_ANSWERED: "kindDISPUTE_ANSWERED",
+  ADVANCE_PAID: "kindADVANCE_PAID",
 };
 
 const CHANNEL_KEY: Record<Channel, "channelIN_APP" | "channelPUSH"> = {
@@ -48,6 +50,7 @@ const KINDS: NoticeKind[] = [
   "PAYSLIP_ISSUED",
   "CONTRACT_ENDING",
   "DISPUTE_ANSWERED",
+  "ADVANCE_PAID",
 ];
 const CHANNELS: Channel[] = ["IN_APP", "PUSH"];
 const PREFS_KEY = ["notifications", "preferences"];

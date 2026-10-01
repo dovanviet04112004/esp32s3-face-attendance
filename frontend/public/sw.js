@@ -107,64 +107,70 @@ const SAYS = {
     REQUEST_DECIDED_true: "Đơn của bạn đã được duyệt",
     REQUEST_DECIDED_false: "Đơn của bạn bị từ chối",
     REQUEST_WAITING: "Có đơn chờ bạn duyệt",
+    REQUEST_WAITING_pay: "Có khoản tạm ứng đã duyệt chờ chi",
     REQUEST_STALLED: "Đơn của bạn chưa ai quyết",
     PAYSLIP_ISSUED: "Phiếu lương kỳ này đã có",
     CONTRACT_ENDING: "Hợp đồng của bạn sắp hết hạn",
     DISPUTE_ANSWERED: "Khiếu nại phiếu lương của bạn đã có trả lời",
+    ADVANCE_PAID: "Khoản tạm ứng của bạn đã được chi",
     other: "Có tin mới cho bạn",
   },
   en: {
     REQUEST_DECIDED_true: "Your request was approved",
     REQUEST_DECIDED_false: "Your request was turned down",
     REQUEST_WAITING: "A request is waiting on you",
+    REQUEST_WAITING_pay: "An approved advance is waiting to be paid",
     REQUEST_STALLED: "Your request has no decision yet",
     PAYSLIP_ISSUED: "This period's payslip is ready",
     CONTRACT_ENDING: "Your contract ends soon",
     DISPUTE_ANSWERED: "Your payslip dispute has an answer",
+    ADVANCE_PAID: "Your salary advance has been paid out",
     other: "There is news for you",
   },
 };
 
-const WHERE = {
-  REQUEST_DECIDED: "/me/requests",
-  REQUEST_WAITING: "/approvals",
-  REQUEST_STALLED: "/me/requests",
-  PAYSLIP_ISSUED: "/me/payslips",
-  CONTRACT_ENDING: "/me",
-  DISPUTE_ANSWERED: "/me/payslips",
-};
-
 // The same routing as the bell's notice list: the reference names the queue or the record.
+function waitingAt(body) {
+  if (body.requestId) {
+    return `/leave/${body.requestId}`;
+  }
+  const [tab, id] = body.certificateId
+    ? ["certificates", body.certificateId]
+    : body.profileChangeId
+      ? ["profileChanges", body.profileChangeId]
+      : body.dependentId
+        ? ["dependents", body.dependentId]
+        : body.advanceId
+          ? [body.approved ? "advancesToPay" : "advancesToDecide", body.advanceId]
+          : ["disputes", body.payslipId || ""];
+  return `/approvals?tab=${tab}&open=${id}`;
+}
+
+// An empty path opens the app's own home: some notices have no page that says more.
 function pathOf(body) {
-  if (body.kind === "REQUEST_WAITING") {
-    const tab = body.certificateId
-      ? "certificates"
-      : body.profileChangeId
-        ? "profileChanges"
-        : body.dependentId
-          ? "dependents"
-          : body.advanceId
-            ? "advancesToDecide"
-            : body.payslipId
-              ? "disputes"
-              : "requests";
-    return `/approvals?tab=${tab}`;
-  }
-  if (body.kind === "REQUEST_DECIDED" || body.kind === "REQUEST_STALLED") {
-    if (body.certificateId) {
-      return "/me/letters";
-    }
-    if (body.profileChangeId || body.dependentId) {
-      return "/me/profile";
-    }
-    if (body.advanceId) {
+  switch (body.kind) {
+    case "REQUEST_WAITING":
+      return waitingAt(body);
+    case "REQUEST_DECIDED":
+    case "REQUEST_STALLED":
+      if (body.certificateId) {
+        return "/me/letters";
+      }
+      if (body.profileChangeId || body.dependentId) {
+        return "/me/profile";
+      }
+      if (body.advanceId) {
+        return "/me/requests?tab=advances";
+      }
+      return body.requestId ? `/me/requests?open=${body.requestId}` : "/me/requests";
+    case "ADVANCE_PAID":
       return "/me/requests?tab=advances";
-    }
-    if (body.requestId) {
-      return `/me/requests?open=${body.requestId}`;
-    }
+    case "PAYSLIP_ISSUED":
+    case "DISPUTE_ANSWERED":
+      return body.payslipId ? `/me/payslips?slip=${body.payslipId}` : "/me/payslips";
+    default:
+      return "";
   }
-  return WHERE[body.kind] || "/me";
 }
 
 // The worker's scope is "/", so it cannot read a locale off the url; the
@@ -177,6 +183,9 @@ function wording(body) {
   const table = tableFor(body);
   if (body.kind === "REQUEST_DECIDED") {
     return table[`REQUEST_DECIDED_${body.approved === true}`];
+  }
+  if (body.kind === "REQUEST_WAITING" && body.advanceId && body.approved === true) {
+    return table.REQUEST_WAITING_pay;
   }
   return table[body.kind] || table.other;
 }
@@ -214,6 +223,6 @@ async function reopen(target) {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const held = event.notification.data || {};
-  const target = new URL(`/${held.locale || "vi"}${held.path || "/me"}`, self.location.origin).href;
+  const target = new URL(`/${held.locale || "vi"}${held.path ?? "/me"}`, self.location.origin).href;
   event.waitUntil(reopen(target));
 });
