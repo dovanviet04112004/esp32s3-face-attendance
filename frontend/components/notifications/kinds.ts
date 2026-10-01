@@ -4,6 +4,8 @@ import {
   ChatCircleTextIcon,
   CheckSquareIcon,
   CoinsIcon,
+  FileTextIcon,
+  HourglassMediumIcon,
   ReceiptIcon,
   TimerIcon,
   TrayIcon,
@@ -16,7 +18,9 @@ export type NoticeKind =
   | "PAYSLIP_ISSUED"
   | "CONTRACT_ENDING"
   | "DISPUTE_ANSWERED"
-  | "ADVANCE_PAID";
+  | "ADVANCE_PAID"
+  | "CONTRACT_DUE"
+  | "PROBATION_DUE";
 
 export type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
 
@@ -37,6 +41,8 @@ export interface Notice {
   readAt: string | null;
   leftAt: string | null;
   createdAt: string;
+  /** Who the notice is about, as the reader may see them now; null or hidden leaves no way in. */
+  subject?: { hidden: boolean; person: { id: number } | null } | null;
 }
 
 /** The catalogue keys under "notices" that name a notice. */
@@ -49,7 +55,9 @@ export type NoticeSentence =
   | "kindPAYSLIP_ISSUED"
   | "kindCONTRACT_ENDING"
   | "kindDISPUTE_ANSWERED"
-  | "kindADVANCE_PAID";
+  | "kindADVANCE_PAID"
+  | "kindCONTRACT_DUE"
+  | "kindPROBATION_DUE";
 
 interface KindLook {
   icon: IconType;
@@ -88,6 +96,9 @@ function decidedAt(notice: Notice): string {
   if (notice.advanceId) {
     return "/me/requests?tab=advances";
   }
+  if (notice.payslipId) {
+    return payslipAt(notice);
+  }
   return notice.requestId ? `/me/requests?open=${notice.requestId}` : "/me/requests";
 }
 
@@ -95,7 +106,13 @@ function payslipAt(notice: Notice): string {
   return notice.payslipId ? `/me/payslips?slip=${notice.payslipId}` : "/me/payslips";
 }
 
+function personAt(notice: Notice, tab = ""): string | null {
+  const person = notice.subject?.hidden ? null : notice.subject?.person;
+  return person ? `/employees/${person.id}${tab}` : null;
+}
+
 const kContractDays = 30;
+const kProbationDays = 7;
 const kStalledDays = 7;
 
 /** One row per kind, the frontend half of notice-kinds.ts; a kind missing here does not compile (KEHOACH 9.21.4). */
@@ -143,6 +160,20 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     label: { key: "kindADVANCE_PAID" },
     sentence: () => ({ key: "kindADVANCE_PAID" }),
     path: () => "/me/requests?tab=advances",
+  },
+  CONTRACT_DUE: {
+    icon: FileTextIcon,
+    category: "PEOPLE",
+    label: { key: "kindCONTRACT_DUE", count: kContractDays },
+    sentence: (notice) => ({ key: "kindCONTRACT_DUE", count: notice.daysLeft ?? kContractDays }),
+    path: (notice) => personAt(notice, "?tab=contracts"),
+  },
+  PROBATION_DUE: {
+    icon: HourglassMediumIcon,
+    category: "PEOPLE",
+    label: { key: "kindPROBATION_DUE", count: kProbationDays },
+    sentence: (notice) => ({ key: "kindPROBATION_DUE", count: notice.daysLeft ?? kProbationDays }),
+    path: (notice) => personAt(notice),
   },
   CONTRACT_ENDING: {
     icon: CalendarDotsIcon,
