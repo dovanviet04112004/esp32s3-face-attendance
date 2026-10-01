@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, scryptSync } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
@@ -20,6 +20,9 @@ const EMAIL = "e2eps@kiosk.local";
 const CHOSEN = "a-password-they-picked";
 const NEXT_ONE = "the-one-after-forgetting";
 const CHANGED = "the-one-they-changed-to";
+const OLD_COST = "made-at-the-old-cost";
+const LAST_ONE = "the-one-after-the-old-cost";
+const CAPPED = "e2eps-capped@kiosk.local";
 
 describe("first password (e2e)", () => {
   let app: INestApplication;
@@ -32,7 +35,7 @@ describe("first password (e2e)", () => {
   let auth: AuthService;
 
   async function sweep(): Promise<void> {
-    await db.user.deleteMany({ where: { email: EMAIL } });
+    await db.user.deleteMany({ where: { email: { in: [EMAIL, CAPPED] } } });
     await db.employee.deleteMany({ where: { code: CODE } });
   }
 
@@ -279,5 +282,63 @@ describe("first password (e2e)", () => {
       .send({ token: link, password: "another-password-again" });
     assert.equal(res.status, 401);
     assert.equal(res.body.message, "SETUP_LINK_SPENT");
+  });
+
+  it("checks a hash made at the old cost and makes it again at today's on the next good sign-in", async () => {
+    const salt = randomBytes(16);
+    const stale = `scrypt$${salt.toString("base64")}$${scryptSync(OLD_COST, salt, 64).toString("base64")}`;
+    await db.user.update({ where: { id: userId }, data: { passwordHash: stale } });
+    assert.equal(typeof (await auth.signIn(EMAIL, OLD_COST, {})).accessToken, "string", "an old-cost hash no longer opens");
+    const held = await db.user.findUniqueOrThrow({ where: { id: userId } });
+    assert.match(held.passwordHash, /^scrypt\$N=16384,r=8,p=5\$/, "the hash kept its old cost");
+    assert.ok(await opensWith(OLD_COST), "the hash made again does not open with the same password");
+  });
+
+  it("closes every open link when the password changes", async () => {
+    const spare = randomBytes(32).toString("base64url");
+    await db.passwordSetup.create({
+      data: { userId, tokenHash: createHash("sha256").update(spare).digest("hex"), expiresAt: new Date(Date.now() + 3_600_000) },
+    });
+    const access = (await auth.signIn(EMAIL, OLD_COST, {})).accessToken;
+    const changed = await request(http)
+      .post("/auth/change-password")
+      .set("Authorization", `Bearer ${access}`)
+      .send({ current: OLD_COST, next: LAST_ONE });
+    assert.equal(changed.status, 204);
+    const late = await request(http).post("/auth/set-password").send({ token: spare, password: "a-password-from-the-old-link" });
+    assert.equal(late.status, 401, "a link from before the change still set the password");
+    assert.ok(await opensWith(LAST_ONE));
+  });
+
+  it("tells the owner by mail each time the password changes, naming neither password nor link", async () => {
+    const jobs = await queues[QUEUE.notify].getJobs(["waiting", "delayed", "completed", "active", "failed"]);
+    const told = jobs
+      .map((job) => job.data as { type: string; userId?: string })
+      .filter((data) => data.type === "password-changed" && data.userId === userId);
+    assert.ok(told.length >= 3, `the owner heard of ${told.length} changes`);
+    assert.deepEqual(Object.keys(told[0]).sort(), ["type", "userId"], "the letter carries more than the account");
+  });
+
+  it("gives a link asked for at the sign-in page an hour, and keeps one link alive per account", async () => {
+    const lifetime = validateEnv().PASSWORD_RESET_TTL_MINUTES;
+    await request(http).post("/auth/forgot-password").send({ email: EMAIL });
+    const first = await db.passwordSetup.findFirstOrThrow({ where: { userId }, orderBy: { createdAt: "desc" } });
+    const minutes = (first.expiresAt.getTime() - first.createdAt.getTime()) / 60_000;
+    assert.ok(Math.abs(minutes - lifetime) < 1, `a reset link lives ${minutes} minutes, not ${lifetime}`);
+    await request(http).post("/auth/forgot-password").send({ email: EMAIL });
+    const alive = await db.passwordSetup.count({ where: { userId, usedAt: null, expiresAt: { gt: new Date() } } });
+    assert.equal(alive, 1, "two links to one account were alive at once");
+  });
+
+  it("mails one address no more than its hourly share, whether or not it has an account", async () => {
+    const share = validateEnv().FORGOT_PER_EMAIL_PER_HOUR;
+    const capped = await db.user.create({ data: { email: CAPPED, passwordHash: UNUSABLE_PASSWORD, role: "VIEWER" } });
+    for (let ask = 0; ask <= share; ask += 1) {
+      const known = await request(http).post("/auth/forgot-password").send({ email: CAPPED });
+      const unknown = await request(http).post("/auth/forgot-password").send({ email: `nobody-capped-${ask}@kiosk.local` });
+      assert.equal(known.status, 204);
+      assert.equal(unknown.status, known.status, "an address over its share answered differently");
+    }
+    assert.equal(await db.passwordSetup.count({ where: { userId: capped.id } }), share, "one address got more letters than its share");
   });
 });

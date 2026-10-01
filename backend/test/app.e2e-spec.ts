@@ -168,7 +168,7 @@ describe("auth (e2e)", () => {
     assert.equal(res.body.fields, undefined);
   });
 
-  it("reads a large import body only for a caller holding a token this api signed", async () => {
+  it("reads a large import body only for a recent ticket of a role that imports", async () => {
     const big = { csv: "x".repeat(200_000) };
     const anonymous = await request(http).post("/employees/import").send(big);
     assert.equal(anonymous.status, 413, "an anonymous body was read before anyone asked who sent it");
@@ -183,6 +183,36 @@ describe("auth (e2e)", () => {
       .set("Authorization", `Bearer ${lapsed}`)
       .send(big);
     assert.equal(renewing.status, 401, "an expired ticket lost the 401 that sends the browser to renew");
+
+    const secret = validateEnv().JWT_ACCESS_SECRET;
+    const longDead = new JwtService().sign(
+      { sub: "e2e-long-dead", role: "HR", sid: "e2e-long-dead", exp: Math.floor(Date.now() / 1000) - 7200 },
+      { secret },
+    );
+    const viewer = new JwtService().sign({ sub: "e2e-viewer", role: "VIEWER", sid: "e2e-viewer" }, { secret, expiresIn: "5m" });
+    for (const [who, ticket] of [["a ticket dead for hours", longDead], ["a role that cannot import", viewer]]) {
+      const res = await request(http).post("/employees/import").set("Authorization", `Bearer ${ticket}`).send(big);
+      assert.equal(res.status, 413, `${who} made the server read 16 MB`);
+    }
+  });
+
+  it("refuses a ticket signed with another algorithm under the right secret", async () => {
+    const login = await signIn(SIGNER_EMAIL, password);
+    const claims = JSON.parse(Buffer.from(login.body.accessToken.split(".")[1], "base64url").toString());
+    const forged = new JwtService().sign(
+      { sub: claims.sub, role: claims.role, sid: claims.sid },
+      { secret: validateEnv().JWT_ACCESS_SECRET, algorithm: "HS512", expiresIn: "5m" },
+    );
+    assert.equal((await request(http).get("/auth/me").set("Authorization", `Bearer ${forged}`)).status, 401);
+  });
+
+  it("kills the ticket of the device that signs out at once, and only that device's", async () => {
+    const phone = (await signIn(SIGNER_EMAIL, password)).body.accessToken as string;
+    const laptop = (await signIn(SIGNER_EMAIL, password)).body.accessToken as string;
+    const out = await request(http).post("/auth/logout").set("Authorization", `Bearer ${phone}`).send({});
+    assert.equal(out.status, 204);
+    assert.equal((await request(http).get("/auth/me").set("Authorization", `Bearer ${phone}`)).status, 401);
+    assert.equal((await request(http).get("/auth/me").set("Authorization", `Bearer ${laptop}`)).status, 200);
   });
 
   it("answers a route that does not exist with a code", async () => {
