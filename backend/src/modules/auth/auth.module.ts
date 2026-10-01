@@ -9,7 +9,7 @@ import { RATE_BUCKETS } from "../../common/decorators/rate-bucket.decorator.js";
 import type { Env } from "../../config/env.schema.js";
 import { RedisService } from "../../database/redis.service.js";
 import { AuthController } from "./auth.controller.js";
-import { THROTTLE, type AccessClaims } from "./auth.types.js";
+import { JWT_ALGORITHM, THROTTLE, type AccessClaims } from "./auth.types.js";
 import { AuthService } from "./auth.service.js";
 import { LoginLockout } from "./login-lockout.service.js";
 import { DeviceStrategy } from "./strategies/device.strategy.js";
@@ -39,7 +39,7 @@ function byAccount(secret: string): (req: Record<string, any>) => string {
     const header: unknown = req.headers?.authorization;
     const token = typeof header === "string" && header.startsWith(BEARER) ? header.slice(BEARER.length) : "";
     try {
-      return token ? `user:${jwt.verify<AccessClaims>(token, { secret }).sub}` : byAddress(req);
+      return token ? `user:${jwt.verify<AccessClaims>(token, { secret, algorithms: [JWT_ALGORITHM] }).sub}` : byAddress(req);
     } catch {
       return byAddress(req);
     }

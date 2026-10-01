@@ -15,7 +15,7 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { AuthService } from "../auth/auth.service.js";
-import { SESSIONS_CUT, type AccessClaims, type SessionsCut } from "../auth/auth.types.js";
+import { JWT_ALGORITHM, SESSIONS_CUT, type AccessClaims, type SessionsCut } from "../auth/auth.types.js";
 
 /** What the dashboard can be told about; KEHOACH 9.4 names who hears each. */
 export const FEED = {
@@ -112,6 +112,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     try {
       const claims = this.jwt.verify<AccessClaims & { iat?: number; exp?: number }>(token, {
         secret: this.config.get("JWT_ACCESS_SECRET", { infer: true }),
+        algorithms: [JWT_ALGORITHM],
       });
       return {
         claims,

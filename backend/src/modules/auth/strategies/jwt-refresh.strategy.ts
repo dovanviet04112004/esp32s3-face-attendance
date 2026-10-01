@@ -5,7 +5,7 @@ import type { Request } from "express";
 import { Strategy } from "passport-jwt";
 
 import type { Env } from "../../../config/env.schema.js";
-import { REFRESH_COOKIE, type RefreshClaims } from "../auth.types.js";
+import { JWT_ALGORITHM, REFRESH_COOKIE, type RefreshClaims } from "../auth.types.js";
 
 /** The refresh token rides in an httpOnly cookie, never in a header. */
 function fromCookie(req: Request): string | null {
@@ -19,6 +19,7 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, "jwt-refresh"
     super({
       jwtFromRequest: fromCookie,
       secretOrKey: config.get("JWT_REFRESH_SECRET", { infer: true }),
+      algorithms: [JWT_ALGORITHM],
       ignoreExpiration: false,
     });
   }

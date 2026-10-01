@@ -11,12 +11,19 @@ import { DOCS, GUARD } from "../../common/cache/cache-keys.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { RedisService } from "../../database/redis.service.js";
-import { SESSIONS_CUT, type AccessClaims, type DeviceClaims, type RefreshClaims, type SessionsCut } from "./auth.types.js";
+import {
+  JWT_ALGORITHM,
+  SESSIONS_CUT,
+  type AccessClaims,
+  type DeviceClaims,
+  type RefreshClaims,
+  type SessionsCut,
+} from "./auth.types.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
 import { LoginLockout, normalEmail } from "./login-lockout.service.js";
-import { hashPassword, LINK_BYTES, verifyPassword } from "./password.js";
+import { hashPassword, LINK_BYTES, needsRehash, verifyPassword } from "./password.js";
 
 const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
@@ -88,6 +95,9 @@ export class AuthService {
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
     }
     await this.lockout.clear(email);
+    if (needsRehash(user.passwordHash)) {
+      await this.db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(password) } });
+    }
     await this.makeRoom(user.id);
     return this.issue(user, from);
   }
@@ -337,6 +347,7 @@ export class AuthService {
     try {
       claims = this.jwt.verify<DeviceClaims>(token, {
         secret: this.config.get("JWT_DEVICE_SECRET", { infer: true }),
+        algorithms: [JWT_ALGORITHM],
       });
     } catch {
       return false;

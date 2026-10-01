@@ -5,7 +5,7 @@ import { ExtractJwt, Strategy } from "passport-jwt";
 
 import type { Env } from "../../../config/env.schema.js";
 import { AuthService } from "../auth.service.js";
-import type { AccessClaims } from "../auth.types.js";
+import { JWT_ALGORITHM, type AccessClaims } from "../auth.types.js";
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
@@ -16,6 +16,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: config.get("JWT_ACCESS_SECRET", { infer: true }),
+      algorithms: [JWT_ALGORITHM],
       ignoreExpiration: false,
     });
   }

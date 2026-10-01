@@ -6,7 +6,7 @@ import { ExtractJwt, Strategy } from "passport-jwt";
 
 import type { Env } from "../../../config/env.schema.js";
 import { AuthService } from "../auth.service.js";
-import type { DeviceClaims } from "../auth.types.js";
+import { JWT_ALGORITHM, type DeviceClaims } from "../auth.types.js";
 
 const bearer = ExtractJwt.fromAuthHeaderAsBearerToken();
 
@@ -20,6 +20,7 @@ export class DeviceStrategy extends PassportStrategy(Strategy, "device") {
     super({
       jwtFromRequest: bearer,
       secretOrKey: config.get("JWT_DEVICE_SECRET", { infer: true }),
+      algorithms: [JWT_ALGORITHM],
       ignoreExpiration: false,
       passReqToCallback: true,
     });

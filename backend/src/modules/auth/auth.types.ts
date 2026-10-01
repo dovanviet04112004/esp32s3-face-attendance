@@ -32,6 +32,8 @@ export interface SessionsCut {
   userIds: string[];
 }
 
+export const JWT_ALGORITHM = "HS256";
+
 export const THROTTLE = {
   api: "api",
   heavy: "heavy",
