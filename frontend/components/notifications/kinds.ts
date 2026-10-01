@@ -35,6 +35,7 @@ export interface Notice {
   daysWaited: number | null;
   approved: boolean | null;
   readAt: string | null;
+  leftAt: string | null;
   createdAt: string;
 }
 

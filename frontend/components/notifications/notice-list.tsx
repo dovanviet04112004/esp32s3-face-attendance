@@ -46,11 +46,11 @@ export function NoticeList({ onGo }: { onGo: () => void }) {
 
   const notices = useQuery({
     queryKey: ["notifications"],
-    queryFn: async () => (await api.get<Notice[]>("/notifications")).data,
+    queryFn: async () => (await api.get<{ rows: Notice[] }>("/notifications")).data.rows,
   });
 
   const read = useMutation({
-    mutationFn: (id?: string) => api.post(id ? `/notifications/${id}/read` : "/notifications/read"),
+    mutationFn: (id?: string) => api.post("/notifications/read", id ? { ids: [id] } : { all: true }),
     onSuccess: () => void cache.invalidateQueries({ queryKey: ["notifications"] }),
     onError: notify.failed,
   });
@@ -61,7 +61,8 @@ export function NoticeList({ onGo }: { onGo: () => void }) {
     return said.count === undefined ? t(said.key) : t(said.key, { count: said.count });
   }
 
-  const rows = notices.data ?? [];
+  // A row whose work moved to somebody else has nothing left for this reader to open.
+  const rows = (notices.data ?? []).filter((notice) => notice.leftAt === null);
 
   return (
     <div>
