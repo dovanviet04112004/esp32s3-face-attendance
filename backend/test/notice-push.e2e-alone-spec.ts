@@ -146,7 +146,7 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     const before = sent.length;
     const items = app.get(NoticeItemsService);
     assert.ok(await items.claimMark("REQUESTS", id, 3));
-    await items.remind("REQUESTS", id, 3);
+    await items.remind("REQUESTS", id, { daysWaited: 3 });
     const reminded = (await pushesTo("boss", 3)).slice(-1)[0];
     assert.ok(sent.length > before && reminded, "the reminder pushed nothing");
     assert.equal(reminded.body.tag, itemKey("REQUESTS", id));

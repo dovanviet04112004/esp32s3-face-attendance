@@ -110,6 +110,7 @@ export const AUDIT_ACTIONS = {
   CERTIFICATE_ISSUE: "certificate.issue",
   CERTIFICATE_REJECT: "certificate.reject",
   CERTIFICATE_CANCEL: "certificate.cancel",
+  NOTICE_RESOLVE: "notice.resolve",
   CERTIFICATE_READ: "certificate.read",
 
   PROFILE_ASK: "profile.ask",

@@ -55,6 +55,8 @@ const DESK_OF: Record<Exclude<InboxQueue, "REQUESTS">, keyof typeof QUEUE_DESKS>
 
 const ESCALATE_ON_DAY = 7;
 
+const DUE_DESK: Role[] = ["ADMIN", "HR"];
+
 // An approver counts only with an open login whose role opens the inbox (KEHOACH 9.21.4).
 const UNREACHABLE = {
   NOT: { login: { is: { active: true, role: { in: [...INBOX_ROLES] } } } },
@@ -123,7 +125,10 @@ export class AudienceService {
   /** Every open login a subject waits on, found by asking waitingOn of each login that could hold it.
    *  @ctx any | one count per candidate login
    */
-  async audienceOf(queue: InboxQueue, subjectId: string): Promise<string[]> {
+  async audienceOf(queue: NoticeQueue, subjectId: string): Promise<string[]> {
+    if (queue === "CONTRACTS_DUE" || queue === "PROBATION_DUE") {
+      return this.dueAudience(queue, subjectId);
+    }
     const candidates = await this.candidates(queue, subjectId);
     const held: string[] = [];
     for (const one of candidates) {
@@ -133,6 +138,34 @@ export class AudienceService {
       }
     }
     return held;
+  }
+
+  // The desk that signs, never the person about it; a probation also the manager who judges it (KEHOACH 9.18 items 1-2).
+  private async dueAudience(queue: "CONTRACTS_DUE" | "PROBATION_DUE", contractId: string): Promise<string[]> {
+    const held = await this.db.employmentContract.findUnique({
+      where: { id: contractId },
+      select: { employeeId: true, employee: { select: { managerId: true } } },
+    });
+    if (!held) {
+      return [];
+    }
+    const desk = await this.db.user.findMany({
+      where: {
+        active: true,
+        role: { in: DUE_DESK },
+        OR: [{ employeeId: null }, { employeeId: { not: held.employeeId } }],
+      },
+      select: { id: true, role: true, employeeId: true },
+    });
+    const seated = desk.filter((one) => !isUnlinkedDesk({ userId: one.id, role: one.role, employeeId: one.employeeId }));
+    const boss =
+      queue === "PROBATION_DUE" && held.employee.managerId !== null
+        ? await this.db.user.findFirst({
+            where: { employeeId: held.employee.managerId, active: true, role: { in: [...INBOX_ROLES] } },
+            select: { id: true },
+          })
+        : null;
+    return [...new Set([...seated.map((one) => one.id), ...(boss ? [boss.id] : [])])];
   }
 
   /** The whole working day of the company a request reaches the desk on (KEHOACH 9.21.4). */

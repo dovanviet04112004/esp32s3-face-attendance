@@ -15,8 +15,8 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AttendanceService } from "../src/modules/attendance/attendance.service.js";
 import { EnrollmentListener } from "../src/modules/enrollment/enrollment.listener.js";
 import type { KioskMessage } from "../src/modules/mqtt/mqtt.events.js";
-import { ContractAlertsService } from "../src/modules/notifications/contract-alerts.service.js";
 import { NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
+import { ContractsSweep } from "../src/modules/notifications/sweeps/contracts.sweep.js";
 import { StalledSweep } from "../src/modules/notifications/sweeps/stalled.sweep.js";
 import { ReportsService } from "../src/modules/reports/reports.service.js";
 import { dayWindow, localDateSql, localDay } from "../src/modules/timesheet/local-day.js";
@@ -265,7 +265,7 @@ describe("company time (e2e)", () => {
   });
 
   it("counts a contract's days left from the company's midnight", async () => {
-    const alerts = app.get(ContractAlertsService);
+    const alerts = app.get(ContractsSweep);
     const contractOf = async (code: string, endsOn: string): Promise<string> => {
       const made = await db.employmentContract.create({
         data: {
@@ -282,10 +282,9 @@ describe("company time (e2e)", () => {
     const onMark = await contractOf(ENDING_30, "2031-04-13");
     await alerts.sweep(HALF_PAST_MIDNIGHT);
 
-    assert.equal(await db.notification.count({ where: { contractId: early } }), 0, "29 days left was told as 30");
-    const told = await db.notification.findMany({ where: { contractId: onMark } });
-    assert.equal(told.length, 1, "30 days left by the company's calendar was not told");
-    assert.equal(told[0]?.daysLeft, 30);
+    const toldOf = (id: string) => db.notification.findFirst({ where: { kind: "CONTRACT_ENDING", contractId: id } });
+    assert.equal((await toldOf(onMark))?.daysLeft, 30, "30 days left by the company's calendar was not told");
+    assert.equal((await toldOf(early))?.daysLeft, 29, "29 days left was counted from UTC midnight");
   });
 
   it("keeps the kiosk's clock skew from a live heartbeat, never from the broker's retained copy", async () => {

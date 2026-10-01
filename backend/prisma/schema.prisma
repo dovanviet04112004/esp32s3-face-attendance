@@ -1385,6 +1385,8 @@ enum NoticeKind {
   CONTRACT_ENDING
   DISPUTE_ANSWERED
   ADVANCE_PAID
+  CONTRACT_DUE
+  PROBATION_DUE
 }
 
 enum NoticeChannel {
@@ -1402,6 +1404,8 @@ enum NoticeQueue {
   PROFILE_CHANGES
   DISPUTES
   DEPENDENTS
+  CONTRACTS_DUE
+  PROBATION_DUE
 }
 
 enum NoticeSubject {
@@ -1421,6 +1425,8 @@ enum NoticeOutcome {
   ISSUED
   UPHELD
   PAID
+  RENEWED
+  RESOLVED
 }
 
 enum NoticeLevel {

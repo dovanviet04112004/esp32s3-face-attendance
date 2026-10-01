@@ -8,18 +8,21 @@ import type {
   NoticeQueue,
   NoticeSubject,
   Prisma,
+  Role,
 } from "@prisma/client";
 
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
-import { AudienceService, type InboxQueue } from "./audience.service.js";
-import { kebab, type ItemKind } from "./notice-kinds.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
+import { AuditService } from "../audit/audit.service.js";
+import { AudienceService } from "./audience.service.js";
+import { DUE_MARKS, DUE_WARNING, kebab, type ItemKind } from "./notice-kinds.js";
 import { NAMED, nameOf, NotificationsService } from "./notifications.service.js";
 import { SubjectsService, type SubjectView } from "./subjects.service.js";
 
-export const QUEUE_SUBJECT: Record<InboxQueue, NoticeSubject> = {
+export const QUEUE_SUBJECT: Record<NoticeQueue, NoticeSubject> = {
   REQUESTS: "REQUEST",
   ADVANCES_TO_DECIDE: "ADVANCE",
   ADVANCES_TO_PAY: "ADVANCE",
@@ -27,9 +30,28 @@ export const QUEUE_SUBJECT: Record<InboxQueue, NoticeSubject> = {
   PROFILE_CHANGES: "PROFILE_CHANGE",
   DISPUTES: "DISPUTE",
   DEPENDENTS: "DEPENDENT",
+  CONTRACTS_DUE: "CONTRACT",
+  PROBATION_DUE: "CONTRACT",
 };
 
-const ITEM_KIND: ItemKind = "REQUEST_WAITING";
+/** The kind a queue's work is told as. */
+export const QUEUE_KIND: Record<NoticeQueue, ItemKind> = {
+  REQUESTS: "REQUEST_WAITING",
+  ADVANCES_TO_DECIDE: "REQUEST_WAITING",
+  ADVANCES_TO_PAY: "REQUEST_WAITING",
+  CERTIFICATES: "REQUEST_WAITING",
+  PROFILE_CHANGES: "REQUEST_WAITING",
+  DISPUTES: "REQUEST_WAITING",
+  DEPENDENTS: "REQUEST_WAITING",
+  CONTRACTS_DUE: "CONTRACT_DUE",
+  PROBATION_DUE: "PROBATION_DUE",
+};
+
+// Only work no business path decides closes by hand, and only by the desk that signs (KEHOACH 9.18 items 1-2).
+const RESOLVERS: Partial<Record<NoticeQueue, readonly Role[]>> = {
+  CONTRACTS_DUE: ["ADMIN", "HR"],
+  PROBATION_DUE: ["ADMIN", "HR"],
+};
 
 export interface Closing {
   state: Exclude<NoticeItemState, "OPEN">;
@@ -53,7 +75,7 @@ interface Seated {
 }
 
 // Work that takes more than one click to finish, where the group needs to see who is on it (KEHOACH 9.21.4).
-export const CLAIMABLE: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["DISPUTES", "CERTIFICATES"]);
+export const CLAIMABLE: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["DISPUTES", "CERTIFICATES", "CONTRACTS_DUE", "PROBATION_DUE"]);
 
 /** An item as its group reads it: its state and result, who is on it, whom it reached and who has read it. */
 export interface ItemDetail {
@@ -67,6 +89,7 @@ export interface ItemDetail {
   closedAt: Date | null;
   dueAt: Date | null;
   claimable: boolean;
+  resolvable: boolean;
   claimedByName: string | null;
   claimedAt: Date | null;
   subject: SubjectView | null;
@@ -84,7 +107,7 @@ type ItemRead = Prisma.NoticeItemGetPayload<{ include: typeof ITEM_READ }>;
 const kHourMs = 3_600_000;
 
 /** The key of the one item a subject has in a queue (KEHOACH 9.21.4). */
-export function itemKey(queue: InboxQueue, subjectId: string): string {
+export function itemKey(queue: NoticeQueue, subjectId: string): string {
   return `${kebab(queue)}:${subjectId}`;
 }
 
@@ -100,6 +123,7 @@ export class NoticeItemsService {
     private readonly subjects: SubjectsService,
     private readonly feed: RealtimeGateway,
     private readonly config: ConfigService<Env, true>,
+    private readonly audit: AuditService,
   ) {}
 
   /** An item for a reader who holds a row of it, the person it is about, or an ADMIN; only the group and ADMIN see whom it reached.
@@ -123,6 +147,7 @@ export class NoticeItemsService {
       closedAt: item.closedAt,
       dueAt: item.dueAt,
       claimable: CLAIMABLE.has(item.queue),
+      resolvable: RESOLVERS[item.queue]?.includes(viewer.role) ?? false,
       claimedByName: claimLive ? nameOf(item.claimedBy) : null,
       claimedAt: claimLive ? item.claimedAt : null,
       subject,
@@ -168,15 +193,28 @@ export class NoticeItemsService {
     return this.detail(viewer, key);
   }
 
-  /** Close an item by hand, kept for kinds no business path decides; every inbox queue has one (KEHOACH 9.21.4).
-   *  @ctx any | NOTICE_NOT_FOUND outside the group, NOTICE_ITEM_NOT_RESOLVABLE for an inbox queue
+  /** Close work by hand with a note, for kinds no business decision closes; audited (KEHOACH 9.21.4, 9.24).
+   *  @ctx any | NOTICE_NOT_FOUND outside the group, NOTICE_ITEM_NOT_RESOLVABLE for work its own queue decides
    */
-  async resolve(viewer: Viewer, key: string): Promise<ItemDetail> {
-    const { member } = await this.reachable(viewer, key);
+  async resolve(viewer: Viewer, key: string, note: string): Promise<ItemDetail> {
+    const { item, member } = await this.reachable(viewer, key);
     if (!member) {
       throw new NotFoundException("NOTICE_NOT_FOUND");
     }
-    throw new ConflictException("NOTICE_ITEM_NOT_RESOLVABLE");
+    if (!(RESOLVERS[item.queue]?.includes(viewer.role) ?? false)) {
+      throw new ConflictException("NOTICE_ITEM_NOT_RESOLVABLE");
+    }
+    if (!(await this.close(item.queue, item.subjectId, { state: "DONE", outcome: "RESOLVED", actorId: viewer.userId }))) {
+      throw new ConflictException("NOTICE_ITEM_CLOSED");
+    }
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.NOTICE_RESOLVE,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(item.employeeId ?? ""),
+      meta: { key: item.key, note },
+    });
+    return this.detail(viewer, key);
   }
 
   private async reachable(viewer: Viewer, key: string): Promise<{ item: ItemRead; member: boolean }> {
@@ -200,7 +238,7 @@ export class NoticeItemsService {
   /** Open the item a waiting row casts and seat its group; a subject never has two in one queue.
    *  @ctx any | after the business commit; logs its own failures, which reconcile repairs
    */
-  async open(queue: InboxQueue, subject: { id: string; employeeId: number }, joining: Joining = "announce"): Promise<void> {
+  async open(queue: NoticeQueue, subject: { id: string; employeeId: number }, joining: Joining = "announce"): Promise<void> {
     try {
       const key = itemKey(queue, subject.id);
       await this.db.noticeItem.createMany({
@@ -219,7 +257,7 @@ export class NoticeItemsService {
   /** Close the item for everybody: one UPDATE claims it, and only that call marks the rows read.
    *  @ctx any | after the business commit; logs its own failures, which reconcile repairs
    */
-  async close(queue: InboxQueue, subjectId: string, closing: Closing): Promise<boolean> {
+  async close(queue: NoticeQueue, subjectId: string, closing: Closing): Promise<boolean> {
     try {
       const key = itemKey(queue, subjectId);
       const shut = await this.db.noticeItem.updateMany({
@@ -276,7 +314,7 @@ export class NoticeItemsService {
   /** Recount the groups of these people's open items now, telling newcomers as at filing (KEHOACH 9.21.4).
    *  @ctx any | after the commit that moved an approver; logs its own failures, which reconcile repairs
    */
-  async regroupPeople(queue: InboxQueue, employeeIds: number[]): Promise<void> {
+  async regroupPeople(queue: NoticeQueue, employeeIds: number[]): Promise<void> {
     if (employeeIds.length === 0) {
       return;
     }
@@ -293,7 +331,7 @@ export class NoticeItemsService {
   }
 
   /** Take a reminder mark; only the call that moves lastMark speaks, so a mark is said once (KEHOACH 9.21.4). */
-  async claimMark(queue: InboxQueue, subjectId: string, mark: number): Promise<boolean> {
+  async claimMark(queue: NoticeQueue, subjectId: string, mark: number): Promise<boolean> {
     const claimed = await this.db.noticeItem.updateMany({
       where: { key: itemKey(queue, subjectId), state: "OPEN", OR: [{ lastMark: null }, { lastMark: { lt: mark } }] },
       data: { lastMark: mark },
@@ -301,10 +339,39 @@ export class NoticeItemsService {
     return claimed.count === 1;
   }
 
+  /** Open work against a date and speak at the days-left mark it has passed; the first mark is the opening.
+   *  @ctx any | the mark is claimed on the item, so each is said once, a missed day included (KEHOACH 9.18)
+   */
+  async speakDue(queue: "CONTRACTS_DUE" | "PROBATION_DUE", subject: { id: string; employeeId: number }, daysLeft: number): Promise<boolean> {
+    const passed = (DUE_MARKS[queue] ?? []).filter((one) => daysLeft <= one).length;
+    if (passed === 0) {
+      return false;
+    }
+    const key = itemKey(queue, subject.id);
+    const fresh = !(await this.db.noticeItem.findUnique({ where: { key }, select: { id: true } }));
+    if (fresh) {
+      await this.open(queue, subject);
+    }
+    if (!(await this.claimMark(queue, subject.id, passed))) {
+      return false;
+    }
+    const warning = DUE_WARNING[queue];
+    if (warning !== undefined && daysLeft <= warning) {
+      await this.db.noticeItem.updateMany({ where: { key, state: "OPEN" }, data: { level: "WARNING" } });
+    }
+    // Work this sweep opened has just been told; a reminder on top would say one thing twice.
+    if (fresh) {
+      await this.db.notification.updateMany({ where: { item: { key } }, data: { facts: { daysLeft }, daysLeft } });
+    } else {
+      await this.remind(queue, subject.id, { daysLeft });
+    }
+    return true;
+  }
+
   /** Surface an open item for its whole group: unread, out of the archive, pushed again.
    *  @ctx any | after claimMark won; logs its own failures
    */
-  async remind(queue: InboxQueue, subjectId: string, daysWaited: number): Promise<void> {
+  async remind(queue: NoticeQueue, subjectId: string, count: { daysWaited: number } | { daysLeft: number }): Promise<void> {
     try {
       const item = await this.db.noticeItem.findUnique({ where: { key: itemKey(queue, subjectId) } });
       if (!item || item.state !== "OPEN") {
@@ -314,14 +381,16 @@ export class NoticeItemsService {
       const fresh = seated.map((one) => one.userId);
       const surfaced = await this.db.$queryRaw<Seated[]>`
         UPDATE "Notification"
-           SET "facts" = jsonb_build_object('daysWaited', ${daysWaited}::int), "daysWaited" = ${daysWaited}::int,
+           SET "facts" = ${JSON.stringify(count)}::jsonb,
+               "daysWaited" = ${"daysWaited" in count ? count.daysWaited : null}::int,
+               "daysLeft" = ${"daysLeft" in count ? count.daysLeft : null}::int,
                "readAt" = NULL, "archivedAt" = NULL, "remindedAt" = now(),
                "remindCount" = "remindCount" + CASE WHEN "userId" = ANY(${fresh}::text[]) THEN 0 ELSE 1 END
          WHERE "itemId" = ${item.id} AND "leftAt" IS NULL
         RETURNING "id", "userId", "dedupKey", "remindedAt" AS "at"
       `;
       await this.notices.announce(
-        ITEM_KIND,
+        QUEUE_KIND[queue],
         surfaced.filter((one) => !fresh.includes(one.userId)).map((one) => ({ ...one, renotify: true })),
       );
     } catch (fell) {
@@ -343,8 +412,9 @@ export class NoticeItemsService {
         : await this.db.$queryRaw<Seated[]>`
             INSERT INTO "Notification" ("id", "userId", "kind", "itemId", "subjectType", "subjectId",
                                         "subjectEmployeeId", "dedupKey", "readAt", "requestId", "advanceId",
-                                        "certificateId", "profileChangeId", "dependentId", "payslipId", "approved")
-            SELECT gen_random_uuid()::text, seat."userId", ${ITEM_KIND}::"NoticeKind", i."id", i."subjectType",
+                                        "certificateId", "profileChangeId", "dependentId", "payslipId", "approved",
+                                        "contractId")
+            SELECT gen_random_uuid()::text, seat."userId", ${QUEUE_KIND[item.queue]}::"NoticeKind", i."id", i."subjectType",
                    i."subjectId", i."employeeId", i."key", CASE WHEN ${quiet}::boolean THEN now() END,
                    CASE WHEN i."subjectType" = 'REQUEST' THEN i."subjectId" END,
                    CASE WHEN i."subjectType" = 'ADVANCE' THEN i."subjectId" END,
@@ -352,7 +422,8 @@ export class NoticeItemsService {
                    CASE WHEN i."subjectType" = 'PROFILE_CHANGE' THEN i."subjectId" END,
                    CASE WHEN i."subjectType" = 'DEPENDENT' THEN i."subjectId" END,
                    (SELECT d."payslipId" FROM "PayslipDispute" d WHERE i."subjectType" = 'DISPUTE' AND d."id" = i."subjectId"),
-                   CASE WHEN i."queue" = 'ADVANCES_TO_PAY' THEN true END
+                   CASE WHEN i."queue" = 'ADVANCES_TO_PAY' THEN true END,
+                   CASE WHEN i."subjectType" = 'CONTRACT' THEN i."subjectId" END
               FROM "NoticeItem" i
              CROSS JOIN unnest(${audience}::text[]) AS seat("userId")
               JOIN "User" u ON u."id" = seat."userId"
@@ -371,7 +442,7 @@ export class NoticeItemsService {
         this.feed.tell(one.userId, FEED.notice, { op: "item", key: item.key, state: item.state });
       }
     } else {
-      await this.notices.announce(ITEM_KIND, seated.map((one) => ({ ...one, renotify: false })));
+      await this.notices.announce(QUEUE_KIND[item.queue], seated.map((one) => ({ ...one, renotify: false })));
     }
     return { seated, left: left.map((one) => one.userId) };
   }

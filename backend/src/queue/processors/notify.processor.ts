@@ -5,12 +5,13 @@ import { Worker } from "bullmq";
 import type { Env } from "../../config/env.schema.js";
 import { RedisService } from "../../database/redis.service.js";
 import { BackupWatchService } from "../../modules/notifications/backup-watch.service.js";
-import { ContractAlertsService } from "../../modules/notifications/contract-alerts.service.js";
 import { MailerService } from "../../modules/notifications/mailer.service.js";
 import { NotificationsService } from "../../modules/notifications/notifications.service.js";
 import { passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
 import { CleanupSweep } from "../../modules/notifications/sweeps/cleanup.sweep.js";
+import { ContractsSweep } from "../../modules/notifications/sweeps/contracts.sweep.js";
+import { ProbationSweep } from "../../modules/notifications/sweeps/probation.sweep.js";
 import { ReconcileSweep } from "../../modules/notifications/sweeps/reconcile.sweep.js";
 import { StalledSweep } from "../../modules/notifications/sweeps/stalled.sweep.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -26,7 +27,8 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly redis: RedisService,
-    private readonly alerts: ContractAlertsService,
+    private readonly contracts: ContractsSweep,
+    private readonly probation: ProbationSweep,
     private readonly mailer: MailerService,
     private readonly profile: ProfileService,
     private readonly stale: StalledSweep,
@@ -44,7 +46,11 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       async (job) => {
         const body = job.data as NotifyJob;
         if (body.type === "contracts-ending") {
-          await this.alerts.sweep();
+          await this.contracts.sweep();
+          return;
+        }
+        if (body.type === "probation-due") {
+          await this.probation.sweep();
           return;
         }
         if (body.type === "requests-stale") {

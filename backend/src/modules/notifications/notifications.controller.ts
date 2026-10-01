@@ -42,7 +42,6 @@ import {
 } from "./dto/notifications.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import { BackupWatchService } from "./backup-watch.service.js";
-import { ContractAlertsService } from "./contract-alerts.service.js";
 import { NoticeItemsService, type ItemDetail } from "./notice-items.service.js";
 import {
   NotificationsService,
@@ -53,6 +52,8 @@ import {
   type Unread,
 } from "./notifications.service.js";
 import { CleanupSweep } from "./sweeps/cleanup.sweep.js";
+import { ContractsSweep } from "./sweeps/contracts.sweep.js";
+import { ProbationSweep } from "./sweeps/probation.sweep.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
 import { StalledSweep } from "./sweeps/stalled.sweep.js";
 
@@ -72,7 +73,8 @@ export class NotificationsController {
   constructor(
     private readonly notices: NotificationsService,
     private readonly items: NoticeItemsService,
-    private readonly alerts: ContractAlertsService,
+    private readonly contracts: ContractsSweep,
+    private readonly probation: ProbationSweep,
     private readonly stale: StalledSweep,
     private readonly backups: BackupWatchService,
     private readonly reconcile: ReconcileSweep,
@@ -158,7 +160,8 @@ export class NotificationsController {
     const run = {
       reconcile: () => this.reconcile.sweep(),
       stalled: () => this.stale.sweep(),
-      contracts: () => this.alerts.sweep(),
+      contracts: () => this.contracts.sweep(),
+      probation: () => this.probation.sweep(),
       backup: () => this.backups.sweep(),
       cleanup: () => this.cleanup.sweep(),
     } satisfies Record<SweepParamDto["name"], () => Promise<object>>;
@@ -211,13 +214,13 @@ export class NotificationsController {
   }
 
   @Post("items/:key/resolve")
-  @ApiOperation({ summary: "Close work by hand, with a note; only kinds no business decision closes" })
+  @ApiOperation({ summary: "Close work by hand, with a note for the audit trail; contract and probation work, by the desk" })
   @ApiParam(ITEM_KEY)
   @ApiCreatedResponse({ type: NoticeItemDetailView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "NOTICE_NOT_FOUND outside the group" })
-  @ApiConflictResponse({ type: ErrorBody, description: "NOTICE_ITEM_NOT_RESOLVABLE: its own queue decides it" })
-  resolve(@CurrentViewer() viewer: Viewer, @Param("key") key: string, @Body() _body: ResolveItemDto): Promise<ItemDetail> {
-    return this.items.resolve(viewer, key);
+  @ApiConflictResponse({ type: ErrorBody, description: "NOTICE_ITEM_NOT_RESOLVABLE: its own queue decides it; NOTICE_ITEM_CLOSED" })
+  resolve(@CurrentViewer() viewer: Viewer, @Param("key") key: string, @Body() body: ResolveItemDto): Promise<ItemDetail> {
+    return this.items.resolve(viewer, key, body.note);
   }
 
   @Get("preferences")

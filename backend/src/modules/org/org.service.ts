@@ -21,6 +21,8 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
+import { ContractsSweep } from "../notifications/sweeps/contracts.sweep.js";
+import { ProbationSweep } from "../notifications/sweeps/probation.sweep.js";
 import { localDay } from "../timesheet/local-day.js";
 import { UsersService } from "../users/users.service.js";
 import type {
@@ -122,6 +124,8 @@ export class OrgService {
     private readonly scope: ScopeService,
     private readonly users: UsersService,
     private readonly items: NoticeItemsService,
+    private readonly contractsDue: ContractsSweep,
+    private readonly probationDue: ProbationSweep,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -391,6 +395,8 @@ export class OrgService {
       subjectId: String(held.employeeId),
       meta: { contractId: id, state: body.state },
     });
+    await this.contractsDue.closeVanished(held.employeeId, viewer.userId);
+    await this.probationDue.closeVanished(held.employeeId, viewer.userId);
     return moved;
   }
 

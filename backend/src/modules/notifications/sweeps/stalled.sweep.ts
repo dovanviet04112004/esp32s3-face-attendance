@@ -112,7 +112,7 @@ export class StalledSweep implements OnModuleInit {
       ...(row.payslipId ? { payslipId: row.payslipId } : {}),
       daysWaited: row.daysWaited,
     });
-    await this.items.remind(queue, row.subjectId, row.daysWaited);
+    await this.items.remind(queue, row.subjectId, { daysWaited: row.daysWaited });
     return true;
   }
 }

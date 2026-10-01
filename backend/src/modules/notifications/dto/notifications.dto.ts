@@ -502,6 +502,9 @@ export class NoticeItemDetailView {
   @ApiProperty({ example: true, description: "Whether the group may say who is on it" })
   claimable!: boolean;
 
+  @ApiProperty({ example: false, description: "Whether this reader may close it by hand, with a note" })
+  resolvable!: boolean;
+
   @ApiProperty({ type: String, nullable: true, example: "Lê Thị C", description: "Who is on it; null when nobody, or lapsed" })
   claimedByName!: string | null;
 
@@ -530,7 +533,7 @@ export class ResolveItemDto {
   note!: string;
 }
 
-const SWEEPS = ["reconcile", "stalled", "contracts", "backup", "cleanup"] as const;
+const SWEEPS = ["reconcile", "stalled", "contracts", "probation", "backup", "cleanup"] as const;
 
 export type SweepName = (typeof SWEEPS)[number];
 

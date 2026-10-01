@@ -126,7 +126,7 @@ describe("notices and push devices (e2e)", () => {
   });
 
   it("tells nobody through a login that is closed", async () => {
-    assert.equal(await db.notification.count({ where: { contractId: closedContract } }), 0);
+    assert.equal(await db.notification.count({ where: { kind: "CONTRACT_ENDING", contractId: closedContract } }), 0);
   });
 
   it("will not drop every device when no endpoint is named", async () => {

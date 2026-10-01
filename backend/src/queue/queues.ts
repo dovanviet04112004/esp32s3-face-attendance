@@ -15,6 +15,7 @@ export const JOB = {
   monthly: "monthly",
   webhook: "webhook",
   contractsEnding: "contracts-ending",
+  probationDue: "probation-due",
   requestsStale: "requests-stale",
   backupWatch: "backup-watch",
   noticeReconcile: "notice-reconcile",
@@ -48,6 +49,10 @@ export interface WebhookJob {
 
 export interface ContractsEndingJob {
   type: typeof JOB.contractsEnding;
+}
+
+export interface ProbationDueJob {
+  type: typeof JOB.probationDue;
 }
 
 export interface RequestsStaleJob {
@@ -105,6 +110,7 @@ export interface ProfileNoticeJob {
 export type NotifyJob =
   | WebhookJob
   | ContractsEndingJob
+  | ProbationDueJob
   | RequestsStaleJob
   | BackupWatchJob
   | NoticeReconcileJob

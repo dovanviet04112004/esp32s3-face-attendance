@@ -8,7 +8,7 @@ export type FactType = "number" | "boolean" | "string" | "day";
 export type OfferedChannel = "IN_APP" | "PUSH";
 
 /** Kinds that are work a group shares; every other kind is news for one person (KEHOACH 9.21.4). */
-export type ItemKind = "REQUEST_WAITING";
+export type ItemKind = "REQUEST_WAITING" | "CONTRACT_DUE" | "PROBATION_DUE";
 
 export type NewsKind = Exclude<NoticeKind, ItemKind>;
 
@@ -27,6 +27,17 @@ export const QUEUE_MARKS: Partial<Record<NoticeQueue, readonly number[]>> = {
 };
 
 export const DUE_SOON_DAYS = 1;
+
+/** Days left at which work against a date opens and then speaks again, the first mark opening it (KEHOACH 9.18 items 1-2). */
+export const DUE_MARKS: Partial<Record<NoticeQueue, readonly number[]>> = {
+  CONTRACTS_DUE: [30, 15, 7],
+  PROBATION_DUE: [7, 3, 1],
+};
+
+/** The days-left mark from which the work reads as a warning. */
+export const DUE_WARNING: Partial<Record<NoticeQueue, number>> = {
+  CONTRACTS_DUE: 7,
+};
 
 /** Roles whose login opens the approvals inbox (KEHOACH 9.15). */
 export const INBOX_ROLES: readonly Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
@@ -91,6 +102,23 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: false,
     defaults: { IN_APP: true, PUSH: true },
     facts: {},
+  },
+  CONTRACT_DUE: {
+    category: "PEOPLE",
+    level: "ACTION",
+    receivers: ["ADMIN", "HR"],
+    item: true,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { daysLeft: "number" },
+  },
+  // The direct manager decides whether the newcomer passes; the desk signs (KEHOACH 9.18 item 2).
+  PROBATION_DUE: {
+    category: "PEOPLE",
+    level: "ACTION",
+    receivers: ["ADMIN", "HR", "MANAGER"],
+    item: true,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { daysLeft: "number" },
   },
   // Off until /me carries a contract card: a notice that opens nothing about it is a dead end (KEHOACH 9.15 rule 1).
   CONTRACT_ENDING: {

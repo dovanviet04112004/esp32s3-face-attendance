@@ -12,6 +12,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { INBOX_QUEUES } from "../src/modules/notifications/audience.service.js";
 import { itemKey } from "../src/modules/notifications/notice-items.service.js";
 import { ReconcileSweep } from "../src/modules/notifications/sweeps/reconcile.sweep.js";
 
@@ -74,7 +75,8 @@ describe("the hourly reconcile, run after every other suite (e2e)", () => {
       .set("Authorization", `Bearer ${admin.body.accessToken}`);
     assert.equal(res.status, 201, JSON.stringify(res.body));
     const tally = res.body.result as Record<string, { closed: number; opened: number }>;
-    for (const [queue, one] of Object.entries(tally)) {
+    for (const queue of INBOX_QUEUES) {
+      const one = tally[queue];
       assert.equal(one.closed, 0, `${queue}: an item stayed open after its business row was done`);
       assert.equal(one.opened, 0, `${queue}: a waiting row had no item`);
     }

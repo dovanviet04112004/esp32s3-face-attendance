@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma } from "@prisma/client";
+import { NoticeQueue, Prisma } from "@prisma/client";
 
 import type { Env } from "../../../config/env.schema.js";
 import { PrismaService } from "../../../database/prisma.service.js";
@@ -9,6 +9,8 @@ import { JOB, QUEUE } from "../../../queue/queues.js";
 import { INBOX_QUEUES, QUEUE_LEDGER, WAITING_STATE, type InboxQueue } from "../audience.service.js";
 import { NoticeItemsService } from "../notice-items.service.js";
 import { kebab } from "../notice-kinds.js";
+import { ContractsSweep } from "./contracts.sweep.js";
+import { ProbationSweep } from "./probation.sweep.js";
 
 /** How a queue's finished business row reads as a closed item; `s` is that row, as the backfill read it. */
 interface Ledger {
@@ -69,7 +71,7 @@ const LEDGERS: Record<InboxQueue, Ledger> = {
 
 const kPage = 500;
 
-/** Per queue: items a write path forgot to close or open, which must be 0, and the group changes, which need not. */
+/** Per queue: work closed or opened behind a write path, 0 in every inbox queue, and the group changes, which need not be. */
 export interface Reconciled {
   closed: number;
   opened: number;
@@ -84,6 +86,8 @@ export class ReconcileSweep implements OnModuleInit {
   constructor(
     private readonly db: PrismaService,
     private readonly items: NoticeItemsService,
+    private readonly contracts: ContractsSweep,
+    private readonly probation: ProbationSweep,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -107,20 +111,23 @@ export class ReconcileSweep implements OnModuleInit {
   /** Bring every item in line with its business row, then recount every open group (KEHOACH 9.21.4).
    *  @ctx job | one statement per queue, then one regroup per open item
    */
-  async sweep(): Promise<Record<InboxQueue, Reconciled>> {
+  async sweep(): Promise<Record<NoticeQueue, Reconciled>> {
     const tally = Object.fromEntries(
-      INBOX_QUEUES.map((queue) => [queue, { closed: 0, opened: 0, joined: 0, left: 0 }]),
-    ) as Record<InboxQueue, Reconciled>;
+      Object.values(NoticeQueue).map((queue) => [queue, { closed: 0, opened: 0, joined: 0, left: 0 }]),
+    ) as Record<NoticeQueue, Reconciled>;
     for (const queue of INBOX_QUEUES) {
       const closed = await this.closeFinished(queue);
       await this.items.settle(closed);
       tally[queue].closed = closed.length;
       tally[queue].opened = await this.openMissing(queue);
     }
+    // Work against a date closes when its contract does, which no inbox decision reports (KEHOACH 9.18).
+    tally.CONTRACTS_DUE.closed = await this.contracts.closeVanished();
+    tally.PROBATION_DUE.closed = await this.probation.closeVanished();
     let after: string | undefined;
     for (;;) {
       const page = await this.db.noticeItem.findMany({
-        where: { state: "OPEN", queue: { in: [...INBOX_QUEUES] }, ...(after ? { id: { gt: after } } : {}) },
+        where: { state: "OPEN", ...(after ? { id: { gt: after } } : {}) },
         orderBy: { id: "asc" },
         take: kPage,
       });
@@ -140,7 +147,7 @@ export class ReconcileSweep implements OnModuleInit {
         this.log.warn(`${queue}: ${one.closed} closed and ${one.opened} opened that a write path left behind`);
       }
     }
-    const sum = (field: keyof Reconciled) => INBOX_QUEUES.reduce((total, queue) => total + tally[queue][field], 0);
+    const sum = (field: keyof Reconciled) => Object.values(tally).reduce((total, one) => total + one[field], 0);
     this.log.log(
       `notice items reconciled: ${sum("closed")} closed, ${sum("opened")} opened, ${sum("joined")} joined, ${sum("left")} left`,
     );

@@ -197,7 +197,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
     assert.ok(next && next.readAt === null && next.leftAt === null, "the new manager was not told");
 
     assert.ok(await items.claimMark("REQUESTS", id, 3));
-    await items.remind("REQUESTS", id, 3);
+    await items.remind("REQUESTS", id, { daysWaited: 3 });
     assert.equal((await seatOf(item, "next"))?.remindCount, 1, "the reminder missed the new manager");
     assert.equal((await seatOf(item, "boss"))?.remindCount, 0, "the reminder reached the manager it left");
 
