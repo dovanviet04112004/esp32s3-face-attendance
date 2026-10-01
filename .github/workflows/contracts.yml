@@ -99,3 +99,6 @@ jobs:
 
       - name: The lock-screen words match both catalogues
         run: python3 tools/gen_sw_words.py --check
+
+      - name: Every notice kind is named in all six places
+        run: python3 tools/check_notice_kinds.py
