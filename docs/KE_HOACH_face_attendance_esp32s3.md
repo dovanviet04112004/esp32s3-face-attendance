@@ -6234,7 +6234,8 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 | Server tự tải URL | Endpoint web-push là URL người dùng đưa, nên đó là đường SSRF. Bản phát hành **không** đến bằng URL: file đi bằng thân request từ bên có token (§7.7), nên đường ấy không còn. Endpoint web-push chỉ nhận host của các dịch vụ push đã biết (FCM, Mozilla, Apple, Windows), và một endpoint đã thuộc tài khoản khác thì không đổi chủ |
 | File xuất cho Excel | Ô bắt đầu bằng `=`, `+`, `-`, `@`, tab hay CR là chữ, không phải công thức: `.csv` thêm `'` đằng trước, `.xlsx` ghi mọi ô thành ô chuỗi. Thiếu nó thì một số điện thoại nhân viên tự khai thành công thức chạy trên máy HR |
 | File nhập từ Excel | `.xlsx` là file nén: server giải nén thật từng phần dưới một trần cỡ và đếm dòng **trước** khi trao cho bộ đọc, vì cỡ ghi trong file là thứ người gửi tự khai (§9.20 luật 1). Thiếu nó thì một file 16 MB bung ra vài GB trong bộ nhớ `api` |
-| Bộ nhớ đệm trình duyệt | API trả `Cache-Control: no-store`. Service worker giữ lần đọc gần nhất **theo từng tài khoản** và xoá sạch khi đăng xuất (§4.7), nên máy dùng chung không đưa dữ liệu của người trước cho người sau |
+| Bộ nhớ đệm trình duyệt | API trả `Cache-Control: no-store`. Service worker giữ lần đọc gần nhất **theo từng tài khoản** và xoá sạch khi đăng xuất (§4.7), nên máy dùng chung không đưa dữ liệu của người trước cho người sau. Ngăn ấy **chỉ giữ phản hồi JSON**, thứ trang đọc, nên **không bao giờ giữ file tải về**: file danh bạ hay file ngân hàng nằm lại trên laptop là thứ không ai cần xem lại khi mất mạng. Nó xét theo `Content-Type` chứ không theo `Content-Disposition`, vì một phản hồi khác origin chỉ cho service worker thấy vài header đã được CORS cho phép, và `Content-Type` nằm trong số đó. Khung trang được cất theo đường dẫn **bỏ query**, nên vé đặt mật khẩu trong URL không vào Cache Storage, và trang đọc xong vé thì xoá nó khỏi thanh địa chỉ |
+| Trang web trong khung, cookie | Dashboard trả CSP với `frame-ancestors 'none'` (cùng `X-Frame-Options: DENY`), `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` và `connect-src` chỉ tới chính nó cùng `api`: trang lạ không nhúng được dashboard đã đăng nhập vào khung để dụ ADMIN bấm. `script-src` vẫn cho `'unsafe-inline'`, vì Next nhúng dữ liệu RSC thành script nội dòng mà trang dựng tĩnh không có nonce theo request. Kèm `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` và `Permissions-Policy` chỉ mở camera cho chính nó. Cookie refresh `SameSite=Strict`: `io.vn` nằm trong Public Suffix List, nên `app` và `api` cùng một site `cckiosk.io.vn`, còn một trang `*.io.vn` của người khác là khác site |
 | DDoS lưu lượng | Không lớp nào trong app chặn được. DNS đi qua Cloudflare, `api` qua proxy của nó, nên IP thật của VPS không nằm trong bản ghi web. Giới hạn nói rõ ở đoạn *Cloudflare* dưới bảng |
 
 **Chống spam, ba lớp, mỗi lớp chặn một thứ lớp kia không thấy.**
@@ -8908,6 +8909,12 @@ Nhà xưởng, tầng hầm, ngoài công trường. Ba luật:
    không có, mà iOS chính là lý do §9.21 chọn PWA. Một cơ chế chạy ở mọi nơi hơn hai cơ chế mà
    một cái im lặng trên nửa số máy. Nên: IndexedDB giữ đơn chưa gửi, và ba lúc thử lại — khi
    trình duyệt báo `online`, khi người ta mở lại ứng dụng, và một nhịp chậm trong lúc mở.
+
+   **Mỗi đơn trong hàng mang tài khoản đã xếp nó, và chỉ đi bằng vé của chính tài khoản ấy.**
+   Máy dùng chung không được gửi đơn của người trước dưới tên người sau. Đơn của người khác nằm
+   chờ tới khi chủ của nó đăng nhập lại. Đăng xuất có chủ đích lúc còn đơn chưa gửi thì hỏi
+   trước, và đồng ý thì bỏ các đơn ấy; phiên chỉ rơi vì gia hạn hỏng thì giữ nguyên, vì đó
+   thường chỉ là mất sóng.
 
    **Xếp hàng là giao ít nhất một lần, nên đơn phải mang khoá của chính nó.** Một đơn gửi đi
    rồi mất phản hồi trên đường về là chuyện thường của mạng yếu; lần thử sau không phân biệt
