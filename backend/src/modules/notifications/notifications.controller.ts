@@ -52,6 +52,7 @@ import {
   type SubscriptionView as KeptSubscription,
   type Unread,
 } from "./notifications.service.js";
+import { CleanupSweep } from "./sweeps/cleanup.sweep.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
 import { StalledSweep } from "./sweeps/stalled.sweep.js";
 
@@ -75,6 +76,7 @@ export class NotificationsController {
     private readonly stale: StalledSweep,
     private readonly backups: BackupWatchService,
     private readonly reconcile: ReconcileSweep,
+    private readonly cleanup: CleanupSweep,
   ) {}
 
   @Get()
@@ -158,6 +160,7 @@ export class NotificationsController {
       stalled: () => this.stale.sweep(),
       contracts: () => this.alerts.sweep(),
       backup: () => this.backups.sweep(),
+      cleanup: () => this.cleanup.sweep(),
     } satisfies Record<SweepParamDto["name"], () => Promise<object>>;
     return { name: params.name, result: { ...(await run[params.name]()) } };
   }

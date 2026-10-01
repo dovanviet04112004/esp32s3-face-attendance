@@ -10,6 +10,7 @@ import { MailerService } from "../../modules/notifications/mailer.service.js";
 import { NotificationsService } from "../../modules/notifications/notifications.service.js";
 import { passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
+import { CleanupSweep } from "../../modules/notifications/sweeps/cleanup.sweep.js";
 import { ReconcileSweep } from "../../modules/notifications/sweeps/reconcile.sweep.js";
 import { StalledSweep } from "../../modules/notifications/sweeps/stalled.sweep.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -31,6 +32,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly stale: StalledSweep,
     private readonly backups: BackupWatchService,
     private readonly reconcile: ReconcileSweep,
+    private readonly cleanup: CleanupSweep,
     private readonly notices: NotificationsService,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
@@ -55,6 +57,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === "notice-reconcile") {
           await this.reconcile.sweep();
+          return;
+        }
+        if (body.type === "notice-cleanup") {
+          await this.cleanup.sweep();
           return;
         }
         if (body.type === "notice-fanout") {

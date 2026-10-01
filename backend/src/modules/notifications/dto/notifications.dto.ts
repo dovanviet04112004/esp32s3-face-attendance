@@ -530,7 +530,7 @@ export class ResolveItemDto {
   note!: string;
 }
 
-const SWEEPS = ["reconcile", "stalled", "contracts", "backup"] as const;
+const SWEEPS = ["reconcile", "stalled", "contracts", "backup", "cleanup"] as const;
 
 export type SweepName = (typeof SWEEPS)[number];
 
