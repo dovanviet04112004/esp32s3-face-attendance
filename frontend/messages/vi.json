@@ -137,6 +137,8 @@
     "androidAppLead": "Cài một lần rồi mở như ứng dụng: không thanh địa chỉ, cùng màu từ trên xuống dưới, vẫn nhận thông báo."
   },
   "mfa": {
+    "title": "Xác minh hai bước",
+    "lead": "Mỗi lần đăng nhập, ngoài mật khẩu bạn nhập thêm mã sáu số từ ứng dụng xác thực trên điện thoại.",
     "codeTitle": "Nhập mã xác minh",
     "codeLead": "Mở ứng dụng xác thực trên điện thoại và nhập mã sáu số đang hiện cho {email}.",
     "codeLabel": "Mã sáu số",
@@ -162,7 +164,17 @@
     "copyBlocked": "Trình duyệt chặn sao chép. Hãy tải về hoặc chép tay.",
     "download": "Tải về",
     "codesFile": "ma-du-phong.txt",
-    "codesKept": "Tôi đã cất mã, tiếp tục"
+    "codesKept": "Tôi đã cất mã, tiếp tục",
+    "since": "Bật từ",
+    "left": "Mã dự phòng còn",
+    "leftCount": "{count, plural, other {# mã}}",
+    "fewCodes": "Sắp hết mã dự phòng. Tạo bộ mới trước khi dùng hết.",
+    "phone": "Đổi điện thoại: chuyển tài khoản ngay trong ứng dụng xác thực, hoặc nhờ quản trị viên đặt lại.",
+    "renew": "Tạo bộ mã dự phòng mới",
+    "renewTitle": "Tạo bộ mã dự phòng mới",
+    "renewLead": "Bộ mã cũ sẽ không dùng được nữa. Nhập mã sáu số trong ứng dụng xác thực, hoặc một mã dự phòng còn lại, để tiếp tục.",
+    "renewGo": "Tạo bộ mới",
+    "renewDone": "Đã tạo bộ mã dự phòng mới."
   },
   "overview": {
     "title": "Tổng quan",

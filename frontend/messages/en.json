@@ -137,6 +137,8 @@
     "androidAppLead": "Install it once and it opens like an app: no address bar, one colour from top to bottom, notifications included."
   },
   "mfa": {
+    "title": "Two-step sign-in",
+    "lead": "Every sign-in asks for a six-digit code from the authenticator app on your phone, as well as your password.",
     "codeTitle": "Enter your code",
     "codeLead": "Open the authenticator app on your phone and enter the six-digit code it shows for {email}.",
     "codeLabel": "Six-digit code",
@@ -162,7 +164,17 @@
     "copyBlocked": "The browser blocked copying. Download them or write them down.",
     "download": "Download",
     "codesFile": "backup-codes.txt",
-    "codesKept": "I have kept them, continue"
+    "codesKept": "I have kept them, continue",
+    "since": "On since",
+    "left": "Backup codes left",
+    "leftCount": "{count, plural, one {# code} other {# codes}}",
+    "fewCodes": "Backup codes are running out. Make a new set before they do.",
+    "phone": "New phone: move the account inside the authenticator app, or ask an administrator to reset it.",
+    "renew": "Make new backup codes",
+    "renewTitle": "Make new backup codes",
+    "renewLead": "The old set stops working. Enter the six-digit code from your authenticator app, or a backup code you still have, to go on.",
+    "renewGo": "Make new set",
+    "renewDone": "A new set of backup codes is ready."
   },
   "overview": {
     "title": "Overview",

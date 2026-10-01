@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 
+import { TwoStep, useTwoStep } from "@/components/auth/two-step";
 import { useSignOut } from "@/components/nav/account-menu";
 import { NoticePreferences } from "@/components/notifications/notice-prefs";
 import { PushDevices } from "@/components/notifications/push-devices";
@@ -85,6 +86,7 @@ export default function SettingsPage() {
   const roleName = useTranslations("roles");
   const notices = useTranslations("notices");
   const nav = useTranslations("nav");
+  const mfa = useTranslations("mfa");
   const locale = useLocale();
   const here = usePathname();
   const router = useRouter();
@@ -93,6 +95,8 @@ export default function SettingsPage() {
   const leaving = useSignOut();
   const [moving, startMoving] = useTransition();
   const cache = useQueryClient();
+  const twoStep = useTwoStep();
+  const twoStepShown = twoStep.data && (twoStep.data.required || twoStep.data.enabledAt !== null) ? twoStep.data : null;
 
   const provision = useMutation({
     mutationFn: async () =>
@@ -135,6 +139,7 @@ export default function SettingsPage() {
     { id: "devices", title: notices("devicesTitle") },
     { id: "notices", title: notices("prefsTitle") },
     ...(role === "ADMIN" ? [{ id: "provision", title: t("provisionTitle") }, { id: "docs", title: t("docsTitle") }] : []),
+    ...(twoStepShown ? [{ id: "two-step", title: mfa("title") }] : []),
     { id: "account", title: t("accountTitle") },
   ];
   const { activeId, selectSection } = useSectionSpy(sections.map((one) => one.id));
@@ -238,6 +243,12 @@ export default function SettingsPage() {
               <Button variant="secondary" icon={BookOpenTextIcon} loading={reference.isPending} onClick={openReference}>
                 {t("docsOpen")}
               </Button>
+            </Section>
+          ) : null}
+
+          {twoStepShown ? (
+            <Section id="two-step" title={mfa("title")} lead={mfa("lead")}>
+              <TwoStep status={twoStepShown} />
             </Section>
           ) : null}
 
