@@ -7420,6 +7420,14 @@ tháng Ba phải tính bằng mức của tháng Ba kể cả khi tháng Tư đ�
 Mỗi dòng giữ: lương cơ bản, **lương đóng bảo hiểm** (khác lương cơ bản ở rất nhiều nơi), phụ
 cấp cố định, và lý do thay đổi.
 
+**Mọi đường ghi lương đi qua một cửa.** Sửa lẻ ở `/compensation`, tăng hàng loạt, mức đầu tiên
+lúc nhận việc và mức đầu tiên lúc nhập file đều ghi qua `CompensationService`, nên chịu cùng một
+bộ luật: chỉ `ADMIN` và `HR` ghi lương, không ai ghi lương của chính mình (§9.4), và mỗi mức ghi
+cho một người để lại một dòng `pay.create` mang `from` và `to` (§9.24 luật 4); tăng hàng loạt để
+lại một dòng cho cả lô (§9.18 mục 6). Một đường ghi lương đi vòng cửa ấy là một đường không có
+luật nào: nhận việc cho chính hồ sơ của mình với ngày vào làm tháng sau là tự đặt lương mình, và
+kỳ lương sau đọc đúng con số ấy.
+
 **Phụ cấp chọn từ danh mục, và dòng lương chép lại luật của nó.** Bàn lương nuôi `AllowanceType`
 trên màn `Phụ cấp` (§9.15). Ghi một mốc lương thì mỗi khoản phụ cấp chọn một loại, và
 `CompensationAllowance` **chép mã, nhãn, cờ chịu thuế, cờ đóng BHXH và mức miễn thuế** của loại
@@ -8022,7 +8030,10 @@ việc onboarding, và tài khoản đăng nhập. Ba điều làm nên hình d�
 - **Mức lương là một dòng `CompensationRecord` lý do `HIRE`**, không phải một ô trên hồ sơ —
   §9.6 đòi lương có thời hạn, và mốc đầu tiên là ngày vào làm. Thiếu nó thì phiếu lương đầu
   tiên tính trên không, và §9.18 mục 4 đã đếm sẵn *người chưa có mức lương hiệu lực* là việc
-  phải đóng trước khi chốt kỳ.
+  phải đóng trước khi chốt kỳ. Nhận việc chỉ ghi **mức đầu tiên**: người đã có bất kỳ dòng lương
+  nào thì phần lương được bỏ qua (`PAY_EXISTS`), dù ngày vào làm gửi lên là ngày nào, vì mọi mức
+  sau mức đầu là một lần tăng lương và đi đường tăng lương. Dòng ấy ghi qua cùng cửa với
+  `/compensation` (§9.6) và chịu đúng luật của cửa ấy.
 - **Phép chia theo phần còn lại của năm**: `daysPerYear × số ngày còn lại ÷ số ngày trong năm`,
   làm tròn về bội 0,5 vì nửa ngày là đơn vị nghỉ nhỏ nhất. Vào ngày 01/10 của một năm 365 ngày,
   một loại phép 12 ngày cho `3,0`.
@@ -8036,9 +8047,10 @@ hệ từ trước cũng vá được bằng cùng một đường.
 **Không phần nào trong năm thứ ấy làm hỏng cả lượt.** Không có mẫu danh sách việc nào khớp,
 người ấy chưa có địa chỉ thư riêng, hay phần ấy vốn đã có từ lượt trước — cả ba đều là chuyện
 của cấu hình và của lần chạy trước, không phải của lượt tuyển này; đường ghi trả về **những gì
-nó đã làm và những gì nó đã bỏ qua, kèm lý do**, y như nghỉ việc trả về thứ còn treo. Chỉ hai
-điều là lỗi, và cả hai nói về con người chứ không về năm thứ kia: không có hồ sơ ấy, và hồ sơ
-ấy đã nghỉ việc.
+nó đã làm và những gì nó đã bỏ qua, kèm lý do**, y như nghỉ việc trả về thứ còn treo. Chỉ ba
+điều là lỗi, và cả ba nói về con người chứ không về năm thứ kia: không có hồ sơ ấy, hồ sơ ấy đã
+nghỉ việc, và hồ sơ ấy là của chính người bấm (`SELF_DECISION`) — nhận việc cho chính mình là
+tự viết hợp đồng và tự đặt lương mình (§9.4).
 
 **Thư mời xếp hàng sau khi giao dịch đã commit**, không nằm trong nó: đẩy job trong một giao
 dịch là gửi thư cho một lượt có thể rollback. Cái giá là một khe hở giữa commit và lúc xếp
@@ -8561,7 +8573,10 @@ quẹt một lần rồi biến mất, nghỉ không đơn, và lượt quẹt m
 
 **4. Danh sách kiểm trước khi chốt lương.** Trước khi `LOCKED` (§9.6), hệ phải tự liệt kê cái
 gì còn treo: đơn nghỉ chưa duyệt, giải trình chưa xử, ngày công thiếu, người chưa có mức lương
-hiệu lực. **Chốt kỳ khi còn mục treo phải cần xác nhận có ghi tên người xác nhận.**
+hiệu lực, và **mức lương bắt đầu có hiệu lực trong kỳ** — mức đầu tiên của người mới lẫn mọi lần
+tăng. Mục cuối không phải lỗi mà là chỗ hai bàn gặp nhau: nhân sự ghi lương, bàn lương chạy lương
+(§9.4), và một lần tăng lương bàn lương không nhìn thấy là một lần tăng không ai đối chiếu. **Chốt
+kỳ khi còn mục treo phải cần xác nhận có ghi tên người xác nhận.**
 
 **5. Nhập hàng loạt từ Excel.** Ba mươi nghìn người không gõ tay được, và dữ liệu đầu vào luôn
 bẩn. Nên nhập theo hai nhịp: **chạy thử ra báo cáo lỗi từng dòng**, rồi mới nhập thật. Nhập
