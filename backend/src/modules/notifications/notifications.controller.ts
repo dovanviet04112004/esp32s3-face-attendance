@@ -6,6 +6,7 @@ import {
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 import type { NoticeChannel, NoticeKind, Notification, NotificationPreference } from "@prisma/client";
@@ -21,6 +22,7 @@ import {
   ListNoticesDto,
   NoticeView,
   PreferenceView,
+  SavedPreferenceView,
   SetPreferenceDto,
   SubscribeDto,
   SubscriptionView,
@@ -65,7 +67,8 @@ export class NotificationsController {
 
   @Post(":id/read")
   @ApiOperation({ summary: "Mark one read" })
-  @ApiCreatedResponse({ type: UnreadView })
+  @ApiCreatedResponse({ type: UnreadView, description: "What is left unread; an id not the viewer's changes nothing" })
+  @ApiParam({ name: "id", description: "Notice id (UUID)", example: "0a113bd1-4a7b-4a3f-972b-bd493d497c2e" })
   readOne(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<Unread> {
     return this.notices.markRead(viewer.userId, id);
   }
@@ -89,7 +92,7 @@ export class NotificationsController {
 
   @Post("preferences")
   @ApiOperation({ summary: "Turn one kind on one channel on or off" })
-  @ApiCreatedResponse({ type: PreferenceView })
+  @ApiCreatedResponse({ type: SavedPreferenceView })
   setPreference(
     @CurrentViewer() viewer: Viewer,
     @Body() body: SetPreferenceDto,

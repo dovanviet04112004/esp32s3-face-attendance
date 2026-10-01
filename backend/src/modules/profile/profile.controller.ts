@@ -8,6 +8,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 import type { ProfileChange } from "@prisma/client";
@@ -27,6 +28,8 @@ import {
   ProfileChangeView,
 } from "./dto/profile-change.dto.js";
 import { ProfileService, type ProfileChangeRow } from "./profile.service.js";
+
+const CHANGE_ID = { name: "id", description: "Change request id", example: "0f1a2b3c-4d5e-4f6a-9b7c-8d9e0f1a2b3c" };
 
 @ApiTags("profile-changes")
 @ApiBearerAuth(API_AUTH.user)
@@ -61,6 +64,7 @@ export class ProfileController {
   @Post(":id/approve")
   @AuditedInService()
   @ApiOperation({ summary: "Write it into the record; neither its owner nor its asker may be the one who does" })
+  @ApiParam(CHANGE_ID)
   @ApiCreatedResponse({ type: ProfileChangeView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
@@ -71,6 +75,7 @@ export class ProfileController {
   @Post(":id/reject")
   @AuditedInService()
   @ApiOperation({ summary: "Turn one down, with a reason the asker can read" })
+  @ApiParam(CHANGE_ID)
   @ApiCreatedResponse({ type: ProfileChangeView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
@@ -85,6 +90,7 @@ export class ProfileController {
   @Post(":id/cancel")
   @AuditedInService()
   @ApiOperation({ summary: "Take back a change nobody has answered yet" })
+  @ApiParam(CHANGE_ID)
   @ApiCreatedResponse({ type: ProfileChangeView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PROFILE_NOT_YOURS" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })

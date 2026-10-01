@@ -6,6 +6,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 import type { Document, DocumentVersion, PersonnelFileType } from "@prisma/client";
@@ -26,6 +27,7 @@ import {
   type UnreadCount,
 } from "./documents.service.js";
 import {
+  AckView,
   CreateDocumentDto,
   CreateFileTypeDto,
   DocumentView,
@@ -39,10 +41,14 @@ import {
   ReaderPageView,
   ReceiveFileDto,
   ReceivedView,
+  ToReadView,
+  UnreadCountView,
   UpdateDocumentDto,
   UpdateFileTypeDto,
   VersionView,
 } from "./dto/documents.dto.js";
+
+const DOCUMENT_ID = { name: "id", description: "Document id", example: "4d5e6f70-8192-4a3b-b4c5-d6e7f8091a2b" };
 
 @ApiTags("documents")
 @ApiBearerAuth(API_AUTH.user)
@@ -75,6 +81,7 @@ export class DocumentsController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Retitle, re-aim, retire or restore a document; its wording stays in versions" })
+  @ApiParam(DOCUMENT_ID)
   @ApiOkResponse({ type: DocumentView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "DOCUMENT_NOT_FOUND | AUDIENCE_NOT_FOUND" })
   update(
@@ -89,6 +96,7 @@ export class DocumentsController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Publish the next wording; the number is assigned here" })
+  @ApiParam(DOCUMENT_ID)
   @ApiCreatedResponse({ type: VersionView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "DOCUMENT_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "DOCUMENT_VERSION_TAKEN" })
@@ -103,6 +111,7 @@ export class DocumentsController {
   @Get("documents/:id/readers")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Who a version reaches, and who has signed for it; unsigned first" })
+  @ApiParam(DOCUMENT_ID)
   @ApiOkResponse({ type: ReaderPageView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "VERSION_NOT_FOUND" })
   readers(@Param("id") id: string, @Query() query: ListReadersDto): Promise<ReaderPage> {
@@ -111,6 +120,7 @@ export class DocumentsController {
 
   @Get("me/documents")
   @ApiOperation({ summary: "The newest wording of everything aimed at me" })
+  @ApiOkResponse({ type: [ToReadView], description: "Unsigned first, then newest; empty for an account with no employee record" })
   mine(@CurrentViewer() viewer: Viewer): Promise<ToRead[]> {
     return viewer.employeeId === null
       ? Promise.resolve([])
@@ -119,6 +129,7 @@ export class DocumentsController {
 
   @Get("me/documents/unread")
   @ApiOperation({ summary: "How many versions aimed at the caller are unsigned" })
+  @ApiOkResponse({ type: UnreadCountView })
   unread(@CurrentViewer() viewer: Viewer): Promise<UnreadCount> {
     return viewer.employeeId === null
       ? Promise.resolve({ total: 0 })
@@ -128,6 +139,13 @@ export class DocumentsController {
   @Post("me/documents/:versionId/ack")
   @AuditedInService()
   @ApiOperation({ summary: "Sign for one version; a later one asks again" })
+  @ApiParam({
+    name: "versionId",
+    description: "Version to sign for; only the newest version aimed at the caller is accepted",
+    example: "7a8b9c0d-1e2f-4031-a425-36475869708a",
+  })
+  @ApiCreatedResponse({ type: AckView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "VERSION_NOT_FOUND" })
   acknowledge(
     @CurrentViewer() viewer: Viewer,
     @Param("versionId") versionId: string,
@@ -160,6 +178,7 @@ export class DocumentsController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Edit, retire or restore a kind of paper" })
+  @ApiParam({ name: "id", description: "Kind of paper id", example: "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d" })
   @ApiOkResponse({ type: FileTypeView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "FILE_TYPE_NOT_FOUND" })
   updateFileType(

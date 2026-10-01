@@ -18,6 +18,7 @@ import {
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiProduces,
   ApiTags,
 } from "@nestjs/swagger";
@@ -76,7 +77,11 @@ export class ModelsController {
   @Get("status/:deviceId")
   @Roles("ADMIN")
   @ApiOperation({ summary: "How the newest update offer to one kiosk went; null when it never had one" })
-  @ApiOkResponse({ type: OfferStatusView })
+  @ApiOkResponse({
+    type: OfferStatusView,
+    description: "An empty body when no offer to the kiosk is on record",
+  })
+  @ApiParam({ name: "deviceId", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
   status(@Param("deviceId") deviceId: string): Promise<OfferStatus | null> {
     return this.models.status(deviceId);
   }
@@ -86,6 +91,7 @@ export class ModelsController {
   @ApiOperation({ summary: "Offer a release to every approved, online kiosk running something older and not installing already" })
   @ApiCreatedResponse({ type: OfferAllView })
   @ApiErrors(HttpStatus.CONFLICT, HttpStatus.GONE)
+  @ApiParam({ name: "releaseId", description: "Release id (UUID)", example: "ae489569-fcc0-4393-9669-2d459d7c57bd" })
   offerAll(
     @Param("releaseId") releaseId: string,
     @Body() body: OfferAllDto,
@@ -100,6 +106,8 @@ export class ModelsController {
   @ApiOperation({ summary: "Offer a release to one kiosk, which checks it again itself" })
   @ApiCreatedResponse({ type: OfferView })
   @ApiErrors(HttpStatus.CONFLICT, HttpStatus.GONE)
+  @ApiParam({ name: "releaseId", description: "Release id (UUID)", example: "ae489569-fcc0-4393-9669-2d459d7c57bd" })
+  @ApiParam({ name: "deviceId", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
   offer(
     @Param("releaseId") releaseId: string,
     @Param("deviceId") deviceId: string,
@@ -142,6 +150,7 @@ export class ReleaseFilesController {
   @ApiProduces("application/octet-stream")
   @ApiOkResponse({ schema: { type: "string", format: "binary" } })
   @ApiErrors(HttpStatus.FORBIDDEN, HttpStatus.GONE)
+  @ApiParam({ name: "releaseId", description: "Release id (UUID)", example: "ae489569-fcc0-4393-9669-2d459d7c57bd" })
   async image(
     @Param("releaseId") releaseId: string,
     @Query() link: ImageLinkDto,

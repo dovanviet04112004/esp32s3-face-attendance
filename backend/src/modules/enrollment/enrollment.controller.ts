@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpStatus, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 import type { DeviceEnrollment } from "@prisma/client";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
@@ -28,7 +28,8 @@ export class EnrollmentController {
   @Get("employees/:employeeId")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Where a person stands on each kiosk" })
-  @ApiOkResponse({ type: [KioskStandingView] })
+  @ApiOkResponse({ type: [KioskStandingView], description: "Kiosks holding or awaiting the person, by kiosk id" })
+  @ApiParam({ name: "employeeId", description: "Employee id", example: 42 })
   standing(@Param("employeeId", ParseIntPipe) employeeId: number): Promise<KioskStanding[]> {
     return this.enrollment.standing(employeeId);
   }
@@ -47,6 +48,8 @@ export class EnrollmentController {
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Withdraw a person from a kiosk" })
   @ApiOkResponse({ type: EnrollmentView })
+  @ApiParam({ name: "deviceId", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
+  @ApiParam({ name: "employeeId", description: "Employee id", example: 42 })
   revoke(
     @Param("deviceId") deviceId: string,
     @Param("employeeId", ParseIntPipe) employeeId: number,
@@ -58,6 +61,7 @@ export class EnrollmentController {
   @Roles("ADMIN")
   @ApiOperation({ summary: "Send the kiosk the whole roster it should hold" })
   @ApiCreatedResponse({ type: RosterView })
+  @ApiParam({ name: "deviceId", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
   async resync(@Param("deviceId") deviceId: string): Promise<{ rosterVersion: number }> {
     return { rosterVersion: await this.enrollment.resync(deviceId) };
   }

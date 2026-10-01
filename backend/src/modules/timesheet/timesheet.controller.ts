@@ -4,6 +4,7 @@ import {
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiProduces,
   ApiTags,
 } from "@nestjs/swagger";
@@ -49,7 +50,10 @@ export class TimesheetController {
 
   @Get()
   @ApiOperation({ summary: "Day rows this viewer may read (KEHOACH 9.8)" })
-  @ApiOkResponse({ type: [DayView] })
+  @ApiOkResponse({
+    type: [DayView],
+    description: "By date, then employee, in one capped answer; skip, take and cursor are not applied",
+  })
   list(@CurrentViewer() viewer: Viewer, @Query() query: ListDaysDto): Promise<AttendanceDay[]> {
     return this.timesheet.list(viewer, query);
   }
@@ -90,6 +94,7 @@ export class TimesheetController {
   @Roles("ADMIN", "HR", "PAYROLL")
   @ApiOperation({ summary: "Where a queued build stands, so a page stops waiting when it ends" })
   @ApiOkResponse({ type: BuildStateView })
+  @ApiParam({ name: "jobId", description: "Job id from POST /timesheet/build", example: "1842" })
   buildState(@Param("jobId") jobId: string): Promise<{ state: BuildState }> {
     return this.timesheet.buildState(jobId);
   }
@@ -100,6 +105,7 @@ export class TimesheetController {
   @ApiOperation({ summary: "Correct somebody else's day by hand, leaving the measurement and a trace" })
   @ApiOkResponse({ type: DayView })
   @ApiErrors(HttpStatus.NOT_FOUND)
+  @ApiParam({ name: "id", description: "Day row id, a decimal integer", example: "18342" })
   correct(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,

@@ -8,7 +8,12 @@ const MAX_PAGE_SIZE = 200;
 const MAX_CURSOR_LENGTH = 256;
 
 export class PaginationDto {
-  @ApiPropertyOptional({ minimum: 0, maximum: MAX_OFFSET, default: 0 })
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: MAX_OFFSET,
+    default: 0,
+    description: "Rows to pass over before the page starts; ignored when a cursor is sent",
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -22,7 +27,7 @@ export class PaginationDto {
   @MaxLength(MAX_CURSOR_LENGTH)
   cursor?: string;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: MAX_PAGE_SIZE, default: 50 })
+  @ApiPropertyOptional({ minimum: 1, maximum: MAX_PAGE_SIZE, default: 50, description: "Most rows the page holds" })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

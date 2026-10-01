@@ -26,7 +26,12 @@ async function answers(probe: PromiseLike<unknown>): Promise<boolean> {
 }
 
 export class HealthView {
-  @ApiProperty({ enum: ["ok"] })
+  @ApiProperty({
+    enum: ["ok"],
+    enumName: "HealthStatus",
+    example: "ok",
+    description: "Always ok: a dependency that does not answer turns the reply into 503 DEPENDENCY_DOWN",
+  })
   status!: "ok";
 }
 

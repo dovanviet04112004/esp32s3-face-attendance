@@ -7,6 +7,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 import type { Certificate } from "@prisma/client";
@@ -27,6 +28,8 @@ import {
   LetterView,
   ListCertificatesDto,
 } from "./dto/certificate.dto.js";
+
+const CERTIFICATE_ID = { name: "id", description: "Certificate id", example: "9d0e1f2a-3b4c-4d5e-8f6a-7b8c9d0e1f2a" };
 
 @ApiTags("certificates")
 @ApiBearerAuth(API_AUTH.user)
@@ -58,6 +61,7 @@ export class CertificatesController {
 
   @Get(":id/letter")
   @ApiOperation({ summary: "The issued letter itself, ready to print; the desk or its owner only" })
+  @ApiParam(CERTIFICATE_ID)
   @ApiOkResponse({ type: LetterView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "CERTIFICATE_NOT_ISSUED" })
   letter(
@@ -70,6 +74,7 @@ export class CertificatesController {
   @Post(":id/issue")
   @AuditedInService()
   @ApiOperation({ summary: "Hand one out; the database mints the serial" })
+  @ApiParam(CERTIFICATE_ID)
   @ApiCreatedResponse({ type: CertificateView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "CERTIFICATE_ALREADY_DECIDED" })
@@ -80,6 +85,7 @@ export class CertificatesController {
   @Post(":id/reject")
   @AuditedInService()
   @ApiOperation({ summary: "Turn one down, with a reason the asker can read" })
+  @ApiParam(CERTIFICATE_ID)
   @ApiCreatedResponse({ type: CertificateView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "CERTIFICATE_ALREADY_DECIDED" })

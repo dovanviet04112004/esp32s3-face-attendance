@@ -9,7 +9,14 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import {
+  ApiAcceptedResponse,
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import { ExtractJwt } from "passport-jwt";
 
@@ -19,7 +26,7 @@ import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { DeviceAuthGuard } from "../../common/guards/device-auth.guard.js";
 import { THROTTLE, type DeviceClaims } from "../auth/auth.types.js";
 import { DevicesService, type Registration } from "./devices.service.js";
-import { RegisterDeviceDto } from "./dto/device.dto.js";
+import { DeviceIdentityView, DeviceTokenView, DeviceWaitingView, RegisterDeviceDto } from "./dto/device.dto.js";
 
 const bearer = ExtractJwt.fromAuthHeaderAsBearerToken();
 
@@ -34,8 +41,8 @@ export class DevicesRegisterController {
   @RateBucket(THROTTLE.deviceRegister)
   @NotAudited()
   @ApiOperation({ summary: "A kiosk with an empty NVS asking to be let in" })
-  @ApiResponse({ status: HttpStatus.ACCEPTED, description: "Waiting for a person to approve it" })
-  @ApiResponse({ status: HttpStatus.OK, description: "Approved; carries the device token" })
+  @ApiAcceptedResponse({ type: DeviceWaitingView, description: "Waiting for a person to approve it" })
+  @ApiOkResponse({ type: DeviceTokenView, description: "Approved; carries the device token" })
   async register(
     @Body() body: RegisterDeviceDto,
     @Res({ passthrough: true }) res: Response,
@@ -49,6 +56,7 @@ export class DevicesRegisterController {
   @UseGuards(DeviceAuthGuard)
   @ApiBearerAuth(API_AUTH.device)
   @ApiOperation({ summary: "A kiosk asking whether its ticket still stands (KEHOACH 7.3)" })
+  @ApiOkResponse({ type: DeviceIdentityView, description: "The ticket stands" })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Revoked, replaced or expired" })
   mine(@Req() req: Request & { user: DeviceClaims }): { deviceId: string } {
     return { deviceId: req.user.deviceId };
@@ -60,7 +68,7 @@ export class DevicesRegisterController {
   @AuditedInService()
   @ApiBearerAuth(API_AUTH.device)
   @ApiOperation({ summary: "A kiosk trading the ticket it holds for a fresh one (KEHOACH 7.3)" })
-  @ApiResponse({ status: HttpStatus.OK, description: "Carries the new device token" })
+  @ApiOkResponse({ type: DeviceTokenView, description: "Carries the new device token" })
   @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: "Revoked, replaced or expired" })
   renew(@Req() req: Request & { user: DeviceClaims }): Promise<Registration> {
     return this.devices.renew(req.user.deviceId, bearer(req) ?? "");

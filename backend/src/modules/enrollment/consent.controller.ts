@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpStatus, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 import type { BiometricConsent } from "@prisma/client";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
@@ -10,6 +10,8 @@ import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { ConsentService } from "./consent.service.js";
 import { ConsentView, GrantConsentDto, WithdrawnView } from "./dto/consent.dto.js";
 import { EnrollmentService } from "./enrollment.service.js";
+
+const EMPLOYEE_ID = { name: "employeeId", description: "Employee whose face data the consent covers", example: 42 };
 
 @ApiTags("biometric-consent")
 @ApiBearerAuth()
@@ -24,7 +26,8 @@ export class ConsentController {
 
   @Get(":employeeId")
   @ApiOperation({ summary: "Every agreement and withdrawal for one person" })
-  @ApiOkResponse({ type: [ConsentView] })
+  @ApiParam(EMPLOYEE_ID)
+  @ApiOkResponse({ type: [ConsentView], description: "Newest first" })
   history(
     @CurrentViewer() viewer: Viewer,
     @Param("employeeId", ParseIntPipe) employeeId: number,
@@ -43,6 +46,7 @@ export class ConsentController {
   @Post(":employeeId/withdraw")
   @AuditedInService()
   @ApiOperation({ summary: "Withdraw and erase the face everywhere in one step; asking again erases again" })
+  @ApiParam(EMPLOYEE_ID)
   @ApiCreatedResponse({ type: WithdrawnView })
   withdraw(
     @CurrentViewer() viewer: Viewer,

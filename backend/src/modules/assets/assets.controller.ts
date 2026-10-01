@@ -18,6 +18,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiProduces,
   ApiTags,
 } from "@nestjs/swagger";
@@ -39,12 +40,16 @@ import {
   AssetCountsView,
   AssetFilterDto,
   AssetPageView,
+  AssetTransferView,
   AssetView,
+  AssetWithHolderView,
   CreateAssetDto,
   HandOverDto,
   ListAssetsDto,
   UpdateAssetDto,
 } from "./dto/asset.dto.js";
+
+const ASSET_ID = { name: "id", description: "Asset id", example: "8f7e6d5c-4b3a-4291-8e7d-6c5b4a392817" };
 
 @ApiTags("assets")
 @ApiBearerAuth(API_AUTH.user)
@@ -95,6 +100,7 @@ export class AssetsController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Correct an asset's name, kind, serial number or note" })
+  @ApiParam(ASSET_ID)
   @ApiOkResponse({ type: AssetView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ASSET_NOT_FOUND" })
   update(@CurrentViewer() viewer: Viewer, @Param("id") id: string, @Body() body: UpdateAssetDto): Promise<Asset> {
@@ -104,6 +110,9 @@ export class AssetsController {
   @Get("assets/:id/history")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Who this asset has been through, newest first" })
+  @ApiParam(ASSET_ID)
+  @ApiOkResponse({ type: [AssetTransferView] })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "ASSET_NOT_FOUND" })
   history(@Param("id") id: string): Promise<AssetTransfer[]> {
     return this.assets.history(id);
   }
@@ -112,7 +121,8 @@ export class AssetsController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Give it out or take it back; either way a row is written" })
-  @ApiCreatedResponse({ type: AssetView })
+  @ApiParam(ASSET_ID)
+  @ApiCreatedResponse({ type: AssetWithHolderView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ASSET_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({
     type: ErrorBody,
@@ -128,6 +138,9 @@ export class AssetsController {
 
   @Get("employees/:id/assets")
   @ApiOperation({ summary: "What this person is still holding" })
+  @ApiParam({ name: "id", description: "Employee id", example: 42 })
+  @ApiOkResponse({ type: [AssetWithHolderView] })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND, also outside the caller's scope" })
   heldBy(
     @CurrentViewer() viewer: Viewer,
     @Param("id", ParseIntPipe) id: number,

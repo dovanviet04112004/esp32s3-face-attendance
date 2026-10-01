@@ -8,6 +8,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 import type { PayslipDispute } from "@prisma/client";
@@ -66,6 +67,7 @@ export class DisputesController {
   @ApiForbiddenResponse({ type: ErrorBody, description: "PAYROLL_WRITE_DENIED, SELF_DECISION" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "DISPUTE_ALREADY_ANSWERED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "DISPUTE_NOT_FOUND" })
+  @ApiParam({ name: "id", description: "Dispute id (UUID)", example: "6ccf84bd-c7d6-4ee6-9217-aa0aaa9380ac" })
   answer(
     @Param("id") id: string,
     @Body() body: AnswerDisputeDto,
@@ -81,6 +83,7 @@ export class DisputesController {
   @ApiForbiddenResponse({ type: ErrorBody, description: "DISPUTE_NOT_YOURS" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "DISPUTE_ALREADY_ANSWERED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "DISPUTE_NOT_FOUND" })
+  @ApiParam({ name: "id", description: "Dispute id (UUID)", example: "6ccf84bd-c7d6-4ee6-9217-aa0aaa9380ac" })
   withdraw(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<PayslipDispute> {
     return this.disputes.withdraw(viewer, id);
   }

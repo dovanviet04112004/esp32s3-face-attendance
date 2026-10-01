@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 /** The one shape every error answer takes; `message` is a code the client turns into a sentence (CLAUDE.md 3.1). */
 export class ErrorBody {
-  @ApiProperty({ example: 400 })
+  @ApiProperty({ description: "The HTTP status, repeated so a logged body still carries it", example: 400 })
   statusCode!: number;
 
   @ApiProperty({ description: "UPPER_SNAKE code, never a sentence", example: "VALIDATION_FAILED" })
@@ -15,9 +15,9 @@ export class ErrorBody {
   })
   fields?: string[];
 
-  @ApiProperty({ example: "/auth/login" })
+  @ApiProperty({ description: "The request path that failed, without its query string", example: "/auth/login" })
   path!: string;
 
-  @ApiProperty({ format: "date-time" })
+  @ApiProperty({ format: "date-time", description: "When the server answered, in UTC", example: "2026-10-01T03:15:42.120Z" })
   ts!: string;
 }

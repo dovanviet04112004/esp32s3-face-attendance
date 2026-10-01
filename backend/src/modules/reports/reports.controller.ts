@@ -18,8 +18,10 @@ import { PaginationDto, type Page } from "../../common/dto/pagination.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import {
   AttendanceTallyPage,
+  AttentionView,
   D02QueryDto,
   ExceptionPage,
+  InsuranceChangesView,
   InsuranceRangeDto,
   PersonRefPage,
   RangeDto,
@@ -53,6 +55,7 @@ export class ReportsController {
   @Get("attention")
   @Roles("ADMIN", "HR", "PAYROLL")
   @ApiOperation({ summary: "What needs a decision today (KEHOACH 9.18)" })
+  @ApiOkResponse({ type: AttentionView })
   attention(): Promise<Attention> {
     return this.reports.attention();
   }
@@ -107,6 +110,7 @@ export class ReportsController {
   @Get("insurance-changes")
   @Roles("ADMIN", "HR", "PAYROLL")
   @ApiOperation({ summary: "Who started, who stopped, whose base moved" })
+  @ApiOkResponse({ type: InsuranceChangesView })
   insuranceChanges(@Query() query: InsuranceRangeDto): Promise<InsuranceChanges> {
     return this.reports.insuranceChanges(
       query.legalEntityId,

@@ -21,18 +21,25 @@ const CODE_MAX = 32;
 const LABEL_MAX = 64;
 
 export class RaiseDisputeDto {
-  @ApiProperty()
+  @ApiProperty({
+    example: "8f14e45f-ceea-467a-9575-7e4f3c2a1b90",
+    description: "One of the caller's own payslips, already issued",
+  })
   @IsString()
   @MaxLength(64)
   payslipId!: string;
 
-  @ApiPropertyOptional({ description: "Which line is disputed; left out means the whole slip" })
+  @ApiPropertyOptional({ example: "OT_WEEKDAY", description: "Which line is disputed; left out means the whole slip" })
   @IsOptional()
   @IsString()
   @MaxLength(CODE_MAX)
   lineCode?: string;
 
-  @ApiProperty({ maxLength: CLAIM_MAX, example: "Tăng ca tháng này thiếu 4 giờ" })
+  @ApiProperty({
+    maxLength: CLAIM_MAX,
+    example: "Tăng ca tháng này thiếu 4 giờ",
+    description: "What the person says is wrong",
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(CLAIM_MAX)
@@ -40,30 +47,47 @@ export class RaiseDisputeDto {
 }
 
 export class AnswerDisputeDto {
-  @ApiProperty({ enum: OUTCOMES })
+  @ApiProperty({
+    enum: OUTCOMES,
+    enumName: "DisputeOutcome",
+    example: "UPHELD",
+    description: "UPHELD agrees with the claim, REJECTED does not",
+  })
   @IsEnum(OUTCOMES)
   outcome!: (typeof OUTCOMES)[number];
 
-  @ApiProperty({ maxLength: ANSWER_MAX })
+  @ApiProperty({
+    maxLength: ANSWER_MAX,
+    example: "Đã đối chiếu máy chấm công, bổ sung 4 giờ tăng ca vào kỳ sau",
+    description: "The answer the person reads; also the adjustment's reason",
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(ANSWER_MAX)
   answer!: string;
 
-  @ApiPropertyOptional({ description: "Dong owed; upholding without it settles nothing" })
+  @ApiPropertyOptional({ example: 450000, description: "Dong owed; upholding without it settles nothing" })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   amount?: number;
 
-  @ApiPropertyOptional({ maxLength: CODE_MAX, example: "OT" })
+  @ApiPropertyOptional({
+    maxLength: CODE_MAX,
+    example: "OT",
+    description: "Code of the adjustment, DISPUTE when left out; the next payslip shows RETRO_<code>",
+  })
   @IsOptional()
   @IsString()
   @MaxLength(CODE_MAX)
   code?: string;
 
-  @ApiPropertyOptional({ maxLength: LABEL_MAX })
+  @ApiPropertyOptional({
+    maxLength: LABEL_MAX,
+    example: "Bù tăng ca tháng 9",
+    description: "Label of the adjustment line on the next payslip",
+  })
   @IsOptional()
   @IsString()
   @MaxLength(LABEL_MAX)
@@ -71,7 +95,11 @@ export class AnswerDisputeDto {
 }
 
 export class ListDisputesDto extends QueueQueryDto {
-  @ApiPropertyOptional({ enum: STATES, description: "OPEN is the desk's queue, without its own rows" })
+  @ApiPropertyOptional({
+    enum: STATES,
+    enumName: "DisputeState",
+    description: "OPEN is the desk's queue, without its own rows",
+  })
   @IsOptional()
   @IsEnum(STATES)
   state?: (typeof STATES)[number];
@@ -91,68 +119,129 @@ export class ListDisputesDto extends QueueQueryDto {
 }
 
 export class PeriodRef {
-  @ApiProperty()
+  @ApiProperty({ example: 2026, description: "Calendar year of the pay month" })
   year!: number;
 
-  @ApiProperty()
+  @ApiProperty({ example: 9, description: "Pay month, 1 for January" })
   month!: number;
 }
 
 export class DisputedSlip {
-  @ApiProperty({ type: PeriodRef })
+  @ApiProperty({ type: PeriodRef, description: "The pay month of the disputed payslip" })
   period!: PeriodRef;
 }
 
 export class DisputeView {
-  @ApiProperty()
+  @ApiProperty({ example: "6ccf84bd-c7d6-4ee6-9217-aa0aaa9380ac", description: "Dispute id (UUID)" })
   id!: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: "8f14e45f-ceea-467a-9575-7e4f3c2a1b90", description: "Payslip disputed" })
   payslipId!: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 42, description: "Employee who raised it" })
   employeeId!: number;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "OT_WEEKDAY",
+    description: "Line disputed; null for the whole payslip",
+  })
   lineCode!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ example: "Tăng ca tháng này thiếu 4 giờ", description: "What the person says is wrong" })
   claim!: string;
 
-  @ApiProperty({ enum: STATES })
+  @ApiProperty({
+    enum: STATES,
+    enumName: "DisputeState",
+    example: "OPEN",
+    description: "Only OPEN can be answered or withdrawn",
+  })
   state!: string;
 
-  @ApiProperty()
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    example: "2026-10-08T03:00:00.000Z",
+    description: "Deadline for an answer, DISPUTE_ANSWER_DAYS after it was raised",
+  })
   dueAt!: Date;
 
-  @ApiProperty({ enum: OUTCOMES, nullable: true })
+  @ApiProperty({
+    enum: OUTCOMES,
+    enumName: "DisputeOutcome",
+    nullable: true,
+    example: "UPHELD",
+    description: "What the answer decided; null until answered",
+  })
   outcome!: string | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "Đã đối chiếu máy chấm công, bổ sung 4 giờ tăng ca vào kỳ sau",
+    description: "The desk's answer; null until answered",
+  })
   answer!: string | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    nullable: true,
+    example: "2026-10-06T07:20:00.000Z",
+    description: "When it was answered; null until then",
+  })
   answeredAt!: Date | null;
 
-  @ApiProperty({ nullable: true, description: "The adjustment an upheld answer paid through" })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "ab35f74f-dd47-4ad6-8e4c-fb243e7ac176",
+    description: "Account that answered it; null until answered",
+  })
+  answeredById!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "46ce4574-f962-4aa5-a112-c5997ab36056",
+    description: "The adjustment an upheld answer paid through",
+  })
   retroId!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    example: "2026-10-03T03:00:00.000Z",
+    description: "When it was raised",
+  })
   createdAt!: Date;
+
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    example: "2026-10-06T07:20:00.000Z",
+    description: "When the row last changed",
+  })
+  updatedAt!: Date;
 }
 
 export class DisputeRowView extends DisputeView {
-  @ApiProperty({ type: PersonView })
+  @ApiProperty({ type: PersonView, description: "Who raised it" })
   employee!: PersonView;
 
-  @ApiProperty({ type: DisputedSlip })
+  @ApiProperty({ type: DisputedSlip, description: "The disputed payslip's pay month" })
   payslip!: DisputedSlip;
 
-  @ApiProperty({ description: "Whole days since it was raised" })
+  @ApiProperty({ example: 3, description: "Whole days since it was raised" })
   waitedDays!: number;
 }
 
 export class DisputePageView extends PageMeta {
-  @ApiProperty({ type: [DisputeRowView] })
+  @ApiProperty({
+    type: [DisputeRowView],
+    description: "Oldest first when listing open ones, newest first otherwise, unless order says",
+  })
   rows!: DisputeRowView[];
 }

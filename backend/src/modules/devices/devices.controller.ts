@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpStatus, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
@@ -46,6 +46,7 @@ export class DevicesController {
   @Roles("ADMIN")
   @ApiOperation({ summary: "One kiosk and what it last reported" })
   @ApiOkResponse({ type: DeviceView })
+  @ApiParam({ name: "id", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
   get(@Param("id") id: string): Promise<PublicDevice> {
     return this.devices.get(id);
   }
@@ -54,6 +55,7 @@ export class DevicesController {
   @Roles("ADMIN")
   @ApiOperation({ summary: "Rename a kiosk or move it to another door" })
   @ApiOkResponse({ type: DeviceView })
+  @ApiParam({ name: "id", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
   update(@Param("id") id: string, @Body() body: UpdateDeviceDto): Promise<PublicDevice> {
     return this.devices.update(id, body);
   }
@@ -64,6 +66,7 @@ export class DevicesController {
   @ApiOperation({ summary: "Accept a kiosk after matching the claim code on its screen" })
   @ApiCreatedResponse({ type: DeviceView })
   @ApiErrors(HttpStatus.CONFLICT)
+  @ApiParam({ name: "id", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
   approve(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -77,6 +80,7 @@ export class DevicesController {
   @Roles("ADMIN")
   @ApiOperation({ summary: "Take a kiosk back; it returns to waiting" })
   @ApiCreatedResponse({ type: DeviceView })
+  @ApiParam({ name: "id", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
   revoke(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PublicDevice> {
     return this.devices.revoke(id, viewer.userId);
   }

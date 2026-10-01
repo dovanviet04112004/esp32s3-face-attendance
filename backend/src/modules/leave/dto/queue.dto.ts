@@ -40,47 +40,57 @@ export class QueueQueryDto extends PaginationDto {
 }
 
 export class DepartmentRef {
-  @ApiProperty()
+  @ApiProperty({ example: "6aef5afe-433e-4daa-9ece-c33b41d3a660", description: "Department id (UUID)" })
   id!: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: "Kỹ thuật", description: "Department name as the org chart shows it" })
   name!: string;
 }
 
 /** Who a queue row is about. */
 export class PersonView {
-  @ApiProperty()
+  @ApiProperty({ example: 42, description: "Employee id" })
   id!: number;
 
-  @ApiProperty()
+  @ApiProperty({ example: "NV0042", description: "Employee code" })
   code!: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: "Nguyễn Văn An", description: "Name as on the employee record" })
   fullName!: string;
 
-  @ApiProperty({ type: DepartmentRef, nullable: true })
+  @ApiProperty({ type: DepartmentRef, nullable: true, description: "Where the person sits; null when unplaced" })
   department!: DepartmentRef | null;
 }
 
 /** The account that decided something, and the person behind it if any. */
 export class DeciderView {
-  @ApiProperty()
+  @ApiProperty({ example: "ab35f74f-dd47-4ad6-8e4c-fb243e7ac176", description: "Account id (UUID)" })
   id!: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: "manager@kiosk.local", description: "Sign-in email of the account" })
   email!: string;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "Vũ Thị Quản Lý",
+    description: "Name of the employee behind the account; null for an account without one",
+  })
   fullName!: string | null;
 }
 
 export class PageMeta {
-  @ApiProperty({ description: "Stops at the count ceiling; see totalIsExact" })
+  @ApiProperty({ example: 120, description: "Stops at the count ceiling; see totalIsExact" })
   total!: number;
 
-  @ApiProperty()
+  @ApiProperty({ example: true, description: "False when counting stopped at the ceiling, so total is a floor" })
   totalIsExact!: boolean;
 
-  @ApiProperty({ nullable: true, description: "Pass as cursor for the next page" })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "eyJzb3J0VmFsdWUiOiIyMDI2LTA5LTE0VDAxOjMyOjA1LjAwMFoiLCJpZCI6IjhmMTRlNDVmLWNlZWEtNDY3YS05NTc1LTdlNGYzYzJhMWI5MCJ9",
+    description: "Pass as cursor for the next page; null once a page comes back short",
+  })
   next!: string | null;
 }

@@ -19,6 +19,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 import type { AllowanceType, Dependent } from "@prisma/client";
@@ -50,6 +51,7 @@ import {
   ListDependentsDto,
   PayRecordView,
   RaisePreviewView,
+  RaiseWrittenView,
   UpdateAllowanceTypeDto,
 } from "./dto/compensation.dto.js";
 
@@ -89,6 +91,7 @@ export class CompensationController {
   @ApiOkResponse({ type: AllowanceTypeView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ALLOWANCE_TYPE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "ALLOWANCE_CODE_TAKEN" })
+  @ApiParam({ name: "id", description: "Allowance type id (UUID)", example: "4eb003d5-9b2e-440e-9bb1-fa30968513f7" })
   updateAllowanceType(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -101,6 +104,7 @@ export class CompensationController {
   @ApiOperation({ summary: "Every pay record for one person, newest first" })
   @ApiOkResponse({ type: [PayRecordView] })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
+  @ApiParam({ name: "id", description: "Employee id", example: 42 })
   history(
     @CurrentViewer() viewer: Viewer,
     @Param("id", ParseIntPipe) id: number,
@@ -134,7 +138,7 @@ export class CompensationController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Write the raise the preview showed; allowances carry forward" })
-  @ApiCreatedResponse({ schema: { properties: { written: { type: "number" } } } })
+  @ApiCreatedResponse({ type: RaiseWrittenView })
   bulk(@CurrentViewer() viewer: Viewer, @Body() body: BulkRaiseDto): Promise<{ written: number }> {
     return this.pay.applyRaise(viewer, body);
   }
@@ -142,6 +146,7 @@ export class CompensationController {
   @Get("employees/:id/dependents")
   @ApiOperation({ summary: "Dependants registered against one person" })
   @ApiOkResponse({ type: [DependentView] })
+  @ApiParam({ name: "id", description: "Employee id", example: 42 })
   dependents(
     @CurrentViewer() viewer: Viewer,
     @Param("id", ParseIntPipe) id: number,
@@ -176,6 +181,11 @@ export class CompensationController {
   @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "DEPENDENT_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "REQUEST_ALREADY_DECIDED" })
+  @ApiParam({
+    name: "id",
+    description: "Dependant registration id (UUID)",
+    example: "e71fa2d2-7ccc-4591-b9df-5b734e951e94",
+  })
   decide(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,

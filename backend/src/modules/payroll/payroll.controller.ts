@@ -15,6 +15,7 @@ import {
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiProduces,
   ApiTags,
 } from "@nestjs/swagger";
@@ -31,6 +32,7 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import {
   AddBonusDto,
+  BonusRowView,
   ChecklistItemView,
   CreatePeriodDto,
   CreateRunDto,
@@ -39,6 +41,8 @@ import {
   ItemCount,
   ListPayslipsDto,
   LockPeriodDto,
+  PayslipDeltaView,
+  PayslipDetailView,
   PayslipPageView,
   PeriodTotalsView,
   PeriodView,
@@ -46,7 +50,9 @@ import {
   QueuedCount,
   RunView,
   SetSettlementDto,
+  SettlementSheetView,
   TaxYearQueryDto,
+  TaxYearStatementView,
 } from "./dto/payroll.dto.js";
 import {
   PayrollService,
@@ -93,6 +99,7 @@ export class PayrollController {
   @Roles("ADMIN", "HR", "PAYROLL")
   @ApiOperation({ summary: "What is still unsettled in this period (KEHOACH 9.18)" })
   @ApiOkResponse({ type: [ChecklistItemView] })
+  @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   checklist(@Param("id") id: string): Promise<ChecklistItem[]> {
     return this.payroll.checklist(id);
   }
@@ -105,6 +112,7 @@ export class PayrollController {
   })
   @ApiCreatedResponse({ type: PeriodView })
   @ApiErrors(HttpStatus.CONFLICT)
+  @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   lock(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -118,6 +126,7 @@ export class PayrollController {
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Mark a locked period paid" })
   @ApiCreatedResponse({ type: PeriodView })
+  @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   markPaid(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayrollPeriod> {
     return this.payroll.markPaid(viewer, id);
   }
@@ -126,6 +135,7 @@ export class PayrollController {
   @Roles("ADMIN", "HR", "PAYROLL")
   @ApiOperation({ summary: "Headcount, gross, net and employer cost over what the period issues or will issue" })
   @ApiOkResponse({ type: PeriodTotalsView })
+  @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   totals(@Param("id") id: string): Promise<PeriodTotals> {
     return this.payroll.periodTotals(id);
   }
@@ -134,6 +144,7 @@ export class PayrollController {
   @Roles("ADMIN", "HR", "PAYROLL")
   @ApiOperation({ summary: "How many issued payslips have gone out to their owners" })
   @ApiOkResponse({ type: DeliveryView })
+  @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   delivery(@Param("id") id: string): Promise<Delivery> {
     return this.payroll.delivery(id);
   }
@@ -144,6 +155,7 @@ export class PayrollController {
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Send every issued payslip as a link, not an attachment" })
   @ApiCreatedResponse({ type: QueuedCount })
+  @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   deliver(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -158,6 +170,7 @@ export class PayrollController {
   @ApiProduces("text/csv")
   @ApiOperation({ summary: "The payment file for a bank, or the ledger for accounting" })
   @ApiOkResponse({ description: "CSV; the ledger carries a byte order mark for Excel", schema: { type: "string" } })
+  @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   exportRows(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -170,6 +183,7 @@ export class PayrollController {
   @Roles("ADMIN", "HR", "PAYROLL")
   @ApiOperation({ summary: "Every attempt at calculating this period" })
   @ApiOkResponse({ type: [RunView] })
+  @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   runs(@Param("id") id: string): Promise<PayrollRun[]> {
     return this.payroll.runs(id);
   }
@@ -186,6 +200,8 @@ export class PayrollController {
   @Get("payroll-runs/:id/bonus")
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "The amounts a bonus run holds, as loaded" })
+  @ApiOkResponse({ type: [BonusRowView], description: "By code, then employee" })
+  @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   bonus(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<BonusRow[]> {
     return this.payroll.bonus(viewer, id);
   }
@@ -195,6 +211,7 @@ export class PayrollController {
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Load the amounts a bonus run pays; nobody loads their own (SELF_DECISION)" })
   @ApiCreatedResponse({ type: ItemCount })
+  @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   setBonus(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -206,6 +223,8 @@ export class PayrollController {
   @Get("payroll-runs/:id/settlement")
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Everything a leaver is owed that the system can derive" })
+  @ApiOkResponse({ type: SettlementSheetView })
+  @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   settlementSheet(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -218,6 +237,7 @@ export class PayrollController {
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Load the severance and offsets somebody signed for" })
   @ApiCreatedResponse({ type: ItemCount })
+  @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   setSettlement(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -232,12 +252,15 @@ export class PayrollController {
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Claim the run as RUNNING and queue it; a second press is refused" })
   @ApiCreatedResponse({ type: RunView })
+  @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   execute(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayrollRun> {
     return this.payroll.execute(viewer, id);
   }
 
   @Get("tax-year/:employeeId")
   @ApiOperation({ summary: "A year of income and tax withheld, read back from the payslips" })
+  @ApiOkResponse({ type: TaxYearStatementView })
+  @ApiParam({ name: "employeeId", description: "Employee id", example: 42 })
   taxYear(
     @CurrentViewer() viewer: Viewer,
     @Param("employeeId", ParseIntPipe) employeeId: number,
@@ -269,12 +292,19 @@ export class PayrollController {
 
   @Get("payslips/:id")
   @ApiOperation({ summary: "One payslip with every line that makes it up" })
+  @ApiOkResponse({
+    type: PayslipDetailView,
+    description: "Opening one's own issued payslip marks it VIEWED; the answer still shows the state before",
+  })
+  @ApiParam({ name: "id", description: "Payslip id (UUID)", example: "8f14e45f-ceea-467a-9575-7e4f3c2a1b90" })
   payslip(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayslipDetail> {
     return this.payroll.payslip(viewer, id);
   }
 
   @Get("payslips/:id/compare")
   @ApiOperation({ summary: "Component by component against the month before" })
+  @ApiOkResponse({ type: [PayslipDeltaView], description: "Only the components whose amount moved" })
+  @ApiParam({ name: "id", description: "Payslip id (UUID)", example: "8f14e45f-ceea-467a-9575-7e4f3c2a1b90" })
   compare(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayslipDelta[]> {
     return this.payroll.compare(viewer, id);
   }

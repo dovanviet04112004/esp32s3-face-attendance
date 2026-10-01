@@ -18,6 +18,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 import type { Department, EmploymentContract, Holiday, JobTitle, LegalEntity } from "@prisma/client";
@@ -29,7 +30,9 @@ import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
+import { DoneView } from "../notifications/dto/notifications.dto.js";
 import {
+  ContractView,
   CreateContractDto,
   CreateDepartmentDto,
   CreateHolidayDto,
@@ -58,6 +61,8 @@ import {
   type LegalEntityRow,
   type ReorgPlan,
 } from "./org.service.js";
+
+const HOLIDAY_ID = { name: "id", description: "Holiday id", example: "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e" };
 
 @ApiTags("org")
 @ApiBearerAuth(API_AUTH.user)
@@ -89,6 +94,7 @@ export class OrgController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Rename a holiday or change whether it is paid" })
+  @ApiParam(HOLIDAY_ID)
   @ApiOkResponse({ type: HolidayView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "HOLIDAY_NOT_FOUND" })
   updateHoliday(
@@ -103,6 +109,8 @@ export class OrgController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Take a day off the calendar, which rebuilds it for everybody" })
+  @ApiParam(HOLIDAY_ID)
+  @ApiOkResponse({ type: DoneView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "HOLIDAY_NOT_FOUND" })
   removeHoliday(
     @CurrentViewer() viewer: Viewer,
@@ -114,6 +122,8 @@ export class OrgController {
   @Get("employees/:id/contracts")
   @Roles("ADMIN", "HR", "PAYROLL")
   @ApiOperation({ summary: "Every contract this person has signed, newest first" })
+  @ApiParam({ name: "id", description: "Employee id", example: 42 })
+  @ApiOkResponse({ type: [ContractView], description: "Latest start first; empty for an id with no contracts" })
   contracts(@Param("id", ParseIntPipe) id: number): Promise<EmploymentContract[]> {
     return this.org.contracts(id);
   }
@@ -122,6 +132,7 @@ export class OrgController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Re-signing is a new contract, never an edit" })
+  @ApiCreatedResponse({ type: ContractView, description: "Starts as DRAFT" })
   addContract(
     @CurrentViewer() viewer: Viewer,
     @Body() body: CreateContractDto,
@@ -133,6 +144,9 @@ export class OrgController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Move a contract on; activating one ends the rest" })
+  @ApiParam({ name: "id", description: "Contract id", example: "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f" })
+  @ApiOkResponse({ type: ContractView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "CONTRACT_NOT_FOUND" })
   decideContract(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -163,6 +177,7 @@ export class OrgController {
   @AuditedInService()
   @Roles("ADMIN")
   @ApiOperation({ summary: "Edit, retire or restore an entity" })
+  @ApiParam({ name: "id", description: "Legal entity id", example: "0e9a7b6c-5d4e-4f3a-8b2c-1d0e9f8a7b6c" })
   @ApiOkResponse({ type: LegalEntityView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "LEGAL_ENTITY_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "ENTITY_CODE_TAKEN | ENTITY_IN_USE" })
@@ -196,6 +211,7 @@ export class OrgController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Edit, retire or restore a job title; holders keep it" })
+  @ApiParam({ name: "id", description: "Job title id", example: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d" })
   @ApiOkResponse({ type: JobTitleView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "JOB_TITLE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "JOB_TITLE_CODE_TAKEN" })
@@ -245,6 +261,7 @@ export class OrgController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Rename, move, set the head or cost centre, retire or restore" })
+  @ApiParam({ name: "id", description: "Department id", example: "6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f" })
   @ApiOkResponse({ type: DepartmentView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "DEPARTMENT_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({

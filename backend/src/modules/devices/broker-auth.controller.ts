@@ -1,12 +1,12 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { SkipThrottle } from "@nestjs/throttler";
 
 import { NotAudited } from "../../common/decorators/audited.decorator.js";
 import { AuthService } from "../auth/auth.service.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import { isServiceName } from "./devices.service.js";
-import { BrokerLoginDto } from "./dto/device.dto.js";
+import { BrokerLoginDto, BrokerVerdictView } from "./dto/device.dto.js";
 
 export interface BrokerVerdict {
   result: "allow" | "deny";
@@ -24,6 +24,10 @@ export class BrokerAuthController {
   // The caller is the broker inside compose, speaking for the whole fleet (KEHOACH 7.2).
   @SkipThrottle({ [THROTTLE.api]: true })
   @ApiOperation({ summary: "Whether a kiosk may log in to the broker" })
+  @ApiOkResponse({
+    type: BrokerVerdictView,
+    description: "EMQX reads result; a refused login is a deny, not an error status",
+  })
   async check(@Body() body: BrokerLoginDto): Promise<BrokerVerdict> {
     // A ticket owns one client id, and a service name logs in only from the broker's table (KEHOACH 7.4).
     if (body.clientid !== body.username || isServiceName(body.username)) {

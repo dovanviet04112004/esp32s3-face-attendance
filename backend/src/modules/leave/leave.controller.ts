@@ -8,6 +8,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiProduces,
   ApiTags,
 } from "@nestjs/swagger";
@@ -23,13 +24,14 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { THROTTLE } from "../auth/auth.types.js";
-import { CreateLeaveTypeDto, UpdateLeaveTypeDto } from "./dto/leave-type.dto.js";
+import { CreateLeaveTypeDto, LeaveTypeView, UpdateLeaveTypeDto } from "./dto/leave-type.dto.js";
 import {
   BalanceQueryDto,
   BalanceView,
   DecideManyDto,
   DecideManyView,
   DecideRequestDto,
+  FiledRequestView,
   InboxCountsView,
   InboxPageView,
   LeaveDaysQueryDto,
@@ -37,7 +39,6 @@ import {
   ListRequestsDto,
   RequestDetailView,
   RequestPageView,
-  RequestView,
   SubmitRequestDto,
 } from "./dto/request.dto.js";
 import {
@@ -62,6 +63,7 @@ export class LeaveController {
 
   @Get("leave-types")
   @ApiOperation({ summary: "The kinds of leave a request can name" })
+  @ApiOkResponse({ type: [LeaveTypeView], description: "Active kinds only, by code" })
   types(): Promise<LeaveType[]> {
     return this.leave.types();
   }
@@ -69,6 +71,7 @@ export class LeaveController {
   @Get("leave-types/all")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Every kind including retired ones, for the desk that edits them" })
+  @ApiOkResponse({ type: [LeaveTypeView], description: "Active kinds first, then by code" })
   allTypes(): Promise<LeaveType[]> {
     return this.leave.allTypes();
   }
@@ -77,6 +80,7 @@ export class LeaveController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Add a kind of leave and what a full year of it earns" })
+  @ApiCreatedResponse({ type: LeaveTypeView })
   createType(
     @CurrentViewer() viewer: Viewer,
     @Body() body: CreateLeaveTypeDto,
@@ -88,6 +92,8 @@ export class LeaveController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Change what a kind grants, or retire it from the filing form" })
+  @ApiOkResponse({ type: LeaveTypeView })
+  @ApiParam({ name: "id", description: "Leave type id (UUID)", example: "99f79587-ad8b-41a8-8b53-f502c36fe29b" })
   updateType(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -122,7 +128,10 @@ export class LeaveController {
 
   @Post("requests")
   @ApiOperation({ summary: "File leave, overtime, a correction or a trip (KEHOACH 9.5)" })
-  @ApiCreatedResponse({ type: RequestView, description: "A repeated clientKey answers with the request already filed" })
+  @ApiCreatedResponse({
+    type: FiledRequestView,
+    description: "A repeated clientKey answers with the request already filed",
+  })
   @ApiConflictResponse({ type: ErrorBody, description: "LEAVE_BALANCE_SHORT, LEAVE_OVERLAP" })
   @ApiForbiddenResponse({ type: ErrorBody, description: "NOT_AN_EMPLOYEE, CLIENT_KEY_NOT_YOURS" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "LEAVE_TYPE_NOT_FOUND: unknown or retired" })
@@ -174,16 +183,18 @@ export class LeaveController {
   @ApiOperation({ summary: "One request with its balance and teammates off; declared after inbox and export" })
   @ApiOkResponse({ type: RequestDetailView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "REQUEST_NOT_FOUND, also outside the viewer's scope" })
+  @ApiParam({ name: "id", description: "Request id (UUID)", example: "e3bf5f75-3ad5-4aca-9258-33e4a3357956" })
   one(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<RequestDetail> {
     return this.leave.one(viewer, id);
   }
 
   @Post("requests/:id/decide")
   @ApiOperation({ summary: "Approve or turn down; the balance moves here" })
-  @ApiCreatedResponse({ type: RequestView })
+  @ApiCreatedResponse({ type: FiledRequestView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, NOT_YOUR_REQUEST" })
   @ApiConflictResponse({ type: ErrorBody, description: "REQUEST_ALREADY_DECIDED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "REQUEST_NOT_FOUND" })
+  @ApiParam({ name: "id", description: "Request id (UUID)", example: "e3bf5f75-3ad5-4aca-9258-33e4a3357956" })
   decide(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -194,9 +205,10 @@ export class LeaveController {
 
   @Post("requests/:id/cancel")
   @ApiOperation({ summary: "Withdraw a request nobody has decided yet" })
-  @ApiCreatedResponse({ type: RequestView })
+  @ApiCreatedResponse({ type: FiledRequestView })
   @ApiConflictResponse({ type: ErrorBody, description: "REQUEST_ALREADY_DECIDED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "REQUEST_NOT_FOUND" })
+  @ApiParam({ name: "id", description: "Request id (UUID)", example: "e3bf5f75-3ad5-4aca-9258-33e4a3357956" })
   cancel(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<LeaveRequest> {
     return this.leave.cancel(viewer, id);
   }

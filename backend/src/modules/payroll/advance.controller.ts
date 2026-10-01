@@ -7,6 +7,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 import type { SalaryAdvance } from "@prisma/client";
@@ -61,6 +62,7 @@ export class AdvanceController {
   @ApiForbiddenResponse({ type: ErrorBody, description: "ADVANCE_DECIDE_DENIED, SELF_DECISION" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "ADVANCE_ALREADY_DECIDED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ADVANCE_NOT_FOUND" })
+  @ApiParam({ name: "id", description: "Advance id (UUID)", example: "ee5e4c9f-9f5c-4ebd-8759-9b7ac5ed3696" })
   decide(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
@@ -76,6 +78,7 @@ export class AdvanceController {
   @ApiForbiddenResponse({ type: ErrorBody, description: "ADVANCE_PAY_DENIED, SELF_DECISION" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "ADVANCE_NOT_APPROVED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ADVANCE_NOT_FOUND" })
+  @ApiParam({ name: "id", description: "Advance id (UUID)", example: "ee5e4c9f-9f5c-4ebd-8759-9b7ac5ed3696" })
   markPaid(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<SalaryAdvance> {
     return this.advances.markPaid(viewer, id);
   }
@@ -85,6 +88,7 @@ export class AdvanceController {
   @ApiCreatedResponse({ type: AdvanceView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "ADVANCE_ALREADY_DECIDED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ADVANCE_NOT_FOUND" })
+  @ApiParam({ name: "id", description: "Advance id (UUID)", example: "ee5e4c9f-9f5c-4ebd-8759-9b7ac5ed3696" })
   cancel(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<SalaryAdvance> {
     return this.advances.cancel(viewer, id);
   }

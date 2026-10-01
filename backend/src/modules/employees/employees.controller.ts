@@ -26,6 +26,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiPayloadTooLargeResponse,
   ApiProduces,
   ApiTags,
@@ -54,6 +55,7 @@ import {
   EmployeeCountsView,
   EmployeeFilterDto,
   EmployeePage,
+  EmployeeRecordView,
   EmployeeView,
   ExportQueryDto,
   FileFormatDto,
@@ -65,9 +67,11 @@ import {
   ListEmployeesDto,
   LoginPlanView,
   MoveLeavingDto,
+  NextCodeView,
   OffboardDto,
   OffboardingView,
   OnboardDto,
+  OnboardingView,
   PlacementPlanView,
   ReadinessCountsView,
   UpdateEmployeeDto,
@@ -91,6 +95,8 @@ const Upload = createParamDecorator((_: unknown, context: ExecutionContext): Imp
   }
   throw new BadRequestException("IMPORT_FILE_UNREADABLE");
 });
+
+const EMPLOYEE_ID = { name: "id", description: "Employee id", example: 42 };
 
 function download(file: FileOut): StreamableFile {
   return new StreamableFile(file.body, {
@@ -257,6 +263,10 @@ export class EmployeesController {
   @Roles("ADMIN", "HR")
   @AuditedInService()
   @ApiOperation({ summary: "Take somebody on: contract, pay, leave, checklist and login (KEHOACH 9.14)" })
+  @ApiParam(EMPLOYEE_ID)
+  @ApiCreatedResponse({ type: OnboardingView, description: "What was written, and beside it what was left alone" })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
+  @ApiConflictResponse({ type: ErrorBody, description: "EMPLOYEE_HAS_LEFT" })
   onboard(
     @Param("id", ParseIntPipe) id: number,
     @Body() body: OnboardDto,
@@ -274,6 +284,7 @@ export class EmployeesController {
       "A last day of today or earlier in APP_TIMEZONE closes the record and the login now; a later one only schedules it, " +
       "and the record closes the morning after that day.",
   })
+  @ApiParam(EMPLOYEE_ID)
   @ApiCreatedResponse({ type: OffboardingView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "EMPLOYEE_HAS_LEFT, LEAVING_SCHEDULED" })
@@ -289,6 +300,7 @@ export class EmployeesController {
   @Roles("ADMIN", "HR")
   @AuditedInService()
   @ApiOperation({ summary: "Move a scheduled last day; one of today or earlier closes the record now" })
+  @ApiParam(EMPLOYEE_ID)
   @ApiOkResponse({ type: OffboardingView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "LEAVING_CLOSED, LEAVING_NOT_SCHEDULED" })
@@ -304,6 +316,7 @@ export class EmployeesController {
   @Roles("ADMIN", "HR")
   @AuditedInService()
   @ApiOperation({ summary: "Call off a scheduled leaving before the record closes" })
+  @ApiParam(EMPLOYEE_ID)
   @ApiOkResponse({ type: EmployeeView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "LEAVING_CLOSED, LEAVING_NOT_SCHEDULED" })
@@ -340,6 +353,7 @@ export class EmployeesController {
   @Get(":id/login")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Where this person's login stands: none, pending, active or locked" })
+  @ApiParam(EMPLOYEE_ID)
   @ApiOkResponse({ type: LoginStateView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   loginOf(@Param("id", ParseIntPipe) id: number): Promise<LoginStateView> {
@@ -350,6 +364,7 @@ export class EmployeesController {
   @Roles("ADMIN", "HR")
   @AuditedInService()
   @ApiOperation({ summary: "Open this person's login, or mail the setup link again when it is open" })
+  @ApiParam(EMPLOYEE_ID)
   @ApiCreatedResponse({ type: LoginOpenedView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "NO_EMAIL: the record holds no personal email" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
@@ -365,12 +380,16 @@ export class EmployeesController {
   @Get("next-code")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Carry on the numbering the last hire used, or null if none reads as a series" })
+  @ApiOkResponse({ type: NextCodeView, description: "A suggestion, not a reservation: the unique code settles a clash" })
   nextCode(): Promise<{ code: string | null }> {
     return this.employees.nextCode();
   }
 
   @Get(":id")
   @ApiOperation({ summary: "One employee, as far as the caller's scope reaches" })
+  @ApiParam(EMPLOYEE_ID)
+  @ApiOkResponse({ type: EmployeeView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND, also outside the caller's scope" })
   get(
     @Param("id", ParseIntPipe) id: number,
     @CurrentViewer() viewer: Viewer,
@@ -385,7 +404,7 @@ export class EmployeesController {
     summary: "Create an employee; the server owns the id (KEHOACH 7.5)",
     description: "With no legal entity named, the department's entity, or the only active entity, is used.",
   })
-  @ApiCreatedResponse({ type: EmployeeView })
+  @ApiCreatedResponse({ type: EmployeeRecordView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "DEPARTMENT_OTHER_ENTITY" })
   @ApiNotFoundResponse({
     type: ErrorBody,
@@ -403,7 +422,8 @@ export class EmployeesController {
     summary: "Correct an employee record; null clears the manager, department or job title",
     description: "Leaving goes through POST /employees/:id/offboard; there is no field for it here.",
   })
-  @ApiOkResponse({ type: EmployeeView })
+  @ApiParam(EMPLOYEE_ID)
+  @ApiOkResponse({ type: EmployeeRecordView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "DEPARTMENT_OTHER_ENTITY" })
   @ApiNotFoundResponse({
     type: ErrorBody,

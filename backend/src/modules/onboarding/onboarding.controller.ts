@@ -19,6 +19,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 
@@ -31,6 +32,7 @@ import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import {
+  ChecklistRunView,
   CreateTemplateDto,
   FinishTaskDto,
   FinishedTaskView,
@@ -38,6 +40,7 @@ import {
   ListTemplatesDto,
   OpenCountsDto,
   OpenCountsView,
+  OpenTaskPageView,
   RunQueryDto,
   StartRunDto,
   TemplateView,
@@ -82,6 +85,7 @@ export class OnboardingController {
   @AuditedInService()
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Edit, retire or restore a template; items sent replace the list" })
+  @ApiParam({ name: "id", description: "Template id", example: "5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c" })
   @ApiOkResponse({ type: TemplateView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "TEMPLATE_NOT_FOUND | AUDIENCE_NOT_FOUND" })
   updateTemplate(
@@ -95,6 +99,7 @@ export class OnboardingController {
   @Post("checklists")
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Pick the template that fits and hand out the work" })
+  @ApiCreatedResponse({ type: ChecklistRunView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND | NO_CHECKLIST_TEMPLATE" })
   @ApiConflictResponse({ type: ErrorBody, description: "CHECKLIST_ALREADY_STARTED" })
   start(@CurrentViewer() viewer: Viewer, @Body() body: StartRunDto): Promise<RunWithTasks> {
@@ -103,6 +108,7 @@ export class OnboardingController {
 
   @Get("checklists/open")
   @ApiOperation({ summary: "Tasks nobody has finished yet, soonest due first" })
+  @ApiOkResponse({ type: OpenTaskPageView })
   open(@CurrentViewer() viewer: Viewer, @Query() query: ListOpenTasksDto): Promise<Page<OpenTask>> {
     return this.onboarding.open(viewer, query);
   }
@@ -116,6 +122,8 @@ export class OnboardingController {
 
   @Get("employees/:id/checklist")
   @ApiOperation({ summary: "What is still open on one person's onboarding" })
+  @ApiParam({ name: "id", description: "Employee id", example: 42 })
+  @ApiOkResponse({ type: ChecklistRunView, description: "An empty body instead while no run of that kind has started" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   run(
     @CurrentViewer() viewer: Viewer,
@@ -127,6 +135,7 @@ export class OnboardingController {
 
   @Post("checklist-tasks/:id/finish")
   @ApiOperation({ summary: "Mark one onboarding task done" })
+  @ApiParam({ name: "id", description: "Task id", example: "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f" })
   @ApiCreatedResponse({ type: FinishedTaskView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "TASK_NOT_FOUND" })

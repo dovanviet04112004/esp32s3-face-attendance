@@ -22,6 +22,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
 import type { Request } from "express";
@@ -42,10 +43,13 @@ import {
   CreateUserDto,
   ListUsersDto,
   MeView,
+  ProvisioningView,
   UpdateUserDto,
   UserFilterDto,
 } from "./dto/user.dto.js";
 import { UsersService, type Provisioning } from "./users.service.js";
+
+const ACCOUNT_ID = { name: "id", description: "Account id", example: "b5f0c3d2-8a41-4e6b-9c2d-7f1e3a5b9c04" };
 
 function actorOf(req: Request): string {
   return (req.user as AccessClaims).sub;
@@ -88,6 +92,7 @@ export class UsersController {
   @Post("provision")
   @Roles("ADMIN")
   @ApiOperation({ summary: "Open a login for employees who have none (KEHOACH 9.4)" })
+  @ApiCreatedResponse({ type: ProvisioningView })
   provision(): Promise<Provisioning> {
     return this.users.provision();
   }
@@ -109,6 +114,7 @@ export class UsersController {
   @AuditedInService()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Mail the setup link again, for a password nobody can recall" })
+  @ApiParam(ACCOUNT_ID)
   @ApiNoContentResponse()
   @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND, also for a locked account" })
   invite(@Param("id") id: string, @Req() req: Request): Promise<void> {
@@ -123,6 +129,7 @@ export class UsersController {
     description:
       "Locking, a new role or a new employee link signs the account out everywhere. Unlocking gives the old role back.",
   })
+  @ApiParam(ACCOUNT_ID)
   @ApiOkResponse({ type: AccountView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "ROLE_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND, EMPLOYEE_NOT_FOUND" })
@@ -146,6 +153,7 @@ export class UsersController {
     summary: "Delete an account nobody ever set a password for",
     description: "An account with a history is locked with PATCH {active:false}, so the audit trail keeps its actor.",
   })
+  @ApiParam(ACCOUNT_ID)
   @ApiNoContentResponse()
   @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "ACCOUNT_HAS_HISTORY" })
