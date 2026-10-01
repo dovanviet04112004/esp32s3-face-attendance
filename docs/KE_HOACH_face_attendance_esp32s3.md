@@ -7127,8 +7127,8 @@ phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng 
 CCCD hay số tài khoản của cấp dưới; một trưởng nhóm đọc được lương cả cây là một cái bảng lương
 bị chép ra ngoài bàn nhân sự. Hai cách thu hẹp, theo loại dữ liệu:
 - **Lương và giấy tờ riêng** — phiếu lương, quyết toán thuế, mức lương, người phụ thuộc, đơn
-  đổi hồ sơ — dùng phạm vi `deskOrSelfEmployeeIds`: bàn nhân sự thấy tất, còn lại chỉ thấy mình,
-  đúng như tạm ứng lương.
+  đổi hồ sơ, lịch sử đồng ý dữ liệu khuôn mặt — dùng phạm vi `deskOrSelfEmployeeIds`: bàn nhân
+  sự thấy tất, còn lại chỉ thấy mình, đúng như tạm ứng lương.
 - **Hồ sơ nhân viên** vẫn mở theo cây, nhưng khi người xem là quản lý và dòng không phải của
   chính họ thì các cột `dateOfBirth`, `nationalId`, `taxCode`, `socialInsuranceNo`,
   `bankAccount`, `bankName` trả về rỗng. Xuất Excel chỉ dành cho `ADMIN`, `HR`, `PAYROLL`.
