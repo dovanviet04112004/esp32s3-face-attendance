@@ -18,6 +18,19 @@ const CALLER_LINE = /^\*\*(Roles: |Caller: |Public: )/;
 interface Operation {
   operationId: string;
   description?: string;
+  parameters?: { name: string; in: string; description?: string }[];
+  responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+}
+
+interface Field {
+  description?: string;
+  $ref?: string;
+  allOf?: unknown[];
+}
+
+interface OpenApi {
+  paths: Record<string, Record<string, Operation>>;
+  components: { schemas: Record<string, { properties?: Record<string, Field> }> };
 }
 
 describe("api reference behind an admin pass (e2e)", () => {
@@ -119,6 +132,37 @@ describe("api reference behind an admin pass (e2e)", () => {
     const used = new Set(operations.flatMap((one) => (one as { tags?: string[] }).tags ?? []));
     const described = new Set(doc.tags.filter((tag) => tag.description).map((tag) => tag.name));
     assert.deepEqual([...used].filter((tag) => !described.has(tag)), [], "tags without a description");
+  });
+
+  it("types every reply and describes every parameter and field", async () => {
+    const cookie = await open(await pass(token.admin));
+    const doc = (await request(http).get("/docs/json").set("Cookie", cookie)).body as OpenApi;
+    const untyped: string[] = [];
+    const bare: string[] = [];
+    for (const [path, item] of Object.entries(doc.paths)) {
+      for (const [verb, operation] of Object.entries(item)) {
+        const replies = Object.entries(operation.responses ?? {}).filter(([code]) => code.startsWith("2"));
+        const typed = replies.some(
+          ([code, reply]) => code === "204" || Object.values(reply.content ?? {}).some((body) => body.schema !== undefined),
+        );
+        if (!typed) {
+          untyped.push(`${verb.toUpperCase()} ${path}`);
+        }
+        for (const parameter of operation.parameters ?? []) {
+          if (!parameter.description) {
+            bare.push(`${verb.toUpperCase()} ${path} ${parameter.in} ${parameter.name}`);
+          }
+        }
+      }
+    }
+    const silent = Object.entries(doc.components.schemas).flatMap(([name, schema]) =>
+      Object.entries(schema.properties ?? {})
+        .filter(([, field]) => !field.description && field.$ref === undefined && field.allOf === undefined)
+        .map(([field]) => `${name}.${field}`),
+    );
+    assert.deepEqual(untyped, [], "operations without a typed success reply");
+    assert.deepEqual(bare, [], "parameters without a description");
+    assert.deepEqual(silent, [], "schema fields without a description");
   });
 
   it("ends a session once its holder is no longer an admin", async () => {
