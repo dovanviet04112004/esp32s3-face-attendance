@@ -6,6 +6,7 @@ import {
   LockIcon,
   LockOpenIcon,
   PlusIcon,
+  ShieldSlashIcon,
   TrashIcon,
   UserGearIcon,
   WarningCircleIcon,
@@ -45,6 +46,7 @@ interface Account {
   pending: boolean;
   lastSeenAt: string | null;
   createdAt: string;
+  mfaEnabledAt: string | null;
   employee: { id: number; code: string; fullName: string; department: { id: string; name: string } | null } | null;
 }
 
@@ -111,6 +113,7 @@ function Accounts() {
   const [fault, setFault] = useState<string | null>(null);
   const [locking, setLocking] = useState<Account | null>(null);
   const [dropping, setDropping] = useState<Account | null>(null);
+  const [resetting, setResetting] = useState<Account | null>(null);
 
   const accounts = useInfiniteQuery({
     queryKey: ["users", "list", filters],
@@ -193,6 +196,15 @@ function Accounts() {
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
 
+  const resetTwoStep = useMutation({
+    mutationFn: (one: Account) => api.delete(`/users/${one.id}/mfa`),
+    onSuccess: (_, one) => {
+      setResetting(null);
+      done(t("mfaResetDone", { email: one.email }));
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
   function open(one: Account | null): void {
     setFault(null);
     setTried(false);
@@ -264,6 +276,13 @@ function Accounts() {
       cell: (row) => <StatePill tone={TONE[statusOf(row)]}>{t(`status_${statusOf(row)}`)}</StatePill>,
     },
     {
+      id: "twoStep",
+      header: t("mfa"),
+      priority: 3,
+      cell: (row) =>
+        row.mfaEnabledAt ? <StatePill tone="good">{t("mfaOn")}</StatePill> : <span className="text-kumo-subtle">{common("empty")}</span>,
+    },
+    {
       id: "lastSeen",
       header: t("lastSeen"),
       priority: 3,
@@ -305,6 +324,18 @@ function Accounts() {
         onSelect: () => {
           setFault(null);
           setLocking(row);
+        },
+      });
+    }
+    if (!mine && row.mfaEnabledAt) {
+      actions.push({
+        key: "mfa",
+        label: t("mfaReset"),
+        icon: ShieldSlashIcon,
+        danger: true,
+        onSelect: () => {
+          setFault(null);
+          setResetting(row);
         },
       });
     }
@@ -458,6 +489,29 @@ function Accounts() {
               onClick={() => locking && lock.mutate({ one: locking, active: false })}
             >
               {t("lockGo")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+
+      <LayerDialog.Alert
+        open={resetting !== null}
+        onOpenChange={(next) => !next && setResetting(null)}
+        dismissDisabled={resetTwoStep.isPending}
+      >
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{resetting ? t("mfaResetTitle", { email: resetting.email }) : ""}</LayerDialog.Title>
+          <LayerDialog.Description>
+            {resetting ? t("mfaResetWarn", { name: resetting.employee?.fullName ?? resetting.email }) : ""}
+          </LayerDialog.Description>
+          <LayerDialog.Body>{faultBanner}</LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              variant="destructive"
+              loading={resetTwoStep.isPending}
+              onClick={() => resetting && resetTwoStep.mutate(resetting)}
+            >
+              {t("mfaResetGo")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>

@@ -2450,7 +2450,14 @@
     "lockTitle": "Khoá tài khoản {email}?",
     "lockWarn": "{name} bị đăng xuất khỏi mọi thiết bị ngay và không đăng nhập được cho tới khi mở khoá. Vai, hồ sơ và nhật ký giữ nguyên.",
     "lockGo": "Khoá tài khoản",
-    "removeInvite": "Xoá lời mời"
+    "removeInvite": "Xoá lời mời",
+    "mfa": "Hai bước",
+    "mfaOn": "Đã bật",
+    "mfaReset": "Đặt lại xác minh hai bước",
+    "mfaResetTitle": "Đặt lại xác minh hai bước của {email}?",
+    "mfaResetWarn": "{name} bị đăng xuất khỏi mọi thiết bị, các mã dự phòng cũ hết hiệu lực, và lần đăng nhập tới phải gắn lại ứng dụng xác thực. Chỉ đặt lại khi đã xác nhận chính người ấy đang nhờ, chẳng hạn bằng một cuộc gọi.",
+    "mfaResetGo": "Đặt lại",
+    "mfaResetDone": "Đã đặt lại xác minh hai bước cho {email}."
   },
   "leaveTypes": {
     "title": "Loại phép",

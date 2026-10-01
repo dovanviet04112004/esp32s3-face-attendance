@@ -2450,7 +2450,14 @@
     "lockTitle": "Lock {email}?",
     "lockWarn": "{name} is signed out on every device at once and cannot sign in until unlocked. Role, record and audit trail stay as they are.",
     "lockGo": "Lock account",
-    "removeInvite": "Delete invitation"
+    "removeInvite": "Delete invitation",
+    "mfa": "Two-step",
+    "mfaOn": "On",
+    "mfaReset": "Reset two-step sign-in",
+    "mfaResetTitle": "Reset two-step sign-in for {email}?",
+    "mfaResetWarn": "{name} is signed out on every device, the old backup codes stop working, and the next sign-in links an authenticator app again. Reset only once you have confirmed it is really them asking, for instance with a phone call.",
+    "mfaResetGo": "Reset",
+    "mfaResetDone": "Two-step sign-in is reset for {email}."
   },
   "leaveTypes": {
     "title": "Leave types",
