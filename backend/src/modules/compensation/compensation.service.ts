@@ -23,6 +23,7 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
 import {
   PERSON_VIEW,
   QUEUE_DESKS,
@@ -95,6 +96,7 @@ export class CompensationService {
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
+    private readonly notices: NotificationsService,
   ) {}
 
   allowanceTypes(all = false): Promise<AllowanceType[]> {
@@ -407,7 +409,7 @@ export class CompensationService {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     await this.mayRead(viewer, employeeId);
-    return this.db.dependent
+    const made = await this.db.dependent
       .create({
         data: {
           employeeId,
@@ -423,6 +425,10 @@ export class CompensationService {
       .catch((error: unknown) => {
         throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
       });
+    await this.notices.raiseToDesk(QUEUE_DESKS.dependents, "REQUEST_WAITING", { dependentId: made.id }, {
+      employeeIds: [employeeId],
+    });
+    return made;
   }
 
   /** The state moves only out of PENDING, claimed by the update itself, so
@@ -459,6 +465,7 @@ export class CompensationService {
       subjectId: String(held.employeeId),
       meta: { dependentId: id },
     });
+    await this.notices.raiseFor(held.employeeId, "REQUEST_DECIDED", { dependentId: id, approved: body.approve });
     return this.db.dependent.findUniqueOrThrow({ where: { id } });
   }
 }
