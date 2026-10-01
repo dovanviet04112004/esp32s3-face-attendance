@@ -307,16 +307,18 @@ export function GlobalSearch() {
           </CommandPalette.Results>
           {loading ? <CommandPalette.Loading /> : <CommandPalette.Empty>{t("nothing")}</CommandPalette.Empty>}
         </CommandPalette.List>
-        <CommandPalette.Footer>
-          <span className="flex items-center gap-2">
-            <kbd className="rounded border border-kumo-hairline bg-kumo-base px-1.5 py-0.5 text-xs">↑↓</kbd>
-            <span>{t("walk")}</span>
-          </span>
-          <span className="flex items-center gap-2">
-            <kbd className="rounded border border-kumo-hairline bg-kumo-base px-1.5 py-0.5 text-xs">↵</kbd>
-            <span>{t("open")}</span>
-          </span>
-        </CommandPalette.Footer>
+        <div className="contents pointer-coarse:hidden">
+          <CommandPalette.Footer>
+            <span className="flex items-center gap-2">
+              <kbd className="rounded border border-kumo-hairline bg-kumo-base px-1.5 py-0.5 text-xs">↑↓</kbd>
+              <span>{t("walk")}</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <kbd className="rounded border border-kumo-hairline bg-kumo-base px-1.5 py-0.5 text-xs">↵</kbd>
+              <span>{t("open")}</span>
+            </span>
+          </CommandPalette.Footer>
+        </div>
       </CommandPalette.Root>
     </>
   );
