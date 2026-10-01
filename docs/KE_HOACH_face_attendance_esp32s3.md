@@ -9288,13 +9288,14 @@ giữ mã của nó cho câu chữ — `REQUEST_ALREADY_DECIDED`, `ADVANCE_ALREA
 dùng mã của đơn từ — còn giao diện rẽ nhánh theo `409`, không theo mã.
 
 **Realtime: tin chỉ mang tham chiếu, và chỉ tới người đang giữ dòng.** Tin `notice` của feed (§9.4)
-có ba dạng:
+có bốn dạng:
 
 | `op` | Mang gì | Tới ai |
 |---|---|---|
 | `new` | `id`, `kind`, `category` | đúng một tài khoản, mọi máy của nó |
 | `item` | `key`, `state`, `outcome`, `actorId`, `at` | mọi tài khoản đang giữ một dòng của việc ấy, mọi máy |
 | `read` | `ids` hoặc `all` | các máy khác của chính tài khoản vừa đọc |
+| `punch` | `ts`, `deviceId`, `delayed` — lượt tới trễ vì kiosk ghi lúc mất mạng | mọi máy của chính người chấm, khi kênh trong ứng dụng của `PUNCH_RECORDED` bật; đây là toast của loại không có dòng |
 
 Thứ tự là commit nghiệp vụ → đóng việc → tin `notice` → tin `change` mà bộ chặn phát như mọi lần ghi
 (§9.4); đảo hai bước giữa thì máy thứ hai hỏi lại và đọc đúng bản cũ. Gateway giữ một chỉ mục tài khoản
