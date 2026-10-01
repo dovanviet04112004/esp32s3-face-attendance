@@ -93,6 +93,8 @@ model User {
   notifications  Notification[]
   noticePrefs    NotificationPreference[]
   pushDevices    PushSubscription[]
+  noticeItemsDone    NoticeItem[] @relation("NoticeItemActor")
+  noticeItemsClaimed NoticeItem[] @relation("NoticeItemClaim")
 }
 
 /**
@@ -280,6 +282,8 @@ model Employee {
   documentAcks      DocumentAck[]
   personnelFiles    PersonnelFile[]
   ownedTasks        ChecklistTask[]     @relation("OwnsTasks")
+  noticeItems       NoticeItem[]
+  noticesAbout      Notification[]      @relation("NoticesAbout")
 
   @@index([departmentId, active])
   @@index([fullName, id])
@@ -1388,6 +1392,86 @@ enum NoticeChannel {
   EMAIL
 }
 
+// A value joins these three in the migration of the first kind that uses it (KEHOACH 9.21.4).
+enum NoticeQueue {
+  REQUESTS
+  ADVANCES_TO_DECIDE
+  ADVANCES_TO_PAY
+  CERTIFICATES
+  PROFILE_CHANGES
+  DISPUTES
+  DEPENDENTS
+}
+
+enum NoticeSubject {
+  REQUEST
+  ADVANCE
+  CERTIFICATE
+  PROFILE_CHANGE
+  DEPENDENT
+  DISPUTE
+  PAYSLIP
+  CONTRACT
+}
+
+enum NoticeOutcome {
+  APPROVED
+  REJECTED
+  ISSUED
+  UPHELD
+  PAID
+}
+
+enum NoticeLevel {
+  INFO
+  ACTION
+  WARNING
+  CRITICAL
+}
+
+enum NoticeItemState {
+  OPEN
+  DONE
+  WITHDRAWN
+  EXPIRED
+  CLEARED
+}
+
+/**
+ * One piece of work a whole group sees, each member holding a Notification
+ * that points here. The business row says whether it is open; this row says
+ * who was told and who handled it (KEHOACH 9.21.4).
+ */
+model NoticeItem {
+  id          String          @id @default(uuid())
+  // <queue in kebab case>:<subject id>[:<part>]
+  key         String          @unique
+  queue       NoticeQueue
+  subjectType NoticeSubject
+  // A uuid, a number, a day or a person-day; a CHECK in the migration holds it.
+  subjectId   String
+  employeeId  Int?
+  level       NoticeLevel     @default(ACTION)
+  // closedAt is set exactly when state leaves OPEN; a CHECK in the migration holds it.
+  state       NoticeItemState @default(OPEN)
+  outcome     NoticeOutcome?
+  actorId     String?
+  claimedById String?
+  claimedAt   DateTime?
+  dueAt       DateTime?
+  lastMark    Int?
+  facts       Json            @default("{}")
+  openedAt    DateTime        @default(now())
+  closedAt    DateTime?
+  employee    Employee?       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  actor       User?           @relation("NoticeItemActor", fields: [actorId], references: [id], onDelete: SetNull)
+  claimedBy   User?           @relation("NoticeItemClaim", fields: [claimedById], references: [id], onDelete: SetNull)
+  rows        Notification[]
+
+  @@index([state, queue])
+  @@index([subjectType, subjectId])
+}
+
 /**
  * No column here can hold a sentence or an amount, which is what keeps a
  * salary figure off a lock screen (KEHOACH 9.21.4).
@@ -1409,13 +1493,29 @@ model Notification {
   daysLeft   Int?
   daysWaited Int?
   approved   Boolean?
+  itemId            String?
+  subjectType       NoticeSubject?
+  subjectId         String?
+  subjectEmployeeId Int?
+  // Null only on rows an older release wrote (KEHOACH 9.21.4).
+  dedupKey          String?
+  facts             Json        @default("{}")
+  remindCount       Int         @default(0)
+  remindedAt        DateTime?
+  archivedAt        DateTime?
+  leftAt            DateTime?
   readAt     DateTime?
   createdAt  DateTime   @default(now())
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item            NoticeItem? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  subjectEmployee Employee?   @relation("NoticesAbout", fields: [subjectEmployeeId], references: [id], onDelete: Cascade)
 
+  // The bell's count reads a partial index the migration writes by hand.
+  @@unique([userId, dedupKey])
   @@index([userId, readAt])
   @@index([userId, createdAt])
   @@index([kind, contractId])
+  @@index([itemId])
 }
 
 model NotificationPreference {
