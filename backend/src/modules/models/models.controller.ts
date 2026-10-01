@@ -16,6 +16,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -76,14 +77,19 @@ export class ModelsController {
 
   @Get("status/:deviceId")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "How the newest update offer to one kiosk went; null when it never had one" })
-  @ApiOkResponse({
-    type: OfferStatusView,
-    description: "An empty body when no offer to the kiosk is on record",
-  })
+  @ApiOperation({ summary: "How the newest update offer to one kiosk went" })
+  @ApiOkResponse({ type: OfferStatusView, description: "The newest offer on record and where it stands" })
+  @ApiNoContentResponse({ description: "No offer to the kiosk is on record" })
   @ApiParam({ name: "deviceId", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
-  status(@Param("deviceId") deviceId: string): Promise<OfferStatus | null> {
-    return this.models.status(deviceId);
+  async status(
+    @Param("deviceId") deviceId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<OfferStatus | null> {
+    const found = await this.models.status(deviceId);
+    if (found === null) {
+      res.status(HttpStatus.NO_CONTENT);
+    }
+    return found;
   }
 
   @Post(":releaseId/offer")

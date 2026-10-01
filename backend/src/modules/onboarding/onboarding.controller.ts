@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
 import { ChecklistKind } from "@prisma/client";
@@ -16,12 +17,14 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
+import type { Response } from "express";
 
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
@@ -123,14 +126,20 @@ export class OnboardingController {
   @Get("employees/:id/checklist")
   @ApiOperation({ summary: "What is still open on one person's onboarding" })
   @ApiParam({ name: "id", description: "Employee id", example: 42 })
-  @ApiOkResponse({ type: ChecklistRunView, description: "An empty body instead while no run of that kind has started" })
+  @ApiOkResponse({ type: ChecklistRunView, description: "The run of that kind, with its tasks in order" })
+  @ApiNoContentResponse({ description: "No run of that kind has started yet; an empty tab, not a fault" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
-  run(
+  async run(
     @CurrentViewer() viewer: Viewer,
     @Param("id", ParseIntPipe) id: number,
     @Query() query: RunQueryDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<RunWithTasks | null> {
-    return this.onboarding.run(viewer, id, query.kind ?? ChecklistKind.ONBOARDING);
+    const found = await this.onboarding.run(viewer, id, query.kind ?? ChecklistKind.ONBOARDING);
+    if (found === null) {
+      res.status(HttpStatus.NO_CONTENT);
+    }
+    return found;
   }
 
   @Post("checklist-tasks/:id/finish")

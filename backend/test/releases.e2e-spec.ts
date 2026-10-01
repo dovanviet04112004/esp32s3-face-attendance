@@ -238,6 +238,13 @@ describe("releases (e2e)", () => {
     assert.ok(!firmware.behind.includes(WAITING), "a kiosk nobody approved was counted");
   });
 
+  it("answers no content for a kiosk that was never offered a release", async () => {
+    const res = await asAdmin("get", `/releases/status/${CURRENT}`);
+    assert.equal(res.status, 204, "a kiosk with no offer still answered 200 with an empty body");
+    assert.equal(res.text, "");
+    assert.equal((await asAdmin("get", "/releases/status/e2e-rel-nobody")).status, 404);
+  });
+
   it("will not offer a kiosk the release it runs, nor one nobody approved", async () => {
     const running = await asAdmin("post", `/releases/${releaseId}/offer/${CURRENT}`);
     assert.equal(running.status, 409);

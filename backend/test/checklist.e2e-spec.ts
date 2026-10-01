@@ -172,12 +172,12 @@ describe("onboarding checklist (e2e)", () => {
     assert.equal((res.body as Run).tasks.length, 3, "work already given out does not vanish");
   });
 
-  it("answers an empty checklist for somebody with none started, not a fault", async () => {
+  it("answers no content for somebody with none started, not a fault", async () => {
     const res = await request(http)
       .get(`/employees/${idOf.get(BOSS) as number}/checklist?kind=ONBOARDING`)
       .set("Authorization", `Bearer ${token}`);
-    assert.equal(res.status, 200);
-    assert.ok(res.text === "" || res.body === null, "a person with no run came back with one");
+    assert.equal(res.status, 204, "nothing started still answered 200 with an empty body");
+    assert.equal(res.text, "", "a person with no run came back with one");
   });
 
   it("counts open and late work the same way the list filters it", async () => {
