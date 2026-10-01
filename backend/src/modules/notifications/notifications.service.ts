@@ -522,7 +522,8 @@ export class NotificationsService {
                    "subjectEmployeeId", "dedupKey", "facts", "archivedAt", "requestId", "advanceId", "periodId",
                    "payslipId", "contractId", "certificateId", "profileChangeId", "dependentId", "daysLeft",
                    "daysWaited", "approved")
-             WHERE EXISTS (SELECT 1 FROM "User" u WHERE u."id" = v."userId")
+              JOIN "User" u ON u."id" = v."userId"
+               FOR KEY SHARE OF u
             ON CONFLICT ("userId", "dedupKey") DO UPDATE
                SET "facts" = EXCLUDED."facts", "daysLeft" = EXCLUDED."daysLeft", "daysWaited" = EXCLUDED."daysWaited",
                    "readAt" = NULL, "remindCount" = "Notification"."remindCount" + 1, "remindedAt" = now(),

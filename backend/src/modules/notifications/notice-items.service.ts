@@ -428,6 +428,7 @@ export class NoticeItemsService {
              CROSS JOIN unnest(${audience}::text[]) AS seat("userId")
               JOIN "User" u ON u."id" = seat."userId"
              WHERE i."id" = ${item.id} AND i."state" = 'OPEN'
+               FOR KEY SHARE OF u
             ON CONFLICT ("userId", "dedupKey") DO UPDATE
                SET "leftAt" = NULL,
                    "readAt" = CASE WHEN ${quiet}::boolean THEN COALESCE("Notification"."readAt", now()) END
