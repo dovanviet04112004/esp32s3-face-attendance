@@ -22,6 +22,7 @@ export const JOB = {
   noticeFanout: "notice-fanout",
   noticeGather: "notice-gather",
   noticeCleanup: "notice-cleanup",
+  kioskAlerts: "kiosk-alerts",
   passwordSetup: "password-setup",
   passwordChanged: "password-changed",
   profileNotice: "profile-notice",
@@ -79,6 +80,10 @@ export interface NoticeCleanupJob {
   type: typeof JOB.noticeCleanup;
 }
 
+export interface KioskAlertsJob {
+  type: typeof JOB.kioskAlerts;
+}
+
 export interface NoticeGatherJob {
   type: typeof JOB.noticeGather;
   userId: string;
@@ -117,6 +122,7 @@ export type NotifyJob =
   | NoticeFanoutJob
   | NoticeGatherJob
   | NoticeCleanupJob
+  | KioskAlertsJob
   | PasswordSetupJob
   | PasswordChangedJob
   | ProfileNoticeJob;

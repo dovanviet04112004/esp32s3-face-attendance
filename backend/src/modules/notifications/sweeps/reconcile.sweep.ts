@@ -10,6 +10,7 @@ import { INBOX_QUEUES, QUEUE_LEDGER, WAITING_STATE, type InboxQueue } from "../a
 import { NoticeItemsService } from "../notice-items.service.js";
 import { kebab } from "../notice-kinds.js";
 import { ContractsSweep } from "./contracts.sweep.js";
+import { KioskSweep } from "./kiosk.sweep.js";
 import { ProbationSweep } from "./probation.sweep.js";
 
 /** How a queue's finished business row reads as a closed item; `s` is that row, as the backfill read it. */
@@ -88,6 +89,7 @@ export class ReconcileSweep implements OnModuleInit {
     private readonly items: NoticeItemsService,
     private readonly contracts: ContractsSweep,
     private readonly probation: ProbationSweep,
+    private readonly kiosk: KioskSweep,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -121,9 +123,10 @@ export class ReconcileSweep implements OnModuleInit {
       tally[queue].closed = closed.length;
       tally[queue].opened = await this.openMissing(queue);
     }
-    // Work against a date closes when its contract does, which no inbox decision reports (KEHOACH 9.18).
+    // Work against a date or a kiosk closes with a row no inbox decision reports (KEHOACH 9.18, 9.21.4).
     tally.CONTRACTS_DUE.closed = await this.contracts.closeVanished();
     tally.PROBATION_DUE.closed = await this.probation.closeVanished();
+    tally.KIOSK.closed = await this.kiosk.closeVanished();
     let after: string | undefined;
     for (;;) {
       const page = await this.db.noticeItem.findMany({
@@ -185,7 +188,7 @@ export class ReconcileSweep implements OnModuleInit {
          AND NOT EXISTS (SELECT 1 FROM "NoticeItem" i WHERE i."key" = ${`${kebab(queue)}:`} || s."id")
     `;
     for (const subject of waiting) {
-      await this.items.open(queue, subject, "quiet");
+      await this.items.open(queue, subject, { joining: "quiet" });
     }
     return waiting.length;
   }

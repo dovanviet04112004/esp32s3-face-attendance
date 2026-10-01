@@ -21,6 +21,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS, type AuditAction } from "../audit/audit-
 import { AuditService } from "../audit/audit.service.js";
 import { AuthService, deviceFingerprint } from "../auth/auth.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
+import { KioskSweep } from "../notifications/sweeps/kiosk.sweep.js";
 import type {
   ApproveDeviceDto,
   ListDevicesDto,
@@ -102,6 +103,7 @@ export class DevicesService {
     private readonly config: ConfigService<Env, true>,
     private readonly broker: MqttService,
     private readonly bus: EventEmitter2,
+    private readonly alerts: KioskSweep,
   ) {}
 
   /**
@@ -137,6 +139,7 @@ export class DevicesService {
       });
       this.log.log(`${body.deviceId} asked to be let in, waiting for a person`);
       this.changed(body.deviceId, "PENDING");
+      await this.alerts.pending(body.deviceId);
       return waiting;
     }
 
@@ -158,6 +161,7 @@ export class DevicesService {
       await this.note(AUDIT_ACTIONS.DEVICE_RESET, held.id, { from: "APPROVED" });
       this.log.warn(`${held.id} registered again while approved, sent back for approval`);
       this.changed(held.id, "PENDING");
+      await this.alerts.pending(held.id);
       return waiting;
     }
     if (held.status === "APPROVED") {
@@ -177,6 +181,7 @@ export class DevicesService {
       });
       await this.note(AUDIT_ACTIONS.DEVICE_REGISTER, held.id, { from: "REVOKED" });
       this.changed(held.id, "PENDING");
+      await this.alerts.pending(held.id);
       return waiting;
     }
     return this.hold(held, claim);
@@ -365,6 +370,7 @@ export class DevicesService {
       subjectId: id,
       meta: { readmitted: closesSpan },
     });
+    await this.alerts.decided(id, "APPROVED", actorId);
     return approved;
   }
 
@@ -392,6 +398,7 @@ export class DevicesService {
       meta: { sessionClosed: closed },
     });
     this.changed(id, "REVOKED");
+    await this.alerts.decided(id, "REVOKED", actorId);
     return revoked;
   }
 

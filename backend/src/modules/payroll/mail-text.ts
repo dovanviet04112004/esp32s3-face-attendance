@@ -322,3 +322,48 @@ const BACKUP_ALARM: Record<MailLocale, (facts: BackupAlarmFacts) => MailBody> = 
 export function backupAlarmMail(locale: string, facts: BackupAlarmFacts): MailBody {
   return BACKUP_ALARM[readsAs(locale)](facts);
 }
+
+export interface KioskSilentFacts {
+  deviceId: string;
+  name: string | null;
+  location: string | null;
+  minutes: number;
+  lastSeen: string;
+  url: string;
+}
+
+/** Sent to every active ADMIN once for each silence, since nobody may have the dashboard open (KEHOACH 9.21.4). */
+const KIOSK_SILENT: Record<MailLocale, (facts: KioskSilentFacts) => MailBody> = {
+  vi: (facts) => ({
+    subject: `Kiosk mất kết nối: ${facts.name ?? facts.deviceId}`,
+    text: [
+      `Kiosk ${facts.deviceId}${facts.name ? ` (${facts.name})` : ""}${facts.location ? ` đặt ở ${facts.location}` : ""} đã im lặng hơn ${facts.minutes} phút.`,
+      `Máy chủ nghe thấy nó lần cuối lúc ${facts.lastSeen}.`,
+      "",
+      "Lượt chấm trong lúc mất kết nối vẫn nằm trên kiosk và được gửi lại khi nó nối lại.",
+      "Việc cần xem là nguồn điện và mạng ở chỗ đặt máy:",
+      "",
+      facts.url,
+      "",
+      "Thư này chỉ gửi một lần cho mỗi lần mất kết nối.",
+    ].join("\n"),
+  }),
+  en: (facts) => ({
+    subject: `Kiosk offline: ${facts.name ?? facts.deviceId}`,
+    text: [
+      `Kiosk ${facts.deviceId}${facts.name ? ` (${facts.name})` : ""}${facts.location ? ` at ${facts.location}` : ""} has been silent for more than ${facts.minutes} minutes.`,
+      `The server last heard from it at ${facts.lastSeen}.`,
+      "",
+      "Punches taken while it is offline stay on the kiosk and are sent once it reconnects.",
+      "What needs a look is the power and the network where it stands:",
+      "",
+      facts.url,
+      "",
+      "This message goes once for each time the kiosk drops off.",
+    ].join("\n"),
+  }),
+};
+
+export function kioskSilentMail(locale: string, facts: KioskSilentFacts): MailBody {
+  return KIOSK_SILENT[readsAs(locale)](facts);
+}

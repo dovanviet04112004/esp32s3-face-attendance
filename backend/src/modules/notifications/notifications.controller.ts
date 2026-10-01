@@ -41,7 +41,6 @@ import {
   UnsubscribeQueryDto,
 } from "./dto/notifications.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
-import { BackupWatchService } from "./backup-watch.service.js";
 import { NoticeItemsService, type ItemDetail } from "./notice-items.service.js";
 import {
   NotificationsService,
@@ -51,8 +50,10 @@ import {
   type SubscriptionView as KeptSubscription,
   type Unread,
 } from "./notifications.service.js";
+import { BackupSweep } from "./sweeps/backup.sweep.js";
 import { CleanupSweep } from "./sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "./sweeps/contracts.sweep.js";
+import { KioskSweep } from "./sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "./sweeps/probation.sweep.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
 import { StalledSweep } from "./sweeps/stalled.sweep.js";
@@ -76,9 +77,10 @@ export class NotificationsController {
     private readonly contracts: ContractsSweep,
     private readonly probation: ProbationSweep,
     private readonly stale: StalledSweep,
-    private readonly backups: BackupWatchService,
+    private readonly backups: BackupSweep,
     private readonly reconcile: ReconcileSweep,
     private readonly cleanup: CleanupSweep,
+    private readonly kiosk: KioskSweep,
   ) {}
 
   @Get()
@@ -164,6 +166,7 @@ export class NotificationsController {
       probation: () => this.probation.sweep(),
       backup: () => this.backups.sweep(),
       cleanup: () => this.cleanup.sweep(),
+      kiosk: () => this.kiosk.sweep(),
     } satisfies Record<SweepParamDto["name"], () => Promise<object>>;
     return { name: params.name, result: { ...(await run[params.name]()) } };
   }

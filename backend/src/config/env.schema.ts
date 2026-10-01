@@ -127,6 +127,7 @@ export const envSchema = z
     NOTICE_CLAIM_HOURS: z.coerce.number().int().positive().max(168).default(24),
     NOTICE_PUSH_GATHER_SECONDS: z.coerce.number().int().min(0).max(3600).default(120),
     NOTICE_KEEP_DAYS: z.coerce.number().int().min(30).max(3650).default(180),
+    KIOSK_OFFLINE_ALERT_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
 
     MQTT_URL: z.string().min(1),
     MQTT_USERNAME: z.string().min(1),

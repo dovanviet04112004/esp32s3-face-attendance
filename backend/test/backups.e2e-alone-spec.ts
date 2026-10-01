@@ -16,9 +16,7 @@ const { RedisService } = await import("../src/database/redis.service.js");
 const { hashPassword } = await import("../src/modules/auth/password.js");
 const { EnrollmentService } = await import("../src/modules/enrollment/enrollment.service.js");
 const { MailerService } = await import("../src/modules/notifications/mailer.service.js");
-const { BackupWatchService, judgeBackups } = await import(
-  "../src/modules/notifications/backup-watch.service.js"
-);
+const { BackupSweep, judgeBackups } = await import("../src/modules/notifications/sweeps/backup.sweep.js");
 
 const PROBLEMS: BackupProblem[] = [
   "WAL_FAILING",
@@ -37,7 +35,7 @@ describe("backups (e2e)", () => {
   let app: INestApplication;
   let db: InstanceType<typeof PrismaService>;
   let redis: InstanceType<typeof RedisService>;
-  let watch: InstanceType<typeof BackupWatchService>;
+  let watch: InstanceType<typeof BackupSweep>;
   let operatorId = "";
   const sent: { to: string; body: MailBody }[] = [];
 
@@ -90,7 +88,7 @@ describe("backups (e2e)", () => {
     await app.init();
     db = app.get(PrismaService);
     redis = app.get(RedisService);
-    watch = app.get(BackupWatchService);
+    watch = app.get(BackupSweep);
     const mailer = app.get(MailerService);
     mailer.send = async (to: string, body: MailBody) => {
       sent.push({ to, body });
@@ -178,6 +176,48 @@ describe("backups (e2e)", () => {
     assert.match(letters[0].subject, /bản ngoài máy/);
     await ran("offsite", 0);
     assert.deepEqual(await sweep(), []);
+  });
+
+  it("holds one BACKUP_ALERT for a failing spell, clears it on a clean watch, and opens the next spell anew", async () => {
+    const open = () => db.noticeItem.findMany({ where: { queue: "BACKUP", state: "OPEN" } });
+    const rowOf = (itemId: string) => db.notification.findFirstOrThrow({ where: { itemId, userId: operatorId } });
+    assert.equal((await open()).length, 0, "a clean watch left backup work open");
+
+    await forget("dump");
+    await ran("dump", 27);
+    assert.deepEqual(await sweep(), ["DUMP_STALE"]);
+    const [first] = await open();
+    assert.ok(first, "a failing backup opened no work");
+    assert.equal(first.level, "CRITICAL");
+    assert.deepEqual(first.facts, { problems: "DUMP_STALE" });
+    assert.equal((await rowOf(first.id)).readAt, null, "the ADMIN was not told");
+
+    await forget("wal");
+    await ran("wal", 27);
+    assert.deepEqual(await sweep(), ["DUMP_STALE", "WAL_STALE"]);
+    const spell = await open();
+    assert.equal(spell.length, 1, "a second problem opened a second piece of work");
+    assert.deepEqual(spell[0].facts, { problems: "DUMP_STALE,WAL_STALE" });
+
+    await ran("dump", 0);
+    await ran("wal", 0);
+    assert.deepEqual(await sweep(), []);
+    assert.equal((await db.noticeItem.findUniqueOrThrow({ where: { id: first.id } })).state, "CLEARED");
+    assert.notEqual((await rowOf(first.id)).readAt, null, "a cleared alert stayed unread");
+
+    await forget("dump");
+    await ran("dump", 30);
+    assert.deepEqual(await sweep(), ["DUMP_STALE"]);
+    const [next] = await open();
+    assert.ok(next && next.id !== first.id, "the next failing spell opened no work of its own");
+    const stepped = await db.noticeItem.findUniqueOrThrow({ where: { id: first.id } });
+    if (next.key === first.key) {
+      assert.ok(stepped.key.startsWith(`${first.key}:`), "the closed spell kept the key the next one needs");
+      assert.equal((await rowOf(first.id)).dedupKey, stepped.key, "the closed spell's rows kept the old key");
+    }
+    await ran("dump", 0);
+    assert.deepEqual(await sweep(), []);
+    toOperator();
   });
 
   it("rewrites FaceTemplate when a face is erased, so no page keeps the old bytes", async () => {

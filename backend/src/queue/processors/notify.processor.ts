@@ -4,13 +4,14 @@ import { Worker } from "bullmq";
 
 import type { Env } from "../../config/env.schema.js";
 import { RedisService } from "../../database/redis.service.js";
-import { BackupWatchService } from "../../modules/notifications/backup-watch.service.js";
 import { MailerService } from "../../modules/notifications/mailer.service.js";
 import { NotificationsService } from "../../modules/notifications/notifications.service.js";
 import { passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
+import { BackupSweep } from "../../modules/notifications/sweeps/backup.sweep.js";
 import { CleanupSweep } from "../../modules/notifications/sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "../../modules/notifications/sweeps/contracts.sweep.js";
+import { KioskSweep } from "../../modules/notifications/sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "../../modules/notifications/sweeps/probation.sweep.js";
 import { ReconcileSweep } from "../../modules/notifications/sweeps/reconcile.sweep.js";
 import { StalledSweep } from "../../modules/notifications/sweeps/stalled.sweep.js";
@@ -32,9 +33,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly mailer: MailerService,
     private readonly profile: ProfileService,
     private readonly stale: StalledSweep,
-    private readonly backups: BackupWatchService,
+    private readonly backups: BackupSweep,
     private readonly reconcile: ReconcileSweep,
     private readonly cleanup: CleanupSweep,
+    private readonly kiosk: KioskSweep,
     private readonly notices: NotificationsService,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
@@ -67,6 +69,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === "notice-cleanup") {
           await this.cleanup.sweep();
+          return;
+        }
+        if (body.type === "kiosk-alerts") {
+          await this.kiosk.sweep();
           return;
         }
         if (body.type === "notice-fanout") {

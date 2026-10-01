@@ -32,6 +32,8 @@ export const QUEUE_SUBJECT: Record<NoticeQueue, NoticeSubject> = {
   DEPENDENTS: "DEPENDENT",
   CONTRACTS_DUE: "CONTRACT",
   PROBATION_DUE: "CONTRACT",
+  BACKUP: "BACKUP",
+  KIOSK: "DEVICE",
 };
 
 /** The kind a queue's work is told as. */
@@ -45,12 +47,15 @@ export const QUEUE_KIND: Record<NoticeQueue, ItemKind> = {
   DEPENDENTS: "REQUEST_WAITING",
   CONTRACTS_DUE: "CONTRACT_DUE",
   PROBATION_DUE: "PROBATION_DUE",
+  BACKUP: "BACKUP_ALERT",
+  KIOSK: "KIOSK_ALERT",
 };
 
-// Only work no business path decides closes by hand, and only by the desk that signs (KEHOACH 9.18 items 1-2).
+// Only work no business path decides closes by hand: by the desk that signs, or for a kiosk an ADMIN (KEHOACH 9.21.4).
 const RESOLVERS: Partial<Record<NoticeQueue, readonly Role[]>> = {
   CONTRACTS_DUE: ["ADMIN", "HR"],
   PROBATION_DUE: ["ADMIN", "HR"],
+  KIOSK: ["ADMIN"],
 };
 
 export interface Closing {
@@ -61,6 +66,25 @@ export interface Closing {
 
 /** Whether newcomers to a group hear of the work, or find it in their inbox already read (KEHOACH 9.21.4). */
 export type Joining = "announce" | "quiet";
+
+/** What work is about; the part tells apart one subject's independent pieces of work in a queue (KEHOACH 9.21.4). */
+export interface WorkRef {
+  id: string;
+  part?: string;
+}
+
+/** The subject work opens on, and the person it is about, when it is about one. */
+export interface Opened extends WorkRef {
+  employeeId: number | null;
+}
+
+/** What work carries from its first moment, and whether its group hears it open. */
+export interface Opening {
+  joining?: Joining;
+  level?: NoticeLevel;
+  facts?: Prisma.InputJsonObject;
+  dueAt?: Date;
+}
 
 export interface Regrouped {
   joined: number;
@@ -73,6 +97,9 @@ interface Seated {
   dedupKey: string;
   at: Date;
 }
+
+// A condition that comes and goes on one subject, so its closed work makes way for the next (KEHOACH 9.21.4).
+const RECURRING: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["BACKUP", "KIOSK"]);
 
 // Work that takes more than one click to finish, where the group needs to see who is on it (KEHOACH 9.21.4).
 export const CLAIMABLE: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["DISPUTES", "CERTIFICATES", "CONTRACTS_DUE", "PROBATION_DUE"]);
@@ -106,9 +133,10 @@ type ItemRead = Prisma.NoticeItemGetPayload<{ include: typeof ITEM_READ }>;
 
 const kHourMs = 3_600_000;
 
-/** The key of the one item a subject has in a queue (KEHOACH 9.21.4). */
-export function itemKey(queue: NoticeQueue, subjectId: string): string {
-  return `${kebab(queue)}:${subjectId}`;
+/** The key of the one open item a subject, or one part of it, has in a queue (KEHOACH 9.21.4). */
+export function itemKey(queue: NoticeQueue, subject: string | WorkRef): string {
+  const ref = typeof subject === "string" ? { id: subject } : subject;
+  return ref.part ? `${kebab(queue)}:${ref.id}:${ref.part}` : `${kebab(queue)}:${ref.id}`;
 }
 
 /** The shared side of a piece of work: one item, a row per holder, closed once for all (KEHOACH 9.21.4). */
@@ -204,7 +232,7 @@ export class NoticeItemsService {
     if (!(RESOLVERS[item.queue]?.includes(viewer.role) ?? false)) {
       throw new ConflictException("NOTICE_ITEM_NOT_RESOLVABLE");
     }
-    if (!(await this.close(item.queue, item.subjectId, { state: "DONE", outcome: "RESOLVED", actorId: viewer.userId }))) {
+    if (!(await this.shut(item.key, { state: "DONE", outcome: "RESOLVED", actorId: viewer.userId }))) {
       throw new ConflictException("NOTICE_ITEM_CLOSED");
     }
     await this.audit.record({
@@ -235,32 +263,63 @@ export class NoticeItemsService {
     }
   }
 
-  /** Open the item a waiting row casts and seat its group; a subject never has two in one queue.
+  /** Open the item a waiting row casts and seat its group, answering whether this call opened it.
    *  @ctx any | after the business commit; logs its own failures, which reconcile repairs
    */
-  async open(queue: NoticeQueue, subject: { id: string; employeeId: number }, joining: Joining = "announce"): Promise<void> {
+  async open(queue: NoticeQueue, subject: Opened, opening: Opening = {}): Promise<boolean> {
+    const key = itemKey(queue, subject);
     try {
-      const key = itemKey(queue, subject.id);
-      await this.db.noticeItem.createMany({
-        data: [{ key, queue, subjectType: QUEUE_SUBJECT[queue], subjectId: subject.id, employeeId: subject.employeeId }],
+      if (RECURRING.has(queue)) {
+        await this.retire(key);
+      }
+      const made = await this.db.noticeItem.createMany({
+        data: [
+          {
+            key,
+            queue,
+            subjectType: QUEUE_SUBJECT[queue],
+            subjectId: subject.id,
+            employeeId: subject.employeeId,
+            level: opening.level,
+            facts: opening.facts,
+            dueAt: opening.dueAt,
+          },
+        ],
         skipDuplicates: true,
       });
       const item = await this.db.noticeItem.findUniqueOrThrow({ where: { key } });
       if (item.state === "OPEN") {
-        await this.regroup(item, joining);
+        await this.regroup(item, opening.joining ?? "announce");
       }
+      return made.count === 1;
     } catch (fell) {
-      this.log.error(`item ${queue} ${subject.id} did not open: ${String(fell)}`);
+      this.log.error(`item ${key} did not open: ${String(fell)}`);
+      return false;
     }
+  }
+
+  // A closed item steps aside with its rows, keeping who handled it, so the condition can open again.
+  private async retire(key: string): Promise<void> {
+    await this.db.$executeRaw`
+      WITH old AS (
+        UPDATE "NoticeItem" SET "key" = "key" || ':' || (extract(epoch FROM "closedAt") * 1000)::bigint
+         WHERE "key" = ${key} AND "state" <> 'OPEN'
+        RETURNING "id", "key"
+      )
+      UPDATE "Notification" n SET "dedupKey" = old."key" FROM old WHERE n."itemId" = old."id"
+    `;
   }
 
   /** Close the item for everybody: one UPDATE claims it, and only that call marks the rows read.
    *  @ctx any | after the business commit; logs its own failures, which reconcile repairs
    */
-  async close(queue: NoticeQueue, subjectId: string, closing: Closing): Promise<boolean> {
+  async close(queue: NoticeQueue, subject: string | WorkRef, closing: Closing): Promise<boolean> {
+    return this.shut(itemKey(queue, subject), closing);
+  }
+
+  private async shut(key: string, closing: Closing): Promise<boolean> {
     try {
-      const key = itemKey(queue, subjectId);
-      const shut = await this.db.noticeItem.updateMany({
+      const moved = await this.db.noticeItem.updateMany({
         where: { key, state: "OPEN" },
         data: {
           state: closing.state,
@@ -269,14 +328,14 @@ export class NoticeItemsService {
           closedAt: new Date(),
         },
       });
-      if (shut.count !== 1) {
+      if (moved.count !== 1) {
         return false;
       }
       const item = await this.db.noticeItem.findUniqueOrThrow({ where: { key }, select: { id: true } });
       await this.settle([item.id]);
       return true;
     } catch (fell) {
-      this.log.error(`item ${queue} ${subjectId} did not close: ${String(fell)}`);
+      this.log.error(`item ${key} did not close: ${String(fell)}`);
       return false;
     }
   }
@@ -331,9 +390,9 @@ export class NoticeItemsService {
   }
 
   /** Take a reminder mark; only the call that moves lastMark speaks, so a mark is said once (KEHOACH 9.21.4). */
-  async claimMark(queue: NoticeQueue, subjectId: string, mark: number): Promise<boolean> {
+  async claimMark(queue: NoticeQueue, subject: string | WorkRef, mark: number): Promise<boolean> {
     const claimed = await this.db.noticeItem.updateMany({
-      where: { key: itemKey(queue, subjectId), state: "OPEN", OR: [{ lastMark: null }, { lastMark: { lt: mark } }] },
+      where: { key: itemKey(queue, subject), state: "OPEN", OR: [{ lastMark: null }, { lastMark: { lt: mark } }] },
       data: { lastMark: mark },
     });
     return claimed.count === 1;
@@ -371,9 +430,10 @@ export class NoticeItemsService {
   /** Surface an open item for its whole group: unread, out of the archive, pushed again.
    *  @ctx any | after claimMark won; logs its own failures
    */
-  async remind(queue: NoticeQueue, subjectId: string, count: { daysWaited: number } | { daysLeft: number }): Promise<void> {
+  async remind(queue: NoticeQueue, subject: string | WorkRef, count: { daysWaited: number } | { daysLeft: number }): Promise<void> {
+    const key = itemKey(queue, subject);
     try {
-      const item = await this.db.noticeItem.findUnique({ where: { key: itemKey(queue, subjectId) } });
+      const item = await this.db.noticeItem.findUnique({ where: { key } });
       if (!item || item.state !== "OPEN") {
         return;
       }
@@ -394,7 +454,7 @@ export class NoticeItemsService {
         surfaced.filter((one) => !fresh.includes(one.userId)).map((one) => ({ ...one, renotify: true })),
       );
     } catch (fell) {
-      this.log.error(`item ${queue} ${subjectId} was not reminded: ${String(fell)}`);
+      this.log.error(`item ${key} was not reminded: ${String(fell)}`);
     }
   }
 
@@ -411,11 +471,11 @@ export class NoticeItemsService {
         ? []
         : await this.db.$queryRaw<Seated[]>`
             INSERT INTO "Notification" ("id", "userId", "kind", "itemId", "subjectType", "subjectId",
-                                        "subjectEmployeeId", "dedupKey", "readAt", "requestId", "advanceId",
+                                        "subjectEmployeeId", "dedupKey", "facts", "readAt", "requestId", "advanceId",
                                         "certificateId", "profileChangeId", "dependentId", "payslipId", "approved",
                                         "contractId")
             SELECT gen_random_uuid()::text, seat."userId", ${QUEUE_KIND[item.queue]}::"NoticeKind", i."id", i."subjectType",
-                   i."subjectId", i."employeeId", i."key", CASE WHEN ${quiet}::boolean THEN now() END,
+                   i."subjectId", i."employeeId", i."key", i."facts", CASE WHEN ${quiet}::boolean THEN now() END,
                    CASE WHEN i."subjectType" = 'REQUEST' THEN i."subjectId" END,
                    CASE WHEN i."subjectType" = 'ADVANCE' THEN i."subjectId" END,
                    CASE WHEN i."subjectType" = 'CERTIFICATE' THEN i."subjectId" END,

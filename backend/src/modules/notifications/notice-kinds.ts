@@ -8,7 +8,7 @@ export type FactType = "number" | "boolean" | "string" | "day";
 export type OfferedChannel = "IN_APP" | "PUSH";
 
 /** Kinds that are work a group shares; every other kind is news for one person (KEHOACH 9.21.4). */
-export type ItemKind = "REQUEST_WAITING" | "CONTRACT_DUE" | "PROBATION_DUE";
+export type ItemKind = "REQUEST_WAITING" | "CONTRACT_DUE" | "PROBATION_DUE" | "BACKUP_ALERT" | "KIOSK_ALERT";
 
 export type NewsKind = Exclude<NoticeKind, ItemKind>;
 
@@ -34,7 +34,6 @@ export const DUE_MARKS: Partial<Record<NoticeQueue, readonly number[]>> = {
   PROBATION_DUE: [7, 3, 1],
 };
 
-/** The days-left mark from which the work reads as a warning. */
 export const DUE_WARNING: Partial<Record<NoticeQueue, number>> = {
   CONTRACTS_DUE: 7,
 };
@@ -127,6 +126,23 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: true,
     defaults: { IN_APP: true, PUSH: true },
     facts: { daysLeft: "number" },
+  },
+  // The codes failing now, comma-joined; the watch keeps them current while the spell lasts (KEHOACH 9.22.2).
+  BACKUP_ALERT: {
+    category: "SYSTEM",
+    level: "CRITICAL",
+    receivers: ["ADMIN"],
+    item: true,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { problems: "string" },
+  },
+  KIOSK_ALERT: {
+    category: "SYSTEM",
+    level: "CRITICAL",
+    receivers: ["ADMIN"],
+    item: true,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { code: "string", errorCode: "number" },
   },
   // Off until /me carries a contract card: a notice that opens nothing about it is a dead end (KEHOACH 9.15 rule 1).
   CONTRACT_ENDING: {

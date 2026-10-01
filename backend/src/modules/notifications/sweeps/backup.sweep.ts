@@ -1,14 +1,16 @@
 import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
-import { ALARM } from "../../common/cache/cache-keys.js";
-import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
-import { RedisService } from "../../database/redis.service.js";
-import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { JOB, QUEUE } from "../../queue/queues.js";
-import { backupAlarmMail, DEFAULT_MAIL_LOCALE, type BackupProblem } from "../payroll/mail-text.js";
-import { MailerService } from "./mailer.service.js";
+import { ALARM } from "../../../common/cache/cache-keys.js";
+import type { Env } from "../../../config/env.schema.js";
+import { PrismaService } from "../../../database/prisma.service.js";
+import { RedisService } from "../../../database/redis.service.js";
+import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
+import { JOB, QUEUE } from "../../../queue/queues.js";
+import { backupAlarmMail, DEFAULT_MAIL_LOCALE, type BackupProblem } from "../../payroll/mail-text.js";
+import { localDay } from "../../timesheet/local-day.js";
+import { MailerService } from "../mailer.service.js";
+import { NoticeItemsService } from "../notice-items.service.js";
 
 /** What pg_stat_archiver says about the last push either way. */
 export interface ArchiverState {
@@ -58,13 +60,14 @@ export function judgeBackups(
 }
 
 @Injectable()
-export class BackupWatchService implements OnModuleInit {
-  private readonly log = new Logger(BackupWatchService.name);
+export class BackupSweep implements OnModuleInit {
+  private readonly log = new Logger(BackupSweep.name);
 
   constructor(
     private readonly db: PrismaService,
     private readonly redis: RedisService,
     private readonly mailer: MailerService,
+    private readonly items: NoticeItemsService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -78,7 +81,7 @@ export class BackupWatchService implements OnModuleInit {
     );
   }
 
-  /** Mail every active ADMIN about each problem found, once a day while it lasts. */
+  /** Mail every active ADMIN about each problem found, once a day while it lasts, and keep one BACKUP_ALERT open meanwhile. */
   async sweep(): Promise<{ problems: BackupProblem[] }> {
     const staleHours = this.config.get("BACKUP_STALE_HOURS", { infer: true });
     if (staleHours === 0) {
@@ -99,7 +102,28 @@ export class BackupWatchService implements OnModuleInit {
     for (const finding of found) {
       await this.raise(finding, now);
     }
+    await this.track([...failing].sort(), now);
     return { problems: [...failing] };
+  }
+
+  // One item a failing spell, its codes kept current; a watch that finds nothing clears it (KEHOACH 9.21.4).
+  private async track(failing: BackupProblem[], now: Date): Promise<void> {
+    const open = await this.db.noticeItem.findMany({ where: { queue: "BACKUP", state: "OPEN" }, select: { id: true, subjectId: true } });
+    if (failing.length === 0) {
+      for (const one of open) {
+        await this.items.close("BACKUP", one.subjectId, { state: "CLEARED" });
+      }
+      return;
+    }
+    const facts = { problems: failing.join(",") };
+    if (open.length === 0) {
+      const today = localDay(now, this.config.get("APP_TIMEZONE", { infer: true }));
+      await this.items.open("BACKUP", { id: today, employeeId: null }, { level: "CRITICAL", facts });
+      return;
+    }
+    const ids = open.map((one) => one.id);
+    await this.db.noticeItem.updateMany({ where: { id: { in: ids } }, data: { facts } });
+    await this.db.notification.updateMany({ where: { itemId: { in: ids } }, data: { facts } });
   }
 
   private async newestRuns(): Promise<Map<string, Date>> {

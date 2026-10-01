@@ -1388,6 +1388,8 @@ enum NoticeKind {
   CONTRACT_DUE
   PROBATION_DUE
   PAYROLL_RUN_DONE
+  BACKUP_ALERT
+  KIOSK_ALERT
 }
 
 enum NoticeChannel {
@@ -1407,6 +1409,8 @@ enum NoticeQueue {
   DEPENDENTS
   CONTRACTS_DUE
   PROBATION_DUE
+  BACKUP
+  KIOSK
 }
 
 enum NoticeSubject {
@@ -1419,6 +1423,8 @@ enum NoticeSubject {
   PAYSLIP
   CONTRACT
   PAYROLL_RUN
+  BACKUP
+  DEVICE
 }
 
 enum NoticeOutcome {
@@ -1457,7 +1463,7 @@ model NoticeItem {
   key         String          @unique
   queue       NoticeQueue
   subjectType NoticeSubject
-  // A uuid, a number, a day or a person-day; a CHECK in the migration holds it.
+  // A uuid, a number, a day, a person-day, or a kiosk id on a kiosk; a CHECK in the migration holds it.
   subjectId   String
   employeeId  Int?
   level       NoticeLevel     @default(ACTION)

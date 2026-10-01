@@ -129,6 +129,9 @@ export class AudienceService {
     if (queue === "CONTRACTS_DUE" || queue === "PROBATION_DUE") {
       return this.dueAudience(queue, subjectId);
     }
+    if (queue === "BACKUP" || queue === "KIOSK") {
+      return this.admins();
+    }
     const candidates = await this.candidates(queue, subjectId);
     const held: string[] = [];
     for (const one of candidates) {
@@ -138,6 +141,11 @@ export class AudienceService {
       }
     }
     return held;
+  }
+
+  private async admins(): Promise<string[]> {
+    const held = await this.db.user.findMany({ where: { active: true, role: "ADMIN" }, select: { id: true } });
+    return held.map((one) => one.id);
   }
 
   // The desk that signs, never the person about it; a probation also the manager who judges it (KEHOACH 9.18 items 1-2).
