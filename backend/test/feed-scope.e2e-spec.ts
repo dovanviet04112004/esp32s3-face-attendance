@@ -188,6 +188,8 @@ describe("who the feed talks to (e2e)", () => {
     assert.equal(watcher.socket.connected, true, "a ticket good for a second was refused early");
 
     await new Promise((done) => setTimeout(done, EXPIRY_MS));
+    // Suites running beside this one write too, and an ADMIN ticket may hear that while it is still good.
+    watcher.heard.length = 0;
     gateway.publish(FEED.device, { deviceId: "kiosk-e2e-stale", online: true });
     await new Promise((done) => setTimeout(done, SETTLE_MS));
 
